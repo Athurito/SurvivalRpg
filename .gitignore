@@ -12,3 +12,11 @@ Saved
 *.suo
 *.xcodeproj
 *.xcworkspace
+
+# Rider user-specific files – don’t share
+.idea/workspace.xml
+.idea/tasks.xml
+.idea/**/workspace.xml
+.idea/**/projectSettingsUpdater.xml
+.idea/
+*.iml
