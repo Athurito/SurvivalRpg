@@ -40,7 +40,7 @@ public:
 	URpgPlayerProgressionData* ConfigData = nullptr;
 
 	/** Runtime State (OwnerOnly Replicated) */
-	UPROPERTY(ReplicatedUsing=OnRep_State, VisibleAnywhere, BlueprintReadOnly)
+	UPROPERTY(ReplicatedUsing=OnRep_State)
 	FPlayerProgressionState State;
 
 	/** UI Events */

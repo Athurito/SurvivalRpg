@@ -27,7 +27,7 @@ public:
 	URpgTradeSkillConfigData* ConfigData = nullptr;
 
 	/** Runtime state – Index = (int32)ETradeSkill */
-	UPROPERTY(ReplicatedUsing=OnRep_SkillStates, VisibleAnywhere, BlueprintReadOnly)
+	UPROPERTY(ReplicatedUsing=OnRep_SkillStates)
 	TArray<FTradeSkillState> SkillStates;
 
 	/** UI / Gameplay events */

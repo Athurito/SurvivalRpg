@@ -6,6 +6,8 @@
 #include "GameFramework/PlayerState.h"
 #include "RpgPlayerState.generated.h"
 
+class URpgTradeSkillProgressionComponent;
+class URpgPlayerProgressionComponent;
 class URpgAbilitySystemComponent;
 /**
  * 
@@ -20,10 +22,27 @@ public:
 	
 private:
 	// The ability system component sub-object used by player characters.
-	UPROPERTY(VisibleAnywhere, Category = "Rpg|PlayerState")
+	UPROPERTY(VisibleAnywhere, Category = "Rpg|AbilitySystem")
 	TObjectPtr<URpgAbilitySystemComponent> AbilitySystemComponent;
+	
+	UPROPERTY(VisibleAnywhere, Category = "Rpg|Progression")
+	TObjectPtr<URpgPlayerProgressionComponent> PlayerProgressionComponent;
+	
+	UPROPERTY(VisibleAnywhere, Category = "Rpg|Progression")
+	TObjectPtr<URpgTradeSkillProgressionComponent> TradeSkillProgressionComponent;
+	
 	
 	// Combat attribute set used by this actor.
 	UPROPERTY()
 	TObjectPtr<const class URpgCombatSet> CombatSet;
+	UPROPERTY()
+	TObjectPtr<const class URpgMetaSet> MetaSet;
+	UPROPERTY()
+	TObjectPtr<const class URpgMobilitySet> MobilitySet;
+	UPROPERTY()
+	TObjectPtr<const class URpgPrimarySet> PrimarySet;
+	UPROPERTY()
+	TObjectPtr<const class URpgVitalSet> VitalSet;
+	UPROPERTY()
+	TObjectPtr<const class URpgWeaponAmmoSet> WeaponAmmoSet;
 };

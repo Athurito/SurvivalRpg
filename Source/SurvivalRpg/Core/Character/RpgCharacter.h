@@ -10,7 +10,7 @@ UCLASS()
 class SURVIVALRPG_API ARpgCharacter : public ACharacter
 {
 	GENERATED_BODY()
-
+ 
 public:
 	// Sets default values for this character's properties
 	ARpgCharacter();
