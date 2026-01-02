@@ -13,3 +13,8 @@ URpgAbilitySystemComponent* URpgAttributeSet::GetRpgAbilitySystemComponent() con
 {
 	return Cast<URpgAbilitySystemComponent>(GetOwningAbilitySystemComponent());
 }
+
+float URpgAttributeSet::ClampAttribute(const float Value, const float Min, const float Max)
+{
+	return FMath::Clamp(Value, Min, Max);
+}

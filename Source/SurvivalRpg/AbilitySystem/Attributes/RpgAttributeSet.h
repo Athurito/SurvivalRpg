@@ -18,4 +18,7 @@ class SURVIVALRPG_API URpgAttributeSet : public UAttributeSet
 public:
 	URpgAttributeSet();
 	URpgAbilitySystemComponent* GetRpgAbilitySystemComponent() const;
+protected:
+	
+	static float ClampAttribute(const float Value, const float Min, const float Max);
 };
