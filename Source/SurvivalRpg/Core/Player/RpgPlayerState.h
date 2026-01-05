@@ -6,6 +6,7 @@
 #include "GameFramework/PlayerState.h"
 #include "RpgPlayerState.generated.h"
 
+class ARpgPlayerController;
 class URpgTradeSkillProgressionComponent;
 class URpgPlayerProgressionComponent;
 class URpgAbilitySystemComponent;
@@ -13,12 +14,15 @@ class URpgAbilitySystemComponent;
  * 
  */
 UCLASS()
-class SURVIVALRPG_API ARpgPlayerState : public APlayerState
+class SURVIVALRPG_API ARpgPlayerState : public AModularPlayerState
 {
 	GENERATED_BODY()
 	
 public:
 	ARpgPlayerState();
+	
+	UFUNCTION(BlueprintCallable, Category = "Rpg|PlayerState")
+	ARpgPlayerController* GetRpgPlayerController() const;
 	
 private:
 	// The ability system component sub-object used by player characters.
