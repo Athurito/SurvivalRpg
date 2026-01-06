@@ -24,7 +24,7 @@ public:
 	FGameplayTag InputTag;
 };
 
-UCLASS()
+UCLASS(BlueprintType, Const)
 class SURVIVALRPG_API URpgInputConfig : public UDataAsset
 {
 	GENERATED_BODY()

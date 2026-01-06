@@ -4,7 +4,6 @@
 #include "RpgPawnExtensionComponent.h"
 
 #include "GameFramework/PlayerState.h"
-#include "Net/UnrealNetwork.h"
 #include "SurvivalRpg/AbilitySystem/RpgAbilitySystemComponent.h"
 
 URpgPawnExtensionComponent::URpgPawnExtensionComponent(const FObjectInitializer& ObjectInitializer) : Super(ObjectInitializer)
@@ -14,53 +13,15 @@ URpgPawnExtensionComponent::URpgPawnExtensionComponent(const FObjectInitializer&
 
 	SetIsReplicatedByDefault(true);
 
-	PawnData = nullptr;
+	
 	AbilitySystemComponent = nullptr;
 }
-
-void URpgPawnExtensionComponent::GetLifetimeReplicatedProps(TArray<FLifetimeProperty>& OutLifetimeProps) const
-{
-	Super::GetLifetimeReplicatedProps(OutLifetimeProps);
-	
-	DOREPLIFETIME(URpgPawnExtensionComponent, PawnData);
-}
-
-void URpgPawnExtensionComponent::SetPawnData(const URpgPawnData* InPawnData)
-{
-	check(InPawnData);
-
-	APawn* Pawn = GetPawnChecked<APawn>();
-
-	if (Pawn->GetLocalRole() != ROLE_Authority)
-	{
-		return;
-	}
-
-	if (PawnData)
-	{
-		//UE_LOG(LogTemp, Error, TEXT("Trying to set PawnData [%s] on pawn [%s] that already has valid PawnData [%s]."), *GetNameSafe(InPawnData), *GetNameSafe(Pawn), *GetNameSafe(PawnData));
-		return;
-	}
-
-	PawnData = InPawnData;
-
-	Pawn->ForceNetUpdate();
-
-}
-
 
 // Called when the game starts
 void URpgPawnExtensionComponent::BeginPlay()
 {
 	Super::BeginPlay();
 }
-
-
-void URpgPawnExtensionComponent::OnRep_PawnData()
-{
-}
-
-
 
 void URpgPawnExtensionComponent::TryInitialize()
 {

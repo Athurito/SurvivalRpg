@@ -19,11 +19,6 @@ public:
 	// Sets default values for this component's properties
 	URpgPawnExtensionComponent(const FObjectInitializer& ObjectInitializer);
 	
-	/** Gets the pawn data, which is used to specify pawn properties in data */
-	template <class T>
-	const T* GetPawnData() const { return Cast<T>(PawnData); }
-	void SetPawnData(const URpgPawnData* InPawnData);
-	
 	/** Returns the pawn extension component if one exists on the specified actor. */
 	UFUNCTION(BlueprintPure, Category = "Lyra|Pawn")
 	static URpgPawnExtensionComponent* FindPawnExtensionComponent(const AActor* Actor) { return (Actor ? Actor->FindComponentByClass<URpgPawnExtensionComponent>() : nullptr); }
@@ -39,18 +34,10 @@ protected:
 	// Called when the game starts
 	virtual void BeginPlay() override;
 	
-	UFUNCTION()
-	void OnRep_PawnData();
-	
 	/** Pointer to the ability system component that is cached for convenience. */
 	UPROPERTY(Transient)
 	TObjectPtr<URpgAbilitySystemComponent> AbilitySystemComponent;
-	
-	UPROPERTY(EditInstanceOnly, ReplicatedUsing = OnRep_PawnData, Category = "Lyra|Pawn")
-	TObjectPtr<const URpgPawnData> PawnData;
-	
-	virtual void GetLifetimeReplicatedProps(TArray<FLifetimeProperty>& OutLifetimeProps) const override;
-	
+
 private:
 	
 	bool bInitialized = false;

@@ -30,3 +30,8 @@ ARpgPlayerState::ARpgPlayerState()
 	TradeSkillProgressionComponent = CreateDefaultSubobject<URpgTradeSkillProgressionComponent>(TEXT("TradeSkillProgressionComponent"));
 
 }
+
+ARpgPlayerController* ARpgPlayerState::GetRpgPlayerController() const
+{
+	return nullptr;
+}

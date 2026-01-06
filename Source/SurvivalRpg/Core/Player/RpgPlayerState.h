@@ -14,7 +14,7 @@ class URpgAbilitySystemComponent;
  * 
  */
 UCLASS()
-class SURVIVALRPG_API ARpgPlayerState : public AModularPlayerState
+class SURVIVALRPG_API ARpgPlayerState : public APlayerState
 {
 	GENERATED_BODY()
 	
