@@ -26,7 +26,7 @@ public:
 	
 private:
 	// The ability system component sub-object used by player characters.
-	UPROPERTY(VisibleAnywhere, Category = "Rpg|AbilitySystem")
+	UPROPERTY(BlueprintReadWrite, VisibleAnywhere, Category = "Rpg|AbilitySystem", meta = (AllowPrivateAccess = "true"))
 	TObjectPtr<URpgAbilitySystemComponent> AbilitySystemComponent;
 	
 	UPROPERTY(VisibleAnywhere, Category = "Rpg|Progression")

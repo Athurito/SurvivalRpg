@@ -3,6 +3,7 @@
 #pragma once
 
 #include "CoreMinimal.h"
+#include "AbilitySystemInterface.h"
 #include "GameFramework/Character.h"
 #include "RpgCharacter.generated.h"
 
@@ -11,7 +12,7 @@ class URpgPawnExtensionComponent;
 class URpgCharacterMovementComponent;
 
 UCLASS()
-class SURVIVALRPG_API ARpgCharacter : public ACharacter
+class SURVIVALRPG_API ARpgCharacter : public ACharacter, public IAbilitySystemInterface
 {
 	GENERATED_BODY()
  
@@ -31,6 +32,9 @@ protected:
 	
 
 public:
+	
+	virtual UAbilitySystemComponent* GetAbilitySystemComponent() const override;
+	
 	void OnStartCrouch(float HalfHeightAdjust, float ScaledHalfHeightAdjust);
 	void OnEndCrouch(float HalfHeightAdjust, float ScaledHalfHeightAdjust);
 	void ToggleCrouch();

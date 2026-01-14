@@ -6,6 +6,7 @@
 #include "RpgCharacterMovementComponent.h"
 #include "RpgPawnExtensionComponent.h"
 #include "RpgPawnGameplayComponent.h"
+#include "SurvivalRpg/AbilitySystem/RpgAbilitySystemComponent.h"
 
 
 ARpgCharacter::ARpgCharacter(const FObjectInitializer& ObjectInitializer) : 
@@ -57,6 +58,11 @@ void ARpgCharacter::OnRep_PlayerState()
 {
 	PawnExtensionComponent->TryInitialize();
 	Super::OnRep_PlayerState();
+}
+
+UAbilitySystemComponent* ARpgCharacter::GetAbilitySystemComponent() const
+{
+	return PawnExtensionComponent->GetRpgAbilitySystemComponent();
 }
 
 
