@@ -111,9 +111,11 @@ protected:
 };
 
 
-
 /**
- * 
+ * URpgAbilitySet
+ *
+ * Defines a collection of gameplay abilities, gameplay effects, and attribute sets
+ * that can be granted to an ability system component.
  */
 UCLASS(BlueprintType, Const)
 class SURVIVALRPG_API URpgAbilitySet : public UPrimaryDataAsset

@@ -10,10 +10,7 @@ URpgPawnExtensionComponent::URpgPawnExtensionComponent(const FObjectInitializer&
 {
 	PrimaryComponentTick.bStartWithTickEnabled = false;
 	PrimaryComponentTick.bCanEverTick = false;
-
 	SetIsReplicatedByDefault(true);
-
-	
 	AbilitySystemComponent = nullptr;
 }
 
@@ -39,9 +36,17 @@ void URpgPawnExtensionComponent::TryInitialize()
 	bInitialized = true;
 	AbilitySystemComponent = Asc;
 
-	if (Asc->GetAvatarActor() != GetPawn<APawn>())
+	APawn* Pawn = GetPawn<APawn>();
+
+	const bool bNeedsInit = (Asc->GetAvatarActor() != Pawn);
+	if (bNeedsInit)
 	{
-		Asc->InitAbilityActorInfo(PS, GetPawn<APawn>());
+		Asc->InitAbilityActorInfo(PS, Pawn);
+	}
+	
+	if (Pawn->HasAuthority())
+	{
+		Asc->ApplyDefaultAbilitySetupIfNeeded(Pawn);
 	}
 	
 }
@@ -49,6 +54,14 @@ void URpgPawnExtensionComponent::TryInitialize()
 void URpgPawnExtensionComponent::UnInitialize()
 {
 	if (!bInitialized) return;
+	
+	if (APawn* Pawn = GetPawn<APawn>())
+	{
+		if (Pawn->HasAuthority() && AbilitySystemComponent)
+		{
+			AbilitySystemComponent->RemoveDefaultAbilitySetup();
+		}
+	}
 
 	bInitialized = false;
 	AbilitySystemComponent = nullptr;

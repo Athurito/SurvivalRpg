@@ -22,9 +22,8 @@ ARpgCharacter::ARpgCharacter(const FObjectInitializer& ObjectInitializer) :
 // Called when the game starts or when spawned
 void ARpgCharacter::BeginPlay()
 {
-	PawnExtensionComponent->TryInitialize();
 	Super::BeginPlay();
-	
+	PawnExtensionComponent->TryInitialize();
 }
 
 void ARpgCharacter::EndPlay(const EEndPlayReason::Type EndPlayReason)
