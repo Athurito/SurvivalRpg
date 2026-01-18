@@ -15,6 +15,8 @@ class SURVIVALRPG_API URpgGameplayAbility : public UGameplayAbility
 	GENERATED_BODY()
 	
 public:
+	URpgGameplayAbility();
+	
 	UPROPERTY(EditDefaultsOnly, BlueprintReadWrite, Category = "UI")
 	bool bShouldShowInAbilitiesBar = false;
 	

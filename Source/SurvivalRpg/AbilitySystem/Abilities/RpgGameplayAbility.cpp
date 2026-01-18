@@ -2,3 +2,9 @@
 
 
 #include "RpgGameplayAbility.h"
+
+URpgGameplayAbility::URpgGameplayAbility()
+{
+	InstancingPolicy = EGameplayAbilityInstancingPolicy::InstancedPerActor;
+	ActivationBlockedTags.AddTag(FGameplayTag::RequestGameplayTag("State.Dead"));
+}

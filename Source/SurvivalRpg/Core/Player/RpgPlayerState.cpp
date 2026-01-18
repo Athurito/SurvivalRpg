@@ -5,7 +5,6 @@
 
 #include "SurvivalRpg/AbilitySystem/RpgAbilitySystemComponent.h"
 #include "SurvivalRpg/AbilitySystem/Attributes/RpgCombatSet.h"
-#include "SurvivalRpg/AbilitySystem/Attributes/RpgMetaSet.h"
 #include "SurvivalRpg/AbilitySystem/Attributes/RpgMobilitySet.h"
 #include "SurvivalRpg/AbilitySystem/Attributes/RpgPrimarySet.h"
 #include "SurvivalRpg/AbilitySystem/Attributes/RpgVitalSet.h"
@@ -20,7 +19,6 @@ ARpgPlayerState::ARpgPlayerState()
 	AbilitySystemComponent->SetReplicationMode(EGameplayEffectReplicationMode::Mixed);
 	
 	CombatSet = CreateDefaultSubobject<URpgCombatSet>(TEXT("CombatSet"));
-	MetaSet = CreateDefaultSubobject<URpgMetaSet>(TEXT("MetaSet"));
 	MobilitySet = CreateDefaultSubobject<URpgMobilitySet>(TEXT("MobilitySet"));
 	PrimarySet = CreateDefaultSubobject<URpgPrimarySet>(TEXT("PrimarySet"));
 	VitalSet = CreateDefaultSubobject<URpgVitalSet>(TEXT("VitalSet"));

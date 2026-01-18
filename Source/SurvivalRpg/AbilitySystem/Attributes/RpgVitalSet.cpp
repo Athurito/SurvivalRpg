@@ -4,7 +4,6 @@
 #include "RpgVitalSet.h"
 
 #include "GameplayEffectExtension.h"
-#include "RpgMetaSet.h"
 #include "Net/UnrealNetwork.h"
 #include "SurvivalRpg/AbilitySystem/RpgAbilitySystemComponent.h"
 

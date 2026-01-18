@@ -41,8 +41,6 @@ private:
 	UPROPERTY()
 	TObjectPtr<const class URpgCombatSet> CombatSet;
 	UPROPERTY()
-	TObjectPtr<const class URpgMetaSet> MetaSet;
-	UPROPERTY()
 	TObjectPtr<const class URpgMobilitySet> MobilitySet;
 	UPROPERTY()
 	TObjectPtr<const class URpgPrimarySet> PrimarySet;
