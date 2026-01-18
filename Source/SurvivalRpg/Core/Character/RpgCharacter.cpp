@@ -49,14 +49,14 @@ void ARpgCharacter::UnPossessed()
 
 void ARpgCharacter::OnRep_Controller()
 {
-	PawnExtensionComponent->TryInitialize();
 	Super::OnRep_Controller();
+	PawnExtensionComponent->TryInitialize();
 }
 
 void ARpgCharacter::OnRep_PlayerState()
 {
-	PawnExtensionComponent->TryInitialize();
 	Super::OnRep_PlayerState();
+	PawnExtensionComponent->TryInitialize();
 }
 
 UAbilitySystemComponent* ARpgCharacter::GetAbilitySystemComponent() const
