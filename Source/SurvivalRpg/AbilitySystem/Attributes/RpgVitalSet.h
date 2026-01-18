@@ -78,4 +78,24 @@ private:
 	
 	void ClampVitalAttributes(const FGameplayAttribute& Attribute, float& NewValue) const;
 
+	
+public:
+	
+	ATTRIBUTE_ACCESSORS_BASIC(URpgVitalSet, Healing);
+	ATTRIBUTE_ACCESSORS_BASIC(URpgVitalSet, Damage);
+
+private:
+	
+	
+	// -------------------------------------------------------------------
+	//	Meta Attribute (please keep attributes that aren't 'stateful' below 
+	// -------------------------------------------------------------------
+
+	// Incoming healing. This is mapped directly to +Health
+	UPROPERTY(BlueprintReadOnly, Category="Rpg|Health", Meta=(AllowPrivateAccess=true))
+	FGameplayAttributeData Healing;
+
+	// Incoming damage. This is mapped directly to -Health
+	UPROPERTY(BlueprintReadOnly, Category="Rpg|Health", Meta=(HideFromModifiers, AllowPrivateAccess=true))
+	FGameplayAttributeData Damage;
 };

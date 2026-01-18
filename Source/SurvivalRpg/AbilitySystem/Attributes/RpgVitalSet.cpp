@@ -22,32 +22,30 @@ void URpgVitalSet::PostGameplayEffectExecute(const FGameplayEffectModCallbackDat
 	URpgAbilitySystemComponent* TargetAsc = Cast<URpgAbilitySystemComponent>(&Data.Target);
 	if (!TargetAsc) return;
 	
-	const URpgMetaSet* MetaSet = TargetAsc->GetSet<URpgMetaSet>();
-	if (!MetaSet) return;
 
 	// 1) Damage -> Health
-	if (MetaSet && Data.EvaluatedData.Attribute == URpgMetaSet::GetDamageAttribute())
+	if (Data.EvaluatedData.Attribute == GetDamageAttribute())
 	{
-		const float IncomingDamage = MetaSet->GetDamage();
+		const float IncomingDamage = GetDamage();
 		if (IncomingDamage > 0.f)
 		{
 			SetHealth(ClampAttribute(GetHealth() - IncomingDamage, 0.f, GetMaxHealth()));
 		}
 
 		// Damage immer wieder auf 0 setzen (Meta-Attribute sind “one-shot”)
-		TargetAsc->SetNumericAttributeBase(URpgMetaSet::GetDamageAttribute(), 0.f);
+		TargetAsc->SetNumericAttributeBase(GetDamageAttribute(), 0.f);
 	}
 
 	// 2) Healing -> Health
-	if (MetaSet && Data.EvaluatedData.Attribute == URpgMetaSet::GetHealingAttribute())
+	if (Data.EvaluatedData.Attribute == GetHealingAttribute())
 	{
-		const float IncomingHealing = MetaSet->GetHealing();
+		const float IncomingHealing = GetHealing();
 		if (IncomingHealing > 0.f)
 		{
 			SetHealth(ClampAttribute(GetHealth() + IncomingHealing, 0.f, GetMaxHealth()));
 		}
 
-		TargetAsc->SetNumericAttributeBase(URpgMetaSet::GetHealingAttribute(), 0.f);
+		TargetAsc->SetNumericAttributeBase(GetHealingAttribute(), 0.f);
 	}
 }
 
@@ -113,7 +111,7 @@ void URpgVitalSet::GetLifetimeReplicatedProps(TArray<FLifetimeProperty>& OutLife
 
 void URpgVitalSet::ClampVitalAttributes(const FGameplayAttribute& Attribute, float& NewValue) const
 {
-	if (Attribute == GetHealthAttribute())
+    if (Attribute == GetHealthAttribute())
 	{
 		NewValue = ClampAttribute(NewValue, 0.f, GetMaxHealth());
 	}
