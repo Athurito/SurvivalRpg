@@ -106,7 +106,12 @@ void URpgAbilitySet::GiveToAbilitySystem(URpgAbilitySystemComponent* RpgASC, FRp
 			continue;
 		}
 
+		bool ShouldActivateAbility = false;
 		URpgGameplayAbility* AbilityCDO = AbilityToGrant.Ability->GetDefaultObject<URpgGameplayAbility>();
+		if (AbilityCDO)
+		{
+			ShouldActivateAbility = AbilityCDO->bAutoActivateWhenGranted;
+		}
 
 		FGameplayAbilitySpec AbilitySpec(AbilityCDO, AbilityToGrant.AbilityLevel);
 		AbilitySpec.SourceObject = SourceObject;
@@ -117,6 +122,11 @@ void URpgAbilitySet::GiveToAbilitySystem(URpgAbilitySystemComponent* RpgASC, FRp
 		if (OutGrantedHandles)
 		{
 			OutGrantedHandles->AddAbilitySpecHandle(AbilitySpecHandle);
+		}
+		
+		if (ShouldActivateAbility)
+		{
+			RpgASC->TryActivateAbility(AbilitySpecHandle);
 		}
 	}
 

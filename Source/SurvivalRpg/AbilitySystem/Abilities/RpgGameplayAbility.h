@@ -13,4 +13,11 @@ UCLASS()
 class SURVIVALRPG_API URpgGameplayAbility : public UGameplayAbility
 {
 	GENERATED_BODY()
+	
+public:
+	UPROPERTY(EditDefaultsOnly, BlueprintReadWrite, Category = "UI")
+	bool bShouldShowInAbilitiesBar = false;
+	
+	UPROPERTY(EditDefaultsOnly, BlueprintReadWrite, Category = "Activation")
+	bool bAutoActivateWhenGranted = false;
 };
