@@ -35,3 +35,8 @@ ARpgPlayerController* ARpgPlayerState::GetRpgPlayerController() const
 {
 	return nullptr;
 }
+
+TObjectPtr<URpgAbilitySystemComponent> ARpgPlayerState::GetRpgAbilitySystemComponent() const
+{
+	return AbilitySystemComponent;
+}

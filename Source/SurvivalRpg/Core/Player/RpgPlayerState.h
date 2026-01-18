@@ -24,6 +24,7 @@ public:
 	UFUNCTION(BlueprintCallable, Category = "Rpg|PlayerState")
 	ARpgPlayerController* GetRpgPlayerController() const;
 	
+	TObjectPtr<URpgAbilitySystemComponent> GetRpgAbilitySystemComponent() const;
 private:
 	// The ability system component sub-object used by player characters.
 	UPROPERTY(BlueprintReadWrite, VisibleAnywhere, Category = "Rpg|AbilitySystem", meta = (AllowPrivateAccess = "true"))
