@@ -7,8 +7,10 @@
 #include "RpgPawnExtensionComponent.generated.h"
 
 
+class UAbilitySystemComponent;
 class URpgPawnData;
 class URpgAbilitySystemComponent;
+DECLARE_MULTICAST_DELEGATE_OneParam(FASCReadySignature, UAbilitySystemComponent* /*ASC*/);
 
 UCLASS(ClassGroup=(Custom), meta=(BlueprintSpawnableComponent))
 class SURVIVALRPG_API URpgPawnExtensionComponent : public UPawnComponent
@@ -29,6 +31,8 @@ public:
 	
 	void TryInitialize();
 	void UnInitialize();
+	
+	FASCReadySignature OnAscReady;
 
 protected:
 	// Called when the game starts

@@ -3,6 +3,7 @@
 
 #include "RpgPawnExtensionComponent.h"
 
+#include "AbilitySystemInterface.h"
 #include "GameFramework/PlayerState.h"
 #include "SurvivalRpg/AbilitySystem/RpgAbilitySystemComponent.h"
 
@@ -22,28 +23,53 @@ void URpgPawnExtensionComponent::BeginPlay()
 
 void URpgPawnExtensionComponent::TryInitialize()
 {
-	if (bInitialized) return;
-
-	
-	APlayerState* PS = GetPlayerState<APlayerState>();
+	APawn* Pawn = GetPawn<APawn>();
 	const AController* C = GetController<AController>();
-	if (!C) return;
-	if (C->IsPlayerController() && !PS) return;
+	APlayerState* PS = GetPlayerState<APlayerState>();
 
-	URpgAbilitySystemComponent* Asc = PS->FindComponentByClass<URpgAbilitySystemComponent>();
+	if (!Pawn || !C) return;
+	if (C->IsPlayerController() && !PS) return;
+	if (!PS) return;
+
+	// Wenn wir schon einen ASC haben und Avatar passt -> "sticky broadcast"
+	if (bInitialized && AbilitySystemComponent)
+	{
+		if (AbilitySystemComponent->GetAvatarActor() == Pawn)
+		{
+			OnAscReady.Broadcast(AbilitySystemComponent);
+			return;
+		}
+
+		// Initialized, aber Avatar stimmt nicht -> reinit erlauben
+		bInitialized = false;
+		AbilitySystemComponent = nullptr;
+	}
+
+	// ASC holen (bevorzugt via Interface)
+	URpgAbilitySystemComponent* Asc = nullptr;
+	if (PS->GetClass()->ImplementsInterface(UAbilitySystemInterface::StaticClass()))
+	{
+		Asc = Cast<URpgAbilitySystemComponent>(Cast<IAbilitySystemInterface>(PS)->GetAbilitySystemComponent());
+	}
+	else
+	{
+		Asc = PS->FindComponentByClass<URpgAbilitySystemComponent>();
+	}
+
 	if (!Asc) return;
 
 	bInitialized = true;
 	AbilitySystemComponent = Asc;
-
-	APawn* Pawn = GetPawn<APawn>();
 
 	const bool bNeedsInit = (Asc->GetAvatarActor() != Pawn);
 	if (bNeedsInit)
 	{
 		Asc->InitAbilityActorInfo(PS, Pawn);
 	}
-	
+
+	// IMMER broadcasten sobald wir einen gültigen ASC haben (late listeners profitieren)
+	OnAscReady.Broadcast(Asc);
+
 	if (Pawn->HasAuthority())
 	{
 		Asc->ApplyDefaultAbilitySetupIfNeeded(Pawn);
