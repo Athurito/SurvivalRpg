@@ -22,4 +22,8 @@ public:
 	
 	UPROPERTY(EditDefaultsOnly, BlueprintReadWrite, Category = "Activation")
 	bool bAutoActivateWhenGranted = false;
+	
+protected:
+	UFUNCTION(BlueprintCallable, Category = "AbilitySystem")
+	bool HasPlayerController() const;
 };

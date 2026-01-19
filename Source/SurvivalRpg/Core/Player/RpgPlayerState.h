@@ -46,6 +46,4 @@ private:
 	TObjectPtr<const class URpgPrimarySet> PrimarySet;
 	UPROPERTY()
 	TObjectPtr<const class URpgVitalSet> VitalSet;
-	UPROPERTY()
-	TObjectPtr<const class URpgWeaponAmmoSet> WeaponAmmoSet;
 };

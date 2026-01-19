@@ -19,12 +19,29 @@ class SURVIVALRPG_API URpgAbilitySystemComponent : public UAbilitySystemComponen
 public:
 	URpgAbilitySystemComponent();
 	
+	/** BP-friendly: kann von Client aufgerufen werden, läuft server-autoritatv */
+	UFUNCTION(BlueprintCallable, Category="RPG|AbilitySet")
+	bool GrantAbilitySet(const URpgAbilitySet* AbilitySet, UObject* SourceObject);
+
+	UFUNCTION(BlueprintCallable, Category="RPG|AbilitySet")
+	bool RemoveAbilitySet(const URpgAbilitySet* AbilitySet);
+
+	UFUNCTION(BlueprintCallable, Category="RPG|AbilitySet")
+	bool HasAbilitySet(const URpgAbilitySet* AbilitySet) const;
+	
 	void ApplyDefaultAbilitySetupIfNeeded(UObject* SourceObject);
 	void RemoveDefaultAbilitySetup();
 	
 
 protected:
 	virtual void BeginPlay() override;
+	
+	/** Server-RPCs */
+	UFUNCTION(Server, Reliable)
+	void Server_GrantAbilitySet(const URpgAbilitySet* AbilitySet, UObject* SourceObject);
+
+	UFUNCTION(Server, Reliable)
+	void Server_RemoveAbilitySet(const URpgAbilitySet* AbilitySet);
 	
 protected:
 	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Ability System")
@@ -36,4 +53,10 @@ private:
 
 	UPROPERTY(Transient)
 	FRpgAbilitySet_GrantedHandles DefaultGrantedHandles;
+	
+	UPROPERTY()
+	TMap<TObjectPtr<const URpgAbilitySet>, FRpgAbilitySet_GrantedHandles> GrantedAbilitySets;
+
+	bool GrantAbilitySet_Internal(const URpgAbilitySet* AbilitySet, UObject* SourceObject);
+	bool RemoveAbilitySet_Internal(const URpgAbilitySet* AbilitySet);
 };

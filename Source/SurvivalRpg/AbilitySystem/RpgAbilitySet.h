@@ -12,7 +12,6 @@ class UGameplayEffect;
 class URpgGameplayAbility;
 struct FGameplayAbilitySpecHandle;
 struct FActiveGameplayEffectHandle;
-class UAttributeSet;
 class URpgAbilitySystemComponent;
 /**
  * FRpgAbilitySet_GameplayAbility
@@ -60,22 +59,6 @@ public:
 	float EffectLevel = 1.0f;
 };
 
-/**
- * FRpgAbilitySet_AttributeSet
- *
- *	Data used by the ability set to grant attribute sets.
- */
-USTRUCT(BlueprintType)
-struct FRpgAbilitySet_AttributeSet
-{
-	GENERATED_BODY()
-
-public:
-	// Gameplay effect to grant.
-	UPROPERTY(EditDefaultsOnly)
-	TSubclassOf<UAttributeSet> AttributeSet;
-
-};
 
 /**
  * FLyraAbilitySet_GrantedHandles
@@ -91,8 +74,6 @@ public:
 
 	void AddAbilitySpecHandle(const FGameplayAbilitySpecHandle& Handle);
 	void AddGameplayEffectHandle(const FActiveGameplayEffectHandle& Handle);
-	void AddAttributeSet(UAttributeSet* Set);
-
 	void TakeFromAbilitySystem(URpgAbilitySystemComponent* RpgAsc);
 
 protected:
@@ -104,10 +85,6 @@ protected:
 	// Handles to the granted gameplay effects.
 	UPROPERTY()
 	TArray<FActiveGameplayEffectHandle> GameplayEffectHandles;
-
-	// Pointers to the granted attribute sets
-	UPROPERTY()
-	TArray<TObjectPtr<UAttributeSet>> GrantedAttributeSets;
 };
 
 
@@ -137,12 +114,4 @@ protected:
 	// Gameplay effects to grant when this ability set is granted.
 	UPROPERTY(EditDefaultsOnly, Category = "Gameplay Effects", meta=(TitleProperty=GameplayEffect))
 	TArray<FRpgAbilitySet_GameplayEffect> GrantedGameplayEffects;
-
-	// Attribute sets to grant when this ability set is granted.
-	UPROPERTY(EditDefaultsOnly, Category = "Attribute Sets", meta=(TitleProperty=AttributeSet))
-	TArray<FRpgAbilitySet_AttributeSet> GrantedAttributes;
 };
-
-
-
-

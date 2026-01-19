@@ -23,11 +23,6 @@ void FRpgAbilitySet_GrantedHandles::AddGameplayEffectHandle(const FActiveGamepla
 	}
 }
 
-void FRpgAbilitySet_GrantedHandles::AddAttributeSet(UAttributeSet* Set)
-{
-	GrantedAttributeSets.Add(Set);
-}
-
 void FRpgAbilitySet_GrantedHandles::TakeFromAbilitySystem(URpgAbilitySystemComponent* RpgASC)
 {
 	check(RpgASC);
@@ -53,15 +48,9 @@ void FRpgAbilitySet_GrantedHandles::TakeFromAbilitySystem(URpgAbilitySystemCompo
 			RpgASC->RemoveActiveGameplayEffect(Handle);
 		}
 	}
-
-	for (UAttributeSet* Set : GrantedAttributeSets)
-	{
-		RpgASC->RemoveSpawnedAttribute(Set);
-	}
-
+	
 	AbilitySpecHandles.Reset();
 	GameplayEffectHandles.Reset();
-	GrantedAttributeSets.Reset();
 }
 
 
@@ -73,26 +62,6 @@ void URpgAbilitySet::GiveToAbilitySystem(URpgAbilitySystemComponent* RpgASC, FRp
 	{
 		// Must be authoritative to give or take ability sets.
 		return;
-	}
-	
-	// Grant the attribute sets.
-	for (int32 SetIndex = 0; SetIndex < GrantedAttributes.Num(); ++SetIndex)
-	{
-		const FRpgAbilitySet_AttributeSet& SetToGrant = GrantedAttributes[SetIndex];
-
-		if (!IsValid(SetToGrant.AttributeSet))
-		{
-			//UE_LOG(LogRpgAbilitySystem, Error, TEXT("GrantedAttributes[%d] on ability set [%s] is not valid"), SetIndex, *GetNameSafe(this));
-			continue;
-		}
-
-		UAttributeSet* NewSet = NewObject<UAttributeSet>(RpgASC->GetOwner(), SetToGrant.AttributeSet);
-		RpgASC->AddAttributeSetSubobject(NewSet);
-
-		if (OutGrantedHandles)
-		{
-			OutGrantedHandles->AddAttributeSet(NewSet);
-		}
 	}
 
 	// Grant the gameplay abilities.
