@@ -3,6 +3,8 @@
 
 #include "RpgAbilitySystemComponent.h"
 
+#include "SurvivalRpg/Core/Player/RpgPlayerState.h"
+
 URpgAbilitySystemComponent::URpgAbilitySystemComponent()
 {
 	PrimaryComponentTick.bCanEverTick = true;
@@ -21,7 +23,7 @@ bool URpgAbilitySystemComponent::GrantAbilitySet(const URpgAbilitySet* AbilitySe
 		Server_GrantAbilitySet(AbilitySet, SourceObject);
 		return true; // Anfrage raus, Server repliziert Ergebnis
 	}
-
+	OwnerPlayerState->SendAbilitiesChangedEvent();
 	return GrantAbilitySet_Internal(AbilitySet, SourceObject);
 }
 
@@ -37,7 +39,7 @@ bool URpgAbilitySystemComponent::RemoveAbilitySet(const URpgAbilitySet* AbilityS
 		Server_RemoveAbilitySet(AbilitySet);
 		return true;
 	}
-
+	OwnerPlayerState->SendAbilitiesChangedEvent();
 	return RemoveAbilitySet_Internal(AbilitySet);
 }
 
@@ -137,5 +139,38 @@ void URpgAbilitySystemComponent::RemoveDefaultAbilitySetup()
 void URpgAbilitySystemComponent::BeginPlay()
 {
 	Super::BeginPlay();
+	
+	OwnerPlayerState = Cast<ARpgPlayerState>(GetOwner());
+}
+
+void URpgAbilitySystemComponent::OnRep_ActivateAbilities()
+{
+	Super::OnRep_ActivateAbilities();
+	
+	if (!OwnerPlayerState) return;
+	
+	bool bAbilitiesChanged = false;
+	
+	if (LastActiveAbilities.Num() != ActivatableAbilities.Items.Num())
+	{
+		bAbilitiesChanged = true;
+	}
+	else
+	{
+		for (int32 i = 0; i < LastActiveAbilities.Num(); ++i)
+		{
+			if (LastActiveAbilities[i].Ability != ActivatableAbilities.Items[i].Ability)
+			{
+				bAbilitiesChanged = true;
+				break;
+			}
+		}
+	}
+	
+	if (bAbilitiesChanged)
+	{
+		OwnerPlayerState->SendAbilitiesChangedEvent();
+		LastActiveAbilities = ActivatableAbilities.Items;
+	}
 }
 

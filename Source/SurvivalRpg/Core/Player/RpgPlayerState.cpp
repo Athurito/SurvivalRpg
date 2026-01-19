@@ -3,6 +3,7 @@
 
 #include "RpgPlayerState.h"
 
+#include "AbilitySystemBlueprintLibrary.h"
 #include "SurvivalRpg/AbilitySystem/RpgAbilitySystemComponent.h"
 #include "SurvivalRpg/AbilitySystem/Attributes/RpgCombatSet.h"
 #include "SurvivalRpg/AbilitySystem/Attributes/RpgMobilitySet.h"
@@ -30,6 +31,15 @@ ARpgPlayerState::ARpgPlayerState()
 ARpgPlayerController* ARpgPlayerState::GetRpgPlayerController() const
 {
 	return nullptr;
+}
+
+void ARpgPlayerState::SendAbilitiesChangedEvent()
+{
+	FGameplayEventData EventData;
+	EventData.EventTag = FGameplayTag::RequestGameplayTag("Event.Abilities.Changed");
+	EventData.Instigator = this;
+	EventData.Target = this;
+	UAbilitySystemBlueprintLibrary::SendGameplayEventToActor(this, EventData.EventTag, EventData);
 }
 
 TObjectPtr<URpgAbilitySystemComponent> ARpgPlayerState::GetRpgAbilitySystemComponent() const

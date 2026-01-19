@@ -24,6 +24,9 @@ public:
 	UFUNCTION(BlueprintCallable, Category = "Rpg|PlayerState")
 	ARpgPlayerController* GetRpgPlayerController() const;
 	
+	UFUNCTION(BlueprintCallable, Category = "AbilitySystem")
+	void SendAbilitiesChangedEvent();
+	
 	TObjectPtr<URpgAbilitySystemComponent> GetRpgAbilitySystemComponent() const;
 private:
 	// The ability system component sub-object used by player characters.

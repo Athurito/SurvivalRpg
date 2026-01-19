@@ -43,9 +43,13 @@ protected:
 	UFUNCTION(Server, Reliable)
 	void Server_RemoveAbilitySet(const URpgAbilitySet* AbilitySet);
 	
+	virtual void OnRep_ActivateAbilities() override;
+	
 protected:
 	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Ability System")
 	TObjectPtr<const URpgAbilitySet> DefaultAbilitySetup;
+	
+	TArray<FGameplayAbilitySpec> LastActiveAbilities;
 	
 private:
 	UPROPERTY(Transient)
@@ -56,6 +60,9 @@ private:
 	
 	UPROPERTY()
 	TMap<TObjectPtr<const URpgAbilitySet>, FRpgAbilitySet_GrantedHandles> GrantedAbilitySets;
+	
+	UPROPERTY()
+	TObjectPtr<class ARpgPlayerState> OwnerPlayerState = nullptr;
 
 	bool GrantAbilitySet_Internal(const URpgAbilitySet* AbilitySet, UObject* SourceObject);
 	bool RemoveAbilitySet_Internal(const URpgAbilitySet* AbilitySet);
