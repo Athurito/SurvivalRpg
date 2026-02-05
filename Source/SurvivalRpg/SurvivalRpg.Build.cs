@@ -8,7 +8,17 @@ public class SurvivalRpg : ModuleRules
 	{
 		PCHUsage = PCHUsageMode.UseExplicitOrSharedPCHs;
 	
-		PublicDependencyModuleNames.AddRange(new string[] { "Core", "CoreUObject", "Engine", "InputCore" });
+		PublicDependencyModuleNames.AddRange(new string[]
+		{
+			"Core",
+			"CoreUObject",
+			"Engine",
+			"InputCore",
+			"NinjaInventoryCore",
+			"NinjaInventoryEquipment",
+			"UMG",
+			"GameplayAbilities", "GameplayTags", "GameplayTasks",
+		});
 
 		PrivateDependencyModuleNames.AddRange(new string[] { "EnhancedInput", "GameplayAbilities", "GameplayTags", "GameplayTasks", "ModularGameplay", "ModelViewViewModel" });
 
