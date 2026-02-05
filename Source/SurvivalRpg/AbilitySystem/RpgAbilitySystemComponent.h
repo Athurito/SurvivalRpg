@@ -31,7 +31,8 @@ public:
 	
 	void ApplyDefaultAbilitySetupIfNeeded(UObject* SourceObject);
 	void RemoveDefaultAbilitySetup();
-	
+	UFUNCTION(BlueprintCallable, Category="RPG|AbilitySet")
+	void ActivateAbilitiesByInputTag(FGameplayTag InputTag, bool bAllowRemoteActivation);
 
 protected:
 	virtual void BeginPlay() override;

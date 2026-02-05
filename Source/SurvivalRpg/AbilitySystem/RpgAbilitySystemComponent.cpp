@@ -136,6 +136,19 @@ void URpgAbilitySystemComponent::RemoveDefaultAbilitySetup()
 	}
 }
 
+void URpgAbilitySystemComponent::ActivateAbilitiesByInputTag(FGameplayTag InputTag, bool bAllowRemoteActivation)
+{
+	FGameplayTagContainer TagContainer(InputTag);
+
+	for (const FGameplayAbilitySpec& Spec : GetActivatableAbilities())
+	{
+		if (Spec.GetDynamicSpecSourceTags().HasTagExact(InputTag))
+		{
+			TryActivateAbility(Spec.Handle, bAllowRemoteActivation);
+		}
+	}
+}
+
 void URpgAbilitySystemComponent::BeginPlay()
 {
 	Super::BeginPlay();
