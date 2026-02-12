@@ -3,6 +3,7 @@
 #pragma once
 
 #include "CoreMinimal.h"
+#include "AdvancedFriendsGameInstance.h"
 #include "Engine/GameInstance.h"
 #include "RpgGameInstance.generated.h"
 
@@ -10,7 +11,7 @@
  * 
  */
 UCLASS()
-class SURVIVALRPG_API URpgGameInstance : public UGameInstance
+class SURVIVALRPG_API URpgGameInstance : public UAdvancedFriendsGameInstance
 {
 	GENERATED_BODY()
 };

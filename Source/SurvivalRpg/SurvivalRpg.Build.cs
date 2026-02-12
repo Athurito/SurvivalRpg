@@ -20,7 +20,7 @@ public class SurvivalRpg : ModuleRules
 			"GameplayAbilities", "GameplayTags", "GameplayTasks",
 		});
 
-		PrivateDependencyModuleNames.AddRange(new string[] { "EnhancedInput", "GameplayAbilities", "GameplayTags", "GameplayTasks", "ModularGameplay", "ModelViewViewModel" });
+		PrivateDependencyModuleNames.AddRange(new string[] { "EnhancedInput", "GameplayAbilities", "GameplayTags", "GameplayTasks", "ModularGameplay", "ModelViewViewModel", "AdvancedSessions" });
 
 		// Uncomment if you are using Slate UI
 		// PrivateDependencyModuleNames.AddRange(new string[] { "Slate", "SlateCore" });
