@@ -18,14 +18,18 @@ class SURVIVALRPG_API URpgPawnExtensionComponent : public UPawnComponent, public
 	GENERATED_BODY()
 	
 public:
-	
+	/** IGameFrameworkInitStateInterface start **/
 	static const FName Name_ActorFeatureName;
-	
 	virtual FName GetFeatureName() const override { return Name_ActorFeatureName; };
 	virtual bool CanChangeInitState(UGameFrameworkComponentManager* Manager, FGameplayTag CurrentState, FGameplayTag DesiredState) const override;
 	virtual void HandleChangeInitState(UGameFrameworkComponentManager* Manager, FGameplayTag CurrentState, FGameplayTag DesiredState) override;
 	virtual void OnActorInitStateChanged(const FActorInitStateChangedParams& Params) override;
 	virtual void CheckDefaultInitialization() override;
+	/** IGameFrameworkInitStateInterface end **/
+	
+public:
+	void InitializeAbilitySystemComponent(URpgAbilitySystemComponent* InAsc, AActor* InOwner);
+	void UninitializeAbilitySystemComponent();
 
 public:
 	// Sets default values for this component's properties

@@ -9,6 +9,7 @@
 #include "RpgCharacter.h"
 #include "RpgPawnExtensionComponent.h"
 #include "Components/GameFrameworkComponentManager.h"
+#include "SurvivalRpg/Core/Player/RpgPlayerState.h"
 #include "SurvivalRpg/GameplayTags/GameplayTags.h"
 #include "SurvivalRpg/Input/RpgInputComponent.h"
 
@@ -48,7 +49,7 @@ bool URpgPawnGameplayComponent::CanChangeInitState(UGameFrameworkComponentManage
 	// -------------- DataInitialized --------------
 	if (CurrentState == RpgGameplayTags::InitState_DataAvailable && DesiredState == RpgGameplayTags::InitState_DataInitialized)
 	{
-		Manager->HasFeatureReachedInitState(Pawn, URpgPawnExtensionComponent::Name_ActorFeatureName, RpgGameplayTags::InitState_DataAvailable);
+		return Manager->HasFeatureReachedInitState(Pawn, URpgPawnExtensionComponent::Name_ActorFeatureName, RpgGameplayTags::InitState_DataAvailable);
 	}
 	
 	// -------------- GameplayReady --------------
@@ -63,15 +64,23 @@ void URpgPawnGameplayComponent::HandleChangeInitState(UGameFrameworkComponentMan
 {
 	if (CurrentState == RpgGameplayTags::InitState_DataAvailable && DesiredState == RpgGameplayTags::InitState_DataInitialized)
 	{
+		APawn* Pawn = GetPawn<APawn>();
+		ARpgPlayerState* PS = GetPlayerState<ARpgPlayerState>();
+
+		if (!Pawn || !PS) return;
+		
+		if (URpgPawnExtensionComponent* PawnExt = URpgPawnExtensionComponent::FindPawnExtensionComponent(Pawn))
+		{
+			PawnExt->InitializeAbilitySystemComponent(PS->GetRpgAbilitySystemComponent(), PS);
+		}
+		
 		if (APlayerController* PC = GetController<APlayerController>())
 		{
-			APawn* Pawn = GetPawn<APawn>();
 			if (Pawn && Pawn->InputComponent)
 			{
 				InitializePlayerInput(Pawn->InputComponent);
 			}
 		}
-		
 		
 	}
 }

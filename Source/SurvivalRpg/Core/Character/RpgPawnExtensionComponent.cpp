@@ -4,6 +4,7 @@
 #include "RpgPawnExtensionComponent.h"
 
 #include "Components/GameFrameworkComponentManager.h"
+#include "SurvivalRpg/AbilitySystem/RpgAbilitySystemComponent.h"
 #include "SurvivalRpg/GameplayTags/GameplayTags.h"
 
 const FName URpgPawnExtensionComponent::Name_ActorFeatureName = FName("RpgPawnExtensionComponent");
@@ -77,17 +78,65 @@ void URpgPawnExtensionComponent::CheckDefaultInitialization()
 	ContinueInitStateChain(StateChain);
 }
 
+void URpgPawnExtensionComponent::InitializeAbilitySystemComponent(URpgAbilitySystemComponent* InAsc, AActor* InOwner)
+{
+	check(InAsc);
+	check(InOwner);
+	
+	if (AbilitySystemComponent == InAsc) return;
+	
+	if (AbilitySystemComponent)
+		return UninitializeAbilitySystemComponent();
+		
+	APawn* Pawn = GetPawnChecked<APawn>();
+	
+	//Death or respawn
+	// If the ASC is already initialized on another pawn, then uninitialize it from that pawn before initializing it on this one. This can happen during death/respawn when the same ASC is used again.
+	AActor* ExistingAvatar = InAsc->GetAvatarActor();
+	if (ExistingAvatar && ExistingAvatar != Pawn)
+	{
+		if (URpgPawnExtensionComponent* PawnExt = FindPawnExtensionComponent(ExistingAvatar))
+		{
+			PawnExt->UninitializeAbilitySystemComponent();
+		}
+	}
+		
+	
+	
+	AbilitySystemComponent = InAsc;
+	AbilitySystemComponent->InitAbilityActorInfo(InOwner, Pawn);
+	
+}
+
+void URpgPawnExtensionComponent::UninitializeAbilitySystemComponent()
+{
+	if (!AbilitySystemComponent) return;
+	
+	if (AbilitySystemComponent->GetAvatarActor() == GetOwner())
+	{
+		AbilitySystemComponent->CancelAbilities();
+		if (AbilitySystemComponent->GetAvatarActor())
+		{
+			AbilitySystemComponent->SetAvatarActor(nullptr);
+		}
+		else
+		{
+			AbilitySystemComponent->ClearActorInfo();
+		}
+	}
+	AbilitySystemComponent = nullptr;
+}
+
 URpgPawnExtensionComponent::URpgPawnExtensionComponent(const FObjectInitializer& ObjectInitializer) : Super(ObjectInitializer)
 {
 	PrimaryComponentTick.bStartWithTickEnabled = false;
 	PrimaryComponentTick.bCanEverTick = false;
-	SetIsReplicatedByDefault(true);
 	AbilitySystemComponent = nullptr;
 }
 
 void URpgPawnExtensionComponent::SetPawnData(const UBasePawnData* InPawnData)
 {
-	check(InPawnData)
+	check(InPawnData);
 	if (PawnData) return;
 	PawnData = InPawnData;
 }
