@@ -25,37 +25,6 @@ void ARpgCharacter::BeginPlay()
 	
 }
 
-void ARpgCharacter::EndPlay(const EEndPlayReason::Type EndPlayReason)
-{
-	if (PawnExtensionComponent)
-		
-	
-	Super::EndPlay(EndPlayReason);
-}
-
-void ARpgCharacter::PossessedBy(AController* NewController)
-{
-	Super::PossessedBy(NewController);
-}
-
-void ARpgCharacter::UnPossessed()
-{
-	if (PawnExtensionComponent)
-		
-	Super::UnPossessed();
-}
-
-void ARpgCharacter::OnRep_Controller()
-{
-	Super::OnRep_Controller();
-}
-
-void ARpgCharacter::OnRep_PlayerState()
-{
-	Super::OnRep_PlayerState();
-}
-
-
 void ARpgCharacter::ToggleCrouch()
 {
 	// const ULyraCharacterMovementComponent* LyraMoveComp = CastChecked<ULyraCharacterMovementComponent>(GetCharacterMovement());
@@ -101,6 +70,7 @@ void ARpgCharacter::Tick(float DeltaTime)
 void ARpgCharacter::SetupPlayerInputComponent(UInputComponent* PlayerInputComponent)
 {
 	Super::SetupPlayerInputComponent(PlayerInputComponent);
+	PawnExtensionComponent->SetupPlayerInputComponent();
 }
 
 

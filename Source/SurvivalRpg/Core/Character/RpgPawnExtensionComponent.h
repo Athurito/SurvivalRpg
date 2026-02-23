@@ -3,6 +3,7 @@
 #pragma once
 
 #include "CoreMinimal.h"
+#include "Components/GameFrameworkInitStateInterface.h"
 #include "Components/PawnComponent.h"
 #include "RpgPawnExtensionComponent.generated.h"
 
@@ -12,9 +13,19 @@ class UAbilitySystemComponent;
 class URpgAbilitySystemComponent;
 
 UCLASS(ClassGroup=(Custom), meta=(BlueprintSpawnableComponent))
-class SURVIVALRPG_API URpgPawnExtensionComponent : public UPawnComponent
+class SURVIVALRPG_API URpgPawnExtensionComponent : public UPawnComponent, public IGameFrameworkInitStateInterface
 {
 	GENERATED_BODY()
+	
+public:
+	
+	static const FName Name_ActorFeatureName;
+	
+	virtual FName GetFeatureName() const override { return Name_ActorFeatureName; };
+	virtual bool CanChangeInitState(UGameFrameworkComponentManager* Manager, FGameplayTag CurrentState, FGameplayTag DesiredState) const override;
+	virtual void HandleChangeInitState(UGameFrameworkComponentManager* Manager, FGameplayTag CurrentState, FGameplayTag DesiredState) override;
+	virtual void OnActorInitStateChanged(const FActorInitStateChangedParams& Params) override;
+	virtual void CheckDefaultInitialization() override;
 
 public:
 	// Sets default values for this component's properties
@@ -31,10 +42,13 @@ public:
 	template<class T>
 	const T* GetPawnData() const { return Cast<T>(PawnData); }
 	void SetPawnData(const UBasePawnData* InPawnData);
+	
+	void SetupPlayerInputComponent();
 
 protected:
 	// Called when the game starts
 	virtual void BeginPlay() override;
+	virtual void OnRegister() override;
 	
 	/** Pointer to the ability system component that is cached for convenience. */
 	UPROPERTY(Transient)

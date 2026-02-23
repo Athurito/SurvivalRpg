@@ -3,6 +3,80 @@
 
 #include "RpgPawnExtensionComponent.h"
 
+#include "Components/GameFrameworkComponentManager.h"
+#include "SurvivalRpg/GameplayTags/GameplayTags.h"
+
+const FName URpgPawnExtensionComponent::Name_ActorFeatureName = FName("RpgPawnExtensionComponent");
+
+bool URpgPawnExtensionComponent::CanChangeInitState(UGameFrameworkComponentManager* Manager, FGameplayTag CurrentState,
+	FGameplayTag DesiredState) const
+{
+	check(Manager);
+	APawn* Pawn = GetPawn<APawn>();
+	
+	// -------------- Spawned --------------
+	if (!CurrentState.IsValid() && DesiredState == RpgGameplayTags::InitState_Spawned)
+	{
+		if (Pawn) return true;
+	}
+
+	// -------------- DataAvailable --------------
+	if (CurrentState == RpgGameplayTags::InitState_Spawned && DesiredState == RpgGameplayTags::InitState_DataAvailable)
+	{
+		if (!PawnData) return false;
+		if (Pawn->IsLocallyControlled())
+		{
+			if (!GetController<APlayerController>()) 
+				return false;
+		}
+		return true;
+	}
+	
+	// -------------- DataInitialized --------------
+	if (CurrentState == RpgGameplayTags::InitState_DataAvailable && DesiredState == RpgGameplayTags::InitState_DataInitialized)
+	{
+		return Manager->HaveAllFeaturesReachedInitState(Pawn, RpgGameplayTags::InitState_DataAvailable);
+	}
+	
+	// -------------- GameplayReady --------------
+	if (CurrentState == RpgGameplayTags::InitState_DataInitialized && DesiredState == RpgGameplayTags::InitState_GameplayReady)
+	{
+		return true;
+	}
+	return false;
+}
+
+void URpgPawnExtensionComponent::HandleChangeInitState(UGameFrameworkComponentManager* Manager,
+	FGameplayTag CurrentState, FGameplayTag DesiredState)
+{
+	// Nothing To Do
+}
+
+void URpgPawnExtensionComponent::OnActorInitStateChanged(const FActorInitStateChangedParams& Params)
+{
+	if (Params.FeatureName != Name_ActorFeatureName)
+	{
+		if (Params.FeatureState == RpgGameplayTags::InitState_DataAvailable)
+		{
+			CheckDefaultInitialization();
+		}
+	}
+}
+
+void URpgPawnExtensionComponent::CheckDefaultInitialization()
+{
+	CheckDefaultInitializationForImplementers();
+	
+	const TArray<FGameplayTag> StateChain = {
+		RpgGameplayTags::InitState_Spawned,
+		RpgGameplayTags::InitState_DataAvailable,
+		RpgGameplayTags::InitState_DataInitialized,
+		RpgGameplayTags::InitState_GameplayReady
+	};
+	
+	ContinueInitStateChain(StateChain);
+}
+
 URpgPawnExtensionComponent::URpgPawnExtensionComponent(const FObjectInitializer& ObjectInitializer) : Super(ObjectInitializer)
 {
 	PrimaryComponentTick.bStartWithTickEnabled = false;
@@ -18,7 +92,24 @@ void URpgPawnExtensionComponent::SetPawnData(const UBasePawnData* InPawnData)
 	PawnData = InPawnData;
 }
 
+void URpgPawnExtensionComponent::SetupPlayerInputComponent()
+{
+	CheckDefaultInitialization();
+}
+
 void URpgPawnExtensionComponent::BeginPlay()
 {
 	Super::BeginPlay();
+	BindOnActorInitStateChanged(NAME_None, FGameplayTag(), false);
+	TryToChangeInitState(RpgGameplayTags::InitState_Spawned);
+	CheckDefaultInitialization();
+}
+
+void URpgPawnExtensionComponent::OnRegister()
+{
+	Super::OnRegister();
+	if (GetPawn<APawn>())
+	{
+		RegisterInitStateFeature();
+	}
 }
