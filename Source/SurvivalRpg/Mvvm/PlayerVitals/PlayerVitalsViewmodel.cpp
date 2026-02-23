@@ -63,7 +63,7 @@ void UPlayerVitalsViewmodel::BindToPlayer(APlayerController* PC)
 	}
 
 	// Sonst Triggern (falls Ext noch nicht init gemacht hat)
-	Ext->TryInitialize();
+	// Ext->TryInitialize();
 }
 
 void UPlayerVitalsViewmodel::BindASC()
@@ -211,14 +211,14 @@ void UPlayerVitalsViewmodel::BindToPawnExtension(URpgPawnExtensionComponent* Ext
 	BoundExt = Ext;
 
 	// Sauber: AddUObject liefert einen Handle, den wir entfernen können
-	H_OnAscReady = BoundExt->OnAscReady.AddUObject(this, &UPlayerVitalsViewmodel::HandleAscReady);
+	// H_OnAscReady = BoundExt->OnAscReady.AddUObject(this, &UPlayerVitalsViewmodel::HandleAscReady);
 }
 
 void UPlayerVitalsViewmodel::UnbindFromPawnExtension()
 {
 	if (BoundExt && H_OnAscReady.IsValid())
 	{
-		BoundExt->OnAscReady.Remove(H_OnAscReady);
+		// BoundExt->OnAscReady.Remove(H_OnAscReady);
 	}
 	H_OnAscReady.Reset();
 	BoundExt = nullptr;

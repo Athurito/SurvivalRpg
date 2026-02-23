@@ -6,6 +6,7 @@
 #include "GameFramework/PlayerState.h"
 #include "RpgPlayerState.generated.h"
 
+class UBasePawnData;
 class ARpgPlayerController;
 class URpgTradeSkillProgressionComponent;
 class URpgPlayerProgressionComponent;
@@ -28,7 +29,12 @@ public:
 	void SendAbilitiesChangedEvent();
 	
 	TObjectPtr<URpgAbilitySystemComponent> GetRpgAbilitySystemComponent() const;
-private:
+	
+	template<class T>
+	const T* GetPawnData() const { return Cast<T>(PawnData); }
+	void SetPawnData(const UBasePawnData* InPawnData);
+	
+protected:
 	// The ability system component sub-object used by player characters.
 	UPROPERTY(VisibleAnywhere, Category = "Rpg|AbilitySystem")
 	TObjectPtr<URpgAbilitySystemComponent> AbilitySystemComponent;
@@ -39,7 +45,10 @@ private:
 	UPROPERTY(VisibleAnywhere, Category = "Rpg|Progression")
 	TObjectPtr<URpgTradeSkillProgressionComponent> TradeSkillProgressionComponent;
 	
+	UPROPERTY(VisibleAnywhere, Category = "Pawn")
+	TObjectPtr<const UBasePawnData> PawnData;
 	
+private:
 	// Combat attribute set used by this actor.
 	UPROPERTY()
 	TObjectPtr<const class URpgCombatSet> CombatSet;

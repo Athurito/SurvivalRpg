@@ -7,10 +7,9 @@
 #include "RpgPawnExtensionComponent.generated.h"
 
 
+class UBasePawnData;
 class UAbilitySystemComponent;
-class URpgPawnData;
 class URpgAbilitySystemComponent;
-DECLARE_MULTICAST_DELEGATE_OneParam(FASCReadySignature, UAbilitySystemComponent* /*ASC*/);
 
 UCLASS(ClassGroup=(Custom), meta=(BlueprintSpawnableComponent))
 class SURVIVALRPG_API URpgPawnExtensionComponent : public UPawnComponent
@@ -28,11 +27,10 @@ public:
 	/** Gets the current ability system component, which may be owned by a different actor */
 	UFUNCTION(BlueprintPure, Category = "Lyra|Pawn")
 	URpgAbilitySystemComponent* GetRpgAbilitySystemComponent() const { return AbilitySystemComponent; }
-	
-	void TryInitialize();
-	void UnInitialize();
-	
-	FASCReadySignature OnAscReady;
+
+	template<class T>
+	const T* GetPawnData() const { return Cast<T>(PawnData); }
+	void SetPawnData(const UBasePawnData* InPawnData);
 
 protected:
 	// Called when the game starts
@@ -43,7 +41,6 @@ protected:
 	TObjectPtr<URpgAbilitySystemComponent> AbilitySystemComponent;
 
 private:
-	
-	bool bInitialized = false;
-	
+	UPROPERTY()
+	TObjectPtr<const UBasePawnData> PawnData;
 };

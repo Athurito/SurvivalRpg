@@ -22,13 +22,13 @@ ARpgCharacter::ARpgCharacter(const FObjectInitializer& ObjectInitializer) :
 void ARpgCharacter::BeginPlay()
 {
 	Super::BeginPlay();
-	PawnExtensionComponent->TryInitialize();
+	
 }
 
 void ARpgCharacter::EndPlay(const EEndPlayReason::Type EndPlayReason)
 {
 	if (PawnExtensionComponent)
-		PawnExtensionComponent->UnInitialize();
+		
 	
 	Super::EndPlay(EndPlayReason);
 }
@@ -36,26 +36,23 @@ void ARpgCharacter::EndPlay(const EEndPlayReason::Type EndPlayReason)
 void ARpgCharacter::PossessedBy(AController* NewController)
 {
 	Super::PossessedBy(NewController);
-	PawnExtensionComponent->TryInitialize();
 }
 
 void ARpgCharacter::UnPossessed()
 {
 	if (PawnExtensionComponent)
-		PawnExtensionComponent->UnInitialize();
+		
 	Super::UnPossessed();
 }
 
 void ARpgCharacter::OnRep_Controller()
 {
 	Super::OnRep_Controller();
-	PawnExtensionComponent->TryInitialize();
 }
 
 void ARpgCharacter::OnRep_PlayerState()
 {
 	Super::OnRep_PlayerState();
-	PawnExtensionComponent->TryInitialize();
 }
 
 

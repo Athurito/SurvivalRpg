@@ -34,12 +34,6 @@ public:
 	void Input_Jump(const FInputActionValue& InputActionValue);
 	void Input_StopJump(const FInputActionValue& InputActionValue);
 protected:
-	
 	// Called when the game starts
 	virtual void BeginPlay() override;
-	
-private:
-	
-	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category="Input", meta = (AllowPrivateAccess = "true"))
-	TObjectPtr<URpgInputConfig> InputConfig; 
 };

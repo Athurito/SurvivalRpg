@@ -46,3 +46,10 @@ TObjectPtr<URpgAbilitySystemComponent> ARpgPlayerState::GetRpgAbilitySystemCompo
 {
 	return AbilitySystemComponent;
 }
+
+void ARpgPlayerState::SetPawnData(const UBasePawnData* InPawnData)
+{
+	check(InPawnData)
+	if (PawnData) return;
+	PawnData = InPawnData;
+}
