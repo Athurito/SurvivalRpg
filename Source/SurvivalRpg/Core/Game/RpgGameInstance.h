@@ -14,4 +14,7 @@ UCLASS()
 class SURVIVALRPG_API URpgGameInstance : public UAdvancedFriendsGameInstance
 {
 	GENERATED_BODY()
+	
+public:
+	virtual void Init() override;
 };

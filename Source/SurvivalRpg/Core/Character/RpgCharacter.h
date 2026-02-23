@@ -3,25 +3,53 @@
 #pragma once
 
 #include "CoreMinimal.h"
+#include "AbilitySystemInterface.h"
+#include "ModularCharacter.h"
 #include "GameFramework/Character.h"
 #include "RpgCharacter.generated.h"
 
+class ARpgPlayerController;
+class ARpgPlayerState;
+class UAbilitySystemComponent;
+class URpgAbilitySystemComponent;
 class URpgPawnGameplayComponent;
 class URpgPawnExtensionComponent;
 class URpgCharacterMovementComponent;
 
 UCLASS()
-class SURVIVALRPG_API ARpgCharacter : public ACharacter
+class SURVIVALRPG_API ARpgCharacter : public AModularCharacter, public IAbilitySystemInterface
 {
 	GENERATED_BODY()
  
 public:
 	// Sets default values for this character's properties
-	explicit ARpgCharacter(const FObjectInitializer& ObjectInitializer);
+	ARpgCharacter(const FObjectInitializer& ObjectInitializer = FObjectInitializer::Get());
+	
+	UFUNCTION(BlueprintCallable, Category = "Rpg|Character")
+	ARpgPlayerController* GetRpgPlayerController() const;
+
+	UFUNCTION(BlueprintCallable, Category = "Rpg|Character")
+	ARpgPlayerState* GetRpgPlayerState() const;
+
+	UFUNCTION(BlueprintCallable, Category = "Rpg|Character")
+	URpgAbilitySystemComponent* GetRpgAbilitySystemComponent() const;
+	virtual UAbilitySystemComponent* GetAbilitySystemComponent() const override;
+	
 
 protected:
 	// Called when the game starts or when spawned
 	virtual void BeginPlay() override;
+	
+	
+	virtual void OnAbilitySystemInitialized();
+	virtual void OnAbilitySystemUninitialized();
+
+	virtual void PossessedBy(AController* NewController) override;
+	virtual void UnPossessed() override;
+
+	virtual void OnRep_Controller() override;
+	virtual void OnRep_PlayerState() override;
+
 	
 
 public:
@@ -40,7 +68,4 @@ private:
 	
 	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "Rpg|Character", Meta = (AllowPrivateAccess = "true"))
 	TObjectPtr<URpgPawnExtensionComponent> PawnExtensionComponent;
-	
-	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "Rpg|Character", Meta = (AllowPrivateAccess = "true"))
-	TObjectPtr<URpgPawnGameplayComponent> PawnGameplayComponent;
 };

@@ -5,7 +5,9 @@
 
 #include "RpgCharacterMovementComponent.h"
 #include "RpgPawnExtensionComponent.h"
-#include "RpgPawnGameplayComponent.h"
+#include "SurvivalRpg/AbilitySystem/RpgAbilitySystemComponent.h"
+#include "SurvivalRpg/Core/Player/RpgPlayerController.h"
+#include "SurvivalRpg/Core/Player/RpgPlayerState.h"
 
 
 ARpgCharacter::ARpgCharacter(const FObjectInitializer& ObjectInitializer) : 
@@ -15,7 +17,31 @@ ARpgCharacter::ARpgCharacter(const FObjectInitializer& ObjectInitializer) :
 	
 	PrimaryActorTick.bCanEverTick = true;
 	PawnExtensionComponent = CreateDefaultSubobject<URpgPawnExtensionComponent>(TEXT("PawnExtensionComponent"));
-	PawnGameplayComponent = CreateDefaultSubobject<URpgPawnGameplayComponent>(TEXT("PawnGameplayComponent"));
+	PawnExtensionComponent->OnAbilitySystemInitialized_RegisterAndCall(FSimpleMulticastDelegate::FDelegate::CreateUObject(this, &ThisClass::OnAbilitySystemInitialized));
+	PawnExtensionComponent->OnAbilitySystemUninitialized_Register(FSimpleMulticastDelegate::FDelegate::CreateUObject(this, &ThisClass::OnAbilitySystemUninitialized));
+}
+
+ARpgPlayerController* ARpgCharacter::GetRpgPlayerController() const
+{
+	return CastChecked<ARpgPlayerController>(GetController(), ECastCheckedType::NullAllowed);
+}
+
+ARpgPlayerState* ARpgCharacter::GetRpgPlayerState() const
+{
+	return CastChecked<ARpgPlayerState>(GetPlayerState(), ECastCheckedType::NullAllowed);
+}
+
+URpgAbilitySystemComponent* ARpgCharacter::GetRpgAbilitySystemComponent() const
+{
+	check(PawnExtensionComponent);
+	return Cast<URpgAbilitySystemComponent>(GetAbilitySystemComponent());
+}
+
+UAbilitySystemComponent* ARpgCharacter::GetAbilitySystemComponent() const
+{
+	if (PawnExtensionComponent == nullptr) return nullptr;
+	
+	return PawnExtensionComponent->GetRpgAbilitySystemComponent();
 }
 
 // Called when the game starts or when spawned
@@ -25,39 +51,53 @@ void ARpgCharacter::BeginPlay()
 	
 }
 
+void ARpgCharacter::OnAbilitySystemInitialized()
+{
+	URpgAbilitySystemComponent* Asc = GetRpgAbilitySystemComponent();
+	check(Asc);
+
+	//HealthComponent->InitializeWithAbilitySystem(Asc);
+}
+
+void ARpgCharacter::OnAbilitySystemUninitialized()
+{
+	//HealthComponent->UninitializeFromAbilitySystem();
+}
+
+void ARpgCharacter::PossessedBy(AController* NewController)
+{
+	Super::PossessedBy(NewController);
+	PawnExtensionComponent->HandleControllerChanged();
+}
+
+void ARpgCharacter::UnPossessed()
+{
+	Super::UnPossessed();
+	PawnExtensionComponent->HandleControllerChanged();
+}
+
+void ARpgCharacter::OnRep_Controller()
+{
+	Super::OnRep_Controller();
+	PawnExtensionComponent->HandleControllerChanged();
+}
+
+void ARpgCharacter::OnRep_PlayerState()
+{
+	Super::OnRep_PlayerState();
+	PawnExtensionComponent->HandlePlayerStateReplicated();
+}
+
 void ARpgCharacter::ToggleCrouch()
 {
-	// const ULyraCharacterMovementComponent* LyraMoveComp = CastChecked<ULyraCharacterMovementComponent>(GetCharacterMovement());
-	//
-	// if (IsCrouched() || LyraMoveComp->bWantsToCrouch)
-	// {
-	// 	UnCrouch();
-	// }
-	// else if (LyraMoveComp->IsMovingOnGround())
-	// {
-	// 	Crouch();
-	// }
 }
 
 void ARpgCharacter::OnStartCrouch(float HalfHeightAdjust, float ScaledHalfHeightAdjust)
 {
-	// if (ULyraAbilitySystemComponent* LyraASC = GetLyraAbilitySystemComponent())
-	// {
-	// 	LyraASC->SetLooseGameplayTagCount(LyraGameplayTags::Status_Crouching, 1);
-	// }
-	//
-	//
-	// Super::OnStartCrouch(HalfHeightAdjust, ScaledHalfHeightAdjust);
 }
 
 void ARpgCharacter::OnEndCrouch(float HalfHeightAdjust, float ScaledHalfHeightAdjust)
 {
-	// if (ULyraAbilitySystemComponent* LyraASC = GetLyraAbilitySystemComponent())
-	// {
-	// 	LyraASC->SetLooseGameplayTagCount(LyraGameplayTags::Status_Crouching, 0);
-	// }
-	//
-	// Super::OnEndCrouch(HalfHeightAdjust, ScaledHalfHeightAdjust);
 }
 
 // Called every frame
