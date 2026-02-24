@@ -8,6 +8,7 @@
 #include "GameFramework/Character.h"
 #include "RpgCharacter.generated.h"
 
+class URpgHealthComponent;
 class ARpgPlayerController;
 class ARpgPlayerState;
 class UAbilitySystemComponent;
@@ -35,6 +36,8 @@ public:
 	URpgAbilitySystemComponent* GetRpgAbilitySystemComponent() const;
 	virtual UAbilitySystemComponent* GetAbilitySystemComponent() const override;
 	
+	// Called to bind functionality to input
+	virtual void SetupPlayerInputComponent(class UInputComponent* PlayerInputComponent) override;
 
 protected:
 	// Called when the game starts or when spawned
@@ -49,18 +52,23 @@ protected:
 
 	virtual void OnRep_Controller() override;
 	virtual void OnRep_PlayerState() override;
+	
+	virtual void FellOutOfWorld(const class UDamageType& dmgType) override;
+	
+	// Begins the death sequence for the character (disables collision, disables movement, etc...)
+	UFUNCTION()
+	virtual void OnDeathStarted(AActor* OwningActor);
+
+	// Ends the death sequence for the character (detaches controller, destroys pawn, etc...)
+	UFUNCTION()
+	virtual void OnDeathFinished(AActor* OwningActor);
 
 	
-
-public:
-	void OnStartCrouch(float HalfHeightAdjust, float ScaledHalfHeightAdjust);
-	void OnEndCrouch(float HalfHeightAdjust, float ScaledHalfHeightAdjust);
-	void ToggleCrouch();
-	// Called every frame
-	virtual void Tick(float DeltaTime) override;
-
-	// Called to bind functionality to input
-	virtual void SetupPlayerInputComponent(class UInputComponent* PlayerInputComponent) override;
+	
+	
+	void DisableMovementAndCollision();
+	void DestroyDueToDeath();
+	void UninitAndDestroy();
 	
 private:
 	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category="CharacterMovement", Meta = (AllowPrivateAccess = "true"))
@@ -68,4 +76,7 @@ private:
 	
 	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "Rpg|Character", Meta = (AllowPrivateAccess = "true"))
 	TObjectPtr<URpgPawnExtensionComponent> PawnExtensionComponent;
+	
+	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "Rpg|Character", Meta = (AllowPrivateAccess = "true"))
+	TObjectPtr<URpgHealthComponent> HealthComponent;
 };

@@ -4,6 +4,7 @@
 #include "RpgCharacter.h"
 
 #include "RpgCharacterMovementComponent.h"
+#include "RpgHealthComponent.h"
 #include "RpgPawnExtensionComponent.h"
 #include "SurvivalRpg/AbilitySystem/RpgAbilitySystemComponent.h"
 #include "SurvivalRpg/Core/Player/RpgPlayerController.h"
@@ -19,6 +20,10 @@ ARpgCharacter::ARpgCharacter(const FObjectInitializer& ObjectInitializer) :
 	PawnExtensionComponent = CreateDefaultSubobject<URpgPawnExtensionComponent>(TEXT("PawnExtensionComponent"));
 	PawnExtensionComponent->OnAbilitySystemInitialized_RegisterAndCall(FSimpleMulticastDelegate::FDelegate::CreateUObject(this, &ThisClass::OnAbilitySystemInitialized));
 	PawnExtensionComponent->OnAbilitySystemUninitialized_Register(FSimpleMulticastDelegate::FDelegate::CreateUObject(this, &ThisClass::OnAbilitySystemUninitialized));
+	
+	HealthComponent = CreateDefaultSubobject<URpgHealthComponent>(TEXT("HealthComponent"));
+	HealthComponent->OnDeathStarted.AddDynamic(this, &ThisClass::OnDeathStarted);
+	HealthComponent->OnDeathFinished.AddDynamic(this, &ThisClass::OnDeathFinished);
 }
 
 ARpgPlayerController* ARpgCharacter::GetRpgPlayerController() const
@@ -88,22 +93,9 @@ void ARpgCharacter::OnRep_PlayerState()
 	PawnExtensionComponent->HandlePlayerStateReplicated();
 }
 
-void ARpgCharacter::ToggleCrouch()
+void ARpgCharacter::FellOutOfWorld(const class UDamageType& dmgType)
 {
-}
-
-void ARpgCharacter::OnStartCrouch(float HalfHeightAdjust, float ScaledHalfHeightAdjust)
-{
-}
-
-void ARpgCharacter::OnEndCrouch(float HalfHeightAdjust, float ScaledHalfHeightAdjust)
-{
-}
-
-// Called every frame
-void ARpgCharacter::Tick(float DeltaTime)
-{
-	Super::Tick(DeltaTime);
+	HealthComponent->DamageSelfDestruct(/*bFellOutOfWorld=*/ true);
 }
 
 // Called to bind functionality to input

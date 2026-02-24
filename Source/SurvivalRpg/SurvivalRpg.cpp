@@ -4,3 +4,14 @@
 #include "Modules/ModuleManager.h"
 
 IMPLEMENT_PRIMARY_GAME_MODULE( FDefaultGameModuleImpl, SurvivalRpg, "SurvivalRpg" );
+
+// General
+DEFINE_LOG_CATEGORY(LogRpg);
+
+// Subsystems
+DEFINE_LOG_CATEGORY(LogRpgAbilitySystem);
+DEFINE_LOG_CATEGORY(LogRpgCharacter);
+DEFINE_LOG_CATEGORY(LogRpgInput);
+DEFINE_LOG_CATEGORY(LogRpgProgression);
+DEFINE_LOG_CATEGORY(LogRpgUI);
+DEFINE_LOG_CATEGORY(LogRpgWeapons);
