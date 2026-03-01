@@ -129,7 +129,7 @@ void URpgPawnExtensionComponent::UninitializeAbilitySystem()
 	{
 		AbilitySystemComponent->CancelAbilities();
 		AbilitySystemComponent->RemoveAllGameplayCues();
-		if (AbilitySystemComponent->GetAvatarActor())
+		if (AbilitySystemComponent->GetOwnerActor() != nullptr)
 		{
 			AbilitySystemComponent->SetAvatarActor(nullptr);
 		}
