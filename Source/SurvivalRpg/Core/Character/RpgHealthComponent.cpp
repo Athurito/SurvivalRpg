@@ -264,7 +264,7 @@ void URpgHealthComponent::DamageSelfDestruct(bool bFellOutOfWorld)
 
 		if (!Spec)
 		{
-			UE_LOG(LogRpg, Error, TEXT("RpgHealthComponent: DamageSelfDestruct failed for owner [%s]. Unable to make outgoing spec for [%s]."), *GetNameSafe(GetOwner()), *GetNameSafe(DamageGE));
+			UE_LOG(LogRpg, Error, TEXT("RpgHealthComponent: DamageSelfDestruct failed for owner [%s]. Unable to make outgoing spec for [%s]."), *GetNameSafe(GetOwner()), *GetNameSafe(DamageGameplayEffect_SetByCaller));
 			return;
 		}
 

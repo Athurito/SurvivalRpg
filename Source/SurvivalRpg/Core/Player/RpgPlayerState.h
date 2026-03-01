@@ -52,12 +52,15 @@ protected:
 	
 private:
 	// Combat attribute set used by this actor.
+	// UPROPERTY()
+	// TObjectPtr<const class URpgCombatSet> CombatSet;
+	// UPROPERTY()
+	// TObjectPtr<const class URpgMobilitySet> MobilitySet;
+	// UPROPERTY()
+	// TObjectPtr<const class URpgPrimarySet> PrimarySet;
+	// UPROPERTY()
+	// TObjectPtr<const class URpgVitalSet> VitalSet;
+	
 	UPROPERTY()
-	TObjectPtr<const class URpgCombatSet> CombatSet;
-	UPROPERTY()
-	TObjectPtr<const class URpgMobilitySet> MobilitySet;
-	UPROPERTY()
-	TObjectPtr<const class URpgPrimarySet> PrimarySet;
-	UPROPERTY()
-	TObjectPtr<const class URpgVitalSet> VitalSet;
+	TObjectPtr<const class URpgHealthSet> HealthSet;
 };

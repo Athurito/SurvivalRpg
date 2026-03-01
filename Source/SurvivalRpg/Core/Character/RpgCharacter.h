@@ -66,9 +66,9 @@ protected:
 	
 	
 	
-	void DisableMovementAndCollision();
-	void DestroyDueToDeath();
-	void UninitAndDestroy();
+	// void DisableMovementAndCollision();
+	void EnterDeadState();
+	// void UninitAndDestroy();
 	
 private:
 	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category="CharacterMovement", Meta = (AllowPrivateAccess = "true"))

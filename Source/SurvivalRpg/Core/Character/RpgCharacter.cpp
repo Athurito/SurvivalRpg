@@ -61,12 +61,12 @@ void ARpgCharacter::OnAbilitySystemInitialized()
 	URpgAbilitySystemComponent* Asc = GetRpgAbilitySystemComponent();
 	check(Asc);
 
-	//HealthComponent->InitializeWithAbilitySystem(Asc);
+	HealthComponent->InitializeWithAbilitySystem(Asc);
 }
 
 void ARpgCharacter::OnAbilitySystemUninitialized()
 {
-	//HealthComponent->UninitializeFromAbilitySystem();
+	HealthComponent->UninitializeFromAbilitySystem();
 }
 
 void ARpgCharacter::PossessedBy(AController* NewController)
@@ -96,6 +96,26 @@ void ARpgCharacter::OnRep_PlayerState()
 void ARpgCharacter::FellOutOfWorld(const class UDamageType& dmgType)
 {
 	HealthComponent->DamageSelfDestruct(/*bFellOutOfWorld=*/ true);
+}
+
+void ARpgCharacter::OnDeathStarted(AActor* OwningActor)
+{
+}
+
+void ARpgCharacter::OnDeathFinished(AActor* OwningActor)
+{
+}
+
+void ARpgCharacter::EnterDeadState()
+{
+	// Controller lösen
+	DetachFromControllerPendingDestroy();
+
+	// Actor bleibt aber bestehen
+	SetActorEnableCollision(false);
+
+	// Optional: Pawn als Dead markieren
+	// bIsDead = true;
 }
 
 // Called to bind functionality to input

@@ -13,7 +13,7 @@ class URpgInputConfig;
 struct FGameplayTag;
 struct FInputActionValue;
 
-UCLASS(ClassGroup=(Custom), meta=(BlueprintSpawnableComponent))
+UCLASS(ClassGroup=(Custom), Blueprintable, meta=(BlueprintSpawnableComponent))
 class SURVIVALRPG_API URpgPawnGameplayComponent : public UPawnComponent, public IGameFrameworkInitStateInterface
 {
 	GENERATED_BODY()

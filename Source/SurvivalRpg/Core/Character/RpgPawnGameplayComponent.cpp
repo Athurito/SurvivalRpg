@@ -240,7 +240,7 @@ void URpgPawnGameplayComponent::Input_Crouch(const FInputActionValue& InputActio
 	//TODO
 	if (ARpgCharacter* Character = GetPawn<ARpgCharacter>())
 	{
-		Character->ToggleCrouch();
+		
 	}
 }
 

@@ -6,6 +6,7 @@
 #include "AbilitySystemBlueprintLibrary.h"
 #include "SurvivalRpg/AbilitySystem/RpgAbilitySystemComponent.h"
 #include "SurvivalRpg/AbilitySystem/Attributes/RpgCombatSet.h"
+#include "SurvivalRpg/AbilitySystem/Attributes/RpgHealthSet.h"
 #include "SurvivalRpg/AbilitySystem/Attributes/RpgMobilitySet.h"
 #include "SurvivalRpg/AbilitySystem/Attributes/RpgPrimarySet.h"
 #include "SurvivalRpg/AbilitySystem/Attributes/RpgVitalSet.h"
@@ -18,10 +19,13 @@ ARpgPlayerState::ARpgPlayerState()
 	AbilitySystemComponent->SetIsReplicated(true);
 	AbilitySystemComponent->SetReplicationMode(EGameplayEffectReplicationMode::Mixed);
 	
-	CombatSet = CreateDefaultSubobject<URpgCombatSet>(TEXT("CombatSet"));
-	MobilitySet = CreateDefaultSubobject<URpgMobilitySet>(TEXT("MobilitySet"));
-	PrimarySet = CreateDefaultSubobject<URpgPrimarySet>(TEXT("PrimarySet"));
-	VitalSet = CreateDefaultSubobject<URpgVitalSet>(TEXT("VitalSet"));
+	// CombatSet = CreateDefaultSubobject<URpgCombatSet>(TEXT("CombatSet"));
+	// MobilitySet = CreateDefaultSubobject<URpgMobilitySet>(TEXT("MobilitySet"));
+	// PrimarySet = CreateDefaultSubobject<URpgPrimarySet>(TEXT("PrimarySet"));
+	// VitalSet = CreateDefaultSubobject<URpgVitalSet>(TEXT("VitalSet"));
+	HealthSet = CreateDefaultSubobject<URpgHealthSet>(TEXT("HealthSet"));
+	
+	
 	
 	PlayerProgressionComponent = CreateDefaultSubobject<URpgPlayerProgressionComponent>(TEXT("PlayerProgressionComponent"));
 	TradeSkillProgressionComponent = CreateDefaultSubobject<URpgTradeSkillProgressionComponent>(TEXT("TradeSkillProgressionComponent"));
