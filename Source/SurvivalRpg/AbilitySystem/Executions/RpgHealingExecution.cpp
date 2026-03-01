@@ -4,7 +4,7 @@
 #include "RpgHealingExecution.h"
 
 #include "SurvivalRpg/AbilitySystem/Attributes/RpgCombatSet.h"
-#include "SurvivalRpg/AbilitySystem/Attributes/RpgVitalSet.h"
+#include "SurvivalRpg/AbilitySystem/Attributes/RpgHealthSet.h"
 #include "SurvivalRpg/GameplayTags/GameplayTags.h"
 
 
@@ -64,7 +64,7 @@ void URpgHealingExecution::Execute_Implementation(const FGameplayEffectCustomExe
 
 	// 3) Output -> VitalSet.Healing (Meta)
 	OutExecutionOutput.AddOutputModifier(
-		FGameplayModifierEvaluatedData(URpgVitalSet::GetHealingAttribute(), EGameplayModOp::Additive, Heal)
+		FGameplayModifierEvaluatedData(URpgHealthSet::GetHealingAttribute(), EGameplayModOp::Additive, Heal)
 	);
 #endif
 }
