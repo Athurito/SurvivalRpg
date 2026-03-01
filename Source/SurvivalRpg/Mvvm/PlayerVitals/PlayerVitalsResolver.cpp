@@ -10,7 +10,6 @@
 UObject* UPlayerVitalsResolver::CreateInstance(const UClass* ExpectedType, const UUserWidget* UserWidget,
                                                const UMVVMView* View) const
 {
-	
 	if (!UserWidget) return nullptr;
 
 	if (ExpectedType && !ExpectedType->IsChildOf(UPlayerVitalsViewmodel::StaticClass()))
@@ -24,14 +23,9 @@ UObject* UPlayerVitalsResolver::CreateInstance(const UClass* ExpectedType, const
 	URpgUiSubsystem* UISub = LP->GetSubsystem<URpgUiSubsystem>();
 	if (!UISub) return nullptr;
 
-	UPlayerVitalsViewmodel* VM = UISub->GetOrCreateVitalsVM();
+	UPlayerVitalsViewmodel* VM = UISub->GetVitalsViewmodel();
 	if (!VM) return nullptr;
-
-	// Darf früh sein: VM bindet später via PawnExtension->OnAscReady
-	if (APlayerController* PC = UserWidget->GetOwningPlayer())
-	{
-		VM->BindToPlayer(PC);
-	}
+	
 
 	return VM;
 }

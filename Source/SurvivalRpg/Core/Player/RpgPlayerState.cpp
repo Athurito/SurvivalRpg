@@ -57,11 +57,3 @@ void ARpgPlayerState::SetPawnData(const UBasePawnData* InPawnData)
 	if (PawnData) return;
 	PawnData = InPawnData;
 }
-
-void ARpgPlayerState::PostInitializeComponents()
-{
-	Super::PostInitializeComponents();
-	check(AbilitySystemComponent);
-	
-	AbilitySystemComponent->InitAbilityActorInfo(this, GetPawn());
-}

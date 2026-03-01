@@ -34,8 +34,6 @@ public:
 	const T* GetPawnData() const { return Cast<T>(PawnData); }
 	void SetPawnData(const UBasePawnData* InPawnData);
 	
-	virtual void PostInitializeComponents() override;
-	
 protected:
 	// The ability system component sub-object used by player characters.
 	UPROPERTY(VisibleAnywhere, Category = "Rpg|AbilitySystem")

@@ -45,60 +45,26 @@ public:
 
 	UPROPERTY(BlueprintReadOnly, FieldNotify)
 	float ManaPercent = 0.f;
-
-public:
-	UFUNCTION(BlueprintCallable)
-	void InitializeFromAbilitySystemComponent(UAbilitySystemComponent* InAsc);
-	void RefreshAll();
-
-	UFUNCTION(BlueprintCallable)
-	void Deinitialize(); // unsub
 	
-	UFUNCTION(BlueprintCallable)
-	void BindToPlayer(APlayerController* PC);
+public:
+	void Initialize(UAbilitySystemComponent* InASC);
+	void UnInitialize();
 	
 private:
-	UPROPERTY()
-	TObjectPtr<UAbilitySystemComponent> ASC;
 
-	// Handles, um sauber zu unsubscriben
+	UPROPERTY()
+	UAbilitySystemComponent* ASC = nullptr;
+
 	FDelegateHandle HealthChangedHandle;
 	FDelegateHandle MaxHealthChangedHandle;
-	
-	FDelegateHandle ManaChangedHandle;
-	FDelegateHandle MaxManaChangedHandle;
-	
-	FDelegateHandle StaminaChangedHandle;
-	FDelegateHandle MaxStaminaChangedHandle;
 
+private:
 	void BindASC();
 	void UnbindASC();
-private:
+
+	void InitialRefresh();
 	void RefreshHealth();
-	void RefreshStamina();
-	void RefreshMana();
 
-	static void UpdatePercent(float Current, float Max, float& OutPercent);
-
-	// Callbacks
 	void OnHealthChanged(const FOnAttributeChangeData& Data);
 	void OnMaxHealthChanged(const FOnAttributeChangeData& Data);
-	
-	void OnManaChanged(const FOnAttributeChangeData& Data);
-	void OnMaxManaChanged(const FOnAttributeChangeData& Data);
-	
-	void OnStaminaChanged(const FOnAttributeChangeData& Data);
-	void OnMaxStaminaChanged(const FOnAttributeChangeData& Data);
-	
-private:
-	// === PawnExtension Binding (ASC ready) ===
-	UPROPERTY(Transient)
-	TObjectPtr<URpgPawnExtensionComponent> BoundExt;
-
-	FDelegateHandle H_OnAscReady;
-
-	void BindToPawnExtension(URpgPawnExtensionComponent* Ext);
-	void UnbindFromPawnExtension();
-	void HandleAscReady(UAbilitySystemComponent* ReadyASC);
-	
 };

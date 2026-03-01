@@ -6,6 +6,8 @@
 #include "Subsystems/LocalPlayerSubsystem.h"
 #include "RpgUiSubsystem.generated.h"
 
+class URpgPawnExtensionComponent;
+class UAbilitySystemComponent;
 class UPlayerVitalsViewmodel;
 /**
  * 
@@ -17,9 +19,25 @@ class SURVIVALRPG_API URpgUiSubsystem : public ULocalPlayerSubsystem
 	
 	
 public:
-	UPlayerVitalsViewmodel* GetOrCreateVitalsVM();
+	UPlayerVitalsViewmodel* GetVitalsViewmodel();
+	virtual void Initialize(FSubsystemCollectionBase& Collection) override;
 
 private:
 	UPROPERTY(Transient)
 	TObjectPtr<UPlayerVitalsViewmodel> VitalsVM;
+	
+	
+	UPROPERTY()
+	UAbilitySystemComponent* CachedASC;
+	
+
+	UFUNCTION()
+	void HandlePawnChanged(APawn* OldPawn, APawn* NewPawn);
+	void HandleAscReady();
+	void BindToControllerSafe();
+	
+	UPROPERTY()
+	URpgPawnExtensionComponent* BoundExt = nullptr;
+
+	FDelegateHandle H_AscInit;
 };

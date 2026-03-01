@@ -64,6 +64,12 @@ public:
 
 	/** Register with the OnAbilitySystemUninitialized delegate fired when our pawn is removed as the ability system's avatar actor */
 	void OnAbilitySystemUninitialized_Register(FSimpleMulticastDelegate::FDelegate Delegate);
+	
+	/** Delegate fired when our pawn becomes the ability system's avatar actor */
+	FSimpleMulticastDelegate OnAbilitySystemInitialized;
+
+	/** Delegate fired when our pawn is removed as the ability system's avatar actor */
+	FSimpleMulticastDelegate OnAbilitySystemUninitialized;
 
 protected:
 	virtual void OnRegister() override;
@@ -72,12 +78,6 @@ protected:
 	
 	UFUNCTION()
 	void OnRep_PawnData();
-	
-	/** Delegate fired when our pawn becomes the ability system's avatar actor */
-	FSimpleMulticastDelegate OnAbilitySystemInitialized;
-
-	/** Delegate fired when our pawn is removed as the ability system's avatar actor */
-	FSimpleMulticastDelegate OnAbilitySystemUninitialized;
 	
 	/** Pointer to the ability system component that is cached for convenience. */
 	UPROPERTY(Transient)
