@@ -18,26 +18,26 @@ class SURVIVALRPG_API URpgUiSubsystem : public ULocalPlayerSubsystem
 	GENERATED_BODY()
 	
 	
-public:
-	UPlayerVitalsViewmodel* GetVitalsViewmodel();
-	virtual void Initialize(FSubsystemCollectionBase& Collection) override;
-
-private:
-	UPROPERTY(Transient)
-	TObjectPtr<UPlayerVitalsViewmodel> VitalsVM;
-	
-	
-	UPROPERTY()
-	UAbilitySystemComponent* CachedASC;
-	
-
-	UFUNCTION()
-	void HandlePawnChanged(APawn* OldPawn, APawn* NewPawn);
-	void HandleAscReady();
-	void BindToControllerSafe();
-	
-	UPROPERTY()
-	URpgPawnExtensionComponent* BoundExt = nullptr;
-
-	FDelegateHandle H_AscInit;
+// public:
+// 	UPlayerVitalsViewmodel* GetVitalsViewmodel();
+// 	virtual void Initialize(FSubsystemCollectionBase& Collection) override;
+//
+// private:
+// 	UPROPERTY(Transient)
+// 	TObjectPtr<UPlayerVitalsViewmodel> VitalsVM;
+// 	
+// 	
+// 	UPROPERTY()
+// 	UAbilitySystemComponent* CachedASC;
+// 	
+//
+// 	UFUNCTION()
+// 	void HandlePawnChanged(APawn* OldPawn, APawn* NewPawn);
+// 	void HandleAscReady();
+// 	void BindToControllerSafe();
+// 	
+// 	UPROPERTY()
+// 	URpgPawnExtensionComponent* BoundExt = nullptr;
+//
+// 	FDelegateHandle H_AscInit;
 };

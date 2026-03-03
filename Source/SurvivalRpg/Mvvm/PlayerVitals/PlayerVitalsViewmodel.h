@@ -18,53 +18,25 @@ class SURVIVALRPG_API UPlayerVitalsViewmodel : public UMVVMViewModelBase
 	GENERATED_BODY()
 	
 public:
-	// --- Bindable UI Properties ---
-	UPROPERTY(BlueprintReadOnly, FieldNotify)
+	void BindASC(UAbilitySystemComponent* InASC);
+	void UnbindASC();
+
+	UFUNCTION(BlueprintPure, FieldNotify)
+	float GetHealthPercent() const { return (MaxHealth > 0.f) ? Health / MaxHealth : 0.f; }
+
+private:
+	UPROPERTY(BlueprintReadOnly, FieldNotify, meta=(AllowPrivateAccess="true"))
 	float Health = 0.f;
 
-	UPROPERTY(BlueprintReadOnly, FieldNotify)
+	UPROPERTY(BlueprintReadOnly, FieldNotify, meta=(AllowPrivateAccess="true"))
 	float MaxHealth = 0.f;
 
-	UPROPERTY(BlueprintReadOnly, FieldNotify)
-	float HealthPercent = 0.f;
-
-	UPROPERTY(BlueprintReadOnly, FieldNotify)
-	float Stamina = 0.f;
-
-	UPROPERTY(BlueprintReadOnly, FieldNotify)
-	float MaxStamina = 0.f;
-
-	UPROPERTY(BlueprintReadOnly, FieldNotify)
-	float StaminaPercent = 0.f;
-
-	UPROPERTY(BlueprintReadOnly, FieldNotify)
-	float Mana = 0.f;
-
-	UPROPERTY(BlueprintReadOnly, FieldNotify)
-	float MaxMana = 0.f;
-
-	UPROPERTY(BlueprintReadOnly, FieldNotify)
-	float ManaPercent = 0.f;
-	
-public:
-	void Initialize(UAbilitySystemComponent* InASC);
-	void UnInitialize();
-	
-private:
-
-	UPROPERTY()
-	UAbilitySystemComponent* ASC = nullptr;
-
+	TWeakObjectPtr<UAbilitySystemComponent> ASC;
 	FDelegateHandle HealthChangedHandle;
 	FDelegateHandle MaxHealthChangedHandle;
 
-private:
-	void BindASC();
-	void UnbindASC();
+	void RefreshOnce();
 
-	void InitialRefresh();
-	void RefreshHealth();
-
-	void OnHealthChanged(const FOnAttributeChangeData& Data);
-	void OnMaxHealthChanged(const FOnAttributeChangeData& Data);
+	void SetHealth(float NewValue);
+	void SetMaxHealth(float NewValue);
 };

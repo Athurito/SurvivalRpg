@@ -109,10 +109,25 @@ void URpgPawnExtensionComponent::InitializeAbilitySystemComponent(URpgAbilitySys
 	AActor* ExistingAvatar = InAsc->GetAvatarActor();
 	if ((ExistingAvatar != nullptr) && (ExistingAvatar != Pawn))
 	{
-		ensure(!ExistingAvatar->HasAuthority());
-		if (URpgPawnExtensionComponent* PawnExt = FindPawnExtensionComponent(ExistingAvatar))
+		const bool bPreInitializedWithOwnerAsAvatar = (ExistingAvatar == InOwner);
+
+		if (!bPreInitializedWithOwnerAsAvatar)
 		{
-			PawnExt->UninitializeAbilitySystem();
+			// Eher echter Alt-Avatar (z. B. Respawn alter Pawn)
+			if (URpgPawnExtensionComponent* PawnExt = FindPawnExtensionComponent(ExistingAvatar))
+			{
+				PawnExt->UninitializeAbilitySystem();
+			}
+			else
+			{
+				// Optional nur Logging statt ensure-crash
+				UE_LOG(LogTemp, Warning, TEXT("ASC had unexpected existing avatar: %s"), *GetNameSafe(ExistingAvatar));
+			}
+		}
+		else
+		{
+			// Plugin hat ASC mit PlayerState als Avatar vorinitialisiert -> okay, wir binden jetzt korrekt auf Pawn um.
+			UE_LOG(LogTemp, Verbose, TEXT("ASC pre-initialized with Owner as Avatar; rebinding to Pawn."));
 		}
 	}
 	

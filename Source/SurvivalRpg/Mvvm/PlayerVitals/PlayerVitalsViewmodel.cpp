@@ -6,115 +6,75 @@
 #include "SurvivalRpg/AbilitySystem/Attributes/RpgHealthSet.h"
 
 
-void UPlayerVitalsViewmodel::Initialize(UAbilitySystemComponent* InASC)
-{
-	if (ASC == InASC)
-		return;
-
-	UnInitialize();
-
-	ASC = InASC;
-
-	if (ASC)
-	{
-		BindASC();
-		InitialRefresh();
-	}
-}
-
-void UPlayerVitalsViewmodel::UnInitialize()
+void UPlayerVitalsViewmodel::BindASC(UAbilitySystemComponent* InASC)
 {
 	UnbindASC();
-	ASC = nullptr;
 
-	UE_MVVM_SET_PROPERTY_VALUE(Health, 0.f);
-	UE_MVVM_SET_PROPERTY_VALUE(MaxHealth, 0.f);
-	UE_MVVM_SET_PROPERTY_VALUE(HealthPercent, 0.f);
-}
-
-void UPlayerVitalsViewmodel::BindASC()
-{
-	if (!ASC)
+	ASC = InASC;
+	if (!ASC.IsValid())
+	{
 		return;
+	}
+
+	RefreshOnce();
 
 	HealthChangedHandle =
-		ASC->GetGameplayAttributeValueChangeDelegate(
-			URpgHealthSet::GetHealthAttribute())
-		.AddUObject(this, &ThisClass::OnHealthChanged);
+		ASC->GetGameplayAttributeValueChangeDelegate(URpgHealthSet::GetHealthAttribute())
+		.AddLambda([this](const FOnAttributeChangeData& Data)
+		{
+			SetHealth(Data.NewValue);
+		});
 
 	MaxHealthChangedHandle =
-		ASC->GetGameplayAttributeValueChangeDelegate(
-			URpgHealthSet::GetMaxHealthAttribute())
-		.AddUObject(this, &ThisClass::OnMaxHealthChanged);
+		ASC->GetGameplayAttributeValueChangeDelegate(URpgHealthSet::GetMaxHealthAttribute())
+		.AddLambda([this](const FOnAttributeChangeData& Data)
+		{
+			SetMaxHealth(Data.NewValue);
+		});
 }
 
 void UPlayerVitalsViewmodel::UnbindASC()
 {
-	if (!ASC)
-		return;
-
-	ASC->GetGameplayAttributeValueChangeDelegate(
-		URpgHealthSet::GetHealthAttribute())
-		.Remove(HealthChangedHandle);
-
-	ASC->GetGameplayAttributeValueChangeDelegate(
-		URpgHealthSet::GetMaxHealthAttribute())
-		.Remove(MaxHealthChangedHandle);
+	if (ASC.IsValid())
+	{
+		if (HealthChangedHandle.IsValid())
+		{
+			ASC->GetGameplayAttributeValueChangeDelegate(URpgHealthSet::GetHealthAttribute())
+				.Remove(HealthChangedHandle);
+		}
+		if (MaxHealthChangedHandle.IsValid())
+		{
+			ASC->GetGameplayAttributeValueChangeDelegate(URpgHealthSet::GetMaxHealthAttribute())
+				.Remove(MaxHealthChangedHandle);
+		}
+	}
 
 	HealthChangedHandle.Reset();
 	MaxHealthChangedHandle.Reset();
+	ASC.Reset();
 }
 
-void UPlayerVitalsViewmodel::InitialRefresh()
+void UPlayerVitalsViewmodel::RefreshOnce()
 {
-	// EINMAL initial refresh
-	const float Current =
-		ASC->GetNumericAttribute(URpgHealthSet::GetHealthAttribute());
+	if (!ASC.IsValid()) return;
 
-	const float Max =
-		ASC->GetNumericAttribute(URpgHealthSet::GetMaxHealthAttribute());
-
-	UE_MVVM_SET_PROPERTY_VALUE(Health, Current);
-	UE_MVVM_SET_PROPERTY_VALUE(MaxHealth, Max);
-
-	const float Percent = (Max > 0.f) ? Current / Max : 0.f;
-	UE_MVVM_SET_PROPERTY_VALUE(HealthPercent, Percent);
+	SetHealth(ASC->GetNumericAttribute(URpgHealthSet::GetHealthAttribute()));
+	SetMaxHealth(ASC->GetNumericAttribute(URpgHealthSet::GetMaxHealthAttribute()));
 }
 
-void UPlayerVitalsViewmodel::RefreshHealth()
+void UPlayerVitalsViewmodel::SetHealth(float NewValue)
 {
-	if (!ASC)
-		return;
-
-	const float Current =
-		ASC->GetNumericAttribute(URpgHealthSet::GetHealthAttribute());
-
-	const float Max =
-		ASC->GetNumericAttribute(URpgHealthSet::GetMaxHealthAttribute());
-
-	UE_MVVM_SET_PROPERTY_VALUE(Health, Current);
-	UE_MVVM_SET_PROPERTY_VALUE(MaxHealth, Max);
-
-	const float Percent = (Max > 0.f) ? Current / Max : 0.f;
-	UE_MVVM_SET_PROPERTY_VALUE(HealthPercent, Percent);
+	if (UE_MVVM_SET_PROPERTY_VALUE(Health, NewValue))
+	{
+		// computed fieldnotify function neu feuern
+		UE_MVVM_BROADCAST_FIELD_VALUE_CHANGED(GetHealthPercent);
+	}
 }
 
-void UPlayerVitalsViewmodel::OnHealthChanged(const FOnAttributeChangeData& Data)
+void UPlayerVitalsViewmodel::SetMaxHealth(float NewValue)
 {
-	UE_MVVM_SET_PROPERTY_VALUE(Health, Data.NewValue);
-
-	const float Max = MaxHealth; // Wir nutzen die gespeicherte Property
-
-	const float Percent = (Max > 0.f) ? Data.NewValue / Max : 0.f;
-	UE_MVVM_SET_PROPERTY_VALUE(HealthPercent, Percent);
-}
-
-void UPlayerVitalsViewmodel::OnMaxHealthChanged(const FOnAttributeChangeData& Data)
-{
-	UE_MVVM_SET_PROPERTY_VALUE(MaxHealth, Data.NewValue);
-
-	const float Current = Health; // gespeicherter Wert
-
-	const float Percent = (Data.NewValue > 0.f) ? Current / Data.NewValue : 0.f;
-	UE_MVVM_SET_PROPERTY_VALUE(HealthPercent, Percent);
+	if (UE_MVVM_SET_PROPERTY_VALUE(MaxHealth, NewValue))
+	{
+		UE_MVVM_BROADCAST_FIELD_VALUE_CHANGED(GetHealthPercent);
+	}
 }
