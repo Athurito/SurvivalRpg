@@ -6,6 +6,7 @@
 #include "RpgCharacterMovementComponent.h"
 #include "RpgDownedComponent.h"
 #include "RpgHealthComponent.h"
+#include "RpgRespawnComponent.h"
 #include "RpgPawnExtensionComponent.h"
 #include "SurvivalRpg/AbilitySystem/RpgAbilitySystemComponent.h"
 #include "SurvivalRpg/Core/Player/RpgPlayerController.h"
@@ -27,6 +28,7 @@ ARpgCharacter::ARpgCharacter(const FObjectInitializer& ObjectInitializer) :
 	HealthComponent->OnDeathFinished.AddDynamic(this, &ThisClass::OnDeathFinished);
 	
 	DownedComponent = CreateDefaultSubobject<URpgDownedComponent>(TEXT("DownedComponent"));
+	RespawnComponent = CreateDefaultSubobject<URpgRespawnComponent>(TEXT("RespawnComponent"));
 }
 
 ARpgPlayerController* ARpgCharacter::GetRpgPlayerController() const
@@ -105,10 +107,23 @@ void ARpgCharacter::FellOutOfWorld(const class UDamageType& dmgType)
 
 void ARpgCharacter::OnDeathStarted(AActor* OwningActor)
 {
+	// Disable movement and collision when death starts.
+	if (URpgCharacterMovementComponent* MoveComp = Cast<URpgCharacterMovementComponent>(GetCharacterMovement()))
+	{
+		MoveComp->StopMovementImmediately();
+		MoveComp->DisableMovement();
+	}
+
+	SetActorEnableCollision(false);
 }
 
 void ARpgCharacter::OnDeathFinished(AActor* OwningActor)
 {
+	// Start the respawn timer (death screen).
+	if (RespawnComponent)
+	{
+		RespawnComponent->StartRespawnTimer();
+	}
 }
 
 void ARpgCharacter::EnterDeadState()

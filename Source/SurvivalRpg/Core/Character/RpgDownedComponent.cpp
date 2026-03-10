@@ -3,40 +3,65 @@
 
 #include "RpgDownedComponent.h"
 
-#include "AbilitySystemComponent.h"
 #include "RpgHealthComponent.h"
 #include "SurvivalRpg/SurvivalRpg.h"
+#include "SurvivalRpg/AbilitySystem/RpgAbilitySystemComponent.h"
+#include "SurvivalRpg/AbilitySystem/Attributes/RpgHealthSet.h"
 #include "SurvivalRpg/GameplayTags/GameplayTags.h"
 
 
-void URpgDownedComponent::InitializeWithAbilitySystem(UAbilitySystemComponent* InASC)
+URpgDownedComponent::URpgDownedComponent(const FObjectInitializer& ObjectInitializer)
+	: Super(ObjectInitializer)
+{
+	PrimaryComponentTick.bStartWithTickEnabled = false;
+	PrimaryComponentTick.bCanEverTick = true;
+
+	SetIsReplicatedByDefault(true);
+}
+
+void URpgDownedComponent::OnUnregister()
+{
+	UninitializeFromAbilitySystem();
+	Super::OnUnregister();
+}
+
+void URpgDownedComponent::InitializeWithAbilitySystem(URpgAbilitySystemComponent* InASC)
 {
 	AActor* Owner = GetOwner();
 	check(Owner);
 
 	if (AbilitySystemComponent)
 	{
-		UE_LOG(LogRpg, Error, TEXT("RpgHealthComponent: Health component for owner [%s] has already been initialized with an ability system."), *GetNameSafe(Owner));
+		UE_LOG(LogRpg, Error, TEXT("RpgDownedComponent: Component for owner [%s] has already been initialized."), *GetNameSafe(Owner));
 		return;
 	}
 
 	AbilitySystemComponent = InASC;
 	if (!AbilitySystemComponent)
 	{
-		UE_LOG(LogRpg, Error, TEXT("RpgHealthComponent: Cannot initialize health component for owner [%s] with NULL ability system."), *GetNameSafe(Owner));
+		UE_LOG(LogRpg, Error, TEXT("RpgDownedComponent: Cannot initialize for owner [%s] with NULL ability system."), *GetNameSafe(Owner));
 		return;
 	}
-	
+
 	HealthComponent = Owner->FindComponentByClass<URpgHealthComponent>();
 }
 
 void URpgDownedComponent::UninitializeFromAbilitySystem()
 {
-	StopBleedout();
+	StopBleedoutTimer();
+	ClearDownedTags();
 
 	AbilitySystemComponent = nullptr;
 	HealthComponent = nullptr;
+	DownedState = ERpgDownedState::NotDowned;
+	ReviveProgress = 0.0f;
+	CurrentReviver = nullptr;
+	SetComponentTickEnabled(false);
 }
+
+// ---------------------------------------------------------------------------
+// Downed State Machine
+// ---------------------------------------------------------------------------
 
 bool URpgDownedComponent::TryEnterDowned()
 {
@@ -45,49 +70,294 @@ bool URpgDownedComponent::TryEnterDowned()
 		return false;
 	}
 
-	if (AbilitySystemComponent->HasMatchingGameplayTag(RpgGameplayTags::Status_Downed))
+	// Already downed or dead — cannot enter downed again.
+	if (DownedState != ERpgDownedState::NotDowned)
 	{
 		return false;
 	}
 
+	// Some characters (bosses, etc.) cannot be downed.
 	if (AbilitySystemComponent->HasMatchingGameplayTag(RpgGameplayTags::Status_CannotBeRevived))
 	{
 		return false;
 	}
 
+	// Already dying/dead via the health component.
 	if (HealthComponent->IsDeadOrDying())
 	{
 		return false;
 	}
 
+	// Enter downed state.
+	SetDownedState(ERpgDownedState::Downed);
+
 	AbilitySystemComponent->AddLooseGameplayTag(RpgGameplayTags::Status_Downed);
 	AbilitySystemComponent->AddLooseGameplayTag(RpgGameplayTags::Status_Downed_BleedingOut);
 
-	StartBleedout();
+	StartBleedoutTimer();
 
+	// Send gameplay event so abilities/UI can react.
+	{
+		FGameplayEventData Payload;
+		Payload.EventTag = RpgGameplayTags::GameplayEvent_Downed;
+		Payload.Instigator = GetOwner();
+		Payload.Target = GetOwner();
+
+		AbilitySystemComponent->HandleGameplayEvent(Payload.EventTag, &Payload);
+	}
+
+	UE_LOG(LogRpg, Log, TEXT("RpgDownedComponent: [%s] entered downed state. Bleedout: %.1fs"), *GetNameSafe(GetOwner()), BleedoutDuration);
 	return true;
 }
 
-void URpgDownedComponent::StartBleedout()
+void URpgDownedComponent::ForceDeathFromDowned()
 {
+	if (DownedState == ERpgDownedState::NotDowned)
+	{
+		return;
+	}
+
+	// Cancel any active revive.
+	if (DownedState == ERpgDownedState::BeingRevived)
+	{
+		CancelRevive();
+	}
+
+	StopBleedoutTimer();
+	ClearDownedTags();
+
+	DownedState = ERpgDownedState::NotDowned;
+
+	// Now trigger real death through the health component's self-destruct,
+	// which will send GameplayEvent.Death and activate the Death Ability.
+	if (HealthComponent)
+	{
+		HealthComponent->DamageSelfDestruct();
+	}
+
+	UE_LOG(LogRpg, Log, TEXT("RpgDownedComponent: [%s] transitioned from downed to death."), *GetNameSafe(GetOwner()));
 }
 
-void URpgDownedComponent::StopBleedout()
+void URpgDownedComponent::ExitDowned()
 {
+	StopBleedoutTimer();
+	ClearDownedTags();
+	SetComponentTickEnabled(false);
+
+	ReviveProgress = 0.0f;
+	CurrentReviver = nullptr;
+
+	SetDownedState(ERpgDownedState::NotDowned);
 }
 
-bool URpgDownedComponent::IsDowned() const
-{
-}
+// ---------------------------------------------------------------------------
+// Revive
+// ---------------------------------------------------------------------------
 
 void URpgDownedComponent::BeginRevive(AActor* Reviver)
 {
+	if (!Reviver || DownedState == ERpgDownedState::NotDowned)
+	{
+		return;
+	}
+
+	// Already being revived by someone — ignore.
+	if (DownedState == ERpgDownedState::BeingRevived && CurrentReviver.IsValid())
+	{
+		UE_LOG(LogRpg, Warning, TEXT("RpgDownedComponent: [%s] is already being revived by [%s]."), *GetNameSafe(GetOwner()), *GetNameSafe(CurrentReviver.Get()));
+		return;
+	}
+
+	CurrentReviver = Reviver;
+	ReviveProgress = 0.0f;
+
+	SetDownedState(ERpgDownedState::BeingRevived);
+
+	if (AbilitySystemComponent)
+	{
+		AbilitySystemComponent->SetLooseGameplayTagCount(RpgGameplayTags::Status_Downed_BleedingOut, 0);
+		AbilitySystemComponent->AddLooseGameplayTag(RpgGameplayTags::Status_Downed_Reviving);
+	}
+
+	// Enable tick to advance revive progress.
+	SetComponentTickEnabled(true);
+
+	OnReviveStarted.Broadcast(Reviver);
+
+	UE_LOG(LogRpg, Log, TEXT("RpgDownedComponent: [%s] revive started by [%s]. Duration: %.1fs"), *GetNameSafe(GetOwner()), *GetNameSafe(Reviver), ReviveDuration);
 }
 
-void URpgDownedComponent::CancelRevive(AActor* Reviver)
+void URpgDownedComponent::CancelRevive()
 {
+	if (DownedState != ERpgDownedState::BeingRevived)
+	{
+		return;
+	}
+
+	AActor* PreviousReviver = CurrentReviver.Get();
+	CurrentReviver = nullptr;
+	ReviveProgress = 0.0f;
+
+	SetDownedState(ERpgDownedState::Downed);
+
+	if (AbilitySystemComponent)
+	{
+		AbilitySystemComponent->SetLooseGameplayTagCount(RpgGameplayTags::Status_Downed_Reviving, 0);
+		AbilitySystemComponent->AddLooseGameplayTag(RpgGameplayTags::Status_Downed_BleedingOut);
+	}
+
+	SetComponentTickEnabled(false);
+
+	OnReviveCancelled.Broadcast(PreviousReviver);
+
+	UE_LOG(LogRpg, Log, TEXT("RpgDownedComponent: [%s] revive cancelled."), *GetNameSafe(GetOwner()));
 }
 
-void URpgDownedComponent::CompleteRevive(AActor* Reviver)
+void URpgDownedComponent::CompleteRevive()
 {
+	if (DownedState != ERpgDownedState::BeingRevived)
+	{
+		return;
+	}
+
+	AActor* Reviver = CurrentReviver.Get();
+
+	// Restore health.
+	if (HealthComponent && AbilitySystemComponent)
+	{
+		const float HealAmount = HealthComponent->GetMaxHealth() * ReviveHealthPercent;
+		AbilitySystemComponent->SetNumericAttributeBase(URpgHealthSet::GetHealthAttribute(), HealAmount);
+	}
+
+	ExitDowned();
+
+	// Send gameplay event.
+	if (AbilitySystemComponent)
+	{
+		FGameplayEventData Payload;
+		Payload.EventTag = RpgGameplayTags::GameplayEvent_Revive;
+		Payload.Instigator = Reviver;
+		Payload.Target = GetOwner();
+
+		AbilitySystemComponent->HandleGameplayEvent(Payload.EventTag, &Payload);
+	}
+
+	OnReviveCompleted.Broadcast(Reviver);
+
+	UE_LOG(LogRpg, Log, TEXT("RpgDownedComponent: [%s] revived by [%s]. Health restored to %.0f%%."), *GetNameSafe(GetOwner()), *GetNameSafe(Reviver), ReviveHealthPercent * 100.0f);
+}
+
+// ---------------------------------------------------------------------------
+// Tick — advances revive progress
+// ---------------------------------------------------------------------------
+
+void URpgDownedComponent::TickComponent(float DeltaTime, ELevelTick TickType, FActorComponentTickFunction* ThisTickFunction)
+{
+	Super::TickComponent(DeltaTime, TickType, ThisTickFunction);
+
+	if (DownedState != ERpgDownedState::BeingRevived)
+	{
+		SetComponentTickEnabled(false);
+		return;
+	}
+
+	// If the reviver is gone, cancel.
+	if (!CurrentReviver.IsValid())
+	{
+		CancelRevive();
+		return;
+	}
+
+	ReviveProgress = FMath::Clamp(ReviveProgress + (DeltaTime / ReviveDuration), 0.0f, 1.0f);
+
+	const float TimeRemaining = (1.0f - ReviveProgress) * ReviveDuration;
+	OnReviveProgressChanged.Broadcast(ReviveProgress, TimeRemaining);
+
+	if (ReviveProgress >= 1.0f)
+	{
+		CompleteRevive();
+	}
+}
+
+// ---------------------------------------------------------------------------
+// Bleedout Timer
+// ---------------------------------------------------------------------------
+
+void URpgDownedComponent::StartBleedoutTimer()
+{
+	if (UWorld* World = GetWorld())
+	{
+		World->GetTimerManager().SetTimer(
+			BleedoutTimerHandle,
+			this,
+			&URpgDownedComponent::OnBleedoutTimerExpired,
+			BleedoutDuration,
+			false
+		);
+	}
+}
+
+void URpgDownedComponent::StopBleedoutTimer()
+{
+	if (UWorld* World = GetWorld())
+	{
+		World->GetTimerManager().ClearTimer(BleedoutTimerHandle);
+	}
+}
+
+void URpgDownedComponent::OnBleedoutTimerExpired()
+{
+	UE_LOG(LogRpg, Log, TEXT("RpgDownedComponent: [%s] bleedout expired."), *GetNameSafe(GetOwner()));
+
+	OnBleedoutExpired.Broadcast();
+
+	// Send gameplay event.
+	if (AbilitySystemComponent)
+	{
+		FGameplayEventData Payload;
+		Payload.EventTag = RpgGameplayTags::GameplayEvent_BleedoutExpired;
+		Payload.Instigator = GetOwner();
+		Payload.Target = GetOwner();
+
+		AbilitySystemComponent->HandleGameplayEvent(Payload.EventTag, &Payload);
+	}
+
+	ForceDeathFromDowned();
+}
+
+float URpgDownedComponent::GetBleedoutTimeRemaining() const
+{
+	if (const UWorld* World = GetWorld())
+	{
+		return World->GetTimerManager().GetTimerRemaining(BleedoutTimerHandle);
+	}
+	return 0.0f;
+}
+
+float URpgDownedComponent::GetBleedoutNormalized() const
+{
+	if (BleedoutDuration <= 0.0f) return 0.0f;
+	return FMath::Clamp(GetBleedoutTimeRemaining() / BleedoutDuration, 0.0f, 1.0f);
+}
+
+// ---------------------------------------------------------------------------
+// Internal Helpers
+// ---------------------------------------------------------------------------
+
+void URpgDownedComponent::SetDownedState(ERpgDownedState NewState)
+{
+	if (DownedState == NewState) return;
+
+	DownedState = NewState;
+	OnDownedStateChanged.Broadcast(NewState);
+}
+
+void URpgDownedComponent::ClearDownedTags()
+{
+	if (AbilitySystemComponent)
+	{
+		AbilitySystemComponent->SetLooseGameplayTagCount(RpgGameplayTags::Status_Downed, 0);
+		AbilitySystemComponent->SetLooseGameplayTagCount(RpgGameplayTags::Status_Downed_BleedingOut, 0);
+		AbilitySystemComponent->SetLooseGameplayTagCount(RpgGameplayTags::Status_Downed_Reviving, 0);
+	}
 }

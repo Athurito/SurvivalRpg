@@ -10,6 +10,7 @@
 
 class URpgDownedComponent;
 class URpgHealthComponent;
+class URpgRespawnComponent;
 class ARpgPlayerController;
 class ARpgPlayerState;
 class UAbilitySystemComponent;
@@ -83,4 +84,7 @@ private:
 	
 	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "Rpg|Character", Meta = (AllowPrivateAccess = "true"))
 	TObjectPtr<URpgDownedComponent> DownedComponent;
+	
+	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "Rpg|Character", Meta = (AllowPrivateAccess = "true"))
+	TObjectPtr<URpgRespawnComponent> RespawnComponent;
 };

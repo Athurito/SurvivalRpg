@@ -3,6 +3,7 @@
 
 #include "RpgHealthComponent.h"
 
+#include "RpgDownedComponent.h"
 #include "Net/UnrealNetwork.h"
 #include "SurvivalRpg/SurvivalRpg.h"
 #include "SurvivalRpg/AbilitySystem/RpgAbilitySystemComponent.h"
@@ -140,7 +141,23 @@ void URpgHealthComponent::HandleOutOfHealth(AActor* DamageInstigator, AActor* Da
 #if WITH_SERVER_CODE
 	if (AbilitySystemComponent && DamageEffectSpec)
 	{
-		// Send the "GameplayEvent.Death" gameplay event through the owner's ability system.  This can be used to trigger a death gameplay ability.
+		// Try to enter downed state first (co-op revive mechanic).
+		// If the character has a DownedComponent and can be downed, we skip the death event.
+		if (AActor* Owner = GetOwner())
+		{
+			if (URpgDownedComponent* DownedComp = URpgDownedComponent::FindDownedComponent(Owner))
+			{
+				if (DownedComp->TryEnterDowned())
+				{
+					// Character entered downed state — do NOT send death event.
+					// Give 1 HP so the HealthSet doesn't re-trigger OutOfHealth.
+					AbilitySystemComponent->SetNumericAttributeBase(URpgHealthSet::GetHealthAttribute(), 1.0f);
+					return;
+				}
+			}
+		}
+
+		// No downed component or cannot be downed — proceed with real death.
 		{
 			FGameplayEventData Payload;
 			Payload.EventTag = RpgGameplayTags::GameplayEvent_Death;

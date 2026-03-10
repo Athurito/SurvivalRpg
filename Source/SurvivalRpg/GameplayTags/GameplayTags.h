@@ -43,4 +43,9 @@ namespace RpgGameplayTags
 	
 	
 	UE_DECLARE_GAMEPLAY_TAG_EXTERN(Ability_Behavior_SurvivesDeath);
+
+	UE_DECLARE_GAMEPLAY_TAG_EXTERN(GameplayEvent_Respawn);
+	UE_DECLARE_GAMEPLAY_TAG_EXTERN(GameplayEvent_BleedoutExpired);
+
+	UE_DECLARE_GAMEPLAY_TAG_EXTERN(Status_Dead_WaitingForRespawn);
 }
