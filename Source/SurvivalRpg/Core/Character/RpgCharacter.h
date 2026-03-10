@@ -8,6 +8,7 @@
 #include "GameFramework/Character.h"
 #include "RpgCharacter.generated.h"
 
+class URpgDownedComponent;
 class URpgHealthComponent;
 class ARpgPlayerController;
 class ARpgPlayerState;
@@ -79,4 +80,7 @@ private:
 	
 	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "Rpg|Character", Meta = (AllowPrivateAccess = "true"))
 	TObjectPtr<URpgHealthComponent> HealthComponent;
+	
+	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "Rpg|Character", Meta = (AllowPrivateAccess = "true"))
+	TObjectPtr<URpgDownedComponent> DownedComponent;
 };

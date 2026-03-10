@@ -4,6 +4,7 @@
 #include "RpgCharacter.h"
 
 #include "RpgCharacterMovementComponent.h"
+#include "RpgDownedComponent.h"
 #include "RpgHealthComponent.h"
 #include "RpgPawnExtensionComponent.h"
 #include "SurvivalRpg/AbilitySystem/RpgAbilitySystemComponent.h"
@@ -24,6 +25,8 @@ ARpgCharacter::ARpgCharacter(const FObjectInitializer& ObjectInitializer) :
 	HealthComponent = CreateDefaultSubobject<URpgHealthComponent>(TEXT("HealthComponent"));
 	HealthComponent->OnDeathStarted.AddDynamic(this, &ThisClass::OnDeathStarted);
 	HealthComponent->OnDeathFinished.AddDynamic(this, &ThisClass::OnDeathFinished);
+	
+	DownedComponent = CreateDefaultSubobject<URpgDownedComponent>(TEXT("DownedComponent"));
 }
 
 ARpgPlayerController* ARpgCharacter::GetRpgPlayerController() const
@@ -62,11 +65,13 @@ void ARpgCharacter::OnAbilitySystemInitialized()
 	check(Asc);
 
 	HealthComponent->InitializeWithAbilitySystem(Asc);
+	DownedComponent->InitializeWithAbilitySystem(Asc);
 }
 
 void ARpgCharacter::OnAbilitySystemUninitialized()
 {
 	HealthComponent->UninitializeFromAbilitySystem();
+	DownedComponent->UninitializeFromAbilitySystem();
 }
 
 void ARpgCharacter::PossessedBy(AController* NewController)
