@@ -13,7 +13,7 @@ class URpgHealthComponent;
 /**
  * Downed state for co-op revive mechanics.
  * Flow: Health reaches 0 → TryEnterDowned → BleedingOut (timer) → if not revived → real death.
- * Another player can BeginRevive → progress fills → CompleteRevive → character stands back up.
+ * Revive is handled by a GameplayAbility on the reviver that calls CompleteRevive() when finished.
  */
 
 UENUM(BlueprintType)
@@ -24,13 +24,9 @@ enum class ERpgDownedState : uint8
 
 	/** Character is downed and bleeding out, waiting for revive. */
 	Downed,
-
-	/** Another player is actively reviving this character. */
-	BeingRevived,
 };
 
 DECLARE_DYNAMIC_MULTICAST_DELEGATE_OneParam(FRpgDowned_StateChanged, ERpgDownedState, NewState);
-DECLARE_DYNAMIC_MULTICAST_DELEGATE_TwoParams(FRpgDowned_ReviveProgress, float, Progress, float, TimeRemaining);
 DECLARE_DYNAMIC_MULTICAST_DELEGATE_OneParam(FRpgDowned_ReviveEvent, AActor*, Reviver);
 DECLARE_DYNAMIC_MULTICAST_DELEGATE(FRpgDowned_BleedoutExpired);
 
@@ -74,25 +70,17 @@ public:
 
 	// --- Revive API ---
 
-	/** Called by the reviving player to start the revive interaction. */
+	/**
+	 * Called by the Revive GameplayAbility when it finishes successfully.
+	 * Restores health and exits downed state.
+	 */
 	UFUNCTION(BlueprintCallable, Category = "Rpg|Downed")
-	void BeginRevive(AActor* Reviver);
-
-	/** Called when the reviving player cancels or moves away. */
-	UFUNCTION(BlueprintCallable, Category = "Rpg|Downed")
-	void CancelRevive();
-
-	/** Called when revive progress reaches 100%. Restores the character. */
-	UFUNCTION(BlueprintCallable, Category = "Rpg|Downed")
-	void CompleteRevive();
+	void CompleteRevive(AActor* Reviver);
 
 	// --- Queries ---
 
 	UFUNCTION(BlueprintCallable, BlueprintPure, Category = "Rpg|Downed")
-	bool IsDowned() const { return DownedState != ERpgDownedState::NotDowned; }
-
-	UFUNCTION(BlueprintCallable, BlueprintPure, Category = "Rpg|Downed")
-	bool IsBeingRevived() const { return DownedState == ERpgDownedState::BeingRevived; }
+	bool IsDowned() const { return DownedState == ERpgDownedState::Downed; }
 
 	UFUNCTION(BlueprintCallable, BlueprintPure, Category = "Rpg|Downed")
 	ERpgDownedState GetDownedState() const { return DownedState; }
@@ -104,10 +92,7 @@ public:
 	float GetBleedoutNormalized() const;
 
 	UFUNCTION(BlueprintCallable, BlueprintPure, Category = "Rpg|Downed")
-	float GetReviveProgress() const { return ReviveProgress; }
-
-	UFUNCTION(BlueprintCallable, BlueprintPure, Category = "Rpg|Downed")
-	AActor* GetCurrentReviver() const { return CurrentReviver.Get(); }
+	float GetReviveHealthPercent() const { return ReviveHealthPercent; }
 
 public:
 	// --- Delegates ---
@@ -115,18 +100,6 @@ public:
 	/** Fired whenever the downed state changes. */
 	UPROPERTY(BlueprintAssignable)
 	FRpgDowned_StateChanged OnDownedStateChanged;
-
-	/** Fired every tick while being revived, with current progress [0..1] and time remaining. */
-	UPROPERTY(BlueprintAssignable)
-	FRpgDowned_ReviveProgress OnReviveProgressChanged;
-
-	/** Fired when revive starts. */
-	UPROPERTY(BlueprintAssignable)
-	FRpgDowned_ReviveEvent OnReviveStarted;
-
-	/** Fired when revive is cancelled. */
-	UPROPERTY(BlueprintAssignable)
-	FRpgDowned_ReviveEvent OnReviveCancelled;
 
 	/** Fired when revive completes successfully. */
 	UPROPERTY(BlueprintAssignable)
@@ -138,7 +111,6 @@ public:
 
 protected:
 	virtual void OnUnregister() override;
-	virtual void TickComponent(float DeltaTime, ELevelTick TickType, FActorComponentTickFunction* ThisTickFunction) override;
 
 private:
 	void SetDownedState(ERpgDownedState NewState);
@@ -166,18 +138,10 @@ private:
 
 	// --- Revive ---
 
-	/** Time in seconds it takes to complete a revive. */
-	UPROPERTY(EditDefaultsOnly, Category = "Rpg|Downed", meta = (ClampMin = "0.5"))
-	float ReviveDuration = 5.0f;
-
 	/** Health percentage [0..1] to restore after revive. */
 	UPROPERTY(EditDefaultsOnly, Category = "Rpg|Downed", meta = (ClampMin = "0.05", ClampMax = "1.0"))
 	float ReviveHealthPercent = 0.3f;
 
-	/** Current revive progress [0..1]. */
-	float ReviveProgress = 0.0f;
-
-	/** The actor currently performing the revive. */
-	UPROPERTY()
-	TWeakObjectPtr<AActor> CurrentReviver = nullptr;
+	/** Set after bleedout expires to prevent re-entering downed on the DamageSelfDestruct path. */
+	bool bPendingDeath = false;
 };

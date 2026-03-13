@@ -14,7 +14,7 @@ URpgDownedComponent::URpgDownedComponent(const FObjectInitializer& ObjectInitial
 	: Super(ObjectInitializer)
 {
 	PrimaryComponentTick.bStartWithTickEnabled = false;
-	PrimaryComponentTick.bCanEverTick = true;
+	PrimaryComponentTick.bCanEverTick = false;
 
 	SetIsReplicatedByDefault(true);
 }
@@ -54,9 +54,7 @@ void URpgDownedComponent::UninitializeFromAbilitySystem()
 	AbilitySystemComponent = nullptr;
 	HealthComponent = nullptr;
 	DownedState = ERpgDownedState::NotDowned;
-	ReviveProgress = 0.0f;
-	CurrentReviver = nullptr;
-	SetComponentTickEnabled(false);
+	bPendingDeath = false;
 }
 
 // ---------------------------------------------------------------------------
@@ -72,6 +70,12 @@ bool URpgDownedComponent::TryEnterDowned()
 
 	// Already downed or dead — cannot enter downed again.
 	if (DownedState != ERpgDownedState::NotDowned)
+	{
+		return false;
+	}
+
+	// Prevent re-entering downed during the DamageSelfDestruct path after bleedout.
+	if (bPendingDeath)
 	{
 		return false;
 	}
@@ -117,16 +121,13 @@ void URpgDownedComponent::ForceDeathFromDowned()
 		return;
 	}
 
-	// Cancel any active revive.
-	if (DownedState == ERpgDownedState::BeingRevived)
-	{
-		CancelRevive();
-	}
-
 	StopBleedoutTimer();
 	ClearDownedTags();
 
 	DownedState = ERpgDownedState::NotDowned;
+
+	// Flag to prevent HandleOutOfHealth from re-entering TryEnterDowned.
+	bPendingDeath = true;
 
 	// Now trigger real death through the health component's self-destruct,
 	// which will send GameplayEvent.Death and activate the Death Ability.
@@ -142,10 +143,6 @@ void URpgDownedComponent::ExitDowned()
 {
 	StopBleedoutTimer();
 	ClearDownedTags();
-	SetComponentTickEnabled(false);
-
-	ReviveProgress = 0.0f;
-	CurrentReviver = nullptr;
 
 	SetDownedState(ERpgDownedState::NotDowned);
 }
@@ -154,73 +151,12 @@ void URpgDownedComponent::ExitDowned()
 // Revive
 // ---------------------------------------------------------------------------
 
-void URpgDownedComponent::BeginRevive(AActor* Reviver)
+void URpgDownedComponent::CompleteRevive(AActor* Reviver)
 {
-	if (!Reviver || DownedState == ERpgDownedState::NotDowned)
+	if (DownedState != ERpgDownedState::Downed)
 	{
 		return;
 	}
-
-	// Already being revived by someone — ignore.
-	if (DownedState == ERpgDownedState::BeingRevived && CurrentReviver.IsValid())
-	{
-		UE_LOG(LogRpg, Warning, TEXT("RpgDownedComponent: [%s] is already being revived by [%s]."), *GetNameSafe(GetOwner()), *GetNameSafe(CurrentReviver.Get()));
-		return;
-	}
-
-	CurrentReviver = Reviver;
-	ReviveProgress = 0.0f;
-
-	SetDownedState(ERpgDownedState::BeingRevived);
-
-	if (AbilitySystemComponent)
-	{
-		AbilitySystemComponent->SetLooseGameplayTagCount(RpgGameplayTags::Status_Downed_BleedingOut, 0);
-		AbilitySystemComponent->AddLooseGameplayTag(RpgGameplayTags::Status_Downed_Reviving);
-	}
-
-	// Enable tick to advance revive progress.
-	SetComponentTickEnabled(true);
-
-	OnReviveStarted.Broadcast(Reviver);
-
-	UE_LOG(LogRpg, Log, TEXT("RpgDownedComponent: [%s] revive started by [%s]. Duration: %.1fs"), *GetNameSafe(GetOwner()), *GetNameSafe(Reviver), ReviveDuration);
-}
-
-void URpgDownedComponent::CancelRevive()
-{
-	if (DownedState != ERpgDownedState::BeingRevived)
-	{
-		return;
-	}
-
-	AActor* PreviousReviver = CurrentReviver.Get();
-	CurrentReviver = nullptr;
-	ReviveProgress = 0.0f;
-
-	SetDownedState(ERpgDownedState::Downed);
-
-	if (AbilitySystemComponent)
-	{
-		AbilitySystemComponent->SetLooseGameplayTagCount(RpgGameplayTags::Status_Downed_Reviving, 0);
-		AbilitySystemComponent->AddLooseGameplayTag(RpgGameplayTags::Status_Downed_BleedingOut);
-	}
-
-	SetComponentTickEnabled(false);
-
-	OnReviveCancelled.Broadcast(PreviousReviver);
-
-	UE_LOG(LogRpg, Log, TEXT("RpgDownedComponent: [%s] revive cancelled."), *GetNameSafe(GetOwner()));
-}
-
-void URpgDownedComponent::CompleteRevive()
-{
-	if (DownedState != ERpgDownedState::BeingRevived)
-	{
-		return;
-	}
-
-	AActor* Reviver = CurrentReviver.Get();
 
 	// Restore health.
 	if (HealthComponent && AbilitySystemComponent)
@@ -245,38 +181,6 @@ void URpgDownedComponent::CompleteRevive()
 	OnReviveCompleted.Broadcast(Reviver);
 
 	UE_LOG(LogRpg, Log, TEXT("RpgDownedComponent: [%s] revived by [%s]. Health restored to %.0f%%."), *GetNameSafe(GetOwner()), *GetNameSafe(Reviver), ReviveHealthPercent * 100.0f);
-}
-
-// ---------------------------------------------------------------------------
-// Tick — advances revive progress
-// ---------------------------------------------------------------------------
-
-void URpgDownedComponent::TickComponent(float DeltaTime, ELevelTick TickType, FActorComponentTickFunction* ThisTickFunction)
-{
-	Super::TickComponent(DeltaTime, TickType, ThisTickFunction);
-
-	if (DownedState != ERpgDownedState::BeingRevived)
-	{
-		SetComponentTickEnabled(false);
-		return;
-	}
-
-	// If the reviver is gone, cancel.
-	if (!CurrentReviver.IsValid())
-	{
-		CancelRevive();
-		return;
-	}
-
-	ReviveProgress = FMath::Clamp(ReviveProgress + (DeltaTime / ReviveDuration), 0.0f, 1.0f);
-
-	const float TimeRemaining = (1.0f - ReviveProgress) * ReviveDuration;
-	OnReviveProgressChanged.Broadcast(ReviveProgress, TimeRemaining);
-
-	if (ReviveProgress >= 1.0f)
-	{
-		CompleteRevive();
-	}
 }
 
 // ---------------------------------------------------------------------------
