@@ -9,11 +9,11 @@
 
 URpgGameplayAbility_Death::URpgGameplayAbility_Death(const FObjectInitializer& ObjectInitializer)
 {
-	
 	InstancingPolicy = EGameplayAbilityInstancingPolicy::InstancedPerActor;
 	NetExecutionPolicy = EGameplayAbilityNetExecutionPolicy::ServerInitiated;
 
 	bAutoStartDeath = true;
+	bDeathStarted = false;
 
 	if (HasAnyFlags(RF_ClassDefaultObject))
 	{
@@ -28,6 +28,8 @@ URpgGameplayAbility_Death::URpgGameplayAbility_Death(const FObjectInitializer& O
 void URpgGameplayAbility_Death::ActivateAbility(const FGameplayAbilitySpecHandle Handle, const FGameplayAbilityActorInfo* ActorInfo, const FGameplayAbilityActivationInfo ActivationInfo, const FGameplayEventData* TriggerEventData)
 {
 	check(ActorInfo);
+
+	bDeathStarted = false;
 	
 	URpgAbilitySystemComponent* RpgAsc = CastChecked<URpgAbilitySystemComponent>(ActorInfo->AbilitySystemComponent.Get());
 	
@@ -54,6 +56,7 @@ void URpgGameplayAbility_Death::EndAbility(const FGameplayAbilitySpecHandle Hand
 	// Always try to finish the death when the ability ends in case the ability doesn't.
 	// This won't do anything if the death hasn't been started.
 	FinishDeath();
+	bDeathStarted = false;
 	
 	Super::EndAbility(Handle, ActorInfo, ActivationInfo, bReplicateEndAbility, bWasCancelled);
 }
@@ -65,12 +68,18 @@ void URpgGameplayAbility_Death::StartDeath()
 		if (HealthComponent->GetDeathState() == ERpgDeathState::NotDead)
 		{
 			HealthComponent->StartDeath();
+			bDeathStarted = (HealthComponent->GetDeathState() == ERpgDeathState::DeathStarted);
 		}
 	}
 }
 
 void URpgGameplayAbility_Death::FinishDeath()
 {
+	if (!bDeathStarted)
+	{
+		return;
+	}
+
 	if (URpgHealthComponent* HealthComponent = URpgHealthComponent::FindHealthComponent(GetAvatarActorFromActorInfo()))
 	{
 		if (HealthComponent->GetDeathState() == ERpgDeathState::DeathStarted)

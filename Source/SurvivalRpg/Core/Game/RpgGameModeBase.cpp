@@ -10,9 +10,7 @@
 #include "SurvivalRpg/AbilitySystem/Attributes/RpgHealthSet.h"
 #include "SurvivalRpg/Core/Character/BasePawnData.h"
 #include "SurvivalRpg/Core/Character/RpgHealthComponent.h"
-#include "SurvivalRpg/Core/Character/RpgDownedComponent.h"
 #include "SurvivalRpg/Core/Character/RpgPawnExtensionComponent.h"
-#include "SurvivalRpg/Core/Character/RpgRespawnComponent.h"
 #include "SurvivalRpg/Core/Player/RpgPlayerState.h"
 #include "SurvivalRpg/GameplayTags/GameplayTags.h"
 #include "GameFramework/CharacterMovementComponent.h"
@@ -232,40 +230,40 @@ void ARpgGameModeBase::ExecuteRespawn(APlayerController* PC, const FTransform& S
 		}
 	}
 
-	// Reset downed component.
-	if (URpgDownedComponent* DownedComp = URpgDownedComponent::FindDownedComponent(Pawn))
-	{
-		if (DownedComp->IsDowned())
-		{
-			DownedComp->ExitDowned();
-		}
-	}
-
-	// Re-enable collision and movement.
-	Pawn->SetActorEnableCollision(true);
-	if (UCharacterMovementComponent* MoveComp = Pawn->FindComponentByClass<UCharacterMovementComponent>())
-	{
-		MoveComp->SetMovementMode(MOVE_Walking);
-	}
-
-	// Notify RespawnComponent (for client-side UI cleanup).
-	if (URpgRespawnComponent* RespawnComp = URpgRespawnComponent::FindRespawnComponent(Pawn))
-	{
-		RespawnComp->OnServerRespawnExecuted(SpawnPoint);
-	}
-
-	// Send gameplay event.
-	if (IAbilitySystemInterface* ASI = Cast<IAbilitySystemInterface>(Pawn))
-	{
-		if (UAbilitySystemComponent* ASC = ASI->GetAbilitySystemComponent())
-		{
-			FGameplayEventData Payload;
-			Payload.EventTag = RpgGameplayTags::GameplayEvent_Respawn;
-			Payload.Instigator = Pawn;
-			Payload.Target = Pawn;
-			ASC->HandleGameplayEvent(Payload.EventTag, &Payload);
-		}
-	}
+	// // Reset downed component.
+	// if (URpgDownedComponent* DownedComp = URpgDownedComponent::FindDownedComponent(Pawn))
+	// {
+	// 	if (DownedComp->IsDowned())
+	// 	{
+	// 		DownedComp->ExitDowned();
+	// 	}
+	// }
+	//
+	// // Re-enable collision and movement.
+	// Pawn->SetActorEnableCollision(true);
+	// if (UCharacterMovementComponent* MoveComp = Pawn->FindComponentByClass<UCharacterMovementComponent>())
+	// {
+	// 	MoveComp->SetMovementMode(MOVE_Walking);
+	// }
+	//
+	// // Notify RespawnComponent (for client-side UI cleanup).
+	// if (URpgRespawnComponent* RespawnComp = URpgRespawnComponent::FindRespawnComponent(Pawn))
+	// {
+	// 	RespawnComp->OnServerRespawnExecuted(SpawnPoint);
+	// }
+	//
+	// // Send gameplay event.
+	// if (IAbilitySystemInterface* ASI = Cast<IAbilitySystemInterface>(Pawn))
+	// {
+	// 	if (UAbilitySystemComponent* ASC = ASI->GetAbilitySystemComponent())
+	// 	{
+	// 		FGameplayEventData Payload;
+	// 		Payload.EventTag = RpgGameplayTags::GameplayEvent_Respawn;
+	// 		Payload.Instigator = Pawn;
+	// 		Payload.Target = Pawn;
+	// 		ASC->HandleGameplayEvent(Payload.EventTag, &Payload);
+	// 	}
+	// }
 
 	OnPlayerRespawned.Broadcast(PC, SpawnPoint);
 

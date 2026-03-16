@@ -3,7 +3,6 @@
 
 #include "RpgHealthComponent.h"
 
-#include "RpgDownedComponent.h"
 #include "Net/UnrealNetwork.h"
 #include "SurvivalRpg/SurvivalRpg.h"
 #include "SurvivalRpg/AbilitySystem/RpgAbilitySystemComponent.h"
@@ -94,13 +93,26 @@ void URpgHealthComponent::UninitializeFromAbilitySystem()
 	AbilitySystemComponent = nullptr;
 }
 
+void URpgHealthComponent::ApplyDeathGameplayTags(ERpgDeathState StateToApply) const
+{
+	if (!AbilitySystemComponent)
+	{
+		return;
+	}
+
+	const int32 bHasDeathState = (StateToApply != ERpgDeathState::NotDead) ? 1 : 0;
+	const int32 bIsDying = (StateToApply == ERpgDeathState::DeathStarted) ? 1 : 0;
+	const int32 bIsDead = (StateToApply == ERpgDeathState::DeathFinished) ? 1 : 0;
+
+	AbilitySystemComponent->SetLooseGameplayTagCount(RpgGameplayTags::State_Dead, bHasDeathState);
+	AbilitySystemComponent->SetLooseGameplayTagCount(RpgGameplayTags::Status_Death, bHasDeathState);
+	AbilitySystemComponent->SetLooseGameplayTagCount(RpgGameplayTags::Status_Death_Dying, bIsDying);
+	AbilitySystemComponent->SetLooseGameplayTagCount(RpgGameplayTags::Status_Death_Dead, bIsDead);
+}
+
 void URpgHealthComponent::ClearGameplayTags()
 {
-	if (AbilitySystemComponent)
-	{
-		AbilitySystemComponent->SetLooseGameplayTagCount(RpgGameplayTags::Status_Death_Dying, 0);
-		AbilitySystemComponent->SetLooseGameplayTagCount(RpgGameplayTags::Status_Death_Dead, 0);
-	}
+	ApplyDeathGameplayTags(ERpgDeathState::NotDead);
 }
 
 float URpgHealthComponent::GetHealth() const
@@ -138,43 +150,18 @@ void URpgHealthComponent::HandleMaxHealthChanged(AActor* DamageInstigator, AActo
 
 void URpgHealthComponent::HandleOutOfHealth(AActor* DamageInstigator, AActor* DamageCauser, const FGameplayEffectSpec* DamageEffectSpec, float DamageMagnitude, float OldValue, float NewValue)
 {
-#if WITH_SERVER_CODE
-	if (AbilitySystemComponent && DamageEffectSpec)
+	if (AbilitySystemComponent)
 	{
-		// Try to enter downed state first (co-op revive mechanic).
-		// If the character has a DownedComponent and can be downed, we skip the death event.
-		if (AActor* Owner = GetOwner())
-		{
-			if (URpgDownedComponent* DownedComp = URpgDownedComponent::FindDownedComponent(Owner))
-			{
-				if (DownedComp->TryEnterDowned())
-				{
-					// Character entered downed state — do NOT send death event.
-					// Give 1 HP so the HealthSet doesn't re-trigger OutOfHealth.
-					AbilitySystemComponent->SetNumericAttributeBase(URpgHealthSet::GetHealthAttribute(), 1.0f);
-					return;
-				}
-			}
-		}
+		FRpgOutOfHealthInfo Info;
+		Info.DamageInstigator = DamageInstigator;
+		Info.DamageCauser = DamageCauser;
+		Info.DamageEffectSpec = DamageEffectSpec;
+		Info.DamageMagnitude = DamageMagnitude;
+		Info.OldValue = OldValue;
+		Info.NewValue = NewValue;
 
-		// No downed component or cannot be downed — proceed with real death.
-		{
-			FGameplayEventData Payload;
-			Payload.EventTag = RpgGameplayTags::GameplayEvent_Death;
-			Payload.Instigator = DamageInstigator;
-			Payload.Target = AbilitySystemComponent->GetAvatarActor();
-			Payload.OptionalObject = DamageEffectSpec->Def;
-			Payload.ContextHandle = DamageEffectSpec->GetEffectContext();
-			Payload.InstigatorTags = *DamageEffectSpec->CapturedSourceTags.GetAggregatedTags();
-			Payload.TargetTags = *DamageEffectSpec->CapturedTargetTags.GetAggregatedTags();
-			Payload.EventMagnitude = DamageMagnitude;
-
-			FScopedPredictionWindow NewScopedWindow(AbilitySystemComponent, true);
-			AbilitySystemComponent->HandleGameplayEvent(Payload.EventTag, &Payload);
-		}
+		OnOutOfHealth.Broadcast(Info);
 	}
-
-#endif // #if WITH_SERVER_CODE
 }
 
 void URpgHealthComponent::OnRep_DeathState(ERpgDeathState OldDeathState)
@@ -231,10 +218,7 @@ void URpgHealthComponent::StartDeath()
 
 	DeathState = ERpgDeathState::DeathStarted;
 
-	if (AbilitySystemComponent)
-	{
-		AbilitySystemComponent->SetLooseGameplayTagCount(RpgGameplayTags::Status_Death_Dying, 1);
-	}
+	ApplyDeathGameplayTags(DeathState);
 
 	AActor* Owner = GetOwner();
 	check(Owner);
@@ -253,10 +237,7 @@ void URpgHealthComponent::FinishDeath()
 
 	DeathState = ERpgDeathState::DeathFinished;
 
-	if (AbilitySystemComponent)
-	{
-		AbilitySystemComponent->SetLooseGameplayTagCount(RpgGameplayTags::Status_Death_Dead, 1);
-	}
+	ApplyDeathGameplayTags(DeathState);
 
 	AActor* Owner = GetOwner();
 	check(Owner);

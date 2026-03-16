@@ -4,16 +4,32 @@
 
 #include "CoreMinimal.h"
 #include "Components/ActorComponent.h"
+#include "SurvivalRpg/AbilitySystem/Attributes/RpgAttributeSet.h"
 #include "RpgHealthComponent.generated.h"
 
 
+struct FRpgOutOfHealthInfo;
 class UGameplayEffect;
 class URpgHealthSet;
 class URpgAbilitySystemComponent;
 struct FGameplayEffectSpec;
-DECLARE_DYNAMIC_MULTICAST_DELEGATE_OneParam(FRpgHealth_DeathEvent, AActor*, OwningActor);
-DECLARE_DYNAMIC_MULTICAST_DELEGATE_FourParams(FRpgHealth_AttributeChanged, URpgHealthComponent*, HealthComponent, float, OldValue, float, NewValue, AActor*, Instigator);
 
+
+
+USTRUCT()
+struct FRpgOutOfHealthInfo
+{
+	GENERATED_BODY()
+
+	UPROPERTY()
+	AActor* DamageInstigator = nullptr;
+	UPROPERTY()
+	AActor* DamageCauser = nullptr;
+	const FGameplayEffectSpec* DamageEffectSpec = nullptr;
+	float DamageMagnitude = 0.0f;
+	float OldValue = 0.0f;
+	float NewValue = 0.0f;
+};
 
 UENUM(BlueprintType)
 enum class ERpgDeathState : uint8
@@ -23,7 +39,9 @@ enum class ERpgDeathState : uint8
 	DeathFinished
 };
 
-
+DECLARE_DYNAMIC_MULTICAST_DELEGATE_OneParam(FRpgHealth_DeathEvent, AActor*, OwningActor);
+DECLARE_DYNAMIC_MULTICAST_DELEGATE_FourParams(FRpgHealth_AttributeChanged, URpgHealthComponent*, HealthComponent, float, OldValue, float, NewValue, AActor*, Instigator);
+DECLARE_MULTICAST_DELEGATE_OneParam(FRpgOutOfHealthSignature, FRpgOutOfHealthInfo&);
 /**
  * URpgHealthComponent
  *
@@ -96,10 +114,14 @@ public:
 	// Delegate fired when the death sequence has finished.
 	UPROPERTY(BlueprintAssignable)
 	FRpgHealth_DeathEvent OnDeathFinished;
+	
+	FRpgOutOfHealthSignature OnOutOfHealth;
+
 
 protected:
 	virtual void OnUnregister() override;
 
+	void ApplyDeathGameplayTags(ERpgDeathState StateToApply) const;
 	void ClearGameplayTags();
 
 	virtual void HandleHealthChanged(AActor* DamageInstigator, AActor* DamageCauser, const FGameplayEffectSpec* DamageEffectSpec, float DamageMagnitude, float OldValue, float NewValue);
@@ -122,6 +144,7 @@ protected:
 	// Replicated state used to handle dying.
 	UPROPERTY(ReplicatedUsing = OnRep_DeathState)
 	ERpgDeathState DeathState;
+	
 	
 private:
 	

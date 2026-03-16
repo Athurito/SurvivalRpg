@@ -8,6 +8,7 @@
 #include "GameFramework/Character.h"
 #include "RpgCharacter.generated.h"
 
+class URpgDeathComponent;
 class URpgDownedComponent;
 class URpgHealthComponent;
 class URpgRespawnComponent;
@@ -68,7 +69,7 @@ protected:
 	
 	
 	
-	// void DisableMovementAndCollision();
+	void DisableMovementAndCollision() const;
 	void EnterDeadState();
 	// void UninitAndDestroy();
 	
@@ -83,8 +84,8 @@ private:
 	TObjectPtr<URpgHealthComponent> HealthComponent;
 	
 	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "Rpg|Character", Meta = (AllowPrivateAccess = "true"))
-	TObjectPtr<URpgDownedComponent> DownedComponent;
+	TObjectPtr<URpgDeathComponent> DeathComponent;
 	
-	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "Rpg|Character", Meta = (AllowPrivateAccess = "true"))
-	TObjectPtr<URpgRespawnComponent> RespawnComponent;
+	// UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "Rpg|Character", Meta = (AllowPrivateAccess = "true"))
+	// TObjectPtr<URpgRespawnComponent> RespawnComponent;
 };
