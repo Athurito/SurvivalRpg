@@ -11,9 +11,7 @@ class ARpgPlayerController;
 class URpgTradeSkillProgressionComponent;
 class URpgPlayerProgressionComponent;
 class URpgAbilitySystemComponent;
-/**
- * 
- */
+
 UCLASS()
 class SURVIVALRPG_API ARpgPlayerState : public APlayerState
 {
@@ -21,6 +19,8 @@ class SURVIVALRPG_API ARpgPlayerState : public APlayerState
 	
 public:
 	ARpgPlayerState();
+
+	virtual void GetLifetimeReplicatedProps(TArray<FLifetimeProperty>& OutLifetimeProps) const override;
 	
 	UFUNCTION(BlueprintCallable, Category = "Rpg|PlayerState")
 	ARpgPlayerController* GetRpgPlayerController() const;
@@ -32,10 +32,24 @@ public:
 	
 	template<class T>
 	const T* GetPawnData() const { return Cast<T>(PawnData); }
+
 	void SetPawnData(const UBasePawnData* InPawnData);
+	void SetRespawnState(bool bInIsWaitingForRespawn, float InRespawnAvailableServerTime);
+	void SetCheckpointData(bool bInHasCheckpoint, const FTransform& InCheckpointTransform);
+
+	UFUNCTION(BlueprintPure, Category = "Rpg|Respawn")
+	bool IsWaitingForRespawn() const { return bIsWaitingForRespawn; }
+
+	UFUNCTION(BlueprintPure, Category = "Rpg|Respawn")
+	float GetRespawnAvailableServerTime() const { return RespawnAvailableServerTime; }
+
+	UFUNCTION(BlueprintPure, Category = "Rpg|Respawn")
+	bool HasCheckpoint() const { return bHasCheckpoint; }
+
+	UFUNCTION(BlueprintPure, Category = "Rpg|Respawn")
+	const FTransform& GetCheckpointTransform() const { return CurrentCheckpointTransform; }
 	
 protected:
-	// The ability system component sub-object used by player characters.
 	UPROPERTY(VisibleAnywhere, Category = "Rpg|AbilitySystem")
 	TObjectPtr<URpgAbilitySystemComponent> AbilitySystemComponent;
 	
@@ -47,18 +61,20 @@ protected:
 	
 	UPROPERTY(VisibleAnywhere, Category = "Pawn")
 	TObjectPtr<const UBasePawnData> PawnData;
+
+	UPROPERTY(Replicated, VisibleAnywhere, Category = "Rpg|Respawn")
+	bool bIsWaitingForRespawn = false;
+
+	UPROPERTY(Replicated, VisibleAnywhere, Category = "Rpg|Respawn")
+	float RespawnAvailableServerTime = 0.0f;
+
+	UPROPERTY(Replicated, VisibleAnywhere, Category = "Rpg|Respawn")
+	bool bHasCheckpoint = false;
+
+	UPROPERTY(Replicated, VisibleAnywhere, Category = "Rpg|Respawn")
+	FTransform CurrentCheckpointTransform = FTransform::Identity;
 	
 private:
-	// Combat attribute set used by this actor.
-	// UPROPERTY()
-	// TObjectPtr<const class URpgCombatSet> CombatSet;
-	// UPROPERTY()
-	// TObjectPtr<const class URpgMobilitySet> MobilitySet;
-	// UPROPERTY()
-	// TObjectPtr<const class URpgPrimarySet> PrimarySet;
-	// UPROPERTY()
-	// TObjectPtr<const class URpgVitalSet> VitalSet;
-	
 	UPROPERTY()
 	TObjectPtr<const class URpgHealthSet> HealthSet;
 };

@@ -8,14 +8,29 @@
 #include "RpgGameModeBase.generated.h"
 
 class UBasePawnData;
-class URpgHealthComponent;
+class URpgAbilitySystemComponent;
 
 DECLARE_DYNAMIC_MULTICAST_DELEGATE_TwoParams(FRpgRespawn_OnPlayerRespawned, APlayerController*, PC, FTransform, RespawnTransform);
 
+USTRUCT(BlueprintType)
+struct SURVIVALRPG_API FRpgPlayerRespawnState
+{
+	GENERATED_BODY()
+
+	UPROPERTY(BlueprintReadOnly, Category = "Rpg|Respawn")
+	bool bIsWaitingForRespawn = false;
+
+	UPROPERTY(BlueprintReadOnly, Category = "Rpg|Respawn")
+	float RespawnAvailableServerTime = 0.0f;
+
+	UPROPERTY(BlueprintReadOnly, Category = "Rpg|Respawn")
+	FTransform PendingRespawnTransform = FTransform::Identity;
+};
+
 /**
  * Server-authoritative GameMode.
- * - Manages respawn flow (checkpoint lookup, teleport, state restore).
- * - Stores all player save data keyed by Steam NetId (host-authoritative, like Dark Souls / not like Valheim).
+ * - Manages host-owned player save data and checkpoint registration.
+ * - Runs a Lyra-style respawn flow by spawning a fresh pawn and reusing the persistent ASC on the PlayerState.
  */
 UCLASS()
 class SURVIVALRPG_API ARpgGameModeBase : public AGameModeBase
@@ -48,15 +63,23 @@ public:
 	UFUNCTION(BlueprintCallable, Category = "Rpg|Respawn")
 	void SetPlayerCheckpoint(APlayerController* PC, const FTransform& CheckpointTransform);
 
-	/** Returns the checkpoint transform for a player. Falls back to default spawn. */
+	/** Returns the checkpoint transform for a player. Falls back to the default spawn. */
 	UFUNCTION(BlueprintCallable, Category = "Rpg|Respawn")
 	FTransform GetPlayerCheckpointTransform(APlayerController* PC) const;
 
 	// --- Respawn API ---
 
+	/** Marks a player as dead on the host and starts the respawn delay. */
+	UFUNCTION(BlueprintCallable, Category = "Rpg|Respawn")
+	void NotifyPlayerDeath(APlayerController* PC);
+
+	/** Returns whether a player may currently respawn according to the host's runtime state. */
+	UFUNCTION(BlueprintCallable, Category = "Rpg|Respawn")
+	bool CanRespawnPlayer(APlayerController* PC) const;
+
 	/**
-	 * Called when a player requests respawn (e.g. after death screen timer).
-	 * Server-authoritative: validates, teleports pawn, restores health, clears death state.
+	 * Called when a player requests respawn (e.g. from a death screen).
+	 * Server-authoritative: validates the pending respawn state and restarts the player at the saved checkpoint.
 	 */
 	UFUNCTION(BlueprintCallable, Category = "Rpg|Respawn")
 	void RequestPlayerRespawn(APlayerController* PC);
@@ -78,7 +101,19 @@ private:
 	/** Helper to get a stable NetId key from a PlayerController. */
 	static FUniqueNetIdRepl GetNetIdForPC(const APlayerController* PC);
 
-	/** Host-authoritative save data. Keyed by Steam NetId. */
+	FRpgPlayerRespawnState& GetOrCreatePlayerRespawnState(APlayerController* PC);
+	const FRpgPlayerRespawnState* FindPlayerRespawnState(APlayerController* PC) const;
+
+	void SyncPlayerCheckpointDataToPlayerState(APlayerController* PC);
+	void SyncPlayerRespawnStateToPlayerState(APlayerController* PC);
+	void ResetPlayerRespawnState(APlayerController* PC);
+	static void ClearRespawnGameplayState(URpgAbilitySystemComponent* ASC);
+
+	/** Host-authoritative persistent save data. Keyed by Steam NetId. */
 	UPROPERTY()
 	TMap<FUniqueNetIdRepl, FRpgPlayerSaveData> PlayerSaveDataMap;
+
+	/** Host-authoritative runtime respawn state. Keyed by Steam NetId. */
+	UPROPERTY()
+	TMap<FUniqueNetIdRepl, FRpgPlayerRespawnState> PlayerRespawnStateMap;
 };

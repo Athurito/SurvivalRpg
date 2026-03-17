@@ -3,17 +3,15 @@
 
 #include "RpgGameModeBase.h"
 
-#include "AbilitySystemInterface.h"
 #include "RpgWorldSettings.h"
 #include "SurvivalRpg/SurvivalRpg.h"
 #include "SurvivalRpg/AbilitySystem/RpgAbilitySystemComponent.h"
 #include "SurvivalRpg/AbilitySystem/Attributes/RpgHealthSet.h"
 #include "SurvivalRpg/Core/Character/BasePawnData.h"
-#include "SurvivalRpg/Core/Character/RpgHealthComponent.h"
 #include "SurvivalRpg/Core/Character/RpgPawnExtensionComponent.h"
 #include "SurvivalRpg/Core/Player/RpgPlayerState.h"
 #include "SurvivalRpg/GameplayTags/GameplayTags.h"
-#include "GameFramework/CharacterMovementComponent.h"
+#include "GameFramework/GameStateBase.h"
 #include "GameFramework/PlayerState.h"
 
 // ---------------------------------------------------------------------------
@@ -33,16 +31,17 @@ void ARpgGameModeBase::PostLogin(APlayerController* NewPlayer)
 		}
 	}
 
-	// Ensure save data entry exists for this player.
 	GetOrCreatePlayerSaveData(NewPlayer);
+	GetOrCreatePlayerRespawnState(NewPlayer);
+	SyncPlayerCheckpointDataToPlayerState(NewPlayer);
+	SyncPlayerRespawnStateToPlayerState(NewPlayer);
 
 	Super::PostLogin(NewPlayer);
 }
 
 void ARpgGameModeBase::Logout(AController* Exiting)
 {
-	// Save data stays in the map — player can rejoin and keep their progress.
-	// Only cleaned up on explicit host action or session end.
+	// Save data stays in the map so a player can reconnect and keep host-owned progress.
 	Super::Logout(Exiting);
 }
 
@@ -70,19 +69,25 @@ APawn* ARpgGameModeBase::SpawnDefaultPawnAtTransform_Implementation(AController*
 			return SpawnedPawn;
 		}
 	}
+
 	return nullptr;
 }
 
 const UBasePawnData* ARpgGameModeBase::GetPawnDataForController(const AController* InController) const
 {
-	if (!InController) return nullptr;
-	if (ARpgPlayerState* Ps = InController->GetPlayerState<ARpgPlayerState>())
+	if (!InController)
 	{
-		if (const UBasePawnData* PawnData = Ps->GetPawnData<UBasePawnData>())
+		return nullptr;
+	}
+
+	if (ARpgPlayerState* PlayerState = InController->GetPlayerState<ARpgPlayerState>())
+	{
+		if (const UBasePawnData* PawnData = PlayerState->GetPawnData<UBasePawnData>())
 		{
 			return PawnData;
 		}
 	}
+
 	return nullptr;
 }
 
@@ -94,33 +99,50 @@ FUniqueNetIdRepl ARpgGameModeBase::GetNetIdForPC(const APlayerController* PC)
 {
 	if (PC)
 	{
-		if (const APlayerState* PS = PC->GetPlayerState<APlayerState>())
+		if (const APlayerState* PlayerState = PC->GetPlayerState<APlayerState>())
 		{
-			return PS->GetUniqueId();
+			return PlayerState->GetUniqueId();
 		}
 	}
+
 	return FUniqueNetIdRepl();
 }
 
 FRpgPlayerSaveData& ARpgGameModeBase::GetOrCreatePlayerSaveData(APlayerController* PC)
 {
-	FUniqueNetIdRepl NetId = GetNetIdForPC(PC);
+	const FUniqueNetIdRepl NetId = GetNetIdForPC(PC);
 
 	if (FRpgPlayerSaveData* Existing = PlayerSaveDataMap.Find(NetId))
 	{
 		return *Existing;
 	}
 
-	UE_LOG(LogRpg, Log, TEXT("RpgGameMode: Creating save data for player [%s]."),
-		*GetNameSafe(PC));
-
+	UE_LOG(LogRpg, Log, TEXT("RpgGameMode: Creating save data for player [%s]."), *GetNameSafe(PC));
 	return PlayerSaveDataMap.Add(NetId, FRpgPlayerSaveData());
 }
 
 const FRpgPlayerSaveData* ARpgGameModeBase::FindPlayerSaveData(APlayerController* PC) const
 {
-	FUniqueNetIdRepl NetId = GetNetIdForPC(PC);
+	const FUniqueNetIdRepl NetId = GetNetIdForPC(PC);
 	return PlayerSaveDataMap.Find(NetId);
+}
+
+FRpgPlayerRespawnState& ARpgGameModeBase::GetOrCreatePlayerRespawnState(APlayerController* PC)
+{
+	const FUniqueNetIdRepl NetId = GetNetIdForPC(PC);
+
+	if (FRpgPlayerRespawnState* Existing = PlayerRespawnStateMap.Find(NetId))
+	{
+		return *Existing;
+	}
+
+	return PlayerRespawnStateMap.Add(NetId, FRpgPlayerRespawnState());
+}
+
+const FRpgPlayerRespawnState* ARpgGameModeBase::FindPlayerRespawnState(APlayerController* PC) const
+{
+	const FUniqueNetIdRepl NetId = GetNetIdForPC(PC);
+	return PlayerRespawnStateMap.Find(NetId);
 }
 
 // ---------------------------------------------------------------------------
@@ -129,29 +151,33 @@ const FRpgPlayerSaveData* ARpgGameModeBase::FindPlayerSaveData(APlayerController
 
 void ARpgGameModeBase::SetPlayerCheckpoint(APlayerController* PC, const FTransform& CheckpointTransform)
 {
-	if (!PC) return;
+	if (!PC)
+	{
+		return;
+	}
 
-	FRpgPlayerSaveData& Data = GetOrCreatePlayerSaveData(PC);
-	Data.CheckpointTransform = CheckpointTransform;
-	Data.bHasCheckpoint = true;
+	FRpgPlayerSaveData& SaveData = GetOrCreatePlayerSaveData(PC);
+	SaveData.CheckpointTransform = CheckpointTransform;
+	SaveData.bHasCheckpoint = true;
+
+	SyncPlayerCheckpointDataToPlayerState(PC);
 
 	UE_LOG(LogRpg, Log, TEXT("RpgGameMode: Checkpoint set for [%s] at %s."),
-		*GetNameSafe(PC), *CheckpointTransform.GetLocation().ToString());
+		*GetNameSafe(PC),
+		*CheckpointTransform.GetLocation().ToString());
 }
 
 FTransform ARpgGameModeBase::GetPlayerCheckpointTransform(APlayerController* PC) const
 {
-	if (const FRpgPlayerSaveData* Data = FindPlayerSaveData(PC))
+	if (const FRpgPlayerSaveData* SaveData = FindPlayerSaveData(PC))
 	{
-		if (Data->bHasCheckpoint)
+		if (SaveData->bHasCheckpoint)
 		{
-			return Data->CheckpointTransform;
+			return SaveData->CheckpointTransform;
 		}
 	}
 
-	// Fallback: default player start.
-	AActor* PlayerStart = const_cast<ARpgGameModeBase*>(this)->FindPlayerStart(PC);
-	if (PlayerStart)
+	if (AActor* PlayerStart = const_cast<ARpgGameModeBase*>(this)->FindPlayerStart(PC))
 	{
 		return PlayerStart->GetActorTransform();
 	}
@@ -159,10 +185,62 @@ FTransform ARpgGameModeBase::GetPlayerCheckpointTransform(APlayerController* PC)
 	return FTransform::Identity;
 }
 
-
 // ---------------------------------------------------------------------------
 // Respawn (server-authoritative)
 // ---------------------------------------------------------------------------
+
+void ARpgGameModeBase::NotifyPlayerDeath(APlayerController* PC)
+{
+	if (!PC || !HasAuthority())
+	{
+		return;
+	}
+
+	FRpgPlayerRespawnState& RespawnState = GetOrCreatePlayerRespawnState(PC);
+	if (RespawnState.bIsWaitingForRespawn)
+	{
+		return;
+	}
+
+	const AGameStateBase* WorldGameState = GetGameState<AGameStateBase>();
+	const float ServerWorldTime = WorldGameState ? WorldGameState->GetServerWorldTimeSeconds() : GetWorld()->GetTimeSeconds();
+
+	RespawnState.bIsWaitingForRespawn = true;
+	RespawnState.RespawnAvailableServerTime = ServerWorldTime + RespawnDelay;
+	RespawnState.PendingRespawnTransform = GetPlayerCheckpointTransform(PC);
+
+	if (ARpgPlayerState* PlayerState = PC->GetPlayerState<ARpgPlayerState>())
+	{
+		PlayerState->SetRespawnState(true, RespawnState.RespawnAvailableServerTime);
+
+		if (URpgAbilitySystemComponent* ASC = PlayerState->GetRpgAbilitySystemComponent())
+		{
+			ASC->SetLooseGameplayTagCount(RpgGameplayTags::Status_Dead_WaitingForRespawn, 1);
+		}
+	}
+
+	UE_LOG(LogRpg, Log, TEXT("RpgGameMode: [%s] entered respawn wait until %.2f."),
+		*GetNameSafe(PC),
+		RespawnState.RespawnAvailableServerTime);
+}
+
+bool ARpgGameModeBase::CanRespawnPlayer(APlayerController* PC) const
+{
+	if (!PC || !HasAuthority())
+	{
+		return false;
+	}
+
+	const FRpgPlayerRespawnState* RespawnState = FindPlayerRespawnState(PC);
+	if (!RespawnState || !RespawnState->bIsWaitingForRespawn)
+	{
+		return false;
+	}
+
+	const AGameStateBase* WorldGameState = GetGameState<AGameStateBase>();
+	const float ServerWorldTime = WorldGameState ? WorldGameState->GetServerWorldTimeSeconds() : GetWorld()->GetTimeSeconds();
+	return (ServerWorldTime >= RespawnState->RespawnAvailableServerTime);
+}
 
 void ARpgGameModeBase::RequestPlayerRespawn(APlayerController* PC)
 {
@@ -171,101 +249,116 @@ void ARpgGameModeBase::RequestPlayerRespawn(APlayerController* PC)
 		return;
 	}
 
-	APawn* Pawn = PC->GetPawn();
-	if (!Pawn)
+	const FRpgPlayerRespawnState* RespawnState = FindPlayerRespawnState(PC);
+	if (!RespawnState || !RespawnState->bIsWaitingForRespawn)
 	{
-		UE_LOG(LogRpg, Warning, TEXT("RpgGameMode: RequestPlayerRespawn — no pawn for [%s]."), *GetNameSafe(PC));
+		UE_LOG(LogRpg, Warning, TEXT("RpgGameMode: RequestPlayerRespawn ignored for [%s] because no respawn is pending."), *GetNameSafe(PC));
 		return;
 	}
 
-	const FTransform SpawnPoint = GetPlayerCheckpointTransform(PC);
+	if (!CanRespawnPlayer(PC))
+	{
+		UE_LOG(LogRpg, Verbose, TEXT("RpgGameMode: RequestPlayerRespawn ignored for [%s] because the delay has not elapsed yet."), *GetNameSafe(PC));
+		return;
+	}
+
+	const FTransform SpawnPoint = RespawnState->PendingRespawnTransform.Equals(FTransform::Identity)
+		? GetPlayerCheckpointTransform(PC)
+		: RespawnState->PendingRespawnTransform;
+
 	ExecuteRespawn(PC, SpawnPoint);
 }
 
 void ARpgGameModeBase::ExecuteRespawn(APlayerController* PC, const FTransform& SpawnPoint)
 {
-	APawn* Pawn = PC->GetPawn();
-	if (!Pawn)
+	if (!PC)
 	{
 		return;
 	}
 
-	// Teleport to checkpoint.
-	Pawn->SetActorTransform(SpawnPoint, false, nullptr, ETeleportType::ResetPhysics);
+	ARpgPlayerState* PlayerState = PC->GetPlayerState<ARpgPlayerState>();
+	URpgAbilitySystemComponent* ASC = PlayerState ? PlayerState->GetRpgAbilitySystemComponent() : nullptr;
 
-	// Restore health and clear death/downed state.
-	if (IAbilitySystemInterface* ASI = Cast<IAbilitySystemInterface>(Pawn))
+	if (APawn* ExistingPawn = PC->GetPawn())
 	{
-		if (URpgAbilitySystemComponent* ASC = Cast<URpgAbilitySystemComponent>(ASI->GetAbilitySystemComponent()))
-		{
-			// Clear death tags.
-			ASC->SetLooseGameplayTagCount(RpgGameplayTags::Status_Death_Dying, 0);
-			ASC->SetLooseGameplayTagCount(RpgGameplayTags::Status_Death_Dead, 0);
-			ASC->SetLooseGameplayTagCount(RpgGameplayTags::Status_Dead_WaitingForRespawn, 0);
-			ASC->SetLooseGameplayTagCount(RpgGameplayTags::Status_Downed, 0);
-			ASC->SetLooseGameplayTagCount(RpgGameplayTags::Status_Downed_BleedingOut, 0);
-			ASC->SetLooseGameplayTagCount(RpgGameplayTags::Status_Downed_Reviving, 0);
-
-			// Restore health to max.
-			if (const URpgHealthSet* HealthSet = ASC->GetSet<URpgHealthSet>())
-			{
-				ASC->SetNumericAttributeBase(URpgHealthSet::GetHealthAttribute(), HealthSet->GetMaxHealth());
-			}
-		}
+		PC->UnPossess();
+		ExistingPawn->Destroy();
 	}
 
-	// Reset HealthComponent death state.
-	if (URpgHealthComponent* HealthComp = URpgHealthComponent::FindHealthComponent(Pawn))
+	ClearRespawnGameplayState(ASC);
+	RestartPlayerAtTransform(PC, SpawnPoint);
+
+	if (!PC->GetPawn())
 	{
-		// Reset death state so the character is considered alive again.
-		// HealthComponent tracks DeathState internally — we need to reset it.
-		// Since DeathState is protected, we re-initialize the component.
-		if (IAbilitySystemInterface* ASI = Cast<IAbilitySystemInterface>(Pawn))
-		{
-			if (URpgAbilitySystemComponent* ASC = Cast<URpgAbilitySystemComponent>(ASI->GetAbilitySystemComponent()))
-			{
-				HealthComp->UninitializeFromAbilitySystem();
-				HealthComp->InitializeWithAbilitySystem(ASC);
-			}
-		}
+		UE_LOG(LogRpg, Error, TEXT("RpgGameMode: RestartPlayerAtTransform failed for [%s]."), *GetNameSafe(PC));
+		return;
 	}
 
-	// // Reset downed component.
-	// if (URpgDownedComponent* DownedComp = URpgDownedComponent::FindDownedComponent(Pawn))
-	// {
-	// 	if (DownedComp->IsDowned())
-	// 	{
-	// 		DownedComp->ExitDowned();
-	// 	}
-	// }
-	//
-	// // Re-enable collision and movement.
-	// Pawn->SetActorEnableCollision(true);
-	// if (UCharacterMovementComponent* MoveComp = Pawn->FindComponentByClass<UCharacterMovementComponent>())
-	// {
-	// 	MoveComp->SetMovementMode(MOVE_Walking);
-	// }
-	//
-	// // Notify RespawnComponent (for client-side UI cleanup).
-	// if (URpgRespawnComponent* RespawnComp = URpgRespawnComponent::FindRespawnComponent(Pawn))
-	// {
-	// 	RespawnComp->OnServerRespawnExecuted(SpawnPoint);
-	// }
-	//
-	// // Send gameplay event.
-	// if (IAbilitySystemInterface* ASI = Cast<IAbilitySystemInterface>(Pawn))
-	// {
-	// 	if (UAbilitySystemComponent* ASC = ASI->GetAbilitySystemComponent())
-	// 	{
-	// 		FGameplayEventData Payload;
-	// 		Payload.EventTag = RpgGameplayTags::GameplayEvent_Respawn;
-	// 		Payload.Instigator = Pawn;
-	// 		Payload.Target = Pawn;
-	// 		ASC->HandleGameplayEvent(Payload.EventTag, &Payload);
-	// 	}
-	// }
+	ResetPlayerRespawnState(PC);
+
+	if (ASC)
+	{
+		if (const URpgHealthSet* HealthSet = ASC->GetSet<URpgHealthSet>())
+		{
+			ASC->SetNumericAttributeBase(URpgHealthSet::GetHealthAttribute(), HealthSet->GetMaxHealth());
+		}
+	}
 
 	OnPlayerRespawned.Broadcast(PC, SpawnPoint);
 
-	UE_LOG(LogRpg, Log, TEXT("RpgGameMode: [%s] respawned at %s."), *GetNameSafe(PC), *SpawnPoint.GetLocation().ToString());
+	UE_LOG(LogRpg, Log, TEXT("RpgGameMode: [%s] respawned at %s."),
+		*GetNameSafe(PC),
+		*SpawnPoint.GetLocation().ToString());
+}
+
+void ARpgGameModeBase::SyncPlayerCheckpointDataToPlayerState(APlayerController* PC)
+{
+	if (!PC)
+	{
+		return;
+	}
+
+	if (ARpgPlayerState* PlayerState = PC->GetPlayerState<ARpgPlayerState>())
+	{
+		const FRpgPlayerSaveData& SaveData = GetOrCreatePlayerSaveData(PC);
+		PlayerState->SetCheckpointData(SaveData.bHasCheckpoint, SaveData.CheckpointTransform);
+	}
+}
+
+void ARpgGameModeBase::SyncPlayerRespawnStateToPlayerState(APlayerController* PC)
+{
+	if (!PC)
+	{
+		return;
+	}
+
+	if (ARpgPlayerState* PlayerState = PC->GetPlayerState<ARpgPlayerState>())
+	{
+		const FRpgPlayerRespawnState& RespawnState = GetOrCreatePlayerRespawnState(PC);
+		PlayerState->SetRespawnState(RespawnState.bIsWaitingForRespawn, RespawnState.RespawnAvailableServerTime);
+	}
+}
+
+void ARpgGameModeBase::ResetPlayerRespawnState(APlayerController* PC)
+{
+	FRpgPlayerRespawnState& RespawnState = GetOrCreatePlayerRespawnState(PC);
+	RespawnState = FRpgPlayerRespawnState();
+	SyncPlayerRespawnStateToPlayerState(PC);
+}
+
+void ARpgGameModeBase::ClearRespawnGameplayState(URpgAbilitySystemComponent* ASC)
+{
+	if (!ASC)
+	{
+		return;
+	}
+
+	ASC->SetLooseGameplayTagCount(RpgGameplayTags::State_Dead, 0);
+	ASC->SetLooseGameplayTagCount(RpgGameplayTags::Status_Death, 0);
+	ASC->SetLooseGameplayTagCount(RpgGameplayTags::Status_Death_Dying, 0);
+	ASC->SetLooseGameplayTagCount(RpgGameplayTags::Status_Death_Dead, 0);
+	ASC->SetLooseGameplayTagCount(RpgGameplayTags::Status_Dead_WaitingForRespawn, 0);
+	ASC->SetLooseGameplayTagCount(RpgGameplayTags::Status_Downed, 0);
+	ASC->SetLooseGameplayTagCount(RpgGameplayTags::Status_Downed_BleedingOut, 0);
+	ASC->SetLooseGameplayTagCount(RpgGameplayTags::Status_Downed_Reviving, 0);
 }

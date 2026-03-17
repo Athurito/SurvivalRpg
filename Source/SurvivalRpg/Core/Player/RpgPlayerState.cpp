@@ -4,12 +4,9 @@
 #include "RpgPlayerState.h"
 
 #include "AbilitySystemBlueprintLibrary.h"
+#include "Net/UnrealNetwork.h"
 #include "SurvivalRpg/AbilitySystem/RpgAbilitySystemComponent.h"
-#include "SurvivalRpg/AbilitySystem/Attributes/RpgCombatSet.h"
 #include "SurvivalRpg/AbilitySystem/Attributes/RpgHealthSet.h"
-#include "SurvivalRpg/AbilitySystem/Attributes/RpgMobilitySet.h"
-#include "SurvivalRpg/AbilitySystem/Attributes/RpgPrimarySet.h"
-#include "SurvivalRpg/AbilitySystem/Attributes/RpgVitalSet.h"
 #include "SurvivalRpg/Progression/Player/RpgPlayerProgressionComponent.h"
 #include "SurvivalRpg/Progression/Skills/RpgTradeSkillProgressionComponent.h"
 
@@ -18,18 +15,21 @@ ARpgPlayerState::ARpgPlayerState()
 	AbilitySystemComponent = CreateDefaultSubobject<URpgAbilitySystemComponent>(TEXT("AbilitySystemComponent"));
 	AbilitySystemComponent->SetIsReplicated(true);
 	AbilitySystemComponent->SetReplicationMode(EGameplayEffectReplicationMode::Mixed);
-	
-	// CombatSet = CreateDefaultSubobject<URpgCombatSet>(TEXT("CombatSet"));
-	// MobilitySet = CreateDefaultSubobject<URpgMobilitySet>(TEXT("MobilitySet"));
-	// PrimarySet = CreateDefaultSubobject<URpgPrimarySet>(TEXT("PrimarySet"));
-	// VitalSet = CreateDefaultSubobject<URpgVitalSet>(TEXT("VitalSet"));
+
 	HealthSet = CreateDefaultSubobject<URpgHealthSet>(TEXT("HealthSet"));
-	
-	
-	
+
 	PlayerProgressionComponent = CreateDefaultSubobject<URpgPlayerProgressionComponent>(TEXT("PlayerProgressionComponent"));
 	TradeSkillProgressionComponent = CreateDefaultSubobject<URpgTradeSkillProgressionComponent>(TEXT("TradeSkillProgressionComponent"));
+}
 
+void ARpgPlayerState::GetLifetimeReplicatedProps(TArray<FLifetimeProperty>& OutLifetimeProps) const
+{
+	Super::GetLifetimeReplicatedProps(OutLifetimeProps);
+
+	DOREPLIFETIME(ARpgPlayerState, bIsWaitingForRespawn);
+	DOREPLIFETIME(ARpgPlayerState, RespawnAvailableServerTime);
+	DOREPLIFETIME(ARpgPlayerState, bHasCheckpoint);
+	DOREPLIFETIME(ARpgPlayerState, CurrentCheckpointTransform);
 }
 
 ARpgPlayerController* ARpgPlayerState::GetRpgPlayerController() const
@@ -54,6 +54,22 @@ TObjectPtr<URpgAbilitySystemComponent> ARpgPlayerState::GetRpgAbilitySystemCompo
 void ARpgPlayerState::SetPawnData(const UBasePawnData* InPawnData)
 {
 	check(InPawnData);
-	if (PawnData) return;
+	if (PawnData)
+	{
+		return;
+	}
+
 	PawnData = InPawnData;
+}
+
+void ARpgPlayerState::SetRespawnState(bool bInIsWaitingForRespawn, float InRespawnAvailableServerTime)
+{
+	bIsWaitingForRespawn = bInIsWaitingForRespawn;
+	RespawnAvailableServerTime = InRespawnAvailableServerTime;
+}
+
+void ARpgPlayerState::SetCheckpointData(bool bInHasCheckpoint, const FTransform& InCheckpointTransform)
+{
+	bHasCheckpoint = bInHasCheckpoint;
+	CurrentCheckpointTransform = InCheckpointTransform;
 }

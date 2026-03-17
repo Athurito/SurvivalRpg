@@ -9,6 +9,7 @@
 #include "RpgPawnExtensionComponent.h"
 #include "Components/CapsuleComponent.h"
 #include "SurvivalRpg/AbilitySystem/RpgAbilitySystemComponent.h"
+#include "SurvivalRpg/Core/Game/RpgGameModeBase.h"
 #include "SurvivalRpg/Core/Player/RpgPlayerController.h"
 #include "SurvivalRpg/Core/Player/RpgPlayerState.h"
 
@@ -119,7 +120,18 @@ void ARpgCharacter::OnDeathStarted(AActor* OwningActor)
 
 void ARpgCharacter::OnDeathFinished(AActor* OwningActor)
 {
-	// Start the respawn timer (death screen).
+	if (!HasAuthority())
+	{
+		return;
+	}
+
+	if (ARpgPlayerController* PC = GetRpgPlayerController())
+	{
+		if (ARpgGameModeBase* GameMode = GetWorld() ? GetWorld()->GetAuthGameMode<ARpgGameModeBase>() : nullptr)
+		{
+			GameMode->NotifyPlayerDeath(PC);
+		}
+	}
 }
 
 void ARpgCharacter::DisableMovementAndCollision() const

@@ -6,12 +6,16 @@
 #include "GameFramework/PlayerController.h"
 #include "RpgPlayerController.generated.h"
 
-/**
- * 
- */
 UCLASS(Abstract)
 class SURVIVALRPG_API ARpgPlayerController : public APlayerController
 {
 	GENERATED_BODY()
-	
+
+public:
+	UFUNCTION(BlueprintCallable, Category = "Rpg|Respawn")
+	void RequestRespawn();
+
+protected:
+	UFUNCTION(Server, Reliable)
+	void ServerRequestRespawn();
 };
