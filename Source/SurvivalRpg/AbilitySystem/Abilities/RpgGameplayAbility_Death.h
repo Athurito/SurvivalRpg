@@ -36,7 +36,4 @@ protected:
 	// If enabled, the ability will automatically call StartDeath.  FinishDeath is always called when the ability ends if the death was started.
 	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Rpg|Death")
 	bool bAutoStartDeath;
-
-	UPROPERTY(Transient)
-	bool bDeathStarted = false;
 };
