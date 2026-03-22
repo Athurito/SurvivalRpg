@@ -108,14 +108,7 @@ void ARpgCharacter::FellOutOfWorld(const class UDamageType& dmgType)
 
 void ARpgCharacter::OnDeathStarted(AActor* OwningActor)
 {
-	// Disable movement and collision when death starts.
-	if (URpgCharacterMovementComponent* MoveComp = Cast<URpgCharacterMovementComponent>(GetCharacterMovement()))
-	{
-		MoveComp->StopMovementImmediately();
-		MoveComp->DisableMovement();
-	}
-
-	SetActorEnableCollision(false);
+	DisableMovementAndCollision();
 }
 
 void ARpgCharacter::OnDeathFinished(AActor* OwningActor)
