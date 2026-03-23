@@ -2,6 +2,7 @@
 
 #include "RpgDownedComponent.h"
 
+#include "Net/UnrealNetwork.h"
 #include "RpgHealthComponent.h"
 #include "TimerManager.h"
 #include "SurvivalRpg/SurvivalRpg.h"
@@ -16,6 +17,13 @@ URpgDownedComponent::URpgDownedComponent(const FObjectInitializer& ObjectInitial
 	PrimaryComponentTick.bCanEverTick = false;
 
 	SetIsReplicatedByDefault(true);
+}
+
+void URpgDownedComponent::GetLifetimeReplicatedProps(TArray<FLifetimeProperty>& OutLifetimeProps) const
+{
+	Super::GetLifetimeReplicatedProps(OutLifetimeProps);
+
+	DOREPLIFETIME(URpgDownedComponent, DownedState);
 }
 
 void URpgDownedComponent::OnUnregister()
@@ -75,6 +83,16 @@ void URpgDownedComponent::UninitializeFromAbilitySystem()
 	bPendingDeath = false;
 }
 
+bool URpgDownedComponent::IsDowned() const
+{
+	if (DownedState == ERpgDownedState::Downed)
+	{
+		return true;
+	}
+
+	return AbilitySystemComponent && AbilitySystemComponent->HasMatchingGameplayTag(RpgGameplayTags::Status_Downed);
+}
+
 bool URpgDownedComponent::TryEnterDowned()
 {
 	if (!AbilitySystemComponent || !HealthComponent)
@@ -113,7 +131,7 @@ bool URpgDownedComponent::TryEnterDowned()
 
 void URpgDownedComponent::ForceDeathFromDowned()
 {
-	if (DownedState == ERpgDownedState::NotDowned)
+	if (!IsDowned())
 	{
 		return;
 	}
@@ -121,7 +139,7 @@ void URpgDownedComponent::ForceDeathFromDowned()
 	StopBleedoutTimer();
 	ClearDownedTags();
 	CurrentReviver = nullptr;
-	DownedState = ERpgDownedState::NotDowned;
+	SetDownedState(ERpgDownedState::NotDowned);
 	bPendingDeath = true;
 
 	if (HealthComponent)
@@ -134,7 +152,7 @@ void URpgDownedComponent::ForceDeathFromDowned()
 
 bool URpgDownedComponent::CanBeRevivedBy(const AActor* Reviver) const
 {
-	if (!Reviver || !AbilitySystemComponent || DownedState != ERpgDownedState::Downed)
+	if (!Reviver || !AbilitySystemComponent || !IsDowned())
 	{
 		return false;
 	}
@@ -216,6 +234,14 @@ void URpgDownedComponent::CompleteRevive(AActor* Reviver)
 	UE_LOG(LogRpg, Log, TEXT("RpgDownedComponent: [%s] revived by [%s]."), *GetNameSafe(GetOwner()), *GetNameSafe(Reviver));
 }
 
+void URpgDownedComponent::OnRep_DownedState(ERpgDownedState OldState)
+{
+	if (OldState != DownedState)
+	{
+		OnDownedStateChanged.Broadcast(DownedState);
+	}
+}
+
 float URpgDownedComponent::GetBleedoutTimeRemaining() const
 {
 	if (const UWorld* World = GetWorld())
@@ -254,6 +280,11 @@ void URpgDownedComponent::SetDownedState(ERpgDownedState NewState)
 
 	DownedState = NewState;
 	OnDownedStateChanged.Broadcast(NewState);
+
+	if (AActor* Owner = GetOwner())
+	{
+		Owner->ForceNetUpdate();
+	}
 }
 
 void URpgDownedComponent::StartBleedoutTimer()

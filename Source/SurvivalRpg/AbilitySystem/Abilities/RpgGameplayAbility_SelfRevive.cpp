@@ -7,12 +7,11 @@
 #include "SurvivalRpg/AbilitySystem/Attributes/RpgHealthSet.h"
 #include "SurvivalRpg/Core/Character/RpgDownedComponent.h"
 #include "SurvivalRpg/Core/Character/RpgHealthComponent.h"
-#include "SurvivalRpg/GameplayTags/GameplayTags.h"
 
 URpgGameplayAbility_SelfRevive::URpgGameplayAbility_SelfRevive()
 {
 	InstancingPolicy = EGameplayAbilityInstancingPolicy::InstancedPerActor;
-	NetExecutionPolicy = EGameplayAbilityNetExecutionPolicy::ServerInitiated;
+	NetExecutionPolicy = EGameplayAbilityNetExecutionPolicy::ServerOnly;
 }
 
 void URpgGameplayAbility_SelfRevive::ActivateAbility(const FGameplayAbilitySpecHandle Handle, const FGameplayAbilityActorInfo* ActorInfo, const FGameplayAbilityActivationInfo ActivationInfo, const FGameplayEventData* TriggerEventData)

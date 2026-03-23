@@ -2,6 +2,8 @@
 
 #include "RpgGameplayAbility_Revive.h"
 
+#include "AbilitySystemBlueprintLibrary.h"
+#include "AbilitySystemComponent.h"
 #include "Abilities/Tasks/AbilityTask_WaitDelay.h"
 #include "SurvivalRpg/SurvivalRpg.h"
 #include "SurvivalRpg/Core/Character/RpgDownedComponent.h"
@@ -11,7 +13,7 @@
 URpgGameplayAbility_Revive::URpgGameplayAbility_Revive()
 {
 	InstancingPolicy = EGameplayAbilityInstancingPolicy::InstancedPerActor;
-	NetExecutionPolicy = EGameplayAbilityNetExecutionPolicy::ServerInitiated;
+	NetExecutionPolicy = EGameplayAbilityNetExecutionPolicy::ServerOnly;
 
 	if (HasAnyFlags(RF_ClassDefaultObject))
 	{

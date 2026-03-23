@@ -28,57 +28,11 @@ class SURVIVALRPG_API URpgDownedComponent : public UActorComponent
 public:
 	URpgDownedComponent(const FObjectInitializer& ObjectInitializer = FObjectInitializer::Get());
 
+	virtual void GetLifetimeReplicatedProps(TArray<FLifetimeProperty>& OutLifetimeProps) const override;
+
 	UFUNCTION(BlueprintPure, Category = "Rpg|Downed")
-	static URpgDownedComponent* FindDownedComponent(const AActor* Actor)
-	{
-		if (!Actor)
-		{
-			return nullptr;
-		}
-
-		TArray<URpgDownedComponent*> Components;
-		Actor->GetComponents<URpgDownedComponent>(Components);
-
-		URpgDownedComponent* PreferredByName = nullptr;
-		URpgDownedComponent* PreferredInitialized = nullptr;
-
-		for (URpgDownedComponent* Component : Components)
-		{
-			if (!Component)
-			{
-				continue;
-			}
-
-			if (Component->GetFName() == FName(TEXT("DownedComponent")))
-			{
-				if (Component->IsInitialized())
-				{
-					return Component;
-				}
-
-				PreferredByName = Component;
-				continue;
-			}
-
-			if (!PreferredInitialized && Component->IsInitialized())
-			{
-				PreferredInitialized = Component;
-			}
-		}
-
-		if (PreferredByName)
-		{
-			return PreferredByName;
-		}
-
-		if (PreferredInitialized)
-		{
-			return PreferredInitialized;
-		}
-
-		return Components.IsEmpty() ? nullptr : Components[0];
-	}
-
+	static URpgDownedComponent* FindDownedComponent(const AActor* Actor) { return (Actor ? Actor->FindComponentByClass<URpgDownedComponent>() : nullptr); }
+	
 	UFUNCTION(BlueprintCallable, Category = "Rpg|Downed")
 	void InitializeWithAbilitySystem(URpgAbilitySystemComponent* InASC);
 
@@ -104,7 +58,7 @@ public:
 	void CompleteRevive(AActor* Reviver);
 
 	UFUNCTION(BlueprintPure, Category = "Rpg|Downed")
-	bool IsDowned() const { return DownedState == ERpgDownedState::Downed; }
+	bool IsDowned() const;
 
 	UFUNCTION(BlueprintPure, Category = "Rpg|Downed")
 	bool IsBeingRevived() const { return CurrentReviver.IsValid(); }
@@ -146,6 +100,9 @@ protected:
 	virtual void OnUnregister() override;
 
 private:
+	UFUNCTION()
+	void OnRep_DownedState(ERpgDownedState OldState);
+
 	void ExitDowned();
 	void SetDownedState(ERpgDownedState NewState);
 	void StartBleedoutTimer();
@@ -160,6 +117,7 @@ private:
 	UPROPERTY()
 	TObjectPtr<URpgHealthComponent> HealthComponent = nullptr;
 
+	UPROPERTY(ReplicatedUsing = OnRep_DownedState)
 	ERpgDownedState DownedState = ERpgDownedState::NotDowned;
 
 	UPROPERTY(EditDefaultsOnly, Category = "Rpg|Downed", meta = (ClampMin = "1.0"))

@@ -22,29 +22,9 @@ public:
 	// Sets default values for this component's properties
 	URpgDeathComponent();
 	
-	
 	// Returns the health component if one exists on the specified actor.
 	UFUNCTION(BlueprintPure, Category = "Rpg|Health")
-	static URpgDeathComponent* FindDeathComponent(const AActor* Actor)
-	{
-		if (!Actor)
-		{
-			return nullptr;
-		}
-
-		TArray<URpgDeathComponent*> Components;
-		Actor->GetComponents<URpgDeathComponent>(Components);
-
-		for (URpgDeathComponent* Component : Components)
-		{
-			if (Component && Component->GetFName() == FName(TEXT("DeathComponent")))
-			{
-				return Component;
-			}
-		}
-
-		return Components.IsEmpty() ? nullptr : Components[0];
-	}
+	static URpgDeathComponent* FindDeathComponent(const AActor* Actor) { return (Actor ? Actor->FindComponentByClass<URpgDeathComponent>() : nullptr); }
 
 	// Initialize the component using an ability system component.
 	UFUNCTION(BlueprintCallable, Category = "Rpg|Health")
