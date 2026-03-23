@@ -6,10 +6,10 @@
 #include "AbilitySystemInterface.h"
 #include "ModularCharacter.h"
 #include "GameFramework/Character.h"
+#include "RpgDownedComponent.h"
 #include "RpgCharacter.generated.h"
 
 class URpgDeathComponent;
-class URpgDownedComponent;
 class URpgHealthComponent;
 class URpgRespawnComponent;
 class ARpgPlayerController;
@@ -66,10 +66,15 @@ protected:
 	UFUNCTION()
 	virtual void OnDeathFinished(AActor* OwningActor);
 
+	UFUNCTION()
+	virtual void OnDownedStateChanged(ERpgDownedState NewState);
+
 	
 	
 	
 	void DisableMovementAndCollision() const;
+	void DisableMovementForDowned() const;
+	void RestoreMovementAndCollision() const;
 	void EnterDeadState();
 	// void UninitAndDestroy();
 	
@@ -85,6 +90,9 @@ private:
 	
 	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "Rpg|Character", Meta = (AllowPrivateAccess = "true"))
 	TObjectPtr<URpgDeathComponent> DeathComponent;
+
+	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "Rpg|Character", Meta = (AllowPrivateAccess = "true"))
+	TObjectPtr<URpgDownedComponent> DownedComponent;
 	
 	// UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "Rpg|Character", Meta = (AllowPrivateAccess = "true"))
 	// TObjectPtr<URpgRespawnComponent> RespawnComponent;

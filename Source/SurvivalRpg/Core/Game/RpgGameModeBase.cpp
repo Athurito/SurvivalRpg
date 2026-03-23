@@ -209,13 +209,26 @@ void ARpgGameModeBase::NotifyPlayerDeath(APlayerController* PC)
 	RespawnState.RespawnAvailableServerTime = ServerWorldTime + RespawnDelay;
 	RespawnState.PendingRespawnTransform = GetPlayerCheckpointTransform(PC);
 
+	if (APawn* ExistingPawn = PC->GetPawn())
+	{
+		PC->UnPossess();
+		ExistingPawn->Destroy();
+	}
+
 	if (ARpgPlayerState* PlayerState = PC->GetPlayerState<ARpgPlayerState>())
 	{
 		PlayerState->SetRespawnState(true, RespawnState.RespawnAvailableServerTime);
 
 		if (URpgAbilitySystemComponent* ASC = PlayerState->GetRpgAbilitySystemComponent())
 		{
+			ASC->SetLooseGameplayTagCount(RpgGameplayTags::State_Dead, 1);
+			ASC->SetLooseGameplayTagCount(RpgGameplayTags::Status_Death, 1);
+			ASC->SetLooseGameplayTagCount(RpgGameplayTags::Status_Death_Dying, 0);
+			ASC->SetLooseGameplayTagCount(RpgGameplayTags::Status_Death_Dead, 1);
 			ASC->SetLooseGameplayTagCount(RpgGameplayTags::Status_Dead_WaitingForRespawn, 1);
+			ASC->SetLooseGameplayTagCount(RpgGameplayTags::Status_Downed, 0);
+			ASC->SetLooseGameplayTagCount(RpgGameplayTags::Status_Downed_BleedingOut, 0);
+			ASC->SetLooseGameplayTagCount(RpgGameplayTags::Status_Downed_Reviving, 0);
 		}
 	}
 
@@ -278,14 +291,6 @@ void ARpgGameModeBase::ExecuteRespawn(APlayerController* PC, const FTransform& S
 
 	ARpgPlayerState* PlayerState = PC->GetPlayerState<ARpgPlayerState>();
 	URpgAbilitySystemComponent* ASC = PlayerState ? PlayerState->GetRpgAbilitySystemComponent() : nullptr;
-
-	if (APawn* ExistingPawn = PC->GetPawn())
-	{
-		PC->UnPossess();
-		ExistingPawn->Destroy();
-	}
-
-	ClearRespawnGameplayState(ASC);
 	RestartPlayerAtTransform(PC, SpawnPoint);
 
 	if (!PC->GetPawn())
@@ -294,15 +299,24 @@ void ARpgGameModeBase::ExecuteRespawn(APlayerController* PC, const FTransform& S
 		return;
 	}
 
-	ResetPlayerRespawnState(PC);
-
 	if (ASC)
 	{
+		ASC->ResetForRespawn();
+
 		if (const URpgHealthSet* HealthSet = ASC->GetSet<URpgHealthSet>())
 		{
 			ASC->SetNumericAttributeBase(URpgHealthSet::GetHealthAttribute(), HealthSet->GetMaxHealth());
 		}
+
+		FGameplayEventData Payload;
+		Payload.EventTag = RpgGameplayTags::GameplayEvent_Respawn;
+		Payload.Instigator = PC->GetPawn();
+		Payload.Target = PC->GetPawn();
+		ASC->HandleGameplayEvent(Payload.EventTag, &Payload);
 	}
+
+	PC->SetIgnoreMoveInput(false);
+	ResetPlayerRespawnState(PC);
 
 	OnPlayerRespawned.Broadcast(PC, SpawnPoint);
 

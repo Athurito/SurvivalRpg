@@ -5,6 +5,7 @@
 
 #include "RpgCharacterMovementComponent.h"
 #include "RpgDeathComponent.h"
+#include "RpgDownedComponent.h"
 #include "RpgHealthComponent.h"
 #include "RpgPawnExtensionComponent.h"
 #include "Components/CapsuleComponent.h"
@@ -29,6 +30,8 @@ ARpgCharacter::ARpgCharacter(const FObjectInitializer& ObjectInitializer) :
 	HealthComponent->OnDeathFinished.AddDynamic(this, &ThisClass::OnDeathFinished);
 	
 	DeathComponent = CreateDefaultSubobject<URpgDeathComponent>(TEXT("DeathComponent"));
+	DownedComponent = CreateDefaultSubobject<URpgDownedComponent>(TEXT("DownedComponent"));
+	DownedComponent->OnDownedStateChanged.AddDynamic(this, &ThisClass::OnDownedStateChanged);
 	// RespawnComponent = CreateDefaultSubobject<URpgRespawnComponent>(TEXT("RespawnComponent"));
 }
 
@@ -69,12 +72,14 @@ void ARpgCharacter::OnAbilitySystemInitialized()
 
 	HealthComponent->InitializeWithAbilitySystem(Asc);
 	DeathComponent->InitializeWithAbilitySystem(Asc);
+	DownedComponent->InitializeWithAbilitySystem(Asc);
 }
 
 void ARpgCharacter::OnAbilitySystemUninitialized()
 {
 	HealthComponent->UninitializeFromAbilitySystem();
 	DeathComponent->UninitializeFromAbilitySystem();
+	DownedComponent->UninitializeFromAbilitySystem();
 }
 
 void ARpgCharacter::PossessedBy(AController* NewController)
@@ -127,6 +132,20 @@ void ARpgCharacter::OnDeathFinished(AActor* OwningActor)
 	}
 }
 
+void ARpgCharacter::OnDownedStateChanged(ERpgDownedState NewState)
+{
+	if (NewState == ERpgDownedState::Downed)
+	{
+		DisableMovementForDowned();
+		return;
+	}
+
+	if (!HealthComponent->IsDeadOrDying())
+	{
+		RestoreMovementAndCollision();
+	}
+}
+
 void ARpgCharacter::DisableMovementAndCollision() const
 {
 	if (GetController())
@@ -142,6 +161,37 @@ void ARpgCharacter::DisableMovementAndCollision() const
 	URpgCharacterMovementComponent* MoveComp = Cast<URpgCharacterMovementComponent>(GetCharacterMovement());
 	MoveComp->StopMovementImmediately();
 	MoveComp->DisableMovement();
+}
+
+void ARpgCharacter::DisableMovementForDowned() const
+{
+	if (GetController())
+	{
+		GetController()->SetIgnoreMoveInput(true);
+	}
+
+	if (URpgCharacterMovementComponent* MoveComp = Cast<URpgCharacterMovementComponent>(GetCharacterMovement()))
+	{
+		MoveComp->StopMovementImmediately();
+		MoveComp->DisableMovement();
+	}
+}
+
+void ARpgCharacter::RestoreMovementAndCollision() const
+{
+	if (GetController())
+	{
+		GetController()->SetIgnoreMoveInput(false);
+	}
+
+	UCapsuleComponent* CapsuleComp = GetCapsuleComponent();
+	check(CapsuleComp);
+	CapsuleComp->SetCollisionEnabled(ECollisionEnabled::QueryAndPhysics);
+
+	if (URpgCharacterMovementComponent* MoveComp = Cast<URpgCharacterMovementComponent>(GetCharacterMovement()))
+	{
+		MoveComp->SetMovementMode(MOVE_Walking);
+	}
 }
 
 void ARpgCharacter::EnterDeadState()

@@ -253,7 +253,13 @@ void URpgHealthComponent::DamageSelfDestruct(bool bFellOutOfWorld)
 	{
 		if (!DamageGameplayEffect_SetByCaller)
 		{
-			UE_LOG(LogRpg, Error, TEXT("RpgHealthComponent: DamageSelfDestruct failed for owner [%s]."), *GetNameSafe(GetOwner()));
+			UE_LOG(LogRpg, Warning, TEXT("RpgHealthComponent: DamageSelfDestruct has no configured damage effect for owner [%s]. Falling back to GameplayEvent.Death."), *GetNameSafe(GetOwner()));
+
+			FGameplayEventData Payload;
+			Payload.EventTag = RpgGameplayTags::GameplayEvent_Death;
+			Payload.Instigator = GetOwner();
+			Payload.Target = GetOwner();
+			AbilitySystemComponent->HandleGameplayEvent(Payload.EventTag, &Payload);
 			return;
 		}
 
@@ -262,7 +268,13 @@ void URpgHealthComponent::DamageSelfDestruct(bool bFellOutOfWorld)
 
 		if (!Spec)
 		{
-			UE_LOG(LogRpg, Error, TEXT("RpgHealthComponent: DamageSelfDestruct failed for owner [%s]. Unable to make outgoing spec for [%s]."), *GetNameSafe(GetOwner()), *GetNameSafe(DamageGameplayEffect_SetByCaller));
+			UE_LOG(LogRpg, Warning, TEXT("RpgHealthComponent: DamageSelfDestruct could not create a damage spec for owner [%s]. Falling back to GameplayEvent.Death."), *GetNameSafe(GetOwner()));
+
+			FGameplayEventData Payload;
+			Payload.EventTag = RpgGameplayTags::GameplayEvent_Death;
+			Payload.Instigator = GetOwner();
+			Payload.Target = GetOwner();
+			AbilitySystemComponent->HandleGameplayEvent(Payload.EventTag, &Payload);
 			return;
 		}
 

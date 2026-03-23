@@ -10,6 +10,7 @@
 
 
 class URpgAbilitySet;
+class UGameplayAbility;
 
 UCLASS(ClassGroup=(Custom), meta=(BlueprintSpawnableComponent))
 class SURVIVALRPG_API URpgAbilitySystemComponent : public UAbilitySystemComponent
@@ -33,6 +34,15 @@ public:
 	void RemoveDefaultAbilitySetup();
 	UFUNCTION(BlueprintCallable, Category="RPG|AbilitySet")
 	void ActivateAbilitiesByInputTag(FGameplayTag InputTag, bool bAllowRemoteActivation);
+
+	UFUNCTION(BlueprintCallable, Category="RPG|Lifecycle")
+	void ResetForRevive();
+
+	UFUNCTION(BlueprintCallable, Category="RPG|Lifecycle")
+	void ResetForRespawn();
+
+	UFUNCTION(BlueprintCallable, Category="RPG|AbilitySet")
+	bool TryActivateFirstAbilityByClass(TSubclassOf<UGameplayAbility> AbilityClass, bool bAllowRemoteActivation);
 
 protected:
 	virtual void BeginPlay() override;
@@ -67,4 +77,6 @@ private:
 
 	bool GrantAbilitySet_Internal(const URpgAbilitySet* AbilitySet, UObject* SourceObject);
 	bool RemoveAbilitySet_Internal(const URpgAbilitySet* AbilitySet);
+	void ClearLifecycleTags();
+	void ClearLifecycleEffects();
 };

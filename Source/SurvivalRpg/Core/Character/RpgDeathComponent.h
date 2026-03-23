@@ -10,6 +10,8 @@
 struct FRpgOutOfHealthInfo;
 class URpgHealthComponent;
 class URpgAbilitySystemComponent;
+class URpgDownedComponent;
+class URpgGameplayAbility_SelfRevive;
 
 UCLASS(ClassGroup=(Custom), meta=(BlueprintSpawnableComponent))
 class SURVIVALRPG_API URpgDeathComponent : public UActorComponent
@@ -23,7 +25,26 @@ public:
 	
 	// Returns the health component if one exists on the specified actor.
 	UFUNCTION(BlueprintPure, Category = "Rpg|Health")
-	static URpgDeathComponent* FindDeathComponent(const AActor* Actor) { return (Actor ? Actor->FindComponentByClass<URpgDeathComponent>() : nullptr); }
+	static URpgDeathComponent* FindDeathComponent(const AActor* Actor)
+	{
+		if (!Actor)
+		{
+			return nullptr;
+		}
+
+		TArray<URpgDeathComponent*> Components;
+		Actor->GetComponents<URpgDeathComponent>(Components);
+
+		for (URpgDeathComponent* Component : Components)
+		{
+			if (Component && Component->GetFName() == FName(TEXT("DeathComponent")))
+			{
+				return Component;
+			}
+		}
+
+		return Components.IsEmpty() ? nullptr : Components[0];
+	}
 
 	// Initialize the component using an ability system component.
 	UFUNCTION(BlueprintCallable, Category = "Rpg|Health")
@@ -38,6 +59,11 @@ protected:
 
 	UFUNCTION()
 	virtual void HandleOutOfHealth(FRpgOutOfHealthInfo& Info);
+
+	virtual bool ShouldEnterDowned() const;
+	virtual bool TrySoloSelfRevive() const;
+	bool HasOtherLivingPlayers() const;
+	bool IsPlayerCharacter() const;
 	
 protected:
 	
@@ -47,4 +73,10 @@ protected:
 	
 	UPROPERTY()
 	TObjectPtr<URpgHealthComponent> HealthComponent;
+
+	UPROPERTY()
+	TObjectPtr<URpgDownedComponent> DownedComponent;
+
+	UPROPERTY(EditDefaultsOnly, Category = "Rpg|Death")
+	TSubclassOf<URpgGameplayAbility_SelfRevive> SoloSelfReviveAbilityClass;
 };
