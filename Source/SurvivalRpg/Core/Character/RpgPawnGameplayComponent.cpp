@@ -3,6 +3,7 @@
 
 #include "RpgPawnGameplayComponent.h"
 
+#include "SurvivalRpg/AbilitySystem/RpgAbilitySystemComponent.h"
 #include "BasePawnData.h"
 #include "GameplayTagContainer.h"
 #include "InputActionValue.h"
@@ -71,7 +72,9 @@ void URpgPawnGameplayComponent::HandleChangeInitState(UGameFrameworkComponentMan
 		
 		if (URpgPawnExtensionComponent* PawnExt = URpgPawnExtensionComponent::FindPawnExtensionComponent(Pawn))
 		{
-			PawnExt->InitializeAbilitySystemComponent(PS->GetRpgAbilitySystemComponent(), PS);
+			URpgAbilitySystemComponent* AbilitySystemComponent = PS->GetRpgAbilitySystemComponent();
+			PawnExt->InitializeAbilitySystemComponent(AbilitySystemComponent, PS);
+			GrantPawnDataAbilitySets(AbilitySystemComponent, PawnExt->GetPawnData<UBasePawnData>(), Pawn);
 		}
 		
 		if (APlayerController* PC = GetController<APlayerController>())
@@ -267,9 +270,24 @@ void URpgPawnGameplayComponent::Input_StopJump(const FInputActionValue& InputAct
 void URpgPawnGameplayComponent::BeginPlay()
 {
 	Super::BeginPlay();
+
+	if (APawn* Pawn = GetPawn<APawn>())
+	{
+		if (URpgPawnExtensionComponent* PawnExt = URpgPawnExtensionComponent::FindPawnExtensionComponent(Pawn))
+		{
+			PawnExt->OnAbilitySystemUninitialized_Register(FSimpleMulticastDelegate::FDelegate::CreateUObject(this, &ThisClass::HandleAbilitySystemUninitialized));
+		}
+	}
+
 	BindOnActorInitStateChanged(URpgPawnExtensionComponent::Name_ActorFeatureName, FGameplayTag(), false);
 	TryToChangeInitState(RpgGameplayTags::InitState_Spawned);
 	CheckDefaultInitialization();
+}
+
+void URpgPawnGameplayComponent::EndPlay(const EEndPlayReason::Type EndPlayReason)
+{
+	RemovePawnDataAbilitySets();
+	Super::EndPlay(EndPlayReason);
 }
 
 void URpgPawnGameplayComponent::OnRegister()
@@ -279,5 +297,61 @@ void URpgPawnGameplayComponent::OnRegister()
 	{
 		RegisterInitStateFeature();
 	}
+}
+
+void URpgPawnGameplayComponent::GrantPawnDataAbilitySets(URpgAbilitySystemComponent* AbilitySystemComponent, const UBasePawnData* PawnData, APawn* Pawn)
+{
+	if (!AbilitySystemComponent || !PawnData || !Pawn)
+	{
+		return;
+	}
+
+	if (!AbilitySystemComponent->IsOwnerActorAuthoritative())
+	{
+		return;
+	}
+
+	if (GrantedAbilitySystemComponent == AbilitySystemComponent && GrantedPawnAbilitySets.Num() > 0)
+	{
+		return;
+	}
+
+	if (GrantedAbilitySystemComponent && GrantedAbilitySystemComponent != AbilitySystemComponent)
+	{
+		RemovePawnDataAbilitySets();
+	}
+
+	for (const TObjectPtr<const URpgAbilitySet>& AbilitySet : PawnData->AbilitySets)
+	{
+		if (!AbilitySet)
+		{
+			continue;
+		}
+
+		FRpgPawnGameplayAbilitySetGrant& GrantedSet = GrantedPawnAbilitySets.AddDefaulted_GetRef();
+		GrantedSet.AbilitySet = AbilitySet;
+		AbilitySet->GiveToAbilitySystem(AbilitySystemComponent, &GrantedSet.GrantedHandles, Pawn);
+	}
+
+	GrantedAbilitySystemComponent = AbilitySystemComponent;
+}
+
+void URpgPawnGameplayComponent::RemovePawnDataAbilitySets()
+{
+	if (GrantedAbilitySystemComponent && GrantedAbilitySystemComponent->IsOwnerActorAuthoritative())
+	{
+		for (FRpgPawnGameplayAbilitySetGrant& GrantedSet : GrantedPawnAbilitySets)
+		{
+			GrantedSet.GrantedHandles.TakeFromAbilitySystem(GrantedAbilitySystemComponent);
+		}
+	}
+
+	GrantedPawnAbilitySets.Reset();
+	GrantedAbilitySystemComponent = nullptr;
+}
+
+void URpgPawnGameplayComponent::HandleAbilitySystemUninitialized()
+{
+	RemovePawnDataAbilitySets();
 }
 

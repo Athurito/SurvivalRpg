@@ -3,6 +3,7 @@
 #pragma once
 
 #include "CoreMinimal.h"
+#include "SurvivalRpg/AbilitySystem/RpgAbilitySet.h"
 #include "Components/GameFrameworkInitStateInterface.h"
 #include "Components/PawnComponent.h"
 
@@ -10,8 +11,22 @@
 
 
 class URpgInputConfig;
+class UBasePawnData;
+class URpgAbilitySystemComponent;
 struct FGameplayTag;
 struct FInputActionValue;
+
+USTRUCT()
+struct FRpgPawnGameplayAbilitySetGrant
+{
+	GENERATED_BODY()
+
+	UPROPERTY()
+	TObjectPtr<const URpgAbilitySet> AbilitySet = nullptr;
+
+	UPROPERTY()
+	FRpgAbilitySet_GrantedHandles GrantedHandles;
+};
 
 UCLASS(ClassGroup=(Custom), Blueprintable, meta=(BlueprintSpawnableComponent))
 class SURVIVALRPG_API URpgPawnGameplayComponent : public UPawnComponent, public IGameFrameworkInitStateInterface
@@ -48,5 +63,17 @@ public:
 protected:
 	// Called when the game starts
 	virtual void BeginPlay() override;
+	virtual void EndPlay(const EEndPlayReason::Type EndPlayReason) override;
 	virtual void OnRegister() override;
+
+private:
+	void GrantPawnDataAbilitySets(URpgAbilitySystemComponent* AbilitySystemComponent, const UBasePawnData* PawnData, APawn* Pawn);
+	void RemovePawnDataAbilitySets();
+	void HandleAbilitySystemUninitialized();
+
+	UPROPERTY()
+	TArray<FRpgPawnGameplayAbilitySetGrant> GrantedPawnAbilitySets;
+
+	UPROPERTY(Transient)
+	TObjectPtr<URpgAbilitySystemComponent> GrantedAbilitySystemComponent = nullptr;
 };
