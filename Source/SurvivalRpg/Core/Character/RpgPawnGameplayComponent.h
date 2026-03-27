@@ -68,6 +68,7 @@ protected:
 
 private:
 	void GrantPawnDataAbilitySets(URpgAbilitySystemComponent* AbilitySystemComponent, const UBasePawnData* PawnData, APawn* Pawn);
+	void ResetCurrentHealthToMaxHealth(URpgAbilitySystemComponent* AbilitySystemComponent) const;
 	void RemovePawnDataAbilitySets();
 	void HandleAbilitySystemUninitialized();
 

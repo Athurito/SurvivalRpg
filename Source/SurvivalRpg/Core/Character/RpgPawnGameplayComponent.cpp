@@ -4,6 +4,7 @@
 #include "RpgPawnGameplayComponent.h"
 
 #include "SurvivalRpg/AbilitySystem/RpgAbilitySystemComponent.h"
+#include "SurvivalRpg/AbilitySystem/Attributes/RpgHealthSet.h"
 #include "BasePawnData.h"
 #include "GameplayTagContainer.h"
 #include "InputActionValue.h"
@@ -75,6 +76,7 @@ void URpgPawnGameplayComponent::HandleChangeInitState(UGameFrameworkComponentMan
 			URpgAbilitySystemComponent* AbilitySystemComponent = PS->GetRpgAbilitySystemComponent();
 			PawnExt->InitializeAbilitySystemComponent(AbilitySystemComponent, PS);
 			GrantPawnDataAbilitySets(AbilitySystemComponent, PawnExt->GetPawnData<UBasePawnData>(), Pawn);
+			ResetCurrentHealthToMaxHealth(AbilitySystemComponent);
 		}
 		
 		if (APlayerController* PC = GetController<APlayerController>())
@@ -334,6 +336,23 @@ void URpgPawnGameplayComponent::GrantPawnDataAbilitySets(URpgAbilitySystemCompon
 	}
 
 	GrantedAbilitySystemComponent = AbilitySystemComponent;
+}
+
+void URpgPawnGameplayComponent::ResetCurrentHealthToMaxHealth(URpgAbilitySystemComponent* AbilitySystemComponent) const
+{
+	if (!AbilitySystemComponent || !AbilitySystemComponent->IsOwnerActorAuthoritative())
+	{
+		return;
+	}
+
+	const URpgHealthSet* HealthSet = AbilitySystemComponent->GetSet<URpgHealthSet>();
+	if (!HealthSet)
+	{
+		return;
+	}
+
+	// Startup runtime health should be derived after all currently-known stat sources have been applied.
+	AbilitySystemComponent->SetNumericAttributeBase(URpgHealthSet::GetHealthAttribute(), HealthSet->GetMaxHealth());
 }
 
 void URpgPawnGameplayComponent::RemovePawnDataAbilitySets()
