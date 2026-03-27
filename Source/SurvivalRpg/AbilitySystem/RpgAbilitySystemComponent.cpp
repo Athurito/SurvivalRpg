@@ -3,7 +3,10 @@
 
 #include "RpgAbilitySystemComponent.h"
 
+#include "GameplayEffect.h"
+#include "GameplayEffectTypes.h"
 #include "SurvivalRpg/Core/Player/RpgPlayerState.h"
+#include "SurvivalRpg/GameplayTags/GameplayTags.h"
 
 URpgAbilitySystemComponent::URpgAbilitySystemComponent()
 {
@@ -138,8 +141,6 @@ void URpgAbilitySystemComponent::RemoveDefaultAbilitySetup()
 
 void URpgAbilitySystemComponent::ActivateAbilitiesByInputTag(FGameplayTag InputTag, bool bAllowRemoteActivation)
 {
-	FGameplayTagContainer TagContainer(InputTag);
-
 	for (const FGameplayAbilitySpec& Spec : GetActivatableAbilities())
 	{
 		if (Spec.GetDynamicSpecSourceTags().HasTagExact(InputTag))
@@ -147,6 +148,37 @@ void URpgAbilitySystemComponent::ActivateAbilitiesByInputTag(FGameplayTag InputT
 			TryActivateAbility(Spec.Handle, bAllowRemoteActivation);
 		}
 	}
+}
+
+void URpgAbilitySystemComponent::ResetForRevive()
+{
+	CancelAbilities();
+	RemoveAllGameplayCues();
+	ClearLifecycleEffects();
+	ClearLifecycleTags();
+}
+
+void URpgAbilitySystemComponent::ResetForRespawn()
+{
+	ResetForRevive();
+}
+
+bool URpgAbilitySystemComponent::TryActivateFirstAbilityByClass(TSubclassOf<UGameplayAbility> AbilityClass, bool bAllowRemoteActivation)
+{
+	if (!IsValid(AbilityClass))
+	{
+		return false;
+	}
+
+	for (const FGameplayAbilitySpec& Spec : GetActivatableAbilities())
+	{
+		if (Spec.Ability && Spec.Ability->GetClass()->IsChildOf(AbilityClass))
+		{
+			return TryActivateAbility(Spec.Handle, bAllowRemoteActivation);
+		}
+	}
+
+	return false;
 }
 
 void URpgAbilitySystemComponent::BeginPlay()
@@ -185,5 +217,32 @@ void URpgAbilitySystemComponent::OnRep_ActivateAbilities()
 		OwnerPlayerState->SendAbilitiesChangedEvent();
 		LastActiveAbilities = ActivatableAbilities.Items;
 	}
+}
+
+void URpgAbilitySystemComponent::ClearLifecycleTags()
+{
+	SetLooseGameplayTagCount(RpgGameplayTags::State_Dead, 0);
+	SetLooseGameplayTagCount(RpgGameplayTags::Status_Death, 0);
+	SetLooseGameplayTagCount(RpgGameplayTags::Status_Death_Dying, 0);
+	SetLooseGameplayTagCount(RpgGameplayTags::Status_Death_Dead, 0);
+	SetLooseGameplayTagCount(RpgGameplayTags::Status_Dead_WaitingForRespawn, 0);
+	SetLooseGameplayTagCount(RpgGameplayTags::Status_Downed, 0);
+	SetLooseGameplayTagCount(RpgGameplayTags::Status_Downed_BleedingOut, 0);
+	SetLooseGameplayTagCount(RpgGameplayTags::Status_Downed_Reviving, 0);
+}
+
+void URpgAbilitySystemComponent::ClearLifecycleEffects()
+{
+	FGameplayTagContainer LifecycleTags;
+	LifecycleTags.AddTag(RpgGameplayTags::State_Dead);
+	LifecycleTags.AddTag(RpgGameplayTags::Status_Death);
+	LifecycleTags.AddTag(RpgGameplayTags::Status_Death_Dying);
+	LifecycleTags.AddTag(RpgGameplayTags::Status_Death_Dead);
+	LifecycleTags.AddTag(RpgGameplayTags::Status_Dead_WaitingForRespawn);
+	LifecycleTags.AddTag(RpgGameplayTags::Status_Downed);
+	LifecycleTags.AddTag(RpgGameplayTags::Status_Downed_BleedingOut);
+	LifecycleTags.AddTag(RpgGameplayTags::Status_Downed_Reviving);
+
+	RemoveActiveEffects(FGameplayEffectQuery::MakeQuery_MatchAnyOwningTags(LifecycleTags));
 }
 

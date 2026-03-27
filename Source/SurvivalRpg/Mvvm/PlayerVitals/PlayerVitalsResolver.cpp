@@ -5,33 +5,41 @@
 
 #include "PlayerVitalsViewmodel.h"
 #include "Blueprint/UserWidget.h"
-#include "SurvivalRpg/Mvvm/RpgUiSubsystem.h"
+#include "Components/WidgetComponent.h"
+#include "SurvivalRpg/Mvvm/Components/RpgVitalsViewModelComponent.h"
 
-UObject* UPlayerVitalsResolver::CreateInstance(const UClass* ExpectedType, const UUserWidget* UserWidget,
-                                               const UMVVMView* View) const
+AActor* UPlayerVitalsResolver::ResolveContextActor(const UUserWidget* UserWidget) const
 {
-	
 	if (!UserWidget) return nullptr;
 
-	if (ExpectedType && !ExpectedType->IsChildOf(UPlayerVitalsViewmodel::StaticClass()))
+	if (APlayerController* PC = UserWidget->GetOwningPlayer())
+	{
+		return PC;
+	}
+
+	if (const UWidgetComponent* WC = UserWidget->GetTypedOuter<UWidgetComponent>())
+	{
+		return WC->GetOwner();
+	}
+
+	return nullptr;
+}
+
+UObject* UPlayerVitalsResolver::CreateInstance(const UClass* ExpectedType, const UUserWidget* UserWidget, const UMVVMView* View) const
+{
+	AActor* ContextActor = ResolveContextActor(UserWidget);
+	if (!ContextActor)
 	{
 		return nullptr;
 	}
 
-	ULocalPlayer* LP = UserWidget->GetOwningLocalPlayer();
-	if (!LP) return nullptr;
-
-	URpgUiSubsystem* UISub = LP->GetSubsystem<URpgUiSubsystem>();
-	if (!UISub) return nullptr;
-
-	UPlayerVitalsViewmodel* VM = UISub->GetOrCreateVitalsVM();
-	if (!VM) return nullptr;
-
-	// Darf früh sein: VM bindet später via PawnExtension->OnAscReady
-	if (APlayerController* PC = UserWidget->GetOwningPlayer())
+	if (auto* VMComp = ContextActor->FindComponentByClass<URpgVitalsViewModelComponent>())
 	{
-		VM->BindToPlayer(PC);
+		UPlayerVitalsViewmodel* VM = VMComp->GetViewModel();
+		if (VM && VM->IsA(ExpectedType))
+		{
+			return VM;
+		}
 	}
-
-	return VM;
+	return nullptr;
 }

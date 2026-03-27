@@ -4,6 +4,7 @@
 #include "RpgDamageExecution.h"
 
 #include "SurvivalRpg/AbilitySystem/Attributes/RpgCombatSet.h"
+#include "SurvivalRpg/AbilitySystem/Attributes/RpgHealthSet.h"
 #include "SurvivalRpg/AbilitySystem/Attributes/RpgVitalSet.h"
 #include "SurvivalRpg/GameplayTags/GameplayTags.h"
 
@@ -145,7 +146,7 @@ void URpgDamageExecution::Execute_Implementation(const FGameplayEffectCustomExec
 	if (Damage > 0.f)
 	{
 		OutExecutionOutput.AddOutputModifier(
-			FGameplayModifierEvaluatedData(URpgVitalSet::GetDamageAttribute(), EGameplayModOp::Additive, Damage)
+			FGameplayModifierEvaluatedData(URpgHealthSet::GetDamageAttribute(), EGameplayModOp::Additive, Damage)
 		);
 	}
 #endif

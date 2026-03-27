@@ -4,45 +4,79 @@
 
 #include "CoreMinimal.h"
 #include "AbilitySystemInterface.h"
+#include "ModularCharacter.h"
 #include "GameFramework/Character.h"
+#include "RpgDownedComponent.h"
 #include "RpgCharacter.generated.h"
 
+class URpgDeathComponent;
+class URpgHealthComponent;
+class URpgRespawnComponent;
+class ARpgPlayerController;
+class ARpgPlayerState;
+class UAbilitySystemComponent;
+class URpgAbilitySystemComponent;
 class URpgPawnGameplayComponent;
 class URpgPawnExtensionComponent;
 class URpgCharacterMovementComponent;
 
 UCLASS()
-class SURVIVALRPG_API ARpgCharacter : public ACharacter, public IAbilitySystemInterface
+class SURVIVALRPG_API ARpgCharacter : public AModularCharacter, public IAbilitySystemInterface
 {
 	GENERATED_BODY()
  
 public:
 	// Sets default values for this character's properties
-	explicit ARpgCharacter(const FObjectInitializer& ObjectInitializer);
+	ARpgCharacter(const FObjectInitializer& ObjectInitializer = FObjectInitializer::Get());
+	
+	UFUNCTION(BlueprintCallable, Category = "Rpg|Character")
+	ARpgPlayerController* GetRpgPlayerController() const;
+
+	UFUNCTION(BlueprintCallable, Category = "Rpg|Character")
+	ARpgPlayerState* GetRpgPlayerState() const;
+
+	UFUNCTION(BlueprintCallable, Category = "Rpg|Character")
+	URpgAbilitySystemComponent* GetRpgAbilitySystemComponent() const;
+	virtual UAbilitySystemComponent* GetAbilitySystemComponent() const override;
+	
+	// Called to bind functionality to input
+	virtual void SetupPlayerInputComponent(class UInputComponent* PlayerInputComponent) override;
 
 protected:
 	// Called when the game starts or when spawned
 	virtual void BeginPlay() override;
-	virtual void EndPlay(const EEndPlayReason::Type EndPlayReason) override;
 	
+	
+	virtual void OnAbilitySystemInitialized();
+	virtual void OnAbilitySystemUninitialized();
+
 	virtual void PossessedBy(AController* NewController) override;
 	virtual void UnPossessed() override;
+
 	virtual void OnRep_Controller() override;
 	virtual void OnRep_PlayerState() override;
 	
-
-public:
+	virtual void FellOutOfWorld(const class UDamageType& dmgType) override;
 	
-	virtual UAbilitySystemComponent* GetAbilitySystemComponent() const override;
-	
-	void OnStartCrouch(float HalfHeightAdjust, float ScaledHalfHeightAdjust);
-	void OnEndCrouch(float HalfHeightAdjust, float ScaledHalfHeightAdjust);
-	void ToggleCrouch();
-	// Called every frame
-	virtual void Tick(float DeltaTime) override;
+	// Begins the death sequence for the character (disables collision, disables movement, etc...)
+	UFUNCTION()
+	virtual void OnDeathStarted(AActor* OwningActor);
 
-	// Called to bind functionality to input
-	virtual void SetupPlayerInputComponent(class UInputComponent* PlayerInputComponent) override;
+	// Ends the death sequence for the character (detaches controller, destroys pawn, etc...)
+	UFUNCTION()
+	virtual void OnDeathFinished(AActor* OwningActor);
+
+	UFUNCTION()
+	virtual void OnDownedStateChanged(ERpgDownedState NewState);
+
+	
+	
+	
+	void DisableMovementAndCollision() const;
+	void DisableMovementForDowned() const;
+	void RestoreMovementAndCollision() const;
+	void EnterDeadState();
+	// void UninitAndDestroy();
 	
 private:
 	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category="CharacterMovement", Meta = (AllowPrivateAccess = "true"))
@@ -52,5 +86,14 @@ private:
 	TObjectPtr<URpgPawnExtensionComponent> PawnExtensionComponent;
 	
 	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "Rpg|Character", Meta = (AllowPrivateAccess = "true"))
-	TObjectPtr<URpgPawnGameplayComponent> PawnGameplayComponent;
+	TObjectPtr<URpgHealthComponent> HealthComponent;
+	
+	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "Rpg|Character", Meta = (AllowPrivateAccess = "true"))
+	TObjectPtr<URpgDeathComponent> DeathComponent;
+
+	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "Rpg|Character", Meta = (AllowPrivateAccess = "true"))
+	TObjectPtr<URpgDownedComponent> DownedComponent;
+	
+	// UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "Rpg|Character", Meta = (AllowPrivateAccess = "true"))
+	// TObjectPtr<URpgRespawnComponent> RespawnComponent;
 };

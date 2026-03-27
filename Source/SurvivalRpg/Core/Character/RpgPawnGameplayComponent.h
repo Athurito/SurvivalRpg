@@ -3,6 +3,7 @@
 #pragma once
 
 #include "CoreMinimal.h"
+#include "Components/GameFrameworkInitStateInterface.h"
 #include "Components/PawnComponent.h"
 
 #include "RpgPawnGameplayComponent.generated.h"
@@ -12,10 +13,20 @@ class URpgInputConfig;
 struct FGameplayTag;
 struct FInputActionValue;
 
-UCLASS(ClassGroup=(Custom), meta=(BlueprintSpawnableComponent))
-class SURVIVALRPG_API URpgPawnGameplayComponent : public UPawnComponent
+UCLASS(ClassGroup=(Custom), Blueprintable, meta=(BlueprintSpawnableComponent))
+class SURVIVALRPG_API URpgPawnGameplayComponent : public UPawnComponent, public IGameFrameworkInitStateInterface
 {
 	GENERATED_BODY()
+public:
+	
+	/** IGameFrameworkInitStateInterface start **/
+	static const FName Name_ActorFeatureName;
+	virtual FName GetFeatureName() const override { return Name_ActorFeatureName; };
+	virtual bool CanChangeInitState(UGameFrameworkComponentManager* Manager, FGameplayTag CurrentState, FGameplayTag DesiredState) const override;
+	virtual void HandleChangeInitState(UGameFrameworkComponentManager* Manager, FGameplayTag CurrentState, FGameplayTag DesiredState) override;
+	virtual void OnActorInitStateChanged(const FActorInitStateChangedParams& Params) override;
+	virtual void CheckDefaultInitialization() override;
+	/** IGameFrameworkInitStateInterface end **/
 
 public:
 	// Sets default values for this component's properties
@@ -33,13 +44,9 @@ public:
 	void Input_AutoRun(const FInputActionValue& InputActionValue);
 	void Input_Jump(const FInputActionValue& InputActionValue);
 	void Input_StopJump(const FInputActionValue& InputActionValue);
+
 protected:
-	
 	// Called when the game starts
 	virtual void BeginPlay() override;
-	
-private:
-	
-	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category="Input", meta = (AllowPrivateAccess = "true"))
-	TObjectPtr<URpgInputConfig> InputConfig; 
+	virtual void OnRegister() override;
 };

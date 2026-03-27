@@ -3,10 +3,13 @@
 
 #include "RpgPawnGameplayComponent.h"
 
+#include "BasePawnData.h"
 #include "GameplayTagContainer.h"
 #include "InputActionValue.h"
 #include "RpgCharacter.h"
 #include "RpgPawnExtensionComponent.h"
+#include "Components/GameFrameworkComponentManager.h"
+#include "SurvivalRpg/Core/Player/RpgPlayerState.h"
 #include "SurvivalRpg/GameplayTags/GameplayTags.h"
 #include "SurvivalRpg/Input/RpgInputComponent.h"
 
@@ -14,6 +17,95 @@ namespace RpgCharacter
 {
 	static constexpr float LookYawRate = 300.0f;
 	static constexpr float LookPitchRate = 165.0f;
+}
+const FName URpgPawnGameplayComponent::Name_ActorFeatureName = FName("RpgPawnGameplayComponent");
+
+bool URpgPawnGameplayComponent::CanChangeInitState(UGameFrameworkComponentManager* Manager, FGameplayTag CurrentState, FGameplayTag DesiredState) const
+{
+	check(Manager);
+	APawn* Pawn = GetPawn<APawn>();
+	if (!Pawn) return false;
+	
+	// -------------- Spawned --------------
+	if (!CurrentState.IsValid() && DesiredState == RpgGameplayTags::InitState_Spawned)
+	{
+		return true;
+	}
+
+	// -------------- DataAvailable --------------
+	if (CurrentState == RpgGameplayTags::InitState_Spawned && DesiredState == RpgGameplayTags::InitState_DataAvailable)
+	{
+		if (Pawn->IsLocallyControlled() && !Pawn->IsBotControlled())
+		{
+			APlayerController* PC = GetController<APlayerController>();
+			if (!Pawn->InputComponent || !PC || !PC->GetLocalPlayer())
+			{
+				return false;
+			}
+		}
+		return true;
+	}
+	
+	// -------------- DataInitialized --------------
+	if (CurrentState == RpgGameplayTags::InitState_DataAvailable && DesiredState == RpgGameplayTags::InitState_DataInitialized)
+	{
+		return Manager->HasFeatureReachedInitState(Pawn, URpgPawnExtensionComponent::Name_ActorFeatureName, RpgGameplayTags::InitState_DataAvailable);
+	}
+	
+	// -------------- GameplayReady --------------
+	if (CurrentState == RpgGameplayTags::InitState_DataInitialized && DesiredState == RpgGameplayTags::InitState_GameplayReady)
+	{
+		return true;
+	}
+	return false;
+}
+
+void URpgPawnGameplayComponent::HandleChangeInitState(UGameFrameworkComponentManager* Manager, FGameplayTag CurrentState, FGameplayTag DesiredState)
+{
+	if (CurrentState == RpgGameplayTags::InitState_DataAvailable && DesiredState == RpgGameplayTags::InitState_DataInitialized)
+	{
+		APawn* Pawn = GetPawn<APawn>();
+		ARpgPlayerState* PS = GetPlayerState<ARpgPlayerState>();
+
+		if (!Pawn || !PS) return;
+		
+		if (URpgPawnExtensionComponent* PawnExt = URpgPawnExtensionComponent::FindPawnExtensionComponent(Pawn))
+		{
+			PawnExt->InitializeAbilitySystemComponent(PS->GetRpgAbilitySystemComponent(), PS);
+		}
+		
+		if (APlayerController* PC = GetController<APlayerController>())
+		{
+			if (Pawn && Pawn->InputComponent)
+			{
+				InitializePlayerInput(Pawn->InputComponent);
+			}
+		}
+		
+	}
+}
+
+void URpgPawnGameplayComponent::OnActorInitStateChanged(const FActorInitStateChangedParams& Params)
+{
+	if (Params.FeatureName == URpgPawnExtensionComponent::Name_ActorFeatureName)
+	{
+		if (Params.FeatureState == RpgGameplayTags::InitState_DataInitialized)
+		{
+			CheckDefaultInitialization();
+		}
+	}
+}
+
+void URpgPawnGameplayComponent::CheckDefaultInitialization()
+{
+	const TArray<FGameplayTag> StateChain = {
+		RpgGameplayTags::InitState_Spawned,
+		RpgGameplayTags::InitState_DataAvailable,
+		RpgGameplayTags::InitState_DataInitialized,
+		RpgGameplayTags::InitState_GameplayReady
+	};
+	
+	ContinueInitStateChain(StateChain);
 }
 
 // Sets default values for this component's properties
@@ -27,31 +119,35 @@ void URpgPawnGameplayComponent::InitializePlayerInput(UInputComponent* PlayerInp
 	check(PlayerInputComponent);
 
 	const APawn* Pawn = GetPawn<APawn>();
-	if (!Pawn)
+	if (!Pawn) return;
+	
+	if (URpgPawnExtensionComponent* PawnExt = URpgPawnExtensionComponent::FindPawnExtensionComponent(Pawn))
 	{
-		return;
+		if (const UBasePawnData* PawnData = PawnExt->GetPawnData<UBasePawnData>())
+		{
+			if (const URpgInputConfig* InputConfig = PawnData->InputConfig)
+			{
+				// URpgInputComponent* LyraIC = Cast<URpgInputComponent>(PlayerInputComponent);
+				// if (ensureMsgf(LyraIC, TEXT("Unexpected Input Component class! The Gameplay Abilities will not be bound to their inputs. Change the input component to ULyraInputComponent or a subclass of it.")))
+				// {
+				// 	// Add the key mappings that may have been set by the player
+				//
+				// 	// This is where we actually bind and input action to a gameplay tag, which means that Gameplay Ability Blueprints will
+				// 	// be triggered directly by these input actions Triggered events. 
+				// 	TArray<uint32> BindHandles;
+				// 	LyraIC->BindAbilityActions(InputConfig, this, &ThisClass::Input_AbilityInputTagPressed, &ThisClass::Input_AbilityInputTagReleased, /*out*/ BindHandles);
+				//
+				// 	LyraIC->BindNativeAction(InputConfig, RpgGameplayTags::InputTag_Move, ETriggerEvent::Triggered, this, &ThisClass::Input_Move, /*bLogIfNotFound=*/ false);
+				// 	LyraIC->BindNativeAction(InputConfig, RpgGameplayTags::InputTag_Look_Mouse, ETriggerEvent::Triggered, this, &ThisClass::Input_LookMouse, /*bLogIfNotFound=*/ false);
+				// 	LyraIC->BindNativeAction(InputConfig, RpgGameplayTags::InputTag_Look_Stick, ETriggerEvent::Triggered, this, &ThisClass::Input_LookStick, /*bLogIfNotFound=*/ false);
+				// 	LyraIC->BindNativeAction(InputConfig, RpgGameplayTags::InputTag_Crouch, ETriggerEvent::Triggered, this, &ThisClass::Input_Crouch, /*bLogIfNotFound=*/ false);
+				// 	LyraIC->BindNativeAction(InputConfig, RpgGameplayTags::InputTag_AutoRun, ETriggerEvent::Triggered, this, &ThisClass::Input_AutoRun, /*bLogIfNotFound=*/ false);
+				// 	LyraIC->BindNativeAction(InputConfig, RpgGameplayTags::InputTag_Jump, ETriggerEvent::Started, this, &ThisClass::Input_Jump, /*bLogIfNotFound=*/ false);
+				// 	LyraIC->BindNativeAction(InputConfig, RpgGameplayTags::InputTag_StopJump, ETriggerEvent::Completed, this, &ThisClass::Input_StopJump, /*bLogIfNotFound=*/ false);
+				// }
+			}
+		}
 	}
-	
-	
-	
-	// URpgInputComponent* LyraIC = Cast<URpgInputComponent>(PlayerInputComponent);
-	// if (ensureMsgf(LyraIC, TEXT("Unexpected Input Component class! The Gameplay Abilities will not be bound to their inputs. Change the input component to ULyraInputComponent or a subclass of it.")))
-	// {
-	// 	// Add the key mappings that may have been set by the player
-	//
-	// 	// This is where we actually bind and input action to a gameplay tag, which means that Gameplay Ability Blueprints will
-	// 	// be triggered directly by these input actions Triggered events. 
-	// 	TArray<uint32> BindHandles;
-	// 	LyraIC->BindAbilityActions(InputConfig, this, &ThisClass::Input_AbilityInputTagPressed, &ThisClass::Input_AbilityInputTagReleased, /*out*/ BindHandles);
-	//
-	// 	LyraIC->BindNativeAction(InputConfig, RpgGameplayTags::InputTag_Move, ETriggerEvent::Triggered, this, &ThisClass::Input_Move, /*bLogIfNotFound=*/ false);
-	// 	LyraIC->BindNativeAction(InputConfig, RpgGameplayTags::InputTag_Look_Mouse, ETriggerEvent::Triggered, this, &ThisClass::Input_LookMouse, /*bLogIfNotFound=*/ false);
-	// 	LyraIC->BindNativeAction(InputConfig, RpgGameplayTags::InputTag_Look_Stick, ETriggerEvent::Triggered, this, &ThisClass::Input_LookStick, /*bLogIfNotFound=*/ false);
-	// 	LyraIC->BindNativeAction(InputConfig, RpgGameplayTags::InputTag_Crouch, ETriggerEvent::Triggered, this, &ThisClass::Input_Crouch, /*bLogIfNotFound=*/ false);
-	// 	LyraIC->BindNativeAction(InputConfig, RpgGameplayTags::InputTag_AutoRun, ETriggerEvent::Triggered, this, &ThisClass::Input_AutoRun, /*bLogIfNotFound=*/ false);
-	// 	LyraIC->BindNativeAction(InputConfig, RpgGameplayTags::InputTag_Jump, ETriggerEvent::Started, this, &ThisClass::Input_Jump, /*bLogIfNotFound=*/ false);
-	// 	LyraIC->BindNativeAction(InputConfig, RpgGameplayTags::InputTag_StopJump, ETriggerEvent::Completed, this, &ThisClass::Input_StopJump, /*bLogIfNotFound=*/ false);
-	// }
 }
 
 void URpgPawnGameplayComponent::Input_AbilityInputTagPressed(FGameplayTag InputTag)
@@ -144,7 +240,7 @@ void URpgPawnGameplayComponent::Input_Crouch(const FInputActionValue& InputActio
 	//TODO
 	if (ARpgCharacter* Character = GetPawn<ARpgCharacter>())
 	{
-		Character->ToggleCrouch();
+		
 	}
 }
 
@@ -168,12 +264,20 @@ void URpgPawnGameplayComponent::Input_StopJump(const FInputActionValue& InputAct
 	}
 }
 
-// Called when the game starts
 void URpgPawnGameplayComponent::BeginPlay()
 {
 	Super::BeginPlay();
-	APawn* Pawn = GetPawn<APawn>();
-	if (!Pawn) return;
-	//InitializePlayerInput(Pawn->InputComponent);
+	BindOnActorInitStateChanged(URpgPawnExtensionComponent::Name_ActorFeatureName, FGameplayTag(), false);
+	TryToChangeInitState(RpgGameplayTags::InitState_Spawned);
+	CheckDefaultInitialization();
+}
+
+void URpgPawnGameplayComponent::OnRegister()
+{
+	Super::OnRegister();
+	if (GetPawn<APawn>())
+	{
+		RegisterInitStateFeature();
+	}
 }
 
