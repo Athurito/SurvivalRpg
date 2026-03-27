@@ -95,6 +95,7 @@ public:
 	virtual void FinishDeath();
 
 	// Applies enough damage to kill the owner.
+	UFUNCTION(BlueprintCallable, BlueprintPure = false, Category = "Rpg|Health")
 	virtual void DamageSelfDestruct(bool bFellOutOfWorld = false);
 	
 public:

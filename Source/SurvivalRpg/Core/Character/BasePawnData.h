@@ -7,6 +7,7 @@
 #include "BasePawnData.generated.h"
 
 class URpgInputConfig;
+class URpgAbilitySet;
 /**
  * 
  */
@@ -18,4 +19,8 @@ class SURVIVALRPG_API UBasePawnData : public UPrimaryDataAsset
 public:
 	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Input")
 	TObjectPtr<URpgInputConfig> InputConfig;
+
+	// Startup-only ability sets that should be granted whenever a pawn using this data is initialized.
+	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Abilities")
+	TArray<TObjectPtr<const URpgAbilitySet>> AbilitySets;
 };
