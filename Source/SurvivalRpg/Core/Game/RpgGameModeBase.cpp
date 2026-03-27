@@ -6,7 +6,6 @@
 #include "RpgWorldSettings.h"
 #include "SurvivalRpg/SurvivalRpg.h"
 #include "SurvivalRpg/AbilitySystem/RpgAbilitySystemComponent.h"
-#include "SurvivalRpg/AbilitySystem/Attributes/RpgHealthSet.h"
 #include "SurvivalRpg/Core/Character/BasePawnData.h"
 #include "SurvivalRpg/Core/Character/RpgPawnExtensionComponent.h"
 #include "SurvivalRpg/Core/Player/RpgPlayerState.h"
@@ -291,6 +290,12 @@ void ARpgGameModeBase::ExecuteRespawn(APlayerController* PC, const FTransform& S
 
 	ARpgPlayerState* PlayerState = PC->GetPlayerState<ARpgPlayerState>();
 	URpgAbilitySystemComponent* ASC = PlayerState ? PlayerState->GetRpgAbilitySystemComponent() : nullptr;
+
+	if (ASC)
+	{
+		ASC->ResetForRespawn();
+	}
+
 	RestartPlayerAtTransform(PC, SpawnPoint);
 
 	if (!PC->GetPawn())
@@ -301,13 +306,6 @@ void ARpgGameModeBase::ExecuteRespawn(APlayerController* PC, const FTransform& S
 
 	if (ASC)
 	{
-		ASC->ResetForRespawn();
-
-		if (const URpgHealthSet* HealthSet = ASC->GetSet<URpgHealthSet>())
-		{
-			ASC->SetNumericAttributeBase(URpgHealthSet::GetHealthAttribute(), HealthSet->GetMaxHealth());
-		}
-
 		FGameplayEventData Payload;
 		Payload.EventTag = RpgGameplayTags::GameplayEvent_Respawn;
 		Payload.Instigator = PC->GetPawn();

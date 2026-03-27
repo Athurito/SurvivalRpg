@@ -161,6 +161,11 @@ void URpgAbilitySystemComponent::ResetForRevive()
 void URpgAbilitySystemComponent::ResetForRespawn()
 {
 	ResetForRevive();
+
+	FGameplayTagContainer RespawnClearedEffectTags;
+	RespawnClearedEffectTags.AddTag(RpgGameplayTags::Effect_Behavior_ClearOnRespawn);
+
+	RemoveActiveEffects(FGameplayEffectQuery::MakeQuery_MatchAnyOwningTags(RespawnClearedEffectTags));
 }
 
 bool URpgAbilitySystemComponent::TryActivateFirstAbilityByClass(TSubclassOf<UGameplayAbility> AbilityClass, bool bAllowRemoteActivation)
