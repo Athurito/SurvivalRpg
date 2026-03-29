@@ -3,6 +3,7 @@
 
 #include "RpgHealthSet.h"
 
+#include "GameFramework/Actor.h"
 #include "GameplayEffectExtension.h"
 #include "Net/UnrealNetwork.h"
 #include "SurvivalRpg/AbilitySystem/RpgAbilitySystemComponent.h"
@@ -14,6 +15,25 @@ UE_DEFINE_GAMEPLAY_TAG(TAG_Gameplay_DamageImmunity, "Gameplay.DamageImmunity");
 UE_DEFINE_GAMEPLAY_TAG(TAG_Gameplay_DamageSelfDestruct, "Gameplay.Damage.SelfDestruct");
 UE_DEFINE_GAMEPLAY_TAG(TAG_Gameplay_FellOutOfWorld, "Gameplay.Damage.FellOutOfWorld");
 //UE_DEFINE_GAMEPLAY_TAG(TAG_Lyra_Damage_Message, "Lyra.Damage.Message");
+
+namespace
+{
+void ForceOwnerNetUpdate(URpgAbilitySystemComponent* AbilitySystemComponent)
+{
+	if (!AbilitySystemComponent)
+	{
+		return;
+	}
+
+	AActor* OwnerActor = AbilitySystemComponent->GetOwnerActor();
+	if (!OwnerActor || !OwnerActor->HasAuthority())
+	{
+		return;
+	}
+
+	OwnerActor->ForceNetUpdate();
+}
+}
 
 URpgHealthSet::URpgHealthSet() : Health(100.0f), MaxHealth(100.0f)
 {
@@ -102,7 +122,7 @@ bool URpgHealthSet::PreGameplayEffectExecute(FGameplayEffectModCallbackData& Dat
 
 void URpgHealthSet::PostGameplayEffectExecute(const FGameplayEffectModCallbackData& Data)
 {
-		Super::PostGameplayEffectExecute(Data);
+	Super::PostGameplayEffectExecute(Data);
 
 	const bool bIsDamageFromSelfDestruct = Data.EffectSpec.GetDynamicAssetTags().HasTagExact(TAG_Gameplay_DamageSelfDestruct);
 	float MinimumHealth = 0.0f;
@@ -158,6 +178,13 @@ void URpgHealthSet::PostGameplayEffectExecute(const FGameplayEffectModCallbackDa
 
 	// Check health again in case an event above changed it.
 	bOutOfHealth = (GetHealth() <= 0.0f);
+
+	const bool bHealthChanged = !FMath::IsNearlyEqual(GetHealth(), HealthBeforeAttributeChange);
+	const bool bMaxHealthChanged = !FMath::IsNearlyEqual(GetMaxHealth(), MaxHealthBeforeAttributeChange);
+	if (bHealthChanged || bMaxHealthChanged)
+	{
+		ForceOwnerNetUpdate(GetRpgAbilitySystemComponent());
+	}
 }
 
 void URpgHealthSet::PreAttributeBaseChange(const FGameplayAttribute& Attribute, float& NewValue) const
