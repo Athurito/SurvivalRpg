@@ -8,6 +8,7 @@
 #include "RpgDownedComponent.h"
 #include "RpgHealthComponent.h"
 #include "RpgPawnExtensionComponent.h"
+#include "RpgPawnGameplayComponent.h"
 #include "Components/CapsuleComponent.h"
 #include "SurvivalRpg/AbilitySystem/RpgAbilitySystemComponent.h"
 #include "SurvivalRpg/Core/Game/RpgGameModeBase.h"
@@ -104,6 +105,11 @@ void ARpgCharacter::OnRep_PlayerState()
 {
 	Super::OnRep_PlayerState();
 	PawnExtensionComponent->HandlePlayerStateReplicated();
+
+	if (URpgPawnGameplayComponent* PawnGameplayComponent = FindComponentByClass<URpgPawnGameplayComponent>())
+	{
+		PawnGameplayComponent->CheckDefaultInitialization();
+	}
 }
 
 void ARpgCharacter::FellOutOfWorld(const class UDamageType& dmgType)

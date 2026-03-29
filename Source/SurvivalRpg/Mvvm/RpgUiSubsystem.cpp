@@ -3,117 +3,132 @@
 
 #include "RpgUiSubsystem.h"
 
+#include "Engine/LocalPlayer.h"
+#include "GameFramework/PlayerController.h"
 #include "PlayerVitals/PlayerVitalsViewmodel.h"
 #include "SurvivalRpg/AbilitySystem/RpgAbilitySystemComponent.h"
 #include "SurvivalRpg/Core/Character/RpgPawnExtensionComponent.h"
 
-// UPlayerVitalsViewmodel* URpgUiSubsystem::GetVitalsViewmodel()
-// {
-// 	if (!VitalsVM)
-// 	{
-// 		VitalsVM = NewObject<UPlayerVitalsViewmodel>(this); // Outer = LocalPlayerSubsystem (stabil)
-// 	}
-// 	return VitalsVM;
-// }
-//
-// void URpgUiSubsystem::Initialize(FSubsystemCollectionBase& Collection)
-// {
-// 	Super::Initialize(Collection);
-// 	
-// 	// ViewModel persistent erzeugen
-// 	VitalsVM = NewObject<UPlayerVitalsViewmodel>(this);
-//
-// 	// NICHT sofort binden!
-// 	if (UWorld* World = GetWorld())
-// 	{
-// 		World->GetTimerManager().SetTimerForNextTick(
-// 			FTimerDelegate::CreateUObject(
-// 				this,
-// 				&ThisClass::BindToControllerSafe
-// 			)
-// 		);
-// 	}
-// }
-//
-// void URpgUiSubsystem::HandlePawnChanged(APawn* OldPawn, APawn* NewPawn)
-// {
-// 	// Unbind old
-// 	if (BoundExt && H_AscInit.IsValid())
-// 	{
-// 		BoundExt->OnAbilitySystemInitialized.Remove(H_AscInit);
-// 		H_AscInit.Reset();
-// 	}
-// 	BoundExt = nullptr;
-//
-// 	if (!NewPawn)
-// 	{
-// 		VitalsVM->UnInitialize();
-// 		return;
-// 	}
-//
-// 	URpgPawnExtensionComponent* Ext =
-// 		URpgPawnExtensionComponent::FindPawnExtensionComponent(NewPawn);
-// 	if (!Ext)
-// 		return;
-//
-// 	BoundExt = Ext;
-//
-// 	// Bind delegate (no params)
-// 	H_AscInit = BoundExt->OnAbilitySystemInitialized.AddUObject(
-// 		this,
-// 		&ThisClass::HandleAscReady
-// 	);
-//
-// 	// Falls ASC schon bereit:
-// 	if (UAbilitySystemComponent* ExistingASC = BoundExt->GetRpgAbilitySystemComponent())
-// 	{
-// 		VitalsVM->Initialize(ExistingASC);
-// 	}
-// }
-//
-// void URpgUiSubsystem::HandleAscReady()
-// {
-// 	if (!BoundExt)
-// 		return;
-// 	//
-// 	// if (UAbilitySystemComponent* ASC = BoundExt->GetRpgAbilitySystemComponent())
-// 	// {
-// 	// 	VitalsVM->Initialize(ASC);
-// 	// 	
-// 	// 	// Falls Client und Werte noch nicht da:
-// 	// 	if (ASC->GetOwnerRole() != ROLE_Authority)
-// 	// 	{
-// 	// 		// Force delayed refresh nach Replikation
-// 	// 		if (UWorld* World = GetWorld())
-// 	// 		{
-// 	// 			World->GetTimerManager().SetTimerForNextTick(
-// 	// 				FTimerDelegate::CreateLambda([this]()
-// 	// 				{
-// 	// 					if (VitalsVM)
-// 	// 					{
-// 	// 						VitalsVM->InitialRefresh();
-// 	// 					}
-// 	// 				})
-// 	// 			);
-// 	// 		}
-// 	// 	}
-// 	// }
-// }
-//
-// void URpgUiSubsystem::BindToControllerSafe()
-// {
-// 	if (!GetLocalPlayer())
-// 		return;
-//
-// 	APlayerController* PC = GetLocalPlayer()->GetPlayerController(GetWorld());
-// 	if (!PC)
-// 		return;
-//
-// 	PC->OnPossessedPawnChanged.AddDynamic(
-// 		this,
-// 		&ThisClass::HandlePawnChanged
-// 	);
-//
-// 	// Initial Sync
-// 	HandlePawnChanged(nullptr, PC->GetPawn());
-// }
+void URpgUiSubsystem::Initialize(FSubsystemCollectionBase& Collection)
+{
+	Super::Initialize(Collection);
+
+	VitalsVM = NewObject<UPlayerVitalsViewmodel>(this);
+
+	if (ULocalPlayer* LocalPlayer = GetLocalPlayer())
+	{
+		PlayerControllerChanged(LocalPlayer->GetPlayerController(GetWorld()));
+	}
+}
+
+void URpgUiSubsystem::Deinitialize()
+{
+	UnbindFromPlayerController();
+
+	if (VitalsVM)
+	{
+		VitalsVM->UnbindASC();
+	}
+
+	VitalsVM = nullptr;
+
+	Super::Deinitialize();
+}
+
+void URpgUiSubsystem::PlayerControllerChanged(APlayerController* NewPlayerController)
+{
+	Super::PlayerControllerChanged(NewPlayerController);
+	BindToPlayerController(NewPlayerController);
+}
+
+void URpgUiSubsystem::HandlePawnChanged(APawn* OldPawn, APawn* NewPawn)
+{
+	UnbindFromPawnExtension();
+	BindToPawn(NewPawn);
+}
+
+void URpgUiSubsystem::BindToPlayerController(APlayerController* NewPlayerController)
+{
+	if (BoundPlayerController == NewPlayerController)
+	{
+		return;
+	}
+
+	UnbindFromPlayerController();
+
+	if (!NewPlayerController || !NewPlayerController->IsLocalController())
+	{
+		return;
+	}
+
+	BoundPlayerController = NewPlayerController;
+	BoundPlayerController->OnPossessedPawnChanged.AddDynamic(this, &ThisClass::HandlePawnChanged);
+
+	HandlePawnChanged(nullptr, BoundPlayerController->GetPawn());
+}
+
+void URpgUiSubsystem::UnbindFromPlayerController()
+{
+	if (BoundPlayerController)
+	{
+		BoundPlayerController->OnPossessedPawnChanged.RemoveDynamic(this, &ThisClass::HandlePawnChanged);
+		BoundPlayerController = nullptr;
+	}
+
+	UnbindFromPawnExtension();
+}
+
+void URpgUiSubsystem::BindToPawn(APawn* NewPawn)
+{
+	if (!NewPawn || !VitalsVM)
+	{
+		return;
+	}
+
+	BoundPawnExtension = URpgPawnExtensionComponent::FindPawnExtensionComponent(NewPawn);
+	if (!BoundPawnExtension)
+	{
+		return;
+	}
+
+	BoundPawnExtension->OnAbilitySystemInitialized_RegisterAndCall(
+		FSimpleMulticastDelegate::FDelegate::CreateUObject(this, &ThisClass::HandleAbilitySystemInitialized));
+	BoundPawnExtension->OnAbilitySystemUninitialized_Register(
+		FSimpleMulticastDelegate::FDelegate::CreateUObject(this, &ThisClass::HandleAbilitySystemUninitialized));
+}
+
+void URpgUiSubsystem::UnbindFromPawnExtension(bool bResetViewModel)
+{
+	if (BoundPawnExtension)
+	{
+		BoundPawnExtension->OnAbilitySystemInitialized.RemoveAll(this);
+		BoundPawnExtension->OnAbilitySystemUninitialized.RemoveAll(this);
+		BoundPawnExtension = nullptr;
+	}
+
+	if (bResetViewModel && VitalsVM)
+	{
+		VitalsVM->UnbindASC();
+	}
+}
+
+void URpgUiSubsystem::HandleAbilitySystemInitialized()
+{
+	if (!VitalsVM || !BoundPawnExtension)
+	{
+		return;
+	}
+
+	if (URpgAbilitySystemComponent* ASC = BoundPawnExtension->GetRpgAbilitySystemComponent())
+	{
+		VitalsVM->BindASC(ASC);
+	}
+}
+
+void URpgUiSubsystem::HandleAbilitySystemUninitialized()
+{
+	if (VitalsVM)
+	{
+		VitalsVM->UnbindASC();
+	}
+}

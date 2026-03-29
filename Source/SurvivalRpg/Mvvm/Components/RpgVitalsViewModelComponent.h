@@ -10,6 +10,8 @@
 class UAbilitySystemComponent;
 class UPlayerVitalsViewmodel;
 
+// Legacy compatibility component kept so existing blueprints still load.
+// Player vitals are now owned by URpgUiSubsystem and resolved via the local player.
 UCLASS(ClassGroup=(Custom), meta=(BlueprintSpawnableComponent))
 class SURVIVALRPG_API URpgVitalsViewModelComponent : public UActorComponent
 {
