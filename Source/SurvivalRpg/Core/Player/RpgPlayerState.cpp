@@ -14,6 +14,10 @@
 
 ARpgPlayerState::ARpgPlayerState()
 {
+	// The local HUD reads attributes from the PlayerState-owned ASC, so keep updates responsive.
+	SetNetUpdateFrequency(100.0f);
+	SetMinNetUpdateFrequency(33.0f);
+
 	AbilitySystemComponent = CreateDefaultSubobject<URpgAbilitySystemComponent>(TEXT("AbilitySystemComponent"));
 	AbilitySystemComponent->SetIsReplicated(true);
 	AbilitySystemComponent->SetReplicationMode(EGameplayEffectReplicationMode::Mixed);
