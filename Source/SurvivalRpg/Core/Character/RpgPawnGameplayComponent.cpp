@@ -51,7 +51,18 @@ bool URpgPawnGameplayComponent::CanChangeInitState(UGameFrameworkComponentManage
 	// -------------- DataInitialized --------------
 	if (CurrentState == RpgGameplayTags::InitState_DataAvailable && DesiredState == RpgGameplayTags::InitState_DataInitialized)
 	{
-		return Manager->HasFeatureReachedInitState(Pawn, URpgPawnExtensionComponent::Name_ActorFeatureName, RpgGameplayTags::InitState_DataAvailable);
+		if (!Manager->HasFeatureReachedInitState(Pawn, URpgPawnExtensionComponent::Name_ActorFeatureName, RpgGameplayTags::InitState_DataAvailable))
+		{
+			return false;
+		}
+
+		const ARpgPlayerState* PlayerState = GetPlayerState<ARpgPlayerState>();
+		if (!PlayerState)
+		{
+			return false;
+		}
+
+		return (PlayerState->GetRpgAbilitySystemComponent() != nullptr);
 	}
 	
 	// -------------- GameplayReady --------------
@@ -74,6 +85,11 @@ void URpgPawnGameplayComponent::HandleChangeInitState(UGameFrameworkComponentMan
 		if (URpgPawnExtensionComponent* PawnExt = URpgPawnExtensionComponent::FindPawnExtensionComponent(Pawn))
 		{
 			URpgAbilitySystemComponent* AbilitySystemComponent = PS->GetRpgAbilitySystemComponent();
+			if (!AbilitySystemComponent)
+			{
+				return;
+			}
+
 			PawnExt->InitializeAbilitySystemComponent(AbilitySystemComponent, PS);
 			GrantPawnDataAbilitySets(AbilitySystemComponent, PawnExt->GetPawnData<UBasePawnData>(), Pawn);
 			ResetCurrentHealthToMaxHealth(AbilitySystemComponent);

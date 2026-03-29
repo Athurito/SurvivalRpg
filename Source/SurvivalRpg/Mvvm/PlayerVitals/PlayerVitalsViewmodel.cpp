@@ -8,6 +8,15 @@
 
 void UPlayerVitalsViewmodel::BindASC(UAbilitySystemComponent* InASC)
 {
+	if (ASC.Get() == InASC)
+	{
+		if (ASC.IsValid())
+		{
+			RefreshOnce();
+		}
+		return;
+	}
+
 	UnbindASC();
 
 	ASC = InASC;

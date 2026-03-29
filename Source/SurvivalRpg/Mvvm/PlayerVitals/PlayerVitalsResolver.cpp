@@ -5,21 +5,25 @@
 
 #include "PlayerVitalsViewmodel.h"
 #include "Blueprint/UserWidget.h"
-#include "Components/WidgetComponent.h"
-#include "SurvivalRpg/Mvvm/Components/RpgVitalsViewModelComponent.h"
+#include "Engine/LocalPlayer.h"
+#include "GameFramework/PlayerController.h"
+#include "SurvivalRpg/Mvvm/RpgUiSubsystem.h"
 
-AActor* UPlayerVitalsResolver::ResolveContextActor(const UUserWidget* UserWidget) const
+ULocalPlayer* UPlayerVitalsResolver::ResolveLocalPlayer(const UUserWidget* UserWidget) const
 {
-	if (!UserWidget) return nullptr;
+	if (!UserWidget)
+	{
+		return nullptr;
+	}
+
+	if (ULocalPlayer* LocalPlayer = UserWidget->GetOwningLocalPlayer())
+	{
+		return LocalPlayer;
+	}
 
 	if (APlayerController* PC = UserWidget->GetOwningPlayer())
 	{
-		return PC;
-	}
-
-	if (const UWidgetComponent* WC = UserWidget->GetTypedOuter<UWidgetComponent>())
-	{
-		return WC->GetOwner();
+		return PC->GetLocalPlayer();
 	}
 
 	return nullptr;
@@ -27,19 +31,20 @@ AActor* UPlayerVitalsResolver::ResolveContextActor(const UUserWidget* UserWidget
 
 UObject* UPlayerVitalsResolver::CreateInstance(const UClass* ExpectedType, const UUserWidget* UserWidget, const UMVVMView* View) const
 {
-	AActor* ContextActor = ResolveContextActor(UserWidget);
-	if (!ContextActor)
+	ULocalPlayer* LocalPlayer = ResolveLocalPlayer(UserWidget);
+	if (!LocalPlayer)
 	{
 		return nullptr;
 	}
 
-	if (auto* VMComp = ContextActor->FindComponentByClass<URpgVitalsViewModelComponent>())
+	if (URpgUiSubsystem* UiSubsystem = LocalPlayer->GetSubsystem<URpgUiSubsystem>())
 	{
-		UPlayerVitalsViewmodel* VM = VMComp->GetViewModel();
+		UPlayerVitalsViewmodel* VM = UiSubsystem->GetVitalsViewmodel();
 		if (VM && VM->IsA(ExpectedType))
 		{
 			return VM;
 		}
 	}
+
 	return nullptr;
 }
