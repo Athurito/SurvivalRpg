@@ -6,6 +6,7 @@
 #include "GameFramework/PlayerController.h"
 #include "RpgPlayerController.generated.h"
 
+class UInputMappingContext;
 class ARpgPlayerState;
 
 UCLASS(Abstract)
@@ -17,10 +18,9 @@ public:
 	UFUNCTION(BlueprintCallable, Category = "Rpg|Respawn")
 	void RequestRespawn();
 
-protected:
-	virtual void BeginPlayingState() override;
 	virtual void OnRep_PlayerState() override;
-
+protected:
+	
 	UFUNCTION(Server, Reliable)
 	void ServerRequestRespawn();
 
@@ -35,11 +35,18 @@ protected:
 
 	UFUNCTION(BlueprintImplementableEvent, Category = "Rpg|Respawn", meta = (DisplayName = "On Checkpoint Changed"))
 	void K2_OnCheckpointChanged(bool bHasCheckpoint, FTransform CheckpointTransform);
+	
+protected:
+	virtual void BeginPlayingState() override;
+	virtual void SetupInputComponent() override;
 
 private:
 	void RefreshPlayerStateBindings();
 	void BindToPlayerState(ARpgPlayerState* NewPlayerState);
 	void UnbindFromPlayerState();
+	
+	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Input", meta = (AllowPrivateAccess = "true"))
+	TArray<UInputMappingContext*> DefaultMappingContexts;
 
 	UPROPERTY(Transient)
 	TObjectPtr<ARpgPlayerState> BoundPlayerState;

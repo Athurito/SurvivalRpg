@@ -33,7 +33,6 @@ ARpgCharacter::ARpgCharacter(const FObjectInitializer& ObjectInitializer) :
 	DeathComponent = CreateDefaultSubobject<URpgDeathComponent>(TEXT("DeathComponent"));
 	DownedComponent = CreateDefaultSubobject<URpgDownedComponent>(TEXT("DownedComponent"));
 	DownedComponent->OnDownedStateChanged.AddDynamic(this, &ThisClass::OnDownedStateChanged);
-	// RespawnComponent = CreateDefaultSubobject<URpgRespawnComponent>(TEXT("RespawnComponent"));
 }
 
 ARpgPlayerController* ARpgCharacter::GetRpgPlayerController() const
