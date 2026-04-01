@@ -3,6 +3,7 @@
 
 #include "RpgPlayerController.h"
 
+#include "EnhancedInputSubsystems.h"
 #include "SurvivalRpg/Core/Game/RpgGameModeBase.h"
 #include "SurvivalRpg/Core/Player/RpgPlayerState.h"
 
@@ -24,6 +25,27 @@ void ARpgPlayerController::BeginPlayingState()
 {
 	Super::BeginPlayingState();
 	RefreshPlayerStateBindings();
+}
+
+void ARpgPlayerController::SetupInputComponent()
+{
+	Super::SetupInputComponent();
+	if (!IsLocalController())
+	{
+		return;
+	}
+
+	if (UEnhancedInputLocalPlayerSubsystem* InputSubsystem =
+		ULocalPlayer::GetSubsystem<UEnhancedInputLocalPlayerSubsystem>(GetLocalPlayer()))
+	{
+		for (const UInputMappingContext* MappingContext : DefaultMappingContexts)
+		{
+			if (MappingContext)
+			{
+				InputSubsystem->AddMappingContext(MappingContext, 0);
+			}
+		}
+	}
 }
 
 void ARpgPlayerController::OnRep_PlayerState()

@@ -47,7 +47,7 @@
 		},
 		{
 			"Name": "NinjaInput",
-			"Enabled": true,
+			"Enabled": false,
 			"MarketplaceURL": "com.epicgames.launcher://ue/Fab/product/cde3c8fb-85be-44a3-95c4-dbccecac028b"
 		},
 		{
