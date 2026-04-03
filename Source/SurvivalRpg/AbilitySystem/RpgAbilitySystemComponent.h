@@ -29,6 +29,8 @@ public:
 
 	UFUNCTION(BlueprintCallable, Category="RPG|AbilitySet")
 	bool HasAbilitySet(const URpgAbilitySet* AbilitySet) const;
+
+	bool HasGrantAuthority() const;
 	
 	void ApplyDefaultAbilitySetupIfNeeded(UObject* SourceObject);
 	void RemoveDefaultAbilitySetup();
@@ -74,6 +76,14 @@ private:
 	
 	UPROPERTY()
 	TObjectPtr<class ARpgPlayerState> OwnerPlayerState = nullptr;
+
+#if WITH_DEV_AUTOMATION_TESTS
+public:
+	void SetForceGrantAuthorityForTests(bool bInForceGrantAuthority) { bForceGrantAuthorityForTests = bInForceGrantAuthority; }
+
+private:
+	bool bForceGrantAuthorityForTests = false;
+#endif
 
 	bool GrantAbilitySet_Internal(const URpgAbilitySet* AbilitySet, UObject* SourceObject);
 	bool RemoveAbilitySet_Internal(const URpgAbilitySet* AbilitySet);

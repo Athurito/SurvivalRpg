@@ -5,6 +5,7 @@
 
 #include "SurvivalRpg/AbilitySystem/RpgAbilitySystemComponent.h"
 #include "SurvivalRpg/AbilitySystem/Attributes/RpgHealthSet.h"
+#include "SurvivalRpg/Equipment/RpgEquipmentComponent.h"
 #include "BasePawnData.h"
 #include "GameplayTagContainer.h"
 #include "InputActionValue.h"
@@ -173,6 +174,31 @@ void URpgPawnGameplayComponent::InitializePlayerInput(UInputComponent* PlayerInp
 
 void URpgPawnGameplayComponent::Input_AbilityInputTagPressed(FGameplayTag InputTag)
 {
+	ARpgPlayerState* PlayerState = GetPlayerState<ARpgPlayerState>();
+	if (PlayerState == nullptr)
+	{
+		return;
+	}
+
+	if (URpgEquipmentComponent* EquipmentComponent = PlayerState->GetEquipmentComponent())
+	{
+		if (InputTag == RpgGameplayTags::InputTag_WeaponSet_1)
+		{
+			EquipmentComponent->TryActivateWeaponSet(0);
+			return;
+		}
+
+		if (InputTag == RpgGameplayTags::InputTag_WeaponSet_2)
+		{
+			EquipmentComponent->TryActivateWeaponSet(1);
+			return;
+		}
+	}
+
+	if (URpgAbilitySystemComponent* AbilitySystemComponent = PlayerState->GetRpgAbilitySystemComponent())
+	{
+		AbilitySystemComponent->ActivateAbilitiesByInputTag(InputTag, true);
+	}
 }
 
 void URpgPawnGameplayComponent::Input_AbilityInputTagReleased(FGameplayTag InputTag)

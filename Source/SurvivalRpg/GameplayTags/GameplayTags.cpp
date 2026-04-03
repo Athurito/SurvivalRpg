@@ -12,6 +12,8 @@ namespace RpgGameplayTags
 	UE_DEFINE_GAMEPLAY_TAG_COMMENT(InputTag_AutoRun, "InputTag.AutoRun", "Auto-run input.");
 	UE_DEFINE_GAMEPLAY_TAG_COMMENT(InputTag_Jump, "InputTag.Jump", "Jump input.");
 	UE_DEFINE_GAMEPLAY_TAG_COMMENT(InputTag_StopJump, "InputTag.StopJump", "StopJump input.");
+	UE_DEFINE_GAMEPLAY_TAG_COMMENT(InputTag_WeaponSet_1, "InputTag.WeaponSet.1", "Activate weapon set 1.");
+	UE_DEFINE_GAMEPLAY_TAG_COMMENT(InputTag_WeaponSet_2, "InputTag.WeaponSet.2", "Activate weapon set 2.");
 	
 	
 	UE_DEFINE_GAMEPLAY_TAG_COMMENT(GameplayEvent_Death, "GameplayEvent.Death", "Event that fires on death. This event only fires on the server.");
@@ -55,6 +57,16 @@ namespace RpgGameplayTags
 	UE_DEFINE_GAMEPLAY_TAG_COMMENT(GameplayEvent_BleedoutExpired, "GameplayEvent.BleedoutExpired", "Event that fires when bleedout timer expires and the player truly dies.");
 
 	UE_DEFINE_GAMEPLAY_TAG_COMMENT(Status_Dead_WaitingForRespawn, "Status.Dead.WaitingForRespawn", "Target is dead and waiting for respawn.");
+	UE_DEFINE_GAMEPLAY_TAG_COMMENT(Equipment_Slot_WeaponSet_1_MainHand, "Equipment.Slot.WeaponSet.1.MainHand", "Main-hand slot for weapon set 1.");
+	UE_DEFINE_GAMEPLAY_TAG_COMMENT(Equipment_Slot_WeaponSet_1_OffHand, "Equipment.Slot.WeaponSet.1.OffHand", "Off-hand slot for weapon set 1.");
+	UE_DEFINE_GAMEPLAY_TAG_COMMENT(Equipment_Slot_WeaponSet_2_MainHand, "Equipment.Slot.WeaponSet.2.MainHand", "Main-hand slot for weapon set 2.");
+	UE_DEFINE_GAMEPLAY_TAG_COMMENT(Equipment_Slot_WeaponSet_2_OffHand, "Equipment.Slot.WeaponSet.2.OffHand", "Off-hand slot for weapon set 2.");
+	UE_DEFINE_GAMEPLAY_TAG_COMMENT(Equipment_HandUsage_MainHand, "Equipment.HandUsage.MainHand", "Item can only be equipped in a main-hand slot.");
+	UE_DEFINE_GAMEPLAY_TAG_COMMENT(Equipment_HandUsage_OffHand, "Equipment.HandUsage.OffHand", "Item can only be equipped in an off-hand slot.");
+	UE_DEFINE_GAMEPLAY_TAG_COMMENT(Equipment_HandUsage_EitherHand, "Equipment.HandUsage.EitherHand", "Item can be equipped in either hand.");
+	UE_DEFINE_GAMEPLAY_TAG_COMMENT(Equipment_HandUsage_TwoHanded, "Equipment.HandUsage.TwoHanded", "Item occupies both hands.");
+	UE_DEFINE_GAMEPLAY_TAG_COMMENT(Equipment_Trait_Shield, "Equipment.Trait.Shield", "Item behaves like a shield.");
+	UE_DEFINE_GAMEPLAY_TAG_COMMENT(Equipment_Trait_DualWield, "Equipment.Trait.DualWield", "Item participates in dual-wield compatibility rules.");
 
 }
 

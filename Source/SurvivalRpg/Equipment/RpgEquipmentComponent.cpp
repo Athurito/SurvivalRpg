@@ -1,0 +1,902 @@
+#include "RpgEquipmentComponent.h"
+
+#include "Engine/ActorChannel.h"
+#include "GameFramework/Pawn.h"
+#include "GameFramework/PlayerState.h"
+#include "Net/UnrealNetwork.h"
+#include "Components/SkeletalMeshComponent.h"
+#include "GameplayEffect.h"
+#include "SurvivalRpg/GameplayTags/GameplayTags.h"
+#include "SurvivalRpg/AbilitySystem/RpgAbilitySystemComponent.h"
+#include "SurvivalRpg/Core/Player/RpgPlayerState.h"
+#include "SurvivalRpg/Items/RpgItemDefinition.h"
+#include "SurvivalRpg/Items/RpgItemInstance.h"
+#include "SurvivalRpg/Items/Fragments/RpgItemFragment_Equipment.h"
+#include "SurvivalRpg/Items/Fragments/RpgItemFragment_Visual.h"
+#include "SurvivalRpg/Items/Fragments/RpgItemFragment_Weapon.h"
+#include "RpgEquipmentRuleset.h"
+
+URpgEquipmentComponent::URpgEquipmentComponent()
+{
+	PrimaryComponentTick.bCanEverTick = true;
+	SetIsReplicatedByDefault(true);
+	WeaponSets.SetNum(2);
+}
+
+void URpgEquipmentComponent::GetLifetimeReplicatedProps(TArray<FLifetimeProperty>& OutLifetimeProps) const
+{
+	Super::GetLifetimeReplicatedProps(OutLifetimeProps);
+
+	DOREPLIFETIME(ThisClass, KnownItemInstances);
+	DOREPLIFETIME(ThisClass, WeaponSets);
+	DOREPLIFETIME(ThisClass, ActiveWeaponSetIndex);
+}
+
+bool URpgEquipmentComponent::ReplicateSubobjects(UActorChannel* Channel, FOutBunch* Bunch, FReplicationFlags* RepFlags)
+{
+	bool bWroteSomething = Super::ReplicateSubobjects(Channel, Bunch, RepFlags);
+	for (URpgItemInstance* ItemInstance : KnownItemInstances)
+	{
+		if (ItemInstance != nullptr)
+		{
+			bWroteSomething |= Channel->ReplicateSubobject(ItemInstance, *Bunch, *RepFlags);
+		}
+	}
+	return bWroteSomething;
+}
+
+void URpgEquipmentComponent::SetEquipmentRuleset(const URpgEquipmentRuleset* InRuleset)
+{
+	EquipmentRuleset = InRuleset;
+	EnsureWeaponSetCount();
+	QueueVisualRefresh();
+}
+
+URpgItemInstance* URpgEquipmentComponent::CreateItemInstance(URpgItemDefinition* ItemDefinition, const FRpgItemSourceHandle& SourceHandle)
+{
+	if (ItemDefinition == nullptr)
+	{
+		return nullptr;
+	}
+
+	UObject* DesiredOuter = GetOwner() ? static_cast<UObject*>(GetOwner()) : static_cast<UObject*>(this);
+	URpgItemInstance* NewItemInstance = NewObject<URpgItemInstance>(DesiredOuter);
+	NewItemInstance->InitializeItemInstance(ItemDefinition, SourceHandle);
+	return RegisterExistingItemInstance(NewItemInstance);
+}
+
+URpgItemInstance* URpgEquipmentComponent::RegisterExistingItemInstance(URpgItemInstance* ItemInstance)
+{
+	if (ItemInstance == nullptr)
+	{
+		return nullptr;
+	}
+
+	if (URpgItemInstance* ExistingItem = FindKnownItemById(ItemInstance->GetInstanceId()))
+	{
+		return ExistingItem;
+	}
+
+	UObject* DesiredOuter = GetOwner() ? static_cast<UObject*>(GetOwner()) : static_cast<UObject*>(this);
+	URpgItemInstance* ManagedItem = (ItemInstance->GetOuter() == DesiredOuter)
+		? ItemInstance
+		: ItemInstance->DuplicateItemInstance(DesiredOuter);
+
+	if (ManagedItem == nullptr)
+	{
+		return nullptr;
+	}
+
+	KnownItemInstances.Add(ManagedItem);
+	ForceOwnerNetUpdate();
+	return ManagedItem;
+}
+
+bool URpgEquipmentComponent::CanEquipItem(const URpgItemInstance* ItemInstance, FGameplayTag SlotTag) const
+{
+	if (ItemInstance == nullptr)
+	{
+		return false;
+	}
+
+	TArray<FRpgEquippedWeaponSet> ProposedWeaponSets = WeaponSets;
+	EnsureWeaponSetCount(ProposedWeaponSets);
+	return BuildProposedEquipState(const_cast<URpgItemInstance*>(ItemInstance), SlotTag, ProposedWeaponSets);
+}
+
+bool URpgEquipmentComponent::TryEquipItem(URpgItemInstance* ItemInstance, FGameplayTag SlotTag)
+{
+	if (ItemInstance == nullptr)
+	{
+		return false;
+	}
+
+	if (!HasAuthorityForEquipment())
+	{
+		ServerTryEquipItem(ItemInstance, SlotTag);
+		return true;
+	}
+
+	URpgItemInstance* ManagedItem = RegisterExistingItemInstance(ItemInstance);
+	if (ManagedItem == nullptr)
+	{
+		return false;
+	}
+
+	TArray<FRpgEquippedWeaponSet> ProposedWeaponSets = WeaponSets;
+	EnsureWeaponSetCount(ProposedWeaponSets);
+	if (!BuildProposedEquipState(ManagedItem, SlotTag, ProposedWeaponSets))
+	{
+		return false;
+	}
+
+	WeaponSets = MoveTemp(ProposedWeaponSets);
+	HandleEquipmentStateChanged();
+	return true;
+}
+
+bool URpgEquipmentComponent::TryAutoEquipItem(URpgItemInstance* ItemInstance)
+{
+	if (ItemInstance == nullptr)
+	{
+		return false;
+	}
+
+	const int32 NumWeaponSets = GetDesiredWeaponSetCount();
+	const int32 SecondarySetIndex = (ActiveWeaponSetIndex + 1) % NumWeaponSets;
+	const TArray<FGameplayTag> CandidateSlots = {
+		MakeSlotTag(ActiveWeaponSetIndex, ERpgEquipmentHandSlot::MainHand),
+		MakeSlotTag(ActiveWeaponSetIndex, ERpgEquipmentHandSlot::OffHand),
+		MakeSlotTag(SecondarySetIndex, ERpgEquipmentHandSlot::MainHand),
+		MakeSlotTag(SecondarySetIndex, ERpgEquipmentHandSlot::OffHand)
+	};
+
+	for (const FGameplayTag& SlotTag : CandidateSlots)
+	{
+		if (CanEquipItem(ItemInstance, SlotTag))
+		{
+			return TryEquipItem(ItemInstance, SlotTag);
+		}
+	}
+
+	return false;
+}
+
+bool URpgEquipmentComponent::TryUnequipItem(FGameplayTag SlotTag)
+{
+	if (!HasAuthorityForEquipment())
+	{
+		ServerTryUnequipItem(SlotTag);
+		return true;
+	}
+
+	int32 WeaponSetIndex = INDEX_NONE;
+	ERpgEquipmentHandSlot HandSlot = ERpgEquipmentHandSlot::MainHand;
+	if (!ResolveSlotTag(SlotTag, WeaponSetIndex, HandSlot))
+	{
+		return false;
+	}
+
+	EnsureWeaponSetCount();
+	const URpgEquipmentRuleset* Ruleset = EquipmentRuleset ? EquipmentRuleset.Get() : GetDefault<URpgEquipmentRuleset>();
+	FRpgEquippedWeaponSet& WeaponSet = WeaponSets[WeaponSetIndex];
+	if (HandSlot == ERpgEquipmentHandSlot::MainHand)
+	{
+		WeaponSet.MainHandItem = nullptr;
+		if (Ruleset == nullptr || !Ruleset->AllowsOffHandWithoutMainHand())
+		{
+			WeaponSet.OffHandItem = nullptr;
+		}
+	}
+	else
+	{
+		WeaponSet.OffHandItem = nullptr;
+	}
+
+	HandleEquipmentStateChanged();
+	return true;
+}
+
+bool URpgEquipmentComponent::TryActivateWeaponSet(int32 WeaponSetIndex)
+{
+	if (!HasAuthorityForEquipment())
+	{
+		ServerTryActivateWeaponSet(WeaponSetIndex);
+		return true;
+	}
+
+	if (WeaponSetIndex < 0 || WeaponSetIndex >= GetDesiredWeaponSetCount())
+	{
+		return false;
+	}
+
+	EnsureWeaponSetCount();
+	ActiveWeaponSetIndex = WeaponSetIndex;
+	HandleEquipmentStateChanged();
+	return true;
+}
+
+FRpgEquippedWeaponSet URpgEquipmentComponent::GetActiveWeaponSet() const
+{
+	if (WeaponSets.IsValidIndex(ActiveWeaponSetIndex))
+	{
+		return WeaponSets[ActiveWeaponSetIndex];
+	}
+
+	return FRpgEquippedWeaponSet();
+}
+
+void URpgEquipmentComponent::GetEquippedItems(TArray<URpgItemInstance*>& OutItems) const
+{
+	OutItems.Reset();
+
+	for (const FRpgEquippedWeaponSet& WeaponSet : WeaponSets)
+	{
+		if (WeaponSet.MainHandItem != nullptr)
+		{
+			OutItems.AddUnique(WeaponSet.MainHandItem);
+		}
+
+		if (WeaponSet.OffHandItem != nullptr)
+		{
+			OutItems.AddUnique(WeaponSet.OffHandItem);
+		}
+	}
+}
+
+URpgItemInstance* URpgEquipmentComponent::GetItemInSlot(FGameplayTag SlotTag) const
+{
+	int32 WeaponSetIndex = INDEX_NONE;
+	ERpgEquipmentHandSlot HandSlot = ERpgEquipmentHandSlot::MainHand;
+	if (!ResolveSlotTag(SlotTag, WeaponSetIndex, HandSlot) || !WeaponSets.IsValidIndex(WeaponSetIndex))
+	{
+		return nullptr;
+	}
+
+	return (HandSlot == ERpgEquipmentHandSlot::MainHand)
+		? WeaponSets[WeaponSetIndex].MainHandItem
+		: WeaponSets[WeaponSetIndex].OffHandItem;
+}
+
+void URpgEquipmentComponent::BeginPlay()
+{
+	Super::BeginPlay();
+	EnsureWeaponSetCount();
+	QueueVisualRefresh();
+}
+
+void URpgEquipmentComponent::EndPlay(const EEndPlayReason::Type EndPlayReason)
+{
+	DestroyAllVisualActors();
+	RemoveAppliedGrants();
+	Super::EndPlay(EndPlayReason);
+}
+
+void URpgEquipmentComponent::TickComponent(float DeltaTime, ELevelTick TickType, FActorComponentTickFunction* ThisTickFunction)
+{
+	Super::TickComponent(DeltaTime, TickType, ThisTickFunction);
+
+	APawn* CurrentPawn = ResolveVisualPawn();
+	if (CachedVisualPawn != CurrentPawn)
+	{
+		CachedVisualPawn = CurrentPawn;
+		bVisualRefreshQueued = true;
+	}
+
+	if (bVisualRefreshQueued)
+	{
+		RefreshVisuals();
+	}
+}
+
+void URpgEquipmentComponent::OnRep_WeaponSets()
+{
+	QueueVisualRefresh();
+	OnEquipmentChanged.Broadcast();
+}
+
+void URpgEquipmentComponent::OnRep_ActiveWeaponSetIndex()
+{
+	QueueVisualRefresh();
+	OnEquipmentChanged.Broadcast();
+}
+
+void URpgEquipmentComponent::ServerTryEquipItem_Implementation(URpgItemInstance* ItemInstance, FGameplayTag SlotTag)
+{
+	TryEquipItem(ItemInstance, SlotTag);
+}
+
+void URpgEquipmentComponent::ServerTryUnequipItem_Implementation(FGameplayTag SlotTag)
+{
+	TryUnequipItem(SlotTag);
+}
+
+void URpgEquipmentComponent::ServerTryActivateWeaponSet_Implementation(int32 WeaponSetIndex)
+{
+	TryActivateWeaponSet(WeaponSetIndex);
+}
+
+bool URpgEquipmentComponent::HasAuthorityForEquipment() const
+{
+	const AActor* OwnerActor = GetOwner();
+	return OwnerActor == nullptr || OwnerActor->HasAuthority();
+}
+
+int32 URpgEquipmentComponent::GetDesiredWeaponSetCount() const
+{
+	const URpgEquipmentRuleset* Ruleset = EquipmentRuleset ? EquipmentRuleset.Get() : GetDefault<URpgEquipmentRuleset>();
+	return Ruleset ? Ruleset->GetNumWeaponSets() : 2;
+}
+
+void URpgEquipmentComponent::EnsureWeaponSetCount()
+{
+	EnsureWeaponSetCount(WeaponSets);
+	if (ActiveWeaponSetIndex < 0 || ActiveWeaponSetIndex >= WeaponSets.Num())
+	{
+		ActiveWeaponSetIndex = 0;
+	}
+}
+
+void URpgEquipmentComponent::EnsureWeaponSetCount(TArray<FRpgEquippedWeaponSet>& InOutWeaponSets) const
+{
+	InOutWeaponSets.SetNum(GetDesiredWeaponSetCount());
+}
+
+bool URpgEquipmentComponent::ResolveSlotTag(const FGameplayTag& SlotTag, int32& OutWeaponSetIndex, ERpgEquipmentHandSlot& OutHandSlot) const
+{
+	OutWeaponSetIndex = INDEX_NONE;
+	OutHandSlot = ERpgEquipmentHandSlot::MainHand;
+
+	const URpgEquipmentRuleset* Ruleset = EquipmentRuleset ? EquipmentRuleset.Get() : GetDefault<URpgEquipmentRuleset>();
+	if (Ruleset == nullptr || !Ruleset->IsWeaponSetSlot(SlotTag))
+	{
+		return false;
+	}
+
+	if (SlotTag == RpgGameplayTags::Equipment_Slot_WeaponSet_1_MainHand)
+	{
+		OutWeaponSetIndex = 0;
+		OutHandSlot = ERpgEquipmentHandSlot::MainHand;
+		return true;
+	}
+
+	if (SlotTag == RpgGameplayTags::Equipment_Slot_WeaponSet_1_OffHand)
+	{
+		OutWeaponSetIndex = 0;
+		OutHandSlot = ERpgEquipmentHandSlot::OffHand;
+		return true;
+	}
+
+	if (SlotTag == RpgGameplayTags::Equipment_Slot_WeaponSet_2_MainHand)
+	{
+		OutWeaponSetIndex = 1;
+		OutHandSlot = ERpgEquipmentHandSlot::MainHand;
+		return true;
+	}
+
+	if (SlotTag == RpgGameplayTags::Equipment_Slot_WeaponSet_2_OffHand)
+	{
+		OutWeaponSetIndex = 1;
+		OutHandSlot = ERpgEquipmentHandSlot::OffHand;
+		return true;
+	}
+
+	return false;
+}
+
+FGameplayTag URpgEquipmentComponent::MakeSlotTag(int32 WeaponSetIndex, ERpgEquipmentHandSlot HandSlot) const
+{
+	if (WeaponSetIndex <= 0)
+	{
+		return HandSlot == ERpgEquipmentHandSlot::MainHand
+			? RpgGameplayTags::Equipment_Slot_WeaponSet_1_MainHand
+			: RpgGameplayTags::Equipment_Slot_WeaponSet_1_OffHand;
+	}
+
+	return HandSlot == ERpgEquipmentHandSlot::MainHand
+		? RpgGameplayTags::Equipment_Slot_WeaponSet_2_MainHand
+		: RpgGameplayTags::Equipment_Slot_WeaponSet_2_OffHand;
+}
+
+bool URpgEquipmentComponent::BuildProposedEquipState(URpgItemInstance* ItemInstance, const FGameplayTag& SlotTag, TArray<FRpgEquippedWeaponSet>& InOutWeaponSets) const
+{
+	const URpgEquipmentRuleset* Ruleset = EquipmentRuleset ? EquipmentRuleset.Get() : GetDefault<URpgEquipmentRuleset>();
+	if (ItemInstance == nullptr || Ruleset == nullptr)
+	{
+		return false;
+	}
+
+	const URpgItemFragment_Equipment* EquipmentFragment = ItemInstance->FindFragmentByClass<URpgItemFragment_Equipment>();
+	if (EquipmentFragment == nullptr || ItemInstance->FindFragmentByClass<URpgItemFragment_Weapon>() == nullptr)
+	{
+		return false;
+	}
+
+	int32 WeaponSetIndex = INDEX_NONE;
+	ERpgEquipmentHandSlot HandSlot = ERpgEquipmentHandSlot::MainHand;
+	if (!ResolveSlotTag(SlotTag, WeaponSetIndex, HandSlot) || !InOutWeaponSets.IsValidIndex(WeaponSetIndex))
+	{
+		return false;
+	}
+
+	if (!Ruleset->DoesItemFitSlot(ItemInstance, SlotTag))
+	{
+		return false;
+	}
+
+	if (!EquipmentFragment->GetSupportedSlotTags().IsEmpty() && !EquipmentFragment->GetSupportedSlotTags().HasTagExact(SlotTag))
+	{
+		return false;
+	}
+
+	StripItemFromWeaponSets(ItemInstance, InOutWeaponSets);
+
+	FRpgEquippedWeaponSet& TargetWeaponSet = InOutWeaponSets[WeaponSetIndex];
+	if (HandSlot == ERpgEquipmentHandSlot::MainHand)
+	{
+		TargetWeaponSet.MainHandItem = ItemInstance;
+
+		if (Ruleset->IsTwoHanded(ItemInstance))
+		{
+			TargetWeaponSet.OffHandItem = nullptr;
+		}
+		else if (TargetWeaponSet.OffHandItem != nullptr && !Ruleset->AreItemsCompatible(ItemInstance, TargetWeaponSet.OffHandItem))
+		{
+			TargetWeaponSet.OffHandItem = nullptr;
+		}
+	}
+	else
+	{
+		if (TargetWeaponSet.MainHandItem == nullptr && !Ruleset->AllowsOffHandWithoutMainHand())
+		{
+			return false;
+		}
+
+		TargetWeaponSet.OffHandItem = ItemInstance;
+	}
+
+	return ValidateWeaponSets(InOutWeaponSets);
+}
+
+bool URpgEquipmentComponent::ValidateWeaponSets(const TArray<FRpgEquippedWeaponSet>& WeaponSetStates) const
+{
+	const URpgEquipmentRuleset* Ruleset = EquipmentRuleset ? EquipmentRuleset.Get() : GetDefault<URpgEquipmentRuleset>();
+	if (Ruleset == nullptr)
+	{
+		return false;
+	}
+
+	if (Ruleset->IsTwoHandedCarryLimitEnabled() && CountTwoHandedItems(WeaponSetStates) > 1)
+	{
+		return false;
+	}
+
+	for (int32 WeaponSetIndex = 0; WeaponSetIndex < WeaponSetStates.Num(); ++WeaponSetIndex)
+	{
+		const FRpgEquippedWeaponSet& WeaponSet = WeaponSetStates[WeaponSetIndex];
+
+		if (WeaponSet.MainHandItem != nullptr && !Ruleset->DoesItemFitSlot(WeaponSet.MainHandItem, MakeSlotTag(WeaponSetIndex, ERpgEquipmentHandSlot::MainHand)))
+		{
+			return false;
+		}
+
+		if (WeaponSet.OffHandItem != nullptr && !Ruleset->DoesItemFitSlot(WeaponSet.OffHandItem, MakeSlotTag(WeaponSetIndex, ERpgEquipmentHandSlot::OffHand)))
+		{
+			return false;
+		}
+
+		if (WeaponSet.MainHandItem != nullptr && Ruleset->IsTwoHanded(WeaponSet.MainHandItem) && WeaponSet.OffHandItem != nullptr)
+		{
+			return false;
+		}
+
+		if (!Ruleset->AreItemsCompatible(WeaponSet.MainHandItem, WeaponSet.OffHandItem))
+		{
+			return false;
+		}
+	}
+
+	return true;
+}
+
+void URpgEquipmentComponent::StripItemFromWeaponSets(URpgItemInstance* ItemInstance, TArray<FRpgEquippedWeaponSet>& InOutWeaponSets) const
+{
+	if (ItemInstance == nullptr)
+	{
+		return;
+	}
+
+	for (FRpgEquippedWeaponSet& WeaponSet : InOutWeaponSets)
+	{
+		if (WeaponSet.MainHandItem == ItemInstance)
+		{
+			WeaponSet.MainHandItem = nullptr;
+		}
+
+		if (WeaponSet.OffHandItem == ItemInstance)
+		{
+			WeaponSet.OffHandItem = nullptr;
+		}
+	}
+}
+
+bool URpgEquipmentComponent::IsItemInActiveWeaponSet(const URpgItemInstance* ItemInstance) const
+{
+	if (ItemInstance == nullptr || !WeaponSets.IsValidIndex(ActiveWeaponSetIndex))
+	{
+		return false;
+	}
+
+	const FRpgEquippedWeaponSet& ActiveWeaponSet = WeaponSets[ActiveWeaponSetIndex];
+	return ActiveWeaponSet.MainHandItem == ItemInstance || ActiveWeaponSet.OffHandItem == ItemInstance;
+}
+
+int32 URpgEquipmentComponent::CountTwoHandedItems(const TArray<FRpgEquippedWeaponSet>& WeaponSetStates) const
+{
+	const URpgEquipmentRuleset* Ruleset = EquipmentRuleset ? EquipmentRuleset.Get() : GetDefault<URpgEquipmentRuleset>();
+	if (Ruleset == nullptr)
+	{
+		return 0;
+	}
+
+	int32 Result = 0;
+	for (const FRpgEquippedWeaponSet& WeaponSet : WeaponSetStates)
+	{
+		if (WeaponSet.MainHandItem != nullptr && Ruleset->IsTwoHanded(WeaponSet.MainHandItem))
+		{
+			++Result;
+		}
+	}
+
+	return Result;
+}
+
+URpgItemInstance* URpgEquipmentComponent::FindKnownItemById(const FGuid& InstanceId) const
+{
+	if (!InstanceId.IsValid())
+	{
+		return nullptr;
+	}
+
+	for (URpgItemInstance* KnownItem : KnownItemInstances)
+	{
+		if (KnownItem != nullptr && KnownItem->GetInstanceId() == InstanceId)
+		{
+			return KnownItem;
+		}
+	}
+
+	return nullptr;
+}
+
+void URpgEquipmentComponent::HandleEquipmentStateChanged()
+{
+	EnsureWeaponSetCount();
+	RemoveAppliedGrants();
+	ApplyCurrentGrants();
+	QueueVisualRefresh();
+	ForceOwnerNetUpdate();
+	OnEquipmentChanged.Broadcast();
+}
+
+void URpgEquipmentComponent::RemoveAppliedGrants()
+{
+	if (URpgAbilitySystemComponent* AbilitySystemComponent = ResolveAbilitySystemComponent())
+	{
+		for (FRpgAbilitySet_GrantedHandles& GrantedHandles : AppliedAbilitySetHandles)
+		{
+			GrantedHandles.TakeFromAbilitySystem(AbilitySystemComponent);
+		}
+
+		for (const FActiveGameplayEffectHandle& EffectHandle : AppliedGameplayEffectHandles)
+		{
+			if (EffectHandle.IsValid())
+			{
+				AbilitySystemComponent->RemoveActiveGameplayEffect(EffectHandle);
+			}
+		}
+
+		for (const TPair<FGameplayTag, int32>& TagCountPair : AppliedLooseTagCounts)
+		{
+			for (int32 CountIndex = 0; CountIndex < TagCountPair.Value; ++CountIndex)
+			{
+				AbilitySystemComponent->RemoveLooseGameplayTag(TagCountPair.Key);
+			}
+		}
+	}
+
+	AppliedAbilitySetHandles.Reset();
+	AppliedGameplayEffectHandles.Reset();
+	AppliedLooseTagCounts.Reset();
+}
+
+void URpgEquipmentComponent::ApplyCurrentGrants()
+{
+	if (!HasAuthorityForEquipment())
+	{
+		return;
+	}
+
+	URpgAbilitySystemComponent* AbilitySystemComponent = ResolveAbilitySystemComponent();
+	if (AbilitySystemComponent == nullptr)
+	{
+		return;
+	}
+
+	TArray<URpgItemInstance*> EquippedItems;
+	GetEquippedItems(EquippedItems);
+
+	for (URpgItemInstance* ItemInstance : EquippedItems)
+	{
+		if (const URpgItemFragment_Equipment* EquipmentFragment = ItemInstance ? ItemInstance->FindFragmentByClass<URpgItemFragment_Equipment>() : nullptr)
+		{
+			ApplyAbilitySets(AbilitySystemComponent, EquipmentFragment->GetEquippedAbilitySets(), ItemInstance);
+			ApplyGameplayEffects(AbilitySystemComponent, EquipmentFragment->GetEquippedGameplayEffects());
+			ApplyLooseTags(AbilitySystemComponent, EquipmentFragment->GetEquippedLooseTags());
+		}
+
+		if (IsItemInActiveWeaponSet(ItemInstance))
+		{
+			if (const URpgItemFragment_Weapon* WeaponFragment = ItemInstance->FindFragmentByClass<URpgItemFragment_Weapon>())
+			{
+				ApplyAbilitySets(AbilitySystemComponent, WeaponFragment->GetActiveAbilitySets(), ItemInstance);
+				ApplyGameplayEffects(AbilitySystemComponent, WeaponFragment->GetActiveGameplayEffects());
+				ApplyLooseTags(AbilitySystemComponent, WeaponFragment->GetActiveLooseTags());
+			}
+		}
+	}
+}
+
+void URpgEquipmentComponent::ApplyAbilitySets(URpgAbilitySystemComponent* AbilitySystemComponent, const TArray<TObjectPtr<const URpgAbilitySet>>& AbilitySets, UObject* SourceObject)
+{
+	if (AbilitySystemComponent == nullptr)
+	{
+		return;
+	}
+
+	for (const URpgAbilitySet* AbilitySet : AbilitySets)
+	{
+		if (AbilitySet == nullptr)
+		{
+			continue;
+		}
+
+		FRpgAbilitySet_GrantedHandles& Handles = AppliedAbilitySetHandles.AddDefaulted_GetRef();
+		AbilitySet->GiveToAbilitySystem(AbilitySystemComponent, &Handles, SourceObject);
+	}
+}
+
+void URpgEquipmentComponent::ApplyGameplayEffects(URpgAbilitySystemComponent* AbilitySystemComponent, const TArray<FRpgItemGameplayEffectGrant>& GameplayEffects)
+{
+	if (AbilitySystemComponent == nullptr)
+	{
+		return;
+	}
+
+	for (const FRpgItemGameplayEffectGrant& EffectGrant : GameplayEffects)
+	{
+		if (EffectGrant.GameplayEffect == nullptr)
+		{
+			continue;
+		}
+
+		const UGameplayEffect* GameplayEffect = EffectGrant.GameplayEffect->GetDefaultObject<UGameplayEffect>();
+		const FActiveGameplayEffectHandle EffectHandle = AbilitySystemComponent->ApplyGameplayEffectToSelf(
+			GameplayEffect,
+			EffectGrant.EffectLevel,
+			AbilitySystemComponent->MakeEffectContext());
+
+		if (EffectHandle.IsValid())
+		{
+			AppliedGameplayEffectHandles.Add(EffectHandle);
+		}
+	}
+}
+
+void URpgEquipmentComponent::ApplyLooseTags(URpgAbilitySystemComponent* AbilitySystemComponent, const FGameplayTagContainer& LooseTags)
+{
+	if (AbilitySystemComponent == nullptr)
+	{
+		return;
+	}
+
+	for (const FGameplayTag& LooseTag : LooseTags)
+	{
+		AbilitySystemComponent->AddLooseGameplayTag(LooseTag);
+		AppliedLooseTagCounts.FindOrAdd(LooseTag) += 1;
+	}
+}
+
+URpgAbilitySystemComponent* URpgEquipmentComponent::ResolveAbilitySystemComponent() const
+{
+#if WITH_DEV_AUTOMATION_TESTS
+	if (AbilitySystemOverrideForTests != nullptr)
+	{
+		return AbilitySystemOverrideForTests;
+	}
+#endif
+
+	if (const ARpgPlayerState* PlayerState = Cast<ARpgPlayerState>(GetOwner()))
+	{
+		return PlayerState->GetRpgAbilitySystemComponent();
+	}
+
+	return nullptr;
+}
+
+void URpgEquipmentComponent::QueueVisualRefresh()
+{
+	bVisualRefreshQueued = true;
+}
+
+void URpgEquipmentComponent::RefreshVisuals()
+{
+	bVisualRefreshQueued = false;
+
+	APawn* VisualPawn = ResolveVisualPawn();
+	if (VisualPawn == nullptr || VisualPawn->GetNetMode() == NM_DedicatedServer)
+	{
+		DestroyAllVisualActors();
+		return;
+	}
+
+	TArray<URpgItemInstance*> EquippedItems;
+	GetEquippedItems(EquippedItems);
+
+	for (int32 EntryIndex = VisualEntries.Num() - 1; EntryIndex >= 0; --EntryIndex)
+	{
+		const FRpgEquipmentVisualEntry& Entry = VisualEntries[EntryIndex];
+		if (Entry.ItemInstance == nullptr || !EquippedItems.Contains(Entry.ItemInstance))
+		{
+			if (Entry.VisualActor != nullptr)
+			{
+				Entry.VisualActor->Destroy();
+			}
+			VisualEntries.RemoveAtSwap(EntryIndex);
+		}
+	}
+
+	USkeletalMeshComponent* MeshComponent = VisualPawn->FindComponentByClass<USkeletalMeshComponent>();
+	if (MeshComponent == nullptr)
+	{
+		DestroyAllVisualActors();
+		return;
+	}
+
+	for (URpgItemInstance* ItemInstance : EquippedItems)
+	{
+		const URpgItemFragment_Visual* VisualFragment = ItemInstance ? ItemInstance->FindFragmentByClass<URpgItemFragment_Visual>() : nullptr;
+		if (VisualFragment == nullptr || VisualFragment->GetEquippedActorClass() == nullptr)
+		{
+			DestroyVisualActorForItem(ItemInstance);
+			continue;
+		}
+
+		AActor* VisualActor = FindOrSpawnVisualActor(ItemInstance, VisualPawn);
+		if (VisualActor == nullptr)
+		{
+			continue;
+		}
+
+		const bool bIsActiveItem = IsItemInActiveWeaponSet(ItemInstance);
+		const FName DesiredSocket = bIsActiveItem ? VisualFragment->GetEquippedSocketName() : VisualFragment->GetStowedSocketName();
+		const bool bShouldHide = !bIsActiveItem && DesiredSocket.IsNone() && VisualFragment->ShouldHideWhenInactiveWithoutStowedSocket();
+
+		VisualActor->SetActorHiddenInGame(bShouldHide);
+		if (bShouldHide)
+		{
+			continue;
+		}
+
+		VisualActor->AttachToComponent(MeshComponent, FAttachmentTransformRules::SnapToTargetNotIncludingScale, DesiredSocket);
+		VisualActor->SetActorRelativeTransform(bIsActiveItem ? VisualFragment->GetEquippedRelativeTransform() : VisualFragment->GetStowedRelativeTransform());
+	}
+}
+
+APawn* URpgEquipmentComponent::ResolveVisualPawn() const
+{
+	if (const APlayerState* PlayerState = Cast<APlayerState>(GetOwner()))
+	{
+		return PlayerState->GetPawn();
+	}
+
+	return nullptr;
+}
+
+AActor* URpgEquipmentComponent::FindVisualActorForItem(const URpgItemInstance* ItemInstance) const
+{
+	for (const FRpgEquipmentVisualEntry& Entry : VisualEntries)
+	{
+		if (Entry.ItemInstance == ItemInstance)
+		{
+			return Entry.VisualActor;
+		}
+	}
+
+	return nullptr;
+}
+
+AActor* URpgEquipmentComponent::FindOrSpawnVisualActor(URpgItemInstance* ItemInstance, APawn* VisualPawn)
+{
+	if (ItemInstance == nullptr || VisualPawn == nullptr)
+	{
+		return nullptr;
+	}
+
+	if (AActor* ExistingActor = FindVisualActorForItem(ItemInstance))
+	{
+		return ExistingActor;
+	}
+
+	const URpgItemFragment_Visual* VisualFragment = ItemInstance->FindFragmentByClass<URpgItemFragment_Visual>();
+	if (VisualFragment == nullptr || VisualFragment->GetEquippedActorClass() == nullptr)
+	{
+		return nullptr;
+	}
+
+	UWorld* World = VisualPawn->GetWorld();
+	if (World == nullptr)
+	{
+		return nullptr;
+	}
+
+	FActorSpawnParameters SpawnParameters;
+	SpawnParameters.Owner = VisualPawn;
+	SpawnParameters.Instigator = VisualPawn;
+	SpawnParameters.ObjectFlags |= RF_Transient;
+	SpawnParameters.SpawnCollisionHandlingOverride = ESpawnActorCollisionHandlingMethod::AlwaysSpawn;
+
+	AActor* VisualActor = World->SpawnActor<AActor>(VisualFragment->GetEquippedActorClass(), VisualPawn->GetActorLocation(), VisualPawn->GetActorRotation(), SpawnParameters);
+	if (VisualActor == nullptr)
+	{
+		return nullptr;
+	}
+
+	VisualActor->SetReplicates(false);
+	VisualActor->SetActorEnableCollision(false);
+
+	FRpgEquipmentVisualEntry& NewEntry = VisualEntries.AddDefaulted_GetRef();
+	NewEntry.ItemInstance = ItemInstance;
+	NewEntry.VisualActor = VisualActor;
+	return VisualActor;
+}
+
+void URpgEquipmentComponent::DestroyVisualActorForItem(const URpgItemInstance* ItemInstance)
+{
+	for (int32 EntryIndex = 0; EntryIndex < VisualEntries.Num(); ++EntryIndex)
+	{
+		if (VisualEntries[EntryIndex].ItemInstance != ItemInstance)
+		{
+			continue;
+		}
+
+		if (VisualEntries[EntryIndex].VisualActor != nullptr)
+		{
+			VisualEntries[EntryIndex].VisualActor->Destroy();
+		}
+
+		VisualEntries.RemoveAtSwap(EntryIndex);
+		return;
+	}
+}
+
+void URpgEquipmentComponent::DestroyAllVisualActors()
+{
+	for (FRpgEquipmentVisualEntry& Entry : VisualEntries)
+	{
+		if (Entry.VisualActor != nullptr)
+		{
+			Entry.VisualActor->Destroy();
+		}
+	}
+
+	VisualEntries.Reset();
+}
+
+void URpgEquipmentComponent::ForceOwnerNetUpdate() const
+{
+	if (AActor* OwnerActor = GetOwner())
+	{
+		OwnerActor->ForceNetUpdate();
+	}
+}

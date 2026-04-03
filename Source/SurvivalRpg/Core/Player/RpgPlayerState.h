@@ -11,6 +11,7 @@ class ARpgPlayerController;
 class URpgTradeSkillProgressionComponent;
 class URpgPlayerProgressionComponent;
 class URpgAbilitySystemComponent;
+class URpgEquipmentComponent;
 
 USTRUCT(BlueprintType)
 struct SURVIVALRPG_API FRpgReplicatedRespawnState
@@ -78,6 +79,7 @@ public:
 	void SendAbilitiesChangedEvent();
 	
 	TObjectPtr<URpgAbilitySystemComponent> GetRpgAbilitySystemComponent() const;
+	URpgEquipmentComponent* GetEquipmentComponent() const { return EquipmentComponent; }
 	
 	template<class T>
 	const T* GetPawnData() const { return Cast<T>(PawnData); }
@@ -129,6 +131,9 @@ protected:
 	
 	UPROPERTY(VisibleAnywhere, Category = "Rpg|Progression")
 	TObjectPtr<URpgTradeSkillProgressionComponent> TradeSkillProgressionComponent;
+
+	UPROPERTY(VisibleAnywhere, Category = "Rpg|Equipment")
+	TObjectPtr<URpgEquipmentComponent> EquipmentComponent;
 	
 	UPROPERTY(VisibleAnywhere, Category = "Pawn")
 	TObjectPtr<const UBasePawnData> PawnData;

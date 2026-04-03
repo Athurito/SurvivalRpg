@@ -21,12 +21,17 @@ bool URpgAbilitySystemComponent::GrantAbilitySet(const URpgAbilitySet* AbilitySe
 	}
 
 	// Wenn Client: an Server delegieren
-	if (!IsOwnerActorAuthoritative())
+	if (!HasGrantAuthority())
 	{
 		Server_GrantAbilitySet(AbilitySet, SourceObject);
 		return true; // Anfrage raus, Server repliziert Ergebnis
 	}
-	OwnerPlayerState->SendAbilitiesChangedEvent();
+
+	if (OwnerPlayerState)
+	{
+		OwnerPlayerState->SendAbilitiesChangedEvent();
+	}
+
 	return GrantAbilitySet_Internal(AbilitySet, SourceObject);
 }
 
@@ -37,18 +42,35 @@ bool URpgAbilitySystemComponent::RemoveAbilitySet(const URpgAbilitySet* AbilityS
 		return false;
 	}
 
-	if (!IsOwnerActorAuthoritative())
+	if (!HasGrantAuthority())
 	{
 		Server_RemoveAbilitySet(AbilitySet);
 		return true;
 	}
-	OwnerPlayerState->SendAbilitiesChangedEvent();
+
+	if (OwnerPlayerState)
+	{
+		OwnerPlayerState->SendAbilitiesChangedEvent();
+	}
+
 	return RemoveAbilitySet_Internal(AbilitySet);
 }
 
 bool URpgAbilitySystemComponent::HasAbilitySet(const URpgAbilitySet* AbilitySet) const
 {
 	return IsValid(AbilitySet) && GrantedAbilitySets.Contains(AbilitySet);
+}
+
+bool URpgAbilitySystemComponent::HasGrantAuthority() const
+{
+#if WITH_DEV_AUTOMATION_TESTS
+	if (bForceGrantAuthorityForTests)
+	{
+		return true;
+	}
+#endif
+
+	return IsOwnerActorAuthoritative();
 }
 
 void URpgAbilitySystemComponent::Server_GrantAbilitySet_Implementation(const URpgAbilitySet* AbilitySet, UObject* SourceObject)
@@ -106,7 +128,7 @@ void URpgAbilitySystemComponent::ApplyDefaultAbilitySetupIfNeeded(UObject* Sourc
 		return;
 	}
 
-	if (!IsOwnerActorAuthoritative())
+	if (!HasGrantAuthority())
 	{
 		return; // Abilities/Effects nur serverseitig geben
 	}
@@ -127,7 +149,7 @@ void URpgAbilitySystemComponent::ApplyDefaultAbilitySetupIfNeeded(UObject* Sourc
 
 void URpgAbilitySystemComponent::RemoveDefaultAbilitySetup()
 {
-	if (!IsOwnerActorAuthoritative())
+	if (!HasGrantAuthority())
 	{
 		return;
 	}

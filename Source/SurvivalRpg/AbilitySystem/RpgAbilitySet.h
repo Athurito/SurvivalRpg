@@ -104,6 +104,7 @@ public:
 	// Grants the ability set to the specified ability system component.
 	// The returned handles can be used later to take away anything that was granted.
 	void GiveToAbilitySystem(URpgAbilitySystemComponent* RpgASC, FRpgAbilitySet_GrantedHandles* OutGrantedHandles, UObject* SourceObject = nullptr) const;
+	void AddGrantedGameplayAbility(TSubclassOf<URpgGameplayAbility> AbilityClass, int32 AbilityLevel = 1, FGameplayTag InputTag = FGameplayTag());
 	
 protected:
 
