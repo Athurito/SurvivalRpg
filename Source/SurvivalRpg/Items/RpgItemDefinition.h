@@ -33,12 +33,12 @@ public:
 	void AddFragment(URpgItemFragment* Fragment);
 
 private:
-	UPROPERTY(EditDefaultsOnly, Instanced, Category = "Item")
+	UPROPERTY(EditDefaultsOnly, Instanced, Category = "Item", meta = (ToolTip = "Static building blocks for this item definition. Add equipment, weapon, visual, and loot fragments here to describe what the item can do."))
 	TArray<TObjectPtr<URpgItemFragment>> Fragments;
 
-	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Item", meta = (AllowPrivateAccess = "true", Categories = "Item.Type"))
+	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Item", meta = (AllowPrivateAccess = "true", Categories = "Item.Type", ToolTip = "High-level item classification used for broad queries and future systems. Typical values are Item.Type.Weapon, Item.Type.Armor, or Item.Type.Consumable."))
 	FGameplayTag ItemTypeTag;
 
-	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Item", meta = (AllowPrivateAccess = "true"))
+	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Item", meta = (AllowPrivateAccess = "true", ToolTip = "General descriptive tags for this item definition. Use these for shared item traits that are not tied to a specific fragment."))
 	FGameplayTagContainer ItemTags;
 };

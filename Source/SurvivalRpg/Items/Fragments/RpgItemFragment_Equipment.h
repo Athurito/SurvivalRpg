@@ -25,18 +25,18 @@ public:
 	void SetEquippedLooseTags(const FGameplayTagContainer& InEquippedLooseTags) { EquippedLooseTags = InEquippedLooseTags; }
 
 private:
-	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Equipment", meta = (AllowPrivateAccess = "true", Categories = "Equipment.Slot"))
+	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Equipment", meta = (AllowPrivateAccess = "true", Categories = "Equipment.Slot", ToolTip = "All slots this item is allowed to occupy. Add MainHand tags for weapons, OffHand tags for shields, or both when the item can be equipped in multiple hand slots."))
 	FGameplayTagContainer SupportedSlotTags;
 
-	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Equipment", meta = (AllowPrivateAccess = "true"))
+	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Equipment", meta = (AllowPrivateAccess = "true", ToolTip = "Passive tags contributed whenever the item is equipped in any valid slot. Use these for generic equipment state, not for hand-compatibility rules."))
 	FGameplayTagContainer EquipmentTags;
 
-	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Equipment", meta = (AllowPrivateAccess = "true"))
+	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Equipment", meta = (AllowPrivateAccess = "true", ToolTip = "Ability sets granted while this item is equipped, even if its weapon set is currently inactive. Use this for persistent passive equipment abilities."))
 	TArray<TObjectPtr<const URpgAbilitySet>> EquippedAbilitySets;
 
-	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Equipment", meta = (AllowPrivateAccess = "true"))
+	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Equipment", meta = (AllowPrivateAccess = "true", ToolTip = "GameplayEffects applied while the item stays equipped. Use this for passive bonuses such as armor, resistances, or stat modifiers."))
 	TArray<FRpgItemGameplayEffectGrant> EquippedGameplayEffects;
 
-	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Equipment", meta = (AllowPrivateAccess = "true"))
+	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Equipment", meta = (AllowPrivateAccess = "true", ToolTip = "Loose gameplay tags applied while the item is equipped. Useful for state queries such as Equipment.State.HasShield or passive trait flags."))
 	FGameplayTagContainer EquippedLooseTags;
 };
