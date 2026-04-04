@@ -6,7 +6,7 @@
 #include "RpgEquipmentBase.h"
 #include "RpgWeaponBase.generated.h"
 
-UCLASS()
+UCLASS(Abstract)
 class SURVIVALRPG_API ARpgWeaponBase : public ARpgEquipmentBase
 {
 	GENERATED_BODY()

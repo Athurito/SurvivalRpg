@@ -6,7 +6,7 @@
 #include "GameFramework/Actor.h"
 #include "RpgEquipmentBase.generated.h"
 
-UCLASS()
+UCLASS(Abstract)
 class SURVIVALRPG_API ARpgEquipmentBase : public AActor
 {
 	GENERATED_BODY()
