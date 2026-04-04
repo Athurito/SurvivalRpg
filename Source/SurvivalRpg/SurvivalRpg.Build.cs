@@ -16,6 +16,7 @@ public class SurvivalRpg : ModuleRules
 			"InputCore",
 			"NinjaInventoryCore",
 			"NinjaInventoryEquipment",
+			"NetCore",
 			"UMG",
 			"GameplayAbilities", "GameplayTags", "GameplayTasks",
 		});

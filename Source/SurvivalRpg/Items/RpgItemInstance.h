@@ -2,6 +2,7 @@
 
 #include "CoreMinimal.h"
 #include "GameplayTagContainer.h"
+#include "RpgGameplayTagStack.h"
 #include "UObject/Object.h"
 #include "RpgItemSourceHandle.h"
 #include "RpgItemInstance.generated.h"
@@ -26,19 +27,6 @@ public:
 
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Item")
 	TMap<FName, float> FloatValues;
-};
-
-USTRUCT(BlueprintType)
-struct SURVIVALRPG_API FRpgItemTagStackEntry
-{
-	GENERATED_BODY()
-
-public:
-	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Item")
-	FGameplayTag Tag;
-
-	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Item")
-	int32 StackCount = 0;
 };
 
 UCLASS(BlueprintType)
@@ -104,7 +92,7 @@ private:
 	int32 RollSeed = INDEX_NONE;
 
 	UPROPERTY(Replicated)
-	TArray<FRpgItemTagStackEntry> StatTagStacks;
+	FRpgGameplayTagStackContainer StatTagStacks;
 
 	UPROPERTY(Replicated)
 	TArray<FRpgItemFragmentRuntimeState> FragmentRuntimeStates;

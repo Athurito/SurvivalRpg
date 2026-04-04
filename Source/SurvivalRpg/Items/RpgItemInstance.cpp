@@ -48,71 +48,38 @@ URpgItemInstance* URpgItemInstance::DuplicateItemInstance(UObject* NewOuter) con
 		return nullptr;
 	}
 
-	return Cast<URpgItemInstance>(StaticDuplicateObject(this, NewOuter));
+	URpgItemInstance* DuplicatedItem = Cast<URpgItemInstance>(StaticDuplicateObject(this, NewOuter));
+	if (DuplicatedItem != nullptr)
+	{
+		DuplicatedItem->StatTagStacks.RebuildTagToCountMap();
+	}
+
+	return DuplicatedItem;
 }
 
 void URpgItemInstance::AddStatTagStack(FGameplayTag Tag, int32 StackCount)
 {
-	if (Tag.IsValid() && StackCount > 0)
-	{
-		SetStatTagStackCount(Tag, GetStatTagStackCount(Tag) + StackCount);
-	}
+	StatTagStacks.AddStack(Tag, StackCount);
 }
 
 void URpgItemInstance::RemoveStatTagStack(FGameplayTag Tag, int32 StackCount)
 {
-	if (Tag.IsValid() && StackCount > 0)
-	{
-		const int32 NewCount = FMath::Max(0, GetStatTagStackCount(Tag) - StackCount);
-		SetStatTagStackCount(Tag, NewCount);
-	}
+	StatTagStacks.RemoveStack(Tag, StackCount);
 }
 
 void URpgItemInstance::SetStatTagStackCount(FGameplayTag Tag, int32 NewCount)
 {
-	if (Tag.IsValid())
-	{
-		const int32 ExistingIndex = StatTagStacks.IndexOfByPredicate([&Tag](const FRpgItemTagStackEntry& Entry)
-		{
-			return Entry.Tag == Tag;
-		});
-
-		if (NewCount > 0)
-		{
-			if (ExistingIndex != INDEX_NONE)
-			{
-				StatTagStacks[ExistingIndex].StackCount = NewCount;
-			}
-			else
-			{
-				FRpgItemTagStackEntry& NewEntry = StatTagStacks.AddDefaulted_GetRef();
-				NewEntry.Tag = Tag;
-				NewEntry.StackCount = NewCount;
-			}
-		}
-		else if (ExistingIndex != INDEX_NONE)
-		{
-			StatTagStacks.RemoveAtSwap(ExistingIndex);
-		}
-	}
+	StatTagStacks.SetStackCount(Tag, NewCount);
 }
 
 int32 URpgItemInstance::GetStatTagStackCount(FGameplayTag Tag) const
 {
-	if (const FRpgItemTagStackEntry* FoundEntry = StatTagStacks.FindByPredicate([&Tag](const FRpgItemTagStackEntry& Entry)
-	{
-		return Entry.Tag == Tag;
-	}))
-	{
-		return FoundEntry->StackCount;
-	}
-
-	return 0;
+	return StatTagStacks.GetStackCount(Tag);
 }
 
 bool URpgItemInstance::HasStatTag(FGameplayTag Tag) const
 {
-	return GetStatTagStackCount(Tag) > 0;
+	return StatTagStacks.ContainsTag(Tag);
 }
 
 const URpgItemFragment* URpgItemInstance::FindFragmentByClass(TSubclassOf<URpgItemFragment> FragmentClass) const

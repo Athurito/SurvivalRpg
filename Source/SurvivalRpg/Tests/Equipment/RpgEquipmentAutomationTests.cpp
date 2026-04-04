@@ -2,6 +2,7 @@
 
 #include "Misc/AutomationTest.h"
 
+#include "Engine/DataAsset.h"
 #include "SurvivalRpg/AbilitySystem/RpgAbilitySet.h"
 #include "SurvivalRpg/AbilitySystem/RpgAbilitySystemComponent.h"
 #include "SurvivalRpg/Equipment/RpgEquipmentComponent.h"
@@ -10,6 +11,7 @@
 #include "SurvivalRpg/Items/RpgItemDefinition.h"
 #include "SurvivalRpg/Items/RpgItemInstance.h"
 #include "SurvivalRpg/Items/Fragments/RpgItemFragment_Equipment.h"
+#include "SurvivalRpg/Items/Fragments/RpgItemFragment_Visual.h"
 #include "SurvivalRpg/Items/Fragments/RpgItemFragment_Weapon.h"
 
 namespace RpgEquipmentAutomationTests
@@ -34,7 +36,8 @@ namespace RpgEquipmentAutomationTests
 		FGameplayTag HandUsageTag,
 		const FGameplayTagContainer& TraitTags = FGameplayTagContainer(),
 		const URpgAbilitySet* ActiveAbilitySet = nullptr,
-		const FGameplayTagContainer& ActiveLooseTags = FGameplayTagContainer())
+		const FGameplayTagContainer& ActiveLooseTags = FGameplayTagContainer(),
+		UDataAsset* CameraSettings = nullptr)
 	{
 		URpgItemDefinition* ItemDefinition = NewObject<URpgItemDefinition>(Outer);
 
@@ -54,6 +57,13 @@ namespace RpgEquipmentAutomationTests
 			WeaponFragment->SetActiveLooseTags(ActiveLooseTags);
 		}
 		ItemDefinition->AddFragment(WeaponFragment);
+
+		if (CameraSettings != nullptr)
+		{
+			URpgItemFragment_Visual* VisualFragment = NewObject<URpgItemFragment_Visual>(ItemDefinition);
+			VisualFragment->SetCameraSettings(CameraSettings);
+			ItemDefinition->AddFragment(VisualFragment);
+		}
 
 		URpgItemInstance* ItemInstance = NewObject<URpgItemInstance>(Outer);
 		ItemInstance->InitializeItemInstance(ItemDefinition, FRpgItemSourceHandle(), FMath::Rand());
@@ -184,12 +194,117 @@ bool FRpgEquipmentWeaponSetGrantSwitchTest::RunTest(const FString& Parameters)
 	TestTrue(TEXT("Weapon set 1 weapon equips."), EquipmentComponent->TryEquipItem(FirstWeapon, RpgGameplayTags::Equipment_Slot_WeaponSet_1_MainHand));
 	TestTrue(TEXT("Weapon set 2 weapon equips."), EquipmentComponent->TryEquipItem(SecondWeapon, RpgGameplayTags::Equipment_Slot_WeaponSet_2_MainHand));
 
-	TestTrue(TEXT("Only the active weapon set 1 loose tags are applied initially."), AbilitySystemComponent->HasMatchingGameplayTag(RpgGameplayTags::InputTag_WeaponSet_1));
-	TestFalse(TEXT("Weapon set 2 loose tags are not active before switching."), AbilitySystemComponent->HasMatchingGameplayTag(RpgGameplayTags::InputTag_WeaponSet_2));
+	TestEqual(TEXT("No weapon set starts active by default."), EquipmentComponent->GetActiveWeaponSetIndex(), INDEX_NONE);
+	TestNull(TEXT("The active weapon set is empty while everything is holstered."), EquipmentComponent->GetActiveWeaponSet().MainHandItem);
+	TestFalse(TEXT("Weapon set 1 loose tags stay inactive while nothing is drawn."), AbilitySystemComponent->HasMatchingGameplayTag(RpgGameplayTags::InputTag_WeaponSet_1));
+	TestFalse(TEXT("Weapon set 2 loose tags stay inactive while nothing is drawn."), AbilitySystemComponent->HasMatchingGameplayTag(RpgGameplayTags::InputTag_WeaponSet_2));
+
+	TestTrue(TEXT("Activating weapon set 1 succeeds."), EquipmentComponent->TryActivateWeaponSet(0));
+	TestEqual(TEXT("Weapon set 1 becomes the active set."), EquipmentComponent->GetActiveWeaponSetIndex(), 0);
+	TestTrue(TEXT("Weapon set 1 loose tags are applied after activation."), AbilitySystemComponent->HasMatchingGameplayTag(RpgGameplayTags::InputTag_WeaponSet_1));
+	TestFalse(TEXT("Weapon set 2 loose tags are still inactive after activating set 1."), AbilitySystemComponent->HasMatchingGameplayTag(RpgGameplayTags::InputTag_WeaponSet_2));
+
+	TestTrue(TEXT("Pressing the same slot again holsters the currently active set."), EquipmentComponent->TryActivateWeaponSet(0));
+	TestEqual(TEXT("Holstering clears the active weapon set index."), EquipmentComponent->GetActiveWeaponSetIndex(), INDEX_NONE);
+	TestNull(TEXT("The active weapon set reports as empty when holstered."), EquipmentComponent->GetActiveWeaponSet().MainHandItem);
+	TestFalse(TEXT("Weapon set 1 loose tags are removed while holstered."), AbilitySystemComponent->HasMatchingGameplayTag(RpgGameplayTags::InputTag_WeaponSet_1));
+	TestFalse(TEXT("Weapon set 2 loose tags remain inactive while holstered."), AbilitySystemComponent->HasMatchingGameplayTag(RpgGameplayTags::InputTag_WeaponSet_2));
+	TestNotNull(TEXT("Holstering does not remove the item from slot 1 main hand."), EquipmentComponent->GetItemInSlot(RpgGameplayTags::Equipment_Slot_WeaponSet_1_MainHand));
+
+	TestTrue(TEXT("Activating weapon set 1 a second time redraws the same set."), EquipmentComponent->TryActivateWeaponSet(0));
+	TestTrue(TEXT("Weapon set 1 loose tags are re-applied after redrawing."), AbilitySystemComponent->HasMatchingGameplayTag(RpgGameplayTags::InputTag_WeaponSet_1));
 
 	TestTrue(TEXT("Switching to weapon set 2 succeeds."), EquipmentComponent->TryActivateWeaponSet(1));
+	TestEqual(TEXT("Weapon set 2 becomes the active set after the switch."), EquipmentComponent->GetActiveWeaponSetIndex(), 1);
 	TestFalse(TEXT("Weapon set 1 loose tags are removed after the switch."), AbilitySystemComponent->HasMatchingGameplayTag(RpgGameplayTags::InputTag_WeaponSet_1));
 	TestTrue(TEXT("Weapon set 2 loose tags are applied after the switch."), AbilitySystemComponent->HasMatchingGameplayTag(RpgGameplayTags::InputTag_WeaponSet_2));
+
+	return true;
+}
+
+IMPLEMENT_SIMPLE_AUTOMATION_TEST(
+	FRpgEquipmentAutoEquipHolsteredOrderTest,
+	"SurvivalRpg.Items.Equipment.AutoEquipHolsteredOrder",
+	EAutomationTestFlags::EditorContext | EAutomationTestFlags::EngineFilter)
+
+bool FRpgEquipmentAutoEquipHolsteredOrderTest::RunTest(const FString& Parameters)
+{
+	using namespace RpgEquipmentAutomationTests;
+
+	URpgEquipmentRuleset* Ruleset = CreateRuleset();
+	Ruleset->AddAllowedPairing(Tag(TEXT("Weapon.Family.Sword")), Tag(TEXT("Weapon.Family.Shield")));
+
+	URpgEquipmentComponent* EquipmentComponent = CreateEquipmentComponent(Ruleset);
+	URpgItemInstance* Sword = CreateWeapon(GetTransientPackage(), Tag(TEXT("Weapon.Family.Sword")), RpgGameplayTags::Equipment_HandUsage_MainHand);
+
+	FGameplayTagContainer ShieldTraits;
+	ShieldTraits.AddTag(RpgGameplayTags::Equipment_Trait_Shield);
+	URpgItemInstance* Shield = CreateWeapon(GetTransientPackage(), Tag(TEXT("Weapon.Family.Shield")), RpgGameplayTags::Equipment_HandUsage_OffHand, ShieldTraits);
+	URpgItemInstance* SecondSword = CreateWeapon(GetTransientPackage(), Tag(TEXT("Weapon.Family.Sword")), RpgGameplayTags::Equipment_HandUsage_MainHand);
+
+	TestEqual(TEXT("No set starts active for auto-equip ordering."), EquipmentComponent->GetActiveWeaponSetIndex(), INDEX_NONE);
+	TestTrue(TEXT("The first main-hand weapon auto-equips into weapon set 1 main hand."), EquipmentComponent->TryAutoEquipItem(Sword));
+	URpgItemInstance* FirstMainHandItem = EquipmentComponent->GetItemInSlot(RpgGameplayTags::Equipment_Slot_WeaponSet_1_MainHand);
+	TestNotNull(TEXT("Weapon set 1 main hand now holds an item."), FirstMainHandItem);
+	TestTrue(TEXT("The first sword lands in weapon set 1 main hand."), FirstMainHandItem != nullptr && FirstMainHandItem->GetInstanceId() == Sword->GetInstanceId());
+
+	TestTrue(TEXT("An off-hand shield prefers weapon set 1 off hand before set 2 main hand."), EquipmentComponent->TryAutoEquipItem(Shield));
+	URpgItemInstance* FirstOffHandItem = EquipmentComponent->GetItemInSlot(RpgGameplayTags::Equipment_Slot_WeaponSet_1_OffHand);
+	TestNotNull(TEXT("Weapon set 1 off hand now holds an item."), FirstOffHandItem);
+	TestTrue(TEXT("The shield lands in weapon set 1 off hand."), FirstOffHandItem != nullptr && FirstOffHandItem->GetInstanceId() == Shield->GetInstanceId());
+
+	TestTrue(TEXT("A second main-hand weapon then falls through to weapon set 2 main hand."), EquipmentComponent->TryAutoEquipItem(SecondSword));
+	URpgItemInstance* SecondMainHandItem = EquipmentComponent->GetItemInSlot(RpgGameplayTags::Equipment_Slot_WeaponSet_2_MainHand);
+	TestNotNull(TEXT("Weapon set 2 main hand now holds an item."), SecondMainHandItem);
+	TestTrue(TEXT("The second sword lands in weapon set 2 main hand."), SecondMainHandItem != nullptr && SecondMainHandItem->GetInstanceId() == SecondSword->GetInstanceId());
+
+	return true;
+}
+
+IMPLEMENT_SIMPLE_AUTOMATION_TEST(
+	FRpgEquipmentActiveCameraSettingsTest,
+	"SurvivalRpg.Items.Equipment.ActiveCameraSettings",
+	EAutomationTestFlags::EditorContext | EAutomationTestFlags::EngineFilter)
+
+bool FRpgEquipmentActiveCameraSettingsTest::RunTest(const FString& Parameters)
+{
+	using namespace RpgEquipmentAutomationTests;
+
+	URpgEquipmentRuleset* Ruleset = CreateRuleset();
+	URpgEquipmentComponent* EquipmentComponent = CreateEquipmentComponent(Ruleset);
+	URpgEquipmentRuleset* FirstCameraSettings = NewObject<URpgEquipmentRuleset>(GetTransientPackage());
+	URpgEquipmentRuleset* SecondCameraSettings = NewObject<URpgEquipmentRuleset>(GetTransientPackage());
+
+	URpgItemInstance* FirstWeapon = CreateWeapon(
+		GetTransientPackage(),
+		Tag(TEXT("Weapon.Family.Sword")),
+		RpgGameplayTags::Equipment_HandUsage_MainHand,
+		FGameplayTagContainer(),
+		nullptr,
+		FGameplayTagContainer(),
+		FirstCameraSettings);
+
+	URpgItemInstance* SecondWeapon = CreateWeapon(
+		GetTransientPackage(),
+		Tag(TEXT("Weapon.Family.Wand")),
+		RpgGameplayTags::Equipment_HandUsage_MainHand,
+		FGameplayTagContainer(),
+		nullptr,
+		FGameplayTagContainer(),
+		SecondCameraSettings);
+
+	TestTrue(TEXT("Weapon set 1 weapon equips for the camera settings test."), EquipmentComponent->TryEquipItem(FirstWeapon, RpgGameplayTags::Equipment_Slot_WeaponSet_1_MainHand));
+	TestTrue(TEXT("Weapon set 2 weapon equips for the camera settings test."), EquipmentComponent->TryEquipItem(SecondWeapon, RpgGameplayTags::Equipment_Slot_WeaponSet_2_MainHand));
+	TestNull(TEXT("Camera settings are null while everything is holstered."), EquipmentComponent->GetActiveCameraSettings());
+
+	TestTrue(TEXT("Activating weapon set 1 succeeds for the camera settings test."), EquipmentComponent->TryActivateWeaponSet(0));
+	TestTrue(TEXT("Weapon set 1 exposes its camera settings when active."), EquipmentComponent->GetActiveCameraSettings() == FirstCameraSettings);
+
+	TestTrue(TEXT("Holstering weapon set 1 succeeds for the camera settings test."), EquipmentComponent->TryActivateWeaponSet(0));
+	TestNull(TEXT("Holstering clears the active camera settings."), EquipmentComponent->GetActiveCameraSettings());
+
+	TestTrue(TEXT("Activating weapon set 2 succeeds for the camera settings test."), EquipmentComponent->TryActivateWeaponSet(1));
+	TestTrue(TEXT("Weapon set 2 exposes its camera settings when active."), EquipmentComponent->GetActiveCameraSettings() == SecondCameraSettings);
 
 	return true;
 }
@@ -225,6 +340,45 @@ bool FRpgEquipmentItemIdentityPersistenceTest::RunTest(const FString& Parameters
 	TestNotNull(TEXT("Duplicating an item instance for transfer succeeds."), DuplicatedItem);
 	TestTrue(TEXT("Duplicated item preserves the stable instance id."), DuplicatedItem && DuplicatedItem->GetInstanceId() == OriginalId);
 	TestEqual(TEXT("Duplicated item preserves the roll seed."), DuplicatedItem ? DuplicatedItem->GetRollSeed() : INDEX_NONE, OriginalSeed);
+
+	return true;
+}
+
+IMPLEMENT_SIMPLE_AUTOMATION_TEST(
+	FRpgItemInstanceStatTagStackTest,
+	"SurvivalRpg.Items.ItemInstance.StatTagStacks",
+	EAutomationTestFlags::EditorContext | EAutomationTestFlags::EngineFilter)
+
+bool FRpgItemInstanceStatTagStackTest::RunTest(const FString& Parameters)
+{
+	using namespace RpgEquipmentAutomationTests;
+
+	URpgItemDefinition* ItemDefinition = NewObject<URpgItemDefinition>(GetTransientPackage());
+	URpgItemInstance* ItemInstance = NewObject<URpgItemInstance>(GetTransientPackage());
+	ItemInstance->InitializeItemInstance(ItemDefinition, FRpgItemSourceHandle(), 1337);
+
+	const FGameplayTag StrengthTag = Tag(TEXT("InputTag.WeaponSet.1"));
+	const FGameplayTag ShieldTag = Tag(TEXT("Equipment.Trait.Shield"));
+
+	ItemInstance->AddStatTagStack(StrengthTag, 2);
+	ItemInstance->AddStatTagStack(StrengthTag, 3);
+	TestEqual(TEXT("Adding the same tag twice accumulates its stack count."), ItemInstance->GetStatTagStackCount(StrengthTag), 5);
+	TestTrue(TEXT("The item reports a tag as present when its stack count is above zero."), ItemInstance->HasStatTag(StrengthTag));
+
+	ItemInstance->SetStatTagStackCount(StrengthTag, 1);
+	TestEqual(TEXT("Setting the stack count replaces the previous amount."), ItemInstance->GetStatTagStackCount(StrengthTag), 1);
+
+	ItemInstance->AddStatTagStack(ShieldTag, 4);
+	TestEqual(TEXT("A second tag stack is tracked independently."), ItemInstance->GetStatTagStackCount(ShieldTag), 4);
+
+	ItemInstance->RemoveStatTagStack(StrengthTag, 1);
+	TestEqual(TEXT("Removing the final stack clears the original tag."), ItemInstance->GetStatTagStackCount(StrengthTag), 0);
+	TestFalse(TEXT("The cleared tag is no longer reported as present."), ItemInstance->HasStatTag(StrengthTag));
+
+	URpgItemInstance* DuplicatedItem = ItemInstance->DuplicateItemInstance(GetTransientPackage());
+	TestNotNull(TEXT("Duplicating an item with fast-array tag stacks succeeds."), DuplicatedItem);
+	TestEqual(TEXT("Duplicated items preserve the remaining shield stack count."), DuplicatedItem ? DuplicatedItem->GetStatTagStackCount(ShieldTag) : INDEX_NONE, 4);
+	TestTrue(TEXT("Duplicated items still answer tag presence queries correctly."), DuplicatedItem && DuplicatedItem->HasStatTag(ShieldTag));
 
 	return true;
 }

@@ -1,5 +1,7 @@
 #include "RpgEquipmentComponent.h"
 
+#include "Animation/AnimInstance.h"
+#include "Animation/AnimMontage.h"
 #include "Engine/ActorChannel.h"
 #include "GameFramework/Pawn.h"
 #include "GameFramework/PlayerState.h"
@@ -14,6 +16,7 @@
 #include "SurvivalRpg/Items/Fragments/RpgItemFragment_Equipment.h"
 #include "SurvivalRpg/Items/Fragments/RpgItemFragment_Visual.h"
 #include "SurvivalRpg/Items/Fragments/RpgItemFragment_Weapon.h"
+#include "AnimNotify_RpgEquipmentPresentation.h"
 #include "RpgEquipmentRuleset.h"
 
 URpgEquipmentComponent::URpgEquipmentComponent()
@@ -50,6 +53,7 @@ void URpgEquipmentComponent::SetEquipmentRuleset(const URpgEquipmentRuleset* InR
 	EquipmentRuleset = InRuleset;
 	EnsureWeaponSetCount();
 	QueueVisualRefresh();
+	RefreshActiveCameraSettings();
 }
 
 URpgItemInstance* URpgEquipmentComponent::CreateItemInstance(URpgItemDefinition* ItemDefinition, const FRpgItemSourceHandle& SourceHandle)
@@ -143,16 +147,35 @@ bool URpgEquipmentComponent::TryAutoEquipItem(URpgItemInstance* ItemInstance)
 	}
 
 	const int32 NumWeaponSets = GetDesiredWeaponSetCount();
-	const int32 SecondarySetIndex = (ActiveWeaponSetIndex + 1) % NumWeaponSets;
-	const TArray<FGameplayTag> CandidateSlots = {
-		MakeSlotTag(ActiveWeaponSetIndex, ERpgEquipmentHandSlot::MainHand),
-		MakeSlotTag(ActiveWeaponSetIndex, ERpgEquipmentHandSlot::OffHand),
-		MakeSlotTag(SecondarySetIndex, ERpgEquipmentHandSlot::MainHand),
-		MakeSlotTag(SecondarySetIndex, ERpgEquipmentHandSlot::OffHand)
-	};
+	TArray<int32> CandidateWeaponSetIndices;
+	if (ActiveWeaponSetIndex != INDEX_NONE && ActiveWeaponSetIndex >= 0 && ActiveWeaponSetIndex < NumWeaponSets)
+	{
+		CandidateWeaponSetIndices.Add(ActiveWeaponSetIndex);
+	}
+
+	for (int32 WeaponSetIndex = 0; WeaponSetIndex < NumWeaponSets; ++WeaponSetIndex)
+	{
+		if (!CandidateWeaponSetIndices.Contains(WeaponSetIndex))
+		{
+			CandidateWeaponSetIndices.Add(WeaponSetIndex);
+		}
+	}
+
+	TArray<FGameplayTag> CandidateSlots;
+	CandidateSlots.Reserve(CandidateWeaponSetIndices.Num() * 2);
+	for (const int32 WeaponSetIndex : CandidateWeaponSetIndices)
+	{
+		CandidateSlots.Add(MakeSlotTag(WeaponSetIndex, ERpgEquipmentHandSlot::MainHand));
+		CandidateSlots.Add(MakeSlotTag(WeaponSetIndex, ERpgEquipmentHandSlot::OffHand));
+	}
 
 	for (const FGameplayTag& SlotTag : CandidateSlots)
 	{
+		if (GetItemInSlot(SlotTag) != nullptr)
+		{
+			continue;
+		}
+
 		if (CanEquipItem(ItemInstance, SlotTag))
 		{
 			return TryEquipItem(ItemInstance, SlotTag);
@@ -211,7 +234,7 @@ bool URpgEquipmentComponent::TryActivateWeaponSet(int32 WeaponSetIndex)
 	}
 
 	EnsureWeaponSetCount();
-	ActiveWeaponSetIndex = WeaponSetIndex;
+	ActiveWeaponSetIndex = (ActiveWeaponSetIndex == WeaponSetIndex) ? INDEX_NONE : WeaponSetIndex;
 	HandleEquipmentStateChanged();
 	return true;
 }
@@ -258,10 +281,31 @@ URpgItemInstance* URpgEquipmentComponent::GetItemInSlot(FGameplayTag SlotTag) co
 		: WeaponSets[WeaponSetIndex].OffHandItem;
 }
 
+void URpgEquipmentComponent::ApplyPresentationNotifyAction(ERpgEquipmentPresentationNotifyAction Action)
+{
+	switch (Action)
+	{
+	case ERpgEquipmentPresentationNotifyAction::ApplyCurrentState:
+	case ERpgEquipmentPresentationNotifyAction::DrawActiveSet:
+		SetPresentationVisibleWeaponSetIndex(ActiveWeaponSetIndex);
+		break;
+
+	case ERpgEquipmentPresentationNotifyAction::HolsterVisuals:
+		SetPresentationVisibleWeaponSetIndex(INDEX_NONE);
+		break;
+
+	default:
+		break;
+	}
+}
+
 void URpgEquipmentComponent::BeginPlay()
 {
 	Super::BeginPlay();
 	EnsureWeaponSetCount();
+	ObservedActiveWeaponSetIndex = ActiveWeaponSetIndex;
+	PresentationVisibleWeaponSetIndex = ActiveWeaponSetIndex;
+	RefreshActiveCameraSettings();
 	QueueVisualRefresh();
 }
 
@@ -292,12 +336,13 @@ void URpgEquipmentComponent::TickComponent(float DeltaTime, ELevelTick TickType,
 void URpgEquipmentComponent::OnRep_WeaponSets()
 {
 	QueueVisualRefresh();
+	RefreshActiveCameraSettings();
 	OnEquipmentChanged.Broadcast();
 }
 
 void URpgEquipmentComponent::OnRep_ActiveWeaponSetIndex()
 {
-	QueueVisualRefresh();
+	RefreshPresentationState(true);
 	OnEquipmentChanged.Broadcast();
 }
 
@@ -331,9 +376,15 @@ int32 URpgEquipmentComponent::GetDesiredWeaponSetCount() const
 void URpgEquipmentComponent::EnsureWeaponSetCount()
 {
 	EnsureWeaponSetCount(WeaponSets);
-	if (ActiveWeaponSetIndex < 0 || ActiveWeaponSetIndex >= WeaponSets.Num())
+	if (ActiveWeaponSetIndex != INDEX_NONE && (ActiveWeaponSetIndex < 0 || ActiveWeaponSetIndex >= WeaponSets.Num()))
 	{
-		ActiveWeaponSetIndex = 0;
+		ActiveWeaponSetIndex = INDEX_NONE;
+	}
+
+	if (PresentationVisibleWeaponSetIndex != INDEX_NONE && (PresentationVisibleWeaponSetIndex < 0 || PresentationVisibleWeaponSetIndex >= WeaponSets.Num()))
+	{
+		PresentationVisibleWeaponSetIndex = INDEX_NONE;
+		QueueVisualRefresh();
 	}
 }
 
@@ -531,6 +582,17 @@ bool URpgEquipmentComponent::IsItemInActiveWeaponSet(const URpgItemInstance* Ite
 	return ActiveWeaponSet.MainHandItem == ItemInstance || ActiveWeaponSet.OffHandItem == ItemInstance;
 }
 
+bool URpgEquipmentComponent::IsItemInPresentationVisibleWeaponSet(const URpgItemInstance* ItemInstance) const
+{
+	if (ItemInstance == nullptr || !WeaponSets.IsValidIndex(PresentationVisibleWeaponSetIndex))
+	{
+		return false;
+	}
+
+	const FRpgEquippedWeaponSet& VisibleWeaponSet = WeaponSets[PresentationVisibleWeaponSetIndex];
+	return VisibleWeaponSet.MainHandItem == ItemInstance || VisibleWeaponSet.OffHandItem == ItemInstance;
+}
+
 int32 URpgEquipmentComponent::CountTwoHandedItems(const TArray<FRpgEquippedWeaponSet>& WeaponSetStates) const
 {
 	const URpgEquipmentRuleset* Ruleset = EquipmentRuleset ? EquipmentRuleset.Get() : GetDefault<URpgEquipmentRuleset>();
@@ -574,9 +636,55 @@ void URpgEquipmentComponent::HandleEquipmentStateChanged()
 	EnsureWeaponSetCount();
 	RemoveAppliedGrants();
 	ApplyCurrentGrants();
-	QueueVisualRefresh();
+	RefreshPresentationState(true);
 	ForceOwnerNetUpdate();
 	OnEquipmentChanged.Broadcast();
+}
+
+void URpgEquipmentComponent::RefreshPresentationState(bool bAllowMontage)
+{
+	const int32 PreviousActiveWeaponSetIndex = ObservedActiveWeaponSetIndex;
+
+	QueueVisualRefresh();
+	RefreshActiveCameraSettings();
+
+	if (bAllowMontage && PreviousActiveWeaponSetIndex != ActiveWeaponSetIndex)
+	{
+		APawn* VisualPawn = ResolveVisualPawn();
+		if (VisualPawn != nullptr && VisualPawn->GetNetMode() != NM_DedicatedServer)
+		{
+			const bool bUseEquipMontage = ActiveWeaponSetIndex != INDEX_NONE;
+			const int32 MontageWeaponSetIndex = bUseEquipMontage ? ActiveWeaponSetIndex : PreviousActiveWeaponSetIndex;
+			const bool bUsesNotifyDrivenPresentation = MontageUsesPresentationNotify(MontageWeaponSetIndex, bUseEquipMontage);
+			const bool bPlayedMontage = PlayPresentationMontageForWeaponSet(MontageWeaponSetIndex, bUseEquipMontage);
+
+			if (!bUsesNotifyDrivenPresentation || !bPlayedMontage)
+			{
+				SetPresentationVisibleWeaponSetIndex(ActiveWeaponSetIndex);
+			}
+		}
+		else
+		{
+			SetPresentationVisibleWeaponSetIndex(ActiveWeaponSetIndex);
+		}
+	}
+
+	ObservedActiveWeaponSetIndex = ActiveWeaponSetIndex;
+}
+
+void URpgEquipmentComponent::SetPresentationVisibleWeaponSetIndex(int32 InPresentationVisibleWeaponSetIndex)
+{
+	const int32 NewVisibleWeaponSetIndex = WeaponSets.IsValidIndex(InPresentationVisibleWeaponSetIndex)
+		? InPresentationVisibleWeaponSetIndex
+		: INDEX_NONE;
+
+	if (PresentationVisibleWeaponSetIndex == NewVisibleWeaponSetIndex)
+	{
+		return;
+	}
+
+	PresentationVisibleWeaponSetIndex = NewVisibleWeaponSetIndex;
+	QueueVisualRefresh();
 }
 
 void URpgEquipmentComponent::RemoveAppliedGrants()
@@ -729,6 +837,23 @@ void URpgEquipmentComponent::QueueVisualRefresh()
 	bVisualRefreshQueued = true;
 }
 
+void URpgEquipmentComponent::RefreshActiveCameraSettings()
+{
+	UDataAsset* NewCameraSettings = nullptr;
+	if (const URpgItemFragment_Visual* VisualFragment = GetPrimaryPresentationVisualFragmentForWeaponSet(ActiveWeaponSetIndex))
+	{
+		NewCameraSettings = VisualFragment->GetCameraSettings();
+	}
+
+	if (ActiveCameraSettings == NewCameraSettings)
+	{
+		return;
+	}
+
+	ActiveCameraSettings = NewCameraSettings;
+	OnActiveCameraSettingsChanged.Broadcast(ActiveCameraSettings);
+}
+
 void URpgEquipmentComponent::RefreshVisuals()
 {
 	bVisualRefreshQueued = false;
@@ -778,9 +903,9 @@ void URpgEquipmentComponent::RefreshVisuals()
 			continue;
 		}
 
-		const bool bIsActiveItem = IsItemInActiveWeaponSet(ItemInstance);
-		const FName DesiredSocket = bIsActiveItem ? VisualFragment->GetEquippedSocketName() : VisualFragment->GetStowedSocketName();
-		const bool bShouldHide = !bIsActiveItem && DesiredSocket.IsNone() && VisualFragment->ShouldHideWhenInactiveWithoutStowedSocket();
+		const bool bIsVisibleEquippedItem = IsItemInPresentationVisibleWeaponSet(ItemInstance);
+		const FName DesiredSocket = bIsVisibleEquippedItem ? VisualFragment->GetEquippedSocketName() : VisualFragment->GetStowedSocketName();
+		const bool bShouldHide = !bIsVisibleEquippedItem && DesiredSocket.IsNone() && VisualFragment->ShouldHideWhenInactiveWithoutStowedSocket();
 
 		VisualActor->SetActorHiddenInGame(bShouldHide);
 		if (bShouldHide)
@@ -789,7 +914,7 @@ void URpgEquipmentComponent::RefreshVisuals()
 		}
 
 		VisualActor->AttachToComponent(MeshComponent, FAttachmentTransformRules::SnapToTargetNotIncludingScale, DesiredSocket);
-		VisualActor->SetActorRelativeTransform(bIsActiveItem ? VisualFragment->GetEquippedRelativeTransform() : VisualFragment->GetStowedRelativeTransform());
+		VisualActor->SetActorRelativeTransform(bIsVisibleEquippedItem ? VisualFragment->GetEquippedRelativeTransform() : VisualFragment->GetStowedRelativeTransform());
 	}
 }
 
@@ -801,6 +926,72 @@ APawn* URpgEquipmentComponent::ResolveVisualPawn() const
 	}
 
 	return nullptr;
+}
+
+URpgItemInstance* URpgEquipmentComponent::GetPrimaryPresentationItemForWeaponSet(int32 WeaponSetIndex) const
+{
+	if (!WeaponSets.IsValidIndex(WeaponSetIndex))
+	{
+		return nullptr;
+	}
+
+	const FRpgEquippedWeaponSet& WeaponSet = WeaponSets[WeaponSetIndex];
+	return WeaponSet.MainHandItem != nullptr ? WeaponSet.MainHandItem : WeaponSet.OffHandItem;
+}
+
+const URpgItemFragment_Visual* URpgEquipmentComponent::GetPrimaryPresentationVisualFragmentForWeaponSet(int32 WeaponSetIndex) const
+{
+	if (URpgItemInstance* PresentationItem = GetPrimaryPresentationItemForWeaponSet(WeaponSetIndex))
+	{
+		return PresentationItem->FindFragmentByClass<URpgItemFragment_Visual>();
+	}
+
+	return nullptr;
+}
+
+bool URpgEquipmentComponent::MontageUsesPresentationNotify(int32 WeaponSetIndex, bool bUseEquipMontage) const
+{
+	const URpgItemFragment_Visual* VisualFragment = GetPrimaryPresentationVisualFragmentForWeaponSet(WeaponSetIndex);
+	if (VisualFragment == nullptr)
+	{
+		return false;
+	}
+
+	const UAnimMontage* MontageToInspect = bUseEquipMontage ? VisualFragment->GetEquipMontage() : VisualFragment->GetUnequipMontage();
+	if (MontageToInspect == nullptr)
+	{
+		return false;
+	}
+
+	for (const FAnimNotifyEvent& NotifyEvent : MontageToInspect->Notifies)
+	{
+		if (NotifyEvent.Notify != nullptr && NotifyEvent.Notify->IsA<UAnimNotify_RpgEquipmentPresentation>())
+		{
+			return true;
+		}
+	}
+
+	return false;
+}
+
+bool URpgEquipmentComponent::PlayPresentationMontageForWeaponSet(int32 WeaponSetIndex, bool bUseEquipMontage) const
+{
+	const URpgItemFragment_Visual* VisualFragment = GetPrimaryPresentationVisualFragmentForWeaponSet(WeaponSetIndex);
+	APawn* VisualPawn = ResolveVisualPawn();
+	if (VisualFragment == nullptr || VisualPawn == nullptr)
+	{
+		return false;
+	}
+
+	UAnimMontage* MontageToPlay = bUseEquipMontage ? VisualFragment->GetEquipMontage() : VisualFragment->GetUnequipMontage();
+	if (MontageToPlay == nullptr)
+	{
+		return false;
+	}
+
+	USkeletalMeshComponent* MeshComponent = VisualPawn->FindComponentByClass<USkeletalMeshComponent>();
+	UAnimInstance* AnimInstance = MeshComponent ? MeshComponent->GetAnimInstance() : nullptr;
+	return AnimInstance != nullptr && AnimInstance->Montage_Play(MontageToPlay) > 0.0f;
 }
 
 AActor* URpgEquipmentComponent::FindVisualActorForItem(const URpgItemInstance* ItemInstance) const

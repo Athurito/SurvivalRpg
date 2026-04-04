@@ -13,6 +13,7 @@ class APawn;
 class FOutBunch;
 struct FReplicationFlags;
 class UActorChannel;
+class UDataAsset;
 class URpgAbilitySystemComponent;
 class URpgEquipmentRuleset;
 class URpgItemDefinition;
@@ -23,6 +24,14 @@ enum class ERpgEquipmentHandSlot : uint8
 {
 	MainHand,
 	OffHand
+};
+
+UENUM(BlueprintType)
+enum class ERpgEquipmentPresentationNotifyAction : uint8
+{
+	ApplyCurrentState,
+	HolsterVisuals,
+	DrawActiveSet
 };
 
 USTRUCT(BlueprintType)
@@ -51,6 +60,7 @@ struct FRpgEquipmentVisualEntry
 };
 
 DECLARE_DYNAMIC_MULTICAST_DELEGATE(FRpgEquipmentChangedSignature);
+DECLARE_DYNAMIC_MULTICAST_DELEGATE_OneParam(FRpgActiveCameraSettingsChangedSignature, UDataAsset*, CameraSettings);
 
 UCLASS(ClassGroup = (Custom), BlueprintType, meta = (BlueprintSpawnableComponent))
 class SURVIVALRPG_API URpgEquipmentComponent : public UActorComponent
@@ -96,6 +106,12 @@ public:
 	UFUNCTION(BlueprintPure, Category = "Equipment")
 	int32 GetActiveWeaponSetIndex() const { return ActiveWeaponSetIndex; }
 
+	UFUNCTION(BlueprintPure, Category = "Equipment|Presentation")
+	UDataAsset* GetActiveCameraSettings() const { return ActiveCameraSettings; }
+
+	UFUNCTION(BlueprintCallable, Category = "Equipment|Presentation")
+	void ApplyPresentationNotifyAction(ERpgEquipmentPresentationNotifyAction Action);
+
 	UFUNCTION(BlueprintCallable, Category = "Equipment")
 	void GetEquippedItems(TArray<URpgItemInstance*>& OutItems) const;
 
@@ -104,6 +120,9 @@ public:
 
 	UPROPERTY(BlueprintAssignable, Category = "Equipment")
 	FRpgEquipmentChangedSignature OnEquipmentChanged;
+
+	UPROPERTY(BlueprintAssignable, Category = "Equipment|Presentation")
+	FRpgActiveCameraSettingsChangedSignature OnActiveCameraSettingsChanged;
 
 #if WITH_DEV_AUTOMATION_TESTS
 	void SetAbilitySystemOverrideForTests(URpgAbilitySystemComponent* InAbilitySystemComponent) { AbilitySystemOverrideForTests = InAbilitySystemComponent; }
@@ -140,9 +159,12 @@ private:
 	bool ValidateWeaponSets(const TArray<FRpgEquippedWeaponSet>& WeaponSetStates) const;
 	void StripItemFromWeaponSets(URpgItemInstance* ItemInstance, TArray<FRpgEquippedWeaponSet>& InOutWeaponSets) const;
 	bool IsItemInActiveWeaponSet(const URpgItemInstance* ItemInstance) const;
+	bool IsItemInPresentationVisibleWeaponSet(const URpgItemInstance* ItemInstance) const;
 	int32 CountTwoHandedItems(const TArray<FRpgEquippedWeaponSet>& WeaponSetStates) const;
 	URpgItemInstance* FindKnownItemById(const FGuid& InstanceId) const;
 	void HandleEquipmentStateChanged();
+	void RefreshPresentationState(bool bAllowMontage);
+	void SetPresentationVisibleWeaponSetIndex(int32 InPresentationVisibleWeaponSetIndex);
 	void RemoveAppliedGrants();
 	void ApplyCurrentGrants();
 	void ApplyAbilitySets(URpgAbilitySystemComponent* AbilitySystemComponent, const TArray<TObjectPtr<const URpgAbilitySet>>& AbilitySets, UObject* SourceObject);
@@ -151,7 +173,12 @@ private:
 	URpgAbilitySystemComponent* ResolveAbilitySystemComponent() const;
 	void QueueVisualRefresh();
 	void RefreshVisuals();
+	void RefreshActiveCameraSettings();
 	APawn* ResolveVisualPawn() const;
+	URpgItemInstance* GetPrimaryPresentationItemForWeaponSet(int32 WeaponSetIndex) const;
+	const class URpgItemFragment_Visual* GetPrimaryPresentationVisualFragmentForWeaponSet(int32 WeaponSetIndex) const;
+	bool MontageUsesPresentationNotify(int32 WeaponSetIndex, bool bUseEquipMontage) const;
+	bool PlayPresentationMontageForWeaponSet(int32 WeaponSetIndex, bool bUseEquipMontage) const;
 	AActor* FindVisualActorForItem(const URpgItemInstance* ItemInstance) const;
 	AActor* FindOrSpawnVisualActor(URpgItemInstance* ItemInstance, APawn* VisualPawn);
 	void DestroyVisualActorForItem(const URpgItemInstance* ItemInstance);
@@ -168,7 +195,7 @@ private:
 	TArray<FRpgEquippedWeaponSet> WeaponSets;
 
 	UPROPERTY(ReplicatedUsing = OnRep_ActiveWeaponSetIndex)
-	int32 ActiveWeaponSetIndex = 0;
+	int32 ActiveWeaponSetIndex = INDEX_NONE;
 
 	UPROPERTY(Transient)
 	TArray<FRpgEquipmentVisualEntry> VisualEntries;
@@ -176,9 +203,16 @@ private:
 	UPROPERTY(Transient)
 	TObjectPtr<APawn> CachedVisualPawn = nullptr;
 
+	UPROPERTY(Transient)
+	TObjectPtr<UDataAsset> ActiveCameraSettings = nullptr;
+
+	UPROPERTY(Transient)
+	int32 PresentationVisibleWeaponSetIndex = INDEX_NONE;
+
 	TArray<FRpgAbilitySet_GrantedHandles> AppliedAbilitySetHandles;
 	TArray<FActiveGameplayEffectHandle> AppliedGameplayEffectHandles;
 	TMap<FGameplayTag, int32> AppliedLooseTagCounts;
+	int32 ObservedActiveWeaponSetIndex = INDEX_NONE;
 	bool bVisualRefreshQueued = true;
 
 #if WITH_DEV_AUTOMATION_TESTS
