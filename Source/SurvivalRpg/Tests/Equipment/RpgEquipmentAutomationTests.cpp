@@ -2,9 +2,10 @@
 
 #include "Misc/AutomationTest.h"
 
-#include "Engine/DataAsset.h"
+#include "Animation/AnimMontage.h"
 #include "SurvivalRpg/AbilitySystem/RpgAbilitySet.h"
 #include "SurvivalRpg/AbilitySystem/RpgAbilitySystemComponent.h"
+#include "SurvivalRpg/Equipment/AnimNotify_RpgWeaponToolPresentation.h"
 #include "SurvivalRpg/Equipment/RpgEquipmentComponent.h"
 #include "SurvivalRpg/Equipment/RpgEquipmentRuleset.h"
 #include "SurvivalRpg/GameplayTags/GameplayTags.h"
@@ -37,7 +38,10 @@ namespace RpgEquipmentAutomationTests
 		const FGameplayTagContainer& TraitTags = FGameplayTagContainer(),
 		const URpgAbilitySet* ActiveAbilitySet = nullptr,
 		const FGameplayTagContainer& ActiveLooseTags = FGameplayTagContainer(),
-		UDataAsset* CameraSettings = nullptr)
+		const FRpgWeaponToolCameraSettings& CameraSettings = FRpgWeaponToolCameraSettings(),
+		const FRpgWeaponToolCharacterSettings& CharacterSettings = FRpgWeaponToolCharacterSettings(),
+		UAnimMontage* EquipMontage = nullptr,
+		UAnimMontage* UnequipMontage = nullptr)
 	{
 		URpgItemDefinition* ItemDefinition = NewObject<URpgItemDefinition>(Outer);
 
@@ -58,10 +62,13 @@ namespace RpgEquipmentAutomationTests
 		}
 		ItemDefinition->AddFragment(WeaponFragment);
 
-		if (CameraSettings != nullptr)
+		if (CameraSettings.bEnabled || CharacterSettings.bEnabled || EquipMontage != nullptr || UnequipMontage != nullptr)
 		{
 			URpgItemFragment_Visual* VisualFragment = NewObject<URpgItemFragment_Visual>(ItemDefinition);
-			VisualFragment->SetCameraSettings(CameraSettings);
+			VisualFragment->SetWeaponToolCameraSettings(CameraSettings);
+			VisualFragment->SetWeaponToolCharacterSettings(CharacterSettings);
+			VisualFragment->SetEquipMontage(EquipMontage);
+			VisualFragment->SetUnequipMontage(UnequipMontage);
 			ItemDefinition->AddFragment(VisualFragment);
 		}
 
@@ -272,8 +279,15 @@ bool FRpgEquipmentActiveCameraSettingsTest::RunTest(const FString& Parameters)
 
 	URpgEquipmentRuleset* Ruleset = CreateRuleset();
 	URpgEquipmentComponent* EquipmentComponent = CreateEquipmentComponent(Ruleset);
-	URpgEquipmentRuleset* FirstCameraSettings = NewObject<URpgEquipmentRuleset>(GetTransientPackage());
-	URpgEquipmentRuleset* SecondCameraSettings = NewObject<URpgEquipmentRuleset>(GetTransientPackage());
+	FRpgWeaponToolCameraSettings FirstCameraSettings;
+	FirstCameraSettings.bEnabled = true;
+	FirstCameraSettings.FOV = 72.0f;
+	FirstCameraSettings.SpringArmSocketOffset = FVector(0.0f, 55.0f, 12.0f);
+
+	FRpgWeaponToolCameraSettings SecondCameraSettings;
+	SecondCameraSettings.bEnabled = true;
+	SecondCameraSettings.FOV = 64.0f;
+	SecondCameraSettings.SpringArmSocketOffset = FVector(0.0f, -40.0f, 8.0f);
 
 	URpgItemInstance* FirstWeapon = CreateWeapon(
 		GetTransientPackage(),
@@ -295,16 +309,125 @@ bool FRpgEquipmentActiveCameraSettingsTest::RunTest(const FString& Parameters)
 
 	TestTrue(TEXT("Weapon set 1 weapon equips for the camera settings test."), EquipmentComponent->TryEquipItem(FirstWeapon, RpgGameplayTags::Equipment_Slot_WeaponSet_1_MainHand));
 	TestTrue(TEXT("Weapon set 2 weapon equips for the camera settings test."), EquipmentComponent->TryEquipItem(SecondWeapon, RpgGameplayTags::Equipment_Slot_WeaponSet_2_MainHand));
-	TestNull(TEXT("Camera settings are null while everything is holstered."), EquipmentComponent->GetActiveCameraSettings());
+	TestFalse(TEXT("Camera settings stay disabled while everything is holstered."), EquipmentComponent->GetActiveCameraSettings().bEnabled);
 
 	TestTrue(TEXT("Activating weapon set 1 succeeds for the camera settings test."), EquipmentComponent->TryActivateWeaponSet(0));
-	TestTrue(TEXT("Weapon set 1 exposes its camera settings when active."), EquipmentComponent->GetActiveCameraSettings() == FirstCameraSettings);
+	TestTrue(TEXT("Weapon set 1 exposes its inline camera settings when active."), EquipmentComponent->GetActiveCameraSettings() == FirstCameraSettings);
 
 	TestTrue(TEXT("Holstering weapon set 1 succeeds for the camera settings test."), EquipmentComponent->TryActivateWeaponSet(0));
-	TestNull(TEXT("Holstering clears the active camera settings."), EquipmentComponent->GetActiveCameraSettings());
+	TestFalse(TEXT("Holstering clears the active camera settings override."), EquipmentComponent->GetActiveCameraSettings().bEnabled);
 
 	TestTrue(TEXT("Activating weapon set 2 succeeds for the camera settings test."), EquipmentComponent->TryActivateWeaponSet(1));
-	TestTrue(TEXT("Weapon set 2 exposes its camera settings when active."), EquipmentComponent->GetActiveCameraSettings() == SecondCameraSettings);
+	TestTrue(TEXT("Weapon set 2 exposes its inline camera settings when active."), EquipmentComponent->GetActiveCameraSettings() == SecondCameraSettings);
+
+	return true;
+}
+
+IMPLEMENT_SIMPLE_AUTOMATION_TEST(
+	FRpgEquipmentActiveCharacterSettingsTest,
+	"SurvivalRpg.Items.Equipment.ActiveCharacterSettings",
+	EAutomationTestFlags::EditorContext | EAutomationTestFlags::EngineFilter)
+
+bool FRpgEquipmentActiveCharacterSettingsTest::RunTest(const FString& Parameters)
+{
+	using namespace RpgEquipmentAutomationTests;
+
+	URpgEquipmentRuleset* Ruleset = CreateRuleset();
+	URpgEquipmentComponent* EquipmentComponent = CreateEquipmentComponent(Ruleset);
+
+	FRpgWeaponToolCharacterSettings FirstCharacterSettings;
+	FirstCharacterSettings.bEnabled = true;
+	FirstCharacterSettings.MaxWalkSpeed = 430.0f;
+	FirstCharacterSettings.bOrientRotationToMovement = false;
+	FirstCharacterSettings.bUseControllerDesiredRotation = true;
+
+	FRpgWeaponToolCharacterSettings SecondCharacterSettings;
+	SecondCharacterSettings.bEnabled = true;
+	SecondCharacterSettings.MaxWalkSpeed = 320.0f;
+	SecondCharacterSettings.bOrientRotationToMovement = true;
+	SecondCharacterSettings.bUseControllerDesiredRotation = false;
+
+	URpgItemInstance* FirstWeapon = CreateWeapon(
+		GetTransientPackage(),
+		Tag(TEXT("Weapon.Family.Sword")),
+		RpgGameplayTags::Equipment_HandUsage_MainHand,
+		FGameplayTagContainer(),
+		nullptr,
+		FGameplayTagContainer(),
+		FRpgWeaponToolCameraSettings(),
+		FirstCharacterSettings);
+
+	URpgItemInstance* SecondWeapon = CreateWeapon(
+		GetTransientPackage(),
+		Tag(TEXT("Weapon.Family.Wand")),
+		RpgGameplayTags::Equipment_HandUsage_MainHand,
+		FGameplayTagContainer(),
+		nullptr,
+		FGameplayTagContainer(),
+		FRpgWeaponToolCameraSettings(),
+		SecondCharacterSettings);
+
+	TestTrue(TEXT("Weapon set 1 weapon equips for the character settings test."), EquipmentComponent->TryEquipItem(FirstWeapon, RpgGameplayTags::Equipment_Slot_WeaponSet_1_MainHand));
+	TestTrue(TEXT("Weapon set 2 weapon equips for the character settings test."), EquipmentComponent->TryEquipItem(SecondWeapon, RpgGameplayTags::Equipment_Slot_WeaponSet_2_MainHand));
+	TestFalse(TEXT("Character settings stay disabled while everything is holstered."), EquipmentComponent->GetActiveWeaponToolCharacterSettings().bEnabled);
+
+	TestTrue(TEXT("Activating weapon set 1 succeeds for the character settings test."), EquipmentComponent->TryActivateWeaponSet(0));
+	TestTrue(TEXT("Weapon set 1 exposes its inline character settings when active."), EquipmentComponent->GetActiveWeaponToolCharacterSettings() == FirstCharacterSettings);
+
+	TestTrue(TEXT("Holstering weapon set 1 succeeds for the character settings test."), EquipmentComponent->TryActivateWeaponSet(0));
+	TestFalse(TEXT("Holstering clears the active character settings override."), EquipmentComponent->GetActiveWeaponToolCharacterSettings().bEnabled);
+
+	TestTrue(TEXT("Activating weapon set 2 succeeds for the character settings test."), EquipmentComponent->TryActivateWeaponSet(1));
+	TestTrue(TEXT("Weapon set 2 exposes its inline character settings when active."), EquipmentComponent->GetActiveWeaponToolCharacterSettings() == SecondCharacterSettings);
+
+	return true;
+}
+
+IMPLEMENT_SIMPLE_AUTOMATION_TEST(
+	FRpgEquipmentWeaponToolPresentationNotifyDetectionTest,
+	"SurvivalRpg.Items.Equipment.WeaponToolPresentationNotifyDetection",
+	EAutomationTestFlags::EditorContext | EAutomationTestFlags::EngineFilter)
+
+bool FRpgEquipmentWeaponToolPresentationNotifyDetectionTest::RunTest(const FString& Parameters)
+{
+	using namespace RpgEquipmentAutomationTests;
+
+	URpgEquipmentRuleset* Ruleset = CreateRuleset();
+	URpgEquipmentComponent* EquipmentComponent = CreateEquipmentComponent(Ruleset);
+
+	UAnimMontage* MontageWithNewNotify = NewObject<UAnimMontage>(GetTransientPackage());
+	FAnimNotifyEvent& NewNotifyEvent = MontageWithNewNotify->Notifies.AddDefaulted_GetRef();
+	NewNotifyEvent.Notify = NewObject<UAnimNotify_RpgWeaponToolPresentation>(MontageWithNewNotify);
+
+	UAnimMontage* MontageWithoutNotify = NewObject<UAnimMontage>(GetTransientPackage());
+
+	URpgItemInstance* WeaponWithNewNotify = CreateWeapon(
+		GetTransientPackage(),
+		Tag(TEXT("Weapon.Family.Sword")),
+		RpgGameplayTags::Equipment_HandUsage_MainHand,
+		FGameplayTagContainer(),
+		nullptr,
+		FGameplayTagContainer(),
+		FRpgWeaponToolCameraSettings(),
+		FRpgWeaponToolCharacterSettings(),
+		MontageWithNewNotify);
+
+	URpgItemInstance* WeaponWithoutNotify = CreateWeapon(
+		GetTransientPackage(),
+		Tag(TEXT("Weapon.Family.Dagger")),
+		RpgGameplayTags::Equipment_HandUsage_MainHand,
+		FGameplayTagContainer(),
+		nullptr,
+		FGameplayTagContainer(),
+		FRpgWeaponToolCameraSettings(),
+		FRpgWeaponToolCharacterSettings(),
+		MontageWithoutNotify);
+
+	TestTrue(TEXT("Weapon with a new weapon-tool presentation notify equips into set 1."), EquipmentComponent->TryEquipItem(WeaponWithNewNotify, RpgGameplayTags::Equipment_Slot_WeaponSet_1_MainHand));
+	TestTrue(TEXT("The new weapon-tool notify is detected on the equip montage."), EquipmentComponent->UsesWeaponToolPresentationNotifyForTests(0, true));
+
+	TestTrue(TEXT("Replacing the set 1 weapon with one that has no presentation notify succeeds."), EquipmentComponent->TryEquipItem(WeaponWithoutNotify, RpgGameplayTags::Equipment_Slot_WeaponSet_1_MainHand));
+	TestFalse(TEXT("Montages without a weapon-tool presentation notify fall back to immediate presentation updates."), EquipmentComponent->UsesWeaponToolPresentationNotifyForTests(0, true));
 
 	return true;
 }

@@ -5,15 +5,20 @@
 #include "GameplayTagContainer.h"
 #include "SurvivalRpg/AbilitySystem/RpgAbilitySet.h"
 #include "SurvivalRpg/Items/RpgItemGrantTypes.h"
+#include "SurvivalRpg/Items/Fragments/RpgItemFragment_Visual.h"
 #include "SurvivalRpg/Items/RpgItemSourceHandle.h"
 #include "RpgEquipmentComponent.generated.h"
 
 class AActor;
 class APawn;
+class UAnimInstance;
+class UCameraComponent;
+class UCharacterMovementComponent;
 class FOutBunch;
 struct FReplicationFlags;
 class UActorChannel;
-class UDataAsset;
+class USkeletalMeshComponent;
+class USpringArmComponent;
 class URpgAbilitySystemComponent;
 class URpgEquipmentRuleset;
 class URpgItemDefinition;
@@ -27,7 +32,7 @@ enum class ERpgEquipmentHandSlot : uint8
 };
 
 UENUM(BlueprintType)
-enum class ERpgEquipmentPresentationNotifyAction : uint8
+enum class ERpgWeaponToolPresentationNotifyAction : uint8
 {
 	ApplyCurrentState,
 	HolsterVisuals,
@@ -60,7 +65,7 @@ struct FRpgEquipmentVisualEntry
 };
 
 DECLARE_DYNAMIC_MULTICAST_DELEGATE(FRpgEquipmentChangedSignature);
-DECLARE_DYNAMIC_MULTICAST_DELEGATE_OneParam(FRpgActiveCameraSettingsChangedSignature, UDataAsset*, CameraSettings);
+DECLARE_DYNAMIC_MULTICAST_DELEGATE_OneParam(FRpgActiveCameraSettingsChangedSignature, FRpgWeaponToolCameraSettings, CameraSettings);
 
 UCLASS(ClassGroup = (Custom), BlueprintType, meta = (BlueprintSpawnableComponent))
 class SURVIVALRPG_API URpgEquipmentComponent : public UActorComponent
@@ -107,10 +112,13 @@ public:
 	int32 GetActiveWeaponSetIndex() const { return ActiveWeaponSetIndex; }
 
 	UFUNCTION(BlueprintPure, Category = "Equipment|Presentation")
-	UDataAsset* GetActiveCameraSettings() const { return ActiveCameraSettings; }
+	FRpgWeaponToolCameraSettings GetActiveCameraSettings() const { return ActiveCameraSettings; }
+
+	UFUNCTION(BlueprintPure, Category = "Equipment|Presentation")
+	FRpgWeaponToolCharacterSettings GetActiveWeaponToolCharacterSettings() const { return ActiveWeaponToolCharacterSettings; }
 
 	UFUNCTION(BlueprintCallable, Category = "Equipment|Presentation")
-	void ApplyPresentationNotifyAction(ERpgEquipmentPresentationNotifyAction Action);
+	void ApplyWeaponToolPresentationNotifyAction(ERpgWeaponToolPresentationNotifyAction Action);
 
 	UFUNCTION(BlueprintCallable, Category = "Equipment")
 	void GetEquippedItems(TArray<URpgItemInstance*>& OutItems) const;
@@ -126,6 +134,7 @@ public:
 
 #if WITH_DEV_AUTOMATION_TESTS
 	void SetAbilitySystemOverrideForTests(URpgAbilitySystemComponent* InAbilitySystemComponent) { AbilitySystemOverrideForTests = InAbilitySystemComponent; }
+	bool UsesWeaponToolPresentationNotifyForTests(int32 WeaponSetIndex, bool bUseEquipMontage) const { return MontageUsesPresentationNotify(WeaponSetIndex, bUseEquipMontage); }
 #endif
 
 protected:
@@ -173,8 +182,18 @@ private:
 	URpgAbilitySystemComponent* ResolveAbilitySystemComponent() const;
 	void QueueVisualRefresh();
 	void RefreshVisuals();
+	void RefreshActiveWeaponToolCharacterSettings();
 	void RefreshActiveCameraSettings();
+	void RefreshPresentationBindings();
+	void ResetPresentationBindings();
+	void ApplyActiveWeaponToolCharacterSettings();
+	void ApplyVisibleWeaponToolPresentationSettings();
+	bool ShouldApplyActiveWeaponToolCharacterSettingsToPawn(const APawn* VisualPawn) const;
 	APawn* ResolveVisualPawn() const;
+	USkeletalMeshComponent* ResolvePresentationMesh(APawn* VisualPawn) const;
+	UCharacterMovementComponent* ResolvePresentationMovementComponent(APawn* VisualPawn) const;
+	UCameraComponent* ResolvePresentationCameraComponent(APawn* VisualPawn) const;
+	USpringArmComponent* ResolvePresentationSpringArmComponent(APawn* VisualPawn) const;
 	URpgItemInstance* GetPrimaryPresentationItemForWeaponSet(int32 WeaponSetIndex) const;
 	const class URpgItemFragment_Visual* GetPrimaryPresentationVisualFragmentForWeaponSet(int32 WeaponSetIndex) const;
 	bool MontageUsesPresentationNotify(int32 WeaponSetIndex, bool bUseEquipMontage) const;
@@ -204,7 +223,40 @@ private:
 	TObjectPtr<APawn> CachedVisualPawn = nullptr;
 
 	UPROPERTY(Transient)
-	TObjectPtr<UDataAsset> ActiveCameraSettings = nullptr;
+	FRpgWeaponToolCameraSettings ActiveCameraSettings;
+
+	UPROPERTY(Transient)
+	FRpgWeaponToolCharacterSettings ActiveWeaponToolCharacterSettings;
+
+	UPROPERTY(Transient)
+	TObjectPtr<USkeletalMeshComponent> CachedPresentationMesh = nullptr;
+
+	UPROPERTY(Transient)
+	TObjectPtr<UCharacterMovementComponent> CachedPresentationMovementComponent = nullptr;
+
+	UPROPERTY(Transient)
+	TObjectPtr<UCameraComponent> CachedPresentationCameraComponent = nullptr;
+
+	UPROPERTY(Transient)
+	TObjectPtr<USpringArmComponent> CachedPresentationSpringArmComponent = nullptr;
+
+	UPROPERTY(Transient)
+	TSubclassOf<UAnimInstance> DefaultPresentationAnimClass = nullptr;
+
+	UPROPERTY(Transient)
+	float DefaultPresentationMaxWalkSpeed = 600.0f;
+
+	UPROPERTY(Transient)
+	bool bDefaultPresentationOrientRotationToMovement = true;
+
+	UPROPERTY(Transient)
+	bool bDefaultPresentationUseControllerDesiredRotation = false;
+
+	UPROPERTY(Transient)
+	float DefaultPresentationCameraFOV = 90.0f;
+
+	UPROPERTY(Transient)
+	FVector DefaultPresentationSpringArmSocketOffset = FVector::ZeroVector;
 
 	UPROPERTY(Transient)
 	int32 PresentationVisibleWeaponSetIndex = INDEX_NONE;
