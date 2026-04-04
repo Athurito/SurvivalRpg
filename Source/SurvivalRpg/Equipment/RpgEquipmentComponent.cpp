@@ -335,6 +335,9 @@ void URpgEquipmentComponent::TickComponent(float DeltaTime, ELevelTick TickType,
 		bVisualRefreshQueued = true;
 	}
 
+	UpdatePendingAnimClassSwitch();
+	UpdateCameraBlend(DeltaTime);
+
 	if (bVisualRefreshQueued)
 	{
 		RefreshVisuals();
@@ -911,11 +914,21 @@ void URpgEquipmentComponent::RefreshPresentationBindings()
 	if (CachedPresentationCameraComponent != nullptr)
 	{
 		DefaultPresentationCameraFOV = CachedPresentationCameraComponent->FieldOfView;
+		AppliedPresentationCameraFOV = DefaultPresentationCameraFOV;
+	}
+	else
+	{
+		AppliedPresentationCameraFOV = DefaultPresentationCameraFOV;
 	}
 
 	if (CachedPresentationSpringArmComponent != nullptr)
 	{
 		DefaultPresentationSpringArmSocketOffset = CachedPresentationSpringArmComponent->SocketOffset;
+		AppliedPresentationSpringArmSocketOffset = DefaultPresentationSpringArmSocketOffset;
+	}
+	else
+	{
+		AppliedPresentationSpringArmSocketOffset = DefaultPresentationSpringArmSocketOffset;
 	}
 
 	ApplyActiveWeaponToolCharacterSettings();
@@ -934,6 +947,17 @@ void URpgEquipmentComponent::ResetPresentationBindings()
 	bDefaultPresentationUseControllerDesiredRotation = false;
 	DefaultPresentationCameraFOV = 90.0f;
 	DefaultPresentationSpringArmSocketOffset = FVector::ZeroVector;
+	PendingPresentationAnimClass = nullptr;
+	AppliedPresentationCameraFOV = DefaultPresentationCameraFOV;
+	AppliedPresentationSpringArmSocketOffset = DefaultPresentationSpringArmSocketOffset;
+	PresentationCameraBlendStartFOV = DefaultPresentationCameraFOV;
+	PresentationCameraBlendStartSpringArmSocketOffset = DefaultPresentationSpringArmSocketOffset;
+	PresentationCameraBlendTargetFOV = DefaultPresentationCameraFOV;
+	PresentationCameraBlendTargetSpringArmSocketOffset = DefaultPresentationSpringArmSocketOffset;
+	PresentationCameraBlendDuration = 0.0f;
+	PresentationCameraBlendElapsedTime = 0.0f;
+	bHasPendingPresentationAnimClassSwitch = false;
+	bPresentationCameraBlendActive = false;
 }
 
 void URpgEquipmentComponent::ApplyActiveWeaponToolCharacterSettings()
@@ -952,12 +976,12 @@ void URpgEquipmentComponent::ApplyActiveWeaponToolCharacterSettings()
 
 void URpgEquipmentComponent::ApplyVisibleWeaponToolPresentationSettings()
 {
-	APawn* VisualPawn = CachedVisualPawn ? CachedVisualPawn.Get() : ResolveVisualPawn();
-	if (VisualPawn == nullptr || VisualPawn->GetNetMode() == NM_DedicatedServer)
-	{
-		return;
-	}
+	RefreshTargetVisiblePresentationState();
+	StartOrUpdateCameraBlend();
+}
 
+void URpgEquipmentComponent::RefreshTargetVisiblePresentationState()
+{
 	FRpgWeaponToolCharacterSettings VisibleCharacterSettings;
 	if (const URpgItemFragment_Visual* VisualFragment = GetPrimaryPresentationVisualFragmentForWeaponSet(PresentationVisibleWeaponSetIndex))
 	{
@@ -968,27 +992,149 @@ void URpgEquipmentComponent::ApplyVisibleWeaponToolPresentationSettings()
 		? VisibleCharacterSettings.AnimClass
 		: DefaultPresentationAnimClass;
 
-	if (CachedPresentationMesh != nullptr && CachedPresentationMesh->GetAnimClass() != DesiredAnimClass)
+	QueuePendingAnimClassSwitch(DesiredAnimClass);
+}
+
+void URpgEquipmentComponent::QueuePendingAnimClassSwitch(TSubclassOf<UAnimInstance> DesiredAnimClass)
+{
+	PendingPresentationAnimClass = DesiredAnimClass;
+	bHasPendingPresentationAnimClassSwitch = CachedPresentationMesh != nullptr && CachedPresentationMesh->GetAnimClass() != DesiredAnimClass;
+}
+
+void URpgEquipmentComponent::StartOrUpdateCameraBlend()
+{
+	const float DesiredFOV = ActiveCameraSettings.bEnabled ? ActiveCameraSettings.FOV : DefaultPresentationCameraFOV;
+	const FVector DesiredSocketOffset = ActiveCameraSettings.bEnabled ? ActiveCameraSettings.SpringArmSocketOffset : DefaultPresentationSpringArmSocketOffset;
+
+	float DesiredBlendTime = ActiveCameraSettings.BlendTime;
+	if (!ActiveCameraSettings.bEnabled && FMath::IsNearlyZero(DesiredBlendTime))
 	{
-		CachedPresentationMesh->SetAnimInstanceClass(DesiredAnimClass);
+		DesiredBlendTime = LastPresentationCameraBlendTime;
+	}
+	LastPresentationCameraBlendTime = DesiredBlendTime;
+
+	PresentationCameraBlendTargetFOV = DesiredFOV;
+	PresentationCameraBlendTargetSpringArmSocketOffset = DesiredSocketOffset;
+
+	APawn* VisualPawn = CachedVisualPawn ? CachedVisualPawn.Get() : ResolveVisualPawn();
+	if (!ShouldApplyVisibleWeaponToolCameraSettingsToPawn(VisualPawn))
+	{
+		bPresentationCameraBlendActive = false;
+		AppliedPresentationCameraFOV = DesiredFOV;
+		AppliedPresentationSpringArmSocketOffset = DesiredSocketOffset;
+		return;
 	}
 
-	if (CachedPresentationCameraComponent != nullptr)
+	const float CurrentFOV = CachedPresentationCameraComponent != nullptr
+		? CachedPresentationCameraComponent->FieldOfView
+		: AppliedPresentationCameraFOV;
+	const FVector CurrentSocketOffset = CachedPresentationSpringArmComponent != nullptr
+		? CachedPresentationSpringArmComponent->SocketOffset
+		: AppliedPresentationSpringArmSocketOffset;
+
+	AppliedPresentationCameraFOV = CurrentFOV;
+	AppliedPresentationSpringArmSocketOffset = CurrentSocketOffset;
+
+	if (DesiredBlendTime <= 0.0f
+		|| (FMath::IsNearlyEqual(CurrentFOV, DesiredFOV) && CurrentSocketOffset.Equals(DesiredSocketOffset)))
 	{
-		const float DesiredFOV = ActiveCameraSettings.bEnabled ? ActiveCameraSettings.FOV : DefaultPresentationCameraFOV;
-		if (!FMath::IsNearlyEqual(CachedPresentationCameraComponent->FieldOfView, DesiredFOV))
-		{
-			CachedPresentationCameraComponent->SetFieldOfView(DesiredFOV);
-		}
+		PresentationCameraBlendDuration = 0.0f;
+		PresentationCameraBlendElapsedTime = 0.0f;
+		bPresentationCameraBlendActive = false;
+		PresentationCameraBlendStartFOV = DesiredFOV;
+		PresentationCameraBlendStartSpringArmSocketOffset = DesiredSocketOffset;
+		ApplyCameraBlendAlpha(1.0f);
+		return;
 	}
 
-	if (CachedPresentationSpringArmComponent != nullptr)
+	PresentationCameraBlendStartFOV = CurrentFOV;
+	PresentationCameraBlendStartSpringArmSocketOffset = CurrentSocketOffset;
+	PresentationCameraBlendDuration = DesiredBlendTime;
+	PresentationCameraBlendElapsedTime = 0.0f;
+	bPresentationCameraBlendActive = true;
+}
+
+void URpgEquipmentComponent::UpdatePendingAnimClassSwitch()
+{
+	if (!bHasPendingPresentationAnimClassSwitch)
 	{
-		const FVector DesiredSocketOffset = ActiveCameraSettings.bEnabled ? ActiveCameraSettings.SpringArmSocketOffset : DefaultPresentationSpringArmSocketOffset;
-		if (!CachedPresentationSpringArmComponent->SocketOffset.Equals(DesiredSocketOffset))
-		{
-			CachedPresentationSpringArmComponent->SocketOffset = DesiredSocketOffset;
-		}
+		return;
+	}
+
+	APawn* VisualPawn = CachedVisualPawn ? CachedVisualPawn.Get() : ResolveVisualPawn();
+	if (!ShouldApplyVisibleWeaponToolAnimClassToPawn(VisualPawn) || CachedPresentationMesh == nullptr)
+	{
+		return;
+	}
+
+	if (CachedPresentationMesh->GetAnimClass() == PendingPresentationAnimClass)
+	{
+		bHasPendingPresentationAnimClassSwitch = false;
+		return;
+	}
+
+	UAnimInstance* CurrentAnimInstance = CachedPresentationMesh->GetAnimInstance();
+	if (CachedPresentationMesh->IsRunningParallelEvaluation()
+		|| (CurrentAnimInstance != nullptr
+			&& (CurrentAnimInstance->IsRunningParallelEvaluation()
+				|| CurrentAnimInstance->IsUpdatingAnimation()
+				|| CurrentAnimInstance->IsPostUpdatingAnimation())))
+	{
+		return;
+	}
+
+	CachedPresentationMesh->SetAnimInstanceClass(PendingPresentationAnimClass);
+	bHasPendingPresentationAnimClassSwitch = false;
+}
+
+void URpgEquipmentComponent::UpdateCameraBlend(float DeltaTime)
+{
+	if (!bPresentationCameraBlendActive)
+	{
+		return;
+	}
+
+	APawn* VisualPawn = CachedVisualPawn ? CachedVisualPawn.Get() : ResolveVisualPawn();
+	if (!ShouldApplyVisibleWeaponToolCameraSettingsToPawn(VisualPawn))
+	{
+		bPresentationCameraBlendActive = false;
+		return;
+	}
+
+	if (PresentationCameraBlendDuration <= 0.0f)
+	{
+		ApplyCameraBlendAlpha(1.0f);
+		bPresentationCameraBlendActive = false;
+		return;
+	}
+
+	PresentationCameraBlendElapsedTime = FMath::Min(PresentationCameraBlendElapsedTime + DeltaTime, PresentationCameraBlendDuration);
+	const float LinearAlpha = FMath::Clamp(PresentationCameraBlendElapsedTime / PresentationCameraBlendDuration, 0.0f, 1.0f);
+	const float EasedAlpha = LinearAlpha * LinearAlpha * (3.0f - (2.0f * LinearAlpha));
+	ApplyCameraBlendAlpha(EasedAlpha);
+
+	if (LinearAlpha >= 1.0f)
+	{
+		bPresentationCameraBlendActive = false;
+	}
+}
+
+void URpgEquipmentComponent::ApplyCameraBlendAlpha(float BlendAlpha)
+{
+	const float NewFOV = FMath::Lerp(PresentationCameraBlendStartFOV, PresentationCameraBlendTargetFOV, BlendAlpha);
+	const FVector NewSocketOffset = FMath::Lerp(PresentationCameraBlendStartSpringArmSocketOffset, PresentationCameraBlendTargetSpringArmSocketOffset, BlendAlpha);
+
+	AppliedPresentationCameraFOV = NewFOV;
+	AppliedPresentationSpringArmSocketOffset = NewSocketOffset;
+
+	if (CachedPresentationCameraComponent != nullptr && !FMath::IsNearlyEqual(CachedPresentationCameraComponent->FieldOfView, NewFOV))
+	{
+		CachedPresentationCameraComponent->SetFieldOfView(NewFOV);
+	}
+
+	if (CachedPresentationSpringArmComponent != nullptr && !CachedPresentationSpringArmComponent->SocketOffset.Equals(NewSocketOffset))
+	{
+		CachedPresentationSpringArmComponent->SocketOffset = NewSocketOffset;
 	}
 }
 
@@ -1000,6 +1146,16 @@ bool URpgEquipmentComponent::ShouldApplyActiveWeaponToolCharacterSettingsToPawn(
 	}
 
 	return HasAuthorityForEquipment() || VisualPawn->IsLocallyControlled();
+}
+
+bool URpgEquipmentComponent::ShouldApplyVisibleWeaponToolAnimClassToPawn(const APawn* VisualPawn) const
+{
+	return VisualPawn != nullptr && VisualPawn->GetNetMode() != NM_DedicatedServer;
+}
+
+bool URpgEquipmentComponent::ShouldApplyVisibleWeaponToolCameraSettingsToPawn(const APawn* VisualPawn) const
+{
+	return VisualPawn != nullptr && VisualPawn->GetNetMode() != NM_DedicatedServer && VisualPawn->IsLocallyControlled();
 }
 
 void URpgEquipmentComponent::RefreshVisuals()

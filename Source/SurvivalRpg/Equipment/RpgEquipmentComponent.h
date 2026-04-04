@@ -188,7 +188,15 @@ private:
 	void ResetPresentationBindings();
 	void ApplyActiveWeaponToolCharacterSettings();
 	void ApplyVisibleWeaponToolPresentationSettings();
+	void RefreshTargetVisiblePresentationState();
+	void QueuePendingAnimClassSwitch(TSubclassOf<UAnimInstance> DesiredAnimClass);
+	void StartOrUpdateCameraBlend();
+	void UpdatePendingAnimClassSwitch();
+	void UpdateCameraBlend(float DeltaTime);
+	void ApplyCameraBlendAlpha(float BlendAlpha);
 	bool ShouldApplyActiveWeaponToolCharacterSettingsToPawn(const APawn* VisualPawn) const;
+	bool ShouldApplyVisibleWeaponToolAnimClassToPawn(const APawn* VisualPawn) const;
+	bool ShouldApplyVisibleWeaponToolCameraSettingsToPawn(const APawn* VisualPawn) const;
 	APawn* ResolveVisualPawn() const;
 	USkeletalMeshComponent* ResolvePresentationMesh(APawn* VisualPawn) const;
 	UCharacterMovementComponent* ResolvePresentationMovementComponent(APawn* VisualPawn) const;
@@ -261,11 +269,43 @@ private:
 	UPROPERTY(Transient)
 	int32 PresentationVisibleWeaponSetIndex = INDEX_NONE;
 
+	UPROPERTY(Transient)
+	TSubclassOf<UAnimInstance> PendingPresentationAnimClass = nullptr;
+
+	UPROPERTY(Transient)
+	float AppliedPresentationCameraFOV = 90.0f;
+
+	UPROPERTY(Transient)
+	FVector AppliedPresentationSpringArmSocketOffset = FVector::ZeroVector;
+
+	UPROPERTY(Transient)
+	float PresentationCameraBlendStartFOV = 90.0f;
+
+	UPROPERTY(Transient)
+	FVector PresentationCameraBlendStartSpringArmSocketOffset = FVector::ZeroVector;
+
+	UPROPERTY(Transient)
+	float PresentationCameraBlendTargetFOV = 90.0f;
+
+	UPROPERTY(Transient)
+	FVector PresentationCameraBlendTargetSpringArmSocketOffset = FVector::ZeroVector;
+
+	UPROPERTY(Transient)
+	float PresentationCameraBlendDuration = 0.0f;
+
+	UPROPERTY(Transient)
+	float PresentationCameraBlendElapsedTime = 0.0f;
+
+	UPROPERTY(Transient)
+	float LastPresentationCameraBlendTime = 0.0f;
+
 	TArray<FRpgAbilitySet_GrantedHandles> AppliedAbilitySetHandles;
 	TArray<FActiveGameplayEffectHandle> AppliedGameplayEffectHandles;
 	TMap<FGameplayTag, int32> AppliedLooseTagCounts;
 	int32 ObservedActiveWeaponSetIndex = INDEX_NONE;
 	bool bVisualRefreshQueued = true;
+	bool bHasPendingPresentationAnimClassSwitch = false;
+	bool bPresentationCameraBlendActive = false;
 
 #if WITH_DEV_AUTOMATION_TESTS
 	URpgAbilitySystemComponent* AbilitySystemOverrideForTests = nullptr;

@@ -283,11 +283,13 @@ bool FRpgEquipmentActiveCameraSettingsTest::RunTest(const FString& Parameters)
 	FirstCameraSettings.bEnabled = true;
 	FirstCameraSettings.FOV = 72.0f;
 	FirstCameraSettings.SpringArmSocketOffset = FVector(0.0f, 55.0f, 12.0f);
+	FirstCameraSettings.BlendTime = 0.2f;
 
 	FRpgWeaponToolCameraSettings SecondCameraSettings;
 	SecondCameraSettings.bEnabled = true;
 	SecondCameraSettings.FOV = 64.0f;
 	SecondCameraSettings.SpringArmSocketOffset = FVector(0.0f, -40.0f, 8.0f);
+	SecondCameraSettings.BlendTime = 0.35f;
 
 	URpgItemInstance* FirstWeapon = CreateWeapon(
 		GetTransientPackage(),
