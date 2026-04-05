@@ -1,0 +1,4 @@
+interface:
+  display_name: "SurvivalRpg Combat Foundation"
+  short_description: "Equip/item architecture with GAS seams"
+  default_prompt: "Use $survival-rpg-combat-foundation to design or implement SurvivalRpg equip, loadout, and item-instance architecture with GAS-aligned combat seams."
