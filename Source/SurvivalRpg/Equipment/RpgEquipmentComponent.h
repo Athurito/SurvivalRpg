@@ -136,11 +136,13 @@ public:
 	void SetAbilitySystemOverrideForTests(URpgAbilitySystemComponent* InAbilitySystemComponent) { AbilitySystemOverrideForTests = InAbilitySystemComponent; }
 	bool UsesWeaponToolPresentationNotifyForTests(int32 WeaponSetIndex, bool bUseEquipMontage) const { return MontageUsesPresentationNotify(WeaponSetIndex, bUseEquipMontage); }
 #endif
-
-protected:
+	
+public:
 	virtual void BeginPlay() override;
 	virtual void EndPlay(const EEndPlayReason::Type EndPlayReason) override;
 	virtual void TickComponent(float DeltaTime, ELevelTick TickType, FActorComponentTickFunction* ThisTickFunction) override;
+	
+protected:
 
 	UFUNCTION()
 	void OnRep_WeaponSets();

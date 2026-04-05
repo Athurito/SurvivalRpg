@@ -24,6 +24,8 @@
 URpgEquipmentComponent::URpgEquipmentComponent()
 {
 	PrimaryComponentTick.bCanEverTick = true;
+	PrimaryComponentTick.TickGroup = TG_PostUpdateWork;
+	PrimaryComponentTick.EndTickGroup = TG_PostUpdateWork;
 	SetIsReplicatedByDefault(true);
 	WeaponSets.SetNum(2);
 }
