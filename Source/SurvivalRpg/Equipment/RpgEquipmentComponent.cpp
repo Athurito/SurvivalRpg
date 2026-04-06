@@ -1,31 +1,83 @@
 #include "RpgEquipmentComponent.h"
 
-#include "Animation/AnimInstance.h"
 #include "Animation/AnimMontage.h"
-#include "Camera/CameraComponent.h"
-#include "Components/SkeletalMeshComponent.h"
 #include "Engine/ActorChannel.h"
-#include "GameFramework/CharacterMovementComponent.h"
 #include "GameFramework/Pawn.h"
-#include "GameFramework/PlayerState.h"
-#include "GameFramework/SpringArmComponent.h"
-#include "Net/UnrealNetwork.h"
 #include "GameplayEffect.h"
-#include "SurvivalRpg/GameplayTags/GameplayTags.h"
+#include "Net/UnrealNetwork.h"
 #include "SurvivalRpg/AbilitySystem/RpgAbilitySystemComponent.h"
 #include "SurvivalRpg/Core/Player/RpgPlayerState.h"
-#include "SurvivalRpg/Items/RpgItemInstance.h"
+#include "SurvivalRpg/GameplayTags/GameplayTags.h"
 #include "SurvivalRpg/Items/Fragments/RpgItemFragment_Equipment.h"
 #include "SurvivalRpg/Items/Fragments/RpgItemFragment_Visual.h"
 #include "SurvivalRpg/Items/Fragments/RpgItemFragment_Weapon.h"
+#include "SurvivalRpg/Items/RpgItemInstance.h"
 #include "AnimNotify_RpgWeaponToolPresentation.h"
 #include "RpgEquipmentRuleset.h"
+#include "RpgWeaponPresentationComponent.h"
+
+namespace
+{
+	struct FRpgDesiredAbilitySetGrant
+	{
+		TWeakObjectPtr<UObject> SourceObject = nullptr;
+		int32 Count = 0;
+	};
+
+	struct FRpgDesiredGrantSnapshot
+	{
+		TMap<const URpgAbilitySet*, FRpgDesiredAbilitySetGrant> AbilitySets;
+		TMap<FRpgItemGameplayEffectGrantKey, int32> GameplayEffects;
+		TMap<FGameplayTag, int32> LooseTags;
+	};
+
+	void AddDesiredAbilitySets(FRpgDesiredGrantSnapshot& Snapshot, const TArray<TObjectPtr<const URpgAbilitySet>>& AbilitySets, UObject* SourceObject)
+	{
+		for (const URpgAbilitySet* AbilitySet : AbilitySets)
+		{
+			if (AbilitySet == nullptr)
+			{
+				continue;
+			}
+
+			FRpgDesiredAbilitySetGrant& DesiredGrant = Snapshot.AbilitySets.FindOrAdd(AbilitySet);
+			if (!DesiredGrant.SourceObject.IsValid())
+			{
+				DesiredGrant.SourceObject = SourceObject;
+			}
+
+			++DesiredGrant.Count;
+		}
+	}
+
+	void AddDesiredGameplayEffects(FRpgDesiredGrantSnapshot& Snapshot, const TArray<FRpgItemGameplayEffectGrant>& GameplayEffects)
+	{
+		for (const FRpgItemGameplayEffectGrant& GameplayEffectGrant : GameplayEffects)
+		{
+			if (GameplayEffectGrant.GameplayEffect == nullptr)
+			{
+				continue;
+			}
+
+			FRpgItemGameplayEffectGrantKey Key;
+			Key.GameplayEffect = GameplayEffectGrant.GameplayEffect;
+			Key.EffectLevel = GameplayEffectGrant.EffectLevel;
+			Snapshot.GameplayEffects.FindOrAdd(Key) += 1;
+		}
+	}
+
+	void AddDesiredLooseTags(FRpgDesiredGrantSnapshot& Snapshot, const FGameplayTagContainer& LooseTags)
+	{
+		for (const FGameplayTag& LooseTag : LooseTags)
+		{
+			Snapshot.LooseTags.FindOrAdd(LooseTag) += 1;
+		}
+	}
+}
 
 URpgEquipmentComponent::URpgEquipmentComponent()
 {
-	PrimaryComponentTick.bCanEverTick = true;
-	PrimaryComponentTick.TickGroup = TG_PostUpdateWork;
-	PrimaryComponentTick.EndTickGroup = TG_PostUpdateWork;
+	PrimaryComponentTick.bCanEverTick = false;
 	SetIsReplicatedByDefault(true);
 	WeaponSets.SetNum(2);
 }
@@ -49,18 +101,22 @@ bool URpgEquipmentComponent::ReplicateSubobjects(UActorChannel* Channel, FOutBun
 			bWroteSomething |= Channel->ReplicateSubobject(ItemInstance, *Bunch, *RepFlags);
 		}
 	}
+
 	return bWroteSomething;
 }
 
 void URpgEquipmentComponent::SetEquipmentRuleset(const URpgEquipmentRuleset* InRuleset)
 {
+	const TArray<FRpgEquippedWeaponSet> PreviousWeaponSets = WeaponSets;
+	const int32 PreviousActiveWeaponSetIndex = ActiveWeaponSetIndex;
+
 	EquipmentRuleset = InRuleset;
 	EnsureWeaponSetCount();
-	RefreshActiveWeaponToolCharacterSettings();
-	ApplyActiveWeaponToolCharacterSettings();
-	RefreshActiveCameraSettings();
-	ApplyVisibleWeaponToolPresentationSettings();
-	QueueVisualRefresh();
+
+	if (HasAuthorityForEquipment() && (!AreWeaponSetsEqual(PreviousWeaponSets, WeaponSets) || PreviousActiveWeaponSetIndex != ActiveWeaponSetIndex))
+	{
+		HandleEquipmentStateChanged(PreviousWeaponSets, PreviousActiveWeaponSetIndex);
+	}
 }
 
 URpgItemInstance* URpgEquipmentComponent::CreateItemInstance(URpgItemDefinition* ItemDefinition, const FRpgItemSourceHandle& SourceHandle)
@@ -141,8 +197,15 @@ bool URpgEquipmentComponent::TryEquipItem(URpgItemInstance* ItemInstance, FGamep
 		return false;
 	}
 
+	const TArray<FRpgEquippedWeaponSet> PreviousWeaponSets = WeaponSets;
+	const int32 PreviousActiveWeaponSetIndex = ActiveWeaponSetIndex;
 	WeaponSets = MoveTemp(ProposedWeaponSets);
-	HandleEquipmentStateChanged();
+
+	if (!AreWeaponSetsEqual(PreviousWeaponSets, WeaponSets))
+	{
+		HandleEquipmentStateChanged(PreviousWeaponSets, PreviousActiveWeaponSetIndex);
+	}
+
 	return true;
 }
 
@@ -208,10 +271,23 @@ bool URpgEquipmentComponent::TryUnequipItem(FGameplayTag SlotTag)
 	}
 
 	EnsureWeaponSetCount();
+	if (!WeaponSets.IsValidIndex(WeaponSetIndex))
+	{
+		return false;
+	}
+
+	const TArray<FRpgEquippedWeaponSet> PreviousWeaponSets = WeaponSets;
+	const int32 PreviousActiveWeaponSetIndex = ActiveWeaponSetIndex;
+
 	const URpgEquipmentRuleset* Ruleset = EquipmentRuleset ? EquipmentRuleset.Get() : GetDefault<URpgEquipmentRuleset>();
 	FRpgEquippedWeaponSet& WeaponSet = WeaponSets[WeaponSetIndex];
 	if (HandSlot == ERpgEquipmentHandSlot::MainHand)
 	{
+		if (WeaponSet.MainHandItem == nullptr && (WeaponSet.OffHandItem == nullptr || (Ruleset != nullptr && Ruleset->AllowsOffHandWithoutMainHand())))
+		{
+			return false;
+		}
+
 		WeaponSet.MainHandItem = nullptr;
 		if (Ruleset == nullptr || !Ruleset->AllowsOffHandWithoutMainHand())
 		{
@@ -220,10 +296,15 @@ bool URpgEquipmentComponent::TryUnequipItem(FGameplayTag SlotTag)
 	}
 	else
 	{
+		if (WeaponSet.OffHandItem == nullptr)
+		{
+			return false;
+		}
+
 		WeaponSet.OffHandItem = nullptr;
 	}
 
-	HandleEquipmentStateChanged();
+	HandleEquipmentStateChanged(PreviousWeaponSets, PreviousActiveWeaponSetIndex);
 	return true;
 }
 
@@ -241,19 +322,50 @@ bool URpgEquipmentComponent::TryActivateWeaponSet(int32 WeaponSetIndex)
 	}
 
 	EnsureWeaponSetCount();
-	ActiveWeaponSetIndex = (ActiveWeaponSetIndex == WeaponSetIndex) ? INDEX_NONE : WeaponSetIndex;
-	HandleEquipmentStateChanged();
+	const int32 NewActiveWeaponSetIndex = (ActiveWeaponSetIndex == WeaponSetIndex) ? INDEX_NONE : WeaponSetIndex;
+	if (NewActiveWeaponSetIndex == ActiveWeaponSetIndex)
+	{
+		return false;
+	}
+
+	const TArray<FRpgEquippedWeaponSet> PreviousWeaponSets = WeaponSets;
+	const int32 PreviousActiveWeaponSetIndex = ActiveWeaponSetIndex;
+	ActiveWeaponSetIndex = NewActiveWeaponSetIndex;
+	HandleEquipmentStateChanged(PreviousWeaponSets, PreviousActiveWeaponSetIndex);
 	return true;
 }
 
 FRpgEquippedWeaponSet URpgEquipmentComponent::GetActiveWeaponSet() const
 {
-	if (WeaponSets.IsValidIndex(ActiveWeaponSetIndex))
+	return GetWeaponSet(ActiveWeaponSetIndex);
+}
+
+FRpgEquippedWeaponSet URpgEquipmentComponent::GetWeaponSet(int32 WeaponSetIndex) const
+{
+	if (WeaponSets.IsValidIndex(WeaponSetIndex))
 	{
-		return WeaponSets[ActiveWeaponSetIndex];
+		return WeaponSets[WeaponSetIndex];
 	}
 
 	return FRpgEquippedWeaponSet();
+}
+
+FRpgWeaponToolCameraSettings URpgEquipmentComponent::GetActiveCameraSettings() const
+{
+	return ResolveActiveCameraSettings();
+}
+
+FRpgWeaponToolCharacterSettings URpgEquipmentComponent::GetActiveWeaponToolCharacterSettings() const
+{
+	return ResolveActiveWeaponToolCharacterSettings();
+}
+
+void URpgEquipmentComponent::ApplyWeaponToolPresentationNotifyAction(ERpgWeaponToolPresentationNotifyAction Action)
+{
+	if (URpgWeaponPresentationComponent* PresentationComponent = ResolvePresentationComponent())
+	{
+		PresentationComponent->ApplyWeaponToolPresentationNotifyAction(Action);
+	}
 }
 
 void URpgEquipmentComponent::GetEquippedItems(TArray<URpgItemInstance*>& OutItems) const
@@ -288,77 +400,37 @@ URpgItemInstance* URpgEquipmentComponent::GetItemInSlot(FGameplayTag SlotTag) co
 		: WeaponSets[WeaponSetIndex].OffHandItem;
 }
 
-void URpgEquipmentComponent::ApplyWeaponToolPresentationNotifyAction(ERpgWeaponToolPresentationNotifyAction Action)
-{
-	switch (Action)
-	{
-	case ERpgWeaponToolPresentationNotifyAction::ApplyCurrentState:
-	case ERpgWeaponToolPresentationNotifyAction::DrawActiveSet:
-		SetPresentationVisibleWeaponSetIndex(ActiveWeaponSetIndex);
-		break;
-
-	case ERpgWeaponToolPresentationNotifyAction::HolsterVisuals:
-		SetPresentationVisibleWeaponSetIndex(INDEX_NONE);
-		break;
-
-	default:
-		break;
-	}
-}
-
 void URpgEquipmentComponent::BeginPlay()
 {
 	Super::BeginPlay();
 	EnsureWeaponSetCount();
-	ObservedActiveWeaponSetIndex = ActiveWeaponSetIndex;
-	PresentationVisibleWeaponSetIndex = ActiveWeaponSetIndex;
-	RefreshActiveWeaponToolCharacterSettings();
-	RefreshActiveCameraSettings();
-	RefreshPresentationBindings();
-	QueueVisualRefresh();
+	LastNotifiedActiveWeaponSetIndex = ActiveWeaponSetIndex;
 }
 
 void URpgEquipmentComponent::EndPlay(const EEndPlayReason::Type EndPlayReason)
 {
-	DestroyAllVisualActors();
-	RemoveAppliedGrants();
+	RemoveAllAppliedGrants();
 	Super::EndPlay(EndPlayReason);
-}
-
-void URpgEquipmentComponent::TickComponent(float DeltaTime, ELevelTick TickType, FActorComponentTickFunction* ThisTickFunction)
-{
-	Super::TickComponent(DeltaTime, TickType, ThisTickFunction);
-
-	APawn* CurrentPawn = ResolveVisualPawn();
-	if (CachedVisualPawn != CurrentPawn)
-	{
-		CachedVisualPawn = CurrentPawn;
-		RefreshPresentationBindings();
-		bVisualRefreshQueued = true;
-	}
-
-	UpdatePendingAnimClassSwitch();
-	UpdateCameraBlend(DeltaTime);
-
-	if (bVisualRefreshQueued)
-	{
-		RefreshVisuals();
-	}
 }
 
 void URpgEquipmentComponent::OnRep_WeaponSets()
 {
-	QueueVisualRefresh();
-	RefreshActiveWeaponToolCharacterSettings();
-	ApplyActiveWeaponToolCharacterSettings();
-	RefreshActiveCameraSettings();
-	ApplyVisibleWeaponToolPresentationSettings();
+	FRpgEquipmentStateChangedEvent Event;
+	Event.PreviousActiveWeaponSetIndex = LastNotifiedActiveWeaponSetIndex;
+	Event.NewActiveWeaponSetIndex = LastNotifiedActiveWeaponSetIndex;
+	Event.bWeaponSlotsChanged = true;
+	BroadcastStateChangedNative(Event);
 	OnEquipmentChanged.Broadcast();
 }
 
 void URpgEquipmentComponent::OnRep_ActiveWeaponSetIndex()
 {
-	RefreshPresentationState(true);
+	FRpgEquipmentStateChangedEvent Event;
+	Event.PreviousActiveWeaponSetIndex = LastNotifiedActiveWeaponSetIndex;
+	Event.NewActiveWeaponSetIndex = ActiveWeaponSetIndex;
+	Event.bWeaponSlotsChanged = false;
+	LastNotifiedActiveWeaponSetIndex = ActiveWeaponSetIndex;
+	BroadcastStateChangedNative(Event);
 	OnEquipmentChanged.Broadcast();
 }
 
@@ -395,12 +467,6 @@ void URpgEquipmentComponent::EnsureWeaponSetCount()
 	if (ActiveWeaponSetIndex != INDEX_NONE && (ActiveWeaponSetIndex < 0 || ActiveWeaponSetIndex >= WeaponSets.Num()))
 	{
 		ActiveWeaponSetIndex = INDEX_NONE;
-	}
-
-	if (PresentationVisibleWeaponSetIndex != INDEX_NONE && (PresentationVisibleWeaponSetIndex < 0 || PresentationVisibleWeaponSetIndex >= WeaponSets.Num()))
-	{
-		PresentationVisibleWeaponSetIndex = INDEX_NONE;
-		QueueVisualRefresh();
 	}
 }
 
@@ -598,17 +664,6 @@ bool URpgEquipmentComponent::IsItemInActiveWeaponSet(const URpgItemInstance* Ite
 	return ActiveWeaponSet.MainHandItem == ItemInstance || ActiveWeaponSet.OffHandItem == ItemInstance;
 }
 
-bool URpgEquipmentComponent::IsItemInPresentationVisibleWeaponSet(const URpgItemInstance* ItemInstance) const
-{
-	if (ItemInstance == nullptr || !WeaponSets.IsValidIndex(PresentationVisibleWeaponSetIndex))
-	{
-		return false;
-	}
-
-	const FRpgEquippedWeaponSet& VisibleWeaponSet = WeaponSets[PresentationVisibleWeaponSetIndex];
-	return VisibleWeaponSet.MainHandItem == ItemInstance || VisibleWeaponSet.OffHandItem == ItemInstance;
-}
-
 int32 URpgEquipmentComponent::CountTwoHandedItems(const TArray<FRpgEquippedWeaponSet>& WeaponSetStates) const
 {
 	const URpgEquipmentRuleset* Ruleset = EquipmentRuleset ? EquipmentRuleset.Get() : GetDefault<URpgEquipmentRuleset>();
@@ -647,81 +702,39 @@ URpgItemInstance* URpgEquipmentComponent::FindKnownItemById(const FGuid& Instanc
 	return nullptr;
 }
 
-void URpgEquipmentComponent::HandleEquipmentStateChanged()
+void URpgEquipmentComponent::HandleEquipmentStateChanged(const TArray<FRpgEquippedWeaponSet>& PreviousWeaponSets, int32 PreviousActiveWeaponSetIndex)
 {
 	EnsureWeaponSetCount();
-	RemoveAppliedGrants();
-	ApplyCurrentGrants();
-	RefreshPresentationState(true);
+	ReconcileAppliedGrants();
+	CompactKnownItemInstances();
 	ForceOwnerNetUpdate();
+
+	FRpgEquipmentStateChangedEvent Event;
+	Event.PreviousActiveWeaponSetIndex = PreviousActiveWeaponSetIndex;
+	Event.NewActiveWeaponSetIndex = ActiveWeaponSetIndex;
+	Event.bWeaponSlotsChanged = !AreWeaponSetsEqual(PreviousWeaponSets, WeaponSets);
+	LastNotifiedActiveWeaponSetIndex = ActiveWeaponSetIndex;
+	BroadcastStateChangedNative(Event);
 	OnEquipmentChanged.Broadcast();
 }
 
-void URpgEquipmentComponent::RefreshPresentationState(bool bAllowMontage)
-{
-	const int32 PreviousActiveWeaponSetIndex = ObservedActiveWeaponSetIndex;
-
-	RefreshActiveWeaponToolCharacterSettings();
-	ApplyActiveWeaponToolCharacterSettings();
-	QueueVisualRefresh();
-	RefreshActiveCameraSettings();
-	ApplyVisibleWeaponToolPresentationSettings();
-
-	if (bAllowMontage && PreviousActiveWeaponSetIndex != ActiveWeaponSetIndex)
-	{
-		APawn* VisualPawn = ResolveVisualPawn();
-		if (VisualPawn != nullptr && VisualPawn->GetNetMode() != NM_DedicatedServer)
-		{
-			const bool bUseEquipMontage = ActiveWeaponSetIndex != INDEX_NONE;
-			const int32 MontageWeaponSetIndex = bUseEquipMontage ? ActiveWeaponSetIndex : PreviousActiveWeaponSetIndex;
-			const bool bUsesNotifyDrivenPresentation = MontageUsesPresentationNotify(MontageWeaponSetIndex, bUseEquipMontage);
-			const bool bPlayedMontage = PlayPresentationMontageForWeaponSet(MontageWeaponSetIndex, bUseEquipMontage);
-
-			if (!bUsesNotifyDrivenPresentation || !bPlayedMontage)
-			{
-				SetPresentationVisibleWeaponSetIndex(ActiveWeaponSetIndex);
-			}
-		}
-		else
-		{
-			SetPresentationVisibleWeaponSetIndex(ActiveWeaponSetIndex);
-		}
-	}
-
-	ObservedActiveWeaponSetIndex = ActiveWeaponSetIndex;
-}
-
-void URpgEquipmentComponent::SetPresentationVisibleWeaponSetIndex(int32 InPresentationVisibleWeaponSetIndex)
-{
-	const int32 NewVisibleWeaponSetIndex = WeaponSets.IsValidIndex(InPresentationVisibleWeaponSetIndex)
-		? InPresentationVisibleWeaponSetIndex
-		: INDEX_NONE;
-
-	if (PresentationVisibleWeaponSetIndex == NewVisibleWeaponSetIndex)
-	{
-		return;
-	}
-
-	PresentationVisibleWeaponSetIndex = NewVisibleWeaponSetIndex;
-	RefreshActiveCameraSettings();
-	ApplyVisibleWeaponToolPresentationSettings();
-	QueueVisualRefresh();
-}
-
-void URpgEquipmentComponent::RemoveAppliedGrants()
+void URpgEquipmentComponent::RemoveAllAppliedGrants()
 {
 	if (URpgAbilitySystemComponent* AbilitySystemComponent = ResolveAbilitySystemComponent())
 	{
-		for (FRpgAbilitySet_GrantedHandles& GrantedHandles : AppliedAbilitySetHandles)
+		for (TPair<const URpgAbilitySet*, FRpgAbilitySet_GrantedHandles>& AppliedAbilitySetPair : AppliedAbilitySetHandles)
 		{
-			GrantedHandles.TakeFromAbilitySystem(AbilitySystemComponent);
+			AppliedAbilitySetPair.Value.TakeFromAbilitySystem(AbilitySystemComponent);
 		}
 
-		for (const FActiveGameplayEffectHandle& EffectHandle : AppliedGameplayEffectHandles)
+		for (TPair<FRpgItemGameplayEffectGrantKey, TArray<FActiveGameplayEffectHandle>>& AppliedGameplayEffectPair : AppliedGameplayEffectHandles)
 		{
-			if (EffectHandle.IsValid())
+			for (const FActiveGameplayEffectHandle& EffectHandle : AppliedGameplayEffectPair.Value)
 			{
-				AbilitySystemComponent->RemoveActiveGameplayEffect(EffectHandle);
+				if (EffectHandle.IsValid())
+				{
+					AbilitySystemComponent->RemoveActiveGameplayEffect(EffectHandle);
+				}
 			}
 		}
 
@@ -735,11 +748,12 @@ void URpgEquipmentComponent::RemoveAppliedGrants()
 	}
 
 	AppliedAbilitySetHandles.Reset();
+	AppliedAbilitySetSourceObjects.Reset();
 	AppliedGameplayEffectHandles.Reset();
 	AppliedLooseTagCounts.Reset();
 }
 
-void URpgEquipmentComponent::ApplyCurrentGrants()
+void URpgEquipmentComponent::ReconcileAppliedGrants()
 {
 	if (!HasAuthorityForEquipment())
 	{
@@ -752,6 +766,7 @@ void URpgEquipmentComponent::ApplyCurrentGrants()
 		return;
 	}
 
+	FRpgDesiredGrantSnapshot DesiredSnapshot;
 	TArray<URpgItemInstance*> EquippedItems;
 	GetEquippedItems(EquippedItems);
 
@@ -759,81 +774,135 @@ void URpgEquipmentComponent::ApplyCurrentGrants()
 	{
 		if (const URpgItemFragment_Equipment* EquipmentFragment = ItemInstance ? ItemInstance->FindFragmentByClass<URpgItemFragment_Equipment>() : nullptr)
 		{
-			ApplyAbilitySets(AbilitySystemComponent, EquipmentFragment->GetEquippedAbilitySets(), ItemInstance);
-			ApplyGameplayEffects(AbilitySystemComponent, EquipmentFragment->GetEquippedGameplayEffects());
-			ApplyLooseTags(AbilitySystemComponent, EquipmentFragment->GetEquippedLooseTags());
+			AddDesiredAbilitySets(DesiredSnapshot, EquipmentFragment->GetEquippedAbilitySets(), ItemInstance);
+			AddDesiredGameplayEffects(DesiredSnapshot, EquipmentFragment->GetEquippedGameplayEffects());
+			AddDesiredLooseTags(DesiredSnapshot, EquipmentFragment->GetEquippedLooseTags());
 		}
 
 		if (IsItemInActiveWeaponSet(ItemInstance))
 		{
 			if (const URpgItemFragment_Weapon* WeaponFragment = ItemInstance->FindFragmentByClass<URpgItemFragment_Weapon>())
 			{
-				ApplyAbilitySets(AbilitySystemComponent, WeaponFragment->GetActiveAbilitySets(), ItemInstance);
-				ApplyGameplayEffects(AbilitySystemComponent, WeaponFragment->GetActiveGameplayEffects());
-				ApplyLooseTags(AbilitySystemComponent, WeaponFragment->GetActiveLooseTags());
+				AddDesiredAbilitySets(DesiredSnapshot, WeaponFragment->GetActiveAbilitySets(), ItemInstance);
+				AddDesiredGameplayEffects(DesiredSnapshot, WeaponFragment->GetActiveGameplayEffects());
+				AddDesiredLooseTags(DesiredSnapshot, WeaponFragment->GetActiveLooseTags());
 			}
 		}
 	}
-}
 
-void URpgEquipmentComponent::ApplyAbilitySets(URpgAbilitySystemComponent* AbilitySystemComponent, const TArray<TObjectPtr<const URpgAbilitySet>>& AbilitySets, UObject* SourceObject)
-{
-	if (AbilitySystemComponent == nullptr)
+	for (auto AppliedAbilitySetIt = AppliedAbilitySetHandles.CreateIterator(); AppliedAbilitySetIt; ++AppliedAbilitySetIt)
 	{
-		return;
+		const URpgAbilitySet* AbilitySet = AppliedAbilitySetIt.Key();
+		const FRpgDesiredAbilitySetGrant* DesiredGrant = DesiredSnapshot.AbilitySets.Find(AbilitySet);
+		const UObject* AppliedSourceObject = AppliedAbilitySetSourceObjects.FindRef(AbilitySet).Get();
+		const UObject* DesiredSourceObject = DesiredGrant ? DesiredGrant->SourceObject.Get() : nullptr;
+		const bool bSourceChanged = DesiredGrant != nullptr && AppliedSourceObject != DesiredSourceObject;
+		if (DesiredGrant == nullptr || DesiredGrant->Count <= 0 || bSourceChanged)
+		{
+			AppliedAbilitySetIt.Value().TakeFromAbilitySystem(AbilitySystemComponent);
+			AppliedAbilitySetSourceObjects.Remove(AbilitySet);
+			AppliedAbilitySetIt.RemoveCurrent();
+		}
 	}
 
-	for (const URpgAbilitySet* AbilitySet : AbilitySets)
+	for (const TPair<const URpgAbilitySet*, FRpgDesiredAbilitySetGrant>& DesiredAbilitySetPair : DesiredSnapshot.AbilitySets)
 	{
-		if (AbilitySet == nullptr)
+		if (DesiredAbilitySetPair.Key == nullptr || AppliedAbilitySetHandles.Contains(DesiredAbilitySetPair.Key))
 		{
 			continue;
 		}
 
-		FRpgAbilitySet_GrantedHandles& Handles = AppliedAbilitySetHandles.AddDefaulted_GetRef();
-		AbilitySet->GiveToAbilitySystem(AbilitySystemComponent, &Handles, SourceObject);
+		FRpgAbilitySet_GrantedHandles Handles;
+		DesiredAbilitySetPair.Key->GiveToAbilitySystem(AbilitySystemComponent, &Handles, DesiredAbilitySetPair.Value.SourceObject.Get());
+		AppliedAbilitySetHandles.Add(DesiredAbilitySetPair.Key, Handles);
+		AppliedAbilitySetSourceObjects.Add(DesiredAbilitySetPair.Key, DesiredAbilitySetPair.Value.SourceObject);
+	}
+
+	for (auto AppliedGameplayEffectIt = AppliedGameplayEffectHandles.CreateIterator(); AppliedGameplayEffectIt; ++AppliedGameplayEffectIt)
+	{
+		const int32 DesiredCount = DesiredSnapshot.GameplayEffects.FindRef(AppliedGameplayEffectIt.Key());
+		TArray<FActiveGameplayEffectHandle>& EffectHandles = AppliedGameplayEffectIt.Value();
+		while (EffectHandles.Num() > DesiredCount)
+		{
+			const FActiveGameplayEffectHandle EffectHandle = EffectHandles.Pop(EAllowShrinking::No);
+			if (EffectHandle.IsValid())
+			{
+				AbilitySystemComponent->RemoveActiveGameplayEffect(EffectHandle);
+			}
+		}
+
+		if (DesiredCount <= 0)
+		{
+			AppliedGameplayEffectIt.RemoveCurrent();
+		}
+	}
+
+	for (const TPair<FRpgItemGameplayEffectGrantKey, int32>& DesiredGameplayEffectPair : DesiredSnapshot.GameplayEffects)
+	{
+		TArray<FActiveGameplayEffectHandle>& EffectHandles = AppliedGameplayEffectHandles.FindOrAdd(DesiredGameplayEffectPair.Key);
+		while (EffectHandles.Num() < DesiredGameplayEffectPair.Value)
+		{
+			const UGameplayEffect* GameplayEffect = DesiredGameplayEffectPair.Key.GameplayEffect->GetDefaultObject<UGameplayEffect>();
+			const FActiveGameplayEffectHandle EffectHandle = AbilitySystemComponent->ApplyGameplayEffectToSelf(
+				GameplayEffect,
+				DesiredGameplayEffectPair.Key.EffectLevel,
+				AbilitySystemComponent->MakeEffectContext());
+
+			if (!EffectHandle.IsValid())
+			{
+				break;
+			}
+
+			EffectHandles.Add(EffectHandle);
+		}
+	}
+
+	for (auto AppliedLooseTagIt = AppliedLooseTagCounts.CreateIterator(); AppliedLooseTagIt; ++AppliedLooseTagIt)
+	{
+		const int32 DesiredCount = DesiredSnapshot.LooseTags.FindRef(AppliedLooseTagIt.Key());
+		while (AppliedLooseTagIt.Value() > DesiredCount)
+		{
+			AbilitySystemComponent->RemoveLooseGameplayTag(AppliedLooseTagIt.Key());
+			AppliedLooseTagIt.Value() -= 1;
+		}
+
+		if (AppliedLooseTagIt.Value() <= 0)
+		{
+			AppliedLooseTagIt.RemoveCurrent();
+		}
+	}
+
+	for (const TPair<FGameplayTag, int32>& DesiredLooseTagPair : DesiredSnapshot.LooseTags)
+	{
+		int32& AppliedCount = AppliedLooseTagCounts.FindOrAdd(DesiredLooseTagPair.Key);
+		while (AppliedCount < DesiredLooseTagPair.Value)
+		{
+			AbilitySystemComponent->AddLooseGameplayTag(DesiredLooseTagPair.Key);
+			AppliedCount += 1;
+		}
 	}
 }
 
-void URpgEquipmentComponent::ApplyGameplayEffects(URpgAbilitySystemComponent* AbilitySystemComponent, const TArray<FRpgItemGameplayEffectGrant>& GameplayEffects)
+void URpgEquipmentComponent::CompactKnownItemInstances()
 {
-	if (AbilitySystemComponent == nullptr)
+	TSet<const URpgItemInstance*> ReferencedItems;
+	for (const FRpgEquippedWeaponSet& WeaponSet : WeaponSets)
 	{
-		return;
-	}
-
-	for (const FRpgItemGameplayEffectGrant& EffectGrant : GameplayEffects)
-	{
-		if (EffectGrant.GameplayEffect == nullptr)
+		if (WeaponSet.MainHandItem != nullptr)
 		{
-			continue;
+			ReferencedItems.Add(WeaponSet.MainHandItem);
 		}
 
-		const UGameplayEffect* GameplayEffect = EffectGrant.GameplayEffect->GetDefaultObject<UGameplayEffect>();
-		const FActiveGameplayEffectHandle EffectHandle = AbilitySystemComponent->ApplyGameplayEffectToSelf(
-			GameplayEffect,
-			EffectGrant.EffectLevel,
-			AbilitySystemComponent->MakeEffectContext());
-
-		if (EffectHandle.IsValid())
+		if (WeaponSet.OffHandItem != nullptr)
 		{
-			AppliedGameplayEffectHandles.Add(EffectHandle);
+			ReferencedItems.Add(WeaponSet.OffHandItem);
 		}
 	}
-}
 
-void URpgEquipmentComponent::ApplyLooseTags(URpgAbilitySystemComponent* AbilitySystemComponent, const FGameplayTagContainer& LooseTags)
-{
-	if (AbilitySystemComponent == nullptr)
+	KnownItemInstances.RemoveAll([&ReferencedItems](const TObjectPtr<URpgItemInstance>& KnownItem)
 	{
-		return;
-	}
-
-	for (const FGameplayTag& LooseTag : LooseTags)
-	{
-		AbilitySystemComponent->AddLooseGameplayTag(LooseTag);
-		AppliedLooseTagCounts.FindOrAdd(LooseTag) += 1;
-	}
+		return KnownItem == nullptr || !ReferencedItems.Contains(KnownItem.Get());
+	});
 }
 
 URpgAbilitySystemComponent* URpgEquipmentComponent::ResolveAbilitySystemComponent() const
@@ -851,407 +920,6 @@ URpgAbilitySystemComponent* URpgEquipmentComponent::ResolveAbilitySystemComponen
 	}
 
 	return nullptr;
-}
-
-void URpgEquipmentComponent::QueueVisualRefresh()
-{
-	bVisualRefreshQueued = true;
-}
-
-void URpgEquipmentComponent::RefreshActiveWeaponToolCharacterSettings()
-{
-	FRpgWeaponToolCharacterSettings NewCharacterSettings;
-	if (const URpgItemFragment_Visual* VisualFragment = GetPrimaryPresentationVisualFragmentForWeaponSet(ActiveWeaponSetIndex))
-	{
-		NewCharacterSettings = VisualFragment->GetWeaponToolCharacterSettings();
-	}
-
-	ActiveWeaponToolCharacterSettings = NewCharacterSettings;
-}
-
-void URpgEquipmentComponent::RefreshActiveCameraSettings()
-{
-	FRpgWeaponToolCameraSettings NewCameraSettings;
-	if (const URpgItemFragment_Visual* VisualFragment = GetPrimaryPresentationVisualFragmentForWeaponSet(PresentationVisibleWeaponSetIndex))
-	{
-		NewCameraSettings = VisualFragment->GetWeaponToolCameraSettings();
-	}
-
-	if (ActiveCameraSettings == NewCameraSettings)
-	{
-		return;
-	}
-
-	ActiveCameraSettings = NewCameraSettings;
-	OnActiveCameraSettingsChanged.Broadcast(ActiveCameraSettings);
-}
-
-void URpgEquipmentComponent::RefreshPresentationBindings()
-{
-	ResetPresentationBindings();
-
-	APawn* VisualPawn = CachedVisualPawn ? CachedVisualPawn.Get() : ResolveVisualPawn();
-	if (VisualPawn == nullptr || VisualPawn->GetNetMode() == NM_DedicatedServer)
-	{
-		return;
-	}
-
-	CachedPresentationMesh = ResolvePresentationMesh(VisualPawn);
-	CachedPresentationMovementComponent = ResolvePresentationMovementComponent(VisualPawn);
-	CachedPresentationCameraComponent = ResolvePresentationCameraComponent(VisualPawn);
-	CachedPresentationSpringArmComponent = ResolvePresentationSpringArmComponent(VisualPawn);
-
-	if (CachedPresentationMesh != nullptr)
-	{
-		DefaultPresentationAnimClass = CachedPresentationMesh->GetAnimClass();
-	}
-
-	if (CachedPresentationMovementComponent != nullptr)
-	{
-		DefaultPresentationMaxWalkSpeed = CachedPresentationMovementComponent->MaxWalkSpeed;
-		bDefaultPresentationOrientRotationToMovement = CachedPresentationMovementComponent->bOrientRotationToMovement;
-		bDefaultPresentationUseControllerDesiredRotation = CachedPresentationMovementComponent->bUseControllerDesiredRotation;
-	}
-
-	if (CachedPresentationCameraComponent != nullptr)
-	{
-		DefaultPresentationCameraFOV = CachedPresentationCameraComponent->FieldOfView;
-		AppliedPresentationCameraFOV = DefaultPresentationCameraFOV;
-	}
-	else
-	{
-		AppliedPresentationCameraFOV = DefaultPresentationCameraFOV;
-	}
-
-	if (CachedPresentationSpringArmComponent != nullptr)
-	{
-		DefaultPresentationSpringArmSocketOffset = CachedPresentationSpringArmComponent->SocketOffset;
-		AppliedPresentationSpringArmSocketOffset = DefaultPresentationSpringArmSocketOffset;
-	}
-	else
-	{
-		AppliedPresentationSpringArmSocketOffset = DefaultPresentationSpringArmSocketOffset;
-	}
-
-	ApplyActiveWeaponToolCharacterSettings();
-	ApplyVisibleWeaponToolPresentationSettings();
-}
-
-void URpgEquipmentComponent::ResetPresentationBindings()
-{
-	CachedPresentationMesh = nullptr;
-	CachedPresentationMovementComponent = nullptr;
-	CachedPresentationCameraComponent = nullptr;
-	CachedPresentationSpringArmComponent = nullptr;
-	DefaultPresentationAnimClass = nullptr;
-	DefaultPresentationMaxWalkSpeed = 600.0f;
-	bDefaultPresentationOrientRotationToMovement = true;
-	bDefaultPresentationUseControllerDesiredRotation = false;
-	DefaultPresentationCameraFOV = 90.0f;
-	DefaultPresentationSpringArmSocketOffset = FVector::ZeroVector;
-	PendingPresentationAnimClass = nullptr;
-	AppliedPresentationCameraFOV = DefaultPresentationCameraFOV;
-	AppliedPresentationSpringArmSocketOffset = DefaultPresentationSpringArmSocketOffset;
-	PresentationCameraBlendStartFOV = DefaultPresentationCameraFOV;
-	PresentationCameraBlendStartSpringArmSocketOffset = DefaultPresentationSpringArmSocketOffset;
-	PresentationCameraBlendTargetFOV = DefaultPresentationCameraFOV;
-	PresentationCameraBlendTargetSpringArmSocketOffset = DefaultPresentationSpringArmSocketOffset;
-	PresentationCameraBlendDuration = 0.0f;
-	PresentationCameraBlendElapsedTime = 0.0f;
-	bHasPendingPresentationAnimClassSwitch = false;
-	bPresentationCameraBlendActive = false;
-}
-
-void URpgEquipmentComponent::ApplyActiveWeaponToolCharacterSettings()
-{
-	APawn* VisualPawn = CachedVisualPawn ? CachedVisualPawn.Get() : ResolveVisualPawn();
-	if (!ShouldApplyActiveWeaponToolCharacterSettingsToPawn(VisualPawn) || CachedPresentationMovementComponent == nullptr)
-	{
-		return;
-	}
-
-	const bool bUseOverride = ActiveWeaponToolCharacterSettings.bEnabled;
-	CachedPresentationMovementComponent->MaxWalkSpeed = bUseOverride ? ActiveWeaponToolCharacterSettings.MaxWalkSpeed : DefaultPresentationMaxWalkSpeed;
-	CachedPresentationMovementComponent->bOrientRotationToMovement = bUseOverride ? ActiveWeaponToolCharacterSettings.bOrientRotationToMovement : bDefaultPresentationOrientRotationToMovement;
-	CachedPresentationMovementComponent->bUseControllerDesiredRotation = bUseOverride ? ActiveWeaponToolCharacterSettings.bUseControllerDesiredRotation : bDefaultPresentationUseControllerDesiredRotation;
-}
-
-void URpgEquipmentComponent::ApplyVisibleWeaponToolPresentationSettings()
-{
-	RefreshTargetVisiblePresentationState();
-	StartOrUpdateCameraBlend();
-}
-
-void URpgEquipmentComponent::RefreshTargetVisiblePresentationState()
-{
-	FRpgWeaponToolCharacterSettings VisibleCharacterSettings;
-	if (const URpgItemFragment_Visual* VisualFragment = GetPrimaryPresentationVisualFragmentForWeaponSet(PresentationVisibleWeaponSetIndex))
-	{
-		VisibleCharacterSettings = VisualFragment->GetWeaponToolCharacterSettings();
-	}
-
-	const TSubclassOf<UAnimInstance> DesiredAnimClass = (VisibleCharacterSettings.bEnabled && VisibleCharacterSettings.AnimClass != nullptr)
-		? VisibleCharacterSettings.AnimClass
-		: DefaultPresentationAnimClass;
-
-	QueuePendingAnimClassSwitch(DesiredAnimClass);
-}
-
-void URpgEquipmentComponent::QueuePendingAnimClassSwitch(TSubclassOf<UAnimInstance> DesiredAnimClass)
-{
-	PendingPresentationAnimClass = DesiredAnimClass;
-	bHasPendingPresentationAnimClassSwitch = CachedPresentationMesh != nullptr && CachedPresentationMesh->GetAnimClass() != DesiredAnimClass;
-}
-
-void URpgEquipmentComponent::StartOrUpdateCameraBlend()
-{
-	const float DesiredFOV = ActiveCameraSettings.bEnabled ? ActiveCameraSettings.FOV : DefaultPresentationCameraFOV;
-	const FVector DesiredSocketOffset = ActiveCameraSettings.bEnabled ? ActiveCameraSettings.SpringArmSocketOffset : DefaultPresentationSpringArmSocketOffset;
-
-	float DesiredBlendTime = ActiveCameraSettings.BlendTime;
-	if (!ActiveCameraSettings.bEnabled && FMath::IsNearlyZero(DesiredBlendTime))
-	{
-		DesiredBlendTime = LastPresentationCameraBlendTime;
-	}
-	LastPresentationCameraBlendTime = DesiredBlendTime;
-
-	PresentationCameraBlendTargetFOV = DesiredFOV;
-	PresentationCameraBlendTargetSpringArmSocketOffset = DesiredSocketOffset;
-
-	APawn* VisualPawn = CachedVisualPawn ? CachedVisualPawn.Get() : ResolveVisualPawn();
-	if (!ShouldApplyVisibleWeaponToolCameraSettingsToPawn(VisualPawn))
-	{
-		bPresentationCameraBlendActive = false;
-		AppliedPresentationCameraFOV = DesiredFOV;
-		AppliedPresentationSpringArmSocketOffset = DesiredSocketOffset;
-		return;
-	}
-
-	const float CurrentFOV = CachedPresentationCameraComponent != nullptr
-		? CachedPresentationCameraComponent->FieldOfView
-		: AppliedPresentationCameraFOV;
-	const FVector CurrentSocketOffset = CachedPresentationSpringArmComponent != nullptr
-		? CachedPresentationSpringArmComponent->SocketOffset
-		: AppliedPresentationSpringArmSocketOffset;
-
-	AppliedPresentationCameraFOV = CurrentFOV;
-	AppliedPresentationSpringArmSocketOffset = CurrentSocketOffset;
-
-	if (DesiredBlendTime <= 0.0f
-		|| (FMath::IsNearlyEqual(CurrentFOV, DesiredFOV) && CurrentSocketOffset.Equals(DesiredSocketOffset)))
-	{
-		PresentationCameraBlendDuration = 0.0f;
-		PresentationCameraBlendElapsedTime = 0.0f;
-		bPresentationCameraBlendActive = false;
-		PresentationCameraBlendStartFOV = DesiredFOV;
-		PresentationCameraBlendStartSpringArmSocketOffset = DesiredSocketOffset;
-		ApplyCameraBlendAlpha(1.0f);
-		return;
-	}
-
-	PresentationCameraBlendStartFOV = CurrentFOV;
-	PresentationCameraBlendStartSpringArmSocketOffset = CurrentSocketOffset;
-	PresentationCameraBlendDuration = DesiredBlendTime;
-	PresentationCameraBlendElapsedTime = 0.0f;
-	bPresentationCameraBlendActive = true;
-}
-
-void URpgEquipmentComponent::UpdatePendingAnimClassSwitch()
-{
-	if (!bHasPendingPresentationAnimClassSwitch)
-	{
-		return;
-	}
-
-	APawn* VisualPawn = CachedVisualPawn ? CachedVisualPawn.Get() : ResolveVisualPawn();
-	if (!ShouldApplyVisibleWeaponToolAnimClassToPawn(VisualPawn) || CachedPresentationMesh == nullptr)
-	{
-		return;
-	}
-
-	if (CachedPresentationMesh->GetAnimClass() == PendingPresentationAnimClass)
-	{
-		bHasPendingPresentationAnimClassSwitch = false;
-		return;
-	}
-
-	UAnimInstance* CurrentAnimInstance = CachedPresentationMesh->GetAnimInstance();
-	if (CachedPresentationMesh->IsRunningParallelEvaluation()
-		|| (CurrentAnimInstance != nullptr
-			&& (CurrentAnimInstance->IsRunningParallelEvaluation()
-				|| CurrentAnimInstance->IsUpdatingAnimation()
-				|| CurrentAnimInstance->IsPostUpdatingAnimation())))
-	{
-		return;
-	}
-
-	CachedPresentationMesh->SetAnimInstanceClass(PendingPresentationAnimClass);
-	bHasPendingPresentationAnimClassSwitch = false;
-}
-
-void URpgEquipmentComponent::UpdateCameraBlend(float DeltaTime)
-{
-	if (!bPresentationCameraBlendActive)
-	{
-		return;
-	}
-
-	APawn* VisualPawn = CachedVisualPawn ? CachedVisualPawn.Get() : ResolveVisualPawn();
-	if (!ShouldApplyVisibleWeaponToolCameraSettingsToPawn(VisualPawn))
-	{
-		bPresentationCameraBlendActive = false;
-		return;
-	}
-
-	if (PresentationCameraBlendDuration <= 0.0f)
-	{
-		ApplyCameraBlendAlpha(1.0f);
-		bPresentationCameraBlendActive = false;
-		return;
-	}
-
-	PresentationCameraBlendElapsedTime = FMath::Min(PresentationCameraBlendElapsedTime + DeltaTime, PresentationCameraBlendDuration);
-	const float LinearAlpha = FMath::Clamp(PresentationCameraBlendElapsedTime / PresentationCameraBlendDuration, 0.0f, 1.0f);
-	const float EasedAlpha = LinearAlpha * LinearAlpha * (3.0f - (2.0f * LinearAlpha));
-	ApplyCameraBlendAlpha(EasedAlpha);
-
-	if (LinearAlpha >= 1.0f)
-	{
-		bPresentationCameraBlendActive = false;
-	}
-}
-
-void URpgEquipmentComponent::ApplyCameraBlendAlpha(float BlendAlpha)
-{
-	const float NewFOV = FMath::Lerp(PresentationCameraBlendStartFOV, PresentationCameraBlendTargetFOV, BlendAlpha);
-	const FVector NewSocketOffset = FMath::Lerp(PresentationCameraBlendStartSpringArmSocketOffset, PresentationCameraBlendTargetSpringArmSocketOffset, BlendAlpha);
-
-	AppliedPresentationCameraFOV = NewFOV;
-	AppliedPresentationSpringArmSocketOffset = NewSocketOffset;
-
-	if (CachedPresentationCameraComponent != nullptr && !FMath::IsNearlyEqual(CachedPresentationCameraComponent->FieldOfView, NewFOV))
-	{
-		CachedPresentationCameraComponent->SetFieldOfView(NewFOV);
-	}
-
-	if (CachedPresentationSpringArmComponent != nullptr && !CachedPresentationSpringArmComponent->SocketOffset.Equals(NewSocketOffset))
-	{
-		CachedPresentationSpringArmComponent->SocketOffset = NewSocketOffset;
-	}
-}
-
-bool URpgEquipmentComponent::ShouldApplyActiveWeaponToolCharacterSettingsToPawn(const APawn* VisualPawn) const
-{
-	if (VisualPawn == nullptr || VisualPawn->GetNetMode() == NM_DedicatedServer)
-	{
-		return false;
-	}
-
-	return HasAuthorityForEquipment() || VisualPawn->IsLocallyControlled();
-}
-
-bool URpgEquipmentComponent::ShouldApplyVisibleWeaponToolAnimClassToPawn(const APawn* VisualPawn) const
-{
-	return VisualPawn != nullptr && VisualPawn->GetNetMode() != NM_DedicatedServer;
-}
-
-bool URpgEquipmentComponent::ShouldApplyVisibleWeaponToolCameraSettingsToPawn(const APawn* VisualPawn) const
-{
-	return VisualPawn != nullptr && VisualPawn->GetNetMode() != NM_DedicatedServer && VisualPawn->IsLocallyControlled();
-}
-
-void URpgEquipmentComponent::RefreshVisuals()
-{
-	bVisualRefreshQueued = false;
-
-	APawn* VisualPawn = ResolveVisualPawn();
-	if (VisualPawn == nullptr || VisualPawn->GetNetMode() == NM_DedicatedServer)
-	{
-		DestroyAllVisualActors();
-		return;
-	}
-
-	TArray<URpgItemInstance*> EquippedItems;
-	GetEquippedItems(EquippedItems);
-
-	for (int32 EntryIndex = VisualEntries.Num() - 1; EntryIndex >= 0; --EntryIndex)
-	{
-		const FRpgEquipmentVisualEntry& Entry = VisualEntries[EntryIndex];
-		if (Entry.ItemInstance == nullptr || !EquippedItems.Contains(Entry.ItemInstance))
-		{
-			if (Entry.VisualActor != nullptr)
-			{
-				Entry.VisualActor->Destroy();
-			}
-			VisualEntries.RemoveAtSwap(EntryIndex);
-		}
-	}
-
-	USkeletalMeshComponent* MeshComponent = VisualPawn->FindComponentByClass<USkeletalMeshComponent>();
-	if (MeshComponent == nullptr)
-	{
-		DestroyAllVisualActors();
-		return;
-	}
-
-	for (URpgItemInstance* ItemInstance : EquippedItems)
-	{
-		const URpgItemFragment_Visual* VisualFragment = ItemInstance ? ItemInstance->FindFragmentByClass<URpgItemFragment_Visual>() : nullptr;
-		if (VisualFragment == nullptr || VisualFragment->GetEquippedActorClass() == nullptr)
-		{
-			DestroyVisualActorForItem(ItemInstance);
-			continue;
-		}
-
-		AActor* VisualActor = FindOrSpawnVisualActor(ItemInstance, VisualPawn);
-		if (VisualActor == nullptr)
-		{
-			continue;
-		}
-
-		const bool bIsVisibleEquippedItem = IsItemInPresentationVisibleWeaponSet(ItemInstance);
-		const FName DesiredSocket = bIsVisibleEquippedItem ? VisualFragment->GetEquippedSocketName() : VisualFragment->GetStowedSocketName();
-		const bool bShouldHide = !bIsVisibleEquippedItem && DesiredSocket.IsNone() && VisualFragment->ShouldHideWhenInactiveWithoutStowedSocket();
-
-		VisualActor->SetActorHiddenInGame(bShouldHide);
-		if (bShouldHide)
-		{
-			continue;
-		}
-
-		VisualActor->AttachToComponent(MeshComponent, FAttachmentTransformRules::SnapToTargetNotIncludingScale, DesiredSocket);
-		VisualActor->SetActorRelativeTransform(bIsVisibleEquippedItem ? VisualFragment->GetEquippedRelativeTransform() : VisualFragment->GetStowedRelativeTransform());
-	}
-}
-
-APawn* URpgEquipmentComponent::ResolveVisualPawn() const
-{
-	if (const APlayerState* PlayerState = Cast<APlayerState>(GetOwner()))
-	{
-		return PlayerState->GetPawn();
-	}
-
-	return nullptr;
-}
-
-USkeletalMeshComponent* URpgEquipmentComponent::ResolvePresentationMesh(APawn* VisualPawn) const
-{
-	return VisualPawn ? VisualPawn->FindComponentByClass<USkeletalMeshComponent>() : nullptr;
-}
-
-UCharacterMovementComponent* URpgEquipmentComponent::ResolvePresentationMovementComponent(APawn* VisualPawn) const
-{
-	return VisualPawn ? VisualPawn->FindComponentByClass<UCharacterMovementComponent>() : nullptr;
-}
-
-UCameraComponent* URpgEquipmentComponent::ResolvePresentationCameraComponent(APawn* VisualPawn) const
-{
-	return VisualPawn ? VisualPawn->FindComponentByClass<UCameraComponent>() : nullptr;
-}
-
-USpringArmComponent* URpgEquipmentComponent::ResolvePresentationSpringArmComponent(APawn* VisualPawn) const
-{
-	return VisualPawn ? VisualPawn->FindComponentByClass<USpringArmComponent>() : nullptr;
 }
 
 URpgItemInstance* URpgEquipmentComponent::GetPrimaryPresentationItemForWeaponSet(int32 WeaponSetIndex) const
@@ -1275,7 +943,7 @@ const URpgItemFragment_Visual* URpgEquipmentComponent::GetPrimaryPresentationVis
 	return nullptr;
 }
 
-bool URpgEquipmentComponent::MontageUsesPresentationNotify(int32 WeaponSetIndex, bool bUseEquipMontage) const
+bool URpgEquipmentComponent::WeaponSetUsesPresentationNotify(int32 WeaponSetIndex, bool bUseEquipMontage) const
 {
 	const URpgItemFragment_Visual* VisualFragment = GetPrimaryPresentationVisualFragmentForWeaponSet(WeaponSetIndex);
 	if (VisualFragment == nullptr)
@@ -1300,120 +968,75 @@ bool URpgEquipmentComponent::MontageUsesPresentationNotify(int32 WeaponSetIndex,
 	return false;
 }
 
-bool URpgEquipmentComponent::PlayPresentationMontageForWeaponSet(int32 WeaponSetIndex, bool bUseEquipMontage) const
-{
-	const URpgItemFragment_Visual* VisualFragment = GetPrimaryPresentationVisualFragmentForWeaponSet(WeaponSetIndex);
-	APawn* VisualPawn = ResolveVisualPawn();
-	if (VisualFragment == nullptr || VisualPawn == nullptr)
-	{
-		return false;
-	}
-
-	UAnimMontage* MontageToPlay = bUseEquipMontage ? VisualFragment->GetEquipMontage() : VisualFragment->GetUnequipMontage();
-	if (MontageToPlay == nullptr)
-	{
-		return false;
-	}
-
-	USkeletalMeshComponent* MeshComponent = VisualPawn->FindComponentByClass<USkeletalMeshComponent>();
-	UAnimInstance* AnimInstance = MeshComponent ? MeshComponent->GetAnimInstance() : nullptr;
-	return AnimInstance != nullptr && AnimInstance->Montage_Play(MontageToPlay) > 0.0f;
-}
-
-AActor* URpgEquipmentComponent::FindVisualActorForItem(const URpgItemInstance* ItemInstance) const
-{
-	for (const FRpgEquipmentVisualEntry& Entry : VisualEntries)
-	{
-		if (Entry.ItemInstance == ItemInstance)
-		{
-			return Entry.VisualActor;
-		}
-	}
-
-	return nullptr;
-}
-
-AActor* URpgEquipmentComponent::FindOrSpawnVisualActor(URpgItemInstance* ItemInstance, APawn* VisualPawn)
-{
-	if (ItemInstance == nullptr || VisualPawn == nullptr)
-	{
-		return nullptr;
-	}
-
-	if (AActor* ExistingActor = FindVisualActorForItem(ItemInstance))
-	{
-		return ExistingActor;
-	}
-
-	const URpgItemFragment_Visual* VisualFragment = ItemInstance->FindFragmentByClass<URpgItemFragment_Visual>();
-	if (VisualFragment == nullptr || VisualFragment->GetEquippedActorClass() == nullptr)
-	{
-		return nullptr;
-	}
-
-	UWorld* World = VisualPawn->GetWorld();
-	if (World == nullptr)
-	{
-		return nullptr;
-	}
-
-	FActorSpawnParameters SpawnParameters;
-	SpawnParameters.Owner = VisualPawn;
-	SpawnParameters.Instigator = VisualPawn;
-	SpawnParameters.ObjectFlags |= RF_Transient;
-	SpawnParameters.SpawnCollisionHandlingOverride = ESpawnActorCollisionHandlingMethod::AlwaysSpawn;
-
-	AActor* VisualActor = World->SpawnActor<AActor>(VisualFragment->GetEquippedActorClass(), VisualPawn->GetActorLocation(), VisualPawn->GetActorRotation(), SpawnParameters);
-	if (VisualActor == nullptr)
-	{
-		return nullptr;
-	}
-
-	VisualActor->SetReplicates(false);
-	VisualActor->SetActorEnableCollision(false);
-
-	FRpgEquipmentVisualEntry& NewEntry = VisualEntries.AddDefaulted_GetRef();
-	NewEntry.ItemInstance = ItemInstance;
-	NewEntry.VisualActor = VisualActor;
-	return VisualActor;
-}
-
-void URpgEquipmentComponent::DestroyVisualActorForItem(const URpgItemInstance* ItemInstance)
-{
-	for (int32 EntryIndex = 0; EntryIndex < VisualEntries.Num(); ++EntryIndex)
-	{
-		if (VisualEntries[EntryIndex].ItemInstance != ItemInstance)
-		{
-			continue;
-		}
-
-		if (VisualEntries[EntryIndex].VisualActor != nullptr)
-		{
-			VisualEntries[EntryIndex].VisualActor->Destroy();
-		}
-
-		VisualEntries.RemoveAtSwap(EntryIndex);
-		return;
-	}
-}
-
-void URpgEquipmentComponent::DestroyAllVisualActors()
-{
-	for (FRpgEquipmentVisualEntry& Entry : VisualEntries)
-	{
-		if (Entry.VisualActor != nullptr)
-		{
-			Entry.VisualActor->Destroy();
-		}
-	}
-
-	VisualEntries.Reset();
-}
-
 void URpgEquipmentComponent::ForceOwnerNetUpdate() const
 {
 	if (AActor* OwnerActor = GetOwner())
 	{
 		OwnerActor->ForceNetUpdate();
 	}
+}
+
+void URpgEquipmentComponent::BroadcastStateChangedNative(const FRpgEquipmentStateChangedEvent& Event)
+{
+	EquipmentStateChangedNative.Broadcast(Event);
+}
+
+FRpgWeaponToolCameraSettings URpgEquipmentComponent::ResolveActiveCameraSettings() const
+{
+	if (const URpgWeaponPresentationComponent* PresentationComponent = ResolvePresentationComponent())
+	{
+		return PresentationComponent->GetActiveCameraSettings();
+	}
+
+	if (const URpgItemFragment_Visual* VisualFragment = GetPrimaryPresentationVisualFragmentForWeaponSet(ActiveWeaponSetIndex))
+	{
+		return VisualFragment->GetWeaponToolCameraSettings();
+	}
+
+	return FRpgWeaponToolCameraSettings();
+}
+
+FRpgWeaponToolCharacterSettings URpgEquipmentComponent::ResolveActiveWeaponToolCharacterSettings() const
+{
+	if (const URpgWeaponPresentationComponent* PresentationComponent = ResolvePresentationComponent())
+	{
+		return PresentationComponent->GetActiveWeaponToolCharacterSettings();
+	}
+
+	if (const URpgItemFragment_Visual* VisualFragment = GetPrimaryPresentationVisualFragmentForWeaponSet(ActiveWeaponSetIndex))
+	{
+		return VisualFragment->GetWeaponToolCharacterSettings();
+	}
+
+	return FRpgWeaponToolCharacterSettings();
+}
+
+URpgWeaponPresentationComponent* URpgEquipmentComponent::ResolvePresentationComponent() const
+{
+	const ARpgPlayerState* PlayerState = Cast<ARpgPlayerState>(GetOwner());
+	APawn* VisualPawn = PlayerState ? PlayerState->GetPawn() : nullptr;
+	return VisualPawn ? VisualPawn->FindComponentByClass<URpgWeaponPresentationComponent>() : nullptr;
+}
+
+void URpgEquipmentComponent::BroadcastForwardedActiveCameraSettingsChanged(const FRpgWeaponToolCameraSettings& CameraSettings)
+{
+	OnActiveCameraSettingsChanged.Broadcast(CameraSettings);
+}
+
+bool URpgEquipmentComponent::AreWeaponSetsEqual(const TArray<FRpgEquippedWeaponSet>& Left, const TArray<FRpgEquippedWeaponSet>& Right) const
+{
+	if (Left.Num() != Right.Num())
+	{
+		return false;
+	}
+
+	for (int32 Index = 0; Index < Left.Num(); ++Index)
+	{
+		if (Left[Index] != Right[Index])
+		{
+			return false;
+		}
+	}
+
+	return true;
 }

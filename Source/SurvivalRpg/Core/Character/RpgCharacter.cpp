@@ -12,6 +12,7 @@
 #include "Components/CapsuleComponent.h"
 #include "SurvivalRpg/AbilitySystem/RpgAbilitySystemComponent.h"
 #include "SurvivalRpg/Core/Game/RpgGameModeBase.h"
+#include "SurvivalRpg/Equipment/RpgWeaponPresentationComponent.h"
 #include "SurvivalRpg/Core/Player/RpgPlayerController.h"
 #include "SurvivalRpg/Core/Player/RpgPlayerState.h"
 
@@ -25,6 +26,7 @@ ARpgCharacter::ARpgCharacter(const FObjectInitializer& ObjectInitializer) :
 	PawnExtensionComponent = CreateDefaultSubobject<URpgPawnExtensionComponent>(TEXT("PawnExtensionComponent"));
 	PawnExtensionComponent->OnAbilitySystemInitialized_RegisterAndCall(FSimpleMulticastDelegate::FDelegate::CreateUObject(this, &ThisClass::OnAbilitySystemInitialized));
 	PawnExtensionComponent->OnAbilitySystemUninitialized_Register(FSimpleMulticastDelegate::FDelegate::CreateUObject(this, &ThisClass::OnAbilitySystemUninitialized));
+	WeaponPresentationComponent = CreateDefaultSubobject<URpgWeaponPresentationComponent>(TEXT("WeaponPresentationComponent"));
 	
 	HealthComponent = CreateDefaultSubobject<URpgHealthComponent>(TEXT("HealthComponent"));
 	HealthComponent->OnDeathStarted.AddDynamic(this, &ThisClass::OnDeathStarted);
@@ -73,6 +75,11 @@ void ARpgCharacter::OnAbilitySystemInitialized()
 	HealthComponent->InitializeWithAbilitySystem(Asc);
 	DeathComponent->InitializeWithAbilitySystem(Asc);
 	DownedComponent->InitializeWithAbilitySystem(Asc);
+
+	if (WeaponPresentationComponent != nullptr)
+	{
+		WeaponPresentationComponent->HandleAbilitySystemInitialized();
+	}
 }
 
 void ARpgCharacter::OnAbilitySystemUninitialized()
@@ -80,30 +87,51 @@ void ARpgCharacter::OnAbilitySystemUninitialized()
 	HealthComponent->UninitializeFromAbilitySystem();
 	DeathComponent->UninitializeFromAbilitySystem();
 	DownedComponent->UninitializeFromAbilitySystem();
+
+	if (WeaponPresentationComponent != nullptr)
+	{
+		WeaponPresentationComponent->HandleAbilitySystemUninitialized();
+	}
 }
 
 void ARpgCharacter::PossessedBy(AController* NewController)
 {
 	Super::PossessedBy(NewController);
 	PawnExtensionComponent->HandleControllerChanged();
+	if (WeaponPresentationComponent != nullptr)
+	{
+		WeaponPresentationComponent->HandlePawnContextChanged();
+	}
 }
 
 void ARpgCharacter::UnPossessed()
 {
 	Super::UnPossessed();
 	PawnExtensionComponent->HandleControllerChanged();
+	if (WeaponPresentationComponent != nullptr)
+	{
+		WeaponPresentationComponent->HandlePawnContextChanged();
+	}
 }
 
 void ARpgCharacter::OnRep_Controller()
 {
 	Super::OnRep_Controller();
 	PawnExtensionComponent->HandleControllerChanged();
+	if (WeaponPresentationComponent != nullptr)
+	{
+		WeaponPresentationComponent->HandlePawnContextChanged();
+	}
 }
 
 void ARpgCharacter::OnRep_PlayerState()
 {
 	Super::OnRep_PlayerState();
 	PawnExtensionComponent->HandlePlayerStateReplicated();
+	if (WeaponPresentationComponent != nullptr)
+	{
+		WeaponPresentationComponent->HandlePawnContextChanged();
+	}
 
 	if (URpgPawnGameplayComponent* PawnGameplayComponent = FindComponentByClass<URpgPawnGameplayComponent>())
 	{

@@ -3,7 +3,7 @@
 #include "Animation/AnimSequenceBase.h"
 #include "Components/SkeletalMeshComponent.h"
 #include "GameFramework/Pawn.h"
-#include "SurvivalRpg/Core/Player/RpgPlayerState.h"
+#include "RpgWeaponPresentationComponent.h"
 
 FString UAnimNotify_RpgWeaponToolPresentation::GetNotifyName_Implementation() const
 {
@@ -26,12 +26,11 @@ void UAnimNotify_RpgWeaponToolPresentation::Notify(USkeletalMeshComponent* MeshC
 	Super::Notify(MeshComp, Animation, EventReference);
 
 	APawn* OwningPawn = MeshComp ? Cast<APawn>(MeshComp->GetOwner()) : nullptr;
-	ARpgPlayerState* PlayerState = OwningPawn ? OwningPawn->GetPlayerState<ARpgPlayerState>() : nullptr;
-	URpgEquipmentComponent* EquipmentComponent = PlayerState ? PlayerState->GetEquipmentComponent() : nullptr;
-	if (EquipmentComponent == nullptr)
+	URpgWeaponPresentationComponent* PresentationComponent = OwningPawn ? OwningPawn->FindComponentByClass<URpgWeaponPresentationComponent>() : nullptr;
+	if (PresentationComponent == nullptr)
 	{
 		return;
 	}
 
-	EquipmentComponent->ApplyWeaponToolPresentationNotifyAction(Action);
+	PresentationComponent->ApplyWeaponToolPresentationNotifyAction(Action);
 }

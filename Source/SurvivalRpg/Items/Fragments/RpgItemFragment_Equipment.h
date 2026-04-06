@@ -15,21 +15,16 @@ class SURVIVALRPG_API URpgItemFragment_Equipment : public URpgItemFragment
 
 public:
 	const FGameplayTagContainer& GetSupportedSlotTags() const { return SupportedSlotTags; }
-	const FGameplayTagContainer& GetEquipmentTags() const { return EquipmentTags; }
 	const TArray<TObjectPtr<const URpgAbilitySet>>& GetEquippedAbilitySets() const { return EquippedAbilitySets; }
 	const TArray<FRpgItemGameplayEffectGrant>& GetEquippedGameplayEffects() const { return EquippedGameplayEffects; }
 	const FGameplayTagContainer& GetEquippedLooseTags() const { return EquippedLooseTags; }
 	void SetSupportedSlotTags(const FGameplayTagContainer& InSupportedSlotTags) { SupportedSlotTags = InSupportedSlotTags; }
-	void SetEquipmentTags(const FGameplayTagContainer& InEquipmentTags) { EquipmentTags = InEquipmentTags; }
 	void AddEquippedAbilitySet(const URpgAbilitySet* AbilitySet) { EquippedAbilitySets.Add(AbilitySet); }
 	void SetEquippedLooseTags(const FGameplayTagContainer& InEquippedLooseTags) { EquippedLooseTags = InEquippedLooseTags; }
 
 private:
 	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Equipment", meta = (AllowPrivateAccess = "true", Categories = "Equipment.Slot", ToolTip = "All slots this item is allowed to occupy. Add MainHand tags for weapons, OffHand tags for shields, or both when the item can be equipped in multiple hand slots."))
 	FGameplayTagContainer SupportedSlotTags;
-
-	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Equipment", meta = (AllowPrivateAccess = "true", ToolTip = "Passive tags contributed whenever the item is equipped in any valid slot. Use these for generic equipment state, not for hand-compatibility rules."))
-	FGameplayTagContainer EquipmentTags;
 
 	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Equipment", meta = (AllowPrivateAccess = "true", ToolTip = "Ability sets granted while this item is equipped, even if its weapon set is currently inactive. Use this for persistent passive equipment abilities."))
 	TArray<TObjectPtr<const URpgAbilitySet>> EquippedAbilitySets;

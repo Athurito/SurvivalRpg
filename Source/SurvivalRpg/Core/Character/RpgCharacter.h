@@ -19,6 +19,7 @@ class URpgAbilitySystemComponent;
 class URpgPawnGameplayComponent;
 class URpgPawnExtensionComponent;
 class URpgCharacterMovementComponent;
+class URpgWeaponPresentationComponent;
 
 UCLASS()
 class SURVIVALRPG_API ARpgCharacter : public AModularCharacter, public IAbilitySystemInterface
@@ -84,6 +85,9 @@ private:
 	
 	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "Rpg|Character", Meta = (AllowPrivateAccess = "true"))
 	TObjectPtr<URpgPawnExtensionComponent> PawnExtensionComponent;
+
+	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "Rpg|Character", Meta = (AllowPrivateAccess = "true"))
+	TObjectPtr<URpgWeaponPresentationComponent> WeaponPresentationComponent;
 	
 	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "Rpg|Character", Meta = (AllowPrivateAccess = "true"))
 	TObjectPtr<URpgHealthComponent> HealthComponent;

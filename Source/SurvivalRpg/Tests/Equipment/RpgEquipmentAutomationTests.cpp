@@ -5,9 +5,12 @@
 #include "Animation/AnimMontage.h"
 #include "SurvivalRpg/AbilitySystem/RpgAbilitySet.h"
 #include "SurvivalRpg/AbilitySystem/RpgAbilitySystemComponent.h"
+#include "SurvivalRpg/AbilitySystem/Abilities/RpgGameplayAbility_ActivateWeaponSet.h"
+#include "SurvivalRpg/Core/Player/RpgPlayerState.h"
 #include "SurvivalRpg/Equipment/AnimNotify_RpgWeaponToolPresentation.h"
 #include "SurvivalRpg/Equipment/RpgEquipmentComponent.h"
 #include "SurvivalRpg/Equipment/RpgEquipmentRuleset.h"
+#include "SurvivalRpg/Equipment/RpgWeaponPresentationComponent.h"
 #include "SurvivalRpg/GameplayTags/GameplayTags.h"
 #include "SurvivalRpg/Items/RpgItemDefinition.h"
 #include "SurvivalRpg/Items/RpgItemInstance.h"
@@ -17,6 +20,13 @@
 
 namespace RpgEquipmentAutomationTests
 {
+	struct FRpgEquipmentAuthorityRig
+	{
+		TObjectPtr<ARpgPlayerState> PlayerState = nullptr;
+		TObjectPtr<URpgEquipmentComponent> EquipmentComponent = nullptr;
+		TObjectPtr<URpgAbilitySystemComponent> AbilitySystemComponent = nullptr;
+	};
+
 	static FGameplayTag Tag(const TCHAR* TagName)
 	{
 		return FGameplayTag::RequestGameplayTag(FName(TagName));
@@ -41,11 +51,21 @@ namespace RpgEquipmentAutomationTests
 		const FRpgWeaponToolCameraSettings& CameraSettings = FRpgWeaponToolCameraSettings(),
 		const FRpgWeaponToolCharacterSettings& CharacterSettings = FRpgWeaponToolCharacterSettings(),
 		UAnimMontage* EquipMontage = nullptr,
-		UAnimMontage* UnequipMontage = nullptr)
+		UAnimMontage* UnequipMontage = nullptr,
+		const URpgAbilitySet* EquippedAbilitySet = nullptr,
+		const FGameplayTagContainer& EquippedLooseTags = FGameplayTagContainer())
 	{
 		URpgItemDefinition* ItemDefinition = NewObject<URpgItemDefinition>(Outer);
 
 		URpgItemFragment_Equipment* EquipmentFragment = NewObject<URpgItemFragment_Equipment>(ItemDefinition);
+		if (EquippedAbilitySet != nullptr)
+		{
+			EquipmentFragment->AddEquippedAbilitySet(EquippedAbilitySet);
+		}
+		if (!EquippedLooseTags.IsEmpty())
+		{
+			EquipmentFragment->SetEquippedLooseTags(EquippedLooseTags);
+		}
 		ItemDefinition->AddFragment(EquipmentFragment);
 
 		URpgItemFragment_Weapon* WeaponFragment = NewObject<URpgItemFragment_Weapon>(ItemDefinition);
@@ -88,6 +108,41 @@ namespace RpgEquipmentAutomationTests
 		}
 #endif
 		return EquipmentComponent;
+	}
+
+	static FRpgEquipmentAuthorityRig CreateAuthorityRig(const URpgEquipmentRuleset* Ruleset)
+	{
+		FRpgEquipmentAuthorityRig Rig;
+		Rig.PlayerState = NewObject<ARpgPlayerState>(GetTransientPackage());
+		Rig.EquipmentComponent = Rig.PlayerState->GetEquipmentComponent();
+		Rig.AbilitySystemComponent = Rig.PlayerState->GetRpgAbilitySystemComponent();
+		check(Rig.EquipmentComponent);
+		check(Rig.AbilitySystemComponent);
+
+		Rig.EquipmentComponent->SetEquipmentRuleset(Ruleset);
+#if WITH_DEV_AUTOMATION_TESTS
+		Rig.AbilitySystemComponent->SetForceGrantAuthorityForTests(true);
+#endif
+		return Rig;
+	}
+
+	static int32 CountAbilitiesByClass(const URpgAbilitySystemComponent* AbilitySystemComponent, TSubclassOf<UGameplayAbility> AbilityClass)
+	{
+		if (AbilitySystemComponent == nullptr || AbilityClass == nullptr)
+		{
+			return 0;
+		}
+
+		int32 Result = 0;
+		for (const FGameplayAbilitySpec& AbilitySpec : AbilitySystemComponent->GetActivatableAbilities())
+		{
+			if (AbilitySpec.Ability != nullptr && AbilitySpec.Ability->GetClass()->IsChildOf(AbilityClass))
+			{
+				++Result;
+			}
+		}
+
+		return Result;
 	}
 
 }
@@ -171,10 +226,9 @@ bool FRpgEquipmentWeaponSetGrantSwitchTest::RunTest(const FString& Parameters)
 	using namespace RpgEquipmentAutomationTests;
 
 	URpgEquipmentRuleset* Ruleset = CreateRuleset();
-	URpgAbilitySystemComponent* AbilitySystemComponent = NewObject<URpgAbilitySystemComponent>(GetTransientPackage());
-	AbilitySystemComponent->SetForceGrantAuthorityForTests(true);
-
-	URpgEquipmentComponent* EquipmentComponent = CreateEquipmentComponent(Ruleset, AbilitySystemComponent);
+	const FRpgEquipmentAuthorityRig Rig = CreateAuthorityRig(Ruleset);
+	URpgAbilitySystemComponent* AbilitySystemComponent = Rig.AbilitySystemComponent;
+	URpgEquipmentComponent* EquipmentComponent = Rig.EquipmentComponent;
 
 	FGameplayTagContainer FirstSetLooseTags;
 	FirstSetLooseTags.AddTag(RpgGameplayTags::InputTag_WeaponSet_1);
@@ -225,6 +279,84 @@ bool FRpgEquipmentWeaponSetGrantSwitchTest::RunTest(const FString& Parameters)
 	TestEqual(TEXT("Weapon set 2 becomes the active set after the switch."), EquipmentComponent->GetActiveWeaponSetIndex(), 1);
 	TestFalse(TEXT("Weapon set 1 loose tags are removed after the switch."), AbilitySystemComponent->HasMatchingGameplayTag(RpgGameplayTags::InputTag_WeaponSet_1));
 	TestTrue(TEXT("Weapon set 2 loose tags are applied after the switch."), AbilitySystemComponent->HasMatchingGameplayTag(RpgGameplayTags::InputTag_WeaponSet_2));
+
+	return true;
+}
+
+IMPLEMENT_SIMPLE_AUTOMATION_TEST(
+	FRpgEquipmentPassiveGrantAggregationTest,
+	"SurvivalRpg.Items.Equipment.PassiveGrantAggregation",
+	EAutomationTestFlags::EditorContext | EAutomationTestFlags::EngineFilter)
+
+bool FRpgEquipmentPassiveGrantAggregationTest::RunTest(const FString& Parameters)
+{
+	using namespace RpgEquipmentAutomationTests;
+
+	URpgEquipmentRuleset* Ruleset = CreateRuleset();
+	const FRpgEquipmentAuthorityRig Rig = CreateAuthorityRig(Ruleset);
+	URpgAbilitySystemComponent* AbilitySystemComponent = Rig.AbilitySystemComponent;
+	URpgEquipmentComponent* EquipmentComponent = Rig.EquipmentComponent;
+	URpgAbilitySet* SharedPassiveAbilitySet = NewObject<URpgAbilitySet>(GetTransientPackage());
+	SharedPassiveAbilitySet->AddGrantedGameplayAbility(URpgGameplayAbility_ActivateWeaponSet::StaticClass(), 1, RpgGameplayTags::InputTag_WeaponSet_1);
+
+	FGameplayTagContainer PassiveLooseTags;
+	PassiveLooseTags.AddTag(RpgGameplayTags::Equipment_Trait_Shield);
+
+	FGameplayTagContainer FirstActiveLooseTags;
+	FirstActiveLooseTags.AddTag(RpgGameplayTags::InputTag_WeaponSet_1);
+
+	FGameplayTagContainer SecondActiveLooseTags;
+	SecondActiveLooseTags.AddTag(RpgGameplayTags::InputTag_WeaponSet_2);
+
+	URpgItemInstance* FirstWeapon = CreateWeapon(
+		GetTransientPackage(),
+		Tag(TEXT("Weapon.Family.Sword")),
+		RpgGameplayTags::Equipment_HandUsage_MainHand,
+		FGameplayTagContainer(),
+		nullptr,
+		FirstActiveLooseTags,
+		FRpgWeaponToolCameraSettings(),
+		FRpgWeaponToolCharacterSettings(),
+		nullptr,
+		nullptr,
+		SharedPassiveAbilitySet,
+		PassiveLooseTags);
+
+	URpgItemInstance* SecondWeapon = CreateWeapon(
+		GetTransientPackage(),
+		Tag(TEXT("Weapon.Family.Wand")),
+		RpgGameplayTags::Equipment_HandUsage_MainHand,
+		FGameplayTagContainer(),
+		nullptr,
+		SecondActiveLooseTags,
+		FRpgWeaponToolCameraSettings(),
+		FRpgWeaponToolCharacterSettings(),
+		nullptr,
+		nullptr,
+		SharedPassiveAbilitySet);
+
+	TestTrue(TEXT("The first passive weapon equips into set 1."), EquipmentComponent->TryEquipItem(FirstWeapon, RpgGameplayTags::Equipment_Slot_WeaponSet_1_MainHand));
+	TestTrue(TEXT("The second passive weapon equips into set 2."), EquipmentComponent->TryEquipItem(SecondWeapon, RpgGameplayTags::Equipment_Slot_WeaponSet_2_MainHand));
+	TestEqual(TEXT("The shared equipped ability set is granted only once while both weapons are holstered."), CountAbilitiesByClass(AbilitySystemComponent, URpgGameplayAbility_ActivateWeaponSet::StaticClass()), 1);
+	TestTrue(TEXT("Passive equipped loose tags stay applied while the weapons are merely equipped."), AbilitySystemComponent->HasMatchingGameplayTag(RpgGameplayTags::Equipment_Trait_Shield));
+
+	TestTrue(TEXT("Activating set 1 succeeds for passive grant aggregation."), EquipmentComponent->TryActivateWeaponSet(0));
+	TestEqual(TEXT("The shared passive ability set still exists only once after activating set 1."), CountAbilitiesByClass(AbilitySystemComponent, URpgGameplayAbility_ActivateWeaponSet::StaticClass()), 1);
+	TestTrue(TEXT("The first active loose tag is applied while set 1 is active."), AbilitySystemComponent->HasMatchingGameplayTag(RpgGameplayTags::InputTag_WeaponSet_1));
+	TestFalse(TEXT("The second active loose tag is not applied while set 1 is active."), AbilitySystemComponent->HasMatchingGameplayTag(RpgGameplayTags::InputTag_WeaponSet_2));
+	TestTrue(TEXT("Passive equipped loose tags persist while set 1 is active."), AbilitySystemComponent->HasMatchingGameplayTag(RpgGameplayTags::Equipment_Trait_Shield));
+
+	TestTrue(TEXT("Switching to set 2 succeeds for passive grant aggregation."), EquipmentComponent->TryActivateWeaponSet(1));
+	TestEqual(TEXT("The shared passive ability set still exists only once after switching to set 2."), CountAbilitiesByClass(AbilitySystemComponent, URpgGameplayAbility_ActivateWeaponSet::StaticClass()), 1);
+	TestFalse(TEXT("The first active loose tag is removed when switching away from set 1."), AbilitySystemComponent->HasMatchingGameplayTag(RpgGameplayTags::InputTag_WeaponSet_1));
+	TestTrue(TEXT("The second active loose tag is applied while set 2 is active."), AbilitySystemComponent->HasMatchingGameplayTag(RpgGameplayTags::InputTag_WeaponSet_2));
+	TestTrue(TEXT("Passive equipped loose tags persist while set 2 is active."), AbilitySystemComponent->HasMatchingGameplayTag(RpgGameplayTags::Equipment_Trait_Shield));
+
+	TestTrue(TEXT("Holstering set 2 succeeds for passive grant aggregation."), EquipmentComponent->TryActivateWeaponSet(1));
+	TestEqual(TEXT("The shared passive ability set still exists only once while holstered again."), CountAbilitiesByClass(AbilitySystemComponent, URpgGameplayAbility_ActivateWeaponSet::StaticClass()), 1);
+	TestFalse(TEXT("The first active loose tag is removed while holstered again."), AbilitySystemComponent->HasMatchingGameplayTag(RpgGameplayTags::InputTag_WeaponSet_1));
+	TestFalse(TEXT("The second active loose tag is removed while holstered again."), AbilitySystemComponent->HasMatchingGameplayTag(RpgGameplayTags::InputTag_WeaponSet_2));
+	TestTrue(TEXT("Passive equipped loose tags remain while the weapons stay equipped."), AbilitySystemComponent->HasMatchingGameplayTag(RpgGameplayTags::Equipment_Trait_Shield));
 
 	return true;
 }
@@ -454,17 +586,64 @@ bool FRpgEquipmentItemIdentityPersistenceTest::RunTest(const FString& Parameters
 	TestNotNull(TEXT("Registering an external item returns a managed instance."), RegisteredItem);
 	TestTrue(TEXT("The managed item keeps the original instance id."), RegisteredItem && RegisteredItem->GetInstanceId() == OriginalId);
 	TestEqual(TEXT("The managed item keeps the original roll seed."), RegisteredItem ? RegisteredItem->GetRollSeed() : INDEX_NONE, OriginalSeed);
+	TestEqual(TEXT("The registered item is tracked while it is managed by the equipment component."), EquipmentComponent->GetKnownItemInstanceCountForTests(), 1);
 
 	TestTrue(TEXT("The managed item can be equipped after registration."), EquipmentComponent->TryEquipItem(RegisteredItem, RpgGameplayTags::Equipment_Slot_WeaponSet_1_MainHand));
 	TestTrue(TEXT("The equipped slot still references the same logical item id."), EquipmentComponent->GetItemInSlot(RpgGameplayTags::Equipment_Slot_WeaponSet_1_MainHand)->GetInstanceId() == OriginalId);
+	TestEqual(TEXT("The tracked item count stays at one while the item is equipped."), EquipmentComponent->GetKnownItemInstanceCountForTests(), 1);
 
 	TestTrue(TEXT("Unequipping the item succeeds."), EquipmentComponent->TryUnequipItem(RpgGameplayTags::Equipment_Slot_WeaponSet_1_MainHand));
 	TestNull(TEXT("The main-hand slot is empty after unequip."), EquipmentComponent->GetItemInSlot(RpgGameplayTags::Equipment_Slot_WeaponSet_1_MainHand));
+	TestEqual(TEXT("Unequipping compacts managed items that are no longer referenced by any slot."), EquipmentComponent->GetKnownItemInstanceCountForTests(), 0);
 
 	URpgItemInstance* DuplicatedItem = RegisteredItem ? RegisteredItem->DuplicateItemInstance(GetTransientPackage()) : nullptr;
 	TestNotNull(TEXT("Duplicating an item instance for transfer succeeds."), DuplicatedItem);
 	TestTrue(TEXT("Duplicated item preserves the stable instance id."), DuplicatedItem && DuplicatedItem->GetInstanceId() == OriginalId);
 	TestEqual(TEXT("Duplicated item preserves the roll seed."), DuplicatedItem ? DuplicatedItem->GetRollSeed() : INDEX_NONE, OriginalSeed);
+
+	return true;
+}
+
+IMPLEMENT_SIMPLE_AUTOMATION_TEST(
+	FRpgEquipmentPhase1WeaponSetGuardTest,
+	"SurvivalRpg.Items.Equipment.Phase1WeaponSetGuard",
+	EAutomationTestFlags::EditorContext | EAutomationTestFlags::EngineFilter)
+
+bool FRpgEquipmentPhase1WeaponSetGuardTest::RunTest(const FString& Parameters)
+{
+	using namespace RpgEquipmentAutomationTests;
+
+	URpgEquipmentRuleset* Ruleset = CreateRuleset();
+	Ruleset->SetNumWeaponSets(4);
+	TestEqual(TEXT("Phase 1 rulesets clamp to exactly two weapon sets even when configured otherwise."), Ruleset->GetNumWeaponSets(), 2);
+
+	URpgEquipmentComponent* EquipmentComponent = CreateEquipmentComponent(Ruleset);
+	TestFalse(TEXT("Weapon set index 2 cannot be activated in the fixed two-set phase-1 equipment model."), EquipmentComponent->TryActivateWeaponSet(2));
+
+	return true;
+}
+
+IMPLEMENT_SIMPLE_AUTOMATION_TEST(
+	FRpgWeaponPresentationTickActivationTest,
+	"SurvivalRpg.Items.Presentation.TickActivation",
+	EAutomationTestFlags::EditorContext | EAutomationTestFlags::EngineFilter)
+
+bool FRpgWeaponPresentationTickActivationTest::RunTest(const FString& Parameters)
+{
+	URpgWeaponPresentationComponent* PresentationComponent = NewObject<URpgWeaponPresentationComponent>(GetTransientPackage());
+	TestFalse(TEXT("Weapon presentation tick starts disabled by default."), PresentationComponent->IsPresentationTickEnabledForTests());
+
+	PresentationComponent->SetPendingAnimSwitchForTests(true);
+	TestTrue(TEXT("A pending anim switch enables the transient presentation tick."), PresentationComponent->IsPresentationTickEnabledForTests());
+
+	PresentationComponent->SetPendingAnimSwitchForTests(false);
+	TestFalse(TEXT("Clearing the pending anim switch disables the presentation tick again."), PresentationComponent->IsPresentationTickEnabledForTests());
+
+	PresentationComponent->SetCameraBlendActiveForTests(true);
+	TestTrue(TEXT("An active camera blend enables the transient presentation tick."), PresentationComponent->IsPresentationTickEnabledForTests());
+
+	PresentationComponent->SetCameraBlendActiveForTests(false);
+	TestFalse(TEXT("Clearing the camera blend disables the presentation tick again."), PresentationComponent->IsPresentationTickEnabledForTests());
 
 	return true;
 }

@@ -29,6 +29,8 @@ class SURVIVALRPG_API URpgEquipmentRuleset : public UDataAsset
 	GENERATED_BODY()
 
 public:
+	static constexpr int32 Phase1WeaponSetCount = 2;
+
 	bool IsWeaponSetSlot(const FGameplayTag& SlotTag) const;
 	bool IsMainHandSlot(const FGameplayTag& SlotTag) const;
 	bool IsOffHandSlot(const FGameplayTag& SlotTag) const;
@@ -37,10 +39,10 @@ public:
 	bool IsTwoHanded(const URpgItemInstance* ItemInstance) const;
 	bool IsOffHandOnly(const URpgItemInstance* ItemInstance) const;
 	bool IsMainHandOnly(const URpgItemInstance* ItemInstance) const;
-	int32 GetNumWeaponSets() const { return FMath::Max(NumWeaponSets, 1); }
+	int32 GetNumWeaponSets() const { return Phase1WeaponSetCount; }
 	bool IsTwoHandedCarryLimitEnabled() const { return bLimitTwoHandedWeaponsToOne; }
 	bool AllowsOffHandWithoutMainHand() const { return bAllowOffHandWithoutMainHand; }
-	void SetNumWeaponSets(int32 InNumWeaponSets) { NumWeaponSets = FMath::Max(InNumWeaponSets, 1); }
+	void SetNumWeaponSets(int32 InNumWeaponSets) { NumWeaponSets = Phase1WeaponSetCount; (void)InNumWeaponSets; }
 	void SetLimitTwoHandedWeaponsToOne(bool bInLimitTwoHandedWeaponsToOne) { bLimitTwoHandedWeaponsToOne = bInLimitTwoHandedWeaponsToOne; }
 	void SetAllowOffHandWithoutMainHand(bool bInAllowOffHandWithoutMainHand) { bAllowOffHandWithoutMainHand = bInAllowOffHandWithoutMainHand; }
 	void AddAllowedPairing(FGameplayTag LeftTag, FGameplayTag RightTag, bool bBidirectional = true) { AllowedPairings.Add({LeftTag, RightTag, bBidirectional}); }
@@ -50,7 +52,7 @@ private:
 	bool MatchesCompatibilityRule(const TArray<FRpgEquipmentCompatibilityRule>& Rules, const FGameplayTagContainer& LeftTags, const FGameplayTagContainer& RightTags) const;
 	FGameplayTagContainer BuildCompatibilityTags(const URpgItemInstance* ItemInstance) const;
 
-	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Equipment", meta = (AllowPrivateAccess = "true", ClampMin = "1", ToolTip = "How many weapon sets a character can carry at the same time. Phase 1 expects 2 sets by default."))
+	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Equipment", meta = (AllowPrivateAccess = "true", ClampMin = "2", ClampMax = "2", ToolTip = "Phase 1 currently supports exactly two weapon sets."))
 	int32 NumWeaponSets = 2;
 
 	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Equipment", meta = (AllowPrivateAccess = "true", ToolTip = "If true, only one two-handed weapon may be carried across all weapon sets. Disable this later if a talent should unlock additional two-handed loadouts."))

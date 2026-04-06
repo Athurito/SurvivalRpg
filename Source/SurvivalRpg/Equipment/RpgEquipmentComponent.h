@@ -2,27 +2,22 @@
 
 #include "CoreMinimal.h"
 #include "Components/ActorComponent.h"
+#include "GameplayEffect.h"
 #include "GameplayTagContainer.h"
 #include "SurvivalRpg/AbilitySystem/RpgAbilitySet.h"
-#include "SurvivalRpg/Items/RpgItemGrantTypes.h"
 #include "SurvivalRpg/Items/Fragments/RpgItemFragment_Visual.h"
+#include "SurvivalRpg/Items/RpgItemGrantTypes.h"
 #include "SurvivalRpg/Items/RpgItemSourceHandle.h"
 #include "RpgEquipmentComponent.generated.h"
 
-class AActor;
-class APawn;
-class UAnimInstance;
-class UCameraComponent;
-class UCharacterMovementComponent;
 class FOutBunch;
 struct FReplicationFlags;
 class UActorChannel;
-class USkeletalMeshComponent;
-class USpringArmComponent;
 class URpgAbilitySystemComponent;
 class URpgEquipmentRuleset;
 class URpgItemDefinition;
 class URpgItemInstance;
+class URpgWeaponPresentationComponent;
 
 UENUM()
 enum class ERpgEquipmentHandSlot : uint8
@@ -50,22 +45,49 @@ public:
 
 	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Equipment")
 	TObjectPtr<URpgItemInstance> OffHandItem = nullptr;
+
+	bool operator==(const FRpgEquippedWeaponSet& Other) const
+	{
+		return MainHandItem == Other.MainHandItem && OffHandItem == Other.OffHandItem;
+	}
+
+	bool operator!=(const FRpgEquippedWeaponSet& Other) const
+	{
+		return !(*this == Other);
+	}
 };
 
-USTRUCT()
-struct FRpgEquipmentVisualEntry
+struct FRpgEquipmentStateChangedEvent
 {
-	GENERATED_BODY()
+	int32 PreviousActiveWeaponSetIndex = INDEX_NONE;
+	int32 NewActiveWeaponSetIndex = INDEX_NONE;
+	bool bWeaponSlotsChanged = false;
 
-	UPROPERTY()
-	TObjectPtr<URpgItemInstance> ItemInstance = nullptr;
-
-	UPROPERTY()
-	TObjectPtr<AActor> VisualActor = nullptr;
+	bool HasActiveWeaponSetChanged() const
+	{
+		return PreviousActiveWeaponSetIndex != NewActiveWeaponSetIndex;
+	}
 };
+
+struct FRpgItemGameplayEffectGrantKey
+{
+	TSubclassOf<UGameplayEffect> GameplayEffect = nullptr;
+	float EffectLevel = 1.0f;
+
+	bool operator==(const FRpgItemGameplayEffectGrantKey& Other) const
+	{
+		return GameplayEffect == Other.GameplayEffect && FMath::IsNearlyEqual(EffectLevel, Other.EffectLevel);
+	}
+};
+
+FORCEINLINE uint32 GetTypeHash(const FRpgItemGameplayEffectGrantKey& Key)
+{
+	return HashCombine(GetTypeHash(Key.GameplayEffect), GetTypeHash(Key.EffectLevel));
+}
 
 DECLARE_DYNAMIC_MULTICAST_DELEGATE(FRpgEquipmentChangedSignature);
 DECLARE_DYNAMIC_MULTICAST_DELEGATE_OneParam(FRpgActiveCameraSettingsChangedSignature, FRpgWeaponToolCameraSettings, CameraSettings);
+DECLARE_MULTICAST_DELEGATE_OneParam(FRpgEquipmentStateChangedNativeSignature, const FRpgEquipmentStateChangedEvent&);
 
 UCLASS(ClassGroup = (Custom), BlueprintType, meta = (BlueprintSpawnableComponent))
 class SURVIVALRPG_API URpgEquipmentComponent : public UActorComponent
@@ -109,13 +131,16 @@ public:
 	FRpgEquippedWeaponSet GetActiveWeaponSet() const;
 
 	UFUNCTION(BlueprintPure, Category = "Equipment")
+	FRpgEquippedWeaponSet GetWeaponSet(int32 WeaponSetIndex) const;
+
+	UFUNCTION(BlueprintPure, Category = "Equipment")
 	int32 GetActiveWeaponSetIndex() const { return ActiveWeaponSetIndex; }
 
 	UFUNCTION(BlueprintPure, Category = "Equipment|Presentation")
-	FRpgWeaponToolCameraSettings GetActiveCameraSettings() const { return ActiveCameraSettings; }
+	FRpgWeaponToolCameraSettings GetActiveCameraSettings() const;
 
 	UFUNCTION(BlueprintPure, Category = "Equipment|Presentation")
-	FRpgWeaponToolCharacterSettings GetActiveWeaponToolCharacterSettings() const { return ActiveWeaponToolCharacterSettings; }
+	FRpgWeaponToolCharacterSettings GetActiveWeaponToolCharacterSettings() const;
 
 	UFUNCTION(BlueprintCallable, Category = "Equipment|Presentation")
 	void ApplyWeaponToolPresentationNotifyAction(ERpgWeaponToolPresentationNotifyAction Action);
@@ -132,18 +157,20 @@ public:
 	UPROPERTY(BlueprintAssignable, Category = "Equipment|Presentation")
 	FRpgActiveCameraSettingsChangedSignature OnActiveCameraSettingsChanged;
 
+	FRpgEquipmentStateChangedNativeSignature& OnEquipmentStateChangedNative() { return EquipmentStateChangedNative; }
+	const FRpgEquipmentStateChangedNativeSignature& OnEquipmentStateChangedNative() const { return EquipmentStateChangedNative; }
+
 #if WITH_DEV_AUTOMATION_TESTS
 	void SetAbilitySystemOverrideForTests(URpgAbilitySystemComponent* InAbilitySystemComponent) { AbilitySystemOverrideForTests = InAbilitySystemComponent; }
-	bool UsesWeaponToolPresentationNotifyForTests(int32 WeaponSetIndex, bool bUseEquipMontage) const { return MontageUsesPresentationNotify(WeaponSetIndex, bUseEquipMontage); }
+	bool UsesWeaponToolPresentationNotifyForTests(int32 WeaponSetIndex, bool bUseEquipMontage) const { return WeaponSetUsesPresentationNotify(WeaponSetIndex, bUseEquipMontage); }
+	int32 GetKnownItemInstanceCountForTests() const { return KnownItemInstances.Num(); }
 #endif
-	
+
 public:
 	virtual void BeginPlay() override;
 	virtual void EndPlay(const EEndPlayReason::Type EndPlayReason) override;
-	virtual void TickComponent(float DeltaTime, ELevelTick TickType, FActorComponentTickFunction* ThisTickFunction) override;
-	
-protected:
 
+protected:
 	UFUNCTION()
 	void OnRep_WeaponSets();
 
@@ -170,49 +197,25 @@ private:
 	bool ValidateWeaponSets(const TArray<FRpgEquippedWeaponSet>& WeaponSetStates) const;
 	void StripItemFromWeaponSets(URpgItemInstance* ItemInstance, TArray<FRpgEquippedWeaponSet>& InOutWeaponSets) const;
 	bool IsItemInActiveWeaponSet(const URpgItemInstance* ItemInstance) const;
-	bool IsItemInPresentationVisibleWeaponSet(const URpgItemInstance* ItemInstance) const;
 	int32 CountTwoHandedItems(const TArray<FRpgEquippedWeaponSet>& WeaponSetStates) const;
 	URpgItemInstance* FindKnownItemById(const FGuid& InstanceId) const;
-	void HandleEquipmentStateChanged();
-	void RefreshPresentationState(bool bAllowMontage);
-	void SetPresentationVisibleWeaponSetIndex(int32 InPresentationVisibleWeaponSetIndex);
-	void RemoveAppliedGrants();
-	void ApplyCurrentGrants();
-	void ApplyAbilitySets(URpgAbilitySystemComponent* AbilitySystemComponent, const TArray<TObjectPtr<const URpgAbilitySet>>& AbilitySets, UObject* SourceObject);
-	void ApplyGameplayEffects(URpgAbilitySystemComponent* AbilitySystemComponent, const TArray<FRpgItemGameplayEffectGrant>& GameplayEffects);
-	void ApplyLooseTags(URpgAbilitySystemComponent* AbilitySystemComponent, const FGameplayTagContainer& LooseTags);
+	void HandleEquipmentStateChanged(const TArray<FRpgEquippedWeaponSet>& PreviousWeaponSets, int32 PreviousActiveWeaponSetIndex);
+	void RemoveAllAppliedGrants();
+	void ReconcileAppliedGrants();
+	void CompactKnownItemInstances();
 	URpgAbilitySystemComponent* ResolveAbilitySystemComponent() const;
-	void QueueVisualRefresh();
-	void RefreshVisuals();
-	void RefreshActiveWeaponToolCharacterSettings();
-	void RefreshActiveCameraSettings();
-	void RefreshPresentationBindings();
-	void ResetPresentationBindings();
-	void ApplyActiveWeaponToolCharacterSettings();
-	void ApplyVisibleWeaponToolPresentationSettings();
-	void RefreshTargetVisiblePresentationState();
-	void QueuePendingAnimClassSwitch(TSubclassOf<UAnimInstance> DesiredAnimClass);
-	void StartOrUpdateCameraBlend();
-	void UpdatePendingAnimClassSwitch();
-	void UpdateCameraBlend(float DeltaTime);
-	void ApplyCameraBlendAlpha(float BlendAlpha);
-	bool ShouldApplyActiveWeaponToolCharacterSettingsToPawn(const APawn* VisualPawn) const;
-	bool ShouldApplyVisibleWeaponToolAnimClassToPawn(const APawn* VisualPawn) const;
-	bool ShouldApplyVisibleWeaponToolCameraSettingsToPawn(const APawn* VisualPawn) const;
-	APawn* ResolveVisualPawn() const;
-	USkeletalMeshComponent* ResolvePresentationMesh(APawn* VisualPawn) const;
-	UCharacterMovementComponent* ResolvePresentationMovementComponent(APawn* VisualPawn) const;
-	UCameraComponent* ResolvePresentationCameraComponent(APawn* VisualPawn) const;
-	USpringArmComponent* ResolvePresentationSpringArmComponent(APawn* VisualPawn) const;
 	URpgItemInstance* GetPrimaryPresentationItemForWeaponSet(int32 WeaponSetIndex) const;
 	const class URpgItemFragment_Visual* GetPrimaryPresentationVisualFragmentForWeaponSet(int32 WeaponSetIndex) const;
-	bool MontageUsesPresentationNotify(int32 WeaponSetIndex, bool bUseEquipMontage) const;
-	bool PlayPresentationMontageForWeaponSet(int32 WeaponSetIndex, bool bUseEquipMontage) const;
-	AActor* FindVisualActorForItem(const URpgItemInstance* ItemInstance) const;
-	AActor* FindOrSpawnVisualActor(URpgItemInstance* ItemInstance, APawn* VisualPawn);
-	void DestroyVisualActorForItem(const URpgItemInstance* ItemInstance);
-	void DestroyAllVisualActors();
+	bool WeaponSetUsesPresentationNotify(int32 WeaponSetIndex, bool bUseEquipMontage) const;
 	void ForceOwnerNetUpdate() const;
+	void BroadcastStateChangedNative(const FRpgEquipmentStateChangedEvent& Event);
+	FRpgWeaponToolCameraSettings ResolveActiveCameraSettings() const;
+	FRpgWeaponToolCharacterSettings ResolveActiveWeaponToolCharacterSettings() const;
+	URpgWeaponPresentationComponent* ResolvePresentationComponent() const;
+	void BroadcastForwardedActiveCameraSettingsChanged(const FRpgWeaponToolCameraSettings& CameraSettings);
+	bool AreWeaponSetsEqual(const TArray<FRpgEquippedWeaponSet>& Left, const TArray<FRpgEquippedWeaponSet>& Right) const;
+
+	friend class URpgWeaponPresentationComponent;
 
 	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Equipment", meta = (AllowPrivateAccess = "true"))
 	TObjectPtr<const URpgEquipmentRuleset> EquipmentRuleset = nullptr;
@@ -226,88 +229,12 @@ private:
 	UPROPERTY(ReplicatedUsing = OnRep_ActiveWeaponSetIndex)
 	int32 ActiveWeaponSetIndex = INDEX_NONE;
 
-	UPROPERTY(Transient)
-	TArray<FRpgEquipmentVisualEntry> VisualEntries;
-
-	UPROPERTY(Transient)
-	TObjectPtr<APawn> CachedVisualPawn = nullptr;
-
-	UPROPERTY(Transient)
-	FRpgWeaponToolCameraSettings ActiveCameraSettings;
-
-	UPROPERTY(Transient)
-	FRpgWeaponToolCharacterSettings ActiveWeaponToolCharacterSettings;
-
-	UPROPERTY(Transient)
-	TObjectPtr<USkeletalMeshComponent> CachedPresentationMesh = nullptr;
-
-	UPROPERTY(Transient)
-	TObjectPtr<UCharacterMovementComponent> CachedPresentationMovementComponent = nullptr;
-
-	UPROPERTY(Transient)
-	TObjectPtr<UCameraComponent> CachedPresentationCameraComponent = nullptr;
-
-	UPROPERTY(Transient)
-	TObjectPtr<USpringArmComponent> CachedPresentationSpringArmComponent = nullptr;
-
-	UPROPERTY(Transient)
-	TSubclassOf<UAnimInstance> DefaultPresentationAnimClass = nullptr;
-
-	UPROPERTY(Transient)
-	float DefaultPresentationMaxWalkSpeed = 600.0f;
-
-	UPROPERTY(Transient)
-	bool bDefaultPresentationOrientRotationToMovement = true;
-
-	UPROPERTY(Transient)
-	bool bDefaultPresentationUseControllerDesiredRotation = false;
-
-	UPROPERTY(Transient)
-	float DefaultPresentationCameraFOV = 90.0f;
-
-	UPROPERTY(Transient)
-	FVector DefaultPresentationSpringArmSocketOffset = FVector::ZeroVector;
-
-	UPROPERTY(Transient)
-	int32 PresentationVisibleWeaponSetIndex = INDEX_NONE;
-
-	UPROPERTY(Transient)
-	TSubclassOf<UAnimInstance> PendingPresentationAnimClass = nullptr;
-
-	UPROPERTY(Transient)
-	float AppliedPresentationCameraFOV = 90.0f;
-
-	UPROPERTY(Transient)
-	FVector AppliedPresentationSpringArmSocketOffset = FVector::ZeroVector;
-
-	UPROPERTY(Transient)
-	float PresentationCameraBlendStartFOV = 90.0f;
-
-	UPROPERTY(Transient)
-	FVector PresentationCameraBlendStartSpringArmSocketOffset = FVector::ZeroVector;
-
-	UPROPERTY(Transient)
-	float PresentationCameraBlendTargetFOV = 90.0f;
-
-	UPROPERTY(Transient)
-	FVector PresentationCameraBlendTargetSpringArmSocketOffset = FVector::ZeroVector;
-
-	UPROPERTY(Transient)
-	float PresentationCameraBlendDuration = 0.0f;
-
-	UPROPERTY(Transient)
-	float PresentationCameraBlendElapsedTime = 0.0f;
-
-	UPROPERTY(Transient)
-	float LastPresentationCameraBlendTime = 0.0f;
-
-	TArray<FRpgAbilitySet_GrantedHandles> AppliedAbilitySetHandles;
-	TArray<FActiveGameplayEffectHandle> AppliedGameplayEffectHandles;
+	TMap<const URpgAbilitySet*, FRpgAbilitySet_GrantedHandles> AppliedAbilitySetHandles;
+	TMap<const URpgAbilitySet*, TWeakObjectPtr<UObject>> AppliedAbilitySetSourceObjects;
+	TMap<FRpgItemGameplayEffectGrantKey, TArray<FActiveGameplayEffectHandle>> AppliedGameplayEffectHandles;
 	TMap<FGameplayTag, int32> AppliedLooseTagCounts;
-	int32 ObservedActiveWeaponSetIndex = INDEX_NONE;
-	bool bVisualRefreshQueued = true;
-	bool bHasPendingPresentationAnimClassSwitch = false;
-	bool bPresentationCameraBlendActive = false;
+	FRpgEquipmentStateChangedNativeSignature EquipmentStateChangedNative;
+	int32 LastNotifiedActiveWeaponSetIndex = INDEX_NONE;
 
 #if WITH_DEV_AUTOMATION_TESTS
 	URpgAbilitySystemComponent* AbilitySystemOverrideForTests = nullptr;
