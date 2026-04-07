@@ -229,14 +229,8 @@ void ARpgCharacter::RestoreMovementAndCollision() const
 
 void ARpgCharacter::EnterDeadState()
 {
-	// Controller lösen
 	DetachFromControllerPendingDestroy();
-
-	// Actor bleibt aber bestehen
 	SetActorEnableCollision(false);
-
-	// Optional: Pawn als Dead markieren
-	// bIsDead = true;
 }
 
 // Called to bind functionality to input
@@ -244,6 +238,10 @@ void ARpgCharacter::SetupPlayerInputComponent(UInputComponent* PlayerInputCompon
 {
 	Super::SetupPlayerInputComponent(PlayerInputComponent);
 	PawnExtensionComponent->SetupPlayerInputComponent();
+	if (URpgPawnGameplayComponent* PawnGameplayComponent = FindComponentByClass<URpgPawnGameplayComponent>())
+	{
+		PawnGameplayComponent->InitializePlayerInput(PlayerInputComponent);
+	}
 }
 
 

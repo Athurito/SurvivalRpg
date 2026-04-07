@@ -40,7 +40,7 @@ void ARpgPlayerController::SetupInputComponent()
 	{
 		for (const UInputMappingContext* MappingContext : DefaultMappingContexts)
 		{
-			if (MappingContext)
+			if (MappingContext && !InputSubsystem->HasMappingContext(MappingContext))
 			{
 				InputSubsystem->AddMappingContext(MappingContext, 0);
 			}

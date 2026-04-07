@@ -39,12 +39,13 @@ protected:
 protected:
 	virtual void BeginPlayingState() override;
 	virtual void SetupInputComponent() override;
+	
 
 private:
 	void RefreshPlayerStateBindings();
 	void BindToPlayerState(ARpgPlayerState* NewPlayerState);
 	void UnbindFromPlayerState();
-	
+
 	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Input", meta = (AllowPrivateAccess = "true"))
 	TArray<UInputMappingContext*> DefaultMappingContexts;
 
