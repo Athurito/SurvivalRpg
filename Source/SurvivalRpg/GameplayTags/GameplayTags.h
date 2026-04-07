@@ -21,6 +21,9 @@ namespace RpgGameplayTags
 	UE_DECLARE_GAMEPLAY_TAG_EXTERN(GameplayEvent_RequestReset);
 	UE_DECLARE_GAMEPLAY_TAG_EXTERN(GameplayEvent_Downed);
 	UE_DECLARE_GAMEPLAY_TAG_EXTERN(GameplayEvent_Revive);
+	UE_DECLARE_GAMEPLAY_TAG_EXTERN(GameplayEvent_Equip_ApplyCurrentState);
+	UE_DECLARE_GAMEPLAY_TAG_EXTERN(GameplayEvent_Equip_HolsterVisible);
+	UE_DECLARE_GAMEPLAY_TAG_EXTERN(GameplayEvent_Equip_DrawActiveSet);
 
 	UE_DECLARE_GAMEPLAY_TAG_EXTERN(Status_Downed);
 	UE_DECLARE_GAMEPLAY_TAG_EXTERN(Status_Downed_BleedingOut);
@@ -28,6 +31,7 @@ namespace RpgGameplayTags
 	UE_DECLARE_GAMEPLAY_TAG_EXTERN(Status_CannotBeRevived);
 	UE_DECLARE_GAMEPLAY_TAG_EXTERN(Status_Crouching);
 	UE_DECLARE_GAMEPLAY_TAG_EXTERN(Status_AutoRunning);
+	UE_DECLARE_GAMEPLAY_TAG_EXTERN(Status_EquipTransition);
 	UE_DECLARE_GAMEPLAY_TAG_EXTERN(State_Dead);
 	UE_DECLARE_GAMEPLAY_TAG_EXTERN(Status_Death);
 	UE_DECLARE_GAMEPLAY_TAG_EXTERN(Status_Death_Dying);

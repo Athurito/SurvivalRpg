@@ -1,9 +1,31 @@
 #include "AnimNotify_RpgWeaponToolPresentation.h"
 
+#include "AbilitySystemComponent.h"
+#include "AbilitySystemInterface.h"
 #include "Animation/AnimSequenceBase.h"
 #include "Components/SkeletalMeshComponent.h"
 #include "GameFramework/Pawn.h"
+#include "SurvivalRpg/GameplayTags/GameplayTags.h"
 #include "RpgWeaponPresentationComponent.h"
+
+namespace
+{
+	FGameplayTag ResolveEquipGameplayEventTag(ERpgWeaponToolPresentationNotifyAction Action)
+	{
+		switch (Action)
+		{
+		case ERpgWeaponToolPresentationNotifyAction::HolsterVisuals:
+			return RpgGameplayTags::GameplayEvent_Equip_HolsterVisible;
+
+		case ERpgWeaponToolPresentationNotifyAction::DrawActiveSet:
+			return RpgGameplayTags::GameplayEvent_Equip_DrawActiveSet;
+
+		case ERpgWeaponToolPresentationNotifyAction::ApplyCurrentState:
+		default:
+			return RpgGameplayTags::GameplayEvent_Equip_ApplyCurrentState;
+		}
+	}
+}
 
 FString UAnimNotify_RpgWeaponToolPresentation::GetNotifyName_Implementation() const
 {
@@ -26,11 +48,37 @@ void UAnimNotify_RpgWeaponToolPresentation::Notify(USkeletalMeshComponent* MeshC
 	Super::Notify(MeshComp, Animation, EventReference);
 
 	APawn* OwningPawn = MeshComp ? Cast<APawn>(MeshComp->GetOwner()) : nullptr;
-	URpgWeaponPresentationComponent* PresentationComponent = OwningPawn ? OwningPawn->FindComponentByClass<URpgWeaponPresentationComponent>() : nullptr;
-	if (PresentationComponent == nullptr)
+	if (OwningPawn == nullptr)
 	{
 		return;
 	}
 
-	PresentationComponent->ApplyWeaponToolPresentationNotifyAction(Action);
+	if (IAbilitySystemInterface* AbilitySystemInterface = Cast<IAbilitySystemInterface>(OwningPawn))
+	{
+		if (UAbilitySystemComponent* AbilitySystemComponent = AbilitySystemInterface->GetAbilitySystemComponent())
+		{
+			FGameplayEventData Payload;
+			Payload.EventTag = ResolveEquipGameplayEventTag(Action);
+			Payload.Instigator = OwningPawn;
+			Payload.Target = OwningPawn;
+			AbilitySystemComponent->HandleGameplayEvent(Payload.EventTag, &Payload);
+			return;
+		}
+	}
+
+	if (URpgWeaponPresentationComponent* PresentationComponent = OwningPawn->FindComponentByClass<URpgWeaponPresentationComponent>())
+	{
+		switch (Action)
+		{
+		case ERpgWeaponToolPresentationNotifyAction::HolsterVisuals:
+			PresentationComponent->ShowHolstered();
+			break;
+
+		case ERpgWeaponToolPresentationNotifyAction::DrawActiveSet:
+		case ERpgWeaponToolPresentationNotifyAction::ApplyCurrentState:
+		default:
+			PresentationComponent->SyncToAuthoritativeState();
+			break;
+		}
+	}
 }

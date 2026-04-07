@@ -145,6 +145,68 @@ namespace RpgEquipmentAutomationTests
 		return Result;
 	}
 
+	static bool MontageHasWeaponPresentationNotify(const UAnimMontage* Montage)
+	{
+		if (Montage == nullptr)
+		{
+			return false;
+		}
+
+		for (const FAnimNotifyEvent& NotifyEvent : Montage->Notifies)
+		{
+			if (NotifyEvent.Notify != nullptr && NotifyEvent.Notify->IsA<UAnimNotify_RpgWeaponToolPresentation>())
+			{
+				return true;
+			}
+		}
+
+		return false;
+	}
+
+	static bool ToggleWeaponSet(URpgEquipmentComponent* EquipmentComponent, int32 WeaponSetIndex)
+	{
+		if (EquipmentComponent == nullptr)
+		{
+			return false;
+		}
+
+		return EquipmentComponent->GetActiveWeaponSetIndex() == WeaponSetIndex
+			? EquipmentComponent->ClearActiveWeaponSet()
+			: EquipmentComponent->SetActiveWeaponSet(WeaponSetIndex);
+	}
+
+	static const URpgItemFragment_Visual* GetActiveVisualFragment(const URpgEquipmentComponent* EquipmentComponent)
+	{
+		if (EquipmentComponent == nullptr)
+		{
+			return nullptr;
+		}
+
+		const FRpgEquippedWeaponSet ActiveWeaponSet = EquipmentComponent->GetActiveWeaponSet();
+		URpgItemInstance* PresentationItem = ActiveWeaponSet.MainHandItem != nullptr ? ActiveWeaponSet.MainHandItem : ActiveWeaponSet.OffHandItem;
+		return PresentationItem ? PresentationItem->FindFragmentByClass<URpgItemFragment_Visual>() : nullptr;
+	}
+
+	static FRpgWeaponToolCameraSettings GetActiveCameraSettingsFromEquipment(const URpgEquipmentComponent* EquipmentComponent)
+	{
+		if (const URpgItemFragment_Visual* VisualFragment = GetActiveVisualFragment(EquipmentComponent))
+		{
+			return VisualFragment->GetWeaponToolCameraSettings();
+		}
+
+		return FRpgWeaponToolCameraSettings();
+	}
+
+	static FRpgWeaponToolCharacterSettings GetActiveCharacterSettingsFromEquipment(const URpgEquipmentComponent* EquipmentComponent)
+	{
+		if (const URpgItemFragment_Visual* VisualFragment = GetActiveVisualFragment(EquipmentComponent))
+		{
+			return VisualFragment->GetWeaponToolCharacterSettings();
+		}
+
+		return FRpgWeaponToolCharacterSettings();
+	}
+
 }
 
 IMPLEMENT_SIMPLE_AUTOMATION_TEST(
@@ -260,22 +322,22 @@ bool FRpgEquipmentWeaponSetGrantSwitchTest::RunTest(const FString& Parameters)
 	TestFalse(TEXT("Weapon set 1 loose tags stay inactive while nothing is drawn."), AbilitySystemComponent->HasMatchingGameplayTag(RpgGameplayTags::InputTag_WeaponSet_1));
 	TestFalse(TEXT("Weapon set 2 loose tags stay inactive while nothing is drawn."), AbilitySystemComponent->HasMatchingGameplayTag(RpgGameplayTags::InputTag_WeaponSet_2));
 
-	TestTrue(TEXT("Activating weapon set 1 succeeds."), EquipmentComponent->TryActivateWeaponSet(0));
+	TestTrue(TEXT("Activating weapon set 1 succeeds."), EquipmentComponent->SetActiveWeaponSet(0));
 	TestEqual(TEXT("Weapon set 1 becomes the active set."), EquipmentComponent->GetActiveWeaponSetIndex(), 0);
 	TestTrue(TEXT("Weapon set 1 loose tags are applied after activation."), AbilitySystemComponent->HasMatchingGameplayTag(RpgGameplayTags::InputTag_WeaponSet_1));
 	TestFalse(TEXT("Weapon set 2 loose tags are still inactive after activating set 1."), AbilitySystemComponent->HasMatchingGameplayTag(RpgGameplayTags::InputTag_WeaponSet_2));
 
-	TestTrue(TEXT("Pressing the same slot again holsters the currently active set."), EquipmentComponent->TryActivateWeaponSet(0));
+	TestTrue(TEXT("Pressing the same slot again holsters the currently active set."), ToggleWeaponSet(EquipmentComponent, 0));
 	TestEqual(TEXT("Holstering clears the active weapon set index."), EquipmentComponent->GetActiveWeaponSetIndex(), INDEX_NONE);
 	TestNull(TEXT("The active weapon set reports as empty when holstered."), EquipmentComponent->GetActiveWeaponSet().MainHandItem);
 	TestFalse(TEXT("Weapon set 1 loose tags are removed while holstered."), AbilitySystemComponent->HasMatchingGameplayTag(RpgGameplayTags::InputTag_WeaponSet_1));
 	TestFalse(TEXT("Weapon set 2 loose tags remain inactive while holstered."), AbilitySystemComponent->HasMatchingGameplayTag(RpgGameplayTags::InputTag_WeaponSet_2));
 	TestNotNull(TEXT("Holstering does not remove the item from slot 1 main hand."), EquipmentComponent->GetItemInSlot(RpgGameplayTags::Equipment_Slot_WeaponSet_1_MainHand));
 
-	TestTrue(TEXT("Activating weapon set 1 a second time redraws the same set."), EquipmentComponent->TryActivateWeaponSet(0));
+	TestTrue(TEXT("Activating weapon set 1 a second time redraws the same set."), ToggleWeaponSet(EquipmentComponent, 0));
 	TestTrue(TEXT("Weapon set 1 loose tags are re-applied after redrawing."), AbilitySystemComponent->HasMatchingGameplayTag(RpgGameplayTags::InputTag_WeaponSet_1));
 
-	TestTrue(TEXT("Switching to weapon set 2 succeeds."), EquipmentComponent->TryActivateWeaponSet(1));
+	TestTrue(TEXT("Switching to weapon set 2 succeeds."), EquipmentComponent->SetActiveWeaponSet(1));
 	TestEqual(TEXT("Weapon set 2 becomes the active set after the switch."), EquipmentComponent->GetActiveWeaponSetIndex(), 1);
 	TestFalse(TEXT("Weapon set 1 loose tags are removed after the switch."), AbilitySystemComponent->HasMatchingGameplayTag(RpgGameplayTags::InputTag_WeaponSet_1));
 	TestTrue(TEXT("Weapon set 2 loose tags are applied after the switch."), AbilitySystemComponent->HasMatchingGameplayTag(RpgGameplayTags::InputTag_WeaponSet_2));
@@ -340,19 +402,19 @@ bool FRpgEquipmentPassiveGrantAggregationTest::RunTest(const FString& Parameters
 	TestEqual(TEXT("The shared equipped ability set is granted only once while both weapons are holstered."), CountAbilitiesByClass(AbilitySystemComponent, URpgGameplayAbility_ActivateWeaponSet::StaticClass()), 1);
 	TestTrue(TEXT("Passive equipped loose tags stay applied while the weapons are merely equipped."), AbilitySystemComponent->HasMatchingGameplayTag(RpgGameplayTags::Equipment_Trait_Shield));
 
-	TestTrue(TEXT("Activating set 1 succeeds for passive grant aggregation."), EquipmentComponent->TryActivateWeaponSet(0));
+	TestTrue(TEXT("Activating set 1 succeeds for passive grant aggregation."), EquipmentComponent->SetActiveWeaponSet(0));
 	TestEqual(TEXT("The shared passive ability set still exists only once after activating set 1."), CountAbilitiesByClass(AbilitySystemComponent, URpgGameplayAbility_ActivateWeaponSet::StaticClass()), 1);
 	TestTrue(TEXT("The first active loose tag is applied while set 1 is active."), AbilitySystemComponent->HasMatchingGameplayTag(RpgGameplayTags::InputTag_WeaponSet_1));
 	TestFalse(TEXT("The second active loose tag is not applied while set 1 is active."), AbilitySystemComponent->HasMatchingGameplayTag(RpgGameplayTags::InputTag_WeaponSet_2));
 	TestTrue(TEXT("Passive equipped loose tags persist while set 1 is active."), AbilitySystemComponent->HasMatchingGameplayTag(RpgGameplayTags::Equipment_Trait_Shield));
 
-	TestTrue(TEXT("Switching to set 2 succeeds for passive grant aggregation."), EquipmentComponent->TryActivateWeaponSet(1));
+	TestTrue(TEXT("Switching to set 2 succeeds for passive grant aggregation."), EquipmentComponent->SetActiveWeaponSet(1));
 	TestEqual(TEXT("The shared passive ability set still exists only once after switching to set 2."), CountAbilitiesByClass(AbilitySystemComponent, URpgGameplayAbility_ActivateWeaponSet::StaticClass()), 1);
 	TestFalse(TEXT("The first active loose tag is removed when switching away from set 1."), AbilitySystemComponent->HasMatchingGameplayTag(RpgGameplayTags::InputTag_WeaponSet_1));
 	TestTrue(TEXT("The second active loose tag is applied while set 2 is active."), AbilitySystemComponent->HasMatchingGameplayTag(RpgGameplayTags::InputTag_WeaponSet_2));
 	TestTrue(TEXT("Passive equipped loose tags persist while set 2 is active."), AbilitySystemComponent->HasMatchingGameplayTag(RpgGameplayTags::Equipment_Trait_Shield));
 
-	TestTrue(TEXT("Holstering set 2 succeeds for passive grant aggregation."), EquipmentComponent->TryActivateWeaponSet(1));
+	TestTrue(TEXT("Holstering set 2 succeeds for passive grant aggregation."), ToggleWeaponSet(EquipmentComponent, 1));
 	TestEqual(TEXT("The shared passive ability set still exists only once while holstered again."), CountAbilitiesByClass(AbilitySystemComponent, URpgGameplayAbility_ActivateWeaponSet::StaticClass()), 1);
 	TestFalse(TEXT("The first active loose tag is removed while holstered again."), AbilitySystemComponent->HasMatchingGameplayTag(RpgGameplayTags::InputTag_WeaponSet_1));
 	TestFalse(TEXT("The second active loose tag is removed while holstered again."), AbilitySystemComponent->HasMatchingGameplayTag(RpgGameplayTags::InputTag_WeaponSet_2));
@@ -443,16 +505,16 @@ bool FRpgEquipmentActiveCameraSettingsTest::RunTest(const FString& Parameters)
 
 	TestTrue(TEXT("Weapon set 1 weapon equips for the camera settings test."), EquipmentComponent->TryEquipItem(FirstWeapon, RpgGameplayTags::Equipment_Slot_WeaponSet_1_MainHand));
 	TestTrue(TEXT("Weapon set 2 weapon equips for the camera settings test."), EquipmentComponent->TryEquipItem(SecondWeapon, RpgGameplayTags::Equipment_Slot_WeaponSet_2_MainHand));
-	TestFalse(TEXT("Camera settings stay disabled while everything is holstered."), EquipmentComponent->GetActiveCameraSettings().bEnabled);
+	TestFalse(TEXT("Camera settings stay disabled while everything is holstered."), GetActiveCameraSettingsFromEquipment(EquipmentComponent).bEnabled);
 
-	TestTrue(TEXT("Activating weapon set 1 succeeds for the camera settings test."), EquipmentComponent->TryActivateWeaponSet(0));
-	TestTrue(TEXT("Weapon set 1 exposes its inline camera settings when active."), EquipmentComponent->GetActiveCameraSettings() == FirstCameraSettings);
+	TestTrue(TEXT("Activating weapon set 1 succeeds for the camera settings test."), EquipmentComponent->SetActiveWeaponSet(0));
+	TestTrue(TEXT("Weapon set 1 exposes its inline camera settings when active."), GetActiveCameraSettingsFromEquipment(EquipmentComponent) == FirstCameraSettings);
 
-	TestTrue(TEXT("Holstering weapon set 1 succeeds for the camera settings test."), EquipmentComponent->TryActivateWeaponSet(0));
-	TestFalse(TEXT("Holstering clears the active camera settings override."), EquipmentComponent->GetActiveCameraSettings().bEnabled);
+	TestTrue(TEXT("Holstering weapon set 1 succeeds for the camera settings test."), ToggleWeaponSet(EquipmentComponent, 0));
+	TestFalse(TEXT("Holstering clears the active camera settings override."), GetActiveCameraSettingsFromEquipment(EquipmentComponent).bEnabled);
 
-	TestTrue(TEXT("Activating weapon set 2 succeeds for the camera settings test."), EquipmentComponent->TryActivateWeaponSet(1));
-	TestTrue(TEXT("Weapon set 2 exposes its inline camera settings when active."), EquipmentComponent->GetActiveCameraSettings() == SecondCameraSettings);
+	TestTrue(TEXT("Activating weapon set 2 succeeds for the camera settings test."), EquipmentComponent->SetActiveWeaponSet(1));
+	TestTrue(TEXT("Weapon set 2 exposes its inline camera settings when active."), GetActiveCameraSettingsFromEquipment(EquipmentComponent) == SecondCameraSettings);
 
 	return true;
 }
@@ -503,16 +565,16 @@ bool FRpgEquipmentActiveCharacterSettingsTest::RunTest(const FString& Parameters
 
 	TestTrue(TEXT("Weapon set 1 weapon equips for the character settings test."), EquipmentComponent->TryEquipItem(FirstWeapon, RpgGameplayTags::Equipment_Slot_WeaponSet_1_MainHand));
 	TestTrue(TEXT("Weapon set 2 weapon equips for the character settings test."), EquipmentComponent->TryEquipItem(SecondWeapon, RpgGameplayTags::Equipment_Slot_WeaponSet_2_MainHand));
-	TestFalse(TEXT("Character settings stay disabled while everything is holstered."), EquipmentComponent->GetActiveWeaponToolCharacterSettings().bEnabled);
+	TestFalse(TEXT("Character settings stay disabled while everything is holstered."), GetActiveCharacterSettingsFromEquipment(EquipmentComponent).bEnabled);
 
-	TestTrue(TEXT("Activating weapon set 1 succeeds for the character settings test."), EquipmentComponent->TryActivateWeaponSet(0));
-	TestTrue(TEXT("Weapon set 1 exposes its inline character settings when active."), EquipmentComponent->GetActiveWeaponToolCharacterSettings() == FirstCharacterSettings);
+	TestTrue(TEXT("Activating weapon set 1 succeeds for the character settings test."), EquipmentComponent->SetActiveWeaponSet(0));
+	TestTrue(TEXT("Weapon set 1 exposes its inline character settings when active."), GetActiveCharacterSettingsFromEquipment(EquipmentComponent) == FirstCharacterSettings);
 
-	TestTrue(TEXT("Holstering weapon set 1 succeeds for the character settings test."), EquipmentComponent->TryActivateWeaponSet(0));
-	TestFalse(TEXT("Holstering clears the active character settings override."), EquipmentComponent->GetActiveWeaponToolCharacterSettings().bEnabled);
+	TestTrue(TEXT("Holstering weapon set 1 succeeds for the character settings test."), ToggleWeaponSet(EquipmentComponent, 0));
+	TestFalse(TEXT("Holstering clears the active character settings override."), GetActiveCharacterSettingsFromEquipment(EquipmentComponent).bEnabled);
 
-	TestTrue(TEXT("Activating weapon set 2 succeeds for the character settings test."), EquipmentComponent->TryActivateWeaponSet(1));
-	TestTrue(TEXT("Weapon set 2 exposes its inline character settings when active."), EquipmentComponent->GetActiveWeaponToolCharacterSettings() == SecondCharacterSettings);
+	TestTrue(TEXT("Activating weapon set 2 succeeds for the character settings test."), EquipmentComponent->SetActiveWeaponSet(1));
+	TestTrue(TEXT("Weapon set 2 exposes its inline character settings when active."), GetActiveCharacterSettingsFromEquipment(EquipmentComponent) == SecondCharacterSettings);
 
 	return true;
 }
@@ -558,10 +620,10 @@ bool FRpgEquipmentWeaponToolPresentationNotifyDetectionTest::RunTest(const FStri
 		MontageWithoutNotify);
 
 	TestTrue(TEXT("Weapon with a new weapon-tool presentation notify equips into set 1."), EquipmentComponent->TryEquipItem(WeaponWithNewNotify, RpgGameplayTags::Equipment_Slot_WeaponSet_1_MainHand));
-	TestTrue(TEXT("The new weapon-tool notify is detected on the equip montage."), EquipmentComponent->UsesWeaponToolPresentationNotifyForTests(0, true));
+	TestTrue(TEXT("The new weapon-tool notify is detected on the equip montage."), MontageHasWeaponPresentationNotify(MontageWithNewNotify));
 
 	TestTrue(TEXT("Replacing the set 1 weapon with one that has no presentation notify succeeds."), EquipmentComponent->TryEquipItem(WeaponWithoutNotify, RpgGameplayTags::Equipment_Slot_WeaponSet_1_MainHand));
-	TestFalse(TEXT("Montages without a weapon-tool presentation notify fall back to immediate presentation updates."), EquipmentComponent->UsesWeaponToolPresentationNotifyForTests(0, true));
+	TestFalse(TEXT("Montages without a weapon-tool presentation notify fall back to immediate presentation updates."), MontageHasWeaponPresentationNotify(MontageWithoutNotify));
 
 	return true;
 }
@@ -618,7 +680,7 @@ bool FRpgEquipmentPhase1WeaponSetGuardTest::RunTest(const FString& Parameters)
 	TestEqual(TEXT("Phase 1 rulesets clamp to exactly two weapon sets even when configured otherwise."), Ruleset->GetNumWeaponSets(), 2);
 
 	URpgEquipmentComponent* EquipmentComponent = CreateEquipmentComponent(Ruleset);
-	TestFalse(TEXT("Weapon set index 2 cannot be activated in the fixed two-set phase-1 equipment model."), EquipmentComponent->TryActivateWeaponSet(2));
+	TestFalse(TEXT("Weapon set index 2 cannot be activated in the fixed two-set phase-1 equipment model."), EquipmentComponent->SetActiveWeaponSet(2));
 
 	return true;
 }
@@ -632,12 +694,6 @@ bool FRpgWeaponPresentationTickActivationTest::RunTest(const FString& Parameters
 {
 	URpgWeaponPresentationComponent* PresentationComponent = NewObject<URpgWeaponPresentationComponent>(GetTransientPackage());
 	TestFalse(TEXT("Weapon presentation tick starts disabled by default."), PresentationComponent->IsPresentationTickEnabledForTests());
-
-	PresentationComponent->SetPendingAnimSwitchForTests(true);
-	TestTrue(TEXT("A pending anim switch enables the transient presentation tick."), PresentationComponent->IsPresentationTickEnabledForTests());
-
-	PresentationComponent->SetPendingAnimSwitchForTests(false);
-	TestFalse(TEXT("Clearing the pending anim switch disables the presentation tick again."), PresentationComponent->IsPresentationTickEnabledForTests());
 
 	PresentationComponent->SetCameraBlendActiveForTests(true);
 	TestTrue(TEXT("An active camera blend enables the transient presentation tick."), PresentationComponent->IsPresentationTickEnabledForTests());

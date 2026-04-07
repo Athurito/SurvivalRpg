@@ -5,7 +5,6 @@
 #include "RpgItemFragment.h"
 #include "RpgItemFragment_Visual.generated.h"
 
-class UAnimInstance;
 class UAnimMontage;
 
 USTRUCT(BlueprintType)
@@ -49,9 +48,6 @@ public:
 	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Character")
 	bool bEnabled = false;
 
-	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Character", meta = (EditCondition = "bEnabled", ToolTip = "Optional AnimBlueprint class used while this weapon or tool is visibly drawn. Leave empty to keep the character default AnimClass."))
-	TSubclassOf<UAnimInstance> AnimClass = nullptr;
-
 	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Character", meta = (EditCondition = "bEnabled", ClampMin = "0.0"))
 	float MaxWalkSpeed = 600.0f;
 
@@ -64,7 +60,6 @@ public:
 	bool operator==(const FRpgWeaponToolCharacterSettings& Other) const
 	{
 		return bEnabled == Other.bEnabled
-			&& AnimClass == Other.AnimClass
 			&& FMath::IsNearlyEqual(MaxWalkSpeed, Other.MaxWalkSpeed)
 			&& bOrientRotationToMovement == Other.bOrientRotationToMovement
 			&& bUseControllerDesiredRotation == Other.bUseControllerDesiredRotation;
@@ -128,7 +123,7 @@ private:
 	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Visual", meta = (AllowPrivateAccess = "true", ToolTip = "Inline camera override for this weapon or tool while it is visibly drawn. FOV and SpringArm SocketOffset are applied when the draw state becomes visible, typically at DrawActiveSet or ApplyCurrentState notifies. BlendTime controls whether that visible camera change snaps or smooths over time."))
 	FRpgWeaponToolCameraSettings WeaponToolCameraSettings;
 
-	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Visual", meta = (AllowPrivateAccess = "true", ToolTip = "Inline character override for this weapon or tool. MaxWalkSpeed and the rotation flags follow the active weapon set immediately, while AnimClass follows the visible draw state and switches at DrawActiveSet or ApplyCurrentState."))
+	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Visual", meta = (AllowPrivateAccess = "true", ToolTip = "Inline character override for this weapon or tool. MaxWalkSpeed and the rotation flags follow the active weapon set immediately."))
 	FRpgWeaponToolCharacterSettings WeaponToolCharacterSettings;
 
 	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Visual", meta = (AllowPrivateAccess = "true", ToolTip = "If true, the item stays hidden whenever no stowed socket is defined and the weapon set is inactive. Disable this only if you want inactive items to remain visible without a stow location."))

@@ -1,7 +1,7 @@
 #include "RpgWeaponPresentationComponent.h"
 
-#include "Animation/AnimInstance.h"
-#include "Animation/AnimMontage.h"
+#include "AbilitySystemComponent.h"
+#include "AbilitySystemInterface.h"
 #include "Camera/CameraComponent.h"
 #include "Components/SkeletalMeshComponent.h"
 #include "GameFramework/CharacterMovementComponent.h"
@@ -9,6 +9,7 @@
 #include "GameFramework/SpringArmComponent.h"
 #include "SurvivalRpg/Core/Character/RpgPawnExtensionComponent.h"
 #include "SurvivalRpg/Core/Player/RpgPlayerState.h"
+#include "SurvivalRpg/GameplayTags/GameplayTags.h"
 #include "SurvivalRpg/Items/Fragments/RpgItemFragment_Visual.h"
 #include "SurvivalRpg/Items/RpgItemInstance.h"
 
@@ -45,37 +46,38 @@ FRpgWeaponToolCharacterSettings URpgWeaponPresentationComponent::GetActiveWeapon
 	return FRpgWeaponToolCharacterSettings();
 }
 
-void URpgWeaponPresentationComponent::ApplyWeaponToolPresentationNotifyAction(ERpgWeaponToolPresentationNotifyAction Action)
+void URpgWeaponPresentationComponent::ShowWeaponSet(int32 WeaponSetIndex)
+{
+	if (VisibleWeaponSetIndex == WeaponSetIndex)
+	{
+		RefreshVisiblePresentationState();
+		return;
+	}
+
+	SetVisibleWeaponSetIndex(WeaponSetIndex);
+}
+
+void URpgWeaponPresentationComponent::ShowHolstered()
+{
+	if (VisibleWeaponSetIndex == INDEX_NONE)
+	{
+		RefreshVisiblePresentationState();
+		return;
+	}
+
+	SetVisibleWeaponSetIndex(INDEX_NONE);
+}
+
+void URpgWeaponPresentationComponent::SyncToAuthoritativeState()
 {
 	const int32 ActiveWeaponSetIndex = EquipmentComponent ? EquipmentComponent->GetActiveWeaponSetIndex() : INDEX_NONE;
-	switch (Action)
+	if (VisibleWeaponSetIndex == ActiveWeaponSetIndex)
 	{
-	case ERpgWeaponToolPresentationNotifyAction::ApplyCurrentState:
-	case ERpgWeaponToolPresentationNotifyAction::DrawActiveSet:
-		if (VisibleWeaponSetIndex == ActiveWeaponSetIndex)
-		{
-			RefreshVisiblePresentationState();
-		}
-		else
-		{
-			SetVisibleWeaponSetIndex(ActiveWeaponSetIndex);
-		}
-		break;
-
-	case ERpgWeaponToolPresentationNotifyAction::HolsterVisuals:
-		if (VisibleWeaponSetIndex == INDEX_NONE)
-		{
-			RefreshVisiblePresentationState();
-		}
-		else
-		{
-			SetVisibleWeaponSetIndex(INDEX_NONE);
-		}
-		break;
-
-	default:
-		break;
+		RefreshVisiblePresentationState();
+		return;
 	}
+
+	SetVisibleWeaponSetIndex(ActiveWeaponSetIndex);
 }
 
 void URpgWeaponPresentationComponent::HandlePawnContextChanged()
@@ -91,7 +93,8 @@ void URpgWeaponPresentationComponent::HandlePawnContextChanged()
 		return;
 	}
 
-	SyncFromEquipmentState(false, EquipmentComponent->GetActiveWeaponSetIndex());
+	SyncToAuthoritativeState();
+	ApplyActiveWeaponToolCharacterSettings();
 }
 
 void URpgWeaponPresentationComponent::HandleAbilitySystemInitialized()
@@ -111,12 +114,6 @@ void URpgWeaponPresentationComponent::HandleAbilitySystemUninitialized()
 }
 
 #if WITH_DEV_AUTOMATION_TESTS
-void URpgWeaponPresentationComponent::SetPendingAnimSwitchForTests(bool bPending)
-{
-	PendingAnimState.bPending = bPending;
-	UpdateTickEnabledState();
-}
-
 void URpgWeaponPresentationComponent::SetCameraBlendActiveForTests(bool bActive)
 {
 	CameraBlendState.bActive = bActive;
@@ -143,8 +140,6 @@ void URpgWeaponPresentationComponent::EndPlay(const EEndPlayReason::Type EndPlay
 void URpgWeaponPresentationComponent::TickComponent(float DeltaTime, ELevelTick TickType, FActorComponentTickFunction* ThisTickFunction)
 {
 	Super::TickComponent(DeltaTime, TickType, ThisTickFunction);
-
-	UpdatePendingAnimClassSwitch();
 	UpdateCameraBlend(DeltaTime);
 }
 
@@ -192,38 +187,13 @@ void URpgWeaponPresentationComponent::HandleEquipmentStateChanged(const FRpgEqui
 		return;
 	}
 
-	if (Event.HasActiveWeaponSetChanged())
-	{
-		SyncFromEquipmentState(true, Event.PreviousActiveWeaponSetIndex);
-		return;
-	}
-
-	ApplyActiveWeaponToolCharacterSettings();
-	RefreshVisiblePresentationState();
-}
-
-void URpgWeaponPresentationComponent::SyncFromEquipmentState(bool bAllowMontage, int32 PreviousActiveWeaponSetIndex)
-{
 	ApplyActiveWeaponToolCharacterSettings();
 
-	const int32 ActiveWeaponSetIndex = EquipmentComponent ? EquipmentComponent->GetActiveWeaponSetIndex() : INDEX_NONE;
-	if (EquipmentComponent != nullptr && bAllowMontage && PreviousActiveWeaponSetIndex != ActiveWeaponSetIndex)
+	APawn* VisualPawn = Bindings.Pawn.Get();
+	if (ShouldAutoSyncVisibleStateFromEquipment(VisualPawn) || !Event.HasActiveWeaponSetChanged())
 	{
-		const bool bUseEquipMontage = ActiveWeaponSetIndex != INDEX_NONE;
-		const int32 MontageWeaponSetIndex = bUseEquipMontage ? ActiveWeaponSetIndex : PreviousActiveWeaponSetIndex;
-		const bool bUsesNotifyDrivenPresentation = WeaponSetUsesPresentationNotify(MontageWeaponSetIndex, bUseEquipMontage);
-		const bool bPlayedMontage = PlayPresentationMontageForWeaponSet(MontageWeaponSetIndex, bUseEquipMontage);
-
-		if (!bUsesNotifyDrivenPresentation || !bPlayedMontage)
-		{
-			SetVisibleWeaponSetIndex(ActiveWeaponSetIndex);
-		}
-
-		return;
+		SyncToAuthoritativeState();
 	}
-
-	VisibleWeaponSetIndex = ActiveWeaponSetIndex;
-	RefreshVisiblePresentationState();
 }
 
 void URpgWeaponPresentationComponent::RefreshPresentationBindings()
@@ -243,11 +213,6 @@ void URpgWeaponPresentationComponent::RefreshPresentationBindings()
 	Bindings.MovementComponent = ResolvePresentationMovementComponent(Bindings.Pawn);
 	Bindings.CameraComponent = ResolvePresentationCameraComponent(Bindings.Pawn);
 	Bindings.SpringArmComponent = ResolvePresentationSpringArmComponent(Bindings.Pawn);
-
-	if (Bindings.Mesh != nullptr)
-	{
-		Defaults.AnimClass = Bindings.Mesh->GetAnimClass();
-	}
 
 	if (Bindings.MovementComponent != nullptr)
 	{
@@ -274,7 +239,6 @@ void URpgWeaponPresentationComponent::ResetPresentationBindings()
 {
 	Bindings = FRpgPresentationBindings();
 	Defaults = FRpgPresentationDefaults();
-	PendingAnimState = FRpgPendingAnimState();
 	CameraBlendState = FRpgCameraBlendState();
 	CameraBlendState.AppliedFOV = Defaults.CameraFOV;
 	CameraBlendState.AppliedSocketOffset = Defaults.SpringArmSocketOffset;
@@ -286,11 +250,6 @@ void URpgWeaponPresentationComponent::RestorePresentationDefaults()
 	if (VisualPawn == nullptr || VisualPawn->GetNetMode() == NM_DedicatedServer)
 	{
 		return;
-	}
-
-	if (ShouldApplyVisibleWeaponToolAnimClassToPawn(VisualPawn) && Bindings.Mesh != nullptr && Bindings.Mesh->GetAnimClass() != Defaults.AnimClass)
-	{
-		Bindings.Mesh->SetAnimInstanceClass(Defaults.AnimClass);
 	}
 
 	if (ShouldApplyActiveWeaponToolCharacterSettingsToPawn(VisualPawn) && Bindings.MovementComponent != nullptr)
@@ -331,13 +290,6 @@ void URpgWeaponPresentationComponent::ApplyActiveWeaponToolCharacterSettings()
 
 void URpgWeaponPresentationComponent::RefreshVisiblePresentationState()
 {
-	const URpgItemFragment_Visual* VisualFragment = GetPrimaryPresentationVisualFragmentForWeaponSet(VisibleWeaponSetIndex);
-	const FRpgWeaponToolCharacterSettings VisibleCharacterSettings = VisualFragment ? VisualFragment->GetWeaponToolCharacterSettings() : FRpgWeaponToolCharacterSettings();
-	const TSubclassOf<UAnimInstance> DesiredAnimClass = (VisibleCharacterSettings.bEnabled && VisibleCharacterSettings.AnimClass != nullptr)
-		? VisibleCharacterSettings.AnimClass
-		: Defaults.AnimClass;
-
-	QueuePendingAnimClassSwitch(DesiredAnimClass);
 	BroadcastActiveCameraSettingsIfChanged();
 	StartOrUpdateCameraBlend();
 	RefreshVisuals();
@@ -348,7 +300,7 @@ void URpgWeaponPresentationComponent::SetVisibleWeaponSetIndex(int32 InVisibleWe
 	int32 NewVisibleWeaponSetIndex = INDEX_NONE;
 	if (EquipmentComponent != nullptr
 		&& InVisibleWeaponSetIndex >= 0
-		&& InVisibleWeaponSetIndex < EquipmentComponent->GetDesiredWeaponSetCount())
+		&& InVisibleWeaponSetIndex < EquipmentComponent->GetWeaponSetCount())
 	{
 		NewVisibleWeaponSetIndex = InVisibleWeaponSetIndex;
 	}
@@ -372,17 +324,6 @@ void URpgWeaponPresentationComponent::BroadcastActiveCameraSettingsIfChanged()
 
 	LastBroadcastCameraSettings = NewCameraSettings;
 	OnActiveCameraSettingsChanged.Broadcast(NewCameraSettings);
-	if (EquipmentComponent != nullptr)
-	{
-		EquipmentComponent->BroadcastForwardedActiveCameraSettingsChanged(NewCameraSettings);
-	}
-}
-
-void URpgWeaponPresentationComponent::QueuePendingAnimClassSwitch(TSubclassOf<UAnimInstance> DesiredAnimClass)
-{
-	PendingAnimState.DesiredAnimClass = DesiredAnimClass;
-	PendingAnimState.bPending = Bindings.Mesh != nullptr && Bindings.Mesh->GetAnimClass() != DesiredAnimClass;
-	UpdateTickEnabledState();
 }
 
 void URpgWeaponPresentationComponent::StartOrUpdateCameraBlend()
@@ -433,41 +374,6 @@ void URpgWeaponPresentationComponent::StartOrUpdateCameraBlend()
 	CameraBlendState.Duration = DesiredBlendTime;
 	CameraBlendState.Elapsed = 0.0f;
 	CameraBlendState.bActive = true;
-	UpdateTickEnabledState();
-}
-
-void URpgWeaponPresentationComponent::UpdatePendingAnimClassSwitch()
-{
-	if (!PendingAnimState.bPending)
-	{
-		return;
-	}
-
-	APawn* VisualPawn = Bindings.Pawn.Get();
-	if (!ShouldApplyVisibleWeaponToolAnimClassToPawn(VisualPawn) || Bindings.Mesh == nullptr)
-	{
-		return;
-	}
-
-	if (Bindings.Mesh->GetAnimClass() == PendingAnimState.DesiredAnimClass)
-	{
-		PendingAnimState.bPending = false;
-		UpdateTickEnabledState();
-		return;
-	}
-
-	UAnimInstance* CurrentAnimInstance = Bindings.Mesh->GetAnimInstance();
-	if (Bindings.Mesh->IsRunningParallelEvaluation()
-		|| (CurrentAnimInstance != nullptr
-			&& (CurrentAnimInstance->IsRunningParallelEvaluation()
-				|| CurrentAnimInstance->IsUpdatingAnimation()
-				|| CurrentAnimInstance->IsPostUpdatingAnimation())))
-	{
-		return;
-	}
-
-	Bindings.Mesh->SetAnimInstanceClass(PendingAnimState.DesiredAnimClass);
-	PendingAnimState.bPending = false;
 	UpdateTickEnabledState();
 }
 
@@ -526,7 +432,7 @@ void URpgWeaponPresentationComponent::ApplyCameraBlendAlpha(float BlendAlpha)
 
 void URpgWeaponPresentationComponent::UpdateTickEnabledState()
 {
-	SetComponentTickEnabled(PendingAnimState.bPending || CameraBlendState.bActive);
+	SetComponentTickEnabled(CameraBlendState.bActive);
 }
 
 bool URpgWeaponPresentationComponent::ShouldApplyActiveWeaponToolCharacterSettingsToPawn(const APawn* VisualPawn) const
@@ -539,14 +445,27 @@ bool URpgWeaponPresentationComponent::ShouldApplyActiveWeaponToolCharacterSettin
 	return VisualPawn->HasAuthority() || VisualPawn->IsLocallyControlled();
 }
 
-bool URpgWeaponPresentationComponent::ShouldApplyVisibleWeaponToolAnimClassToPawn(const APawn* VisualPawn) const
-{
-	return VisualPawn != nullptr && VisualPawn->GetNetMode() != NM_DedicatedServer;
-}
-
 bool URpgWeaponPresentationComponent::ShouldApplyVisibleWeaponToolCameraSettingsToPawn(const APawn* VisualPawn) const
 {
 	return VisualPawn != nullptr && VisualPawn->GetNetMode() != NM_DedicatedServer && VisualPawn->IsLocallyControlled();
+}
+
+bool URpgWeaponPresentationComponent::ShouldAutoSyncVisibleStateFromEquipment(const APawn* VisualPawn) const
+{
+	if (VisualPawn == nullptr || !VisualPawn->IsLocallyControlled())
+	{
+		return true;
+	}
+
+	if (const IAbilitySystemInterface* AbilitySystemInterface = Cast<IAbilitySystemInterface>(VisualPawn))
+	{
+		if (const UAbilitySystemComponent* AbilitySystemComponent = AbilitySystemInterface->GetAbilitySystemComponent())
+		{
+			return !AbilitySystemComponent->HasMatchingGameplayTag(RpgGameplayTags::Status_EquipTransition);
+		}
+	}
+
+	return true;
 }
 
 URpgEquipmentComponent* URpgWeaponPresentationComponent::ResolveEquipmentComponent() const
@@ -597,24 +516,6 @@ const URpgItemFragment_Visual* URpgWeaponPresentationComponent::GetPrimaryPresen
 	return nullptr;
 }
 
-bool URpgWeaponPresentationComponent::WeaponSetUsesPresentationNotify(int32 WeaponSetIndex, bool bUseEquipMontage) const
-{
-	return EquipmentComponent != nullptr && EquipmentComponent->WeaponSetUsesPresentationNotify(WeaponSetIndex, bUseEquipMontage);
-}
-
-bool URpgWeaponPresentationComponent::PlayPresentationMontageForWeaponSet(int32 WeaponSetIndex, bool bUseEquipMontage) const
-{
-	const URpgItemFragment_Visual* VisualFragment = GetPrimaryPresentationVisualFragmentForWeaponSet(WeaponSetIndex);
-	if (VisualFragment == nullptr || Bindings.Mesh == nullptr)
-	{
-		return false;
-	}
-
-	UAnimMontage* MontageToPlay = bUseEquipMontage ? VisualFragment->GetEquipMontage() : VisualFragment->GetUnequipMontage();
-	UAnimInstance* AnimInstance = Bindings.Mesh->GetAnimInstance();
-	return MontageToPlay != nullptr && AnimInstance != nullptr && AnimInstance->Montage_Play(MontageToPlay) > 0.0f;
-}
-
 void URpgWeaponPresentationComponent::RefreshVisuals()
 {
 	if (Bindings.Pawn == nullptr || Bindings.Pawn->GetNetMode() == NM_DedicatedServer || EquipmentComponent == nullptr)
@@ -646,6 +547,7 @@ void URpgWeaponPresentationComponent::RefreshVisuals()
 		return;
 	}
 
+	const FRpgEquippedWeaponSet VisibleWeaponSet = EquipmentComponent->GetWeaponSet(VisibleWeaponSetIndex);
 	for (URpgItemInstance* ItemInstance : EquippedItems)
 	{
 		const URpgItemFragment_Visual* VisualFragment = ItemInstance ? ItemInstance->FindFragmentByClass<URpgItemFragment_Visual>() : nullptr;
@@ -661,8 +563,7 @@ void URpgWeaponPresentationComponent::RefreshVisuals()
 			continue;
 		}
 
-		const bool bIsVisibleEquippedItem = EquipmentComponent->GetWeaponSet(VisibleWeaponSetIndex).MainHandItem == ItemInstance
-			|| EquipmentComponent->GetWeaponSet(VisibleWeaponSetIndex).OffHandItem == ItemInstance;
+		const bool bIsVisibleEquippedItem = VisibleWeaponSet.MainHandItem == ItemInstance || VisibleWeaponSet.OffHandItem == ItemInstance;
 		const FName DesiredSocket = bIsVisibleEquippedItem ? VisualFragment->GetEquippedSocketName() : VisualFragment->GetStowedSocketName();
 		const bool bShouldHide = !bIsVisibleEquippedItem && DesiredSocket.IsNone() && VisualFragment->ShouldHideWhenInactiveWithoutStowedSocket();
 

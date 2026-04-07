@@ -2,18 +2,20 @@
 
 #include "CoreMinimal.h"
 #include "Components/ActorComponent.h"
+#include "SurvivalRpg/Items/Fragments/RpgItemFragment_Visual.h"
 #include "RpgEquipmentComponent.h"
 #include "RpgWeaponPresentationComponent.generated.h"
 
 class AActor;
 class APawn;
-class UAnimInstance;
 class UCameraComponent;
 class UCharacterMovementComponent;
 class USkeletalMeshComponent;
 class USpringArmComponent;
 class URpgEquipmentComponent;
 class URpgPawnExtensionComponent;
+
+DECLARE_DYNAMIC_MULTICAST_DELEGATE_OneParam(FRpgActiveCameraSettingsChangedSignature, FRpgWeaponToolCameraSettings, CameraSettings);
 
 USTRUCT()
 struct FRpgWeaponPresentationVisualEntry
@@ -54,9 +56,6 @@ struct FRpgPresentationDefaults
 	GENERATED_BODY()
 
 	UPROPERTY(Transient)
-	TSubclassOf<UAnimInstance> AnimClass = nullptr;
-
-	UPROPERTY(Transient)
 	float MaxWalkSpeed = 600.0f;
 
 	UPROPERTY(Transient)
@@ -70,18 +69,6 @@ struct FRpgPresentationDefaults
 
 	UPROPERTY(Transient)
 	FVector SpringArmSocketOffset = FVector::ZeroVector;
-};
-
-USTRUCT()
-struct FRpgPendingAnimState
-{
-	GENERATED_BODY()
-
-	UPROPERTY(Transient)
-	TSubclassOf<UAnimInstance> DesiredAnimClass = nullptr;
-
-	UPROPERTY(Transient)
-	bool bPending = false;
 };
 
 USTRUCT()
@@ -135,7 +122,13 @@ public:
 	FRpgWeaponToolCharacterSettings GetActiveWeaponToolCharacterSettings() const;
 
 	UFUNCTION(BlueprintCallable, Category = "Equipment|Presentation")
-	void ApplyWeaponToolPresentationNotifyAction(ERpgWeaponToolPresentationNotifyAction Action);
+	void ShowWeaponSet(int32 WeaponSetIndex);
+
+	UFUNCTION(BlueprintCallable, Category = "Equipment|Presentation")
+	void ShowHolstered();
+
+	UFUNCTION(BlueprintCallable, Category = "Equipment|Presentation")
+	void SyncToAuthoritativeState();
 
 	void HandlePawnContextChanged();
 	void HandleAbilitySystemInitialized();
@@ -145,7 +138,6 @@ public:
 	FRpgActiveCameraSettingsChangedSignature OnActiveCameraSettingsChanged;
 
 #if WITH_DEV_AUTOMATION_TESTS
-	void SetPendingAnimSwitchForTests(bool bPending);
 	void SetCameraBlendActiveForTests(bool bActive);
 	bool IsPresentationTickEnabledForTests() const { return IsComponentTickEnabled(); }
 	int32 GetVisibleWeaponSetIndexForTests() const { return VisibleWeaponSetIndex; }
@@ -161,7 +153,6 @@ private:
 	void UnbindEquipmentComponent();
 	void BindEquipmentComponent(URpgEquipmentComponent* InEquipmentComponent);
 	void HandleEquipmentStateChanged(const FRpgEquipmentStateChangedEvent& Event);
-	void SyncFromEquipmentState(bool bAllowMontage, int32 PreviousActiveWeaponSetIndex);
 	void RefreshPresentationBindings();
 	void ResetPresentationBindings();
 	void RestorePresentationDefaults();
@@ -169,15 +160,13 @@ private:
 	void RefreshVisiblePresentationState();
 	void SetVisibleWeaponSetIndex(int32 InVisibleWeaponSetIndex);
 	void BroadcastActiveCameraSettingsIfChanged();
-	void QueuePendingAnimClassSwitch(TSubclassOf<UAnimInstance> DesiredAnimClass);
 	void StartOrUpdateCameraBlend();
-	void UpdatePendingAnimClassSwitch();
 	void UpdateCameraBlend(float DeltaTime);
 	void ApplyCameraBlendAlpha(float BlendAlpha);
 	void UpdateTickEnabledState();
 	bool ShouldApplyActiveWeaponToolCharacterSettingsToPawn(const APawn* VisualPawn) const;
-	bool ShouldApplyVisibleWeaponToolAnimClassToPawn(const APawn* VisualPawn) const;
 	bool ShouldApplyVisibleWeaponToolCameraSettingsToPawn(const APawn* VisualPawn) const;
+	bool ShouldAutoSyncVisibleStateFromEquipment(const APawn* VisualPawn) const;
 	URpgEquipmentComponent* ResolveEquipmentComponent() const;
 	USkeletalMeshComponent* ResolvePresentationMesh(APawn* VisualPawn) const;
 	UCharacterMovementComponent* ResolvePresentationMovementComponent(APawn* VisualPawn) const;
@@ -185,8 +174,6 @@ private:
 	USpringArmComponent* ResolvePresentationSpringArmComponent(APawn* VisualPawn) const;
 	URpgItemInstance* GetPrimaryPresentationItemForWeaponSet(int32 WeaponSetIndex) const;
 	const URpgItemFragment_Visual* GetPrimaryPresentationVisualFragmentForWeaponSet(int32 WeaponSetIndex) const;
-	bool WeaponSetUsesPresentationNotify(int32 WeaponSetIndex, bool bUseEquipMontage) const;
-	bool PlayPresentationMontageForWeaponSet(int32 WeaponSetIndex, bool bUseEquipMontage) const;
 	void RefreshVisuals();
 	AActor* FindVisualActorForItem(const URpgItemInstance* ItemInstance) const;
 	AActor* FindOrSpawnVisualActor(URpgItemInstance* ItemInstance);
@@ -201,9 +188,6 @@ private:
 
 	UPROPERTY(Transient)
 	FRpgPresentationDefaults Defaults;
-
-	UPROPERTY(Transient)
-	FRpgPendingAnimState PendingAnimState;
 
 	UPROPERTY(Transient)
 	FRpgCameraBlendState CameraBlendState;

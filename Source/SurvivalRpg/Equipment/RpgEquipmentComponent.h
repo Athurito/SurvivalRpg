@@ -5,7 +5,6 @@
 #include "GameplayEffect.h"
 #include "GameplayTagContainer.h"
 #include "SurvivalRpg/AbilitySystem/RpgAbilitySet.h"
-#include "SurvivalRpg/Items/Fragments/RpgItemFragment_Visual.h"
 #include "SurvivalRpg/Items/RpgItemGrantTypes.h"
 #include "SurvivalRpg/Items/RpgItemSourceHandle.h"
 #include "RpgEquipmentComponent.generated.h"
@@ -17,7 +16,6 @@ class URpgAbilitySystemComponent;
 class URpgEquipmentRuleset;
 class URpgItemDefinition;
 class URpgItemInstance;
-class URpgWeaponPresentationComponent;
 
 UENUM()
 enum class ERpgEquipmentHandSlot : uint8
@@ -86,7 +84,6 @@ FORCEINLINE uint32 GetTypeHash(const FRpgItemGameplayEffectGrantKey& Key)
 }
 
 DECLARE_DYNAMIC_MULTICAST_DELEGATE(FRpgEquipmentChangedSignature);
-DECLARE_DYNAMIC_MULTICAST_DELEGATE_OneParam(FRpgActiveCameraSettingsChangedSignature, FRpgWeaponToolCameraSettings, CameraSettings);
 DECLARE_MULTICAST_DELEGATE_OneParam(FRpgEquipmentStateChangedNativeSignature, const FRpgEquipmentStateChangedEvent&);
 
 UCLASS(ClassGroup = (Custom), BlueprintType, meta = (BlueprintSpawnableComponent))
@@ -125,7 +122,10 @@ public:
 	bool TryUnequipItem(FGameplayTag SlotTag);
 
 	UFUNCTION(BlueprintCallable, Category = "Equipment")
-	bool TryActivateWeaponSet(int32 WeaponSetIndex);
+	bool SetActiveWeaponSet(int32 WeaponSetIndex);
+
+	UFUNCTION(BlueprintCallable, Category = "Equipment")
+	bool ClearActiveWeaponSet();
 
 	UFUNCTION(BlueprintPure, Category = "Equipment")
 	FRpgEquippedWeaponSet GetActiveWeaponSet() const;
@@ -136,14 +136,8 @@ public:
 	UFUNCTION(BlueprintPure, Category = "Equipment")
 	int32 GetActiveWeaponSetIndex() const { return ActiveWeaponSetIndex; }
 
-	UFUNCTION(BlueprintPure, Category = "Equipment|Presentation")
-	FRpgWeaponToolCameraSettings GetActiveCameraSettings() const;
-
-	UFUNCTION(BlueprintPure, Category = "Equipment|Presentation")
-	FRpgWeaponToolCharacterSettings GetActiveWeaponToolCharacterSettings() const;
-
-	UFUNCTION(BlueprintCallable, Category = "Equipment|Presentation")
-	void ApplyWeaponToolPresentationNotifyAction(ERpgWeaponToolPresentationNotifyAction Action);
+	UFUNCTION(BlueprintPure, Category = "Equipment")
+	int32 GetWeaponSetCount() const { return GetDesiredWeaponSetCount(); }
 
 	UFUNCTION(BlueprintCallable, Category = "Equipment")
 	void GetEquippedItems(TArray<URpgItemInstance*>& OutItems) const;
@@ -154,15 +148,11 @@ public:
 	UPROPERTY(BlueprintAssignable, Category = "Equipment")
 	FRpgEquipmentChangedSignature OnEquipmentChanged;
 
-	UPROPERTY(BlueprintAssignable, Category = "Equipment|Presentation")
-	FRpgActiveCameraSettingsChangedSignature OnActiveCameraSettingsChanged;
-
 	FRpgEquipmentStateChangedNativeSignature& OnEquipmentStateChangedNative() { return EquipmentStateChangedNative; }
 	const FRpgEquipmentStateChangedNativeSignature& OnEquipmentStateChangedNative() const { return EquipmentStateChangedNative; }
 
 #if WITH_DEV_AUTOMATION_TESTS
 	void SetAbilitySystemOverrideForTests(URpgAbilitySystemComponent* InAbilitySystemComponent) { AbilitySystemOverrideForTests = InAbilitySystemComponent; }
-	bool UsesWeaponToolPresentationNotifyForTests(int32 WeaponSetIndex, bool bUseEquipMontage) const { return WeaponSetUsesPresentationNotify(WeaponSetIndex, bUseEquipMontage); }
 	int32 GetKnownItemInstanceCountForTests() const { return KnownItemInstances.Num(); }
 #endif
 
@@ -184,7 +174,10 @@ protected:
 	void ServerTryUnequipItem(FGameplayTag SlotTag);
 
 	UFUNCTION(Server, Reliable)
-	void ServerTryActivateWeaponSet(int32 WeaponSetIndex);
+	void ServerSetActiveWeaponSet(int32 WeaponSetIndex);
+
+	UFUNCTION(Server, Reliable)
+	void ServerClearActiveWeaponSet();
 
 private:
 	bool HasAuthorityForEquipment() const;
@@ -204,18 +197,9 @@ private:
 	void ReconcileAppliedGrants();
 	void CompactKnownItemInstances();
 	URpgAbilitySystemComponent* ResolveAbilitySystemComponent() const;
-	URpgItemInstance* GetPrimaryPresentationItemForWeaponSet(int32 WeaponSetIndex) const;
-	const class URpgItemFragment_Visual* GetPrimaryPresentationVisualFragmentForWeaponSet(int32 WeaponSetIndex) const;
-	bool WeaponSetUsesPresentationNotify(int32 WeaponSetIndex, bool bUseEquipMontage) const;
 	void ForceOwnerNetUpdate() const;
 	void BroadcastStateChangedNative(const FRpgEquipmentStateChangedEvent& Event);
-	FRpgWeaponToolCameraSettings ResolveActiveCameraSettings() const;
-	FRpgWeaponToolCharacterSettings ResolveActiveWeaponToolCharacterSettings() const;
-	URpgWeaponPresentationComponent* ResolvePresentationComponent() const;
-	void BroadcastForwardedActiveCameraSettingsChanged(const FRpgWeaponToolCameraSettings& CameraSettings);
 	bool AreWeaponSetsEqual(const TArray<FRpgEquippedWeaponSet>& Left, const TArray<FRpgEquippedWeaponSet>& Right) const;
-
-	friend class URpgWeaponPresentationComponent;
 
 	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Equipment", meta = (AllowPrivateAccess = "true"))
 	TObjectPtr<const URpgEquipmentRuleset> EquipmentRuleset = nullptr;

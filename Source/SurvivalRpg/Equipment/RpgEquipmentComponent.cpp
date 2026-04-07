@@ -1,20 +1,15 @@
 #include "RpgEquipmentComponent.h"
 
-#include "Animation/AnimMontage.h"
 #include "Engine/ActorChannel.h"
-#include "GameFramework/Pawn.h"
 #include "GameplayEffect.h"
 #include "Net/UnrealNetwork.h"
 #include "SurvivalRpg/AbilitySystem/RpgAbilitySystemComponent.h"
 #include "SurvivalRpg/Core/Player/RpgPlayerState.h"
 #include "SurvivalRpg/GameplayTags/GameplayTags.h"
 #include "SurvivalRpg/Items/Fragments/RpgItemFragment_Equipment.h"
-#include "SurvivalRpg/Items/Fragments/RpgItemFragment_Visual.h"
 #include "SurvivalRpg/Items/Fragments/RpgItemFragment_Weapon.h"
 #include "SurvivalRpg/Items/RpgItemInstance.h"
-#include "AnimNotify_RpgWeaponToolPresentation.h"
 #include "RpgEquipmentRuleset.h"
-#include "RpgWeaponPresentationComponent.h"
 
 namespace
 {
@@ -308,11 +303,11 @@ bool URpgEquipmentComponent::TryUnequipItem(FGameplayTag SlotTag)
 	return true;
 }
 
-bool URpgEquipmentComponent::TryActivateWeaponSet(int32 WeaponSetIndex)
+bool URpgEquipmentComponent::SetActiveWeaponSet(int32 WeaponSetIndex)
 {
 	if (!HasAuthorityForEquipment())
 	{
-		ServerTryActivateWeaponSet(WeaponSetIndex);
+		ServerSetActiveWeaponSet(WeaponSetIndex);
 		return true;
 	}
 
@@ -322,15 +317,35 @@ bool URpgEquipmentComponent::TryActivateWeaponSet(int32 WeaponSetIndex)
 	}
 
 	EnsureWeaponSetCount();
-	const int32 NewActiveWeaponSetIndex = (ActiveWeaponSetIndex == WeaponSetIndex) ? INDEX_NONE : WeaponSetIndex;
-	if (NewActiveWeaponSetIndex == ActiveWeaponSetIndex)
+	if (ActiveWeaponSetIndex == WeaponSetIndex)
 	{
 		return false;
 	}
 
 	const TArray<FRpgEquippedWeaponSet> PreviousWeaponSets = WeaponSets;
 	const int32 PreviousActiveWeaponSetIndex = ActiveWeaponSetIndex;
-	ActiveWeaponSetIndex = NewActiveWeaponSetIndex;
+	ActiveWeaponSetIndex = WeaponSetIndex;
+	HandleEquipmentStateChanged(PreviousWeaponSets, PreviousActiveWeaponSetIndex);
+	return true;
+}
+
+bool URpgEquipmentComponent::ClearActiveWeaponSet()
+{
+	if (!HasAuthorityForEquipment())
+	{
+		ServerClearActiveWeaponSet();
+		return true;
+	}
+
+	EnsureWeaponSetCount();
+	if (ActiveWeaponSetIndex == INDEX_NONE)
+	{
+		return false;
+	}
+
+	const TArray<FRpgEquippedWeaponSet> PreviousWeaponSets = WeaponSets;
+	const int32 PreviousActiveWeaponSetIndex = ActiveWeaponSetIndex;
+	ActiveWeaponSetIndex = INDEX_NONE;
 	HandleEquipmentStateChanged(PreviousWeaponSets, PreviousActiveWeaponSetIndex);
 	return true;
 }
@@ -348,24 +363,6 @@ FRpgEquippedWeaponSet URpgEquipmentComponent::GetWeaponSet(int32 WeaponSetIndex)
 	}
 
 	return FRpgEquippedWeaponSet();
-}
-
-FRpgWeaponToolCameraSettings URpgEquipmentComponent::GetActiveCameraSettings() const
-{
-	return ResolveActiveCameraSettings();
-}
-
-FRpgWeaponToolCharacterSettings URpgEquipmentComponent::GetActiveWeaponToolCharacterSettings() const
-{
-	return ResolveActiveWeaponToolCharacterSettings();
-}
-
-void URpgEquipmentComponent::ApplyWeaponToolPresentationNotifyAction(ERpgWeaponToolPresentationNotifyAction Action)
-{
-	if (URpgWeaponPresentationComponent* PresentationComponent = ResolvePresentationComponent())
-	{
-		PresentationComponent->ApplyWeaponToolPresentationNotifyAction(Action);
-	}
 }
 
 void URpgEquipmentComponent::GetEquippedItems(TArray<URpgItemInstance*>& OutItems) const
@@ -444,9 +441,14 @@ void URpgEquipmentComponent::ServerTryUnequipItem_Implementation(FGameplayTag Sl
 	TryUnequipItem(SlotTag);
 }
 
-void URpgEquipmentComponent::ServerTryActivateWeaponSet_Implementation(int32 WeaponSetIndex)
+void URpgEquipmentComponent::ServerSetActiveWeaponSet_Implementation(int32 WeaponSetIndex)
 {
-	TryActivateWeaponSet(WeaponSetIndex);
+	SetActiveWeaponSet(WeaponSetIndex);
+}
+
+void URpgEquipmentComponent::ServerClearActiveWeaponSet_Implementation()
+{
+	ClearActiveWeaponSet();
 }
 
 bool URpgEquipmentComponent::HasAuthorityForEquipment() const
@@ -922,52 +924,6 @@ URpgAbilitySystemComponent* URpgEquipmentComponent::ResolveAbilitySystemComponen
 	return nullptr;
 }
 
-URpgItemInstance* URpgEquipmentComponent::GetPrimaryPresentationItemForWeaponSet(int32 WeaponSetIndex) const
-{
-	if (!WeaponSets.IsValidIndex(WeaponSetIndex))
-	{
-		return nullptr;
-	}
-
-	const FRpgEquippedWeaponSet& WeaponSet = WeaponSets[WeaponSetIndex];
-	return WeaponSet.MainHandItem != nullptr ? WeaponSet.MainHandItem : WeaponSet.OffHandItem;
-}
-
-const URpgItemFragment_Visual* URpgEquipmentComponent::GetPrimaryPresentationVisualFragmentForWeaponSet(int32 WeaponSetIndex) const
-{
-	if (URpgItemInstance* PresentationItem = GetPrimaryPresentationItemForWeaponSet(WeaponSetIndex))
-	{
-		return PresentationItem->FindFragmentByClass<URpgItemFragment_Visual>();
-	}
-
-	return nullptr;
-}
-
-bool URpgEquipmentComponent::WeaponSetUsesPresentationNotify(int32 WeaponSetIndex, bool bUseEquipMontage) const
-{
-	const URpgItemFragment_Visual* VisualFragment = GetPrimaryPresentationVisualFragmentForWeaponSet(WeaponSetIndex);
-	if (VisualFragment == nullptr)
-	{
-		return false;
-	}
-
-	const UAnimMontage* MontageToInspect = bUseEquipMontage ? VisualFragment->GetEquipMontage() : VisualFragment->GetUnequipMontage();
-	if (MontageToInspect == nullptr)
-	{
-		return false;
-	}
-
-	for (const FAnimNotifyEvent& NotifyEvent : MontageToInspect->Notifies)
-	{
-		if (NotifyEvent.Notify != nullptr && NotifyEvent.Notify->IsA<UAnimNotify_RpgWeaponToolPresentation>())
-		{
-			return true;
-		}
-	}
-
-	return false;
-}
-
 void URpgEquipmentComponent::ForceOwnerNetUpdate() const
 {
 	if (AActor* OwnerActor = GetOwner())
@@ -979,48 +935,6 @@ void URpgEquipmentComponent::ForceOwnerNetUpdate() const
 void URpgEquipmentComponent::BroadcastStateChangedNative(const FRpgEquipmentStateChangedEvent& Event)
 {
 	EquipmentStateChangedNative.Broadcast(Event);
-}
-
-FRpgWeaponToolCameraSettings URpgEquipmentComponent::ResolveActiveCameraSettings() const
-{
-	if (const URpgWeaponPresentationComponent* PresentationComponent = ResolvePresentationComponent())
-	{
-		return PresentationComponent->GetActiveCameraSettings();
-	}
-
-	if (const URpgItemFragment_Visual* VisualFragment = GetPrimaryPresentationVisualFragmentForWeaponSet(ActiveWeaponSetIndex))
-	{
-		return VisualFragment->GetWeaponToolCameraSettings();
-	}
-
-	return FRpgWeaponToolCameraSettings();
-}
-
-FRpgWeaponToolCharacterSettings URpgEquipmentComponent::ResolveActiveWeaponToolCharacterSettings() const
-{
-	if (const URpgWeaponPresentationComponent* PresentationComponent = ResolvePresentationComponent())
-	{
-		return PresentationComponent->GetActiveWeaponToolCharacterSettings();
-	}
-
-	if (const URpgItemFragment_Visual* VisualFragment = GetPrimaryPresentationVisualFragmentForWeaponSet(ActiveWeaponSetIndex))
-	{
-		return VisualFragment->GetWeaponToolCharacterSettings();
-	}
-
-	return FRpgWeaponToolCharacterSettings();
-}
-
-URpgWeaponPresentationComponent* URpgEquipmentComponent::ResolvePresentationComponent() const
-{
-	const ARpgPlayerState* PlayerState = Cast<ARpgPlayerState>(GetOwner());
-	APawn* VisualPawn = PlayerState ? PlayerState->GetPawn() : nullptr;
-	return VisualPawn ? VisualPawn->FindComponentByClass<URpgWeaponPresentationComponent>() : nullptr;
-}
-
-void URpgEquipmentComponent::BroadcastForwardedActiveCameraSettingsChanged(const FRpgWeaponToolCameraSettings& CameraSettings)
-{
-	OnActiveCameraSettingsChanged.Broadcast(CameraSettings);
 }
 
 bool URpgEquipmentComponent::AreWeaponSetsEqual(const TArray<FRpgEquippedWeaponSet>& Left, const TArray<FRpgEquippedWeaponSet>& Right) const

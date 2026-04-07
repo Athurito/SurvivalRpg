@@ -21,10 +21,14 @@ namespace RpgGameplayTags
 	UE_DEFINE_GAMEPLAY_TAG_COMMENT(GameplayEvent_RequestReset, "GameplayEvent.RequestReset", "Event to request a player's pawn to be instantly replaced with a new one at a valid spawn location.");
 	UE_DEFINE_GAMEPLAY_TAG_COMMENT(GameplayEvent_Downed, "GameplayEvent.Downed", "Event that fires when a target enters the downed state.");
 	UE_DEFINE_GAMEPLAY_TAG_COMMENT(GameplayEvent_Revive, "GameplayEvent.Revive", "Event that fires when a target is revived.");
+	UE_DEFINE_GAMEPLAY_TAG_COMMENT(GameplayEvent_Equip_ApplyCurrentState, "GameplayEvent.Equip.ApplyCurrentState", "Equip notify requests that visible presentation snaps to the current authoritative state.");
+	UE_DEFINE_GAMEPLAY_TAG_COMMENT(GameplayEvent_Equip_HolsterVisible, "GameplayEvent.Equip.HolsterVisible", "Equip notify requests that the current weapon visuals become holstered or hidden.");
+	UE_DEFINE_GAMEPLAY_TAG_COMMENT(GameplayEvent_Equip_DrawActiveSet, "GameplayEvent.Equip.DrawActiveSet", "Equip notify requests that the active weapon set becomes visible.");
 	
 	// ---------------- Status ----------------
 	UE_DEFINE_GAMEPLAY_TAG_COMMENT(Status_Crouching, "Status.Crouching", "Target is crouching.");
 	UE_DEFINE_GAMEPLAY_TAG_COMMENT(Status_AutoRunning, "Status.AutoRunning", "Target is auto-running.");
+	UE_DEFINE_GAMEPLAY_TAG_COMMENT(Status_EquipTransition, "Status.EquipTransition", "Target is currently transitioning between visible equip states.");
 	UE_DEFINE_GAMEPLAY_TAG_COMMENT(State_Dead, "State.Dead", "Target is dead or currently dying.");
 	UE_DEFINE_GAMEPLAY_TAG_COMMENT(Status_Death, "Status.Death", "Target has the death status.");
 	UE_DEFINE_GAMEPLAY_TAG_COMMENT(Status_Death_Dying, "Status.Death.Dying", "Target has begun the death process.");
