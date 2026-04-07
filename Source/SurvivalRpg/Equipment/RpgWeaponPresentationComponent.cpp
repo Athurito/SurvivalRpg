@@ -452,11 +452,15 @@ bool URpgWeaponPresentationComponent::ShouldApplyVisibleWeaponToolCameraSettings
 
 bool URpgWeaponPresentationComponent::ShouldAutoSyncVisibleStateFromEquipment(const APawn* VisualPawn) const
 {
-	if (VisualPawn == nullptr || !VisualPawn->IsLocallyControlled())
+	if (VisualPawn == nullptr)
 	{
 		return true;
 	}
 
+	// Check the equip-transition tag on ALL pawns (local and remote).  The server
+	// keeps the activate-weapon-set ability alive while the montage plays, so the
+	// tag replicates to every client and prevents an instant visual snap while the
+	// equip animation is still running.
 	if (const IAbilitySystemInterface* AbilitySystemInterface = Cast<IAbilitySystemInterface>(VisualPawn))
 	{
 		if (const UAbilitySystemComponent* AbilitySystemComponent = AbilitySystemInterface->GetAbilitySystemComponent())

@@ -53,6 +53,7 @@ void UAnimNotify_RpgWeaponToolPresentation::Notify(USkeletalMeshComponent* MeshC
 		return;
 	}
 
+	// Send gameplay event through ASC (for a locally running ability to pick up).
 	if (IAbilitySystemInterface* AbilitySystemInterface = Cast<IAbilitySystemInterface>(OwningPawn))
 	{
 		if (UAbilitySystemComponent* AbilitySystemComponent = AbilitySystemInterface->GetAbilitySystemComponent())
@@ -62,10 +63,18 @@ void UAnimNotify_RpgWeaponToolPresentation::Notify(USkeletalMeshComponent* MeshC
 			Payload.Instigator = OwningPawn;
 			Payload.Target = OwningPawn;
 			AbilitySystemComponent->HandleGameplayEvent(Payload.EventTag, &Payload);
-			return;
+
+			// For the locally controlled pawn the ability's event tasks drive the
+			// presentation – no need to do it again here.
+			if (OwningPawn->IsLocallyControlled())
+			{
+				return;
+			}
 		}
 	}
 
+	// For remote pawns (or pawns without an ASC) directly drive the presentation
+	// component because no ability event task is listening on this machine.
 	if (URpgWeaponPresentationComponent* PresentationComponent = OwningPawn->FindComponentByClass<URpgWeaponPresentationComponent>())
 	{
 		switch (Action)

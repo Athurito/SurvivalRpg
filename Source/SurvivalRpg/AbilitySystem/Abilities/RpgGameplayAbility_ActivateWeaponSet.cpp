@@ -57,44 +57,46 @@ void URpgGameplayAbility_ActivateWeaponSet::ActivateAbility(
 		}
 	}
 
-	if (!ShouldDrivePresentationLocally(ActorInfo))
-	{
-		EndAbility(Handle, ActorInfo, ActivationInfo, true, false);
-		return;
-	}
-
-	URpgWeaponPresentationComponent* PresentationComponent = ResolvePresentationComponent(ActorInfo);
-	if (PresentationComponent == nullptr)
-	{
-		EndAbility(Handle, ActorInfo, ActivationInfo, true, false);
-		return;
-	}
-
+	// Resolve the montage early – it must be played on ALL machines (including the
+	// server) so that the animation state replicates to remote observers.
 	const bool bUseEquipMontage = !bHolsterCurrentSet;
 	const int32 MontageWeaponSetIndex = bUseEquipMontage ? WeaponSetIndex : PreviousActiveWeaponSetIndex;
 	UAnimMontage* MontageToPlay = ResolvePresentationMontage(EquipmentComponent, MontageWeaponSetIndex, bUseEquipMontage);
-	const bool bUsesPresentationNotify = MontageUsesPresentationNotify(MontageToPlay);
 
-	if (!bUsesPresentationNotify)
+	const bool bDrivePresentationLocally = ShouldDrivePresentationLocally(ActorInfo);
+
+	// Local presentation driving (only for locally controlled pawns)
+	if (bDrivePresentationLocally)
 	{
-		ApplyPredictedVisibleState();
+		URpgWeaponPresentationComponent* PresentationComponent = ResolvePresentationComponent(ActorInfo);
+		if (PresentationComponent == nullptr)
+		{
+			EndAbility(Handle, ActorInfo, ActivationInfo, false, false);
+			return;
+		}
+
+		const bool bUsesPresentationNotify = MontageUsesPresentationNotify(MontageToPlay);
+		if (!bUsesPresentationNotify)
+		{
+			ApplyPredictedVisibleState();
+		}
 	}
 
 	if (MontageToPlay == nullptr)
 	{
-		EndAbility(Handle, ActorInfo, ActivationInfo, true, false);
+		EndAbility(Handle, ActorInfo, ActivationInfo, bDrivePresentationLocally, false);
 		return;
 	}
 
-	StartWaitingForEquipEvent(RpgGameplayTags::GameplayEvent_Equip_ApplyCurrentState);
-	StartWaitingForEquipEvent(RpgGameplayTags::GameplayEvent_Equip_HolsterVisible);
-	StartWaitingForEquipEvent(RpgGameplayTags::GameplayEvent_Equip_DrawActiveSet);
-
+	// Play montage on ALL machines so the animation replicates to remote observers.
 	ActiveMontageTask = UAbilityTask_PlayMontageAndWait::CreatePlayMontageAndWaitProxy(this, NAME_None, MontageToPlay);
 	if (ActiveMontageTask == nullptr)
 	{
-		ApplyPredictedVisibleState();
-		EndAbility(Handle, ActorInfo, ActivationInfo, true, false);
+		if (bDrivePresentationLocally)
+		{
+			ApplyPredictedVisibleState();
+		}
+		EndAbility(Handle, ActorInfo, ActivationInfo, bDrivePresentationLocally, false);
 		return;
 	}
 
@@ -102,6 +104,15 @@ void URpgGameplayAbility_ActivateWeaponSet::ActivateAbility(
 	ActiveMontageTask->OnInterrupted.AddDynamic(this, &ThisClass::OnEquipMontageInterrupted);
 	ActiveMontageTask->OnCancelled.AddDynamic(this, &ThisClass::OnEquipMontageCancelled);
 	ActiveMontageTask->ReadyForActivation();
+
+	// Event tasks are only needed when driving presentation locally – the AnimNotify
+	// directly drives the presentation component for remote observers.
+	if (bDrivePresentationLocally)
+	{
+		StartWaitingForEquipEvent(RpgGameplayTags::GameplayEvent_Equip_ApplyCurrentState);
+		StartWaitingForEquipEvent(RpgGameplayTags::GameplayEvent_Equip_HolsterVisible);
+		StartWaitingForEquipEvent(RpgGameplayTags::GameplayEvent_Equip_DrawActiveSet);
+	}
 }
 
 void URpgGameplayAbility_ActivateWeaponSet::EndAbility(
