@@ -2,9 +2,9 @@
 
 #include "CoreMinimal.h"
 #include "GameplayTagContainer.h"
-#include "RpgGameplayTagStack.h"
 #include "UObject/Object.h"
 #include "RpgItemSourceHandle.h"
+#include "SurvivalRpg/Systems/RpgGameplayTagStack.h"
 #include "RpgItemInstance.generated.h"
 
 class URpgItemDefinition;
