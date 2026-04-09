@@ -3,12 +3,19 @@
 
 #include "RpgGameplayAbility.h"
 
-URpgGameplayAbility::URpgGameplayAbility()
+#include "SurvivalRpg/Core/Player/RpgPlayerController.h"
+
+
+URpgGameplayAbility::URpgGameplayAbility(const FObjectInitializer& ObjectInitializer) : Super(ObjectInitializer)
 {
 	InstancingPolicy = EGameplayAbilityInstancingPolicy::InstancedPerActor;
 	ActivationBlockedTags.AddTag(FGameplayTag::RequestGameplayTag("State.Dead"));
 	ActivationOwnedTags.AddTag(FGameplayTag::RequestGameplayTag("GameplayAbility.Active"));
+}
 
+ARpgPlayerController* URpgGameplayAbility::GetRpgPlayerControllerFromActorInfo() const
+{
+	return (CurrentActorInfo ? Cast<ARpgPlayerController>(CurrentActorInfo->PlayerController.Get()) : nullptr);
 }
 
 bool URpgGameplayAbility::HasPlayerController() const

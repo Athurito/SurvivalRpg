@@ -6,16 +6,20 @@
 #include "Abilities/GameplayAbility.h"
 #include "RpgGameplayAbility.generated.h"
 
+class ARpgPlayerController;
 /**
  * 
  */
-UCLASS()
+UCLASS(Abstract, Meta = (ShortTooltip = "The base gameplay ability class used by this project."))
 class SURVIVALRPG_API URpgGameplayAbility : public UGameplayAbility
 {
 	GENERATED_BODY()
 	
 public:
-	URpgGameplayAbility();
+	URpgGameplayAbility(const FObjectInitializer& ObjectInitializer = FObjectInitializer::Get());
+	
+	UFUNCTION(BlueprintCallable, Category = "Rpg|Ability")
+	ARpgPlayerController* GetRpgPlayerControllerFromActorInfo() const;
 	
 	UPROPERTY(EditDefaultsOnly, BlueprintReadWrite, Category = "UI")
 	bool bShouldShowInAbilitiesBar = false;
