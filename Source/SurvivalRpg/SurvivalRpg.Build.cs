@@ -44,5 +44,8 @@ public class SurvivalRpg : ModuleRules
 		
 		// Generate compile errors if using DrawDebug functions in test/shipping builds.
 		PublicDefinitions.Add("SHIPPING_DRAW_DEBUG_ERROR=1");
+		
+		SetupGameplayDebuggerSupport(Target);
+		SetupIrisSupport(Target);
 	}
 }
