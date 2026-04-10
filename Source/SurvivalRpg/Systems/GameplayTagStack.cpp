@@ -1,18 +1,18 @@
-#include "RpgGameplayTagStack.h"
+#include "GameplayTagStack.h"
 
-FString FRpgGameplayTagStack::GetDebugString() const
+FString FGameplayTagStack::GetDebugString() const
 {
 	return FString::Printf(TEXT("%sx%d"), *Tag.ToString(), StackCount);
 }
 
-void FRpgGameplayTagStackContainer::AddStack(FGameplayTag Tag, int32 StackCount)
+void FGameplayTagStackContainer::AddStack(FGameplayTag Tag, int32 StackCount)
 {
 	if (!Tag.IsValid() || StackCount <= 0)
 	{
 		return;
 	}
 
-	for (FRpgGameplayTagStack& Stack : Stacks)
+	for (FGameplayTagStack& Stack : Stacks)
 	{
 		if (Stack.Tag == Tag)
 		{
@@ -24,12 +24,12 @@ void FRpgGameplayTagStackContainer::AddStack(FGameplayTag Tag, int32 StackCount)
 		}
 	}
 
-	FRpgGameplayTagStack& NewStack = Stacks.Emplace_GetRef(Tag, StackCount);
+	FGameplayTagStack& NewStack = Stacks.Emplace_GetRef(Tag, StackCount);
 	TagToCountMap.Add(Tag, StackCount);
 	MarkItemDirty(NewStack);
 }
 
-void FRpgGameplayTagStackContainer::RemoveStack(FGameplayTag Tag, int32 StackCount)
+void FGameplayTagStackContainer::RemoveStack(FGameplayTag Tag, int32 StackCount)
 {
 	if (!Tag.IsValid() || StackCount <= 0)
 	{
@@ -38,7 +38,7 @@ void FRpgGameplayTagStackContainer::RemoveStack(FGameplayTag Tag, int32 StackCou
 
 	for (auto It = Stacks.CreateIterator(); It; ++It)
 	{
-		FRpgGameplayTagStack& Stack = *It;
+		FGameplayTagStack& Stack = *It;
 		if (Stack.Tag != Tag)
 		{
 			continue;
@@ -62,7 +62,7 @@ void FRpgGameplayTagStackContainer::RemoveStack(FGameplayTag Tag, int32 StackCou
 	}
 }
 
-void FRpgGameplayTagStackContainer::SetStackCount(FGameplayTag Tag, int32 NewCount)
+void FGameplayTagStackContainer::SetStackCount(FGameplayTag Tag, int32 NewCount)
 {
 	const int32 OldCount = GetStackCount(Tag);
 	if (NewCount <= 0)
@@ -82,7 +82,7 @@ void FRpgGameplayTagStackContainer::SetStackCount(FGameplayTag Tag, int32 NewCou
 	}
 }
 
-int32 FRpgGameplayTagStackContainer::GetStackCount(FGameplayTag Tag) const
+int32 FGameplayTagStackContainer::GetStackCount(FGameplayTag Tag) const
 {
 	if (const int32* FoundCount = TagToCountMap.Find(Tag))
 	{
@@ -92,22 +92,22 @@ int32 FRpgGameplayTagStackContainer::GetStackCount(FGameplayTag Tag) const
 	return 0;
 }
 
-bool FRpgGameplayTagStackContainer::ContainsTag(FGameplayTag Tag) const
+bool FGameplayTagStackContainer::ContainsTag(FGameplayTag Tag) const
 {
 	return GetStackCount(Tag) > 0;
 }
 
-void FRpgGameplayTagStackContainer::RebuildTagToCountMap()
+void FGameplayTagStackContainer::RebuildTagToCountMap()
 {
 	TagToCountMap.Reset();
 
-	for (const FRpgGameplayTagStack& Stack : Stacks)
+	for (const FGameplayTagStack& Stack : Stacks)
 	{
 		TagToCountMap.FindOrAdd(Stack.Tag) = Stack.StackCount;
 	}
 }
 
-void FRpgGameplayTagStackContainer::PreReplicatedRemove(const TArrayView<int32> RemovedIndices, int32 FinalSize)
+void FGameplayTagStackContainer::PreReplicatedRemove(const TArrayView<int32> RemovedIndices, int32 FinalSize)
 {
 	for (const int32 RemovedIndex : RemovedIndices)
 	{
@@ -115,20 +115,20 @@ void FRpgGameplayTagStackContainer::PreReplicatedRemove(const TArrayView<int32> 
 	}
 }
 
-void FRpgGameplayTagStackContainer::PostReplicatedAdd(const TArrayView<int32> AddedIndices, int32 FinalSize)
+void FGameplayTagStackContainer::PostReplicatedAdd(const TArrayView<int32> AddedIndices, int32 FinalSize)
 {
 	for (const int32 AddedIndex : AddedIndices)
 	{
-		const FRpgGameplayTagStack& Stack = Stacks[AddedIndex];
+		const FGameplayTagStack& Stack = Stacks[AddedIndex];
 		TagToCountMap.FindOrAdd(Stack.Tag) = Stack.StackCount;
 	}
 }
 
-void FRpgGameplayTagStackContainer::PostReplicatedChange(const TArrayView<int32> ChangedIndices, int32 FinalSize)
+void FGameplayTagStackContainer::PostReplicatedChange(const TArrayView<int32> ChangedIndices, int32 FinalSize)
 {
 	for (const int32 ChangedIndex : ChangedIndices)
 	{
-		const FRpgGameplayTagStack& Stack = Stacks[ChangedIndex];
+		const FGameplayTagStack& Stack = Stacks[ChangedIndex];
 		TagToCountMap.FindOrAdd(Stack.Tag) = Stack.StackCount;
 	}
 }

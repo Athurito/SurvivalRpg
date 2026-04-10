@@ -4,7 +4,7 @@
 #include "GameplayTagContainer.h"
 #include "UObject/Object.h"
 #include "RpgItemSourceHandle.h"
-#include "SurvivalRpg/Systems/RpgGameplayTagStack.h"
+#include "SurvivalRpg/Systems/GameplayTagStack.h"
 #include "RpgItemInstance.generated.h"
 
 class URpgItemDefinition;
@@ -92,7 +92,7 @@ private:
 	int32 RollSeed = INDEX_NONE;
 
 	UPROPERTY(Replicated)
-	FRpgGameplayTagStackContainer StatTagStacks;
+	FGameplayTagStackContainer StatTagStacks;
 
 	UPROPERTY(Replicated)
 	TArray<FRpgItemFragmentRuntimeState> FragmentRuntimeStates;

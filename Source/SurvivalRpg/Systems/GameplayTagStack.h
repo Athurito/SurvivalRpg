@@ -3,19 +3,19 @@
 #include "CoreMinimal.h"
 #include "GameplayTagContainer.h"
 #include "Net/Serialization/FastArraySerializer.h"
-#include "RpgGameplayTagStack.generated.h"
+#include "GameplayTagStack.generated.h"
 
 struct FNetDeltaSerializeInfo;
-struct FRpgGameplayTagStackContainer;
+struct FGameplayTagStackContainer;
 
 USTRUCT(BlueprintType)
-struct SURVIVALRPG_API FRpgGameplayTagStack : public FFastArraySerializerItem
+struct SURVIVALRPG_API FGameplayTagStack : public FFastArraySerializerItem
 {
 	GENERATED_BODY()
 
-	FRpgGameplayTagStack() = default;
+	FGameplayTagStack() = default;
 
-	FRpgGameplayTagStack(FGameplayTag InTag, int32 InStackCount)
+	FGameplayTagStack(FGameplayTag InTag, int32 InStackCount)
 		: Tag(InTag)
 		, StackCount(InStackCount)
 	{
@@ -24,7 +24,7 @@ struct SURVIVALRPG_API FRpgGameplayTagStack : public FFastArraySerializerItem
 	FString GetDebugString() const;
 
 private:
-	friend FRpgGameplayTagStackContainer;
+	friend FGameplayTagStackContainer;
 
 	UPROPERTY()
 	FGameplayTag Tag;
@@ -34,7 +34,7 @@ private:
 };
 
 USTRUCT(BlueprintType)
-struct SURVIVALRPG_API FRpgGameplayTagStackContainer : public FFastArraySerializer
+struct SURVIVALRPG_API FGameplayTagStackContainer : public FFastArraySerializer
 {
 	GENERATED_BODY()
 
@@ -52,18 +52,18 @@ public:
 
 	bool NetDeltaSerialize(FNetDeltaSerializeInfo& DeltaParms)
 	{
-		return FastArrayDeltaSerialize<FRpgGameplayTagStack, FRpgGameplayTagStackContainer>(Stacks, DeltaParms, *this);
+		return FastArrayDeltaSerialize<FGameplayTagStack, FGameplayTagStackContainer>(Stacks, DeltaParms, *this);
 	}
 
 private:
 	UPROPERTY()
-	TArray<FRpgGameplayTagStack> Stacks;
+	TArray<FGameplayTagStack> Stacks;
 
 	TMap<FGameplayTag, int32> TagToCountMap;
 };
 
 template<>
-struct TStructOpsTypeTraits<FRpgGameplayTagStackContainer> : public TStructOpsTypeTraitsBase2<FRpgGameplayTagStackContainer>
+struct TStructOpsTypeTraits<FGameplayTagStackContainer> : public TStructOpsTypeTraitsBase2<FGameplayTagStackContainer>
 {
 	enum
 	{
