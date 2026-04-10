@@ -21,7 +21,19 @@ public class SurvivalRpg : ModuleRules
 			"GameplayAbilities", "GameplayTags", "GameplayTasks",
 		});
 
-		PrivateDependencyModuleNames.AddRange(new string[] { "EnhancedInput", "GameplayAbilities", "GameplayTags", "GameplayTasks", "ModularGameplay", "ModelViewViewModel", "AdvancedSessions", "ModularGameplayActors" });
+		PrivateDependencyModuleNames.AddRange(
+			new string[]
+			{
+				"EnhancedInput",
+				"GameplayAbilities",
+				"GameplayTags",
+				"GameplayTasks",
+				"ModularGameplay",
+				"ModelViewViewModel",
+				"AdvancedSessions",
+				"ModularGameplayActors",
+				"GameplayMessageRuntime",
+			});
 
 		PrivateDependencyModuleNames.AddRange(new string[] { "Slate", "SlateCore" });
 		
@@ -29,5 +41,8 @@ public class SurvivalRpg : ModuleRules
 		// PrivateDependencyModuleNames.Add("OnlineSubsystem");
 		DynamicallyLoadedModuleNames.Add("OnlineSubsystemSteam");
 		// To include OnlineSubsystemSteam, add it to the plugins section in your uproject file with the Enabled attribute set to true
+		
+		// Generate compile errors if using DrawDebug functions in test/shipping builds.
+		PublicDefinitions.Add("SHIPPING_DRAW_DEBUG_ERROR=1");
 	}
 }
