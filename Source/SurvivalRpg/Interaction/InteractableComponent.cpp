@@ -7,6 +7,9 @@ UInteractableComponent::UInteractableComponent(const FObjectInitializer& ObjectI
 {
 }
 
-FTransform UInteractableComponent::GetTargetTransform_Implementation() const
+void UInteractableComponent::GatherInteractionOptions(const FInteractionQuery& InteractQuery,
+	FInteractionOptionBuilder& InteractionBuilder)
 {
+
 }
+

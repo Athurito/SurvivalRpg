@@ -5,6 +5,7 @@
 #include "CoreMinimal.h"
 #include "IInteractableTarget.h"
 #include "Components/ActorComponent.h"
+#include "SurvivalRpg/Inventory/IPickupable.h"
 #include "InteractableComponent.generated.h"
 
 
@@ -16,13 +17,15 @@ class SURVIVALRPG_API UInteractableComponent : public UActorComponent, public II
 public:
 	// Sets default values for this component's properties
 	explicit UInteractableComponent(const FObjectInitializer& ObjectInitializer = FObjectInitializer::Get());
-
-
-public:
 	
 	//~IInteractableTarget contract
-	void GatherInteractionOptions(const FInteractionQuery& InteractQuery, FInteractionOptionBuilder& OptionBuilder) override;
-	
+	virtual void GatherInteractionOptions(const FInteractionQuery& InteractQuery, FInteractionOptionBuilder& InteractionBuilder) override;
 	//~End of IInteractableTarget contract
+	
+protected:
+	UPROPERTY(EditAnywhere)
+	FInteractionOption Option;
 
+	UPROPERTY(EditAnywhere)
+	FInventoryPickup StaticInventory;
 };
