@@ -5,13 +5,120 @@
 
 #include "GameplayEffect.h"
 #include "GameplayEffectTypes.h"
+#include "RpgGlobalAbilitySystem.h"
+#include "SurvivalRpg/Animation/RpgAnimInstance.h"
 #include "SurvivalRpg/Core/Player/RpgPlayerState.h"
 #include "SurvivalRpg/GameplayTags/GameplayTags.h"
 
-URpgAbilitySystemComponent::URpgAbilitySystemComponent()
+
+URpgAbilitySystemComponent::URpgAbilitySystemComponent(const FObjectInitializer& ObjectInitializer) : Super(ObjectInitializer)
 {
-	PrimaryComponentTick.bCanEverTick = true;
+	InputPressedSpecHandles.Reset();
+	InputReleasedSpecHandles.Reset();
+	InputHeldSpecHandles.Reset();
+
+	FMemory::Memset(ActivationGroupCounts, 0, sizeof(ActivationGroupCounts));
 }
+
+void URpgAbilitySystemComponent::EndPlay(const EEndPlayReason::Type EndPlayReason)
+{
+	if (URpgGlobalAbilitySystem* GlobalAbilitySystem = UWorld::GetSubsystem<URpgGlobalAbilitySystem>(GetWorld()))
+	{
+		GlobalAbilitySystem->UnregisterASC(this);
+	}
+	Super::EndPlay(EndPlayReason);
+}
+
+void URpgAbilitySystemComponent::InitAbilityActorInfo(AActor* InOwnerActor, AActor* InAvatarActor)
+{
+	FGameplayAbilityActorInfo* ActorInfo = AbilityActorInfo.Get();
+	check(ActorInfo);
+	check(InOwnerActor);
+
+	const bool bHasNewPawnAvatar = Cast<APawn>(InAvatarActor) && (InAvatarActor != ActorInfo->AvatarActor);
+	
+	Super::InitAbilityActorInfo(InOwnerActor, InAvatarActor);
+	
+	if (bHasNewPawnAvatar)
+	{
+		// Notify all abilities that a new pawn avatar has been set
+		for (const FGameplayAbilitySpec& AbilitySpec : ActivatableAbilities.Items)
+		{
+			PRAGMA_DISABLE_DEPRECATION_WARNINGS
+						ensureMsgf(AbilitySpec.Ability && AbilitySpec.Ability->GetInstancingPolicy() != EGameplayAbilityInstancingPolicy::NonInstanced, TEXT("InitAbilityActorInfo: All Abilities should be Instanced (NonInstanced is being deprecated due to usability issues)."));
+			PRAGMA_ENABLE_DEPRECATION_WARNINGS
+	
+			TArray<UGameplayAbility*> Instances = AbilitySpec.GetAbilityInstances();
+			for (UGameplayAbility* AbilityInstance : Instances)
+			{
+				URpgGameplayAbility* RpgAbilityInstance = Cast<URpgGameplayAbility>(AbilityInstance);
+				if (RpgAbilityInstance)
+				{
+					// Ability instances may be missing for replays
+					RpgAbilityInstance->OnPawnAvatarSet();
+				}
+			}
+		}
+
+		// Register with the global system once we actually have a pawn avatar. We wait until this time since some globally-applied effects may require an avatar.
+		if (URpgGlobalAbilitySystem* GlobalAbilitySystem = UWorld::GetSubsystem<URpgGlobalAbilitySystem>(GetWorld()))
+		{
+			GlobalAbilitySystem->RegisterASC(this);
+		}
+
+		if (URpgAnimInstance* RpgAnimInst = Cast<URpgAnimInstance>(ActorInfo->GetAnimInstance()))
+		{
+			RpgAnimInst->InitializeWithAbilitySystem(this);
+		}
+
+		TryActivateAbilitiesOnSpawn();
+	}
+}
+
+void URpgAbilitySystemComponent::TryActivateAbilitiesOnSpawn()
+{
+	ABILITYLIST_SCOPE_LOCK();
+	for (const FGameplayAbilitySpec& AbilitySpec : ActivatableAbilities.Items)
+	{
+		if (const URpgGameplayAbility* RpgAbilityCDO = Cast<URpgGameplayAbility>(AbilitySpec.Ability))
+		{
+			RpgAbilityCDO->TryActivateAbilityOnSpawn(AbilityActorInfo.Get(), AbilitySpec);
+		}
+	}
+}
+
+void URpgAbilitySystemComponent::AbilityInputTagPressed(const FGameplayTag& InputTag)
+{
+	if (InputTag.IsValid())
+	{
+		for (const FGameplayAbilitySpec& AbilitySpec : ActivatableAbilities.Items)
+		{
+			if (AbilitySpec.Ability && (AbilitySpec.GetDynamicSpecSourceTags().HasTagExact(InputTag)))
+			{
+				InputPressedSpecHandles.AddUnique(AbilitySpec.Handle);
+				InputHeldSpecHandles.AddUnique(AbilitySpec.Handle);
+			}
+		}
+	}
+}
+
+void URpgAbilitySystemComponent::AbilityInputTagReleased(const FGameplayTag& InputTag)
+{
+	if (InputTag.IsValid())
+	{
+		for (const FGameplayAbilitySpec& AbilitySpec : ActivatableAbilities.Items)
+		{
+			if (AbilitySpec.Ability && (AbilitySpec.GetDynamicSpecSourceTags().HasTagExact(InputTag)))
+			{
+				InputReleasedSpecHandles.AddUnique(AbilitySpec.Handle);
+				InputHeldSpecHandles.Remove(AbilitySpec.Handle);
+			}
+		}
+	}
+}
+
+
+
 
 bool URpgAbilitySystemComponent::GrantAbilitySet(const URpgAbilitySet* AbilitySet, UObject* SourceObject)
 {

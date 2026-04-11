@@ -173,16 +173,28 @@ void URpgPawnGameplayComponent::InitializePlayerInput(UInputComponent* PlayerInp
 
 void URpgPawnGameplayComponent::Input_AbilityInputTagPressed(FGameplayTag InputTag)
 {
-	ARpgPlayerState* PlayerState = GetPlayerState<ARpgPlayerState>();
-	if (PlayerState == nullptr)
+	if (const APawn* Pawn = GetPawn<APawn>())
 	{
-		return;
+		if (const URpgPawnExtensionComponent* PawnExtComp = URpgPawnExtensionComponent::FindPawnExtensionComponent(Pawn))
+		{
+			if (URpgAbilitySystemComponent* RpgAsc = PawnExtComp->GetRpgAbilitySystemComponent())
+			{
+				RpgAsc->AbilityInputTagPressed(InputTag);
+			}
+		}
 	}
-
-	if (URpgAbilitySystemComponent* AbilitySystemComponent = PlayerState->GetRpgAbilitySystemComponent())
-	{
-		AbilitySystemComponent->ActivateAbilitiesByInputTag(InputTag, true);
-	}
+	
+	
+	// ARpgPlayerState* PlayerState = GetPlayerState<ARpgPlayerState>();
+	// if (PlayerState == nullptr)
+	// {
+	// 	return;
+	// }
+	//
+	// if (URpgAbilitySystemComponent* AbilitySystemComponent = PlayerState->GetRpgAbilitySystemComponent())
+	// {
+	// 	AbilitySystemComponent->ActivateAbilitiesByInputTag(InputTag, true);
+	// }
 }
 
 void URpgPawnGameplayComponent::Input_AbilityInputTagReleased(FGameplayTag InputTag)

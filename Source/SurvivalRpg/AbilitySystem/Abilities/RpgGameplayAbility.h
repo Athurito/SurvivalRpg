@@ -80,9 +80,11 @@ public:
 	UPROPERTY(EditDefaultsOnly, BlueprintReadWrite, Category = "Activation")
 	bool bAutoActivateWhenGranted = false;
 	
+	virtual void OnPawnAvatarSet();
 protected:
 	UFUNCTION(BlueprintCallable, Category = "AbilitySystem")
 	bool HasPlayerController() const;
+	
 	
 	/** Called when this ability is granted to the ability system component. */
 	UFUNCTION(BlueprintImplementableEvent, Category = Ability, DisplayName = "OnAbilityAdded")
@@ -91,6 +93,10 @@ protected:
 	/** Called when this ability is removed from the ability system component. */
 	UFUNCTION(BlueprintImplementableEvent, Category = Ability, DisplayName = "OnAbilityRemoved")
 	void K2_OnAbilityRemoved();
+	
+	/** Called when the ability system is initialized with a pawn avatar. */
+	UFUNCTION(BlueprintImplementableEvent, Category = Ability, DisplayName = "OnPawnAvatarSet")
+	void K2_OnPawnAvatarSet();
 	
 protected:
 	// Defines how this ability is meant to activate.

@@ -59,3 +59,8 @@ bool URpgGameplayAbility::HasPlayerController() const
 	
 	return PawnObject->IsPlayerControlled();
 }
+
+void URpgGameplayAbility::OnPawnAvatarSet()
+{
+	K2_OnPawnAvatarSet();
+}
