@@ -45,12 +45,15 @@ public:
 
 public:
 	// Sets default values for this component's properties
-	URpgPawnGameplayComponent(const FObjectInitializer& ObjectInitializer);
+	explicit URpgPawnGameplayComponent(const FObjectInitializer& ObjectInitializer);
+	// Called when the game starts
+	virtual void BeginPlay() override;
+	virtual void EndPlay(const EEndPlayReason::Type EndPlayReason) override;
 	
 	virtual void InitializePlayerInput(UInputComponent* PlayerInputComponent);
 
-	void Input_AbilityInputTagPressed(FGameplayTag InputTag);
-	void Input_AbilityInputTagReleased(FGameplayTag InputTag);
+	void Input_AbilityInputTagPressed(FGameplayTag InputTag) const;
+	void Input_AbilityInputTagReleased(FGameplayTag InputTag) const;
 
 	void Input_Move(const FInputActionValue& InputActionValue);
 	void Input_LookMouse(const FInputActionValue& InputActionValue);
@@ -61,9 +64,7 @@ public:
 	void Input_StopJump(const FInputActionValue& InputActionValue);
 
 protected:
-	// Called when the game starts
-	virtual void BeginPlay() override;
-	virtual void EndPlay(const EEndPlayReason::Type EndPlayReason) override;
+
 	virtual void OnRegister() override;
 
 private:

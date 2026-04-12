@@ -4,7 +4,6 @@
 #include "RpgAbilitySystemComponent.h"
 
 #include "GameplayEffect.h"
-#include "GameplayEffectTypes.h"
 #include "RpgGlobalAbilitySystem.h"
 #include "SurvivalRpg/Animation/RpgAnimInstance.h"
 #include "SurvivalRpg/Core/Player/RpgPlayerState.h"
@@ -18,7 +17,6 @@ namespace
 	{
 		FPredictionKey ActivationPredictionKey;
 
-PRAGMA_DISABLE_DEPRECATION_WARNINGS
 		TArray<UGameplayAbility*> Instances = Spec.GetAbilityInstances();
 		if (!Instances.IsEmpty() && Instances.Last())
 		{
@@ -28,7 +26,6 @@ PRAGMA_DISABLE_DEPRECATION_WARNINGS
 		{
 			ActivationPredictionKey = Spec.ActivationInfo.GetActivationPredictionKey();
 		}
-PRAGMA_ENABLE_DEPRECATION_WARNINGS
 
 		return ActivationPredictionKey;
 	}
@@ -67,9 +64,7 @@ void URpgAbilitySystemComponent::InitAbilityActorInfo(AActor* InOwnerActor, AAct
 		// Notify all abilities that a new pawn avatar has been set
 		for (const FGameplayAbilitySpec& AbilitySpec : ActivatableAbilities.Items)
 		{
-			PRAGMA_DISABLE_DEPRECATION_WARNINGS
-						ensureMsgf(AbilitySpec.Ability && AbilitySpec.Ability->GetInstancingPolicy() != EGameplayAbilityInstancingPolicy::NonInstanced, TEXT("InitAbilityActorInfo: All Abilities should be Instanced (NonInstanced is being deprecated due to usability issues)."));
-			PRAGMA_ENABLE_DEPRECATION_WARNINGS
+			ensureMsgf(AbilitySpec.Ability && AbilitySpec.Ability->GetInstancingPolicy() != EGameplayAbilityInstancingPolicy::NonInstanced, TEXT("InitAbilityActorInfo: All Abilities should be Instanced (NonInstanced is being deprecated due to usability issues)."));
 	
 			TArray<UGameplayAbility*> Instances = AbilitySpec.GetAbilityInstances();
 			for (UGameplayAbility* AbilityInstance : Instances)
@@ -250,7 +245,9 @@ void URpgAbilitySystemComponent::AbilitySpecInputPressed(FGameplayAbilitySpec& S
 
 	if (Spec.IsActive())
 	{
-		InvokeReplicatedEvent(EAbilityGenericReplicatedEvent::InputPressed, Spec.Handle, GetAbilitySpecActivationPredictionKey(Spec));
+		const UGameplayAbility* Instance = Spec.GetPrimaryInstance();
+		FPredictionKey OriginalPredictionKey = Instance ? Instance->GetCurrentActivationInfo().GetActivationPredictionKey() : Spec.ActivationInfo.GetActivationPredictionKey();
+		InvokeReplicatedEvent(EAbilityGenericReplicatedEvent::InputPressed, Spec.Handle, OriginalPredictionKey);
 	}
 }
 
@@ -260,7 +257,9 @@ void URpgAbilitySystemComponent::AbilitySpecInputReleased(FGameplayAbilitySpec& 
 
 	if (Spec.IsActive())
 	{
-		InvokeReplicatedEvent(EAbilityGenericReplicatedEvent::InputReleased, Spec.Handle, GetAbilitySpecActivationPredictionKey(Spec));
+		const UGameplayAbility* Instance = Spec.GetPrimaryInstance();
+		FPredictionKey OriginalPredictionKey = Instance ? Instance->GetCurrentActivationInfo().GetActivationPredictionKey() : Spec.ActivationInfo.GetActivationPredictionKey();
+		InvokeReplicatedEvent(EAbilityGenericReplicatedEvent::InputReleased, Spec.Handle, OriginalPredictionKey);
 	}
 }
 

@@ -171,7 +171,7 @@ void URpgPawnGameplayComponent::InitializePlayerInput(UInputComponent* PlayerInp
 	}
 }
 
-void URpgPawnGameplayComponent::Input_AbilityInputTagPressed(FGameplayTag InputTag)
+void URpgPawnGameplayComponent::Input_AbilityInputTagPressed(FGameplayTag InputTag) const
 {
 	if (const APawn* Pawn = GetPawn<APawn>())
 	{
@@ -183,21 +183,9 @@ void URpgPawnGameplayComponent::Input_AbilityInputTagPressed(FGameplayTag InputT
 			}
 		}
 	}
-	
-	
-	// ARpgPlayerState* PlayerState = GetPlayerState<ARpgPlayerState>();
-	// if (PlayerState == nullptr)
-	// {
-	// 	return;
-	// }
-	//
-	// if (URpgAbilitySystemComponent* AbilitySystemComponent = PlayerState->GetRpgAbilitySystemComponent())
-	// {
-	// 	AbilitySystemComponent->ActivateAbilitiesByInputTag(InputTag, true);
-	// }
 }
 
-void URpgPawnGameplayComponent::Input_AbilityInputTagReleased(FGameplayTag InputTag)
+void URpgPawnGameplayComponent::Input_AbilityInputTagReleased(FGameplayTag InputTag) const
 {
 	if (const APawn* Pawn = GetPawn<APawn>())
 	{
