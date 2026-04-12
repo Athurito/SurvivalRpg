@@ -199,6 +199,16 @@ void URpgPawnGameplayComponent::Input_AbilityInputTagPressed(FGameplayTag InputT
 
 void URpgPawnGameplayComponent::Input_AbilityInputTagReleased(FGameplayTag InputTag)
 {
+	if (const APawn* Pawn = GetPawn<APawn>())
+	{
+		if (const URpgPawnExtensionComponent* PawnExtComp = URpgPawnExtensionComponent::FindPawnExtensionComponent(Pawn))
+		{
+			if (URpgAbilitySystemComponent* RpgAsc = PawnExtComp->GetRpgAbilitySystemComponent())
+			{
+				RpgAsc->AbilityInputTagReleased(InputTag);
+			}
+		}
+	}
 }
 
 void URpgPawnGameplayComponent::Input_Move(const FInputActionValue& InputActionValue)

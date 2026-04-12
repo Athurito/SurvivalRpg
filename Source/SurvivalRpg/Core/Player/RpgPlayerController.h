@@ -6,6 +6,7 @@
 #include "GameFramework/PlayerController.h"
 #include "RpgPlayerController.generated.h"
 
+class URpgAbilitySystemComponent;
 class UInputMappingContext;
 class ARpgPlayerState;
 
@@ -15,10 +16,20 @@ class SURVIVALRPG_API ARpgPlayerController : public APlayerController
 	GENERATED_BODY()
 
 public:
+
+	UFUNCTION(BlueprintCallable, Category = "Rpg|PlayerController")
+	ARpgPlayerState* GetRpgPlayerState() const;
+
+	UFUNCTION(BlueprintCallable, Category = "Rpg|PlayerController")
+	URpgAbilitySystemComponent* GetRpgAbilitySystemComponent() const;
+
 	UFUNCTION(BlueprintCallable, Category = "Rpg|Respawn")
 	void RequestRespawn();
 
 	virtual void OnRep_PlayerState() override;
+	//~APlayerController interface
+	virtual void PostProcessInput(const float DeltaTime, const bool bGamePaused) override;
+	//~End of APlayerController interface
 protected:
 	
 	UFUNCTION(Server, Reliable)

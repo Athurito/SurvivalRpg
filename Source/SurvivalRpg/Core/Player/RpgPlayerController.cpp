@@ -4,8 +4,20 @@
 #include "RpgPlayerController.h"
 
 #include "EnhancedInputSubsystems.h"
+#include "SurvivalRpg/AbilitySystem/RpgAbilitySystemComponent.h"
 #include "SurvivalRpg/Core/Game/RpgGameModeBase.h"
 #include "SurvivalRpg/Core/Player/RpgPlayerState.h"
+
+ARpgPlayerState* ARpgPlayerController::GetRpgPlayerState() const
+{
+	return CastChecked<ARpgPlayerState>(PlayerState, ECastCheckedType::NullAllowed);
+}
+
+URpgAbilitySystemComponent* ARpgPlayerController::GetRpgAbilitySystemComponent() const
+{
+	const ARpgPlayerState* RpgPS = GetRpgPlayerState();
+	return (RpgPS ? RpgPS->GetRpgAbilitySystemComponent() : nullptr);
+}
 
 void ARpgPlayerController::RequestRespawn()
 {
@@ -52,6 +64,15 @@ void ARpgPlayerController::OnRep_PlayerState()
 {
 	Super::OnRep_PlayerState();
 	RefreshPlayerStateBindings();
+}
+
+void ARpgPlayerController::PostProcessInput(const float DeltaTime, const bool bGamePaused)
+{
+	if (URpgAbilitySystemComponent* RpgASC = GetRpgAbilitySystemComponent())
+	{
+		RpgASC->ProcessAbilityInput(DeltaTime, bGamePaused);
+	}
+	Super::PostProcessInput(DeltaTime, bGamePaused);
 }
 
 void ARpgPlayerController::ServerRequestRespawn_Implementation()
