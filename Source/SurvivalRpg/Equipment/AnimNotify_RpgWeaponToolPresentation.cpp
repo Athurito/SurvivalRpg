@@ -5,7 +5,7 @@
 #include "Animation/AnimSequenceBase.h"
 #include "Components/SkeletalMeshComponent.h"
 #include "GameFramework/Pawn.h"
-#include "SurvivalRpg/GameplayTags/GameplayTags.h"
+#include "SurvivalRpg/GameplayTags/RpgGameplayTags.h"
 #include "RpgWeaponPresentationComponent.h"
 
 namespace

@@ -9,7 +9,7 @@
 #include "SurvivalRpg/Core/Character/BasePawnData.h"
 #include "SurvivalRpg/Core/Character/RpgPawnExtensionComponent.h"
 #include "SurvivalRpg/Core/Player/RpgPlayerState.h"
-#include "SurvivalRpg/GameplayTags/GameplayTags.h"
+#include "SurvivalRpg/GameplayTags/RpgGameplayTags.h"
 #include "GameFramework/GameStateBase.h"
 #include "GameFramework/PlayerState.h"
 

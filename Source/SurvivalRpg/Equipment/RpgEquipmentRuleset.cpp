@@ -1,6 +1,6 @@
 #include "RpgEquipmentRuleset.h"
 
-#include "SurvivalRpg/GameplayTags/GameplayTags.h"
+#include "SurvivalRpg/GameplayTags/RpgGameplayTags.h"
 #include "SurvivalRpg/Items/RpgItemInstance.h"
 #include "SurvivalRpg/Items/Fragments/RpgItemFragment_Weapon.h"
 

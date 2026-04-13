@@ -7,7 +7,7 @@
 #include "SurvivalRpg/SurvivalRpg.h"
 #include "SurvivalRpg/AbilitySystem/RpgAbilitySystemComponent.h"
 #include "SurvivalRpg/AbilitySystem/Attributes/RpgHealthSet.h"
-#include "SurvivalRpg/GameplayTags/GameplayTags.h"
+#include "SurvivalRpg/GameplayTags/RpgGameplayTags.h"
 
 
 // Sets default values for this component's properties

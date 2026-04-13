@@ -5,7 +5,7 @@
 
 #include "SurvivalRpg/AbilitySystem/RpgAbilitySystemComponent.h"
 #include "SurvivalRpg/Core/Character/RpgHealthComponent.h"
-#include "SurvivalRpg/GameplayTags/GameplayTags.h"
+#include "SurvivalRpg/GameplayTags/RpgGameplayTags.h"
 
 URpgGameplayAbility_Death::URpgGameplayAbility_Death(const FObjectInitializer& ObjectInitializer)
 {

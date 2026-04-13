@@ -4,7 +4,7 @@
 #include "RpgGameInstance.h"
 
 #include "Components/GameFrameworkComponentManager.h"
-#include "SurvivalRpg/GameplayTags/GameplayTags.h"
+#include "SurvivalRpg/GameplayTags/RpgGameplayTags.h"
 
 void URpgGameInstance::Init()
 {

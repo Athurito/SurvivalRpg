@@ -8,7 +8,7 @@
 #include "SurvivalRpg/Equipment/AnimNotify_RpgWeaponToolPresentation.h"
 #include "SurvivalRpg/Equipment/RpgEquipmentComponent.h"
 #include "SurvivalRpg/Equipment/RpgWeaponPresentationComponent.h"
-#include "SurvivalRpg/GameplayTags/GameplayTags.h"
+#include "SurvivalRpg/GameplayTags/RpgGameplayTags.h"
 #include "SurvivalRpg/Items/Fragments/RpgItemFragment_Visual.h"
 #include "SurvivalRpg/Items/RpgItemInstance.h"
 

@@ -6,6 +6,18 @@
 
 namespace RpgGameplayTags
 {
+	
+	
+	
+	UE_DECLARE_GAMEPLAY_TAG_EXTERN(Ability_ActivateFail_IsDead);         
+	UE_DECLARE_GAMEPLAY_TAG_EXTERN(Ability_ActivateFail_Cooldown);       
+	UE_DECLARE_GAMEPLAY_TAG_EXTERN(Ability_ActivateFail_Cost);           
+	UE_DECLARE_GAMEPLAY_TAG_EXTERN(Ability_ActivateFail_TagsBlocked);    
+	UE_DECLARE_GAMEPLAY_TAG_EXTERN(Ability_ActivateFail_TagsMissing);    
+	UE_DECLARE_GAMEPLAY_TAG_EXTERN(Ability_ActivateFail_Networking);     
+	UE_DECLARE_GAMEPLAY_TAG_EXTERN(Ability_ActivateFail_ActivationGroup);
+	
+	
 	UE_DECLARE_GAMEPLAY_TAG_EXTERN(InputTag_Move);      
 	UE_DECLARE_GAMEPLAY_TAG_EXTERN(InputTag_Look_Mouse);
 	UE_DECLARE_GAMEPLAY_TAG_EXTERN(InputTag_Look_Stick);

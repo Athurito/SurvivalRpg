@@ -5,7 +5,7 @@
 #include "Net/UnrealNetwork.h"
 #include "SurvivalRpg/AbilitySystem/RpgAbilitySystemComponent.h"
 #include "SurvivalRpg/Core/Player/RpgPlayerState.h"
-#include "SurvivalRpg/GameplayTags/GameplayTags.h"
+#include "SurvivalRpg/GameplayTags/RpgGameplayTags.h"
 #include "SurvivalRpg/Items/Fragments/RpgItemFragment_Equipment.h"
 #include "SurvivalRpg/Items/Fragments/RpgItemFragment_Weapon.h"
 #include "SurvivalRpg/Items/RpgItemInstance.h"

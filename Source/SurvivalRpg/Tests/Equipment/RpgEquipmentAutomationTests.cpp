@@ -11,7 +11,7 @@
 #include "SurvivalRpg/Equipment/RpgEquipmentComponent.h"
 #include "SurvivalRpg/Equipment/RpgEquipmentRuleset.h"
 #include "SurvivalRpg/Equipment/RpgWeaponPresentationComponent.h"
-#include "SurvivalRpg/GameplayTags/GameplayTags.h"
+#include "SurvivalRpg/GameplayTags/RpgGameplayTags.h"
 #include "SurvivalRpg/Items/RpgItemDefinition.h"
 #include "SurvivalRpg/Items/RpgItemInstance.h"
 #include "SurvivalRpg/Items/Fragments/RpgItemFragment_Equipment.h"

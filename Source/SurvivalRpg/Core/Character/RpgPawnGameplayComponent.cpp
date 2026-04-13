@@ -12,7 +12,7 @@
 #include "RpgPawnExtensionComponent.h"
 #include "Components/GameFrameworkComponentManager.h"
 #include "SurvivalRpg/Core/Player/RpgPlayerState.h"
-#include "SurvivalRpg/GameplayTags/GameplayTags.h"
+#include "SurvivalRpg/GameplayTags/RpgGameplayTags.h"
 #include "SurvivalRpg/Input/RpgInputComponent.h"
 
 namespace RpgCharacter
@@ -171,7 +171,7 @@ void URpgPawnGameplayComponent::InitializePlayerInput(UInputComponent* PlayerInp
 	}
 }
 
-void URpgPawnGameplayComponent::Input_AbilityInputTagPressed(FGameplayTag InputTag) const
+void URpgPawnGameplayComponent::Input_AbilityInputTagPressed(FGameplayTag InputTag)
 {
 	if (const APawn* Pawn = GetPawn<APawn>())
 	{
@@ -185,7 +185,7 @@ void URpgPawnGameplayComponent::Input_AbilityInputTagPressed(FGameplayTag InputT
 	}
 }
 
-void URpgPawnGameplayComponent::Input_AbilityInputTagReleased(FGameplayTag InputTag) const
+void URpgPawnGameplayComponent::Input_AbilityInputTagReleased(FGameplayTag InputTag)
 {
 	if (const APawn* Pawn = GetPawn<APawn>())
 	{

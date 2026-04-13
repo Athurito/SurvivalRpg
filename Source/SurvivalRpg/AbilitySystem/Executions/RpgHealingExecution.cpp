@@ -5,7 +5,7 @@
 
 #include "SurvivalRpg/AbilitySystem/Attributes/RpgCombatSet.h"
 #include "SurvivalRpg/AbilitySystem/Attributes/RpgHealthSet.h"
-#include "SurvivalRpg/GameplayTags/GameplayTags.h"
+#include "SurvivalRpg/GameplayTags/RpgGameplayTags.h"
 
 
 namespace

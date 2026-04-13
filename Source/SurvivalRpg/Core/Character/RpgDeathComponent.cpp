@@ -11,7 +11,7 @@
 #include "SurvivalRpg/AbilitySystem/RpgAbilitySystemComponent.h"
 #include "SurvivalRpg/AbilitySystem/Abilities/RpgGameplayAbility_Death.h"
 #include "SurvivalRpg/AbilitySystem/Abilities/RpgGameplayAbility_SelfRevive.h"
-#include "SurvivalRpg/GameplayTags/GameplayTags.h"
+#include "SurvivalRpg/GameplayTags/RpgGameplayTags.h"
 
 
 // Sets default values for this component's properties

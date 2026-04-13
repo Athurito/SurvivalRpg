@@ -6,7 +6,7 @@
 #include "Components/GameFrameworkComponentManager.h"
 #include "Net/UnrealNetwork.h"
 #include "SurvivalRpg/AbilitySystem/RpgAbilitySystemComponent.h"
-#include "SurvivalRpg/GameplayTags/GameplayTags.h"
+#include "SurvivalRpg/GameplayTags/RpgGameplayTags.h"
 
 const FName URpgPawnExtensionComponent::Name_ActorFeatureName = FName("PawnExtension");
 

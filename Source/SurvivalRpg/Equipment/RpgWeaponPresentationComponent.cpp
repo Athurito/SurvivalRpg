@@ -9,7 +9,7 @@
 #include "GameFramework/SpringArmComponent.h"
 #include "SurvivalRpg/Core/Character/RpgPawnExtensionComponent.h"
 #include "SurvivalRpg/Core/Player/RpgPlayerState.h"
-#include "SurvivalRpg/GameplayTags/GameplayTags.h"
+#include "SurvivalRpg/GameplayTags/RpgGameplayTags.h"
 #include "SurvivalRpg/Items/Fragments/RpgItemFragment_Visual.h"
 #include "SurvivalRpg/Items/RpgItemInstance.h"
 
