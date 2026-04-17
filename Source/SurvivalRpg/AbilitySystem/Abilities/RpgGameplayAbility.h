@@ -4,8 +4,13 @@
 
 #include "CoreMinimal.h"
 #include "Abilities/GameplayAbility.h"
+#include "SurvivalRpg/AbilitySystem/RpgAbilitySourceInterface.h"
+#include "SurvivalRpg/Core/Character/RpgCharacter.h"
+#include "SurvivalRpg/Core/Character/RpgPawnGameplayComponent.h"
 #include "RpgGameplayAbility.generated.h"
 
+class URpgAbilityCost;
+class URpgCameraMode;
 class ARpgPlayerController;
 
 
@@ -49,6 +54,28 @@ enum class ERpgAbilityActivationGroup : uint8
 	MAX	UMETA(Hidden)
 };
 
+/** Failure reason that can be used to play an animation montage when a failure occurs */
+USTRUCT(BlueprintType)
+struct FRpgAbilityMontageFailureMessage
+{
+	GENERATED_BODY()
+
+public:
+	// Player controller that failed to activate the ability, if the AbilitySystemComponent was player owned
+	UPROPERTY(BlueprintReadWrite)
+	TObjectPtr<APlayerController> PlayerController = nullptr;
+
+	// Avatar actor that failed to activate the ability
+	UPROPERTY(BlueprintReadWrite)
+	TObjectPtr<AActor> AvatarActor = nullptr;
+
+	// All the reasons why this ability has failed
+	UPROPERTY(BlueprintReadWrite)
+	FGameplayTagContainer FailureTags;
+
+	UPROPERTY(BlueprintReadWrite)
+	TObjectPtr<UAnimMontage> FailureMontage = nullptr;
+};
 
 /**
  * 
@@ -59,31 +86,72 @@ class SURVIVALRPG_API URpgGameplayAbility : public UGameplayAbility
 	GENERATED_BODY()
 	
 public:
-	URpgGameplayAbility(const FObjectInitializer& ObjectInitializer = FObjectInitializer::Get());
+	explicit URpgGameplayAbility(const FObjectInitializer& ObjectInitializer = FObjectInitializer::Get());
 	
 	UFUNCTION(BlueprintCallable, Category = "Rpg|Ability")
 	ARpgPlayerController* GetRpgPlayerControllerFromActorInfo() const;
 	
+	
+	UFUNCTION(BlueprintCallable, Category = "Rpg|Ability")
+	AController* GetControllerFromActorInfo() const;
+	
+	UFUNCTION(BlueprintCallable, Category = "Rpg|Ability")
+	ARpgCharacter* GetRpgCharacterFromActorInfo() const;
+	
+	UFUNCTION(BlueprintCallable, Category = "Rpg|Ability")
+	URpgPawnGameplayComponent* GetPawnGameplayComponentFromActorInfo() const;
+	
+	
 	ERpgAbilityActivationPolicy GetActivationPolicy() const { return ActivationPolicy; }
 	ERpgAbilityActivationGroup GetActivationGroup() const { return ActivationGroup; }
-
+	
 	void TryActivateAbilityOnSpawn(const FGameplayAbilityActorInfo* ActorInfo, const FGameplayAbilitySpec& Spec) const;
 	
-	virtual void OnGiveAbility(const FGameplayAbilityActorInfo* ActorInfo, const FGameplayAbilitySpec& Spec) override;
+	
+	// Sets the ability's camera mode.
+	UFUNCTION(BlueprintCallable, Category = "Rpg|Ability")
+    void SetCameraMode(TSubclassOf<URpgCameraMode> CameraMode);
 
+	// Clears the ability's camera mode.  Automatically called if needed when the ability ends.
+	UFUNCTION(BlueprintCallable, Category = "Rpg|Ability")
+	void ClearCameraMode();
+	
+	void OnAbilityFailedToActivate(const FGameplayTagContainer& FailedReason) const
+	{
+		NativeOnAbilityFailedToActivate(FailedReason);
+		ScriptOnAbilityFailedToActivate(FailedReason);
+	}
 	
 public:
-	
-	UPROPERTY(EditDefaultsOnly, BlueprintReadWrite, Category = "UI")
-	bool bShouldShowInAbilitiesBar = false;
 	
 	UPROPERTY(EditDefaultsOnly, BlueprintReadWrite, Category = "Activation")
 	bool bAutoActivateWhenGranted = false;
 	
 	virtual void OnPawnAvatarSet();
+	virtual void GetAbilitySource(FGameplayAbilitySpecHandle Handle, const FGameplayAbilityActorInfo* ActorInfo, float& OutSourceLevel, const IRpgAbilitySourceInterface*& OutAbilitySource, AActor*& OutEffectCauser) const;
+
 protected:
-	UFUNCTION(BlueprintCallable, Category = "AbilitySystem")
-	bool HasPlayerController() const;
+	// Called when the ability fails to activate
+	virtual void NativeOnAbilityFailedToActivate(const FGameplayTagContainer& FailedReason) const;
+
+	// Called when the ability fails to activate
+	UFUNCTION(BlueprintImplementableEvent)
+	void ScriptOnAbilityFailedToActivate(const FGameplayTagContainer& FailedReason) const;
+	
+	//~UGameplayAbility interface
+	virtual bool CanActivateAbility(const FGameplayAbilitySpecHandle Handle, const FGameplayAbilityActorInfo* ActorInfo, const FGameplayTagContainer* SourceTags, const FGameplayTagContainer* TargetTags, FGameplayTagContainer* OptionalRelevantTags) const override;
+	virtual void SetCanBeCanceled(bool bCanBeCanceled) override;
+	virtual void OnGiveAbility(const FGameplayAbilityActorInfo* ActorInfo, const FGameplayAbilitySpec& Spec) override;
+	virtual void OnRemoveAbility(const FGameplayAbilityActorInfo* ActorInfo, const FGameplayAbilitySpec& Spec) override;
+	virtual void ActivateAbility(const FGameplayAbilitySpecHandle Handle, const FGameplayAbilityActorInfo* ActorInfo, const FGameplayAbilityActivationInfo ActivationInfo, const FGameplayEventData* TriggerEventData) override;
+	virtual void EndAbility(const FGameplayAbilitySpecHandle Handle, const FGameplayAbilityActorInfo* ActorInfo, const FGameplayAbilityActivationInfo ActivationInfo, bool bReplicateEndAbility, bool bWasCancelled) override;
+	virtual bool CheckCost(const FGameplayAbilitySpecHandle Handle, const FGameplayAbilityActorInfo* ActorInfo, OUT FGameplayTagContainer* OptionalRelevantTags = nullptr) const override;
+	virtual void ApplyCost(const FGameplayAbilitySpecHandle Handle, const FGameplayAbilityActorInfo* ActorInfo, const FGameplayAbilityActivationInfo ActivationInfo) const override;
+	virtual FGameplayEffectContextHandle MakeEffectContext(const FGameplayAbilitySpecHandle Handle, const FGameplayAbilityActorInfo* ActorInfo) const override;
+	virtual void ApplyAbilityTagsToGameplayEffectSpec(FGameplayEffectSpec& Spec, FGameplayAbilitySpec* AbilitySpec) const override;
+	virtual bool DoesAbilitySatisfyTagRequirements(const UAbilitySystemComponent& AbilitySystemComponent, const FGameplayTagContainer* SourceTags = nullptr, const FGameplayTagContainer* TargetTags = nullptr, OUT FGameplayTagContainer* OptionalRelevantTags = nullptr) const override;
+	//~End of UGameplayAbility interface
+	
 	
 	
 	/** Called when this ability is granted to the ability system component. */
@@ -106,4 +174,19 @@ protected:
 	// Defines the relationship between this ability activating and other abilities activating.
 	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Rpg|Ability Activation")
 	ERpgAbilityActivationGroup ActivationGroup;
+	
+	// Additional costs that must be paid to activate this ability
+	UPROPERTY(EditDefaultsOnly, Instanced, Category = Costs)
+	TArray<TObjectPtr<URpgAbilityCost>> AdditionalCosts;
+	
+	// Map of failure tags to simple error messages
+	UPROPERTY(EditDefaultsOnly, Category = "Advanced")
+	TMap<FGameplayTag, FText> FailureTagToUserFacingMessages;
+
+	// Map of failure tags to anim montages that should be played with them
+	UPROPERTY(EditDefaultsOnly, Category = "Advanced")
+	TMap<FGameplayTag, TObjectPtr<UAnimMontage>> FailureTagToAnimMontage;
+	
+	// Current camera mode set by the ability.
+	TSubclassOf<URpgCameraMode> ActiveCameraMode;
 };
