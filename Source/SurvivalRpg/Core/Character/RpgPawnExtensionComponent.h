@@ -8,7 +8,7 @@
 #include "RpgPawnExtensionComponent.generated.h"
 
 
-class UBasePawnData;
+class URpgPawnData;
 class UAbilitySystemComponent;
 class URpgAbilitySystemComponent;
 
@@ -38,7 +38,7 @@ public:
 	const T* GetPawnData() const { return Cast<T>(PawnData); }
 	
 	/** Sets the current pawn data */
-	void SetPawnData(const UBasePawnData* InPawnData);
+	void SetPawnData(const URpgPawnData* InPawnData);
 	
 	/** Gets the current ability system component, which may be owned by a different actor */
 	UFUNCTION(BlueprintPure, Category = "Lyra|Pawn")
@@ -84,5 +84,5 @@ protected:
 	TObjectPtr<URpgAbilitySystemComponent> AbilitySystemComponent;
 	
 	UPROPERTY(EditInstanceOnly, ReplicatedUsing = OnRep_PawnData, Category = "Lyra|Pawn")
-	TObjectPtr<const UBasePawnData> PawnData;
+	TObjectPtr<const URpgPawnData> PawnData;
 };

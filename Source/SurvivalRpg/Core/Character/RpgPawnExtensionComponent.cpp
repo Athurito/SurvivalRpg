@@ -57,7 +57,7 @@ void URpgPawnExtensionComponent::EndPlay(const EEndPlayReason::Type EndPlayReaso
 
 
 
-void URpgPawnExtensionComponent::SetPawnData(const UBasePawnData* InPawnData)
+void URpgPawnExtensionComponent::SetPawnData(const URpgPawnData* InPawnData)
 {
 	check(InPawnData);
 	

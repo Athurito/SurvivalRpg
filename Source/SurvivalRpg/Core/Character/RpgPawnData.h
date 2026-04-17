@@ -4,16 +4,17 @@
 
 #include "CoreMinimal.h"
 #include "Engine/DataAsset.h"
-#include "BasePawnData.generated.h"
+#include "RpgPawnData.generated.h"
 
 class URpgCameraMode;
 class URpgInputConfig;
 class URpgAbilitySet;
+class URpgAbilityTagRelationshipMapping;
 /**
  * 
  */
 UCLASS()
-class SURVIVALRPG_API UBasePawnData : public UPrimaryDataAsset
+class SURVIVALRPG_API URpgPawnData : public UPrimaryDataAsset
 {
 	GENERATED_BODY()
 	

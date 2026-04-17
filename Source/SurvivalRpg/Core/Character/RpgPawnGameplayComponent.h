@@ -11,7 +11,7 @@
 
 
 class URpgInputConfig;
-class UBasePawnData;
+class URpgPawnData;
 class URpgAbilitySystemComponent;
 struct FGameplayTag;
 struct FInputActionValue;
@@ -68,7 +68,7 @@ protected:
 	virtual void OnRegister() override;
 
 private:
-	void GrantPawnDataAbilitySets(URpgAbilitySystemComponent* AbilitySystemComponent, const UBasePawnData* PawnData, APawn* Pawn);
+	void GrantPawnDataAbilitySets(URpgAbilitySystemComponent* AbilitySystemComponent, const URpgPawnData* PawnData, APawn* Pawn);
 	void ResetCurrentHealthToMaxHealth(URpgAbilitySystemComponent* AbilitySystemComponent) const;
 	void RemovePawnDataAbilitySets();
 	void HandleAbilitySystemUninitialized();

@@ -6,7 +6,7 @@
 #include "GameFramework/PlayerState.h"
 #include "RpgPlayerState.generated.h"
 
-class UBasePawnData;
+class URpgPawnData;
 class ARpgPlayerController;
 class URpgTradeSkillProgressionComponent;
 class URpgPlayerProgressionComponent;
@@ -84,7 +84,7 @@ public:
 	template<class T>
 	const T* GetPawnData() const { return Cast<T>(PawnData); }
 
-	void SetPawnData(const UBasePawnData* InPawnData);
+	void SetPawnData(const URpgPawnData* InPawnData);
 	void SetRespawnState(bool bInIsWaitingForRespawn, float InRespawnAvailableServerTime);
 	void SetCheckpointData(bool bInHasCheckpoint, const FTransform& InCheckpointTransform);
 
@@ -136,7 +136,7 @@ protected:
 	TObjectPtr<URpgEquipmentComponent> EquipmentComponent;
 	
 	UPROPERTY(VisibleAnywhere, Category = "Pawn")
-	TObjectPtr<const UBasePawnData> PawnData;
+	TObjectPtr<const URpgPawnData> PawnData;
 
 	UPROPERTY(ReplicatedUsing = OnRep_RespawnState, VisibleAnywhere, Category = "Rpg|Respawn")
 	FRpgReplicatedRespawnState RespawnState;

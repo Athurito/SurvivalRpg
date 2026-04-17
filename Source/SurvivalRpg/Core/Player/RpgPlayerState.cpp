@@ -57,7 +57,7 @@ TObjectPtr<URpgAbilitySystemComponent> ARpgPlayerState::GetRpgAbilitySystemCompo
 	return AbilitySystemComponent;
 }
 
-void ARpgPlayerState::SetPawnData(const UBasePawnData* InPawnData)
+void ARpgPlayerState::SetPawnData(const URpgPawnData* InPawnData)
 {
 	check(InPawnData);
 	if (PawnData)

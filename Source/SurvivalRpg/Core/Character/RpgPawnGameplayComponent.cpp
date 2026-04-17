@@ -9,6 +9,7 @@
 #include "GameplayTagContainer.h"
 #include "InputActionValue.h"
 #include "RpgCharacter.h"
+#include "RpgPawnData.h"
 #include "RpgPawnExtensionComponent.h"
 #include "Components/GameFrameworkComponentManager.h"
 #include "SurvivalRpg/Core/Player/RpgPlayerState.h"
@@ -91,7 +92,7 @@ void URpgPawnGameplayComponent::HandleChangeInitState(UGameFrameworkComponentMan
 			}
 
 			PawnExt->InitializeAbilitySystemComponent(AbilitySystemComponent, PS);
-			GrantPawnDataAbilitySets(AbilitySystemComponent, PawnExt->GetPawnData<UBasePawnData>(), Pawn);
+			GrantPawnDataAbilitySets(AbilitySystemComponent, PawnExt->GetPawnData<URpgPawnData>(), Pawn);
 			ResetCurrentHealthToMaxHealth(AbilitySystemComponent);
 		}
 		
@@ -144,7 +145,7 @@ void URpgPawnGameplayComponent::InitializePlayerInput(UInputComponent* PlayerInp
 	
 	if (URpgPawnExtensionComponent* PawnExt = URpgPawnExtensionComponent::FindPawnExtensionComponent(Pawn))
 	{
-		if (const UBasePawnData* PawnData = PawnExt->GetPawnData<UBasePawnData>())
+		if (const URpgPawnData* PawnData = PawnExt->GetPawnData<URpgPawnData>())
 		{
 			if (const URpgInputConfig* InputConfig = PawnData->InputConfig)
 			{
