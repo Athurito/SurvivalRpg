@@ -5,13 +5,13 @@
 
 #include "SurvivalRpg/AbilitySystem/RpgAbilitySystemComponent.h"
 #include "SurvivalRpg/AbilitySystem/Attributes/RpgHealthSet.h"
-#include "BasePawnData.h"
 #include "GameplayTagContainer.h"
 #include "InputActionValue.h"
 #include "RpgCharacter.h"
 #include "RpgPawnData.h"
 #include "RpgPawnExtensionComponent.h"
 #include "Components/GameFrameworkComponentManager.h"
+#include "SurvivalRpg/Camera/RpgCameraMode.h"
 #include "SurvivalRpg/Core/Player/RpgPlayerState.h"
 #include "SurvivalRpg/GameplayTags/RpgGameplayTags.h"
 #include "SurvivalRpg/Input/RpgInputComponent.h"
@@ -22,6 +22,47 @@ namespace RpgCharacter
 	static constexpr float LookPitchRate = 165.0f;
 }
 const FName URpgPawnGameplayComponent::Name_ActorFeatureName = FName("RpgPawnGameplayComponent");
+
+
+
+// Sets default values for this component's properties
+URpgPawnGameplayComponent::URpgPawnGameplayComponent(const FObjectInitializer& ObjectInitializer) : Super(ObjectInitializer)
+{
+	PrimaryComponentTick.bCanEverTick = true;
+}
+
+void URpgPawnGameplayComponent::BeginPlay()
+{
+	Super::BeginPlay();
+
+	if (APawn* Pawn = GetPawn<APawn>())
+	{
+		if (URpgPawnExtensionComponent* PawnExt = URpgPawnExtensionComponent::FindPawnExtensionComponent(Pawn))
+		{
+			PawnExt->OnAbilitySystemUninitialized_Register(FSimpleMulticastDelegate::FDelegate::CreateUObject(this, &ThisClass::HandleAbilitySystemUninitialized));
+		}
+	}
+
+	BindOnActorInitStateChanged(URpgPawnExtensionComponent::Name_ActorFeatureName, FGameplayTag(), false);
+	TryToChangeInitState(RpgGameplayTags::InitState_Spawned);
+	CheckDefaultInitialization();
+}
+
+void URpgPawnGameplayComponent::EndPlay(const EEndPlayReason::Type EndPlayReason)
+{
+	RemovePawnDataAbilitySets();
+	Super::EndPlay(EndPlayReason);
+}
+
+void URpgPawnGameplayComponent::OnRegister()
+{
+	Super::OnRegister();
+	if (GetPawn<APawn>())
+	{
+		RegisterInitStateFeature();
+	}
+}
+
 
 bool URpgPawnGameplayComponent::CanChangeInitState(UGameFrameworkComponentManager* Manager, FGameplayTag CurrentState, FGameplayTag DesiredState) const
 {
@@ -130,10 +171,25 @@ void URpgPawnGameplayComponent::CheckDefaultInitialization()
 	ContinueInitStateChain(StateChain);
 }
 
-// Sets default values for this component's properties
-URpgPawnGameplayComponent::URpgPawnGameplayComponent(const FObjectInitializer& ObjectInitializer) : Super(ObjectInitializer)
+
+
+void URpgPawnGameplayComponent::SetAbilityCameraMode(TSubclassOf<URpgCameraMode> CameraMode,
+	const FGameplayAbilitySpecHandle& OwningSpecHandle)
 {
-	PrimaryComponentTick.bCanEverTick = true;
+	if (CameraMode)
+	{
+		AbilityCameraMode = CameraMode;
+		AbilityCameraModeOwningSpecHandle = OwningSpecHandle;
+	}
+}
+
+void URpgPawnGameplayComponent::ClearAbilityCameraMode(const FGameplayAbilitySpecHandle& OwningSpecHandle)
+{
+	if (AbilityCameraModeOwningSpecHandle == OwningSpecHandle)
+	{
+		AbilityCameraMode = nullptr;
+		AbilityCameraModeOwningSpecHandle = FGameplayAbilitySpecHandle();
+	}
 }
 
 void URpgPawnGameplayComponent::InitializePlayerInput(UInputComponent* PlayerInputComponent)
@@ -150,7 +206,7 @@ void URpgPawnGameplayComponent::InitializePlayerInput(UInputComponent* PlayerInp
 			if (const URpgInputConfig* InputConfig = PawnData->InputConfig)
 			{
 				URpgInputComponent* RpgIC = Cast<URpgInputComponent>(PlayerInputComponent);
-				if (ensureMsgf(RpgIC, TEXT("Unexpected Input Component class! The Gameplay Abilities will not be bound to their inputs. Change the input component to ULyraInputComponent or a subclass of it.")))
+				if (ensureMsgf(RpgIC, TEXT("Unexpected Input Component class! The Gameplay Abilities will not be bound to their inputs. Change the input component to URpgInputComponent or a subclass of it.")))
 				{
 					// Add the key mappings that may have been set by the player
 				
@@ -206,9 +262,9 @@ void URpgPawnGameplayComponent::Input_Move(const FInputActionValue& InputActionV
 	AController* Controller = Pawn ? Pawn->GetController() : nullptr;
 
 	// If the player has attempted to move again then cancel auto running
-	// if (ARPlayerController* LyraController = Cast<ALyraPlayerController>(Controller))
+	// if (ARPlayerController* RpgController = Cast<ARpgPlayerController>(Controller))
 	// {
-	// 	LyraController->SetIsAutoRunning(false);
+	// 	RpgController->SetIsAutoRunning(false);
 	// }
 	
 	if (Controller)
@@ -306,39 +362,33 @@ void URpgPawnGameplayComponent::Input_StopJump(const FInputActionValue& InputAct
 	}
 }
 
-void URpgPawnGameplayComponent::BeginPlay()
+TSubclassOf<URpgCameraMode> URpgPawnGameplayComponent::DetermineCameraMode() const
 {
-	Super::BeginPlay();
-
-	if (APawn* Pawn = GetPawn<APawn>())
+	if (AbilityCameraMode)
 	{
-		if (URpgPawnExtensionComponent* PawnExt = URpgPawnExtensionComponent::FindPawnExtensionComponent(Pawn))
+		return AbilityCameraMode;
+	}
+
+	const APawn* Pawn = GetPawn<APawn>();
+	if (!Pawn)
+	{
+		return nullptr;
+	}
+
+	if (URpgPawnExtensionComponent* PawnExtComp = URpgPawnExtensionComponent::FindPawnExtensionComponent(Pawn))
+	{
+		if (const URpgPawnData* PawnData = PawnExtComp->GetPawnData<URpgPawnData>())
 		{
-			PawnExt->OnAbilitySystemUninitialized_Register(FSimpleMulticastDelegate::FDelegate::CreateUObject(this, &ThisClass::HandleAbilitySystemUninitialized));
+			return PawnData->DefaultCameraMode;
 		}
 	}
 
-	BindOnActorInitStateChanged(URpgPawnExtensionComponent::Name_ActorFeatureName, FGameplayTag(), false);
-	TryToChangeInitState(RpgGameplayTags::InitState_Spawned);
-	CheckDefaultInitialization();
+	return nullptr;
 }
 
-void URpgPawnGameplayComponent::EndPlay(const EEndPlayReason::Type EndPlayReason)
-{
-	RemovePawnDataAbilitySets();
-	Super::EndPlay(EndPlayReason);
-}
 
-void URpgPawnGameplayComponent::OnRegister()
-{
-	Super::OnRegister();
-	if (GetPawn<APawn>())
-	{
-		RegisterInitStateFeature();
-	}
-}
 
-void URpgPawnGameplayComponent::GrantPawnDataAbilitySets(URpgAbilitySystemComponent* AbilitySystemComponent, const UBasePawnData* PawnData, APawn* Pawn)
+void URpgPawnGameplayComponent::GrantPawnDataAbilitySets(URpgAbilitySystemComponent* AbilitySystemComponent, const URpgPawnData* PawnData, APawn* Pawn)
 {
 	if (!AbilitySystemComponent || !PawnData || !Pawn)
 	{

@@ -3,6 +3,7 @@
 #pragma once
 
 #include "CoreMinimal.h"
+#include "GameplayAbilitySpecHandle.h"
 #include "SurvivalRpg/AbilitySystem/RpgAbilitySet.h"
 #include "Components/GameFrameworkInitStateInterface.h"
 #include "Components/PawnComponent.h"
@@ -10,6 +11,7 @@
 #include "RpgPawnGameplayComponent.generated.h"
 
 
+class URpgCameraMode;
 class URpgInputConfig;
 class URpgPawnData;
 class URpgAbilitySystemComponent;
@@ -46,14 +48,26 @@ public:
 public:
 	// Sets default values for this component's properties
 	explicit URpgPawnGameplayComponent(const FObjectInitializer& ObjectInitializer);
+	
+	/** Returns the hero component if one exists on the specified actor. */
+	UFUNCTION(BlueprintPure, Category = "Rpg|Hero")
+	static URpgPawnGameplayComponent* FindPawnGameplayComponent(const AActor* Actor) { return (Actor ? Actor->FindComponentByClass<URpgPawnGameplayComponent>() : nullptr); }
+	
+	/** Overrides the camera from an active gameplay ability */
+	void SetAbilityCameraMode(TSubclassOf<URpgCameraMode> CameraMode, const FGameplayAbilitySpecHandle& OwningSpecHandle);
+
+	/** Clears the camera override if it is set */
+	void ClearAbilityCameraMode(const FGameplayAbilitySpecHandle& OwningSpecHandle);
+	
+	
 	// Called when the game starts
 	virtual void BeginPlay() override;
 	virtual void EndPlay(const EEndPlayReason::Type EndPlayReason) override;
 	
 	virtual void InitializePlayerInput(UInputComponent* PlayerInputComponent);
 
-	void Input_AbilityInputTagPressed(FGameplayTag InputTag) const;
-	void Input_AbilityInputTagReleased(FGameplayTag InputTag) const;
+	void Input_AbilityInputTagPressed(FGameplayTag InputTag);
+	void Input_AbilityInputTagReleased(FGameplayTag InputTag);
 
 	void Input_Move(const FInputActionValue& InputActionValue);
 	void Input_LookMouse(const FInputActionValue& InputActionValue);
@@ -62,10 +76,22 @@ public:
 	void Input_AutoRun(const FInputActionValue& InputActionValue);
 	void Input_Jump(const FInputActionValue& InputActionValue);
 	void Input_StopJump(const FInputActionValue& InputActionValue);
+	
+	TSubclassOf<URpgCameraMode> DetermineCameraMode() const;
 
 protected:
 
 	virtual void OnRegister() override;
+	
+protected:
+	
+	
+	/** Camera mode set by an ability. */
+	UPROPERTY()
+	TSubclassOf<URpgCameraMode> AbilityCameraMode;
+
+	/** Spec handle for the last ability to set a camera mode. */
+	FGameplayAbilitySpecHandle AbilityCameraModeOwningSpecHandle;
 
 private:
 	void GrantPawnDataAbilitySets(URpgAbilitySystemComponent* AbilitySystemComponent, const URpgPawnData* PawnData, APawn* Pawn);

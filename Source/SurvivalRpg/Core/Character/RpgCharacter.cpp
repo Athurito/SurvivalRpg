@@ -11,6 +11,7 @@
 #include "RpgPawnGameplayComponent.h"
 #include "Components/CapsuleComponent.h"
 #include "SurvivalRpg/AbilitySystem/RpgAbilitySystemComponent.h"
+#include "SurvivalRpg/Camera/RpgCameraComponent.h"
 #include "SurvivalRpg/Core/Game/RpgGameModeBase.h"
 #include "SurvivalRpg/Equipment/RpgWeaponPresentationComponent.h"
 #include "SurvivalRpg/Core/Player/RpgPlayerController.h"
@@ -20,12 +21,33 @@
 ARpgCharacter::ARpgCharacter(const FObjectInitializer& ObjectInitializer) : 
 	Super(ObjectInitializer.SetDefaultSubobjectClass<URpgCharacterMovementComponent>(CharacterMovementComponentName))
 {
-	MovementComponent = Cast<URpgCharacterMovementComponent>(ACharacter::GetMovementComponent());
+	// Avoid ticking characters if possible.
+	PrimaryActorTick.bCanEverTick = false;
+	PrimaryActorTick.bStartWithTickEnabled = false;
 	
-	PrimaryActorTick.bCanEverTick = true;
+	SetNetCullDistanceSquared(900000000.0f);
+	
+	URpgCharacterMovementComponent* RpgMoveComp = CastChecked<URpgCharacterMovementComponent>(ACharacter::GetMovementComponent());
+	RpgMoveComp->GravityScale = 1.0f;
+	RpgMoveComp->MaxAcceleration = 2400.0f;
+	RpgMoveComp->BrakingFrictionFactor = 1.0f;
+	RpgMoveComp->BrakingFriction = 6.0f;
+	RpgMoveComp->GroundFriction = 8.0f;
+	RpgMoveComp->BrakingDecelerationWalking = 1400.0f;
+	RpgMoveComp->bUseControllerDesiredRotation = false;
+	RpgMoveComp->bOrientRotationToMovement = false;
+	RpgMoveComp->RotationRate = FRotator(0.0f, 720.0f, 0.0f);
+	RpgMoveComp->bAllowPhysicsRotationDuringAnimRootMotion = false;
+	RpgMoveComp->GetNavAgentPropertiesRef().bCanCrouch = true;
+	RpgMoveComp->bCanWalkOffLedgesWhenCrouching = true;
+	RpgMoveComp->SetCrouchedHalfHeight(65.0f);
+	
+
+	
 	PawnExtensionComponent = CreateDefaultSubobject<URpgPawnExtensionComponent>(TEXT("PawnExtensionComponent"));
 	PawnExtensionComponent->OnAbilitySystemInitialized_RegisterAndCall(FSimpleMulticastDelegate::FDelegate::CreateUObject(this, &ThisClass::OnAbilitySystemInitialized));
 	PawnExtensionComponent->OnAbilitySystemUninitialized_Register(FSimpleMulticastDelegate::FDelegate::CreateUObject(this, &ThisClass::OnAbilitySystemUninitialized));
+	
 	WeaponPresentationComponent = CreateDefaultSubobject<URpgWeaponPresentationComponent>(TEXT("WeaponPresentationComponent"));
 	
 	HealthComponent = CreateDefaultSubobject<URpgHealthComponent>(TEXT("HealthComponent"));
@@ -35,6 +57,16 @@ ARpgCharacter::ARpgCharacter(const FObjectInitializer& ObjectInitializer) :
 	DeathComponent = CreateDefaultSubobject<URpgDeathComponent>(TEXT("DeathComponent"));
 	DownedComponent = CreateDefaultSubobject<URpgDownedComponent>(TEXT("DownedComponent"));
 	DownedComponent->OnDownedStateChanged.AddDynamic(this, &ThisClass::OnDownedStateChanged);
+	
+	CameraComponent = CreateDefaultSubobject<URpgCameraComponent>(TEXT("CameraComponent"));
+	CameraComponent->SetRelativeLocation(FVector(-300.0f, 0.0f, 75.0f));
+	
+	bUseControllerRotationPitch = false;
+	bUseControllerRotationYaw = true;
+	bUseControllerRotationRoll = false;
+
+	BaseEyeHeight = 80.0f;
+	CrouchedEyeHeight = 50.0f;
 }
 
 ARpgPlayerController* ARpgCharacter::GetRpgPlayerController() const
