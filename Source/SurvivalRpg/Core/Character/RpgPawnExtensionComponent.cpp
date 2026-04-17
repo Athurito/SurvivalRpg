@@ -6,6 +6,7 @@
 #include "Components/GameFrameworkComponentManager.h"
 #include "Net/UnrealNetwork.h"
 #include "SurvivalRpg/AbilitySystem/RpgAbilitySystemComponent.h"
+#include "SurvivalRpg/Core/Character/RpgPawnData.h"
 #include "SurvivalRpg/GameplayTags/RpgGameplayTags.h"
 
 const FName URpgPawnExtensionComponent::Name_ActorFeatureName = FName("PawnExtension");
@@ -133,6 +134,12 @@ void URpgPawnExtensionComponent::InitializeAbilitySystemComponent(URpgAbilitySys
 	
 	AbilitySystemComponent = InAsc;
 	AbilitySystemComponent->InitAbilityActorInfo(InOwner, Pawn);
+
+	if (ensure(PawnData))
+	{
+		InAsc->SetTagRelationshipMapping(PawnData->TagRelationshipMapping);
+	}
+
 	OnAbilitySystemInitialized.Broadcast();
 }
 

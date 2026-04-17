@@ -11,6 +11,8 @@
 #include "RpgPawnData.h"
 #include "RpgPawnExtensionComponent.h"
 #include "Components/GameFrameworkComponentManager.h"
+#include "GameFramework/Controller.h"
+#include "SurvivalRpg/Camera/RpgCameraComponent.h"
 #include "SurvivalRpg/Camera/RpgCameraMode.h"
 #include "SurvivalRpg/Core/Player/RpgPlayerState.h"
 #include "SurvivalRpg/GameplayTags/RpgGameplayTags.h"
@@ -50,6 +52,14 @@ void URpgPawnGameplayComponent::BeginPlay()
 
 void URpgPawnGameplayComponent::EndPlay(const EEndPlayReason::Type EndPlayReason)
 {
+	if (APawn* Pawn = GetPawn<APawn>())
+	{
+		if (URpgCameraComponent* CameraComponent = URpgCameraComponent::FindCameraComponent(Pawn))
+		{
+			CameraComponent->DetermineCameraModeDelegate.Unbind();
+		}
+	}
+
 	RemovePawnDataAbilitySets();
 	Super::EndPlay(EndPlayReason);
 }
@@ -79,7 +89,27 @@ bool URpgPawnGameplayComponent::CanChangeInitState(UGameFrameworkComponentManage
 	// -------------- DataAvailable --------------
 	if (CurrentState == RpgGameplayTags::InitState_Spawned && DesiredState == RpgGameplayTags::InitState_DataAvailable)
 	{
-		if (Pawn->IsLocallyControlled() && !Pawn->IsBotControlled())
+		if (!GetPlayerState<ARpgPlayerState>())
+		{
+			return false;
+		}
+
+		if (Pawn->GetLocalRole() != ROLE_SimulatedProxy)
+		{
+			AController* Controller = GetController<AController>();
+			const bool bHasControllerPairedWithPS = (Controller != nullptr)
+				&& (Controller->PlayerState != nullptr)
+				&& (Controller->PlayerState->GetOwner() == Controller);
+
+			if (!bHasControllerPairedWithPS)
+			{
+				return false;
+			}
+		}
+
+		const bool bIsLocallyControlled = Pawn->IsLocallyControlled();
+		const bool bIsBot = Pawn->IsBotControlled();
+		if (bIsLocallyControlled && !bIsBot)
 		{
 			APlayerController* PC = GetController<APlayerController>();
 			if (!Pawn->InputComponent || !PC || !PC->GetLocalPlayer())
@@ -93,18 +123,9 @@ bool URpgPawnGameplayComponent::CanChangeInitState(UGameFrameworkComponentManage
 	// -------------- DataInitialized --------------
 	if (CurrentState == RpgGameplayTags::InitState_DataAvailable && DesiredState == RpgGameplayTags::InitState_DataInitialized)
 	{
-		if (!Manager->HasFeatureReachedInitState(Pawn, URpgPawnExtensionComponent::Name_ActorFeatureName, RpgGameplayTags::InitState_DataAvailable))
-		{
-			return false;
-		}
-
-		const ARpgPlayerState* PlayerState = GetPlayerState<ARpgPlayerState>();
-		if (!PlayerState)
-		{
-			return false;
-		}
-
-		return (PlayerState->GetRpgAbilitySystemComponent() != nullptr);
+		ARpgPlayerState* PlayerState = GetPlayerState<ARpgPlayerState>();
+		return PlayerState
+			&& Manager->HasFeatureReachedInitState(Pawn, URpgPawnExtensionComponent::Name_ActorFeatureName, RpgGameplayTags::InitState_DataInitialized);
 	}
 	
 	// -------------- GameplayReady --------------
@@ -123,9 +144,13 @@ void URpgPawnGameplayComponent::HandleChangeInitState(UGameFrameworkComponentMan
 		ARpgPlayerState* PS = GetPlayerState<ARpgPlayerState>();
 
 		if (!Pawn || !PS) return;
+
+		const URpgPawnData* PawnData = nullptr;
 		
 		if (URpgPawnExtensionComponent* PawnExt = URpgPawnExtensionComponent::FindPawnExtensionComponent(Pawn))
 		{
+			PawnData = PawnExt->GetPawnData<URpgPawnData>();
+
 			URpgAbilitySystemComponent* AbilitySystemComponent = PS->GetRpgAbilitySystemComponent();
 			if (!AbilitySystemComponent)
 			{
@@ -144,7 +169,14 @@ void URpgPawnGameplayComponent::HandleChangeInitState(UGameFrameworkComponentMan
 				InitializePlayerInput(Pawn->InputComponent);
 			}
 		}
-		
+
+		if (PawnData)
+		{
+			if (URpgCameraComponent* CameraComponent = URpgCameraComponent::FindCameraComponent(Pawn))
+			{
+				CameraComponent->DetermineCameraModeDelegate.BindUObject(this, &ThisClass::DetermineCameraMode);
+			}
+		}
 	}
 }
 
@@ -458,6 +490,14 @@ void URpgPawnGameplayComponent::RemovePawnDataAbilitySets()
 
 void URpgPawnGameplayComponent::HandleAbilitySystemUninitialized()
 {
+	if (APawn* Pawn = GetPawn<APawn>())
+	{
+		if (URpgCameraComponent* CameraComponent = URpgCameraComponent::FindCameraComponent(Pawn))
+		{
+			CameraComponent->DetermineCameraModeDelegate.Unbind();
+		}
+	}
+
 	RemovePawnDataAbilitySets();
 }
 

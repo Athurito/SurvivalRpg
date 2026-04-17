@@ -3,6 +3,7 @@
 
 #include "RpgPlayerController.h"
 
+#include "Engine/World.h"
 #include "EnhancedInputSubsystems.h"
 #include "SurvivalRpg/AbilitySystem/RpgAbilitySystemComponent.h"
 #include "SurvivalRpg/Core/Game/RpgGameModeBase.h"
@@ -64,6 +65,18 @@ void ARpgPlayerController::OnRep_PlayerState()
 {
 	Super::OnRep_PlayerState();
 	RefreshPlayerStateBindings();
+
+	if (GetWorld()->IsNetMode(NM_Client))
+	{
+		if (ARpgPlayerState* RpgPS = GetPlayerState<ARpgPlayerState>())
+		{
+			if (URpgAbilitySystemComponent* RpgASC = RpgPS->GetRpgAbilitySystemComponent())
+			{
+				RpgASC->RefreshAbilityActorInfo();
+				RpgASC->TryActivateAbilitiesOnSpawn();
+			}
+		}
+	}
 }
 
 void ARpgPlayerController::PostProcessInput(const float DeltaTime, const bool bGamePaused)
