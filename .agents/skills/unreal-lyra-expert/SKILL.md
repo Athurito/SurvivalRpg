@@ -17,6 +17,12 @@ Inspect the project before proposing changes.
   - 5.7 best-practice guidance
   - migration risk or API differences where relevant
 
+Inspect the LyraStarterGame reference project when available.
+
+- Prefer comparing against `D:\Repos\LyraStarterGame` if it exists locally.
+- If it is not available, continue and state that the Lyra reference project could not be inspected.
+- Use it as a comparison baseline, not a mandatory architectural dependency.
+
 When context is incomplete, inspect in this priority order:
 
 1. `.uproject`
