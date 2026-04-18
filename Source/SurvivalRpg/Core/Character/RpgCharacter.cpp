@@ -16,6 +16,7 @@
 #include "SurvivalRpg/Equipment/RpgWeaponPresentationComponent.h"
 #include "SurvivalRpg/Core/Player/RpgPlayerController.h"
 #include "SurvivalRpg/Core/Player/RpgPlayerState.h"
+#include "SurvivalRpg/GameplayTags/RpgGameplayTags.h"
 
 
 ARpgCharacter::ARpgCharacter(const FObjectInitializer& ObjectInitializer) : 
@@ -92,6 +93,20 @@ UAbilitySystemComponent* ARpgCharacter::GetAbilitySystemComponent() const
 	return PawnExtensionComponent->GetRpgAbilitySystemComponent();
 }
 
+void ARpgCharacter::ToggleCrouch()
+{
+	const URpgCharacterMovementComponent* RpgMoveComp = CastChecked<URpgCharacterMovementComponent>(GetCharacterMovement());
+
+	if (IsCrouched() || RpgMoveComp->bWantsToCrouch)
+	{
+		UnCrouch();
+	}
+	else if (RpgMoveComp->IsMovingOnGround())
+	{
+		Crouch();
+	}
+}
+
 // Called when the game starts or when spawned
 void ARpgCharacter::BeginPlay()
 {
@@ -107,6 +122,7 @@ void ARpgCharacter::OnAbilitySystemInitialized()
 	HealthComponent->InitializeWithAbilitySystem(Asc);
 	DeathComponent->InitializeWithAbilitySystem(Asc);
 	DownedComponent->InitializeWithAbilitySystem(Asc);
+	Asc->SetLooseGameplayTagCount(RpgGameplayTags::Status_Crouching, IsCrouched() ? 1 : 0);
 
 	if (WeaponPresentationComponent != nullptr)
 	{
@@ -119,6 +135,11 @@ void ARpgCharacter::OnAbilitySystemUninitialized()
 	HealthComponent->UninitializeFromAbilitySystem();
 	DeathComponent->UninitializeFromAbilitySystem();
 	DownedComponent->UninitializeFromAbilitySystem();
+
+	if (URpgAbilitySystemComponent* Asc = GetRpgAbilitySystemComponent())
+	{
+		Asc->SetLooseGameplayTagCount(RpgGameplayTags::Status_Crouching, 0);
+	}
 
 	if (WeaponPresentationComponent != nullptr)
 	{
@@ -211,6 +232,31 @@ void ARpgCharacter::OnDownedStateChanged(ERpgDownedState NewState)
 	}
 }
 
+void ARpgCharacter::OnStartCrouch(float HalfHeightAdjust, float ScaledHalfHeightAdjust)
+{
+	if (URpgAbilitySystemComponent* Asc = GetRpgAbilitySystemComponent())
+	{
+		Asc->SetLooseGameplayTagCount(RpgGameplayTags::Status_Crouching, 1);
+	}
+
+	Super::OnStartCrouch(HalfHeightAdjust, ScaledHalfHeightAdjust);
+}
+
+void ARpgCharacter::OnEndCrouch(float HalfHeightAdjust, float ScaledHalfHeightAdjust)
+{
+	if (URpgAbilitySystemComponent* Asc = GetRpgAbilitySystemComponent())
+	{
+		Asc->SetLooseGameplayTagCount(RpgGameplayTags::Status_Crouching, 0);
+	}
+
+	Super::OnEndCrouch(HalfHeightAdjust, ScaledHalfHeightAdjust);
+}
+
+bool ARpgCharacter::CanJumpInternal_Implementation() const
+{
+	return JumpIsAllowedInternal();
+}
+
 void ARpgCharacter::DisableMovementAndCollision() const
 {
 	if (GetController())
@@ -270,10 +316,6 @@ void ARpgCharacter::SetupPlayerInputComponent(UInputComponent* PlayerInputCompon
 {
 	Super::SetupPlayerInputComponent(PlayerInputComponent);
 	PawnExtensionComponent->SetupPlayerInputComponent();
-	if (URpgPawnGameplayComponent* PawnGameplayComponent = FindComponentByClass<URpgPawnGameplayComponent>())
-	{
-		PawnGameplayComponent->InitializePlayerInput(PlayerInputComponent);
-	}
 }
 
 

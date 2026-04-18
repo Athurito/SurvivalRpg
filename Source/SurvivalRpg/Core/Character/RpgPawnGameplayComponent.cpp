@@ -14,6 +14,7 @@
 #include "GameFramework/Controller.h"
 #include "SurvivalRpg/Camera/RpgCameraComponent.h"
 #include "SurvivalRpg/Camera/RpgCameraMode.h"
+#include "SurvivalRpg/Core/Player/RpgPlayerController.h"
 #include "SurvivalRpg/Core/Player/RpgPlayerState.h"
 #include "SurvivalRpg/GameplayTags/RpgGameplayTags.h"
 #include "SurvivalRpg/Input/RpgInputComponent.h"
@@ -294,10 +295,10 @@ void URpgPawnGameplayComponent::Input_Move(const FInputActionValue& InputActionV
 	AController* Controller = Pawn ? Pawn->GetController() : nullptr;
 
 	// If the player has attempted to move again then cancel auto running
-	// if (ARPlayerController* RpgController = Cast<ARpgPlayerController>(Controller))
-	// {
-	// 	RpgController->SetIsAutoRunning(false);
-	// }
+	if (ARpgPlayerController* RpgController = Cast<ARpgPlayerController>(Controller))
+	{
+		RpgController->SetIsAutoRunning(false);
+	}
 	
 	if (Controller)
 	{
@@ -367,21 +368,28 @@ void URpgPawnGameplayComponent::Input_LookStick(const FInputActionValue& InputAc
 
 void URpgPawnGameplayComponent::Input_Crouch(const FInputActionValue& InputActionValue)
 {
-	//TODO
 	if (ARpgCharacter* Character = GetPawn<ARpgCharacter>())
 	{
-		
+		Character->ToggleCrouch();
 	}
 }
 
 void URpgPawnGameplayComponent::Input_AutoRun(const FInputActionValue& InputActionValue)
 {
+	if (APawn* Pawn = GetPawn<APawn>())
+	{
+		if (ARpgPlayerController* Controller = Cast<ARpgPlayerController>(Pawn->GetController()))
+		{
+			Controller->SetIsAutoRunning(!Controller->GetIsAutoRunning());
+		}
+	}
 }
 
 void URpgPawnGameplayComponent::Input_Jump(const FInputActionValue& InputActionValue)
 {
 	if (ARpgCharacter* Character = GetPawn<ARpgCharacter>())
 	{
+		Character->UnCrouch();
 		Character->Jump();
 	}
 }

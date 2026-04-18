@@ -5,9 +5,11 @@
 
 #include "Engine/World.h"
 #include "EnhancedInputSubsystems.h"
+#include "GameFramework/Pawn.h"
 #include "SurvivalRpg/AbilitySystem/RpgAbilitySystemComponent.h"
 #include "SurvivalRpg/Core/Game/RpgGameModeBase.h"
 #include "SurvivalRpg/Core/Player/RpgPlayerState.h"
+#include "SurvivalRpg/GameplayTags/RpgGameplayTags.h"
 
 ARpgPlayerState* ARpgPlayerController::GetRpgPlayerState() const
 {
@@ -61,6 +63,27 @@ void ARpgPlayerController::SetupInputComponent()
 	}
 }
 
+void ARpgPlayerController::PlayerTick(float DeltaTime)
+{
+	Super::PlayerTick(DeltaTime);
+
+	if (GetIsAutoRunning())
+	{
+		if (APawn* CurrentPawn = GetPawn())
+		{
+			const FRotator MovementRotation(0.0f, GetControlRotation().Yaw, 0.0f);
+			const FVector MovementDirection = MovementRotation.RotateVector(FVector::ForwardVector);
+			CurrentPawn->AddMovementInput(MovementDirection, 1.0f);
+		}
+	}
+}
+
+void ARpgPlayerController::OnPossess(APawn* InPawn)
+{
+	Super::OnPossess(InPawn);
+	SetIsAutoRunning(false);
+}
+
 void ARpgPlayerController::OnRep_PlayerState()
 {
 	Super::OnRep_PlayerState();
@@ -86,6 +109,34 @@ void ARpgPlayerController::PostProcessInput(const float DeltaTime, const bool bG
 		RpgASC->ProcessAbilityInput(DeltaTime, bGamePaused);
 	}
 	Super::PostProcessInput(DeltaTime, bGamePaused);
+}
+
+void ARpgPlayerController::SetIsAutoRunning(bool bEnabled)
+{
+	const bool bIsAutoRunning = GetIsAutoRunning();
+	if (bEnabled == bIsAutoRunning)
+	{
+		return;
+	}
+
+	if (bEnabled)
+	{
+		OnStartAutoRun();
+	}
+	else
+	{
+		OnEndAutoRun();
+	}
+}
+
+bool ARpgPlayerController::GetIsAutoRunning() const
+{
+	if (const URpgAbilitySystemComponent* RpgASC = GetRpgAbilitySystemComponent())
+	{
+		return RpgASC->GetTagCount(RpgGameplayTags::Status_AutoRunning) > 0;
+	}
+
+	return false;
 }
 
 void ARpgPlayerController::ServerRequestRespawn_Implementation()
@@ -146,3 +197,22 @@ void ARpgPlayerController::UnbindFromPlayerState()
 	BoundPlayerState->OnCheckpointChanged.RemoveDynamic(this, &ThisClass::HandleCheckpointChanged);
 	BoundPlayerState = nullptr;
 }
+
+void ARpgPlayerController::OnStartAutoRun()
+{
+	if (URpgAbilitySystemComponent* RpgASC = GetRpgAbilitySystemComponent())
+	{
+		RpgASC->SetLooseGameplayTagCount(RpgGameplayTags::Status_AutoRunning, 1);
+		K2_OnStartAutoRun();
+	}
+}
+
+void ARpgPlayerController::OnEndAutoRun()
+{
+	if (URpgAbilitySystemComponent* RpgASC = GetRpgAbilitySystemComponent())
+	{
+		RpgASC->SetLooseGameplayTagCount(RpgGameplayTags::Status_AutoRunning, 0);
+		K2_OnEndAutoRun();
+	}
+}
+

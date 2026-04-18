@@ -41,6 +41,9 @@ public:
 	UFUNCTION(BlueprintCallable, Category = "Rpg|Character")
 	URpgAbilitySystemComponent* GetRpgAbilitySystemComponent() const;
 	virtual UAbilitySystemComponent* GetAbilitySystemComponent() const override;
+
+	UFUNCTION(BlueprintCallable, Category = "Rpg|Character")
+	void ToggleCrouch();
 	
 	// Called to bind functionality to input
 	virtual void SetupPlayerInputComponent(class UInputComponent* PlayerInputComponent) override;
@@ -70,6 +73,10 @@ protected:
 
 	UFUNCTION()
 	virtual void OnDownedStateChanged(ERpgDownedState NewState);
+
+	virtual void OnStartCrouch(float HalfHeightAdjust, float ScaledHalfHeightAdjust) override;
+	virtual void OnEndCrouch(float HalfHeightAdjust, float ScaledHalfHeightAdjust) override;
+	virtual bool CanJumpInternal_Implementation() const override;
 	
 	void DisableMovementAndCollision() const;
 	void DisableMovementForDowned() const;

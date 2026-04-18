@@ -28,8 +28,16 @@ public:
 
 	virtual void OnRep_PlayerState() override;
 	//~APlayerController interface
+	virtual void PlayerTick(float DeltaTime) override;
+	virtual void OnPossess(APawn* InPawn) override;
 	virtual void PostProcessInput(const float DeltaTime, const bool bGamePaused) override;
 	//~End of APlayerController interface
+
+	UFUNCTION(BlueprintCallable, Category = "Rpg|Character")
+	void SetIsAutoRunning(bool bEnabled);
+
+	UFUNCTION(BlueprintCallable, Category = "Rpg|Character")
+	bool GetIsAutoRunning() const;
 protected:
 	
 	UFUNCTION(Server, Reliable)
@@ -46,6 +54,12 @@ protected:
 
 	UFUNCTION(BlueprintImplementableEvent, Category = "Rpg|Respawn", meta = (DisplayName = "On Checkpoint Changed"))
 	void K2_OnCheckpointChanged(bool bHasCheckpoint, FTransform CheckpointTransform);
+
+	UFUNCTION(BlueprintImplementableEvent, Category = "Rpg|Character", meta = (DisplayName = "On Start Auto Run"))
+	void K2_OnStartAutoRun();
+
+	UFUNCTION(BlueprintImplementableEvent, Category = "Rpg|Character", meta = (DisplayName = "On End Auto Run"))
+	void K2_OnEndAutoRun();
 	
 protected:
 	virtual void BeginPlayingState() override;
@@ -53,6 +67,8 @@ protected:
 	
 
 private:
+	void OnStartAutoRun();
+	void OnEndAutoRun();
 	void RefreshPlayerStateBindings();
 	void BindToPlayerState(ARpgPlayerState* NewPlayerState);
 	void UnbindFromPlayerState();
