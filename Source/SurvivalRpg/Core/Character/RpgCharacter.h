@@ -20,7 +20,7 @@ class URpgAbilitySystemComponent;
 class URpgPawnGameplayComponent;
 class URpgPawnExtensionComponent;
 class URpgCharacterMovementComponent;
-class URpgWeaponPresentationComponent;
+class URpgEquipmentManagerComponent;
 
 UCLASS()
 class SURVIVALRPG_API ARpgCharacter : public AModularCharacter, public IAbilitySystemInterface
@@ -44,6 +44,9 @@ public:
 
 	UFUNCTION(BlueprintCallable, Category = "Rpg|Character")
 	void ToggleCrouch();
+
+	UFUNCTION(BlueprintCallable, Category = "Rpg|Equipment")
+	URpgEquipmentManagerComponent* GetEquipmentManagerComponent() const { return EquipmentManagerComponent; }
 	
 	// Called to bind functionality to input
 	virtual void SetupPlayerInputComponent(class UInputComponent* PlayerInputComponent) override;
@@ -88,8 +91,8 @@ private:
 	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "Rpg|Character", Meta = (AllowPrivateAccess = "true"))
 	TObjectPtr<URpgPawnExtensionComponent> PawnExtensionComponent;
 
-	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "Rpg|Character", Meta = (AllowPrivateAccess = "true"))
-	TObjectPtr<URpgWeaponPresentationComponent> WeaponPresentationComponent;
+	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "Rpg|Equipment", Meta = (AllowPrivateAccess = "true"))
+	TObjectPtr<URpgEquipmentManagerComponent> EquipmentManagerComponent;
 	
 	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "Rpg|Character", Meta = (AllowPrivateAccess = "true"))
 	TObjectPtr<URpgHealthComponent> HealthComponent;

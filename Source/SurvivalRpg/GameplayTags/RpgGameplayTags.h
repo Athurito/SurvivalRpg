@@ -25,17 +25,20 @@ namespace RpgGameplayTags
 	UE_DECLARE_GAMEPLAY_TAG_EXTERN(InputTag_AutoRun);   
 	UE_DECLARE_GAMEPLAY_TAG_EXTERN(InputTag_Jump);   
 	UE_DECLARE_GAMEPLAY_TAG_EXTERN(InputTag_StopJump);   
-	UE_DECLARE_GAMEPLAY_TAG_EXTERN(InputTag_WeaponSet_1);
-	UE_DECLARE_GAMEPLAY_TAG_EXTERN(InputTag_WeaponSet_2);
+	UE_DECLARE_GAMEPLAY_TAG_EXTERN(InputTag_QuickBar_Slot_1);
+	UE_DECLARE_GAMEPLAY_TAG_EXTERN(InputTag_QuickBar_Slot_2);
+	UE_DECLARE_GAMEPLAY_TAG_EXTERN(InputTag_QuickBar_Slot_3);
+	UE_DECLARE_GAMEPLAY_TAG_EXTERN(InputTag_QuickBar_Slot_4);
+	UE_DECLARE_GAMEPLAY_TAG_EXTERN(InputTag_QuickBar_Slot_5);
+	UE_DECLARE_GAMEPLAY_TAG_EXTERN(InputTag_QuickBar_Slot_6);
+	UE_DECLARE_GAMEPLAY_TAG_EXTERN(InputTag_QuickBar_Slot_7);
+	UE_DECLARE_GAMEPLAY_TAG_EXTERN(InputTag_QuickBar_Slot_8);
 	
 	UE_DECLARE_GAMEPLAY_TAG_EXTERN(GameplayEvent_Death);
 	UE_DECLARE_GAMEPLAY_TAG_EXTERN(GameplayEvent_Reset);
 	UE_DECLARE_GAMEPLAY_TAG_EXTERN(GameplayEvent_RequestReset);
 	UE_DECLARE_GAMEPLAY_TAG_EXTERN(GameplayEvent_Downed);
 	UE_DECLARE_GAMEPLAY_TAG_EXTERN(GameplayEvent_Revive);
-	UE_DECLARE_GAMEPLAY_TAG_EXTERN(GameplayEvent_Equip_ApplyCurrentState);
-	UE_DECLARE_GAMEPLAY_TAG_EXTERN(GameplayEvent_Equip_HolsterVisible);
-	UE_DECLARE_GAMEPLAY_TAG_EXTERN(GameplayEvent_Equip_DrawActiveSet);
 
 	UE_DECLARE_GAMEPLAY_TAG_EXTERN(Status_Downed);
 	UE_DECLARE_GAMEPLAY_TAG_EXTERN(Status_Downed_BleedingOut);
@@ -43,7 +46,6 @@ namespace RpgGameplayTags
 	UE_DECLARE_GAMEPLAY_TAG_EXTERN(Status_CannotBeRevived);
 	UE_DECLARE_GAMEPLAY_TAG_EXTERN(Status_Crouching);
 	UE_DECLARE_GAMEPLAY_TAG_EXTERN(Status_AutoRunning);
-	UE_DECLARE_GAMEPLAY_TAG_EXTERN(Status_EquipTransition);
 	UE_DECLARE_GAMEPLAY_TAG_EXTERN(State_Dead);
 	UE_DECLARE_GAMEPLAY_TAG_EXTERN(Status_Death);
 	UE_DECLARE_GAMEPLAY_TAG_EXTERN(Status_Death_Dying);
@@ -68,14 +70,4 @@ namespace RpgGameplayTags
 	UE_DECLARE_GAMEPLAY_TAG_EXTERN(GameplayEvent_BleedoutExpired);
 
 	UE_DECLARE_GAMEPLAY_TAG_EXTERN(Status_Dead_WaitingForRespawn);
-	UE_DECLARE_GAMEPLAY_TAG_EXTERN(Equipment_Slot_WeaponSet_1_MainHand);
-	UE_DECLARE_GAMEPLAY_TAG_EXTERN(Equipment_Slot_WeaponSet_1_OffHand);
-	UE_DECLARE_GAMEPLAY_TAG_EXTERN(Equipment_Slot_WeaponSet_2_MainHand);
-	UE_DECLARE_GAMEPLAY_TAG_EXTERN(Equipment_Slot_WeaponSet_2_OffHand);
-	UE_DECLARE_GAMEPLAY_TAG_EXTERN(Equipment_HandUsage_MainHand);
-	UE_DECLARE_GAMEPLAY_TAG_EXTERN(Equipment_HandUsage_OffHand);
-	UE_DECLARE_GAMEPLAY_TAG_EXTERN(Equipment_HandUsage_EitherHand);
-	UE_DECLARE_GAMEPLAY_TAG_EXTERN(Equipment_HandUsage_TwoHanded);
-	UE_DECLARE_GAMEPLAY_TAG_EXTERN(Equipment_Trait_Shield);
-	UE_DECLARE_GAMEPLAY_TAG_EXTERN(Equipment_Trait_DualWield);
 }

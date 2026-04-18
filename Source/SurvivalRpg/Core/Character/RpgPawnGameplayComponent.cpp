@@ -255,6 +255,14 @@ void URpgPawnGameplayComponent::InitializePlayerInput(UInputComponent* PlayerInp
 					RpgIC->BindNativeAction(InputConfig, RpgGameplayTags::InputTag_AutoRun, ETriggerEvent::Triggered, this, &ThisClass::Input_AutoRun, /*bLogIfNotFound=*/ false);
 					RpgIC->BindNativeAction(InputConfig, RpgGameplayTags::InputTag_Jump, ETriggerEvent::Started, this, &ThisClass::Input_Jump, /*bLogIfNotFound=*/ false);
 					RpgIC->BindNativeAction(InputConfig, RpgGameplayTags::InputTag_StopJump, ETriggerEvent::Completed, this, &ThisClass::Input_StopJump, /*bLogIfNotFound=*/ false);
+					RpgIC->BindNativeAction(InputConfig, RpgGameplayTags::InputTag_QuickBar_Slot_1, ETriggerEvent::Started, this, &ThisClass::Input_QuickBarSlot1, /*bLogIfNotFound=*/ false);
+					RpgIC->BindNativeAction(InputConfig, RpgGameplayTags::InputTag_QuickBar_Slot_2, ETriggerEvent::Started, this, &ThisClass::Input_QuickBarSlot2, /*bLogIfNotFound=*/ false);
+					RpgIC->BindNativeAction(InputConfig, RpgGameplayTags::InputTag_QuickBar_Slot_3, ETriggerEvent::Started, this, &ThisClass::Input_QuickBarSlot3, /*bLogIfNotFound=*/ false);
+					RpgIC->BindNativeAction(InputConfig, RpgGameplayTags::InputTag_QuickBar_Slot_4, ETriggerEvent::Started, this, &ThisClass::Input_QuickBarSlot4, /*bLogIfNotFound=*/ false);
+					RpgIC->BindNativeAction(InputConfig, RpgGameplayTags::InputTag_QuickBar_Slot_5, ETriggerEvent::Started, this, &ThisClass::Input_QuickBarSlot5, /*bLogIfNotFound=*/ false);
+					RpgIC->BindNativeAction(InputConfig, RpgGameplayTags::InputTag_QuickBar_Slot_6, ETriggerEvent::Started, this, &ThisClass::Input_QuickBarSlot6, /*bLogIfNotFound=*/ false);
+					RpgIC->BindNativeAction(InputConfig, RpgGameplayTags::InputTag_QuickBar_Slot_7, ETriggerEvent::Started, this, &ThisClass::Input_QuickBarSlot7, /*bLogIfNotFound=*/ false);
+					RpgIC->BindNativeAction(InputConfig, RpgGameplayTags::InputTag_QuickBar_Slot_8, ETriggerEvent::Started, this, &ThisClass::Input_QuickBarSlot8, /*bLogIfNotFound=*/ false);
 				}
 			}
 		}
@@ -399,6 +407,57 @@ void URpgPawnGameplayComponent::Input_StopJump(const FInputActionValue& InputAct
 	if (ARpgCharacter* Character = GetPawn<ARpgCharacter>())
 	{
 		Character->StopJumping();
+	}
+}
+
+void URpgPawnGameplayComponent::Input_QuickBarSlot1(const FInputActionValue& InputActionValue)
+{
+	Input_QuickBarSlot(0);
+}
+
+void URpgPawnGameplayComponent::Input_QuickBarSlot2(const FInputActionValue& InputActionValue)
+{
+	Input_QuickBarSlot(1);
+}
+
+void URpgPawnGameplayComponent::Input_QuickBarSlot3(const FInputActionValue& InputActionValue)
+{
+	Input_QuickBarSlot(2);
+}
+
+void URpgPawnGameplayComponent::Input_QuickBarSlot4(const FInputActionValue& InputActionValue)
+{
+	Input_QuickBarSlot(3);
+}
+
+void URpgPawnGameplayComponent::Input_QuickBarSlot5(const FInputActionValue& InputActionValue)
+{
+	Input_QuickBarSlot(4);
+}
+
+void URpgPawnGameplayComponent::Input_QuickBarSlot6(const FInputActionValue& InputActionValue)
+{
+	Input_QuickBarSlot(5);
+}
+
+void URpgPawnGameplayComponent::Input_QuickBarSlot7(const FInputActionValue& InputActionValue)
+{
+	Input_QuickBarSlot(6);
+}
+
+void URpgPawnGameplayComponent::Input_QuickBarSlot8(const FInputActionValue& InputActionValue)
+{
+	Input_QuickBarSlot(7);
+}
+
+void URpgPawnGameplayComponent::Input_QuickBarSlot(int32 SlotIndex)
+{
+	if (APawn* Pawn = GetPawn<APawn>())
+	{
+		if (ARpgPlayerController* Controller = Cast<ARpgPlayerController>(Pawn->GetController()))
+		{
+			Controller->SetActiveQuickBarSlot(SlotIndex);
+		}
 	}
 }
 

@@ -107,7 +107,20 @@ URpgInventoryItemInstance* FRpgInventoryList::AddEntry(TSubclassOf<URpgInventory
 
 void FRpgInventoryList::AddEntry(URpgInventoryItemInstance* Instance)
 {
-	unimplemented();
+	//Noot implemented in lyra
+	if (Instance == nullptr)
+	{
+		return;
+	}
+
+	check(OwnerComponent);
+	AActor* OwningActor = OwnerComponent->GetOwner();
+	check(OwningActor && OwningActor->HasAuthority());
+
+	FRpgInventoryEntry& NewEntry = Entries.AddDefaulted_GetRef();
+	NewEntry.Instance = Instance;
+	NewEntry.StackCount = 1;
+	MarkItemDirty(NewEntry);
 }
 
 void FRpgInventoryList::RemoveEntry(URpgInventoryItemInstance* Instance)

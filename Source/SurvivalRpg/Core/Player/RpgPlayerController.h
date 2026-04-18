@@ -7,6 +7,7 @@
 #include "RpgPlayerController.generated.h"
 
 class URpgAbilitySystemComponent;
+class URpgQuickBarComponent;
 class UInputMappingContext;
 class ARpgPlayerState;
 
@@ -16,6 +17,7 @@ class SURVIVALRPG_API ARpgPlayerController : public APlayerController
 	GENERATED_BODY()
 
 public:
+	ARpgPlayerController(const FObjectInitializer& ObjectInitializer = FObjectInitializer::Get());
 
 	UFUNCTION(BlueprintCallable, Category = "Rpg|PlayerController")
 	ARpgPlayerState* GetRpgPlayerState() const;
@@ -25,6 +27,12 @@ public:
 
 	UFUNCTION(BlueprintCallable, Category = "Rpg|Respawn")
 	void RequestRespawn();
+
+	UFUNCTION(BlueprintCallable, Category = "Rpg|QuickBar")
+	URpgQuickBarComponent* GetQuickBarComponent() const { return QuickBarComponent; }
+
+	UFUNCTION(BlueprintCallable, Category = "Rpg|QuickBar")
+	void SetActiveQuickBarSlot(int32 SlotIndex);
 
 	virtual void OnRep_PlayerState() override;
 	//~APlayerController interface
@@ -78,4 +86,7 @@ private:
 
 	UPROPERTY(Transient)
 	TObjectPtr<ARpgPlayerState> BoundPlayerState;
+
+	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "Rpg|QuickBar", meta = (AllowPrivateAccess = "true"))
+	TObjectPtr<URpgQuickBarComponent> QuickBarComponent;
 };

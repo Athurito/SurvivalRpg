@@ -27,6 +27,7 @@ public:
 
 	//~UObject interface
 	virtual bool IsSupportedForNetworking() const override { return true; }
+	virtual void GetLifetimeReplicatedProps(TArray<FLifetimeProperty>& OutLifetimeProps) const override;
 	//~End of UObject interface
 
 	// Adds a specified number of stacks to the tag (does nothing if StackCount is below 1)
@@ -56,7 +57,7 @@ public:
 	template <typename ResultClass>
 	const ResultClass* FindFragmentByClass() const
 	{
-		return static_cast<ResultClass*>(FindFragmentByClass(ResultClass::StaticClass()));
+		return static_cast<const ResultClass*>(FindFragmentByClass(ResultClass::StaticClass()));
 	}
 
 	/** Register all replication fragments */

@@ -3,6 +3,8 @@
 #pragma once
 
 #include "CoreMinimal.h"
+#include "GameplayAbilitySpec.h"
+#include "GameplayEffectTypes.h"
 #include "GameplayTagContainer.h"
 #include "Engine/DataAsset.h"
 #include "RpgAbilitySet.generated.h"
@@ -10,8 +12,6 @@
 
 class UGameplayEffect;
 class URpgGameplayAbility;
-struct FGameplayAbilitySpecHandle;
-struct FActiveGameplayEffectHandle;
 class URpgAbilitySystemComponent;
 /**
  * FRpgAbilitySet_GameplayAbility

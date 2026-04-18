@@ -76,6 +76,14 @@ public:
 	void Input_AutoRun(const FInputActionValue& InputActionValue);
 	void Input_Jump(const FInputActionValue& InputActionValue);
 	void Input_StopJump(const FInputActionValue& InputActionValue);
+	void Input_QuickBarSlot1(const FInputActionValue& InputActionValue);
+	void Input_QuickBarSlot2(const FInputActionValue& InputActionValue);
+	void Input_QuickBarSlot3(const FInputActionValue& InputActionValue);
+	void Input_QuickBarSlot4(const FInputActionValue& InputActionValue);
+	void Input_QuickBarSlot5(const FInputActionValue& InputActionValue);
+	void Input_QuickBarSlot6(const FInputActionValue& InputActionValue);
+	void Input_QuickBarSlot7(const FInputActionValue& InputActionValue);
+	void Input_QuickBarSlot8(const FInputActionValue& InputActionValue);
 	
 	TSubclassOf<URpgCameraMode> DetermineCameraMode() const;
 
@@ -94,6 +102,7 @@ protected:
 	FGameplayAbilitySpecHandle AbilityCameraModeOwningSpecHandle;
 
 private:
+	void Input_QuickBarSlot(int32 SlotIndex);
 	void GrantPawnDataAbilitySets(URpgAbilitySystemComponent* AbilitySystemComponent, const URpgPawnData* PawnData, APawn* Pawn);
 	void ResetCurrentHealthToMaxHealth(URpgAbilitySystemComponent* AbilitySystemComponent) const;
 	void RemovePawnDataAbilitySets();

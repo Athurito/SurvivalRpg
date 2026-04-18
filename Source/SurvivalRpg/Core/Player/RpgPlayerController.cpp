@@ -9,7 +9,14 @@
 #include "SurvivalRpg/AbilitySystem/RpgAbilitySystemComponent.h"
 #include "SurvivalRpg/Core/Game/RpgGameModeBase.h"
 #include "SurvivalRpg/Core/Player/RpgPlayerState.h"
+#include "SurvivalRpg/Equipment/RpgQuickBarComponent.h"
 #include "SurvivalRpg/GameplayTags/RpgGameplayTags.h"
+
+ARpgPlayerController::ARpgPlayerController(const FObjectInitializer& ObjectInitializer)
+	: Super(ObjectInitializer)
+{
+	QuickBarComponent = CreateDefaultSubobject<URpgQuickBarComponent>(TEXT("QuickBarComponent"));
+}
 
 ARpgPlayerState* ARpgPlayerController::GetRpgPlayerState() const
 {
@@ -33,6 +40,14 @@ void ARpgPlayerController::RequestRespawn()
 	if (ARpgGameModeBase* GameMode = GetWorld() ? GetWorld()->GetAuthGameMode<ARpgGameModeBase>() : nullptr)
 	{
 		GameMode->RequestPlayerRespawn(this);
+	}
+}
+
+void ARpgPlayerController::SetActiveQuickBarSlot(int32 SlotIndex)
+{
+	if (QuickBarComponent != nullptr)
+	{
+		QuickBarComponent->SetActiveSlotIndex(SlotIndex);
 	}
 }
 
