@@ -10,6 +10,7 @@
 #include "RpgGameplayAbility.generated.h"
 
 class URpgAbilityCost;
+class URpgAbilitySystemComponent;
 class URpgCameraMode;
 class ARpgPlayerController;
 
@@ -89,6 +90,9 @@ public:
 	explicit URpgGameplayAbility(const FObjectInitializer& ObjectInitializer = FObjectInitializer::Get());
 	
 	UFUNCTION(BlueprintCallable, Category = "Rpg|Ability")
+	URpgAbilitySystemComponent* GetRpgAbilitySystemComponentFromActorInfo() const;
+	
+	UFUNCTION(BlueprintCallable, Category = "Rpg|Ability")
 	ARpgPlayerController* GetRpgPlayerControllerFromActorInfo() const;
 	
 	
@@ -106,6 +110,12 @@ public:
 	ERpgAbilityActivationGroup GetActivationGroup() const { return ActivationGroup; }
 	
 	void TryActivateAbilityOnSpawn(const FGameplayAbilityActorInfo* ActorInfo, const FGameplayAbilitySpec& Spec) const;
+	
+	UFUNCTION(BlueprintCallable, BlueprintPure = false, Category = "Rpg|Ability", Meta = (ExpandBoolAsExecs = "ReturnValue"))
+	bool CanChangeActivationGroup(ERpgAbilityActivationGroup NewGroup) const;
+	
+	UFUNCTION(BlueprintCallable, BlueprintPure = false, Category = "Rpg|Ability", Meta = (ExpandBoolAsExecs = "ReturnValue"))
+	bool ChangeActivationGroup(ERpgAbilityActivationGroup NewGroup);
 	
 	
 	// Sets the ability's camera mode.

@@ -5,10 +5,12 @@
 
 #include "AbilitySystemBlueprintLibrary.h"
 #include "AbilitySystemComponent.h"
+#include "AbilitySystemGlobals.h"
 #include "AbilitySystemLog.h"
 #include "RpgAbilityCost.h"
 #include "RpgAbilitySimpleFailureMessage.h"
 #include "GameFramework/GameplayMessageSubsystem.h"
+#include "SurvivalRpg/SurvivalRpg.h"
 #include "SurvivalRpg/AbilitySystem/RpgAbilitySourceInterface.h"
 #include "SurvivalRpg/AbilitySystem/RpgAbilitySystemComponent.h"
 #include "SurvivalRpg/AbilitySystem/RpgGameplayEffectContext.h"
@@ -40,6 +42,11 @@ URpgGameplayAbility::URpgGameplayAbility(const FObjectInitializer& ObjectInitial
 	ActivationGroup = ERpgAbilityActivationGroup::Independent;
 	
 	ActiveCameraMode = nullptr;
+}
+
+URpgAbilitySystemComponent* URpgGameplayAbility::GetRpgAbilitySystemComponentFromActorInfo() const
+{
+	return (CurrentActorInfo ? Cast<URpgAbilitySystemComponent>(CurrentActorInfo->AbilitySystemComponent.Get()) : nullptr);
 }
 
 ARpgPlayerController* URpgGameplayAbility::GetRpgPlayerControllerFromActorInfo() const
@@ -198,6 +205,12 @@ bool URpgGameplayAbility::CanActivateAbility(const FGameplayAbilitySpecHandle Ha
 
 void URpgGameplayAbility::SetCanBeCanceled(bool bCanBeCanceled)
 {
+	if (!bCanBeCanceled && (ActivationGroup == ERpgAbilityActivationGroup::Exclusive_Replaceable))
+	{
+		UE_LOG(LogRpgAbilitySystem, Error, TEXT("SetCanBeCanceled: Ability [%s] can not block canceling because its activation group is replaceable."), *GetName());
+		return;
+	}
+
 	Super::SetCanBeCanceled(bCanBeCanceled);
 }
 
@@ -338,8 +351,152 @@ bool URpgGameplayAbility::DoesAbilitySatisfyTagRequirements(const UAbilitySystem
 	const FGameplayTagContainer* SourceTags, const FGameplayTagContainer* TargetTags,
 	FGameplayTagContainer* OptionalRelevantTags) const
 {
-	return Super::DoesAbilitySatisfyTagRequirements(AbilitySystemComponent, SourceTags, TargetTags,
-	                                                OptionalRelevantTags);
+	bool bBlocked = false;
+	bool bMissing = false;
+
+	UAbilitySystemGlobals& AbilitySystemGlobals = UAbilitySystemGlobals::Get();
+	const FGameplayTag& BlockedTag = AbilitySystemGlobals.ActivateFailTagsBlockedTag;
+	const FGameplayTag& MissingTag = AbilitySystemGlobals.ActivateFailTagsMissingTag;
+
+	if (AbilitySystemComponent.AreAbilityTagsBlocked(GetAssetTags()))
+	{
+		bBlocked = true;
+	}
+
+	const URpgAbilitySystemComponent* RpgASC = Cast<URpgAbilitySystemComponent>(&AbilitySystemComponent);
+	FGameplayTagContainer AllRequiredTags = ActivationRequiredTags;
+	FGameplayTagContainer AllBlockedTags = ActivationBlockedTags;
+
+	if (RpgASC)
+	{
+		RpgASC->GetAdditionalActivationTagRequirements(GetAssetTags(), AllRequiredTags, AllBlockedTags);
+	}
+
+	if (AllBlockedTags.Num() || AllRequiredTags.Num())
+	{
+		FGameplayTagContainer AbilitySystemComponentTags;
+		AbilitySystemComponent.GetOwnedGameplayTags(AbilitySystemComponentTags);
+
+		if (AbilitySystemComponentTags.HasAny(AllBlockedTags))
+		{
+			if (OptionalRelevantTags && AbilitySystemComponentTags.HasTag(RpgGameplayTags::Status_Death))
+			{
+				OptionalRelevantTags->AddTag(RpgGameplayTags::Ability_ActivateFail_IsDead);
+			}
+
+			bBlocked = true;
+		}
+
+		if (!AbilitySystemComponentTags.HasAll(AllRequiredTags))
+		{
+			bMissing = true;
+		}
+	}
+
+	if (SourceTags != nullptr)
+	{
+		if (SourceBlockedTags.Num() || SourceRequiredTags.Num())
+		{
+			if (SourceTags->HasAny(SourceBlockedTags))
+			{
+				bBlocked = true;
+			}
+
+			if (!SourceTags->HasAll(SourceRequiredTags))
+			{
+				bMissing = true;
+			}
+		}
+	}
+
+	if (TargetTags != nullptr)
+	{
+		if (TargetBlockedTags.Num() || TargetRequiredTags.Num())
+		{
+			if (TargetTags->HasAny(TargetBlockedTags))
+			{
+				bBlocked = true;
+			}
+
+			if (!TargetTags->HasAll(TargetRequiredTags))
+			{
+				bMissing = true;
+			}
+		}
+	}
+
+	if (bBlocked)
+	{
+		if (OptionalRelevantTags && BlockedTag.IsValid())
+		{
+			OptionalRelevantTags->AddTag(BlockedTag);
+		}
+
+		return false;
+	}
+
+	if (bMissing)
+	{
+		if (OptionalRelevantTags && MissingTag.IsValid())
+		{
+			OptionalRelevantTags->AddTag(MissingTag);
+		}
+
+		return false;
+	}
+
+	return true;
+}
+
+bool URpgGameplayAbility::CanChangeActivationGroup(ERpgAbilityActivationGroup NewGroup) const
+{
+	if (!IsInstantiated() || !IsActive())
+	{
+		return false;
+	}
+
+	if (ActivationGroup == NewGroup)
+	{
+		return true;
+	}
+
+	URpgAbilitySystemComponent* RpgASC = GetRpgAbilitySystemComponentFromActorInfo();
+	check(RpgASC);
+
+	if ((ActivationGroup != ERpgAbilityActivationGroup::Exclusive_Blocking) && RpgASC->IsActivationGroupBlocked(NewGroup))
+	{
+		return false;
+	}
+
+	if ((NewGroup == ERpgAbilityActivationGroup::Exclusive_Replaceable) && !CanBeCanceled())
+	{
+		return false;
+	}
+
+	return true;
+}
+
+bool URpgGameplayAbility::ChangeActivationGroup(ERpgAbilityActivationGroup NewGroup)
+{
+	ENSURE_ABILITY_IS_INSTANTIATED_OR_RETURN(ChangeActivationGroup, false);
+
+	if (!CanChangeActivationGroup(NewGroup))
+	{
+		return false;
+	}
+
+	if (ActivationGroup != NewGroup)
+	{
+		URpgAbilitySystemComponent* RpgASC = GetRpgAbilitySystemComponentFromActorInfo();
+		check(RpgASC);
+
+		RpgASC->RemoveAbilityFromActivationGroup(ActivationGroup, this);
+		RpgASC->AddAbilityToActivationGroup(NewGroup, this);
+
+		ActivationGroup = NewGroup;
+	}
+
+	return true;
 }
 
 void URpgGameplayAbility::SetCameraMode(TSubclassOf<URpgCameraMode> CameraMode)

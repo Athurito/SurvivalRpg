@@ -149,7 +149,11 @@ void URpgPawnExtensionComponent::UninitializeAbilitySystem()
 	
 	if (AbilitySystemComponent->GetAvatarActor() == GetOwner())
 	{
-		AbilitySystemComponent->CancelAbilities();
+		FGameplayTagContainer AbilityTypesToIgnore;
+		AbilityTypesToIgnore.AddTag(RpgGameplayTags::Ability_Behavior_SurvivesDeath);
+
+		AbilitySystemComponent->CancelAbilities(nullptr, &AbilityTypesToIgnore);
+		AbilitySystemComponent->ClearAbilityInput();
 		AbilitySystemComponent->RemoveAllGameplayCues();
 		if (AbilitySystemComponent->GetOwnerActor() != nullptr)
 		{
