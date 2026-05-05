@@ -6,11 +6,12 @@
 #include "GameFramework/PlayerState.h"
 #include "RpgPlayerState.generated.h"
 
-class UBasePawnData;
+class URpgPawnData;
 class ARpgPlayerController;
 class URpgTradeSkillProgressionComponent;
 class URpgPlayerProgressionComponent;
 class URpgAbilitySystemComponent;
+class URpgInventoryManagerComponent;
 
 USTRUCT(BlueprintType)
 struct SURVIVALRPG_API FRpgReplicatedRespawnState
@@ -78,11 +79,14 @@ public:
 	void SendAbilitiesChangedEvent();
 	
 	TObjectPtr<URpgAbilitySystemComponent> GetRpgAbilitySystemComponent() const;
+
+	UFUNCTION(BlueprintCallable, Category = "Rpg|Inventory")
+	URpgInventoryManagerComponent* GetInventoryManagerComponent() const { return InventoryManagerComponent; }
 	
 	template<class T>
 	const T* GetPawnData() const { return Cast<T>(PawnData); }
 
-	void SetPawnData(const UBasePawnData* InPawnData);
+	void SetPawnData(const URpgPawnData* InPawnData);
 	void SetRespawnState(bool bInIsWaitingForRespawn, float InRespawnAvailableServerTime);
 	void SetCheckpointData(bool bInHasCheckpoint, const FTransform& InCheckpointTransform);
 
@@ -129,9 +133,12 @@ protected:
 	
 	UPROPERTY(VisibleAnywhere, Category = "Rpg|Progression")
 	TObjectPtr<URpgTradeSkillProgressionComponent> TradeSkillProgressionComponent;
+
+	UPROPERTY(VisibleAnywhere, Category = "Rpg|Inventory")
+	TObjectPtr<URpgInventoryManagerComponent> InventoryManagerComponent;
 	
 	UPROPERTY(VisibleAnywhere, Category = "Pawn")
-	TObjectPtr<const UBasePawnData> PawnData;
+	TObjectPtr<const URpgPawnData> PawnData;
 
 	UPROPERTY(ReplicatedUsing = OnRep_RespawnState, VisibleAnywhere, Category = "Rpg|Respawn")
 	FRpgReplicatedRespawnState RespawnState;

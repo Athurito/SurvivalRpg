@@ -3,6 +3,7 @@
 #pragma once
 
 #include "CoreMinimal.h"
+#include "GameplayAbilitySpecHandle.h"
 #include "SurvivalRpg/AbilitySystem/RpgAbilitySet.h"
 #include "Components/GameFrameworkInitStateInterface.h"
 #include "Components/PawnComponent.h"
@@ -10,8 +11,9 @@
 #include "RpgPawnGameplayComponent.generated.h"
 
 
+class URpgCameraMode;
 class URpgInputConfig;
-class UBasePawnData;
+class URpgPawnData;
 class URpgAbilitySystemComponent;
 struct FGameplayTag;
 struct FInputActionValue;
@@ -45,7 +47,22 @@ public:
 
 public:
 	// Sets default values for this component's properties
-	URpgPawnGameplayComponent(const FObjectInitializer& ObjectInitializer);
+	explicit URpgPawnGameplayComponent(const FObjectInitializer& ObjectInitializer);
+	
+	/** Returns the hero component if one exists on the specified actor. */
+	UFUNCTION(BlueprintPure, Category = "Rpg|Hero")
+	static URpgPawnGameplayComponent* FindPawnGameplayComponent(const AActor* Actor) { return (Actor ? Actor->FindComponentByClass<URpgPawnGameplayComponent>() : nullptr); }
+	
+	/** Overrides the camera from an active gameplay ability */
+	void SetAbilityCameraMode(TSubclassOf<URpgCameraMode> CameraMode, const FGameplayAbilitySpecHandle& OwningSpecHandle);
+
+	/** Clears the camera override if it is set */
+	void ClearAbilityCameraMode(const FGameplayAbilitySpecHandle& OwningSpecHandle);
+	
+	
+	// Called when the game starts
+	virtual void BeginPlay() override;
+	virtual void EndPlay(const EEndPlayReason::Type EndPlayReason) override;
 	
 	virtual void InitializePlayerInput(UInputComponent* PlayerInputComponent);
 
@@ -59,15 +76,34 @@ public:
 	void Input_AutoRun(const FInputActionValue& InputActionValue);
 	void Input_Jump(const FInputActionValue& InputActionValue);
 	void Input_StopJump(const FInputActionValue& InputActionValue);
+	void Input_QuickBarSlot1(const FInputActionValue& InputActionValue);
+	void Input_QuickBarSlot2(const FInputActionValue& InputActionValue);
+	void Input_QuickBarSlot3(const FInputActionValue& InputActionValue);
+	void Input_QuickBarSlot4(const FInputActionValue& InputActionValue);
+	void Input_QuickBarSlot5(const FInputActionValue& InputActionValue);
+	void Input_QuickBarSlot6(const FInputActionValue& InputActionValue);
+	void Input_QuickBarSlot7(const FInputActionValue& InputActionValue);
+	void Input_QuickBarSlot8(const FInputActionValue& InputActionValue);
+	
+	TSubclassOf<URpgCameraMode> DetermineCameraMode() const;
 
 protected:
-	// Called when the game starts
-	virtual void BeginPlay() override;
-	virtual void EndPlay(const EEndPlayReason::Type EndPlayReason) override;
+
 	virtual void OnRegister() override;
+	
+protected:
+	
+	
+	/** Camera mode set by an ability. */
+	UPROPERTY()
+	TSubclassOf<URpgCameraMode> AbilityCameraMode;
+
+	/** Spec handle for the last ability to set a camera mode. */
+	FGameplayAbilitySpecHandle AbilityCameraModeOwningSpecHandle;
 
 private:
-	void GrantPawnDataAbilitySets(URpgAbilitySystemComponent* AbilitySystemComponent, const UBasePawnData* PawnData, APawn* Pawn);
+	void Input_QuickBarSlot(int32 SlotIndex);
+	void GrantPawnDataAbilitySets(URpgAbilitySystemComponent* AbilitySystemComponent, const URpgPawnData* PawnData, APawn* Pawn);
 	void ResetCurrentHealthToMaxHealth(URpgAbilitySystemComponent* AbilitySystemComponent) const;
 	void RemovePawnDataAbilitySets();
 	void HandleAbilitySystemUninitialized();

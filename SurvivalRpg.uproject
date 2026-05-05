@@ -60,16 +60,15 @@
 			"MarketplaceURL": "com.epicgames.launcher://ue/Fab/product/261ab2b6-41c5-40c0-a694-08248ffcd37e"
 		},
 		{
-			"Name": "NinjaInventory",
-			"Enabled": true,
-			"MarketplaceURL": "com.epicgames.launcher://ue/Fab/product/da30946a-08c2-4133-9c92-46a5697d7214"
-		},
-		{
 			"Name": "AsyncMessageSystem",
 			"Enabled": true
 		},
 		{
 			"Name": "SteamSockets",
+			"Enabled": true
+		},
+		{
+			"Name": "GameplayMessageRouter",
 			"Enabled": true
 		}
 	]

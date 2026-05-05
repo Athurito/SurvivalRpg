@@ -7,7 +7,7 @@
 #include "GameFramework/GameModeBase.h"
 #include "RpgGameModeBase.generated.h"
 
-class UBasePawnData;
+class URpgPawnData;
 class URpgAbilitySystemComponent;
 
 DECLARE_DYNAMIC_MULTICAST_DELEGATE_TwoParams(FRpgRespawn_OnPlayerRespawned, APlayerController*, PC, FTransform, RespawnTransform);
@@ -42,7 +42,7 @@ public:
 	virtual void Logout(AController* Exiting) override;
 	virtual APawn* SpawnDefaultPawnAtTransform_Implementation(AController* NewPlayer, const FTransform& SpawnTransform) override;
 
-	const UBasePawnData* GetPawnDataForController(const AController* InController) const;
+	const URpgPawnData* GetPawnDataForController(const AController* InController) const;
 
 	// --- Save Data API (host-authoritative) ---
 

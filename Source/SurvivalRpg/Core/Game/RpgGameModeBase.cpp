@@ -6,10 +6,10 @@
 #include "RpgWorldSettings.h"
 #include "SurvivalRpg/SurvivalRpg.h"
 #include "SurvivalRpg/AbilitySystem/RpgAbilitySystemComponent.h"
-#include "SurvivalRpg/Core/Character/BasePawnData.h"
+#include "SurvivalRpg/Core/Character/RpgPawnData.h"
 #include "SurvivalRpg/Core/Character/RpgPawnExtensionComponent.h"
 #include "SurvivalRpg/Core/Player/RpgPlayerState.h"
-#include "SurvivalRpg/GameplayTags/GameplayTags.h"
+#include "SurvivalRpg/GameplayTags/RpgGameplayTags.h"
 #include "GameFramework/GameStateBase.h"
 #include "GameFramework/PlayerState.h"
 
@@ -21,7 +21,7 @@ void ARpgGameModeBase::PostLogin(APlayerController* NewPlayer)
 {
 	if (const ARpgWorldSettings* WorldSettings = Cast<ARpgWorldSettings>(GetWorld()->GetWorldSettings()))
 	{
-		if (const UBasePawnData* PawnData = WorldSettings->GetDefaultPawnData())
+		if (const URpgPawnData* PawnData = WorldSettings->GetDefaultPawnData())
 		{
 			if (ARpgPlayerState* PlayerState = NewPlayer->GetPlayerState<ARpgPlayerState>())
 			{
@@ -72,7 +72,7 @@ APawn* ARpgGameModeBase::SpawnDefaultPawnAtTransform_Implementation(AController*
 	return nullptr;
 }
 
-const UBasePawnData* ARpgGameModeBase::GetPawnDataForController(const AController* InController) const
+const URpgPawnData* ARpgGameModeBase::GetPawnDataForController(const AController* InController) const
 {
 	if (!InController)
 	{
@@ -81,7 +81,7 @@ const UBasePawnData* ARpgGameModeBase::GetPawnDataForController(const AControlle
 
 	if (ARpgPlayerState* PlayerState = InController->GetPlayerState<ARpgPlayerState>())
 	{
-		if (const UBasePawnData* PawnData = PlayerState->GetPawnData<UBasePawnData>())
+		if (const URpgPawnData* PawnData = PlayerState->GetPawnData<URpgPawnData>())
 		{
 			return PawnData;
 		}

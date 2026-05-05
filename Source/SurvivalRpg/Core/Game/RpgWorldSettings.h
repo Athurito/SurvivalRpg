@@ -6,7 +6,7 @@
 #include "GameFramework/WorldSettings.h"
 #include "RpgWorldSettings.generated.h"
 
-class UBasePawnData;
+class URpgPawnData;
 /**
  * 
  */
@@ -15,9 +15,9 @@ class SURVIVALRPG_API ARpgWorldSettings : public AWorldSettings
 {
 	GENERATED_BODY()
 public:
-	const UBasePawnData* GetDefaultPawnData() const { return DefaultPawnData; }
+	const URpgPawnData* GetDefaultPawnData() const { return DefaultPawnData; }
 protected:
 	
 	UPROPERTY(EditDefaultsOnly, Category = "Pawn")
-	TObjectPtr<UBasePawnData> DefaultPawnData;
+	TObjectPtr<URpgPawnData> DefaultPawnData;
 };

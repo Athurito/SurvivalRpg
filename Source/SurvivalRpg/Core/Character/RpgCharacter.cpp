@@ -11,20 +11,45 @@
 #include "RpgPawnGameplayComponent.h"
 #include "Components/CapsuleComponent.h"
 #include "SurvivalRpg/AbilitySystem/RpgAbilitySystemComponent.h"
+#include "SurvivalRpg/Camera/RpgCameraComponent.h"
 #include "SurvivalRpg/Core/Game/RpgGameModeBase.h"
+#include "SurvivalRpg/Equipment/RpgEquipmentManagerComponent.h"
 #include "SurvivalRpg/Core/Player/RpgPlayerController.h"
 #include "SurvivalRpg/Core/Player/RpgPlayerState.h"
+#include "SurvivalRpg/GameplayTags/RpgGameplayTags.h"
 
 
 ARpgCharacter::ARpgCharacter(const FObjectInitializer& ObjectInitializer) : 
 	Super(ObjectInitializer.SetDefaultSubobjectClass<URpgCharacterMovementComponent>(CharacterMovementComponentName))
 {
-	MovementComponent = Cast<URpgCharacterMovementComponent>(ACharacter::GetMovementComponent());
+	// Avoid ticking characters if possible.
+	PrimaryActorTick.bCanEverTick = false;
+	PrimaryActorTick.bStartWithTickEnabled = false;
 	
-	PrimaryActorTick.bCanEverTick = true;
+	SetNetCullDistanceSquared(900000000.0f);
+	
+	URpgCharacterMovementComponent* RpgMoveComp = CastChecked<URpgCharacterMovementComponent>(ACharacter::GetMovementComponent());
+	RpgMoveComp->GravityScale = 1.0f;
+	RpgMoveComp->MaxAcceleration = 2400.0f;
+	RpgMoveComp->BrakingFrictionFactor = 1.0f;
+	RpgMoveComp->BrakingFriction = 6.0f;
+	RpgMoveComp->GroundFriction = 8.0f;
+	RpgMoveComp->BrakingDecelerationWalking = 1400.0f;
+	RpgMoveComp->bUseControllerDesiredRotation = false;
+	RpgMoveComp->bOrientRotationToMovement = false;
+	RpgMoveComp->RotationRate = FRotator(0.0f, 720.0f, 0.0f);
+	RpgMoveComp->bAllowPhysicsRotationDuringAnimRootMotion = false;
+	RpgMoveComp->GetNavAgentPropertiesRef().bCanCrouch = true;
+	RpgMoveComp->bCanWalkOffLedgesWhenCrouching = true;
+	RpgMoveComp->SetCrouchedHalfHeight(65.0f);
+	
+
+	
 	PawnExtensionComponent = CreateDefaultSubobject<URpgPawnExtensionComponent>(TEXT("PawnExtensionComponent"));
 	PawnExtensionComponent->OnAbilitySystemInitialized_RegisterAndCall(FSimpleMulticastDelegate::FDelegate::CreateUObject(this, &ThisClass::OnAbilitySystemInitialized));
 	PawnExtensionComponent->OnAbilitySystemUninitialized_Register(FSimpleMulticastDelegate::FDelegate::CreateUObject(this, &ThisClass::OnAbilitySystemUninitialized));
+	
+	EquipmentManagerComponent = CreateDefaultSubobject<URpgEquipmentManagerComponent>(TEXT("EquipmentManagerComponent"));
 	
 	HealthComponent = CreateDefaultSubobject<URpgHealthComponent>(TEXT("HealthComponent"));
 	HealthComponent->OnDeathStarted.AddDynamic(this, &ThisClass::OnDeathStarted);
@@ -33,6 +58,16 @@ ARpgCharacter::ARpgCharacter(const FObjectInitializer& ObjectInitializer) :
 	DeathComponent = CreateDefaultSubobject<URpgDeathComponent>(TEXT("DeathComponent"));
 	DownedComponent = CreateDefaultSubobject<URpgDownedComponent>(TEXT("DownedComponent"));
 	DownedComponent->OnDownedStateChanged.AddDynamic(this, &ThisClass::OnDownedStateChanged);
+	
+	CameraComponent = CreateDefaultSubobject<URpgCameraComponent>(TEXT("CameraComponent"));
+	CameraComponent->SetRelativeLocation(FVector(-300.0f, 0.0f, 75.0f));
+	
+	bUseControllerRotationPitch = false;
+	bUseControllerRotationYaw = true;
+	bUseControllerRotationRoll = false;
+
+	BaseEyeHeight = 80.0f;
+	CrouchedEyeHeight = 50.0f;
 }
 
 ARpgPlayerController* ARpgCharacter::GetRpgPlayerController() const
@@ -58,6 +93,20 @@ UAbilitySystemComponent* ARpgCharacter::GetAbilitySystemComponent() const
 	return PawnExtensionComponent->GetRpgAbilitySystemComponent();
 }
 
+void ARpgCharacter::ToggleCrouch()
+{
+	const URpgCharacterMovementComponent* RpgMoveComp = CastChecked<URpgCharacterMovementComponent>(GetCharacterMovement());
+
+	if (IsCrouched() || RpgMoveComp->bWantsToCrouch)
+	{
+		UnCrouch();
+	}
+	else if (RpgMoveComp->IsMovingOnGround())
+	{
+		Crouch();
+	}
+}
+
 // Called when the game starts or when spawned
 void ARpgCharacter::BeginPlay()
 {
@@ -73,6 +122,7 @@ void ARpgCharacter::OnAbilitySystemInitialized()
 	HealthComponent->InitializeWithAbilitySystem(Asc);
 	DeathComponent->InitializeWithAbilitySystem(Asc);
 	DownedComponent->InitializeWithAbilitySystem(Asc);
+	Asc->SetLooseGameplayTagCount(RpgGameplayTags::Status_Crouching, IsCrouched() ? 1 : 0);
 }
 
 void ARpgCharacter::OnAbilitySystemUninitialized()
@@ -80,6 +130,11 @@ void ARpgCharacter::OnAbilitySystemUninitialized()
 	HealthComponent->UninitializeFromAbilitySystem();
 	DeathComponent->UninitializeFromAbilitySystem();
 	DownedComponent->UninitializeFromAbilitySystem();
+
+	if (URpgAbilitySystemComponent* Asc = GetRpgAbilitySystemComponent())
+	{
+		Asc->SetLooseGameplayTagCount(RpgGameplayTags::Status_Crouching, 0);
+	}
 }
 
 void ARpgCharacter::PossessedBy(AController* NewController)
@@ -151,6 +206,31 @@ void ARpgCharacter::OnDownedStateChanged(ERpgDownedState NewState)
 	}
 }
 
+void ARpgCharacter::OnStartCrouch(float HalfHeightAdjust, float ScaledHalfHeightAdjust)
+{
+	if (URpgAbilitySystemComponent* Asc = GetRpgAbilitySystemComponent())
+	{
+		Asc->SetLooseGameplayTagCount(RpgGameplayTags::Status_Crouching, 1);
+	}
+
+	Super::OnStartCrouch(HalfHeightAdjust, ScaledHalfHeightAdjust);
+}
+
+void ARpgCharacter::OnEndCrouch(float HalfHeightAdjust, float ScaledHalfHeightAdjust)
+{
+	if (URpgAbilitySystemComponent* Asc = GetRpgAbilitySystemComponent())
+	{
+		Asc->SetLooseGameplayTagCount(RpgGameplayTags::Status_Crouching, 0);
+	}
+
+	Super::OnEndCrouch(HalfHeightAdjust, ScaledHalfHeightAdjust);
+}
+
+bool ARpgCharacter::CanJumpInternal_Implementation() const
+{
+	return JumpIsAllowedInternal();
+}
+
 void ARpgCharacter::DisableMovementAndCollision() const
 {
 	if (GetController())
@@ -201,14 +281,8 @@ void ARpgCharacter::RestoreMovementAndCollision() const
 
 void ARpgCharacter::EnterDeadState()
 {
-	// Controller lösen
 	DetachFromControllerPendingDestroy();
-
-	// Actor bleibt aber bestehen
 	SetActorEnableCollision(false);
-
-	// Optional: Pawn als Dead markieren
-	// bIsDead = true;
 }
 
 // Called to bind functionality to input

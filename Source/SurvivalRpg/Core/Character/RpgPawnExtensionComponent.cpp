@@ -6,7 +6,8 @@
 #include "Components/GameFrameworkComponentManager.h"
 #include "Net/UnrealNetwork.h"
 #include "SurvivalRpg/AbilitySystem/RpgAbilitySystemComponent.h"
-#include "SurvivalRpg/GameplayTags/GameplayTags.h"
+#include "SurvivalRpg/Core/Character/RpgPawnData.h"
+#include "SurvivalRpg/GameplayTags/RpgGameplayTags.h"
 
 const FName URpgPawnExtensionComponent::Name_ActorFeatureName = FName("PawnExtension");
 
@@ -57,7 +58,7 @@ void URpgPawnExtensionComponent::EndPlay(const EEndPlayReason::Type EndPlayReaso
 
 
 
-void URpgPawnExtensionComponent::SetPawnData(const UBasePawnData* InPawnData)
+void URpgPawnExtensionComponent::SetPawnData(const URpgPawnData* InPawnData)
 {
 	check(InPawnData);
 	
@@ -133,6 +134,12 @@ void URpgPawnExtensionComponent::InitializeAbilitySystemComponent(URpgAbilitySys
 	
 	AbilitySystemComponent = InAsc;
 	AbilitySystemComponent->InitAbilityActorInfo(InOwner, Pawn);
+
+	if (ensure(PawnData))
+	{
+		InAsc->SetTagRelationshipMapping(PawnData->TagRelationshipMapping);
+	}
+
 	OnAbilitySystemInitialized.Broadcast();
 }
 
@@ -142,7 +149,11 @@ void URpgPawnExtensionComponent::UninitializeAbilitySystem()
 	
 	if (AbilitySystemComponent->GetAvatarActor() == GetOwner())
 	{
-		AbilitySystemComponent->CancelAbilities();
+		FGameplayTagContainer AbilityTypesToIgnore;
+		AbilityTypesToIgnore.AddTag(RpgGameplayTags::Ability_Behavior_SurvivesDeath);
+
+		AbilitySystemComponent->CancelAbilities(nullptr, &AbilityTypesToIgnore);
+		AbilitySystemComponent->ClearAbilityInput();
 		AbilitySystemComponent->RemoveAllGameplayCues();
 		if (AbilitySystemComponent->GetOwnerActor() != nullptr)
 		{

@@ -27,7 +27,7 @@ void FRpgAbilitySet_GrantedHandles::TakeFromAbilitySystem(URpgAbilitySystemCompo
 {
 	check(RpgASC);
 
-	if (!RpgASC->IsOwnerActorAuthoritative())
+	if (!RpgASC->HasGrantAuthority())
 	{
 		// Must be authoritative to give or take ability sets.
 		return;
@@ -58,7 +58,7 @@ void URpgAbilitySet::GiveToAbilitySystem(URpgAbilitySystemComponent* RpgASC, FRp
 {
 	check(RpgASC);
 
-	if (!RpgASC->IsOwnerActorAuthoritative())
+	if (!RpgASC->HasGrantAuthority())
 	{
 		// Must be authoritative to give or take ability sets.
 		return;
@@ -118,4 +118,12 @@ void URpgAbilitySet::GiveToAbilitySystem(URpgAbilitySystemComponent* RpgASC, FRp
 			OutGrantedHandles->AddGameplayEffectHandle(GameplayEffectHandle);
 		}
 	}
+}
+
+void URpgAbilitySet::AddGrantedGameplayAbility(TSubclassOf<URpgGameplayAbility> AbilityClass, int32 AbilityLevel, FGameplayTag InputTag)
+{
+	FRpgAbilitySet_GameplayAbility& NewAbility = GrantedGameplayAbilities.AddDefaulted_GetRef();
+	NewAbility.Ability = AbilityClass;
+	NewAbility.AbilityLevel = AbilityLevel;
+	NewAbility.InputTag = InputTag;
 }

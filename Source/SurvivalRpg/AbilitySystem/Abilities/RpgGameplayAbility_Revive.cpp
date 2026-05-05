@@ -8,7 +8,7 @@
 #include "SurvivalRpg/SurvivalRpg.h"
 #include "SurvivalRpg/Core/Character/RpgDownedComponent.h"
 #include "SurvivalRpg/Core/Character/RpgHealthComponent.h"
-#include "SurvivalRpg/GameplayTags/GameplayTags.h"
+#include "SurvivalRpg/GameplayTags/RpgGameplayTags.h"
 
 URpgGameplayAbility_Revive::URpgGameplayAbility_Revive()
 {

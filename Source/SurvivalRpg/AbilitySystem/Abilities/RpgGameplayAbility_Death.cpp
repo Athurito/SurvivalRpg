@@ -3,9 +3,10 @@
 
 #include "RpgGameplayAbility_Death.h"
 
+#include "SurvivalRpg/SurvivalRpg.h"
 #include "SurvivalRpg/AbilitySystem/RpgAbilitySystemComponent.h"
 #include "SurvivalRpg/Core/Character/RpgHealthComponent.h"
-#include "SurvivalRpg/GameplayTags/GameplayTags.h"
+#include "SurvivalRpg/GameplayTags/RpgGameplayTags.h"
 
 URpgGameplayAbility_Death::URpgGameplayAbility_Death(const FObjectInitializer& ObjectInitializer)
 {
@@ -37,6 +38,11 @@ void URpgGameplayAbility_Death::ActivateAbility(const FGameplayAbilitySpecHandle
 	RpgAsc->CancelAbilities(nullptr, &AbilityTypesToIgnore, this);
 	
 	SetCanBeCanceled(false);
+
+	if (!ChangeActivationGroup(ERpgAbilityActivationGroup::Exclusive_Blocking))
+	{
+		UE_LOG(LogRpgAbilitySystem, Error, TEXT("URpgGameplayAbility_Death::ActivateAbility: Ability [%s] failed to change activation group to blocking."), *GetName());
+	}
 	
 	if (bAutoStartDeath)
 	{

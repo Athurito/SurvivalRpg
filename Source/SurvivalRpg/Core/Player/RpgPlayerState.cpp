@@ -9,6 +9,7 @@
 #include "SurvivalRpg/AbilitySystem/RpgAbilitySystemComponent.h"
 #include "SurvivalRpg/AbilitySystem/Attributes/RpgHealthSet.h"
 #include "SurvivalRpg/Core/Player/RpgPlayerController.h"
+#include "SurvivalRpg/Inventory/RpgInventoryManagerComponent.h"
 #include "SurvivalRpg/Progression/Player/RpgPlayerProgressionComponent.h"
 #include "SurvivalRpg/Progression/Skills/RpgTradeSkillProgressionComponent.h"
 
@@ -26,6 +27,7 @@ ARpgPlayerState::ARpgPlayerState()
 
 	PlayerProgressionComponent = CreateDefaultSubobject<URpgPlayerProgressionComponent>(TEXT("PlayerProgressionComponent"));
 	TradeSkillProgressionComponent = CreateDefaultSubobject<URpgTradeSkillProgressionComponent>(TEXT("TradeSkillProgressionComponent"));
+	InventoryManagerComponent = CreateDefaultSubobject<URpgInventoryManagerComponent>(TEXT("InventoryManagerComponent"));
 }
 
 void ARpgPlayerState::GetLifetimeReplicatedProps(TArray<FLifetimeProperty>& OutLifetimeProps) const
@@ -55,7 +57,7 @@ TObjectPtr<URpgAbilitySystemComponent> ARpgPlayerState::GetRpgAbilitySystemCompo
 	return AbilitySystemComponent;
 }
 
-void ARpgPlayerState::SetPawnData(const UBasePawnData* InPawnData)
+void ARpgPlayerState::SetPawnData(const URpgPawnData* InPawnData)
 {
 	check(InPawnData);
 	if (PawnData)

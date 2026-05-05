@@ -1,0 +1,4 @@
+interface:
+  display_name: "Unreal Lyra Expert"
+  short_description: "Unreal/Lyra best-practice expert"
+  default_prompt: "Inspect the project first. Then review, design, or implement the Unreal task using project-compatible practices, treating UE 5.7 as the default only until the project proves otherwise. Use Lyra patterns only where they are already present or clearly intended."
