@@ -13,6 +13,7 @@
 class URpgAbilityTagRelationshipMapping;
 class URpgAbilitySet;
 class UGameplayAbility;
+class ARpgBasePlayerState;
 
 UCLASS(ClassGroup=(Custom), meta=(BlueprintSpawnableComponent))
 class SURVIVALRPG_API URpgAbilitySystemComponent : public UAbilitySystemComponent
@@ -155,7 +156,7 @@ private:
 	TMap<TObjectPtr<const URpgAbilitySet>, FRpgAbilitySet_GrantedHandles> GrantedAbilitySets;
 	
 	UPROPERTY()
-	TObjectPtr<class ARpgPlayerState> OwnerPlayerState = nullptr;
+	TObjectPtr<ARpgBasePlayerState> OwnerPlayerState = nullptr;
 
 #if WITH_DEV_AUTOMATION_TESTS
 public:

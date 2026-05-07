@@ -6,8 +6,11 @@
 #include "RpgWorldSettings.h"
 #include "SurvivalRpg/SurvivalRpg.h"
 #include "SurvivalRpg/AbilitySystem/RpgAbilitySystemComponent.h"
+#include "SurvivalRpg/Core/AI/RpgAIController.h"
+#include "SurvivalRpg/Core/AI/RpgAIPawnData.h"
 #include "SurvivalRpg/Core/Character/RpgPawnData.h"
 #include "SurvivalRpg/Core/Character/RpgPawnExtensionComponent.h"
+#include "SurvivalRpg/Core/Player/RpgBasePlayerState.h"
 #include "SurvivalRpg/Core/Player/RpgPlayerState.h"
 #include "SurvivalRpg/GameplayTags/RpgGameplayTags.h"
 #include "GameFramework/GameStateBase.h"
@@ -23,7 +26,7 @@ void ARpgGameModeBase::PostLogin(APlayerController* NewPlayer)
 	{
 		if (const URpgPawnData* PawnData = WorldSettings->GetDefaultPawnData())
 		{
-			if (ARpgPlayerState* PlayerState = NewPlayer->GetPlayerState<ARpgPlayerState>())
+			if (ARpgBasePlayerState* PlayerState = NewPlayer->GetPlayerState<ARpgBasePlayerState>())
 			{
 				PlayerState->SetPawnData(PawnData);
 			}
@@ -48,6 +51,19 @@ void ARpgGameModeBase::Logout(AController* Exiting)
 // Pawn Spawning
 // ---------------------------------------------------------------------------
 
+UClass* ARpgGameModeBase::GetDefaultPawnClassForController_Implementation(AController* InController)
+{
+	if (const URpgPawnData* PawnData = GetPawnDataForController(InController))
+	{
+		if (PawnData->PawnClass)
+		{
+			return PawnData->PawnClass;
+		}
+	}
+
+	return Super::GetDefaultPawnClassForController_Implementation(InController);
+}
+
 APawn* ARpgGameModeBase::SpawnDefaultPawnAtTransform_Implementation(AController* NewPlayer, const FTransform& SpawnTransform)
 {
 	FActorSpawnParameters SpawnParams;
@@ -61,7 +77,10 @@ APawn* ARpgGameModeBase::SpawnDefaultPawnAtTransform_Implementation(AController*
 		{
 			if (URpgPawnExtensionComponent* PawnExt = URpgPawnExtensionComponent::FindPawnExtensionComponent(SpawnedPawn))
 			{
-				PawnExt->SetPawnData(GetPawnDataForController(NewPlayer));
+				if (const URpgPawnData* PawnData = GetPawnDataForController(NewPlayer))
+				{
+					PawnExt->SetPawnData(PawnData);
+				}
 			}
 
 			SpawnedPawn->FinishSpawning(SpawnTransform);
@@ -79,12 +98,17 @@ const URpgPawnData* ARpgGameModeBase::GetPawnDataForController(const AController
 		return nullptr;
 	}
 
-	if (ARpgPlayerState* PlayerState = InController->GetPlayerState<ARpgPlayerState>())
+	if (ARpgBasePlayerState* PlayerState = InController->GetPlayerState<ARpgBasePlayerState>())
 	{
 		if (const URpgPawnData* PawnData = PlayerState->GetPawnData<URpgPawnData>())
 		{
 			return PawnData;
 		}
+	}
+
+	if (const ARpgAIController* AIController = Cast<ARpgAIController>(InController))
+	{
+		return static_cast<const URpgPawnData*>(AIController->GetDefaultPawnData());
 	}
 
 	return nullptr;

@@ -40,6 +40,7 @@ class SURVIVALRPG_API ARpgGameModeBase : public AGameModeBase
 public:
 	virtual void PostLogin(APlayerController* NewPlayer) override;
 	virtual void Logout(AController* Exiting) override;
+	virtual UClass* GetDefaultPawnClassForController_Implementation(AController* InController) override;
 	virtual APawn* SpawnDefaultPawnAtTransform_Implementation(AController* NewPlayer, const FTransform& SpawnTransform) override;
 
 	const URpgPawnData* GetPawnDataForController(const AController* InController) const;

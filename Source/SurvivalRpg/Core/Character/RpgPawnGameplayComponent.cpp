@@ -4,7 +4,6 @@
 #include "RpgPawnGameplayComponent.h"
 
 #include "SurvivalRpg/AbilitySystem/RpgAbilitySystemComponent.h"
-#include "SurvivalRpg/AbilitySystem/Attributes/RpgHealthSet.h"
 #include "GameplayTagContainer.h"
 #include "InputActionValue.h"
 #include "RpgCharacter.h"
@@ -60,8 +59,7 @@ void URpgPawnGameplayComponent::EndPlay(const EEndPlayReason::Type EndPlayReason
 			CameraComponent->DetermineCameraModeDelegate.Unbind();
 		}
 	}
-
-	RemovePawnDataAbilitySets();
+	UnregisterInitStateFeature();
 	Super::EndPlay(EndPlayReason);
 }
 
@@ -142,25 +140,14 @@ void URpgPawnGameplayComponent::HandleChangeInitState(UGameFrameworkComponentMan
 	if (CurrentState == RpgGameplayTags::InitState_DataAvailable && DesiredState == RpgGameplayTags::InitState_DataInitialized)
 	{
 		APawn* Pawn = GetPawn<APawn>();
-		ARpgPlayerState* PS = GetPlayerState<ARpgPlayerState>();
 
-		if (!Pawn || !PS) return;
+		if (!Pawn) return;
 
 		const URpgPawnData* PawnData = nullptr;
 		
 		if (URpgPawnExtensionComponent* PawnExt = URpgPawnExtensionComponent::FindPawnExtensionComponent(Pawn))
 		{
 			PawnData = PawnExt->GetPawnData<URpgPawnData>();
-
-			URpgAbilitySystemComponent* AbilitySystemComponent = PS->GetRpgAbilitySystemComponent();
-			if (!AbilitySystemComponent)
-			{
-				return;
-			}
-
-			PawnExt->InitializeAbilitySystemComponent(AbilitySystemComponent, PS);
-			GrantPawnDataAbilitySets(AbilitySystemComponent, PawnExt->GetPawnData<URpgPawnData>(), Pawn);
-			ResetCurrentHealthToMaxHealth(AbilitySystemComponent);
 		}
 		
 		if (APlayerController* PC = GetController<APlayerController>())
@@ -485,76 +472,6 @@ TSubclassOf<URpgCameraMode> URpgPawnGameplayComponent::DetermineCameraMode() con
 	return nullptr;
 }
 
-
-
-void URpgPawnGameplayComponent::GrantPawnDataAbilitySets(URpgAbilitySystemComponent* AbilitySystemComponent, const URpgPawnData* PawnData, APawn* Pawn)
-{
-	if (!AbilitySystemComponent || !PawnData || !Pawn)
-	{
-		return;
-	}
-
-	if (!AbilitySystemComponent->IsOwnerActorAuthoritative())
-	{
-		return;
-	}
-
-	if (GrantedAbilitySystemComponent == AbilitySystemComponent && GrantedPawnAbilitySets.Num() > 0)
-	{
-		return;
-	}
-
-	if (GrantedAbilitySystemComponent && GrantedAbilitySystemComponent != AbilitySystemComponent)
-	{
-		RemovePawnDataAbilitySets();
-	}
-
-	for (const TObjectPtr<const URpgAbilitySet>& AbilitySet : PawnData->AbilitySets)
-	{
-		if (!AbilitySet)
-		{
-			continue;
-		}
-
-		FRpgPawnGameplayAbilitySetGrant& GrantedSet = GrantedPawnAbilitySets.AddDefaulted_GetRef();
-		GrantedSet.AbilitySet = AbilitySet;
-		AbilitySet->GiveToAbilitySystem(AbilitySystemComponent, &GrantedSet.GrantedHandles, Pawn);
-	}
-
-	GrantedAbilitySystemComponent = AbilitySystemComponent;
-}
-
-void URpgPawnGameplayComponent::ResetCurrentHealthToMaxHealth(URpgAbilitySystemComponent* AbilitySystemComponent) const
-{
-	if (!AbilitySystemComponent || !AbilitySystemComponent->IsOwnerActorAuthoritative())
-	{
-		return;
-	}
-
-	const URpgHealthSet* HealthSet = AbilitySystemComponent->GetSet<URpgHealthSet>();
-	if (!HealthSet)
-	{
-		return;
-	}
-
-	// Startup runtime health should be derived after all currently-known stat sources have been applied.
-	AbilitySystemComponent->SetNumericAttributeBase(URpgHealthSet::GetHealthAttribute(), HealthSet->GetMaxHealth());
-}
-
-void URpgPawnGameplayComponent::RemovePawnDataAbilitySets()
-{
-	if (GrantedAbilitySystemComponent && GrantedAbilitySystemComponent->IsOwnerActorAuthoritative())
-	{
-		for (FRpgPawnGameplayAbilitySetGrant& GrantedSet : GrantedPawnAbilitySets)
-		{
-			GrantedSet.GrantedHandles.TakeFromAbilitySystem(GrantedAbilitySystemComponent);
-		}
-	}
-
-	GrantedPawnAbilitySets.Reset();
-	GrantedAbilitySystemComponent = nullptr;
-}
-
 void URpgPawnGameplayComponent::HandleAbilitySystemUninitialized()
 {
 	if (APawn* Pawn = GetPawn<APawn>())
@@ -564,7 +481,5 @@ void URpgPawnGameplayComponent::HandleAbilitySystemUninitialized()
 			CameraComponent->DetermineCameraModeDelegate.Unbind();
 		}
 	}
-
-	RemovePawnDataAbilitySets();
 }
 

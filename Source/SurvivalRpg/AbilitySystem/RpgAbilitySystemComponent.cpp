@@ -8,7 +8,7 @@
 #include "RpgGlobalAbilitySystem.h"
 #include "SurvivalRpg/SurvivalRpg.h"
 #include "SurvivalRpg/Animation/RpgAnimInstance.h"
-#include "SurvivalRpg/Core/Player/RpgPlayerState.h"
+#include "SurvivalRpg/Core/Player/RpgBasePlayerState.h"
 #include "SurvivalRpg/GameplayTags/RpgGameplayTags.h"
 
 UE_DEFINE_GAMEPLAY_TAG(TAG_Gameplay_AbilityInputBlocked, "Gameplay.AbilityInputBlocked");
@@ -41,6 +41,7 @@ void URpgAbilitySystemComponent::InitAbilityActorInfo(AActor* InOwnerActor, AAct
 	const bool bHasNewPawnAvatar = Cast<APawn>(InAvatarActor) && (InAvatarActor != ActorInfo->AvatarActor);
 	
 	Super::InitAbilityActorInfo(InOwnerActor, InAvatarActor);
+	OwnerPlayerState = Cast<ARpgBasePlayerState>(InOwnerActor);
 	
 	if (bHasNewPawnAvatar)
 	{
@@ -728,7 +729,7 @@ void URpgAbilitySystemComponent::BeginPlay()
 {
 	Super::BeginPlay();
 	
-	OwnerPlayerState = Cast<ARpgPlayerState>(GetOwner());
+	OwnerPlayerState = Cast<ARpgBasePlayerState>(GetOwner());
 }
 
 void URpgAbilitySystemComponent::OnRep_ActivateAbilities()

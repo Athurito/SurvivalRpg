@@ -3,11 +3,8 @@
 
 #include "RpgPlayerState.h"
 
-#include "AbilitySystemBlueprintLibrary.h"
 #include "GameFramework/GameStateBase.h"
 #include "Net/UnrealNetwork.h"
-#include "SurvivalRpg/AbilitySystem/RpgAbilitySystemComponent.h"
-#include "SurvivalRpg/AbilitySystem/Attributes/RpgHealthSet.h"
 #include "SurvivalRpg/Core/Player/RpgPlayerController.h"
 #include "SurvivalRpg/Inventory/RpgInventoryManagerComponent.h"
 #include "SurvivalRpg/Progression/Player/RpgPlayerProgressionComponent.h"
@@ -15,16 +12,6 @@
 
 ARpgPlayerState::ARpgPlayerState()
 {
-	// The local HUD reads attributes from the PlayerState-owned ASC, so keep updates responsive.
-	SetNetUpdateFrequency(100.0f);
-	SetMinNetUpdateFrequency(33.0f);
-
-	AbilitySystemComponent = CreateDefaultSubobject<URpgAbilitySystemComponent>(TEXT("AbilitySystemComponent"));
-	AbilitySystemComponent->SetIsReplicated(true);
-	AbilitySystemComponent->SetReplicationMode(EGameplayEffectReplicationMode::Mixed);
-
-	HealthSet = CreateDefaultSubobject<URpgHealthSet>(TEXT("HealthSet"));
-
 	PlayerProgressionComponent = CreateDefaultSubobject<URpgPlayerProgressionComponent>(TEXT("PlayerProgressionComponent"));
 	TradeSkillProgressionComponent = CreateDefaultSubobject<URpgTradeSkillProgressionComponent>(TEXT("TradeSkillProgressionComponent"));
 	InventoryManagerComponent = CreateDefaultSubobject<URpgInventoryManagerComponent>(TEXT("InventoryManagerComponent"));
@@ -41,31 +28,6 @@ void ARpgPlayerState::GetLifetimeReplicatedProps(TArray<FLifetimeProperty>& OutL
 ARpgPlayerController* ARpgPlayerState::GetRpgPlayerController() const
 {
 	return Cast<ARpgPlayerController>(GetOwner());
-}
-
-void ARpgPlayerState::SendAbilitiesChangedEvent()
-{
-	FGameplayEventData EventData;
-	EventData.EventTag = FGameplayTag::RequestGameplayTag("Event.Abilities.Changed");
-	EventData.Instigator = this;
-	EventData.Target = this;
-	UAbilitySystemBlueprintLibrary::SendGameplayEventToActor(this, EventData.EventTag, EventData);
-}
-
-TObjectPtr<URpgAbilitySystemComponent> ARpgPlayerState::GetRpgAbilitySystemComponent() const
-{
-	return AbilitySystemComponent;
-}
-
-void ARpgPlayerState::SetPawnData(const URpgPawnData* InPawnData)
-{
-	check(InPawnData);
-	if (PawnData)
-	{
-		return;
-	}
-
-	PawnData = InPawnData;
 }
 
 void ARpgPlayerState::SetRespawnState(bool bInIsWaitingForRespawn, float InRespawnAvailableServerTime)

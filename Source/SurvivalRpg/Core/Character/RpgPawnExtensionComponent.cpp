@@ -4,9 +4,11 @@
 #include "RpgPawnExtensionComponent.h"
 
 #include "Components/GameFrameworkComponentManager.h"
+#include "GameFramework/Controller.h"
 #include "Net/UnrealNetwork.h"
 #include "SurvivalRpg/AbilitySystem/RpgAbilitySystemComponent.h"
 #include "SurvivalRpg/Core/Character/RpgPawnData.h"
+#include "SurvivalRpg/Core/Player/RpgBasePlayerState.h"
 #include "SurvivalRpg/GameplayTags/RpgGameplayTags.h"
 
 const FName URpgPawnExtensionComponent::Name_ActorFeatureName = FName("PawnExtension");
@@ -225,13 +227,14 @@ bool URpgPawnExtensionComponent::CanChangeInitState(UGameFrameworkComponentManag
 	if (CurrentState == RpgGameplayTags::InitState_Spawned && DesiredState == RpgGameplayTags::InitState_DataAvailable)
 	{
 		if (!PawnData) return false;
+		if (!GetPlayerState<ARpgBasePlayerState>()) return false;
 		
 		const bool bHasAuthority = Pawn->HasAuthority();
 		const bool bIsLocallyControlled = Pawn->IsLocallyControlled();
 		
 		if (bHasAuthority || bIsLocallyControlled)
 		{
-			if (!GetController<APlayerController>()) 
+			if (!GetController<AController>()) 
 				return false;
 		}
 		return true;
@@ -256,7 +259,13 @@ void URpgPawnExtensionComponent::HandleChangeInitState(UGameFrameworkComponentMa
 {
 	if (DesiredState == RpgGameplayTags::InitState_DataInitialized)
 	{
-		// This is currently all handled by other components listening to this state change
+		if (ARpgBasePlayerState* PlayerState = GetPlayerState<ARpgBasePlayerState>())
+		{
+			if (URpgAbilitySystemComponent* AbilitySystem = PlayerState->GetRpgAbilitySystemComponent())
+			{
+				InitializeAbilitySystemComponent(AbilitySystem, PlayerState);
+			}
+		}
 	}
 }
 
