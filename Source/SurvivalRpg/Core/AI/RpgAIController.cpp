@@ -9,9 +9,11 @@
 #include "GameFramework/Pawn.h"
 #include "GameFramework/PlayerState.h"
 #include "StateTree.h"
+#include "SurvivalRpg/AbilitySystem/RpgAbilitySystemComponent.h"
 #include "SurvivalRpg/Core/AI/RpgAIPlayerState.h"
 #include "SurvivalRpg/Core/AI/RpgAIPawnData.h"
 #include "SurvivalRpg/Core/Character/RpgPawnExtensionComponent.h"
+#include "SurvivalRpg/Core/Player/RpgBasePlayerState.h"
 
 ARpgAIController::ARpgAIController(const FObjectInitializer& ObjectInitializer)
 	: Super(ObjectInitializer)
@@ -79,6 +81,25 @@ void ARpgAIController::OnPossess(APawn* InPawn)
 
 void ARpgAIController::OnUnPossess()
 {
+	if (APawn* PawnBeingUnpossessed = GetPawn())
+	{
+		if (URpgPawnExtensionComponent* PawnExtension = URpgPawnExtensionComponent::FindPawnExtensionComponent(PawnBeingUnpossessed))
+		{
+			PawnExtension->OnAbilitySystemInitialized.RemoveAll(this);
+			PawnExtension->UninitializeAbilitySystem();
+		}
+		else if (ARpgBasePlayerState* RpgPlayerState = GetPlayerState<ARpgBasePlayerState>())
+		{
+			if (URpgAbilitySystemComponent* AbilitySystemComponent = RpgPlayerState->GetRpgAbilitySystemComponent())
+			{
+				if (AbilitySystemComponent->GetAvatarActor() == PawnBeingUnpossessed)
+				{
+					AbilitySystemComponent->SetAvatarActor(nullptr);
+				}
+			}
+		}
+	}
+
 	StopStateTreeLogic(TEXT("UnPossess"));
 	Super::OnUnPossess();
 }
