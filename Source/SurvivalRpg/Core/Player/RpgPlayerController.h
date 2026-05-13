@@ -3,6 +3,7 @@
 #pragma once
 
 #include "CoreMinimal.h"
+#include "GenericTeamAgentInterface.h"
 #include "GameFramework/PlayerController.h"
 #include "RpgPlayerController.generated.h"
 
@@ -12,7 +13,7 @@ class UInputMappingContext;
 class ARpgPlayerState;
 
 UCLASS(Abstract)
-class SURVIVALRPG_API ARpgPlayerController : public APlayerController
+class SURVIVALRPG_API ARpgPlayerController : public APlayerController, public IGenericTeamAgentInterface
 {
 	GENERATED_BODY()
 
@@ -40,6 +41,12 @@ public:
 	virtual void OnPossess(APawn* InPawn) override;
 	virtual void PostProcessInput(const float DeltaTime, const bool bGamePaused) override;
 	//~End of APlayerController interface
+
+	//~IGenericTeamAgentInterface interface
+	virtual void SetGenericTeamId(const FGenericTeamId& NewTeamID) override;
+	virtual FGenericTeamId GetGenericTeamId() const override;
+	virtual ETeamAttitude::Type GetTeamAttitudeTowards(const AActor& Other) const override;
+	//~End of IGenericTeamAgentInterface interface
 
 	UFUNCTION(BlueprintCallable, Category = "Rpg|Character")
 	void SetIsAutoRunning(bool bEnabled);

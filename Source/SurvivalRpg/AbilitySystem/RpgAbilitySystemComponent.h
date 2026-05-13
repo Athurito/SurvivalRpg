@@ -118,6 +118,12 @@ public:
 	UFUNCTION(BlueprintCallable, Category="RPG|AbilitySet")
 	void ActivateAbilitiesByInputTag(FGameplayTag InputTag, bool bAllowRemoteActivation);
 
+	UFUNCTION(BlueprintCallable, Category="RPG|AbilitySet")
+	bool TryActivateFirstAbilityByTag(FGameplayTag ActivationTag, bool bAllowRemoteActivation);
+
+	UFUNCTION(BlueprintCallable, Category="RPG|AbilitySet")
+	bool TryActivateFirstAbilityByInputTag(FGameplayTag InputTag, bool bAllowRemoteActivation);
+
 	UFUNCTION(BlueprintCallable, Category="RPG|Lifecycle")
 	void ResetForRevive();
 

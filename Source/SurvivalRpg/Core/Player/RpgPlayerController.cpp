@@ -8,6 +8,7 @@
 #include "GameFramework/Pawn.h"
 #include "SurvivalRpg/AbilitySystem/RpgAbilitySystemComponent.h"
 #include "SurvivalRpg/Core/Game/RpgGameModeBase.h"
+#include "SurvivalRpg/Core/Player/RpgBasePlayerState.h"
 #include "SurvivalRpg/Core/Player/RpgPlayerState.h"
 #include "SurvivalRpg/Equipment/RpgQuickBarComponent.h"
 #include "SurvivalRpg/GameplayTags/RpgGameplayTags.h"
@@ -97,6 +98,22 @@ void ARpgPlayerController::OnPossess(APawn* InPawn)
 {
 	Super::OnPossess(InPawn);
 	SetIsAutoRunning(false);
+}
+
+void ARpgPlayerController::SetGenericTeamId(const FGenericTeamId& NewTeamID)
+{
+	UE_LOG(LogTemp, Verbose, TEXT("ARpgPlayerController ignores SetGenericTeamId because team is driven by PawnData on the PlayerState."));
+}
+
+FGenericTeamId ARpgPlayerController::GetGenericTeamId() const
+{
+	const ARpgBasePlayerState* RpgPS = GetPlayerState<ARpgBasePlayerState>();
+	return RpgPS ? RpgPS->GetGenericTeamId() : FGenericTeamId::NoTeam;
+}
+
+ETeamAttitude::Type ARpgPlayerController::GetTeamAttitudeTowards(const AActor& Other) const
+{
+	return ARpgBasePlayerState::GetTeamAttitudeTowardsActor(GetGenericTeamId(), Other);
 }
 
 void ARpgPlayerController::OnRep_PlayerState()

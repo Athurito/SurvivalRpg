@@ -4,6 +4,7 @@
 
 #include "AbilitySystemBlueprintLibrary.h"
 #include "Components/GameFrameworkComponentManager.h"
+#include "GameFramework/Pawn.h"
 #include "GameplayTagContainer.h"
 #include "Net/UnrealNetwork.h"
 #include "SurvivalRpg/AbilitySystem/RpgAbilitySet.h"
@@ -13,6 +14,24 @@
 #include "SurvivalRpg/Core/Character/RpgPawnData.h"
 
 const FName ARpgBasePlayerState::NAME_RpgAbilityReady(TEXT("RpgAbilitiesReady"));
+
+namespace
+{
+const IGenericTeamAgentInterface* GetTeamAgentForActor(const AActor& Actor)
+{
+	if (const IGenericTeamAgentInterface* TeamAgent = Cast<const IGenericTeamAgentInterface>(&Actor))
+	{
+		return TeamAgent;
+	}
+
+	if (const APawn* Pawn = Cast<const APawn>(&Actor))
+	{
+		return Cast<const IGenericTeamAgentInterface>(Pawn->GetController());
+	}
+
+	return nullptr;
+}
+}
 
 ARpgBasePlayerState::ARpgBasePlayerState(const FObjectInitializer& ObjectInitializer)
 	: Super(ObjectInitializer)
@@ -33,6 +52,7 @@ void ARpgBasePlayerState::GetLifetimeReplicatedProps(TArray<FLifetimeProperty>& 
 	Super::GetLifetimeReplicatedProps(OutLifetimeProps);
 
 	DOREPLIFETIME(ARpgBasePlayerState, PawnData);
+	DOREPLIFETIME(ARpgBasePlayerState, TeamId);
 }
 
 void ARpgBasePlayerState::PostInitializeComponents()
@@ -62,6 +82,29 @@ UAbilitySystemComponent* ARpgBasePlayerState::GetAbilitySystemComponent() const
 	return AbilitySystemComponent;
 }
 
+int32 ARpgBasePlayerState::GetTeamId() const
+{
+	return (TeamId == FGenericTeamId::NoTeam.GetId()) ? INDEX_NONE : static_cast<int32>(TeamId);
+}
+
+FGenericTeamId ARpgBasePlayerState::GetGenericTeamId() const
+{
+	return FGenericTeamId(TeamId);
+}
+
+ETeamAttitude::Type ARpgBasePlayerState::GetTeamAttitudeTowardsActor(FGenericTeamId OwnTeamId, const AActor& Other)
+{
+	const IGenericTeamAgentInterface* OtherTeamAgent = GetTeamAgentForActor(Other);
+	const FGenericTeamId OtherTeamId = OtherTeamAgent ? OtherTeamAgent->GetGenericTeamId() : FGenericTeamId::NoTeam;
+
+	if (OwnTeamId == FGenericTeamId::NoTeam || OtherTeamId == FGenericTeamId::NoTeam)
+	{
+		return ETeamAttitude::Neutral;
+	}
+
+	return OwnTeamId == OtherTeamId ? ETeamAttitude::Friendly : ETeamAttitude::Hostile;
+}
+
 void ARpgBasePlayerState::SetPawnData(const URpgPawnData* InPawnData)
 {
 	check(InPawnData);
@@ -81,6 +124,7 @@ void ARpgBasePlayerState::SetPawnData(const URpgPawnData* InPawnData)
 	}
 
 	PawnData = InPawnData;
+	SetTeamIdFromPawnData(*PawnData);
 
 	check(AbilitySystemComponent);
 
@@ -123,4 +167,11 @@ void ARpgBasePlayerState::ApplyStartupLooseTags(const FGameplayTagContainer& Tag
 	{
 		AbilitySystemComponent->SetLooseGameplayTagCount(Tag, 1);
 	}
+}
+
+void ARpgBasePlayerState::SetTeamIdFromPawnData(const URpgPawnData& InPawnData)
+{
+	TeamId = InPawnData.TeamId < 0
+		? FGenericTeamId::NoTeam.GetId()
+		: static_cast<uint8>(FMath::Clamp(InPawnData.TeamId, 0, 254));
 }

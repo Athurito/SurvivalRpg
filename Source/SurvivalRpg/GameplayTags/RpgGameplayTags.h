@@ -16,6 +16,12 @@ namespace RpgGameplayTags
 	UE_DECLARE_GAMEPLAY_TAG_EXTERN(Ability_ActivateFail_TagsMissing);    
 	UE_DECLARE_GAMEPLAY_TAG_EXTERN(Ability_ActivateFail_Networking);     
 	UE_DECLARE_GAMEPLAY_TAG_EXTERN(Ability_ActivateFail_ActivationGroup);
+	UE_DECLARE_GAMEPLAY_TAG_EXTERN(Ability_Attack_Basic);
+	UE_DECLARE_GAMEPLAY_TAG_EXTERN(Ability_Support_Heal);
+	UE_DECLARE_GAMEPLAY_TAG_EXTERN(Ability_Defense_Block);
+	UE_DECLARE_GAMEPLAY_TAG_EXTERN(AI_Role_Grunt);
+	UE_DECLARE_GAMEPLAY_TAG_EXTERN(Faction_Player);
+	UE_DECLARE_GAMEPLAY_TAG_EXTERN(Faction_Enemy);
 	
 	
 	UE_DECLARE_GAMEPLAY_TAG_EXTERN(InputTag_Move);      

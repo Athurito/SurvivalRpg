@@ -15,6 +15,8 @@ class SURVIVALRPG_API URpgAIPawnData : public URpgPawnData
 	GENERATED_BODY()
 
 public:
+	URpgAIPawnData();
+
 	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Rpg|AI", meta = (Schema = "/Script/GameplayStateTreeModule.StateTreeAIComponentSchema"))
 	TObjectPtr<UStateTree> StateTree = nullptr;
 

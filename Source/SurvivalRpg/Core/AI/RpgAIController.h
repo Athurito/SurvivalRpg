@@ -3,12 +3,11 @@
 #pragma once
 
 #include "CoreMinimal.h"
+#include "GenericTeamAgentInterface.h"
 #include "ModularAIController.h"
 #include "RpgAIController.generated.h"
 
 class URpgAIPawnData;
-class URpgPawnExtensionComponent;
-class UStateTreeAIComponent;
 
 UCLASS()
 class SURVIVALRPG_API ARpgAIController : public AModularAIController
@@ -19,19 +18,15 @@ public:
 	explicit ARpgAIController(const FObjectInitializer& ObjectInitializer = FObjectInitializer::Get());
 
 	virtual void InitPlayerState() override;
-	virtual void OnPossess(APawn* InPawn) override;
 	virtual void OnUnPossess() override;
+
+	virtual void SetGenericTeamId(const FGenericTeamId& NewTeamID) override;
+	virtual FGenericTeamId GetGenericTeamId() const override;
+	virtual ETeamAttitude::Type GetTeamAttitudeTowards(const AActor& Other) const override;
 
 	const URpgAIPawnData* GetDefaultPawnData() const { return DefaultPawnData; }
 
 protected:
-	void HandlePawnAbilitySystemInitialized();
-	void StopStateTreeLogic(const FString& Reason);
-
-protected:
 	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Rpg|AI")
 	TObjectPtr<const URpgAIPawnData> DefaultPawnData;
-
-	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "Rpg|AI", meta = (AllowPrivateAccess = "true"))
-	TObjectPtr<UStateTreeAIComponent> StateTreeComponent;
 };

@@ -4,6 +4,7 @@
 
 #include "CoreMinimal.h"
 #include "AbilitySystemInterface.h"
+#include "GenericTeamAgentInterface.h"
 #include "ModularPlayerState.h"
 #include "RpgBasePlayerState.generated.h"
 
@@ -39,11 +40,19 @@ public:
 
 	void SetPawnData(const URpgPawnData* InPawnData);
 
+	UFUNCTION(BlueprintPure, Category = "Rpg|Team")
+	int32 GetTeamId() const;
+
+	FGenericTeamId GetGenericTeamId() const;
+
+	static ETeamAttitude::Type GetTeamAttitudeTowardsActor(FGenericTeamId OwnTeamId, const AActor& Other);
+
 protected:
 	UFUNCTION()
 	void OnRep_PawnData();
 
 	void ApplyStartupLooseTags(const FGameplayTagContainer& TagContainer) const;
+	void SetTeamIdFromPawnData(const URpgPawnData& InPawnData);
 
 protected:
 	UPROPERTY(VisibleAnywhere, Category = "Rpg|AbilitySystem")
@@ -51,6 +60,9 @@ protected:
 
 	UPROPERTY(ReplicatedUsing = OnRep_PawnData, VisibleAnywhere, Category = "Pawn")
 	TObjectPtr<const URpgPawnData> PawnData;
+
+	UPROPERTY(Replicated, VisibleAnywhere, Category = "Rpg|Team")
+	uint8 TeamId = 255;
 
 private:
 	UPROPERTY()

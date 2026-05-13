@@ -13,6 +13,24 @@
 
 UE_DEFINE_GAMEPLAY_TAG(TAG_Gameplay_AbilityInputBlocked, "Gameplay.AbilityInputBlocked");
 
+namespace
+{
+bool AbilitySpecHasActivationTag(const FGameplayAbilitySpec& Spec, const FGameplayTag& ActivationTag)
+{
+	if (!Spec.Ability || !ActivationTag.IsValid())
+	{
+		return false;
+	}
+
+	if (Spec.GetDynamicSpecSourceTags().HasTagExact(ActivationTag))
+	{
+		return true;
+	}
+
+	return Spec.Ability->GetAssetTags().HasTagExact(ActivationTag);
+}
+}
+
 
 URpgAbilitySystemComponent::URpgAbilitySystemComponent(const FObjectInitializer& ObjectInitializer) : Super(ObjectInitializer)
 {
@@ -687,6 +705,29 @@ void URpgAbilitySystemComponent::ActivateAbilitiesByInputTag(FGameplayTag InputT
 			TryActivateAbility(Spec.Handle, bAllowRemoteActivation);
 		}
 	}
+}
+
+bool URpgAbilitySystemComponent::TryActivateFirstAbilityByTag(FGameplayTag ActivationTag, bool bAllowRemoteActivation)
+{
+	if (!ActivationTag.IsValid())
+	{
+		return false;
+	}
+
+	for (const FGameplayAbilitySpec& Spec : GetActivatableAbilities())
+	{
+		if (AbilitySpecHasActivationTag(Spec, ActivationTag))
+		{
+			return TryActivateAbility(Spec.Handle, bAllowRemoteActivation);
+		}
+	}
+
+	return false;
+}
+
+bool URpgAbilitySystemComponent::TryActivateFirstAbilityByInputTag(FGameplayTag InputTag, bool bAllowRemoteActivation)
+{
+	return TryActivateFirstAbilityByTag(InputTag, bAllowRemoteActivation);
 }
 
 void URpgAbilitySystemComponent::ResetForRevive()
