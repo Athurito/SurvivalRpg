@@ -62,6 +62,30 @@ void ARpgAIController::InitPlayerState()
 	}
 }
 
+void ARpgAIController::OnPossess(APawn* InPawn)
+{
+	Super::OnPossess(InPawn);
+
+	ARpgBasePlayerState* RpgPlayerState = GetPlayerState<ARpgBasePlayerState>();
+	URpgAbilitySystemComponent* AbilitySystemComponent = RpgPlayerState ? RpgPlayerState->GetRpgAbilitySystemComponent() : nullptr;
+	URpgPawnExtensionComponent* PawnExtension = URpgPawnExtensionComponent::FindPawnExtensionComponent(InPawn);
+
+	if (!RpgPlayerState || !AbilitySystemComponent || !PawnExtension)
+	{
+		return;
+	}
+
+	if (!PawnExtension->GetPawnData<URpgAIPawnData>())
+	{
+		if (const URpgAIPawnData* PawnData = RpgPlayerState->GetPawnData<URpgAIPawnData>())
+		{
+			PawnExtension->SetPawnData(PawnData);
+		}
+	}
+
+	PawnExtension->InitializeAbilitySystemComponent(AbilitySystemComponent, RpgPlayerState);
+}
+
 void ARpgAIController::OnUnPossess()
 {
 	if (APawn* PawnBeingUnpossessed = GetPawn())

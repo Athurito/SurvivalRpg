@@ -18,6 +18,7 @@ public:
 	explicit ARpgAIController(const FObjectInitializer& ObjectInitializer = FObjectInitializer::Get());
 
 	virtual void InitPlayerState() override;
+	virtual void OnPossess(APawn* InPawn) override;
 	virtual void OnUnPossess() override;
 
 	virtual void SetGenericTeamId(const FGenericTeamId& NewTeamID) override;

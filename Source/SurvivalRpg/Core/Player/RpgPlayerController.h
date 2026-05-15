@@ -4,7 +4,7 @@
 
 #include "CoreMinimal.h"
 #include "GenericTeamAgentInterface.h"
-#include "GameFramework/PlayerController.h"
+#include "ModularPlayerController.h"
 #include "RpgPlayerController.generated.h"
 
 class URpgAbilitySystemComponent;
@@ -13,7 +13,7 @@ class UInputMappingContext;
 class ARpgPlayerState;
 
 UCLASS(Abstract)
-class SURVIVALRPG_API ARpgPlayerController : public APlayerController, public IGenericTeamAgentInterface
+class SURVIVALRPG_API ARpgPlayerController : public AModularPlayerController, public IGenericTeamAgentInterface
 {
 	GENERATED_BODY()
 

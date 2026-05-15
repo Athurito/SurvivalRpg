@@ -9,6 +9,7 @@ class ARpgPlayerController;
 class URpgTradeSkillProgressionComponent;
 class URpgPlayerProgressionComponent;
 class URpgInventoryManagerComponent;
+class URpgExperienceDefinition;
 
 USTRUCT(BlueprintType)
 struct SURVIVALRPG_API FRpgReplicatedRespawnState
@@ -67,6 +68,8 @@ class SURVIVALRPG_API ARpgPlayerState : public ARpgBasePlayerState
 public:
 	ARpgPlayerState();
 
+	virtual void PostInitializeComponents() override;
+	virtual void ClientInitialize(AController* C) override;
 	virtual void GetLifetimeReplicatedProps(TArray<FLifetimeProperty>& OutLifetimeProps) const override;
 	
 	UFUNCTION(BlueprintCallable, Category = "Rpg|PlayerState")
@@ -108,6 +111,7 @@ protected:
 	UFUNCTION()
 	void OnRep_CheckpointState();
 
+	void OnExperienceLoaded(const URpgExperienceDefinition* CurrentExperience);
 	void BroadcastRespawnStateChanged() const;
 	void BroadcastCheckpointChanged() const;
 

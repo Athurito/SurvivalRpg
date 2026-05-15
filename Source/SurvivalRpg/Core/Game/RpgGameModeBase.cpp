@@ -4,17 +4,53 @@
 #include "RpgGameModeBase.h"
 
 #include "RpgWorldSettings.h"
+#include "AssetRegistry/AssetData.h"
+#include "Kismet/GameplayStatics.h"
+#include "Misc/CommandLine.h"
 #include "SurvivalRpg/SurvivalRpg.h"
 #include "SurvivalRpg/AbilitySystem/RpgAbilitySystemComponent.h"
 #include "SurvivalRpg/Core/AI/RpgAIController.h"
 #include "SurvivalRpg/Core/AI/RpgAIPawnData.h"
+#include "SurvivalRpg/Core/Character/RpgCharacter.h"
 #include "SurvivalRpg/Core/Character/RpgPawnData.h"
 #include "SurvivalRpg/Core/Character/RpgPawnExtensionComponent.h"
+#include "SurvivalRpg/Core/Game/RpgGameStateBase.h"
+#include "SurvivalRpg/Core/Game/Experience/RpgExperienceDefinition.h"
+#include "SurvivalRpg/Core/Game/Experience/RpgExperienceManagerComponent.h"
 #include "SurvivalRpg/Core/Player/RpgBasePlayerState.h"
+#include "SurvivalRpg/Core/Player/RpgPlayerController.h"
 #include "SurvivalRpg/Core/Player/RpgPlayerState.h"
+#include "SurvivalRpg/Development/RpgDeveloperSettings.h"
 #include "SurvivalRpg/GameplayTags/RpgGameplayTags.h"
+#include "SurvivalRpg/System/RpgAssetManager.h"
 #include "GameFramework/GameStateBase.h"
 #include "GameFramework/PlayerState.h"
+#include "TimerManager.h"
+
+ARpgGameModeBase::ARpgGameModeBase(const FObjectInitializer& ObjectInitializer)
+	: Super(ObjectInitializer)
+{
+	GameStateClass = ARpgGameStateBase::StaticClass();
+	PlayerControllerClass = ARpgPlayerController::StaticClass();
+	PlayerStateClass = ARpgPlayerState::StaticClass();
+	DefaultPawnClass = ARpgCharacter::StaticClass();
+}
+
+void ARpgGameModeBase::InitGame(const FString& MapName, const FString& Options, FString& ErrorMessage)
+{
+	Super::InitGame(MapName, Options, ErrorMessage);
+
+	GetWorldTimerManager().SetTimerForNextTick(this, &ThisClass::HandleMatchAssignmentIfNotExpectingOne);
+}
+
+void ARpgGameModeBase::InitGameState()
+{
+	Super::InitGameState();
+
+	URpgExperienceManagerComponent* ExperienceComponent = GameState ? GameState->FindComponentByClass<URpgExperienceManagerComponent>() : nullptr;
+	check(ExperienceComponent);
+	ExperienceComponent->CallOrRegister_OnExperienceLoaded(FOnRpgExperienceLoaded::FDelegate::CreateUObject(this, &ThisClass::OnExperienceLoaded));
+}
 
 // ---------------------------------------------------------------------------
 // Login / Logout
@@ -22,17 +58,6 @@
 
 void ARpgGameModeBase::PostLogin(APlayerController* NewPlayer)
 {
-	if (const ARpgWorldSettings* WorldSettings = Cast<ARpgWorldSettings>(GetWorld()->GetWorldSettings()))
-	{
-		if (const URpgPawnData* PawnData = WorldSettings->GetDefaultPawnData())
-		{
-			if (ARpgBasePlayerState* PlayerState = NewPlayer->GetPlayerState<ARpgBasePlayerState>())
-			{
-				PlayerState->SetPawnData(PawnData);
-			}
-		}
-	}
-
 	GetOrCreatePlayerSaveData(NewPlayer);
 	GetOrCreatePlayerRespawnState(NewPlayer);
 	SyncPlayerCheckpointDataToPlayerState(NewPlayer);
@@ -45,6 +70,14 @@ void ARpgGameModeBase::Logout(AController* Exiting)
 {
 	// Save data stays in the map so a player can reconnect and keep host-owned progress.
 	Super::Logout(Exiting);
+}
+
+void ARpgGameModeBase::HandleStartingNewPlayer_Implementation(APlayerController* NewPlayer)
+{
+	if (IsExperienceLoaded())
+	{
+		Super::HandleStartingNewPlayer_Implementation(NewPlayer);
+	}
 }
 
 // ---------------------------------------------------------------------------
@@ -108,10 +141,229 @@ const URpgPawnData* ARpgGameModeBase::GetPawnDataForController(const AController
 
 	if (const ARpgAIController* AIController = Cast<ARpgAIController>(InController))
 	{
-		return static_cast<const URpgPawnData*>(AIController->GetDefaultPawnData());
+		if (const URpgAIPawnData* AIPawnData = AIController->GetDefaultPawnData())
+		{
+			return static_cast<const URpgPawnData*>(AIPawnData);
+		}
+	}
+
+	if (GameState)
+	{
+		if (const URpgExperienceManagerComponent* ExperienceComponent = GameState->FindComponentByClass<URpgExperienceManagerComponent>())
+		{
+			if (ExperienceComponent->IsExperienceLoaded())
+			{
+				const URpgExperienceDefinition* Experience = ExperienceComponent->GetCurrentExperienceChecked();
+				if (Experience && Experience->DefaultPawnData)
+				{
+					return Experience->DefaultPawnData;
+				}
+
+				return URpgAssetManager::Get().GetDefaultPawnData();
+			}
+		}
 	}
 
 	return nullptr;
+}
+
+bool ARpgGameModeBase::IsExperienceLoaded() const
+{
+	check(GameState);
+
+	const URpgExperienceManagerComponent* ExperienceComponent = GameState->FindComponentByClass<URpgExperienceManagerComponent>();
+	check(ExperienceComponent);
+
+	return ExperienceComponent->IsExperienceLoaded();
+}
+
+void ARpgGameModeBase::HandleMatchAssignmentIfNotExpectingOne()
+{
+	FPrimaryAssetId ExperienceId;
+	FString ExperienceIdSource;
+
+	if (!ExperienceId.IsValid() && UGameplayStatics::HasOption(OptionsString, TEXT("Experience")))
+	{
+		const FString ExperienceFromOptions = UGameplayStatics::ParseOption(OptionsString, TEXT("Experience"));
+		ExperienceId = FPrimaryAssetId(FPrimaryAssetType(URpgExperienceDefinition::StaticClass()->GetFName()), FName(*ExperienceFromOptions));
+		ExperienceIdSource = TEXT("OptionsString");
+	}
+
+	if (!ExperienceId.IsValid() && GetWorld()->IsPlayInEditor())
+	{
+		ExperienceId = GetDefault<URpgDeveloperSettings>()->ExperienceOverride;
+		ExperienceIdSource = TEXT("DeveloperSettings");
+	}
+
+	if (!ExperienceId.IsValid())
+	{
+		FString ExperienceFromCommandLine;
+		if (FParse::Value(FCommandLine::Get(), TEXT("Experience="), ExperienceFromCommandLine))
+		{
+			ExperienceId = FPrimaryAssetId::ParseTypeAndName(ExperienceFromCommandLine);
+			if (!ExperienceId.PrimaryAssetType.IsValid())
+			{
+				ExperienceId = FPrimaryAssetId(FPrimaryAssetType(URpgExperienceDefinition::StaticClass()->GetFName()), FName(*ExperienceFromCommandLine));
+			}
+			ExperienceIdSource = TEXT("CommandLine");
+		}
+	}
+
+	if (!ExperienceId.IsValid())
+	{
+		if (const ARpgWorldSettings* WorldSettings = Cast<ARpgWorldSettings>(GetWorldSettings()))
+		{
+			ExperienceId = WorldSettings->GetDefaultGameplayExperience();
+			ExperienceIdSource = TEXT("WorldSettings");
+		}
+	}
+
+	URpgAssetManager& AssetManager = URpgAssetManager::Get();
+	FAssetData Dummy;
+	if (ExperienceId.IsValid() && !AssetManager.GetPrimaryAssetData(ExperienceId, Dummy))
+	{
+		UE_LOG(LogRpgExperience, Error, TEXT("Wanted to use experience [%s] from [%s], but AssetManager could not find it. Falling back."),
+			*ExperienceId.ToString(),
+			*ExperienceIdSource);
+		ExperienceId = FPrimaryAssetId();
+	}
+
+	if (!ExperienceId.IsValid())
+	{
+		ExperienceId = FPrimaryAssetId(FPrimaryAssetType(URpgExperienceDefinition::StaticClass()->GetFName()), FName(TEXT("RpgPrototypeExperience")));
+		ExperienceIdSource = TEXT("Default");
+	}
+
+	OnMatchAssignmentGiven(ExperienceId, ExperienceIdSource);
+}
+
+void ARpgGameModeBase::OnMatchAssignmentGiven(FPrimaryAssetId ExperienceId, const FString& ExperienceIdSource)
+{
+	if (!ExperienceId.IsValid())
+	{
+		UE_LOG(LogRpgExperience, Error, TEXT("Failed to identify a valid experience."));
+		return;
+	}
+
+	UE_LOG(LogRpgExperience, Log, TEXT("Identified experience [%s] from [%s]."),
+		*ExperienceId.ToString(),
+		*ExperienceIdSource);
+
+	check(GameState);
+	URpgExperienceManagerComponent* ExperienceComponent = GameState->FindComponentByClass<URpgExperienceManagerComponent>();
+	check(ExperienceComponent);
+	ExperienceComponent->SetCurrentExperience(ExperienceId);
+}
+
+void ARpgGameModeBase::OnExperienceLoaded(const URpgExperienceDefinition* CurrentExperience)
+{
+	for (FConstPlayerControllerIterator Iterator = GetWorld()->GetPlayerControllerIterator(); Iterator; ++Iterator)
+	{
+		APlayerController* PC = Iterator->Get();
+		if (PC && PC->GetPawn() == nullptr && PlayerCanRestart(PC))
+		{
+			RestartPlayer(PC);
+		}
+	}
+}
+
+bool ARpgGameModeBase::ShouldSpawnAtStartSpot(AController* Player)
+{
+	return false;
+}
+
+void ARpgGameModeBase::FinishRestartPlayer(AController* NewPlayer, const FRotator& StartRotation)
+{
+	Super::FinishRestartPlayer(NewPlayer, StartRotation);
+}
+
+bool ARpgGameModeBase::PlayerCanRestart_Implementation(APlayerController* Player)
+{
+	return ControllerCanRestart(Player);
+}
+
+bool ARpgGameModeBase::UpdatePlayerStartSpot(AController* Player, const FString& Portal, FString& OutErrorMessage)
+{
+	return true;
+}
+
+void ARpgGameModeBase::GenericPlayerInitialization(AController* NewPlayer)
+{
+	Super::GenericPlayerInitialization(NewPlayer);
+	OnGameModePlayerInitialized.Broadcast(this, NewPlayer);
+}
+
+void ARpgGameModeBase::FailedToRestartPlayer(AController* NewPlayer)
+{
+	Super::FailedToRestartPlayer(NewPlayer);
+
+	if (GetDefaultPawnClassForController(NewPlayer))
+	{
+		if (APlayerController* NewPC = Cast<APlayerController>(NewPlayer))
+		{
+			if (PlayerCanRestart(NewPC))
+			{
+				RequestPlayerRestartNextFrame(NewPlayer, false);
+			}
+			else
+			{
+				UE_LOG(LogRpg, Verbose, TEXT("FailedToRestartPlayer(%s) and PlayerCanRestart returned false, so not retrying."), *GetPathNameSafe(NewPlayer));
+			}
+		}
+		else
+		{
+			RequestPlayerRestartNextFrame(NewPlayer, false);
+		}
+	}
+	else
+	{
+		UE_LOG(LogRpg, Verbose, TEXT("FailedToRestartPlayer(%s) but there is no pawn class, so giving up."), *GetPathNameSafe(NewPlayer));
+	}
+}
+
+void ARpgGameModeBase::RequestPlayerRestartNextFrame(AController* Controller, bool bForceReset)
+{
+	if (!Controller)
+	{
+		return;
+	}
+
+	if (bForceReset)
+	{
+		Controller->Reset();
+	}
+
+	if (APlayerController* PC = Cast<APlayerController>(Controller))
+	{
+		GetWorldTimerManager().SetTimerForNextTick(PC, &APlayerController::ServerRestartPlayer_Implementation);
+		return;
+	}
+
+	TWeakObjectPtr<AController> WeakController = Controller;
+	GetWorldTimerManager().SetTimerForNextTick(FTimerDelegate::CreateWeakLambda(this, [this, WeakController]()
+	{
+		if (WeakController.IsValid())
+		{
+			RestartPlayer(WeakController.Get());
+		}
+	}));
+}
+
+bool ARpgGameModeBase::ControllerCanRestart(AController* Controller)
+{
+	if (APlayerController* PC = Cast<APlayerController>(Controller))
+	{
+		if (!Super::PlayerCanRestart_Implementation(PC))
+		{
+			return false;
+		}
+	}
+	else if ((Controller == nullptr) || Controller->IsPendingKillPending())
+	{
+		return false;
+	}
+
+	return true;
 }
 
 // ---------------------------------------------------------------------------

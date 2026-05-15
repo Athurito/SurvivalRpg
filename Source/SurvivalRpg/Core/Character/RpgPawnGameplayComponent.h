@@ -6,6 +6,7 @@
 #include "GameplayAbilitySpecHandle.h"
 #include "Components/GameFrameworkInitStateInterface.h"
 #include "Components/PawnComponent.h"
+#include "SurvivalRpg/GameFeatures/RpgGameFeatureAction_AddInputContextMapping.h"
 
 #include "RpgPawnGameplayComponent.generated.h"
 
@@ -17,23 +18,32 @@ class URpgAbilitySystemComponent;
 struct FGameplayTag;
 struct FInputActionValue;
 
+/**
+ * Player-only pawn gameplay component.
+ *
+ * This is the Lyra HeroComponent-style layer for local input, camera selection, quickbar input,
+ * and player ASC avatar binding. AI pawns should use PawnExtension directly instead.
+ */
 UCLASS(ClassGroup=(Custom), Blueprintable, meta=(BlueprintSpawnableComponent))
 class SURVIVALRPG_API URpgPawnGameplayComponent : public UPawnComponent, public IGameFrameworkInitStateInterface
 {
 	GENERATED_BODY()
 public:
 	
-	/** IGameFrameworkInitStateInterface start **/
+	/** The extension event sent when ability inputs are ready to bind. */
+	static const FName NAME_BindInputsNow;
+	/** The name of this component-implemented actor feature. */
 	static const FName Name_ActorFeatureName;
+
+	//~ IGameFrameworkInitStateInterface interface
 	virtual FName GetFeatureName() const override { return Name_ActorFeatureName; };
 	virtual bool CanChangeInitState(UGameFrameworkComponentManager* Manager, FGameplayTag CurrentState, FGameplayTag DesiredState) const override;
 	virtual void HandleChangeInitState(UGameFrameworkComponentManager* Manager, FGameplayTag CurrentState, FGameplayTag DesiredState) override;
 	virtual void OnActorInitStateChanged(const FActorInitStateChangedParams& Params) override;
 	virtual void CheckDefaultInitialization() override;
-	/** IGameFrameworkInitStateInterface end **/
+	//~ End IGameFrameworkInitStateInterface interface
 
 public:
-	// Sets default values for this component's properties
 	explicit URpgPawnGameplayComponent(const FObjectInitializer& ObjectInitializer);
 	
 	/** Returns the hero component if one exists on the specified actor. */
@@ -45,12 +55,21 @@ public:
 
 	/** Clears the camera override if it is set */
 	void ClearAbilityCameraMode(const FGameplayAbilitySpecHandle& OwningSpecHandle);
+
+	/** Adds mode- or feature-specific input config after the base pawn input is ready. */
+	void AddAdditionalInputConfig(const URpgInputConfig* InputConfig);
+	/** Removes a mode- or feature-specific input config if it has been added. */
+	void RemoveAdditionalInputConfig(const URpgInputConfig* InputConfig);
+	/** True when this locally controlled player pawn is ready for additional ability input bindings. */
+	bool IsReadyToBindInputs() const;
 	
 	
-	// Called when the game starts
+	//~ UActorComponent interface
 	virtual void BeginPlay() override;
 	virtual void EndPlay(const EEndPlayReason::Type EndPlayReason) override;
+	//~ End UActorComponent interface
 	
+	/** Initializes Enhanced Input and binds native plus ability input actions for the owning local player. */
 	virtual void InitializePlayerInput(UInputComponent* PlayerInputComponent);
 
 	void Input_AbilityInputTagPressed(FGameplayTag InputTag);
@@ -81,12 +100,18 @@ protected:
 protected:
 	
 	
+	UPROPERTY(EditAnywhere, Category = "Input")
+	TArray<FRpgInputMappingContextAndPriority> DefaultInputMappings;
+	
 	/** Camera mode set by an ability. */
 	UPROPERTY()
 	TSubclassOf<URpgCameraMode> AbilityCameraMode;
 
 	/** Spec handle for the last ability to set a camera mode. */
 	FGameplayAbilitySpecHandle AbilityCameraModeOwningSpecHandle;
+
+	/** True after player input bindings have been applied. This should remain false for AI pawns. */
+	bool bReadyToBindInputs = false;
 
 private:
 	void Input_QuickBarSlot(int32 SlotIndex);

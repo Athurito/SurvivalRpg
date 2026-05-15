@@ -8,7 +8,6 @@
 #include "Net/UnrealNetwork.h"
 #include "SurvivalRpg/AbilitySystem/RpgAbilitySystemComponent.h"
 #include "SurvivalRpg/Core/Character/RpgPawnData.h"
-#include "SurvivalRpg/Core/Player/RpgBasePlayerState.h"
 #include "SurvivalRpg/GameplayTags/RpgGameplayTags.h"
 
 const FName URpgPawnExtensionComponent::Name_ActorFeatureName = FName("PawnExtension");
@@ -73,7 +72,10 @@ void URpgPawnExtensionComponent::SetPawnData(const URpgPawnData* InPawnData)
 	
 	if (PawnData)
 	{
-		//Already Set
+		UE_LOG(LogTemp, Error, TEXT("Trying to set PawnData [%s] on pawn [%s] that already has valid PawnData [%s]."),
+			*GetNameSafe(InPawnData),
+			*GetNameSafe(Pawn),
+			*GetNameSafe(PawnData));
 		return;
 	}
 		
@@ -227,7 +229,6 @@ bool URpgPawnExtensionComponent::CanChangeInitState(UGameFrameworkComponentManag
 	if (CurrentState == RpgGameplayTags::InitState_Spawned && DesiredState == RpgGameplayTags::InitState_DataAvailable)
 	{
 		if (!PawnData) return false;
-		if (!GetPlayerState<ARpgBasePlayerState>()) return false;
 		
 		const bool bHasAuthority = Pawn->HasAuthority();
 		const bool bIsLocallyControlled = Pawn->IsLocallyControlled();
@@ -259,13 +260,7 @@ void URpgPawnExtensionComponent::HandleChangeInitState(UGameFrameworkComponentMa
 {
 	if (DesiredState == RpgGameplayTags::InitState_DataInitialized)
 	{
-		if (ARpgBasePlayerState* PlayerState = GetPlayerState<ARpgBasePlayerState>())
-		{
-			if (URpgAbilitySystemComponent* AbilitySystem = PlayerState->GetRpgAbilitySystemComponent())
-			{
-				InitializeAbilitySystemComponent(AbilitySystem, PlayerState);
-			}
-		}
+		// Lyra keeps ASC avatar binding owned by higher-level components, e.g. HeroComponent.
 	}
 }
 
