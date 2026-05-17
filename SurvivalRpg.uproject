@@ -76,7 +76,7 @@
 		},
 		{
 			"Name": "NinjaInteraction",
-			"Enabled": true,
+			"Enabled": false,
 			"MarketplaceURL": "com.epicgames.launcher://ue/Fab/product/261ab2b6-41c5-40c0-a694-08248ffcd37e"
 		},
 		{
