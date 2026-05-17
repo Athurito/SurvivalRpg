@@ -11,6 +11,7 @@
 #include "RpgPawnGameplayComponent.h"
 #include "Components/CapsuleComponent.h"
 #include "SurvivalRpg/AbilitySystem/RpgAbilitySystemComponent.h"
+#include "SurvivalRpg/AbilitySystem/Attributes/RpgHealthSet.h"
 #include "SurvivalRpg/Camera/RpgCameraComponent.h"
 #include "SurvivalRpg/Core/Game/RpgGameModeBase.h"
 #include "SurvivalRpg/Equipment/RpgEquipmentManagerComponent.h"
@@ -122,6 +123,15 @@ void ARpgCharacter::OnAbilitySystemInitialized()
 	HealthComponent->InitializeWithAbilitySystem(Asc);
 	DeathComponent->InitializeWithAbilitySystem(Asc);
 	DownedComponent->InitializeWithAbilitySystem(Asc);
+
+	if (HasAuthority())
+	{
+		if (const URpgHealthSet* HealthSet = Asc->GetSet<URpgHealthSet>())
+		{
+			Asc->SetNumericAttributeBase(URpgHealthSet::GetHealthAttribute(), HealthSet->GetMaxHealth());
+		}
+	}
+
 	Asc->SetLooseGameplayTagCount(RpgGameplayTags::Status_Crouching, IsCrouched() ? 1 : 0);
 }
 

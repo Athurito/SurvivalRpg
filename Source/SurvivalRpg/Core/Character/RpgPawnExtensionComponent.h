@@ -12,6 +12,12 @@ class URpgPawnData;
 class UAbilitySystemComponent;
 class URpgAbilitySystemComponent;
 
+/**
+ * Core pawn extension used by player and AI pawns.
+ *
+ * It owns pawn init-state coordination and binds an externally owned ASC to this pawn as avatar.
+ * Ability grants stay in PawnData/PlayerState paths; this component only connects the avatar.
+ */
 UCLASS(ClassGroup=(Custom), meta=(BlueprintSpawnableComponent))
 class SURVIVALRPG_API URpgPawnExtensionComponent : public UPawnComponent, public IGameFrameworkInitStateInterface
 {
@@ -20,14 +26,16 @@ class SURVIVALRPG_API URpgPawnExtensionComponent : public UPawnComponent, public
 public:
 	URpgPawnExtensionComponent(const FObjectInitializer& ObjectInitializer);
 	
-	//~ IGameFrameworkInitStateInterface start
+	/** The name of this component-implemented actor feature. */
 	static const FName Name_ActorFeatureName;
+
+	//~ IGameFrameworkInitStateInterface interface
 	virtual FName GetFeatureName() const override { return Name_ActorFeatureName; };
 	virtual bool CanChangeInitState(UGameFrameworkComponentManager* Manager, FGameplayTag CurrentState, FGameplayTag DesiredState) const override;
 	virtual void HandleChangeInitState(UGameFrameworkComponentManager* Manager, FGameplayTag CurrentState, FGameplayTag DesiredState) override;
 	virtual void OnActorInitStateChanged(const FActorInitStateChangedParams& Params) override;
 	virtual void CheckDefaultInitialization() override;
-	//~ IGameFrameworkInitStateInterface end
+	//~ End IGameFrameworkInitStateInterface interface
 	
 	/** Returns the pawn extension component if one exists on the specified actor. */
 	UFUNCTION(BlueprintPure, Category = "Lyra|Pawn")
@@ -37,7 +45,7 @@ public:
 	template<class T>
 	const T* GetPawnData() const { return Cast<T>(PawnData); }
 	
-	/** Sets the current pawn data */
+	/** Sets the current pawn data. Authority-only and expected to happen once per pawn. */
 	void SetPawnData(const URpgPawnData* InPawnData);
 	
 	/** Gets the current ability system component, which may be owned by a different actor */
@@ -83,6 +91,7 @@ protected:
 	UPROPERTY(Transient)
 	TObjectPtr<URpgAbilitySystemComponent> AbilitySystemComponent;
 	
+	/** Pawn data used to configure this pawn instance. Set during spawn or on placed instances. */
 	UPROPERTY(EditInstanceOnly, ReplicatedUsing = OnRep_PawnData, Category = "Lyra|Pawn")
 	TObjectPtr<const URpgPawnData> PawnData;
 };

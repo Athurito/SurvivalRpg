@@ -4,13 +4,14 @@
 #include "RpgPawnGameplayComponent.h"
 
 #include "SurvivalRpg/AbilitySystem/RpgAbilitySystemComponent.h"
-#include "SurvivalRpg/AbilitySystem/Attributes/RpgHealthSet.h"
 #include "GameplayTagContainer.h"
 #include "InputActionValue.h"
+#include "InputMappingContext.h"
 #include "RpgCharacter.h"
 #include "RpgPawnData.h"
 #include "RpgPawnExtensionComponent.h"
 #include "Components/GameFrameworkComponentManager.h"
+#include "EnhancedInputSubsystems.h"
 #include "GameFramework/Controller.h"
 #include "SurvivalRpg/Camera/RpgCameraComponent.h"
 #include "SurvivalRpg/Camera/RpgCameraMode.h"
@@ -18,12 +19,14 @@
 #include "SurvivalRpg/Core/Player/RpgPlayerState.h"
 #include "SurvivalRpg/GameplayTags/RpgGameplayTags.h"
 #include "SurvivalRpg/Input/RpgInputComponent.h"
+#include "UserSettings/EnhancedInputUserSettings.h"
 
 namespace RpgCharacter
 {
 	static constexpr float LookYawRate = 300.0f;
 	static constexpr float LookPitchRate = 165.0f;
 }
+const FName URpgPawnGameplayComponent::NAME_BindInputsNow = FName("BindInputsNow");
 const FName URpgPawnGameplayComponent::Name_ActorFeatureName = FName("RpgPawnGameplayComponent");
 
 
@@ -31,7 +34,10 @@ const FName URpgPawnGameplayComponent::Name_ActorFeatureName = FName("RpgPawnGam
 // Sets default values for this component's properties
 URpgPawnGameplayComponent::URpgPawnGameplayComponent(const FObjectInitializer& ObjectInitializer) : Super(ObjectInitializer)
 {
-	PrimaryComponentTick.bCanEverTick = true;
+	PrimaryComponentTick.bStartWithTickEnabled = false;
+	PrimaryComponentTick.bCanEverTick = false;
+	AbilityCameraMode = nullptr;
+	bReadyToBindInputs = false;
 }
 
 void URpgPawnGameplayComponent::BeginPlay()
@@ -60,8 +66,7 @@ void URpgPawnGameplayComponent::EndPlay(const EEndPlayReason::Type EndPlayReason
 			CameraComponent->DetermineCameraModeDelegate.Unbind();
 		}
 	}
-
-	RemovePawnDataAbilitySets();
+	UnregisterInitStateFeature();
 	Super::EndPlay(EndPlayReason);
 }
 
@@ -142,25 +147,16 @@ void URpgPawnGameplayComponent::HandleChangeInitState(UGameFrameworkComponentMan
 	if (CurrentState == RpgGameplayTags::InitState_DataAvailable && DesiredState == RpgGameplayTags::InitState_DataInitialized)
 	{
 		APawn* Pawn = GetPawn<APawn>();
-		ARpgPlayerState* PS = GetPlayerState<ARpgPlayerState>();
+		ARpgPlayerState* PlayerState = GetPlayerState<ARpgPlayerState>();
 
-		if (!Pawn || !PS) return;
+		if (!Pawn || !PlayerState) return;
 
 		const URpgPawnData* PawnData = nullptr;
 		
 		if (URpgPawnExtensionComponent* PawnExt = URpgPawnExtensionComponent::FindPawnExtensionComponent(Pawn))
 		{
 			PawnData = PawnExt->GetPawnData<URpgPawnData>();
-
-			URpgAbilitySystemComponent* AbilitySystemComponent = PS->GetRpgAbilitySystemComponent();
-			if (!AbilitySystemComponent)
-			{
-				return;
-			}
-
-			PawnExt->InitializeAbilitySystemComponent(AbilitySystemComponent, PS);
-			GrantPawnDataAbilitySets(AbilitySystemComponent, PawnExt->GetPawnData<URpgPawnData>(), Pawn);
-			ResetCurrentHealthToMaxHealth(AbilitySystemComponent);
+			PawnExt->InitializeAbilitySystemComponent(PlayerState->GetRpgAbilitySystemComponent(), PlayerState);
 		}
 		
 		if (APlayerController* PC = GetController<APlayerController>())
@@ -231,17 +227,58 @@ void URpgPawnGameplayComponent::InitializePlayerInput(UInputComponent* PlayerInp
 
 	const APawn* Pawn = GetPawn<APawn>();
 	if (!Pawn) return;
+
+	if (bReadyToBindInputs)
+	{
+		return;
+	}
+
+	const APlayerController* PC = GetController<APlayerController>();
+	if (!PC)
+	{
+		return;
+	}
+
+	ULocalPlayer* LocalPlayer = PC->GetLocalPlayer();
+	if (!LocalPlayer)
+	{
+		return;
+	}
+
+	UEnhancedInputLocalPlayerSubsystem* InputSubsystem = LocalPlayer->GetSubsystem<UEnhancedInputLocalPlayerSubsystem>();
+	if (!InputSubsystem)
+	{
+		return;
+	}
 	
 	if (URpgPawnExtensionComponent* PawnExt = URpgPawnExtensionComponent::FindPawnExtensionComponent(Pawn))
 	{
 		if (const URpgPawnData* PawnData = PawnExt->GetPawnData<URpgPawnData>())
 		{
+			for (const FRpgInputMappingContextAndPriority& Mapping : DefaultInputMappings)
+			{
+				if (UInputMappingContext* IMC = Mapping.InputMapping.LoadSynchronous())
+				{
+					if (Mapping.bRegisterWithSettings)
+					{
+						if (UEnhancedInputUserSettings* Settings = InputSubsystem->GetUserSettings())
+						{
+							Settings->RegisterInputMappingContext(IMC);
+						}
+					}
+
+					FModifyContextOptions Options;
+					Options.bIgnoreAllPressedKeysUntilRelease = false;
+					InputSubsystem->AddMappingContext(IMC, Mapping.Priority, Options);
+				}
+			}
+
 			if (const URpgInputConfig* InputConfig = PawnData->InputConfig)
 			{
 				URpgInputComponent* RpgIC = Cast<URpgInputComponent>(PlayerInputComponent);
 				if (ensureMsgf(RpgIC, TEXT("Unexpected Input Component class! The Gameplay Abilities will not be bound to their inputs. Change the input component to URpgInputComponent or a subclass of it.")))
 				{
-					// Add the key mappings that may have been set by the player
+					RpgIC->AddInputMappings(InputConfig, InputSubsystem);
 				
 					// This is where we actually bind and input action to a gameplay tag, which means that Gameplay Ability Blueprints will
 					// be triggered directly by these input actions Triggered events. 
@@ -267,6 +304,41 @@ void URpgPawnGameplayComponent::InitializePlayerInput(UInputComponent* PlayerInp
 			}
 		}
 	}
+
+	bReadyToBindInputs = true;
+	UGameFrameworkComponentManager::SendGameFrameworkComponentExtensionEvent(const_cast<APlayerController*>(PC), NAME_BindInputsNow);
+	UGameFrameworkComponentManager::SendGameFrameworkComponentExtensionEvent(const_cast<APawn*>(Pawn), NAME_BindInputsNow);
+}
+
+void URpgPawnGameplayComponent::AddAdditionalInputConfig(const URpgInputConfig* InputConfig)
+{
+	if (!InputConfig)
+	{
+		return;
+	}
+
+	const APawn* Pawn = GetPawn<APawn>();
+	const APlayerController* PC = GetController<APlayerController>();
+	if (!Pawn || !PC || !PC->GetLocalPlayer())
+	{
+		return;
+	}
+
+	URpgInputComponent* RpgIC = Pawn->FindComponentByClass<URpgInputComponent>();
+	if (ensureMsgf(RpgIC, TEXT("Unexpected Input Component class! Ability inputs from the additional config will not be bound.")))
+	{
+		TArray<uint32> BindHandles;
+		RpgIC->BindAbilityActions(InputConfig, this, &ThisClass::Input_AbilityInputTagPressed, &ThisClass::Input_AbilityInputTagReleased, BindHandles);
+	}
+}
+
+void URpgPawnGameplayComponent::RemoveAdditionalInputConfig(const URpgInputConfig* InputConfig)
+{
+}
+
+bool URpgPawnGameplayComponent::IsReadyToBindInputs() const
+{
+	return bReadyToBindInputs;
 }
 
 void URpgPawnGameplayComponent::Input_AbilityInputTagPressed(FGameplayTag InputTag)
@@ -485,76 +557,6 @@ TSubclassOf<URpgCameraMode> URpgPawnGameplayComponent::DetermineCameraMode() con
 	return nullptr;
 }
 
-
-
-void URpgPawnGameplayComponent::GrantPawnDataAbilitySets(URpgAbilitySystemComponent* AbilitySystemComponent, const URpgPawnData* PawnData, APawn* Pawn)
-{
-	if (!AbilitySystemComponent || !PawnData || !Pawn)
-	{
-		return;
-	}
-
-	if (!AbilitySystemComponent->IsOwnerActorAuthoritative())
-	{
-		return;
-	}
-
-	if (GrantedAbilitySystemComponent == AbilitySystemComponent && GrantedPawnAbilitySets.Num() > 0)
-	{
-		return;
-	}
-
-	if (GrantedAbilitySystemComponent && GrantedAbilitySystemComponent != AbilitySystemComponent)
-	{
-		RemovePawnDataAbilitySets();
-	}
-
-	for (const TObjectPtr<const URpgAbilitySet>& AbilitySet : PawnData->AbilitySets)
-	{
-		if (!AbilitySet)
-		{
-			continue;
-		}
-
-		FRpgPawnGameplayAbilitySetGrant& GrantedSet = GrantedPawnAbilitySets.AddDefaulted_GetRef();
-		GrantedSet.AbilitySet = AbilitySet;
-		AbilitySet->GiveToAbilitySystem(AbilitySystemComponent, &GrantedSet.GrantedHandles, Pawn);
-	}
-
-	GrantedAbilitySystemComponent = AbilitySystemComponent;
-}
-
-void URpgPawnGameplayComponent::ResetCurrentHealthToMaxHealth(URpgAbilitySystemComponent* AbilitySystemComponent) const
-{
-	if (!AbilitySystemComponent || !AbilitySystemComponent->IsOwnerActorAuthoritative())
-	{
-		return;
-	}
-
-	const URpgHealthSet* HealthSet = AbilitySystemComponent->GetSet<URpgHealthSet>();
-	if (!HealthSet)
-	{
-		return;
-	}
-
-	// Startup runtime health should be derived after all currently-known stat sources have been applied.
-	AbilitySystemComponent->SetNumericAttributeBase(URpgHealthSet::GetHealthAttribute(), HealthSet->GetMaxHealth());
-}
-
-void URpgPawnGameplayComponent::RemovePawnDataAbilitySets()
-{
-	if (GrantedAbilitySystemComponent && GrantedAbilitySystemComponent->IsOwnerActorAuthoritative())
-	{
-		for (FRpgPawnGameplayAbilitySetGrant& GrantedSet : GrantedPawnAbilitySets)
-		{
-			GrantedSet.GrantedHandles.TakeFromAbilitySystem(GrantedAbilitySystemComponent);
-		}
-	}
-
-	GrantedPawnAbilitySets.Reset();
-	GrantedAbilitySystemComponent = nullptr;
-}
-
 void URpgPawnGameplayComponent::HandleAbilitySystemUninitialized()
 {
 	if (APawn* Pawn = GetPawn<APawn>())
@@ -564,7 +566,5 @@ void URpgPawnGameplayComponent::HandleAbilitySystemUninitialized()
 			CameraComponent->DetermineCameraModeDelegate.Unbind();
 		}
 	}
-
-	RemovePawnDataAbilitySets();
 }
 

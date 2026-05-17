@@ -3,14 +3,45 @@
 #pragma once
 
 #include "CoreMinimal.h"
-#include "GameFramework/GameStateBase.h"
+#include "AbilitySystemInterface.h"
+#include "ModularGameState.h"
 #include "RpgGameStateBase.generated.h"
 
+class UAbilitySystemComponent;
+class URpgAbilitySystemComponent;
+class URpgExperienceManagerComponent;
+
 /**
- * 
+ * GameState used by the runtime gameplay map.
+ *
+ * It owns the replicated experience manager and a game-wide ASC for global gameplay effects/cues.
  */
 UCLASS()
-class SURVIVALRPG_API ARpgGameStateBase : public AGameStateBase
+class SURVIVALRPG_API ARpgGameStateBase : public AModularGameStateBase, public IAbilitySystemInterface
 {
 	GENERATED_BODY()
+
+public:
+	explicit ARpgGameStateBase(const FObjectInitializer& ObjectInitializer = FObjectInitializer::Get());
+
+	//~ AActor interface
+	virtual void PostInitializeComponents() override;
+	//~ End AActor interface
+
+	//~ IAbilitySystemInterface interface
+	virtual UAbilitySystemComponent* GetAbilitySystemComponent() const override;
+	//~ End IAbilitySystemInterface interface
+
+	/** Gets the game-wide ability system component. */
+	UFUNCTION(BlueprintCallable, Category = "Rpg|GameState")
+	URpgAbilitySystemComponent* GetRpgAbilitySystemComponent() const { return AbilitySystemComponent; }
+
+private:
+	/** Handles loading and managing the current gameplay experience. */
+	UPROPERTY()
+	TObjectPtr<URpgExperienceManagerComponent> ExperienceManagerComponent;
+
+	/** Ability system component for game-wide gameplay effects and cues. */
+	UPROPERTY(VisibleAnywhere, Category = "Rpg|GameState")
+	TObjectPtr<URpgAbilitySystemComponent> AbilitySystemComponent;
 };

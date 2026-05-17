@@ -10,12 +10,19 @@ public class SurvivalRpg : ModuleRules
 	
 		PublicDependencyModuleNames.AddRange(new string[]
 		{
+			"AIModule",
+			"AssetRegistry",
 			"Core",
 			"CoreUObject",
 			"Engine",
+			"GameFeatures",
+			"GameplayStateTreeModule",
+			"CommonLoadingScreen",
 			"InputCore",
 			"ModularGameplay",
+			"ModularGameplayActors",
 			"NetCore",
+			"StateTreeModule",
 			"UMG",
 			"GameplayAbilities", "GameplayTags", "GameplayTasks",
 		});
@@ -23,14 +30,15 @@ public class SurvivalRpg : ModuleRules
 		PrivateDependencyModuleNames.AddRange(
 			new string[]
 			{
+				"DeveloperSettings",
 				"EnhancedInput",
 				"GameplayAbilities",
 				"GameplayTags",
 				"GameplayTasks",
 				"ModelViewViewModel",
 				"AdvancedSessions",
-				"ModularGameplayActors",
 				"GameplayMessageRuntime",
+				"Projects",
 			});
 
 		PrivateDependencyModuleNames.AddRange(new string[] { "Slate", "SlateCore" });

@@ -6,6 +6,7 @@
 
 // General
 DECLARE_LOG_CATEGORY_EXTERN(LogRpg, Log, All);
+DECLARE_LOG_CATEGORY_EXTERN(LogRpgExperience, Log, All);
 
 // Subsystems
 DECLARE_LOG_CATEGORY_EXTERN(LogRpgAbilitySystem, Log, All);

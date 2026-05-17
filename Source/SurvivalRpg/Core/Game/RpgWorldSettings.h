@@ -6,18 +6,24 @@
 #include "GameFramework/WorldSettings.h"
 #include "RpgWorldSettings.generated.h"
 
-class URpgPawnData;
+class URpgExperienceDefinition;
+
 /**
- * 
+ * World settings extension used to select the default gameplay experience for a map.
  */
 UCLASS()
 class SURVIVALRPG_API ARpgWorldSettings : public AWorldSettings
 {
 	GENERATED_BODY()
+
 public:
-	const URpgPawnData* GetDefaultPawnData() const { return DefaultPawnData; }
+	explicit ARpgWorldSettings(const FObjectInitializer& ObjectInitializer = FObjectInitializer::Get());
+
+	/** Returns the default experience to use when the server opens this map. */
+	FPrimaryAssetId GetDefaultGameplayExperience() const;
+
 protected:
-	
-	UPROPERTY(EditDefaultsOnly, Category = "Pawn")
-	TObjectPtr<URpgPawnData> DefaultPawnData;
+	/** Default experience to use unless URL, PIE settings, or command line select another one. */
+	UPROPERTY(EditDefaultsOnly, Category = "GameMode")
+	TSoftClassPtr<URpgExperienceDefinition> DefaultGameplayExperience;
 };

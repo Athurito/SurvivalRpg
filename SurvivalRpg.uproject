@@ -26,6 +26,10 @@
 			"Enabled": true
 		},
 		{
+			"Name": "StateTree",
+			"Enabled": true
+		},
+		{
 			"Name": "SlateModelViewViewModel",
 			"Enabled": true
 		},
@@ -42,7 +46,23 @@
 			"Enabled": true
 		},
 		{
+			"Name": "CommonLoadingScreen",
+			"Enabled": true
+		},
+		{
+			"Name": "GameFeatures",
+			"Enabled": true
+		},
+		{
 			"Name": "ModularGameplay",
+			"Enabled": true
+		},
+		{
+			"Name": "ModularGameplayActors",
+			"Enabled": true
+		},
+		{
+			"Name": "EnhancedInput",
 			"Enabled": true
 		},
 		{
@@ -68,7 +88,39 @@
 			"Enabled": true
 		},
 		{
+			"Name": "OnlineSubsystemSteam",
+			"Enabled": true
+		},
+		{
 			"Name": "GameplayMessageRouter",
+			"Enabled": true
+		},
+		{
+			"Name": "GF_Combat_Core",
+			"Enabled": true
+		},
+		{
+			"Name": "GF_Combat_Magic",
+			"Enabled": true
+		},
+		{
+			"Name": "GF_Runes_Core",
+			"Enabled": true
+		},
+		{
+			"Name": "GF_Portals_Core",
+			"Enabled": true
+		},
+		{
+			"Name": "GF_Harvesting_Magic",
+			"Enabled": true
+		},
+		{
+			"Name": "GF_AI_RiftMonsters",
+			"Enabled": true
+		},
+		{
+			"Name": "GF_Progression",
 			"Enabled": true
 		}
 	]

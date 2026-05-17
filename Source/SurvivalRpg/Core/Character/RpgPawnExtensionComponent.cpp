@@ -4,6 +4,7 @@
 #include "RpgPawnExtensionComponent.h"
 
 #include "Components/GameFrameworkComponentManager.h"
+#include "GameFramework/Controller.h"
 #include "Net/UnrealNetwork.h"
 #include "SurvivalRpg/AbilitySystem/RpgAbilitySystemComponent.h"
 #include "SurvivalRpg/Core/Character/RpgPawnData.h"
@@ -71,7 +72,10 @@ void URpgPawnExtensionComponent::SetPawnData(const URpgPawnData* InPawnData)
 	
 	if (PawnData)
 	{
-		//Already Set
+		UE_LOG(LogTemp, Error, TEXT("Trying to set PawnData [%s] on pawn [%s] that already has valid PawnData [%s]."),
+			*GetNameSafe(InPawnData),
+			*GetNameSafe(Pawn),
+			*GetNameSafe(PawnData));
 		return;
 	}
 		
@@ -231,7 +235,7 @@ bool URpgPawnExtensionComponent::CanChangeInitState(UGameFrameworkComponentManag
 		
 		if (bHasAuthority || bIsLocallyControlled)
 		{
-			if (!GetController<APlayerController>()) 
+			if (!GetController<AController>()) 
 				return false;
 		}
 		return true;
@@ -256,7 +260,7 @@ void URpgPawnExtensionComponent::HandleChangeInitState(UGameFrameworkComponentMa
 {
 	if (DesiredState == RpgGameplayTags::InitState_DataInitialized)
 	{
-		// This is currently all handled by other components listening to this state change
+		// Lyra keeps ASC avatar binding owned by higher-level components, e.g. HeroComponent.
 	}
 }
 

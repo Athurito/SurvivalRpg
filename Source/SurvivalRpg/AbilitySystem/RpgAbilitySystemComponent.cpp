@@ -8,10 +8,28 @@
 #include "RpgGlobalAbilitySystem.h"
 #include "SurvivalRpg/SurvivalRpg.h"
 #include "SurvivalRpg/Animation/RpgAnimInstance.h"
-#include "SurvivalRpg/Core/Player/RpgPlayerState.h"
+#include "SurvivalRpg/Core/Player/RpgBasePlayerState.h"
 #include "SurvivalRpg/GameplayTags/RpgGameplayTags.h"
 
 UE_DEFINE_GAMEPLAY_TAG(TAG_Gameplay_AbilityInputBlocked, "Gameplay.AbilityInputBlocked");
+
+namespace
+{
+bool AbilitySpecHasActivationTag(const FGameplayAbilitySpec& Spec, const FGameplayTag& ActivationTag)
+{
+	if (!Spec.Ability || !ActivationTag.IsValid())
+	{
+		return false;
+	}
+
+	if (Spec.GetDynamicSpecSourceTags().HasTagExact(ActivationTag))
+	{
+		return true;
+	}
+
+	return Spec.Ability->GetAssetTags().HasTagExact(ActivationTag);
+}
+}
 
 
 URpgAbilitySystemComponent::URpgAbilitySystemComponent(const FObjectInitializer& ObjectInitializer) : Super(ObjectInitializer)
@@ -41,6 +59,7 @@ void URpgAbilitySystemComponent::InitAbilityActorInfo(AActor* InOwnerActor, AAct
 	const bool bHasNewPawnAvatar = Cast<APawn>(InAvatarActor) && (InAvatarActor != ActorInfo->AvatarActor);
 	
 	Super::InitAbilityActorInfo(InOwnerActor, InAvatarActor);
+	OwnerPlayerState = Cast<ARpgBasePlayerState>(InOwnerActor);
 	
 	if (bHasNewPawnAvatar)
 	{
@@ -688,6 +707,29 @@ void URpgAbilitySystemComponent::ActivateAbilitiesByInputTag(FGameplayTag InputT
 	}
 }
 
+bool URpgAbilitySystemComponent::TryActivateFirstAbilityByTag(FGameplayTag ActivationTag, bool bAllowRemoteActivation)
+{
+	if (!ActivationTag.IsValid())
+	{
+		return false;
+	}
+
+	for (const FGameplayAbilitySpec& Spec : GetActivatableAbilities())
+	{
+		if (AbilitySpecHasActivationTag(Spec, ActivationTag))
+		{
+			return TryActivateAbility(Spec.Handle, bAllowRemoteActivation);
+		}
+	}
+
+	return false;
+}
+
+bool URpgAbilitySystemComponent::TryActivateFirstAbilityByInputTag(FGameplayTag InputTag, bool bAllowRemoteActivation)
+{
+	return TryActivateFirstAbilityByTag(InputTag, bAllowRemoteActivation);
+}
+
 void URpgAbilitySystemComponent::ResetForRevive()
 {
 	CancelAbilities();
@@ -728,7 +770,7 @@ void URpgAbilitySystemComponent::BeginPlay()
 {
 	Super::BeginPlay();
 	
-	OwnerPlayerState = Cast<ARpgPlayerState>(GetOwner());
+	OwnerPlayerState = Cast<ARpgBasePlayerState>(GetOwner());
 }
 
 void URpgAbilitySystemComponent::OnRep_ActivateAbilities()

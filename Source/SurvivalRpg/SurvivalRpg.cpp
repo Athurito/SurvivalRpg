@@ -7,6 +7,7 @@ IMPLEMENT_PRIMARY_GAME_MODULE( FDefaultGameModuleImpl, SurvivalRpg, "SurvivalRpg
 
 // General
 DEFINE_LOG_CATEGORY(LogRpg);
+DEFINE_LOG_CATEGORY(LogRpgExperience);
 
 // Subsystems
 DEFINE_LOG_CATEGORY(LogRpgAbilitySystem);

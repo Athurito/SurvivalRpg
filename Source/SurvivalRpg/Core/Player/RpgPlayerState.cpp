@@ -3,11 +3,13 @@
 
 #include "RpgPlayerState.h"
 
-#include "AbilitySystemBlueprintLibrary.h"
 #include "GameFramework/GameStateBase.h"
 #include "Net/UnrealNetwork.h"
-#include "SurvivalRpg/AbilitySystem/RpgAbilitySystemComponent.h"
-#include "SurvivalRpg/AbilitySystem/Attributes/RpgHealthSet.h"
+#include "SurvivalRpg/Core/Character/RpgPawnData.h"
+#include "SurvivalRpg/Core/Character/RpgPawnExtensionComponent.h"
+#include "SurvivalRpg/Core/Game/RpgGameModeBase.h"
+#include "SurvivalRpg/Core/Game/Experience/RpgExperienceDefinition.h"
+#include "SurvivalRpg/Core/Game/Experience/RpgExperienceManagerComponent.h"
 #include "SurvivalRpg/Core/Player/RpgPlayerController.h"
 #include "SurvivalRpg/Inventory/RpgInventoryManagerComponent.h"
 #include "SurvivalRpg/Progression/Player/RpgPlayerProgressionComponent.h"
@@ -15,19 +17,26 @@
 
 ARpgPlayerState::ARpgPlayerState()
 {
-	// The local HUD reads attributes from the PlayerState-owned ASC, so keep updates responsive.
-	SetNetUpdateFrequency(100.0f);
-	SetMinNetUpdateFrequency(33.0f);
-
-	AbilitySystemComponent = CreateDefaultSubobject<URpgAbilitySystemComponent>(TEXT("AbilitySystemComponent"));
-	AbilitySystemComponent->SetIsReplicated(true);
-	AbilitySystemComponent->SetReplicationMode(EGameplayEffectReplicationMode::Mixed);
-
-	HealthSet = CreateDefaultSubobject<URpgHealthSet>(TEXT("HealthSet"));
-
 	PlayerProgressionComponent = CreateDefaultSubobject<URpgPlayerProgressionComponent>(TEXT("PlayerProgressionComponent"));
 	TradeSkillProgressionComponent = CreateDefaultSubobject<URpgTradeSkillProgressionComponent>(TEXT("TradeSkillProgressionComponent"));
 	InventoryManagerComponent = CreateDefaultSubobject<URpgInventoryManagerComponent>(TEXT("InventoryManagerComponent"));
+}
+
+void ARpgPlayerState::PostInitializeComponents()
+{
+	Super::PostInitializeComponents();
+
+	UWorld* World = GetWorld();
+	if (World && World->IsGameWorld() && World->GetNetMode() != NM_Client)
+	{
+		AGameStateBase* WorldGameState = World->GetGameState();
+		check(WorldGameState);
+
+		URpgExperienceManagerComponent* ExperienceComponent = WorldGameState->FindComponentByClass<URpgExperienceManagerComponent>();
+		check(ExperienceComponent);
+
+		ExperienceComponent->CallOrRegister_OnExperienceLoaded(FOnRpgExperienceLoaded::FDelegate::CreateUObject(this, &ThisClass::OnExperienceLoaded));
+	}
 }
 
 void ARpgPlayerState::GetLifetimeReplicatedProps(TArray<FLifetimeProperty>& OutLifetimeProps) const
@@ -38,34 +47,34 @@ void ARpgPlayerState::GetLifetimeReplicatedProps(TArray<FLifetimeProperty>& OutL
 	DOREPLIFETIME(ARpgPlayerState, CheckpointState);
 }
 
+void ARpgPlayerState::ClientInitialize(AController* C)
+{
+	Super::ClientInitialize(C);
+
+	if (URpgPawnExtensionComponent* PawnExtension = URpgPawnExtensionComponent::FindPawnExtensionComponent(GetPawn()))
+	{
+		PawnExtension->CheckDefaultInitialization();
+	}
+}
+
 ARpgPlayerController* ARpgPlayerState::GetRpgPlayerController() const
 {
 	return Cast<ARpgPlayerController>(GetOwner());
 }
 
-void ARpgPlayerState::SendAbilitiesChangedEvent()
+void ARpgPlayerState::OnExperienceLoaded(const URpgExperienceDefinition* CurrentExperience)
 {
-	FGameplayEventData EventData;
-	EventData.EventTag = FGameplayTag::RequestGameplayTag("Event.Abilities.Changed");
-	EventData.Instigator = this;
-	EventData.Target = this;
-	UAbilitySystemBlueprintLibrary::SendGameplayEventToActor(this, EventData.EventTag, EventData);
-}
-
-TObjectPtr<URpgAbilitySystemComponent> ARpgPlayerState::GetRpgAbilitySystemComponent() const
-{
-	return AbilitySystemComponent;
-}
-
-void ARpgPlayerState::SetPawnData(const URpgPawnData* InPawnData)
-{
-	check(InPawnData);
-	if (PawnData)
+	if (ARpgGameModeBase* RpgGameMode = GetWorld() ? GetWorld()->GetAuthGameMode<ARpgGameModeBase>() : nullptr)
 	{
-		return;
+		if (const URpgPawnData* NewPawnData = RpgGameMode->GetPawnDataForController(GetOwningController()))
+		{
+			SetPawnData(NewPawnData);
+		}
+		else
+		{
+			UE_LOG(LogTemp, Error, TEXT("ARpgPlayerState::OnExperienceLoaded(): Unable to find PawnData for [%s]."), *GetNameSafe(this));
+		}
 	}
-
-	PawnData = InPawnData;
 }
 
 void ARpgPlayerState::SetRespawnState(bool bInIsWaitingForRespawn, float InRespawnAvailableServerTime)

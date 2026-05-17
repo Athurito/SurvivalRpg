@@ -4,13 +4,16 @@
 
 #include "CoreMinimal.h"
 #include "RpgPlayerSaveData.h"
-#include "GameFramework/GameModeBase.h"
+#include "ModularGameMode.h"
 #include "RpgGameModeBase.generated.h"
 
+class AGameModeBase;
 class URpgPawnData;
 class URpgAbilitySystemComponent;
+class URpgExperienceDefinition;
 
 DECLARE_DYNAMIC_MULTICAST_DELEGATE_TwoParams(FRpgRespawn_OnPlayerRespawned, APlayerController*, PC, FTransform, RespawnTransform);
+DECLARE_MULTICAST_DELEGATE_TwoParams(FOnRpgGameModePlayerInitialized, AGameModeBase* /*GameMode*/, AController* /*NewPlayer*/);
 
 USTRUCT(BlueprintType)
 struct SURVIVALRPG_API FRpgPlayerRespawnState
@@ -29,20 +32,43 @@ struct SURVIVALRPG_API FRpgPlayerRespawnState
 
 /**
  * Server-authoritative GameMode.
- * - Manages host-owned player save data and checkpoint registration.
- * - Runs a Lyra-style respawn flow by spawning a fresh pawn and reusing the persistent ASC on the PlayerState.
+ *
+ * Selects and loads the gameplay experience, waits for it before starting players,
+ * resolves PawnData for controllers, and owns host-only survival save/respawn state.
  */
 UCLASS()
-class SURVIVALRPG_API ARpgGameModeBase : public AGameModeBase
+class SURVIVALRPG_API ARpgGameModeBase : public AModularGameModeBase
 {
 	GENERATED_BODY()
 
 public:
+	explicit ARpgGameModeBase(const FObjectInitializer& ObjectInitializer = FObjectInitializer::Get());
+
+	virtual void InitGame(const FString& MapName, const FString& Options, FString& ErrorMessage) override;
+	virtual void InitGameState() override;
 	virtual void PostLogin(APlayerController* NewPlayer) override;
 	virtual void Logout(AController* Exiting) override;
+	virtual void HandleStartingNewPlayer_Implementation(APlayerController* NewPlayer) override;
+	virtual UClass* GetDefaultPawnClassForController_Implementation(AController* InController) override;
 	virtual APawn* SpawnDefaultPawnAtTransform_Implementation(AController* NewPlayer, const FTransform& SpawnTransform) override;
+	virtual bool ShouldSpawnAtStartSpot(AController* Player) override;
+	virtual void FinishRestartPlayer(AController* NewPlayer, const FRotator& StartRotation) override;
+	virtual bool PlayerCanRestart_Implementation(APlayerController* Player) override;
+	virtual bool UpdatePlayerStartSpot(AController* Player, const FString& Portal, FString& OutErrorMessage) override;
+	virtual void GenericPlayerInitialization(AController* NewPlayer) override;
+	virtual void FailedToRestartPlayer(AController* NewPlayer) override;
 
+	/** Returns the PawnData that should drive pawn class selection and startup grants for the controller. */
 	const URpgPawnData* GetPawnDataForController(const AController* InController) const;
+	/** Returns true once the current experience has fully loaded. */
+	bool IsExperienceLoaded() const;
+
+	/** Restarts the player or AI controller next frame, optionally resetting the controller first. */
+	UFUNCTION(BlueprintCallable, Category = "Rpg|Player")
+	void RequestPlayerRestartNextFrame(AController* Controller, bool bForceReset = false);
+
+	/** Pawn-agnostic restart gate that works for both real players and AI controllers. */
+	virtual bool ControllerCanRestart(AController* Controller);
 
 	// --- Save Data API (host-authoritative) ---
 
@@ -93,6 +119,8 @@ public:
 	UPROPERTY(BlueprintAssignable)
 	FRpgRespawn_OnPlayerRespawned OnPlayerRespawned;
 
+	FOnRpgGameModePlayerInitialized OnGameModePlayerInitialized;
+
 protected:
 	/** Executes the actual respawn logic. Override for custom behavior. */
 	virtual void ExecuteRespawn(APlayerController* PC, const FTransform& SpawnPoint);
@@ -103,6 +131,10 @@ private:
 
 	FRpgPlayerRespawnState& GetOrCreatePlayerRespawnState(APlayerController* PC);
 	const FRpgPlayerRespawnState* FindPlayerRespawnState(APlayerController* PC) const;
+
+	void HandleMatchAssignmentIfNotExpectingOne();
+	void OnMatchAssignmentGiven(FPrimaryAssetId ExperienceId, const FString& ExperienceIdSource);
+	void OnExperienceLoaded(const URpgExperienceDefinition* CurrentExperience);
 
 	void SyncPlayerCheckpointDataToPlayerState(APlayerController* PC);
 	void SyncPlayerRespawnStateToPlayerState(APlayerController* PC);

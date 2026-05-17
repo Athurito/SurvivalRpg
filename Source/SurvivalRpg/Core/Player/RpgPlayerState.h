@@ -2,16 +2,14 @@
 
 #pragma once
 
-#include "CoreMinimal.h"
-#include "GameFramework/PlayerState.h"
+#include "RpgBasePlayerState.h"
 #include "RpgPlayerState.generated.h"
 
-class URpgPawnData;
 class ARpgPlayerController;
 class URpgTradeSkillProgressionComponent;
 class URpgPlayerProgressionComponent;
-class URpgAbilitySystemComponent;
 class URpgInventoryManagerComponent;
+class URpgExperienceDefinition;
 
 USTRUCT(BlueprintType)
 struct SURVIVALRPG_API FRpgReplicatedRespawnState
@@ -63,30 +61,22 @@ DECLARE_DYNAMIC_MULTICAST_DELEGATE_TwoParams(FRpgPlayerState_RespawnStateChanged
 DECLARE_DYNAMIC_MULTICAST_DELEGATE_TwoParams(FRpgPlayerState_CheckpointChanged, bool, bHasCheckpoint, FTransform, CheckpointTransform);
 
 UCLASS()
-class SURVIVALRPG_API ARpgPlayerState : public APlayerState
+class SURVIVALRPG_API ARpgPlayerState : public ARpgBasePlayerState
 {
 	GENERATED_BODY()
 	
 public:
 	ARpgPlayerState();
 
+	virtual void PostInitializeComponents() override;
+	virtual void ClientInitialize(AController* C) override;
 	virtual void GetLifetimeReplicatedProps(TArray<FLifetimeProperty>& OutLifetimeProps) const override;
 	
 	UFUNCTION(BlueprintCallable, Category = "Rpg|PlayerState")
 	ARpgPlayerController* GetRpgPlayerController() const;
-	
-	UFUNCTION(BlueprintCallable, Category = "AbilitySystem")
-	void SendAbilitiesChangedEvent();
-	
-	TObjectPtr<URpgAbilitySystemComponent> GetRpgAbilitySystemComponent() const;
 
 	UFUNCTION(BlueprintCallable, Category = "Rpg|Inventory")
 	URpgInventoryManagerComponent* GetInventoryManagerComponent() const { return InventoryManagerComponent; }
-	
-	template<class T>
-	const T* GetPawnData() const { return Cast<T>(PawnData); }
-
-	void SetPawnData(const URpgPawnData* InPawnData);
 	void SetRespawnState(bool bInIsWaitingForRespawn, float InRespawnAvailableServerTime);
 	void SetCheckpointData(bool bInHasCheckpoint, const FTransform& InCheckpointTransform);
 
@@ -121,13 +111,11 @@ protected:
 	UFUNCTION()
 	void OnRep_CheckpointState();
 
+	void OnExperienceLoaded(const URpgExperienceDefinition* CurrentExperience);
 	void BroadcastRespawnStateChanged() const;
 	void BroadcastCheckpointChanged() const;
 
 protected:
-	UPROPERTY(VisibleAnywhere, Category = "Rpg|AbilitySystem")
-	TObjectPtr<URpgAbilitySystemComponent> AbilitySystemComponent;
-	
 	UPROPERTY(VisibleAnywhere, Category = "Rpg|Progression")
 	TObjectPtr<URpgPlayerProgressionComponent> PlayerProgressionComponent;
 	
@@ -136,17 +124,10 @@ protected:
 
 	UPROPERTY(VisibleAnywhere, Category = "Rpg|Inventory")
 	TObjectPtr<URpgInventoryManagerComponent> InventoryManagerComponent;
-	
-	UPROPERTY(VisibleAnywhere, Category = "Pawn")
-	TObjectPtr<const URpgPawnData> PawnData;
 
 	UPROPERTY(ReplicatedUsing = OnRep_RespawnState, VisibleAnywhere, Category = "Rpg|Respawn")
 	FRpgReplicatedRespawnState RespawnState;
 
 	UPROPERTY(ReplicatedUsing = OnRep_CheckpointState, VisibleAnywhere, Category = "Rpg|Respawn")
 	FRpgReplicatedCheckpointState CheckpointState;
-	
-private:
-	UPROPERTY()
-	TObjectPtr<const class URpgHealthSet> HealthSet;
 };

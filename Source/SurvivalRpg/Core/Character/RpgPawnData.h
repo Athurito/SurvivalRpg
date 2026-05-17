@@ -23,6 +23,10 @@ public:
 	// Class to instantiate for this pawn (should usually derive from ARpgPawn or ARpgCharacter).
 	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Rpg|Pawn")
 	TSubclassOf<APawn> PawnClass;
+
+	// Data-driven GenericTeamAgent team. 255/negative values are treated as NoTeam.
+	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Rpg|Team", meta = (ClampMin = "-1", ClampMax = "254"))
+	int32 TeamId = 1;
 	
 	// What mapping of ability tags to use for actions taking by this pawn
 	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Rpg|Abilities")
