@@ -7,7 +7,7 @@ class AActor;
 class URpgAbilitySet;
 class URpgEquipmentInstance;
 
-USTRUCT()
+USTRUCT(BlueprintType)
 struct SURVIVALRPG_API FRpgEquipmentActorToSpawn
 {
 	GENERATED_BODY()

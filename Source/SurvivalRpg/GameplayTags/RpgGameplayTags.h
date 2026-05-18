@@ -39,8 +39,11 @@ namespace RpgGameplayTags
 	UE_DECLARE_GAMEPLAY_TAG_EXTERN(InputTag_QuickBar_Slot_6);
 	UE_DECLARE_GAMEPLAY_TAG_EXTERN(InputTag_QuickBar_Slot_7);
 	UE_DECLARE_GAMEPLAY_TAG_EXTERN(InputTag_QuickBar_Slot_8);
+	UE_DECLARE_GAMEPLAY_TAG_EXTERN(InputTag_Weapon_Primary);
+	UE_DECLARE_GAMEPLAY_TAG_EXTERN(InputTag_Weapon_Secondary);
 	
 	UE_DECLARE_GAMEPLAY_TAG_EXTERN(GameplayEvent_Death);
+	UE_DECLARE_GAMEPLAY_TAG_EXTERN(GameplayEvent_HitReaction);
 	UE_DECLARE_GAMEPLAY_TAG_EXTERN(GameplayEvent_Reset);
 	UE_DECLARE_GAMEPLAY_TAG_EXTERN(GameplayEvent_RequestReset);
 	UE_DECLARE_GAMEPLAY_TAG_EXTERN(GameplayEvent_Downed);
@@ -71,6 +74,13 @@ namespace RpgGameplayTags
 	
 	UE_DECLARE_GAMEPLAY_TAG_EXTERN(Ability_Behavior_SurvivesDeath);
 	UE_DECLARE_GAMEPLAY_TAG_EXTERN(Effect_Behavior_ClearOnRespawn);
+	UE_DECLARE_GAMEPLAY_TAG_EXTERN(Rpg_Combat_Message_ActorKilled);
+	UE_DECLARE_GAMEPLAY_TAG_EXTERN(Weapon_Attack_Primary);
+	UE_DECLARE_GAMEPLAY_TAG_EXTERN(Weapon_Attack_Secondary);
+	UE_DECLARE_GAMEPLAY_TAG_EXTERN(Weapon_Type_Melee);
+	UE_DECLARE_GAMEPLAY_TAG_EXTERN(Weapon_Type_Ranged);
+	UE_DECLARE_GAMEPLAY_TAG_EXTERN(Weapon_Family_Sword);
+	UE_DECLARE_GAMEPLAY_TAG_EXTERN(Weapon_Melee_Sword);
 
 	UE_DECLARE_GAMEPLAY_TAG_EXTERN(GameplayEvent_Respawn);
 	UE_DECLARE_GAMEPLAY_TAG_EXTERN(GameplayEvent_BleedoutExpired);

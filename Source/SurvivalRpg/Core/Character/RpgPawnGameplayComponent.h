@@ -116,4 +116,6 @@ protected:
 private:
 	void Input_QuickBarSlot(int32 SlotIndex);
 	void HandleAbilitySystemUninitialized();
+
+	TMap<const URpgInputConfig*, TArray<uint32>> AdditionalInputConfigBindHandles;
 };

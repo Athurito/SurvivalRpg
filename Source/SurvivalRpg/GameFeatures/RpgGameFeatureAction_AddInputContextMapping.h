@@ -13,7 +13,7 @@ class ULocalPlayer;
 class UPlayer;
 struct FComponentRequestHandle;
 
-USTRUCT()
+USTRUCT(BlueprintType)
 struct FRpgInputMappingContextAndPriority
 {
 	GENERATED_BODY()

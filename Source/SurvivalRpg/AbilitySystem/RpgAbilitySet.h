@@ -26,15 +26,15 @@ struct FRpgAbilitySet_GameplayAbility
 public:
 
 	// Gameplay ability to grant.
-	UPROPERTY(EditDefaultsOnly)
+	UPROPERTY(EditAnywhere)
 	TSubclassOf<URpgGameplayAbility> Ability = nullptr;
 
 	// Level of ability to grant.
-	UPROPERTY(EditDefaultsOnly)
+	UPROPERTY(EditAnywhere)
 	int32 AbilityLevel = 1;
 
 	// Tag used to process input for the ability.
-	UPROPERTY(EditDefaultsOnly, Meta = (Categories = "InputTag"))
+	UPROPERTY(EditAnywhere, Meta = (Categories = "InputTag"))
 	FGameplayTag InputTag;
 };
 
@@ -51,11 +51,11 @@ struct FRpgAbilitySet_GameplayEffect
 public:
 
 	// Gameplay effect to grant.
-	UPROPERTY(EditDefaultsOnly)
+	UPROPERTY(EditAnywhere)
 	TSubclassOf<UGameplayEffect> GameplayEffect = nullptr;
 
 	// Level of gameplay effect to grant.
-	UPROPERTY(EditDefaultsOnly)
+	UPROPERTY(EditAnywhere)
 	float EffectLevel = 1.0f;
 };
 
@@ -105,14 +105,20 @@ public:
 	// The returned handles can be used later to take away anything that was granted.
 	void GiveToAbilitySystem(URpgAbilitySystemComponent* RpgASC, FRpgAbilitySet_GrantedHandles* OutGrantedHandles, UObject* SourceObject = nullptr) const;
 	void AddGrantedGameplayAbility(TSubclassOf<URpgGameplayAbility> AbilityClass, int32 AbilityLevel = 1, FGameplayTag InputTag = FGameplayTag());
+
+	UFUNCTION(BlueprintCallable, Category = "Rpg|Ability Set")
+	void ClearGrantedGameplayAbilities();
+
+	UFUNCTION(BlueprintCallable, Category = "Rpg|Ability Set")
+	void AddGrantedGameplayAbilityByTagName(TSubclassOf<URpgGameplayAbility> AbilityClass, int32 AbilityLevel, FName InputTagName);
 	
 protected:
 
 	// Gameplay abilities to grant when this ability set is granted.
-	UPROPERTY(EditDefaultsOnly, Category = "Gameplay Abilities", meta=(TitleProperty=Ability))
+	UPROPERTY(EditAnywhere, Category = "Gameplay Abilities", meta=(TitleProperty=Ability))
 	TArray<FRpgAbilitySet_GameplayAbility> GrantedGameplayAbilities;
 
 	// Gameplay effects to grant when this ability set is granted.
-	UPROPERTY(EditDefaultsOnly, Category = "Gameplay Effects", meta=(TitleProperty=GameplayEffect))
+	UPROPERTY(EditAnywhere, Category = "Gameplay Effects", meta=(TitleProperty=GameplayEffect))
 	TArray<FRpgAbilitySet_GameplayEffect> GrantedGameplayEffects;
 };

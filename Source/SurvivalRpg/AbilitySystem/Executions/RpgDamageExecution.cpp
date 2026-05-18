@@ -3,6 +3,9 @@
 
 #include "RpgDamageExecution.h"
 
+#include "GameFramework/Actor.h"
+#include "SurvivalRpg/AbilitySystem/RpgAbilitySourceInterface.h"
+#include "SurvivalRpg/AbilitySystem/RpgGameplayEffectContext.h"
 #include "SurvivalRpg/AbilitySystem/Attributes/RpgCombatSet.h"
 #include "SurvivalRpg/AbilitySystem/Attributes/RpgHealthSet.h"
 #include "SurvivalRpg/AbilitySystem/Attributes/RpgVitalSet.h"
@@ -89,6 +92,24 @@ void URpgDamageExecution::Execute_Implementation(const FGameplayEffectCustomExec
 	if (Damage <= 0.f)
 	{
 		return;
+	}
+
+	if (const FRpgGameplayEffectContext* RpgContext = FRpgGameplayEffectContext::ExtractEffectContext(Spec.GetEffectContext()))
+	{
+		if (const IRpgAbilitySourceInterface* AbilitySource = RpgContext->GetAbilitySource())
+		{
+			float Distance = 0.0f;
+			if (const FHitResult* HitResult = RpgContext->GetHitResult())
+			{
+				if (const AActor* SourceActor = RpgContext->GetEffectCauser())
+				{
+					Distance = FVector::Dist(SourceActor->GetActorLocation(), HitResult->ImpactPoint);
+				}
+			}
+
+			Damage *= AbilitySource->GetDistanceAttenuation(Distance, SourceTags, TargetTags);
+			Damage *= AbilitySource->GetPhysicalMaterialAttenuation(RpgContext->GetPhysicalMaterial(), SourceTags, TargetTags);
+		}
 	}
 
 	// -------------------------

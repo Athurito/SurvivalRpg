@@ -199,7 +199,12 @@ void ARpgCharacter::OnDeathFinished(AActor* OwningActor)
 		{
 			GameMode->NotifyPlayerDeath(PC);
 		}
+
+		return;
 	}
+
+	EnterDeadState();
+	SetLifeSpan(8.0f);
 }
 
 void ARpgCharacter::OnDownedStateChanged(ERpgDownedState NewState)

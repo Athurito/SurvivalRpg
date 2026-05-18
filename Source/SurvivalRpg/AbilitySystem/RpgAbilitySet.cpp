@@ -127,3 +127,14 @@ void URpgAbilitySet::AddGrantedGameplayAbility(TSubclassOf<URpgGameplayAbility> 
 	NewAbility.AbilityLevel = AbilityLevel;
 	NewAbility.InputTag = InputTag;
 }
+
+void URpgAbilitySet::ClearGrantedGameplayAbilities()
+{
+	GrantedGameplayAbilities.Reset();
+}
+
+void URpgAbilitySet::AddGrantedGameplayAbilityByTagName(TSubclassOf<URpgGameplayAbility> AbilityClass, int32 AbilityLevel, FName InputTagName)
+{
+	const FGameplayTag InputTag = InputTagName.IsNone() ? FGameplayTag() : FGameplayTag::RequestGameplayTag(InputTagName);
+	AddGrantedGameplayAbility(AbilityClass, AbilityLevel, InputTag);
+}
