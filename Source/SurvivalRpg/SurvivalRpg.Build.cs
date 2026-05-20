@@ -24,6 +24,7 @@ public class SurvivalRpg : ModuleRules
 			"NetCore",
 			"StateTreeModule",
 			"UMG",
+			"CommonUI",
 			"GameplayAbilities", "GameplayTags", "GameplayTasks",
 		});
 
