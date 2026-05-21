@@ -8,6 +8,9 @@
 #include "SurvivalRpg/Inventory/IPickupable.h"
 #include "RpgWorldCollectable.generated.h"
 
+class USphereComponent;
+class UStaticMeshComponent;
+
 UCLASS(Abstract, Blueprintable)
 class SURVIVALRPG_API ARpgWorldCollectable : public AActor, public IInteractableTarget, public IPickupable
 {
@@ -21,6 +24,12 @@ public:
 	virtual FInventoryPickup GetPickupInventory() const override;
 
 protected:
+	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "Collectable")
+	TObjectPtr<USphereComponent> InteractionCollision;
+
+	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "Collectable")
+	TObjectPtr<UStaticMeshComponent> DisplayMesh;
+
 	UPROPERTY(EditAnywhere)
 	FInteractionOption Option;
 

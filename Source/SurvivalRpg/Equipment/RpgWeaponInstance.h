@@ -4,12 +4,10 @@
 #include "GameplayTagContainer.h"
 #include "GameplayEffect.h"
 #include "RpgEquipmentInstance.h"
-#include "SurvivalRpg/AbilitySystem/RpgAbilitySourceInterface.h"
 #include "SurvivalRpg/Camera/RpgCameraMode.h"
 #include "RpgWeaponInstance.generated.h"
 
 class UAnimMontage;
-class UPhysicalMaterial;
 
 USTRUCT(BlueprintType)
 struct FRpgWeaponAttackDefinition
@@ -55,11 +53,11 @@ struct FRpgWeaponAttackDefinition
 /**
  * Data-driven weapon instance used as the source object for weapon abilities.
  *
- * The instance owns weapon attack data, camera seams, and attenuation hooks while equipment
+ * The instance owns weapon attack data and camera seams while equipment
  * definitions remain responsible for granting the actual abilities.
  */
 UCLASS(BlueprintType, Blueprintable)
-class SURVIVALRPG_API URpgWeaponInstance : public URpgEquipmentInstance, public IRpgAbilitySourceInterface
+class SURVIVALRPG_API URpgWeaponInstance : public URpgEquipmentInstance
 {
 	GENERATED_BODY()
 
@@ -109,10 +107,7 @@ public:
 		TSubclassOf<URpgCameraMode> CameraMode,
 		FName HitReactionEventTagName);
 
-	virtual float GetDistanceAttenuation(float Distance, const FGameplayTagContainer* SourceTags = nullptr, const FGameplayTagContainer* TargetTags = nullptr) const override;
-	virtual float GetPhysicalMaterialAttenuation(const UPhysicalMaterial* PhysicalMaterial, const FGameplayTagContainer* SourceTags = nullptr, const FGameplayTagContainer* TargetTags = nullptr) const override;
-
-private:
+protected:
 	UPROPERTY(EditDefaultsOnly, Category = "Weapon", meta = (Categories = "Weapon.Type"))
 	FGameplayTag WeaponTypeTag;
 

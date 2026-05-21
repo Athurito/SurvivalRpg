@@ -58,6 +58,7 @@ private:
 	bool TryGetSocketLocationFromAvatar(FName SocketName, FVector& OutLocation) const;
 	void ResolveTrace(FVector& OutStart, FVector& OutEnd) const;
 	void PerformDamageTrace();
+	FGameplayEffectSpecHandle MakeWeaponDamageEffectSpec(const FHitResult& HitResult) const;
 	void ApplyDamageToHitActor(AActor* TargetActor, const FHitResult& HitResult);
 	void SendHitReactionEvent(AActor* TargetActor, const FHitResult& HitResult, const FGameplayEffectSpec* DamageSpec) const;
 	void FinishAttack(bool bWasCancelled);

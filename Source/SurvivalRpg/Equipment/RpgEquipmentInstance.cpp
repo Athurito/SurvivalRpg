@@ -5,6 +5,7 @@
 #include "Net/UnrealNetwork.h"
 #include "RpgEquipmentDefinition.h"
 
+#include "Components/SceneComponent.h"
 #include "Iris/ReplicationSystem/ReplicationFragmentUtil.h"
 
 #include UE_INLINE_GENERATED_CPP_BY_NAME(RpgEquipmentInstance)
@@ -81,6 +82,17 @@ void URpgEquipmentInstance::SpawnEquipmentActors(const TArray<FRpgEquipmentActor
 		}
 
 		NewActor->FinishSpawning(FTransform::Identity, true);
+
+		TInlineComponentArray<USceneComponent*> SceneComponents;
+		NewActor->GetComponents(SceneComponents);
+		for (USceneComponent* SceneComponent : SceneComponents)
+		{
+			if (SceneComponent)
+			{
+				SceneComponent->SetMobility(EComponentMobility::Movable);
+			}
+		}
+
 		NewActor->SetActorRelativeTransform(SpawnInfo.AttachTransform);
 		NewActor->AttachToComponent(AttachTarget, FAttachmentTransformRules::KeepRelativeTransform, SpawnInfo.AttachSocket);
 		SpawnedActors.Add(NewActor);

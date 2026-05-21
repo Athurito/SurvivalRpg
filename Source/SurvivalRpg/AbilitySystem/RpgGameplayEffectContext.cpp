@@ -43,7 +43,13 @@ namespace UE::Net
 
 void FRpgGameplayEffectContext::SetAbilitySource(const IRpgAbilitySourceInterface* InObject, float InSourceLevel)
 {
-	AbilitySourceObject = MakeWeakObjectPtr(Cast<const UObject>(InObject));
+	AbilitySourceObject.Reset();
+
+	if (InObject)
+	{
+		AbilitySourceObject = InObject->_getUObject();
+	}
+
 	//SourceLevel = InSourceLevel;
 }
 

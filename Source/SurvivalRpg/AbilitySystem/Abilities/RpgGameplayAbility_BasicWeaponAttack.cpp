@@ -282,6 +282,18 @@ void URpgGameplayAbility_BasicWeaponAttack::PerformDamageTrace()
 	}
 }
 
+FGameplayEffectSpecHandle URpgGameplayAbility_BasicWeaponAttack::MakeWeaponDamageEffectSpec(const FHitResult& HitResult) const
+{
+	FGameplayEffectSpecHandle DamageSpecHandle = MakeOutgoingGameplayEffectSpec(ActiveAttackDefinition.DamageEffect, GetAbilityLevel());
+	if (FGameplayEffectSpec* DamageSpec = DamageSpecHandle.Data.Get())
+	{
+		DamageSpec->SetSetByCallerMagnitude(RpgGameplayTags::SetByCaller_Damage, ActiveAttackDefinition.Damage);
+		DamageSpec->GetContext().AddHitResult(HitResult, true);
+	}
+
+	return DamageSpecHandle;
+}
+
 void URpgGameplayAbility_BasicWeaponAttack::ApplyDamageToHitActor(AActor* TargetActor, const FHitResult& HitResult)
 {
 	if (!TargetActor)
@@ -301,15 +313,12 @@ void URpgGameplayAbility_BasicWeaponAttack::ApplyDamageToHitActor(AActor* Target
 		return;
 	}
 
-	FGameplayEffectSpecHandle DamageSpecHandle = MakeOutgoingGameplayEffectSpec(ActiveAttackDefinition.DamageEffect, GetAbilityLevel());
+	FGameplayEffectSpecHandle DamageSpecHandle = MakeWeaponDamageEffectSpec(HitResult);
 	FGameplayEffectSpec* DamageSpec = DamageSpecHandle.Data.Get();
 	if (!DamageSpec)
 	{
 		return;
 	}
-
-	DamageSpec->SetSetByCallerMagnitude(RpgGameplayTags::SetByCaller_Damage, ActiveAttackDefinition.Damage);
-	DamageSpec->GetContext().AddHitResult(HitResult, true);
 
 	if (UAbilitySystemComponent* SourceASC = GetAbilitySystemComponentFromActorInfo())
 	{

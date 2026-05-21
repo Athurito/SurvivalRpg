@@ -334,9 +334,16 @@ FGameplayEffectContextHandle URpgGameplayAbility::MakeEffectContext(const FGamep
 
 	AActor* Instigator = ActorInfo ? ActorInfo->OwnerActor.Get() : nullptr;
 
-	EffectContext->SetAbilitySource(AbilitySource, SourceLevel);
+	if (AbilitySource)
+	{
+		EffectContext->SetAbilitySource(AbilitySource, SourceLevel);
+	}
+
 	EffectContext->AddInstigator(Instigator, EffectCauser);
-	EffectContext->AddSourceObject(SourceObject);
+	if (SourceObject)
+	{
+		EffectContext->AddSourceObject(SourceObject);
+	}
 
 	return ContextHandle;
 }

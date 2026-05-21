@@ -10,6 +10,7 @@
 #include "RpgPawnExtensionComponent.h"
 #include "RpgPawnGameplayComponent.h"
 #include "Components/CapsuleComponent.h"
+#include "Components/SkeletalMeshComponent.h"
 #include "SurvivalRpg/AbilitySystem/RpgAbilitySystemComponent.h"
 #include "SurvivalRpg/AbilitySystem/Attributes/RpgHealthSet.h"
 #include "SurvivalRpg/Camera/RpgCameraComponent.h"
@@ -26,6 +27,9 @@ ARpgCharacter::ARpgCharacter(const FObjectInitializer& ObjectInitializer) :
 	// Avoid ticking characters if possible.
 	PrimaryActorTick.bCanEverTick = false;
 	PrimaryActorTick.bStartWithTickEnabled = false;
+
+	GetCapsuleComponent()->SetCollisionProfileName(TEXT("RpgPawnCapsule"));
+	GetMesh()->SetCollisionProfileName(TEXT("RpgPawnMesh"));
 	
 	SetNetCullDistanceSquared(900000000.0f);
 	

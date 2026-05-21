@@ -53,16 +53,6 @@ bool URpgWeaponInstance::HasAttackDefinitionByTagName(FName AttackDefinitionTagN
 	return FindAttackDefinition(AttackDefinitionTag) != nullptr;
 }
 
-float URpgWeaponInstance::GetDistanceAttenuation(float Distance, const FGameplayTagContainer* SourceTags, const FGameplayTagContainer* TargetTags) const
-{
-	return 1.0f;
-}
-
-float URpgWeaponInstance::GetPhysicalMaterialAttenuation(const UPhysicalMaterial* PhysicalMaterial, const FGameplayTagContainer* SourceTags, const FGameplayTagContainer* TargetTags) const
-{
-	return 1.0f;
-}
-
 void URpgWeaponInstance::SetWeaponTagsByName(FName WeaponTypeTagName, FName WeaponFamilyTagName)
 {
 	WeaponTypeTag = WeaponTypeTagName.IsNone() ? FGameplayTag() : FGameplayTag::RequestGameplayTag(WeaponTypeTagName);
