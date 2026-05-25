@@ -5,13 +5,63 @@
 #include "Abilities/Tasks/AbilityTask_PlayMontageAndWait.h"
 #include "Abilities/Tasks/AbilityTask_WaitDelay.h"
 #include "Components/SkeletalMeshComponent.h"
+#include "DrawDebugHelpers.h"
 #include "GameFramework/Character.h"
 #include "GameFramework/Controller.h"
 #include "SurvivalRpg/AbilitySystem/RpgAbilitySystemComponent.h"
 #include "SurvivalRpg/Camera/RpgCameraMode.h"
+#include "SurvivalRpg/Combat/RpgCombatDeveloperSettings.h"
 #include "SurvivalRpg/Core/Character/RpgHealthComponent.h"
 #include "SurvivalRpg/GameplayTags/RpgGameplayTags.h"
 #include "SurvivalRpg/Physics/RpgCollisionChannels.h"
+
+#if ENABLE_DRAW_DEBUG
+namespace
+{
+	void DrawWeaponAttackTrace(
+		UWorld* World,
+		const FVector& TraceStart,
+		const FVector& TraceEnd,
+		float TraceRadius,
+		const TArray<FHitResult>& HitResults)
+	{
+		const URpgCombatDeveloperSettings* Settings = GetDefault<URpgCombatDeveloperSettings>();
+		if (!World || !Settings || !Settings->bDrawWeaponAttackTraces)
+		{
+			return;
+		}
+
+		const float Duration = FMath::Max(0.0f, Settings->WeaponAttackTraceDebugDuration);
+		const float Radius = FMath::Max(1.0f, TraceRadius);
+		const FVector TraceDelta = TraceEnd - TraceStart;
+		const FVector TraceCenter = (TraceStart + TraceEnd) * 0.5f;
+		const FColor TraceColor = HitResults.IsEmpty() ? FColor::Green : FColor::Red;
+		const FQuat TraceRotation = TraceDelta.IsNearlyZero()
+			? FQuat::Identity
+			: FRotationMatrix::MakeFromZ(TraceDelta).ToQuat();
+
+		DrawDebugCapsule(
+			World,
+			TraceCenter,
+			Radius + (TraceDelta.Size() * 0.5f),
+			Radius,
+			TraceRotation,
+			TraceColor,
+			false,
+			Duration,
+			0,
+			1.5f);
+
+		DrawDebugPoint(World, TraceStart, 12.0f, FColor::Blue, false, Duration);
+		DrawDebugPoint(World, TraceEnd, 12.0f, FColor::Cyan, false, Duration);
+
+		for (const FHitResult& HitResult : HitResults)
+		{
+			DrawDebugPoint(World, HitResult.ImpactPoint, 18.0f, FColor::Yellow, false, Duration);
+		}
+	}
+}
+#endif
 
 URpgGameplayAbility_BasicWeaponAttack::URpgGameplayAbility_BasicWeaponAttack(const FObjectInitializer& ObjectInitializer)
 	: Super(ObjectInitializer)
@@ -266,6 +316,10 @@ void URpgGameplayAbility_BasicWeaponAttack::PerformDamageTrace()
 	TArray<FHitResult> HitResults;
 	const FCollisionShape Shape = FCollisionShape::MakeSphere(FMath::Max(1.0f, ActiveAttackDefinition.TraceRadius));
 	World->SweepMultiByChannel(HitResults, TraceStart, TraceEnd, FQuat::Identity, Rpg_TraceChannel_Weapon, Shape, QueryParams);
+
+#if ENABLE_DRAW_DEBUG
+	DrawWeaponAttackTrace(World, TraceStart, TraceEnd, ActiveAttackDefinition.TraceRadius, HitResults);
+#endif
 
 	TSet<TObjectKey<AActor>> HitActors;
 	for (const FHitResult& HitResult : HitResults)

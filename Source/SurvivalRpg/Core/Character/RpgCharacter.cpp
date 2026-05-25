@@ -77,12 +77,12 @@ ARpgCharacter::ARpgCharacter(const FObjectInitializer& ObjectInitializer) :
 
 ARpgPlayerController* ARpgCharacter::GetRpgPlayerController() const
 {
-	return CastChecked<ARpgPlayerController>(GetController(), ECastCheckedType::NullAllowed);
+	return Cast<ARpgPlayerController>(GetController());
 }
 
 ARpgPlayerState* ARpgCharacter::GetRpgPlayerState() const
 {
-	return CastChecked<ARpgPlayerState>(GetPlayerState(), ECastCheckedType::NullAllowed);
+	return Cast<ARpgPlayerState>(GetPlayerState());
 }
 
 URpgAbilitySystemComponent* ARpgCharacter::GetRpgAbilitySystemComponent() const
