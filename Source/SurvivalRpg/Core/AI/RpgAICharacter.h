@@ -16,6 +16,8 @@ class SURVIVALRPG_API ARpgAICharacter : public ARpgCharacter
 public:
 	explicit ARpgAICharacter(const FObjectInitializer& ObjectInitializer = FObjectInitializer::Get());
 
+	virtual void OnRep_PlayerState() override;
+
 private:
 	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "Rpg|Progression", Meta = (AllowPrivateAccess = "true"))
 	TObjectPtr<URpgExperienceRewardComponent> ExperienceRewardComponent;
