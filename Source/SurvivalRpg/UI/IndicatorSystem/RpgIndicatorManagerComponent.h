@@ -8,6 +8,7 @@
 
 
 class UIndicatorDescriptor;
+class URpgIndicatorHostWidget;
 
 UCLASS(ClassGroup=(Custom), meta=(BlueprintSpawnableComponent))
 class SURVIVALRPG_API URpgIndicatorManagerComponent : public UControllerComponent
@@ -30,7 +31,14 @@ public:
 
 	const TArray<UIndicatorDescriptor*>& GetIndicators() const { return Indicators; }
 
+protected:
+	virtual void BeginPlay() override;
+	virtual void EndPlay(const EEndPlayReason::Type EndPlayReason) override;
+
 private:
 	UPROPERTY()
 	TArray<TObjectPtr<UIndicatorDescriptor>> Indicators;
+
+	UPROPERTY(Transient)
+	TObjectPtr<URpgIndicatorHostWidget> HostWidget;
 };
