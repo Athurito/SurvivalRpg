@@ -4,6 +4,7 @@
 #include "RpgPlayerController.h"
 
 #include "Engine/World.h"
+#include "Engine/Engine.h"
 #include "EnhancedInputSubsystems.h"
 #include "GameFramework/Pawn.h"
 #include "SurvivalRpg/AbilitySystem/RpgAbilitySystemComponent.h"
@@ -12,6 +13,8 @@
 #include "SurvivalRpg/Core/Player/RpgPlayerState.h"
 #include "SurvivalRpg/Equipment/RpgQuickBarComponent.h"
 #include "SurvivalRpg/GameplayTags/RpgGameplayTags.h"
+#include "SurvivalRpg/Progression/Player/RpgPlayerProgressionComponent.h"
+#include "SurvivalRpg/SurvivalRpg.h"
 
 ARpgPlayerController::ARpgPlayerController(const FObjectInitializer& ObjectInitializer)
 	: Super(ObjectInitializer)
@@ -49,6 +52,30 @@ void ARpgPlayerController::SetActiveQuickBarSlot(int32 SlotIndex)
 	if (QuickBarComponent != nullptr)
 	{
 		QuickBarComponent->SetActiveSlotIndex(SlotIndex);
+	}
+}
+
+void ARpgPlayerController::RpgPrintProgression() const
+{
+	const ARpgPlayerState* RpgPS = GetRpgPlayerState();
+	const URpgPlayerProgressionComponent* ProgressionComponent = RpgPS ? RpgPS->GetPlayerProgressionComponent() : nullptr;
+	if (ProgressionComponent == nullptr)
+	{
+		UE_LOG(LogRpgProgression, Warning, TEXT("No player progression component found for %s."), *GetNameSafe(this));
+		return;
+	}
+
+	const FString Message = FString::Printf(
+		TEXT("Progression: Level %d | XP %.0f / %.0f | SkillPoints %d"),
+		ProgressionComponent->GetLevel(),
+		ProgressionComponent->GetXP(),
+		ProgressionComponent->GetXPToNextLevelForCurrentLevel(),
+		ProgressionComponent->GetUnspentSkillPoints());
+
+	UE_LOG(LogRpgProgression, Display, TEXT("%s"), *Message);
+	if (GEngine && IsLocalController())
+	{
+		GEngine->AddOnScreenDebugMessage(INDEX_NONE, 5.0f, FColor::Green, Message);
 	}
 }
 

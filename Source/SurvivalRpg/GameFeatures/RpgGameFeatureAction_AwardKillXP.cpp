@@ -1,5 +1,6 @@
 #include "RpgGameFeatureAction_AwardKillXP.h"
 
+#include "Engine/CurveTable.h"
 #include "Engine/GameInstance.h"
 #include "Engine/World.h"
 #include "GameFramework/Controller.h"
@@ -18,6 +19,8 @@ void URpgGameFeatureAction_AwardKillXP::OnGameFeatureActivating(FGameFeatureActi
 		Reset(ActiveData);
 	}
 
+	LoadedEnemyXPRewardCurveTable = EnemyXPRewardCurveTable.IsNull() ? nullptr : EnemyXPRewardCurveTable.LoadSynchronous();
+
 	Super::OnGameFeatureActivating(Context);
 }
 
@@ -29,6 +32,8 @@ void URpgGameFeatureAction_AwardKillXP::OnGameFeatureDeactivating(FGameFeatureDe
 	{
 		Reset(*ActiveData);
 	}
+
+	LoadedEnemyXPRewardCurveTable = nullptr;
 }
 
 void URpgGameFeatureAction_AwardKillXP::AddToWorld(const FWorldContext& WorldContext, const FGameFeatureStateChangeContext& ChangeContext)
@@ -65,7 +70,7 @@ void URpgGameFeatureAction_AwardKillXP::HandleActorKilled(FGameplayTag Channel, 
 	}
 
 	const URpgExperienceRewardComponent* RewardComponent = Message.Victim->FindComponentByClass<URpgExperienceRewardComponent>();
-	const float XPReward = RewardComponent ? RewardComponent->GetXPReward() : 0.0f;
+	const float XPReward = ResolveXPReward(RewardComponent);
 	if (XPReward <= 0.0f)
 	{
 		return;
@@ -81,6 +86,26 @@ void URpgGameFeatureAction_AwardKillXP::HandleActorKilled(FGameplayTag Channel, 
 	{
 		ProgressionComponent->AddXP(XPReward);
 	}
+}
+
+float URpgGameFeatureAction_AwardKillXP::ResolveXPReward(const URpgExperienceRewardComponent* RewardComponent) const
+{
+	if (!RewardComponent)
+	{
+		return 0.0f;
+	}
+
+	const FName RowName = RewardComponent->GetXPRewardRowName();
+	if (LoadedEnemyXPRewardCurveTable && RowName != NAME_None)
+	{
+		const FString ContextString = FString::Printf(TEXT("%s resolving enemy XP reward"), *GetNameSafe(this));
+		if (const FRealCurve* RewardCurve = LoadedEnemyXPRewardCurveTable->FindCurve(RowName, ContextString, false))
+		{
+			return RewardCurve->Eval(static_cast<float>(RewardComponent->GetEnemyLevel()));
+		}
+	}
+
+	return RewardComponent->GetFallbackXPReward();
 }
 
 ARpgPlayerState* URpgGameFeatureAction_AwardKillXP::ResolveKillerPlayerState(const FRpgCombatActorKilledMessage& Message) const

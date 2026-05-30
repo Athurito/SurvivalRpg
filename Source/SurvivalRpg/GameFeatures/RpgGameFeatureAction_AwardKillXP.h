@@ -6,6 +6,8 @@
 #include "RpgGameFeatureAction_AwardKillXP.generated.h"
 
 class ARpgPlayerState;
+class UCurveTable;
+class URpgExperienceRewardComponent;
 struct FRpgCombatActorKilledMessage;
 
 /**
@@ -20,6 +22,9 @@ public:
 	virtual void OnGameFeatureActivating(FGameFeatureActivatingContext& Context) override;
 	virtual void OnGameFeatureDeactivating(FGameFeatureDeactivatingContext& Context) override;
 
+	UPROPERTY(EditAnywhere, Category = "XP", meta = (AssetBundles = "Server"))
+	TSoftObjectPtr<UCurveTable> EnemyXPRewardCurveTable;
+
 private:
 	struct FPerContextData
 	{
@@ -32,6 +37,10 @@ private:
 
 	void Reset(FPerContextData& ActiveData);
 	void HandleActorKilled(FGameplayTag Channel, const FRpgCombatActorKilledMessage& Message);
+	float ResolveXPReward(const URpgExperienceRewardComponent* RewardComponent) const;
 	ARpgPlayerState* ResolveKillerPlayerState(const FRpgCombatActorKilledMessage& Message) const;
 	ARpgPlayerState* ResolvePlayerStateFromActor(AActor* Actor) const;
+
+	UPROPERTY(Transient)
+	TObjectPtr<UCurveTable> LoadedEnemyXPRewardCurveTable;
 };

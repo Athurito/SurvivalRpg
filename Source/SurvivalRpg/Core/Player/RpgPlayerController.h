@@ -35,6 +35,9 @@ public:
 	UFUNCTION(BlueprintCallable, Category = "Rpg|QuickBar")
 	void SetActiveQuickBarSlot(int32 SlotIndex);
 
+	UFUNCTION(Exec)
+	void RpgPrintProgression() const;
+
 	virtual void OnRep_PlayerState() override;
 	//~APlayerController interface
 	virtual void PlayerTick(float DeltaTime) override;

@@ -61,6 +61,9 @@ public:
 	float GetXP() const { return State.XP; }
 
 	UFUNCTION(BlueprintCallable)
+	float GetXPToNextLevelForCurrentLevel() const;
+
+	UFUNCTION(BlueprintCallable)
 	int32 GetUnspentSkillPoints() const { return State.UnspentSkillPoints; }
 
 	/** Server API */
