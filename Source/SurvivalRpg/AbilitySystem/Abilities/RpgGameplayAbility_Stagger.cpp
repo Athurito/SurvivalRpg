@@ -58,6 +58,7 @@ void URpgGameplayAbility_Stagger::ActivateAbility(
 	RpgASC->CancelActivationGroupAbilities(ERpgAbilityActivationGroup::Exclusive_Blocking, this, true);
 	RpgASC->CancelActivationGroupAbilities(ERpgAbilityActivationGroup::Exclusive_Replaceable, this, true);
 
+	ActivationGroupBeforeStagger = ActivationGroup;
 	if (!ChangeActivationGroup(ERpgAbilityActivationGroup::Exclusive_Blocking))
 	{
 		EndAbility(Handle, ActorInfo, ActivationInfo, true, true);
@@ -110,8 +111,13 @@ void URpgGameplayAbility_Stagger::EndAbility(
 	bool bReplicateEndAbility,
 	bool bWasCancelled)
 {
+	const ERpgAbilityActivationGroup GroupToRestore = ActivationGroupBeforeStagger;
+
 	ClearStaggerTags();
 	Super::EndAbility(Handle, ActorInfo, ActivationInfo, bReplicateEndAbility, bWasCancelled);
+
+	ActivationGroup = GroupToRestore;
+	ActivationGroupBeforeStagger = ERpgAbilityActivationGroup::Independent;
 }
 
 void URpgGameplayAbility_Stagger::OnStaggerFinished()

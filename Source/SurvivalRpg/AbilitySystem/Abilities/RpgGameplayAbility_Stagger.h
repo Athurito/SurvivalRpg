@@ -43,6 +43,8 @@ private:
 	void ClearStaggerTags() const;
 
 private:
+	ERpgAbilityActivationGroup ActivationGroupBeforeStagger = ERpgAbilityActivationGroup::Independent;
+
 	UPROPERTY(EditDefaultsOnly, Category = "Stagger")
 	TObjectPtr<UAnimMontage> StaggerMontage;
 
