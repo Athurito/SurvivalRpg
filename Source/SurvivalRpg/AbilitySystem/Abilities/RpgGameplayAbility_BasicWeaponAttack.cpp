@@ -342,6 +342,8 @@ FGameplayEffectSpecHandle URpgGameplayAbility_BasicWeaponAttack::MakeWeaponDamag
 	if (FGameplayEffectSpec* DamageSpec = DamageSpecHandle.Data.Get())
 	{
 		DamageSpec->SetSetByCallerMagnitude(RpgGameplayTags::SetByCaller_Damage, ActiveAttackDefinition.Damage);
+		DamageSpec->SetSetByCallerMagnitude(RpgGameplayTags::SetByCaller_StaggerDamage, ActiveAttackDefinition.StaggerDamage);
+		DamageSpec->AppendDynamicAssetTags(ActiveAttackDefinition.DamageTypeTags);
 		DamageSpec->GetContext().AddHitResult(HitResult, true);
 	}
 
@@ -376,8 +378,13 @@ void URpgGameplayAbility_BasicWeaponAttack::ApplyDamageToHitActor(AActor* Target
 
 	if (UAbilitySystemComponent* SourceASC = GetAbilitySystemComponentFromActorInfo())
 	{
+		const float HealthBefore = HealthComponent->GetHealth();
 		SourceASC->ApplyGameplayEffectSpecToTarget(*DamageSpec, TargetASC);
-		SendHitReactionEvent(TargetActor, HitResult, DamageSpec);
+		const float HealthAfter = HealthComponent->GetHealth();
+		if (HealthAfter < HealthBefore)
+		{
+			SendHitReactionEvent(TargetActor, HitResult, DamageSpec);
+		}
 	}
 }
 

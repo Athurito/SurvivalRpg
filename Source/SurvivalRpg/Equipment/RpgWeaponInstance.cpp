@@ -9,8 +9,12 @@ URpgWeaponInstance::URpgWeaponInstance(const FObjectInitializer& ObjectInitializ
 	WeaponFamilyTag = RpgGameplayTags::Weapon_Family_Sword;
 
 	FRpgWeaponAttackDefinition PrimaryAttack;
+	PrimaryAttack.DamageTypeTags.AddTag(RpgGameplayTags::Damage_Type_Melee);
+	PrimaryAttack.StaggerDamage = 20.0f;
 	PrimaryAttack.HitReactionEventTag = RpgGameplayTags::GameplayEvent_HitReaction;
 	AttackDefinitions.Add(RpgGameplayTags::Weapon_Attack_Primary, PrimaryAttack);
+
+	BlockDefinition.BlockableDamageTypeTags.AddTag(RpgGameplayTags::Damage_Type_Melee);
 }
 
 const FRpgWeaponAttackDefinition* URpgWeaponInstance::FindAttackDefinition(FGameplayTag AttackDefinitionTag) const

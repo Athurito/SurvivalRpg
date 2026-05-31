@@ -26,6 +26,12 @@ struct FRpgWeaponAttackDefinition
 	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Damage", meta = (ClampMin = "0.0"))
 	float Damage = 25.0f;
 
+	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Damage", meta = (Categories = "Damage.Type"))
+	FGameplayTagContainer DamageTypeTags;
+
+	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Damage", meta = (ClampMin = "0.0"))
+	float StaggerDamage = 20.0f;
+
 	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Trace", meta = (ClampMin = "0.0"))
 	float DamageTraceDelay = 0.18f;
 
@@ -48,6 +54,60 @@ struct FRpgWeaponAttackDefinition
 	FGameplayTag HitReactionEventTag;
 
 	bool CanApplyDamage() const { return DamageEffect && Damage > 0.0f; }
+};
+
+USTRUCT(BlueprintType)
+struct FRpgWeaponBlockDefinition
+{
+	GENERATED_BODY()
+
+	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Block")
+	bool bCanBlock = true;
+
+	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Block", meta = (Categories = "Damage.Type"))
+	FGameplayTagContainer BlockableDamageTypeTags;
+
+	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Block", meta = (ClampMin = "0.0", ClampMax = "360.0"))
+	float BlockAngleDegrees = 120.0f;
+
+	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Block", meta = (ClampMin = "0.0"))
+	float PerfectBlockWindow = 0.25f;
+
+	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Block")
+	bool bAllowPerfectBlock = true;
+
+	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Block", meta = (ClampMin = "0.0"))
+	float StaminaCost = 20.0f;
+
+	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Block", meta = (ClampMin = "0.0", ClampMax = "1.0"))
+	float DamageReduction = 1.0f;
+
+	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Block", meta = (ClampMin = "0.0"))
+	float BlockStaggerDamageMultiplier = 0.3f;
+
+	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Perfect Block", meta = (ClampMin = "0.0"))
+	float PerfectBlockStaminaRestore = 15.0f;
+
+	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Perfect Block", meta = (ClampMin = "0.0"))
+	float PerfectBlockStaggerDamage = 35.0f;
+
+	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Animation")
+	TObjectPtr<UAnimMontage> BlockStartMontage = nullptr;
+
+	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Animation")
+	TObjectPtr<UAnimMontage> BlockLoopMontage = nullptr;
+
+	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Animation")
+	TObjectPtr<UAnimMontage> BlockEndMontage = nullptr;
+
+	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Animation")
+	TObjectPtr<UAnimMontage> BlockHitMontage = nullptr;
+
+	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Animation")
+	TObjectPtr<UAnimMontage> PerfectBlockMontage = nullptr;
+
+	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Animation")
+	TObjectPtr<UAnimMontage> GuardBreakMontage = nullptr;
 };
 
 /**
@@ -87,6 +147,12 @@ public:
 	UFUNCTION(BlueprintCallable, BlueprintPure, Category = "Weapon")
 	const FGameplayTagContainer& GetEquipmentTraitTags() const { return EquipmentTraitTags; }
 
+	UFUNCTION(BlueprintCallable, BlueprintPure, Category = "Weapon|Block")
+	const FRpgWeaponBlockDefinition& GetBlockDefinition() const { return BlockDefinition; }
+
+	UFUNCTION(BlueprintCallable, BlueprintPure, Category = "Weapon|Block")
+	bool CanBlock() const { return BlockDefinition.bCanBlock; }
+
 	UFUNCTION(BlueprintCallable, Category = "Weapon")
 	void SetWeaponTagsByName(FName WeaponTypeTagName, FName WeaponFamilyTagName);
 
@@ -119,4 +185,7 @@ protected:
 
 	UPROPERTY(EditDefaultsOnly, Category = "Weapon|Attack", meta = (Categories = "Weapon.Attack"))
 	TMap<FGameplayTag, FRpgWeaponAttackDefinition> AttackDefinitions;
+
+	UPROPERTY(EditDefaultsOnly, Category = "Weapon|Block")
+	FRpgWeaponBlockDefinition BlockDefinition;
 };
