@@ -10,6 +10,26 @@
 class UAnimMontage;
 
 USTRUCT(BlueprintType)
+struct FRpgConditionalAttackModifier
+{
+	GENERATED_BODY()
+
+	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Condition")
+	FGameplayTagContainer RequiredTargetTags;
+
+	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Condition")
+	FGameplayTagContainer BlockedTargetTags;
+
+	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Modifier", meta = (ClampMin = "0.0"))
+	float DamageMultiplier = 1.0f;
+
+	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Modifier", meta = (ClampMin = "0.0"))
+	float StaggerDamageMultiplier = 1.0f;
+
+	bool MatchesTargetTags(const FGameplayTagContainer& TargetTags) const;
+};
+
+USTRUCT(BlueprintType)
 struct FRpgWeaponAttackDefinition
 {
 	GENERATED_BODY()
@@ -32,6 +52,9 @@ struct FRpgWeaponAttackDefinition
 	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Damage", meta = (ClampMin = "0.0"))
 	float StaggerDamage = 20.0f;
 
+	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Damage")
+	TArray<FRpgConditionalAttackModifier> ConditionalModifiers;
+
 	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Trace", meta = (ClampMin = "0.0"))
 	float DamageTraceDelay = 0.18f;
 
@@ -53,7 +76,7 @@ struct FRpgWeaponAttackDefinition
 	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Events", meta = (Categories = "GameplayEvent"))
 	FGameplayTag HitReactionEventTag;
 
-	bool CanApplyDamage() const { return DamageEffect && Damage > 0.0f; }
+	bool CanApplyDamage() const { return DamageEffect && (Damage > 0.0f || StaggerDamage > 0.0f); }
 };
 
 USTRUCT(BlueprintType)
@@ -90,6 +113,9 @@ struct FRpgWeaponBlockDefinition
 
 	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Perfect Block", meta = (ClampMin = "0.0"))
 	float PerfectBlockStaggerDamage = 35.0f;
+
+	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Perfect Block", meta = (ClampMin = "0.0"))
+	float PerfectBlockStaggerDamageMultiplier = 1.0f;
 
 	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Animation")
 	TObjectPtr<UAnimMontage> BlockStartMontage = nullptr;

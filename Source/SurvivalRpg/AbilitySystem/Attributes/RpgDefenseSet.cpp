@@ -14,6 +14,10 @@ URpgDefenseSet::URpgDefenseSet()
 	, CriticalHitResistance(0.0f)
 	, Stagger(0.0f)
 	, MaxStagger(100.0f)
+	, IncomingStaggerDamageMultiplier(1.0f)
+	, StaggerDuration(0.7f)
+	, StaggerImmunityDuration(2.0f)
+	, StaggeredDamageTakenMultiplier(1.0f)
 	, BlockAngleDegrees(120.0f)
 	, BlockStaminaCost(20.0f)
 	, BlockDamageReduction(1.0f)
@@ -41,6 +45,25 @@ void URpgDefenseSet::PostGameplayEffectExecute(const FGameplayEffectModCallbackD
 
 	if (Data.EvaluatedData.Attribute == GetStaggerAttribute())
 	{
+		URpgAbilitySystemComponent* TargetASC = Cast<URpgAbilitySystemComponent>(&Data.Target);
+		AActor* TargetActor = TargetASC ? TargetASC->GetAvatarActor() : nullptr;
+		if (TargetActor && !TargetActor->HasAuthority())
+		{
+			return;
+		}
+
+		const bool bCanReceiveStagger =
+			TargetASC &&
+			TargetASC->HasMatchingGameplayTag(RpgGameplayTags::Trait_Staggerable) &&
+			!TargetASC->HasMatchingGameplayTag(RpgGameplayTags::State_Staggered) &&
+			!TargetASC->HasMatchingGameplayTag(RpgGameplayTags::State_GuardBroken) &&
+			!TargetASC->HasMatchingGameplayTag(RpgGameplayTags::State_StaggerImmune);
+		if (!bCanReceiveStagger)
+		{
+			SetStagger(0.0f);
+			return;
+		}
+
 		const float NewStagger = GetStagger();
 		const float OldStagger = FMath::Max(0.0f, NewStagger - Data.EvaluatedData.Magnitude);
 		HandleStaggerThreshold(Data, OldStagger, NewStagger);
@@ -56,6 +79,10 @@ void URpgDefenseSet::GetLifetimeReplicatedProps(TArray<FLifetimeProperty>& OutLi
 	DOREPLIFETIME_CONDITION_NOTIFY(URpgDefenseSet, CriticalHitResistance, COND_None, REPNOTIFY_Always);
 	DOREPLIFETIME_CONDITION_NOTIFY(URpgDefenseSet, Stagger, COND_None, REPNOTIFY_Always);
 	DOREPLIFETIME_CONDITION_NOTIFY(URpgDefenseSet, MaxStagger, COND_None, REPNOTIFY_Always);
+	DOREPLIFETIME_CONDITION_NOTIFY(URpgDefenseSet, IncomingStaggerDamageMultiplier, COND_None, REPNOTIFY_Always);
+	DOREPLIFETIME_CONDITION_NOTIFY(URpgDefenseSet, StaggerDuration, COND_None, REPNOTIFY_Always);
+	DOREPLIFETIME_CONDITION_NOTIFY(URpgDefenseSet, StaggerImmunityDuration, COND_None, REPNOTIFY_Always);
+	DOREPLIFETIME_CONDITION_NOTIFY(URpgDefenseSet, StaggeredDamageTakenMultiplier, COND_None, REPNOTIFY_Always);
 	DOREPLIFETIME_CONDITION_NOTIFY(URpgDefenseSet, BlockAngleDegrees, COND_None, REPNOTIFY_Always);
 	DOREPLIFETIME_CONDITION_NOTIFY(URpgDefenseSet, BlockStaminaCost, COND_None, REPNOTIFY_Always);
 	DOREPLIFETIME_CONDITION_NOTIFY(URpgDefenseSet, BlockDamageReduction, COND_None, REPNOTIFY_Always);
@@ -87,6 +114,26 @@ void URpgDefenseSet::OnRep_Stagger(const FGameplayAttributeData& OldValue) const
 void URpgDefenseSet::OnRep_MaxStagger(const FGameplayAttributeData& OldValue) const
 {
 	GAMEPLAYATTRIBUTE_REPNOTIFY(URpgDefenseSet, MaxStagger, OldValue);
+}
+
+void URpgDefenseSet::OnRep_IncomingStaggerDamageMultiplier(const FGameplayAttributeData& OldValue) const
+{
+	GAMEPLAYATTRIBUTE_REPNOTIFY(URpgDefenseSet, IncomingStaggerDamageMultiplier, OldValue);
+}
+
+void URpgDefenseSet::OnRep_StaggerDuration(const FGameplayAttributeData& OldValue) const
+{
+	GAMEPLAYATTRIBUTE_REPNOTIFY(URpgDefenseSet, StaggerDuration, OldValue);
+}
+
+void URpgDefenseSet::OnRep_StaggerImmunityDuration(const FGameplayAttributeData& OldValue) const
+{
+	GAMEPLAYATTRIBUTE_REPNOTIFY(URpgDefenseSet, StaggerImmunityDuration, OldValue);
+}
+
+void URpgDefenseSet::OnRep_StaggeredDamageTakenMultiplier(const FGameplayAttributeData& OldValue) const
+{
+	GAMEPLAYATTRIBUTE_REPNOTIFY(URpgDefenseSet, StaggeredDamageTakenMultiplier, OldValue);
 }
 
 void URpgDefenseSet::OnRep_BlockAngleDegrees(const FGameplayAttributeData& OldValue) const
@@ -140,6 +187,10 @@ void URpgDefenseSet::ClampDefenseAttribute(const FGameplayAttribute& Attribute, 
 	else if (Attribute == GetArmorAttribute() ||
 		Attribute == GetBlockChanceAttribute() ||
 		Attribute == GetCriticalHitResistanceAttribute() ||
+		Attribute == GetIncomingStaggerDamageMultiplierAttribute() ||
+		Attribute == GetStaggerDurationAttribute() ||
+		Attribute == GetStaggerImmunityDurationAttribute() ||
+		Attribute == GetStaggeredDamageTakenMultiplierAttribute() ||
 		Attribute == GetBlockStaminaCostAttribute() ||
 		Attribute == GetBlockStaggerDamageMultiplierAttribute() ||
 		Attribute == GetPerfectBlockStaminaRestoreAttribute() ||
@@ -161,6 +212,17 @@ void URpgDefenseSet::HandleStaggerThreshold(const FGameplayEffectModCallbackData
 	AActor* TargetActor = TargetASC ? TargetASC->GetAvatarActor() : nullptr;
 	if (!TargetASC || !TargetActor || !TargetActor->HasAuthority())
 	{
+		return;
+	}
+
+	const bool bCanReceiveStagger =
+		TargetASC->HasMatchingGameplayTag(RpgGameplayTags::Trait_Staggerable) &&
+		!TargetASC->HasMatchingGameplayTag(RpgGameplayTags::State_Staggered) &&
+		!TargetASC->HasMatchingGameplayTag(RpgGameplayTags::State_GuardBroken) &&
+		!TargetASC->HasMatchingGameplayTag(RpgGameplayTags::State_StaggerImmune);
+	if (!bCanReceiveStagger)
+	{
+		TargetASC->SetNumericAttributeBase(GetStaggerAttribute(), 0.0f);
 		return;
 	}
 

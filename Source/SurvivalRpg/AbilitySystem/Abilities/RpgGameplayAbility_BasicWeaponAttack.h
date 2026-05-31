@@ -7,6 +7,7 @@
 
 class UAbilityTask_PlayMontageAndWait;
 class UAbilityTask_WaitDelay;
+class UAbilitySystemComponent;
 
 /**
  * Basic, data-driven weapon attack.
@@ -58,7 +59,8 @@ private:
 	bool TryGetSocketLocationFromAvatar(FName SocketName, FVector& OutLocation) const;
 	void ResolveTrace(FVector& OutStart, FVector& OutEnd) const;
 	void PerformDamageTrace();
-	FGameplayEffectSpecHandle MakeWeaponDamageEffectSpec(const FHitResult& HitResult) const;
+	void EvaluateConditionalModifiers(const UAbilitySystemComponent* TargetASC, float& Damage, float& StaggerDamage) const;
+	FGameplayEffectSpecHandle MakeWeaponDamageEffectSpec(const FHitResult& HitResult, const UAbilitySystemComponent* TargetASC) const;
 	void ApplyDamageToHitActor(AActor* TargetActor, const FHitResult& HitResult);
 	void SendHitReactionEvent(AActor* TargetActor, const FHitResult& HitResult, const FGameplayEffectSpec* DamageSpec) const;
 	void FinishAttack(bool bWasCancelled);

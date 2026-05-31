@@ -167,7 +167,9 @@ void URpgGameplayAbility_Block::ApplyBlockState(const FRpgWeaponBlockDefinition&
 	ASC->SetNumericAttributeBase(URpgDefenseSet::GetBlockDamageReductionAttribute(), BlockDefinition.DamageReduction);
 	ASC->SetNumericAttributeBase(URpgDefenseSet::GetBlockStaggerDamageMultiplierAttribute(), BlockDefinition.BlockStaggerDamageMultiplier);
 	ASC->SetNumericAttributeBase(URpgDefenseSet::GetPerfectBlockStaminaRestoreAttribute(), BlockDefinition.PerfectBlockStaminaRestore);
-	ASC->SetNumericAttributeBase(URpgDefenseSet::GetPerfectBlockStaggerDamageAttribute(), BlockDefinition.PerfectBlockStaggerDamage);
+	ASC->SetNumericAttributeBase(
+		URpgDefenseSet::GetPerfectBlockStaggerDamageAttribute(),
+		BlockDefinition.PerfectBlockStaggerDamage * FMath::Max(0.0f, BlockDefinition.PerfectBlockStaggerDamageMultiplier));
 
 	SetReplicatedLooseTagCount(RpgGameplayTags::State_Blocking, 1);
 	bAppliedBlockState = true;

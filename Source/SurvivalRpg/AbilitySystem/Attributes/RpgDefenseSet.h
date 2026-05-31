@@ -42,6 +42,22 @@ public:
 	FGameplayAttributeData MaxStagger;
 	ATTRIBUTE_ACCESSORS_BASIC(URpgDefenseSet, MaxStagger);
 
+	UPROPERTY(BlueprintReadOnly, ReplicatedUsing = OnRep_IncomingStaggerDamageMultiplier, Category = "Rpg|Defense|Stagger")
+	FGameplayAttributeData IncomingStaggerDamageMultiplier;
+	ATTRIBUTE_ACCESSORS_BASIC(URpgDefenseSet, IncomingStaggerDamageMultiplier);
+
+	UPROPERTY(BlueprintReadOnly, ReplicatedUsing = OnRep_StaggerDuration, Category = "Rpg|Defense|Stagger")
+	FGameplayAttributeData StaggerDuration;
+	ATTRIBUTE_ACCESSORS_BASIC(URpgDefenseSet, StaggerDuration);
+
+	UPROPERTY(BlueprintReadOnly, ReplicatedUsing = OnRep_StaggerImmunityDuration, Category = "Rpg|Defense|Stagger")
+	FGameplayAttributeData StaggerImmunityDuration;
+	ATTRIBUTE_ACCESSORS_BASIC(URpgDefenseSet, StaggerImmunityDuration);
+
+	UPROPERTY(BlueprintReadOnly, ReplicatedUsing = OnRep_StaggeredDamageTakenMultiplier, Category = "Rpg|Defense|Stagger")
+	FGameplayAttributeData StaggeredDamageTakenMultiplier;
+	ATTRIBUTE_ACCESSORS_BASIC(URpgDefenseSet, StaggeredDamageTakenMultiplier);
+
 	UPROPERTY(BlueprintReadOnly, ReplicatedUsing = OnRep_BlockAngleDegrees, Category = "Rpg|Defense|Block")
 	FGameplayAttributeData BlockAngleDegrees;
 	ATTRIBUTE_ACCESSORS_BASIC(URpgDefenseSet, BlockAngleDegrees);
@@ -77,6 +93,10 @@ protected:
 	UFUNCTION() void OnRep_CriticalHitResistance(const FGameplayAttributeData& OldValue) const;
 	UFUNCTION() void OnRep_Stagger(const FGameplayAttributeData& OldValue) const;
 	UFUNCTION() void OnRep_MaxStagger(const FGameplayAttributeData& OldValue) const;
+	UFUNCTION() void OnRep_IncomingStaggerDamageMultiplier(const FGameplayAttributeData& OldValue) const;
+	UFUNCTION() void OnRep_StaggerDuration(const FGameplayAttributeData& OldValue) const;
+	UFUNCTION() void OnRep_StaggerImmunityDuration(const FGameplayAttributeData& OldValue) const;
+	UFUNCTION() void OnRep_StaggeredDamageTakenMultiplier(const FGameplayAttributeData& OldValue) const;
 	UFUNCTION() void OnRep_BlockAngleDegrees(const FGameplayAttributeData& OldValue) const;
 	UFUNCTION() void OnRep_BlockStaminaCost(const FGameplayAttributeData& OldValue) const;
 	UFUNCTION() void OnRep_BlockDamageReduction(const FGameplayAttributeData& OldValue) const;

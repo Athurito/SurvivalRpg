@@ -41,6 +41,9 @@ protected:
 private:
 	void ApplyStaggerTags() const;
 	void ClearStaggerTags() const;
+	void ApplyStaggerImmunity() const;
+	float GetStaggerDuration() const;
+	float GetStaggerImmunityDuration() const;
 
 private:
 	ERpgAbilityActivationGroup ActivationGroupBeforeStagger = ERpgAbilityActivationGroup::Independent;

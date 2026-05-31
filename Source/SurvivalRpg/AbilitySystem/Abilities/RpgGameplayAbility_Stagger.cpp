@@ -1,5 +1,6 @@
 #include "RpgGameplayAbility_Stagger.h"
 
+#include "AbilitySystemComponent.h"
 #include "Abilities/Tasks/AbilityTask_PlayMontageAndWait.h"
 #include "Abilities/Tasks/AbilityTask_WaitDelay.h"
 #include "SurvivalRpg/AbilitySystem/Attributes/RpgDefenseSet.h"
@@ -37,7 +38,17 @@ bool URpgGameplayAbility_Stagger::CanActivateAbility(
 	}
 
 	const URpgHealthComponent* HealthComponent = ActorInfo ? URpgHealthComponent::FindHealthComponent(ActorInfo->AvatarActor.Get()) : nullptr;
-	return !HealthComponent || !HealthComponent->IsDeadOrDying();
+	if (HealthComponent && HealthComponent->IsDeadOrDying())
+	{
+		return false;
+	}
+
+	const UAbilitySystemComponent* ASC = ActorInfo ? ActorInfo->AbilitySystemComponent.Get() : nullptr;
+	return ASC &&
+		ASC->HasMatchingGameplayTag(RpgGameplayTags::Trait_Staggerable) &&
+		!ASC->HasMatchingGameplayTag(RpgGameplayTags::State_Staggered) &&
+		!ASC->HasMatchingGameplayTag(RpgGameplayTags::State_GuardBroken) &&
+		!ASC->HasMatchingGameplayTag(RpgGameplayTags::State_StaggerImmune);
 }
 
 void URpgGameplayAbility_Stagger::ActivateAbility(
@@ -76,6 +87,7 @@ void URpgGameplayAbility_Stagger::ActivateAbility(
 
 	Super::ActivateAbility(Handle, ActorInfo, ActivationInfo, TriggerEventData);
 
+	const float StaggerDuration = GetStaggerDuration();
 	UAnimMontage* MontageToPlay = GuardBreakMontage ? GuardBreakMontage : StaggerMontage;
 	if (MontageToPlay)
 	{
@@ -85,19 +97,26 @@ void URpgGameplayAbility_Stagger::ActivateAbility(
 			MontageToPlay,
 			FMath::Max(0.01f, MontagePlayRate));
 
-		MontageTask->OnCompleted.AddDynamic(this, &ThisClass::OnStaggerFinished);
-		MontageTask->OnBlendOut.AddDynamic(this, &ThisClass::OnStaggerFinished);
+		if (StaggerDuration <= 0.0f)
+		{
+			MontageTask->OnCompleted.AddDynamic(this, &ThisClass::OnStaggerFinished);
+			MontageTask->OnBlendOut.AddDynamic(this, &ThisClass::OnStaggerFinished);
+		}
 		MontageTask->OnInterrupted.AddDynamic(this, &ThisClass::OnStaggerFinished);
 		MontageTask->OnCancelled.AddDynamic(this, &ThisClass::OnStaggerFinished);
 		MontageTask->ReadyForActivation();
+	}
+
+	if (StaggerDuration > 0.0f)
+	{
+		UAbilityTask_WaitDelay* WaitTask = UAbilityTask_WaitDelay::WaitDelay(this, StaggerDuration);
+		WaitTask->OnFinish.AddDynamic(this, &ThisClass::OnStaggerFinished);
+		WaitTask->ReadyForActivation();
 		return;
 	}
 
-	if (FallbackDuration > 0.0f)
+	if (MontageToPlay)
 	{
-		UAbilityTask_WaitDelay* WaitTask = UAbilityTask_WaitDelay::WaitDelay(this, FallbackDuration);
-		WaitTask->OnFinish.AddDynamic(this, &ThisClass::OnStaggerFinished);
-		WaitTask->ReadyForActivation();
 		return;
 	}
 
@@ -114,6 +133,10 @@ void URpgGameplayAbility_Stagger::EndAbility(
 	const ERpgAbilityActivationGroup GroupToRestore = ActivationGroupBeforeStagger;
 
 	ClearStaggerTags();
+	if (!bWasCancelled)
+	{
+		ApplyStaggerImmunity();
+	}
 	Super::EndAbility(Handle, ActorInfo, ActivationInfo, bReplicateEndAbility, bWasCancelled);
 
 	ActivationGroup = GroupToRestore;
@@ -144,4 +167,40 @@ void URpgGameplayAbility_Stagger::ClearStaggerTags() const
 		ASC->SetLooseGameplayTagCount(RpgGameplayTags::State_Staggered, 0, EGameplayTagReplicationState::TagAndCountToAll);
 		ASC->SetLooseGameplayTagCount(RpgGameplayTags::State_GuardBroken, 0, EGameplayTagReplicationState::TagAndCountToAll);
 	}
+}
+
+void URpgGameplayAbility_Stagger::ApplyStaggerImmunity() const
+{
+	if (URpgAbilitySystemComponent* ASC = GetRpgAbilitySystemComponentFromActorInfo())
+	{
+		const float ImmunityDuration = GetStaggerImmunityDuration();
+		ASC->AddTimedLooseGameplayTag(
+			RpgGameplayTags::State_StaggerImmune,
+			ImmunityDuration,
+			EGameplayTagReplicationState::TagAndCountToAll);
+	}
+}
+
+float URpgGameplayAbility_Stagger::GetStaggerDuration() const
+{
+	if (const URpgAbilitySystemComponent* ASC = GetRpgAbilitySystemComponentFromActorInfo())
+	{
+		const float AttributeDuration = ASC->GetNumericAttribute(URpgDefenseSet::GetStaggerDurationAttribute());
+		if (AttributeDuration > 0.0f)
+		{
+			return AttributeDuration;
+		}
+	}
+
+	return FMath::Max(0.0f, FallbackDuration);
+}
+
+float URpgGameplayAbility_Stagger::GetStaggerImmunityDuration() const
+{
+	if (const URpgAbilitySystemComponent* ASC = GetRpgAbilitySystemComponentFromActorInfo())
+	{
+		return FMath::Max(0.0f, ASC->GetNumericAttribute(URpgDefenseSet::GetStaggerImmunityDurationAttribute()));
+	}
+
+	return 0.0f;
 }

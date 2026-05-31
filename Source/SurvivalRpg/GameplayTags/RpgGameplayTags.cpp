@@ -57,6 +57,8 @@ namespace RpgGameplayTags
 	UE_DEFINE_GAMEPLAY_TAG_COMMENT(State_PerfectBlockWindow, "State.PerfectBlockWindow", "Target is inside the perfect block timing window.");
 	UE_DEFINE_GAMEPLAY_TAG_COMMENT(State_Staggered, "State.Staggered", "Target is staggered.");
 	UE_DEFINE_GAMEPLAY_TAG_COMMENT(State_GuardBroken, "State.GuardBroken", "Target's guard is broken.");
+	UE_DEFINE_GAMEPLAY_TAG_COMMENT(State_StaggerImmune, "State.StaggerImmune", "Target is temporarily immune to new stagger buildup.");
+	UE_DEFINE_GAMEPLAY_TAG_COMMENT(Trait_Staggerable, "Trait.Staggerable", "Target can build stagger and enter stagger reactions.");
 	UE_DEFINE_GAMEPLAY_TAG_COMMENT(Status_Death, "Status.Death", "Target has the death status.");
 	UE_DEFINE_GAMEPLAY_TAG_COMMENT(Status_Death_Dying, "Status.Death.Dying", "Target has begun the death process.");
 	UE_DEFINE_GAMEPLAY_TAG_COMMENT(Status_Death_Dead, "Status.Death.Dead", "Target has finished the death process.");

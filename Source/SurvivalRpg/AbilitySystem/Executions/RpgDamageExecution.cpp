@@ -103,8 +103,29 @@ namespace
 		UAbilitySystemBlueprintLibrary::SendGameplayEventToActor(TargetActor, EventTag, Payload);
 	}
 
+	static bool CanReceiveStagger(const UAbilitySystemComponent* ASC)
+	{
+		return ASC &&
+			ASC->HasMatchingGameplayTag(RpgGameplayTags::Trait_Staggerable) &&
+			!ASC->HasMatchingGameplayTag(RpgGameplayTags::State_Staggered) &&
+			!ASC->HasMatchingGameplayTag(RpgGameplayTags::State_GuardBroken) &&
+			!ASC->HasMatchingGameplayTag(RpgGameplayTags::State_StaggerImmune);
+	}
+
+	static float GetScaledIncomingStaggerDamage(const UAbilitySystemComponent* ASC, float StaggerDamage)
+	{
+		if (!CanReceiveStagger(ASC) || StaggerDamage <= 0.0f)
+		{
+			return 0.0f;
+		}
+
+		const float IncomingStaggerMultiplier = FMath::Max(0.0f, ASC->GetNumericAttribute(URpgDefenseSet::GetIncomingStaggerDamageMultiplierAttribute()));
+		return FMath::Max(0.0f, StaggerDamage * IncomingStaggerMultiplier);
+	}
+
 	static void ApplyStaggerToSource(UAbilitySystemComponent* SourceASC, AActor* SourceActor, AActor* InstigatorActor, const FGameplayEffectSpec& Spec, float StaggerDamage)
 	{
+		StaggerDamage = GetScaledIncomingStaggerDamage(SourceASC, StaggerDamage);
 		if (!SourceASC || !SourceActor || StaggerDamage <= 0.0f)
 		{
 			return;
@@ -116,7 +137,7 @@ namespace
 		SourceASC->ApplyModToAttribute(URpgDefenseSet::GetStaggerAttribute(), EGameplayModOp::Additive, StaggerDamage);
 
 		const float NewStagger = SourceASC->GetNumericAttribute(URpgDefenseSet::GetStaggerAttribute());
-		if (OldStagger < MaxStagger && NewStagger >= MaxStagger && !SourceASC->HasMatchingGameplayTag(RpgGameplayTags::State_Staggered))
+		if (OldStagger < MaxStagger && NewStagger >= MaxStagger && CanReceiveStagger(SourceASC))
 		{
 			SendCombatEvent(SourceActor, InstigatorActor, RpgGameplayTags::GameplayEvent_Stagger, Spec, NewStagger);
 			SourceASC->SetNumericAttributeBase(URpgDefenseSet::GetStaggerAttribute(), 0.0f);
@@ -293,6 +314,16 @@ void URpgDamageExecution::Execute_Implementation(const FGameplayEffectCustomExec
 			}
 		}
 	}
+
+	if (TargetASC && TargetASC->HasMatchingGameplayTag(RpgGameplayTags::State_Staggered))
+	{
+		const float StaggeredDamageMultiplier = FMath::Max(
+			0.0f,
+			TargetASC->GetNumericAttribute(URpgDefenseSet::GetStaggeredDamageTakenMultiplierAttribute()));
+		Damage *= StaggeredDamageMultiplier;
+	}
+
+	StaggerDamage = GetScaledIncomingStaggerDamage(TargetASC, StaggerDamage);
 
 	// -------------------------
 	// 5) Output -> Health and Stagger

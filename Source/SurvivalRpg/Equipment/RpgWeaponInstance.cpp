@@ -2,6 +2,21 @@
 
 #include "SurvivalRpg/GameplayTags/RpgGameplayTags.h"
 
+bool FRpgConditionalAttackModifier::MatchesTargetTags(const FGameplayTagContainer& TargetTags) const
+{
+	if (!TargetTags.HasAll(RequiredTargetTags))
+	{
+		return false;
+	}
+
+	if (BlockedTargetTags.Num() > 0 && TargetTags.HasAny(BlockedTargetTags))
+	{
+		return false;
+	}
+
+	return true;
+}
+
 URpgWeaponInstance::URpgWeaponInstance(const FObjectInitializer& ObjectInitializer)
 	: Super(ObjectInitializer)
 {
