@@ -16,6 +16,9 @@ namespace RpgGameplayTags
 	UE_DEFINE_GAMEPLAY_TAG_COMMENT(Ability_Support_Heal, "Ability.Support.Heal", "Semantic tag for a support healing ability.");
 	UE_DEFINE_GAMEPLAY_TAG_COMMENT(Ability_Defense_Block, "Ability.Defense.Block", "Semantic tag for a defensive block ability.");
 	UE_DEFINE_GAMEPLAY_TAG_COMMENT(AI_Role_Grunt, "AI.Role.Grunt", "Semantic tag for a basic grunt AI role.");
+	UE_DEFINE_GAMEPLAY_TAG_COMMENT(Enemy_Archetype_BasicSword, "Enemy.Archetype.BasicSword", "Enemy combat archetype that equips a basic sword.");
+	UE_DEFINE_GAMEPLAY_TAG_COMMENT(Enemy_Archetype_SwordShield, "Enemy.Archetype.SwordShield", "Enemy combat archetype that equips a sword and shield.");
+	UE_DEFINE_GAMEPLAY_TAG_COMMENT(Enemy_Archetype_TwoHanded, "Enemy.Archetype.TwoHanded", "Enemy combat archetype that equips a basic two-handed weapon.");
 	UE_DEFINE_GAMEPLAY_TAG_COMMENT(Faction_Player, "Faction.Player", "Semantic faction tag for player-aligned actors.");
 	UE_DEFINE_GAMEPLAY_TAG_COMMENT(Faction_Enemy, "Faction.Enemy", "Semantic faction tag for enemy-aligned actors.");
 	

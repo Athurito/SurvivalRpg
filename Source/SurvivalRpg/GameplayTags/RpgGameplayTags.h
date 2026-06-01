@@ -20,6 +20,9 @@ namespace RpgGameplayTags
 	UE_DECLARE_GAMEPLAY_TAG_EXTERN(Ability_Support_Heal);
 	UE_DECLARE_GAMEPLAY_TAG_EXTERN(Ability_Defense_Block);
 	UE_DECLARE_GAMEPLAY_TAG_EXTERN(AI_Role_Grunt);
+	UE_DECLARE_GAMEPLAY_TAG_EXTERN(Enemy_Archetype_BasicSword);
+	UE_DECLARE_GAMEPLAY_TAG_EXTERN(Enemy_Archetype_SwordShield);
+	UE_DECLARE_GAMEPLAY_TAG_EXTERN(Enemy_Archetype_TwoHanded);
 	UE_DECLARE_GAMEPLAY_TAG_EXTERN(Faction_Player);
 	UE_DECLARE_GAMEPLAY_TAG_EXTERN(Faction_Enemy);
 	
