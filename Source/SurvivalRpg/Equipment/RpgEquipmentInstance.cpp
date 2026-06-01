@@ -30,6 +30,7 @@ void URpgEquipmentInstance::GetLifetimeReplicatedProps(TArray<FLifetimeProperty>
 	Super::GetLifetimeReplicatedProps(OutLifetimeProps);
 
 	DOREPLIFETIME(ThisClass, Instigator);
+	DOREPLIFETIME(ThisClass, EquippedSlot);
 	DOREPLIFETIME(ThisClass, SpawnedActors);
 }
 
@@ -94,7 +95,7 @@ void URpgEquipmentInstance::SpawnEquipmentActors(const TArray<FRpgEquipmentActor
 		}
 
 		NewActor->SetActorRelativeTransform(SpawnInfo.AttachTransform);
-		NewActor->AttachToComponent(AttachTarget, FAttachmentTransformRules::KeepRelativeTransform, SpawnInfo.AttachSocket);
+		NewActor->AttachToComponent(AttachTarget, FAttachmentTransformRules::KeepRelativeTransform, SpawnInfo.GetAttachSocketForSlot(EquippedSlot));
 		SpawnedActors.Add(NewActor);
 	}
 }

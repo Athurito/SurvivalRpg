@@ -96,7 +96,7 @@ void URpgStarterInventoryComponent::TryGrantStarterInventory()
 
 			if (SlotIndex != INDEX_NONE)
 			{
-				QuickBarComponent->AddItemToSlot(SlotIndex, ItemInstance);
+				QuickBarComponent->AddItemToLoadoutSlot(SlotIndex, Entry.QuickBarEquipmentSlot, ItemInstance);
 
 				if (Entry.bActivateQuickBarSlot)
 				{
@@ -154,9 +154,9 @@ bool URpgStarterInventoryComponent::QuickBarContainsItem(const URpgQuickBarCompo
 		return false;
 	}
 
-	for (const URpgInventoryItemInstance* SlotItem : QuickBarComponent->GetSlots())
+	for (const FRpgQuickBarLoadoutSlot& LoadoutSlot : QuickBarComponent->GetLoadoutSlots())
 	{
-		if (SlotItem == ItemInstance)
+		if (LoadoutSlot.MainHandItem == ItemInstance || LoadoutSlot.OffHandItem == ItemInstance)
 		{
 			return true;
 		}

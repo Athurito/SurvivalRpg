@@ -3,6 +3,7 @@
 #include "Components/ControllerComponent.h"
 #include "TimerManager.h"
 #include "UObject/SoftObjectPtr.h"
+#include "SurvivalRpg/Equipment/RpgEquipmentDefinition.h"
 
 #include "RpgStarterInventoryComponent.generated.h"
 
@@ -28,6 +29,9 @@ struct SURVIVALRPG_API FRpgStarterInventoryEntry
 
 	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Starter Inventory", meta = (EditCondition = "bAddToQuickBar"))
 	int32 QuickBarSlotIndex = INDEX_NONE;
+
+	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Starter Inventory", meta = (EditCondition = "bAddToQuickBar"))
+	ERpgEquipmentSlot QuickBarEquipmentSlot = ERpgEquipmentSlot::MainHand;
 
 	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Starter Inventory", meta = (EditCondition = "bAddToQuickBar"))
 	bool bActivateQuickBarSlot = true;

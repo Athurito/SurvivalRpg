@@ -41,6 +41,14 @@ bool URpgGameplayAbility_Block::CanActivateAbility(
 		return false;
 	}
 
+	if (const URpgEquipmentInstance* EquipmentInstance = Cast<URpgEquipmentInstance>(GetSourceObject(Handle, ActorInfo)))
+	{
+		if (!IsEquipmentActiveForInput(EquipmentInstance, GetInputTagFromSpec(Handle, ActorInfo)))
+		{
+			return false;
+		}
+	}
+
 	const FRpgWeaponBlockDefinition* BlockDefinition = ResolveBlockDefinition(Handle, ActorInfo);
 	return BlockDefinition && BlockDefinition->bCanBlock;
 }

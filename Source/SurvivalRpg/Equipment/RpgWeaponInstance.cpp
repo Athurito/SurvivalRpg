@@ -114,3 +114,65 @@ void URpgWeaponInstance::ConfigureAttackByTagName(
 	AttackDefinition.CameraMode = CameraMode;
 	AttackDefinition.HitReactionEventTag = HitReactionEventTagName.IsNone() ? FGameplayTag() : FGameplayTag::RequestGameplayTag(HitReactionEventTagName);
 }
+
+void URpgWeaponInstance::ConfigureMeleeAttackByTagName(
+	FName AttackDefinitionTagName,
+	UAnimMontage* Montage,
+	TSubclassOf<UGameplayEffect> DamageEffect,
+	float Damage,
+	float StaggerDamage,
+	float DamageTraceDelay,
+	float TraceDistance,
+	float TraceRadius,
+	FName TraceStartSocket,
+	FName TraceEndSocket,
+	TSubclassOf<URpgCameraMode> CameraMode,
+	FName HitReactionEventTagName)
+{
+	ConfigureAttackByTagName(
+		AttackDefinitionTagName,
+		Montage,
+		DamageEffect,
+		Damage,
+		DamageTraceDelay,
+		TraceDistance,
+		TraceRadius,
+		TraceStartSocket,
+		TraceEndSocket,
+		CameraMode,
+		HitReactionEventTagName);
+
+	const FGameplayTag AttackDefinitionTag = AttackDefinitionTagName.IsNone() ? FGameplayTag() : FGameplayTag::RequestGameplayTag(AttackDefinitionTagName);
+	if (FRpgWeaponAttackDefinition* AttackDefinition = AttackDefinitions.Find(AttackDefinitionTag))
+	{
+		AttackDefinition->DamageTypeTags.Reset();
+		AttackDefinition->DamageTypeTags.AddTag(RpgGameplayTags::Damage_Type_Melee);
+		AttackDefinition->StaggerDamage = FMath::Max(0.0f, StaggerDamage);
+	}
+}
+
+void URpgWeaponInstance::ConfigureMeleeBlock(
+	bool bCanBlock,
+	bool bAllowPerfectBlock,
+	float BlockAngleDegrees,
+	float PerfectBlockWindow,
+	float StaminaCost,
+	float DamageReduction,
+	float BlockStaggerDamageMultiplier,
+	float PerfectBlockStaminaRestore,
+	float PerfectBlockStaggerDamage,
+	UAnimMontage* BlockLoopMontage)
+{
+	BlockDefinition.bCanBlock = bCanBlock;
+	BlockDefinition.bAllowPerfectBlock = bAllowPerfectBlock;
+	BlockDefinition.BlockableDamageTypeTags.Reset();
+	BlockDefinition.BlockableDamageTypeTags.AddTag(RpgGameplayTags::Damage_Type_Melee);
+	BlockDefinition.BlockAngleDegrees = FMath::Clamp(BlockAngleDegrees, 0.0f, 360.0f);
+	BlockDefinition.PerfectBlockWindow = FMath::Max(0.0f, PerfectBlockWindow);
+	BlockDefinition.StaminaCost = FMath::Max(0.0f, StaminaCost);
+	BlockDefinition.DamageReduction = FMath::Clamp(DamageReduction, 0.0f, 1.0f);
+	BlockDefinition.BlockStaggerDamageMultiplier = FMath::Max(0.0f, BlockStaggerDamageMultiplier);
+	BlockDefinition.PerfectBlockStaminaRestore = FMath::Max(0.0f, PerfectBlockStaminaRestore);
+	BlockDefinition.PerfectBlockStaggerDamage = FMath::Max(0.0f, PerfectBlockStaggerDamage);
+	BlockDefinition.BlockLoopMontage = BlockLoopMontage;
+}

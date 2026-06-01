@@ -199,6 +199,34 @@ public:
 		TSubclassOf<URpgCameraMode> CameraMode,
 		FName HitReactionEventTagName);
 
+	UFUNCTION(BlueprintCallable, Category = "Weapon")
+	void ConfigureMeleeAttackByTagName(
+		FName AttackDefinitionTagName,
+		UAnimMontage* Montage,
+		TSubclassOf<UGameplayEffect> DamageEffect,
+		float Damage,
+		float StaggerDamage,
+		float DamageTraceDelay,
+		float TraceDistance,
+		float TraceRadius,
+		FName TraceStartSocket,
+		FName TraceEndSocket,
+		TSubclassOf<URpgCameraMode> CameraMode,
+		FName HitReactionEventTagName);
+
+	UFUNCTION(BlueprintCallable, Category = "Weapon|Block")
+	void ConfigureMeleeBlock(
+		bool bCanBlock,
+		bool bAllowPerfectBlock,
+		float BlockAngleDegrees,
+		float PerfectBlockWindow,
+		float StaminaCost,
+		float DamageReduction,
+		float BlockStaggerDamageMultiplier,
+		float PerfectBlockStaminaRestore,
+		float PerfectBlockStaggerDamage,
+		UAnimMontage* BlockLoopMontage);
+
 protected:
 	UPROPERTY(EditDefaultsOnly, Category = "Weapon", meta = (Categories = "Weapon.Type"))
 	FGameplayTag WeaponTypeTag;

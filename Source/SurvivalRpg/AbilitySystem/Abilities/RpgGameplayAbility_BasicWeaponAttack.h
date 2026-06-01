@@ -54,6 +54,7 @@ protected:
 	void OnMontageCancelled();
 
 private:
+	FGameplayTag ResolveAttackDefinitionTag(const FGameplayAbilitySpecHandle Handle, const FGameplayAbilityActorInfo* ActorInfo) const;
 	const FRpgWeaponAttackDefinition* GetAttackDefinitionFromEquipment() const;
 	bool TryGetSocketLocationFromWeapon(const URpgWeaponInstance* WeaponInstance, FName SocketName, FVector& OutLocation) const;
 	bool TryGetSocketLocationFromAvatar(FName SocketName, FVector& OutLocation) const;
@@ -68,6 +69,9 @@ private:
 private:
 	UPROPERTY(EditDefaultsOnly, Category = "Weapon", meta = (Categories = "Weapon.Attack"))
 	FGameplayTag AttackDefinitionTag;
+
+	UPROPERTY(EditDefaultsOnly, Category = "Weapon")
+	bool bRouteAttackDefinitionFromInputTag = true;
 
 	UPROPERTY(EditDefaultsOnly, Category = "Weapon", meta = (ClampMin = "0.0"))
 	float NoMontageEndDelay = 0.05f;

@@ -85,7 +85,19 @@ bool URpgGameplayAbility_BasicWeaponAttack::CanActivateAbility(
 		return false;
 	}
 
-	return Cast<URpgWeaponInstance>(GetSourceObject(Handle, ActorInfo)) != nullptr;
+	const URpgWeaponInstance* WeaponInstance = Cast<URpgWeaponInstance>(GetSourceObject(Handle, ActorInfo));
+	if (!WeaponInstance)
+	{
+		return false;
+	}
+
+	const FGameplayTag InputTag = GetInputTagFromSpec(Handle, ActorInfo);
+	if (!IsEquipmentActiveForInput(WeaponInstance, InputTag))
+	{
+		return false;
+	}
+
+	return WeaponInstance->FindAttackDefinition(ResolveAttackDefinitionTag(Handle, ActorInfo)) != nullptr;
 }
 
 void URpgGameplayAbility_BasicWeaponAttack::ActivateAbility(
@@ -97,7 +109,7 @@ void URpgGameplayAbility_BasicWeaponAttack::ActivateAbility(
 	check(ActorInfo);
 
 	ActiveWeaponInstance = Cast<URpgWeaponInstance>(GetSourceObject(Handle, ActorInfo));
-	const FRpgWeaponAttackDefinition* AttackDefinition = ActiveWeaponInstance ? ActiveWeaponInstance->FindAttackDefinition(AttackDefinitionTag) : nullptr;
+	const FRpgWeaponAttackDefinition* AttackDefinition = ActiveWeaponInstance ? ActiveWeaponInstance->FindAttackDefinition(ResolveAttackDefinitionTag(Handle, ActorInfo)) : nullptr;
 	if (!ActiveWeaponInstance || !AttackDefinition || !AttackDefinition->CanApplyDamage())
 	{
 		EndAbility(Handle, ActorInfo, ActivationInfo, true, true);
@@ -208,6 +220,24 @@ void URpgGameplayAbility_BasicWeaponAttack::OnMontageCancelled()
 {
 	bWaitingForMontage = false;
 	FinishAttack(true);
+}
+
+FGameplayTag URpgGameplayAbility_BasicWeaponAttack::ResolveAttackDefinitionTag(const FGameplayAbilitySpecHandle Handle, const FGameplayAbilityActorInfo* ActorInfo) const
+{
+	if (bRouteAttackDefinitionFromInputTag)
+	{
+		const FGameplayTag InputTag = GetInputTagFromSpec(Handle, ActorInfo);
+		if (InputTag == RpgGameplayTags::InputTag_Weapon_Secondary)
+		{
+			return RpgGameplayTags::Weapon_Attack_Secondary;
+		}
+		if (InputTag == RpgGameplayTags::InputTag_Weapon_Primary)
+		{
+			return RpgGameplayTags::Weapon_Attack_Primary;
+		}
+	}
+
+	return AttackDefinitionTag.IsValid() ? AttackDefinitionTag : RpgGameplayTags::Weapon_Attack_Primary;
 }
 
 const FRpgWeaponAttackDefinition* URpgGameplayAbility_BasicWeaponAttack::GetAttackDefinitionFromEquipment() const

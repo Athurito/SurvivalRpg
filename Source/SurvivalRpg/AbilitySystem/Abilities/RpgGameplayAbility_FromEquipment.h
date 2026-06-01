@@ -1,6 +1,7 @@
 #pragma once
 
 #include "CoreMinimal.h"
+#include "GameplayTagContainer.h"
 #include "RpgGameplayAbility.h"
 #include "RpgGameplayAbility_FromEquipment.generated.h"
 
@@ -20,4 +21,8 @@ public:
 
 	UFUNCTION(BlueprintCallable, BlueprintPure = false, Category = "Equipment|Ability")
 	URpgInventoryItemInstance* GetAssociatedItem() const;
+
+protected:
+	FGameplayTag GetInputTagFromSpec(const FGameplayAbilitySpecHandle Handle, const FGameplayAbilityActorInfo* ActorInfo) const;
+	bool IsEquipmentActiveForInput(const URpgEquipmentInstance* EquipmentInstance, FGameplayTag InputTag) const;
 };

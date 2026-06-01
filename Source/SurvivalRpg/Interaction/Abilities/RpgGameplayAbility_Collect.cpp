@@ -3,6 +3,7 @@
 #include "GameFramework/Controller.h"
 #include "GameFramework/Pawn.h"
 #include "GameFramework/PlayerState.h"
+#include "SurvivalRpg/Equipment/RpgEquipmentDefinition.h"
 #include "SurvivalRpg/Core/Player/RpgPlayerController.h"
 #include "SurvivalRpg/Equipment/RpgQuickBarComponent.h"
 #include "SurvivalRpg/Inventory/IPickupable.h"
@@ -181,18 +182,41 @@ void URpgGameplayAbility_Collect::AddEquippableItemsToQuickBar(URpgQuickBarCompo
 	bool bActivatedSlot = false;
 	for (URpgInventoryItemInstance* AddedItem : AddedItems)
 	{
-		if (AddedItem == nullptr || AddedItem->FindFragmentByClass<URpgInventoryFragment_EquippableItem>() == nullptr)
+		const URpgInventoryFragment_EquippableItem* EquippableFragment = AddedItem ? AddedItem->FindFragmentByClass<URpgInventoryFragment_EquippableItem>() : nullptr;
+		const TSubclassOf<URpgEquipmentDefinition> EquipmentDefinition = EquippableFragment ? EquippableFragment->GetEquipmentDefinition() : nullptr;
+		const URpgEquipmentDefinition* EquipmentCDO = EquipmentDefinition ? GetDefault<URpgEquipmentDefinition>(EquipmentDefinition) : nullptr;
+		if (EquipmentCDO == nullptr)
 		{
 			continue;
 		}
 
-		const int32 SlotIndex = QuickBarComponent->GetNextFreeItemSlot();
+		const ERpgEquipmentSlot EquipmentSlot = EquipmentCDO->GetDefaultEquipSlot();
+		int32 SlotIndex = INDEX_NONE;
+
+		const int32 ActiveSlotIndex = QuickBarComponent->GetActiveSlotIndex();
+		if (QuickBarComponent->GetItemInLoadoutSlot(ActiveSlotIndex, EquipmentSlot) == nullptr)
+		{
+			SlotIndex = ActiveSlotIndex;
+		}
+		else
+		{
+			const TArray<FRpgQuickBarLoadoutSlot> LoadoutSlots = QuickBarComponent->GetLoadoutSlots();
+			for (int32 Index = 0; Index < LoadoutSlots.Num(); ++Index)
+			{
+				if (LoadoutSlots[Index].GetItemForSlot(EquipmentSlot) == nullptr)
+				{
+					SlotIndex = Index;
+					break;
+				}
+			}
+		}
+
 		if (SlotIndex == INDEX_NONE)
 		{
 			return;
 		}
 
-		QuickBarComponent->AddItemToSlot(SlotIndex, AddedItem);
+		QuickBarComponent->AddItemToLoadoutSlot(SlotIndex, EquipmentSlot, AddedItem);
 		if (bActivateFirstSlot && !bActivatedSlot)
 		{
 			QuickBarComponent->SetActiveSlotIndex(SlotIndex);
