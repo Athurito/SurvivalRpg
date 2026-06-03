@@ -8,6 +8,7 @@
 #include "Net/UnrealNetwork.h"
 #include "SurvivalRpg/AbilitySystem/RpgAbilitySystemComponent.h"
 #include "SurvivalRpg/Core/Character/RpgPawnData.h"
+#include "SurvivalRpg/Core/Player/RpgBasePlayerState.h"
 #include "SurvivalRpg/GameplayTags/RpgGameplayTags.h"
 
 const FName URpgPawnExtensionComponent::Name_ActorFeatureName = FName("PawnExtension");
@@ -80,6 +81,11 @@ void URpgPawnExtensionComponent::SetPawnData(const URpgPawnData* InPawnData)
 	}
 		
 	PawnData = InPawnData;
+
+	if (AbilitySystemComponent)
+	{
+		AbilitySystemComponent->SetTagRelationshipMapping(PawnData->TagRelationshipMapping);
+	}
 	
 	Pawn->ForceNetUpdate();
 
@@ -88,6 +94,11 @@ void URpgPawnExtensionComponent::SetPawnData(const URpgPawnData* InPawnData)
 
 void URpgPawnExtensionComponent::OnRep_PawnData()
 {
+	if (AbilitySystemComponent && PawnData)
+	{
+		AbilitySystemComponent->SetTagRelationshipMapping(PawnData->TagRelationshipMapping);
+	}
+
 	CheckDefaultInitialization();
 }
 
@@ -139,9 +150,30 @@ void URpgPawnExtensionComponent::InitializeAbilitySystemComponent(URpgAbilitySys
 	AbilitySystemComponent = InAsc;
 	AbilitySystemComponent->InitAbilityActorInfo(InOwner, Pawn);
 
-	if (ensure(PawnData))
+	const URpgPawnData* ResolvedPawnData = PawnData;
+	if (!ResolvedPawnData)
 	{
-		InAsc->SetTagRelationshipMapping(PawnData->TagRelationshipMapping);
+		if (const ARpgBasePlayerState* RpgPlayerState = Cast<ARpgBasePlayerState>(InOwner))
+		{
+			ResolvedPawnData = RpgPlayerState->GetPawnData<URpgPawnData>();
+		}
+
+		if (ResolvedPawnData && Pawn->HasAuthority())
+		{
+			PawnData = ResolvedPawnData;
+			Pawn->ForceNetUpdate();
+			CheckDefaultInitialization();
+		}
+	}
+
+	if (ResolvedPawnData)
+	{
+		InAsc->SetTagRelationshipMapping(ResolvedPawnData->TagRelationshipMapping);
+	}
+	else
+	{
+		UE_LOG(LogTemp, Warning, TEXT("Initializing ASC for pawn [%s] without PawnData. Tag relationship mapping will be cleared."), *GetNameSafe(Pawn));
+		InAsc->SetTagRelationshipMapping(nullptr);
 	}
 
 	OnAbilitySystemInitialized.Broadcast();

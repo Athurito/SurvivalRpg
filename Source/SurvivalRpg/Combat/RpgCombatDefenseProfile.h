@@ -7,6 +7,8 @@
 
 class URpgAbilitySystemComponent;
 class URpgPawnExtensionComponent;
+class APawn;
+class AController;
 
 USTRUCT(BlueprintType)
 struct FRpgCombatDefenseProfileData
@@ -80,6 +82,61 @@ private:
 
 	UPROPERTY(EditAnywhere, Category = "Combat Defense", meta = (EditCondition = "DefenseProfile == nullptr", EditConditionHides))
 	FRpgCombatDefenseProfileData FallbackProfileData;
+
+	UPROPERTY(Transient)
+	TObjectPtr<URpgPawnExtensionComponent> BoundPawnExtension;
+
+	UPROPERTY(Transient)
+	TObjectPtr<URpgAbilitySystemComponent> AppliedAbilitySystemComponent;
+
+	FTimerHandle ApplyRetryTimerHandle;
+};
+
+/**
+ * Applies a combat defense profile to the currently possessed player pawn.
+ *
+ * This lives on the PlayerController so GF_Combat_Core can grant player guard/posture
+ * rules without adding the same component to AI characters that derive from ARpgCharacter.
+ */
+UCLASS(BlueprintType, Blueprintable, ClassGroup = (Combat), meta = (BlueprintSpawnableComponent, DisplayName = "Player Combat Defense Profile"))
+class SURVIVALRPG_API URpgPlayerCombatDefenseProfileComponent : public UActorComponent
+{
+	GENERATED_BODY()
+
+public:
+	URpgPlayerCombatDefenseProfileComponent(const FObjectInitializer& ObjectInitializer = FObjectInitializer::Get());
+
+	UFUNCTION(BlueprintCallable, BlueprintAuthorityOnly, Category = "Rpg|Combat Defense")
+	void ApplyDefenseProfile();
+
+protected:
+	virtual void OnRegister() override;
+	virtual void BeginPlay() override;
+	virtual void EndPlay(const EEndPlayReason::Type EndPlayReason) override;
+
+private:
+	void BindToPlayerController();
+	void UnbindFromPlayerController();
+	void BindToPawn(APawn* Pawn);
+	void UnbindFromPawnExtension();
+	void HandleAbilitySystemInitialized();
+	void HandleAbilitySystemUninitialized();
+	void ApplyProfileToAbilitySystem(URpgAbilitySystemComponent* ASC);
+	void ClearAppliedProfile();
+	void ScheduleApplyRetry();
+	const FRpgCombatDefenseProfileData& GetResolvedProfileData() const;
+
+	UFUNCTION()
+	void HandlePossessedPawnChanged(APawn* OldPawn, APawn* NewPawn);
+
+	UPROPERTY(EditDefaultsOnly, Category = "Combat Defense")
+	TObjectPtr<const URpgCombatDefenseProfile> DefenseProfile;
+
+	UPROPERTY(EditAnywhere, Category = "Combat Defense", meta = (EditCondition = "DefenseProfile == nullptr", EditConditionHides))
+	FRpgCombatDefenseProfileData FallbackProfileData;
+
+	UPROPERTY(Transient)
+	TObjectPtr<AController> BoundPlayerController;
 
 	UPROPERTY(Transient)
 	TObjectPtr<URpgPawnExtensionComponent> BoundPawnExtension;

@@ -6,17 +6,24 @@
 #include "AbilitySystemBlueprintLibrary.h"
 #include "AbilitySystemComponent.h"
 #include "GameFramework/Actor.h"
+#include "HAL/IConsoleManager.h"
 #include "SurvivalRpg/AbilitySystem/RpgAbilitySourceInterface.h"
 #include "SurvivalRpg/AbilitySystem/RpgGameplayEffectContext.h"
 #include "SurvivalRpg/AbilitySystem/Attributes/RpgCombatSet.h"
 #include "SurvivalRpg/AbilitySystem/Attributes/RpgDefenseSet.h"
 #include "SurvivalRpg/AbilitySystem/Attributes/RpgHealthSet.h"
 #include "SurvivalRpg/AbilitySystem/Attributes/RpgStaminaSet.h"
+#include "SurvivalRpg/Factions/RpgFactionSubsystem.h"
 #include "SurvivalRpg/GameplayTags/RpgGameplayTags.h"
 
 
 namespace
 {
+	static TAutoConsoleVariable<int32> CVarRpgCombatBlockDebug(
+		TEXT("rpg.Combat.Block.Debug"),
+		0,
+		TEXT("Logs server-side block, perfect block, and guard/posture decisions."));
+
 	struct FRpgDamageStatics
 	{
 		// Optional: BaseDamage aus CombatSet
@@ -54,6 +61,60 @@ namespace
 	}
 
 	static float Clamp01(float V) { return FMath::Clamp(V, 0.f, 1.f); }
+
+	static bool CanSourceDamageTarget(const FGameplayEffectSpec& Spec, UAbilitySystemComponent* SourceASC, UAbilitySystemComponent* TargetASC)
+	{
+		const AActor* SourceActor = SourceASC ? SourceASC->GetAvatarActor() : nullptr;
+		const AActor* TargetActor = TargetASC ? TargetASC->GetAvatarActor() : nullptr;
+		if (!TargetActor)
+		{
+			return false;
+		}
+
+		const AActor* EffectCauser = Spec.GetEffectContext().GetEffectCauser();
+		const AActor* OriginalInstigator = Spec.GetEffectContext().GetOriginalInstigator();
+
+		UWorld* World = TargetActor->GetWorld();
+		if (!World && SourceActor)
+		{
+			World = SourceActor->GetWorld();
+		}
+
+		const URpgFactionSubsystem* FactionSubsystem = World ? World->GetSubsystem<URpgFactionSubsystem>() : nullptr;
+		if (!FactionSubsystem)
+		{
+			return false;
+		}
+
+		const UObject* CandidateInstigators[] = { OriginalInstigator, SourceActor, EffectCauser };
+		for (const UObject* CandidateInstigator : CandidateInstigators)
+		{
+			if (!CandidateInstigator)
+			{
+				continue;
+			}
+
+			if (FactionSubsystem->CanCauseDamage(CandidateInstigator, TargetActor, true))
+			{
+				return true;
+			}
+
+			int32 CandidateFactionId = INDEX_NONE;
+			int32 TargetFactionId = INDEX_NONE;
+			const ERpgFactionComparison Comparison = FactionSubsystem->CompareFactions(
+				CandidateInstigator,
+				TargetActor,
+				CandidateFactionId,
+				TargetFactionId);
+
+			if (Comparison == ERpgFactionComparison::SameFaction || CandidateFactionId != INDEX_NONE)
+			{
+				return false;
+			}
+		}
+
+		return false;
+	}
 
 	static bool HasDamageType(const FGameplayEffectSpec& Spec, const FGameplayTagContainer* SourceTags, FGameplayTag DamageTypeTag)
 	{
@@ -123,16 +184,42 @@ namespace
 		return FMath::Max(0.0f, StaggerDamage * IncomingStaggerMultiplier);
 	}
 
+	static bool ShouldDebugBlock()
+	{
+		return CVarRpgCombatBlockDebug.GetValueOnGameThread() != 0;
+	}
+
 	static void ApplyStaggerToSource(UAbilitySystemComponent* SourceASC, AActor* SourceActor, AActor* InstigatorActor, const FGameplayEffectSpec& Spec, float StaggerDamage)
 	{
 		StaggerDamage = GetScaledIncomingStaggerDamage(SourceASC, StaggerDamage);
 		if (!SourceASC || !SourceActor || StaggerDamage <= 0.0f)
 		{
+			if (ShouldDebugBlock())
+			{
+				UE_LOG(LogTemp, Warning, TEXT("BlockDebug PerfectBlockSource[%s]: no attacker posture applied. RawOrScaled=%.2f Staggerable=%d Immune=%d"),
+					*GetNameSafe(SourceActor),
+					StaggerDamage,
+					SourceASC && SourceASC->HasMatchingGameplayTag(RpgGameplayTags::Trait_Staggerable) ? 1 : 0,
+					SourceASC && SourceASC->HasMatchingGameplayTag(RpgGameplayTags::State_StaggerImmune) ? 1 : 0);
+			}
 			return;
 		}
 
 		const float OldStagger = SourceASC->GetNumericAttribute(URpgDefenseSet::GetStaggerAttribute());
 		const float MaxStagger = FMath::Max(1.0f, SourceASC->GetNumericAttribute(URpgDefenseSet::GetMaxStaggerAttribute()));
+		const bool bWillGuardBreak = OldStagger < MaxStagger && (OldStagger + StaggerDamage) >= MaxStagger && CanReceiveStagger(SourceASC);
+
+		if (ShouldDebugBlock())
+		{
+			UE_LOG(LogTemp, Warning, TEXT("BlockDebug PerfectBlockSource[%s]: attacker posture +%.2f %.2f/%.2f -> %.2f/%.2f WillGuardBreak=%d"),
+				*GetNameSafe(SourceActor),
+				StaggerDamage,
+				OldStagger,
+				MaxStagger,
+				FMath::Min(MaxStagger, OldStagger + StaggerDamage),
+				MaxStagger,
+				bWillGuardBreak ? 1 : 0);
+		}
 
 		SourceASC->ApplyModToAttribute(URpgDefenseSet::GetStaggerAttribute(), EGameplayModOp::Additive, StaggerDamage);
 
@@ -188,6 +275,16 @@ void URpgDamageExecution::Execute_Implementation(const FGameplayEffectCustomExec
 		return;
 	}
 
+	UAbilitySystemComponent* SourceASC = ExecutionParams.GetSourceAbilitySystemComponent();
+	UAbilitySystemComponent* TargetASC = ExecutionParams.GetTargetAbilitySystemComponent();
+	AActor* SourceActor = SourceASC ? SourceASC->GetAvatarActor() : nullptr;
+	AActor* TargetActor = TargetASC ? TargetASC->GetAvatarActor() : nullptr;
+
+	if (!CanSourceDamageTarget(Spec, SourceASC, TargetASC))
+	{
+		return;
+	}
+
 	if (const FRpgGameplayEffectContext* RpgContext = FRpgGameplayEffectContext::ExtractEffectContext(Spec.GetEffectContext()))
 	{
 		if (const IRpgAbilitySourceInterface* AbilitySource = RpgContext->GetAbilitySource())
@@ -195,9 +292,9 @@ void URpgDamageExecution::Execute_Implementation(const FGameplayEffectCustomExec
 			float Distance = 0.0f;
 			if (const FHitResult* HitResult = RpgContext->GetHitResult())
 			{
-				if (const AActor* SourceActor = RpgContext->GetEffectCauser())
+				if (const AActor* ContextSourceActor = RpgContext->GetEffectCauser())
 				{
-					Distance = FVector::Dist(SourceActor->GetActorLocation(), HitResult->ImpactPoint);
+					Distance = FVector::Dist(ContextSourceActor->GetActorLocation(), HitResult->ImpactPoint);
 				}
 			}
 
@@ -258,11 +355,6 @@ void URpgDamageExecution::Execute_Implementation(const FGameplayEffectCustomExec
 	// -------------------------
 	// 4) Block / Perfect Block
 	// -------------------------
-	UAbilitySystemComponent* SourceASC = ExecutionParams.GetSourceAbilitySystemComponent();
-	UAbilitySystemComponent* TargetASC = ExecutionParams.GetTargetAbilitySystemComponent();
-	AActor* SourceActor = SourceASC ? SourceASC->GetAvatarActor() : nullptr;
-	AActor* TargetActor = TargetASC ? TargetASC->GetAvatarActor() : nullptr;
-
 	const bool bIsMeleeDamage = HasDamageType(Spec, SourceTags, RpgGameplayTags::Damage_Type_Melee);
 	const bool bIsBlocking = TargetASC && TargetASC->HasMatchingGameplayTag(RpgGameplayTags::State_Blocking);
 	const bool bIsPerfectBlock = TargetASC && TargetASC->HasMatchingGameplayTag(RpgGameplayTags::State_PerfectBlockWindow);
@@ -273,6 +365,8 @@ void URpgDamageExecution::Execute_Implementation(const FGameplayEffectCustomExec
 		const bool bInBlockCone = IsHitInsideBlockCone(TargetActor, SourceActor, BlockAngleDegrees);
 		if (bInBlockCone)
 		{
+			const float DamageBeforeBlock = Damage;
+			const float StaggerDamageBeforeBlock = StaggerDamage;
 			const float StaminaCost = FMath::Max(0.0f, TargetASC->GetNumericAttribute(URpgDefenseSet::GetBlockStaminaCostAttribute()));
 			const float CurrentStamina = TargetASC->GetNumericAttribute(URpgStaminaSet::GetStaminaAttribute());
 			const bool bCanPayBlock = StaminaCost <= 0.0f || CurrentStamina >= StaminaCost;
@@ -284,6 +378,24 @@ void URpgDamageExecution::Execute_Implementation(const FGameplayEffectCustomExec
 
 				Damage = 0.0f;
 				StaggerDamage = 0.0f;
+
+				if (ShouldDebugBlock())
+				{
+					const float CurrentTargetStagger = TargetASC->GetNumericAttribute(URpgDefenseSet::GetStaggerAttribute());
+					const float TargetMaxStagger = FMath::Max(1.0f, TargetASC->GetNumericAttribute(URpgDefenseSet::GetMaxStaggerAttribute()));
+					UE_LOG(LogTemp, Warning, TEXT("BlockDebug PerfectBlock[%s <- %s]: Damage %.2f->%.2f DefenderStagger %.2f->%.2f Current %.2f/%.2f StaminaRestore=%.2f AttackerPosture=%.2f DefenderStaggerable=%d"),
+						*GetNameSafe(TargetActor),
+						*GetNameSafe(SourceActor),
+						DamageBeforeBlock,
+						Damage,
+						StaggerDamageBeforeBlock,
+						StaggerDamage,
+						CurrentTargetStagger,
+						TargetMaxStagger,
+						StaminaRestore,
+						SourceStaggerDamage,
+						TargetASC->HasMatchingGameplayTag(RpgGameplayTags::Trait_Staggerable) ? 1 : 0);
+				}
 
 				if (StaminaRestore > 0.0f)
 				{
@@ -303,6 +415,33 @@ void URpgDamageExecution::Execute_Implementation(const FGameplayEffectCustomExec
 				Damage *= (1.0f - DamageReduction);
 				StaggerDamage *= BlockStaggerMultiplier;
 
+				if (ShouldDebugBlock())
+				{
+					const float CurrentTargetStagger = TargetASC->GetNumericAttribute(URpgDefenseSet::GetStaggerAttribute());
+					const float TargetMaxStagger = FMath::Max(1.0f, TargetASC->GetNumericAttribute(URpgDefenseSet::GetMaxStaggerAttribute()));
+					const float ScaledStaggerDamage = GetScaledIncomingStaggerDamage(TargetASC, StaggerDamage);
+					const bool bWillGuardBreak = CurrentTargetStagger < TargetMaxStagger &&
+						(CurrentTargetStagger + ScaledStaggerDamage) >= TargetMaxStagger &&
+						CanReceiveStagger(TargetASC);
+
+					UE_LOG(LogTemp, Warning, TEXT("BlockDebug NormalBlock[%s <- %s]: Damage %.2f->%.2f StaminaCost=%.2f Stamina=%.2f Stagger %.2f*%.2f=%.2f Scaled=%.2f Current %.2f/%.2f DefenderStaggerable=%d Immune=%d WillGuardBreak=%d"),
+						*GetNameSafe(TargetActor),
+						*GetNameSafe(SourceActor),
+						DamageBeforeBlock,
+						Damage,
+						StaminaCost,
+						CurrentStamina,
+						StaggerDamageBeforeBlock,
+						BlockStaggerMultiplier,
+						StaggerDamage,
+						ScaledStaggerDamage,
+						CurrentTargetStagger,
+						TargetMaxStagger,
+						TargetASC->HasMatchingGameplayTag(RpgGameplayTags::Trait_Staggerable) ? 1 : 0,
+						TargetASC->HasMatchingGameplayTag(RpgGameplayTags::State_StaggerImmune) ? 1 : 0,
+						bWillGuardBreak ? 1 : 0);
+				}
+
 				if (StaminaCost > 0.0f)
 				{
 					OutExecutionOutput.AddOutputModifier(
@@ -312,6 +451,25 @@ void URpgDamageExecution::Execute_Implementation(const FGameplayEffectCustomExec
 
 				SendCombatEvent(TargetActor, SourceActor, RpgGameplayTags::GameplayEvent_Block, Spec, StaminaCost);
 			}
+			else if (ShouldDebugBlock())
+			{
+				UE_LOG(LogTemp, Warning, TEXT("BlockDebug FailedBlock[%s <- %s]: not enough stamina. Damage=%.2f Stagger=%.2f StaminaCost=%.2f Stamina=%.2f"),
+					*GetNameSafe(TargetActor),
+					*GetNameSafe(SourceActor),
+					Damage,
+					StaggerDamage,
+					StaminaCost,
+					CurrentStamina);
+			}
+		}
+		else if (ShouldDebugBlock())
+		{
+			UE_LOG(LogTemp, Warning, TEXT("BlockDebug FailedBlock[%s <- %s]: outside block cone. Cone=%.2f Damage=%.2f Stagger=%.2f"),
+				*GetNameSafe(TargetActor),
+				*GetNameSafe(SourceActor),
+				BlockAngleDegrees,
+				Damage,
+				StaggerDamage);
 		}
 	}
 
