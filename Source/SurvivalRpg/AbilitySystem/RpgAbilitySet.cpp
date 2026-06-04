@@ -54,7 +54,11 @@ void FRpgAbilitySet_GrantedHandles::TakeFromAbilitySystem(URpgAbilitySystemCompo
 }
 
 
-void URpgAbilitySet::GiveToAbilitySystem(URpgAbilitySystemComponent* RpgASC, FRpgAbilitySet_GrantedHandles* OutGrantedHandles, UObject* SourceObject) const
+void URpgAbilitySet::GiveToAbilitySystem(
+	URpgAbilitySystemComponent* RpgASC,
+	FRpgAbilitySet_GrantedHandles* OutGrantedHandles,
+	UObject* SourceObject,
+	const FGameplayTagContainer* InputTagFilter) const
 {
 	check(RpgASC);
 
@@ -72,6 +76,11 @@ void URpgAbilitySet::GiveToAbilitySystem(URpgAbilitySystemComponent* RpgASC, FRp
 		if (!IsValid(AbilityToGrant.Ability))
 		{
 			//UE_LOG(LogRpgAbilitySystem, Error, TEXT("GrantedGameplayAbilities[%d] on ability set [%s] is not valid."), AbilityIndex, *GetNameSafe(this));
+			continue;
+		}
+
+		if (InputTagFilter != nullptr && AbilityToGrant.InputTag.IsValid() && !InputTagFilter->HasTagExact(AbilityToGrant.InputTag))
+		{
 			continue;
 		}
 
