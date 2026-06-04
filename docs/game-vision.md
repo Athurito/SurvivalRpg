@@ -1,90 +1,87 @@
-# Game Vision - Dark Fantasy Survival RPG
+# Game Vision - Dark Fantasy Portal Survival RPG
 
 ## 1. Projektziel
 
-Dieses Projekt ist ein **Open World Survival Action RPG** im **Medieval Dark Fantasy Setting**.
+Dieses Projekt ist ein **Open-World Survival Action RPG** im **mittelalterlichen Dark-Fantasy-Setting**.
 
-Die Vision ist es, ein Spiel zu erschaffen, das die stärksten Elemente aus Spielen wie **Valheim**, **Enshrouded**, **New World** und modernen **Rune-/Utility-Systemen** aufgreift, aber daraus eine **eigene Identität** formt.
+Die Identität des Spiels entsteht aus der Kombination von:
 
-Der Fokus liegt auf:
+- skillbasiertem Third-Person-Combat
+- Portalen, die die Welt aktiv bedrohen
+- Dungeonbreaks, die sich in der Oberwelt ausbreiten
+- Runen als Combat-, Utility-, Crafting- und Weltinteraktionssystem
+- magischem Harvesting statt reinem Axt-/Spitzhacken-Grind
+- Progression durch Aktivität plus bewusste Spezialisierungsentscheidungen
+- langfristig relevanten Ressourcen und Ausrüstung
 
-- belohnendem, skillbasiertem Combat
-- einer motivierenden Survival- und Crafting-Loop
-- langfristig relevanten Ressourcen ohne Wegwerf-Progression
-- hoher Wiederspielbarkeit durch dynamische Welt- und Portalereignisse
-
-Dieses Dokument ist **kein vollständiges GDD**, sondern eine **klare Vision und Systemorientierung für Entwicklung und technische Umsetzung**.
-
-Wenn dieses Dokument sowohl **Long-Term-Richtung** als auch **First-Playable-/MVP-Inhalte** beschreibt, haben für frühe Entwicklungsentscheidungen **First Playable und Kernloop** Vorrang.
+Das Spiel soll sich nicht wie ein normales Survival Game mit Fantasy-Skin anfühlen, sondern wie eine lebende Welt, in der der Spieler Portale kontrolliert, nutzt oder riskiert, um stärker zu werden.
 
 ---
 
 ## 2. High Concept
 
-Die Spielwelt ist eine düstere mittelalterliche Fantasy-Welt, die von **Portalen in fremde Reiche** bedroht wird.
+In einer dunklen mittelalterlichen Fantasy-Welt öffnen sich mysteriöse **Portale** in fremde Reiche. Aus ihnen treten Monster, seltene Ressourcen und instabile Magie aus.
 
-Diese Portale erscheinen dynamisch in der Welt und führen in gefährliche andere Dimensionen mit eigenen Gegnern, Ressourcen, Regeln und Bossen. Wenn der Spieler den Boss eines Portals besiegt, kann das Portal geschlossen werden. Bleiben Portale zu lange offen, kann es zu einem **Dungeon Break** kommen: Feinde und Korruption breiten sich in die Oberwelt aus und verändern Regionen aktiv.
+Wird ein Portal früh geschlossen, bleibt die Region sicherer, aber die Belohnung ist kleiner. Wird ein Portal ignoriert oder absichtlich wachsen gelassen, kann daraus ein **Dungeonbreak** entstehen: Die Bedrohung breitet sich aus, verändert die Umgebung, korrumpiert Ressourcen, spawnt stärkere Gegner und kann Bosse oder regionale Katastrophen erzeugen.
 
-Der Spieler sammelt Ressourcen, überlebt in der Welt, baut und verbessert seine Basis, entwickelt Waffen- und Runenfähigkeiten weiter und entscheidet, wie mit dieser Bedrohung umzugehen ist.
-
-**Wichtig:** Basisbau ist ein **funktionaler Hub und Ausdruck des Spielers**, aber **nicht die primäre Identität** des Spiels. Die Kernfantasie bleibt Kampf, Vorbereitung, Portalbedrohung und eine reagierende Welt.
+Der Spieler ist ein aufsteigender Überlebender, Dungeonjäger, Runenkrieger und magischer Handwerker. Er kämpft, sammelt, craftet, baut seine Ausrüstung aus, spezialisiert seinen Spielstil und beeinflusst den Zustand der Welt.
 
 ---
 
 ## 3. Core Vision Statement
 
-**Das Spiel soll sich anfühlen wie das Überleben und Meistern einer lebenden Welt, die durch Portale aktiv verändert wird.**
+**Der Spieler überlebt und meistert eine lebende Dark-Fantasy-Welt, in der Portale nicht nur Dungeons sind, sondern dynamische Bedrohungen, Chancen und Machtquellen.**
 
-Der Spieler soll nicht nur stärker werden, sondern die Welt verstehen, kontrollieren, stabilisieren oder bewusst riskanter machen, um bessere Belohnungen zu erhalten.
+Der Spieler soll nicht nur stärker werden, sondern lernen, die Weltbedrohung zu lesen, zu kontrollieren, zu stabilisieren oder bewusst riskanter zu machen, um bessere Belohnungen zu erhalten.
 
 ---
 
-## 4. Design-Ziele
+## 4. Kernfantasie
+
+Der Spieler erfüllt mehrere Fantasien:
+
+- Überlebender in einer feindlichen Fantasy-Welt
+- Dungeonjäger mit Solo-Leveling-Gefühl
+- Runenkrieger mit modularer Ausrüstung
+- magischer Handwerker und Ressourcenmeister
+- Portaljäger, der Risiken für bessere Beute abwägt
+- Beschützer, Manipulator oder Ausnutzer einer sich verändernden Welt
+
+---
+
+## 5. Design-Ziele
 
 ### Primäre Ziele
 
-- Combat soll direkt, präzise und belohnend sein.
-- Gathering und Crafting sollen befriedigend wirken und nicht wie Arbeit.
-- Survival soll Spannung erzeugen, aber nicht nerven.
-- Alte Ressourcen und Ausrüstung sollen auch im späteren Spiel relevant bleiben.
-- Die Welt soll dynamisch und reaktiv sein.
-- Builds aus Waffen, Magie und Runen sollen echten Spielstil-Unterschied erzeugen.
+- Combat soll direkt, präzise, lesbar und belohnend sein.
+- Portale und Dungeonbreaks sollen das strukturelle Herzstück bilden.
+- Gathering soll durch Magie und Runen aktiver und interessanter werden.
+- Progression soll natürlich durch Nutzung entstehen, aber echte Build-Entscheidungen bieten.
+- Runen sollen Spielstile verändern, nicht nur Zahlen erhöhen.
+- Ressourcen und Ausrüstung sollen langfristig relevant bleiben.
+- Die Welt soll dynamisch und reaktiv wirken.
 
 ### Sekundäre Ziele
 
-- Base Building als funktionaler Progressions-Hub
-- hohe Wiederspielbarkeit durch variable Welt- und Eventstruktur
-- gute technische Skalierbarkeit für spätere Content-Erweiterungen
+- Base Building als funktionaler Hub, nicht als primäre Identität.
+- hohe Wiederspielbarkeit durch variable Portal-, Welt- und Build-Strukturen.
+- technische Skalierbarkeit über Lyra/GAS/GameFeature-artige Modularität.
 
 ---
 
-## 5. Was das Spiel nicht sein soll
+## 6. Was das Spiel nicht sein soll
 
 - kein reines Soulslike
-- kein reines Sandbox-Bauspiel
 - kein MMO
-- keine überkomplexe Survival-Simulation mit permanentem Micromanagement
-- kein System, in dem Early-Game-Content schnell wertlos wird
-- kein Crafting-System, das nur linear höhere Tier-Stufen ersetzt
+- kein reines Sandbox-Bauspiel
+- keine überkomplexe Survival-Simulation
+- kein Crafting-System mit reiner Wegwerf-Tier-Progression
+- kein System, in dem Waffenwechsel bedeutet, wieder bei null anzufangen
+- kein Spiel, in dem Portale nur austauschbare Dungeon-Eingänge sind
 
-Zusätzlich gilt:
+Base Building soll Vorbereitung, Crafting und Rückkehrmotivation unterstützen, aber nicht die Kernidentität von Kampf, Portalbedrohung und Weltreaktion verdrängen.
 
-- Base Building soll das Spiel **unterstützen**, aber nicht die Kernidentität von Portalbedrohung, Kampf und Vorbereitung verdrängen.
-- Survival soll **Relevanz und Spannung** erzeugen, aber nicht als permanenter Strafmechanismus dominieren.
-- Progression soll **Optionen, Spezialisierung und Wiederverwendung** fördern, nicht nur lineare Ersetzung.
-
----
-
-## 6. Player Fantasy
-
-Der Spieler soll mehrere Fantasien gleichzeitig erfüllen können:
-
-- Überlebender in einer feindlichen dunklen Welt
-- Jäger von Portalbestien
-- Runenschmied / magischer Handwerker
-- Build-Crafter mit eigener Kampfweise
-- Entdecker gefährlicher Regionen und fremder Reiche
-- Verteidiger oder Manipulator einer sich wandelnden Welt
+Survival soll Spannung und Vorbereitung erzeugen, aber nicht durch permanentes Micromanagement nerven.
 
 ---
 
@@ -93,135 +90,302 @@ Der Spieler soll mehrere Fantasien gleichzeitig erfüllen können:
 ### Macro Loop
 
 1. Welt erkunden
-2. Ressourcen sammeln
-3. Crafting-Materialien verarbeiten
-4. Ausrüstung, Stationen, Runen und Build verbessern
-5. Portale / Dungeons / Events angehen
-6. Boss besiegen oder Event abschließen
+2. Ressourcen und Hinweise sammeln
+3. Ausrüstung, Runen, Skills und Basis vorbereiten
+4. Portal, Dungeonbreak oder gefährliche Region angehen
+5. Gegner besiegen, Boss/event abschließen oder Risiko eskalieren lassen
+6. Loot, Runen, Essenzen, Rezepte und Materialien sichern
 7. Weltzustand verändert sich
 8. neue Ziele, Gefahren und Chancen entstehen
 
 ### Micro Loop
 
-1. Vorbereitung in der Basis
+1. Vorbereitung im Hub / Lager / Basis
 2. Auszug in eine Region
-3. Ressourcen und Gegnerbegegnungen
-4. Loot, Essenzen, Rezepte oder Runen sichern
-5. Rückkehr zur Basis
-6. Verarbeitung und nächste Zielsetzung
+3. Kampf-, Gathering- und Eventbegegnungen
+4. Beute sichern
+5. Rückkehr und Verarbeitung
+6. Build verbessern
+7. nächste Bedrohung wählen
+
+### Kernloop in einem Satz
+
+**Kämpfen -> Looten -> Runen und Ausrüstung verbessern -> Portale kontrollieren -> Welt beeinflussen -> stärker werden.**
 
 ---
 
 ## 8. Design-Säulen
 
-### 8.1 Combat First
+## 8.1 Combat First
 
-Das Combat-System ist ein Hauptträger des Spiels.
+Combat ist einer der Hauptträger des Spiels.
 
 Wichtige Merkmale:
 
 - Nahkampf, Fernkampf und Magie
 - responsive Steuerung
 - klare Trefferreaktionen
-- Stagger- und Poise-System
-- Perfect Block / Parry als belohnender Skill-Moment
+- Stagger / Poise
+- Block, Perfect Block und Parry als Skill-Momente
 - Waffen mit eigenem Spielgefühl
-- aktive Skills und Combos über Weapon Mastery
+- aktive Skills und Combos über Mastery
+- Runen, die Waffenverhalten sichtbar verändern
 
-### 8.2 Survival Without Friction
-
-Survival soll relevant sein, aber den Spielfluss nicht ständig unterbrechen.
-
-Wichtige Merkmale:
-
-- Nahrung als Vorbereitung und Buff-System statt als Dauerpflicht
-- Temperatur, Korruption oder Umweltgefahren nur dort relevant, wo sie Spannung erzeugen
-- Rested-/Camp-/Basis-Boni als Motivation für Planung und Rückkehr
-
-### 8.3 Lasting Economy
-
-Ressourcen sollen langfristig Bedeutung behalten.
-
-Wichtige Merkmale:
-
-- Recycling / Scrapping alter Ausrüstung
-- Materialveredelung statt kompletter Entwertung alter Rohstoffe
-- Low- und Mid-Tier-Materialien bleiben in High-Tier-Rezepten nutzbar
-- alte Biome und Regionen behalten Wert
-
-### 8.4 Dynamic World Threat
-
-Die Welt ist kein statischer Hintergrund.
-
-Wichtige Merkmale:
-
-- Portale erscheinen dynamisch
-- offene Portale beeinflussen Regionen
-- Dungeon Breaks können Feinde in die Oberwelt bringen
-- Weltzustand verändert Ressourcen, Gegner, Risiko und Belohnungen
-
-### 8.5 Replayability Through Variation
-
-Wiederspielbarkeit entsteht durch Variation, nicht nur durch Grind.
-
-Wichtige Merkmale:
-
-- variable Weltstruktur oder hybride prozedurale Elemente
-- wechselnde Portaltypen und Eventkombinationen
-- unterschiedliche Build-Pfade
-- alternative Entscheidungen im Umgang mit Bedrohungen
+Ein guter Spieler soll durch Timing, Positionierung und Build-Synergien deutlich effektiver sein als durch reine Itemstärke.
 
 ---
 
-## 9. First Playable / Vertical Slice Priorität
+## 8.2 Portal Threat
 
-Die **erste Entwicklungspriorität** ist nicht maximale Systembreite, sondern der **kleinste starke Vertical Slice**, der die Identität des Spiels beweist.
+Portale sind das Herzstück der Weltbedrohung.
 
-### First Playable Fokus
+Portale können:
 
-- Third-Person Character Controller
-- Melee Combat mit Block / Perfect Block / Stagger
-- einfache Resource Nodes
-- Inventar und einfache Item-Datenstruktur
-- Craftingstation mit 2-3 Rezepten
-- Portal-Encounter mit Teleport in ein Sublevel
-- Boss-Encounter mit Portal-Close-State
-- rudimentäre Character- und Weapon-Progression
+- zufällig oder systemisch erscheinen
+- Gegner und Ressourcen hervorbringen
+- in fremde Dungeons/Subwelten führen
+- wachsen und eskalieren
+- Dungeonbreaks auslösen
+- Regionen gefährlicher oder wertvoller machen
 
-### Was der First Playable beweisen muss
+Die zentrale Entscheidung lautet:
 
-- macht der Kampf Spaß?
-- fühlt sich Gathering gut an?
-- ist der Portal-Loop spannend?
-- ergänzt Survival die Loop statt zu nerven?
-- funktioniert der Ressourcenkreislauf ohne Obsolescence?
+- Portal früh schließen = sicherer, weniger Belohnung
+- Portal wachsen lassen = gefährlicher, bessere Belohnung
 
-### Für den First Playable ausdrücklich nicht notwendig
+---
 
-- große Base-Building-Systeme
-- breite Waffen- oder Magiekataloge
-- komplexe NPC-Simulation
-- große Biome- und Endgame-Strukturen
-- tiefe Automatisierungs- oder Produktionsketten
-- maximale Systemtiefe in allen Bereichen gleichzeitig
+## 8.3 Dungeonbreak World Reaction
+
+Dungeonbreaks sind eskalierende Weltzustände.
+
+Mögliche Folgen:
+
+- stärkere Gegner
+- mutierte Tiere und Ressourcen
+- korrumpierte Zonen
+- verändertes Wetter oder Sicht
+- NPCs meiden die Region
+- Händler oder Wege werden blockiert
+- Elitegegner oder Weltbosse entstehen
+- seltene Materialien erscheinen
+
+Dungeonbreaks sollen Portale von Content-Containern zu echten Weltbedrohungen machen.
+
+---
+
+## 8.4 Runes as Utility Layer
+
+Runen sind nicht nur Schadensboni.
+
+Runen können beeinflussen:
+
+- Waffen
+- Rüstungen
+- Werkzeuge
+- Harvesting
+- Crafting
+- Portale
+- Schutzkreise
+- Movement
+- Dungeonbreak-Interaktion
+
+Beispiele:
+
+- Flammenrune: Waffe verursacht Feuerschaden oder Flächenbrand.
+- Echo-Rune: jeder dritte Angriff erzeugt einen Geisterschlag.
+- Instabilitätsrune: stärker in Dungeonbreak-Zonen.
+- Astralrune: magisches Werkzeug kehrt nach Wurf zurück.
+- Schutzrune: reduziert Korruption oder Portalwahnsinn.
+
+---
+
+## 8.5 Magical Harvesting
+
+Gathering soll sich nicht nur wie Axt und Spitzhacke anfühlen.
+
+Ressourcen sollen mit magischen Fähigkeiten und Runen gesammelt werden können.
+
+Beispiele:
+
+- **Stoneburst**: Felsen explodieren und legen Erz frei.
+- **Astral Axe**: magische Axt wird geworfen, trifft Bäume und kehrt zurück.
+- **Ore Sense**: zeigt versteckte Erzadern.
+- **Root Call**: zieht seltene Pflanzen oder Wurzeln hervor.
+- **Rift Extraction**: extrahiert instabile Kristalle aus Dungeonbreak-Zonen.
+
+Harvesting-Methoden sollen Entscheidungen bieten:
+
+- schnell, aber laut
+- langsam, aber präzise
+- riskant, aber hoher Ertrag
+- riftbasiert, aber korruptionsgefährlich
+
+---
+
+## 8.6 Survival Without Friction
+
+Survival soll vorbereitend und atmosphärisch sein.
+
+Statt permanenter Hunger-/Durst-Strafen stehen im Fokus:
+
+- Nahrung als Buff- und Vorbereitungssystem
+- Kälte, Hitze oder Wetter in relevanten Regionen
+- Erschöpfung
+- Verletzungen
+- Flüche
+- Korruption
+- Rift-Wahnsinn
+- magische Instabilität
+
+Survival soll Expeditionen spannender machen, aber den Spielfluss nicht ständig blockieren.
+
+---
+
+## 8.7 Lasting Economy
+
+Ressourcen sollen nicht wertlos werden.
+
+Regeln:
+
+- alte Ausrüstung kann zerlegt werden
+- Low- und Mid-Tier-Materialien bleiben in High-Tier-Rezepten relevant
+- Materialien können veredelt oder kombiniert werden
+- alte Regionen behalten Spezialressourcen
+- Runen, Upgrades und Crafting nutzen gemischte Materialstufen
+
+Ziel: keine toten Biome, keine toten Ressourcen, keine reine lineare Wegwerfprogression.
+
+---
+
+## 8.8 Replayability Through Variation
+
+Wiederspielwert entsteht durch:
+
+- unterschiedliche Builds
+- Runenkombinationen
+- variable Portalspawns
+- Dungeonbreak-Entscheidungen
+- wechselnde regionale Modifikatoren
+- verschiedene Harvesting-Methoden
+- Fraktionsentscheidungen
+- riskante vs sichere Portalstrategien
+
+---
+
+## 9. Progression und Skill-System
+
+Die bevorzugte Progression ist ein **Hybrid-System**:
+
+1. Skills steigen durch Aktivität.
+2. Grundfähigkeiten werden automatisch freigeschaltet.
+3. Bei Meilensteinen trifft der Spieler echte Entscheidungen.
+4. Runen und Ausrüstung formen den Build zusätzlich.
+
+### Warum Hybrid?
+
+Nur aktiver Skilltree wirkt künstlich, weil Nutzung und Fortschritt getrennt sind.
+
+Nur passives Use-Based-Leveling bietet zu wenig Entscheidungen und kann Waffenwechsel bestrafen.
+
+Das Ziel ist:
+
+**natürlicher Fortschritt durch Nutzung + bewusste Build-Identität durch Entscheidungen.**
+
+---
+
+## 9.1 Mastery statt Waffen-Reset
+
+Waffenwechsel darf sich nicht wie ein Neustart anfühlen.
+
+Statt isolierter Waffenlevel:
+
+```text
+Schwert Level 20
+Axt Level 1
+Speer Level 1
+```
+
+besser:
+
+```text
+Melee Mastery Level 20
+One-Handed Mastery Level 14
+Sword Familiarity Level 6
+```
+
+Empfohlene Gewichtung:
+
+```text
+70% allgemeine Mastery
+20% Stil-/Kategorie-Mastery
+10% Waffen-Familiarity
+```
+
+Beispiel:
+
+Wenn der Spieler von Schwert auf Axt wechselt, bleiben `Melee Mastery` und `One-Handed Mastery` erhalten. Nur kleine Sword-spezifische Boni fehlen.
+
+---
+
+## 9.2 Skillgruppen
+
+Langfristig mögliche Skillgruppen:
+
+- Combat / Melee
+- Archery
+- Magic
+- Runecrafting
+- Magical Harvesting
+- Portal Hunting
+- Survival
+
+Für den First Playable reichen reduzierte Gruppen:
+
+- Combat
+- Magic oder Rune Skill
+- Magical Harvesting
+- Portal Hunting in Minimalform
+
+---
+
+## 9.3 Beispiel-Progression
+
+### Combat Mastery
+
+- Level 1: Light Attack
+- Level 3: Heavy Attack
+- Level 5: Wahl zwischen schneller Angriff, stärkerer Stagger oder besserer Block
+- Level 10: Wahl zwischen One-Handed, Two-Handed oder Shield Focus
+- Level 20: Ascension wie Blade Dancer, Rune Knight oder Warbreaker
+
+### Magic Mastery
+
+- Level 1: Arcane Spark
+- Level 3: Fireball oder erster Elementarzauber
+- Level 5: Wahl zwischen Burn, geringeren Manakosten oder DamageArea
+- Level 10: Battlemage, Scholar oder Rift Adept
+
+### Magical Harvesting
+
+- Level 1: Stoneburst
+- Level 3: Astral Axe
+- Level 5: Wahl zwischen mehr Ertrag, schnellerem Harvesting oder selteneren Materialien
+- Level 10: Miner, Forager oder Arcane Lumberjack
+
+### Portal Hunting
+
+- Level 1: Rift Sense
+- Level 3: kleines Portal schließen
+- Level 5: Wahl zwischen schneller schließen, mehr Loot bei Risiko oder Portalmodifikatoren erkennen
 
 ---
 
 ## 10. Kernsysteme
 
-Die folgenden Systeme beschreiben die **gewünschte Richtung** des Projekts.  
-Sie sind **nicht alle vollständig für den First Playable erforderlich** und können in reduzierter Form beginnen.
+## 10.1 Combat
 
-## 10.1 Combat System
-
-### Ziele
-
-- direkte Kontrolle
-- hohes Trefferfeedback
-- defensive Skill-Momente mit offensiver Belohnung
-- Hybrid-Builds unterstützen
-
-### Kernmechaniken
+Kernmechaniken:
 
 - Light Attack
 - Heavy Attack
@@ -229,436 +393,267 @@ Sie sind **nicht alle vollständig für den First Playable erforderlich** und k�
 - Dodge / Evade
 - Block
 - Perfect Block / Parry
-- Stagger
+- Stagger / Poise
 - Weakpoint Damage
 - Status Effects
 - Weapon Skills
 - Rune Skills
 
-### Combat-Prinzip
-
-Ein guter Spieler soll durch Timing, Positionierung und Build-Synergien deutlich effektiver sein als durch reine Itemstärke.
-
-### Beispiel
-
-Perfect Block gegen geeigneten Angriff erzeugt ein kurzes Stagger-Fenster. Innerhalb dieses Fensters verursachen bestimmte Waffen-Skills oder Combos erhöhten Schaden oder spezielle Reaktionen.
+Combat soll über GAS/Abilities/Effects/Tags datengetrieben und modular umgesetzt werden.
 
 ---
 
-## 10.2 Weapon Mastery
+## 10.2 Waffen und Equipment
 
-Jede Waffenklasse besitzt einen eigenen Fortschritt und Skillbaum.
+Waffen sollen sich stark unterscheiden, aber nicht zu harten Progression-Silos werden.
 
-### Ziele
+Nutzung:
 
-- Waffen sollen sich stark voneinander unterscheiden
-- Skilltrees sollen Spielstil ändern, nicht nur Zahlen erhöhen
-- Freischaltungen sollen neue Skills, Combos, Passives und Rollen bieten
+- WeaponTypeTag für melee/ranged/magic
+- WeaponFamilyTag für sword/axe/spear/bow/staff
+- EquipmentTraitTags für block, parry, charge, rune socket, harvesting, utility
 
-### Beispielhafte Waffenklassen
-
-- Schwert
-- Schwert + Schild
-- Zweihandwaffe
-- Axt
-- Speer
-- Bogen
-- Stab / Fokuswaffe
-
-### Erwartete Inhalte pro Waffenklasse
-
-- Basiskombo
-- Spezialskill 1
-- Spezialskill 2
-- passiver Pfad
-- Mastery-Fähigkeiten
-- Upgrade-/Variantensynergien
-
-**Hinweis:** Für den First Playable reicht eine deutlich reduzierte Version mit sehr wenigen Waffenklassen und minimaler Mastery-Tiefe.
+Waffen, Runen und Affixe sollen später gemeinsam Ability Grants, GameplayEffects und GameplayTags beitragen können.
 
 ---
 
 ## 10.3 Magie
 
-Magie ist nicht nur ein Kampfwerkzeug, sondern ein System für Kampf, Utility und Weltinteraktion.
-
-### Rollen der Magie
+Magie hat drei Rollen:
 
 1. Combat Magic
 2. Utility Magic
 3. World Magic
 
-### Beispiele
+Beispiele:
 
 - Projektilzauber
 - Crowd Control
 - Waffenverzauberung
-- Erzschmelzen beschleunigen
 - Ressourcen aufspüren
-- Portale analysieren oder stabilisieren
+- Erz/Felsen beeinflussen
+- Portale analysieren
 - Korruption reinigen oder nutzen
-
-**Hinweis:** Diese Rollen beschreiben die Zielrichtung. Frühe Versionen dürfen mit einer kleinen, klaren Auswahl beginnen.
 
 ---
 
 ## 10.4 Runensystem
 
-Das Runensystem ist ein zentrales Alleinstellungsmerkmal.
+Runen sind ein zentrales Alleinstellungsmerkmal.
 
-### Ziele
+Kategorien:
 
-- Runen sollen Gathering, Crafting, Combat und Weltinteraktion verbessern
-- Runen sollen modular, upgradebar und kombinierbar sein
-- Runen sollen neue Problemlösungen ermöglichen statt nur Schadenszauber zu sein
+- Combat Runes
+- Tool Runes
+- Armor Runes
+- World Runes
+- Rift Runes
 
-### Kategorien
+Runen können:
 
-#### Tool Runes
-
-- Baumfällen effizienter
-- Erzabbau beschleunigen
-- Ressourcen einsammeln
-- Schmelzprozesse verstärken
-
-#### Combat Runes
-
-- Burst-Fähigkeiten
-- Movement-Skills
-- Crowd Control
-- Elementeffekte
-
-#### World Runes
-
-- Schutzkreise
-- Portalkontrolle
-- Wetter- oder Korruptionsinteraktion
-- Basisverstärkung
-
-### Beispielideen
-
-- Astralaxt: geworfenes Werkzeug für mehrere Bäume
-- Seismischer Schlag: bricht Erzadern oder Steinflächen
-- Glutzeichen: beschleunigt Ofen oder Schmelze
-- Aetherzug: zieht Drops und Ressourcen in Radius an
-
-**Wichtige Produktaussage:** Runen sind nicht nur Kampfskills, sondern eine **systemübergreifende Problemlösungs- und Utility-Ebene** für Gathering, Crafting, Reisen und Weltkontrolle.
+- GameplayEffects geben
+- GameplayAbilities freischalten
+- GameplayTags hinzufügen
+- Proc-Effekte auslösen
+- Harvesting verändern
+- Portalinteraktion erlauben
 
 ---
 
-## 10.5 Gathering
+## 10.5 Portale
 
-Gathering muss befriedigend und ruhig lesbar sein.
+Portal-Stufen können sein:
 
-### Ziele
+1. Dormant / Öffnend
+2. Active Portal
+3. Instabile Zone
+4. Dungeonbreak
+5. Regionale Katastrophe
+6. Geschlossen / Stabilisiert
 
-- gute audiovisuelle Rückmeldung
-- effiziente Tools und Rune-Synergien
-- kein ständiges Unterbrechen durch übermäßige Aggro
-- Skill- und Fortschrittsgefühl beim Sammeln
-
-### Design-Prinzipien
-
-- Mining / Logging / Harvesting sollen eigene Fortschrittswerte haben
-- Schwachstellen oder Timing-Elemente können Yield verbessern
-- Gefahr entsteht eher durch regionale Bedrohung und Lärmaufbau statt durch permanentes Spawnen von Feinden
+Portale können Gegner spawnen, Dungeonzugänge öffnen, Belohnungen geben und Weltwerte verändern.
 
 ---
 
-## 10.6 Crafting & Verarbeitung
+## 10.6 Dungeonbreaks
 
-Crafting soll eine zentrale Langzeitmotivation sein.
+Ein Dungeonbreak ist die Eskalation eines Portals in der Oberwelt.
 
-### Stationen
+Regionen können Werte besitzen wie:
+
+- SecurityLevel
+- RiftInstability
+- FactionControl
+- ResourceMutation
+- NPCPopulation
+- BossThreatLevel
+
+Diese Werte beeinflussen Gegner, Ressourcen, Händler, NPCs und Risiko/Belohnung.
+
+---
+
+## 10.7 Crafting und Verarbeitung
+
+Crafting ist langfristige Motivation und Vorbereitungsloop.
+
+Mögliche Stationen:
 
 - Werkbank
 - Schmiede
 - Schmelze
-- Gerberei
 - Küche
 - Alchemietisch
 - Runenschrein
 - Verzauberungsaltar
 
-### Ziele
-
-- sichtbarer Fortschritt durch Stations-Upgrades
-- Materialveredelung statt harter Tier-Ersetzung
-- Ressourcenrecycling
-- optionale magische Beschleunigung oder Veredelung
-
-### Beispielideen
-
-- Magie kann Schmelzprozesse beschleunigen
-- Runen können Materialverlust senken
-- Upgrades schalten neue Konvertierungen frei
-- Endgame-Rezepte benötigen weiterhin frühere Materialien in veredelter Form
-
-**Hinweis:** Nicht alle Stationen sind früh notwendig. Der First Playable darf mit einer kleinen Teilmenge beginnen.
+Für den MVP reichen wenige Stationen und wenige Rezepte.
 
 ---
 
-## 10.7 Ressourcensystem / Anti-Obsolescence
+## 10.8 Basis / Hub
 
-Eines der wichtigsten Designziele ist die Vermeidung wertloser Inhalte.
+Die Basis ist:
 
-### Regeln
-
-- Alte Ausrüstung kann zerlegt werden
-- Zerlegte Ausrüstung gibt Basismaterialien teilweise zurück
-- Niedrigere Materialien können veredelt oder in Rezepte eingebunden werden
-- High-Tier-Rezepte nutzen gemischte Materialstufen
-- Regionen behalten durch Spezialmaterialien langfristigen Wert
-
-### Ziele
-
-- keine toten Ressourcen
-- keine toten Biome
-- kontinuierlicher Nutzen alter Inhalte
-
----
-
-## 10.8 Survival
-
-Survival soll Vorbereitung vertiefen, nicht bestrafen.
-
-### Gewünschte Philosophie
-
-- Survival erzeugt Relevanz
-- Survival unterbricht nicht permanent
-- Buff-orientierter statt Straf-orientierter Ansatz
-
-### Beispiele
-
-- Essen erhöht Werte und Regeneration, leerer Magen macht ineffizient, aber nicht sofort hilflos
-- Wetter oder Kälte sind in manchen Regionen relevant
-- Korruption wird in bestimmten Zonen oder Portalen zum Vorbereitungsthema
-- Basis und Lagerfeuer geben starke Rückkehr- und Ruhe-Boni
-
----
-
-## 10.9 Portale und Dungeon Breaks
-
-Portale sind das strukturelle Herzstück des Spiels.
-
-### Portal-Funktion
-
-- erscheinen in der Oberwelt
-- führen in fremde Subwelten / Dungeons
-- besitzen eigene Gegner, Materialien und Bosse
-- können geschlossen oder eventuell kontrolliert werden
-
-### Dungeon Break
-
-Wenn ein Portal zu lange offen bleibt oder bestimmte Bedingungen erfüllt, bricht dessen Bedrohung in die Oberwelt über.
-
-### Folgen eines Dungeon Breaks
-
-- stärkere Feinde in betroffener Region
-- veränderte Umweltbedingungen
-- korrumpierte Ressourcen oder neue seltene Drops
-- höheres Risiko, aber höhere Belohnungen
-
-### Ziel
-
-Portale sollen nicht nur Content-Container sein, sondern aktiv auf die Welt zurückwirken.
-
----
-
-## 10.10 Basis / Hub
-
-Base Building ist optionaler Ausdruck, aber funktional zentral.
-
-### Rolle der Basis
-
+- sicherer Vorbereitungsort
 - Crafting-Hub
-- Verarbeitungszentrum
-- sichere Vorbereitung
-- Lagerung
+- Lager
 - Buff-Quelle
-- Verteidigungsraum gegen Weltbedrohung
+- funktionaler Rückkehrpunkt
+- später Verteidigungsort gegen Weltbedrohungen
 
-### Design-Prinzipien
-
-- Stationen und Upgrades klar sichtbar
-- Basis bietet spielrelevante Vorteile
-- dekoratives Bauen möglich, aber nicht alleiniger Fokus
-
-**Klarstellung:** Die Basis ist wichtig als **Hub, Vorbereitungsraum und funktionaler Fortschrittsort**, aber sie soll das Spiel **nicht** in Richtung eines primären Base-Building-Sandbox-Games verschieben.
+Sie ist wichtig, aber nicht die primäre Spielidentität.
 
 ---
 
-## 11. Weltstruktur
+## 11. Fraktionen
 
-Die Welt soll möglichst stark nach Open World wirken, aber technisch kontrollierbar bleiben.
+Mögliche Fraktionen:
 
-### Empfohlene Richtung
+- Königliche Gilde: Ordnung und Portalschließung
+- Runenschmiede: Forschung und Runenverbesserung
+- Jägerorden: Monsterjagd und Bossbelohnungen
+- Druidenzirkel: Natur und Korruptionsheilung
+- Risskultisten: riskante Portalnutzung und Machtgewinn
 
-**Hybrid aus handgebauter Welt und variablen/prozeduralen Elementen**
-
-### Handgebaut
-
-- Biome
-- Hauptorte
-- Landmarken
-- Lore-relevante Zonen
-- wichtige Bossräume
-
-### Variabel
-
-- Portalspawns
-- Eventspawns
-- Ressourcencluster
-- Elite-Begegnungen
-- regionale Modifikatoren
-- Wetter- oder Korruptionsereignisse
-
-### Warum
-
-Vollständige prozedurale Generierung erhöht Wiederspielwert, aber auch Entwicklungsrisiko und Komplexität stark. Eine hybride Struktur ist realistischer und kontrollierbarer.
-
-**Leitsatz:** Das Spiel soll sich für den Spieler wie eine Open World anfühlen, auch wenn Portalplatzierung, Eventverteilung und Weltvariation systemisch gesteuert werden.
+Fraktionen können Quests, Belohnungen, Weltzustände und Spezialisierungen beeinflussen.
 
 ---
 
-## 12. Wiederspielwert
+## 12. First Playable / Vertical Slice
 
-Wiederspielbarkeit entsteht durch Kombination mehrerer Faktoren:
+Die erste Entwicklungspriorität ist ein kleiner, starker Vertical Slice.
 
-- unterschiedliche Builds
-- wechselnde Portale und Weltzustände
-- variable Ressourcenverteilung
-- veränderliche Bedrohungszonen
-- alternative Prioritäten zwischen Risiko, Kontrolle und Expansion
+### First Playable muss beweisen
 
-### Ziel
-
-Jeder Spieldurchlauf soll ein anderes strategisches Gefühl erzeugen, ohne die Kernidentität zu verlieren.
-
----
-
-## 13. Technische Leitidee für Umsetzung
-
-### Engine
-
-Unreal Engine
-
-### Bestehende Grundlage
-
-Projekt im Lyra-Stil mit GAS als Kern für Fähigkeiten und Statussysteme.
-
-### Architektur-Ziele
-
-- modular erweiterbare Ability- und Combat-Struktur
-- datengetriebene Waffen, Runen, Gegner und Rezepte
-- Welt-Events als systemische Trigger statt harte Scripte, wo sinnvoll
-- gute Grundlage für spätere Content-Skalierung
-
-### Geeignete Systemaufteilung
-
-- Combat über GAS-Abilities, Effects und Tags
-- Weapon Mastery datengetrieben über Skillnodes / Unlocks
-- Portale als World Events / Encounter Definitions
-- Crafting-Rezepte datengetrieben
-- Ressourcen- und Stationssystem modular
-- Runen als Equipment/Ability-Hybrid
-
----
-
-## 14. Prioritäten für frühe Entwicklung
-
-### Fokus für Vertical Slice
-
-1. Combat-Grundgefühl
-2. Gathering + Crafting Loop
-3. eine funktionierende Basis / Hub-Struktur
-4. ein Portal mit Boss und Abschlusszustand
-5. erste Progression über Weapon Mastery oder Rune-System
-
-### Was zuerst bewiesen werden muss
-
-- macht der Kampf Spaß?
-- fühlt sich Gathering gut an?
-- ist der Portal-Loop spannend?
-- ergänzt Survival die Loop statt zu nerven?
-- funktioniert der Ressourcenkreislauf ohne Obsolescence?
-
----
-
-## 15. MVP-Empfehlung
+- fühlt sich der Kampf gut an?
+- funktioniert Equipment + Ability Grants?
+- fühlt sich Gathering besser an als reines Tool-Spammen?
+- ist ein Portal-Encounter spannend?
+- ist die erste Progression motivierend?
+- passt Survival als Vorbereitung statt als Frust?
 
 ### MVP-Inhalt
 
-- 1 kleine Open-World-Region
-- 1 Basis-Hub
-- 3-4 Ressourcenarten
-- 2-3 Craftingstationen
-- 2 Waffenklassen
-- 1 Magietyp
-- 2-3 Runen
-- 3 normale Gegner
-- 1 Elite-Gegner
-- 1 Portaltyp
-- 1 Boss
-- rudimentäres Recycling-System
+- Third-Person Character
+- Basis-Combat mit Attack, Block, Perfect Block oder Stagger
+- ein einfacher Gegner
+- XP / Mastery-Fortschritt
+- einfache Item-/Equipment-Struktur
+- ein Portal, das Gegner spawnt oder in Sublevel führt
+- ein Portalabschluss oder Bosszustand
+- eine Rune, die eine Waffe sichtbar verändert
+- eine magische Harvesting-Fähigkeit wie Stoneburst
+- 2-3 Ressourcen
+- 1-2 Craftingstationen
 
-### Zweck des MVP
+### Nicht früh notwendig
 
-Nicht Content-Menge beweisen, sondern die Kernidentität des Spiels.
-
----
-
-## 16. USP / Alleinstellungsmerkmale
-
-### 1. Portale verändern die Oberwelt aktiv
-
-Portale sind nicht nur Dungeons, sondern Bedrohungsquellen mit Weltwirkung.
-
-### 2. Runen als echtes Utility-System
-
-Runen sind nicht nur Combat-Fähigkeiten, sondern eine systemübergreifende Ebene für Gathering, Crafting, Reisen und Weltkontrolle.
-
-### 3. Keine toten Ressourcen
-
-Die Ökonomie des Spiels ist auf Wiederverwertung, Veredelung und Langzeitrelevanz ausgelegt.
-
-### 4. Survival ohne ständigen Frust
-
-Survival ist spürbar, aber nicht als permanenter Strafmechanismus gestaltet.
+- große Open World
+- großes Base Building
+- viele Waffenklassen
+- komplexe Fraktionen
+- vollständige Dungeonbreak-Simulation
+- breite Magiekataloge
+- Endgame
 
 ---
 
-## 17. Kurzfassung für Coding Agent
+## 13. Technische Leitidee
 
-### Ziel
+Engine: Unreal Engine mit Lyra-/GAS-orientierter Architektur.
 
-Baue ein modulares Survival Action RPG mit Fokus auf Combat, Crafting, Portale und nachhaltige Progression.
+Leitlinien:
 
-### Prioritätsregel
+- Combat über GameplayAbilities, GameplayEffects, GameplayCues und Tags
+- Equipment als Quelle für aggregierte Ability Grants und Effekte
+- Runen als Equipment/Ability/Effect-Hybrid
+- Progression über datengetriebene Mastery, Skillnodes und AbilitySets
+- Portale als datengetriebene World Events / Encounter Definitions
+- Crafting und Ressourcen datengetrieben
+- modulare GameFeatures für größere Systeme
 
-Wenn Long-Term-Ideen und First-Playable-Umfang kollidieren, priorisiere **den kleinsten spaßigen, lesbaren, modularen Vertical Slice**, der die Kernidentität des Spiels beweist.
+Mögliche GameFeature-Aufteilung:
 
-### First Playable Anforderungen
+- `GF_Combat_Core`
+- `GF_Combat_Magic`
+- `GF_Combat_Ranged`
+- `GF_Runes_Core`
+- `GF_Runes_Elemental`
+- `GF_Runes_Rift`
+- `GF_Portals_Core`
+- `GF_Dungeonbreak_System`
+- `GF_Harvesting_Magic`
+- `GF_Progression`
+- `GF_WorldState`
+- `GF_AI_RiftMonsters`
 
-- Third-Person Character Controller
-- Melee Combat mit Block / Perfect Block / Stagger
-- einfache Resource Nodes zum Abbauen
-- Inventar und einfache Item-Datenstruktur
-- Craftingstation mit 2-3 Rezepten
-- Portal-Encounter mit Teleport in Sublevel
-- Boss-Encounter mit Portal-Close-State
-- rudimentäre Character- und Weapon-Progression
-
-### Entwicklungsprinzipien
-
-- Systeme modular halten
-- datengetrieben arbeiten
-- zuerst Fun und Lesbarkeit beweisen, dann skalieren
-- keine unnötige Komplexität früh einbauen
-- Features so bauen, dass spätere Runen, Waffen, Portale und Rezepte leicht ergänzt werden können
+Für Prototyping darf funktionaler Code temporär im Core liegen, wenn GameFeature-Referenzen die Iteration behindern. Solche Assets sollten klar als Base/Prototype markiert werden.
 
 ---
 
-## 18. Ein-Satz-Vision
+## 14. USP
 
-**Ein Dark-Fantasy Survival RPG, in dem Spieler in einer durch Portale bedrohten Welt überleben, kämpfen, craften und eine dynamische Bedrohung kontrollieren, während nahezu jedes System langfristig relevant bleibt.**
+### 1. Portale verändern die Oberwelt
+
+Portale sind nicht nur Dungeons, sondern dynamische Bedrohungen mit Weltwirkung.
+
+### 2. Dungeonbreak Risiko/Belohnung
+
+Der Spieler entscheidet, ob er Bedrohungen früh kontrolliert oder für bessere Beute eskalieren lässt.
+
+### 3. Runen als Utility-System
+
+Runen verbessern nicht nur Combat, sondern auch Gathering, Crafting, Reisen und Weltkontrolle.
+
+### 4. Magisches Harvesting
+
+Ressourcen werden über Fähigkeiten, Runen und Risiken gesammelt statt nur über Axt/Spitzhacke.
+
+### 5. Progression ohne Waffenwechsel-Frust
+
+Use-Based Mastery gibt natürliches Wachstum, aber übergeordnete Masteries verhindern den Neustart bei jedem Waffenwechsel.
+
+---
+
+## 15. Kurzfassung für Coding Agent
+
+Baue ein modulares Dark-Fantasy Open-World Survival Action RPG mit starkem Combat, Portalen, Dungeonbreaks, Runen, magischem Harvesting und nachhaltiger Progression.
+
+Priorisiere den kleinsten spaßigen Vertical Slice:
+
+- kämpfen
+- Schaden anwenden
+- Gegner töten
+- XP/Mastery erhalten
+- einfache Waffe ausrüsten
+- Rune oder Ability-Grant testen
+- Portal begegnen und schließen
+- Ressource per magischer Ability sammeln
+
+Wenn Long-Term-Vision und MVP kollidieren, priorisiere immer den kleinsten lesbaren, spielbaren, modularen Kernloop.
+
+---
+
+## 16. Ein-Satz-Vision
+
+**Ein Dark-Fantasy Survival Action RPG, in dem Spieler durch Kampf, Runen, magisches Harvesting und kluge Portalentscheidungen eine lebende Welt meistern, deren Bedrohung aktiv eskaliert oder stabilisiert werden kann.**
