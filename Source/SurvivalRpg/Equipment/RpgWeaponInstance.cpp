@@ -2,6 +2,35 @@
 
 #include "SurvivalRpg/GameplayTags/RpgGameplayTags.h"
 
+FRpgWeaponAttackDefinition::FRpgWeaponAttackDefinition()
+{
+	TracePointSockets.Add(TEXT("blade_base"));
+	TracePointSockets.Add(TEXT("blade_mid"));
+	TracePointSockets.Add(TEXT("blade_tip"));
+}
+
+bool FRpgWeaponAttackDefinition::HasValidTraceData() const
+{
+	if (TracePointSockets.Num() < 2 || TraceSampleInterval <= 0.0f)
+	{
+		return false;
+	}
+
+	switch (TraceMode)
+	{
+	case ERpgWeaponAttackTraceMode::LineTrace:
+		return !bTraceBetweenSockets || TraceInterpolationDistance > 0.0f;
+	case ERpgWeaponAttackTraceMode::SphereSweep:
+		return TraceRadius > 0.0f;
+	case ERpgWeaponAttackTraceMode::CapsuleSweep:
+		return TraceRadius > 0.0f && TraceCapsuleHalfHeight > 0.0f;
+	case ERpgWeaponAttackTraceMode::BoxSweep:
+		return TraceBoxExtent.GetAbsMin() > 0.0f;
+	default:
+		return false;
+	}
+}
+
 bool FRpgConditionalAttackModifier::MatchesTargetTags(const FGameplayTagContainer& TargetTags) const
 {
 	if (!TargetTags.HasAll(RequiredTargetTags))
@@ -88,11 +117,9 @@ void URpgWeaponInstance::ConfigureAttackByTagName(
 	UAnimMontage* Montage,
 	TSubclassOf<UGameplayEffect> DamageEffect,
 	float Damage,
-	float DamageTraceDelay,
-	float TraceDistance,
 	float TraceRadius,
-	FName TraceStartSocket,
-	FName TraceEndSocket,
+	const TArray<FName>& TracePointSockets,
+	float TraceSampleInterval,
 	TSubclassOf<URpgCameraMode> CameraMode,
 	FName HitReactionEventTagName)
 {
@@ -106,11 +133,9 @@ void URpgWeaponInstance::ConfigureAttackByTagName(
 	AttackDefinition.Montage = Montage;
 	AttackDefinition.DamageEffect = DamageEffect;
 	AttackDefinition.Damage = Damage;
-	AttackDefinition.DamageTraceDelay = DamageTraceDelay;
-	AttackDefinition.TraceDistance = TraceDistance;
 	AttackDefinition.TraceRadius = TraceRadius;
-	AttackDefinition.TraceStartSocket = TraceStartSocket;
-	AttackDefinition.TraceEndSocket = TraceEndSocket;
+	AttackDefinition.TracePointSockets = TracePointSockets;
+	AttackDefinition.TraceSampleInterval = TraceSampleInterval;
 	AttackDefinition.CameraMode = CameraMode;
 	AttackDefinition.HitReactionEventTag = HitReactionEventTagName.IsNone() ? FGameplayTag() : FGameplayTag::RequestGameplayTag(HitReactionEventTagName);
 }
@@ -121,11 +146,9 @@ void URpgWeaponInstance::ConfigureMeleeAttackByTagName(
 	TSubclassOf<UGameplayEffect> DamageEffect,
 	float Damage,
 	float StaggerDamage,
-	float DamageTraceDelay,
-	float TraceDistance,
 	float TraceRadius,
-	FName TraceStartSocket,
-	FName TraceEndSocket,
+	const TArray<FName>& TracePointSockets,
+	float TraceSampleInterval,
 	TSubclassOf<URpgCameraMode> CameraMode,
 	FName HitReactionEventTagName)
 {
@@ -134,11 +157,9 @@ void URpgWeaponInstance::ConfigureMeleeAttackByTagName(
 		Montage,
 		DamageEffect,
 		Damage,
-		DamageTraceDelay,
-		TraceDistance,
 		TraceRadius,
-		TraceStartSocket,
-		TraceEndSocket,
+		TracePointSockets,
+		TraceSampleInterval,
 		CameraMode,
 		HitReactionEventTagName);
 

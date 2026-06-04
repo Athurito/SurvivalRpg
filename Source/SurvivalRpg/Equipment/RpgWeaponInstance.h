@@ -9,6 +9,15 @@
 
 class UAnimMontage;
 
+UENUM(BlueprintType)
+enum class ERpgWeaponAttackTraceMode : uint8
+{
+	LineTrace,
+	SphereSweep,
+	CapsuleSweep,
+	BoxSweep
+};
+
 USTRUCT(BlueprintType)
 struct FRpgConditionalAttackModifier
 {
@@ -55,20 +64,29 @@ struct FRpgWeaponAttackDefinition
 	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Damage")
 	TArray<FRpgConditionalAttackModifier> ConditionalModifiers;
 
-	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Trace", meta = (ClampMin = "0.0"))
-	float DamageTraceDelay = 0.18f;
+	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Trace")
+	ERpgWeaponAttackTraceMode TraceMode = ERpgWeaponAttackTraceMode::LineTrace;
 
-	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Trace", meta = (ClampMin = "0.0"))
-	float TraceDistance = 175.0f;
+	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Trace")
+	bool bTraceBetweenSockets = true;
+
+	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Trace", meta = (ClampMin = "1.0", EditCondition = "bTraceBetweenSockets"))
+	float TraceInterpolationDistance = 12.0f;
 
 	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Trace", meta = (ClampMin = "1.0"))
-	float TraceRadius = 45.0f;
+	float TraceRadius = 12.0f;
+
+	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Trace", meta = (ClampMin = "1.0"))
+	float TraceCapsuleHalfHeight = 24.0f;
 
 	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Trace")
-	FName TraceStartSocket = TEXT("hand_r");
+	FVector TraceBoxExtent = FVector(12.0f, 12.0f, 12.0f);
 
 	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Trace")
-	FName TraceEndSocket = NAME_None;
+	TArray<FName> TracePointSockets;
+
+	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Trace", meta = (ClampMin = "0.001", ForceUnits = "s"))
+	float TraceSampleInterval = 0.016f;
 
 	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Camera")
 	TSubclassOf<URpgCameraMode> CameraMode;
@@ -76,7 +94,9 @@ struct FRpgWeaponAttackDefinition
 	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Events", meta = (Categories = "GameplayEvent"))
 	FGameplayTag HitReactionEventTag;
 
+	FRpgWeaponAttackDefinition();
 	bool CanApplyDamage() const { return DamageEffect && (Damage > 0.0f || StaggerDamage > 0.0f); }
+	bool HasValidTraceData() const;
 };
 
 USTRUCT(BlueprintType)
@@ -191,11 +211,9 @@ public:
 		UAnimMontage* Montage,
 		TSubclassOf<UGameplayEffect> DamageEffect,
 		float Damage,
-		float DamageTraceDelay,
-		float TraceDistance,
 		float TraceRadius,
-		FName TraceStartSocket,
-		FName TraceEndSocket,
+		const TArray<FName>& TracePointSockets,
+		float TraceSampleInterval,
 		TSubclassOf<URpgCameraMode> CameraMode,
 		FName HitReactionEventTagName);
 
@@ -206,11 +224,9 @@ public:
 		TSubclassOf<UGameplayEffect> DamageEffect,
 		float Damage,
 		float StaggerDamage,
-		float DamageTraceDelay,
-		float TraceDistance,
 		float TraceRadius,
-		FName TraceStartSocket,
-		FName TraceEndSocket,
+		const TArray<FName>& TracePointSockets,
+		float TraceSampleInterval,
 		TSubclassOf<URpgCameraMode> CameraMode,
 		FName HitReactionEventTagName);
 

@@ -6,7 +6,7 @@
 #include "RpgGameplayAbility_BasicWeaponAttack.generated.h"
 
 class UAbilityTask_PlayMontageAndWait;
-class UAbilityTask_WaitDelay;
+class UAbilityTask_WaitGameplayEvent;
 class UAbilitySystemComponent;
 
 /**
@@ -45,7 +45,10 @@ protected:
 		bool bWasCancelled) override;
 
 	UFUNCTION()
-	void OnTraceDelayFinished();
+	void OnAttackWindowStarted(FGameplayEventData Payload);
+
+	UFUNCTION()
+	void OnAttackWindowEnded(FGameplayEventData Payload);
 
 	UFUNCTION()
 	void OnMontageFinished();
@@ -55,11 +58,29 @@ protected:
 
 private:
 	FGameplayTag ResolveAttackDefinitionTag(const FGameplayAbilitySpecHandle Handle, const FGameplayAbilityActorInfo* ActorInfo) const;
-	const FRpgWeaponAttackDefinition* GetAttackDefinitionFromEquipment() const;
 	bool TryGetSocketLocationFromWeapon(const URpgWeaponInstance* WeaponInstance, FName SocketName, FVector& OutLocation) const;
 	bool TryGetSocketLocationFromAvatar(FName SocketName, FVector& OutLocation) const;
-	void ResolveTrace(FVector& OutStart, FVector& OutEnd) const;
-	void PerformDamageTrace();
+	bool GatherTracePointLocations(TArray<FVector>& OutLocations) const;
+	void BuildInterpolatedTracePointPairs(
+		const TArray<FVector>& PreviousSocketLocations,
+		const TArray<FVector>& CurrentSocketLocations,
+		TArray<FVector>& OutPreviousTraceLocations,
+		TArray<FVector>& OutCurrentTraceLocations) const;
+	void OpenAttackWindow();
+	void CloseAttackWindow(bool bLogMissingEndNotify);
+	void PerformBladeTraceSample();
+	void BuildTraceQueryParams(FCollisionQueryParams& QueryParams) const;
+	void PerformLineTraceRibbon(
+		const TArray<FVector>& PreviousSocketLocations,
+		const TArray<FVector>& CurrentSocketLocations,
+		const FCollisionQueryParams& QueryParams);
+	void PerformSweepTraceRibbon(
+		const TArray<FVector>& PreviousSocketLocations,
+		const TArray<FVector>& CurrentSocketLocations,
+		const FCollisionQueryParams& QueryParams);
+	void TraceDamageLine(const FVector& TraceStart, const FVector& TraceEnd, const FCollisionQueryParams& QueryParams);
+	void TraceDamageSweep(const FVector& TraceStart, const FVector& TraceEnd, const FCollisionQueryParams& QueryParams);
+	void HandleTraceHitResults(const TArray<FHitResult>& HitResults);
 	void EvaluateConditionalModifiers(const UAbilitySystemComponent* TargetASC, float& Damage, float& StaggerDamage) const;
 	FGameplayEffectSpecHandle MakeWeaponDamageEffectSpec(const FHitResult& HitResult, const UAbilitySystemComponent* TargetASC) const;
 	void ApplyDamageToHitActor(AActor* TargetActor, const FHitResult& HitResult);
@@ -73,14 +94,17 @@ private:
 	UPROPERTY(EditDefaultsOnly, Category = "Weapon")
 	bool bRouteAttackDefinitionFromInputTag = true;
 
-	UPROPERTY(EditDefaultsOnly, Category = "Weapon", meta = (ClampMin = "0.0"))
-	float NoMontageEndDelay = 0.05f;
-
 	UPROPERTY(Transient)
 	TObjectPtr<URpgWeaponInstance> ActiveWeaponInstance;
 
 	FRpgWeaponAttackDefinition ActiveAttackDefinition;
-	bool bTraceHasFired = false;
 	bool bWaitingForMontage = false;
 	bool bFinishingAttack = false;
+	bool bAttackWindowOpen = false;
+	bool bReceivedAttackWindowStart = false;
+	bool bReceivedAttackWindowEnd = false;
+
+	FTimerHandle TraceSampleTimerHandle;
+	TArray<FVector> PreviousTracePointLocations;
+	TSet<TObjectKey<AActor>> HitActorsThisWindow;
 };
