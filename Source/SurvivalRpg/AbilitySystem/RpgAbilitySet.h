@@ -25,15 +25,15 @@ struct FRpgAbilitySet_GameplayAbility
 
 public:
 
-	// Gameplay ability to grant.
+	// Gameplay ability class granted by this set.
 	UPROPERTY(EditAnywhere)
 	TSubclassOf<URpgGameplayAbility> Ability = nullptr;
 
-	// Level of ability to grant.
+	// Ability level passed to GAS when the ability spec is created.
 	UPROPERTY(EditAnywhere)
 	int32 AbilityLevel = 1;
 
-	// Tag used to process input for the ability.
+	// Optional input tag used by the input component to trigger this ability.
 	UPROPERTY(EditAnywhere, Meta = (Categories = "InputTag"))
 	FGameplayTag InputTag;
 };
@@ -50,11 +50,11 @@ struct FRpgAbilitySet_GameplayEffect
 
 public:
 
-	// Gameplay effect to grant.
+	// GameplayEffect applied while this ability set is granted.
 	UPROPERTY(EditAnywhere)
 	TSubclassOf<UGameplayEffect> GameplayEffect = nullptr;
 
-	// Level of gameplay effect to grant.
+	// Effect level used when applying the granted GameplayEffect.
 	UPROPERTY(EditAnywhere)
 	float EffectLevel = 1.0f;
 };
@@ -114,11 +114,11 @@ public:
 	
 protected:
 
-	// Gameplay abilities to grant when this ability set is granted.
+	// Gameplay abilities granted by this set. Equipment uses this for attack, block, and utility abilities.
 	UPROPERTY(EditAnywhere, Category = "Gameplay Abilities", meta=(TitleProperty=Ability))
 	TArray<FRpgAbilitySet_GameplayAbility> GrantedGameplayAbilities;
 
-	// Gameplay effects to grant when this ability set is granted.
+	// Persistent GameplayEffects granted by this set, usually passive stats or stateful equipment effects.
 	UPROPERTY(EditAnywhere, Category = "Gameplay Effects", meta=(TitleProperty=GameplayEffect))
 	TArray<FRpgAbilitySet_GameplayEffect> GrantedGameplayEffects;
 };

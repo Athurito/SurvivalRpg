@@ -13,7 +13,7 @@ struct FFrame;
 
 //////////////////////////////////////////////////////////////////////
 
-// Represents a fragment of an item definition
+// Represents one modular data block on an item definition.
 UCLASS(MinimalAPI, DefaultToInstanced, EditInlineNew, Abstract)
 class URpgInventoryItemFragment : public UObject
 {
@@ -36,9 +36,11 @@ class URpgInventoryItemDefinition : public UObject
 public:
 	explicit URpgInventoryItemDefinition(const FObjectInitializer& ObjectInitializer = FObjectInitializer::Get());
 
+	// Player-facing item name shown in inventory and pickup UI.
 	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category=Display)
 	FText DisplayName;
 
+	// Modular data fragments that define what this item can do, such as equipping into an EquipmentDefinition.
 	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category=Display, Instanced)
 	TArray<TObjectPtr<URpgInventoryItemFragment>> Fragments;
 
