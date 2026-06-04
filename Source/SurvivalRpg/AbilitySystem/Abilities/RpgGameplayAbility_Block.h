@@ -47,6 +47,8 @@ protected:
 	void OnPerfectBlockEvent(FGameplayEventData Payload);
 
 	void EndPerfectBlockWindow();
+	void QueueBlockLoopMontage(float Delay);
+	void StartBlockLoopMontage();
 
 private:
 	const FRpgWeaponBlockDefinition* ResolveBlockDefinition(
@@ -56,7 +58,7 @@ private:
 	void ApplyBlockState(const FRpgWeaponBlockDefinition& BlockDefinition);
 	void ClearBlockState();
 	void SetReplicatedLooseTagCount(FGameplayTag Tag, int32 Count) const;
-	void PlayBlockMontage(UAnimMontage* Montage, float PlayRate = 1.0f) const;
+	float PlayBlockMontage(UAnimMontage* Montage, float PlayRate = 1.0f);
 
 private:
 	UPROPERTY(EditDefaultsOnly, Category = "Block")
@@ -68,6 +70,8 @@ private:
 	FRpgWeaponBlockDefinition ActiveBlockDefinition;
 
 	bool bAppliedBlockState = false;
+	bool bBlockInputReleased = false;
+	bool bBlockLoopStarted = false;
 	bool bStoredPreviousBlockAttributes = false;
 	float PreviousBlockAngleDegrees = 0.0f;
 	float PreviousBlockStaminaCost = 0.0f;
@@ -77,4 +81,5 @@ private:
 	float PreviousPerfectBlockStaggerDamage = 0.0f;
 
 	FTimerHandle PerfectBlockTimerHandle;
+	FTimerHandle BlockLoopTimerHandle;
 };

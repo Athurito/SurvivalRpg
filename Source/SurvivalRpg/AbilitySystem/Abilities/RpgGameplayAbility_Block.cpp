@@ -4,11 +4,20 @@
 #include "Abilities/Tasks/AbilityTask_WaitGameplayEvent.h"
 #include "Abilities/Tasks/AbilityTask_WaitInputRelease.h"
 #include "Animation/AnimInstance.h"
+#include "HAL/IConsoleManager.h"
 #include "TimerManager.h"
 #include "SurvivalRpg/AbilitySystem/Attributes/RpgDefenseSet.h"
 #include "SurvivalRpg/AbilitySystem/RpgAbilitySystemComponent.h"
 #include "SurvivalRpg/Core/Character/RpgHealthComponent.h"
 #include "SurvivalRpg/GameplayTags/RpgGameplayTags.h"
+
+namespace
+{
+TAutoConsoleVariable<int32> CVarRpgCombatBlockAnimationDebug(
+	TEXT("rpg.Combat.Block.AnimationDebug"),
+	0,
+	TEXT("Logs block ability animation montage transitions."));
+}
 
 URpgGameplayAbility_Block::URpgGameplayAbility_Block(const FObjectInitializer& ObjectInitializer)
 	: Super(ObjectInitializer)
@@ -18,6 +27,7 @@ URpgGameplayAbility_Block::URpgGameplayAbility_Block(const FObjectInitializer& O
 	ActivationPolicy = ERpgAbilityActivationPolicy::WhileInputActive;
 	ActivationGroup = ERpgAbilityActivationGroup::Exclusive_Blocking;
 
+	DefaultBlockDefinition.bCanBlock = false;
 	DefaultBlockDefinition.bAllowPerfectBlock = false;
 	DefaultBlockDefinition.PerfectBlockWindow = 0.0f;
 	DefaultBlockDefinition.BlockableDamageTypeTags.AddTag(RpgGameplayTags::Damage_Type_Melee);
@@ -75,6 +85,8 @@ void URpgGameplayAbility_Block::ActivateAbility(
 	}
 
 	ActiveBlockDefinition = *BlockDefinition;
+	bBlockInputReleased = false;
+	bBlockLoopStarted = false;
 
 	Super::ActivateAbility(Handle, ActorInfo, ActivationInfo, TriggerEventData);
 
@@ -83,7 +95,18 @@ void URpgGameplayAbility_Block::ActivateAbility(
 		ApplyBlockState(ActiveBlockDefinition);
 	}
 
-	PlayBlockMontage(ActiveBlockDefinition.BlockStartMontage ? ActiveBlockDefinition.BlockStartMontage : ActiveBlockDefinition.BlockLoopMontage, MontagePlayRate);
+	if (ActiveBlockDefinition.BlockStartMontage)
+	{
+		const float StartDuration = PlayBlockMontage(ActiveBlockDefinition.BlockStartMontage, MontagePlayRate);
+		if (ActiveBlockDefinition.BlockLoopMontage)
+		{
+			QueueBlockLoopMontage(StartDuration);
+		}
+	}
+	else
+	{
+		StartBlockLoopMontage();
+	}
 
 	UAbilityTask_WaitInputRelease* ReleaseTask = UAbilityTask_WaitInputRelease::WaitInputRelease(this, true);
 	ReleaseTask->OnRelease.AddDynamic(this, &ThisClass::OnBlockInputReleased);
@@ -105,20 +128,32 @@ void URpgGameplayAbility_Block::EndAbility(
 	bool bReplicateEndAbility,
 	bool bWasCancelled)
 {
+	if (UWorld* World = GetWorld())
+	{
+		World->GetTimerManager().ClearTimer(BlockLoopTimerHandle);
+	}
+
 	if (ActorInfo && ActorInfo->IsNetAuthority())
 	{
 		ClearBlockState();
 	}
 
-	PlayBlockMontage(ActiveBlockDefinition.BlockEndMontage, MontagePlayRate);
+	if (bAppliedBlockState || bBlockLoopStarted || ActiveBlockDefinition.BlockStartMontage)
+	{
+		PlayBlockMontage(ActiveBlockDefinition.BlockEndMontage, MontagePlayRate);
+	}
 
 	ActiveBlockDefinition = FRpgWeaponBlockDefinition();
+	bBlockInputReleased = false;
+	bBlockLoopStarted = false;
 
 	Super::EndAbility(Handle, ActorInfo, ActivationInfo, bReplicateEndAbility, bWasCancelled);
 }
 
 void URpgGameplayAbility_Block::OnBlockInputReleased(float TimeHeld)
 {
+	bBlockInputReleased = true;
+
 	if (IsActive())
 	{
 		EndAbility(CurrentSpecHandle, CurrentActorInfo, CurrentActivationInfo, true, false);
@@ -127,19 +162,65 @@ void URpgGameplayAbility_Block::OnBlockInputReleased(float TimeHeld)
 
 void URpgGameplayAbility_Block::OnBlockEvent(FGameplayEventData Payload)
 {
-	PlayBlockMontage(ActiveBlockDefinition.BlockHitMontage, MontagePlayRate);
+	const float HitDuration = PlayBlockMontage(ActiveBlockDefinition.BlockHitMontage, MontagePlayRate);
+	if (HitDuration > 0.0f && ActiveBlockDefinition.BlockLoopMontage && !bBlockInputReleased)
+	{
+		bBlockLoopStarted = false;
+		QueueBlockLoopMontage(HitDuration);
+	}
 }
 
 void URpgGameplayAbility_Block::OnPerfectBlockEvent(FGameplayEventData Payload)
 {
-	PlayBlockMontage(
+	const float HitDuration = PlayBlockMontage(
 		ActiveBlockDefinition.PerfectBlockMontage ? ActiveBlockDefinition.PerfectBlockMontage : ActiveBlockDefinition.BlockHitMontage,
 		MontagePlayRate);
+	if (HitDuration > 0.0f && ActiveBlockDefinition.BlockLoopMontage && !bBlockInputReleased)
+	{
+		bBlockLoopStarted = false;
+		QueueBlockLoopMontage(HitDuration);
+	}
 }
 
 void URpgGameplayAbility_Block::EndPerfectBlockWindow()
 {
 	SetReplicatedLooseTagCount(RpgGameplayTags::State_PerfectBlockWindow, 0);
+}
+
+void URpgGameplayAbility_Block::QueueBlockLoopMontage(float Delay)
+{
+	if (!ActiveBlockDefinition.BlockLoopMontage)
+	{
+		return;
+	}
+
+	if (Delay > 0.0f)
+	{
+		if (UWorld* World = GetWorld())
+		{
+			World->GetTimerManager().ClearTimer(BlockLoopTimerHandle);
+			World->GetTimerManager().SetTimer(
+				BlockLoopTimerHandle,
+				this,
+				&ThisClass::StartBlockLoopMontage,
+				Delay,
+				false);
+		}
+	}
+	else
+	{
+		StartBlockLoopMontage();
+	}
+}
+
+void URpgGameplayAbility_Block::StartBlockLoopMontage()
+{
+	if (!IsActive() || bBlockInputReleased || bBlockLoopStarted || !ActiveBlockDefinition.BlockLoopMontage)
+	{
+		return;
+	}
+
+	bBlockLoopStarted = PlayBlockMontage(ActiveBlockDefinition.BlockLoopMontage, MontagePlayRate) > 0.0f;
 }
 
 const FRpgWeaponBlockDefinition* URpgGameplayAbility_Block::ResolveBlockDefinition(
@@ -207,6 +288,7 @@ void URpgGameplayAbility_Block::ClearBlockState()
 	if (UWorld* World = GetWorld())
 	{
 		World->GetTimerManager().ClearTimer(PerfectBlockTimerHandle);
+		World->GetTimerManager().ClearTimer(BlockLoopTimerHandle);
 	}
 
 	URpgAbilitySystemComponent* ASC = GetRpgAbilitySystemComponentFromActorInfo();
@@ -240,15 +322,35 @@ void URpgGameplayAbility_Block::SetReplicatedLooseTagCount(FGameplayTag Tag, int
 	}
 }
 
-void URpgGameplayAbility_Block::PlayBlockMontage(UAnimMontage* Montage, float PlayRate) const
+float URpgGameplayAbility_Block::PlayBlockMontage(UAnimMontage* Montage, float PlayRate)
 {
-	if (!Montage || !CurrentActorInfo)
+	URpgAbilitySystemComponent* ASC = GetRpgAbilitySystemComponentFromActorInfo();
+	if (!Montage || !ASC)
 	{
-		return;
+		return 0.0f;
 	}
 
-	if (UAnimInstance* AnimInstance = CurrentActorInfo->GetAnimInstance())
+	const float ActualPlayRate = FMath::Max(0.01f, PlayRate);
+	if (ASC->GetCurrentMontage() == Montage)
 	{
-		AnimInstance->Montage_Play(Montage, FMath::Max(0.01f, PlayRate));
+		if (CVarRpgCombatBlockAnimationDebug.GetValueOnGameThread() != 0)
+		{
+			UE_LOG(LogTemp, Log, TEXT("BlockAbility[%s]: montage %s already current, skipping replay."),
+				*GetNameSafe(CurrentActorInfo ? CurrentActorInfo->AvatarActor.Get() : nullptr),
+				*GetNameSafe(Montage));
+		}
+
+		return Montage->GetPlayLength() / ActualPlayRate;
 	}
+
+	const float PlayedDuration = ASC->PlayMontage(this, CurrentActivationInfo, Montage, ActualPlayRate);
+	if (CVarRpgCombatBlockAnimationDebug.GetValueOnGameThread() != 0)
+	{
+		UE_LOG(LogTemp, Log, TEXT("BlockAbility[%s]: play montage %s duration %.3f."),
+			*GetNameSafe(CurrentActorInfo ? CurrentActorInfo->AvatarActor.Get() : nullptr),
+			*GetNameSafe(Montage),
+			PlayedDuration);
+	}
+
+	return PlayedDuration > 0.0f ? PlayedDuration : (Montage->GetPlayLength() / ActualPlayRate);
 }
