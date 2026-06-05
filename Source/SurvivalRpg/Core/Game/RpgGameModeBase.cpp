@@ -21,7 +21,6 @@
 #include "SurvivalRpg/Core/Player/RpgPlayerController.h"
 #include "SurvivalRpg/Core/Player/RpgPlayerState.h"
 #include "SurvivalRpg/Development/RpgDeveloperSettings.h"
-#include "SurvivalRpg/Equipment/RpgQuickBarComponent.h"
 #include "SurvivalRpg/GameplayTags/RpgGameplayTags.h"
 #include "SurvivalRpg/System/RpgAssetManager.h"
 #include "GameFramework/GameStateBase.h"
@@ -485,14 +484,6 @@ void ARpgGameModeBase::NotifyPlayerDeath(APlayerController* PC)
 	RespawnState.RespawnAvailableServerTime = ServerWorldTime + RespawnDelay;
 	RespawnState.PendingRespawnTransform = GetPlayerCheckpointTransform(PC);
 
-	if (ARpgPlayerController* RpgPC = Cast<ARpgPlayerController>(PC))
-	{
-		if (URpgQuickBarComponent* QuickBarComponent = RpgPC->GetQuickBarComponent())
-		{
-			QuickBarComponent->UnequipActiveLoadoutFromCurrentPawn();
-		}
-	}
-
 	if (APawn* ExistingPawn = PC->GetPawn())
 	{
 		PC->UnPossess();
@@ -601,11 +592,6 @@ void ARpgGameModeBase::ExecuteRespawn(APlayerController* PC, const FTransform& S
 	PC->SetIgnoreMoveInput(false);
 	PC->SetIgnoreLookInput(false);
 	ResetPlayerRespawnState(PC);
-
-	if (ARpgPlayerController* RpgPC = Cast<ARpgPlayerController>(PC))
-	{
-		RpgPC->ClientRestoreGameplayInputFocus();
-	}
 
 	OnPlayerRespawned.Broadcast(PC, SpawnPoint);
 
