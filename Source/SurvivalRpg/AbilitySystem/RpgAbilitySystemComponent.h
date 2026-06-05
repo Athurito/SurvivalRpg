@@ -106,10 +106,6 @@ protected:
 	// Number of abilities running in each activation group.
 	int32 ActivationGroupCounts[static_cast<uint8>(ERpgAbilityActivationGroup::MAX)];
 	
-private:
-	UPROPERTY(EditAnywhere, Category="RPG|AbilitySystem")
-	TSubclassOf<UGameplayEffect> DynamicTagGameplayEffectClass;
-
 public:
 	
 	/** BP-friendly: kann von Client aufgerufen werden, läuft server-autoritatv */

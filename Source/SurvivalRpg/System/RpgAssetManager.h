@@ -7,6 +7,7 @@
 #include "RpgAssetManager.generated.h"
 
 class URpgPawnData;
+class URpgGameData;
 
 /** Asset bundle names used by gameplay systems and GameFeature loading. */
 struct FRpgBundles
@@ -45,6 +46,9 @@ public:
 	/** PawnData fallback used if an experience or PlayerState does not provide one. */
 	const URpgPawnData* GetDefaultPawnData() const;
 
+	/** Project-wide gameplay asset references used by low-level systems. */
+	const URpgGameData& GetGameData();
+
 protected:
 	static UObject* SynchronousLoadAsset(const FSoftObjectPath& AssetPath);
 	static bool ShouldLogAssetLoads();
@@ -66,6 +70,14 @@ private:
 	/** Configured default PawnData fallback. */
 	UPROPERTY(Config)
 	TSoftObjectPtr<URpgPawnData> DefaultPawnData;
+
+	/** Configured project GameData asset. */
+	UPROPERTY(Config)
+	TSoftObjectPtr<URpgGameData> RpgGameDataPath;
+
+	/** Cached GameData asset loaded from RpgGameDataPath. */
+	UPROPERTY(Transient)
+	TObjectPtr<URpgGameData> LoadedGameData;
 
 	/** Assets loaded and tracked by this manager so they stay in memory. */
 	UPROPERTY()
