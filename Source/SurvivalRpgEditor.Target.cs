@@ -10,6 +10,6 @@ public class SurvivalRpgEditorTarget : TargetRules
 		Type = TargetType.Editor;
 		DefaultBuildSettings = BuildSettingsVersion.V6;
 
-		ExtraModuleNames.AddRange( new string[] { "SurvivalRpg" } );
+		ExtraModuleNames.AddRange( new string[] { "SurvivalRpg", "SurvivalRpgEditor" } );
 	}
 }

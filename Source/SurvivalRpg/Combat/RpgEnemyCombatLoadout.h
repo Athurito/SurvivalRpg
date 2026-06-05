@@ -29,6 +29,10 @@ public:
 	UFUNCTION(BlueprintCallable, BlueprintAuthorityOnly, Category = "Enemy Combat")
 	void SetEnemyCombatArchetypeTag(FGameplayTag NewArchetypeTag);
 
+#if WITH_EDITOR
+	void SetEnemyCombatArchetypeTagForEditor(FGameplayTag NewArchetypeTag);
+#endif
+
 protected:
 	virtual void GetLifetimeReplicatedProps(TArray<FLifetimeProperty>& OutLifetimeProps) const override;
 
@@ -81,6 +85,14 @@ public:
 
 	UFUNCTION(BlueprintCallable, BlueprintAuthorityOnly, Category = "Enemy Combat")
 	void ClearAppliedCombatLoadout();
+
+#if WITH_EDITOR
+	void ConfigureEnemyCombatLoadoutForEditor(
+		FGameplayTag InDefaultArchetypeTag,
+		const TArray<TSoftObjectPtr<const URpgEnemyCombatLoadoutDefinition>>& InLoadoutDefinitions);
+	FGameplayTag GetDefaultArchetypeTagForEditor() const { return DefaultArchetypeTag; }
+	const TArray<TSoftObjectPtr<const URpgEnemyCombatLoadoutDefinition>>& GetLoadoutDefinitionsForEditor() const { return LoadoutDefinitions; }
+#endif
 
 protected:
 	virtual void OnRegister() override;

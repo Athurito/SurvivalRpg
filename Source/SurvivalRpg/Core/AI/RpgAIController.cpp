@@ -2,6 +2,7 @@
 
 #include "RpgAIController.h"
 
+#include "Components/StateTreeAIComponent.h"
 #include "Engine/World.h"
 #include "GameFramework/GameModeBase.h"
 #include "GameFramework/GameStateBase.h"
@@ -18,6 +19,10 @@ ARpgAIController::ARpgAIController(const FObjectInitializer& ObjectInitializer)
 {
 	bWantsPlayerState = true;
 	bStopAILogicOnUnposses = false;
+
+	StateTreeComponent = CreateDefaultSubobject<UStateTreeAIComponent>(TEXT("StateTreeComponent"));
+	StateTreeComponent->SetStartLogicAutomatically(false);
+	BrainComponent = StateTreeComponent;
 }
 
 void ARpgAIController::InitPlayerState()
@@ -84,10 +89,13 @@ void ARpgAIController::OnPossess(APawn* InPawn)
 	}
 
 	PawnExtension->InitializeAbilitySystemComponent(AbilitySystemComponent, RpgPlayerState);
+	StartPawnStateTree();
 }
 
 void ARpgAIController::OnUnPossess()
 {
+	StopPawnStateTree(TEXT("AI pawn unpossessed."));
+
 	if (APawn* PawnBeingUnpossessed = GetPawn())
 	{
 		if (URpgPawnExtensionComponent* PawnExtension = URpgPawnExtensionComponent::FindPawnExtensionComponent(PawnBeingUnpossessed))
@@ -109,6 +117,49 @@ void ARpgAIController::OnUnPossess()
 	Super::OnUnPossess();
 }
 
+void ARpgAIController::StartPawnStateTree()
+{
+	if (GetNetMode() == NM_Client || !StateTreeComponent)
+	{
+		return;
+	}
+
+	const ARpgBasePlayerState* RpgPlayerState = GetPlayerState<ARpgBasePlayerState>();
+	const URpgAIPawnData* PawnData = RpgPlayerState ? RpgPlayerState->GetPawnData<URpgAIPawnData>() : nullptr;
+	if (!PawnData)
+	{
+		if (const APawn* ControlledPawn = GetPawn())
+		{
+			if (const URpgPawnExtensionComponent* PawnExtension = URpgPawnExtensionComponent::FindPawnExtensionComponent(ControlledPawn))
+			{
+				PawnData = PawnExtension->GetPawnData<URpgAIPawnData>();
+			}
+		}
+	}
+
+	if (!PawnData || !PawnData->StateTree)
+	{
+		StopPawnStateTree(TEXT("No AI PawnData StateTree configured."));
+		return;
+	}
+
+	if (StateTreeComponent->IsRunning())
+	{
+		StateTreeComponent->StopLogic(TEXT("Restarting AI StateTree from PawnData."));
+	}
+
+	StateTreeComponent->SetStateTree(PawnData->StateTree);
+	StateTreeComponent->StartLogic();
+}
+
+void ARpgAIController::StopPawnStateTree(const FString& Reason)
+{
+	if (StateTreeComponent && StateTreeComponent->IsRunning())
+	{
+		StateTreeComponent->StopLogic(Reason);
+	}
+}
+
 void ARpgAIController::SetGenericTeamId(const FGenericTeamId& NewTeamID)
 {
 	Super::SetGenericTeamId(NewTeamID);
@@ -124,3 +175,12 @@ ETeamAttitude::Type ARpgAIController::GetTeamAttitudeTowards(const AActor& Other
 {
 	return ARpgBasePlayerState::GetTeamAttitudeTowardsActor(GetGenericTeamId(), Other);
 }
+
+#if WITH_EDITOR
+void ARpgAIController::SetDefaultPawnDataForEditor(const URpgAIPawnData* InPawnData)
+{
+	Modify();
+	DefaultPawnData = InPawnData;
+	MarkPackageDirty();
+}
+#endif

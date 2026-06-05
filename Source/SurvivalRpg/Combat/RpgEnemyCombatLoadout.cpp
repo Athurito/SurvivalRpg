@@ -31,6 +31,20 @@ void URpgEnemyCombatArchetypeComponent::SetEnemyCombatArchetypeTag(FGameplayTag 
 	}
 }
 
+#if WITH_EDITOR
+void URpgEnemyCombatArchetypeComponent::SetEnemyCombatArchetypeTagForEditor(FGameplayTag NewArchetypeTag)
+{
+	Modify();
+	EnemyCombatArchetypeTag = NewArchetypeTag;
+	MarkPackageDirty();
+
+	if (AActor* Owner = GetOwner())
+	{
+		Owner->MarkPackageDirty();
+	}
+}
+#endif
+
 void URpgEnemyCombatArchetypeComponent::GetLifetimeReplicatedProps(TArray<FLifetimeProperty>& OutLifetimeProps) const
 {
 	Super::GetLifetimeReplicatedProps(OutLifetimeProps);
@@ -106,6 +120,12 @@ void URpgEnemyCombatLoadoutComponent::ApplyCombatLoadout()
 	}
 
 	AppliedArchetypeTag = LoadoutDefinition->GetArchetypeTag();
+	if (URpgEnemyCombatArchetypeComponent* ArchetypeComponent = URpgEnemyCombatArchetypeComponent::FindEnemyCombatArchetypeComponent(Owner);
+		ArchetypeComponent && !ArchetypeComponent->GetEnemyCombatArchetypeTag().IsValid())
+	{
+		ArchetypeComponent->SetEnemyCombatArchetypeTag(AppliedArchetypeTag);
+	}
+
 	Owner->ForceNetUpdate();
 }
 
@@ -130,6 +150,23 @@ void URpgEnemyCombatLoadoutComponent::ClearAppliedCombatLoadout()
 	AppliedEquipmentInstances.Reset();
 	AppliedArchetypeTag = FGameplayTag();
 }
+
+#if WITH_EDITOR
+void URpgEnemyCombatLoadoutComponent::ConfigureEnemyCombatLoadoutForEditor(
+	FGameplayTag InDefaultArchetypeTag,
+	const TArray<TSoftObjectPtr<const URpgEnemyCombatLoadoutDefinition>>& InLoadoutDefinitions)
+{
+	Modify();
+	DefaultArchetypeTag = InDefaultArchetypeTag;
+	LoadoutDefinitions = InLoadoutDefinitions;
+	MarkPackageDirty();
+
+	if (AActor* Owner = GetOwner())
+	{
+		Owner->MarkPackageDirty();
+	}
+}
+#endif
 
 void URpgEnemyCombatLoadoutComponent::BindToPawnExtension()
 {
