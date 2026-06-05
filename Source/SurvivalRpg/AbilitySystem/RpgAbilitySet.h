@@ -106,8 +106,7 @@ public:
 	void GiveToAbilitySystem(
 		URpgAbilitySystemComponent* RpgASC,
 		FRpgAbilitySet_GrantedHandles* OutGrantedHandles,
-		UObject* SourceObject = nullptr,
-		const FGameplayTagContainer* InputTagFilter = nullptr) const;
+		UObject* SourceObject = nullptr) const;
 	void AddGrantedGameplayAbility(TSubclassOf<URpgGameplayAbility> AbilityClass, int32 AbilityLevel = 1, FGameplayTag InputTag = FGameplayTag());
 
 	UFUNCTION(BlueprintCallable, Category = "Rpg|Ability Set")

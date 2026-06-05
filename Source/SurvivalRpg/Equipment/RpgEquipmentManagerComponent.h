@@ -127,7 +127,8 @@ private:
 	void UnequipConflictingItems(TSubclassOf<URpgEquipmentDefinition> EquipmentDefinition, ERpgEquipmentSlot Slot);
 	bool DoesEquipmentOccupySlot(const FRpgAppliedEquipmentEntry& Entry, ERpgEquipmentSlot Slot) const;
 	bool CanEquipmentBlock(const URpgEquipmentInstance* EquipmentInstance) const;
-	FGameplayTagContainer BuildAbilityInputTagFilterForEntry(const FRpgAppliedEquipmentEntry& Entry) const;
+	URpgEquipmentInstance* GetActiveBlockSource() const;
+	bool ShouldGrantSlotAbilitySet(const FRpgAppliedEquipmentEntry& Entry, const FRpgEquipmentSlotAbilitySet& SlotAbilitySet, const URpgEquipmentInstance* ActiveBlockSource) const;
 	void RebuildEquipmentAbilityGrants();
 
 	UPROPERTY(Replicated)

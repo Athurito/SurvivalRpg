@@ -383,35 +383,38 @@ bool URpgEquipmentManagerComponent::CanEquipmentBlock(const URpgEquipmentInstanc
 	return WeaponInstance && WeaponInstance->CanBlock();
 }
 
-FGameplayTagContainer URpgEquipmentManagerComponent::BuildAbilityInputTagFilterForEntry(const FRpgAppliedEquipmentEntry& Entry) const
+URpgEquipmentInstance* URpgEquipmentManagerComponent::GetActiveBlockSource() const
 {
-	FGameplayTagContainer InputTags;
-	if (!Entry.Instance)
+	if (URpgEquipmentInstance* OffHandInstance = GetEquipmentInstanceInSlot(ERpgEquipmentSlot::OffHand))
 	{
-		return InputTags;
-	}
-
-	if (Entry.EquippedSlot == ERpgEquipmentSlot::MainHand)
-	{
-		InputTags.AddTag(RpgGameplayTags::InputTag_Weapon_Primary);
-
-		const URpgEquipmentInstance* OffHandInstance = GetEquipmentInstanceInSlot(ERpgEquipmentSlot::OffHand);
-		if (!CanEquipmentBlock(OffHandInstance) && CanEquipmentBlock(Entry.Instance))
+		if (CanEquipmentBlock(OffHandInstance))
 		{
-			InputTags.AddTag(RpgGameplayTags::InputTag_Weapon_Block);
-		}
-	}
-	else if (Entry.EquippedSlot == ERpgEquipmentSlot::OffHand)
-	{
-		InputTags.AddTag(RpgGameplayTags::InputTag_Weapon_Secondary);
-
-		if (CanEquipmentBlock(Entry.Instance))
-		{
-			InputTags.AddTag(RpgGameplayTags::InputTag_Weapon_Block);
+			return OffHandInstance;
 		}
 	}
 
-	return InputTags;
+	URpgEquipmentInstance* MainHandInstance = GetEquipmentInstanceInSlot(ERpgEquipmentSlot::MainHand);
+	return CanEquipmentBlock(MainHandInstance) ? MainHandInstance : nullptr;
+}
+
+bool URpgEquipmentManagerComponent::ShouldGrantSlotAbilitySet(const FRpgAppliedEquipmentEntry& Entry, const FRpgEquipmentSlotAbilitySet& SlotAbilitySet, const URpgEquipmentInstance* ActiveBlockSource) const
+{
+	if (!Entry.Instance || !SlotAbilitySet.AbilitySet)
+	{
+		return false;
+	}
+
+	if (Entry.EquippedSlot != SlotAbilitySet.EquippedSlot)
+	{
+		return false;
+	}
+
+	if (SlotAbilitySet.GrantPolicy == ERpgEquipmentAbilityGrantPolicy::ActiveBlockSourceOnly)
+	{
+		return Entry.Instance == ActiveBlockSource;
+	}
+
+	return true;
 }
 
 void URpgEquipmentManagerComponent::RebuildEquipmentAbilityGrants()
@@ -427,6 +430,8 @@ void URpgEquipmentManagerComponent::RebuildEquipmentAbilityGrants()
 		Entry.GrantedHandles.TakeFromAbilitySystem(AbilitySystemComponent);
 	}
 
+	const URpgEquipmentInstance* ActiveBlockSource = GetActiveBlockSource();
+
 	for (FRpgAppliedEquipmentEntry& Entry : EquipmentList.Entries)
 	{
 		const URpgEquipmentDefinition* EquipmentCDO = Entry.EquipmentDefinition ? GetDefault<URpgEquipmentDefinition>(Entry.EquipmentDefinition) : nullptr;
@@ -435,12 +440,19 @@ void URpgEquipmentManagerComponent::RebuildEquipmentAbilityGrants()
 			continue;
 		}
 
-		const FGameplayTagContainer InputTagFilter = BuildAbilityInputTagFilterForEntry(Entry);
 		for (const TObjectPtr<const URpgAbilitySet>& AbilitySet : EquipmentCDO->AbilitySetsToGrant)
 		{
 			if (AbilitySet != nullptr)
 			{
-				AbilitySet->GiveToAbilitySystem(AbilitySystemComponent, &Entry.GrantedHandles, Entry.Instance, &InputTagFilter);
+				AbilitySet->GiveToAbilitySystem(AbilitySystemComponent, &Entry.GrantedHandles, Entry.Instance);
+			}
+		}
+
+		for (const FRpgEquipmentSlotAbilitySet& SlotAbilitySet : EquipmentCDO->SlotAbilitySetsToGrant)
+		{
+			if (ShouldGrantSlotAbilitySet(Entry, SlotAbilitySet, ActiveBlockSource))
+			{
+				SlotAbilitySet.AbilitySet->GiveToAbilitySystem(AbilitySystemComponent, &Entry.GrantedHandles, Entry.Instance);
 			}
 		}
 	}

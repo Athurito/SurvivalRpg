@@ -31,6 +31,34 @@ enum class ERpgEquipmentHandOccupancy : uint8
 	BothHands
 };
 
+UENUM(BlueprintType)
+enum class ERpgEquipmentAbilityGrantPolicy : uint8
+{
+	// Grants this AbilitySet whenever the item is equipped in the configured slot.
+	AlwaysForSlot,
+
+	// Grants this AbilitySet only to the item currently selected as the block source.
+	ActiveBlockSourceOnly
+};
+
+USTRUCT(BlueprintType)
+struct SURVIVALRPG_API FRpgEquipmentSlotAbilitySet
+{
+	GENERATED_BODY()
+
+	// Slot that must contain this equipment item before the AbilitySet can be granted.
+	UPROPERTY(EditAnywhere, Category = "Equipment")
+	ERpgEquipmentSlot EquippedSlot = ERpgEquipmentSlot::MainHand;
+
+	// Determines whether the AbilitySet is always granted for the slot or only for the active block source.
+	UPROPERTY(EditAnywhere, Category = "Equipment")
+	ERpgEquipmentAbilityGrantPolicy GrantPolicy = ERpgEquipmentAbilityGrantPolicy::AlwaysForSlot;
+
+	// AbilitySet granted when this slot grant is active. Keep input-specific grants in small, explicit AbilitySets.
+	UPROPERTY(EditAnywhere, Category = "Equipment")
+	TObjectPtr<const URpgAbilitySet> AbilitySet = nullptr;
+};
+
 USTRUCT(BlueprintType)
 struct SURVIVALRPG_API FRpgEquipmentActorToSpawn
 {
@@ -83,9 +111,13 @@ public:
 	UPROPERTY(EditDefaultsOnly, Category = "Equipment|Slots")
 	ERpgEquipmentHandOccupancy HandOccupancy = ERpgEquipmentHandOccupancy::SelectedSlotOnly;
 
-	// Ability sets granted while this equipment is active. Use these for weapon attacks, block, and passive effects.
+	// AbilitySets granted whenever this equipment is active. Prefer SlotAbilitySetsToGrant for hand/input actions.
 	UPROPERTY(EditDefaultsOnly, Category = "Equipment")
 	TArray<TObjectPtr<const URpgAbilitySet>> AbilitySetsToGrant;
+
+	// Slot-specific AbilitySets granted by the equipment manager after resolving hand role and block ownership.
+	UPROPERTY(EditDefaultsOnly, Category = "Equipment|Slot Grants", meta = (TitleProperty = "AbilitySet"))
+	TArray<FRpgEquipmentSlotAbilitySet> SlotAbilitySetsToGrant;
 
 	// Visual or gameplay-presentational actors spawned and attached while this equipment is active.
 	UPROPERTY(EditDefaultsOnly, Category = "Equipment")
