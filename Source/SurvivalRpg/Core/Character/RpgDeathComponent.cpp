@@ -7,10 +7,13 @@
 #include "GameFramework/PlayerController.h"
 #include "RpgDownedComponent.h"
 #include "RpgHealthComponent.h"
+#include "GameFramework/GameplayMessageSubsystem.h"
 #include "SurvivalRpg/SurvivalRpg.h"
 #include "SurvivalRpg/AbilitySystem/RpgAbilitySystemComponent.h"
 #include "SurvivalRpg/AbilitySystem/Abilities/RpgGameplayAbility_Death.h"
 #include "SurvivalRpg/AbilitySystem/Abilities/RpgGameplayAbility_SelfRevive.h"
+#include "SurvivalRpg/AbilitySystem/Attributes/RpgHealthSet.h"
+#include "SurvivalRpg/Combat/RpgCombatMessages.h"
 #include "SurvivalRpg/GameplayTags/RpgGameplayTags.h"
 
 
@@ -107,6 +110,12 @@ void URpgDeathComponent::HandleOutOfHealth(FRpgOutOfHealthInfo& Info)
 		return;
 	}
 
+	FRpgCombatActorKilledMessage KillMessage;
+	KillMessage.Victim = Owner;
+	KillMessage.Killer = Info.DamageInstigator;
+	KillMessage.DamageCauser = Info.DamageCauser;
+	KillMessage.DamageMagnitude = Info.DamageMagnitude;
+
 	FGameplayEventData Payload;
 	Payload.EventTag = RpgGameplayTags::GameplayEvent_Death;
 	Payload.Instigator = Info.DamageInstigator;
@@ -117,17 +126,28 @@ void URpgDeathComponent::HandleOutOfHealth(FRpgOutOfHealthInfo& Info)
 	{
 		Payload.OptionalObject = Info.DamageEffectSpec->Def;
 		Payload.ContextHandle = Info.DamageEffectSpec->GetEffectContext();
+		KillMessage.DamageEffect = Info.DamageEffectSpec->Def ? Info.DamageEffectSpec->Def->GetClass() : nullptr;
+		KillMessage.bWasSelfDestruct = Info.DamageEffectSpec->GetDynamicAssetTags().HasTagExact(TAG_Gameplay_DamageSelfDestruct);
 
 		if (const FGameplayTagContainer* SourceTags = Info.DamageEffectSpec->CapturedSourceTags.GetAggregatedTags())
 		{
 			Payload.InstigatorTags = *SourceTags;
+			KillMessage.SourceTags = *SourceTags;
 		}
 
 		if (const FGameplayTagContainer* TargetTags = Info.DamageEffectSpec->CapturedTargetTags.GetAggregatedTags())
 		{
 			Payload.TargetTags = *TargetTags;
+			KillMessage.TargetTags = *TargetTags;
 		}
 	}
+
+	if (UWorld* World = GetWorld())
+	{
+		UGameplayMessageSubsystem& MessageSubsystem = UGameplayMessageSubsystem::Get(World);
+		MessageSubsystem.BroadcastMessage(RpgGameplayTags::Rpg_Combat_Message_ActorKilled, KillMessage);
+	}
+
 	FScopedPredictionWindow NewScopedWindow(AbilitySystemComponent, true);
 	AbilitySystemComponent->HandleGameplayEvent(Payload.EventTag, &Payload);
 }

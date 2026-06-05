@@ -31,7 +31,7 @@ enum class EActorCanvasProjectionMode : uint8
 
 /**
  * Describes and controls an active indicator.  It is highly recommended that your widget implements
- * IActorIndicatorWidget so that it can 'bind' to the associated data.
+ * IIndicatorWidgetInterface so that it can bind to the associated data.
  */
 UCLASS(MinimalAPI, BlueprintType)
 class UIndicatorDescriptor : public UObject

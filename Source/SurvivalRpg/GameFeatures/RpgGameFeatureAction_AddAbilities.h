@@ -37,7 +37,7 @@ struct FRpgGameFeatureAttributeSetGrant
 	TSoftObjectPtr<UDataTable> InitializationData;
 };
 
-USTRUCT()
+USTRUCT(BlueprintType)
 struct FRpgGameFeatureAbilitiesEntry
 {
 	GENERATED_BODY()

@@ -10,6 +10,8 @@
 #include "SurvivalRpg/Animation/RpgAnimInstance.h"
 #include "SurvivalRpg/Core/Player/RpgBasePlayerState.h"
 #include "SurvivalRpg/GameplayTags/RpgGameplayTags.h"
+#include "SurvivalRpg/System/RpgAssetManager.h"
+#include "SurvivalRpg/System/RpgGameData.h"
 
 UE_DEFINE_GAMEPLAY_TAG(TAG_Gameplay_AbilityInputBlocked, "Gameplay.AbilityInputBlocked");
 
@@ -43,6 +45,15 @@ URpgAbilitySystemComponent::URpgAbilitySystemComponent(const FObjectInitializer&
 
 void URpgAbilitySystemComponent::EndPlay(const EEndPlayReason::Type EndPlayReason)
 {
+	if (UWorld* World = GetWorld())
+	{
+		for (TPair<FGameplayTag, FTimerHandle>& Entry : TimedLooseTagTimerHandles)
+		{
+			World->GetTimerManager().ClearTimer(Entry.Value);
+		}
+	}
+	TimedLooseTagTimerHandles.Reset();
+
 	if (URpgGlobalAbilitySystem* GlobalAbilitySystem = UWorld::GetSubsystem<URpgGlobalAbilitySystem>(GetWorld()))
 	{
 		GlobalAbilitySystem->UnregisterASC(this);
@@ -491,18 +502,19 @@ void URpgAbilitySystemComponent::CancelActivationGroupAbilities(ERpgAbilityActiv
 
 void URpgAbilitySystemComponent::AddDynamicTagGameplayEffect(const FGameplayTag& Tag)
 {
-	if (!DynamicTagGameplayEffectClass)
+	const TSubclassOf<UGameplayEffect> DynamicTagGE = URpgAssetManager::GetSubclass(URpgGameData::Get().DynamicTagGameplayEffect);
+	if (!DynamicTagGE)
 	{
-		UE_LOG(LogRpgAbilitySystem, Warning, TEXT("AddDynamicTagGameplayEffect: Unable to find DynamicTagGameplayEffect [%s]."), *GetNameSafe(DynamicTagGameplayEffectClass));
+		UE_LOG(LogRpgAbilitySystem, Warning, TEXT("AddDynamicTagGameplayEffect: Unable to find DynamicTagGameplayEffect [%s]."), *URpgGameData::Get().DynamicTagGameplayEffect.GetAssetName());
 		return;
 	}
 
-	const FGameplayEffectSpecHandle SpecHandle = MakeOutgoingSpec(DynamicTagGameplayEffectClass, 1.0f, MakeEffectContext());
+	const FGameplayEffectSpecHandle SpecHandle = MakeOutgoingSpec(DynamicTagGE, 1.0f, MakeEffectContext());
 	FGameplayEffectSpec* Spec = SpecHandle.Data.Get();
 
 	if (!Spec)
 	{
-		UE_LOG(LogRpgAbilitySystem, Warning, TEXT("AddDynamicTagGameplayEffect: Unable to make outgoing spec for [%s]."), *GetNameSafe(DynamicTagGameplayEffectClass));
+		UE_LOG(LogRpgAbilitySystem, Warning, TEXT("AddDynamicTagGameplayEffect: Unable to make outgoing spec for [%s]."), *GetNameSafe(DynamicTagGE));
 		return;
 	}
 
@@ -513,16 +525,72 @@ void URpgAbilitySystemComponent::AddDynamicTagGameplayEffect(const FGameplayTag&
 
 void URpgAbilitySystemComponent::RemoveDynamicTagGameplayEffect(const FGameplayTag& Tag)
 {
-	if (!DynamicTagGameplayEffectClass)
+	const TSubclassOf<UGameplayEffect> DynamicTagGE = URpgAssetManager::GetSubclass(URpgGameData::Get().DynamicTagGameplayEffect);
+	if (!DynamicTagGE)
 	{
-		UE_LOG(LogRpgAbilitySystem, Warning, TEXT("RemoveDynamicTagGameplayEffect: Unable to find gameplay effect [%s]."), *GetNameSafe(DynamicTagGameplayEffectClass));
+		UE_LOG(LogRpgAbilitySystem, Warning, TEXT("RemoveDynamicTagGameplayEffect: Unable to find gameplay effect [%s]."), *URpgGameData::Get().DynamicTagGameplayEffect.GetAssetName());
 		return;
 	}
 
 	FGameplayEffectQuery Query = FGameplayEffectQuery::MakeQuery_MatchAnyOwningTags(FGameplayTagContainer(Tag));
-	Query.EffectDefinition = DynamicTagGameplayEffectClass;
+	Query.EffectDefinition = DynamicTagGE;
 
 	RemoveActiveEffects(Query);
+}
+
+void URpgAbilitySystemComponent::AddTimedLooseGameplayTag(
+	const FGameplayTag& Tag,
+	float Duration,
+	EGameplayTagReplicationState ReplicationState)
+{
+	if (!Tag.IsValid())
+	{
+		return;
+	}
+
+	RemoveTimedLooseGameplayTag(Tag, ReplicationState);
+
+	if (Duration <= 0.0f)
+	{
+		return;
+	}
+
+	SetLooseGameplayTagCount(Tag, 1, ReplicationState);
+
+	if (UWorld* World = GetWorld())
+	{
+		FTimerHandle& TimerHandle = TimedLooseTagTimerHandles.FindOrAdd(Tag);
+		World->GetTimerManager().SetTimer(
+			TimerHandle,
+			FTimerDelegate::CreateWeakLambda(this, [this, Tag, ReplicationState]()
+			{
+				SetLooseGameplayTagCount(Tag, 0, ReplicationState);
+				TimedLooseTagTimerHandles.Remove(Tag);
+			}),
+			Duration,
+			false);
+	}
+}
+
+void URpgAbilitySystemComponent::RemoveTimedLooseGameplayTag(
+	const FGameplayTag& Tag,
+	EGameplayTagReplicationState ReplicationState)
+{
+	if (!Tag.IsValid())
+	{
+		return;
+	}
+
+	if (FTimerHandle* TimerHandle = TimedLooseTagTimerHandles.Find(Tag))
+	{
+		if (UWorld* World = GetWorld())
+		{
+			World->GetTimerManager().ClearTimer(*TimerHandle);
+		}
+		TimedLooseTagTimerHandles.Remove(Tag);
+	}
+
+	SetLooseGameplayTagCount(Tag, 0, ReplicationState);
 }
 
 void URpgAbilitySystemComponent::GetAbilityTargetData(const FGameplayAbilitySpecHandle AbilityHandle, FGameplayAbilityActivationInfo ActivationInfo, FGameplayAbilityTargetDataHandle& OutTargetDataHandle)
@@ -807,6 +875,11 @@ void URpgAbilitySystemComponent::OnRep_ActivateAbilities()
 void URpgAbilitySystemComponent::ClearLifecycleTags()
 {
 	SetLooseGameplayTagCount(RpgGameplayTags::State_Dead, 0);
+	SetLooseGameplayTagCount(RpgGameplayTags::State_Blocking, 0);
+	SetLooseGameplayTagCount(RpgGameplayTags::State_PerfectBlockWindow, 0);
+	SetLooseGameplayTagCount(RpgGameplayTags::State_Staggered, 0);
+	SetLooseGameplayTagCount(RpgGameplayTags::State_GuardBroken, 0);
+	RemoveTimedLooseGameplayTag(RpgGameplayTags::State_StaggerImmune, EGameplayTagReplicationState::TagAndCountToAll);
 	SetLooseGameplayTagCount(RpgGameplayTags::Status_Death, 0);
 	SetLooseGameplayTagCount(RpgGameplayTags::Status_Death_Dying, 0);
 	SetLooseGameplayTagCount(RpgGameplayTags::Status_Death_Dead, 0);

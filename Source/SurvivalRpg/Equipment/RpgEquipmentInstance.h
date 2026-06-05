@@ -2,6 +2,7 @@
 
 #include "CoreMinimal.h"
 #include "UObject/Object.h"
+#include "RpgEquipmentDefinition.h"
 #include "RpgEquipmentInstance.generated.h"
 
 class AActor;
@@ -34,6 +35,11 @@ public:
 	UFUNCTION(BlueprintPure, Category = "Equipment")
 	TArray<AActor*> GetSpawnedActors() const { return SpawnedActors; }
 
+	UFUNCTION(BlueprintPure, Category = "Equipment")
+	ERpgEquipmentSlot GetEquippedSlot() const { return EquippedSlot; }
+
+	void SetEquippedSlot(ERpgEquipmentSlot InEquippedSlot) { EquippedSlot = InEquippedSlot; }
+
 	virtual void SpawnEquipmentActors(const TArray<FRpgEquipmentActorToSpawn>& ActorsToSpawn);
 	virtual void DestroyEquipmentActors();
 
@@ -55,6 +61,9 @@ private:
 
 	UPROPERTY(ReplicatedUsing = OnRep_Instigator)
 	TObjectPtr<UObject> Instigator = nullptr;
+
+	UPROPERTY(Replicated)
+	ERpgEquipmentSlot EquippedSlot = ERpgEquipmentSlot::None;
 
 	UPROPERTY(Replicated)
 	TArray<TObjectPtr<AActor>> SpawnedActors;

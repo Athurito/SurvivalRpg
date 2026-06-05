@@ -65,7 +65,17 @@ void URpgPawnGameplayComponent::EndPlay(const EEndPlayReason::Type EndPlayReason
 		{
 			CameraComponent->DetermineCameraModeDelegate.Unbind();
 		}
+
+		if (URpgInputComponent* RpgIC = Cast<URpgInputComponent>(Pawn->InputComponent))
+		{
+			for (auto& Entry : AdditionalInputConfigBindHandles)
+			{
+				RpgIC->RemoveBinds(Entry.Value);
+			}
+		}
 	}
+
+	AdditionalInputConfigBindHandles.Reset();
 	UnregisterInitStateFeature();
 	Super::EndPlay(EndPlayReason);
 }
@@ -317,23 +327,49 @@ void URpgPawnGameplayComponent::AddAdditionalInputConfig(const URpgInputConfig* 
 		return;
 	}
 
-	const APawn* Pawn = GetPawn<APawn>();
+	if (AdditionalInputConfigBindHandles.Contains(InputConfig))
+	{
+		return;
+	}
+
+	APawn* Pawn = GetPawn<APawn>();
 	const APlayerController* PC = GetController<APlayerController>();
 	if (!Pawn || !PC || !PC->GetLocalPlayer())
 	{
 		return;
 	}
 
-	URpgInputComponent* RpgIC = Pawn->FindComponentByClass<URpgInputComponent>();
+	URpgInputComponent* RpgIC = Cast<URpgInputComponent>(Pawn->InputComponent);
 	if (ensureMsgf(RpgIC, TEXT("Unexpected Input Component class! Ability inputs from the additional config will not be bound.")))
 	{
 		TArray<uint32> BindHandles;
 		RpgIC->BindAbilityActions(InputConfig, this, &ThisClass::Input_AbilityInputTagPressed, &ThisClass::Input_AbilityInputTagReleased, BindHandles);
+		AdditionalInputConfigBindHandles.Add(InputConfig, MoveTemp(BindHandles));
 	}
 }
 
 void URpgPawnGameplayComponent::RemoveAdditionalInputConfig(const URpgInputConfig* InputConfig)
 {
+	if (!InputConfig)
+	{
+		return;
+	}
+
+	TArray<uint32>* BindHandles = AdditionalInputConfigBindHandles.Find(InputConfig);
+	if (!BindHandles)
+	{
+		return;
+	}
+
+	if (APawn* Pawn = GetPawn<APawn>())
+	{
+		if (URpgInputComponent* RpgIC = Cast<URpgInputComponent>(Pawn->InputComponent))
+		{
+			RpgIC->RemoveBinds(*BindHandles);
+		}
+	}
+
+	AdditionalInputConfigBindHandles.Remove(InputConfig);
 }
 
 bool URpgPawnGameplayComponent::IsReadyToBindInputs() const

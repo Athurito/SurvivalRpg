@@ -14,6 +14,7 @@ class SURVIVALRPG_API URpgInventoryFragment_EquippableItem : public URpgInventor
 public:
 	TSubclassOf<URpgEquipmentDefinition> GetEquipmentDefinition() const { return EquipmentDefinition; }
 
+	// EquipmentDefinition used when this inventory item is equipped through the quickbar or equipment system.
 	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Equipment")
 	TSubclassOf<URpgEquipmentDefinition> EquipmentDefinition;
 };

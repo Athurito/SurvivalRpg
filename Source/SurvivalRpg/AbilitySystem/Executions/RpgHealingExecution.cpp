@@ -62,7 +62,7 @@ void URpgHealingExecution::Execute_Implementation(const FGameplayEffectCustomExe
 		return;
 	}
 
-	// 3) Output -> VitalSet.Healing (Meta)
+	// 3) Output -> HealthSet.Healing (Meta)
 	OutExecutionOutput.AddOutputModifier(
 		FGameplayModifierEvaluatedData(URpgHealthSet::GetHealingAttribute(), EGameplayModOp::Additive, Heal)
 	);

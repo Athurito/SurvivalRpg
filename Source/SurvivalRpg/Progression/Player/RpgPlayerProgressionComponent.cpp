@@ -7,6 +7,7 @@
 #include "Data/RpgPlayerProgressionData.h"
 #include "GameFramework/PlayerState.h"
 #include "Net/UnrealNetwork.h"
+#include "SurvivalRpg/SurvivalRpg.h"
 
 URpgPlayerProgressionComponent::URpgPlayerProgressionComponent()
 {
@@ -36,12 +37,25 @@ void URpgPlayerProgressionComponent::AddXP(float Amount)
 		return;
 
 	if (Amount <= 0.f || !ConfigData)
+	{
+		if (Amount > 0.f && !ConfigData)
+		{
+			UE_LOG(LogRpgProgression, Warning, TEXT("%s ignored %.2f XP because ConfigData is not set."), *GetNameSafe(this), Amount);
+		}
 		return;
+	}
 
 	State.XP += Amount;
 	TryLevelUp();
 
 	const float XPToNext = GetXPToNextLevel(State.Level);
+	UE_LOG(LogRpgProgression, Log, TEXT("%s gained %.2f XP. Level=%d XP=%.2f/%.2f SkillPoints=%d"),
+		*GetNameSafe(GetOwner()),
+		Amount,
+		State.Level,
+		State.XP,
+		XPToNext,
+		State.UnspentSkillPoints);
 	OnXPChanged.Broadcast(State.XP, XPToNext);
 }
 
@@ -70,6 +84,11 @@ void URpgPlayerProgressionComponent::OnRep_State()
 	OnXPChanged.Broadcast(State.XP, XPToNext);
 	OnLevelChanged.Broadcast(State.Level);
 	OnSkillPointsChanged.Broadcast(State.UnspentSkillPoints);
+}
+
+float URpgPlayerProgressionComponent::GetXPToNextLevelForCurrentLevel() const
+{
+	return GetXPToNextLevel(State.Level);
 }
 
 float URpgPlayerProgressionComponent::GetXPToNextLevel(int32 Level) const

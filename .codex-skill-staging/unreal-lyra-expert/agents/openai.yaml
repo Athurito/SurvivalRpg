@@ -1,4 +1,0 @@
-interface:
-  display_name: "Unreal Lyra Expert"
-  short_description: "Unreal/Lyra best-practice expert"
-  default_prompt: "Use $unreal-lyra-expert to review, design, or implement this Unreal Engine 5.7 task with Lyra-aligned best practices."

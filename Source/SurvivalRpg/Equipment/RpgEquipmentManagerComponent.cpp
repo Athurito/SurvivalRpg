@@ -5,13 +5,15 @@
 #include "Net/UnrealNetwork.h"
 #include "RpgEquipmentDefinition.h"
 #include "RpgEquipmentInstance.h"
+#include "RpgWeaponInstance.h"
 #include "SurvivalRpg/AbilitySystem/RpgAbilitySystemComponent.h"
+#include "SurvivalRpg/GameplayTags/RpgGameplayTags.h"
 
 #include UE_INLINE_GENERATED_CPP_BY_NAME(RpgEquipmentManagerComponent)
 
 FString FRpgAppliedEquipmentEntry::GetDebugString() const
 {
-	return FString::Printf(TEXT("%s of %s"), *GetNameSafe(Instance), *GetNameSafe(EquipmentDefinition.Get()));
+	return FString::Printf(TEXT("%s of %s in slot %d"), *GetNameSafe(Instance), *GetNameSafe(EquipmentDefinition.Get()), static_cast<int32>(EquippedSlot));
 }
 
 void FRpgEquipmentList::PreReplicatedRemove(const TArrayView<int32> RemovedIndices, int32 FinalSize)
@@ -49,7 +51,7 @@ URpgAbilitySystemComponent* FRpgEquipmentList::GetAbilitySystemComponent() const
 	return Cast<URpgAbilitySystemComponent>(UAbilitySystemGlobals::GetAbilitySystemComponentFromActor(OwningActor));
 }
 
-URpgEquipmentInstance* FRpgEquipmentList::AddEntry(TSubclassOf<URpgEquipmentDefinition> EquipmentDefinition)
+URpgEquipmentInstance* FRpgEquipmentList::AddEntry(TSubclassOf<URpgEquipmentDefinition> EquipmentDefinition, ERpgEquipmentSlot EquippedSlot)
 {
 	check(EquipmentDefinition != nullptr);
 	check(OwnerComponent);
@@ -64,20 +66,11 @@ URpgEquipmentInstance* FRpgEquipmentList::AddEntry(TSubclassOf<URpgEquipmentDefi
 
 	FRpgAppliedEquipmentEntry& NewEntry = Entries.AddDefaulted_GetRef();
 	NewEntry.EquipmentDefinition = EquipmentDefinition;
+	NewEntry.EquippedSlot = EquippedSlot;
 	NewEntry.Instance = NewObject<URpgEquipmentInstance>(OwnerComponent->GetOwner(), InstanceType);
 
 	URpgEquipmentInstance* Result = NewEntry.Instance;
-
-	if (URpgAbilitySystemComponent* AbilitySystemComponent = GetAbilitySystemComponent())
-	{
-		for (const TObjectPtr<const URpgAbilitySet>& AbilitySet : EquipmentCDO->AbilitySetsToGrant)
-		{
-			if (AbilitySet != nullptr)
-			{
-				AbilitySet->GiveToAbilitySystem(AbilitySystemComponent, &NewEntry.GrantedHandles, Result);
-			}
-		}
-	}
+	Result->SetEquippedSlot(EquippedSlot);
 
 	Result->SpawnEquipmentActors(EquipmentCDO->ActorsToSpawn);
 	MarkItemDirty(NewEntry);
@@ -128,12 +121,21 @@ void URpgEquipmentManagerComponent::GetLifetimeReplicatedProps(TArray<FLifetimeP
 
 URpgEquipmentInstance* URpgEquipmentManagerComponent::EquipItem(TSubclassOf<URpgEquipmentDefinition> EquipmentDefinition)
 {
+	const URpgEquipmentDefinition* EquipmentCDO = EquipmentDefinition ? GetDefault<URpgEquipmentDefinition>(EquipmentDefinition) : nullptr;
+	return EquipItemInSlot(EquipmentDefinition, EquipmentCDO ? EquipmentCDO->GetDefaultEquipSlot() : ERpgEquipmentSlot::MainHand);
+}
+
+URpgEquipmentInstance* URpgEquipmentManagerComponent::EquipItemInSlot(TSubclassOf<URpgEquipmentDefinition> EquipmentDefinition, ERpgEquipmentSlot Slot)
+{
 	URpgEquipmentInstance* Result = nullptr;
-	if (EquipmentDefinition != nullptr)
+	if (CanEquipItemInSlot(EquipmentDefinition, Slot))
 	{
-		Result = EquipmentList.AddEntry(EquipmentDefinition);
+		UnequipConflictingItems(EquipmentDefinition, Slot);
+
+		Result = EquipmentList.AddEntry(EquipmentDefinition, Slot);
 		if (Result != nullptr)
 		{
+			RebuildEquipmentAbilityGrants();
 			Result->OnEquipped();
 
 			if (IsUsingRegisteredSubObjectList() && IsReadyForReplication())
@@ -160,6 +162,24 @@ void URpgEquipmentManagerComponent::UnequipItem(URpgEquipmentInstance* ItemInsta
 
 	ItemInstance->OnUnequipped();
 	EquipmentList.RemoveEntry(ItemInstance);
+	RebuildEquipmentAbilityGrants();
+}
+
+void URpgEquipmentManagerComponent::UnequipItemInSlot(ERpgEquipmentSlot Slot)
+{
+	TArray<URpgEquipmentInstance*> InstancesToUnequip;
+	for (const FRpgAppliedEquipmentEntry& Entry : EquipmentList.Entries)
+	{
+		if (DoesEquipmentOccupySlot(Entry, Slot))
+		{
+			InstancesToUnequip.Add(Entry.Instance);
+		}
+	}
+
+	for (URpgEquipmentInstance* Instance : InstancesToUnequip)
+	{
+		UnequipItem(Instance);
+	}
 }
 
 URpgEquipmentInstance* URpgEquipmentManagerComponent::GetFirstInstanceOfType(TSubclassOf<URpgEquipmentInstance> InstanceType) const
@@ -187,6 +207,77 @@ TArray<URpgEquipmentInstance*> URpgEquipmentManagerComponent::GetEquipmentInstan
 	}
 
 	return Results;
+}
+
+URpgEquipmentInstance* URpgEquipmentManagerComponent::GetEquipmentInstanceInSlot(ERpgEquipmentSlot Slot) const
+{
+	for (const FRpgAppliedEquipmentEntry& Entry : EquipmentList.Entries)
+	{
+		if (Entry.EquippedSlot == Slot && Entry.Instance != nullptr)
+		{
+			return Entry.Instance;
+		}
+	}
+
+	return nullptr;
+}
+
+bool URpgEquipmentManagerComponent::IsEquipmentSlotBlocked(ERpgEquipmentSlot Slot) const
+{
+	if (Slot == ERpgEquipmentSlot::None)
+	{
+		return true;
+	}
+
+	for (const FRpgAppliedEquipmentEntry& Entry : EquipmentList.Entries)
+	{
+		if (Entry.EquippedSlot != Slot && DoesEquipmentOccupySlot(Entry, Slot))
+		{
+			return true;
+		}
+	}
+
+	return false;
+}
+
+bool URpgEquipmentManagerComponent::IsEquipmentInstanceActiveForInputTag(const URpgEquipmentInstance* EquipmentInstance, FGameplayTag InputTag) const
+{
+	if (!EquipmentInstance)
+	{
+		return false;
+	}
+
+	if (!InputTag.IsValid())
+	{
+		return true;
+	}
+
+	if (InputTag == RpgGameplayTags::InputTag_Weapon_Primary)
+	{
+		return EquipmentInstance == GetEquipmentInstanceInSlot(ERpgEquipmentSlot::MainHand);
+	}
+
+	if (InputTag == RpgGameplayTags::InputTag_Weapon_Secondary)
+	{
+		return !IsEquipmentSlotBlocked(ERpgEquipmentSlot::OffHand) &&
+			EquipmentInstance == GetEquipmentInstanceInSlot(ERpgEquipmentSlot::OffHand);
+	}
+
+	if (InputTag == RpgGameplayTags::InputTag_Weapon_Block)
+	{
+		if (URpgEquipmentInstance* OffHandInstance = GetEquipmentInstanceInSlot(ERpgEquipmentSlot::OffHand))
+		{
+			if (CanEquipmentBlock(OffHandInstance))
+			{
+				return EquipmentInstance == OffHandInstance;
+			}
+		}
+
+		URpgEquipmentInstance* MainHandInstance = GetEquipmentInstanceInSlot(ERpgEquipmentSlot::MainHand);
+		return EquipmentInstance == MainHandInstance && CanEquipmentBlock(MainHandInstance);
+	}
+
+	return true;
 }
 
 bool URpgEquipmentManagerComponent::ReplicateSubobjects(UActorChannel* Channel, FOutBunch* Bunch, FReplicationFlags* RepFlags)
@@ -236,6 +327,132 @@ void URpgEquipmentManagerComponent::ReadyForReplication()
 			if (Entry.Instance != nullptr && IsValid(Entry.Instance))
 			{
 				AddReplicatedSubObject(Entry.Instance);
+			}
+		}
+	}
+}
+
+bool URpgEquipmentManagerComponent::CanEquipItemInSlot(TSubclassOf<URpgEquipmentDefinition> EquipmentDefinition, ERpgEquipmentSlot Slot) const
+{
+	const URpgEquipmentDefinition* EquipmentCDO = EquipmentDefinition ? GetDefault<URpgEquipmentDefinition>(EquipmentDefinition) : nullptr;
+	return EquipmentCDO && EquipmentCDO->CanEquipInSlot(Slot);
+}
+
+void URpgEquipmentManagerComponent::UnequipConflictingItems(TSubclassOf<URpgEquipmentDefinition> EquipmentDefinition, ERpgEquipmentSlot Slot)
+{
+	const URpgEquipmentDefinition* NewEquipmentCDO = EquipmentDefinition ? GetDefault<URpgEquipmentDefinition>(EquipmentDefinition) : nullptr;
+	if (!NewEquipmentCDO)
+	{
+		return;
+	}
+
+	TArray<URpgEquipmentInstance*> InstancesToUnequip;
+	for (const FRpgAppliedEquipmentEntry& Entry : EquipmentList.Entries)
+	{
+		const URpgEquipmentDefinition* ExistingEquipmentCDO = Entry.EquipmentDefinition ? GetDefault<URpgEquipmentDefinition>(Entry.EquipmentDefinition) : nullptr;
+		if (!ExistingEquipmentCDO || !Entry.Instance)
+		{
+			continue;
+		}
+
+		const bool bNewConflictsWithExistingSlot = NewEquipmentCDO->OccupiesSlot(Slot, Entry.EquippedSlot);
+		const bool bExistingConflictsWithNewMainHand = NewEquipmentCDO->OccupiesSlot(Slot, ERpgEquipmentSlot::MainHand) && ExistingEquipmentCDO->OccupiesSlot(Entry.EquippedSlot, ERpgEquipmentSlot::MainHand);
+		const bool bExistingConflictsWithNewOffHand = NewEquipmentCDO->OccupiesSlot(Slot, ERpgEquipmentSlot::OffHand) && ExistingEquipmentCDO->OccupiesSlot(Entry.EquippedSlot, ERpgEquipmentSlot::OffHand);
+
+		if (bNewConflictsWithExistingSlot || bExistingConflictsWithNewMainHand || bExistingConflictsWithNewOffHand)
+		{
+			InstancesToUnequip.Add(Entry.Instance);
+		}
+	}
+
+	for (URpgEquipmentInstance* Instance : InstancesToUnequip)
+	{
+		UnequipItem(Instance);
+	}
+}
+
+bool URpgEquipmentManagerComponent::DoesEquipmentOccupySlot(const FRpgAppliedEquipmentEntry& Entry, ERpgEquipmentSlot Slot) const
+{
+	const URpgEquipmentDefinition* EquipmentCDO = Entry.EquipmentDefinition ? GetDefault<URpgEquipmentDefinition>(Entry.EquipmentDefinition) : nullptr;
+	return EquipmentCDO && EquipmentCDO->OccupiesSlot(Entry.EquippedSlot, Slot);
+}
+
+bool URpgEquipmentManagerComponent::CanEquipmentBlock(const URpgEquipmentInstance* EquipmentInstance) const
+{
+	const URpgWeaponInstance* WeaponInstance = Cast<URpgWeaponInstance>(EquipmentInstance);
+	return WeaponInstance && WeaponInstance->CanBlock();
+}
+
+URpgEquipmentInstance* URpgEquipmentManagerComponent::GetActiveBlockSource() const
+{
+	if (URpgEquipmentInstance* OffHandInstance = GetEquipmentInstanceInSlot(ERpgEquipmentSlot::OffHand))
+	{
+		if (CanEquipmentBlock(OffHandInstance))
+		{
+			return OffHandInstance;
+		}
+	}
+
+	URpgEquipmentInstance* MainHandInstance = GetEquipmentInstanceInSlot(ERpgEquipmentSlot::MainHand);
+	return CanEquipmentBlock(MainHandInstance) ? MainHandInstance : nullptr;
+}
+
+bool URpgEquipmentManagerComponent::ShouldGrantSlotAbilitySet(const FRpgAppliedEquipmentEntry& Entry, const FRpgEquipmentSlotAbilitySet& SlotAbilitySet, const URpgEquipmentInstance* ActiveBlockSource) const
+{
+	if (!Entry.Instance || !SlotAbilitySet.AbilitySet)
+	{
+		return false;
+	}
+
+	if (Entry.EquippedSlot != SlotAbilitySet.EquippedSlot)
+	{
+		return false;
+	}
+
+	if (SlotAbilitySet.GrantPolicy == ERpgEquipmentAbilityGrantPolicy::ActiveBlockSourceOnly)
+	{
+		return Entry.Instance == ActiveBlockSource;
+	}
+
+	return true;
+}
+
+void URpgEquipmentManagerComponent::RebuildEquipmentAbilityGrants()
+{
+	URpgAbilitySystemComponent* AbilitySystemComponent = EquipmentList.GetAbilitySystemComponent();
+	if (!AbilitySystemComponent)
+	{
+		return;
+	}
+
+	for (FRpgAppliedEquipmentEntry& Entry : EquipmentList.Entries)
+	{
+		Entry.GrantedHandles.TakeFromAbilitySystem(AbilitySystemComponent);
+	}
+
+	const URpgEquipmentInstance* ActiveBlockSource = GetActiveBlockSource();
+
+	for (FRpgAppliedEquipmentEntry& Entry : EquipmentList.Entries)
+	{
+		const URpgEquipmentDefinition* EquipmentCDO = Entry.EquipmentDefinition ? GetDefault<URpgEquipmentDefinition>(Entry.EquipmentDefinition) : nullptr;
+		if (!EquipmentCDO || !Entry.Instance)
+		{
+			continue;
+		}
+
+		for (const TObjectPtr<const URpgAbilitySet>& AbilitySet : EquipmentCDO->AbilitySetsToGrant)
+		{
+			if (AbilitySet != nullptr)
+			{
+				AbilitySet->GiveToAbilitySystem(AbilitySystemComponent, &Entry.GrantedHandles, Entry.Instance);
+			}
+		}
+
+		for (const FRpgEquipmentSlotAbilitySet& SlotAbilitySet : EquipmentCDO->SlotAbilitySetsToGrant)
+		{
+			if (ShouldGrantSlotAbilitySet(Entry, SlotAbilitySet, ActiveBlockSource))
+			{
+				SlotAbilitySet.AbilitySet->GiveToAbilitySystem(AbilitySystemComponent, &Entry.GrantedHandles, Entry.Instance);
 			}
 		}
 	}

@@ -77,6 +77,10 @@ public:
 
 	UFUNCTION(BlueprintCallable, Category = "Rpg|Inventory")
 	URpgInventoryManagerComponent* GetInventoryManagerComponent() const { return InventoryManagerComponent; }
+
+	UFUNCTION(BlueprintCallable, Category = "Rpg|Progression")
+	URpgPlayerProgressionComponent* GetPlayerProgressionComponent() const { return PlayerProgressionComponent; }
+
 	void SetRespawnState(bool bInIsWaitingForRespawn, float InRespawnAvailableServerTime);
 	void SetCheckpointData(bool bInHasCheckpoint, const FTransform& InCheckpointTransform);
 

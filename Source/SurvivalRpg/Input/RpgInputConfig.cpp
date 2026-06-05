@@ -3,6 +3,14 @@
 
 #include "RpgInputConfig.h"
 
+namespace
+{
+FGameplayTag ResolveGameplayTag(FName TagName)
+{
+	return TagName.IsNone() ? FGameplayTag() : FGameplayTag::RequestGameplayTag(TagName);
+}
+}
+
 URpgInputConfig::URpgInputConfig(const FObjectInitializer& ObjectInitializer)
 {
 }
@@ -41,4 +49,16 @@ const UInputAction* URpgInputConfig::FindAbilityInputActionForTag(const FGamepla
 	}
 
 	return nullptr;
+}
+
+void URpgInputConfig::ClearAbilityInputActions()
+{
+	AbilityInputActions.Reset();
+}
+
+void URpgInputConfig::AddAbilityInputActionByTagName(const UInputAction* InputAction, FName InputTagName)
+{
+	FRpgInputAction& NewAction = AbilityInputActions.AddDefaulted_GetRef();
+	NewAction.InputAction = InputAction;
+	NewAction.InputTag = ResolveGameplayTag(InputTagName);
 }

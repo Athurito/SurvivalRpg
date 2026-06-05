@@ -54,7 +54,10 @@ void FRpgAbilitySet_GrantedHandles::TakeFromAbilitySystem(URpgAbilitySystemCompo
 }
 
 
-void URpgAbilitySet::GiveToAbilitySystem(URpgAbilitySystemComponent* RpgASC, FRpgAbilitySet_GrantedHandles* OutGrantedHandles, UObject* SourceObject) const
+void URpgAbilitySet::GiveToAbilitySystem(
+	URpgAbilitySystemComponent* RpgASC,
+	FRpgAbilitySet_GrantedHandles* OutGrantedHandles,
+	UObject* SourceObject) const
 {
 	check(RpgASC);
 
@@ -126,4 +129,15 @@ void URpgAbilitySet::AddGrantedGameplayAbility(TSubclassOf<URpgGameplayAbility> 
 	NewAbility.Ability = AbilityClass;
 	NewAbility.AbilityLevel = AbilityLevel;
 	NewAbility.InputTag = InputTag;
+}
+
+void URpgAbilitySet::ClearGrantedGameplayAbilities()
+{
+	GrantedGameplayAbilities.Reset();
+}
+
+void URpgAbilitySet::AddGrantedGameplayAbilityByTagName(TSubclassOf<URpgGameplayAbility> AbilityClass, int32 AbilityLevel, FName InputTagName)
+{
+	const FGameplayTag InputTag = InputTagName.IsNone() ? FGameplayTag() : FGameplayTag::RequestGameplayTag(InputTagName);
+	AddGrantedGameplayAbility(AbilityClass, AbilityLevel, InputTag);
 }

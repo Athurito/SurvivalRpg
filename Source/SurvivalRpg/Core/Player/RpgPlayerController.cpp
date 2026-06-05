@@ -4,14 +4,20 @@
 #include "RpgPlayerController.h"
 
 #include "Engine/World.h"
+#include "Engine/Engine.h"
 #include "EnhancedInputSubsystems.h"
+#include "Framework/Application/SlateApplication.h"
 #include "GameFramework/Pawn.h"
+#include "GameFramework/PlayerInput.h"
 #include "SurvivalRpg/AbilitySystem/RpgAbilitySystemComponent.h"
 #include "SurvivalRpg/Core/Game/RpgGameModeBase.h"
+#include "SurvivalRpg/Core/Character/RpgPawnExtensionComponent.h"
 #include "SurvivalRpg/Core/Player/RpgBasePlayerState.h"
 #include "SurvivalRpg/Core/Player/RpgPlayerState.h"
 #include "SurvivalRpg/Equipment/RpgQuickBarComponent.h"
 #include "SurvivalRpg/GameplayTags/RpgGameplayTags.h"
+#include "SurvivalRpg/Progression/Player/RpgPlayerProgressionComponent.h"
+#include "SurvivalRpg/SurvivalRpg.h"
 
 ARpgPlayerController::ARpgPlayerController(const FObjectInitializer& ObjectInitializer)
 	: Super(ObjectInitializer)
@@ -44,6 +50,11 @@ void ARpgPlayerController::RequestRespawn()
 	}
 }
 
+void ARpgPlayerController::ClientRestoreGameplayInputFocus_Implementation()
+{
+	RestoreGameplayInputFocus();
+}
+
 void ARpgPlayerController::SetActiveQuickBarSlot(int32 SlotIndex)
 {
 	if (QuickBarComponent != nullptr)
@@ -52,10 +63,35 @@ void ARpgPlayerController::SetActiveQuickBarSlot(int32 SlotIndex)
 	}
 }
 
+void ARpgPlayerController::RpgPrintProgression() const
+{
+	const ARpgPlayerState* RpgPS = GetRpgPlayerState();
+	const URpgPlayerProgressionComponent* ProgressionComponent = RpgPS ? RpgPS->GetPlayerProgressionComponent() : nullptr;
+	if (ProgressionComponent == nullptr)
+	{
+		UE_LOG(LogRpgProgression, Warning, TEXT("No player progression component found for %s."), *GetNameSafe(this));
+		return;
+	}
+
+	const FString Message = FString::Printf(
+		TEXT("Progression: Level %d | XP %.0f / %.0f | SkillPoints %d"),
+		ProgressionComponent->GetLevel(),
+		ProgressionComponent->GetXP(),
+		ProgressionComponent->GetXPToNextLevelForCurrentLevel(),
+		ProgressionComponent->GetUnspentSkillPoints());
+
+	UE_LOG(LogRpgProgression, Display, TEXT("%s"), *Message);
+	if (GEngine && IsLocalController())
+	{
+		GEngine->AddOnScreenDebugMessage(INDEX_NONE, 5.0f, FColor::Green, Message);
+	}
+}
+
 void ARpgPlayerController::BeginPlayingState()
 {
 	Super::BeginPlayingState();
 	RefreshPlayerStateBindings();
+	BindToGameModeRespawnEvent();
 }
 
 void ARpgPlayerController::SetupInputComponent()
@@ -79,6 +115,13 @@ void ARpgPlayerController::SetupInputComponent()
 	}
 }
 
+void ARpgPlayerController::EndPlay(const EEndPlayReason::Type EndPlayReason)
+{
+	UnbindFromPawnExtensionForLoadout();
+	UnbindFromGameModeRespawnEvent();
+	Super::EndPlay(EndPlayReason);
+}
+
 void ARpgPlayerController::PlayerTick(float DeltaTime)
 {
 	Super::PlayerTick(DeltaTime);
@@ -98,6 +141,22 @@ void ARpgPlayerController::OnPossess(APawn* InPawn)
 {
 	Super::OnPossess(InPawn);
 	SetIsAutoRunning(false);
+	SetIgnoreMoveInput(false);
+	SetIgnoreLookInput(false);
+	ClientRestoreGameplayInputFocus();
+	BindToGameModeRespawnEvent();
+	BindToPawnExtensionForLoadout(InPawn);
+}
+
+void ARpgPlayerController::OnUnPossess()
+{
+	if (QuickBarComponent)
+	{
+		QuickBarComponent->UnequipActiveLoadoutFromCurrentPawn();
+	}
+
+	UnbindFromPawnExtensionForLoadout();
+	Super::OnUnPossess();
 }
 
 void ARpgPlayerController::SetGenericTeamId(const FGenericTeamId& NewTeamID)
@@ -179,6 +238,11 @@ void ARpgPlayerController::ServerRequestRespawn_Implementation()
 void ARpgPlayerController::HandleRespawnStateChanged(bool bIsWaitingForRespawn, float RespawnAvailableServerTime)
 {
 	K2_OnRespawnStateChanged(bIsWaitingForRespawn, RespawnAvailableServerTime);
+
+	if (!bIsWaitingForRespawn && IsLocalController() && GetPawn())
+	{
+		RestoreGameplayInputFocus();
+	}
 }
 
 void ARpgPlayerController::HandleCheckpointChanged(bool bHasCheckpoint, FTransform CheckpointTransform)
@@ -248,3 +312,125 @@ void ARpgPlayerController::OnEndAutoRun()
 	}
 }
 
+void ARpgPlayerController::RestoreGameplayInputFocus()
+{
+	if (!IsLocalController())
+	{
+		return;
+	}
+
+	SetIgnoreMoveInput(false);
+	SetIgnoreLookInput(false);
+	SetShowMouseCursor(false);
+
+	FInputModeGameOnly InputMode;
+	SetInputMode(InputMode);
+
+	if (PlayerInput)
+	{
+		PlayerInput->FlushPressedKeys();
+	}
+
+	if (FSlateApplication::IsInitialized())
+	{
+		FSlateApplication::Get().SetAllUserFocusToGameViewport();
+	}
+}
+
+void ARpgPlayerController::BindToPawnExtensionForLoadout(APawn* InPawn)
+{
+	UnbindFromPawnExtensionForLoadout();
+
+	if (!HasAuthority() || !InPawn)
+	{
+		return;
+	}
+
+	URpgPawnExtensionComponent* PawnExtension = URpgPawnExtensionComponent::FindPawnExtensionComponent(InPawn);
+	if (!PawnExtension)
+	{
+		return;
+	}
+
+	BoundLoadoutPawnExtension = PawnExtension;
+	BoundLoadoutPawnExtension->OnAbilitySystemInitialized_RegisterAndCall(
+		FSimpleMulticastDelegate::FDelegate::CreateUObject(this, &ThisClass::HandlePossessedPawnAbilitySystemInitialized));
+	BoundLoadoutPawnExtension->OnAbilitySystemUninitialized_Register(
+		FSimpleMulticastDelegate::FDelegate::CreateUObject(this, &ThisClass::HandlePossessedPawnAbilitySystemUninitialized));
+}
+
+void ARpgPlayerController::UnbindFromPawnExtensionForLoadout()
+{
+	if (!BoundLoadoutPawnExtension)
+	{
+		return;
+	}
+
+	BoundLoadoutPawnExtension->OnAbilitySystemInitialized.RemoveAll(this);
+	BoundLoadoutPawnExtension->OnAbilitySystemUninitialized.RemoveAll(this);
+	BoundLoadoutPawnExtension = nullptr;
+}
+
+void ARpgPlayerController::HandlePossessedPawnAbilitySystemInitialized()
+{
+	if (HasAuthority() && QuickBarComponent)
+	{
+		QuickBarComponent->RefreshActiveLoadoutOnCurrentPawn();
+	}
+}
+
+void ARpgPlayerController::HandlePossessedPawnAbilitySystemUninitialized()
+{
+	if (QuickBarComponent)
+	{
+		QuickBarComponent->UnequipActiveLoadoutFromCurrentPawn();
+	}
+}
+
+void ARpgPlayerController::BindToGameModeRespawnEvent()
+{
+	if (!HasAuthority())
+	{
+		return;
+	}
+
+	ARpgGameModeBase* GameMode = GetWorld() ? GetWorld()->GetAuthGameMode<ARpgGameModeBase>() : nullptr;
+	if (BoundRespawnGameMode == GameMode)
+	{
+		return;
+	}
+
+	UnbindFromGameModeRespawnEvent();
+
+	if (GameMode)
+	{
+		BoundRespawnGameMode = GameMode;
+		BoundRespawnGameMode->OnPlayerRespawned.AddUniqueDynamic(this, &ThisClass::HandleGameModePlayerRespawned);
+	}
+}
+
+void ARpgPlayerController::UnbindFromGameModeRespawnEvent()
+{
+	if (!BoundRespawnGameMode)
+	{
+		return;
+	}
+
+	BoundRespawnGameMode->OnPlayerRespawned.RemoveDynamic(this, &ThisClass::HandleGameModePlayerRespawned);
+	BoundRespawnGameMode = nullptr;
+}
+
+void ARpgPlayerController::HandleGameModePlayerRespawned(APlayerController* RespawnedPlayerController, FTransform RespawnTransform)
+{
+	if (RespawnedPlayerController != this)
+	{
+		return;
+	}
+
+	if (QuickBarComponent)
+	{
+		QuickBarComponent->RefreshActiveLoadoutOnCurrentPawn();
+	}
+
+	ClientRestoreGameplayInputFocus();
+}

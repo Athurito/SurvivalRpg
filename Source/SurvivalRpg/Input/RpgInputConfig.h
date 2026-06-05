@@ -17,10 +17,10 @@ struct FRpgInputAction
 
 public:
 
-	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly)
+	UPROPERTY(EditAnywhere, BlueprintReadOnly)
 	TObjectPtr<const UInputAction> InputAction = nullptr;
 
-	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Meta = (Categories = "InputTag"))
+	UPROPERTY(EditAnywhere, BlueprintReadOnly, Meta = (Categories = "InputTag"))
 	FGameplayTag InputTag;
 };
 
@@ -36,14 +36,20 @@ public:
 
 	UFUNCTION(BlueprintCallable, Category = "Rpg|Pawn")
 	const UInputAction* FindAbilityInputActionForTag(const FGameplayTag& InputTag, bool bLogNotFound = true) const;
+
+	UFUNCTION(BlueprintCallable, Category = "Rpg|Input")
+	void ClearAbilityInputActions();
+
+	UFUNCTION(BlueprintCallable, Category = "Rpg|Input")
+	void AddAbilityInputActionByTagName(const UInputAction* InputAction, FName InputTagName);
 	
 public:
 	
 	// List of input actions used by the owner.  These input actions are mapped to a gameplay tag and must be manually bound.
-	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Meta = (TitleProperty = "InputAction"))
+	UPROPERTY(EditAnywhere, BlueprintReadOnly, Meta = (TitleProperty = "InputAction"))
 	TArray<FRpgInputAction> NativeInputActions;
 
 	// List of input actions used by the owner.  These input actions are mapped to a gameplay tag and are automatically bound to abilities with matching input tags.
-	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Meta = (TitleProperty = "InputAction"))
+	UPROPERTY(EditAnywhere, BlueprintReadOnly, Meta = (TitleProperty = "InputAction"))
 	TArray<FRpgInputAction> AbilityInputActions;
 };

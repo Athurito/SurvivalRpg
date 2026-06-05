@@ -9,7 +9,6 @@
 
 
 struct FRpgOutOfHealthInfo;
-class UGameplayEffect;
 class URpgHealthSet;
 class URpgAbilitySystemComponent;
 struct FGameplayEffectSpec;
@@ -145,19 +144,4 @@ protected:
 	// Replicated state used to handle dying.
 	UPROPERTY(ReplicatedUsing = OnRep_DeathState)
 	ERpgDeathState DeathState;
-	
-	
-private:
-	
-	// Gameplay effect used to apply damage.  Uses SetByCaller for the damage magnitude.
-	UPROPERTY(EditDefaultsOnly, Category = "Default Gameplay Effects", meta = (DisplayName = "Damage Gameplay Effect (SetByCaller)"))
-	TSubclassOf<UGameplayEffect> DamageGameplayEffect_SetByCaller;
-
-	// Gameplay effect used to apply healing.  Uses SetByCaller for the healing magnitude.
-	UPROPERTY(EditDefaultsOnly, Category = "Default Gameplay Effects", meta = (DisplayName = "Heal Gameplay Effect (SetByCaller)"))
-	TSubclassOf<UGameplayEffect> HealGameplayEffect_SetByCaller;
-
-	// Gameplay effect used to add and remove dynamic tags.
-	UPROPERTY(EditDefaultsOnly, Category = "Default Gameplay Effects")
-	TSubclassOf<UGameplayEffect> DynamicTagGameplayEffect;
 };

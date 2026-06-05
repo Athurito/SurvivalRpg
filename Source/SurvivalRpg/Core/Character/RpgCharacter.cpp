@@ -10,6 +10,7 @@
 #include "RpgPawnExtensionComponent.h"
 #include "RpgPawnGameplayComponent.h"
 #include "Components/CapsuleComponent.h"
+#include "Components/SkeletalMeshComponent.h"
 #include "SurvivalRpg/AbilitySystem/RpgAbilitySystemComponent.h"
 #include "SurvivalRpg/AbilitySystem/Attributes/RpgHealthSet.h"
 #include "SurvivalRpg/Camera/RpgCameraComponent.h"
@@ -26,6 +27,9 @@ ARpgCharacter::ARpgCharacter(const FObjectInitializer& ObjectInitializer) :
 	// Avoid ticking characters if possible.
 	PrimaryActorTick.bCanEverTick = false;
 	PrimaryActorTick.bStartWithTickEnabled = false;
+
+	GetCapsuleComponent()->SetCollisionProfileName(TEXT("RpgPawnCapsule"));
+	GetMesh()->SetCollisionProfileName(TEXT("RpgPawnMesh"));
 	
 	SetNetCullDistanceSquared(900000000.0f);
 	
@@ -73,12 +77,12 @@ ARpgCharacter::ARpgCharacter(const FObjectInitializer& ObjectInitializer) :
 
 ARpgPlayerController* ARpgCharacter::GetRpgPlayerController() const
 {
-	return CastChecked<ARpgPlayerController>(GetController(), ECastCheckedType::NullAllowed);
+	return Cast<ARpgPlayerController>(GetController());
 }
 
 ARpgPlayerState* ARpgCharacter::GetRpgPlayerState() const
 {
-	return CastChecked<ARpgPlayerState>(GetPlayerState(), ECastCheckedType::NullAllowed);
+	return Cast<ARpgPlayerState>(GetPlayerState());
 }
 
 URpgAbilitySystemComponent* ARpgCharacter::GetRpgAbilitySystemComponent() const
@@ -199,7 +203,12 @@ void ARpgCharacter::OnDeathFinished(AActor* OwningActor)
 		{
 			GameMode->NotifyPlayerDeath(PC);
 		}
+
+		return;
 	}
+
+	EnterDeadState();
+	SetLifeSpan(8.0f);
 }
 
 void ARpgCharacter::OnDownedStateChanged(ERpgDownedState NewState)

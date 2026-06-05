@@ -6,6 +6,7 @@
 #include "AbilitySystemComponent.h"
 #include "RpgAbilitySet.h"
 #include "Abilities/RpgGameplayAbility.h"
+#include "TimerManager.h"
 
 #include "RpgAbilitySystemComponent.generated.h"
 
@@ -48,6 +49,16 @@ public:
 
 	// Removes all active instances of the gameplay effect that was used to add the specified dynamic granted tag.
 	void RemoveDynamicTagGameplayEffect(const FGameplayTag& Tag);
+
+	// Adds a replicated loose tag for a fixed duration, replacing any previous timer for the same tag.
+	void AddTimedLooseGameplayTag(
+		const FGameplayTag& Tag,
+		float Duration,
+		EGameplayTagReplicationState ReplicationState = EGameplayTagReplicationState::TagAndCountToAll);
+
+	void RemoveTimedLooseGameplayTag(
+		const FGameplayTag& Tag,
+		EGameplayTagReplicationState ReplicationState = EGameplayTagReplicationState::TagAndCountToAll);
 
 	/** Gets the ability target data associated with the given ability handle and activation info */
 	void GetAbilityTargetData(const FGameplayAbilitySpecHandle AbilityHandle, FGameplayAbilityActivationInfo ActivationInfo, FGameplayAbilityTargetDataHandle& OutTargetDataHandle);
@@ -95,10 +106,6 @@ protected:
 	// Number of abilities running in each activation group.
 	int32 ActivationGroupCounts[static_cast<uint8>(ERpgAbilityActivationGroup::MAX)];
 	
-private:
-	UPROPERTY(EditAnywhere, Category="RPG|AbilitySystem")
-	TSubclassOf<UGameplayEffect> DynamicTagGameplayEffectClass;
-
 public:
 	
 	/** BP-friendly: kann von Client aufgerufen werden, läuft server-autoritatv */
@@ -163,6 +170,8 @@ private:
 	
 	UPROPERTY()
 	TObjectPtr<ARpgBasePlayerState> OwnerPlayerState = nullptr;
+
+	TMap<FGameplayTag, FTimerHandle> TimedLooseTagTimerHandles;
 
 #if WITH_DEV_AUTOMATION_TESTS
 public:

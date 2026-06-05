@@ -1,4 +1,0 @@
-interface:
-  display_name: "SurvivalRpg Project"
-  short_description: "Project vision and implementation guardrails"
-  default_prompt: "Use $survival-rpg-project to keep this SurvivalRpg task aligned with the project's gameplay pillars, first-playable scope, and modular progression goals."

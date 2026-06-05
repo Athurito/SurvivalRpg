@@ -9,6 +9,7 @@
 #include "Misc/CommandLine.h"
 #include "Misc/ScopedSlowTask.h"
 #include "SurvivalRpg/Core/Character/RpgPawnData.h"
+#include "SurvivalRpg/System/RpgGameData.h"
 #include "SurvivalRpg/SurvivalRpg.h"
 
 const FName FRpgBundles::Equipped("Equipped");
@@ -21,6 +22,8 @@ static FAutoConsoleCommand CVarDumpLoadedAssets(
 URpgAssetManager::URpgAssetManager()
 {
 	DefaultPawnData = nullptr;
+	RpgGameDataPath = nullptr;
+	LoadedGameData = nullptr;
 }
 
 URpgAssetManager& URpgAssetManager::Get()
@@ -89,6 +92,12 @@ void URpgAssetManager::StartInitialLoading()
 	SCOPED_BOOT_TIMING("URpgAssetManager::StartInitialLoading");
 
 	Super::StartInitialLoading();
+
+	if (!RpgGameDataPath.IsNull())
+	{
+		GetGameData();
+	}
+
 	InitializeGameplayCueManager();
 }
 
@@ -104,6 +113,25 @@ const URpgPawnData* URpgAssetManager::GetDefaultPawnData() const
 	return GetAsset(DefaultPawnData);
 }
 
+const URpgGameData& URpgAssetManager::GetGameData()
+{
+	if (!LoadedGameData)
+	{
+		if (RpgGameDataPath.IsNull())
+		{
+			UE_LOG(LogRpg, Fatal, TEXT("RpgGameDataPath is not configured in DefaultGame.ini."));
+		}
+
+		LoadedGameData = GetAsset(RpgGameDataPath);
+		if (!LoadedGameData)
+		{
+			UE_LOG(LogRpg, Fatal, TEXT("Failed to load RpgGameData asset [%s]."), *RpgGameDataPath.ToString());
+		}
+	}
+
+	return *LoadedGameData;
+}
+
 #if WITH_EDITOR
 void URpgAssetManager::PreBeginPIE(bool bStartSimulate)
 {
@@ -115,5 +143,9 @@ void URpgAssetManager::PreBeginPIE(bool bStartSimulate)
 	SlowTask.MakeDialog(bShowCancelButton, bAllowInPIE);
 
 	GetDefaultPawnData();
+	if (!RpgGameDataPath.IsNull())
+	{
+		GetGameData();
+	}
 }
 #endif

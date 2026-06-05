@@ -9,8 +9,10 @@
 
 class URpgAbilitySystemComponent;
 class URpgQuickBarComponent;
+class URpgPawnExtensionComponent;
 class UInputMappingContext;
 class ARpgPlayerState;
+class ARpgGameModeBase;
 
 UCLASS(Abstract)
 class SURVIVALRPG_API ARpgPlayerController : public AModularPlayerController, public IGenericTeamAgentInterface
@@ -29,16 +31,23 @@ public:
 	UFUNCTION(BlueprintCallable, Category = "Rpg|Respawn")
 	void RequestRespawn();
 
+	UFUNCTION(Client, Reliable, BlueprintCallable, Category = "Rpg|Respawn")
+	void ClientRestoreGameplayInputFocus();
+
 	UFUNCTION(BlueprintCallable, Category = "Rpg|QuickBar")
 	URpgQuickBarComponent* GetQuickBarComponent() const { return QuickBarComponent; }
 
 	UFUNCTION(BlueprintCallable, Category = "Rpg|QuickBar")
 	void SetActiveQuickBarSlot(int32 SlotIndex);
 
+	UFUNCTION(Exec)
+	void RpgPrintProgression() const;
+
 	virtual void OnRep_PlayerState() override;
 	//~APlayerController interface
 	virtual void PlayerTick(float DeltaTime) override;
 	virtual void OnPossess(APawn* InPawn) override;
+	virtual void OnUnPossess() override;
 	virtual void PostProcessInput(const float DeltaTime, const bool bGamePaused) override;
 	//~End of APlayerController interface
 
@@ -79,11 +88,21 @@ protected:
 protected:
 	virtual void BeginPlayingState() override;
 	virtual void SetupInputComponent() override;
+	virtual void EndPlay(const EEndPlayReason::Type EndPlayReason) override;
 	
 
 private:
 	void OnStartAutoRun();
 	void OnEndAutoRun();
+	void RestoreGameplayInputFocus();
+	void BindToPawnExtensionForLoadout(APawn* InPawn);
+	void UnbindFromPawnExtensionForLoadout();
+	void HandlePossessedPawnAbilitySystemInitialized();
+	void HandlePossessedPawnAbilitySystemUninitialized();
+	void BindToGameModeRespawnEvent();
+	void UnbindFromGameModeRespawnEvent();
+	UFUNCTION()
+	void HandleGameModePlayerRespawned(APlayerController* RespawnedPlayerController, FTransform RespawnTransform);
 	void RefreshPlayerStateBindings();
 	void BindToPlayerState(ARpgPlayerState* NewPlayerState);
 	void UnbindFromPlayerState();
@@ -96,4 +115,10 @@ private:
 
 	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "Rpg|QuickBar", meta = (AllowPrivateAccess = "true"))
 	TObjectPtr<URpgQuickBarComponent> QuickBarComponent;
+
+	UPROPERTY(Transient)
+	TObjectPtr<URpgPawnExtensionComponent> BoundLoadoutPawnExtension;
+
+	UPROPERTY(Transient)
+	TObjectPtr<ARpgGameModeBase> BoundRespawnGameMode;
 };

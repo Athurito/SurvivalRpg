@@ -590,6 +590,7 @@ void ARpgGameModeBase::ExecuteRespawn(APlayerController* PC, const FTransform& S
 	}
 
 	PC->SetIgnoreMoveInput(false);
+	PC->SetIgnoreLookInput(false);
 	ResetPlayerRespawnState(PC);
 
 	OnPlayerRespawned.Broadcast(PC, SpawnPoint);

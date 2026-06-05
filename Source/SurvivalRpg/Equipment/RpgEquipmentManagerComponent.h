@@ -2,8 +2,10 @@
 
 #include "CoreMinimal.h"
 #include "Components/PawnComponent.h"
+#include "GameplayTagContainer.h"
 #include "Net/Serialization/FastArraySerializer.h"
 #include "SurvivalRpg/AbilitySystem/RpgAbilitySet.h"
+#include "RpgEquipmentDefinition.h"
 #include "RpgEquipmentManagerComponent.generated.h"
 
 class URpgAbilitySystemComponent;
@@ -24,6 +26,9 @@ private:
 
 	UPROPERTY()
 	TSubclassOf<URpgEquipmentDefinition> EquipmentDefinition;
+
+	UPROPERTY()
+	ERpgEquipmentSlot EquippedSlot = ERpgEquipmentSlot::None;
 
 	UPROPERTY()
 	TObjectPtr<URpgEquipmentInstance> Instance = nullptr;
@@ -49,7 +54,7 @@ struct SURVIVALRPG_API FRpgEquipmentList : public FFastArraySerializer
 		return FFastArraySerializer::FastArrayDeltaSerialize<FRpgAppliedEquipmentEntry, FRpgEquipmentList>(Entries, DeltaParms, *this);
 	}
 
-	URpgEquipmentInstance* AddEntry(TSubclassOf<URpgEquipmentDefinition> EquipmentDefinition);
+	URpgEquipmentInstance* AddEntry(TSubclassOf<URpgEquipmentDefinition> EquipmentDefinition, ERpgEquipmentSlot EquippedSlot);
 	void RemoveEntry(URpgEquipmentInstance* Instance);
 
 private:
@@ -82,13 +87,28 @@ public:
 	URpgEquipmentInstance* EquipItem(TSubclassOf<URpgEquipmentDefinition> EquipmentDefinition);
 
 	UFUNCTION(BlueprintCallable, BlueprintAuthorityOnly, Category = "Equipment")
+	URpgEquipmentInstance* EquipItemInSlot(TSubclassOf<URpgEquipmentDefinition> EquipmentDefinition, ERpgEquipmentSlot Slot);
+
+	UFUNCTION(BlueprintCallable, BlueprintAuthorityOnly, Category = "Equipment")
 	void UnequipItem(URpgEquipmentInstance* ItemInstance);
+
+	UFUNCTION(BlueprintCallable, BlueprintAuthorityOnly, Category = "Equipment")
+	void UnequipItemInSlot(ERpgEquipmentSlot Slot);
 
 	UFUNCTION(BlueprintCallable, BlueprintPure, Category = "Equipment")
 	URpgEquipmentInstance* GetFirstInstanceOfType(TSubclassOf<URpgEquipmentInstance> InstanceType) const;
 
 	UFUNCTION(BlueprintCallable, BlueprintPure, Category = "Equipment")
 	TArray<URpgEquipmentInstance*> GetEquipmentInstancesOfType(TSubclassOf<URpgEquipmentInstance> InstanceType) const;
+
+	UFUNCTION(BlueprintCallable, BlueprintPure, Category = "Equipment")
+	URpgEquipmentInstance* GetEquipmentInstanceInSlot(ERpgEquipmentSlot Slot) const;
+
+	UFUNCTION(BlueprintCallable, BlueprintPure, Category = "Equipment")
+	bool IsEquipmentSlotBlocked(ERpgEquipmentSlot Slot) const;
+
+	UFUNCTION(BlueprintCallable, BlueprintPure, Category = "Equipment")
+	bool IsEquipmentInstanceActiveForInputTag(const URpgEquipmentInstance* EquipmentInstance, FGameplayTag InputTag) const;
 
 	template <typename T>
 	T* GetFirstInstanceOfType() const
@@ -103,6 +123,14 @@ public:
 	virtual void ReadyForReplication() override;
 
 private:
+	bool CanEquipItemInSlot(TSubclassOf<URpgEquipmentDefinition> EquipmentDefinition, ERpgEquipmentSlot Slot) const;
+	void UnequipConflictingItems(TSubclassOf<URpgEquipmentDefinition> EquipmentDefinition, ERpgEquipmentSlot Slot);
+	bool DoesEquipmentOccupySlot(const FRpgAppliedEquipmentEntry& Entry, ERpgEquipmentSlot Slot) const;
+	bool CanEquipmentBlock(const URpgEquipmentInstance* EquipmentInstance) const;
+	URpgEquipmentInstance* GetActiveBlockSource() const;
+	bool ShouldGrantSlotAbilitySet(const FRpgAppliedEquipmentEntry& Entry, const FRpgEquipmentSlotAbilitySet& SlotAbilitySet, const URpgEquipmentInstance* ActiveBlockSource) const;
+	void RebuildEquipmentAbilityGrants();
+
 	UPROPERTY(Replicated)
 	FRpgEquipmentList EquipmentList;
 };

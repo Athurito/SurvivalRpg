@@ -5,6 +5,7 @@
 #include "Net/UnrealNetwork.h"
 #include "RpgEquipmentDefinition.h"
 
+#include "Components/SceneComponent.h"
 #include "Iris/ReplicationSystem/ReplicationFragmentUtil.h"
 
 #include UE_INLINE_GENERATED_CPP_BY_NAME(RpgEquipmentInstance)
@@ -29,6 +30,7 @@ void URpgEquipmentInstance::GetLifetimeReplicatedProps(TArray<FLifetimeProperty>
 	Super::GetLifetimeReplicatedProps(OutLifetimeProps);
 
 	DOREPLIFETIME(ThisClass, Instigator);
+	DOREPLIFETIME(ThisClass, EquippedSlot);
 	DOREPLIFETIME(ThisClass, SpawnedActors);
 }
 
@@ -81,8 +83,19 @@ void URpgEquipmentInstance::SpawnEquipmentActors(const TArray<FRpgEquipmentActor
 		}
 
 		NewActor->FinishSpawning(FTransform::Identity, true);
+
+		TInlineComponentArray<USceneComponent*> SceneComponents;
+		NewActor->GetComponents(SceneComponents);
+		for (USceneComponent* SceneComponent : SceneComponents)
+		{
+			if (SceneComponent)
+			{
+				SceneComponent->SetMobility(EComponentMobility::Movable);
+			}
+		}
+
 		NewActor->SetActorRelativeTransform(SpawnInfo.AttachTransform);
-		NewActor->AttachToComponent(AttachTarget, FAttachmentTransformRules::KeepRelativeTransform, SpawnInfo.AttachSocket);
+		NewActor->AttachToComponent(AttachTarget, FAttachmentTransformRules::KeepRelativeTransform, SpawnInfo.GetAttachSocketForSlot(EquippedSlot));
 		SpawnedActors.Add(NewActor);
 	}
 }

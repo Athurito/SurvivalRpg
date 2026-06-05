@@ -20,6 +20,9 @@ namespace RpgGameplayTags
 	UE_DECLARE_GAMEPLAY_TAG_EXTERN(Ability_Support_Heal);
 	UE_DECLARE_GAMEPLAY_TAG_EXTERN(Ability_Defense_Block);
 	UE_DECLARE_GAMEPLAY_TAG_EXTERN(AI_Role_Grunt);
+	UE_DECLARE_GAMEPLAY_TAG_EXTERN(Enemy_Archetype_BasicSword);
+	UE_DECLARE_GAMEPLAY_TAG_EXTERN(Enemy_Archetype_SwordShield);
+	UE_DECLARE_GAMEPLAY_TAG_EXTERN(Enemy_Archetype_TwoHanded);
 	UE_DECLARE_GAMEPLAY_TAG_EXTERN(Faction_Player);
 	UE_DECLARE_GAMEPLAY_TAG_EXTERN(Faction_Enemy);
 	
@@ -39,8 +42,17 @@ namespace RpgGameplayTags
 	UE_DECLARE_GAMEPLAY_TAG_EXTERN(InputTag_QuickBar_Slot_6);
 	UE_DECLARE_GAMEPLAY_TAG_EXTERN(InputTag_QuickBar_Slot_7);
 	UE_DECLARE_GAMEPLAY_TAG_EXTERN(InputTag_QuickBar_Slot_8);
+	UE_DECLARE_GAMEPLAY_TAG_EXTERN(InputTag_Weapon_Primary);
+	UE_DECLARE_GAMEPLAY_TAG_EXTERN(InputTag_Weapon_Secondary);
+	UE_DECLARE_GAMEPLAY_TAG_EXTERN(InputTag_Weapon_Block);
 	
 	UE_DECLARE_GAMEPLAY_TAG_EXTERN(GameplayEvent_Death);
+	UE_DECLARE_GAMEPLAY_TAG_EXTERN(GameplayEvent_HitReaction);
+	UE_DECLARE_GAMEPLAY_TAG_EXTERN(GameplayEvent_Block);
+	UE_DECLARE_GAMEPLAY_TAG_EXTERN(GameplayEvent_PerfectBlock);
+	UE_DECLARE_GAMEPLAY_TAG_EXTERN(GameplayEvent_Stagger);
+	UE_DECLARE_GAMEPLAY_TAG_EXTERN(GameplayEvent_Weapon_Attack_Window_Start);
+	UE_DECLARE_GAMEPLAY_TAG_EXTERN(GameplayEvent_Weapon_Attack_Window_End);
 	UE_DECLARE_GAMEPLAY_TAG_EXTERN(GameplayEvent_Reset);
 	UE_DECLARE_GAMEPLAY_TAG_EXTERN(GameplayEvent_RequestReset);
 	UE_DECLARE_GAMEPLAY_TAG_EXTERN(GameplayEvent_Downed);
@@ -53,12 +65,19 @@ namespace RpgGameplayTags
 	UE_DECLARE_GAMEPLAY_TAG_EXTERN(Status_Crouching);
 	UE_DECLARE_GAMEPLAY_TAG_EXTERN(Status_AutoRunning);
 	UE_DECLARE_GAMEPLAY_TAG_EXTERN(State_Dead);
+	UE_DECLARE_GAMEPLAY_TAG_EXTERN(State_Blocking);
+	UE_DECLARE_GAMEPLAY_TAG_EXTERN(State_PerfectBlockWindow);
+	UE_DECLARE_GAMEPLAY_TAG_EXTERN(State_Staggered);
+	UE_DECLARE_GAMEPLAY_TAG_EXTERN(State_GuardBroken);
+	UE_DECLARE_GAMEPLAY_TAG_EXTERN(State_StaggerImmune);
+	UE_DECLARE_GAMEPLAY_TAG_EXTERN(Trait_Staggerable);
 	UE_DECLARE_GAMEPLAY_TAG_EXTERN(Status_Death);
 	UE_DECLARE_GAMEPLAY_TAG_EXTERN(Status_Death_Dying);
 	UE_DECLARE_GAMEPLAY_TAG_EXTERN(Status_Death_Dead);
 	
 	UE_DECLARE_GAMEPLAY_TAG_EXTERN(SetByCaller_Damage);
 	UE_DECLARE_GAMEPLAY_TAG_EXTERN(SetByCaller_Heal);
+	UE_DECLARE_GAMEPLAY_TAG_EXTERN(SetByCaller_StaggerDamage);
 	
 	UE_DECLARE_GAMEPLAY_TAG_EXTERN(Cheat_GodMode);
 	UE_DECLARE_GAMEPLAY_TAG_EXTERN(Cheat_UnlimitedHealth);
@@ -71,6 +90,19 @@ namespace RpgGameplayTags
 	
 	UE_DECLARE_GAMEPLAY_TAG_EXTERN(Ability_Behavior_SurvivesDeath);
 	UE_DECLARE_GAMEPLAY_TAG_EXTERN(Effect_Behavior_ClearOnRespawn);
+	UE_DECLARE_GAMEPLAY_TAG_EXTERN(Rpg_Combat_Message_ActorKilled);
+	UE_DECLARE_GAMEPLAY_TAG_EXTERN(Equipment_Slot_MainHand);
+	UE_DECLARE_GAMEPLAY_TAG_EXTERN(Equipment_Slot_OffHand);
+	UE_DECLARE_GAMEPLAY_TAG_EXTERN(Equipment_Slot_BothHands);
+	UE_DECLARE_GAMEPLAY_TAG_EXTERN(Weapon_Attack_Primary);
+	UE_DECLARE_GAMEPLAY_TAG_EXTERN(Weapon_Attack_Secondary);
+	UE_DECLARE_GAMEPLAY_TAG_EXTERN(Weapon_Type_Melee);
+	UE_DECLARE_GAMEPLAY_TAG_EXTERN(Weapon_Type_Ranged);
+	UE_DECLARE_GAMEPLAY_TAG_EXTERN(Weapon_Family_Sword);
+	UE_DECLARE_GAMEPLAY_TAG_EXTERN(Weapon_Melee_Sword);
+	UE_DECLARE_GAMEPLAY_TAG_EXTERN(Damage_Type_Melee);
+	UE_DECLARE_GAMEPLAY_TAG_EXTERN(Damage_Type_Projectile);
+	UE_DECLARE_GAMEPLAY_TAG_EXTERN(Damage_Type_Magic);
 
 	UE_DECLARE_GAMEPLAY_TAG_EXTERN(GameplayEvent_Respawn);
 	UE_DECLARE_GAMEPLAY_TAG_EXTERN(GameplayEvent_BleedoutExpired);
