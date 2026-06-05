@@ -6,7 +6,9 @@
 #include "Engine/World.h"
 #include "Engine/Engine.h"
 #include "EnhancedInputSubsystems.h"
+#include "Framework/Application/SlateApplication.h"
 #include "GameFramework/Pawn.h"
+#include "GameFramework/PlayerInput.h"
 #include "SurvivalRpg/AbilitySystem/RpgAbilitySystemComponent.h"
 #include "SurvivalRpg/Core/Game/RpgGameModeBase.h"
 #include "SurvivalRpg/Core/Player/RpgBasePlayerState.h"
@@ -15,6 +17,12 @@
 #include "SurvivalRpg/GameplayTags/RpgGameplayTags.h"
 #include "SurvivalRpg/Progression/Player/RpgPlayerProgressionComponent.h"
 #include "SurvivalRpg/SurvivalRpg.h"
+#include "TimerManager.h"
+
+namespace
+{
+	static constexpr int32 RpgMaxQuickBarRespawnRefreshAttempts = 12;
+}
 
 ARpgPlayerController::ARpgPlayerController(const FObjectInitializer& ObjectInitializer)
 	: Super(ObjectInitializer)
@@ -45,6 +53,11 @@ void ARpgPlayerController::RequestRespawn()
 	{
 		GameMode->RequestPlayerRespawn(this);
 	}
+}
+
+void ARpgPlayerController::ClientRestoreGameplayInputFocus_Implementation()
+{
+	RestoreGameplayInputFocus();
 }
 
 void ARpgPlayerController::SetActiveQuickBarSlot(int32 SlotIndex)
@@ -125,6 +138,10 @@ void ARpgPlayerController::OnPossess(APawn* InPawn)
 {
 	Super::OnPossess(InPawn);
 	SetIsAutoRunning(false);
+	SetIgnoreMoveInput(false);
+	SetIgnoreLookInput(false);
+	ClientRestoreGameplayInputFocus();
+	RefreshActiveQuickBarLoadoutAfterPossess(0);
 }
 
 void ARpgPlayerController::SetGenericTeamId(const FGenericTeamId& NewTeamID)
@@ -206,6 +223,11 @@ void ARpgPlayerController::ServerRequestRespawn_Implementation()
 void ARpgPlayerController::HandleRespawnStateChanged(bool bIsWaitingForRespawn, float RespawnAvailableServerTime)
 {
 	K2_OnRespawnStateChanged(bIsWaitingForRespawn, RespawnAvailableServerTime);
+
+	if (!bIsWaitingForRespawn && IsLocalController() && GetPawn())
+	{
+		RestoreGameplayInputFocus();
+	}
 }
 
 void ARpgPlayerController::HandleCheckpointChanged(bool bHasCheckpoint, FTransform CheckpointTransform)
@@ -275,3 +297,55 @@ void ARpgPlayerController::OnEndAutoRun()
 	}
 }
 
+void ARpgPlayerController::RestoreGameplayInputFocus()
+{
+	if (!IsLocalController())
+	{
+		return;
+	}
+
+	SetIgnoreMoveInput(false);
+	SetIgnoreLookInput(false);
+	SetShowMouseCursor(false);
+
+	FInputModeGameOnly InputMode;
+	SetInputMode(InputMode);
+
+	if (PlayerInput)
+	{
+		PlayerInput->FlushPressedKeys();
+	}
+
+	if (FSlateApplication::IsInitialized())
+	{
+		FSlateApplication::Get().SetAllUserFocusToGameViewport();
+	}
+}
+
+void ARpgPlayerController::RefreshActiveQuickBarLoadoutAfterPossess(int32 AttemptNumber)
+{
+	if (!HasAuthority() || !QuickBarComponent)
+	{
+		return;
+	}
+
+	if (QuickBarComponent->RefreshActiveLoadoutOnCurrentPawn())
+	{
+		return;
+	}
+
+	if (AttemptNumber >= RpgMaxQuickBarRespawnRefreshAttempts)
+	{
+		UE_LOG(LogRpg, Warning, TEXT("QuickBar refresh after possess failed for [%s] after %d attempts."),
+			*GetNameSafe(this),
+			AttemptNumber + 1);
+		return;
+	}
+
+	if (UWorld* World = GetWorld())
+	{
+		FTimerDelegate RetryDelegate;
+		RetryDelegate.BindUObject(this, &ThisClass::RefreshActiveQuickBarLoadoutAfterPossess, AttemptNumber + 1);
+		World->GetTimerManager().SetTimerForNextTick(RetryDelegate);
+	}
+}

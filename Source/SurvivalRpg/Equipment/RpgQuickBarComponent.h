@@ -73,6 +73,12 @@ public:
 	UFUNCTION(BlueprintCallable, BlueprintAuthorityOnly, Category = "QuickBar")
 	URpgInventoryItemInstance* RemoveItemFromLoadoutSlot(int32 SlotIndex, ERpgEquipmentSlot EquipmentSlot);
 
+	UFUNCTION(BlueprintCallable, BlueprintAuthorityOnly, Category = "QuickBar")
+	void UnequipActiveLoadoutFromCurrentPawn();
+
+	UFUNCTION(BlueprintCallable, BlueprintAuthorityOnly, Category = "QuickBar")
+	bool RefreshActiveLoadoutOnCurrentPawn();
+
 	virtual void BeginPlay() override;
 	virtual void GetLifetimeReplicatedProps(TArray<FLifetimeProperty>& OutLifetimeProps) const override;
 
@@ -90,8 +96,11 @@ private:
 	void EnsureSlotCount();
 	void UnequipItemInSlot();
 	void EquipItemInSlot();
+	bool IsActiveLoadoutAppliedToCurrentPawn() const;
+	void ClearEquippedItemReferences();
 	URpgEquipmentInstance* EquipLoadoutItem(URpgInventoryItemInstance* SlotItem, ERpgEquipmentSlot EquipmentSlot) const;
 	URpgEquipmentManagerComponent* FindEquipmentManager() const;
+	bool HasReadyEquipmentTarget() const;
 	void BroadcastSlotsChanged() const;
 	void BroadcastActiveIndexChanged() const;
 

@@ -29,6 +29,9 @@ public:
 	UFUNCTION(BlueprintCallable, Category = "Rpg|Respawn")
 	void RequestRespawn();
 
+	UFUNCTION(Client, Reliable, BlueprintCallable, Category = "Rpg|Respawn")
+	void ClientRestoreGameplayInputFocus();
+
 	UFUNCTION(BlueprintCallable, Category = "Rpg|QuickBar")
 	URpgQuickBarComponent* GetQuickBarComponent() const { return QuickBarComponent; }
 
@@ -87,6 +90,8 @@ protected:
 private:
 	void OnStartAutoRun();
 	void OnEndAutoRun();
+	void RestoreGameplayInputFocus();
+	void RefreshActiveQuickBarLoadoutAfterPossess(int32 AttemptNumber);
 	void RefreshPlayerStateBindings();
 	void BindToPlayerState(ARpgPlayerState* NewPlayerState);
 	void UnbindFromPlayerState();

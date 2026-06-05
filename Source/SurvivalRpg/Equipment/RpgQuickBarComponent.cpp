@@ -1,5 +1,6 @@
 #include "RpgQuickBarComponent.h"
 
+#include "AbilitySystemGlobals.h"
 #include "GameFramework/GameplayMessageSubsystem.h"
 #include "GameFramework/Pawn.h"
 #include "NativeGameplayTags.h"
@@ -112,8 +113,14 @@ void URpgQuickBarComponent::CycleActiveSlotBackward()
 void URpgQuickBarComponent::SetActiveSlotIndex_Implementation(int32 NewIndex)
 {
 	EnsureSlotCount();
-	if (!Slots.IsValidIndex(NewIndex) || ActiveSlotIndex == NewIndex)
+	if (!Slots.IsValidIndex(NewIndex))
 	{
+		return;
+	}
+
+	if (ActiveSlotIndex == NewIndex)
+	{
+		RefreshActiveLoadoutOnCurrentPawn();
 		return;
 	}
 
@@ -229,6 +236,57 @@ URpgInventoryItemInstance* URpgQuickBarComponent::RemoveItemFromLoadoutSlot(int3
 	return Result;
 }
 
+void URpgQuickBarComponent::UnequipActiveLoadoutFromCurrentPawn()
+{
+	if (AActor* OwnerActor = GetOwner(); !OwnerActor || !OwnerActor->HasAuthority())
+	{
+		return;
+	}
+
+	UnequipItemInSlot();
+	if (URpgEquipmentManagerComponent* EquipmentManager = FindEquipmentManager())
+	{
+		EquipmentManager->UnequipItemInSlot(ERpgEquipmentSlot::OffHand);
+		EquipmentManager->UnequipItemInSlot(ERpgEquipmentSlot::MainHand);
+	}
+	ClearEquippedItemReferences();
+}
+
+bool URpgQuickBarComponent::RefreshActiveLoadoutOnCurrentPawn()
+{
+	if (AActor* OwnerActor = GetOwner(); !OwnerActor || !OwnerActor->HasAuthority())
+	{
+		return false;
+	}
+
+	EnsureSlotCount();
+	if (!Slots.IsValidIndex(ActiveSlotIndex) || !Slots[ActiveSlotIndex].HasAnyItem())
+	{
+		ClearEquippedItemReferences();
+		return true;
+	}
+
+	URpgEquipmentManagerComponent* EquipmentManager = FindEquipmentManager();
+	if (!EquipmentManager || !HasReadyEquipmentTarget())
+	{
+		ClearEquippedItemReferences();
+		return false;
+	}
+
+	if (IsActiveLoadoutAppliedToCurrentPawn())
+	{
+		return true;
+	}
+
+	UnequipItemInSlot();
+	EquipmentManager->UnequipItemInSlot(ERpgEquipmentSlot::OffHand);
+	EquipmentManager->UnequipItemInSlot(ERpgEquipmentSlot::MainHand);
+	ClearEquippedItemReferences();
+
+	EquipItemInSlot();
+	return IsActiveLoadoutAppliedToCurrentPawn();
+}
+
 void URpgQuickBarComponent::OnRep_Slots()
 {
 	BroadcastSlotsChanged();
@@ -257,18 +315,20 @@ void URpgQuickBarComponent::EnsureSlotCount()
 
 void URpgQuickBarComponent::UnequipItemInSlot()
 {
+	URpgEquipmentInstance* OldOffHandEquippedItem = OffHandEquippedItem;
+	URpgEquipmentInstance* OldMainHandEquippedItem = MainHandEquippedItem;
+	ClearEquippedItemReferences();
+
 	if (URpgEquipmentManagerComponent* EquipmentManager = FindEquipmentManager())
 	{
-		if (OffHandEquippedItem != nullptr)
+		if (OldOffHandEquippedItem != nullptr)
 		{
-			EquipmentManager->UnequipItem(OffHandEquippedItem);
-			OffHandEquippedItem = nullptr;
+			EquipmentManager->UnequipItem(OldOffHandEquippedItem);
 		}
 
-		if (MainHandEquippedItem != nullptr)
+		if (OldMainHandEquippedItem != nullptr)
 		{
-			EquipmentManager->UnequipItem(MainHandEquippedItem);
-			MainHandEquippedItem = nullptr;
+			EquipmentManager->UnequipItem(OldMainHandEquippedItem);
 		}
 	}
 }
@@ -288,6 +348,42 @@ void URpgQuickBarComponent::EquipItemInSlot()
 	{
 		OffHandEquippedItem = EquipLoadoutItem(LoadoutSlot.OffHandItem, ERpgEquipmentSlot::OffHand);
 	}
+}
+
+bool URpgQuickBarComponent::IsActiveLoadoutAppliedToCurrentPawn() const
+{
+	if (!Slots.IsValidIndex(ActiveSlotIndex))
+	{
+		return MainHandEquippedItem == nullptr && OffHandEquippedItem == nullptr;
+	}
+
+	const FRpgQuickBarLoadoutSlot& LoadoutSlot = Slots[ActiveSlotIndex];
+	if (!LoadoutSlot.HasAnyItem())
+	{
+		return MainHandEquippedItem == nullptr && OffHandEquippedItem == nullptr;
+	}
+
+	const URpgEquipmentManagerComponent* EquipmentManager = FindEquipmentManager();
+	if (!EquipmentManager)
+	{
+		return false;
+	}
+
+	const bool bMainHandApplied = LoadoutSlot.MainHandItem == nullptr ||
+		(MainHandEquippedItem != nullptr && EquipmentManager->GetEquipmentInstanceInSlot(ERpgEquipmentSlot::MainHand) == MainHandEquippedItem);
+
+	const bool bOffHandBlocked = EquipmentManager->IsEquipmentSlotBlocked(ERpgEquipmentSlot::OffHand);
+	const bool bOffHandApplied = LoadoutSlot.OffHandItem == nullptr ||
+		bOffHandBlocked ||
+		(OffHandEquippedItem != nullptr && EquipmentManager->GetEquipmentInstanceInSlot(ERpgEquipmentSlot::OffHand) == OffHandEquippedItem);
+
+	return bMainHandApplied && bOffHandApplied;
+}
+
+void URpgQuickBarComponent::ClearEquippedItemReferences()
+{
+	MainHandEquippedItem = nullptr;
+	OffHandEquippedItem = nullptr;
 }
 
 URpgEquipmentInstance* URpgQuickBarComponent::EquipLoadoutItem(URpgInventoryItemInstance* SlotItem, ERpgEquipmentSlot EquipmentSlot) const
@@ -322,6 +418,20 @@ URpgEquipmentManagerComponent* URpgQuickBarComponent::FindEquipmentManager() con
 		}
 	}
 	return nullptr;
+}
+
+bool URpgQuickBarComponent::HasReadyEquipmentTarget() const
+{
+	if (const AController* OwnerController = Cast<AController>(GetOwner()))
+	{
+		if (const APawn* Pawn = OwnerController->GetPawn())
+		{
+			return Pawn->FindComponentByClass<URpgEquipmentManagerComponent>() != nullptr &&
+				UAbilitySystemGlobals::GetAbilitySystemComponentFromActor(Pawn) != nullptr;
+		}
+	}
+
+	return false;
 }
 
 void URpgQuickBarComponent::BroadcastSlotsChanged() const
