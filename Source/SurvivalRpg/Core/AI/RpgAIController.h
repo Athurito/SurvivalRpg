@@ -8,6 +8,7 @@
 #include "RpgAIController.generated.h"
 
 class URpgAIPawnData;
+class UStateTreeAIComponent;
 
 UCLASS()
 class SURVIVALRPG_API ARpgAIController : public AModularAIController
@@ -27,7 +28,17 @@ public:
 
 	const URpgAIPawnData* GetDefaultPawnData() const { return DefaultPawnData; }
 
+#if WITH_EDITOR
+	void SetDefaultPawnDataForEditor(const URpgAIPawnData* InPawnData);
+#endif
+
 protected:
+	void StartPawnStateTree();
+	void StopPawnStateTree(const FString& Reason);
+
 	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Rpg|AI")
 	TObjectPtr<const URpgAIPawnData> DefaultPawnData;
+
+	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "Rpg|AI")
+	TObjectPtr<UStateTreeAIComponent> StateTreeComponent;
 };

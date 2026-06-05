@@ -8,6 +8,7 @@
 
 class URpgExperienceRewardComponent;
 class URpgEnemyCombatArchetypeComponent;
+class URpgEnemyCombatLoadoutComponent;
 
 UCLASS()
 class SURVIVALRPG_API ARpgAICharacter : public ARpgCharacter
@@ -22,6 +23,9 @@ public:
 private:
 	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "Rpg|Combat", Meta = (AllowPrivateAccess = "true"))
 	TObjectPtr<URpgEnemyCombatArchetypeComponent> CombatArchetypeComponent;
+
+	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "Rpg|Combat", Meta = (AllowPrivateAccess = "true"))
+	TObjectPtr<URpgEnemyCombatLoadoutComponent> CombatLoadoutComponent;
 
 	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "Rpg|Progression", Meta = (AllowPrivateAccess = "true"))
 	TObjectPtr<URpgExperienceRewardComponent> ExperienceRewardComponent;

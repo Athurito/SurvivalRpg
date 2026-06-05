@@ -10,6 +10,7 @@ ARpgAICharacter::ARpgAICharacter(const FObjectInitializer& ObjectInitializer)
 	: Super(ObjectInitializer)
 {
 	CombatArchetypeComponent = CreateDefaultSubobject<URpgEnemyCombatArchetypeComponent>(TEXT("CombatArchetypeComponent"));
+	CombatLoadoutComponent = CreateDefaultSubobject<URpgEnemyCombatLoadoutComponent>(TEXT("CombatLoadoutComponent"));
 	ExperienceRewardComponent = CreateDefaultSubobject<URpgExperienceRewardComponent>(TEXT("ExperienceRewardComponent"));
 }
 
