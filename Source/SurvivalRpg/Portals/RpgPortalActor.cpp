@@ -74,6 +74,7 @@ void ARpgPortalActor::GetLifetimeReplicatedProps(TArray<FLifetimeProperty>& OutL
 	DOREPLIFETIME(ThisClass, PortalState);
 	DOREPLIFETIME(ThisClass, CurrentStability);
 	DOREPLIFETIME(ThisClass, DefeatedTrackedEnemyCount);
+	DOREPLIFETIME(ThisClass, TotalTrackedEnemyCount);
 }
 
 void ARpgPortalActor::GatherInteractionOptions(const FInteractionQuery& InteractQuery, FInteractionOptionBuilder& InteractionBuilder)
@@ -106,6 +107,7 @@ void ARpgPortalActor::StartEncounter()
 
 	CurrentStability = 0.0f;
 	DefeatedTrackedEnemyCount = 0;
+	TotalTrackedEnemyCount = 0;
 	TrackedEnemies.Reset();
 
 	SetPortalState(ERpgPortalState::Active);
@@ -133,6 +135,8 @@ bool ARpgPortalActor::TryClosePortal(AActor* ClosingActor)
 	FRpgPortalCompletedMessage Message;
 	Message.Portal = this;
 	Message.Instigator = ClosingActor;
+	Message.EncounterDefinition = EncounterDefinition;
+	Message.CompletionTags = EncounterDefinition ? EncounterDefinition->CompletionTags : FGameplayTagContainer();
 	Message.FinalStability = CurrentStability;
 	Message.bRewardsRequireBossDefeat = EncounterDefinition ? EncounterDefinition->bRewardsRequireBossDefeat : true;
 	Message.bBossDefeated = false;
@@ -234,35 +238,56 @@ void ARpgPortalActor::SpawnEncounterEnemies()
 		return;
 	}
 
-	TSubclassOf<AActor> EnemyClass = EncounterDefinition->EnemyClass;
-	if (!EnemyClass)
-	{
-		UE_LOG(LogTemp, Warning, TEXT("%s cannot spawn portal enemies because EnemyClass is not set."), *GetNameSafe(this));
-		return;
-	}
-
 	UWorld* World = GetWorld();
 	if (!World)
 	{
 		return;
 	}
 
-	const int32 SpawnCount = FMath::Max(0, EncounterDefinition->SpawnCount);
-	const float SpawnRadius = FMath::Max(0.0f, EncounterDefinition->SpawnRadius);
-	for (int32 SpawnIndex = 0; SpawnIndex < SpawnCount; ++SpawnIndex)
+	int32 RequestedEnemyCount = 0;
+	for (const FRpgPortalEnemySpawnEntry& SpawnEntry : EncounterDefinition->EnemySpawnEntries)
 	{
-		const float AngleRadians = (SpawnCount > 0) ? (2.0f * PI * static_cast<float>(SpawnIndex) / static_cast<float>(SpawnCount)) : 0.0f;
-		const FVector Offset(FMath::Cos(AngleRadians) * SpawnRadius, FMath::Sin(AngleRadians) * SpawnRadius, 0.0f);
-		const FTransform SpawnTransform(GetActorRotation(), GetActorLocation() + Offset);
-
-		FActorSpawnParameters SpawnParams;
-		SpawnParams.Owner = this;
-		SpawnParams.SpawnCollisionHandlingOverride = ESpawnActorCollisionHandlingMethod::AdjustIfPossibleButAlwaysSpawn;
-
-		if (AActor* SpawnedEnemy = World->SpawnActor<AActor>(EnemyClass, SpawnTransform, SpawnParams))
+		if (SpawnEntry.EnemyClass)
 		{
-			SpawnedEnemy->OnDestroyed.AddDynamic(this, &ThisClass::HandleTrackedEnemyDestroyed);
-			TrackedEnemies.Add(SpawnedEnemy);
+			RequestedEnemyCount += FMath::Max(0, SpawnEntry.Count);
+		}
+	}
+
+	if (RequestedEnemyCount <= 0)
+	{
+		UE_LOG(LogTemp, Warning, TEXT("%s cannot spawn portal enemies because EnemySpawnEntries is empty or invalid."), *GetNameSafe(this));
+		return;
+	}
+
+	const float SpawnRadius = FMath::Max(0.0f, EncounterDefinition->SpawnRadius);
+	int32 SpawnIndex = 0;
+	for (const FRpgPortalEnemySpawnEntry& SpawnEntry : EncounterDefinition->EnemySpawnEntries)
+	{
+		TSubclassOf<AActor> EnemyClass = SpawnEntry.EnemyClass;
+		const int32 EntryEnemyCount = FMath::Max(0, SpawnEntry.Count);
+		if (!EnemyClass || EntryEnemyCount <= 0)
+		{
+			continue;
+		}
+
+		for (int32 EntryEnemyIndex = 0; EntryEnemyIndex < EntryEnemyCount; ++EntryEnemyIndex)
+		{
+			const float AngleRadians = 2.0f * PI * static_cast<float>(SpawnIndex) / static_cast<float>(RequestedEnemyCount);
+			const FVector Offset(FMath::Cos(AngleRadians) * SpawnRadius, FMath::Sin(AngleRadians) * SpawnRadius, 0.0f);
+			const FTransform SpawnTransform(GetActorRotation(), GetActorLocation() + Offset);
+
+			FActorSpawnParameters SpawnParams;
+			SpawnParams.Owner = this;
+			SpawnParams.SpawnCollisionHandlingOverride = ESpawnActorCollisionHandlingMethod::AdjustIfPossibleButAlwaysSpawn;
+
+			if (AActor* SpawnedEnemy = World->SpawnActor<AActor>(EnemyClass, SpawnTransform, SpawnParams))
+			{
+				SpawnedEnemy->OnDestroyed.AddDynamic(this, &ThisClass::HandleTrackedEnemyDestroyed);
+				TrackedEnemies.Add(SpawnedEnemy);
+				++TotalTrackedEnemyCount;
+			}
+
+			++SpawnIndex;
 		}
 	}
 }
@@ -293,8 +318,8 @@ void ARpgPortalActor::MarkTrackedEnemyDefeated(AActor* DefeatedEnemy)
 
 void ARpgPortalActor::RefreshStabilityFromProgress()
 {
-	const int32 SpawnCount = EncounterDefinition ? FMath::Max(EncounterDefinition->SpawnCount, 1) : 3;
-	const float DefeatAlpha = FMath::Clamp(static_cast<float>(DefeatedTrackedEnemyCount) / static_cast<float>(SpawnCount), 0.0f, 1.0f);
+	const int32 TrackedEnemyCount = FMath::Max(TotalTrackedEnemyCount, 1);
+	const float DefeatAlpha = FMath::Clamp(static_cast<float>(DefeatedTrackedEnemyCount) / static_cast<float>(TrackedEnemyCount), 0.0f, 1.0f);
 	CurrentStability = GetMaxStability() * DefeatAlpha;
 	OnPortalStabilityChanged.Broadcast(CurrentStability, GetMaxStability());
 }

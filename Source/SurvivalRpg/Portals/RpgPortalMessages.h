@@ -1,9 +1,11 @@
 #pragma once
 
 #include "CoreMinimal.h"
+#include "GameplayTagContainer.h"
 #include "RpgPortalMessages.generated.h"
 
 class AActor;
+class URpgPortalEncounterDefinition;
 
 USTRUCT(BlueprintType)
 struct SURVIVALRPG_API FRpgPortalCompletedMessage
@@ -15,6 +17,12 @@ struct SURVIVALRPG_API FRpgPortalCompletedMessage
 
 	UPROPERTY(BlueprintReadOnly, Category = "Portal")
 	TObjectPtr<AActor> Instigator = nullptr;
+
+	UPROPERTY(BlueprintReadOnly, Category = "Portal")
+	TObjectPtr<const URpgPortalEncounterDefinition> EncounterDefinition = nullptr;
+
+	UPROPERTY(BlueprintReadOnly, Category = "Portal")
+	FGameplayTagContainer CompletionTags;
 
 	UPROPERTY(BlueprintReadOnly, Category = "Portal")
 	float FinalStability = 0.0f;

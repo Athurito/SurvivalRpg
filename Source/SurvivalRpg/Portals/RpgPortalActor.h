@@ -58,6 +58,9 @@ public:
 	int32 GetDefeatedTrackedEnemyCount() const { return DefeatedTrackedEnemyCount; }
 
 	UFUNCTION(BlueprintPure, Category = "Portal")
+	int32 GetTotalTrackedEnemyCount() const { return TotalTrackedEnemyCount; }
+
+	UFUNCTION(BlueprintPure, Category = "Portal")
 	int32 GetRemainingTrackedEnemyCount() const;
 
 	UFUNCTION(BlueprintPure, Category = "Portal")
@@ -116,6 +119,9 @@ protected:
 
 	UPROPERTY(Replicated, VisibleInstanceOnly, BlueprintReadOnly, Category = "Portal")
 	int32 DefeatedTrackedEnemyCount = 0;
+
+	UPROPERTY(Replicated, VisibleInstanceOnly, BlueprintReadOnly, Category = "Portal")
+	int32 TotalTrackedEnemyCount = 0;
 
 	UPROPERTY(Transient)
 	TArray<TObjectPtr<AActor>> TrackedEnemies;
