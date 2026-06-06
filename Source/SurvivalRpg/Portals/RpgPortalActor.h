@@ -42,6 +42,9 @@ public:
 	UFUNCTION(BlueprintCallable, BlueprintAuthorityOnly, Category = "Portal")
 	void StartEncounter();
 
+	UFUNCTION(BlueprintCallable, BlueprintAuthorityOnly, Category = "Portal|Encounter")
+	void ConfigureEncounterDefinition(const URpgPortalEncounterDefinition* InEncounterDefinition);
+
 	UFUNCTION(BlueprintCallable, BlueprintAuthorityOnly, Category = "Portal")
 	bool TryClosePortal(AActor* ClosingActor);
 

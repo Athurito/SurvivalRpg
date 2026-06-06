@@ -92,6 +92,8 @@ namespace RpgGameplayTags
 	UE_DECLARE_GAMEPLAY_TAG_EXTERN(Effect_Behavior_ClearOnRespawn);
 	UE_DECLARE_GAMEPLAY_TAG_EXTERN(Rpg_Combat_Message_ActorKilled);
 	UE_DECLARE_GAMEPLAY_TAG_EXTERN(Rpg_Portal_Message_Completed);
+	UE_DECLARE_GAMEPLAY_TAG_EXTERN(Feature);
+	UE_DECLARE_GAMEPLAY_TAG_EXTERN(Feature_Portal_Encounter);
 	UE_DECLARE_GAMEPLAY_TAG_EXTERN(Equipment_Slot_MainHand);
 	UE_DECLARE_GAMEPLAY_TAG_EXTERN(Equipment_Slot_OffHand);
 	UE_DECLARE_GAMEPLAY_TAG_EXTERN(Equipment_Slot_BothHands);

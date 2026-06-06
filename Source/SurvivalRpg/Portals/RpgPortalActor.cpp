@@ -121,6 +121,22 @@ void ARpgPortalActor::StartEncounter()
 	}
 }
 
+void ARpgPortalActor::ConfigureEncounterDefinition(const URpgPortalEncounterDefinition* InEncounterDefinition)
+{
+	if (!HasAuthority())
+	{
+		return;
+	}
+
+	if (PortalState != ERpgPortalState::Dormant || TotalTrackedEnemyCount > 0 || DefeatedTrackedEnemyCount > 0 || !TrackedEnemies.IsEmpty())
+	{
+		UE_LOG(LogTemp, Warning, TEXT("%s ignored encounter definition reconfiguration after the encounter started."), *GetNameSafe(this));
+		return;
+	}
+
+	EncounterDefinition = InEncounterDefinition;
+}
+
 bool ARpgPortalActor::TryClosePortal(AActor* ClosingActor)
 {
 	if (!HasAuthority() || PortalState != ERpgPortalState::Sealable)
