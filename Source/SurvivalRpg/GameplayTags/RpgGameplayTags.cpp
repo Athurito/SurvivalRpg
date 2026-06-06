@@ -92,6 +92,7 @@ namespace RpgGameplayTags
 	UE_DEFINE_GAMEPLAY_TAG_COMMENT(Ability_Behavior_SurvivesDeath, "Ability.Behavior.SurvivesDeath", "An ability with this type tag should not be canceled due to death.");
 	UE_DEFINE_GAMEPLAY_TAG_COMMENT(Effect_Behavior_ClearOnRespawn, "Effect.Behavior.ClearOnRespawn", "GameplayEffects with this tag are removed when the owner respawns.");
 	UE_DEFINE_GAMEPLAY_TAG_COMMENT(Rpg_Combat_Message_ActorKilled, "Rpg.Combat.Message.ActorKilled", "Gameplay message sent by combat when an actor is killed.");
+	UE_DEFINE_GAMEPLAY_TAG_COMMENT(Rpg_Portal_Message_Completed, "Rpg.Portal.Message.Completed", "Gameplay message sent when a portal encounter is completed.");
 	UE_DEFINE_GAMEPLAY_TAG_COMMENT(Equipment_Slot_MainHand, "Equipment.Slot.MainHand", "Equipment is assigned to the main hand slot.");
 	UE_DEFINE_GAMEPLAY_TAG_COMMENT(Equipment_Slot_OffHand, "Equipment.Slot.OffHand", "Equipment is assigned to the off hand slot.");
 	UE_DEFINE_GAMEPLAY_TAG_COMMENT(Equipment_Slot_BothHands, "Equipment.Slot.BothHands", "Equipment occupies both hand slots.");
