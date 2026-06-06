@@ -128,7 +128,7 @@ bool ARpgPortalActor::TryClosePortal(AActor* ClosingActor)
 
 	CurrentStability = GetMaxStability();
 	SetPortalState(ERpgPortalState::Closed);
-	InteractionCollision->SetCollisionEnabled(ECollisionEnabled::NoCollision);
+	ApplyClosedPresentation();
 
 	FRpgPortalCompletedMessage Message;
 	Message.Portal = this;
@@ -170,9 +170,9 @@ void ARpgPortalActor::OnRep_PortalState()
 {
 	OnPortalStateChanged.Broadcast(PortalState);
 
-	if (PortalState == ERpgPortalState::Closed && InteractionCollision)
+	if (PortalState == ERpgPortalState::Closed)
 	{
-		InteractionCollision->SetCollisionEnabled(ECollisionEnabled::NoCollision);
+		ApplyClosedPresentation();
 	}
 }
 
@@ -308,6 +308,20 @@ void ARpgPortalActor::SetPortalState(ERpgPortalState NewState)
 
 	PortalState = NewState;
 	OnPortalStateChanged.Broadcast(PortalState);
+}
+
+void ARpgPortalActor::ApplyClosedPresentation()
+{
+	if (InteractionCollision)
+	{
+		InteractionCollision->SetCollisionEnabled(ECollisionEnabled::NoCollision);
+	}
+
+	if (PortalMesh)
+	{
+		PortalMesh->SetCollisionEnabled(ECollisionEnabled::NoCollision);
+		PortalMesh->SetHiddenInGame(true);
+	}
 }
 
 bool ARpgPortalActor::IsTrackedEnemy(AActor* Actor) const

@@ -65,7 +65,7 @@ bool URpgAIAssetTools::RebuildRiftGruntStateTree(UStateTree* StateTree)
 	UStateTreeState& Root = EditorData->AddSubTree(TEXT("RiftGrunt"));
 	Root.ID = FGuid::NewGuid();
 	Root.Description = TEXT("Acquire the nearest hostile pawn, chase into sword range, and let the AI attack driver activate primary weapon attacks.");
-	Root.SelectionBehavior = EStateTreeStateSelectionBehavior::None;
+	Root.SelectionBehavior = EStateTreeStateSelectionBehavior::TryEnterState;
 	Root.TasksCompletion = EStateTreeTaskCompletionType::All;
 
 	TStateTreeEditorNode<FRpgStateTreeFindHostileTargetTask>& FindTargetTask = Root.AddTask<FRpgStateTreeFindHostileTargetTask>();

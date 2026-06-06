@@ -9,6 +9,7 @@
 #include "SurvivalRpg/GameplayTags/RpgGameplayTags.h"
 
 URpgGameplayAbility_Death::URpgGameplayAbility_Death(const FObjectInitializer& ObjectInitializer)
+	: Super(ObjectInitializer)
 {
 	InstancingPolicy = EGameplayAbilityInstancingPolicy::InstancedPerActor;
 	NetExecutionPolicy = EGameplayAbilityNetExecutionPolicy::ServerOnly;
@@ -34,7 +35,11 @@ void URpgGameplayAbility_Death::ActivateAbility(const FGameplayAbilitySpecHandle
 	FGameplayTagContainer AbilityTypesToIgnore;
 	AbilityTypesToIgnore.AddTag(RpgGameplayTags::Ability_Behavior_SurvivesDeath);
 
-	// Cancel all abilities and block others from starting.
+	// Death must win over any currently running hit reaction, stagger, block, or attack.
+	RpgAsc->CancelActivationGroupAbilities(ERpgAbilityActivationGroup::Exclusive_Blocking, this, true);
+	RpgAsc->CancelActivationGroupAbilities(ERpgAbilityActivationGroup::Exclusive_Replaceable, this, true);
+
+	// Cancel all remaining abilities and block others from starting.
 	RpgAsc->CancelAbilities(nullptr, &AbilityTypesToIgnore, this);
 	
 	SetCanBeCanceled(false);

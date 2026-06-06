@@ -86,6 +86,7 @@ protected:
 	void MarkTrackedEnemyDefeated(AActor* DefeatedEnemy);
 	void RefreshStabilityFromProgress();
 	void SetPortalState(ERpgPortalState NewState);
+	void ApplyClosedPresentation();
 	bool IsTrackedEnemy(AActor* Actor) const;
 	bool ShouldRewardsBeEligible() const;
 
