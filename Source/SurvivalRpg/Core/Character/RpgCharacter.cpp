@@ -30,6 +30,8 @@ ARpgCharacter::ARpgCharacter(const FObjectInitializer& ObjectInitializer) :
 
 	GetCapsuleComponent()->SetCollisionProfileName(TEXT("RpgPawnCapsule"));
 	GetMesh()->SetCollisionProfileName(TEXT("RpgPawnMesh"));
+	GetMesh()->VisibilityBasedAnimTickOption = EVisibilityBasedAnimTickOption::AlwaysTickPoseAndRefreshBones;
+	GetMesh()->bEnableUpdateRateOptimizations = false;
 	
 	SetNetCullDistanceSquared(900000000.0f);
 	
