@@ -99,7 +99,7 @@ void URpgPortalEncounterComponent::TrySpawnPortalEncounters()
 				continue;
 			}
 
-			if (ARpgPortalActor* SpawnedPortal = SpawnPortalForPoint(*RegionActor, *EncounterPoint, SpawnRule))
+			if (ARpgPortalActor* SpawnedPortal = SpawnPortalForPoint(*RegionActor, *EncounterPoint, SpawnRule, SpawnedPortals.Num()))
 			{
 				SpawnedPortals.Add(SpawnedPortal);
 				ClaimedEncounterPoints.Add(EncounterPoint);
@@ -154,7 +154,7 @@ void URpgPortalEncounterComponent::ConfigureSingleSpawnRuleByTagNames(
 	SpawnRules.Add(SpawnRule);
 }
 
-ARpgPortalActor* URpgPortalEncounterComponent::SpawnPortalForPoint(ARpgFeatureRegionActor& RegionActor, ARpgFeatureEncounterPoint& EncounterPoint, const FRpgPortalEncounterSpawnRule& SpawnRule)
+ARpgPortalActor* URpgPortalEncounterComponent::SpawnPortalForPoint(ARpgFeatureRegionActor& RegionActor, ARpgFeatureEncounterPoint& EncounterPoint, const FRpgPortalEncounterSpawnRule& SpawnRule, int32 PortalIndex)
 {
 	UWorld* World = RegionActor.GetWorld();
 	if (!World)
@@ -186,7 +186,29 @@ ARpgPortalActor* URpgPortalEncounterComponent::SpawnPortalForPoint(ARpgFeatureRe
 	}
 
 	PortalActor->ConfigureEncounterDefinition(EncounterDefinition);
+	PortalActor->ConfigureDungeonLevelInstanceTransform(BuildDungeonLevelInstanceTransform(RegionActor, EncounterPoint, PortalIndex));
 	UGameplayStatics::FinishSpawningActor(PortalActor, SpawnTransform);
 
 	return PortalActor;
+}
+
+FTransform URpgPortalEncounterComponent::BuildDungeonLevelInstanceTransform(const ARpgFeatureRegionActor& RegionActor, const ARpgFeatureEncounterPoint& EncounterPoint, int32 PortalIndex) const
+{
+	const FVector RegionLocation = RegionActor.GetActorLocation();
+	const FVector PointLocation = EncounterPoint.GetActorLocation();
+	const double SafeGridSize = FMath::Max(1000.0, DungeonPocketRegionGridSize);
+	const double SafeRegionStride = FMath::Max(1000.0, DungeonPocketRegionStride);
+	const double SafePortalSpacing = FMath::Max(1000.0, DungeonPocketPortalSpacing);
+
+	const int32 RegionGridX = FMath::FloorToInt(RegionLocation.X / SafeGridSize);
+	const int32 RegionGridY = FMath::FloorToInt(RegionLocation.Y / SafeGridSize);
+	const int32 PointGridX = FMath::FloorToInt(PointLocation.X / SafeGridSize);
+	const int32 PointGridY = FMath::FloorToInt(PointLocation.Y / SafeGridSize);
+
+	const FVector PocketLocation(
+		DungeonPocketBaseLocation.X + static_cast<double>(RegionGridX) * SafeRegionStride + static_cast<double>(PortalIndex) * SafePortalSpacing,
+		DungeonPocketBaseLocation.Y + static_cast<double>(RegionGridY) * SafeRegionStride + static_cast<double>(PointGridX - RegionGridX) * SafePortalSpacing,
+		DungeonPocketBaseLocation.Z + static_cast<double>(PointGridY - RegionGridY) * SafePortalSpacing);
+
+	return FTransform(FRotator::ZeroRotator, PocketLocation);
 }

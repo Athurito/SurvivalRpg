@@ -5,6 +5,13 @@
 
 class ARpgPortalActor;
 
+/**
+ * Generic interaction ability for closing a sealable portal.
+ *
+ * The interactable portal supplies itself through GameplayEventData; the ability
+ * stays content-agnostic and only asks the target ARpgPortalActor to close on the
+ * server, matching the Lyra-style "option grants ability" interaction flow.
+ */
 UCLASS()
 class SURVIVALRPG_API URpgGameplayAbility_ClosePortal : public URpgGameplayAbility
 {
@@ -20,5 +27,6 @@ protected:
 		const FGameplayAbilityActivationInfo ActivationInfo,
 		const FGameplayEventData* TriggerEventData) override;
 
+	/** Resolves the portal from interaction event data or ability actor context. */
 	ARpgPortalActor* ResolvePortalTarget(const FGameplayAbilityActorInfo* ActorInfo, const FGameplayEventData* TriggerEventData) const;
 };

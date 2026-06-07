@@ -3,6 +3,7 @@
 #include "AbilitySystemComponent.h"
 #include "Components/SphereComponent.h"
 #include "Components/StaticMeshComponent.h"
+#include "Engine/Level.h"
 #include "Engine/LevelStreamingDynamic.h"
 #include "Engine/World.h"
 #include "GameFramework/Controller.h"
@@ -14,6 +15,7 @@
 #include "SurvivalRpg/AbilitySystem/Abilities/RpgGameplayAbility_EnterPortal.h"
 #include "SurvivalRpg/Combat/RpgCombatMessages.h"
 #include "SurvivalRpg/GameplayTags/RpgGameplayTags.h"
+#include "SurvivalRpg/Portals/RpgPortalDungeonMarkerActor.h"
 #include "SurvivalRpg/Portals/RpgPortalEncounterDefinition.h"
 #include "SurvivalRpg/Portals/RpgPortalExitActor.h"
 #include "SurvivalRpg/Portals/RpgPortalMessages.h"
@@ -88,6 +90,7 @@ void ARpgPortalActor::EndPlay(const EEndPlayReason::Type EndPlayReason)
 		}
 	}
 	DungeonOccupants.Reset();
+	PendingDungeonEntrants.Reset();
 
 	DestroyExitPortal();
 	UnloadDungeonLevelInstance();
@@ -106,11 +109,14 @@ void ARpgPortalActor::GetLifetimeReplicatedProps(TArray<FLifetimeProperty>& OutL
 	DOREPLIFETIME(ThisClass, bDungeonBossDefeated);
 	DOREPLIFETIME(ThisClass, DungeonOccupantCount);
 	DOREPLIFETIME(ThisClass, EncounterDefinition);
+	DOREPLIFETIME(ThisClass, DungeonLevelInstanceTransform);
+	DOREPLIFETIME(ThisClass, DungeonLevelInstanceName);
 }
 
 void ARpgPortalActor::GatherInteractionOptions(const FInteractionQuery& InteractQuery, FInteractionOptionBuilder& InteractionBuilder)
 {
-	if (IsDungeonEncounterMode() && EnterPortalAbilityClass && (PortalState == ERpgPortalState::Active || PortalState == ERpgPortalState::DungeonInProgress))
+	if (IsDungeonEncounterMode() && EnterPortalAbilityClass
+		&& (PortalState == ERpgPortalState::Active || PortalState == ERpgPortalState::DungeonLoading || PortalState == ERpgPortalState::DungeonInProgress))
 	{
 		FInteractionOption Option;
 		Option.InteractionAbilityToGrant = EnterPortalAbilityClass;
@@ -154,7 +160,14 @@ void ARpgPortalActor::StartEncounter()
 	DungeonOccupantCount = 0;
 	TrackedEnemies.Reset();
 	DungeonOccupants.Reset();
+	PendingDungeonEntrants.Reset();
 	TrackedBoss = nullptr;
+	ClearDungeonMarkers();
+
+	if (IsDungeonEncounterMode())
+	{
+		EnsureDungeonLevelStreamingConfig();
+	}
 
 	SetPortalState(ERpgPortalState::Active);
 
@@ -186,6 +199,26 @@ void ARpgPortalActor::ConfigureEncounterDefinition(const URpgPortalEncounterDefi
 	}
 
 	EncounterDefinition = InEncounterDefinition;
+}
+
+void ARpgPortalActor::ConfigureDungeonLevelInstanceTransform(const FTransform& InDungeonLevelInstanceTransform)
+{
+	if (!HasAuthority())
+	{
+		return;
+	}
+
+	if (PortalState != ERpgPortalState::Dormant)
+	{
+		UE_LOG(LogRpgPortalActor, Warning, TEXT("%s ignored dungeon level instance transform configuration after the encounter started."), *GetNameSafe(this));
+		return;
+	}
+
+	DungeonLevelInstanceTransform = InDungeonLevelInstanceTransform;
+	if (DungeonLevelInstanceName.IsEmpty())
+	{
+		DungeonLevelInstanceName = GetDefaultDungeonLevelInstanceName();
+	}
 }
 
 bool ARpgPortalActor::TryClosePortal(AActor* ClosingActor)
@@ -227,7 +260,7 @@ bool ARpgPortalActor::TryEnterPortal(AActor* EnteringActor)
 		return false;
 	}
 
-	if (PortalState != ERpgPortalState::Active && PortalState != ERpgPortalState::DungeonInProgress)
+	if (PortalState != ERpgPortalState::Active && PortalState != ERpgPortalState::DungeonLoading && PortalState != ERpgPortalState::DungeonInProgress)
 	{
 		return false;
 	}
@@ -243,21 +276,18 @@ bool ARpgPortalActor::TryEnterPortal(AActor* EnteringActor)
 		StartDungeonEncounter();
 	}
 
-	if (!DungeonOccupants.Contains(TravelActor))
+	if (PortalState == ERpgPortalState::DungeonLoading)
 	{
-		TravelActor->OnDestroyed.AddDynamic(this, &ThisClass::HandleDungeonOccupantDestroyed);
-		DungeonOccupants.Add(TravelActor);
-		RefreshDungeonOccupantCount();
+		PendingDungeonEntrants.AddUnique(TravelActor);
+		return true;
 	}
 
-	const FTransform EntryTransform = GetDungeonEntryTransform();
-	const bool bTeleported = TravelActor->TeleportTo(EntryTransform.GetLocation(), EntryTransform.Rotator(), false, true);
-	if (!bTeleported)
+	if (PortalState == ERpgPortalState::DungeonInProgress)
 	{
-		UE_LOG(LogRpgPortalActor, Warning, TEXT("%s failed to teleport %s into the portal dungeon."), *GetNameSafe(this), *GetNameSafe(TravelActor));
+		return TeleportActorToDungeon(TravelActor);
 	}
 
-	return bTeleported;
+	return false;
 }
 
 bool ARpgPortalActor::TryExitPortal(AActor* ExitingActor)
@@ -329,7 +359,7 @@ void ARpgPortalActor::OnRep_PortalState()
 
 	if (IsDungeonEncounterMode())
 	{
-		if (PortalState == ERpgPortalState::DungeonInProgress || PortalState == ERpgPortalState::ExitOpen || PortalState == ERpgPortalState::Sealable)
+		if (ShouldDungeonLevelBeLoadedForState())
 		{
 			LoadDungeonLevelInstance();
 		}
@@ -352,7 +382,15 @@ void ARpgPortalActor::OnRep_CurrentStability()
 
 void ARpgPortalActor::OnRep_EncounterDefinition()
 {
-	if (IsDungeonEncounterMode() && (PortalState == ERpgPortalState::DungeonInProgress || PortalState == ERpgPortalState::ExitOpen || PortalState == ERpgPortalState::Sealable))
+	if (IsDungeonEncounterMode() && ShouldDungeonLevelBeLoadedForState())
+	{
+		LoadDungeonLevelInstance();
+	}
+}
+
+void ARpgPortalActor::OnRep_DungeonLevelStreamingConfig()
+{
+	if (IsDungeonEncounterMode() && ShouldDungeonLevelBeLoadedForState())
 	{
 		LoadDungeonLevelInstance();
 	}
@@ -376,6 +414,7 @@ void ARpgPortalActor::HandleDungeonOccupantDestroyed(AActor* DestroyedActor)
 	}
 
 	DungeonOccupants.RemoveSingleSwap(DestroyedActor);
+	PendingDungeonEntrants.RemoveSingleSwap(DestroyedActor);
 	RefreshDungeonOccupantCount();
 }
 
@@ -387,6 +426,33 @@ void ARpgPortalActor::HandleTrackedBossDestroyed(AActor* DestroyedActor)
 	}
 
 	MarkTrackedBossDefeated(DestroyedActor);
+}
+
+void ARpgPortalActor::HandleDungeonLevelShown()
+{
+	if (!HasAuthority() || PortalState != ERpgPortalState::DungeonLoading)
+	{
+		return;
+	}
+
+	if (!ResolveDungeonMarkers())
+	{
+		UE_LOG(LogRpgPortalActor, Warning, TEXT("%s failed to resolve required dungeon markers and returned to Active state."), *GetNameSafe(this));
+		PendingDungeonEntrants.Reset();
+		UnloadDungeonLevelInstance();
+		SetPortalState(ERpgPortalState::Active);
+		return;
+	}
+
+	SetPortalState(ERpgPortalState::DungeonInProgress);
+	SpawnDungeonBoss();
+	TeleportPendingDungeonEntrants();
+
+	if (!TrackedBoss)
+	{
+		UE_LOG(LogRpgPortalActor, Warning, TEXT("%s has no dungeon boss and will open its exit immediately."), *GetNameSafe(this));
+		MarkTrackedBossDefeated(nullptr);
+	}
 }
 
 void ARpgPortalActor::HandleActorKilled(FGameplayTag Channel, const FRpgCombatActorKilledMessage& Message)
@@ -502,37 +568,73 @@ void ARpgPortalActor::StartDungeonEncounter()
 		return;
 	}
 
-	SetPortalState(ERpgPortalState::DungeonInProgress);
-	LoadDungeonLevelInstance();
-	SpawnDungeonBoss();
-
-	if (!TrackedBoss)
+	EnsureDungeonLevelStreamingConfig();
+	SetPortalState(ERpgPortalState::DungeonLoading);
+	if (!LoadDungeonLevelInstance())
 	{
-		UE_LOG(LogRpgPortalActor, Warning, TEXT("%s has no dungeon boss and will open its exit immediately."), *GetNameSafe(this));
-		MarkTrackedBossDefeated(nullptr);
+		SetPortalState(ERpgPortalState::Active);
+	}
+}
+
+void ARpgPortalActor::EnsureDungeonLevelStreamingConfig()
+{
+	if (!HasAuthority())
+	{
+		return;
+	}
+
+	if (DungeonLevelInstanceTransform.Equals(FTransform::Identity))
+	{
+		DungeonLevelInstanceTransform = GetDefaultDungeonLevelInstanceTransform();
+	}
+
+	if (DungeonLevelInstanceName.IsEmpty())
+	{
+		DungeonLevelInstanceName = GetDefaultDungeonLevelInstanceName();
 	}
 }
 
 bool ARpgPortalActor::LoadDungeonLevelInstance()
 {
-	if (!EncounterDefinition || EncounterDefinition->DungeonLevel.IsNull() || DungeonLevelStreaming)
+	if (!EncounterDefinition || EncounterDefinition->DungeonLevel.IsNull())
 	{
 		return true;
 	}
 
+	if (DungeonLevelStreaming)
+	{
+		return true;
+	}
+
+	if (HasAuthority())
+	{
+		EnsureDungeonLevelStreamingConfig();
+	}
+
+	if (DungeonLevelInstanceName.IsEmpty() || DungeonLevelInstanceTransform.Equals(FTransform::Identity))
+	{
+		return false;
+	}
+
 	bool bLevelLoaded = false;
-	const FString LevelInstanceName = FString::Printf(TEXT("PortalDungeon_%s"), *GetFName().ToString());
 	DungeonLevelStreaming = ULevelStreamingDynamic::LoadLevelInstanceBySoftObjectPtr(
 		this,
 		EncounterDefinition->DungeonLevel,
-		EncounterDefinition->DungeonLevelInstanceTransform,
+		DungeonLevelInstanceTransform,
 		bLevelLoaded,
-		LevelInstanceName);
+		DungeonLevelInstanceName);
 
 	if (!bLevelLoaded || !DungeonLevelStreaming)
 	{
 		UE_LOG(LogRpgPortalActor, Warning, TEXT("%s failed to stream dungeon level %s."), *GetNameSafe(this), *EncounterDefinition->DungeonLevel.ToString());
+		DungeonLevelStreaming = nullptr;
 		return false;
+	}
+
+	DungeonLevelStreaming->OnLevelShown.AddDynamic(this, &ThisClass::HandleDungeonLevelShown);
+	if (DungeonLevelStreaming->GetLoadedLevel())
+	{
+		HandleDungeonLevelShown();
 	}
 
 	return true;
@@ -543,13 +645,125 @@ void ARpgPortalActor::UnloadDungeonLevelInstance()
 	if (!DungeonLevelStreaming)
 	{
 		DungeonLevelStreaming = nullptr;
+		ClearDungeonMarkers();
 		return;
 	}
 
+	DungeonLevelStreaming->OnLevelShown.RemoveDynamic(this, &ThisClass::HandleDungeonLevelShown);
 	DungeonLevelStreaming->SetShouldBeVisible(false);
 	DungeonLevelStreaming->SetShouldBeLoaded(false);
 	DungeonLevelStreaming->SetIsRequestingUnloadAndRemoval(true);
 	DungeonLevelStreaming = nullptr;
+	ClearDungeonMarkers();
+}
+
+bool ARpgPortalActor::ResolveDungeonMarkers()
+{
+	ClearDungeonMarkers();
+
+	ULevel* LoadedLevel = DungeonLevelStreaming ? DungeonLevelStreaming->GetLoadedLevel() : nullptr;
+	if (!LoadedLevel)
+	{
+		UE_LOG(LogRpgPortalActor, Warning, TEXT("%s cannot resolve dungeon markers because the dungeon level is not loaded."), *GetNameSafe(this));
+		return false;
+	}
+
+	int32 EntryCount = 0;
+	int32 BossSpawnCount = 0;
+	int32 ExitPortalCount = 0;
+
+	for (AActor* Actor : LoadedLevel->Actors)
+	{
+		ARpgPortalDungeonMarkerActor* Marker = Cast<ARpgPortalDungeonMarkerActor>(Actor);
+		if (!Marker)
+		{
+			continue;
+		}
+
+		switch (Marker->GetMarkerRole())
+		{
+		case ERpgPortalDungeonMarkerRole::Entry:
+			DungeonEntryMarker = Marker;
+			++EntryCount;
+			break;
+		case ERpgPortalDungeonMarkerRole::BossSpawn:
+			DungeonBossSpawnMarker = Marker;
+			++BossSpawnCount;
+			break;
+		case ERpgPortalDungeonMarkerRole::ExitPortal:
+			DungeonExitPortalMarker = Marker;
+			++ExitPortalCount;
+			break;
+		default:
+			break;
+		}
+	}
+
+	const bool bHasExactlyOneMarkerOfEachRole = EntryCount == 1 && BossSpawnCount == 1 && ExitPortalCount == 1;
+	if (!bHasExactlyOneMarkerOfEachRole)
+	{
+		UE_LOG(LogRpgPortalActor, Warning, TEXT("%s expected exactly one dungeon marker of each role but found Entry=%d, BossSpawn=%d, ExitPortal=%d."),
+			*GetNameSafe(this),
+			EntryCount,
+			BossSpawnCount,
+			ExitPortalCount);
+		ClearDungeonMarkers();
+		return false;
+	}
+
+	return true;
+}
+
+void ARpgPortalActor::ClearDungeonMarkers()
+{
+	DungeonEntryMarker = nullptr;
+	DungeonBossSpawnMarker = nullptr;
+	DungeonExitPortalMarker = nullptr;
+}
+
+void ARpgPortalActor::TeleportPendingDungeonEntrants()
+{
+	TArray<TObjectPtr<AActor>> PendingEntrants = MoveTemp(PendingDungeonEntrants);
+	PendingDungeonEntrants.Reset();
+
+	for (AActor* PendingEntrant : PendingEntrants)
+	{
+		if (IsValid(PendingEntrant))
+		{
+			TeleportActorToDungeon(PendingEntrant);
+		}
+	}
+}
+
+bool ARpgPortalActor::TeleportActorToDungeon(AActor* TravelActor)
+{
+	if (!TravelActor || !DungeonEntryMarker)
+	{
+		return false;
+	}
+
+	const FTransform EntryTransform = DungeonEntryMarker->GetMarkerTransform();
+	const bool bTeleported = TravelActor->TeleportTo(EntryTransform.GetLocation(), EntryTransform.Rotator(), false, true);
+	if (!bTeleported)
+	{
+		UE_LOG(LogRpgPortalActor, Warning, TEXT("%s failed to teleport %s into the portal dungeon."), *GetNameSafe(this), *GetNameSafe(TravelActor));
+		return false;
+	}
+
+	RegisterDungeonOccupant(TravelActor);
+	return true;
+}
+
+void ARpgPortalActor::RegisterDungeonOccupant(AActor* TravelActor)
+{
+	if (!TravelActor || DungeonOccupants.Contains(TravelActor))
+	{
+		return;
+	}
+
+	TravelActor->OnDestroyed.AddDynamic(this, &ThisClass::HandleDungeonOccupantDestroyed);
+	DungeonOccupants.Add(TravelActor);
+	RefreshDungeonOccupantCount();
 }
 
 void ARpgPortalActor::SpawnDungeonBoss()
@@ -566,6 +780,12 @@ void ARpgPortalActor::SpawnDungeonBoss()
 		return;
 	}
 
+	if (!DungeonBossSpawnMarker)
+	{
+		UE_LOG(LogRpgPortalActor, Warning, TEXT("%s cannot spawn a dungeon boss because the BossSpawn marker is missing."), *GetNameSafe(this));
+		return;
+	}
+
 	UWorld* World = GetWorld();
 	if (!World)
 	{
@@ -574,9 +794,10 @@ void ARpgPortalActor::SpawnDungeonBoss()
 
 	FActorSpawnParameters SpawnParams;
 	SpawnParams.Owner = this;
+	SpawnParams.OverrideLevel = DungeonBossSpawnMarker->GetLevel();
 	SpawnParams.SpawnCollisionHandlingOverride = ESpawnActorCollisionHandlingMethod::AdjustIfPossibleButAlwaysSpawn;
 
-	TrackedBoss = World->SpawnActor<AActor>(EncounterDefinition->BossClass, GetDungeonBossSpawnTransform(), SpawnParams);
+	TrackedBoss = World->SpawnActor<AActor>(EncounterDefinition->BossClass, DungeonBossSpawnMarker->GetMarkerTransform(), SpawnParams);
 	if (TrackedBoss)
 	{
 		TrackedBoss->OnDestroyed.AddDynamic(this, &ThisClass::HandleTrackedBossDestroyed);
@@ -585,8 +806,18 @@ void ARpgPortalActor::SpawnDungeonBoss()
 
 void ARpgPortalActor::SpawnExitPortal()
 {
-	if (ExitPortalActor || !ExitPortalActorClass)
+	TSubclassOf<ARpgPortalExitActor> ExitClass = EncounterDefinition && EncounterDefinition->ExitPortalActorClass
+		? EncounterDefinition->ExitPortalActorClass
+		: ExitPortalActorClass;
+
+	if (ExitPortalActor || !ExitClass)
 	{
+		return;
+	}
+
+	if (!DungeonExitPortalMarker)
+	{
+		UE_LOG(LogRpgPortalActor, Warning, TEXT("%s cannot spawn its exit portal because the ExitPortal marker is missing."), *GetNameSafe(this));
 		return;
 	}
 
@@ -596,13 +827,15 @@ void ARpgPortalActor::SpawnExitPortal()
 		return;
 	}
 
-	const FTransform ExitTransform = GetDungeonExitSpawnTransform();
-	ARpgPortalExitActor* SpawnedExit = World->SpawnActorDeferred<ARpgPortalExitActor>(
-		ExitPortalActorClass,
-		ExitTransform,
-		this,
-		GetInstigator(),
-		ESpawnActorCollisionHandlingMethod::AdjustIfPossibleButAlwaysSpawn);
+	const FTransform ExitTransform = DungeonExitPortalMarker->GetMarkerTransform();
+	FActorSpawnParameters SpawnParams;
+	SpawnParams.Owner = this;
+	SpawnParams.Instigator = GetInstigator();
+	SpawnParams.OverrideLevel = DungeonExitPortalMarker->GetLevel();
+	SpawnParams.bDeferConstruction = true;
+	SpawnParams.SpawnCollisionHandlingOverride = ESpawnActorCollisionHandlingMethod::AdjustIfPossibleButAlwaysSpawn;
+
+	ARpgPortalExitActor* SpawnedExit = World->SpawnActor<ARpgPortalExitActor>(ExitClass, ExitTransform, SpawnParams);
 
 	if (!SpawnedExit)
 	{
@@ -739,24 +972,34 @@ AActor* ARpgPortalActor::ResolveTravelActor(AActor* Actor) const
 	return Actor;
 }
 
-FTransform ARpgPortalActor::GetDungeonEntryTransform() const
+FTransform ARpgPortalActor::GetDefaultDungeonLevelInstanceTransform() const
 {
-	return EncounterDefinition ? EncounterDefinition->DungeonEntryTransform : FTransform(FRotator::ZeroRotator, GetActorLocation() + FVector(10000.0f, 0.0f, 250.0f));
+	constexpr double RegionGridSize = 100000.0;
+	const FVector PortalLocation = GetActorLocation();
+	const FVector RegionGridOrigin(
+		FMath::GridSnap(PortalLocation.X, RegionGridSize),
+		FMath::GridSnap(PortalLocation.Y, RegionGridSize),
+		0.0);
+
+	return FTransform(FRotator::ZeroRotator, FVector(1000000.0, 0.0, 0.0) + RegionGridOrigin);
 }
 
-FTransform ARpgPortalActor::GetDungeonBossSpawnTransform() const
+FString ARpgPortalActor::GetDefaultDungeonLevelInstanceName() const
 {
-	return EncounterDefinition ? EncounterDefinition->DungeonBossSpawnTransform : FTransform(FRotator::ZeroRotator, GetActorLocation() + FVector(10600.0f, 0.0f, 250.0f));
-}
-
-FTransform ARpgPortalActor::GetDungeonExitSpawnTransform() const
-{
-	return EncounterDefinition ? EncounterDefinition->DungeonExitSpawnTransform : FTransform(FRotator::ZeroRotator, GetActorLocation() + FVector(11200.0f, 0.0f, 250.0f));
+	return FString::Printf(TEXT("PortalDungeon_%s"), *GetFName().ToString());
 }
 
 FTransform ARpgPortalActor::GetOverworldReturnTransform() const
 {
-	return EncounterDefinition ? (EncounterDefinition->OverworldReturnTransformOffset * GetActorTransform()) : FTransform(GetActorRotation(), GetActorLocation() + FVector(250.0f, 0.0f, 0.0f));
+	return FTransform(GetActorRotation(), GetActorLocation() + GetActorForwardVector() * OverworldReturnDistance);
+}
+
+bool ARpgPortalActor::ShouldDungeonLevelBeLoadedForState() const
+{
+	return PortalState == ERpgPortalState::DungeonLoading
+		|| PortalState == ERpgPortalState::DungeonInProgress
+		|| PortalState == ERpgPortalState::ExitOpen
+		|| PortalState == ERpgPortalState::Sealable;
 }
 
 bool ARpgPortalActor::IsTrackedEnemy(AActor* Actor) const
