@@ -1,4 +1,4 @@
-#include "RpgPortalEncounterDefinition.h"
+#include "Portals/RpgPortalEncounterDefinition.h"
 
 #include UE_INLINE_GENERATED_CPP_BY_NAME(RpgPortalEncounterDefinition)
 

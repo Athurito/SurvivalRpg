@@ -1,6 +1,6 @@
-#include "RpgGameplayAbility_ExitPortal.h"
+#include "AbilitySystem/Abilities/RpgGameplayAbility_ExitPortal.h"
 
-#include "SurvivalRpg/Portals/RpgPortalExitActor.h"
+#include "Portals/RpgPortalExitActor.h"
 
 #include UE_INLINE_GENERATED_CPP_BY_NAME(RpgGameplayAbility_ExitPortal)
 

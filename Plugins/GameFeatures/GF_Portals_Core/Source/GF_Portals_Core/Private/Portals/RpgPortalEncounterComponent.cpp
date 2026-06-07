@@ -1,12 +1,12 @@
-#include "RpgPortalEncounterComponent.h"
+#include "Portals/RpgPortalEncounterComponent.h"
 
 #include "Engine/World.h"
 #include "Kismet/GameplayStatics.h"
 #include "SurvivalRpg/GameFeatures/RpgFeatureEncounterPoint.h"
 #include "SurvivalRpg/GameFeatures/RpgFeatureRegionActor.h"
 #include "SurvivalRpg/GameFeatures/RpgFeatureTagUtilities.h"
-#include "SurvivalRpg/Portals/RpgPortalActor.h"
-#include "SurvivalRpg/Portals/RpgPortalEncounterDefinition.h"
+#include "Portals/RpgPortalActor.h"
+#include "Portals/RpgPortalEncounterDefinition.h"
 
 #include UE_INLINE_GENERATED_CPP_BY_NAME(RpgPortalEncounterComponent)
 

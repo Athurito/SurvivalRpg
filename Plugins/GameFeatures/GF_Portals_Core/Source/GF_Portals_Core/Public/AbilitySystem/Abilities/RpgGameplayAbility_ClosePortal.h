@@ -1,24 +1,24 @@
 #pragma once
 
 #include "SurvivalRpg/AbilitySystem/Abilities/RpgGameplayAbility.h"
-#include "RpgGameplayAbility_EnterPortal.generated.h"
+#include "RpgGameplayAbility_ClosePortal.generated.h"
 
 class ARpgPortalActor;
 
 /**
- * Generic interaction ability for entering a dungeon portal.
+ * Generic interaction ability for closing a sealable portal.
  *
- * The portal owns the streaming, marker resolution and teleport authority; this
- * ability only resolves the interacted portal target and forwards the server
- * request.
+ * The interactable portal supplies itself through GameplayEventData; the ability
+ * stays content-agnostic and only asks the target ARpgPortalActor to close on the
+ * server, matching the Lyra-style "option grants ability" interaction flow.
  */
 UCLASS()
-class SURVIVALRPG_API URpgGameplayAbility_EnterPortal : public URpgGameplayAbility
+class GF_PORTALS_CORE_API URpgGameplayAbility_ClosePortal : public URpgGameplayAbility
 {
 	GENERATED_BODY()
 
 public:
-	explicit URpgGameplayAbility_EnterPortal(const FObjectInitializer& ObjectInitializer = FObjectInitializer::Get());
+	explicit URpgGameplayAbility_ClosePortal(const FObjectInitializer& ObjectInitializer = FObjectInitializer::Get());
 
 protected:
 	virtual void ActivateAbility(

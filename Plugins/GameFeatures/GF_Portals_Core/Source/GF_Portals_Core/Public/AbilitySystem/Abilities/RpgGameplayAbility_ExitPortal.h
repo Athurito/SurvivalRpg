@@ -12,7 +12,7 @@ class ARpgPortalExitActor;
  * authoritative portal flow owns return teleporting and sealable-state updates.
  */
 UCLASS()
-class SURVIVALRPG_API URpgGameplayAbility_ExitPortal : public URpgGameplayAbility
+class GF_PORTALS_CORE_API URpgGameplayAbility_ExitPortal : public URpgGameplayAbility
 {
 	GENERATED_BODY()
 

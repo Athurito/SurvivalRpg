@@ -21,7 +21,7 @@ enum class ERpgPortalEncounterMode : uint8
 
 /** One fixed enemy class/count pair for BrokenOutbreak portal encounters. */
 USTRUCT(BlueprintType)
-struct SURVIVALRPG_API FRpgPortalEnemySpawnEntry
+struct GF_PORTALS_CORE_API FRpgPortalEnemySpawnEntry
 {
 	GENERATED_BODY()
 
@@ -43,7 +43,7 @@ struct SURVIVALRPG_API FRpgPortalEnemySpawnEntry
  * EnemySpawnEntries to spill enemies into the overworld.
  */
 UCLASS(BlueprintType)
-class SURVIVALRPG_API URpgPortalEncounterDefinition : public UDataAsset
+class GF_PORTALS_CORE_API URpgPortalEncounterDefinition : public UDataAsset
 {
 	GENERATED_BODY()
 

@@ -1,11 +1,11 @@
-#include "RpgPortalExitActor.h"
+#include "Portals/RpgPortalExitActor.h"
 
 #include "Components/SphereComponent.h"
 #include "Components/StaticMeshComponent.h"
 #include "Net/UnrealNetwork.h"
-#include "SurvivalRpg/AbilitySystem/Abilities/RpgGameplayAbility_ExitPortal.h"
-#include "SurvivalRpg/Portals/RpgPortalActor.h"
-#include "SurvivalRpg/Portals/RpgPortalEncounterDefinition.h"
+#include "AbilitySystem/Abilities/RpgGameplayAbility_ExitPortal.h"
+#include "Portals/RpgPortalActor.h"
+#include "Portals/RpgPortalEncounterDefinition.h"
 
 #include UE_INLINE_GENERATED_CPP_BY_NAME(RpgPortalExitActor)
 

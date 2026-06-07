@@ -52,7 +52,7 @@ DECLARE_DYNAMIC_MULTICAST_DELEGATE_TwoParams(FRpgPortalStabilityChanged, float, 
  * and broadcasts completion for later reward or world-state systems.
  */
 UCLASS(Blueprintable)
-class SURVIVALRPG_API ARpgPortalActor : public AActor, public IInteractableTarget
+class GF_PORTALS_CORE_API ARpgPortalActor : public AActor, public IInteractableTarget
 {
 	GENERATED_BODY()
 

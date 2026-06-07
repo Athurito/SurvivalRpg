@@ -1,6 +1,6 @@
-#include "RpgGameplayAbility_EnterPortal.h"
+#include "AbilitySystem/Abilities/RpgGameplayAbility_EnterPortal.h"
 
-#include "SurvivalRpg/Portals/RpgPortalActor.h"
+#include "Portals/RpgPortalActor.h"
 
 #include UE_INLINE_GENERATED_CPP_BY_NAME(RpgGameplayAbility_EnterPortal)
 

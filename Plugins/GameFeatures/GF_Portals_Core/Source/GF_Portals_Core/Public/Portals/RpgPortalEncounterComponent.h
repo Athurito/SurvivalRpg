@@ -18,7 +18,7 @@ class URpgPortalEncounterDefinition;
  * overworld placement points without hard-referencing GameFeature portal assets.
  */
 USTRUCT(BlueprintType)
-struct SURVIVALRPG_API FRpgPortalEncounterSpawnRule
+struct GF_PORTALS_CORE_API FRpgPortalEncounterSpawnRule
 {
 	GENERATED_BODY()
 
@@ -52,7 +52,7 @@ struct SURVIVALRPG_API FRpgPortalEncounterSpawnRule
  * gives each portal a deterministic technical dungeon-pocket transform.
  */
 UCLASS(Blueprintable, ClassGroup = (Portals), meta = (BlueprintSpawnableComponent))
-class SURVIVALRPG_API URpgPortalEncounterComponent : public UActorComponent
+class GF_PORTALS_CORE_API URpgPortalEncounterComponent : public UActorComponent
 {
 	GENERATED_BODY()
 

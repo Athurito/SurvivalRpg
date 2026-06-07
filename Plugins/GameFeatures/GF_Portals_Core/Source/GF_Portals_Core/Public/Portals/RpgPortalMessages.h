@@ -16,7 +16,7 @@ class URpgPortalEncounterDefinition;
  * reward eligibility flags.
  */
 USTRUCT(BlueprintType)
-struct SURVIVALRPG_API FRpgPortalCompletedMessage
+struct GF_PORTALS_CORE_API FRpgPortalCompletedMessage
 {
 	GENERATED_BODY()
 

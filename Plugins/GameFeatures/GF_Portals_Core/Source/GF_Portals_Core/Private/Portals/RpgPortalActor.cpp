@@ -1,4 +1,4 @@
-#include "RpgPortalActor.h"
+#include "Portals/RpgPortalActor.h"
 
 #include "AbilitySystemComponent.h"
 #include "Components/SphereComponent.h"
@@ -11,14 +11,14 @@
 #include "GameFramework/GameplayMessageSubsystem.h"
 #include "Kismet/GameplayStatics.h"
 #include "Net/UnrealNetwork.h"
-#include "SurvivalRpg/AbilitySystem/Abilities/RpgGameplayAbility_ClosePortal.h"
-#include "SurvivalRpg/AbilitySystem/Abilities/RpgGameplayAbility_EnterPortal.h"
+#include "AbilitySystem/Abilities/RpgGameplayAbility_ClosePortal.h"
+#include "AbilitySystem/Abilities/RpgGameplayAbility_EnterPortal.h"
 #include "SurvivalRpg/Combat/RpgCombatMessages.h"
-#include "SurvivalRpg/GameplayTags/RpgGameplayTags.h"
-#include "SurvivalRpg/Portals/RpgPortalDungeonMarkerActor.h"
-#include "SurvivalRpg/Portals/RpgPortalEncounterDefinition.h"
-#include "SurvivalRpg/Portals/RpgPortalExitActor.h"
-#include "SurvivalRpg/Portals/RpgPortalMessages.h"
+#include "GameplayTags/RpgPortalGameplayTags.h"
+#include "Portals/RpgPortalDungeonMarkerActor.h"
+#include "Portals/RpgPortalEncounterDefinition.h"
+#include "Portals/RpgPortalExitActor.h"
+#include "Portals/RpgPortalMessages.h"
 
 #include UE_INLINE_GENERATED_CPP_BY_NAME(RpgPortalActor)
 
@@ -247,7 +247,7 @@ bool ARpgPortalActor::TryClosePortal(AActor* ClosingActor)
 	if (UWorld* World = GetWorld())
 	{
 		UGameplayMessageSubsystem& MessageSubsystem = UGameplayMessageSubsystem::Get(World);
-		MessageSubsystem.BroadcastMessage(RpgGameplayTags::Rpg_Portal_Message_Completed, Message);
+		MessageSubsystem.BroadcastMessage(RpgPortalGameplayTags::Rpg_Portal_Message_Completed, Message);
 	}
 
 	return true;
@@ -485,7 +485,7 @@ void ARpgPortalActor::RegisterCombatMessageListener()
 	{
 		UGameplayMessageSubsystem& MessageSubsystem = UGameplayMessageSubsystem::Get(World);
 		ActorKilledListenerHandle = MessageSubsystem.RegisterListener<FRpgCombatActorKilledMessage>(
-			RpgGameplayTags::Rpg_Combat_Message_ActorKilled,
+			FGameplayTag::RequestGameplayTag(TEXT("Rpg.Combat.Message.ActorKilled")),
 			this,
 			&ThisClass::HandleActorKilled);
 	}

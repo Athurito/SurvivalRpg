@@ -18,7 +18,7 @@ class URpgGameplayAbility_ExitPortal;
  * portal decide the authoritative return transform and sealable state.
  */
 UCLASS(Blueprintable)
-class SURVIVALRPG_API ARpgPortalExitActor : public AActor, public IInteractableTarget
+class GF_PORTALS_CORE_API ARpgPortalExitActor : public AActor, public IInteractableTarget
 {
 	GENERATED_BODY()
 

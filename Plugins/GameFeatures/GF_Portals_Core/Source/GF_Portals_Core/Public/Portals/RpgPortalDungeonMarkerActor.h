@@ -27,7 +27,7 @@ enum class ERpgPortalDungeonMarkerRole : uint8
  * Each V1 dungeon level must contain exactly one marker for each role.
  */
 UCLASS(Blueprintable)
-class SURVIVALRPG_API ARpgPortalDungeonMarkerActor : public AActor
+class GF_PORTALS_CORE_API ARpgPortalDungeonMarkerActor : public AActor
 {
 	GENERATED_BODY()
 
