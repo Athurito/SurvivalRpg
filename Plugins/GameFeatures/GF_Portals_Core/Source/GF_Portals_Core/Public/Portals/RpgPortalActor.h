@@ -3,6 +3,7 @@
 #include "CoreMinimal.h"
 #include "GameFramework/Actor.h"
 #include "GameFramework/GameplayMessageSubsystem.h"
+#include "GameFramework/OnlineReplStructs.h"
 #include "SurvivalRpg/Interaction/IInteractableTarget.h"
 #include "RpgPortalActor.generated.h"
 
@@ -15,8 +16,25 @@ class URpgGameplayAbility_ClosePortal;
 class URpgGameplayAbility_EnterPortal;
 class URpgPortalEncounterDefinition;
 class URpgPortalTravelComponent;
+class AController;
 enum class ERpgPortalTravelState : uint8;
 struct FRpgCombatActorKilledMessage;
+
+/**
+ * Runtime-only per-player dungeon participation data for one portal instance.
+ *
+ * This intentionally is not replicated or saved. It lets the live server recover
+ * a disconnected/reconnected player into the same streamed dungeon instance while
+ * the portal is still alive and not closed.
+ */
+struct FRpgPortalDungeonParticipantState
+{
+	FUniqueNetIdRepl PlayerNetId;
+	FTransform LastSafeDungeonTransform = FTransform::Identity;
+	bool bHasLastSafeDungeonTransform = false;
+	bool bInsideDungeon = false;
+	bool bResumeAllowed = false;
+};
 
 UENUM(BlueprintType)
 enum class ERpgPortalState : uint8
@@ -96,6 +114,9 @@ public:
 
 	/** Cleans up a pending travel request that failed before teleporting into the dungeon. */
 	void HandlePortalTravelFailed(URpgPortalTravelComponent* TravelComponent, int32 RequestId);
+
+	/** Restores a reconnecting controller if this live portal still has resume data for its player. */
+	bool TryRestoreReconnectController(AController* Controller);
 
 	UFUNCTION(BlueprintPure, Category = "Portal")
 	ERpgPortalState GetPortalState() const { return PortalState; }
@@ -179,6 +200,23 @@ protected:
 	void PrepareActorForPortalTeleport(AActor* TravelActor) const;
 	void RegisterDungeonOccupant(AActor* TravelActor);
 	void UnregisterDungeonOccupant(AActor* TravelActor);
+	AController* ResolveTravelController(AActor* TravelActor) const;
+	FUniqueNetIdRepl ResolvePlayerNetId(AActor* TravelActor) const;
+	FUniqueNetIdRepl ResolvePlayerNetId(AController* Controller) const;
+	FRpgPortalDungeonParticipantState* FindParticipantState(const FUniqueNetIdRepl& PlayerNetId);
+	const FRpgPortalDungeonParticipantState* FindParticipantState(const FUniqueNetIdRepl& PlayerNetId) const;
+	FRpgPortalDungeonParticipantState* FindParticipantStateForActor(AActor* TravelActor);
+	FRpgPortalDungeonParticipantState* FindOrAddParticipantStateForActor(AActor* TravelActor);
+	bool IsResumeStateUsable(const FRpgPortalDungeonParticipantState& ParticipantState) const;
+	bool GetResumeDungeonTransformForActor(AActor* TravelActor, FTransform& OutTransform) const;
+	void UpdateParticipantSafeTransform(AActor* TravelActor);
+	void MarkParticipantEnteredDungeon(AActor* TravelActor);
+	void MarkParticipantExitedDungeon(AActor* TravelActor);
+	void MarkParticipantDisconnectedFromDungeon(AActor* TravelActor);
+	void InvalidateParticipantResumeStates();
+	void StartParticipantLocationSamplingIfNeeded();
+	void StopParticipantLocationSamplingIfIdle();
+	void SampleDungeonParticipantLocations();
 	void NotifyKnownTravelComponentsToUnload(ERpgPortalTravelState TerminalState);
 	void SpawnDungeonBoss();
 	void SpawnExitPortal();
@@ -304,6 +342,9 @@ protected:
 	UPROPERTY(Transient)
 	TArray<TObjectPtr<URpgPortalTravelComponent>> KnownTravelComponents;
 
+	TMap<FUniqueNetIdRepl, FRpgPortalDungeonParticipantState> DungeonParticipantStates;
+	TMap<FObjectKey, FUniqueNetIdRepl> DungeonOccupantPlayerNetIds;
+	FTimerHandle ParticipantLocationSampleTimerHandle;
 	FGameplayMessageListenerHandle ActorKilledListenerHandle;
 	int32 NextPortalTravelRequestId = 0;
 };

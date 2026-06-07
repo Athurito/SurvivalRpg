@@ -50,6 +50,8 @@ public:
 
 	static URpgPortalTravelComponent* FindPortalTravelComponent(AController* Controller);
 
+	virtual void BeginPlay() override;
+	virtual void ReceivedPlayer() override;
 	virtual void EndPlay(const EEndPlayReason::Type EndPlayReason) override;
 
 	/**
@@ -128,6 +130,8 @@ protected:
 	void TryClientDeferredUnloadAfterExit();
 	bool IsClientSafeToUnloadDungeonLevelInstance() const;
 	bool IsObjectInLocalDungeonLevel(const UObject* Object) const;
+	void ScheduleServerResumeCheck();
+	void TryRestorePortalResumeAfterLogin();
 	void SetTravelState(ERpgPortalTravelState NewState);
 	void ResetRequestData();
 	void ResetPendingClientUnloadData();
@@ -155,8 +159,10 @@ protected:
 
 	FTimerHandle NetVisibilityRetryTimerHandle;
 	FTimerHandle ClientDeferredUnloadTimerHandle;
+	FTimerHandle ServerResumeCheckTimerHandle;
 	TObjectPtr<ARpgPortalActor> PendingUnloadPortal;
 	FString PendingUnloadLevelInstanceName;
 	int32 PendingUnloadRequestId = 0;
 	double ClientDeferredUnloadStartTime = 0.0;
+	int32 ServerResumeCheckAttempts = 0;
 };

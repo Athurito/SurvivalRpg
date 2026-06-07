@@ -11,10 +11,12 @@
 #include "GameFramework/Controller.h"
 #include "GameFramework/Pawn.h"
 #include "GameFramework/GameplayMessageSubsystem.h"
+#include "GameFramework/PlayerState.h"
 #include "Kismet/GameplayStatics.h"
 #include "Net/UnrealNetwork.h"
 #include "AbilitySystem/Abilities/RpgGameplayAbility_ClosePortal.h"
 #include "AbilitySystem/Abilities/RpgGameplayAbility_EnterPortal.h"
+#include "SurvivalRpg/Core/Character/RpgHealthComponent.h"
 #include "SurvivalRpg/Combat/RpgCombatMessages.h"
 #include "GameplayTags/RpgPortalGameplayTags.h"
 #include "Portals/RpgPortalDungeonMarkerActor.h"
@@ -22,10 +24,16 @@
 #include "Portals/RpgPortalExitActor.h"
 #include "Portals/RpgPortalMessages.h"
 #include "Portals/RpgPortalTravelComponent.h"
+#include "TimerManager.h"
 
 #include UE_INLINE_GENERATED_CPP_BY_NAME(RpgPortalActor)
 
 DEFINE_LOG_CATEGORY_STATIC(LogRpgPortalActor, Log, All);
+
+namespace
+{
+	constexpr float PortalParticipantSafeTransformSampleInterval = 1.0f;
+}
 
 ARpgPortalActor::ARpgPortalActor(const FObjectInitializer& ObjectInitializer)
 	: Super(ObjectInitializer)
@@ -70,6 +78,11 @@ void ARpgPortalActor::EndPlay(const EEndPlayReason::Type EndPlayReason)
 {
 	UnregisterCombatMessageListener();
 
+	if (UWorld* World = GetWorld())
+	{
+		World->GetTimerManager().ClearTimer(ParticipantLocationSampleTimerHandle);
+	}
+
 	for (AActor* TrackedEnemy : TrackedEnemies)
 	{
 		if (TrackedEnemy)
@@ -94,6 +107,8 @@ void ARpgPortalActor::EndPlay(const EEndPlayReason::Type EndPlayReason)
 	}
 	DungeonOccupants.Reset();
 	PendingDungeonEntrants.Reset();
+	DungeonParticipantStates.Reset();
+	DungeonOccupantPlayerNetIds.Reset();
 
 	NotifyKnownTravelComponentsToUnload(ERpgPortalTravelState::Cancelled);
 	DestroyExitPortal();
@@ -169,6 +184,12 @@ void ARpgPortalActor::StartEncounter()
 	DungeonOccupants.Reset();
 	PendingDungeonEntrants.Reset();
 	KnownTravelComponents.Reset();
+	DungeonParticipantStates.Reset();
+	DungeonOccupantPlayerNetIds.Reset();
+	if (UWorld* World = GetWorld())
+	{
+		World->GetTimerManager().ClearTimer(ParticipantLocationSampleTimerHandle);
+	}
 	NextPortalTravelRequestId = 0;
 	TrackedBoss = nullptr;
 	ClearDungeonMarkers();
@@ -240,6 +261,7 @@ bool ARpgPortalActor::TryClosePortal(AActor* ClosingActor)
 	CurrentStability = GetMaxStability();
 	SetPortalState(ERpgPortalState::Closed);
 	ApplyClosedPresentation();
+	InvalidateParticipantResumeStates();
 	NotifyKnownTravelComponentsToUnload(ERpgPortalTravelState::Cancelled);
 	DestroyExitPortal();
 	UnloadDungeonLevelInstance();
@@ -273,7 +295,8 @@ bool ARpgPortalActor::TryEnterPortal(AActor* EnteringActor)
 	if (PortalState != ERpgPortalState::Active
 		&& PortalState != ERpgPortalState::DungeonLoading
 		&& PortalState != ERpgPortalState::DungeonInProgress
-		&& PortalState != ERpgPortalState::ExitOpen)
+		&& PortalState != ERpgPortalState::ExitOpen
+		&& PortalState != ERpgPortalState::Sealable)
 	{
 		return false;
 	}
@@ -295,7 +318,7 @@ bool ARpgPortalActor::TryEnterPortal(AActor* EnteringActor)
 		return true;
 	}
 
-	if (PortalState == ERpgPortalState::DungeonInProgress || PortalState == ERpgPortalState::ExitOpen)
+	if (PortalState == ERpgPortalState::DungeonInProgress || PortalState == ERpgPortalState::ExitOpen || PortalState == ERpgPortalState::Sealable)
 	{
 		return BeginPortalTravelForActor(TravelActor);
 	}
@@ -328,16 +351,7 @@ bool ARpgPortalActor::TryExitPortal(AActor* ExitingActor)
 	}
 	TravelActor->ForceNetUpdate();
 
-	AController* TravelController = nullptr;
-	if (APawn* TravelPawn = Cast<APawn>(TravelActor))
-	{
-		TravelController = TravelPawn->GetController();
-	}
-	else
-	{
-		TravelController = Cast<AController>(TravelActor);
-	}
-
+	AController* TravelController = ResolveTravelController(TravelActor);
 	if (URpgPortalTravelComponent* TravelComponent = URpgPortalTravelComponent::FindPortalTravelComponent(TravelController))
 	{
 		TravelComponent->BeginPortalExit(this);
@@ -347,7 +361,6 @@ bool ARpgPortalActor::TryExitPortal(AActor* ExitingActor)
 	if (bDungeonBossDefeated && DungeonOccupants.IsEmpty() && PortalState != ERpgPortalState::Closed)
 	{
 		SetPortalState(ERpgPortalState::Sealable);
-		DestroyExitPortal();
 	}
 
 	return true;
@@ -360,7 +373,7 @@ bool ARpgPortalActor::CompletePortalTravel(URpgPortalTravelComponent* TravelComp
 		return false;
 	}
 
-	if (PortalState != ERpgPortalState::DungeonInProgress && PortalState != ERpgPortalState::ExitOpen)
+	if (PortalState != ERpgPortalState::DungeonInProgress && PortalState != ERpgPortalState::ExitOpen && PortalState != ERpgPortalState::Sealable)
 	{
 		TravelComponent->FailPortalTravel(this, RequestId, TEXT("Portal is no longer in a dungeon-enterable state."));
 		return false;
@@ -401,6 +414,78 @@ void ARpgPortalActor::HandlePortalTravelFailed(URpgPortalTravelComponent* Travel
 	{
 		PendingDungeonEntrants.RemoveSingleSwap(TravelActor);
 	}
+}
+
+bool ARpgPortalActor::TryRestoreReconnectController(AController* Controller)
+{
+	if (!HasAuthority() || !Controller || !IsDungeonEncounterMode() || PortalState == ERpgPortalState::Closed)
+	{
+		return false;
+	}
+
+	const FUniqueNetIdRepl PlayerNetId = ResolvePlayerNetId(Controller);
+	FRpgPortalDungeonParticipantState* ParticipantState = FindParticipantState(PlayerNetId);
+	if (!ParticipantState || !ParticipantState->bResumeAllowed)
+	{
+		return false;
+	}
+
+	APawn* Pawn = Controller->GetPawn();
+	if (!Pawn)
+	{
+		return false;
+	}
+
+	if (DungeonOccupants.Contains(Pawn))
+	{
+		return true;
+	}
+
+	const bool bCanAttemptDungeonResume = IsResumeStateUsable(*ParticipantState);
+	if (!bCanAttemptDungeonResume
+		&& (PortalState == ERpgPortalState::DungeonInProgress
+			|| PortalState == ERpgPortalState::ExitOpen
+			|| PortalState == ERpgPortalState::Sealable))
+	{
+		PrepareActorForPortalTeleport(Pawn);
+		const FTransform SafeReturnTransform = GetOverworldReturnTransform();
+		Pawn->TeleportTo(SafeReturnTransform.GetLocation(), SafeReturnTransform.Rotator(), false, true);
+		Pawn->ForceNetUpdate();
+		ParticipantState->bInsideDungeon = false;
+		ParticipantState->bResumeAllowed = false;
+		return true;
+	}
+
+	if (!bCanAttemptDungeonResume)
+	{
+		return false;
+	}
+
+	PrepareActorForPortalTeleport(Pawn);
+	const FTransform SafeReturnTransform = GetOverworldReturnTransform();
+	if (!Pawn->TeleportTo(SafeReturnTransform.GetLocation(), SafeReturnTransform.Rotator(), false, true))
+	{
+		UE_LOG(LogRpgPortalActor, Warning, TEXT("%s failed to place reconnecting player %s at the overworld portal fallback before resume."),
+			*GetNameSafe(this),
+			*GetNameSafe(Pawn));
+		return true;
+	}
+	Pawn->ForceNetUpdate();
+
+	UE_LOG(LogRpgPortalActor, Log, TEXT("%s found live dungeon resume data for %s and is starting portal travel for instance %s."),
+		*GetNameSafe(this),
+		*GetNameSafe(Pawn),
+		*DungeonLevelInstanceName);
+
+	if (!BeginPortalTravelForActor(Pawn))
+	{
+		ParticipantState->bInsideDungeon = false;
+		UE_LOG(LogRpgPortalActor, Warning, TEXT("%s could not start resume travel for %s; player remains at overworld fallback."),
+			*GetNameSafe(this),
+			*GetNameSafe(Pawn));
+	}
+
+	return true;
 }
 
 FText ARpgPortalActor::GetExitInteractionText() const
@@ -472,9 +557,25 @@ void ARpgPortalActor::HandleDungeonOccupantDestroyed(AActor* DestroyedActor)
 		return;
 	}
 
+	const bool bWasDungeonOccupant = DungeonOccupants.Contains(DestroyedActor);
+	if (bWasDungeonOccupant)
+	{
+		const URpgHealthComponent* HealthComponent = URpgHealthComponent::FindHealthComponent(DestroyedActor);
+		if (HealthComponent && HealthComponent->IsDeadOrDying())
+		{
+			MarkParticipantExitedDungeon(DestroyedActor);
+		}
+		else
+		{
+			MarkParticipantDisconnectedFromDungeon(DestroyedActor);
+		}
+	}
+
 	DungeonOccupants.RemoveSingleSwap(DestroyedActor);
+	DungeonOccupantPlayerNetIds.Remove(FObjectKey(DestroyedActor));
 	PendingDungeonEntrants.RemoveSingleSwap(DestroyedActor);
 	RefreshDungeonOccupantCount();
+	StopParticipantLocationSamplingIfIdle();
 
 	for (URpgPortalTravelComponent* TravelComponent : KnownTravelComponents)
 	{
@@ -487,6 +588,11 @@ void ARpgPortalActor::HandleDungeonOccupantDestroyed(AActor* DestroyedActor)
 	{
 		return TravelComponent == nullptr || !IsValid(TravelComponent);
 	});
+
+	if (bDungeonBossDefeated && DungeonOccupants.IsEmpty() && PortalState != ERpgPortalState::Closed)
+	{
+		SetPortalState(ERpgPortalState::Sealable);
+	}
 }
 
 void ARpgPortalActor::HandleTrackedBossDestroyed(AActor* DestroyedActor)
@@ -822,16 +928,7 @@ bool ARpgPortalActor::BeginPortalTravelForActor(AActor* TravelActor)
 		return false;
 	}
 
-	AController* TravelController = nullptr;
-	if (APawn* TravelPawn = Cast<APawn>(TravelActor))
-	{
-		TravelController = TravelPawn->GetController();
-	}
-	else
-	{
-		TravelController = Cast<AController>(TravelActor);
-	}
-
+	AController* TravelController = ResolveTravelController(TravelActor);
 	if (!TravelController)
 	{
 		UE_LOG(LogRpgPortalActor, Warning, TEXT("%s cannot begin portal travel for %s because no controller was resolved."), *GetNameSafe(this), *GetNameSafe(TravelActor));
@@ -880,13 +977,22 @@ bool ARpgPortalActor::TeleportActorToDungeon(AActor* TravelActor)
 		return false;
 	}
 
-	const FTransform EntryTransform = DungeonEntryMarker->GetMarkerTransform();
+	FTransform DestinationTransform = DungeonEntryMarker->GetMarkerTransform();
+	const bool bUsingResumeTransform = GetResumeDungeonTransformForActor(TravelActor, DestinationTransform);
 	PrepareActorForPortalTeleport(TravelActor);
-	const bool bTeleported = TravelActor->TeleportTo(EntryTransform.GetLocation(), EntryTransform.Rotator(), false, true);
+	const bool bTeleported = TravelActor->TeleportTo(DestinationTransform.GetLocation(), DestinationTransform.Rotator(), false, true);
 	if (!bTeleported)
 	{
 		UE_LOG(LogRpgPortalActor, Warning, TEXT("%s failed to teleport %s into the portal dungeon."), *GetNameSafe(this), *GetNameSafe(TravelActor));
 		return false;
+	}
+
+	if (bUsingResumeTransform)
+	{
+		UE_LOG(LogRpgPortalActor, Log, TEXT("%s restored %s to its last safe dungeon transform for instance %s."),
+			*GetNameSafe(this),
+			*GetNameSafe(TravelActor),
+			*DungeonLevelInstanceName);
 	}
 
 	RegisterDungeonOccupant(TravelActor);
@@ -919,7 +1025,14 @@ void ARpgPortalActor::RegisterDungeonOccupant(AActor* TravelActor)
 
 	TravelActor->OnDestroyed.AddDynamic(this, &ThisClass::HandleDungeonOccupantDestroyed);
 	DungeonOccupants.Add(TravelActor);
+	MarkParticipantEnteredDungeon(TravelActor);
+	const FUniqueNetIdRepl PlayerNetId = ResolvePlayerNetId(TravelActor);
+	if (PlayerNetId.IsValid())
+	{
+		DungeonOccupantPlayerNetIds.Add(FObjectKey(TravelActor), PlayerNetId);
+	}
 	RefreshDungeonOccupantCount();
+	StartParticipantLocationSamplingIfNeeded();
 }
 
 void ARpgPortalActor::UnregisterDungeonOccupant(AActor* TravelActor)
@@ -930,8 +1043,254 @@ void ARpgPortalActor::UnregisterDungeonOccupant(AActor* TravelActor)
 	}
 
 	TravelActor->OnDestroyed.RemoveDynamic(this, &ThisClass::HandleDungeonOccupantDestroyed);
+	MarkParticipantExitedDungeon(TravelActor);
+	DungeonOccupantPlayerNetIds.Remove(FObjectKey(TravelActor));
 	DungeonOccupants.RemoveSingleSwap(TravelActor);
 	RefreshDungeonOccupantCount();
+	StopParticipantLocationSamplingIfIdle();
+}
+
+AController* ARpgPortalActor::ResolveTravelController(AActor* TravelActor) const
+{
+	if (!TravelActor)
+	{
+		return nullptr;
+	}
+
+	if (const APawn* TravelPawn = Cast<APawn>(TravelActor))
+	{
+		return TravelPawn->GetController();
+	}
+
+	return Cast<AController>(TravelActor);
+}
+
+FUniqueNetIdRepl ARpgPortalActor::ResolvePlayerNetId(AActor* TravelActor) const
+{
+	if (!TravelActor)
+	{
+		return FUniqueNetIdRepl();
+	}
+
+	if (AController* Controller = ResolveTravelController(TravelActor))
+	{
+		const FUniqueNetIdRepl ControllerPlayerNetId = ResolvePlayerNetId(Controller);
+		if (ControllerPlayerNetId.IsValid())
+		{
+			return ControllerPlayerNetId;
+		}
+	}
+
+	if (const APawn* TravelPawn = Cast<APawn>(TravelActor))
+	{
+		if (const APlayerState* PlayerState = TravelPawn->GetPlayerState())
+		{
+			return PlayerState->GetUniqueId();
+		}
+	}
+
+	if (const FUniqueNetIdRepl* CachedPlayerNetId = DungeonOccupantPlayerNetIds.Find(FObjectKey(TravelActor)))
+	{
+		return *CachedPlayerNetId;
+	}
+
+	return FUniqueNetIdRepl();
+}
+
+FUniqueNetIdRepl ARpgPortalActor::ResolvePlayerNetId(AController* Controller) const
+{
+	if (Controller)
+	{
+		if (const APlayerState* PlayerState = Controller->GetPlayerState<APlayerState>())
+		{
+			return PlayerState->GetUniqueId();
+		}
+	}
+
+	return FUniqueNetIdRepl();
+}
+
+FRpgPortalDungeonParticipantState* ARpgPortalActor::FindParticipantState(const FUniqueNetIdRepl& PlayerNetId)
+{
+	return PlayerNetId.IsValid() ? DungeonParticipantStates.Find(PlayerNetId) : nullptr;
+}
+
+const FRpgPortalDungeonParticipantState* ARpgPortalActor::FindParticipantState(const FUniqueNetIdRepl& PlayerNetId) const
+{
+	return PlayerNetId.IsValid() ? DungeonParticipantStates.Find(PlayerNetId) : nullptr;
+}
+
+FRpgPortalDungeonParticipantState* ARpgPortalActor::FindParticipantStateForActor(AActor* TravelActor)
+{
+	return FindParticipantState(ResolvePlayerNetId(TravelActor));
+}
+
+FRpgPortalDungeonParticipantState* ARpgPortalActor::FindOrAddParticipantStateForActor(AActor* TravelActor)
+{
+	const FUniqueNetIdRepl PlayerNetId = ResolvePlayerNetId(TravelActor);
+	if (!PlayerNetId.IsValid())
+	{
+		return nullptr;
+	}
+
+	FRpgPortalDungeonParticipantState& ParticipantState = DungeonParticipantStates.FindOrAdd(PlayerNetId);
+	ParticipantState.PlayerNetId = PlayerNetId;
+	return &ParticipantState;
+}
+
+bool ARpgPortalActor::IsResumeStateUsable(const FRpgPortalDungeonParticipantState& ParticipantState) const
+{
+	const bool bPortalCanStillHostDungeonTravel =
+		PortalState == ERpgPortalState::DungeonInProgress
+		|| PortalState == ERpgPortalState::ExitOpen
+		|| PortalState == ERpgPortalState::Sealable;
+
+	return IsDungeonEncounterMode()
+		&& bPortalCanStillHostDungeonTravel
+		&& DungeonEntryMarker != nullptr
+		&& ParticipantState.PlayerNetId.IsValid()
+		&& ParticipantState.bResumeAllowed
+		&& ParticipantState.bHasLastSafeDungeonTransform
+		&& !ParticipantState.LastSafeDungeonTransform.ContainsNaN();
+}
+
+bool ARpgPortalActor::GetResumeDungeonTransformForActor(AActor* TravelActor, FTransform& OutTransform) const
+{
+	const FUniqueNetIdRepl PlayerNetId = ResolvePlayerNetId(TravelActor);
+	const FRpgPortalDungeonParticipantState* ParticipantState = FindParticipantState(PlayerNetId);
+	if (!ParticipantState || !IsResumeStateUsable(*ParticipantState))
+	{
+		return false;
+	}
+
+	OutTransform = ParticipantState->LastSafeDungeonTransform;
+	return true;
+}
+
+void ARpgPortalActor::UpdateParticipantSafeTransform(AActor* TravelActor)
+{
+	if (!TravelActor)
+	{
+		return;
+	}
+
+	FRpgPortalDungeonParticipantState* ParticipantState = FindOrAddParticipantStateForActor(TravelActor);
+	if (!ParticipantState)
+	{
+		return;
+	}
+
+	const FTransform ActorTransform = TravelActor->GetActorTransform();
+	if (ActorTransform.ContainsNaN())
+	{
+		return;
+	}
+
+	ParticipantState->LastSafeDungeonTransform = ActorTransform;
+	ParticipantState->bHasLastSafeDungeonTransform = true;
+}
+
+void ARpgPortalActor::MarkParticipantEnteredDungeon(AActor* TravelActor)
+{
+	FRpgPortalDungeonParticipantState* ParticipantState = FindOrAddParticipantStateForActor(TravelActor);
+	if (!ParticipantState)
+	{
+		return;
+	}
+
+	ParticipantState->bInsideDungeon = true;
+	ParticipantState->bResumeAllowed = true;
+	UpdateParticipantSafeTransform(TravelActor);
+}
+
+void ARpgPortalActor::MarkParticipantExitedDungeon(AActor* TravelActor)
+{
+	FRpgPortalDungeonParticipantState* ParticipantState = FindParticipantStateForActor(TravelActor);
+	if (!ParticipantState)
+	{
+		return;
+	}
+
+	UpdateParticipantSafeTransform(TravelActor);
+	ParticipantState->bInsideDungeon = false;
+	ParticipantState->bResumeAllowed = false;
+}
+
+void ARpgPortalActor::MarkParticipantDisconnectedFromDungeon(AActor* TravelActor)
+{
+	FRpgPortalDungeonParticipantState* ParticipantState = FindOrAddParticipantStateForActor(TravelActor);
+	if (!ParticipantState)
+	{
+		return;
+	}
+
+	UpdateParticipantSafeTransform(TravelActor);
+	ParticipantState->bInsideDungeon = false;
+	ParticipantState->bResumeAllowed = ParticipantState->bHasLastSafeDungeonTransform;
+}
+
+void ARpgPortalActor::InvalidateParticipantResumeStates()
+{
+	for (TPair<FUniqueNetIdRepl, FRpgPortalDungeonParticipantState>& ParticipantPair : DungeonParticipantStates)
+	{
+		ParticipantPair.Value.bInsideDungeon = false;
+		ParticipantPair.Value.bResumeAllowed = false;
+	}
+
+	if (UWorld* World = GetWorld())
+	{
+		World->GetTimerManager().ClearTimer(ParticipantLocationSampleTimerHandle);
+	}
+}
+
+void ARpgPortalActor::StartParticipantLocationSamplingIfNeeded()
+{
+	if (!HasAuthority() || DungeonOccupants.IsEmpty())
+	{
+		return;
+	}
+
+	if (UWorld* World = GetWorld())
+	{
+		if (!World->GetTimerManager().IsTimerActive(ParticipantLocationSampleTimerHandle))
+		{
+			World->GetTimerManager().SetTimer(
+				ParticipantLocationSampleTimerHandle,
+				this,
+				&ThisClass::SampleDungeonParticipantLocations,
+				PortalParticipantSafeTransformSampleInterval,
+				true);
+		}
+	}
+}
+
+void ARpgPortalActor::StopParticipantLocationSamplingIfIdle()
+{
+	if (!DungeonOccupants.IsEmpty())
+	{
+		return;
+	}
+
+	if (UWorld* World = GetWorld())
+	{
+		World->GetTimerManager().ClearTimer(ParticipantLocationSampleTimerHandle);
+	}
+}
+
+void ARpgPortalActor::SampleDungeonParticipantLocations()
+{
+	if (!HasAuthority())
+	{
+		return;
+	}
+
+	RefreshDungeonOccupantCount();
+	for (AActor* DungeonOccupant : DungeonOccupants)
+	{
+		UpdateParticipantSafeTransform(DungeonOccupant);
+	}
+
+	StopParticipantLocationSamplingIfIdle();
 }
 
 void ARpgPortalActor::NotifyKnownTravelComponentsToUnload(ERpgPortalTravelState TerminalState)

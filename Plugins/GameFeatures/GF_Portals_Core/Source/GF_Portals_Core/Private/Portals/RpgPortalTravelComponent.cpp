@@ -7,6 +7,7 @@
 #include "EngineUtils.h"
 #include "GameFramework/Character.h"
 #include "GameFramework/CharacterMovementComponent.h"
+#include "GameFramework/Pawn.h"
 #include "GameFramework/PlayerController.h"
 #include "Portals/RpgPortalActor.h"
 #include "TimerManager.h"
@@ -21,6 +22,8 @@ namespace
 	constexpr float PortalTravelVisibilityTimeout = 8.0f;
 	constexpr float PortalTravelDeferredUnloadRetryDelay = 0.05f;
 	constexpr float PortalTravelDeferredUnloadTimeout = 3.0f;
+	constexpr float PortalTravelResumeRetryDelay = 0.25f;
+	constexpr int32 PortalTravelResumeMaxAttempts = 24;
 
 	FString PortalTravelStateToString(ERpgPortalTravelState State)
 	{
@@ -43,12 +46,25 @@ URpgPortalTravelComponent* URpgPortalTravelComponent::FindPortalTravelComponent(
 	return Controller ? Controller->FindComponentByClass<URpgPortalTravelComponent>() : nullptr;
 }
 
+void URpgPortalTravelComponent::BeginPlay()
+{
+	Super::BeginPlay();
+	ScheduleServerResumeCheck();
+}
+
+void URpgPortalTravelComponent::ReceivedPlayer()
+{
+	Super::ReceivedPlayer();
+	ScheduleServerResumeCheck();
+}
+
 void URpgPortalTravelComponent::EndPlay(const EEndPlayReason::Type EndPlayReason)
 {
 	if (UWorld* World = GetWorld())
 	{
 		World->GetTimerManager().ClearTimer(NetVisibilityRetryTimerHandle);
 		World->GetTimerManager().ClearTimer(ClientDeferredUnloadTimerHandle);
+		World->GetTimerManager().ClearTimer(ServerResumeCheckTimerHandle);
 	}
 
 	UnloadClientDungeonLevelInstance();
@@ -237,6 +253,10 @@ void URpgPortalTravelComponent::ClientLoadPortalDungeon_Implementation(
 		&& TravelState != ERpgPortalTravelState::Cancelled
 		&& TravelState != ERpgPortalTravelState::Failed)
 	{
+		if (UWorld* World = GetWorld())
+		{
+			World->GetTimerManager().ClearTimer(ClientDeferredUnloadTimerHandle);
+		}
 		UnloadClientDungeonLevelInstance();
 	}
 
@@ -418,17 +438,36 @@ bool URpgPortalTravelComponent::LoadClientDungeonLevelInstance()
 
 	if (LocalDungeonLevelStreaming)
 	{
+		if (UWorld* TimerWorld = GetWorld())
+		{
+			TimerWorld->GetTimerManager().ClearTimer(ClientDeferredUnloadTimerHandle);
+		}
+		ResetPendingClientUnloadData();
+		LocalDungeonLevelStreaming->SetShouldBeLoaded(true);
+		LocalDungeonLevelStreaming->SetShouldBeVisible(true);
+		LocalDungeonLevelStreaming->SetIsRequestingUnloadAndRemoval(false);
+		LocalDungeonLevelStreaming->OnLevelShown.RemoveDynamic(this, &ThisClass::HandleClientDungeonLevelShown);
+		LocalDungeonLevelStreaming->OnLevelShown.AddDynamic(this, &ThisClass::HandleClientDungeonLevelShown);
+
+		if (const ULevel* LoadedLevel = LocalDungeonLevelStreaming->GetLoadedLevel())
+		{
+			if (LoadedLevel->bIsVisible)
+			{
+				HandleClientDungeonLevelShown();
+			}
+		}
+
 		return true;
 	}
 
 	const TSoftObjectPtr<UWorld> DungeonLevel(ActiveDungeonLevelPath);
 	bool bLevelLoaded = false;
-	LocalDungeonLevelStreaming = ULevelStreamingDynamic::LoadLevelInstanceBySoftObjectPtr(
-		this,
-		DungeonLevel,
-		ActiveLevelInstanceTransform,
-		bLevelLoaded,
-		ActiveLevelInstanceName);
+	ULevelStreamingDynamic::FLoadLevelInstanceParams LoadParams(World, DungeonLevel.GetLongPackageName(), ActiveLevelInstanceTransform);
+	LoadParams.OptionalLevelNameOverride = &ActiveLevelInstanceName;
+	LoadParams.bAllowReuseExitingLevelStreaming = true;
+	LoadParams.bInitiallyVisible = true;
+
+	LocalDungeonLevelStreaming = ULevelStreamingDynamic::LoadLevelInstance(LoadParams, bLevelLoaded);
 
 	if (!bLevelLoaded || !LocalDungeonLevelStreaming)
 	{
@@ -442,6 +481,8 @@ bool URpgPortalTravelComponent::LoadClientDungeonLevelInstance()
 		return false;
 	}
 
+	LocalDungeonLevelStreaming->SetIsRequestingUnloadAndRemoval(false);
+	LocalDungeonLevelStreaming->OnLevelShown.RemoveDynamic(this, &ThisClass::HandleClientDungeonLevelShown);
 	LocalDungeonLevelStreaming->OnLevelShown.AddDynamic(this, &ThisClass::HandleClientDungeonLevelShown);
 
 	if (const ULevel* LoadedLevel = LocalDungeonLevelStreaming->GetLoadedLevel())
@@ -462,6 +503,10 @@ void URpgPortalTravelComponent::UnloadClientDungeonLevelInstance()
 		return;
 	}
 
+	if (UWorld* World = GetWorld())
+	{
+		World->GetTimerManager().ClearTimer(ClientDeferredUnloadTimerHandle);
+	}
 	LocalDungeonLevelStreaming->OnLevelShown.RemoveDynamic(this, &ThisClass::HandleClientDungeonLevelShown);
 	LocalDungeonLevelStreaming->SetShouldBeVisible(false);
 	LocalDungeonLevelStreaming->SetShouldBeLoaded(false);
@@ -584,6 +629,74 @@ bool URpgPortalTravelComponent::IsObjectInLocalDungeonLevel(const UObject* Objec
 	}
 
 	return false;
+}
+
+void URpgPortalTravelComponent::ScheduleServerResumeCheck()
+{
+	APlayerController* PlayerController = GetOwningPlayerController();
+	if (!PlayerController || !PlayerController->HasAuthority())
+	{
+		return;
+	}
+
+	if (TravelState != ERpgPortalTravelState::Idle
+		&& TravelState != ERpgPortalTravelState::Cancelled
+		&& TravelState != ERpgPortalTravelState::Failed)
+	{
+		return;
+	}
+
+	UWorld* World = GetWorld();
+	if (!World || World->GetTimerManager().IsTimerActive(ServerResumeCheckTimerHandle))
+	{
+		return;
+	}
+
+	ServerResumeCheckAttempts = 0;
+	World->GetTimerManager().SetTimer(ServerResumeCheckTimerHandle, this, &ThisClass::TryRestorePortalResumeAfterLogin, PortalTravelResumeRetryDelay, false);
+}
+
+void URpgPortalTravelComponent::TryRestorePortalResumeAfterLogin()
+{
+	APlayerController* PlayerController = GetOwningPlayerController();
+	UWorld* World = GetWorld();
+	if (!PlayerController || !PlayerController->HasAuthority() || !World)
+	{
+		return;
+	}
+
+	if (TravelState != ERpgPortalTravelState::Idle
+		&& TravelState != ERpgPortalTravelState::Cancelled
+		&& TravelState != ERpgPortalTravelState::Failed)
+	{
+		return;
+	}
+
+	++ServerResumeCheckAttempts;
+
+	if (!PlayerController->GetPawn())
+	{
+		if (ServerResumeCheckAttempts < PortalTravelResumeMaxAttempts)
+		{
+			World->GetTimerManager().SetTimer(ServerResumeCheckTimerHandle, this, &ThisClass::TryRestorePortalResumeAfterLogin, PortalTravelResumeRetryDelay, false);
+		}
+		return;
+	}
+
+	for (TActorIterator<ARpgPortalActor> PortalIt(World); PortalIt; ++PortalIt)
+	{
+		ARpgPortalActor* Portal = *PortalIt;
+		if (Portal && Portal->TryRestoreReconnectController(PlayerController))
+		{
+			World->GetTimerManager().ClearTimer(ServerResumeCheckTimerHandle);
+			return;
+		}
+	}
+
+	if (ServerResumeCheckAttempts < PortalTravelResumeMaxAttempts)
+	{
+		World->GetTimerManager().SetTimer(ServerResumeCheckTimerHandle, this, &ThisClass::TryRestorePortalResumeAfterLogin, PortalTravelResumeRetryDelay, false);
+	}
 }
 
 void URpgPortalTravelComponent::SetTravelState(ERpgPortalTravelState NewState)
