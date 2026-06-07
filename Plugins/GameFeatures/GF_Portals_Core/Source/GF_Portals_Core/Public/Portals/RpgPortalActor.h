@@ -14,6 +14,8 @@ class ARpgPortalDungeonMarkerActor;
 class URpgGameplayAbility_ClosePortal;
 class URpgGameplayAbility_EnterPortal;
 class URpgPortalEncounterDefinition;
+class URpgPortalTravelComponent;
+enum class ERpgPortalTravelState : uint8;
 struct FRpgCombatActorKilledMessage;
 
 UENUM(BlueprintType)
@@ -88,6 +90,12 @@ public:
 	/** Attempts to leave a completed dungeon through its spawned exit portal. Server-only. */
 	UFUNCTION(BlueprintCallable, BlueprintAuthorityOnly, Category = "Portal")
 	bool TryExitPortal(AActor* ExitingActor);
+
+	/** Completes a client-ready travel request after the owning connection has confirmed dungeon visibility. */
+	bool CompletePortalTravel(URpgPortalTravelComponent* TravelComponent, int32 RequestId);
+
+	/** Cleans up a pending travel request that failed before teleporting into the dungeon. */
+	void HandlePortalTravelFailed(URpgPortalTravelComponent* TravelComponent, int32 RequestId);
 
 	UFUNCTION(BlueprintPure, Category = "Portal")
 	ERpgPortalState GetPortalState() const { return PortalState; }
@@ -166,8 +174,12 @@ protected:
 	bool ResolveDungeonMarkers();
 	void ClearDungeonMarkers();
 	void TeleportPendingDungeonEntrants();
+	bool BeginPortalTravelForActor(AActor* TravelActor);
 	bool TeleportActorToDungeon(AActor* TravelActor);
+	void PrepareActorForPortalTeleport(AActor* TravelActor) const;
 	void RegisterDungeonOccupant(AActor* TravelActor);
+	void UnregisterDungeonOccupant(AActor* TravelActor);
+	void NotifyKnownTravelComponentsToUnload(ERpgPortalTravelState TerminalState);
 	void SpawnDungeonBoss();
 	void SpawnExitPortal();
 	void DestroyExitPortal();
@@ -180,8 +192,8 @@ protected:
 	AActor* ResolveTravelActor(AActor* Actor) const;
 	FTransform GetDefaultDungeonLevelInstanceTransform() const;
 	FString GetDefaultDungeonLevelInstanceName() const;
+	FName GetDungeonLevelNetPackageName() const;
 	FTransform GetOverworldReturnTransform() const;
-	bool ShouldDungeonLevelBeLoadedForState() const;
 	bool IsTrackedEnemy(AActor* Actor) const;
 	bool IsDungeonEncounterMode() const;
 	bool IsBrokenOutbreakMode() const;
@@ -288,5 +300,10 @@ protected:
 	UPROPERTY(Transient)
 	TArray<TObjectPtr<AActor>> PendingDungeonEntrants;
 
+	/** Travel components that loaded this dungeon locally and must be unloaded on exit/close/cancel. */
+	UPROPERTY(Transient)
+	TArray<TObjectPtr<URpgPortalTravelComponent>> KnownTravelComponents;
+
 	FGameplayMessageListenerHandle ActorKilledListenerHandle;
+	int32 NextPortalTravelRequestId = 0;
 };

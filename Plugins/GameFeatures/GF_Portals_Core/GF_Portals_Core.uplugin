@@ -31,6 +31,10 @@
 		{
 			"Name": "GameplayMessageRouter",
 			"Enabled": true
+		},
+		{
+			"Name": "ModularGameplay",
+			"Enabled": true
 		}
 	]
 }

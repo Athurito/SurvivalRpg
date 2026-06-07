@@ -15,6 +15,7 @@ public class GF_Portals_Core : ModuleRules
 			"GameplayMessageRuntime",
 			"GameplayTags",
 			"GameplayTasks",
+			"ModularGameplay",
 			"SurvivalRpg",
 		});
 
