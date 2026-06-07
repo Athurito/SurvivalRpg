@@ -186,19 +186,19 @@ ARpgPortalActor* URpgPortalEncounterComponent::SpawnPortalForPoint(ARpgFeatureRe
 	}
 
 	PortalActor->ConfigureEncounterDefinition(EncounterDefinition);
-	PortalActor->ConfigureDungeonLevelInstanceTransform(BuildDungeonLevelInstanceTransform(RegionActor, EncounterPoint, PortalIndex));
+	PortalActor->ConfigureRealmLevelInstanceTransform(BuildRealmLevelInstanceTransform(RegionActor, EncounterPoint, PortalIndex));
 	UGameplayStatics::FinishSpawningActor(PortalActor, SpawnTransform);
 
 	return PortalActor;
 }
 
-FTransform URpgPortalEncounterComponent::BuildDungeonLevelInstanceTransform(const ARpgFeatureRegionActor& RegionActor, const ARpgFeatureEncounterPoint& EncounterPoint, int32 PortalIndex) const
+FTransform URpgPortalEncounterComponent::BuildRealmLevelInstanceTransform(const ARpgFeatureRegionActor& RegionActor, const ARpgFeatureEncounterPoint& EncounterPoint, int32 PortalIndex) const
 {
 	const FVector RegionLocation = RegionActor.GetActorLocation();
 	const FVector PointLocation = EncounterPoint.GetActorLocation();
-	const double SafeGridSize = FMath::Max(1000.0, DungeonPocketRegionGridSize);
-	const double SafeRegionStride = FMath::Max(1000.0, DungeonPocketRegionStride);
-	const double SafePortalSpacing = FMath::Max(1000.0, DungeonPocketPortalSpacing);
+	const double SafeGridSize = FMath::Max(1000.0, RealmPocketRegionGridSize);
+	const double SafeRegionStride = FMath::Max(1000.0, RealmPocketRegionStride);
+	const double SafePortalSpacing = FMath::Max(1000.0, RealmPocketPortalSpacing);
 
 	const int32 RegionGridX = FMath::FloorToInt(RegionLocation.X / SafeGridSize);
 	const int32 RegionGridY = FMath::FloorToInt(RegionLocation.Y / SafeGridSize);
@@ -206,9 +206,9 @@ FTransform URpgPortalEncounterComponent::BuildDungeonLevelInstanceTransform(cons
 	const int32 PointGridY = FMath::FloorToInt(PointLocation.Y / SafeGridSize);
 
 	const FVector PocketLocation(
-		DungeonPocketBaseLocation.X + static_cast<double>(RegionGridX) * SafeRegionStride + static_cast<double>(PortalIndex) * SafePortalSpacing,
-		DungeonPocketBaseLocation.Y + static_cast<double>(RegionGridY) * SafeRegionStride + static_cast<double>(PointGridX - RegionGridX) * SafePortalSpacing,
-		DungeonPocketBaseLocation.Z + static_cast<double>(PointGridY - RegionGridY) * SafePortalSpacing);
+		RealmPocketBaseLocation.X + static_cast<double>(RegionGridX) * SafeRegionStride + static_cast<double>(PortalIndex) * SafePortalSpacing,
+		RealmPocketBaseLocation.Y + static_cast<double>(RegionGridY) * SafeRegionStride + static_cast<double>(PointGridX - RegionGridX) * SafePortalSpacing,
+		RealmPocketBaseLocation.Z + static_cast<double>(PointGridY - RegionGridY) * SafePortalSpacing);
 
 	return FTransform(FRotator::ZeroRotator, PocketLocation);
 }

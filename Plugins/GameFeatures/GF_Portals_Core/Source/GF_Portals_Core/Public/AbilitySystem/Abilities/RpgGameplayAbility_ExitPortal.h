@@ -6,7 +6,7 @@
 class ARpgPortalExitActor;
 
 /**
- * Generic interaction ability for using a spawned dungeon exit portal.
+ * Generic interaction ability for using a spawned realm exit portal.
  *
  * The spawned ARpgPortalExitActor forwards to its owning overworld portal so the
  * authoritative portal flow owns return teleporting and sealable-state updates.

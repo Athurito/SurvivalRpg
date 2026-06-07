@@ -67,7 +67,7 @@ void URpgPortalTravelComponent::EndPlay(const EEndPlayReason::Type EndPlayReason
 		World->GetTimerManager().ClearTimer(ServerResumeCheckTimerHandle);
 	}
 
-	UnloadClientDungeonLevelInstance();
+	UnloadClientRealmLevelInstance();
 	ResetRequestData();
 	Super::EndPlay(EndPlayReason);
 }
@@ -75,21 +75,21 @@ void URpgPortalTravelComponent::EndPlay(const EEndPlayReason::Type EndPlayReason
 bool URpgPortalTravelComponent::BeginPortalTravel(
 	ARpgPortalActor* Portal,
 	AActor* TravelActor,
-	const FSoftObjectPath& DungeonLevelPath,
+	const FSoftObjectPath& RealmLevelPath,
 	const FTransform& LevelInstanceTransform,
 	const FString& LevelInstanceName,
 	FName ExpectedPackageName,
 	int32 RequestId)
 {
 	APlayerController* PlayerController = GetOwningPlayerController();
-	if (!PlayerController || !PlayerController->HasAuthority() || !Portal || !TravelActor || DungeonLevelPath.IsNull() || LevelInstanceName.IsEmpty() || ExpectedPackageName.IsNone() || RequestId <= 0)
+	if (!PlayerController || !PlayerController->HasAuthority() || !Portal || !TravelActor || RealmLevelPath.IsNull() || LevelInstanceName.IsEmpty() || ExpectedPackageName.IsNone() || RequestId <= 0)
 	{
 		LogInvalidTransition(TEXT("BeginPortalTravel received invalid request data."), Portal, RequestId);
 		return false;
 	}
 
 	if (TravelState != ERpgPortalTravelState::Idle
-		&& TravelState != ERpgPortalTravelState::InsideDungeon
+		&& TravelState != ERpgPortalTravelState::InsideRealm
 		&& TravelState != ERpgPortalTravelState::Cancelled
 		&& TravelState != ERpgPortalTravelState::Failed)
 	{
@@ -98,7 +98,7 @@ bool URpgPortalTravelComponent::BeginPortalTravel(
 
 	ActivePortal = Portal;
 	ActiveTravelActor = TravelActor;
-	ActiveDungeonLevelPath = DungeonLevelPath;
+	ActiveRealmLevelPath = RealmLevelPath;
 	ActiveLevelInstanceTransform = LevelInstanceTransform;
 	ActiveLevelInstanceName = LevelInstanceName;
 	ActiveExpectedPackageName = ExpectedPackageName;
@@ -112,7 +112,7 @@ bool URpgPortalTravelComponent::BeginPortalTravel(
 		return ActivePortal && ActivePortal->CompletePortalTravel(this, ActiveRequestId);
 	}
 
-	ClientLoadPortalDungeon(Portal, RequestId, DungeonLevelPath, LevelInstanceTransform, LevelInstanceName, ExpectedPackageName);
+	ClientLoadPortalRealm(Portal, RequestId, RealmLevelPath, LevelInstanceTransform, LevelInstanceName, ExpectedPackageName);
 	return true;
 }
 
@@ -140,7 +140,7 @@ void URpgPortalTravelComponent::CancelPortalTravel(ARpgPortalActor* Portal, int3
 		Reason ? Reason : TEXT("None"));
 
 	SetTravelState(ERpgPortalTravelState::Cancelled);
-	ClientUnloadPortalDungeon(ActivePortal, ActiveLevelInstanceName, ActiveRequestId, ERpgPortalTravelState::Cancelled);
+	ClientUnloadPortalRealm(ActivePortal, ActiveLevelInstanceName, ActiveRequestId, ERpgPortalTravelState::Cancelled);
 	ResetRequestData();
 }
 
@@ -168,7 +168,7 @@ void URpgPortalTravelComponent::FailPortalTravel(ARpgPortalActor* Portal, int32 
 		Reason ? Reason : TEXT("None"));
 
 	SetTravelState(ERpgPortalTravelState::Failed);
-	ClientUnloadPortalDungeon(ActivePortal, ActiveLevelInstanceName, ActiveRequestId, ERpgPortalTravelState::Failed);
+	ClientUnloadPortalRealm(ActivePortal, ActiveLevelInstanceName, ActiveRequestId, ERpgPortalTravelState::Failed);
 	ResetRequestData();
 }
 
@@ -184,15 +184,15 @@ bool URpgPortalTravelComponent::MarkTeleporting(ARpgPortalActor* Portal, int32 R
 	return true;
 }
 
-bool URpgPortalTravelComponent::MarkInsideDungeon(ARpgPortalActor* Portal, int32 RequestId)
+bool URpgPortalTravelComponent::MarkInsideRealm(ARpgPortalActor* Portal, int32 RequestId)
 {
 	if (!IsActiveRequest(Portal, RequestId) || TravelState != ERpgPortalTravelState::Teleporting)
 	{
-		LogInvalidTransition(TEXT("MarkInsideDungeon requires Teleporting."), Portal, RequestId);
+		LogInvalidTransition(TEXT("MarkInsideRealm requires Teleporting."), Portal, RequestId);
 		return false;
 	}
 
-	SetTravelState(ERpgPortalTravelState::InsideDungeon);
+	SetTravelState(ERpgPortalTravelState::InsideRealm);
 	return true;
 }
 
@@ -204,9 +204,9 @@ void URpgPortalTravelComponent::BeginPortalExit(ARpgPortalActor* Portal)
 		return;
 	}
 
-	if (TravelState != ERpgPortalTravelState::InsideDungeon && TravelState != ERpgPortalTravelState::Teleporting)
+	if (TravelState != ERpgPortalTravelState::InsideRealm && TravelState != ERpgPortalTravelState::Teleporting)
 	{
-		LogInvalidTransition(TEXT("BeginPortalExit requires an inside dungeon request."), Portal, ActiveRequestId);
+		LogInvalidTransition(TEXT("BeginPortalExit requires an inside realm request."), Portal, ActiveRequestId);
 	}
 
 	const FString InstanceNameToUnload = ActiveLevelInstanceName;
@@ -214,7 +214,7 @@ void URpgPortalTravelComponent::BeginPortalExit(ARpgPortalActor* Portal)
 	ARpgPortalActor* PortalToUnload = ActivePortal ? ActivePortal.Get() : Portal;
 
 	SetTravelState(ERpgPortalTravelState::Exiting);
-	ClientUnloadPortalDungeon(PortalToUnload, InstanceNameToUnload, RequestIdToUnload, ERpgPortalTravelState::Idle);
+	ClientUnloadPortalRealm(PortalToUnload, InstanceNameToUnload, RequestIdToUnload, ERpgPortalTravelState::Idle);
 	ResetRequestData();
 	SetTravelState(ERpgPortalTravelState::Idle);
 }
@@ -229,23 +229,23 @@ bool URpgPortalTravelComponent::IsActiveRequest(ARpgPortalActor* Portal, int32 R
 	return Portal != nullptr && ActivePortal == Portal && ActiveRequestId == RequestId && RequestId > 0;
 }
 
-void URpgPortalTravelComponent::ClientLoadPortalDungeon_Implementation(
+void URpgPortalTravelComponent::ClientLoadPortalRealm_Implementation(
 	ARpgPortalActor* Portal,
 	int32 RequestId,
-	FSoftObjectPath DungeonLevelPath,
+	FSoftObjectPath RealmLevelPath,
 	FTransform LevelInstanceTransform,
 	const FString& LevelInstanceName,
 	FName ExpectedPackageName)
 {
-	if (!Portal || DungeonLevelPath.IsNull() || LevelInstanceName.IsEmpty() || RequestId <= 0)
+	if (!Portal || RealmLevelPath.IsNull() || LevelInstanceName.IsEmpty() || RequestId <= 0)
 	{
-		UE_LOG(LogRpgPortalTravel, Warning, TEXT("ClientLoadPortalDungeon rejected invalid data. RequestId=%d Controller=%s Portal=%s InstanceName=%s ExpectedPackageName=%s"),
+		UE_LOG(LogRpgPortalTravel, Warning, TEXT("ClientLoadPortalRealm rejected invalid data. RequestId=%d Controller=%s Portal=%s InstanceName=%s ExpectedPackageName=%s"),
 			RequestId,
 			*GetNameSafe(GetOwner()),
 			*GetNameSafe(Portal),
 			*LevelInstanceName,
 			*ExpectedPackageName.ToString());
-		ServerNotifyPortalDungeonTravelFailed(Portal, RequestId, LevelInstanceName);
+		ServerNotifyPortalRealmTravelFailed(Portal, RequestId, LevelInstanceName);
 		return;
 	}
 
@@ -257,12 +257,12 @@ void URpgPortalTravelComponent::ClientLoadPortalDungeon_Implementation(
 		{
 			World->GetTimerManager().ClearTimer(ClientDeferredUnloadTimerHandle);
 		}
-		UnloadClientDungeonLevelInstance();
+		UnloadClientRealmLevelInstance();
 	}
 
 	ActivePortal = Portal;
 	ActiveTravelActor = nullptr;
-	ActiveDungeonLevelPath = DungeonLevelPath;
+	ActiveRealmLevelPath = RealmLevelPath;
 	ActiveLevelInstanceTransform = LevelInstanceTransform;
 	ActiveLevelInstanceName = LevelInstanceName;
 	ActiveExpectedPackageName = ExpectedPackageName;
@@ -270,35 +270,35 @@ void URpgPortalTravelComponent::ClientLoadPortalDungeon_Implementation(
 
 	SetTravelState(ERpgPortalTravelState::ClientLoadingLevel);
 
-	if (!LoadClientDungeonLevelInstance())
+	if (!LoadClientRealmLevelInstance())
 	{
 		SetTravelState(ERpgPortalTravelState::Failed);
-		ServerNotifyPortalDungeonTravelFailed(Portal, RequestId, LevelInstanceName);
+		ServerNotifyPortalRealmTravelFailed(Portal, RequestId, LevelInstanceName);
 		ResetRequestData();
 	}
 }
 
-void URpgPortalTravelComponent::ClientUnloadPortalDungeon_Implementation(ARpgPortalActor* Portal, const FString& LevelInstanceName, int32 RequestId, ERpgPortalTravelState TerminalState)
+void URpgPortalTravelComponent::ClientUnloadPortalRealm_Implementation(ARpgPortalActor* Portal, const FString& LevelInstanceName, int32 RequestId, ERpgPortalTravelState TerminalState)
 {
 	if (Portal && ActivePortal && Portal != ActivePortal)
 	{
-		LogInvalidTransition(TEXT("ClientUnloadPortalDungeon received a different portal."), Portal, RequestId);
+		LogInvalidTransition(TEXT("ClientUnloadPortalRealm received a different portal."), Portal, RequestId);
 		return;
 	}
 
 	if (!LevelInstanceName.IsEmpty() && !ActiveLevelInstanceName.IsEmpty() && LevelInstanceName != ActiveLevelInstanceName)
 	{
-		LogInvalidTransition(TEXT("ClientUnloadPortalDungeon received a different instance name."), Portal, RequestId);
+		LogInvalidTransition(TEXT("ClientUnloadPortalRealm received a different instance name."), Portal, RequestId);
 		return;
 	}
 
-	if (TerminalState == ERpgPortalTravelState::Idle && LocalDungeonLevelStreaming && !IsClientSafeToUnloadDungeonLevelInstance())
+	if (TerminalState == ERpgPortalTravelState::Idle && LocalRealmLevelStreaming && !IsClientSafeToUnloadRealmLevelInstance())
 	{
 		StartClientDeferredUnloadAfterExit(Portal, LevelInstanceName, RequestId);
 		return;
 	}
 
-	UnloadClientDungeonLevelInstance();
+	UnloadClientRealmLevelInstance();
 
 	if (TerminalState == ERpgPortalTravelState::Cancelled || TerminalState == ERpgPortalTravelState::Failed)
 	{
@@ -313,11 +313,11 @@ void URpgPortalTravelComponent::ClientUnloadPortalDungeon_Implementation(ARpgPor
 	}
 }
 
-void URpgPortalTravelComponent::ServerNotifyPortalDungeonLevelShown_Implementation(ARpgPortalActor* Portal, int32 RequestId, const FString& LevelInstanceName, FName ExpectedPackageName)
+void URpgPortalTravelComponent::ServerNotifyPortalRealmLevelShown_Implementation(ARpgPortalActor* Portal, int32 RequestId, const FString& LevelInstanceName, FName ExpectedPackageName)
 {
 	if (!IsActiveRequest(Portal, RequestId) || LevelInstanceName != ActiveLevelInstanceName || ExpectedPackageName != ActiveExpectedPackageName)
 	{
-		LogInvalidTransition(TEXT("ServerNotifyPortalDungeonLevelShown stale or mismatched request."), Portal, RequestId);
+		LogInvalidTransition(TEXT("ServerNotifyPortalRealmLevelShown stale or mismatched request."), Portal, RequestId);
 		return;
 	}
 
@@ -325,11 +325,11 @@ void URpgPortalTravelComponent::ServerNotifyPortalDungeonLevelShown_Implementati
 	StartServerVisibilityWait();
 }
 
-void URpgPortalTravelComponent::ServerNotifyPortalDungeonTravelFailed_Implementation(ARpgPortalActor* Portal, int32 RequestId, const FString& LevelInstanceName)
+void URpgPortalTravelComponent::ServerNotifyPortalRealmTravelFailed_Implementation(ARpgPortalActor* Portal, int32 RequestId, const FString& LevelInstanceName)
 {
 	if (!IsActiveRequest(Portal, RequestId) || LevelInstanceName != ActiveLevelInstanceName)
 	{
-		LogInvalidTransition(TEXT("ServerNotifyPortalDungeonTravelFailed stale or mismatched request."), Portal, RequestId);
+		LogInvalidTransition(TEXT("ServerNotifyPortalRealmTravelFailed stale or mismatched request."), Portal, RequestId);
 		return;
 	}
 
@@ -337,19 +337,19 @@ void URpgPortalTravelComponent::ServerNotifyPortalDungeonTravelFailed_Implementa
 	{
 		ActivePortal->HandlePortalTravelFailed(this, RequestId);
 	}
-	FailPortalTravel(Portal, RequestId, TEXT("Owning client failed to load/show the dungeon level."));
+	FailPortalTravel(Portal, RequestId, TEXT("Owning client failed to load/show the realm level."));
 }
 
-void URpgPortalTravelComponent::HandleClientDungeonLevelShown()
+void URpgPortalTravelComponent::HandleClientRealmLevelShown()
 {
 	if (TravelState != ERpgPortalTravelState::ClientLoadingLevel || !ActivePortal || ActiveRequestId <= 0)
 	{
-		LogInvalidTransition(TEXT("HandleClientDungeonLevelShown without an active client loading request."), ActivePortal, ActiveRequestId);
+		LogInvalidTransition(TEXT("HandleClientRealmLevelShown without an active client loading request."), ActivePortal, ActiveRequestId);
 		return;
 	}
 
 	SetTravelState(ERpgPortalTravelState::ClientLevelShown);
-	ServerNotifyPortalDungeonLevelShown(ActivePortal, ActiveRequestId, ActiveLevelInstanceName, ActiveExpectedPackageName);
+	ServerNotifyPortalRealmLevelShown(ActivePortal, ActiveRequestId, ActiveLevelInstanceName, ActiveExpectedPackageName);
 }
 
 void URpgPortalTravelComponent::StartServerVisibilityWait()
@@ -428,77 +428,77 @@ bool URpgPortalTravelComponent::ShouldUseClientLoadHandshake() const
 	return !PlayerController->IsLocalController() || PlayerController->GetNetConnection() != nullptr;
 }
 
-bool URpgPortalTravelComponent::LoadClientDungeonLevelInstance()
+bool URpgPortalTravelComponent::LoadClientRealmLevelInstance()
 {
 	UWorld* World = GetWorld();
-	if (!World || ActiveDungeonLevelPath.IsNull())
+	if (!World || ActiveRealmLevelPath.IsNull())
 	{
 		return false;
 	}
 
-	if (LocalDungeonLevelStreaming)
+	if (LocalRealmLevelStreaming)
 	{
 		if (UWorld* TimerWorld = GetWorld())
 		{
 			TimerWorld->GetTimerManager().ClearTimer(ClientDeferredUnloadTimerHandle);
 		}
 		ResetPendingClientUnloadData();
-		LocalDungeonLevelStreaming->SetShouldBeLoaded(true);
-		LocalDungeonLevelStreaming->SetShouldBeVisible(true);
-		LocalDungeonLevelStreaming->SetIsRequestingUnloadAndRemoval(false);
-		LocalDungeonLevelStreaming->OnLevelShown.RemoveDynamic(this, &ThisClass::HandleClientDungeonLevelShown);
-		LocalDungeonLevelStreaming->OnLevelShown.AddDynamic(this, &ThisClass::HandleClientDungeonLevelShown);
+		LocalRealmLevelStreaming->SetShouldBeLoaded(true);
+		LocalRealmLevelStreaming->SetShouldBeVisible(true);
+		LocalRealmLevelStreaming->SetIsRequestingUnloadAndRemoval(false);
+		LocalRealmLevelStreaming->OnLevelShown.RemoveDynamic(this, &ThisClass::HandleClientRealmLevelShown);
+		LocalRealmLevelStreaming->OnLevelShown.AddDynamic(this, &ThisClass::HandleClientRealmLevelShown);
 
-		if (const ULevel* LoadedLevel = LocalDungeonLevelStreaming->GetLoadedLevel())
+		if (const ULevel* LoadedLevel = LocalRealmLevelStreaming->GetLoadedLevel())
 		{
 			if (LoadedLevel->bIsVisible)
 			{
-				HandleClientDungeonLevelShown();
+				HandleClientRealmLevelShown();
 			}
 		}
 
 		return true;
 	}
 
-	const TSoftObjectPtr<UWorld> DungeonLevel(ActiveDungeonLevelPath);
+	const TSoftObjectPtr<UWorld> RealmLevel(ActiveRealmLevelPath);
 	bool bLevelLoaded = false;
-	ULevelStreamingDynamic::FLoadLevelInstanceParams LoadParams(World, DungeonLevel.GetLongPackageName(), ActiveLevelInstanceTransform);
+	ULevelStreamingDynamic::FLoadLevelInstanceParams LoadParams(World, RealmLevel.GetLongPackageName(), ActiveLevelInstanceTransform);
 	LoadParams.OptionalLevelNameOverride = &ActiveLevelInstanceName;
 	LoadParams.bAllowReuseExitingLevelStreaming = true;
 	LoadParams.bInitiallyVisible = true;
 
-	LocalDungeonLevelStreaming = ULevelStreamingDynamic::LoadLevelInstance(LoadParams, bLevelLoaded);
+	LocalRealmLevelStreaming = ULevelStreamingDynamic::LoadLevelInstance(LoadParams, bLevelLoaded);
 
-	if (!bLevelLoaded || !LocalDungeonLevelStreaming)
+	if (!bLevelLoaded || !LocalRealmLevelStreaming)
 	{
-		UE_LOG(LogRpgPortalTravel, Warning, TEXT("Client failed to stream portal dungeon. RequestId=%d Controller=%s Portal=%s InstanceName=%s Level=%s"),
+		UE_LOG(LogRpgPortalTravel, Warning, TEXT("Client failed to stream portal realm. RequestId=%d Controller=%s Portal=%s InstanceName=%s Level=%s"),
 			ActiveRequestId,
 			*GetNameSafe(GetOwner()),
 			*GetNameSafe(ActivePortal),
 			*ActiveLevelInstanceName,
-			*ActiveDungeonLevelPath.ToString());
-		LocalDungeonLevelStreaming = nullptr;
+			*ActiveRealmLevelPath.ToString());
+		LocalRealmLevelStreaming = nullptr;
 		return false;
 	}
 
-	LocalDungeonLevelStreaming->SetIsRequestingUnloadAndRemoval(false);
-	LocalDungeonLevelStreaming->OnLevelShown.RemoveDynamic(this, &ThisClass::HandleClientDungeonLevelShown);
-	LocalDungeonLevelStreaming->OnLevelShown.AddDynamic(this, &ThisClass::HandleClientDungeonLevelShown);
+	LocalRealmLevelStreaming->SetIsRequestingUnloadAndRemoval(false);
+	LocalRealmLevelStreaming->OnLevelShown.RemoveDynamic(this, &ThisClass::HandleClientRealmLevelShown);
+	LocalRealmLevelStreaming->OnLevelShown.AddDynamic(this, &ThisClass::HandleClientRealmLevelShown);
 
-	if (const ULevel* LoadedLevel = LocalDungeonLevelStreaming->GetLoadedLevel())
+	if (const ULevel* LoadedLevel = LocalRealmLevelStreaming->GetLoadedLevel())
 	{
 		if (LoadedLevel->bIsVisible)
 		{
-			HandleClientDungeonLevelShown();
+			HandleClientRealmLevelShown();
 		}
 	}
 
 	return true;
 }
 
-void URpgPortalTravelComponent::UnloadClientDungeonLevelInstance()
+void URpgPortalTravelComponent::UnloadClientRealmLevelInstance()
 {
-	if (!LocalDungeonLevelStreaming)
+	if (!LocalRealmLevelStreaming)
 	{
 		return;
 	}
@@ -507,11 +507,11 @@ void URpgPortalTravelComponent::UnloadClientDungeonLevelInstance()
 	{
 		World->GetTimerManager().ClearTimer(ClientDeferredUnloadTimerHandle);
 	}
-	LocalDungeonLevelStreaming->OnLevelShown.RemoveDynamic(this, &ThisClass::HandleClientDungeonLevelShown);
-	LocalDungeonLevelStreaming->SetShouldBeVisible(false);
-	LocalDungeonLevelStreaming->SetShouldBeLoaded(false);
-	LocalDungeonLevelStreaming->SetIsRequestingUnloadAndRemoval(true);
-	LocalDungeonLevelStreaming = nullptr;
+	LocalRealmLevelStreaming->OnLevelShown.RemoveDynamic(this, &ThisClass::HandleClientRealmLevelShown);
+	LocalRealmLevelStreaming->SetShouldBeVisible(false);
+	LocalRealmLevelStreaming->SetShouldBeLoaded(false);
+	LocalRealmLevelStreaming->SetIsRequestingUnloadAndRemoval(true);
+	LocalRealmLevelStreaming = nullptr;
 	ResetPendingClientUnloadData();
 }
 
@@ -537,9 +537,9 @@ void URpgPortalTravelComponent::TryClientDeferredUnloadAfterExit()
 	const bool bTimedOut = ClientDeferredUnloadStartTime > 0.0
 		&& World->GetTimeSeconds() - ClientDeferredUnloadStartTime >= PortalTravelDeferredUnloadTimeout;
 
-	if (!LocalDungeonLevelStreaming || IsClientSafeToUnloadDungeonLevelInstance() || bTimedOut)
+	if (!LocalRealmLevelStreaming || IsClientSafeToUnloadRealmLevelInstance() || bTimedOut)
 	{
-		if (bTimedOut && LocalDungeonLevelStreaming)
+		if (bTimedOut && LocalRealmLevelStreaming)
 		{
 			UE_LOG(LogRpgPortalTravel, Warning, TEXT("Portal travel deferred client unload timed out. RequestId=%d Controller=%s Portal=%s InstanceName=%s"),
 				PendingUnloadRequestId,
@@ -549,7 +549,7 @@ void URpgPortalTravelComponent::TryClientDeferredUnloadAfterExit()
 		}
 
 		World->GetTimerManager().ClearTimer(ClientDeferredUnloadTimerHandle);
-		UnloadClientDungeonLevelInstance();
+		UnloadClientRealmLevelInstance();
 		ResetRequestData();
 		SetTravelState(ERpgPortalTravelState::Idle);
 		return;
@@ -558,15 +558,15 @@ void URpgPortalTravelComponent::TryClientDeferredUnloadAfterExit()
 	World->GetTimerManager().SetTimer(ClientDeferredUnloadTimerHandle, this, &ThisClass::TryClientDeferredUnloadAfterExit, PortalTravelDeferredUnloadRetryDelay, false);
 }
 
-bool URpgPortalTravelComponent::IsClientSafeToUnloadDungeonLevelInstance() const
+bool URpgPortalTravelComponent::IsClientSafeToUnloadRealmLevelInstance() const
 {
-	if (!LocalDungeonLevelStreaming)
+	if (!LocalRealmLevelStreaming)
 	{
 		return true;
 	}
 
-	const ULevel* LoadedDungeonLevel = LocalDungeonLevelStreaming->GetLoadedLevel();
-	if (!LoadedDungeonLevel)
+	const ULevel* LoadedRealmLevel = LocalRealmLevelStreaming->GetLoadedLevel();
+	if (!LoadedRealmLevel)
 	{
 		return true;
 	}
@@ -585,16 +585,16 @@ bool URpgPortalTravelComponent::IsClientSafeToUnloadDungeonLevelInstance() const
 			continue;
 		}
 
-		if (IsObjectInLocalDungeonLevel(Character->GetMovementBase())
-			|| IsObjectInLocalDungeonLevel(Character->GetBasedMovement().MovementBase)
-			|| IsObjectInLocalDungeonLevel(Character->GetReplicatedBasedMovement().MovementBase))
+		if (IsObjectInLocalRealmLevel(Character->GetMovementBase())
+			|| IsObjectInLocalRealmLevel(Character->GetBasedMovement().MovementBase)
+			|| IsObjectInLocalRealmLevel(Character->GetReplicatedBasedMovement().MovementBase))
 		{
 			return false;
 		}
 
 		if (const UCharacterMovementComponent* MovementComponent = Character->GetCharacterMovement())
 		{
-			if (IsObjectInLocalDungeonLevel(MovementComponent->CurrentFloor.HitResult.GetComponent()))
+			if (IsObjectInLocalRealmLevel(MovementComponent->CurrentFloor.HitResult.GetComponent()))
 			{
 				return false;
 			}
@@ -604,28 +604,28 @@ bool URpgPortalTravelComponent::IsClientSafeToUnloadDungeonLevelInstance() const
 	return true;
 }
 
-bool URpgPortalTravelComponent::IsObjectInLocalDungeonLevel(const UObject* Object) const
+bool URpgPortalTravelComponent::IsObjectInLocalRealmLevel(const UObject* Object) const
 {
-	if (!Object || !LocalDungeonLevelStreaming)
+	if (!Object || !LocalRealmLevelStreaming)
 	{
 		return false;
 	}
 
-	const ULevel* LoadedDungeonLevel = LocalDungeonLevelStreaming->GetLoadedLevel();
-	if (!LoadedDungeonLevel)
+	const ULevel* LoadedRealmLevel = LocalRealmLevelStreaming->GetLoadedLevel();
+	if (!LoadedRealmLevel)
 	{
 		return false;
 	}
 
 	if (const AActor* Actor = Cast<AActor>(Object))
 	{
-		return Actor->GetLevel() == LoadedDungeonLevel;
+		return Actor->GetLevel() == LoadedRealmLevel;
 	}
 
 	if (const UActorComponent* ActorComponent = Cast<UActorComponent>(Object))
 	{
 		const AActor* Owner = ActorComponent->GetOwner();
-		return Owner && Owner->GetLevel() == LoadedDungeonLevel;
+		return Owner && Owner->GetLevel() == LoadedRealmLevel;
 	}
 
 	return false;
@@ -727,7 +727,7 @@ void URpgPortalTravelComponent::ResetRequestData()
 
 	ActivePortal = nullptr;
 	ActiveTravelActor = nullptr;
-	ActiveDungeonLevelPath.Reset();
+	ActiveRealmLevelPath.Reset();
 	ActiveLevelInstanceTransform = FTransform::Identity;
 	ActiveLevelInstanceName.Reset();
 	ActiveExpectedPackageName = NAME_None;

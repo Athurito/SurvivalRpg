@@ -44,7 +44,7 @@ struct GF_PORTALS_CORE_API FRpgPortalCompletedMessage
 	UPROPERTY(BlueprintReadOnly, Category = "Portal")
 	bool bRewardsRequireBossDefeat = true;
 
-	/** Whether the portal actor observed a dungeon boss defeat. */
+	/** Whether the portal actor observed a realm boss defeat. */
 	UPROPERTY(BlueprintReadOnly, Category = "Portal")
 	bool bBossDefeated = false;
 

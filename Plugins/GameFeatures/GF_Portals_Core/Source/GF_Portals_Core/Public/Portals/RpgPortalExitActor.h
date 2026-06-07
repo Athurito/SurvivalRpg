@@ -11,7 +11,7 @@ class USphereComponent;
 class URpgGameplayAbility_ExitPortal;
 
 /**
- * Spawned interaction actor used to leave a completed portal dungeon.
+ * Spawned interaction actor used to leave a completed portal realm.
  *
  * The exit portal is configured with its owning overworld portal, forwards the
  * interaction through the generic interaction ability, and lets the owning

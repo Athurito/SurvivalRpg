@@ -6,7 +6,7 @@
 class ARpgPortalActor;
 
 /**
- * Generic interaction ability for entering a dungeon portal.
+ * Generic interaction ability for entering a realm portal.
  *
  * The portal owns the streaming, marker resolution and teleport authority; this
  * ability only resolves the interacted portal target and forwards the server

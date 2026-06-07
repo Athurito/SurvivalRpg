@@ -1,10 +1,10 @@
-#include "Portals/RpgPortalDungeonMarkerActor.h"
+#include "Portals/RpgPortalRealmMarkerActor.h"
 
 #include "Components/SceneComponent.h"
 
-#include UE_INLINE_GENERATED_CPP_BY_NAME(RpgPortalDungeonMarkerActor)
+#include UE_INLINE_GENERATED_CPP_BY_NAME(RpgPortalRealmMarkerActor)
 
-ARpgPortalDungeonMarkerActor::ARpgPortalDungeonMarkerActor(const FObjectInitializer& ObjectInitializer)
+ARpgPortalRealmMarkerActor::ARpgPortalRealmMarkerActor(const FObjectInitializer& ObjectInitializer)
 	: Super(ObjectInitializer)
 {
 	PrimaryActorTick.bCanEverTick = false;

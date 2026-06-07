@@ -9,10 +9,10 @@ class ARpgPortalActor;
 class ULevelStreamingDynamic;
 
 /**
- * Debuggable lifecycle for one player controller's portal-dungeon travel request.
+ * Debuggable lifecycle for one player controller's portal-realm travel request.
  *
  * The server owns the authoritative request. The owning client loads the same
- * dynamic dungeon level instance locally, reports OnLevelShown, then the server
+ * dynamic realm level instance locally, reports OnLevelShown, then the server
  * waits until Unreal's level-visibility RPC has reached the NetConnection before
  * the portal teleports the pawn into streamed-level collision.
  */
@@ -26,7 +26,7 @@ enum class ERpgPortalTravelState : uint8
 	ServerWaitingForNetVisibility,
 	ReadyToTeleport,
 	Teleporting,
-	InsideDungeon,
+	InsideRealm,
 	Exiting,
 	Cancelled,
 	Failed
@@ -55,7 +55,7 @@ public:
 	virtual void EndPlay(const EEndPlayReason::Type EndPlayReason) override;
 
 	/**
-	 * Starts a server-authoritative dungeon travel request for the owning controller.
+	 * Starts a server-authoritative realm travel request for the owning controller.
 	 *
 	 * Remote clients receive a Client RPC and must load/show the matching dynamic
 	 * level instance before the server will teleport the pawn. Local authority
@@ -65,25 +65,25 @@ public:
 	bool BeginPortalTravel(
 		ARpgPortalActor* Portal,
 		AActor* TravelActor,
-		const FSoftObjectPath& DungeonLevelPath,
+		const FSoftObjectPath& RealmLevelPath,
 		const FTransform& LevelInstanceTransform,
 		const FString& LevelInstanceName,
 		FName ExpectedPackageName,
 		int32 RequestId);
 
-	/** Cancels the active request and tells the owning client to unload its local dungeon instance. */
+	/** Cancels the active request and tells the owning client to unload its local realm instance. */
 	void CancelPortalTravel(ARpgPortalActor* Portal, int32 RequestId, const TCHAR* Reason);
 
-	/** Marks the active request as failed and unloads any client-side local dungeon instance. */
+	/** Marks the active request as failed and unloads any client-side local realm instance. */
 	void FailPortalTravel(ARpgPortalActor* Portal, int32 RequestId, const TCHAR* Reason);
 
 	/** Called by the portal when the server is about to move the pawn. */
 	bool MarkTeleporting(ARpgPortalActor* Portal, int32 RequestId);
 
-	/** Called by the portal after a successful server teleport into the dungeon. */
-	bool MarkInsideDungeon(ARpgPortalActor* Portal, int32 RequestId);
+	/** Called by the portal after a successful server teleport into the realm. */
+	bool MarkInsideRealm(ARpgPortalActor* Portal, int32 RequestId);
 
-	/** Called by the portal when this controller exits the dungeon back to the overworld. */
+	/** Called by the portal when this controller exits the realm back to the overworld. */
 	void BeginPortalExit(ARpgPortalActor* Portal);
 
 	UFUNCTION(BlueprintPure, Category = "Portal|Travel")
@@ -100,36 +100,36 @@ public:
 
 protected:
 	UFUNCTION(Client, Reliable)
-	void ClientLoadPortalDungeon(
+	void ClientLoadPortalRealm(
 		ARpgPortalActor* Portal,
 		int32 RequestId,
-		FSoftObjectPath DungeonLevelPath,
+		FSoftObjectPath RealmLevelPath,
 		FTransform LevelInstanceTransform,
 		const FString& LevelInstanceName,
 		FName ExpectedPackageName);
 
 	UFUNCTION(Client, Reliable)
-	void ClientUnloadPortalDungeon(ARpgPortalActor* Portal, const FString& LevelInstanceName, int32 RequestId, ERpgPortalTravelState TerminalState);
+	void ClientUnloadPortalRealm(ARpgPortalActor* Portal, const FString& LevelInstanceName, int32 RequestId, ERpgPortalTravelState TerminalState);
 
 	UFUNCTION(Server, Reliable)
-	void ServerNotifyPortalDungeonLevelShown(ARpgPortalActor* Portal, int32 RequestId, const FString& LevelInstanceName, FName ExpectedPackageName);
+	void ServerNotifyPortalRealmLevelShown(ARpgPortalActor* Portal, int32 RequestId, const FString& LevelInstanceName, FName ExpectedPackageName);
 
 	UFUNCTION(Server, Reliable)
-	void ServerNotifyPortalDungeonTravelFailed(ARpgPortalActor* Portal, int32 RequestId, const FString& LevelInstanceName);
+	void ServerNotifyPortalRealmTravelFailed(ARpgPortalActor* Portal, int32 RequestId, const FString& LevelInstanceName);
 
 	UFUNCTION()
-	void HandleClientDungeonLevelShown();
+	void HandleClientRealmLevelShown();
 
 	void StartServerVisibilityWait();
 	void TryCompleteServerVisibilityWait();
 	bool IsExpectedPackageVisibleToOwningClient() const;
 	bool ShouldUseClientLoadHandshake() const;
-	bool LoadClientDungeonLevelInstance();
-	void UnloadClientDungeonLevelInstance();
+	bool LoadClientRealmLevelInstance();
+	void UnloadClientRealmLevelInstance();
 	void StartClientDeferredUnloadAfterExit(ARpgPortalActor* Portal, const FString& LevelInstanceName, int32 RequestId);
 	void TryClientDeferredUnloadAfterExit();
-	bool IsClientSafeToUnloadDungeonLevelInstance() const;
-	bool IsObjectInLocalDungeonLevel(const UObject* Object) const;
+	bool IsClientSafeToUnloadRealmLevelInstance() const;
+	bool IsObjectInLocalRealmLevel(const UObject* Object) const;
 	void ScheduleServerResumeCheck();
 	void TryRestorePortalResumeAfterLogin();
 	void SetTravelState(ERpgPortalTravelState NewState);
@@ -148,9 +148,9 @@ protected:
 	TObjectPtr<AActor> ActiveTravelActor;
 
 	UPROPERTY(Transient)
-	TObjectPtr<ULevelStreamingDynamic> LocalDungeonLevelStreaming;
+	TObjectPtr<ULevelStreamingDynamic> LocalRealmLevelStreaming;
 
-	FSoftObjectPath ActiveDungeonLevelPath;
+	FSoftObjectPath ActiveRealmLevelPath;
 	FTransform ActiveLevelInstanceTransform = FTransform::Identity;
 	FString ActiveLevelInstanceName;
 	FName ActiveExpectedPackageName;

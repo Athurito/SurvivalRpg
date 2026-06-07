@@ -4,14 +4,18 @@
 #include "GameFramework/Actor.h"
 #include "GameFramework/GameplayMessageSubsystem.h"
 #include "GameFramework/OnlineReplStructs.h"
+#include "GameplayEffectTypes.h"
 #include "SurvivalRpg/Interaction/IInteractableTarget.h"
 #include "RpgPortalActor.generated.h"
 
+class UAbilitySystemComponent;
+class UGameplayEffect;
 class UStaticMeshComponent;
 class USphereComponent;
 class ULevelStreamingDynamic;
 class ARpgPortalExitActor;
-class ARpgPortalDungeonMarkerActor;
+class ARpgPortalRealmMarkerActor;
+class ARpgPortalRealmEventDirector;
 class URpgGameplayAbility_ClosePortal;
 class URpgGameplayAbility_EnterPortal;
 class URpgPortalEncounterDefinition;
@@ -21,18 +25,21 @@ enum class ERpgPortalTravelState : uint8;
 struct FRpgCombatActorKilledMessage;
 
 /**
- * Runtime-only per-player dungeon participation data for one portal instance.
+ * Runtime-only per-player realm participation data for one portal instance.
  *
  * This intentionally is not replicated or saved. It lets the live server recover
- * a disconnected/reconnected player into the same streamed dungeon instance while
+ * a disconnected/reconnected player into the same streamed realm instance while
  * the portal is still alive and not closed.
  */
-struct FRpgPortalDungeonParticipantState
+struct FRpgPortalRealmParticipantState
 {
 	FUniqueNetIdRepl PlayerNetId;
-	FTransform LastSafeDungeonTransform = FTransform::Identity;
-	bool bHasLastSafeDungeonTransform = false;
-	bool bInsideDungeon = false;
+	FTransform LastSafeRealmTransform = FTransform::Identity;
+	TWeakObjectPtr<UAbilitySystemComponent> RealmAbilitySystem;
+	TArray<FActiveGameplayEffectHandle> ActiveRealmEffectHandles;
+	FActiveGameplayEffectHandle ActiveRealmTagEffectHandle;
+	bool bHasLastSafeRealmTransform = false;
+	bool bInsideRealm = false;
 	bool bResumeAllowed = false;
 };
 
@@ -42,16 +49,16 @@ enum class ERpgPortalState : uint8
 	/** Encounter has not started yet and can still be configured by a spawner. */
 	Dormant,
 
-	/** Encounter is available in the overworld. Dungeon portals can be entered from here. */
+	/** Encounter is available in the overworld. Realm portals can be entered from here. */
 	Active,
 
-	/** Dungeon level instance is streaming in; entering players are queued until markers resolve. */
-	DungeonLoading,
+	/** Realm level instance is streaming in; entering players are queued until markers resolve. */
+	RealmLoading,
 
-	/** Dungeon level is loaded and at least the boss phase is active. */
-	DungeonInProgress,
+	/** Realm level is loaded and at least the boss phase is active. */
+	RealmInProgress,
 
-	/** Dungeon boss is defeated and the dungeon exit portal is available. */
+	/** Realm boss is defeated and the realm exit portal is available. */
 	ExitOpen,
 
 	/** Encounter objectives are complete and the overworld portal can be closed. */
@@ -68,7 +75,7 @@ DECLARE_DYNAMIC_MULTICAST_DELEGATE_TwoParams(FRpgPortalStabilityChanged, float, 
  * Runtime portal encounter actor.
  *
  * The actor owns authoritative encounter state, exposes Lyra-style interaction
- * options, streams dungeon level instances when needed, tracks kills/occupants,
+ * options, streams realm level instances when needed, tracks kills/occupants,
  * and broadcasts completion for later reward or world-state systems.
  */
 UCLASS(Blueprintable)
@@ -93,26 +100,26 @@ public:
 	UFUNCTION(BlueprintCallable, BlueprintAuthorityOnly, Category = "Portal|Encounter")
 	void ConfigureEncounterDefinition(const URpgPortalEncounterDefinition* InEncounterDefinition);
 
-	/** Sets the technical level-instance transform before BeginPlay; gameplay positions still come from dungeon markers. */
+	/** Sets the technical level-instance transform before BeginPlay; gameplay positions still come from realm markers. */
 	UFUNCTION(BlueprintCallable, BlueprintAuthorityOnly, Category = "Portal|Encounter")
-	void ConfigureDungeonLevelInstanceTransform(const FTransform& InDungeonLevelInstanceTransform);
+	void ConfigureRealmLevelInstanceTransform(const FTransform& InRealmLevelInstanceTransform);
 
 	/** Attempts to close a sealable portal and broadcast the completion message. Server-only. */
 	UFUNCTION(BlueprintCallable, BlueprintAuthorityOnly, Category = "Portal")
 	bool TryClosePortal(AActor* ClosingActor);
 
-	/** Attempts to enter a dungeon portal, streaming the dungeon first if necessary. Server-only. */
+	/** Attempts to enter a realm portal, streaming the realm first if necessary. Server-only. */
 	UFUNCTION(BlueprintCallable, BlueprintAuthorityOnly, Category = "Portal")
 	bool TryEnterPortal(AActor* EnteringActor);
 
-	/** Attempts to leave a completed dungeon through its spawned exit portal. Server-only. */
+	/** Attempts to leave a completed realm through its spawned exit portal. Server-only. */
 	UFUNCTION(BlueprintCallable, BlueprintAuthorityOnly, Category = "Portal")
 	bool TryExitPortal(AActor* ExitingActor);
 
-	/** Completes a client-ready travel request after the owning connection has confirmed dungeon visibility. */
+	/** Completes a client-ready travel request after the owning connection has confirmed realm visibility. */
 	bool CompletePortalTravel(URpgPortalTravelComponent* TravelComponent, int32 RequestId);
 
-	/** Cleans up a pending travel request that failed before teleporting into the dungeon. */
+	/** Cleans up a pending travel request that failed before teleporting into the realm. */
 	void HandlePortalTravelFailed(URpgPortalTravelComponent* TravelComponent, int32 RequestId);
 
 	/** Restores a reconnecting controller if this live portal still has resume data for its player. */
@@ -170,70 +177,80 @@ protected:
 	void OnRep_EncounterDefinition();
 
 	UFUNCTION()
-	void OnRep_DungeonLevelStreamingConfig();
+	void OnRep_RealmLevelStreamingConfig();
 
 	UFUNCTION()
 	void HandleTrackedEnemyDestroyed(AActor* DestroyedActor);
 
 	UFUNCTION()
-	void HandleDungeonOccupantDestroyed(AActor* DestroyedActor);
+	void HandleRealmOccupantDestroyed(AActor* DestroyedActor);
 
 	UFUNCTION()
 	void HandleTrackedBossDestroyed(AActor* DestroyedActor);
 
 	UFUNCTION()
-	void HandleDungeonLevelShown();
+	void HandleRealmLevelShown();
 
 	void HandleActorKilled(FGameplayTag Channel, const FRpgCombatActorKilledMessage& Message);
 	void RegisterCombatMessageListener();
 	void UnregisterCombatMessageListener();
 	void SpawnEncounterEnemies();
-	void StartDungeonEncounter();
-	void EnsureDungeonLevelStreamingConfig();
-	bool LoadDungeonLevelInstance();
-	void UnloadDungeonLevelInstance();
-	bool ResolveDungeonMarkers();
-	void ClearDungeonMarkers();
-	void TeleportPendingDungeonEntrants();
+	void StartRealmEncounter();
+	void EnsureRealmLevelStreamingConfig();
+	bool LoadRealmLevelInstance();
+	void UnloadRealmLevelInstance();
+	bool ResolveRealmMarkers();
+	void ClearRealmMarkers();
+	void TeleportPendingRealmEntrants();
 	bool BeginPortalTravelForActor(AActor* TravelActor);
-	bool TeleportActorToDungeon(AActor* TravelActor);
+	bool TeleportActorToRealm(AActor* TravelActor);
 	void PrepareActorForPortalTeleport(AActor* TravelActor) const;
-	void RegisterDungeonOccupant(AActor* TravelActor);
-	void UnregisterDungeonOccupant(AActor* TravelActor);
+	void RegisterRealmOccupant(AActor* TravelActor);
+	void UnregisterRealmOccupant(AActor* TravelActor);
 	AController* ResolveTravelController(AActor* TravelActor) const;
 	FUniqueNetIdRepl ResolvePlayerNetId(AActor* TravelActor) const;
 	FUniqueNetIdRepl ResolvePlayerNetId(AController* Controller) const;
-	FRpgPortalDungeonParticipantState* FindParticipantState(const FUniqueNetIdRepl& PlayerNetId);
-	const FRpgPortalDungeonParticipantState* FindParticipantState(const FUniqueNetIdRepl& PlayerNetId) const;
-	FRpgPortalDungeonParticipantState* FindParticipantStateForActor(AActor* TravelActor);
-	FRpgPortalDungeonParticipantState* FindOrAddParticipantStateForActor(AActor* TravelActor);
-	bool IsResumeStateUsable(const FRpgPortalDungeonParticipantState& ParticipantState) const;
-	bool GetResumeDungeonTransformForActor(AActor* TravelActor, FTransform& OutTransform) const;
+	FRpgPortalRealmParticipantState* FindParticipantState(const FUniqueNetIdRepl& PlayerNetId);
+	const FRpgPortalRealmParticipantState* FindParticipantState(const FUniqueNetIdRepl& PlayerNetId) const;
+	FRpgPortalRealmParticipantState* FindParticipantStateForActor(AActor* TravelActor);
+	FRpgPortalRealmParticipantState* FindOrAddParticipantStateForActor(AActor* TravelActor);
+	bool IsResumeStateUsable(const FRpgPortalRealmParticipantState& ParticipantState) const;
+	bool GetResumeRealmTransformForActor(AActor* TravelActor, FTransform& OutTransform) const;
 	void UpdateParticipantSafeTransform(AActor* TravelActor);
-	void MarkParticipantEnteredDungeon(AActor* TravelActor);
-	void MarkParticipantExitedDungeon(AActor* TravelActor);
-	void MarkParticipantDisconnectedFromDungeon(AActor* TravelActor);
+	void MarkParticipantEnteredRealm(AActor* TravelActor);
+	void MarkParticipantExitedRealm(AActor* TravelActor);
+	void MarkParticipantDiedInRealm(AActor* TravelActor);
+	void MarkParticipantDisconnectedFromRealm(AActor* TravelActor);
 	void InvalidateParticipantResumeStates();
+	void ApplyRealmEnterEffects(AActor* TravelActor, FRpgPortalRealmParticipantState& ParticipantState);
+	void ApplyRealmExitEffects(AActor* TravelActor) const;
+	void RemoveRealmPersistentEffects(FRpgPortalRealmParticipantState& ParticipantState);
+	void RemoveAllRealmPersistentEffects();
+	void ApplyGameplayEffectsToActor(AActor* TargetActor, const TArray<TSubclassOf<UGameplayEffect>>& Effects, TArray<FActiveGameplayEffectHandle>* OutHandles = nullptr) const;
+	FActiveGameplayEffectHandle ApplyRealmTagsToActor(AActor* TargetActor) const;
+	UAbilitySystemComponent* ResolveAbilitySystemComponent(AActor* TargetActor) const;
 	void StartParticipantLocationSamplingIfNeeded();
 	void StopParticipantLocationSamplingIfIdle();
-	void SampleDungeonParticipantLocations();
+	void SampleRealmParticipantLocations();
 	void NotifyKnownTravelComponentsToUnload(ERpgPortalTravelState TerminalState);
-	void SpawnDungeonBoss();
+	void SpawnRealmBoss();
+	void SpawnRealmEventDirector();
+	void DestroyRealmEventDirector();
 	void SpawnExitPortal();
 	void DestroyExitPortal();
 	void MarkTrackedEnemyDefeated(AActor* DefeatedEnemy);
 	void MarkTrackedBossDefeated(AActor* DefeatedBoss);
 	void RefreshStabilityFromProgress();
-	void RefreshDungeonOccupantCount();
+	void RefreshRealmOccupantCount();
 	void SetPortalState(ERpgPortalState NewState);
 	void ApplyClosedPresentation();
 	AActor* ResolveTravelActor(AActor* Actor) const;
-	FTransform GetDefaultDungeonLevelInstanceTransform() const;
-	FString GetDefaultDungeonLevelInstanceName() const;
-	FName GetDungeonLevelNetPackageName() const;
+	FTransform GetDefaultRealmLevelInstanceTransform() const;
+	FString GetDefaultRealmLevelInstanceName() const;
+	FName GetRealmLevelNetPackageName() const;
 	FTransform GetOverworldReturnTransform() const;
 	bool IsTrackedEnemy(AActor* Actor) const;
-	bool IsDungeonEncounterMode() const;
+	bool IsRealmEncounterMode() const;
 	bool IsBrokenOutbreakMode() const;
 	bool ShouldRewardsBeEligible() const;
 
@@ -246,7 +263,7 @@ protected:
 	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "Portal")
 	TObjectPtr<UStaticMeshComponent> PortalMesh;
 
-	/** Data asset that defines this portal's mode, enemies, dungeon, boss, exit and text. */
+	/** Data asset that defines this portal's mode, enemies, realm, boss, exit and text. */
 	UPROPERTY(ReplicatedUsing = OnRep_EncounterDefinition, EditAnywhere, BlueprintReadOnly, Category = "Portal|Encounter")
 	TObjectPtr<const URpgPortalEncounterDefinition> EncounterDefinition;
 
@@ -254,16 +271,16 @@ protected:
 	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Portal|Interaction")
 	TSubclassOf<URpgGameplayAbility_ClosePortal> ClosePortalAbilityClass;
 
-	/** Interaction ability granted by the interaction system while the dungeon portal can be entered. */
+	/** Interaction ability granted by the interaction system while the realm portal can be entered. */
 	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Portal|Interaction")
 	TSubclassOf<URpgGameplayAbility_EnterPortal> EnterPortalAbilityClass;
 
 	/** Fallback exit portal class used when the EncounterDefinition does not override it. */
-	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Portal|Dungeon")
+	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Portal|Realm")
 	TSubclassOf<ARpgPortalExitActor> ExitPortalActorClass;
 
-	/** Distance in front of the overworld portal where exiting dungeon players return. */
-	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Portal|Dungeon", meta = (ClampMin = "0.0", ForceUnits = "cm"))
+	/** Distance in front of the overworld portal where exiting realm players return. */
+	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Portal|Realm", meta = (ClampMin = "0.0", ForceUnits = "cm"))
 	float OverworldReturnDistance = 250.0f;
 
 	/** Starts the encounter on BeginPlay; GameFeature-spawned portals normally keep this enabled. */
@@ -274,7 +291,7 @@ protected:
 	UPROPERTY(ReplicatedUsing = OnRep_PortalState, VisibleInstanceOnly, BlueprintReadOnly, Category = "Portal")
 	ERpgPortalState PortalState = ERpgPortalState::Dormant;
 
-	/** Current stability value. BrokenOutbreak uses defeated enemies; Dungeon mode fills after boss completion. */
+	/** Current stability value. BrokenOutbreak uses defeated enemies; Realm mode fills after boss completion. */
 	UPROPERTY(ReplicatedUsing = OnRep_CurrentStability, VisibleInstanceOnly, BlueprintReadOnly, Category = "Portal")
 	float CurrentStability = 0.0f;
 
@@ -286,64 +303,68 @@ protected:
 	UPROPERTY(Replicated, VisibleInstanceOnly, BlueprintReadOnly, Category = "Portal")
 	int32 TotalTrackedEnemyCount = 0;
 
-	/** True after the dungeon boss death message/destruction has been processed. */
-	UPROPERTY(Replicated, VisibleInstanceOnly, BlueprintReadOnly, Category = "Portal|Dungeon")
-	bool bDungeonBossDefeated = false;
+	/** True after the realm boss death message/destruction has been processed. */
+	UPROPERTY(Replicated, VisibleInstanceOnly, BlueprintReadOnly, Category = "Portal|Realm")
+	bool bRealmBossDefeated = false;
 
-	/** Number of tracked players/pawns still inside this portal's dungeon instance. */
-	UPROPERTY(Replicated, VisibleInstanceOnly, BlueprintReadOnly, Category = "Portal|Dungeon")
-	int32 DungeonOccupantCount = 0;
+	/** Number of tracked players/pawns still inside this portal's realm instance. */
+	UPROPERTY(Replicated, VisibleInstanceOnly, BlueprintReadOnly, Category = "Portal|Realm")
+	int32 RealmOccupantCount = 0;
 
 	/** Technical level-instance placement chosen by the region spawner; not a gameplay marker. */
-	UPROPERTY(ReplicatedUsing = OnRep_DungeonLevelStreamingConfig, VisibleInstanceOnly, BlueprintReadOnly, Category = "Portal|Dungeon")
-	FTransform DungeonLevelInstanceTransform = FTransform::Identity;
+	UPROPERTY(ReplicatedUsing = OnRep_RealmLevelStreamingConfig, VisibleInstanceOnly, BlueprintReadOnly, Category = "Portal|Realm")
+	FTransform RealmLevelInstanceTransform = FTransform::Identity;
 
-	/** Stable level-instance name so server and clients load the same streamed dungeon instance. */
-	UPROPERTY(ReplicatedUsing = OnRep_DungeonLevelStreamingConfig, VisibleInstanceOnly, BlueprintReadOnly, Category = "Portal|Dungeon")
-	FString DungeonLevelInstanceName;
+	/** Stable level-instance name so server and clients load the same streamed realm instance. */
+	UPROPERTY(ReplicatedUsing = OnRep_RealmLevelStreamingConfig, VisibleInstanceOnly, BlueprintReadOnly, Category = "Portal|Realm")
+	FString RealmLevelInstanceName;
 
 	/** Live BrokenOutbreak enemies whose deaths advance stability. */
 	UPROPERTY(Transient)
 	TArray<TObjectPtr<AActor>> TrackedEnemies;
 
-	/** Live dungeon boss spawned at the BossSpawn marker. */
+	/** Live realm boss spawned at the BossSpawn marker. */
 	UPROPERTY(Transient)
 	TObjectPtr<AActor> TrackedBoss;
 
-	/** Live dungeon exit portal spawned after boss defeat. */
+	/** Live realm exit portal spawned after boss defeat. */
 	UPROPERTY(Transient)
 	TObjectPtr<ARpgPortalExitActor> ExitPortalActor;
 
-	/** Runtime streaming handle for this portal's dungeon level instance. */
+	/** Optional realm-local director spawned from the encounter definition. */
 	UPROPERTY(Transient)
-	TObjectPtr<ULevelStreamingDynamic> DungeonLevelStreaming;
+	TObjectPtr<ARpgPortalRealmEventDirector> RealmEventDirector;
 
-	/** Resolved Entry marker from the loaded dungeon level. */
+	/** Runtime streaming handle for this portal's realm level instance. */
 	UPROPERTY(Transient)
-	TObjectPtr<ARpgPortalDungeonMarkerActor> DungeonEntryMarker;
+	TObjectPtr<ULevelStreamingDynamic> RealmLevelStreaming;
 
-	/** Resolved BossSpawn marker from the loaded dungeon level. */
+	/** Resolved Entry marker from the loaded realm level. */
 	UPROPERTY(Transient)
-	TObjectPtr<ARpgPortalDungeonMarkerActor> DungeonBossSpawnMarker;
+	TObjectPtr<ARpgPortalRealmMarkerActor> RealmEntryMarker;
 
-	/** Resolved ExitPortal marker from the loaded dungeon level. */
+	/** Resolved BossSpawn marker from the loaded realm level. */
 	UPROPERTY(Transient)
-	TObjectPtr<ARpgPortalDungeonMarkerActor> DungeonExitPortalMarker;
+	TObjectPtr<ARpgPortalRealmMarkerActor> RealmBossSpawnMarker;
 
-	/** Players/pawns currently considered inside this dungeon instance. */
+	/** Resolved ExitPortal marker from the loaded realm level. */
 	UPROPERTY(Transient)
-	TArray<TObjectPtr<AActor>> DungeonOccupants;
+	TObjectPtr<ARpgPortalRealmMarkerActor> RealmExitPortalMarker;
 
-	/** Players/pawns that interacted while the dungeon level was still loading. */
+	/** Players/pawns currently considered inside this realm instance. */
 	UPROPERTY(Transient)
-	TArray<TObjectPtr<AActor>> PendingDungeonEntrants;
+	TArray<TObjectPtr<AActor>> RealmOccupants;
 
-	/** Travel components that loaded this dungeon locally and must be unloaded on exit/close/cancel. */
+	/** Players/pawns that interacted while the realm level was still loading. */
+	UPROPERTY(Transient)
+	TArray<TObjectPtr<AActor>> PendingRealmEntrants;
+
+	/** Travel components that loaded this realm locally and must be unloaded on exit/close/cancel. */
 	UPROPERTY(Transient)
 	TArray<TObjectPtr<URpgPortalTravelComponent>> KnownTravelComponents;
 
-	TMap<FUniqueNetIdRepl, FRpgPortalDungeonParticipantState> DungeonParticipantStates;
-	TMap<FObjectKey, FUniqueNetIdRepl> DungeonOccupantPlayerNetIds;
+	TMap<FUniqueNetIdRepl, FRpgPortalRealmParticipantState> RealmParticipantStates;
+	TMap<FObjectKey, FUniqueNetIdRepl> RealmOccupantPlayerNetIds;
 	FTimerHandle ParticipantLocationSampleTimerHandle;
 	FGameplayMessageListenerHandle ActorKilledListenerHandle;
 	int32 NextPortalTravelRequestId = 0;
