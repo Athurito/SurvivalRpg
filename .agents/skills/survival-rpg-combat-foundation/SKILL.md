@@ -1,10 +1,18 @@
 ---
 name: survival-rpg-combat-foundation
-schein: false
-description: Combat, equipment, progression and GameFeature architecture guide for the SurvivalRpg repository. Use when Codex needs to design, review, document, or implement GAS/Lyra-based combat, equipment, item instances, ability grants, mastery unlocks, runes, portal combat, or modular GameFeature content while staying aligned with the current game vision.
+description: Use for SurvivalRpg combat, equipment, inventory-facing item instances, loadouts, GAS ability grants, mastery/progression, runes, portal combat, Dungeonbreak, and modular GameFeature combat content. Prefer current repo truth and pair with $unreal-lyra-expert for engine-facing implementation.
 ---
 
 # SurvivalRpg Combat Foundation
+
+## Skill Boundaries
+
+This skill owns SurvivalRpg combat, equipment, inventory-facing item instances, weapon action routing, runes, mastery/progression, portal combat, and combat GameFeature guidance.
+
+Use it together with `$unreal-lyra-expert` when implementation details touch Unreal Engine, GAS internals, replication, Experiences, Game Features, Lyra Interaction, or Lyra-rooted inventory/equipment.
+Use it together with `$survival-rpg-project` when a combat or equipment decision changes product scope, progression identity, survival friction, or first-playable priorities.
+
+Do not let this skill create a parallel combat/equipment authority beside the existing Lyra-rooted RPG architecture.
 
 ## Always start from current repository truth
 

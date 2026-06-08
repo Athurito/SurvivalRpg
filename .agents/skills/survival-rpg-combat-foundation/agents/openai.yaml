@@ -1,4 +1,7 @@
 interface:
   display_name: "SurvivalRpg Combat Foundation"
-  short_description: "Equip/item architecture with GAS seams"
-  default_prompt: "Use $survival-rpg-combat-foundation to design or implement SurvivalRpg equip, loadout, and item-instance architecture with GAS-aligned combat seams."
+  short_description: "Combat, equipment, GAS and RPG item seams"
+  default_prompt: "Use $survival-rpg-combat-foundation for SurvivalRpg combat, equipment, loadout, item-instance, progression, runes, portal-combat, and combat GameFeature work. Pair with $unreal-lyra-expert for Unreal/GAS/replication details."
+
+policy:
+  allow_implicit_invocation: true

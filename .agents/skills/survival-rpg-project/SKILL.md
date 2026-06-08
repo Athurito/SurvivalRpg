@@ -1,9 +1,11 @@
 ---
 name: survival-rpg-project
-description: Project-specific implementation guide for the SurvivalRpg repository. Use when Codex plans, reviews, or implements gameplay, systems, content scaffolding, or architecture for this dark-fantasy survival action RPG so work stays aligned with the game's first-playable scope, modular data-driven approach, portal-centric world design, and long-term resource relevance.
+description: Use for SurvivalRpg project vision, feature scope, gameplay priorities, first-playable planning, portal-centric world design, survival/crafting/progression tradeoffs, and content architecture so implementation stays aligned with the game identity.
 ---
 
 # SurvivalRpg Project
+
+Use this skill for product direction and project guardrails. It should define what the game is trying to become; it should not override concrete repository evidence or Unreal/Lyra technical constraints.
 
 Start from project identity before choosing a solution.
 

@@ -1,9 +1,12 @@
 ---
 name: survival-rpg-orchestrator
-description: Coordination skill for the SurvivalRpg repository. Use when Codex should route a task across project-specific direction, Unreal/Lyra technical expertise, and focused implementation work so the right skills are applied automatically and larger requests are broken into the smallest useful slices.
+description: Use for large or ambiguous SurvivalRpg requests that need routing across project vision, Unreal/Lyra architecture, combat/equipment, planning, review, or implementation. Select only the needed specialist skills and break work into the smallest useful slice.
 ---
 
 # SurvivalRpg Orchestrator
+
+Use this skill as a router for broad, ambiguous, multi-system, or multi-step SurvivalRpg work.
+For narrow tasks, go directly to the relevant specialist skill instead of routing through this skill.
 
 Classify the request before doing work.
 
@@ -59,9 +62,9 @@ Catch coordination failures early.
 - Stop technical drift toward hard-coded content, oversized managers, or systems that bypass Unreal and Lyra extension seams already present.
 - Stop planning drift when a task grows beyond the current vertical-slice goal.
 
-When reporting back, summarize in this order.
+When reporting back, summarize in this order when routing decisions matter. Do not force a routing report for small implementation tasks.
 
-- Which specialist skills were activated and why.
+- Which specialist skills were relevant and why.
 - What concrete slice was chosen.
 - What was implemented, reviewed, or deferred.
 - What risks or next steps remain.
