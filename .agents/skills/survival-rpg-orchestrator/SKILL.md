@@ -23,6 +23,12 @@ Route to the minimum skill set that covers the task.
 - Use both skills together when implementing gameplay systems in this repository.
 - Do not duplicate specialist guidance inside this skill. Delegate to the specialist skill instead.
 
+Preserve repository-wide documentation defaults.
+
+When a routed task creates or modifies designer-facing Unreal APIs, DataAssets, Blueprint-configurable fields, combat tuning, item/equipment data, portal data, rune data, recipe data, progression data, replicated gameplay state, or save-relevant state, ensure the selected specialist skill adds concise documentation comments by default.
+
+Do not turn this into a separate documentation task unless the user asked for documentation only. Treat it as part of normal implementation quality.
+
 Apply these default routing rules.
 
 - New gameplay feature: use `$survival-rpg-project`, then add `$unreal-lyra-expert` if the feature touches runtime implementation.

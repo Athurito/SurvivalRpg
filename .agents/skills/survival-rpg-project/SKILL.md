@@ -47,6 +47,7 @@ Choose architecture that scales without overbuilding.
 - Prefer data-driven definitions for weapons, runes, enemies, recipes, portal encounters, and progression unlocks.
 - Add extension seams that make later content easy to slot in.
 - Avoid premature frameworks, generic abstractions, or speculative systems that are not yet required by the vertical slice.
+- Require concise designer-facing documentation for DataAssets, Blueprint-configurable fields, tuning values, item/equipment definitions, recipe data, portal encounter data, rune data, enemy data, crafting data, loot data, and progression unlock data.
 
 Evaluate feature proposals against these questions.
 

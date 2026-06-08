@@ -184,6 +184,7 @@ If none of these apply, use normal Unreal patterns and keep the solution simple.
 - compact structured runtime item state
 - server-authoritative inventory/equipment mutation
 - CommonUI-style screen flow when UI grows
+- concise designer-facing documentation for DataAssets, Blueprint-configurable fields, item/equipment definitions, interaction options, GameFeature configuration, and RPG tuning data
 
 ---
 
@@ -202,6 +203,7 @@ If none of these apply, use normal Unreal patterns and keep the solution simple.
 - monolithic item classes when fragment composition would be cleaner
 - replicated convenience variables instead of authoritative reconstructed state
 - importing Lyra terminology when the underlying system is not actually present
+- undocumented designer-facing configuration that makes DataAssets, Blueprint fields, item/equipment data, interaction options, or tuning values unsafe to edit
 
 ---
 

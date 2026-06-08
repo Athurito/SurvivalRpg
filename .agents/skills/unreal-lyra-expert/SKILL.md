@@ -60,6 +60,7 @@ Preserve the existing architecture unless there is a strong reason to change it.
   - a lifecycle or ownership flaw
   - a near-term extensibility problem likely to compound quickly
 
+
 Choose the right implementation boundary.
 
 - Put durable gameplay rules, authority checks, replication logic, persistence, and performance-sensitive systems in C++.
@@ -67,6 +68,39 @@ Choose the right implementation boundary.
 - Expose clear extension points instead of burying core game rules inside Widgets or large Blueprint graphs.
 - Keep UI reflective of gameplay state rather than authoritative over gameplay state.
 - For inventory/equipment, keep UI as a view/controller of replicated gameplay state, not the owner of item truth.
+
+Document designer-facing Unreal APIs by default.
+
+When creating or modifying C++ that is visible to designers, Blueprints, DataAssets, assets, or config, add concise documentation comments.
+
+Use Unreal-style block comments before reflected declarations:
+
+- UCLASS
+- USTRUCT
+- UENUM
+- UINTERFACE
+- UPROPERTY
+- UFUNCTION
+
+Document all non-trivial fields exposed with:
+
+- EditAnywhere
+- EditDefaultsOnly
+- EditInstanceOnly
+- BlueprintReadOnly
+- BlueprintReadWrite
+- Config
+- SaveGame
+
+For DataAssets, ItemDefinitions, EquipmentDefinitions, fragments, AbilitySets, Interaction options, GameFeature config assets, and BP-configurable tuning structs, comments should explain designer intent, gameplay meaning, units, valid ranges, ownership, replication/save behavior, and whether the value is runtime-mutated or static definition data.
+
+Prefer comments that help a designer safely configure the asset.
+Avoid comments that only repeat the variable name.
+
+When a tooltip needs to be explicit in the editor, also use metadata like ToolTip, ClampMin, ClampMax, UIMin, UIMax, Units, ForceUnits, AllowedClasses, Categories, or DisplayName where appropriate.
+
+Keep comments short, practical, and accurate.
+
 
 Match the response style to the task.
 

@@ -23,6 +23,53 @@ Use this reference for implementation and review work in Unreal Engine projects.
 - Expose focused `BlueprintCallable`, `BlueprintPure`, or `BlueprintImplementableEvent` APIs instead of broad utility surfaces.
 - Avoid giant all-purpose Blueprint base classes.
 
+## Documentation and Designer-Facing APIs
+
+Add concise documentation comments by default for reflected Unreal APIs that designers, Blueprint authors, or future gameplay programmers will touch.
+
+Document by default:
+
+- UCLASS, USTRUCT, UENUM, and important UINTERFACE types
+- public or protected UFUNCTION APIs
+- Blueprint-callable, Blueprint-pure, Blueprint-native, or Blueprint-implementable functions
+- UPROPERTY fields exposed to Blueprints, DataAssets, config, save data, replication, or editor tuning
+- DataAsset fields
+- item definitions
+- equipment definitions
+- item fragments
+- equipment fragments
+- ability sets
+- interaction options
+- recipe data
+- rune data
+- portal encounter data
+- enemy data
+- progression unlock data
+- gameplay tag fields
+- asset references
+- class references
+- replicated fields
+- saved fields
+- authority-sensitive fields
+
+For designer-facing UPROPERTY fields, comments should explain:
+
+- what the value controls
+- expected unit, range, or scale
+- whether the value is static asset data or runtime state
+- whether it is designer-tuned, runtime-mutated, replicated, saved, cosmetic, or UI-only
+- whether server authority owns the value
+- whether the field is safe to change in child Blueprints or DataAssets
+- whether the field expects a hard reference, soft reference, gameplay tag, class reference, or DataAsset reference
+
+Prefer comments that explain intent, constraints, ownership, or designer impact.
+
+Avoid noisy comments on obvious local variables, simple private helpers, boilerplate code, or comments that only repeat the property name.
+
+When useful for editor clarity, also use Unreal metadata such as ToolTip, ClampMin, ClampMax, UIMin, UIMax, ForceUnits, Units, AllowedClasses, Categories, DisplayName, EditCondition, or EditConditionHides.
+
+Keep comments short, practical, and accurate.
+
 ## UObject and Lifetime Safety
 
 - Store UObject references with `UPROPERTY` when lifetime tracking matters.

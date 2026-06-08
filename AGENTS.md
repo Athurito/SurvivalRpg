@@ -29,19 +29,32 @@ Architecture guardrails:
 Codex should add concise Unreal-style documentation comments by default when creating or modifying designer-facing or gameplay-facing APIs.
 
 Document by default:
-- `UCLASS`, `USTRUCT`, `UENUM`, and important `UINTERFACE` types
-- public or protected `UFUNCTION` APIs
-- `UPROPERTY` fields exposed to Blueprints, DataAssets, config, or editor tuning
-- DataAsset fields, item/equipment definitions, fragments, ability sets, interaction options, and GameFeature-facing configuration
-- replicated properties, saved properties, authority-sensitive fields, and fields with non-obvious lifecycle or ownership rules
+
+- UCLASS, USTRUCT, UENUM, and important UINTERFACE types
+- public or protected UFUNCTION APIs
+- UPROPERTY fields exposed to Blueprints, DataAssets, config, save data, replication, or editor tuning
+- DataAsset fields
+- item definitions
+- equipment definitions
+- fragments
+- ability sets
+- interaction options
+- GameFeature-facing configuration
+- portal, rune, recipe, crafting, enemy, loot, progression, and combat tuning data
+- replicated properties
+- saved properties
+- authority-sensitive properties
+- fields with non-obvious lifecycle, ownership, or runtime mutation rules
 
 For Blueprint-configurable fields, comments should explain:
+
 - what the field controls
 - expected units, ranges, or gameplay meaning
-- whether it is designer-tuned, runtime-mutated, replicated, saved, or derived
-- important ownership assumptions, for example server-authoritative, cosmetic-only, or UI-read-only
+- whether it is designer-tuned, runtime-mutated, replicated, saved, derived, or cosmetic-only
+- important ownership assumptions such as server-authoritative, owning-client-only, UI-read-only, static definition data, or runtime mutable state
 
 Prefer useful intent comments over noisy restatements.
+
 Do not add comments for obvious local variables or trivial private helpers unless the behavior is non-obvious.
 
 Verification:
