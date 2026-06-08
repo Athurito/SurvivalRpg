@@ -1,11 +1,26 @@
 #include "RpgCombatDefenseProfile.h"
 
+#include "Engine/World.h"
 #include "TimerManager.h"
 #include "GameFramework/Controller.h"
 #include "SurvivalRpg/AbilitySystem/RpgAbilitySystemComponent.h"
 #include "SurvivalRpg/AbilitySystem/Attributes/RpgDefenseSet.h"
 #include "SurvivalRpg/Core/Character/RpgPawnExtensionComponent.h"
 #include "SurvivalRpg/GameplayTags/RpgGameplayTags.h"
+
+namespace
+{
+bool IsWorldTearingDown(const UActorComponent* Component, const UAbilitySystemComponent* AbilitySystemComponent)
+{
+	const UWorld* World = Component ? Component->GetWorld() : nullptr;
+	if (!World && AbilitySystemComponent)
+	{
+		World = AbilitySystemComponent->GetWorld();
+	}
+
+	return World && World->bIsTearingDown;
+}
+}
 
 URpgCombatDefenseProfileComponent::URpgCombatDefenseProfileComponent(const FObjectInitializer& ObjectInitializer)
 	: Super(ObjectInitializer)
@@ -144,6 +159,12 @@ void URpgCombatDefenseProfileComponent::ClearAppliedProfile()
 {
 	if (!AppliedAbilitySystemComponent)
 	{
+		return;
+	}
+
+	if (IsWorldTearingDown(this, AppliedAbilitySystemComponent))
+	{
+		AppliedAbilitySystemComponent = nullptr;
 		return;
 	}
 
@@ -374,6 +395,12 @@ void URpgPlayerCombatDefenseProfileComponent::ClearAppliedProfile()
 {
 	if (!AppliedAbilitySystemComponent)
 	{
+		return;
+	}
+
+	if (IsWorldTearingDown(this, AppliedAbilitySystemComponent))
+	{
+		AppliedAbilitySystemComponent = nullptr;
 		return;
 	}
 

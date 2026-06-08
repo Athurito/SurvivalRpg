@@ -80,12 +80,13 @@ void UAbilityTask_GrantNearbyInteraction::QueryInteractables()
 				{
 					// Grant the ability to the GAS, otherwise it won't be able to do whatever the interaction is.
 					FObjectKey ObjectKey(Option.InteractionAbilityToGrant);
-					if (!InteractionAbilityCache.Find(ObjectKey))
-					{
-						FGameplayAbilitySpec Spec(Option.InteractionAbilityToGrant, 1, INDEX_NONE, this);
-						FGameplayAbilitySpecHandle Handle = AbilitySystemComponent->GiveAbility(Spec);
-						InteractionAbilityCache.Add(ObjectKey, Handle);
-					}
+				if (!InteractionAbilityCache.Find(ObjectKey))
+				{
+					// The ability spec can replicate; do not use this transient ability task as SourceObject.
+					FGameplayAbilitySpec Spec(Option.InteractionAbilityToGrant, 1, INDEX_NONE, ActorOwner);
+					FGameplayAbilitySpecHandle Handle = AbilitySystemComponent->GiveAbility(Spec);
+					InteractionAbilityCache.Add(ObjectKey, Handle);
+				}
 				}
 			}
 		}
