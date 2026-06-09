@@ -92,6 +92,26 @@ void URpgInventoryUiActionComponent::RequestTransferItemStack_Implementation(URp
 	}
 }
 
+void URpgInventoryUiActionComponent::RequestApplyInventorySort_Implementation(URpgInventoryManagerComponent* Inventory, ERpgInventorySortMode SortMode)
+{
+	if (!CanAccessInventory(Inventory))
+	{
+		return;
+	}
+
+	Inventory->ApplyInventorySort(SortMode);
+}
+
+void URpgInventoryUiActionComponent::RequestMoveInventoryEntry_Implementation(URpgInventoryManagerComponent* Inventory, FGuid EntryId, int32 TargetIndex)
+{
+	if (!CanAccessInventory(Inventory) || !Inventory->ContainsEntry(EntryId))
+	{
+		return;
+	}
+
+	Inventory->MoveInventoryEntry(EntryId, TargetIndex);
+}
+
 bool URpgInventoryUiActionComponent::CanAccessInventory(URpgInventoryManagerComponent* Inventory) const
 {
 	if (Inventory == nullptr)

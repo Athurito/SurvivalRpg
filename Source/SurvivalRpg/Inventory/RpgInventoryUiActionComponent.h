@@ -1,6 +1,7 @@
 #pragma once
 
 #include "Components/ControllerComponent.h"
+#include "RpgInventoryManagerComponent.h"
 #include "SurvivalRpg/Equipment/RpgEquipmentDefinition.h"
 
 #include "RpgInventoryUiActionComponent.generated.h"
@@ -44,6 +45,14 @@ public:
 	/** Transfers a whole item entry or partial stack between two accessible inventories. */
 	UFUNCTION(Server, Reliable, BlueprintCallable, Category = "Inventory|UI Actions")
 	void RequestTransferItemStack(URpgInventoryManagerComponent* SourceInventory, URpgInventoryManagerComponent* TargetInventory, URpgInventoryItemInstance* Item, int32 StackCount);
+
+	/** Applies a shared server-side sort to an accessible inventory such as storage or loot. */
+	UFUNCTION(Server, Reliable, BlueprintCallable, Category = "Inventory|UI Actions")
+	void RequestApplyInventorySort(URpgInventoryManagerComponent* Inventory, ERpgInventorySortMode SortMode);
+
+	/** Moves one accessible inventory entry to a shared replicated index for manual storage ordering. */
+	UFUNCTION(Server, Reliable, BlueprintCallable, Category = "Inventory|UI Actions")
+	void RequestMoveInventoryEntry(URpgInventoryManagerComponent* Inventory, FGuid EntryId, int32 TargetIndex);
 
 	UFUNCTION(BlueprintCallable, BlueprintPure = false, Category = "Inventory|UI Actions")
 	bool CanAccessInventory(URpgInventoryManagerComponent* Inventory) const;

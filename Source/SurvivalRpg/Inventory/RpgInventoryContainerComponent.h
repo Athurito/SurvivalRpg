@@ -40,6 +40,10 @@ public:
 	UFUNCTION(BlueprintCallable, BlueprintPure, Category = "Inventory|Container")
 	FName GetStorageGroupId() const { return StorageGroupId; }
 
+	/** Stable save/export id for this world container. Leave None for non-persistent loot proxies. */
+	UFUNCTION(BlueprintCallable, BlueprintPure, Category = "Inventory|Container")
+	FName GetPersistentContainerId() const { return PersistentContainerId; }
+
 	/** True when crafting/resource scans may pull items from this container. */
 	UFUNCTION(BlueprintCallable, BlueprintPure, Category = "Inventory|Container")
 	bool AllowsCraftingAccess() const { return bAllowCraftingAccess; }
@@ -56,6 +60,10 @@ protected:
 	/** Storage/base group used by crafting stations to include same-base containers even outside direct interaction range. */
 	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Inventory|Container")
 	FName StorageGroupId;
+
+	/** Stable id used by inventory snapshots and future world-save data for this container. */
+	UPROPERTY(EditAnywhere, Replicated, BlueprintReadOnly, Category = "Inventory|Container")
+	FName PersistentContainerId;
 
 	/** Maximum distance in centimeters at which a player may transfer items with this container directly. */
 	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Inventory|Container", meta = (ClampMin = "0", UIMin = "0", Units = "cm"))

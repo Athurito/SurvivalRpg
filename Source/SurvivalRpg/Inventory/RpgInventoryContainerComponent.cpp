@@ -26,6 +26,7 @@ void URpgInventoryContainerComponent::GetLifetimeReplicatedProps(TArray<FLifetim
 	Super::GetLifetimeReplicatedProps(OutLifetimeProps);
 
 	DOREPLIFETIME(ThisClass, bAccessible);
+	DOREPLIFETIME(ThisClass, PersistentContainerId);
 }
 
 URpgInventoryManagerComponent* URpgInventoryContainerComponent::GetInventoryManager() const
