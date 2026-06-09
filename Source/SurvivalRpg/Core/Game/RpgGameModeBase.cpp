@@ -22,6 +22,11 @@
 #include "SurvivalRpg/Core/Player/RpgPlayerState.h"
 #include "SurvivalRpg/Development/RpgDeveloperSettings.h"
 #include "SurvivalRpg/GameplayTags/RpgGameplayTags.h"
+#include "SurvivalRpg/Inventory/RpgDroppedInventoryActor.h"
+#include "SurvivalRpg/Inventory/RpgInventoryFragment_EquippableItem.h"
+#include "SurvivalRpg/Inventory/RpgInventoryFragment_ItemTraits.h"
+#include "SurvivalRpg/Inventory/RpgInventoryItemInstance.h"
+#include "SurvivalRpg/Inventory/RpgInventoryManagerComponent.h"
 #include "SurvivalRpg/System/RpgAssetManager.h"
 #include "GameFramework/GameStateBase.h"
 #include "GameFramework/PlayerState.h"
@@ -34,6 +39,7 @@ ARpgGameModeBase::ARpgGameModeBase(const FObjectInitializer& ObjectInitializer)
 	PlayerControllerClass = ARpgPlayerController::StaticClass();
 	PlayerStateClass = ARpgPlayerState::StaticClass();
 	DefaultPawnClass = ARpgCharacter::StaticClass();
+	DeathDropActorClass = ARpgDroppedInventoryActor::StaticClass();
 }
 
 void ARpgGameModeBase::InitGame(const FString& MapName, const FString& Options, FString& ErrorMessage)
@@ -486,6 +492,7 @@ void ARpgGameModeBase::NotifyPlayerDeath(APlayerController* PC)
 
 	if (APawn* ExistingPawn = PC->GetPawn())
 	{
+		DropInventoryForPlayerDeath(PC, ExistingPawn->GetActorTransform());
 		PC->UnPossess();
 		ExistingPawn->Destroy();
 	}
@@ -650,4 +657,66 @@ void ARpgGameModeBase::ClearRespawnGameplayState(URpgAbilitySystemComponent* ASC
 	ASC->SetLooseGameplayTagCount(RpgGameplayTags::Status_Downed, 0);
 	ASC->SetLooseGameplayTagCount(RpgGameplayTags::Status_Downed_BleedingOut, 0);
 	ASC->SetLooseGameplayTagCount(RpgGameplayTags::Status_Downed_Reviving, 0);
+}
+
+void ARpgGameModeBase::DropInventoryForPlayerDeath(APlayerController* PC, const FTransform& DropTransform)
+{
+	if (!PC || !HasAuthority())
+	{
+		return;
+	}
+
+	ARpgPlayerState* PlayerState = PC->GetPlayerState<ARpgPlayerState>();
+	URpgInventoryManagerComponent* InventoryComponent = PlayerState ? PlayerState->GetInventoryManagerComponent() : nullptr;
+	if (!InventoryComponent || PlayerState->GetDeathDropMode() == ERpgPlayerDeathDropMode::None)
+	{
+		return;
+	}
+
+	FInventoryPickup DropPickup;
+	TArray<TPair<URpgInventoryItemInstance*, int32>> EntriesToRemove;
+
+	for (const FRpgInventoryEntryView& Entry : InventoryComponent->GetAllEntries())
+	{
+		URpgInventoryItemInstance* ItemInstance = Entry.Instance;
+		if (!ItemInstance || Entry.StackCount <= 0)
+		{
+			continue;
+		}
+
+		if (ItemInstance->FindFragmentByClass<URpgInventoryFragment_EquippableItem>() != nullptr)
+		{
+			continue;
+		}
+
+		const URpgInventoryFragment_ItemTraits* Traits = ItemInstance->FindFragmentByClass<URpgInventoryFragment_ItemTraits>();
+		if (!Traits || !Traits->CanDropForMode(PlayerState->GetDeathDropMode()))
+		{
+			continue;
+		}
+
+		FPickupTemplate& Template = DropPickup.Templates.AddDefaulted_GetRef();
+		Template.ItemDef = ItemInstance->GetItemDef();
+		Template.StackCount = Entry.StackCount;
+		EntriesToRemove.Add(TPair<URpgInventoryItemInstance*, int32>(ItemInstance, Entry.StackCount));
+	}
+
+	if (DropPickup.Templates.IsEmpty() || !DeathDropActorClass)
+	{
+		return;
+	}
+
+	FActorSpawnParameters SpawnParams;
+	SpawnParams.Owner = PC;
+	SpawnParams.Instigator = PC->GetPawn();
+	ARpgDroppedInventoryActor* DropActor = GetWorld()->SpawnActor<ARpgDroppedInventoryActor>(DeathDropActorClass, DropTransform, SpawnParams);
+	if (DropActor)
+	{
+		DropActor->SetPickupInventory(DropPickup);
+
+		for (const TPair<URpgInventoryItemInstance*, int32>& EntryToRemove : EntriesToRemove)
+		{
+			InventoryComponent->RemoveItemInstanceStack(EntryToRemove.Key, EntryToRemove.Value);
+		}
+	}
 }

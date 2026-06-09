@@ -16,6 +16,25 @@ struct FRpgInventoryList;
 struct FNetDeltaSerializeInfo;
 struct FReplicationFlags;
 
+/** Read-only inventory row exposed to UI and server-side transfer systems. */
+USTRUCT(BlueprintType)
+struct FRpgInventoryEntryView
+{
+	GENERATED_BODY()
+
+	/** Inventory component that owns this entry. UI should treat it as read-only source context. */
+	UPROPERTY(BlueprintReadOnly, Category = Inventory)
+	TObjectPtr<UActorComponent> InventoryOwner = nullptr;
+
+	/** Concrete replicated item instance represented by this entry. */
+	UPROPERTY(BlueprintReadOnly, Category = Inventory)
+	TObjectPtr<URpgInventoryItemInstance> Instance = nullptr;
+
+	/** Authoritative replicated stack count for this item entry. */
+	UPROPERTY(BlueprintReadOnly, Category = Inventory)
+	int32 StackCount = 0;
+};
+
 /** A message when an item is added to the inventory */
 USTRUCT(BlueprintType)
 struct FRpgInventoryChangeMessage
@@ -78,6 +97,9 @@ struct FRpgInventoryList : public FFastArraySerializer
 	}
 
 	TArray<URpgInventoryItemInstance*> GetAllItems() const;
+	TArray<FRpgInventoryEntryView> GetAllEntries() const;
+	int32 GetStackCount(URpgInventoryItemInstance* Instance) const;
+	bool ContainsItemInstance(URpgInventoryItemInstance* Instance) const;
 
 public:
 	//~FFastArraySerializer contract
@@ -91,10 +113,11 @@ public:
 		return FFastArraySerializer::FastArrayDeltaSerialize<FRpgInventoryEntry, FRpgInventoryList>(Entries, DeltaParms, *this);
 	}
 
-	URpgInventoryItemInstance* AddEntry(TSubclassOf<URpgInventoryItemDefinition> ItemClass, int32 StackCount);
-	void AddEntry(URpgInventoryItemInstance* Instance);
+	URpgInventoryItemInstance* AddEntry(TSubclassOf<URpgInventoryItemDefinition> ItemClass, int32 StackCount, TArray<URpgInventoryItemInstance*>& OutNewInstances);
+	void AddEntry(URpgInventoryItemInstance* Instance, int32 StackCount = 1);
 
 	void RemoveEntry(URpgInventoryItemInstance* Instance);
+	bool RemoveEntryStack(URpgInventoryItemInstance* Instance, int32 StackCount, bool& bOutRemovedEntry);
 
 private:
 	void BroadcastChangeMessage(FRpgInventoryEntry& Entry, int32 OldCount, int32 NewCount);
@@ -147,15 +170,33 @@ public:
 	void AddItemInstance(URpgInventoryItemInstance* ItemInstance);
 
 	UFUNCTION(BlueprintCallable, BlueprintAuthorityOnly, Category=Inventory)
+	void AddItemInstanceWithStack(URpgInventoryItemInstance* ItemInstance, int32 StackCount = 1);
+
+	UFUNCTION(BlueprintCallable, BlueprintAuthorityOnly, Category=Inventory)
 	void RemoveItemInstance(URpgInventoryItemInstance* ItemInstance);
+
+	UFUNCTION(BlueprintCallable, BlueprintAuthorityOnly, Category=Inventory)
+	bool RemoveItemInstanceStack(URpgInventoryItemInstance* ItemInstance, int32 StackCount = 1);
 
 	UFUNCTION(BlueprintCallable, Category=Inventory, BlueprintPure=false)
 	TArray<URpgInventoryItemInstance*> GetAllItems() const;
 
+	UFUNCTION(BlueprintCallable, Category=Inventory, BlueprintPure=false)
+	TArray<FRpgInventoryEntryView> GetAllEntries() const;
+
 	UFUNCTION(BlueprintCallable, Category=Inventory, BlueprintPure)
 	URpgInventoryItemInstance* FindFirstItemStackByDefinition(TSubclassOf<URpgInventoryItemDefinition> ItemDef) const;
 
+	UFUNCTION(BlueprintCallable, Category=Inventory, BlueprintPure)
+	bool ContainsItemInstance(URpgInventoryItemInstance* ItemInstance) const;
+
+	UFUNCTION(BlueprintCallable, Category=Inventory, BlueprintPure)
+	int32 GetItemStackCount(URpgInventoryItemInstance* ItemInstance) const;
+
+	UFUNCTION(BlueprintCallable, Category=Inventory, BlueprintPure)
 	int32 GetTotalItemCountByDefinition(TSubclassOf<URpgInventoryItemDefinition> ItemDef) const;
+
+	UFUNCTION(BlueprintCallable, BlueprintAuthorityOnly, Category=Inventory)
 	bool ConsumeItemsByDefinition(TSubclassOf<URpgInventoryItemDefinition> ItemDef, int32 NumToConsume);
 
 	//~UObject interface

@@ -9,6 +9,7 @@
 class AActor;
 class URpgEquipmentInstance;
 class URpgEquipmentManagerComponent;
+class URpgInventoryManagerComponent;
 
 USTRUCT(BlueprintType)
 struct SURVIVALRPG_API FRpgQuickBarLoadoutSlot
@@ -61,17 +62,45 @@ public:
 	UFUNCTION(BlueprintCallable, BlueprintPure = false, Category = "QuickBar")
 	int32 GetNextFreeItemSlot() const;
 
+	/** Client/UI entry point for assigning an owned item to a quickbar hand slot. Server validates inventory ownership and item rules. */
+	UFUNCTION(Server, Reliable, BlueprintCallable, Category = "QuickBar")
+	void RequestAssignItemToLoadoutSlot(int32 SlotIndex, ERpgEquipmentSlot EquipmentSlot, URpgInventoryItemInstance* Item);
+
+	/** Client/UI entry point for swapping two quickbar hand slots. Server validates slot indices and hand-slot usage. */
+	UFUNCTION(Server, Reliable, BlueprintCallable, Category = "QuickBar")
+	void RequestSwapLoadoutSlots(int32 SourceSlotIndex, ERpgEquipmentSlot SourceEquipmentSlot, int32 TargetSlotIndex, ERpgEquipmentSlot TargetEquipmentSlot);
+
+	/** Client/UI entry point for clearing one quickbar hand slot. */
+	UFUNCTION(Server, Reliable, BlueprintCallable, Category = "QuickBar")
+	void RequestClearLoadoutSlot(int32 SlotIndex, ERpgEquipmentSlot EquipmentSlot);
+
+	/** Returns true when the item is owned by this controller and may be assigned to the requested quickbar hand slot. */
+	UFUNCTION(BlueprintCallable, BlueprintPure = false, Category = "QuickBar")
+	bool CanAssignItemToLoadoutSlot(int32 SlotIndex, ERpgEquipmentSlot EquipmentSlot, const URpgInventoryItemInstance* Item) const;
+
 	UFUNCTION(BlueprintCallable, BlueprintAuthorityOnly, Category = "QuickBar")
 	void AddItemToSlot(int32 SlotIndex, URpgInventoryItemInstance* Item);
 
 	UFUNCTION(BlueprintCallable, BlueprintAuthorityOnly, Category = "QuickBar")
 	void AddItemToLoadoutSlot(int32 SlotIndex, ERpgEquipmentSlot EquipmentSlot, URpgInventoryItemInstance* Item);
 
+	/** Server-side assignment used by UI actions and starter grants. Replaces the target slot after validation. */
+	UFUNCTION(BlueprintCallable, BlueprintAuthorityOnly, Category = "QuickBar")
+	bool AssignItemToLoadoutSlot(int32 SlotIndex, ERpgEquipmentSlot EquipmentSlot, URpgInventoryItemInstance* Item);
+
+	/** Server-side swap used by drag-and-drop quickbar rearranging. */
+	UFUNCTION(BlueprintCallable, BlueprintAuthorityOnly, Category = "QuickBar")
+	bool SwapLoadoutSlots(int32 SourceSlotIndex, ERpgEquipmentSlot SourceEquipmentSlot, int32 TargetSlotIndex, ERpgEquipmentSlot TargetEquipmentSlot);
+
 	UFUNCTION(BlueprintCallable, BlueprintAuthorityOnly, Category = "QuickBar")
 	URpgInventoryItemInstance* RemoveItemFromSlot(int32 SlotIndex);
 
 	UFUNCTION(BlueprintCallable, BlueprintAuthorityOnly, Category = "QuickBar")
 	URpgInventoryItemInstance* RemoveItemFromLoadoutSlot(int32 SlotIndex, ERpgEquipmentSlot EquipmentSlot);
+
+	/** Clears every quickbar reference to the item, useful when moving an equipped item into storage. */
+	UFUNCTION(BlueprintCallable, BlueprintAuthorityOnly, Category = "QuickBar")
+	void ClearItemFromAllLoadoutSlots(URpgInventoryItemInstance* Item);
 
 	UFUNCTION(BlueprintCallable, BlueprintAuthorityOnly, Category = "QuickBar")
 	void UnequipActiveLoadoutFromCurrentPawn();
@@ -100,9 +129,12 @@ private:
 	void ClearEquippedItemReferences();
 	URpgEquipmentInstance* EquipLoadoutItem(URpgInventoryItemInstance* SlotItem, ERpgEquipmentSlot EquipmentSlot) const;
 	URpgEquipmentManagerComponent* FindEquipmentManager() const;
+	URpgInventoryManagerComponent* FindOwnerInventory() const;
 	bool HasReadyEquipmentTarget() const;
 	void BroadcastSlotsChanged() const;
 	void BroadcastActiveIndexChanged() const;
+	static bool IsQuickBarEquipmentSlot(ERpgEquipmentSlot EquipmentSlot);
+	static bool IsItemAllowedInQuickBarSlot(const URpgInventoryItemInstance* Item, ERpgEquipmentSlot EquipmentSlot);
 
 	UPROPERTY(ReplicatedUsing = OnRep_Slots)
 	TArray<FRpgQuickBarLoadoutSlot> Slots;

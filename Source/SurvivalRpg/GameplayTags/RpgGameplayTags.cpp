@@ -96,6 +96,11 @@ namespace RpgGameplayTags
 	UE_DEFINE_GAMEPLAY_TAG_COMMENT(Equipment_Slot_MainHand, "Equipment.Slot.MainHand", "Equipment is assigned to the main hand slot.");
 	UE_DEFINE_GAMEPLAY_TAG_COMMENT(Equipment_Slot_OffHand, "Equipment.Slot.OffHand", "Equipment is assigned to the off hand slot.");
 	UE_DEFINE_GAMEPLAY_TAG_COMMENT(Equipment_Slot_BothHands, "Equipment.Slot.BothHands", "Equipment occupies both hand slots.");
+	UE_DEFINE_GAMEPLAY_TAG_COMMENT(Equipment_Slot_Head, "Equipment.Slot.Head", "Equipment is assigned to the head armor slot.");
+	UE_DEFINE_GAMEPLAY_TAG_COMMENT(Equipment_Slot_Chest, "Equipment.Slot.Chest", "Equipment is assigned to the chest armor slot.");
+	UE_DEFINE_GAMEPLAY_TAG_COMMENT(Equipment_Slot_Hands, "Equipment.Slot.Hands", "Equipment is assigned to the hands armor slot.");
+	UE_DEFINE_GAMEPLAY_TAG_COMMENT(Equipment_Slot_Legs, "Equipment.Slot.Legs", "Equipment is assigned to the legs armor slot.");
+	UE_DEFINE_GAMEPLAY_TAG_COMMENT(Equipment_Slot_Feet, "Equipment.Slot.Feet", "Equipment is assigned to the feet armor slot.");
 	UE_DEFINE_GAMEPLAY_TAG_COMMENT(Weapon_Attack_Primary, "Weapon.Attack.Primary", "Default primary weapon attack definition.");
 	UE_DEFINE_GAMEPLAY_TAG_COMMENT(Weapon_Attack_Secondary, "Weapon.Attack.Secondary", "Default secondary weapon attack definition.");
 	UE_DEFINE_GAMEPLAY_TAG_COMMENT(Weapon_Type_Melee, "Weapon.Type.Melee", "Melee weapon type.");

@@ -8,7 +8,10 @@
 #include "RpgEquipmentDefinition.h"
 #include "RpgEquipmentInstance.h"
 #include "RpgEquipmentManagerComponent.h"
+#include "SurvivalRpg/Core/Player/RpgPlayerState.h"
 #include "SurvivalRpg/Inventory/RpgInventoryFragment_EquippableItem.h"
+#include "SurvivalRpg/Inventory/RpgInventoryFragment_ItemTraits.h"
+#include "SurvivalRpg/Inventory/RpgInventoryManagerComponent.h"
 
 #include UE_INLINE_GENERATED_CPP_BY_NAME(RpgQuickBarComponent)
 
@@ -164,6 +167,37 @@ int32 URpgQuickBarComponent::GetNextFreeItemSlot() const
 	return INDEX_NONE;
 }
 
+void URpgQuickBarComponent::RequestAssignItemToLoadoutSlot_Implementation(int32 SlotIndex, ERpgEquipmentSlot EquipmentSlot, URpgInventoryItemInstance* Item)
+{
+	AssignItemToLoadoutSlot(SlotIndex, EquipmentSlot, Item);
+}
+
+void URpgQuickBarComponent::RequestSwapLoadoutSlots_Implementation(int32 SourceSlotIndex, ERpgEquipmentSlot SourceEquipmentSlot, int32 TargetSlotIndex, ERpgEquipmentSlot TargetEquipmentSlot)
+{
+	SwapLoadoutSlots(SourceSlotIndex, SourceEquipmentSlot, TargetSlotIndex, TargetEquipmentSlot);
+}
+
+void URpgQuickBarComponent::RequestClearLoadoutSlot_Implementation(int32 SlotIndex, ERpgEquipmentSlot EquipmentSlot)
+{
+	RemoveItemFromLoadoutSlot(SlotIndex, EquipmentSlot);
+}
+
+bool URpgQuickBarComponent::CanAssignItemToLoadoutSlot(int32 SlotIndex, ERpgEquipmentSlot EquipmentSlot, const URpgInventoryItemInstance* Item) const
+{
+	if (!Slots.IsValidIndex(SlotIndex) || !Item || !IsQuickBarEquipmentSlot(EquipmentSlot))
+	{
+		return false;
+	}
+
+	const URpgInventoryManagerComponent* OwnerInventory = FindOwnerInventory();
+	if (!OwnerInventory || !OwnerInventory->ContainsItemInstance(const_cast<URpgInventoryItemInstance*>(Item)))
+	{
+		return false;
+	}
+
+	return IsItemAllowedInQuickBarSlot(Item, EquipmentSlot);
+}
+
 void URpgQuickBarComponent::AddItemToSlot(int32 SlotIndex, URpgInventoryItemInstance* Item)
 {
 	AddItemToLoadoutSlot(SlotIndex, ERpgEquipmentSlot::MainHand, Item);
@@ -172,9 +206,20 @@ void URpgQuickBarComponent::AddItemToSlot(int32 SlotIndex, URpgInventoryItemInst
 void URpgQuickBarComponent::AddItemToLoadoutSlot(int32 SlotIndex, ERpgEquipmentSlot EquipmentSlot, URpgInventoryItemInstance* Item)
 {
 	EnsureSlotCount();
-	if (!Slots.IsValidIndex(SlotIndex) || Item == nullptr || Slots[SlotIndex].GetItemForSlot(EquipmentSlot) != nullptr)
+	if (!Slots.IsValidIndex(SlotIndex) || Slots[SlotIndex].GetItemForSlot(EquipmentSlot) != nullptr)
 	{
 		return;
+	}
+
+	AssignItemToLoadoutSlot(SlotIndex, EquipmentSlot, Item);
+}
+
+bool URpgQuickBarComponent::AssignItemToLoadoutSlot(int32 SlotIndex, ERpgEquipmentSlot EquipmentSlot, URpgInventoryItemInstance* Item)
+{
+	EnsureSlotCount();
+	if (!CanAssignItemToLoadoutSlot(SlotIndex, EquipmentSlot, Item))
+	{
+		return false;
 	}
 
 	const bool bWasActiveSlot = ActiveSlotIndex == SlotIndex;
@@ -183,6 +228,7 @@ void URpgQuickBarComponent::AddItemToLoadoutSlot(int32 SlotIndex, ERpgEquipmentS
 		UnequipItemInSlot();
 	}
 
+	ClearItemFromAllLoadoutSlots(Item);
 	Slots[SlotIndex].SetItemForSlot(EquipmentSlot, Item);
 
 	if (bWasActiveSlot)
@@ -191,6 +237,52 @@ void URpgQuickBarComponent::AddItemToLoadoutSlot(int32 SlotIndex, ERpgEquipmentS
 	}
 
 	OnRep_Slots();
+	return true;
+}
+
+bool URpgQuickBarComponent::SwapLoadoutSlots(int32 SourceSlotIndex, ERpgEquipmentSlot SourceEquipmentSlot, int32 TargetSlotIndex, ERpgEquipmentSlot TargetEquipmentSlot)
+{
+	EnsureSlotCount();
+	if (!Slots.IsValidIndex(SourceSlotIndex) || !Slots.IsValidIndex(TargetSlotIndex) ||
+		!IsQuickBarEquipmentSlot(SourceEquipmentSlot) || !IsQuickBarEquipmentSlot(TargetEquipmentSlot))
+	{
+		return false;
+	}
+
+	if (SourceSlotIndex == TargetSlotIndex && SourceEquipmentSlot == TargetEquipmentSlot)
+	{
+		return true;
+	}
+
+	URpgInventoryItemInstance* SourceItem = Slots[SourceSlotIndex].GetItemForSlot(SourceEquipmentSlot);
+	URpgInventoryItemInstance* TargetItem = Slots[TargetSlotIndex].GetItemForSlot(TargetEquipmentSlot);
+
+	if (SourceItem && !IsItemAllowedInQuickBarSlot(SourceItem, TargetEquipmentSlot))
+	{
+		return false;
+	}
+
+	if (TargetItem && !IsItemAllowedInQuickBarSlot(TargetItem, SourceEquipmentSlot))
+	{
+		return false;
+	}
+
+	const bool bTouchesActiveSlot = ActiveSlotIndex == SourceSlotIndex || ActiveSlotIndex == TargetSlotIndex;
+	if (bTouchesActiveSlot)
+	{
+		UnequipItemInSlot();
+	}
+
+	Slots[SourceSlotIndex].SetItemForSlot(SourceEquipmentSlot, TargetItem);
+	Slots[TargetSlotIndex].SetItemForSlot(TargetEquipmentSlot, SourceItem);
+
+	if (bTouchesActiveSlot)
+	{
+		EquipItemInSlot();
+	}
+
+	OnRep_Slots();
+	return true;
 }
 
 URpgInventoryItemInstance* URpgQuickBarComponent::RemoveItemFromSlot(int32 SlotIndex)
@@ -234,6 +326,49 @@ URpgInventoryItemInstance* URpgQuickBarComponent::RemoveItemFromLoadoutSlot(int3
 
 	OnRep_Slots();
 	return Result;
+}
+
+void URpgQuickBarComponent::ClearItemFromAllLoadoutSlots(URpgInventoryItemInstance* Item)
+{
+	if (Item == nullptr)
+	{
+		return;
+	}
+
+	bool bChanged = false;
+	const bool bTouchesActiveSlot = Slots.IsValidIndex(ActiveSlotIndex) &&
+		(Slots[ActiveSlotIndex].MainHandItem == Item || Slots[ActiveSlotIndex].OffHandItem == Item);
+	const bool bHadEquippedReferences = MainHandEquippedItem != nullptr || OffHandEquippedItem != nullptr;
+
+	if (bTouchesActiveSlot)
+	{
+		UnequipItemInSlot();
+	}
+
+	for (FRpgQuickBarLoadoutSlot& Slot : Slots)
+	{
+		if (Slot.MainHandItem == Item)
+		{
+			Slot.MainHandItem = nullptr;
+			bChanged = true;
+		}
+
+		if (Slot.OffHandItem == Item)
+		{
+			Slot.OffHandItem = nullptr;
+			bChanged = true;
+		}
+	}
+
+	if (bTouchesActiveSlot && bHadEquippedReferences && Slots.IsValidIndex(ActiveSlotIndex) && Slots[ActiveSlotIndex].HasAnyItem())
+	{
+		EquipItemInSlot();
+	}
+
+	if (bChanged)
+	{
+		OnRep_Slots();
+	}
 }
 
 void URpgQuickBarComponent::UnequipActiveLoadoutFromCurrentPawn()
@@ -420,6 +555,19 @@ URpgEquipmentManagerComponent* URpgQuickBarComponent::FindEquipmentManager() con
 	return nullptr;
 }
 
+URpgInventoryManagerComponent* URpgQuickBarComponent::FindOwnerInventory() const
+{
+	if (const AController* OwnerController = Cast<AController>(GetOwner()))
+	{
+		if (const ARpgPlayerState* RpgPlayerState = OwnerController->GetPlayerState<ARpgPlayerState>())
+		{
+			return RpgPlayerState->GetInventoryManagerComponent();
+		}
+	}
+
+	return nullptr;
+}
+
 bool URpgQuickBarComponent::HasReadyEquipmentTarget() const
 {
 	if (const AController* OwnerController = Cast<AController>(GetOwner()))
@@ -432,6 +580,40 @@ bool URpgQuickBarComponent::HasReadyEquipmentTarget() const
 	}
 
 	return false;
+}
+
+bool URpgQuickBarComponent::IsQuickBarEquipmentSlot(ERpgEquipmentSlot EquipmentSlot)
+{
+	return EquipmentSlot == ERpgEquipmentSlot::MainHand || EquipmentSlot == ERpgEquipmentSlot::OffHand;
+}
+
+bool URpgQuickBarComponent::IsItemAllowedInQuickBarSlot(const URpgInventoryItemInstance* Item, ERpgEquipmentSlot EquipmentSlot)
+{
+	if (!Item || !IsQuickBarEquipmentSlot(EquipmentSlot))
+	{
+		return false;
+	}
+
+	const URpgInventoryFragment_EquippableItem* EquippableFragment = Item->FindFragmentByClass<URpgInventoryFragment_EquippableItem>();
+	TSubclassOf<URpgEquipmentDefinition> EquipmentDefinition = EquippableFragment ? EquippableFragment->GetEquipmentDefinition() : nullptr;
+	const URpgEquipmentDefinition* EquipmentCDO = EquipmentDefinition ? GetDefault<URpgEquipmentDefinition>(EquipmentDefinition) : nullptr;
+	if (!EquipmentCDO || !EquipmentCDO->CanEquipInSlot(EquipmentSlot))
+	{
+		return false;
+	}
+
+	const URpgInventoryFragment_ItemTraits* Traits = Item->FindFragmentByClass<URpgInventoryFragment_ItemTraits>();
+	if (!Traits)
+	{
+		return true;
+	}
+
+	if (Traits->ItemCategory == ERpgInventoryItemCategory::Armor || Traits->IsMaterial())
+	{
+		return false;
+	}
+
+	return Traits->bCanAssignToQuickBar;
 }
 
 void URpgQuickBarComponent::BroadcastSlotsChanged() const

@@ -95,6 +95,11 @@ namespace RpgGameplayTags
 	UE_DECLARE_GAMEPLAY_TAG_EXTERN(Equipment_Slot_MainHand);
 	UE_DECLARE_GAMEPLAY_TAG_EXTERN(Equipment_Slot_OffHand);
 	UE_DECLARE_GAMEPLAY_TAG_EXTERN(Equipment_Slot_BothHands);
+	UE_DECLARE_GAMEPLAY_TAG_EXTERN(Equipment_Slot_Head);
+	UE_DECLARE_GAMEPLAY_TAG_EXTERN(Equipment_Slot_Chest);
+	UE_DECLARE_GAMEPLAY_TAG_EXTERN(Equipment_Slot_Hands);
+	UE_DECLARE_GAMEPLAY_TAG_EXTERN(Equipment_Slot_Legs);
+	UE_DECLARE_GAMEPLAY_TAG_EXTERN(Equipment_Slot_Feet);
 	UE_DECLARE_GAMEPLAY_TAG_EXTERN(Weapon_Attack_Primary);
 	UE_DECLARE_GAMEPLAY_TAG_EXTERN(Weapon_Attack_Secondary);
 	UE_DECLARE_GAMEPLAY_TAG_EXTERN(Weapon_Type_Melee);

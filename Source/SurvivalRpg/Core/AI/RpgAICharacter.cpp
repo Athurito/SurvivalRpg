@@ -4,6 +4,9 @@
 #include "SurvivalRpg/Combat/RpgEnemyCombatLoadout.h"
 #include "SurvivalRpg/Core/AI/RpgAIPlayerState.h"
 #include "SurvivalRpg/Core/Character/RpgPawnExtensionComponent.h"
+#include "SurvivalRpg/Inventory/RpgInventoryContainerComponent.h"
+#include "SurvivalRpg/Inventory/RpgInventoryManagerComponent.h"
+#include "SurvivalRpg/Inventory/RpgLootSourceComponent.h"
 #include "SurvivalRpg/Progression/RpgExperienceRewardComponent.h"
 
 ARpgAICharacter::ARpgAICharacter(const FObjectInitializer& ObjectInitializer)
@@ -12,6 +15,9 @@ ARpgAICharacter::ARpgAICharacter(const FObjectInitializer& ObjectInitializer)
 	CombatArchetypeComponent = CreateDefaultSubobject<URpgEnemyCombatArchetypeComponent>(TEXT("CombatArchetypeComponent"));
 	CombatLoadoutComponent = CreateDefaultSubobject<URpgEnemyCombatLoadoutComponent>(TEXT("CombatLoadoutComponent"));
 	ExperienceRewardComponent = CreateDefaultSubobject<URpgExperienceRewardComponent>(TEXT("ExperienceRewardComponent"));
+	LootInventoryComponent = CreateDefaultSubobject<URpgInventoryManagerComponent>(TEXT("LootInventoryComponent"));
+	LootContainerComponent = CreateDefaultSubobject<URpgInventoryContainerComponent>(TEXT("LootContainerComponent"));
+	LootSourceComponent = CreateDefaultSubobject<URpgLootSourceComponent>(TEXT("LootSourceComponent"));
 }
 
 void ARpgAICharacter::OnRep_PlayerState()

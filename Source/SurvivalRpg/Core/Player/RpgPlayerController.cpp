@@ -14,8 +14,10 @@
 #include "SurvivalRpg/Core/Character/RpgPawnExtensionComponent.h"
 #include "SurvivalRpg/Core/Player/RpgBasePlayerState.h"
 #include "SurvivalRpg/Core/Player/RpgPlayerState.h"
+#include "SurvivalRpg/Equipment/RpgEquipmentLoadoutComponent.h"
 #include "SurvivalRpg/Equipment/RpgQuickBarComponent.h"
 #include "SurvivalRpg/GameplayTags/RpgGameplayTags.h"
+#include "SurvivalRpg/Inventory/RpgInventoryUiActionComponent.h"
 #include "SurvivalRpg/Progression/Player/RpgPlayerProgressionComponent.h"
 #include "SurvivalRpg/SurvivalRpg.h"
 
@@ -23,6 +25,8 @@ ARpgPlayerController::ARpgPlayerController(const FObjectInitializer& ObjectIniti
 	: Super(ObjectInitializer)
 {
 	QuickBarComponent = CreateDefaultSubobject<URpgQuickBarComponent>(TEXT("QuickBarComponent"));
+	EquipmentLoadoutComponent = CreateDefaultSubobject<URpgEquipmentLoadoutComponent>(TEXT("EquipmentLoadoutComponent"));
+	InventoryUiActionComponent = CreateDefaultSubobject<URpgInventoryUiActionComponent>(TEXT("InventoryUiActionComponent"));
 }
 
 ARpgPlayerState* ARpgPlayerController::GetRpgPlayerState() const
@@ -47,6 +51,20 @@ void ARpgPlayerController::RequestRespawn()
 	if (ARpgGameModeBase* GameMode = GetWorld() ? GetWorld()->GetAuthGameMode<ARpgGameModeBase>() : nullptr)
 	{
 		GameMode->RequestPlayerRespawn(this);
+	}
+}
+
+void ARpgPlayerController::SetDeathDropMode(ERpgPlayerDeathDropMode NewDropMode)
+{
+	if (!HasAuthority())
+	{
+		ServerSetDeathDropMode(NewDropMode);
+		return;
+	}
+
+	if (ARpgPlayerState* RpgPlayerState = GetRpgPlayerState())
+	{
+		RpgPlayerState->SetDeathDropMode(NewDropMode);
 	}
 }
 
@@ -155,6 +173,11 @@ void ARpgPlayerController::OnUnPossess()
 		QuickBarComponent->UnequipActiveLoadoutFromCurrentPawn();
 	}
 
+	if (EquipmentLoadoutComponent)
+	{
+		EquipmentLoadoutComponent->UnequipLoadoutFromCurrentPawn();
+	}
+
 	UnbindFromPawnExtensionForLoadout();
 	Super::OnUnPossess();
 }
@@ -233,6 +256,11 @@ bool ARpgPlayerController::GetIsAutoRunning() const
 void ARpgPlayerController::ServerRequestRespawn_Implementation()
 {
 	RequestRespawn();
+}
+
+void ARpgPlayerController::ServerSetDeathDropMode_Implementation(ERpgPlayerDeathDropMode NewDropMode)
+{
+	SetDeathDropMode(NewDropMode);
 }
 
 void ARpgPlayerController::HandleRespawnStateChanged(bool bIsWaitingForRespawn, float RespawnAvailableServerTime)
@@ -377,6 +405,11 @@ void ARpgPlayerController::HandlePossessedPawnAbilitySystemInitialized()
 	{
 		QuickBarComponent->RefreshActiveLoadoutOnCurrentPawn();
 	}
+
+	if (HasAuthority() && EquipmentLoadoutComponent)
+	{
+		EquipmentLoadoutComponent->RefreshEquipmentLoadoutOnCurrentPawn();
+	}
 }
 
 void ARpgPlayerController::HandlePossessedPawnAbilitySystemUninitialized()
@@ -384,6 +417,11 @@ void ARpgPlayerController::HandlePossessedPawnAbilitySystemUninitialized()
 	if (QuickBarComponent)
 	{
 		QuickBarComponent->UnequipActiveLoadoutFromCurrentPawn();
+	}
+
+	if (EquipmentLoadoutComponent)
+	{
+		EquipmentLoadoutComponent->UnequipLoadoutFromCurrentPawn();
 	}
 }
 
@@ -430,6 +468,11 @@ void ARpgPlayerController::HandleGameModePlayerRespawned(APlayerController* Resp
 	if (QuickBarComponent)
 	{
 		QuickBarComponent->RefreshActiveLoadoutOnCurrentPawn();
+	}
+
+	if (EquipmentLoadoutComponent)
+	{
+		EquipmentLoadoutComponent->RefreshEquipmentLoadoutOnCurrentPawn();
 	}
 
 	ClientRestoreGameplayInputFocus();

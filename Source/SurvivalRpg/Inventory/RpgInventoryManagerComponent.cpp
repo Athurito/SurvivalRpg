@@ -3,6 +3,7 @@
 #include "Engine/ActorChannel.h"
 #include "Engine/World.h"
 #include "RpgInventoryItemDefinition.h"
+#include "RpgInventoryFragment_ItemTraits.h"
 #include "RpgInventoryItemInstance.h"
 #include "NativeGameplayTags.h"
 #include "GameFramework/GameplayMessageSubsystem.h"
@@ -14,6 +15,25 @@ class FLifetimeProperty;
 struct FReplicationFlags;
 
 UE_DEFINE_GAMEPLAY_TAG_STATIC(TAG_Rpg_Inventory_Message_StackChanged, "Rpg.Inventory.Message.StackChanged");
+
+namespace
+{
+	const URpgInventoryFragment_ItemTraits* GetItemTraits(TSubclassOf<URpgInventoryItemDefinition> ItemDef)
+	{
+		const URpgInventoryItemDefinition* ItemCDO = ItemDef ? GetDefault<URpgInventoryItemDefinition>(ItemDef) : nullptr;
+		return ItemCDO ? Cast<URpgInventoryFragment_ItemTraits>(ItemCDO->FindFragmentByClass(URpgInventoryFragment_ItemTraits::StaticClass())) : nullptr;
+	}
+
+	int32 GetMaxStackSizeForDefinition(TSubclassOf<URpgInventoryItemDefinition> ItemDef)
+	{
+		if (const URpgInventoryFragment_ItemTraits* Traits = GetItemTraits(ItemDef))
+		{
+			return Traits->GetMaxStackSize();
+		}
+
+		return 1;
+	}
+}
 
 //////////////////////////////////////////////////////////////////////
 // FRpgInventoryEntry
@@ -75,7 +95,7 @@ void FRpgInventoryList::BroadcastChangeMessage(FRpgInventoryEntry& Entry, int32 
 	MessageSystem.BroadcastMessage(TAG_Rpg_Inventory_Message_StackChanged, Message);
 }
 
-URpgInventoryItemInstance* FRpgInventoryList::AddEntry(TSubclassOf<URpgInventoryItemDefinition> ItemDef, int32 StackCount)
+URpgInventoryItemInstance* FRpgInventoryList::AddEntry(TSubclassOf<URpgInventoryItemDefinition> ItemDef, int32 StackCount, TArray<URpgInventoryItemInstance*>& OutNewInstances)
 {
 	URpgInventoryItemInstance* Result = nullptr;
 
@@ -85,30 +105,75 @@ URpgInventoryItemInstance* FRpgInventoryList::AddEntry(TSubclassOf<URpgInventory
 	AActor* OwningActor = OwnerComponent->GetOwner();
 	check(OwningActor->HasAuthority());
 
-
-	FRpgInventoryEntry& NewEntry = Entries.AddDefaulted_GetRef();
-	NewEntry.Instance = NewObject<URpgInventoryItemInstance>(OwnerComponent->GetOwner());  //@TODO: Using the actor instead of component as the outer due to UE-127172
-	NewEntry.Instance->SetItemDef(ItemDef);
-	for (URpgInventoryItemFragment* Fragment : GetDefault<URpgInventoryItemDefinition>(ItemDef)->Fragments)
+	int32 RemainingCount = StackCount;
+	if (RemainingCount <= 0)
 	{
-		if (Fragment != nullptr)
+		return nullptr;
+	}
+
+	const int32 MaxStackSize = GetMaxStackSizeForDefinition(ItemDef);
+	if (MaxStackSize > 1)
+	{
+		for (FRpgInventoryEntry& Entry : Entries)
 		{
-			Fragment->OnInstanceCreated(NewEntry.Instance);
+			if (RemainingCount <= 0)
+			{
+				break;
+			}
+
+			if (!Entry.Instance || Entry.Instance->GetItemDef() != ItemDef || Entry.StackCount >= MaxStackSize)
+			{
+				continue;
+			}
+
+			const int32 OldCount = Entry.StackCount;
+			const int32 CountToAdd = FMath::Min(MaxStackSize - Entry.StackCount, RemainingCount);
+			Entry.StackCount += CountToAdd;
+			RemainingCount -= CountToAdd;
+			if (!Result)
+			{
+				Result = Entry.Instance.Get();
+			}
+
+			MarkItemDirty(Entry);
+			BroadcastChangeMessage(Entry, OldCount, Entry.StackCount);
 		}
 	}
-	NewEntry.StackCount = StackCount;
-	Result = NewEntry.Instance;
 
-	//const URpgInventoryItemDefinition* ItemCDO = GetDefault<URpgInventoryItemDefinition>(ItemDef);
-	MarkItemDirty(NewEntry);
+	while (RemainingCount > 0)
+	{
+		const int32 NewEntryCount = FMath::Min(MaxStackSize, RemainingCount);
+		RemainingCount -= NewEntryCount;
+
+		FRpgInventoryEntry& NewEntry = Entries.AddDefaulted_GetRef();
+		NewEntry.Instance = NewObject<URpgInventoryItemInstance>(OwnerComponent->GetOwner());  //@TODO: Using the actor instead of component as the outer due to UE-127172
+		NewEntry.Instance->SetItemDef(ItemDef);
+		for (URpgInventoryItemFragment* Fragment : GetDefault<URpgInventoryItemDefinition>(ItemDef)->Fragments)
+		{
+			if (Fragment != nullptr)
+			{
+				Fragment->OnInstanceCreated(NewEntry.Instance);
+			}
+		}
+		NewEntry.StackCount = NewEntryCount;
+		if (!Result)
+		{
+			Result = NewEntry.Instance.Get();
+		}
+		OutNewInstances.Add(NewEntry.Instance);
+
+		MarkItemDirty(NewEntry);
+		BroadcastChangeMessage(NewEntry, 0, NewEntry.StackCount);
+	}
+
 
 	return Result;
 }
 
-void FRpgInventoryList::AddEntry(URpgInventoryItemInstance* Instance)
+void FRpgInventoryList::AddEntry(URpgInventoryItemInstance* Instance, int32 StackCount)
 {
 	//Noot implemented in lyra
-	if (Instance == nullptr)
+	if (Instance == nullptr || StackCount <= 0)
 	{
 		return;
 	}
@@ -119,8 +184,9 @@ void FRpgInventoryList::AddEntry(URpgInventoryItemInstance* Instance)
 
 	FRpgInventoryEntry& NewEntry = Entries.AddDefaulted_GetRef();
 	NewEntry.Instance = Instance;
-	NewEntry.StackCount = 1;
+	NewEntry.StackCount = StackCount;
 	MarkItemDirty(NewEntry);
+	BroadcastChangeMessage(NewEntry, 0, NewEntry.StackCount);
 }
 
 void FRpgInventoryList::RemoveEntry(URpgInventoryItemInstance* Instance)
@@ -130,10 +196,53 @@ void FRpgInventoryList::RemoveEntry(URpgInventoryItemInstance* Instance)
 		FRpgInventoryEntry& Entry = *EntryIt;
 		if (Entry.Instance == Instance)
 		{
+			BroadcastChangeMessage(Entry, Entry.StackCount, 0);
 			EntryIt.RemoveCurrent();
 			MarkArrayDirty();
+			return;
 		}
 	}
+}
+
+bool FRpgInventoryList::RemoveEntryStack(URpgInventoryItemInstance* Instance, int32 StackCount, bool& bOutRemovedEntry)
+{
+	bOutRemovedEntry = false;
+	if (Instance == nullptr || StackCount <= 0)
+	{
+		return false;
+	}
+
+	for (auto EntryIt = Entries.CreateIterator(); EntryIt; ++EntryIt)
+	{
+		FRpgInventoryEntry& Entry = *EntryIt;
+		if (Entry.Instance != Instance)
+		{
+			continue;
+		}
+
+		if (Entry.StackCount < StackCount)
+		{
+			return false;
+		}
+
+		const int32 OldCount = Entry.StackCount;
+		Entry.StackCount -= StackCount;
+
+		if (Entry.StackCount <= 0)
+		{
+			BroadcastChangeMessage(Entry, OldCount, 0);
+			EntryIt.RemoveCurrent();
+			MarkArrayDirty();
+			bOutRemovedEntry = true;
+			return true;
+		}
+
+		MarkItemDirty(Entry);
+		BroadcastChangeMessage(Entry, OldCount, Entry.StackCount);
+		return true;
+	}
+
+	return false;
 }
 
 TArray<URpgInventoryItemInstance*> FRpgInventoryList::GetAllItems() const
@@ -148,6 +257,43 @@ TArray<URpgInventoryItemInstance*> FRpgInventoryList::GetAllItems() const
 		}
 	}
 	return Results;
+}
+
+TArray<FRpgInventoryEntryView> FRpgInventoryList::GetAllEntries() const
+{
+	TArray<FRpgInventoryEntryView> Results;
+	Results.Reserve(Entries.Num());
+
+	for (const FRpgInventoryEntry& Entry : Entries)
+	{
+		if (Entry.Instance != nullptr)
+		{
+			FRpgInventoryEntryView& View = Results.AddDefaulted_GetRef();
+			View.InventoryOwner = OwnerComponent;
+			View.Instance = Entry.Instance;
+			View.StackCount = Entry.StackCount;
+		}
+	}
+
+	return Results;
+}
+
+int32 FRpgInventoryList::GetStackCount(URpgInventoryItemInstance* Instance) const
+{
+	for (const FRpgInventoryEntry& Entry : Entries)
+	{
+		if (Entry.Instance == Instance)
+		{
+			return Entry.StackCount;
+		}
+	}
+
+	return 0;
+}
+
+bool FRpgInventoryList::ContainsItemInstance(URpgInventoryItemInstance* Instance) const
+{
+	return GetStackCount(Instance) > 0;
 }
 
 //////////////////////////////////////////////////////////////////////
@@ -169,8 +315,7 @@ void URpgInventoryManagerComponent::GetLifetimeReplicatedProps(TArray< FLifetime
 
 bool URpgInventoryManagerComponent::CanAddItemDefinition(TSubclassOf<URpgInventoryItemDefinition> ItemDef, int32 StackCount)
 {
-	//@TODO: Add support for stack limit / uniqueness checks / etc...
-	return true;
+	return ItemDef != nullptr && StackCount > 0;
 }
 
 URpgInventoryItemInstance* URpgInventoryManagerComponent::AddItemDefinition(TSubclassOf<URpgInventoryItemDefinition> ItemDef, int32 StackCount)
@@ -178,11 +323,18 @@ URpgInventoryItemInstance* URpgInventoryManagerComponent::AddItemDefinition(TSub
 	URpgInventoryItemInstance* Result = nullptr;
 	if (ItemDef != nullptr)
 	{
-		Result = InventoryList.AddEntry(ItemDef, StackCount);
+		TArray<URpgInventoryItemInstance*> NewInstances;
+		Result = InventoryList.AddEntry(ItemDef, StackCount, NewInstances);
 		
-		if (IsUsingRegisteredSubObjectList() && IsReadyForReplication() && Result)
+		if (IsUsingRegisteredSubObjectList() && IsReadyForReplication())
 		{
-			AddReplicatedSubObject(Result);
+			for (URpgInventoryItemInstance* NewInstance : NewInstances)
+			{
+				if (NewInstance)
+				{
+					AddReplicatedSubObject(NewInstance);
+				}
+			}
 		}
 	}
 	return Result;
@@ -190,7 +342,12 @@ URpgInventoryItemInstance* URpgInventoryManagerComponent::AddItemDefinition(TSub
 
 void URpgInventoryManagerComponent::AddItemInstance(URpgInventoryItemInstance* ItemInstance)
 {
-	InventoryList.AddEntry(ItemInstance);
+	AddItemInstanceWithStack(ItemInstance, 1);
+}
+
+void URpgInventoryManagerComponent::AddItemInstanceWithStack(URpgInventoryItemInstance* ItemInstance, int32 StackCount)
+{
+	InventoryList.AddEntry(ItemInstance, StackCount);
 	if (IsUsingRegisteredSubObjectList() && IsReadyForReplication() && ItemInstance)
 	{
 		AddReplicatedSubObject(ItemInstance);
@@ -207,9 +364,37 @@ void URpgInventoryManagerComponent::RemoveItemInstance(URpgInventoryItemInstance
 	}
 }
 
+bool URpgInventoryManagerComponent::RemoveItemInstanceStack(URpgInventoryItemInstance* ItemInstance, int32 StackCount)
+{
+	bool bRemovedEntry = false;
+	const bool bRemovedStack = InventoryList.RemoveEntryStack(ItemInstance, StackCount, bRemovedEntry);
+
+	if (bRemovedStack && bRemovedEntry && ItemInstance && IsUsingRegisteredSubObjectList())
+	{
+		RemoveReplicatedSubObject(ItemInstance);
+	}
+
+	return bRemovedStack;
+}
+
 TArray<URpgInventoryItemInstance*> URpgInventoryManagerComponent::GetAllItems() const
 {
 	return InventoryList.GetAllItems();
+}
+
+TArray<FRpgInventoryEntryView> URpgInventoryManagerComponent::GetAllEntries() const
+{
+	return InventoryList.GetAllEntries();
+}
+
+bool URpgInventoryManagerComponent::ContainsItemInstance(URpgInventoryItemInstance* ItemInstance) const
+{
+	return InventoryList.ContainsItemInstance(ItemInstance);
+}
+
+int32 URpgInventoryManagerComponent::GetItemStackCount(URpgInventoryItemInstance* ItemInstance) const
+{
+	return InventoryList.GetStackCount(ItemInstance);
 }
 
 URpgInventoryItemInstance* URpgInventoryManagerComponent::FindFirstItemStackByDefinition(TSubclassOf<URpgInventoryItemDefinition> ItemDef) const
@@ -241,7 +426,7 @@ int32 URpgInventoryManagerComponent::GetTotalItemCountByDefinition(TSubclassOf<U
 		{
 			if (Instance->GetItemDef() == ItemDef)
 			{
-				++TotalCount;
+				TotalCount += Entry.StackCount;
 			}
 		}
 	}
@@ -257,22 +442,30 @@ bool URpgInventoryManagerComponent::ConsumeItemsByDefinition(TSubclassOf<URpgInv
 		return false;
 	}
 
-	//@TODO: N squared right now as there's no acceleration structure
-	int32 TotalConsumed = 0;
-	while (TotalConsumed < NumToConsume)
+	if (GetTotalItemCountByDefinition(ItemDef) < NumToConsume)
 	{
-		if (URpgInventoryItemInstance* Instance = URpgInventoryManagerComponent::FindFirstItemStackByDefinition(ItemDef))
-		{
-			InventoryList.RemoveEntry(Instance);
-			++TotalConsumed;
-		}
-		else
+		return false;
+	}
+
+	int32 RemainingToConsume = NumToConsume;
+	while (RemainingToConsume > 0)
+	{
+		URpgInventoryItemInstance* Instance = FindFirstItemStackByDefinition(ItemDef);
+		if (Instance == nullptr)
 		{
 			return false;
 		}
+
+		const int32 CountToConsume = FMath::Min(RemainingToConsume, GetItemStackCount(Instance));
+		if (!RemoveItemInstanceStack(Instance, CountToConsume))
+		{
+			return false;
+		}
+
+		RemainingToConsume -= CountToConsume;
 	}
 
-	return TotalConsumed == NumToConsume;
+	return true;
 }
 
 void URpgInventoryManagerComponent::ReadyForReplication()

@@ -8,6 +8,7 @@
 #include "RpgGameModeBase.generated.h"
 
 class AGameModeBase;
+class ARpgDroppedInventoryActor;
 class URpgPawnData;
 class URpgAbilitySystemComponent;
 class URpgExperienceDefinition;
@@ -114,6 +115,10 @@ public:
 	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Rpg|Respawn", meta = (ClampMin = "0.0"))
 	float RespawnDelay = 5.0f;
 
+	/** Pickup actor spawned when death-drop rules produce material or backpack loot. */
+	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Rpg|Inventory")
+	TSubclassOf<ARpgDroppedInventoryActor> DeathDropActorClass;
+
 public:
 	/** Fired on the server when a player respawns. */
 	UPROPERTY(BlueprintAssignable)
@@ -140,6 +145,7 @@ private:
 	void SyncPlayerRespawnStateToPlayerState(APlayerController* PC);
 	void ResetPlayerRespawnState(APlayerController* PC);
 	static void ClearRespawnGameplayState(URpgAbilitySystemComponent* ASC);
+	void DropInventoryForPlayerDeath(APlayerController* PC, const FTransform& DropTransform);
 
 	/** Host-authoritative persistent save data. Keyed by Steam NetId. */
 	UPROPERTY()

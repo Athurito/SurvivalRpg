@@ -18,7 +18,22 @@ enum class ERpgEquipmentSlot : uint8
 	MainHand,
 
 	// Off-hand slot. Secondary and block input can route here when occupied.
-	OffHand
+	OffHand,
+
+	// Head armor slot. Does not route weapon input.
+	Head,
+
+	// Chest armor slot. Does not route weapon input.
+	Chest,
+
+	// Hands armor slot. Does not route weapon input.
+	Hands,
+
+	// Legs armor slot. Does not route weapon input.
+	Legs,
+
+	// Feet armor slot. Does not route weapon input.
+	Feet
 };
 
 UENUM(BlueprintType)
