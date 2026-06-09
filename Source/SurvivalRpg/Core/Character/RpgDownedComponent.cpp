@@ -142,9 +142,13 @@ void URpgDownedComponent::ForceDeathFromDowned()
 	SetDownedState(ERpgDownedState::NotDowned);
 	bPendingDeath = true;
 
-	if (HealthComponent)
+	if (AbilitySystemComponent)
 	{
-		HealthComponent->DamageSelfDestruct();
+		FGameplayEventData Payload;
+		Payload.EventTag = RpgGameplayTags::GameplayEvent_Death;
+		Payload.Instigator = GetOwner();
+		Payload.Target = GetOwner();
+		AbilitySystemComponent->HandleGameplayEvent(Payload.EventTag, &Payload);
 	}
 
 	UE_LOG(LogRpg, Log, TEXT("RpgDownedComponent: [%s] transitioned from downed to final death."), *GetNameSafe(GetOwner()));

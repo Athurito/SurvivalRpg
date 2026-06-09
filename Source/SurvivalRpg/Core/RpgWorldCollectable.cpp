@@ -11,7 +11,7 @@ ARpgWorldCollectable::ARpgWorldCollectable()
 {
 	USceneComponent* SceneRoot = CreateDefaultSubobject<USceneComponent>(TEXT("Root"));
 	SetRootComponent(SceneRoot);
-
+	SetReplicates(true);
 	InteractionCollision = CreateDefaultSubobject<USphereComponent>(TEXT("InteractionCollision"));
 	InteractionCollision->SetupAttachment(SceneRoot);
 	InteractionCollision->InitSphereRadius(120.0f);
