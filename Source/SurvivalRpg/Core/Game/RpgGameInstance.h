@@ -17,4 +17,6 @@ class SURVIVALRPG_API URpgGameInstance : public UAdvancedFriendsGameInstance
 	
 public:
 	virtual void Init() override;
+	virtual int32 AddLocalPlayer(ULocalPlayer* NewPlayer, FPlatformUserId UserId) override;
+	virtual bool RemoveLocalPlayer(ULocalPlayer* ExistingPlayer) override;
 };

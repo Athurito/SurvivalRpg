@@ -116,5 +116,16 @@ namespace RpgGameplayTags
 
 	UE_DEFINE_GAMEPLAY_TAG_COMMENT(Status_Dead_WaitingForRespawn, "Status.Dead.WaitingForRespawn", "Target is dead and waiting for respawn.");
 
+	UE_DEFINE_GAMEPLAY_TAG_COMMENT(UI_Layer_Game, "UI.Layer.Game", "HUD and persistent in-game widgets.");
+	UE_DEFINE_GAMEPLAY_TAG_COMMENT(UI_Layer_GameMenu, "UI.Layer.GameMenu", "In-game menus such as inventory, storage, crafting, and character panels.");
+	UE_DEFINE_GAMEPLAY_TAG_COMMENT(UI_Layer_Menu, "UI.Layer.Menu", "Full-screen menu layer above in-game menus.");
+	UE_DEFINE_GAMEPLAY_TAG_COMMENT(UI_Layer_Modal, "UI.Layer.Modal", "Blocking modal dialogs above every other UI layer.");
+	UE_DEFINE_GAMEPLAY_TAG_COMMENT(UI_Screen_Inventory, "UI.Screen.Inventory", "Inventory screen opened through the project UI screen registry.");
+	UE_DEFINE_GAMEPLAY_TAG_COMMENT(UI_Screen_Storage, "UI.Screen.Storage", "Storage screen opened through the project UI screen registry.");
+	UE_DEFINE_GAMEPLAY_TAG_COMMENT(UI_Screen_Loot, "UI.Screen.Loot", "Loot screen opened through the project UI screen registry.");
+	UE_DEFINE_GAMEPLAY_TAG_COMMENT(UI_Screen_Crafting, "UI.Screen.Crafting", "Crafting screen opened through the project UI screen registry.");
+	UE_DEFINE_GAMEPLAY_TAG_COMMENT(UI_Screen_Pause, "UI.Screen.Pause", "Pause screen opened through the project UI screen registry.");
+	UE_DEFINE_GAMEPLAY_TAG_COMMENT(UI_Screen_Settings, "UI.Screen.Settings", "Settings screen opened through the project UI screen registry.");
+
 }
 

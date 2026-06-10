@@ -17,14 +17,14 @@
 
 namespace
 {
-	int32 GetMaxStackSizeForDefinition(TSubclassOf<URpgInventoryItemDefinition> ItemDef)
+	int32 GetCollectAbilityMaxStackSizeForDefinition(TSubclassOf<URpgInventoryItemDefinition> ItemDef)
 	{
 		const URpgInventoryItemDefinition* ItemCDO = ItemDef ? GetDefault<URpgInventoryItemDefinition>(ItemDef) : nullptr;
 		const URpgInventoryFragment_ItemTraits* Traits = ItemCDO ? Cast<URpgInventoryFragment_ItemTraits>(ItemCDO->FindFragmentByClass(URpgInventoryFragment_ItemTraits::StaticClass())) : nullptr;
 		return Traits ? Traits->GetMaxStackSize() : 1;
 	}
 
-	bool CanInventoryAcceptPickup(URpgInventoryManagerComponent* InventoryComponent, const FInventoryPickup& PickupInventory)
+	bool CanCollectAbilityInventoryAcceptPickup(URpgInventoryManagerComponent* InventoryComponent, const FInventoryPickup& PickupInventory)
 	{
 		if (!InventoryComponent || (PickupInventory.Templates.IsEmpty() && PickupInventory.Instances.IsEmpty()))
 		{
@@ -56,7 +56,7 @@ namespace
 		for (const FRpgInventoryEntryView& Entry : InventoryComponent->GetAllEntries())
 		{
 			const TSubclassOf<URpgInventoryItemDefinition> EntryDefinition = Entry.Instance ? Entry.Instance->GetItemDef() : nullptr;
-			const int32 MaxStackSize = GetMaxStackSizeForDefinition(EntryDefinition);
+			const int32 MaxStackSize = GetCollectAbilityMaxStackSizeForDefinition(EntryDefinition);
 			if (EntryDefinition && MaxStackSize > 1)
 			{
 				ExistingFreeStackSpaceByDefinition.FindOrAdd(EntryDefinition) += FMath::Max(0, MaxStackSize - Entry.StackCount);
@@ -78,7 +78,7 @@ namespace
 		for (const TPair<TSubclassOf<URpgInventoryItemDefinition>, int32>& RequestedTemplateCount : RequestedTemplateCounts)
 		{
 			const TSubclassOf<URpgInventoryItemDefinition> ItemDefinition = RequestedTemplateCount.Key;
-			const int32 MaxStackSize = GetMaxStackSizeForDefinition(ItemDefinition);
+			const int32 MaxStackSize = GetCollectAbilityMaxStackSizeForDefinition(ItemDefinition);
 			int32 RemainingCount = RequestedTemplateCount.Value;
 
 			if (MaxStackSize > 1)
@@ -243,7 +243,7 @@ ARpgPlayerController* URpgGameplayAbility_Collect::FindPlayerControllerForActor(
 
 bool URpgGameplayAbility_Collect::CanAddPickupToInventory(URpgInventoryManagerComponent* InventoryComponent, const FInventoryPickup& PickupInventory)
 {
-	return CanInventoryAcceptPickup(InventoryComponent, PickupInventory);
+	return CanCollectAbilityInventoryAcceptPickup(InventoryComponent, PickupInventory);
 }
 
 bool URpgGameplayAbility_Collect::AddPickupToInventory(URpgInventoryManagerComponent* InventoryComponent, const FInventoryPickup& PickupInventory, TArray<URpgInventoryItemInstance*>& OutAddedItems)

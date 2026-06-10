@@ -26,7 +26,7 @@ namespace
 		return ItemCDO ? Cast<URpgInventoryFragment_ItemTraits>(ItemCDO->FindFragmentByClass(URpgInventoryFragment_ItemTraits::StaticClass())) : nullptr;
 	}
 
-	int32 GetMaxStackSizeForDefinition(TSubclassOf<URpgInventoryItemDefinition> ItemDef)
+	int32 GetInventoryManagerMaxStackSizeForDefinition(TSubclassOf<URpgInventoryItemDefinition> ItemDef)
 	{
 		if (const URpgInventoryFragment_ItemTraits* Traits = GetItemTraits(ItemDef))
 		{
@@ -134,7 +134,7 @@ URpgInventoryItemInstance* FRpgInventoryList::AddEntry(TSubclassOf<URpgInventory
 		return nullptr;
 	}
 
-	const int32 MaxStackSize = GetMaxStackSizeForDefinition(ItemDef);
+	const int32 MaxStackSize = GetInventoryManagerMaxStackSizeForDefinition(ItemDef);
 	if (MaxStackSize > 1)
 	{
 		for (FRpgInventoryEntry& Entry : Entries)
@@ -308,7 +308,7 @@ int32 FRpgInventoryList::GetRequiredNewEntryCount(TSubclassOf<URpgInventoryItemD
 	}
 
 	int32 RemainingCount = StackCount;
-	const int32 MaxStackSize = GetMaxStackSizeForDefinition(ItemDef);
+	const int32 MaxStackSize = GetInventoryManagerMaxStackSizeForDefinition(ItemDef);
 	if (MaxStackSize > 1)
 	{
 		for (const FRpgInventoryEntry& Entry : Entries)

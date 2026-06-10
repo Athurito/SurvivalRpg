@@ -3,7 +3,9 @@
 
 #include "RpgGameInstance.h"
 
+#include "CommonLocalPlayer.h"
 #include "Components/GameFrameworkComponentManager.h"
+#include "GameUIManagerSubsystem.h"
 #include "SurvivalRpg/GameplayTags/RpgGameplayTags.h"
 
 void URpgGameInstance::Init()
@@ -19,4 +21,35 @@ void URpgGameInstance::Init()
 		ComponentManager->RegisterInitState(RpgGameplayTags::InitState_DataInitialized, false, RpgGameplayTags::InitState_DataAvailable);
 		ComponentManager->RegisterInitState(RpgGameplayTags::InitState_GameplayReady, false, RpgGameplayTags::InitState_DataInitialized);
 	}
+}
+
+int32 URpgGameInstance::AddLocalPlayer(ULocalPlayer* NewPlayer, FPlatformUserId UserId)
+{
+	const int32 ReturnValue = Super::AddLocalPlayer(NewPlayer, UserId);
+
+	if (ReturnValue != INDEX_NONE)
+	{
+		if (UCommonLocalPlayer* CommonLocalPlayer = Cast<UCommonLocalPlayer>(NewPlayer))
+		{
+			if (UGameUIManagerSubsystem* UIManager = GetSubsystem<UGameUIManagerSubsystem>())
+			{
+				UIManager->NotifyPlayerAdded(CommonLocalPlayer);
+			}
+		}
+	}
+
+	return ReturnValue;
+}
+
+bool URpgGameInstance::RemoveLocalPlayer(ULocalPlayer* ExistingPlayer)
+{
+	if (UCommonLocalPlayer* CommonLocalPlayer = Cast<UCommonLocalPlayer>(ExistingPlayer))
+	{
+		if (UGameUIManagerSubsystem* UIManager = GetSubsystem<UGameUIManagerSubsystem>())
+		{
+			UIManager->NotifyPlayerDestroyed(CommonLocalPlayer);
+		}
+	}
+
+	return Super::RemoveLocalPlayer(ExistingPlayer);
 }
