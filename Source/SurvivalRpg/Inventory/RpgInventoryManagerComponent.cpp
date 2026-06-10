@@ -1,5 +1,7 @@
 // Copyright Epic Games, Inc. All Rights Reserved.
 #include "RpgInventoryManagerComponent.h"
+#include "AbilitySystemComponent.h"
+#include "AbilitySystemInterface.h"
 #include "Engine/ActorChannel.h"
 #include "Engine/World.h"
 #include "RpgInventoryItemDefinition.h"
@@ -110,6 +112,7 @@ void FRpgInventoryList::BroadcastChangeMessage(FRpgInventoryEntry& Entry, int32 
 	Message.Delta = NewCount - OldCount;
 	Message.SortIndex = Entry.SortIndex;
 	Message.bOrderChanged = bOrderChanged;
+	Message.bCapacityChanged = false;
 
 	UGameplayMessageSubsystem& MessageSystem = UGameplayMessageSubsystem::Get(OwnerComponent->GetWorld());
 	MessageSystem.BroadcastMessage(TAG_Rpg_Inventory_Message_StackChanged, Message);
@@ -281,6 +284,50 @@ TArray<URpgInventoryItemInstance*> FRpgInventoryList::GetAllItems() const
 		}
 	}
 	return Results;
+}
+
+int32 FRpgInventoryList::GetUsedEntryCount() const
+{
+	int32 UsedCount = 0;
+	for (const FRpgInventoryEntry& Entry : Entries)
+	{
+		if (Entry.Instance != nullptr && Entry.StackCount > 0)
+		{
+			++UsedCount;
+		}
+	}
+
+	return UsedCount;
+}
+
+int32 FRpgInventoryList::GetRequiredNewEntryCount(TSubclassOf<URpgInventoryItemDefinition> ItemDef, int32 StackCount) const
+{
+	if (!ItemDef || StackCount <= 0)
+	{
+		return 0;
+	}
+
+	int32 RemainingCount = StackCount;
+	const int32 MaxStackSize = GetMaxStackSizeForDefinition(ItemDef);
+	if (MaxStackSize > 1)
+	{
+		for (const FRpgInventoryEntry& Entry : Entries)
+		{
+			if (RemainingCount <= 0)
+			{
+				break;
+			}
+
+			if (!Entry.Instance || Entry.Instance->GetItemDef() != ItemDef || Entry.StackCount >= MaxStackSize)
+			{
+				continue;
+			}
+
+			RemainingCount -= FMath::Min(MaxStackSize - Entry.StackCount, RemainingCount);
+		}
+	}
+
+	return RemainingCount > 0 ? FMath::DivideAndRoundUp(RemainingCount, MaxStackSize) : 0;
 }
 
 TArray<FRpgInventoryEntryView> FRpgInventoryList::GetAllEntries() const
@@ -621,15 +668,171 @@ void URpgInventoryManagerComponent::GetLifetimeReplicatedProps(TArray< FLifetime
 	DOREPLIFETIME(ThisClass, InventoryList);
 }
 
-bool URpgInventoryManagerComponent::CanAddItemDefinition(TSubclassOf<URpgInventoryItemDefinition> ItemDef, int32 StackCount)
+void URpgInventoryManagerComponent::BeginPlay()
 {
-	return ItemDef != nullptr && StackCount > 0;
+	Super::BeginPlay();
+
+	RefreshCapacityAttributeBinding();
+}
+
+void URpgInventoryManagerComponent::EndPlay(const EEndPlayReason::Type EndPlayReason)
+{
+	ClearCapacityAttributeBinding();
+
+	Super::EndPlay(EndPlayReason);
+}
+
+bool URpgInventoryManagerComponent::IsCapacityUnlimited() const
+{
+	return CapacityMode == ERpgInventoryCapacityMode::Unlimited;
+}
+
+int32 URpgInventoryManagerComponent::GetMaxEntries() const
+{
+	if (CapacityMode == ERpgInventoryCapacityMode::Unlimited)
+	{
+		return INDEX_NONE;
+	}
+
+	if (CapacityMode == ERpgInventoryCapacityMode::AbilitySystemAttribute && CapacityAttribute.IsValid())
+	{
+		if (const UAbilitySystemComponent* ASC = FindCapacityAbilitySystem())
+		{
+			return FMath::Max(0, FMath::RoundToInt(ASC->GetNumericAttribute(CapacityAttribute)));
+		}
+	}
+
+	return FMath::Max(0, FixedMaxEntries);
+}
+
+int32 URpgInventoryManagerComponent::GetUsedEntryCount() const
+{
+	return InventoryList.GetUsedEntryCount();
+}
+
+int32 URpgInventoryManagerComponent::GetFreeEntryCount() const
+{
+	if (IsCapacityUnlimited())
+	{
+		return INDEX_NONE;
+	}
+
+	return FMath::Max(0, GetMaxEntries() - GetUsedEntryCount());
+}
+
+int32 URpgInventoryManagerComponent::GetRequiredNewEntryCountForItemDefinition(TSubclassOf<URpgInventoryItemDefinition> ItemDef, int32 StackCount) const
+{
+	return InventoryList.GetRequiredNewEntryCount(ItemDef, StackCount);
+}
+
+int32 URpgInventoryManagerComponent::GetRequiredNewEntryCountForItemInstance(URpgInventoryItemInstance* ItemInstance, int32 StackCount) const
+{
+	return ItemInstance && StackCount > 0 ? 1 : 0;
+}
+
+void URpgInventoryManagerComponent::SetCapacityMode(ERpgInventoryCapacityMode NewCapacityMode)
+{
+	AActor* OwningActor = GetOwner();
+	UWorld* World = OwningActor ? OwningActor->GetWorld() : nullptr;
+	const bool bIsRuntimeGameWorld = World && World->IsGameWorld() && IsRegistered() && !HasAnyFlags(RF_ClassDefaultObject | RF_ArchetypeObject);
+	if (bIsRuntimeGameWorld && !OwningActor->HasAuthority())
+	{
+		return;
+	}
+
+	if (CapacityMode == NewCapacityMode)
+	{
+		return;
+	}
+
+	CapacityMode = NewCapacityMode;
+	if (bIsRuntimeGameWorld)
+	{
+		RefreshCapacityAttributeBinding();
+		BroadcastCapacityChanged();
+	}
+}
+
+void URpgInventoryManagerComponent::SetFixedMaxEntries(int32 NewFixedMaxEntries)
+{
+	AActor* OwningActor = GetOwner();
+	UWorld* World = OwningActor ? OwningActor->GetWorld() : nullptr;
+	const bool bIsRuntimeGameWorld = World && World->IsGameWorld() && IsRegistered() && !HasAnyFlags(RF_ClassDefaultObject | RF_ArchetypeObject);
+	if (bIsRuntimeGameWorld && !OwningActor->HasAuthority())
+	{
+		return;
+	}
+
+	const int32 ClampedValue = FMath::Max(0, NewFixedMaxEntries);
+	if (FixedMaxEntries == ClampedValue)
+	{
+		return;
+	}
+
+	FixedMaxEntries = ClampedValue;
+	if (bIsRuntimeGameWorld)
+	{
+		BroadcastCapacityChanged();
+	}
+}
+
+void URpgInventoryManagerComponent::SetCapacityAttribute(FGameplayAttribute NewCapacityAttribute)
+{
+	AActor* OwningActor = GetOwner();
+	UWorld* World = OwningActor ? OwningActor->GetWorld() : nullptr;
+	const bool bIsRuntimeGameWorld = World && World->IsGameWorld() && IsRegistered() && !HasAnyFlags(RF_ClassDefaultObject | RF_ArchetypeObject);
+	if (bIsRuntimeGameWorld && !OwningActor->HasAuthority())
+	{
+		return;
+	}
+
+	if (CapacityAttribute == NewCapacityAttribute)
+	{
+		return;
+	}
+
+	CapacityAttribute = NewCapacityAttribute;
+	if (bIsRuntimeGameWorld)
+	{
+		RefreshCapacityAttributeBinding();
+		BroadcastCapacityChanged();
+	}
+}
+
+bool URpgInventoryManagerComponent::CanAddItemDefinition(TSubclassOf<URpgInventoryItemDefinition> ItemDef, int32 StackCount) const
+{
+	if (ItemDef == nullptr || StackCount <= 0)
+	{
+		return false;
+	}
+
+	if (IsCapacityUnlimited())
+	{
+		return true;
+	}
+
+	return InventoryList.GetRequiredNewEntryCount(ItemDef, StackCount) <= GetFreeEntryCount();
+}
+
+bool URpgInventoryManagerComponent::CanAddItemInstance(URpgInventoryItemInstance* ItemInstance, int32 StackCount) const
+{
+	if (ItemInstance == nullptr || StackCount <= 0)
+	{
+		return false;
+	}
+
+	if (IsCapacityUnlimited())
+	{
+		return true;
+	}
+
+	return GetRequiredNewEntryCountForItemInstance(ItemInstance, StackCount) <= GetFreeEntryCount();
 }
 
 URpgInventoryItemInstance* URpgInventoryManagerComponent::AddItemDefinition(TSubclassOf<URpgInventoryItemDefinition> ItemDef, int32 StackCount)
 {
 	URpgInventoryItemInstance* Result = nullptr;
-	if (ItemDef != nullptr)
+	if (CanAddItemDefinition(ItemDef, StackCount))
 	{
 		TArray<URpgInventoryItemInstance*> NewInstances;
 		Result = InventoryList.AddEntry(ItemDef, StackCount, NewInstances);
@@ -655,6 +858,11 @@ void URpgInventoryManagerComponent::AddItemInstance(URpgInventoryItemInstance* I
 
 void URpgInventoryManagerComponent::AddItemInstanceWithStack(URpgInventoryItemInstance* ItemInstance, int32 StackCount)
 {
+	if (!CanAddItemInstance(ItemInstance, StackCount))
+	{
+		return;
+	}
+
 	InventoryList.AddEntry(ItemInstance, StackCount);
 	if (IsUsingRegisteredSubObjectList() && IsReadyForReplication() && ItemInstance)
 	{
@@ -875,6 +1083,75 @@ bool URpgInventoryManagerComponent::ReplicateSubobjects(UActorChannel* Channel, 
 	}
 
 	return WroteSomething;
+}
+
+UAbilitySystemComponent* URpgInventoryManagerComponent::FindCapacityAbilitySystem() const
+{
+	AActor* OwnerActor = GetOwner();
+	if (!OwnerActor)
+	{
+		return nullptr;
+	}
+
+	if (const IAbilitySystemInterface* AbilitySystemInterface = Cast<IAbilitySystemInterface>(OwnerActor))
+	{
+		return AbilitySystemInterface->GetAbilitySystemComponent();
+	}
+
+	return OwnerActor->FindComponentByClass<UAbilitySystemComponent>();
+}
+
+void URpgInventoryManagerComponent::RefreshCapacityAttributeBinding()
+{
+	ClearCapacityAttributeBinding();
+
+	if (CapacityMode != ERpgInventoryCapacityMode::AbilitySystemAttribute || !CapacityAttribute.IsValid())
+	{
+		return;
+	}
+
+	if (UAbilitySystemComponent* ASC = FindCapacityAbilitySystem())
+	{
+		BoundCapacityAbilitySystem = ASC;
+		CapacityAttributeChangedHandle = ASC->GetGameplayAttributeValueChangeDelegate(CapacityAttribute)
+			.AddUObject(this, &ThisClass::HandleCapacityAttributeChanged);
+	}
+}
+
+void URpgInventoryManagerComponent::ClearCapacityAttributeBinding()
+{
+	if (UAbilitySystemComponent* ASC = BoundCapacityAbilitySystem.Get())
+	{
+		if (CapacityAttributeChangedHandle.IsValid() && CapacityAttribute.IsValid())
+		{
+			ASC->GetGameplayAttributeValueChangeDelegate(CapacityAttribute).Remove(CapacityAttributeChangedHandle);
+		}
+	}
+
+	CapacityAttributeChangedHandle.Reset();
+	BoundCapacityAbilitySystem.Reset();
+}
+
+void URpgInventoryManagerComponent::HandleCapacityAttributeChanged(const FOnAttributeChangeData& Data)
+{
+	BroadcastCapacityChanged();
+}
+
+void URpgInventoryManagerComponent::BroadcastCapacityChanged() const
+{
+	UWorld* World = GetWorld();
+	if (!World || !World->IsGameWorld() || !IsRegistered() || HasAnyFlags(RF_ClassDefaultObject | RF_ArchetypeObject))
+	{
+		return;
+	}
+
+	FRpgInventoryChangeMessage Message;
+	Message.InventoryOwner = const_cast<URpgInventoryManagerComponent*>(this);
+	Message.bCapacityChanged = true;
+	Message.bOrderChanged = true;
+
+	UGameplayMessageSubsystem& MessageSystem = UGameplayMessageSubsystem::Get(World);
+	MessageSystem.BroadcastMessage(TAG_Rpg_Inventory_Message_StackChanged, Message);
 }
 
 //////////////////////////////////////////////////////////////////////

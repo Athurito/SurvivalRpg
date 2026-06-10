@@ -7,6 +7,8 @@
 #include "RpgInventoryUiActionComponent.generated.h"
 
 class URpgEquipmentLoadoutComponent;
+class URpgBaseStorageStationComponent;
+class URpgInventoryItemDefinition;
 class URpgInventoryItemInstance;
 class URpgInventoryManagerComponent;
 class URpgQuickBarComponent;
@@ -54,6 +56,26 @@ public:
 	UFUNCTION(Server, Reliable, BlueprintCallable, Category = "Inventory|UI Actions")
 	void RequestMoveInventoryEntry(URpgInventoryManagerComponent* Inventory, FGuid EntryId, int32 TargetIndex);
 
+	/** Deposits all material stacks from the player inventory into the linked base storage station. */
+	UFUNCTION(Server, Reliable, BlueprintCallable, Category = "Inventory|Base Storage")
+	void RequestDepositAllMaterialsToBase(URpgBaseStorageStationComponent* Station);
+
+	/** Deposits one material stack from the player inventory into the linked base storage station. */
+	UFUNCTION(Server, Reliable, BlueprintCallable, Category = "Inventory|Base Storage")
+	void RequestDepositMaterialStackToBase(URpgBaseStorageStationComponent* Station, URpgInventoryItemInstance* Item, int32 StackCount);
+
+	/** Withdraws resources from the linked base storage station into the player inventory. */
+	UFUNCTION(Server, Reliable, BlueprintCallable, Category = "Inventory|Base Storage")
+	void RequestWithdrawResourceFromBase(URpgBaseStorageStationComponent* Station, TSubclassOf<URpgInventoryItemDefinition> ItemDefinition, int32 StackCount);
+
+	/** Stores an instance-based player item in the linked base armory inventory. */
+	UFUNCTION(Server, Reliable, BlueprintCallable, Category = "Inventory|Base Storage")
+	void RequestStoreItemInstanceInBase(URpgBaseStorageStationComponent* Station, URpgInventoryItemInstance* Item, int32 StackCount);
+
+	/** Takes an instance-based item from the linked base armory inventory into the player inventory. */
+	UFUNCTION(Server, Reliable, BlueprintCallable, Category = "Inventory|Base Storage")
+	void RequestTakeItemInstanceFromBase(URpgBaseStorageStationComponent* Station, URpgInventoryItemInstance* Item, int32 StackCount);
+
 	UFUNCTION(BlueprintCallable, BlueprintPure = false, Category = "Inventory|UI Actions")
 	bool CanAccessInventory(URpgInventoryManagerComponent* Inventory) const;
 
@@ -62,5 +84,6 @@ private:
 	URpgQuickBarComponent* FindQuickBar() const;
 	URpgEquipmentLoadoutComponent* FindEquipmentLoadout() const;
 	bool CanTransferItemStack(URpgInventoryManagerComponent* SourceInventory, URpgInventoryManagerComponent* TargetInventory, URpgInventoryItemInstance* Item, int32 StackCount) const;
+	bool CanAccessBaseStorageStation(const URpgBaseStorageStationComponent* Station) const;
 	void ClearPlayerAssignmentsForItem(URpgInventoryItemInstance* Item) const;
 };

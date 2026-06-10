@@ -2,6 +2,7 @@
 
 #pragma once
 
+#include "AttributeSet.h"
 #include "Components/ActorComponent.h"
 #include "Misc/Guid.h"
 #include "Net/Serialization/FastArraySerializer.h"
@@ -11,11 +12,27 @@
 class URpgInventoryItemDefinition;
 class URpgInventoryItemInstance;
 class URpgInventoryManagerComponent;
+class UAbilitySystemComponent;
 class UObject;
+struct FOnAttributeChangeData;
 struct FFrame;
 struct FRpgInventoryList;
 struct FNetDeltaSerializeInfo;
 struct FReplicationFlags;
+
+/** Capacity source used by an inventory manager when accepting new entries. */
+UENUM(BlueprintType)
+enum class ERpgInventoryCapacityMode : uint8
+{
+	/** No entry limit. Useful for loot proxies, debug containers, or temporary piles. */
+	Unlimited,
+
+	/** Use FixedMaxEntries as the authoritative entry limit. */
+	FixedEntries,
+
+	/** Read the entry limit from a GAS attribute on the owning actor's ASC, falling back to FixedMaxEntries. */
+	AbilitySystemAttribute
+};
 
 /** Server-authoritative sort modes that can rewrite shared inventory order. */
 UENUM(BlueprintType)
@@ -129,6 +146,10 @@ struct FRpgInventoryChangeMessage
 
 	UPROPERTY(BlueprintReadOnly, Category = Inventory)
 	bool bOrderChanged = false;
+
+	/** True when the inventory refreshed because capacity changed rather than an item stack changing. */
+	UPROPERTY(BlueprintReadOnly, Category = Inventory)
+	bool bCapacityChanged = false;
 };
 
 /** A single entry in an inventory */
@@ -181,6 +202,8 @@ struct FRpgInventoryList : public FFastArraySerializer
 	TArray<URpgInventoryItemInstance*> GetAllItems() const;
 	TArray<FRpgInventoryEntryView> GetAllEntries() const;
 	int32 GetStackCount(URpgInventoryItemInstance* Instance) const;
+	int32 GetUsedEntryCount() const;
+	int32 GetRequiredNewEntryCount(TSubclassOf<URpgInventoryItemDefinition> ItemDef, int32 StackCount) const;
 	bool ContainsItemInstance(URpgInventoryItemInstance* Instance) const;
 	bool ContainsEntry(FGuid EntryId) const;
 
@@ -251,8 +274,47 @@ class URpgInventoryManagerComponent : public UActorComponent
 public:
 	URpgInventoryManagerComponent(const FObjectInitializer& ObjectInitializer = FObjectInitializer::Get());
 
+	/** Returns true when this inventory is not limited by entry count. */
+	UFUNCTION(BlueprintCallable, Category = "Inventory|Capacity", BlueprintPure)
+	bool IsCapacityUnlimited() const;
+
+	/** Returns the max entry count, or INDEX_NONE when capacity is unlimited. */
+	UFUNCTION(BlueprintCallable, Category = "Inventory|Capacity", BlueprintPure)
+	int32 GetMaxEntries() const;
+
+	/** Returns the number of currently occupied inventory entries. */
+	UFUNCTION(BlueprintCallable, Category = "Inventory|Capacity", BlueprintPure)
+	int32 GetUsedEntryCount() const;
+
+	/** Returns free entries, or INDEX_NONE when capacity is unlimited. */
+	UFUNCTION(BlueprintCallable, Category = "Inventory|Capacity", BlueprintPure)
+	int32 GetFreeEntryCount() const;
+
+	/** Returns how many new entries this item definition would need after filling compatible existing stacks. */
+	UFUNCTION(BlueprintCallable, Category = "Inventory|Capacity", BlueprintPure)
+	int32 GetRequiredNewEntryCountForItemDefinition(TSubclassOf<URpgInventoryItemDefinition> ItemDef, int32 StackCount = 1) const;
+
+	/** Returns how many new entries this concrete item instance would need. Instance moves do not merge. */
+	UFUNCTION(BlueprintCallable, Category = "Inventory|Capacity", BlueprintPure)
+	int32 GetRequiredNewEntryCountForItemInstance(URpgInventoryItemInstance* ItemInstance, int32 StackCount = 1) const;
+
+	/** Sets the capacity mode. Server-authoritative for runtime changes; normally configured on archetypes. */
+	UFUNCTION(BlueprintCallable, BlueprintAuthorityOnly, Category = "Inventory|Capacity")
+	void SetCapacityMode(ERpgInventoryCapacityMode NewCapacityMode);
+
+	/** Sets the fixed fallback/max entry count. Zero means no entries when FixedEntries is active. */
+	UFUNCTION(BlueprintCallable, BlueprintAuthorityOnly, Category = "Inventory|Capacity")
+	void SetFixedMaxEntries(int32 NewFixedMaxEntries);
+
+	/** Sets the GAS attribute used when CapacityMode is AbilitySystemAttribute. */
+	UFUNCTION(BlueprintCallable, BlueprintAuthorityOnly, Category = "Inventory|Capacity")
+	void SetCapacityAttribute(FGameplayAttribute NewCapacityAttribute);
+
 	UFUNCTION(BlueprintCallable, BlueprintAuthorityOnly, Category=Inventory)
-	bool CanAddItemDefinition(TSubclassOf<URpgInventoryItemDefinition> ItemDef, int32 StackCount = 1);
+	bool CanAddItemDefinition(TSubclassOf<URpgInventoryItemDefinition> ItemDef, int32 StackCount = 1) const;
+
+	UFUNCTION(BlueprintCallable, BlueprintAuthorityOnly, Category=Inventory)
+	bool CanAddItemInstance(URpgInventoryItemInstance* ItemInstance, int32 StackCount = 1) const;
 
 	UFUNCTION(BlueprintCallable, BlueprintAuthorityOnly, Category=Inventory)
 	URpgInventoryItemInstance* AddItemDefinition(TSubclassOf<URpgInventoryItemDefinition> ItemDef, int32 StackCount = 1);
@@ -310,11 +372,35 @@ public:
 	void ImportInventorySnapshot(const FRpgInventorySnapshot& Snapshot);
 
 	//~UObject interface
+	virtual void BeginPlay() override;
+	virtual void EndPlay(const EEndPlayReason::Type EndPlayReason) override;
 	virtual bool ReplicateSubobjects(class UActorChannel* Channel, class FOutBunch* Bunch, FReplicationFlags* RepFlags) override;
 	virtual void ReadyForReplication() override;
 	//~End of UObject interface
 
 private:
+	UAbilitySystemComponent* FindCapacityAbilitySystem() const;
+	void RefreshCapacityAttributeBinding();
+	void ClearCapacityAttributeBinding();
+	void HandleCapacityAttributeChanged(const FOnAttributeChangeData& Data);
+	void BroadcastCapacityChanged() const;
+
+private:
+	/** Source used to determine how many entries this inventory may hold. */
+	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Inventory|Capacity", meta = (AllowPrivateAccess = "true"))
+	ERpgInventoryCapacityMode CapacityMode = ERpgInventoryCapacityMode::Unlimited;
+
+	/** Fixed entry limit and fallback when the configured GAS attribute is unavailable. */
+	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Inventory|Capacity", meta = (AllowPrivateAccess = "true", ClampMin = "0", UIMin = "0"))
+	int32 FixedMaxEntries = 0;
+
+	/** GAS attribute used as entry capacity when CapacityMode is AbilitySystemAttribute. */
+	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Inventory|Capacity", meta = (AllowPrivateAccess = "true"))
+	FGameplayAttribute CapacityAttribute;
+
 	UPROPERTY(Replicated)
 	FRpgInventoryList InventoryList;
+
+	TWeakObjectPtr<UAbilitySystemComponent> BoundCapacityAbilitySystem;
+	FDelegateHandle CapacityAttributeChangedHandle;
 };

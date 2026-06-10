@@ -8,10 +8,96 @@
 #include "SurvivalRpg/Equipment/RpgQuickBarComponent.h"
 #include "SurvivalRpg/Inventory/IPickupable.h"
 #include "SurvivalRpg/Inventory/RpgInventoryFragment_EquippableItem.h"
+#include "SurvivalRpg/Inventory/RpgInventoryFragment_ItemTraits.h"
+#include "SurvivalRpg/Inventory/RpgInventoryItemDefinition.h"
 #include "SurvivalRpg/Inventory/RpgInventoryItemInstance.h"
 #include "SurvivalRpg/Inventory/RpgInventoryManagerComponent.h"
 
 #include UE_INLINE_GENERATED_CPP_BY_NAME(RpgGameplayAbility_Collect)
+
+namespace
+{
+	int32 GetMaxStackSizeForDefinition(TSubclassOf<URpgInventoryItemDefinition> ItemDef)
+	{
+		const URpgInventoryItemDefinition* ItemCDO = ItemDef ? GetDefault<URpgInventoryItemDefinition>(ItemDef) : nullptr;
+		const URpgInventoryFragment_ItemTraits* Traits = ItemCDO ? Cast<URpgInventoryFragment_ItemTraits>(ItemCDO->FindFragmentByClass(URpgInventoryFragment_ItemTraits::StaticClass())) : nullptr;
+		return Traits ? Traits->GetMaxStackSize() : 1;
+	}
+
+	bool CanInventoryAcceptPickup(URpgInventoryManagerComponent* InventoryComponent, const FInventoryPickup& PickupInventory)
+	{
+		if (!InventoryComponent || (PickupInventory.Templates.IsEmpty() && PickupInventory.Instances.IsEmpty()))
+		{
+			return false;
+		}
+
+		for (const FPickupTemplate& Template : PickupInventory.Templates)
+		{
+			if (!Template.ItemDef || Template.StackCount <= 0)
+			{
+				return false;
+			}
+		}
+
+		for (const FPickupInstance& Instance : PickupInventory.Instances)
+		{
+			if (!Instance.Item)
+			{
+				return false;
+			}
+		}
+
+		if (InventoryComponent->IsCapacityUnlimited())
+		{
+			return true;
+		}
+
+		TMap<TSubclassOf<URpgInventoryItemDefinition>, int32> ExistingFreeStackSpaceByDefinition;
+		for (const FRpgInventoryEntryView& Entry : InventoryComponent->GetAllEntries())
+		{
+			const TSubclassOf<URpgInventoryItemDefinition> EntryDefinition = Entry.Instance ? Entry.Instance->GetItemDef() : nullptr;
+			const int32 MaxStackSize = GetMaxStackSizeForDefinition(EntryDefinition);
+			if (EntryDefinition && MaxStackSize > 1)
+			{
+				ExistingFreeStackSpaceByDefinition.FindOrAdd(EntryDefinition) += FMath::Max(0, MaxStackSize - Entry.StackCount);
+			}
+		}
+
+		TMap<TSubclassOf<URpgInventoryItemDefinition>, int32> RequestedTemplateCounts;
+		for (const FPickupTemplate& Template : PickupInventory.Templates)
+		{
+			RequestedTemplateCounts.FindOrAdd(Template.ItemDef) += Template.StackCount;
+		}
+
+		int32 RequiredNewEntries = 0;
+		for (const FPickupInstance& Instance : PickupInventory.Instances)
+		{
+			RequiredNewEntries += InventoryComponent->GetRequiredNewEntryCountForItemInstance(Instance.Item, 1);
+		}
+
+		for (const TPair<TSubclassOf<URpgInventoryItemDefinition>, int32>& RequestedTemplateCount : RequestedTemplateCounts)
+		{
+			const TSubclassOf<URpgInventoryItemDefinition> ItemDefinition = RequestedTemplateCount.Key;
+			const int32 MaxStackSize = GetMaxStackSizeForDefinition(ItemDefinition);
+			int32 RemainingCount = RequestedTemplateCount.Value;
+
+			if (MaxStackSize > 1)
+			{
+				int32& ExistingFreeStackSpace = ExistingFreeStackSpaceByDefinition.FindOrAdd(ItemDefinition);
+				const int32 FilledExistingStackCount = FMath::Min(ExistingFreeStackSpace, RemainingCount);
+				ExistingFreeStackSpace -= FilledExistingStackCount;
+				RemainingCount -= FilledExistingStackCount;
+			}
+
+			if (RemainingCount > 0)
+			{
+				RequiredNewEntries += FMath::DivideAndRoundUp(RemainingCount, MaxStackSize);
+			}
+		}
+
+		return RequiredNewEntries <= InventoryComponent->GetFreeEntryCount();
+	}
+}
 
 URpgGameplayAbility_Collect::URpgGameplayAbility_Collect(const FObjectInitializer& ObjectInitializer)
 	: Super(ObjectInitializer)
@@ -29,12 +115,6 @@ void URpgGameplayAbility_Collect::ActivateAbility(
 	Super::ActivateAbility(Handle, ActorInfo, ActivationInfo, TriggerEventData);
 
 	if (ActorInfo == nullptr || !ActorInfo->IsNetAuthority())
-	{
-		EndAbility(Handle, ActorInfo, ActivationInfo, true, true);
-		return;
-	}
-
-	if (!CommitAbility(Handle, ActorInfo, ActivationInfo))
 	{
 		EndAbility(Handle, ActorInfo, ActivationInfo, true, true);
 		return;
@@ -61,8 +141,25 @@ void URpgGameplayAbility_Collect::ActivateAbility(
 		return;
 	}
 
+	const FInventoryPickup PickupInventory = Pickup->GetPickupInventory();
+	if (!CanAddPickupToInventory(InventoryComponent, PickupInventory))
+	{
+		EndAbility(Handle, ActorInfo, ActivationInfo, true, true);
+		return;
+	}
+
+	if (!CommitAbility(Handle, ActorInfo, ActivationInfo))
+	{
+		EndAbility(Handle, ActorInfo, ActivationInfo, true, true);
+		return;
+	}
+
 	TArray<URpgInventoryItemInstance*> AddedItems;
-	AddPickupToInventory(InventoryComponent, Pickup->GetPickupInventory(), AddedItems);
+	if (!AddPickupToInventory(InventoryComponent, PickupInventory, AddedItems))
+	{
+		EndAbility(Handle, ActorInfo, ActivationInfo, true, true);
+		return;
+	}
 
 	if (bAddCollectedEquippableItemsToQuickBar)
 	{
@@ -144,11 +241,16 @@ ARpgPlayerController* URpgGameplayAbility_Collect::FindPlayerControllerForActor(
 	return nullptr;
 }
 
-void URpgGameplayAbility_Collect::AddPickupToInventory(URpgInventoryManagerComponent* InventoryComponent, const FInventoryPickup& PickupInventory, TArray<URpgInventoryItemInstance*>& OutAddedItems)
+bool URpgGameplayAbility_Collect::CanAddPickupToInventory(URpgInventoryManagerComponent* InventoryComponent, const FInventoryPickup& PickupInventory)
 {
-	if (InventoryComponent == nullptr)
+	return CanInventoryAcceptPickup(InventoryComponent, PickupInventory);
+}
+
+bool URpgGameplayAbility_Collect::AddPickupToInventory(URpgInventoryManagerComponent* InventoryComponent, const FInventoryPickup& PickupInventory, TArray<URpgInventoryItemInstance*>& OutAddedItems)
+{
+	if (!CanAddPickupToInventory(InventoryComponent, PickupInventory))
 	{
-		return;
+		return false;
 	}
 
 	for (const FPickupTemplate& Template : PickupInventory.Templates)
@@ -170,6 +272,8 @@ void URpgGameplayAbility_Collect::AddPickupToInventory(URpgInventoryManagerCompo
 			OutAddedItems.Add(Instance.Item);
 		}
 	}
+
+	return true;
 }
 
 void URpgGameplayAbility_Collect::AddEquippableItemsToQuickBar(URpgQuickBarComponent* QuickBarComponent, const TArray<URpgInventoryItemInstance*>& AddedItems, bool bActivateFirstSlot)

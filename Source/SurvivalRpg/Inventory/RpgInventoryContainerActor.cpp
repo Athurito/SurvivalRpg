@@ -16,5 +16,7 @@ ARpgInventoryContainerActor::ARpgInventoryContainerActor(const FObjectInitialize
 	SetRootComponent(SceneRoot);
 
 	InventoryManagerComponent = CreateDefaultSubobject<URpgInventoryManagerComponent>(TEXT("InventoryManagerComponent"));
+	InventoryManagerComponent->SetCapacityMode(ERpgInventoryCapacityMode::FixedEntries);
+	InventoryManagerComponent->SetFixedMaxEntries(16);
 	ContainerComponent = CreateDefaultSubobject<URpgInventoryContainerComponent>(TEXT("ContainerComponent"));
 }

@@ -4,6 +4,8 @@
 #include "GameFramework/Controller.h"
 #include "GameFramework/Pawn.h"
 #include "GameFramework/PlayerState.h"
+#include "SurvivalRpg/Base/RpgBaseCampActor.h"
+#include "SurvivalRpg/Base/RpgBaseStorageComponent.h"
 #include "SurvivalRpg/Inventory/RpgInventoryContainerComponent.h"
 #include "SurvivalRpg/Inventory/RpgInventoryItemDefinition.h"
 #include "SurvivalRpg/Inventory/RpgInventoryManagerComponent.h"
@@ -104,6 +106,11 @@ int32 URpgCraftingStationComponent::GetAvailableResourceCount(AActor* Requesting
 		}
 	}
 
+	if (const URpgBaseStorageComponent* BaseStorage = GetLinkedBaseStorage())
+	{
+		TotalCount += BaseStorage->GetResourceCount(ItemDefinition);
+	}
+
 	return TotalCount;
 }
 
@@ -149,9 +156,27 @@ bool URpgCraftingStationComponent::ConsumeResources(AActor* RequestingActor, con
 
 		if (RemainingCount > 0)
 		{
+			if (URpgBaseStorageComponent* BaseStorage = GetLinkedBaseStorage())
+			{
+				const int32 AvailableInBaseStorage = BaseStorage->GetResourceCount(RequiredItem.ItemDefinition);
+				const int32 CountToConsume = FMath::Min(AvailableInBaseStorage, RemainingCount);
+				if (CountToConsume > 0 && BaseStorage->WithdrawResource(RequiredItem.ItemDefinition, CountToConsume))
+				{
+					RemainingCount -= CountToConsume;
+				}
+			}
+		}
+
+		if (RemainingCount > 0)
+		{
 			return false;
 		}
 	}
 
 	return true;
+}
+
+URpgBaseStorageComponent* URpgCraftingStationComponent::GetLinkedBaseStorage() const
+{
+	return bUseLinkedBaseStorage && LinkedBaseCamp ? LinkedBaseCamp->GetBaseStorageComponent() : nullptr;
 }

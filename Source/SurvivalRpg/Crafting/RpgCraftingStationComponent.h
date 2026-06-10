@@ -6,6 +6,8 @@
 
 class URpgInventoryItemDefinition;
 class URpgInventoryManagerComponent;
+class ARpgBaseCampActor;
+class URpgBaseStorageComponent;
 
 /** One resource requirement consumed by a crafting station. */
 USTRUCT(BlueprintType)
@@ -53,4 +55,15 @@ protected:
 	/** Radius in centimeters for including nearby shared containers as crafting resource sources. */
 	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Crafting", meta = (ClampMin = "0", UIMin = "0", Units = "cm"))
 	float StorageSearchRadius = 1200.0f;
+
+	/** Optional base camp resource pool this station may pull material counts from. */
+	UPROPERTY(EditInstanceOnly, BlueprintReadOnly, Category = "Crafting|Base Storage")
+	TObjectPtr<ARpgBaseCampActor> LinkedBaseCamp;
+
+	/** Whether recipe checks and consumption include the linked base camp's material-count pool. */
+	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Crafting|Base Storage")
+	bool bUseLinkedBaseStorage = true;
+
+private:
+	URpgBaseStorageComponent* GetLinkedBaseStorage() const;
 };

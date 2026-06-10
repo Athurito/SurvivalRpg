@@ -64,6 +64,7 @@ void URpgInventoryEntryViewModel::InitializeFromEntry(
 	EntryId = Entry.EntryId;
 	StackCount = Entry.StackCount;
 	SortIndex = Entry.SortIndex;
+	SlotIndex = Entry.SortIndex;
 	DisplayName = FText::GetEmpty();
 	ShortDisplayName = FText::GetEmpty();
 	Description = FText::GetEmpty();
@@ -72,6 +73,7 @@ void URpgInventoryEntryViewModel::InitializeFromEntry(
 	ItemTags.Reset();
 	PresentationTags.Reset();
 	bCanDrag = ItemInstance != nullptr && StackCount > 0;
+	bIsEmptySlot = ItemInstance == nullptr;
 	bCanAssignToQuickBar = false;
 	FragmentViewModels.Reset();
 
@@ -120,10 +122,10 @@ void URpgInventoryEntryViewModel::InitializeFromEntry(
 		}
 	};
 
-	AddFragmentViewModel(URpgInventoryStackFragmentViewModel::StaticClass());
-
 	if (ItemInstance)
 	{
+		AddFragmentViewModel(URpgInventoryStackFragmentViewModel::StaticClass());
+
 		for (const TPair<TSubclassOf<URpgInventoryItemFragment>, TSubclassOf<URpgInventoryFragmentViewModel>>& Mapping : FragmentViewModelClasses)
 		{
 			if (Mapping.Key && Mapping.Value && ItemInstance->FindFragmentByClass(Mapping.Key) != nullptr)
@@ -138,6 +140,7 @@ void URpgInventoryEntryViewModel::InitializeFromEntry(
 	UE_MVVM_BROADCAST_FIELD_VALUE_CHANGED(EntryId);
 	UE_MVVM_BROADCAST_FIELD_VALUE_CHANGED(StackCount);
 	UE_MVVM_BROADCAST_FIELD_VALUE_CHANGED(SortIndex);
+	UE_MVVM_BROADCAST_FIELD_VALUE_CHANGED(SlotIndex);
 	UE_MVVM_BROADCAST_FIELD_VALUE_CHANGED(DisplayName);
 	UE_MVVM_BROADCAST_FIELD_VALUE_CHANGED(ShortDisplayName);
 	UE_MVVM_BROADCAST_FIELD_VALUE_CHANGED(Description);
@@ -146,8 +149,27 @@ void URpgInventoryEntryViewModel::InitializeFromEntry(
 	UE_MVVM_BROADCAST_FIELD_VALUE_CHANGED(ItemTags);
 	UE_MVVM_BROADCAST_FIELD_VALUE_CHANGED(PresentationTags);
 	UE_MVVM_BROADCAST_FIELD_VALUE_CHANGED(bCanDrag);
+	UE_MVVM_BROADCAST_FIELD_VALUE_CHANGED(bIsEmptySlot);
 	UE_MVVM_BROADCAST_FIELD_VALUE_CHANGED(bCanAssignToQuickBar);
 	UE_MVVM_BROADCAST_FIELD_VALUE_CHANGED(FragmentViewModels);
+}
+
+void URpgInventoryEntryViewModel::InitializeEmptySlot(UActorComponent* InInventoryOwner, int32 InSlotIndex)
+{
+	FRpgInventoryEntryView EmptyEntry;
+	EmptyEntry.InventoryOwner = InInventoryOwner;
+	EmptyEntry.StackCount = 0;
+	EmptyEntry.SortIndex = InSlotIndex;
+
+	const TMap<TSubclassOf<URpgInventoryItemFragment>, TSubclassOf<URpgInventoryFragmentViewModel>> EmptyFragmentViewModelClasses;
+	InitializeFromEntry(EmptyEntry, EmptyFragmentViewModelClasses);
+	SlotIndex = InSlotIndex;
+	SortIndex = InSlotIndex;
+	bIsEmptySlot = true;
+
+	UE_MVVM_BROADCAST_FIELD_VALUE_CHANGED(SlotIndex);
+	UE_MVVM_BROADCAST_FIELD_VALUE_CHANGED(SortIndex);
+	UE_MVVM_BROADCAST_FIELD_VALUE_CHANGED(bIsEmptySlot);
 }
 
 URpgInventoryPanelViewModel::URpgInventoryPanelViewModel()
@@ -175,6 +197,7 @@ void URpgInventoryPanelViewModel::UnbindInventory()
 	UnregisterInventoryMessageListener();
 	ObservedInventory.Reset();
 	Entries.Reset();
+	RefreshCapacityFields(nullptr);
 	UE_MVVM_BROADCAST_FIELD_VALUE_CHANGED(Entries);
 }
 
@@ -183,6 +206,7 @@ void URpgInventoryPanelViewModel::RefreshEntries()
 	Entries.Reset();
 
 	URpgInventoryManagerComponent* Inventory = ObservedInventory.Get();
+	RefreshCapacityFields(Inventory);
 	if (!Inventory)
 	{
 		UE_MVVM_BROADCAST_FIELD_VALUE_CHANGED(Entries);
@@ -195,7 +219,9 @@ void URpgInventoryPanelViewModel::RefreshEntries()
 		return A.SortIndex < B.SortIndex;
 	});
 
-	Entries.Reserve(EntryViews.Num());
+	const bool bShouldRenderEmptySlots = !Inventory->IsCapacityUnlimited() && MaxEntries > 0;
+	const int32 DisplaySlotCount = bShouldRenderEmptySlots ? FMath::Max(MaxEntries, EntryViews.Num()) : EntryViews.Num();
+	Entries.Reserve(DisplaySlotCount);
 	for (const FRpgInventoryEntryView& EntryView : EntryViews)
 	{
 		URpgInventoryEntryViewModel* EntryViewModel = NewObject<URpgInventoryEntryViewModel>(this);
@@ -206,7 +232,48 @@ void URpgInventoryPanelViewModel::RefreshEntries()
 		}
 	}
 
+	if (bShouldRenderEmptySlots)
+	{
+		for (int32 SlotIndex = Entries.Num(); SlotIndex < DisplaySlotCount; ++SlotIndex)
+		{
+			URpgInventoryEntryViewModel* EmptySlotViewModel = NewObject<URpgInventoryEntryViewModel>(this);
+			if (EmptySlotViewModel)
+			{
+				EmptySlotViewModel->InitializeEmptySlot(Inventory, SlotIndex);
+				Entries.Add(EmptySlotViewModel);
+			}
+		}
+	}
+
 	UE_MVVM_BROADCAST_FIELD_VALUE_CHANGED(Entries);
+}
+
+void URpgInventoryPanelViewModel::RefreshCapacityFields(URpgInventoryManagerComponent* Inventory)
+{
+	if (!Inventory)
+	{
+		UsedEntries = 0;
+		MaxEntries = 0;
+		FreeEntries = 0;
+		bIsUnlimited = false;
+		CapacityText = FText::GetEmpty();
+	}
+	else
+	{
+		UsedEntries = Inventory->GetUsedEntryCount();
+		MaxEntries = Inventory->GetMaxEntries();
+		FreeEntries = Inventory->GetFreeEntryCount();
+		bIsUnlimited = Inventory->IsCapacityUnlimited();
+		CapacityText = bIsUnlimited
+			? FText::FromString(TEXT("Unlimited"))
+			: FText::FromString(FString::Printf(TEXT("%d / %d"), UsedEntries, MaxEntries));
+	}
+
+	UE_MVVM_BROADCAST_FIELD_VALUE_CHANGED(UsedEntries);
+	UE_MVVM_BROADCAST_FIELD_VALUE_CHANGED(MaxEntries);
+	UE_MVVM_BROADCAST_FIELD_VALUE_CHANGED(FreeEntries);
+	UE_MVVM_BROADCAST_FIELD_VALUE_CHANGED(bIsUnlimited);
+	UE_MVVM_BROADCAST_FIELD_VALUE_CHANGED(CapacityText);
 }
 
 void URpgInventoryPanelViewModel::BeginDestroy()

@@ -128,6 +128,10 @@ public:
 	UFUNCTION(BlueprintCallable, Category = "Inventory|ViewModel")
 	void InitializeFromEntry(const FRpgInventoryEntryView& Entry, const TMap<TSubclassOf<URpgInventoryItemFragment>, TSubclassOf<URpgInventoryFragmentViewModel>>& FragmentViewModelClasses);
 
+	/** Initializes a UI-only empty slot. It does not represent a replicated inventory entry. */
+	UFUNCTION(BlueprintCallable, Category = "Inventory|ViewModel")
+	void InitializeEmptySlot(UActorComponent* InInventoryOwner, int32 InSlotIndex);
+
 protected:
 	/** Inventory component that owns this entry. Drag payloads should pass this back to server RPCs. */
 	UPROPERTY(BlueprintReadOnly, FieldNotify, Category = "Inventory|ViewModel", meta = (AllowPrivateAccess = "true"))
@@ -148,6 +152,10 @@ protected:
 	/** Shared server-authored order key. */
 	UPROPERTY(BlueprintReadOnly, FieldNotify, Category = "Inventory|ViewModel", meta = (AllowPrivateAccess = "true"))
 	int32 SortIndex = 0;
+
+	/** Visual slot index in the current panel, including UI-only empty slots. */
+	UPROPERTY(BlueprintReadOnly, FieldNotify, Category = "Inventory|ViewModel", meta = (AllowPrivateAccess = "true"))
+	int32 SlotIndex = INDEX_NONE;
 
 	/** Full display name from the item definition. */
 	UPROPERTY(BlueprintReadOnly, FieldNotify, Category = "Inventory|ViewModel", meta = (AllowPrivateAccess = "true"))
@@ -180,6 +188,10 @@ protected:
 	/** True when widgets may start a drag payload for this entry. */
 	UPROPERTY(BlueprintReadOnly, FieldNotify, Category = "Inventory|ViewModel", meta = (AllowPrivateAccess = "true"))
 	bool bCanDrag = false;
+
+	/** True for UI-only placeholder slots that can receive drops but do not contain an item. */
+	UPROPERTY(BlueprintReadOnly, FieldNotify, Category = "Inventory|ViewModel", meta = (AllowPrivateAccess = "true"))
+	bool bIsEmptySlot = true;
 
 	/** Static quickbar hint from ItemTraits; server validation still owns the final answer. */
 	UPROPERTY(BlueprintReadOnly, FieldNotify, Category = "Inventory|ViewModel", meta = (AllowPrivateAccess = "true"))
@@ -223,11 +235,32 @@ protected:
 	UPROPERTY(BlueprintReadOnly, FieldNotify, Category = "Inventory|ViewModel", meta = (AllowPrivateAccess = "true"))
 	TArray<TObjectPtr<URpgInventoryEntryViewModel>> Entries;
 
+	/** Number of occupied inventory entries. Stack counts do not increase this unless they create a new stack entry. */
+	UPROPERTY(BlueprintReadOnly, FieldNotify, Category = "Inventory|Capacity", meta = (AllowPrivateAccess = "true"))
+	int32 UsedEntries = 0;
+
+	/** Maximum available entries, or INDEX_NONE when the observed inventory is unlimited. */
+	UPROPERTY(BlueprintReadOnly, FieldNotify, Category = "Inventory|Capacity", meta = (AllowPrivateAccess = "true"))
+	int32 MaxEntries = 0;
+
+	/** Remaining free entries, or INDEX_NONE when the observed inventory is unlimited. */
+	UPROPERTY(BlueprintReadOnly, FieldNotify, Category = "Inventory|Capacity", meta = (AllowPrivateAccess = "true"))
+	int32 FreeEntries = 0;
+
+	/** True when the observed inventory does not enforce an entry limit. */
+	UPROPERTY(BlueprintReadOnly, FieldNotify, Category = "Inventory|Capacity", meta = (AllowPrivateAccess = "true"))
+	bool bIsUnlimited = false;
+
+	/** Display-ready capacity text, for example "12 / 24" or "Unlimited". */
+	UPROPERTY(BlueprintReadOnly, FieldNotify, Category = "Inventory|Capacity", meta = (AllowPrivateAccess = "true"))
+	FText CapacityText;
+
 	/** Fragment presenter mapping. Designers may extend this for durability, affixes, sockets, and similar fragments. */
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Inventory|ViewModel", meta = (AllowPrivateAccess = "true"))
 	TMap<TSubclassOf<URpgInventoryItemFragment>, TSubclassOf<URpgInventoryFragmentViewModel>> FragmentViewModelClasses;
 
 private:
+	void RefreshCapacityFields(URpgInventoryManagerComponent* Inventory);
 	void RegisterInventoryMessageListener();
 	void UnregisterInventoryMessageListener();
 	void HandleInventoryChanged(FGameplayTag Channel, const FRpgInventoryChangeMessage& Message);

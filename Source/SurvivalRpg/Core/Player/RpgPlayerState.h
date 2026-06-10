@@ -8,6 +8,7 @@
 
 class ARpgPlayerController;
 class URpgTradeSkillProgressionComponent;
+class URpgInventoryCapacitySet;
 class URpgPlayerProgressionComponent;
 class URpgInventoryManagerComponent;
 class URpgExperienceDefinition;
@@ -135,6 +136,10 @@ protected:
 
 	UPROPERTY(VisibleAnywhere, Category = "Rpg|Inventory")
 	TObjectPtr<URpgInventoryManagerComponent> InventoryManagerComponent;
+
+	/** Player-owned GAS attributes that can increase backpack capacity through gear, runes, or progression. */
+	UPROPERTY()
+	TObjectPtr<const URpgInventoryCapacitySet> InventoryCapacitySet;
 
 	/** Player-facing death-drop setting replicated for UI and consumed server-side by GameMode on final death. */
 	UPROPERTY(Replicated, VisibleAnywhere, BlueprintReadOnly, Category = "Rpg|Inventory")
