@@ -6,6 +6,8 @@
 #include "SurvivalRpg/GameplayTags/RpgGameplayTags.h"
 #include "Widgets/CommonActivatableWidgetContainer.h"
 
+DEFINE_LOG_CATEGORY_STATIC(LogRpgPrimaryGameLayout, Log, All);
+
 void URpgPrimaryGameLayout::NativeOnInitialized()
 {
 	Super::NativeOnInitialized();
@@ -31,6 +33,13 @@ void URpgPrimaryGameLayout::NativeOnInitialized()
 	{
 		RegisterLayer(RpgGameplayTags::UI_Layer_Modal, ModalLayer);
 	}
+
+	UE_LOG(LogRpgPrimaryGameLayout, Log, TEXT("Initialized layers for [%s]: Game=%s GameMenu=%s Menu=%s Modal=%s."),
+		*GetNameSafe(this),
+		*GetNameSafe(GameLayer),
+		*GetNameSafe(GameMenuLayer),
+		*GetNameSafe(MenuLayer),
+		*GetNameSafe(ModalLayer));
 }
 
 void URpgPrimaryGameLayout::CreateNativeFallbackLayers()

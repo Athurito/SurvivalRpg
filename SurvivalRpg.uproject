@@ -54,6 +54,10 @@
 			"Enabled": true
 		},
 		{
+			"Name": "UIExtension",
+			"Enabled": true
+		},
+		{
 			"Name": "ModelViewViewModel",
 			"Enabled": true
 		},

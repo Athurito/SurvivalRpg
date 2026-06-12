@@ -26,6 +26,7 @@ public class SurvivalRpg : ModuleRules
 			"UMG",
 			"CommonGame",
 			"CommonUI",
+			"UIExtension",
 			"GameplayAbilities", "GameplayTags", "GameplayTasks",
 		});
 

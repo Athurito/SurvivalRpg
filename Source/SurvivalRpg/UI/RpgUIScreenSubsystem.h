@@ -6,6 +6,7 @@
 #include "RpgUIScreenSubsystem.generated.h"
 
 class UCommonActivatableWidget;
+class UPrimaryGameLayout;
 class URpgUIScreenRegistry;
 struct FRpgUIScreenRegistryEntry;
 
@@ -38,6 +39,7 @@ public:
 	UCommonActivatableWidget* GetActiveScreen(FGameplayTag ScreenTag) const;
 
 protected:
+	UPrimaryGameLayout* GetOrCreatePrimaryGameLayout() const;
 	const URpgUIScreenRegistry* GetScreenRegistry() const;
 	bool ResolveScreenEntry(FGameplayTag ScreenTag, FRpgUIScreenRegistryEntry& OutEntry) const;
 	void ApplyPayloadToWidget(UCommonActivatableWidget* Widget, UObject* Payload) const;
