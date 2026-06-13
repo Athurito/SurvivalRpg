@@ -132,6 +132,38 @@ public:
 	UFUNCTION(BlueprintCallable, Category = "Inventory|ViewModel")
 	void InitializeEmptySlot(UActorComponent* InInventoryOwner, int32 InSlotIndex);
 
+	/** Inventory component that owns this entry or empty capacity slot. */
+	UFUNCTION(BlueprintPure, Category = "Inventory|ViewModel")
+	UActorComponent* GetInventoryOwner() const { return InventoryOwner.Get(); }
+
+	/** Inventory manager that owns this entry or empty capacity slot. */
+	UFUNCTION(BlueprintPure, Category = "Inventory|ViewModel")
+	URpgInventoryManagerComponent* GetInventoryManager() const { return Cast<URpgInventoryManagerComponent>(InventoryOwner.Get()); }
+
+	/** Concrete item instance represented by this entry, or nullptr for empty capacity slots. */
+	UFUNCTION(BlueprintPure, Category = "Inventory|ViewModel")
+	URpgInventoryItemInstance* GetItemInstance() const { return ItemInstance.Get(); }
+
+	/** Stable replicated entry id used for shared manual ordering. */
+	UFUNCTION(BlueprintPure, Category = "Inventory|ViewModel")
+	FGuid GetEntryId() const { return EntryId; }
+
+	/** Current replicated stack count. Empty capacity slots return 0. */
+	UFUNCTION(BlueprintPure, Category = "Inventory|ViewModel")
+	int32 GetStackCount() const { return StackCount; }
+
+	/** Visual slot index in the current inventory panel, including empty capacity slots. */
+	UFUNCTION(BlueprintPure, Category = "Inventory|ViewModel")
+	int32 GetSlotIndex() const { return SlotIndex; }
+
+	/** Returns true for UI-only placeholder slots that do not contain an item. */
+	UFUNCTION(BlueprintPure, Category = "Inventory|ViewModel")
+	bool IsEmptySlot() const { return bIsEmptySlot; }
+
+	/** Returns true when this entry can start a drag or controller hold. */
+	UFUNCTION(BlueprintPure, Category = "Inventory|ViewModel")
+	bool CanDrag() const { return bCanDrag; }
+
 protected:
 	/** Inventory component that owns this entry. Drag payloads should pass this back to server RPCs. */
 	UPROPERTY(BlueprintReadOnly, FieldNotify, Category = "Inventory|ViewModel", meta = (AllowPrivateAccess = "true"))
