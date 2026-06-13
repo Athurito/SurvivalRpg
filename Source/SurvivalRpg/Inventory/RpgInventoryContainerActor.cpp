@@ -1,6 +1,7 @@
 #include "RpgInventoryContainerActor.h"
 
 #include "Components/SceneComponent.h"
+#include "Components/SphereComponent.h"
 #include "RpgInventoryContainerComponent.h"
 #include "RpgInventoryManagerComponent.h"
 
@@ -14,6 +15,12 @@ ARpgInventoryContainerActor::ARpgInventoryContainerActor(const FObjectInitialize
 
 	SceneRoot = CreateDefaultSubobject<USceneComponent>(TEXT("SceneRoot"));
 	SetRootComponent(SceneRoot);
+
+	InteractionCollision = CreateDefaultSubobject<USphereComponent>(TEXT("InteractionCollision"));
+	InteractionCollision->SetupAttachment(SceneRoot);
+	InteractionCollision->InitSphereRadius(120.0f);
+	InteractionCollision->SetCollisionProfileName(TEXT("Interactable_OverlapDynamic"));
+	InteractionCollision->SetGenerateOverlapEvents(true);
 
 	InventoryManagerComponent = CreateDefaultSubobject<URpgInventoryManagerComponent>(TEXT("InventoryManagerComponent"));
 	InventoryManagerComponent->SetCapacityMode(ERpgInventoryCapacityMode::FixedEntries);

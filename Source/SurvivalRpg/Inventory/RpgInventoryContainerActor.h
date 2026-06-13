@@ -5,6 +5,7 @@
 #include "RpgInventoryContainerActor.generated.h"
 
 class USceneComponent;
+class USphereComponent;
 class URpgInventoryContainerComponent;
 class URpgInventoryManagerComponent;
 
@@ -34,6 +35,10 @@ protected:
 	/** Simple root so Blueprint children can attach meshes and interaction visuals. */
 	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "Inventory|Container")
 	TObjectPtr<USceneComponent> SceneRoot;
+
+	/** Native overlap used by Lyra-style interaction scans to discover this container. */
+	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "Inventory|Container")
+	TObjectPtr<USphereComponent> InteractionCollision;
 
 	/** Authoritative replicated inventory for shared storage contents. */
 	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "Inventory|Container")

@@ -2,6 +2,7 @@
 
 #include "Net/UnrealNetwork.h"
 #include "RpgInventoryManagerComponent.h"
+#include "SurvivalRpg/Interaction/Abilities/RpgGameplayAbility_OpenStorageContainer.h"
 #include "SurvivalRpg/Interaction/InteractionQuery.h"
 
 #include UE_INLINE_GENERATED_CPP_BY_NAME(RpgInventoryContainerComponent)
@@ -11,6 +12,10 @@ URpgInventoryContainerComponent::URpgInventoryContainerComponent(const FObjectIn
 {
 	PrimaryComponentTick.bCanEverTick = false;
 	SetIsReplicatedByDefault(true);
+
+	OpenContainerOption.Text = NSLOCTEXT("RpgInventory", "OpenStorageContainerText", "Open");
+	OpenContainerOption.SubText = NSLOCTEXT("RpgInventory", "OpenStorageContainerSubText", "Storage");
+	OpenContainerOption.InteractionAbilityToGrant = URpgGameplayAbility_OpenStorageContainer::StaticClass();
 }
 
 void URpgInventoryContainerComponent::GatherInteractionOptions(const FInteractionQuery& InteractQuery, FInteractionOptionBuilder& InteractionBuilder)
