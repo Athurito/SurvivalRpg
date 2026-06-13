@@ -13,7 +13,12 @@ class SURVIVALRPG_API ARpgDroppedInventoryActor : public ARpgWorldCollectable
 	GENERATED_BODY()
 
 public:
+	virtual void PostInitializeComponents() override;
+
 	/** Sets the pickup contents before players interact with this actor. Server-authoritative runtime state. */
 	UFUNCTION(BlueprintCallable, BlueprintAuthorityOnly, Category = "Inventory|Drop")
 	void SetPickupInventory(const FInventoryPickup& NewPickupInventory);
+
+private:
+	void EnsureDefaultPickupInteractionOption();
 };

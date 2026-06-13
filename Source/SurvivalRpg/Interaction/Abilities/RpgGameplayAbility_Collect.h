@@ -17,7 +17,7 @@ struct FInventoryPickup;
  * harvest pickups can stay inventory-only while test weapons can be equipped
  * immediately without character-side hardcoding.
  */
-UCLASS(Abstract)
+UCLASS(Blueprintable)
 class SURVIVALRPG_API URpgGameplayAbility_Collect : public URpgGameplayAbility
 {
 	GENERATED_BODY()

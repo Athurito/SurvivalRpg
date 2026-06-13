@@ -5,6 +5,7 @@
 
 #include "Components/SphereComponent.h"
 #include "Components/StaticMeshComponent.h"
+#include "SurvivalRpg/Interaction/Abilities/RpgGameplayAbility_Collect.h"
 
 
 ARpgWorldCollectable::ARpgWorldCollectable()
@@ -21,6 +22,9 @@ ARpgWorldCollectable::ARpgWorldCollectable()
 	DisplayMesh = CreateDefaultSubobject<UStaticMeshComponent>(TEXT("DisplayMesh"));
 	DisplayMesh->SetupAttachment(SceneRoot);
 	DisplayMesh->SetCollisionProfileName(TEXT("Interactable_BlockDynamic"));
+
+	Option.Text = NSLOCTEXT("RpgInteraction", "CollectInteractionText", "Collect");
+	Option.InteractionAbilityToGrant = URpgGameplayAbility_Collect::StaticClass();
 }
 
 void ARpgWorldCollectable::GatherInteractionOptions(const FInteractionQuery& InteractQuery,
@@ -33,5 +37,4 @@ FInventoryPickup ARpgWorldCollectable::GetPickupInventory() const
 {
 	return StaticInventory;
 }
-
 
