@@ -18,13 +18,79 @@ URpgInventoryTileView::URpgInventoryTileView(const FObjectInitializer& ObjectIni
 }
 
 void URpgInventoryTileView::SetDragDropCoordinator(URpgInventoryDragDropCoordinator* InCoordinator)
-{
+{ 
 	DragDropCoordinator = InCoordinator;
 
 	for (UUserWidget* EntryWidget : GetDisplayedEntryWidgets())
 	{
 		ApplyCoordinatorToEntry(EntryWidget);
 	}
+}
+
+void URpgInventoryTileView::SetInventoryEntryItems(const TArray<URpgInventoryEntryViewModel*>& InEntries)
+{
+	const TArray<UObject*>& CurrentListItems = GetListItems();
+	if (CurrentListItems.Num() == InEntries.Num())
+	{
+		bool bSameItems = true;
+		for (int32 Index = 0; Index < InEntries.Num(); ++Index)
+		{
+			if (CurrentListItems[Index] != InEntries[Index])
+			{
+				bSameItems = false;
+				break;
+			}
+		}
+
+		if (bSameItems)
+		{
+			RequestRefresh();
+			return;
+		}
+	}
+
+	TArray<UObject*> NewListItems;
+	NewListItems.Reserve(InEntries.Num());
+	for (URpgInventoryEntryViewModel* Entry : InEntries)
+	{
+		NewListItems.Add(Entry);
+	}
+
+	SetListItems(NewListItems);
+	RequestRefresh();
+}
+
+void URpgInventoryTileView::BindInventoryPanelViewModel(URpgInventoryPanelViewModel* InPanelViewModel)
+{
+	if (BoundPanelViewModel == InPanelViewModel)
+	{
+		RefreshInventoryEntryItems();
+		return;
+	}
+
+	if (BoundPanelViewModel)
+	{
+		BoundPanelViewModel->OnEntriesChanged.RemoveDynamic(this, &ThisClass::RefreshInventoryEntryItems);
+	}
+
+	BoundPanelViewModel = InPanelViewModel;
+	if (BoundPanelViewModel)
+	{
+		BoundPanelViewModel->OnEntriesChanged.AddUniqueDynamic(this, &ThisClass::RefreshInventoryEntryItems);
+	}
+
+	RefreshInventoryEntryItems();
+}
+
+void URpgInventoryTileView::RefreshInventoryEntryItems()
+{
+	if (!BoundPanelViewModel)
+	{
+		SetInventoryEntryItems(TArray<URpgInventoryEntryViewModel*>());
+		return;
+	}
+
+	SetInventoryEntryItems(BoundPanelViewModel->GetEntries());
 }
 
 void URpgInventoryTileView::NativeOnEntryGenerated(UUserWidget* EntryWidget)

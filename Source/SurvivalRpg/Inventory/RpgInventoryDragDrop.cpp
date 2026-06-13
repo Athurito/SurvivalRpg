@@ -265,7 +265,13 @@ bool URpgInventoryDragDropCoordinator::CommitPayloadToTarget(const FRpgInventory
 					return true;
 				}
 
-				Actions->RequestMoveInventoryEntry(Payload.SourceInventory, Payload.EntryId, Target.TargetIndex);
+				Actions->RequestMoveInventoryEntryToSlot(Payload.SourceInventory, Payload.EntryId, Target.TargetIndex);
+				return true;
+			}
+
+			if (Target.TargetType == ERpgInventoryDropTargetType::InventorySlot)
+			{
+				Actions->RequestTransferItemStackToInventorySlot(Payload.SourceInventory, Target.TargetInventory, Payload.ItemInstance, Payload.StackCount, Target.TargetIndex);
 				return true;
 			}
 

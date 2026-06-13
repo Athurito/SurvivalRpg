@@ -6,6 +6,8 @@
 #include "RpgInventoryTileView.generated.h"
 
 class URpgInventoryDragDropCoordinator;
+class URpgInventoryEntryViewModel;
+class URpgInventoryPanelViewModel;
 
 /**
  * CommonTileView specialization for inventory panels.
@@ -26,6 +28,18 @@ public:
 	UFUNCTION(BlueprintCallable, Category = "Inventory|DragDrop")
 	void SetDragDropCoordinator(URpgInventoryDragDropCoordinator* InCoordinator);
 
+	/** Replaces the TileView items with the latest panel VM entries and requests an immediate visual refresh. */
+	UFUNCTION(BlueprintCallable, Category = "Inventory|ViewModel")
+	void SetInventoryEntryItems(const TArray<URpgInventoryEntryViewModel*>& InEntries);
+
+	/** Binds this TileView directly to a panel VM and keeps list items refreshed without the MVVM TileView extension. */
+	UFUNCTION(BlueprintCallable, Category = "Inventory|ViewModel")
+	void BindInventoryPanelViewModel(URpgInventoryPanelViewModel* InPanelViewModel);
+
+	/** Pulls the latest entries from the bound panel VM and applies them to this TileView. */
+	UFUNCTION(BlueprintCallable, Category = "Inventory|ViewModel")
+	void RefreshInventoryEntryItems();
+
 	/** Current coordinator used by this inventory TileView. */
 	UFUNCTION(BlueprintPure, Category = "Inventory|DragDrop")
 	URpgInventoryDragDropCoordinator* GetDragDropCoordinator() const { return DragDropCoordinator.Get(); }
@@ -42,6 +56,9 @@ private:
 
 	UPROPERTY(Transient, BlueprintReadOnly, Category = "Inventory|DragDrop", meta = (AllowPrivateAccess = "true"))
 	TObjectPtr<URpgInventoryDragDropCoordinator> DragDropCoordinator = nullptr;
+
+	UPROPERTY(Transient, BlueprintReadOnly, Category = "Inventory|ViewModel", meta = (AllowPrivateAccess = "true"))
+	TObjectPtr<URpgInventoryPanelViewModel> BoundPanelViewModel = nullptr;
 
 	/** If true, TileView item click/confirm uses pick/place. Leave false when entries inherit URpgInventorySlotEntryWidget. */
 	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Inventory|DragDrop", meta = (AllowPrivateAccess = "true"))

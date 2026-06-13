@@ -201,7 +201,10 @@ struct FRpgInventoryList : public FFastArraySerializer
 
 	TArray<URpgInventoryItemInstance*> GetAllItems() const;
 	TArray<FRpgInventoryEntryView> GetAllEntries() const;
+	URpgInventoryItemInstance* GetItemInSlot(int32 SlotIndex) const;
+	int32 GetSlotIndex(URpgInventoryItemInstance* Instance) const;
 	int32 GetStackCount(URpgInventoryItemInstance* Instance) const;
+	int32 GetFreeStackCapacity(URpgInventoryItemInstance* Instance) const;
 	int32 GetUsedEntryCount() const;
 	int32 GetRequiredNewEntryCount(TSubclassOf<URpgInventoryItemDefinition> ItemDef, int32 StackCount) const;
 	bool ContainsItemInstance(URpgInventoryItemInstance* Instance) const;
@@ -220,17 +223,28 @@ public:
 	}
 
 	URpgInventoryItemInstance* AddEntry(TSubclassOf<URpgInventoryItemDefinition> ItemClass, int32 StackCount, TArray<URpgInventoryItemInstance*>& OutNewInstances);
+	URpgInventoryItemInstance* AddEntryAtSlot(TSubclassOf<URpgInventoryItemDefinition> ItemClass, int32 StackCount, int32 SlotIndex, TArray<URpgInventoryItemInstance*>& OutNewInstances);
 	void AddEntry(URpgInventoryItemInstance* Instance, int32 StackCount = 1);
+	void AddEntryAtSlot(URpgInventoryItemInstance* Instance, int32 StackCount, int32 SlotIndex);
+	bool AddStackToEntry(URpgInventoryItemInstance* Instance, int32 StackCount);
 
 	void RemoveEntry(URpgInventoryItemInstance* Instance);
 	bool RemoveEntryStack(URpgInventoryItemInstance* Instance, int32 StackCount, bool& bOutRemovedEntry);
 	bool ApplySort(ERpgInventorySortMode SortMode);
 	bool MoveEntry(FGuid EntryId, int32 TargetIndex);
+	bool MoveEntryToSlot(FGuid EntryId, int32 TargetSlotIndex);
 	FRpgInventorySnapshot ExportSnapshot(FName ContainerId) const;
 	void ImportSnapshot(const FRpgInventorySnapshot& Snapshot);
 
 private:
+	FRpgInventoryEntry* FindEntryByInstance(URpgInventoryItemInstance* Instance);
+	const FRpgInventoryEntry* FindEntryByInstance(URpgInventoryItemInstance* Instance) const;
+	FRpgInventoryEntry* FindEntryByEntryId(FGuid EntryId);
+	const FRpgInventoryEntry* FindEntryByEntryId(FGuid EntryId) const;
+	FRpgInventoryEntry* FindEntryBySlotIndex(int32 SlotIndex);
+	const FRpgInventoryEntry* FindEntryBySlotIndex(int32 SlotIndex) const;
 	void BroadcastChangeMessage(FRpgInventoryEntry& Entry, int32 OldCount, int32 NewCount, bool bOrderChanged = false);
+	int32 GetNextAvailableSlotIndex() const;
 	int32 GetNextSortIndex() const;
 	void NormalizeSortIndices();
 	void SortEntriesBySortIndex();
@@ -316,14 +330,34 @@ public:
 	UFUNCTION(BlueprintCallable, BlueprintAuthorityOnly, Category=Inventory)
 	bool CanAddItemInstance(URpgInventoryItemInstance* ItemInstance, int32 StackCount = 1) const;
 
+	/** Returns true when the stack can be placed or merged into one exact slot. Used by explicit drag/drop. */
+	UFUNCTION(BlueprintCallable, BlueprintAuthorityOnly, Category = "Inventory|Slots")
+	bool CanAddItemDefinitionToSlot(TSubclassOf<URpgInventoryItemDefinition> ItemDef, int32 StackCount, int32 SlotIndex) const;
+
+	/** Returns true when this concrete item instance can be moved into one exact empty slot. */
+	UFUNCTION(BlueprintCallable, BlueprintAuthorityOnly, Category = "Inventory|Slots")
+	bool CanAddItemInstanceToSlot(URpgInventoryItemInstance* ItemInstance, int32 StackCount, int32 SlotIndex) const;
+
 	UFUNCTION(BlueprintCallable, BlueprintAuthorityOnly, Category=Inventory)
 	URpgInventoryItemInstance* AddItemDefinition(TSubclassOf<URpgInventoryItemDefinition> ItemDef, int32 StackCount = 1);
+
+	/** Adds a definition-created stack to an exact slot instead of auto-stacking into the inventory. */
+	UFUNCTION(BlueprintCallable, BlueprintAuthorityOnly, Category = "Inventory|Slots")
+	URpgInventoryItemInstance* AddItemDefinitionToSlot(TSubclassOf<URpgInventoryItemDefinition> ItemDef, int32 StackCount, int32 SlotIndex);
 
 	UFUNCTION(BlueprintCallable, BlueprintAuthorityOnly, Category=Inventory)
 	void AddItemInstance(URpgInventoryItemInstance* ItemInstance);
 
 	UFUNCTION(BlueprintCallable, BlueprintAuthorityOnly, Category=Inventory)
 	void AddItemInstanceWithStack(URpgInventoryItemInstance* ItemInstance, int32 StackCount = 1);
+
+	/** Adds an existing item instance to an exact slot, preserving runtime instance data such as durability. */
+	UFUNCTION(BlueprintCallable, BlueprintAuthorityOnly, Category = "Inventory|Slots")
+	void AddItemInstanceWithStackToSlot(URpgInventoryItemInstance* ItemInstance, int32 StackCount, int32 SlotIndex);
+
+	/** Adds stack count to an existing stack entry without creating or moving an entry. */
+	UFUNCTION(BlueprintCallable, BlueprintAuthorityOnly, Category = "Inventory|Slots")
+	bool AddStackToExistingItem(URpgInventoryItemInstance* ItemInstance, int32 StackCount);
 
 	UFUNCTION(BlueprintCallable, BlueprintAuthorityOnly, Category=Inventory)
 	void RemoveItemInstance(URpgInventoryItemInstance* ItemInstance);
@@ -336,6 +370,18 @@ public:
 
 	UFUNCTION(BlueprintCallable, Category=Inventory, BlueprintPure=false)
 	TArray<FRpgInventoryEntryView> GetAllEntries() const;
+
+	/** Returns the item occupying an exact replicated slot, or nullptr for empty/invalid slots. */
+	UFUNCTION(BlueprintCallable, Category = "Inventory|Slots", BlueprintPure)
+	URpgInventoryItemInstance* GetItemInSlot(int32 SlotIndex) const;
+
+	/** Returns the replicated slot index of an item entry, or INDEX_NONE when the item is not owned here. */
+	UFUNCTION(BlueprintCallable, Category = "Inventory|Slots", BlueprintPure)
+	int32 GetItemSlotIndex(URpgInventoryItemInstance* ItemInstance) const;
+
+	/** Returns how many units can still merge into this stack before reaching its definition max stack size. */
+	UFUNCTION(BlueprintCallable, Category = "Inventory|Slots", BlueprintPure)
+	int32 GetFreeStackCapacity(URpgInventoryItemInstance* ItemInstance) const;
 
 	UFUNCTION(BlueprintCallable, Category=Inventory, BlueprintPure)
 	bool ContainsEntry(FGuid EntryId) const;
@@ -363,6 +409,10 @@ public:
 	UFUNCTION(BlueprintCallable, BlueprintAuthorityOnly, Category = "Inventory|Sorting")
 	bool MoveInventoryEntry(FGuid EntryId, int32 TargetIndex);
 
+	/** Moves, swaps, or stack-merges one entry into an exact replicated slot on the server. */
+	UFUNCTION(BlueprintCallable, BlueprintAuthorityOnly, Category = "Inventory|Slots")
+	bool MoveInventoryEntryToSlot(FGuid EntryId, int32 TargetSlotIndex);
+
 	/** Exports a save-ready snapshot containing item definitions, stack counts, entry ids, and shared order. */
 	UFUNCTION(BlueprintCallable, Category = "Inventory|Snapshot")
 	FRpgInventorySnapshot ExportInventorySnapshot(FName ContainerId) const;
@@ -379,6 +429,11 @@ public:
 	//~End of UObject interface
 
 private:
+	UFUNCTION()
+	void OnRep_InventoryRevision();
+
+	void MarkInventoryStateDirty();
+	void BroadcastInventoryStateChanged() const;
 	UAbilitySystemComponent* FindCapacityAbilitySystem() const;
 	void RefreshCapacityAttributeBinding();
 	void ClearCapacityAttributeBinding();
@@ -400,6 +455,10 @@ private:
 
 	UPROPERTY(Replicated)
 	FRpgInventoryList InventoryList;
+
+	/** Lightweight replicated pulse used to wake already-open UI panels after any server inventory mutation. */
+	UPROPERTY(ReplicatedUsing = OnRep_InventoryRevision)
+	int32 InventoryRevision = 0;
 
 	TWeakObjectPtr<UAbilitySystemComponent> BoundCapacityAbilitySystem;
 	FDelegateHandle CapacityAttributeChangedHandle;

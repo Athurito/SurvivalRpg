@@ -16,6 +16,13 @@ class URpgInventoryFragment_UIData;
 class URpgInventoryItemFragment;
 class URpgInventoryItemInstance;
 class URpgInventoryManagerComponent;
+class URpgInventoryEntryViewModel;
+
+/** Broadcast when one slot view model changed its represented item, stack, or empty state. */
+DECLARE_DYNAMIC_MULTICAST_DELEGATE_OneParam(FRpgInventoryEntryViewModelChanged, URpgInventoryEntryViewModel*, EntryViewModel);
+
+/** Broadcast when the panel rebuilt its UI entry list and list widgets should refresh their items. */
+DECLARE_DYNAMIC_MULTICAST_DELEGATE(FRpgInventoryPanelEntriesChanged);
 
 /**
  * Base class for optional item-fragment presenters used by inventory widgets.
@@ -164,6 +171,10 @@ public:
 	UFUNCTION(BlueprintPure, Category = "Inventory|ViewModel")
 	bool CanDrag() const { return bCanDrag; }
 
+	/** Fired when this slot object keeps its identity but its visual item/stack data changed. */
+	UPROPERTY(BlueprintAssignable, Category = "Inventory|ViewModel")
+	FRpgInventoryEntryViewModelChanged OnEntryChanged;
+
 protected:
 	/** Inventory component that owns this entry. Drag payloads should pass this back to server RPCs. */
 	UPROPERTY(BlueprintReadOnly, FieldNotify, Category = "Inventory|ViewModel", meta = (AllowPrivateAccess = "true"))
@@ -257,8 +268,16 @@ public:
 	UFUNCTION(BlueprintCallable, Category = "Inventory|ViewModel")
 	void RefreshEntries();
 
+	/** Current entry models, including empty capacity slots for finite inventories. */
+	UFUNCTION(BlueprintPure, Category = "Inventory|ViewModel")
+	TArray<URpgInventoryEntryViewModel*> GetEntries() const;
+
 	UFUNCTION(BlueprintPure, Category = "Inventory|ViewModel")
 	URpgInventoryManagerComponent* GetObservedInventory() const { return ObservedInventory.Get(); }
+
+	/** Fired after Entries has been rebuilt so BP widgets can call SetListItems and RequestRefresh. */
+	UPROPERTY(BlueprintAssignable, Category = "Inventory|ViewModel")
+	FRpgInventoryPanelEntriesChanged OnEntriesChanged;
 
 protected:
 	virtual void BeginDestroy() override;
@@ -292,6 +311,8 @@ protected:
 	TMap<TSubclassOf<URpgInventoryItemFragment>, TSubclassOf<URpgInventoryFragmentViewModel>> FragmentViewModelClasses;
 
 private:
+	void RequestRefreshEntries();
+	void ExecuteQueuedRefreshEntries();
 	void RefreshCapacityFields(URpgInventoryManagerComponent* Inventory);
 	void RegisterInventoryMessageListener();
 	void UnregisterInventoryMessageListener();
@@ -299,4 +320,5 @@ private:
 
 	TWeakObjectPtr<URpgInventoryManagerComponent> ObservedInventory;
 	FGameplayMessageListenerHandle InventoryChangedHandle;
+	bool bRefreshEntriesQueued = false;
 };

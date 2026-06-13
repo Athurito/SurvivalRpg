@@ -4,6 +4,7 @@
 #include "SurvivalRpg/Inventory/RpgInventoryFragment_ItemTraits.h"
 #include "SurvivalRpg/Inventory/RpgInventoryItemDefinition.h"
 #include "SurvivalRpg/Inventory/RpgInventoryItemInstance.h"
+#include "TimerManager.h"
 
 #include UE_INLINE_GENERATED_CPP_BY_NAME(RpgInventoryViewModels)
 
@@ -59,6 +60,15 @@ void URpgInventoryEntryViewModel::InitializeFromEntry(
 	const FRpgInventoryEntryView& Entry,
 	const TMap<TSubclassOf<URpgInventoryItemFragment>, TSubclassOf<URpgInventoryFragmentViewModel>>& FragmentViewModelClasses)
 {
+	const bool bWasChanged =
+		InventoryOwner != Entry.InventoryOwner ||
+		ItemInstance != Entry.Instance ||
+		EntryId != Entry.EntryId ||
+		StackCount != Entry.StackCount ||
+		SortIndex != Entry.SortIndex ||
+		SlotIndex != Entry.SortIndex ||
+		bIsEmptySlot != (Entry.Instance == nullptr);
+
 	InventoryOwner = Entry.InventoryOwner;
 	ItemInstance = Entry.Instance;
 	EntryId = Entry.EntryId;
@@ -152,6 +162,10 @@ void URpgInventoryEntryViewModel::InitializeFromEntry(
 	UE_MVVM_BROADCAST_FIELD_VALUE_CHANGED(bIsEmptySlot);
 	UE_MVVM_BROADCAST_FIELD_VALUE_CHANGED(bCanAssignToQuickBar);
 	UE_MVVM_BROADCAST_FIELD_VALUE_CHANGED(FragmentViewModels);
+	if (bWasChanged)
+	{
+		OnEntryChanged.Broadcast(this);
+	}
 }
 
 void URpgInventoryEntryViewModel::InitializeEmptySlot(UActorComponent* InInventoryOwner, int32 InSlotIndex)
@@ -163,19 +177,23 @@ void URpgInventoryEntryViewModel::InitializeEmptySlot(UActorComponent* InInvento
 
 	const TMap<TSubclassOf<URpgInventoryItemFragment>, TSubclassOf<URpgInventoryFragmentViewModel>> EmptyFragmentViewModelClasses;
 	InitializeFromEntry(EmptyEntry, EmptyFragmentViewModelClasses);
-	SlotIndex = InSlotIndex;
-	SortIndex = InSlotIndex;
-	bIsEmptySlot = true;
-
-	UE_MVVM_BROADCAST_FIELD_VALUE_CHANGED(SlotIndex);
-	UE_MVVM_BROADCAST_FIELD_VALUE_CHANGED(SortIndex);
-	UE_MVVM_BROADCAST_FIELD_VALUE_CHANGED(bIsEmptySlot);
 }
 
 URpgInventoryPanelViewModel::URpgInventoryPanelViewModel()
 {
 	FragmentViewModelClasses.Add(URpgInventoryFragment_UIData::StaticClass(), URpgInventoryUiDataFragmentViewModel::StaticClass());
 	FragmentViewModelClasses.Add(URpgInventoryFragment_ItemTraits::StaticClass(), URpgInventoryTraitsFragmentViewModel::StaticClass());
+}
+
+TArray<URpgInventoryEntryViewModel*> URpgInventoryPanelViewModel::GetEntries() const
+{
+	TArray<URpgInventoryEntryViewModel*> Result;
+	Result.Reserve(Entries.Num());
+	for (URpgInventoryEntryViewModel* Entry : Entries)
+	{
+		Result.Add(Entry);
+	}
+	return Result;
 }
 
 void URpgInventoryPanelViewModel::BindInventory(URpgInventoryManagerComponent* InInventory)
@@ -197,19 +215,21 @@ void URpgInventoryPanelViewModel::UnbindInventory()
 	UnregisterInventoryMessageListener();
 	ObservedInventory.Reset();
 	Entries.Reset();
+	bRefreshEntriesQueued = false;
 	RefreshCapacityFields(nullptr);
 	UE_MVVM_BROADCAST_FIELD_VALUE_CHANGED(Entries);
+	OnEntriesChanged.Broadcast();
 }
 
 void URpgInventoryPanelViewModel::RefreshEntries()
 {
-	Entries.Reset();
-
 	URpgInventoryManagerComponent* Inventory = ObservedInventory.Get();
 	RefreshCapacityFields(Inventory);
 	if (!Inventory)
 	{
+		Entries.Reset();
 		UE_MVVM_BROADCAST_FIELD_VALUE_CHANGED(Entries);
+		OnEntriesChanged.Broadcast();
 		return;
 	}
 
@@ -219,33 +239,81 @@ void URpgInventoryPanelViewModel::RefreshEntries()
 		return A.SortIndex < B.SortIndex;
 	});
 
-	const bool bShouldRenderEmptySlots = !Inventory->IsCapacityUnlimited() && MaxEntries > 0;
-	const int32 DisplaySlotCount = bShouldRenderEmptySlots ? FMath::Max(MaxEntries, EntryViews.Num()) : EntryViews.Num();
-	Entries.Reserve(DisplaySlotCount);
-	for (const FRpgInventoryEntryView& EntryView : EntryViews)
+	auto GetReusableEntryViewModel = [this](const TArray<TObjectPtr<URpgInventoryEntryViewModel>>& PreviousEntries, int32 PreferredIndex)
 	{
-		URpgInventoryEntryViewModel* EntryViewModel = NewObject<URpgInventoryEntryViewModel>(this);
+		URpgInventoryEntryViewModel* EntryViewModel = PreviousEntries.IsValidIndex(PreferredIndex) ? PreviousEntries[PreferredIndex].Get() : nullptr;
+		return EntryViewModel ? EntryViewModel : NewObject<URpgInventoryEntryViewModel>(this);
+	};
+
+	auto AddEntryViewModel = [this](URpgInventoryEntryViewModel* EntryViewModel, const FRpgInventoryEntryView& EntryView)
+	{
 		if (EntryViewModel)
 		{
 			EntryViewModel->InitializeFromEntry(EntryView, FragmentViewModelClasses);
 			Entries.Add(EntryViewModel);
 		}
-	}
+	};
 
+	auto AddEmptySlotViewModel = [this, Inventory](URpgInventoryEntryViewModel* EmptySlotViewModel, int32 SlotIndex)
+	{
+		if (EmptySlotViewModel)
+		{
+			EmptySlotViewModel->InitializeEmptySlot(Inventory, SlotIndex);
+			Entries.Add(EmptySlotViewModel);
+		}
+	};
+
+	TArray<TObjectPtr<URpgInventoryEntryViewModel>> PreviousEntries = MoveTemp(Entries);
+	Entries.Reset();
+
+	const bool bShouldRenderEmptySlots = !Inventory->IsCapacityUnlimited() && MaxEntries > 0;
 	if (bShouldRenderEmptySlots)
 	{
-		for (int32 SlotIndex = Entries.Num(); SlotIndex < DisplaySlotCount; ++SlotIndex)
+		TMap<int32, FRpgInventoryEntryView> EntriesBySlot;
+		TArray<FRpgInventoryEntryView> OverflowEntries;
+		for (const FRpgInventoryEntryView& EntryView : EntryViews)
 		{
-			URpgInventoryEntryViewModel* EmptySlotViewModel = NewObject<URpgInventoryEntryViewModel>(this);
-			if (EmptySlotViewModel)
+			if (EntryView.SortIndex >= 0 && EntryView.SortIndex < MaxEntries && !EntriesBySlot.Contains(EntryView.SortIndex))
 			{
-				EmptySlotViewModel->InitializeEmptySlot(Inventory, SlotIndex);
-				Entries.Add(EmptySlotViewModel);
+				EntriesBySlot.Add(EntryView.SortIndex, EntryView);
 			}
+			else
+			{
+				OverflowEntries.Add(EntryView);
+			}
+		}
+
+		Entries.Reserve(MaxEntries + OverflowEntries.Num());
+		for (int32 SlotIndex = 0; SlotIndex < MaxEntries; ++SlotIndex)
+		{
+			URpgInventoryEntryViewModel* SlotViewModel = GetReusableEntryViewModel(PreviousEntries, SlotIndex);
+			if (const FRpgInventoryEntryView* EntryView = EntriesBySlot.Find(SlotIndex))
+			{
+				AddEntryViewModel(SlotViewModel, *EntryView);
+			}
+			else
+			{
+				AddEmptySlotViewModel(SlotViewModel, SlotIndex);
+			}
+		}
+
+		int32 OverflowIndex = MaxEntries;
+		for (const FRpgInventoryEntryView& OverflowEntry : OverflowEntries)
+		{
+			AddEntryViewModel(GetReusableEntryViewModel(PreviousEntries, OverflowIndex++), OverflowEntry);
+		}
+	}
+	else
+	{
+		Entries.Reserve(EntryViews.Num());
+		for (int32 EntryIndex = 0; EntryIndex < EntryViews.Num(); ++EntryIndex)
+		{
+			AddEntryViewModel(GetReusableEntryViewModel(PreviousEntries, EntryIndex), EntryViews[EntryIndex]);
 		}
 	}
 
 	UE_MVVM_BROADCAST_FIELD_VALUE_CHANGED(Entries);
+	OnEntriesChanged.Broadcast();
 }
 
 void URpgInventoryPanelViewModel::RefreshCapacityFields(URpgInventoryManagerComponent* Inventory)
@@ -274,6 +342,31 @@ void URpgInventoryPanelViewModel::RefreshCapacityFields(URpgInventoryManagerComp
 	UE_MVVM_BROADCAST_FIELD_VALUE_CHANGED(FreeEntries);
 	UE_MVVM_BROADCAST_FIELD_VALUE_CHANGED(bIsUnlimited);
 	UE_MVVM_BROADCAST_FIELD_VALUE_CHANGED(CapacityText);
+}
+
+void URpgInventoryPanelViewModel::RequestRefreshEntries()
+{
+	if (bRefreshEntriesQueued)
+	{
+		return;
+	}
+
+	URpgInventoryManagerComponent* Inventory = ObservedInventory.Get();
+	UWorld* World = Inventory ? Inventory->GetWorld() : nullptr;
+	if (!World)
+	{
+		RefreshEntries();
+		return;
+	}
+
+	bRefreshEntriesQueued = true;
+	World->GetTimerManager().SetTimerForNextTick(FTimerDelegate::CreateUObject(this, &ThisClass::ExecuteQueuedRefreshEntries));
+}
+
+void URpgInventoryPanelViewModel::ExecuteQueuedRefreshEntries()
+{
+	bRefreshEntriesQueued = false;
+	RefreshEntries();
 }
 
 void URpgInventoryPanelViewModel::BeginDestroy()
@@ -314,6 +407,6 @@ void URpgInventoryPanelViewModel::HandleInventoryChanged(FGameplayTag Channel, c
 {
 	if (ObservedInventory.Get() == Message.InventoryOwner)
 	{
-		RefreshEntries();
+		RequestRefreshEntries();
 	}
 }

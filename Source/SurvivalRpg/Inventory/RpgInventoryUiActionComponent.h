@@ -48,6 +48,10 @@ public:
 	UFUNCTION(Server, Reliable, BlueprintCallable, Category = "Inventory|UI Actions")
 	void RequestTransferItemStack(URpgInventoryManagerComponent* SourceInventory, URpgInventoryManagerComponent* TargetInventory, URpgInventoryItemInstance* Item, int32 StackCount);
 
+	/** Transfers a stack into one exact target slot. Explicit drag/drop uses this instead of auto-stacking. */
+	UFUNCTION(Server, Reliable, BlueprintCallable, Category = "Inventory|UI Actions")
+	void RequestTransferItemStackToInventorySlot(URpgInventoryManagerComponent* SourceInventory, URpgInventoryManagerComponent* TargetInventory, URpgInventoryItemInstance* Item, int32 StackCount, int32 TargetSlotIndex);
+
 	/** Applies a shared server-side sort to an accessible inventory such as storage or loot. */
 	UFUNCTION(Server, Reliable, BlueprintCallable, Category = "Inventory|UI Actions")
 	void RequestApplyInventorySort(URpgInventoryManagerComponent* Inventory, ERpgInventorySortMode SortMode);
@@ -55,6 +59,10 @@ public:
 	/** Moves one accessible inventory entry to a shared replicated index for manual storage ordering. */
 	UFUNCTION(Server, Reliable, BlueprintCallable, Category = "Inventory|UI Actions")
 	void RequestMoveInventoryEntry(URpgInventoryManagerComponent* Inventory, FGuid EntryId, int32 TargetIndex);
+
+	/** Moves, swaps, or stack-merges an accessible inventory entry into one exact slot. */
+	UFUNCTION(Server, Reliable, BlueprintCallable, Category = "Inventory|UI Actions")
+	void RequestMoveInventoryEntryToSlot(URpgInventoryManagerComponent* Inventory, FGuid EntryId, int32 TargetSlotIndex);
 
 	/** Deposits all material stacks from the player inventory into the linked base storage station. */
 	UFUNCTION(Server, Reliable, BlueprintCallable, Category = "Inventory|Base Storage")
@@ -84,6 +92,7 @@ private:
 	URpgQuickBarComponent* FindQuickBar() const;
 	URpgEquipmentLoadoutComponent* FindEquipmentLoadout() const;
 	bool CanTransferItemStack(URpgInventoryManagerComponent* SourceInventory, URpgInventoryManagerComponent* TargetInventory, URpgInventoryItemInstance* Item, int32 StackCount) const;
+	bool CanTransferItemStackToInventorySlot(URpgInventoryManagerComponent* SourceInventory, URpgInventoryManagerComponent* TargetInventory, URpgInventoryItemInstance* Item, int32 StackCount, int32 TargetSlotIndex) const;
 	bool CanAccessBaseStorageStation(const URpgBaseStorageStationComponent* Station) const;
 	void ClearPlayerAssignmentsForItem(URpgInventoryItemInstance* Item) const;
 };

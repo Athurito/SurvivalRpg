@@ -51,6 +51,10 @@ protected:
 	virtual void NativeOnClicked() override;
 	//~End of IUserListEntry interface
 
+	/** Replays the presentation hook when the assigned slot view model updates in place. */
+	UFUNCTION()
+	void HandleEntryViewModelChanged(URpgInventoryEntryViewModel* ChangedEntryViewModel);
+
 	/** Blueprint presentation hook called whenever this recycled entry receives a new view model. */
 	UFUNCTION(BlueprintImplementableEvent, Category = "Inventory|Entry", meta = (DisplayName = "On Inventory Entry ViewModel Set"))
 	void BP_OnInventoryEntryViewModelSet(URpgInventoryEntryViewModel* NewEntryViewModel);
