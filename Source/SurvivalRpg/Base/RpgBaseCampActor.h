@@ -22,6 +22,12 @@ class SURVIVALRPG_API ARpgBaseCampActor : public AActor
 public:
 	explicit ARpgBaseCampActor(const FObjectInitializer& ObjectInitializer = FObjectInitializer::Get());
 
+	virtual void GetLifetimeReplicatedProps(TArray<FLifetimeProperty>& OutLifetimeProps) const override;
+
+	/** Stable designer-authored id used by stations, crafting stations, and future save data to refer to this base. */
+	UFUNCTION(BlueprintCallable, BlueprintPure, Category = "Base Camp")
+	FName GetBaseId() const { return BaseId; }
+
 	/** Shared resource pool for material counts owned by this base camp. */
 	UFUNCTION(BlueprintCallable, BlueprintPure = false, Category = "Base Camp")
 	URpgBaseStorageComponent* GetBaseStorageComponent() const { return BaseStorageComponent; }
@@ -31,6 +37,10 @@ public:
 	URpgInventoryManagerComponent* GetArmoryInventoryComponent() const { return ArmoryInventoryComponent; }
 
 protected:
+	/** Stable id for this base camp. Replicated so UI and linked actors can display/debug their base ownership. */
+	UPROPERTY(EditInstanceOnly, Replicated, BlueprintReadOnly, Category = "Base Camp")
+	FName BaseId;
+
 	/** Simple replicated actor root so Blueprint children can attach base visuals. */
 	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "Base Camp")
 	TObjectPtr<USceneComponent> SceneRoot;

@@ -123,6 +123,11 @@ namespace RpgGameplayTags
 	UE_DECLARE_GAMEPLAY_TAG_EXTERN(UI_Screen_Storage);
 	UE_DECLARE_GAMEPLAY_TAG_EXTERN(UI_Screen_Loot);
 	UE_DECLARE_GAMEPLAY_TAG_EXTERN(UI_Screen_Crafting);
+	UE_DECLARE_GAMEPLAY_TAG_EXTERN(UI_Screen_BaseTerminal);
 	UE_DECLARE_GAMEPLAY_TAG_EXTERN(UI_Screen_Pause);
 	UE_DECLARE_GAMEPLAY_TAG_EXTERN(UI_Screen_Settings);
+
+	UE_DECLARE_GAMEPLAY_TAG_EXTERN(Base_Storage_Upgrade_AutoSort);
+	UE_DECLARE_GAMEPLAY_TAG_EXTERN(Base_Storage_Upgrade_RemoteAccess);
+	UE_DECLARE_GAMEPLAY_TAG_EXTERN(Base_Storage_Upgrade_CraftingOutputAutoDeposit);
 }

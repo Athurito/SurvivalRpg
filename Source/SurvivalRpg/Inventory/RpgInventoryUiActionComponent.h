@@ -8,6 +8,7 @@
 
 class URpgEquipmentLoadoutComponent;
 class URpgBaseStorageStationComponent;
+class URpgBaseStorageUpgradeDefinition;
 class URpgInventoryItemDefinition;
 class URpgInventoryItemInstance;
 class URpgInventoryManagerComponent;
@@ -83,6 +84,18 @@ public:
 	/** Takes an instance-based item from the linked base armory inventory into the player inventory. */
 	UFUNCTION(Server, Reliable, BlueprintCallable, Category = "Inventory|Base Storage")
 	void RequestTakeItemInstanceFromBase(URpgBaseStorageStationComponent* Station, URpgInventoryItemInstance* Item, int32 StackCount);
+
+	/** Installs a data-driven upgrade on a base storage station after paying material costs. */
+	UFUNCTION(Server, Reliable, BlueprintCallable, Category = "Inventory|Base Storage")
+	void RequestInstallBaseStorageUpgrade(URpgBaseStorageStationComponent* Station, URpgBaseStorageUpgradeDefinition* UpgradeDefinition);
+
+	/** Applies a shared server-side sort to the linked base resource rows. */
+	UFUNCTION(Server, Reliable, BlueprintCallable, Category = "Inventory|Base Storage")
+	void RequestApplyBaseResourceSort(URpgBaseStorageStationComponent* Station, ERpgInventorySortMode SortMode);
+
+	/** Moves one linked base resource row to a shared replicated index. */
+	UFUNCTION(Server, Reliable, BlueprintCallable, Category = "Inventory|Base Storage")
+	void RequestMoveBaseResourceEntry(URpgBaseStorageStationComponent* Station, TSubclassOf<URpgInventoryItemDefinition> ItemDefinition, int32 TargetIndex);
 
 	UFUNCTION(BlueprintCallable, BlueprintPure = false, Category = "Inventory|UI Actions")
 	bool CanAccessInventory(URpgInventoryManagerComponent* Inventory) const;

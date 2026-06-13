@@ -4,7 +4,10 @@
 #include "GameFramework/Pawn.h"
 #include "Net/UnrealNetwork.h"
 #include "RpgBaseCampActor.h"
+#include "RpgBaseStorageUpgradeDefinition.h"
+#include "SurvivalRpg/Interaction/Abilities/RpgGameplayAbility_OpenBaseStorageStation.h"
 #include "SurvivalRpg/Interaction/InteractionQuery.h"
+#include "SurvivalRpg/Inventory/RpgInventoryItemDefinition.h"
 #include "SurvivalRpg/Inventory/RpgInventoryManagerComponent.h"
 
 #include UE_INLINE_GENERATED_CPP_BY_NAME(RpgBaseStorageStationComponent)
@@ -14,6 +17,10 @@ URpgBaseStorageStationComponent::URpgBaseStorageStationComponent(const FObjectIn
 {
 	PrimaryComponentTick.bCanEverTick = false;
 	SetIsReplicatedByDefault(true);
+
+	OpenStationOption.Text = NSLOCTEXT("RpgBaseStorage", "OpenBaseStorageText", "Open");
+	OpenStationOption.SubText = NSLOCTEXT("RpgBaseStorage", "OpenBaseStorageSubText", "Base Storage");
+	OpenStationOption.InteractionAbilityToGrant = URpgGameplayAbility_OpenBaseStorageStation::StaticClass();
 }
 
 void URpgBaseStorageStationComponent::BeginPlay()
@@ -35,6 +42,7 @@ void URpgBaseStorageStationComponent::GetLifetimeReplicatedProps(TArray<FLifetim
 	Super::GetLifetimeReplicatedProps(OutLifetimeProps);
 
 	DOREPLIFETIME(ThisClass, LinkedBaseCamp);
+	DOREPLIFETIME(ThisClass, InstalledUpgrades);
 	DOREPLIFETIME(ThisClass, bAccessible);
 }
 
@@ -54,6 +62,67 @@ URpgBaseStorageComponent* URpgBaseStorageStationComponent::GetBaseStorage() cons
 URpgInventoryManagerComponent* URpgBaseStorageStationComponent::GetArmoryInventory() const
 {
 	return LinkedBaseCamp ? LinkedBaseCamp->GetArmoryInventoryComponent() : nullptr;
+}
+
+TArray<TSubclassOf<URpgInventoryItemDefinition>> URpgBaseStorageStationComponent::GetAllowedResourceDefinitions() const
+{
+	TArray<TSubclassOf<URpgInventoryItemDefinition>> Results;
+	if (StationMode == ERpgBaseStorageStationMode::Terminal)
+	{
+		return Results;
+	}
+
+	for (TSubclassOf<URpgInventoryItemDefinition> ItemDefinition : AllowedResourceDefinitions)
+	{
+		if (ItemDefinition)
+		{
+			Results.AddUnique(ItemDefinition);
+		}
+	}
+
+	if (Results.Num() == 0)
+	{
+		for (const FRpgBaseResourceCapacity& Bonus : CapacityBonuses)
+		{
+			if (Bonus.ItemDefinition)
+			{
+				Results.AddUnique(Bonus.ItemDefinition);
+			}
+		}
+
+		for (const URpgBaseStorageUpgradeDefinition* UpgradeDefinition : InstalledUpgrades)
+		{
+			if (!UpgradeDefinition)
+			{
+				continue;
+			}
+
+			for (const FRpgBaseResourceCapacity& Bonus : UpgradeDefinition->CapacityBonuses)
+			{
+				if (Bonus.ItemDefinition)
+				{
+					Results.AddUnique(Bonus.ItemDefinition);
+				}
+			}
+		}
+	}
+
+	return Results;
+}
+
+bool URpgBaseStorageStationComponent::AllowsResourceDefinition(TSubclassOf<URpgInventoryItemDefinition> ItemDefinition) const
+{
+	if (!ItemDefinition)
+	{
+		return false;
+	}
+
+	if (StationMode == ERpgBaseStorageStationMode::Terminal)
+	{
+		return true;
+	}
+
+	return GetAllowedResourceDefinitions().Contains(ItemDefinition);
 }
 
 bool URpgBaseStorageStationComponent::CanActorAccess(const AActor* RequestingActor) const
@@ -92,6 +161,76 @@ void URpgBaseStorageStationComponent::SetStationAccessible(bool bNewAccessible)
 	}
 }
 
+TArray<URpgBaseStorageUpgradeDefinition*> URpgBaseStorageStationComponent::GetInstalledUpgrades() const
+{
+	TArray<URpgBaseStorageUpgradeDefinition*> Results;
+	Results.Reserve(InstalledUpgrades.Num());
+	for (URpgBaseStorageUpgradeDefinition* UpgradeDefinition : InstalledUpgrades)
+	{
+		if (UpgradeDefinition)
+		{
+			Results.Add(UpgradeDefinition);
+		}
+	}
+	return Results;
+}
+
+bool URpgBaseStorageStationComponent::HasInstalledUpgrade(const URpgBaseStorageUpgradeDefinition* UpgradeDefinition) const
+{
+	return UpgradeDefinition && InstalledUpgrades.Contains(UpgradeDefinition);
+}
+
+bool URpgBaseStorageStationComponent::HasUpgradeTag(FGameplayTag UpgradeTag) const
+{
+	return UpgradeTag.IsValid() && GetGrantedUpgradeTags().HasTagExact(UpgradeTag);
+}
+
+FGameplayTagContainer URpgBaseStorageStationComponent::GetGrantedUpgradeTags() const
+{
+	FGameplayTagContainer GrantedTags;
+	for (const URpgBaseStorageUpgradeDefinition* UpgradeDefinition : InstalledUpgrades)
+	{
+		if (UpgradeDefinition)
+		{
+			GrantedTags.AppendTags(UpgradeDefinition->GrantedUpgradeTags);
+		}
+	}
+	return GrantedTags;
+}
+
+bool URpgBaseStorageStationComponent::CanInstallUpgrade(const URpgBaseStorageUpgradeDefinition* UpgradeDefinition) const
+{
+	if (!UpgradeDefinition || HasInstalledUpgrade(UpgradeDefinition))
+	{
+		return false;
+	}
+
+	if (!UpgradeDefinition->AllowedStationTags.IsEmpty() && !StationTags.HasAny(UpgradeDefinition->AllowedStationTags))
+	{
+		return false;
+	}
+
+	return true;
+}
+
+bool URpgBaseStorageStationComponent::InstallUpgrade(URpgBaseStorageUpgradeDefinition* UpgradeDefinition)
+{
+	AActor* OwnerActor = GetOwner();
+	if (!OwnerActor || !OwnerActor->HasAuthority() || !CanInstallUpgrade(UpgradeDefinition))
+	{
+		return false;
+	}
+
+	InstalledUpgrades.Add(UpgradeDefinition);
+	if (bCapacityBonusesApplied)
+	{
+		ApplyCapacityList(UpgradeDefinition->CapacityBonuses, 1);
+	}
+
+	OwnerActor->ForceNetUpdate();
+	return true;
+}
+
 void URpgBaseStorageStationComponent::ApplyCapacityBonuses(int32 Sign)
 {
 	AActor* OwnerActor = GetOwner();
@@ -110,16 +249,33 @@ void URpgBaseStorageStationComponent::ApplyCapacityBonuses(int32 Sign)
 		return;
 	}
 
+	if (!GetBaseStorage())
+	{
+		return;
+	}
+
+	ApplyCapacityList(CapacityBonuses, Sign);
+	for (const URpgBaseStorageUpgradeDefinition* UpgradeDefinition : InstalledUpgrades)
+	{
+		if (UpgradeDefinition)
+		{
+			ApplyCapacityList(UpgradeDefinition->CapacityBonuses, Sign);
+		}
+	}
+
+	bCapacityBonusesApplied = Sign > 0;
+}
+
+void URpgBaseStorageStationComponent::ApplyCapacityList(const TArray<FRpgBaseResourceCapacity>& Bonuses, int32 Sign)
+{
 	URpgBaseStorageComponent* BaseStorage = GetBaseStorage();
 	if (!BaseStorage)
 	{
 		return;
 	}
 
-	for (const FRpgBaseResourceCapacity& Bonus : CapacityBonuses)
+	for (const FRpgBaseResourceCapacity& Bonus : Bonuses)
 	{
 		BaseStorage->AddResourceCapacity(Bonus.ItemDefinition, Bonus.Capacity * Sign);
 	}
-
-	bCapacityBonusesApplied = Sign > 0;
 }

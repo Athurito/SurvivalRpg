@@ -8,6 +8,9 @@
 
 class AActor;
 class UActorComponent;
+class URpgBaseStorageComponent;
+class URpgBaseStorageStationComponent;
+class URpgInventoryItemDefinition;
 class URpgInventoryManagerComponent;
 
 /**
@@ -67,4 +70,34 @@ public:
 	/** Optional component context for interactions that are component-owned. */
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Inventory")
 	TObjectPtr<UActorComponent> ContextComponent = nullptr;
+};
+
+/**
+ * Payload used by base terminal and storage-unit screens to bind shared base resources and armory state.
+ */
+UCLASS(BlueprintType)
+class SURVIVALRPG_API URpgBaseStorageScreenPayload : public URpgInventoryScreenPayload
+{
+	GENERATED_BODY()
+
+public:
+	/** Player inventory shown for deposits, withdrawals, and upgrade material context. */
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Base Storage")
+	TObjectPtr<URpgInventoryManagerComponent> PlayerInventory = nullptr;
+
+	/** Shared material-count storage pool owned by the linked base camp. */
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Base Storage")
+	TObjectPtr<URpgBaseStorageComponent> BaseStorage = nullptr;
+
+	/** Shared inventory for instance-based base storage such as weapons, armor, and tools. */
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Base Storage")
+	TObjectPtr<URpgInventoryManagerComponent> ArmoryInventory = nullptr;
+
+	/** Station or terminal that opened the screen and is used for server-side access validation. */
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Base Storage")
+	TObjectPtr<URpgBaseStorageStationComponent> StationComponent = nullptr;
+
+	/** Empty means full terminal access; otherwise the UI should show only these material definitions. */
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Base Storage")
+	TArray<TSubclassOf<URpgInventoryItemDefinition>> AllowedResources;
 };

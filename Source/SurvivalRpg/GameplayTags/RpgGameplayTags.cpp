@@ -124,8 +124,13 @@ namespace RpgGameplayTags
 	UE_DEFINE_GAMEPLAY_TAG_COMMENT(UI_Screen_Storage, "UI.Screen.Storage", "Storage screen opened through the project UI screen registry.");
 	UE_DEFINE_GAMEPLAY_TAG_COMMENT(UI_Screen_Loot, "UI.Screen.Loot", "Loot screen opened through the project UI screen registry.");
 	UE_DEFINE_GAMEPLAY_TAG_COMMENT(UI_Screen_Crafting, "UI.Screen.Crafting", "Crafting screen opened through the project UI screen registry.");
+	UE_DEFINE_GAMEPLAY_TAG_COMMENT(UI_Screen_BaseTerminal, "UI.Screen.BaseTerminal", "Base terminal screen opened through the project UI screen registry.");
 	UE_DEFINE_GAMEPLAY_TAG_COMMENT(UI_Screen_Pause, "UI.Screen.Pause", "Pause screen opened through the project UI screen registry.");
 	UE_DEFINE_GAMEPLAY_TAG_COMMENT(UI_Screen_Settings, "UI.Screen.Settings", "Settings screen opened through the project UI screen registry.");
+
+	UE_DEFINE_GAMEPLAY_TAG_COMMENT(Base_Storage_Upgrade_AutoSort, "Base.Storage.Upgrade.AutoSort", "Base storage upgrade tag that unlocks shared auto-sort convenience.");
+	UE_DEFINE_GAMEPLAY_TAG_COMMENT(Base_Storage_Upgrade_RemoteAccess, "Base.Storage.Upgrade.RemoteAccess", "Base storage upgrade tag that unlocks remote access convenience.");
+	UE_DEFINE_GAMEPLAY_TAG_COMMENT(Base_Storage_Upgrade_CraftingOutputAutoDeposit, "Base.Storage.Upgrade.CraftingOutputAutoDeposit", "Base storage upgrade tag that lets crafting outputs flow back into linked base storage.");
 
 }
 

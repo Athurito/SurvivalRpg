@@ -8,8 +8,10 @@
 #include "RpgInventoryManagerComponent.h"
 #include "SurvivalRpg/Base/RpgBaseStorageComponent.h"
 #include "SurvivalRpg/Base/RpgBaseStorageStationComponent.h"
+#include "SurvivalRpg/Base/RpgBaseStorageUpgradeDefinition.h"
 #include "SurvivalRpg/Core/Player/RpgPlayerController.h"
 #include "SurvivalRpg/Core/Player/RpgPlayerState.h"
+#include "SurvivalRpg/Crafting/RpgCraftingStationComponent.h"
 #include "SurvivalRpg/Equipment/RpgEquipmentLoadoutComponent.h"
 #include "SurvivalRpg/Equipment/RpgQuickBarComponent.h"
 
@@ -22,9 +24,21 @@ namespace
 		return Item ? Item->FindFragmentByClass<URpgInventoryFragment_ItemTraits>() : nullptr;
 	}
 
+	const URpgInventoryFragment_ItemTraits* GetItemTraitsForDefinition(TSubclassOf<URpgInventoryItemDefinition> ItemDefinition)
+	{
+		const URpgInventoryItemDefinition* ItemCDO = ItemDefinition ? GetDefault<URpgInventoryItemDefinition>(ItemDefinition) : nullptr;
+		return ItemCDO ? Cast<URpgInventoryFragment_ItemTraits>(ItemCDO->FindFragmentByClass(URpgInventoryFragment_ItemTraits::StaticClass())) : nullptr;
+	}
+
 	bool IsMaterialItem(const URpgInventoryItemInstance* Item)
 	{
 		const URpgInventoryFragment_ItemTraits* Traits = GetItemTraits(Item);
+		return Traits && Traits->IsMaterial();
+	}
+
+	bool IsMaterialItemDefinition(TSubclassOf<URpgInventoryItemDefinition> ItemDefinition)
+	{
+		const URpgInventoryFragment_ItemTraits* Traits = GetItemTraitsForDefinition(ItemDefinition);
 		return Traits && Traits->IsMaterial();
 	}
 
@@ -47,6 +61,92 @@ namespace
 		}
 
 		return bTransfersWholeEntry && TargetInventory->CanAddItemInstance(Item, TransferCount);
+	}
+
+	int32 GetAvailableUpgradeCostCount(
+		const URpgInventoryManagerComponent* PlayerInventory,
+		const URpgBaseStorageComponent* BaseStorage,
+		TSubclassOf<URpgInventoryItemDefinition> ItemDefinition,
+		ERpgBaseStorageUpgradeCostConsumeOrder ConsumeOrder)
+	{
+		int32 AvailableCount = 0;
+
+		if (ConsumeOrder != ERpgBaseStorageUpgradeCostConsumeOrder::BaseOnly && PlayerInventory)
+		{
+			AvailableCount += PlayerInventory->GetTotalItemCountByDefinition(ItemDefinition);
+		}
+
+		if (ConsumeOrder != ERpgBaseStorageUpgradeCostConsumeOrder::PlayerOnly && BaseStorage)
+		{
+			AvailableCount += BaseStorage->GetResourceCount(ItemDefinition);
+		}
+
+		return AvailableCount;
+	}
+
+	bool ConsumeUpgradeCostFromPlayer(URpgInventoryManagerComponent* PlayerInventory, TSubclassOf<URpgInventoryItemDefinition> ItemDefinition, int32 CountToConsume)
+	{
+		return CountToConsume <= 0 || (PlayerInventory && PlayerInventory->ConsumeItemsByDefinition(ItemDefinition, CountToConsume));
+	}
+
+	bool ConsumeUpgradeCostFromBase(URpgBaseStorageComponent* BaseStorage, TSubclassOf<URpgInventoryItemDefinition> ItemDefinition, int32 CountToConsume)
+	{
+		return CountToConsume <= 0 || (BaseStorage && BaseStorage->WithdrawResource(ItemDefinition, CountToConsume));
+	}
+
+	bool ConsumeUpgradeCost(
+		URpgInventoryManagerComponent* PlayerInventory,
+		URpgBaseStorageComponent* BaseStorage,
+		TSubclassOf<URpgInventoryItemDefinition> ItemDefinition,
+		int32 Count,
+		ERpgBaseStorageUpgradeCostConsumeOrder ConsumeOrder)
+	{
+		if (!ItemDefinition || Count <= 0)
+		{
+			return false;
+		}
+
+		int32 RemainingCount = Count;
+		auto ConsumeFromBase = [&]()
+		{
+			const int32 AvailableInBase = BaseStorage ? BaseStorage->GetResourceCount(ItemDefinition) : 0;
+			const int32 CountToConsume = FMath::Min(AvailableInBase, RemainingCount);
+			if (!ConsumeUpgradeCostFromBase(BaseStorage, ItemDefinition, CountToConsume))
+			{
+				return false;
+			}
+			RemainingCount -= CountToConsume;
+			return true;
+		};
+
+		auto ConsumeFromPlayer = [&]()
+		{
+			const int32 AvailableInPlayer = PlayerInventory ? PlayerInventory->GetTotalItemCountByDefinition(ItemDefinition) : 0;
+			const int32 CountToConsume = FMath::Min(AvailableInPlayer, RemainingCount);
+			if (!ConsumeUpgradeCostFromPlayer(PlayerInventory, ItemDefinition, CountToConsume))
+			{
+				return false;
+			}
+			RemainingCount -= CountToConsume;
+			return true;
+		};
+
+		switch (ConsumeOrder)
+		{
+		case ERpgBaseStorageUpgradeCostConsumeOrder::BaseThenPlayer:
+			return ConsumeFromBase() && ConsumeFromPlayer() && RemainingCount <= 0;
+
+		case ERpgBaseStorageUpgradeCostConsumeOrder::PlayerThenBase:
+			return ConsumeFromPlayer() && ConsumeFromBase() && RemainingCount <= 0;
+
+		case ERpgBaseStorageUpgradeCostConsumeOrder::BaseOnly:
+			return ConsumeFromBase() && RemainingCount <= 0;
+
+		case ERpgBaseStorageUpgradeCostConsumeOrder::PlayerOnly:
+			return ConsumeFromPlayer() && RemainingCount <= 0;
+		}
+
+		return false;
 	}
 }
 
@@ -282,6 +382,11 @@ void URpgInventoryUiActionComponent::RequestDepositAllMaterialsToBase_Implementa
 		}
 
 		const TSubclassOf<URpgInventoryItemDefinition> ItemDefinition = Item->GetItemDef();
+		if (!Station->AllowsResourceDefinition(ItemDefinition))
+		{
+			continue;
+		}
+
 		const int32 CountToDeposit = FMath::Min(Entry.StackCount, BaseStorage->GetFreeResourceCapacity(ItemDefinition));
 		if (CountToDeposit <= 0 || !BaseStorage->CanStoreResource(ItemDefinition, CountToDeposit))
 		{
@@ -313,6 +418,11 @@ void URpgInventoryUiActionComponent::RequestDepositMaterialStackToBase_Implement
 	const int32 RequestedCount = StackCount <= 0 ? AvailableCount : StackCount;
 	const int32 TransferCount = FMath::Min(AvailableCount, RequestedCount);
 	const TSubclassOf<URpgInventoryItemDefinition> ItemDefinition = Item->GetItemDef();
+	if (!Station->AllowsResourceDefinition(ItemDefinition))
+	{
+		return;
+	}
+
 	if (TransferCount <= 0 || !BaseStorage->CanStoreResource(ItemDefinition, TransferCount))
 	{
 		return;
@@ -333,6 +443,11 @@ void URpgInventoryUiActionComponent::RequestWithdrawResourceFromBase_Implementat
 		return;
 	}
 
+	if (!Station->AllowsResourceDefinition(ItemDefinition))
+	{
+		return;
+	}
+
 	if (BaseStorage->GetResourceCount(ItemDefinition) < StackCount || !PlayerInventory->CanAddItemDefinition(ItemDefinition, StackCount))
 	{
 		return;
@@ -348,7 +463,7 @@ void URpgInventoryUiActionComponent::RequestStoreItemInstanceInBase_Implementati
 {
 	URpgInventoryManagerComponent* PlayerInventory = FindPlayerInventory();
 	URpgInventoryManagerComponent* ArmoryInventory = Station ? Station->GetArmoryInventory() : nullptr;
-	if (!CanAccessBaseStorageStation(Station) || !PlayerInventory || !ArmoryInventory || !Item || IsMaterialItem(Item))
+	if (!CanAccessBaseStorageStation(Station) || Station->GetStationMode() != ERpgBaseStorageStationMode::Terminal || !PlayerInventory || !ArmoryInventory || !Item || IsMaterialItem(Item))
 	{
 		return;
 	}
@@ -369,7 +484,7 @@ void URpgInventoryUiActionComponent::RequestTakeItemInstanceFromBase_Implementat
 {
 	URpgInventoryManagerComponent* PlayerInventory = FindPlayerInventory();
 	URpgInventoryManagerComponent* ArmoryInventory = Station ? Station->GetArmoryInventory() : nullptr;
-	if (!CanAccessBaseStorageStation(Station) || !PlayerInventory || !ArmoryInventory || !Item)
+	if (!CanAccessBaseStorageStation(Station) || Station->GetStationMode() != ERpgBaseStorageStationMode::Terminal || !PlayerInventory || !ArmoryInventory || !Item)
 	{
 		return;
 	}
@@ -383,6 +498,62 @@ void URpgInventoryUiActionComponent::RequestTakeItemInstanceFromBase_Implementat
 
 	ArmoryInventory->RemoveItemInstance(Item);
 	PlayerInventory->AddItemInstanceWithStack(Item, AvailableCount);
+}
+
+void URpgInventoryUiActionComponent::RequestInstallBaseStorageUpgrade_Implementation(URpgBaseStorageStationComponent* Station, URpgBaseStorageUpgradeDefinition* UpgradeDefinition)
+{
+	URpgInventoryManagerComponent* PlayerInventory = FindPlayerInventory();
+	URpgBaseStorageComponent* BaseStorage = Station ? Station->GetBaseStorage() : nullptr;
+	if (!CanAccessBaseStorageStation(Station) || !PlayerInventory || !BaseStorage || !UpgradeDefinition || !Station->CanInstallUpgrade(UpgradeDefinition))
+	{
+		return;
+	}
+
+	const ERpgBaseStorageUpgradeCostConsumeOrder ConsumeOrder = Station->GetUpgradeCostConsumeOrder();
+	for (const FRpgBaseStorageUpgradeCost& Cost : UpgradeDefinition->Costs)
+	{
+		if (!Cost.ItemDefinition || Cost.Count <= 0 || !IsMaterialItemDefinition(Cost.ItemDefinition))
+		{
+			return;
+		}
+
+		if (GetAvailableUpgradeCostCount(PlayerInventory, BaseStorage, Cost.ItemDefinition, ConsumeOrder) < Cost.Count)
+		{
+			return;
+		}
+	}
+
+	for (const FRpgBaseStorageUpgradeCost& Cost : UpgradeDefinition->Costs)
+	{
+		if (!ConsumeUpgradeCost(PlayerInventory, BaseStorage, Cost.ItemDefinition, Cost.Count, ConsumeOrder))
+		{
+			return;
+		}
+	}
+
+	Station->InstallUpgrade(UpgradeDefinition);
+}
+
+void URpgInventoryUiActionComponent::RequestApplyBaseResourceSort_Implementation(URpgBaseStorageStationComponent* Station, ERpgInventorySortMode SortMode)
+{
+	URpgBaseStorageComponent* BaseStorage = Station ? Station->GetBaseStorage() : nullptr;
+	if (!CanAccessBaseStorageStation(Station) || !BaseStorage)
+	{
+		return;
+	}
+
+	BaseStorage->ApplyResourceSort(SortMode);
+}
+
+void URpgInventoryUiActionComponent::RequestMoveBaseResourceEntry_Implementation(URpgBaseStorageStationComponent* Station, TSubclassOf<URpgInventoryItemDefinition> ItemDefinition, int32 TargetIndex)
+{
+	URpgBaseStorageComponent* BaseStorage = Station ? Station->GetBaseStorage() : nullptr;
+	if (!CanAccessBaseStorageStation(Station) || !BaseStorage || !Station->AllowsResourceDefinition(ItemDefinition))
+	{
+		return;
+	}
+
+	BaseStorage->MoveResourceEntry(ItemDefinition, TargetIndex);
 }
 
 bool URpgInventoryUiActionComponent::CanAccessInventory(URpgInventoryManagerComponent* Inventory) const
@@ -406,6 +577,12 @@ bool URpgInventoryUiActionComponent::CanAccessInventory(URpgInventoryManagerComp
 	if (Station && Station->GetArmoryInventory() == BaseArmoryInventory)
 	{
 		return Station->CanActorAccess(RequestingActor);
+	}
+
+	const URpgCraftingStationComponent* CraftingStation = InventoryOwner ? InventoryOwner->FindComponentByClass<URpgCraftingStationComponent>() : nullptr;
+	if (CraftingStation && CraftingStation->GetOutputInventory() == Inventory)
+	{
+		return CraftingStation->CanActorAccess(RequestingActor);
 	}
 
 	const URpgInventoryContainerComponent* Container = InventoryOwner ? InventoryOwner->FindComponentByClass<URpgInventoryContainerComponent>() : nullptr;
