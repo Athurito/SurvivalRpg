@@ -26,7 +26,7 @@ namespace
 		return Item ? Item->FindFragmentByClass<URpgInventoryFragment_ItemTraits>() : nullptr;
 	}
 
-	const URpgInventoryFragment_ItemTraits* GetItemTraitsForDefinition(TSubclassOf<URpgInventoryItemDefinition> ItemDefinition)
+	const URpgInventoryFragment_ItemTraits* GetUiActionItemTraitsForDefinition(TSubclassOf<URpgInventoryItemDefinition> ItemDefinition)
 	{
 		const URpgInventoryItemDefinition* ItemCDO = ItemDefinition ? GetDefault<URpgInventoryItemDefinition>(ItemDefinition) : nullptr;
 		return ItemCDO ? Cast<URpgInventoryFragment_ItemTraits>(ItemCDO->FindFragmentByClass(URpgInventoryFragment_ItemTraits::StaticClass())) : nullptr;
@@ -40,7 +40,7 @@ namespace
 
 	bool IsMaterialItemDefinition(TSubclassOf<URpgInventoryItemDefinition> ItemDefinition)
 	{
-		const URpgInventoryFragment_ItemTraits* Traits = GetItemTraitsForDefinition(ItemDefinition);
+		const URpgInventoryFragment_ItemTraits* Traits = GetUiActionItemTraitsForDefinition(ItemDefinition);
 		return Traits && Traits->IsMaterial();
 	}
 
