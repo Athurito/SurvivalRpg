@@ -34,11 +34,11 @@ struct SURVIVALRPG_API FRpgCraftingResourceCost
 	GENERATED_BODY()
 
 	/** Item definition required by the recipe. Static recipe data. */
-	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Crafting")
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Crafting")
 	TSubclassOf<URpgInventoryItemDefinition> ItemDefinition;
 
 	/** Number of items to consume across player inventory and linked storage. */
-	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Crafting", meta = (ClampMin = "1", UIMin = "1"))
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Crafting", meta = (ClampMin = "1", UIMin = "1"))
 	int32 Count = 1;
 };
 
@@ -49,11 +49,11 @@ struct SURVIVALRPG_API FRpgCraftingOutputItem
 	GENERATED_BODY()
 
 	/** Item definition produced by the recipe. Instance data is created through the inventory manager. */
-	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Crafting")
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Crafting")
 	TSubclassOf<URpgInventoryItemDefinition> ItemDefinition;
 
 	/** Number of items produced. Stackable definitions may merge; equipment definitions create entries as needed. */
-	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Crafting", meta = (ClampMin = "1", UIMin = "1"))
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Crafting", meta = (ClampMin = "1", UIMin = "1"))
 	int32 Count = 1;
 };
 
@@ -114,6 +114,10 @@ public:
 	UFUNCTION(BlueprintCallable, BlueprintPure = false, Category = "Crafting|Output")
 	bool ShouldAutoDepositCraftingOutputs() const;
 
+	/** Returns the storage station component that supplies output auto-deposit upgrade tags, if any. */
+	UFUNCTION(BlueprintCallable, BlueprintPure = false, Category = "Crafting|Output")
+	URpgBaseStorageStationComponent* GetOutputAutoDepositUpgradeProvider() const;
+
 protected:
 	/** Shared storage group this station belongs to. Empty means radius-only shared-container lookup. */
 	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Crafting")
@@ -143,7 +147,11 @@ protected:
 	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Crafting|Base Storage")
 	ERpgCraftingResourceConsumeOrder ResourceConsumeOrder = ERpgCraftingResourceConsumeOrder::BaseThenPlayer;
 
-	/** Station/terminal whose installed upgrades unlock output auto-deposit for this crafting station. */
+	/** Actor whose base storage station component supplies output auto-deposit upgrade tags. Set this to the placed terminal/storage-unit actor. */
+	UPROPERTY(EditInstanceOnly, BlueprintReadOnly, Category = "Crafting|Output")
+	TObjectPtr<AActor> OutputAutoDepositUpgradeProviderActor;
+
+	/** Direct component fallback for advanced Blueprint setups. Prefer OutputAutoDepositUpgradeProviderActor for placed level actors. */
 	UPROPERTY(EditInstanceOnly, BlueprintReadOnly, Category = "Crafting|Output")
 	TObjectPtr<URpgBaseStorageStationComponent> OutputAutoDepositUpgradeProvider;
 

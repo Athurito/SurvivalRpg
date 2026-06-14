@@ -16,6 +16,8 @@
 
 #include UE_INLINE_GENERATED_CPP_BY_NAME(RpgCraftingStationComponent)
 
+DEFINE_LOG_CATEGORY_STATIC(LogRpgCraftingStation, Log, All);
+
 URpgCraftingStationComponent::URpgCraftingStationComponent(const FObjectInitializer& ObjectInitializer)
 	: Super(ObjectInitializer)
 {
@@ -360,6 +362,13 @@ bool URpgCraftingStationComponent::AddCraftingOutputs(const TArray<FRpgCraftingO
 	const bool bAutoDeposit = ShouldAutoDepositCraftingOutputs();
 	URpgBaseStorageComponent* BaseStorage = GetLinkedBaseStorage();
 	URpgInventoryManagerComponent* ArmoryInventory = GetLinkedArmoryInventory();
+	UE_LOG(LogRpgCraftingStation, Log, TEXT("AddCraftingOutputs: Station=%s AutoDeposit=%s BaseStorage=%s Armory=%s OutputInventory=%s OutputCount=%d"),
+		*GetNameSafe(GetOwner()),
+		bAutoDeposit ? TEXT("true") : TEXT("false"),
+		*GetNameSafe(BaseStorage),
+		*GetNameSafe(ArmoryInventory),
+		*GetNameSafe(OutputInventoryComponent),
+		OutputItems.Num());
 
 	for (const FRpgCraftingOutputItem& OutputItem : OutputItems)
 	{
@@ -367,6 +376,11 @@ bool URpgCraftingStationComponent::AddCraftingOutputs(const TArray<FRpgCraftingO
 		if (bAutoDeposit && IsMaterialDefinition(OutputItem.ItemDefinition) && BaseStorage)
 		{
 			const int32 CountToStore = FMath::Min(RemainingCount, BaseStorage->GetFreeResourceCapacity(OutputItem.ItemDefinition));
+			UE_LOG(LogRpgCraftingStation, Log, TEXT("AddCraftingOutputs: Material output ItemDef=%s Count=%d FreeBaseCapacity=%d StoreCount=%d"),
+				*GetNameSafe(OutputItem.ItemDefinition),
+				OutputItem.Count,
+				BaseStorage->GetFreeResourceCapacity(OutputItem.ItemDefinition),
+				CountToStore);
 			if (CountToStore > 0 && BaseStorage->StoreResource(OutputItem.ItemDefinition, CountToStore))
 			{
 				RemainingCount -= CountToStore;
@@ -446,9 +460,27 @@ bool URpgCraftingStationComponent::FlushOutputToBaseStorage()
 
 bool URpgCraftingStationComponent::ShouldAutoDepositCraftingOutputs() const
 {
-	return bAlwaysAutoDepositCraftingOutputs ||
-		(OutputAutoDepositUpgradeProvider &&
-			OutputAutoDepositUpgradeProvider->HasUpgradeTag(RpgGameplayTags::Base_Storage_Upgrade_CraftingOutputAutoDeposit));
+	const URpgBaseStorageStationComponent* UpgradeProvider = GetOutputAutoDepositUpgradeProvider();
+	const bool bProviderHasTag = UpgradeProvider && UpgradeProvider->HasUpgradeTag(RpgGameplayTags::Base_Storage_Upgrade_CraftingOutputAutoDeposit);
+	const bool bShouldAutoDeposit = bAlwaysAutoDepositCraftingOutputs || bProviderHasTag;
+	UE_LOG(LogRpgCraftingStation, Log, TEXT("ShouldAutoDepositCraftingOutputs: Station=%s Always=%s ProviderActor=%s ProviderComponent=%s ProviderHasTag=%s Result=%s"),
+		*GetNameSafe(GetOwner()),
+		bAlwaysAutoDepositCraftingOutputs ? TEXT("true") : TEXT("false"),
+		*GetNameSafe(OutputAutoDepositUpgradeProviderActor),
+		*GetNameSafe(UpgradeProvider),
+		bProviderHasTag ? TEXT("true") : TEXT("false"),
+		bShouldAutoDeposit ? TEXT("true") : TEXT("false"));
+	return bShouldAutoDeposit;
+}
+
+URpgBaseStorageStationComponent* URpgCraftingStationComponent::GetOutputAutoDepositUpgradeProvider() const
+{
+	if (OutputAutoDepositUpgradeProvider)
+	{
+		return OutputAutoDepositUpgradeProvider;
+	}
+
+	return OutputAutoDepositUpgradeProviderActor ? OutputAutoDepositUpgradeProviderActor->FindComponentByClass<URpgBaseStorageStationComponent>() : nullptr;
 }
 
 URpgBaseStorageComponent* URpgCraftingStationComponent::GetLinkedBaseStorage() const

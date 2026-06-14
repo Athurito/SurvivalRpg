@@ -17,6 +17,8 @@
 
 #include UE_INLINE_GENERATED_CPP_BY_NAME(RpgInventoryUiActionComponent)
 
+DEFINE_LOG_CATEGORY_STATIC(LogRpgInventoryUiActions, Log, All);
+
 namespace
 {
 	const URpgInventoryFragment_ItemTraits* GetItemTraits(const URpgInventoryItemInstance* Item)
@@ -504,21 +506,99 @@ void URpgInventoryUiActionComponent::RequestInstallBaseStorageUpgrade_Implementa
 {
 	URpgInventoryManagerComponent* PlayerInventory = FindPlayerInventory();
 	URpgBaseStorageComponent* BaseStorage = Station ? Station->GetBaseStorage() : nullptr;
-	if (!CanAccessBaseStorageStation(Station) || !PlayerInventory || !BaseStorage || !UpgradeDefinition || !Station->CanInstallUpgrade(UpgradeDefinition))
+	if (!Station)
 	{
+		UE_LOG(LogRpgInventoryUiActions, Warning, TEXT("Install base storage upgrade failed: Station is null. Owner=%s Upgrade=%s"),
+			*GetNameSafe(GetOwner()),
+			*GetNameSafe(UpgradeDefinition));
+		return;
+	}
+
+	if (!CanAccessBaseStorageStation(Station))
+	{
+		UE_LOG(LogRpgInventoryUiActions, Warning, TEXT("Install base storage upgrade failed: station access denied. Owner=%s Station=%s Upgrade=%s"),
+			*GetNameSafe(GetOwner()),
+			*GetNameSafe(Station),
+			*GetNameSafe(UpgradeDefinition));
+		return;
+	}
+
+	if (!PlayerInventory)
+	{
+		UE_LOG(LogRpgInventoryUiActions, Warning, TEXT("Install base storage upgrade failed: player inventory missing. Owner=%s Station=%s Upgrade=%s"),
+			*GetNameSafe(GetOwner()),
+			*GetNameSafe(Station),
+			*GetNameSafe(UpgradeDefinition));
+		return;
+	}
+
+	if (!BaseStorage)
+	{
+		UE_LOG(LogRpgInventoryUiActions, Warning, TEXT("Install base storage upgrade failed: base storage missing. Owner=%s Station=%s Upgrade=%s"),
+			*GetNameSafe(GetOwner()),
+			*GetNameSafe(Station),
+			*GetNameSafe(UpgradeDefinition));
+		return;
+	}
+
+	if (!UpgradeDefinition)
+	{
+		UE_LOG(LogRpgInventoryUiActions, Warning, TEXT("Install base storage upgrade failed: upgrade definition is null. Owner=%s Station=%s"),
+			*GetNameSafe(GetOwner()),
+			*GetNameSafe(Station));
+		return;
+	}
+
+	if (!Station->CanInstallUpgrade(UpgradeDefinition))
+	{
+		UE_LOG(LogRpgInventoryUiActions, Warning, TEXT("Install base storage upgrade failed: station cannot install upgrade, maybe already installed or station tags do not match. Owner=%s Station=%s Upgrade=%s"),
+			*GetNameSafe(GetOwner()),
+			*GetNameSafe(Station),
+			*GetNameSafe(UpgradeDefinition));
 		return;
 	}
 
 	const ERpgBaseStorageUpgradeCostConsumeOrder ConsumeOrder = Station->GetUpgradeCostConsumeOrder();
+	UE_LOG(LogRpgInventoryUiActions, Log, TEXT("Install base storage upgrade requested: Owner=%s Station=%s Upgrade=%s CostCount=%d"),
+		*GetNameSafe(GetOwner()),
+		*GetNameSafe(Station),
+		*GetNameSafe(UpgradeDefinition),
+		UpgradeDefinition->Costs.Num());
+
 	for (const FRpgBaseStorageUpgradeCost& Cost : UpgradeDefinition->Costs)
 	{
-		if (!Cost.ItemDefinition || Cost.Count <= 0 || !IsMaterialItemDefinition(Cost.ItemDefinition))
+		if (!Cost.ItemDefinition)
 		{
+			UE_LOG(LogRpgInventoryUiActions, Warning, TEXT("Install base storage upgrade failed: empty cost item definition. Upgrade=%s"),
+				*GetNameSafe(UpgradeDefinition));
 			return;
 		}
 
-		if (GetAvailableUpgradeCostCount(PlayerInventory, BaseStorage, Cost.ItemDefinition, ConsumeOrder) < Cost.Count)
+		if (Cost.Count <= 0)
 		{
+			UE_LOG(LogRpgInventoryUiActions, Warning, TEXT("Install base storage upgrade failed: invalid cost count. Upgrade=%s ItemDef=%s Count=%d"),
+				*GetNameSafe(UpgradeDefinition),
+				*GetNameSafe(Cost.ItemDefinition),
+				Cost.Count);
+			return;
+		}
+
+		if (!IsMaterialItemDefinition(Cost.ItemDefinition))
+		{
+			UE_LOG(LogRpgInventoryUiActions, Warning, TEXT("Install base storage upgrade failed: cost item is not marked as material. Upgrade=%s ItemDef=%s"),
+				*GetNameSafe(UpgradeDefinition),
+				*GetNameSafe(Cost.ItemDefinition));
+			return;
+		}
+
+		const int32 AvailableCount = GetAvailableUpgradeCostCount(PlayerInventory, BaseStorage, Cost.ItemDefinition, ConsumeOrder);
+		if (AvailableCount < Cost.Count)
+		{
+			UE_LOG(LogRpgInventoryUiActions, Warning, TEXT("Install base storage upgrade failed: not enough resources. Upgrade=%s ItemDef=%s Available=%d Required=%d"),
+				*GetNameSafe(UpgradeDefinition),
+				*GetNameSafe(Cost.ItemDefinition),
+				AvailableCount,
+				Cost.Count);
 			return;
 		}
 	}
@@ -527,11 +607,20 @@ void URpgInventoryUiActionComponent::RequestInstallBaseStorageUpgrade_Implementa
 	{
 		if (!ConsumeUpgradeCost(PlayerInventory, BaseStorage, Cost.ItemDefinition, Cost.Count, ConsumeOrder))
 		{
+			UE_LOG(LogRpgInventoryUiActions, Warning, TEXT("Install base storage upgrade failed: cost consume failed after validation. Upgrade=%s ItemDef=%s Count=%d"),
+				*GetNameSafe(UpgradeDefinition),
+				*GetNameSafe(Cost.ItemDefinition),
+				Cost.Count);
 			return;
 		}
 	}
 
-	Station->InstallUpgrade(UpgradeDefinition);
+	const bool bInstalled = Station->InstallUpgrade(UpgradeDefinition);
+	UE_LOG(LogRpgInventoryUiActions, Log, TEXT("Install base storage upgrade result: Owner=%s Station=%s Upgrade=%s Installed=%s"),
+		*GetNameSafe(GetOwner()),
+		*GetNameSafe(Station),
+		*GetNameSafe(UpgradeDefinition),
+		bInstalled ? TEXT("true") : TEXT("false"));
 }
 
 void URpgInventoryUiActionComponent::RequestApplyBaseResourceSort_Implementation(URpgBaseStorageStationComponent* Station, ERpgInventorySortMode SortMode)
