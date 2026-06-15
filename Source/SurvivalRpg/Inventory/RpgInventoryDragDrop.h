@@ -35,6 +35,26 @@ enum class ERpgInventoryDropTargetType : uint8
 	ClearSlot
 };
 
+/** UI presentation state for one inventory slot while controller pick/place is active. */
+UENUM(BlueprintType)
+enum class ERpgInventorySlotDragVisualState : uint8
+{
+	/** No special drag/drop state. */
+	Normal,
+
+	/** Slot is currently focused or selected by CommonUI. */
+	Focused,
+
+	/** Slot is the source of the currently held controller payload. */
+	HeldSource,
+
+	/** Slot can receive the currently held payload. */
+	ValidTarget,
+
+	/** Slot is visible but cannot receive the currently held payload. */
+	InvalidTarget
+};
+
 /**
  * UI-only description of the item or assignment currently being dragged or held by controller input.
  *
@@ -106,6 +126,8 @@ struct SURVIVALRPG_API FRpgInventoryDropTarget
 	UPROPERTY(BlueprintReadWrite, Category = "Inventory|DragDrop")
 	ERpgEquipmentSlot EquipmentSlot = ERpgEquipmentSlot::None;
 };
+
+DECLARE_DYNAMIC_MULTICAST_DELEGATE_TwoParams(FRpgInventoryHeldPayloadChanged, bool, bHasHeldPayload, const FRpgInventoryDragPayload&, HeldPayload);
 
 /** Native drag operation used by mouse drag/drop inventory widgets. */
 UCLASS(BlueprintType, Blueprintable)
@@ -203,6 +225,14 @@ public:
 	UFUNCTION(BlueprintPure, Category = "Inventory|DragDrop")
 	FRpgInventoryDragPayload GetHeldPayload() const { return HeldPayload; }
 
+	/** Returns the held item instance, or null when controller pick/place is empty-handed. */
+	UFUNCTION(BlueprintPure, Category = "Inventory|DragDrop")
+	URpgInventoryItemInstance* GetHeldItemInstance() const { return bHasHeldPayload ? HeldPayload.ItemInstance.Get() : nullptr; }
+
+	/** Computes the visual drag/drop state for one inventory entry widget. */
+	UFUNCTION(BlueprintCallable, Category = "Inventory|DragDrop")
+	ERpgInventorySlotDragVisualState GetInventoryEntryVisualState(URpgInventoryEntryViewModel* EntryViewModel, bool bIsFocused) const;
+
 	/** Local preview validation for hover/focus feedback. Server validation still owns the final result. */
 	UFUNCTION(BlueprintCallable, Category = "Inventory|DragDrop")
 	bool PreviewDrop(const FRpgInventoryDropTarget& Target) const;
@@ -223,8 +253,13 @@ public:
 	UFUNCTION(BlueprintCallable, Category = "Inventory|DragDrop")
 	bool HandleInventoryEntryAccept(URpgInventoryEntryViewModel* EntryViewModel);
 
+	/** Broadcast whenever controller pick/place starts, changes, or is cancelled. */
+	UPROPERTY(BlueprintAssignable, Category = "Inventory|DragDrop")
+	FRpgInventoryHeldPayloadChanged OnHeldPayloadChanged;
+
 private:
 	bool CanCommitPayloadToTarget(const FRpgInventoryDragPayload& Payload, const FRpgInventoryDropTarget& Target) const;
+	bool IsHeldSourceEntry(URpgInventoryEntryViewModel* EntryViewModel) const;
 	URpgInventoryUiActionComponent* ResolveUiActionComponent() const;
 	URpgInventoryManagerComponent* FindPlayerInventory() const;
 	bool IsPlayerInventory(const URpgInventoryManagerComponent* Inventory) const;

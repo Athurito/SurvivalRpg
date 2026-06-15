@@ -27,12 +27,14 @@ void URpgBaseStorageStationComponent::BeginPlay()
 {
 	Super::BeginPlay();
 
+	RegisterWithLinkedBaseCamp();
 	ApplyCapacityBonuses(1);
 }
 
 void URpgBaseStorageStationComponent::EndPlay(const EEndPlayReason::Type EndPlayReason)
 {
 	ApplyCapacityBonuses(-1);
+	UnregisterFromLinkedBaseCamp();
 
 	Super::EndPlay(EndPlayReason);
 }
@@ -44,6 +46,37 @@ void URpgBaseStorageStationComponent::GetLifetimeReplicatedProps(TArray<FLifetim
 	DOREPLIFETIME(ThisClass, LinkedBaseCamp);
 	DOREPLIFETIME(ThisClass, InstalledUpgrades);
 	DOREPLIFETIME(ThisClass, bAccessible);
+}
+
+void URpgBaseStorageStationComponent::SetLinkedBaseCamp(ARpgBaseCampActor* NewBaseCamp)
+{
+	AActor* OwnerActor = GetOwner();
+	if (!OwnerActor || !OwnerActor->HasAuthority() || LinkedBaseCamp == NewBaseCamp)
+	{
+		return;
+	}
+
+	ApplyCapacityBonuses(-1);
+	UnregisterFromLinkedBaseCamp();
+	LinkedBaseCamp = NewBaseCamp;
+	RegisterWithLinkedBaseCamp();
+	ApplyCapacityBonuses(1);
+	OwnerActor->ForceNetUpdate();
+}
+
+void URpgBaseStorageStationComponent::OnRep_LinkedBaseCamp()
+{
+	RegisterWithLinkedBaseCamp();
+}
+
+void URpgBaseStorageStationComponent::OnRep_InstalledUpgrades()
+{
+	OnInstalledUpgradesChanged.Broadcast(this);
+
+	if (AActor* OwnerActor = GetOwner())
+	{
+		OwnerActor->ForceNetUpdate();
+	}
 }
 
 void URpgBaseStorageStationComponent::GatherInteractionOptions(const FInteractionQuery& InteractQuery, FInteractionOptionBuilder& InteractionBuilder)
@@ -228,6 +261,11 @@ bool URpgBaseStorageStationComponent::InstallUpgrade(URpgBaseStorageUpgradeDefin
 	}
 
 	OwnerActor->ForceNetUpdate();
+	if (LinkedBaseCamp)
+	{
+		LinkedBaseCamp->ForceNetUpdate();
+	}
+	OnInstalledUpgradesChanged.Broadcast(this);
 	return true;
 }
 
@@ -278,4 +316,29 @@ void URpgBaseStorageStationComponent::ApplyCapacityList(const TArray<FRpgBaseRes
 	{
 		BaseStorage->AddResourceCapacity(Bonus.ItemDefinition, Bonus.Capacity * Sign);
 	}
+}
+
+void URpgBaseStorageStationComponent::RegisterWithLinkedBaseCamp()
+{
+	ARpgBaseCampActor* CurrentBaseCamp = LinkedBaseCamp;
+	if (RegisteredBaseCamp.Get() == CurrentBaseCamp)
+	{
+		return;
+	}
+
+	UnregisterFromLinkedBaseCamp();
+	if (CurrentBaseCamp)
+	{
+		CurrentBaseCamp->RegisterStorageStation(this);
+		RegisteredBaseCamp = CurrentBaseCamp;
+	}
+}
+
+void URpgBaseStorageStationComponent::UnregisterFromLinkedBaseCamp()
+{
+	if (ARpgBaseCampActor* ExistingBaseCamp = RegisteredBaseCamp.Get())
+	{
+		ExistingBaseCamp->UnregisterStorageStation(this);
+	}
+	RegisteredBaseCamp.Reset();
 }

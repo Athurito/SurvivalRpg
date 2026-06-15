@@ -16,12 +16,32 @@ URpgInventorySlotEntryWidget::URpgInventorySlotEntryWidget(const FObjectInitiali
 
 void URpgInventorySlotEntryWidget::SetDragDropCoordinator(URpgInventoryDragDropCoordinator* InCoordinator)
 {
+	if (DragDropCoordinator)
+	{
+		DragDropCoordinator->OnHeldPayloadChanged.RemoveDynamic(this, &ThisClass::HandleHeldPayloadChanged);
+	}
+
 	DragDropCoordinator = InCoordinator;
+	if (DragDropCoordinator)
+	{
+		DragDropCoordinator->OnHeldPayloadChanged.AddUniqueDynamic(this, &ThisClass::HandleHeldPayloadChanged);
+	}
+
+	RefreshDragDropVisualState();
 }
 
 bool URpgInventorySlotEntryWidget::HandleEntryAccept()
 {
 	return DragDropCoordinator && EntryViewModel && DragDropCoordinator->HandleInventoryEntryAccept(EntryViewModel);
+}
+
+void URpgInventorySlotEntryWidget::RefreshDragDropVisualState()
+{
+	CurrentDragDropVisualState = DragDropCoordinator
+		? DragDropCoordinator->GetInventoryEntryVisualState(EntryViewModel, bEntrySelected)
+		: (bEntrySelected ? ERpgInventorySlotDragVisualState::Focused : ERpgInventorySlotDragVisualState::Normal);
+
+	BP_OnInventoryEntryDragDropStateChanged(CurrentDragDropVisualState);
 }
 
 void URpgInventorySlotEntryWidget::NativeOnListItemObjectSet(UObject* ListItemObject)
@@ -45,6 +65,7 @@ void URpgInventorySlotEntryWidget::NativeOnListItemObjectSet(UObject* ListItemOb
 	}
 
 	BP_OnInventoryEntryViewModelSet(EntryViewModel);
+	RefreshDragDropVisualState();
 }
 
 void URpgInventorySlotEntryWidget::NativeOnEntryReleased()
@@ -57,19 +78,23 @@ void URpgInventorySlotEntryWidget::NativeOnEntryReleased()
 	}
 
 	EntryViewModel = nullptr;
+	bEntrySelected = false;
 	if (UMVVMView* View = UMVVMSubsystem::GetViewFromUserWidget(this))
 	{
 		View->SetViewModelByClass(nullptr);
 	}
 
 	BP_OnInventoryEntryReleased();
+	RefreshDragDropVisualState();
 }
 
 void URpgInventorySlotEntryWidget::NativeOnItemSelectionChanged(bool bIsSelected)
 {
 	IUserListEntry::NativeOnItemSelectionChanged(bIsSelected);
 
+	bEntrySelected = bIsSelected;
 	BP_OnInventoryEntrySelectionChanged(bIsSelected);
+	RefreshDragDropVisualState();
 }
 
 void URpgInventorySlotEntryWidget::NativeOnClicked()
@@ -84,5 +109,11 @@ void URpgInventorySlotEntryWidget::HandleEntryViewModelChanged(URpgInventoryEntr
 	if (ChangedEntryViewModel == EntryViewModel)
 	{
 		BP_OnInventoryEntryViewModelSet(ChangedEntryViewModel);
+		RefreshDragDropVisualState();
 	}
+}
+
+void URpgInventorySlotEntryWidget::HandleHeldPayloadChanged(bool bHasHeldPayload, const FRpgInventoryDragPayload& HeldPayload)
+{
+	RefreshDragDropVisualState();
 }

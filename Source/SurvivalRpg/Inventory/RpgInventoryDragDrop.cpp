@@ -202,6 +202,7 @@ bool URpgInventoryDragDropCoordinator::BeginHold(const FRpgInventoryDragPayload&
 
 	HeldPayload = Payload;
 	bHasHeldPayload = true;
+	OnHeldPayloadChanged.Broadcast(bHasHeldPayload, HeldPayload);
 	return true;
 }
 
@@ -214,6 +215,30 @@ void URpgInventoryDragDropCoordinator::CancelHold()
 {
 	HeldPayload = FRpgInventoryDragPayload();
 	bHasHeldPayload = false;
+	OnHeldPayloadChanged.Broadcast(bHasHeldPayload, HeldPayload);
+}
+
+ERpgInventorySlotDragVisualState URpgInventoryDragDropCoordinator::GetInventoryEntryVisualState(URpgInventoryEntryViewModel* EntryViewModel, bool bIsFocused) const
+{
+	if (!EntryViewModel)
+	{
+		return bIsFocused ? ERpgInventorySlotDragVisualState::Focused : ERpgInventorySlotDragVisualState::Normal;
+	}
+
+	if (!bHasHeldPayload)
+	{
+		return bIsFocused ? ERpgInventorySlotDragVisualState::Focused : ERpgInventorySlotDragVisualState::Normal;
+	}
+
+	if (IsHeldSourceEntry(EntryViewModel))
+	{
+		return ERpgInventorySlotDragVisualState::HeldSource;
+	}
+
+	const FRpgInventoryDropTarget Target = MakeInventoryTargetFromEntry(EntryViewModel);
+	return PreviewDrop(Target)
+		? ERpgInventorySlotDragVisualState::ValidTarget
+		: ERpgInventorySlotDragVisualState::InvalidTarget;
 }
 
 bool URpgInventoryDragDropCoordinator::PreviewDrop(const FRpgInventoryDropTarget& Target) const
@@ -422,6 +447,18 @@ bool URpgInventoryDragDropCoordinator::CanCommitPayloadToTarget(const FRpgInvent
 	}
 
 	return false;
+}
+
+bool URpgInventoryDragDropCoordinator::IsHeldSourceEntry(URpgInventoryEntryViewModel* EntryViewModel) const
+{
+	if (!bHasHeldPayload || HeldPayload.SourceType != ERpgInventoryDragSourceType::InventoryEntry || !EntryViewModel)
+	{
+		return false;
+	}
+
+	return HeldPayload.SourceInventory == EntryViewModel->GetInventoryManager() &&
+		HeldPayload.EntryId == EntryViewModel->GetEntryId() &&
+		HeldPayload.SourceSlotIndex == EntryViewModel->GetSlotIndex();
 }
 
 URpgInventoryUiActionComponent* URpgInventoryDragDropCoordinator::ResolveUiActionComponent() const

@@ -23,6 +23,8 @@ enum class ERpgBaseStorageStationMode : uint8
 	ResourceUnit
 };
 
+DECLARE_DYNAMIC_MULTICAST_DELEGATE_OneParam(FRpgBaseStorageStationUpgradesChanged, URpgBaseStorageStationComponent*, Station);
+
 /**
  * Physical interaction point for a linked base camp.
  *
@@ -45,6 +47,10 @@ public:
 	/** Returns the base camp that owns the shared storage pools exposed by this station. */
 	UFUNCTION(BlueprintCallable, BlueprintPure = false, Category = "Base Storage")
 	ARpgBaseCampActor* GetBaseCamp() const { return LinkedBaseCamp; }
+
+	/** Runtime-links this placed or spawned station to a base camp. Server-authoritative. */
+	UFUNCTION(BlueprintCallable, BlueprintAuthorityOnly, Category = "Base Storage")
+	void SetLinkedBaseCamp(ARpgBaseCampActor* NewBaseCamp);
 
 	/** Returns the linked material-count storage pool, or null when no base camp is linked. */
 	UFUNCTION(BlueprintCallable, BlueprintPure = false, Category = "Base Storage")
@@ -106,7 +112,17 @@ public:
 	UFUNCTION(BlueprintCallable, BlueprintPure, Category = "Base Storage|Upgrades")
 	ERpgBaseStorageUpgradeCostConsumeOrder GetUpgradeCostConsumeOrder() const { return UpgradeCostConsumeOrder; }
 
+	/** Broadcast when installed upgrades replicate or change on the server. */
+	UPROPERTY(BlueprintAssignable, Category = "Base Storage|Upgrades")
+	FRpgBaseStorageStationUpgradesChanged OnInstalledUpgradesChanged;
+
 protected:
+	UFUNCTION()
+	void OnRep_LinkedBaseCamp();
+
+	UFUNCTION()
+	void OnRep_InstalledUpgrades();
+
 	/** Interaction option shown by the Lyra-style interaction scan when the station is usable. */
 	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Base Storage")
 	FInteractionOption OpenStationOption;
@@ -120,7 +136,7 @@ protected:
 	FGameplayTagContainer StationTags;
 
 	/** Base camp that receives this station's capacity bonuses and owns the shared pools. */
-	UPROPERTY(EditInstanceOnly, Replicated, BlueprintReadOnly, Category = "Base Storage")
+	UPROPERTY(EditInstanceOnly, ReplicatedUsing = OnRep_LinkedBaseCamp, BlueprintReadOnly, Category = "Base Storage")
 	TObjectPtr<ARpgBaseCampActor> LinkedBaseCamp;
 
 	/** Resource capacity added while this station exists and is linked on the authority. */
@@ -132,7 +148,7 @@ protected:
 	TArray<TSubclassOf<URpgInventoryItemDefinition>> AllowedResourceDefinitions;
 
 	/** Installed upgrade assets replicated to clients for terminal UI and crafting-output unlock checks. */
-	UPROPERTY(EditAnywhere, Replicated, BlueprintReadOnly, Category = "Base Storage|Upgrades")
+	UPROPERTY(EditAnywhere, ReplicatedUsing = OnRep_InstalledUpgrades, BlueprintReadOnly, Category = "Base Storage|Upgrades")
 	TArray<TObjectPtr<URpgBaseStorageUpgradeDefinition>> InstalledUpgrades;
 
 	/** Source order used when paying upgrade costs from player inventory and linked base storage. */
@@ -150,6 +166,9 @@ protected:
 private:
 	void ApplyCapacityBonuses(int32 Sign);
 	void ApplyCapacityList(const TArray<FRpgBaseResourceCapacity>& Bonuses, int32 Sign);
+	void RegisterWithLinkedBaseCamp();
+	void UnregisterFromLinkedBaseCamp();
 
 	bool bCapacityBonusesApplied = false;
+	TWeakObjectPtr<ARpgBaseCampActor> RegisteredBaseCamp;
 };

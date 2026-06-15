@@ -6,11 +6,15 @@
 #include "RpgInventoryItemDefinition.h"
 #include "RpgInventoryItemInstance.h"
 #include "RpgInventoryManagerComponent.h"
+#include "SurvivalRpg/Base/RpgBaseBuildableDefinition.h"
+#include "SurvivalRpg/Base/RpgBaseCampActor.h"
+#include "SurvivalRpg/Base/RpgBaseConstructionSiteActor.h"
 #include "SurvivalRpg/Base/RpgBaseStorageComponent.h"
 #include "SurvivalRpg/Base/RpgBaseStorageStationComponent.h"
 #include "SurvivalRpg/Base/RpgBaseStorageUpgradeDefinition.h"
 #include "SurvivalRpg/Core/Player/RpgPlayerController.h"
 #include "SurvivalRpg/Core/Player/RpgPlayerState.h"
+#include "SurvivalRpg/Crafting/RpgCraftingRecipeDefinition.h"
 #include "SurvivalRpg/Crafting/RpgCraftingStationComponent.h"
 #include "SurvivalRpg/Equipment/RpgEquipmentLoadoutComponent.h"
 #include "SurvivalRpg/Equipment/RpgQuickBarComponent.h"
@@ -643,6 +647,77 @@ void URpgInventoryUiActionComponent::RequestMoveBaseResourceEntry_Implementation
 	}
 
 	BaseStorage->MoveResourceEntry(ItemDefinition, TargetIndex);
+}
+
+void URpgInventoryUiActionComponent::RequestPlaceBaseBuildable_Implementation(ARpgBaseCampActor* BaseCamp, URpgBaseBuildableDefinition* BuildableDefinition, FTransform BuildTransform, bool bAutoContributeFromBase)
+{
+	const AController* OwnerController = Cast<AController>(GetOwner());
+	AActor* RequestingActor = OwnerController ? OwnerController->GetPawn() : GetOwner();
+	if (!BaseCamp || !BuildableDefinition || !RequestingActor || !BaseCamp->CanPlaceBuildableAtTransform(BuildableDefinition, BuildTransform, RequestingActor))
+	{
+		return;
+	}
+
+	UWorld* World = GetWorld();
+	if (!World)
+	{
+		return;
+	}
+
+	TSubclassOf<ARpgBaseConstructionSiteActor> ConstructionSiteClass = BuildableDefinition->ConstructionSiteActorClass;
+	if (!ConstructionSiteClass)
+	{
+		ConstructionSiteClass = ARpgBaseConstructionSiteActor::StaticClass();
+	}
+
+	FActorSpawnParameters SpawnParams;
+	SpawnParams.Owner = BaseCamp;
+	SpawnParams.Instigator = Cast<APawn>(RequestingActor);
+	SpawnParams.SpawnCollisionHandlingOverride = ESpawnActorCollisionHandlingMethod::AdjustIfPossibleButAlwaysSpawn;
+
+	ARpgBaseConstructionSiteActor* ConstructionSite = World->SpawnActor<ARpgBaseConstructionSiteActor>(ConstructionSiteClass, BuildTransform, SpawnParams);
+	if (!ConstructionSite)
+	{
+		return;
+	}
+
+	ConstructionSite->InitializeConstructionSite(BaseCamp, BuildableDefinition);
+	if (bAutoContributeFromBase && IsValid(ConstructionSite) && !ConstructionSite->IsConstructionComplete())
+	{
+		ConstructionSite->ContributeAllResources(RequestingActor, true);
+	}
+}
+
+void URpgInventoryUiActionComponent::RequestContributeAllToBaseConstructionSite_Implementation(ARpgBaseConstructionSiteActor* ConstructionSite, bool bAllowBaseStorage)
+{
+	const AController* OwnerController = Cast<AController>(GetOwner());
+	AActor* RequestingActor = OwnerController ? OwnerController->GetPawn() : GetOwner();
+	if (ConstructionSite && RequestingActor)
+	{
+		ConstructionSite->ContributeAllResources(RequestingActor, bAllowBaseStorage);
+	}
+}
+
+void URpgInventoryUiActionComponent::RequestContributeMaterialToBaseConstructionSite_Implementation(ARpgBaseConstructionSiteActor* ConstructionSite, TSubclassOf<URpgInventoryItemDefinition> ItemDefinition, int32 StackCount, bool bAllowBaseStorage)
+{
+	const AController* OwnerController = Cast<AController>(GetOwner());
+	AActor* RequestingActor = OwnerController ? OwnerController->GetPawn() : GetOwner();
+	if (ConstructionSite && RequestingActor && ItemDefinition && StackCount > 0)
+	{
+		ConstructionSite->ContributeMaterial(RequestingActor, ItemDefinition, StackCount, bAllowBaseStorage);
+	}
+}
+
+void URpgInventoryUiActionComponent::RequestCraftRecipe_Implementation(URpgCraftingStationComponent* CraftingStation, URpgCraftingRecipeDefinition* RecipeDefinition)
+{
+	const AController* OwnerController = Cast<AController>(GetOwner());
+	AActor* RequestingActor = OwnerController ? OwnerController->GetPawn() : GetOwner();
+	if (!CraftingStation || !RecipeDefinition || !RequestingActor || !CraftingStation->CanCraftRecipe(RequestingActor, RecipeDefinition))
+	{
+		return;
+	}
+
+	CraftingStation->CraftRecipe(RequestingActor, RecipeDefinition);
 }
 
 bool URpgInventoryUiActionComponent::CanAccessInventory(URpgInventoryManagerComponent* Inventory) const

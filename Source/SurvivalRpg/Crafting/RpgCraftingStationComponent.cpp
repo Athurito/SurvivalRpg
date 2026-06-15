@@ -4,9 +4,11 @@
 #include "GameFramework/Controller.h"
 #include "GameFramework/Pawn.h"
 #include "GameFramework/PlayerState.h"
+#include "Net/UnrealNetwork.h"
 #include "SurvivalRpg/Base/RpgBaseCampActor.h"
 #include "SurvivalRpg/Base/RpgBaseStorageComponent.h"
 #include "SurvivalRpg/Base/RpgBaseStorageStationComponent.h"
+#include "SurvivalRpg/Crafting/RpgCraftingRecipeDefinition.h"
 #include "SurvivalRpg/GameplayTags/RpgGameplayTags.h"
 #include "SurvivalRpg/Inventory/RpgInventoryContainerComponent.h"
 #include "SurvivalRpg/Inventory/RpgInventoryFragment_ItemTraits.h"
@@ -22,6 +24,7 @@ URpgCraftingStationComponent::URpgCraftingStationComponent(const FObjectInitiali
 	: Super(ObjectInitializer)
 {
 	PrimaryComponentTick.bCanEverTick = false;
+	SetIsReplicatedByDefault(true);
 }
 
 void URpgCraftingStationComponent::BeginPlay()
@@ -32,6 +35,13 @@ void URpgCraftingStationComponent::BeginPlay()
 	{
 		SetOutputInventoryManager(OutputInventoryComponent);
 	}
+}
+
+void URpgCraftingStationComponent::GetLifetimeReplicatedProps(TArray<FLifetimeProperty>& OutLifetimeProps) const
+{
+	Super::GetLifetimeReplicatedProps(OutLifetimeProps);
+
+	DOREPLIFETIME(ThisClass, LinkedBaseCamp);
 }
 
 namespace
@@ -124,6 +134,95 @@ TArray<URpgInventoryManagerComponent*> URpgCraftingStationComponent::GetResource
 	}
 
 	return Results;
+}
+
+void URpgCraftingStationComponent::SetLinkedBaseCamp(ARpgBaseCampActor* NewBaseCamp)
+{
+	AActor* OwnerActor = GetOwner();
+	if (!OwnerActor || !OwnerActor->HasAuthority())
+	{
+		return;
+	}
+
+	LinkedBaseCamp = NewBaseCamp;
+	OwnerActor->ForceNetUpdate();
+}
+
+TArray<URpgCraftingRecipeDefinition*> URpgCraftingStationComponent::GetAvailableRecipes() const
+{
+	TArray<URpgCraftingRecipeDefinition*> Results;
+	if (!AvailableRecipeSet)
+	{
+		return Results;
+	}
+
+	const FGameplayTagContainer BaseUpgradeTags = LinkedBaseCamp ? LinkedBaseCamp->GetGrantedStorageUpgradeTags() : FGameplayTagContainer();
+	for (URpgCraftingRecipeDefinition* Recipe : AvailableRecipeSet->Recipes)
+	{
+		if (!Recipe)
+		{
+			continue;
+		}
+
+		if (!Recipe->RequiredStationTags.IsEmpty() && !StationTags.HasAllExact(Recipe->RequiredStationTags))
+		{
+			continue;
+		}
+
+		if (!Recipe->RequiredUnlockTags.IsEmpty() && !BaseUpgradeTags.HasAllExact(Recipe->RequiredUnlockTags))
+		{
+			continue;
+		}
+
+		Results.Add(Recipe);
+	}
+
+	return Results;
+}
+
+bool URpgCraftingStationComponent::CanCraftRecipe(AActor* RequestingActor, const URpgCraftingRecipeDefinition* RecipeDefinition) const
+{
+	if (!RecipeDefinition || !CanActorAccess(RequestingActor))
+	{
+		return false;
+	}
+
+	if (!RecipeDefinition->RequiredStationTags.IsEmpty() && !StationTags.HasAllExact(RecipeDefinition->RequiredStationTags))
+	{
+		return false;
+	}
+
+	const FGameplayTagContainer BaseUpgradeTags = LinkedBaseCamp ? LinkedBaseCamp->GetGrantedStorageUpgradeTags() : FGameplayTagContainer();
+	if (!RecipeDefinition->RequiredUnlockTags.IsEmpty() && !BaseUpgradeTags.HasAllExact(RecipeDefinition->RequiredUnlockTags))
+	{
+		return false;
+	}
+
+	for (const FRpgCraftingResourceCost& RequiredItem : RecipeDefinition->RequiredResources)
+	{
+		if (!RequiredItem.ItemDefinition || RequiredItem.Count <= 0)
+		{
+			return false;
+		}
+
+		if (GetAvailableResourceCount(RequestingActor, RequiredItem.ItemDefinition) < RequiredItem.Count)
+		{
+			return false;
+		}
+	}
+
+	return CanAcceptCraftingOutputs(RecipeDefinition->OutputItems);
+}
+
+bool URpgCraftingStationComponent::CraftRecipe(AActor* RequestingActor, URpgCraftingRecipeDefinition* RecipeDefinition)
+{
+	AActor* OwnerActor = GetOwner();
+	if (!OwnerActor || !OwnerActor->HasAuthority() || !CanCraftRecipe(RequestingActor, RecipeDefinition))
+	{
+		return false;
+	}
+
+	return CraftItems(RequestingActor, RecipeDefinition->RequiredResources, RecipeDefinition->OutputItems);
 }
 
 int32 URpgCraftingStationComponent::GetAvailableResourceCount(AActor* RequestingActor, TSubclassOf<URpgInventoryItemDefinition> ItemDefinition) const
@@ -462,10 +561,13 @@ bool URpgCraftingStationComponent::ShouldAutoDepositCraftingOutputs() const
 {
 	const URpgBaseStorageStationComponent* UpgradeProvider = GetOutputAutoDepositUpgradeProvider();
 	const bool bProviderHasTag = UpgradeProvider && UpgradeProvider->HasUpgradeTag(RpgGameplayTags::Base_Storage_Upgrade_CraftingOutputAutoDeposit);
-	const bool bShouldAutoDeposit = bAlwaysAutoDepositCraftingOutputs || bProviderHasTag;
-	UE_LOG(LogRpgCraftingStation, Log, TEXT("ShouldAutoDepositCraftingOutputs: Station=%s Always=%s ProviderActor=%s ProviderComponent=%s ProviderHasTag=%s Result=%s"),
+	const bool bBaseCampHasTag = LinkedBaseCamp && LinkedBaseCamp->HasStorageUpgradeTag(RpgGameplayTags::Base_Storage_Upgrade_CraftingOutputAutoDeposit);
+	const bool bShouldAutoDeposit = bAlwaysAutoDepositCraftingOutputs || bBaseCampHasTag || bProviderHasTag;
+	UE_LOG(LogRpgCraftingStation, Verbose, TEXT("ShouldAutoDepositCraftingOutputs: Station=%s Always=%s BaseCamp=%s BaseHasTag=%s ProviderActor=%s ProviderComponent=%s ProviderHasTag=%s Result=%s"),
 		*GetNameSafe(GetOwner()),
 		bAlwaysAutoDepositCraftingOutputs ? TEXT("true") : TEXT("false"),
+		*GetNameSafe(LinkedBaseCamp),
+		bBaseCampHasTag ? TEXT("true") : TEXT("false"),
 		*GetNameSafe(OutputAutoDepositUpgradeProviderActor),
 		*GetNameSafe(UpgradeProvider),
 		bProviderHasTag ? TEXT("true") : TEXT("false"),

@@ -1,6 +1,7 @@
 #pragma once
 
 #include "Components/ActorComponent.h"
+#include "GameplayTagContainer.h"
 
 #include "RpgCraftingStationComponent.generated.h"
 
@@ -9,6 +10,8 @@ class URpgInventoryManagerComponent;
 class ARpgBaseCampActor;
 class URpgBaseStorageStationComponent;
 class URpgBaseStorageComponent;
+class URpgCraftingRecipeDefinition;
+class URpgCraftingRecipeSet;
 
 /** Resource source order used by a crafting station when a recipe consumes materials. */
 UENUM(BlueprintType)
@@ -69,10 +72,35 @@ public:
 	explicit URpgCraftingStationComponent(const FObjectInitializer& ObjectInitializer = FObjectInitializer::Get());
 
 	virtual void BeginPlay() override;
+	virtual void GetLifetimeReplicatedProps(TArray<FLifetimeProperty>& OutLifetimeProps) const override;
 
 	/** Returns player inventory plus crafting-accessible containers in range or in the same storage group. */
 	UFUNCTION(BlueprintCallable, BlueprintPure = false, Category = "Crafting")
 	TArray<URpgInventoryManagerComponent*> GetResourceInventories(AActor* RequestingActor) const;
+
+	/** Runtime-links this placed or spawned station to a base camp. Server-authoritative. */
+	UFUNCTION(BlueprintCallable, BlueprintAuthorityOnly, Category = "Crafting|Base Storage")
+	void SetLinkedBaseCamp(ARpgBaseCampActor* NewBaseCamp);
+
+	/** Returns the linked base camp this station may consume from and auto-deposit into. */
+	UFUNCTION(BlueprintCallable, BlueprintPure = false, Category = "Crafting|Base Storage")
+	ARpgBaseCampActor* GetLinkedBaseCamp() const { return LinkedBaseCamp; }
+
+	/** Semantic station tags used by recipe filters, such as Crafting.Station.Smelter. */
+	UFUNCTION(BlueprintCallable, BlueprintPure, Category = "Crafting|Recipes", meta = (Categories = "Crafting.Station"))
+	FGameplayTagContainer GetStationTags() const { return StationTags; }
+
+	/** Returns recipes from the configured set that match this station's tags and base unlock state. */
+	UFUNCTION(BlueprintCallable, BlueprintPure = false, Category = "Crafting|Recipes")
+	TArray<URpgCraftingRecipeDefinition*> GetAvailableRecipes() const;
+
+	/** Returns true if this station can currently craft the recipe for the requesting actor. */
+	UFUNCTION(BlueprintCallable, BlueprintPure = false, Category = "Crafting|Recipes")
+	bool CanCraftRecipe(AActor* RequestingActor, const URpgCraftingRecipeDefinition* RecipeDefinition) const;
+
+	/** Crafts one data-driven recipe instantly. Server-authoritative V1 path. */
+	UFUNCTION(BlueprintCallable, BlueprintAuthorityOnly, Category = "Crafting|Recipes")
+	bool CraftRecipe(AActor* RequestingActor, URpgCraftingRecipeDefinition* RecipeDefinition);
 
 	/** Returns total available count across all resource inventories for one item definition. */
 	UFUNCTION(BlueprintCallable, BlueprintPure = false, Category = "Crafting")
@@ -119,6 +147,14 @@ public:
 	URpgBaseStorageStationComponent* GetOutputAutoDepositUpgradeProvider() const;
 
 protected:
+	/** Station identity tags used by recipe definitions to decide where they can be crafted. */
+	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Crafting|Recipes", meta = (Categories = "Crafting.Station"))
+	FGameplayTagContainer StationTags;
+
+	/** Data-driven recipe list offered by this station. */
+	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Crafting|Recipes")
+	TObjectPtr<URpgCraftingRecipeSet> AvailableRecipeSet;
+
 	/** Shared storage group this station belongs to. Empty means radius-only shared-container lookup. */
 	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Crafting")
 	FName StorageGroupId;
@@ -136,7 +172,7 @@ protected:
 	float InteractionRadius = 350.0f;
 
 	/** Optional base camp resource pool this station may pull material counts from. */
-	UPROPERTY(EditInstanceOnly, BlueprintReadOnly, Category = "Crafting|Base Storage")
+	UPROPERTY(EditInstanceOnly, Replicated, BlueprintReadOnly, Category = "Crafting|Base Storage")
 	TObjectPtr<ARpgBaseCampActor> LinkedBaseCamp;
 
 	/** Whether recipe checks and consumption include the linked base camp's material-count pool. */

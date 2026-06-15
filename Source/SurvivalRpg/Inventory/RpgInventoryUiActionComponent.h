@@ -6,9 +6,14 @@
 
 #include "RpgInventoryUiActionComponent.generated.h"
 
+class ARpgBaseCampActor;
+class ARpgBaseConstructionSiteActor;
 class URpgEquipmentLoadoutComponent;
+class URpgBaseBuildableDefinition;
 class URpgBaseStorageStationComponent;
 class URpgBaseStorageUpgradeDefinition;
+class URpgCraftingRecipeDefinition;
+class URpgCraftingStationComponent;
 class URpgInventoryItemDefinition;
 class URpgInventoryItemInstance;
 class URpgInventoryManagerComponent;
@@ -96,6 +101,22 @@ public:
 	/** Moves one linked base resource row to a shared replicated index. */
 	UFUNCTION(Server, Reliable, BlueprintCallable, Category = "Inventory|Base Storage")
 	void RequestMoveBaseResourceEntry(URpgBaseStorageStationComponent* Station, TSubclassOf<URpgInventoryItemDefinition> ItemDefinition, int32 TargetIndex);
+
+	/** Places a replicated construction site for a buildable near a base camp. */
+	UFUNCTION(Server, Reliable, BlueprintCallable, Category = "Inventory|Base Building")
+	void RequestPlaceBaseBuildable(ARpgBaseCampActor* BaseCamp, URpgBaseBuildableDefinition* BuildableDefinition, FTransform BuildTransform, bool bAutoContributeFromBase);
+
+	/** Contributes all available matching resources to a construction site. */
+	UFUNCTION(Server, Reliable, BlueprintCallable, Category = "Inventory|Base Building")
+	void RequestContributeAllToBaseConstructionSite(ARpgBaseConstructionSiteActor* ConstructionSite, bool bAllowBaseStorage);
+
+	/** Contributes one resource type to a construction site. */
+	UFUNCTION(Server, Reliable, BlueprintCallable, Category = "Inventory|Base Building")
+	void RequestContributeMaterialToBaseConstructionSite(ARpgBaseConstructionSiteActor* ConstructionSite, TSubclassOf<URpgInventoryItemDefinition> ItemDefinition, int32 StackCount, bool bAllowBaseStorage);
+
+	/** Crafts one recipe through an accessible crafting station. */
+	UFUNCTION(Server, Reliable, BlueprintCallable, Category = "Inventory|Crafting")
+	void RequestCraftRecipe(URpgCraftingStationComponent* CraftingStation, URpgCraftingRecipeDefinition* RecipeDefinition);
 
 	UFUNCTION(BlueprintCallable, BlueprintPure = false, Category = "Inventory|UI Actions")
 	bool CanAccessInventory(URpgInventoryManagerComponent* Inventory) const;

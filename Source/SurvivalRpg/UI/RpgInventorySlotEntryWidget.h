@@ -3,6 +3,7 @@
 #include "Blueprint/IUserObjectListEntry.h"
 #include "CommonButtonBase.h"
 #include "CoreMinimal.h"
+#include "SurvivalRpg/Inventory/RpgInventoryDragDrop.h"
 
 #include "RpgInventorySlotEntryWidget.generated.h"
 
@@ -40,6 +41,14 @@ public:
 	UFUNCTION(BlueprintCallable, Category = "Inventory|DragDrop")
 	bool HandleEntryAccept();
 
+	/** Recomputes drag/drop presentation state and calls the Blueprint visual hook. */
+	UFUNCTION(BlueprintCallable, Category = "Inventory|DragDrop")
+	void RefreshDragDropVisualState();
+
+	/** Current drag/drop presentation state for this entry widget. */
+	UFUNCTION(BlueprintPure, Category = "Inventory|DragDrop")
+	ERpgInventorySlotDragVisualState GetCurrentDragDropVisualState() const { return CurrentDragDropVisualState; }
+
 protected:
 	//~IUserObjectListEntry interface
 	virtual void NativeOnListItemObjectSet(UObject* ListItemObject) override;
@@ -67,10 +76,22 @@ protected:
 	UFUNCTION(BlueprintImplementableEvent, Category = "Inventory|Entry", meta = (DisplayName = "On Inventory Entry Selection Changed"))
 	void BP_OnInventoryEntrySelectionChanged(bool bIsSelected);
 
+	/** Blueprint presentation hook for controller held-item and drop-target highlights. */
+	UFUNCTION(BlueprintImplementableEvent, Category = "Inventory|DragDrop", meta = (DisplayName = "On Inventory Entry DragDrop State Changed"))
+	void BP_OnInventoryEntryDragDropStateChanged(ERpgInventorySlotDragVisualState NewState);
+
+	UFUNCTION()
+	void HandleHeldPayloadChanged(bool bHasHeldPayload, const FRpgInventoryDragPayload& HeldPayload);
+
 private:
 	UPROPERTY(Transient, BlueprintReadOnly, Category = "Inventory|Entry", meta = (AllowPrivateAccess = "true"))
 	TObjectPtr<URpgInventoryEntryViewModel> EntryViewModel = nullptr;
 
 	UPROPERTY(Transient, BlueprintReadOnly, Category = "Inventory|DragDrop", meta = (AllowPrivateAccess = "true"))
 	TObjectPtr<URpgInventoryDragDropCoordinator> DragDropCoordinator = nullptr;
+
+	UPROPERTY(Transient, BlueprintReadOnly, Category = "Inventory|DragDrop", meta = (AllowPrivateAccess = "true"))
+	ERpgInventorySlotDragVisualState CurrentDragDropVisualState = ERpgInventorySlotDragVisualState::Normal;
+
+	bool bEntrySelected = false;
 };
