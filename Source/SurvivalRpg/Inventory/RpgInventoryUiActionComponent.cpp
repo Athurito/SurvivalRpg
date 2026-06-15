@@ -653,14 +653,36 @@ void URpgInventoryUiActionComponent::RequestPlaceBaseBuildable_Implementation(AR
 {
 	const AController* OwnerController = Cast<AController>(GetOwner());
 	AActor* RequestingActor = OwnerController ? OwnerController->GetPawn() : GetOwner();
-	if (!BaseCamp || !BuildableDefinition || !RequestingActor || !BaseCamp->CanPlaceBuildableAtTransform(BuildableDefinition, BuildTransform, RequestingActor))
+	if (!BaseCamp || !BuildableDefinition || !RequestingActor)
 	{
+		UE_LOG(LogRpgInventoryUiActions, Warning, TEXT("Place buildable failed: missing input. Owner=%s BaseCamp=%s Buildable=%s RequestingActor=%s"),
+			*GetNameSafe(GetOwner()),
+			*GetNameSafe(BaseCamp),
+			*GetNameSafe(BuildableDefinition),
+			*GetNameSafe(RequestingActor));
+		return;
+	}
+
+	if (!BaseCamp->CanPlaceBuildableAtTransform(BuildableDefinition, BuildTransform, RequestingActor))
+	{
+		UE_LOG(LogRpgInventoryUiActions, Warning, TEXT("Place buildable failed: placement validation denied. Owner=%s BaseCamp=%s Buildable=%s BuildActorClass=%s BaseDist=%.0f BuilderDist=%.0f BuildLocation=%s"),
+			*GetNameSafe(GetOwner()),
+			*GetNameSafe(BaseCamp),
+			*GetNameSafe(BuildableDefinition),
+			*GetNameSafe(BuildableDefinition->BuildActorClass),
+			FVector::Dist(BaseCamp->GetActorLocation(), BuildTransform.GetLocation()),
+			FVector::Dist(RequestingActor->GetActorLocation(), BuildTransform.GetLocation()),
+			*BuildTransform.GetLocation().ToCompactString());
 		return;
 	}
 
 	UWorld* World = GetWorld();
 	if (!World)
 	{
+		UE_LOG(LogRpgInventoryUiActions, Warning, TEXT("Place buildable failed: world missing. Owner=%s BaseCamp=%s Buildable=%s"),
+			*GetNameSafe(GetOwner()),
+			*GetNameSafe(BaseCamp),
+			*GetNameSafe(BuildableDefinition));
 		return;
 	}
 
@@ -678,8 +700,21 @@ void URpgInventoryUiActionComponent::RequestPlaceBaseBuildable_Implementation(AR
 	ARpgBaseConstructionSiteActor* ConstructionSite = World->SpawnActor<ARpgBaseConstructionSiteActor>(ConstructionSiteClass, BuildTransform, SpawnParams);
 	if (!ConstructionSite)
 	{
+		UE_LOG(LogRpgInventoryUiActions, Warning, TEXT("Place buildable failed: construction site spawn failed. Owner=%s BaseCamp=%s Buildable=%s SiteClass=%s"),
+			*GetNameSafe(GetOwner()),
+			*GetNameSafe(BaseCamp),
+			*GetNameSafe(BuildableDefinition),
+			*GetNameSafe(ConstructionSiteClass));
 		return;
 	}
+
+	UE_LOG(LogRpgInventoryUiActions, Log, TEXT("Place buildable succeeded: Site=%s BaseCamp=%s Buildable=%s BuildActorClass=%s AutoContributeFromBase=%s Location=%s"),
+		*GetNameSafe(ConstructionSite),
+		*GetNameSafe(BaseCamp),
+		*GetNameSafe(BuildableDefinition),
+		*GetNameSafe(BuildableDefinition->BuildActorClass),
+		bAutoContributeFromBase ? TEXT("true") : TEXT("false"),
+		*BuildTransform.GetLocation().ToCompactString());
 
 	ConstructionSite->InitializeConstructionSite(BaseCamp, BuildableDefinition);
 	if (bAutoContributeFromBase && IsValid(ConstructionSite) && !ConstructionSite->IsConstructionComplete())

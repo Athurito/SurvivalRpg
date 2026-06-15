@@ -13,6 +13,8 @@
 
 #include UE_INLINE_GENERATED_CPP_BY_NAME(RpgBaseConstructionSiteActor)
 
+DEFINE_LOG_CATEGORY_STATIC(LogRpgBaseConstructionSite, Log, All);
+
 ARpgBaseConstructionSiteActor::ARpgBaseConstructionSiteActor(const FObjectInitializer& ObjectInitializer)
 	: Super(ObjectInitializer)
 {
@@ -37,6 +39,12 @@ void ARpgBaseConstructionSiteActor::InitializeConstructionSite(ARpgBaseCampActor
 {
 	if (!HasAuthority() || !InBaseCamp || !InBuildableDefinition || bFinished)
 	{
+		UE_LOG(LogRpgBaseConstructionSite, Warning, TEXT("Initialize construction site failed: Site=%s Authority=%s BaseCamp=%s Buildable=%s Finished=%s"),
+			*GetNameSafe(this),
+			HasAuthority() ? TEXT("true") : TEXT("false"),
+			*GetNameSafe(InBaseCamp),
+			*GetNameSafe(InBuildableDefinition),
+			bFinished ? TEXT("true") : TEXT("false"));
 		return;
 	}
 
@@ -58,6 +66,12 @@ void ARpgBaseConstructionSiteActor::InitializeConstructionSite(ARpgBaseCampActor
 	}
 
 	ForceNetUpdate();
+	UE_LOG(LogRpgBaseConstructionSite, Log, TEXT("Initialized construction site: Site=%s BaseCamp=%s Buildable=%s CostRows=%d Remaining=%d"),
+		*GetNameSafe(this),
+		*GetNameSafe(BaseCamp),
+		*GetNameSafe(BuildableDefinition),
+		ConstructionCosts.Num(),
+		GetTotalRemainingCost());
 	HandleProgressChanged();
 }
 
@@ -113,12 +127,22 @@ bool ARpgBaseConstructionSiteActor::ContributeMaterial(AActor* RequestingActor, 
 {
 	if (!HasAuthority() || !CanActorContribute(RequestingActor) || !ItemDefinition || Count <= 0)
 	{
+		UE_LOG(LogRpgBaseConstructionSite, Warning, TEXT("Contribute material failed: invalid request. Site=%s Authority=%s Actor=%s ItemDef=%s Count=%d CanContribute=%s"),
+			*GetNameSafe(this),
+			HasAuthority() ? TEXT("true") : TEXT("false"),
+			*GetNameSafe(RequestingActor),
+			*GetNameSafe(ItemDefinition),
+			Count,
+			CanActorContribute(RequestingActor) ? TEXT("true") : TEXT("false"));
 		return false;
 	}
 
 	FRpgBaseConstructionResourceState* CostState = FindCostState(ItemDefinition);
 	if (!CostState)
 	{
+		UE_LOG(LogRpgBaseConstructionSite, Warning, TEXT("Contribute material failed: item is not part of construction cost. Site=%s ItemDef=%s"),
+			*GetNameSafe(this),
+			*GetNameSafe(ItemDefinition));
 		return false;
 	}
 
@@ -126,10 +150,25 @@ bool ARpgBaseConstructionSiteActor::ContributeMaterial(AActor* RequestingActor, 
 	const int32 ContributionCount = FMath::Min(Count, RemainingCost);
 	if (ContributionCount <= 0 || !ConsumeContribution(RequestingActor, ItemDefinition, ContributionCount, bAllowBaseStorage))
 	{
+		UE_LOG(LogRpgBaseConstructionSite, Warning, TEXT("Contribute material failed: could not consume resources. Site=%s Actor=%s ItemDef=%s Requested=%d Contribution=%d Remaining=%d AllowBase=%s"),
+			*GetNameSafe(this),
+			*GetNameSafe(RequestingActor),
+			*GetNameSafe(ItemDefinition),
+			Count,
+			ContributionCount,
+			RemainingCost,
+			bAllowBaseStorage ? TEXT("true") : TEXT("false"));
 		return false;
 	}
 
 	CostState->ContributedCount += ContributionCount;
+	UE_LOG(LogRpgBaseConstructionSite, Log, TEXT("Contributed construction material: Site=%s ItemDef=%s Added=%d Progress=%d/%d TotalRemaining=%d"),
+		*GetNameSafe(this),
+		*GetNameSafe(ItemDefinition),
+		ContributionCount,
+		CostState->ContributedCount,
+		CostState->RequiredCount,
+		GetTotalRemainingCost());
 	HandleProgressChanged();
 	return true;
 }
@@ -159,6 +198,13 @@ AActor* ARpgBaseConstructionSiteActor::FinishConstruction()
 {
 	if (!HasAuthority() || bFinished || !IsConstructionComplete() || !BuildableDefinition || !BuildableDefinition->BuildActorClass)
 	{
+		UE_LOG(LogRpgBaseConstructionSite, Warning, TEXT("Finish construction failed: Site=%s Authority=%s Finished=%s Complete=%s Buildable=%s BuildActorClass=%s"),
+			*GetNameSafe(this),
+			HasAuthority() ? TEXT("true") : TEXT("false"),
+			bFinished ? TEXT("true") : TEXT("false"),
+			IsConstructionComplete() ? TEXT("true") : TEXT("false"),
+			*GetNameSafe(BuildableDefinition),
+			BuildableDefinition ? *GetNameSafe(BuildableDefinition->BuildActorClass) : TEXT("None"));
 		return nullptr;
 	}
 
@@ -176,10 +222,18 @@ AActor* ARpgBaseConstructionSiteActor::FinishConstruction()
 	AActor* SpawnedActor = World->SpawnActor<AActor>(BuildableDefinition->BuildActorClass, GetActorTransform(), SpawnParams);
 	if (!SpawnedActor)
 	{
+		UE_LOG(LogRpgBaseConstructionSite, Warning, TEXT("Finish construction failed: final actor spawn failed. Site=%s BuildActorClass=%s"),
+			*GetNameSafe(this),
+			*GetNameSafe(BuildableDefinition->BuildActorClass));
 		return nullptr;
 	}
 
 	LinkSpawnedActorToBase(SpawnedActor);
+	UE_LOG(LogRpgBaseConstructionSite, Log, TEXT("Finished construction: Site=%s SpawnedActor=%s Buildable=%s BaseCamp=%s"),
+		*GetNameSafe(this),
+		*GetNameSafe(SpawnedActor),
+		*GetNameSafe(BuildableDefinition),
+		*GetNameSafe(BaseCamp));
 	bFinished = true;
 	ForceNetUpdate();
 	HandleProgressChanged();
@@ -315,7 +369,7 @@ void ARpgBaseConstructionSiteActor::HandleProgressChanged()
 {
 	OnConstructionSiteChanged.Broadcast(this);
 
-	if (HasAuthority() && bAutoFinishWhenComplete && IsConstructionComplete())
+	if (HasAuthority() && bAutoFinishWhenComplete && !bFinished && IsConstructionComplete())
 	{
 		FinishConstruction();
 	}
