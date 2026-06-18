@@ -743,16 +743,46 @@ void URpgInventoryUiActionComponent::RequestContributeMaterialToBaseConstruction
 	}
 }
 
-void URpgInventoryUiActionComponent::RequestCraftRecipe_Implementation(URpgCraftingStationComponent* CraftingStation, URpgCraftingRecipeDefinition* RecipeDefinition)
+void URpgInventoryUiActionComponent::RequestCraftRecipe_Implementation(URpgCraftingStationComponent* CraftingStation, URpgCraftingRecipeDefinition* RecipeDefinition, int32 Quantity)
 {
 	const AController* OwnerController = Cast<AController>(GetOwner());
 	AActor* RequestingActor = OwnerController ? OwnerController->GetPawn() : GetOwner();
-	if (!CraftingStation || !RecipeDefinition || !RequestingActor || !CraftingStation->CanCraftRecipe(RequestingActor, RecipeDefinition))
+	if (!CraftingStation || !RecipeDefinition || !RequestingActor || !CraftingStation->CanCraftRecipeQuantity(RequestingActor, RecipeDefinition, Quantity))
 	{
 		return;
 	}
 
-	CraftingStation->CraftRecipe(RequestingActor, RecipeDefinition);
+	CraftingStation->QueueCraftRecipe(RequestingActor, RecipeDefinition, Quantity);
+}
+
+void URpgInventoryUiActionComponent::RequestCancelCraftJob_Implementation(URpgCraftingStationComponent* CraftingStation, FGuid JobId)
+{
+	const AController* OwnerController = Cast<AController>(GetOwner());
+	AActor* RequestingActor = OwnerController ? OwnerController->GetPawn() : GetOwner();
+	if (CraftingStation && RequestingActor)
+	{
+		CraftingStation->CancelCraftJob(RequestingActor, JobId);
+	}
+}
+
+void URpgInventoryUiActionComponent::RequestPauseCraftingStation_Implementation(URpgCraftingStationComponent* CraftingStation)
+{
+	const AController* OwnerController = Cast<AController>(GetOwner());
+	AActor* RequestingActor = OwnerController ? OwnerController->GetPawn() : GetOwner();
+	if (CraftingStation && RequestingActor)
+	{
+		CraftingStation->PauseCraftingStation(RequestingActor);
+	}
+}
+
+void URpgInventoryUiActionComponent::RequestResumeCraftingStation_Implementation(URpgCraftingStationComponent* CraftingStation)
+{
+	const AController* OwnerController = Cast<AController>(GetOwner());
+	AActor* RequestingActor = OwnerController ? OwnerController->GetPawn() : GetOwner();
+	if (CraftingStation && RequestingActor)
+	{
+		CraftingStation->ResumeCraftingStation(RequestingActor);
+	}
 }
 
 bool URpgInventoryUiActionComponent::CanAccessInventory(URpgInventoryManagerComponent* Inventory) const

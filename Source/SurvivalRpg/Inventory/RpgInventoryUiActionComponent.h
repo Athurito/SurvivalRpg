@@ -114,9 +114,21 @@ public:
 	UFUNCTION(Server, Reliable, BlueprintCallable, Category = "Inventory|Base Building")
 	void RequestContributeMaterialToBaseConstructionSite(ARpgBaseConstructionSiteActor* ConstructionSite, TSubclassOf<URpgInventoryItemDefinition> ItemDefinition, int32 StackCount, bool bAllowBaseStorage);
 
-	/** Crafts one recipe through an accessible crafting station. */
+	/** Queues one or more units of a recipe through an accessible crafting station. */
 	UFUNCTION(Server, Reliable, BlueprintCallable, Category = "Inventory|Crafting")
-	void RequestCraftRecipe(URpgCraftingStationComponent* CraftingStation, URpgCraftingRecipeDefinition* RecipeDefinition);
+	void RequestCraftRecipe(URpgCraftingStationComponent* CraftingStation, URpgCraftingRecipeDefinition* RecipeDefinition, int32 Quantity = 1);
+
+	/** Cancels one queued or active crafting job and refunds the unfinished resource credits. */
+	UFUNCTION(Server, Reliable, BlueprintCallable, Category = "Inventory|Crafting")
+	void RequestCancelCraftJob(URpgCraftingStationComponent* CraftingStation, FGuid JobId);
+
+	/** Pauses a whole crafting station queue. */
+	UFUNCTION(Server, Reliable, BlueprintCallable, Category = "Inventory|Crafting")
+	void RequestPauseCraftingStation(URpgCraftingStationComponent* CraftingStation);
+
+	/** Resumes a paused crafting station queue. */
+	UFUNCTION(Server, Reliable, BlueprintCallable, Category = "Inventory|Crafting")
+	void RequestResumeCraftingStation(URpgCraftingStationComponent* CraftingStation);
 
 	UFUNCTION(BlueprintCallable, BlueprintPure = false, Category = "Inventory|UI Actions")
 	bool CanAccessInventory(URpgInventoryManagerComponent* Inventory) const;

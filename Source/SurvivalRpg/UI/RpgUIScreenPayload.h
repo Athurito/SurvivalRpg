@@ -10,6 +10,7 @@ class AActor;
 class UActorComponent;
 class URpgBaseStorageComponent;
 class URpgBaseStorageStationComponent;
+class URpgCraftingStationComponent;
 class URpgInventoryItemDefinition;
 class URpgInventoryManagerComponent;
 
@@ -100,4 +101,30 @@ public:
 	/** Empty means full terminal access; otherwise the UI should show only these material definitions. */
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Base Storage")
 	TArray<TSubclassOf<URpgInventoryItemDefinition>> AllowedResources;
+};
+
+/**
+ * Payload used by crafting station screens to bind recipe state, player context, and output inventory.
+ */
+UCLASS(BlueprintType)
+class SURVIVALRPG_API URpgCraftingStationScreenPayload : public URpgInventoryScreenPayload
+{
+	GENERATED_BODY()
+
+public:
+	/** Player inventory used for ingredient availability and inventory-side transfers. */
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Crafting")
+	TObjectPtr<URpgInventoryManagerComponent> PlayerInventory = nullptr;
+
+	/** Station that owns recipes, queue state, pause state, and output handling. */
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Crafting")
+	TObjectPtr<URpgCraftingStationComponent> CraftingStation = nullptr;
+
+	/** Station output inventory shown beside active jobs and queue. */
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Crafting")
+	TObjectPtr<URpgInventoryManagerComponent> OutputInventory = nullptr;
+
+	/** Local pawn or actor used by the ViewModel for access and resource availability checks. */
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Crafting")
+	TObjectPtr<AActor> RequestingActor = nullptr;
 };

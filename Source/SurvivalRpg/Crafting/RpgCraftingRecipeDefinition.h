@@ -11,7 +11,8 @@ class UTexture2D;
 /**
  * Data-driven crafting recipe consumed by a crafting station.
  *
- * V1 recipes are instant. CraftTime is kept for UI/upgrade readiness but is not queued yet.
+ * Recipes are static designer data. Runtime unlocks, queue state, quantities, and costs are owned by
+ * the game state and crafting station components.
  */
 UCLASS(BlueprintType)
 class SURVIVALRPG_API URpgCraftingRecipeDefinition : public UPrimaryDataAsset
@@ -35,6 +36,26 @@ public:
 	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Crafting", meta = (Categories = "Crafting.Category"))
 	FGameplayTag RecipeCategory;
 
+	/** Global recipe unlock tag. Empty means this recipe is governed only by bUnlockedByDefault and other requirements. */
+	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Crafting|Unlocks", meta = (Categories = "Recipe"))
+	FGameplayTag RecipeUnlockTag;
+
+	/** Whether the recipe is available to every player at session start without being globally unlocked. */
+	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Crafting|Unlocks")
+	bool bUnlockedByDefault = true;
+
+	/** UI tier used for filtering and sorting. This is display/progression metadata, not an item quality value. */
+	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Crafting|Display", meta = (ClampMin = "1", UIMin = "1"))
+	int32 RecipeTier = 1;
+
+	/** Extra lowercase-insensitive search words such as local names, nicknames, or material aliases. */
+	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Crafting|Display")
+	TArray<FText> SearchKeywords;
+
+	/** Designer-authored ordering within the same category and tier. Lower values appear earlier. */
+	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Crafting|Display")
+	int32 SortPriority = 0;
+
 	/** Station tags that must all be present on the crafting station. Empty means any station can craft it. */
 	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Crafting", meta = (Categories = "Crafting.Station"))
 	FGameplayTagContainer RequiredStationTags;
@@ -51,7 +72,7 @@ public:
 	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Crafting")
 	TArray<FRpgCraftingOutputItem> OutputItems;
 
-	/** Future queue/timer duration in seconds. V1 treats values <= 0 as instant craft. */
+	/** Time in seconds to produce one unit of this recipe. Values <= 0 are processed immediately. */
 	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Crafting", meta = (ClampMin = "0", UIMin = "0", Units = "s"))
 	float CraftTime = 0.0f;
 };

@@ -2,12 +2,14 @@
 
 #include "Components/ActorComponent.h"
 #include "GameplayTagContainer.h"
+#include "SurvivalRpg/Interaction/IInteractableTarget.h"
 
 #include "RpgCraftingStationComponent.generated.h"
 
 class URpgInventoryItemDefinition;
 class URpgInventoryManagerComponent;
 class ARpgBaseCampActor;
+class ARpgDroppedInventoryActor;
 class URpgBaseStorageStationComponent;
 class URpgBaseStorageComponent;
 class URpgCraftingRecipeDefinition;
@@ -28,6 +30,26 @@ enum class ERpgCraftingResourceConsumeOrder : uint8
 
 	/** Only consume from player/allowed inventory sources. */
 	PlayerOnly
+};
+
+/** Replicated lifecycle state for one crafting station job. */
+UENUM(BlueprintType)
+enum class ERpgCraftingJobState : uint8
+{
+	/** Waiting until no earlier job is active. */
+	Queued,
+
+	/** Server timer is currently producing the next unit. */
+	Active,
+
+	/** Station-level pause froze this job's remaining time. */
+	Paused,
+
+	/** Output could not be stored or dropped; the station is waiting for a retry path. */
+	BlockedOutput,
+
+	/** Job has finished and is about to be removed from the queue. */
+	Completed
 };
 
 /** One resource requirement consumed by a crafting station. */
@@ -60,11 +82,96 @@ struct SURVIVALRPG_API FRpgCraftingOutputItem
 	int32 Count = 1;
 };
 
+/** Server-only resource credit used to refund canceled crafting batches. */
+USTRUCT()
+struct SURVIVALRPG_API FRpgCraftingRefundEntry
+{
+	GENERATED_BODY()
+
+	UPROPERTY(NotReplicated)
+	TSubclassOf<URpgInventoryItemDefinition> ItemDefinition;
+
+	UPROPERTY(NotReplicated)
+	int32 Count = 0;
+
+	UPROPERTY(NotReplicated)
+	TObjectPtr<URpgInventoryManagerComponent> Inventory = nullptr;
+
+	UPROPERTY(NotReplicated)
+	bool bRefundToBaseStorage = false;
+};
+
+/** Replicated read model for one active or queued crafting batch. */
+USTRUCT(BlueprintType)
+struct SURVIVALRPG_API FRpgCraftingJobEntry
+{
+	GENERATED_BODY()
+
+	/** Stable id used by UI cancel commands and replication refreshes. */
+	UPROPERTY(BlueprintReadOnly, Category = "Crafting|Jobs")
+	FGuid JobId;
+
+	/** Static recipe data processed by this job. */
+	UPROPERTY(BlueprintReadOnly, Category = "Crafting|Jobs")
+	TObjectPtr<URpgCraftingRecipeDefinition> Recipe = nullptr;
+
+	/** Total number of recipe units requested by the player. */
+	UPROPERTY(BlueprintReadOnly, Category = "Crafting|Jobs")
+	int32 QuantityTotal = 0;
+
+	/** Number of units already produced and output-handled by the server. */
+	UPROPERTY(BlueprintReadOnly, Category = "Crafting|Jobs")
+	int32 QuantityCompleted = 0;
+
+	/** Current replicated lifecycle state. */
+	UPROPERTY(BlueprintReadOnly, Category = "Crafting|Jobs")
+	ERpgCraftingJobState State = ERpgCraftingJobState::Queued;
+
+	/** Server world time when the current unit started. UI uses this for progress display. */
+	UPROPERTY(BlueprintReadOnly, Category = "Crafting|Jobs")
+	float StartServerTime = 0.0f;
+
+	/** Server world time when the current unit should finish. UI uses this for progress display. */
+	UPROPERTY(BlueprintReadOnly, Category = "Crafting|Jobs")
+	float FinishServerTime = 0.0f;
+
+	/** Remaining seconds captured when the station pauses this job. */
+	UPROPERTY(BlueprintReadOnly, Category = "Crafting|Jobs")
+	float PausedRemainingTime = 0.0f;
+
+	/** Server-only credits for the not-yet-produced part of this batch. Used when canceling/refunding. */
+	UPROPERTY(NotReplicated)
+	TArray<FRpgCraftingRefundEntry> RefundEntries;
+};
+
+/** GameplayMessage payload for crafting queue, pause, and progress state changes. */
+USTRUCT(BlueprintType)
+struct SURVIVALRPG_API FRpgCraftingStationChangeMessage
+{
+	GENERATED_BODY()
+
+	/** Crafting station component whose replicated job state changed. */
+	UPROPERTY(BlueprintReadOnly, Category = "Crafting")
+	TObjectPtr<UActorComponent> Station = nullptr;
+
+	/** Job id that changed, or invalid when the whole station state refreshed. */
+	UPROPERTY(BlueprintReadOnly, Category = "Crafting")
+	FGuid JobId;
+
+	/** Current state for the changed job, if any. */
+	UPROPERTY(BlueprintReadOnly, Category = "Crafting")
+	ERpgCraftingJobState JobState = ERpgCraftingJobState::Queued;
+
+	/** True when the station-level pause flag changed. */
+	UPROPERTY(BlueprintReadOnly, Category = "Crafting")
+	bool bPauseStateChanged = false;
+};
+
 /**
  * V1 crafting station helper that consumes resources and stores outputs in a replicated inventory.
  */
 UCLASS(Blueprintable, ClassGroup = (Crafting), meta = (BlueprintSpawnableComponent))
-class SURVIVALRPG_API URpgCraftingStationComponent : public UActorComponent
+class SURVIVALRPG_API URpgCraftingStationComponent : public UActorComponent, public IInteractableTarget
 {
 	GENERATED_BODY()
 
@@ -73,6 +180,7 @@ public:
 
 	virtual void BeginPlay() override;
 	virtual void GetLifetimeReplicatedProps(TArray<FLifetimeProperty>& OutLifetimeProps) const override;
+	virtual void GatherInteractionOptions(const FInteractionQuery& InteractQuery, FInteractionOptionBuilder& InteractionBuilder) override;
 
 	/** Returns player inventory plus crafting-accessible containers in range or in the same storage group. */
 	UFUNCTION(BlueprintCallable, BlueprintPure = false, Category = "Crafting")
@@ -90,17 +198,57 @@ public:
 	UFUNCTION(BlueprintCallable, BlueprintPure, Category = "Crafting|Recipes", meta = (Categories = "Crafting.Station"))
 	FGameplayTagContainer GetStationTags() const { return StationTags; }
 
-	/** Returns recipes from the configured set that match this station's tags and base unlock state. */
+	/** Returns recipes from the configured set that match this station's tags and base unlock state. Globally locked recipes may still be returned for UI display. */
 	UFUNCTION(BlueprintCallable, BlueprintPure = false, Category = "Crafting|Recipes")
 	TArray<URpgCraftingRecipeDefinition*> GetAvailableRecipes() const;
+
+	/** Returns true when the recipe is globally unlocked or marked unlocked by default. */
+	UFUNCTION(BlueprintCallable, BlueprintPure = false, Category = "Crafting|Recipes")
+	bool IsRecipeUnlocked(const URpgCraftingRecipeDefinition* RecipeDefinition) const;
 
 	/** Returns true if this station can currently craft the recipe for the requesting actor. */
 	UFUNCTION(BlueprintCallable, BlueprintPure = false, Category = "Crafting|Recipes")
 	bool CanCraftRecipe(AActor* RequestingActor, const URpgCraftingRecipeDefinition* RecipeDefinition) const;
 
-	/** Crafts one data-driven recipe instantly. Server-authoritative V1 path. */
+	/** Returns true if this station can enqueue this many recipe units for the requesting actor. */
+	UFUNCTION(BlueprintCallable, BlueprintPure = false, Category = "Crafting|Recipes")
+	bool CanCraftRecipeQuantity(AActor* RequestingActor, const URpgCraftingRecipeDefinition* RecipeDefinition, int32 Quantity) const;
+
+	/** Returns the maximum quantity the requesting actor can currently enqueue from available resources. */
+	UFUNCTION(BlueprintCallable, BlueprintPure = false, Category = "Crafting|Recipes")
+	int32 GetMaxCraftableQuantity(AActor* RequestingActor, const URpgCraftingRecipeDefinition* RecipeDefinition) const;
+
+	/** Queues one or more recipe units. Resources are consumed immediately and refunded if the unfinished remainder is canceled. */
+	UFUNCTION(BlueprintCallable, BlueprintAuthorityOnly, Category = "Crafting|Recipes")
+	bool QueueCraftRecipe(AActor* RequestingActor, URpgCraftingRecipeDefinition* RecipeDefinition, int32 Quantity = 1);
+
+	/** Backward-compatible one-unit craft path that now queues the recipe through the timed station pipeline. */
 	UFUNCTION(BlueprintCallable, BlueprintAuthorityOnly, Category = "Crafting|Recipes")
 	bool CraftRecipe(AActor* RequestingActor, URpgCraftingRecipeDefinition* RecipeDefinition);
+
+	/** Cancels one active or queued job and refunds the unfinished resource credits. */
+	UFUNCTION(BlueprintCallable, BlueprintAuthorityOnly, Category = "Crafting|Jobs")
+	bool CancelCraftJob(AActor* RequestingActor, FGuid JobId);
+
+	/** Pauses the whole station, freezing active progress and preventing queued jobs from starting. */
+	UFUNCTION(BlueprintCallable, BlueprintAuthorityOnly, Category = "Crafting|Jobs")
+	bool PauseCraftingStation(AActor* RequestingActor);
+
+	/** Resumes the whole station and restarts the active or next queued job. */
+	UFUNCTION(BlueprintCallable, BlueprintAuthorityOnly, Category = "Crafting|Jobs")
+	bool ResumeCraftingStation(AActor* RequestingActor);
+
+	/** Returns the current replicated queue, including the active job if present. */
+	UFUNCTION(BlueprintCallable, BlueprintPure, Category = "Crafting|Jobs")
+	TArray<FRpgCraftingJobEntry> GetCraftingJobs() const { return CraftingJobs; }
+
+	/** Returns true and fills the active/paused job if one exists. */
+	UFUNCTION(BlueprintCallable, BlueprintPure, Category = "Crafting|Jobs")
+	bool GetActiveCraftingJob(FRpgCraftingJobEntry& OutJob) const;
+
+	/** True when this station's queue is paused by a server-authoritative action. */
+	UFUNCTION(BlueprintCallable, BlueprintPure, Category = "Crafting|Jobs")
+	bool IsCraftingPaused() const { return bStationPaused; }
 
 	/** Returns total available count across all resource inventories for one item definition. */
 	UFUNCTION(BlueprintCallable, BlueprintPure = false, Category = "Crafting")
@@ -147,6 +295,10 @@ public:
 	URpgBaseStorageStationComponent* GetOutputAutoDepositUpgradeProvider() const;
 
 protected:
+	/** Interaction option shown by the Lyra-style interaction scan when this station can open its crafting UI. */
+	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Crafting|Interaction")
+	FInteractionOption OpenCraftingOption;
+
 	/** Station identity tags used by recipe definitions to decide where they can be crafted. */
 	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Crafting|Recipes", meta = (Categories = "Crafting.Station"))
 	FGameplayTagContainer StationTags;
@@ -207,10 +359,56 @@ protected:
 	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Crafting|Output", meta = (ClampMin = "0", UIMin = "0"))
 	int32 OutputSlotCount = 4;
 
+	/** Maximum number of active plus queued jobs this station accepts. */
+	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Crafting|Jobs", meta = (ClampMin = "1", UIMin = "1"))
+	int32 MaxQueuedJobs = 5;
+
+	/** Fallback max quantity for recipes that have no resource costs. Prevents infinite Max buttons in UI. */
+	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Crafting|Jobs", meta = (ClampMin = "1", UIMin = "1"))
+	int32 MaxFreeRecipeCraftQuantity = 99;
+
+	/** Pickup actor used when outputs or refunds cannot be stored in inventories/base storage. */
+	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Crafting|Output")
+	TSubclassOf<ARpgDroppedInventoryActor> DroppedOutputActorClass;
+
+	/** Radius in centimeters used to merge new stackable world outputs into existing nearby drops. */
+	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Crafting|Output", meta = (ClampMin = "0", UIMin = "0", Units = "cm"))
+	float OutputDropMergeRadius = 250.0f;
+
+	/** Replicated station-level pause flag. Clients use it for UI; the server owns all timer behavior. */
+	UPROPERTY(ReplicatedUsing = OnRep_CraftingState, BlueprintReadOnly, Category = "Crafting|Jobs", meta = (AllowPrivateAccess = "true"))
+	bool bStationPaused = false;
+
+	/** Replicated active and queued jobs. Server-only refund credits are kept inside each entry and are not replicated. */
+	UPROPERTY(ReplicatedUsing = OnRep_CraftingState, BlueprintReadOnly, Category = "Crafting|Jobs", meta = (AllowPrivateAccess = "true"))
+	TArray<FRpgCraftingJobEntry> CraftingJobs;
+
 private:
+	UFUNCTION()
+	void OnRep_CraftingState();
+
 	URpgBaseStorageComponent* GetLinkedBaseStorage() const;
 	URpgInventoryManagerComponent* GetLinkedArmoryInventory() const;
 	int32 GetAvailableInventoryResourceCount(TSubclassOf<URpgInventoryItemDefinition> ItemDefinition, const TArray<URpgInventoryManagerComponent*>& ResourceInventories) const;
 	bool ConsumeInventoryResources(TSubclassOf<URpgInventoryItemDefinition> ItemDefinition, int32 Count, const TArray<URpgInventoryManagerComponent*>& ResourceInventories) const;
 	bool ConsumeBaseResources(TSubclassOf<URpgInventoryItemDefinition> ItemDefinition, int32 Count) const;
+	bool ConsumeResourcesWithRefund(AActor* RequestingActor, const TArray<FRpgCraftingResourceCost>& RequiredItems, int32 Quantity, TArray<FRpgCraftingRefundEntry>& OutRefundEntries);
+	void SpendRefundCreditsForCompletedUnit(FRpgCraftingJobEntry& Job);
+	void RefundRemainingJobCosts(FRpgCraftingJobEntry& Job);
+	bool RefundResourceCredit(const FRpgCraftingRefundEntry& RefundEntry);
+	void TryStartNextQueuedJob();
+	void StartJobAtIndex(int32 JobIndex, float DurationOverride = -1.0f);
+	void CompleteActiveJobUnit();
+	int32 FindActiveJobIndex() const;
+	int32 FindJobIndex(FGuid JobId) const;
+	bool HasActiveOrPausedJob() const;
+	float GetServerWorldTimeSeconds() const;
+	float GetRecipeCraftTime(const URpgCraftingRecipeDefinition* RecipeDefinition) const;
+	bool AddOutputItemOrDrop(TSubclassOf<URpgInventoryItemDefinition> ItemDefinition, int32 Count);
+	bool SpawnOrMergeDroppedOutput(TSubclassOf<URpgInventoryItemDefinition> ItemDefinition, int32 Count);
+	bool TryMergeDroppedOutput(TSubclassOf<URpgInventoryItemDefinition> ItemDefinition, int32 Count) const;
+	void MarkCraftingStateDirty(FGuid ChangedJobId = FGuid(), ERpgCraftingJobState ChangedState = ERpgCraftingJobState::Queued, bool bPauseStateChanged = false) const;
+
+private:
+	FTimerHandle CraftingTimerHandle;
 };

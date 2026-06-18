@@ -5,6 +5,7 @@
 
 #include "SurvivalRpg/AbilitySystem/RpgAbilitySystemComponent.h"
 #include "SurvivalRpg/Core/Game/Experience/RpgExperienceManagerComponent.h"
+#include "SurvivalRpg/Crafting/RpgRecipeUnlockComponent.h"
 
 ARpgGameStateBase::ARpgGameStateBase(const FObjectInitializer& ObjectInitializer)
 	: Super(ObjectInitializer)
@@ -14,6 +15,8 @@ ARpgGameStateBase::ARpgGameStateBase(const FObjectInitializer& ObjectInitializer
 	AbilitySystemComponent = CreateDefaultSubobject<URpgAbilitySystemComponent>(TEXT("AbilitySystemComponent"));
 	AbilitySystemComponent->SetIsReplicated(true);
 	AbilitySystemComponent->SetReplicationMode(EGameplayEffectReplicationMode::Mixed);
+
+	RecipeUnlockComponent = CreateDefaultSubobject<URpgRecipeUnlockComponent>(TEXT("RecipeUnlockComponent"));
 }
 
 void ARpgGameStateBase::PostInitializeComponents()
