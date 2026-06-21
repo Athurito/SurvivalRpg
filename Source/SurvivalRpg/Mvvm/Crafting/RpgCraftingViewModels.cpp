@@ -72,6 +72,53 @@ namespace
 		const AGameStateBase* GameState = World ? World->GetGameState() : nullptr;
 		return GameState ? GameState->GetServerWorldTimeSeconds() : (World ? World->GetTimeSeconds() : 0.0f);
 	}
+
+	bool AreRecipeOrdersEqual(
+		const TArray<URpgCraftingRecipeDefinition*>& PreviousRecipes,
+		const TArray<TObjectPtr<URpgCraftingRecipeViewModel>>& NewRecipes)
+	{
+		if (PreviousRecipes.Num() != NewRecipes.Num())
+		{
+			return false;
+		}
+
+		for (int32 Index = 0; Index < PreviousRecipes.Num(); ++Index)
+		{
+			const URpgCraftingRecipeDefinition* NewRecipe = NewRecipes[Index] ? NewRecipes[Index]->GetRecipeDefinition() : nullptr;
+			if (PreviousRecipes[Index] != NewRecipe)
+			{
+				return false;
+			}
+		}
+
+		return true;
+	}
+
+	bool AreJobOrdersEqual(const TArray<FGuid>& PreviousJobIds, const TArray<TObjectPtr<URpgCraftingJobViewModel>>& NewJobs)
+	{
+		if (PreviousJobIds.Num() != NewJobs.Num())
+		{
+			return false;
+		}
+
+		for (int32 Index = 0; Index < PreviousJobIds.Num(); ++Index)
+		{
+			const FGuid NewJobId = NewJobs[Index] ? NewJobs[Index]->GetJobId() : FGuid();
+			if (PreviousJobIds[Index] != NewJobId)
+			{
+				return false;
+			}
+		}
+
+		return true;
+	}
+
+	FText MakePauseResumeButtonText(bool bIsPaused)
+	{
+		return bIsPaused
+			? NSLOCTEXT("RpgCrafting", "ResumeCraftingStationButton", "Resume")
+			: NSLOCTEXT("RpgCrafting", "PauseCraftingStationButton", "Pause");
+	}
 }
 
 void URpgCraftingIngredientViewModel::InitializeIngredient(TSubclassOf<URpgInventoryItemDefinition> InItemDefinition, int32 InRequiredCount, int32 InAvailableCount)
@@ -248,10 +295,16 @@ void URpgCraftingStationViewModel::UnbindCraftingStation()
 	RequestingActor = nullptr;
 	OutputInventory = nullptr;
 	SelectedRecipe = nullptr;
+	CraftQuantity = 1;
+	MaxSelectedCraftQuantity = 0;
+	SelectedTotalCraftTime = 0.0f;
+	bCanCraftSelectedRecipe = false;
 	bStationPaused = false;
+	PauseResumeButtonText = MakePauseResumeButtonText(bStationPaused);
 	bCanAutoDepositCraftingOutputs = false;
 	bAutoDepositCraftingOutputsEnabled = false;
 	bShouldAutoDepositCraftingOutputs = false;
+	RebuildActionAvailability();
 	FilteredRecipes.Reset();
 	SelectedIngredients.Reset();
 	SelectedOutputs.Reset();
@@ -261,7 +314,12 @@ void URpgCraftingStationViewModel::UnbindCraftingStation()
 	UE_MVVM_BROADCAST_FIELD_VALUE_CHANGED(RequestingActor);
 	UE_MVVM_BROADCAST_FIELD_VALUE_CHANGED(OutputInventory);
 	UE_MVVM_BROADCAST_FIELD_VALUE_CHANGED(SelectedRecipe);
+	UE_MVVM_BROADCAST_FIELD_VALUE_CHANGED(CraftQuantity);
+	UE_MVVM_BROADCAST_FIELD_VALUE_CHANGED(MaxSelectedCraftQuantity);
+	UE_MVVM_BROADCAST_FIELD_VALUE_CHANGED(SelectedTotalCraftTime);
+	UE_MVVM_BROADCAST_FIELD_VALUE_CHANGED(bCanCraftSelectedRecipe);
 	UE_MVVM_BROADCAST_FIELD_VALUE_CHANGED(bStationPaused);
+	UE_MVVM_BROADCAST_FIELD_VALUE_CHANGED(PauseResumeButtonText);
 	UE_MVVM_BROADCAST_FIELD_VALUE_CHANGED(bCanAutoDepositCraftingOutputs);
 	UE_MVVM_BROADCAST_FIELD_VALUE_CHANGED(bAutoDepositCraftingOutputsEnabled);
 	UE_MVVM_BROADCAST_FIELD_VALUE_CHANGED(bShouldAutoDepositCraftingOutputs);
@@ -276,14 +334,39 @@ void URpgCraftingStationViewModel::UnbindCraftingStation()
 
 void URpgCraftingStationViewModel::Refresh()
 {
+	RefreshStationState();
+	RefreshRecipesAndDetails();
+	RefreshJobs();
+}
+
+void URpgCraftingStationViewModel::RefreshStationState()
+{
 	RebuildStationState();
+}
+
+void URpgCraftingStationViewModel::RefreshRecipesAndDetails()
+{
 	RebuildRecipeList();
 	RebuildSelectedRecipeDetails();
+}
+
+void URpgCraftingStationViewModel::RefreshSelectedRecipeDetails()
+{
+	RebuildSelectedRecipeDetails();
+}
+
+void URpgCraftingStationViewModel::RefreshJobs()
+{
 	RebuildJobs();
 }
 
 void URpgCraftingStationViewModel::SelectRecipe(URpgCraftingRecipeDefinition* RecipeDefinition)
 {
+	if (SelectedRecipe == RecipeDefinition)
+	{
+		return;
+	}
+
 	SelectedRecipe = RecipeDefinition;
 	CraftQuantity = 1;
 	UE_MVVM_BROADCAST_FIELD_VALUE_CHANGED(SelectedRecipe);
@@ -293,36 +376,63 @@ void URpgCraftingStationViewModel::SelectRecipe(URpgCraftingRecipeDefinition* Re
 
 void URpgCraftingStationViewModel::SetSearchText(FText InSearchText)
 {
+	if (SearchText.ToString().Equals(InSearchText.ToString(), ESearchCase::CaseSensitive))
+	{
+		return;
+	}
+
 	SearchText = InSearchText;
 	UE_MVVM_BROADCAST_FIELD_VALUE_CHANGED(SearchText);
-	RebuildRecipeList();
+	RefreshRecipesAndDetails();
 }
 
 void URpgCraftingStationViewModel::SetCategoryFilter(FGameplayTag InCategoryFilter)
 {
+	if (CategoryFilter == InCategoryFilter)
+	{
+		return;
+	}
+
 	CategoryFilter = InCategoryFilter;
 	UE_MVVM_BROADCAST_FIELD_VALUE_CHANGED(CategoryFilter);
-	RebuildRecipeList();
+	RefreshRecipesAndDetails();
 }
 
 void URpgCraftingStationViewModel::SetTierFilter(int32 InTierFilter)
 {
-	TierFilter = FMath::Max(0, InTierFilter);
+	const int32 NewTierFilter = FMath::Max(0, InTierFilter);
+	if (TierFilter == NewTierFilter)
+	{
+		return;
+	}
+
+	TierFilter = NewTierFilter;
 	UE_MVVM_BROADCAST_FIELD_VALUE_CHANGED(TierFilter);
-	RebuildRecipeList();
+	RefreshRecipesAndDetails();
 }
 
 void URpgCraftingStationViewModel::SetRecipeSortMode(ERpgCraftingRecipeSortMode InSortMode)
 {
+	if (RecipeSortMode == InSortMode)
+	{
+		return;
+	}
+
 	RecipeSortMode = InSortMode;
 	UE_MVVM_BROADCAST_FIELD_VALUE_CHANGED(RecipeSortMode);
-	RebuildRecipeList();
+	RefreshRecipesAndDetails();
 }
 
 void URpgCraftingStationViewModel::SetCraftQuantity(int32 InCraftQuantity)
 {
 	const int32 ClampedMax = FMath::Max(1, MaxSelectedCraftQuantity);
-	CraftQuantity = FMath::Clamp(InCraftQuantity, 1, ClampedMax);
+	const int32 NewCraftQuantity = FMath::Clamp(InCraftQuantity, 1, ClampedMax);
+	if (CraftQuantity == NewCraftQuantity)
+	{
+		return;
+	}
+
+	CraftQuantity = NewCraftQuantity;
 	UE_MVVM_BROADCAST_FIELD_VALUE_CHANGED(CraftQuantity);
 	RebuildSelectedRecipeDetails();
 }
@@ -335,6 +445,28 @@ void URpgCraftingStationViewModel::IncreaseCraftQuantity(int32 Delta)
 void URpgCraftingStationViewModel::SetCraftQuantityToMax()
 {
 	SetCraftQuantity(FMath::Max(1, MaxSelectedCraftQuantity));
+}
+
+bool URpgCraftingStationViewModel::CanSetCraftQuantity(int32 InCraftQuantity) const
+{
+	if (InCraftQuantity == 1)
+	{
+		return bCanSetCraftQuantityToOne;
+	}
+
+	if (InCraftQuantity == 5)
+	{
+		return bCanSetCraftQuantityToFive;
+	}
+
+	if (InCraftQuantity == 10)
+	{
+		return bCanSetCraftQuantityToTen;
+	}
+
+	return InCraftQuantity > 0
+		&& InCraftQuantity <= MaxSelectedCraftQuantity
+		&& InCraftQuantity != CraftQuantity;
 }
 
 TArray<URpgCraftingRecipeViewModel*> URpgCraftingStationViewModel::GetFilteredRecipes() const
@@ -437,12 +569,15 @@ void URpgCraftingStationViewModel::RebuildStationState()
 	URpgCraftingStationComponent* Station = ObservedStation.Get();
 	OutputInventory = Station ? Station->GetOutputInventory() : nullptr;
 	bStationPaused = Station && Station->IsCraftingPaused();
+	PauseResumeButtonText = MakePauseResumeButtonText(bStationPaused);
 	bCanAutoDepositCraftingOutputs = Station && Station->HasCraftingOutputAutoDepositAccess();
 	bAutoDepositCraftingOutputsEnabled = Station && Station->IsCraftingOutputAutoDepositEnabled();
 	bShouldAutoDepositCraftingOutputs = Station && Station->ShouldAutoDepositCraftingOutputs();
+	RebuildActionAvailability();
 
 	UE_MVVM_BROADCAST_FIELD_VALUE_CHANGED(OutputInventory);
 	UE_MVVM_BROADCAST_FIELD_VALUE_CHANGED(bStationPaused);
+	UE_MVVM_BROADCAST_FIELD_VALUE_CHANGED(PauseResumeButtonText);
 	UE_MVVM_BROADCAST_FIELD_VALUE_CHANGED(bCanAutoDepositCraftingOutputs);
 	UE_MVVM_BROADCAST_FIELD_VALUE_CHANGED(bAutoDepositCraftingOutputsEnabled);
 	UE_MVVM_BROADCAST_FIELD_VALUE_CHANGED(bShouldAutoDepositCraftingOutputs);
@@ -450,13 +585,41 @@ void URpgCraftingStationViewModel::RebuildStationState()
 
 void URpgCraftingStationViewModel::RebuildRecipeList()
 {
-	FilteredRecipes.Reset();
+	TArray<URpgCraftingRecipeDefinition*> PreviousRecipeOrder;
+	PreviousRecipeOrder.Reserve(FilteredRecipes.Num());
+
+	TMap<URpgCraftingRecipeDefinition*, URpgCraftingRecipeViewModel*> PreviousViewModelsByRecipe;
+	for (URpgCraftingRecipeViewModel* ExistingViewModel : FilteredRecipes)
+	{
+		URpgCraftingRecipeDefinition* ExistingRecipe = ExistingViewModel ? ExistingViewModel->GetRecipeDefinition() : nullptr;
+		PreviousRecipeOrder.Add(ExistingRecipe);
+		if (ExistingRecipe && ExistingViewModel)
+		{
+			PreviousViewModelsByRecipe.Add(ExistingRecipe, ExistingViewModel);
+		}
+	}
+
+	TArray<TObjectPtr<URpgCraftingRecipeViewModel>> NewFilteredRecipes;
 	URpgCraftingStationComponent* Station = ObservedStation.Get();
 	AActor* Actor = RequestingActor.Get();
+	URpgCraftingRecipeDefinition* PreviousSelectedRecipe = SelectedRecipe.Get();
 	if (!Station)
 	{
-		UE_MVVM_BROADCAST_FIELD_VALUE_CHANGED(FilteredRecipes);
-		OnRecipesChanged.Broadcast();
+		FilteredRecipes.Reset();
+		SelectedRecipe = nullptr;
+		CraftQuantity = 1;
+
+		if (PreviousSelectedRecipe)
+		{
+			UE_MVVM_BROADCAST_FIELD_VALUE_CHANGED(SelectedRecipe);
+			UE_MVVM_BROADCAST_FIELD_VALUE_CHANGED(CraftQuantity);
+		}
+
+		if (PreviousRecipeOrder.Num() > 0)
+		{
+			UE_MVVM_BROADCAST_FIELD_VALUE_CHANGED(FilteredRecipes);
+			OnRecipesChanged.Broadcast();
+		}
 		return;
 	}
 
@@ -477,14 +640,24 @@ void URpgCraftingStationViewModel::RebuildRecipeList()
 			continue;
 		}
 
-		URpgCraftingRecipeViewModel* RecipeViewModel = NewObject<URpgCraftingRecipeViewModel>(this);
+		URpgCraftingRecipeViewModel* RecipeViewModel = nullptr;
+		if (URpgCraftingRecipeViewModel** ExistingViewModel = PreviousViewModelsByRecipe.Find(Recipe))
+		{
+			RecipeViewModel = *ExistingViewModel;
+		}
+
+		if (!RecipeViewModel)
+		{
+			RecipeViewModel = NewObject<URpgCraftingRecipeViewModel>(this);
+		}
+
 		RecipeViewModel->InitializeRecipe(Station, Actor, Recipe);
 		if (!RecipeViewModel->MatchesSearchText(SearchText))
 		{
 			continue;
 		}
 
-		FilteredRecipes.Add(RecipeViewModel);
+		NewFilteredRecipes.Add(RecipeViewModel);
 	}
 
 	auto CompareDefault = [Station, Actor](const URpgCraftingRecipeDefinition* A, const URpgCraftingRecipeDefinition* B)
@@ -509,10 +682,10 @@ void URpgCraftingStationViewModel::RebuildRecipeList()
 		return GetRecipeSortName(A).Compare(GetRecipeSortName(B), ESearchCase::IgnoreCase) < 0;
 	};
 
-	FilteredRecipes.Sort([this, Station, Actor, &CompareDefault](const TObjectPtr<URpgCraftingRecipeViewModel>& A, const TObjectPtr<URpgCraftingRecipeViewModel>& B)
+	NewFilteredRecipes.Sort([this, Station, Actor, &CompareDefault](const URpgCraftingRecipeViewModel& A, const URpgCraftingRecipeViewModel& B)
 	{
-		const URpgCraftingRecipeDefinition* RecipeA = A ? A->GetRecipeDefinition() : nullptr;
-		const URpgCraftingRecipeDefinition* RecipeB = B ? B->GetRecipeDefinition() : nullptr;
+		const URpgCraftingRecipeDefinition* RecipeA = A.GetRecipeDefinition();
+		const URpgCraftingRecipeDefinition* RecipeB = B.GetRecipeDefinition();
 		switch (RecipeSortMode)
 		{
 		case ERpgCraftingRecipeSortMode::Tier:
@@ -564,14 +737,26 @@ void URpgCraftingStationViewModel::RebuildRecipeList()
 		return CompareDefault(RecipeA, RecipeB);
 	});
 
-	if (!SelectedRecipe && FilteredRecipes.Num() > 0)
+	const bool bSelectedRecipeStillVisible = SelectedRecipe && NewFilteredRecipes.ContainsByPredicate([this](const TObjectPtr<URpgCraftingRecipeViewModel>& RecipeViewModel)
 	{
-		SelectedRecipe = FilteredRecipes[0]->GetRecipeDefinition();
+		return RecipeViewModel && RecipeViewModel->GetRecipeDefinition() == SelectedRecipe;
+	});
+
+	if (!bSelectedRecipeStillVisible)
+	{
+		SelectedRecipe = NewFilteredRecipes.Num() > 0 ? NewFilteredRecipes[0]->GetRecipeDefinition() : nullptr;
+		CraftQuantity = 1;
 		UE_MVVM_BROADCAST_FIELD_VALUE_CHANGED(SelectedRecipe);
+		UE_MVVM_BROADCAST_FIELD_VALUE_CHANGED(CraftQuantity);
 	}
 
-	UE_MVVM_BROADCAST_FIELD_VALUE_CHANGED(FilteredRecipes);
-	OnRecipesChanged.Broadcast();
+	const bool bRecipeListChanged = !AreRecipeOrdersEqual(PreviousRecipeOrder, NewFilteredRecipes);
+	FilteredRecipes = MoveTemp(NewFilteredRecipes);
+	if (bRecipeListChanged)
+	{
+		UE_MVVM_BROADCAST_FIELD_VALUE_CHANGED(FilteredRecipes);
+		OnRecipesChanged.Broadcast();
+	}
 }
 
 void URpgCraftingStationViewModel::RebuildSelectedRecipeDetails()
@@ -589,6 +774,8 @@ void URpgCraftingStationViewModel::RebuildSelectedRecipeDetails()
 	bCanCraftSelectedRecipe = Station && SelectedRecipe && Station->CanCraftRecipeQuantity(Actor, SelectedRecipe, CraftQuantity);
 	SelectedTotalCraftTime = SelectedRecipe ? FMath::Max(0.0f, SelectedRecipe->CraftTime) * CraftQuantity : 0.0f;
 	bStationPaused = Station && Station->IsCraftingPaused();
+	PauseResumeButtonText = MakePauseResumeButtonText(bStationPaused);
+	RebuildActionAvailability();
 
 	if (Station && SelectedRecipe)
 	{
@@ -615,6 +802,7 @@ void URpgCraftingStationViewModel::RebuildSelectedRecipeDetails()
 	UE_MVVM_BROADCAST_FIELD_VALUE_CHANGED(SelectedTotalCraftTime);
 	UE_MVVM_BROADCAST_FIELD_VALUE_CHANGED(bCanCraftSelectedRecipe);
 	UE_MVVM_BROADCAST_FIELD_VALUE_CHANGED(bStationPaused);
+	UE_MVVM_BROADCAST_FIELD_VALUE_CHANGED(PauseResumeButtonText);
 	UE_MVVM_BROADCAST_FIELD_VALUE_CHANGED(SelectedIngredients);
 	UE_MVVM_BROADCAST_FIELD_VALUE_CHANGED(SelectedOutputs);
 	OnSelectedRecipeDetailsChanged.Broadcast();
@@ -622,16 +810,41 @@ void URpgCraftingStationViewModel::RebuildSelectedRecipeDetails()
 
 void URpgCraftingStationViewModel::RebuildJobs()
 {
-	Jobs.Reset();
+	TArray<FGuid> PreviousJobOrder;
+	PreviousJobOrder.Reserve(Jobs.Num());
+
+	TMap<FGuid, URpgCraftingJobViewModel*> PreviousViewModelsByJobId;
+	for (URpgCraftingJobViewModel* ExistingViewModel : Jobs)
+	{
+		const FGuid ExistingJobId = ExistingViewModel ? ExistingViewModel->GetJobId() : FGuid();
+		PreviousJobOrder.Add(ExistingJobId);
+		if (ExistingJobId.IsValid() && ExistingViewModel)
+		{
+			PreviousViewModelsByJobId.Add(ExistingJobId, ExistingViewModel);
+		}
+	}
+
+	TArray<TObjectPtr<URpgCraftingJobViewModel>> NewJobs;
 	URpgCraftingStationComponent* Station = ObservedStation.Get();
+	const bool bPreviousStationPaused = bStationPaused;
 	if (Station)
 	{
 		const float ServerTime = GetServerWorldTimeSeconds(Station);
 		for (const FRpgCraftingJobEntry& Job : Station->GetCraftingJobs())
 		{
-			URpgCraftingJobViewModel* JobViewModel = NewObject<URpgCraftingJobViewModel>(this);
+			URpgCraftingJobViewModel* JobViewModel = nullptr;
+			if (URpgCraftingJobViewModel** ExistingViewModel = PreviousViewModelsByJobId.Find(Job.JobId))
+			{
+				JobViewModel = *ExistingViewModel;
+			}
+
+			if (!JobViewModel)
+			{
+				JobViewModel = NewObject<URpgCraftingJobViewModel>(this);
+			}
+
 			JobViewModel->InitializeJob(Job, ServerTime);
-			Jobs.Add(JobViewModel);
+			NewJobs.Add(JobViewModel);
 		}
 
 		bStationPaused = Station->IsCraftingPaused();
@@ -641,32 +854,152 @@ void URpgCraftingStationViewModel::RebuildJobs()
 		bStationPaused = false;
 	}
 
-	UE_MVVM_BROADCAST_FIELD_VALUE_CHANGED(Jobs);
-	UE_MVVM_BROADCAST_FIELD_VALUE_CHANGED(bStationPaused);
-	OnJobsChanged.Broadcast();
+	const bool bJobListChanged = !AreJobOrdersEqual(PreviousJobOrder, NewJobs);
+	Jobs = MoveTemp(NewJobs);
+	if (bJobListChanged)
+	{
+		UE_MVVM_BROADCAST_FIELD_VALUE_CHANGED(Jobs);
+	}
+
+	if (bJobListChanged || PreviousJobOrder.Num() > 0 || Jobs.Num() > 0)
+	{
+		OnJobsChanged.Broadcast();
+	}
+
+	if (bPreviousStationPaused != bStationPaused)
+	{
+		PauseResumeButtonText = MakePauseResumeButtonText(bStationPaused);
+		RebuildActionAvailability();
+		UE_MVVM_BROADCAST_FIELD_VALUE_CHANGED(bStationPaused);
+		UE_MVVM_BROADCAST_FIELD_VALUE_CHANGED(PauseResumeButtonText);
+	}
+}
+
+void URpgCraftingStationViewModel::RebuildActionAvailability()
+{
+	const bool bNewCanSubmitSelectedRecipe = bCanCraftSelectedRecipe;
+	if (bCanSubmitSelectedRecipe != bNewCanSubmitSelectedRecipe)
+	{
+		bCanSubmitSelectedRecipe = bNewCanSubmitSelectedRecipe;
+		UE_MVVM_BROADCAST_FIELD_VALUE_CHANGED(bCanSubmitSelectedRecipe);
+	}
+
+	const bool bNewCanDecreaseCraftQuantity = CraftQuantity > 1;
+	if (bCanDecreaseCraftQuantity != bNewCanDecreaseCraftQuantity)
+	{
+		bCanDecreaseCraftQuantity = bNewCanDecreaseCraftQuantity;
+		UE_MVVM_BROADCAST_FIELD_VALUE_CHANGED(bCanDecreaseCraftQuantity);
+	}
+
+	const bool bNewCanIncreaseCraftQuantity = CraftQuantity < MaxSelectedCraftQuantity;
+	if (bCanIncreaseCraftQuantity != bNewCanIncreaseCraftQuantity)
+	{
+		bCanIncreaseCraftQuantity = bNewCanIncreaseCraftQuantity;
+		UE_MVVM_BROADCAST_FIELD_VALUE_CHANGED(bCanIncreaseCraftQuantity);
+	}
+
+	const bool bNewCanSetCraftQuantityToOne = MaxSelectedCraftQuantity >= 1 && CraftQuantity != 1;
+	if (bCanSetCraftQuantityToOne != bNewCanSetCraftQuantityToOne)
+	{
+		bCanSetCraftQuantityToOne = bNewCanSetCraftQuantityToOne;
+		UE_MVVM_BROADCAST_FIELD_VALUE_CHANGED(bCanSetCraftQuantityToOne);
+	}
+
+	const bool bNewCanSetCraftQuantityToFive = MaxSelectedCraftQuantity >= 5 && CraftQuantity != 5;
+	if (bCanSetCraftQuantityToFive != bNewCanSetCraftQuantityToFive)
+	{
+		bCanSetCraftQuantityToFive = bNewCanSetCraftQuantityToFive;
+		UE_MVVM_BROADCAST_FIELD_VALUE_CHANGED(bCanSetCraftQuantityToFive);
+	}
+
+	const bool bNewCanSetCraftQuantityToTen = MaxSelectedCraftQuantity >= 10 && CraftQuantity != 10;
+	if (bCanSetCraftQuantityToTen != bNewCanSetCraftQuantityToTen)
+	{
+		bCanSetCraftQuantityToTen = bNewCanSetCraftQuantityToTen;
+		UE_MVVM_BROADCAST_FIELD_VALUE_CHANGED(bCanSetCraftQuantityToTen);
+	}
+
+	const bool bNewCanSetCraftQuantityToMax = MaxSelectedCraftQuantity > 1 && CraftQuantity < MaxSelectedCraftQuantity;
+	if (bCanSetCraftQuantityToMax != bNewCanSetCraftQuantityToMax)
+	{
+		bCanSetCraftQuantityToMax = bNewCanSetCraftQuantityToMax;
+		UE_MVVM_BROADCAST_FIELD_VALUE_CHANGED(bCanSetCraftQuantityToMax);
+	}
+
+	const bool bNewHasCraftQuantityOptions = MaxSelectedCraftQuantity > 1;
+	if (bHasCraftQuantityOptions != bNewHasCraftQuantityOptions)
+	{
+		bHasCraftQuantityOptions = bNewHasCraftQuantityOptions;
+		UE_MVVM_BROADCAST_FIELD_VALUE_CHANGED(bHasCraftQuantityOptions);
+	}
+
+	URpgCraftingStationComponent* Station = ObservedStation.Get();
+	AActor* Actor = RequestingActor.Get();
+	const bool bNewCanToggleCraftingPause = Station && Actor && Station->CanActorAccess(Actor);
+	if (bCanToggleCraftingPause != bNewCanToggleCraftingPause)
+	{
+		bCanToggleCraftingPause = bNewCanToggleCraftingPause;
+		UE_MVVM_BROADCAST_FIELD_VALUE_CHANGED(bCanToggleCraftingPause);
+	}
+
+	const bool bNewCanPauseCraftingStation = bCanToggleCraftingPause && !bStationPaused;
+	if (bCanPauseCraftingStation != bNewCanPauseCraftingStation)
+	{
+		bCanPauseCraftingStation = bNewCanPauseCraftingStation;
+		UE_MVVM_BROADCAST_FIELD_VALUE_CHANGED(bCanPauseCraftingStation);
+	}
+
+	const bool bNewCanResumeCraftingStation = bCanToggleCraftingPause && bStationPaused;
+	if (bCanResumeCraftingStation != bNewCanResumeCraftingStation)
+	{
+		bCanResumeCraftingStation = bNewCanResumeCraftingStation;
+		UE_MVVM_BROADCAST_FIELD_VALUE_CHANGED(bCanResumeCraftingStation);
+	}
 }
 
 void URpgCraftingStationViewModel::HandleCraftingStationChanged(FGameplayTag Channel, const FRpgCraftingStationChangeMessage& Message)
 {
 	if (ObservedStation.Get() == Message.Station)
 	{
-		Refresh();
+		RefreshStationState();
+		RefreshJobs();
 	}
 }
 
 void URpgCraftingStationViewModel::HandleRecipeUnlockChanged(FGameplayTag Channel, const FRpgRecipeUnlockChangeMessage& Message)
 {
-	Refresh();
+	RefreshRecipesAndDetails();
 }
 
 void URpgCraftingStationViewModel::HandleInventoryChanged(FGameplayTag Channel, const FRpgInventoryChangeMessage& Message)
 {
-	RebuildRecipeList();
-	RebuildSelectedRecipeDetails();
+	URpgCraftingStationComponent* Station = ObservedStation.Get();
+	if (!Station)
+	{
+		return;
+	}
+
+	URpgInventoryManagerComponent* ChangedInventory = Cast<URpgInventoryManagerComponent>(Message.InventoryOwner.Get());
+	if (!ChangedInventory)
+	{
+		return;
+	}
+
+	if (ChangedInventory == Station->GetOutputInventory())
+	{
+		RefreshStationState();
+		RefreshJobs();
+		return;
+	}
+
+	const TArray<URpgInventoryManagerComponent*> ResourceInventories = Station->GetResourceInventories(RequestingActor.Get());
+	if (ResourceInventories.Contains(ChangedInventory))
+	{
+		RefreshRecipesAndDetails();
+	}
 }
 
 void URpgCraftingStationViewModel::HandleBaseStorageChanged(FGameplayTag Channel, const FRpgBaseResourceChangeMessage& Message)
 {
-	RebuildRecipeList();
-	RebuildSelectedRecipeDetails();
+	RefreshRecipesAndDetails();
 }

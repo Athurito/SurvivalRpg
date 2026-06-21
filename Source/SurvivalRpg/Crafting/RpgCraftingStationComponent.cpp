@@ -60,6 +60,7 @@ void URpgCraftingStationComponent::GetLifetimeReplicatedProps(TArray<FLifetimePr
 	DOREPLIFETIME(ThisClass, bAutoDepositCraftingOutputsEnabled);
 	DOREPLIFETIME(ThisClass, bStationPaused);
 	DOREPLIFETIME(ThisClass, CraftingJobs);
+	DOREPLIFETIME(ThisClass, CraftingStateRevision);
 }
 
 void URpgCraftingStationComponent::GatherInteractionOptions(const FInteractionQuery& InteractQuery, FInteractionOptionBuilder& InteractionBuilder)
@@ -427,8 +428,7 @@ bool URpgCraftingStationComponent::ResumeCraftingStation(AActor* RequestingActor
 	if (ActiveJobIndex != INDEX_NONE && CraftingJobs[ActiveJobIndex].State == ERpgCraftingJobState::Paused)
 	{
 		const float RemainingDuration = CraftingJobs[ActiveJobIndex].PausedRemainingTime;
-		StartJobAtIndex(ActiveJobIndex, RemainingDuration);
-		MarkCraftingStateDirty(CraftingJobs[ActiveJobIndex].JobId, CraftingJobs[ActiveJobIndex].State, true);
+		StartJobAtIndex(ActiveJobIndex, RemainingDuration, true);
 		return true;
 	}
 
@@ -1088,7 +1088,7 @@ void URpgCraftingStationComponent::TryStartNextQueuedJob()
 	}
 }
 
-void URpgCraftingStationComponent::StartJobAtIndex(int32 JobIndex, float DurationOverride)
+void URpgCraftingStationComponent::StartJobAtIndex(int32 JobIndex, float DurationOverride, bool bPauseStateChanged)
 {
 	if (!CraftingJobs.IsValidIndex(JobIndex))
 	{
@@ -1111,23 +1111,25 @@ void URpgCraftingStationComponent::StartJobAtIndex(int32 JobIndex, float Duratio
 	}
 
 	const float Now = GetServerWorldTimeSeconds();
-	const float CraftDuration = DurationOverride >= 0.0f ? DurationOverride : GetRecipeCraftTime(Job.Recipe);
+	const float FullCraftDuration = GetRecipeCraftTime(Job.Recipe);
+	const float RemainingDuration = DurationOverride >= 0.0f ? FMath::Max(0.0f, DurationOverride) : FullCraftDuration;
+	const float PreviousElapsedDuration = DurationOverride >= 0.0f ? FMath::Max(0.0f, FullCraftDuration - RemainingDuration) : 0.0f;
 	Job.State = ERpgCraftingJobState::Active;
-	Job.StartServerTime = Now;
-	Job.FinishServerTime = Now + CraftDuration;
+	Job.StartServerTime = Now - PreviousElapsedDuration;
+	Job.FinishServerTime = Now + RemainingDuration;
 	Job.PausedRemainingTime = 0.0f;
 
 	World->GetTimerManager().ClearTimer(CraftingTimerHandle);
-	if (CraftDuration <= 0.0f)
+	if (RemainingDuration <= 0.0f)
 	{
 		World->GetTimerManager().SetTimerForNextTick(FTimerDelegate::CreateUObject(this, &ThisClass::CompleteActiveJobUnit));
 	}
 	else
 	{
-		World->GetTimerManager().SetTimer(CraftingTimerHandle, this, &ThisClass::CompleteActiveJobUnit, CraftDuration, false);
+		World->GetTimerManager().SetTimer(CraftingTimerHandle, this, &ThisClass::CompleteActiveJobUnit, RemainingDuration, false);
 	}
 
-	MarkCraftingStateDirty(Job.JobId, Job.State);
+	MarkCraftingStateDirty(Job.JobId, Job.State, bPauseStateChanged);
 }
 
 void URpgCraftingStationComponent::CompleteActiveJobUnit()
@@ -1164,8 +1166,6 @@ void URpgCraftingStationComponent::CompleteActiveJobUnit()
 	if (Job.QuantityCompleted >= Job.QuantityTotal)
 	{
 		const FGuid FinishedJobId = Job.JobId;
-		Job.State = ERpgCraftingJobState::Completed;
-		MarkCraftingStateDirty(FinishedJobId, Job.State);
 		CraftingJobs.RemoveAt(ActiveJobIndex);
 		MarkCraftingStateDirty(FinishedJobId, ERpgCraftingJobState::Completed);
 		TryStartNextQueuedJob();
@@ -1363,7 +1363,7 @@ bool URpgCraftingStationComponent::TryMergeDroppedOutput(TSubclassOf<URpgInvento
 	return false;
 }
 
-void URpgCraftingStationComponent::MarkCraftingStateDirty(FGuid ChangedJobId, ERpgCraftingJobState ChangedState, bool bPauseStateChanged) const
+void URpgCraftingStationComponent::MarkCraftingStateDirty(FGuid ChangedJobId, ERpgCraftingJobState ChangedState, bool bPauseStateChanged)
 {
 	UWorld* World = GetWorld();
 	if (!World || !World->IsGameWorld() || !IsRegistered() || HasAnyFlags(RF_ClassDefaultObject | RF_ArchetypeObject))
@@ -1375,6 +1375,7 @@ void URpgCraftingStationComponent::MarkCraftingStateDirty(FGuid ChangedJobId, ER
 	{
 		if (OwnerActor->HasAuthority())
 		{
+			++CraftingStateRevision;
 			OwnerActor->ForceNetUpdate();
 		}
 	}

@@ -260,6 +260,22 @@ public:
 	UFUNCTION(BlueprintCallable, Category = "Crafting|ViewModel")
 	void Refresh();
 
+	/** Refreshes station-level state such as pause and auto-deposit without touching recipe list widgets. */
+	UFUNCTION(BlueprintCallable, Category = "Crafting|ViewModel")
+	void RefreshStationState();
+
+	/** Refreshes recipe rows and selected details after filters, unlocks, or ingredient resources changed. */
+	UFUNCTION(BlueprintCallable, Category = "Crafting|ViewModel")
+	void RefreshRecipesAndDetails();
+
+	/** Refreshes only selected recipe details such as quantity, ingredients, total time, and craft button state. */
+	UFUNCTION(BlueprintCallable, Category = "Crafting|ViewModel")
+	void RefreshSelectedRecipeDetails();
+
+	/** Refreshes only active/queued job rows. Use this for UI progress timers instead of Refresh(). */
+	UFUNCTION(BlueprintCallable, Category = "Crafting|ViewModel")
+	void RefreshJobs();
+
 	/** Selects a recipe for the details panel. */
 	UFUNCTION(BlueprintCallable, Category = "Crafting|ViewModel")
 	void SelectRecipe(URpgCraftingRecipeDefinition* RecipeDefinition);
@@ -289,6 +305,82 @@ public:
 
 	UFUNCTION(BlueprintCallable, Category = "Crafting|ViewModel")
 	void SetCraftQuantityToMax();
+
+	/** Static recipe currently selected by the details panel. */
+	UFUNCTION(BlueprintPure, Category = "Crafting|ViewModel")
+	URpgCraftingRecipeDefinition* GetSelectedRecipe() const { return SelectedRecipe.Get(); }
+
+	/** Desired batch quantity currently shown in the details panel. */
+	UFUNCTION(BlueprintPure, Category = "Crafting|ViewModel")
+	int32 GetCraftQuantity() const { return CraftQuantity; }
+
+	/** Maximum quantity currently craftable from known player and station resources. */
+	UFUNCTION(BlueprintPure, Category = "Crafting|ViewModel")
+	int32 GetMaxSelectedCraftQuantity() const { return MaxSelectedCraftQuantity; }
+
+	/** Total seconds for the selected recipe at the selected quantity. */
+	UFUNCTION(BlueprintPure, Category = "Crafting|ViewModel")
+	float GetSelectedTotalCraftTime() const { return SelectedTotalCraftTime; }
+
+	/** True when the selected recipe and quantity can be submitted to the server. */
+	UFUNCTION(BlueprintPure, Category = "Crafting|ViewModel")
+	bool CanCraftSelectedRecipe() const { return bCanCraftSelectedRecipe; }
+
+	/** Alias for craft buttons: true when the selected recipe and quantity are valid for a server craft request. */
+	UFUNCTION(BlueprintPure, Category = "Crafting|ViewModel")
+	bool CanSubmitSelectedRecipe() const { return bCanSubmitSelectedRecipe; }
+
+	/** True when the quantity can be reduced by one without dropping below one. */
+	UFUNCTION(BlueprintPure, Category = "Crafting|ViewModel")
+	bool CanDecreaseCraftQuantity() const { return bCanDecreaseCraftQuantity; }
+
+	/** True when the quantity can be increased by one without exceeding the currently craftable maximum. */
+	UFUNCTION(BlueprintPure, Category = "Crafting|ViewModel")
+	bool CanIncreaseCraftQuantity() const { return bCanIncreaseCraftQuantity; }
+
+	/** True when the exact preset amount can be selected for the current recipe. */
+	UFUNCTION(BlueprintPure, Category = "Crafting|ViewModel")
+	bool CanSetCraftQuantity(int32 InCraftQuantity) const;
+
+	/** True when the quantity preset button for one item should be enabled. */
+	UFUNCTION(BlueprintPure, Category = "Crafting|ViewModel")
+	bool CanSetCraftQuantityToOne() const { return bCanSetCraftQuantityToOne; }
+
+	/** True when the quantity preset button for five items should be enabled. */
+	UFUNCTION(BlueprintPure, Category = "Crafting|ViewModel")
+	bool CanSetCraftQuantityToFive() const { return bCanSetCraftQuantityToFive; }
+
+	/** True when the quantity preset button for ten items should be enabled. */
+	UFUNCTION(BlueprintPure, Category = "Crafting|ViewModel")
+	bool CanSetCraftQuantityToTen() const { return bCanSetCraftQuantityToTen; }
+
+	/** True when the Max button would change the current quantity to a larger craftable amount. */
+	UFUNCTION(BlueprintPure, Category = "Crafting|ViewModel")
+	bool CanSetCraftQuantityToMax() const { return bCanSetCraftQuantityToMax; }
+
+	/** True when the selected recipe supports a useful quantity picker. */
+	UFUNCTION(BlueprintPure, Category = "Crafting|ViewModel")
+	bool HasCraftQuantityOptions() const { return bHasCraftQuantityOptions; }
+
+	/** Current replicated pause state projected for pause/resume button styling. */
+	UFUNCTION(BlueprintPure, Category = "Crafting|ViewModel")
+	bool IsStationPaused() const { return bStationPaused; }
+
+	/** True when this UI can send either a pause or resume command for the observed station. */
+	UFUNCTION(BlueprintPure, Category = "Crafting|ViewModel")
+	bool CanToggleCraftingPause() const { return bCanToggleCraftingPause; }
+
+	/** True when the station is currently running and can be paused. */
+	UFUNCTION(BlueprintPure, Category = "Crafting|ViewModel")
+	bool CanPauseCraftingStation() const { return bCanPauseCraftingStation; }
+
+	/** True when the station is currently paused and can be resumed. */
+	UFUNCTION(BlueprintPure, Category = "Crafting|ViewModel")
+	bool CanResumeCraftingStation() const { return bCanResumeCraftingStation; }
+
+	/** Text for a single pause/resume button, derived from the replicated station pause state. */
+	UFUNCTION(BlueprintPure, Category = "Crafting|ViewModel")
+	FText GetPauseResumeButtonText() const { return PauseResumeButtonText; }
 
 	UFUNCTION(BlueprintPure, Category = "Crafting|ViewModel")
 	TArray<URpgCraftingRecipeViewModel*> GetFilteredRecipes() const;
@@ -356,8 +448,56 @@ protected:
 	UPROPERTY(BlueprintReadOnly, FieldNotify, Category = "Crafting|Recipe", meta = (AllowPrivateAccess = "true"))
 	bool bCanCraftSelectedRecipe = false;
 
+	/** FieldNotify version of CanCraftSelectedRecipe for MVVM button bindings. */
+	UPROPERTY(BlueprintReadOnly, FieldNotify, Category = "Crafting|Recipe", meta = (AllowPrivateAccess = "true"))
+	bool bCanSubmitSelectedRecipe = false;
+
+	/** FieldNotify state for the quantity minus button. */
+	UPROPERTY(BlueprintReadOnly, FieldNotify, Category = "Crafting|Recipe", meta = (AllowPrivateAccess = "true"))
+	bool bCanDecreaseCraftQuantity = false;
+
+	/** FieldNotify state for the quantity plus button. */
+	UPROPERTY(BlueprintReadOnly, FieldNotify, Category = "Crafting|Recipe", meta = (AllowPrivateAccess = "true"))
+	bool bCanIncreaseCraftQuantity = false;
+
+	/** FieldNotify state for the 1x quantity preset. */
+	UPROPERTY(BlueprintReadOnly, FieldNotify, Category = "Crafting|Recipe", meta = (AllowPrivateAccess = "true"))
+	bool bCanSetCraftQuantityToOne = false;
+
+	/** FieldNotify state for the 5x quantity preset. */
+	UPROPERTY(BlueprintReadOnly, FieldNotify, Category = "Crafting|Recipe", meta = (AllowPrivateAccess = "true"))
+	bool bCanSetCraftQuantityToFive = false;
+
+	/** FieldNotify state for the 10x quantity preset. */
+	UPROPERTY(BlueprintReadOnly, FieldNotify, Category = "Crafting|Recipe", meta = (AllowPrivateAccess = "true"))
+	bool bCanSetCraftQuantityToTen = false;
+
+	/** FieldNotify state for the Max quantity preset. */
+	UPROPERTY(BlueprintReadOnly, FieldNotify, Category = "Crafting|Recipe", meta = (AllowPrivateAccess = "true"))
+	bool bCanSetCraftQuantityToMax = false;
+
+	/** FieldNotify state for showing quantity controls at all. */
+	UPROPERTY(BlueprintReadOnly, FieldNotify, Category = "Crafting|Recipe", meta = (AllowPrivateAccess = "true"))
+	bool bHasCraftQuantityOptions = false;
+
 	UPROPERTY(BlueprintReadOnly, FieldNotify, Category = "Crafting|Station", meta = (AllowPrivateAccess = "true"))
 	bool bStationPaused = false;
+
+	/** Live text for the station pause/resume action; bind buttons to this instead of duplicating state logic in widgets. */
+	UPROPERTY(BlueprintReadOnly, FieldNotify, Category = "Crafting|Station", meta = (AllowPrivateAccess = "true"))
+	FText PauseResumeButtonText;
+
+	/** FieldNotify state for a combined pause/resume button. */
+	UPROPERTY(BlueprintReadOnly, FieldNotify, Category = "Crafting|Station", meta = (AllowPrivateAccess = "true"))
+	bool bCanToggleCraftingPause = false;
+
+	/** FieldNotify state for a pause-only button. */
+	UPROPERTY(BlueprintReadOnly, FieldNotify, Category = "Crafting|Station", meta = (AllowPrivateAccess = "true"))
+	bool bCanPauseCraftingStation = false;
+
+	/** FieldNotify state for a resume-only button. */
+	UPROPERTY(BlueprintReadOnly, FieldNotify, Category = "Crafting|Station", meta = (AllowPrivateAccess = "true"))
+	bool bCanResumeCraftingStation = false;
 
 	/** Whether upgrades/config currently permit auto-deposit at this station. */
 	UPROPERTY(BlueprintReadOnly, FieldNotify, Category = "Crafting|Station", meta = (AllowPrivateAccess = "true"))
@@ -402,6 +542,7 @@ private:
 	void RebuildRecipeList();
 	void RebuildSelectedRecipeDetails();
 	void RebuildJobs();
+	void RebuildActionAvailability();
 	void HandleCraftingStationChanged(FGameplayTag Channel, const FRpgCraftingStationChangeMessage& Message);
 	void HandleRecipeUnlockChanged(FGameplayTag Channel, const struct FRpgRecipeUnlockChangeMessage& Message);
 	void HandleInventoryChanged(FGameplayTag Channel, const struct FRpgInventoryChangeMessage& Message);

@@ -399,6 +399,10 @@ protected:
 	UPROPERTY(ReplicatedUsing = OnRep_CraftingState, BlueprintReadOnly, Category = "Crafting|Jobs", meta = (AllowPrivateAccess = "true"))
 	TArray<FRpgCraftingJobEntry> CraftingJobs;
 
+	/** Lightweight replicated pulse that wakes clients even when the queue becomes empty after the final job. */
+	UPROPERTY(ReplicatedUsing = OnRep_CraftingState, BlueprintReadOnly, Category = "Crafting|Jobs", meta = (AllowPrivateAccess = "true"))
+	int32 CraftingStateRevision = 0;
+
 private:
 	UFUNCTION()
 	void OnRep_CraftingState();
@@ -413,7 +417,7 @@ private:
 	void RefundRemainingJobCosts(FRpgCraftingJobEntry& Job);
 	bool RefundResourceCredit(const FRpgCraftingRefundEntry& RefundEntry);
 	void TryStartNextQueuedJob();
-	void StartJobAtIndex(int32 JobIndex, float DurationOverride = -1.0f);
+	void StartJobAtIndex(int32 JobIndex, float DurationOverride = -1.0f, bool bPauseStateChanged = false);
 	void CompleteActiveJobUnit();
 	int32 FindActiveJobIndex() const;
 	int32 FindJobIndex(FGuid JobId) const;
@@ -423,7 +427,7 @@ private:
 	bool AddOutputItemOrDrop(TSubclassOf<URpgInventoryItemDefinition> ItemDefinition, int32 Count);
 	bool SpawnOrMergeDroppedOutput(TSubclassOf<URpgInventoryItemDefinition> ItemDefinition, int32 Count);
 	bool TryMergeDroppedOutput(TSubclassOf<URpgInventoryItemDefinition> ItemDefinition, int32 Count) const;
-	void MarkCraftingStateDirty(FGuid ChangedJobId = FGuid(), ERpgCraftingJobState ChangedState = ERpgCraftingJobState::Queued, bool bPauseStateChanged = false) const;
+	void MarkCraftingStateDirty(FGuid ChangedJobId = FGuid(), ERpgCraftingJobState ChangedState = ERpgCraftingJobState::Queued, bool bPauseStateChanged = false);
 
 private:
 	FTimerHandle CraftingTimerHandle;
