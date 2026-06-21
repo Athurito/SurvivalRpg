@@ -57,6 +57,7 @@ void URpgCraftingStationComponent::GetLifetimeReplicatedProps(TArray<FLifetimePr
 	Super::GetLifetimeReplicatedProps(OutLifetimeProps);
 
 	DOREPLIFETIME(ThisClass, LinkedBaseCamp);
+	DOREPLIFETIME(ThisClass, bAutoDepositCraftingOutputsEnabled);
 	DOREPLIFETIME(ThisClass, bStationPaused);
 	DOREPLIFETIME(ThisClass, CraftingJobs);
 }
@@ -708,14 +709,48 @@ bool URpgCraftingStationComponent::FlushOutputToBaseStorage()
 	return bMovedAnyOutput;
 }
 
+bool URpgCraftingStationComponent::HasCraftingOutputAutoDepositAccess() const
+{
+	const URpgBaseStorageStationComponent* UpgradeProvider = GetOutputAutoDepositUpgradeProvider();
+	const bool bProviderHasTag = UpgradeProvider && UpgradeProvider->HasUpgradeTag(RpgGameplayTags::Base_Storage_Upgrade_CraftingOutputAutoDeposit);
+	const bool bBaseCampHasTag = LinkedBaseCamp && LinkedBaseCamp->HasStorageUpgradeTag(RpgGameplayTags::Base_Storage_Upgrade_CraftingOutputAutoDeposit);
+	return bAlwaysAutoDepositCraftingOutputs || bBaseCampHasTag || bProviderHasTag;
+}
+
+bool URpgCraftingStationComponent::SetCraftingOutputAutoDepositEnabled(AActor* RequestingActor, bool bEnabled)
+{
+	AActor* OwnerActor = GetOwner();
+	if (!OwnerActor || !OwnerActor->HasAuthority() || !CanActorAccess(RequestingActor))
+	{
+		return false;
+	}
+
+	if (bAutoDepositCraftingOutputsEnabled == bEnabled)
+	{
+		return true;
+	}
+
+	bAutoDepositCraftingOutputsEnabled = bEnabled;
+	MarkCraftingStateDirty();
+
+	if (bEnabled && ShouldAutoDepositCraftingOutputs())
+	{
+		FlushOutputToBaseStorage();
+	}
+
+	return true;
+}
+
 bool URpgCraftingStationComponent::ShouldAutoDepositCraftingOutputs() const
 {
 	const URpgBaseStorageStationComponent* UpgradeProvider = GetOutputAutoDepositUpgradeProvider();
 	const bool bProviderHasTag = UpgradeProvider && UpgradeProvider->HasUpgradeTag(RpgGameplayTags::Base_Storage_Upgrade_CraftingOutputAutoDeposit);
 	const bool bBaseCampHasTag = LinkedBaseCamp && LinkedBaseCamp->HasStorageUpgradeTag(RpgGameplayTags::Base_Storage_Upgrade_CraftingOutputAutoDeposit);
-	const bool bShouldAutoDeposit = bAlwaysAutoDepositCraftingOutputs || bBaseCampHasTag || bProviderHasTag;
-	UE_LOG(LogRpgCraftingStation, Verbose, TEXT("ShouldAutoDepositCraftingOutputs: Station=%s Always=%s BaseCamp=%s BaseHasTag=%s ProviderActor=%s ProviderComponent=%s ProviderHasTag=%s Result=%s"),
+	const bool bHasAutoDepositAccess = bAlwaysAutoDepositCraftingOutputs || bBaseCampHasTag || bProviderHasTag;
+	const bool bShouldAutoDeposit = bAutoDepositCraftingOutputsEnabled && bHasAutoDepositAccess;
+	UE_LOG(LogRpgCraftingStation, Verbose, TEXT("ShouldAutoDepositCraftingOutputs: Station=%s Enabled=%s Always=%s BaseCamp=%s BaseHasTag=%s ProviderActor=%s ProviderComponent=%s ProviderHasTag=%s Result=%s"),
 		*GetNameSafe(GetOwner()),
+		bAutoDepositCraftingOutputsEnabled ? TEXT("true") : TEXT("false"),
 		bAlwaysAutoDepositCraftingOutputs ? TEXT("true") : TEXT("false"),
 		*GetNameSafe(LinkedBaseCamp),
 		bBaseCampHasTag ? TEXT("true") : TEXT("false"),

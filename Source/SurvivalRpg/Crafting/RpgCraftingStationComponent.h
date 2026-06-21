@@ -286,6 +286,18 @@ public:
 	UFUNCTION(BlueprintCallable, BlueprintAuthorityOnly, Category = "Crafting|Output")
 	bool FlushOutputToBaseStorage();
 
+	/** Returns true when this station has an upgrade/config source that permits auto-deposit. */
+	UFUNCTION(BlueprintCallable, BlueprintPure = false, Category = "Crafting|Output")
+	bool HasCraftingOutputAutoDepositAccess() const;
+
+	/** Runtime station toggle for auto-deposit. The upgrade/config source must still grant access. */
+	UFUNCTION(BlueprintCallable, BlueprintPure, Category = "Crafting|Output")
+	bool IsCraftingOutputAutoDepositEnabled() const { return bAutoDepositCraftingOutputsEnabled; }
+
+	/** Enables or disables output auto-deposit on this station. Server-authoritative and access-checked. */
+	UFUNCTION(BlueprintCallable, BlueprintAuthorityOnly, Category = "Crafting|Output")
+	bool SetCraftingOutputAutoDepositEnabled(AActor* RequestingActor, bool bEnabled);
+
 	/** Returns true when this station should push crafted outputs into the linked base before using output slots. */
 	UFUNCTION(BlueprintCallable, BlueprintPure = false, Category = "Crafting|Output")
 	bool ShouldAutoDepositCraftingOutputs() const;
@@ -346,6 +358,10 @@ protected:
 	/** Debug/prototype override that enables auto-deposit without requiring the upgrade provider tag. */
 	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Crafting|Output")
 	bool bAlwaysAutoDepositCraftingOutputs = false;
+
+	/** Runtime toggle for this station. Replicated for UI; auto-deposit still requires the upgrade/config access source. */
+	UPROPERTY(EditAnywhere, ReplicatedUsing = OnRep_CraftingState, BlueprintReadOnly, Category = "Crafting|Output")
+	bool bAutoDepositCraftingOutputsEnabled = true;
 
 	/** Whether instance-based outputs may go directly to the linked base armory when auto-deposit is active. */
 	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Crafting|Output")

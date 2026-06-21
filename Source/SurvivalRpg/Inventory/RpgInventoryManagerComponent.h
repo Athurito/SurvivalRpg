@@ -432,6 +432,9 @@ private:
 	UFUNCTION()
 	void OnRep_InventoryRevision();
 
+	UFUNCTION()
+	void OnRep_CapacitySettings();
+
 	void MarkInventoryStateDirty();
 	void BroadcastInventoryStateChanged() const;
 	UAbilitySystemComponent* FindCapacityAbilitySystem() const;
@@ -442,11 +445,11 @@ private:
 
 private:
 	/** Source used to determine how many entries this inventory may hold. */
-	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Inventory|Capacity", meta = (AllowPrivateAccess = "true"))
+	UPROPERTY(EditAnywhere, ReplicatedUsing = OnRep_CapacitySettings, BlueprintReadOnly, Category = "Inventory|Capacity", meta = (AllowPrivateAccess = "true"))
 	ERpgInventoryCapacityMode CapacityMode = ERpgInventoryCapacityMode::Unlimited;
 
 	/** Fixed entry limit and fallback when the configured GAS attribute is unavailable. */
-	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Inventory|Capacity", meta = (AllowPrivateAccess = "true", ClampMin = "0", UIMin = "0"))
+	UPROPERTY(EditAnywhere, ReplicatedUsing = OnRep_CapacitySettings, BlueprintReadOnly, Category = "Inventory|Capacity", meta = (AllowPrivateAccess = "true", ClampMin = "0", UIMin = "0"))
 	int32 FixedMaxEntries = 0;
 
 	/** GAS attribute used as entry capacity when CapacityMode is AbilitySystemAttribute. */

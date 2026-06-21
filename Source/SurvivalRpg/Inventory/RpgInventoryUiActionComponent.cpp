@@ -785,6 +785,16 @@ void URpgInventoryUiActionComponent::RequestResumeCraftingStation_Implementation
 	}
 }
 
+void URpgInventoryUiActionComponent::RequestSetCraftingOutputAutoDepositEnabled_Implementation(URpgCraftingStationComponent* CraftingStation, bool bEnabled)
+{
+	const AController* OwnerController = Cast<AController>(GetOwner());
+	AActor* RequestingActor = OwnerController ? OwnerController->GetPawn() : GetOwner();
+	if (CraftingStation && RequestingActor)
+	{
+		CraftingStation->SetCraftingOutputAutoDepositEnabled(RequestingActor, bEnabled);
+	}
+}
+
 bool URpgInventoryUiActionComponent::CanAccessInventory(URpgInventoryManagerComponent* Inventory) const
 {
 	if (Inventory == nullptr)

@@ -246,7 +246,12 @@ void URpgCraftingStationViewModel::UnbindCraftingStation()
 	UnregisterMessageListeners();
 	ObservedStation = nullptr;
 	RequestingActor = nullptr;
+	OutputInventory = nullptr;
 	SelectedRecipe = nullptr;
+	bStationPaused = false;
+	bCanAutoDepositCraftingOutputs = false;
+	bAutoDepositCraftingOutputsEnabled = false;
+	bShouldAutoDepositCraftingOutputs = false;
 	FilteredRecipes.Reset();
 	SelectedIngredients.Reset();
 	SelectedOutputs.Reset();
@@ -254,7 +259,12 @@ void URpgCraftingStationViewModel::UnbindCraftingStation()
 
 	UE_MVVM_BROADCAST_FIELD_VALUE_CHANGED(ObservedStation);
 	UE_MVVM_BROADCAST_FIELD_VALUE_CHANGED(RequestingActor);
+	UE_MVVM_BROADCAST_FIELD_VALUE_CHANGED(OutputInventory);
 	UE_MVVM_BROADCAST_FIELD_VALUE_CHANGED(SelectedRecipe);
+	UE_MVVM_BROADCAST_FIELD_VALUE_CHANGED(bStationPaused);
+	UE_MVVM_BROADCAST_FIELD_VALUE_CHANGED(bCanAutoDepositCraftingOutputs);
+	UE_MVVM_BROADCAST_FIELD_VALUE_CHANGED(bAutoDepositCraftingOutputsEnabled);
+	UE_MVVM_BROADCAST_FIELD_VALUE_CHANGED(bShouldAutoDepositCraftingOutputs);
 	UE_MVVM_BROADCAST_FIELD_VALUE_CHANGED(FilteredRecipes);
 	UE_MVVM_BROADCAST_FIELD_VALUE_CHANGED(SelectedIngredients);
 	UE_MVVM_BROADCAST_FIELD_VALUE_CHANGED(SelectedOutputs);
@@ -266,6 +276,7 @@ void URpgCraftingStationViewModel::UnbindCraftingStation()
 
 void URpgCraftingStationViewModel::Refresh()
 {
+	RebuildStationState();
 	RebuildRecipeList();
 	RebuildSelectedRecipeDetails();
 	RebuildJobs();
@@ -419,6 +430,22 @@ void URpgCraftingStationViewModel::UnregisterMessageListeners()
 	{
 		BaseStorageChangedHandle.Unregister();
 	}
+}
+
+void URpgCraftingStationViewModel::RebuildStationState()
+{
+	URpgCraftingStationComponent* Station = ObservedStation.Get();
+	OutputInventory = Station ? Station->GetOutputInventory() : nullptr;
+	bStationPaused = Station && Station->IsCraftingPaused();
+	bCanAutoDepositCraftingOutputs = Station && Station->HasCraftingOutputAutoDepositAccess();
+	bAutoDepositCraftingOutputsEnabled = Station && Station->IsCraftingOutputAutoDepositEnabled();
+	bShouldAutoDepositCraftingOutputs = Station && Station->ShouldAutoDepositCraftingOutputs();
+
+	UE_MVVM_BROADCAST_FIELD_VALUE_CHANGED(OutputInventory);
+	UE_MVVM_BROADCAST_FIELD_VALUE_CHANGED(bStationPaused);
+	UE_MVVM_BROADCAST_FIELD_VALUE_CHANGED(bCanAutoDepositCraftingOutputs);
+	UE_MVVM_BROADCAST_FIELD_VALUE_CHANGED(bAutoDepositCraftingOutputsEnabled);
+	UE_MVVM_BROADCAST_FIELD_VALUE_CHANGED(bShouldAutoDepositCraftingOutputs);
 }
 
 void URpgCraftingStationViewModel::RebuildRecipeList()

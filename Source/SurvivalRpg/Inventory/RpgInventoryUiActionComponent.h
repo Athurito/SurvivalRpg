@@ -130,6 +130,10 @@ public:
 	UFUNCTION(Server, Reliable, BlueprintCallable, Category = "Inventory|Crafting")
 	void RequestResumeCraftingStation(URpgCraftingStationComponent* CraftingStation);
 
+	/** Toggles whether an accessible crafting station auto-deposits finished outputs into linked base storage. */
+	UFUNCTION(Server, Reliable, BlueprintCallable, Category = "Inventory|Crafting")
+	void RequestSetCraftingOutputAutoDepositEnabled(URpgCraftingStationComponent* CraftingStation, bool bEnabled);
+
 	UFUNCTION(BlueprintCallable, BlueprintPure = false, Category = "Inventory|UI Actions")
 	bool CanAccessInventory(URpgInventoryManagerComponent* Inventory) const;
 

@@ -1012,6 +1012,8 @@ void URpgInventoryManagerComponent::GetLifetimeReplicatedProps(TArray< FLifetime
 {
 	Super::GetLifetimeReplicatedProps(OutLifetimeProps);
 
+	DOREPLIFETIME(ThisClass, CapacityMode);
+	DOREPLIFETIME(ThisClass, FixedMaxEntries);
 	DOREPLIFETIME(ThisClass, InventoryList);
 	DOREPLIFETIME(ThisClass, InventoryRevision);
 }
@@ -1582,6 +1584,12 @@ bool URpgInventoryManagerComponent::ReplicateSubobjects(UActorChannel* Channel, 
 void URpgInventoryManagerComponent::OnRep_InventoryRevision()
 {
 	BroadcastInventoryStateChanged();
+}
+
+void URpgInventoryManagerComponent::OnRep_CapacitySettings()
+{
+	RefreshCapacityAttributeBinding();
+	BroadcastCapacityChanged();
 }
 
 void URpgInventoryManagerComponent::MarkInventoryStateDirty()

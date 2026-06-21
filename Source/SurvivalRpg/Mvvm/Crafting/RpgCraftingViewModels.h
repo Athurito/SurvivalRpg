@@ -10,6 +10,7 @@
 
 class UTexture2D;
 class URpgCraftingRecipeDefinition;
+class URpgInventoryManagerComponent;
 class URpgInventoryItemDefinition;
 
 /** Local UI sort modes for crafting recipe lists. They never mutate server gameplay state. */
@@ -301,6 +302,22 @@ public:
 	UFUNCTION(BlueprintPure, Category = "Crafting|ViewModel")
 	TArray<URpgCraftingJobViewModel*> GetJobs() const;
 
+	/** Output inventory to bind to a normal inventory panel for finished station items. */
+	UFUNCTION(BlueprintPure, Category = "Crafting|ViewModel")
+	URpgInventoryManagerComponent* GetOutputInventory() const { return OutputInventory.Get(); }
+
+	/** True when station upgrades/config allow auto-deposit if the station toggle is enabled. */
+	UFUNCTION(BlueprintPure, Category = "Crafting|ViewModel")
+	bool CanAutoDepositCraftingOutputs() const { return bCanAutoDepositCraftingOutputs; }
+
+	/** True when this station's runtime auto-deposit toggle is enabled. */
+	UFUNCTION(BlueprintPure, Category = "Crafting|ViewModel")
+	bool IsAutoDepositCraftingOutputsEnabled() const { return bAutoDepositCraftingOutputsEnabled; }
+
+	/** True when finished outputs currently prefer base storage/armory before station output slots. */
+	UFUNCTION(BlueprintPure, Category = "Crafting|ViewModel")
+	bool ShouldAutoDepositCraftingOutputs() const { return bShouldAutoDepositCraftingOutputs; }
+
 	/** Fired whenever recipe list widgets should call SetListItems/RequestRefresh. */
 	UPROPERTY(BlueprintAssignable, Category = "Crafting|ViewModel")
 	FRpgCraftingViewModelListChanged OnRecipesChanged;
@@ -320,6 +337,10 @@ protected:
 	UPROPERTY(BlueprintReadOnly, FieldNotify, Category = "Crafting|Station", meta = (AllowPrivateAccess = "true"))
 	TObjectPtr<AActor> RequestingActor = nullptr;
 
+	/** Replicated station output inventory. Bind this to the same inventory panel used by player/storage views. */
+	UPROPERTY(BlueprintReadOnly, FieldNotify, Category = "Crafting|Station", meta = (AllowPrivateAccess = "true"))
+	TObjectPtr<URpgInventoryManagerComponent> OutputInventory = nullptr;
+
 	UPROPERTY(BlueprintReadOnly, FieldNotify, Category = "Crafting|Recipe", meta = (AllowPrivateAccess = "true"))
 	TObjectPtr<URpgCraftingRecipeDefinition> SelectedRecipe = nullptr;
 
@@ -337,6 +358,18 @@ protected:
 
 	UPROPERTY(BlueprintReadOnly, FieldNotify, Category = "Crafting|Station", meta = (AllowPrivateAccess = "true"))
 	bool bStationPaused = false;
+
+	/** Whether upgrades/config currently permit auto-deposit at this station. */
+	UPROPERTY(BlueprintReadOnly, FieldNotify, Category = "Crafting|Station", meta = (AllowPrivateAccess = "true"))
+	bool bCanAutoDepositCraftingOutputs = false;
+
+	/** Runtime station toggle replicated from the server. */
+	UPROPERTY(BlueprintReadOnly, FieldNotify, Category = "Crafting|Station", meta = (AllowPrivateAccess = "true"))
+	bool bAutoDepositCraftingOutputsEnabled = false;
+
+	/** Effective auto-deposit state after combining access and the station toggle. */
+	UPROPERTY(BlueprintReadOnly, FieldNotify, Category = "Crafting|Station", meta = (AllowPrivateAccess = "true"))
+	bool bShouldAutoDepositCraftingOutputs = false;
 
 	UPROPERTY(BlueprintReadOnly, FieldNotify, Category = "Crafting|Filters", meta = (AllowPrivateAccess = "true"))
 	FText SearchText;
@@ -365,6 +398,7 @@ protected:
 private:
 	void RegisterMessageListeners();
 	void UnregisterMessageListeners();
+	void RebuildStationState();
 	void RebuildRecipeList();
 	void RebuildSelectedRecipeDetails();
 	void RebuildJobs();
