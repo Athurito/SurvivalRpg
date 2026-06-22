@@ -9,20 +9,20 @@
 
 namespace
 {
-	const URpgInventoryItemDefinition* GetItemDefinitionCDO(TSubclassOf<URpgInventoryItemDefinition> ItemDefinition)
+	const URpgInventoryItemDefinition* GetBaseStorageItemDefinitionCDO(TSubclassOf<URpgInventoryItemDefinition> ItemDefinition)
 	{
 		return ItemDefinition ? GetDefault<URpgInventoryItemDefinition>(ItemDefinition) : nullptr;
 	}
 
-	FText GetItemDisplayName(TSubclassOf<URpgInventoryItemDefinition> ItemDefinition)
+	FText GetBaseStorageItemDisplayName(TSubclassOf<URpgInventoryItemDefinition> ItemDefinition)
 	{
-		const URpgInventoryItemDefinition* ItemCDO = GetItemDefinitionCDO(ItemDefinition);
+		const URpgInventoryItemDefinition* ItemCDO = GetBaseStorageItemDefinitionCDO(ItemDefinition);
 		return ItemCDO ? ItemCDO->DisplayName : FText::GetEmpty();
 	}
 
-	TSoftObjectPtr<UTexture2D> GetItemIcon(TSubclassOf<URpgInventoryItemDefinition> ItemDefinition)
+	TSoftObjectPtr<UTexture2D> GetBaseStorageItemIcon(TSubclassOf<URpgInventoryItemDefinition> ItemDefinition)
 	{
-		const URpgInventoryItemDefinition* ItemCDO = GetItemDefinitionCDO(ItemDefinition);
+		const URpgInventoryItemDefinition* ItemCDO = GetBaseStorageItemDefinitionCDO(ItemDefinition);
 		const URpgInventoryFragment_UIData* UIData = ItemCDO ? Cast<URpgInventoryFragment_UIData>(ItemCDO->FindFragmentByClass(URpgInventoryFragment_UIData::StaticClass())) : nullptr;
 		return UIData ? UIData->Icon : TSoftObjectPtr<UTexture2D>();
 	}
@@ -72,8 +72,8 @@ namespace
 void URpgBaseResourceEntryViewModel::InitializeFromResourceEntry(const FRpgBaseResourceEntryView& Entry)
 {
 	ItemDefinition = Entry.ItemDefinition;
-	DisplayName = GetItemDisplayName(ItemDefinition);
-	Icon = GetItemIcon(ItemDefinition);
+	DisplayName = GetBaseStorageItemDisplayName(ItemDefinition);
+	Icon = GetBaseStorageItemIcon(ItemDefinition);
 	Count = FMath::Max(0, Entry.Count);
 	Capacity = FMath::Max(0, Entry.Capacity);
 	FreeCapacity = FMath::Max(0, Capacity - Count);

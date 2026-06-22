@@ -70,6 +70,10 @@ public:
 	UFUNCTION(Server, Reliable, BlueprintCallable, Category = "Inventory|UI Actions")
 	void RequestMoveInventoryEntryToSlot(URpgInventoryManagerComponent* Inventory, FGuid EntryId, int32 TargetSlotIndex);
 
+	/** Splits one stack into a new stack in the same inventory. SplitCount <= 0 performs the V1 quick 50% split. */
+	UFUNCTION(Server, Reliable, BlueprintCallable, Category = "Inventory|UI Actions")
+	void RequestSplitItemStack(URpgInventoryManagerComponent* Inventory, URpgInventoryItemInstance* Item, int32 SplitCount, int32 TargetSlotIndex);
+
 	/** Deposits all material stacks from the player inventory into the linked base storage station. */
 	UFUNCTION(Server, Reliable, BlueprintCallable, Category = "Inventory|Base Storage")
 	void RequestDepositAllMaterialsToBase(URpgBaseStorageStationComponent* Station);
@@ -143,6 +147,8 @@ private:
 	URpgEquipmentLoadoutComponent* FindEquipmentLoadout() const;
 	bool CanTransferItemStack(URpgInventoryManagerComponent* SourceInventory, URpgInventoryManagerComponent* TargetInventory, URpgInventoryItemInstance* Item, int32 StackCount) const;
 	bool CanTransferItemStackToInventorySlot(URpgInventoryManagerComponent* SourceInventory, URpgInventoryManagerComponent* TargetInventory, URpgInventoryItemInstance* Item, int32 StackCount, int32 TargetSlotIndex) const;
+	bool CanSplitItemStack(URpgInventoryManagerComponent* Inventory, URpgInventoryItemInstance* Item, int32 SplitCount, int32 TargetSlotIndex, int32& OutSplitCount, int32& OutTargetSlotIndex) const;
+	bool FindFirstEmptyInventorySlot(URpgInventoryManagerComponent* Inventory, int32& OutSlotIndex) const;
 	bool CanAccessBaseStorageStation(const URpgBaseStorageStationComponent* Station) const;
 	void ClearPlayerAssignmentsForItem(URpgInventoryItemInstance* Item) const;
 };

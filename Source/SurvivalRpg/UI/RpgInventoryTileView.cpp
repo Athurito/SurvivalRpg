@@ -5,6 +5,7 @@
 #include "Input/Reply.h"
 #include "Slate/UMGDragDropOp.h"
 #include "SurvivalRpg/Inventory/RpgInventoryDragDrop.h"
+#include "SurvivalRpg/Inventory/RpgInventoryManagerComponent.h"
 #include "SurvivalRpg/Mvvm/Inventory/RpgInventoryViewModels.h"
 #include "SurvivalRpg/UI/RpgInventorySlotEntryWidget.h"
 
@@ -91,6 +92,72 @@ void URpgInventoryTileView::RefreshInventoryEntryItems()
 	}
 
 	SetInventoryEntryItems(BoundPanelViewModel->GetEntries());
+}
+
+URpgInventoryEntryViewModel* URpgInventoryTileView::GetSelectedInventoryEntry() const
+{
+	return Cast<URpgInventoryEntryViewModel>(GetSelectedItem());
+}
+
+bool URpgInventoryTileView::SelectInventoryListItem(UObject* Item, APlayerController* OwningPlayer)
+{
+	if (!Item || !GetListItems().Contains(Item))
+	{
+		return false;
+	}
+
+	SetSelectedItem(Item);
+	RequestNavigateToItem(Item);
+	if (OwningPlayer)
+	{
+		SetUserFocus(OwningPlayer);
+	}
+	return true;
+}
+
+bool URpgInventoryTileView::SelectBestInventoryEntry(APlayerController* OwningPlayer, bool bPreferOccupiedSlot)
+{
+	const TArray<UObject*>& Items = GetListItems();
+	if (Items.IsEmpty())
+	{
+		return false;
+	}
+
+	UObject* DesiredItem = GetSelectedItem();
+	if (!DesiredItem || !Items.Contains(DesiredItem))
+	{
+		DesiredItem = nullptr;
+	}
+
+	if (!DesiredItem && bPreferOccupiedSlot)
+	{
+		for (UObject* Item : Items)
+		{
+			const URpgInventoryEntryViewModel* Entry = Cast<URpgInventoryEntryViewModel>(Item);
+			if (Entry && !Entry->IsEmptySlot())
+			{
+				DesiredItem = Item;
+				break;
+			}
+		}
+	}
+
+	if (!DesiredItem)
+	{
+		DesiredItem = Items[0];
+	}
+
+	return SelectInventoryListItem(DesiredItem, OwningPlayer);
+}
+
+bool URpgInventoryTileView::QuickTransferSelectedEntry(URpgInventoryManagerComponent* ExplicitTargetInventory)
+{
+	return DragDropCoordinator && DragDropCoordinator->QuickTransferEntry(GetSelectedInventoryEntry(), ExplicitTargetInventory);
+}
+
+bool URpgInventoryTileView::QuickSplitSelectedEntry(int32 SplitCount, int32 TargetSlotIndex)
+{
+	return DragDropCoordinator && DragDropCoordinator->QuickSplitEntry(GetSelectedInventoryEntry(), TargetSlotIndex, SplitCount);
 }
 
 void URpgInventoryTileView::NativeOnEntryGenerated(UUserWidget* EntryWidget)

@@ -53,7 +53,14 @@ void URpgInventoryDragDropCoordinator::Initialize(APlayerController* InPlayerCon
 	PlayerController = InPlayerController;
 	UiActionComponent = nullptr;
 	UiActionComponent = ResolveUiActionComponent();
+	FocusedInventory = nullptr;
+	QuickTransferRoutes.Reset();
 	CancelHold();
+}
+
+URpgInventoryManagerComponent* URpgInventoryDragDropCoordinator::GetPlayerInventory() const
+{
+	return FindPlayerInventory();
 }
 
 void URpgInventoryDragDropCoordinator::SetUiActionComponent(URpgInventoryUiActionComponent* InUiActionComponent)
@@ -216,6 +223,128 @@ void URpgInventoryDragDropCoordinator::CancelHold()
 	HeldPayload = FRpgInventoryDragPayload();
 	bHasHeldPayload = false;
 	OnHeldPayloadChanged.Broadcast(bHasHeldPayload, HeldPayload);
+}
+
+void URpgInventoryDragDropCoordinator::SetFocusedInventory(URpgInventoryManagerComponent* InFocusedInventory)
+{
+	FocusedInventory = InFocusedInventory;
+}
+
+void URpgInventoryDragDropCoordinator::SetQuickTransferTarget(URpgInventoryManagerComponent* SourceInventory, URpgInventoryManagerComponent* TargetInventory)
+{
+	if (!SourceInventory)
+	{
+		return;
+	}
+
+	for (FRpgInventoryQuickTransferRoute& Route : QuickTransferRoutes)
+	{
+		if (Route.SourceInventory == SourceInventory)
+		{
+			Route.TargetInventory = TargetInventory;
+			return;
+		}
+	}
+
+	FRpgInventoryQuickTransferRoute& NewRoute = QuickTransferRoutes.AddDefaulted_GetRef();
+	NewRoute.SourceInventory = SourceInventory;
+	NewRoute.TargetInventory = TargetInventory;
+}
+
+void URpgInventoryDragDropCoordinator::ClearQuickTransferTargets()
+{
+	QuickTransferRoutes.Reset();
+}
+
+URpgInventoryManagerComponent* URpgInventoryDragDropCoordinator::ResolveQuickTransferTarget(URpgInventoryManagerComponent* SourceInventory) const
+{
+	if (!SourceInventory)
+	{
+		return nullptr;
+	}
+
+	for (const FRpgInventoryQuickTransferRoute& Route : QuickTransferRoutes)
+	{
+		if (Route.SourceInventory == SourceInventory && Route.TargetInventory && Route.TargetInventory != SourceInventory)
+		{
+			return Route.TargetInventory.Get();
+		}
+	}
+
+	URpgInventoryManagerComponent* PlayerInventory = FindPlayerInventory();
+	if (PlayerInventory && SourceInventory != PlayerInventory)
+	{
+		return PlayerInventory;
+	}
+
+	return nullptr;
+}
+
+bool URpgInventoryDragDropCoordinator::CanQuickTransferEntry(URpgInventoryEntryViewModel* EntryViewModel, URpgInventoryManagerComponent* ExplicitTargetInventory) const
+{
+	if (!EntryViewModel || !EntryViewModel->CanDrag() || !ResolveUiActionComponent())
+	{
+		return false;
+	}
+
+	URpgInventoryManagerComponent* SourceInventory = EntryViewModel->GetInventoryManager();
+	URpgInventoryManagerComponent* TargetInventory = ExplicitTargetInventory ? ExplicitTargetInventory : ResolveQuickTransferTarget(SourceInventory);
+	return SourceInventory &&
+		TargetInventory &&
+		SourceInventory != TargetInventory &&
+		EntryViewModel->GetItemInstance() &&
+		EntryViewModel->GetStackCount() > 0;
+}
+
+bool URpgInventoryDragDropCoordinator::QuickTransferEntry(URpgInventoryEntryViewModel* EntryViewModel, URpgInventoryManagerComponent* ExplicitTargetInventory)
+{
+	if (!CanQuickTransferEntry(EntryViewModel, ExplicitTargetInventory))
+	{
+		return false;
+	}
+
+	URpgInventoryManagerComponent* SourceInventory = EntryViewModel->GetInventoryManager();
+	URpgInventoryManagerComponent* TargetInventory = ExplicitTargetInventory ? ExplicitTargetInventory : ResolveQuickTransferTarget(SourceInventory);
+	ResolveUiActionComponent()->RequestTransferItemStack(SourceInventory, TargetInventory, EntryViewModel->GetItemInstance(), EntryViewModel->GetStackCount());
+	return true;
+}
+
+bool URpgInventoryDragDropCoordinator::CanQuickSplitEntry(URpgInventoryEntryViewModel* EntryViewModel, int32 TargetSlotIndex, int32 SplitCount) const
+{
+	if (!EntryViewModel || !EntryViewModel->CanDrag() || !ResolveUiActionComponent())
+	{
+		return false;
+	}
+
+	URpgInventoryManagerComponent* Inventory = EntryViewModel->GetInventoryManager();
+	if (!Inventory || !EntryViewModel->GetItemInstance() || EntryViewModel->GetStackCount() <= 1)
+	{
+		return false;
+	}
+
+	if (TargetSlotIndex != INDEX_NONE && Inventory->GetItemInSlot(TargetSlotIndex) != nullptr)
+	{
+		return false;
+	}
+
+	if (TargetSlotIndex == INDEX_NONE && !Inventory->IsCapacityUnlimited() && Inventory->GetFreeEntryCount() <= 0)
+	{
+		return false;
+	}
+
+	const int32 RequestedSplitCount = SplitCount <= 0 ? EntryViewModel->GetStackCount() / 2 : SplitCount;
+	return RequestedSplitCount > 0 && RequestedSplitCount < EntryViewModel->GetStackCount();
+}
+
+bool URpgInventoryDragDropCoordinator::QuickSplitEntry(URpgInventoryEntryViewModel* EntryViewModel, int32 TargetSlotIndex, int32 SplitCount)
+{
+	if (!CanQuickSplitEntry(EntryViewModel, TargetSlotIndex, SplitCount))
+	{
+		return false;
+	}
+
+	ResolveUiActionComponent()->RequestSplitItemStack(EntryViewModel->GetInventoryManager(), EntryViewModel->GetItemInstance(), SplitCount, TargetSlotIndex);
+	return true;
 }
 
 ERpgInventorySlotDragVisualState URpgInventoryDragDropCoordinator::GetInventoryEntryVisualState(URpgInventoryEntryViewModel* EntryViewModel, bool bIsFocused) const

@@ -369,6 +369,27 @@ void URpgInventoryUiActionComponent::RequestMoveInventoryEntryToSlot_Implementat
 	Inventory->MoveInventoryEntryToSlot(EntryId, TargetSlotIndex);
 }
 
+void URpgInventoryUiActionComponent::RequestSplitItemStack_Implementation(URpgInventoryManagerComponent* Inventory, URpgInventoryItemInstance* Item, int32 SplitCount, int32 TargetSlotIndex)
+{
+	int32 ActualSplitCount = 0;
+	int32 ActualTargetSlotIndex = INDEX_NONE;
+	if (!CanSplitItemStack(Inventory, Item, SplitCount, TargetSlotIndex, ActualSplitCount, ActualTargetSlotIndex))
+	{
+		return;
+	}
+
+	const TSubclassOf<URpgInventoryItemDefinition> ItemDefinition = Item->GetItemDef();
+	if (!Inventory->RemoveItemInstanceStack(Item, ActualSplitCount))
+	{
+		return;
+	}
+
+	if (!Inventory->AddItemDefinitionToSlot(ItemDefinition, ActualSplitCount, ActualTargetSlotIndex))
+	{
+		Inventory->AddStackToExistingItem(Item, ActualSplitCount);
+	}
+}
+
 void URpgInventoryUiActionComponent::RequestDepositAllMaterialsToBase_Implementation(URpgBaseStorageStationComponent* Station)
 {
 	URpgInventoryManagerComponent* PlayerInventory = FindPlayerInventory();
@@ -934,6 +955,72 @@ bool URpgInventoryUiActionComponent::CanTransferItemStackToInventorySlot(URpgInv
 	}
 
 	return RequestedCount >= AvailableCount && SourceInventory->GetItemSlotIndex(Item) != INDEX_NONE;
+}
+
+bool URpgInventoryUiActionComponent::CanSplitItemStack(URpgInventoryManagerComponent* Inventory, URpgInventoryItemInstance* Item, int32 SplitCount, int32 TargetSlotIndex, int32& OutSplitCount, int32& OutTargetSlotIndex) const
+{
+	OutSplitCount = 0;
+	OutTargetSlotIndex = INDEX_NONE;
+
+	if (!Inventory || !Item || !CanAccessInventory(Inventory) || !IsStackableItem(Item))
+	{
+		return false;
+	}
+
+	const int32 AvailableCount = Inventory->GetItemStackCount(Item);
+	if (AvailableCount <= 1)
+	{
+		return false;
+	}
+
+	const int32 RequestedSplitCount = SplitCount <= 0 ? AvailableCount / 2 : SplitCount;
+	if (RequestedSplitCount <= 0 || RequestedSplitCount >= AvailableCount)
+	{
+		return false;
+	}
+
+	int32 ResolvedTargetSlotIndex = TargetSlotIndex;
+	if (ResolvedTargetSlotIndex == INDEX_NONE && !FindFirstEmptyInventorySlot(Inventory, ResolvedTargetSlotIndex))
+	{
+		return false;
+	}
+
+	if (ResolvedTargetSlotIndex < 0 || Inventory->GetItemInSlot(ResolvedTargetSlotIndex) != nullptr)
+	{
+		return false;
+	}
+
+	if (!Inventory->CanAddItemDefinitionToSlot(Item->GetItemDef(), RequestedSplitCount, ResolvedTargetSlotIndex))
+	{
+		return false;
+	}
+
+	OutSplitCount = RequestedSplitCount;
+	OutTargetSlotIndex = ResolvedTargetSlotIndex;
+	return true;
+}
+
+bool URpgInventoryUiActionComponent::FindFirstEmptyInventorySlot(URpgInventoryManagerComponent* Inventory, int32& OutSlotIndex) const
+{
+	OutSlotIndex = INDEX_NONE;
+	if (!Inventory)
+	{
+		return false;
+	}
+
+	const int32 ScanLimit = Inventory->IsCapacityUnlimited()
+		? Inventory->GetUsedEntryCount() + 1
+		: Inventory->GetMaxEntries();
+	for (int32 SlotIndex = 0; SlotIndex < ScanLimit; ++SlotIndex)
+	{
+		if (!Inventory->GetItemInSlot(SlotIndex))
+		{
+			OutSlotIndex = SlotIndex;
+			return true;
+		}
+	}
+
+	return false;
 }
 
 bool URpgInventoryUiActionComponent::CanAccessBaseStorageStation(const URpgBaseStorageStationComponent* Station) const

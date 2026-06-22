@@ -129,6 +129,21 @@ struct SURVIVALRPG_API FRpgInventoryDropTarget
 
 DECLARE_DYNAMIC_MULTICAST_DELEGATE_TwoParams(FRpgInventoryHeldPayloadChanged, bool, bHasHeldPayload, const FRpgInventoryDragPayload&, HeldPayload);
 
+/** One quick-transfer route used by UI shortcuts such as Ctrl+Click or controller X. */
+USTRUCT(BlueprintType)
+struct SURVIVALRPG_API FRpgInventoryQuickTransferRoute
+{
+	GENERATED_BODY()
+
+	/** Inventory whose focused entry should be transferred by the shortcut. */
+	UPROPERTY(BlueprintReadWrite, Category = "Inventory|Quick Transfer")
+	TObjectPtr<URpgInventoryManagerComponent> SourceInventory = nullptr;
+
+	/** Inventory that receives SourceInventory's shortcut transfers. */
+	UPROPERTY(BlueprintReadWrite, Category = "Inventory|Quick Transfer")
+	TObjectPtr<URpgInventoryManagerComponent> TargetInventory = nullptr;
+};
+
 /** Native drag operation used by mouse drag/drop inventory widgets. */
 UCLASS(BlueprintType, Blueprintable)
 class SURVIVALRPG_API URpgInventoryDragDropOperation : public UDragDropOperation
@@ -160,6 +175,10 @@ public:
 	/** Initializes routing for a screen owned by the supplied local player controller. */
 	UFUNCTION(BlueprintCallable, Category = "Inventory|DragDrop")
 	void Initialize(APlayerController* InPlayerController);
+
+	/** Player inventory resolved from the owning controller, used by navigation helpers and fallback transfers. */
+	UFUNCTION(BlueprintPure, Category = "Inventory|DragDrop")
+	URpgInventoryManagerComponent* GetPlayerInventory() const;
 
 	/** Overrides the UI action component used for server requests, useful for testing or custom controllers. */
 	UFUNCTION(BlueprintCallable, Category = "Inventory|DragDrop")
@@ -229,6 +248,42 @@ public:
 	UFUNCTION(BlueprintPure, Category = "Inventory|DragDrop")
 	URpgInventoryItemInstance* GetHeldItemInstance() const { return bHasHeldPayload ? HeldPayload.ItemInstance.Get() : nullptr; }
 
+	/** Sets the inventory panel that currently owns CommonUI focus. Used for shortcut routing and UI hints. */
+	UFUNCTION(BlueprintCallable, Category = "Inventory|Shortcuts")
+	void SetFocusedInventory(URpgInventoryManagerComponent* InFocusedInventory);
+
+	/** Currently focused inventory panel, if the screen registered one. */
+	UFUNCTION(BlueprintPure, Category = "Inventory|Shortcuts")
+	URpgInventoryManagerComponent* GetFocusedInventory() const { return FocusedInventory.Get(); }
+
+	/** Registers or replaces the shortcut transfer target for one source inventory. */
+	UFUNCTION(BlueprintCallable, Category = "Inventory|Shortcuts")
+	void SetQuickTransferTarget(URpgInventoryManagerComponent* SourceInventory, URpgInventoryManagerComponent* TargetInventory);
+
+	/** Removes every shortcut transfer route on this UI-local coordinator. */
+	UFUNCTION(BlueprintCallable, Category = "Inventory|Shortcuts")
+	void ClearQuickTransferTargets();
+
+	/** Resolves the shortcut transfer target for a source inventory, including player-inventory fallback. */
+	UFUNCTION(BlueprintPure, Category = "Inventory|Shortcuts")
+	URpgInventoryManagerComponent* ResolveQuickTransferTarget(URpgInventoryManagerComponent* SourceInventory) const;
+
+	/** Returns true when the focused entry can send a full-stack shortcut transfer command. */
+	UFUNCTION(BlueprintCallable, Category = "Inventory|Shortcuts")
+	bool CanQuickTransferEntry(URpgInventoryEntryViewModel* EntryViewModel, URpgInventoryManagerComponent* ExplicitTargetInventory = nullptr) const;
+
+	/** Sends a full-stack shortcut transfer command for the focused entry. */
+	UFUNCTION(BlueprintCallable, Category = "Inventory|Shortcuts")
+	bool QuickTransferEntry(URpgInventoryEntryViewModel* EntryViewModel, URpgInventoryManagerComponent* ExplicitTargetInventory = nullptr);
+
+	/** Returns true when the focused entry can be split into a separate stack. */
+	UFUNCTION(BlueprintCallable, Category = "Inventory|Shortcuts")
+	bool CanQuickSplitEntry(URpgInventoryEntryViewModel* EntryViewModel, int32 TargetSlotIndex = -1, int32 SplitCount = 0) const;
+
+	/** Sends a split-stack command. SplitCount <= 0 uses the V1 50% quick split rule. */
+	UFUNCTION(BlueprintCallable, Category = "Inventory|Shortcuts")
+	bool QuickSplitEntry(URpgInventoryEntryViewModel* EntryViewModel, int32 TargetSlotIndex = -1, int32 SplitCount = 0);
+
 	/** Computes the visual drag/drop state for one inventory entry widget. */
 	UFUNCTION(BlueprintCallable, Category = "Inventory|DragDrop")
 	ERpgInventorySlotDragVisualState GetInventoryEntryVisualState(URpgInventoryEntryViewModel* EntryViewModel, bool bIsFocused) const;
@@ -269,6 +324,12 @@ private:
 
 	UPROPERTY(Transient)
 	TObjectPtr<URpgInventoryUiActionComponent> UiActionComponent = nullptr;
+
+	UPROPERTY(Transient)
+	TObjectPtr<URpgInventoryManagerComponent> FocusedInventory = nullptr;
+
+	UPROPERTY(Transient)
+	TArray<FRpgInventoryQuickTransferRoute> QuickTransferRoutes;
 
 	UPROPERTY(BlueprintReadOnly, Category = "Inventory|DragDrop", meta = (AllowPrivateAccess = "true"))
 	FRpgInventoryDragPayload HeldPayload;

@@ -7,6 +7,7 @@
 
 class URpgInventoryDragDropCoordinator;
 class URpgInventoryEntryViewModel;
+class URpgInventoryManagerComponent;
 class URpgInventoryPanelViewModel;
 
 /**
@@ -39,6 +40,26 @@ public:
 	/** Pulls the latest entries from the bound panel VM and applies them to this TileView. */
 	UFUNCTION(BlueprintCallable, Category = "Inventory|ViewModel")
 	void RefreshInventoryEntryItems();
+
+	/** Current selected inventory entry view model, or null when selection is empty/non-inventory. */
+	UFUNCTION(BlueprintPure, Category = "Inventory|Navigation")
+	URpgInventoryEntryViewModel* GetSelectedInventoryEntry() const;
+
+	/** Selects and navigates to a specific list item if it belongs to this TileView. */
+	UFUNCTION(BlueprintCallable, Category = "Inventory|Navigation")
+	bool SelectInventoryListItem(UObject* Item, APlayerController* OwningPlayer);
+
+	/** Selects a sensible slot for controller focus: current valid selection, first occupied slot, then first slot. */
+	UFUNCTION(BlueprintCallable, Category = "Inventory|Navigation")
+	bool SelectBestInventoryEntry(APlayerController* OwningPlayer, bool bPreferOccupiedSlot = true);
+
+	/** Shortcut helper for controller X on the selected slot. */
+	UFUNCTION(BlueprintCallable, Category = "Inventory|Shortcuts")
+	bool QuickTransferSelectedEntry(URpgInventoryManagerComponent* ExplicitTargetInventory = nullptr);
+
+	/** Shortcut helper for controller Y on the selected slot. SplitCount <= 0 performs quick 50% split. */
+	UFUNCTION(BlueprintCallable, Category = "Inventory|Shortcuts")
+	bool QuickSplitSelectedEntry(int32 SplitCount = 0, int32 TargetSlotIndex = -1);
 
 	/** Current coordinator used by this inventory TileView. */
 	UFUNCTION(BlueprintPure, Category = "Inventory|DragDrop")
