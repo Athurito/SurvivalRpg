@@ -119,6 +119,14 @@ namespace
 			? NSLOCTEXT("RpgCrafting", "ResumeCraftingStationButton", "Resume")
 			: NSLOCTEXT("RpgCrafting", "PauseCraftingStationButton", "Pause");
 	}
+
+	bool CanCancelJobState(ERpgCraftingJobState State)
+	{
+		return State == ERpgCraftingJobState::Queued
+			|| State == ERpgCraftingJobState::Active
+			|| State == ERpgCraftingJobState::Paused
+			|| State == ERpgCraftingJobState::BlockedOutput;
+	}
 }
 
 void URpgCraftingIngredientViewModel::InitializeIngredient(TSubclassOf<URpgInventoryItemDefinition> InItemDefinition, int32 InRequiredCount, int32 InAvailableCount)
@@ -231,6 +239,12 @@ bool URpgCraftingRecipeViewModel::MatchesSearchText(const FText& InSearchText) c
 
 void URpgCraftingJobViewModel::InitializeJob(const FRpgCraftingJobEntry& Job, float ServerWorldTime)
 {
+	InitializeJobForStation(nullptr, Job, ServerWorldTime);
+}
+
+void URpgCraftingJobViewModel::InitializeJobForStation(URpgCraftingStationComponent* InCraftingStation, const FRpgCraftingJobEntry& Job, float ServerWorldTime)
+{
+	CraftingStation = InCraftingStation;
 	JobId = Job.JobId;
 	RecipeDefinition = Job.Recipe;
 	DisplayName = Job.Recipe ? Job.Recipe->DisplayName : FText::GetEmpty();
@@ -238,6 +252,7 @@ void URpgCraftingJobViewModel::InitializeJob(const FRpgCraftingJobEntry& Job, fl
 	QuantityTotal = Job.QuantityTotal;
 	QuantityCompleted = Job.QuantityCompleted;
 	State = Job.State;
+	bCanCancelJob = CraftingStation && JobId.IsValid() && CanCancelJobState(State);
 
 	const float UnitDuration = FMath::Max(0.0f, Job.FinishServerTime - Job.StartServerTime);
 	if (Job.State == ERpgCraftingJobState::Active && UnitDuration > 0.0f)
@@ -256,6 +271,7 @@ void URpgCraftingJobViewModel::InitializeJob(const FRpgCraftingJobEntry& Job, fl
 		RemainingSeconds = 0.0f;
 	}
 
+	UE_MVVM_BROADCAST_FIELD_VALUE_CHANGED(CraftingStation);
 	UE_MVVM_BROADCAST_FIELD_VALUE_CHANGED(JobId);
 	UE_MVVM_BROADCAST_FIELD_VALUE_CHANGED(RecipeDefinition);
 	UE_MVVM_BROADCAST_FIELD_VALUE_CHANGED(DisplayName);
@@ -263,6 +279,7 @@ void URpgCraftingJobViewModel::InitializeJob(const FRpgCraftingJobEntry& Job, fl
 	UE_MVVM_BROADCAST_FIELD_VALUE_CHANGED(QuantityTotal);
 	UE_MVVM_BROADCAST_FIELD_VALUE_CHANGED(QuantityCompleted);
 	UE_MVVM_BROADCAST_FIELD_VALUE_CHANGED(State);
+	UE_MVVM_BROADCAST_FIELD_VALUE_CHANGED(bCanCancelJob);
 	UE_MVVM_BROADCAST_FIELD_VALUE_CHANGED(Progress);
 	UE_MVVM_BROADCAST_FIELD_VALUE_CHANGED(RemainingSeconds);
 }
@@ -445,28 +462,6 @@ void URpgCraftingStationViewModel::IncreaseCraftQuantity(int32 Delta)
 void URpgCraftingStationViewModel::SetCraftQuantityToMax()
 {
 	SetCraftQuantity(FMath::Max(1, MaxSelectedCraftQuantity));
-}
-
-bool URpgCraftingStationViewModel::CanSetCraftQuantity(int32 InCraftQuantity) const
-{
-	if (InCraftQuantity == 1)
-	{
-		return bCanSetCraftQuantityToOne;
-	}
-
-	if (InCraftQuantity == 5)
-	{
-		return bCanSetCraftQuantityToFive;
-	}
-
-	if (InCraftQuantity == 10)
-	{
-		return bCanSetCraftQuantityToTen;
-	}
-
-	return InCraftQuantity > 0
-		&& InCraftQuantity <= MaxSelectedCraftQuantity
-		&& InCraftQuantity != CraftQuantity;
 }
 
 TArray<URpgCraftingRecipeViewModel*> URpgCraftingStationViewModel::GetFilteredRecipes() const
@@ -843,7 +838,7 @@ void URpgCraftingStationViewModel::RebuildJobs()
 				JobViewModel = NewObject<URpgCraftingJobViewModel>(this);
 			}
 
-			JobViewModel->InitializeJob(Job, ServerTime);
+			JobViewModel->InitializeJobForStation(Station, Job, ServerTime);
 			NewJobs.Add(JobViewModel);
 		}
 
