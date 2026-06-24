@@ -284,6 +284,14 @@ public:
 	UFUNCTION(BlueprintCallable, Category = "Inventory|Shortcuts")
 	bool QuickSplitEntry(URpgInventoryEntryViewModel* EntryViewModel, int32 TargetSlotIndex = -1, int32 SplitCount = 0);
 
+	/** Uses a usable item, otherwise tries to equip it through quickbar or dedicated equipment slots. */
+	UFUNCTION(BlueprintCallable, Category = "Inventory|Shortcuts")
+	bool UseOrEquipEntry(URpgInventoryEntryViewModel* EntryViewModel, int32 StackCount = 1);
+
+	/** Requests a manual world drop for the focused entry. Confirmed must be true for confirm-protected items. */
+	UFUNCTION(BlueprintCallable, Category = "Inventory|Shortcuts")
+	bool DropEntry(URpgInventoryEntryViewModel* EntryViewModel, int32 StackCount = 0, bool bConfirmed = false);
+
 	/** Computes the visual drag/drop state for one inventory entry widget. */
 	UFUNCTION(BlueprintCallable, Category = "Inventory|DragDrop")
 	ERpgInventorySlotDragVisualState GetInventoryEntryVisualState(URpgInventoryEntryViewModel* EntryViewModel, bool bIsFocused) const;

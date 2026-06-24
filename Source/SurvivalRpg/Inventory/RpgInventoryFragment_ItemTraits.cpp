@@ -25,6 +25,28 @@ bool URpgInventoryFragment_ItemTraits::CanDropForMode(ERpgPlayerDeathDropMode Dr
 	}
 }
 
+ERpgInventoryManualDropPolicy URpgInventoryFragment_ItemTraits::GetResolvedManualDropPolicy() const
+{
+	if (ManualDropPolicy != ERpgInventoryManualDropPolicy::Default)
+	{
+		return ManualDropPolicy;
+	}
+
+	if (ItemCategory == ERpgInventoryItemCategory::Quest)
+	{
+		return ERpgInventoryManualDropPolicy::Disabled;
+	}
+
+	if (ItemCategory == ERpgInventoryItemCategory::Weapon ||
+		ItemCategory == ERpgInventoryItemCategory::Shield ||
+		ItemCategory == ERpgInventoryItemCategory::Armor)
+	{
+		return ERpgInventoryManualDropPolicy::Confirm;
+	}
+
+	return ERpgInventoryManualDropPolicy::Direct;
+}
+
 int32 URpgInventoryFragment_ItemTraits::GetMaxStackSize() const
 {
 	return bCanStack ? FMath::Max(1, MaxStackSize) : 1;

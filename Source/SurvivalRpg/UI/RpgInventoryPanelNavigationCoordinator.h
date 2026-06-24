@@ -31,6 +31,14 @@ struct SURVIVALRPG_API FRpgInventoryPanelNavigationEntry
 	/** Last selected list item for this panel. Updated whenever focus leaves the panel. */
 	UPROPERTY(Transient, BlueprintReadOnly, Category = "Inventory|Navigation")
 	TObjectPtr<UObject> LastSelectedItem = nullptr;
+
+	/** Last selected occupied entry id, used to restore focus after list item recycling. */
+	UPROPERTY(Transient, BlueprintReadOnly, Category = "Inventory|Navigation")
+	FGuid LastSelectedEntryId;
+
+	/** Last selected visual slot index, used when the entry id disappeared or the selected slot was empty. */
+	UPROPERTY(Transient, BlueprintReadOnly, Category = "Inventory|Navigation")
+	int32 LastSelectedSlotIndex = INDEX_NONE;
 };
 
 DECLARE_DYNAMIC_MULTICAST_DELEGATE_FourParams(FRpgInventoryActivePanelChanged, FName, PanelId, int32, PanelIndex, URpgInventoryTileView*, TileView, URpgInventoryManagerComponent*, Inventory);
@@ -62,6 +70,10 @@ public:
 	/** Registers one focusable inventory panel for LB/RB controller navigation. */
 	UFUNCTION(BlueprintCallable, Category = "Inventory|Navigation")
 	void RegisterInventoryPanel(FName PanelId, URpgInventoryTileView* TileView, URpgInventoryManagerComponent* Inventory);
+
+	/** Called by registered TileViews when CommonUI selection moves into or within a panel. */
+	UFUNCTION(BlueprintCallable, Category = "Inventory|Navigation")
+	void NotifyPanelSelectionChanged(URpgInventoryTileView* TileView, UObject* SelectedItem);
 
 	/** Activates a registered panel by id and focuses a sensible entry. */
 	UFUNCTION(BlueprintCallable, Category = "Inventory|Navigation")
@@ -106,7 +118,12 @@ public:
 private:
 	bool IsValidPanelIndex(int32 PanelIndex) const;
 	void SaveActivePanelSelection();
+	void UpdatePanelSelectionMemory(FRpgInventoryPanelNavigationEntry& Panel) const;
+	bool RestorePanelSelection(FRpgInventoryPanelNavigationEntry& Panel) const;
+	void ApplyActivePanelState();
 	void UpdateShortcutRoutesForActivePanel(const FRpgInventoryPanelNavigationEntry& ActivePanel);
+	int32 FindPanelIndexForTileView(const URpgInventoryTileView* TileView) const;
+	void BroadcastActivePanelChanged(const FRpgInventoryPanelNavigationEntry& ActivePanel);
 
 	UPROPERTY(Transient)
 	TObjectPtr<APlayerController> PlayerController = nullptr;
@@ -119,4 +136,6 @@ private:
 
 	UPROPERTY(Transient)
 	int32 ActivePanelIndex = INDEX_NONE;
+
+	bool bSuppressPanelSelectionNotifications = false;
 };

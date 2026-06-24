@@ -1,6 +1,7 @@
 #pragma once
 
 #include "Components/ControllerComponent.h"
+#include "GameplayTagContainer.h"
 #include "RpgInventoryManagerComponent.h"
 #include "SurvivalRpg/Equipment/RpgEquipmentDefinition.h"
 
@@ -8,6 +9,8 @@
 
 class ARpgBaseCampActor;
 class ARpgBaseConstructionSiteActor;
+class ARpgDroppedInventoryActor;
+class URpgAbilitySystemComponent;
 class URpgEquipmentLoadoutComponent;
 class URpgBaseBuildableDefinition;
 class URpgBaseStorageStationComponent;
@@ -18,6 +21,83 @@ class URpgInventoryItemDefinition;
 class URpgInventoryItemInstance;
 class URpgInventoryManagerComponent;
 class URpgQuickBarComponent;
+
+/** Owning-client result for an inventory UI command. */
+UENUM(BlueprintType)
+enum class ERpgInventoryActionFeedbackResult : uint8
+{
+	/** The action completed or was accepted by the server. */
+	Success,
+
+	/** The request was malformed or referenced missing runtime state. */
+	InvalidRequest,
+
+	/** The player cannot access one of the referenced inventories or stations. */
+	NoAccess,
+
+	/** The referenced item is missing or no longer owned by the source inventory. */
+	MissingItem,
+
+	/** The target inventory or slot has no capacity for the requested item. */
+	InventoryFull,
+
+	/** The requested slot index is invalid or blocked. */
+	InvalidSlot,
+
+	/** The item is not stackable or cannot be split as requested. */
+	NotStackable,
+
+	/** The item has no usable behavior or its use ability was rejected. */
+	CannotUse,
+
+	/** Manual dropping is disabled for this item. */
+	CannotDrop,
+
+	/** The server requires the UI to confirm before repeating the request. */
+	RequiresConfirmation,
+
+	/** This action is only valid from the player's own inventory. */
+	WrongInventory,
+
+	/** The item cannot be assigned to any supported quickbar or equipment slot. */
+	NotEquippable,
+
+	/** No compatible free quickbar or equipment slot could be found. */
+	NoValidSlot,
+
+	/** GAS rejected the one-shot item ability activation. */
+	AbilityRejected,
+
+	/** Fallback for a server-side rejection without a more specific reason. */
+	ServerRejected
+};
+
+/** Gameplay message broadcast on the owning client after inventory UI commands succeed, fail, or need confirmation. */
+USTRUCT(BlueprintType)
+struct SURVIVALRPG_API FRpgInventoryActionFeedbackMessage
+{
+	GENERATED_BODY()
+
+	/** Semantic action that produced this feedback, such as Rpg.Inventory.Action.Drop. */
+	UPROPERTY(BlueprintReadOnly, Category = "Inventory|Feedback")
+	FGameplayTag ActionTag;
+
+	/** Result code intended for UI sounds, toasts, confirmation modals, or slot flashes. */
+	UPROPERTY(BlueprintReadOnly, Category = "Inventory|Feedback")
+	ERpgInventoryActionFeedbackResult Result = ERpgInventoryActionFeedbackResult::ServerRejected;
+
+	/** Inventory involved in the request, when relevant. UI should read this only as context. */
+	UPROPERTY(BlueprintReadOnly, Category = "Inventory|Feedback")
+	TObjectPtr<UActorComponent> InventoryOwner = nullptr;
+
+	/** Item involved in the request, when relevant. */
+	UPROPERTY(BlueprintReadOnly, Category = "Inventory|Feedback")
+	TObjectPtr<URpgInventoryItemInstance> Item = nullptr;
+
+	/** Requested or affected count. Zero means not count-specific. */
+	UPROPERTY(BlueprintReadOnly, Category = "Inventory|Feedback")
+	int32 StackCount = 0;
+};
 
 /**
  * Owned controller component that turns UI drag-and-drop intents into server-validated inventory actions.
@@ -73,6 +153,18 @@ public:
 	/** Splits one stack into a new stack in the same inventory. SplitCount <= 0 performs the V1 quick 50% split. */
 	UFUNCTION(Server, Reliable, BlueprintCallable, Category = "Inventory|UI Actions")
 	void RequestSplitItemStack(URpgInventoryManagerComponent* Inventory, URpgInventoryItemInstance* Item, int32 SplitCount, int32 TargetSlotIndex);
+
+	/** Uses a usable inventory item by granting and activating its configured one-shot ability. */
+	UFUNCTION(Server, Reliable, BlueprintCallable, Category = "Inventory|UI Actions")
+	void RequestUseInventoryItem(URpgInventoryManagerComponent* Inventory, URpgInventoryItemInstance* Item, int32 StackCount = 1);
+
+	/** Assigns an owned item to its default equipment destination, choosing armor slots or the first free quickbar hand slot. */
+	UFUNCTION(Server, Reliable, BlueprintCallable, Category = "Inventory|UI Actions")
+	void RequestEquipInventoryItem(URpgInventoryItemInstance* Item);
+
+	/** Drops a stack or whole item entry into the world near the owning pawn. Confirmed must be true for confirm-protected items. */
+	UFUNCTION(Server, Reliable, BlueprintCallable, Category = "Inventory|UI Actions")
+	void RequestDropInventoryItem(URpgInventoryManagerComponent* Inventory, URpgInventoryItemInstance* Item, int32 StackCount, bool bConfirmed);
 
 	/** Deposits all material stacks from the player inventory into the linked base storage station. */
 	UFUNCTION(Server, Reliable, BlueprintCallable, Category = "Inventory|Base Storage")
@@ -145,10 +237,36 @@ private:
 	URpgInventoryManagerComponent* FindPlayerInventory() const;
 	URpgQuickBarComponent* FindQuickBar() const;
 	URpgEquipmentLoadoutComponent* FindEquipmentLoadout() const;
+	URpgAbilitySystemComponent* FindPlayerAbilitySystem() const;
 	bool CanTransferItemStack(URpgInventoryManagerComponent* SourceInventory, URpgInventoryManagerComponent* TargetInventory, URpgInventoryItemInstance* Item, int32 StackCount) const;
 	bool CanTransferItemStackToInventorySlot(URpgInventoryManagerComponent* SourceInventory, URpgInventoryManagerComponent* TargetInventory, URpgInventoryItemInstance* Item, int32 StackCount, int32 TargetSlotIndex) const;
 	bool CanSplitItemStack(URpgInventoryManagerComponent* Inventory, URpgInventoryItemInstance* Item, int32 SplitCount, int32 TargetSlotIndex, int32& OutSplitCount, int32& OutTargetSlotIndex) const;
 	bool FindFirstEmptyInventorySlot(URpgInventoryManagerComponent* Inventory, int32& OutSlotIndex) const;
 	bool CanAccessBaseStorageStation(const URpgBaseStorageStationComponent* Station) const;
 	void ClearPlayerAssignmentsForItem(URpgInventoryItemInstance* Item) const;
+	bool TryAssignItemToDefaultEquipmentDestination(URpgInventoryItemInstance* Item);
+	bool TrySpawnManualDrop(URpgInventoryItemInstance* Item, int32 StackCount, bool bDropAsInstance);
+	bool TryMergeManualDrop(TSubclassOf<URpgInventoryItemDefinition> ItemDefinition, int32 StackCount, const FVector& SpawnLocation) const;
+	FTransform GetManualDropTransform() const;
+	void SendActionFeedback(FGameplayTag ActionTag, ERpgInventoryActionFeedbackResult Result, URpgInventoryManagerComponent* Inventory, URpgInventoryItemInstance* Item, int32 StackCount) const;
+
+	UFUNCTION(Client, Unreliable)
+	void ClientBroadcastInventoryActionFeedback(const FRpgInventoryActionFeedbackMessage& Message);
+
+private:
+	/** Pickup actor class used when players manually drop inventory items. Runtime spawn is server-authoritative. */
+	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Inventory|Drop", meta = (AllowPrivateAccess = "true"))
+	TSubclassOf<ARpgDroppedInventoryActor> ManualDropActorClass;
+
+	/** Distance in centimeters in front of the pawn where manual drops are spawned. */
+	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Inventory|Drop", meta = (AllowPrivateAccess = "true", ClampMin = "0", UIMin = "0", Units = "cm"))
+	float ManualDropForwardDistance = 120.0f;
+
+	/** Height offset in centimeters applied to manual drop spawn location. */
+	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Inventory|Drop", meta = (AllowPrivateAccess = "true", Units = "cm"))
+	float ManualDropUpOffset = 30.0f;
+
+	/** Radius in centimeters used to merge stackable manual drops into nearby dropped inventory actors. */
+	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Inventory|Drop", meta = (AllowPrivateAccess = "true", ClampMin = "0", UIMin = "0", Units = "cm"))
+	float ManualDropMergeRadius = 250.0f;
 };

@@ -8,6 +8,8 @@
 
 #include UE_INLINE_GENERATED_CPP_BY_NAME(RpgInventoryViewModels)
 
+DEFINE_LOG_CATEGORY_STATIC(LogRpgInventoryViewModels, Log, All);
+
 void URpgInventoryFragmentViewModel::InitializeFromEntry(const FRpgInventoryEntryView& Entry)
 {
 	ItemInstance = Entry.Instance;
@@ -297,10 +299,14 @@ void URpgInventoryPanelViewModel::RefreshEntries()
 			}
 		}
 
-		int32 OverflowIndex = MaxEntries;
 		for (const FRpgInventoryEntryView& OverflowEntry : OverflowEntries)
 		{
-			AddEntryViewModel(GetReusableEntryViewModel(PreviousEntries, OverflowIndex++), OverflowEntry);
+			UE_LOG(LogRpgInventoryViewModels, Warning, TEXT("Finite inventory contains overflow or duplicate slot entry. Inventory=%s Item=%s EntryId=%s SortIndex=%d MaxEntries=%d"),
+				*GetNameSafe(Inventory),
+				*GetNameSafe(OverflowEntry.Instance),
+				*OverflowEntry.EntryId.ToString(),
+				OverflowEntry.SortIndex,
+				MaxEntries);
 		}
 	}
 	else

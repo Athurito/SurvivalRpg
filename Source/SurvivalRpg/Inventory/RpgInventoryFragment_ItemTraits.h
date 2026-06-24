@@ -3,11 +3,13 @@
 #include "GameplayTagContainer.h"
 #include "RpgInventoryItemDefinition.h"
 #include "RpgInventoryItemTypes.h"
+#include "Templates/SubclassOf.h"
 #include "UObject/SoftObjectPtr.h"
 
 #include "RpgInventoryFragment_ItemTraits.generated.h"
 
 class UTexture2D;
+class URpgGameplayAbility;
 
 /**
  * Presentation data read by inventory, quickbar, loot, and storage widgets.
@@ -72,11 +74,48 @@ public:
 	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Inventory|Drops")
 	ERpgInventoryDeathDropRule DeathDropRule = ERpgInventoryDeathDropRule::Never;
 
+	/** Manual UI drop behavior. Leave Default for category-based V1 rules, or override for quest/special items. */
+	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Inventory|Drops")
+	ERpgInventoryManualDropPolicy ManualDropPolicy = ERpgInventoryManualDropPolicy::Default;
+
 	UFUNCTION(BlueprintPure, Category = "Inventory|Traits")
 	bool IsMaterial() const;
 
 	UFUNCTION(BlueprintPure, Category = "Inventory|Traits")
 	bool CanDropForMode(ERpgPlayerDeathDropMode DropMode) const;
 
+	UFUNCTION(BlueprintPure, Category = "Inventory|Traits")
+	ERpgInventoryManualDropPolicy GetResolvedManualDropPolicy() const;
+
 	int32 GetMaxStackSize() const;
+};
+
+/**
+ * Ability-driven active item behavior for consumables and other one-shot usable inventory items.
+ */
+UCLASS(BlueprintType)
+class SURVIVALRPG_API URpgInventoryFragment_UsableItem : public URpgInventoryItemFragment
+{
+	GENERATED_BODY()
+
+public:
+	/** Ability granted and activated once on the owning player's ASC when the item is used. Must execute on the server. */
+	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Inventory|Use")
+	TSubclassOf<URpgGameplayAbility> UseAbility;
+
+	/** Ability level passed to GAS for this one-shot activation. */
+	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Inventory|Use", meta = (ClampMin = "1", UIMin = "1"))
+	int32 AbilityLevel = 1;
+
+	/** Number of item units consumed per accepted activation. Zero keeps the item stack unchanged. */
+	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Inventory|Use", meta = (ClampMin = "0", UIMin = "0"))
+	int32 ConsumeCount = 1;
+
+	/** If true, ConsumeCount is removed after GAS accepts the one-shot ability activation. */
+	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Inventory|Use")
+	bool bConsumeOnActivationAccepted = true;
+
+	/** If true, the item must be in the player's own backpack, not storage, loot, or crafting output. */
+	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Inventory|Use")
+	bool bOnlyFromPlayerInventory = true;
 };

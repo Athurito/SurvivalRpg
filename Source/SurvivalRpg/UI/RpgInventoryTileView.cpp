@@ -7,6 +7,7 @@
 #include "SurvivalRpg/Inventory/RpgInventoryDragDrop.h"
 #include "SurvivalRpg/Inventory/RpgInventoryManagerComponent.h"
 #include "SurvivalRpg/Mvvm/Inventory/RpgInventoryViewModels.h"
+#include "SurvivalRpg/UI/RpgInventoryPanelNavigationCoordinator.h"
 #include "SurvivalRpg/UI/RpgInventorySlotEntryWidget.h"
 
 #include UE_INLINE_GENERATED_CPP_BY_NAME(RpgInventoryTileView)
@@ -25,6 +26,7 @@ void URpgInventoryTileView::SetDragDropCoordinator(URpgInventoryDragDropCoordina
 	for (UUserWidget* EntryWidget : GetDisplayedEntryWidgets())
 	{
 		ApplyCoordinatorToEntry(EntryWidget);
+		ApplyPanelActiveStateToEntry(EntryWidget);
 	}
 }
 
@@ -150,6 +152,69 @@ bool URpgInventoryTileView::SelectBestInventoryEntry(APlayerController* OwningPl
 	return SelectInventoryListItem(DesiredItem, OwningPlayer);
 }
 
+bool URpgInventoryTileView::SelectInventoryEntryByIdentity(FGuid EntryId, int32 SlotIndex, APlayerController* OwningPlayer)
+{
+	const TArray<UObject*>& Items = GetListItems();
+	if (Items.IsEmpty())
+	{
+		return false;
+	}
+
+	if (EntryId.IsValid())
+	{
+		for (UObject* Item : Items)
+		{
+			const URpgInventoryEntryViewModel* Entry = Cast<URpgInventoryEntryViewModel>(Item);
+			if (Entry && !Entry->IsEmptySlot() && Entry->GetEntryId() == EntryId)
+			{
+				return SelectInventoryListItem(Item, OwningPlayer);
+			}
+		}
+	}
+
+	if (SlotIndex != INDEX_NONE)
+	{
+		for (UObject* Item : Items)
+		{
+			const URpgInventoryEntryViewModel* Entry = Cast<URpgInventoryEntryViewModel>(Item);
+			if (Entry && Entry->GetSlotIndex() == SlotIndex)
+			{
+				return SelectInventoryListItem(Item, OwningPlayer);
+			}
+		}
+	}
+
+	return false;
+}
+
+void URpgInventoryTileView::SetInventoryPanelActive(bool bInInventoryPanelActive)
+{
+	if (bInventoryPanelActive == bInInventoryPanelActive)
+	{
+		return;
+	}
+
+	bInventoryPanelActive = bInInventoryPanelActive;
+	for (UUserWidget* EntryWidget : GetDisplayedEntryWidgets())
+	{
+		ApplyPanelActiveStateToEntry(EntryWidget);
+	}
+}
+
+void URpgInventoryTileView::SetPanelNavigationCoordinator(URpgInventoryPanelNavigationCoordinator* InPanelNavigationCoordinator, FName InPanelId)
+{
+	PanelNavigationCoordinator = InPanelNavigationCoordinator;
+	PanelNavigationId = InPanelId;
+}
+
+void URpgInventoryTileView::ClearInventorySelectionVisual()
+{
+	const bool bWasSuppressingPanelSelectionNotify = bSuppressPanelSelectionNotify;
+	bSuppressPanelSelectionNotify = true;
+	ITypedUMGListView<UObject*>::ClearSelection();
+	bSuppressPanelSelectionNotify = bWasSuppressingPanelSelectionNotify;
+}
+
 bool URpgInventoryTileView::QuickTransferSelectedEntry(URpgInventoryManagerComponent* ExplicitTargetInventory)
 {
 	return DragDropCoordinator && DragDropCoordinator->QuickTransferEntry(GetSelectedInventoryEntry(), ExplicitTargetInventory);
@@ -160,11 +225,22 @@ bool URpgInventoryTileView::QuickSplitSelectedEntry(int32 SplitCount, int32 Targ
 	return DragDropCoordinator && DragDropCoordinator->QuickSplitEntry(GetSelectedInventoryEntry(), TargetSlotIndex, SplitCount);
 }
 
+bool URpgInventoryTileView::UseOrEquipSelectedEntry(int32 StackCount)
+{
+	return DragDropCoordinator && DragDropCoordinator->UseOrEquipEntry(GetSelectedInventoryEntry(), StackCount);
+}
+
+bool URpgInventoryTileView::DropSelectedEntry(int32 StackCount, bool bConfirmed)
+{
+	return DragDropCoordinator && DragDropCoordinator->DropEntry(GetSelectedInventoryEntry(), StackCount, bConfirmed);
+}
+
 void URpgInventoryTileView::NativeOnEntryGenerated(UUserWidget* EntryWidget)
 {
 	Super::NativeOnEntryGenerated(EntryWidget);
 
 	ApplyCoordinatorToEntry(EntryWidget);
+	ApplyPanelActiveStateToEntry(EntryWidget);
 }
 
 UDragDropOperation* URpgInventoryTileView::HandleListEntryDragDetected(const FGeometry& MyGeometry, const FPointerEvent& PointerEvent, UUserWidget& EntryWidget)
@@ -268,10 +344,30 @@ void URpgInventoryTileView::OnItemClickedInternal(UObject* Item)
 	DragDropCoordinator->HandleInventoryEntryAccept(Cast<URpgInventoryEntryViewModel>(Item));
 }
 
+void URpgInventoryTileView::OnSelectionChangedInternal(UObject* FirstSelectedItem)
+{
+	Super::OnSelectionChangedInternal(FirstSelectedItem);
+
+	if (bSuppressPanelSelectionNotify || !PanelNavigationCoordinator || !FirstSelectedItem)
+	{
+		return;
+	}
+
+	PanelNavigationCoordinator->NotifyPanelSelectionChanged(this, FirstSelectedItem);
+}
+
 void URpgInventoryTileView::ApplyCoordinatorToEntry(UUserWidget* EntryWidget) const
 {
 	if (URpgInventorySlotEntryWidget* InventoryEntryWidget = Cast<URpgInventorySlotEntryWidget>(EntryWidget))
 	{
 		InventoryEntryWidget->SetDragDropCoordinator(DragDropCoordinator);
+	}
+}
+
+void URpgInventoryTileView::ApplyPanelActiveStateToEntry(UUserWidget* EntryWidget) const
+{
+	if (URpgInventorySlotEntryWidget* InventoryEntryWidget = Cast<URpgInventorySlotEntryWidget>(EntryWidget))
+	{
+		InventoryEntryWidget->SetInventoryPanelActive(bInventoryPanelActive);
 	}
 }

@@ -51,11 +51,34 @@ bool URpgInventorySlotEntryWidget::HandleEntryQuickSplit(int32 SplitCount, int32
 	return DragDropCoordinator && EntryViewModel && DragDropCoordinator->QuickSplitEntry(EntryViewModel, TargetSlotIndex, SplitCount);
 }
 
+bool URpgInventorySlotEntryWidget::HandleEntryUseOrEquip(int32 StackCount)
+{
+	return DragDropCoordinator && EntryViewModel && DragDropCoordinator->UseOrEquipEntry(EntryViewModel, StackCount);
+}
+
+bool URpgInventorySlotEntryWidget::HandleEntryDrop(int32 StackCount, bool bConfirmed)
+{
+	return DragDropCoordinator && EntryViewModel && DragDropCoordinator->DropEntry(EntryViewModel, StackCount, bConfirmed);
+}
+
+void URpgInventorySlotEntryWidget::SetInventoryPanelActive(bool bInInventoryPanelActive)
+{
+	if (bInventoryPanelActive == bInInventoryPanelActive)
+	{
+		return;
+	}
+
+	bInventoryPanelActive = bInInventoryPanelActive;
+	BP_OnInventoryEntrySelectionChanged(bEntrySelected && bInventoryPanelActive);
+	RefreshDragDropVisualState();
+}
+
 void URpgInventorySlotEntryWidget::RefreshDragDropVisualState()
 {
+	const bool bShowFocusedState = bEntrySelected && bInventoryPanelActive;
 	CurrentDragDropVisualState = DragDropCoordinator
-		? DragDropCoordinator->GetInventoryEntryVisualState(EntryViewModel, bEntrySelected)
-		: (bEntrySelected ? ERpgInventorySlotDragVisualState::Focused : ERpgInventorySlotDragVisualState::Normal);
+		? DragDropCoordinator->GetInventoryEntryVisualState(EntryViewModel, bShowFocusedState)
+		: (bShowFocusedState ? ERpgInventorySlotDragVisualState::Focused : ERpgInventorySlotDragVisualState::Normal);
 
 	BP_OnInventoryEntryDragDropStateChanged(CurrentDragDropVisualState);
 }
@@ -100,6 +123,7 @@ void URpgInventorySlotEntryWidget::NativeOnEntryReleased()
 		View->SetViewModelByClass(nullptr);
 	}
 
+	BP_OnInventoryEntrySelectionChanged(false);
 	BP_OnInventoryEntryReleased();
 	RefreshDragDropVisualState();
 }
@@ -109,7 +133,7 @@ void URpgInventorySlotEntryWidget::NativeOnItemSelectionChanged(bool bIsSelected
 	IUserListEntry::NativeOnItemSelectionChanged(bIsSelected);
 
 	bEntrySelected = bIsSelected;
-	BP_OnInventoryEntrySelectionChanged(bIsSelected);
+	BP_OnInventoryEntrySelectionChanged(bIsSelected && bInventoryPanelActive);
 	RefreshDragDropVisualState();
 }
 
@@ -122,6 +146,11 @@ void URpgInventorySlotEntryWidget::NativeOnClicked()
 
 FReply URpgInventorySlotEntryWidget::NativeOnPreviewMouseButtonDown(const FGeometry& InGeometry, const FPointerEvent& InMouseEvent)
 {
+	if (InMouseEvent.GetEffectingButton() == EKeys::RightMouseButton && HandleEntryUseOrEquip())
+	{
+		return FReply::Handled();
+	}
+
 	if (TryHandleModifiedLeftMouseButtonDown(InMouseEvent, true))
 	{
 		return FReply::Handled();
@@ -132,6 +161,11 @@ FReply URpgInventorySlotEntryWidget::NativeOnPreviewMouseButtonDown(const FGeome
 
 FReply URpgInventorySlotEntryWidget::NativeOnMouseButtonDown(const FGeometry& InGeometry, const FPointerEvent& InMouseEvent)
 {
+	if (InMouseEvent.GetEffectingButton() == EKeys::RightMouseButton && HandleEntryUseOrEquip())
+	{
+		return FReply::Handled();
+	}
+
 	if (TryHandleModifiedLeftMouseButtonDown(InMouseEvent, false))
 	{
 		return FReply::Handled();

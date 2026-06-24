@@ -1,5 +1,6 @@
 #include "RpgInventoryDragDrop.h"
 
+#include "RpgInventoryFragment_ItemTraits.h"
 #include "RpgInventoryItemInstance.h"
 #include "RpgInventoryManagerComponent.h"
 #include "RpgInventoryUiActionComponent.h"
@@ -29,6 +30,14 @@ namespace
 			EquipmentSlot == ERpgEquipmentSlot::Hands ||
 			EquipmentSlot == ERpgEquipmentSlot::Legs ||
 			EquipmentSlot == ERpgEquipmentSlot::Feet;
+	}
+
+	bool IsSplittableStackItem(const URpgInventoryItemInstance* ItemInstance)
+	{
+		const URpgInventoryFragment_ItemTraits* Traits = ItemInstance
+			? ItemInstance->FindFragmentByClass<URpgInventoryFragment_ItemTraits>()
+			: nullptr;
+		return Traits && Traits->GetMaxStackSize() > 1;
 	}
 }
 
@@ -305,7 +314,20 @@ bool URpgInventoryDragDropCoordinator::QuickTransferEntry(URpgInventoryEntryView
 
 	URpgInventoryManagerComponent* SourceInventory = EntryViewModel->GetInventoryManager();
 	URpgInventoryManagerComponent* TargetInventory = ExplicitTargetInventory ? ExplicitTargetInventory : ResolveQuickTransferTarget(SourceInventory);
-	ResolveUiActionComponent()->RequestTransferItemStack(SourceInventory, TargetInventory, EntryViewModel->GetItemInstance(), EntryViewModel->GetStackCount());
+	URpgInventoryItemInstance* ItemInstance = EntryViewModel->GetItemInstance();
+	const int32 StackCount = EntryViewModel->GetStackCount();
+	URpgInventoryUiActionComponent* ActionComponent = ResolveUiActionComponent();
+	if (!ActionComponent || !SourceInventory || !TargetInventory || SourceInventory == TargetInventory || !ItemInstance || StackCount <= 0)
+	{
+		return false;
+	}
+
+	if (bHasHeldPayload)
+	{
+		CancelHold();
+	}
+
+	ActionComponent->RequestTransferItemStack(SourceInventory, TargetInventory, ItemInstance, StackCount);
 	return true;
 }
 
@@ -317,7 +339,8 @@ bool URpgInventoryDragDropCoordinator::CanQuickSplitEntry(URpgInventoryEntryView
 	}
 
 	URpgInventoryManagerComponent* Inventory = EntryViewModel->GetInventoryManager();
-	if (!Inventory || !EntryViewModel->GetItemInstance() || EntryViewModel->GetStackCount() <= 1)
+	URpgInventoryItemInstance* ItemInstance = EntryViewModel->GetItemInstance();
+	if (!Inventory || !ItemInstance || !IsSplittableStackItem(ItemInstance) || EntryViewModel->GetStackCount() <= 1)
 	{
 		return false;
 	}
@@ -343,7 +366,77 @@ bool URpgInventoryDragDropCoordinator::QuickSplitEntry(URpgInventoryEntryViewMod
 		return false;
 	}
 
-	ResolveUiActionComponent()->RequestSplitItemStack(EntryViewModel->GetInventoryManager(), EntryViewModel->GetItemInstance(), SplitCount, TargetSlotIndex);
+	URpgInventoryManagerComponent* Inventory = EntryViewModel->GetInventoryManager();
+	URpgInventoryItemInstance* ItemInstance = EntryViewModel->GetItemInstance();
+	URpgInventoryUiActionComponent* ActionComponent = ResolveUiActionComponent();
+	if (!ActionComponent || !Inventory || !ItemInstance)
+	{
+		return false;
+	}
+
+	if (bHasHeldPayload)
+	{
+		CancelHold();
+	}
+
+	ActionComponent->RequestSplitItemStack(Inventory, ItemInstance, SplitCount, TargetSlotIndex);
+	return true;
+}
+
+bool URpgInventoryDragDropCoordinator::UseOrEquipEntry(URpgInventoryEntryViewModel* EntryViewModel, int32 StackCount)
+{
+	if (!EntryViewModel || !EntryViewModel->CanDrag())
+	{
+		return false;
+	}
+
+	URpgInventoryUiActionComponent* ActionComponent = ResolveUiActionComponent();
+	URpgInventoryManagerComponent* Inventory = EntryViewModel->GetInventoryManager();
+	URpgInventoryItemInstance* ItemInstance = EntryViewModel->GetItemInstance();
+	if (!ActionComponent || !Inventory || !ItemInstance || EntryViewModel->GetStackCount() <= 0)
+	{
+		return false;
+	}
+
+	if (bHasHeldPayload)
+	{
+		CancelHold();
+	}
+
+	if (ItemInstance->FindFragmentByClass<URpgInventoryFragment_UsableItem>() != nullptr)
+	{
+		ActionComponent->RequestUseInventoryItem(Inventory, ItemInstance, FMath::Max(1, StackCount));
+	}
+	else
+	{
+		ActionComponent->RequestEquipInventoryItem(ItemInstance);
+	}
+
+	return true;
+}
+
+bool URpgInventoryDragDropCoordinator::DropEntry(URpgInventoryEntryViewModel* EntryViewModel, int32 StackCount, bool bConfirmed)
+{
+	if (!EntryViewModel || !EntryViewModel->CanDrag())
+	{
+		return false;
+	}
+
+	URpgInventoryUiActionComponent* ActionComponent = ResolveUiActionComponent();
+	URpgInventoryManagerComponent* Inventory = EntryViewModel->GetInventoryManager();
+	URpgInventoryItemInstance* ItemInstance = EntryViewModel->GetItemInstance();
+	if (!ActionComponent || !Inventory || !ItemInstance || EntryViewModel->GetStackCount() <= 0)
+	{
+		return false;
+	}
+
+	if (bHasHeldPayload)
+	{
+		CancelHold();
+	}
+
+	const int32 RequestedStackCount = StackCount <= 0 ? EntryViewModel->GetStackCount() : StackCount;
+	ActionComponent->RequestDropInventoryItem(Inventory, ItemInstance, RequestedStackCount, bConfirmed);
 	return true;
 }
 

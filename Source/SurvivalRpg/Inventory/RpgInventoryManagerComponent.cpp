@@ -18,6 +18,8 @@ struct FReplicationFlags;
 
 UE_DEFINE_GAMEPLAY_TAG_STATIC(TAG_Rpg_Inventory_Message_StackChanged, "Rpg.Inventory.Message.StackChanged");
 
+DEFINE_LOG_CATEGORY_STATIC(LogRpgInventoryManager, Log, All);
+
 namespace
 {
 	const URpgInventoryFragment_ItemTraits* GetItemTraits(TSubclassOf<URpgInventoryItemDefinition> ItemDef)
@@ -175,6 +177,17 @@ URpgInventoryItemInstance* FRpgInventoryList::AddEntry(TSubclassOf<URpgInventory
 
 	while (RemainingCount > 0)
 	{
+		const int32 NewSlotIndex = GetNextAvailableSlotIndex();
+		if (NewSlotIndex == INDEX_NONE)
+		{
+			UE_LOG(LogRpgInventoryManager, Warning, TEXT("AddEntry failed: no free finite slot. Inventory=%s ItemDef=%s RemainingCount=%d UsedEntries=%d"),
+				*GetNameSafe(OwnerComponent),
+				*GetNameSafe(ItemDef),
+				RemainingCount,
+				GetUsedEntryCount());
+			break;
+		}
+
 		const int32 NewEntryCount = FMath::Min(MaxStackSize, RemainingCount);
 		RemainingCount -= NewEntryCount;
 
@@ -190,7 +203,7 @@ URpgInventoryItemInstance* FRpgInventoryList::AddEntry(TSubclassOf<URpgInventory
 			}
 		}
 		NewEntry.StackCount = NewEntryCount;
-		NewEntry.SortIndex = GetNextAvailableSlotIndex();
+		NewEntry.SortIndex = NewSlotIndex;
 		if (!Result)
 		{
 			Result = NewEntry.Instance.Get();
@@ -213,7 +226,7 @@ URpgInventoryItemInstance* FRpgInventoryList::AddEntryAtSlot(TSubclassOf<URpgInv
 	AActor* OwningActor = OwnerComponent->GetOwner();
 	check(OwningActor && OwningActor->HasAuthority());
 
-	if (StackCount <= 0 || SlotIndex < 0)
+	if (StackCount <= 0 || !IsValidInventorySlotIndex(Cast<URpgInventoryManagerComponent>(OwnerComponent), SlotIndex))
 	{
 		return nullptr;
 	}
@@ -276,18 +289,29 @@ void FRpgInventoryList::AddEntry(URpgInventoryItemInstance* Instance, int32 Stac
 	AActor* OwningActor = OwnerComponent->GetOwner();
 	check(OwningActor && OwningActor->HasAuthority());
 
+	const int32 NewSlotIndex = GetNextAvailableSlotIndex();
+	if (NewSlotIndex == INDEX_NONE)
+	{
+		UE_LOG(LogRpgInventoryManager, Warning, TEXT("AddEntry instance failed: no free finite slot. Inventory=%s Item=%s StackCount=%d UsedEntries=%d"),
+			*GetNameSafe(OwnerComponent),
+			*GetNameSafe(Instance),
+			StackCount,
+			GetUsedEntryCount());
+		return;
+	}
+
 	FRpgInventoryEntry& NewEntry = Entries.AddDefaulted_GetRef();
 	NewEntry.Instance = Instance;
 	NewEntry.EntryId = FGuid::NewGuid();
 	NewEntry.StackCount = StackCount;
-	NewEntry.SortIndex = GetNextAvailableSlotIndex();
+	NewEntry.SortIndex = NewSlotIndex;
 	MarkItemDirty(NewEntry);
 	BroadcastChangeMessage(NewEntry, 0, NewEntry.StackCount);
 }
 
 void FRpgInventoryList::AddEntryAtSlot(URpgInventoryItemInstance* Instance, int32 StackCount, int32 SlotIndex)
 {
-	if (Instance == nullptr || StackCount <= 0 || SlotIndex < 0 || FindEntryBySlotIndex(SlotIndex) != nullptr)
+	if (Instance == nullptr || StackCount <= 0 || !IsValidInventorySlotIndex(Cast<URpgInventoryManagerComponent>(OwnerComponent), SlotIndex) || FindEntryBySlotIndex(SlotIndex) != nullptr)
 	{
 		return;
 	}
@@ -938,6 +962,8 @@ int32 FRpgInventoryList::GetNextAvailableSlotIndex() const
 				return SlotIndex;
 			}
 		}
+
+		return INDEX_NONE;
 	}
 
 	return GetNextSortIndex();

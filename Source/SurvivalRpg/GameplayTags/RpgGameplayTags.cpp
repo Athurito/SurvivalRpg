@@ -92,6 +92,12 @@ namespace RpgGameplayTags
 	UE_DEFINE_GAMEPLAY_TAG_COMMENT(Ability_Behavior_SurvivesDeath, "Ability.Behavior.SurvivesDeath", "An ability with this type tag should not be canceled due to death.");
 	UE_DEFINE_GAMEPLAY_TAG_COMMENT(Effect_Behavior_ClearOnRespawn, "Effect.Behavior.ClearOnRespawn", "GameplayEffects with this tag are removed when the owner respawns.");
 	UE_DEFINE_GAMEPLAY_TAG_COMMENT(Rpg_Combat_Message_ActorKilled, "Rpg.Combat.Message.ActorKilled", "Gameplay message sent by combat when an actor is killed.");
+	UE_DEFINE_GAMEPLAY_TAG_COMMENT(Rpg_Inventory_Message_ActionFeedback, "Rpg.Inventory.Message.ActionFeedback", "Owning-client gameplay message for inventory shortcut or server validation feedback.");
+	UE_DEFINE_GAMEPLAY_TAG_COMMENT(Rpg_Inventory_Action_Transfer, "Rpg.Inventory.Action.Transfer", "Inventory UI action tag for transfer requests.");
+	UE_DEFINE_GAMEPLAY_TAG_COMMENT(Rpg_Inventory_Action_Split, "Rpg.Inventory.Action.Split", "Inventory UI action tag for split-stack requests.");
+	UE_DEFINE_GAMEPLAY_TAG_COMMENT(Rpg_Inventory_Action_Use, "Rpg.Inventory.Action.Use", "Inventory UI action tag for item use requests.");
+	UE_DEFINE_GAMEPLAY_TAG_COMMENT(Rpg_Inventory_Action_Drop, "Rpg.Inventory.Action.Drop", "Inventory UI action tag for manual item drop requests.");
+	UE_DEFINE_GAMEPLAY_TAG_COMMENT(Rpg_Inventory_Action_Equip, "Rpg.Inventory.Action.Equip", "Inventory UI action tag for convenience equip requests.");
 	UE_DEFINE_GAMEPLAY_TAG_COMMENT(Feature, "Feature", "Root tag for placed GameFeature-driven world spawning markers.");
 	UE_DEFINE_GAMEPLAY_TAG_COMMENT(Equipment_Slot_MainHand, "Equipment.Slot.MainHand", "Equipment is assigned to the main hand slot.");
 	UE_DEFINE_GAMEPLAY_TAG_COMMENT(Equipment_Slot_OffHand, "Equipment.Slot.OffHand", "Equipment is assigned to the off hand slot.");

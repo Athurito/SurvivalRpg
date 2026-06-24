@@ -50,9 +50,21 @@ public:
 	UFUNCTION(BlueprintCallable, Category = "Inventory|Shortcuts")
 	bool HandleEntryQuickSplit(int32 SplitCount = 0, int32 TargetSlotIndex = -1);
 
+	/** Shortcut helper for right-click or CommonUI action: use usable items, otherwise try to equip. */
+	UFUNCTION(BlueprintCallable, Category = "Inventory|Shortcuts")
+	bool HandleEntryUseOrEquip(int32 StackCount = 1);
+
+	/** Shortcut/helper for context actions: drop this entry into the world near the owning player. */
+	UFUNCTION(BlueprintCallable, Category = "Inventory|Shortcuts")
+	bool HandleEntryDrop(int32 StackCount = 0, bool bConfirmed = false);
+
 	/** Recomputes drag/drop presentation state and calls the Blueprint visual hook. */
 	UFUNCTION(BlueprintCallable, Category = "Inventory|DragDrop")
 	void RefreshDragDropVisualState();
+
+	/** Sets whether this entry belongs to the currently active controller panel. Inactive panels keep selection memory but should not show focused visuals. */
+	UFUNCTION(BlueprintCallable, Category = "Inventory|Navigation")
+	void SetInventoryPanelActive(bool bInInventoryPanelActive);
 
 	/** Current drag/drop presentation state for this entry widget. */
 	UFUNCTION(BlueprintPure, Category = "Inventory|DragDrop")
@@ -107,4 +119,5 @@ private:
 	ERpgInventorySlotDragVisualState CurrentDragDropVisualState = ERpgInventorySlotDragVisualState::Normal;
 
 	bool bEntrySelected = false;
+	bool bInventoryPanelActive = true;
 };
