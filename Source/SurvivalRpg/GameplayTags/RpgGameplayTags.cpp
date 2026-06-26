@@ -47,6 +47,7 @@ namespace RpgGameplayTags
 	UE_DEFINE_GAMEPLAY_TAG_COMMENT(GameplayEvent_Block, "GameplayEvent.Block", "Event that fires when a melee hit is blocked.");
 	UE_DEFINE_GAMEPLAY_TAG_COMMENT(GameplayEvent_PerfectBlock, "GameplayEvent.PerfectBlock", "Event that fires when a melee hit is perfect blocked.");
 	UE_DEFINE_GAMEPLAY_TAG_COMMENT(GameplayEvent_Stagger, "GameplayEvent.Stagger", "Event that requests a target stagger or guard break.");
+	UE_DEFINE_GAMEPLAY_TAG_COMMENT(GameplayEvent_ItemUse_Apply, "GameplayEvent.ItemUse.Apply", "Event sent by item-use montages when configured item effects should execute.");
 	UE_DEFINE_GAMEPLAY_TAG_COMMENT(GameplayEvent_Weapon_Attack_Window_Start, "GameplayEvent.Weapon.Attack.Window.Start", "Event sent by melee attack montages when weapon damage tracing starts.");
 	UE_DEFINE_GAMEPLAY_TAG_COMMENT(GameplayEvent_Weapon_Attack_Window_End, "GameplayEvent.Weapon.Attack.Window.End", "Event sent by melee attack montages when weapon damage tracing ends.");
 	UE_DEFINE_GAMEPLAY_TAG_COMMENT(GameplayEvent_Reset, "GameplayEvent.Reset", "Event that fires once a player reset is executed.");

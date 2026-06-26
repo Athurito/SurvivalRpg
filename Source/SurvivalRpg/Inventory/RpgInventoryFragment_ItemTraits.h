@@ -9,7 +9,154 @@
 #include "RpgInventoryFragment_ItemTraits.generated.h"
 
 class UTexture2D;
+class UGameplayEffect;
+class UAnimMontage;
 class URpgGameplayAbility;
+
+/**
+ * One SetByCaller value written onto an outgoing item-use GameplayEffect spec.
+ */
+USTRUCT(BlueprintType)
+struct FRpgInventoryUsableItemSetByCallerMagnitude
+{
+	GENERATED_BODY()
+
+public:
+	/** GameplayEffect SetByCaller data tag, for example SetByCaller.Heal. Must match the effect's expected tag. */
+	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Inventory|Use")
+	FGameplayTag DataTag;
+
+	/** Magnitude written for this tag. Designers tune this per item definition; the server applies it during item use. */
+	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Inventory|Use")
+	float Magnitude = 0.0f;
+
+	/** If true, using multiple stack units in one request multiplies this value by the requested use count. */
+	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Inventory|Use")
+	bool bScaleByUseCount = true;
+};
+
+/**
+ * GameplayEffect applied by a usable item when its use ability runs.
+ */
+USTRUCT(BlueprintType)
+struct FRpgInventoryUsableItemEffect
+{
+	GENERATED_BODY()
+
+public:
+	/** Effect applied to the owning player ASC. Use SetByCaller rows below for item-specific values. */
+	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Inventory|Use")
+	TSubclassOf<UGameplayEffect> GameplayEffect;
+
+	/** Level used for this effect. Values <= 0 use the activated ability level instead. */
+	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Inventory|Use", meta = (ClampMin = "0.0", UIMin = "0.0"))
+	float EffectLevel = 1.0f;
+
+	/** Optional item-specific SetByCaller values written before the effect is applied. */
+	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Inventory|Use")
+	TArray<FRpgInventoryUsableItemSetByCallerMagnitude> SetByCallerMagnitudes;
+};
+
+/**
+ * Point in an item-use sequence at which a configured use step should execute.
+ */
+UENUM(BlueprintType)
+enum class ERpgInventoryUseStepTrigger : uint8
+{
+	/** Executes immediately after the item-use ability commits. */
+	OnActivate,
+
+	/** Executes after the step's Delay value on the server. */
+	AfterDelay,
+
+	/** Executes when the active montage emits the step's GameplayEvent tag. */
+	OnMontageEvent,
+
+	/** Executes when the optional use montage completes or blends out normally. */
+	OnMontageCompleted,
+
+	/** Executes when the optional use montage is interrupted or cancelled. */
+	OnMontageInterrupted
+};
+
+/**
+ * Built-in requirement checks used by the generic item-use ability before it accepts an item use.
+ */
+UENUM(BlueprintType)
+enum class ERpgInventoryUseRequirementType : uint8
+{
+	/** No requirement. Useful as a temporarily disabled row in data assets. */
+	None,
+
+	/** The user must have Health below MaxHealth. Typical for healing potions. */
+	HealthBelowMax
+};
+
+/**
+ * One server-authoritative requirement for using an item.
+ */
+USTRUCT(BlueprintType)
+struct FRpgInventoryUsableItemRequirement
+{
+	GENERATED_BODY()
+
+public:
+	/** Requirement evaluated by URpgGameplayAbility_ApplyItemEffects before activation is accepted. */
+	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Inventory|Use")
+	ERpgInventoryUseRequirementType RequirementType = ERpgInventoryUseRequirementType::None;
+};
+
+/**
+ * One-shot gameplay cue emitted by an item-use sequence step.
+ */
+USTRUCT(BlueprintType)
+struct FRpgInventoryUsableItemGameplayCue
+{
+	GENERATED_BODY()
+
+public:
+	/** GameplayCue tag executed on the user's ASC when the step runs. Effect-owned cues should still live on GameplayEffects. */
+	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Inventory|Use", meta = (Categories = "GameplayCue"))
+	FGameplayTag GameplayCueTag;
+
+	/** Optional raw magnitude passed to the cue parameters. Cosmetic cues may ignore this value. */
+	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Inventory|Use")
+	float RawMagnitude = 0.0f;
+};
+
+/**
+ * One step in a data-driven item-use sequence. Steps are executed only on the server.
+ */
+USTRUCT(BlueprintType)
+struct FRpgInventoryUsableItemUseStep
+{
+	GENERATED_BODY()
+
+public:
+	/** When this step should run during the item-use ability. */
+	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Inventory|Use")
+	ERpgInventoryUseStepTrigger Trigger = ERpgInventoryUseStepTrigger::OnActivate;
+
+	/** Delay in seconds for AfterDelay steps. Ignored by other triggers. */
+	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Inventory|Use", meta = (EditCondition = "Trigger == ERpgInventoryUseStepTrigger::AfterDelay", ClampMin = "0.0", UIMin = "0.0"))
+	float Delay = 0.0f;
+
+	/** GameplayEvent tag required by OnMontageEvent steps. The generic item AnimNotify can send this tag. */
+	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Inventory|Use", meta = (EditCondition = "Trigger == ERpgInventoryUseStepTrigger::OnMontageEvent", Categories = "GameplayEvent"))
+	FGameplayTag MontageEventTag;
+
+	/** If true, the item stack is consumed before this step's effects and cues are executed. */
+	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Inventory|Use")
+	bool bConsumeItem = false;
+
+	/** Effects applied to the owning player ASC when this step runs. */
+	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Inventory|Use")
+	TArray<FRpgInventoryUsableItemEffect> EffectsToApply;
+
+	/** One-shot cues executed when this step runs. Prefer effect-owned cues for persistent effect visuals. */
+	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Inventory|Use")
+	TArray<FRpgInventoryUsableItemGameplayCue> GameplayCues;
+};
 
 /**
  * Presentation data read by inventory, quickbar, loot, and storage widgets.
@@ -118,4 +265,28 @@ public:
 	/** If true, the item must be in the player's own backpack, not storage, loot, or crafting output. */
 	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Inventory|Use")
 	bool bOnlyFromPlayerInventory = true;
+
+	/** Montage played by the generic item-use ability. Leave null for instant or timer-only consumables. */
+	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Inventory|Use|Animation")
+	TObjectPtr<UAnimMontage> UseMontage;
+
+	/** Server-authoritative play rate for UseMontage. Values <= 0 are clamped to a tiny positive rate. */
+	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Inventory|Use|Animation", meta = (ClampMin = "0.01", UIMin = "0.01"))
+	float MontagePlayRate = 1.0f;
+
+	/** Optional montage section to start from. NAME_None starts at the montage default section. */
+	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Inventory|Use|Animation")
+	FName MontageStartSection = NAME_None;
+
+	/** Data-driven requirements that must pass before the item-use ability is accepted. */
+	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Inventory|Use|Requirements")
+	TArray<FRpgInventoryUsableItemRequirement> UseRequirements;
+
+	/** Ordered server-side steps for animated, delayed, or event-timed item effects, cues, and consumption. */
+	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Inventory|Use")
+	TArray<FRpgInventoryUsableItemUseStep> UseSequence;
+
+	/** Legacy instant effects. Used as a single OnActivate step when UseSequence is empty. */
+	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Inventory|Use")
+	TArray<FRpgInventoryUsableItemEffect> EffectsToApply;
 };

@@ -11,8 +11,10 @@
 #include "RpgInventoryFragment_ItemTraits.h"
 #include "RpgInventoryItemDefinition.h"
 #include "RpgInventoryItemInstance.h"
+#include "RpgInventoryItemUseContext.h"
 #include "RpgInventoryManagerComponent.h"
 #include "SurvivalRpg/AbilitySystem/RpgAbilitySystemComponent.h"
+#include "SurvivalRpg/AbilitySystem/Abilities/RpgGameplayAbility_ApplyItemEffects.h"
 #include "SurvivalRpg/Base/RpgBaseBuildableDefinition.h"
 #include "SurvivalRpg/Base/RpgBaseCampActor.h"
 #include "SurvivalRpg/Base/RpgBaseConstructionSiteActor.h"
@@ -63,12 +65,12 @@ namespace
 		return Traits && Traits->GetMaxStackSize() > 1;
 	}
 
-	bool IsQuickBarEquipmentSlot(ERpgEquipmentSlot EquipmentSlot)
+	bool IsUiActionQuickBarEquipmentSlot(ERpgEquipmentSlot EquipmentSlot)
 	{
 		return EquipmentSlot == ERpgEquipmentSlot::MainHand || EquipmentSlot == ERpgEquipmentSlot::OffHand;
 	}
 
-	bool IsDedicatedEquipmentSlot(ERpgEquipmentSlot EquipmentSlot)
+	bool IsUiActionDedicatedEquipmentSlot(ERpgEquipmentSlot EquipmentSlot)
 	{
 		return EquipmentSlot == ERpgEquipmentSlot::Head ||
 			EquipmentSlot == ERpgEquipmentSlot::Chest ||
@@ -483,9 +485,7 @@ void URpgInventoryUiActionComponent::RequestUseInventoryItem_Implementation(URpg
 	}
 
 	const int32 UseCount = FMath::Max(1, StackCount);
-	const int32 ConsumeCount = UsableFragment->bConsumeOnActivationAccepted
-		? FMath::Max(0, UsableFragment->ConsumeCount) * UseCount
-		: 0;
+	const int32 ConsumeCount = FMath::Max(0, UsableFragment->ConsumeCount) * UseCount;
 	if (ConsumeCount > AvailableCount)
 	{
 		SendActionFeedback(RpgGameplayTags::Rpg_Inventory_Action_Use, ERpgInventoryActionFeedbackResult::MissingItem, Inventory, Item, ConsumeCount);
@@ -508,22 +508,36 @@ void URpgInventoryUiActionComponent::RequestUseInventoryItem_Implementation(URpg
 	EventData.OptionalObject = Item;
 	EventData.EventMagnitude = static_cast<float>(UseCount);
 
+	URpgInventoryItemUseContext* UseContext = NewObject<URpgInventoryItemUseContext>(this);
+	UseContext->Initialize(Inventory, Item, UseCount, ConsumeCount);
+
+	const bool bUsesApplyEffectsContext = UsableFragment->UseAbility->IsChildOf(URpgGameplayAbility_ApplyItemEffects::StaticClass());
+	if (bUsesApplyEffectsContext)
+	{
+		URpgGameplayAbility_ApplyItemEffects::RegisterPendingUseContext(AbilitySystem, Item, UseContext);
+	}
+
 	FGameplayAbilitySpec UseSpec(UsableFragment->UseAbility, FMath::Max(1, UsableFragment->AbilityLevel), INDEX_NONE, Item);
 	const FGameplayAbilitySpecHandle ActivatedHandle = AbilitySystem->GiveAbilityAndActivateOnce(UseSpec, &EventData);
 	if (!ActivatedHandle.IsValid())
 	{
+		if (bUsesApplyEffectsContext)
+		{
+			URpgGameplayAbility_ApplyItemEffects::ClearPendingUseContext(AbilitySystem, Item);
+		}
+
 		SendActionFeedback(RpgGameplayTags::Rpg_Inventory_Action_Use, ERpgInventoryActionFeedbackResult::AbilityRejected, Inventory, Item, StackCount);
 		return;
 	}
 
-	if (ConsumeCount > 0)
+	if (UsableFragment->bConsumeOnActivationAccepted && ConsumeCount > 0)
 	{
 		if (Inventory == PlayerInventory && ConsumeCount >= AvailableCount)
 		{
 			ClearPlayerAssignmentsForItem(Item);
 		}
 
-		if (!Inventory->RemoveItemInstanceStack(Item, ConsumeCount))
+		if (!UseContext->TryConsume())
 		{
 			SendActionFeedback(RpgGameplayTags::Rpg_Inventory_Action_Use, ERpgInventoryActionFeedbackResult::ServerRejected, Inventory, Item, ConsumeCount);
 			return;
@@ -1336,7 +1350,7 @@ bool URpgInventoryUiActionComponent::TryAssignItemToDefaultEquipmentDestination(
 	}
 
 	const ERpgEquipmentSlot DefaultSlot = EquipmentCDO->GetDefaultEquipSlot();
-	if (IsDedicatedEquipmentSlot(DefaultSlot))
+	if (IsUiActionDedicatedEquipmentSlot(DefaultSlot))
 	{
 		if (URpgEquipmentLoadoutComponent* EquipmentLoadout = FindEquipmentLoadout())
 		{
@@ -1345,7 +1359,7 @@ bool URpgInventoryUiActionComponent::TryAssignItemToDefaultEquipmentDestination(
 		return false;
 	}
 
-	if (!IsQuickBarEquipmentSlot(DefaultSlot))
+	if (!IsUiActionQuickBarEquipmentSlot(DefaultSlot))
 	{
 		return false;
 	}

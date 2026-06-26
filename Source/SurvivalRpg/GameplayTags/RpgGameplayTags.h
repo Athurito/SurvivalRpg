@@ -51,6 +51,7 @@ namespace RpgGameplayTags
 	UE_DECLARE_GAMEPLAY_TAG_EXTERN(GameplayEvent_Block);
 	UE_DECLARE_GAMEPLAY_TAG_EXTERN(GameplayEvent_PerfectBlock);
 	UE_DECLARE_GAMEPLAY_TAG_EXTERN(GameplayEvent_Stagger);
+	UE_DECLARE_GAMEPLAY_TAG_EXTERN(GameplayEvent_ItemUse_Apply);
 	UE_DECLARE_GAMEPLAY_TAG_EXTERN(GameplayEvent_Weapon_Attack_Window_Start);
 	UE_DECLARE_GAMEPLAY_TAG_EXTERN(GameplayEvent_Weapon_Attack_Window_End);
 	UE_DECLARE_GAMEPLAY_TAG_EXTERN(GameplayEvent_Reset);
