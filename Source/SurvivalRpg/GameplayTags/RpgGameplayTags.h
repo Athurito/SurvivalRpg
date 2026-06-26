@@ -92,6 +92,9 @@ namespace RpgGameplayTags
 	UE_DECLARE_GAMEPLAY_TAG_EXTERN(Ability_Behavior_SurvivesDeath);
 	UE_DECLARE_GAMEPLAY_TAG_EXTERN(Effect_Behavior_ClearOnRespawn);
 	UE_DECLARE_GAMEPLAY_TAG_EXTERN(Rpg_Combat_Message_ActorKilled);
+	UE_DECLARE_GAMEPLAY_TAG_EXTERN(Rpg_QuickBar_Message_SlotsChanged);
+	UE_DECLARE_GAMEPLAY_TAG_EXTERN(Rpg_QuickBar_Message_ActiveIndexChanged);
+	UE_DECLARE_GAMEPLAY_TAG_EXTERN(Rpg_EquipmentLoadout_Message_SlotsChanged);
 	UE_DECLARE_GAMEPLAY_TAG_EXTERN(Rpg_Inventory_Message_ActionFeedback);
 	UE_DECLARE_GAMEPLAY_TAG_EXTERN(Rpg_Inventory_Action_Transfer);
 	UE_DECLARE_GAMEPLAY_TAG_EXTERN(Rpg_Inventory_Action_Split);
@@ -133,6 +136,7 @@ namespace RpgGameplayTags
 	UE_DECLARE_GAMEPLAY_TAG_EXTERN(UI_Screen_BaseTerminal);
 	UE_DECLARE_GAMEPLAY_TAG_EXTERN(UI_Screen_Pause);
 	UE_DECLARE_GAMEPLAY_TAG_EXTERN(UI_Screen_Settings);
+	UE_DECLARE_GAMEPLAY_TAG_EXTERN(UI_HUD_Slot_Quickbar);
 
 	UE_DECLARE_GAMEPLAY_TAG_EXTERN(Base_Storage_Upgrade_AutoSort);
 	UE_DECLARE_GAMEPLAY_TAG_EXTERN(Base_Storage_Upgrade_RemoteAccess);

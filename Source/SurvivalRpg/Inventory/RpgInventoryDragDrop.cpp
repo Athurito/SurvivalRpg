@@ -1,6 +1,7 @@
 #include "RpgInventoryDragDrop.h"
 
 #include "RpgInventoryFragment_ItemTraits.h"
+#include "RpgInventoryFragment_EquippableItem.h"
 #include "RpgInventoryItemInstance.h"
 #include "RpgInventoryManagerComponent.h"
 #include "RpgInventoryUiActionComponent.h"
@@ -38,6 +39,39 @@ namespace
 			? ItemInstance->FindFragmentByClass<URpgInventoryFragment_ItemTraits>()
 			: nullptr;
 		return Traits && Traits->GetMaxStackSize() > 1;
+	}
+
+	bool CanInventoryItemEquipInSlot(const URpgInventoryItemInstance* ItemInstance, ERpgEquipmentSlot EquipmentSlot)
+	{
+		const URpgInventoryFragment_EquippableItem* EquippableFragment = ItemInstance
+			? ItemInstance->FindFragmentByClass<URpgInventoryFragment_EquippableItem>()
+			: nullptr;
+		const TSubclassOf<URpgEquipmentDefinition> EquipmentDefinition = EquippableFragment ? EquippableFragment->GetEquipmentDefinition() : nullptr;
+		const URpgEquipmentDefinition* EquipmentCDO = EquipmentDefinition ? GetDefault<URpgEquipmentDefinition>(EquipmentDefinition) : nullptr;
+		return EquipmentCDO && EquipmentCDO->CanEquipInSlot(EquipmentSlot);
+	}
+
+	bool CanInventoryItemAssignToQuickBarSlot(const URpgInventoryItemInstance* ItemInstance, ERpgEquipmentSlot EquipmentSlot)
+	{
+		if (!IsQuickBarEquipmentSlot(EquipmentSlot) || !CanInventoryItemEquipInSlot(ItemInstance, EquipmentSlot))
+		{
+			return false;
+		}
+
+		const URpgInventoryFragment_ItemTraits* Traits = ItemInstance
+			? ItemInstance->FindFragmentByClass<URpgInventoryFragment_ItemTraits>()
+			: nullptr;
+		if (!Traits)
+		{
+			return true;
+		}
+
+		if (Traits->ItemCategory == ERpgInventoryItemCategory::Armor || Traits->IsMaterial())
+		{
+			return false;
+		}
+
+		return Traits->bCanAssignToQuickBar;
 	}
 }
 
@@ -646,7 +680,8 @@ bool URpgInventoryDragDropCoordinator::CanCommitPayloadToTarget(const FRpgInvent
 	{
 		if (Payload.SourceType == ERpgInventoryDragSourceType::InventoryEntry)
 		{
-			return IsPlayerInventory(Payload.SourceInventory);
+			return IsPlayerInventory(Payload.SourceInventory) &&
+				CanInventoryItemAssignToQuickBarSlot(Payload.ItemInstance, Target.EquipmentSlot);
 		}
 
 		return Payload.SourceType == ERpgInventoryDragSourceType::QuickBarSlot;
@@ -656,7 +691,9 @@ bool URpgInventoryDragDropCoordinator::CanCommitPayloadToTarget(const FRpgInvent
 	{
 		if (Payload.SourceType == ERpgInventoryDragSourceType::InventoryEntry)
 		{
-			return IsPlayerInventory(Payload.SourceInventory);
+			return IsPlayerInventory(Payload.SourceInventory) &&
+				IsDedicatedEquipmentSlot(Target.EquipmentSlot) &&
+				CanInventoryItemEquipInSlot(Payload.ItemInstance, Target.EquipmentSlot);
 		}
 
 		return Payload.SourceType == ERpgInventoryDragSourceType::EquipmentSlot;

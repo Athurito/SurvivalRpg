@@ -53,6 +53,10 @@ public:
 	UFUNCTION(BlueprintCallable, BlueprintPure = false, Category = "QuickBar")
 	int32 GetActiveSlotIndex() const { return ActiveSlotIndex; }
 
+	/** Number of loadout slots the quickbar should expose to HUD and inventory UI. */
+	UFUNCTION(BlueprintCallable, BlueprintPure = false, Category = "QuickBar")
+	int32 GetNumSlots() const { return NumSlots; }
+
 	UFUNCTION(BlueprintCallable, BlueprintPure = false, Category = "QuickBar")
 	URpgInventoryItemInstance* GetActiveSlotItem() const;
 

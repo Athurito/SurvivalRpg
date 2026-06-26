@@ -8,12 +8,11 @@
 #include "RpgEquipmentInstance.h"
 #include "RpgEquipmentManagerComponent.h"
 #include "SurvivalRpg/Core/Player/RpgPlayerState.h"
+#include "SurvivalRpg/GameplayTags/RpgGameplayTags.h"
 #include "SurvivalRpg/Inventory/RpgInventoryFragment_EquippableItem.h"
 #include "SurvivalRpg/Inventory/RpgInventoryManagerComponent.h"
 
 #include UE_INLINE_GENERATED_CPP_BY_NAME(RpgEquipmentLoadoutComponent)
-
-UE_DEFINE_GAMEPLAY_TAG_STATIC(TAG_Rpg_EquipmentLoadout_Message_SlotsChanged, "Rpg.EquipmentLoadout.Message.SlotsChanged");
 
 URpgEquipmentLoadoutComponent::URpgEquipmentLoadoutComponent(const FObjectInitializer& ObjectInitializer)
 	: Super(ObjectInitializer)
@@ -318,7 +317,7 @@ void URpgEquipmentLoadoutComponent::BroadcastSlotsChanged() const
 	Message.Slots = Slots;
 
 	UGameplayMessageSubsystem& MessageSystem = UGameplayMessageSubsystem::Get(this);
-	MessageSystem.BroadcastMessage(TAG_Rpg_EquipmentLoadout_Message_SlotsChanged, Message);
+	MessageSystem.BroadcastMessage(RpgGameplayTags::Rpg_EquipmentLoadout_Message_SlotsChanged, Message);
 }
 
 bool URpgEquipmentLoadoutComponent::IsManagedEquipmentSlot(ERpgEquipmentSlot EquipmentSlot)

@@ -9,14 +9,12 @@
 #include "RpgEquipmentInstance.h"
 #include "RpgEquipmentManagerComponent.h"
 #include "SurvivalRpg/Core/Player/RpgPlayerState.h"
+#include "SurvivalRpg/GameplayTags/RpgGameplayTags.h"
 #include "SurvivalRpg/Inventory/RpgInventoryFragment_EquippableItem.h"
 #include "SurvivalRpg/Inventory/RpgInventoryFragment_ItemTraits.h"
 #include "SurvivalRpg/Inventory/RpgInventoryManagerComponent.h"
 
 #include UE_INLINE_GENERATED_CPP_BY_NAME(RpgQuickBarComponent)
-
-UE_DEFINE_GAMEPLAY_TAG_STATIC(TAG_Rpg_QuickBar_Message_SlotsChanged, "Rpg.QuickBar.Message.SlotsChanged");
-UE_DEFINE_GAMEPLAY_TAG_STATIC(TAG_Rpg_QuickBar_Message_ActiveIndexChanged, "Rpg.QuickBar.Message.ActiveIndexChanged");
 
 URpgInventoryItemInstance* FRpgQuickBarLoadoutSlot::GetItemForSlot(ERpgEquipmentSlot Slot) const
 {
@@ -624,7 +622,7 @@ void URpgQuickBarComponent::BroadcastSlotsChanged() const
 	Message.Slots = GetSlots();
 
 	UGameplayMessageSubsystem& MessageSystem = UGameplayMessageSubsystem::Get(this);
-	MessageSystem.BroadcastMessage(TAG_Rpg_QuickBar_Message_SlotsChanged, Message);
+	MessageSystem.BroadcastMessage(RpgGameplayTags::Rpg_QuickBar_Message_SlotsChanged, Message);
 }
 
 void URpgQuickBarComponent::BroadcastActiveIndexChanged() const
@@ -634,5 +632,5 @@ void URpgQuickBarComponent::BroadcastActiveIndexChanged() const
 	Message.ActiveIndex = ActiveSlotIndex;
 
 	UGameplayMessageSubsystem& MessageSystem = UGameplayMessageSubsystem::Get(this);
-	MessageSystem.BroadcastMessage(TAG_Rpg_QuickBar_Message_ActiveIndexChanged, Message);
+	MessageSystem.BroadcastMessage(RpgGameplayTags::Rpg_QuickBar_Message_ActiveIndexChanged, Message);
 }

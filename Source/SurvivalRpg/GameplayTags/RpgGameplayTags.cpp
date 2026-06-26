@@ -93,6 +93,9 @@ namespace RpgGameplayTags
 	UE_DEFINE_GAMEPLAY_TAG_COMMENT(Ability_Behavior_SurvivesDeath, "Ability.Behavior.SurvivesDeath", "An ability with this type tag should not be canceled due to death.");
 	UE_DEFINE_GAMEPLAY_TAG_COMMENT(Effect_Behavior_ClearOnRespawn, "Effect.Behavior.ClearOnRespawn", "GameplayEffects with this tag are removed when the owner respawns.");
 	UE_DEFINE_GAMEPLAY_TAG_COMMENT(Rpg_Combat_Message_ActorKilled, "Rpg.Combat.Message.ActorKilled", "Gameplay message sent by combat when an actor is killed.");
+	UE_DEFINE_GAMEPLAY_TAG_COMMENT(Rpg_QuickBar_Message_SlotsChanged, "Rpg.QuickBar.Message.SlotsChanged", "Gameplay message sent when a controller-owned quickbar loadout assignment changes.");
+	UE_DEFINE_GAMEPLAY_TAG_COMMENT(Rpg_QuickBar_Message_ActiveIndexChanged, "Rpg.QuickBar.Message.ActiveIndexChanged", "Gameplay message sent when the active quickbar loadout slot changes.");
+	UE_DEFINE_GAMEPLAY_TAG_COMMENT(Rpg_EquipmentLoadout_Message_SlotsChanged, "Rpg.EquipmentLoadout.Message.SlotsChanged", "Gameplay message sent when a controller-owned dedicated equipment slot assignment changes.");
 	UE_DEFINE_GAMEPLAY_TAG_COMMENT(Rpg_Inventory_Message_ActionFeedback, "Rpg.Inventory.Message.ActionFeedback", "Owning-client gameplay message for inventory shortcut or server validation feedback.");
 	UE_DEFINE_GAMEPLAY_TAG_COMMENT(Rpg_Inventory_Action_Transfer, "Rpg.Inventory.Action.Transfer", "Inventory UI action tag for transfer requests.");
 	UE_DEFINE_GAMEPLAY_TAG_COMMENT(Rpg_Inventory_Action_Split, "Rpg.Inventory.Action.Split", "Inventory UI action tag for split-stack requests.");
@@ -134,6 +137,7 @@ namespace RpgGameplayTags
 	UE_DEFINE_GAMEPLAY_TAG_COMMENT(UI_Screen_BaseTerminal, "UI.Screen.BaseTerminal", "Base terminal screen opened through the project UI screen registry.");
 	UE_DEFINE_GAMEPLAY_TAG_COMMENT(UI_Screen_Pause, "UI.Screen.Pause", "Pause screen opened through the project UI screen registry.");
 	UE_DEFINE_GAMEPLAY_TAG_COMMENT(UI_Screen_Settings, "UI.Screen.Settings", "Settings screen opened through the project UI screen registry.");
+	UE_DEFINE_GAMEPLAY_TAG_COMMENT(UI_HUD_Slot_Quickbar, "UI.HUD.Slot.Quickbar", "UIExtension slot for the persistent weapon quickbar HUD widget.");
 
 	UE_DEFINE_GAMEPLAY_TAG_COMMENT(Base_Storage_Upgrade_AutoSort, "Base.Storage.Upgrade.AutoSort", "Base storage upgrade tag that unlocks shared auto-sort convenience.");
 	UE_DEFINE_GAMEPLAY_TAG_COMMENT(Base_Storage_Upgrade_RemoteAccess, "Base.Storage.Upgrade.RemoteAccess", "Base storage upgrade tag that unlocks remote access convenience.");
