@@ -88,6 +88,7 @@ void URpgAbilitySet::GiveToAbilitySystem(
 		FGameplayAbilitySpec AbilitySpec(AbilityCDO, AbilityToGrant.AbilityLevel);
 		AbilitySpec.SourceObject = SourceObject;
 		AbilitySpec.GetDynamicSpecSourceTags().AddTag(AbilityToGrant.InputTag);
+		AbilitySpec.GetDynamicSpecSourceTags().AddTag(AbilityToGrant.AbilityIdTag);
 
 		const FGameplayAbilitySpecHandle AbilitySpecHandle = RpgASC->GiveAbility(AbilitySpec);
 
@@ -123,12 +124,13 @@ void URpgAbilitySet::GiveToAbilitySystem(
 	}
 }
 
-void URpgAbilitySet::AddGrantedGameplayAbility(TSubclassOf<URpgGameplayAbility> AbilityClass, int32 AbilityLevel, FGameplayTag InputTag)
+void URpgAbilitySet::AddGrantedGameplayAbility(TSubclassOf<URpgGameplayAbility> AbilityClass, int32 AbilityLevel, FGameplayTag InputTag, FGameplayTag AbilityIdTag)
 {
 	FRpgAbilitySet_GameplayAbility& NewAbility = GrantedGameplayAbilities.AddDefaulted_GetRef();
 	NewAbility.Ability = AbilityClass;
 	NewAbility.AbilityLevel = AbilityLevel;
 	NewAbility.InputTag = InputTag;
+	NewAbility.AbilityIdTag = AbilityIdTag;
 }
 
 void URpgAbilitySet::ClearGrantedGameplayAbilities()

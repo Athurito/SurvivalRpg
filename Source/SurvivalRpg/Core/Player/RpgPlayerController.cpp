@@ -10,12 +10,14 @@
 #include "GameFramework/Pawn.h"
 #include "GameFramework/PlayerInput.h"
 #include "SurvivalRpg/AbilitySystem/RpgAbilitySystemComponent.h"
+#include "SurvivalRpg/ActionBar/RpgActionBarComponent.h"
 #include "SurvivalRpg/Core/Game/RpgGameModeBase.h"
 #include "SurvivalRpg/Core/Character/RpgPawnExtensionComponent.h"
 #include "SurvivalRpg/Core/Player/RpgBasePlayerState.h"
+#include "SurvivalRpg/Core/Player/RpgPlayerGameplayInputRouterComponent.h"
 #include "SurvivalRpg/Core/Player/RpgPlayerState.h"
 #include "SurvivalRpg/Equipment/RpgEquipmentLoadoutComponent.h"
-#include "SurvivalRpg/Equipment/RpgQuickBarComponent.h"
+#include "SurvivalRpg/Equipment/RpgWeaponAbilityLoadoutComponent.h"
 #include "SurvivalRpg/GameplayTags/RpgGameplayTags.h"
 #include "SurvivalRpg/Inventory/RpgInventoryUiActionComponent.h"
 #include "SurvivalRpg/Progression/Player/RpgPlayerProgressionComponent.h"
@@ -24,7 +26,9 @@
 ARpgPlayerController::ARpgPlayerController(const FObjectInitializer& ObjectInitializer)
 	: Super(ObjectInitializer)
 {
-	QuickBarComponent = CreateDefaultSubobject<URpgQuickBarComponent>(TEXT("QuickBarComponent"));
+	ActionBarComponent = CreateDefaultSubobject<URpgActionBarComponent>(TEXT("ActionBarComponent"));
+	WeaponAbilityLoadoutComponent = CreateDefaultSubobject<URpgWeaponAbilityLoadoutComponent>(TEXT("WeaponAbilityLoadoutComponent"));
+	GameplayInputRouterComponent = CreateDefaultSubobject<URpgPlayerGameplayInputRouterComponent>(TEXT("GameplayInputRouterComponent"));
 	EquipmentLoadoutComponent = CreateDefaultSubobject<URpgEquipmentLoadoutComponent>(TEXT("EquipmentLoadoutComponent"));
 	InventoryUiActionComponent = CreateDefaultSubobject<URpgInventoryUiActionComponent>(TEXT("InventoryUiActionComponent"));
 }
@@ -71,14 +75,6 @@ void ARpgPlayerController::SetDeathDropMode(ERpgPlayerDeathDropMode NewDropMode)
 void ARpgPlayerController::ClientRestoreGameplayInputFocus_Implementation()
 {
 	RestoreGameplayInputFocus();
-}
-
-void ARpgPlayerController::SetActiveQuickBarSlot(int32 SlotIndex)
-{
-	if (QuickBarComponent != nullptr)
-	{
-		QuickBarComponent->SetActiveSlotIndex(SlotIndex);
-	}
 }
 
 void ARpgPlayerController::RpgPrintProgression() const
@@ -168,11 +164,6 @@ void ARpgPlayerController::OnPossess(APawn* InPawn)
 
 void ARpgPlayerController::OnUnPossess()
 {
-	if (QuickBarComponent)
-	{
-		QuickBarComponent->UnequipActiveLoadoutFromCurrentPawn();
-	}
-
 	if (EquipmentLoadoutComponent)
 	{
 		EquipmentLoadoutComponent->UnequipLoadoutFromCurrentPawn();
@@ -401,24 +392,19 @@ void ARpgPlayerController::UnbindFromPawnExtensionForLoadout()
 
 void ARpgPlayerController::HandlePossessedPawnAbilitySystemInitialized()
 {
-	if (HasAuthority() && QuickBarComponent)
-	{
-		QuickBarComponent->RefreshActiveLoadoutOnCurrentPawn();
-	}
-
 	if (HasAuthority() && EquipmentLoadoutComponent)
 	{
 		EquipmentLoadoutComponent->RefreshEquipmentLoadoutOnCurrentPawn();
+	}
+
+	if (HasAuthority() && WeaponAbilityLoadoutComponent)
+	{
+		WeaponAbilityLoadoutComponent->RefreshAbilityBindings();
 	}
 }
 
 void ARpgPlayerController::HandlePossessedPawnAbilitySystemUninitialized()
 {
-	if (QuickBarComponent)
-	{
-		QuickBarComponent->UnequipActiveLoadoutFromCurrentPawn();
-	}
-
 	if (EquipmentLoadoutComponent)
 	{
 		EquipmentLoadoutComponent->UnequipLoadoutFromCurrentPawn();
@@ -465,14 +451,14 @@ void ARpgPlayerController::HandleGameModePlayerRespawned(APlayerController* Resp
 		return;
 	}
 
-	if (QuickBarComponent)
-	{
-		QuickBarComponent->RefreshActiveLoadoutOnCurrentPawn();
-	}
-
 	if (EquipmentLoadoutComponent)
 	{
 		EquipmentLoadoutComponent->RefreshEquipmentLoadoutOnCurrentPawn();
+	}
+
+	if (WeaponAbilityLoadoutComponent)
+	{
+		WeaponAbilityLoadoutComponent->RefreshAbilityBindings();
 	}
 
 	ClientRestoreGameplayInputFocus();

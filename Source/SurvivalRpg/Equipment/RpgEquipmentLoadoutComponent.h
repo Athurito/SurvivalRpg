@@ -10,14 +10,15 @@ class AActor;
 class URpgEquipmentInstance;
 class URpgEquipmentManagerComponent;
 class URpgInventoryManagerComponent;
+class URpgWeaponAbilityLoadoutComponent;
 
-/** Persistent player-owned assignment for one non-hand equipment slot. */
+/** Persistent player-owned assignment for one equipment slot, including hands and armor. */
 USTRUCT(BlueprintType)
 struct SURVIVALRPG_API FRpgEquipmentLoadoutSlot
 {
 	GENERATED_BODY()
 
-	/** Equipment slot represented by this loadout entry. V1 uses armor slots only. */
+	/** Equipment slot represented by this loadout entry. V1 manages MainHand, OffHand, and armor slots. */
 	UPROPERTY(BlueprintReadOnly, Category = "Equipment")
 	ERpgEquipmentSlot EquipmentSlot = ERpgEquipmentSlot::None;
 
@@ -42,7 +43,7 @@ struct SURVIVALRPG_API FRpgEquipmentLoadoutSlotsChangedMessage
 };
 
 /**
- * Controller-owned loadout for dedicated equipment slots such as armor.
+ * Controller-owned loadout for persistent equipment slots such as hands and armor.
  *
  * The component stores persistent item-instance assignments on the controller, while URpgEquipmentManagerComponent
  * remains the runtime authority that equips actors, grants abilities, and replicates equipped state on the pawn.
@@ -109,6 +110,7 @@ private:
 	URpgInventoryManagerComponent* FindOwnerInventory() const;
 	bool HasReadyEquipmentTarget() const;
 	void BroadcastSlotsChanged() const;
+	void RefreshWeaponAbilityLoadout() const;
 	static bool IsManagedEquipmentSlot(ERpgEquipmentSlot EquipmentSlot);
 
 	UPROPERTY(ReplicatedUsing = OnRep_Slots)

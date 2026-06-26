@@ -21,7 +21,7 @@ struct FInputActionValue;
 /**
  * Player-only pawn gameplay component.
  *
- * This is the Lyra HeroComponent-style layer for local input, camera selection, quickbar input,
+ * This is the Lyra HeroComponent-style layer for local input, camera selection, routed gameplay hotkeys,
  * and player ASC avatar binding. AI pawns should use PawnExtension directly instead.
  */
 UCLASS(ClassGroup=(Custom), Blueprintable, meta=(BlueprintSpawnableComponent))
@@ -82,14 +82,8 @@ public:
 	void Input_AutoRun(const FInputActionValue& InputActionValue);
 	void Input_Jump(const FInputActionValue& InputActionValue);
 	void Input_StopJump(const FInputActionValue& InputActionValue);
-	void Input_QuickBarSlot1(const FInputActionValue& InputActionValue);
-	void Input_QuickBarSlot2(const FInputActionValue& InputActionValue);
-	void Input_QuickBarSlot3(const FInputActionValue& InputActionValue);
-	void Input_QuickBarSlot4(const FInputActionValue& InputActionValue);
-	void Input_QuickBarSlot5(const FInputActionValue& InputActionValue);
-	void Input_QuickBarSlot6(const FInputActionValue& InputActionValue);
-	void Input_QuickBarSlot7(const FInputActionValue& InputActionValue);
-	void Input_QuickBarSlot8(const FInputActionValue& InputActionValue);
+	void Input_GameplayHotkeyPressed(FGameplayTag InputTag);
+	void Input_GameplayHotkeyReleased(FGameplayTag InputTag);
 	
 	TSubclassOf<URpgCameraMode> DetermineCameraMode() const;
 
@@ -114,7 +108,6 @@ protected:
 	bool bReadyToBindInputs = false;
 
 private:
-	void Input_QuickBarSlot(int32 SlotIndex);
 	void HandleAbilitySystemUninitialized();
 
 	TMap<const URpgInputConfig*, TArray<uint32>> AdditionalInputConfigBindHandles;

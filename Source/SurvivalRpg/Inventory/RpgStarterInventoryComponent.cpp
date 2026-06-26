@@ -4,8 +4,8 @@
 #include "TimerManager.h"
 #include "SurvivalRpg/Core/Player/RpgPlayerController.h"
 #include "SurvivalRpg/Core/Player/RpgPlayerState.h"
+#include "SurvivalRpg/Equipment/RpgEquipmentLoadoutComponent.h"
 #include "SurvivalRpg/Equipment/RpgEquipmentManagerComponent.h"
-#include "SurvivalRpg/Equipment/RpgQuickBarComponent.h"
 #include "SurvivalRpg/Inventory/RpgInventoryItemDefinition.h"
 #include "SurvivalRpg/Inventory/RpgInventoryItemInstance.h"
 #include "SurvivalRpg/Inventory/RpgInventoryManagerComponent.h"
@@ -58,7 +58,7 @@ void URpgStarterInventoryComponent::TryGrantStarterInventory()
 	ARpgPlayerController* PlayerController = Cast<ARpgPlayerController>(Owner);
 	ARpgPlayerState* PlayerState = PlayerController ? PlayerController->GetRpgPlayerState() : nullptr;
 	URpgInventoryManagerComponent* InventoryComponent = PlayerState ? PlayerState->GetInventoryManagerComponent() : nullptr;
-	URpgQuickBarComponent* QuickBarComponent = PlayerController ? PlayerController->GetQuickBarComponent() : nullptr;
+	URpgEquipmentLoadoutComponent* EquipmentLoadout = PlayerController ? PlayerController->GetEquipmentLoadoutComponent() : nullptr;
 
 	if (PlayerController == nullptr || PlayerState == nullptr || InventoryComponent == nullptr || ShouldWaitForPawn(PlayerController))
 	{
@@ -88,21 +88,9 @@ void URpgStarterInventoryComponent::TryGrantStarterInventory()
 			ItemInstance = InventoryComponent->AddItemDefinition(ItemDefinition, Entry.StackCount);
 		}
 
-		if (Entry.bAddToQuickBar && QuickBarComponent != nullptr && ItemInstance != nullptr && !QuickBarContainsItem(QuickBarComponent, ItemInstance))
+		if (Entry.bAddToQuickBar && EquipmentLoadout != nullptr && ItemInstance != nullptr && !EquipmentLoadoutContainsItem(EquipmentLoadout, ItemInstance))
 		{
-			const int32 SlotIndex = Entry.QuickBarSlotIndex >= 0
-				? Entry.QuickBarSlotIndex
-				: QuickBarComponent->GetNextFreeItemSlot();
-
-			if (SlotIndex != INDEX_NONE)
-			{
-				QuickBarComponent->AddItemToLoadoutSlot(SlotIndex, Entry.QuickBarEquipmentSlot, ItemInstance);
-
-				if (Entry.bActivateQuickBarSlot)
-				{
-					QuickBarComponent->SetActiveSlotIndex(SlotIndex);
-				}
-			}
+			EquipmentLoadout->AssignItemToEquipmentSlot(Entry.QuickBarEquipmentSlot, ItemInstance);
 		}
 	}
 
@@ -147,16 +135,16 @@ bool URpgStarterInventoryComponent::ShouldWaitForPawn(const ARpgPlayerController
 	return false;
 }
 
-bool URpgStarterInventoryComponent::QuickBarContainsItem(const URpgQuickBarComponent* QuickBarComponent, const URpgInventoryItemInstance* ItemInstance)
+bool URpgStarterInventoryComponent::EquipmentLoadoutContainsItem(const URpgEquipmentLoadoutComponent* EquipmentLoadout, const URpgInventoryItemInstance* ItemInstance)
 {
-	if (QuickBarComponent == nullptr || ItemInstance == nullptr)
+	if (EquipmentLoadout == nullptr || ItemInstance == nullptr)
 	{
 		return false;
 	}
 
-	for (const FRpgQuickBarLoadoutSlot& LoadoutSlot : QuickBarComponent->GetLoadoutSlots())
+	for (const FRpgEquipmentLoadoutSlot& LoadoutSlot : EquipmentLoadout->GetLoadoutSlots())
 	{
-		if (LoadoutSlot.MainHandItem == ItemInstance || LoadoutSlot.OffHandItem == ItemInstance)
+		if (LoadoutSlot.Item == ItemInstance)
 		{
 			return true;
 		}

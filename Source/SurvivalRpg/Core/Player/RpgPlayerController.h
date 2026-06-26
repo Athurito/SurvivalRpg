@@ -9,9 +9,11 @@
 #include "RpgPlayerController.generated.h"
 
 class URpgAbilitySystemComponent;
+class URpgActionBarComponent;
 class URpgEquipmentLoadoutComponent;
 class URpgInventoryUiActionComponent;
-class URpgQuickBarComponent;
+class URpgPlayerGameplayInputRouterComponent;
+class URpgWeaponAbilityLoadoutComponent;
 class URpgPawnExtensionComponent;
 class UInputMappingContext;
 class ARpgPlayerState;
@@ -40,17 +42,17 @@ public:
 	UFUNCTION(Client, Reliable, BlueprintCallable, Category = "Rpg|Respawn")
 	void ClientRestoreGameplayInputFocus();
 
-	UFUNCTION(BlueprintCallable, Category = "Rpg|QuickBar")
-	URpgQuickBarComponent* GetQuickBarComponent() const { return QuickBarComponent; }
+	UFUNCTION(BlueprintCallable, Category = "Rpg|Action Bar")
+	URpgActionBarComponent* GetActionBarComponent() const { return ActionBarComponent; }
+
+	UFUNCTION(BlueprintCallable, Category = "Rpg|Weapon Abilities")
+	URpgWeaponAbilityLoadoutComponent* GetWeaponAbilityLoadoutComponent() const { return WeaponAbilityLoadoutComponent; }
 
 	UFUNCTION(BlueprintCallable, Category = "Rpg|Equipment")
 	URpgEquipmentLoadoutComponent* GetEquipmentLoadoutComponent() const { return EquipmentLoadoutComponent; }
 
 	UFUNCTION(BlueprintCallable, Category = "Rpg|Inventory")
 	URpgInventoryUiActionComponent* GetInventoryUiActionComponent() const { return InventoryUiActionComponent; }
-
-	UFUNCTION(BlueprintCallable, Category = "Rpg|QuickBar")
-	void SetActiveQuickBarSlot(int32 SlotIndex);
 
 	UFUNCTION(Exec)
 	void RpgPrintProgression() const;
@@ -128,8 +130,14 @@ private:
 	UPROPERTY(Transient)
 	TObjectPtr<ARpgPlayerState> BoundPlayerState;
 
-	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "Rpg|QuickBar", meta = (AllowPrivateAccess = "true"))
-	TObjectPtr<URpgQuickBarComponent> QuickBarComponent;
+	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "Rpg|Action Bar", meta = (AllowPrivateAccess = "true"))
+	TObjectPtr<URpgActionBarComponent> ActionBarComponent;
+
+	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "Rpg|Weapon Abilities", meta = (AllowPrivateAccess = "true"))
+	TObjectPtr<URpgWeaponAbilityLoadoutComponent> WeaponAbilityLoadoutComponent;
+
+	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "Rpg|Input", meta = (AllowPrivateAccess = "true"))
+	TObjectPtr<URpgPlayerGameplayInputRouterComponent> GameplayInputRouterComponent;
 
 	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "Rpg|Equipment", meta = (AllowPrivateAccess = "true"))
 	TObjectPtr<URpgEquipmentLoadoutComponent> EquipmentLoadoutComponent;

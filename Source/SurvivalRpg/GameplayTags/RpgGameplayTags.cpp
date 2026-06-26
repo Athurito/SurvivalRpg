@@ -29,14 +29,17 @@ namespace RpgGameplayTags
 	UE_DEFINE_GAMEPLAY_TAG_COMMENT(InputTag_AutoRun, "InputTag.AutoRun", "Auto-run input.");
 	UE_DEFINE_GAMEPLAY_TAG_COMMENT(InputTag_Jump, "InputTag.Jump", "Jump input.");
 	UE_DEFINE_GAMEPLAY_TAG_COMMENT(InputTag_StopJump, "InputTag.StopJump", "StopJump input.");
-	UE_DEFINE_GAMEPLAY_TAG_COMMENT(InputTag_QuickBar_Slot_1, "InputTag.QuickBar.Slot.1", "Activate quick bar slot 1.");
-	UE_DEFINE_GAMEPLAY_TAG_COMMENT(InputTag_QuickBar_Slot_2, "InputTag.QuickBar.Slot.2", "Activate quick bar slot 2.");
-	UE_DEFINE_GAMEPLAY_TAG_COMMENT(InputTag_QuickBar_Slot_3, "InputTag.QuickBar.Slot.3", "Activate quick bar slot 3.");
-	UE_DEFINE_GAMEPLAY_TAG_COMMENT(InputTag_QuickBar_Slot_4, "InputTag.QuickBar.Slot.4", "Activate quick bar slot 4.");
-	UE_DEFINE_GAMEPLAY_TAG_COMMENT(InputTag_QuickBar_Slot_5, "InputTag.QuickBar.Slot.5", "Activate quick bar slot 5.");
-	UE_DEFINE_GAMEPLAY_TAG_COMMENT(InputTag_QuickBar_Slot_6, "InputTag.QuickBar.Slot.6", "Activate quick bar slot 6.");
-	UE_DEFINE_GAMEPLAY_TAG_COMMENT(InputTag_QuickBar_Slot_7, "InputTag.QuickBar.Slot.7", "Activate quick bar slot 7.");
-	UE_DEFINE_GAMEPLAY_TAG_COMMENT(InputTag_QuickBar_Slot_8, "InputTag.QuickBar.Slot.8", "Activate quick bar slot 8.");
+	UE_DEFINE_GAMEPLAY_TAG_COMMENT(InputTag_ActionBar_Slot_1, "InputTag.ActionBar.Slot.1", "Activate general action bar slot 1.");
+	UE_DEFINE_GAMEPLAY_TAG_COMMENT(InputTag_ActionBar_Slot_2, "InputTag.ActionBar.Slot.2", "Activate general action bar slot 2.");
+	UE_DEFINE_GAMEPLAY_TAG_COMMENT(InputTag_ActionBar_Slot_3, "InputTag.ActionBar.Slot.3", "Activate general action bar slot 3.");
+	UE_DEFINE_GAMEPLAY_TAG_COMMENT(InputTag_ActionBar_Slot_4, "InputTag.ActionBar.Slot.4", "Activate general action bar slot 4.");
+	UE_DEFINE_GAMEPLAY_TAG_COMMENT(InputTag_ActionBar_Slot_5, "InputTag.ActionBar.Slot.5", "Activate general action bar slot 5.");
+	UE_DEFINE_GAMEPLAY_TAG_COMMENT(InputTag_ActionBar_Slot_6, "InputTag.ActionBar.Slot.6", "Activate general action bar slot 6.");
+	UE_DEFINE_GAMEPLAY_TAG_COMMENT(InputTag_ActionBar_Slot_7, "InputTag.ActionBar.Slot.7", "Activate general action bar slot 7.");
+	UE_DEFINE_GAMEPLAY_TAG_COMMENT(InputTag_ActionBar_Slot_8, "InputTag.ActionBar.Slot.8", "Activate general action bar slot 8.");
+	UE_DEFINE_GAMEPLAY_TAG_COMMENT(InputTag_Weapon_Ability_1, "InputTag.Weapon.Ability.1", "Activate selected weapon or rune ability slot 1.");
+	UE_DEFINE_GAMEPLAY_TAG_COMMENT(InputTag_Weapon_Ability_2, "InputTag.Weapon.Ability.2", "Activate selected weapon or rune ability slot 2.");
+	UE_DEFINE_GAMEPLAY_TAG_COMMENT(InputTag_Weapon_Ability_3, "InputTag.Weapon.Ability.3", "Activate selected weapon or rune ability slot 3.");
 	UE_DEFINE_GAMEPLAY_TAG_COMMENT(InputTag_Weapon_Primary, "InputTag.Weapon.Primary", "Primary weapon attack input.");
 	UE_DEFINE_GAMEPLAY_TAG_COMMENT(InputTag_Weapon_Secondary, "InputTag.Weapon.Secondary", "Secondary weapon attack input.");
 	UE_DEFINE_GAMEPLAY_TAG_COMMENT(InputTag_Weapon_Block, "InputTag.Weapon.Block", "Hold block input for the equipped weapon.");
@@ -93,8 +96,8 @@ namespace RpgGameplayTags
 	UE_DEFINE_GAMEPLAY_TAG_COMMENT(Ability_Behavior_SurvivesDeath, "Ability.Behavior.SurvivesDeath", "An ability with this type tag should not be canceled due to death.");
 	UE_DEFINE_GAMEPLAY_TAG_COMMENT(Effect_Behavior_ClearOnRespawn, "Effect.Behavior.ClearOnRespawn", "GameplayEffects with this tag are removed when the owner respawns.");
 	UE_DEFINE_GAMEPLAY_TAG_COMMENT(Rpg_Combat_Message_ActorKilled, "Rpg.Combat.Message.ActorKilled", "Gameplay message sent by combat when an actor is killed.");
-	UE_DEFINE_GAMEPLAY_TAG_COMMENT(Rpg_QuickBar_Message_SlotsChanged, "Rpg.QuickBar.Message.SlotsChanged", "Gameplay message sent when a controller-owned quickbar loadout assignment changes.");
-	UE_DEFINE_GAMEPLAY_TAG_COMMENT(Rpg_QuickBar_Message_ActiveIndexChanged, "Rpg.QuickBar.Message.ActiveIndexChanged", "Gameplay message sent when the active quickbar loadout slot changes.");
+	UE_DEFINE_GAMEPLAY_TAG_COMMENT(Rpg_ActionBar_Message_SlotsChanged, "Rpg.ActionBar.Message.SlotsChanged", "Gameplay message sent when a controller-owned general action bar slot changes.");
+	UE_DEFINE_GAMEPLAY_TAG_COMMENT(Rpg_WeaponAbilityLoadout_Message_SlotsChanged, "Rpg.WeaponAbilityLoadout.Message.SlotsChanged", "Gameplay message sent when a controller-owned weapon ability binding changes.");
 	UE_DEFINE_GAMEPLAY_TAG_COMMENT(Rpg_EquipmentLoadout_Message_SlotsChanged, "Rpg.EquipmentLoadout.Message.SlotsChanged", "Gameplay message sent when a controller-owned dedicated equipment slot assignment changes.");
 	UE_DEFINE_GAMEPLAY_TAG_COMMENT(Rpg_Inventory_Message_ActionFeedback, "Rpg.Inventory.Message.ActionFeedback", "Owning-client gameplay message for inventory shortcut or server validation feedback.");
 	UE_DEFINE_GAMEPLAY_TAG_COMMENT(Rpg_Inventory_Action_Transfer, "Rpg.Inventory.Action.Transfer", "Inventory UI action tag for transfer requests.");
@@ -137,7 +140,8 @@ namespace RpgGameplayTags
 	UE_DEFINE_GAMEPLAY_TAG_COMMENT(UI_Screen_BaseTerminal, "UI.Screen.BaseTerminal", "Base terminal screen opened through the project UI screen registry.");
 	UE_DEFINE_GAMEPLAY_TAG_COMMENT(UI_Screen_Pause, "UI.Screen.Pause", "Pause screen opened through the project UI screen registry.");
 	UE_DEFINE_GAMEPLAY_TAG_COMMENT(UI_Screen_Settings, "UI.Screen.Settings", "Settings screen opened through the project UI screen registry.");
-	UE_DEFINE_GAMEPLAY_TAG_COMMENT(UI_HUD_Slot_Quickbar, "UI.HUD.Slot.Quickbar", "UIExtension slot for the persistent weapon quickbar HUD widget.");
+	UE_DEFINE_GAMEPLAY_TAG_COMMENT(UI_HUD_Slot_ActionBar, "UI.HUD.Slot.ActionBar", "UIExtension slot for the persistent general action bar HUD widget.");
+	UE_DEFINE_GAMEPLAY_TAG_COMMENT(UI_HUD_Slot_WeaponAbilityBar, "UI.HUD.Slot.WeaponAbilityBar", "UIExtension slot for the persistent weapon ability HUD widget.");
 
 	UE_DEFINE_GAMEPLAY_TAG_COMMENT(Base_Storage_Upgrade_AutoSort, "Base.Storage.Upgrade.AutoSort", "Base storage upgrade tag that unlocks shared auto-sort convenience.");
 	UE_DEFINE_GAMEPLAY_TAG_COMMENT(Base_Storage_Upgrade_RemoteAccess, "Base.Storage.Upgrade.RemoteAccess", "Base storage upgrade tag that unlocks remote access convenience.");

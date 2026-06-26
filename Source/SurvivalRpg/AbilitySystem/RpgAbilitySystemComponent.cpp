@@ -798,6 +798,73 @@ bool URpgAbilitySystemComponent::TryActivateFirstAbilityByInputTag(FGameplayTag 
 	return TryActivateFirstAbilityByTag(InputTag, bAllowRemoteActivation);
 }
 
+bool URpgAbilitySystemComponent::HasAbilityWithAbilityId(FGameplayTag AbilityIdTag) const
+{
+	if (!AbilityIdTag.IsValid())
+	{
+		return false;
+	}
+
+	for (const FGameplayAbilitySpec& Spec : GetActivatableAbilities())
+	{
+		if (AbilitySpecHasActivationTag(Spec, AbilityIdTag))
+		{
+			return true;
+		}
+	}
+
+	return false;
+}
+
+bool URpgAbilitySystemComponent::BindInputTagToAbilityId(FGameplayTag AbilityIdTag, FGameplayTag RuntimeInputTag)
+{
+	if (!HasGrantAuthority() || !AbilityIdTag.IsValid() || !RuntimeInputTag.IsValid())
+	{
+		return false;
+	}
+
+	bool bBound = false;
+
+	ABILITYLIST_SCOPE_LOCK();
+	for (FGameplayAbilitySpec& Spec : ActivatableAbilities.Items)
+	{
+		if (Spec.GetDynamicSpecSourceTags().RemoveTag(RuntimeInputTag))
+		{
+			MarkAbilitySpecDirty(Spec);
+		}
+	}
+
+	for (FGameplayAbilitySpec& Spec : ActivatableAbilities.Items)
+	{
+		if (AbilitySpecHasActivationTag(Spec, AbilityIdTag))
+		{
+			Spec.GetDynamicSpecSourceTags().AddTag(RuntimeInputTag);
+			MarkAbilitySpecDirty(Spec);
+			bBound = true;
+			break;
+		}
+	}
+
+	return bBound;
+}
+
+void URpgAbilitySystemComponent::ClearRuntimeAbilityInputTag(FGameplayTag RuntimeInputTag)
+{
+	if (!HasGrantAuthority() || !RuntimeInputTag.IsValid())
+	{
+		return;
+	}
+
+	ABILITYLIST_SCOPE_LOCK();
+	for (FGameplayAbilitySpec& Spec : ActivatableAbilities.Items)
+	{
+		if (Spec.GetDynamicSpecSourceTags().RemoveTag(RuntimeInputTag))
+		{
+			MarkAbilitySpecDirty(Spec);
+		}
+	}
+}
+
 void URpgAbilitySystemComponent::ResetForRevive()
 {
 	CancelAbilities();

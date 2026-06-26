@@ -5,7 +5,7 @@
 #include "GameFramework/PlayerState.h"
 #include "SurvivalRpg/Equipment/RpgEquipmentDefinition.h"
 #include "SurvivalRpg/Core/Player/RpgPlayerController.h"
-#include "SurvivalRpg/Equipment/RpgQuickBarComponent.h"
+#include "SurvivalRpg/Equipment/RpgEquipmentLoadoutComponent.h"
 #include "SurvivalRpg/Inventory/IPickupable.h"
 #include "SurvivalRpg/Inventory/RpgInventoryFragment_EquippableItem.h"
 #include "SurvivalRpg/Inventory/RpgInventoryFragment_ItemTraits.h"
@@ -165,7 +165,7 @@ void URpgGameplayAbility_Collect::ActivateAbility(
 	{
 		if (ARpgPlayerController* PlayerController = FindPlayerControllerForActor(InteractingActor))
 		{
-			AddEquippableItemsToQuickBar(PlayerController->GetQuickBarComponent(), AddedItems, bActivateFirstQuickBarSlot);
+			AssignEquippableItemsToEquipment(PlayerController->GetEquipmentLoadoutComponent(), AddedItems);
 		}
 	}
 
@@ -276,14 +276,13 @@ bool URpgGameplayAbility_Collect::AddPickupToInventory(URpgInventoryManagerCompo
 	return true;
 }
 
-void URpgGameplayAbility_Collect::AddEquippableItemsToQuickBar(URpgQuickBarComponent* QuickBarComponent, const TArray<URpgInventoryItemInstance*>& AddedItems, bool bActivateFirstSlot)
+void URpgGameplayAbility_Collect::AssignEquippableItemsToEquipment(URpgEquipmentLoadoutComponent* EquipmentLoadout, const TArray<URpgInventoryItemInstance*>& AddedItems)
 {
-	if (QuickBarComponent == nullptr)
+	if (EquipmentLoadout == nullptr)
 	{
 		return;
 	}
 
-	bool bActivatedSlot = false;
 	for (URpgInventoryItemInstance* AddedItem : AddedItems)
 	{
 		const URpgInventoryFragment_EquippableItem* EquippableFragment = AddedItem ? AddedItem->FindFragmentByClass<URpgInventoryFragment_EquippableItem>() : nullptr;
@@ -295,36 +294,6 @@ void URpgGameplayAbility_Collect::AddEquippableItemsToQuickBar(URpgQuickBarCompo
 		}
 
 		const ERpgEquipmentSlot EquipmentSlot = EquipmentCDO->GetDefaultEquipSlot();
-		int32 SlotIndex = INDEX_NONE;
-
-		const int32 ActiveSlotIndex = QuickBarComponent->GetActiveSlotIndex();
-		if (QuickBarComponent->GetItemInLoadoutSlot(ActiveSlotIndex, EquipmentSlot) == nullptr)
-		{
-			SlotIndex = ActiveSlotIndex;
-		}
-		else
-		{
-			const TArray<FRpgQuickBarLoadoutSlot> LoadoutSlots = QuickBarComponent->GetLoadoutSlots();
-			for (int32 Index = 0; Index < LoadoutSlots.Num(); ++Index)
-			{
-				if (LoadoutSlots[Index].GetItemForSlot(EquipmentSlot) == nullptr)
-				{
-					SlotIndex = Index;
-					break;
-				}
-			}
-		}
-
-		if (SlotIndex == INDEX_NONE)
-		{
-			return;
-		}
-
-		QuickBarComponent->AddItemToLoadoutSlot(SlotIndex, EquipmentSlot, AddedItem);
-		if (bActivateFirstSlot && !bActivatedSlot)
-		{
-			QuickBarComponent->SetActiveSlotIndex(SlotIndex);
-			bActivatedSlot = true;
-		}
+		EquipmentLoadout->AssignItemToEquipmentSlot(EquipmentSlot, AddedItem);
 	}
 }

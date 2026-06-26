@@ -20,7 +20,6 @@ class URpgCraftingStationComponent;
 class URpgInventoryItemDefinition;
 class URpgInventoryItemInstance;
 class URpgInventoryManagerComponent;
-class URpgQuickBarComponent;
 
 /** Owning-client result for an inventory UI command. */
 UENUM(BlueprintType)
@@ -59,10 +58,10 @@ enum class ERpgInventoryActionFeedbackResult : uint8
 	/** This action is only valid from the player's own inventory. */
 	WrongInventory,
 
-	/** The item cannot be assigned to any supported quickbar or equipment slot. */
+	/** The item cannot be assigned to any supported actionbar or equipment slot. */
 	NotEquippable,
 
-	/** No compatible free quickbar or equipment slot could be found. */
+	/** No compatible actionbar or equipment slot could be found. */
 	NoValidSlot,
 
 	/** GAS rejected the one-shot item ability activation. */
@@ -110,15 +109,15 @@ class SURVIVALRPG_API URpgInventoryUiActionComponent : public UControllerCompone
 public:
 	explicit URpgInventoryUiActionComponent(const FObjectInitializer& ObjectInitializer = FObjectInitializer::Get());
 
-	/** Assigns an owned inventory item to a quickbar hand slot without removing it from inventory. */
+	/** Legacy Blueprint adapter: assigns an owned inventory item to MainHand or OffHand equipment without removing it from inventory. */
 	UFUNCTION(Server, Reliable, BlueprintCallable, Category = "Inventory|UI Actions")
 	void RequestAssignItemToQuickBar(int32 QuickBarSlotIndex, ERpgEquipmentSlot EquipmentSlot, URpgInventoryItemInstance* Item);
 
-	/** Swaps or moves two quickbar hand-slot assignments. */
+	/** Legacy Blueprint adapter: swaps MainHand/OffHand equipment assignments. */
 	UFUNCTION(Server, Reliable, BlueprintCallable, Category = "Inventory|UI Actions")
 	void RequestSwapQuickBarSlots(int32 SourceSlotIndex, ERpgEquipmentSlot SourceEquipmentSlot, int32 TargetSlotIndex, ERpgEquipmentSlot TargetEquipmentSlot);
 
-	/** Clears one quickbar hand slot. */
+	/** Legacy Blueprint adapter: clears one MainHand or OffHand equipment assignment. */
 	UFUNCTION(Server, Reliable, BlueprintCallable, Category = "Inventory|UI Actions")
 	void RequestClearQuickBarSlot(int32 QuickBarSlotIndex, ERpgEquipmentSlot EquipmentSlot);
 
@@ -158,7 +157,7 @@ public:
 	UFUNCTION(Server, Reliable, BlueprintCallable, Category = "Inventory|UI Actions")
 	void RequestUseInventoryItem(URpgInventoryManagerComponent* Inventory, URpgInventoryItemInstance* Item, int32 StackCount = 1);
 
-	/** Assigns an owned item to its default equipment destination, choosing armor slots or the first free quickbar hand slot. */
+	/** Assigns an owned item to its default equipment destination, including MainHand, OffHand, and armor slots. */
 	UFUNCTION(Server, Reliable, BlueprintCallable, Category = "Inventory|UI Actions")
 	void RequestEquipInventoryItem(URpgInventoryItemInstance* Item);
 
@@ -235,7 +234,6 @@ public:
 
 private:
 	URpgInventoryManagerComponent* FindPlayerInventory() const;
-	URpgQuickBarComponent* FindQuickBar() const;
 	URpgEquipmentLoadoutComponent* FindEquipmentLoadout() const;
 	URpgAbilitySystemComponent* FindPlayerAbilitySystem() const;
 	bool CanTransferItemStack(URpgInventoryManagerComponent* SourceInventory, URpgInventoryManagerComponent* TargetInventory, URpgInventoryItemInstance* Item, int32 StackCount) const;

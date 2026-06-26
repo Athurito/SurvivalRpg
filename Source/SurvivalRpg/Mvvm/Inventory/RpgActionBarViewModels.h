@@ -1,0 +1,249 @@
+#pragma once
+
+#include "CoreMinimal.h"
+#include "GameFramework/GameplayMessageSubsystem.h"
+#include "GameplayTagContainer.h"
+#include "MVVMViewModelBase.h"
+#include "SurvivalRpg/ActionBar/RpgActionBarComponent.h"
+#include "SurvivalRpg/Equipment/RpgWeaponAbilityLoadoutComponent.h"
+#include "UObject/SoftObjectPtr.h"
+
+#include "RpgActionBarViewModels.generated.h"
+
+class APlayerController;
+class UTexture2D;
+class URpgInventoryItemInstance;
+class URpgInventoryManagerComponent;
+class URpgActionBarSlotViewModel;
+class URpgWeaponAbilitySlotViewModel;
+
+/** Broadcast when one general actionbar slot view model changes. */
+DECLARE_DYNAMIC_MULTICAST_DELEGATE_OneParam(FRpgActionBarSlotViewModelChanged, URpgActionBarSlotViewModel*, SlotViewModel);
+
+/** Broadcast when the general actionbar slot list changes. */
+DECLARE_DYNAMIC_MULTICAST_DELEGATE(FRpgActionBarViewModelSlotsChanged);
+
+/** Broadcast when one weapon ability slot view model changes. */
+DECLARE_DYNAMIC_MULTICAST_DELEGATE_OneParam(FRpgWeaponAbilitySlotViewModelChanged, URpgWeaponAbilitySlotViewModel*, SlotViewModel);
+
+/** Broadcast when the weapon ability slot list changes. */
+DECLARE_DYNAMIC_MULTICAST_DELEGATE(FRpgWeaponAbilityLoadoutViewModelSlotsChanged);
+
+/** UI projection for one 1..8 general actionbar slot. */
+UCLASS(BlueprintType)
+class SURVIVALRPG_API URpgActionBarSlotViewModel : public UMVVMViewModelBase
+{
+	GENERATED_BODY()
+
+public:
+	/** Rebuilds this slot from owner-only replicated actionbar state. */
+	UFUNCTION(BlueprintCallable, Category = "Action Bar|ViewModel")
+	void InitializeSlot(int32 InSlotIndex, const FRpgActionBarSlot& InSlot, int32 InStackCount);
+
+	UFUNCTION(BlueprintPure, Category = "Action Bar|ViewModel")
+	int32 GetSlotIndex() const { return SlotIndex; }
+
+	UFUNCTION(BlueprintPure, Category = "Action Bar|ViewModel")
+	ERpgActionBarSlotType GetSlotType() const { return SlotType; }
+
+	UFUNCTION(BlueprintPure, Category = "Action Bar|ViewModel")
+	bool HasContent() const { return bHasContent; }
+
+	UFUNCTION(BlueprintPure, Category = "Action Bar|ViewModel")
+	URpgInventoryItemInstance* GetItemInstance() const { return ItemInstance.Get(); }
+
+	UFUNCTION(BlueprintPure, Category = "Action Bar|ViewModel")
+	FGameplayTag GetAbilityIdTag() const { return AbilityIdTag; }
+
+	UFUNCTION(BlueprintPure, Category = "Action Bar|ViewModel")
+	int32 GetStackCount() const { return StackCount; }
+
+	UFUNCTION(BlueprintPure, Category = "Action Bar|ViewModel")
+	FName GetHotkeyActionRowName() const { return HotkeyActionRowName; }
+
+	UPROPERTY(BlueprintAssignable, Category = "Action Bar|ViewModel")
+	FRpgActionBarSlotViewModelChanged OnSlotChanged;
+
+protected:
+	/** Zero-based slot index used by commands and row-handle lookup. */
+	UPROPERTY(BlueprintReadOnly, FieldNotify, Category = "Action Bar|ViewModel", meta = (AllowPrivateAccess = "true"))
+	int32 SlotIndex = INDEX_NONE;
+
+	/** Whether this slot is empty, item-backed, or ability-backed. */
+	UPROPERTY(BlueprintReadOnly, FieldNotify, Category = "Action Bar|ViewModel", meta = (AllowPrivateAccess = "true"))
+	ERpgActionBarSlotType SlotType = ERpgActionBarSlotType::Empty;
+
+	/** True when the slot has an item or ability assignment. */
+	UPROPERTY(BlueprintReadOnly, FieldNotify, Category = "Action Bar|ViewModel", meta = (AllowPrivateAccess = "true"))
+	bool bHasContent = false;
+
+	/** Inventory-owned item assigned to this actionbar slot. */
+	UPROPERTY(BlueprintReadOnly, FieldNotify, Category = "Action Bar|ViewModel", meta = (AllowPrivateAccess = "true"))
+	TObjectPtr<URpgInventoryItemInstance> ItemInstance = nullptr;
+
+	/** Ability id assigned to this actionbar slot. */
+	UPROPERTY(BlueprintReadOnly, FieldNotify, Category = "Action Bar|ViewModel", meta = (AllowPrivateAccess = "true"))
+	FGameplayTag AbilityIdTag;
+
+	/** Current stack count for item slots, read from the player's inventory when available. */
+	UPROPERTY(BlueprintReadOnly, FieldNotify, Category = "Action Bar|ViewModel", meta = (AllowPrivateAccess = "true"))
+	int32 StackCount = 0;
+
+	/** Optional item icon read from UIData. Ability icon support can layer on this later. */
+	UPROPERTY(BlueprintReadOnly, FieldNotify, Category = "Action Bar|ViewModel", meta = (AllowPrivateAccess = "true"))
+	TSoftObjectPtr<UTexture2D> Icon;
+
+	/** Short item name or ability tag text for compact slot UI. */
+	UPROPERTY(BlueprintReadOnly, FieldNotify, Category = "Action Bar|ViewModel", meta = (AllowPrivateAccess = "true"))
+	FText ShortDisplayName;
+
+	/** CommonUI action row name expected in CDT_RpgUIActions_All for this slot's hotkey glyph. */
+	UPROPERTY(BlueprintReadOnly, FieldNotify, Category = "Action Bar|ViewModel", meta = (AllowPrivateAccess = "true"))
+	FName HotkeyActionRowName;
+};
+
+/** UI projection for the owner-only general actionbar component. */
+UCLASS(BlueprintType)
+class SURVIVALRPG_API URpgActionBarViewModel : public UMVVMViewModelBase
+{
+	GENERATED_BODY()
+
+public:
+	/** Resolves and observes the general actionbar on an RPG player controller. */
+	UFUNCTION(BlueprintCallable, Category = "Action Bar|ViewModel")
+	void BindPlayerController(APlayerController* InPlayerController);
+
+	/** Starts observing one actionbar component. */
+	UFUNCTION(BlueprintCallable, Category = "Action Bar|ViewModel")
+	void BindActionBar(URpgActionBarComponent* InActionBar, URpgInventoryManagerComponent* InPlayerInventory);
+
+	/** Stops observing the current actionbar. */
+	UFUNCTION(BlueprintCallable, Category = "Action Bar|ViewModel")
+	void UnbindActionBar();
+
+	/** Rebuilds the slot view models from replicated owner-only actionbar state. */
+	UFUNCTION(BlueprintCallable, Category = "Action Bar|ViewModel")
+	void RefreshSlots();
+
+	UFUNCTION(BlueprintPure, Category = "Action Bar|ViewModel")
+	TArray<URpgActionBarSlotViewModel*> GetSlots() const;
+
+	UFUNCTION(BlueprintPure, Category = "Action Bar|ViewModel")
+	URpgActionBarSlotViewModel* GetSlotAtIndex(int32 SlotIndex) const;
+
+	UPROPERTY(BlueprintAssignable, Category = "Action Bar|ViewModel")
+	FRpgActionBarViewModelSlotsChanged OnSlotsChanged;
+
+protected:
+	virtual void BeginDestroy() override;
+
+	UPROPERTY(BlueprintReadOnly, FieldNotify, Category = "Action Bar|ViewModel", meta = (AllowPrivateAccess = "true"))
+	TArray<TObjectPtr<URpgActionBarSlotViewModel>> Slots;
+
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Action Bar|ViewModel", meta = (AllowPrivateAccess = "true", ClampMin = "1", UIMin = "1"))
+	int32 DefaultSlotCount = 8;
+
+private:
+	void RegisterMessageListener();
+	void UnregisterMessageListener();
+	void HandleActionBarSlotsChanged(FGameplayTag Channel, const FRpgActionBarSlotsChangedMessage& Message);
+
+	TWeakObjectPtr<URpgActionBarComponent> ObservedActionBar;
+	TWeakObjectPtr<URpgInventoryManagerComponent> ObservedPlayerInventory;
+	FGameplayMessageListenerHandle SlotsChangedHandle;
+};
+
+/** UI projection for one Q/E/R weapon ability slot. */
+UCLASS(BlueprintType)
+class SURVIVALRPG_API URpgWeaponAbilitySlotViewModel : public UMVVMViewModelBase
+{
+	GENERATED_BODY()
+
+public:
+	/** Rebuilds this slot from owner-only replicated weapon ability state. */
+	UFUNCTION(BlueprintCallable, Category = "Weapon Abilities|ViewModel")
+	void InitializeSlot(int32 InSlotIndex, const FRpgWeaponAbilityLoadoutSlot& InSlot);
+
+	UFUNCTION(BlueprintPure, Category = "Weapon Abilities|ViewModel")
+	int32 GetSlotIndex() const { return SlotIndex; }
+
+	UFUNCTION(BlueprintPure, Category = "Weapon Abilities|ViewModel")
+	FGameplayTag GetAbilityIdTag() const { return AbilityIdTag; }
+
+	UFUNCTION(BlueprintPure, Category = "Weapon Abilities|ViewModel")
+	bool IsAvailable() const { return bAvailable; }
+
+	UFUNCTION(BlueprintPure, Category = "Weapon Abilities|ViewModel")
+	FName GetHotkeyActionRowName() const { return HotkeyActionRowName; }
+
+	UPROPERTY(BlueprintAssignable, Category = "Weapon Abilities|ViewModel")
+	FRpgWeaponAbilitySlotViewModelChanged OnSlotChanged;
+
+protected:
+	/** Zero-based slot index: 0=Q, 1=E, 2=R by default input setup. */
+	UPROPERTY(BlueprintReadOnly, FieldNotify, Category = "Weapon Abilities|ViewModel", meta = (AllowPrivateAccess = "true"))
+	int32 SlotIndex = INDEX_NONE;
+
+	/** Selected semantic ability id for this slot. */
+	UPROPERTY(BlueprintReadOnly, FieldNotify, Category = "Weapon Abilities|ViewModel", meta = (AllowPrivateAccess = "true"))
+	FGameplayTag AbilityIdTag;
+
+	/** True when the ability is currently granted and bound to the slot input tag. */
+	UPROPERTY(BlueprintReadOnly, FieldNotify, Category = "Weapon Abilities|ViewModel", meta = (AllowPrivateAccess = "true"))
+	bool bAvailable = false;
+
+	/** Compact display text from the ability id tag. */
+	UPROPERTY(BlueprintReadOnly, FieldNotify, Category = "Weapon Abilities|ViewModel", meta = (AllowPrivateAccess = "true"))
+	FText DisplayName;
+
+	/** CommonUI action row name expected in CDT_RpgUIActions_All for this slot's hotkey glyph. */
+	UPROPERTY(BlueprintReadOnly, FieldNotify, Category = "Weapon Abilities|ViewModel", meta = (AllowPrivateAccess = "true"))
+	FName HotkeyActionRowName;
+};
+
+/** UI projection for the owner-only Q/E/R weapon ability loadout. */
+UCLASS(BlueprintType)
+class SURVIVALRPG_API URpgWeaponAbilityLoadoutViewModel : public UMVVMViewModelBase
+{
+	GENERATED_BODY()
+
+public:
+	/** Resolves and observes the weapon ability loadout on an RPG player controller. */
+	UFUNCTION(BlueprintCallable, Category = "Weapon Abilities|ViewModel")
+	void BindPlayerController(APlayerController* InPlayerController);
+
+	/** Starts observing one weapon ability loadout component. */
+	UFUNCTION(BlueprintCallable, Category = "Weapon Abilities|ViewModel")
+	void BindWeaponAbilityLoadout(URpgWeaponAbilityLoadoutComponent* InLoadout);
+
+	/** Stops observing the current weapon ability loadout. */
+	UFUNCTION(BlueprintCallable, Category = "Weapon Abilities|ViewModel")
+	void UnbindWeaponAbilityLoadout();
+
+	/** Rebuilds the slot view models from replicated owner-only weapon ability state. */
+	UFUNCTION(BlueprintCallable, Category = "Weapon Abilities|ViewModel")
+	void RefreshSlots();
+
+	UFUNCTION(BlueprintPure, Category = "Weapon Abilities|ViewModel")
+	TArray<URpgWeaponAbilitySlotViewModel*> GetSlots() const;
+
+	UFUNCTION(BlueprintPure, Category = "Weapon Abilities|ViewModel")
+	URpgWeaponAbilitySlotViewModel* GetSlotAtIndex(int32 SlotIndex) const;
+
+	UPROPERTY(BlueprintAssignable, Category = "Weapon Abilities|ViewModel")
+	FRpgWeaponAbilityLoadoutViewModelSlotsChanged OnSlotsChanged;
+
+protected:
+	virtual void BeginDestroy() override;
+
+	UPROPERTY(BlueprintReadOnly, FieldNotify, Category = "Weapon Abilities|ViewModel", meta = (AllowPrivateAccess = "true"))
+	TArray<TObjectPtr<URpgWeaponAbilitySlotViewModel>> Slots;
+
+private:
+	void RegisterMessageListener();
+	void UnregisterMessageListener();
+	void HandleWeaponAbilityLoadoutChanged(FGameplayTag Channel, const FRpgWeaponAbilityLoadoutChangedMessage& Message);
+
+	TWeakObjectPtr<URpgWeaponAbilityLoadoutComponent> ObservedLoadout;
+	FGameplayMessageListenerHandle SlotsChangedHandle;
+};

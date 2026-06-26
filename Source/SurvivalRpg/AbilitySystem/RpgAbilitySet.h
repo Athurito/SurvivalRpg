@@ -33,6 +33,10 @@ public:
 	UPROPERTY(EditAnywhere)
 	int32 AbilityLevel = 1;
 
+	/** Stable semantic id used by loadouts to bind this granted ability to runtime input slots such as Q/E/R or actionbar keys. */
+	UPROPERTY(EditAnywhere, Meta = (Categories = "Ability"))
+	FGameplayTag AbilityIdTag;
+
 	// Optional input tag used by the input component to trigger this ability.
 	UPROPERTY(EditAnywhere, Meta = (Categories = "InputTag"))
 	FGameplayTag InputTag;
@@ -107,7 +111,7 @@ public:
 		URpgAbilitySystemComponent* RpgASC,
 		FRpgAbilitySet_GrantedHandles* OutGrantedHandles,
 		UObject* SourceObject = nullptr) const;
-	void AddGrantedGameplayAbility(TSubclassOf<URpgGameplayAbility> AbilityClass, int32 AbilityLevel = 1, FGameplayTag InputTag = FGameplayTag());
+	void AddGrantedGameplayAbility(TSubclassOf<URpgGameplayAbility> AbilityClass, int32 AbilityLevel = 1, FGameplayTag InputTag = FGameplayTag(), FGameplayTag AbilityIdTag = FGameplayTag());
 
 	UFUNCTION(BlueprintCallable, Category = "Rpg|Ability Set")
 	void ClearGrantedGameplayAbilities();

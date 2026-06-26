@@ -7,6 +7,7 @@
 #include "Net/UnrealNetwork.h"
 #include "RpgEquipmentInstance.h"
 #include "RpgEquipmentManagerComponent.h"
+#include "RpgWeaponAbilityLoadoutComponent.h"
 #include "SurvivalRpg/Core/Player/RpgPlayerState.h"
 #include "SurvivalRpg/GameplayTags/RpgGameplayTags.h"
 #include "SurvivalRpg/Inventory/RpgInventoryFragment_EquippableItem.h"
@@ -92,6 +93,7 @@ bool URpgEquipmentLoadoutComponent::AssignItemToEquipmentSlot(ERpgEquipmentSlot 
 	}
 
 	OnRep_Slots();
+	RefreshWeaponAbilityLoadout();
 	return true;
 }
 
@@ -113,6 +115,7 @@ URpgInventoryItemInstance* URpgEquipmentLoadoutComponent::ClearEquipmentSlot(ERp
 	UnequipRuntimeSlot(EquipmentSlot);
 	Slots[SlotIndex].Item = nullptr;
 	OnRep_Slots();
+	RefreshWeaponAbilityLoadout();
 	return OldItem;
 }
 
@@ -137,6 +140,7 @@ void URpgEquipmentLoadoutComponent::ClearItemFromAllEquipmentSlots(URpgInventory
 	if (bChanged)
 	{
 		OnRep_Slots();
+		RefreshWeaponAbilityLoadout();
 	}
 }
 
@@ -183,6 +187,7 @@ bool URpgEquipmentLoadoutComponent::RefreshEquipmentLoadoutOnCurrentPawn()
 		}
 	}
 
+	RefreshWeaponAbilityLoadout();
 	return true;
 }
 
@@ -195,6 +200,8 @@ void URpgEquipmentLoadoutComponent::EnsureDefaultSlots()
 {
 	const ERpgEquipmentSlot DefaultSlots[] =
 	{
+		ERpgEquipmentSlot::MainHand,
+		ERpgEquipmentSlot::OffHand,
 		ERpgEquipmentSlot::Head,
 		ERpgEquipmentSlot::Chest,
 		ERpgEquipmentSlot::Hands,
@@ -320,9 +327,22 @@ void URpgEquipmentLoadoutComponent::BroadcastSlotsChanged() const
 	MessageSystem.BroadcastMessage(RpgGameplayTags::Rpg_EquipmentLoadout_Message_SlotsChanged, Message);
 }
 
+void URpgEquipmentLoadoutComponent::RefreshWeaponAbilityLoadout() const
+{
+	if (const AController* OwnerController = Cast<AController>(GetOwner()))
+	{
+		if (URpgWeaponAbilityLoadoutComponent* WeaponAbilityLoadout = OwnerController->FindComponentByClass<URpgWeaponAbilityLoadoutComponent>())
+		{
+			WeaponAbilityLoadout->RefreshAbilityBindings();
+		}
+	}
+}
+
 bool URpgEquipmentLoadoutComponent::IsManagedEquipmentSlot(ERpgEquipmentSlot EquipmentSlot)
 {
-	return EquipmentSlot == ERpgEquipmentSlot::Head ||
+	return EquipmentSlot == ERpgEquipmentSlot::MainHand ||
+		EquipmentSlot == ERpgEquipmentSlot::OffHand ||
+		EquipmentSlot == ERpgEquipmentSlot::Head ||
 		EquipmentSlot == ERpgEquipmentSlot::Chest ||
 		EquipmentSlot == ERpgEquipmentSlot::Hands ||
 		EquipmentSlot == ERpgEquipmentSlot::Legs ||

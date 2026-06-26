@@ -616,21 +616,8 @@ bool URpgQuickBarComponent::IsItemAllowedInQuickBarSlot(const URpgInventoryItemI
 
 void URpgQuickBarComponent::BroadcastSlotsChanged() const
 {
-	FRpgQuickBarSlotsChangedMessage Message;
-	Message.Owner = GetOwner();
-	Message.LoadoutSlots = Slots;
-	Message.Slots = GetSlots();
-
-	UGameplayMessageSubsystem& MessageSystem = UGameplayMessageSubsystem::Get(this);
-	MessageSystem.BroadcastMessage(RpgGameplayTags::Rpg_QuickBar_Message_SlotsChanged, Message);
 }
 
 void URpgQuickBarComponent::BroadcastActiveIndexChanged() const
 {
-	FRpgQuickBarActiveIndexChangedMessage Message;
-	Message.Owner = GetOwner();
-	Message.ActiveIndex = ActiveSlotIndex;
-
-	UGameplayMessageSubsystem& MessageSystem = UGameplayMessageSubsystem::Get(this);
-	MessageSystem.BroadcastMessage(RpgGameplayTags::Rpg_QuickBar_Message_ActiveIndexChanged, Message);
 }

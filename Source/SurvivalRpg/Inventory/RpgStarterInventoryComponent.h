@@ -11,7 +11,7 @@ class ARpgPlayerController;
 class URpgInventoryItemDefinition;
 class URpgInventoryItemInstance;
 class URpgInventoryManagerComponent;
-class URpgQuickBarComponent;
+class URpgEquipmentLoadoutComponent;
 
 USTRUCT(BlueprintType)
 struct SURVIVALRPG_API FRpgStarterInventoryEntry
@@ -24,15 +24,19 @@ struct SURVIVALRPG_API FRpgStarterInventoryEntry
 	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Starter Inventory", meta = (ClampMin = "1", UIMin = "1"))
 	int32 StackCount = 1;
 
+	/** Legacy asset field: when true, the added item is assigned to EquipmentSlot after being granted. */
 	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Starter Inventory")
 	bool bAddToQuickBar = true;
 
+	/** Deprecated legacy field kept for asset compatibility. Equipment assignment ignores this index. */
 	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Starter Inventory", meta = (EditCondition = "bAddToQuickBar"))
 	int32 QuickBarSlotIndex = INDEX_NONE;
 
+	/** Equipment slot used when bAddToQuickBar is true. MainHand/OffHand and armor slots are supported. */
 	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Starter Inventory", meta = (EditCondition = "bAddToQuickBar"))
 	ERpgEquipmentSlot QuickBarEquipmentSlot = ERpgEquipmentSlot::MainHand;
 
+	/** Deprecated legacy field kept for asset compatibility. Equipment assignment is applied immediately when the pawn is ready. */
 	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Starter Inventory", meta = (EditCondition = "bAddToQuickBar"))
 	bool bActivateQuickBarSlot = true;
 };
@@ -42,7 +46,7 @@ struct SURVIVALRPG_API FRpgStarterInventoryEntry
  *
  * The component is intentionally generic: feature assets decide which item
  * definitions are granted, while runtime ownership still flows through
- * Inventory -> QuickBar -> Equipment.
+ * Inventory -> EquipmentLoadout -> runtime EquipmentManager.
  */
 UCLASS(Blueprintable, meta = (BlueprintSpawnableComponent))
 class SURVIVALRPG_API URpgStarterInventoryComponent : public UControllerComponent
@@ -62,6 +66,7 @@ protected:
 	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Starter Inventory")
 	bool bGrantOnlyIfMissing = true;
 
+	/** Legacy asset field: when true, starter equipment waits until the pawn has an equipment manager. */
 	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Starter Inventory")
 	bool bWaitForPawnBeforeActivatingQuickBar = true;
 
@@ -75,7 +80,7 @@ private:
 	void TryGrantStarterInventory();
 	void ScheduleRetry();
 	bool ShouldWaitForPawn(const ARpgPlayerController* PlayerController) const;
-	static bool QuickBarContainsItem(const URpgQuickBarComponent* QuickBarComponent, const URpgInventoryItemInstance* ItemInstance);
+	static bool EquipmentLoadoutContainsItem(const URpgEquipmentLoadoutComponent* EquipmentLoadout, const URpgInventoryItemInstance* ItemInstance);
 
 	UPROPERTY(Transient)
 	bool bHasTriedGrant = false;

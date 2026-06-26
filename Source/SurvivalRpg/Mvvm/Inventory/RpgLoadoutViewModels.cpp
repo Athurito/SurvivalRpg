@@ -157,8 +157,7 @@ FText URpgQuickBarSlotViewModel::GetShortDisplayNameForEquipmentSlot(ERpgEquipme
 
 void URpgQuickBarViewModel::BindPlayerController(APlayerController* InPlayerController)
 {
-	const ARpgPlayerController* RpgPlayerController = Cast<ARpgPlayerController>(InPlayerController);
-	BindQuickBar(RpgPlayerController ? RpgPlayerController->GetQuickBarComponent() : nullptr);
+	BindQuickBar(nullptr);
 }
 
 void URpgQuickBarViewModel::BindQuickBar(URpgQuickBarComponent* InQuickBar)
@@ -241,24 +240,6 @@ void URpgQuickBarViewModel::BeginDestroy()
 void URpgQuickBarViewModel::RegisterMessageListeners()
 {
 	UnregisterMessageListeners();
-
-	URpgQuickBarComponent* QuickBar = ObservedQuickBar.Get();
-	UWorld* World = QuickBar ? QuickBar->GetWorld() : nullptr;
-	if (!World)
-	{
-		return;
-	}
-
-	UGameplayMessageSubsystem& MessageSubsystem = UGameplayMessageSubsystem::Get(World);
-	SlotsChangedHandle = MessageSubsystem.RegisterListener<FRpgQuickBarSlotsChangedMessage>(
-		RpgGameplayTags::Rpg_QuickBar_Message_SlotsChanged,
-		this,
-		&ThisClass::HandleQuickBarSlotsChanged);
-
-	ActiveIndexChangedHandle = MessageSubsystem.RegisterListener<FRpgQuickBarActiveIndexChangedMessage>(
-		RpgGameplayTags::Rpg_QuickBar_Message_ActiveIndexChanged,
-		this,
-		&ThisClass::HandleQuickBarActiveIndexChanged);
 }
 
 void URpgQuickBarViewModel::UnregisterMessageListeners()
