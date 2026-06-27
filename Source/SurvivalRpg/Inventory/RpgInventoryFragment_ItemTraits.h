@@ -159,7 +159,7 @@ public:
 };
 
 /**
- * Presentation data read by inventory, quickbar, loot, and storage widgets.
+ * Presentation data read by inventory, equipment, loot, and storage widgets.
  */
 UCLASS(BlueprintType)
 class SURVIVALRPG_API URpgInventoryFragment_UIData : public URpgInventoryItemFragment
@@ -208,10 +208,6 @@ public:
 	/** Maximum count in one stack when stacking is enabled. Values below 1 are treated as 1 at runtime. */
 	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Inventory|Stacking", meta = (EditCondition = "bCanStack", ClampMin = "1", UIMin = "1"))
 	int32 MaxStackSize = 1;
-
-	/** Explicit designer permission for quickbar assignment. Weapons and shields may enable this; armor and materials should not. */
-	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Inventory|QuickBar")
-	bool bCanAssignToQuickBar = false;
 
 	/** Treat this item as a material for death drops and crafting-source scans even if its category is more specific. */
 	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Inventory|Drops")

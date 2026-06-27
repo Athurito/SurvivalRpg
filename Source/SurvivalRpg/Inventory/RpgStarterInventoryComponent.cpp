@@ -88,9 +88,9 @@ void URpgStarterInventoryComponent::TryGrantStarterInventory()
 			ItemInstance = InventoryComponent->AddItemDefinition(ItemDefinition, Entry.StackCount);
 		}
 
-		if (Entry.bAddToQuickBar && EquipmentLoadout != nullptr && ItemInstance != nullptr && !EquipmentLoadoutContainsItem(EquipmentLoadout, ItemInstance))
+		if (Entry.bAssignToEquipment && EquipmentLoadout != nullptr && ItemInstance != nullptr && !EquipmentLoadoutContainsItem(EquipmentLoadout, ItemInstance))
 		{
-			EquipmentLoadout->AssignItemToEquipmentSlot(Entry.QuickBarEquipmentSlot, ItemInstance);
+			EquipmentLoadout->AssignItemToEquipmentSlot(Entry.EquipmentSlot, ItemInstance);
 		}
 	}
 
@@ -118,14 +118,14 @@ void URpgStarterInventoryComponent::ScheduleRetry()
 
 bool URpgStarterInventoryComponent::ShouldWaitForPawn(const ARpgPlayerController* PlayerController) const
 {
-	if (!bWaitForPawnBeforeActivatingQuickBar || PlayerController == nullptr)
+	if (!bWaitForPawnBeforeAssigningEquipment || PlayerController == nullptr)
 	{
 		return false;
 	}
 
 	for (const FRpgStarterInventoryEntry& Entry : StarterInventory)
 	{
-		if (Entry.bAddToQuickBar && Entry.bActivateQuickBarSlot)
+		if (Entry.bAssignToEquipment)
 		{
 			const APawn* Pawn = PlayerController->GetPawn();
 			return Pawn == nullptr || Pawn->FindComponentByClass<URpgEquipmentManagerComponent>() == nullptr;

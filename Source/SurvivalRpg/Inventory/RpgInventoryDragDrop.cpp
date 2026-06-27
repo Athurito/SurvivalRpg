@@ -19,14 +19,11 @@ namespace
 			TargetType == ERpgInventoryDropTargetType::InventoryPanel;
 	}
 
-	bool IsQuickBarEquipmentSlot(ERpgEquipmentSlot EquipmentSlot)
+	bool IsManagedEquipmentSlot(ERpgEquipmentSlot EquipmentSlot)
 	{
-		return EquipmentSlot == ERpgEquipmentSlot::MainHand || EquipmentSlot == ERpgEquipmentSlot::OffHand;
-	}
-
-	bool IsDedicatedEquipmentSlot(ERpgEquipmentSlot EquipmentSlot)
-	{
-		return EquipmentSlot == ERpgEquipmentSlot::Head ||
+		return EquipmentSlot == ERpgEquipmentSlot::MainHand ||
+			EquipmentSlot == ERpgEquipmentSlot::OffHand ||
+			EquipmentSlot == ERpgEquipmentSlot::Head ||
 			EquipmentSlot == ERpgEquipmentSlot::Chest ||
 			EquipmentSlot == ERpgEquipmentSlot::Hands ||
 			EquipmentSlot == ERpgEquipmentSlot::Legs ||
@@ -51,28 +48,6 @@ namespace
 		return EquipmentCDO && EquipmentCDO->CanEquipInSlot(EquipmentSlot);
 	}
 
-	bool CanInventoryItemAssignToQuickBarSlot(const URpgInventoryItemInstance* ItemInstance, ERpgEquipmentSlot EquipmentSlot)
-	{
-		if (!IsQuickBarEquipmentSlot(EquipmentSlot) || !CanInventoryItemEquipInSlot(ItemInstance, EquipmentSlot))
-		{
-			return false;
-		}
-
-		const URpgInventoryFragment_ItemTraits* Traits = ItemInstance
-			? ItemInstance->FindFragmentByClass<URpgInventoryFragment_ItemTraits>()
-			: nullptr;
-		if (!Traits)
-		{
-			return true;
-		}
-
-		if (Traits->ItemCategory == ERpgInventoryItemCategory::Armor || Traits->IsMaterial())
-		{
-			return false;
-		}
-
-		return Traits->bCanAssignToQuickBar;
-	}
 }
 
 URpgInventoryDragDropCoordinator* URpgInventoryDragDropCoordinator::CreateInventoryDragDropCoordinator(UObject* WorldContextObject, APlayerController* InPlayerController)
@@ -150,26 +125,6 @@ FRpgInventoryDropTarget URpgInventoryDragDropCoordinator::MakeInventoryPanelTarg
 	return Target;
 }
 
-FRpgInventoryDragPayload URpgInventoryDragDropCoordinator::MakeQuickBarPayload(URpgInventoryItemInstance* ItemInstance, int32 QuickBarSlotIndex, ERpgEquipmentSlot EquipmentSlot)
-{
-	FRpgInventoryDragPayload Payload;
-	Payload.SourceType = ERpgInventoryDragSourceType::QuickBarSlot;
-	Payload.ItemInstance = ItemInstance;
-	Payload.SourceSlotIndex = QuickBarSlotIndex;
-	Payload.EquipmentSlot = EquipmentSlot;
-	Payload.StackCount = 1;
-	return Payload;
-}
-
-FRpgInventoryDropTarget URpgInventoryDragDropCoordinator::MakeQuickBarTarget(int32 QuickBarSlotIndex, ERpgEquipmentSlot EquipmentSlot)
-{
-	FRpgInventoryDropTarget Target;
-	Target.TargetType = ERpgInventoryDropTargetType::QuickBarSlot;
-	Target.QuickBarSlotIndex = QuickBarSlotIndex;
-	Target.EquipmentSlot = EquipmentSlot;
-	return Target;
-}
-
 FRpgInventoryDragPayload URpgInventoryDragDropCoordinator::MakeEquipmentPayload(URpgInventoryItemInstance* ItemInstance, ERpgEquipmentSlot EquipmentSlot)
 {
 	FRpgInventoryDragPayload Payload;
@@ -205,14 +160,9 @@ bool URpgInventoryDragDropCoordinator::IsPayloadValid(const FRpgInventoryDragPay
 			Payload.EntryId.IsValid() &&
 			Payload.StackCount > 0;
 
-	case ERpgInventoryDragSourceType::QuickBarSlot:
-		return Payload.ItemInstance != nullptr &&
-			Payload.SourceSlotIndex >= 0 &&
-			IsQuickBarEquipmentSlot(Payload.EquipmentSlot);
-
 	case ERpgInventoryDragSourceType::EquipmentSlot:
 		return Payload.ItemInstance != nullptr &&
-			IsDedicatedEquipmentSlot(Payload.EquipmentSlot);
+			IsManagedEquipmentSlot(Payload.EquipmentSlot);
 
 	default:
 		return false;
@@ -229,11 +179,8 @@ bool URpgInventoryDragDropCoordinator::IsTargetValid(const FRpgInventoryDropTarg
 	case ERpgInventoryDropTargetType::InventoryPanel:
 		return Target.TargetInventory != nullptr;
 
-	case ERpgInventoryDropTargetType::QuickBarSlot:
-		return Target.QuickBarSlotIndex >= 0 && IsQuickBarEquipmentSlot(Target.EquipmentSlot);
-
 	case ERpgInventoryDropTargetType::EquipmentSlot:
-		return IsDedicatedEquipmentSlot(Target.EquipmentSlot);
+		return IsManagedEquipmentSlot(Target.EquipmentSlot);
 
 	case ERpgInventoryDropTargetType::ClearSlot:
 		return true;
@@ -560,35 +507,9 @@ bool URpgInventoryDragDropCoordinator::CommitPayloadToTarget(const FRpgInventory
 			return true;
 		}
 
-		if (Payload.SourceType == ERpgInventoryDragSourceType::QuickBarSlot)
-		{
-			Actions->RequestClearQuickBarSlot(Payload.SourceSlotIndex, Payload.EquipmentSlot);
-			return true;
-		}
-
 		if (Payload.SourceType == ERpgInventoryDragSourceType::EquipmentSlot)
 		{
 			Actions->RequestClearEquipmentSlot(Payload.EquipmentSlot);
-			return true;
-		}
-	}
-
-	if (Target.TargetType == ERpgInventoryDropTargetType::QuickBarSlot)
-	{
-		if (Payload.SourceType == ERpgInventoryDragSourceType::InventoryEntry)
-		{
-			Actions->RequestAssignItemToQuickBar(Target.QuickBarSlotIndex, Target.EquipmentSlot, Payload.ItemInstance);
-			return true;
-		}
-
-		if (Payload.SourceType == ERpgInventoryDragSourceType::QuickBarSlot)
-		{
-			if (Payload.SourceSlotIndex == Target.QuickBarSlotIndex && Payload.EquipmentSlot == Target.EquipmentSlot)
-			{
-				return true;
-			}
-
-			Actions->RequestSwapQuickBarSlots(Payload.SourceSlotIndex, Payload.EquipmentSlot, Target.QuickBarSlotIndex, Target.EquipmentSlot);
 			return true;
 		}
 	}
@@ -610,12 +531,6 @@ bool URpgInventoryDragDropCoordinator::CommitPayloadToTarget(const FRpgInventory
 
 	if (Target.TargetType == ERpgInventoryDropTargetType::ClearSlot)
 	{
-		if (Payload.SourceType == ERpgInventoryDragSourceType::QuickBarSlot)
-		{
-			Actions->RequestClearQuickBarSlot(Payload.SourceSlotIndex, Payload.EquipmentSlot);
-			return true;
-		}
-
 		if (Payload.SourceType == ERpgInventoryDragSourceType::EquipmentSlot)
 		{
 			Actions->RequestClearEquipmentSlot(Payload.EquipmentSlot);
@@ -667,8 +582,7 @@ bool URpgInventoryDragDropCoordinator::CanCommitPayloadToTarget(const FRpgInvent
 			return true;
 		}
 
-		if (Payload.SourceType == ERpgInventoryDragSourceType::QuickBarSlot ||
-			Payload.SourceType == ERpgInventoryDragSourceType::EquipmentSlot)
+		if (Payload.SourceType == ERpgInventoryDragSourceType::EquipmentSlot)
 		{
 			return IsPlayerInventory(Target.TargetInventory);
 		}
@@ -676,33 +590,23 @@ bool URpgInventoryDragDropCoordinator::CanCommitPayloadToTarget(const FRpgInvent
 		return false;
 	}
 
-	if (Target.TargetType == ERpgInventoryDropTargetType::QuickBarSlot)
-	{
-		if (Payload.SourceType == ERpgInventoryDragSourceType::InventoryEntry)
-		{
-			return IsPlayerInventory(Payload.SourceInventory) &&
-				CanInventoryItemAssignToQuickBarSlot(Payload.ItemInstance, Target.EquipmentSlot);
-		}
-
-		return Payload.SourceType == ERpgInventoryDragSourceType::QuickBarSlot;
-	}
-
 	if (Target.TargetType == ERpgInventoryDropTargetType::EquipmentSlot)
 	{
 		if (Payload.SourceType == ERpgInventoryDragSourceType::InventoryEntry)
 		{
 			return IsPlayerInventory(Payload.SourceInventory) &&
-				IsDedicatedEquipmentSlot(Target.EquipmentSlot) &&
+				IsManagedEquipmentSlot(Target.EquipmentSlot) &&
 				CanInventoryItemEquipInSlot(Payload.ItemInstance, Target.EquipmentSlot);
 		}
 
-		return Payload.SourceType == ERpgInventoryDragSourceType::EquipmentSlot;
+		return Payload.SourceType == ERpgInventoryDragSourceType::EquipmentSlot &&
+			IsManagedEquipmentSlot(Target.EquipmentSlot) &&
+			CanInventoryItemEquipInSlot(Payload.ItemInstance, Target.EquipmentSlot);
 	}
 
 	if (Target.TargetType == ERpgInventoryDropTargetType::ClearSlot)
 	{
-		return Payload.SourceType == ERpgInventoryDragSourceType::QuickBarSlot ||
-			Payload.SourceType == ERpgInventoryDragSourceType::EquipmentSlot;
+		return Payload.SourceType == ERpgInventoryDragSourceType::EquipmentSlot;
 	}
 
 	return false;

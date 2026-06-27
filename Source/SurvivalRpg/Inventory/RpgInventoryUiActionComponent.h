@@ -109,19 +109,7 @@ class SURVIVALRPG_API URpgInventoryUiActionComponent : public UControllerCompone
 public:
 	explicit URpgInventoryUiActionComponent(const FObjectInitializer& ObjectInitializer = FObjectInitializer::Get());
 
-	/** Legacy Blueprint adapter: assigns an owned inventory item to MainHand or OffHand equipment without removing it from inventory. */
-	UFUNCTION(Server, Reliable, BlueprintCallable, Category = "Inventory|UI Actions")
-	void RequestAssignItemToQuickBar(int32 QuickBarSlotIndex, ERpgEquipmentSlot EquipmentSlot, URpgInventoryItemInstance* Item);
-
-	/** Legacy Blueprint adapter: swaps MainHand/OffHand equipment assignments. */
-	UFUNCTION(Server, Reliable, BlueprintCallable, Category = "Inventory|UI Actions")
-	void RequestSwapQuickBarSlots(int32 SourceSlotIndex, ERpgEquipmentSlot SourceEquipmentSlot, int32 TargetSlotIndex, ERpgEquipmentSlot TargetEquipmentSlot);
-
-	/** Legacy Blueprint adapter: clears one MainHand or OffHand equipment assignment. */
-	UFUNCTION(Server, Reliable, BlueprintCallable, Category = "Inventory|UI Actions")
-	void RequestClearQuickBarSlot(int32 QuickBarSlotIndex, ERpgEquipmentSlot EquipmentSlot);
-
-	/** Assigns an owned inventory item to a dedicated equipment slot such as Head or Chest. */
+	/** Assigns an owned inventory item to an equipment slot such as MainHand, OffHand, Head, or Chest. */
 	UFUNCTION(Server, Reliable, BlueprintCallable, Category = "Inventory|UI Actions")
 	void RequestAssignItemToEquipmentSlot(ERpgEquipmentSlot EquipmentSlot, URpgInventoryItemInstance* Item);
 

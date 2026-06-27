@@ -33,12 +33,10 @@ void URpgInventoryTraitsFragmentViewModel::InitializeFromEntry(const FRpgInvento
 	const URpgInventoryFragment_ItemTraits* Traits = Entry.Instance ? Entry.Instance->FindFragmentByClass<URpgInventoryFragment_ItemTraits>() : nullptr;
 	ItemCategory = Traits ? Traits->ItemCategory : ERpgInventoryItemCategory::Misc;
 	ItemTags = Traits ? Traits->ItemTags : FGameplayTagContainer();
-	bCanAssignToQuickBar = Traits ? Traits->bCanAssignToQuickBar : false;
 	bIsMaterial = Traits ? Traits->IsMaterial() : false;
 
 	UE_MVVM_BROADCAST_FIELD_VALUE_CHANGED(ItemCategory);
 	UE_MVVM_BROADCAST_FIELD_VALUE_CHANGED(ItemTags);
-	UE_MVVM_BROADCAST_FIELD_VALUE_CHANGED(bCanAssignToQuickBar);
 	UE_MVVM_BROADCAST_FIELD_VALUE_CHANGED(bIsMaterial);
 }
 
@@ -86,7 +84,6 @@ void URpgInventoryEntryViewModel::InitializeFromEntry(
 	PresentationTags.Reset();
 	bCanDrag = ItemInstance != nullptr && StackCount > 0;
 	bIsEmptySlot = ItemInstance == nullptr;
-	bCanAssignToQuickBar = false;
 	FragmentViewModels.Reset();
 
 	if (ItemInstance)
@@ -115,7 +112,6 @@ void URpgInventoryEntryViewModel::InitializeFromEntry(
 		{
 			ItemCategory = Traits->ItemCategory;
 			ItemTags = Traits->ItemTags;
-			bCanAssignToQuickBar = Traits->bCanAssignToQuickBar;
 		}
 	}
 
@@ -162,7 +158,6 @@ void URpgInventoryEntryViewModel::InitializeFromEntry(
 	UE_MVVM_BROADCAST_FIELD_VALUE_CHANGED(PresentationTags);
 	UE_MVVM_BROADCAST_FIELD_VALUE_CHANGED(bCanDrag);
 	UE_MVVM_BROADCAST_FIELD_VALUE_CHANGED(bIsEmptySlot);
-	UE_MVVM_BROADCAST_FIELD_VALUE_CHANGED(bCanAssignToQuickBar);
 	UE_MVVM_BROADCAST_FIELD_VALUE_CHANGED(FragmentViewModels);
 	if (bWasChanged)
 	{

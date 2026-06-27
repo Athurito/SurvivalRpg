@@ -24,21 +24,13 @@ struct SURVIVALRPG_API FRpgStarterInventoryEntry
 	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Starter Inventory", meta = (ClampMin = "1", UIMin = "1"))
 	int32 StackCount = 1;
 
-	/** Legacy asset field: when true, the added item is assigned to EquipmentSlot after being granted. */
+	/** If true, the granted item is assigned to EquipmentSlot after being added to the player's inventory. */
 	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Starter Inventory")
-	bool bAddToQuickBar = true;
+	bool bAssignToEquipment = true;
 
-	/** Deprecated legacy field kept for asset compatibility. Equipment assignment ignores this index. */
-	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Starter Inventory", meta = (EditCondition = "bAddToQuickBar"))
-	int32 QuickBarSlotIndex = INDEX_NONE;
-
-	/** Equipment slot used when bAddToQuickBar is true. MainHand/OffHand and armor slots are supported. */
-	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Starter Inventory", meta = (EditCondition = "bAddToQuickBar"))
-	ERpgEquipmentSlot QuickBarEquipmentSlot = ERpgEquipmentSlot::MainHand;
-
-	/** Deprecated legacy field kept for asset compatibility. Equipment assignment is applied immediately when the pawn is ready. */
-	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Starter Inventory", meta = (EditCondition = "bAddToQuickBar"))
-	bool bActivateQuickBarSlot = true;
+	/** Equipment slot used when bAssignToEquipment is true. MainHand, OffHand, and armor slots are supported. */
+	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Starter Inventory", meta = (EditCondition = "bAssignToEquipment"))
+	ERpgEquipmentSlot EquipmentSlot = ERpgEquipmentSlot::MainHand;
 };
 
 /**
@@ -66,9 +58,9 @@ protected:
 	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Starter Inventory")
 	bool bGrantOnlyIfMissing = true;
 
-	/** Legacy asset field: when true, starter equipment waits until the pawn has an equipment manager. */
+	/** If true, starter equipment waits until the possessed pawn has an equipment manager ready to apply the loadout. */
 	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Starter Inventory")
-	bool bWaitForPawnBeforeActivatingQuickBar = true;
+	bool bWaitForPawnBeforeAssigningEquipment = true;
 
 	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Starter Inventory", meta = (ClampMin = "0.05", UIMin = "0.05"))
 	float RetryInterval = 0.25f;

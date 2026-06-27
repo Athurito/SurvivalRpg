@@ -161,7 +161,7 @@ void URpgGameplayAbility_Collect::ActivateAbility(
 		return;
 	}
 
-	if (bAddCollectedEquippableItemsToQuickBar)
+	if (bAssignCollectedEquippableItemsToEquipment)
 	{
 		if (ARpgPlayerController* PlayerController = FindPlayerControllerForActor(InteractingActor))
 		{

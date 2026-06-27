@@ -84,10 +84,6 @@ protected:
 	UPROPERTY(BlueprintReadOnly, FieldNotify, Category = "Inventory|Traits", meta = (AllowPrivateAccess = "true"))
 	FGameplayTagContainer ItemTags;
 
-	/** Whether this item may be assigned to the quickbar according to static traits. */
-	UPROPERTY(BlueprintReadOnly, FieldNotify, Category = "Inventory|Traits", meta = (AllowPrivateAccess = "true"))
-	bool bCanAssignToQuickBar = false;
-
 	/** Whether this item is treated as a material for UI grouping and death-drop previews. */
 	UPROPERTY(BlueprintReadOnly, FieldNotify, Category = "Inventory|Traits", meta = (AllowPrivateAccess = "true"))
 	bool bIsMaterial = false;
@@ -235,10 +231,6 @@ protected:
 	/** True for UI-only placeholder slots that can receive drops but do not contain an item. */
 	UPROPERTY(BlueprintReadOnly, FieldNotify, Category = "Inventory|ViewModel", meta = (AllowPrivateAccess = "true"))
 	bool bIsEmptySlot = true;
-
-	/** Static quickbar hint from ItemTraits; server validation still owns the final answer. */
-	UPROPERTY(BlueprintReadOnly, FieldNotify, Category = "Inventory|ViewModel", meta = (AllowPrivateAccess = "true"))
-	bool bCanAssignToQuickBar = false;
 
 	/** Optional per-fragment presenters generated for this entry. */
 	UPROPERTY(BlueprintReadOnly, FieldNotify, Category = "Inventory|ViewModel", meta = (AllowPrivateAccess = "true"))

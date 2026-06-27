@@ -34,13 +34,9 @@ protected:
 	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Collect")
 	bool bDestroyCollectedActor = true;
 
-	/** Legacy asset field: when true, collected equippable items are assigned to their default equipment slot. */
-	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Collect|QuickBar")
-	bool bAddCollectedEquippableItemsToQuickBar = false;
-
-	/** Deprecated legacy field kept for asset compatibility. Equipment assignment no longer activates a quickbar slot. */
-	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Collect|QuickBar", meta = (EditCondition = "bAddCollectedEquippableItemsToQuickBar"))
-	bool bActivateFirstQuickBarSlot = false;
+	/** If true, collected equippable items are assigned to their default equipment slot after pickup succeeds. */
+	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Collect|Equipment")
+	bool bAssignCollectedEquippableItemsToEquipment = false;
 
 private:
 	static URpgInventoryManagerComponent* FindInventoryManagerForActor(AActor* Actor);

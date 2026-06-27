@@ -5,7 +5,7 @@
 #include "RpgInventoryItemTypes.generated.h"
 
 /**
- * Broad gameplay category used by inventory UI, quickbar validation, crafting, and drop rules.
+ * Broad gameplay category used by inventory UI, equipment validation, crafting, and drop rules.
  */
 UENUM(BlueprintType)
 enum class ERpgInventoryItemCategory : uint8

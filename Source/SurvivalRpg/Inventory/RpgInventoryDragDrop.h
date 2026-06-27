@@ -19,7 +19,6 @@ enum class ERpgInventoryDragSourceType : uint8
 {
 	None,
 	InventoryEntry,
-	QuickBarSlot,
 	EquipmentSlot
 };
 
@@ -30,7 +29,6 @@ enum class ERpgInventoryDropTargetType : uint8
 	None,
 	InventorySlot,
 	InventoryPanel,
-	QuickBarSlot,
 	EquipmentSlot,
 	ClearSlot
 };
@@ -86,11 +84,11 @@ struct SURVIVALRPG_API FRpgInventoryDragPayload
 	UPROPERTY(BlueprintReadWrite, Category = "Inventory|DragDrop")
 	int32 StackCount = 0;
 
-	/** Source visual slot index for inventory or quickbar payloads. */
+	/** Source visual slot index for inventory payloads. */
 	UPROPERTY(BlueprintReadWrite, Category = "Inventory|DragDrop")
 	int32 SourceSlotIndex = INDEX_NONE;
 
-	/** Source equipment slot for quickbar hand slots or dedicated equipment slots. */
+	/** Source equipment slot for equipped hand or armor slots. */
 	UPROPERTY(BlueprintReadWrite, Category = "Inventory|DragDrop")
 	ERpgEquipmentSlot EquipmentSlot = ERpgEquipmentSlot::None;
 };
@@ -118,11 +116,7 @@ struct SURVIVALRPG_API FRpgInventoryDropTarget
 	UPROPERTY(BlueprintReadWrite, Category = "Inventory|DragDrop")
 	int32 TargetIndex = INDEX_NONE;
 
-	/** Target quickbar slot index when TargetType is QuickBarSlot. */
-	UPROPERTY(BlueprintReadWrite, Category = "Inventory|DragDrop")
-	int32 QuickBarSlotIndex = INDEX_NONE;
-
-	/** Target equipment slot for quickbar hand slots or dedicated equipment slots. */
+	/** Target equipment slot for equipped hand or armor slots. */
 	UPROPERTY(BlueprintReadWrite, Category = "Inventory|DragDrop")
 	ERpgEquipmentSlot EquipmentSlot = ERpgEquipmentSlot::None;
 };
@@ -196,23 +190,15 @@ public:
 	UFUNCTION(BlueprintCallable, Category = "Inventory|DragDrop")
 	static FRpgInventoryDropTarget MakeInventoryPanelTarget(URpgInventoryManagerComponent* TargetInventory);
 
-	/** Builds a payload from an existing quickbar assignment. */
-	UFUNCTION(BlueprintCallable, Category = "Inventory|DragDrop")
-	static FRpgInventoryDragPayload MakeQuickBarPayload(URpgInventoryItemInstance* ItemInstance, int32 QuickBarSlotIndex, ERpgEquipmentSlot EquipmentSlot);
-
-	/** Builds a target for a quickbar hand slot. */
-	UFUNCTION(BlueprintCallable, Category = "Inventory|DragDrop")
-	static FRpgInventoryDropTarget MakeQuickBarTarget(int32 QuickBarSlotIndex, ERpgEquipmentSlot EquipmentSlot);
-
-	/** Builds a payload from an existing dedicated equipment assignment. */
+	/** Builds a payload from an existing equipment assignment. */
 	UFUNCTION(BlueprintCallable, Category = "Inventory|DragDrop")
 	static FRpgInventoryDragPayload MakeEquipmentPayload(URpgInventoryItemInstance* ItemInstance, ERpgEquipmentSlot EquipmentSlot);
 
-	/** Builds a target for a dedicated equipment slot. */
+	/** Builds a target for an equipment slot. */
 	UFUNCTION(BlueprintCallable, Category = "Inventory|DragDrop")
 	static FRpgInventoryDropTarget MakeEquipmentTarget(ERpgEquipmentSlot EquipmentSlot);
 
-	/** Builds a target that clears quickbar or equipment assignments without moving the owned item. */
+	/** Builds a target that clears equipment assignments without moving the owned item. */
 	UFUNCTION(BlueprintCallable, Category = "Inventory|DragDrop")
 	static FRpgInventoryDropTarget MakeClearTarget();
 
@@ -284,7 +270,7 @@ public:
 	UFUNCTION(BlueprintCallable, Category = "Inventory|Shortcuts")
 	bool QuickSplitEntry(URpgInventoryEntryViewModel* EntryViewModel, int32 TargetSlotIndex = -1, int32 SplitCount = 0);
 
-	/** Uses a usable item, otherwise tries to equip it through quickbar or dedicated equipment slots. */
+	/** Uses a usable item, otherwise tries to equip it through equipment slots. */
 	UFUNCTION(BlueprintCallable, Category = "Inventory|Shortcuts")
 	bool UseOrEquipEntry(URpgInventoryEntryViewModel* EntryViewModel, int32 StackCount = 1);
 
