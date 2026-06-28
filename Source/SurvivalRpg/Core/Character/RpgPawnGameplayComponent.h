@@ -109,6 +109,8 @@ protected:
 
 private:
 	void HandleAbilitySystemUninitialized();
+	void BindRoutedGameplayHotkeys(const URpgInputConfig* InputConfig, class URpgInputComponent* RpgIC, TArray<uint32>* BindHandles = nullptr);
+	static bool IsRoutedGameplayHotkeyTag(FGameplayTag InputTag);
 
 	TMap<const URpgInputConfig*, TArray<uint32>> AdditionalInputConfigBindHandles;
 };

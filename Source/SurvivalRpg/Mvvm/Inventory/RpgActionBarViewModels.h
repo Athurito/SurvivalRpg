@@ -6,12 +6,15 @@
 #include "MVVMViewModelBase.h"
 #include "SurvivalRpg/ActionBar/RpgActionBarComponent.h"
 #include "SurvivalRpg/Equipment/RpgWeaponAbilityLoadoutComponent.h"
+#include "TimerManager.h"
 #include "UObject/SoftObjectPtr.h"
 
 #include "RpgActionBarViewModels.generated.h"
 
 class APlayerController;
 class UTexture2D;
+class URpgAbilitySystemComponent;
+struct FRpgInventoryChangeMessage;
 class URpgInventoryItemInstance;
 class URpgInventoryManagerComponent;
 class URpgActionBarSlotViewModel;
@@ -147,10 +150,12 @@ private:
 	void RegisterMessageListener();
 	void UnregisterMessageListener();
 	void HandleActionBarSlotsChanged(FGameplayTag Channel, const FRpgActionBarSlotsChangedMessage& Message);
+	void HandlePlayerInventoryChanged(FGameplayTag Channel, const FRpgInventoryChangeMessage& Message);
 
 	TWeakObjectPtr<URpgActionBarComponent> ObservedActionBar;
 	TWeakObjectPtr<URpgInventoryManagerComponent> ObservedPlayerInventory;
 	FGameplayMessageListenerHandle SlotsChangedHandle;
+	FGameplayMessageListenerHandle InventoryChangedHandle;
 };
 
 /** UI projection for one Q/E/R weapon ability slot. */
@@ -164,6 +169,13 @@ public:
 	UFUNCTION(BlueprintCallable, Category = "Weapon Abilities|ViewModel")
 	void InitializeSlot(int32 InSlotIndex, const FRpgWeaponAbilityLoadoutSlot& InSlot);
 
+	/** Rebuilds this slot and reads static presentation/cooldown state from the owning player's ASC. */
+	void InitializeSlotWithAbilitySystem(int32 InSlotIndex, const FRpgWeaponAbilityLoadoutSlot& InSlot, const URpgAbilitySystemComponent* InAbilitySystem);
+
+	/** Refreshes only cooldown-related fields; safe for a lightweight UI timer. */
+	UFUNCTION(BlueprintCallable, Category = "Weapon Abilities|ViewModel")
+	void RefreshCooldown(const URpgAbilitySystemComponent* InAbilitySystem);
+
 	UFUNCTION(BlueprintPure, Category = "Weapon Abilities|ViewModel")
 	int32 GetSlotIndex() const { return SlotIndex; }
 
@@ -175,6 +187,30 @@ public:
 
 	UFUNCTION(BlueprintPure, Category = "Weapon Abilities|ViewModel")
 	FName GetHotkeyActionRowName() const { return HotkeyActionRowName; }
+
+	UFUNCTION(BlueprintPure, Category = "Weapon Abilities|ViewModel")
+	FText GetDisplayName() const { return DisplayName; }
+
+	UFUNCTION(BlueprintPure, Category = "Weapon Abilities|ViewModel")
+	FText GetDescription() const { return Description; }
+
+	UFUNCTION(BlueprintPure, Category = "Weapon Abilities|ViewModel")
+	TSoftObjectPtr<UTexture2D> GetIcon() const { return Icon; }
+
+	UFUNCTION(BlueprintPure, Category = "Weapon Abilities|ViewModel")
+	bool IsOnCooldown() const { return bOnCooldown; }
+
+	UFUNCTION(BlueprintPure, Category = "Weapon Abilities|ViewModel")
+	float GetCooldownRemainingTime() const { return CooldownRemainingTime; }
+
+	UFUNCTION(BlueprintPure, Category = "Weapon Abilities|ViewModel")
+	float GetCooldownDuration() const { return CooldownDuration; }
+
+	UFUNCTION(BlueprintPure, Category = "Weapon Abilities|ViewModel")
+	float GetCooldownPercent() const { return CooldownPercent; }
+
+	UFUNCTION(BlueprintPure, Category = "Weapon Abilities|ViewModel")
+	FText GetCooldownText() const { return CooldownText; }
 
 	UPROPERTY(BlueprintAssignable, Category = "Weapon Abilities|ViewModel")
 	FRpgWeaponAbilitySlotViewModelChanged OnSlotChanged;
@@ -192,9 +228,37 @@ protected:
 	UPROPERTY(BlueprintReadOnly, FieldNotify, Category = "Weapon Abilities|ViewModel", meta = (AllowPrivateAccess = "true"))
 	bool bAvailable = false;
 
-	/** Compact display text from the ability id tag. */
+	/** Compact display text from the ability CDO, falling back to the ability id tag. */
 	UPROPERTY(BlueprintReadOnly, FieldNotify, Category = "Weapon Abilities|ViewModel", meta = (AllowPrivateAccess = "true"))
 	FText DisplayName;
+
+	/** Optional ability description for details/tooltips. */
+	UPROPERTY(BlueprintReadOnly, FieldNotify, Category = "Weapon Abilities|ViewModel", meta = (AllowPrivateAccess = "true"))
+	FText Description;
+
+	/** Soft ability icon read from the granted ability CDO. */
+	UPROPERTY(BlueprintReadOnly, FieldNotify, Category = "Weapon Abilities|ViewModel", meta = (AllowPrivateAccess = "true"))
+	TSoftObjectPtr<UTexture2D> Icon;
+
+	/** True while GAS reports an active cooldown effect for this ability. */
+	UPROPERTY(BlueprintReadOnly, FieldNotify, Category = "Weapon Abilities|ViewModel", meta = (AllowPrivateAccess = "true"))
+	bool bOnCooldown = false;
+
+	/** Remaining cooldown seconds. UI-read-only and refreshed locally. */
+	UPROPERTY(BlueprintReadOnly, FieldNotify, Category = "Weapon Abilities|ViewModel", meta = (AllowPrivateAccess = "true"))
+	float CooldownRemainingTime = 0.0f;
+
+	/** Total cooldown duration seconds reported by the active cooldown GameplayEffect. */
+	UPROPERTY(BlueprintReadOnly, FieldNotify, Category = "Weapon Abilities|ViewModel", meta = (AllowPrivateAccess = "true"))
+	float CooldownDuration = 0.0f;
+
+	/** Remaining cooldown fraction in range 0..1, useful for overlay or progress materials. */
+	UPROPERTY(BlueprintReadOnly, FieldNotify, Category = "Weapon Abilities|ViewModel", meta = (AllowPrivateAccess = "true", ClampMin = "0.0", ClampMax = "1.0"))
+	float CooldownPercent = 0.0f;
+
+	/** Short remaining-time text, empty when no cooldown is active. */
+	UPROPERTY(BlueprintReadOnly, FieldNotify, Category = "Weapon Abilities|ViewModel", meta = (AllowPrivateAccess = "true"))
+	FText CooldownText;
 
 	/** CommonUI action row name expected in CDT_RpgUIActions_All for this slot's hotkey glyph. */
 	UPROPERTY(BlueprintReadOnly, FieldNotify, Category = "Weapon Abilities|ViewModel", meta = (AllowPrivateAccess = "true"))
@@ -216,6 +280,10 @@ public:
 	UFUNCTION(BlueprintCallable, Category = "Weapon Abilities|ViewModel")
 	void BindWeaponAbilityLoadout(URpgWeaponAbilityLoadoutComponent* InLoadout);
 
+	/** Starts observing one weapon ability loadout and the owning ASC used for icon/cooldown projection. */
+	UFUNCTION(BlueprintCallable, Category = "Weapon Abilities|ViewModel")
+	void BindWeaponAbilityLoadoutWithAbilitySystem(URpgWeaponAbilityLoadoutComponent* InLoadout, URpgAbilitySystemComponent* InAbilitySystem);
+
 	/** Stops observing the current weapon ability loadout. */
 	UFUNCTION(BlueprintCallable, Category = "Weapon Abilities|ViewModel")
 	void UnbindWeaponAbilityLoadout();
@@ -223,6 +291,10 @@ public:
 	/** Rebuilds the slot view models from replicated owner-only weapon ability state. */
 	UFUNCTION(BlueprintCallable, Category = "Weapon Abilities|ViewModel")
 	void RefreshSlots();
+
+	/** Refreshes cooldown fields without rebuilding the slot list. */
+	UFUNCTION(BlueprintCallable, Category = "Weapon Abilities|ViewModel")
+	void RefreshCooldowns();
 
 	UFUNCTION(BlueprintPure, Category = "Weapon Abilities|ViewModel")
 	TArray<URpgWeaponAbilitySlotViewModel*> GetSlots() const;
@@ -239,11 +311,19 @@ protected:
 	UPROPERTY(BlueprintReadOnly, FieldNotify, Category = "Weapon Abilities|ViewModel", meta = (AllowPrivateAccess = "true"))
 	TArray<TObjectPtr<URpgWeaponAbilitySlotViewModel>> Slots;
 
+	/** Local UI refresh interval for cooldown text/progress. This does not drive gameplay. */
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Weapon Abilities|ViewModel", meta = (AllowPrivateAccess = "true", ClampMin = "0.05", UIMin = "0.05", Units = "s"))
+	float CooldownRefreshInterval = 0.1f;
+
 private:
 	void RegisterMessageListener();
 	void UnregisterMessageListener();
+	void StartCooldownRefreshTimer();
+	void StopCooldownRefreshTimer();
 	void HandleWeaponAbilityLoadoutChanged(FGameplayTag Channel, const FRpgWeaponAbilityLoadoutChangedMessage& Message);
 
 	TWeakObjectPtr<URpgWeaponAbilityLoadoutComponent> ObservedLoadout;
+	TWeakObjectPtr<URpgAbilitySystemComponent> ObservedAbilitySystem;
 	FGameplayMessageListenerHandle SlotsChangedHandle;
+	FTimerHandle CooldownRefreshTimerHandle;
 };

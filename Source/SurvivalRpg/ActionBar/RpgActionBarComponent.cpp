@@ -73,10 +73,11 @@ void URpgActionBarComponent::RequestAssignAbilityToSlot_Implementation(int32 Slo
 	}
 
 	const FGameplayTag RuntimeInputTag = GetInputTagForSlotIndex(SlotIndex);
-	if (!RuntimeInputTag.IsValid() || !RpgASC->BindInputTagToAbilityId(AbilityIdTag, RuntimeInputTag))
+	if (!RuntimeInputTag.IsValid())
 	{
 		return;
 	}
+	RpgASC->BindInputTagToAbilityId(AbilityIdTag, RuntimeInputTag);
 
 	FRpgActionBarSlot& Slot = Slots[SlotIndex];
 	Slot.SlotType = ERpgActionBarSlotType::Ability;
@@ -132,7 +133,7 @@ void URpgActionBarComponent::ActivateSlot(int32 SlotIndex)
 	{
 		if (URpgAbilitySystemComponent* RpgASC = RpgPC->GetRpgAbilitySystemComponent())
 		{
-			RpgASC->AbilityInputTagPressed(GetInputTagForSlotIndex(SlotIndex));
+			RpgASC->AbilityInputTagPressed(Slot.AbilityIdTag);
 		}
 	}
 }
@@ -155,7 +156,7 @@ void URpgActionBarComponent::ReleaseSlot(int32 SlotIndex)
 	{
 		if (URpgAbilitySystemComponent* RpgASC = RpgPC->GetRpgAbilitySystemComponent())
 		{
-			RpgASC->AbilityInputTagReleased(GetInputTagForSlotIndex(SlotIndex));
+			RpgASC->AbilityInputTagReleased(Slot.AbilityIdTag);
 		}
 	}
 }

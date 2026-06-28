@@ -84,7 +84,13 @@ void URpgWeaponAbilityLoadoutComponent::RefreshAbilityBindings()
 		RpgASC->ClearRuntimeAbilityInputTag(RuntimeInputTag);
 
 		const bool bCanBind = Slot.AbilityIdTag.IsValid() && RpgASC->HasAbilityWithAbilityId(Slot.AbilityIdTag);
-		Slot.bAvailable = bCanBind && RpgASC->BindInputTagToAbilityId(Slot.AbilityIdTag, RuntimeInputTag);
+		Slot.bAvailable = bCanBind;
+
+		// Keep the runtime slot tag mirrored for compatibility, but activation uses the stable AbilityIdTag.
+		if (bCanBind)
+		{
+			RpgASC->BindInputTagToAbilityId(Slot.AbilityIdTag, RuntimeInputTag);
+		}
 	}
 
 	OnRep_Slots();
@@ -102,7 +108,7 @@ void URpgWeaponAbilityLoadoutComponent::HandleInputPressed(int32 SlotIndex)
 	{
 		if (URpgAbilitySystemComponent* RpgASC = RpgPC->GetRpgAbilitySystemComponent())
 		{
-			RpgASC->AbilityInputTagPressed(GetInputTagForSlotIndex(SlotIndex));
+			RpgASC->AbilityInputTagPressed(Slots[SlotIndex].AbilityIdTag);
 		}
 	}
 }
@@ -119,7 +125,7 @@ void URpgWeaponAbilityLoadoutComponent::HandleInputReleased(int32 SlotIndex)
 	{
 		if (URpgAbilitySystemComponent* RpgASC = RpgPC->GetRpgAbilitySystemComponent())
 		{
-			RpgASC->AbilityInputTagReleased(GetInputTagForSlotIndex(SlotIndex));
+			RpgASC->AbilityInputTagReleased(Slots[SlotIndex].AbilityIdTag);
 		}
 	}
 }

@@ -135,6 +135,14 @@ public:
 	UFUNCTION(BlueprintCallable, Category="RPG|AbilitySet")
 	bool HasAbilityWithAbilityId(FGameplayTag AbilityIdTag) const;
 
+	/** Returns the granted ability CDO identified by AbilityIdTag, used by UI to read static presentation data. */
+	UFUNCTION(BlueprintPure, Category="RPG|AbilitySet")
+	const URpgGameplayAbility* FindAbilityCDOByAbilityId(FGameplayTag AbilityIdTag) const;
+
+	/** Reads the longest active cooldown matching the ability's cooldown tags. Output is seconds and is UI-read-only. */
+	UFUNCTION(BlueprintPure, Category="RPG|AbilitySet")
+	bool GetCooldownTimeRemainingAndDurationForAbilityId(FGameplayTag AbilityIdTag, float& OutRemainingTime, float& OutDuration) const;
+
 	/** Adds RuntimeInputTag to the first ability spec matching AbilityIdTag, replacing any previous use of that input tag. Server-authoritative. */
 	UFUNCTION(BlueprintCallable, Category="RPG|AbilitySet")
 	bool BindInputTagToAbilityId(FGameplayTag AbilityIdTag, FGameplayTag RuntimeInputTag);

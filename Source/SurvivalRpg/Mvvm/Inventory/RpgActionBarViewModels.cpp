@@ -1,6 +1,8 @@
 #include "RpgActionBarViewModels.h"
 
 #include "GameFramework/GameplayMessageSubsystem.h"
+#include "SurvivalRpg/AbilitySystem/Abilities/RpgGameplayAbility.h"
+#include "SurvivalRpg/AbilitySystem/RpgAbilitySystemComponent.h"
 #include "SurvivalRpg/Core/Player/RpgPlayerController.h"
 #include "SurvivalRpg/Core/Player/RpgPlayerState.h"
 #include "SurvivalRpg/GameplayTags/RpgGameplayTags.h"
@@ -54,6 +56,51 @@ namespace
 		return AbilityIdTag.IsValid()
 			? FText::FromName(AbilityIdTag.GetTagName())
 			: FText::GetEmpty();
+	}
+
+	struct FRpgAbilitySlotPresentation
+	{
+		TSoftObjectPtr<UTexture2D> Icon;
+		FText DisplayName;
+		FText Description;
+	};
+
+	FRpgAbilitySlotPresentation BuildAbilityPresentation(FGameplayTag AbilityIdTag, const URpgAbilitySystemComponent* AbilitySystem)
+	{
+		FRpgAbilitySlotPresentation Presentation;
+		Presentation.DisplayName = AbilityIdToDisplayText(AbilityIdTag);
+
+		const URpgGameplayAbility* AbilityCDO = AbilitySystem ? AbilitySystem->FindAbilityCDOByAbilityId(AbilityIdTag) : nullptr;
+		if (!AbilityCDO)
+		{
+			return Presentation;
+		}
+
+		const FText AbilityDisplayName = AbilityCDO->GetAbilityDisplayName();
+		Presentation.DisplayName = AbilityDisplayName.IsEmpty() ? Presentation.DisplayName : AbilityDisplayName;
+		Presentation.Description = AbilityCDO->GetAbilityDescription();
+		Presentation.Icon = AbilityCDO->GetAbilityIcon();
+		return Presentation;
+	}
+
+	FText BuildCooldownText(float RemainingSeconds)
+	{
+		if (RemainingSeconds <= 0.0f)
+		{
+			return FText::GetEmpty();
+		}
+
+		FNumberFormattingOptions NumberFormatting;
+		if (RemainingSeconds < 10.0f)
+		{
+			NumberFormatting.MinimumFractionalDigits = 1;
+			NumberFormatting.MaximumFractionalDigits = 1;
+			return FText::AsNumber(FMath::Max(0.1f, RemainingSeconds), &NumberFormatting);
+		}
+
+		NumberFormatting.MinimumFractionalDigits = 0;
+		NumberFormatting.MaximumFractionalDigits = 0;
+		return FText::AsNumber(FMath::CeilToInt(RemainingSeconds), &NumberFormatting);
 	}
 }
 
@@ -200,6 +247,11 @@ void URpgActionBarViewModel::RegisterMessageListener()
 		RpgGameplayTags::Rpg_ActionBar_Message_SlotsChanged,
 		this,
 		&ThisClass::HandleActionBarSlotsChanged);
+
+	InventoryChangedHandle = MessageSubsystem.RegisterListener<FRpgInventoryChangeMessage>(
+		FGameplayTag::RequestGameplayTag(TEXT("Rpg.Inventory.Message.StackChanged")),
+		this,
+		&ThisClass::HandlePlayerInventoryChanged);
 }
 
 void URpgActionBarViewModel::UnregisterMessageListener()
@@ -207,6 +259,11 @@ void URpgActionBarViewModel::UnregisterMessageListener()
 	if (SlotsChangedHandle.IsValid())
 	{
 		SlotsChangedHandle.Unregister();
+	}
+
+	if (InventoryChangedHandle.IsValid())
+	{
+		InventoryChangedHandle.Unregister();
 	}
 }
 
@@ -219,17 +276,41 @@ void URpgActionBarViewModel::HandleActionBarSlotsChanged(FGameplayTag Channel, c
 	}
 }
 
+void URpgActionBarViewModel::HandlePlayerInventoryChanged(FGameplayTag Channel, const FRpgInventoryChangeMessage& Message)
+{
+	const URpgInventoryManagerComponent* PlayerInventory = ObservedPlayerInventory.Get();
+	if (PlayerInventory && Message.InventoryOwner == PlayerInventory)
+	{
+		RefreshSlots();
+	}
+}
+
 void URpgWeaponAbilitySlotViewModel::InitializeSlot(int32 InSlotIndex, const FRpgWeaponAbilityLoadoutSlot& InSlot)
+{
+	InitializeSlotWithAbilitySystem(InSlotIndex, InSlot, nullptr);
+}
+
+void URpgWeaponAbilitySlotViewModel::InitializeSlotWithAbilitySystem(
+	int32 InSlotIndex,
+	const FRpgWeaponAbilityLoadoutSlot& InSlot,
+	const URpgAbilitySystemComponent* InAbilitySystem)
 {
 	const bool bWasChanged =
 		SlotIndex != InSlotIndex ||
 		AbilityIdTag != InSlot.AbilityIdTag ||
 		bAvailable != InSlot.bAvailable;
+	const FRpgAbilitySlotPresentation Presentation = BuildAbilityPresentation(InSlot.AbilityIdTag, InAbilitySystem);
+	const bool bPresentationChanged =
+		!DisplayName.EqualTo(Presentation.DisplayName) ||
+		!Description.EqualTo(Presentation.Description) ||
+		Icon != Presentation.Icon;
 
 	SlotIndex = InSlotIndex;
 	AbilityIdTag = InSlot.AbilityIdTag;
 	bAvailable = InSlot.bAvailable;
-	DisplayName = AbilityIdToDisplayText(AbilityIdTag);
+	DisplayName = Presentation.DisplayName;
+	Description = Presentation.Description;
+	Icon = Presentation.Icon;
 	HotkeyActionRowName = InSlotIndex >= 0
 		? FName(*FString::Printf(TEXT("UI.WeaponAbility.%d"), InSlotIndex + 1))
 		: NAME_None;
@@ -238,38 +319,93 @@ void URpgWeaponAbilitySlotViewModel::InitializeSlot(int32 InSlotIndex, const FRp
 	UE_MVVM_BROADCAST_FIELD_VALUE_CHANGED(AbilityIdTag);
 	UE_MVVM_BROADCAST_FIELD_VALUE_CHANGED(bAvailable);
 	UE_MVVM_BROADCAST_FIELD_VALUE_CHANGED(DisplayName);
+	UE_MVVM_BROADCAST_FIELD_VALUE_CHANGED(Description);
+	UE_MVVM_BROADCAST_FIELD_VALUE_CHANGED(Icon);
 	UE_MVVM_BROADCAST_FIELD_VALUE_CHANGED(HotkeyActionRowName);
 
-	if (bWasChanged)
+	RefreshCooldown(InAbilitySystem);
+
+	if (bWasChanged || bPresentationChanged)
 	{
 		OnSlotChanged.Broadcast(this);
+	}
+}
+
+void URpgWeaponAbilitySlotViewModel::RefreshCooldown(const URpgAbilitySystemComponent* InAbilitySystem)
+{
+	float NewCooldownRemainingTime = 0.0f;
+	float NewCooldownDuration = 0.0f;
+	const bool bNewOnCooldown = bAvailable && AbilityIdTag.IsValid() && InAbilitySystem
+		&& InAbilitySystem->GetCooldownTimeRemainingAndDurationForAbilityId(
+			AbilityIdTag,
+			NewCooldownRemainingTime,
+			NewCooldownDuration);
+	const float NewCooldownPercent = bNewOnCooldown && NewCooldownDuration > 0.0f
+		? FMath::Clamp(NewCooldownRemainingTime / NewCooldownDuration, 0.0f, 1.0f)
+		: 0.0f;
+	const FText NewCooldownText = bNewOnCooldown ? BuildCooldownText(NewCooldownRemainingTime) : FText::GetEmpty();
+
+	const bool bCooldownChanged =
+		bOnCooldown != bNewOnCooldown ||
+		!FMath::IsNearlyEqual(CooldownRemainingTime, NewCooldownRemainingTime, 0.01f) ||
+		!FMath::IsNearlyEqual(CooldownDuration, NewCooldownDuration, 0.01f) ||
+		!FMath::IsNearlyEqual(CooldownPercent, NewCooldownPercent, 0.001f) ||
+		!CooldownText.EqualTo(NewCooldownText);
+
+	bOnCooldown = bNewOnCooldown;
+	CooldownRemainingTime = bNewOnCooldown ? NewCooldownRemainingTime : 0.0f;
+	CooldownDuration = bNewOnCooldown ? NewCooldownDuration : 0.0f;
+	CooldownPercent = NewCooldownPercent;
+	CooldownText = NewCooldownText;
+
+	if (bCooldownChanged)
+	{
+		UE_MVVM_BROADCAST_FIELD_VALUE_CHANGED(bOnCooldown);
+		UE_MVVM_BROADCAST_FIELD_VALUE_CHANGED(CooldownRemainingTime);
+		UE_MVVM_BROADCAST_FIELD_VALUE_CHANGED(CooldownDuration);
+		UE_MVVM_BROADCAST_FIELD_VALUE_CHANGED(CooldownPercent);
+		UE_MVVM_BROADCAST_FIELD_VALUE_CHANGED(CooldownText);
 	}
 }
 
 void URpgWeaponAbilityLoadoutViewModel::BindPlayerController(APlayerController* InPlayerController)
 {
 	const ARpgPlayerController* RpgPlayerController = Cast<ARpgPlayerController>(InPlayerController);
-	BindWeaponAbilityLoadout(RpgPlayerController ? RpgPlayerController->GetWeaponAbilityLoadoutComponent() : nullptr);
+	BindWeaponAbilityLoadoutWithAbilitySystem(
+		RpgPlayerController ? RpgPlayerController->GetWeaponAbilityLoadoutComponent() : nullptr,
+		RpgPlayerController ? RpgPlayerController->GetRpgAbilitySystemComponent() : nullptr);
 }
 
 void URpgWeaponAbilityLoadoutViewModel::BindWeaponAbilityLoadout(URpgWeaponAbilityLoadoutComponent* InLoadout)
 {
-	if (ObservedLoadout.Get() == InLoadout)
+	BindWeaponAbilityLoadoutWithAbilitySystem(InLoadout, nullptr);
+}
+
+void URpgWeaponAbilityLoadoutViewModel::BindWeaponAbilityLoadoutWithAbilitySystem(
+	URpgWeaponAbilityLoadoutComponent* InLoadout,
+	URpgAbilitySystemComponent* InAbilitySystem)
+{
+	if (ObservedLoadout.Get() == InLoadout && ObservedAbilitySystem.Get() == InAbilitySystem)
 	{
 		RefreshSlots();
 		return;
 	}
 
+	StopCooldownRefreshTimer();
 	UnregisterMessageListener();
 	ObservedLoadout = InLoadout;
+	ObservedAbilitySystem = InAbilitySystem;
 	RegisterMessageListener();
 	RefreshSlots();
+	StartCooldownRefreshTimer();
 }
 
 void URpgWeaponAbilityLoadoutViewModel::UnbindWeaponAbilityLoadout()
 {
+	StopCooldownRefreshTimer();
 	UnregisterMessageListener();
 	ObservedLoadout.Reset();
+	ObservedAbilitySystem.Reset();
 	RefreshSlots();
 }
 
@@ -293,12 +429,24 @@ void URpgWeaponAbilityLoadoutViewModel::RefreshSlots()
 
 		const FRpgWeaponAbilityLoadoutSlot EmptySlot;
 		const FRpgWeaponAbilityLoadoutSlot& SourceSlot = SourceSlots.IsValidIndex(SlotIndex) ? SourceSlots[SlotIndex] : EmptySlot;
-		SlotViewModel->InitializeSlot(SlotIndex, SourceSlot);
+		SlotViewModel->InitializeSlotWithAbilitySystem(SlotIndex, SourceSlot, ObservedAbilitySystem.Get());
 		Slots.Add(SlotViewModel);
 	}
 
 	UE_MVVM_BROADCAST_FIELD_VALUE_CHANGED(Slots);
 	OnSlotsChanged.Broadcast();
+}
+
+void URpgWeaponAbilityLoadoutViewModel::RefreshCooldowns()
+{
+	const URpgAbilitySystemComponent* AbilitySystem = ObservedAbilitySystem.Get();
+	for (URpgWeaponAbilitySlotViewModel* Slot : Slots)
+	{
+		if (Slot)
+		{
+			Slot->RefreshCooldown(AbilitySystem);
+		}
+	}
 }
 
 TArray<URpgWeaponAbilitySlotViewModel*> URpgWeaponAbilityLoadoutViewModel::GetSlots() const
@@ -319,6 +467,7 @@ URpgWeaponAbilitySlotViewModel* URpgWeaponAbilityLoadoutViewModel::GetSlotAtInde
 
 void URpgWeaponAbilityLoadoutViewModel::BeginDestroy()
 {
+	StopCooldownRefreshTimer();
 	UnregisterMessageListener();
 	Super::BeginDestroy();
 }
@@ -347,6 +496,52 @@ void URpgWeaponAbilityLoadoutViewModel::UnregisterMessageListener()
 	{
 		SlotsChangedHandle.Unregister();
 	}
+}
+
+void URpgWeaponAbilityLoadoutViewModel::StartCooldownRefreshTimer()
+{
+	StopCooldownRefreshTimer();
+
+	UWorld* World = nullptr;
+	if (URpgAbilitySystemComponent* AbilitySystem = ObservedAbilitySystem.Get())
+	{
+		World = AbilitySystem->GetWorld();
+	}
+	else if (URpgWeaponAbilityLoadoutComponent* Loadout = ObservedLoadout.Get())
+	{
+		World = Loadout->GetWorld();
+	}
+
+	if (!World || CooldownRefreshInterval <= 0.0f)
+	{
+		return;
+	}
+
+	World->GetTimerManager().SetTimer(
+		CooldownRefreshTimerHandle,
+		this,
+		&ThisClass::RefreshCooldowns,
+		CooldownRefreshInterval,
+		true);
+}
+
+void URpgWeaponAbilityLoadoutViewModel::StopCooldownRefreshTimer()
+{
+	UWorld* World = nullptr;
+	if (URpgAbilitySystemComponent* AbilitySystem = ObservedAbilitySystem.Get())
+	{
+		World = AbilitySystem->GetWorld();
+	}
+	else if (URpgWeaponAbilityLoadoutComponent* Loadout = ObservedLoadout.Get())
+	{
+		World = Loadout->GetWorld();
+	}
+
+	if (World)
+	{
+		World->GetTimerManager().ClearTimer(CooldownRefreshTimerHandle);
+	}
+	CooldownRefreshTimerHandle.Invalidate();
 }
 
 void URpgWeaponAbilityLoadoutViewModel::HandleWeaponAbilityLoadoutChanged(FGameplayTag Channel, const FRpgWeaponAbilityLoadoutChangedMessage& Message)

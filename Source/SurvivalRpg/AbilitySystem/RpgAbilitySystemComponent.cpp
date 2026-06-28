@@ -816,6 +816,60 @@ bool URpgAbilitySystemComponent::HasAbilityWithAbilityId(FGameplayTag AbilityIdT
 	return false;
 }
 
+const URpgGameplayAbility* URpgAbilitySystemComponent::FindAbilityCDOByAbilityId(FGameplayTag AbilityIdTag) const
+{
+	if (!AbilityIdTag.IsValid())
+	{
+		return nullptr;
+	}
+
+	for (const FGameplayAbilitySpec& Spec : GetActivatableAbilities())
+	{
+		if (AbilitySpecHasActivationTag(Spec, AbilityIdTag))
+		{
+			return Cast<URpgGameplayAbility>(Spec.Ability);
+		}
+	}
+
+	return nullptr;
+}
+
+bool URpgAbilitySystemComponent::GetCooldownTimeRemainingAndDurationForAbilityId(
+	FGameplayTag AbilityIdTag,
+	float& OutRemainingTime,
+	float& OutDuration) const
+{
+	OutRemainingTime = 0.0f;
+	OutDuration = 0.0f;
+
+	const URpgGameplayAbility* AbilityCDO = FindAbilityCDOByAbilityId(AbilityIdTag);
+	if (!AbilityCDO)
+	{
+		return false;
+	}
+
+	const FGameplayTagContainer* CooldownTags = AbilityCDO->GetCooldownTags();
+	if (!CooldownTags || CooldownTags->IsEmpty())
+	{
+		return false;
+	}
+
+	const FGameplayEffectQuery CooldownQuery = FGameplayEffectQuery::MakeQuery_MatchAnyOwningTags(*CooldownTags);
+	const TArray<TPair<float, float>> CooldownTimes = GetActiveEffectsTimeRemainingAndDuration(CooldownQuery);
+	for (const TPair<float, float>& CooldownTime : CooldownTimes)
+	{
+		const float RemainingTime = CooldownTime.Key;
+		const float Duration = CooldownTime.Value;
+		if (RemainingTime > OutRemainingTime)
+		{
+			OutRemainingTime = RemainingTime;
+			OutDuration = Duration;
+		}
+	}
+
+	return OutRemainingTime > 0.0f && OutDuration > 0.0f;
+}
+
 bool URpgAbilitySystemComponent::BindInputTagToAbilityId(FGameplayTag AbilityIdTag, FGameplayTag RuntimeInputTag)
 {
 	if (!HasGrantAuthority() || !AbilityIdTag.IsValid() || !RuntimeInputTag.IsValid())
