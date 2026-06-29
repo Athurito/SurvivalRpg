@@ -2,9 +2,11 @@
 
 #include "RpgInventoryFragment_ItemTraits.h"
 #include "RpgInventoryFragment_EquippableItem.h"
+#include "RpgInventoryFragment_SlotContainerProvider.h"
 #include "RpgInventoryItemInstance.h"
 #include "RpgInventoryManagerComponent.h"
 #include "RpgInventoryUiActionComponent.h"
+#include "RpgPlayerInventoryLayoutComponent.h"
 #include "SurvivalRpg/Core/Player/RpgPlayerController.h"
 #include "SurvivalRpg/Core/Player/RpgPlayerState.h"
 #include "SurvivalRpg/Mvvm/Inventory/RpgInventoryViewModels.h"
@@ -27,7 +29,8 @@ namespace
 			EquipmentSlot == ERpgEquipmentSlot::Chest ||
 			EquipmentSlot == ERpgEquipmentSlot::Hands ||
 			EquipmentSlot == ERpgEquipmentSlot::Legs ||
-			EquipmentSlot == ERpgEquipmentSlot::Feet;
+			EquipmentSlot == ERpgEquipmentSlot::Feet ||
+			URpgPlayerInventoryLayoutComponent::IsSlotContainerEquipmentSlot(EquipmentSlot);
 	}
 
 	bool IsSplittableStackItem(const URpgInventoryItemInstance* ItemInstance)
@@ -40,6 +43,11 @@ namespace
 
 	bool CanInventoryItemEquipInSlot(const URpgInventoryItemInstance* ItemInstance, ERpgEquipmentSlot EquipmentSlot)
 	{
+		if (URpgPlayerInventoryLayoutComponent::IsSlotContainerEquipmentSlot(EquipmentSlot))
+		{
+			return ItemInstance && ItemInstance->FindFragmentByClass<URpgInventoryFragment_SlotContainerProvider>() != nullptr;
+		}
+
 		const URpgInventoryFragment_EquippableItem* EquippableFragment = ItemInstance
 			? ItemInstance->FindFragmentByClass<URpgInventoryFragment_EquippableItem>()
 			: nullptr;

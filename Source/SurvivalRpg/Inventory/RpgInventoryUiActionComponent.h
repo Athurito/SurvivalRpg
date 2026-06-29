@@ -3,6 +3,7 @@
 #include "Components/ControllerComponent.h"
 #include "GameplayTagContainer.h"
 #include "RpgInventoryManagerComponent.h"
+#include "RpgPlayerInventoryLayoutTypes.h"
 #include "SurvivalRpg/Equipment/RpgEquipmentDefinition.h"
 
 #include "RpgInventoryUiActionComponent.generated.h"
@@ -20,6 +21,8 @@ class URpgCraftingStationComponent;
 class URpgInventoryItemDefinition;
 class URpgInventoryItemInstance;
 class URpgInventoryManagerComponent;
+class URpgActionBarComponent;
+class URpgPlayerInventoryLayoutComponent;
 
 /** Owning-client result for an inventory UI command. */
 UENUM(BlueprintType)
@@ -137,6 +140,34 @@ public:
 	UFUNCTION(Server, Reliable, BlueprintCallable, Category = "Inventory|UI Actions")
 	void RequestMoveInventoryEntryToSlot(URpgInventoryManagerComponent* Inventory, FGuid EntryId, int32 TargetSlotIndex);
 
+	/** Moves an owned player-inventory item into a logical player slot address such as WeaponSlot1[0] or Belt[2]. */
+	UFUNCTION(Server, Reliable, BlueprintCallable, Category = "Inventory|UI Actions")
+	void RequestMoveItemToInventorySlotAddress(URpgInventoryItemInstance* Item, FRpgInventorySlotAddress TargetAddress);
+
+	/** Assigns a bag, belt, pouch, or resource bag item to a slot-container equipment slot. */
+	UFUNCTION(Server, Reliable, BlueprintCallable, Category = "Inventory|UI Actions")
+	void RequestEquipSlotContainerItem(ERpgEquipmentSlot ContainerSlot, URpgInventoryItemInstance* Item);
+
+	/** Clears a bag, belt, pouch, or resource bag equipment slot if its provided slots are empty. */
+	UFUNCTION(Server, Reliable, BlueprintCallable, Category = "Inventory|UI Actions")
+	void RequestUnequipSlotContainerItem(ERpgEquipmentSlot ContainerSlot);
+
+	/** Activates a carry slot as MainHand or OffHand without moving the item out of the inventory. */
+	UFUNCTION(Server, Reliable, BlueprintCallable, Category = "Inventory|UI Actions")
+	void RequestActivateCarrySlot(FRpgInventorySlotAddress CarrySlotAddress);
+
+	/** Clears the active MainHand/OffHand runtime state. Items remain in their inventory carry slots. */
+	UFUNCTION(Server, Reliable, BlueprintCallable, Category = "Inventory|UI Actions")
+	void RequestClearActiveHands();
+
+	/** Binds one 1..8 actionbar slot to a bindable non-carry inventory slot address. */
+	UFUNCTION(Server, Reliable, BlueprintCallable, Category = "Inventory|UI Actions")
+	void RequestBindActionBarToInventorySlot(int32 ActionBarSlotIndex, FRpgInventorySlotAddress SlotAddress);
+
+	/** Binds one 1..8 actionbar slot to a carry slot address. */
+	UFUNCTION(Server, Reliable, BlueprintCallable, Category = "Inventory|UI Actions")
+	void RequestBindActionBarToCarrySlot(int32 ActionBarSlotIndex, FRpgInventorySlotAddress CarrySlotAddress);
+
 	/** Splits one stack into a new stack in the same inventory. SplitCount <= 0 performs the V1 quick 50% split. */
 	UFUNCTION(Server, Reliable, BlueprintCallable, Category = "Inventory|UI Actions")
 	void RequestSplitItemStack(URpgInventoryManagerComponent* Inventory, URpgInventoryItemInstance* Item, int32 SplitCount, int32 TargetSlotIndex);
@@ -223,14 +254,17 @@ public:
 private:
 	URpgInventoryManagerComponent* FindPlayerInventory() const;
 	URpgEquipmentLoadoutComponent* FindEquipmentLoadout() const;
+	URpgPlayerInventoryLayoutComponent* FindPlayerInventoryLayout() const;
+	URpgActionBarComponent* FindActionBar() const;
 	URpgAbilitySystemComponent* FindPlayerAbilitySystem() const;
 	bool CanTransferItemStack(URpgInventoryManagerComponent* SourceInventory, URpgInventoryManagerComponent* TargetInventory, URpgInventoryItemInstance* Item, int32 StackCount) const;
 	bool CanTransferItemStackToInventorySlot(URpgInventoryManagerComponent* SourceInventory, URpgInventoryManagerComponent* TargetInventory, URpgInventoryItemInstance* Item, int32 StackCount, int32 TargetSlotIndex) const;
 	bool CanSplitItemStack(URpgInventoryManagerComponent* Inventory, URpgInventoryItemInstance* Item, int32 SplitCount, int32 TargetSlotIndex, int32& OutSplitCount, int32& OutTargetSlotIndex) const;
 	bool FindFirstEmptyInventorySlot(URpgInventoryManagerComponent* Inventory, int32& OutSlotIndex) const;
 	bool CanAccessBaseStorageStation(const URpgBaseStorageStationComponent* Station) const;
-	void ClearPlayerAssignmentsForItem(URpgInventoryItemInstance* Item) const;
+	bool ClearPlayerAssignmentsForItem(URpgInventoryItemInstance* Item) const;
 	bool TryAssignItemToDefaultEquipmentDestination(URpgInventoryItemInstance* Item);
+	bool TryMoveItemToFirstCompatibleCarrySlot(URpgInventoryItemInstance* Item);
 	bool TrySpawnManualDrop(URpgInventoryItemInstance* Item, int32 StackCount, bool bDropAsInstance);
 	bool TryMergeManualDrop(TSubclassOf<URpgInventoryItemDefinition> ItemDefinition, int32 StackCount, const FVector& SpawnLocation) const;
 	FTransform GetManualDropTransform() const;

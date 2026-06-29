@@ -10,6 +10,7 @@
 #include "SurvivalRpg/Inventory/RpgInventoryItemDefinition.h"
 #include "SurvivalRpg/Inventory/RpgInventoryItemInstance.h"
 #include "SurvivalRpg/Inventory/RpgInventoryManagerComponent.h"
+#include "SurvivalRpg/Inventory/RpgPlayerInventoryLayoutComponent.h"
 
 #include UE_INLINE_GENERATED_CPP_BY_NAME(RpgActionBarViewModels)
 
@@ -104,36 +105,36 @@ namespace
 	}
 }
 
-void URpgActionBarSlotViewModel::InitializeSlot(int32 InSlotIndex, const FRpgActionBarSlot& InSlot, int32 InStackCount)
+void URpgActionBarSlotViewModel::InitializeSlot(int32 InSlotIndex, const FRpgActionBarSlot& InSlot, URpgInventoryItemInstance* ResolvedItem, int32 InStackCount)
 {
 	const bool bWasChanged =
 		SlotIndex != InSlotIndex ||
 		SlotType != InSlot.SlotType ||
-		ItemInstance != InSlot.ItemInstance ||
-		AbilityIdTag != InSlot.AbilityIdTag ||
+		SlotAddress != InSlot.SlotAddress ||
+		ItemInstance != ResolvedItem ||
 		StackCount != InStackCount;
 
 	SlotIndex = InSlotIndex;
 	SlotType = InSlot.SlotType;
 	bHasContent = !InSlot.IsEmpty();
-	ItemInstance = InSlot.ItemInstance;
-	AbilityIdTag = InSlot.AbilityIdTag;
-	StackCount = InSlot.SlotType == ERpgActionBarSlotType::InventoryItem ? InStackCount : 0;
+	SlotAddress = InSlot.SlotAddress;
+	ItemInstance = ResolvedItem;
+	StackCount = ResolvedItem ? InStackCount : 0;
 	HotkeyActionRowName = InSlotIndex >= 0
 		? FName(*FString::Printf(TEXT("UI.ActionBar.Slot.%d"), InSlotIndex + 1))
 		: NAME_None;
 
 	const FRpgActionSlotPresentation Presentation = BuildItemPresentation(ItemInstance);
 	Icon = Presentation.Icon;
-	ShortDisplayName = InSlot.SlotType == ERpgActionBarSlotType::Ability
-		? AbilityIdToDisplayText(AbilityIdTag)
-		: Presentation.ShortDisplayName;
+	ShortDisplayName = !Presentation.ShortDisplayName.IsEmpty()
+		? Presentation.ShortDisplayName
+		: (bHasContent ? FText::FromString(FString::Printf(TEXT("%s %d"), *SlotAddress.GroupId.ToString(), SlotAddress.LocalSlotIndex + 1)) : FText::GetEmpty());
 
 	UE_MVVM_BROADCAST_FIELD_VALUE_CHANGED(SlotIndex);
 	UE_MVVM_BROADCAST_FIELD_VALUE_CHANGED(SlotType);
 	UE_MVVM_BROADCAST_FIELD_VALUE_CHANGED(bHasContent);
+	UE_MVVM_BROADCAST_FIELD_VALUE_CHANGED(SlotAddress);
 	UE_MVVM_BROADCAST_FIELD_VALUE_CHANGED(ItemInstance);
-	UE_MVVM_BROADCAST_FIELD_VALUE_CHANGED(AbilityIdTag);
 	UE_MVVM_BROADCAST_FIELD_VALUE_CHANGED(StackCount);
 	UE_MVVM_BROADCAST_FIELD_VALUE_CHANGED(Icon);
 	UE_MVVM_BROADCAST_FIELD_VALUE_CHANGED(ShortDisplayName);
@@ -149,14 +150,20 @@ void URpgActionBarViewModel::BindPlayerController(APlayerController* InPlayerCon
 {
 	const ARpgPlayerController* RpgPlayerController = Cast<ARpgPlayerController>(InPlayerController);
 	const ARpgPlayerState* RpgPlayerState = RpgPlayerController ? RpgPlayerController->GetRpgPlayerState() : nullptr;
-	BindActionBar(
+	BindActionBarWithLayout(
 		RpgPlayerController ? RpgPlayerController->GetActionBarComponent() : nullptr,
-		RpgPlayerState ? RpgPlayerState->GetInventoryManagerComponent() : nullptr);
+		RpgPlayerState ? RpgPlayerState->GetInventoryManagerComponent() : nullptr,
+		RpgPlayerController ? RpgPlayerController->GetPlayerInventoryLayoutComponent() : nullptr);
 }
 
 void URpgActionBarViewModel::BindActionBar(URpgActionBarComponent* InActionBar, URpgInventoryManagerComponent* InPlayerInventory)
 {
-	if (ObservedActionBar.Get() == InActionBar && ObservedPlayerInventory.Get() == InPlayerInventory)
+	BindActionBarWithLayout(InActionBar, InPlayerInventory, nullptr);
+}
+
+void URpgActionBarViewModel::BindActionBarWithLayout(URpgActionBarComponent* InActionBar, URpgInventoryManagerComponent* InPlayerInventory, URpgPlayerInventoryLayoutComponent* InInventoryLayout)
+{
+	if (ObservedActionBar.Get() == InActionBar && ObservedPlayerInventory.Get() == InPlayerInventory && ObservedInventoryLayout.Get() == InInventoryLayout)
 	{
 		RefreshSlots();
 		return;
@@ -165,6 +172,7 @@ void URpgActionBarViewModel::BindActionBar(URpgActionBarComponent* InActionBar, 
 	UnregisterMessageListener();
 	ObservedActionBar = InActionBar;
 	ObservedPlayerInventory = InPlayerInventory;
+	ObservedInventoryLayout = InInventoryLayout;
 	RegisterMessageListener();
 	RefreshSlots();
 }
@@ -174,6 +182,7 @@ void URpgActionBarViewModel::UnbindActionBar()
 	UnregisterMessageListener();
 	ObservedActionBar.Reset();
 	ObservedPlayerInventory.Reset();
+	ObservedInventoryLayout.Reset();
 	RefreshSlots();
 }
 
@@ -181,6 +190,7 @@ void URpgActionBarViewModel::RefreshSlots()
 {
 	const URpgActionBarComponent* ActionBar = ObservedActionBar.Get();
 	const URpgInventoryManagerComponent* PlayerInventory = ObservedPlayerInventory.Get();
+	URpgPlayerInventoryLayoutComponent* InventoryLayout = ObservedInventoryLayout.Get();
 	const TArray<FRpgActionBarSlot> SourceSlots = ActionBar ? ActionBar->GetSlots() : TArray<FRpgActionBarSlot>();
 	const int32 SlotCount = ActionBar ? FMath::Max(ActionBar->GetNumSlots(), SourceSlots.Num()) : FMath::Max(1, DefaultSlotCount);
 
@@ -198,10 +208,11 @@ void URpgActionBarViewModel::RefreshSlots()
 
 		const FRpgActionBarSlot EmptySlot;
 		const FRpgActionBarSlot& SourceSlot = SourceSlots.IsValidIndex(SlotIndex) ? SourceSlots[SlotIndex] : EmptySlot;
-		const int32 StackCount = (PlayerInventory && SourceSlot.ItemInstance)
-			? PlayerInventory->GetItemStackCount(SourceSlot.ItemInstance)
+		URpgInventoryItemInstance* ResolvedItem = InventoryLayout ? InventoryLayout->GetItemInSlotAddress(SourceSlot.SlotAddress) : nullptr;
+		const int32 StackCount = (PlayerInventory && ResolvedItem)
+			? PlayerInventory->GetItemStackCount(ResolvedItem)
 			: 0;
-		SlotViewModel->InitializeSlot(SlotIndex, SourceSlot, StackCount);
+		SlotViewModel->InitializeSlot(SlotIndex, SourceSlot, ResolvedItem, StackCount);
 		Slots.Add(SlotViewModel);
 	}
 
@@ -252,6 +263,11 @@ void URpgActionBarViewModel::RegisterMessageListener()
 		FGameplayTag::RequestGameplayTag(TEXT("Rpg.Inventory.Message.StackChanged")),
 		this,
 		&ThisClass::HandlePlayerInventoryChanged);
+
+	LayoutChangedHandle = MessageSubsystem.RegisterListener<FRpgPlayerInventoryLayoutChangedMessage>(
+		RpgGameplayTags::Rpg_InventoryLayout_Message_Changed,
+		this,
+		&ThisClass::HandlePlayerInventoryLayoutChanged);
 }
 
 void URpgActionBarViewModel::UnregisterMessageListener()
@@ -264,6 +280,11 @@ void URpgActionBarViewModel::UnregisterMessageListener()
 	if (InventoryChangedHandle.IsValid())
 	{
 		InventoryChangedHandle.Unregister();
+	}
+
+	if (LayoutChangedHandle.IsValid())
+	{
+		LayoutChangedHandle.Unregister();
 	}
 }
 
@@ -280,6 +301,15 @@ void URpgActionBarViewModel::HandlePlayerInventoryChanged(FGameplayTag Channel, 
 {
 	const URpgInventoryManagerComponent* PlayerInventory = ObservedPlayerInventory.Get();
 	if (PlayerInventory && Message.InventoryOwner == PlayerInventory)
+	{
+		RefreshSlots();
+	}
+}
+
+void URpgActionBarViewModel::HandlePlayerInventoryLayoutChanged(FGameplayTag Channel, const FRpgPlayerInventoryLayoutChangedMessage& Message)
+{
+	const URpgPlayerInventoryLayoutComponent* InventoryLayout = ObservedInventoryLayout.Get();
+	if (InventoryLayout && Message.LayoutComponent == InventoryLayout)
 	{
 		RefreshSlots();
 	}

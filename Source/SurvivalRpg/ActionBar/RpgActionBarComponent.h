@@ -2,11 +2,11 @@
 
 #include "Components/ControllerComponent.h"
 #include "GameplayTagContainer.h"
+#include "SurvivalRpg/Inventory/RpgPlayerInventoryLayoutTypes.h"
 
 #include "RpgActionBarComponent.generated.h"
 
 class ARpgPlayerController;
-class URpgInventoryItemInstance;
 
 /** Runtime payload type stored by a general actionbar slot. */
 UENUM(BlueprintType)
@@ -15,11 +15,11 @@ enum class ERpgActionBarSlotType : uint8
 	/** The slot has no assigned action. */
 	Empty,
 
-	/** The slot uses an item instance owned by the player's inventory. */
-	InventoryItem,
+	/** The slot activates or uses the current item in a bindable player-inventory address such as Belt[0]. */
+	InventorySlotBinding,
 
-	/** The slot activates a currently granted gameplay ability identified by AbilityIdTag. */
-	Ability
+	/** The slot activates the current item in a carry-slot address such as WeaponSlot1 or ToolSlot1. */
+	CarrySlotBinding
 };
 
 /** Owner-only replicated state for one general actionbar slot. */
@@ -32,13 +32,9 @@ struct SURVIVALRPG_API FRpgActionBarSlot
 	UPROPERTY(BlueprintReadOnly, Category = "Action Bar")
 	ERpgActionBarSlotType SlotType = ERpgActionBarSlotType::Empty;
 
-	/** Inventory item assigned to this slot when SlotType is InventoryItem. The item remains owned by the player inventory. */
+	/** Logical player-inventory slot bound to this actionbar slot. Bindings survive item swaps inside that source slot. */
 	UPROPERTY(BlueprintReadOnly, Category = "Action Bar")
-	TObjectPtr<URpgInventoryItemInstance> ItemInstance = nullptr;
-
-	/** Semantic ability id assigned to this slot when SlotType is Ability. Runtime input tags are rebound from this id. */
-	UPROPERTY(BlueprintReadOnly, Category = "Action Bar")
-	FGameplayTag AbilityIdTag;
+	FRpgInventorySlotAddress SlotAddress;
 
 	bool IsEmpty() const { return SlotType == ERpgActionBarSlotType::Empty; }
 };
@@ -59,10 +55,10 @@ struct SURVIVALRPG_API FRpgActionBarSlotsChangedMessage
 };
 
 /**
- * Controller-owned general actionbar for player-configured items and abilities on keys 1..8.
+ * Controller-owned general actionbar for player-configured slot bindings on keys 1..8.
  *
- * The component stores owner-only selection state. Item use, ability activation, and inventory ownership
- * remain validated by the existing inventory and ability system server paths.
+ * The component stores owner-only selection state. Item use, carry activation, and inventory ownership remain
+ * validated by the existing server paths; the actionbar never owns item instances directly.
  */
 UCLASS(Blueprintable, meta = (BlueprintSpawnableComponent))
 class SURVIVALRPG_API URpgActionBarComponent : public UControllerComponent
@@ -87,13 +83,13 @@ public:
 	UFUNCTION(BlueprintPure, Category = "Rpg|Action Bar")
 	FRpgActionBarSlot GetSlot(int32 SlotIndex) const;
 
-	/** Assigns a player-inventory item to a general actionbar slot. */
+	/** Binds this actionbar slot to a bindable non-carry player-inventory slot such as Belt or Pockets. */
 	UFUNCTION(Server, Reliable, BlueprintCallable, Category = "Rpg|Action Bar")
-	void RequestAssignItemToSlot(int32 SlotIndex, URpgInventoryItemInstance* ItemInstance);
+	void RequestBindInventorySlotToSlot(int32 SlotIndex, FRpgInventorySlotAddress SlotAddress);
 
-	/** Assigns a granted ability id to a general actionbar slot. */
+	/** Binds this actionbar slot to a carry slot such as WeaponSlot1, ShieldSlot, or ToolSlot1. */
 	UFUNCTION(Server, Reliable, BlueprintCallable, Category = "Rpg|Action Bar")
-	void RequestAssignAbilityToSlot(int32 SlotIndex, FGameplayTag AbilityIdTag);
+	void RequestBindCarrySlotToSlot(int32 SlotIndex, FRpgInventorySlotAddress SlotAddress);
 
 	/** Clears one general actionbar slot. */
 	UFUNCTION(Server, Reliable, BlueprintCallable, Category = "Rpg|Action Bar")

@@ -12,6 +12,7 @@ class URpgInventoryItemDefinition;
 class URpgInventoryItemInstance;
 class URpgInventoryManagerComponent;
 class URpgEquipmentLoadoutComponent;
+class URpgPlayerInventoryLayoutComponent;
 
 USTRUCT(BlueprintType)
 struct SURVIVALRPG_API FRpgStarterInventoryEntry
@@ -72,6 +73,7 @@ private:
 	void TryGrantStarterInventory();
 	void ScheduleRetry();
 	bool ShouldWaitForPawn(const ARpgPlayerController* PlayerController) const;
+	static bool TryMoveItemToFirstCompatibleCarrySlot(URpgPlayerInventoryLayoutComponent* InventoryLayout, URpgInventoryManagerComponent* Inventory, URpgInventoryItemInstance* ItemInstance);
 	static bool EquipmentLoadoutContainsItem(const URpgEquipmentLoadoutComponent* EquipmentLoadout, const URpgInventoryItemInstance* ItemInstance);
 
 	UPROPERTY(Transient)

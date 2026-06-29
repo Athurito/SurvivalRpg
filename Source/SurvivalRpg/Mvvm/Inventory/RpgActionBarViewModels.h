@@ -15,8 +15,10 @@ class APlayerController;
 class UTexture2D;
 class URpgAbilitySystemComponent;
 struct FRpgInventoryChangeMessage;
+struct FRpgPlayerInventoryLayoutChangedMessage;
 class URpgInventoryItemInstance;
 class URpgInventoryManagerComponent;
+class URpgPlayerInventoryLayoutComponent;
 class URpgActionBarSlotViewModel;
 class URpgWeaponAbilitySlotViewModel;
 
@@ -41,7 +43,7 @@ class SURVIVALRPG_API URpgActionBarSlotViewModel : public UMVVMViewModelBase
 public:
 	/** Rebuilds this slot from owner-only replicated actionbar state. */
 	UFUNCTION(BlueprintCallable, Category = "Action Bar|ViewModel")
-	void InitializeSlot(int32 InSlotIndex, const FRpgActionBarSlot& InSlot, int32 InStackCount);
+	void InitializeSlot(int32 InSlotIndex, const FRpgActionBarSlot& InSlot, URpgInventoryItemInstance* ResolvedItem, int32 InStackCount);
 
 	UFUNCTION(BlueprintPure, Category = "Action Bar|ViewModel")
 	int32 GetSlotIndex() const { return SlotIndex; }
@@ -56,7 +58,7 @@ public:
 	URpgInventoryItemInstance* GetItemInstance() const { return ItemInstance.Get(); }
 
 	UFUNCTION(BlueprintPure, Category = "Action Bar|ViewModel")
-	FGameplayTag GetAbilityIdTag() const { return AbilityIdTag; }
+	FRpgInventorySlotAddress GetSlotAddress() const { return SlotAddress; }
 
 	UFUNCTION(BlueprintPure, Category = "Action Bar|ViewModel")
 	int32 GetStackCount() const { return StackCount; }
@@ -72,31 +74,31 @@ protected:
 	UPROPERTY(BlueprintReadOnly, FieldNotify, Category = "Action Bar|ViewModel", meta = (AllowPrivateAccess = "true"))
 	int32 SlotIndex = INDEX_NONE;
 
-	/** Whether this slot is empty, item-backed, or ability-backed. */
+	/** Whether this slot is empty, bound to a normal inventory slot, or bound to a carry slot. */
 	UPROPERTY(BlueprintReadOnly, FieldNotify, Category = "Action Bar|ViewModel", meta = (AllowPrivateAccess = "true"))
 	ERpgActionBarSlotType SlotType = ERpgActionBarSlotType::Empty;
 
-	/** True when the slot has an item or ability assignment. */
+	/** True when the slot has a source-slot assignment, even if that source slot is currently empty. */
 	UPROPERTY(BlueprintReadOnly, FieldNotify, Category = "Action Bar|ViewModel", meta = (AllowPrivateAccess = "true"))
 	bool bHasContent = false;
 
-	/** Inventory-owned item assigned to this actionbar slot. */
+	/** Logical source slot this actionbar entry activates. Empty entries have an invalid address. */
+	UPROPERTY(BlueprintReadOnly, FieldNotify, Category = "Action Bar|ViewModel", meta = (AllowPrivateAccess = "true"))
+	FRpgInventorySlotAddress SlotAddress;
+
+	/** Inventory-owned item currently resolved from SlotAddress. Null when the bound source slot is empty. */
 	UPROPERTY(BlueprintReadOnly, FieldNotify, Category = "Action Bar|ViewModel", meta = (AllowPrivateAccess = "true"))
 	TObjectPtr<URpgInventoryItemInstance> ItemInstance = nullptr;
 
-	/** Ability id assigned to this actionbar slot. */
-	UPROPERTY(BlueprintReadOnly, FieldNotify, Category = "Action Bar|ViewModel", meta = (AllowPrivateAccess = "true"))
-	FGameplayTag AbilityIdTag;
-
-	/** Current stack count for item slots, read from the player's inventory when available. */
+	/** Current stack count for the resolved item, read from the player's inventory when available. */
 	UPROPERTY(BlueprintReadOnly, FieldNotify, Category = "Action Bar|ViewModel", meta = (AllowPrivateAccess = "true"))
 	int32 StackCount = 0;
 
-	/** Optional item icon read from UIData. Ability icon support can layer on this later. */
+	/** Optional item icon read from the item currently resolved from SlotAddress. */
 	UPROPERTY(BlueprintReadOnly, FieldNotify, Category = "Action Bar|ViewModel", meta = (AllowPrivateAccess = "true"))
 	TSoftObjectPtr<UTexture2D> Icon;
 
-	/** Short item name or ability tag text for compact slot UI. */
+	/** Short item name or source-slot fallback text for compact slot UI. */
 	UPROPERTY(BlueprintReadOnly, FieldNotify, Category = "Action Bar|ViewModel", meta = (AllowPrivateAccess = "true"))
 	FText ShortDisplayName;
 
@@ -119,6 +121,10 @@ public:
 	/** Starts observing one actionbar component. */
 	UFUNCTION(BlueprintCallable, Category = "Action Bar|ViewModel")
 	void BindActionBar(URpgActionBarComponent* InActionBar, URpgInventoryManagerComponent* InPlayerInventory);
+
+	/** Starts observing one actionbar component and the layout used to resolve its slot-address bindings. */
+	UFUNCTION(BlueprintCallable, Category = "Action Bar|ViewModel")
+	void BindActionBarWithLayout(URpgActionBarComponent* InActionBar, URpgInventoryManagerComponent* InPlayerInventory, URpgPlayerInventoryLayoutComponent* InInventoryLayout);
 
 	/** Stops observing the current actionbar. */
 	UFUNCTION(BlueprintCallable, Category = "Action Bar|ViewModel")
@@ -151,11 +157,14 @@ private:
 	void UnregisterMessageListener();
 	void HandleActionBarSlotsChanged(FGameplayTag Channel, const FRpgActionBarSlotsChangedMessage& Message);
 	void HandlePlayerInventoryChanged(FGameplayTag Channel, const FRpgInventoryChangeMessage& Message);
+	void HandlePlayerInventoryLayoutChanged(FGameplayTag Channel, const FRpgPlayerInventoryLayoutChangedMessage& Message);
 
 	TWeakObjectPtr<URpgActionBarComponent> ObservedActionBar;
 	TWeakObjectPtr<URpgInventoryManagerComponent> ObservedPlayerInventory;
+	TWeakObjectPtr<URpgPlayerInventoryLayoutComponent> ObservedInventoryLayout;
 	FGameplayMessageListenerHandle SlotsChangedHandle;
 	FGameplayMessageListenerHandle InventoryChangedHandle;
+	FGameplayMessageListenerHandle LayoutChangedHandle;
 };
 
 /** UI projection for one Q/E/R weapon ability slot. */

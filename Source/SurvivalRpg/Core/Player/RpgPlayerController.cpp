@@ -19,6 +19,7 @@
 #include "SurvivalRpg/Equipment/RpgEquipmentLoadoutComponent.h"
 #include "SurvivalRpg/Equipment/RpgWeaponAbilityLoadoutComponent.h"
 #include "SurvivalRpg/GameplayTags/RpgGameplayTags.h"
+#include "SurvivalRpg/Inventory/RpgPlayerInventoryLayoutComponent.h"
 #include "SurvivalRpg/Inventory/RpgInventoryUiActionComponent.h"
 #include "SurvivalRpg/Progression/Player/RpgPlayerProgressionComponent.h"
 #include "SurvivalRpg/SurvivalRpg.h"
@@ -31,6 +32,7 @@ ARpgPlayerController::ARpgPlayerController(const FObjectInitializer& ObjectIniti
 	GameplayInputRouterComponent = CreateDefaultSubobject<URpgPlayerGameplayInputRouterComponent>(TEXT("GameplayInputRouterComponent"));
 	EquipmentLoadoutComponent = CreateDefaultSubobject<URpgEquipmentLoadoutComponent>(TEXT("EquipmentLoadoutComponent"));
 	InventoryUiActionComponent = CreateDefaultSubobject<URpgInventoryUiActionComponent>(TEXT("InventoryUiActionComponent"));
+	PlayerInventoryLayoutComponent = CreateDefaultSubobject<URpgPlayerInventoryLayoutComponent>(TEXT("PlayerInventoryLayoutComponent"));
 }
 
 ARpgPlayerState* ARpgPlayerController::GetRpgPlayerState() const
@@ -299,6 +301,11 @@ void ARpgPlayerController::BindToPlayerState(ARpgPlayerState* NewPlayerState)
 	HandleCheckpointChanged(
 		BoundPlayerState->HasCheckpoint(),
 		BoundPlayerState->GetCheckpointTransform());
+
+	if (HasAuthority() && PlayerInventoryLayoutComponent)
+	{
+		PlayerInventoryLayoutComponent->ApplyLayoutCapacityToInventory();
+	}
 }
 
 void ARpgPlayerController::UnbindFromPlayerState()
@@ -397,6 +404,11 @@ void ARpgPlayerController::HandlePossessedPawnAbilitySystemInitialized()
 		EquipmentLoadoutComponent->RefreshEquipmentLoadoutOnCurrentPawn();
 	}
 
+	if (HasAuthority() && PlayerInventoryLayoutComponent)
+	{
+		PlayerInventoryLayoutComponent->ApplyLayoutCapacityToInventory();
+	}
+
 	if (HasAuthority() && WeaponAbilityLoadoutComponent)
 	{
 		WeaponAbilityLoadoutComponent->RefreshAbilityBindings();
@@ -454,6 +466,11 @@ void ARpgPlayerController::HandleGameModePlayerRespawned(APlayerController* Resp
 	if (EquipmentLoadoutComponent)
 	{
 		EquipmentLoadoutComponent->RefreshEquipmentLoadoutOnCurrentPawn();
+	}
+
+	if (PlayerInventoryLayoutComponent)
+	{
+		PlayerInventoryLayoutComponent->ApplyLayoutCapacityToInventory();
 	}
 
 	if (WeaponAbilityLoadoutComponent)

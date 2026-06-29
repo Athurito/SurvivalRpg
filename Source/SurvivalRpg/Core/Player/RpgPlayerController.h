@@ -12,6 +12,7 @@ class URpgAbilitySystemComponent;
 class URpgActionBarComponent;
 class URpgEquipmentLoadoutComponent;
 class URpgInventoryUiActionComponent;
+class URpgPlayerInventoryLayoutComponent;
 class URpgPlayerGameplayInputRouterComponent;
 class URpgWeaponAbilityLoadoutComponent;
 class URpgPawnExtensionComponent;
@@ -53,6 +54,9 @@ public:
 
 	UFUNCTION(BlueprintCallable, Category = "Rpg|Inventory")
 	URpgInventoryUiActionComponent* GetInventoryUiActionComponent() const { return InventoryUiActionComponent; }
+
+	UFUNCTION(BlueprintCallable, Category = "Rpg|Inventory")
+	URpgPlayerInventoryLayoutComponent* GetPlayerInventoryLayoutComponent() const { return PlayerInventoryLayoutComponent; }
 
 	UFUNCTION(Exec)
 	void RpgPrintProgression() const;
@@ -144,6 +148,9 @@ private:
 
 	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "Rpg|Inventory", meta = (AllowPrivateAccess = "true"))
 	TObjectPtr<URpgInventoryUiActionComponent> InventoryUiActionComponent;
+
+	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "Rpg|Inventory", meta = (AllowPrivateAccess = "true"))
+	TObjectPtr<URpgPlayerInventoryLayoutComponent> PlayerInventoryLayoutComponent;
 
 	UPROPERTY(Transient)
 	TObjectPtr<URpgPawnExtensionComponent> BoundLoadoutPawnExtension;

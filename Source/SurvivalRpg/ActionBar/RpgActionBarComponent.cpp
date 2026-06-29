@@ -2,12 +2,14 @@
 
 #include "GameFramework/GameplayMessageSubsystem.h"
 #include "Net/UnrealNetwork.h"
-#include "SurvivalRpg/AbilitySystem/RpgAbilitySystemComponent.h"
 #include "SurvivalRpg/Core/Player/RpgPlayerController.h"
 #include "SurvivalRpg/Core/Player/RpgPlayerState.h"
 #include "SurvivalRpg/GameplayTags/RpgGameplayTags.h"
+#include "SurvivalRpg/Inventory/RpgInventoryFragment_ItemTraits.h"
+#include "SurvivalRpg/Inventory/RpgInventoryItemInstance.h"
 #include "SurvivalRpg/Inventory/RpgInventoryManagerComponent.h"
 #include "SurvivalRpg/Inventory/RpgInventoryUiActionComponent.h"
+#include "SurvivalRpg/Inventory/RpgPlayerInventoryLayoutComponent.h"
 
 #include UE_INLINE_GENERATED_CPP_BY_NAME(RpgActionBarComponent)
 
@@ -35,54 +37,49 @@ FRpgActionBarSlot URpgActionBarComponent::GetSlot(int32 SlotIndex) const
 	return Slots.IsValidIndex(SlotIndex) ? Slots[SlotIndex] : FRpgActionBarSlot();
 }
 
-void URpgActionBarComponent::RequestAssignItemToSlot_Implementation(int32 SlotIndex, URpgInventoryItemInstance* ItemInstance)
+void URpgActionBarComponent::RequestBindInventorySlotToSlot_Implementation(int32 SlotIndex, FRpgInventorySlotAddress SlotAddress)
 {
 	EnsureSlotCount();
-	if (!IsValidSlotIndex(SlotIndex) || !ItemInstance)
+	if (!IsValidSlotIndex(SlotIndex) || !SlotAddress.IsValid())
 	{
 		return;
 	}
 
 	const ARpgPlayerController* RpgPC = GetRpgPlayerController();
-	const ARpgPlayerState* RpgPS = RpgPC ? RpgPC->GetRpgPlayerState() : nullptr;
-	const URpgInventoryManagerComponent* PlayerInventory = RpgPS ? RpgPS->GetInventoryManagerComponent() : nullptr;
-	if (!PlayerInventory || !PlayerInventory->ContainsItemInstance(ItemInstance))
+	const URpgPlayerInventoryLayoutComponent* InventoryLayout = RpgPC ? RpgPC->GetPlayerInventoryLayoutComponent() : nullptr;
+	if (!InventoryLayout ||
+		!InventoryLayout->IsSlotAddressActionbarBindable(SlotAddress) ||
+		InventoryLayout->IsCarrySlotAddress(SlotAddress))
 	{
 		return;
 	}
 
 	FRpgActionBarSlot& Slot = Slots[SlotIndex];
-	Slot.SlotType = ERpgActionBarSlotType::InventoryItem;
-	Slot.ItemInstance = ItemInstance;
-	Slot.AbilityIdTag = FGameplayTag();
+	Slot.SlotType = ERpgActionBarSlotType::InventorySlotBinding;
+	Slot.SlotAddress = SlotAddress;
 	OnRep_Slots();
 }
 
-void URpgActionBarComponent::RequestAssignAbilityToSlot_Implementation(int32 SlotIndex, FGameplayTag AbilityIdTag)
+void URpgActionBarComponent::RequestBindCarrySlotToSlot_Implementation(int32 SlotIndex, FRpgInventorySlotAddress SlotAddress)
 {
 	EnsureSlotCount();
-	if (!IsValidSlotIndex(SlotIndex) || !AbilityIdTag.IsValid())
+	if (!IsValidSlotIndex(SlotIndex) || !SlotAddress.IsValid())
 	{
 		return;
 	}
 
-	URpgAbilitySystemComponent* RpgASC = GetRpgPlayerController() ? GetRpgPlayerController()->GetRpgAbilitySystemComponent() : nullptr;
-	if (!RpgASC || !RpgASC->HasAbilityWithAbilityId(AbilityIdTag))
+	const ARpgPlayerController* RpgPC = GetRpgPlayerController();
+	const URpgPlayerInventoryLayoutComponent* InventoryLayout = RpgPC ? RpgPC->GetPlayerInventoryLayoutComponent() : nullptr;
+	if (!InventoryLayout ||
+		!InventoryLayout->IsSlotAddressActionbarBindable(SlotAddress) ||
+		!InventoryLayout->IsCarrySlotAddress(SlotAddress))
 	{
 		return;
 	}
-
-	const FGameplayTag RuntimeInputTag = GetInputTagForSlotIndex(SlotIndex);
-	if (!RuntimeInputTag.IsValid())
-	{
-		return;
-	}
-	RpgASC->BindInputTagToAbilityId(AbilityIdTag, RuntimeInputTag);
 
 	FRpgActionBarSlot& Slot = Slots[SlotIndex];
-	Slot.SlotType = ERpgActionBarSlotType::Ability;
-	Slot.ItemInstance = nullptr;
-	Slot.AbilityIdTag = AbilityIdTag;
+	Slot.SlotType = ERpgActionBarSlotType::CarrySlotBinding;
+	Slot.SlotAddress = SlotAddress;
 	OnRep_Slots();
 }
 
@@ -92,11 +89,6 @@ void URpgActionBarComponent::RequestClearSlot_Implementation(int32 SlotIndex)
 	if (!IsValidSlotIndex(SlotIndex))
 	{
 		return;
-	}
-
-	if (URpgAbilitySystemComponent* RpgASC = GetRpgPlayerController() ? GetRpgPlayerController()->GetRpgAbilitySystemComponent() : nullptr)
-	{
-		RpgASC->ClearRuntimeAbilityInputTag(GetInputTagForSlotIndex(SlotIndex));
 	}
 
 	Slots[SlotIndex] = FRpgActionBarSlot();
@@ -118,22 +110,27 @@ void URpgActionBarComponent::ActivateSlot(int32 SlotIndex)
 		return;
 	}
 
-	if (Slot.SlotType == ERpgActionBarSlotType::InventoryItem)
+	URpgInventoryUiActionComponent* UiActions = RpgPC->GetInventoryUiActionComponent();
+	URpgPlayerInventoryLayoutComponent* InventoryLayout = RpgPC->GetPlayerInventoryLayoutComponent();
+	if (!UiActions || !InventoryLayout || Slot.IsEmpty())
 	{
-		ARpgPlayerState* RpgPS = RpgPC->GetRpgPlayerState();
-		URpgInventoryManagerComponent* PlayerInventory = RpgPS ? RpgPS->GetInventoryManagerComponent() : nullptr;
-		if (URpgInventoryUiActionComponent* UiActions = RpgPC->GetInventoryUiActionComponent())
-		{
-			UiActions->RequestUseInventoryItem(PlayerInventory, Slot.ItemInstance, 1);
-		}
 		return;
 	}
 
-	if (Slot.SlotType == ERpgActionBarSlotType::Ability)
+	if (Slot.SlotType == ERpgActionBarSlotType::CarrySlotBinding)
 	{
-		if (URpgAbilitySystemComponent* RpgASC = RpgPC->GetRpgAbilitySystemComponent())
+		UiActions->RequestActivateCarrySlot(Slot.SlotAddress);
+		return;
+	}
+
+	if (Slot.SlotType == ERpgActionBarSlotType::InventorySlotBinding)
+	{
+		ARpgPlayerState* RpgPS = RpgPC->GetRpgPlayerState();
+		URpgInventoryManagerComponent* PlayerInventory = RpgPS ? RpgPS->GetInventoryManagerComponent() : nullptr;
+		URpgInventoryItemInstance* Item = InventoryLayout->GetItemInSlotAddress(Slot.SlotAddress);
+		if (PlayerInventory && Item)
 		{
-			RpgASC->AbilityInputTagPressed(Slot.AbilityIdTag);
+			UiActions->RequestUseInventoryItem(PlayerInventory, Item, 1);
 		}
 	}
 }
@@ -146,19 +143,7 @@ void URpgActionBarComponent::ReleaseSlot(int32 SlotIndex)
 		return;
 	}
 
-	const FRpgActionBarSlot& Slot = Slots[SlotIndex];
-	if (Slot.SlotType != ERpgActionBarSlotType::Ability)
-	{
-		return;
-	}
-
-	if (ARpgPlayerController* RpgPC = GetRpgPlayerController())
-	{
-		if (URpgAbilitySystemComponent* RpgASC = RpgPC->GetRpgAbilitySystemComponent())
-		{
-			RpgASC->AbilityInputTagReleased(Slot.AbilityIdTag);
-		}
-	}
+	// 1..8 actionbar V1.5 only activates slot sources. Held abilities stay on the Q/E/R weapon ability loadout.
 }
 
 FGameplayTag URpgActionBarComponent::GetInputTagForSlotIndex(int32 SlotIndex)

@@ -98,6 +98,7 @@ namespace RpgGameplayTags
 	UE_DECLARE_GAMEPLAY_TAG_EXTERN(Rpg_ActionBar_Message_SlotsChanged);
 	UE_DECLARE_GAMEPLAY_TAG_EXTERN(Rpg_WeaponAbilityLoadout_Message_SlotsChanged);
 	UE_DECLARE_GAMEPLAY_TAG_EXTERN(Rpg_EquipmentLoadout_Message_SlotsChanged);
+	UE_DECLARE_GAMEPLAY_TAG_EXTERN(Rpg_InventoryLayout_Message_Changed);
 	UE_DECLARE_GAMEPLAY_TAG_EXTERN(Rpg_Inventory_Message_ActionFeedback);
 	UE_DECLARE_GAMEPLAY_TAG_EXTERN(Rpg_Inventory_Action_Transfer);
 	UE_DECLARE_GAMEPLAY_TAG_EXTERN(Rpg_Inventory_Action_Split);

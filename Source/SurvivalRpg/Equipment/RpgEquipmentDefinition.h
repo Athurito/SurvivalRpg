@@ -33,7 +33,19 @@ enum class ERpgEquipmentSlot : uint8
 	Legs,
 
 	// Feet armor slot. Does not route weapon input.
-	Feet
+	Feet,
+
+	// Backpack equipment slot. Provides inventory slot groups; does not route weapon input.
+	Backpack,
+
+	// Belt equipment slot. Provides bindable inventory slot groups; does not route weapon input.
+	Belt,
+
+	// Pouch equipment slot. Provides inventory slot groups; does not route weapon input.
+	Pouch,
+
+	// Resource bag equipment slot. Provides filtered inventory slot groups; does not route weapon input.
+	ResourceBag
 };
 
 UENUM(BlueprintType)

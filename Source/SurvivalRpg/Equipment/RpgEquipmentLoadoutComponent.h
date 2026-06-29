@@ -10,6 +10,7 @@ class AActor;
 class URpgEquipmentInstance;
 class URpgEquipmentManagerComponent;
 class URpgInventoryManagerComponent;
+class URpgPlayerInventoryLayoutComponent;
 class URpgWeaponAbilityLoadoutComponent;
 
 /** Persistent player-owned assignment for one equipment slot, including hands and armor. */
@@ -25,6 +26,21 @@ struct SURVIVALRPG_API FRpgEquipmentLoadoutSlot
 	/** Inventory item assigned to the slot. The item stays owned by inventory; equipment runtime state is recreated per pawn. */
 	UPROPERTY(BlueprintReadOnly, Category = "Equipment")
 	TObjectPtr<URpgInventoryItemInstance> Item = nullptr;
+};
+
+/** Remembered offhand assignment for one mainhand item while the item remains inventory-owned. */
+USTRUCT(BlueprintType)
+struct SURVIVALRPG_API FRpgRememberedOffhandForMainHand
+{
+	GENERATED_BODY()
+
+	/** Mainhand item that should restore the remembered offhand when activated again. */
+	UPROPERTY(BlueprintReadOnly, Category = "Equipment")
+	TObjectPtr<URpgInventoryItemInstance> MainHandItem = nullptr;
+
+	/** Offhand item restored for MainHandItem when still owned and valid. */
+	UPROPERTY(BlueprintReadOnly, Category = "Equipment")
+	TObjectPtr<URpgInventoryItemInstance> OffHandItem = nullptr;
 };
 
 /** Gameplay message emitted when dedicated equipment slot assignments change. */
@@ -84,7 +100,31 @@ public:
 
 	/** Clears every dedicated equipment slot reference to this item. */
 	UFUNCTION(BlueprintCallable, BlueprintAuthorityOnly, Category = "Equipment")
-	void ClearItemFromAllEquipmentSlots(URpgInventoryItemInstance* Item);
+	bool ClearItemFromAllEquipmentSlots(URpgInventoryItemInstance* Item);
+
+	/** Returns whether the item can be removed from inventory without leaving invalid equipment or bag slots behind. */
+	UFUNCTION(BlueprintCallable, BlueprintAuthorityOnly, Category = "Equipment")
+	bool CanRemoveItemFromLoadout(URpgInventoryItemInstance* Item) const;
+
+	/** Activates a carry-slot weapon or tool as the current MainHand, restoring remembered offhand when valid. */
+	UFUNCTION(BlueprintCallable, BlueprintAuthorityOnly, Category = "Equipment")
+	bool ActivateMainHandItem(URpgInventoryItemInstance* Item);
+
+	/** Activates a carry-slot shield/offhand item, remembering it for the currently active one-handed mainhand. */
+	UFUNCTION(BlueprintCallable, BlueprintAuthorityOnly, Category = "Equipment")
+	bool ActivateOffHandItem(URpgInventoryItemInstance* Item);
+
+	/** Clears the active runtime hands without moving items out of their inventory carry slots. */
+	UFUNCTION(BlueprintCallable, BlueprintAuthorityOnly, Category = "Equipment")
+	bool ClearActiveHands();
+
+	/** Clears OffHand. When requested by the player, also forgets the active MainHand's offhand memory. */
+	UFUNCTION(BlueprintCallable, BlueprintAuthorityOnly, Category = "Equipment")
+	bool ClearActiveOffHand(bool bForgetForActiveMainHand = true);
+
+	/** Returns the remembered offhand item for a mainhand item, or null. */
+	UFUNCTION(BlueprintCallable, BlueprintPure = false, Category = "Equipment")
+	URpgInventoryItemInstance* GetRememberedOffhandForMainHand(URpgInventoryItemInstance* MainHandItem) const;
 
 	/** Removes this loadout's runtime equipment instances from the current pawn. */
 	UFUNCTION(BlueprintCallable, BlueprintAuthorityOnly, Category = "Equipment")
@@ -108,13 +148,27 @@ private:
 	void UnequipRuntimeSlot(ERpgEquipmentSlot EquipmentSlot);
 	URpgEquipmentManagerComponent* FindEquipmentManager() const;
 	URpgInventoryManagerComponent* FindOwnerInventory() const;
+	URpgPlayerInventoryLayoutComponent* FindPlayerInventoryLayout() const;
 	bool HasReadyEquipmentTarget() const;
 	void BroadcastSlotsChanged() const;
 	void RefreshWeaponAbilityLoadout() const;
+	bool CanClearEquipmentSlot(ERpgEquipmentSlot EquipmentSlot) const;
+	bool IsTwoHandItem(const URpgInventoryItemInstance* Item) const;
+	void RememberCurrentOffhandForActiveMainhand();
+	void SetRememberedOffhandForMainHand(URpgInventoryItemInstance* MainHandItem, URpgInventoryItemInstance* OffHandItem);
+	void ClearRememberedOffhandForMainHand(URpgInventoryItemInstance* MainHandItem);
+	void ClearRememberedOffhandEntriesForItem(URpgInventoryItemInstance* Item);
+	bool AssignRuntimeEquipmentSlot(ERpgEquipmentSlot EquipmentSlot, URpgInventoryItemInstance* Item);
 	static bool IsManagedEquipmentSlot(ERpgEquipmentSlot EquipmentSlot);
+	static bool IsRuntimeEquipmentSlot(ERpgEquipmentSlot EquipmentSlot);
+	static bool IsSlotContainerEquipmentSlot(ERpgEquipmentSlot EquipmentSlot);
 
 	UPROPERTY(ReplicatedUsing = OnRep_Slots)
 	TArray<FRpgEquipmentLoadoutSlot> Slots;
+
+	/** Owner-replicated memory that lets a one-handed mainhand restore the last manually paired offhand. */
+	UPROPERTY(ReplicatedUsing = OnRep_Slots)
+	TArray<FRpgRememberedOffhandForMainHand> RememberedOffhands;
 
 	TMap<ERpgEquipmentSlot, TWeakObjectPtr<URpgEquipmentInstance>> EquippedItemsBySlot;
 };
