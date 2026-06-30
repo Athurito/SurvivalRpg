@@ -3,14 +3,18 @@
 #include "Blueprint/DragDropOperation.h"
 #include "CoreMinimal.h"
 #include "SurvivalRpg/Equipment/RpgEquipmentDefinition.h"
+#include "SurvivalRpg/Inventory/RpgPlayerInventoryLayoutTypes.h"
 #include "UObject/Object.h"
 
 #include "RpgInventoryDragDrop.generated.h"
 
 class APlayerController;
+class URpgActionBarSlotViewModel;
+class URpgInventoryAddressSlotViewModel;
 class URpgInventoryEntryViewModel;
 class URpgInventoryItemInstance;
 class URpgInventoryManagerComponent;
+class URpgPlayerInventoryLayoutComponent;
 class URpgInventoryUiActionComponent;
 
 /** Kind of UI source represented by an inventory drag or controller-held payload. */
@@ -19,6 +23,7 @@ enum class ERpgInventoryDragSourceType : uint8
 {
 	None,
 	InventoryEntry,
+	PlayerInventorySlotAddress,
 	EquipmentSlot
 };
 
@@ -30,6 +35,8 @@ enum class ERpgInventoryDropTargetType : uint8
 	InventorySlot,
 	InventoryPanel,
 	EquipmentSlot,
+	PlayerInventorySlotAddress,
+	ActionBarSlot,
 	ClearSlot
 };
 
@@ -88,6 +95,10 @@ struct SURVIVALRPG_API FRpgInventoryDragPayload
 	UPROPERTY(BlueprintReadWrite, Category = "Inventory|DragDrop")
 	int32 SourceSlotIndex = INDEX_NONE;
 
+	/** Logical source address when the payload came from the player inventory layout UI. */
+	UPROPERTY(BlueprintReadWrite, Category = "Inventory|DragDrop")
+	FRpgInventorySlotAddress SourceSlotAddress;
+
 	/** Source equipment slot for equipped hand or armor slots. */
 	UPROPERTY(BlueprintReadWrite, Category = "Inventory|DragDrop")
 	ERpgEquipmentSlot EquipmentSlot = ERpgEquipmentSlot::None;
@@ -115,6 +126,14 @@ struct SURVIVALRPG_API FRpgInventoryDropTarget
 	/** Target visual slot index for inventory reorder or capacity-slot placement. */
 	UPROPERTY(BlueprintReadWrite, Category = "Inventory|DragDrop")
 	int32 TargetIndex = INDEX_NONE;
+
+	/** Target logical address for player-inventory layout slots or actionbar slot-source binding. */
+	UPROPERTY(BlueprintReadWrite, Category = "Inventory|DragDrop")
+	FRpgInventorySlotAddress SlotAddress;
+
+	/** Target 1..8 actionbar slot index for actionbar binding drops. */
+	UPROPERTY(BlueprintReadWrite, Category = "Inventory|DragDrop")
+	int32 ActionBarSlotIndex = INDEX_NONE;
 
 	/** Target equipment slot for equipped hand or armor slots. */
 	UPROPERTY(BlueprintReadWrite, Category = "Inventory|DragDrop")
@@ -182,9 +201,17 @@ public:
 	UFUNCTION(BlueprintCallable, Category = "Inventory|DragDrop")
 	static FRpgInventoryDragPayload MakeInventoryPayloadFromEntry(URpgInventoryEntryViewModel* EntryViewModel);
 
+	/** Builds an inventory-entry payload from a logical player-inventory address slot. */
+	UFUNCTION(BlueprintCallable, Category = "Inventory|DragDrop")
+	static FRpgInventoryDragPayload MakeInventoryPayloadFromAddressSlot(URpgInventoryAddressSlotViewModel* SlotViewModel);
+
 	/** Builds an inventory-slot target from a TileView entry model, including UI-only empty capacity slots. */
 	UFUNCTION(BlueprintCallable, Category = "Inventory|DragDrop")
 	static FRpgInventoryDropTarget MakeInventoryTargetFromEntry(URpgInventoryEntryViewModel* EntryViewModel);
+
+	/** Builds a target for a logical player-inventory address slot. */
+	UFUNCTION(BlueprintCallable, Category = "Inventory|DragDrop")
+	static FRpgInventoryDropTarget MakePlayerInventorySlotAddressTarget(URpgInventoryAddressSlotViewModel* SlotViewModel);
 
 	/** Builds a panel-level target for transferring into an inventory without a specific slot index. */
 	UFUNCTION(BlueprintCallable, Category = "Inventory|DragDrop")
@@ -197,6 +224,14 @@ public:
 	/** Builds a target for an equipment slot. */
 	UFUNCTION(BlueprintCallable, Category = "Inventory|DragDrop")
 	static FRpgInventoryDropTarget MakeEquipmentTarget(ERpgEquipmentSlot EquipmentSlot);
+
+	/** Builds a target for binding a held player-inventory slot address to one 1..8 actionbar slot. */
+	UFUNCTION(BlueprintCallable, Category = "Inventory|DragDrop")
+	static FRpgInventoryDropTarget MakeActionBarSlotTarget(int32 ActionBarSlotIndex);
+
+	/** Builds a target from an actionbar slot view model. */
+	UFUNCTION(BlueprintCallable, Category = "Inventory|DragDrop")
+	static FRpgInventoryDropTarget MakeActionBarSlotTargetFromViewModel(URpgActionBarSlotViewModel* SlotViewModel);
 
 	/** Builds a target that clears equipment assignments without moving the owned item. */
 	UFUNCTION(BlueprintCallable, Category = "Inventory|DragDrop")
@@ -282,6 +317,10 @@ public:
 	UFUNCTION(BlueprintCallable, Category = "Inventory|DragDrop")
 	ERpgInventorySlotDragVisualState GetInventoryEntryVisualState(URpgInventoryEntryViewModel* EntryViewModel, bool bIsFocused) const;
 
+	/** Computes the visual drag/drop state for one player layout address slot widget. */
+	UFUNCTION(BlueprintCallable, Category = "Inventory|DragDrop")
+	ERpgInventorySlotDragVisualState GetInventoryAddressSlotVisualState(URpgInventoryAddressSlotViewModel* SlotViewModel, bool bIsFocused) const;
+
 	/** Local preview validation for hover/focus feedback. Server validation still owns the final result. */
 	UFUNCTION(BlueprintCallable, Category = "Inventory|DragDrop")
 	bool PreviewDrop(const FRpgInventoryDropTarget& Target) const;
@@ -309,8 +348,11 @@ public:
 private:
 	bool CanCommitPayloadToTarget(const FRpgInventoryDragPayload& Payload, const FRpgInventoryDropTarget& Target) const;
 	bool IsHeldSourceEntry(URpgInventoryEntryViewModel* EntryViewModel) const;
+	bool IsHeldSourceAddressSlot(URpgInventoryAddressSlotViewModel* SlotViewModel) const;
 	URpgInventoryUiActionComponent* ResolveUiActionComponent() const;
 	URpgInventoryManagerComponent* FindPlayerInventory() const;
+	URpgPlayerInventoryLayoutComponent* FindPlayerInventoryLayout() const;
+	FRpgInventorySlotAddress ResolvePayloadSourceAddress(const FRpgInventoryDragPayload& Payload) const;
 	bool IsPlayerInventory(const URpgInventoryManagerComponent* Inventory) const;
 
 	UPROPERTY(Transient)

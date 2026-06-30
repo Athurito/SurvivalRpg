@@ -40,6 +40,11 @@ struct SURVIVALRPG_API FRpgInventorySlotAddress
 	{
 		return !(A == B);
 	}
+
+	friend uint32 GetTypeHash(const FRpgInventorySlotAddress& Address)
+	{
+		return HashCombine(GetTypeHash(Address.GroupId), GetTypeHash(Address.LocalSlotIndex));
+	}
 };
 
 /**

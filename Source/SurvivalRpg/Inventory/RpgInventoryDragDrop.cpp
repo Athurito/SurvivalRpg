@@ -10,6 +10,8 @@
 #include "SurvivalRpg/Core/Player/RpgPlayerController.h"
 #include "SurvivalRpg/Core/Player/RpgPlayerState.h"
 #include "SurvivalRpg/Mvvm/Inventory/RpgInventoryViewModels.h"
+#include "SurvivalRpg/Mvvm/Inventory/RpgActionBarViewModels.h"
+#include "SurvivalRpg/Mvvm/Inventory/RpgPlayerInventoryViewModels.h"
 
 #include UE_INLINE_GENERATED_CPP_BY_NAME(RpgInventoryDragDrop)
 
@@ -111,6 +113,26 @@ FRpgInventoryDragPayload URpgInventoryDragDropCoordinator::MakeInventoryPayloadF
 	return Payload;
 }
 
+FRpgInventoryDragPayload URpgInventoryDragDropCoordinator::MakeInventoryPayloadFromAddressSlot(URpgInventoryAddressSlotViewModel* SlotViewModel)
+{
+	FRpgInventoryDragPayload Payload;
+	if (!SlotViewModel)
+	{
+		return Payload;
+	}
+
+	Payload.SourceType = SlotViewModel->CanDrag()
+		? ERpgInventoryDragSourceType::InventoryEntry
+		: ERpgInventoryDragSourceType::PlayerInventorySlotAddress;
+	Payload.SourceInventory = SlotViewModel->GetInventoryManager();
+	Payload.ItemInstance = SlotViewModel->GetItemInstance();
+	Payload.EntryId = SlotViewModel->GetEntryId();
+	Payload.StackCount = SlotViewModel->GetStackCount();
+	Payload.SourceSlotIndex = SlotViewModel->GetGlobalSlotIndex();
+	Payload.SourceSlotAddress = SlotViewModel->GetSlotAddress();
+	return Payload;
+}
+
 FRpgInventoryDropTarget URpgInventoryDragDropCoordinator::MakeInventoryTargetFromEntry(URpgInventoryEntryViewModel* EntryViewModel)
 {
 	FRpgInventoryDropTarget Target;
@@ -122,6 +144,21 @@ FRpgInventoryDropTarget URpgInventoryDragDropCoordinator::MakeInventoryTargetFro
 	Target.TargetType = ERpgInventoryDropTargetType::InventorySlot;
 	Target.TargetInventory = EntryViewModel->GetInventoryManager();
 	Target.TargetIndex = EntryViewModel->GetSlotIndex();
+	return Target;
+}
+
+FRpgInventoryDropTarget URpgInventoryDragDropCoordinator::MakePlayerInventorySlotAddressTarget(URpgInventoryAddressSlotViewModel* SlotViewModel)
+{
+	FRpgInventoryDropTarget Target;
+	if (!SlotViewModel)
+	{
+		return Target;
+	}
+
+	Target.TargetType = ERpgInventoryDropTargetType::PlayerInventorySlotAddress;
+	Target.TargetInventory = SlotViewModel->GetInventoryManager();
+	Target.TargetIndex = SlotViewModel->GetGlobalSlotIndex();
+	Target.SlotAddress = SlotViewModel->GetSlotAddress();
 	return Target;
 }
 
@@ -151,6 +188,19 @@ FRpgInventoryDropTarget URpgInventoryDragDropCoordinator::MakeEquipmentTarget(ER
 	return Target;
 }
 
+FRpgInventoryDropTarget URpgInventoryDragDropCoordinator::MakeActionBarSlotTarget(int32 ActionBarSlotIndex)
+{
+	FRpgInventoryDropTarget Target;
+	Target.TargetType = ERpgInventoryDropTargetType::ActionBarSlot;
+	Target.ActionBarSlotIndex = ActionBarSlotIndex;
+	return Target;
+}
+
+FRpgInventoryDropTarget URpgInventoryDragDropCoordinator::MakeActionBarSlotTargetFromViewModel(URpgActionBarSlotViewModel* SlotViewModel)
+{
+	return MakeActionBarSlotTarget(SlotViewModel ? SlotViewModel->GetSlotIndex() : INDEX_NONE);
+}
+
 FRpgInventoryDropTarget URpgInventoryDragDropCoordinator::MakeClearTarget()
 {
 	FRpgInventoryDropTarget Target;
@@ -167,6 +217,10 @@ bool URpgInventoryDragDropCoordinator::IsPayloadValid(const FRpgInventoryDragPay
 			Payload.ItemInstance != nullptr &&
 			Payload.EntryId.IsValid() &&
 			Payload.StackCount > 0;
+
+	case ERpgInventoryDragSourceType::PlayerInventorySlotAddress:
+		return Payload.SourceInventory != nullptr &&
+			Payload.SourceSlotAddress.IsValid();
 
 	case ERpgInventoryDragSourceType::EquipmentSlot:
 		return Payload.ItemInstance != nullptr &&
@@ -189,6 +243,12 @@ bool URpgInventoryDragDropCoordinator::IsTargetValid(const FRpgInventoryDropTarg
 
 	case ERpgInventoryDropTargetType::EquipmentSlot:
 		return IsManagedEquipmentSlot(Target.EquipmentSlot);
+
+	case ERpgInventoryDropTargetType::PlayerInventorySlotAddress:
+		return Target.SlotAddress.IsValid();
+
+	case ERpgInventoryDropTargetType::ActionBarSlot:
+		return Target.ActionBarSlotIndex >= 0;
 
 	case ERpgInventoryDropTargetType::ClearSlot:
 		return true;
@@ -452,6 +512,29 @@ ERpgInventorySlotDragVisualState URpgInventoryDragDropCoordinator::GetInventoryE
 		: ERpgInventorySlotDragVisualState::InvalidTarget;
 }
 
+ERpgInventorySlotDragVisualState URpgInventoryDragDropCoordinator::GetInventoryAddressSlotVisualState(URpgInventoryAddressSlotViewModel* SlotViewModel, bool bIsFocused) const
+{
+	if (!SlotViewModel)
+	{
+		return bIsFocused ? ERpgInventorySlotDragVisualState::Focused : ERpgInventorySlotDragVisualState::Normal;
+	}
+
+	if (!bHasHeldPayload)
+	{
+		return bIsFocused ? ERpgInventorySlotDragVisualState::Focused : ERpgInventorySlotDragVisualState::Normal;
+	}
+
+	if (IsHeldSourceAddressSlot(SlotViewModel))
+	{
+		return ERpgInventorySlotDragVisualState::HeldSource;
+	}
+
+	const FRpgInventoryDropTarget Target = MakePlayerInventorySlotAddressTarget(SlotViewModel);
+	return PreviewDrop(Target)
+		? ERpgInventorySlotDragVisualState::ValidTarget
+		: ERpgInventorySlotDragVisualState::InvalidTarget;
+}
+
 bool URpgInventoryDragDropCoordinator::PreviewDrop(const FRpgInventoryDropTarget& Target) const
 {
 	return bHasHeldPayload && CanCommitPayloadToTarget(HeldPayload, Target);
@@ -520,6 +603,40 @@ bool URpgInventoryDragDropCoordinator::CommitPayloadToTarget(const FRpgInventory
 			Actions->RequestClearEquipmentSlot(Payload.EquipmentSlot);
 			return true;
 		}
+	}
+
+	if (Target.TargetType == ERpgInventoryDropTargetType::PlayerInventorySlotAddress)
+	{
+		if (Payload.SourceType == ERpgInventoryDragSourceType::InventoryEntry)
+		{
+			Actions->RequestMoveItemToInventorySlotAddress(Payload.ItemInstance, Target.SlotAddress);
+			return true;
+		}
+	}
+
+	if (Target.TargetType == ERpgInventoryDropTargetType::ActionBarSlot)
+	{
+		const FRpgInventorySlotAddress SourceAddress = ResolvePayloadSourceAddress(Payload);
+		if (!SourceAddress.IsValid())
+		{
+			return false;
+		}
+
+		URpgPlayerInventoryLayoutComponent* InventoryLayout = FindPlayerInventoryLayout();
+		if (!InventoryLayout || !InventoryLayout->IsSlotAddressActionbarBindable(SourceAddress))
+		{
+			return false;
+		}
+
+		if (InventoryLayout->IsCarrySlotAddress(SourceAddress))
+		{
+			Actions->RequestBindActionBarToCarrySlot(Target.ActionBarSlotIndex, SourceAddress);
+		}
+		else
+		{
+			Actions->RequestBindActionBarToInventorySlot(Target.ActionBarSlotIndex, SourceAddress);
+		}
+		return true;
 	}
 
 	if (Target.TargetType == ERpgInventoryDropTargetType::EquipmentSlot)
@@ -612,6 +729,37 @@ bool URpgInventoryDragDropCoordinator::CanCommitPayloadToTarget(const FRpgInvent
 			CanInventoryItemEquipInSlot(Payload.ItemInstance, Target.EquipmentSlot);
 	}
 
+	if (Target.TargetType == ERpgInventoryDropTargetType::PlayerInventorySlotAddress)
+	{
+		if (Payload.SourceType != ERpgInventoryDragSourceType::InventoryEntry ||
+			!IsPlayerInventory(Payload.SourceInventory) ||
+			!Payload.ItemInstance ||
+			!Target.SlotAddress.IsValid())
+		{
+			return false;
+		}
+
+		const URpgPlayerInventoryLayoutComponent* InventoryLayout = FindPlayerInventoryLayout();
+		return InventoryLayout && InventoryLayout->CanItemUseSlotAddress(Payload.ItemInstance, Target.SlotAddress);
+	}
+
+	if (Target.TargetType == ERpgInventoryDropTargetType::ActionBarSlot)
+	{
+		if ((Payload.SourceType != ERpgInventoryDragSourceType::InventoryEntry &&
+				Payload.SourceType != ERpgInventoryDragSourceType::PlayerInventorySlotAddress) ||
+			!IsPlayerInventory(Payload.SourceInventory) ||
+			Target.ActionBarSlotIndex < 0)
+		{
+			return false;
+		}
+
+		const FRpgInventorySlotAddress SourceAddress = ResolvePayloadSourceAddress(Payload);
+		const URpgPlayerInventoryLayoutComponent* InventoryLayout = FindPlayerInventoryLayout();
+		return InventoryLayout &&
+			SourceAddress.IsValid() &&
+			InventoryLayout->IsSlotAddressActionbarBindable(SourceAddress);
+	}
+
 	if (Target.TargetType == ERpgInventoryDropTargetType::ClearSlot)
 	{
 		return Payload.SourceType == ERpgInventoryDragSourceType::EquipmentSlot;
@@ -630,6 +778,22 @@ bool URpgInventoryDragDropCoordinator::IsHeldSourceEntry(URpgInventoryEntryViewM
 	return HeldPayload.SourceInventory == EntryViewModel->GetInventoryManager() &&
 		HeldPayload.EntryId == EntryViewModel->GetEntryId() &&
 		HeldPayload.SourceSlotIndex == EntryViewModel->GetSlotIndex();
+}
+
+bool URpgInventoryDragDropCoordinator::IsHeldSourceAddressSlot(URpgInventoryAddressSlotViewModel* SlotViewModel) const
+{
+	if (!bHasHeldPayload ||
+		(HeldPayload.SourceType != ERpgInventoryDragSourceType::InventoryEntry &&
+			HeldPayload.SourceType != ERpgInventoryDragSourceType::PlayerInventorySlotAddress) ||
+		!SlotViewModel)
+	{
+		return false;
+	}
+
+	const FRpgInventorySlotAddress HeldAddress = ResolvePayloadSourceAddress(HeldPayload);
+	return HeldPayload.SourceInventory == SlotViewModel->GetInventoryManager() &&
+		HeldAddress.IsValid() &&
+		HeldAddress == SlotViewModel->GetSlotAddress();
 }
 
 URpgInventoryUiActionComponent* URpgInventoryDragDropCoordinator::ResolveUiActionComponent() const
@@ -677,6 +841,39 @@ URpgInventoryManagerComponent* URpgInventoryDragDropCoordinator::FindPlayerInven
 	}
 
 	return nullptr;
+}
+
+URpgPlayerInventoryLayoutComponent* URpgInventoryDragDropCoordinator::FindPlayerInventoryLayout() const
+{
+	const APlayerController* Controller = PlayerController;
+	if (!Controller)
+	{
+		return nullptr;
+	}
+
+	if (const ARpgPlayerController* RpgPlayerController = Cast<ARpgPlayerController>(Controller))
+	{
+		return RpgPlayerController->GetPlayerInventoryLayoutComponent();
+	}
+
+	return Controller->FindComponentByClass<URpgPlayerInventoryLayoutComponent>();
+}
+
+FRpgInventorySlotAddress URpgInventoryDragDropCoordinator::ResolvePayloadSourceAddress(const FRpgInventoryDragPayload& Payload) const
+{
+	if (Payload.SourceSlotAddress.IsValid())
+	{
+		return Payload.SourceSlotAddress;
+	}
+
+	FRpgInventorySlotAddress Address;
+	const URpgPlayerInventoryLayoutComponent* InventoryLayout = FindPlayerInventoryLayout();
+	if (InventoryLayout && IsPlayerInventory(Payload.SourceInventory) && Payload.SourceSlotIndex != INDEX_NONE)
+	{
+		InventoryLayout->TryMakeSlotAddressFromGlobalSlotIndex(Payload.SourceSlotIndex, Address);
+	}
+
+	return Address;
 }
 
 bool URpgInventoryDragDropCoordinator::IsPlayerInventory(const URpgInventoryManagerComponent* Inventory) const

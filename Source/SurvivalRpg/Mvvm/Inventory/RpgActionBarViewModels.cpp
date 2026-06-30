@@ -22,7 +22,7 @@ namespace
 		FText ShortDisplayName;
 	};
 
-	FRpgActionSlotPresentation BuildItemPresentation(const URpgInventoryItemInstance* ItemInstance)
+	FRpgActionSlotPresentation BuildActionBarItemPresentation(const URpgInventoryItemInstance* ItemInstance)
 	{
 		FRpgActionSlotPresentation Presentation;
 		if (!ItemInstance)
@@ -124,7 +124,7 @@ void URpgActionBarSlotViewModel::InitializeSlot(int32 InSlotIndex, const FRpgAct
 		? FName(*FString::Printf(TEXT("UI.ActionBar.Slot.%d"), InSlotIndex + 1))
 		: NAME_None;
 
-	const FRpgActionSlotPresentation Presentation = BuildItemPresentation(ItemInstance);
+	const FRpgActionSlotPresentation Presentation = BuildActionBarItemPresentation(ItemInstance);
 	Icon = Presentation.Icon;
 	ShortDisplayName = !Presentation.ShortDisplayName.IsEmpty()
 		? Presentation.ShortDisplayName

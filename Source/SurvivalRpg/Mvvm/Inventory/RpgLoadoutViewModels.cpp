@@ -65,6 +65,14 @@ namespace
 			return NSLOCTEXT("RpgEquipmentSlots", "Legs", "Legs");
 		case ERpgEquipmentSlot::Feet:
 			return NSLOCTEXT("RpgEquipmentSlots", "Feet", "Feet");
+		case ERpgEquipmentSlot::Backpack:
+			return NSLOCTEXT("RpgEquipmentSlots", "Backpack", "Backpack");
+		case ERpgEquipmentSlot::Belt:
+			return NSLOCTEXT("RpgEquipmentSlots", "Belt", "Belt");
+		case ERpgEquipmentSlot::Pouch:
+			return NSLOCTEXT("RpgEquipmentSlots", "Pouch", "Pouch");
+		case ERpgEquipmentSlot::ResourceBag:
+			return NSLOCTEXT("RpgEquipmentSlots", "ResourceBag", "Resource Bag");
 		default:
 			return FText::GetEmpty();
 		}
