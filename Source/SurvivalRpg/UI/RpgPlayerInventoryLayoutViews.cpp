@@ -108,7 +108,14 @@ UDragDropOperation* URpgInventoryAddressTileView::HandleListEntryDragDetected(co
 		const TSubclassOf<UUserWidget> DragVisualClass = DragDropVisualEntryClass ? DragDropVisualEntryClass : EntryWidgetClass;
 		if (DragVisualClass)
 		{
-			InventoryOperation->DefaultDragVisual = CreateWidget<UUserWidget>(GetWorld(), DragVisualClass);
+			UUserWidget* DefaultDragVisual = CreateWidget<UUserWidget>(GetWorld(), DragVisualClass);
+			if (URpgInventoryAddressSlotWidget* AddressSlotDragVisual = Cast<URpgInventoryAddressSlotWidget>(DefaultDragVisual))
+			{
+				AddressSlotDragVisual->SetAddressSlotViewModel(SlotViewModel);
+				AddressSlotDragVisual->SetDragDropCoordinator(DragDropCoordinator);
+			}
+
+			InventoryOperation->DefaultDragVisual = DefaultDragVisual;
 		}
 	}
 

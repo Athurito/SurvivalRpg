@@ -12,6 +12,7 @@
 class URpgInventoryItemDefinition;
 class URpgInventoryItemInstance;
 class URpgInventoryManagerComponent;
+class URpgPlayerInventoryLayoutComponent;
 class UAbilitySystemComponent;
 class UObject;
 struct FOnAttributeChangeData;
@@ -429,6 +430,8 @@ public:
 	//~End of UObject interface
 
 private:
+	friend FRpgInventoryList;
+
 	UFUNCTION()
 	void OnRep_InventoryRevision();
 
@@ -442,6 +445,11 @@ private:
 	void ClearCapacityAttributeBinding();
 	void HandleCapacityAttributeChanged(const FOnAttributeChangeData& Data);
 	void BroadcastCapacityChanged() const;
+	const URpgPlayerInventoryLayoutComponent* FindOwningPlayerInventoryLayout() const;
+	int32 GetNextAutoAddSlotForItemDefinition(TSubclassOf<URpgInventoryItemDefinition> ItemDef) const;
+	int32 GetNextAutoAddSlotForItemInstance(URpgInventoryItemInstance* ItemInstance) const;
+	int32 CountAvailableAutoAddSlotsForItemDefinition(TSubclassOf<URpgInventoryItemDefinition> ItemDef) const;
+	int32 CountAvailableAutoAddSlotsForItemInstance(URpgInventoryItemInstance* ItemInstance) const;
 
 private:
 	/** Source used to determine how many entries this inventory may hold. */

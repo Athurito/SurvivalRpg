@@ -8,6 +8,7 @@
 #include "RpgPlayerInventoryLayoutTypes.generated.h"
 
 class UTexture2D;
+class URpgInventoryItemDefinition;
 class URpgInventoryItemInstance;
 
 /**
@@ -80,6 +81,9 @@ struct SURVIVALRPG_API FRpgInventorySlotRule
 
 	/** Returns whether the item satisfies this slot rule. Null items are never accepted. */
 	bool AllowsItem(const URpgInventoryItemInstance* Item) const;
+
+	/** Returns whether an item definition satisfies this slot rule before an instance is created. */
+	bool AllowsItemDefinition(TSubclassOf<URpgInventoryItemDefinition> ItemDefinition) const;
 };
 
 /**

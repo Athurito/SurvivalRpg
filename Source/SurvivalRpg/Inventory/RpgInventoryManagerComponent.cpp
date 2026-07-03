@@ -7,9 +7,12 @@
 #include "RpgInventoryItemDefinition.h"
 #include "RpgInventoryFragment_ItemTraits.h"
 #include "RpgInventoryItemInstance.h"
+#include "RpgPlayerInventoryLayoutComponent.h"
 #include "NativeGameplayTags.h"
 #include "GameFramework/GameplayMessageSubsystem.h"
 #include "Net/UnrealNetwork.h"
+#include "SurvivalRpg/Core/Player/RpgPlayerController.h"
+#include "SurvivalRpg/Core/Player/RpgPlayerState.h"
 
 #include UE_INLINE_GENERATED_CPP_BY_NAME(RpgInventoryManagerComponent)
 
@@ -177,7 +180,8 @@ URpgInventoryItemInstance* FRpgInventoryList::AddEntry(TSubclassOf<URpgInventory
 
 	while (RemainingCount > 0)
 	{
-		const int32 NewSlotIndex = GetNextAvailableSlotIndex();
+		const URpgInventoryManagerComponent* Inventory = Cast<URpgInventoryManagerComponent>(OwnerComponent);
+		const int32 NewSlotIndex = Inventory ? Inventory->GetNextAutoAddSlotForItemDefinition(ItemDef) : GetNextAvailableSlotIndex();
 		if (NewSlotIndex == INDEX_NONE)
 		{
 			UE_LOG(LogRpgInventoryManager, Warning, TEXT("AddEntry failed: no free finite slot. Inventory=%s ItemDef=%s RemainingCount=%d UsedEntries=%d"),
@@ -289,7 +293,8 @@ void FRpgInventoryList::AddEntry(URpgInventoryItemInstance* Instance, int32 Stac
 	AActor* OwningActor = OwnerComponent->GetOwner();
 	check(OwningActor && OwningActor->HasAuthority());
 
-	const int32 NewSlotIndex = GetNextAvailableSlotIndex();
+	const URpgInventoryManagerComponent* Inventory = Cast<URpgInventoryManagerComponent>(OwnerComponent);
+	const int32 NewSlotIndex = Inventory ? Inventory->GetNextAutoAddSlotForItemInstance(Instance) : GetNextAvailableSlotIndex();
 	if (NewSlotIndex == INDEX_NONE)
 	{
 		UE_LOG(LogRpgInventoryManager, Warning, TEXT("AddEntry instance failed: no free finite slot. Inventory=%s Item=%s StackCount=%d UsedEntries=%d"),
@@ -1187,7 +1192,18 @@ bool URpgInventoryManagerComponent::CanAddItemDefinition(TSubclassOf<URpgInvento
 		return true;
 	}
 
-	return InventoryList.GetRequiredNewEntryCount(ItemDef, StackCount) <= GetFreeEntryCount();
+	const int32 RequiredNewEntries = InventoryList.GetRequiredNewEntryCount(ItemDef, StackCount);
+	if (RequiredNewEntries <= 0)
+	{
+		return true;
+	}
+
+	if (FindOwningPlayerInventoryLayout())
+	{
+		return CountAvailableAutoAddSlotsForItemDefinition(ItemDef) >= RequiredNewEntries;
+	}
+
+	return RequiredNewEntries <= GetFreeEntryCount();
 }
 
 bool URpgInventoryManagerComponent::CanAddItemInstance(URpgInventoryItemInstance* ItemInstance, int32 StackCount) const
@@ -1202,7 +1218,18 @@ bool URpgInventoryManagerComponent::CanAddItemInstance(URpgInventoryItemInstance
 		return true;
 	}
 
-	return GetRequiredNewEntryCountForItemInstance(ItemInstance, StackCount) <= GetFreeEntryCount();
+	const int32 RequiredNewEntries = GetRequiredNewEntryCountForItemInstance(ItemInstance, StackCount);
+	if (RequiredNewEntries <= 0)
+	{
+		return true;
+	}
+
+	if (FindOwningPlayerInventoryLayout())
+	{
+		return CountAvailableAutoAddSlotsForItemInstance(ItemInstance) >= RequiredNewEntries;
+	}
+
+	return RequiredNewEntries <= GetFreeEntryCount();
 }
 
 bool URpgInventoryManagerComponent::CanAddItemDefinitionToSlot(TSubclassOf<URpgInventoryItemDefinition> ItemDef, int32 StackCount, int32 SlotIndex) const
@@ -1644,6 +1671,128 @@ void URpgInventoryManagerComponent::BroadcastInventoryStateChanged() const
 
 	UGameplayMessageSubsystem& MessageSystem = UGameplayMessageSubsystem::Get(World);
 	MessageSystem.BroadcastMessage(TAG_Rpg_Inventory_Message_StackChanged, Message);
+}
+
+const URpgPlayerInventoryLayoutComponent* URpgInventoryManagerComponent::FindOwningPlayerInventoryLayout() const
+{
+	const ARpgPlayerState* RpgPlayerState = Cast<ARpgPlayerState>(GetOwner());
+	const ARpgPlayerController* RpgPlayerController = RpgPlayerState ? RpgPlayerState->GetRpgPlayerController() : nullptr;
+	const URpgPlayerInventoryLayoutComponent* InventoryLayout = RpgPlayerController ? RpgPlayerController->GetPlayerInventoryLayoutComponent() : nullptr;
+	return InventoryLayout && RpgPlayerState && RpgPlayerState->GetInventoryManagerComponent() == this ? InventoryLayout : nullptr;
+}
+
+int32 URpgInventoryManagerComponent::GetNextAutoAddSlotForItemDefinition(TSubclassOf<URpgInventoryItemDefinition> ItemDef) const
+{
+	const URpgPlayerInventoryLayoutComponent* InventoryLayout = FindOwningPlayerInventoryLayout();
+	if (!InventoryLayout)
+	{
+		return InventoryList.GetNextAvailableSlotIndex();
+	}
+
+	for (const FRpgInventorySlotGroupView& Group : InventoryLayout->GetSlotGroups())
+	{
+		if (!Group.Rule.AllowsItemDefinition(ItemDef))
+		{
+			continue;
+		}
+
+		for (int32 LocalSlotIndex = 0; LocalSlotIndex < Group.SlotCount; ++LocalSlotIndex)
+		{
+			const int32 GlobalSlotIndex = Group.FirstGlobalSlotIndex + LocalSlotIndex;
+			if (!InventoryList.FindEntryBySlotIndex(GlobalSlotIndex))
+			{
+				return GlobalSlotIndex;
+			}
+		}
+	}
+
+	return INDEX_NONE;
+}
+
+int32 URpgInventoryManagerComponent::GetNextAutoAddSlotForItemInstance(URpgInventoryItemInstance* ItemInstance) const
+{
+	const URpgPlayerInventoryLayoutComponent* InventoryLayout = FindOwningPlayerInventoryLayout();
+	if (!InventoryLayout)
+	{
+		return InventoryList.GetNextAvailableSlotIndex();
+	}
+
+	for (const FRpgInventorySlotGroupView& Group : InventoryLayout->GetSlotGroups())
+	{
+		if (!Group.Rule.AllowsItem(ItemInstance))
+		{
+			continue;
+		}
+
+		for (int32 LocalSlotIndex = 0; LocalSlotIndex < Group.SlotCount; ++LocalSlotIndex)
+		{
+			const int32 GlobalSlotIndex = Group.FirstGlobalSlotIndex + LocalSlotIndex;
+			if (!InventoryList.FindEntryBySlotIndex(GlobalSlotIndex))
+			{
+				return GlobalSlotIndex;
+			}
+		}
+	}
+
+	return INDEX_NONE;
+}
+
+int32 URpgInventoryManagerComponent::CountAvailableAutoAddSlotsForItemDefinition(TSubclassOf<URpgInventoryItemDefinition> ItemDef) const
+{
+	const URpgPlayerInventoryLayoutComponent* InventoryLayout = FindOwningPlayerInventoryLayout();
+	if (!InventoryLayout)
+	{
+		return GetFreeEntryCount();
+	}
+
+	int32 MatchingFreeSlots = 0;
+	for (const FRpgInventorySlotGroupView& Group : InventoryLayout->GetSlotGroups())
+	{
+		if (!Group.Rule.AllowsItemDefinition(ItemDef))
+		{
+			continue;
+		}
+
+		for (int32 LocalSlotIndex = 0; LocalSlotIndex < Group.SlotCount; ++LocalSlotIndex)
+		{
+			const int32 GlobalSlotIndex = Group.FirstGlobalSlotIndex + LocalSlotIndex;
+			if (!InventoryList.FindEntryBySlotIndex(GlobalSlotIndex))
+			{
+				++MatchingFreeSlots;
+			}
+		}
+	}
+
+	return MatchingFreeSlots;
+}
+
+int32 URpgInventoryManagerComponent::CountAvailableAutoAddSlotsForItemInstance(URpgInventoryItemInstance* ItemInstance) const
+{
+	const URpgPlayerInventoryLayoutComponent* InventoryLayout = FindOwningPlayerInventoryLayout();
+	if (!InventoryLayout)
+	{
+		return GetFreeEntryCount();
+	}
+
+	int32 MatchingFreeSlots = 0;
+	for (const FRpgInventorySlotGroupView& Group : InventoryLayout->GetSlotGroups())
+	{
+		if (!Group.Rule.AllowsItem(ItemInstance))
+		{
+			continue;
+		}
+
+		for (int32 LocalSlotIndex = 0; LocalSlotIndex < Group.SlotCount; ++LocalSlotIndex)
+		{
+			const int32 GlobalSlotIndex = Group.FirstGlobalSlotIndex + LocalSlotIndex;
+			if (!InventoryList.FindEntryBySlotIndex(GlobalSlotIndex))
+			{
+				++MatchingFreeSlots;
+			}
+		}
+	}
+
+	return MatchingFreeSlots;
 }
 
 UAbilitySystemComponent* URpgInventoryManagerComponent::FindCapacityAbilitySystem() const

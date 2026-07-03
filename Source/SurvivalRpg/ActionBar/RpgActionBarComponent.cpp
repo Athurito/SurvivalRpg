@@ -54,6 +54,8 @@ void URpgActionBarComponent::RequestBindInventorySlotToSlot_Implementation(int32
 		return;
 	}
 
+	ClearDuplicateSourceBindings(SlotIndex, SlotAddress);
+
 	FRpgActionBarSlot& Slot = Slots[SlotIndex];
 	Slot.SlotType = ERpgActionBarSlotType::InventorySlotBinding;
 	Slot.SlotAddress = SlotAddress;
@@ -76,6 +78,8 @@ void URpgActionBarComponent::RequestBindCarrySlotToSlot_Implementation(int32 Slo
 	{
 		return;
 	}
+
+	ClearDuplicateSourceBindings(SlotIndex, SlotAddress);
 
 	FRpgActionBarSlot& Slot = Slots[SlotIndex];
 	Slot.SlotType = ERpgActionBarSlotType::CarrySlotBinding;
@@ -130,7 +134,14 @@ void URpgActionBarComponent::ActivateSlot(int32 SlotIndex)
 		URpgInventoryItemInstance* Item = InventoryLayout->GetItemInSlotAddress(Slot.SlotAddress);
 		if (PlayerInventory && Item)
 		{
-			UiActions->RequestUseInventoryItem(PlayerInventory, Item, 1);
+			if (Item->FindFragmentByClass<URpgInventoryFragment_UsableItem>() != nullptr)
+			{
+				UiActions->RequestUseInventoryItem(PlayerInventory, Item, 1);
+			}
+			else
+			{
+				UiActions->RequestEquipInventoryItem(Item);
+			}
 		}
 	}
 }
@@ -210,4 +221,20 @@ bool URpgActionBarComponent::IsValidSlotIndex(int32 SlotIndex) const
 ARpgPlayerController* URpgActionBarComponent::GetRpgPlayerController() const
 {
 	return Cast<ARpgPlayerController>(GetOwner());
+}
+
+void URpgActionBarComponent::ClearDuplicateSourceBindings(int32 TargetSlotIndex, const FRpgInventorySlotAddress& SlotAddress)
+{
+	if (!SlotAddress.IsValid())
+	{
+		return;
+	}
+
+	for (int32 Index = 0; Index < Slots.Num(); ++Index)
+	{
+		if (Index != TargetSlotIndex && Slots[Index].SlotAddress == SlotAddress)
+		{
+			Slots[Index] = FRpgActionBarSlot();
+		}
+	}
 }

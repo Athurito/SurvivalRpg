@@ -8,6 +8,7 @@
 #include "RpgInventoryAddressSlotWidget.generated.h"
 
 class UDragDropOperation;
+class UUserWidget;
 class URpgInventoryAddressSlotViewModel;
 class URpgInventoryDragDropCoordinator;
 
@@ -28,6 +29,10 @@ public:
 	/** Assigns the screen-local drag/drop coordinator shared by player inventory, gear slots, and actionbar. */
 	UFUNCTION(BlueprintCallable, Category = "Inventory|Address Slot")
 	void SetDragDropCoordinator(URpgInventoryDragDropCoordinator* InCoordinator);
+
+	/** Assigns the view model represented by this address slot entry or drag visual. */
+	UFUNCTION(BlueprintCallable, Category = "Inventory|Address Slot")
+	void SetAddressSlotViewModel(URpgInventoryAddressSlotViewModel* InSlotViewModel);
 
 	/** Current logical slot VM assigned by the owning list/tile view. */
 	UFUNCTION(BlueprintPure, Category = "Inventory|Address Slot")
@@ -69,6 +74,10 @@ protected:
 	/** Blueprint presentation hook for held-item/drop-target highlights. */
 	UFUNCTION(BlueprintImplementableEvent, Category = "Inventory|Address Slot", meta = (DisplayName = "On Address Slot DragDrop State Changed"))
 	void BP_OnAddressSlotDragDropStateChanged(ERpgInventorySlotDragVisualState NewState);
+
+	/** Widget class used as the mouse drag visual. Leave unset to reuse this slot entry class with the same view model. */
+	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Inventory|Address Slot|Drag")
+	TSubclassOf<UUserWidget> DragVisualClass;
 
 private:
 	UFUNCTION()

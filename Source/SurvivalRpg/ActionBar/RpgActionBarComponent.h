@@ -113,6 +113,7 @@ private:
 	void BroadcastSlotsChanged() const;
 	bool IsValidSlotIndex(int32 SlotIndex) const;
 	ARpgPlayerController* GetRpgPlayerController() const;
+	void ClearDuplicateSourceBindings(int32 TargetSlotIndex, const FRpgInventorySlotAddress& SlotAddress);
 
 	/** Owner-only replicated actionbar state. */
 	UPROPERTY(ReplicatedUsing = OnRep_Slots)

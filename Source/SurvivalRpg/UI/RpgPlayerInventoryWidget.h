@@ -1,0 +1,138 @@
+#pragma once
+
+#include "CoreMinimal.h"
+#include "SurvivalRpg/Equipment/RpgEquipmentDefinition.h"
+#include "SurvivalRpg/UI/RpgActivatableWidget.h"
+
+#include "RpgPlayerInventoryWidget.generated.h"
+
+class URpgActionBarTileView;
+class URpgEquipmentSlotWidget;
+class URpgInventoryDragDropCoordinator;
+class URpgInventorySlotGroupListView;
+class URpgPlayerInventoryViewModel;
+
+/**
+ * Native base for the player inventory screen.
+ *
+ * It wires the player-inventory MVVM projection into named Blueprint widgets so the screen does not need manual
+ * slot loops or per-entry coordinator setup. Gameplay state stays in inventory, layout, equipment, and actionbar
+ * components; this widget only connects view models to CommonUI views.
+ */
+UCLASS(Abstract, Blueprintable)
+class SURVIVALRPG_API URpgPlayerInventoryWidget : public URpgActivatableWidget
+{
+	GENERATED_BODY()
+
+public:
+	explicit URpgPlayerInventoryWidget(const FObjectInitializer& ObjectInitializer = FObjectInitializer::Get());
+
+	/** Ensures the screen-local drag/drop coordinator exists and forwards it to all bound child widgets. */
+	UFUNCTION(BlueprintCallable, Category = "Inventory|Player")
+	void EnsurePlayerInventoryCoordinator();
+
+	/** Rebinds the aggregate player inventory VM to the owning player controller and refreshes all child views. */
+	UFUNCTION(BlueprintCallable, Category = "Inventory|Player")
+	void BindPlayerInventoryViewModel();
+
+	/** Pushes the latest slot-group VMs into CarryGroupsList and InventoryGroupsList. */
+	UFUNCTION(BlueprintCallable, Category = "Inventory|Player")
+	void RefreshSlotGroups();
+
+	/** Pushes the latest 1..8 actionbar slot VMs into ActionBarTileView. */
+	UFUNCTION(BlueprintCallable, Category = "Inventory|Player")
+	void RefreshActionBar();
+
+	/** Pushes the latest fixed armor and bag slot VMs into the optional gear widgets. */
+	UFUNCTION(BlueprintCallable, Category = "Inventory|Player")
+	void RefreshGearSlots();
+
+	/** Refreshes gear slots, slot groups, and actionbar preview from the aggregate VM. */
+	UFUNCTION(BlueprintCallable, Category = "Inventory|Player")
+	void RefreshPlayerInventoryViews();
+
+	/** Aggregate MVVM projection used by this screen. Created by the native base when missing. */
+	UFUNCTION(BlueprintPure, Category = "Inventory|Player")
+	URpgPlayerInventoryViewModel* GetPlayerInventoryViewModel() const { return PlayerInventoryViewModel; }
+
+	/** Screen-local drag/drop coordinator shared by gear, address slots, and actionbar preview. */
+	UFUNCTION(BlueprintPure, Category = "Inventory|Player")
+	URpgInventoryDragDropCoordinator* GetInventoryDragDropCoordinator() const { return DragDropCoordinator; }
+
+	/** Returns a compact runtime summary for debugging Blueprint widget binding and VM list counts. */
+	UFUNCTION(BlueprintCallable, Category = "Inventory|Player|Debug")
+	FString GetPlayerInventoryWidgetDebugSummary() const;
+
+protected:
+	virtual void NativeOnInitialized() override;
+	virtual void NativeOnActivated() override;
+	virtual void NativeOnDeactivated() override;
+
+	/** Blueprint hook after the native parent creates and assigns PlayerInventoryViewModel. */
+	UFUNCTION(BlueprintImplementableEvent, Category = "Inventory|Player", meta = (DisplayName = "On Player Inventory ViewModel Ready"))
+	void BP_OnPlayerInventoryViewModelReady(URpgPlayerInventoryViewModel* ViewModel);
+
+	/** Optional list view for carry groups such as WeaponSlot1, ShieldSlot, and ToolSlot1. */
+	UPROPERTY(BlueprintReadOnly, meta = (BindWidgetOptional))
+	TObjectPtr<URpgInventorySlotGroupListView> CarryGroupsList = nullptr;
+
+	/** Optional list view for normal groups such as Pockets, Backpack, Belt, Pouch, and ResourceBag. */
+	UPROPERTY(BlueprintReadOnly, meta = (BindWidgetOptional))
+	TObjectPtr<URpgInventorySlotGroupListView> InventoryGroupsList = nullptr;
+
+	/** Optional 1..8 actionbar preview/drop target inside the inventory screen. */
+	UPROPERTY(BlueprintReadOnly, meta = (BindWidgetOptional))
+	TObjectPtr<URpgActionBarTileView> ActionBarTileView = nullptr;
+
+	/** Optional fixed armor slot widgets. */
+	UPROPERTY(BlueprintReadOnly, meta = (BindWidgetOptional))
+	TObjectPtr<URpgEquipmentSlotWidget> Gear_Head = nullptr;
+
+	UPROPERTY(BlueprintReadOnly, meta = (BindWidgetOptional))
+	TObjectPtr<URpgEquipmentSlotWidget> Gear_Chest = nullptr;
+
+	UPROPERTY(BlueprintReadOnly, meta = (BindWidgetOptional))
+	TObjectPtr<URpgEquipmentSlotWidget> Gear_Hands = nullptr;
+
+	UPROPERTY(BlueprintReadOnly, meta = (BindWidgetOptional))
+	TObjectPtr<URpgEquipmentSlotWidget> Gear_Legs = nullptr;
+
+	UPROPERTY(BlueprintReadOnly, meta = (BindWidgetOptional))
+	TObjectPtr<URpgEquipmentSlotWidget> Gear_Feet = nullptr;
+
+	/** Optional bag/provider equipment slot widgets. */
+	UPROPERTY(BlueprintReadOnly, meta = (BindWidgetOptional))
+	TObjectPtr<URpgEquipmentSlotWidget> Gear_Backpack = nullptr;
+
+	UPROPERTY(BlueprintReadOnly, meta = (BindWidgetOptional))
+	TObjectPtr<URpgEquipmentSlotWidget> Gear_Belt = nullptr;
+
+	UPROPERTY(BlueprintReadOnly, meta = (BindWidgetOptional))
+	TObjectPtr<URpgEquipmentSlotWidget> Gear_Pouch = nullptr;
+
+	UPROPERTY(BlueprintReadOnly, meta = (BindWidgetOptional))
+	TObjectPtr<URpgEquipmentSlotWidget> Gear_ResourceBag = nullptr;
+
+private:
+	UFUNCTION()
+	void HandleGearSlotsChanged();
+
+	UFUNCTION()
+	void HandleSlotGroupsChanged();
+
+	UFUNCTION()
+	void HandleActionBarSlotsChanged();
+
+	void EnsurePlayerInventoryViewModel();
+	void BindViewModelDelegates();
+	void SetGearSlotViewModel(URpgEquipmentSlotWidget* GearSlotWidget, ERpgEquipmentSlot EquipmentSlot, bool bBagSlot) const;
+	void ForwardCoordinatorToChildren();
+
+	UPROPERTY(Transient)
+	TObjectPtr<URpgPlayerInventoryViewModel> PlayerInventoryViewModel = nullptr;
+
+	UPROPERTY(Transient)
+	TObjectPtr<URpgInventoryDragDropCoordinator> DragDropCoordinator = nullptr;
+
+	bool bViewModelDelegatesBound = false;
+};

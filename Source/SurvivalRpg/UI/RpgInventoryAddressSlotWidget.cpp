@@ -34,6 +34,35 @@ void URpgInventoryAddressSlotWidget::SetDragDropCoordinator(URpgInventoryDragDro
 	RefreshDragDropVisualState();
 }
 
+void URpgInventoryAddressSlotWidget::SetAddressSlotViewModel(URpgInventoryAddressSlotViewModel* InSlotViewModel)
+{
+	if (SlotViewModel == InSlotViewModel)
+	{
+		BP_OnAddressSlotViewModelSet(SlotViewModel);
+		RefreshDragDropVisualState();
+		return;
+	}
+
+	if (SlotViewModel)
+	{
+		SlotViewModel->OnSlotChanged.RemoveDynamic(this, &ThisClass::HandleSlotViewModelChanged);
+	}
+
+	SlotViewModel = InSlotViewModel;
+	if (SlotViewModel)
+	{
+		SlotViewModel->OnSlotChanged.AddUniqueDynamic(this, &ThisClass::HandleSlotViewModelChanged);
+	}
+
+	if (UMVVMView* View = UMVVMSubsystem::GetViewFromUserWidget(this))
+	{
+		View->SetViewModelByClass(SlotViewModel);
+	}
+
+	BP_OnAddressSlotViewModelSet(SlotViewModel);
+	RefreshDragDropVisualState();
+}
+
 bool URpgInventoryAddressSlotWidget::HandleSlotAccept()
 {
 	if (!DragDropCoordinator || !SlotViewModel)
@@ -62,47 +91,17 @@ void URpgInventoryAddressSlotWidget::RefreshDragDropVisualState()
 void URpgInventoryAddressSlotWidget::NativeOnListItemObjectSet(UObject* ListItemObject)
 {
 	IUserObjectListEntry::NativeOnListItemObjectSet(ListItemObject);
-
-	if (SlotViewModel)
-	{
-		SlotViewModel->OnSlotChanged.RemoveDynamic(this, &ThisClass::HandleSlotViewModelChanged);
-	}
-
-	SlotViewModel = Cast<URpgInventoryAddressSlotViewModel>(ListItemObject);
-	if (SlotViewModel)
-	{
-		SlotViewModel->OnSlotChanged.AddUniqueDynamic(this, &ThisClass::HandleSlotViewModelChanged);
-	}
-
-	if (UMVVMView* View = UMVVMSubsystem::GetViewFromUserWidget(this))
-	{
-		View->SetViewModelByClass(SlotViewModel);
-	}
-
-	BP_OnAddressSlotViewModelSet(SlotViewModel);
-	RefreshDragDropVisualState();
+	SetAddressSlotViewModel(Cast<URpgInventoryAddressSlotViewModel>(ListItemObject));
 }
 
 void URpgInventoryAddressSlotWidget::NativeOnEntryReleased()
 {
 	IUserListEntry::NativeOnEntryReleased();
 
-	if (SlotViewModel)
-	{
-		SlotViewModel->OnSlotChanged.RemoveDynamic(this, &ThisClass::HandleSlotViewModelChanged);
-	}
-
-	SlotViewModel = nullptr;
 	bSlotSelected = false;
-
-	if (UMVVMView* View = UMVVMSubsystem::GetViewFromUserWidget(this))
-	{
-		View->SetViewModelByClass(nullptr);
-	}
-
 	BP_OnAddressSlotSelectionChanged(false);
+	SetAddressSlotViewModel(nullptr);
 	BP_OnAddressSlotReleased();
-	RefreshDragDropVisualState();
 }
 
 void URpgInventoryAddressSlotWidget::NativeOnItemSelectionChanged(bool bIsSelected)
@@ -146,6 +145,25 @@ void URpgInventoryAddressSlotWidget::NativeOnDragDetected(const FGeometry& InGeo
 
 	InventoryOperation->Payload = SlotViewModel;
 	InventoryOperation->InventoryPayload = Payload;
+
+	TSubclassOf<UUserWidget> VisualClass = DragVisualClass;
+	if (!VisualClass)
+	{
+		VisualClass = GetClass();
+	}
+
+	if (VisualClass)
+	{
+		UUserWidget* DragVisual = CreateWidget<UUserWidget>(GetWorld(), VisualClass);
+		if (URpgInventoryAddressSlotWidget* AddressSlotDragVisual = Cast<URpgInventoryAddressSlotWidget>(DragVisual))
+		{
+			AddressSlotDragVisual->SetAddressSlotViewModel(SlotViewModel);
+			AddressSlotDragVisual->SetDragDropCoordinator(DragDropCoordinator);
+		}
+
+		InventoryOperation->DefaultDragVisual = DragVisual;
+	}
+
 	OutOperation = InventoryOperation;
 }
 
