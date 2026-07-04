@@ -219,7 +219,9 @@ void URpgInventoryUiActionComponent::RequestAssignItemToEquipmentSlot_Implementa
 		if (!EquipmentLoadout->AssignItemToEquipmentSlot(EquipmentSlot, Item))
 		{
 			SendActionFeedback(RpgGameplayTags::Rpg_Inventory_Action_Equip, ERpgInventoryActionFeedbackResult::NotEquippable, FindPlayerInventory(), Item, 1);
+			return;
 		}
+		SyncEquipmentLoadoutFromGearSlots();
 		return;
 	}
 
@@ -230,6 +232,27 @@ void URpgInventoryUiActionComponent::RequestClearEquipmentSlot_Implementation(ER
 {
 	if (URpgEquipmentLoadoutComponent* EquipmentLoadout = FindEquipmentLoadout())
 	{
+		if (EquipmentSlot != ERpgEquipmentSlot::MainHand &&
+			EquipmentSlot != ERpgEquipmentSlot::OffHand)
+		{
+			if (URpgInventoryItemInstance* SlotItem = EquipmentLoadout->GetItemInEquipmentSlot(EquipmentSlot))
+			{
+				FRpgInventorySlotAddress GearAddress;
+				if (URpgPlayerInventoryLayoutComponent::TryMakeGearSlotAddress(EquipmentSlot, GearAddress) &&
+					!CanMoveItemOutOfGearSlot(GearAddress))
+				{
+					SendActionFeedback(RpgGameplayTags::Rpg_Inventory_Action_Equip, ERpgInventoryActionFeedbackResult::ServerRejected, FindPlayerInventory(), SlotItem, 1);
+					return;
+				}
+
+				if (!TryMoveItemToFirstCompatibleContentSlot(SlotItem))
+				{
+					SendActionFeedback(RpgGameplayTags::Rpg_Inventory_Action_Equip, ERpgInventoryActionFeedbackResult::InventoryFull, FindPlayerInventory(), SlotItem, 1);
+					return;
+				}
+			}
+		}
+
 		EquipmentLoadout->ClearEquipmentSlot(EquipmentSlot);
 	}
 }
@@ -451,8 +474,41 @@ void URpgInventoryUiActionComponent::RequestMoveItemToInventorySlotAddress_Imple
 	const int32 SourceGlobalSlotIndex = PlayerInventory->GetItemSlotIndex(Item);
 	FRpgInventorySlotAddress SourceAddress;
 	URpgInventoryItemInstance* TargetItem = PlayerInventory->GetItemInSlot(TargetGlobalSlotIndex);
+	const bool bHasSourceAddress = InventoryLayout->TryMakeSlotAddressFromGlobalSlotIndex(SourceGlobalSlotIndex, SourceAddress);
+	if (bHasSourceAddress && InventoryLayout->IsGearSlotAddress(SourceAddress) && !CanMoveItemOutOfGearSlot(SourceAddress))
+	{
+		SendActionFeedback(RpgGameplayTags::Rpg_Inventory_Action_Transfer, ERpgInventoryActionFeedbackResult::ServerRejected, PlayerInventory, Item, 1);
+		return;
+	}
+
+	if (bHasSourceAddress && InventoryLayout->IsGearSlotAddress(SourceAddress))
+	{
+		ERpgEquipmentSlot SourceEquipmentSlot = ERpgEquipmentSlot::None;
+		if (URpgPlayerInventoryLayoutComponent::TryGetEquipmentSlotForGearGroupId(SourceAddress.GroupId, SourceEquipmentSlot) &&
+			URpgPlayerInventoryLayoutComponent::IsSlotContainerEquipmentSlot(SourceEquipmentSlot))
+		{
+			bool bTargetIsStaticContent = false;
+			for (const FRpgInventorySlotGroupView& Group : InventoryLayout->GetSlotGroups())
+			{
+				if (Group.GroupId == TargetAddress.GroupId &&
+					TargetAddress.LocalSlotIndex >= 0 &&
+					TargetAddress.LocalSlotIndex < Group.SlotCount)
+				{
+					bTargetIsStaticContent = Group.GroupKind == ERpgInventorySlotGroupKind::Content && !Group.bProvidedByEquipment;
+					break;
+				}
+			}
+
+			if (!bTargetIsStaticContent)
+			{
+				SendActionFeedback(RpgGameplayTags::Rpg_Inventory_Action_Transfer, ERpgInventoryActionFeedbackResult::InvalidSlot, PlayerInventory, Item, 1);
+				return;
+			}
+		}
+	}
+
 	if (TargetItem &&
-		InventoryLayout->TryMakeSlotAddressFromGlobalSlotIndex(SourceGlobalSlotIndex, SourceAddress) &&
+		bHasSourceAddress &&
 		!InventoryLayout->CanItemUseSlotAddress(TargetItem, SourceAddress))
 	{
 		SendActionFeedback(RpgGameplayTags::Rpg_Inventory_Action_Transfer, ERpgInventoryActionFeedbackResult::InvalidSlot, PlayerInventory, Item, 1);
@@ -472,7 +528,10 @@ void URpgInventoryUiActionComponent::RequestMoveItemToInventorySlotAddress_Imple
 	if (!EntryId.IsValid() || !PlayerInventory->MoveInventoryEntryToSlot(EntryId, TargetGlobalSlotIndex))
 	{
 		SendActionFeedback(RpgGameplayTags::Rpg_Inventory_Action_Transfer, ERpgInventoryActionFeedbackResult::ServerRejected, PlayerInventory, Item, 1);
+		return;
 	}
+
+	SyncEquipmentLoadoutFromGearSlots();
 }
 
 void URpgInventoryUiActionComponent::RequestEquipSlotContainerItem_Implementation(ERpgEquipmentSlot ContainerSlot, URpgInventoryItemInstance* Item)
@@ -497,6 +556,7 @@ void URpgInventoryUiActionComponent::RequestEquipSlotContainerItem_Implementatio
 		return;
 	}
 
+	SyncEquipmentLoadoutFromGearSlots();
 	SendActionFeedback(RpgGameplayTags::Rpg_Inventory_Action_Equip, ERpgInventoryActionFeedbackResult::Success, PlayerInventory, Item, 1);
 }
 
@@ -1620,7 +1680,7 @@ bool URpgInventoryUiActionComponent::TryMoveItemToFirstCompatibleCarrySlot(URpgI
 
 	for (const FRpgInventorySlotGroupView& Group : InventoryLayout->GetSlotGroups())
 	{
-		if (!Group.Rule.bCarrySlot || !Group.Rule.AllowsItem(Item))
+		if (Group.GroupKind != ERpgInventorySlotGroupKind::Carry || !Group.Rule.bCarrySlot || !Group.Rule.AllowsItem(Item))
 		{
 			continue;
 		}
@@ -1636,6 +1696,117 @@ bool URpgInventoryUiActionComponent::TryMoveItemToFirstCompatibleCarrySlot(URpgI
 	}
 
 	return false;
+}
+
+bool URpgInventoryUiActionComponent::TryMoveItemToFirstCompatibleContentSlot(URpgInventoryItemInstance* Item)
+{
+	URpgInventoryManagerComponent* PlayerInventory = FindPlayerInventory();
+	URpgPlayerInventoryLayoutComponent* InventoryLayout = FindPlayerInventoryLayout();
+	if (!Item || !PlayerInventory || !InventoryLayout || PlayerInventory->GetItemStackCount(Item) <= 0)
+	{
+		return false;
+	}
+
+	FGuid EntryId;
+	for (const FRpgInventoryEntryView& Entry : PlayerInventory->GetAllEntries())
+	{
+		if (Entry.Instance == Item)
+		{
+			EntryId = Entry.EntryId;
+			break;
+		}
+	}
+
+	if (!EntryId.IsValid())
+	{
+		return false;
+	}
+
+	for (const FRpgInventorySlotGroupView& Group : InventoryLayout->GetSlotGroups())
+	{
+		if (Group.GroupKind != ERpgInventorySlotGroupKind::Content || Group.bProvidedByEquipment || !Group.Rule.AllowsItem(Item))
+		{
+			continue;
+		}
+
+		for (int32 LocalSlotIndex = 0; LocalSlotIndex < Group.SlotCount; ++LocalSlotIndex)
+		{
+			const int32 GlobalSlotIndex = Group.FirstGlobalSlotIndex + LocalSlotIndex;
+			if (PlayerInventory->GetItemInSlot(GlobalSlotIndex) == nullptr)
+			{
+				return PlayerInventory->MoveInventoryEntryToSlot(EntryId, GlobalSlotIndex);
+			}
+		}
+	}
+
+	return false;
+}
+
+bool URpgInventoryUiActionComponent::CanMoveItemOutOfGearSlot(const FRpgInventorySlotAddress& SourceAddress) const
+{
+	ERpgEquipmentSlot EquipmentSlot = ERpgEquipmentSlot::None;
+	if (!URpgPlayerInventoryLayoutComponent::TryGetEquipmentSlotForGearGroupId(SourceAddress.GroupId, EquipmentSlot))
+	{
+		return true;
+	}
+
+	if (!URpgPlayerInventoryLayoutComponent::IsSlotContainerEquipmentSlot(EquipmentSlot))
+	{
+		return true;
+	}
+
+	const URpgPlayerInventoryLayoutComponent* InventoryLayout = FindPlayerInventoryLayout();
+	return !InventoryLayout || InventoryLayout->CanUnequipSlotContainer(EquipmentSlot);
+}
+
+void URpgInventoryUiActionComponent::SyncEquipmentLoadoutFromGearSlots() const
+{
+	URpgEquipmentLoadoutComponent* EquipmentLoadout = FindEquipmentLoadout();
+	URpgInventoryManagerComponent* PlayerInventory = FindPlayerInventory();
+	URpgPlayerInventoryLayoutComponent* InventoryLayout = FindPlayerInventoryLayout();
+	if (!EquipmentLoadout || !PlayerInventory || !InventoryLayout)
+	{
+		return;
+	}
+
+	const ERpgEquipmentSlot GearSlots[] =
+	{
+		ERpgEquipmentSlot::Head,
+		ERpgEquipmentSlot::Chest,
+		ERpgEquipmentSlot::Hands,
+		ERpgEquipmentSlot::Legs,
+		ERpgEquipmentSlot::Feet,
+		ERpgEquipmentSlot::Backpack,
+		ERpgEquipmentSlot::Belt,
+		ERpgEquipmentSlot::Pouch,
+		ERpgEquipmentSlot::ResourceBag
+	};
+
+	for (const ERpgEquipmentSlot EquipmentSlot : GearSlots)
+	{
+		FRpgInventorySlotAddress GearAddress;
+		int32 GlobalSlotIndex = INDEX_NONE;
+		if (!URpgPlayerInventoryLayoutComponent::TryMakeGearSlotAddress(EquipmentSlot, GearAddress) ||
+			!InventoryLayout->ResolveSlotAddress(GearAddress, GlobalSlotIndex))
+		{
+			continue;
+		}
+
+		URpgInventoryItemInstance* GearItem = PlayerInventory->GetItemInSlot(GlobalSlotIndex);
+		if (EquipmentLoadout->GetItemInEquipmentSlot(EquipmentSlot) == GearItem)
+		{
+			continue;
+		}
+
+		if (GearItem)
+		{
+			EquipmentLoadout->AssignItemToEquipmentSlot(EquipmentSlot, GearItem);
+		}
+		else
+		{
+			EquipmentLoadout->ClearEquipmentSlot(EquipmentSlot);
+		}
+	}
 }
 
 bool URpgInventoryUiActionComponent::TrySpawnManualDrop(URpgInventoryItemInstance* Item, int32 StackCount, bool bDropAsInstance)

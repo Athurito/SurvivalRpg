@@ -32,9 +32,12 @@ void URpgEquipmentSlotWidget::SetEquipmentSlotViewModel(URpgEquipmentSlotViewMod
 		SlotViewModel->OnSlotChanged.AddUniqueDynamic(this, &ThisClass::HandleSlotViewModelChanged);
 	}
 
-	if (UMVVMView* View = UMVVMSubsystem::GetViewFromUserWidget(this))
+	if (SlotViewModel)
 	{
-		View->SetViewModelByClass(SlotViewModel);
+		if (UMVVMView* View = UMVVMSubsystem::GetViewFromUserWidget(this))
+		{
+			View->SetViewModelByClass(SlotViewModel);
+		}
 	}
 
 	BP_OnEquipmentSlotUpdated(SlotViewModel, GetRepresentedItem(), GetRepresentedItem() != nullptr);

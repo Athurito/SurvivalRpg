@@ -134,7 +134,8 @@ void URpgInventoryAddressSlotViewModel::InitializeSlot(
 		ItemInstance != NewItem ||
 		StackCount != NewStackCount ||
 		bActionbarBindable != InGroupView.Rule.bActionbarBindable ||
-		bCarrySlot != InGroupView.Rule.bCarrySlot;
+		bCarrySlot != (InGroupView.GroupKind == ERpgInventorySlotGroupKind::Carry && InGroupView.Rule.bCarrySlot) ||
+		bGearSlot != (InGroupView.GroupKind == ERpgInventorySlotGroupKind::Gear);
 
 	Inventory = InInventory;
 	InventoryLayout = InInventoryLayout;
@@ -151,7 +152,8 @@ void URpgInventoryAddressSlotViewModel::InitializeSlot(
 	bIsEmptySlot = ItemInstance == nullptr;
 	bCanDrag = ItemInstance != nullptr && StackCount > 0;
 	bActionbarBindable = InGroupView.Rule.bActionbarBindable;
-	bCarrySlot = InGroupView.Rule.bCarrySlot;
+	bCarrySlot = InGroupView.GroupKind == ERpgInventorySlotGroupKind::Carry && InGroupView.Rule.bCarrySlot;
+	bGearSlot = InGroupView.GroupKind == ERpgInventorySlotGroupKind::Gear;
 
 	UE_MVVM_BROADCAST_FIELD_VALUE_CHANGED(Inventory);
 	UE_MVVM_BROADCAST_FIELD_VALUE_CHANGED(InventoryLayout);
@@ -169,6 +171,7 @@ void URpgInventoryAddressSlotViewModel::InitializeSlot(
 	UE_MVVM_BROADCAST_FIELD_VALUE_CHANGED(bCanDrag);
 	UE_MVVM_BROADCAST_FIELD_VALUE_CHANGED(bActionbarBindable);
 	UE_MVVM_BROADCAST_FIELD_VALUE_CHANGED(bCarrySlot);
+	UE_MVVM_BROADCAST_FIELD_VALUE_CHANGED(bGearSlot);
 
 	if (bWasChanged)
 	{
@@ -184,7 +187,9 @@ void URpgInventorySlotGroupViewModel::InitializeGroup(const FRpgInventorySlotGro
 	FirstGlobalSlotIndex = InGroupView.FirstGlobalSlotIndex;
 	SlotCount = InGroupView.SlotCount;
 	bActionbarBindable = InGroupView.Rule.bActionbarBindable;
-	bCarryGroup = InGroupView.Rule.bCarrySlot;
+	bCarryGroup = InGroupView.GroupKind == ERpgInventorySlotGroupKind::Carry && InGroupView.Rule.bCarrySlot;
+	bGearGroup = InGroupView.GroupKind == ERpgInventorySlotGroupKind::Gear;
+	bContentGroup = InGroupView.GroupKind == ERpgInventorySlotGroupKind::Content;
 	bProvidedByEquipment = InGroupView.bProvidedByEquipment;
 	SourceEquipmentSlotName = InGroupView.SourceEquipmentSlotName;
 
@@ -202,6 +207,8 @@ void URpgInventorySlotGroupViewModel::InitializeGroup(const FRpgInventorySlotGro
 	UE_MVVM_BROADCAST_FIELD_VALUE_CHANGED(SlotCount);
 	UE_MVVM_BROADCAST_FIELD_VALUE_CHANGED(bActionbarBindable);
 	UE_MVVM_BROADCAST_FIELD_VALUE_CHANGED(bCarryGroup);
+	UE_MVVM_BROADCAST_FIELD_VALUE_CHANGED(bGearGroup);
+	UE_MVVM_BROADCAST_FIELD_VALUE_CHANGED(bContentGroup);
 	UE_MVVM_BROADCAST_FIELD_VALUE_CHANGED(bProvidedByEquipment);
 	UE_MVVM_BROADCAST_FIELD_VALUE_CHANGED(SourceEquipmentSlotName);
 	UE_MVVM_BROADCAST_FIELD_VALUE_CHANGED(Slots);
@@ -529,11 +536,11 @@ void URpgPlayerInventoryViewModel::RefreshSlotGroups()
 			}
 
 			GroupViewModel->InitializeGroup(GroupView, GroupSlots);
-			if (GroupView.Rule.bCarrySlot)
+			if (GroupView.GroupKind == ERpgInventorySlotGroupKind::Carry)
 			{
 				NewCarryGroups.Add(GroupViewModel);
 			}
-			else
+			else if (GroupView.GroupKind == ERpgInventorySlotGroupKind::Content)
 			{
 				NewInventoryGroups.Add(GroupViewModel);
 			}

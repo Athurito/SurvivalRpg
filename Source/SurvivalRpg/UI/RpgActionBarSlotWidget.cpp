@@ -28,9 +28,12 @@ void URpgActionBarSlotWidget::SetActionBarSlotViewModel(URpgActionBarSlotViewMod
 		SlotViewModel->OnSlotChanged.AddUniqueDynamic(this, &ThisClass::HandleSlotViewModelChanged);
 	}
 
-	if (UMVVMView* View = UMVVMSubsystem::GetViewFromUserWidget(this))
+	if (SlotViewModel)
 	{
-		View->SetViewModelByClass(SlotViewModel);
+		if (UMVVMView* View = UMVVMSubsystem::GetViewFromUserWidget(this))
+		{
+			View->SetViewModelByClass(SlotViewModel);
+		}
 	}
 
 	BP_OnActionBarSlotViewModelSet(SlotViewModel);
@@ -120,9 +123,12 @@ void URpgActionBarSlotWidget::HandleSlotViewModelChanged(URpgActionBarSlotViewMo
 {
 	if (ChangedSlotViewModel == SlotViewModel)
 	{
-		if (UMVVMView* View = UMVVMSubsystem::GetViewFromUserWidget(this))
+		if (SlotViewModel)
 		{
-			View->SetViewModelByClass(SlotViewModel);
+			if (UMVVMView* View = UMVVMSubsystem::GetViewFromUserWidget(this))
+			{
+				View->SetViewModelByClass(SlotViewModel);
+			}
 		}
 
 		BP_OnActionBarSlotViewModelSet(SlotViewModel);

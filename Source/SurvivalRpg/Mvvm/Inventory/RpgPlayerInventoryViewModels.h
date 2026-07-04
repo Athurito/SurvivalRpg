@@ -91,6 +91,10 @@ public:
 	UFUNCTION(BlueprintPure, Category = "Inventory|Layout ViewModel")
 	bool IsCarrySlot() const { return bCarrySlot; }
 
+	/** True when this address belongs to a dedicated gear slot such as Gear.Head or Gear.Backpack. */
+	UFUNCTION(BlueprintPure, Category = "Inventory|Layout ViewModel")
+	bool IsGearSlot() const { return bGearSlot; }
+
 	/** Fired when this slot object keeps identity but its visible data changed. */
 	UPROPERTY(BlueprintAssignable, Category = "Inventory|Layout ViewModel")
 	FRpgInventoryAddressSlotViewModelChanged OnSlotChanged;
@@ -159,6 +163,10 @@ protected:
 	/** Whether this slot is a weapon/tool/shield carry slot. */
 	UPROPERTY(BlueprintReadOnly, FieldNotify, Category = "Inventory|Layout ViewModel", meta = (AllowPrivateAccess = "true"))
 	bool bCarrySlot = false;
+
+	/** Whether this slot is a dedicated gear slot. Gear slots are normally rendered by CUI_GearSlot widgets. */
+	UPROPERTY(BlueprintReadOnly, FieldNotify, Category = "Inventory|Layout ViewModel", meta = (AllowPrivateAccess = "true"))
+	bool bGearSlot = false;
 };
 
 /**
@@ -210,6 +218,14 @@ protected:
 	/** True when this is a weapon/tool/shield carry group. */
 	UPROPERTY(BlueprintReadOnly, FieldNotify, Category = "Inventory|Layout ViewModel", meta = (AllowPrivateAccess = "true"))
 	bool bCarryGroup = false;
+
+	/** True when this is a dedicated gear group. Player inventory screens usually render these separately. */
+	UPROPERTY(BlueprintReadOnly, FieldNotify, Category = "Inventory|Layout ViewModel", meta = (AllowPrivateAccess = "true"))
+	bool bGearGroup = false;
+
+	/** True when this group is normal item storage such as Pockets or Backpack contents. */
+	UPROPERTY(BlueprintReadOnly, FieldNotify, Category = "Inventory|Layout ViewModel", meta = (AllowPrivateAccess = "true"))
+	bool bContentGroup = false;
 
 	/** True when this group came from an equipped bag/belt/pouch/resource-bag item. */
 	UPROPERTY(BlueprintReadOnly, FieldNotify, Category = "Inventory|Layout ViewModel", meta = (AllowPrivateAccess = "true"))

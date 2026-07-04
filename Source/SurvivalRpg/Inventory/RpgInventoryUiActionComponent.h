@@ -265,6 +265,9 @@ private:
 	bool ClearPlayerAssignmentsForItem(URpgInventoryItemInstance* Item) const;
 	bool TryAssignItemToDefaultEquipmentDestination(URpgInventoryItemInstance* Item);
 	bool TryMoveItemToFirstCompatibleCarrySlot(URpgInventoryItemInstance* Item);
+	bool TryMoveItemToFirstCompatibleContentSlot(URpgInventoryItemInstance* Item);
+	bool CanMoveItemOutOfGearSlot(const FRpgInventorySlotAddress& SourceAddress) const;
+	void SyncEquipmentLoadoutFromGearSlots() const;
 	bool TrySpawnManualDrop(URpgInventoryItemInstance* Item, int32 StackCount, bool bDropAsInstance);
 	bool TryMergeManualDrop(TSubclassOf<URpgInventoryItemDefinition> ItemDefinition, int32 StackCount, const FVector& SpawnLocation) const;
 	FTransform GetManualDropTransform() const;

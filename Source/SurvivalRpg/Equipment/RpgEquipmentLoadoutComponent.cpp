@@ -115,6 +115,13 @@ bool URpgEquipmentLoadoutComponent::AssignItemToEquipmentSlot(ERpgEquipmentSlot 
 		}
 	}
 
+	if (EquipmentSlot != ERpgEquipmentSlot::MainHand &&
+		EquipmentSlot != ERpgEquipmentSlot::OffHand &&
+		!MoveInventoryItemToEquipmentSlotAddress(EquipmentSlot, Item))
+	{
+		return false;
+	}
+
 	UnequipRuntimeSlot(EquipmentSlot);
 
 	Slots[SlotIndex].Item = Item;
@@ -584,6 +591,67 @@ bool URpgEquipmentLoadoutComponent::IsTwoHandItem(const URpgInventoryItemInstanc
 	const TSubclassOf<URpgEquipmentDefinition> EquipmentDefinition = EquippableFragment ? EquippableFragment->GetEquipmentDefinition() : nullptr;
 	const URpgEquipmentDefinition* EquipmentCDO = EquipmentDefinition ? GetDefault<URpgEquipmentDefinition>(EquipmentDefinition) : nullptr;
 	return EquipmentCDO && EquipmentCDO->HandOccupancy == ERpgEquipmentHandOccupancy::BothHands;
+}
+
+bool URpgEquipmentLoadoutComponent::MoveInventoryItemToEquipmentSlotAddress(ERpgEquipmentSlot EquipmentSlot, URpgInventoryItemInstance* Item) const
+{
+	URpgInventoryManagerComponent* OwnerInventory = FindOwnerInventory();
+	URpgPlayerInventoryLayoutComponent* InventoryLayout = FindPlayerInventoryLayout();
+	if (!OwnerInventory || !InventoryLayout || !Item || !OwnerInventory->ContainsItemInstance(Item))
+	{
+		return false;
+	}
+
+	FRpgInventorySlotAddress TargetAddress;
+	int32 TargetGlobalSlotIndex = INDEX_NONE;
+	if (!URpgPlayerInventoryLayoutComponent::TryMakeGearSlotAddress(EquipmentSlot, TargetAddress) ||
+		!InventoryLayout->ResolveSlotAddress(TargetAddress, TargetGlobalSlotIndex) ||
+		!InventoryLayout->CanItemUseSlotAddress(Item, TargetAddress))
+	{
+		return false;
+	}
+
+	if (OwnerInventory->GetItemSlotIndex(Item) == TargetGlobalSlotIndex)
+	{
+		return true;
+	}
+
+	FRpgInventorySlotAddress SourceAddress;
+	const int32 SourceGlobalSlotIndex = OwnerInventory->GetItemSlotIndex(Item);
+	if (SourceGlobalSlotIndex == INDEX_NONE ||
+		!InventoryLayout->TryMakeSlotAddressFromGlobalSlotIndex(SourceGlobalSlotIndex, SourceAddress))
+	{
+		return false;
+	}
+
+	if (URpgInventoryItemInstance* TargetItem = OwnerInventory->GetItemInSlot(TargetGlobalSlotIndex))
+	{
+		if (!InventoryLayout->CanItemUseSlotAddress(TargetItem, SourceAddress))
+		{
+			return false;
+		}
+	}
+
+	const FGuid EntryId = FindInventoryEntryIdForItem(OwnerInventory, Item);
+	return EntryId.IsValid() && OwnerInventory->MoveInventoryEntryToSlot(EntryId, TargetGlobalSlotIndex);
+}
+
+FGuid URpgEquipmentLoadoutComponent::FindInventoryEntryIdForItem(const URpgInventoryManagerComponent* Inventory, const URpgInventoryItemInstance* Item) const
+{
+	if (!Inventory || !Item)
+	{
+		return FGuid();
+	}
+
+	for (const FRpgInventoryEntryView& Entry : Inventory->GetAllEntries())
+	{
+		if (Entry.Instance == Item)
+		{
+			return Entry.EntryId;
+		}
+	}
+
+	return FGuid();
 }
 
 void URpgEquipmentLoadoutComponent::RememberCurrentOffhandForActiveMainhand()

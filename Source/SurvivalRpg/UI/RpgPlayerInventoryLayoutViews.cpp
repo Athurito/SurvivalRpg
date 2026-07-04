@@ -296,9 +296,12 @@ void URpgInventorySlotGroupWidget::SetSlotGroupViewModel(URpgInventorySlotGroupV
 {
 	GroupViewModel = InGroupViewModel;
 
-	if (UMVVMView* View = UMVVMSubsystem::GetViewFromUserWidget(this))
+	if (GroupViewModel)
 	{
-		View->SetViewModelByClass(GroupViewModel);
+		if (UMVVMView* View = UMVVMSubsystem::GetViewFromUserWidget(this))
+		{
+			View->SetViewModelByClass(GroupViewModel);
+		}
 	}
 
 	if (SlotTileView)

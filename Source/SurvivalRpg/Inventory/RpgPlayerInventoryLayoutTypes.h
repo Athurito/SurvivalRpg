@@ -48,6 +48,20 @@ struct SURVIVALRPG_API FRpgInventorySlotAddress
 	}
 };
 
+/** High-level player-inventory layout area used to keep gear, carry, and stored items visually distinct. */
+UENUM(BlueprintType)
+enum class ERpgInventorySlotGroupKind : uint8
+{
+	/** Regular item storage such as Pockets, Backpack contents, Belt contents, or Pouches. */
+	Content,
+
+	/** Persistent carry slot for weapons, shields, and tools that can be activated into runtime hands. */
+	Carry,
+
+	/** Dedicated equipped gear slot such as Head, Chest, Backpack, or Belt. */
+	Gear
+};
+
 /**
  * Server-side rule for what may live in a player inventory slot group.
  *
@@ -106,6 +120,10 @@ struct SURVIVALRPG_API FRpgInventorySlotGroupDefinition
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Inventory|Layout", meta = (AssetBundles = "Client"))
 	TSoftObjectPtr<UTexture2D> Icon;
 
+	/** Layout area this group belongs to. Content accepts auto-added inventory items; gear and carry require explicit moves. */
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Inventory|Layout")
+	ERpgInventorySlotGroupKind GroupKind = ERpgInventorySlotGroupKind::Content;
+
 	/** Number of slots contributed by this group. Values below 1 are ignored at runtime. */
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Inventory|Layout", meta = (ClampMin = "1", UIMin = "1"))
 	int32 SlotCount = 1;
@@ -134,6 +152,10 @@ struct SURVIVALRPG_API FRpgInventorySlotGroupView
 	/** Optional icon for group headers or equipment-slot placeholders. UI-only. */
 	UPROPERTY(BlueprintReadOnly, Category = "Inventory|Layout")
 	TSoftObjectPtr<UTexture2D> Icon;
+
+	/** Layout area this group belongs to. UI uses this to split gear, carry, and item storage. */
+	UPROPERTY(BlueprintReadOnly, Category = "Inventory|Layout")
+	ERpgInventorySlotGroupKind GroupKind = ERpgInventorySlotGroupKind::Content;
 
 	/** First global SortIndex slot represented by this group. */
 	UPROPERTY(BlueprintReadOnly, Category = "Inventory|Layout")

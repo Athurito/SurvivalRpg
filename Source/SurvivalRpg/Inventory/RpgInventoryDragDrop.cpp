@@ -607,7 +607,8 @@ bool URpgInventoryDragDropCoordinator::CommitPayloadToTarget(const FRpgInventory
 
 	if (Target.TargetType == ERpgInventoryDropTargetType::PlayerInventorySlotAddress)
 	{
-		if (Payload.SourceType == ERpgInventoryDragSourceType::InventoryEntry)
+		if (Payload.SourceType == ERpgInventoryDragSourceType::InventoryEntry ||
+			Payload.SourceType == ERpgInventoryDragSourceType::EquipmentSlot)
 		{
 			Actions->RequestMoveItemToInventorySlotAddress(Payload.ItemInstance, Target.SlotAddress);
 			return true;
@@ -731,10 +732,15 @@ bool URpgInventoryDragDropCoordinator::CanCommitPayloadToTarget(const FRpgInvent
 
 	if (Target.TargetType == ERpgInventoryDropTargetType::PlayerInventorySlotAddress)
 	{
-		if (Payload.SourceType != ERpgInventoryDragSourceType::InventoryEntry ||
-			!IsPlayerInventory(Payload.SourceInventory) ||
+		if ((Payload.SourceType != ERpgInventoryDragSourceType::InventoryEntry &&
+				Payload.SourceType != ERpgInventoryDragSourceType::EquipmentSlot) ||
 			!Payload.ItemInstance ||
 			!Target.SlotAddress.IsValid())
+		{
+			return false;
+		}
+
+		if (Payload.SourceType == ERpgInventoryDragSourceType::InventoryEntry && !IsPlayerInventory(Payload.SourceInventory))
 		{
 			return false;
 		}

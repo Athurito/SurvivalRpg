@@ -98,9 +98,12 @@ void URpgInventorySlotEntryWidget::NativeOnListItemObjectSet(UObject* ListItemOb
 		EntryViewModel->OnEntryChanged.AddUniqueDynamic(this, &ThisClass::HandleEntryViewModelChanged);
 	}
 
-	if (UMVVMView* View = UMVVMSubsystem::GetViewFromUserWidget(this))
+	if (EntryViewModel)
 	{
-		View->SetViewModelByClass(EntryViewModel);
+		if (UMVVMView* View = UMVVMSubsystem::GetViewFromUserWidget(this))
+		{
+			View->SetViewModelByClass(EntryViewModel);
+		}
 	}
 
 	BP_OnInventoryEntryViewModelSet(EntryViewModel);
@@ -118,10 +121,6 @@ void URpgInventorySlotEntryWidget::NativeOnEntryReleased()
 
 	EntryViewModel = nullptr;
 	bEntrySelected = false;
-	if (UMVVMView* View = UMVVMSubsystem::GetViewFromUserWidget(this))
-	{
-		View->SetViewModelByClass(nullptr);
-	}
 
 	BP_OnInventoryEntrySelectionChanged(false);
 	BP_OnInventoryEntryReleased();

@@ -1691,7 +1691,8 @@ int32 URpgInventoryManagerComponent::GetNextAutoAddSlotForItemDefinition(TSubcla
 
 	for (const FRpgInventorySlotGroupView& Group : InventoryLayout->GetSlotGroups())
 	{
-		if (!Group.Rule.AllowsItemDefinition(ItemDef))
+		if (Group.GroupKind != ERpgInventorySlotGroupKind::Content ||
+			!Group.Rule.AllowsItemDefinition(ItemDef))
 		{
 			continue;
 		}
@@ -1719,7 +1720,8 @@ int32 URpgInventoryManagerComponent::GetNextAutoAddSlotForItemInstance(URpgInven
 
 	for (const FRpgInventorySlotGroupView& Group : InventoryLayout->GetSlotGroups())
 	{
-		if (!Group.Rule.AllowsItem(ItemInstance))
+		if (Group.GroupKind != ERpgInventorySlotGroupKind::Content ||
+			!Group.Rule.AllowsItem(ItemInstance))
 		{
 			continue;
 		}
@@ -1748,7 +1750,8 @@ int32 URpgInventoryManagerComponent::CountAvailableAutoAddSlotsForItemDefinition
 	int32 MatchingFreeSlots = 0;
 	for (const FRpgInventorySlotGroupView& Group : InventoryLayout->GetSlotGroups())
 	{
-		if (!Group.Rule.AllowsItemDefinition(ItemDef))
+		if (Group.GroupKind != ERpgInventorySlotGroupKind::Content ||
+			!Group.Rule.AllowsItemDefinition(ItemDef))
 		{
 			continue;
 		}
@@ -1777,7 +1780,8 @@ int32 URpgInventoryManagerComponent::CountAvailableAutoAddSlotsForItemInstance(U
 	int32 MatchingFreeSlots = 0;
 	for (const FRpgInventorySlotGroupView& Group : InventoryLayout->GetSlotGroups())
 	{
-		if (!Group.Rule.AllowsItem(ItemInstance))
+		if (Group.GroupKind != ERpgInventorySlotGroupKind::Content ||
+			!Group.Rule.AllowsItem(ItemInstance))
 		{
 			continue;
 		}

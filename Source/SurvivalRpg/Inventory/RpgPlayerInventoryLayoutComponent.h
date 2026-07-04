@@ -77,6 +77,14 @@ public:
 	UFUNCTION(BlueprintCallable, BlueprintPure = false, Category = "Inventory|Layout")
 	bool IsCarrySlotAddress(const FRpgInventorySlotAddress& Address) const;
 
+	/** Returns true when the addressed group is a dedicated gear slot such as Gear.Head or Gear.Backpack. */
+	UFUNCTION(BlueprintCallable, BlueprintPure = false, Category = "Inventory|Layout")
+	bool IsGearSlotAddress(const FRpgInventorySlotAddress& Address) const;
+
+	/** Returns true when the addressed group is normal item storage that may receive auto-added inventory items. */
+	UFUNCTION(BlueprintCallable, BlueprintPure = false, Category = "Inventory|Layout")
+	bool IsContentSlotAddress(const FRpgInventorySlotAddress& Address) const;
+
 	/** Applies the current layout slot count to the player inventory as a fixed entry capacity on the server. */
 	UFUNCTION(BlueprintCallable, BlueprintAuthorityOnly, Category = "Inventory|Layout")
 	void ApplyLayoutCapacityToInventory();
@@ -93,6 +101,18 @@ public:
 	UFUNCTION(BlueprintCallable, BlueprintPure, Category = "Inventory|Layout")
 	static bool IsBuiltInCarryGroupId(FName GroupId);
 
+	/** Returns true when a logical group id is one of the built-in dedicated gear slot groups. */
+	UFUNCTION(BlueprintCallable, BlueprintPure, Category = "Inventory|Layout")
+	static bool IsBuiltInGearGroupId(FName GroupId);
+
+	/** Builds the logical gear-slot address for an equipment slot such as Head or Backpack. */
+	UFUNCTION(BlueprintCallable, BlueprintPure, Category = "Inventory|Layout")
+	static bool TryMakeGearSlotAddress(ERpgEquipmentSlot EquipmentSlot, FRpgInventorySlotAddress& OutAddress);
+
+	/** Resolves a Gear.* group id back to its equipment slot. */
+	UFUNCTION(BlueprintCallable, BlueprintPure, Category = "Inventory|Layout")
+	static bool TryGetEquipmentSlotForGearGroupId(FName GroupId, ERpgEquipmentSlot& OutEquipmentSlot);
+
 	/** Built-in group ids used by carry/actionbar UI. */
 	static const FName WeaponSlot1GroupId;
 	static const FName WeaponSlot2GroupId;
@@ -100,6 +120,15 @@ public:
 	static const FName ToolSlot1GroupId;
 	static const FName ToolSlot2GroupId;
 	static const FName PocketsGroupId;
+	static const FName GearHeadGroupId;
+	static const FName GearChestGroupId;
+	static const FName GearHandsGroupId;
+	static const FName GearLegsGroupId;
+	static const FName GearFeetGroupId;
+	static const FName GearBackpackGroupId;
+	static const FName GearBeltGroupId;
+	static const FName GearPouchGroupId;
+	static const FName GearResourceBagGroupId;
 
 private:
 	URpgInventoryManagerComponent* FindPlayerInventory() const;
@@ -108,7 +137,7 @@ private:
 	void AppendGroupViews(const TArray<FRpgInventorySlotGroupDefinition>& GroupDefinitions, bool bProvidedByEquipment, ERpgEquipmentSlot SourceEquipmentSlot, TArray<FRpgInventorySlotGroupView>& OutGroups, int32& InOutFirstGlobalSlotIndex) const;
 	void BroadcastLayoutChanged() const;
 	static FName EquipmentSlotToSourceName(ERpgEquipmentSlot EquipmentSlot);
-	static FRpgInventorySlotGroupDefinition MakeStaticGroup(FName GroupId, const FText& DisplayName, int32 SlotCount, const TArray<ERpgInventoryItemCategory>& AllowedCategories, bool bActionbarBindable, bool bCarrySlot);
+	static FRpgInventorySlotGroupDefinition MakeStaticGroup(FName GroupId, const FText& DisplayName, int32 SlotCount, const TArray<ERpgInventoryItemCategory>& AllowedCategories, bool bActionbarBindable, bool bCarrySlot, ERpgInventorySlotGroupKind GroupKind);
 
 	/** Built-in body/carry slot groups. Runtime bag/provider groups are appended after these. */
 	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Inventory|Layout", meta = (AllowPrivateAccess = "true", TitleProperty = "GroupId"))
