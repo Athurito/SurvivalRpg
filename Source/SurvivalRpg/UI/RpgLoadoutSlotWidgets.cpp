@@ -3,9 +3,11 @@
 #include "Blueprint/DragDropOperation.h"
 #include "Input/Reply.h"
 #include "InputCoreTypes.h"
+#include "MVVMSubsystem.h"
 #include "SurvivalRpg/Inventory/RpgInventoryDragDrop.h"
 #include "SurvivalRpg/Inventory/RpgInventoryItemInstance.h"
 #include "SurvivalRpg/Mvvm/Inventory/RpgLoadoutViewModels.h"
+#include "View/MVVMView.h"
 
 #include UE_INLINE_GENERATED_CPP_BY_NAME(RpgLoadoutSlotWidgets)
 
@@ -28,6 +30,11 @@ void URpgEquipmentSlotWidget::SetEquipmentSlotViewModel(URpgEquipmentSlotViewMod
 	{
 		EquipmentSlot = SlotViewModel->GetEquipmentSlot();
 		SlotViewModel->OnSlotChanged.AddUniqueDynamic(this, &ThisClass::HandleSlotViewModelChanged);
+	}
+
+	if (UMVVMView* View = UMVVMSubsystem::GetViewFromUserWidget(this))
+	{
+		View->SetViewModelByClass(SlotViewModel);
 	}
 
 	BP_OnEquipmentSlotUpdated(SlotViewModel, GetRepresentedItem(), GetRepresentedItem() != nullptr);
