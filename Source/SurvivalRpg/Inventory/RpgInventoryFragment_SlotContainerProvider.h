@@ -8,8 +8,9 @@
 /**
  * Item fragment for backpacks, belts, pouches, and resource bags that expand the player's inventory layout.
  *
- * The item does not own a second inventory. When assigned to a supported equipment/container slot, its groups are
- * appended to the owning player's single URpgInventoryManagerComponent as extra logical slot ranges.
+ * When assigned to a supported equipment/container slot, its grid definitions are exposed as spatial content
+ * containers on the owning inventory while the concrete item instance remains the identity that can be moved,
+ * dropped, looted, and equipped again.
  */
 UCLASS(BlueprintType)
 class SURVIVALRPG_API URpgInventoryFragment_SlotContainerProvider : public URpgInventoryItemFragment
@@ -17,7 +18,7 @@ class SURVIVALRPG_API URpgInventoryFragment_SlotContainerProvider : public URpgI
 	GENERATED_BODY()
 
 public:
-	/** Slot groups contributed while this item is equipped as a bag, belt, pouch, or resource bag. */
-	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Inventory|Layout", meta = (TitleProperty = "GroupId"))
+	/** Spatial grid containers contributed while this item is equipped as a bag, belt, pouch, or resource bag. */
+	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Inventory|Layout", meta = (TitleProperty = "ContainerId"))
 	TArray<FRpgInventorySlotGroupDefinition> ProvidedSlotGroups;
 };

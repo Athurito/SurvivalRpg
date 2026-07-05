@@ -45,7 +45,7 @@ class SURVIVALRPG_API URpgInventoryAddressSlotViewModel : public UMVVMViewModelB
 public:
 	/** Rebuilds this slot from the current layout and inventory state. */
 	UFUNCTION(BlueprintCallable, Category = "Inventory|Layout ViewModel")
-	void InitializeSlot(URpgInventoryManagerComponent* InInventory, URpgPlayerInventoryLayoutComponent* InInventoryLayout, const FRpgInventorySlotGroupView& InGroupView, int32 InLocalSlotIndex);
+	void InitializeSlot(URpgInventoryManagerComponent* InInventory, URpgPlayerInventoryLayoutComponent* InInventoryLayout, const FRpgInventorySlotGroupView& InGroupView, int32 InX, int32 InY);
 
 	/** Inventory component that owns the represented item, or null when the player inventory is unavailable. */
 	UFUNCTION(BlueprintPure, Category = "Inventory|Layout ViewModel")
@@ -59,9 +59,25 @@ public:
 	UFUNCTION(BlueprintPure, Category = "Inventory|Layout ViewModel")
 	FRpgInventorySlotAddress GetSlotAddress() const { return SlotAddress; }
 
-	/** Global SortIndex slot resolved from SlotAddress. */
+	/** Authoritative spatial placement resolved from SlotAddress. */
 	UFUNCTION(BlueprintPure, Category = "Inventory|Layout ViewModel")
-	int32 GetGlobalSlotIndex() const { return GlobalSlotIndex; }
+	FRpgInventoryGridPlacement GetPlacement() const { return Placement; }
+
+	/** Authoritative placement for the item occupying this cell, or invalid when the cell is empty. */
+	UFUNCTION(BlueprintPure, Category = "Inventory|Layout ViewModel")
+	FRpgInventoryGridPlacement GetItemPlacement() const { return ItemPlacement; }
+
+	/** Occupied item width in cells after rotation. Empty cells return zero. */
+	UFUNCTION(BlueprintPure, Category = "Inventory|Layout ViewModel")
+	int32 GetItemOccupiedWidth() const { return ItemOccupiedWidth; }
+
+	/** Occupied item height in cells after rotation. Empty cells return zero. */
+	UFUNCTION(BlueprintPure, Category = "Inventory|Layout ViewModel")
+	int32 GetItemOccupiedHeight() const { return ItemOccupiedHeight; }
+
+	/** Visual linear index derived from Placement for existing selection widgets. Not gameplay truth. */
+	UFUNCTION(BlueprintPure, Category = "Inventory|Layout ViewModel")
+	int32 GetGlobalSlotIndex() const { return Placement.IsValid() ? Placement.Y * 1000 + Placement.X : INDEX_NONE; }
 
 	/** Replicated entry id for the current item, or invalid for an empty slot. */
 	UFUNCTION(BlueprintPure, Category = "Inventory|Layout ViewModel")
@@ -78,6 +94,14 @@ public:
 	/** True when this slot has no item. */
 	UFUNCTION(BlueprintPure, Category = "Inventory|Layout ViewModel")
 	bool IsEmptySlot() const { return bIsEmptySlot; }
+
+	/** True when this cell is the top-left/origin cell of the occupying item footprint. */
+	UFUNCTION(BlueprintPure, Category = "Inventory|Layout ViewModel")
+	bool IsItemOriginCell() const { return bItemOriginCell; }
+
+	/** True when this cell is covered by an item whose origin is another cell. */
+	UFUNCTION(BlueprintPure, Category = "Inventory|Layout ViewModel")
+	bool IsItemCoveredCell() const { return bItemCoveredCell; }
 
 	/** True when this slot can start a drag/controller hold. */
 	UFUNCTION(BlueprintPure, Category = "Inventory|Layout ViewModel")
@@ -108,21 +132,37 @@ protected:
 	UPROPERTY(BlueprintReadOnly, FieldNotify, Category = "Inventory|Layout ViewModel", meta = (AllowPrivateAccess = "true"))
 	TObjectPtr<URpgPlayerInventoryLayoutComponent> InventoryLayout = nullptr;
 
-	/** Logical group id that owns this slot. */
+	/** Logical container id that owns this grid cell. */
 	UPROPERTY(BlueprintReadOnly, FieldNotify, Category = "Inventory|Layout ViewModel", meta = (AllowPrivateAccess = "true"))
-	FName GroupId = NAME_None;
+	FName ContainerId = NAME_None;
 
 	/** Stable logical address within the current player layout. */
 	UPROPERTY(BlueprintReadOnly, FieldNotify, Category = "Inventory|Layout ViewModel", meta = (AllowPrivateAccess = "true"))
 	FRpgInventorySlotAddress SlotAddress;
 
-	/** Zero-based index inside GroupId. */
+	/** Zero-based X coordinate inside ContainerId. */
 	UPROPERTY(BlueprintReadOnly, FieldNotify, Category = "Inventory|Layout ViewModel", meta = (AllowPrivateAccess = "true"))
-	int32 LocalSlotIndex = INDEX_NONE;
+	int32 X = INDEX_NONE;
 
-	/** Global SortIndex slot backing this address. */
+	/** Zero-based Y coordinate inside ContainerId. */
 	UPROPERTY(BlueprintReadOnly, FieldNotify, Category = "Inventory|Layout ViewModel", meta = (AllowPrivateAccess = "true"))
-	int32 GlobalSlotIndex = INDEX_NONE;
+	int32 Y = INDEX_NONE;
+
+	/** Spatial placement backing this address. Empty slots use a 1x1 cell placement. */
+	UPROPERTY(BlueprintReadOnly, FieldNotify, Category = "Inventory|Layout ViewModel", meta = (AllowPrivateAccess = "true"))
+	FRpgInventoryGridPlacement Placement;
+
+	/** Spatial placement of the item occupying this cell. Covered cells point back to the same item origin. */
+	UPROPERTY(BlueprintReadOnly, FieldNotify, Category = "Inventory|Layout ViewModel", meta = (AllowPrivateAccess = "true"))
+	FRpgInventoryGridPlacement ItemPlacement;
+
+	/** Occupied item width in cells after rotation. Empty cells use zero. */
+	UPROPERTY(BlueprintReadOnly, FieldNotify, Category = "Inventory|Layout ViewModel", meta = (AllowPrivateAccess = "true"))
+	int32 ItemOccupiedWidth = 0;
+
+	/** Occupied item height in cells after rotation. Empty cells use zero. */
+	UPROPERTY(BlueprintReadOnly, FieldNotify, Category = "Inventory|Layout ViewModel", meta = (AllowPrivateAccess = "true"))
+	int32 ItemOccupiedHeight = 0;
 
 	/** Replicated item entry id for item-aware drag/drop. */
 	UPROPERTY(BlueprintReadOnly, FieldNotify, Category = "Inventory|Layout ViewModel", meta = (AllowPrivateAccess = "true"))
@@ -151,6 +191,14 @@ protected:
 	/** True when ItemInstance is null. */
 	UPROPERTY(BlueprintReadOnly, FieldNotify, Category = "Inventory|Layout ViewModel", meta = (AllowPrivateAccess = "true"))
 	bool bIsEmptySlot = true;
+
+	/** True when this cell is the top-left/origin cell of ItemInstance's spatial footprint. */
+	UPROPERTY(BlueprintReadOnly, FieldNotify, Category = "Inventory|Layout ViewModel", meta = (AllowPrivateAccess = "true"))
+	bool bItemOriginCell = false;
+
+	/** True when this cell is occupied by ItemInstance but should not render/start actions as the primary item cell. */
+	UPROPERTY(BlueprintReadOnly, FieldNotify, Category = "Inventory|Layout ViewModel", meta = (AllowPrivateAccess = "true"))
+	bool bItemCoveredCell = false;
 
 	/** True when widgets may start a drag payload for this slot. */
 	UPROPERTY(BlueprintReadOnly, FieldNotify, Category = "Inventory|Layout ViewModel", meta = (AllowPrivateAccess = "true"))
@@ -184,16 +232,20 @@ public:
 
 	/** Stable group id used by FRpgInventorySlotAddress. */
 	UFUNCTION(BlueprintPure, Category = "Inventory|Layout ViewModel")
-	FName GetGroupId() const { return GroupId; }
+	FName GetGroupId() const { return ContainerId; }
+
+	/** Grid size of this visible container. */
+	UFUNCTION(BlueprintPure, Category = "Inventory|Layout ViewModel")
+	FRpgInventoryGridSize GetGridSize() const { return GridSize; }
 
 	/** Logical slots contained by this group. */
 	UFUNCTION(BlueprintPure, Category = "Inventory|Layout ViewModel")
 	TArray<URpgInventoryAddressSlotViewModel*> GetSlots() const;
 
 protected:
-	/** Stable group id such as WeaponSlot1, Pockets, Backpack, or Belt. */
+	/** Stable container id such as WeaponSlot1, Pockets, Backpack, or Belt. */
 	UPROPERTY(BlueprintReadOnly, FieldNotify, Category = "Inventory|Layout ViewModel", meta = (AllowPrivateAccess = "true"))
-	FName GroupId = NAME_None;
+	FName ContainerId = NAME_None;
 
 	/** Player-facing group header text. */
 	UPROPERTY(BlueprintReadOnly, FieldNotify, Category = "Inventory|Layout ViewModel", meta = (AllowPrivateAccess = "true"))
@@ -203,13 +255,9 @@ protected:
 	UPROPERTY(BlueprintReadOnly, FieldNotify, Category = "Inventory|Layout ViewModel", meta = (AllowPrivateAccess = "true"))
 	TSoftObjectPtr<UTexture2D> Icon;
 
-	/** First global SortIndex slot represented by this group. */
+	/** Grid dimensions for this visible container. */
 	UPROPERTY(BlueprintReadOnly, FieldNotify, Category = "Inventory|Layout ViewModel", meta = (AllowPrivateAccess = "true"))
-	int32 FirstGlobalSlotIndex = INDEX_NONE;
-
-	/** Number of logical slots in this group. */
-	UPROPERTY(BlueprintReadOnly, FieldNotify, Category = "Inventory|Layout ViewModel", meta = (AllowPrivateAccess = "true"))
-	int32 SlotCount = 0;
+	FRpgInventoryGridSize GridSize;
 
 	/** True when every slot in this group may be bound to the 1..8 actionbar. */
 	UPROPERTY(BlueprintReadOnly, FieldNotify, Category = "Inventory|Layout ViewModel", meta = (AllowPrivateAccess = "true"))

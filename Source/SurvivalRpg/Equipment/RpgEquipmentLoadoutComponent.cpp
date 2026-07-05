@@ -603,28 +603,31 @@ bool URpgEquipmentLoadoutComponent::MoveInventoryItemToEquipmentSlotAddress(ERpg
 	}
 
 	FRpgInventorySlotAddress TargetAddress;
-	int32 TargetGlobalSlotIndex = INDEX_NONE;
+	FRpgInventoryGridPlacement TargetPlacement;
 	if (!URpgPlayerInventoryLayoutComponent::TryMakeGearSlotAddress(EquipmentSlot, TargetAddress) ||
-		!InventoryLayout->ResolveSlotAddress(TargetAddress, TargetGlobalSlotIndex) ||
+		!InventoryLayout->ResolveSlotAddress(TargetAddress, TargetPlacement) ||
 		!InventoryLayout->CanItemUseSlotAddress(Item, TargetAddress))
 	{
 		return false;
 	}
 
-	if (OwnerInventory->GetItemSlotIndex(Item) == TargetGlobalSlotIndex)
+	FRpgInventoryGridPlacement CurrentPlacement;
+	if (OwnerInventory->GetItemPlacement(Item, CurrentPlacement) &&
+		CurrentPlacement.ContainerId == TargetPlacement.ContainerId &&
+		CurrentPlacement.X == TargetPlacement.X &&
+		CurrentPlacement.Y == TargetPlacement.Y)
 	{
 		return true;
 	}
 
 	FRpgInventorySlotAddress SourceAddress;
-	const int32 SourceGlobalSlotIndex = OwnerInventory->GetItemSlotIndex(Item);
-	if (SourceGlobalSlotIndex == INDEX_NONE ||
-		!InventoryLayout->TryMakeSlotAddressFromGlobalSlotIndex(SourceGlobalSlotIndex, SourceAddress))
+	if (!CurrentPlacement.IsValid() ||
+		!InventoryLayout->TryMakeSlotAddressFromPlacement(CurrentPlacement, SourceAddress))
 	{
 		return false;
 	}
 
-	if (URpgInventoryItemInstance* TargetItem = OwnerInventory->GetItemInSlot(TargetGlobalSlotIndex))
+	if (URpgInventoryItemInstance* TargetItem = OwnerInventory->GetItemAtCell(TargetPlacement.ContainerId, TargetPlacement.X, TargetPlacement.Y))
 	{
 		if (!InventoryLayout->CanItemUseSlotAddress(TargetItem, SourceAddress))
 		{
@@ -633,7 +636,7 @@ bool URpgEquipmentLoadoutComponent::MoveInventoryItemToEquipmentSlotAddress(ERpg
 	}
 
 	const FGuid EntryId = FindInventoryEntryIdForItem(OwnerInventory, Item);
-	return EntryId.IsValid() && OwnerInventory->MoveInventoryEntryToSlot(EntryId, TargetGlobalSlotIndex);
+	return EntryId.IsValid() && OwnerInventory->MoveInventoryEntryToPlacement(EntryId, TargetPlacement);
 }
 
 FGuid URpgEquipmentLoadoutComponent::FindInventoryEntryIdForItem(const URpgInventoryManagerComponent* Inventory, const URpgInventoryItemInstance* Item) const

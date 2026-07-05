@@ -6,6 +6,7 @@
 #include "Components/ActorComponent.h"
 #include "Misc/Guid.h"
 #include "Net/Serialization/FastArraySerializer.h"
+#include "RpgInventorySpatialTypes.h"
 
 #include "RpgInventoryManagerComponent.generated.h"
 
@@ -39,7 +40,7 @@ enum class ERpgInventoryCapacityMode : uint8
 UENUM(BlueprintType)
 enum class ERpgInventorySortMode : uint8
 {
-	/** Preserve the replicated SortIndex order, including manual moves. */
+	/** Preserve the current replicated grid placement order, including manual moves. */
 	Manual,
 
 	/** Sort alphabetically by item display name. */
@@ -77,9 +78,9 @@ struct FRpgInventoryEntryView
 	UPROPERTY(BlueprintReadOnly, Category = Inventory)
 	int32 StackCount = 0;
 
-	/** Server-authored order key. Lower values appear earlier in manual/shared sorted views. */
+	/** Server-authored spatial placement for this inventory entry. */
 	UPROPERTY(BlueprintReadOnly, Category = Inventory)
-	int32 SortIndex = 0;
+	FRpgInventoryGridPlacement Placement;
 };
 
 /** One save-ready inventory row used for session export/import and future world container saves. */
@@ -100,9 +101,9 @@ struct FRpgInventorySnapshotEntry
 	UPROPERTY(BlueprintReadWrite, Category = "Inventory|Snapshot")
 	int32 StackCount = 0;
 
-	/** Saved shared order key for this entry. */
+	/** Saved spatial placement for this entry. */
 	UPROPERTY(BlueprintReadWrite, Category = "Inventory|Snapshot")
-	int32 SortIndex = 0;
+	FRpgInventoryGridPlacement Placement;
 };
 
 /** Save-ready inventory snapshot for a player inventory or world container. */
@@ -143,7 +144,7 @@ struct FRpgInventoryChangeMessage
 	int32 Delta = 0;
 
 	UPROPERTY(BlueprintReadOnly, Category = Inventory)
-	int32 SortIndex = 0;
+	FRpgInventoryGridPlacement Placement;
 
 	UPROPERTY(BlueprintReadOnly, Category = Inventory)
 	bool bOrderChanged = false;
@@ -178,7 +179,7 @@ private:
 	int32 StackCount = 0;
 
 	UPROPERTY()
-	int32 SortIndex = 0;
+	FRpgInventoryGridPlacement Placement;
 
 	UPROPERTY(NotReplicated)
 	int32 LastObservedCount = INDEX_NONE;
@@ -202,8 +203,8 @@ struct FRpgInventoryList : public FFastArraySerializer
 
 	TArray<URpgInventoryItemInstance*> GetAllItems() const;
 	TArray<FRpgInventoryEntryView> GetAllEntries() const;
-	URpgInventoryItemInstance* GetItemInSlot(int32 SlotIndex) const;
-	int32 GetSlotIndex(URpgInventoryItemInstance* Instance) const;
+	URpgInventoryItemInstance* GetItemAtCell(FName ContainerId, int32 X, int32 Y) const;
+	bool GetPlacementForItem(URpgInventoryItemInstance* Instance, FRpgInventoryGridPlacement& OutPlacement) const;
 	int32 GetStackCount(URpgInventoryItemInstance* Instance) const;
 	int32 GetFreeStackCapacity(URpgInventoryItemInstance* Instance) const;
 	int32 GetUsedEntryCount() const;
@@ -224,16 +225,16 @@ public:
 	}
 
 	URpgInventoryItemInstance* AddEntry(TSubclassOf<URpgInventoryItemDefinition> ItemClass, int32 StackCount, TArray<URpgInventoryItemInstance*>& OutNewInstances);
-	URpgInventoryItemInstance* AddEntryAtSlot(TSubclassOf<URpgInventoryItemDefinition> ItemClass, int32 StackCount, int32 SlotIndex, TArray<URpgInventoryItemInstance*>& OutNewInstances);
+	URpgInventoryItemInstance* AddEntryAtPlacement(TSubclassOf<URpgInventoryItemDefinition> ItemClass, int32 StackCount, const FRpgInventoryGridPlacement& Placement, TArray<URpgInventoryItemInstance*>& OutNewInstances);
 	void AddEntry(URpgInventoryItemInstance* Instance, int32 StackCount = 1);
-	void AddEntryAtSlot(URpgInventoryItemInstance* Instance, int32 StackCount, int32 SlotIndex);
+	void AddEntryAtPlacement(URpgInventoryItemInstance* Instance, int32 StackCount, const FRpgInventoryGridPlacement& Placement);
 	bool AddStackToEntry(URpgInventoryItemInstance* Instance, int32 StackCount);
 
 	void RemoveEntry(URpgInventoryItemInstance* Instance);
 	bool RemoveEntryStack(URpgInventoryItemInstance* Instance, int32 StackCount, bool& bOutRemovedEntry);
 	bool ApplySort(ERpgInventorySortMode SortMode);
 	bool MoveEntry(FGuid EntryId, int32 TargetIndex);
-	bool MoveEntryToSlot(FGuid EntryId, int32 TargetSlotIndex);
+	bool MoveEntryToPlacement(FGuid EntryId, const FRpgInventoryGridPlacement& TargetPlacement);
 	FRpgInventorySnapshot ExportSnapshot(FName ContainerId) const;
 	void ImportSnapshot(const FRpgInventorySnapshot& Snapshot);
 
@@ -242,13 +243,17 @@ private:
 	const FRpgInventoryEntry* FindEntryByInstance(URpgInventoryItemInstance* Instance) const;
 	FRpgInventoryEntry* FindEntryByEntryId(FGuid EntryId);
 	const FRpgInventoryEntry* FindEntryByEntryId(FGuid EntryId) const;
-	FRpgInventoryEntry* FindEntryBySlotIndex(int32 SlotIndex);
-	const FRpgInventoryEntry* FindEntryBySlotIndex(int32 SlotIndex) const;
+	FRpgInventoryEntry* FindEntryAtCell(FName ContainerId, int32 X, int32 Y);
+	const FRpgInventoryEntry* FindEntryAtCell(FName ContainerId, int32 X, int32 Y) const;
+	FRpgInventoryEntry* FindEntryOverlapping(const FRpgInventoryGridPlacement& Placement, const FRpgInventoryEntry* IgnoredEntry = nullptr);
+	const FRpgInventoryEntry* FindEntryOverlapping(const FRpgInventoryGridPlacement& Placement, const FRpgInventoryEntry* IgnoredEntry = nullptr) const;
+	bool IsPlacementWithinGrid(const FRpgInventoryGridPlacement& Placement) const;
+	bool CanPlaceEntryAt(const FRpgInventoryGridPlacement& Placement, const FRpgInventoryEntry* IgnoredEntry = nullptr) const;
 	void BroadcastChangeMessage(FRpgInventoryEntry& Entry, int32 OldCount, int32 NewCount, bool bOrderChanged = false);
-	int32 GetNextAvailableSlotIndex() const;
-	int32 GetNextSortIndex() const;
-	void NormalizeSortIndices();
-	void SortEntriesBySortIndex();
+	bool FindFirstFitPlacement(TSubclassOf<URpgInventoryItemDefinition> ItemDef, FRpgInventoryGridPlacement& OutPlacement) const;
+	bool FindFirstFitPlacement(URpgInventoryItemInstance* ItemInstance, FRpgInventoryGridPlacement& OutPlacement) const;
+	int32 GetLinearOrder(const FRpgInventoryGridPlacement& Placement) const;
+	void SortEntriesByPlacement();
 	bool SetOrderFromSortedEntryPointers(const TArray<FRpgInventoryEntry*>& SortedEntries);
 
 private:
@@ -331,20 +336,20 @@ public:
 	UFUNCTION(BlueprintCallable, BlueprintAuthorityOnly, Category=Inventory)
 	bool CanAddItemInstance(URpgInventoryItemInstance* ItemInstance, int32 StackCount = 1) const;
 
-	/** Returns true when the stack can be placed or merged into one exact slot. Used by explicit drag/drop. */
-	UFUNCTION(BlueprintCallable, BlueprintAuthorityOnly, Category = "Inventory|Slots")
-	bool CanAddItemDefinitionToSlot(TSubclassOf<URpgInventoryItemDefinition> ItemDef, int32 StackCount, int32 SlotIndex) const;
+	/** Returns true when the stack can be placed or merged into one exact grid placement. */
+	UFUNCTION(BlueprintCallable, BlueprintAuthorityOnly, Category = "Inventory|Spatial")
+	bool CanAddItemDefinitionToPlacement(TSubclassOf<URpgInventoryItemDefinition> ItemDef, int32 StackCount, FRpgInventoryGridPlacement Placement) const;
 
-	/** Returns true when this concrete item instance can be moved into one exact empty slot. */
-	UFUNCTION(BlueprintCallable, BlueprintAuthorityOnly, Category = "Inventory|Slots")
-	bool CanAddItemInstanceToSlot(URpgInventoryItemInstance* ItemInstance, int32 StackCount, int32 SlotIndex) const;
+	/** Returns true when this concrete item instance can be moved into one exact grid placement. */
+	UFUNCTION(BlueprintCallable, BlueprintAuthorityOnly, Category = "Inventory|Spatial")
+	bool CanAddItemInstanceToPlacement(URpgInventoryItemInstance* ItemInstance, int32 StackCount, FRpgInventoryGridPlacement Placement) const;
 
 	UFUNCTION(BlueprintCallable, BlueprintAuthorityOnly, Category=Inventory)
 	URpgInventoryItemInstance* AddItemDefinition(TSubclassOf<URpgInventoryItemDefinition> ItemDef, int32 StackCount = 1);
 
-	/** Adds a definition-created stack to an exact slot instead of auto-stacking into the inventory. */
-	UFUNCTION(BlueprintCallable, BlueprintAuthorityOnly, Category = "Inventory|Slots")
-	URpgInventoryItemInstance* AddItemDefinitionToSlot(TSubclassOf<URpgInventoryItemDefinition> ItemDef, int32 StackCount, int32 SlotIndex);
+	/** Adds a definition-created stack to an exact grid placement instead of auto-placing into the inventory. */
+	UFUNCTION(BlueprintCallable, BlueprintAuthorityOnly, Category = "Inventory|Spatial")
+	URpgInventoryItemInstance* AddItemDefinitionToPlacement(TSubclassOf<URpgInventoryItemDefinition> ItemDef, int32 StackCount, FRpgInventoryGridPlacement Placement);
 
 	UFUNCTION(BlueprintCallable, BlueprintAuthorityOnly, Category=Inventory)
 	void AddItemInstance(URpgInventoryItemInstance* ItemInstance);
@@ -352,9 +357,9 @@ public:
 	UFUNCTION(BlueprintCallable, BlueprintAuthorityOnly, Category=Inventory)
 	void AddItemInstanceWithStack(URpgInventoryItemInstance* ItemInstance, int32 StackCount = 1);
 
-	/** Adds an existing item instance to an exact slot, preserving runtime instance data such as durability. */
-	UFUNCTION(BlueprintCallable, BlueprintAuthorityOnly, Category = "Inventory|Slots")
-	void AddItemInstanceWithStackToSlot(URpgInventoryItemInstance* ItemInstance, int32 StackCount, int32 SlotIndex);
+	/** Adds an existing item instance to an exact grid placement, preserving runtime instance data such as durability. */
+	UFUNCTION(BlueprintCallable, BlueprintAuthorityOnly, Category = "Inventory|Spatial")
+	void AddItemInstanceWithStackToPlacement(URpgInventoryItemInstance* ItemInstance, int32 StackCount, FRpgInventoryGridPlacement Placement);
 
 	/** Adds stack count to an existing stack entry without creating or moving an entry. */
 	UFUNCTION(BlueprintCallable, BlueprintAuthorityOnly, Category = "Inventory|Slots")
@@ -372,13 +377,13 @@ public:
 	UFUNCTION(BlueprintCallable, Category=Inventory, BlueprintPure=false)
 	TArray<FRpgInventoryEntryView> GetAllEntries() const;
 
-	/** Returns the item occupying an exact replicated slot, or nullptr for empty/invalid slots. */
-	UFUNCTION(BlueprintCallable, Category = "Inventory|Slots", BlueprintPure)
-	URpgInventoryItemInstance* GetItemInSlot(int32 SlotIndex) const;
+	/** Returns the item occupying one replicated grid cell, or nullptr for empty/invalid cells. */
+	UFUNCTION(BlueprintCallable, Category = "Inventory|Spatial", BlueprintPure)
+	URpgInventoryItemInstance* GetItemAtCell(FName ContainerId, int32 X, int32 Y) const;
 
-	/** Returns the replicated slot index of an item entry, or INDEX_NONE when the item is not owned here. */
-	UFUNCTION(BlueprintCallable, Category = "Inventory|Slots", BlueprintPure)
-	int32 GetItemSlotIndex(URpgInventoryItemInstance* ItemInstance) const;
+	/** Returns the replicated spatial placement of an owned item entry. */
+	UFUNCTION(BlueprintCallable, Category = "Inventory|Spatial", BlueprintPure)
+	bool GetItemPlacement(URpgInventoryItemInstance* ItemInstance, FRpgInventoryGridPlacement& OutPlacement) const;
 
 	/** Returns how many units can still merge into this stack before reaching its definition max stack size. */
 	UFUNCTION(BlueprintCallable, Category = "Inventory|Slots", BlueprintPure)
@@ -410,9 +415,9 @@ public:
 	UFUNCTION(BlueprintCallable, BlueprintAuthorityOnly, Category = "Inventory|Sorting")
 	bool MoveInventoryEntry(FGuid EntryId, int32 TargetIndex);
 
-	/** Moves, swaps, or stack-merges one entry into an exact replicated slot on the server. */
-	UFUNCTION(BlueprintCallable, BlueprintAuthorityOnly, Category = "Inventory|Slots")
-	bool MoveInventoryEntryToSlot(FGuid EntryId, int32 TargetSlotIndex);
+	/** Moves, swaps, or stack-merges one entry into an exact replicated grid placement on the server. */
+	UFUNCTION(BlueprintCallable, BlueprintAuthorityOnly, Category = "Inventory|Spatial")
+	bool MoveInventoryEntryToPlacement(FGuid EntryId, FRpgInventoryGridPlacement TargetPlacement);
 
 	/** Exports a save-ready snapshot containing item definitions, stack counts, entry ids, and shared order. */
 	UFUNCTION(BlueprintCallable, Category = "Inventory|Snapshot")
@@ -446,10 +451,9 @@ private:
 	void HandleCapacityAttributeChanged(const FOnAttributeChangeData& Data);
 	void BroadcastCapacityChanged() const;
 	const URpgPlayerInventoryLayoutComponent* FindOwningPlayerInventoryLayout() const;
-	int32 GetNextAutoAddSlotForItemDefinition(TSubclassOf<URpgInventoryItemDefinition> ItemDef) const;
-	int32 GetNextAutoAddSlotForItemInstance(URpgInventoryItemInstance* ItemInstance) const;
-	int32 CountAvailableAutoAddSlotsForItemDefinition(TSubclassOf<URpgInventoryItemDefinition> ItemDef) const;
-	int32 CountAvailableAutoAddSlotsForItemInstance(URpgInventoryItemInstance* ItemInstance) const;
+	bool GetGridSizeForContainer(FName ContainerId, FRpgInventoryGridSize& OutGridSize) const;
+	FRpgInventoryGridPlacement MakePlacementForItemDefinition(TSubclassOf<URpgInventoryItemDefinition> ItemDef, FName ContainerId, int32 X, int32 Y, bool bRotated) const;
+	FRpgInventoryGridPlacement MakePlacementForItemInstance(URpgInventoryItemInstance* ItemInstance, FName ContainerId, int32 X, int32 Y, bool bRotated) const;
 
 private:
 	/** Source used to determine how many entries this inventory may hold. */
@@ -463,6 +467,14 @@ private:
 	/** GAS attribute used as entry capacity when CapacityMode is AbilitySystemAttribute. */
 	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Inventory|Capacity", meta = (AllowPrivateAccess = "true"))
 	FGameplayAttribute CapacityAttribute;
+
+	/** Default grid dimensions for non-player inventories such as world storage, loot, and crafting outputs. */
+	UPROPERTY(EditAnywhere, ReplicatedUsing = OnRep_CapacitySettings, BlueprintReadOnly, Category = "Inventory|Spatial", meta = (AllowPrivateAccess = "true"))
+	FRpgInventoryGridSize DefaultGridSize;
+
+	/** Stable grid id for non-player inventories. Player inventory grid ids come from URpgPlayerInventoryLayoutComponent. */
+	UPROPERTY(EditAnywhere, ReplicatedUsing = OnRep_CapacitySettings, BlueprintReadOnly, Category = "Inventory|Spatial", meta = (AllowPrivateAccess = "true"))
+	FName DefaultContainerId = TEXT("Storage");
 
 	UPROPERTY(Replicated)
 	FRpgInventoryList InventoryList;

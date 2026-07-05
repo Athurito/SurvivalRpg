@@ -133,7 +133,7 @@ public:
 
 	/** Initializes a UI-only empty slot. It does not represent a replicated inventory entry. */
 	UFUNCTION(BlueprintCallable, Category = "Inventory|ViewModel")
-	void InitializeEmptySlot(UActorComponent* InInventoryOwner, int32 InSlotIndex);
+	void InitializeEmptySlot(UActorComponent* InInventoryOwner, FRpgInventoryGridPlacement InPlacement);
 
 	/** Inventory component that owns this entry or empty capacity slot. */
 	UFUNCTION(BlueprintPure, Category = "Inventory|ViewModel")
@@ -155,7 +155,11 @@ public:
 	UFUNCTION(BlueprintPure, Category = "Inventory|ViewModel")
 	int32 GetStackCount() const { return StackCount; }
 
-	/** Visual slot index in the current inventory panel, including empty capacity slots. */
+	/** Server-authored grid placement represented by this entry or empty capacity cell. */
+	UFUNCTION(BlueprintPure, Category = "Inventory|ViewModel")
+	FRpgInventoryGridPlacement GetPlacement() const { return Placement; }
+
+	/** Visual index used only by legacy list selection helpers, derived from Placement for current widgets. */
 	UFUNCTION(BlueprintPure, Category = "Inventory|ViewModel")
 	int32 GetSlotIndex() const { return SlotIndex; }
 
@@ -188,11 +192,11 @@ protected:
 	UPROPERTY(BlueprintReadOnly, FieldNotify, Category = "Inventory|ViewModel", meta = (AllowPrivateAccess = "true"))
 	int32 StackCount = 0;
 
-	/** Shared server-authored order key. */
+	/** Server-authored spatial placement. UI may preview it, but gameplay mutations are server-validated. */
 	UPROPERTY(BlueprintReadOnly, FieldNotify, Category = "Inventory|ViewModel", meta = (AllowPrivateAccess = "true"))
-	int32 SortIndex = 0;
+	FRpgInventoryGridPlacement Placement;
 
-	/** Visual slot index in the current panel, including UI-only empty slots. */
+	/** Visual index used by existing TileView selection helpers; not gameplay placement truth. */
 	UPROPERTY(BlueprintReadOnly, FieldNotify, Category = "Inventory|ViewModel", meta = (AllowPrivateAccess = "true"))
 	int32 SlotIndex = INDEX_NONE;
 

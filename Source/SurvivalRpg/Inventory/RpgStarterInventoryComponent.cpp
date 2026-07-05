@@ -157,8 +157,9 @@ bool URpgStarterInventoryComponent::TryMoveItemToFirstCompatibleCarrySlot(URpgPl
 	}
 
 	FRpgInventorySlotAddress CurrentAddress;
-	const int32 CurrentGlobalSlotIndex = Inventory->GetItemSlotIndex(ItemInstance);
-	if (InventoryLayout->TryMakeSlotAddressFromGlobalSlotIndex(CurrentGlobalSlotIndex, CurrentAddress) &&
+	FRpgInventoryGridPlacement CurrentPlacement;
+	if (Inventory->GetItemPlacement(ItemInstance, CurrentPlacement) &&
+		InventoryLayout->TryMakeSlotAddressFromPlacement(CurrentPlacement, CurrentAddress) &&
 		InventoryLayout->IsCarrySlotAddress(CurrentAddress) &&
 		InventoryLayout->CanItemUseSlotAddress(ItemInstance, CurrentAddress))
 	{
@@ -187,12 +188,20 @@ bool URpgStarterInventoryComponent::TryMoveItemToFirstCompatibleCarrySlot(URpgPl
 			continue;
 		}
 
-		for (int32 LocalSlotIndex = 0; LocalSlotIndex < Group.SlotCount; ++LocalSlotIndex)
+		for (int32 Y = 0; Y < Group.GridSize.Height; ++Y)
 		{
-			const int32 GlobalSlotIndex = Group.FirstGlobalSlotIndex + LocalSlotIndex;
-			if (!Inventory->GetItemInSlot(GlobalSlotIndex))
+			for (int32 X = 0; X < Group.GridSize.Width; ++X)
 			{
-				return Inventory->MoveInventoryEntryToSlot(EntryId, GlobalSlotIndex);
+				if (!Inventory->GetItemAtCell(Group.ContainerId, X, Y))
+				{
+					FRpgInventoryGridPlacement TargetPlacement;
+					TargetPlacement.ContainerId = Group.ContainerId;
+					TargetPlacement.X = X;
+					TargetPlacement.Y = Y;
+					TargetPlacement.Width = 1;
+					TargetPlacement.Height = 1;
+					return Inventory->MoveInventoryEntryToPlacement(EntryId, TargetPlacement);
+				}
 			}
 		}
 	}

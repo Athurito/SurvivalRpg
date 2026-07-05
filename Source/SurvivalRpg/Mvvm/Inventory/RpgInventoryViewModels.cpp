@@ -10,6 +10,19 @@
 
 DEFINE_LOG_CATEGORY_STATIC(LogRpgInventoryViewModels, Log, All);
 
+namespace
+{
+	int32 GetInventoryViewModelLinearIndex(const FRpgInventoryGridPlacement& Placement)
+	{
+		return Placement.IsValid() ? Placement.Y * 1000 + Placement.X : INDEX_NONE;
+	}
+
+	FString GetInventoryViewModelPlacementKey(const FRpgInventoryGridPlacement& Placement)
+	{
+		return FString::Printf(TEXT("%s:%d:%d"), *Placement.ContainerId.ToString(), Placement.X, Placement.Y);
+	}
+}
+
 void URpgInventoryFragmentViewModel::InitializeFromEntry(const FRpgInventoryEntryView& Entry)
 {
 	ItemInstance = Entry.Instance;
@@ -65,16 +78,18 @@ void URpgInventoryEntryViewModel::InitializeFromEntry(
 		ItemInstance != Entry.Instance ||
 		EntryId != Entry.EntryId ||
 		StackCount != Entry.StackCount ||
-		SortIndex != Entry.SortIndex ||
-		SlotIndex != Entry.SortIndex ||
+		Placement.ContainerId != Entry.Placement.ContainerId ||
+		Placement.X != Entry.Placement.X ||
+		Placement.Y != Entry.Placement.Y ||
+		Placement.bRotated != Entry.Placement.bRotated ||
 		bIsEmptySlot != (Entry.Instance == nullptr);
 
 	InventoryOwner = Entry.InventoryOwner;
 	ItemInstance = Entry.Instance;
 	EntryId = Entry.EntryId;
 	StackCount = Entry.StackCount;
-	SortIndex = Entry.SortIndex;
-	SlotIndex = Entry.SortIndex;
+	Placement = Entry.Placement;
+	SlotIndex = GetInventoryViewModelLinearIndex(Placement);
 	DisplayName = FText::GetEmpty();
 	ShortDisplayName = FText::GetEmpty();
 	Description = FText::GetEmpty();
@@ -147,7 +162,7 @@ void URpgInventoryEntryViewModel::InitializeFromEntry(
 	UE_MVVM_BROADCAST_FIELD_VALUE_CHANGED(ItemInstance);
 	UE_MVVM_BROADCAST_FIELD_VALUE_CHANGED(EntryId);
 	UE_MVVM_BROADCAST_FIELD_VALUE_CHANGED(StackCount);
-	UE_MVVM_BROADCAST_FIELD_VALUE_CHANGED(SortIndex);
+	UE_MVVM_BROADCAST_FIELD_VALUE_CHANGED(Placement);
 	UE_MVVM_BROADCAST_FIELD_VALUE_CHANGED(SlotIndex);
 	UE_MVVM_BROADCAST_FIELD_VALUE_CHANGED(DisplayName);
 	UE_MVVM_BROADCAST_FIELD_VALUE_CHANGED(ShortDisplayName);
@@ -165,12 +180,12 @@ void URpgInventoryEntryViewModel::InitializeFromEntry(
 	}
 }
 
-void URpgInventoryEntryViewModel::InitializeEmptySlot(UActorComponent* InInventoryOwner, int32 InSlotIndex)
+void URpgInventoryEntryViewModel::InitializeEmptySlot(UActorComponent* InInventoryOwner, FRpgInventoryGridPlacement InPlacement)
 {
 	FRpgInventoryEntryView EmptyEntry;
 	EmptyEntry.InventoryOwner = InInventoryOwner;
 	EmptyEntry.StackCount = 0;
-	EmptyEntry.SortIndex = InSlotIndex;
+	EmptyEntry.Placement = InPlacement;
 
 	const TMap<TSubclassOf<URpgInventoryItemFragment>, TSubclassOf<URpgInventoryFragmentViewModel>> EmptyFragmentViewModelClasses;
 	InitializeFromEntry(EmptyEntry, EmptyFragmentViewModelClasses);
@@ -233,7 +248,17 @@ void URpgInventoryPanelViewModel::RefreshEntries()
 	TArray<FRpgInventoryEntryView> EntryViews = Inventory->GetAllEntries();
 	EntryViews.Sort([](const FRpgInventoryEntryView& A, const FRpgInventoryEntryView& B)
 	{
-		return A.SortIndex < B.SortIndex;
+		if (A.Placement.ContainerId != B.Placement.ContainerId)
+		{
+			return A.Placement.ContainerId.LexicalLess(B.Placement.ContainerId);
+		}
+
+		if (A.Placement.Y != B.Placement.Y)
+		{
+			return A.Placement.Y < B.Placement.Y;
+		}
+
+		return A.Placement.X < B.Placement.X;
 	});
 
 	auto GetReusableEntryViewModel = [this](const TArray<TObjectPtr<URpgInventoryEntryViewModel>>& PreviousEntries, int32 PreferredIndex)
@@ -251,11 +276,11 @@ void URpgInventoryPanelViewModel::RefreshEntries()
 		}
 	};
 
-	auto AddEmptySlotViewModel = [this, Inventory](URpgInventoryEntryViewModel* EmptySlotViewModel, int32 SlotIndex)
+	auto AddEmptySlotViewModel = [this, Inventory](URpgInventoryEntryViewModel* EmptySlotViewModel, FRpgInventoryGridPlacement Placement)
 	{
 		if (EmptySlotViewModel)
 		{
-			EmptySlotViewModel->InitializeEmptySlot(Inventory, SlotIndex);
+			EmptySlotViewModel->InitializeEmptySlot(Inventory, Placement);
 			Entries.Add(EmptySlotViewModel);
 		}
 	};
@@ -266,13 +291,14 @@ void URpgInventoryPanelViewModel::RefreshEntries()
 	const bool bShouldRenderEmptySlots = !Inventory->IsCapacityUnlimited() && MaxEntries > 0;
 	if (bShouldRenderEmptySlots)
 	{
-		TMap<int32, FRpgInventoryEntryView> EntriesBySlot;
+		TMap<FString, FRpgInventoryEntryView> EntriesBySlot;
 		TArray<FRpgInventoryEntryView> OverflowEntries;
 		for (const FRpgInventoryEntryView& EntryView : EntryViews)
 		{
-			if (EntryView.SortIndex >= 0 && EntryView.SortIndex < MaxEntries && !EntriesBySlot.Contains(EntryView.SortIndex))
+			const FString PlacementKey = GetInventoryViewModelPlacementKey(EntryView.Placement);
+			if (EntryView.Placement.IsValid() && !EntriesBySlot.Contains(PlacementKey))
 			{
-				EntriesBySlot.Add(EntryView.SortIndex, EntryView);
+				EntriesBySlot.Add(PlacementKey, EntryView);
 			}
 			else
 			{
@@ -284,23 +310,31 @@ void URpgInventoryPanelViewModel::RefreshEntries()
 		for (int32 SlotIndex = 0; SlotIndex < MaxEntries; ++SlotIndex)
 		{
 			URpgInventoryEntryViewModel* SlotViewModel = GetReusableEntryViewModel(PreviousEntries, SlotIndex);
-			if (const FRpgInventoryEntryView* EntryView = EntriesBySlot.Find(SlotIndex))
+			FRpgInventoryGridPlacement SlotPlacement;
+			SlotPlacement.ContainerId = TEXT("Storage");
+			SlotPlacement.X = SlotIndex % 10;
+			SlotPlacement.Y = SlotIndex / 10;
+			SlotPlacement.Width = 1;
+			SlotPlacement.Height = 1;
+			if (const FRpgInventoryEntryView* EntryView = EntriesBySlot.Find(GetInventoryViewModelPlacementKey(SlotPlacement)))
 			{
 				AddEntryViewModel(SlotViewModel, *EntryView);
 			}
 			else
 			{
-				AddEmptySlotViewModel(SlotViewModel, SlotIndex);
+				AddEmptySlotViewModel(SlotViewModel, SlotPlacement);
 			}
 		}
 
 		for (const FRpgInventoryEntryView& OverflowEntry : OverflowEntries)
 		{
-			UE_LOG(LogRpgInventoryViewModels, Warning, TEXT("Finite inventory contains overflow or duplicate slot entry. Inventory=%s Item=%s EntryId=%s SortIndex=%d MaxEntries=%d"),
+			UE_LOG(LogRpgInventoryViewModels, Warning, TEXT("Finite inventory contains overflow or duplicate grid placement. Inventory=%s Item=%s EntryId=%s Container=%s X=%d Y=%d MaxEntries=%d"),
 				*GetNameSafe(Inventory),
 				*GetNameSafe(OverflowEntry.Instance),
 				*OverflowEntry.EntryId.ToString(),
-				OverflowEntry.SortIndex,
+				*OverflowEntry.Placement.ContainerId.ToString(),
+				OverflowEntry.Placement.X,
+				OverflowEntry.Placement.Y,
 				MaxEntries);
 		}
 	}

@@ -54,17 +54,18 @@ namespace
 		return Presentation;
 	}
 
-	FText BuildAddressSlotLabel(const FRpgInventorySlotGroupView& GroupView, int32 LocalSlotIndex)
+	FText BuildAddressSlotLabel(const FRpgInventorySlotGroupView& GroupView, int32 X, int32 Y)
 	{
-		if (GroupView.SlotCount <= 1)
+		if (GroupView.GridSize.Width * GroupView.GridSize.Height <= 1)
 		{
 			return GroupView.DisplayName;
 		}
 
 		return FText::Format(
-			NSLOCTEXT("RpgPlayerInventory", "SlotGroupIndexLabel", "{0} {1}"),
+			NSLOCTEXT("RpgPlayerInventory", "SlotGroupCellLabel", "{0} {1},{2}"),
 			GroupView.DisplayName,
-			FText::AsNumber(LocalSlotIndex + 1));
+			FText::AsNumber(X + 1),
+			FText::AsNumber(Y + 1));
 	}
 
 	FGuid FindEntryIdForItem(const URpgInventoryManagerComponent* Inventory, const URpgInventoryItemInstance* Item)
@@ -114,56 +115,105 @@ void URpgInventoryAddressSlotViewModel::InitializeSlot(
 	URpgInventoryManagerComponent* InInventory,
 	URpgPlayerInventoryLayoutComponent* InInventoryLayout,
 	const FRpgInventorySlotGroupView& InGroupView,
-	int32 InLocalSlotIndex)
+	int32 InX,
+	int32 InY)
 {
-	const FRpgInventorySlotAddress NewAddress = InGroupView.MakeAddress(InLocalSlotIndex);
-	const int32 NewGlobalSlotIndex = InGroupView.FirstGlobalSlotIndex + InLocalSlotIndex;
-	URpgInventoryItemInstance* NewItem = InInventory ? InInventory->GetItemInSlot(NewGlobalSlotIndex) : nullptr;
+	const FRpgInventorySlotAddress NewAddress = InGroupView.MakeAddress(InX, InY);
+	FRpgInventoryGridPlacement NewPlacement;
+	NewPlacement.ContainerId = NewAddress.ContainerId;
+	NewPlacement.X = NewAddress.X;
+	NewPlacement.Y = NewAddress.Y;
+	NewPlacement.Width = 1;
+	NewPlacement.Height = 1;
+	URpgInventoryItemInstance* NewItem = InInventory ? InInventory->GetItemAtCell(NewPlacement.ContainerId, NewPlacement.X, NewPlacement.Y) : nullptr;
+	FRpgInventoryGridPlacement NewItemPlacement;
+	const bool bHasResolvedItemPlacement = NewItem && InInventory && InInventory->GetItemPlacement(NewItem, NewItemPlacement);
+	const bool bNewItemOriginCell = bHasResolvedItemPlacement &&
+		NewItemPlacement.ContainerId == NewPlacement.ContainerId &&
+		NewItemPlacement.X == NewPlacement.X &&
+		NewItemPlacement.Y == NewPlacement.Y;
+	const bool bNewItemCoveredCell = bHasResolvedItemPlacement &&
+		NewItemPlacement.ContainsCell(NewPlacement.X, NewPlacement.Y) &&
+		!bNewItemOriginCell;
+	const bool bCanRepresentItemFromThisCell = NewItem && (!bHasResolvedItemPlacement || bNewItemOriginCell);
+	int32 NewItemOccupiedWidth = 0;
+	int32 NewItemOccupiedHeight = 0;
+	if (bHasResolvedItemPlacement)
+	{
+		const FRpgInventoryGridSize OccupiedSize = NewItemPlacement.GetOccupiedSize();
+		NewItemOccupiedWidth = OccupiedSize.Width;
+		NewItemOccupiedHeight = OccupiedSize.Height;
+	}
 	const int32 NewStackCount = (InInventory && NewItem) ? InInventory->GetItemStackCount(NewItem) : 0;
 	const FGuid NewEntryId = FindEntryIdForItem(InInventory, NewItem);
-	const FRpgPlayerInventoryItemPresentation Presentation = BuildPlayerInventoryItemPresentation(NewItem);
+	const FRpgPlayerInventoryItemPresentation Presentation = bCanRepresentItemFromThisCell
+		? BuildPlayerInventoryItemPresentation(NewItem)
+		: FRpgPlayerInventoryItemPresentation();
 	const bool bNewActionbarBindable = InInventoryLayout
-		? InInventoryLayout->CanBindSlotAddressToActionbar(NewAddress, NewItem)
+		? bCanRepresentItemFromThisCell && InInventoryLayout->CanBindSlotAddressToActionbar(NewAddress, NewItem)
 		: false;
 
 	const bool bWasChanged =
 		Inventory != InInventory ||
 		InventoryLayout != InInventoryLayout ||
-		GroupId != InGroupView.GroupId ||
+		ContainerId != InGroupView.ContainerId ||
 		SlotAddress != NewAddress ||
-		LocalSlotIndex != InLocalSlotIndex ||
-		GlobalSlotIndex != NewGlobalSlotIndex ||
+		X != InX ||
+		Y != InY ||
+		Placement.ContainerId != NewPlacement.ContainerId ||
+		Placement.X != NewPlacement.X ||
+		Placement.Y != NewPlacement.Y ||
+		ItemPlacement.ContainerId != NewItemPlacement.ContainerId ||
+		ItemPlacement.X != NewItemPlacement.X ||
+		ItemPlacement.Y != NewItemPlacement.Y ||
+		ItemPlacement.Width != NewItemPlacement.Width ||
+		ItemPlacement.Height != NewItemPlacement.Height ||
+		ItemPlacement.bRotated != NewItemPlacement.bRotated ||
+		ItemOccupiedWidth != NewItemOccupiedWidth ||
+		ItemOccupiedHeight != NewItemOccupiedHeight ||
 		EntryId != NewEntryId ||
 		ItemInstance != NewItem ||
 		StackCount != NewStackCount ||
+		bItemOriginCell != bNewItemOriginCell ||
+		bItemCoveredCell != bNewItemCoveredCell ||
 		bActionbarBindable != bNewActionbarBindable ||
 		bCarrySlot != (InGroupView.GroupKind == ERpgInventorySlotGroupKind::Carry && InGroupView.Rule.bCarrySlot) ||
 		bGearSlot != (InGroupView.GroupKind == ERpgInventorySlotGroupKind::Gear);
 
 	Inventory = InInventory;
 	InventoryLayout = InInventoryLayout;
-	GroupId = InGroupView.GroupId;
+	ContainerId = InGroupView.ContainerId;
 	SlotAddress = NewAddress;
-	LocalSlotIndex = InLocalSlotIndex;
-	GlobalSlotIndex = NewGlobalSlotIndex;
+	X = InX;
+	Y = InY;
+	Placement = NewPlacement;
+	ItemPlacement = NewItemPlacement;
+	ItemOccupiedWidth = NewItemOccupiedWidth;
+	ItemOccupiedHeight = NewItemOccupiedHeight;
 	EntryId = NewEntryId;
 	ItemInstance = NewItem;
 	StackCount = NewStackCount;
-	SlotLabel = BuildAddressSlotLabel(InGroupView, InLocalSlotIndex);
+	SlotLabel = BuildAddressSlotLabel(InGroupView, InX, InY);
 	ShortDisplayName = Presentation.ShortDisplayName;
 	Icon = Presentation.Icon;
 	bIsEmptySlot = ItemInstance == nullptr;
-	bCanDrag = ItemInstance != nullptr && StackCount > 0;
+	bItemOriginCell = bNewItemOriginCell;
+	bItemCoveredCell = bNewItemCoveredCell;
+	bCanDrag = bCanRepresentItemFromThisCell && StackCount > 0;
 	bActionbarBindable = bNewActionbarBindable;
 	bCarrySlot = InGroupView.GroupKind == ERpgInventorySlotGroupKind::Carry && InGroupView.Rule.bCarrySlot;
 	bGearSlot = InGroupView.GroupKind == ERpgInventorySlotGroupKind::Gear;
 
 	UE_MVVM_BROADCAST_FIELD_VALUE_CHANGED(Inventory);
 	UE_MVVM_BROADCAST_FIELD_VALUE_CHANGED(InventoryLayout);
-	UE_MVVM_BROADCAST_FIELD_VALUE_CHANGED(GroupId);
+	UE_MVVM_BROADCAST_FIELD_VALUE_CHANGED(ContainerId);
 	UE_MVVM_BROADCAST_FIELD_VALUE_CHANGED(SlotAddress);
-	UE_MVVM_BROADCAST_FIELD_VALUE_CHANGED(LocalSlotIndex);
-	UE_MVVM_BROADCAST_FIELD_VALUE_CHANGED(GlobalSlotIndex);
+	UE_MVVM_BROADCAST_FIELD_VALUE_CHANGED(X);
+	UE_MVVM_BROADCAST_FIELD_VALUE_CHANGED(Y);
+	UE_MVVM_BROADCAST_FIELD_VALUE_CHANGED(Placement);
+	UE_MVVM_BROADCAST_FIELD_VALUE_CHANGED(ItemPlacement);
+	UE_MVVM_BROADCAST_FIELD_VALUE_CHANGED(ItemOccupiedWidth);
+	UE_MVVM_BROADCAST_FIELD_VALUE_CHANGED(ItemOccupiedHeight);
 	UE_MVVM_BROADCAST_FIELD_VALUE_CHANGED(EntryId);
 	UE_MVVM_BROADCAST_FIELD_VALUE_CHANGED(ItemInstance);
 	UE_MVVM_BROADCAST_FIELD_VALUE_CHANGED(StackCount);
@@ -171,6 +221,8 @@ void URpgInventoryAddressSlotViewModel::InitializeSlot(
 	UE_MVVM_BROADCAST_FIELD_VALUE_CHANGED(ShortDisplayName);
 	UE_MVVM_BROADCAST_FIELD_VALUE_CHANGED(Icon);
 	UE_MVVM_BROADCAST_FIELD_VALUE_CHANGED(bIsEmptySlot);
+	UE_MVVM_BROADCAST_FIELD_VALUE_CHANGED(bItemOriginCell);
+	UE_MVVM_BROADCAST_FIELD_VALUE_CHANGED(bItemCoveredCell);
 	UE_MVVM_BROADCAST_FIELD_VALUE_CHANGED(bCanDrag);
 	UE_MVVM_BROADCAST_FIELD_VALUE_CHANGED(bActionbarBindable);
 	UE_MVVM_BROADCAST_FIELD_VALUE_CHANGED(bCarrySlot);
@@ -184,11 +236,10 @@ void URpgInventoryAddressSlotViewModel::InitializeSlot(
 
 void URpgInventorySlotGroupViewModel::InitializeGroup(const FRpgInventorySlotGroupView& InGroupView, const TArray<URpgInventoryAddressSlotViewModel*>& InSlots)
 {
-	GroupId = InGroupView.GroupId;
+	ContainerId = InGroupView.ContainerId;
 	DisplayName = InGroupView.DisplayName;
 	Icon = InGroupView.Icon;
-	FirstGlobalSlotIndex = InGroupView.FirstGlobalSlotIndex;
-	SlotCount = InGroupView.SlotCount;
+	GridSize = InGroupView.GridSize;
 	bActionbarBindable = InGroupView.Rule.bActionbarBindable;
 	bCarryGroup = InGroupView.GroupKind == ERpgInventorySlotGroupKind::Carry && InGroupView.Rule.bCarrySlot;
 	bGearGroup = InGroupView.GroupKind == ERpgInventorySlotGroupKind::Gear;
@@ -203,11 +254,10 @@ void URpgInventorySlotGroupViewModel::InitializeGroup(const FRpgInventorySlotGro
 		Slots.Add(Slot);
 	}
 
-	UE_MVVM_BROADCAST_FIELD_VALUE_CHANGED(GroupId);
+	UE_MVVM_BROADCAST_FIELD_VALUE_CHANGED(ContainerId);
 	UE_MVVM_BROADCAST_FIELD_VALUE_CHANGED(DisplayName);
 	UE_MVVM_BROADCAST_FIELD_VALUE_CHANGED(Icon);
-	UE_MVVM_BROADCAST_FIELD_VALUE_CHANGED(FirstGlobalSlotIndex);
-	UE_MVVM_BROADCAST_FIELD_VALUE_CHANGED(SlotCount);
+	UE_MVVM_BROADCAST_FIELD_VALUE_CHANGED(GridSize);
 	UE_MVVM_BROADCAST_FIELD_VALUE_CHANGED(bActionbarBindable);
 	UE_MVVM_BROADCAST_FIELD_VALUE_CHANGED(bCarryGroup);
 	UE_MVVM_BROADCAST_FIELD_VALUE_CHANGED(bGearGroup);
@@ -443,13 +493,13 @@ void URpgPlayerInventoryViewModel::RefreshGearSlots()
 	auto ResolveGearSlotItem = [PlayerInventory, InventoryLayout, EquipmentLoadout](ERpgEquipmentSlot EquipmentSlot)
 	{
 		FRpgInventorySlotAddress GearAddress;
-		int32 GlobalSlotIndex = INDEX_NONE;
+		FRpgInventoryGridPlacement GearPlacement;
 		if (PlayerInventory &&
 			InventoryLayout &&
 			URpgPlayerInventoryLayoutComponent::TryMakeGearSlotAddress(EquipmentSlot, GearAddress) &&
-			InventoryLayout->ResolveSlotAddress(GearAddress, GlobalSlotIndex))
+			InventoryLayout->ResolveSlotAddress(GearAddress, GearPlacement))
 		{
-			return PlayerInventory->GetItemInSlot(GlobalSlotIndex);
+			return PlayerInventory->GetItemAtCell(GearPlacement.ContainerId, GearPlacement.X, GearPlacement.Y);
 		}
 
 		return EquipmentLoadout ? EquipmentLoadout->GetItemInEquipmentSlot(EquipmentSlot) : nullptr;
@@ -534,22 +584,25 @@ void URpgPlayerInventoryViewModel::RefreshSlotGroups()
 		for (const FRpgInventorySlotGroupView& GroupView : InventoryLayout->GetSlotGroups())
 		{
 			TArray<URpgInventoryAddressSlotViewModel*> GroupSlots;
-			GroupSlots.Reserve(GroupView.SlotCount);
+			GroupSlots.Reserve(GroupView.GridSize.Width * GroupView.GridSize.Height);
 
-			for (int32 LocalSlotIndex = 0; LocalSlotIndex < GroupView.SlotCount; ++LocalSlotIndex)
+			for (int32 Y = 0; Y < GroupView.GridSize.Height; ++Y)
 			{
-				const FRpgInventorySlotAddress Address = GroupView.MakeAddress(LocalSlotIndex);
-				URpgInventoryAddressSlotViewModel* SlotViewModel = FindReusableAddressSlot(ReusableSlots, Address);
-				if (!SlotViewModel)
+				for (int32 X = 0; X < GroupView.GridSize.Width; ++X)
 				{
-					SlotViewModel = NewObject<URpgInventoryAddressSlotViewModel>(this);
-				}
+					const FRpgInventorySlotAddress Address = GroupView.MakeAddress(X, Y);
+					URpgInventoryAddressSlotViewModel* SlotViewModel = FindReusableAddressSlot(ReusableSlots, Address);
+					if (!SlotViewModel)
+					{
+						SlotViewModel = NewObject<URpgInventoryAddressSlotViewModel>(this);
+					}
 
-				SlotViewModel->InitializeSlot(PlayerInventory, InventoryLayout, GroupView, LocalSlotIndex);
-				GroupSlots.Add(SlotViewModel);
+					SlotViewModel->InitializeSlot(PlayerInventory, InventoryLayout, GroupView, X, Y);
+					GroupSlots.Add(SlotViewModel);
+				}
 			}
 
-			URpgInventorySlotGroupViewModel* GroupViewModel = FindReusableGroup(ReusableGroups, GroupView.GroupId);
+			URpgInventorySlotGroupViewModel* GroupViewModel = FindReusableGroup(ReusableGroups, GroupView.ContainerId);
 			if (!GroupViewModel)
 			{
 				GroupViewModel = NewObject<URpgInventorySlotGroupViewModel>(this);

@@ -222,7 +222,7 @@ bool URpgInventoryTileView::QuickTransferSelectedEntry(URpgInventoryManagerCompo
 
 bool URpgInventoryTileView::QuickSplitSelectedEntry(int32 SplitCount, int32 TargetSlotIndex)
 {
-	return DragDropCoordinator && DragDropCoordinator->QuickSplitEntry(GetSelectedInventoryEntry(), TargetSlotIndex, SplitCount);
+	return DragDropCoordinator && DragDropCoordinator->QuickSplitEntry(GetSelectedInventoryEntry(), FRpgInventoryGridPlacement(), SplitCount);
 }
 
 bool URpgInventoryTileView::UseOrEquipSelectedEntry(int32 StackCount)

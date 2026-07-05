@@ -124,9 +124,9 @@ public:
 	UFUNCTION(Server, Reliable, BlueprintCallable, Category = "Inventory|UI Actions")
 	void RequestTransferItemStack(URpgInventoryManagerComponent* SourceInventory, URpgInventoryManagerComponent* TargetInventory, URpgInventoryItemInstance* Item, int32 StackCount);
 
-	/** Transfers a stack into one exact target slot. Explicit drag/drop uses this instead of auto-stacking. */
+	/** Transfers a stack into one exact target grid placement. Explicit drag/drop uses this instead of auto-stacking. */
 	UFUNCTION(Server, Reliable, BlueprintCallable, Category = "Inventory|UI Actions")
-	void RequestTransferItemStackToInventorySlot(URpgInventoryManagerComponent* SourceInventory, URpgInventoryManagerComponent* TargetInventory, URpgInventoryItemInstance* Item, int32 StackCount, int32 TargetSlotIndex);
+	void RequestTransferItemStackToPlacement(URpgInventoryManagerComponent* SourceInventory, URpgInventoryManagerComponent* TargetInventory, URpgInventoryItemInstance* Item, int32 StackCount, FRpgInventoryGridPlacement TargetPlacement);
 
 	/** Applies a shared server-side sort to an accessible inventory such as storage or loot. */
 	UFUNCTION(Server, Reliable, BlueprintCallable, Category = "Inventory|UI Actions")
@@ -136,11 +136,11 @@ public:
 	UFUNCTION(Server, Reliable, BlueprintCallable, Category = "Inventory|UI Actions")
 	void RequestMoveInventoryEntry(URpgInventoryManagerComponent* Inventory, FGuid EntryId, int32 TargetIndex);
 
-	/** Moves, swaps, or stack-merges an accessible inventory entry into one exact slot. */
+	/** Moves, swaps, or stack-merges an accessible inventory entry into one exact grid placement. */
 	UFUNCTION(Server, Reliable, BlueprintCallable, Category = "Inventory|UI Actions")
-	void RequestMoveInventoryEntryToSlot(URpgInventoryManagerComponent* Inventory, FGuid EntryId, int32 TargetSlotIndex);
+	void RequestMoveInventoryEntryToPlacement(URpgInventoryManagerComponent* Inventory, FGuid EntryId, FRpgInventoryGridPlacement TargetPlacement);
 
-	/** Moves an owned player-inventory item into a logical player slot address such as WeaponSlot1[0] or Belt[2]. */
+	/** Moves an owned player-inventory item into a logical player grid address such as WeaponSlot1[0,0] or Belt[2,1]. */
 	UFUNCTION(Server, Reliable, BlueprintCallable, Category = "Inventory|UI Actions")
 	void RequestMoveItemToInventorySlotAddress(URpgInventoryItemInstance* Item, FRpgInventorySlotAddress TargetAddress);
 
@@ -168,9 +168,9 @@ public:
 	UFUNCTION(Server, Reliable, BlueprintCallable, Category = "Inventory|UI Actions")
 	void RequestBindActionBarToCarrySlot(int32 ActionBarSlotIndex, FRpgInventorySlotAddress CarrySlotAddress);
 
-	/** Splits one stack into a new stack in the same inventory. SplitCount <= 0 performs the V1 quick 50% split. */
+	/** Splits one stack into a new stack in the same inventory. SplitCount <= 0 performs the quick 50% split. */
 	UFUNCTION(Server, Reliable, BlueprintCallable, Category = "Inventory|UI Actions")
-	void RequestSplitItemStack(URpgInventoryManagerComponent* Inventory, URpgInventoryItemInstance* Item, int32 SplitCount, int32 TargetSlotIndex);
+	void RequestSplitItemStack(URpgInventoryManagerComponent* Inventory, URpgInventoryItemInstance* Item, int32 SplitCount, FRpgInventoryGridPlacement TargetPlacement);
 
 	/** Uses a usable inventory item by granting and activating its configured one-shot ability. */
 	UFUNCTION(Server, Reliable, BlueprintCallable, Category = "Inventory|UI Actions")
@@ -262,9 +262,9 @@ private:
 	URpgActionBarComponent* FindActionBar() const;
 	URpgAbilitySystemComponent* FindPlayerAbilitySystem() const;
 	bool CanTransferItemStack(URpgInventoryManagerComponent* SourceInventory, URpgInventoryManagerComponent* TargetInventory, URpgInventoryItemInstance* Item, int32 StackCount) const;
-	bool CanTransferItemStackToInventorySlot(URpgInventoryManagerComponent* SourceInventory, URpgInventoryManagerComponent* TargetInventory, URpgInventoryItemInstance* Item, int32 StackCount, int32 TargetSlotIndex) const;
-	bool CanSplitItemStack(URpgInventoryManagerComponent* Inventory, URpgInventoryItemInstance* Item, int32 SplitCount, int32 TargetSlotIndex, int32& OutSplitCount, int32& OutTargetSlotIndex) const;
-	bool FindFirstEmptyInventorySlot(URpgInventoryManagerComponent* Inventory, int32& OutSlotIndex) const;
+	bool CanTransferItemStackToPlacement(URpgInventoryManagerComponent* SourceInventory, URpgInventoryManagerComponent* TargetInventory, URpgInventoryItemInstance* Item, int32 StackCount, FRpgInventoryGridPlacement TargetPlacement) const;
+	bool CanSplitItemStack(URpgInventoryManagerComponent* Inventory, URpgInventoryItemInstance* Item, int32 SplitCount, FRpgInventoryGridPlacement TargetPlacement, int32& OutSplitCount, FRpgInventoryGridPlacement& OutTargetPlacement) const;
+	bool FindFirstEmptyInventoryPlacement(URpgInventoryManagerComponent* Inventory, TSubclassOf<URpgInventoryItemDefinition> ItemDefinition, FRpgInventoryGridPlacement& OutPlacement) const;
 	bool CanAccessBaseStorageStation(const URpgBaseStorageStationComponent* Station) const;
 	bool ClearPlayerAssignmentsForItem(URpgInventoryItemInstance* Item) const;
 	bool TryAssignItemToDefaultEquipmentDestination(URpgInventoryItemInstance* Item);

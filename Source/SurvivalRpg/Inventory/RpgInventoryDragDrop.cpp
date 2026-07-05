@@ -109,7 +109,7 @@ FRpgInventoryDragPayload URpgInventoryDragDropCoordinator::MakeInventoryPayloadF
 	Payload.ItemInstance = EntryViewModel->GetItemInstance();
 	Payload.EntryId = EntryViewModel->GetEntryId();
 	Payload.StackCount = EntryViewModel->GetStackCount();
-	Payload.SourceSlotIndex = EntryViewModel->GetSlotIndex();
+	Payload.SourcePlacement = EntryViewModel->GetPlacement();
 	return Payload;
 }
 
@@ -128,7 +128,9 @@ FRpgInventoryDragPayload URpgInventoryDragDropCoordinator::MakeInventoryPayloadF
 	Payload.ItemInstance = SlotViewModel->GetItemInstance();
 	Payload.EntryId = SlotViewModel->GetEntryId();
 	Payload.StackCount = SlotViewModel->GetStackCount();
-	Payload.SourceSlotIndex = SlotViewModel->GetGlobalSlotIndex();
+	Payload.SourcePlacement = SlotViewModel->GetItemPlacement().IsValid()
+		? SlotViewModel->GetItemPlacement()
+		: SlotViewModel->GetPlacement();
 	Payload.SourceSlotAddress = SlotViewModel->GetSlotAddress();
 	return Payload;
 }
@@ -143,7 +145,7 @@ FRpgInventoryDropTarget URpgInventoryDragDropCoordinator::MakeInventoryTargetFro
 
 	Target.TargetType = ERpgInventoryDropTargetType::InventorySlot;
 	Target.TargetInventory = EntryViewModel->GetInventoryManager();
-	Target.TargetIndex = EntryViewModel->GetSlotIndex();
+	Target.TargetPlacement = EntryViewModel->GetPlacement();
 	return Target;
 }
 
@@ -157,7 +159,7 @@ FRpgInventoryDropTarget URpgInventoryDragDropCoordinator::MakePlayerInventorySlo
 
 	Target.TargetType = ERpgInventoryDropTargetType::PlayerInventorySlotAddress;
 	Target.TargetInventory = SlotViewModel->GetInventoryManager();
-	Target.TargetIndex = SlotViewModel->GetGlobalSlotIndex();
+	Target.TargetPlacement = SlotViewModel->GetPlacement();
 	Target.SlotAddress = SlotViewModel->GetSlotAddress();
 	return Target;
 }
@@ -236,7 +238,7 @@ bool URpgInventoryDragDropCoordinator::IsTargetValid(const FRpgInventoryDropTarg
 	switch (Target.TargetType)
 	{
 	case ERpgInventoryDropTargetType::InventorySlot:
-		return Target.TargetInventory != nullptr && Target.TargetIndex >= 0;
+		return Target.TargetInventory != nullptr && Target.TargetPlacement.IsValid();
 
 	case ERpgInventoryDropTargetType::InventoryPanel:
 		return Target.TargetInventory != nullptr;
@@ -380,7 +382,7 @@ bool URpgInventoryDragDropCoordinator::QuickTransferEntry(URpgInventoryEntryView
 	return true;
 }
 
-bool URpgInventoryDragDropCoordinator::CanQuickSplitEntry(URpgInventoryEntryViewModel* EntryViewModel, int32 TargetSlotIndex, int32 SplitCount) const
+bool URpgInventoryDragDropCoordinator::CanQuickSplitEntry(URpgInventoryEntryViewModel* EntryViewModel, FRpgInventoryGridPlacement TargetPlacement, int32 SplitCount) const
 {
 	if (!EntryViewModel || !EntryViewModel->CanDrag() || !ResolveUiActionComponent())
 	{
@@ -394,12 +396,12 @@ bool URpgInventoryDragDropCoordinator::CanQuickSplitEntry(URpgInventoryEntryView
 		return false;
 	}
 
-	if (TargetSlotIndex != INDEX_NONE && Inventory->GetItemInSlot(TargetSlotIndex) != nullptr)
+	if (TargetPlacement.IsValid() && Inventory->GetItemAtCell(TargetPlacement.ContainerId, TargetPlacement.X, TargetPlacement.Y) != nullptr)
 	{
 		return false;
 	}
 
-	if (TargetSlotIndex == INDEX_NONE && !Inventory->IsCapacityUnlimited() && Inventory->GetFreeEntryCount() <= 0)
+	if (!TargetPlacement.IsValid() && !Inventory->IsCapacityUnlimited() && Inventory->GetFreeEntryCount() <= 0)
 	{
 		return false;
 	}
@@ -408,9 +410,9 @@ bool URpgInventoryDragDropCoordinator::CanQuickSplitEntry(URpgInventoryEntryView
 	return RequestedSplitCount > 0 && RequestedSplitCount < EntryViewModel->GetStackCount();
 }
 
-bool URpgInventoryDragDropCoordinator::QuickSplitEntry(URpgInventoryEntryViewModel* EntryViewModel, int32 TargetSlotIndex, int32 SplitCount)
+bool URpgInventoryDragDropCoordinator::QuickSplitEntry(URpgInventoryEntryViewModel* EntryViewModel, FRpgInventoryGridPlacement TargetPlacement, int32 SplitCount)
 {
-	if (!CanQuickSplitEntry(EntryViewModel, TargetSlotIndex, SplitCount))
+	if (!CanQuickSplitEntry(EntryViewModel, TargetPlacement, SplitCount))
 	{
 		return false;
 	}
@@ -428,7 +430,7 @@ bool URpgInventoryDragDropCoordinator::QuickSplitEntry(URpgInventoryEntryViewMod
 		CancelHold();
 	}
 
-	ActionComponent->RequestSplitItemStack(Inventory, ItemInstance, SplitCount, TargetSlotIndex);
+	ActionComponent->RequestSplitItemStack(Inventory, ItemInstance, SplitCount, TargetPlacement);
 	return true;
 }
 
@@ -500,7 +502,7 @@ bool URpgInventoryDragDropCoordinator::UseOrEquipAddressSlot(URpgInventoryAddres
 	return true;
 }
 
-bool URpgInventoryDragDropCoordinator::QuickSplitAddressSlot(URpgInventoryAddressSlotViewModel* SlotViewModel, int32 TargetSlotIndex, int32 SplitCount)
+bool URpgInventoryDragDropCoordinator::QuickSplitAddressSlot(URpgInventoryAddressSlotViewModel* SlotViewModel, FRpgInventoryGridPlacement TargetPlacement, int32 SplitCount)
 {
 	if (!SlotViewModel || !SlotViewModel->CanDrag() || SlotViewModel->IsGearSlot() || SlotViewModel->IsCarrySlot())
 	{
@@ -520,7 +522,7 @@ bool URpgInventoryDragDropCoordinator::QuickSplitAddressSlot(URpgInventoryAddres
 		CancelHold();
 	}
 
-	ActionComponent->RequestSplitItemStack(Inventory, ItemInstance, SplitCount, TargetSlotIndex);
+	ActionComponent->RequestSplitItemStack(Inventory, ItemInstance, SplitCount, TargetPlacement);
 	return true;
 }
 
@@ -664,18 +666,21 @@ bool URpgInventoryDragDropCoordinator::CommitPayloadToTarget(const FRpgInventory
 		{
 			if (Payload.SourceInventory == Target.TargetInventory)
 			{
-				if (Target.TargetIndex == INDEX_NONE || Target.TargetIndex == Payload.SourceSlotIndex)
+				if (!Target.TargetPlacement.IsValid() ||
+					(Target.TargetPlacement.ContainerId == Payload.SourcePlacement.ContainerId &&
+						Target.TargetPlacement.X == Payload.SourcePlacement.X &&
+						Target.TargetPlacement.Y == Payload.SourcePlacement.Y))
 				{
 					return true;
 				}
 
-				Actions->RequestMoveInventoryEntryToSlot(Payload.SourceInventory, Payload.EntryId, Target.TargetIndex);
+				Actions->RequestMoveInventoryEntryToPlacement(Payload.SourceInventory, Payload.EntryId, Target.TargetPlacement);
 				return true;
 			}
 
 			if (Target.TargetType == ERpgInventoryDropTargetType::InventorySlot)
 			{
-				Actions->RequestTransferItemStackToInventorySlot(Payload.SourceInventory, Target.TargetInventory, Payload.ItemInstance, Payload.StackCount, Target.TargetIndex);
+				Actions->RequestTransferItemStackToPlacement(Payload.SourceInventory, Target.TargetInventory, Payload.ItemInstance, Payload.StackCount, Target.TargetPlacement);
 				return true;
 			}
 
@@ -787,7 +792,7 @@ bool URpgInventoryDragDropCoordinator::CanCommitPayloadToTarget(const FRpgInvent
 			{
 				return Target.TargetType == ERpgInventoryDropTargetType::InventorySlot &&
 					Payload.EntryId.IsValid() &&
-					Target.TargetIndex >= 0;
+					Target.TargetPlacement.IsValid();
 			}
 
 			return true;
@@ -846,7 +851,7 @@ bool URpgInventoryDragDropCoordinator::CanCommitPayloadToTarget(const FRpgInvent
 
 			ERpgEquipmentSlot SourceEquipmentSlot = ERpgEquipmentSlot::None;
 			if (InventoryLayout->IsGearSlotAddress(SourceAddress) &&
-				URpgPlayerInventoryLayoutComponent::TryGetEquipmentSlotForGearGroupId(SourceAddress.GroupId, SourceEquipmentSlot) &&
+				URpgPlayerInventoryLayoutComponent::TryGetEquipmentSlotForGearGroupId(SourceAddress.ContainerId, SourceEquipmentSlot) &&
 				URpgPlayerInventoryLayoutComponent::IsSlotContainerEquipmentSlot(SourceEquipmentSlot) &&
 				!InventoryLayout->CanUnequipSlotContainer(SourceEquipmentSlot))
 			{
@@ -859,9 +864,8 @@ bool URpgInventoryDragDropCoordinator::CanCommitPayloadToTarget(const FRpgInvent
 				bool bTargetIsStaticContent = false;
 				for (const FRpgInventorySlotGroupView& Group : InventoryLayout->GetSlotGroups())
 				{
-					if (Group.GroupId == Target.SlotAddress.GroupId &&
-						Target.SlotAddress.LocalSlotIndex >= 0 &&
-						Target.SlotAddress.LocalSlotIndex < Group.SlotCount)
+					if (Group.ContainerId == Target.SlotAddress.ContainerId &&
+						Group.ContainsCell(Target.SlotAddress.X, Target.SlotAddress.Y))
 					{
 						bTargetIsStaticContent = Group.GroupKind == ERpgInventorySlotGroupKind::Content && !Group.bProvidedByEquipment;
 						break;
@@ -922,7 +926,9 @@ bool URpgInventoryDragDropCoordinator::IsHeldSourceEntry(URpgInventoryEntryViewM
 
 	return HeldPayload.SourceInventory == EntryViewModel->GetInventoryManager() &&
 		HeldPayload.EntryId == EntryViewModel->GetEntryId() &&
-		HeldPayload.SourceSlotIndex == EntryViewModel->GetSlotIndex();
+		HeldPayload.SourcePlacement.ContainerId == EntryViewModel->GetPlacement().ContainerId &&
+		HeldPayload.SourcePlacement.X == EntryViewModel->GetPlacement().X &&
+		HeldPayload.SourcePlacement.Y == EntryViewModel->GetPlacement().Y;
 }
 
 bool URpgInventoryDragDropCoordinator::IsHeldSourceAddressSlot(URpgInventoryAddressSlotViewModel* SlotViewModel) const
@@ -1018,9 +1024,9 @@ FRpgInventorySlotAddress URpgInventoryDragDropCoordinator::ResolvePayloadSourceA
 
 	FRpgInventorySlotAddress Address;
 	const URpgPlayerInventoryLayoutComponent* InventoryLayout = FindPlayerInventoryLayout();
-	if (InventoryLayout && IsPlayerInventory(Payload.SourceInventory) && Payload.SourceSlotIndex != INDEX_NONE)
+	if (InventoryLayout && IsPlayerInventory(Payload.SourceInventory) && Payload.SourcePlacement.IsValid())
 	{
-		InventoryLayout->TryMakeSlotAddressFromGlobalSlotIndex(Payload.SourceSlotIndex, Address);
+		InventoryLayout->TryMakeSlotAddressFromPlacement(Payload.SourcePlacement, Address);
 	}
 
 	return Address;
@@ -1053,12 +1059,15 @@ FRpgInventorySlotAddress URpgInventoryDragDropCoordinator::ResolveEquipmentPaylo
 			continue;
 		}
 
-		for (int32 LocalSlotIndex = 0; LocalSlotIndex < Group.SlotCount; ++LocalSlotIndex)
+		for (int32 Y = 0; Y < Group.GridSize.Height; ++Y)
 		{
-			const FRpgInventorySlotAddress CandidateAddress = Group.MakeAddress(LocalSlotIndex);
-			if (InventoryLayout->GetItemInSlotAddress(CandidateAddress) == Payload.ItemInstance)
+			for (int32 X = 0; X < Group.GridSize.Width; ++X)
 			{
-				return CandidateAddress;
+				const FRpgInventorySlotAddress CandidateAddress = Group.MakeAddress(X, Y);
+				if (InventoryLayout->GetItemInSlotAddress(CandidateAddress) == Payload.ItemInstance)
+				{
+					return CandidateAddress;
+				}
 			}
 		}
 	}

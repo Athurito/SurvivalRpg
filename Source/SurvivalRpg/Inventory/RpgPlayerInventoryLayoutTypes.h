@@ -3,6 +3,7 @@
 #include "CoreMinimal.h"
 #include "GameplayTagContainer.h"
 #include "RpgInventoryItemTypes.h"
+#include "RpgInventorySpatialTypes.h"
 #include "UObject/SoftObjectPtr.h"
 
 #include "RpgPlayerInventoryLayoutTypes.generated.h"
@@ -14,7 +15,7 @@ class URpgInventoryItemInstance;
 /**
  * Stable logical address for one visible player-inventory slot.
  *
- * The address is UI/save friendly. Server gameplay resolves it to the current global SortIndex slot
+ * The address is UI/save friendly. Server gameplay resolves it to the current spatial grid cell
  * through URpgPlayerInventoryLayoutComponent before moving, binding, or activating items.
  */
 USTRUCT(BlueprintType)
@@ -22,19 +23,23 @@ struct SURVIVALRPG_API FRpgInventorySlotAddress
 {
 	GENERATED_BODY()
 
-	/** Logical slot group, for example WeaponSlot1, Belt, Backpack, or Pockets. */
+	/** Logical grid container, for example WeaponSlot1, Belt, Backpack, or Pockets. */
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Inventory|Layout")
-	FName GroupId = NAME_None;
+	FName ContainerId = NAME_None;
 
-	/** Zero-based slot inside GroupId. Values below 0 are invalid. */
+	/** Zero-based grid cell X coordinate inside ContainerId. */
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Inventory|Layout", meta = (ClampMin = "0", UIMin = "0"))
-	int32 LocalSlotIndex = INDEX_NONE;
+	int32 X = INDEX_NONE;
 
-	bool IsValid() const { return !GroupId.IsNone() && LocalSlotIndex >= 0; }
+	/** Zero-based grid cell Y coordinate inside ContainerId. */
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Inventory|Layout", meta = (ClampMin = "0", UIMin = "0"))
+	int32 Y = INDEX_NONE;
+
+	bool IsValid() const { return !ContainerId.IsNone() && X >= 0 && Y >= 0; }
 
 	friend bool operator==(const FRpgInventorySlotAddress& A, const FRpgInventorySlotAddress& B)
 	{
-		return A.GroupId == B.GroupId && A.LocalSlotIndex == B.LocalSlotIndex;
+		return A.ContainerId == B.ContainerId && A.X == B.X && A.Y == B.Y;
 	}
 
 	friend bool operator!=(const FRpgInventorySlotAddress& A, const FRpgInventorySlotAddress& B)
@@ -44,7 +49,7 @@ struct SURVIVALRPG_API FRpgInventorySlotAddress
 
 	friend uint32 GetTypeHash(const FRpgInventorySlotAddress& Address)
 	{
-		return HashCombine(GetTypeHash(Address.GroupId), GetTypeHash(Address.LocalSlotIndex));
+		return HashCombine(HashCombine(GetTypeHash(Address.ContainerId), GetTypeHash(Address.X)), GetTypeHash(Address.Y));
 	}
 };
 
@@ -101,16 +106,16 @@ struct SURVIVALRPG_API FRpgInventorySlotRule
 };
 
 /**
- * Definition data for one slot group before it is assigned a global inventory range.
+ * Definition data for one visible grid container.
  */
 USTRUCT(BlueprintType)
 struct SURVIVALRPG_API FRpgInventorySlotGroupDefinition
 {
 	GENERATED_BODY()
 
-	/** Stable group id used in FRpgInventorySlotAddress. */
+	/** Stable grid id used in FRpgInventorySlotAddress and replicated item placements. */
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Inventory|Layout")
-	FName GroupId = NAME_None;
+	FName ContainerId = NAME_None;
 
 	/** Player-facing label shown by inventory screens. */
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Inventory|Layout")
@@ -124,26 +129,26 @@ struct SURVIVALRPG_API FRpgInventorySlotGroupDefinition
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Inventory|Layout")
 	ERpgInventorySlotGroupKind GroupKind = ERpgInventorySlotGroupKind::Content;
 
-	/** Number of slots contributed by this group. Values below 1 are ignored at runtime. */
+	/** Grid dimensions contributed by this container. Gear and carry containers should remain 1x1. */
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Inventory|Layout", meta = (ClampMin = "1", UIMin = "1"))
-	int32 SlotCount = 1;
+	FRpgInventoryGridSize GridSize;
 
-	/** Validation rule used by server moves and actionbar binding requests. */
+	/** Validation rule used by server moves and actionbar binding requests for cells in this container. */
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Inventory|Layout")
 	FRpgInventorySlotRule Rule;
 };
 
 /**
- * Runtime view of one slot group after the layout maps it onto global inventory SortIndex slots.
+ * Runtime view of one grid container after fixed and item-provided containers are resolved.
  */
 USTRUCT(BlueprintType)
 struct SURVIVALRPG_API FRpgInventorySlotGroupView
 {
 	GENERATED_BODY()
 
-	/** Stable group id used in FRpgInventorySlotAddress. */
+	/** Stable grid id used in FRpgInventorySlotAddress and replicated item placements. */
 	UPROPERTY(BlueprintReadOnly, Category = "Inventory|Layout")
-	FName GroupId = NAME_None;
+	FName ContainerId = NAME_None;
 
 	/** Player-facing label shown by inventory screens. */
 	UPROPERTY(BlueprintReadOnly, Category = "Inventory|Layout")
@@ -157,15 +162,11 @@ struct SURVIVALRPG_API FRpgInventorySlotGroupView
 	UPROPERTY(BlueprintReadOnly, Category = "Inventory|Layout")
 	ERpgInventorySlotGroupKind GroupKind = ERpgInventorySlotGroupKind::Content;
 
-	/** First global SortIndex slot represented by this group. */
+	/** Grid dimensions for this visible container. */
 	UPROPERTY(BlueprintReadOnly, Category = "Inventory|Layout")
-	int32 FirstGlobalSlotIndex = INDEX_NONE;
+	FRpgInventoryGridSize GridSize;
 
-	/** Number of contiguous global slots represented by this group. */
-	UPROPERTY(BlueprintReadOnly, Category = "Inventory|Layout")
-	int32 SlotCount = 0;
-
-	/** Server validation rule for every slot in this group. */
+	/** Server validation rule for every cell in this container. */
 	UPROPERTY(BlueprintReadOnly, Category = "Inventory|Layout")
 	FRpgInventorySlotRule Rule;
 
@@ -177,18 +178,21 @@ struct SURVIVALRPG_API FRpgInventorySlotGroupView
 	UPROPERTY(BlueprintReadOnly, Category = "Inventory|Layout")
 	FName SourceEquipmentSlotName = NAME_None;
 
-	FRpgInventorySlotAddress MakeAddress(int32 LocalSlotIndex) const
+	FRpgInventorySlotAddress MakeAddress(int32 X, int32 Y) const
 	{
 		FRpgInventorySlotAddress Address;
-		Address.GroupId = GroupId;
-		Address.LocalSlotIndex = LocalSlotIndex;
+		Address.ContainerId = ContainerId;
+		Address.X = X;
+		Address.Y = Y;
 		return Address;
 	}
 
-	bool ContainsGlobalSlotIndex(int32 GlobalSlotIndex) const
+	bool ContainsCell(int32 X, int32 Y) const
 	{
-		return FirstGlobalSlotIndex != INDEX_NONE &&
-			GlobalSlotIndex >= FirstGlobalSlotIndex &&
-			GlobalSlotIndex < FirstGlobalSlotIndex + SlotCount;
+		return GridSize.IsValid() &&
+			X >= 0 &&
+			Y >= 0 &&
+			X < GridSize.Width &&
+			Y < GridSize.Height;
 	}
 };

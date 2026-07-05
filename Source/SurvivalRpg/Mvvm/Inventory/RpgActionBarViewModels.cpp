@@ -128,7 +128,7 @@ void URpgActionBarSlotViewModel::InitializeSlot(int32 InSlotIndex, const FRpgAct
 	Icon = Presentation.Icon;
 	ShortDisplayName = !Presentation.ShortDisplayName.IsEmpty()
 		? Presentation.ShortDisplayName
-		: (bHasContent ? FText::FromString(FString::Printf(TEXT("%s %d"), *SlotAddress.GroupId.ToString(), SlotAddress.LocalSlotIndex + 1)) : FText::GetEmpty());
+		: (bHasContent ? FText::FromString(FString::Printf(TEXT("%s %d,%d"), *SlotAddress.ContainerId.ToString(), SlotAddress.X + 1, SlotAddress.Y + 1)) : FText::GetEmpty());
 
 	UE_MVVM_BROADCAST_FIELD_VALUE_CHANGED(SlotIndex);
 	UE_MVVM_BROADCAST_FIELD_VALUE_CHANGED(SlotType);

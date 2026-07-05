@@ -192,7 +192,7 @@ void URpgInventoryAddressTileView::SetPanelNavigationCoordinator(URpgInventoryPa
 
 bool URpgInventoryAddressTileView::QuickSplitSelectedAddressSlot(int32 SplitCount, int32 TargetSlotIndex)
 {
-	return DragDropCoordinator && DragDropCoordinator->QuickSplitAddressSlot(GetSelectedAddressSlot(), TargetSlotIndex, SplitCount);
+	return DragDropCoordinator && DragDropCoordinator->QuickSplitAddressSlot(GetSelectedAddressSlot(), FRpgInventoryGridPlacement(), SplitCount);
 }
 
 bool URpgInventoryAddressTileView::UseOrEquipSelectedAddressSlot(int32 StackCount)

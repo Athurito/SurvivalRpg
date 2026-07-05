@@ -312,11 +312,11 @@ void URpgInventoryUiActionComponent::RequestTransferItemStack_Implementation(URp
 	}
 }
 
-void URpgInventoryUiActionComponent::RequestTransferItemStackToInventorySlot_Implementation(URpgInventoryManagerComponent* SourceInventory, URpgInventoryManagerComponent* TargetInventory, URpgInventoryItemInstance* Item, int32 StackCount, int32 TargetSlotIndex)
+void URpgInventoryUiActionComponent::RequestTransferItemStackToPlacement_Implementation(URpgInventoryManagerComponent* SourceInventory, URpgInventoryManagerComponent* TargetInventory, URpgInventoryItemInstance* Item, int32 StackCount, FRpgInventoryGridPlacement TargetPlacement)
 {
-	if (!CanTransferItemStackToInventorySlot(SourceInventory, TargetInventory, Item, StackCount, TargetSlotIndex))
+	if (!CanTransferItemStackToPlacement(SourceInventory, TargetInventory, Item, StackCount, TargetPlacement))
 	{
-		const ERpgInventoryActionFeedbackResult Result = TargetSlotIndex < 0
+		const ERpgInventoryActionFeedbackResult Result = !TargetPlacement.IsValid()
 			? ERpgInventoryActionFeedbackResult::InvalidSlot
 			: ((!CanAccessInventory(SourceInventory) || !CanAccessInventory(TargetInventory))
 				? ERpgInventoryActionFeedbackResult::NoAccess
@@ -327,7 +327,7 @@ void URpgInventoryUiActionComponent::RequestTransferItemStackToInventorySlot_Imp
 
 	const int32 AvailableCount = SourceInventory->GetItemStackCount(Item);
 	const int32 RequestedCount = StackCount <= 0 ? AvailableCount : StackCount;
-	URpgInventoryItemInstance* TargetItem = TargetInventory->GetItemInSlot(TargetSlotIndex);
+	URpgInventoryItemInstance* TargetItem = TargetInventory->GetItemAtCell(TargetPlacement.ContainerId, TargetPlacement.X, TargetPlacement.Y);
 
 	if (TargetItem && TargetItem->GetItemDef() == Item->GetItemDef())
 	{
@@ -377,14 +377,14 @@ void URpgInventoryUiActionComponent::RequestTransferItemStackToInventorySlot_Imp
 			}
 
 			SourceInventory->RemoveItemInstance(Item);
-			TargetInventory->AddItemInstanceWithStackToSlot(Item, AvailableCount, TargetSlotIndex);
+			TargetInventory->AddItemInstanceWithStackToPlacement(Item, AvailableCount, TargetPlacement);
 			return;
 		}
 
 		const TSubclassOf<URpgInventoryItemDefinition> ItemDefinition = Item->GetItemDef();
 		if (SourceInventory->RemoveItemInstanceStack(Item, TransferCount))
 		{
-			TargetInventory->AddItemDefinitionToSlot(ItemDefinition, TransferCount, TargetSlotIndex);
+			TargetInventory->AddItemDefinitionToPlacement(ItemDefinition, TransferCount, TargetPlacement);
 		}
 		return;
 	}
@@ -394,9 +394,9 @@ void URpgInventoryUiActionComponent::RequestTransferItemStackToInventorySlot_Imp
 		return;
 	}
 
-	const int32 SourceSlotIndex = SourceInventory->GetItemSlotIndex(Item);
+	FRpgInventoryGridPlacement SourcePlacement;
 	const int32 TargetStackCount = TargetInventory->GetItemStackCount(TargetItem);
-	if (SourceSlotIndex == INDEX_NONE || TargetStackCount <= 0)
+	if (!SourceInventory->GetItemPlacement(Item, SourcePlacement) || TargetStackCount <= 0)
 	{
 		return;
 	}
@@ -421,8 +421,8 @@ void URpgInventoryUiActionComponent::RequestTransferItemStackToInventorySlot_Imp
 
 	SourceInventory->RemoveItemInstance(Item);
 	TargetInventory->RemoveItemInstance(TargetItem);
-	SourceInventory->AddItemInstanceWithStackToSlot(TargetItem, TargetStackCount, SourceSlotIndex);
-	TargetInventory->AddItemInstanceWithStackToSlot(Item, AvailableCount, TargetSlotIndex);
+	SourceInventory->AddItemInstanceWithStackToPlacement(TargetItem, TargetStackCount, SourcePlacement);
+	TargetInventory->AddItemInstanceWithStackToPlacement(Item, AvailableCount, TargetPlacement);
 }
 
 void URpgInventoryUiActionComponent::RequestApplyInventorySort_Implementation(URpgInventoryManagerComponent* Inventory, ERpgInventorySortMode SortMode)
@@ -445,14 +445,14 @@ void URpgInventoryUiActionComponent::RequestMoveInventoryEntry_Implementation(UR
 	Inventory->MoveInventoryEntry(EntryId, TargetIndex);
 }
 
-void URpgInventoryUiActionComponent::RequestMoveInventoryEntryToSlot_Implementation(URpgInventoryManagerComponent* Inventory, FGuid EntryId, int32 TargetSlotIndex)
+void URpgInventoryUiActionComponent::RequestMoveInventoryEntryToPlacement_Implementation(URpgInventoryManagerComponent* Inventory, FGuid EntryId, FRpgInventoryGridPlacement TargetPlacement)
 {
 	if (!CanAccessInventory(Inventory) || !Inventory->ContainsEntry(EntryId))
 	{
 		return;
 	}
 
-	Inventory->MoveInventoryEntryToSlot(EntryId, TargetSlotIndex);
+	Inventory->MoveInventoryEntryToPlacement(EntryId, TargetPlacement);
 }
 
 void URpgInventoryUiActionComponent::RequestMoveItemToInventorySlotAddress_Implementation(URpgInventoryItemInstance* Item, FRpgInventorySlotAddress TargetAddress)
@@ -465,18 +465,19 @@ void URpgInventoryUiActionComponent::RequestMoveItemToInventorySlotAddress_Imple
 		return;
 	}
 
-	int32 TargetGlobalSlotIndex = INDEX_NONE;
-	if (!InventoryLayout->ResolveSlotAddress(TargetAddress, TargetGlobalSlotIndex) ||
+	FRpgInventoryGridPlacement TargetPlacement;
+	if (!InventoryLayout->ResolveSlotAddress(TargetAddress, TargetPlacement) ||
 		!InventoryLayout->CanItemUseSlotAddress(Item, TargetAddress))
 	{
 		SendActionFeedback(RpgGameplayTags::Rpg_Inventory_Action_Transfer, ERpgInventoryActionFeedbackResult::InvalidSlot, PlayerInventory, Item, 1);
 		return;
 	}
 
-	const int32 SourceGlobalSlotIndex = PlayerInventory->GetItemSlotIndex(Item);
+	FRpgInventoryGridPlacement SourcePlacement;
 	FRpgInventorySlotAddress SourceAddress;
-	URpgInventoryItemInstance* TargetItem = PlayerInventory->GetItemInSlot(TargetGlobalSlotIndex);
-	const bool bHasSourceAddress = InventoryLayout->TryMakeSlotAddressFromGlobalSlotIndex(SourceGlobalSlotIndex, SourceAddress);
+	URpgInventoryItemInstance* TargetItem = PlayerInventory->GetItemAtCell(TargetPlacement.ContainerId, TargetPlacement.X, TargetPlacement.Y);
+	const bool bHasSourceAddress = PlayerInventory->GetItemPlacement(Item, SourcePlacement) &&
+		InventoryLayout->TryMakeSlotAddressFromPlacement(SourcePlacement, SourceAddress);
 	if (bHasSourceAddress && InventoryLayout->IsGearSlotAddress(SourceAddress) && !CanMoveItemOutOfGearSlot(SourceAddress))
 	{
 		SendActionFeedback(RpgGameplayTags::Rpg_Inventory_Action_Transfer, ERpgInventoryActionFeedbackResult::ServerRejected, PlayerInventory, Item, 1);
@@ -486,15 +487,14 @@ void URpgInventoryUiActionComponent::RequestMoveItemToInventorySlotAddress_Imple
 	if (bHasSourceAddress && InventoryLayout->IsGearSlotAddress(SourceAddress))
 	{
 		ERpgEquipmentSlot SourceEquipmentSlot = ERpgEquipmentSlot::None;
-		if (URpgPlayerInventoryLayoutComponent::TryGetEquipmentSlotForGearGroupId(SourceAddress.GroupId, SourceEquipmentSlot) &&
+		if (URpgPlayerInventoryLayoutComponent::TryGetEquipmentSlotForGearGroupId(SourceAddress.ContainerId, SourceEquipmentSlot) &&
 			URpgPlayerInventoryLayoutComponent::IsSlotContainerEquipmentSlot(SourceEquipmentSlot))
 		{
 			bool bTargetIsStaticContent = false;
 			for (const FRpgInventorySlotGroupView& Group : InventoryLayout->GetSlotGroups())
 			{
-				if (Group.GroupId == TargetAddress.GroupId &&
-					TargetAddress.LocalSlotIndex >= 0 &&
-					TargetAddress.LocalSlotIndex < Group.SlotCount)
+				if (Group.ContainerId == TargetAddress.ContainerId &&
+					Group.ContainsCell(TargetAddress.X, TargetAddress.Y))
 				{
 					bTargetIsStaticContent = Group.GroupKind == ERpgInventorySlotGroupKind::Content && !Group.bProvidedByEquipment;
 					break;
@@ -527,7 +527,7 @@ void URpgInventoryUiActionComponent::RequestMoveItemToInventorySlotAddress_Imple
 		}
 	}
 
-	if (!EntryId.IsValid() || !PlayerInventory->MoveInventoryEntryToSlot(EntryId, TargetGlobalSlotIndex))
+	if (!EntryId.IsValid() || !PlayerInventory->MoveInventoryEntryToPlacement(EntryId, TargetPlacement))
 	{
 		SendActionFeedback(RpgGameplayTags::Rpg_Inventory_Action_Transfer, ERpgInventoryActionFeedbackResult::ServerRejected, PlayerInventory, Item, 1);
 		return;
@@ -593,11 +593,11 @@ void URpgInventoryUiActionComponent::RequestActivateCarrySlot_Implementation(FRp
 	}
 
 	bool bActivated = false;
-	if (CarrySlotAddress.GroupId == URpgPlayerInventoryLayoutComponent::ShieldSlotGroupId)
+	if (CarrySlotAddress.ContainerId == URpgPlayerInventoryLayoutComponent::ShieldSlotGroupId)
 	{
 		bActivated = EquipmentLoadout->ActivateOffHandItem(Item);
 	}
-	else if (URpgPlayerInventoryLayoutComponent::IsBuiltInCarryGroupId(CarrySlotAddress.GroupId))
+	else if (URpgPlayerInventoryLayoutComponent::IsBuiltInCarryGroupId(CarrySlotAddress.ContainerId))
 	{
 		bActivated = EquipmentLoadout->ActivateMainHandItem(Item);
 	}
@@ -634,11 +634,11 @@ void URpgInventoryUiActionComponent::RequestBindActionBarToCarrySlot_Implementat
 	}
 }
 
-void URpgInventoryUiActionComponent::RequestSplitItemStack_Implementation(URpgInventoryManagerComponent* Inventory, URpgInventoryItemInstance* Item, int32 SplitCount, int32 TargetSlotIndex)
+void URpgInventoryUiActionComponent::RequestSplitItemStack_Implementation(URpgInventoryManagerComponent* Inventory, URpgInventoryItemInstance* Item, int32 SplitCount, FRpgInventoryGridPlacement TargetPlacement)
 {
 	int32 ActualSplitCount = 0;
-	int32 ActualTargetSlotIndex = INDEX_NONE;
-	if (!CanSplitItemStack(Inventory, Item, SplitCount, TargetSlotIndex, ActualSplitCount, ActualTargetSlotIndex))
+	FRpgInventoryGridPlacement ActualTargetPlacement;
+	if (!CanSplitItemStack(Inventory, Item, SplitCount, TargetPlacement, ActualSplitCount, ActualTargetPlacement))
 	{
 		const ERpgInventoryActionFeedbackResult Result = !Item || !IsStackableItem(Item)
 			? ERpgInventoryActionFeedbackResult::NotStackable
@@ -653,7 +653,7 @@ void URpgInventoryUiActionComponent::RequestSplitItemStack_Implementation(URpgIn
 		return;
 	}
 
-	if (!Inventory->AddItemDefinitionToSlot(ItemDefinition, ActualSplitCount, ActualTargetSlotIndex))
+	if (!Inventory->AddItemDefinitionToPlacement(ItemDefinition, ActualSplitCount, ActualTargetPlacement))
 	{
 		Inventory->AddStackToExistingItem(Item, ActualSplitCount);
 		SendActionFeedback(RpgGameplayTags::Rpg_Inventory_Action_Split, ERpgInventoryActionFeedbackResult::InventoryFull, Inventory, Item, ActualSplitCount);
@@ -798,9 +798,9 @@ void URpgInventoryUiActionComponent::RequestUnequipInventoryItemToContentSlot_Im
 	}
 
 	FRpgInventorySlotAddress SourceAddress;
-	const int32 SourceGlobalSlotIndex = PlayerInventory->GetItemSlotIndex(Item);
-	if (SourceGlobalSlotIndex == INDEX_NONE ||
-		!InventoryLayout->TryMakeSlotAddressFromGlobalSlotIndex(SourceGlobalSlotIndex, SourceAddress))
+	FRpgInventoryGridPlacement SourcePlacement;
+	if (!PlayerInventory->GetItemPlacement(Item, SourcePlacement) ||
+		!InventoryLayout->TryMakeSlotAddressFromPlacement(SourcePlacement, SourceAddress))
 	{
 		SendActionFeedback(RpgGameplayTags::Rpg_Inventory_Action_Equip, ERpgInventoryActionFeedbackResult::InvalidSlot, PlayerInventory, Item, 1);
 		return;
@@ -1479,9 +1479,9 @@ bool URpgInventoryUiActionComponent::CanTransferItemStack(URpgInventoryManagerCo
 	return CanTargetAcceptTransferredStack(TargetInventory, Item, RequestedCount, RequestedCount >= AvailableCount);
 }
 
-bool URpgInventoryUiActionComponent::CanTransferItemStackToInventorySlot(URpgInventoryManagerComponent* SourceInventory, URpgInventoryManagerComponent* TargetInventory, URpgInventoryItemInstance* Item, int32 StackCount, int32 TargetSlotIndex) const
+bool URpgInventoryUiActionComponent::CanTransferItemStackToPlacement(URpgInventoryManagerComponent* SourceInventory, URpgInventoryManagerComponent* TargetInventory, URpgInventoryItemInstance* Item, int32 StackCount, FRpgInventoryGridPlacement TargetPlacement) const
 {
-	if (!SourceInventory || !TargetInventory || SourceInventory == TargetInventory || !Item || TargetSlotIndex < 0)
+	if (!SourceInventory || !TargetInventory || SourceInventory == TargetInventory || !Item || !TargetPlacement.IsValid())
 	{
 		return false;
 	}
@@ -1503,15 +1503,15 @@ bool URpgInventoryUiActionComponent::CanTransferItemStackToInventorySlot(URpgInv
 		return false;
 	}
 
-	URpgInventoryItemInstance* TargetItem = TargetInventory->GetItemInSlot(TargetSlotIndex);
+	URpgInventoryItemInstance* TargetItem = TargetInventory->GetItemAtCell(TargetPlacement.ContainerId, TargetPlacement.X, TargetPlacement.Y);
 	if (!TargetItem)
 	{
 		if (RequestedCount >= AvailableCount)
 		{
-			return TargetInventory->CanAddItemInstanceToSlot(Item, AvailableCount, TargetSlotIndex);
+			return TargetInventory->CanAddItemInstanceToPlacement(Item, AvailableCount, TargetPlacement);
 		}
 
-		return TargetInventory->CanAddItemDefinitionToSlot(Item->GetItemDef(), RequestedCount, TargetSlotIndex);
+		return TargetInventory->CanAddItemDefinitionToPlacement(Item->GetItemDef(), RequestedCount, TargetPlacement);
 	}
 
 	if (TargetItem->GetItemDef() == Item->GetItemDef() && TargetInventory->GetFreeStackCapacity(TargetItem) > 0)
@@ -1519,13 +1519,14 @@ bool URpgInventoryUiActionComponent::CanTransferItemStackToInventorySlot(URpgInv
 		return true;
 	}
 
-	return RequestedCount >= AvailableCount && SourceInventory->GetItemSlotIndex(Item) != INDEX_NONE;
+	FRpgInventoryGridPlacement SourcePlacement;
+	return RequestedCount >= AvailableCount && SourceInventory->GetItemPlacement(Item, SourcePlacement);
 }
 
-bool URpgInventoryUiActionComponent::CanSplitItemStack(URpgInventoryManagerComponent* Inventory, URpgInventoryItemInstance* Item, int32 SplitCount, int32 TargetSlotIndex, int32& OutSplitCount, int32& OutTargetSlotIndex) const
+bool URpgInventoryUiActionComponent::CanSplitItemStack(URpgInventoryManagerComponent* Inventory, URpgInventoryItemInstance* Item, int32 SplitCount, FRpgInventoryGridPlacement TargetPlacement, int32& OutSplitCount, FRpgInventoryGridPlacement& OutTargetPlacement) const
 {
 	OutSplitCount = 0;
-	OutTargetSlotIndex = INDEX_NONE;
+	OutTargetPlacement = FRpgInventoryGridPlacement();
 
 	if (!Inventory || !Item || !CanAccessInventory(Inventory) || !IsStackableItem(Item))
 	{
@@ -1544,44 +1545,93 @@ bool URpgInventoryUiActionComponent::CanSplitItemStack(URpgInventoryManagerCompo
 		return false;
 	}
 
-	int32 ResolvedTargetSlotIndex = TargetSlotIndex;
-	if (ResolvedTargetSlotIndex == INDEX_NONE && !FindFirstEmptyInventorySlot(Inventory, ResolvedTargetSlotIndex))
+	FRpgInventoryGridPlacement ResolvedTargetPlacement = TargetPlacement;
+	if (!ResolvedTargetPlacement.IsValid() && !FindFirstEmptyInventoryPlacement(Inventory, Item->GetItemDef(), ResolvedTargetPlacement))
 	{
 		return false;
 	}
 
-	if (ResolvedTargetSlotIndex < 0 || Inventory->GetItemInSlot(ResolvedTargetSlotIndex) != nullptr)
+	if (!ResolvedTargetPlacement.IsValid() || Inventory->GetItemAtCell(ResolvedTargetPlacement.ContainerId, ResolvedTargetPlacement.X, ResolvedTargetPlacement.Y) != nullptr)
 	{
 		return false;
 	}
 
-	if (!Inventory->CanAddItemDefinitionToSlot(Item->GetItemDef(), RequestedSplitCount, ResolvedTargetSlotIndex))
+	if (!Inventory->CanAddItemDefinitionToPlacement(Item->GetItemDef(), RequestedSplitCount, ResolvedTargetPlacement))
 	{
 		return false;
 	}
 
 	OutSplitCount = RequestedSplitCount;
-	OutTargetSlotIndex = ResolvedTargetSlotIndex;
+	OutTargetPlacement = ResolvedTargetPlacement;
 	return true;
 }
 
-bool URpgInventoryUiActionComponent::FindFirstEmptyInventorySlot(URpgInventoryManagerComponent* Inventory, int32& OutSlotIndex) const
+bool URpgInventoryUiActionComponent::FindFirstEmptyInventoryPlacement(URpgInventoryManagerComponent* Inventory, TSubclassOf<URpgInventoryItemDefinition> ItemDefinition, FRpgInventoryGridPlacement& OutPlacement) const
 {
-	OutSlotIndex = INDEX_NONE;
-	if (!Inventory)
+	OutPlacement = FRpgInventoryGridPlacement();
+	if (!Inventory || !ItemDefinition)
 	{
 		return false;
 	}
 
-	const int32 ScanLimit = Inventory->IsCapacityUnlimited()
-		? Inventory->GetUsedEntryCount() + 1
-		: Inventory->GetMaxEntries();
-	for (int32 SlotIndex = 0; SlotIndex < ScanLimit; ++SlotIndex)
+	if (URpgInventoryManagerComponent* PlayerInventory = FindPlayerInventory(); Inventory == PlayerInventory)
 	{
-		if (!Inventory->GetItemInSlot(SlotIndex))
+		if (const URpgPlayerInventoryLayoutComponent* InventoryLayout = FindPlayerInventoryLayout())
 		{
-			OutSlotIndex = SlotIndex;
-			return true;
+			for (const FRpgInventorySlotGroupView& Group : InventoryLayout->GetSlotGroups())
+			{
+				if (Group.GroupKind != ERpgInventorySlotGroupKind::Content || !Group.Rule.AllowsItemDefinition(ItemDefinition))
+				{
+					continue;
+				}
+
+				for (int32 Y = 0; Y < Group.GridSize.Height; ++Y)
+				{
+					for (int32 X = 0; X < Group.GridSize.Width; ++X)
+					{
+						FRpgInventoryGridPlacement Candidate;
+						Candidate.ContainerId = Group.ContainerId;
+						Candidate.X = X;
+						Candidate.Y = Y;
+						Candidate.Width = 1;
+						Candidate.Height = 1;
+						if (Inventory->CanAddItemDefinitionToPlacement(ItemDefinition, 1, Candidate))
+						{
+							OutPlacement = Candidate;
+							return true;
+						}
+					}
+				}
+			}
+		}
+
+		return false;
+	}
+
+	for (const FRpgInventoryEntryView& Entry : Inventory->GetAllEntries())
+	{
+		if (Entry.Placement.ContainerId.IsNone())
+		{
+			continue;
+		}
+	}
+
+	const FName DefaultContainerId(TEXT("Storage"));
+	for (int32 Y = 0; Y < 32; ++Y)
+	{
+		for (int32 X = 0; X < 32; ++X)
+		{
+			FRpgInventoryGridPlacement Candidate;
+			Candidate.ContainerId = DefaultContainerId;
+			Candidate.X = X;
+			Candidate.Y = Y;
+			Candidate.Width = 1;
+			Candidate.Height = 1;
+			if (Inventory->CanAddItemDefinitionToPlacement(ItemDefinition, 1, Candidate))
+			{
+				OutPlacement = Candidate;
+				return true;
+			}
 		}
 	}
 
@@ -1700,8 +1750,9 @@ bool URpgInventoryUiActionComponent::TryMoveItemToFirstCompatibleCarrySlot(URpgI
 	}
 
 	FRpgInventorySlotAddress CurrentAddress;
-	const int32 CurrentGlobalSlotIndex = PlayerInventory->GetItemSlotIndex(Item);
-	if (InventoryLayout->TryMakeSlotAddressFromGlobalSlotIndex(CurrentGlobalSlotIndex, CurrentAddress) &&
+	FRpgInventoryGridPlacement CurrentPlacement;
+	if (PlayerInventory->GetItemPlacement(Item, CurrentPlacement) &&
+		InventoryLayout->TryMakeSlotAddressFromPlacement(CurrentPlacement, CurrentAddress) &&
 		InventoryLayout->IsCarrySlotAddress(CurrentAddress) &&
 		InventoryLayout->CanItemUseSlotAddress(Item, CurrentAddress))
 	{
@@ -1730,12 +1781,20 @@ bool URpgInventoryUiActionComponent::TryMoveItemToFirstCompatibleCarrySlot(URpgI
 			continue;
 		}
 
-		for (int32 LocalSlotIndex = 0; LocalSlotIndex < Group.SlotCount; ++LocalSlotIndex)
+		for (int32 Y = 0; Y < Group.GridSize.Height; ++Y)
 		{
-			const int32 GlobalSlotIndex = Group.FirstGlobalSlotIndex + LocalSlotIndex;
-			if (PlayerInventory->GetItemInSlot(GlobalSlotIndex) == nullptr)
+			for (int32 X = 0; X < Group.GridSize.Width; ++X)
 			{
-				return PlayerInventory->MoveInventoryEntryToSlot(EntryId, GlobalSlotIndex);
+				if (PlayerInventory->GetItemAtCell(Group.ContainerId, X, Y) == nullptr)
+				{
+					FRpgInventoryGridPlacement TargetPlacement;
+					TargetPlacement.ContainerId = Group.ContainerId;
+					TargetPlacement.X = X;
+					TargetPlacement.Y = Y;
+					TargetPlacement.Width = 1;
+					TargetPlacement.Height = 1;
+					return PlayerInventory->MoveInventoryEntryToPlacement(EntryId, TargetPlacement);
+				}
 			}
 		}
 	}
@@ -1754,13 +1813,13 @@ bool URpgInventoryUiActionComponent::TryMoveItemToFirstCompatibleContentSlot(URp
 
 	FName DisappearingProviderSourceName = NAME_None;
 	FRpgInventorySlotAddress SourceAddress;
-	const int32 SourceGlobalSlotIndex = PlayerInventory->GetItemSlotIndex(Item);
-	if (SourceGlobalSlotIndex != INDEX_NONE &&
-		InventoryLayout->TryMakeSlotAddressFromGlobalSlotIndex(SourceGlobalSlotIndex, SourceAddress) &&
+	FRpgInventoryGridPlacement SourcePlacement;
+	if (PlayerInventory->GetItemPlacement(Item, SourcePlacement) &&
+		InventoryLayout->TryMakeSlotAddressFromPlacement(SourcePlacement, SourceAddress) &&
 		InventoryLayout->IsGearSlotAddress(SourceAddress))
 	{
 		ERpgEquipmentSlot SourceEquipmentSlot = ERpgEquipmentSlot::None;
-		if (URpgPlayerInventoryLayoutComponent::TryGetEquipmentSlotForGearGroupId(SourceAddress.GroupId, SourceEquipmentSlot) &&
+		if (URpgPlayerInventoryLayoutComponent::TryGetEquipmentSlotForGearGroupId(SourceAddress.ContainerId, SourceEquipmentSlot) &&
 			URpgPlayerInventoryLayoutComponent::IsSlotContainerEquipmentSlot(SourceEquipmentSlot))
 		{
 			switch (SourceEquipmentSlot)
@@ -1810,12 +1869,20 @@ bool URpgInventoryUiActionComponent::TryMoveItemToFirstCompatibleContentSlot(URp
 			continue;
 		}
 
-		for (int32 LocalSlotIndex = 0; LocalSlotIndex < Group.SlotCount; ++LocalSlotIndex)
+		for (int32 Y = 0; Y < Group.GridSize.Height; ++Y)
 		{
-			const int32 GlobalSlotIndex = Group.FirstGlobalSlotIndex + LocalSlotIndex;
-			if (PlayerInventory->GetItemInSlot(GlobalSlotIndex) == nullptr)
+			for (int32 X = 0; X < Group.GridSize.Width; ++X)
 			{
-				return PlayerInventory->MoveInventoryEntryToSlot(EntryId, GlobalSlotIndex);
+				if (PlayerInventory->GetItemAtCell(Group.ContainerId, X, Y) == nullptr)
+				{
+					FRpgInventoryGridPlacement TargetPlacement;
+					TargetPlacement.ContainerId = Group.ContainerId;
+					TargetPlacement.X = X;
+					TargetPlacement.Y = Y;
+					TargetPlacement.Width = 1;
+					TargetPlacement.Height = 1;
+					return PlayerInventory->MoveInventoryEntryToPlacement(EntryId, TargetPlacement);
+				}
 			}
 		}
 	}
@@ -1826,7 +1893,7 @@ bool URpgInventoryUiActionComponent::TryMoveItemToFirstCompatibleContentSlot(URp
 bool URpgInventoryUiActionComponent::CanMoveItemOutOfGearSlot(const FRpgInventorySlotAddress& SourceAddress) const
 {
 	ERpgEquipmentSlot EquipmentSlot = ERpgEquipmentSlot::None;
-	if (!URpgPlayerInventoryLayoutComponent::TryGetEquipmentSlotForGearGroupId(SourceAddress.GroupId, EquipmentSlot))
+	if (!URpgPlayerInventoryLayoutComponent::TryGetEquipmentSlotForGearGroupId(SourceAddress.ContainerId, EquipmentSlot))
 	{
 		return true;
 	}
@@ -1866,14 +1933,14 @@ void URpgInventoryUiActionComponent::SyncEquipmentLoadoutFromGearSlots() const
 	for (const ERpgEquipmentSlot EquipmentSlot : GearSlots)
 	{
 		FRpgInventorySlotAddress GearAddress;
-		int32 GlobalSlotIndex = INDEX_NONE;
+		FRpgInventoryGridPlacement GearPlacement;
 		if (!URpgPlayerInventoryLayoutComponent::TryMakeGearSlotAddress(EquipmentSlot, GearAddress) ||
-			!InventoryLayout->ResolveSlotAddress(GearAddress, GlobalSlotIndex))
+			!InventoryLayout->ResolveSlotAddress(GearAddress, GearPlacement))
 		{
 			continue;
 		}
 
-		URpgInventoryItemInstance* GearItem = PlayerInventory->GetItemInSlot(GlobalSlotIndex);
+		URpgInventoryItemInstance* GearItem = PlayerInventory->GetItemAtCell(GearPlacement.ContainerId, GearPlacement.X, GearPlacement.Y);
 		if (EquipmentLoadout->GetItemInEquipmentSlot(EquipmentSlot) == GearItem)
 		{
 			continue;
@@ -1913,17 +1980,20 @@ void URpgInventoryUiActionComponent::SyncActiveHandsFromCarrySlots() const
 				continue;
 			}
 
-			const bool bGroupIsOffHand = Group.GroupId == URpgPlayerInventoryLayoutComponent::ShieldSlotGroupId;
+			const bool bGroupIsOffHand = Group.ContainerId == URpgPlayerInventoryLayoutComponent::ShieldSlotGroupId;
 			if (bGroupIsOffHand != bOffHand)
 			{
 				continue;
 			}
 
-			for (int32 LocalSlotIndex = 0; LocalSlotIndex < Group.SlotCount; ++LocalSlotIndex)
+			for (int32 Y = 0; Y < Group.GridSize.Height; ++Y)
 			{
-				if (InventoryLayout->GetItemInSlotAddress(Group.MakeAddress(LocalSlotIndex)) == Item)
+				for (int32 X = 0; X < Group.GridSize.Width; ++X)
 				{
-					return true;
+					if (InventoryLayout->GetItemInSlotAddress(Group.MakeAddress(X, Y)) == Item)
+					{
+						return true;
+					}
 				}
 			}
 		}

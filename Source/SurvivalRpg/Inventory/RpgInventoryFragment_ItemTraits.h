@@ -3,6 +3,7 @@
 #include "GameplayTagContainer.h"
 #include "RpgInventoryItemDefinition.h"
 #include "RpgInventoryItemTypes.h"
+#include "RpgInventorySpatialTypes.h"
 #include "Templates/SubclassOf.h"
 #include "UObject/SoftObjectPtr.h"
 
@@ -12,6 +13,28 @@ class UTexture2D;
 class UGameplayEffect;
 class UAnimMontage;
 class URpgGameplayAbility;
+
+/**
+ * Static spatial footprint used by the server when placing an item in a grid inventory.
+ */
+UCLASS(BlueprintType)
+class SURVIVALRPG_API URpgInventoryFragment_SpatialItem : public URpgInventoryItemFragment
+{
+	GENERATED_BODY()
+
+public:
+	/** Unrotated item size in inventory grid cells. Static definition data used by server placement validation. */
+	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Inventory|Spatial")
+	FRpgInventoryGridSize Footprint;
+
+	/** If true, the item may be rotated by UI/controller input before server placement validation. */
+	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Inventory|Spatial")
+	bool bAllowRotation = true;
+
+	/** Returns the configured footprint after applying optional rotation. */
+	UFUNCTION(BlueprintPure, Category = "Inventory|Spatial")
+	FRpgInventoryGridSize GetFootprint(bool bRotated) const { return Footprint.GetRotated(bRotated && bAllowRotation); }
+};
 
 /**
  * One SetByCaller value written onto an outgoing item-use GameplayEffect spec.

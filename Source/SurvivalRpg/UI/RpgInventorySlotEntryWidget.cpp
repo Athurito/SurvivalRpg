@@ -48,7 +48,7 @@ bool URpgInventorySlotEntryWidget::HandleEntryQuickTransfer(URpgInventoryManager
 
 bool URpgInventorySlotEntryWidget::HandleEntryQuickSplit(int32 SplitCount, int32 TargetSlotIndex)
 {
-	return DragDropCoordinator && EntryViewModel && DragDropCoordinator->QuickSplitEntry(EntryViewModel, TargetSlotIndex, SplitCount);
+	return DragDropCoordinator && EntryViewModel && DragDropCoordinator->QuickSplitEntry(EntryViewModel, FRpgInventoryGridPlacement(), SplitCount);
 }
 
 bool URpgInventorySlotEntryWidget::HandleEntryUseOrEquip(int32 StackCount)

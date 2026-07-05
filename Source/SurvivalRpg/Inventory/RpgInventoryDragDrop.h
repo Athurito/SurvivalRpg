@@ -91,9 +91,9 @@ struct SURVIVALRPG_API FRpgInventoryDragPayload
 	UPROPERTY(BlueprintReadWrite, Category = "Inventory|DragDrop")
 	int32 StackCount = 0;
 
-	/** Source visual slot index for inventory payloads. */
+	/** Source spatial placement for inventory payloads. UI-only, server revalidates before moving. */
 	UPROPERTY(BlueprintReadWrite, Category = "Inventory|DragDrop")
-	int32 SourceSlotIndex = INDEX_NONE;
+	FRpgInventoryGridPlacement SourcePlacement;
 
 	/** Logical source address when the payload came from the player inventory layout UI. */
 	UPROPERTY(BlueprintReadWrite, Category = "Inventory|DragDrop")
@@ -123,9 +123,9 @@ struct SURVIVALRPG_API FRpgInventoryDropTarget
 	UPROPERTY(BlueprintReadWrite, Category = "Inventory|DragDrop")
 	TObjectPtr<URpgInventoryManagerComponent> TargetInventory = nullptr;
 
-	/** Target visual slot index for inventory reorder or capacity-slot placement. */
+	/** Target spatial placement for inventory reorder or exact capacity placement. */
 	UPROPERTY(BlueprintReadWrite, Category = "Inventory|DragDrop")
-	int32 TargetIndex = INDEX_NONE;
+	FRpgInventoryGridPlacement TargetPlacement;
 
 	/** Target logical address for player-inventory layout slots or actionbar slot-source binding. */
 	UPROPERTY(BlueprintReadWrite, Category = "Inventory|DragDrop")
@@ -299,11 +299,11 @@ public:
 
 	/** Returns true when the focused entry can be split into a separate stack. */
 	UFUNCTION(BlueprintCallable, Category = "Inventory|Shortcuts")
-	bool CanQuickSplitEntry(URpgInventoryEntryViewModel* EntryViewModel, int32 TargetSlotIndex = -1, int32 SplitCount = 0) const;
+	bool CanQuickSplitEntry(URpgInventoryEntryViewModel* EntryViewModel, FRpgInventoryGridPlacement TargetPlacement, int32 SplitCount = 0) const;
 
-	/** Sends a split-stack command. SplitCount <= 0 uses the V1 50% quick split rule. */
+	/** Sends a split-stack command. SplitCount <= 0 uses the 50% quick split rule. */
 	UFUNCTION(BlueprintCallable, Category = "Inventory|Shortcuts")
-	bool QuickSplitEntry(URpgInventoryEntryViewModel* EntryViewModel, int32 TargetSlotIndex = -1, int32 SplitCount = 0);
+	bool QuickSplitEntry(URpgInventoryEntryViewModel* EntryViewModel, FRpgInventoryGridPlacement TargetPlacement, int32 SplitCount = 0);
 
 	/** Uses a usable item, otherwise tries to equip it through equipment slots. */
 	UFUNCTION(BlueprintCallable, Category = "Inventory|Shortcuts")
@@ -315,7 +315,7 @@ public:
 
 	/** Quick-splits one logical player-inventory address slot. SplitCount <= 0 performs quick 50%. */
 	UFUNCTION(BlueprintCallable, Category = "Inventory|Shortcuts")
-	bool QuickSplitAddressSlot(URpgInventoryAddressSlotViewModel* SlotViewModel, int32 TargetSlotIndex = -1, int32 SplitCount = 0);
+	bool QuickSplitAddressSlot(URpgInventoryAddressSlotViewModel* SlotViewModel, FRpgInventoryGridPlacement TargetPlacement, int32 SplitCount = 0);
 
 	/** Requests a manual world drop for the focused entry. Confirmed must be true for confirm-protected items. */
 	UFUNCTION(BlueprintCallable, Category = "Inventory|Shortcuts")

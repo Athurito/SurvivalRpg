@@ -46,11 +46,6 @@ namespace
 			}
 		}
 
-		if (InventoryComponent->IsCapacityUnlimited())
-		{
-			return true;
-		}
-
 		TMap<TSubclassOf<URpgInventoryItemDefinition>, int32> ExistingFreeStackSpaceByDefinition;
 		for (const FRpgInventoryEntryView& Entry : InventoryComponent->GetAllEntries())
 		{
@@ -94,7 +89,28 @@ namespace
 			}
 		}
 
-		return RequiredNewEntries <= InventoryComponent->GetFreeEntryCount();
+		if (!InventoryComponent->IsCapacityUnlimited() && RequiredNewEntries > InventoryComponent->GetFreeEntryCount())
+		{
+			return false;
+		}
+
+		for (const FPickupTemplate& Template : PickupInventory.Templates)
+		{
+			if (!InventoryComponent->CanAddItemDefinition(Template.ItemDef, Template.StackCount))
+			{
+				return false;
+			}
+		}
+
+		for (const FPickupInstance& Instance : PickupInventory.Instances)
+		{
+			if (!InventoryComponent->CanAddItemInstance(Instance.Item, 1))
+			{
+				return false;
+			}
+		}
+
+		return true;
 	}
 }
 

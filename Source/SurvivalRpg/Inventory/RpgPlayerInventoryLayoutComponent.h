@@ -24,16 +24,16 @@ struct SURVIVALRPG_API FRpgPlayerInventoryLayoutChangedMessage
 	UPROPERTY(BlueprintReadOnly, Category = "Inventory|Layout")
 	TObjectPtr<UActorComponent> LayoutComponent = nullptr;
 
-	/** Total slot count after rebuilding fixed and bag-provided groups. */
+	/** Total grid-cell count after rebuilding fixed and item-provided containers. */
 	UPROPERTY(BlueprintReadOnly, Category = "Inventory|Layout")
-	int32 TotalSlotCount = 0;
+	int32 TotalCellCount = 0;
 };
 
 /**
  * Controller-owned layout mapper for the player's single inventory manager.
  *
- * The component does not own items. It maps logical slot groups such as WeaponSlot1, Belt, or Backpack to global
- * SortIndex slots on the existing player inventory and validates which items may occupy those addresses.
+ * The component does not own items. It maps logical containers such as WeaponSlot1, Belt, or Backpack to spatial
+ * grid cells on the existing player inventory and validates which items may occupy those addresses.
  */
 UCLASS(Blueprintable, meta = (BlueprintSpawnableComponent))
 class SURVIVALRPG_API URpgPlayerInventoryLayoutComponent : public UControllerComponent
@@ -49,17 +49,21 @@ public:
 	UFUNCTION(BlueprintCallable, BlueprintPure = false, Category = "Inventory|Layout")
 	TArray<FRpgInventorySlotGroupView> GetSlotGroups() const;
 
-	/** Returns the total number of global slots currently exposed by this layout. */
+	/** Returns the total number of grid cells currently exposed by this layout. */
 	UFUNCTION(BlueprintCallable, BlueprintPure = false, Category = "Inventory|Layout")
-	int32 GetTotalSlotCount() const;
+	int32 GetTotalCellCount() const;
 
-	/** Resolves a logical slot address to the global SortIndex slot used by URpgInventoryManagerComponent. */
+	/** Resolves a logical cell address to the authoritative spatial placement used by URpgInventoryManagerComponent. */
 	UFUNCTION(BlueprintCallable, BlueprintPure = false, Category = "Inventory|Layout")
-	bool ResolveSlotAddress(const FRpgInventorySlotAddress& Address, int32& OutGlobalSlotIndex) const;
+	bool ResolveSlotAddress(const FRpgInventorySlotAddress& Address, FRpgInventoryGridPlacement& OutPlacement) const;
 
-	/** Resolves a global SortIndex slot back to its logical group address. */
+	/** Resolves an authoritative spatial placement back to a logical grid-cell address. */
 	UFUNCTION(BlueprintCallable, BlueprintPure = false, Category = "Inventory|Layout")
-	bool TryMakeSlotAddressFromGlobalSlotIndex(int32 GlobalSlotIndex, FRpgInventorySlotAddress& OutAddress) const;
+	bool TryMakeSlotAddressFromPlacement(const FRpgInventoryGridPlacement& Placement, FRpgInventorySlotAddress& OutAddress) const;
+
+	/** Returns the dimensions of one active logical grid container. */
+	UFUNCTION(BlueprintCallable, BlueprintPure = false, Category = "Inventory|Layout")
+	bool GetGridSizeForContainer(FName ContainerId, FRpgInventoryGridSize& OutGridSize) const;
 
 	/** Returns the item currently stored at a logical player-inventory slot address. */
 	UFUNCTION(BlueprintCallable, BlueprintPure = false, Category = "Inventory|Layout")
@@ -89,7 +93,7 @@ public:
 	UFUNCTION(BlueprintCallable, BlueprintPure = false, Category = "Inventory|Layout")
 	bool IsContentSlotAddress(const FRpgInventorySlotAddress& Address) const;
 
-	/** Applies the current layout slot count to the player inventory as a fixed entry capacity on the server. */
+	/** Applies the current layout cell count to the player inventory as a fixed entry capacity on the server. */
 	UFUNCTION(BlueprintCallable, BlueprintAuthorityOnly, Category = "Inventory|Layout")
 	void ApplyLayoutCapacityToInventory();
 
@@ -101,11 +105,11 @@ public:
 	UFUNCTION(BlueprintCallable, BlueprintPure = false, Category = "Inventory|Layout")
 	bool CanUnequipSlotContainer(ERpgEquipmentSlot EquipmentSlot) const;
 
-	/** Returns true when a logical group id is one of the built-in carry slot groups. */
+	/** Returns true when a logical container id is one of the built-in carry slot containers. */
 	UFUNCTION(BlueprintCallable, BlueprintPure, Category = "Inventory|Layout")
 	static bool IsBuiltInCarryGroupId(FName GroupId);
 
-	/** Returns true when a logical group id is one of the built-in dedicated gear slot groups. */
+	/** Returns true when a logical container id is one of the built-in dedicated gear slot containers. */
 	UFUNCTION(BlueprintCallable, BlueprintPure, Category = "Inventory|Layout")
 	static bool IsBuiltInGearGroupId(FName GroupId);
 
@@ -138,12 +142,12 @@ private:
 	URpgInventoryManagerComponent* FindPlayerInventory() const;
 	URpgEquipmentLoadoutComponent* FindEquipmentLoadout() const;
 	TArray<FRpgInventorySlotGroupView> BuildSlotGroups() const;
-	void AppendGroupViews(const TArray<FRpgInventorySlotGroupDefinition>& GroupDefinitions, bool bProvidedByEquipment, ERpgEquipmentSlot SourceEquipmentSlot, TArray<FRpgInventorySlotGroupView>& OutGroups, int32& InOutFirstGlobalSlotIndex) const;
+	void AppendGroupViews(const TArray<FRpgInventorySlotGroupDefinition>& GroupDefinitions, bool bProvidedByEquipment, ERpgEquipmentSlot SourceEquipmentSlot, TArray<FRpgInventorySlotGroupView>& OutGroups) const;
 	void BroadcastLayoutChanged() const;
 	static FName EquipmentSlotToSourceName(ERpgEquipmentSlot EquipmentSlot);
-	static FRpgInventorySlotGroupDefinition MakeStaticGroup(FName GroupId, const FText& DisplayName, int32 SlotCount, const TArray<ERpgInventoryItemCategory>& AllowedCategories, bool bActionbarBindable, bool bCarrySlot, ERpgInventorySlotGroupKind GroupKind);
+	static FRpgInventorySlotGroupDefinition MakeStaticGroup(FName ContainerId, const FText& DisplayName, int32 GridWidth, int32 GridHeight, const TArray<ERpgInventoryItemCategory>& AllowedCategories, bool bActionbarBindable, bool bCarrySlot, ERpgInventorySlotGroupKind GroupKind);
 
-	/** Built-in body/carry slot groups. Runtime bag/provider groups are appended after these. */
-	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Inventory|Layout", meta = (AllowPrivateAccess = "true", TitleProperty = "GroupId"))
+	/** Built-in body/carry/content containers. Runtime item-provider containers are appended after these. */
+	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Inventory|Layout", meta = (AllowPrivateAccess = "true", TitleProperty = "ContainerId"))
 	TArray<FRpgInventorySlotGroupDefinition> StaticSlotGroups;
 };
