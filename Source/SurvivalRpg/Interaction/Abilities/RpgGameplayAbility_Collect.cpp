@@ -7,6 +7,7 @@
 #include "SurvivalRpg/Core/Player/RpgPlayerController.h"
 #include "SurvivalRpg/Equipment/RpgEquipmentLoadoutComponent.h"
 #include "SurvivalRpg/Inventory/IPickupable.h"
+#include "SurvivalRpg/Inventory/RpgDroppedInventoryActor.h"
 #include "SurvivalRpg/Inventory/RpgInventoryFragment_EquippableItem.h"
 #include "SurvivalRpg/Inventory/RpgInventoryFragment_ItemTraits.h"
 #include "SurvivalRpg/Inventory/RpgInventoryItemDefinition.h"
@@ -144,6 +145,17 @@ void URpgGameplayAbility_Collect::ActivateAbility(
 	const FInventoryPickup PickupInventory = Pickup->GetPickupInventory();
 	if (!CanAddPickupToInventory(InventoryComponent, PickupInventory))
 	{
+		if (ARpgDroppedInventoryActor* DroppedInventoryActor = Cast<ARpgDroppedInventoryActor>(TargetActor))
+		{
+			if (URpgInventoryManagerComponent* LootInventory = DroppedInventoryActor->GetLootInventoryManager())
+			{
+				if (ARpgPlayerController* PlayerController = FindPlayerControllerForActor(InteractingActor))
+				{
+					PlayerController->ClientOpenLootInventory(InventoryComponent, LootInventory, DroppedInventoryActor);
+				}
+			}
+		}
+
 		EndAbility(Handle, ActorInfo, ActivationInfo, true, true);
 		return;
 	}

@@ -34,6 +34,10 @@ public:
 	UFUNCTION(BlueprintCallable, Category = "Inventory|Address Slot")
 	void SetAddressSlotViewModel(URpgInventoryAddressSlotViewModel* InSlotViewModel);
 
+	/** Marks whether the owning address panel is the active controller panel. */
+	UFUNCTION(BlueprintCallable, Category = "Inventory|Address Slot")
+	void SetInventoryPanelActive(bool bInInventoryPanelActive);
+
 	/** Current logical slot VM assigned by the owning list/tile view. */
 	UFUNCTION(BlueprintPure, Category = "Inventory|Address Slot")
 	URpgInventoryAddressSlotViewModel* GetAddressSlotViewModel() const { return SlotViewModel.Get(); }
@@ -99,4 +103,5 @@ private:
 	ERpgInventorySlotDragVisualState CurrentDragDropVisualState = ERpgInventorySlotDragVisualState::Normal;
 
 	bool bSlotSelected = false;
+	bool bInventoryPanelActive = true;
 };

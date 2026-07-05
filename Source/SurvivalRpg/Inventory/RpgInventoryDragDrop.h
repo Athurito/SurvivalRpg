@@ -309,9 +309,21 @@ public:
 	UFUNCTION(BlueprintCallable, Category = "Inventory|Shortcuts")
 	bool UseOrEquipEntry(URpgInventoryEntryViewModel* EntryViewModel, int32 StackCount = 1);
 
+	/** Uses/equips or unequips one logical player-inventory address slot. */
+	UFUNCTION(BlueprintCallable, Category = "Inventory|Shortcuts")
+	bool UseOrEquipAddressSlot(URpgInventoryAddressSlotViewModel* SlotViewModel, int32 StackCount = 1);
+
+	/** Quick-splits one logical player-inventory address slot. SplitCount <= 0 performs quick 50%. */
+	UFUNCTION(BlueprintCallable, Category = "Inventory|Shortcuts")
+	bool QuickSplitAddressSlot(URpgInventoryAddressSlotViewModel* SlotViewModel, int32 TargetSlotIndex = -1, int32 SplitCount = 0);
+
 	/** Requests a manual world drop for the focused entry. Confirmed must be true for confirm-protected items. */
 	UFUNCTION(BlueprintCallable, Category = "Inventory|Shortcuts")
 	bool DropEntry(URpgInventoryEntryViewModel* EntryViewModel, int32 StackCount = 0, bool bConfirmed = false);
+
+	/** Requests a manual world drop for one logical player-inventory address slot. */
+	UFUNCTION(BlueprintCallable, Category = "Inventory|Shortcuts")
+	bool DropAddressSlot(URpgInventoryAddressSlotViewModel* SlotViewModel, int32 StackCount = 0, bool bConfirmed = false);
 
 	/** Computes the visual drag/drop state for one inventory entry widget. */
 	UFUNCTION(BlueprintCallable, Category = "Inventory|DragDrop")

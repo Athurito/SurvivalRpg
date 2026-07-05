@@ -2,6 +2,7 @@
 
 #include "GameFramework/GameplayMessageSubsystem.h"
 #include "RpgInventoryFragment_EquippableItem.h"
+#include "RpgInventoryFragment_ItemTraits.h"
 #include "RpgInventoryFragment_SlotContainerProvider.h"
 #include "RpgInventoryItemInstance.h"
 #include "RpgInventoryManagerComponent.h"
@@ -185,6 +186,58 @@ bool URpgPlayerInventoryLayoutComponent::IsSlotAddressActionbarBindable(const FR
 		if (Group.GroupId == Address.GroupId && Address.LocalSlotIndex >= 0 && Address.LocalSlotIndex < Group.SlotCount)
 		{
 			return Group.Rule.bActionbarBindable;
+		}
+	}
+
+	return false;
+}
+
+bool URpgPlayerInventoryLayoutComponent::CanBindSlotAddressToActionbar(const FRpgInventorySlotAddress& Address, const URpgInventoryItemInstance* Item) const
+{
+	if (!Address.IsValid() || !Item)
+	{
+		return false;
+	}
+
+	for (const FRpgInventorySlotGroupView& Group : BuildSlotGroups())
+	{
+		if (Group.GroupId != Address.GroupId || Address.LocalSlotIndex < 0 || Address.LocalSlotIndex >= Group.SlotCount)
+		{
+			continue;
+		}
+
+		if (!Group.Rule.bActionbarBindable || !Group.Rule.AllowsItem(Item))
+		{
+			return false;
+		}
+
+		if (Group.GroupKind == ERpgInventorySlotGroupKind::Carry && Group.Rule.bCarrySlot)
+		{
+			return true;
+		}
+
+		if (Group.GroupKind != ERpgInventorySlotGroupKind::Content)
+		{
+			return false;
+		}
+
+		const URpgInventoryFragment_UsableItem* UsableFragment = Item->FindFragmentByClass<URpgInventoryFragment_UsableItem>();
+		const URpgInventoryFragment_ItemTraits* Traits = Item->FindFragmentByClass<URpgInventoryFragment_ItemTraits>();
+		if (!UsableFragment || !Traits)
+		{
+			return false;
+		}
+
+		switch (Traits->ItemCategory)
+		{
+		case ERpgInventoryItemCategory::Weapon:
+		case ERpgInventoryItemCategory::Shield:
+		case ERpgInventoryItemCategory::Armor:
+		case ERpgInventoryItemCategory::Tool:
+			return false;
+
+		default:
+			return true;
 		}
 	}
 

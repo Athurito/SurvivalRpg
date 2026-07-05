@@ -10,6 +10,7 @@
 #include "SurvivalRpg/Mvvm/Inventory/RpgPlayerInventoryViewModels.h"
 #include "SurvivalRpg/UI/RpgActionBarSlotWidget.h"
 #include "SurvivalRpg/UI/RpgInventoryAddressSlotWidget.h"
+#include "SurvivalRpg/UI/RpgInventoryPanelNavigationCoordinator.h"
 #include "View/MVVMView.h"
 
 #include UE_INLINE_GENERATED_CPP_BY_NAME(RpgPlayerInventoryLayoutViews)
@@ -27,6 +28,7 @@ void URpgInventoryAddressTileView::SetDragDropCoordinator(URpgInventoryDragDropC
 	for (UUserWidget* EntryWidget : GetDisplayedEntryWidgets())
 	{
 		ApplyCoordinatorToEntry(EntryWidget);
+		ApplyPanelActiveStateToEntry(EntryWidget);
 	}
 }
 
@@ -69,10 +71,145 @@ void URpgInventoryAddressTileView::BindSlotGroupViewModel(URpgInventorySlotGroup
 	RefreshAddressSlotItems();
 }
 
+URpgInventoryAddressSlotViewModel* URpgInventoryAddressTileView::GetSelectedAddressSlot() const
+{
+	return Cast<URpgInventoryAddressSlotViewModel>(GetSelectedItem());
+}
+
+bool URpgInventoryAddressTileView::SelectAddressListItem(UObject* Item, APlayerController* OwningPlayer)
+{
+	if (!Item || !GetListItems().Contains(Item))
+	{
+		return false;
+	}
+
+	SetSelectedItem(Item);
+	RequestNavigateToItem(Item);
+	if (OwningPlayer)
+	{
+		SetUserFocus(OwningPlayer);
+	}
+	return true;
+}
+
+bool URpgInventoryAddressTileView::SelectBestAddressSlot(APlayerController* OwningPlayer, bool bPreferOccupiedSlot)
+{
+	const TArray<UObject*>& Items = GetListItems();
+	if (Items.IsEmpty())
+	{
+		return false;
+	}
+
+	UObject* DesiredItem = GetSelectedItem();
+	if (!DesiredItem || !Items.Contains(DesiredItem))
+	{
+		DesiredItem = nullptr;
+	}
+
+	if (!DesiredItem && bPreferOccupiedSlot)
+	{
+		for (UObject* Item : Items)
+		{
+			const URpgInventoryAddressSlotViewModel* AddressSlot = Cast<URpgInventoryAddressSlotViewModel>(Item);
+			if (AddressSlot && !AddressSlot->IsEmptySlot())
+			{
+				DesiredItem = Item;
+				break;
+			}
+		}
+	}
+
+	if (!DesiredItem)
+	{
+		DesiredItem = Items[0];
+	}
+
+	return SelectAddressListItem(DesiredItem, OwningPlayer);
+}
+
+bool URpgInventoryAddressTileView::SelectAddressSlotByIdentity(FGuid EntryId, int32 GlobalSlotIndex, APlayerController* OwningPlayer)
+{
+	const TArray<UObject*>& Items = GetListItems();
+	if (Items.IsEmpty())
+	{
+		return false;
+	}
+
+	if (EntryId.IsValid())
+	{
+		for (UObject* Item : Items)
+		{
+			const URpgInventoryAddressSlotViewModel* AddressSlot = Cast<URpgInventoryAddressSlotViewModel>(Item);
+			if (AddressSlot && !AddressSlot->IsEmptySlot() && AddressSlot->GetEntryId() == EntryId)
+			{
+				return SelectAddressListItem(Item, OwningPlayer);
+			}
+		}
+	}
+
+	if (GlobalSlotIndex != INDEX_NONE)
+	{
+		for (UObject* Item : Items)
+		{
+			const URpgInventoryAddressSlotViewModel* AddressSlot = Cast<URpgInventoryAddressSlotViewModel>(Item);
+			if (AddressSlot && AddressSlot->GetGlobalSlotIndex() == GlobalSlotIndex)
+			{
+				return SelectAddressListItem(Item, OwningPlayer);
+			}
+		}
+	}
+
+	return false;
+}
+
+void URpgInventoryAddressTileView::ClearAddressSelectionVisual()
+{
+	const bool bWasSuppressingPanelSelectionNotify = bSuppressPanelSelectionNotify;
+	bSuppressPanelSelectionNotify = true;
+	ITypedUMGListView<UObject*>::ClearSelection();
+	bSuppressPanelSelectionNotify = bWasSuppressingPanelSelectionNotify;
+}
+
+void URpgInventoryAddressTileView::SetInventoryPanelActive(bool bInInventoryPanelActive)
+{
+	if (bInventoryPanelActive == bInInventoryPanelActive)
+	{
+		return;
+	}
+
+	bInventoryPanelActive = bInInventoryPanelActive;
+	for (UUserWidget* EntryWidget : GetDisplayedEntryWidgets())
+	{
+		ApplyPanelActiveStateToEntry(EntryWidget);
+	}
+}
+
+void URpgInventoryAddressTileView::SetPanelNavigationCoordinator(URpgInventoryPanelNavigationCoordinator* InPanelNavigationCoordinator, FName InPanelId)
+{
+	PanelNavigationCoordinator = InPanelNavigationCoordinator;
+	PanelNavigationId = InPanelId;
+}
+
+bool URpgInventoryAddressTileView::QuickSplitSelectedAddressSlot(int32 SplitCount, int32 TargetSlotIndex)
+{
+	return DragDropCoordinator && DragDropCoordinator->QuickSplitAddressSlot(GetSelectedAddressSlot(), TargetSlotIndex, SplitCount);
+}
+
+bool URpgInventoryAddressTileView::UseOrEquipSelectedAddressSlot(int32 StackCount)
+{
+	return DragDropCoordinator && DragDropCoordinator->UseOrEquipAddressSlot(GetSelectedAddressSlot(), StackCount);
+}
+
+bool URpgInventoryAddressTileView::DropSelectedAddressSlot(int32 StackCount, bool bConfirmed)
+{
+	return DragDropCoordinator && DragDropCoordinator->DropAddressSlot(GetSelectedAddressSlot(), StackCount, bConfirmed);
+}
+
 void URpgInventoryAddressTileView::NativeOnEntryGenerated(UUserWidget* EntryWidget)
 {
 	Super::NativeOnEntryGenerated(EntryWidget);
 	ApplyCoordinatorToEntry(EntryWidget);
+	ApplyPanelActiveStateToEntry(EntryWidget);
 }
 
 UDragDropOperation* URpgInventoryAddressTileView::HandleListEntryDragDetected(const FGeometry& MyGeometry, const FPointerEvent& PointerEvent, UUserWidget& EntryWidget)
@@ -165,6 +302,18 @@ FReply URpgInventoryAddressTileView::HandleListEntryAcceptDrop(const FDragDropEv
 	return FReply::Handled().EndDragDrop();
 }
 
+void URpgInventoryAddressTileView::OnSelectionChangedInternal(UObject* FirstSelectedItem)
+{
+	Super::OnSelectionChangedInternal(FirstSelectedItem);
+
+	if (bSuppressPanelSelectionNotify || !PanelNavigationCoordinator || !FirstSelectedItem)
+	{
+		return;
+	}
+
+	PanelNavigationCoordinator->NotifyAddressPanelSelectionChanged(this, FirstSelectedItem);
+}
+
 void URpgInventoryAddressTileView::RefreshAddressSlotItems()
 {
 	SetAddressSlotItems(BoundGroupViewModel ? BoundGroupViewModel->GetSlots() : TArray<URpgInventoryAddressSlotViewModel*>());
@@ -175,6 +324,14 @@ void URpgInventoryAddressTileView::ApplyCoordinatorToEntry(UUserWidget* EntryWid
 	if (URpgInventoryAddressSlotWidget* AddressSlotWidget = Cast<URpgInventoryAddressSlotWidget>(EntryWidget))
 	{
 		AddressSlotWidget->SetDragDropCoordinator(DragDropCoordinator);
+	}
+}
+
+void URpgInventoryAddressTileView::ApplyPanelActiveStateToEntry(UUserWidget* EntryWidget) const
+{
+	if (URpgInventoryAddressSlotWidget* AddressSlotWidget = Cast<URpgInventoryAddressSlotWidget>(EntryWidget))
+	{
+		AddressSlotWidget->SetInventoryPanelActive(bInventoryPanelActive);
 	}
 }
 
@@ -191,6 +348,7 @@ void URpgActionBarTileView::SetDragDropCoordinator(URpgInventoryDragDropCoordina
 	for (UUserWidget* EntryWidget : GetDisplayedEntryWidgets())
 	{
 		ApplyCoordinatorToEntry(EntryWidget);
+		ApplyPanelActiveStateToEntry(EntryWidget);
 	}
 }
 
@@ -227,10 +385,91 @@ void URpgActionBarTileView::SetActionBarSlotItems(const TArray<URpgActionBarSlot
 	RequestRefresh();
 }
 
+URpgActionBarSlotViewModel* URpgActionBarTileView::GetSelectedActionBarSlot() const
+{
+	return Cast<URpgActionBarSlotViewModel>(GetSelectedItem());
+}
+
+bool URpgActionBarTileView::SelectActionBarListItem(UObject* Item, APlayerController* OwningPlayer)
+{
+	if (!Item || !GetListItems().Contains(Item))
+	{
+		return false;
+	}
+
+	SetSelectedItem(Item);
+	RequestNavigateToItem(Item);
+	if (OwningPlayer)
+	{
+		SetUserFocus(OwningPlayer);
+	}
+	return true;
+}
+
+bool URpgActionBarTileView::SelectBestActionBarSlot(APlayerController* OwningPlayer)
+{
+	const TArray<UObject*>& Items = GetListItems();
+	if (Items.IsEmpty())
+	{
+		return false;
+	}
+
+	UObject* DesiredItem = GetSelectedItem();
+	if (!DesiredItem || !Items.Contains(DesiredItem))
+	{
+		DesiredItem = Items[0];
+	}
+
+	return SelectActionBarListItem(DesiredItem, OwningPlayer);
+}
+
+bool URpgActionBarTileView::SelectActionBarSlotByIndex(int32 SlotIndex, APlayerController* OwningPlayer)
+{
+	for (UObject* Item : GetListItems())
+	{
+		const URpgActionBarSlotViewModel* ActionBarSlot = Cast<URpgActionBarSlotViewModel>(Item);
+		if (ActionBarSlot && ActionBarSlot->GetSlotIndex() == SlotIndex)
+		{
+			return SelectActionBarListItem(Item, OwningPlayer);
+		}
+	}
+
+	return false;
+}
+
+void URpgActionBarTileView::ClearActionBarSelectionVisual()
+{
+	const bool bWasSuppressingPanelSelectionNotify = bSuppressPanelSelectionNotify;
+	bSuppressPanelSelectionNotify = true;
+	ITypedUMGListView<UObject*>::ClearSelection();
+	bSuppressPanelSelectionNotify = bWasSuppressingPanelSelectionNotify;
+}
+
+void URpgActionBarTileView::SetActionBarPanelActive(bool bInActionBarPanelActive)
+{
+	if (bActionBarPanelActive == bInActionBarPanelActive)
+	{
+		return;
+	}
+
+	bActionBarPanelActive = bInActionBarPanelActive;
+	for (UUserWidget* EntryWidget : GetDisplayedEntryWidgets())
+	{
+		ApplyPanelActiveStateToEntry(EntryWidget);
+	}
+}
+
+void URpgActionBarTileView::SetPanelNavigationCoordinator(URpgInventoryPanelNavigationCoordinator* InPanelNavigationCoordinator, FName InPanelId)
+{
+	PanelNavigationCoordinator = InPanelNavigationCoordinator;
+	PanelNavigationId = InPanelId;
+}
+
 void URpgActionBarTileView::NativeOnEntryGenerated(UUserWidget* EntryWidget)
 {
 	Super::NativeOnEntryGenerated(EntryWidget);
 	ApplyCoordinatorToEntry(EntryWidget);
+	ApplyPanelActiveStateToEntry(EntryWidget);
 }
 
 TOptional<EItemDropZone> URpgActionBarTileView::HandleListEntryCanAcceptDrop(const FDragDropEvent& DropEvent, EItemDropZone DropZone, UUserWidget& EntryWidget)
@@ -275,11 +514,31 @@ FReply URpgActionBarTileView::HandleListEntryAcceptDrop(const FDragDropEvent& Dr
 	return FReply::Handled().EndDragDrop();
 }
 
+void URpgActionBarTileView::OnSelectionChangedInternal(UObject* FirstSelectedItem)
+{
+	Super::OnSelectionChangedInternal(FirstSelectedItem);
+
+	if (bSuppressPanelSelectionNotify || !PanelNavigationCoordinator || !FirstSelectedItem)
+	{
+		return;
+	}
+
+	PanelNavigationCoordinator->NotifyActionBarPanelSelectionChanged(this, FirstSelectedItem);
+}
+
 void URpgActionBarTileView::ApplyCoordinatorToEntry(UUserWidget* EntryWidget) const
 {
 	if (URpgActionBarSlotWidget* ActionBarSlotWidget = Cast<URpgActionBarSlotWidget>(EntryWidget))
 	{
 		ActionBarSlotWidget->SetDragDropCoordinator(DragDropCoordinator);
+	}
+}
+
+void URpgActionBarTileView::ApplyPanelActiveStateToEntry(UUserWidget* EntryWidget) const
+{
+	if (URpgActionBarSlotWidget* ActionBarSlotWidget = Cast<URpgActionBarSlotWidget>(EntryWidget))
+	{
+		ActionBarSlotWidget->SetActionBarPanelActive(bActionBarPanelActive);
 	}
 }
 

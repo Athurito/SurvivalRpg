@@ -180,6 +180,10 @@ public:
 	UFUNCTION(Server, Reliable, BlueprintCallable, Category = "Inventory|UI Actions")
 	void RequestEquipInventoryItem(URpgInventoryItemInstance* Item);
 
+	/** Moves an owned gear/carry item back into the first compatible content slot and clears stale runtime equipment. */
+	UFUNCTION(Server, Reliable, BlueprintCallable, Category = "Inventory|UI Actions")
+	void RequestUnequipInventoryItemToContentSlot(URpgInventoryItemInstance* Item);
+
 	/** Drops a stack or whole item entry into the world near the owning pawn. Confirmed must be true for confirm-protected items. */
 	UFUNCTION(Server, Reliable, BlueprintCallable, Category = "Inventory|UI Actions")
 	void RequestDropInventoryItem(URpgInventoryManagerComponent* Inventory, URpgInventoryItemInstance* Item, int32 StackCount, bool bConfirmed);

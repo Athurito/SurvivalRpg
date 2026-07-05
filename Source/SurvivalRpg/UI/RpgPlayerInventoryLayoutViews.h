@@ -8,10 +8,14 @@
 
 #include "RpgPlayerInventoryLayoutViews.generated.h"
 
+class APlayerController;
 class URpgActionBarSlotViewModel;
+class URpgActionBarTileView;
 class URpgInventoryAddressSlotViewModel;
 class URpgInventoryAddressTileView;
 class URpgInventoryDragDropCoordinator;
+class URpgInventoryManagerComponent;
+class URpgInventoryPanelNavigationCoordinator;
 class URpgInventorySlotGroupWidget;
 class URpgInventorySlotGroupViewModel;
 class UDragDropOperation;
@@ -42,21 +46,72 @@ public:
 	UFUNCTION(BlueprintCallable, Category = "Inventory|Address Slots")
 	void BindSlotGroupViewModel(URpgInventorySlotGroupViewModel* InGroupViewModel);
 
+	/** Current selected address slot view model, or null when selection is empty/non-address. */
+	UFUNCTION(BlueprintPure, Category = "Inventory|Address Slots")
+	URpgInventoryAddressSlotViewModel* GetSelectedAddressSlot() const;
+
+	/** Selects a list item and moves controller focus to this address TileView. */
+	UFUNCTION(BlueprintCallable, Category = "Inventory|Address Slots")
+	bool SelectAddressListItem(UObject* Item, APlayerController* OwningPlayer);
+
+	/** Selects current valid selection, first occupied slot, then first slot. */
+	UFUNCTION(BlueprintCallable, Category = "Inventory|Address Slots")
+	bool SelectBestAddressSlot(APlayerController* OwningPlayer, bool bPreferOccupiedSlot = true);
+
+	/** Selects by entry id first, then global slot index. */
+	UFUNCTION(BlueprintCallable, Category = "Inventory|Address Slots")
+	bool SelectAddressSlotByIdentity(FGuid EntryId, int32 GlobalSlotIndex, APlayerController* OwningPlayer);
+
+	/** Clears only the visible ListView selection. */
+	UFUNCTION(BlueprintCallable, Category = "Inventory|Address Slots")
+	void ClearAddressSelectionVisual();
+
+	/** Marks this address panel as the active controller target. */
+	UFUNCTION(BlueprintCallable, Category = "Inventory|Address Slots")
+	void SetInventoryPanelActive(bool bInInventoryPanelActive);
+
+	/** Registers this address TileView with the screen-local panel navigator so selection changes update active-panel routing. */
+	UFUNCTION(BlueprintCallable, Category = "Inventory|Address Slots")
+	void SetPanelNavigationCoordinator(URpgInventoryPanelNavigationCoordinator* InPanelNavigationCoordinator, FName InPanelId);
+
+	/** Shortcut helper for quick split on the selected address slot. */
+	UFUNCTION(BlueprintCallable, Category = "Inventory|Address Slots")
+	bool QuickSplitSelectedAddressSlot(int32 SplitCount = 0, int32 TargetSlotIndex = -1);
+
+	/** Shortcut helper for use/equip/unequip on the selected address slot. */
+	UFUNCTION(BlueprintCallable, Category = "Inventory|Address Slots")
+	bool UseOrEquipSelectedAddressSlot(int32 StackCount = 1);
+
+	/** Shortcut helper for dropping the selected address slot into the world. */
+	UFUNCTION(BlueprintCallable, Category = "Inventory|Address Slots")
+	bool DropSelectedAddressSlot(int32 StackCount = 0, bool bConfirmed = false);
+
 protected:
 	virtual void NativeOnEntryGenerated(UUserWidget* EntryWidget) override;
 	virtual UDragDropOperation* HandleListEntryDragDetected(const FGeometry& MyGeometry, const FPointerEvent& PointerEvent, UUserWidget& EntryWidget) override;
 	virtual TOptional<EItemDropZone> HandleListEntryCanAcceptDrop(const FDragDropEvent& DropEvent, EItemDropZone DropZone, UUserWidget& EntryWidget) override;
 	virtual FReply HandleListEntryAcceptDrop(const FDragDropEvent& DropEvent, EItemDropZone DropZone, UUserWidget& EntryWidget) override;
+	virtual void OnSelectionChangedInternal(UObject* FirstSelectedItem) override;
 
 private:
 	void RefreshAddressSlotItems();
 	void ApplyCoordinatorToEntry(UUserWidget* EntryWidget) const;
+	void ApplyPanelActiveStateToEntry(UUserWidget* EntryWidget) const;
 
 	UPROPERTY(Transient)
 	TObjectPtr<URpgInventoryDragDropCoordinator> DragDropCoordinator = nullptr;
 
 	UPROPERTY(Transient)
 	TObjectPtr<URpgInventorySlotGroupViewModel> BoundGroupViewModel = nullptr;
+
+	UPROPERTY(Transient)
+	TObjectPtr<URpgInventoryPanelNavigationCoordinator> PanelNavigationCoordinator = nullptr;
+
+	UPROPERTY(Transient)
+	FName PanelNavigationId = NAME_None;
+
+	bool bInventoryPanelActive = true;
+	bool bSuppressPanelSelectionNotify = false;
 };
 
 /**
@@ -80,16 +135,55 @@ public:
 	UFUNCTION(BlueprintCallable, Category = "Action Bar|Slots")
 	void SetActionBarSlotItems(const TArray<URpgActionBarSlotViewModel*>& InSlots);
 
+	/** Current selected actionbar slot view model, or null when selection is empty/non-actionbar. */
+	UFUNCTION(BlueprintPure, Category = "Action Bar|Navigation")
+	URpgActionBarSlotViewModel* GetSelectedActionBarSlot() const;
+
+	/** Selects a list item and moves controller focus to this actionbar TileView. */
+	UFUNCTION(BlueprintCallable, Category = "Action Bar|Navigation")
+	bool SelectActionBarListItem(UObject* Item, APlayerController* OwningPlayer);
+
+	/** Selects current valid selection or the first actionbar slot. */
+	UFUNCTION(BlueprintCallable, Category = "Action Bar|Navigation")
+	bool SelectBestActionBarSlot(APlayerController* OwningPlayer);
+
+	/** Selects by zero-based actionbar slot index. */
+	UFUNCTION(BlueprintCallable, Category = "Action Bar|Navigation")
+	bool SelectActionBarSlotByIndex(int32 SlotIndex, APlayerController* OwningPlayer);
+
+	/** Clears only the visible ListView selection. */
+	UFUNCTION(BlueprintCallable, Category = "Action Bar|Navigation")
+	void ClearActionBarSelectionVisual();
+
+	/** Marks this actionbar panel as the active controller target. */
+	UFUNCTION(BlueprintCallable, Category = "Action Bar|Navigation")
+	void SetActionBarPanelActive(bool bInActionBarPanelActive);
+
+	/** Registers this TileView with the screen-local panel navigator so selection changes update active-panel routing. */
+	UFUNCTION(BlueprintCallable, Category = "Action Bar|Navigation")
+	void SetPanelNavigationCoordinator(URpgInventoryPanelNavigationCoordinator* InPanelNavigationCoordinator, FName InPanelId);
+
 protected:
 	virtual void NativeOnEntryGenerated(UUserWidget* EntryWidget) override;
 	virtual TOptional<EItemDropZone> HandleListEntryCanAcceptDrop(const FDragDropEvent& DropEvent, EItemDropZone DropZone, UUserWidget& EntryWidget) override;
 	virtual FReply HandleListEntryAcceptDrop(const FDragDropEvent& DropEvent, EItemDropZone DropZone, UUserWidget& EntryWidget) override;
+	virtual void OnSelectionChangedInternal(UObject* FirstSelectedItem) override;
 
 private:
 	void ApplyCoordinatorToEntry(UUserWidget* EntryWidget) const;
+	void ApplyPanelActiveStateToEntry(UUserWidget* EntryWidget) const;
 
 	UPROPERTY(Transient)
 	TObjectPtr<URpgInventoryDragDropCoordinator> DragDropCoordinator = nullptr;
+
+	UPROPERTY(Transient)
+	TObjectPtr<URpgInventoryPanelNavigationCoordinator> PanelNavigationCoordinator = nullptr;
+
+	UPROPERTY(Transient)
+	FName PanelNavigationId = NAME_None;
+
+	bool bActionBarPanelActive = true;
+	bool bSuppressPanelSelectionNotify = false;
 };
 
 /**

@@ -73,6 +73,10 @@ public:
 	UFUNCTION(BlueprintCallable, BlueprintPure = false, Category = "Inventory|Layout")
 	bool IsSlotAddressActionbarBindable(const FRpgInventorySlotAddress& Address) const;
 
+	/** Returns true when the addressed slot and its current item may be bound to the 1..8 actionbar. */
+	UFUNCTION(BlueprintCallable, BlueprintPure = false, Category = "Inventory|Layout")
+	bool CanBindSlotAddressToActionbar(const FRpgInventorySlotAddress& Address, const URpgInventoryItemInstance* Item) const;
+
 	/** Returns true when the addressed group is a carry slot that activates MainHand or OffHand. */
 	UFUNCTION(BlueprintCallable, BlueprintPure = false, Category = "Inventory|Layout")
 	bool IsCarrySlotAddress(const FRpgInventorySlotAddress& Address) const;

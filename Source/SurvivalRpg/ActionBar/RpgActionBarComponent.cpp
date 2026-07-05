@@ -47,8 +47,9 @@ void URpgActionBarComponent::RequestBindInventorySlotToSlot_Implementation(int32
 
 	const ARpgPlayerController* RpgPC = GetRpgPlayerController();
 	const URpgPlayerInventoryLayoutComponent* InventoryLayout = RpgPC ? RpgPC->GetPlayerInventoryLayoutComponent() : nullptr;
+	const URpgInventoryItemInstance* BoundItem = InventoryLayout ? InventoryLayout->GetItemInSlotAddress(SlotAddress) : nullptr;
 	if (!InventoryLayout ||
-		!InventoryLayout->IsSlotAddressActionbarBindable(SlotAddress) ||
+		!InventoryLayout->CanBindSlotAddressToActionbar(SlotAddress, BoundItem) ||
 		InventoryLayout->IsCarrySlotAddress(SlotAddress))
 	{
 		return;
@@ -72,8 +73,9 @@ void URpgActionBarComponent::RequestBindCarrySlotToSlot_Implementation(int32 Slo
 
 	const ARpgPlayerController* RpgPC = GetRpgPlayerController();
 	const URpgPlayerInventoryLayoutComponent* InventoryLayout = RpgPC ? RpgPC->GetPlayerInventoryLayoutComponent() : nullptr;
+	const URpgInventoryItemInstance* BoundItem = InventoryLayout ? InventoryLayout->GetItemInSlotAddress(SlotAddress) : nullptr;
 	if (!InventoryLayout ||
-		!InventoryLayout->IsSlotAddressActionbarBindable(SlotAddress) ||
+		!InventoryLayout->CanBindSlotAddressToActionbar(SlotAddress, BoundItem) ||
 		!InventoryLayout->IsCarrySlotAddress(SlotAddress))
 	{
 		return;
@@ -123,6 +125,11 @@ void URpgActionBarComponent::ActivateSlot(int32 SlotIndex)
 
 	if (Slot.SlotType == ERpgActionBarSlotType::CarrySlotBinding)
 	{
+		if (!InventoryLayout->CanBindSlotAddressToActionbar(Slot.SlotAddress, InventoryLayout->GetItemInSlotAddress(Slot.SlotAddress)))
+		{
+			return;
+		}
+
 		UiActions->RequestActivateCarrySlot(Slot.SlotAddress);
 		return;
 	}
@@ -134,6 +141,11 @@ void URpgActionBarComponent::ActivateSlot(int32 SlotIndex)
 		URpgInventoryItemInstance* Item = InventoryLayout->GetItemInSlotAddress(Slot.SlotAddress);
 		if (PlayerInventory && Item)
 		{
+			if (!InventoryLayout->CanBindSlotAddressToActionbar(Slot.SlotAddress, Item))
+			{
+				return;
+			}
+
 			if (Item->FindFragmentByClass<URpgInventoryFragment_UsableItem>() != nullptr)
 			{
 				UiActions->RequestUseInventoryItem(PlayerInventory, Item, 1);

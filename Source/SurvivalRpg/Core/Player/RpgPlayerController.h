@@ -11,6 +11,7 @@
 class URpgAbilitySystemComponent;
 class URpgActionBarComponent;
 class URpgEquipmentLoadoutComponent;
+class URpgInventoryManagerComponent;
 class URpgInventoryUiActionComponent;
 class URpgPlayerInventoryLayoutComponent;
 class URpgPlayerGameplayInputRouterComponent;
@@ -42,6 +43,10 @@ public:
 
 	UFUNCTION(Client, Reliable, BlueprintCallable, Category = "Rpg|Respawn")
 	void ClientRestoreGameplayInputFocus();
+
+	/** Opens the local loot screen for a server-authoritative loot inventory that could not be fully auto-collected. */
+	UFUNCTION(Client, Reliable, Category = "Rpg|Inventory")
+	void ClientOpenLootInventory(URpgInventoryManagerComponent* PrimaryInventory, URpgInventoryManagerComponent* LootInventory, AActor* LootActor);
 
 	UFUNCTION(BlueprintCallable, Category = "Rpg|Action Bar")
 	URpgActionBarComponent* GetActionBarComponent() const { return ActionBarComponent; }

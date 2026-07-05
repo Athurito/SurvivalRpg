@@ -122,6 +122,9 @@ void URpgInventoryAddressSlotViewModel::InitializeSlot(
 	const int32 NewStackCount = (InInventory && NewItem) ? InInventory->GetItemStackCount(NewItem) : 0;
 	const FGuid NewEntryId = FindEntryIdForItem(InInventory, NewItem);
 	const FRpgPlayerInventoryItemPresentation Presentation = BuildPlayerInventoryItemPresentation(NewItem);
+	const bool bNewActionbarBindable = InInventoryLayout
+		? InInventoryLayout->CanBindSlotAddressToActionbar(NewAddress, NewItem)
+		: false;
 
 	const bool bWasChanged =
 		Inventory != InInventory ||
@@ -133,7 +136,7 @@ void URpgInventoryAddressSlotViewModel::InitializeSlot(
 		EntryId != NewEntryId ||
 		ItemInstance != NewItem ||
 		StackCount != NewStackCount ||
-		bActionbarBindable != InGroupView.Rule.bActionbarBindable ||
+		bActionbarBindable != bNewActionbarBindable ||
 		bCarrySlot != (InGroupView.GroupKind == ERpgInventorySlotGroupKind::Carry && InGroupView.Rule.bCarrySlot) ||
 		bGearSlot != (InGroupView.GroupKind == ERpgInventorySlotGroupKind::Gear);
 
@@ -151,7 +154,7 @@ void URpgInventoryAddressSlotViewModel::InitializeSlot(
 	Icon = Presentation.Icon;
 	bIsEmptySlot = ItemInstance == nullptr;
 	bCanDrag = ItemInstance != nullptr && StackCount > 0;
-	bActionbarBindable = InGroupView.Rule.bActionbarBindable;
+	bActionbarBindable = bNewActionbarBindable;
 	bCarrySlot = InGroupView.GroupKind == ERpgInventorySlotGroupKind::Carry && InGroupView.Rule.bCarrySlot;
 	bGearSlot = InGroupView.GroupKind == ERpgInventorySlotGroupKind::Gear;
 
@@ -434,8 +437,25 @@ void URpgPlayerInventoryViewModel::UnregisterMessageListeners()
 void URpgPlayerInventoryViewModel::RefreshGearSlots()
 {
 	URpgEquipmentLoadoutComponent* EquipmentLoadout = ObservedEquipmentLoadout.Get();
+	URpgInventoryManagerComponent* PlayerInventory = ObservedPlayerInventory.Get();
+	URpgPlayerInventoryLayoutComponent* InventoryLayout = ObservedInventoryLayout.Get();
 
-	auto RefreshSlotsForOrder = [this, EquipmentLoadout](TArray<TObjectPtr<URpgEquipmentSlotViewModel>>& InOutSlots, TConstArrayView<ERpgEquipmentSlot> SlotOrder)
+	auto ResolveGearSlotItem = [PlayerInventory, InventoryLayout, EquipmentLoadout](ERpgEquipmentSlot EquipmentSlot)
+	{
+		FRpgInventorySlotAddress GearAddress;
+		int32 GlobalSlotIndex = INDEX_NONE;
+		if (PlayerInventory &&
+			InventoryLayout &&
+			URpgPlayerInventoryLayoutComponent::TryMakeGearSlotAddress(EquipmentSlot, GearAddress) &&
+			InventoryLayout->ResolveSlotAddress(GearAddress, GlobalSlotIndex))
+		{
+			return PlayerInventory->GetItemInSlot(GlobalSlotIndex);
+		}
+
+		return EquipmentLoadout ? EquipmentLoadout->GetItemInEquipmentSlot(EquipmentSlot) : nullptr;
+	};
+
+	auto RefreshSlotsForOrder = [this, &ResolveGearSlotItem](TArray<TObjectPtr<URpgEquipmentSlotViewModel>>& InOutSlots, TConstArrayView<ERpgEquipmentSlot> SlotOrder)
 	{
 		TArray<TObjectPtr<URpgEquipmentSlotViewModel>> PreviousSlots = MoveTemp(InOutSlots);
 		InOutSlots.Reset();
@@ -450,7 +470,7 @@ void URpgPlayerInventoryViewModel::RefreshGearSlots()
 			}
 
 			const ERpgEquipmentSlot EquipmentSlot = SlotOrder[Index];
-			URpgInventoryItemInstance* Item = EquipmentLoadout ? EquipmentLoadout->GetItemInEquipmentSlot(EquipmentSlot) : nullptr;
+			URpgInventoryItemInstance* Item = ResolveGearSlotItem(EquipmentSlot);
 			SlotViewModel->InitializeSlot(EquipmentSlot, Item);
 			InOutSlots.Add(SlotViewModel);
 		}

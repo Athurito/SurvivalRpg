@@ -32,6 +32,10 @@ public:
 	UFUNCTION(BlueprintCallable, Category = "Action Bar|Slot")
 	void SetDragDropCoordinator(URpgInventoryDragDropCoordinator* InCoordinator);
 
+	/** Marks whether the owning actionbar panel is currently selected by controller navigation. */
+	UFUNCTION(BlueprintCallable, Category = "Action Bar|Slot")
+	void SetActionBarPanelActive(bool bInActionBarPanelActive);
+
 	/** Current actionbar slot VM represented by this widget. */
 	UFUNCTION(BlueprintPure, Category = "Action Bar|Slot")
 	URpgActionBarSlotViewModel* GetActionBarSlotViewModel() const { return SlotViewModel.Get(); }
@@ -86,4 +90,5 @@ private:
 	ERpgInventorySlotDragVisualState CurrentDragDropVisualState = ERpgInventorySlotDragVisualState::Normal;
 
 	bool bSlotSelected = false;
+	bool bActionBarPanelActive = true;
 };

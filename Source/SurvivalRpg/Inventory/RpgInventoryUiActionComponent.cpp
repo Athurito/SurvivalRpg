@@ -254,6 +254,8 @@ void URpgInventoryUiActionComponent::RequestClearEquipmentSlot_Implementation(ER
 		}
 
 		EquipmentLoadout->ClearEquipmentSlot(EquipmentSlot);
+		SyncEquipmentLoadoutFromGearSlots();
+		SyncActiveHandsFromCarrySlots();
 	}
 }
 
@@ -782,6 +784,48 @@ void URpgInventoryUiActionComponent::RequestEquipInventoryItem_Implementation(UR
 		return;
 	}
 
+	SendActionFeedback(RpgGameplayTags::Rpg_Inventory_Action_Equip, ERpgInventoryActionFeedbackResult::Success, PlayerInventory, Item, 1);
+}
+
+void URpgInventoryUiActionComponent::RequestUnequipInventoryItemToContentSlot_Implementation(URpgInventoryItemInstance* Item)
+{
+	URpgInventoryManagerComponent* PlayerInventory = FindPlayerInventory();
+	URpgPlayerInventoryLayoutComponent* InventoryLayout = FindPlayerInventoryLayout();
+	if (!PlayerInventory || !InventoryLayout || !Item || PlayerInventory->GetItemStackCount(Item) <= 0)
+	{
+		SendActionFeedback(RpgGameplayTags::Rpg_Inventory_Action_Equip, ERpgInventoryActionFeedbackResult::MissingItem, PlayerInventory, Item, 1);
+		return;
+	}
+
+	FRpgInventorySlotAddress SourceAddress;
+	const int32 SourceGlobalSlotIndex = PlayerInventory->GetItemSlotIndex(Item);
+	if (SourceGlobalSlotIndex == INDEX_NONE ||
+		!InventoryLayout->TryMakeSlotAddressFromGlobalSlotIndex(SourceGlobalSlotIndex, SourceAddress))
+	{
+		SendActionFeedback(RpgGameplayTags::Rpg_Inventory_Action_Equip, ERpgInventoryActionFeedbackResult::InvalidSlot, PlayerInventory, Item, 1);
+		return;
+	}
+
+	if (InventoryLayout->IsGearSlotAddress(SourceAddress) && !CanMoveItemOutOfGearSlot(SourceAddress))
+	{
+		SendActionFeedback(RpgGameplayTags::Rpg_Inventory_Action_Equip, ERpgInventoryActionFeedbackResult::ServerRejected, PlayerInventory, Item, 1);
+		return;
+	}
+
+	if (!InventoryLayout->IsGearSlotAddress(SourceAddress) && !InventoryLayout->IsCarrySlotAddress(SourceAddress))
+	{
+		SendActionFeedback(RpgGameplayTags::Rpg_Inventory_Action_Equip, ERpgInventoryActionFeedbackResult::InvalidSlot, PlayerInventory, Item, 1);
+		return;
+	}
+
+	if (!TryMoveItemToFirstCompatibleContentSlot(Item))
+	{
+		SendActionFeedback(RpgGameplayTags::Rpg_Inventory_Action_Equip, ERpgInventoryActionFeedbackResult::InventoryFull, PlayerInventory, Item, 1);
+		return;
+	}
+
+	SyncEquipmentLoadoutFromGearSlots();
+	SyncActiveHandsFromCarrySlots();
 	SendActionFeedback(RpgGameplayTags::Rpg_Inventory_Action_Equip, ERpgInventoryActionFeedbackResult::Success, PlayerInventory, Item, 1);
 }
 
@@ -1708,6 +1752,37 @@ bool URpgInventoryUiActionComponent::TryMoveItemToFirstCompatibleContentSlot(URp
 		return false;
 	}
 
+	FName DisappearingProviderSourceName = NAME_None;
+	FRpgInventorySlotAddress SourceAddress;
+	const int32 SourceGlobalSlotIndex = PlayerInventory->GetItemSlotIndex(Item);
+	if (SourceGlobalSlotIndex != INDEX_NONE &&
+		InventoryLayout->TryMakeSlotAddressFromGlobalSlotIndex(SourceGlobalSlotIndex, SourceAddress) &&
+		InventoryLayout->IsGearSlotAddress(SourceAddress))
+	{
+		ERpgEquipmentSlot SourceEquipmentSlot = ERpgEquipmentSlot::None;
+		if (URpgPlayerInventoryLayoutComponent::TryGetEquipmentSlotForGearGroupId(SourceAddress.GroupId, SourceEquipmentSlot) &&
+			URpgPlayerInventoryLayoutComponent::IsSlotContainerEquipmentSlot(SourceEquipmentSlot))
+		{
+			switch (SourceEquipmentSlot)
+			{
+			case ERpgEquipmentSlot::Backpack:
+				DisappearingProviderSourceName = FName(TEXT("Backpack"));
+				break;
+			case ERpgEquipmentSlot::Belt:
+				DisappearingProviderSourceName = FName(TEXT("Belt"));
+				break;
+			case ERpgEquipmentSlot::Pouch:
+				DisappearingProviderSourceName = FName(TEXT("Pouch"));
+				break;
+			case ERpgEquipmentSlot::ResourceBag:
+				DisappearingProviderSourceName = FName(TEXT("ResourceBag"));
+				break;
+			default:
+				break;
+			}
+		}
+	}
+
 	FGuid EntryId;
 	for (const FRpgInventoryEntryView& Entry : PlayerInventory->GetAllEntries())
 	{
@@ -1725,7 +1800,12 @@ bool URpgInventoryUiActionComponent::TryMoveItemToFirstCompatibleContentSlot(URp
 
 	for (const FRpgInventorySlotGroupView& Group : InventoryLayout->GetSlotGroups())
 	{
-		if (Group.GroupKind != ERpgInventorySlotGroupKind::Content || Group.bProvidedByEquipment || !Group.Rule.AllowsItem(Item))
+		if (Group.GroupKind != ERpgInventorySlotGroupKind::Content || !Group.Rule.AllowsItem(Item))
+		{
+			continue;
+		}
+
+		if (!DisappearingProviderSourceName.IsNone() && Group.bProvidedByEquipment && Group.SourceEquipmentSlotName == DisappearingProviderSourceName)
 		{
 			continue;
 		}

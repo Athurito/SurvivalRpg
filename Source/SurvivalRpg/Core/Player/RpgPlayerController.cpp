@@ -23,6 +23,8 @@
 #include "SurvivalRpg/Inventory/RpgInventoryUiActionComponent.h"
 #include "SurvivalRpg/Progression/Player/RpgPlayerProgressionComponent.h"
 #include "SurvivalRpg/SurvivalRpg.h"
+#include "SurvivalRpg/UI/RpgUIScreenBlueprintLibrary.h"
+#include "SurvivalRpg/UI/RpgUIScreenPayload.h"
 
 ARpgPlayerController::ARpgPlayerController(const FObjectInitializer& ObjectInitializer)
 	: Super(ObjectInitializer)
@@ -77,6 +79,22 @@ void ARpgPlayerController::SetDeathDropMode(ERpgPlayerDeathDropMode NewDropMode)
 void ARpgPlayerController::ClientRestoreGameplayInputFocus_Implementation()
 {
 	RestoreGameplayInputFocus();
+}
+
+void ARpgPlayerController::ClientOpenLootInventory_Implementation(URpgInventoryManagerComponent* PrimaryInventory, URpgInventoryManagerComponent* LootInventory, AActor* LootActor)
+{
+	if (!IsLocalController() || !PrimaryInventory || !LootInventory)
+	{
+		return;
+	}
+
+	URpgInventoryScreenPayload* Payload = NewObject<URpgInventoryScreenPayload>(this);
+	Payload->ScreenTag = RpgGameplayTags::UI_Screen_Loot;
+	Payload->PrimaryInventory = PrimaryInventory;
+	Payload->SecondaryInventory = LootInventory;
+	Payload->ContextActor = LootActor;
+
+	URpgUIScreenBlueprintLibrary::OpenUIScreen(this, RpgGameplayTags::UI_Screen_Loot, Payload);
 }
 
 void ARpgPlayerController::RpgPrintProgression() const

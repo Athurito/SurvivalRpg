@@ -56,6 +56,17 @@ void URpgActionBarSlotWidget::SetDragDropCoordinator(URpgInventoryDragDropCoordi
 	RefreshDragDropVisualState();
 }
 
+void URpgActionBarSlotWidget::SetActionBarPanelActive(bool bInActionBarPanelActive)
+{
+	if (bActionBarPanelActive == bInActionBarPanelActive)
+	{
+		return;
+	}
+
+	bActionBarPanelActive = bInActionBarPanelActive;
+	RefreshDragDropVisualState();
+}
+
 bool URpgActionBarSlotWidget::HandleSlotAccept()
 {
 	return DragDropCoordinator && DragDropCoordinator->HasHeldPayload() && DragDropCoordinator->CommitDrop(MakeDropTarget());
@@ -70,7 +81,7 @@ void URpgActionBarSlotWidget::RefreshDragDropVisualState()
 			? ERpgInventorySlotDragVisualState::ValidTarget
 			: ERpgInventorySlotDragVisualState::InvalidTarget;
 	}
-	else if (bSlotSelected)
+	else if (bSlotSelected && bActionBarPanelActive)
 	{
 		CurrentDragDropVisualState = ERpgInventorySlotDragVisualState::Focused;
 	}

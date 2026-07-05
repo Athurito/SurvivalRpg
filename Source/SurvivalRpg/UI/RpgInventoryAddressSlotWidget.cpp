@@ -66,6 +66,17 @@ void URpgInventoryAddressSlotWidget::SetAddressSlotViewModel(URpgInventoryAddres
 	RefreshDragDropVisualState();
 }
 
+void URpgInventoryAddressSlotWidget::SetInventoryPanelActive(bool bInInventoryPanelActive)
+{
+	if (bInventoryPanelActive == bInInventoryPanelActive)
+	{
+		return;
+	}
+
+	bInventoryPanelActive = bInInventoryPanelActive;
+	RefreshDragDropVisualState();
+}
+
 bool URpgInventoryAddressSlotWidget::HandleSlotAccept()
 {
 	if (!DragDropCoordinator || !SlotViewModel)
@@ -85,8 +96,8 @@ bool URpgInventoryAddressSlotWidget::HandleSlotAccept()
 void URpgInventoryAddressSlotWidget::RefreshDragDropVisualState()
 {
 	CurrentDragDropVisualState = DragDropCoordinator
-		? DragDropCoordinator->GetInventoryAddressSlotVisualState(SlotViewModel, bSlotSelected)
-		: (bSlotSelected ? ERpgInventorySlotDragVisualState::Focused : ERpgInventorySlotDragVisualState::Normal);
+		? DragDropCoordinator->GetInventoryAddressSlotVisualState(SlotViewModel, bSlotSelected && bInventoryPanelActive)
+		: (bSlotSelected && bInventoryPanelActive ? ERpgInventorySlotDragVisualState::Focused : ERpgInventorySlotDragVisualState::Normal);
 
 	BP_OnAddressSlotDragDropStateChanged(CurrentDragDropVisualState);
 }
@@ -124,6 +135,11 @@ void URpgInventoryAddressSlotWidget::NativeOnClicked()
 
 FReply URpgInventoryAddressSlotWidget::NativeOnMouseButtonDown(const FGeometry& InGeometry, const FPointerEvent& InMouseEvent)
 {
+	if (InMouseEvent.GetEffectingButton() == EKeys::RightMouseButton && DragDropCoordinator && DragDropCoordinator->UseOrEquipAddressSlot(SlotViewModel))
+	{
+		return FReply::Handled();
+	}
+
 	if (InMouseEvent.GetEffectingButton() == EKeys::LeftMouseButton && SlotViewModel && (SlotViewModel->CanDrag() || SlotViewModel->IsActionbarBindable()))
 	{
 		return FReply::Handled().DetectDrag(TakeWidget(), EKeys::LeftMouseButton);

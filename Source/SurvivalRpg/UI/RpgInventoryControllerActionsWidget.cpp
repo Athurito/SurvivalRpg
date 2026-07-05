@@ -161,9 +161,9 @@ UWidget* URpgInventoryControllerActionsWidget::NativeGetDesiredFocusTarget() con
 {
 	if (PanelNavigator)
 	{
-		if (URpgInventoryTileView* ActiveTileView = PanelNavigator->GetActiveTileView())
+		if (UWidget* ActiveFocusTarget = PanelNavigator->GetActiveFocusTarget())
 		{
-			return ActiveTileView;
+			return ActiveFocusTarget;
 		}
 	}
 
@@ -202,15 +202,13 @@ void URpgInventoryControllerActionsWidget::HandleQuickTransferAction()
 
 	if (PanelNavigator)
 	{
-		if (URpgInventoryTileView* ActiveTileView = PanelNavigator->GetActiveTileView())
+		if (PanelNavigator->QuickTransferActiveSelection())
 		{
-			ActiveTileView->QuickTransferSelectedEntry();
+			return;
 		}
-		else
-		{
-			UE_LOG(LogRpgInventoryControllerActionsWidget, Warning, TEXT("%s quick transfer ignored because there is no active inventory tile view."),
-				*GetNameSafe(this));
-		}
+
+		UE_LOG(LogRpgInventoryControllerActionsWidget, Warning, TEXT("%s quick transfer ignored because the active panel selection does not support it."),
+			*GetNameSafe(this));
 	}
 }
 
@@ -222,15 +220,13 @@ void URpgInventoryControllerActionsWidget::HandleQuickSplitAction()
 
 	if (PanelNavigator)
 	{
-		if (URpgInventoryTileView* ActiveTileView = PanelNavigator->GetActiveTileView())
+		if (PanelNavigator->QuickSplitActiveSelection())
 		{
-			ActiveTileView->QuickSplitSelectedEntry();
+			return;
 		}
-		else
-		{
-			UE_LOG(LogRpgInventoryControllerActionsWidget, Warning, TEXT("%s quick split ignored because there is no active inventory tile view."),
-				*GetNameSafe(this));
-		}
+
+		UE_LOG(LogRpgInventoryControllerActionsWidget, Warning, TEXT("%s quick split ignored because the active panel selection does not support it."),
+			*GetNameSafe(this));
 	}
 }
 
@@ -242,15 +238,13 @@ void URpgInventoryControllerActionsWidget::HandleUseOrEquipAction()
 
 	if (PanelNavigator)
 	{
-		if (URpgInventoryTileView* ActiveTileView = PanelNavigator->GetActiveTileView())
+		if (PanelNavigator->UseOrEquipActiveSelection())
 		{
-			ActiveTileView->UseOrEquipSelectedEntry();
+			return;
 		}
-		else
-		{
-			UE_LOG(LogRpgInventoryControllerActionsWidget, Warning, TEXT("%s use/equip ignored because there is no active inventory tile view."),
-				*GetNameSafe(this));
-		}
+
+		UE_LOG(LogRpgInventoryControllerActionsWidget, Warning, TEXT("%s use/equip ignored because the active panel selection does not support it."),
+			*GetNameSafe(this));
 	}
 }
 
@@ -262,15 +256,13 @@ void URpgInventoryControllerActionsWidget::HandleDropAction()
 
 	if (PanelNavigator)
 	{
-		if (URpgInventoryTileView* ActiveTileView = PanelNavigator->GetActiveTileView())
+		if (PanelNavigator->DropActiveSelection())
 		{
-			ActiveTileView->DropSelectedEntry();
+			return;
 		}
-		else
-		{
-			UE_LOG(LogRpgInventoryControllerActionsWidget, Warning, TEXT("%s drop ignored because there is no active inventory tile view."),
-				*GetNameSafe(this));
-		}
+
+		UE_LOG(LogRpgInventoryControllerActionsWidget, Warning, TEXT("%s drop ignored because the active panel selection does not support it."),
+			*GetNameSafe(this));
 	}
 }
 
