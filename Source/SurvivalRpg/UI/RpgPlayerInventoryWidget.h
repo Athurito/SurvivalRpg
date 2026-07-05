@@ -2,13 +2,14 @@
 
 #include "CoreMinimal.h"
 #include "SurvivalRpg/Equipment/RpgEquipmentDefinition.h"
-#include "SurvivalRpg/UI/RpgActivatableWidget.h"
+#include "SurvivalRpg/UI/RpgInventoryControllerActionsWidget.h"
 
 #include "RpgPlayerInventoryWidget.generated.h"
 
 class URpgActionBarTileView;
 class URpgEquipmentSlotWidget;
 class URpgInventoryDragDropCoordinator;
+class URpgInventoryPanelNavigationCoordinator;
 class URpgInventorySlotGroupListView;
 class URpgPlayerInventoryViewModel;
 
@@ -20,7 +21,7 @@ class URpgPlayerInventoryViewModel;
  * components; this widget only connects view models to CommonUI views.
  */
 UCLASS(Abstract, Blueprintable)
-class SURVIVALRPG_API URpgPlayerInventoryWidget : public URpgActivatableWidget
+class SURVIVALRPG_API URpgPlayerInventoryWidget : public URpgInventoryControllerActionsWidget
 {
 	GENERATED_BODY()
 
@@ -30,6 +31,10 @@ public:
 	/** Ensures the screen-local drag/drop coordinator exists and forwards it to all bound child widgets. */
 	UFUNCTION(BlueprintCallable, Category = "Inventory|Player")
 	void EnsurePlayerInventoryCoordinator();
+
+	/** Ensures the screen-local panel navigator exists and is shared with controller action routing. */
+	UFUNCTION(BlueprintCallable, Category = "Inventory|Player")
+	void EnsurePlayerInventoryPanelNavigator();
 
 	/** Rebinds the aggregate player inventory VM to the owning player controller and refreshes all child views. */
 	UFUNCTION(BlueprintCallable, Category = "Inventory|Player")
@@ -54,10 +59,6 @@ public:
 	/** Aggregate MVVM projection used by this screen. Created by the native base when missing. */
 	UFUNCTION(BlueprintPure, Category = "Inventory|Player")
 	URpgPlayerInventoryViewModel* GetPlayerInventoryViewModel() const { return PlayerInventoryViewModel; }
-
-	/** Screen-local drag/drop coordinator shared by gear, address slots, and actionbar preview. */
-	UFUNCTION(BlueprintPure, Category = "Inventory|Player")
-	URpgInventoryDragDropCoordinator* GetInventoryDragDropCoordinator() const { return DragDropCoordinator; }
 
 	/** Returns a compact runtime summary for debugging Blueprint widget binding and VM list counts. */
 	UFUNCTION(BlueprintCallable, Category = "Inventory|Player|Debug")
@@ -127,12 +128,16 @@ private:
 	void BindViewModelDelegates();
 	void SetGearSlotViewModel(URpgEquipmentSlotWidget* GearSlotWidget, ERpgEquipmentSlot EquipmentSlot, bool bBagSlot) const;
 	void ForwardCoordinatorToChildren();
+	void RegisterPlayerInventoryNavigationPanels();
 
 	UPROPERTY(Transient)
 	TObjectPtr<URpgPlayerInventoryViewModel> PlayerInventoryViewModel = nullptr;
 
 	UPROPERTY(Transient)
-	TObjectPtr<URpgInventoryDragDropCoordinator> DragDropCoordinator = nullptr;
+	TObjectPtr<URpgInventoryDragDropCoordinator> PlayerDragDropCoordinator = nullptr;
+
+	UPROPERTY(Transient)
+	TObjectPtr<URpgInventoryPanelNavigationCoordinator> PlayerPanelNavigationCoordinator = nullptr;
 
 	bool bViewModelDelegatesBound = false;
 };

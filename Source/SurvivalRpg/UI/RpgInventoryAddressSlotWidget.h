@@ -10,6 +10,7 @@
 class UDragDropOperation;
 class UUserWidget;
 class URpgInventoryAddressSlotViewModel;
+class URpgInventoryAddressTileView;
 class URpgInventoryDragDropCoordinator;
 
 /**
@@ -38,6 +39,9 @@ public:
 	UFUNCTION(BlueprintCallable, Category = "Inventory|Address Slot")
 	void SetInventoryPanelActive(bool bInInventoryPanelActive);
 
+	/** Assigns the hidden ListView mirror used by spatial grids to keep controller shortcut selection in sync. */
+	void SetSelectionMirrorTileView(URpgInventoryAddressTileView* InSelectionMirrorTileView);
+
 	/** Current logical slot VM assigned by the owning list/tile view. */
 	UFUNCTION(BlueprintPure, Category = "Inventory|Address Slot")
 	URpgInventoryAddressSlotViewModel* GetAddressSlotViewModel() const { return SlotViewModel.Get(); }
@@ -58,9 +62,14 @@ protected:
 	virtual void NativeOnListItemObjectSet(UObject* ListItemObject) override;
 	virtual void NativeOnEntryReleased() override;
 	virtual void NativeOnItemSelectionChanged(bool bIsSelected) override;
+	virtual void NativeOnAddedToFocusPath(const FFocusEvent& InFocusEvent) override;
+	virtual void NativeOnRemovedFromFocusPath(const FFocusEvent& InFocusEvent) override;
 	virtual void NativeOnClicked() override;
+	virtual FReply NativeOnPreviewMouseButtonDown(const FGeometry& InGeometry, const FPointerEvent& InMouseEvent) override;
 	virtual FReply NativeOnMouseButtonDown(const FGeometry& InGeometry, const FPointerEvent& InMouseEvent) override;
+	virtual FReply NativeOnMouseButtonUp(const FGeometry& InGeometry, const FPointerEvent& InMouseEvent) override;
 	virtual void NativeOnDragDetected(const FGeometry& InGeometry, const FPointerEvent& InMouseEvent, UDragDropOperation*& OutOperation) override;
+	virtual bool NativeOnDragOver(const FGeometry& InGeometry, const FDragDropEvent& InDragDropEvent, UDragDropOperation* InOperation) override;
 	virtual bool NativeOnDrop(const FGeometry& InGeometry, const FDragDropEvent& InDragDropEvent, UDragDropOperation* InOperation) override;
 
 	/** Blueprint presentation hook called when this recycled entry receives a new address slot VM. */
@@ -90,6 +99,8 @@ private:
 	UFUNCTION()
 	void HandleHeldPayloadChanged(bool bHasHeldPayload, const FRpgInventoryDragPayload& HeldPayload);
 
+	FReply HandlePointerButtonDown(const FGeometry& InGeometry, const FPointerEvent& InMouseEvent);
+	void MirrorSelectionToTileView() const;
 	FRpgInventoryDragPayload MakeDragPayload(bool bAllowEmptyAddressPayload) const;
 	FRpgInventoryDropTarget MakeDropTarget() const;
 
@@ -100,8 +111,12 @@ private:
 	TObjectPtr<URpgInventoryDragDropCoordinator> DragDropCoordinator = nullptr;
 
 	UPROPERTY(Transient)
+	TObjectPtr<URpgInventoryAddressTileView> SelectionMirrorTileView = nullptr;
+
+	UPROPERTY(Transient)
 	ERpgInventorySlotDragVisualState CurrentDragDropVisualState = ERpgInventorySlotDragVisualState::Normal;
 
 	bool bSlotSelected = false;
 	bool bInventoryPanelActive = true;
+	bool bPendingLeftClickAccept = false;
 };

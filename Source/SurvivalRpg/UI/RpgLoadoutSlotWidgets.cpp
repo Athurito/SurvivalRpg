@@ -1,6 +1,7 @@
 #include "RpgLoadoutSlotWidgets.h"
 
 #include "Blueprint/DragDropOperation.h"
+#include "Blueprint/WidgetBlueprintLibrary.h"
 #include "Input/Reply.h"
 #include "InputCoreTypes.h"
 #include "MVVMSubsystem.h"
@@ -140,6 +141,28 @@ void URpgEquipmentSlotWidget::NativeOnClicked()
 
 FReply URpgEquipmentSlotWidget::NativeOnMouseButtonDown(const FGeometry& InGeometry, const FPointerEvent& InMouseEvent)
 {
+	const FReply HandledReply = HandlePointerButtonDown(InGeometry, InMouseEvent);
+	if (HandledReply.IsEventHandled())
+	{
+		return HandledReply;
+	}
+
+	return Super::NativeOnMouseButtonDown(InGeometry, InMouseEvent);
+}
+
+FReply URpgEquipmentSlotWidget::NativeOnPreviewMouseButtonDown(const FGeometry& InGeometry, const FPointerEvent& InMouseEvent)
+{
+	const FReply HandledReply = HandlePointerButtonDown(InGeometry, InMouseEvent);
+	if (HandledReply.IsEventHandled())
+	{
+		return HandledReply;
+	}
+
+	return Super::NativeOnPreviewMouseButtonDown(InGeometry, InMouseEvent);
+}
+
+FReply URpgEquipmentSlotWidget::HandlePointerButtonDown(const FGeometry& InGeometry, const FPointerEvent& InMouseEvent)
+{
 	if (InMouseEvent.GetEffectingButton() == EKeys::RightMouseButton && HandleClearAssignment())
 	{
 		return FReply::Handled();
@@ -147,14 +170,28 @@ FReply URpgEquipmentSlotWidget::NativeOnMouseButtonDown(const FGeometry& InGeome
 
 	if (InMouseEvent.GetEffectingButton() == EKeys::LeftMouseButton && GetRepresentedItem())
 	{
-		return FReply::Handled().DetectDrag(TakeWidget(), EKeys::LeftMouseButton);
+		bPendingLeftClickAccept = true;
+		return UWidgetBlueprintLibrary::DetectDragIfPressed(InMouseEvent, this, EKeys::LeftMouseButton).NativeReply;
 	}
 
-	return Super::NativeOnMouseButtonDown(InGeometry, InMouseEvent);
+	return FReply::Unhandled();
+}
+
+FReply URpgEquipmentSlotWidget::NativeOnMouseButtonUp(const FGeometry& InGeometry, const FPointerEvent& InMouseEvent)
+{
+	if (InMouseEvent.GetEffectingButton() == EKeys::LeftMouseButton && bPendingLeftClickAccept)
+	{
+		bPendingLeftClickAccept = false;
+		return HandleSlotAccept() ? FReply::Handled() : FReply::Unhandled();
+	}
+
+	return Super::NativeOnMouseButtonUp(InGeometry, InMouseEvent);
 }
 
 void URpgEquipmentSlotWidget::NativeOnDragDetected(const FGeometry& InGeometry, const FPointerEvent& InMouseEvent, UDragDropOperation*& OutOperation)
 {
+	bPendingLeftClickAccept = false;
+
 	const FRpgInventoryDragPayload Payload = MakeDragPayload();
 	if (!URpgInventoryDragDropCoordinator::IsPayloadValid(Payload))
 	{
@@ -167,9 +204,37 @@ void URpgEquipmentSlotWidget::NativeOnDragDetected(const FGeometry& InGeometry, 
 		return;
 	}
 
+	InventoryOperation->Pivot = EDragPivot::MouseDown;
 	InventoryOperation->Payload = GetRepresentedItem();
 	InventoryOperation->InventoryPayload = Payload;
+
+	TSubclassOf<UUserWidget> VisualClass = DragVisualClass;
+	if (!VisualClass)
+	{
+		VisualClass = GetClass();
+	}
+
+	if (VisualClass)
+	{
+		UUserWidget* DragVisual = CreateWidget<UUserWidget>(GetWorld(), VisualClass);
+		if (URpgEquipmentSlotWidget* EquipmentSlotDragVisual = Cast<URpgEquipmentSlotWidget>(DragVisual))
+		{
+			EquipmentSlotDragVisual->SetEquipmentSlotViewModel(SlotViewModel);
+			EquipmentSlotDragVisual->SetDragDropCoordinator(DragDropCoordinator);
+		}
+
+		InventoryOperation->DefaultDragVisual = DragVisual;
+	}
+
 	OutOperation = InventoryOperation;
+}
+
+bool URpgEquipmentSlotWidget::NativeOnDragOver(const FGeometry& InGeometry, const FDragDropEvent& InDragDropEvent, UDragDropOperation* InOperation)
+{
+	const URpgInventoryDragDropOperation* InventoryOperation = Cast<URpgInventoryDragDropOperation>(InOperation);
+	return DragDropCoordinator &&
+		InventoryOperation &&
+		DragDropCoordinator->PreviewPayloadDrop(InventoryOperation->InventoryPayload, MakeDropTarget());
 }
 
 bool URpgEquipmentSlotWidget::NativeOnDrop(const FGeometry& InGeometry, const FDragDropEvent& InDragDropEvent, UDragDropOperation* InOperation)

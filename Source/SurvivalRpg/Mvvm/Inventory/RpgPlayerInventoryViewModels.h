@@ -91,6 +91,14 @@ public:
 	UFUNCTION(BlueprintPure, Category = "Inventory|Layout ViewModel")
 	int32 GetStackCount() const { return StackCount; }
 
+	/** Short item name for compact slot or overlay presentation. */
+	UFUNCTION(BlueprintPure, Category = "Inventory|Layout ViewModel")
+	FText GetShortDisplayName() const { return ShortDisplayName; }
+
+	/** Optional item icon for compact slot or overlay presentation. */
+	UFUNCTION(BlueprintPure, Category = "Inventory|Layout ViewModel")
+	TSoftObjectPtr<UTexture2D> GetIcon() const { return Icon; }
+
 	/** True when this slot has no item. */
 	UFUNCTION(BlueprintPure, Category = "Inventory|Layout ViewModel")
 	bool IsEmptySlot() const { return bIsEmptySlot; }
@@ -102,6 +110,10 @@ public:
 	/** True when this cell is covered by an item whose origin is another cell. */
 	UFUNCTION(BlueprintPure, Category = "Inventory|Layout ViewModel")
 	bool IsItemCoveredCell() const { return bItemCoveredCell; }
+
+	/** True only for the item origin cell that should draw icon/name/stack visuals. */
+	UFUNCTION(BlueprintPure, Category = "Inventory|Layout ViewModel")
+	bool ShouldRenderItemVisual() const { return bRenderItemVisual; }
 
 	/** True when this slot can start a drag/controller hold. */
 	UFUNCTION(BlueprintPure, Category = "Inventory|Layout ViewModel")
@@ -199,6 +211,10 @@ protected:
 	/** True when this cell is occupied by ItemInstance but should not render/start actions as the primary item cell. */
 	UPROPERTY(BlueprintReadOnly, FieldNotify, Category = "Inventory|Layout ViewModel", meta = (AllowPrivateAccess = "true"))
 	bool bItemCoveredCell = false;
+
+	/** True when widgets should draw item visuals for this cell. Covered cells remain occupied but visually empty. */
+	UPROPERTY(BlueprintReadOnly, FieldNotify, Category = "Inventory|Layout ViewModel", meta = (AllowPrivateAccess = "true"))
+	bool bRenderItemVisual = false;
 
 	/** True when widgets may start a drag payload for this slot. */
 	UPROPERTY(BlueprintReadOnly, FieldNotify, Category = "Inventory|Layout ViewModel", meta = (AllowPrivateAccess = "true"))

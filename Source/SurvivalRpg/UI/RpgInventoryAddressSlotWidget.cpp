@@ -1,12 +1,14 @@
 #include "RpgInventoryAddressSlotWidget.h"
 
 #include "Blueprint/DragDropOperation.h"
+#include "Blueprint/WidgetBlueprintLibrary.h"
 #include "Input/Reply.h"
 #include "InputCoreTypes.h"
 #include "MVVMSubsystem.h"
 #include "SurvivalRpg/Inventory/RpgInventoryDragDrop.h"
 #include "SurvivalRpg/Inventory/RpgInventoryItemInstance.h"
 #include "SurvivalRpg/Mvvm/Inventory/RpgPlayerInventoryViewModels.h"
+#include "SurvivalRpg/UI/RpgPlayerInventoryLayoutViews.h"
 #include "View/MVVMView.h"
 
 #include UE_INLINE_GENERATED_CPP_BY_NAME(RpgInventoryAddressSlotWidget)
@@ -77,6 +79,11 @@ void URpgInventoryAddressSlotWidget::SetInventoryPanelActive(bool bInInventoryPa
 	RefreshDragDropVisualState();
 }
 
+void URpgInventoryAddressSlotWidget::SetSelectionMirrorTileView(URpgInventoryAddressTileView* InSelectionMirrorTileView)
+{
+	SelectionMirrorTileView = InSelectionMirrorTileView;
+}
+
 bool URpgInventoryAddressSlotWidget::HandleSlotAccept()
 {
 	if (!DragDropCoordinator || !SlotViewModel)
@@ -127,14 +134,58 @@ void URpgInventoryAddressSlotWidget::NativeOnItemSelectionChanged(bool bIsSelect
 	RefreshDragDropVisualState();
 }
 
+void URpgInventoryAddressSlotWidget::NativeOnAddedToFocusPath(const FFocusEvent& InFocusEvent)
+{
+	Super::NativeOnAddedToFocusPath(InFocusEvent);
+
+	bSlotSelected = true;
+	BP_OnAddressSlotSelectionChanged(true);
+	MirrorSelectionToTileView();
+	RefreshDragDropVisualState();
+}
+
+void URpgInventoryAddressSlotWidget::NativeOnRemovedFromFocusPath(const FFocusEvent& InFocusEvent)
+{
+	Super::NativeOnRemovedFromFocusPath(InFocusEvent);
+
+	bSlotSelected = false;
+	BP_OnAddressSlotSelectionChanged(false);
+	RefreshDragDropVisualState();
+}
+
 void URpgInventoryAddressSlotWidget::NativeOnClicked()
 {
 	Super::NativeOnClicked();
+	MirrorSelectionToTileView();
 	HandleSlotAccept();
 }
 
 FReply URpgInventoryAddressSlotWidget::NativeOnMouseButtonDown(const FGeometry& InGeometry, const FPointerEvent& InMouseEvent)
 {
+	const FReply HandledReply = HandlePointerButtonDown(InGeometry, InMouseEvent);
+	if (HandledReply.IsEventHandled())
+	{
+		return HandledReply;
+	}
+
+	return Super::NativeOnMouseButtonDown(InGeometry, InMouseEvent);
+}
+
+FReply URpgInventoryAddressSlotWidget::NativeOnPreviewMouseButtonDown(const FGeometry& InGeometry, const FPointerEvent& InMouseEvent)
+{
+	const FReply HandledReply = HandlePointerButtonDown(InGeometry, InMouseEvent);
+	if (HandledReply.IsEventHandled())
+	{
+		return HandledReply;
+	}
+
+	return Super::NativeOnPreviewMouseButtonDown(InGeometry, InMouseEvent);
+}
+
+FReply URpgInventoryAddressSlotWidget::HandlePointerButtonDown(const FGeometry& InGeometry, const FPointerEvent& InMouseEvent)
+{
+	MirrorSelectionToTileView();
+
 	if (InMouseEvent.GetEffectingButton() == EKeys::RightMouseButton && DragDropCoordinator && DragDropCoordinator->UseOrEquipAddressSlot(SlotViewModel))
 	{
 		return FReply::Handled();
@@ -142,14 +193,28 @@ FReply URpgInventoryAddressSlotWidget::NativeOnMouseButtonDown(const FGeometry& 
 
 	if (InMouseEvent.GetEffectingButton() == EKeys::LeftMouseButton && SlotViewModel && (SlotViewModel->CanDrag() || SlotViewModel->IsActionbarBindable()))
 	{
-		return FReply::Handled().DetectDrag(TakeWidget(), EKeys::LeftMouseButton);
+		bPendingLeftClickAccept = true;
+		return UWidgetBlueprintLibrary::DetectDragIfPressed(InMouseEvent, this, EKeys::LeftMouseButton).NativeReply;
 	}
 
-	return Super::NativeOnMouseButtonDown(InGeometry, InMouseEvent);
+	return FReply::Unhandled();
+}
+
+FReply URpgInventoryAddressSlotWidget::NativeOnMouseButtonUp(const FGeometry& InGeometry, const FPointerEvent& InMouseEvent)
+{
+	if (InMouseEvent.GetEffectingButton() == EKeys::LeftMouseButton && bPendingLeftClickAccept)
+	{
+		bPendingLeftClickAccept = false;
+		return HandleSlotAccept() ? FReply::Handled() : FReply::Unhandled();
+	}
+
+	return Super::NativeOnMouseButtonUp(InGeometry, InMouseEvent);
 }
 
 void URpgInventoryAddressSlotWidget::NativeOnDragDetected(const FGeometry& InGeometry, const FPointerEvent& InMouseEvent, UDragDropOperation*& OutOperation)
 {
+	bPendingLeftClickAccept = false;
+
 	const FRpgInventoryDragPayload Payload = MakeDragPayload(true);
 	if (!URpgInventoryDragDropCoordinator::IsPayloadValid(Payload))
 	{
@@ -162,6 +227,7 @@ void URpgInventoryAddressSlotWidget::NativeOnDragDetected(const FGeometry& InGeo
 		return;
 	}
 
+	InventoryOperation->Pivot = EDragPivot::MouseDown;
 	InventoryOperation->Payload = SlotViewModel;
 	InventoryOperation->InventoryPayload = Payload;
 
@@ -178,12 +244,21 @@ void URpgInventoryAddressSlotWidget::NativeOnDragDetected(const FGeometry& InGeo
 		{
 			AddressSlotDragVisual->SetAddressSlotViewModel(SlotViewModel);
 			AddressSlotDragVisual->SetDragDropCoordinator(DragDropCoordinator);
+			AddressSlotDragVisual->SetSelectionMirrorTileView(SelectionMirrorTileView);
 		}
 
 		InventoryOperation->DefaultDragVisual = DragVisual;
 	}
 
 	OutOperation = InventoryOperation;
+}
+
+bool URpgInventoryAddressSlotWidget::NativeOnDragOver(const FGeometry& InGeometry, const FDragDropEvent& InDragDropEvent, UDragDropOperation* InOperation)
+{
+	const URpgInventoryDragDropOperation* InventoryOperation = Cast<URpgInventoryDragDropOperation>(InOperation);
+	return DragDropCoordinator &&
+		InventoryOperation &&
+		DragDropCoordinator->PreviewPayloadDrop(InventoryOperation->InventoryPayload, MakeDropTarget());
 }
 
 bool URpgInventoryAddressSlotWidget::NativeOnDrop(const FGeometry& InGeometry, const FDragDropEvent& InDragDropEvent, UDragDropOperation* InOperation)
@@ -209,6 +284,14 @@ void URpgInventoryAddressSlotWidget::HandleSlotViewModelChanged(URpgInventoryAdd
 void URpgInventoryAddressSlotWidget::HandleHeldPayloadChanged(bool bHasHeldPayload, const FRpgInventoryDragPayload& HeldPayload)
 {
 	RefreshDragDropVisualState();
+}
+
+void URpgInventoryAddressSlotWidget::MirrorSelectionToTileView() const
+{
+	if (SelectionMirrorTileView && SlotViewModel)
+	{
+		SelectionMirrorTileView->MirrorAddressSlotSelection(SlotViewModel);
+	}
 }
 
 FRpgInventoryDragPayload URpgInventoryAddressSlotWidget::MakeDragPayload(bool bAllowEmptyAddressPayload) const

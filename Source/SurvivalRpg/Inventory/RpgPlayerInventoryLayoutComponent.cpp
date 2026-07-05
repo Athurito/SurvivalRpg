@@ -70,7 +70,7 @@ URpgPlayerInventoryLayoutComponent::URpgPlayerInventoryLayoutComponent(const FOb
 		MakeStaticGroup(ShieldSlotGroupId, NSLOCTEXT("RpgInventoryLayout", "ShieldSlot", "Shield"), 1, 1, { ERpgInventoryItemCategory::Shield }, true, true, ERpgInventorySlotGroupKind::Carry),
 		MakeStaticGroup(ToolSlot1GroupId, NSLOCTEXT("RpgInventoryLayout", "ToolSlot1", "Tool 1"), 1, 1, { ERpgInventoryItemCategory::Tool }, true, true, ERpgInventorySlotGroupKind::Carry),
 		MakeStaticGroup(ToolSlot2GroupId, NSLOCTEXT("RpgInventoryLayout", "ToolSlot2", "Tool 2"), 1, 1, { ERpgInventoryItemCategory::Tool }, true, true, ERpgInventorySlotGroupKind::Carry),
-		MakeStaticGroup(PocketsGroupId, NSLOCTEXT("RpgInventoryLayout", "Pockets", "Pockets"), 4, 2, {}, false, false, ERpgInventorySlotGroupKind::Content)
+		MakeStaticGroup(PocketsGroupId, NSLOCTEXT("RpgInventoryLayout", "Pockets", "Pockets"), 4, 2, {}, true, false, ERpgInventorySlotGroupKind::Content)
 	};
 }
 

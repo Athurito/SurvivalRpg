@@ -108,6 +108,7 @@ private:
 	UFUNCTION()
 	void HandleActivePanelChanged(FName PanelId, int32 PanelIndex, URpgInventoryTileView* TileView, URpgInventoryManagerComponent* Inventory);
 
+	void EnsureDefaultInventoryControllerActionRows();
 	void RegisterActionRow(const FDataTableRowHandle& ActionRow, const FSimpleDelegate& Delegate);
 	bool HandleInventoryBackAction();
 	static bool IsActionRowValid(const FDataTableRowHandle& ActionRow);

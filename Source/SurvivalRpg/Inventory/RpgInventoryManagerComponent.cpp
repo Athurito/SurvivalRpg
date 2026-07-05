@@ -717,9 +717,80 @@ bool FRpgInventoryList::MoveEntry(FGuid EntryId, int32 TargetIndex)
 	return SetOrderFromSortedEntryPointers(SortedEntries);
 }
 
-bool FRpgInventoryList::MoveEntryToPlacement(FGuid EntryId, const FRpgInventoryGridPlacement& TargetPlacement)
+bool FRpgInventoryList::CanMoveEntryToPlacement(FGuid EntryId, const FRpgInventoryGridPlacement& TargetPlacement, FRpgInventoryGridPlacement* OutNormalizedTargetPlacement) const
 {
 	if (!EntryId.IsValid() || !TargetPlacement.IsValid())
+	{
+		return false;
+	}
+
+	const FRpgInventoryEntry* MovingEntry = FindEntryByEntryId(EntryId);
+	if (!MovingEntry || !MovingEntry->Instance)
+	{
+		return false;
+	}
+
+	FRpgInventoryGridPlacement NormalizedTargetPlacement;
+	if (!NormalizePlacementForEntry(*MovingEntry, TargetPlacement, NormalizedTargetPlacement))
+	{
+		return false;
+	}
+
+	if (OutNormalizedTargetPlacement)
+	{
+		*OutNormalizedTargetPlacement = NormalizedTargetPlacement;
+	}
+
+	if (!CanEntryUsePlacement(*MovingEntry, NormalizedTargetPlacement) ||
+		!IsPlacementWithinGrid(NormalizedTargetPlacement))
+	{
+		return false;
+	}
+
+	TArray<const FRpgInventoryEntry*> OverlappingEntries;
+	FindEntriesOverlapping(NormalizedTargetPlacement, MovingEntry, OverlappingEntries);
+	if (OverlappingEntries.Num() == 0)
+	{
+		return true;
+	}
+
+	if (OverlappingEntries.Num() > 1)
+	{
+		return false;
+	}
+
+	const FRpgInventoryEntry* TargetEntry = OverlappingEntries[0];
+	if (!TargetEntry || !TargetEntry->Instance)
+	{
+		return false;
+	}
+
+	if (TargetEntry->Instance &&
+		MovingEntry->Instance->GetItemDef() == TargetEntry->Instance->GetItemDef())
+	{
+		const int32 MaxStackSize = GetInventoryManagerMaxStackSizeForDefinition(TargetEntry->Instance->GetItemDef());
+		const int32 FreeCapacity = FMath::Max(0, MaxStackSize - TargetEntry->StackCount);
+		if (FreeCapacity > 0)
+		{
+			return true;
+		}
+	}
+
+	FRpgInventoryGridPlacement TargetSwapPlacement = TargetEntry->Placement;
+	TargetSwapPlacement.ContainerId = MovingEntry->Placement.ContainerId;
+	TargetSwapPlacement.X = MovingEntry->Placement.X;
+	TargetSwapPlacement.Y = MovingEntry->Placement.Y;
+
+	return CanEntryUsePlacement(*TargetEntry, TargetSwapPlacement) &&
+		IsPlacementWithinGrid(TargetSwapPlacement) &&
+		CanPlaceEntryAt(TargetSwapPlacement, MovingEntry, TargetEntry) &&
+		CanPlaceEntryAt(NormalizedTargetPlacement, MovingEntry, TargetEntry);
+}
+
+bool FRpgInventoryList::MoveEntryToPlacement(FGuid EntryId, const FRpgInventoryGridPlacement& TargetPlacement)
+{
+	FRpgInventoryGridPlacement NormalizedTargetPlacement;
+	if (!CanMoveEntryToPlacement(EntryId, TargetPlacement, &NormalizedTargetPlacement))
 	{
 		return false;
 	}
@@ -730,46 +801,11 @@ bool FRpgInventoryList::MoveEntryToPlacement(FGuid EntryId, const FRpgInventoryG
 		return false;
 	}
 
-	const TSubclassOf<URpgInventoryItemDefinition> MovingDefinition = MovingEntry->Instance->GetItemDef();
-	FRpgInventoryGridPlacement NormalizedTargetPlacement = TargetPlacement;
-	const FRpgInventoryGridSize MovingFootprint = GetInventoryManagerFootprintForDefinition(MovingDefinition, false);
-	NormalizedTargetPlacement.Width = MovingFootprint.Width;
-	NormalizedTargetPlacement.Height = MovingFootprint.Height;
-	NormalizedTargetPlacement.bRotated = TargetPlacement.bRotated && CanInventoryManagerRotateDefinition(MovingDefinition);
-
-	if (const URpgInventoryManagerComponent* Inventory = Cast<URpgInventoryManagerComponent>(OwnerComponent))
-	{
-		if (const URpgPlayerInventoryLayoutComponent* InventoryLayout = Inventory->FindOwningPlayerInventoryLayout())
-		{
-			FRpgInventorySlotAddress TargetAddress;
-			TargetAddress.ContainerId = NormalizedTargetPlacement.ContainerId;
-			TargetAddress.X = NormalizedTargetPlacement.X;
-			TargetAddress.Y = NormalizedTargetPlacement.Y;
-			if (!InventoryLayout->CanItemUseSlotAddress(MovingEntry->Instance, TargetAddress))
-			{
-				return false;
-			}
-		}
-	}
-
-	if (!IsPlacementWithinGrid(NormalizedTargetPlacement))
-	{
-		return false;
-	}
-
-	FRpgInventoryEntry* TargetEntry = FindEntryOverlapping(NormalizedTargetPlacement, MovingEntry);
-	if (TargetEntry == MovingEntry)
-	{
-		return true;
-	}
-
+	TArray<const FRpgInventoryEntry*> OverlappingEntries;
+	FindEntriesOverlapping(NormalizedTargetPlacement, MovingEntry, OverlappingEntries);
+	FRpgInventoryEntry* TargetEntry = OverlappingEntries.Num() == 1 ? FindEntryByEntryId(OverlappingEntries[0]->EntryId) : nullptr;
 	if (!TargetEntry)
 	{
-		if (!CanPlaceEntryAt(NormalizedTargetPlacement, MovingEntry))
-		{
-			return false;
-		}
-
 		MovingEntry->Placement = NormalizedTargetPlacement;
 		MarkItemDirty(*MovingEntry);
 		BroadcastChangeMessage(*MovingEntry, MovingEntry->StackCount, MovingEntry->StackCount, true);
@@ -828,8 +864,8 @@ bool FRpgInventoryList::MoveEntryToPlacement(FGuid EntryId, const FRpgInventoryG
 	TargetSwapPlacement.Y = MovingEntry->Placement.Y;
 
 	if (!IsPlacementWithinGrid(TargetSwapPlacement) ||
-		!CanPlaceEntryAt(TargetSwapPlacement, TargetEntry) ||
-		!CanPlaceEntryAt(NormalizedTargetPlacement, MovingEntry))
+		!CanPlaceEntryAt(TargetSwapPlacement, MovingEntry, TargetEntry) ||
+		!CanPlaceEntryAt(NormalizedTargetPlacement, MovingEntry, TargetEntry))
 	{
 		return false;
 	}
@@ -1046,6 +1082,18 @@ const FRpgInventoryEntry* FRpgInventoryList::FindEntryOverlapping(const FRpgInve
 	return nullptr;
 }
 
+void FRpgInventoryList::FindEntriesOverlapping(const FRpgInventoryGridPlacement& Placement, const FRpgInventoryEntry* IgnoredEntry, TArray<const FRpgInventoryEntry*>& OutEntries) const
+{
+	OutEntries.Reset();
+	for (const FRpgInventoryEntry& Entry : Entries)
+	{
+		if (&Entry != IgnoredEntry && Entry.Instance != nullptr && Entry.StackCount > 0 && Entry.Placement.Overlaps(Placement))
+		{
+			OutEntries.Add(&Entry);
+		}
+	}
+}
+
 bool FRpgInventoryList::IsPlacementWithinGrid(const FRpgInventoryGridPlacement& Placement) const
 {
 	if (!Placement.IsValid())
@@ -1070,6 +1118,82 @@ bool FRpgInventoryList::IsPlacementWithinGrid(const FRpgInventoryGridPlacement& 
 bool FRpgInventoryList::CanPlaceEntryAt(const FRpgInventoryGridPlacement& Placement, const FRpgInventoryEntry* IgnoredEntry) const
 {
 	return IsPlacementWithinGrid(Placement) && FindEntryOverlapping(Placement, IgnoredEntry) == nullptr;
+}
+
+bool FRpgInventoryList::CanPlaceEntryAt(const FRpgInventoryGridPlacement& Placement, const FRpgInventoryEntry* IgnoredEntryA, const FRpgInventoryEntry* IgnoredEntryB) const
+{
+	if (!IsPlacementWithinGrid(Placement))
+	{
+		return false;
+	}
+
+	for (const FRpgInventoryEntry& Entry : Entries)
+	{
+		if (&Entry != IgnoredEntryA &&
+			&Entry != IgnoredEntryB &&
+			Entry.Instance != nullptr &&
+			Entry.StackCount > 0 &&
+			Entry.Placement.Overlaps(Placement))
+		{
+			return false;
+		}
+	}
+
+	return true;
+}
+
+bool FRpgInventoryList::CanEntryUsePlacement(const FRpgInventoryEntry& Entry, const FRpgInventoryGridPlacement& Placement) const
+{
+	if (!Entry.Instance || !Placement.IsValid())
+	{
+		return false;
+	}
+
+	if (const URpgInventoryManagerComponent* Inventory = Cast<URpgInventoryManagerComponent>(OwnerComponent))
+	{
+		if (const URpgPlayerInventoryLayoutComponent* InventoryLayout = Inventory->FindOwningPlayerInventoryLayout())
+		{
+			FRpgInventorySlotAddress Address;
+			Address.ContainerId = Placement.ContainerId;
+			Address.X = Placement.X;
+			Address.Y = Placement.Y;
+			return InventoryLayout->CanItemUseSlotAddress(Entry.Instance, Address);
+		}
+	}
+
+	return true;
+}
+
+bool FRpgInventoryList::NormalizePlacementForEntry(const FRpgInventoryEntry& Entry, const FRpgInventoryGridPlacement& TargetPlacement, FRpgInventoryGridPlacement& OutNormalizedPlacement) const
+{
+	OutNormalizedPlacement = FRpgInventoryGridPlacement();
+	if (!Entry.Instance || !TargetPlacement.IsValid())
+	{
+		return false;
+	}
+
+	const TSubclassOf<URpgInventoryItemDefinition> ItemDefinition = Entry.Instance->GetItemDef();
+	if (!ItemDefinition)
+	{
+		return false;
+	}
+
+	if (TargetPlacement.bRotated && !CanInventoryManagerRotateDefinition(ItemDefinition))
+	{
+		return false;
+	}
+
+	const FRpgInventoryGridSize UnrotatedFootprint = GetInventoryManagerFootprintForDefinition(ItemDefinition, false);
+	if (!UnrotatedFootprint.IsValid())
+	{
+		return false;
+	}
+
+	OutNormalizedPlacement = TargetPlacement;
+	OutNormalizedPlacement.Width = UnrotatedFootprint.Width;
+	OutNormalizedPlacement.Height = UnrotatedFootprint.Height;
+	OutNormalizedPlacement.bRotated = TargetPlacement.bRotated;
+	return true;
 }
 
 bool FRpgInventoryList::FindFirstFitPlacement(TSubclassOf<URpgInventoryItemDefinition> ItemDef, FRpgInventoryGridPlacement& OutPlacement) const
@@ -1427,6 +1551,11 @@ bool URpgInventoryManagerComponent::CanAddItemDefinitionToPlacement(TSubclassOf<
 		return false;
 	}
 
+	if (Placement.bRotated && !CanInventoryManagerRotateDefinition(ItemDef))
+	{
+		return false;
+	}
+
 	const int32 MaxStackSize = GetInventoryManagerMaxStackSizeForDefinition(ItemDef);
 	if (StackCount > MaxStackSize)
 	{
@@ -1460,18 +1589,29 @@ bool URpgInventoryManagerComponent::CanAddItemDefinitionToPlacement(TSubclassOf<
 		}
 	}
 
-	URpgInventoryItemInstance* ExistingItem = InventoryList.GetItemAtCell(NormalizedPlacement.ContainerId, NormalizedPlacement.X, NormalizedPlacement.Y);
-	if (!ExistingItem)
+	TArray<const FRpgInventoryEntry*> OverlappingEntries;
+	InventoryList.FindEntriesOverlapping(NormalizedPlacement, nullptr, OverlappingEntries);
+	if (OverlappingEntries.Num() == 0)
 	{
 		return (IsCapacityUnlimited() || GetFreeEntryCount() > 0) && InventoryList.CanPlaceEntryAt(NormalizedPlacement);
 	}
 
-	return ExistingItem->GetItemDef() == ItemDef && InventoryList.GetFreeStackCapacity(ExistingItem) >= StackCount;
+	if (OverlappingEntries.Num() > 1 || !OverlappingEntries[0]->Instance)
+	{
+		return false;
+	}
+
+	return OverlappingEntries[0]->Instance->GetItemDef() == ItemDef && InventoryList.GetFreeStackCapacity(OverlappingEntries[0]->Instance) >= StackCount;
 }
 
 bool URpgInventoryManagerComponent::CanAddItemInstanceToPlacement(URpgInventoryItemInstance* ItemInstance, int32 StackCount, FRpgInventoryGridPlacement Placement) const
 {
 	if (!ItemInstance || StackCount <= 0)
+	{
+		return false;
+	}
+
+	if (Placement.bRotated && !CanInventoryManagerRotateDefinition(ItemInstance->GetItemDef()))
 	{
 		return false;
 	}
@@ -1792,6 +1932,11 @@ bool URpgInventoryManagerComponent::MoveInventoryEntryToPlacement(FGuid EntryId,
 		MarkInventoryStateDirty();
 	}
 	return bChanged;
+}
+
+bool URpgInventoryManagerComponent::CanMoveInventoryEntryToPlacement(FGuid EntryId, FRpgInventoryGridPlacement TargetPlacement) const
+{
+	return InventoryList.CanMoveEntryToPlacement(EntryId, TargetPlacement);
 }
 
 FRpgInventorySnapshot URpgInventoryManagerComponent::ExportInventorySnapshot(FName ContainerId) const

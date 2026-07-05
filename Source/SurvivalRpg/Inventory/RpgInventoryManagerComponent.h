@@ -234,6 +234,7 @@ public:
 	bool RemoveEntryStack(URpgInventoryItemInstance* Instance, int32 StackCount, bool& bOutRemovedEntry);
 	bool ApplySort(ERpgInventorySortMode SortMode);
 	bool MoveEntry(FGuid EntryId, int32 TargetIndex);
+	bool CanMoveEntryToPlacement(FGuid EntryId, const FRpgInventoryGridPlacement& TargetPlacement, FRpgInventoryGridPlacement* OutNormalizedTargetPlacement = nullptr) const;
 	bool MoveEntryToPlacement(FGuid EntryId, const FRpgInventoryGridPlacement& TargetPlacement);
 	FRpgInventorySnapshot ExportSnapshot(FName ContainerId) const;
 	void ImportSnapshot(const FRpgInventorySnapshot& Snapshot);
@@ -247,8 +248,12 @@ private:
 	const FRpgInventoryEntry* FindEntryAtCell(FName ContainerId, int32 X, int32 Y) const;
 	FRpgInventoryEntry* FindEntryOverlapping(const FRpgInventoryGridPlacement& Placement, const FRpgInventoryEntry* IgnoredEntry = nullptr);
 	const FRpgInventoryEntry* FindEntryOverlapping(const FRpgInventoryGridPlacement& Placement, const FRpgInventoryEntry* IgnoredEntry = nullptr) const;
+	void FindEntriesOverlapping(const FRpgInventoryGridPlacement& Placement, const FRpgInventoryEntry* IgnoredEntry, TArray<const FRpgInventoryEntry*>& OutEntries) const;
 	bool IsPlacementWithinGrid(const FRpgInventoryGridPlacement& Placement) const;
 	bool CanPlaceEntryAt(const FRpgInventoryGridPlacement& Placement, const FRpgInventoryEntry* IgnoredEntry = nullptr) const;
+	bool CanPlaceEntryAt(const FRpgInventoryGridPlacement& Placement, const FRpgInventoryEntry* IgnoredEntryA, const FRpgInventoryEntry* IgnoredEntryB) const;
+	bool CanEntryUsePlacement(const FRpgInventoryEntry& Entry, const FRpgInventoryGridPlacement& Placement) const;
+	bool NormalizePlacementForEntry(const FRpgInventoryEntry& Entry, const FRpgInventoryGridPlacement& TargetPlacement, FRpgInventoryGridPlacement& OutNormalizedPlacement) const;
 	void BroadcastChangeMessage(FRpgInventoryEntry& Entry, int32 OldCount, int32 NewCount, bool bOrderChanged = false);
 	bool FindFirstFitPlacement(TSubclassOf<URpgInventoryItemDefinition> ItemDef, FRpgInventoryGridPlacement& OutPlacement) const;
 	bool FindFirstFitPlacement(URpgInventoryItemInstance* ItemInstance, FRpgInventoryGridPlacement& OutPlacement) const;
@@ -418,6 +423,10 @@ public:
 	/** Moves, swaps, or stack-merges one entry into an exact replicated grid placement on the server. */
 	UFUNCTION(BlueprintCallable, BlueprintAuthorityOnly, Category = "Inventory|Spatial")
 	bool MoveInventoryEntryToPlacement(FGuid EntryId, FRpgInventoryGridPlacement TargetPlacement);
+
+	/** Returns whether a replicated entry can move, merge, or swap into an exact grid placement using server rules. */
+	UFUNCTION(BlueprintCallable, Category = "Inventory|Spatial", BlueprintPure)
+	bool CanMoveInventoryEntryToPlacement(FGuid EntryId, FRpgInventoryGridPlacement TargetPlacement) const;
 
 	/** Exports a save-ready snapshot containing item definitions, stack counts, entry ids, and shared order. */
 	UFUNCTION(BlueprintCallable, Category = "Inventory|Snapshot")

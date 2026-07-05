@@ -132,6 +132,12 @@ FRpgInventoryDragPayload URpgInventoryDragDropCoordinator::MakeInventoryPayloadF
 		? SlotViewModel->GetItemPlacement()
 		: SlotViewModel->GetPlacement();
 	Payload.SourceSlotAddress = SlotViewModel->GetSlotAddress();
+	if (SlotViewModel->GetItemInstance() && SlotViewModel->GetItemPlacement().IsValid())
+	{
+		Payload.SourceSlotAddress.ContainerId = SlotViewModel->GetItemPlacement().ContainerId;
+		Payload.SourceSlotAddress.X = SlotViewModel->GetItemPlacement().X;
+		Payload.SourceSlotAddress.Y = SlotViewModel->GetItemPlacement().Y;
+	}
 	return Payload;
 }
 
@@ -367,6 +373,48 @@ bool URpgInventoryDragDropCoordinator::QuickTransferEntry(URpgInventoryEntryView
 	URpgInventoryManagerComponent* TargetInventory = ExplicitTargetInventory ? ExplicitTargetInventory : ResolveQuickTransferTarget(SourceInventory);
 	URpgInventoryItemInstance* ItemInstance = EntryViewModel->GetItemInstance();
 	const int32 StackCount = EntryViewModel->GetStackCount();
+	URpgInventoryUiActionComponent* ActionComponent = ResolveUiActionComponent();
+	if (!ActionComponent || !SourceInventory || !TargetInventory || SourceInventory == TargetInventory || !ItemInstance || StackCount <= 0)
+	{
+		return false;
+	}
+
+	if (bHasHeldPayload)
+	{
+		CancelHold();
+	}
+
+	ActionComponent->RequestTransferItemStack(SourceInventory, TargetInventory, ItemInstance, StackCount);
+	return true;
+}
+
+bool URpgInventoryDragDropCoordinator::CanQuickTransferAddressSlot(URpgInventoryAddressSlotViewModel* SlotViewModel, URpgInventoryManagerComponent* ExplicitTargetInventory) const
+{
+	if (!SlotViewModel || !SlotViewModel->CanDrag() || !ResolveUiActionComponent())
+	{
+		return false;
+	}
+
+	URpgInventoryManagerComponent* SourceInventory = SlotViewModel->GetInventoryManager();
+	URpgInventoryManagerComponent* TargetInventory = ExplicitTargetInventory ? ExplicitTargetInventory : ResolveQuickTransferTarget(SourceInventory);
+	return SourceInventory &&
+		TargetInventory &&
+		SourceInventory != TargetInventory &&
+		SlotViewModel->GetItemInstance() &&
+		SlotViewModel->GetStackCount() > 0;
+}
+
+bool URpgInventoryDragDropCoordinator::QuickTransferAddressSlot(URpgInventoryAddressSlotViewModel* SlotViewModel, URpgInventoryManagerComponent* ExplicitTargetInventory)
+{
+	if (!CanQuickTransferAddressSlot(SlotViewModel, ExplicitTargetInventory))
+	{
+		return false;
+	}
+
+	URpgInventoryManagerComponent* SourceInventory = SlotViewModel->GetInventoryManager();
+	URpgInventoryManagerComponent* TargetInventory = ExplicitTargetInventory ? ExplicitTargetInventory : ResolveQuickTransferTarget(SourceInventory);
+	URpgInventoryItemInstance* ItemInstance = SlotViewModel->GetItemInstance();
+	const int32 StackCount = SlotViewModel->GetStackCount();
 	URpgInventoryUiActionComponent* ActionComponent = ResolveUiActionComponent();
 	if (!ActionComponent || !SourceInventory || !TargetInventory || SourceInventory == TargetInventory || !ItemInstance || StackCount <= 0)
 	{
@@ -700,6 +748,21 @@ bool URpgInventoryDragDropCoordinator::CommitPayloadToTarget(const FRpgInventory
 		if (Payload.SourceType == ERpgInventoryDragSourceType::InventoryEntry ||
 			Payload.SourceType == ERpgInventoryDragSourceType::EquipmentSlot)
 		{
+			URpgInventoryManagerComponent* PlayerInventory = FindPlayerInventory();
+			if (Payload.SourceType == ERpgInventoryDragSourceType::InventoryEntry &&
+				Payload.SourceInventory &&
+				PlayerInventory &&
+				Payload.SourceInventory != PlayerInventory)
+			{
+				Actions->RequestTransferItemStackToPlacement(
+					Payload.SourceInventory,
+					PlayerInventory,
+					Payload.ItemInstance,
+					Payload.StackCount,
+					Target.TargetPlacement);
+				return true;
+			}
+
 			Actions->RequestMoveItemToInventorySlotAddress(Payload.ItemInstance, Target.SlotAddress);
 			return true;
 		}
@@ -792,7 +855,8 @@ bool URpgInventoryDragDropCoordinator::CanCommitPayloadToTarget(const FRpgInvent
 			{
 				return Target.TargetType == ERpgInventoryDropTargetType::InventorySlot &&
 					Payload.EntryId.IsValid() &&
-					Target.TargetPlacement.IsValid();
+					Target.TargetPlacement.IsValid() &&
+					Payload.SourceInventory->CanMoveInventoryEntryToPlacement(Payload.EntryId, Target.TargetPlacement);
 			}
 
 			return true;
@@ -830,7 +894,10 @@ bool URpgInventoryDragDropCoordinator::CanCommitPayloadToTarget(const FRpgInvent
 			return false;
 		}
 
-		if (Payload.SourceType == ERpgInventoryDragSourceType::InventoryEntry && !IsPlayerInventory(Payload.SourceInventory))
+		const bool bSourceIsPlayerInventory = Payload.SourceType == ERpgInventoryDragSourceType::InventoryEntry &&
+			IsPlayerInventory(Payload.SourceInventory);
+		const bool bTargetIsPlayerInventory = IsPlayerInventory(Target.TargetInventory);
+		if (Payload.SourceType == ERpgInventoryDragSourceType::InventoryEntry && !bSourceIsPlayerInventory && !bTargetIsPlayerInventory)
 		{
 			return false;
 		}
@@ -877,6 +944,12 @@ bool URpgInventoryDragDropCoordinator::CanCommitPayloadToTarget(const FRpgInvent
 					return false;
 				}
 			}
+		}
+
+		if (bSourceIsPlayerInventory && Payload.EntryId.IsValid())
+		{
+			return Payload.SourceInventory &&
+				Payload.SourceInventory->CanMoveInventoryEntryToPlacement(Payload.EntryId, Target.TargetPlacement);
 		}
 
 		if (URpgInventoryItemInstance* TargetItem = InventoryLayout->GetItemInSlotAddress(Target.SlotAddress))

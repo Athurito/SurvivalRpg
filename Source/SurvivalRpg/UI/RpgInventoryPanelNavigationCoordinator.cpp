@@ -5,6 +5,7 @@
 #include "SurvivalRpg/Mvvm/Inventory/RpgActionBarViewModels.h"
 #include "SurvivalRpg/Mvvm/Inventory/RpgInventoryViewModels.h"
 #include "SurvivalRpg/Mvvm/Inventory/RpgPlayerInventoryViewModels.h"
+#include "SurvivalRpg/UI/RpgLoadoutSlotWidgets.h"
 #include "SurvivalRpg/UI/RpgPlayerInventoryLayoutViews.h"
 #include "SurvivalRpg/UI/RpgInventoryTileView.h"
 
@@ -82,6 +83,7 @@ void URpgInventoryPanelNavigationCoordinator::RegisterInventoryPanel(FName Panel
 			Panel.TileView = TileView;
 			Panel.AddressTileView = nullptr;
 			Panel.ActionBarTileView = nullptr;
+			Panel.EquipmentSlotWidget = nullptr;
 			Panel.Inventory = Inventory;
 			TileView->SetPanelNavigationCoordinator(this, PanelId);
 			UpdatePanelSelectionMemory(Panel);
@@ -105,6 +107,7 @@ void URpgInventoryPanelNavigationCoordinator::RegisterInventoryPanel(FName Panel
 	NewPanel.TileView = TileView;
 	NewPanel.AddressTileView = nullptr;
 	NewPanel.ActionBarTileView = nullptr;
+	NewPanel.EquipmentSlotWidget = nullptr;
 	NewPanel.Inventory = Inventory;
 	TileView->SetPanelNavigationCoordinator(this, PanelId);
 	UpdatePanelSelectionMemory(NewPanel);
@@ -145,6 +148,7 @@ void URpgInventoryPanelNavigationCoordinator::RegisterInventoryAddressPanel(FNam
 			Panel.TileView = nullptr;
 			Panel.AddressTileView = TileView;
 			Panel.ActionBarTileView = nullptr;
+			Panel.EquipmentSlotWidget = nullptr;
 			Panel.Inventory = Inventory;
 			TileView->SetPanelNavigationCoordinator(this, PanelId);
 			UpdatePanelSelectionMemory(Panel);
@@ -158,6 +162,7 @@ void URpgInventoryPanelNavigationCoordinator::RegisterInventoryAddressPanel(FNam
 	NewPanel.TileView = nullptr;
 	NewPanel.AddressTileView = TileView;
 	NewPanel.ActionBarTileView = nullptr;
+	NewPanel.EquipmentSlotWidget = nullptr;
 	NewPanel.Inventory = Inventory;
 	TileView->SetPanelNavigationCoordinator(this, PanelId);
 	UpdatePanelSelectionMemory(NewPanel);
@@ -183,6 +188,7 @@ void URpgInventoryPanelNavigationCoordinator::RegisterActionBarPanel(FName Panel
 			Panel.TileView = nullptr;
 			Panel.AddressTileView = nullptr;
 			Panel.ActionBarTileView = TileView;
+			Panel.EquipmentSlotWidget = nullptr;
 			Panel.Inventory = nullptr;
 			TileView->SetPanelNavigationCoordinator(this, PanelId);
 			UpdatePanelSelectionMemory(Panel);
@@ -196,10 +202,48 @@ void URpgInventoryPanelNavigationCoordinator::RegisterActionBarPanel(FName Panel
 	NewPanel.TileView = nullptr;
 	NewPanel.AddressTileView = nullptr;
 	NewPanel.ActionBarTileView = TileView;
+	NewPanel.EquipmentSlotWidget = nullptr;
 	NewPanel.Inventory = nullptr;
 	TileView->SetPanelNavigationCoordinator(this, PanelId);
 	UpdatePanelSelectionMemory(NewPanel);
 	TileView->SetActionBarPanelActive(false);
+
+	if (ActivePanelIndex == INDEX_NONE)
+	{
+		ActivatePanelByIndex(0);
+	}
+}
+
+void URpgInventoryPanelNavigationCoordinator::RegisterEquipmentPanel(FName PanelId, URpgEquipmentSlotWidget* EquipmentSlotWidget)
+{
+	if (PanelId.IsNone() || !EquipmentSlotWidget)
+	{
+		return;
+	}
+
+	for (FRpgInventoryPanelNavigationEntry& Panel : Panels)
+	{
+		if (Panel.PanelId == PanelId)
+		{
+			Panel.TileView = nullptr;
+			Panel.AddressTileView = nullptr;
+			Panel.ActionBarTileView = nullptr;
+			Panel.EquipmentSlotWidget = EquipmentSlotWidget;
+			Panel.Inventory = DragDropCoordinator ? DragDropCoordinator->GetPlayerInventory() : nullptr;
+			UpdatePanelSelectionMemory(Panel);
+			ApplyActivePanelState();
+			return;
+		}
+	}
+
+	FRpgInventoryPanelNavigationEntry& NewPanel = Panels.AddDefaulted_GetRef();
+	NewPanel.PanelId = PanelId;
+	NewPanel.TileView = nullptr;
+	NewPanel.AddressTileView = nullptr;
+	NewPanel.ActionBarTileView = nullptr;
+	NewPanel.EquipmentSlotWidget = EquipmentSlotWidget;
+	NewPanel.Inventory = DragDropCoordinator ? DragDropCoordinator->GetPlayerInventory() : nullptr;
+	UpdatePanelSelectionMemory(NewPanel);
 
 	if (ActivePanelIndex == INDEX_NONE)
 	{
@@ -327,7 +371,7 @@ bool URpgInventoryPanelNavigationCoordinator::ActivatePanelByIndex(int32 PanelIn
 	ApplyActivePanelState();
 
 	FRpgInventoryPanelNavigationEntry& ActivePanel = Panels[ActivePanelIndex];
-	if (!ActivePanel.TileView && !ActivePanel.AddressTileView && !ActivePanel.ActionBarTileView)
+	if (!ActivePanel.TileView && !ActivePanel.AddressTileView && !ActivePanel.ActionBarTileView && !ActivePanel.EquipmentSlotWidget)
 	{
 		bSuppressPanelSelectionNotifications = false;
 		return false;
@@ -346,6 +390,10 @@ bool URpgInventoryPanelNavigationCoordinator::ActivatePanelByIndex(int32 PanelIn
 		else if (ActivePanel.ActionBarTileView)
 		{
 			ActivePanel.ActionBarTileView->SelectBestActionBarSlot(PlayerController);
+		}
+		else if (ActivePanel.EquipmentSlotWidget && PlayerController)
+		{
+			ActivePanel.EquipmentSlotWidget->SetUserFocus(PlayerController);
 		}
 	}
 	bSuppressPanelSelectionNotifications = false;
@@ -390,7 +438,7 @@ bool URpgInventoryPanelNavigationCoordinator::RefreshActivePanelFocus()
 	}
 
 	FRpgInventoryPanelNavigationEntry& ActivePanel = Panels[ActivePanelIndex];
-	if (!ActivePanel.TileView && !ActivePanel.AddressTileView && !ActivePanel.ActionBarTileView)
+	if (!ActivePanel.TileView && !ActivePanel.AddressTileView && !ActivePanel.ActionBarTileView && !ActivePanel.EquipmentSlotWidget)
 	{
 		return false;
 	}
@@ -410,6 +458,10 @@ bool URpgInventoryPanelNavigationCoordinator::RefreshActivePanelFocus()
 		else if (ActivePanel.ActionBarTileView)
 		{
 			ActivePanel.ActionBarTileView->SelectBestActionBarSlot(PlayerController);
+		}
+		else if (ActivePanel.EquipmentSlotWidget && PlayerController)
+		{
+			ActivePanel.EquipmentSlotWidget->SetUserFocus(PlayerController);
 		}
 	}
 	bSuppressPanelSelectionNotifications = false;
@@ -439,6 +491,11 @@ URpgActionBarTileView* URpgInventoryPanelNavigationCoordinator::GetActiveActionB
 	return IsValidPanelIndex(ActivePanelIndex) ? Panels[ActivePanelIndex].ActionBarTileView.Get() : nullptr;
 }
 
+URpgEquipmentSlotWidget* URpgInventoryPanelNavigationCoordinator::GetActiveEquipmentSlotWidget() const
+{
+	return IsValidPanelIndex(ActivePanelIndex) ? Panels[ActivePanelIndex].EquipmentSlotWidget.Get() : nullptr;
+}
+
 UWidget* URpgInventoryPanelNavigationCoordinator::GetActiveFocusTarget() const
 {
 	if (!IsValidPanelIndex(ActivePanelIndex))
@@ -453,10 +510,20 @@ UWidget* URpgInventoryPanelNavigationCoordinator::GetActiveFocusTarget() const
 
 	if (Panels[ActivePanelIndex].AddressTileView)
 	{
+		if (UWidget* RedirectFocusTarget = Panels[ActivePanelIndex].AddressTileView->GetAddressSlotFocusTarget())
+		{
+			return RedirectFocusTarget;
+		}
+
 		return Panels[ActivePanelIndex].AddressTileView.Get();
 	}
 
-	return Panels[ActivePanelIndex].ActionBarTileView.Get();
+	if (Panels[ActivePanelIndex].ActionBarTileView)
+	{
+		return Panels[ActivePanelIndex].ActionBarTileView.Get();
+	}
+
+	return Panels[ActivePanelIndex].EquipmentSlotWidget.Get();
 }
 
 URpgInventoryManagerComponent* URpgInventoryPanelNavigationCoordinator::GetActiveInventory() const
@@ -474,6 +541,11 @@ bool URpgInventoryPanelNavigationCoordinator::QuickTransferActiveSelection()
 	if (URpgInventoryTileView* TileView = Panels[ActivePanelIndex].TileView)
 	{
 		return TileView->QuickTransferSelectedEntry();
+	}
+
+	if (URpgInventoryAddressTileView* AddressTileView = Panels[ActivePanelIndex].AddressTileView)
+	{
+		return AddressTileView->QuickTransferSelectedAddressSlot();
 	}
 
 	return false;
@@ -516,6 +588,11 @@ bool URpgInventoryPanelNavigationCoordinator::UseOrEquipActiveSelection(int32 St
 		return AddressTileView->UseOrEquipSelectedAddressSlot(StackCount);
 	}
 
+	if (URpgEquipmentSlotWidget* EquipmentSlotWidget = Panels[ActivePanelIndex].EquipmentSlotWidget)
+	{
+		return EquipmentSlotWidget->HandleClearAssignment();
+	}
+
 	return false;
 }
 
@@ -547,8 +624,8 @@ bool URpgInventoryPanelNavigationCoordinator::IsValidPanelIndex(int32 PanelIndex
 	}
 
 	const FRpgInventoryPanelNavigationEntry& Panel = Panels[PanelIndex];
-	return (Panel.TileView || Panel.AddressTileView || Panel.ActionBarTileView) &&
-		(Panel.Inventory || Panel.ActionBarTileView);
+	return (Panel.TileView || Panel.AddressTileView || Panel.ActionBarTileView || Panel.EquipmentSlotWidget) &&
+		(Panel.Inventory || Panel.ActionBarTileView || Panel.EquipmentSlotWidget);
 }
 
 void URpgInventoryPanelNavigationCoordinator::SaveActivePanelSelection()
@@ -593,6 +670,10 @@ void URpgInventoryPanelNavigationCoordinator::UpdatePanelSelectionMemory(FRpgInv
 			SelectedSlotIndex = SelectedSlot->GetSlotIndex();
 		}
 	}
+	else if (Panel.EquipmentSlotWidget)
+	{
+		SelectedItem = Panel.EquipmentSlotWidget;
+	}
 
 	if (!SelectedItem)
 	{
@@ -631,7 +712,18 @@ bool URpgInventoryPanelNavigationCoordinator::RestorePanelSelection(FRpgInventor
 		return true;
 	}
 
-	return Panel.ActionBarTileView && Panel.ActionBarTileView->SelectActionBarSlotByIndex(Panel.LastSelectedSlotIndex, PlayerController);
+	if (Panel.ActionBarTileView)
+	{
+		return Panel.ActionBarTileView->SelectActionBarSlotByIndex(Panel.LastSelectedSlotIndex, PlayerController);
+	}
+
+	if (Panel.EquipmentSlotWidget && PlayerController)
+	{
+		Panel.EquipmentSlotWidget->SetUserFocus(PlayerController);
+		return true;
+	}
+
+	return false;
 }
 
 void URpgInventoryPanelNavigationCoordinator::ApplyActivePanelState()
@@ -733,6 +825,24 @@ int32 URpgInventoryPanelNavigationCoordinator::FindPanelIndexForActionBarTileVie
 	for (int32 PanelIndex = 0; PanelIndex < Panels.Num(); ++PanelIndex)
 	{
 		if (Panels[PanelIndex].ActionBarTileView == TileView)
+		{
+			return PanelIndex;
+		}
+	}
+
+	return INDEX_NONE;
+}
+
+int32 URpgInventoryPanelNavigationCoordinator::FindPanelIndexForEquipmentSlotWidget(const URpgEquipmentSlotWidget* EquipmentSlotWidget) const
+{
+	if (!EquipmentSlotWidget)
+	{
+		return INDEX_NONE;
+	}
+
+	for (int32 PanelIndex = 0; PanelIndex < Panels.Num(); ++PanelIndex)
+	{
+		if (Panels[PanelIndex].EquipmentSlotWidget == EquipmentSlotWidget)
 		{
 			return PanelIndex;
 		}

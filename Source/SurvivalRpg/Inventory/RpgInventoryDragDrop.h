@@ -297,6 +297,14 @@ public:
 	UFUNCTION(BlueprintCallable, Category = "Inventory|Shortcuts")
 	bool QuickTransferEntry(URpgInventoryEntryViewModel* EntryViewModel, URpgInventoryManagerComponent* ExplicitTargetInventory = nullptr);
 
+	/** Returns true when one logical player-inventory address can quick-transfer to the configured target inventory. */
+	UFUNCTION(BlueprintCallable, Category = "Inventory|Shortcuts")
+	bool CanQuickTransferAddressSlot(URpgInventoryAddressSlotViewModel* SlotViewModel, URpgInventoryManagerComponent* ExplicitTargetInventory = nullptr) const;
+
+	/** Sends a full-stack shortcut transfer command for one logical player-inventory address slot. */
+	UFUNCTION(BlueprintCallable, Category = "Inventory|Shortcuts")
+	bool QuickTransferAddressSlot(URpgInventoryAddressSlotViewModel* SlotViewModel, URpgInventoryManagerComponent* ExplicitTargetInventory = nullptr);
+
 	/** Returns true when the focused entry can be split into a separate stack. */
 	UFUNCTION(BlueprintCallable, Category = "Inventory|Shortcuts")
 	bool CanQuickSplitEntry(URpgInventoryEntryViewModel* EntryViewModel, FRpgInventoryGridPlacement TargetPlacement, int32 SplitCount = 0) const;

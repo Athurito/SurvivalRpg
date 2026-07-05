@@ -11,6 +11,7 @@ class URpgEquipmentSlotViewModel;
 class URpgInventoryDragDropCoordinator;
 class URpgInventoryItemInstance;
 class UDragDropOperation;
+class UUserWidget;
 
 /**
  * Native button base for one equipment slot such as MainHand, OffHand, Head, Chest, Hands, Legs, or Feet.
@@ -60,8 +61,11 @@ public:
 protected:
 	virtual void NativeDestruct() override;
 	virtual void NativeOnClicked() override;
+	virtual FReply NativeOnPreviewMouseButtonDown(const FGeometry& InGeometry, const FPointerEvent& InMouseEvent) override;
 	virtual FReply NativeOnMouseButtonDown(const FGeometry& InGeometry, const FPointerEvent& InMouseEvent) override;
+	virtual FReply NativeOnMouseButtonUp(const FGeometry& InGeometry, const FPointerEvent& InMouseEvent) override;
 	virtual void NativeOnDragDetected(const FGeometry& InGeometry, const FPointerEvent& InMouseEvent, UDragDropOperation*& OutOperation) override;
+	virtual bool NativeOnDragOver(const FGeometry& InGeometry, const FDragDropEvent& InDragDropEvent, UDragDropOperation* InOperation) override;
 	virtual bool NativeOnDrop(const FGeometry& InGeometry, const FDragDropEvent& InDragDropEvent, UDragDropOperation* InOperation) override;
 
 	/** Blueprint presentation hook called whenever the represented equipment slot changes. */
@@ -83,13 +87,20 @@ private:
 	UFUNCTION()
 	void HandleHeldPayloadChanged(bool bHasHeldPayload, const FRpgInventoryDragPayload& HeldPayload);
 
+	FReply HandlePointerButtonDown(const FGeometry& InGeometry, const FPointerEvent& InMouseEvent);
 	FRpgInventoryDragPayload MakeDragPayload() const;
 	FRpgInventoryDropTarget MakeDropTarget() const;
 	bool IsHeldSource() const;
+
+	/** Optional mouse drag visual class for equipped gear slots. Leave unset to reuse this slot widget class. */
+	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Equipment|Slot|Drag", meta = (AllowPrivateAccess = "true"))
+	TSubclassOf<UUserWidget> DragVisualClass;
 
 	UPROPERTY(Transient)
 	TObjectPtr<URpgEquipmentSlotViewModel> SlotViewModel = nullptr;
 
 	UPROPERTY(Transient)
 	TObjectPtr<URpgInventoryDragDropCoordinator> DragDropCoordinator = nullptr;
+
+	bool bPendingLeftClickAccept = false;
 };

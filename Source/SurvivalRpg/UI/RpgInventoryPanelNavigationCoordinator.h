@@ -7,6 +7,7 @@
 
 class APlayerController;
 class URpgActionBarTileView;
+class URpgEquipmentSlotWidget;
 class URpgInventoryDragDropCoordinator;
 class URpgInventoryManagerComponent;
 class URpgInventoryAddressTileView;
@@ -34,6 +35,10 @@ struct SURVIVALRPG_API FRpgInventoryPanelNavigationEntry
 	/** Actionbar TileView that receives controller focus while this panel is active. */
 	UPROPERTY(BlueprintReadWrite, Category = "Inventory|Navigation")
 	TObjectPtr<URpgActionBarTileView> ActionBarTileView = nullptr;
+
+	/** Equipment slot widget that receives controller focus while this gear panel is active. */
+	UPROPERTY(BlueprintReadWrite, Category = "Inventory|Navigation")
+	TObjectPtr<URpgEquipmentSlotWidget> EquipmentSlotWidget = nullptr;
 
 	/** Inventory represented by the TileView; used for shortcut routing. */
 	UPROPERTY(BlueprintReadWrite, Category = "Inventory|Navigation")
@@ -90,6 +95,10 @@ public:
 	UFUNCTION(BlueprintCallable, Category = "Inventory|Navigation")
 	void RegisterActionBarPanel(FName PanelId, URpgActionBarTileView* TileView);
 
+	/** Registers one focusable gear/equipment slot panel for LB/RB controller navigation. */
+	UFUNCTION(BlueprintCallable, Category = "Inventory|Navigation")
+	void RegisterEquipmentPanel(FName PanelId, URpgEquipmentSlotWidget* EquipmentSlotWidget);
+
 	/** Called by registered TileViews when CommonUI selection moves into or within a panel. */
 	UFUNCTION(BlueprintCallable, Category = "Inventory|Navigation")
 	void NotifyPanelSelectionChanged(URpgInventoryTileView* TileView, UObject* SelectedItem);
@@ -142,6 +151,10 @@ public:
 	UFUNCTION(BlueprintPure, Category = "Inventory|Navigation")
 	URpgActionBarTileView* GetActiveActionBarTileView() const;
 
+	/** Active equipment slot widget, or null when no gear panel is active. */
+	UFUNCTION(BlueprintPure, Category = "Inventory|Navigation")
+	URpgEquipmentSlotWidget* GetActiveEquipmentSlotWidget() const;
+
 	/** Active focus target widget for CommonUI, regardless of panel implementation. */
 	UFUNCTION(BlueprintPure, Category = "Inventory|Navigation")
 	UWidget* GetActiveFocusTarget() const;
@@ -180,6 +193,7 @@ private:
 	int32 FindPanelIndexForTileView(const URpgInventoryTileView* TileView) const;
 	int32 FindPanelIndexForAddressTileView(const URpgInventoryAddressTileView* TileView) const;
 	int32 FindPanelIndexForActionBarTileView(const URpgActionBarTileView* TileView) const;
+	int32 FindPanelIndexForEquipmentSlotWidget(const URpgEquipmentSlotWidget* EquipmentSlotWidget) const;
 	void BroadcastActivePanelChanged(const FRpgInventoryPanelNavigationEntry& ActivePanel);
 
 	UPROPERTY(Transient)

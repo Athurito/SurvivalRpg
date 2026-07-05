@@ -447,12 +447,22 @@ void URpgInventoryUiActionComponent::RequestMoveInventoryEntry_Implementation(UR
 
 void URpgInventoryUiActionComponent::RequestMoveInventoryEntryToPlacement_Implementation(URpgInventoryManagerComponent* Inventory, FGuid EntryId, FRpgInventoryGridPlacement TargetPlacement)
 {
-	if (!CanAccessInventory(Inventory) || !Inventory->ContainsEntry(EntryId))
+	if (!Inventory || !CanAccessInventory(Inventory) || !Inventory->ContainsEntry(EntryId))
 	{
+		SendActionFeedback(RpgGameplayTags::Rpg_Inventory_Action_Transfer, ERpgInventoryActionFeedbackResult::NoAccess, Inventory, nullptr, 1);
 		return;
 	}
 
-	Inventory->MoveInventoryEntryToPlacement(EntryId, TargetPlacement);
+	if (!Inventory->CanMoveInventoryEntryToPlacement(EntryId, TargetPlacement))
+	{
+		SendActionFeedback(RpgGameplayTags::Rpg_Inventory_Action_Transfer, ERpgInventoryActionFeedbackResult::InvalidSlot, Inventory, nullptr, 1);
+		return;
+	}
+
+	if (!Inventory->MoveInventoryEntryToPlacement(EntryId, TargetPlacement))
+	{
+		SendActionFeedback(RpgGameplayTags::Rpg_Inventory_Action_Transfer, ERpgInventoryActionFeedbackResult::ServerRejected, Inventory, nullptr, 1);
+	}
 }
 
 void URpgInventoryUiActionComponent::RequestMoveItemToInventorySlotAddress_Implementation(URpgInventoryItemInstance* Item, FRpgInventorySlotAddress TargetAddress)
@@ -527,7 +537,13 @@ void URpgInventoryUiActionComponent::RequestMoveItemToInventorySlotAddress_Imple
 		}
 	}
 
-	if (!EntryId.IsValid() || !PlayerInventory->MoveInventoryEntryToPlacement(EntryId, TargetPlacement))
+	if (!EntryId.IsValid() || !PlayerInventory->CanMoveInventoryEntryToPlacement(EntryId, TargetPlacement))
+	{
+		SendActionFeedback(RpgGameplayTags::Rpg_Inventory_Action_Transfer, ERpgInventoryActionFeedbackResult::InvalidSlot, PlayerInventory, Item, 1);
+		return;
+	}
+
+	if (!PlayerInventory->MoveInventoryEntryToPlacement(EntryId, TargetPlacement))
 	{
 		SendActionFeedback(RpgGameplayTags::Rpg_Inventory_Action_Transfer, ERpgInventoryActionFeedbackResult::ServerRejected, PlayerInventory, Item, 1);
 		return;

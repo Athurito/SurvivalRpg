@@ -15,6 +15,22 @@ FString DescribeActionRow(const FDataTableRowHandle& ActionRow)
 {
 	return FString::Printf(TEXT("%s::%s"), *GetNameSafe(ActionRow.DataTable), *ActionRow.RowName.ToString());
 }
+
+bool DoesActionRowResolve(const FDataTableRowHandle& ActionRow)
+{
+	return ActionRow.DataTable != nullptr &&
+		ActionRow.RowName != NAME_None &&
+		ActionRow.DataTable->GetRowNames().Contains(ActionRow.RowName);
+}
+
+void FillMissingActionRow(FDataTableRowHandle& ActionRow, UDataTable* DataTable, FName RowName)
+{
+	if (!DoesActionRowResolve(ActionRow))
+	{
+		ActionRow.DataTable = DataTable;
+		ActionRow.RowName = RowName;
+	}
+}
 }
 
 URpgInventoryControllerActionsWidget::URpgInventoryControllerActionsWidget(const FObjectInitializer& ObjectInitializer)
@@ -70,6 +86,8 @@ void URpgInventoryControllerActionsWidget::SetInventoryControllerCoordinators(UR
 
 void URpgInventoryControllerActionsWidget::RegisterInventoryControllerActionBindings()
 {
+	EnsureDefaultInventoryControllerActionRows();
+
 	if (!IsActivated())
 	{
 		UE_LOG(LogRpgInventoryControllerActionsWidget, Verbose, TEXT("%s skipped inventory action binding registration because the widget is not active."),
@@ -307,6 +325,33 @@ void URpgInventoryControllerActionsWidget::RegisterActionRow(const FDataTableRow
 	}
 }
 
+void URpgInventoryControllerActionsWidget::EnsureDefaultInventoryControllerActionRows()
+{
+	if (IsActionRowValid(PreviousPanelInputAction) &&
+		IsActionRowValid(NextPanelInputAction) &&
+		IsActionRowValid(QuickTransferInputAction) &&
+		IsActionRowValid(QuickSplitInputAction) &&
+		IsActionRowValid(UseOrEquipInputAction) &&
+		IsActionRowValid(DropInputAction))
+	{
+		return;
+	}
+
+	UDataTable* ActionTable = LoadObject<UDataTable>(nullptr, TEXT("/Game/UI/Input/CDT_RpgUIActions_All.CDT_RpgUIActions_All"));
+	if (!ActionTable)
+	{
+		UE_LOG(LogRpgInventoryControllerActionsWidget, Warning, TEXT("%s could not load default inventory controller action table."), *GetNameSafe(this));
+		return;
+	}
+
+	FillMissingActionRow(PreviousPanelInputAction, ActionTable, TEXT("UI.Inventory.PreviousPanel"));
+	FillMissingActionRow(NextPanelInputAction, ActionTable, TEXT("UI.Inventory.NextPanel"));
+	FillMissingActionRow(QuickTransferInputAction, ActionTable, TEXT("UI.Inventory.QuickTransfer"));
+	FillMissingActionRow(QuickSplitInputAction, ActionTable, TEXT("UI.Inventory.QuickSplit"));
+	FillMissingActionRow(UseOrEquipInputAction, ActionTable, TEXT("UI.Inventory.UseOrEquip"));
+	FillMissingActionRow(DropInputAction, ActionTable, TEXT("UI.Inventory.Drop"));
+}
+
 bool URpgInventoryControllerActionsWidget::HandleInventoryBackAction()
 {
 	if (DragDropCoordinator && DragDropCoordinator->HasHeldPayload())
@@ -320,5 +365,5 @@ bool URpgInventoryControllerActionsWidget::HandleInventoryBackAction()
 
 bool URpgInventoryControllerActionsWidget::IsActionRowValid(const FDataTableRowHandle& ActionRow)
 {
-	return ActionRow.DataTable != nullptr && ActionRow.RowName != NAME_None;
+	return DoesActionRowResolve(ActionRow);
 }

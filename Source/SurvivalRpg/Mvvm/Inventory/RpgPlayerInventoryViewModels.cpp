@@ -144,7 +144,7 @@ void URpgInventoryAddressSlotViewModel::InitializeSlot(
 		NewItemOccupiedWidth = OccupiedSize.Width;
 		NewItemOccupiedHeight = OccupiedSize.Height;
 	}
-	const int32 NewStackCount = (InInventory && NewItem) ? InInventory->GetItemStackCount(NewItem) : 0;
+	const int32 NewStackCount = (InInventory && NewItem && bCanRepresentItemFromThisCell) ? InInventory->GetItemStackCount(NewItem) : 0;
 	const FGuid NewEntryId = FindEntryIdForItem(InInventory, NewItem);
 	const FRpgPlayerInventoryItemPresentation Presentation = bCanRepresentItemFromThisCell
 		? BuildPlayerInventoryItemPresentation(NewItem)
@@ -176,6 +176,7 @@ void URpgInventoryAddressSlotViewModel::InitializeSlot(
 		StackCount != NewStackCount ||
 		bItemOriginCell != bNewItemOriginCell ||
 		bItemCoveredCell != bNewItemCoveredCell ||
+		bRenderItemVisual != bCanRepresentItemFromThisCell ||
 		bActionbarBindable != bNewActionbarBindable ||
 		bCarrySlot != (InGroupView.GroupKind == ERpgInventorySlotGroupKind::Carry && InGroupView.Rule.bCarrySlot) ||
 		bGearSlot != (InGroupView.GroupKind == ERpgInventorySlotGroupKind::Gear);
@@ -199,6 +200,7 @@ void URpgInventoryAddressSlotViewModel::InitializeSlot(
 	bIsEmptySlot = ItemInstance == nullptr;
 	bItemOriginCell = bNewItemOriginCell;
 	bItemCoveredCell = bNewItemCoveredCell;
+	bRenderItemVisual = bCanRepresentItemFromThisCell;
 	bCanDrag = bCanRepresentItemFromThisCell && StackCount > 0;
 	bActionbarBindable = bNewActionbarBindable;
 	bCarrySlot = InGroupView.GroupKind == ERpgInventorySlotGroupKind::Carry && InGroupView.Rule.bCarrySlot;
@@ -223,6 +225,7 @@ void URpgInventoryAddressSlotViewModel::InitializeSlot(
 	UE_MVVM_BROADCAST_FIELD_VALUE_CHANGED(bIsEmptySlot);
 	UE_MVVM_BROADCAST_FIELD_VALUE_CHANGED(bItemOriginCell);
 	UE_MVVM_BROADCAST_FIELD_VALUE_CHANGED(bItemCoveredCell);
+	UE_MVVM_BROADCAST_FIELD_VALUE_CHANGED(bRenderItemVisual);
 	UE_MVVM_BROADCAST_FIELD_VALUE_CHANGED(bCanDrag);
 	UE_MVVM_BROADCAST_FIELD_VALUE_CHANGED(bActionbarBindable);
 	UE_MVVM_BROADCAST_FIELD_VALUE_CHANGED(bCarrySlot);
