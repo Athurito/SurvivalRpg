@@ -532,6 +532,7 @@ void URpgInventoryUiActionComponent::RequestMoveItemToInventorySlotAddress_Imple
 	}
 
 	SyncEquipmentLoadoutFromGearSlots();
+	SyncActiveHandsFromCarrySlots();
 }
 
 void URpgInventoryUiActionComponent::RequestEquipSlotContainerItem_Implementation(ERpgEquipmentSlot ContainerSlot, URpgInventoryItemInstance* Item)
@@ -1806,6 +1807,61 @@ void URpgInventoryUiActionComponent::SyncEquipmentLoadoutFromGearSlots() const
 		{
 			EquipmentLoadout->ClearEquipmentSlot(EquipmentSlot);
 		}
+	}
+}
+
+void URpgInventoryUiActionComponent::SyncActiveHandsFromCarrySlots() const
+{
+	URpgEquipmentLoadoutComponent* EquipmentLoadout = FindEquipmentLoadout();
+	const URpgPlayerInventoryLayoutComponent* InventoryLayout = FindPlayerInventoryLayout();
+	if (!EquipmentLoadout || !InventoryLayout)
+	{
+		return;
+	}
+
+	auto IsItemInCarrySlot = [InventoryLayout](const URpgInventoryItemInstance* Item, bool bOffHand)
+	{
+		if (!Item)
+		{
+			return false;
+		}
+
+		for (const FRpgInventorySlotGroupView& Group : InventoryLayout->GetSlotGroups())
+		{
+			if (Group.GroupKind != ERpgInventorySlotGroupKind::Carry || !Group.Rule.bCarrySlot)
+			{
+				continue;
+			}
+
+			const bool bGroupIsOffHand = Group.GroupId == URpgPlayerInventoryLayoutComponent::ShieldSlotGroupId;
+			if (bGroupIsOffHand != bOffHand)
+			{
+				continue;
+			}
+
+			for (int32 LocalSlotIndex = 0; LocalSlotIndex < Group.SlotCount; ++LocalSlotIndex)
+			{
+				if (InventoryLayout->GetItemInSlotAddress(Group.MakeAddress(LocalSlotIndex)) == Item)
+				{
+					return true;
+				}
+			}
+		}
+
+		return false;
+	};
+
+	if (URpgInventoryItemInstance* MainHandItem = EquipmentLoadout->GetItemInEquipmentSlot(ERpgEquipmentSlot::MainHand);
+		MainHandItem && !IsItemInCarrySlot(MainHandItem, false))
+	{
+		EquipmentLoadout->ClearActiveHands();
+		return;
+	}
+
+	if (URpgInventoryItemInstance* OffHandItem = EquipmentLoadout->GetItemInEquipmentSlot(ERpgEquipmentSlot::OffHand);
+		OffHandItem && !IsItemInCarrySlot(OffHandItem, true))
+	{
+		EquipmentLoadout->ClearActiveOffHand(true);
 	}
 }
 

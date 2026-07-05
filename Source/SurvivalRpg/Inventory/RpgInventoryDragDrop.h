@@ -353,6 +353,7 @@ private:
 	URpgInventoryManagerComponent* FindPlayerInventory() const;
 	URpgPlayerInventoryLayoutComponent* FindPlayerInventoryLayout() const;
 	FRpgInventorySlotAddress ResolvePayloadSourceAddress(const FRpgInventoryDragPayload& Payload) const;
+	FRpgInventorySlotAddress ResolveEquipmentPayloadSourceAddress(const FRpgInventoryDragPayload& Payload) const;
 	bool IsPlayerInventory(const URpgInventoryManagerComponent* Inventory) const;
 
 	UPROPERTY(Transient)

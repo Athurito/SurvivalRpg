@@ -746,15 +746,69 @@ bool URpgInventoryDragDropCoordinator::CanCommitPayloadToTarget(const FRpgInvent
 		}
 
 		const URpgPlayerInventoryLayoutComponent* InventoryLayout = FindPlayerInventoryLayout();
-		return InventoryLayout && InventoryLayout->CanItemUseSlotAddress(Payload.ItemInstance, Target.SlotAddress);
+		if (!InventoryLayout || !InventoryLayout->CanItemUseSlotAddress(Payload.ItemInstance, Target.SlotAddress))
+		{
+			return false;
+		}
+
+		const FRpgInventorySlotAddress SourceAddress = ResolvePayloadSourceAddress(Payload);
+		if (Payload.SourceType == ERpgInventoryDragSourceType::EquipmentSlot)
+		{
+			if (!SourceAddress.IsValid() || !InventoryLayout->IsContentSlotAddress(Target.SlotAddress))
+			{
+				return false;
+			}
+
+			ERpgEquipmentSlot SourceEquipmentSlot = ERpgEquipmentSlot::None;
+			if (InventoryLayout->IsGearSlotAddress(SourceAddress) &&
+				URpgPlayerInventoryLayoutComponent::TryGetEquipmentSlotForGearGroupId(SourceAddress.GroupId, SourceEquipmentSlot) &&
+				URpgPlayerInventoryLayoutComponent::IsSlotContainerEquipmentSlot(SourceEquipmentSlot) &&
+				!InventoryLayout->CanUnequipSlotContainer(SourceEquipmentSlot))
+			{
+				return false;
+			}
+
+			if (InventoryLayout->IsGearSlotAddress(SourceAddress) &&
+				URpgPlayerInventoryLayoutComponent::IsSlotContainerEquipmentSlot(SourceEquipmentSlot))
+			{
+				bool bTargetIsStaticContent = false;
+				for (const FRpgInventorySlotGroupView& Group : InventoryLayout->GetSlotGroups())
+				{
+					if (Group.GroupId == Target.SlotAddress.GroupId &&
+						Target.SlotAddress.LocalSlotIndex >= 0 &&
+						Target.SlotAddress.LocalSlotIndex < Group.SlotCount)
+					{
+						bTargetIsStaticContent = Group.GroupKind == ERpgInventorySlotGroupKind::Content && !Group.bProvidedByEquipment;
+						break;
+					}
+				}
+
+				if (!bTargetIsStaticContent)
+				{
+					return false;
+				}
+			}
+		}
+
+		if (URpgInventoryItemInstance* TargetItem = InventoryLayout->GetItemInSlotAddress(Target.SlotAddress))
+		{
+			return SourceAddress.IsValid() && InventoryLayout->CanItemUseSlotAddress(TargetItem, SourceAddress);
+		}
+
+		return true;
 	}
 
 	if (Target.TargetType == ERpgInventoryDropTargetType::ActionBarSlot)
 	{
 		if ((Payload.SourceType != ERpgInventoryDragSourceType::InventoryEntry &&
-				Payload.SourceType != ERpgInventoryDragSourceType::PlayerInventorySlotAddress) ||
-			!IsPlayerInventory(Payload.SourceInventory) ||
+				Payload.SourceType != ERpgInventoryDragSourceType::PlayerInventorySlotAddress &&
+				Payload.SourceType != ERpgInventoryDragSourceType::EquipmentSlot) ||
 			Target.ActionBarSlotIndex < 0)
+		{
+			return false;
+		}
+
+		if (Payload.SourceType != ERpgInventoryDragSourceType::EquipmentSlot && !IsPlayerInventory(Payload.SourceInventory))
 		{
 			return false;
 		}
@@ -790,15 +844,15 @@ bool URpgInventoryDragDropCoordinator::IsHeldSourceAddressSlot(URpgInventoryAddr
 {
 	if (!bHasHeldPayload ||
 		(HeldPayload.SourceType != ERpgInventoryDragSourceType::InventoryEntry &&
-			HeldPayload.SourceType != ERpgInventoryDragSourceType::PlayerInventorySlotAddress) ||
+			HeldPayload.SourceType != ERpgInventoryDragSourceType::PlayerInventorySlotAddress &&
+			HeldPayload.SourceType != ERpgInventoryDragSourceType::EquipmentSlot) ||
 		!SlotViewModel)
 	{
 		return false;
 	}
 
 	const FRpgInventorySlotAddress HeldAddress = ResolvePayloadSourceAddress(HeldPayload);
-	return HeldPayload.SourceInventory == SlotViewModel->GetInventoryManager() &&
-		HeldAddress.IsValid() &&
+	return HeldAddress.IsValid() &&
 		HeldAddress == SlotViewModel->GetSlotAddress();
 }
 
@@ -872,6 +926,11 @@ FRpgInventorySlotAddress URpgInventoryDragDropCoordinator::ResolvePayloadSourceA
 		return Payload.SourceSlotAddress;
 	}
 
+	if (Payload.SourceType == ERpgInventoryDragSourceType::EquipmentSlot)
+	{
+		return ResolveEquipmentPayloadSourceAddress(Payload);
+	}
+
 	FRpgInventorySlotAddress Address;
 	const URpgPlayerInventoryLayoutComponent* InventoryLayout = FindPlayerInventoryLayout();
 	if (InventoryLayout && IsPlayerInventory(Payload.SourceInventory) && Payload.SourceSlotIndex != INDEX_NONE)
@@ -880,6 +939,46 @@ FRpgInventorySlotAddress URpgInventoryDragDropCoordinator::ResolvePayloadSourceA
 	}
 
 	return Address;
+}
+
+FRpgInventorySlotAddress URpgInventoryDragDropCoordinator::ResolveEquipmentPayloadSourceAddress(const FRpgInventoryDragPayload& Payload) const
+{
+	FRpgInventorySlotAddress Address;
+	if (Payload.SourceType != ERpgInventoryDragSourceType::EquipmentSlot || !Payload.ItemInstance)
+	{
+		return Address;
+	}
+
+	const URpgPlayerInventoryLayoutComponent* InventoryLayout = FindPlayerInventoryLayout();
+	if (!InventoryLayout)
+	{
+		return Address;
+	}
+
+	if (URpgPlayerInventoryLayoutComponent::TryMakeGearSlotAddress(Payload.EquipmentSlot, Address) &&
+		InventoryLayout->GetItemInSlotAddress(Address) == Payload.ItemInstance)
+	{
+		return Address;
+	}
+
+	for (const FRpgInventorySlotGroupView& Group : InventoryLayout->GetSlotGroups())
+	{
+		if (Group.GroupKind != ERpgInventorySlotGroupKind::Carry || !Group.Rule.bCarrySlot)
+		{
+			continue;
+		}
+
+		for (int32 LocalSlotIndex = 0; LocalSlotIndex < Group.SlotCount; ++LocalSlotIndex)
+		{
+			const FRpgInventorySlotAddress CandidateAddress = Group.MakeAddress(LocalSlotIndex);
+			if (InventoryLayout->GetItemInSlotAddress(CandidateAddress) == Payload.ItemInstance)
+			{
+				return CandidateAddress;
+			}
+		}
+	}
+
+	return FRpgInventorySlotAddress();
 }
 
 bool URpgInventoryDragDropCoordinator::IsPlayerInventory(const URpgInventoryManagerComponent* Inventory) const

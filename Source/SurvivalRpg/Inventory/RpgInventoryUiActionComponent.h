@@ -268,6 +268,7 @@ private:
 	bool TryMoveItemToFirstCompatibleContentSlot(URpgInventoryItemInstance* Item);
 	bool CanMoveItemOutOfGearSlot(const FRpgInventorySlotAddress& SourceAddress) const;
 	void SyncEquipmentLoadoutFromGearSlots() const;
+	void SyncActiveHandsFromCarrySlots() const;
 	bool TrySpawnManualDrop(URpgInventoryItemInstance* Item, int32 StackCount, bool bDropAsInstance);
 	bool TryMergeManualDrop(TSubclassOf<URpgInventoryItemDefinition> ItemDefinition, int32 StackCount, const FVector& SpawnLocation) const;
 	FTransform GetManualDropTransform() const;
