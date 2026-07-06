@@ -17,10 +17,6 @@ namespace
 		return Placement.IsValid() ? Placement.Y * 1000 + Placement.X : INDEX_NONE;
 	}
 
-	FString GetInventoryViewModelPlacementKey(const FRpgInventoryGridPlacement& Placement)
-	{
-		return FString::Printf(TEXT("%s:%d:%d"), *Placement.ContainerId.ToString(), Placement.X, Placement.Y);
-	}
 }
 
 void URpgInventoryFragmentViewModel::InitializeFromEntry(const FRpgInventoryEntryView& Entry)
@@ -276,75 +272,13 @@ void URpgInventoryPanelViewModel::RefreshEntries()
 		}
 	};
 
-	auto AddEmptySlotViewModel = [this, Inventory](URpgInventoryEntryViewModel* EmptySlotViewModel, FRpgInventoryGridPlacement Placement)
-	{
-		if (EmptySlotViewModel)
-		{
-			EmptySlotViewModel->InitializeEmptySlot(Inventory, Placement);
-			Entries.Add(EmptySlotViewModel);
-		}
-	};
-
 	TArray<TObjectPtr<URpgInventoryEntryViewModel>> PreviousEntries = MoveTemp(Entries);
 	Entries.Reset();
 
-	const bool bShouldRenderEmptySlots = !Inventory->IsCapacityUnlimited() && MaxEntries > 0;
-	if (bShouldRenderEmptySlots)
+	Entries.Reserve(EntryViews.Num());
+	for (int32 EntryIndex = 0; EntryIndex < EntryViews.Num(); ++EntryIndex)
 	{
-		TMap<FString, FRpgInventoryEntryView> EntriesBySlot;
-		TArray<FRpgInventoryEntryView> OverflowEntries;
-		for (const FRpgInventoryEntryView& EntryView : EntryViews)
-		{
-			const FString PlacementKey = GetInventoryViewModelPlacementKey(EntryView.Placement);
-			if (EntryView.Placement.IsValid() && !EntriesBySlot.Contains(PlacementKey))
-			{
-				EntriesBySlot.Add(PlacementKey, EntryView);
-			}
-			else
-			{
-				OverflowEntries.Add(EntryView);
-			}
-		}
-
-		Entries.Reserve(MaxEntries + OverflowEntries.Num());
-		for (int32 SlotIndex = 0; SlotIndex < MaxEntries; ++SlotIndex)
-		{
-			URpgInventoryEntryViewModel* SlotViewModel = GetReusableEntryViewModel(PreviousEntries, SlotIndex);
-			FRpgInventoryGridPlacement SlotPlacement;
-			SlotPlacement.ContainerId = TEXT("Storage");
-			SlotPlacement.X = SlotIndex % 10;
-			SlotPlacement.Y = SlotIndex / 10;
-			SlotPlacement.Width = 1;
-			SlotPlacement.Height = 1;
-			if (const FRpgInventoryEntryView* EntryView = EntriesBySlot.Find(GetInventoryViewModelPlacementKey(SlotPlacement)))
-			{
-				AddEntryViewModel(SlotViewModel, *EntryView);
-			}
-			else
-			{
-				AddEmptySlotViewModel(SlotViewModel, SlotPlacement);
-			}
-		}
-
-		for (const FRpgInventoryEntryView& OverflowEntry : OverflowEntries)
-		{
-			UE_LOG(LogRpgInventoryViewModels, Warning, TEXT("Finite inventory contains overflow or duplicate grid placement. Inventory=%s Item=%s EntryId=%s Container=%s X=%d Y=%d MaxEntries=%d"),
-				*GetNameSafe(Inventory),
-				*GetNameSafe(OverflowEntry.Instance),
-				*OverflowEntry.EntryId.ToString(),
-				*OverflowEntry.Placement.ContainerId.ToString(),
-				OverflowEntry.Placement.X,
-				OverflowEntry.Placement.Y,
-				MaxEntries);
-		}
-	}
-	else
-	{
-		Entries.Reserve(EntryViews.Num());
-		for (int32 EntryIndex = 0; EntryIndex < EntryViews.Num(); ++EntryIndex)
-		{
-			AddEntryViewModel(GetReusableEntryViewModel(PreviousEntries, EntryIndex), EntryViews[EntryIndex]);
-		}
+		AddEntryViewModel(GetReusableEntryViewModel(PreviousEntries, EntryIndex), EntryViews[EntryIndex]);
 	}
 
 	UE_MVVM_BROADCAST_FIELD_VALUE_CHANGED(Entries);

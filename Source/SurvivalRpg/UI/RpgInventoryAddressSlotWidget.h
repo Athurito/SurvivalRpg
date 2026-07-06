@@ -10,7 +10,6 @@
 class UDragDropOperation;
 class UUserWidget;
 class URpgInventoryAddressSlotViewModel;
-class URpgInventoryAddressTileView;
 class URpgInventoryDragDropCoordinator;
 
 /**
@@ -38,9 +37,6 @@ public:
 	/** Marks whether the owning address panel is the active controller panel. */
 	UFUNCTION(BlueprintCallable, Category = "Inventory|Address Slot")
 	void SetInventoryPanelActive(bool bInInventoryPanelActive);
-
-	/** Assigns the hidden ListView mirror used by spatial grids to keep controller shortcut selection in sync. */
-	void SetSelectionMirrorTileView(URpgInventoryAddressTileView* InSelectionMirrorTileView);
 
 	/** Current logical slot VM assigned by the owning list/tile view. */
 	UFUNCTION(BlueprintPure, Category = "Inventory|Address Slot")
@@ -100,7 +96,6 @@ private:
 	void HandleHeldPayloadChanged(bool bHasHeldPayload, const FRpgInventoryDragPayload& HeldPayload);
 
 	FReply HandlePointerButtonDown(const FGeometry& InGeometry, const FPointerEvent& InMouseEvent);
-	void MirrorSelectionToTileView() const;
 	FRpgInventoryDragPayload MakeDragPayload(bool bAllowEmptyAddressPayload) const;
 	FRpgInventoryDropTarget MakeDropTarget() const;
 
@@ -109,9 +104,6 @@ private:
 
 	UPROPERTY(Transient)
 	TObjectPtr<URpgInventoryDragDropCoordinator> DragDropCoordinator = nullptr;
-
-	UPROPERTY(Transient)
-	TObjectPtr<URpgInventoryAddressTileView> SelectionMirrorTileView = nullptr;
 
 	UPROPERTY(Transient)
 	ERpgInventorySlotDragVisualState CurrentDragDropVisualState = ERpgInventorySlotDragVisualState::Normal;

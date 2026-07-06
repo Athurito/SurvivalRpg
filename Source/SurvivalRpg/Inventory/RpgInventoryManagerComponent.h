@@ -386,6 +386,18 @@ public:
 	UFUNCTION(BlueprintCallable, Category = "Inventory|Spatial", BlueprintPure)
 	URpgInventoryItemInstance* GetItemAtCell(FName ContainerId, int32 X, int32 Y) const;
 
+	/** Default grid id used by non-player inventories such as storage containers. */
+	UFUNCTION(BlueprintCallable, Category = "Inventory|Spatial", BlueprintPure)
+	FName GetDefaultContainerId() const { return DefaultContainerId; }
+
+	/** Default grid size used by non-player inventories such as storage containers. */
+	UFUNCTION(BlueprintCallable, Category = "Inventory|Spatial", BlueprintPure)
+	FRpgInventoryGridSize GetDefaultGridSize() const { return DefaultGridSize; }
+
+	/** Resolves the grid dimensions for a player layout container or this inventory's default storage container. */
+	UFUNCTION(BlueprintCallable, Category = "Inventory|Spatial", BlueprintPure)
+	bool GetGridSizeForContainer(FName ContainerId, FRpgInventoryGridSize& OutGridSize) const;
+
 	/** Returns the replicated spatial placement of an owned item entry. */
 	UFUNCTION(BlueprintCallable, Category = "Inventory|Spatial", BlueprintPure)
 	bool GetItemPlacement(URpgInventoryItemInstance* ItemInstance, FRpgInventoryGridPlacement& OutPlacement) const;
@@ -460,7 +472,6 @@ private:
 	void HandleCapacityAttributeChanged(const FOnAttributeChangeData& Data);
 	void BroadcastCapacityChanged() const;
 	const URpgPlayerInventoryLayoutComponent* FindOwningPlayerInventoryLayout() const;
-	bool GetGridSizeForContainer(FName ContainerId, FRpgInventoryGridSize& OutGridSize) const;
 	FRpgInventoryGridPlacement MakePlacementForItemDefinition(TSubclassOf<URpgInventoryItemDefinition> ItemDef, FName ContainerId, int32 X, int32 Y, bool bRotated) const;
 	FRpgInventoryGridPlacement MakePlacementForItemInstance(URpgInventoryItemInstance* ItemInstance, FName ContainerId, int32 X, int32 Y, bool bRotated) const;
 

@@ -1,11 +1,13 @@
 #include "RpgPlayerInventoryWidget.h"
 
+#include "Engine/World.h"
 #include "MVVMSubsystem.h"
 #include "SurvivalRpg/Inventory/RpgInventoryDragDrop.h"
 #include "SurvivalRpg/Mvvm/Inventory/RpgPlayerInventoryViewModels.h"
 #include "SurvivalRpg/UI/RpgLoadoutSlotWidgets.h"
 #include "SurvivalRpg/UI/RpgInventoryPanelNavigationCoordinator.h"
 #include "SurvivalRpg/UI/RpgPlayerInventoryLayoutViews.h"
+#include "TimerManager.h"
 #include "View/MVVMView.h"
 
 #include UE_INLINE_GENERATED_CPP_BY_NAME(RpgPlayerInventoryWidget)
@@ -32,6 +34,7 @@ void URpgPlayerInventoryWidget::NativeOnActivated()
 
 	Super::NativeOnActivated();
 	RefreshInventoryControllerFocus();
+	QueueDeferredPlayerInventoryRefresh();
 }
 
 void URpgPlayerInventoryWidget::NativeOnDeactivated()
@@ -166,6 +169,7 @@ void URpgPlayerInventoryWidget::HandleGearSlotsChanged()
 void URpgPlayerInventoryWidget::HandleSlotGroupsChanged()
 {
 	RefreshSlotGroups();
+	QueueDeferredPlayerInventoryRefresh();
 }
 
 void URpgPlayerInventoryWidget::HandleActionBarSlotsChanged()
@@ -340,4 +344,31 @@ void URpgPlayerInventoryWidget::RegisterPlayerInventoryNavigationPanels()
 	{
 		PlayerPanelNavigationCoordinator->RegisterActionBarPanel(TEXT("Actionbar"), ActionBarTileView);
 	}
+}
+
+void URpgPlayerInventoryWidget::QueueDeferredPlayerInventoryRefresh()
+{
+	if (bDeferredPlayerInventoryRefreshQueued)
+	{
+		return;
+	}
+
+	UWorld* World = GetWorld();
+	if (!World)
+	{
+		ExecuteDeferredPlayerInventoryRefresh();
+		return;
+	}
+
+	bDeferredPlayerInventoryRefreshQueued = true;
+	World->GetTimerManager().SetTimerForNextTick(FTimerDelegate::CreateUObject(this, &ThisClass::ExecuteDeferredPlayerInventoryRefresh));
+}
+
+void URpgPlayerInventoryWidget::ExecuteDeferredPlayerInventoryRefresh()
+{
+	bDeferredPlayerInventoryRefreshQueued = false;
+
+	ForwardCoordinatorToChildren();
+	RefreshPlayerInventoryViews();
+	RefreshInventoryControllerFocus();
 }

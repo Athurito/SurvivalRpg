@@ -155,6 +155,18 @@ public:
 	UFUNCTION(BlueprintPure, Category = "Inventory|ViewModel")
 	int32 GetStackCount() const { return StackCount; }
 
+	/** Full item display name from the definition. Empty capacity slots return empty text. */
+	UFUNCTION(BlueprintPure, Category = "Inventory|ViewModel")
+	FText GetDisplayName() const { return DisplayName; }
+
+	/** Compact UI label from UIData, falling back to DisplayName. Empty capacity slots return empty text. */
+	UFUNCTION(BlueprintPure, Category = "Inventory|ViewModel")
+	FText GetShortDisplayName() const { return ShortDisplayName; }
+
+	/** Optional item icon from UIData. Empty capacity slots return no icon. */
+	UFUNCTION(BlueprintPure, Category = "Inventory|ViewModel")
+	TSoftObjectPtr<UTexture2D> GetIcon() const { return Icon; }
+
 	/** Server-authored grid placement represented by this entry or empty capacity cell. */
 	UFUNCTION(BlueprintPure, Category = "Inventory|ViewModel")
 	FRpgInventoryGridPlacement GetPlacement() const { return Placement; }

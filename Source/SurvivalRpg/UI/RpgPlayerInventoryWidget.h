@@ -10,7 +10,7 @@ class URpgActionBarTileView;
 class URpgEquipmentSlotWidget;
 class URpgInventoryDragDropCoordinator;
 class URpgInventoryPanelNavigationCoordinator;
-class URpgInventorySlotGroupListView;
+class URpgInventorySlotGroupPanelWidget;
 class URpgPlayerInventoryViewModel;
 
 /**
@@ -73,13 +73,13 @@ protected:
 	UFUNCTION(BlueprintImplementableEvent, Category = "Inventory|Player", meta = (DisplayName = "On Player Inventory ViewModel Ready"))
 	void BP_OnPlayerInventoryViewModelReady(URpgPlayerInventoryViewModel* ViewModel);
 
-	/** Optional list view for carry groups such as WeaponSlot1, ShieldSlot, and ToolSlot1. */
+	/** Optional spatial group panel for carry groups such as WeaponSlot1, ShieldSlot, and ToolSlot1. */
 	UPROPERTY(BlueprintReadOnly, meta = (BindWidgetOptional))
-	TObjectPtr<URpgInventorySlotGroupListView> CarryGroupsList = nullptr;
+	TObjectPtr<URpgInventorySlotGroupPanelWidget> CarryGroupsList = nullptr;
 
-	/** Optional list view for normal groups such as Pockets, Backpack, Belt, Pouch, and ResourceBag. */
+	/** Optional spatial group panel for normal groups such as Pockets, Backpack, Belt, Pouch, and ResourceBag. */
 	UPROPERTY(BlueprintReadOnly, meta = (BindWidgetOptional))
-	TObjectPtr<URpgInventorySlotGroupListView> InventoryGroupsList = nullptr;
+	TObjectPtr<URpgInventorySlotGroupPanelWidget> InventoryGroupsList = nullptr;
 
 	/** Optional 1..8 actionbar preview/drop target inside the inventory screen. */
 	UPROPERTY(BlueprintReadOnly, meta = (BindWidgetOptional))
@@ -129,6 +129,8 @@ private:
 	void SetGearSlotViewModel(URpgEquipmentSlotWidget* GearSlotWidget, ERpgEquipmentSlot EquipmentSlot, bool bBagSlot) const;
 	void ForwardCoordinatorToChildren();
 	void RegisterPlayerInventoryNavigationPanels();
+	void QueueDeferredPlayerInventoryRefresh();
+	void ExecuteDeferredPlayerInventoryRefresh();
 
 	UPROPERTY(Transient)
 	TObjectPtr<URpgPlayerInventoryViewModel> PlayerInventoryViewModel = nullptr;
@@ -140,4 +142,5 @@ private:
 	TObjectPtr<URpgInventoryPanelNavigationCoordinator> PlayerPanelNavigationCoordinator = nullptr;
 
 	bool bViewModelDelegatesBound = false;
+	bool bDeferredPlayerInventoryRefreshQueued = false;
 };

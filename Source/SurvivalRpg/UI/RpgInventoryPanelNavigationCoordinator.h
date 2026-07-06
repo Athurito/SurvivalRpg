@@ -10,7 +10,7 @@ class URpgActionBarTileView;
 class URpgEquipmentSlotWidget;
 class URpgInventoryDragDropCoordinator;
 class URpgInventoryManagerComponent;
-class URpgInventoryAddressTileView;
+class URpgInventorySpatialGridWidget;
 class URpgInventoryTileView;
 class UWidget;
 
@@ -28,9 +28,9 @@ struct SURVIVALRPG_API FRpgInventoryPanelNavigationEntry
 	UPROPERTY(BlueprintReadWrite, Category = "Inventory|Navigation")
 	TObjectPtr<URpgInventoryTileView> TileView = nullptr;
 
-	/** Address TileView that receives controller focus while this player-inventory layout panel is active. */
+	/** Spatial grid that receives controller focus while this fixed-layout inventory panel is active. */
 	UPROPERTY(BlueprintReadWrite, Category = "Inventory|Navigation")
-	TObjectPtr<URpgInventoryAddressTileView> AddressTileView = nullptr;
+	TObjectPtr<URpgInventorySpatialGridWidget> SpatialGridWidget = nullptr;
 
 	/** Actionbar TileView that receives controller focus while this panel is active. */
 	UPROPERTY(BlueprintReadWrite, Category = "Inventory|Navigation")
@@ -87,9 +87,9 @@ public:
 	UFUNCTION(BlueprintCallable, Category = "Inventory|Navigation")
 	void RegisterInventoryPanel(FName PanelId, URpgInventoryTileView* TileView, URpgInventoryManagerComponent* Inventory);
 
-	/** Registers one focusable player-inventory address panel for LB/RB controller navigation. */
+	/** Registers one focusable spatial inventory grid for LB/RB controller navigation. */
 	UFUNCTION(BlueprintCallable, Category = "Inventory|Navigation")
-	void RegisterInventoryAddressPanel(FName PanelId, URpgInventoryAddressTileView* TileView, URpgInventoryManagerComponent* Inventory);
+	void RegisterSpatialInventoryPanel(FName PanelId, URpgInventorySpatialGridWidget* SpatialGridWidget, URpgInventoryManagerComponent* Inventory);
 
 	/** Registers one focusable actionbar panel for LB/RB controller navigation. */
 	UFUNCTION(BlueprintCallable, Category = "Inventory|Navigation")
@@ -103,9 +103,9 @@ public:
 	UFUNCTION(BlueprintCallable, Category = "Inventory|Navigation")
 	void NotifyPanelSelectionChanged(URpgInventoryTileView* TileView, UObject* SelectedItem);
 
-	/** Called by registered address TileViews when CommonUI selection moves into or within a player-inventory layout panel. */
+	/** Called by registered spatial grids when their logical cursor moves into or within a panel. */
 	UFUNCTION(BlueprintCallable, Category = "Inventory|Navigation")
-	void NotifyAddressPanelSelectionChanged(URpgInventoryAddressTileView* TileView, UObject* SelectedItem);
+	void NotifySpatialPanelSelectionChanged(URpgInventorySpatialGridWidget* SpatialGridWidget, UObject* SelectedItem);
 
 	/** Called by registered actionbar TileViews when CommonUI selection moves into or within the actionbar panel. */
 	UFUNCTION(BlueprintCallable, Category = "Inventory|Navigation")
@@ -143,9 +143,9 @@ public:
 	UFUNCTION(BlueprintPure, Category = "Inventory|Navigation")
 	URpgInventoryTileView* GetActiveTileView() const;
 
-	/** Active player-inventory address TileView, or null when no address panel is active. */
+	/** Active spatial grid, or null when no spatial panel is active. */
 	UFUNCTION(BlueprintPure, Category = "Inventory|Navigation")
-	URpgInventoryAddressTileView* GetActiveAddressTileView() const;
+	URpgInventorySpatialGridWidget* GetActiveSpatialGridWidget() const;
 
 	/** Active actionbar TileView, or null when no actionbar panel is active. */
 	UFUNCTION(BlueprintPure, Category = "Inventory|Navigation")
@@ -191,7 +191,7 @@ private:
 	void ApplyActivePanelState();
 	void UpdateShortcutRoutesForActivePanel(const FRpgInventoryPanelNavigationEntry& ActivePanel);
 	int32 FindPanelIndexForTileView(const URpgInventoryTileView* TileView) const;
-	int32 FindPanelIndexForAddressTileView(const URpgInventoryAddressTileView* TileView) const;
+	int32 FindPanelIndexForSpatialGridWidget(const URpgInventorySpatialGridWidget* SpatialGridWidget) const;
 	int32 FindPanelIndexForActionBarTileView(const URpgActionBarTileView* TileView) const;
 	int32 FindPanelIndexForEquipmentSlotWidget(const URpgEquipmentSlotWidget* EquipmentSlotWidget) const;
 	void BroadcastActivePanelChanged(const FRpgInventoryPanelNavigationEntry& ActivePanel);

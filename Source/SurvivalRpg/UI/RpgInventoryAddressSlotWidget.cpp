@@ -8,7 +8,6 @@
 #include "SurvivalRpg/Inventory/RpgInventoryDragDrop.h"
 #include "SurvivalRpg/Inventory/RpgInventoryItemInstance.h"
 #include "SurvivalRpg/Mvvm/Inventory/RpgPlayerInventoryViewModels.h"
-#include "SurvivalRpg/UI/RpgPlayerInventoryLayoutViews.h"
 #include "View/MVVMView.h"
 
 #include UE_INLINE_GENERATED_CPP_BY_NAME(RpgInventoryAddressSlotWidget)
@@ -79,11 +78,6 @@ void URpgInventoryAddressSlotWidget::SetInventoryPanelActive(bool bInInventoryPa
 	RefreshDragDropVisualState();
 }
 
-void URpgInventoryAddressSlotWidget::SetSelectionMirrorTileView(URpgInventoryAddressTileView* InSelectionMirrorTileView)
-{
-	SelectionMirrorTileView = InSelectionMirrorTileView;
-}
-
 bool URpgInventoryAddressSlotWidget::HandleSlotAccept()
 {
 	if (!DragDropCoordinator || !SlotViewModel)
@@ -140,7 +134,6 @@ void URpgInventoryAddressSlotWidget::NativeOnAddedToFocusPath(const FFocusEvent&
 
 	bSlotSelected = true;
 	BP_OnAddressSlotSelectionChanged(true);
-	MirrorSelectionToTileView();
 	RefreshDragDropVisualState();
 }
 
@@ -156,7 +149,6 @@ void URpgInventoryAddressSlotWidget::NativeOnRemovedFromFocusPath(const FFocusEv
 void URpgInventoryAddressSlotWidget::NativeOnClicked()
 {
 	Super::NativeOnClicked();
-	MirrorSelectionToTileView();
 	HandleSlotAccept();
 }
 
@@ -184,8 +176,6 @@ FReply URpgInventoryAddressSlotWidget::NativeOnPreviewMouseButtonDown(const FGeo
 
 FReply URpgInventoryAddressSlotWidget::HandlePointerButtonDown(const FGeometry& InGeometry, const FPointerEvent& InMouseEvent)
 {
-	MirrorSelectionToTileView();
-
 	if (InMouseEvent.GetEffectingButton() == EKeys::RightMouseButton && DragDropCoordinator && DragDropCoordinator->UseOrEquipAddressSlot(SlotViewModel))
 	{
 		return FReply::Handled();
@@ -244,7 +234,6 @@ void URpgInventoryAddressSlotWidget::NativeOnDragDetected(const FGeometry& InGeo
 		{
 			AddressSlotDragVisual->SetAddressSlotViewModel(SlotViewModel);
 			AddressSlotDragVisual->SetDragDropCoordinator(DragDropCoordinator);
-			AddressSlotDragVisual->SetSelectionMirrorTileView(SelectionMirrorTileView);
 		}
 
 		InventoryOperation->DefaultDragVisual = DragVisual;
@@ -284,14 +273,6 @@ void URpgInventoryAddressSlotWidget::HandleSlotViewModelChanged(URpgInventoryAdd
 void URpgInventoryAddressSlotWidget::HandleHeldPayloadChanged(bool bHasHeldPayload, const FRpgInventoryDragPayload& HeldPayload)
 {
 	RefreshDragDropVisualState();
-}
-
-void URpgInventoryAddressSlotWidget::MirrorSelectionToTileView() const
-{
-	if (SelectionMirrorTileView && SlotViewModel)
-	{
-		SelectionMirrorTileView->MirrorAddressSlotSelection(SlotViewModel);
-	}
 }
 
 FRpgInventoryDragPayload URpgInventoryAddressSlotWidget::MakeDragPayload(bool bAllowEmptyAddressPayload) const
