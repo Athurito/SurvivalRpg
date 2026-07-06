@@ -210,6 +210,7 @@ void URpgInventoryUiActionComponent::RequestAssignItemToEquipmentSlot_Implementa
 			return;
 		}
 
+		SyncActiveHandsFromCarrySlots();
 		SendActionFeedback(RpgGameplayTags::Rpg_Inventory_Action_Equip, ERpgInventoryActionFeedbackResult::Success, PlayerInventory, Item, 1);
 		return;
 	}
@@ -327,61 +328,71 @@ void URpgInventoryUiActionComponent::RequestTransferItemStackToPlacement_Impleme
 
 	const int32 AvailableCount = SourceInventory->GetItemStackCount(Item);
 	const int32 RequestedCount = StackCount <= 0 ? AvailableCount : StackCount;
-	URpgInventoryItemInstance* TargetItem = TargetInventory->GetItemAtCell(TargetPlacement.ContainerId, TargetPlacement.X, TargetPlacement.Y);
+	const int32 TransferCount = FMath::Min(AvailableCount, RequestedCount);
+	if (TransferCount <= 0)
+	{
+		return;
+	}
 
+	FRpgInventoryGridPlacement NormalizedTargetPlacement;
+	URpgInventoryItemInstance* TargetItem = TargetInventory->GetSingleItemOverlappingPlacementForItem(Item, TargetPlacement, NormalizedTargetPlacement);
 	if (TargetItem && TargetItem->GetItemDef() == Item->GetItemDef())
 	{
 		const int32 FreeStackCapacity = TargetInventory->GetFreeStackCapacity(TargetItem);
 		if (FreeStackCapacity > 0)
 		{
-			const int32 TransferCount = FMath::Min3(AvailableCount, RequestedCount, FreeStackCapacity);
-			if (TransferCount <= 0)
+			const int32 StackTransferCount = FMath::Min(TransferCount, FreeStackCapacity);
+			if (StackTransferCount <= 0)
 			{
 				return;
 			}
 
-			if (SourceInventory == FindPlayerInventory() && TransferCount >= AvailableCount)
+			if (SourceInventory == FindPlayerInventory() && StackTransferCount >= AvailableCount)
 			{
 				if (!ClearPlayerAssignmentsForItem(Item))
 				{
-					SendActionFeedback(RpgGameplayTags::Rpg_Inventory_Action_Transfer, ERpgInventoryActionFeedbackResult::ServerRejected, SourceInventory, Item, TransferCount);
+					SendActionFeedback(RpgGameplayTags::Rpg_Inventory_Action_Transfer, ERpgInventoryActionFeedbackResult::ServerRejected, SourceInventory, Item, StackTransferCount);
 					return;
 				}
 			}
 
-			if (SourceInventory->RemoveItemInstanceStack(Item, TransferCount))
+			if (SourceInventory->RemoveItemInstanceStack(Item, StackTransferCount))
 			{
-				TargetInventory->AddStackToExistingItem(TargetItem, TransferCount);
+				TargetInventory->AddStackToExistingItem(TargetItem, StackTransferCount);
 			}
 			return;
 		}
 	}
 
-	if (!TargetItem)
+	if (TransferCount >= AvailableCount &&
+		TargetInventory->CanAddItemInstanceToPlacement(Item, AvailableCount, TargetPlacement))
 	{
-		const int32 TransferCount = FMath::Min(AvailableCount, RequestedCount);
-		if (TransferCount <= 0)
+		if (SourceInventory == FindPlayerInventory())
 		{
-			return;
-		}
-
-		if (TransferCount >= AvailableCount)
-		{
-			if (SourceInventory == FindPlayerInventory())
+			if (!ClearPlayerAssignmentsForItem(Item))
 			{
-				if (!ClearPlayerAssignmentsForItem(Item))
-				{
-					SendActionFeedback(RpgGameplayTags::Rpg_Inventory_Action_Transfer, ERpgInventoryActionFeedbackResult::ServerRejected, SourceInventory, Item, TransferCount);
-					return;
-				}
+				SendActionFeedback(RpgGameplayTags::Rpg_Inventory_Action_Transfer, ERpgInventoryActionFeedbackResult::ServerRejected, SourceInventory, Item, TransferCount);
+				return;
 			}
-
-			SourceInventory->RemoveItemInstance(Item);
-			TargetInventory->AddItemInstanceWithStackToPlacement(Item, AvailableCount, TargetPlacement);
-			return;
 		}
 
-		const TSubclassOf<URpgInventoryItemDefinition> ItemDefinition = Item->GetItemDef();
+		SourceInventory->RemoveItemInstance(Item);
+		TargetInventory->AddItemInstanceWithStackToPlacement(Item, AvailableCount, TargetPlacement);
+		return;
+	}
+
+	const TSubclassOf<URpgInventoryItemDefinition> ItemDefinition = Item->GetItemDef();
+	if (TargetInventory->CanAddItemDefinitionToPlacement(ItemDefinition, TransferCount, TargetPlacement))
+	{
+		if (SourceInventory == FindPlayerInventory() && TransferCount >= AvailableCount)
+		{
+			if (!ClearPlayerAssignmentsForItem(Item))
+			{
+				SendActionFeedback(RpgGameplayTags::Rpg_Inventory_Action_Transfer, ERpgInventoryActionFeedbackResult::ServerRejected, SourceInventory, Item, TransferCount);
+				return;
+			}
+		}
+
 		if (SourceInventory->RemoveItemInstanceStack(Item, TransferCount))
 		{
 			TargetInventory->AddItemDefinitionToPlacement(ItemDefinition, TransferCount, TargetPlacement);
@@ -389,7 +400,7 @@ void URpgInventoryUiActionComponent::RequestTransferItemStackToPlacement_Impleme
 		return;
 	}
 
-	if (RequestedCount < AvailableCount)
+	if (!TargetItem || TargetItem->GetItemDef() == Item->GetItemDef() || RequestedCount < AvailableCount)
 	{
 		return;
 	}
@@ -398,6 +409,13 @@ void URpgInventoryUiActionComponent::RequestTransferItemStackToPlacement_Impleme
 	const int32 TargetStackCount = TargetInventory->GetItemStackCount(TargetItem);
 	if (!SourceInventory->GetItemPlacement(Item, SourcePlacement) || TargetStackCount <= 0)
 	{
+		return;
+	}
+
+	if (!TargetInventory->CanAddItemInstanceToPlacementIgnoringItem(Item, AvailableCount, TargetPlacement, TargetItem) ||
+		!SourceInventory->CanAddItemInstanceToPlacementIgnoringItem(TargetItem, TargetStackCount, SourcePlacement, Item))
+	{
+		SendActionFeedback(RpgGameplayTags::Rpg_Inventory_Action_Transfer, ERpgInventoryActionFeedbackResult::InvalidSlot, SourceInventory, Item, AvailableCount);
 		return;
 	}
 
@@ -1519,24 +1537,35 @@ bool URpgInventoryUiActionComponent::CanTransferItemStackToPlacement(URpgInvento
 		return false;
 	}
 
-	URpgInventoryItemInstance* TargetItem = TargetInventory->GetItemAtCell(TargetPlacement.ContainerId, TargetPlacement.X, TargetPlacement.Y);
-	if (!TargetItem)
+	FRpgInventoryGridPlacement NormalizedTargetPlacement;
+	URpgInventoryItemInstance* TargetItem = TargetInventory->GetSingleItemOverlappingPlacementForItem(Item, TargetPlacement, NormalizedTargetPlacement);
+	if (TargetItem && TargetItem->GetItemDef() == Item->GetItemDef())
 	{
-		if (RequestedCount >= AvailableCount)
-		{
-			return TargetInventory->CanAddItemInstanceToPlacement(Item, AvailableCount, TargetPlacement);
-		}
-
-		return TargetInventory->CanAddItemDefinitionToPlacement(Item->GetItemDef(), RequestedCount, TargetPlacement);
+		return TargetInventory->GetFreeStackCapacity(TargetItem) > 0;
 	}
 
-	if (TargetItem->GetItemDef() == Item->GetItemDef() && TargetInventory->GetFreeStackCapacity(TargetItem) > 0)
+	if (RequestedCount >= AvailableCount &&
+		TargetInventory->CanAddItemInstanceToPlacement(Item, AvailableCount, TargetPlacement))
 	{
 		return true;
 	}
 
+	if (TargetInventory->CanAddItemDefinitionToPlacement(Item->GetItemDef(), RequestedCount, TargetPlacement))
+	{
+		return true;
+	}
+
+	if (!TargetItem || RequestedCount < AvailableCount)
+	{
+		return false;
+	}
+
 	FRpgInventoryGridPlacement SourcePlacement;
-	return RequestedCount >= AvailableCount && SourceInventory->GetItemPlacement(Item, SourcePlacement);
+	const int32 TargetStackCount = TargetInventory->GetItemStackCount(TargetItem);
+	return SourceInventory->GetItemPlacement(Item, SourcePlacement) &&
+		TargetStackCount > 0 &&
+		TargetInventory->CanAddItemInstanceToPlacementIgnoringItem(Item, AvailableCount, TargetPlacement, TargetItem) &&
+		SourceInventory->CanAddItemInstanceToPlacementIgnoringItem(TargetItem, TargetStackCount, SourcePlacement, Item);
 }
 
 bool URpgInventoryUiActionComponent::CanSplitItemStack(URpgInventoryManagerComponent* Inventory, URpgInventoryItemInstance* Item, int32 SplitCount, FRpgInventoryGridPlacement TargetPlacement, int32& OutSplitCount, FRpgInventoryGridPlacement& OutTargetPlacement) const
@@ -1801,14 +1830,14 @@ bool URpgInventoryUiActionComponent::TryMoveItemToFirstCompatibleCarrySlot(URpgI
 		{
 			for (int32 X = 0; X < Group.GridSize.Width; ++X)
 			{
-				if (PlayerInventory->GetItemAtCell(Group.ContainerId, X, Y) == nullptr)
+				FRpgInventoryGridPlacement TargetPlacement;
+				TargetPlacement.ContainerId = Group.ContainerId;
+				TargetPlacement.X = X;
+				TargetPlacement.Y = Y;
+				TargetPlacement.Width = 1;
+				TargetPlacement.Height = 1;
+				if (PlayerInventory->CanMoveInventoryEntryToPlacement(EntryId, TargetPlacement))
 				{
-					FRpgInventoryGridPlacement TargetPlacement;
-					TargetPlacement.ContainerId = Group.ContainerId;
-					TargetPlacement.X = X;
-					TargetPlacement.Y = Y;
-					TargetPlacement.Width = 1;
-					TargetPlacement.Height = 1;
 					return PlayerInventory->MoveInventoryEntryToPlacement(EntryId, TargetPlacement);
 				}
 			}
@@ -1889,14 +1918,14 @@ bool URpgInventoryUiActionComponent::TryMoveItemToFirstCompatibleContentSlot(URp
 		{
 			for (int32 X = 0; X < Group.GridSize.Width; ++X)
 			{
-				if (PlayerInventory->GetItemAtCell(Group.ContainerId, X, Y) == nullptr)
+				FRpgInventoryGridPlacement TargetPlacement;
+				TargetPlacement.ContainerId = Group.ContainerId;
+				TargetPlacement.X = X;
+				TargetPlacement.Y = Y;
+				TargetPlacement.Width = 1;
+				TargetPlacement.Height = 1;
+				if (PlayerInventory->CanMoveInventoryEntryToPlacement(EntryId, TargetPlacement))
 				{
-					FRpgInventoryGridPlacement TargetPlacement;
-					TargetPlacement.ContainerId = Group.ContainerId;
-					TargetPlacement.X = X;
-					TargetPlacement.Y = Y;
-					TargetPlacement.Width = 1;
-					TargetPlacement.Height = 1;
 					return PlayerInventory->MoveInventoryEntryToPlacement(EntryId, TargetPlacement);
 				}
 			}

@@ -95,6 +95,34 @@ struct SURVIVALRPG_API FRpgInventoryDragPayload
 	UPROPERTY(BlueprintReadWrite, Category = "Inventory|DragDrop")
 	FRpgInventoryGridPlacement SourcePlacement;
 
+	/** Unrotated definition footprint for content grids. Gear and carry slots may store the same item as 1x1. */
+	UPROPERTY(BlueprintReadWrite, Category = "Inventory|DragDrop")
+	FRpgInventoryGridSize ItemFootprint;
+
+	/** True when spatial UI should keep a clicked/selected cell inside the item footprint anchored to the cursor. */
+	UPROPERTY(BlueprintReadWrite, Category = "Inventory|DragDrop")
+	bool bHasSpatialGrabOffset = false;
+
+	/** X cell offset inside SourcePlacement's occupied footprint that should stay under the cursor during placement. */
+	UPROPERTY(BlueprintReadWrite, Category = "Inventory|DragDrop", meta = (ClampMin = "0", UIMin = "0"))
+	int32 GrabCellOffsetX = 0;
+
+	/** Y cell offset inside SourcePlacement's occupied footprint that should stay under the cursor during placement. */
+	UPROPERTY(BlueprintReadWrite, Category = "Inventory|DragDrop", meta = (ClampMin = "0", UIMin = "0"))
+	int32 GrabCellOffsetY = 0;
+
+	/** True when mouse drag placement should derive the target origin from the visible item ghost's top-left corner. */
+	UPROPERTY(BlueprintReadWrite, Category = "Inventory|DragDrop")
+	bool bHasPointerGrabOffset = false;
+
+	/** Pixel offset from the dragged item's top-left to the pointer at mouse drag start. UI-only and never authoritative. */
+	UPROPERTY(BlueprintReadWrite, Category = "Inventory|DragDrop")
+	FVector2D PointerGrabOffset = FVector2D::ZeroVector;
+
+	/** Pixel size of the dragged item widget at mouse drag start. Used only for responsive UI preview and diagnostics. */
+	UPROPERTY(BlueprintReadWrite, Category = "Inventory|DragDrop")
+	FVector2D DragVisualSize = FVector2D::ZeroVector;
+
 	/** Logical source address when the payload came from the player inventory layout UI. */
 	UPROPERTY(BlueprintReadWrite, Category = "Inventory|DragDrop")
 	FRpgInventorySlotAddress SourceSlotAddress;

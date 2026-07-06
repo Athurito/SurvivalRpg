@@ -106,7 +106,11 @@ bool URpgEquipmentSlotWidget::HandleClearAssignment()
 void URpgEquipmentSlotWidget::RefreshDragDropVisualState()
 {
 	ERpgInventorySlotDragVisualState NewState = ERpgInventorySlotDragVisualState::Normal;
-	if (DragDropCoordinator && DragDropCoordinator->HasHeldPayload())
+	if (bHasExternalPreviewState)
+	{
+		NewState = ExternalPreviewState;
+	}
+	else if (DragDropCoordinator && DragDropCoordinator->HasHeldPayload())
 	{
 		NewState = IsHeldSource()
 			? ERpgInventorySlotDragVisualState::HeldSource
@@ -116,6 +120,41 @@ void URpgEquipmentSlotWidget::RefreshDragDropVisualState()
 	}
 
 	BP_OnEquipmentSlotDragDropStateChanged(NewState);
+}
+
+bool URpgEquipmentSlotWidget::PreviewPayloadDrop(const FRpgInventoryDragPayload& Payload)
+{
+	if (!DragDropCoordinator || !URpgInventoryDragDropCoordinator::IsPayloadValid(Payload))
+	{
+		ClearExternalPreviewPayload();
+		return false;
+	}
+
+	const bool bCanDrop = DragDropCoordinator->PreviewPayloadDrop(Payload, MakeDropTarget());
+	bHasExternalPreviewState = true;
+	ExternalPreviewState = bCanDrop
+		? ERpgInventorySlotDragVisualState::ValidTarget
+		: ERpgInventorySlotDragVisualState::InvalidTarget;
+	RefreshDragDropVisualState();
+	return bCanDrop;
+}
+
+bool URpgEquipmentSlotWidget::CommitPayloadDrop(const FRpgInventoryDragPayload& Payload)
+{
+	ClearExternalPreviewPayload();
+	return DragDropCoordinator && DragDropCoordinator->CommitPayloadToTarget(Payload, MakeDropTarget());
+}
+
+void URpgEquipmentSlotWidget::ClearExternalPreviewPayload()
+{
+	if (!bHasExternalPreviewState)
+	{
+		return;
+	}
+
+	bHasExternalPreviewState = false;
+	ExternalPreviewState = ERpgInventorySlotDragVisualState::Normal;
+	RefreshDragDropVisualState();
 }
 
 void URpgEquipmentSlotWidget::NativeDestruct()
@@ -232,20 +271,31 @@ void URpgEquipmentSlotWidget::NativeOnDragDetected(const FGeometry& InGeometry, 
 bool URpgEquipmentSlotWidget::NativeOnDragOver(const FGeometry& InGeometry, const FDragDropEvent& InDragDropEvent, UDragDropOperation* InOperation)
 {
 	const URpgInventoryDragDropOperation* InventoryOperation = Cast<URpgInventoryDragDropOperation>(InOperation);
-	return DragDropCoordinator &&
-		InventoryOperation &&
-		DragDropCoordinator->PreviewPayloadDrop(InventoryOperation->InventoryPayload, MakeDropTarget());
+	if (!InventoryOperation)
+	{
+		return false;
+	}
+
+	PreviewPayloadDrop(InventoryOperation->InventoryPayload);
+	return true;
 }
 
 bool URpgEquipmentSlotWidget::NativeOnDrop(const FGeometry& InGeometry, const FDragDropEvent& InDragDropEvent, UDragDropOperation* InOperation)
 {
 	const URpgInventoryDragDropOperation* InventoryOperation = Cast<URpgInventoryDragDropOperation>(InOperation);
-	if (!DragDropCoordinator || !InventoryOperation)
+	if (!InventoryOperation)
 	{
 		return false;
 	}
 
-	return DragDropCoordinator->CommitPayloadToTarget(InventoryOperation->InventoryPayload, MakeDropTarget());
+	CommitPayloadDrop(InventoryOperation->InventoryPayload);
+	return true;
+}
+
+void URpgEquipmentSlotWidget::NativeOnDragLeave(const FDragDropEvent& InDragDropEvent, UDragDropOperation* InOperation)
+{
+	ClearExternalPreviewPayload();
+	Super::NativeOnDragLeave(InDragDropEvent, InOperation);
 }
 
 void URpgEquipmentSlotWidget::HandleSlotViewModelChanged(URpgEquipmentSlotViewModel* ChangedSlotViewModel)

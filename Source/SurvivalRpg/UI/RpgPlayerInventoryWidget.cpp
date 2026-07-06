@@ -1,5 +1,7 @@
 #include "RpgPlayerInventoryWidget.h"
 
+#include "Blueprint/DragDropOperation.h"
+#include "Components/Widget.h"
 #include "Engine/World.h"
 #include "MVVMSubsystem.h"
 #include "SurvivalRpg/Inventory/RpgInventoryDragDrop.h"
@@ -11,6 +13,27 @@
 #include "View/MVVMView.h"
 
 #include UE_INLINE_GENERATED_CPP_BY_NAME(RpgPlayerInventoryWidget)
+
+namespace
+{
+	bool IsWidgetUnderScreenPosition(const UWidget* Widget, FVector2D ScreenPosition)
+	{
+		if (!Widget || Widget->GetVisibility() == ESlateVisibility::Collapsed || Widget->GetVisibility() == ESlateVisibility::Hidden)
+		{
+			return false;
+		}
+
+		const FGeometry Geometry = Widget->GetCachedGeometry();
+		const FVector2D LocalPosition = Geometry.AbsoluteToLocal(ScreenPosition);
+		const FVector2D LocalSize = Geometry.GetLocalSize();
+		return LocalSize.X > KINDA_SMALL_NUMBER &&
+			LocalSize.Y > KINDA_SMALL_NUMBER &&
+			LocalPosition.X >= 0.0f &&
+			LocalPosition.Y >= 0.0f &&
+			LocalPosition.X <= LocalSize.X &&
+			LocalPosition.Y <= LocalSize.Y;
+	}
+}
 
 URpgPlayerInventoryWidget::URpgPlayerInventoryWidget(const FObjectInitializer& ObjectInitializer)
 	: Super(ObjectInitializer)
@@ -45,6 +68,36 @@ void URpgPlayerInventoryWidget::NativeOnDeactivated()
 	}
 
 	Super::NativeOnDeactivated();
+}
+
+bool URpgPlayerInventoryWidget::NativeOnDragOver(const FGeometry& InGeometry, const FDragDropEvent& InDragDropEvent, UDragDropOperation* InOperation)
+{
+	const URpgInventoryDragDropOperation* InventoryOperation = Cast<URpgInventoryDragDropOperation>(InOperation);
+	if (!InventoryOperation || !URpgInventoryDragDropCoordinator::IsPayloadValid(InventoryOperation->InventoryPayload))
+	{
+		return Super::NativeOnDragOver(InGeometry, InDragDropEvent, InOperation);
+	}
+
+	RouteInventoryPayloadAtScreenPosition(InventoryOperation->InventoryPayload, InDragDropEvent.GetScreenSpacePosition(), false);
+	return true;
+}
+
+bool URpgPlayerInventoryWidget::NativeOnDrop(const FGeometry& InGeometry, const FDragDropEvent& InDragDropEvent, UDragDropOperation* InOperation)
+{
+	const URpgInventoryDragDropOperation* InventoryOperation = Cast<URpgInventoryDragDropOperation>(InOperation);
+	if (!InventoryOperation || !URpgInventoryDragDropCoordinator::IsPayloadValid(InventoryOperation->InventoryPayload))
+	{
+		return Super::NativeOnDrop(InGeometry, InDragDropEvent, InOperation);
+	}
+
+	RouteInventoryPayloadAtScreenPosition(InventoryOperation->InventoryPayload, InDragDropEvent.GetScreenSpacePosition(), true);
+	return true;
+}
+
+void URpgPlayerInventoryWidget::NativeOnDragLeave(const FDragDropEvent& InDragDropEvent, UDragDropOperation* InOperation)
+{
+	ClearExternalDragPreviews();
+	Super::NativeOnDragLeave(InDragDropEvent, InOperation);
 }
 
 void URpgPlayerInventoryWidget::EnsurePlayerInventoryCoordinator()
@@ -343,6 +396,164 @@ void URpgPlayerInventoryWidget::RegisterPlayerInventoryNavigationPanels()
 	if (ActionBarTileView)
 	{
 		PlayerPanelNavigationCoordinator->RegisterActionBarPanel(TEXT("Actionbar"), ActionBarTileView);
+	}
+}
+
+bool URpgPlayerInventoryWidget::RouteInventoryPayloadAtScreenPosition(const FRpgInventoryDragPayload& Payload, FVector2D ScreenPosition, bool bCommit)
+{
+	ClearExternalDragPreviews();
+
+	if (RoutePayloadToGearSlot(Payload, ScreenPosition, bCommit))
+	{
+		return true;
+	}
+
+	if (RoutePayloadToActionBar(Payload, ScreenPosition, bCommit))
+	{
+		return true;
+	}
+
+	if (RoutePayloadToSpatialGrid(Payload, ScreenPosition, bCommit))
+	{
+		return true;
+	}
+
+	return false;
+}
+
+bool URpgPlayerInventoryWidget::RoutePayloadToGearSlot(const FRpgInventoryDragPayload& Payload, FVector2D ScreenPosition, bool bCommit)
+{
+	auto TryRouteSlot = [&](URpgEquipmentSlotWidget* SlotWidget)
+	{
+		if (!IsWidgetUnderScreenPosition(SlotWidget, ScreenPosition))
+		{
+			return false;
+		}
+
+		if (bCommit)
+		{
+			SlotWidget->CommitPayloadDrop(Payload);
+		}
+		else
+		{
+			SlotWidget->PreviewPayloadDrop(Payload);
+		}
+		return true;
+	};
+
+	return TryRouteSlot(Gear_Head) ||
+		TryRouteSlot(Gear_Chest) ||
+		TryRouteSlot(Gear_Hands) ||
+		TryRouteSlot(Gear_Legs) ||
+		TryRouteSlot(Gear_Feet) ||
+		TryRouteSlot(Gear_Backpack) ||
+		TryRouteSlot(Gear_Belt) ||
+		TryRouteSlot(Gear_Pouch) ||
+		TryRouteSlot(Gear_ResourceBag);
+}
+
+bool URpgPlayerInventoryWidget::RoutePayloadToActionBar(const FRpgInventoryDragPayload& Payload, FVector2D ScreenPosition, bool bCommit)
+{
+	if (!ActionBarTileView || !IsWidgetUnderScreenPosition(ActionBarTileView, ScreenPosition))
+	{
+		return false;
+	}
+
+	return bCommit
+		? ActionBarTileView->CommitPayloadAtScreenPosition(Payload, ScreenPosition)
+		: ActionBarTileView->PreviewPayloadAtScreenPosition(Payload, ScreenPosition);
+}
+
+bool URpgPlayerInventoryWidget::RoutePayloadToSpatialGrid(const FRpgInventoryDragPayload& Payload, FVector2D ScreenPosition, bool bCommit)
+{
+	TArray<URpgInventorySpatialGridWidget*> SpatialGrids;
+	CollectSpatialGrids(SpatialGrids);
+	for (URpgInventorySpatialGridWidget* SpatialGrid : SpatialGrids)
+	{
+		if (!SpatialGrid || !SpatialGrid->ContainsScreenPosition(ScreenPosition))
+		{
+			continue;
+		}
+
+		if (bCommit)
+		{
+			SpatialGrid->CommitPayloadAtScreenPosition(Payload, ScreenPosition);
+		}
+		else
+		{
+			SpatialGrid->PreviewPayloadAtScreenPosition(Payload, ScreenPosition);
+		}
+		return true;
+	}
+
+	return false;
+}
+
+void URpgPlayerInventoryWidget::CollectSpatialGrids(TArray<URpgInventorySpatialGridWidget*>& OutGrids) const
+{
+	if (CarryGroupsList)
+	{
+		CarryGroupsList->GetSpatialGridWidgets(OutGrids);
+	}
+
+	if (InventoryGroupsList)
+	{
+		InventoryGroupsList->GetSpatialGridWidgets(OutGrids);
+	}
+}
+
+void URpgPlayerInventoryWidget::ClearExternalDragPreviews()
+{
+	if (Gear_Head)
+	{
+		Gear_Head->ClearExternalPreviewPayload();
+	}
+	if (Gear_Chest)
+	{
+		Gear_Chest->ClearExternalPreviewPayload();
+	}
+	if (Gear_Hands)
+	{
+		Gear_Hands->ClearExternalPreviewPayload();
+	}
+	if (Gear_Legs)
+	{
+		Gear_Legs->ClearExternalPreviewPayload();
+	}
+	if (Gear_Feet)
+	{
+		Gear_Feet->ClearExternalPreviewPayload();
+	}
+	if (Gear_Backpack)
+	{
+		Gear_Backpack->ClearExternalPreviewPayload();
+	}
+	if (Gear_Belt)
+	{
+		Gear_Belt->ClearExternalPreviewPayload();
+	}
+	if (Gear_Pouch)
+	{
+		Gear_Pouch->ClearExternalPreviewPayload();
+	}
+	if (Gear_ResourceBag)
+	{
+		Gear_ResourceBag->ClearExternalPreviewPayload();
+	}
+
+	if (ActionBarTileView)
+	{
+		ActionBarTileView->ClearExternalPreviewPayloads();
+	}
+
+	TArray<URpgInventorySpatialGridWidget*> SpatialGrids;
+	CollectSpatialGrids(SpatialGrids);
+	for (URpgInventorySpatialGridWidget* SpatialGrid : SpatialGrids)
+	{
+		if (SpatialGrid)
+		{
+			SpatialGrid->ClearExternalPreviewPayload();
+		}
 	}
 }
 

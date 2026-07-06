@@ -2,6 +2,7 @@
 
 #include "CoreMinimal.h"
 #include "SurvivalRpg/Equipment/RpgEquipmentDefinition.h"
+#include "SurvivalRpg/Inventory/RpgInventoryDragDrop.h"
 #include "SurvivalRpg/UI/RpgInventoryControllerActionsWidget.h"
 
 #include "RpgPlayerInventoryWidget.generated.h"
@@ -10,8 +11,10 @@ class URpgActionBarTileView;
 class URpgEquipmentSlotWidget;
 class URpgInventoryDragDropCoordinator;
 class URpgInventoryPanelNavigationCoordinator;
+class URpgInventorySpatialGridWidget;
 class URpgInventorySlotGroupPanelWidget;
 class URpgPlayerInventoryViewModel;
+class UDragDropOperation;
 
 /**
  * Native base for the player inventory screen.
@@ -68,6 +71,9 @@ protected:
 	virtual void NativeOnInitialized() override;
 	virtual void NativeOnActivated() override;
 	virtual void NativeOnDeactivated() override;
+	virtual bool NativeOnDragOver(const FGeometry& InGeometry, const FDragDropEvent& InDragDropEvent, UDragDropOperation* InOperation) override;
+	virtual bool NativeOnDrop(const FGeometry& InGeometry, const FDragDropEvent& InDragDropEvent, UDragDropOperation* InOperation) override;
+	virtual void NativeOnDragLeave(const FDragDropEvent& InDragDropEvent, UDragDropOperation* InOperation) override;
 
 	/** Blueprint hook after the native parent creates and assigns PlayerInventoryViewModel. */
 	UFUNCTION(BlueprintImplementableEvent, Category = "Inventory|Player", meta = (DisplayName = "On Player Inventory ViewModel Ready"))
@@ -131,6 +137,12 @@ private:
 	void RegisterPlayerInventoryNavigationPanels();
 	void QueueDeferredPlayerInventoryRefresh();
 	void ExecuteDeferredPlayerInventoryRefresh();
+	bool RouteInventoryPayloadAtScreenPosition(const FRpgInventoryDragPayload& Payload, FVector2D ScreenPosition, bool bCommit);
+	bool RoutePayloadToGearSlot(const FRpgInventoryDragPayload& Payload, FVector2D ScreenPosition, bool bCommit);
+	bool RoutePayloadToActionBar(const FRpgInventoryDragPayload& Payload, FVector2D ScreenPosition, bool bCommit);
+	bool RoutePayloadToSpatialGrid(const FRpgInventoryDragPayload& Payload, FVector2D ScreenPosition, bool bCommit);
+	void CollectSpatialGrids(TArray<URpgInventorySpatialGridWidget*>& OutGrids) const;
+	void ClearExternalDragPreviews();
 
 	UPROPERTY(Transient)
 	TObjectPtr<URpgPlayerInventoryViewModel> PlayerInventoryViewModel = nullptr;

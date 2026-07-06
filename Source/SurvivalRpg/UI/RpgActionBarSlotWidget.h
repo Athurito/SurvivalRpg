@@ -48,12 +48,26 @@ public:
 	UFUNCTION(BlueprintCallable, Category = "Action Bar|Slot")
 	void RefreshDragDropVisualState();
 
+	/** Updates mouse-drag hover feedback for an explicit payload. Invalid targets are still visibly handled. */
+	UFUNCTION(BlueprintCallable, Category = "Action Bar|Slot")
+	bool PreviewPayloadDrop(const FRpgInventoryDragPayload& Payload);
+
+	/** Commits an explicit mouse-drag payload to this actionbar slot through the server-authoritative action path. */
+	UFUNCTION(BlueprintCallable, Category = "Action Bar|Slot")
+	bool CommitPayloadDrop(const FRpgInventoryDragPayload& Payload);
+
+	/** Clears transient mouse-drag hover feedback without changing gameplay state. */
+	UFUNCTION(BlueprintCallable, Category = "Action Bar|Slot")
+	void ClearExternalPreviewPayload();
+
 protected:
 	virtual void NativeOnListItemObjectSet(UObject* ListItemObject) override;
 	virtual void NativeOnEntryReleased() override;
 	virtual void NativeOnItemSelectionChanged(bool bIsSelected) override;
 	virtual void NativeOnClicked() override;
+	virtual bool NativeOnDragOver(const FGeometry& InGeometry, const FDragDropEvent& InDragDropEvent, UDragDropOperation* InOperation) override;
 	virtual bool NativeOnDrop(const FGeometry& InGeometry, const FDragDropEvent& InDragDropEvent, UDragDropOperation* InOperation) override;
+	virtual void NativeOnDragLeave(const FDragDropEvent& InDragDropEvent, UDragDropOperation* InOperation) override;
 
 	/** Blueprint presentation hook called when this slot receives or refreshes its VM. */
 	UFUNCTION(BlueprintImplementableEvent, Category = "Action Bar|Slot", meta = (DisplayName = "On Action Bar Slot ViewModel Set"))
@@ -91,4 +105,6 @@ private:
 
 	bool bSlotSelected = false;
 	bool bActionBarPanelActive = true;
+	bool bHasExternalPreviewState = false;
+	ERpgInventorySlotDragVisualState ExternalPreviewState = ERpgInventorySlotDragVisualState::Normal;
 };

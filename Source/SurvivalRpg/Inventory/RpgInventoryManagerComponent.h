@@ -349,6 +349,12 @@ public:
 	UFUNCTION(BlueprintCallable, BlueprintAuthorityOnly, Category = "Inventory|Spatial")
 	bool CanAddItemInstanceToPlacement(URpgInventoryItemInstance* ItemInstance, int32 StackCount, FRpgInventoryGridPlacement Placement) const;
 
+	/** Returns true when an instance would fit into a placement after removing exactly one known swap counterpart. */
+	bool CanAddItemInstanceToPlacementIgnoringItem(URpgInventoryItemInstance* ItemInstance, int32 StackCount, FRpgInventoryGridPlacement Placement, URpgInventoryItemInstance* IgnoredItemInstance) const;
+
+	/** Resolves the single item overlapped by this item's normalized footprint, or null for empty/multi-overlap targets. */
+	URpgInventoryItemInstance* GetSingleItemOverlappingPlacementForItem(URpgInventoryItemInstance* ItemInstance, FRpgInventoryGridPlacement Placement, FRpgInventoryGridPlacement& OutNormalizedPlacement) const;
+
 	UFUNCTION(BlueprintCallable, BlueprintAuthorityOnly, Category=Inventory)
 	URpgInventoryItemInstance* AddItemDefinition(TSubclassOf<URpgInventoryItemDefinition> ItemDef, int32 StackCount = 1);
 
@@ -472,6 +478,9 @@ private:
 	void HandleCapacityAttributeChanged(const FOnAttributeChangeData& Data);
 	void BroadcastCapacityChanged() const;
 	const URpgPlayerInventoryLayoutComponent* FindOwningPlayerInventoryLayout() const;
+	bool ShouldUseSingleCellPlacementForContainer(FName ContainerId) const;
+	bool TryMakePlacementForItemDefinition(TSubclassOf<URpgInventoryItemDefinition> ItemDef, FName ContainerId, int32 X, int32 Y, bool bRotated, FRpgInventoryGridPlacement& OutPlacement) const;
+	bool TryMakePlacementForItemInstance(URpgInventoryItemInstance* ItemInstance, FName ContainerId, int32 X, int32 Y, bool bRotated, FRpgInventoryGridPlacement& OutPlacement) const;
 	FRpgInventoryGridPlacement MakePlacementForItemDefinition(TSubclassOf<URpgInventoryItemDefinition> ItemDef, FName ContainerId, int32 X, int32 Y, bool bRotated) const;
 	FRpgInventoryGridPlacement MakePlacementForItemInstance(URpgInventoryItemInstance* ItemInstance, FName ContainerId, int32 X, int32 Y, bool bRotated) const;
 

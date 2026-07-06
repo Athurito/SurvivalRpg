@@ -9,6 +9,7 @@
 #include "RpgPlayerInventoryLayoutViews.generated.h"
 
 class APlayerController;
+class URpgActionBarSlotWidget;
 class URpgActionBarSlotViewModel;
 class URpgInventoryAddressSlotViewModel;
 class URpgInventoryDragDropCoordinator;
@@ -66,6 +67,15 @@ public:
 	UFUNCTION(BlueprintCallable, Category = "Action Bar|Navigation")
 	void ClearActionBarSelectionVisual();
 
+	/** Updates mouse-drag hover feedback for the actionbar slot under a screen position. */
+	bool PreviewPayloadAtScreenPosition(const FRpgInventoryDragPayload& Payload, FVector2D ScreenPosition);
+
+	/** Commits a mouse-drag payload to the actionbar slot under a screen position. */
+	bool CommitPayloadAtScreenPosition(const FRpgInventoryDragPayload& Payload, FVector2D ScreenPosition);
+
+	/** Clears transient mouse-drag feedback on displayed actionbar slots. */
+	void ClearExternalPreviewPayloads();
+
 	/** Marks this actionbar panel as the active controller target. */
 	UFUNCTION(BlueprintCallable, Category = "Action Bar|Navigation")
 	void SetActionBarPanelActive(bool bInActionBarPanelActive);
@@ -83,6 +93,7 @@ protected:
 private:
 	void ApplyCoordinatorToEntry(UUserWidget* EntryWidget) const;
 	void ApplyPanelActiveStateToEntry(UUserWidget* EntryWidget) const;
+	URpgActionBarSlotWidget* FindActionBarSlotWidgetAtScreenPosition(FVector2D ScreenPosition) const;
 
 	UPROPERTY(Transient)
 	TObjectPtr<URpgInventoryDragDropCoordinator> DragDropCoordinator = nullptr;
@@ -430,9 +441,11 @@ public:
 	bool SelectCellFromScreenPosition(FVector2D ScreenPosition, APlayerController* OwningPlayer = nullptr);
 	bool CommitPayloadToCell(const FRpgInventoryDragPayload& Payload, int32 X, int32 Y);
 	bool PreviewPayloadOnCell(const FRpgInventoryDragPayload& Payload, int32 X, int32 Y);
+	bool CommitPayloadAtScreenPosition(const FRpgInventoryDragPayload& Payload, FVector2D ScreenPosition);
+	bool PreviewPayloadAtScreenPosition(const FRpgInventoryDragPayload& Payload, FVector2D ScreenPosition);
+	bool ContainsScreenPosition(FVector2D ScreenPosition) const;
+	bool ResolveDropTargetAtScreenPosition(const FRpgInventoryDragPayload& Payload, FVector2D ScreenPosition, FRpgInventoryDropTarget& OutTarget, FRpgInventoryGridPlacement& OutTargetPlacement, int32& OutAnchorX, int32& OutAnchorY) const;
 	void ClearExternalPreviewPayload();
-	bool CommitPayloadToItemWidget(const FRpgInventoryDragPayload& Payload, const URpgInventorySpatialItemWidget* ItemWidget);
-	bool PreviewPayloadOnItemWidget(const FRpgInventoryDragPayload& Payload, const URpgInventorySpatialItemWidget* ItemWidget) const;
 	bool IsItemWidgetFocused(const URpgInventorySpatialItemWidget* ItemWidget) const;
 
 protected:
@@ -522,6 +535,7 @@ private:
 	void RebuildItemOverlay();
 	void UpdateCellVisualStates();
 	ERpgInventorySpatialCellVisualState GetCellVisualState(int32 X, int32 Y) const;
+	bool ResolvePayloadPreviewCellState(const FRpgInventoryDragPayload& Payload, int32 X, int32 Y, ERpgInventorySpatialCellVisualState& OutState) const;
 	void ClearObservedSlotDelegates();
 	void ObserveSlotDelegates();
 	void ClearObservedEntryDelegates();
@@ -529,13 +543,20 @@ private:
 	void NotifySelectionChanged();
 	bool MoveCursorBy(int32 DeltaX, int32 DeltaY, APlayerController* OwningPlayer);
 	bool TryGetCellFromLocalPosition(FVector2D LocalPosition, int32& OutX, int32& OutY) const;
+	bool TryGetCellFromScreenPosition(FVector2D ScreenPosition, int32& OutX, int32& OutY) const;
 	FRpgInventoryDropTarget MakeDropTargetAtCursor() const;
 	FRpgInventoryDropTarget MakeDropTargetForCell(int32 X, int32 Y) const;
-	FRpgInventoryDropTarget MakeDropTargetForItemWidget(const URpgInventorySpatialItemWidget* ItemWidget) const;
+	FRpgInventoryDropTarget MakeDropTargetForCell(const FRpgInventoryDragPayload& Payload, int32 X, int32 Y) const;
+	FRpgInventoryDropTarget MakeDropTargetForPlacement(const FRpgInventoryDragPayload& Payload, const FRpgInventoryGridPlacement& TargetPlacement) const;
+	FRpgInventoryGridPlacement MakeTargetPlacementForCell(const FRpgInventoryDragPayload& Payload, int32 X, int32 Y) const;
+	FRpgInventoryGridPlacement ResolveTargetPlacementAtScreenPosition(const FRpgInventoryDragPayload& Payload, FVector2D ScreenPosition, int32& OutAnchorX, int32& OutAnchorY) const;
 	FRpgInventoryDragPayload MakePayloadFromSelectedItem() const;
 	URpgInventoryAddressSlotViewModel* FindAddressCell(int32 X, int32 Y) const;
 	URpgInventoryAddressSlotViewModel* FindAddressItemAtCell(int32 X, int32 Y) const;
 	URpgInventoryEntryViewModel* FindEntryAtCell(int32 X, int32 Y) const;
+	URpgInventoryManagerComponent* ResolveGridInventory() const;
+	FGeometry GetGridInteractionGeometry() const;
+	FVector2D GetGridLocalSize() const;
 	FVector2D GetCellPosition(int32 X, int32 Y) const;
 	FVector2D GetPlacementSize(const FRpgInventoryGridPlacement& Placement) const;
 	FName ResolveContainerId() const;
@@ -580,6 +601,9 @@ private:
 	UPROPERTY(Transient)
 	FRpgInventoryDragPayload ExternalPreviewPayload;
 
+	UPROPERTY(Transient)
+	FRpgInventoryGridPlacement ExternalPreviewTargetPlacement;
+
 	int32 CursorX = 0;
 	int32 CursorY = 0;
 	bool bInventoryPanelActive = true;
@@ -587,6 +611,7 @@ private:
 	bool bHeldTargetRotated = false;
 	bool bPendingLeftClickAccept = false;
 	bool bHasExternalPreviewPayload = false;
+	bool bHasExternalPreviewTargetPlacement = false;
 };
 
 /**
@@ -613,6 +638,10 @@ public:
 	/** Assigns the group VM manually. Spatial groups are created by a panel builder, not a ListView. */
 	UFUNCTION(BlueprintCallable, Category = "Inventory|Slot Group")
 	void SetSlotGroupViewModel(URpgInventorySlotGroupViewModel* InGroupViewModel);
+
+	/** Spatial grid owned by this group widget, if the Blueprint supplied one. */
+	UFUNCTION(BlueprintPure, Category = "Inventory|Slot Group")
+	URpgInventorySpatialGridWidget* GetSpatialGridWidget() const { return SpatialGrid.Get(); }
 
 protected:
 	virtual void NativeDestruct() override;
@@ -673,6 +702,9 @@ public:
 	/** Replaces children with the supplied slot group VMs while preserving direct panel layout. */
 	UFUNCTION(BlueprintCallable, Category = "Inventory|Slot Group")
 	void SetSlotGroupItems(const TArray<URpgInventorySlotGroupViewModel*>& InGroups);
+
+	/** Appends all currently generated spatial grids to OutGrids for screen-level drag/drop routing. */
+	void GetSpatialGridWidgets(TArray<URpgInventorySpatialGridWidget*>& OutGrids) const;
 
 protected:
 	/** Optional Blueprint panel that receives group widgets. If unset, an existing root panel is used. */

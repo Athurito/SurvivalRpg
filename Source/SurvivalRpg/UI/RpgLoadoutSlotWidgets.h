@@ -58,6 +58,18 @@ public:
 	UFUNCTION(BlueprintCallable, Category = "Equipment|Slot")
 	void RefreshDragDropVisualState();
 
+	/** Updates mouse-drag hover feedback for an explicit payload. Invalid targets are still visibly handled. */
+	UFUNCTION(BlueprintCallable, Category = "Equipment|Slot")
+	bool PreviewPayloadDrop(const FRpgInventoryDragPayload& Payload);
+
+	/** Commits an explicit mouse-drag payload to this equipment slot through the server-authoritative action path. */
+	UFUNCTION(BlueprintCallable, Category = "Equipment|Slot")
+	bool CommitPayloadDrop(const FRpgInventoryDragPayload& Payload);
+
+	/** Clears transient mouse-drag hover feedback without changing gameplay state. */
+	UFUNCTION(BlueprintCallable, Category = "Equipment|Slot")
+	void ClearExternalPreviewPayload();
+
 protected:
 	virtual void NativeDestruct() override;
 	virtual void NativeOnClicked() override;
@@ -67,6 +79,7 @@ protected:
 	virtual void NativeOnDragDetected(const FGeometry& InGeometry, const FPointerEvent& InMouseEvent, UDragDropOperation*& OutOperation) override;
 	virtual bool NativeOnDragOver(const FGeometry& InGeometry, const FDragDropEvent& InDragDropEvent, UDragDropOperation* InOperation) override;
 	virtual bool NativeOnDrop(const FGeometry& InGeometry, const FDragDropEvent& InDragDropEvent, UDragDropOperation* InOperation) override;
+	virtual void NativeOnDragLeave(const FDragDropEvent& InDragDropEvent, UDragDropOperation* InOperation) override;
 
 	/** Blueprint presentation hook called whenever the represented equipment slot changes. */
 	UFUNCTION(BlueprintImplementableEvent, Category = "Equipment|Slot", meta = (DisplayName = "On Equipment Slot Updated"))
@@ -103,4 +116,6 @@ private:
 	TObjectPtr<URpgInventoryDragDropCoordinator> DragDropCoordinator = nullptr;
 
 	bool bPendingLeftClickAccept = false;
+	bool bHasExternalPreviewState = false;
+	ERpgInventorySlotDragVisualState ExternalPreviewState = ERpgInventorySlotDragVisualState::Normal;
 };
