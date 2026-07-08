@@ -19,7 +19,7 @@ class SURVIVALRPG_API UPlayerVitalsResolver : public UMVVMViewModelContextResolv
 	
 public:
 	virtual UObject* CreateInstance(const UClass* ExpectedType, const UUserWidget* UserWidget, const UMVVMView* View) const override;
-	virtual void DestroyInstance(const UObject* ViewModel, const UMVVMView* View) const override {}
+	virtual void DestroyInstance(UObject* ViewModel, const UMVVMView* View) const override {}
 
 private:
 	ULocalPlayer* ResolveLocalPlayer(const UUserWidget* UserWidget) const;
