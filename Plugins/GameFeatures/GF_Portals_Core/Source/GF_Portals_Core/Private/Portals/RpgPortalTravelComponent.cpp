@@ -585,9 +585,9 @@ bool URpgPortalTravelComponent::IsClientSafeToUnloadRealmLevelInstance() const
 			continue;
 		}
 
-		if (IsObjectInLocalRealmLevel(Character->GetMovementBase())
-			|| IsObjectInLocalRealmLevel(Character->GetBasedMovement().MovementBase)
-			|| IsObjectInLocalRealmLevel(Character->GetReplicatedBasedMovement().MovementBase))
+		if (IsObjectInLocalRealmLevel(Character->GetMovementBaseObject())
+			|| IsObjectInLocalRealmLevel(Character->GetBasedMovement().MovementBaseInterfaceData.GetMovementBaseObject())
+			|| IsObjectInLocalRealmLevel(Character->GetReplicatedBasedMovement().MovementBaseInterfaceData.GetMovementBaseObject()))
 		{
 			return false;
 		}
