@@ -1031,12 +1031,12 @@ void ARpgPortalActor::PrepareActorForPortalTeleport(AActor* TravelActor) const
 {
 	if (ACharacter* Character = Cast<ACharacter>(TravelActor))
 	{
-		Character->SetBase(nullptr, NAME_None, false);
+		Character->SetBase(static_cast<FMovementBaseInterfaceData*>(nullptr), NAME_None, false);
 
 		if (UCharacterMovementComponent* MovementComponent = Character->GetCharacterMovement())
 		{
 			MovementComponent->StopMovementImmediately();
-			MovementComponent->SetBase(nullptr);
+			MovementComponent->SetBase(static_cast<FMovementBaseInterfaceData*>(nullptr));
 			MovementComponent->CurrentFloor.Clear();
 			MovementComponent->bJustTeleported = true;
 		}
