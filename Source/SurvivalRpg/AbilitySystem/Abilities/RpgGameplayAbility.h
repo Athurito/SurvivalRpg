@@ -7,12 +7,14 @@
 #include "SurvivalRpg/AbilitySystem/RpgAbilitySourceInterface.h"
 #include "SurvivalRpg/Core/Character/RpgCharacter.h"
 #include "SurvivalRpg/Core/Character/RpgPawnGameplayComponent.h"
+#include "UObject/SoftObjectPtr.h"
 #include "RpgGameplayAbility.generated.h"
 
 class URpgAbilityCost;
 class URpgAbilitySystemComponent;
 class URpgCameraMode;
 class ARpgPlayerController;
+class UTexture2D;
 
 
 
@@ -108,6 +110,15 @@ public:
 	
 	ERpgAbilityActivationPolicy GetActivationPolicy() const { return ActivationPolicy; }
 	ERpgAbilityActivationGroup GetActivationGroup() const { return ActivationGroup; }
+
+	UFUNCTION(BlueprintPure, Category = "Rpg|Ability UI")
+	FText GetAbilityDisplayName() const { return AbilityDisplayName; }
+
+	UFUNCTION(BlueprintPure, Category = "Rpg|Ability UI")
+	FText GetAbilityDescription() const { return AbilityDescription; }
+
+	UFUNCTION(BlueprintPure, Category = "Rpg|Ability UI")
+	TSoftObjectPtr<UTexture2D> GetAbilityIcon() const { return AbilityIcon; }
 	
 	void TryActivateAbilityOnSpawn(const FGameplayAbilityActorInfo* ActorInfo, const FGameplayAbilitySpec& Spec) const;
 	
@@ -177,6 +188,18 @@ protected:
 	void K2_OnPawnAvatarSet();
 	
 protected:
+	/** Name shown by HUD/actionbar widgets for this ability. Empty falls back to the ability id gameplay tag. */
+	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Rpg|Ability UI")
+	FText AbilityDisplayName;
+
+	/** Optional UI description for menus or tooltips. Static CDO data, never mutated at runtime. */
+	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Rpg|Ability UI", meta = (MultiLine = "true"))
+	FText AbilityDescription;
+
+	/** Soft icon used by HUD/actionbar widgets. Kept soft so combat abilities do not force-load UI art. */
+	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Rpg|Ability UI", meta = (AssetBundles = "Client"))
+	TSoftObjectPtr<UTexture2D> AbilityIcon;
+
 	// Defines how this ability is meant to activate.
 	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Rpg|Ability Activation")
 	ERpgAbilityActivationPolicy ActivationPolicy;

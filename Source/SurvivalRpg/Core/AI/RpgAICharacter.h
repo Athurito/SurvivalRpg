@@ -9,6 +9,9 @@
 class URpgExperienceRewardComponent;
 class URpgEnemyCombatArchetypeComponent;
 class URpgEnemyCombatLoadoutComponent;
+class URpgInventoryContainerComponent;
+class URpgInventoryManagerComponent;
+class URpgLootSourceComponent;
 
 UCLASS()
 class SURVIVALRPG_API ARpgAICharacter : public ARpgCharacter
@@ -29,4 +32,16 @@ private:
 
 	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "Rpg|Progression", Meta = (AllowPrivateAccess = "true"))
 	TObjectPtr<URpgExperienceRewardComponent> ExperienceRewardComponent;
+
+	/** Replicated inventory used as the enemy corpse/container item source after death. */
+	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "Rpg|Inventory", Meta = (AllowPrivateAccess = "true"))
+	TObjectPtr<URpgInventoryManagerComponent> LootInventoryComponent;
+
+	/** Interaction-facing container gate for opening the enemy's death loot. */
+	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "Rpg|Inventory", Meta = (AllowPrivateAccess = "true"))
+	TObjectPtr<URpgInventoryContainerComponent> LootContainerComponent;
+
+	/** Populates and unlocks the enemy loot inventory when death finishes. */
+	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "Rpg|Inventory", Meta = (AllowPrivateAccess = "true"))
+	TObjectPtr<URpgLootSourceComponent> LootSourceComponent;
 };

@@ -37,18 +37,23 @@ AActor* UInteractionStatics::GetActorFromInteractableTarget(TScriptInterface<IIn
 
 void UInteractionStatics::GetInteractableTargetsFromActor(AActor* Actor, TArray<TScriptInterface<IInteractableTarget>>& OutInteractableTargets)
 {
+	if (!Actor)
+	{
+		return;
+	}
+
 	// If the actor is directly interactable, return that.
 	TScriptInterface<IInteractableTarget> InteractableActor(Actor);
 	if (InteractableActor)
 	{
-		OutInteractableTargets.Add(InteractableActor);
+		OutInteractableTargets.AddUnique(InteractableActor);
 	}
 
 	// If the actor isn't interactable, it might have a component that has a interactable interface.
-	TArray<UActorComponent*> InteractableComponents = Actor ? Actor->GetComponentsByInterface(UInteractableTarget::StaticClass()) : TArray<UActorComponent*>();
+	TArray<UActorComponent*> InteractableComponents = Actor->GetComponentsByInterface(UInteractableTarget::StaticClass());
 	for (UActorComponent* InteractableComponent : InteractableComponents)
 	{
-		OutInteractableTargets.Add(TScriptInterface<IInteractableTarget>(InteractableComponent));
+		OutInteractableTargets.AddUnique(TScriptInterface<IInteractableTarget>(InteractableComponent));
 	}
 }
 
@@ -56,11 +61,7 @@ void UInteractionStatics::AppendInteractableTargetsFromOverlapResults(const TArr
 {
 	for (const FOverlapResult& Overlap : OverlapResults)
 	{
-		TScriptInterface<IInteractableTarget> InteractableActor(Overlap.GetActor());
-		if (InteractableActor)
-		{
-			OutInteractableTargets.AddUnique(InteractableActor);
-		}
+		GetInteractableTargetsFromActor(Overlap.GetActor(), OutInteractableTargets);
 
 		TScriptInterface<IInteractableTarget> InteractableComponent(Overlap.GetComponent());
 		if (InteractableComponent)
@@ -72,11 +73,7 @@ void UInteractionStatics::AppendInteractableTargetsFromOverlapResults(const TArr
 
 void UInteractionStatics::AppendInteractableTargetsFromHitResult(const FHitResult& HitResult, TArray<TScriptInterface<IInteractableTarget>>& OutInteractableTargets)
 {
-	TScriptInterface<IInteractableTarget> InteractableActor(HitResult.GetActor());
-	if (InteractableActor)
-	{
-		OutInteractableTargets.AddUnique(InteractableActor);
-	}
+	GetInteractableTargetsFromActor(HitResult.GetActor(), OutInteractableTargets);
 
 	TScriptInterface<IInteractableTarget> InteractableComponent(HitResult.GetComponent());
 	if (InteractableComponent)

@@ -10,6 +10,7 @@
 class UAbilitySystemComponent;
 class URpgAbilitySystemComponent;
 class URpgExperienceManagerComponent;
+class URpgRecipeUnlockComponent;
 
 /**
  * GameState used by the runtime gameplay map.
@@ -36,6 +37,10 @@ public:
 	UFUNCTION(BlueprintCallable, Category = "Rpg|GameState")
 	URpgAbilitySystemComponent* GetRpgAbilitySystemComponent() const { return AbilitySystemComponent; }
 
+	/** Gets the session-wide recipe unlock store shared by every player. */
+	UFUNCTION(BlueprintCallable, Category = "Rpg|GameState")
+	URpgRecipeUnlockComponent* GetRecipeUnlockComponent() const { return RecipeUnlockComponent; }
+
 private:
 	/** Handles loading and managing the current gameplay experience. */
 	UPROPERTY()
@@ -44,4 +49,8 @@ private:
 	/** Ability system component for game-wide gameplay effects and cues. */
 	UPROPERTY(VisibleAnywhere, Category = "Rpg|GameState")
 	TObjectPtr<URpgAbilitySystemComponent> AbilitySystemComponent;
+
+	/** Replicated session-global recipe unlocks used by crafting stations and crafting UI. */
+	UPROPERTY(VisibleAnywhere, Category = "Rpg|GameState")
+	TObjectPtr<URpgRecipeUnlockComponent> RecipeUnlockComponent;
 };

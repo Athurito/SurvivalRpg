@@ -5,10 +5,17 @@
 #include "CoreMinimal.h"
 #include "GenericTeamAgentInterface.h"
 #include "ModularPlayerController.h"
+#include "SurvivalRpg/Inventory/RpgInventoryItemTypes.h"
 #include "RpgPlayerController.generated.h"
 
 class URpgAbilitySystemComponent;
-class URpgQuickBarComponent;
+class URpgActionBarComponent;
+class URpgEquipmentLoadoutComponent;
+class URpgInventoryManagerComponent;
+class URpgInventoryUiActionComponent;
+class URpgPlayerInventoryLayoutComponent;
+class URpgPlayerGameplayInputRouterComponent;
+class URpgWeaponAbilityLoadoutComponent;
 class URpgPawnExtensionComponent;
 class UInputMappingContext;
 class ARpgPlayerState;
@@ -31,14 +38,30 @@ public:
 	UFUNCTION(BlueprintCallable, Category = "Rpg|Respawn")
 	void RequestRespawn();
 
+	UFUNCTION(BlueprintCallable, Category = "Rpg|Inventory")
+	void SetDeathDropMode(ERpgPlayerDeathDropMode NewDropMode);
+
 	UFUNCTION(Client, Reliable, BlueprintCallable, Category = "Rpg|Respawn")
 	void ClientRestoreGameplayInputFocus();
 
-	UFUNCTION(BlueprintCallable, Category = "Rpg|QuickBar")
-	URpgQuickBarComponent* GetQuickBarComponent() const { return QuickBarComponent; }
+	/** Opens the local loot screen for a server-authoritative loot inventory that could not be fully auto-collected. */
+	UFUNCTION(Client, Reliable, Category = "Rpg|Inventory")
+	void ClientOpenLootInventory(URpgInventoryManagerComponent* PrimaryInventory, URpgInventoryManagerComponent* LootInventory, AActor* LootActor);
 
-	UFUNCTION(BlueprintCallable, Category = "Rpg|QuickBar")
-	void SetActiveQuickBarSlot(int32 SlotIndex);
+	UFUNCTION(BlueprintCallable, Category = "Rpg|Action Bar")
+	URpgActionBarComponent* GetActionBarComponent() const { return ActionBarComponent; }
+
+	UFUNCTION(BlueprintCallable, Category = "Rpg|Weapon Abilities")
+	URpgWeaponAbilityLoadoutComponent* GetWeaponAbilityLoadoutComponent() const { return WeaponAbilityLoadoutComponent; }
+
+	UFUNCTION(BlueprintCallable, Category = "Rpg|Equipment")
+	URpgEquipmentLoadoutComponent* GetEquipmentLoadoutComponent() const { return EquipmentLoadoutComponent; }
+
+	UFUNCTION(BlueprintCallable, Category = "Rpg|Inventory")
+	URpgInventoryUiActionComponent* GetInventoryUiActionComponent() const { return InventoryUiActionComponent; }
+
+	UFUNCTION(BlueprintCallable, Category = "Rpg|Inventory")
+	URpgPlayerInventoryLayoutComponent* GetPlayerInventoryLayoutComponent() const { return PlayerInventoryLayoutComponent; }
 
 	UFUNCTION(Exec)
 	void RpgPrintProgression() const;
@@ -66,6 +89,9 @@ protected:
 	
 	UFUNCTION(Server, Reliable)
 	void ServerRequestRespawn();
+
+	UFUNCTION(Server, Reliable)
+	void ServerSetDeathDropMode(ERpgPlayerDeathDropMode NewDropMode);
 
 	UFUNCTION()
 	void HandleRespawnStateChanged(bool bIsWaitingForRespawn, float RespawnAvailableServerTime);
@@ -113,8 +139,23 @@ private:
 	UPROPERTY(Transient)
 	TObjectPtr<ARpgPlayerState> BoundPlayerState;
 
-	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "Rpg|QuickBar", meta = (AllowPrivateAccess = "true"))
-	TObjectPtr<URpgQuickBarComponent> QuickBarComponent;
+	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "Rpg|Action Bar", meta = (AllowPrivateAccess = "true"))
+	TObjectPtr<URpgActionBarComponent> ActionBarComponent;
+
+	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "Rpg|Weapon Abilities", meta = (AllowPrivateAccess = "true"))
+	TObjectPtr<URpgWeaponAbilityLoadoutComponent> WeaponAbilityLoadoutComponent;
+
+	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "Rpg|Input", meta = (AllowPrivateAccess = "true"))
+	TObjectPtr<URpgPlayerGameplayInputRouterComponent> GameplayInputRouterComponent;
+
+	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "Rpg|Equipment", meta = (AllowPrivateAccess = "true"))
+	TObjectPtr<URpgEquipmentLoadoutComponent> EquipmentLoadoutComponent;
+
+	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "Rpg|Inventory", meta = (AllowPrivateAccess = "true"))
+	TObjectPtr<URpgInventoryUiActionComponent> InventoryUiActionComponent;
+
+	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "Rpg|Inventory", meta = (AllowPrivateAccess = "true"))
+	TObjectPtr<URpgPlayerInventoryLayoutComponent> PlayerInventoryLayoutComponent;
 
 	UPROPERTY(Transient)
 	TObjectPtr<URpgPawnExtensionComponent> BoundLoadoutPawnExtension;

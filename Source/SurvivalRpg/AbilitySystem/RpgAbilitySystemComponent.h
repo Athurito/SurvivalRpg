@@ -131,6 +131,26 @@ public:
 	UFUNCTION(BlueprintCallable, Category="RPG|AbilitySet")
 	bool TryActivateFirstAbilityByInputTag(FGameplayTag InputTag, bool bAllowRemoteActivation);
 
+	/** Returns true if the ASC currently has an ability spec identified by the given semantic ability id tag. */
+	UFUNCTION(BlueprintCallable, Category="RPG|AbilitySet")
+	bool HasAbilityWithAbilityId(FGameplayTag AbilityIdTag) const;
+
+	/** Returns the granted ability CDO identified by AbilityIdTag, used by UI to read static presentation data. */
+	UFUNCTION(BlueprintPure, Category="RPG|AbilitySet")
+	const URpgGameplayAbility* FindAbilityCDOByAbilityId(FGameplayTag AbilityIdTag) const;
+
+	/** Reads the longest active cooldown matching the ability's cooldown tags. Output is seconds and is UI-read-only. */
+	UFUNCTION(BlueprintPure, Category="RPG|AbilitySet")
+	bool GetCooldownTimeRemainingAndDurationForAbilityId(FGameplayTag AbilityIdTag, float& OutRemainingTime, float& OutDuration) const;
+
+	/** Adds RuntimeInputTag to the first ability spec matching AbilityIdTag, replacing any previous use of that input tag. Server-authoritative. */
+	UFUNCTION(BlueprintCallable, Category="RPG|AbilitySet")
+	bool BindInputTagToAbilityId(FGameplayTag AbilityIdTag, FGameplayTag RuntimeInputTag);
+
+	/** Removes RuntimeInputTag from every ability spec. Server-authoritative and used when loadout slots are cleared or rebound. */
+	UFUNCTION(BlueprintCallable, Category="RPG|AbilitySet")
+	void ClearRuntimeAbilityInputTag(FGameplayTag RuntimeInputTag);
+
 	UFUNCTION(BlueprintCallable, Category="RPG|Lifecycle")
 	void ResetForRevive();
 

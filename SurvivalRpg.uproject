@@ -50,6 +50,14 @@
 			"Enabled": true
 		},
 		{
+			"Name": "CommonGame",
+			"Enabled": true
+		},
+		{
+			"Name": "UIExtension",
+			"Enabled": true
+		},
+		{
 			"Name": "ModelViewViewModel",
 			"Enabled": true
 		},
@@ -78,18 +86,8 @@
 			"Enabled": true
 		},
 		{
-			"Name": "NinjaInput",
-			"Enabled": false,
-			"MarketplaceURL": "com.epicgames.launcher://ue/Fab/product/cde3c8fb-85be-44a3-95c4-dbccecac028b"
-		},
-		{
 			"Name": "AIAssistant",
 			"Enabled": true
-		},
-		{
-			"Name": "NinjaInteraction",
-			"Enabled": false,
-			"MarketplaceURL": "com.epicgames.launcher://ue/Fab/product/261ab2b6-41c5-40c0-a694-08248ffcd37e"
 		},
 		{
 			"Name": "AsyncMessageSystem",

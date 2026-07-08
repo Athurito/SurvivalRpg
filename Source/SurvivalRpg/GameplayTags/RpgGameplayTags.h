@@ -34,14 +34,17 @@ namespace RpgGameplayTags
 	UE_DECLARE_GAMEPLAY_TAG_EXTERN(InputTag_AutoRun);   
 	UE_DECLARE_GAMEPLAY_TAG_EXTERN(InputTag_Jump);   
 	UE_DECLARE_GAMEPLAY_TAG_EXTERN(InputTag_StopJump);   
-	UE_DECLARE_GAMEPLAY_TAG_EXTERN(InputTag_QuickBar_Slot_1);
-	UE_DECLARE_GAMEPLAY_TAG_EXTERN(InputTag_QuickBar_Slot_2);
-	UE_DECLARE_GAMEPLAY_TAG_EXTERN(InputTag_QuickBar_Slot_3);
-	UE_DECLARE_GAMEPLAY_TAG_EXTERN(InputTag_QuickBar_Slot_4);
-	UE_DECLARE_GAMEPLAY_TAG_EXTERN(InputTag_QuickBar_Slot_5);
-	UE_DECLARE_GAMEPLAY_TAG_EXTERN(InputTag_QuickBar_Slot_6);
-	UE_DECLARE_GAMEPLAY_TAG_EXTERN(InputTag_QuickBar_Slot_7);
-	UE_DECLARE_GAMEPLAY_TAG_EXTERN(InputTag_QuickBar_Slot_8);
+	UE_DECLARE_GAMEPLAY_TAG_EXTERN(InputTag_ActionBar_Slot_1);
+	UE_DECLARE_GAMEPLAY_TAG_EXTERN(InputTag_ActionBar_Slot_2);
+	UE_DECLARE_GAMEPLAY_TAG_EXTERN(InputTag_ActionBar_Slot_3);
+	UE_DECLARE_GAMEPLAY_TAG_EXTERN(InputTag_ActionBar_Slot_4);
+	UE_DECLARE_GAMEPLAY_TAG_EXTERN(InputTag_ActionBar_Slot_5);
+	UE_DECLARE_GAMEPLAY_TAG_EXTERN(InputTag_ActionBar_Slot_6);
+	UE_DECLARE_GAMEPLAY_TAG_EXTERN(InputTag_ActionBar_Slot_7);
+	UE_DECLARE_GAMEPLAY_TAG_EXTERN(InputTag_ActionBar_Slot_8);
+	UE_DECLARE_GAMEPLAY_TAG_EXTERN(InputTag_Weapon_Ability_1);
+	UE_DECLARE_GAMEPLAY_TAG_EXTERN(InputTag_Weapon_Ability_2);
+	UE_DECLARE_GAMEPLAY_TAG_EXTERN(InputTag_Weapon_Ability_3);
 	UE_DECLARE_GAMEPLAY_TAG_EXTERN(InputTag_Weapon_Primary);
 	UE_DECLARE_GAMEPLAY_TAG_EXTERN(InputTag_Weapon_Secondary);
 	UE_DECLARE_GAMEPLAY_TAG_EXTERN(InputTag_Weapon_Block);
@@ -51,6 +54,7 @@ namespace RpgGameplayTags
 	UE_DECLARE_GAMEPLAY_TAG_EXTERN(GameplayEvent_Block);
 	UE_DECLARE_GAMEPLAY_TAG_EXTERN(GameplayEvent_PerfectBlock);
 	UE_DECLARE_GAMEPLAY_TAG_EXTERN(GameplayEvent_Stagger);
+	UE_DECLARE_GAMEPLAY_TAG_EXTERN(GameplayEvent_ItemUse_Apply);
 	UE_DECLARE_GAMEPLAY_TAG_EXTERN(GameplayEvent_Weapon_Attack_Window_Start);
 	UE_DECLARE_GAMEPLAY_TAG_EXTERN(GameplayEvent_Weapon_Attack_Window_End);
 	UE_DECLARE_GAMEPLAY_TAG_EXTERN(GameplayEvent_Reset);
@@ -91,10 +95,25 @@ namespace RpgGameplayTags
 	UE_DECLARE_GAMEPLAY_TAG_EXTERN(Ability_Behavior_SurvivesDeath);
 	UE_DECLARE_GAMEPLAY_TAG_EXTERN(Effect_Behavior_ClearOnRespawn);
 	UE_DECLARE_GAMEPLAY_TAG_EXTERN(Rpg_Combat_Message_ActorKilled);
+	UE_DECLARE_GAMEPLAY_TAG_EXTERN(Rpg_ActionBar_Message_SlotsChanged);
+	UE_DECLARE_GAMEPLAY_TAG_EXTERN(Rpg_WeaponAbilityLoadout_Message_SlotsChanged);
+	UE_DECLARE_GAMEPLAY_TAG_EXTERN(Rpg_EquipmentLoadout_Message_SlotsChanged);
+	UE_DECLARE_GAMEPLAY_TAG_EXTERN(Rpg_InventoryLayout_Message_Changed);
+	UE_DECLARE_GAMEPLAY_TAG_EXTERN(Rpg_Inventory_Message_ActionFeedback);
+	UE_DECLARE_GAMEPLAY_TAG_EXTERN(Rpg_Inventory_Action_Transfer);
+	UE_DECLARE_GAMEPLAY_TAG_EXTERN(Rpg_Inventory_Action_Split);
+	UE_DECLARE_GAMEPLAY_TAG_EXTERN(Rpg_Inventory_Action_Use);
+	UE_DECLARE_GAMEPLAY_TAG_EXTERN(Rpg_Inventory_Action_Drop);
+	UE_DECLARE_GAMEPLAY_TAG_EXTERN(Rpg_Inventory_Action_Equip);
 	UE_DECLARE_GAMEPLAY_TAG_EXTERN(Feature);
 	UE_DECLARE_GAMEPLAY_TAG_EXTERN(Equipment_Slot_MainHand);
 	UE_DECLARE_GAMEPLAY_TAG_EXTERN(Equipment_Slot_OffHand);
 	UE_DECLARE_GAMEPLAY_TAG_EXTERN(Equipment_Slot_BothHands);
+	UE_DECLARE_GAMEPLAY_TAG_EXTERN(Equipment_Slot_Head);
+	UE_DECLARE_GAMEPLAY_TAG_EXTERN(Equipment_Slot_Chest);
+	UE_DECLARE_GAMEPLAY_TAG_EXTERN(Equipment_Slot_Hands);
+	UE_DECLARE_GAMEPLAY_TAG_EXTERN(Equipment_Slot_Legs);
+	UE_DECLARE_GAMEPLAY_TAG_EXTERN(Equipment_Slot_Feet);
 	UE_DECLARE_GAMEPLAY_TAG_EXTERN(Weapon_Attack_Primary);
 	UE_DECLARE_GAMEPLAY_TAG_EXTERN(Weapon_Attack_Secondary);
 	UE_DECLARE_GAMEPLAY_TAG_EXTERN(Weapon_Type_Melee);
@@ -109,4 +128,22 @@ namespace RpgGameplayTags
 	UE_DECLARE_GAMEPLAY_TAG_EXTERN(GameplayEvent_BleedoutExpired);
 
 	UE_DECLARE_GAMEPLAY_TAG_EXTERN(Status_Dead_WaitingForRespawn);
+
+	UE_DECLARE_GAMEPLAY_TAG_EXTERN(UI_Layer_Game);
+	UE_DECLARE_GAMEPLAY_TAG_EXTERN(UI_Layer_GameMenu);
+	UE_DECLARE_GAMEPLAY_TAG_EXTERN(UI_Layer_Menu);
+	UE_DECLARE_GAMEPLAY_TAG_EXTERN(UI_Layer_Modal);
+	UE_DECLARE_GAMEPLAY_TAG_EXTERN(UI_Screen_Inventory);
+	UE_DECLARE_GAMEPLAY_TAG_EXTERN(UI_Screen_Storage);
+	UE_DECLARE_GAMEPLAY_TAG_EXTERN(UI_Screen_Loot);
+	UE_DECLARE_GAMEPLAY_TAG_EXTERN(UI_Screen_Crafting);
+	UE_DECLARE_GAMEPLAY_TAG_EXTERN(UI_Screen_BaseTerminal);
+	UE_DECLARE_GAMEPLAY_TAG_EXTERN(UI_Screen_Pause);
+	UE_DECLARE_GAMEPLAY_TAG_EXTERN(UI_Screen_Settings);
+	UE_DECLARE_GAMEPLAY_TAG_EXTERN(UI_HUD_Slot_ActionBar);
+	UE_DECLARE_GAMEPLAY_TAG_EXTERN(UI_HUD_Slot_WeaponAbilityBar);
+
+	UE_DECLARE_GAMEPLAY_TAG_EXTERN(Base_Storage_Upgrade_AutoSort);
+	UE_DECLARE_GAMEPLAY_TAG_EXTERN(Base_Storage_Upgrade_RemoteAccess);
+	UE_DECLARE_GAMEPLAY_TAG_EXTERN(Base_Storage_Upgrade_CraftingOutputAutoDeposit);
 }

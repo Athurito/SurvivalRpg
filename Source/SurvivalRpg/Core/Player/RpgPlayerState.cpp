@@ -11,6 +11,7 @@
 #include "SurvivalRpg/Core/Game/Experience/RpgExperienceDefinition.h"
 #include "SurvivalRpg/Core/Game/Experience/RpgExperienceManagerComponent.h"
 #include "SurvivalRpg/Core/Player/RpgPlayerController.h"
+#include "SurvivalRpg/AbilitySystem/Attributes/RpgInventoryCapacitySet.h"
 #include "SurvivalRpg/Inventory/RpgInventoryManagerComponent.h"
 #include "SurvivalRpg/Progression/Player/RpgPlayerProgressionComponent.h"
 #include "SurvivalRpg/Progression/Skills/RpgTradeSkillProgressionComponent.h"
@@ -19,7 +20,11 @@ ARpgPlayerState::ARpgPlayerState()
 {
 	PlayerProgressionComponent = CreateDefaultSubobject<URpgPlayerProgressionComponent>(TEXT("PlayerProgressionComponent"));
 	TradeSkillProgressionComponent = CreateDefaultSubobject<URpgTradeSkillProgressionComponent>(TEXT("TradeSkillProgressionComponent"));
+	InventoryCapacitySet = CreateDefaultSubobject<URpgInventoryCapacitySet>(TEXT("InventoryCapacitySet"));
 	InventoryManagerComponent = CreateDefaultSubobject<URpgInventoryManagerComponent>(TEXT("InventoryManagerComponent"));
+	InventoryManagerComponent->SetCapacityMode(ERpgInventoryCapacityMode::FixedEntries);
+	InventoryManagerComponent->SetFixedMaxEntries(24);
+	InventoryManagerComponent->SetCapacityAttribute(URpgInventoryCapacitySet::GetBackpackSlotsAttribute());
 }
 
 void ARpgPlayerState::PostInitializeComponents()
@@ -45,6 +50,7 @@ void ARpgPlayerState::GetLifetimeReplicatedProps(TArray<FLifetimeProperty>& OutL
 
 	DOREPLIFETIME(ARpgPlayerState, RespawnState);
 	DOREPLIFETIME(ARpgPlayerState, CheckpointState);
+	DOREPLIFETIME(ARpgPlayerState, DeathDropMode);
 }
 
 void ARpgPlayerState::ClientInitialize(AController* C)
@@ -60,6 +66,14 @@ void ARpgPlayerState::ClientInitialize(AController* C)
 ARpgPlayerController* ARpgPlayerState::GetRpgPlayerController() const
 {
 	return Cast<ARpgPlayerController>(GetOwner());
+}
+
+void ARpgPlayerState::SetDeathDropMode(ERpgPlayerDeathDropMode NewDropMode)
+{
+	if (HasAuthority())
+	{
+		DeathDropMode = NewDropMode;
+	}
 }
 
 void ARpgPlayerState::OnExperienceLoaded(const URpgExperienceDefinition* CurrentExperience)

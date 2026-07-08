@@ -3,10 +3,12 @@
 #pragma once
 
 #include "RpgBasePlayerState.h"
+#include "SurvivalRpg/Inventory/RpgInventoryItemTypes.h"
 #include "RpgPlayerState.generated.h"
 
 class ARpgPlayerController;
 class URpgTradeSkillProgressionComponent;
+class URpgInventoryCapacitySet;
 class URpgPlayerProgressionComponent;
 class URpgInventoryManagerComponent;
 class URpgExperienceDefinition;
@@ -78,6 +80,12 @@ public:
 	UFUNCTION(BlueprintCallable, Category = "Rpg|Inventory")
 	URpgInventoryManagerComponent* GetInventoryManagerComponent() const { return InventoryManagerComponent; }
 
+	UFUNCTION(BlueprintCallable, Category = "Rpg|Inventory")
+	void SetDeathDropMode(ERpgPlayerDeathDropMode NewDropMode);
+
+	UFUNCTION(BlueprintPure, Category = "Rpg|Inventory")
+	ERpgPlayerDeathDropMode GetDeathDropMode() const { return DeathDropMode; }
+
 	UFUNCTION(BlueprintCallable, Category = "Rpg|Progression")
 	URpgPlayerProgressionComponent* GetPlayerProgressionComponent() const { return PlayerProgressionComponent; }
 
@@ -128,6 +136,14 @@ protected:
 
 	UPROPERTY(VisibleAnywhere, Category = "Rpg|Inventory")
 	TObjectPtr<URpgInventoryManagerComponent> InventoryManagerComponent;
+
+	/** Player-owned GAS attributes that can increase backpack capacity through gear, runes, or progression. */
+	UPROPERTY()
+	TObjectPtr<const URpgInventoryCapacitySet> InventoryCapacitySet;
+
+	/** Player-facing death-drop setting replicated for UI and consumed server-side by GameMode on final death. */
+	UPROPERTY(Replicated, VisibleAnywhere, BlueprintReadOnly, Category = "Rpg|Inventory")
+	ERpgPlayerDeathDropMode DeathDropMode = ERpgPlayerDeathDropMode::MaterialsOnly;
 
 	UPROPERTY(ReplicatedUsing = OnRep_RespawnState, VisibleAnywhere, Category = "Rpg|Respawn")
 	FRpgReplicatedRespawnState RespawnState;

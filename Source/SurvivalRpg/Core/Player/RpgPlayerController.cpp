@@ -10,19 +10,31 @@
 #include "GameFramework/Pawn.h"
 #include "GameFramework/PlayerInput.h"
 #include "SurvivalRpg/AbilitySystem/RpgAbilitySystemComponent.h"
+#include "SurvivalRpg/ActionBar/RpgActionBarComponent.h"
 #include "SurvivalRpg/Core/Game/RpgGameModeBase.h"
 #include "SurvivalRpg/Core/Character/RpgPawnExtensionComponent.h"
 #include "SurvivalRpg/Core/Player/RpgBasePlayerState.h"
+#include "SurvivalRpg/Core/Player/RpgPlayerGameplayInputRouterComponent.h"
 #include "SurvivalRpg/Core/Player/RpgPlayerState.h"
-#include "SurvivalRpg/Equipment/RpgQuickBarComponent.h"
+#include "SurvivalRpg/Equipment/RpgEquipmentLoadoutComponent.h"
+#include "SurvivalRpg/Equipment/RpgWeaponAbilityLoadoutComponent.h"
 #include "SurvivalRpg/GameplayTags/RpgGameplayTags.h"
+#include "SurvivalRpg/Inventory/RpgPlayerInventoryLayoutComponent.h"
+#include "SurvivalRpg/Inventory/RpgInventoryUiActionComponent.h"
 #include "SurvivalRpg/Progression/Player/RpgPlayerProgressionComponent.h"
 #include "SurvivalRpg/SurvivalRpg.h"
+#include "SurvivalRpg/UI/RpgUIScreenBlueprintLibrary.h"
+#include "SurvivalRpg/UI/RpgUIScreenPayload.h"
 
 ARpgPlayerController::ARpgPlayerController(const FObjectInitializer& ObjectInitializer)
 	: Super(ObjectInitializer)
 {
-	QuickBarComponent = CreateDefaultSubobject<URpgQuickBarComponent>(TEXT("QuickBarComponent"));
+	ActionBarComponent = CreateDefaultSubobject<URpgActionBarComponent>(TEXT("ActionBarComponent"));
+	WeaponAbilityLoadoutComponent = CreateDefaultSubobject<URpgWeaponAbilityLoadoutComponent>(TEXT("WeaponAbilityLoadoutComponent"));
+	GameplayInputRouterComponent = CreateDefaultSubobject<URpgPlayerGameplayInputRouterComponent>(TEXT("GameplayInputRouterComponent"));
+	EquipmentLoadoutComponent = CreateDefaultSubobject<URpgEquipmentLoadoutComponent>(TEXT("EquipmentLoadoutComponent"));
+	InventoryUiActionComponent = CreateDefaultSubobject<URpgInventoryUiActionComponent>(TEXT("InventoryUiActionComponent"));
+	PlayerInventoryLayoutComponent = CreateDefaultSubobject<URpgPlayerInventoryLayoutComponent>(TEXT("PlayerInventoryLayoutComponent"));
 }
 
 ARpgPlayerState* ARpgPlayerController::GetRpgPlayerState() const
@@ -50,17 +62,39 @@ void ARpgPlayerController::RequestRespawn()
 	}
 }
 
+void ARpgPlayerController::SetDeathDropMode(ERpgPlayerDeathDropMode NewDropMode)
+{
+	if (!HasAuthority())
+	{
+		ServerSetDeathDropMode(NewDropMode);
+		return;
+	}
+
+	if (ARpgPlayerState* RpgPlayerState = GetRpgPlayerState())
+	{
+		RpgPlayerState->SetDeathDropMode(NewDropMode);
+	}
+}
+
 void ARpgPlayerController::ClientRestoreGameplayInputFocus_Implementation()
 {
 	RestoreGameplayInputFocus();
 }
 
-void ARpgPlayerController::SetActiveQuickBarSlot(int32 SlotIndex)
+void ARpgPlayerController::ClientOpenLootInventory_Implementation(URpgInventoryManagerComponent* PrimaryInventory, URpgInventoryManagerComponent* LootInventory, AActor* LootActor)
 {
-	if (QuickBarComponent != nullptr)
+	if (!IsLocalController() || !PrimaryInventory || !LootInventory)
 	{
-		QuickBarComponent->SetActiveSlotIndex(SlotIndex);
+		return;
 	}
+
+	URpgInventoryScreenPayload* Payload = NewObject<URpgInventoryScreenPayload>(this);
+	Payload->ScreenTag = RpgGameplayTags::UI_Screen_Loot;
+	Payload->PrimaryInventory = PrimaryInventory;
+	Payload->SecondaryInventory = LootInventory;
+	Payload->ContextActor = LootActor;
+
+	URpgUIScreenBlueprintLibrary::OpenUIScreen(this, RpgGameplayTags::UI_Screen_Loot, Payload);
 }
 
 void ARpgPlayerController::RpgPrintProgression() const
@@ -150,9 +184,9 @@ void ARpgPlayerController::OnPossess(APawn* InPawn)
 
 void ARpgPlayerController::OnUnPossess()
 {
-	if (QuickBarComponent)
+	if (EquipmentLoadoutComponent)
 	{
-		QuickBarComponent->UnequipActiveLoadoutFromCurrentPawn();
+		EquipmentLoadoutComponent->UnequipLoadoutFromCurrentPawn();
 	}
 
 	UnbindFromPawnExtensionForLoadout();
@@ -235,6 +269,11 @@ void ARpgPlayerController::ServerRequestRespawn_Implementation()
 	RequestRespawn();
 }
 
+void ARpgPlayerController::ServerSetDeathDropMode_Implementation(ERpgPlayerDeathDropMode NewDropMode)
+{
+	SetDeathDropMode(NewDropMode);
+}
+
 void ARpgPlayerController::HandleRespawnStateChanged(bool bIsWaitingForRespawn, float RespawnAvailableServerTime)
 {
 	K2_OnRespawnStateChanged(bIsWaitingForRespawn, RespawnAvailableServerTime);
@@ -280,6 +319,11 @@ void ARpgPlayerController::BindToPlayerState(ARpgPlayerState* NewPlayerState)
 	HandleCheckpointChanged(
 		BoundPlayerState->HasCheckpoint(),
 		BoundPlayerState->GetCheckpointTransform());
+
+	if (HasAuthority() && PlayerInventoryLayoutComponent)
+	{
+		PlayerInventoryLayoutComponent->ApplyLayoutCapacityToInventory();
+	}
 }
 
 void ARpgPlayerController::UnbindFromPlayerState()
@@ -373,17 +417,27 @@ void ARpgPlayerController::UnbindFromPawnExtensionForLoadout()
 
 void ARpgPlayerController::HandlePossessedPawnAbilitySystemInitialized()
 {
-	if (HasAuthority() && QuickBarComponent)
+	if (HasAuthority() && EquipmentLoadoutComponent)
 	{
-		QuickBarComponent->RefreshActiveLoadoutOnCurrentPawn();
+		EquipmentLoadoutComponent->RefreshEquipmentLoadoutOnCurrentPawn();
+	}
+
+	if (HasAuthority() && PlayerInventoryLayoutComponent)
+	{
+		PlayerInventoryLayoutComponent->ApplyLayoutCapacityToInventory();
+	}
+
+	if (HasAuthority() && WeaponAbilityLoadoutComponent)
+	{
+		WeaponAbilityLoadoutComponent->RefreshAbilityBindings();
 	}
 }
 
 void ARpgPlayerController::HandlePossessedPawnAbilitySystemUninitialized()
 {
-	if (QuickBarComponent)
+	if (EquipmentLoadoutComponent)
 	{
-		QuickBarComponent->UnequipActiveLoadoutFromCurrentPawn();
+		EquipmentLoadoutComponent->UnequipLoadoutFromCurrentPawn();
 	}
 }
 
@@ -427,9 +481,19 @@ void ARpgPlayerController::HandleGameModePlayerRespawned(APlayerController* Resp
 		return;
 	}
 
-	if (QuickBarComponent)
+	if (EquipmentLoadoutComponent)
 	{
-		QuickBarComponent->RefreshActiveLoadoutOnCurrentPawn();
+		EquipmentLoadoutComponent->RefreshEquipmentLoadoutOnCurrentPawn();
+	}
+
+	if (PlayerInventoryLayoutComponent)
+	{
+		PlayerInventoryLayoutComponent->ApplyLayoutCapacityToInventory();
+	}
+
+	if (WeaponAbilityLoadoutComponent)
+	{
+		WeaponAbilityLoadoutComponent->RefreshAbilityBindings();
 	}
 
 	ClientRestoreGameplayInputFocus();

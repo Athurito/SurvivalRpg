@@ -5,19 +5,18 @@
 #include "RpgGameplayAbility_Collect.generated.h"
 
 class ARpgPlayerController;
+class URpgEquipmentLoadoutComponent;
 class URpgInventoryItemInstance;
 class URpgInventoryManagerComponent;
-class URpgQuickBarComponent;
 struct FInventoryPickup;
 
 /**
  * Adds a pickupable interaction target to the instigating player's inventory.
  *
- * Optional quickbar slotting is kept data-driven per ability asset so normal
- * harvest pickups can stay inventory-only while test weapons can be equipped
- * immediately without character-side hardcoding.
+ * Optional equipment assignment is kept data-driven per ability asset so normal harvest pickups
+ * can stay inventory-only while test weapons can be equipped immediately without pawn hardcoding.
  */
-UCLASS(Abstract)
+UCLASS(Blueprintable)
 class SURVIVALRPG_API URpgGameplayAbility_Collect : public URpgGameplayAbility
 {
 	GENERATED_BODY()
@@ -35,15 +34,14 @@ protected:
 	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Collect")
 	bool bDestroyCollectedActor = true;
 
-	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Collect|QuickBar")
-	bool bAddCollectedEquippableItemsToQuickBar = false;
-
-	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Collect|QuickBar", meta = (EditCondition = "bAddCollectedEquippableItemsToQuickBar"))
-	bool bActivateFirstQuickBarSlot = false;
+	/** If true, collected equippable items are assigned to their default equipment slot after pickup succeeds. */
+	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Collect|Equipment")
+	bool bAssignCollectedEquippableItemsToEquipment = false;
 
 private:
 	static URpgInventoryManagerComponent* FindInventoryManagerForActor(AActor* Actor);
 	static ARpgPlayerController* FindPlayerControllerForActor(AActor* Actor);
-	static void AddPickupToInventory(URpgInventoryManagerComponent* InventoryComponent, const FInventoryPickup& PickupInventory, TArray<URpgInventoryItemInstance*>& OutAddedItems);
-	static void AddEquippableItemsToQuickBar(URpgQuickBarComponent* QuickBarComponent, const TArray<URpgInventoryItemInstance*>& AddedItems, bool bActivateFirstSlot);
+	static bool CanAddPickupToInventory(URpgInventoryManagerComponent* InventoryComponent, const FInventoryPickup& PickupInventory);
+	static bool AddPickupToInventory(URpgInventoryManagerComponent* InventoryComponent, const FInventoryPickup& PickupInventory, TArray<URpgInventoryItemInstance*>& OutAddedItems);
+	static void AssignEquippableItemsToEquipment(URpgEquipmentLoadoutComponent* EquipmentLoadout, const TArray<URpgInventoryItemInstance*>& AddedItems);
 };

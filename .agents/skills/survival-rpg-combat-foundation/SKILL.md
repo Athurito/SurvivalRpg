@@ -1,10 +1,19 @@
 ---
 name: survival-rpg-combat-foundation
-schein: false
-description: Combat, equipment, progression and GameFeature architecture guide for the SurvivalRpg repository. Use when Codex needs to design, review, document, or implement GAS/Lyra-based combat, equipment, item instances, ability grants, mastery unlocks, runes, portal combat, or modular GameFeature content while staying aligned with the current game vision.
+description: Use for SurvivalRpg combat, equipment, inventory-facing item instances, loadouts, GAS ability grants, mastery/progression, runes, portal combat, Dungeonbreak, and modular GameFeature combat content. Prefer current repo truth, preserve Lyra-rooted RPG equipment/inventory architecture, and pair with $unreal-lyra-expert for engine-facing implementation.
 ---
 
 # SurvivalRpg Combat Foundation
+
+## Skill Boundaries
+
+This skill owns SurvivalRpg combat, equipment, inventory-facing item instances, weapon action routing, runes, mastery/progression, portal combat, Dungeonbreak combat escalation, and combat GameFeature guidance.
+
+Use it together with `$unreal-lyra-expert` when implementation details touch Unreal Engine, GAS internals, replication, Experiences, Game Features, Lyra Interaction, or Lyra-rooted inventory/equipment.
+
+Use it together with `$survival-rpg-project` when a combat, equipment, rune, portal, or progression decision changes product scope, progression identity, survival friction, first-playable priorities, or long-term resource relevance.
+
+Do not let this skill create a parallel combat, equipment, inventory, ability-grant, or item-instance authority beside the existing Lyra-rooted RPG architecture.
 
 ## Always start from current repository truth
 
@@ -88,6 +97,40 @@ Equip input abilities such as `URpgGameplayAbility_EquipLoadoutSlot` should stay
 Characters and UI should mirror equipment state for presentation only. They should not own combat truth.
 
 Avoid duplicate managers that overlap with equipment authority. A future weapon manager is only acceptable if it has a narrow role that does not conflict with equipped-state ownership.
+
+## Documentation defaults for combat assets
+
+When creating or modifying combat, item, equipment, rune, portal, mastery, DamageArea, GameplayAbility, GameplayEffect, or GameFeature configuration, add concise documentation comments for designer-facing fields.
+
+Document especially:
+
+- DataAsset fields
+- Blueprint-configurable tuning values
+- gameplay tag fields
+- GameplayEffect class references
+- GameplayAbility class references
+- item definition fields
+- equipment definition fields
+- fragment fields
+- runtime item instance fields
+- replicated equipment state
+- save/load relevant item or progression state
+- ability grant configuration
+- damage, cooldown, cost, range, duration, radius, tick interval, and targeting values
+
+Comments should explain:
+
+- gameplay intent
+- expected units
+- valid ranges
+- whether the field is static definition data or runtime mutable state
+- whether the value is server-authoritative
+- whether the value is replicated
+- whether the value is saved
+- whether UI should only read the value
+- how designers are expected to tune the value
+
+Avoid comments that merely restate the property name.
 
 ---
 

@@ -1,4 +1,7 @@
 interface:
   display_name: "SurvivalRpg Project"
-  short_description: "Project vision and implementation guardrails"
-  default_prompt: "Use $survival-rpg-project to keep this SurvivalRpg task aligned with the project's gameplay pillars, first-playable scope, and modular progression goals."
+  short_description: "Vision, scope and first-playable guardrails"
+  default_prompt: "Use $survival-rpg-project to keep SurvivalRpg tasks aligned with the game's dark-fantasy survival action RPG identity, portal-centric world, first-playable scope, and modular progression goals. Prefer data-driven content with concise designer-facing documentation for configurable DataAssets, Blueprint-exposed fields, tuning values, and progression/content definitions."
+
+policy:
+  allow_implicit_invocation: true

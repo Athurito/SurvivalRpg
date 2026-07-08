@@ -29,14 +29,17 @@ namespace RpgGameplayTags
 	UE_DEFINE_GAMEPLAY_TAG_COMMENT(InputTag_AutoRun, "InputTag.AutoRun", "Auto-run input.");
 	UE_DEFINE_GAMEPLAY_TAG_COMMENT(InputTag_Jump, "InputTag.Jump", "Jump input.");
 	UE_DEFINE_GAMEPLAY_TAG_COMMENT(InputTag_StopJump, "InputTag.StopJump", "StopJump input.");
-	UE_DEFINE_GAMEPLAY_TAG_COMMENT(InputTag_QuickBar_Slot_1, "InputTag.QuickBar.Slot.1", "Activate quick bar slot 1.");
-	UE_DEFINE_GAMEPLAY_TAG_COMMENT(InputTag_QuickBar_Slot_2, "InputTag.QuickBar.Slot.2", "Activate quick bar slot 2.");
-	UE_DEFINE_GAMEPLAY_TAG_COMMENT(InputTag_QuickBar_Slot_3, "InputTag.QuickBar.Slot.3", "Activate quick bar slot 3.");
-	UE_DEFINE_GAMEPLAY_TAG_COMMENT(InputTag_QuickBar_Slot_4, "InputTag.QuickBar.Slot.4", "Activate quick bar slot 4.");
-	UE_DEFINE_GAMEPLAY_TAG_COMMENT(InputTag_QuickBar_Slot_5, "InputTag.QuickBar.Slot.5", "Activate quick bar slot 5.");
-	UE_DEFINE_GAMEPLAY_TAG_COMMENT(InputTag_QuickBar_Slot_6, "InputTag.QuickBar.Slot.6", "Activate quick bar slot 6.");
-	UE_DEFINE_GAMEPLAY_TAG_COMMENT(InputTag_QuickBar_Slot_7, "InputTag.QuickBar.Slot.7", "Activate quick bar slot 7.");
-	UE_DEFINE_GAMEPLAY_TAG_COMMENT(InputTag_QuickBar_Slot_8, "InputTag.QuickBar.Slot.8", "Activate quick bar slot 8.");
+	UE_DEFINE_GAMEPLAY_TAG_COMMENT(InputTag_ActionBar_Slot_1, "InputTag.ActionBar.Slot.1", "Activate general action bar slot 1.");
+	UE_DEFINE_GAMEPLAY_TAG_COMMENT(InputTag_ActionBar_Slot_2, "InputTag.ActionBar.Slot.2", "Activate general action bar slot 2.");
+	UE_DEFINE_GAMEPLAY_TAG_COMMENT(InputTag_ActionBar_Slot_3, "InputTag.ActionBar.Slot.3", "Activate general action bar slot 3.");
+	UE_DEFINE_GAMEPLAY_TAG_COMMENT(InputTag_ActionBar_Slot_4, "InputTag.ActionBar.Slot.4", "Activate general action bar slot 4.");
+	UE_DEFINE_GAMEPLAY_TAG_COMMENT(InputTag_ActionBar_Slot_5, "InputTag.ActionBar.Slot.5", "Activate general action bar slot 5.");
+	UE_DEFINE_GAMEPLAY_TAG_COMMENT(InputTag_ActionBar_Slot_6, "InputTag.ActionBar.Slot.6", "Activate general action bar slot 6.");
+	UE_DEFINE_GAMEPLAY_TAG_COMMENT(InputTag_ActionBar_Slot_7, "InputTag.ActionBar.Slot.7", "Activate general action bar slot 7.");
+	UE_DEFINE_GAMEPLAY_TAG_COMMENT(InputTag_ActionBar_Slot_8, "InputTag.ActionBar.Slot.8", "Activate general action bar slot 8.");
+	UE_DEFINE_GAMEPLAY_TAG_COMMENT(InputTag_Weapon_Ability_1, "InputTag.Weapon.Ability.1", "Activate selected weapon or rune ability slot 1.");
+	UE_DEFINE_GAMEPLAY_TAG_COMMENT(InputTag_Weapon_Ability_2, "InputTag.Weapon.Ability.2", "Activate selected weapon or rune ability slot 2.");
+	UE_DEFINE_GAMEPLAY_TAG_COMMENT(InputTag_Weapon_Ability_3, "InputTag.Weapon.Ability.3", "Activate selected weapon or rune ability slot 3.");
 	UE_DEFINE_GAMEPLAY_TAG_COMMENT(InputTag_Weapon_Primary, "InputTag.Weapon.Primary", "Primary weapon attack input.");
 	UE_DEFINE_GAMEPLAY_TAG_COMMENT(InputTag_Weapon_Secondary, "InputTag.Weapon.Secondary", "Secondary weapon attack input.");
 	UE_DEFINE_GAMEPLAY_TAG_COMMENT(InputTag_Weapon_Block, "InputTag.Weapon.Block", "Hold block input for the equipped weapon.");
@@ -47,6 +50,7 @@ namespace RpgGameplayTags
 	UE_DEFINE_GAMEPLAY_TAG_COMMENT(GameplayEvent_Block, "GameplayEvent.Block", "Event that fires when a melee hit is blocked.");
 	UE_DEFINE_GAMEPLAY_TAG_COMMENT(GameplayEvent_PerfectBlock, "GameplayEvent.PerfectBlock", "Event that fires when a melee hit is perfect blocked.");
 	UE_DEFINE_GAMEPLAY_TAG_COMMENT(GameplayEvent_Stagger, "GameplayEvent.Stagger", "Event that requests a target stagger or guard break.");
+	UE_DEFINE_GAMEPLAY_TAG_COMMENT(GameplayEvent_ItemUse_Apply, "GameplayEvent.ItemUse.Apply", "Event sent by item-use montages when configured item effects should execute.");
 	UE_DEFINE_GAMEPLAY_TAG_COMMENT(GameplayEvent_Weapon_Attack_Window_Start, "GameplayEvent.Weapon.Attack.Window.Start", "Event sent by melee attack montages when weapon damage tracing starts.");
 	UE_DEFINE_GAMEPLAY_TAG_COMMENT(GameplayEvent_Weapon_Attack_Window_End, "GameplayEvent.Weapon.Attack.Window.End", "Event sent by melee attack montages when weapon damage tracing ends.");
 	UE_DEFINE_GAMEPLAY_TAG_COMMENT(GameplayEvent_Reset, "GameplayEvent.Reset", "Event that fires once a player reset is executed.");
@@ -92,10 +96,25 @@ namespace RpgGameplayTags
 	UE_DEFINE_GAMEPLAY_TAG_COMMENT(Ability_Behavior_SurvivesDeath, "Ability.Behavior.SurvivesDeath", "An ability with this type tag should not be canceled due to death.");
 	UE_DEFINE_GAMEPLAY_TAG_COMMENT(Effect_Behavior_ClearOnRespawn, "Effect.Behavior.ClearOnRespawn", "GameplayEffects with this tag are removed when the owner respawns.");
 	UE_DEFINE_GAMEPLAY_TAG_COMMENT(Rpg_Combat_Message_ActorKilled, "Rpg.Combat.Message.ActorKilled", "Gameplay message sent by combat when an actor is killed.");
+	UE_DEFINE_GAMEPLAY_TAG_COMMENT(Rpg_ActionBar_Message_SlotsChanged, "Rpg.ActionBar.Message.SlotsChanged", "Gameplay message sent when a controller-owned general action bar slot changes.");
+	UE_DEFINE_GAMEPLAY_TAG_COMMENT(Rpg_WeaponAbilityLoadout_Message_SlotsChanged, "Rpg.WeaponAbilityLoadout.Message.SlotsChanged", "Gameplay message sent when a controller-owned weapon ability binding changes.");
+	UE_DEFINE_GAMEPLAY_TAG_COMMENT(Rpg_EquipmentLoadout_Message_SlotsChanged, "Rpg.EquipmentLoadout.Message.SlotsChanged", "Gameplay message sent when a controller-owned dedicated equipment slot assignment changes.");
+	UE_DEFINE_GAMEPLAY_TAG_COMMENT(Rpg_InventoryLayout_Message_Changed, "Rpg.InventoryLayout.Message.Changed", "Gameplay message sent when the player inventory layout or slot capacity changes.");
+	UE_DEFINE_GAMEPLAY_TAG_COMMENT(Rpg_Inventory_Message_ActionFeedback, "Rpg.Inventory.Message.ActionFeedback", "Owning-client gameplay message for inventory shortcut or server validation feedback.");
+	UE_DEFINE_GAMEPLAY_TAG_COMMENT(Rpg_Inventory_Action_Transfer, "Rpg.Inventory.Action.Transfer", "Inventory UI action tag for transfer requests.");
+	UE_DEFINE_GAMEPLAY_TAG_COMMENT(Rpg_Inventory_Action_Split, "Rpg.Inventory.Action.Split", "Inventory UI action tag for split-stack requests.");
+	UE_DEFINE_GAMEPLAY_TAG_COMMENT(Rpg_Inventory_Action_Use, "Rpg.Inventory.Action.Use", "Inventory UI action tag for item use requests.");
+	UE_DEFINE_GAMEPLAY_TAG_COMMENT(Rpg_Inventory_Action_Drop, "Rpg.Inventory.Action.Drop", "Inventory UI action tag for manual item drop requests.");
+	UE_DEFINE_GAMEPLAY_TAG_COMMENT(Rpg_Inventory_Action_Equip, "Rpg.Inventory.Action.Equip", "Inventory UI action tag for convenience equip requests.");
 	UE_DEFINE_GAMEPLAY_TAG_COMMENT(Feature, "Feature", "Root tag for placed GameFeature-driven world spawning markers.");
 	UE_DEFINE_GAMEPLAY_TAG_COMMENT(Equipment_Slot_MainHand, "Equipment.Slot.MainHand", "Equipment is assigned to the main hand slot.");
 	UE_DEFINE_GAMEPLAY_TAG_COMMENT(Equipment_Slot_OffHand, "Equipment.Slot.OffHand", "Equipment is assigned to the off hand slot.");
 	UE_DEFINE_GAMEPLAY_TAG_COMMENT(Equipment_Slot_BothHands, "Equipment.Slot.BothHands", "Equipment occupies both hand slots.");
+	UE_DEFINE_GAMEPLAY_TAG_COMMENT(Equipment_Slot_Head, "Equipment.Slot.Head", "Equipment is assigned to the head armor slot.");
+	UE_DEFINE_GAMEPLAY_TAG_COMMENT(Equipment_Slot_Chest, "Equipment.Slot.Chest", "Equipment is assigned to the chest armor slot.");
+	UE_DEFINE_GAMEPLAY_TAG_COMMENT(Equipment_Slot_Hands, "Equipment.Slot.Hands", "Equipment is assigned to the hands armor slot.");
+	UE_DEFINE_GAMEPLAY_TAG_COMMENT(Equipment_Slot_Legs, "Equipment.Slot.Legs", "Equipment is assigned to the legs armor slot.");
+	UE_DEFINE_GAMEPLAY_TAG_COMMENT(Equipment_Slot_Feet, "Equipment.Slot.Feet", "Equipment is assigned to the feet armor slot.");
 	UE_DEFINE_GAMEPLAY_TAG_COMMENT(Weapon_Attack_Primary, "Weapon.Attack.Primary", "Default primary weapon attack definition.");
 	UE_DEFINE_GAMEPLAY_TAG_COMMENT(Weapon_Attack_Secondary, "Weapon.Attack.Secondary", "Default secondary weapon attack definition.");
 	UE_DEFINE_GAMEPLAY_TAG_COMMENT(Weapon_Type_Melee, "Weapon.Type.Melee", "Melee weapon type.");
@@ -110,6 +129,24 @@ namespace RpgGameplayTags
 	UE_DEFINE_GAMEPLAY_TAG_COMMENT(GameplayEvent_BleedoutExpired, "GameplayEvent.BleedoutExpired", "Event that fires when bleedout timer expires and the player truly dies.");
 
 	UE_DEFINE_GAMEPLAY_TAG_COMMENT(Status_Dead_WaitingForRespawn, "Status.Dead.WaitingForRespawn", "Target is dead and waiting for respawn.");
+
+	UE_DEFINE_GAMEPLAY_TAG_COMMENT(UI_Layer_Game, "UI.Layer.Game", "HUD and persistent in-game widgets.");
+	UE_DEFINE_GAMEPLAY_TAG_COMMENT(UI_Layer_GameMenu, "UI.Layer.GameMenu", "In-game menus such as inventory, storage, crafting, and character panels.");
+	UE_DEFINE_GAMEPLAY_TAG_COMMENT(UI_Layer_Menu, "UI.Layer.Menu", "Full-screen menu layer above in-game menus.");
+	UE_DEFINE_GAMEPLAY_TAG_COMMENT(UI_Layer_Modal, "UI.Layer.Modal", "Blocking modal dialogs above every other UI layer.");
+	UE_DEFINE_GAMEPLAY_TAG_COMMENT(UI_Screen_Inventory, "UI.Screen.Inventory", "Inventory screen opened through the project UI screen registry.");
+	UE_DEFINE_GAMEPLAY_TAG_COMMENT(UI_Screen_Storage, "UI.Screen.Storage", "Storage screen opened through the project UI screen registry.");
+	UE_DEFINE_GAMEPLAY_TAG_COMMENT(UI_Screen_Loot, "UI.Screen.Loot", "Loot screen opened through the project UI screen registry.");
+	UE_DEFINE_GAMEPLAY_TAG_COMMENT(UI_Screen_Crafting, "UI.Screen.Crafting", "Crafting screen opened through the project UI screen registry.");
+	UE_DEFINE_GAMEPLAY_TAG_COMMENT(UI_Screen_BaseTerminal, "UI.Screen.BaseTerminal", "Base terminal screen opened through the project UI screen registry.");
+	UE_DEFINE_GAMEPLAY_TAG_COMMENT(UI_Screen_Pause, "UI.Screen.Pause", "Pause screen opened through the project UI screen registry.");
+	UE_DEFINE_GAMEPLAY_TAG_COMMENT(UI_Screen_Settings, "UI.Screen.Settings", "Settings screen opened through the project UI screen registry.");
+	UE_DEFINE_GAMEPLAY_TAG_COMMENT(UI_HUD_Slot_ActionBar, "UI.HUD.Slot.ActionBar", "UIExtension slot for the persistent general action bar HUD widget.");
+	UE_DEFINE_GAMEPLAY_TAG_COMMENT(UI_HUD_Slot_WeaponAbilityBar, "UI.HUD.Slot.WeaponAbilityBar", "UIExtension slot for the persistent weapon ability HUD widget.");
+
+	UE_DEFINE_GAMEPLAY_TAG_COMMENT(Base_Storage_Upgrade_AutoSort, "Base.Storage.Upgrade.AutoSort", "Base storage upgrade tag that unlocks shared auto-sort convenience.");
+	UE_DEFINE_GAMEPLAY_TAG_COMMENT(Base_Storage_Upgrade_RemoteAccess, "Base.Storage.Upgrade.RemoteAccess", "Base storage upgrade tag that unlocks remote access convenience.");
+	UE_DEFINE_GAMEPLAY_TAG_COMMENT(Base_Storage_Upgrade_CraftingOutputAutoDeposit, "Base.Storage.Upgrade.CraftingOutputAutoDeposit", "Base storage upgrade tag that lets crafting outputs flow back into linked base storage.");
 
 }
 
