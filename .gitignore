@@ -1,23 +1,26 @@
-Binaries
-DerivedDataCache
-Intermediate
-Saved
-Build/
-.vscode
-.vs
+# Unreal generated folders
+/Binaries/
+/DerivedDataCache/
+/Intermediate/
+/Saved/
+
+# Plugin generated folders
+/Plugins/**/Intermediate/
+/Plugins/**/Binaries/
+
+# IDE / editor user files
+.vs/
+.vscode/
+.idea/
+*.sln
+*.suo
 *.VC.db
 *.opensdf
 *.opendb
 *.sdf
-*.sln
-*.suo
 *.xcodeproj
 *.xcworkspace
-
-# Rider user-specific files – don’t share
-.idea/workspace.xml
-.idea/tasks.xml
-.idea/**/workspace.xml
-.idea/**/projectSettingsUpdater.xml
-.idea/
 *.iml
+
+# Logs / temp
+*.log
