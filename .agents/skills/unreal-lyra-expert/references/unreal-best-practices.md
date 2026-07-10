@@ -4,9 +4,9 @@ Use this reference for implementation and review work in Unreal Engine projects.
 
 ## Version Policy
 
-- Assume Unreal Engine 5.7 by default.
-- Prefer Unreal Engine 5.7 APIs, idioms, and plugin-era architecture unless inspected project files show a different engine target.
-- If the project appears to be on an older version, call out the mismatch explicitly and separate "5.7 best practice" from "compatible fallback for this codebase".
+- Assume Unreal Engine 5.8 by default.
+- Prefer Unreal Engine 5.8 APIs, idioms, and plugin-era architecture unless inspected project files show a different engine target.
+- If the project appears to be on an older version, call out the mismatch explicitly and separate "5.8 best practice" from "compatible fallback for this codebase".
 
 ## Architecture
 

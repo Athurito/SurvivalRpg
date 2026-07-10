@@ -8,13 +8,13 @@ description: Use for Unreal Engine 5 C++/Blueprint review, design, debugging, re
 Inspect the project before proposing changes.
 
 - Read the `.uproject`, relevant `.uplugin` files, affected modules, and relevant `Config/` first.
-- Assume Unreal Engine 5.7 only until the inspected project files prove otherwise.
-- Once the project version is identified, prefer project-compatible APIs, plugin assumptions, and engine patterns over 5.7-only recommendations.
+- Assume Unreal Engine 5.8 only until the inspected project files prove otherwise.
+- Once the project version is identified, prefer project-compatible APIs, plugin assumptions, and engine patterns over 5.8-only recommendations.
 - Identify the Unreal version, enabled plugins, module layout, and whether the project uses Lyra, GAS, CommonUI, Enhanced Input, CommonGame, ModularGameplay, Game Features, Experiences, Lyra Interaction, or Lyra-derived inventory/equipment.
 - Infer whether the codebase is vanilla Unreal, Lyra-derived, or only borrowing selected Lyra ideas.
-- If the project is not on 5.7, explicitly separate:
+- If the project is not on 5.8, explicitly separate:
   - current-project-compatible guidance
-  - 5.7 best-practice guidance
+  - 5.8 best-practice guidance
   - migration risk or API differences where relevant
 
 Inspect the LyraStarterGame reference project when available.
