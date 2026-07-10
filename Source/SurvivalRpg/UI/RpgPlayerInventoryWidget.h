@@ -75,11 +75,24 @@ protected:
 	virtual bool NativeOnDrop(const FGeometry& InGeometry, const FDragDropEvent& InDragDropEvent, UDragDropOperation* InOperation) override;
 	virtual void NativeOnDragLeave(const FDragDropEvent& InDragDropEvent, UDragDropOperation* InOperation) override;
 
+	/** Lets dual-inventory screens add their spatial panels inside the same focus-preserving navigator refresh. */
+	virtual void RegisterAdditionalInventoryNavigationPanels(URpgInventoryPanelNavigationCoordinator* Navigator);
+
+	/** Appends spatial grids owned by a derived screen so mouse routing and preview clearing use the shared session. */
+	virtual void AppendAdditionalSpatialGrids(TArray<URpgInventorySpatialGridWidget*>& OutGrids) const;
+
 	/** Blueprint hook after the native parent creates and assigns PlayerInventoryViewModel. */
 	UFUNCTION(BlueprintImplementableEvent, Category = "Inventory|Player", meta = (DisplayName = "On Player Inventory ViewModel Ready"))
 	void BP_OnPlayerInventoryViewModelReady(URpgPlayerInventoryViewModel* ViewModel);
 
-	/** Optional spatial group panel for carry groups such as WeaponSlot1, ShieldSlot, and ToolSlot1. */
+	/**
+	 * Presentation hook for Move/Merge/Swap/Equip/Blocked/OOB/Pending/Rejected indicators.
+	 * Read the coordinator's InteractionSession for the current payload, target, rotation, and request id.
+	 */
+	UFUNCTION(BlueprintImplementableEvent, Category = "Inventory|Interaction", meta = (DisplayName = "On Inventory Interaction State Changed"))
+	void BP_OnInventoryInteractionStateChanged(ERpgInventoryInteractionPreviewState PreviewState, bool bHasPayload, bool bPendingRequest);
+
+	/** Optional spatial group panel for the two ready-weapon roles and the offhand/shield role. */
 	UPROPERTY(BlueprintReadOnly, meta = (BindWidgetOptional))
 	TObjectPtr<URpgInventorySlotGroupPanelWidget> CarryGroupsList = nullptr;
 
@@ -129,6 +142,9 @@ private:
 
 	UFUNCTION()
 	void HandleActionBarSlotsChanged();
+
+	UFUNCTION()
+	void HandleInventoryInteractionStateChanged(ERpgInventoryInteractionPreviewState PreviewState, bool bHasPayload, bool bPendingRequest);
 
 	void EnsurePlayerInventoryViewModel();
 	void BindViewModelDelegates();

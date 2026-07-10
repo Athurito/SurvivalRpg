@@ -99,10 +99,10 @@ namespace
 	}
 
 	URpgInventorySlotGroupViewModel* FindReusableGroup(
-		const TMap<FName, TObjectPtr<URpgInventorySlotGroupViewModel>>& ReusableGroups,
-		FName GroupId)
+		const TMap<FRpgInventoryContainerHandle, TObjectPtr<URpgInventorySlotGroupViewModel>>& ReusableGroups,
+		const FRpgInventoryContainerHandle& ContainerHandle)
 	{
-		if (const TObjectPtr<URpgInventorySlotGroupViewModel>* ExistingGroup = ReusableGroups.Find(GroupId))
+		if (const TObjectPtr<URpgInventorySlotGroupViewModel>* ExistingGroup = ReusableGroups.Find(ContainerHandle))
 		{
 			return ExistingGroup->Get();
 		}
@@ -120,16 +120,18 @@ void URpgInventoryAddressSlotViewModel::InitializeSlot(
 {
 	const FRpgInventorySlotAddress NewAddress = InGroupView.MakeAddress(InX, InY);
 	FRpgInventoryGridPlacement NewPlacement;
-	NewPlacement.ContainerId = NewAddress.ContainerId;
+	NewPlacement.SetContainerHandle(NewAddress.GetContainerHandle());
 	NewPlacement.X = NewAddress.X;
 	NewPlacement.Y = NewAddress.Y;
 	NewPlacement.Width = 1;
 	NewPlacement.Height = 1;
-	URpgInventoryItemInstance* NewItem = InInventory ? InInventory->GetItemAtCell(NewPlacement.ContainerId, NewPlacement.X, NewPlacement.Y) : nullptr;
+	URpgInventoryItemInstance* NewItem = InInventory
+		? InInventory->GetItemAtContainerCell(NewPlacement.GetContainerHandle(), NewPlacement.X, NewPlacement.Y)
+		: nullptr;
 	FRpgInventoryGridPlacement NewItemPlacement;
 	const bool bHasResolvedItemPlacement = NewItem && InInventory && InInventory->GetItemPlacement(NewItem, NewItemPlacement);
 	const bool bNewItemOriginCell = bHasResolvedItemPlacement &&
-		NewItemPlacement.ContainerId == NewPlacement.ContainerId &&
+		NewItemPlacement.GetContainerHandle() == NewPlacement.GetContainerHandle() &&
 		NewItemPlacement.X == NewPlacement.X &&
 		NewItemPlacement.Y == NewPlacement.Y;
 	const bool bNewItemCoveredCell = bHasResolvedItemPlacement &&
@@ -160,10 +162,10 @@ void URpgInventoryAddressSlotViewModel::InitializeSlot(
 		SlotAddress != NewAddress ||
 		X != InX ||
 		Y != InY ||
-		Placement.ContainerId != NewPlacement.ContainerId ||
+		Placement.GetContainerHandle() != NewPlacement.GetContainerHandle() ||
 		Placement.X != NewPlacement.X ||
 		Placement.Y != NewPlacement.Y ||
-		ItemPlacement.ContainerId != NewItemPlacement.ContainerId ||
+		ItemPlacement.GetContainerHandle() != NewItemPlacement.GetContainerHandle() ||
 		ItemPlacement.X != NewItemPlacement.X ||
 		ItemPlacement.Y != NewItemPlacement.Y ||
 		ItemPlacement.Width != NewItemPlacement.Width ||
@@ -239,6 +241,9 @@ void URpgInventoryAddressSlotViewModel::InitializeSlot(
 
 void URpgInventorySlotGroupViewModel::InitializeGroup(const FRpgInventorySlotGroupView& InGroupView, const TArray<URpgInventoryAddressSlotViewModel*>& InSlots)
 {
+	ContainerHandle = InGroupView.ContainerHandle.IsValid()
+		? InGroupView.ContainerHandle
+		: FRpgInventoryContainerHandle::MakeRoot(InGroupView.ContainerId);
 	ContainerId = InGroupView.ContainerId;
 	DisplayName = InGroupView.DisplayName;
 	Icon = InGroupView.Icon;
@@ -257,6 +262,7 @@ void URpgInventorySlotGroupViewModel::InitializeGroup(const FRpgInventorySlotGro
 		Slots.Add(Slot);
 	}
 
+	UE_MVVM_BROADCAST_FIELD_VALUE_CHANGED(ContainerHandle);
 	UE_MVVM_BROADCAST_FIELD_VALUE_CHANGED(ContainerId);
 	UE_MVVM_BROADCAST_FIELD_VALUE_CHANGED(DisplayName);
 	UE_MVVM_BROADCAST_FIELD_VALUE_CHANGED(Icon);
@@ -416,6 +422,27 @@ URpgInventorySlotGroupViewModel* URpgPlayerInventoryViewModel::GetSlotGroup(FNam
 	return nullptr;
 }
 
+URpgInventorySlotGroupViewModel* URpgPlayerInventoryViewModel::GetSlotGroupByHandle(FRpgInventoryContainerHandle ContainerHandle) const
+{
+	for (URpgInventorySlotGroupViewModel* Group : CarryGroups)
+	{
+		if (Group && Group->GetContainerHandle() == ContainerHandle)
+		{
+			return Group;
+		}
+	}
+
+	for (URpgInventorySlotGroupViewModel* Group : InventoryGroups)
+	{
+		if (Group && Group->GetContainerHandle() == ContainerHandle)
+		{
+			return Group;
+		}
+	}
+
+	return nullptr;
+}
+
 void URpgPlayerInventoryViewModel::BeginDestroy()
 {
 	UnregisterMessageListeners();
@@ -502,7 +529,7 @@ void URpgPlayerInventoryViewModel::RefreshGearSlots()
 			URpgPlayerInventoryLayoutComponent::TryMakeGearSlotAddress(EquipmentSlot, GearAddress) &&
 			InventoryLayout->ResolveSlotAddress(GearAddress, GearPlacement))
 		{
-			return PlayerInventory->GetItemAtCell(GearPlacement.ContainerId, GearPlacement.X, GearPlacement.Y);
+			return PlayerInventory->GetItemAtContainerCell(GearPlacement.GetContainerHandle(), GearPlacement.X, GearPlacement.Y);
 		}
 
 		return EquipmentLoadout ? EquipmentLoadout->GetItemInEquipmentSlot(EquipmentSlot) : nullptr;
@@ -562,14 +589,14 @@ void URpgPlayerInventoryViewModel::RefreshSlotGroups()
 		}
 	};
 
-	TMap<FName, TObjectPtr<URpgInventorySlotGroupViewModel>> ReusableGroups;
+	TMap<FRpgInventoryContainerHandle, TObjectPtr<URpgInventorySlotGroupViewModel>> ReusableGroups;
 	auto CacheGroups = [&ReusableGroups](const TArray<TObjectPtr<URpgInventorySlotGroupViewModel>>& Groups)
 	{
 		for (URpgInventorySlotGroupViewModel* Group : Groups)
 		{
 			if (Group)
 			{
-				ReusableGroups.Add(Group->GetGroupId(), Group);
+				ReusableGroups.Add(Group->GetContainerHandle(), Group);
 			}
 		}
 	};
@@ -605,7 +632,10 @@ void URpgPlayerInventoryViewModel::RefreshSlotGroups()
 				}
 			}
 
-			URpgInventorySlotGroupViewModel* GroupViewModel = FindReusableGroup(ReusableGroups, GroupView.ContainerId);
+			const FRpgInventoryContainerHandle GroupHandle = GroupView.ContainerHandle.IsValid()
+				? GroupView.ContainerHandle
+				: FRpgInventoryContainerHandle::MakeRoot(GroupView.ContainerId);
+			URpgInventorySlotGroupViewModel* GroupViewModel = FindReusableGroup(ReusableGroups, GroupHandle);
 			if (!GroupViewModel)
 			{
 				GroupViewModel = NewObject<URpgInventorySlotGroupViewModel>(this);

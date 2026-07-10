@@ -337,7 +337,7 @@ void URpgInventoryControllerActionsWidget::EnsureDefaultInventoryControllerActio
 		return;
 	}
 
-	UDataTable* ActionTable = LoadObject<UDataTable>(nullptr, TEXT("/Game/UI/Input/CDT_RpgUIActions_All.CDT_RpgUIActions_All"));
+	UDataTable* ActionTable = LoadObject<UDataTable>(nullptr, TEXT("/Game/SurvivalRpg/UI/Input/DT_RpgUIActions_Inventory.DT_RpgUIActions_Inventory"));
 	if (!ActionTable)
 	{
 		UE_LOG(LogRpgInventoryControllerActionsWidget, Warning, TEXT("%s could not load default inventory controller action table."), *GetNameSafe(this));

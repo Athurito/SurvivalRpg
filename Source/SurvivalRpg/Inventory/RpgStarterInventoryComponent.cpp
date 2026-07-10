@@ -2,6 +2,7 @@
 
 #include "Engine/World.h"
 #include "TimerManager.h"
+#include "SurvivalRpg/Core/Game/RpgGameModeBase.h"
 #include "SurvivalRpg/Core/Player/RpgPlayerController.h"
 #include "SurvivalRpg/Core/Player/RpgPlayerState.h"
 #include "SurvivalRpg/Equipment/RpgEquipmentLoadoutComponent.h"
@@ -62,7 +63,28 @@ void URpgStarterInventoryComponent::TryGrantStarterInventory()
 	URpgEquipmentLoadoutComponent* EquipmentLoadout = PlayerController ? PlayerController->GetEquipmentLoadoutComponent() : nullptr;
 	URpgPlayerInventoryLayoutComponent* InventoryLayout = PlayerController ? PlayerController->GetPlayerInventoryLayoutComponent() : nullptr;
 
-	if (PlayerController == nullptr || PlayerState == nullptr || InventoryComponent == nullptr || ShouldWaitForPawn(PlayerController))
+	if (PlayerController == nullptr || PlayerState == nullptr || InventoryComponent == nullptr)
+	{
+		ScheduleRetry();
+		return;
+	}
+
+	// PostLogin restores the complete graph before feature-authored starter items may be considered.
+	if (ARpgGameModeBase* GameMode = GetWorld()->GetAuthGameMode<ARpgGameModeBase>())
+	{
+		if (!GameMode->IsPlayerProfileRestoreComplete(PlayerController))
+		{
+			ScheduleRetry();
+			return;
+		}
+		if (GameMode->HasRestoredPlayerProfile(PlayerController))
+		{
+			bHasTriedGrant = true;
+			return;
+		}
+	}
+
+	if (ShouldWaitForPawn(PlayerController))
 	{
 		ScheduleRetry();
 		return;
@@ -197,7 +219,9 @@ bool URpgStarterInventoryComponent::TryMoveItemToFirstCompatibleCarrySlot(URpgPl
 			for (int32 X = 0; X < Group.GridSize.Width; ++X)
 			{
 				FRpgInventoryGridPlacement TargetPlacement;
-				TargetPlacement.ContainerId = Group.ContainerId;
+				TargetPlacement.SetContainerHandle(Group.ContainerHandle.IsValid()
+					? Group.ContainerHandle
+					: FRpgInventoryContainerHandle::MakeRoot(Group.ContainerId));
 				TargetPlacement.X = X;
 				TargetPlacement.Y = Y;
 				TargetPlacement.Width = 1;
@@ -235,7 +259,7 @@ bool URpgStarterInventoryComponent::TryMoveItemToEquipmentSlot(
 
 	FRpgInventoryGridPlacement CurrentPlacement;
 	if (Inventory->GetItemPlacement(ItemInstance, CurrentPlacement) &&
-		CurrentPlacement.ContainerId == GearPlacement.ContainerId &&
+		CurrentPlacement.GetContainerHandle() == GearPlacement.GetContainerHandle() &&
 		CurrentPlacement.X == GearPlacement.X &&
 		CurrentPlacement.Y == GearPlacement.Y)
 	{

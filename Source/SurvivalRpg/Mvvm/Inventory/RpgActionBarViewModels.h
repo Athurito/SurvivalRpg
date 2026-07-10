@@ -45,6 +45,9 @@ public:
 	UFUNCTION(BlueprintCallable, Category = "Action Bar|ViewModel")
 	void InitializeSlot(int32 InSlotIndex, const FRpgActionBarSlot& InSlot, URpgInventoryItemInstance* ResolvedItem, int32 InStackCount);
 
+	/** Rebuilds this slot and resolves ability presentation from the owning ASC. */
+	void InitializeSlotWithAbilitySystem(int32 InSlotIndex, const FRpgActionBarSlot& InSlot, URpgInventoryItemInstance* ResolvedItem, int32 InStackCount, const URpgAbilitySystemComponent* AbilitySystem);
+
 	UFUNCTION(BlueprintPure, Category = "Action Bar|ViewModel")
 	int32 GetSlotIndex() const { return SlotIndex; }
 
@@ -62,6 +65,21 @@ public:
 
 	UFUNCTION(BlueprintPure, Category = "Action Bar|ViewModel")
 	int32 GetStackCount() const { return StackCount; }
+
+	UFUNCTION(BlueprintPure, Category = "Action Bar|ViewModel")
+	bool IsAvailable() const { return bAvailable; }
+
+	UFUNCTION(BlueprintPure, Category = "Action Bar|ViewModel")
+	ERpgQuickAccessBlockedReason GetBlockedReason() const { return BlockedReason; }
+
+	UFUNCTION(BlueprintPure, Category = "Action Bar|ViewModel")
+	FGameplayTag GetAbilityId() const { return AbilityId; }
+
+	UFUNCTION(BlueprintPure, Category = "Action Bar|ViewModel")
+	TSoftObjectPtr<UTexture2D> GetIcon() const { return Icon; }
+
+	UFUNCTION(BlueprintPure, Category = "Action Bar|ViewModel")
+	FText GetShortDisplayName() const { return ShortDisplayName; }
 
 	UFUNCTION(BlueprintPure, Category = "Action Bar|ViewModel")
 	FName GetHotkeyActionRowName() const { return HotkeyActionRowName; }
@@ -93,6 +111,18 @@ protected:
 	/** Current stack count for the resolved item, read from the player's inventory when available. */
 	UPROPERTY(BlueprintReadOnly, FieldNotify, Category = "Action Bar|ViewModel", meta = (AllowPrivateAccess = "true"))
 	int32 StackCount = 0;
+
+	/** Current server-derived availability for the typed binding. */
+	UPROPERTY(BlueprintReadOnly, FieldNotify, Category = "Action Bar|ViewModel", meta = (AllowPrivateAccess = "true"))
+	bool bAvailable = false;
+
+	/** Stable blocked reason for disabled/empty radial and HUD indicators. */
+	UPROPERTY(BlueprintReadOnly, FieldNotify, Category = "Action Bar|ViewModel", meta = (AllowPrivateAccess = "true"))
+	ERpgQuickAccessBlockedReason BlockedReason = ERpgQuickAccessBlockedReason::Empty;
+
+	/** Semantic ability id for Ability bindings; invalid for item/carry bindings. */
+	UPROPERTY(BlueprintReadOnly, FieldNotify, Category = "Action Bar|ViewModel", meta = (AllowPrivateAccess = "true"))
+	FGameplayTag AbilityId;
 
 	/** Optional item icon read from the item currently resolved from SlotAddress. */
 	UPROPERTY(BlueprintReadOnly, FieldNotify, Category = "Action Bar|ViewModel", meta = (AllowPrivateAccess = "true"))

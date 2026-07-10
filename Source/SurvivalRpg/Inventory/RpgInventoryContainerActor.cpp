@@ -23,7 +23,7 @@ ARpgInventoryContainerActor::ARpgInventoryContainerActor(const FObjectInitialize
 	InteractionCollision->SetGenerateOverlapEvents(true);
 
 	InventoryManagerComponent = CreateDefaultSubobject<URpgInventoryManagerComponent>(TEXT("InventoryManagerComponent"));
-	InventoryManagerComponent->SetCapacityMode(ERpgInventoryCapacityMode::FixedEntries);
-	InventoryManagerComponent->SetFixedMaxEntries(16);
+	// Spatial storage capacity is defined exclusively by the 10x6 grid and item stack limits.
+	InventoryManagerComponent->SetCapacityMode(ERpgInventoryCapacityMode::Unlimited);
 	ContainerComponent = CreateDefaultSubobject<URpgInventoryContainerComponent>(TEXT("ContainerComponent"));
 }

@@ -3,6 +3,7 @@
 #pragma once
 
 #include "Kismet/BlueprintFunctionLibrary.h"
+#include "RpgInventoryGraphTypes.h"
 
 #include "RpgInventoryItemDefinition.generated.h"
 
@@ -13,21 +14,56 @@ struct FFrame;
 
 //////////////////////////////////////////////////////////////////////
 
-// Represents one modular data block on an item definition.
-UCLASS(MinimalAPI, DefaultToInstanced, EditInlineNew, Abstract)
-class URpgInventoryItemFragment : public UObject
+/**
+ * One immutable modular data block on an item definition.
+ *
+ * Fragments may optionally provide a versioned runtime-state seam for durability, affixes, sockets, rolls, or other
+ * instance-specific data. The item instance owns mutable state; definition fragments remain static CDO data.
+ */
+UCLASS(DefaultToInstanced, EditInlineNew, Abstract)
+class SURVIVALRPG_API URpgInventoryItemFragment : public UObject
 {
 	GENERATED_BODY()
 
 public:
+	/** Called on authority after a new concrete item instance receives its definition and persistent identity. */
 	virtual void OnInstanceCreated(URpgInventoryItemInstance* Instance) const {}
+
+	/** Stable save-payload id owned by this fragment, or None when the fragment has no mutable runtime state. */
+	virtual FName GetRuntimeStateIdentifier() const;
+
+	/** Current schema version emitted by this fragment's runtime-state payload. */
+	virtual int32 GetRuntimeStateVersion() const;
+
+	/** Exports this fragment's state from an item. Return false when no payload should be emitted. */
+	virtual bool ExportRuntimeState(
+		const URpgInventoryItemInstance* Instance,
+		FRpgInventoryFragmentStatePayload& OutPayload) const;
+
+	/** Validates an imported payload without mutating the item. A successful validation must make import infallible. */
+	virtual bool ValidateRuntimeState(
+		const URpgInventoryItemInstance* Instance,
+		const FRpgInventoryFragmentStatePayload& Payload) const;
+
+	/** Applies a previously validated payload to an authority-owned item instance. */
+	virtual bool ImportRuntimeState(
+		URpgInventoryItemInstance* Instance,
+		const FRpgInventoryFragmentStatePayload& Payload) const;
+
+	/** Copies this fragment's mutable runtime state for split or cross-inventory reconstruction. */
+	virtual void CopyRuntimeState(
+		const URpgInventoryItemInstance* Source,
+		URpgInventoryItemInstance* Target) const;
+
+	/** Returns whether this fragment's mutable state permits two otherwise matching items to stack. */
+	virtual bool AreInstancesStackCompatible(
+		const URpgInventoryItemInstance* A,
+		const URpgInventoryItemInstance* B) const;
 };
 
 //////////////////////////////////////////////////////////////////////
 
-/**
- * URpgInventoryItemDefinition
- */
+/** Static fragment-composed definition shared by all concrete instances of one item type. */
 UCLASS(Blueprintable, Const, Abstract)
 class URpgInventoryItemDefinition : public UObject
 {
@@ -36,15 +72,16 @@ class URpgInventoryItemDefinition : public UObject
 public:
 	explicit URpgInventoryItemDefinition(const FObjectInitializer& ObjectInitializer = FObjectInitializer::Get());
 
-	// Player-facing item name shown in inventory and pickup UI.
+	/** Player-facing item name shown in inventory and pickup UI. Static definition data. */
 	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category=Display)
 	FText DisplayName;
 
-	// Modular data fragments that define what this item can do, such as equipping into an EquipmentDefinition.
+	/** Modular static behavior/data, including equipment, item-owned containers, UI, stack rules, and runtime-state seams. */
 	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category=Display, Instanced)
 	TArray<TObjectPtr<URpgInventoryItemFragment>> Fragments;
 
 public:
+	/** Finds the first fragment compatible with FragmentClass. */
 	const URpgInventoryItemFragment* FindFragmentByClass(TSubclassOf<URpgInventoryItemFragment> FragmentClass) const;
 };
 
@@ -54,6 +91,7 @@ class URpgInventoryFunctionLibrary : public UBlueprintFunctionLibrary
 {
 	GENERATED_BODY()
 
-	UFUNCTION(BlueprintCallable, meta=(DeterminesOutputType=FragmentClass))
+	/** Finds one static fragment on an item definition without constructing a runtime item. */
+	UFUNCTION(BlueprintCallable, Category = "Inventory|Definition", meta=(DeterminesOutputType=FragmentClass))
 	static const URpgInventoryItemFragment* FindItemDefinitionFragment(TSubclassOf<URpgInventoryItemDefinition> ItemDef, TSubclassOf<URpgInventoryItemFragment> FragmentClass);
 };

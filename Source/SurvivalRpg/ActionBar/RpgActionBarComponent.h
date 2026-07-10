@@ -1,42 +1,120 @@
 #pragma once
 
 #include "Components/ControllerComponent.h"
+#include "GameFramework/GameplayMessageSubsystem.h"
 #include "GameplayTagContainer.h"
+#include "SurvivalRpg/Inventory/RpgInventoryGraphTypes.h"
 #include "SurvivalRpg/Inventory/RpgPlayerInventoryLayoutTypes.h"
 
 #include "RpgActionBarComponent.generated.h"
 
 class ARpgPlayerController;
+class URpgAbilitySystemComponent;
+class URpgInventoryItemDefinition;
+class URpgInventoryItemInstance;
+class URpgPlayerInventoryLayoutComponent;
+struct FRpgInventoryChangeMessage;
+struct FRpgPlayerInventoryLayoutChangedMessage;
 
-/** Runtime payload type stored by a general actionbar slot. */
+/** Payload type shared by keyboard 1..8 and the controller gameplay radial. */
 UENUM(BlueprintType)
 enum class ERpgActionBarSlotType : uint8
 {
 	/** The slot has no assigned action. */
-	Empty,
+	Empty = 0,
 
-	/** The slot activates or uses the current item in a bindable player-inventory address such as Belt[0]. */
-	InventorySlotBinding,
+	/** Uses a compatible stack from designer-marked quick-access grids, preferring one persistent item id. */
+	Consumable = 1,
 
-	/** The slot activates the current item in a carry-slot address such as WeaponSlot1 or ToolSlot1. */
-	CarrySlotBinding
+	/** Activates or holsters the current item in a semantic Carry role such as WeaponSlot1 or ShieldSlot. */
+	CarrySlot = 2,
+
+	/** Presses the one granted GAS spec identified by a unique semantic AbilityId. */
+	Ability = 3,
+
+	/** Deprecated serialized enum name migrated to Consumable during server revalidation. */
+	InventorySlotBinding = 4 UMETA(Hidden),
+
+	/** Deprecated serialized enum name migrated to CarrySlot during server revalidation. */
+	CarrySlotBinding = 5 UMETA(Hidden)
 };
 
-/** Owner-only replicated state for one general actionbar slot. */
+/** Stable reason exposed to HUD/radial presentation when a non-empty binding cannot currently activate. */
+UENUM(BlueprintType)
+enum class ERpgQuickAccessBlockedReason : uint8
+{
+	/** The binding is valid and currently activatable. */
+	None,
+
+	/** Empty bindings intentionally have no action. */
+	Empty,
+
+	/** The configured Carry role is not present in the active data-driven player layout. */
+	InvalidCarryRole,
+
+	/** No compatible item currently exists in the bound Carry or quick-access grids. */
+	MissingItem,
+
+	/** The selected item definition is not a server-validated usable consumable. */
+	NotConsumable,
+
+	/** No currently granted GAS spec owns the selected AbilityId. */
+	MissingAbility,
+
+	/** Several granted specs own the same AbilityId; activation is blocked as a content configuration error. */
+	AmbiguousAbility
+};
+
+/** Owner-only replicated and save-friendly state for one shared quick-access binding. */
 USTRUCT(BlueprintType)
-struct SURVIVALRPG_API FRpgActionBarSlot
+struct SURVIVALRPG_API FRpgQuickAccessBinding
 {
 	GENERATED_BODY()
 
-	/** Current assignment type. This is UI/selection state; gameplay activation is still validated by the server. */
-	UPROPERTY(BlueprintReadOnly, Category = "Action Bar")
+	/** Assignment type consumed by both keyboard 1..8 and controller radial activation. */
+	UPROPERTY(BlueprintReadOnly, SaveGame, Category = "Quick Access")
 	ERpgActionBarSlotType SlotType = ERpgActionBarSlotType::Empty;
 
-	/** Logical player-inventory slot bound to this actionbar slot. Bindings survive item swaps inside that source slot. */
-	UPROPERTY(BlueprintReadOnly, Category = "Action Bar")
+	/**
+	 * Compatibility/presentation address last used to create this binding.
+	 * Consumable resolution no longer treats this mutable cell as authoritative.
+	 */
+	UPROPERTY(BlueprintReadOnly, SaveGame, Category = "Quick Access")
 	FRpgInventorySlotAddress SlotAddress;
 
+	/** Data-driven Carry group/role whose current item is activated; no concrete item pointer is saved. */
+	UPROPERTY(BlueprintReadOnly, SaveGame, Category = "Quick Access")
+	FName CarryRole = NAME_None;
+
+	/** Consumable definition resolved only from designer-marked quick-access grids. */
+	UPROPERTY(BlueprintReadOnly, SaveGame, Category = "Quick Access")
+	TSubclassOf<URpgInventoryItemDefinition> ConsumableDefinition;
+
+	/** Preferred concrete stack. If absent, another compatible quick-access stack is selected deterministically. */
+	UPROPERTY(BlueprintReadOnly, SaveGame, Category = "Quick Access")
+	FRpgInventoryItemId PreferredItemId;
+
+	/** Semantic id that must resolve to exactly one currently granted GAS ability spec. */
+	UPROPERTY(BlueprintReadOnly, SaveGame, Category = "Quick Access")
+	FGameplayTag AbilityId;
+
+	/** Server-derived availability seam used by the HUD and radial; false never authorizes gameplay by itself. */
+	UPROPERTY(BlueprintReadOnly, Category = "Quick Access")
+	bool bAvailable = false;
+
+	/** Server-derived reason shown when a configured binding cannot currently activate. */
+	UPROPERTY(BlueprintReadOnly, Category = "Quick Access")
+	ERpgQuickAccessBlockedReason BlockedReason = ERpgQuickAccessBlockedReason::Empty;
+
 	bool IsEmpty() const { return SlotType == ERpgActionBarSlotType::Empty; }
+	void Reset() { *this = FRpgQuickAccessBinding(); }
+};
+
+/** Backward-compatible actionbar slot name; every slot now carries the canonical quick-access binding payload. */
+USTRUCT(BlueprintType)
+struct SURVIVALRPG_API FRpgActionBarSlot : public FRpgQuickAccessBinding
+{
+	GENERATED_BODY()
 };
 
 /** Gameplay message sent to the owning client when the general actionbar assignment changes. */
@@ -70,36 +148,68 @@ public:
 
 	virtual void GetLifetimeReplicatedProps(TArray<FLifetimeProperty>& OutLifetimeProps) const override;
 	virtual void BeginPlay() override;
+	virtual void EndPlay(const EEndPlayReason::Type EndPlayReason) override;
 
-	/** Number of general actionbar slots. V1 is fixed at eight slots. */
+	/** Number of shared keyboard/radial bindings. This contract is always exactly eight. */
 	UFUNCTION(BlueprintPure, Category = "Rpg|Action Bar")
-	int32 GetNumSlots() const { return SlotCount; }
+	int32 GetNumSlots() const { return 8; }
 
 	/** Returns a copy of all owner-only actionbar slots for UI display. */
 	UFUNCTION(BlueprintPure, Category = "Rpg|Action Bar")
 	const TArray<FRpgActionBarSlot>& GetSlots() const { return Slots; }
 
+	/** Returns exactly eight canonical bindings for disk-save and the shared keyboard/controller radial UI. */
+	UFUNCTION(BlueprintPure, Category = "Rpg|Quick Access")
+	TArray<FRpgQuickAccessBinding> GetQuickAccessBindings() const;
+
 	/** Returns one actionbar slot, or an empty slot for invalid indices. */
 	UFUNCTION(BlueprintPure, Category = "Rpg|Action Bar")
 	FRpgActionBarSlot GetSlot(int32 SlotIndex) const;
 
-	/** Binds this actionbar slot to a bindable non-carry player-inventory slot such as Belt or Pockets. */
+	/** Compatibility adapter that creates a definition+item-id consumable binding from a quick-access grid cell. */
 	UFUNCTION(Server, Reliable, BlueprintCallable, Category = "Rpg|Action Bar")
 	void RequestBindInventorySlotToSlot(int32 SlotIndex, FRpgInventorySlotAddress SlotAddress);
 
-	/** Binds this actionbar slot to a carry slot such as WeaponSlot1, ShieldSlot, or ToolSlot1. */
+	/** Compatibility adapter that stores the address's data-driven Carry role instead of a concrete item. */
 	UFUNCTION(Server, Reliable, BlueprintCallable, Category = "Rpg|Action Bar")
 	void RequestBindCarrySlotToSlot(int32 SlotIndex, FRpgInventorySlotAddress SlotAddress);
+
+	/** Binds a semantic Carry role such as WeaponSlot1 or ShieldSlot to one shared quick-access slot. */
+	UFUNCTION(Server, Reliable, BlueprintCallable, Category = "Rpg|Quick Access")
+	void RequestBindCarryRoleToSlot(int32 SlotIndex, FName CarryRole);
+
+	/** Binds a consumable definition and preferred persistent stack id to one shared quick-access slot. */
+	UFUNCTION(Server, Reliable, BlueprintCallable, Category = "Rpg|Quick Access")
+	void RequestBindConsumableToSlot(
+		int32 SlotIndex,
+		TSubclassOf<URpgInventoryItemDefinition> ConsumableDefinition,
+		FRpgInventoryItemId PreferredItemId);
+
+	/** Binds a semantic AbilityId. Missing grants stay saved but blocked; ambiguous ids are never activated. */
+	UFUNCTION(Server, Reliable, BlueprintCallable, Category = "Rpg|Quick Access")
+	void RequestBindAbilityToSlot(int32 SlotIndex, FGameplayTag AbilityId);
 
 	/** Clears one general actionbar slot. */
 	UFUNCTION(Server, Reliable, BlueprintCallable, Category = "Rpg|Action Bar")
 	void RequestClearSlot(int32 SlotIndex);
+
+	/** Restores up to eight pointer-free bindings after the inventory graph has resolved persistent item ids. */
+	UFUNCTION(BlueprintCallable, BlueprintAuthorityOnly, Category = "Rpg|Quick Access")
+	void RestoreQuickAccessBindings(const TArray<FRpgQuickAccessBinding>& SavedBindings);
+
+	/** Revalidates all eight bindings after inventory, equipment, progression, or GAS grants change. */
+	UFUNCTION(BlueprintCallable, BlueprintAuthorityOnly, Category = "Rpg|Quick Access")
+	void RefreshBindings();
 
 	/** Handles local key/button press for one actionbar slot. */
 	void ActivateSlot(int32 SlotIndex);
 
 	/** Handles local key/button release for one actionbar slot. */
 	void ReleaseSlot(int32 SlotIndex);
+
+	/** One-shot activation used when the controller radial commits on stick release. */
+	UFUNCTION(BlueprintCallable, Category = "Rpg|Quick Access")
+	void TriggerSlot(int32 SlotIndex);
 
 	/** Input tag used by the given actionbar slot index, or invalid for out-of-range indices. */
 	static FGameplayTag GetInputTagForSlotIndex(int32 SlotIndex);
@@ -113,13 +223,25 @@ private:
 	void BroadcastSlotsChanged() const;
 	bool IsValidSlotIndex(int32 SlotIndex) const;
 	ARpgPlayerController* GetRpgPlayerController() const;
-	void ClearDuplicateSourceBindings(int32 TargetSlotIndex, const FRpgInventorySlotAddress& SlotAddress);
+	URpgInventoryItemInstance* ResolveConsumableItem(const FRpgActionBarSlot& Slot, FRpgInventorySlotAddress* OutAddress = nullptr) const;
+	bool IsValidCarryRole(FName CarryRole, FRpgInventorySlotAddress& OutAddress) const;
+	void ClearDuplicateBinding(int32 TargetSlotIndex, const FRpgActionBarSlot& Binding);
+	void RefreshBindingsInternal(bool bForceBroadcast);
+	void RefreshBindingAvailability(int32 SlotIndex, FRpgActionBarSlot& Slot, URpgAbilitySystemComponent* AbilitySystemComponent);
+	static bool AreBindingsEquivalent(const FRpgQuickAccessBinding& A, const FRpgQuickAccessBinding& B);
+	void RegisterStateListeners();
+	void UnregisterStateListeners();
+	void HandleInventoryChanged(FGameplayTag Channel, const FRpgInventoryChangeMessage& Message);
+	void HandleInventoryLayoutChanged(FGameplayTag Channel, const FRpgPlayerInventoryLayoutChangedMessage& Message);
 
 	/** Owner-only replicated actionbar state. */
-	UPROPERTY(ReplicatedUsing = OnRep_Slots)
+	UPROPERTY(ReplicatedUsing = OnRep_Slots, SaveGame)
 	TArray<FRpgActionBarSlot> Slots;
 
-	/** Designer-visible slot count kept fixed at 8 for V1. */
-	UPROPERTY(EditDefaultsOnly, Category = "Action Bar", meta = (ClampMin = 1, ClampMax = 8))
+	/** Fixed-size compatibility property. Editor clamps both ends to eight so keyboard and radial can never diverge. */
+	UPROPERTY(EditDefaultsOnly, Category = "Action Bar", meta = (ClampMin = 8, ClampMax = 8, UIMin = 8, UIMax = 8))
 	int32 SlotCount = 8;
+
+	FGameplayMessageListenerHandle InventoryChangedHandle;
+	FGameplayMessageListenerHandle InventoryLayoutChangedHandle;
 };

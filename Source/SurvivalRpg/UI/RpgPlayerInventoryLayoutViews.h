@@ -14,6 +14,7 @@ class URpgActionBarSlotViewModel;
 class URpgInventoryAddressSlotViewModel;
 class URpgInventoryDragDropCoordinator;
 class URpgInventoryEntryViewModel;
+class URpgInventoryItemInstance;
 class URpgInventoryManagerComponent;
 class URpgInventoryPanelNavigationCoordinator;
 class URpgInventoryPanelViewModel;
@@ -134,6 +135,23 @@ enum class ERpgInventorySpatialCellVisualState : uint8
 
 	/** Cell is covered by a multi-cell item whose origin is elsewhere. */
 	Covered
+};
+
+/** Context actions exposed by the native spatial presenter to mouse and controller menus. */
+UENUM(BlueprintType)
+enum class ERpgInventoryContextAction : uint8
+{
+	OpenContainer,
+	Inspect,
+	Use,
+	EquipAndActivate,
+	MoveToCarry,
+	Split,
+	Rotate,
+	QuickAccessBind,
+	QuickAccessUnbind,
+	Transfer,
+	Drop
 };
 
 /**
@@ -267,6 +285,10 @@ public:
 	UFUNCTION(BlueprintPure, Category = "Inventory|Spatial Item")
 	ERpgInventorySlotDragVisualState GetCurrentDragDropVisualState() const { return CurrentDragDropVisualState; }
 
+	/** Stable replicated entry id used by the owning grid to reuse this widget across placement refreshes. */
+	UFUNCTION(BlueprintPure, Category = "Inventory|Spatial Item")
+	FGuid GetRepresentedEntryId() const;
+
 protected:
 	virtual int32 NativePaint(
 		const FPaintArgs& Args,
@@ -358,6 +380,28 @@ public:
 	UFUNCTION(BlueprintCallable, Category = "Inventory|Spatial Grid")
 	void BindInventoryPanelViewModel(URpgInventoryPanelViewModel* InPanelViewModel, URpgInventoryManagerComponent* InInventory, FName InContainerId);
 
+	/** Binds this grid to one exact root or item-owned container in an inventory graph. */
+	UFUNCTION(BlueprintCallable, Category = "Inventory|Spatial Grid")
+	void BindInventoryContainerPanelViewModel(
+		URpgInventoryPanelViewModel* InPanelViewModel,
+		URpgInventoryManagerComponent* InInventory,
+		FRpgInventoryContainerHandle InContainerHandle);
+
+	/**
+	 * Applies presentation-only dimming to the supplied replicated entry ids.
+	 * Item overlays, hit targets, view models, and server-authored grid coordinates remain present and unchanged.
+	 */
+	UFUNCTION(BlueprintCallable, Category = "Inventory|Spatial Grid|Filter")
+	void SetDimmedEntryIds(const TArray<FGuid>& InDimmedEntryIds, float InDimmedOpacity = 0.25f);
+
+	/** Restores full opacity for every item overlay without rebuilding inventory state. */
+	UFUNCTION(BlueprintCallable, Category = "Inventory|Spatial Grid|Filter")
+	void ClearEntryDimming();
+
+	/** Returns whether the presentation-only filter currently dims this replicated entry. */
+	UFUNCTION(BlueprintPure, Category = "Inventory|Spatial Grid|Filter")
+	bool IsEntryDimmed(FGuid EntryId) const;
+
 	/** Assigns the screen-local drag/drop coordinator shared by grid, item overlays, actionbar, and gear slots. */
 	UFUNCTION(BlueprintCallable, Category = "Inventory|Spatial Grid")
 	void SetDragDropCoordinator(URpgInventoryDragDropCoordinator* InCoordinator);
@@ -401,6 +445,30 @@ public:
 	/** Shortcut helper for controller Y. Rotates held payload, otherwise quick-splits the item under the cursor. */
 	UFUNCTION(BlueprintCallable, Category = "Inventory|Spatial Grid|Actions")
 	bool QuickSplitSelectedCell(int32 SplitCount = 0);
+
+	/** Opens the exact split UI for the selected stack (1..StackCount-1, default floor half). */
+	UFUNCTION(BlueprintCallable, Category = "Inventory|Spatial Grid|Actions")
+	bool RequestSplitDialogForSelectedCell();
+
+	/** Commits the exact value captured by the active split dialog after revalidating the same item and range. */
+	UFUNCTION(BlueprintCallable, Category = "Inventory|Spatial Grid|Actions")
+	bool ConfirmPendingSplit(int32 SplitCount);
+
+	/** Closes the current split request without changing gameplay state. */
+	UFUNCTION(BlueprintCallable, Category = "Inventory|Spatial Grid|Actions")
+	void CancelPendingSplit();
+
+	/** Opens the context menu for the current item and reports all locally meaningful action rows. */
+	UFUNCTION(BlueprintCallable, Category = "Inventory|Spatial Grid|Actions")
+	bool RequestContextMenuForSelectedCell(FVector2D ScreenPosition);
+
+	/** Returns context actions for the selected item. The server still validates every committed action. */
+	UFUNCTION(BlueprintPure, Category = "Inventory|Spatial Grid|Actions")
+	TArray<ERpgInventoryContextAction> GetSelectedContextActions() const;
+
+	/** Executes a native context action or forwards UI-only actions such as Inspect/Open/Binding to Blueprint. */
+	UFUNCTION(BlueprintCallable, Category = "Inventory|Spatial Grid|Actions")
+	bool ExecuteSelectedContextAction(ERpgInventoryContextAction Action, int32 SplitCount = 0, int32 QuickAccessSlotIndex = -1);
 
 	/** Shortcut helper for use/equip on the item under the cursor. */
 	UFUNCTION(BlueprintCallable, Category = "Inventory|Spatial Grid|Actions")
@@ -466,6 +534,28 @@ protected:
 	virtual bool NativeOnDrop(const FGeometry& InGeometry, const FDragDropEvent& InDragDropEvent, UDragDropOperation* InOperation) override;
 	virtual void NativeOnDragLeave(const FDragDropEvent& InDragDropEvent, UDragDropOperation* InOperation) override;
 	virtual FReply NativeOnFocusReceived(const FGeometry& InGeometry, const FFocusEvent& InFocusEvent) override;
+
+	/** Builds and displays the screen-specific context menu. Actions are presentation-only until explicitly executed. */
+	UFUNCTION(BlueprintImplementableEvent, Category = "Inventory|Spatial Grid|Context", meta = (DisplayName = "On Inventory Context Menu Requested"))
+	void BP_OnInventoryContextMenuRequested(
+		URpgInventoryItemInstance* Item,
+		const TArray<ERpgInventoryContextAction>& Actions,
+		FVector2D ScreenPosition);
+
+	/** Opens the screen-specific slider/text dialog for an exact split amount. */
+	UFUNCTION(BlueprintImplementableEvent, Category = "Inventory|Spatial Grid|Split", meta = (DisplayName = "On Inventory Split Dialog Requested"))
+	void BP_OnInventorySplitDialogRequested(
+		URpgInventoryItemInstance* Item,
+		int32 MinimumCount,
+		int32 MaximumCount,
+		int32 DefaultCount);
+
+	/** Handles Inspect/Open Container/Quick-Access menu decisions that require screen-specific presentation. */
+	UFUNCTION(BlueprintImplementableEvent, Category = "Inventory|Spatial Grid|Context", meta = (DisplayName = "On Deferred Inventory Context Action"))
+	void BP_OnDeferredInventoryContextAction(
+		ERpgInventoryContextAction Action,
+		URpgInventoryItemInstance* Item,
+		int32 QuickAccessSlotIndex);
 
 	/** Optional CanvasPanel in Blueprint that receives one designable cell widget per grid coordinate. */
 	UPROPERTY(BlueprintReadOnly, meta = (BindWidgetOptional))
@@ -533,6 +623,7 @@ private:
 	void UpdateDesiredGridSize();
 	void RebuildCellLayer();
 	void RebuildItemOverlay();
+	void ApplyEntryDimming();
 	void UpdateCellVisualStates();
 	ERpgInventorySpatialCellVisualState GetCellVisualState(int32 X, int32 Y) const;
 	bool ResolvePayloadPreviewCellState(const FRpgInventoryDragPayload& Payload, int32 X, int32 Y, ERpgInventorySpatialCellVisualState& OutState) const;
@@ -542,6 +633,8 @@ private:
 	void ObserveEntryDelegates();
 	void NotifySelectionChanged();
 	bool MoveCursorBy(int32 DeltaX, int32 DeltaY, APlayerController* OwningPlayer);
+	URpgInventoryItemInstance* GetSelectedItemInstance() const;
+	int32 GetSelectedItemStackCount() const;
 	bool TryGetCellFromLocalPosition(FVector2D LocalPosition, int32& OutX, int32& OutY) const;
 	bool TryGetCellFromScreenPosition(FVector2D ScreenPosition, int32& OutX, int32& OutY) const;
 	FRpgInventoryDropTarget MakeDropTargetAtCursor() const;
@@ -559,6 +652,7 @@ private:
 	FVector2D GetGridLocalSize() const;
 	FVector2D GetCellPosition(int32 X, int32 Y) const;
 	FVector2D GetPlacementSize(const FRpgInventoryGridPlacement& Placement) const;
+	FRpgInventoryContainerHandle ResolveContainerHandle() const;
 	FName ResolveContainerId() const;
 	bool IsValidCell(int32 X, int32 Y) const;
 
@@ -583,6 +677,10 @@ private:
 	UPROPERTY(Transient)
 	FName ContainerId = NAME_None;
 
+	/** Exact graph identity; ContainerId remains as a legacy root-container adapter. */
+	UPROPERTY(Transient)
+	FRpgInventoryContainerHandle ContainerHandle;
+
 	UPROPERTY(Transient)
 	FRpgInventoryGridSize GridSize;
 
@@ -598,6 +696,12 @@ private:
 	UPROPERTY(Transient)
 	TArray<TObjectPtr<URpgInventorySpatialItemWidget>> ItemWidgets;
 
+	/** Replicated entry ids currently rendered with reduced opacity by a UI-only search/filter presenter. */
+	TSet<FGuid> DimmedEntryIds;
+
+	/** Render opacity used for DimmedEntryIds. It never disables item input or changes grid occupancy. */
+	float DimmedEntryOpacity = 0.25f;
+
 	UPROPERTY(Transient)
 	FRpgInventoryDragPayload ExternalPreviewPayload;
 
@@ -608,7 +712,15 @@ private:
 	int32 CursorY = 0;
 	bool bInventoryPanelActive = true;
 	bool bSelectionVisualSuppressed = false;
-	bool bHeldTargetRotated = false;
+
+	/** View-model identity captured while the exact split dialog is open. */
+	UPROPERTY(Transient)
+	TObjectPtr<URpgInventoryAddressSlotViewModel> PendingSplitAddressSlot = nullptr;
+
+	UPROPERTY(Transient)
+	TObjectPtr<URpgInventoryEntryViewModel> PendingSplitEntry = nullptr;
+
+	int32 PendingSplitMaximum = 0;
 	bool bPendingLeftClickAccept = false;
 	bool bHasExternalPreviewPayload = false;
 	bool bHasExternalPreviewTargetPlacement = false;
@@ -642,6 +754,14 @@ public:
 	/** Spatial grid owned by this group widget, if the Blueprint supplied one. */
 	UFUNCTION(BlueprintPure, Category = "Inventory|Slot Group")
 	URpgInventorySpatialGridWidget* GetSpatialGridWidget() const { return SpatialGrid.Get(); }
+
+	/** Stable container/group id used by the parent panel to retain this widget across VM refreshes. */
+	UFUNCTION(BlueprintPure, Category = "Inventory|Slot Group")
+	FName GetSlotGroupId() const;
+
+	/** Full root or item-owned identity used to distinguish equal local container ids. */
+	UFUNCTION(BlueprintPure, Category = "Inventory|Slot Group")
+	FRpgInventoryContainerHandle GetSlotGroupHandle() const;
 
 protected:
 	virtual void NativeDestruct() override;
@@ -699,7 +819,7 @@ public:
 	UFUNCTION(BlueprintCallable, Category = "Inventory|Slot Group")
 	void SetPanelNavigationCoordinator(URpgInventoryPanelNavigationCoordinator* InPanelNavigationCoordinator, FName InPanelIdPrefix);
 
-	/** Replaces children with the supplied slot group VMs while preserving direct panel layout. */
+	/** Reconciles children by stable group id so existing grids retain cursor, focus, and interaction state. */
 	UFUNCTION(BlueprintCallable, Category = "Inventory|Slot Group")
 	void SetSlotGroupItems(const TArray<URpgInventorySlotGroupViewModel*>& InGroups);
 

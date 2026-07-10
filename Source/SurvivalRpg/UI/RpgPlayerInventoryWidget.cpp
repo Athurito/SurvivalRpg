@@ -5,6 +5,7 @@
 #include "Engine/World.h"
 #include "MVVMSubsystem.h"
 #include "SurvivalRpg/Inventory/RpgInventoryDragDrop.h"
+#include "SurvivalRpg/Inventory/RpgInventoryInteractionSession.h"
 #include "SurvivalRpg/Mvvm/Inventory/RpgPlayerInventoryViewModels.h"
 #include "SurvivalRpg/UI/RpgLoadoutSlotWidgets.h"
 #include "SurvivalRpg/UI/RpgInventoryPanelNavigationCoordinator.h"
@@ -64,7 +65,7 @@ void URpgPlayerInventoryWidget::NativeOnDeactivated()
 {
 	if (PlayerDragDropCoordinator && PlayerDragDropCoordinator->HasHeldPayload())
 	{
-		PlayerDragDropCoordinator->CancelHold();
+		PlayerDragDropCoordinator->ForceCancelInteraction();
 	}
 
 	Super::NativeOnDeactivated();
@@ -78,8 +79,7 @@ bool URpgPlayerInventoryWidget::NativeOnDragOver(const FGeometry& InGeometry, co
 		return Super::NativeOnDragOver(InGeometry, InDragDropEvent, InOperation);
 	}
 
-	RouteInventoryPayloadAtScreenPosition(InventoryOperation->InventoryPayload, InDragDropEvent.GetScreenSpacePosition(), false);
-	return true;
+	return RouteInventoryPayloadAtScreenPosition(InventoryOperation->InventoryPayload, InDragDropEvent.GetScreenSpacePosition(), false);
 }
 
 bool URpgPlayerInventoryWidget::NativeOnDrop(const FGeometry& InGeometry, const FDragDropEvent& InDragDropEvent, UDragDropOperation* InOperation)
@@ -90,13 +90,20 @@ bool URpgPlayerInventoryWidget::NativeOnDrop(const FGeometry& InGeometry, const 
 		return Super::NativeOnDrop(InGeometry, InDragDropEvent, InOperation);
 	}
 
-	RouteInventoryPayloadAtScreenPosition(InventoryOperation->InventoryPayload, InDragDropEvent.GetScreenSpacePosition(), true);
-	return true;
+	return RouteInventoryPayloadAtScreenPosition(InventoryOperation->InventoryPayload, InDragDropEvent.GetScreenSpacePosition(), true);
 }
 
 void URpgPlayerInventoryWidget::NativeOnDragLeave(const FDragDropEvent& InDragDropEvent, UDragDropOperation* InOperation)
 {
 	ClearExternalDragPreviews();
+	if (PlayerDragDropCoordinator)
+	{
+		const URpgInventoryInteractionSession* Session = PlayerDragDropCoordinator->GetInteractionSession();
+		if (Session && Session->GetInputMode() == ERpgInventoryInteractionInputMode::Mouse && !Session->IsRequestPending())
+		{
+			PlayerDragDropCoordinator->CancelHold();
+		}
+	}
 	Super::NativeOnDragLeave(InDragDropEvent, InOperation);
 }
 
@@ -105,6 +112,12 @@ void URpgPlayerInventoryWidget::EnsurePlayerInventoryCoordinator()
 	if (!PlayerDragDropCoordinator)
 	{
 		PlayerDragDropCoordinator = URpgInventoryDragDropCoordinator::CreateInventoryDragDropCoordinator(this, GetOwningPlayer());
+	}
+	if (PlayerDragDropCoordinator && PlayerDragDropCoordinator->GetInteractionSession())
+	{
+		PlayerDragDropCoordinator->GetInteractionSession()->OnInteractionStateChanged.AddUniqueDynamic(
+			this,
+			&ThisClass::HandleInventoryInteractionStateChanged);
 	}
 
 	ForwardCoordinatorToChildren();
@@ -137,10 +150,10 @@ void URpgPlayerInventoryWidget::BindPlayerInventoryViewModel()
 
 void URpgPlayerInventoryWidget::RefreshPlayerInventoryViews()
 {
-	RegisterPlayerInventoryNavigationPanels();
 	RefreshGearSlots();
 	RefreshSlotGroups();
 	RefreshActionBar();
+	RegisterPlayerInventoryNavigationPanels();
 }
 
 FString URpgPlayerInventoryWidget::GetPlayerInventoryWidgetDebugSummary() const
@@ -228,6 +241,14 @@ void URpgPlayerInventoryWidget::HandleSlotGroupsChanged()
 void URpgPlayerInventoryWidget::HandleActionBarSlotsChanged()
 {
 	RefreshActionBar();
+}
+
+void URpgPlayerInventoryWidget::HandleInventoryInteractionStateChanged(
+	ERpgInventoryInteractionPreviewState PreviewState,
+	bool bHasPayload,
+	bool bPendingRequest)
+{
+	BP_OnInventoryInteractionStateChanged(PreviewState, bHasPayload, bPendingRequest);
 }
 
 void URpgPlayerInventoryWidget::EnsurePlayerInventoryViewModel()
@@ -344,7 +365,7 @@ void URpgPlayerInventoryWidget::RegisterPlayerInventoryNavigationPanels()
 		return;
 	}
 
-	PlayerPanelNavigationCoordinator->ClearPanels();
+	PlayerPanelNavigationCoordinator->BeginPanelRefresh();
 
 	if (Gear_Head)
 	{
@@ -397,6 +418,20 @@ void URpgPlayerInventoryWidget::RegisterPlayerInventoryNavigationPanels()
 	{
 		PlayerPanelNavigationCoordinator->RegisterActionBarPanel(TEXT("Actionbar"), ActionBarTileView);
 	}
+
+	RegisterAdditionalInventoryNavigationPanels(PlayerPanelNavigationCoordinator);
+
+	PlayerPanelNavigationCoordinator->EndPanelRefresh();
+}
+
+void URpgPlayerInventoryWidget::RegisterAdditionalInventoryNavigationPanels(URpgInventoryPanelNavigationCoordinator* Navigator)
+{
+	(void)Navigator;
+}
+
+void URpgPlayerInventoryWidget::AppendAdditionalSpatialGrids(TArray<URpgInventorySpatialGridWidget*>& OutGrids) const
+{
+	(void)OutGrids;
 }
 
 bool URpgPlayerInventoryWidget::RouteInventoryPayloadAtScreenPosition(const FRpgInventoryDragPayload& Payload, FVector2D ScreenPosition, bool bCommit)
@@ -432,12 +467,10 @@ bool URpgPlayerInventoryWidget::RoutePayloadToGearSlot(const FRpgInventoryDragPa
 
 		if (bCommit)
 		{
-			SlotWidget->CommitPayloadDrop(Payload);
+			return SlotWidget->CommitPayloadDrop(Payload);
 		}
-		else
-		{
-			SlotWidget->PreviewPayloadDrop(Payload);
-		}
+
+		SlotWidget->PreviewPayloadDrop(Payload);
 		return true;
 	};
 
@@ -477,12 +510,10 @@ bool URpgPlayerInventoryWidget::RoutePayloadToSpatialGrid(const FRpgInventoryDra
 
 		if (bCommit)
 		{
-			SpatialGrid->CommitPayloadAtScreenPosition(Payload, ScreenPosition);
+			return SpatialGrid->CommitPayloadAtScreenPosition(Payload, ScreenPosition);
 		}
-		else
-		{
-			SpatialGrid->PreviewPayloadAtScreenPosition(Payload, ScreenPosition);
-		}
+
+		SpatialGrid->PreviewPayloadAtScreenPosition(Payload, ScreenPosition);
 		return true;
 	}
 
@@ -500,6 +531,8 @@ void URpgPlayerInventoryWidget::CollectSpatialGrids(TArray<URpgInventorySpatialG
 	{
 		InventoryGroupsList->GetSpatialGridWidgets(OutGrids);
 	}
+
+	AppendAdditionalSpatialGrids(OutGrids);
 }
 
 void URpgPlayerInventoryWidget::ClearExternalDragPreviews()
@@ -555,6 +588,11 @@ void URpgPlayerInventoryWidget::ClearExternalDragPreviews()
 			SpatialGrid->ClearExternalPreviewPayload();
 		}
 	}
+
+	if (PlayerDragDropCoordinator)
+	{
+		PlayerDragDropCoordinator->ClearInteractionPreview();
+	}
 }
 
 void URpgPlayerInventoryWidget::QueueDeferredPlayerInventoryRefresh()
@@ -580,6 +618,6 @@ void URpgPlayerInventoryWidget::ExecuteDeferredPlayerInventoryRefresh()
 	bDeferredPlayerInventoryRefreshQueued = false;
 
 	ForwardCoordinatorToChildren();
-	RefreshPlayerInventoryViews();
+	RegisterPlayerInventoryNavigationPanels();
 	RefreshInventoryControllerFocus();
 }

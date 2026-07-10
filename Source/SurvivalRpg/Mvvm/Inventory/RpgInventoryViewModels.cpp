@@ -74,7 +74,7 @@ void URpgInventoryEntryViewModel::InitializeFromEntry(
 		ItemInstance != Entry.Instance ||
 		EntryId != Entry.EntryId ||
 		StackCount != Entry.StackCount ||
-		Placement.ContainerId != Entry.Placement.ContainerId ||
+		Placement.GetContainerHandle() != Entry.Placement.GetContainerHandle() ||
 		Placement.X != Entry.Placement.X ||
 		Placement.Y != Entry.Placement.Y ||
 		Placement.bRotated != Entry.Placement.bRotated ||
@@ -206,7 +206,14 @@ TArray<URpgInventoryEntryViewModel*> URpgInventoryPanelViewModel::GetEntries() c
 
 void URpgInventoryPanelViewModel::BindInventory(URpgInventoryManagerComponent* InInventory)
 {
-	if (ObservedInventory.Get() == InInventory)
+	BindInventoryContainer(InInventory, FRpgInventoryContainerHandle());
+}
+
+void URpgInventoryPanelViewModel::BindInventoryContainer(
+	URpgInventoryManagerComponent* InInventory,
+	FRpgInventoryContainerHandle InContainerHandle)
+{
+	if (ObservedInventory.Get() == InInventory && ContainerFilter == InContainerHandle)
 	{
 		RefreshEntries();
 		return;
@@ -214,6 +221,7 @@ void URpgInventoryPanelViewModel::BindInventory(URpgInventoryManagerComponent* I
 
 	UnbindInventory();
 	ObservedInventory = InInventory;
+	ContainerFilter = InContainerHandle;
 	RegisterInventoryMessageListener();
 	RefreshEntries();
 }
@@ -222,6 +230,7 @@ void URpgInventoryPanelViewModel::UnbindInventory()
 {
 	UnregisterInventoryMessageListener();
 	ObservedInventory.Reset();
+	ContainerFilter = FRpgInventoryContainerHandle();
 	Entries.Reset();
 	bRefreshEntriesQueued = false;
 	RefreshCapacityFields(nullptr);
@@ -242,11 +251,20 @@ void URpgInventoryPanelViewModel::RefreshEntries()
 	}
 
 	TArray<FRpgInventoryEntryView> EntryViews = Inventory->GetAllEntries();
+	if (ContainerFilter.IsValid())
+	{
+		EntryViews.RemoveAll([this](const FRpgInventoryEntryView& Entry)
+		{
+			return Entry.Placement.GetContainerHandle() != ContainerFilter;
+		});
+	}
 	EntryViews.Sort([](const FRpgInventoryEntryView& A, const FRpgInventoryEntryView& B)
 	{
-		if (A.Placement.ContainerId != B.Placement.ContainerId)
+		const FRpgInventoryContainerHandle AHandle = A.Placement.GetContainerHandle();
+		const FRpgInventoryContainerHandle BHandle = B.Placement.GetContainerHandle();
+		if (AHandle != BHandle)
 		{
-			return A.Placement.ContainerId.LexicalLess(B.Placement.ContainerId);
+			return AHandle.ToString() < BHandle.ToString();
 		}
 
 		if (A.Placement.Y != B.Placement.Y)
@@ -256,12 +274,6 @@ void URpgInventoryPanelViewModel::RefreshEntries()
 
 		return A.Placement.X < B.Placement.X;
 	});
-
-	auto GetReusableEntryViewModel = [this](const TArray<TObjectPtr<URpgInventoryEntryViewModel>>& PreviousEntries, int32 PreferredIndex)
-	{
-		URpgInventoryEntryViewModel* EntryViewModel = PreviousEntries.IsValidIndex(PreferredIndex) ? PreviousEntries[PreferredIndex].Get() : nullptr;
-		return EntryViewModel ? EntryViewModel : NewObject<URpgInventoryEntryViewModel>(this);
-	};
 
 	auto AddEntryViewModel = [this](URpgInventoryEntryViewModel* EntryViewModel, const FRpgInventoryEntryView& EntryView)
 	{
@@ -273,12 +285,25 @@ void URpgInventoryPanelViewModel::RefreshEntries()
 	};
 
 	TArray<TObjectPtr<URpgInventoryEntryViewModel>> PreviousEntries = MoveTemp(Entries);
+	TMap<FGuid, TObjectPtr<URpgInventoryEntryViewModel>> PreviousEntriesById;
+	for (URpgInventoryEntryViewModel* PreviousEntry : PreviousEntries)
+	{
+		if (PreviousEntry && PreviousEntry->GetEntryId().IsValid())
+		{
+			PreviousEntriesById.Add(PreviousEntry->GetEntryId(), PreviousEntry);
+		}
+	}
 	Entries.Reset();
 
 	Entries.Reserve(EntryViews.Num());
 	for (int32 EntryIndex = 0; EntryIndex < EntryViews.Num(); ++EntryIndex)
 	{
-		AddEntryViewModel(GetReusableEntryViewModel(PreviousEntries, EntryIndex), EntryViews[EntryIndex]);
+		URpgInventoryEntryViewModel* EntryViewModel = PreviousEntriesById.FindRef(EntryViews[EntryIndex].EntryId);
+		if (!EntryViewModel)
+		{
+			EntryViewModel = NewObject<URpgInventoryEntryViewModel>(this);
+		}
+		AddEntryViewModel(EntryViewModel, EntryViews[EntryIndex]);
 	}
 
 	UE_MVVM_BROADCAST_FIELD_VALUE_CHANGED(Entries);

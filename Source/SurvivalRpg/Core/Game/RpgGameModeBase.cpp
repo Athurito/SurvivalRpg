@@ -5,9 +5,11 @@
 
 #include "RpgWorldSettings.h"
 #include "AssetRegistry/AssetData.h"
+#include "EngineUtils.h"
 #include "Kismet/GameplayStatics.h"
 #include "Misc/CommandLine.h"
 #include "SurvivalRpg/SurvivalRpg.h"
+#include "SurvivalRpg/ActionBar/RpgActionBarComponent.h"
 #include "SurvivalRpg/AbilitySystem/RpgAbilitySystemComponent.h"
 #include "SurvivalRpg/Core/AI/RpgAIController.h"
 #include "SurvivalRpg/Core/AI/RpgAIPawnData.h"
@@ -21,11 +23,13 @@
 #include "SurvivalRpg/Core/Player/RpgPlayerController.h"
 #include "SurvivalRpg/Core/Player/RpgPlayerState.h"
 #include "SurvivalRpg/Development/RpgDeveloperSettings.h"
+#include "SurvivalRpg/Equipment/RpgEquipmentLoadoutComponent.h"
 #include "SurvivalRpg/GameplayTags/RpgGameplayTags.h"
 #include "SurvivalRpg/Inventory/RpgDroppedInventoryActor.h"
 #include "SurvivalRpg/Inventory/RpgInventoryFragment_EquippableItem.h"
 #include "SurvivalRpg/Inventory/RpgInventoryFragment_ItemTraits.h"
 #include "SurvivalRpg/Inventory/RpgInventoryItemInstance.h"
+#include "SurvivalRpg/Inventory/RpgInventoryContainerComponent.h"
 #include "SurvivalRpg/Inventory/RpgInventoryManagerComponent.h"
 #include "SurvivalRpg/System/RpgAssetManager.h"
 #include "GameFramework/GameStateBase.h"
@@ -46,6 +50,15 @@ void ARpgGameModeBase::InitGame(const FString& MapName, const FString& Options, 
 {
 	Super::InitGame(MapName, Options, ErrorMessage);
 
+	ResolvedOfflineProfileKey = UGameplayStatics::ParseOption(Options, TEXT("ProfileKey"));
+	if (ResolvedOfflineProfileKey.IsEmpty())
+	{
+		ResolvedOfflineProfileKey = OfflineProfileKey.IsEmpty() ? TEXT("LocalProfile") : OfflineProfileKey;
+	}
+
+	LoadWorldSaveFromDisk();
+	RegisterSaveStateListeners();
+
 	GetWorldTimerManager().SetTimerForNextTick(this, &ThisClass::HandleMatchAssignmentIfNotExpectingOne);
 }
 
@@ -58,6 +71,24 @@ void ARpgGameModeBase::InitGameState()
 	ExperienceComponent->CallOrRegister_OnExperienceLoaded(FOnRpgExperienceLoaded::FDelegate::CreateUObject(this, &ThisClass::OnExperienceLoaded));
 }
 
+void ARpgGameModeBase::StartPlay()
+{
+	Super::StartPlay();
+	RestorePlacedWorldContainers();
+}
+
+void ARpgGameModeBase::EndPlay(const EEndPlayReason::Type EndPlayReason)
+{
+	if (bEnableDiskPersistence && HasAuthority())
+	{
+		FlushWorldSave();
+	}
+
+	GetWorldTimerManager().ClearTimer(AutoSaveTimerHandle);
+	UnregisterSaveStateListeners();
+	Super::EndPlay(EndPlayReason);
+}
+
 // ---------------------------------------------------------------------------
 // Login / Logout
 // ---------------------------------------------------------------------------
@@ -66,6 +97,7 @@ void ARpgGameModeBase::PostLogin(APlayerController* NewPlayer)
 {
 	GetOrCreatePlayerSaveData(NewPlayer);
 	GetOrCreatePlayerRespawnState(NewPlayer);
+	RestorePlayerProfile(NewPlayer);
 	SyncPlayerCheckpointDataToPlayerState(NewPlayer);
 	SyncPlayerRespawnStateToPlayerState(NewPlayer);
 
@@ -74,6 +106,12 @@ void ARpgGameModeBase::PostLogin(APlayerController* NewPlayer)
 
 void ARpgGameModeBase::Logout(AController* Exiting)
 {
+	if (APlayerController* PC = Cast<APlayerController>(Exiting))
+	{
+		CapturePlayerSaveData(PC);
+		FlushWorldSave();
+	}
+
 	// Save data stays in the map so a player can reconnect and keep host-owned progress.
 	Super::Logout(Exiting);
 }
@@ -281,6 +319,11 @@ bool ARpgGameModeBase::ShouldSpawnAtStartSpot(AController* Player)
 void ARpgGameModeBase::FinishRestartPlayer(AController* NewPlayer, const FRotator& StartRotation)
 {
 	Super::FinishRestartPlayer(NewPlayer, StartRotation);
+
+	if (APlayerController* PC = Cast<APlayerController>(NewPlayer))
+	{
+		ApplyRestoredEquipmentSelection(PC);
+	}
 }
 
 bool ARpgGameModeBase::PlayerCanRestart_Implementation(APlayerController* Player)
@@ -373,7 +416,7 @@ bool ARpgGameModeBase::ControllerCanRestart(AController* Controller)
 }
 
 // ---------------------------------------------------------------------------
-// Save Data (host-authoritative, keyed by Steam NetId)
+// Save Data (host-authoritative, keyed by online id string / stable offline profile)
 // ---------------------------------------------------------------------------
 
 FUniqueNetIdRepl ARpgGameModeBase::GetNetIdForPC(const APlayerController* PC)
@@ -391,21 +434,643 @@ FUniqueNetIdRepl ARpgGameModeBase::GetNetIdForPC(const APlayerController* PC)
 
 FRpgPlayerSaveData& ARpgGameModeBase::GetOrCreatePlayerSaveData(APlayerController* PC)
 {
-	const FUniqueNetIdRepl NetId = GetNetIdForPC(PC);
+	const FString ProfileKey = GetPlayerProfileKey(PC);
 
-	if (FRpgPlayerSaveData* Existing = PlayerSaveDataMap.Find(NetId))
+	if (FRpgPlayerSaveData* Existing = PlayerSaveDataMap.Find(ProfileKey))
 	{
 		return *Existing;
 	}
 
-	UE_LOG(LogRpg, Log, TEXT("RpgGameMode: Creating save data for player [%s]."), *GetNameSafe(PC));
-	return PlayerSaveDataMap.Add(NetId, FRpgPlayerSaveData());
+	UE_LOG(LogRpg, Log, TEXT("RpgGameMode: Creating save data for player [%s] with profile key [%s]."),
+		*GetNameSafe(PC), *ProfileKey);
+	return PlayerSaveDataMap.Add(ProfileKey, FRpgPlayerSaveData());
 }
 
 const FRpgPlayerSaveData* ARpgGameModeBase::FindPlayerSaveData(APlayerController* PC) const
 {
+	return PlayerSaveDataMap.Find(GetPlayerProfileKey(PC));
+}
+
+FString ARpgGameModeBase::GetPlayerProfileKey(const APlayerController* PC) const
+{
 	const FUniqueNetIdRepl NetId = GetNetIdForPC(PC);
-	return PlayerSaveDataMap.Find(NetId);
+	if (NetId.IsValid())
+	{
+		const FString OnlineId = NetId.ToString();
+		if (!OnlineId.IsEmpty() && !OnlineId.Equals(TEXT("INVALID"), ESearchCase::IgnoreCase))
+		{
+			return FString::Printf(TEXT("Online:%s"), *OnlineId);
+		}
+	}
+
+	const FString& StableOfflineKey = ResolvedOfflineProfileKey.IsEmpty() ? OfflineProfileKey : ResolvedOfflineProfileKey;
+	return FString::Printf(TEXT("Offline:%s"), StableOfflineKey.IsEmpty() ? TEXT("LocalProfile") : *StableOfflineKey);
+}
+
+bool ARpgGameModeBase::IsPlayerProfileRestoreComplete(const APlayerController* PC) const
+{
+	return RestoreCompletedProfileKeys.Contains(GetPlayerProfileKey(PC));
+}
+
+bool ARpgGameModeBase::HasRestoredPlayerProfile(const APlayerController* PC) const
+{
+	return RestoredProfileKeys.Contains(GetPlayerProfileKey(PC));
+}
+
+void ARpgGameModeBase::MarkPlayerSaveDirty(APlayerController* PC)
+{
+	if (!HasAuthority() || !PC)
+	{
+		return;
+	}
+
+	MarkWorldSaveDirty();
+}
+
+void ARpgGameModeBase::MarkWorldContainerSaveDirty(
+	FName PersistentContainerId,
+	URpgInventoryManagerComponent* Inventory)
+{
+	if (!HasAuthority() || PersistentContainerId.IsNone() || !Inventory)
+	{
+		return;
+	}
+
+	FRpgWorldContainerSaveData& SaveData = WorldContainerSaveDataMap.FindOrAdd(PersistentContainerId);
+	const FRpgInventoryGraphSaveData ExportedGraph = Inventory->ExportInventoryGraph();
+	if (ExportedGraph.Items.Num() != Inventory->GetAllEntries().Num())
+	{
+		bDiskWritesBlockedByRestoreFailure = true;
+		UE_LOG(LogRpg, Error, TEXT("RpgGameMode: World-container graph export failed for [%s]; disk writes are blocked."),
+			*PersistentContainerId.ToString());
+		return;
+	}
+	SaveData.PersistentContainerId = PersistentContainerId;
+	SaveData.InventoryGraph = ExportedGraph;
+	MarkWorldSaveDirty();
+}
+
+bool ARpgGameModeBase::RestorePlayerProfile(APlayerController* PC)
+{
+	if (!PC || !HasAuthority())
+	{
+		return false;
+	}
+
+	const FString ProfileKey = GetPlayerProfileKey(PC);
+	if (RestoreCompletedProfileKeys.Contains(ProfileKey))
+	{
+		return RestoredProfileKeys.Contains(ProfileKey);
+	}
+
+	RestoreCompletedProfileKeys.Add(ProfileKey);
+	const FRpgPlayerSaveData* CurrentSaveData = PlayerSaveDataMap.Find(ProfileKey);
+	if (!CurrentSaveData || !CurrentSaveData->bHasInventoryGraph)
+	{
+		return false;
+	}
+
+	TArray<const FRpgPlayerSaveData*> Candidates;
+	Candidates.Add(CurrentSaveData);
+	for (const URpgWorldSaveGame* CandidateSave : ValidLoadedSaveCandidates)
+	{
+		const FRpgPlayerSaveData* CandidatePlayer = CandidateSave ? CandidateSave->Players.Find(ProfileKey) : nullptr;
+		if (CandidatePlayer && CandidatePlayer->bHasInventoryGraph && CandidatePlayer != CurrentSaveData)
+		{
+			Candidates.Add(CandidatePlayer);
+		}
+	}
+
+	for (int32 CandidateIndex = 0; CandidateIndex < Candidates.Num(); ++CandidateIndex)
+	{
+		const FRpgPlayerSaveData* Candidate = Candidates[CandidateIndex];
+		bIsRestoringSaveState = true;
+		const bool bRestored = TryRestorePlayerSaveData(PC, *Candidate);
+		bIsRestoringSaveState = false;
+		if (!bRestored)
+		{
+			continue;
+		}
+
+		PlayerSaveDataMap.Add(ProfileKey, *Candidate);
+		RestoredProfileKeys.Add(ProfileKey);
+		if (CandidateIndex > 0)
+		{
+			UE_LOG(LogRpg, Warning, TEXT("RpgGameMode: Restored profile [%s] from a fallback disk snapshot."), *ProfileKey);
+			MarkWorldSaveDirty();
+		}
+		return true;
+	}
+
+	bDiskWritesBlockedByRestoreFailure = true;
+	UE_LOG(LogRpg, Error,
+		TEXT("RpgGameMode: Every disk candidate failed atomic graph import for profile [%s]. Disk writes are blocked to preserve the last valid save."),
+		*ProfileKey);
+	return false;
+}
+
+bool ARpgGameModeBase::TryRestorePlayerSaveData(APlayerController* PC, const FRpgPlayerSaveData& SaveData)
+{
+	ARpgPlayerController* RpgPC = Cast<ARpgPlayerController>(PC);
+	ARpgPlayerState* PlayerState = RpgPC ? RpgPC->GetRpgPlayerState() : nullptr;
+	URpgInventoryManagerComponent* Inventory = PlayerState ? PlayerState->GetInventoryManagerComponent() : nullptr;
+	if (!RpgPC || !Inventory || !SaveData.IsSchemaSupported() || !SaveData.bHasInventoryGraph)
+	{
+		return false;
+	}
+
+	FRpgInventoryMutationResult ImportResult;
+	if (!Inventory->ImportInventoryGraph(SaveData.InventoryGraph, ImportResult))
+	{
+		UE_LOG(LogRpg, Error, TEXT("RpgGameMode: Player inventory import rejected with result code %d."),
+			static_cast<int32>(ImportResult.Code));
+		return false;
+	}
+
+	// Ordering is intentional: bindings and equipment ids may only resolve after item instances have been rebuilt.
+	if (URpgEquipmentLoadoutComponent* EquipmentLoadout = RpgPC->GetEquipmentLoadoutComponent())
+	{
+		EquipmentLoadout->ReconcilePhysicalEquipmentFromInventory();
+	}
+	if (URpgActionBarComponent* ActionBar = RpgPC->GetActionBarComponent())
+	{
+		ActionBar->RestoreQuickAccessBindings(SaveData.QuickAccessBindings);
+	}
+	if (URpgEquipmentLoadoutComponent* EquipmentLoadout = RpgPC->GetEquipmentLoadoutComponent())
+	{
+		EquipmentLoadout->RestoreEquipmentSelection(SaveData.EquipmentSelection);
+	}
+
+	return true;
+}
+
+void ARpgGameModeBase::CapturePlayerSaveData(APlayerController* PC)
+{
+	if (!PC || !HasAuthority())
+	{
+		return;
+	}
+
+	ARpgPlayerController* RpgPC = Cast<ARpgPlayerController>(PC);
+	ARpgPlayerState* PlayerState = RpgPC ? RpgPC->GetRpgPlayerState() : nullptr;
+	URpgInventoryManagerComponent* Inventory = PlayerState ? PlayerState->GetInventoryManagerComponent() : nullptr;
+	if (!RpgPC || !Inventory)
+	{
+		return;
+	}
+
+	FRpgPlayerSaveData& SaveData = GetOrCreatePlayerSaveData(PC);
+	const FRpgInventoryGraphSaveData ExportedGraph = Inventory->ExportInventoryGraph();
+	if (ExportedGraph.Items.Num() != Inventory->GetAllEntries().Num())
+	{
+		bDiskWritesBlockedByRestoreFailure = true;
+		UE_LOG(LogRpg, Error, TEXT("RpgGameMode: Player graph export failed for [%s]; disk writes are blocked."),
+			*GetPlayerProfileKey(PC));
+		return;
+	}
+	SaveData.SchemaVersion = FRpgPlayerSaveData::CurrentSchemaVersion;
+	SaveData.InventoryGraph = ExportedGraph;
+	SaveData.bHasInventoryGraph = true;
+
+	if (const URpgActionBarComponent* ActionBar = RpgPC->GetActionBarComponent())
+	{
+		SaveData.QuickAccessBindings = ActionBar->GetQuickAccessBindings();
+	}
+	if (const URpgEquipmentLoadoutComponent* EquipmentLoadout = RpgPC->GetEquipmentLoadoutComponent())
+	{
+		SaveData.EquipmentSelection = EquipmentLoadout->ExportEquipmentSelection();
+	}
+}
+
+void ARpgGameModeBase::CaptureConnectedPlayers()
+{
+	for (FConstPlayerControllerIterator Iterator = GetWorld()->GetPlayerControllerIterator(); Iterator; ++Iterator)
+	{
+		CapturePlayerSaveData(Iterator->Get());
+	}
+}
+
+void ARpgGameModeBase::CaptureWorldContainers()
+{
+	for (TActorIterator<AActor> Iterator(GetWorld()); Iterator; ++Iterator)
+	{
+		AActor* Actor = *Iterator;
+		URpgInventoryContainerComponent* Container = Actor ? Actor->FindComponentByClass<URpgInventoryContainerComponent>() : nullptr;
+		const FName PersistentId = Container ? Container->GetPersistentContainerId() : NAME_None;
+		URpgInventoryManagerComponent* Inventory = Container ? Container->GetInventoryManager() : nullptr;
+		if (PersistentId.IsNone() || !Inventory)
+		{
+			continue;
+		}
+
+		FRpgWorldContainerSaveData& SaveData = WorldContainerSaveDataMap.FindOrAdd(PersistentId);
+		const FRpgInventoryGraphSaveData ExportedGraph = Inventory->ExportInventoryGraph();
+		if (ExportedGraph.Items.Num() != Inventory->GetAllEntries().Num())
+		{
+			bDiskWritesBlockedByRestoreFailure = true;
+			UE_LOG(LogRpg, Error, TEXT("RpgGameMode: Graph export failed for world container [%s]; disk writes are blocked."),
+				*PersistentId.ToString());
+			return;
+		}
+		SaveData.PersistentContainerId = PersistentId;
+		SaveData.InventoryGraph = ExportedGraph;
+	}
+}
+
+void ARpgGameModeBase::RestorePlacedWorldContainers()
+{
+	if (!HasAuthority())
+	{
+		return;
+	}
+
+	for (TActorIterator<AActor> Iterator(GetWorld()); Iterator; ++Iterator)
+	{
+		AActor* Actor = *Iterator;
+		URpgInventoryContainerComponent* Container = Actor ? Actor->FindComponentByClass<URpgInventoryContainerComponent>() : nullptr;
+		if (Container && !Container->GetPersistentContainerId().IsNone())
+		{
+			RestoreWorldContainer(Container->GetPersistentContainerId(), Container->GetInventoryManager());
+		}
+	}
+}
+
+bool ARpgGameModeBase::RestoreWorldContainer(
+	FName PersistentContainerId,
+	URpgInventoryManagerComponent* Inventory)
+{
+	if (!HasAuthority() || PersistentContainerId.IsNone() || !Inventory)
+	{
+		return false;
+	}
+
+	TArray<const FRpgWorldContainerSaveData*> Candidates;
+	if (const FRpgWorldContainerSaveData* Current = WorldContainerSaveDataMap.Find(PersistentContainerId))
+	{
+		Candidates.Add(Current);
+	}
+	for (const URpgWorldSaveGame* CandidateSave : ValidLoadedSaveCandidates)
+	{
+		const FRpgWorldContainerSaveData* Candidate = CandidateSave ? CandidateSave->WorldContainers.Find(PersistentContainerId) : nullptr;
+		if (Candidate && !Candidates.Contains(Candidate))
+		{
+			Candidates.Add(Candidate);
+		}
+	}
+
+	if (Candidates.IsEmpty())
+	{
+		return false;
+	}
+
+	for (int32 CandidateIndex = 0; CandidateIndex < Candidates.Num(); ++CandidateIndex)
+	{
+		FRpgInventoryMutationResult ImportResult;
+		bIsRestoringSaveState = true;
+		const bool bRestored = Inventory->ImportInventoryGraph(Candidates[CandidateIndex]->InventoryGraph, ImportResult);
+		bIsRestoringSaveState = false;
+		if (bRestored)
+		{
+			WorldContainerSaveDataMap.Add(PersistentContainerId, *Candidates[CandidateIndex]);
+			if (CandidateIndex > 0)
+			{
+				MarkWorldSaveDirty();
+			}
+			return true;
+		}
+	}
+
+	bDiskWritesBlockedByRestoreFailure = true;
+	UE_LOG(LogRpg, Error,
+		TEXT("RpgGameMode: Every disk candidate failed atomic import for world container [%s]. Disk writes are blocked."),
+		*PersistentContainerId.ToString());
+	return false;
+}
+
+void ARpgGameModeBase::ApplyRestoredEquipmentSelection(APlayerController* PC)
+{
+	if (!PC || !HasRestoredPlayerProfile(PC))
+	{
+		return;
+	}
+
+	const FRpgPlayerSaveData* SaveData = FindPlayerSaveData(PC);
+	ARpgPlayerController* RpgPC = Cast<ARpgPlayerController>(PC);
+	if (SaveData && RpgPC)
+	{
+		if (URpgEquipmentLoadoutComponent* EquipmentLoadout = RpgPC->GetEquipmentLoadoutComponent())
+		{
+			EquipmentLoadout->RestoreEquipmentSelection(SaveData->EquipmentSelection);
+		}
+	}
+}
+
+void ARpgGameModeBase::LoadWorldSaveFromDisk()
+{
+	PlayerSaveDataMap.Reset();
+	WorldContainerSaveDataMap.Reset();
+	ValidLoadedSaveCandidates.Reset();
+	LastSuccessfulSaveGame = nullptr;
+	NextSaveSequence = 1;
+
+	if (!bEnableDiskPersistence)
+	{
+		return;
+	}
+
+	TSet<FString> VisitedSlots;
+	const TArray<FString> CandidateSlots = { WorldSaveSlotName, WorldSaveBackupSlotName, WorldSaveRecoverySlotName };
+	for (const FString& SlotName : CandidateSlots)
+	{
+		if (SlotName.IsEmpty() || VisitedSlots.Contains(SlotName) ||
+			!UGameplayStatics::DoesSaveGameExist(SlotName, WorldSaveUserIndex))
+		{
+			continue;
+		}
+		VisitedSlots.Add(SlotName);
+
+		URpgWorldSaveGame* Loaded = Cast<URpgWorldSaveGame>(UGameplayStatics::LoadGameFromSlot(SlotName, WorldSaveUserIndex));
+		FString ValidationError;
+		if (!Loaded || !Loaded->ValidateForLoad(ValidationError))
+		{
+			UE_LOG(LogRpg, Error, TEXT("RpgGameMode: Ignoring invalid save slot [%s]: %s"),
+				*SlotName, Loaded ? *ValidationError : TEXT("wrong SaveGame class or load failure"));
+			continue;
+		}
+
+		ValidLoadedSaveCandidates.Add(Loaded);
+	}
+
+	ValidLoadedSaveCandidates.Sort([](const URpgWorldSaveGame& A, const URpgWorldSaveGame& B)
+	{
+		return A.SaveSequence > B.SaveSequence;
+	});
+
+	if (!ValidLoadedSaveCandidates.IsEmpty())
+	{
+		LastSuccessfulSaveGame = ValidLoadedSaveCandidates[0];
+		PlayerSaveDataMap = LastSuccessfulSaveGame->Players;
+		WorldContainerSaveDataMap = LastSuccessfulSaveGame->WorldContainers;
+		NextSaveSequence = LastSuccessfulSaveGame->SaveSequence + 1;
+		UE_LOG(LogRpg, Log, TEXT("RpgGameMode: Loaded world save sequence %lld with %d player profiles and %d world containers."),
+			LastSuccessfulSaveGame->SaveSequence, PlayerSaveDataMap.Num(), WorldContainerSaveDataMap.Num());
+	}
+}
+
+URpgWorldSaveGame* ARpgGameModeBase::BuildWorldSaveSnapshot()
+{
+	URpgWorldSaveGame* Snapshot = NewObject<URpgWorldSaveGame>(this);
+	Snapshot->SchemaVersion = URpgWorldSaveGame::CurrentSchemaVersion;
+	Snapshot->SaveSequence = NextSaveSequence++;
+	Snapshot->Players = PlayerSaveDataMap;
+	Snapshot->WorldContainers = WorldContainerSaveDataMap;
+	return Snapshot;
+}
+
+void ARpgGameModeBase::MarkWorldSaveDirty()
+{
+	if (!bEnableDiskPersistence || bIsRestoringSaveState || bDiskWritesBlockedByRestoreFailure)
+	{
+		return;
+	}
+
+	bWorldSaveDirty = true;
+	ScheduleAsyncWorldSave();
+}
+
+void ARpgGameModeBase::ScheduleAsyncWorldSave()
+{
+	if (bAsyncSaveInFlight)
+	{
+		bSaveQueuedDuringAsync = true;
+		return;
+	}
+
+	GetWorldTimerManager().ClearTimer(AutoSaveTimerHandle);
+	if (AutoSaveDebounceSeconds <= 0.0f)
+	{
+		AutoSaveTimerHandle = GetWorldTimerManager().SetTimerForNextTick(this, &ThisClass::SaveWorldStateAsync);
+	}
+	else
+	{
+		GetWorldTimerManager().SetTimer(
+			AutoSaveTimerHandle,
+			this,
+			&ThisClass::SaveWorldStateAsync,
+			AutoSaveDebounceSeconds,
+			false);
+	}
+}
+
+bool ARpgGameModeBase::WritePreviousSnapshotToBackup() const
+{
+	if (!LastSuccessfulSaveGame)
+	{
+		return true;
+	}
+	if (WorldSaveBackupSlotName.IsEmpty() || WorldSaveBackupSlotName == WorldSaveSlotName)
+	{
+		UE_LOG(LogRpg, Error, TEXT("RpgGameMode: Backup slot must be non-empty and different from the primary slot."));
+		return false;
+	}
+
+	return UGameplayStatics::SaveGameToSlot(LastSuccessfulSaveGame, WorldSaveBackupSlotName, WorldSaveUserIndex);
+}
+
+void ARpgGameModeBase::SaveWorldStateAsync()
+{
+	if (!bWorldSaveDirty || !bEnableDiskPersistence || bDiskWritesBlockedByRestoreFailure)
+	{
+		return;
+	}
+	if (bAsyncSaveInFlight)
+	{
+		bSaveQueuedDuringAsync = true;
+		return;
+	}
+
+	CaptureConnectedPlayers();
+	CaptureWorldContainers();
+	if (bDiskWritesBlockedByRestoreFailure)
+	{
+		return;
+	}
+	if (!WritePreviousSnapshotToBackup())
+	{
+		UE_LOG(LogRpg, Error, TEXT("RpgGameMode: Async save aborted because the previous valid snapshot could not be backed up."));
+		ScheduleAsyncWorldSave();
+		return;
+	}
+
+	ActiveAsyncSaveGame = BuildWorldSaveSnapshot();
+	bAsyncSaveInFlight = true;
+	bSaveQueuedDuringAsync = false;
+	bWorldSaveDirty = false;
+	UGameplayStatics::AsyncSaveGameToSlot(
+		ActiveAsyncSaveGame,
+		WorldSaveSlotName,
+		WorldSaveUserIndex,
+		FAsyncSaveGameToSlotDelegate::CreateUObject(this, &ThisClass::HandleAsyncSaveCompleted));
+}
+
+void ARpgGameModeBase::HandleAsyncSaveCompleted(const FString& SlotName, int32 UserIndex, bool bSuccess)
+{
+	URpgWorldSaveGame* CompletedSnapshot = ActiveAsyncSaveGame;
+	bAsyncSaveInFlight = false;
+	ActiveAsyncSaveGame = nullptr;
+
+	if (bSuccess && CompletedSnapshot)
+	{
+		if (!LastSuccessfulSaveGame || CompletedSnapshot->SaveSequence >= LastSuccessfulSaveGame->SaveSequence)
+		{
+			LastSuccessfulSaveGame = CompletedSnapshot;
+		}
+		else
+		{
+			// A checkpoint/logout flush completed while this older task was running. Reassert the newer primary snapshot.
+			UGameplayStatics::SaveGameToSlot(LastSuccessfulSaveGame, WorldSaveSlotName, WorldSaveUserIndex);
+		}
+	}
+	else
+	{
+		bWorldSaveDirty = true;
+		UE_LOG(LogRpg, Error, TEXT("RpgGameMode: Async SaveGame write failed for slot [%s], user %d."), *SlotName, UserIndex);
+	}
+
+	if (bSaveQueuedDuringAsync || bWorldSaveDirty)
+	{
+		bSaveQueuedDuringAsync = false;
+		ScheduleAsyncWorldSave();
+	}
+}
+
+bool ARpgGameModeBase::SaveWorldStateSync()
+{
+	if (!bEnableDiskPersistence || bDiskWritesBlockedByRestoreFailure)
+	{
+		return !bEnableDiskPersistence;
+	}
+
+	CaptureConnectedPlayers();
+	CaptureWorldContainers();
+	if (bDiskWritesBlockedByRestoreFailure)
+	{
+		return false;
+	}
+	if (!WritePreviousSnapshotToBackup())
+	{
+		UE_LOG(LogRpg, Error, TEXT("RpgGameMode: Synchronous save aborted because the previous valid snapshot could not be backed up."));
+		return false;
+	}
+
+	URpgWorldSaveGame* Snapshot = BuildWorldSaveSnapshot();
+	const bool bRecoverySaved = !WorldSaveRecoverySlotName.IsEmpty() &&
+		UGameplayStatics::SaveGameToSlot(Snapshot, WorldSaveRecoverySlotName, WorldSaveUserIndex);
+	const bool bPrimarySaved = UGameplayStatics::SaveGameToSlot(Snapshot, WorldSaveSlotName, WorldSaveUserIndex);
+	if (bPrimarySaved || bRecoverySaved)
+	{
+		LastSuccessfulSaveGame = Snapshot;
+		bWorldSaveDirty = false;
+	}
+
+	if (!bPrimarySaved)
+	{
+		UE_LOG(LogRpg, Error, TEXT("RpgGameMode: Primary synchronous SaveGame write failed; recovery result=%s."),
+			bRecoverySaved ? TEXT("saved") : TEXT("failed"));
+	}
+	return bPrimarySaved || bRecoverySaved;
+}
+
+bool ARpgGameModeBase::FlushWorldSave()
+{
+	if (!HasAuthority())
+	{
+		return false;
+	}
+
+	GetWorldTimerManager().ClearTimer(AutoSaveTimerHandle);
+	return SaveWorldStateSync();
+}
+
+void ARpgGameModeBase::RegisterSaveStateListeners()
+{
+	UnregisterSaveStateListeners();
+	if (!HasAuthority() || !GetWorld())
+	{
+		return;
+	}
+
+	UGameplayMessageSubsystem& MessageSubsystem = UGameplayMessageSubsystem::Get(this);
+	InventoryChangedSaveHandle = MessageSubsystem.RegisterListener<FRpgInventoryChangeMessage>(
+		FGameplayTag::RequestGameplayTag(TEXT("Rpg.Inventory.Message.StackChanged")),
+		this,
+		&ThisClass::HandleInventoryChanged);
+	ActionBarChangedSaveHandle = MessageSubsystem.RegisterListener<FRpgActionBarSlotsChangedMessage>(
+		RpgGameplayTags::Rpg_ActionBar_Message_SlotsChanged,
+		this,
+		&ThisClass::HandleActionBarChanged);
+	EquipmentChangedSaveHandle = MessageSubsystem.RegisterListener<FRpgEquipmentLoadoutSlotsChangedMessage>(
+		RpgGameplayTags::Rpg_EquipmentLoadout_Message_SlotsChanged,
+		this,
+		&ThisClass::HandleEquipmentLoadoutChanged);
+}
+
+void ARpgGameModeBase::UnregisterSaveStateListeners()
+{
+	if (InventoryChangedSaveHandle.IsValid())
+	{
+		InventoryChangedSaveHandle.Unregister();
+	}
+	if (ActionBarChangedSaveHandle.IsValid())
+	{
+		ActionBarChangedSaveHandle.Unregister();
+	}
+	if (EquipmentChangedSaveHandle.IsValid())
+	{
+		EquipmentChangedSaveHandle.Unregister();
+	}
+}
+
+void ARpgGameModeBase::HandleInventoryChanged(FGameplayTag Channel, const FRpgInventoryChangeMessage& Message)
+{
+	if (bIsRestoringSaveState)
+	{
+		return;
+	}
+
+	URpgInventoryManagerComponent* Inventory = Cast<URpgInventoryManagerComponent>(Message.InventoryOwner);
+	AActor* InventoryOwner = Inventory ? Inventory->GetOwner() : nullptr;
+	if (ARpgPlayerState* PlayerState = Cast<ARpgPlayerState>(InventoryOwner))
+	{
+		MarkPlayerSaveDirty(PlayerState->GetRpgPlayerController());
+		return;
+	}
+
+	URpgInventoryContainerComponent* Container = InventoryOwner
+		? InventoryOwner->FindComponentByClass<URpgInventoryContainerComponent>()
+		: nullptr;
+	if (Container && !Container->GetPersistentContainerId().IsNone())
+	{
+		MarkWorldContainerSaveDirty(Container->GetPersistentContainerId(), Inventory);
+	}
+}
+
+void ARpgGameModeBase::HandleActionBarChanged(FGameplayTag Channel, const FRpgActionBarSlotsChangedMessage& Message)
+{
+	if (!bIsRestoringSaveState)
+	{
+		MarkPlayerSaveDirty(Cast<APlayerController>(Message.Owner));
+	}
+}
+
+void ARpgGameModeBase::HandleEquipmentLoadoutChanged(
+	FGameplayTag Channel,
+	const FRpgEquipmentLoadoutSlotsChangedMessage& Message)
+{
+	if (!bIsRestoringSaveState)
+	{
+		MarkPlayerSaveDirty(Cast<APlayerController>(Message.Owner));
+	}
 }
 
 FRpgPlayerRespawnState& ARpgGameModeBase::GetOrCreatePlayerRespawnState(APlayerController* PC)
@@ -442,6 +1107,8 @@ void ARpgGameModeBase::SetPlayerCheckpoint(APlayerController* PC, const FTransfo
 	SaveData.bHasCheckpoint = true;
 
 	SyncPlayerCheckpointDataToPlayerState(PC);
+	MarkPlayerSaveDirty(PC);
+	FlushWorldSave();
 
 	UE_LOG(LogRpg, Log, TEXT("RpgGameMode: Checkpoint set for [%s] at %s."),
 		*GetNameSafe(PC),

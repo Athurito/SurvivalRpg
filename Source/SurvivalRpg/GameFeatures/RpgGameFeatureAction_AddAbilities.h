@@ -64,7 +64,7 @@ struct FRpgGameFeatureAbilitiesEntry
  *
  * Grants are tied to the GameFeature activation context and are removed when the feature deactivates.
  */
-UCLASS(meta = (DisplayName = "Add Rpg Abilities"))
+UCLASS(BlueprintType, meta = (DisplayName = "Add Rpg Abilities"))
 class SURVIVALRPG_API URpgGameFeatureAction_AddAbilities final : public URpgGameFeatureAction_WorldActionBase
 {
 	GENERATED_BODY()

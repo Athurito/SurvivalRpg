@@ -268,6 +268,10 @@ public:
 	UFUNCTION(BlueprintCallable, Category = "Inventory|ViewModel")
 	void BindInventory(URpgInventoryManagerComponent* InInventory);
 
+	/** Observes only one exact root or item-owned grid within an inventory graph. */
+	UFUNCTION(BlueprintCallable, Category = "Inventory|ViewModel")
+	void BindInventoryContainer(URpgInventoryManagerComponent* InInventory, FRpgInventoryContainerHandle InContainerHandle);
+
 	/** Stops observing the current inventory and clears entry models. */
 	UFUNCTION(BlueprintCallable, Category = "Inventory|ViewModel")
 	void UnbindInventory();
@@ -282,6 +286,10 @@ public:
 
 	UFUNCTION(BlueprintPure, Category = "Inventory|ViewModel")
 	URpgInventoryManagerComponent* GetObservedInventory() const { return ObservedInventory.Get(); }
+
+	/** Exact container filter, or invalid when the panel projects the complete inventory graph. */
+	UFUNCTION(BlueprintPure, Category = "Inventory|ViewModel")
+	FRpgInventoryContainerHandle GetContainerFilter() const { return ContainerFilter; }
 
 	/** Fired after Entries has been rebuilt so BP widgets can call SetListItems and RequestRefresh. */
 	UPROPERTY(BlueprintAssignable, Category = "Inventory|ViewModel")
@@ -327,6 +335,11 @@ private:
 	void HandleInventoryChanged(FGameplayTag Channel, const FRpgInventoryChangeMessage& Message);
 
 	TWeakObjectPtr<URpgInventoryManagerComponent> ObservedInventory;
+
+	/** Optional exact graph address used by nested-container and storage detail panels. */
+	UPROPERTY(Transient)
+	FRpgInventoryContainerHandle ContainerFilter;
+
 	FGameplayMessageListenerHandle InventoryChangedHandle;
 	bool bRefreshEntriesQueued = false;
 };

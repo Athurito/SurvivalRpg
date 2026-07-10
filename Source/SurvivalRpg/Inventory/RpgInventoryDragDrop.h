@@ -14,8 +14,60 @@ class URpgInventoryAddressSlotViewModel;
 class URpgInventoryEntryViewModel;
 class URpgInventoryItemInstance;
 class URpgInventoryManagerComponent;
+class URpgInventoryInteractionSession;
 class URpgPlayerInventoryLayoutComponent;
 class URpgInventoryUiActionComponent;
+
+/** Input path that currently owns the transient inventory interaction. */
+UENUM(BlueprintType)
+enum class ERpgInventoryInteractionInputMode : uint8
+{
+	None,
+	Mouse,
+	Controller
+};
+
+/**
+ * Semantic local preview for the current inventory target.
+ *
+ * These values are presentation-only. The server still performs final placement, equipment, and access validation.
+ */
+UENUM(BlueprintType)
+enum class ERpgInventoryInteractionPreviewState : uint8
+{
+	/** No payload or target is currently being previewed. */
+	None,
+
+	/** The payload will move into an empty compatible target. */
+	Move,
+
+	/** The payload will merge into a compatible stack. */
+	Merge,
+
+	/** The payload and one occupied target will exchange placements. */
+	Swap,
+
+	/** The payload will be assigned to an equipment slot. */
+	Equip,
+
+	/** The payload will be assigned to an actionbar slot. */
+	Bind,
+
+	/** The payload will clear its current assignment. */
+	Clear,
+
+	/** The target is inside the UI but fails local compatibility or capacity checks. */
+	Blocked,
+
+	/** The rotated or unrotated footprint extends outside the target grid. */
+	OutOfBounds,
+
+	/** A server-authoritative request was dispatched and is awaiting replicated acknowledgement. */
+	Pending,
+
+	/** The most recent request was rejected; the held payload remains available for another target. */
+	Rejected
+};
 
 /** Kind of UI source represented by an inventory drag or controller-held payload. */
 UENUM(BlueprintType)
@@ -195,6 +247,15 @@ public:
 	/** UI-only payload carried by the mouse drag operation. */
 	UPROPERTY(BlueprintReadWrite, Category = "Inventory|DragDrop", meta = (ExposeOnSpawn = "true"))
 	FRpgInventoryDragPayload InventoryPayload;
+
+	/** Connects drag cancellation to the same screen-local interaction used by controller pick/place. */
+	void SetInteractionSession(URpgInventoryInteractionSession* InInteractionSession);
+
+	virtual void DragCancelled_Implementation(const FPointerEvent& PointerEvent) override;
+
+private:
+	UPROPERTY(Transient)
+	TObjectPtr<URpgInventoryInteractionSession> InteractionSession = nullptr;
 };
 
 /**
@@ -224,6 +285,10 @@ public:
 	/** Overrides the UI action component used for server requests, useful for testing or custom controllers. */
 	UFUNCTION(BlueprintCallable, Category = "Inventory|DragDrop")
 	void SetUiActionComponent(URpgInventoryUiActionComponent* InUiActionComponent);
+
+	/** Shared screen-local interaction state used by pointer drag and controller pick/place. */
+	UFUNCTION(BlueprintPure, Category = "Inventory|Interaction")
+	URpgInventoryInteractionSession* GetInteractionSession() const { return InteractionSession.Get(); }
 
 	/** Builds an inventory-entry payload from a TileView entry model. Empty slots return an invalid payload. */
 	UFUNCTION(BlueprintCallable, Category = "Inventory|DragDrop")
@@ -277,6 +342,10 @@ public:
 	UFUNCTION(BlueprintCallable, Category = "Inventory|DragDrop")
 	bool BeginHold(const FRpgInventoryDragPayload& Payload);
 
+	/** Starts the pointer drag flow with the same transient payload state used by controller pick/place. */
+	UFUNCTION(BlueprintCallable, Category = "Inventory|DragDrop")
+	bool BeginPointerDrag(const FRpgInventoryDragPayload& Payload);
+
 	/** Starts holding the focused inventory entry for controller pick/place. */
 	UFUNCTION(BlueprintCallable, Category = "Inventory|DragDrop")
 	bool BeginHoldFromEntry(URpgInventoryEntryViewModel* EntryViewModel);
@@ -285,17 +354,40 @@ public:
 	UFUNCTION(BlueprintCallable, Category = "Inventory|DragDrop")
 	void CancelHold();
 
+	/** Clears the interaction even while a request is pending; intended for screen teardown only. */
+	void ForceCancelInteraction();
+
 	/** Returns true while controller pick/place is holding a payload. */
 	UFUNCTION(BlueprintPure, Category = "Inventory|DragDrop")
-	bool HasHeldPayload() const { return bHasHeldPayload; }
+	bool HasHeldPayload() const;
 
 	/** Returns the current controller-held payload for UI previews. */
 	UFUNCTION(BlueprintPure, Category = "Inventory|DragDrop")
-	FRpgInventoryDragPayload GetHeldPayload() const { return HeldPayload; }
+	FRpgInventoryDragPayload GetHeldPayload() const;
 
 	/** Returns the held item instance, or null when controller pick/place is empty-handed. */
 	UFUNCTION(BlueprintPure, Category = "Inventory|DragDrop")
-	URpgInventoryItemInstance* GetHeldItemInstance() const { return bHasHeldPayload ? HeldPayload.ItemInstance.Get() : nullptr; }
+	URpgInventoryItemInstance* GetHeldItemInstance() const;
+
+	/** Returns true while the current server request is awaiting authoritative feedback or replicated state. */
+	UFUNCTION(BlueprintPure, Category = "Inventory|Interaction")
+	bool IsInteractionRequestPending() const;
+
+	/** Rotates the shared payload and grab offsets in place for mouse and controller placement. */
+	UFUNCTION(BlueprintCallable, Category = "Inventory|Interaction")
+	bool ToggleInteractionRotation();
+
+	/** Target rotation owned by the shared session when Payload is the active payload. */
+	UFUNCTION(BlueprintPure, Category = "Inventory|Interaction")
+	bool GetTargetRotationForPayload(const FRpgInventoryDragPayload& Payload) const;
+
+	/** Returns the current shared payload for matching pointer/controller payload identity, otherwise Payload unchanged. */
+	UFUNCTION(BlueprintPure, Category = "Inventory|Interaction")
+	FRpgInventoryDragPayload ResolveInteractionPayload(const FRpgInventoryDragPayload& Payload) const;
+
+	/** Semantic preview currently exposed to Blueprint indicators and contextual action text. */
+	UFUNCTION(BlueprintPure, Category = "Inventory|Interaction")
+	ERpgInventoryInteractionPreviewState GetInteractionPreviewState() const;
 
 	/** Sets the inventory panel that currently owns CommonUI focus. Used for shortcut routing and UI hints. */
 	UFUNCTION(BlueprintCallable, Category = "Inventory|Shortcuts")
@@ -377,7 +469,19 @@ public:
 	UFUNCTION(BlueprintCallable, Category = "Inventory|DragDrop")
 	bool PreviewPayloadDrop(const FRpgInventoryDragPayload& Payload, const FRpgInventoryDropTarget& Target) const;
 
-	/** Commits the current controller-held payload to a target and clears it on success. */
+	/** Updates the shared target/preview state and returns whether the local target is committable. */
+	UFUNCTION(BlueprintCallable, Category = "Inventory|Interaction")
+	bool UpdateInteractionPreview(const FRpgInventoryDragPayload& Payload, const FRpgInventoryDropTarget& Target);
+
+	/** Clears the hover/focus target while retaining the active payload and rotation. */
+	UFUNCTION(BlueprintCallable, Category = "Inventory|Interaction")
+	void ClearInteractionPreview();
+
+	/** Resolves Move/Merge/Swap/Equip/Blocked/OOB semantics without sending a gameplay request. */
+	UFUNCTION(BlueprintCallable, Category = "Inventory|Interaction")
+	ERpgInventoryInteractionPreviewState ResolveInteractionPreview(const FRpgInventoryDragPayload& Payload, const FRpgInventoryDropTarget& Target) const;
+
+	/** Dispatches the current payload to a target and retains it until authoritative acknowledgement. */
 	UFUNCTION(BlueprintCallable, Category = "Inventory|DragDrop")
 	bool CommitDrop(const FRpgInventoryDropTarget& Target);
 
@@ -394,7 +498,15 @@ public:
 	FRpgInventoryHeldPayloadChanged OnHeldPayloadChanged;
 
 private:
+	UFUNCTION()
+	void HandleInteractionSessionChanged(ERpgInventoryInteractionPreviewState PreviewState, bool bHasPayload, bool bPendingRequest);
+
 	bool CanCommitPayloadToTarget(const FRpgInventoryDragPayload& Payload, const FRpgInventoryDropTarget& Target) const;
+	bool IsSameInteractionPayload(const FRpgInventoryDragPayload& A, const FRpgInventoryDragPayload& B) const;
+	bool IsTargetPlacementOutOfBounds(const FRpgInventoryDropTarget& Target) const;
+	FGameplayTag ResolveActionTagForTarget(const FRpgInventoryDropTarget& Target) const;
+	void EnsureInteractionSession();
+	void MarkInteractionRequestPending(const FRpgInventoryDragPayload& Payload, const FRpgInventoryDropTarget& Target);
 	bool IsHeldSourceEntry(URpgInventoryEntryViewModel* EntryViewModel) const;
 	bool IsHeldSourceAddressSlot(URpgInventoryAddressSlotViewModel* SlotViewModel) const;
 	URpgInventoryUiActionComponent* ResolveUiActionComponent() const;
@@ -416,9 +528,6 @@ private:
 	UPROPERTY(Transient)
 	TArray<FRpgInventoryQuickTransferRoute> QuickTransferRoutes;
 
-	UPROPERTY(BlueprintReadOnly, Category = "Inventory|DragDrop", meta = (AllowPrivateAccess = "true"))
-	FRpgInventoryDragPayload HeldPayload;
-
-	UPROPERTY(BlueprintReadOnly, Category = "Inventory|DragDrop", meta = (AllowPrivateAccess = "true"))
-	bool bHasHeldPayload = false;
+	UPROPERTY(Transient)
+	TObjectPtr<URpgInventoryInteractionSession> InteractionSession = nullptr;
 };

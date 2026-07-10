@@ -61,6 +61,53 @@ void URpgInventoryPanelNavigationCoordinator::ClearPanels()
 
 	Panels.Reset();
 	ActivePanelIndex = INDEX_NONE;
+	if (!bPanelRefreshInProgress)
+	{
+		RetainedPanelMemories.Reset();
+		RetainedActivePanelId = NAME_None;
+	}
+}
+
+void URpgInventoryPanelNavigationCoordinator::BeginPanelRefresh()
+{
+	if (bPanelRefreshInProgress)
+	{
+		return;
+	}
+
+	SaveActivePanelSelection();
+	RetainedActivePanelId = GetActivePanelId();
+	RetainedPanelMemories.Reset();
+	for (const FRpgInventoryPanelNavigationEntry& Panel : Panels)
+	{
+		if (!Panel.PanelId.IsNone())
+		{
+			RetainedPanelMemories.Add(Panel.PanelId, Panel);
+		}
+	}
+
+	bPanelRefreshInProgress = true;
+	ClearPanels();
+}
+
+void URpgInventoryPanelNavigationCoordinator::EndPanelRefresh()
+{
+	if (!bPanelRefreshInProgress)
+	{
+		return;
+	}
+
+	bPanelRefreshInProgress = false;
+	const FName DesiredPanelId = RetainedActivePanelId;
+	RetainedActivePanelId = NAME_None;
+
+	bool bRestoredPanel = !DesiredPanelId.IsNone() && ActivatePanelById(DesiredPanelId);
+	if (!bRestoredPanel && Panels.Num() > 0)
+	{
+		bRestoredPanel = ActivatePanelByIndex(0);
+	}
+
+	RetainedPanelMemories.Reset();
 }
 
 void URpgInventoryPanelNavigationCoordinator::RegisterInventoryPanel(FName PanelId, URpgInventoryTileView* TileView, URpgInventoryManagerComponent* Inventory)
@@ -109,7 +156,11 @@ void URpgInventoryPanelNavigationCoordinator::RegisterInventoryPanel(FName Panel
 	NewPanel.EquipmentSlotWidget = nullptr;
 	NewPanel.Inventory = Inventory;
 	TileView->SetPanelNavigationCoordinator(this, PanelId);
-	UpdatePanelSelectionMemory(NewPanel);
+	ApplyRetainedPanelMemory(NewPanel);
+	if (!RetainedPanelMemories.Contains(PanelId))
+	{
+		UpdatePanelSelectionMemory(NewPanel);
+	}
 	TileView->SetInventoryPanelActive(false);
 
 	if (DragDropCoordinator)
@@ -127,7 +178,7 @@ void URpgInventoryPanelNavigationCoordinator::RegisterInventoryPanel(FName Panel
 		}
 	}
 
-	if (ActivePanelIndex == INDEX_NONE)
+	if (ActivePanelIndex == INDEX_NONE && !bPanelRefreshInProgress)
 	{
 		ActivatePanelByIndex(0);
 	}
@@ -164,10 +215,14 @@ void URpgInventoryPanelNavigationCoordinator::RegisterSpatialInventoryPanel(FNam
 	NewPanel.EquipmentSlotWidget = nullptr;
 	NewPanel.Inventory = Inventory;
 	SpatialGridWidget->SetPanelNavigationCoordinator(this, PanelId);
-	UpdatePanelSelectionMemory(NewPanel);
+	ApplyRetainedPanelMemory(NewPanel);
+	if (!RetainedPanelMemories.Contains(PanelId))
+	{
+		UpdatePanelSelectionMemory(NewPanel);
+	}
 	SpatialGridWidget->SetInventoryPanelActive(false);
 
-	if (ActivePanelIndex == INDEX_NONE)
+	if (ActivePanelIndex == INDEX_NONE && !bPanelRefreshInProgress)
 	{
 		ActivatePanelByIndex(0);
 	}
@@ -204,10 +259,14 @@ void URpgInventoryPanelNavigationCoordinator::RegisterActionBarPanel(FName Panel
 	NewPanel.EquipmentSlotWidget = nullptr;
 	NewPanel.Inventory = nullptr;
 	TileView->SetPanelNavigationCoordinator(this, PanelId);
-	UpdatePanelSelectionMemory(NewPanel);
+	ApplyRetainedPanelMemory(NewPanel);
+	if (!RetainedPanelMemories.Contains(PanelId))
+	{
+		UpdatePanelSelectionMemory(NewPanel);
+	}
 	TileView->SetActionBarPanelActive(false);
 
-	if (ActivePanelIndex == INDEX_NONE)
+	if (ActivePanelIndex == INDEX_NONE && !bPanelRefreshInProgress)
 	{
 		ActivatePanelByIndex(0);
 	}
@@ -242,9 +301,13 @@ void URpgInventoryPanelNavigationCoordinator::RegisterEquipmentPanel(FName Panel
 	NewPanel.ActionBarTileView = nullptr;
 	NewPanel.EquipmentSlotWidget = EquipmentSlotWidget;
 	NewPanel.Inventory = DragDropCoordinator ? DragDropCoordinator->GetPlayerInventory() : nullptr;
-	UpdatePanelSelectionMemory(NewPanel);
+	ApplyRetainedPanelMemory(NewPanel);
+	if (!RetainedPanelMemories.Contains(PanelId))
+	{
+		UpdatePanelSelectionMemory(NewPanel);
+	}
 
-	if (ActivePanelIndex == INDEX_NONE)
+	if (ActivePanelIndex == INDEX_NONE && !bPanelRefreshInProgress)
 	{
 		ActivatePanelByIndex(0);
 	}
@@ -547,6 +610,11 @@ bool URpgInventoryPanelNavigationCoordinator::QuickTransferActiveSelection()
 
 bool URpgInventoryPanelNavigationCoordinator::QuickSplitActiveSelection(int32 SplitCount)
 {
+	if (DragDropCoordinator && DragDropCoordinator->HasHeldPayload())
+	{
+		return DragDropCoordinator->ToggleInteractionRotation();
+	}
+
 	if (!IsValidPanelIndex(ActivePanelIndex))
 	{
 		return false;
@@ -844,4 +912,17 @@ int32 URpgInventoryPanelNavigationCoordinator::FindPanelIndexForEquipmentSlotWid
 void URpgInventoryPanelNavigationCoordinator::BroadcastActivePanelChanged(const FRpgInventoryPanelNavigationEntry& ActivePanel)
 {
 	OnActivePanelChanged.Broadcast(ActivePanel.PanelId, ActivePanelIndex, ActivePanel.TileView, ActivePanel.Inventory);
+}
+
+void URpgInventoryPanelNavigationCoordinator::ApplyRetainedPanelMemory(FRpgInventoryPanelNavigationEntry& Panel) const
+{
+	const FRpgInventoryPanelNavigationEntry* RetainedPanel = RetainedPanelMemories.Find(Panel.PanelId);
+	if (!RetainedPanel)
+	{
+		return;
+	}
+
+	Panel.LastSelectedItem = RetainedPanel->LastSelectedItem;
+	Panel.LastSelectedEntryId = RetainedPanel->LastSelectedEntryId;
+	Panel.LastSelectedSlotIndex = RetainedPanel->LastSelectedSlotIndex;
 }

@@ -65,6 +65,10 @@ public:
 	UFUNCTION(BlueprintCallable, BlueprintPure = false, Category = "Inventory|Layout")
 	bool GetGridSizeForContainer(FName ContainerId, FRpgInventoryGridSize& OutGridSize) const;
 
+	/** Returns dimensions for an unambiguous root or item-owned container handle. */
+	UFUNCTION(BlueprintCallable, BlueprintPure = false, Category = "Inventory|Layout")
+	bool GetGridSizeForContainerHandle(FRpgInventoryContainerHandle ContainerHandle, FRpgInventoryGridSize& OutGridSize) const;
+
 	/** Returns the item currently stored at a logical player-inventory slot address. */
 	UFUNCTION(BlueprintCallable, BlueprintPure = false, Category = "Inventory|Layout")
 	URpgInventoryItemInstance* GetItemInSlotAddress(const FRpgInventorySlotAddress& Address) const;
@@ -84,6 +88,10 @@ public:
 	/** Returns true when the addressed group is a carry slot that activates MainHand or OffHand. */
 	UFUNCTION(BlueprintCallable, BlueprintPure = false, Category = "Inventory|Layout")
 	bool IsCarrySlotAddress(const FRpgInventorySlotAddress& Address) const;
+
+	/** Returns the data-driven equipment role activated by a carry address, or an invalid tag for non-carry groups. */
+	UFUNCTION(BlueprintCallable, BlueprintPure = false, Category = "Inventory|Layout")
+	FGameplayTag GetCarryActivationRole(const FRpgInventorySlotAddress& Address) const;
 
 	/** Returns true when the addressed group is a dedicated gear slot such as Gear.Head or Gear.Backpack. */
 	UFUNCTION(BlueprintCallable, BlueprintPure = false, Category = "Inventory|Layout")
@@ -125,8 +133,6 @@ public:
 	static const FName WeaponSlot1GroupId;
 	static const FName WeaponSlot2GroupId;
 	static const FName ShieldSlotGroupId;
-	static const FName ToolSlot1GroupId;
-	static const FName ToolSlot2GroupId;
 	static const FName PocketsGroupId;
 	static const FName GearHeadGroupId;
 	static const FName GearChestGroupId;
@@ -143,9 +149,10 @@ private:
 	URpgEquipmentLoadoutComponent* FindEquipmentLoadout() const;
 	TArray<FRpgInventorySlotGroupView> BuildSlotGroups() const;
 	void AppendGroupViews(const TArray<FRpgInventorySlotGroupDefinition>& GroupDefinitions, bool bProvidedByEquipment, ERpgEquipmentSlot SourceEquipmentSlot, TArray<FRpgInventorySlotGroupView>& OutGroups) const;
+	void AppendItemContainerViews(const URpgInventoryItemInstance* ProviderItem, ERpgEquipmentSlot SourceEquipmentSlot, TArray<FRpgInventorySlotGroupView>& OutGroups) const;
 	void BroadcastLayoutChanged() const;
 	static FName EquipmentSlotToSourceName(ERpgEquipmentSlot EquipmentSlot);
-	static FRpgInventorySlotGroupDefinition MakeStaticGroup(FName ContainerId, const FText& DisplayName, int32 GridWidth, int32 GridHeight, const TArray<ERpgInventoryItemCategory>& AllowedCategories, bool bActionbarBindable, bool bCarrySlot, ERpgInventorySlotGroupKind GroupKind);
+	static FRpgInventorySlotGroupDefinition MakeStaticGroup(FName ContainerId, const FText& DisplayName, int32 GridWidth, int32 GridHeight, const TArray<ERpgInventoryItemCategory>& AllowedCategories, bool bActionbarBindable, bool bCarrySlot, ERpgInventorySlotGroupKind GroupKind, FGameplayTag CarryActivationRole = FGameplayTag());
 
 	/** Built-in body/carry/content containers. Runtime item-provider containers are appended after these. */
 	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Inventory|Layout", meta = (AllowPrivateAccess = "true", TitleProperty = "ContainerId"))

@@ -288,8 +288,7 @@ bool URpgEquipmentSlotWidget::NativeOnDrop(const FGeometry& InGeometry, const FD
 		return false;
 	}
 
-	CommitPayloadDrop(InventoryOperation->InventoryPayload);
-	return true;
+	return CommitPayloadDrop(InventoryOperation->InventoryPayload);
 }
 
 void URpgEquipmentSlotWidget::NativeOnDragLeave(const FDragDropEvent& InDragDropEvent, UDragDropOperation* InOperation)

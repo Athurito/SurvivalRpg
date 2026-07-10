@@ -2,6 +2,7 @@
 
 #pragma once
 
+#include "RpgInventoryGraphTypes.h"
 #include "SurvivalRpg/Systems/GameplayTagStack.h"
 #include "Templates/SubclassOf.h"
 
@@ -9,14 +10,13 @@
 
 class FLifetimeProperty;
 
+class URpgInventoryManagerComponent;
 class URpgInventoryItemDefinition;
 class URpgInventoryItemFragment;
 struct FFrame;
 struct FGameplayTag;
 
-/**
- * URpgInventoryItemInstance
- */
+/** Server-authored concrete item state with persistent identity independent of placement and replicated entry ids. */
 UCLASS(BlueprintType)
 class URpgInventoryItemInstance : public UObject
 {
@@ -30,28 +30,54 @@ public:
 	virtual void GetLifetimeReplicatedProps(TArray<FLifetimeProperty>& OutLifetimeProps) const override;
 	//~End of UObject interface
 
-	// Adds a specified number of stacks to the tag (does nothing if StackCount is below 1)
+	/** Adds an instance stat-tag count on authority; ignored for non-authority replicated instances. */
 	UFUNCTION(BlueprintCallable, BlueprintAuthorityOnly, Category=Inventory)
 	void AddStatTagStack(FGameplayTag Tag, int32 StackCount);
 
-	// Removes a specified number of stacks from the tag (does nothing if StackCount is below 1)
+	/** Removes an instance stat-tag count on authority; ignored for non-authority replicated instances. */
 	UFUNCTION(BlueprintCallable, BlueprintAuthorityOnly, Category= Inventory)
 	void RemoveStatTagStack(FGameplayTag Tag, int32 StackCount);
 
-	// Returns the stack count of the specified tag (or 0 if the tag is not present)
+	/** Returns the instance-specific count for a stat tag. */
 	UFUNCTION(BlueprintCallable, Category=Inventory)
 	int32 GetStatTagStackCount(FGameplayTag Tag) const;
 
-	// Returns true if there is at least one stack of the specified tag
+	/** Returns whether this instance has at least one count of the stat tag. */
 	UFUNCTION(BlueprintCallable, Category=Inventory)
 	bool HasStatTag(FGameplayTag Tag) const;
+
+	/** Returns the persistent item identity used by graph handles, transactions, saves, and quick-access bindings. */
+	UFUNCTION(BlueprintPure, Category = "Inventory|Identity")
+	FRpgInventoryItemId GetItemId() const { return ItemId; }
+
+	/** Generates a persistent id when absent. Only an authority-owned or transient test instance may initialize it. */
+	bool InitializePersistentId();
+
+	/** Restores a validated saved/transferred id before graph insertion. Rejects invalid ids and non-authority callers. */
+	bool RestoreItemId(const FRpgInventoryItemId& InItemId);
+
+	/**
+	 * Copies all stack-relevant mutable state from Source.
+	 * Preserve identity for cross-inventory reconstruction; leave it false for split stacks so the new item keeps its id.
+	 */
+	bool CopyRuntimeStateFrom(const URpgInventoryItemInstance* Source, bool bPreserveItemId);
+
+	/** Returns whether definition, StatTags, and every fragment-owned mutable state agree for stack merging. */
+	bool IsStackCompatibleWith(const URpgInventoryItemInstance* Other) const;
+
+	/** Exports core StatTags plus every fragment-owned versioned payload for atomic graph persistence. */
+	bool ExportRuntimeState(TArray<FRpgInventoryFragmentStatePayload>& OutPayloads) const;
+
+	/** Validates all payloads first, then restores core and fragment-owned state on authority. */
+	bool ImportRuntimeState(const TArray<FRpgInventoryFragmentStatePayload>& Payloads);
 
 	TSubclassOf<URpgInventoryItemDefinition> GetItemDef() const
 	{
 		return ItemDef;
 	}
 
-	UFUNCTION(BlueprintCallable, BlueprintPure=false, meta=(DeterminesOutputType=FragmentClass))
+	/** Finds a static fragment on this instance's item definition. */
+	UFUNCTION(BlueprintCallable, BlueprintPure=false, Category = "Inventory|Definition", meta=(DeterminesOutputType=FragmentClass))
 	const URpgInventoryItemFragment* FindFragmentByClass(TSubclassOf<URpgInventoryItemFragment> FragmentClass) const;
 
 	template <typename ResultClass>
@@ -65,14 +91,21 @@ public:
 private:
 
 	void SetItemDef(TSubclassOf<URpgInventoryItemDefinition> InDef);
+	bool HasAuthorityForMutation() const;
 
 	friend struct FRpgInventoryList;
+	friend class URpgInventoryManagerComponent;
 
 private:
+	/** Persistent server-authored identity. Replicated to every connection allowed to receive this inventory instance. */
+	UPROPERTY(Replicated, SaveGame)
+	FRpgInventoryItemId ItemId;
+
+	/** Mutable instance tags used by affixes/stats; replicated and serialized through the core runtime-state payload. */
 	UPROPERTY(Replicated)
 	FGameplayTagStackContainer StatTags;
 
-	// The item definition
+	/** Static fragment-composed definition shared by every instance of this item type. */
 	UPROPERTY(Replicated)
 	TSubclassOf<URpgInventoryItemDefinition> ItemDef;
 };

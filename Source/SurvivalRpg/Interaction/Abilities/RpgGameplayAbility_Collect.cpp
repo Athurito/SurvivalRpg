@@ -9,10 +9,12 @@
 #include "SurvivalRpg/Inventory/IPickupable.h"
 #include "SurvivalRpg/Inventory/RpgDroppedInventoryActor.h"
 #include "SurvivalRpg/Inventory/RpgInventoryFragment_EquippableItem.h"
+#include "SurvivalRpg/Inventory/RpgInventoryFragment_ItemContainer.h"
 #include "SurvivalRpg/Inventory/RpgInventoryFragment_ItemTraits.h"
 #include "SurvivalRpg/Inventory/RpgInventoryItemDefinition.h"
 #include "SurvivalRpg/Inventory/RpgInventoryItemInstance.h"
 #include "SurvivalRpg/Inventory/RpgInventoryManagerComponent.h"
+#include "SurvivalRpg/Inventory/RpgPlayerInventoryLayoutComponent.h"
 
 #include UE_INLINE_GENERATED_CPP_BY_NAME(RpgGameplayAbility_Collect)
 
@@ -98,6 +100,95 @@ namespace
 
 		return RequiredNewEntries <= InventoryComponent->GetFreeEntryCount();
 	}
+
+	bool TransferDroppedInventoryGraph(
+		URpgInventoryManagerComponent* LootInventory,
+		URpgInventoryManagerComponent* PlayerInventory,
+		ARpgPlayerController* PlayerController,
+		TArray<FRpgInventoryItemId>& OutAddedItemIds)
+	{
+		if (!LootInventory || !PlayerInventory || !PlayerController)
+		{
+			return false;
+		}
+
+		TArray<FRpgInventoryContainerHandle> TargetContainers;
+		if (const URpgPlayerInventoryLayoutComponent* Layout = PlayerController->GetPlayerInventoryLayoutComponent())
+		{
+			for (const FRpgInventorySlotGroupView& Group : Layout->GetSlotGroups())
+			{
+				if (Group.GroupKind == ERpgInventorySlotGroupKind::Content && Group.ContainerHandle.IsValid())
+				{
+					TargetContainers.AddUnique(Group.ContainerHandle);
+				}
+			}
+		}
+		if (TargetContainers.IsEmpty())
+		{
+			return false;
+		}
+
+		TArray<FRpgInventoryItemId> RootItemIds;
+		for (const FRpgInventoryEntryView& Entry : LootInventory->GetAllEntries())
+		{
+			if (Entry.ItemId.IsValid() && Entry.Placement.GetContainerHandle().IsRoot())
+			{
+				RootItemIds.Add(Entry.ItemId);
+			}
+		}
+
+		bool bTransferredAnything = false;
+		for (const FRpgInventoryItemId& RootItemId : RootItemIds)
+		{
+			for (const FRpgInventoryContainerHandle& TargetContainer : TargetContainers)
+			{
+				URpgInventoryItemInstance* CurrentItem = LootInventory->FindItemById(RootItemId);
+				if (!CurrentItem)
+				{
+					break;
+				}
+
+				FRpgInventoryGridPlacement SourcePlacement;
+				const int32 CurrentStackCount = LootInventory->GetItemStackCount(CurrentItem);
+				if (CurrentStackCount <= 0 || !LootInventory->GetItemPlacement(CurrentItem, SourcePlacement))
+				{
+					break;
+				}
+
+				const URpgInventoryFragment_ItemTraits* Traits = CurrentItem->FindFragmentByClass<URpgInventoryFragment_ItemTraits>();
+				const bool bAllowPartialStackPickup =
+					!CurrentItem->FindFragmentByClass<URpgInventoryFragment_ItemContainer>() &&
+					Traits && Traits->GetMaxStackSize() > 1;
+
+				FRpgInventoryMutationRequest Request;
+				Request.Operation = ERpgInventoryMutationOperation::Pickup;
+				Request.ItemId = RootItemId;
+				Request.Source = SourcePlacement.GetContainerHandle();
+				Request.Target = TargetContainer;
+				Request.Quantity = CurrentStackCount;
+				Request.EnsureRequestId();
+				const FRpgInventoryMutationResult TransferResult = LootInventory->ExecuteCrossInventoryTransfer(
+					PlayerInventory,
+					Request,
+					bAllowPartialStackPickup);
+				if (!TransferResult.IsSuccess())
+				{
+					continue;
+				}
+
+				bTransferredAnything = true;
+				for (const FRpgInventoryMutationDelta& Delta : TransferResult.Deltas)
+				{
+					if (Delta.ItemId.IsValid() && Delta.AfterContainer == TargetContainer)
+					{
+						OutAddedItemIds.AddUnique(Delta.ItemId);
+					}
+				}
+			}
+		}
+
+		return bTransferredAnything;
+	}
 }
 
 URpgGameplayAbility_Collect::URpgGameplayAbility_Collect(const FObjectInitializer& ObjectInitializer)
@@ -142,6 +233,56 @@ void URpgGameplayAbility_Collect::ActivateAbility(
 		return;
 	}
 
+	if (ARpgDroppedInventoryActor* DroppedInventoryActor = Cast<ARpgDroppedInventoryActor>(TargetActor))
+	{
+		URpgInventoryManagerComponent* LootInventory = DroppedInventoryActor->GetLootInventoryManager();
+		ARpgPlayerController* PlayerController = FindPlayerControllerForActor(InteractingActor);
+		if (!LootInventory || !PlayerController || !CommitAbility(Handle, ActorInfo, ActivationInfo))
+		{
+			EndAbility(Handle, ActorInfo, ActivationInfo, true, true);
+			return;
+		}
+
+		TArray<FRpgInventoryItemId> AddedItemIds;
+		const bool bTransferredAnything = TransferDroppedInventoryGraph(
+			LootInventory,
+			InventoryComponent,
+			PlayerController,
+			AddedItemIds);
+
+		if (URpgEquipmentLoadoutComponent* EquipmentLoadout = PlayerController->GetEquipmentLoadoutComponent())
+		{
+			EquipmentLoadout->ReconcilePhysicalEquipmentFromInventory();
+			if (bAssignCollectedEquippableItemsToEquipment && bTransferredAnything)
+			{
+				TArray<URpgInventoryItemInstance*> AddedItems;
+				for (const FRpgInventoryItemId& ItemId : AddedItemIds)
+				{
+					if (URpgInventoryItemInstance* AddedItem = InventoryComponent->FindItemById(ItemId))
+					{
+						AddedItems.Add(AddedItem);
+					}
+				}
+				AssignEquippableItemsToEquipment(EquipmentLoadout, AddedItems);
+			}
+		}
+
+		if (LootInventory->GetAllEntries().IsEmpty())
+		{
+			if (bDestroyCollectedActor && TargetActor->HasAuthority() && TargetActor != InteractingActor)
+			{
+				TargetActor->Destroy();
+			}
+		}
+		else
+		{
+			PlayerController->ClientOpenLootInventory(InventoryComponent, LootInventory, DroppedInventoryActor);
+		}
+
+		EndAbility(Handle, ActorInfo, ActivationInfo, true, false);
+		return;
+	}
+
 	const FInventoryPickup PickupInventory = Pickup->GetPickupInventory();
 	if (!CanAddPickupToInventory(InventoryComponent, PickupInventory))
 	{
@@ -169,6 +310,13 @@ void URpgGameplayAbility_Collect::ActivateAbility(
 	TArray<URpgInventoryItemInstance*> AddedItems;
 	if (!AddPickupToInventory(InventoryComponent, PickupInventory, AddedItems))
 	{
+		if (ARpgPlayerController* PlayerController = FindPlayerControllerForActor(InteractingActor))
+		{
+			if (URpgEquipmentLoadoutComponent* EquipmentLoadout = PlayerController->GetEquipmentLoadoutComponent())
+			{
+				EquipmentLoadout->ReconcilePhysicalEquipmentFromInventory();
+			}
+		}
 		EndAbility(Handle, ActorInfo, ActivationInfo, true, true);
 		return;
 	}
@@ -264,15 +412,30 @@ bool URpgGameplayAbility_Collect::AddPickupToInventory(URpgInventoryManagerCompo
 	{
 		return false;
 	}
+	const FRpgInventoryGraphSaveData InventoryBefore = InventoryComponent->ExportInventoryGraph();
+	if (InventoryBefore.Items.Num() != InventoryComponent->GetAllEntries().Num())
+	{
+		return false;
+	}
+	auto Rollback = [InventoryComponent, &InventoryBefore, &OutAddedItems]()
+	{
+		FRpgInventoryMutationResult RollbackResult;
+		InventoryComponent->ImportInventoryGraph(InventoryBefore, RollbackResult);
+		OutAddedItems.Reset();
+		return false;
+	};
 
 	for (const FPickupTemplate& Template : PickupInventory.Templates)
 	{
 		if (Template.ItemDef != nullptr && Template.StackCount > 0)
 		{
-			if (URpgInventoryItemInstance* AddedItem = InventoryComponent->AddItemDefinition(Template.ItemDef, Template.StackCount))
+			const int32 PreviousCount = InventoryComponent->GetTotalItemCountByDefinition(Template.ItemDef);
+			URpgInventoryItemInstance* AddedItem = InventoryComponent->AddItemDefinition(Template.ItemDef, Template.StackCount);
+			if (!AddedItem || InventoryComponent->GetTotalItemCountByDefinition(Template.ItemDef) != PreviousCount + Template.StackCount)
 			{
-				OutAddedItems.Add(AddedItem);
+				return Rollback();
 			}
+			OutAddedItems.AddUnique(AddedItem);
 		}
 	}
 
@@ -281,7 +444,11 @@ bool URpgGameplayAbility_Collect::AddPickupToInventory(URpgInventoryManagerCompo
 		if (Instance.Item != nullptr)
 		{
 			InventoryComponent->AddItemInstance(Instance.Item);
-			OutAddedItems.Add(Instance.Item);
+			if (!InventoryComponent->ContainsItemInstance(Instance.Item))
+			{
+				return Rollback();
+			}
+			OutAddedItems.AddUnique(Instance.Item);
 		}
 	}
 

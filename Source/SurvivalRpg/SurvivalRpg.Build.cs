@@ -35,19 +35,19 @@ public class SurvivalRpg : ModuleRules
 			{
 				"DeveloperSettings",
 				"EnhancedInput",
+				"CoreOnline",
 				"GameplayAbilities",
 				"GameplayTags",
 				"GameplayTasks",
 				"ModelViewViewModel",
 				"AdvancedSessions",
 				"GameplayMessageRuntime",
+				"OnlineSubsystem",
 				"Projects",
 			});
 
 		PrivateDependencyModuleNames.AddRange(new string[] { "Slate", "SlateCore" });
 		
-		// Uncomment if you are using online features
-		// PrivateDependencyModuleNames.Add("OnlineSubsystem");
 		DynamicallyLoadedModuleNames.Add("OnlineSubsystemSteam");
 		// To include OnlineSubsystemSteam, add it to the plugins section in your uproject file with the Enabled attribute set to true
 		

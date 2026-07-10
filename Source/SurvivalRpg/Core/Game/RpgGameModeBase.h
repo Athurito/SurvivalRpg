@@ -3,7 +3,8 @@
 #pragma once
 
 #include "CoreMinimal.h"
-#include "RpgPlayerSaveData.h"
+#include "RpgWorldSaveGame.h"
+#include "GameFramework/GameplayMessageSubsystem.h"
 #include "ModularGameMode.h"
 #include "RpgGameModeBase.generated.h"
 
@@ -12,6 +13,10 @@ class ARpgDroppedInventoryActor;
 class URpgPawnData;
 class URpgAbilitySystemComponent;
 class URpgExperienceDefinition;
+class URpgInventoryManagerComponent;
+struct FRpgActionBarSlotsChangedMessage;
+struct FRpgEquipmentLoadoutSlotsChangedMessage;
+struct FRpgInventoryChangeMessage;
 
 DECLARE_DYNAMIC_MULTICAST_DELEGATE_TwoParams(FRpgRespawn_OnPlayerRespawned, APlayerController*, PC, FTransform, RespawnTransform);
 DECLARE_MULTICAST_DELEGATE_TwoParams(FOnRpgGameModePlayerInitialized, AGameModeBase* /*GameMode*/, AController* /*NewPlayer*/);
@@ -47,6 +52,8 @@ public:
 
 	virtual void InitGame(const FString& MapName, const FString& Options, FString& ErrorMessage) override;
 	virtual void InitGameState() override;
+	virtual void StartPlay() override;
+	virtual void EndPlay(const EEndPlayReason::Type EndPlayReason) override;
 	virtual void PostLogin(APlayerController* NewPlayer) override;
 	virtual void Logout(AController* Exiting) override;
 	virtual void HandleStartingNewPlayer_Implementation(APlayerController* NewPlayer) override;
@@ -80,9 +87,37 @@ public:
 	/** Returns save data for a player (read-only). Returns nullptr if not found. */
 	const FRpgPlayerSaveData* FindPlayerSaveData(APlayerController* PC) const;
 
-	/** Returns the full save data map (e.g. for serialization). */
+	/** Returns the host-owned profile map keyed by UniqueNetId string or the stable offline profile key. */
 	UFUNCTION(BlueprintCallable, Category = "Rpg|Save")
-	const TMap<FUniqueNetIdRepl, FRpgPlayerSaveData>& GetAllPlayerSaveData() const { return PlayerSaveDataMap; }
+	const TMap<FString, FRpgPlayerSaveData>& GetAllPlayerSaveData() const { return PlayerSaveDataMap; }
+
+	/** Resolves the stable disk profile key used for this controller on the authoritative host. */
+	UFUNCTION(BlueprintCallable, BlueprintPure = false, Category = "Rpg|Save")
+	FString GetPlayerProfileKey(const APlayerController* PC) const;
+
+	/** True once disk restore has been attempted for this profile, including profiles with no previous save. */
+	UFUNCTION(BlueprintCallable, BlueprintPure = false, Category = "Rpg|Save")
+	bool IsPlayerProfileRestoreComplete(const APlayerController* PC) const;
+
+	/** True only when this session atomically restored a saved inventory graph for the profile. */
+	UFUNCTION(BlueprintCallable, BlueprintPure = false, Category = "Rpg|Save")
+	bool HasRestoredPlayerProfile(const APlayerController* PC) const;
+
+	/** Marks player state dirty and restarts the two-second asynchronous disk-save debounce. */
+	UFUNCTION(BlueprintCallable, BlueprintAuthorityOnly, Category = "Rpg|Save")
+	void MarkPlayerSaveDirty(APlayerController* PC);
+
+	/** Captures one persistent world container and restarts the asynchronous save debounce. */
+	UFUNCTION(BlueprintCallable, BlueprintAuthorityOnly, Category = "Rpg|Save")
+	void MarkWorldContainerSaveDirty(FName PersistentContainerId, URpgInventoryManagerComponent* Inventory);
+
+	/** Atomically imports a saved world-container graph, trying valid backup snapshots if the newest graph fails. */
+	UFUNCTION(BlueprintCallable, BlueprintAuthorityOnly, Category = "Rpg|Save")
+	bool RestoreWorldContainer(FName PersistentContainerId, URpgInventoryManagerComponent* Inventory);
+
+	/** Synchronously captures and writes all current host state, used by checkpoints, logout, and shutdown. */
+	UFUNCTION(BlueprintCallable, BlueprintAuthorityOnly, Category = "Rpg|Save")
+	bool FlushWorldSave();
 
 	// --- Checkpoint API ---
 
@@ -119,6 +154,34 @@ public:
 	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Rpg|Inventory")
 	TSubclassOf<ARpgDroppedInventoryActor> DeathDropActorClass;
 
+	/** Primary SaveGame slot containing the newest successfully written host snapshot. */
+	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Rpg|Save|Disk")
+	FString WorldSaveSlotName = TEXT("SurvivalRpg_World");
+
+	/** Previous valid snapshot written before the primary slot is replaced. */
+	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Rpg|Save|Disk")
+	FString WorldSaveBackupSlotName = TEXT("SurvivalRpg_World_Backup");
+
+	/** Synchronous-flush safety slot; its sequence wins if an older async write completes during shutdown. */
+	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Rpg|Save|Disk")
+	FString WorldSaveRecoverySlotName = TEXT("SurvivalRpg_World_Recovery");
+
+	/** Platform save user index supplied to Unreal's SaveGame API. */
+	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Rpg|Save|Disk", meta = (ClampMin = "0", UIMin = "0"))
+	int32 WorldSaveUserIndex = 0;
+
+	/** Stable fallback profile key used when no valid online UniqueNetId exists. May be overridden by ?ProfileKey=. */
+	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Rpg|Save|Disk")
+	FString OfflineProfileKey = TEXT("LocalProfile");
+
+	/** Quiet period in seconds after the latest mutation before an asynchronous disk snapshot is started. */
+	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Rpg|Save|Disk", meta = (ClampMin = "0.0", UIMin = "0.0", Units = "s"))
+	float AutoSaveDebounceSeconds = 2.0f;
+
+	/** Enables host disk persistence. Disable only for transient test modes that intentionally discard progress. */
+	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Rpg|Save|Disk")
+	bool bEnableDiskPersistence = true;
+
 public:
 	/** Fired on the server when a player respawns. */
 	UPROPERTY(BlueprintAssignable)
@@ -131,8 +194,31 @@ protected:
 	virtual void ExecuteRespawn(APlayerController* PC, const FTransform& SpawnPoint);
 
 private:
-	/** Helper to get a stable NetId key from a PlayerController. */
+	/** Runtime-only respawn key retained for the existing replicated session state. */
 	static FUniqueNetIdRepl GetNetIdForPC(const APlayerController* PC);
+
+	bool RestorePlayerProfile(APlayerController* PC);
+	bool TryRestorePlayerSaveData(APlayerController* PC, const FRpgPlayerSaveData& SaveData);
+	void CapturePlayerSaveData(APlayerController* PC);
+	void CaptureConnectedPlayers();
+	void CaptureWorldContainers();
+	void RestorePlacedWorldContainers();
+	void ApplyRestoredEquipmentSelection(APlayerController* PC);
+
+	void LoadWorldSaveFromDisk();
+	URpgWorldSaveGame* BuildWorldSaveSnapshot();
+	void ScheduleAsyncWorldSave();
+	void SaveWorldStateAsync();
+	bool SaveWorldStateSync();
+	void HandleAsyncSaveCompleted(const FString& SlotName, int32 UserIndex, bool bSuccess);
+	bool WritePreviousSnapshotToBackup() const;
+	void MarkWorldSaveDirty();
+
+	void RegisterSaveStateListeners();
+	void UnregisterSaveStateListeners();
+	void HandleInventoryChanged(FGameplayTag Channel, const FRpgInventoryChangeMessage& Message);
+	void HandleActionBarChanged(FGameplayTag Channel, const FRpgActionBarSlotsChangedMessage& Message);
+	void HandleEquipmentLoadoutChanged(FGameplayTag Channel, const FRpgEquipmentLoadoutSlotsChangedMessage& Message);
 
 	FRpgPlayerRespawnState& GetOrCreatePlayerRespawnState(APlayerController* PC);
 	const FRpgPlayerRespawnState* FindPlayerRespawnState(APlayerController* PC) const;
@@ -147,11 +233,42 @@ private:
 	static void ClearRespawnGameplayState(URpgAbilitySystemComponent* ASC);
 	void DropInventoryForPlayerDeath(APlayerController* PC, const FTransform& DropTransform);
 
-	/** Host-authoritative persistent save data. Keyed by Steam NetId. */
+	/** Host-authoritative persistent player data keyed by online id string or stable offline profile key. */
 	UPROPERTY()
-	TMap<FUniqueNetIdRepl, FRpgPlayerSaveData> PlayerSaveDataMap;
+	TMap<FString, FRpgPlayerSaveData> PlayerSaveDataMap;
+
+	/** Host-authoritative persistent physical world-container graphs keyed by stable container id. */
+	UPROPERTY()
+	TMap<FName, FRpgWorldContainerSaveData> WorldContainerSaveDataMap;
 
 	/** Host-authoritative runtime respawn state. Keyed by Steam NetId. */
 	UPROPERTY()
 	TMap<FUniqueNetIdRepl, FRpgPlayerRespawnState> PlayerRespawnStateMap;
+
+	/** Structurally valid disk candidates sorted newest-first for atomic per-graph fallback restore. */
+	UPROPERTY(Transient)
+	TArray<TObjectPtr<URpgWorldSaveGame>> ValidLoadedSaveCandidates;
+
+	/** Most recent disk snapshot known to have completed successfully. */
+	UPROPERTY(Transient)
+	TObjectPtr<URpgWorldSaveGame> LastSuccessfulSaveGame;
+
+	/** Immutable snapshot currently owned by Unreal's async SaveGame task. */
+	UPROPERTY(Transient)
+	TObjectPtr<URpgWorldSaveGame> ActiveAsyncSaveGame;
+
+	TSet<FString> RestoreCompletedProfileKeys;
+	TSet<FString> RestoredProfileKeys;
+	FString ResolvedOfflineProfileKey;
+	int64 NextSaveSequence = 1;
+	bool bWorldSaveDirty = false;
+	bool bAsyncSaveInFlight = false;
+	bool bSaveQueuedDuringAsync = false;
+	bool bIsRestoringSaveState = false;
+	bool bDiskWritesBlockedByRestoreFailure = false;
+	FTimerHandle AutoSaveTimerHandle;
+
+	FGameplayMessageListenerHandle InventoryChangedSaveHandle;
+	FGameplayMessageListenerHandle ActionBarChangedSaveHandle;
+	FGameplayMessageListenerHandle EquipmentChangedSaveHandle;
 };

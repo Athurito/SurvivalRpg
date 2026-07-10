@@ -51,7 +51,10 @@ URpgAbilitySystemComponent* FRpgEquipmentList::GetAbilitySystemComponent() const
 	return Cast<URpgAbilitySystemComponent>(UAbilitySystemGlobals::GetAbilitySystemComponentFromActor(OwningActor));
 }
 
-URpgEquipmentInstance* FRpgEquipmentList::AddEntry(TSubclassOf<URpgEquipmentDefinition> EquipmentDefinition, ERpgEquipmentSlot EquippedSlot)
+URpgEquipmentInstance* FRpgEquipmentList::AddEntry(
+	TSubclassOf<URpgEquipmentDefinition> EquipmentDefinition,
+	ERpgEquipmentSlot EquippedSlot,
+	UObject* SourceItemInstigator)
 {
 	check(EquipmentDefinition != nullptr);
 	check(OwnerComponent);
@@ -70,6 +73,7 @@ URpgEquipmentInstance* FRpgEquipmentList::AddEntry(TSubclassOf<URpgEquipmentDefi
 	NewEntry.Instance = NewObject<URpgEquipmentInstance>(OwnerComponent->GetOwner(), InstanceType);
 
 	URpgEquipmentInstance* Result = NewEntry.Instance;
+	Result->SetInstigator(SourceItemInstigator);
 	Result->SetEquippedSlot(EquippedSlot);
 
 	Result->SpawnEquipmentActors(EquipmentCDO->ActorsToSpawn);
@@ -121,18 +125,36 @@ void URpgEquipmentManagerComponent::GetLifetimeReplicatedProps(TArray<FLifetimeP
 
 URpgEquipmentInstance* URpgEquipmentManagerComponent::EquipItem(TSubclassOf<URpgEquipmentDefinition> EquipmentDefinition)
 {
+	if (!GetOwner() || !GetOwner()->HasAuthority())
+	{
+		return nullptr;
+	}
+
 	const URpgEquipmentDefinition* EquipmentCDO = EquipmentDefinition ? GetDefault<URpgEquipmentDefinition>(EquipmentDefinition) : nullptr;
 	return EquipItemInSlot(EquipmentDefinition, EquipmentCDO ? EquipmentCDO->GetDefaultEquipSlot() : ERpgEquipmentSlot::MainHand);
 }
 
 URpgEquipmentInstance* URpgEquipmentManagerComponent::EquipItemInSlot(TSubclassOf<URpgEquipmentDefinition> EquipmentDefinition, ERpgEquipmentSlot Slot)
 {
+	return EquipItemInSlotWithInstigator(EquipmentDefinition, Slot, nullptr);
+}
+
+URpgEquipmentInstance* URpgEquipmentManagerComponent::EquipItemInSlotWithInstigator(
+	TSubclassOf<URpgEquipmentDefinition> EquipmentDefinition,
+	ERpgEquipmentSlot Slot,
+	UObject* SourceItemInstigator)
+{
 	URpgEquipmentInstance* Result = nullptr;
+	if (!GetOwner() || !GetOwner()->HasAuthority())
+	{
+		return Result;
+	}
+
 	if (CanEquipItemInSlot(EquipmentDefinition, Slot))
 	{
 		UnequipConflictingItems(EquipmentDefinition, Slot);
 
-		Result = EquipmentList.AddEntry(EquipmentDefinition, Slot);
+		Result = EquipmentList.AddEntry(EquipmentDefinition, Slot, SourceItemInstigator);
 		if (Result != nullptr)
 		{
 			RebuildEquipmentAbilityGrants();
@@ -150,7 +172,7 @@ URpgEquipmentInstance* URpgEquipmentManagerComponent::EquipItemInSlot(TSubclassO
 
 void URpgEquipmentManagerComponent::UnequipItem(URpgEquipmentInstance* ItemInstance)
 {
-	if (ItemInstance == nullptr)
+	if (!GetOwner() || !GetOwner()->HasAuthority() || ItemInstance == nullptr)
 	{
 		return;
 	}
@@ -167,6 +189,11 @@ void URpgEquipmentManagerComponent::UnequipItem(URpgEquipmentInstance* ItemInsta
 
 void URpgEquipmentManagerComponent::UnequipItemInSlot(ERpgEquipmentSlot Slot)
 {
+	if (!GetOwner() || !GetOwner()->HasAuthority())
+	{
+		return;
+	}
+
 	TArray<URpgEquipmentInstance*> InstancesToUnequip;
 	for (const FRpgAppliedEquipmentEntry& Entry : EquipmentList.Entries)
 	{

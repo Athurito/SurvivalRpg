@@ -38,6 +38,10 @@ public:
 	UFUNCTION(BlueprintCallable, BlueprintPure, Category = "UI|Screens", meta = (Categories = "UI.Screen"))
 	UCommonActivatableWidget* GetActiveScreen(FGameplayTag ScreenTag) const;
 
+	/** Returns true while a screen is active or still being asynchronously pushed. */
+	UFUNCTION(BlueprintCallable, BlueprintPure, Category = "UI|Screens", meta = (Categories = "UI.Screen"))
+	bool IsScreenActiveOrPending(FGameplayTag ScreenTag) const;
+
 protected:
 	UPrimaryGameLayout* GetOrCreatePrimaryGameLayout() const;
 	const URpgUIScreenRegistry* GetScreenRegistry() const;
@@ -54,4 +58,8 @@ private:
 
 	UPROPERTY(Transient)
 	TSet<FGameplayTag> PendingScreenTags;
+
+	/** Pending pushes canceled because gameplay access disappeared before initialization completed. */
+	UPROPERTY(Transient)
+	TSet<FGameplayTag> CanceledPendingScreenTags;
 };

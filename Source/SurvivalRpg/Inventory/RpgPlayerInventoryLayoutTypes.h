@@ -23,6 +23,10 @@ struct SURVIVALRPG_API FRpgInventorySlotAddress
 {
 	GENERATED_BODY()
 
+	/** Stable root or item-owned graph address. Invalid legacy values fall back to ContainerId as a root. */
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Inventory|Layout")
+	FRpgInventoryContainerHandle ContainerHandle;
+
 	/** Logical grid container, for example WeaponSlot1, Belt, Backpack, or Pockets. */
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Inventory|Layout")
 	FName ContainerId = NAME_None;
@@ -35,11 +39,22 @@ struct SURVIVALRPG_API FRpgInventorySlotAddress
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Inventory|Layout", meta = (ClampMin = "0", UIMin = "0"))
 	int32 Y = INDEX_NONE;
 
-	bool IsValid() const { return !ContainerId.IsNone() && X >= 0 && Y >= 0; }
+	FRpgInventoryContainerHandle GetContainerHandle() const
+	{
+		return ContainerHandle.IsValid() ? ContainerHandle : FRpgInventoryContainerHandle::MakeRoot(ContainerId);
+	}
+
+	void SetContainerHandle(const FRpgInventoryContainerHandle& InHandle)
+	{
+		ContainerHandle = InHandle;
+		ContainerId = InHandle.ContainerId;
+	}
+
+	bool IsValid() const { return GetContainerHandle().IsValid() && X >= 0 && Y >= 0; }
 
 	friend bool operator==(const FRpgInventorySlotAddress& A, const FRpgInventorySlotAddress& B)
 	{
-		return A.ContainerId == B.ContainerId && A.X == B.X && A.Y == B.Y;
+		return A.GetContainerHandle() == B.GetContainerHandle() && A.X == B.X && A.Y == B.Y;
 	}
 
 	friend bool operator!=(const FRpgInventorySlotAddress& A, const FRpgInventorySlotAddress& B)
@@ -49,7 +64,7 @@ struct SURVIVALRPG_API FRpgInventorySlotAddress
 
 	friend uint32 GetTypeHash(const FRpgInventorySlotAddress& Address)
 	{
-		return HashCombine(HashCombine(GetTypeHash(Address.ContainerId), GetTypeHash(Address.X)), GetTypeHash(Address.Y));
+		return HashCombine(HashCombine(GetTypeHash(Address.GetContainerHandle()), GetTypeHash(Address.X)), GetTypeHash(Address.Y));
 	}
 };
 
@@ -97,6 +112,10 @@ struct SURVIVALRPG_API FRpgInventorySlotRule
 	/** True when this slot group represents a weapon/tool/shield carry slot that can become active hands. */
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Inventory|Layout")
 	bool bCarrySlot = false;
+
+	/** Semantic equipment role activated by this carry group, normally MainHand or OffHand. */
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Inventory|Layout", meta = (EditCondition = "bCarrySlot", Categories = "Equipment.Slot"))
+	FGameplayTag CarryActivationRole;
 
 	/** Returns whether the item satisfies this slot rule. Null items are never accepted. */
 	bool AllowsItem(const URpgInventoryItemInstance* Item) const;
@@ -146,6 +165,10 @@ struct SURVIVALRPG_API FRpgInventorySlotGroupView
 {
 	GENERATED_BODY()
 
+	/** Stable root or item-owned container address represented by this visible group. */
+	UPROPERTY(BlueprintReadOnly, Category = "Inventory|Layout")
+	FRpgInventoryContainerHandle ContainerHandle;
+
 	/** Stable grid id used in FRpgInventorySlotAddress and replicated item placements. */
 	UPROPERTY(BlueprintReadOnly, Category = "Inventory|Layout")
 	FName ContainerId = NAME_None;
@@ -181,7 +204,7 @@ struct SURVIVALRPG_API FRpgInventorySlotGroupView
 	FRpgInventorySlotAddress MakeAddress(int32 X, int32 Y) const
 	{
 		FRpgInventorySlotAddress Address;
-		Address.ContainerId = ContainerId;
+		Address.SetContainerHandle(ContainerHandle.IsValid() ? ContainerHandle : FRpgInventoryContainerHandle::MakeRoot(ContainerId));
 		Address.X = X;
 		Address.Y = Y;
 		return Address;

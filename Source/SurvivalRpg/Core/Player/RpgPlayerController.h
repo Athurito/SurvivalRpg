@@ -4,6 +4,7 @@
 
 #include "CoreMinimal.h"
 #include "GenericTeamAgentInterface.h"
+#include "GameplayTagContainer.h"
 #include "ModularPlayerController.h"
 #include "SurvivalRpg/Inventory/RpgInventoryItemTypes.h"
 #include "RpgPlayerController.generated.h"
@@ -15,6 +16,7 @@ class URpgInventoryManagerComponent;
 class URpgInventoryUiActionComponent;
 class URpgPlayerInventoryLayoutComponent;
 class URpgPlayerGameplayInputRouterComponent;
+class URpgQuickAccessRadialWidget;
 class URpgWeaponAbilityLoadoutComponent;
 class URpgPawnExtensionComponent;
 class UInputMappingContext;
@@ -48,6 +50,10 @@ public:
 	UFUNCTION(Client, Reliable, Category = "Rpg|Inventory")
 	void ClientOpenLootInventory(URpgInventoryManagerComponent* PrimaryInventory, URpgInventoryManagerComponent* LootInventory, AActor* LootActor);
 
+	/** Opens and monitors an accessible world storage inventory on the owning client. */
+	UFUNCTION(BlueprintCallable, Category = "Rpg|Inventory")
+	void OpenStorageInventory(URpgInventoryManagerComponent* PrimaryInventory, URpgInventoryManagerComponent* StorageInventory, AActor* StorageActor);
+
 	UFUNCTION(BlueprintCallable, Category = "Rpg|Action Bar")
 	URpgActionBarComponent* GetActionBarComponent() const { return ActionBarComponent; }
 
@@ -62,6 +68,10 @@ public:
 
 	UFUNCTION(BlueprintCallable, Category = "Rpg|Inventory")
 	URpgPlayerInventoryLayoutComponent* GetPlayerInventoryLayoutComponent() const { return PlayerInventoryLayoutComponent; }
+
+	/** Local systemic-input router observed by the gameplay quick-access radial. */
+	UFUNCTION(BlueprintPure, Category = "Rpg|Input")
+	URpgPlayerGameplayInputRouterComponent* GetGameplayInputRouterComponent() const { return GameplayInputRouterComponent; }
 
 	UFUNCTION(Exec)
 	void RpgPrintProgression() const;
@@ -132,6 +142,7 @@ private:
 	void RefreshPlayerStateBindings();
 	void BindToPlayerState(ARpgPlayerState* NewPlayerState);
 	void UnbindFromPlayerState();
+	void OpenInventoryContainerScreen(FGameplayTag ScreenTag, URpgInventoryManagerComponent* PrimaryInventory, URpgInventoryManagerComponent* SecondaryInventory, AActor* ContextActor);
 
 	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Input", meta = (AllowPrivateAccess = "true"))
 	TArray<UInputMappingContext*> DefaultMappingContexts;
@@ -148,6 +159,13 @@ private:
 	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "Rpg|Input", meta = (AllowPrivateAccess = "true"))
 	TObjectPtr<URpgPlayerGameplayInputRouterComponent> GameplayInputRouterComponent;
 
+	/** Native fallback radial overlay; designers may replace this class without changing the eight shared bindings. */
+	UPROPERTY(EditDefaultsOnly, Category = "Rpg|Input", meta = (AllowPrivateAccess = "true"))
+	TSubclassOf<URpgQuickAccessRadialWidget> QuickAccessRadialWidgetClass;
+
+	UPROPERTY(Transient)
+	TObjectPtr<URpgQuickAccessRadialWidget> QuickAccessRadialWidget;
+
 	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "Rpg|Equipment", meta = (AllowPrivateAccess = "true"))
 	TObjectPtr<URpgEquipmentLoadoutComponent> EquipmentLoadoutComponent;
 
@@ -162,4 +180,9 @@ private:
 
 	UPROPERTY(Transient)
 	TObjectPtr<ARpgGameModeBase> BoundRespawnGameMode;
+
+	/** Local loot/storage context monitored for access loss while its CommonUI screen is open. */
+	TWeakObjectPtr<AActor> ActiveLootContextActor;
+	FGameplayTag ActiveInventoryContextScreenTag;
+	bool bHasActiveLootContext = false;
 };

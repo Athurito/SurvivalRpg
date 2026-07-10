@@ -250,6 +250,10 @@ public:
 	UFUNCTION(BlueprintPure, Category = "Inventory|Layout ViewModel")
 	FName GetGroupId() const { return ContainerId; }
 
+	/** Full graph identity of this root or item-owned container. */
+	UFUNCTION(BlueprintPure, Category = "Inventory|Layout ViewModel")
+	FRpgInventoryContainerHandle GetContainerHandle() const { return ContainerHandle; }
+
 	/** Grid size of this visible container. */
 	UFUNCTION(BlueprintPure, Category = "Inventory|Layout ViewModel")
 	FRpgInventoryGridSize GetGridSize() const { return GridSize; }
@@ -259,6 +263,10 @@ public:
 	TArray<URpgInventoryAddressSlotViewModel*> GetSlots() const;
 
 protected:
+	/** Stable graph address. Item-owned containers with the same local id remain distinct. */
+	UPROPERTY(BlueprintReadOnly, FieldNotify, Category = "Inventory|Layout ViewModel", meta = (AllowPrivateAccess = "true"))
+	FRpgInventoryContainerHandle ContainerHandle;
+
 	/** Stable container id such as WeaponSlot1, Pockets, Backpack, or Belt. */
 	UPROPERTY(BlueprintReadOnly, FieldNotify, Category = "Inventory|Layout ViewModel", meta = (AllowPrivateAccess = "true"))
 	FName ContainerId = NAME_None;
@@ -359,6 +367,10 @@ public:
 	/** Returns the group VM for a group id, if currently visible. */
 	UFUNCTION(BlueprintPure, Category = "Inventory|Player ViewModel")
 	URpgInventorySlotGroupViewModel* GetSlotGroup(FName GroupId) const;
+
+	/** Returns the exact root or item-owned group addressed by its full graph handle. */
+	UFUNCTION(BlueprintPure, Category = "Inventory|Player ViewModel")
+	URpgInventorySlotGroupViewModel* GetSlotGroupByHandle(FRpgInventoryContainerHandle ContainerHandle) const;
 
 	UPROPERTY(BlueprintAssignable, Category = "Inventory|Player ViewModel")
 	FRpgPlayerInventoryViewModelChanged OnGearSlotsChanged;

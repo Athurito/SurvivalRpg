@@ -5,6 +5,7 @@
 #include "RpgDroppedInventoryActor.generated.h"
 
 class URpgInventoryItemDefinition;
+class URpgInventoryContainerComponent;
 class URpgInventoryManagerComponent;
 
 /**
@@ -44,4 +45,12 @@ private:
 
 	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "Inventory|Drop", meta = (AllowPrivateAccess = "true"))
 	TObjectPtr<URpgInventoryManagerComponent> LootInventoryComponent;
+
+	/** Access/relevancy boundary used by the same server-side transfer validation as world storage. */
+	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "Inventory|Drop", meta = (AllowPrivateAccess = "true"))
+	TObjectPtr<URpgInventoryContainerComponent> ContainerComponent;
+
+	/** True after static spawn data has been materialized into the authoritative runtime inventory. */
+	UPROPERTY(Transient)
+	bool bLootInventoryInitialized = false;
 };

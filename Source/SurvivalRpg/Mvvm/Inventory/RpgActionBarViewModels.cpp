@@ -22,6 +22,25 @@ namespace
 		FText ShortDisplayName;
 	};
 
+	FRpgActionSlotPresentation BuildActionBarDefinitionPresentation(TSubclassOf<URpgInventoryItemDefinition> ItemDefinition)
+	{
+		FRpgActionSlotPresentation Presentation;
+		const URpgInventoryItemDefinition* ItemCDO = ItemDefinition ? GetDefault<URpgInventoryItemDefinition>(ItemDefinition) : nullptr;
+		if (!ItemCDO)
+		{
+			return Presentation;
+		}
+
+		Presentation.ShortDisplayName = ItemCDO->DisplayName;
+		if (const URpgInventoryFragment_UIData* UIData = Cast<URpgInventoryFragment_UIData>(
+			ItemCDO->FindFragmentByClass(URpgInventoryFragment_UIData::StaticClass())))
+		{
+			Presentation.Icon = UIData->Icon;
+			Presentation.ShortDisplayName = UIData->ShortDisplayName.IsEmpty() ? ItemCDO->DisplayName : UIData->ShortDisplayName;
+		}
+		return Presentation;
+	}
+
 	FRpgActionSlotPresentation BuildActionBarItemPresentation(const URpgInventoryItemInstance* ItemInstance)
 	{
 		FRpgActionSlotPresentation Presentation;
@@ -30,26 +49,7 @@ namespace
 			return Presentation;
 		}
 
-		FText DisplayName = FText::GetEmpty();
-		if (const TSubclassOf<URpgInventoryItemDefinition> ItemDefinition = ItemInstance->GetItemDef())
-		{
-			if (const URpgInventoryItemDefinition* ItemCDO = GetDefault<URpgInventoryItemDefinition>(ItemDefinition))
-			{
-				DisplayName = ItemCDO->DisplayName;
-			}
-		}
-
-		if (const URpgInventoryFragment_UIData* UIData = ItemInstance->FindFragmentByClass<URpgInventoryFragment_UIData>())
-		{
-			Presentation.Icon = UIData->Icon;
-			Presentation.ShortDisplayName = UIData->ShortDisplayName.IsEmpty() ? DisplayName : UIData->ShortDisplayName;
-		}
-		else
-		{
-			Presentation.ShortDisplayName = DisplayName;
-		}
-
-		return Presentation;
+		return BuildActionBarDefinitionPresentation(ItemInstance->GetItemDef());
 	}
 
 	FText AbilityIdToDisplayText(FGameplayTag AbilityIdTag)
@@ -107,12 +107,25 @@ namespace
 
 void URpgActionBarSlotViewModel::InitializeSlot(int32 InSlotIndex, const FRpgActionBarSlot& InSlot, URpgInventoryItemInstance* ResolvedItem, int32 InStackCount)
 {
+	InitializeSlotWithAbilitySystem(InSlotIndex, InSlot, ResolvedItem, InStackCount, nullptr);
+}
+
+void URpgActionBarSlotViewModel::InitializeSlotWithAbilitySystem(
+	int32 InSlotIndex,
+	const FRpgActionBarSlot& InSlot,
+	URpgInventoryItemInstance* ResolvedItem,
+	int32 InStackCount,
+	const URpgAbilitySystemComponent* AbilitySystem)
+{
 	const bool bWasChanged =
 		SlotIndex != InSlotIndex ||
 		SlotType != InSlot.SlotType ||
 		SlotAddress != InSlot.SlotAddress ||
 		ItemInstance != ResolvedItem ||
-		StackCount != InStackCount;
+		StackCount != InStackCount ||
+		bAvailable != InSlot.bAvailable ||
+		BlockedReason != InSlot.BlockedReason ||
+		AbilityId != InSlot.AbilityId;
 
 	SlotIndex = InSlotIndex;
 	SlotType = InSlot.SlotType;
@@ -120,15 +133,30 @@ void URpgActionBarSlotViewModel::InitializeSlot(int32 InSlotIndex, const FRpgAct
 	SlotAddress = InSlot.SlotAddress;
 	ItemInstance = ResolvedItem;
 	StackCount = ResolvedItem ? InStackCount : 0;
+	bAvailable = InSlot.bAvailable;
+	BlockedReason = InSlot.BlockedReason;
+	AbilityId = InSlot.AbilityId;
 	HotkeyActionRowName = InSlotIndex >= 0
 		? FName(*FString::Printf(TEXT("UI.ActionBar.Slot.%d"), InSlotIndex + 1))
 		: NAME_None;
 
-	const FRpgActionSlotPresentation Presentation = BuildActionBarItemPresentation(ItemInstance);
+	FRpgActionSlotPresentation Presentation = BuildActionBarItemPresentation(ItemInstance);
+	if (InSlot.SlotType == ERpgActionBarSlotType::Consumable && !ItemInstance)
+	{
+		Presentation = BuildActionBarDefinitionPresentation(InSlot.ConsumableDefinition);
+	}
+	if (InSlot.SlotType == ERpgActionBarSlotType::Ability)
+	{
+		const FRpgAbilitySlotPresentation AbilityPresentation = BuildAbilityPresentation(InSlot.AbilityId, AbilitySystem);
+		Presentation.Icon = AbilityPresentation.Icon;
+		Presentation.ShortDisplayName = AbilityPresentation.DisplayName;
+	}
 	Icon = Presentation.Icon;
 	ShortDisplayName = !Presentation.ShortDisplayName.IsEmpty()
 		? Presentation.ShortDisplayName
-		: (bHasContent ? FText::FromString(FString::Printf(TEXT("%s %d,%d"), *SlotAddress.ContainerId.ToString(), SlotAddress.X + 1, SlotAddress.Y + 1)) : FText::GetEmpty());
+		: InSlot.SlotType == ERpgActionBarSlotType::CarrySlot
+			? FText::FromName(InSlot.CarryRole)
+			: (bHasContent ? FText::FromName(InSlot.AbilityId.GetTagName()) : FText::GetEmpty());
 
 	UE_MVVM_BROADCAST_FIELD_VALUE_CHANGED(SlotIndex);
 	UE_MVVM_BROADCAST_FIELD_VALUE_CHANGED(SlotType);
@@ -136,6 +164,9 @@ void URpgActionBarSlotViewModel::InitializeSlot(int32 InSlotIndex, const FRpgAct
 	UE_MVVM_BROADCAST_FIELD_VALUE_CHANGED(SlotAddress);
 	UE_MVVM_BROADCAST_FIELD_VALUE_CHANGED(ItemInstance);
 	UE_MVVM_BROADCAST_FIELD_VALUE_CHANGED(StackCount);
+	UE_MVVM_BROADCAST_FIELD_VALUE_CHANGED(bAvailable);
+	UE_MVVM_BROADCAST_FIELD_VALUE_CHANGED(BlockedReason);
+	UE_MVVM_BROADCAST_FIELD_VALUE_CHANGED(AbilityId);
 	UE_MVVM_BROADCAST_FIELD_VALUE_CHANGED(Icon);
 	UE_MVVM_BROADCAST_FIELD_VALUE_CHANGED(ShortDisplayName);
 	UE_MVVM_BROADCAST_FIELD_VALUE_CHANGED(HotkeyActionRowName);
@@ -191,6 +222,8 @@ void URpgActionBarViewModel::RefreshSlots()
 	const URpgActionBarComponent* ActionBar = ObservedActionBar.Get();
 	const URpgInventoryManagerComponent* PlayerInventory = ObservedPlayerInventory.Get();
 	URpgPlayerInventoryLayoutComponent* InventoryLayout = ObservedInventoryLayout.Get();
+	const ARpgPlayerController* RpgPlayerController = ActionBar ? Cast<ARpgPlayerController>(ActionBar->GetOwner()) : nullptr;
+	const URpgAbilitySystemComponent* AbilitySystem = RpgPlayerController ? RpgPlayerController->GetRpgAbilitySystemComponent() : nullptr;
 	const TArray<FRpgActionBarSlot> SourceSlots = ActionBar ? ActionBar->GetSlots() : TArray<FRpgActionBarSlot>();
 	const int32 SlotCount = ActionBar ? FMath::Max(ActionBar->GetNumSlots(), SourceSlots.Num()) : FMath::Max(1, DefaultSlotCount);
 
@@ -212,7 +245,7 @@ void URpgActionBarViewModel::RefreshSlots()
 		const int32 StackCount = (PlayerInventory && ResolvedItem)
 			? PlayerInventory->GetItemStackCount(ResolvedItem)
 			: 0;
-		SlotViewModel->InitializeSlot(SlotIndex, SourceSlot, ResolvedItem, StackCount);
+		SlotViewModel->InitializeSlotWithAbilitySystem(SlotIndex, SourceSlot, ResolvedItem, StackCount, AbilitySystem);
 		Slots.Add(SlotViewModel);
 	}
 

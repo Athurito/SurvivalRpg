@@ -2,11 +2,42 @@
 
 #include "CoreMinimal.h"
 #include "Templates/SubclassOf.h"
+#include "UObject/SoftObjectPtr.h"
 #include "RpgEquipmentDefinition.generated.h"
 
 class AActor;
+class UAnimMontage;
 class URpgAbilitySet;
 class URpgEquipmentInstance;
+
+/** Server-authoritative equipment load tier used to select dodge presentation and root motion. */
+UENUM(BlueprintType)
+enum class ERpgEquipmentLoadTier : uint8
+{
+	/** Aggregate Gear and Carry weight is below the medium threshold. */
+	Light,
+
+	/** Aggregate Gear and Carry weight is at least the medium threshold but below the heavy threshold. */
+	Medium,
+
+	/** Aggregate Gear and Carry weight is at least the heavy threshold. */
+	Heavy
+};
+
+/** Designer-authored dodge assets selected by the current equipment load tier. */
+USTRUCT(BlueprintType)
+struct SURVIVALRPG_API FRpgEquipmentDodgeProfile
+{
+	GENERATED_BODY()
+
+	/** Optional dodge montage for this load tier. The dodge ability owns loading and playback. */
+	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Equipment|Dodge", meta = (AssetBundles = "Client,Server"))
+	TSoftObjectPtr<UAnimMontage> Montage;
+
+	/** Semantic root-motion profile consumed by the dodge ability or animation layer. None uses its normal default. */
+	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Equipment|Dodge")
+	FName RootMotionProfile = NAME_None;
+};
 
 UENUM(BlueprintType)
 enum class ERpgEquipmentSlot : uint8
@@ -137,6 +168,13 @@ public:
 	// Defines whether this item occupies only its selected slot or both hands.
 	UPROPERTY(EditDefaultsOnly, Category = "Equipment|Slots")
 	ERpgEquipmentHandOccupancy HandOccupancy = ERpgEquipmentHandOccupancy::SelectedSlotOnly;
+
+	/**
+	 * Load contributed while the physical item is in a Gear or Carry container, in kilograms.
+	 * Contents of equipped bags and pouches never contribute through this value.
+	 */
+	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Equipment|Load", meta = (ClampMin = "0.0", UIMin = "0.0", Units = "kg"))
+	float EquipLoadWeight = 0.0f;
 
 	// AbilitySets granted whenever this equipment is active. Prefer SlotAbilitySetsToGrant for hand/input actions.
 	UPROPERTY(EditDefaultsOnly, Category = "Equipment")

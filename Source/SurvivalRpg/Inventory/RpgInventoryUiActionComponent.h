@@ -112,6 +112,10 @@ class SURVIVALRPG_API URpgInventoryUiActionComponent : public UControllerCompone
 public:
 	explicit URpgInventoryUiActionComponent(const FObjectInitializer& ObjectInitializer = FObjectInitializer::Get());
 
+	/** Canonical reliable server RPC for item-id based mutations inside one accessible inventory graph. */
+	UFUNCTION(Server, Reliable, BlueprintCallable, Category = "Inventory|Transactions")
+	void RequestInventoryMutation(URpgInventoryManagerComponent* Inventory, FRpgInventoryMutationRequest Request);
+
 	/** Assigns an owned inventory item to an equipment slot such as MainHand, OffHand, Head, or Chest. */
 	UFUNCTION(Server, Reliable, BlueprintCallable, Category = "Inventory|UI Actions")
 	void RequestAssignItemToEquipmentSlot(ERpgEquipmentSlot EquipmentSlot, URpgInventoryItemInstance* Item);
@@ -268,13 +272,14 @@ private:
 	bool CanAccessBaseStorageStation(const URpgBaseStorageStationComponent* Station) const;
 	bool ClearPlayerAssignmentsForItem(URpgInventoryItemInstance* Item) const;
 	bool TryAssignItemToDefaultEquipmentDestination(URpgInventoryItemInstance* Item);
+	bool TryMoveAndActivateItemInCarry(URpgInventoryItemInstance* Item, ERpgEquipmentSlot PreferredHandSlot);
+	bool TryMoveItemToGearSlot(ERpgEquipmentSlot EquipmentSlot, URpgInventoryItemInstance* Item);
 	bool TryMoveItemToFirstCompatibleCarrySlot(URpgInventoryItemInstance* Item);
 	bool TryMoveItemToFirstCompatibleContentSlot(URpgInventoryItemInstance* Item);
 	bool CanMoveItemOutOfGearSlot(const FRpgInventorySlotAddress& SourceAddress) const;
 	void SyncEquipmentLoadoutFromGearSlots() const;
 	void SyncActiveHandsFromCarrySlots() const;
-	bool TrySpawnManualDrop(URpgInventoryItemInstance* Item, int32 StackCount, bool bDropAsInstance);
-	bool TryMergeManualDrop(TSubclassOf<URpgInventoryItemDefinition> ItemDefinition, int32 StackCount, const FVector& SpawnLocation) const;
+	bool TryTransferManualDrop(URpgInventoryManagerComponent* SourceInventory, URpgInventoryItemInstance* Item, int32 StackCount);
 	FTransform GetManualDropTransform() const;
 	void SendActionFeedback(FGameplayTag ActionTag, ERpgInventoryActionFeedbackResult Result, URpgInventoryManagerComponent* Inventory, URpgInventoryItemInstance* Item, int32 StackCount) const;
 

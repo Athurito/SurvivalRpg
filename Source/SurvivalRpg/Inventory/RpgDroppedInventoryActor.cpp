@@ -2,6 +2,7 @@
 
 #include "SurvivalRpg/Interaction/Abilities/RpgGameplayAbility_Collect.h"
 #include "SurvivalRpg/Inventory/RpgInventoryFragment_ItemTraits.h"
+#include "SurvivalRpg/Inventory/RpgInventoryContainerComponent.h"
 #include "SurvivalRpg/Inventory/RpgInventoryItemDefinition.h"
 #include "SurvivalRpg/Inventory/RpgInventoryItemInstance.h"
 #include "SurvivalRpg/Inventory/RpgInventoryManagerComponent.h"
@@ -14,6 +15,7 @@ ARpgDroppedInventoryActor::ARpgDroppedInventoryActor(const FObjectInitializer& O
 	(void)ObjectInitializer;
 
 	LootInventoryComponent = CreateDefaultSubobject<URpgInventoryManagerComponent>(TEXT("LootInventoryComponent"));
+	ContainerComponent = CreateDefaultSubobject<URpgInventoryContainerComponent>(TEXT("ContainerComponent"));
 }
 
 void ARpgDroppedInventoryActor::PostInitializeComponents()
@@ -26,12 +28,14 @@ void ARpgDroppedInventoryActor::PostInitializeComponents()
 	{
 		LootInventoryComponent->SetCapacityMode(ERpgInventoryCapacityMode::Unlimited);
 		PopulateLootInventoryFromPickup(StaticInventory);
+		StaticInventory = FInventoryPickup();
+		bLootInventoryInitialized = true;
 	}
 }
 
 FInventoryPickup ARpgDroppedInventoryActor::GetPickupInventory() const
 {
-	if (LootInventoryComponent && !LootInventoryComponent->GetAllEntries().IsEmpty())
+	if (LootInventoryComponent && bLootInventoryInitialized)
 	{
 		return BuildPickupInventoryFromLootInventory();
 	}
@@ -44,8 +48,17 @@ void ARpgDroppedInventoryActor::SetPickupInventory(const FInventoryPickup& NewPi
 	if (HasAuthority())
 	{
 		EnsureDefaultPickupInteractionOption();
-		StaticInventory = NewPickupInventory;
-		PopulateLootInventoryFromPickup(StaticInventory);
+		if (LootInventoryComponent)
+		{
+			const TArray<FRpgInventoryEntryView> ExistingEntries = LootInventoryComponent->GetAllEntries();
+			for (const FRpgInventoryEntryView& Entry : ExistingEntries)
+			{
+				LootInventoryComponent->RemoveItemInstance(Entry.Instance);
+			}
+		}
+		PopulateLootInventoryFromPickup(NewPickupInventory);
+		StaticInventory = FInventoryPickup();
+		bLootInventoryInitialized = true;
 		ForceNetUpdate();
 	}
 }
@@ -58,47 +71,37 @@ bool ARpgDroppedInventoryActor::MergePickupTemplate(TSubclassOf<URpgInventoryIte
 	}
 
 	EnsureDefaultPickupInteractionOption();
-	for (FPickupTemplate& Template : StaticInventory.Templates)
+	if (!LootInventoryComponent || !LootInventoryComponent->CanAddItemDefinition(ItemDefinition, StackCount))
 	{
-		if (Template.ItemDef == ItemDefinition)
-		{
-			Template.StackCount += StackCount;
-			if (LootInventoryComponent)
-			{
-				LootInventoryComponent->AddItemDefinition(ItemDefinition, StackCount);
-			}
-			ForceNetUpdate();
-			return true;
-		}
+		return false;
 	}
 
-	FPickupTemplate& NewTemplate = StaticInventory.Templates.AddDefaulted_GetRef();
-	NewTemplate.ItemDef = ItemDefinition;
-	NewTemplate.StackCount = StackCount;
-	if (LootInventoryComponent)
+	if (!LootInventoryComponent->AddItemDefinition(ItemDefinition, StackCount))
 	{
-		LootInventoryComponent->AddItemDefinition(ItemDefinition, StackCount);
+		return false;
 	}
+	bLootInventoryInitialized = true;
 	ForceNetUpdate();
 	return true;
 }
 
 bool ARpgDroppedInventoryActor::CanMergePickupTemplate(TSubclassOf<URpgInventoryItemDefinition> ItemDefinition) const
 {
-	if (!ItemDefinition || StaticInventory.Instances.Num() > 0)
+	if (!ItemDefinition || !LootInventoryComponent)
 	{
 		return false;
 	}
 
-	for (const FPickupTemplate& Template : StaticInventory.Templates)
+	const TArray<FRpgInventoryEntryView> Entries = LootInventoryComponent->GetAllEntries();
+	for (const FRpgInventoryEntryView& Entry : Entries)
 	{
-		if (Template.ItemDef == ItemDefinition)
+		if (!Entry.Instance || Entry.Instance->GetItemDef() != ItemDefinition)
 		{
-			return true;
+			return false;
 		}
 	}
 
-	return StaticInventory.Templates.Num() == 0;
+	return Entries.IsEmpty() || LootInventoryComponent->CanAddItemDefinition(ItemDefinition, 1);
 }
 
 void ARpgDroppedInventoryActor::EnsureDefaultPickupInteractionOption()
@@ -121,7 +124,7 @@ void ARpgDroppedInventoryActor::EnsureDefaultPickupInteractionOption()
 
 void ARpgDroppedInventoryActor::PopulateLootInventoryFromPickup(const FInventoryPickup& PickupInventory)
 {
-	if (!HasAuthority() || !LootInventoryComponent || !LootInventoryComponent->GetAllEntries().IsEmpty())
+	if (!HasAuthority() || !LootInventoryComponent)
 	{
 		return;
 	}

@@ -2,11 +2,57 @@
 
 #include "RpgInventoryItemDefinition.h"
 
-
 #include "Templates/SubclassOf.h"
 #include "UObject/ObjectPtr.h"
 
 #include UE_INLINE_GENERATED_CPP_BY_NAME(RpgInventoryItemDefinition)
+
+//////////////////////////////////////////////////////////////////////
+// URpgInventoryItemFragment
+
+FName URpgInventoryItemFragment::GetRuntimeStateIdentifier() const
+{
+	return NAME_None;
+}
+
+int32 URpgInventoryItemFragment::GetRuntimeStateVersion() const
+{
+	return 1;
+}
+
+bool URpgInventoryItemFragment::ExportRuntimeState(
+	const URpgInventoryItemInstance* Instance,
+	FRpgInventoryFragmentStatePayload& OutPayload) const
+{
+	return false;
+}
+
+bool URpgInventoryItemFragment::ValidateRuntimeState(
+	const URpgInventoryItemInstance* Instance,
+	const FRpgInventoryFragmentStatePayload& Payload) const
+{
+	return false;
+}
+
+bool URpgInventoryItemFragment::ImportRuntimeState(
+	URpgInventoryItemInstance* Instance,
+	const FRpgInventoryFragmentStatePayload& Payload) const
+{
+	return false;
+}
+
+void URpgInventoryItemFragment::CopyRuntimeState(
+	const URpgInventoryItemInstance* Source,
+	URpgInventoryItemInstance* Target) const
+{
+}
+
+bool URpgInventoryItemFragment::AreInstancesStackCompatible(
+	const URpgInventoryItemInstance* A,
+	const URpgInventoryItemInstance* B) const
+{
+	return true;
+}
 
 //////////////////////////////////////////////////////////////////////
 // URpgInventoryItemDefinition

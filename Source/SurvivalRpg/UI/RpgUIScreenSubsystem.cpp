@@ -9,6 +9,8 @@
 #include "RpgUIScreenPayload.h"
 #include "RpgUIScreenRegistry.h"
 #include "RpgUISettings.h"
+#include "SurvivalRpg/GameplayTags/RpgGameplayTags.h"
+#include "SurvivalRpg/UI/RpgStorageInventoryWidget.h"
 
 DEFINE_LOG_CATEGORY_STATIC(LogRpgUIScreenSubsystem, Log, All);
 
@@ -95,6 +97,7 @@ UCommonActivatableWidget* URpgUIScreenSubsystem::OpenScreen(FGameplayTag ScreenT
 		{
 			if (State == EAsyncWidgetLayerState::Canceled)
 			{
+				CanceledPendingScreenTags.Remove(ScreenTag);
 				PendingPayloads.Remove(ScreenTag);
 				PendingScreenTags.Remove(ScreenTag);
 				return;
@@ -102,6 +105,14 @@ UCommonActivatableWidget* URpgUIScreenSubsystem::OpenScreen(FGameplayTag ScreenT
 
 			if (State == EAsyncWidgetLayerState::Initialize && Widget)
 			{
+				if (CanceledPendingScreenTags.Remove(ScreenTag) > 0)
+				{
+					Widget->DeactivateWidget();
+					PendingPayloads.Remove(ScreenTag);
+					PendingScreenTags.Remove(ScreenTag);
+					return;
+				}
+
 				ActiveScreens.Add(ScreenTag, Widget);
 
 				UObject* PayloadToApply = nullptr;
@@ -202,6 +213,14 @@ void URpgUIScreenSubsystem::CloseScreen(FGameplayTag ScreenTag)
 	if (UCommonActivatableWidget* ActiveWidget = GetActiveScreen(ScreenTag))
 	{
 		ActiveWidget->DeactivateWidget();
+		return;
+	}
+
+	if (PendingScreenTags.Contains(ScreenTag))
+	{
+		PendingPayloads.Remove(ScreenTag);
+		PendingScreenTags.Remove(ScreenTag);
+		CanceledPendingScreenTags.Add(ScreenTag);
 	}
 }
 
@@ -219,6 +238,11 @@ UCommonActivatableWidget* URpgUIScreenSubsystem::GetActiveScreen(FGameplayTag Sc
 	}
 
 	return nullptr;
+}
+
+bool URpgUIScreenSubsystem::IsScreenActiveOrPending(FGameplayTag ScreenTag) const
+{
+	return PendingScreenTags.Contains(ScreenTag) || GetActiveScreen(ScreenTag) != nullptr;
 }
 
 const URpgUIScreenRegistry* URpgUIScreenSubsystem::GetScreenRegistry() const
@@ -240,6 +264,13 @@ bool URpgUIScreenSubsystem::ResolveScreenEntry(FGameplayTag ScreenTag, FRpgUIScr
 		{
 			return true;
 		}
+
+		// Loot uses the same dual-inventory presentation as storage. This native alias keeps old registries valid.
+		if (ScreenTag == RpgGameplayTags::UI_Screen_Loot && Registry->FindScreen(RpgGameplayTags::UI_Screen_Storage, OutEntry))
+		{
+			OutEntry.ScreenTag = ScreenTag;
+			return true;
+		}
 	}
 
 	const URpgUISettings* UISettings = GetDefault<URpgUISettings>();
@@ -257,6 +288,19 @@ bool URpgUIScreenSubsystem::ResolveScreenEntry(FGameplayTag ScreenTag, FRpgUIScr
 		}
 	}
 
+	if (ScreenTag == RpgGameplayTags::UI_Screen_Loot)
+	{
+		for (const FRpgUIScreenRegistryEntry& Entry : UISettings->DefaultScreenMappings)
+		{
+			if (Entry.ScreenTag == RpgGameplayTags::UI_Screen_Storage)
+			{
+				OutEntry = Entry;
+				OutEntry.ScreenTag = ScreenTag;
+				return true;
+			}
+		}
+	}
+
 	return false;
 }
 
@@ -265,6 +309,13 @@ void URpgUIScreenSubsystem::ApplyPayloadToWidget(UCommonActivatableWidget* Widge
 	if (Widget && Widget->GetClass()->ImplementsInterface(URpgUIScreenPayloadReceiver::StaticClass()))
 	{
 		IRpgUIScreenPayloadReceiver::Execute_ReceiveScreenPayload(Widget, Payload);
+	}
+
+	// CUI_StorageContainer historically implemented the interface in Blueprint. Finalize the native spatial
+	// presenter after that compatibility graph so both sides always use one coordinator/session during migration.
+	if (URpgStorageInventoryWidget* StorageInventoryWidget = Cast<URpgStorageInventoryWidget>(Widget))
+	{
+		StorageInventoryWidget->ApplyInventoryScreenPayload(Payload);
 	}
 }
 

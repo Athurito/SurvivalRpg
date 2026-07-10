@@ -2,6 +2,7 @@
 
 #include "GameFramework/GameplayMessageSubsystem.h"
 #include "RpgInventoryFragment_EquippableItem.h"
+#include "RpgInventoryFragment_ItemContainer.h"
 #include "RpgInventoryFragment_ItemTraits.h"
 #include "RpgInventoryFragment_SlotContainerProvider.h"
 #include "RpgInventoryItemInstance.h"
@@ -15,8 +16,6 @@
 const FName URpgPlayerInventoryLayoutComponent::WeaponSlot1GroupId(TEXT("WeaponSlot1"));
 const FName URpgPlayerInventoryLayoutComponent::WeaponSlot2GroupId(TEXT("WeaponSlot2"));
 const FName URpgPlayerInventoryLayoutComponent::ShieldSlotGroupId(TEXT("ShieldSlot"));
-const FName URpgPlayerInventoryLayoutComponent::ToolSlot1GroupId(TEXT("ToolSlot1"));
-const FName URpgPlayerInventoryLayoutComponent::ToolSlot2GroupId(TEXT("ToolSlot2"));
 const FName URpgPlayerInventoryLayoutComponent::PocketsGroupId(TEXT("Pockets"));
 const FName URpgPlayerInventoryLayoutComponent::GearHeadGroupId(TEXT("Gear.Head"));
 const FName URpgPlayerInventoryLayoutComponent::GearChestGroupId(TEXT("Gear.Chest"));
@@ -39,7 +38,7 @@ namespace
 
 		if (URpgPlayerInventoryLayoutComponent::IsSlotContainerEquipmentSlot(EquipmentSlot))
 		{
-			return Item->FindFragmentByClass<URpgInventoryFragment_SlotContainerProvider>() != nullptr;
+			return Item->FindFragmentByClass<URpgInventoryFragment_ItemContainer>() != nullptr;
 		}
 
 		const URpgInventoryFragment_EquippableItem* EquippableFragment = Item->FindFragmentByClass<URpgInventoryFragment_EquippableItem>();
@@ -65,11 +64,9 @@ URpgPlayerInventoryLayoutComponent::URpgPlayerInventoryLayoutComponent(const FOb
 		MakeStaticGroup(GearBeltGroupId, NSLOCTEXT("RpgInventoryLayout", "GearBelt", "Belt"), 1, 1, {}, false, false, ERpgInventorySlotGroupKind::Gear),
 		MakeStaticGroup(GearPouchGroupId, NSLOCTEXT("RpgInventoryLayout", "GearPouch", "Pouch"), 1, 1, {}, false, false, ERpgInventorySlotGroupKind::Gear),
 		MakeStaticGroup(GearResourceBagGroupId, NSLOCTEXT("RpgInventoryLayout", "GearResourceBag", "Resource Bag"), 1, 1, {}, false, false, ERpgInventorySlotGroupKind::Gear),
-		MakeStaticGroup(WeaponSlot1GroupId, NSLOCTEXT("RpgInventoryLayout", "WeaponSlot1", "Weapon 1"), 1, 1, { ERpgInventoryItemCategory::Weapon }, true, true, ERpgInventorySlotGroupKind::Carry),
-		MakeStaticGroup(WeaponSlot2GroupId, NSLOCTEXT("RpgInventoryLayout", "WeaponSlot2", "Weapon 2"), 1, 1, { ERpgInventoryItemCategory::Weapon }, true, true, ERpgInventorySlotGroupKind::Carry),
-		MakeStaticGroup(ShieldSlotGroupId, NSLOCTEXT("RpgInventoryLayout", "ShieldSlot", "Shield"), 1, 1, { ERpgInventoryItemCategory::Shield }, true, true, ERpgInventorySlotGroupKind::Carry),
-		MakeStaticGroup(ToolSlot1GroupId, NSLOCTEXT("RpgInventoryLayout", "ToolSlot1", "Tool 1"), 1, 1, { ERpgInventoryItemCategory::Tool }, true, true, ERpgInventorySlotGroupKind::Carry),
-		MakeStaticGroup(ToolSlot2GroupId, NSLOCTEXT("RpgInventoryLayout", "ToolSlot2", "Tool 2"), 1, 1, { ERpgInventoryItemCategory::Tool }, true, true, ERpgInventorySlotGroupKind::Carry),
+		MakeStaticGroup(WeaponSlot1GroupId, NSLOCTEXT("RpgInventoryLayout", "WeaponSlot1", "Weapon 1"), 1, 1, { ERpgInventoryItemCategory::Weapon }, true, true, ERpgInventorySlotGroupKind::Carry, RpgGameplayTags::Equipment_Slot_MainHand),
+		MakeStaticGroup(WeaponSlot2GroupId, NSLOCTEXT("RpgInventoryLayout", "WeaponSlot2", "Weapon 2"), 1, 1, { ERpgInventoryItemCategory::Weapon }, true, true, ERpgInventorySlotGroupKind::Carry, RpgGameplayTags::Equipment_Slot_MainHand),
+		MakeStaticGroup(ShieldSlotGroupId, NSLOCTEXT("RpgInventoryLayout", "ShieldSlot", "Shield"), 1, 1, { ERpgInventoryItemCategory::Shield }, true, true, ERpgInventorySlotGroupKind::Carry, RpgGameplayTags::Equipment_Slot_OffHand),
 		MakeStaticGroup(PocketsGroupId, NSLOCTEXT("RpgInventoryLayout", "Pockets", "Pockets"), 4, 2, {}, true, false, ERpgInventorySlotGroupKind::Content)
 	};
 }
@@ -106,9 +103,9 @@ bool URpgPlayerInventoryLayoutComponent::ResolveSlotAddress(const FRpgInventoryS
 
 	for (const FRpgInventorySlotGroupView& Group : BuildSlotGroups())
 	{
-		if (Group.ContainerId == Address.ContainerId && Group.ContainsCell(Address.X, Address.Y))
+		if (Group.ContainerHandle == Address.GetContainerHandle() && Group.ContainsCell(Address.X, Address.Y))
 		{
-			OutPlacement.ContainerId = Address.ContainerId;
+			OutPlacement.SetContainerHandle(Address.GetContainerHandle());
 			OutPlacement.X = Address.X;
 			OutPlacement.Y = Address.Y;
 			OutPlacement.Width = 1;
@@ -131,9 +128,9 @@ bool URpgPlayerInventoryLayoutComponent::TryMakeSlotAddressFromPlacement(const F
 
 	for (const FRpgInventorySlotGroupView& Group : BuildSlotGroups())
 	{
-		if (Group.ContainerId == Placement.ContainerId && Group.ContainsCell(Placement.X, Placement.Y))
+		if (Group.ContainerHandle == Placement.GetContainerHandle() && Group.ContainsCell(Placement.X, Placement.Y))
 		{
-			OutAddress.ContainerId = Placement.ContainerId;
+			OutAddress.SetContainerHandle(Placement.GetContainerHandle());
 			OutAddress.X = Placement.X;
 			OutAddress.Y = Placement.Y;
 			return true;
@@ -163,11 +160,31 @@ bool URpgPlayerInventoryLayoutComponent::GetGridSizeForContainer(FName Container
 	return false;
 }
 
+bool URpgPlayerInventoryLayoutComponent::GetGridSizeForContainerHandle(FRpgInventoryContainerHandle ContainerHandle, FRpgInventoryGridSize& OutGridSize) const
+{
+	OutGridSize = FRpgInventoryGridSize();
+	if (!ContainerHandle.IsValid())
+	{
+		return false;
+	}
+
+	for (const FRpgInventorySlotGroupView& Group : BuildSlotGroups())
+	{
+		if (Group.ContainerHandle == ContainerHandle && Group.GridSize.IsValid())
+		{
+			OutGridSize = Group.GridSize;
+			return true;
+		}
+	}
+
+	return false;
+}
+
 URpgInventoryItemInstance* URpgPlayerInventoryLayoutComponent::GetItemInSlotAddress(const FRpgInventorySlotAddress& Address) const
 {
 	URpgInventoryManagerComponent* Inventory = FindPlayerInventory();
 	FRpgInventoryGridPlacement Placement;
-	return Inventory && ResolveSlotAddress(Address, Placement) ? Inventory->GetItemAtCell(Placement.ContainerId, Placement.X, Placement.Y) : nullptr;
+	return Inventory && ResolveSlotAddress(Address, Placement) ? Inventory->GetItemAtContainerCell(Placement.GetContainerHandle(), Placement.X, Placement.Y) : nullptr;
 }
 
 bool URpgPlayerInventoryLayoutComponent::CanItemUseSlotAddress(URpgInventoryItemInstance* Item, const FRpgInventorySlotAddress& Address) const
@@ -179,7 +196,7 @@ bool URpgPlayerInventoryLayoutComponent::CanItemUseSlotAddress(URpgInventoryItem
 
 	for (const FRpgInventorySlotGroupView& Group : BuildSlotGroups())
 	{
-		if (Group.ContainerId == Address.ContainerId && Group.ContainsCell(Address.X, Address.Y))
+		if (Group.ContainerHandle == Address.GetContainerHandle() && Group.ContainsCell(Address.X, Address.Y))
 		{
 			if (!Group.Rule.AllowsItem(Item))
 			{
@@ -209,9 +226,14 @@ bool URpgPlayerInventoryLayoutComponent::IsSlotAddressActionbarBindable(const FR
 
 	for (const FRpgInventorySlotGroupView& Group : BuildSlotGroups())
 	{
-		if (Group.ContainerId == Address.ContainerId && Group.ContainsCell(Address.X, Address.Y))
+		if (Group.ContainerHandle == Address.GetContainerHandle() && Group.ContainsCell(Address.X, Address.Y))
 		{
-			return Group.Rule.bActionbarBindable;
+			const bool bDisallowedProvider = Group.bProvidedByEquipment &&
+				Group.SourceEquipmentSlotName != FName(TEXT("Belt")) &&
+				Group.SourceEquipmentSlotName != FName(TEXT("Pouch"));
+			return Group.Rule.bActionbarBindable &&
+				Group.ContainerHandle.Depth <= 1 &&
+				(Group.GroupKind != ERpgInventorySlotGroupKind::Content || !bDisallowedProvider);
 		}
 	}
 
@@ -227,12 +249,16 @@ bool URpgPlayerInventoryLayoutComponent::CanBindSlotAddressToActionbar(const FRp
 
 	for (const FRpgInventorySlotGroupView& Group : BuildSlotGroups())
 	{
-		if (Group.ContainerId != Address.ContainerId || !Group.ContainsCell(Address.X, Address.Y))
+		if (Group.ContainerHandle != Address.GetContainerHandle() || !Group.ContainsCell(Address.X, Address.Y))
 		{
 			continue;
 		}
 
 		if (!Group.Rule.bActionbarBindable || !Group.Rule.AllowsItem(Item))
+		{
+			return false;
+		}
+		if (Group.ContainerHandle.Depth > 1)
 		{
 			return false;
 		}
@@ -243,6 +269,12 @@ bool URpgPlayerInventoryLayoutComponent::CanBindSlotAddressToActionbar(const FRp
 		}
 
 		if (Group.GroupKind != ERpgInventorySlotGroupKind::Content)
+		{
+			return false;
+		}
+		if (Group.bProvidedByEquipment &&
+			Group.SourceEquipmentSlotName != FName(TEXT("Belt")) &&
+			Group.SourceEquipmentSlotName != FName(TEXT("Pouch")))
 		{
 			return false;
 		}
@@ -279,13 +311,32 @@ bool URpgPlayerInventoryLayoutComponent::IsCarrySlotAddress(const FRpgInventoryS
 
 	for (const FRpgInventorySlotGroupView& Group : BuildSlotGroups())
 	{
-		if (Group.ContainerId == Address.ContainerId && Group.ContainsCell(Address.X, Address.Y))
+		if (Group.ContainerHandle == Address.GetContainerHandle() && Group.ContainsCell(Address.X, Address.Y))
 		{
 			return Group.GroupKind == ERpgInventorySlotGroupKind::Carry && Group.Rule.bCarrySlot;
 		}
 	}
 
 	return false;
+}
+
+FGameplayTag URpgPlayerInventoryLayoutComponent::GetCarryActivationRole(const FRpgInventorySlotAddress& Address) const
+{
+	if (!Address.IsValid())
+	{
+		return FGameplayTag();
+	}
+
+	for (const FRpgInventorySlotGroupView& Group : BuildSlotGroups())
+	{
+		if (Group.ContainerHandle == Address.GetContainerHandle() && Group.ContainsCell(Address.X, Address.Y) &&
+			Group.GroupKind == ERpgInventorySlotGroupKind::Carry && Group.Rule.bCarrySlot)
+		{
+			return Group.Rule.CarryActivationRole;
+		}
+	}
+
+	return FGameplayTag();
 }
 
 bool URpgPlayerInventoryLayoutComponent::IsGearSlotAddress(const FRpgInventorySlotAddress& Address) const
@@ -297,7 +348,7 @@ bool URpgPlayerInventoryLayoutComponent::IsGearSlotAddress(const FRpgInventorySl
 
 	for (const FRpgInventorySlotGroupView& Group : BuildSlotGroups())
 	{
-		if (Group.ContainerId == Address.ContainerId && Group.ContainsCell(Address.X, Address.Y))
+		if (Group.ContainerHandle == Address.GetContainerHandle() && Group.ContainsCell(Address.X, Address.Y))
 		{
 			return Group.GroupKind == ERpgInventorySlotGroupKind::Gear;
 		}
@@ -315,7 +366,7 @@ bool URpgPlayerInventoryLayoutComponent::IsContentSlotAddress(const FRpgInventor
 
 	for (const FRpgInventorySlotGroupView& Group : BuildSlotGroups())
 	{
-		if (Group.ContainerId == Address.ContainerId && Group.ContainsCell(Address.X, Address.Y))
+		if (Group.ContainerHandle == Address.GetContainerHandle() && Group.ContainsCell(Address.X, Address.Y))
 		{
 			return Group.GroupKind == ERpgInventorySlotGroupKind::Content;
 		}
@@ -338,8 +389,8 @@ void URpgPlayerInventoryLayoutComponent::ApplyLayoutCapacityToInventory()
 		return;
 	}
 
-	PlayerInventory->SetCapacityMode(ERpgInventoryCapacityMode::FixedEntries);
-	PlayerInventory->SetFixedMaxEntries(GetTotalCellCount());
+	// Spatial player capacity is defined only by active grids and per-item stack limits.
+	PlayerInventory->SetCapacityMode(ERpgInventoryCapacityMode::Unlimited);
 	BroadcastLayoutChanged();
 }
 
@@ -353,48 +404,9 @@ bool URpgPlayerInventoryLayoutComponent::IsSlotContainerEquipmentSlot(ERpgEquipm
 
 bool URpgPlayerInventoryLayoutComponent::CanUnequipSlotContainer(ERpgEquipmentSlot EquipmentSlot) const
 {
-	if (!IsSlotContainerEquipmentSlot(EquipmentSlot))
-	{
-		return true;
-	}
-
-	URpgInventoryManagerComponent* PlayerInventory = FindPlayerInventory();
-	if (!PlayerInventory)
-	{
-		return true;
-	}
-
-	const FName SourceName = EquipmentSlotToSourceName(EquipmentSlot);
-	bool bCheckThisAndFollowingProviderGroups = false;
-	for (const FRpgInventorySlotGroupView& Group : BuildSlotGroups())
-	{
-		if (!Group.bProvidedByEquipment)
-		{
-			continue;
-		}
-
-		if (Group.SourceEquipmentSlotName == SourceName)
-		{
-			bCheckThisAndFollowingProviderGroups = true;
-		}
-
-		if (!bCheckThisAndFollowingProviderGroups)
-		{
-			continue;
-		}
-
-		for (int32 Y = 0; Y < Group.GridSize.Height; ++Y)
-		{
-			for (int32 X = 0; X < Group.GridSize.Width; ++X)
-			{
-				if (PlayerInventory->GetItemAtCell(Group.ContainerId, X, Y) != nullptr)
-				{
-					return false;
-				}
-			}
-		}
-	}
-
+	(void)EquipmentSlot;
+	// Contents are addressed by the concrete provider item id and therefore travel with the item.
+	// Emptying a backpack before unequipping was a legacy global-grid constraint, not a gameplay rule.
 	return true;
 }
 
@@ -402,9 +414,7 @@ bool URpgPlayerInventoryLayoutComponent::IsBuiltInCarryGroupId(FName GroupId)
 {
 	return GroupId == WeaponSlot1GroupId ||
 		GroupId == WeaponSlot2GroupId ||
-		GroupId == ShieldSlotGroupId ||
-		GroupId == ToolSlot1GroupId ||
-		GroupId == ToolSlot2GroupId;
+		GroupId == ShieldSlotGroupId;
 }
 
 bool URpgPlayerInventoryLayoutComponent::IsBuiltInGearGroupId(FName GroupId)
@@ -541,21 +551,20 @@ TArray<FRpgInventorySlotGroupView> URpgPlayerInventoryLayoutComponent::BuildSlot
 		{
 			for (const FRpgInventorySlotGroupView& ExistingGroup : Groups)
 			{
-				if (ExistingGroup.ContainerId == GearAddress.ContainerId && ExistingGroup.ContainsCell(0, 0))
+				if (ExistingGroup.ContainerHandle == GearAddress.GetContainerHandle() && ExistingGroup.ContainsCell(0, 0))
 				{
-					ProviderItem = PlayerInventory->GetItemAtCell(ExistingGroup.ContainerId, 0, 0);
+					ProviderItem = PlayerInventory->GetItemAtContainerCell(ExistingGroup.ContainerHandle, 0, 0);
 					break;
 				}
 			}
 		}
 
-		const URpgInventoryFragment_SlotContainerProvider* ProviderFragment = ProviderItem ? ProviderItem->FindFragmentByClass<URpgInventoryFragment_SlotContainerProvider>() : nullptr;
-		if (!ProviderFragment)
+		if (!ProviderItem || !ProviderItem->FindFragmentByClass<URpgInventoryFragment_ItemContainer>())
 		{
 			continue;
 		}
 
-		AppendGroupViews(ProviderFragment->ProvidedSlotGroups, true, ProviderSlot, Groups);
+		AppendItemContainerViews(ProviderItem, ProviderSlot, Groups);
 	}
 
 	return Groups;
@@ -574,7 +583,17 @@ void URpgPlayerInventoryLayoutComponent::AppendGroupViews(
 			continue;
 		}
 
+		if (OutGroups.ContainsByPredicate([&GroupDefinition](const FRpgInventorySlotGroupView& ExistingGroup)
+			{
+				return ExistingGroup.ContainerId == GroupDefinition.ContainerId;
+			}))
+		{
+			UE_LOG(LogTemp, Error, TEXT("Duplicate inventory container id '%s' was rejected while building the player layout."), *GroupDefinition.ContainerId.ToString());
+			continue;
+		}
+
 		FRpgInventorySlotGroupView& GroupView = OutGroups.AddDefaulted_GetRef();
+		GroupView.ContainerHandle = FRpgInventoryContainerHandle::MakeRoot(GroupDefinition.ContainerId);
 		GroupView.ContainerId = GroupDefinition.ContainerId;
 		GroupView.DisplayName = GroupDefinition.DisplayName;
 		GroupView.Icon = GroupDefinition.Icon;
@@ -582,6 +601,67 @@ void URpgPlayerInventoryLayoutComponent::AppendGroupViews(
 		GroupView.GridSize = GroupDefinition.GridSize;
 		GroupView.Rule = GroupDefinition.Rule;
 		GroupView.bProvidedByEquipment = bProvidedByEquipment;
+		GroupView.SourceEquipmentSlotName = EquipmentSlotToSourceName(SourceEquipmentSlot);
+	}
+}
+
+void URpgPlayerInventoryLayoutComponent::AppendItemContainerViews(
+	const URpgInventoryItemInstance* ProviderItem,
+	ERpgEquipmentSlot SourceEquipmentSlot,
+	TArray<FRpgInventorySlotGroupView>& OutGroups) const
+{
+	const URpgInventoryFragment_ItemContainer* ProviderFragment = ProviderItem
+		? ProviderItem->FindFragmentByClass<URpgInventoryFragment_ItemContainer>()
+		: nullptr;
+	URpgInventoryManagerComponent* PlayerInventory = FindPlayerInventory();
+	if (!ProviderFragment || !PlayerInventory || !ProviderItem->GetItemId().IsValid())
+	{
+		return;
+	}
+
+	FRpgInventoryGridPlacement ProviderPlacement;
+	if (!PlayerInventory->GetItemPlacement(const_cast<URpgInventoryItemInstance*>(ProviderItem), ProviderPlacement))
+	{
+		return;
+	}
+
+	const uint8 ChildDepth = ProviderPlacement.GetContainerHandle().GetDirectChildDepth();
+	if (ChildDepth == 0)
+	{
+		return;
+	}
+
+	TArray<FRpgInventoryItemContainerDefinition> ContainerDefinitions;
+	ProviderFragment->GetProvidedContainers(ContainerDefinitions);
+	for (const FRpgInventoryItemContainerDefinition& Definition : ContainerDefinitions)
+	{
+		if (!Definition.IsValid())
+		{
+			continue;
+		}
+
+		const FRpgInventoryContainerHandle Handle = FRpgInventoryContainerHandle::MakeItemOwned(
+			ProviderItem->GetItemId(), Definition.ContainerId, ChildDepth);
+		if (OutGroups.ContainsByPredicate([&Handle](const FRpgInventorySlotGroupView& ExistingGroup)
+			{
+				return ExistingGroup.ContainerHandle == Handle;
+			}))
+		{
+			continue;
+		}
+
+		FRpgInventorySlotGroupView& GroupView = OutGroups.AddDefaulted_GetRef();
+		GroupView.ContainerHandle = Handle;
+		GroupView.ContainerId = Definition.ContainerId;
+		GroupView.DisplayName = Definition.DisplayName;
+		GroupView.Icon = Definition.Icon;
+		GroupView.GroupKind = ERpgInventorySlotGroupKind::Content;
+		GroupView.GridSize = Definition.GridSize;
+		GroupView.Rule.AllowedCategories = Definition.AllowedCategories;
+		GroupView.Rule.RequiredItemTags = Definition.RequiredItemTags;
+		GroupView.Rule.BlockedItemTags = Definition.BlockedItemTags;
+		GroupView.Rule.bActionbarBindable = Definition.bQuickAccessEligible;
+		GroupView.bProvidedByEquipment = true;
 		GroupView.SourceEquipmentSlotName = EquipmentSlotToSourceName(SourceEquipmentSlot);
 	}
 }
@@ -627,7 +707,8 @@ FRpgInventorySlotGroupDefinition URpgPlayerInventoryLayoutComponent::MakeStaticG
 	const TArray<ERpgInventoryItemCategory>& AllowedCategories,
 	bool bActionbarBindable,
 	bool bCarrySlot,
-	ERpgInventorySlotGroupKind GroupKind)
+	ERpgInventorySlotGroupKind GroupKind,
+	FGameplayTag CarryActivationRole)
 {
 	FRpgInventorySlotGroupDefinition Group;
 	Group.ContainerId = ContainerId;
@@ -638,5 +719,6 @@ FRpgInventorySlotGroupDefinition URpgPlayerInventoryLayoutComponent::MakeStaticG
 	Group.Rule.AllowedCategories = AllowedCategories;
 	Group.Rule.bActionbarBindable = bActionbarBindable;
 	Group.Rule.bCarrySlot = bCarrySlot;
+	Group.Rule.CarryActivationRole = CarryActivationRole;
 	return Group;
 }

@@ -178,8 +178,7 @@ bool URpgActionBarSlotWidget::NativeOnDrop(const FGeometry& InGeometry, const FD
 		return false;
 	}
 
-	CommitPayloadDrop(InventoryOperation->InventoryPayload);
-	return true;
+	return CommitPayloadDrop(InventoryOperation->InventoryPayload);
 }
 
 void URpgActionBarSlotWidget::NativeOnDragLeave(const FDragDropEvent& InDragDropEvent, UDragDropOperation* InOperation)

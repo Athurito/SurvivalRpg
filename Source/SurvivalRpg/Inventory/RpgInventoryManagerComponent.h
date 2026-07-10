@@ -21,6 +21,18 @@ struct FFrame;
 struct FRpgInventoryList;
 struct FNetDeltaSerializeInfo;
 struct FReplicationFlags;
+class FCustomPropertyConditionState;
+
+/** Connection audience for the replicated inventory graph and item subobjects. */
+UENUM(BlueprintType)
+enum class ERpgInventoryReplicationPolicy : uint8
+{
+	/** Private player inventory: only the owning connection receives entries and item state. */
+	OwnerOnly,
+
+	/** World storage/loot: every connection for which the owning actor is relevant receives the graph. */
+	ActorRelevant
+};
 
 /** Capacity source used by an inventory manager when accepting new entries. */
 UENUM(BlueprintType)
@@ -74,6 +86,10 @@ struct FRpgInventoryEntryView
 	UPROPERTY(BlueprintReadOnly, Category = Inventory)
 	FGuid EntryId;
 
+	/** Persistent identity of the concrete item, independent of this inventory entry. */
+	UPROPERTY(BlueprintReadOnly, Category = Inventory)
+	FRpgInventoryItemId ItemId;
+
 	/** Authoritative replicated stack count for this item entry. */
 	UPROPERTY(BlueprintReadOnly, Category = Inventory)
 	int32 StackCount = 0;
@@ -92,6 +108,10 @@ struct FRpgInventorySnapshotEntry
 	/** Stable entry id preserved when restoring a saved container order. */
 	UPROPERTY(BlueprintReadWrite, Category = "Inventory|Snapshot")
 	FGuid EntryId;
+
+	/** Persistent concrete item identity preserved across containers and disk restore. */
+	UPROPERTY(BlueprintReadWrite, SaveGame, Category = "Inventory|Snapshot")
+	FRpgInventoryItemId ItemId;
 
 	/** Static item definition to recreate for this saved stack. */
 	UPROPERTY(BlueprintReadWrite, Category = "Inventory|Snapshot")
@@ -204,11 +224,14 @@ struct FRpgInventoryList : public FFastArraySerializer
 	TArray<URpgInventoryItemInstance*> GetAllItems() const;
 	TArray<FRpgInventoryEntryView> GetAllEntries() const;
 	URpgInventoryItemInstance* GetItemAtCell(FName ContainerId, int32 X, int32 Y) const;
+	URpgInventoryItemInstance* GetItemAtCell(const FRpgInventoryContainerHandle& ContainerHandle, int32 X, int32 Y) const;
 	bool GetPlacementForItem(URpgInventoryItemInstance* Instance, FRpgInventoryGridPlacement& OutPlacement) const;
 	int32 GetStackCount(URpgInventoryItemInstance* Instance) const;
 	int32 GetFreeStackCapacity(URpgInventoryItemInstance* Instance) const;
 	int32 GetUsedEntryCount() const;
 	int32 GetRequiredNewEntryCount(TSubclassOf<URpgInventoryItemDefinition> ItemDef, int32 StackCount) const;
+	/** Simulates every stack merge and spatial allocation without mutating the replicated list. */
+	bool CanFullyAddItemDefinition(TSubclassOf<URpgInventoryItemDefinition> ItemDef, int32 StackCount) const;
 	bool ContainsItemInstance(URpgInventoryItemInstance* Instance) const;
 	bool ContainsEntry(FGuid EntryId) const;
 
@@ -232,7 +255,7 @@ public:
 
 	void RemoveEntry(URpgInventoryItemInstance* Instance);
 	bool RemoveEntryStack(URpgInventoryItemInstance* Instance, int32 StackCount, bool& bOutRemovedEntry);
-	bool ApplySort(ERpgInventorySortMode SortMode);
+	bool ApplySort(ERpgInventorySortMode SortMode, FRpgInventoryContainerHandle ContainerFilter = FRpgInventoryContainerHandle());
 	bool MoveEntry(FGuid EntryId, int32 TargetIndex);
 	bool CanMoveEntryToPlacement(FGuid EntryId, const FRpgInventoryGridPlacement& TargetPlacement, FRpgInventoryGridPlacement* OutNormalizedTargetPlacement = nullptr) const;
 	bool MoveEntryToPlacement(FGuid EntryId, const FRpgInventoryGridPlacement& TargetPlacement);
@@ -244,6 +267,8 @@ private:
 	const FRpgInventoryEntry* FindEntryByInstance(URpgInventoryItemInstance* Instance) const;
 	FRpgInventoryEntry* FindEntryByEntryId(FGuid EntryId);
 	const FRpgInventoryEntry* FindEntryByEntryId(FGuid EntryId) const;
+	FRpgInventoryEntry* FindEntryByItemId(const FRpgInventoryItemId& ItemId);
+	const FRpgInventoryEntry* FindEntryByItemId(const FRpgInventoryItemId& ItemId) const;
 	FRpgInventoryEntry* FindEntryAtCell(FName ContainerId, int32 X, int32 Y);
 	const FRpgInventoryEntry* FindEntryAtCell(FName ContainerId, int32 X, int32 Y) const;
 	FRpgInventoryEntry* FindEntryOverlapping(const FRpgInventoryGridPlacement& Placement, const FRpgInventoryEntry* IgnoredEntry = nullptr);
@@ -257,9 +282,19 @@ private:
 	void BroadcastChangeMessage(FRpgInventoryEntry& Entry, int32 OldCount, int32 NewCount, bool bOrderChanged = false);
 	bool FindFirstFitPlacement(TSubclassOf<URpgInventoryItemDefinition> ItemDef, FRpgInventoryGridPlacement& OutPlacement) const;
 	bool FindFirstFitPlacement(URpgInventoryItemInstance* ItemInstance, FRpgInventoryGridPlacement& OutPlacement) const;
+	bool FindFirstFitPlacement(
+		TSubclassOf<URpgInventoryItemDefinition> ItemDef,
+		FRpgInventoryGridPlacement& OutPlacement,
+		const TArray<FRpgInventoryGridPlacement>& AdditionalOccupancy) const;
+	bool FindFirstFitPlacementInContainer(
+		TSubclassOf<URpgInventoryItemDefinition> ItemDef,
+		const FRpgInventoryContainerHandle& ContainerHandle,
+		const TArray<FRpgInventoryGridPlacement>& ScratchOccupancy,
+		FRpgInventoryGridPlacement& OutPlacement) const;
 	int32 GetLinearOrder(const FRpgInventoryGridPlacement& Placement) const;
 	void SortEntriesByPlacement();
 	bool SetOrderFromSortedEntryPointers(const TArray<FRpgInventoryEntry*>& SortedEntries);
+	void RebaseDescendantContainerDepths(const FRpgInventoryItemId& AncestorItemId, int32 DepthDelta);
 
 private:
 	friend URpgInventoryManagerComponent;
@@ -298,6 +333,9 @@ class URpgInventoryManagerComponent : public UActorComponent
 
 public:
 	URpgInventoryManagerComponent(const FObjectInitializer& ObjectInitializer = FObjectInitializer::Get());
+
+	/** Sets the static replication audience. Configure during actor construction before replication begins. */
+	void SetReplicationPolicy(ERpgInventoryReplicationPolicy NewPolicy) { ReplicationPolicy = NewPolicy; }
 
 	/** Returns true when this inventory is not limited by entry count. */
 	UFUNCTION(BlueprintCallable, Category = "Inventory|Capacity", BlueprintPure)
@@ -392,6 +430,10 @@ public:
 	UFUNCTION(BlueprintCallable, Category = "Inventory|Spatial", BlueprintPure)
 	URpgInventoryItemInstance* GetItemAtCell(FName ContainerId, int32 X, int32 Y) const;
 
+	/** Returns the item occupying a cell in an unambiguous root or item-owned container. */
+	UFUNCTION(BlueprintCallable, Category = "Inventory|Spatial", BlueprintPure)
+	URpgInventoryItemInstance* GetItemAtContainerCell(FRpgInventoryContainerHandle ContainerHandle, int32 X, int32 Y) const;
+
 	/** Default grid id used by non-player inventories such as storage containers. */
 	UFUNCTION(BlueprintCallable, Category = "Inventory|Spatial", BlueprintPure)
 	FName GetDefaultContainerId() const { return DefaultContainerId; }
@@ -404,6 +446,10 @@ public:
 	UFUNCTION(BlueprintCallable, Category = "Inventory|Spatial", BlueprintPure)
 	bool GetGridSizeForContainer(FName ContainerId, FRpgInventoryGridSize& OutGridSize) const;
 
+	/** Resolves grid dimensions for a root or concrete item-owned container. */
+	UFUNCTION(BlueprintCallable, Category = "Inventory|Spatial", BlueprintPure)
+	bool GetGridSizeForContainerHandle(FRpgInventoryContainerHandle ContainerHandle, FRpgInventoryGridSize& OutGridSize) const;
+
 	/** Returns the replicated spatial placement of an owned item entry. */
 	UFUNCTION(BlueprintCallable, Category = "Inventory|Spatial", BlueprintPure)
 	bool GetItemPlacement(URpgInventoryItemInstance* ItemInstance, FRpgInventoryGridPlacement& OutPlacement) const;
@@ -414,6 +460,10 @@ public:
 
 	UFUNCTION(BlueprintCallable, Category=Inventory, BlueprintPure)
 	bool ContainsEntry(FGuid EntryId) const;
+
+	/** Resolves a concrete item by its persistent identity. */
+	UFUNCTION(BlueprintCallable, Category = Inventory, BlueprintPure)
+	URpgInventoryItemInstance* FindItemById(FRpgInventoryItemId ItemId) const;
 
 	UFUNCTION(BlueprintCallable, Category=Inventory, BlueprintPure)
 	URpgInventoryItemInstance* FindFirstItemStackByDefinition(TSubclassOf<URpgInventoryItemDefinition> ItemDef) const;
@@ -454,11 +504,35 @@ public:
 	UFUNCTION(BlueprintCallable, BlueprintAuthorityOnly, Category = "Inventory|Snapshot")
 	void ImportInventorySnapshot(const FRpgInventorySnapshot& Snapshot);
 
+	/** Simulates one item-id based mutation using the same validation rules as the authoritative commit. */
+	UFUNCTION(BlueprintCallable, Category = "Inventory|Transaction", BlueprintPure = false)
+	FRpgInventoryMutationResult PlanInventoryMutation(FRpgInventoryMutationRequest Request) const;
+
+	/** Sole public authoritative item-id mutation path used by migrated UI and gameplay systems. */
+	UFUNCTION(BlueprintCallable, BlueprintAuthorityOnly, Category = "Inventory|Transaction")
+	FRpgInventoryMutationResult ExecuteInventoryMutation(FRpgInventoryMutationRequest Request);
+
+	/** Atomically transfers a stack or complete item-owned subtree between two authoritative inventories. */
+	UFUNCTION(BlueprintCallable, BlueprintAuthorityOnly, Category = "Inventory|Transaction")
+	FRpgInventoryMutationResult ExecuteCrossInventoryTransfer(
+		URpgInventoryManagerComponent* TargetInventory,
+		FRpgInventoryMutationRequest Request,
+		bool bAllowPartialStackPickup = false);
+
+	/** Exports the complete flattened inventory graph for validated versioned disk persistence. */
+	UFUNCTION(BlueprintCallable, Category = "Inventory|Persistence")
+	FRpgInventoryGraphSaveData ExportInventoryGraph() const;
+
+	/** Validates the complete graph before atomically replacing runtime inventory state. */
+	UFUNCTION(BlueprintCallable, BlueprintAuthorityOnly, Category = "Inventory|Persistence")
+	bool ImportInventoryGraph(const FRpgInventoryGraphSaveData& SaveData, FRpgInventoryMutationResult& OutResult);
+
 	//~UObject interface
 	virtual void BeginPlay() override;
 	virtual void EndPlay(const EEndPlayReason::Type EndPlayReason) override;
 	virtual bool ReplicateSubobjects(class UActorChannel* Channel, class FOutBunch* Bunch, FReplicationFlags* RepFlags) override;
 	virtual void ReadyForReplication() override;
+	virtual void GetReplicatedCustomConditionState(FCustomPropertyConditionState& OutActiveState) const override;
 	//~End of UObject interface
 
 private:
@@ -479,6 +553,9 @@ private:
 	void BroadcastCapacityChanged() const;
 	const URpgPlayerInventoryLayoutComponent* FindOwningPlayerInventoryLayout() const;
 	bool ShouldUseSingleCellPlacementForContainer(FName ContainerId) const;
+	bool GetItemContainerDefinition(const FRpgInventoryContainerHandle& ContainerHandle, struct FRpgInventoryItemContainerDefinition& OutDefinition) const;
+	bool ValidatePlacementGraphRules(const FRpgInventoryEntry& Entry, const FRpgInventoryGridPlacement& Placement, ERpgInventoryMutationResultCode& OutCode) const;
+	bool WouldCreateContainerCycle(const FRpgInventoryItemId& MovingItemId, const FRpgInventoryContainerHandle& TargetContainer) const;
 	bool TryMakePlacementForItemDefinition(TSubclassOf<URpgInventoryItemDefinition> ItemDef, FName ContainerId, int32 X, int32 Y, bool bRotated, FRpgInventoryGridPlacement& OutPlacement) const;
 	bool TryMakePlacementForItemInstance(URpgInventoryItemInstance* ItemInstance, FName ContainerId, int32 X, int32 Y, bool bRotated, FRpgInventoryGridPlacement& OutPlacement) const;
 	FRpgInventoryGridPlacement MakePlacementForItemDefinition(TSubclassOf<URpgInventoryItemDefinition> ItemDef, FName ContainerId, int32 X, int32 Y, bool bRotated) const;
@@ -505,6 +582,10 @@ private:
 	UPROPERTY(EditAnywhere, ReplicatedUsing = OnRep_CapacitySettings, BlueprintReadOnly, Category = "Inventory|Spatial", meta = (AllowPrivateAccess = "true"))
 	FName DefaultContainerId = TEXT("Storage");
 
+	/** Static audience policy; private player graphs are owner-only while world containers follow actor relevancy. */
+	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Inventory|Replication", meta = (AllowPrivateAccess = "true"))
+	ERpgInventoryReplicationPolicy ReplicationPolicy = ERpgInventoryReplicationPolicy::ActorRelevant;
+
 	UPROPERTY(Replicated)
 	FRpgInventoryList InventoryList;
 
@@ -514,4 +595,8 @@ private:
 
 	TWeakObjectPtr<UAbilitySystemComponent> BoundCapacityAbilitySystem;
 	FDelegateHandle CapacityAttributeChangedHandle;
+
+	/** Short authority-side idempotency cache for retried reliable transaction requests. */
+	TMap<FGuid, FRpgInventoryMutationResult> RecentMutationResults;
+	TArray<FGuid> RecentMutationOrder;
 };

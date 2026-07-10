@@ -22,9 +22,8 @@ ARpgPlayerState::ARpgPlayerState()
 	TradeSkillProgressionComponent = CreateDefaultSubobject<URpgTradeSkillProgressionComponent>(TEXT("TradeSkillProgressionComponent"));
 	InventoryCapacitySet = CreateDefaultSubobject<URpgInventoryCapacitySet>(TEXT("InventoryCapacitySet"));
 	InventoryManagerComponent = CreateDefaultSubobject<URpgInventoryManagerComponent>(TEXT("InventoryManagerComponent"));
-	InventoryManagerComponent->SetCapacityMode(ERpgInventoryCapacityMode::FixedEntries);
-	InventoryManagerComponent->SetFixedMaxEntries(24);
-	InventoryManagerComponent->SetCapacityAttribute(URpgInventoryCapacitySet::GetBackpackSlotsAttribute());
+	InventoryManagerComponent->SetCapacityMode(ERpgInventoryCapacityMode::Unlimited);
+	InventoryManagerComponent->SetReplicationPolicy(ERpgInventoryReplicationPolicy::OwnerOnly);
 }
 
 void ARpgPlayerState::PostInitializeComponents()

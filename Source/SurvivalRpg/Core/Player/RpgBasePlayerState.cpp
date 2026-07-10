@@ -10,8 +10,10 @@
 #include "SurvivalRpg/AbilitySystem/RpgAbilitySet.h"
 #include "SurvivalRpg/AbilitySystem/RpgAbilitySystemComponent.h"
 #include "SurvivalRpg/AbilitySystem/Attributes/RpgHealthSet.h"
+#include "SurvivalRpg/ActionBar/RpgActionBarComponent.h"
 #include "SurvivalRpg/Core/AI/RpgAIPawnData.h"
 #include "SurvivalRpg/Core/Character/RpgPawnData.h"
+#include "SurvivalRpg/Core/Player/RpgPlayerController.h"
 
 const FName ARpgBasePlayerState::NAME_RpgAbilityReady(TEXT("RpgAbilitiesReady"));
 
@@ -70,6 +72,18 @@ void ARpgBasePlayerState::SendAbilitiesChangedEvent()
 	EventData.Instigator = this;
 	EventData.Target = this;
 	UAbilitySystemBlueprintLibrary::SendGameplayEventToActor(this, EventData.EventTag, EventData);
+
+	// Saved ability bindings must become available immediately after progression/GameFeature grants change.
+	if (HasAuthority())
+	{
+		if (const ARpgPlayerController* RpgPlayerController = Cast<ARpgPlayerController>(GetPlayerController()))
+		{
+			if (URpgActionBarComponent* ActionBar = RpgPlayerController->GetActionBarComponent())
+			{
+				ActionBar->RefreshBindings();
+			}
+		}
+	}
 }
 
 URpgAbilitySystemComponent* ARpgBasePlayerState::GetRpgAbilitySystemComponent() const

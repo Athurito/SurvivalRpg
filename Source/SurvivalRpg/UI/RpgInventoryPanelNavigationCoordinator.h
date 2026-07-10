@@ -83,6 +83,14 @@ public:
 	UFUNCTION(BlueprintCallable, Category = "Inventory|Navigation")
 	void ClearPanels();
 
+	/** Begins an in-place panel registration pass while retaining active panel and per-panel selection memory. */
+	UFUNCTION(BlueprintCallable, Category = "Inventory|Navigation")
+	void BeginPanelRefresh();
+
+	/** Finishes a registration pass and restores the previously active surviving panel and its focus target. */
+	UFUNCTION(BlueprintCallable, Category = "Inventory|Navigation")
+	void EndPanelRefresh();
+
 	/** Registers one focusable inventory panel for LB/RB controller navigation. */
 	UFUNCTION(BlueprintCallable, Category = "Inventory|Navigation")
 	void RegisterInventoryPanel(FName PanelId, URpgInventoryTileView* TileView, URpgInventoryManagerComponent* Inventory);
@@ -195,6 +203,7 @@ private:
 	int32 FindPanelIndexForActionBarTileView(const URpgActionBarTileView* TileView) const;
 	int32 FindPanelIndexForEquipmentSlotWidget(const URpgEquipmentSlotWidget* EquipmentSlotWidget) const;
 	void BroadcastActivePanelChanged(const FRpgInventoryPanelNavigationEntry& ActivePanel);
+	void ApplyRetainedPanelMemory(FRpgInventoryPanelNavigationEntry& Panel) const;
 
 	UPROPERTY(Transient)
 	TObjectPtr<APlayerController> PlayerController = nullptr;
@@ -208,5 +217,12 @@ private:
 	UPROPERTY(Transient)
 	int32 ActivePanelIndex = INDEX_NONE;
 
+	UPROPERTY(Transient)
+	TMap<FName, FRpgInventoryPanelNavigationEntry> RetainedPanelMemories;
+
+	UPROPERTY(Transient)
+	FName RetainedActivePanelId = NAME_None;
+
 	bool bSuppressPanelSelectionNotifications = false;
+	bool bPanelRefreshInProgress = false;
 };

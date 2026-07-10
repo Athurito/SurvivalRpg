@@ -1,24 +1,26 @@
 #pragma once
 
-#include "RpgInventoryItemDefinition.h"
+#include "RpgInventoryFragment_ItemContainer.h"
 #include "RpgPlayerInventoryLayoutTypes.h"
 
 #include "RpgInventoryFragment_SlotContainerProvider.generated.h"
 
 /**
- * Item fragment for backpacks, belts, pouches, and resource bags that expand the player's inventory layout.
+ * Compatibility fragment for legacy backpacks, belts, pouches, and resource bags.
  *
- * When assigned to a supported equipment/container slot, its grid definitions are exposed as spatial content
- * containers on the owning inventory while the concrete item instance remains the identity that can be moved,
- * dropped, looted, and equipped again.
+ * Existing assets keep their ProvidedSlotGroups data while the inventory graph consumes converted item-owned
+ * container definitions through GetProvidedContainers. New definitions should use URpgInventoryFragment_ItemContainer.
  */
-UCLASS(BlueprintType)
-class SURVIVALRPG_API URpgInventoryFragment_SlotContainerProvider : public URpgInventoryItemFragment
+UCLASS(BlueprintType, meta = (DeprecationMessage = "Use RpgInventoryFragment_ItemContainer for item-owned nested grids."))
+class SURVIVALRPG_API URpgInventoryFragment_SlotContainerProvider : public URpgInventoryFragment_ItemContainer
 {
 	GENERATED_BODY()
 
 public:
-	/** Spatial grid containers contributed while this item is equipped as a bag, belt, pouch, or resource bag. */
-	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Inventory|Layout", meta = (TitleProperty = "ContainerId"))
+	/** Legacy equipped-layout grids retained for serialized assets and converted to item-owned containers at runtime. */
+	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Inventory|Layout", meta = (TitleProperty = "ContainerId", DeprecatedProperty, DeprecationMessage = "Migrate this row to ProvidedContainers."))
 	TArray<FRpgInventorySlotGroupDefinition> ProvidedSlotGroups;
+
+	/** Appends native item-owned definitions followed by compatible conversions of legacy ProvidedSlotGroups rows. */
+	virtual void GetProvidedContainers(TArray<FRpgInventoryItemContainerDefinition>& OutContainers) const override;
 };

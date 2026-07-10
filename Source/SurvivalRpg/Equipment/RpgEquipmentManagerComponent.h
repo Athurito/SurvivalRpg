@@ -54,7 +54,10 @@ struct SURVIVALRPG_API FRpgEquipmentList : public FFastArraySerializer
 		return FFastArraySerializer::FastArrayDeltaSerialize<FRpgAppliedEquipmentEntry, FRpgEquipmentList>(Entries, DeltaParms, *this);
 	}
 
-	URpgEquipmentInstance* AddEntry(TSubclassOf<URpgEquipmentDefinition> EquipmentDefinition, ERpgEquipmentSlot EquippedSlot);
+	URpgEquipmentInstance* AddEntry(
+		TSubclassOf<URpgEquipmentDefinition> EquipmentDefinition,
+		ERpgEquipmentSlot EquippedSlot,
+		UObject* SourceItemInstigator);
 	void RemoveEntry(URpgEquipmentInstance* Instance);
 
 private:
@@ -88,6 +91,16 @@ public:
 
 	UFUNCTION(BlueprintCallable, BlueprintAuthorityOnly, Category = "Equipment")
 	URpgEquipmentInstance* EquipItemInSlot(TSubclassOf<URpgEquipmentDefinition> EquipmentDefinition, ERpgEquipmentSlot Slot);
+
+	/**
+	 * Creates runtime equipment with its inventory source assigned before actors or GAS grants are built.
+	 * Inventory/loadout reconciliation should use this path so ability SourceObject is never temporarily null.
+	 */
+	UFUNCTION(BlueprintCallable, BlueprintAuthorityOnly, Category = "Equipment")
+	URpgEquipmentInstance* EquipItemInSlotWithInstigator(
+		TSubclassOf<URpgEquipmentDefinition> EquipmentDefinition,
+		ERpgEquipmentSlot Slot,
+		UObject* SourceItemInstigator);
 
 	UFUNCTION(BlueprintCallable, BlueprintAuthorityOnly, Category = "Equipment")
 	void UnequipItem(URpgEquipmentInstance* ItemInstance);
