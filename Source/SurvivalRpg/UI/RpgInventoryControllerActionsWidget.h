@@ -58,6 +58,7 @@ protected:
 	virtual void NativeOnActivated() override;
 	virtual void NativeOnDeactivated() override;
 	virtual bool NativeOnHandleBackAction() override;
+	virtual FReply NativeOnKeyDown(const FGeometry& InGeometry, const FKeyEvent& InKeyEvent) override;
 	virtual UWidget* NativeGetDesiredFocusTarget() const override;
 
 	/** Action row for previous inventory panel, usually LB or Q. */
@@ -108,8 +109,12 @@ private:
 	UFUNCTION()
 	void HandleActivePanelChanged(FName PanelId, int32 PanelIndex, URpgInventoryTileView* TileView, URpgInventoryManagerComponent* Inventory);
 
+	UFUNCTION()
+	void HandleActiveSelectionChanged();
+
 	void EnsureDefaultInventoryControllerActionRows();
-	void RegisterActionRow(const FDataTableRowHandle& ActionRow, const FSimpleDelegate& Delegate);
+	FUIActionBindingHandle RegisterActionRow(const FDataTableRowHandle& ActionRow, const FSimpleDelegate& Delegate);
+	void RefreshInventoryActionBindingVisibility();
 	bool HandleInventoryBackAction();
 	static bool IsActionRowValid(const FDataTableRowHandle& ActionRow);
 
@@ -121,4 +126,10 @@ private:
 
 	UPROPERTY(Transient)
 	TArray<FUIActionBindingHandle> InventoryActionBindings;
+
+	/** Tracks the CommonUI F binding so the native key fallback can never execute the same action twice. */
+	FUIActionBindingHandle UseOrEquipActionBinding;
+	FUIActionBindingHandle QuickTransferActionBinding;
+	FUIActionBindingHandle QuickSplitActionBinding;
+	FUIActionBindingHandle DropActionBinding;
 };

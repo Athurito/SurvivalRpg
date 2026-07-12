@@ -835,21 +835,9 @@ bool FRpgInventoryList::CanMoveEntryToPlacement(FGuid EntryId, const FRpgInvento
 		}
 	}
 
-	FRpgInventoryGridPlacement TargetSwapPlacementCandidate = TargetEntry->Placement;
-	TargetSwapPlacementCandidate.SetContainerHandle(MovingEntry->Placement.GetContainerHandle());
-	TargetSwapPlacementCandidate.X = MovingEntry->Placement.X;
-	TargetSwapPlacementCandidate.Y = MovingEntry->Placement.Y;
-
 	FRpgInventoryGridPlacement TargetSwapPlacement;
-	if (!NormalizePlacementForEntry(*TargetEntry, TargetSwapPlacementCandidate, TargetSwapPlacement))
-	{
-		return false;
-	}
-
-	return CanEntryUsePlacement(*TargetEntry, TargetSwapPlacement) &&
-		IsPlacementWithinGrid(TargetSwapPlacement) &&
-		CanPlaceEntryAt(TargetSwapPlacement, MovingEntry, TargetEntry) &&
-		CanPlaceEntryAt(NormalizedTargetPlacement, MovingEntry, TargetEntry);
+	return CanPlaceEntryAt(NormalizedTargetPlacement, MovingEntry, TargetEntry) &&
+		TryResolveDisplacedEntryPlacement(*MovingEntry, NormalizedTargetPlacement, *TargetEntry, TargetSwapPlacement);
 }
 
 bool FRpgInventoryList::MoveEntryToPlacement(FGuid EntryId, const FRpgInventoryGridPlacement& TargetPlacement)
@@ -927,20 +915,9 @@ bool FRpgInventoryList::MoveEntryToPlacement(FGuid EntryId, const FRpgInventoryG
 		}
 	}
 
-	FRpgInventoryGridPlacement TargetSwapPlacementCandidate = TargetEntry->Placement;
-	TargetSwapPlacementCandidate.SetContainerHandle(MovingEntry->Placement.GetContainerHandle());
-	TargetSwapPlacementCandidate.X = MovingEntry->Placement.X;
-	TargetSwapPlacementCandidate.Y = MovingEntry->Placement.Y;
-
 	FRpgInventoryGridPlacement TargetSwapPlacement;
-	if (!NormalizePlacementForEntry(*TargetEntry, TargetSwapPlacementCandidate, TargetSwapPlacement))
-	{
-		return false;
-	}
-
-	if (!IsPlacementWithinGrid(TargetSwapPlacement) ||
-		!CanPlaceEntryAt(TargetSwapPlacement, MovingEntry, TargetEntry) ||
-		!CanPlaceEntryAt(NormalizedTargetPlacement, MovingEntry, TargetEntry))
+	if (!CanPlaceEntryAt(NormalizedTargetPlacement, MovingEntry, TargetEntry) ||
+		!TryResolveDisplacedEntryPlacement(*MovingEntry, NormalizedTargetPlacement, *TargetEntry, TargetSwapPlacement))
 	{
 		return false;
 	}
@@ -1337,6 +1314,90 @@ bool FRpgInventoryList::NormalizePlacementForEntry(const FRpgInventoryEntry& Ent
 	OutNormalizedPlacement.Height = UnrotatedFootprint.Height;
 	OutNormalizedPlacement.bRotated = TargetPlacement.bRotated;
 	return true;
+}
+
+bool FRpgInventoryList::TryResolveDisplacedEntryPlacement(
+	const FRpgInventoryEntry& MovingEntry,
+	const FRpgInventoryGridPlacement& MovingTargetPlacement,
+	const FRpgInventoryEntry& DisplacedEntry,
+	FRpgInventoryGridPlacement& OutDisplacedPlacement) const
+{
+	OutDisplacedPlacement = FRpgInventoryGridPlacement();
+	if (!MovingEntry.Instance || !DisplacedEntry.Instance || !MovingTargetPlacement.IsValid() ||
+		!MovingEntry.Placement.IsValid())
+	{
+		return false;
+	}
+
+	const FRpgInventoryContainerHandle SourceContainer = MovingEntry.Placement.GetContainerHandle();
+	const URpgInventoryManagerComponent* Inventory = Cast<URpgInventoryManagerComponent>(OwnerComponent);
+	FRpgInventoryGridSize SourceGridSize;
+	if (!Inventory || !Inventory->GetGridSizeForContainerHandle(SourceContainer, SourceGridSize) || !SourceGridSize.IsValid())
+	{
+		return false;
+	}
+
+	TSet<FIntPoint> TestedOrigins;
+	auto TryOrigin = [this, &MovingEntry, &MovingTargetPlacement, &DisplacedEntry, &SourceContainer, &TestedOrigins, &OutDisplacedPlacement](int32 X, int32 Y)
+	{
+		const FIntPoint Origin(X, Y);
+		if (TestedOrigins.Contains(Origin))
+		{
+			return false;
+		}
+		TestedOrigins.Add(Origin);
+
+		FRpgInventoryGridPlacement Candidate = DisplacedEntry.Placement;
+		Candidate.SetContainerHandle(SourceContainer);
+		Candidate.X = X;
+		Candidate.Y = Y;
+
+		FRpgInventoryGridPlacement NormalizedCandidate;
+		if (!NormalizePlacementForEntry(DisplacedEntry, Candidate, NormalizedCandidate) ||
+			!CanEntryUsePlacement(DisplacedEntry, NormalizedCandidate) ||
+			!IsPlacementWithinGrid(NormalizedCandidate) ||
+			NormalizedCandidate.Overlaps(MovingTargetPlacement) ||
+			!CanPlaceEntryAt(NormalizedCandidate, &MovingEntry, &DisplacedEntry))
+		{
+			return false;
+		}
+
+		OutDisplacedPlacement = NormalizedCandidate;
+		return true;
+	};
+
+	// Preserve the classic swap result when both final footprints fit without touching.
+	if (TryOrigin(MovingEntry.Placement.X, MovingEntry.Placement.Y))
+	{
+		return true;
+	}
+
+	// Prefer cells released by the moving item so a small displaced item stays visually near the drop.
+	const FRpgInventoryGridSize ReleasedFootprint = MovingEntry.Placement.GetOccupiedSize();
+	for (int32 Y = MovingEntry.Placement.Y; Y < MovingEntry.Placement.Y + ReleasedFootprint.Height; ++Y)
+	{
+		for (int32 X = MovingEntry.Placement.X; X < MovingEntry.Placement.X + ReleasedFootprint.Width; ++X)
+		{
+			if (TryOrigin(X, Y))
+			{
+				return true;
+			}
+		}
+	}
+
+	// If the released footprint is too small, fall back to a deterministic first fit in the source container.
+	for (int32 Y = 0; Y < SourceGridSize.Height; ++Y)
+	{
+		for (int32 X = 0; X < SourceGridSize.Width; ++X)
+		{
+			if (TryOrigin(X, Y))
+			{
+				return true;
+			}
+		}
+	}
+
+	return false;
 }
 
 bool FRpgInventoryList::FindFirstFitPlacement(TSubclassOf<URpgInventoryItemDefinition> ItemDef, FRpgInventoryGridPlacement& OutPlacement) const
@@ -2662,12 +2723,8 @@ FRpgInventoryMutationResult URpgInventoryManagerComponent::PlanInventoryMutation
 		return Result;
 	}
 
-	FRpgInventoryGridPlacement TargetSwapCandidate = TargetEntry->Placement;
-	TargetSwapCandidate.SetContainerHandle(CurrentContainer);
-	TargetSwapCandidate.X = MovingEntry->Placement.X;
-	TargetSwapCandidate.Y = MovingEntry->Placement.Y;
 	FRpgInventoryGridPlacement TargetSwapPlacement;
-	if (!InventoryList.NormalizePlacementForEntry(*TargetEntry, TargetSwapCandidate, TargetSwapPlacement))
+	if (!InventoryList.TryResolveDisplacedEntryPlacement(*MovingEntry, NormalizedTarget, *TargetEntry, TargetSwapPlacement))
 	{
 		Result.Code = ERpgInventoryMutationResultCode::NoSpace;
 		return Result;

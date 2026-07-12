@@ -106,6 +106,8 @@ namespace RpgGameplayTags
 	UE_DEFINE_GAMEPLAY_TAG_COMMENT(Rpg_Inventory_Action_Use, "Rpg.Inventory.Action.Use", "Inventory UI action tag for item use requests.");
 	UE_DEFINE_GAMEPLAY_TAG_COMMENT(Rpg_Inventory_Action_Drop, "Rpg.Inventory.Action.Drop", "Inventory UI action tag for manual item drop requests.");
 	UE_DEFINE_GAMEPLAY_TAG_COMMENT(Rpg_Inventory_Action_Equip, "Rpg.Inventory.Action.Equip", "Inventory UI action tag for convenience equip requests.");
+	UE_DEFINE_GAMEPLAY_TAG_COMMENT(Rpg_Inventory_Action_EquipAndActivate, "Rpg.Inventory.Action.EquipAndActivate", "Inventory UI action tag for explicit fast-equip and activation requests.");
+	UE_DEFINE_GAMEPLAY_TAG_COMMENT(Rpg_Inventory_Action_MoveToCarry, "Rpg.Inventory.Action.MoveToCarry", "Inventory UI action tag for moving an item to Carry without activation.");
 	UE_DEFINE_GAMEPLAY_TAG_COMMENT(Feature, "Feature", "Root tag for placed GameFeature-driven world spawning markers.");
 	UE_DEFINE_GAMEPLAY_TAG_COMMENT(Equipment_Slot_MainHand, "Equipment.Slot.MainHand", "Equipment is assigned to the main hand slot.");
 	UE_DEFINE_GAMEPLAY_TAG_COMMENT(Equipment_Slot_OffHand, "Equipment.Slot.OffHand", "Equipment is assigned to the off hand slot.");

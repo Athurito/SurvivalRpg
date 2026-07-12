@@ -58,6 +58,7 @@ struct SURVIVALRPG_API FRpgInventoryPanelNavigationEntry
 };
 
 DECLARE_DYNAMIC_MULTICAST_DELEGATE_FourParams(FRpgInventoryActivePanelChanged, FName, PanelId, int32, PanelIndex, URpgInventoryTileView*, TileView, URpgInventoryManagerComponent*, Inventory);
+DECLARE_DYNAMIC_MULTICAST_DELEGATE(FRpgInventoryActiveSelectionChanged);
 
 /**
  * UI-local controller navigation helper for inventory screens with multiple panels.
@@ -171,6 +172,22 @@ public:
 	UFUNCTION(BlueprintPure, Category = "Inventory|Navigation")
 	URpgInventoryManagerComponent* GetActiveInventory() const;
 
+	/** Whether the current selection can expose the full-stack transfer shortcut in the action bar. */
+	UFUNCTION(BlueprintPure, Category = "Inventory|Navigation|Availability")
+	bool CanQuickTransferActiveSelection() const;
+
+	/** Whether the current selection can split, or the held payload can use the shared rotate shortcut. */
+	UFUNCTION(BlueprintPure, Category = "Inventory|Navigation|Availability")
+	bool CanQuickSplitActiveSelection() const;
+
+	/** Whether the current selection has a usable, equippable, carry, or unequip action. */
+	UFUNCTION(BlueprintPure, Category = "Inventory|Navigation|Availability")
+	bool CanUseOrEquipActiveSelection() const;
+
+	/** Whether the current selection represents an item that may submit a drop request. */
+	UFUNCTION(BlueprintPure, Category = "Inventory|Navigation|Availability")
+	bool CanDropActiveSelection() const;
+
 	/** Runs quick transfer on the active panel selection when supported. */
 	UFUNCTION(BlueprintCallable, Category = "Inventory|Navigation")
 	bool QuickTransferActiveSelection();
@@ -190,6 +207,10 @@ public:
 	/** Fired after active panel focus changes so Blueprints can update borders/headers. */
 	UPROPERTY(BlueprintAssignable, Category = "Inventory|Navigation")
 	FRpgInventoryActivePanelChanged OnActivePanelChanged;
+
+	/** Fired for selection changes inside the active panel so CommonUI hints can update without rebuilding bindings. */
+	UPROPERTY(BlueprintAssignable, Category = "Inventory|Navigation")
+	FRpgInventoryActiveSelectionChanged OnActiveSelectionChanged;
 
 private:
 	bool IsValidPanelIndex(int32 PanelIndex) const;

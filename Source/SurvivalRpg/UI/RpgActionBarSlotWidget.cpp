@@ -101,7 +101,7 @@ bool URpgActionBarSlotWidget::PreviewPayloadDrop(const FRpgInventoryDragPayload&
 		return false;
 	}
 
-	const bool bCanDrop = DragDropCoordinator->PreviewPayloadDrop(Payload, MakeDropTarget());
+	const bool bCanDrop = DragDropCoordinator->UpdateInteractionPreview(Payload, MakeDropTarget());
 	bHasExternalPreviewState = true;
 	ExternalPreviewState = bCanDrop
 		? ERpgInventorySlotDragVisualState::ValidTarget
@@ -160,30 +160,16 @@ void URpgActionBarSlotWidget::NativeOnClicked()
 
 bool URpgActionBarSlotWidget::NativeOnDragOver(const FGeometry& InGeometry, const FDragDropEvent& InDragDropEvent, UDragDropOperation* InOperation)
 {
-	const URpgInventoryDragDropOperation* InventoryOperation = Cast<URpgInventoryDragDropOperation>(InOperation);
-	if (!InventoryOperation)
-	{
-		return false;
-	}
-
-	PreviewPayloadDrop(InventoryOperation->InventoryPayload);
-	return true;
+	return false;
 }
 
 bool URpgActionBarSlotWidget::NativeOnDrop(const FGeometry& InGeometry, const FDragDropEvent& InDragDropEvent, UDragDropOperation* InOperation)
 {
-	const URpgInventoryDragDropOperation* InventoryOperation = Cast<URpgInventoryDragDropOperation>(InOperation);
-	if (!InventoryOperation)
-	{
-		return false;
-	}
-
-	return CommitPayloadDrop(InventoryOperation->InventoryPayload);
+	return false;
 }
 
 void URpgActionBarSlotWidget::NativeOnDragLeave(const FDragDropEvent& InDragDropEvent, UDragDropOperation* InOperation)
 {
-	ClearExternalPreviewPayload();
 	Super::NativeOnDragLeave(InDragDropEvent, InOperation);
 }
 

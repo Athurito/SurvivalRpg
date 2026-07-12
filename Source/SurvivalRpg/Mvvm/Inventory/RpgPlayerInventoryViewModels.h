@@ -262,6 +262,14 @@ public:
 	UFUNCTION(BlueprintPure, Category = "Inventory|Layout ViewModel")
 	TArray<URpgInventoryAddressSlotViewModel*> GetSlots() const;
 
+	/** True when an equipped backpack, belt, pouch, or resource bag owns this content grid. */
+	UFUNCTION(BlueprintPure, Category = "Inventory|Layout ViewModel")
+	bool IsProvidedByEquipment() const { return bProvidedByEquipment; }
+
+	/** Equipment slot name that currently provides this item-owned content grid. */
+	UFUNCTION(BlueprintPure, Category = "Inventory|Layout ViewModel")
+	FName GetSourceEquipmentSlotName() const { return SourceEquipmentSlotName; }
+
 protected:
 	/** Stable graph address. Item-owned containers with the same local id remain distinct. */
 	UPROPERTY(BlueprintReadOnly, FieldNotify, Category = "Inventory|Layout ViewModel", meta = (AllowPrivateAccess = "true"))

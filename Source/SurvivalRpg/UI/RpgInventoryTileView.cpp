@@ -9,6 +9,7 @@
 #include "SurvivalRpg/Mvvm/Inventory/RpgInventoryViewModels.h"
 #include "SurvivalRpg/UI/RpgInventoryPanelNavigationCoordinator.h"
 #include "SurvivalRpg/UI/RpgInventorySlotEntryWidget.h"
+#include "SurvivalRpg/UI/RpgInventoryDragVisualWidget.h"
 
 #include UE_INLINE_GENERATED_CPP_BY_NAME(RpgInventoryTileView)
 
@@ -252,11 +253,30 @@ UDragDropOperation* URpgInventoryTileView::HandleListEntryDragDetected(const FGe
 		return nullptr;
 	}
 
-	const FRpgInventoryDragPayload Payload = URpgInventoryDragDropCoordinator::MakeInventoryPayloadFromEntry(EntryViewModel);
+	FRpgInventoryDragPayload Payload = URpgInventoryDragDropCoordinator::MakeInventoryPayloadFromEntry(EntryViewModel);
 	if (!URpgInventoryDragDropCoordinator::IsPayloadValid(Payload))
 	{
 		return nullptr;
 	}
+	const FGeometry EntryGeometry = EntryWidget.GetCachedGeometry();
+	URpgInventoryDragDropCoordinator::CapturePointerDragAnchor(
+		Payload,
+		EntryGeometry.AbsoluteToLocal(PointerEvent.GetScreenSpacePosition()),
+		EntryGeometry.GetLocalSize());
+	const FVector2D ScreenTopLeft = EntryGeometry.LocalToAbsolute(FVector2D::ZeroVector);
+	const FVector2D ScreenBottomRight = EntryGeometry.LocalToAbsolute(EntryGeometry.GetLocalSize());
+	URpgInventoryDragDropCoordinator::CapturePointerDragAnchorScreenGeometry(
+		Payload,
+		ScreenTopLeft,
+		PointerEvent.GetScreenSpacePosition(),
+		FVector2D(
+			FMath::Abs(ScreenBottomRight.X - ScreenTopLeft.X),
+			FMath::Abs(ScreenBottomRight.Y - ScreenTopLeft.Y)));
+	if (!DragDropCoordinator->BeginPointerDrag(Payload))
+	{
+		return nullptr;
+	}
+	Payload = DragDropCoordinator->ResolveInteractionPayload(Payload);
 
 	URpgInventoryDragDropOperation* InventoryOperation = NewObject<URpgInventoryDragDropOperation>(this);
 	if (!InventoryOperation)
@@ -264,9 +284,14 @@ UDragDropOperation* URpgInventoryTileView::HandleListEntryDragDetected(const FGe
 		return nullptr;
 	}
 
-	InventoryOperation->Pivot = DragDropVisualPivot;
-	InventoryOperation->Offset = DragDropVisualOffset;
+	InventoryOperation->Pivot = EDragPivot::TopLeft;
+	InventoryOperation->Offset = Payload.DragAnchor.SourceVisualSize.X > KINDA_SMALL_NUMBER && Payload.DragAnchor.SourceVisualSize.Y > KINDA_SMALL_NUMBER
+		? FVector2D(
+			-Payload.DragAnchor.SourcePointerOffset.X / Payload.DragAnchor.SourceVisualSize.X,
+			-Payload.DragAnchor.SourcePointerOffset.Y / Payload.DragAnchor.SourceVisualSize.Y)
+		: DragDropVisualOffset;
 	InventoryOperation->Payload = ListItem;
+	InventoryOperation->SetInteractionSession(DragDropCoordinator->GetInteractionSession());
 
 	if (DragVisualWidget)
 	{
@@ -274,11 +299,19 @@ UDragDropOperation* URpgInventoryTileView::HandleListEntryDragDetected(const FGe
 	}
 	else
 	{
-		const TSubclassOf<UUserWidget> DragVisualClass = DragDropVisualEntryClass ? DragDropVisualEntryClass : EntryWidgetClass;
+		TSubclassOf<UUserWidget> DragVisualClass = DragDropVisualEntryClass;
+		if (!DragVisualClass)
+		{
+			DragVisualClass = URpgInventoryDragVisualWidget::StaticClass();
+		}
 		if (DragVisualClass)
 		{
 			InventoryOperation->DefaultDragVisual = CreateWidget<UUserWidget>(GetWorld(), DragVisualClass);
 		}
+	}
+	if (URpgInventoryDragVisualWidget* CanonicalDragVisual = Cast<URpgInventoryDragVisualWidget>(InventoryOperation->DefaultDragVisual))
+	{
+		CanonicalDragVisual->ConfigureFromPayload(Payload, 70.0f, 2.0f);
 	}
 
 	InventoryOperation->InventoryPayload = Payload;

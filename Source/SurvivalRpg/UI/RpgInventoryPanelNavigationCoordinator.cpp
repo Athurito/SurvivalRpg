@@ -337,6 +337,7 @@ void URpgInventoryPanelNavigationCoordinator::NotifyPanelSelectionChanged(URpgIn
 	FRpgInventoryPanelNavigationEntry& ActivePanel = Panels[PanelIndex];
 	UpdatePanelSelectionMemory(ActivePanel);
 	UpdateShortcutRoutesForActivePanel(ActivePanel);
+	OnActiveSelectionChanged.Broadcast();
 
 	if (bPanelChanged)
 	{
@@ -367,6 +368,7 @@ void URpgInventoryPanelNavigationCoordinator::NotifyActionBarPanelSelectionChang
 
 	FRpgInventoryPanelNavigationEntry& ActivePanel = Panels[PanelIndex];
 	UpdatePanelSelectionMemory(ActivePanel);
+	OnActiveSelectionChanged.Broadcast();
 
 	if (bPanelChanged)
 	{
@@ -398,6 +400,7 @@ void URpgInventoryPanelNavigationCoordinator::NotifySpatialPanelSelectionChanged
 	FRpgInventoryPanelNavigationEntry& ActivePanel = Panels[PanelIndex];
 	UpdatePanelSelectionMemory(ActivePanel);
 	UpdateShortcutRoutesForActivePanel(ActivePanel);
+	OnActiveSelectionChanged.Broadcast();
 
 	if (bPanelChanged)
 	{
@@ -588,6 +591,101 @@ URpgInventoryManagerComponent* URpgInventoryPanelNavigationCoordinator::GetActiv
 	return IsValidPanelIndex(ActivePanelIndex) ? Panels[ActivePanelIndex].Inventory.Get() : nullptr;
 }
 
+bool URpgInventoryPanelNavigationCoordinator::CanQuickTransferActiveSelection() const
+{
+	if (!IsValidPanelIndex(ActivePanelIndex))
+	{
+		return false;
+	}
+
+	const FRpgInventoryPanelNavigationEntry& Panel = Panels[ActivePanelIndex];
+	if (const URpgInventorySpatialGridWidget* Grid = Panel.SpatialGridWidget)
+	{
+		if (!DragDropCoordinator)
+		{
+			return false;
+		}
+		if (URpgInventoryAddressSlotViewModel* AddressSlot = Grid->GetSelectedAddressSlot())
+		{
+			return DragDropCoordinator->CanQuickTransferAddressSlot(AddressSlot);
+		}
+		return DragDropCoordinator->CanQuickTransferEntry(Grid->GetSelectedEntryViewModel());
+	}
+	if (const URpgInventoryTileView* TileView = Panel.TileView)
+	{
+		return DragDropCoordinator &&
+			DragDropCoordinator->CanQuickTransferEntry(TileView->GetSelectedInventoryEntry());
+	}
+	return Panel.EquipmentSlotWidget && DragDropCoordinator &&
+		DragDropCoordinator->CanQuickTransferPlayerItem(Panel.EquipmentSlotWidget->GetRepresentedItem());
+}
+
+bool URpgInventoryPanelNavigationCoordinator::CanQuickSplitActiveSelection() const
+{
+	if (DragDropCoordinator && DragDropCoordinator->HasHeldPayload())
+	{
+		return true;
+	}
+	if (!IsValidPanelIndex(ActivePanelIndex))
+	{
+		return false;
+	}
+
+	const FRpgInventoryPanelNavigationEntry& Panel = Panels[ActivePanelIndex];
+	if (const URpgInventorySpatialGridWidget* Grid = Panel.SpatialGridWidget)
+	{
+		return Grid->GetSelectedContextActions().Contains(ERpgInventoryContextAction::Split);
+	}
+	if (const URpgInventoryTileView* TileView = Panel.TileView)
+	{
+		const URpgInventoryEntryViewModel* Entry = TileView->GetSelectedInventoryEntry();
+		return Entry && Entry->CanDrag() && Entry->GetStackCount() > 1;
+	}
+	return false;
+}
+
+bool URpgInventoryPanelNavigationCoordinator::CanUseOrEquipActiveSelection() const
+{
+	if (!IsValidPanelIndex(ActivePanelIndex))
+	{
+		return false;
+	}
+
+	const FRpgInventoryPanelNavigationEntry& Panel = Panels[ActivePanelIndex];
+	if (const URpgInventorySpatialGridWidget* Grid = Panel.SpatialGridWidget)
+	{
+		const TArray<ERpgInventoryContextAction> Actions = Grid->GetSelectedContextActions();
+		return Actions.Contains(ERpgInventoryContextAction::Use) ||
+			Actions.Contains(ERpgInventoryContextAction::EquipAndActivate);
+	}
+	if (const URpgInventoryTileView* TileView = Panel.TileView)
+	{
+		const URpgInventoryEntryViewModel* Entry = TileView->GetSelectedInventoryEntry();
+		return Entry && Entry->CanDrag() && Entry->GetItemInstance();
+	}
+	return Panel.EquipmentSlotWidget && Panel.EquipmentSlotWidget->GetRepresentedItem();
+}
+
+bool URpgInventoryPanelNavigationCoordinator::CanDropActiveSelection() const
+{
+	if (!IsValidPanelIndex(ActivePanelIndex))
+	{
+		return false;
+	}
+
+	const FRpgInventoryPanelNavigationEntry& Panel = Panels[ActivePanelIndex];
+	if (const URpgInventorySpatialGridWidget* Grid = Panel.SpatialGridWidget)
+	{
+		return Grid->GetSelectedContextActions().Contains(ERpgInventoryContextAction::Drop);
+	}
+	if (const URpgInventoryTileView* TileView = Panel.TileView)
+	{
+		const URpgInventoryEntryViewModel* Entry = TileView->GetSelectedInventoryEntry();
+		return Entry && Entry->CanDrag();
+	}
+	return false;
+}
+
 bool URpgInventoryPanelNavigationCoordinator::QuickTransferActiveSelection()
 {
 	if (!IsValidPanelIndex(ActivePanelIndex))
@@ -603,6 +701,10 @@ bool URpgInventoryPanelNavigationCoordinator::QuickTransferActiveSelection()
 	if (URpgInventorySpatialGridWidget* SpatialGridWidget = Panels[ActivePanelIndex].SpatialGridWidget)
 	{
 		return SpatialGridWidget->QuickTransferSelectedCell();
+	}
+	if (URpgEquipmentSlotWidget* EquipmentSlotWidget = Panels[ActivePanelIndex].EquipmentSlotWidget)
+	{
+		return DragDropCoordinator && DragDropCoordinator->QuickTransferPlayerItem(EquipmentSlotWidget->GetRepresentedItem());
 	}
 
 	return false;

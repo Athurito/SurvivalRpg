@@ -36,14 +36,21 @@ namespace
 			return false;
 		}
 
-		if (URpgPlayerInventoryLayoutComponent::IsSlotContainerEquipmentSlot(EquipmentSlot))
-		{
-			return Item->FindFragmentByClass<URpgInventoryFragment_ItemContainer>() != nullptr;
-		}
-
 		const URpgInventoryFragment_EquippableItem* EquippableFragment = Item->FindFragmentByClass<URpgInventoryFragment_EquippableItem>();
 		const TSubclassOf<URpgEquipmentDefinition> EquipmentDefinition = EquippableFragment ? EquippableFragment->GetEquipmentDefinition() : nullptr;
 		const URpgEquipmentDefinition* EquipmentCDO = EquipmentDefinition ? GetDefault<URpgEquipmentDefinition>(EquipmentDefinition) : nullptr;
+		if (URpgPlayerInventoryLayoutComponent::IsSlotContainerEquipmentSlot(EquipmentSlot))
+		{
+			if (!Item->FindFragmentByClass<URpgInventoryFragment_ItemContainer>())
+			{
+				return false;
+			}
+
+			// Equipment data distinguishes backpacks, belts, pouches, and resource bags. Definition-less legacy
+			// providers keep their migration compatibility until their item definitions are updated.
+			return !EquipmentCDO || EquipmentCDO->CanEquipInSlot(EquipmentSlot);
+		}
+
 		return EquipmentCDO && EquipmentCDO->CanEquipInSlot(EquipmentSlot);
 	}
 }

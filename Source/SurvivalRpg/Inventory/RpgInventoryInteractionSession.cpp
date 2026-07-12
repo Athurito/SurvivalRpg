@@ -4,6 +4,7 @@
 #include "SurvivalRpg/Equipment/RpgEquipmentLoadoutComponent.h"
 #include "SurvivalRpg/GameplayTags/RpgGameplayTags.h"
 #include "SurvivalRpg/Inventory/RpgInventoryManagerComponent.h"
+#include "SurvivalRpg/Inventory/RpgInventoryItemInstance.h"
 #include "SurvivalRpg/Inventory/RpgInventoryUiActionComponent.h"
 
 #include UE_INLINE_GENERATED_CPP_BY_NAME(RpgInventoryInteractionSession)
@@ -26,6 +27,7 @@ bool URpgInventoryInteractionSession::BeginInteraction(const FRpgInventoryDragPa
 
 	Payload = InPayload;
 	Target = FRpgInventoryDropTarget();
+	SpatialPreviewDescriptor = FRpgInventorySpatialPreviewDescriptor();
 	PreviewState = ERpgInventoryInteractionPreviewState::None;
 	InputMode = InInputMode;
 	RequestId.Invalidate();
@@ -33,10 +35,13 @@ bool URpgInventoryInteractionSession::BeginInteraction(const FRpgInventoryDragPa
 	PendingSourceInventory = nullptr;
 	PendingTargetInventory = nullptr;
 	PendingItem = nullptr;
+	PendingItemId = FRpgInventoryItemId();
 	PendingEntryId.Invalidate();
 	bHasPayload = true;
 	bTargetRotated = Payload.SourcePlacement.IsValid() && Payload.SourcePlacement.bRotated;
 	bPendingRequest = false;
+	OnSpatialPreviewChanged.Broadcast(SpatialPreviewDescriptor);
+	BroadcastPayloadChanged();
 	BroadcastStateChanged();
 	return true;
 }
@@ -45,6 +50,7 @@ void URpgInventoryInteractionSession::CancelInteraction()
 {
 	Payload = FRpgInventoryDragPayload();
 	Target = FRpgInventoryDropTarget();
+	SpatialPreviewDescriptor = FRpgInventorySpatialPreviewDescriptor();
 	PreviewState = ERpgInventoryInteractionPreviewState::None;
 	InputMode = ERpgInventoryInteractionInputMode::None;
 	RequestId.Invalidate();
@@ -52,10 +58,13 @@ void URpgInventoryInteractionSession::CancelInteraction()
 	PendingSourceInventory = nullptr;
 	PendingTargetInventory = nullptr;
 	PendingItem = nullptr;
+	PendingItemId = FRpgInventoryItemId();
 	PendingEntryId.Invalidate();
 	bHasPayload = false;
 	bTargetRotated = false;
 	bPendingRequest = false;
+	OnSpatialPreviewChanged.Broadcast(SpatialPreviewDescriptor);
+	BroadcastPayloadChanged();
 	BroadcastStateChanged();
 }
 
@@ -94,7 +103,30 @@ void URpgInventoryInteractionSession::ClearPreviewTarget()
 
 	Target = FRpgInventoryDropTarget();
 	PreviewState = ERpgInventoryInteractionPreviewState::None;
+	ClearSpatialPreviewDescriptor();
 	BroadcastStateChanged();
+}
+
+void URpgInventoryInteractionSession::SetSpatialPreviewDescriptor(const FRpgInventorySpatialPreviewDescriptor& InDescriptor)
+{
+	if (!bHasPayload || bPendingRequest || SpatialPreviewDescriptor.IsEquivalentTo(InDescriptor))
+	{
+		return;
+	}
+
+	SpatialPreviewDescriptor = InDescriptor;
+	OnSpatialPreviewChanged.Broadcast(SpatialPreviewDescriptor);
+}
+
+void URpgInventoryInteractionSession::ClearSpatialPreviewDescriptor()
+{
+	if (!SpatialPreviewDescriptor.bValid)
+	{
+		return;
+	}
+
+	SpatialPreviewDescriptor = FRpgInventorySpatialPreviewDescriptor();
+	OnSpatialPreviewChanged.Broadcast(SpatialPreviewDescriptor);
 }
 
 bool URpgInventoryInteractionSession::ToggleTargetRotation()
@@ -124,6 +156,47 @@ bool URpgInventoryInteractionSession::ToggleTargetRotation()
 		}
 	}
 
+	if (Payload.DragAnchor.bValid)
+	{
+		const FIntPoint OldCell(
+			FMath::Clamp(Payload.DragAnchor.GrabbedCell.X, 0, FMath::Max(0, OldOccupiedSize.Width - 1)),
+			FMath::Clamp(Payload.DragAnchor.GrabbedCell.Y, 0, FMath::Max(0, OldOccupiedSize.Height - 1)));
+		const FVector2D OldWithin(
+			FMath::Clamp(Payload.DragAnchor.WithinCellNormalized.X, 0.0f, 1.0f),
+			FMath::Clamp(Payload.DragAnchor.WithinCellNormalized.Y, 0.0f, 1.0f));
+		if (!bWasRotated)
+		{
+			Payload.DragAnchor.GrabbedCell = FIntPoint(OldOccupiedSize.Height - 1 - OldCell.Y, OldCell.X);
+			Payload.DragAnchor.WithinCellNormalized = FVector2D(1.0f - OldWithin.Y, OldWithin.X);
+		}
+		else
+		{
+			Payload.DragAnchor.GrabbedCell = FIntPoint(OldCell.Y, OldOccupiedSize.Width - 1 - OldCell.X);
+			Payload.DragAnchor.WithinCellNormalized = FVector2D(OldWithin.Y, 1.0f - OldWithin.X);
+		}
+		const FVector2D OldSourceSize = Payload.DragAnchor.SourceVisualSize;
+		const FVector2D OldSourceOffset(
+			FMath::Clamp(Payload.DragAnchor.SourcePointerOffset.X, 0.0f, OldSourceSize.X),
+			FMath::Clamp(Payload.DragAnchor.SourcePointerOffset.Y, 0.0f, OldSourceSize.Y));
+		Payload.DragAnchor.SourcePointerOffset = !bWasRotated
+			? FVector2D(OldSourceSize.Y - OldSourceOffset.Y, OldSourceOffset.X)
+			: FVector2D(OldSourceOffset.Y, OldSourceSize.X - OldSourceOffset.X);
+		Payload.DragAnchor.SourceVisualSize = FVector2D(OldSourceSize.Y, OldSourceSize.X);
+
+		const FVector2D OldScreenSize = Payload.DragAnchor.SourceScreenVisualSize;
+		if (OldScreenSize.X > KINDA_SMALL_NUMBER && OldScreenSize.Y > KINDA_SMALL_NUMBER)
+		{
+			const FVector2D OldScreenOffset(
+				FMath::Clamp(Payload.DragAnchor.SourceScreenPointerOffset.X, 0.0f, OldScreenSize.X),
+				FMath::Clamp(Payload.DragAnchor.SourceScreenPointerOffset.Y, 0.0f, OldScreenSize.Y));
+			Payload.DragAnchor.SourceScreenPointerOffset = !bWasRotated
+				? FVector2D(OldScreenSize.Y - OldScreenOffset.Y, OldScreenOffset.X)
+				: FVector2D(OldScreenOffset.Y, OldScreenSize.X - OldScreenOffset.X);
+			Payload.DragAnchor.SourceScreenVisualSize = FVector2D(OldScreenSize.Y, OldScreenSize.X);
+		}
+		Payload.DragAnchor.bRotated = bTargetRotated;
+	}
+
 	if (Payload.bHasPointerGrabOffset && Payload.DragVisualSize.X > KINDA_SMALL_NUMBER && Payload.DragVisualSize.Y > KINDA_SMALL_NUMBER)
 	{
 		const FVector2D OldVisualSize = Payload.DragVisualSize;
@@ -138,6 +211,14 @@ bool URpgInventoryInteractionSession::ToggleTargetRotation()
 
 	Target = FRpgInventoryDropTarget();
 	PreviewState = ERpgInventoryInteractionPreviewState::None;
+	const FRpgInventorySpatialPreviewDescriptor PreviousSpatialPreview = SpatialPreviewDescriptor;
+	BroadcastPayloadChanged();
+	// The currently addressed grid re-resolves from its retained pointer in the payload callback. If no presenter
+	// replaced the descriptor (for example while the free ghost is outside every grid), clear the stale candidate.
+	if (SpatialPreviewDescriptor.IsEquivalentTo(PreviousSpatialPreview))
+	{
+		ClearSpatialPreviewDescriptor();
+	}
 	BroadcastStateChanged();
 	return true;
 }
@@ -156,8 +237,10 @@ void URpgInventoryInteractionSession::MarkRequestPending(const FRpgInventoryDrop
 	PendingSourceInventory = Payload.SourceInventory;
 	PendingTargetInventory = InTarget.TargetInventory;
 	PendingItem = Payload.ItemInstance;
+	PendingItemId = Payload.ItemInstance ? Payload.ItemInstance->GetItemId() : FRpgInventoryItemId();
 	PendingEntryId = Payload.EntryId;
 	bPendingRequest = true;
+	UpdateSpatialPreviewState(ERpgInventoryInteractionPreviewState::Pending);
 	BroadcastStateChanged();
 }
 
@@ -170,6 +253,7 @@ void URpgInventoryInteractionSession::RejectRequestLocally()
 
 	bPendingRequest = false;
 	PreviewState = ERpgInventoryInteractionPreviewState::Rejected;
+	UpdateSpatialPreviewState(ERpgInventoryInteractionPreviewState::Rejected);
 	BroadcastStateChanged();
 }
 
@@ -245,14 +329,32 @@ void URpgInventoryInteractionSession::ResolvePendingRequest(bool bSucceeded)
 	PendingSourceInventory = nullptr;
 	PendingTargetInventory = nullptr;
 	PendingItem = nullptr;
+	PendingItemId = FRpgInventoryItemId();
 	PendingEntryId.Invalidate();
 	PreviewState = ERpgInventoryInteractionPreviewState::Rejected;
+	UpdateSpatialPreviewState(ERpgInventoryInteractionPreviewState::Rejected);
 	BroadcastStateChanged();
 }
 
 void URpgInventoryInteractionSession::BroadcastStateChanged()
 {
 	OnInteractionStateChanged.Broadcast(PreviewState, bHasPayload, bPendingRequest);
+}
+
+void URpgInventoryInteractionSession::BroadcastPayloadChanged()
+{
+	OnPayloadChanged.Broadcast(bHasPayload, bHasPayload ? Payload : FRpgInventoryDragPayload());
+}
+
+void URpgInventoryInteractionSession::UpdateSpatialPreviewState(ERpgInventoryInteractionPreviewState InPreviewState)
+{
+	if (!SpatialPreviewDescriptor.bValid || SpatialPreviewDescriptor.PreviewState == InPreviewState)
+	{
+		return;
+	}
+
+	SpatialPreviewDescriptor.PreviewState = InPreviewState;
+	OnSpatialPreviewChanged.Broadcast(SpatialPreviewDescriptor);
 }
 
 bool URpgInventoryInteractionSession::IsPendingMessageRelevant(UActorComponent* InventoryOwner, const UObject* Item) const
@@ -269,8 +371,14 @@ bool URpgInventoryInteractionSession::IsPendingMessageRelevant(UActorComponent* 
 
 void URpgInventoryInteractionSession::HandleActionFeedback(FGameplayTag Channel, const FRpgInventoryActionFeedbackMessage& Message)
 {
-	if (!bPendingRequest || (PendingActionTag.IsValid() && Message.ActionTag != PendingActionTag) ||
-		!IsPendingMessageRelevant(Message.InventoryOwner.Get(), Message.Item.Get()))
+	if (!bPendingRequest ||
+		(RequestId.IsValid() && Message.RequestId.IsValid() && Message.RequestId != RequestId) ||
+		(PendingActionTag.IsValid() && Message.ActionTag != PendingActionTag) ||
+		(PendingItemId.IsValid() && Message.ItemId.IsValid() && Message.ItemId != PendingItemId))
+	{
+		return;
+	}
+	if (!Message.RequestId.IsValid() && !IsPendingMessageRelevant(Message.InventoryOwner.Get(), Message.Item.Get()))
 	{
 		return;
 	}

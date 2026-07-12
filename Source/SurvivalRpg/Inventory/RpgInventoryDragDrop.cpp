@@ -2,7 +2,7 @@
 
 #include "RpgInventoryFragment_ItemTraits.h"
 #include "RpgInventoryFragment_EquippableItem.h"
-#include "RpgInventoryFragment_SlotContainerProvider.h"
+#include "RpgInventoryFragment_ItemContainer.h"
 #include "RpgInventoryItemInstance.h"
 #include "RpgInventoryInteractionSession.h"
 #include "RpgInventoryManagerComponent.h"
@@ -14,11 +14,29 @@
 #include "SurvivalRpg/Mvvm/Inventory/RpgInventoryViewModels.h"
 #include "SurvivalRpg/Mvvm/Inventory/RpgActionBarViewModels.h"
 #include "SurvivalRpg/Mvvm/Inventory/RpgPlayerInventoryViewModels.h"
+#include "SurvivalRpg/UI/RpgInventoryDragVisualWidget.h"
+
+#include "Blueprint/WidgetLayoutLibrary.h"
 
 #include UE_INLINE_GENERATED_CPP_BY_NAME(RpgInventoryDragDrop)
 
 namespace
 {
+	FRpgInventoryGridSize ResolvePayloadOccupiedSize(const FRpgInventoryDragPayload& Payload, bool bRotated)
+	{
+		FRpgInventoryGridSize Footprint = Payload.ItemFootprint;
+		if (!Footprint.IsValid() && Payload.SourcePlacement.IsValid())
+		{
+			Footprint = Payload.SourcePlacement.GetUnrotatedSize();
+		}
+		if (!Footprint.IsValid())
+		{
+			Footprint.Width = 1;
+			Footprint.Height = 1;
+		}
+		return Footprint.GetRotated(bRotated);
+	}
+
 	bool IsInventoryTargetType(ERpgInventoryDropTargetType TargetType)
 	{
 		return TargetType == ERpgInventoryDropTargetType::InventorySlot ||
@@ -65,16 +83,23 @@ namespace
 
 	bool CanInventoryItemEquipInSlot(const URpgInventoryItemInstance* ItemInstance, ERpgEquipmentSlot EquipmentSlot)
 	{
-		if (URpgPlayerInventoryLayoutComponent::IsSlotContainerEquipmentSlot(EquipmentSlot))
-		{
-			return ItemInstance && ItemInstance->FindFragmentByClass<URpgInventoryFragment_SlotContainerProvider>() != nullptr;
-		}
-
 		const URpgInventoryFragment_EquippableItem* EquippableFragment = ItemInstance
 			? ItemInstance->FindFragmentByClass<URpgInventoryFragment_EquippableItem>()
 			: nullptr;
 		const TSubclassOf<URpgEquipmentDefinition> EquipmentDefinition = EquippableFragment ? EquippableFragment->GetEquipmentDefinition() : nullptr;
 		const URpgEquipmentDefinition* EquipmentCDO = EquipmentDefinition ? GetDefault<URpgEquipmentDefinition>(EquipmentDefinition) : nullptr;
+		if (URpgPlayerInventoryLayoutComponent::IsSlotContainerEquipmentSlot(EquipmentSlot))
+		{
+			if (!ItemInstance || !ItemInstance->FindFragmentByClass<URpgInventoryFragment_ItemContainer>())
+			{
+				return false;
+			}
+
+			// Modern provider items use their equipment definition to distinguish Backpack/Belt/Pouch/ResourceBag.
+			// Definition-less legacy providers retain the old any-provider-slot compatibility during migration.
+			return !EquipmentCDO || EquipmentCDO->CanEquipInSlot(EquipmentSlot);
+		}
+
 		return EquipmentCDO && EquipmentCDO->CanEquipInSlot(EquipmentSlot);
 	}
 
@@ -149,9 +174,119 @@ namespace
 
 }
 
+bool FRpgInventorySpatialPreviewDescriptor::IsEquivalentTo(const FRpgInventorySpatialPreviewDescriptor& Other) const
+{
+	return bValid == Other.bValid &&
+		EntryId == Other.EntryId &&
+		Target.TargetType == Other.Target.TargetType &&
+		Target.TargetInventory == Other.Target.TargetInventory &&
+		Target.TargetPlacement.GetContainerHandle() == Other.Target.TargetPlacement.GetContainerHandle() &&
+		Target.TargetPlacement.X == Other.Target.TargetPlacement.X &&
+		Target.TargetPlacement.Y == Other.Target.TargetPlacement.Y &&
+		Target.TargetPlacement.Width == Other.Target.TargetPlacement.Width &&
+		Target.TargetPlacement.Height == Other.Target.TargetPlacement.Height &&
+		Target.TargetPlacement.bRotated == Other.Target.TargetPlacement.bRotated &&
+		Target.SlotAddress == Other.Target.SlotAddress &&
+		Target.ActionBarSlotIndex == Other.Target.ActionBarSlotIndex &&
+		Target.EquipmentSlot == Other.Target.EquipmentSlot &&
+		TargetPlacement.GetContainerHandle() == Other.TargetPlacement.GetContainerHandle() &&
+		TargetPlacement.X == Other.TargetPlacement.X &&
+		TargetPlacement.Y == Other.TargetPlacement.Y &&
+		TargetPlacement.Width == Other.TargetPlacement.Width &&
+		TargetPlacement.Height == Other.TargetPlacement.Height &&
+		TargetPlacement.bRotated == Other.TargetPlacement.bRotated &&
+		PreviewState == Other.PreviewState &&
+		SnappedLocalPosition.Equals(Other.SnappedLocalPosition) &&
+		SnappedLocalSize.Equals(Other.SnappedLocalSize);
+}
+
 void URpgInventoryDragDropOperation::SetInteractionSession(URpgInventoryInteractionSession* InInteractionSession)
 {
 	InteractionSession = InInteractionSession;
+}
+
+FVector2D URpgInventoryDragDropOperation::ResolveDecoratorCenterScreen(FVector2D PointerScreenPosition) const
+{
+	if (!DefaultDragVisual || Pivot != EDragPivot::TopLeft)
+	{
+		return URpgInventoryDragDropCoordinator::ResolveFreeGhostCenterScreen(InventoryPayload, PointerScreenPosition);
+	}
+
+	// FUMGDragDropOp wraps the visual in SDPIScaler before applying Offset, so mirror its desired screen size.
+	const float ResolvedViewportScale = UWidgetLayoutLibrary::GetViewportScale(DefaultDragVisual);
+	const float ViewportScale = ResolvedViewportScale > KINDA_SMALL_NUMBER ? ResolvedViewportScale : 1.0f;
+	const URpgInventoryDragVisualWidget* CanonicalVisual = Cast<URpgInventoryDragVisualWidget>(DefaultDragVisual);
+	const FVector2D DecoratorLocalSize = CanonicalVisual
+		? CanonicalVisual->GetExactVisualSize()
+		: DefaultDragVisual->GetDesiredSize();
+	const FVector2D DecoratorSize = DecoratorLocalSize * ViewportScale;
+	if (DecoratorSize.X <= KINDA_SMALL_NUMBER || DecoratorSize.Y <= KINDA_SMALL_NUMBER)
+	{
+		return URpgInventoryDragDropCoordinator::ResolveFreeGhostCenterScreen(InventoryPayload, PointerScreenPosition);
+	}
+
+	// Matches FUMGDragDropOp's final TopLeft placement; player inventory paints its own non-interpolated ghost.
+	return PointerScreenPosition + DecoratorSize * Offset + DecoratorSize * 0.5f;
+}
+
+void URpgInventoryDragDropOperation::RefreshDecoratorPointerOffset()
+{
+	const FRpgInventoryDragAnchor& Anchor = InventoryPayload.DragAnchor;
+	if (!Anchor.bValid ||
+		Anchor.SourceVisualSize.X <= KINDA_SMALL_NUMBER ||
+		Anchor.SourceVisualSize.Y <= KINDA_SMALL_NUMBER)
+	{
+		return;
+	}
+
+	Offset = FVector2D(
+		-FMath::Clamp(Anchor.SourcePointerOffset.X / Anchor.SourceVisualSize.X, 0.0f, 1.0f),
+		-FMath::Clamp(Anchor.SourcePointerOffset.Y / Anchor.SourceVisualSize.Y, 0.0f, 1.0f));
+}
+
+void URpgInventoryDragDropOperation::Dragged_Implementation(const FPointerEvent& PointerEvent)
+{
+	Super::Dragged_Implementation(PointerEvent);
+	SynchronizeFromInteractionSession();
+}
+
+void URpgInventoryDragDropOperation::SetScreenOwnedDragVisualActive(bool bInActive)
+{
+	bScreenOwnedDragVisualActive = bInActive;
+	if (DefaultDragVisual)
+	{
+		const float DesiredOpacity = bScreenOwnedDragVisualActive ? 0.0f : 1.0f;
+		if (!FMath::IsNearlyEqual(DefaultDragVisual->GetRenderOpacity(), DesiredOpacity))
+		{
+			DefaultDragVisual->SetRenderOpacity(DesiredOpacity);
+		}
+	}
+}
+
+void URpgInventoryDragDropOperation::SynchronizeFromInteractionSession()
+{
+	if (!InteractionSession)
+	{
+		return;
+	}
+
+	InventoryPayload = InteractionSession->GetPayload();
+	if (DefaultDragVisual)
+	{
+		const float DesiredOpacity = bScreenOwnedDragVisualActive || InteractionSession->GetSpatialPreviewDescriptor().bValid
+			? 0.0f
+			: 1.0f;
+		if (!FMath::IsNearlyEqual(DefaultDragVisual->GetRenderOpacity(), DesiredOpacity))
+		{
+			DefaultDragVisual->SetRenderOpacity(DesiredOpacity);
+		}
+	}
+	if (URpgInventoryDragVisualWidget* DragVisual = Cast<URpgInventoryDragVisualWidget>(DefaultDragVisual))
+	{
+		DragVisual->SetFootprintRotated(InteractionSession->IsTargetRotated());
+		DragVisual->SetPreviewState(InteractionSession->GetPreviewState());
+	}
+	RefreshDecoratorPointerOffset();
 }
 
 void URpgInventoryDragDropOperation::DragCancelled_Implementation(const FPointerEvent& PointerEvent)
@@ -213,8 +348,126 @@ void URpgInventoryDragDropCoordinator::EnsureInteractionSession()
 
 	if (InteractionSession)
 	{
-		InteractionSession->OnInteractionStateChanged.AddUniqueDynamic(this, &ThisClass::HandleInteractionSessionChanged);
+		InteractionSession->OnPayloadChanged.AddUniqueDynamic(this, &ThisClass::HandleInteractionPayloadChanged);
 	}
+}
+
+void URpgInventoryDragDropCoordinator::CapturePointerDragAnchor(
+	FRpgInventoryDragPayload& InOutPayload,
+	FVector2D LocalPointerPosition,
+	FVector2D SourceVisualSize)
+{
+	const bool bSourceRotated = InOutPayload.SourcePlacement.IsValid() && InOutPayload.SourcePlacement.bRotated;
+	const FRpgInventoryGridSize OccupiedSize = ResolvePayloadOccupiedSize(InOutPayload, bSourceRotated);
+	if (!OccupiedSize.IsValid() || SourceVisualSize.X <= KINDA_SMALL_NUMBER || SourceVisualSize.Y <= KINDA_SMALL_NUMBER)
+	{
+		InOutPayload.DragAnchor = FRpgInventoryDragAnchor();
+		return;
+	}
+
+	const FVector2D ClampedPointer(
+		FMath::Clamp(LocalPointerPosition.X, 0.0f, FMath::Max(0.0f, SourceVisualSize.X - UE_KINDA_SMALL_NUMBER)),
+		FMath::Clamp(LocalPointerPosition.Y, 0.0f, FMath::Max(0.0f, SourceVisualSize.Y - UE_KINDA_SMALL_NUMBER)));
+	const FVector2D Normalized(
+		FMath::Clamp(ClampedPointer.X / SourceVisualSize.X, 0.0f, 1.0f),
+		FMath::Clamp(ClampedPointer.Y / SourceVisualSize.Y, 0.0f, 1.0f));
+	const FVector2D CellSpace(
+		Normalized.X * static_cast<float>(OccupiedSize.Width),
+		Normalized.Y * static_cast<float>(OccupiedSize.Height));
+
+	FRpgInventoryDragAnchor& Anchor = InOutPayload.DragAnchor;
+	Anchor.bValid = true;
+	Anchor.GrabbedCell.X = FMath::Clamp(FMath::FloorToInt(CellSpace.X), 0, OccupiedSize.Width - 1);
+	Anchor.GrabbedCell.Y = FMath::Clamp(FMath::FloorToInt(CellSpace.Y), 0, OccupiedSize.Height - 1);
+	Anchor.WithinCellNormalized.X = FMath::Clamp(CellSpace.X - Anchor.GrabbedCell.X, 0.0f, 1.0f);
+	Anchor.WithinCellNormalized.Y = FMath::Clamp(CellSpace.Y - Anchor.GrabbedCell.Y, 0.0f, 1.0f);
+	Anchor.SourceVisualSize = SourceVisualSize;
+	Anchor.SourcePointerOffset = ClampedPointer;
+	Anchor.SourceScreenVisualSize = FVector2D::ZeroVector;
+	Anchor.SourceScreenPointerOffset = FVector2D::ZeroVector;
+	Anchor.bRotated = bSourceRotated;
+
+	// Keep legacy Blueprint diagnostics populated while all placement code migrates to DragAnchor.
+	InOutPayload.bHasSpatialGrabOffset = true;
+	InOutPayload.GrabCellOffsetX = Anchor.GrabbedCell.X;
+	InOutPayload.GrabCellOffsetY = Anchor.GrabbedCell.Y;
+	InOutPayload.bHasPointerGrabOffset = true;
+	InOutPayload.PointerGrabOffset = ClampedPointer;
+	InOutPayload.DragVisualSize = SourceVisualSize;
+}
+
+void URpgInventoryDragDropCoordinator::CapturePointerDragAnchorScreenGeometry(
+	FRpgInventoryDragPayload& InOutPayload,
+	FVector2D SourceScreenTopLeft,
+	FVector2D PointerScreenPosition,
+	FVector2D SourceScreenVisualSize)
+{
+	FRpgInventoryDragAnchor& Anchor = InOutPayload.DragAnchor;
+	if (!Anchor.bValid ||
+		SourceScreenVisualSize.X <= KINDA_SMALL_NUMBER ||
+		SourceScreenVisualSize.Y <= KINDA_SMALL_NUMBER)
+	{
+		Anchor.SourceScreenVisualSize = FVector2D::ZeroVector;
+		Anchor.SourceScreenPointerOffset = FVector2D::ZeroVector;
+		return;
+	}
+
+	Anchor.SourceScreenVisualSize = SourceScreenVisualSize;
+	Anchor.SourceScreenPointerOffset = FVector2D(
+		FMath::Clamp(PointerScreenPosition.X - SourceScreenTopLeft.X, 0.0f, SourceScreenVisualSize.X),
+		FMath::Clamp(PointerScreenPosition.Y - SourceScreenTopLeft.Y, 0.0f, SourceScreenVisualSize.Y));
+}
+
+FVector2D URpgInventoryDragDropCoordinator::ResolveTargetGrabPixels(
+	const FRpgInventoryDragPayload& Payload,
+	bool bTargetRotated,
+	float CellSize,
+	float CellPadding)
+{
+	const FRpgInventoryGridSize OccupiedSize = ResolvePayloadOccupiedSize(Payload, bTargetRotated);
+	const float SafeCellSize = FMath::Max(1.0f, CellSize);
+	const float SafePadding = FMath::Max(0.0f, CellPadding);
+	const float Stride = SafeCellSize + SafePadding;
+	if (!Payload.DragAnchor.bValid)
+	{
+		return FVector2D(SafeCellSize * 0.5f, SafeCellSize * 0.5f);
+	}
+
+	const FIntPoint GrabbedCell(
+		FMath::Clamp(Payload.DragAnchor.GrabbedCell.X, 0, FMath::Max(0, OccupiedSize.Width - 1)),
+		FMath::Clamp(Payload.DragAnchor.GrabbedCell.Y, 0, FMath::Max(0, OccupiedSize.Height - 1)));
+	const FVector2D Within(
+		FMath::Clamp(Payload.DragAnchor.WithinCellNormalized.X, 0.0f, 1.0f),
+		FMath::Clamp(Payload.DragAnchor.WithinCellNormalized.Y, 0.0f, 1.0f));
+	return FVector2D(
+		GrabbedCell.X * Stride + Within.X * SafeCellSize,
+		GrabbedCell.Y * Stride + Within.Y * SafeCellSize);
+}
+
+FVector2D URpgInventoryDragDropCoordinator::ResolveFreeGhostCenterScreen(
+	const FRpgInventoryDragPayload& Payload,
+	FVector2D PointerScreenPosition)
+{
+	if (!Payload.DragAnchor.bValid)
+	{
+		return PointerScreenPosition;
+	}
+
+	if (Payload.DragAnchor.SourceScreenVisualSize.X > KINDA_SMALL_NUMBER &&
+		Payload.DragAnchor.SourceScreenVisualSize.Y > KINDA_SMALL_NUMBER)
+	{
+		return PointerScreenPosition - Payload.DragAnchor.SourceScreenPointerOffset +
+			Payload.DragAnchor.SourceScreenVisualSize * 0.5f;
+	}
+
+	if (Payload.DragAnchor.SourceVisualSize.X > KINDA_SMALL_NUMBER &&
+		Payload.DragAnchor.SourceVisualSize.Y > KINDA_SMALL_NUMBER)
+	{
+		return PointerScreenPosition - Payload.DragAnchor.SourcePointerOffset +
+			Payload.DragAnchor.SourceVisualSize * 0.5f;
+	}
+
+	return PointerScreenPosition;
 }
 
 FRpgInventoryDragPayload URpgInventoryDragDropCoordinator::MakeInventoryPayloadFromEntry(URpgInventoryEntryViewModel* EntryViewModel)
@@ -536,18 +789,38 @@ URpgInventoryManagerComponent* URpgInventoryDragDropCoordinator::ResolveQuickTra
 
 bool URpgInventoryDragDropCoordinator::CanQuickTransferEntry(URpgInventoryEntryViewModel* EntryViewModel, URpgInventoryManagerComponent* ExplicitTargetInventory) const
 {
-	if (!EntryViewModel || !EntryViewModel->CanDrag() || !ResolveUiActionComponent())
+	URpgInventoryUiActionComponent* Actions = ResolveUiActionComponent();
+	if (!EntryViewModel || !EntryViewModel->CanDrag() || !Actions)
 	{
 		return false;
 	}
 
 	URpgInventoryManagerComponent* SourceInventory = EntryViewModel->GetInventoryManager();
 	URpgInventoryManagerComponent* TargetInventory = ExplicitTargetInventory ? ExplicitTargetInventory : ResolveQuickTransferTarget(SourceInventory);
-	return SourceInventory &&
-		TargetInventory &&
-		SourceInventory != TargetInventory &&
-		EntryViewModel->GetItemInstance() &&
-		EntryViewModel->GetStackCount() > 0;
+	URpgInventoryItemInstance* Item = EntryViewModel->GetItemInstance();
+	if (!TargetInventory && IsPlayerInventory(SourceInventory))
+	{
+		TargetInventory = SourceInventory;
+	}
+	if (!SourceInventory || !TargetInventory || !Item || EntryViewModel->GetStackCount() <= 0)
+	{
+		return false;
+	}
+
+	FRpgInventoryQuickTransferRequest Request;
+	Request.ItemId = Item->GetItemId();
+	Request.StackCount = EntryViewModel->GetStackCount();
+	if (SourceInventory == TargetInventory)
+	{
+		BuildPlayerQuickTransferTargets(EntryViewModel->GetPlacement(), Request.PreferredTargetContainers);
+		if (Request.PreferredTargetContainers.IsEmpty())
+		{
+			return false;
+		}
+	}
+	FRpgInventoryContainerHandle TargetContainer;
+	FRpgInventoryGridPlacement TargetPlacement;
+	return Actions->FindQuickTransferDestination(SourceInventory, TargetInventory, Request, TargetContainer, TargetPlacement);
 }
 
 bool URpgInventoryDragDropCoordinator::QuickTransferEntry(URpgInventoryEntryViewModel* EntryViewModel, URpgInventoryManagerComponent* ExplicitTargetInventory)
@@ -562,7 +835,11 @@ bool URpgInventoryDragDropCoordinator::QuickTransferEntry(URpgInventoryEntryView
 	URpgInventoryItemInstance* ItemInstance = EntryViewModel->GetItemInstance();
 	const int32 StackCount = EntryViewModel->GetStackCount();
 	URpgInventoryUiActionComponent* ActionComponent = ResolveUiActionComponent();
-	if (!ActionComponent || !SourceInventory || !TargetInventory || SourceInventory == TargetInventory || !ItemInstance || StackCount <= 0)
+	if (!TargetInventory && IsPlayerInventory(SourceInventory))
+	{
+		TargetInventory = SourceInventory;
+	}
+	if (!ActionComponent || !SourceInventory || !TargetInventory || !ItemInstance || StackCount <= 0)
 	{
 		return false;
 	}
@@ -572,24 +849,55 @@ bool URpgInventoryDragDropCoordinator::QuickTransferEntry(URpgInventoryEntryView
 		CancelHold();
 	}
 
-	ActionComponent->RequestTransferItemStack(SourceInventory, TargetInventory, ItemInstance, StackCount);
+	FRpgInventoryQuickTransferRequest Request;
+	Request.RequestId = FGuid::NewGuid();
+	Request.ItemId = ItemInstance->GetItemId();
+	Request.StackCount = StackCount;
+	if (SourceInventory == TargetInventory)
+	{
+		BuildPlayerQuickTransferTargets(EntryViewModel->GetPlacement(), Request.PreferredTargetContainers);
+	}
+	ActionComponent->RequestQuickTransferItem(SourceInventory, TargetInventory, Request);
 	return true;
 }
 
 bool URpgInventoryDragDropCoordinator::CanQuickTransferAddressSlot(URpgInventoryAddressSlotViewModel* SlotViewModel, URpgInventoryManagerComponent* ExplicitTargetInventory) const
 {
-	if (!SlotViewModel || !SlotViewModel->CanDrag() || !ResolveUiActionComponent())
+	URpgInventoryUiActionComponent* Actions = ResolveUiActionComponent();
+	if (!SlotViewModel || !SlotViewModel->CanDrag() || !Actions)
 	{
 		return false;
 	}
 
 	URpgInventoryManagerComponent* SourceInventory = SlotViewModel->GetInventoryManager();
 	URpgInventoryManagerComponent* TargetInventory = ExplicitTargetInventory ? ExplicitTargetInventory : ResolveQuickTransferTarget(SourceInventory);
-	return SourceInventory &&
-		TargetInventory &&
-		SourceInventory != TargetInventory &&
-		SlotViewModel->GetItemInstance() &&
-		SlotViewModel->GetStackCount() > 0;
+	URpgInventoryItemInstance* Item = SlotViewModel->GetItemInstance();
+	if (!TargetInventory && IsPlayerInventory(SourceInventory))
+	{
+		TargetInventory = SourceInventory;
+	}
+	if (!SourceInventory || !TargetInventory || !Item || SlotViewModel->GetStackCount() <= 0)
+	{
+		return false;
+	}
+
+	FRpgInventoryQuickTransferRequest Request;
+	Request.ItemId = Item->GetItemId();
+	Request.StackCount = SlotViewModel->GetStackCount();
+	if (SourceInventory == TargetInventory)
+	{
+		const FRpgInventoryGridPlacement SourcePlacement = SlotViewModel->GetItemPlacement().IsValid()
+			? SlotViewModel->GetItemPlacement()
+			: SlotViewModel->GetPlacement();
+		BuildPlayerQuickTransferTargets(SourcePlacement, Request.PreferredTargetContainers);
+		if (Request.PreferredTargetContainers.IsEmpty())
+		{
+			return false;
+		}
+	}
+	FRpgInventoryContainerHandle TargetContainer;
+	FRpgInventoryGridPlacement TargetPlacement;
+	return Actions->FindQuickTransferDestination(SourceInventory, TargetInventory, Request, TargetContainer, TargetPlacement);
 }
 
 bool URpgInventoryDragDropCoordinator::QuickTransferAddressSlot(URpgInventoryAddressSlotViewModel* SlotViewModel, URpgInventoryManagerComponent* ExplicitTargetInventory)
@@ -604,7 +912,11 @@ bool URpgInventoryDragDropCoordinator::QuickTransferAddressSlot(URpgInventoryAdd
 	URpgInventoryItemInstance* ItemInstance = SlotViewModel->GetItemInstance();
 	const int32 StackCount = SlotViewModel->GetStackCount();
 	URpgInventoryUiActionComponent* ActionComponent = ResolveUiActionComponent();
-	if (!ActionComponent || !SourceInventory || !TargetInventory || SourceInventory == TargetInventory || !ItemInstance || StackCount <= 0)
+	if (!TargetInventory && IsPlayerInventory(SourceInventory))
+	{
+		TargetInventory = SourceInventory;
+	}
+	if (!ActionComponent || !SourceInventory || !TargetInventory || !ItemInstance || StackCount <= 0)
 	{
 		return false;
 	}
@@ -614,7 +926,81 @@ bool URpgInventoryDragDropCoordinator::QuickTransferAddressSlot(URpgInventoryAdd
 		CancelHold();
 	}
 
-	ActionComponent->RequestTransferItemStack(SourceInventory, TargetInventory, ItemInstance, StackCount);
+	FRpgInventoryQuickTransferRequest Request;
+	Request.RequestId = FGuid::NewGuid();
+	Request.ItemId = ItemInstance->GetItemId();
+	Request.StackCount = StackCount;
+	if (SourceInventory == TargetInventory)
+	{
+		const FRpgInventoryGridPlacement SourcePlacement = SlotViewModel->GetItemPlacement().IsValid()
+			? SlotViewModel->GetItemPlacement()
+			: SlotViewModel->GetPlacement();
+		BuildPlayerQuickTransferTargets(SourcePlacement, Request.PreferredTargetContainers);
+	}
+	ActionComponent->RequestQuickTransferItem(SourceInventory, TargetInventory, Request);
+	return true;
+}
+
+bool URpgInventoryDragDropCoordinator::CanQuickTransferPlayerItem(URpgInventoryItemInstance* ItemInstance) const
+{
+	URpgInventoryManagerComponent* PlayerInventory = FindPlayerInventory();
+	URpgInventoryUiActionComponent* Actions = ResolveUiActionComponent();
+	if (!PlayerInventory || !Actions || !ItemInstance || !PlayerInventory->ContainsItemInstance(ItemInstance))
+	{
+		return false;
+	}
+
+	FRpgInventoryGridPlacement SourcePlacement;
+	if (!PlayerInventory->GetItemPlacement(ItemInstance, SourcePlacement))
+	{
+		return false;
+	}
+
+	FRpgInventoryQuickTransferRequest Request;
+	Request.ItemId = ItemInstance->GetItemId();
+	Request.StackCount = PlayerInventory->GetItemStackCount(ItemInstance);
+	BuildPlayerQuickTransferTargets(SourcePlacement, Request.PreferredTargetContainers);
+	if (Request.StackCount <= 0 || Request.PreferredTargetContainers.IsEmpty())
+	{
+		return false;
+	}
+
+	FRpgInventoryContainerHandle TargetContainer;
+	FRpgInventoryGridPlacement TargetPlacement;
+	return Actions->FindQuickTransferDestination(
+		PlayerInventory,
+		PlayerInventory,
+		Request,
+		TargetContainer,
+		TargetPlacement);
+}
+
+bool URpgInventoryDragDropCoordinator::QuickTransferPlayerItem(URpgInventoryItemInstance* ItemInstance)
+{
+	if (!CanQuickTransferPlayerItem(ItemInstance))
+	{
+		return false;
+	}
+
+	URpgInventoryManagerComponent* PlayerInventory = FindPlayerInventory();
+	URpgInventoryUiActionComponent* Actions = ResolveUiActionComponent();
+	FRpgInventoryGridPlacement SourcePlacement;
+	if (!PlayerInventory || !Actions || !PlayerInventory->GetItemPlacement(ItemInstance, SourcePlacement))
+	{
+		return false;
+	}
+
+	if (HasHeldPayload())
+	{
+		CancelHold();
+	}
+
+	FRpgInventoryQuickTransferRequest Request;
+	Request.RequestId = FGuid::NewGuid();
+	Request.ItemId = ItemInstance->GetItemId();
+	Request.StackCount = PlayerInventory->GetItemStackCount(ItemInstance);
+	BuildPlayerQuickTransferTargets(SourcePlacement, Request.PreferredTargetContainers);
+	Actions->RequestQuickTransferItem(PlayerInventory, PlayerInventory, Request);
 	return true;
 }
 
@@ -667,7 +1053,12 @@ bool URpgInventoryDragDropCoordinator::QuickSplitEntry(URpgInventoryEntryViewMod
 		CancelHold();
 	}
 
-	ActionComponent->RequestSplitItemStack(Inventory, ItemInstance, SplitCount, TargetPlacement);
+	ActionComponent->RequestSplitItemStackById(
+		Inventory,
+		ItemInstance->GetItemId(),
+		SplitCount,
+		TargetPlacement,
+		FGuid::NewGuid());
 	return true;
 }
 
@@ -691,15 +1082,49 @@ bool URpgInventoryDragDropCoordinator::UseOrEquipEntry(URpgInventoryEntryViewMod
 		CancelHold();
 	}
 
-	if (ItemInstance->FindFragmentByClass<URpgInventoryFragment_UsableItem>() != nullptr)
+	const URpgInventoryFragment_UsableItem* Usable = ItemInstance->FindFragmentByClass<URpgInventoryFragment_UsableItem>();
+	const bool bEquippable = ItemInstance->FindFragmentByClass<URpgInventoryFragment_EquippableItem>() != nullptr ||
+		ItemInstance->FindFragmentByClass<URpgInventoryFragment_ItemContainer>() != nullptr;
+	const ERpgInventoryItemActionIntent QuickIntent = Usable && bEquippable
+		? (Usable->HybridQuickAction == ERpgInventoryHybridQuickAction::EquipAndActivate
+			? ERpgInventoryItemActionIntent::EquipAndActivate
+			: ERpgInventoryItemActionIntent::Use)
+		: (bEquippable ? ERpgInventoryItemActionIntent::EquipAndActivate : ERpgInventoryItemActionIntent::Use);
+	return ExecuteEntryItemAction(
+		EntryViewModel,
+		QuickIntent,
+		StackCount);
+}
+
+bool URpgInventoryDragDropCoordinator::ExecuteEntryItemAction(
+	URpgInventoryEntryViewModel* EntryViewModel,
+	ERpgInventoryItemActionIntent Intent,
+	int32 StackCount)
+{
+	if (!EntryViewModel || !EntryViewModel->CanDrag())
 	{
-		ActionComponent->RequestUseInventoryItem(Inventory, ItemInstance, FMath::Max(1, StackCount));
-	}
-	else
-	{
-		ActionComponent->RequestEquipInventoryItem(ItemInstance);
+		return false;
 	}
 
+	URpgInventoryUiActionComponent* Actions = ResolveUiActionComponent();
+	URpgInventoryManagerComponent* Inventory = EntryViewModel->GetInventoryManager();
+	URpgInventoryItemInstance* Item = EntryViewModel->GetItemInstance();
+	if (!Actions || !Inventory || !Item || EntryViewModel->GetStackCount() <= 0)
+	{
+		return false;
+	}
+
+	if (HasHeldPayload())
+	{
+		CancelHold();
+	}
+
+	FRpgInventoryItemActionRequest Request;
+	Request.RequestId = FGuid::NewGuid();
+	Request.ItemId = Item->GetItemId();
+	Request.Intent = Intent;
+	Request.StackCount = FMath::Max(1, StackCount);
+	Actions->RequestExecuteInventoryItemAction(Inventory, Request);
 	return true;
 }
 
@@ -723,19 +1148,55 @@ bool URpgInventoryDragDropCoordinator::UseOrEquipAddressSlot(URpgInventoryAddres
 		CancelHold();
 	}
 
-	if (ItemInstance->FindFragmentByClass<URpgInventoryFragment_UsableItem>() != nullptr)
-	{
-		ActionComponent->RequestUseInventoryItem(Inventory, ItemInstance, FMath::Max(1, StackCount));
-		return true;
-	}
-
-	if (SlotViewModel->IsGearSlot() || SlotViewModel->IsCarrySlot())
+	if (SlotViewModel->IsGearSlot())
 	{
 		ActionComponent->RequestUnequipInventoryItemToContentSlot(ItemInstance);
 		return true;
 	}
 
-	ActionComponent->RequestEquipInventoryItem(ItemInstance);
+	const URpgInventoryFragment_UsableItem* Usable = ItemInstance->FindFragmentByClass<URpgInventoryFragment_UsableItem>();
+	const bool bEquippable = ItemInstance->FindFragmentByClass<URpgInventoryFragment_EquippableItem>() != nullptr ||
+		ItemInstance->FindFragmentByClass<URpgInventoryFragment_ItemContainer>() != nullptr;
+	const ERpgInventoryItemActionIntent QuickIntent = Usable && bEquippable
+		? (Usable->HybridQuickAction == ERpgInventoryHybridQuickAction::EquipAndActivate
+			? ERpgInventoryItemActionIntent::EquipAndActivate
+			: ERpgInventoryItemActionIntent::Use)
+		: (bEquippable ? ERpgInventoryItemActionIntent::EquipAndActivate : ERpgInventoryItemActionIntent::Use);
+	return ExecuteAddressItemAction(
+		SlotViewModel,
+		QuickIntent,
+		StackCount);
+}
+
+bool URpgInventoryDragDropCoordinator::ExecuteAddressItemAction(
+	URpgInventoryAddressSlotViewModel* SlotViewModel,
+	ERpgInventoryItemActionIntent Intent,
+	int32 StackCount)
+{
+	if (!SlotViewModel || !SlotViewModel->CanDrag())
+	{
+		return false;
+	}
+
+	URpgInventoryUiActionComponent* Actions = ResolveUiActionComponent();
+	URpgInventoryManagerComponent* Inventory = SlotViewModel->GetInventoryManager();
+	URpgInventoryItemInstance* Item = SlotViewModel->GetItemInstance();
+	if (!Actions || !Inventory || !Item || SlotViewModel->GetStackCount() <= 0)
+	{
+		return false;
+	}
+
+	if (HasHeldPayload())
+	{
+		CancelHold();
+	}
+
+	FRpgInventoryItemActionRequest Request;
+	Request.RequestId = FGuid::NewGuid();
+	Request.ItemId = Item->GetItemId();
+	Request.Intent = Intent;
+	Request.StackCount = FMath::Max(1, StackCount);
+	Actions->RequestExecuteInventoryItemAction(Inventory, Request);
 	return true;
 }
 
@@ -759,7 +1220,12 @@ bool URpgInventoryDragDropCoordinator::QuickSplitAddressSlot(URpgInventoryAddres
 		CancelHold();
 	}
 
-	ActionComponent->RequestSplitItemStack(Inventory, ItemInstance, SplitCount, TargetPlacement);
+	ActionComponent->RequestSplitItemStackById(
+		Inventory,
+		ItemInstance->GetItemId(),
+		SplitCount,
+		TargetPlacement,
+		FGuid::NewGuid());
 	return true;
 }
 
@@ -810,6 +1276,53 @@ bool URpgInventoryDragDropCoordinator::DropAddressSlot(URpgInventoryAddressSlotV
 
 	const int32 RequestedStackCount = StackCount <= 0 ? SlotViewModel->GetStackCount() : StackCount;
 	ActionComponent->RequestDropInventoryItem(Inventory, ItemInstance, RequestedStackCount, bConfirmed);
+	return true;
+}
+
+bool URpgInventoryDragDropCoordinator::UnequipEquipmentItem(
+	ERpgEquipmentSlot EquipmentSlot,
+	FRpgInventoryItemId ExpectedItemId)
+{
+	URpgInventoryUiActionComponent* ActionComponent = ResolveUiActionComponent();
+	URpgInventoryItemInstance* ItemInstance = ResolveCurrentEquipmentItem(EquipmentSlot, ExpectedItemId);
+	if (!ActionComponent || !ItemInstance)
+	{
+		return false;
+	}
+
+	if (HasHeldPayload())
+	{
+		CancelHold();
+	}
+
+	// The server resolves the item's current physical gear/carry address again and rejects stale requests.
+	ActionComponent->RequestUnequipInventoryItemToContentSlot(ItemInstance);
+	return true;
+}
+
+bool URpgInventoryDragDropCoordinator::DropEquipmentItem(
+	ERpgEquipmentSlot EquipmentSlot,
+	FRpgInventoryItemId ExpectedItemId,
+	bool bConfirmed)
+{
+	URpgInventoryUiActionComponent* ActionComponent = ResolveUiActionComponent();
+	URpgInventoryManagerComponent* PlayerInventory = FindPlayerInventory();
+	URpgInventoryItemInstance* ItemInstance = ResolveCurrentEquipmentItem(EquipmentSlot, ExpectedItemId);
+	const int32 StackCount = PlayerInventory && ItemInstance
+		? PlayerInventory->GetItemStackCount(ItemInstance)
+		: 0;
+	if (!ActionComponent || !PlayerInventory || !ItemInstance || StackCount <= 0)
+	{
+		return false;
+	}
+
+	if (HasHeldPayload())
+	{
+		CancelHold();
+	}
+
+	// RequestDropInventoryItem performs the authoritative access, drop-policy, assignment, and world-spawn checks.
+	ActionComponent->RequestDropInventoryItem(PlayerInventory, ItemInstance, StackCount, bConfirmed);
 	return true;
 }
 
@@ -868,14 +1381,6 @@ bool URpgInventoryDragDropCoordinator::PreviewPayloadDrop(const FRpgInventoryDra
 {
 	const FRpgInventoryDragPayload ResolvedPayload = ResolveInteractionPayload(Payload);
 	const ERpgInventoryInteractionPreviewState PreviewState = ResolveInteractionPreview(ResolvedPayload, Target);
-	if (InteractionSession && (!InteractionSession->HasPayload() || IsSameInteractionPayload(ResolvedPayload, InteractionSession->GetPayload())))
-	{
-		if (!InteractionSession->HasPayload())
-		{
-			InteractionSession->BeginInteraction(ResolvedPayload, ERpgInventoryInteractionInputMode::Mouse);
-		}
-		InteractionSession->SetPreviewTarget(Target, PreviewState);
-	}
 	return PreviewState != ERpgInventoryInteractionPreviewState::Blocked &&
 		PreviewState != ERpgInventoryInteractionPreviewState::OutOfBounds &&
 		PreviewState != ERpgInventoryInteractionPreviewState::Pending &&
@@ -885,7 +1390,23 @@ bool URpgInventoryDragDropCoordinator::PreviewPayloadDrop(const FRpgInventoryDra
 
 bool URpgInventoryDragDropCoordinator::UpdateInteractionPreview(const FRpgInventoryDragPayload& Payload, const FRpgInventoryDropTarget& Target)
 {
-	return PreviewPayloadDrop(Payload, Target);
+	const FRpgInventoryDragPayload ResolvedPayload = ResolveInteractionPayload(Payload);
+	const ERpgInventoryInteractionPreviewState PreviewState = ResolveInteractionPreview(ResolvedPayload, Target);
+	if (InteractionSession && (!InteractionSession->HasPayload() || IsSameInteractionPayload(ResolvedPayload, InteractionSession->GetPayload())))
+	{
+		if (!InteractionSession->HasPayload() &&
+			!InteractionSession->BeginInteraction(ResolvedPayload, ERpgInventoryInteractionInputMode::Mouse))
+		{
+			return false;
+		}
+		InteractionSession->SetPreviewTarget(Target, PreviewState);
+	}
+
+	return PreviewState != ERpgInventoryInteractionPreviewState::Blocked &&
+		PreviewState != ERpgInventoryInteractionPreviewState::OutOfBounds &&
+		PreviewState != ERpgInventoryInteractionPreviewState::Pending &&
+		PreviewState != ERpgInventoryInteractionPreviewState::Rejected &&
+		PreviewState != ERpgInventoryInteractionPreviewState::None;
 }
 
 void URpgInventoryDragDropCoordinator::ClearInteractionPreview()
@@ -918,6 +1439,31 @@ bool URpgInventoryDragDropCoordinator::CommitPayloadToTarget(const FRpgInventory
 	{
 		return false;
 	}
+	auto SubmitExactPlacementMutation = [this, Actions, &Payload, &Target](
+		URpgInventoryManagerComponent* Inventory,
+		const FRpgInventoryGridPlacement& SourcePlacement,
+		ERpgInventoryMutationOperation Operation)
+	{
+		if (!Inventory || !Payload.ItemInstance || !SourcePlacement.IsValid() || !Target.TargetPlacement.IsValid())
+		{
+			return false;
+		}
+
+		FRpgInventoryMutationRequest Request;
+		Request.RequestId = MarkInteractionRequestPending(Payload, Target);
+		Request.Operation = Operation;
+		Request.ItemId = Payload.ItemInstance->GetItemId();
+		Request.Source = SourcePlacement.GetContainerHandle();
+		Request.Target = Target.TargetPlacement.GetContainerHandle();
+		Request.TargetPlacement = Target.TargetPlacement;
+		Request.Quantity = Payload.StackCount;
+		if (!Request.RequestId.IsValid())
+		{
+			return false;
+		}
+		Actions->RequestInventoryMutation(Inventory, Request);
+		return true;
+	};
 
 	if (IsInventoryTargetType(Target.TargetType))
 	{
@@ -934,9 +1480,10 @@ bool URpgInventoryDragDropCoordinator::CommitPayloadToTarget(const FRpgInventory
 					return false;
 				}
 
-				MarkInteractionRequestPending(Payload, Target);
-				Actions->RequestMoveInventoryEntryToPlacement(Payload.SourceInventory, Payload.EntryId, Target.TargetPlacement);
-				return true;
+				return SubmitExactPlacementMutation(
+					Payload.SourceInventory,
+					Payload.SourcePlacement,
+					ERpgInventoryMutationOperation::Move);
 			}
 
 			if (Target.TargetType == ERpgInventoryDropTargetType::InventorySlot)
@@ -953,9 +1500,18 @@ bool URpgInventoryDragDropCoordinator::CommitPayloadToTarget(const FRpgInventory
 
 		if (Payload.SourceType == ERpgInventoryDragSourceType::EquipmentSlot)
 		{
-			MarkInteractionRequestPending(Payload, Target);
-			Actions->RequestClearEquipmentSlot(Payload.EquipmentSlot);
-			return true;
+			URpgPlayerInventoryLayoutComponent* InventoryLayout = FindPlayerInventoryLayout();
+			FRpgInventorySlotAddress TargetAddress;
+			if (!Target.TargetPlacement.IsValid() || !InventoryLayout ||
+				!InventoryLayout->TryMakeSlotAddressFromPlacement(Target.TargetPlacement, TargetAddress))
+			{
+				return false;
+			}
+
+			URpgInventoryManagerComponent* PlayerInventory = FindPlayerInventory();
+			FRpgInventoryGridPlacement SourcePlacement;
+			return PlayerInventory && PlayerInventory->GetItemPlacement(Payload.ItemInstance, SourcePlacement) &&
+				SubmitExactPlacementMutation(PlayerInventory, SourcePlacement, ERpgInventoryMutationOperation::Move);
 		}
 	}
 
@@ -980,9 +1536,9 @@ bool URpgInventoryDragDropCoordinator::CommitPayloadToTarget(const FRpgInventory
 				return true;
 			}
 
-			MarkInteractionRequestPending(Payload, Target);
-			Actions->RequestMoveItemToInventorySlotAddress(Payload.ItemInstance, Target.SlotAddress);
-			return true;
+			FRpgInventoryGridPlacement SourcePlacement;
+			return PlayerInventory && PlayerInventory->GetItemPlacement(Payload.ItemInstance, SourcePlacement) &&
+				SubmitExactPlacementMutation(PlayerInventory, SourcePlacement, ERpgInventoryMutationOperation::Move);
 		}
 	}
 
@@ -1136,14 +1692,11 @@ ERpgInventoryInteractionPreviewState URpgInventoryDragDropCoordinator::ResolveIn
 	}
 }
 
-void URpgInventoryDragDropCoordinator::HandleInteractionSessionChanged(
-	ERpgInventoryInteractionPreviewState PreviewState,
+void URpgInventoryDragDropCoordinator::HandleInteractionPayloadChanged(
 	bool bHasPayload,
-	bool bPendingRequest)
+	const FRpgInventoryDragPayload& Payload)
 {
-	OnHeldPayloadChanged.Broadcast(bHasPayload, bHasPayload && InteractionSession
-		? InteractionSession->GetPayload()
-		: FRpgInventoryDragPayload());
+	OnHeldPayloadChanged.Broadcast(bHasPayload, bHasPayload ? Payload : FRpgInventoryDragPayload());
 }
 
 bool URpgInventoryDragDropCoordinator::IsSameInteractionPayload(
@@ -1201,14 +1754,14 @@ FGameplayTag URpgInventoryDragDropCoordinator::ResolveActionTagForTarget(const F
 		: RpgGameplayTags::Rpg_Inventory_Action_Transfer;
 }
 
-void URpgInventoryDragDropCoordinator::MarkInteractionRequestPending(
+FGuid URpgInventoryDragDropCoordinator::MarkInteractionRequestPending(
 	const FRpgInventoryDragPayload& Payload,
 	const FRpgInventoryDropTarget& Target)
 {
 	EnsureInteractionSession();
 	if (!InteractionSession)
 	{
-		return;
+		return FGuid();
 	}
 
 	if (!InteractionSession->HasPayload() || !IsSameInteractionPayload(Payload, InteractionSession->GetPayload()))
@@ -1217,6 +1770,7 @@ void URpgInventoryDragDropCoordinator::MarkInteractionRequestPending(
 	}
 	InteractionSession->SetPreviewTarget(Target, ResolveInteractionPreview(Payload, Target));
 	InteractionSession->MarkRequestPending(Target, ResolveActionTagForTarget(Target));
+	return InteractionSession->GetRequestId();
 }
 
 bool URpgInventoryDragDropCoordinator::CanCommitPayloadToTarget(const FRpgInventoryDragPayload& Payload, const FRpgInventoryDropTarget& Target) const
@@ -1251,7 +1805,25 @@ bool URpgInventoryDragDropCoordinator::CanCommitPayloadToTarget(const FRpgInvent
 
 		if (Payload.SourceType == ERpgInventoryDragSourceType::EquipmentSlot)
 		{
-			return IsPlayerInventory(Target.TargetInventory);
+			URpgInventoryManagerComponent* PlayerInventory = FindPlayerInventory();
+			URpgPlayerInventoryLayoutComponent* InventoryLayout = FindPlayerInventoryLayout();
+			FRpgInventorySlotAddress TargetAddress;
+			if (!PlayerInventory || Target.TargetInventory != PlayerInventory || !InventoryLayout ||
+				!Payload.ItemInstance || !Target.TargetPlacement.IsValid() ||
+				!InventoryLayout->TryMakeSlotAddressFromPlacement(Target.TargetPlacement, TargetAddress) ||
+				!InventoryLayout->CanItemUseSlotAddress(Payload.ItemInstance, TargetAddress))
+			{
+				return false;
+			}
+
+			const TArray<FRpgInventoryEntryView> Entries = PlayerInventory->GetAllEntries();
+			const FRpgInventoryEntryView* SourceEntry = Entries.FindByPredicate(
+				[&Payload](const FRpgInventoryEntryView& Entry)
+				{
+					return Entry.Instance == Payload.ItemInstance;
+				});
+			return SourceEntry &&
+				PlayerInventory->CanMoveInventoryEntryToPlacement(SourceEntry->EntryId, Target.TargetPlacement);
 		}
 
 		return false;
@@ -1542,7 +2114,91 @@ FRpgInventorySlotAddress URpgInventoryDragDropCoordinator::ResolveEquipmentPaylo
 	return FRpgInventorySlotAddress();
 }
 
+URpgInventoryItemInstance* URpgInventoryDragDropCoordinator::ResolveCurrentEquipmentItem(
+	ERpgEquipmentSlot EquipmentSlot,
+	const FRpgInventoryItemId& ExpectedItemId) const
+{
+	URpgInventoryManagerComponent* PlayerInventory = FindPlayerInventory();
+	URpgPlayerInventoryLayoutComponent* InventoryLayout = FindPlayerInventoryLayout();
+	if (!PlayerInventory || !InventoryLayout || !ExpectedItemId.IsValid())
+	{
+		return nullptr;
+	}
+
+	URpgInventoryItemInstance* ItemInstance = PlayerInventory->FindItemById(ExpectedItemId);
+	if (!ItemInstance)
+	{
+		return nullptr;
+	}
+
+	FRpgInventorySlotAddress GearAddress;
+	if (URpgPlayerInventoryLayoutComponent::TryMakeGearSlotAddress(EquipmentSlot, GearAddress))
+	{
+		return InventoryLayout->GetItemInSlotAddress(GearAddress) == ItemInstance
+			? ItemInstance
+			: nullptr;
+	}
+
+	// Main-/Offhand projections resolve through their currently selected carry address.
+	const FRpgInventoryDragPayload Payload = MakeEquipmentPayload(ItemInstance, EquipmentSlot);
+	return ResolveEquipmentPayloadSourceAddress(Payload).IsValid()
+		? ItemInstance
+		: nullptr;
+}
+
 bool URpgInventoryDragDropCoordinator::IsPlayerInventory(const URpgInventoryManagerComponent* Inventory) const
 {
 	return Inventory != nullptr && Inventory == FindPlayerInventory();
+}
+
+void URpgInventoryDragDropCoordinator::BuildPlayerQuickTransferTargets(
+	const FRpgInventoryGridPlacement& SourcePlacement,
+	TArray<FRpgInventoryContainerHandle>& OutTargets) const
+{
+	OutTargets.Reset();
+	URpgPlayerInventoryLayoutComponent* Layout = FindPlayerInventoryLayout();
+	if (!Layout || !SourcePlacement.GetContainerHandle().IsValid())
+	{
+		return;
+	}
+
+	const TArray<FRpgInventorySlotGroupView> Groups = Layout->GetSlotGroups();
+	const FRpgInventorySlotGroupView* SourceGroup = Groups.FindByPredicate([&SourcePlacement](const FRpgInventorySlotGroupView& Group)
+	{
+		return Group.ContainerHandle == SourcePlacement.GetContainerHandle();
+	});
+	const bool bSourceIsBackpack = SourceGroup && SourceGroup->SourceEquipmentSlotName == TEXT("Backpack");
+
+	auto AddMatchingGroups = [&Groups, &OutTargets](TFunctionRef<bool(const FRpgInventorySlotGroupView&)> Predicate)
+	{
+		for (const FRpgInventorySlotGroupView& Group : Groups)
+		{
+			if (Group.GroupKind == ERpgInventorySlotGroupKind::Content && Group.ContainerHandle.IsValid() && Predicate(Group))
+			{
+				OutTargets.AddUnique(Group.ContainerHandle);
+			}
+		}
+	};
+
+	if (bSourceIsBackpack)
+	{
+		AddMatchingGroups([](const FRpgInventorySlotGroupView& Group)
+		{
+			return Group.ContainerId == URpgPlayerInventoryLayoutComponent::PocketsGroupId;
+		});
+		AddMatchingGroups([](const FRpgInventorySlotGroupView& Group)
+		{
+			return Group.SourceEquipmentSlotName == TEXT("Belt");
+		});
+		AddMatchingGroups([](const FRpgInventorySlotGroupView& Group)
+		{
+			return Group.SourceEquipmentSlotName == TEXT("Pouch");
+		});
+		return;
+	}
+
+	AddMatchingGroups([](const FRpgInventorySlotGroupView& Group)
+	{
+		return Group.SourceEquipmentSlotName == TEXT("Backpack");
+	});
 }

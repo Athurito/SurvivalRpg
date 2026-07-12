@@ -8,10 +8,12 @@
 #include "RpgLoadoutSlotWidgets.generated.h"
 
 class URpgEquipmentSlotViewModel;
+class URpgInventoryContextMenuWidget;
 class URpgInventoryDragDropCoordinator;
 class URpgInventoryItemInstance;
 class UDragDropOperation;
 class UUserWidget;
+enum class ERpgInventoryContextAction : uint8;
 
 /**
  * Native button base for one equipment slot such as MainHand, OffHand, Head, Chest, Hands, Legs, or Feet.
@@ -70,6 +72,15 @@ public:
 	UFUNCTION(BlueprintCallable, Category = "Equipment|Slot")
 	void ClearExternalPreviewPayload();
 
+	/** Opens the shared modal inventory context menu for this slot's current persistent item. */
+	UFUNCTION(BlueprintCallable, Category = "Equipment|Slot|Context Menu")
+	bool RequestEquipmentContextMenu(FVector2D ScreenPosition);
+
+	/** Executes a gear context action only when the slot still represents ExpectedItemId. */
+	bool ExecuteEquipmentContextAction(
+		ERpgInventoryContextAction Action,
+		const FRpgInventoryItemId& ExpectedItemId);
+
 protected:
 	virtual void NativeDestruct() override;
 	virtual void NativeOnClicked() override;
@@ -88,6 +99,10 @@ protected:
 	/** Blueprint presentation hook for held-item/drop-target highlights. */
 	UFUNCTION(BlueprintImplementableEvent, Category = "Equipment|Slot", meta = (DisplayName = "On Equipment Slot DragDrop State Changed"))
 	void BP_OnEquipmentSlotDragDropStateChanged(ERpgInventorySlotDragVisualState NewState);
+
+	/** Optional presentation hook for opening an item-inspect view without mutating equipment state. */
+	UFUNCTION(BlueprintImplementableEvent, Category = "Equipment|Slot|Context Menu", meta = (DisplayName = "On Inspect Equipment Item Requested"))
+	void BP_OnInspectEquipmentItemRequested(URpgInventoryItemInstance* ItemInstance);
 
 	/** Dedicated equipment slot represented before or without a VM assignment. */
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Equipment|Slot")
@@ -109,13 +124,22 @@ private:
 	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Equipment|Slot|Drag", meta = (AllowPrivateAccess = "true"))
 	TSubclassOf<UUserWidget> DragVisualClass;
 
+	/** Optional styled CommonUI context menu class; the functional native fallback is used when unset. */
+	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Equipment|Slot|Context Menu", meta = (AllowPrivateAccess = "true"))
+	TSubclassOf<URpgInventoryContextMenuWidget> ContextMenuWidgetClass;
+
 	UPROPERTY(Transient)
 	TObjectPtr<URpgEquipmentSlotViewModel> SlotViewModel = nullptr;
 
 	UPROPERTY(Transient)
 	TObjectPtr<URpgInventoryDragDropCoordinator> DragDropCoordinator = nullptr;
 
+	/** Weak CommonUI-owned modal retained so repeated RMB presses close the previous instance safely. */
+	TWeakObjectPtr<URpgInventoryContextMenuWidget> ActiveContextMenu;
+
 	bool bPendingLeftClickAccept = false;
+	FRpgInventoryDragAnchor PendingPointerDragAnchor;
+	bool bHasPendingPointerDragAnchor = false;
 	bool bHasExternalPreviewState = false;
 	ERpgInventorySlotDragVisualState ExternalPreviewState = ERpgInventorySlotDragVisualState::Normal;
 };

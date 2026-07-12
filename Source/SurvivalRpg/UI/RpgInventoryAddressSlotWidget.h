@@ -4,13 +4,16 @@
 #include "CommonButtonBase.h"
 #include "CoreMinimal.h"
 #include "SurvivalRpg/Inventory/RpgInventoryDragDrop.h"
+#include "SurvivalRpg/UI/RpgPlayerInventoryLayoutViews.h"
 
 #include "RpgInventoryAddressSlotWidget.generated.h"
 
 class UDragDropOperation;
 class UUserWidget;
 class URpgInventoryAddressSlotViewModel;
+class URpgInventoryContextMenuWidget;
 class URpgInventoryDragDropCoordinator;
+class URpgInventorySplitDialogWidget;
 
 /**
  * Native CommonUI slot entry for one logical player-inventory address such as Belt[0] or WeaponSlot1[0].
@@ -54,6 +57,17 @@ public:
 	UFUNCTION(BlueprintPure, Category = "Inventory|Address Slot")
 	ERpgInventorySlotDragVisualState GetCurrentDragDropVisualState() const { return CurrentDragDropVisualState; }
 
+	/** Context actions available for this legacy address entry, using the same semantics as spatial items. */
+	UFUNCTION(BlueprintCallable, Category = "Inventory|Address Slot|Context Menu")
+	TArray<ERpgInventoryContextAction> GetAddressContextActions() const;
+
+	/** Executes one context action after revalidating the persistent item identity captured by the menu. */
+	UFUNCTION(BlueprintCallable, Category = "Inventory|Address Slot|Context Menu")
+	bool ExecuteAddressContextAction(ERpgInventoryContextAction Action, FRpgInventoryItemId ExpectedItemId);
+
+	/** Submits an exact split amount from the shared modal after stable-item revalidation. */
+	bool ConfirmAddressSplit(FRpgInventoryItemId ExpectedItemId, int32 SplitCount);
+
 protected:
 	virtual void NativeOnListItemObjectSet(UObject* ListItemObject) override;
 	virtual void NativeOnEntryReleased() override;
@@ -84,9 +98,21 @@ protected:
 	UFUNCTION(BlueprintImplementableEvent, Category = "Inventory|Address Slot", meta = (DisplayName = "On Address Slot DragDrop State Changed"))
 	void BP_OnAddressSlotDragDropStateChanged(ERpgInventorySlotDragVisualState NewState);
 
+	/** Presentation-only fallback for Inspect/Open/Quick-Access actions that require a project detail/slot chooser. */
+	UFUNCTION(BlueprintImplementableEvent, Category = "Inventory|Address Slot", meta = (DisplayName = "On Deferred Address Context Action"))
+	void BP_OnDeferredAddressContextAction(ERpgInventoryContextAction Action, URpgInventoryItemInstance* Item);
+
 	/** Widget class used as the mouse drag visual. Leave unset to reuse this slot entry class with the same view model. */
 	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Inventory|Address Slot|Drag")
 	TSubclassOf<UUserWidget> DragVisualClass;
+
+	/** Optional styled context menu; the shared functional native menu is used when unset. */
+	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Inventory|Address Slot|Context Menu")
+	TSubclassOf<URpgInventoryContextMenuWidget> ContextMenuWidgetClass;
+
+	/** Optional styled exact split dialog; the shared functional native dialog is used when unset. */
+	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Inventory|Address Slot|Context Menu")
+	TSubclassOf<URpgInventorySplitDialogWidget> SplitDialogWidgetClass;
 
 private:
 	UFUNCTION()
@@ -96,6 +122,8 @@ private:
 	void HandleHeldPayloadChanged(bool bHasHeldPayload, const FRpgInventoryDragPayload& HeldPayload);
 
 	FReply HandlePointerButtonDown(const FGeometry& InGeometry, const FPointerEvent& InMouseEvent);
+	bool RequestAddressContextMenu(FVector2D ScreenPosition);
+	bool RequestAddressSplitDialog();
 	FRpgInventoryDragPayload MakeDragPayload(bool bAllowEmptyAddressPayload) const;
 	FRpgInventoryDropTarget MakeDropTarget() const;
 
@@ -108,7 +136,15 @@ private:
 	UPROPERTY(Transient)
 	ERpgInventorySlotDragVisualState CurrentDragDropVisualState = ERpgInventorySlotDragVisualState::Normal;
 
+	/** Weak because the CommonUI modal stack owns the opened menu. */
+	TWeakObjectPtr<URpgInventoryContextMenuWidget> ActiveContextMenu;
+
+	/** Weak because the CommonUI modal stack owns the opened split dialog. */
+	TWeakObjectPtr<URpgInventorySplitDialogWidget> ActiveSplitDialog;
+
 	bool bSlotSelected = false;
 	bool bInventoryPanelActive = true;
 	bool bPendingLeftClickAccept = false;
+	FRpgInventoryDragAnchor PendingPointerDragAnchor;
+	bool bHasPendingPointerDragAnchor = false;
 };

@@ -279,6 +279,12 @@ private:
 	bool CanPlaceEntryAt(const FRpgInventoryGridPlacement& Placement, const FRpgInventoryEntry* IgnoredEntryA, const FRpgInventoryEntry* IgnoredEntryB) const;
 	bool CanEntryUsePlacement(const FRpgInventoryEntry& Entry, const FRpgInventoryGridPlacement& Placement) const;
 	bool NormalizePlacementForEntry(const FRpgInventoryEntry& Entry, const FRpgInventoryGridPlacement& TargetPlacement, FRpgInventoryGridPlacement& OutNormalizedPlacement) const;
+	/** Finds a collision-free destination for an entry displaced by a size-asymmetric spatial swap. */
+	bool TryResolveDisplacedEntryPlacement(
+		const FRpgInventoryEntry& MovingEntry,
+		const FRpgInventoryGridPlacement& MovingTargetPlacement,
+		const FRpgInventoryEntry& DisplacedEntry,
+		FRpgInventoryGridPlacement& OutDisplacedPlacement) const;
 	void BroadcastChangeMessage(FRpgInventoryEntry& Entry, int32 OldCount, int32 NewCount, bool bOrderChanged = false);
 	bool FindFirstFitPlacement(TSubclassOf<URpgInventoryItemDefinition> ItemDef, FRpgInventoryGridPlacement& OutPlacement) const;
 	bool FindFirstFitPlacement(URpgInventoryItemInstance* ItemInstance, FRpgInventoryGridPlacement& OutPlacement) const;

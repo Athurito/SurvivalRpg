@@ -21,6 +21,17 @@ DECLARE_DYNAMIC_MULTICAST_DELEGATE_ThreeParams(
 	bool, bHasPayload,
 	bool, bPendingRequest);
 
+/** Fired only when the held payload begins, rotates, changes, or is cleared. */
+DECLARE_DYNAMIC_MULTICAST_DELEGATE_TwoParams(
+	FRpgInventoryInteractionPayloadChanged,
+	bool, bHasPayload,
+	const FRpgInventoryDragPayload&, Payload);
+
+/** Fired when the single cached spatial pointer candidate changes. */
+DECLARE_DYNAMIC_MULTICAST_DELEGATE_OneParam(
+	FRpgInventorySpatialPreviewChanged,
+	const FRpgInventorySpatialPreviewDescriptor&, Descriptor);
+
 /**
  * Screen-local state shared by mouse drag/drop and controller pick/place inventory interaction.
  *
@@ -47,6 +58,12 @@ public:
 
 	/** Clears only the current hover/focus target while retaining the held payload and its rotation. */
 	void ClearPreviewTarget();
+
+	/** Publishes the one spatial candidate used by ghost, footprint indicators, and commit. */
+	void SetSpatialPreviewDescriptor(const FRpgInventorySpatialPreviewDescriptor& InDescriptor);
+
+	/** Clears the spatial candidate without discarding the held payload. */
+	void ClearSpatialPreviewDescriptor();
 
 	/** Rotates the UI payload in place, including cell and pointer grab offsets. */
 	bool ToggleTargetRotation();
@@ -77,6 +94,10 @@ public:
 	UFUNCTION(BlueprintPure, Category = "Inventory|Interaction")
 	FRpgInventoryDropTarget GetTarget() const { return Target; }
 
+	/** Current cached spatial candidate, or an invalid descriptor when another target type owns the interaction. */
+	UFUNCTION(BlueprintPure, Category = "Inventory|Interaction")
+	FRpgInventorySpatialPreviewDescriptor GetSpatialPreviewDescriptor() const { return SpatialPreviewDescriptor; }
+
 	/** Semantic presentation state for target indicators and contextual action text. */
 	UFUNCTION(BlueprintPure, Category = "Inventory|Interaction")
 	ERpgInventoryInteractionPreviewState GetPreviewState() const { return PreviewState; }
@@ -93,6 +114,14 @@ public:
 	UPROPERTY(BlueprintAssignable, Category = "Inventory|Interaction")
 	FRpgInventoryInteractionStateChanged OnInteractionStateChanged;
 
+	/** Payload lifecycle signal; unlike OnInteractionStateChanged it is not emitted for every hover cell. */
+	UPROPERTY(BlueprintAssignable, Category = "Inventory|Interaction")
+	FRpgInventoryInteractionPayloadChanged OnPayloadChanged;
+
+	/** Spatial candidate signal consumed by grids without re-running placement validation per cell. */
+	UPROPERTY(BlueprintAssignable, Category = "Inventory|Interaction")
+	FRpgInventorySpatialPreviewChanged OnSpatialPreviewChanged;
+
 	virtual void BeginDestroy() override;
 
 private:
@@ -100,6 +129,8 @@ private:
 	void UnregisterMessageListeners();
 	void ResolvePendingRequest(bool bSucceeded);
 	void BroadcastStateChanged();
+	void BroadcastPayloadChanged();
+	void UpdateSpatialPreviewState(ERpgInventoryInteractionPreviewState InPreviewState);
 	bool IsPendingMessageRelevant(UActorComponent* InventoryOwner, const UObject* Item) const;
 	void HandleActionFeedback(FGameplayTag Channel, const FRpgInventoryActionFeedbackMessage& Message);
 	void HandleInventoryChanged(FGameplayTag Channel, const FRpgInventoryChangeMessage& Message);
@@ -117,6 +148,9 @@ private:
 
 	UPROPERTY(Transient)
 	FRpgInventoryDropTarget Target;
+
+	UPROPERTY(Transient)
+	FRpgInventorySpatialPreviewDescriptor SpatialPreviewDescriptor;
 
 	UPROPERTY(Transient)
 	ERpgInventoryInteractionPreviewState PreviewState = ERpgInventoryInteractionPreviewState::None;
@@ -139,6 +173,7 @@ private:
 	UPROPERTY(Transient)
 	TObjectPtr<UObject> PendingItem = nullptr;
 
+	FRpgInventoryItemId PendingItemId;
 	FGuid PendingEntryId;
 	bool bHasPayload = false;
 	bool bTargetRotated = false;

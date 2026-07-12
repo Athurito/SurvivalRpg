@@ -14,6 +14,17 @@ class UGameplayEffect;
 class UAnimMontage;
 class URpgGameplayAbility;
 
+/** Explicit Alt+LMB behavior for an item that is both usable and equippable. */
+UENUM(BlueprintType)
+enum class ERpgInventoryHybridQuickAction : uint8
+{
+	/** Alt+LMB uses the configured usable behavior and never equips as an implicit fallback. */
+	Use,
+
+	/** Alt+LMB atomically equips the item at its default destination and activates Carry equipment. */
+	EquipAndActivate
+};
+
 /**
  * Static spatial footprint used by the server when placing an item in a grid inventory.
  */
@@ -265,6 +276,13 @@ class SURVIVALRPG_API URpgInventoryFragment_UsableItem : public URpgInventoryIte
 	GENERATED_BODY()
 
 public:
+	/**
+	 * Alt+LMB behavior when this same item also has an EquippableItem or ItemContainer fragment.
+	 * Ignored for usable-only items. Static designer data; the server still validates the explicit intent.
+	 */
+	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Inventory|Use|Quick Action")
+	ERpgInventoryHybridQuickAction HybridQuickAction = ERpgInventoryHybridQuickAction::Use;
+
 	/** Ability granted and activated once on the owning player's ASC when the item is used. Must execute on the server. */
 	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Inventory|Use")
 	TSubclassOf<URpgGameplayAbility> UseAbility;

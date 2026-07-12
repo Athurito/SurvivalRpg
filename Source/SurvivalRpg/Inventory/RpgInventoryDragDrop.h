@@ -4,6 +4,7 @@
 #include "CoreMinimal.h"
 #include "SurvivalRpg/Equipment/RpgEquipmentDefinition.h"
 #include "SurvivalRpg/Inventory/RpgPlayerInventoryLayoutTypes.h"
+#include "SurvivalRpg/Inventory/RpgInventoryUiActionComponent.h"
 #include "UObject/Object.h"
 
 #include "RpgInventoryDragDrop.generated.h"
@@ -113,6 +114,50 @@ enum class ERpgInventorySlotDragVisualState : uint8
 };
 
 /**
+ * DPI-independent point inside a dragged spatial item that stays attached to the pointer.
+ *
+ * The source widget is sampled on the original mouse-down. Placement later rebuilds pixels from the target grid's
+ * cell metrics, so differently sized gear widgets and spatial grids cannot disagree about the item origin.
+ */
+USTRUCT(BlueprintType)
+struct SURVIVALRPG_API FRpgInventoryDragAnchor
+{
+	GENERATED_BODY()
+
+	/** Whether this payload captured a usable pointer anchor. Controller-held payloads may leave this false. */
+	UPROPERTY(BlueprintReadWrite, Category = "Inventory|DragDrop")
+	bool bValid = false;
+
+	/** Cell inside the currently oriented footprint that was grabbed on mouse-down. */
+	UPROPERTY(BlueprintReadWrite, Category = "Inventory|DragDrop")
+	FIntPoint GrabbedCell = FIntPoint::ZeroValue;
+
+	/** Normalized 0..1 point inside GrabbedCell. It is transformed together with the cell on rotation. */
+	UPROPERTY(BlueprintReadWrite, Category = "Inventory|DragDrop")
+	FVector2D WithinCellNormalized = FVector2D(0.5f, 0.5f);
+
+	/** Presentation-only source size used to position the free-floating decorator; never used for grid placement. */
+	UPROPERTY(BlueprintReadWrite, Category = "Inventory|DragDrop")
+	FVector2D SourceVisualSize = FVector2D::ZeroVector;
+
+	/** Presentation-only source pixel offset captured before Slate crosses its drag trigger threshold. */
+	UPROPERTY(BlueprintReadWrite, Category = "Inventory|DragDrop")
+	FVector2D SourcePointerOffset = FVector2D::ZeroVector;
+
+	/** Source visual size in Slate absolute screen units, used only to route the free ghost across DPI-scaled targets. */
+	UPROPERTY(BlueprintReadWrite, Category = "Inventory|DragDrop")
+	FVector2D SourceScreenVisualSize = FVector2D::ZeroVector;
+
+	/** Pointer offset in Slate absolute screen units, paired with SourceScreenVisualSize for DPI-safe ghost routing. */
+	UPROPERTY(BlueprintReadWrite, Category = "Inventory|DragDrop")
+	FVector2D SourceScreenPointerOffset = FVector2D::ZeroVector;
+
+	/** Orientation represented by GrabbedCell and WithinCellNormalized. */
+	UPROPERTY(BlueprintReadWrite, Category = "Inventory|DragDrop")
+	bool bRotated = false;
+};
+
+/**
  * UI-only description of the item or assignment currently being dragged or held by controller input.
  *
  * This payload is never authoritative. It is only translated into server-validated requests on
@@ -151,6 +196,10 @@ struct SURVIVALRPG_API FRpgInventoryDragPayload
 	UPROPERTY(BlueprintReadWrite, Category = "Inventory|DragDrop")
 	FRpgInventoryGridSize ItemFootprint;
 
+	/** Canonical pointer anchor captured on mouse-down and projected through the target grid's own cell metrics. */
+	UPROPERTY(BlueprintReadWrite, Category = "Inventory|DragDrop")
+	FRpgInventoryDragAnchor DragAnchor;
+
 	/** True when spatial UI should keep a clicked/selected cell inside the item footprint anchored to the cursor. */
 	UPROPERTY(BlueprintReadWrite, Category = "Inventory|DragDrop")
 	bool bHasSpatialGrabOffset = false;
@@ -164,15 +213,15 @@ struct SURVIVALRPG_API FRpgInventoryDragPayload
 	int32 GrabCellOffsetY = 0;
 
 	/** True when mouse drag placement should derive the target origin from the visible item ghost's top-left corner. */
-	UPROPERTY(BlueprintReadWrite, Category = "Inventory|DragDrop")
+	UPROPERTY(BlueprintReadWrite, Category = "Inventory|DragDrop", meta = (DeprecatedProperty, DeprecationMessage = "Use DragAnchor; raw source pixels are not placement truth."))
 	bool bHasPointerGrabOffset = false;
 
 	/** Pixel offset from the dragged item's top-left to the pointer at mouse drag start. UI-only and never authoritative. */
-	UPROPERTY(BlueprintReadWrite, Category = "Inventory|DragDrop")
+	UPROPERTY(BlueprintReadWrite, Category = "Inventory|DragDrop", meta = (DeprecatedProperty, DeprecationMessage = "Use DragAnchor; raw source pixels are not placement truth."))
 	FVector2D PointerGrabOffset = FVector2D::ZeroVector;
 
 	/** Pixel size of the dragged item widget at mouse drag start. Used only for responsive UI preview and diagnostics. */
-	UPROPERTY(BlueprintReadWrite, Category = "Inventory|DragDrop")
+	UPROPERTY(BlueprintReadWrite, Category = "Inventory|DragDrop", meta = (DeprecatedProperty, DeprecationMessage = "Use DragAnchor.SourceVisualSize for decorator presentation only."))
 	FVector2D DragVisualSize = FVector2D::ZeroVector;
 
 	/** Logical source address when the payload came from the player inventory layout UI. */
@@ -220,6 +269,52 @@ struct SURVIVALRPG_API FRpgInventoryDropTarget
 	ERpgEquipmentSlot EquipmentSlot = ERpgEquipmentSlot::None;
 };
 
+/**
+ * One cached spatial candidate shared by target ghost, cell indicators, interaction feedback, and final commit.
+ *
+ * This is transient owning-client presentation state. The server still validates Target and TargetPlacement.
+ */
+USTRUCT(BlueprintType)
+struct SURVIVALRPG_API FRpgInventorySpatialPreviewDescriptor
+{
+	GENERATED_BODY()
+
+	/** True when a spatial grid currently owns this pointer candidate. */
+	UPROPERTY(BlueprintReadOnly, Category = "Inventory|Interaction")
+	bool bValid = false;
+
+	/** Stable replicated entry identity of the payload being previewed. */
+	UPROPERTY(BlueprintReadOnly, Category = "Inventory|Interaction")
+	FGuid EntryId;
+
+	/** Exact server-validatable target built once for both preview and commit. */
+	UPROPERTY(BlueprintReadOnly, Category = "Inventory|Interaction")
+	FRpgInventoryDropTarget Target;
+
+	/** Placement retained even when it extends out of bounds so the UI can render a red edge footprint. */
+	UPROPERTY(BlueprintReadOnly, Category = "Inventory|Interaction")
+	FRpgInventoryGridPlacement TargetPlacement;
+
+	/** Semantic result calculated once for this candidate. */
+	UPROPERTY(BlueprintReadOnly, Category = "Inventory|Interaction")
+	ERpgInventoryInteractionPreviewState PreviewState = ERpgInventoryInteractionPreviewState::None;
+
+	/** Snapped top-left in the target grid's local Slate units. */
+	UPROPERTY(BlueprintReadOnly, Category = "Inventory|Interaction")
+	FVector2D SnappedLocalPosition = FVector2D::ZeroVector;
+
+	/** Exact occupied footprint size using the target grid's cell size and padding. */
+	UPROPERTY(BlueprintReadOnly, Category = "Inventory|Interaction")
+	FVector2D SnappedLocalSize = FVector2D::ZeroVector;
+
+	/** Most recent pointer position used to resolve this candidate, retained for rotation without mouse movement. */
+	UPROPERTY(BlueprintReadOnly, Category = "Inventory|Interaction")
+	FVector2D PointerScreenPosition = FVector2D::ZeroVector;
+
+	/** Returns whether both descriptors address the same payload, target placement, and semantic state. */
+	bool IsEquivalentTo(const FRpgInventorySpatialPreviewDescriptor& Other) const;
+};
+
 DECLARE_DYNAMIC_MULTICAST_DELEGATE_TwoParams(FRpgInventoryHeldPayloadChanged, bool, bHasHeldPayload, const FRpgInventoryDragPayload&, HeldPayload);
 
 /** One quick-transfer route used by UI shortcuts such as Ctrl+Click or controller X. */
@@ -250,10 +345,24 @@ public:
 
 	/** Connects drag cancellation to the same screen-local interaction used by controller pick/place. */
 	void SetInteractionSession(URpgInventoryInteractionSession* InInteractionSession);
+	URpgInventoryInteractionSession* GetInteractionSession() const { return InteractionSession.Get(); }
 
+	/** Mirrors UE's TopLeft decorator placement so target routing uses the center of the visible free ghost. */
+	FVector2D ResolveDecoratorCenterScreen(FVector2D PointerScreenPosition) const;
+
+	/** Pulls rotation/state from the shared session immediately, including when no pointer-move event is generated. */
+	void SynchronizeFromInteractionSession();
+
+	/** Suppresses UE's interpolated decorator while a screen paints the canonical free ghost itself. */
+	void SetScreenOwnedDragVisualActive(bool bInActive);
+
+	virtual void Dragged_Implementation(const FPointerEvent& PointerEvent) override;
 	virtual void DragCancelled_Implementation(const FPointerEvent& PointerEvent) override;
 
 private:
+	void RefreshDecoratorPointerOffset();
+	bool bScreenOwnedDragVisualActive = false;
+
 	UPROPERTY(Transient)
 	TObjectPtr<URpgInventoryInteractionSession> InteractionSession = nullptr;
 };
@@ -337,6 +446,29 @@ public:
 	/** Returns true when the target has enough data to receive a payload. */
 	UFUNCTION(BlueprintPure, Category = "Inventory|DragDrop")
 	static bool IsTargetValid(const FRpgInventoryDropTarget& Target);
+
+	/** Captures a DPI-independent cell anchor from the original source-widget mouse-down geometry. */
+	static void CapturePointerDragAnchor(
+		FRpgInventoryDragPayload& InOutPayload,
+		FVector2D LocalPointerPosition,
+		FVector2D SourceVisualSize);
+
+	/** Adds presentation-only absolute geometry without changing the canonical cell anchor used for placement. */
+	static void CapturePointerDragAnchorScreenGeometry(
+		FRpgInventoryDragPayload& InOutPayload,
+		FVector2D SourceScreenTopLeft,
+		FVector2D PointerScreenPosition,
+		FVector2D SourceScreenVisualSize);
+
+	/** Rebuilds the grabbed point in target-local pixels using the target grid's own cell metrics. */
+	static FVector2D ResolveTargetGrabPixels(
+		const FRpgInventoryDragPayload& Payload,
+		bool bTargetRotated,
+		float CellSize,
+		float CellPadding);
+
+	/** Returns the center of the free source-sized decorator for non-spatial target routing. */
+	static FVector2D ResolveFreeGhostCenterScreen(const FRpgInventoryDragPayload& Payload, FVector2D PointerScreenPosition);
 
 	/** Starts the controller pick/place flow with a payload. No gameplay RPC is sent. */
 	UFUNCTION(BlueprintCallable, Category = "Inventory|DragDrop")
@@ -425,6 +557,14 @@ public:
 	UFUNCTION(BlueprintCallable, Category = "Inventory|Shortcuts")
 	bool QuickTransferAddressSlot(URpgInventoryAddressSlotViewModel* SlotViewModel, URpgInventoryManagerComponent* ExplicitTargetInventory = nullptr);
 
+	/** Checks a concrete player-owned Gear/Carry item against the same deterministic content routing policy. */
+	UFUNCTION(BlueprintCallable, Category = "Inventory|Shortcuts")
+	bool CanQuickTransferPlayerItem(URpgInventoryItemInstance* ItemInstance) const;
+
+	/** Moves a concrete Gear/Carry item wholly into the first fitting player content container, normally Backpack. */
+	UFUNCTION(BlueprintCallable, Category = "Inventory|Shortcuts")
+	bool QuickTransferPlayerItem(URpgInventoryItemInstance* ItemInstance);
+
 	/** Returns true when the focused entry can be split into a separate stack. */
 	UFUNCTION(BlueprintCallable, Category = "Inventory|Shortcuts")
 	bool CanQuickSplitEntry(URpgInventoryEntryViewModel* EntryViewModel, FRpgInventoryGridPlacement TargetPlacement, int32 SplitCount = 0) const;
@@ -437,9 +577,23 @@ public:
 	UFUNCTION(BlueprintCallable, Category = "Inventory|Shortcuts")
 	bool UseOrEquipEntry(URpgInventoryEntryViewModel* EntryViewModel, int32 StackCount = 1);
 
+	/** Executes one explicit item action without falling back to a different intent for hybrid items. */
+	UFUNCTION(BlueprintCallable, Category = "Inventory|Shortcuts")
+	bool ExecuteEntryItemAction(
+		URpgInventoryEntryViewModel* EntryViewModel,
+		ERpgInventoryItemActionIntent Intent,
+		int32 StackCount = 1);
+
 	/** Uses/equips or unequips one logical player-inventory address slot. */
 	UFUNCTION(BlueprintCallable, Category = "Inventory|Shortcuts")
 	bool UseOrEquipAddressSlot(URpgInventoryAddressSlotViewModel* SlotViewModel, int32 StackCount = 1);
+
+	/** Executes one explicit item action for a player-layout address without heuristic fallback. */
+	UFUNCTION(BlueprintCallable, Category = "Inventory|Shortcuts")
+	bool ExecuteAddressItemAction(
+		URpgInventoryAddressSlotViewModel* SlotViewModel,
+		ERpgInventoryItemActionIntent Intent,
+		int32 StackCount = 1);
 
 	/** Quick-splits one logical player-inventory address slot. SplitCount <= 0 performs quick 50%. */
 	UFUNCTION(BlueprintCallable, Category = "Inventory|Shortcuts")
@@ -453,6 +607,20 @@ public:
 	UFUNCTION(BlueprintCallable, Category = "Inventory|Shortcuts")
 	bool DropAddressSlot(URpgInventoryAddressSlotViewModel* SlotViewModel, int32 StackCount = 0, bool bConfirmed = false);
 
+	/**
+	 * Moves the exact persistent item currently represented by a gear slot into compatible content space.
+	 * The item id and current physical gear location are revalidated locally before the server validates again.
+	 */
+	UFUNCTION(BlueprintCallable, Category = "Inventory|Equipment Actions")
+	bool UnequipEquipmentItem(ERpgEquipmentSlot EquipmentSlot, FRpgInventoryItemId ExpectedItemId);
+
+	/**
+	 * Requests a full-item world drop for the exact persistent item currently represented by a gear slot.
+	 * Final ownership, drop-policy, and physical equipment cleanup remain server authoritative.
+	 */
+	UFUNCTION(BlueprintCallable, Category = "Inventory|Equipment Actions")
+	bool DropEquipmentItem(ERpgEquipmentSlot EquipmentSlot, FRpgInventoryItemId ExpectedItemId, bool bConfirmed = false);
+
 	/** Computes the visual drag/drop state for one inventory entry widget. */
 	UFUNCTION(BlueprintCallable, Category = "Inventory|DragDrop")
 	ERpgInventorySlotDragVisualState GetInventoryEntryVisualState(URpgInventoryEntryViewModel* EntryViewModel, bool bIsFocused) const;
@@ -465,11 +633,11 @@ public:
 	UFUNCTION(BlueprintCallable, Category = "Inventory|DragDrop")
 	bool PreviewDrop(const FRpgInventoryDropTarget& Target) const;
 
-	/** Local preview validation for an explicit mouse drag payload. No gameplay RPC is sent. */
+	/** Pure local validation for an explicit payload. Does not mutate or broadcast the shared interaction session. */
 	UFUNCTION(BlueprintCallable, Category = "Inventory|DragDrop")
 	bool PreviewPayloadDrop(const FRpgInventoryDragPayload& Payload, const FRpgInventoryDropTarget& Target) const;
 
-	/** Updates the shared target/preview state and returns whether the local target is committable. */
+	/** Updates and broadcasts the shared target/preview state for an actual pointer or controller hover. */
 	UFUNCTION(BlueprintCallable, Category = "Inventory|Interaction")
 	bool UpdateInteractionPreview(const FRpgInventoryDragPayload& Payload, const FRpgInventoryDropTarget& Target);
 
@@ -499,14 +667,14 @@ public:
 
 private:
 	UFUNCTION()
-	void HandleInteractionSessionChanged(ERpgInventoryInteractionPreviewState PreviewState, bool bHasPayload, bool bPendingRequest);
+	void HandleInteractionPayloadChanged(bool bHasPayload, const FRpgInventoryDragPayload& Payload);
 
 	bool CanCommitPayloadToTarget(const FRpgInventoryDragPayload& Payload, const FRpgInventoryDropTarget& Target) const;
 	bool IsSameInteractionPayload(const FRpgInventoryDragPayload& A, const FRpgInventoryDragPayload& B) const;
 	bool IsTargetPlacementOutOfBounds(const FRpgInventoryDropTarget& Target) const;
 	FGameplayTag ResolveActionTagForTarget(const FRpgInventoryDropTarget& Target) const;
 	void EnsureInteractionSession();
-	void MarkInteractionRequestPending(const FRpgInventoryDragPayload& Payload, const FRpgInventoryDropTarget& Target);
+	FGuid MarkInteractionRequestPending(const FRpgInventoryDragPayload& Payload, const FRpgInventoryDropTarget& Target);
 	bool IsHeldSourceEntry(URpgInventoryEntryViewModel* EntryViewModel) const;
 	bool IsHeldSourceAddressSlot(URpgInventoryAddressSlotViewModel* SlotViewModel) const;
 	URpgInventoryUiActionComponent* ResolveUiActionComponent() const;
@@ -514,7 +682,13 @@ private:
 	URpgPlayerInventoryLayoutComponent* FindPlayerInventoryLayout() const;
 	FRpgInventorySlotAddress ResolvePayloadSourceAddress(const FRpgInventoryDragPayload& Payload) const;
 	FRpgInventorySlotAddress ResolveEquipmentPayloadSourceAddress(const FRpgInventoryDragPayload& Payload) const;
+	URpgInventoryItemInstance* ResolveCurrentEquipmentItem(
+		ERpgEquipmentSlot EquipmentSlot,
+		const FRpgInventoryItemId& ExpectedItemId) const;
 	bool IsPlayerInventory(const URpgInventoryManagerComponent* Inventory) const;
+	void BuildPlayerQuickTransferTargets(
+		const FRpgInventoryGridPlacement& SourcePlacement,
+		TArray<FRpgInventoryContainerHandle>& OutTargets) const;
 
 	UPROPERTY(Transient)
 	TObjectPtr<APlayerController> PlayerController = nullptr;

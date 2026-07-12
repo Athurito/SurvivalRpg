@@ -3,8 +3,11 @@
 #if WITH_DEV_AUTOMATION_TESTS
 
 #include "RpgPlayerInventoryLayoutComponent.h"
+#include "RpgInventoryDragDrop.h"
+#include "RpgInventoryInteractionSession.h"
 #include "RpgInventoryItemInstance.h"
 #include "RpgInventoryManagerComponent.h"
+#include "RpgInventoryUiActionComponent.h"
 #include "SurvivalRpg/Equipment/RpgEquipmentLoadoutComponent.h"
 #include "SurvivalRpg/GameplayTags/RpgGameplayTags.h"
 #include "SurvivalRpg/Systems/GameplayTagStack.h"
@@ -332,6 +335,317 @@ bool FRpgInventoryFragmentedGridAndRotationTest::RunTest(const FString& Paramete
 		TEXT("Atomic definition add rejects the fragmented grid"),
 		FragmentedInventory->AddItemDefinition(URpgInventoryAutomationTestWideItemDefinition::StaticClass(), 1));
 	TestEqual(TEXT("Failed fragmented-grid add does not partially mutate entries"), MakeInventorySignature(FragmentedInventory), BeforeFailedAdd);
+	return true;
+}
+
+IMPLEMENT_SIMPLE_AUTOMATION_TEST(
+	FRpgInventoryContainerGearDragDropTest,
+	"SurvivalRpg.Inventory.DragDrop.ItemContainerBackpackPreviewAndCommit",
+	EAutomationTestFlags::EditorContext | EAutomationTestFlags::EngineFilter)
+
+bool FRpgInventoryContainerGearDragDropTest::RunTest(const FString& Parameters)
+{
+	using namespace RpgInventoryTransactionTests;
+	FScopedInventoryWorld TestWorld;
+	if (!InitializeTest(*this, TestWorld))
+	{
+		return false;
+	}
+
+	UWorld* World = TestWorld.GetTestWorld();
+	FActorSpawnParameters ControllerSpawnParameters;
+	ControllerSpawnParameters.Name = MakeUniqueObjectName(
+		World,
+		ARpgInventoryAutomationTestPlayerController::StaticClass(),
+		TEXT("ContainerGearDragDropController"));
+	ControllerSpawnParameters.ObjectFlags = RF_Transient;
+	ARpgInventoryAutomationTestPlayerController* Controller =
+		World->SpawnActor<ARpgInventoryAutomationTestPlayerController>(ControllerSpawnParameters);
+
+	FActorSpawnParameters PlayerStateSpawnParameters;
+	PlayerStateSpawnParameters.Name = MakeUniqueObjectName(
+		World,
+		ARpgInventoryAutomationTestPlayerState::StaticClass(),
+		TEXT("ContainerGearDragDropPlayerState"));
+	PlayerStateSpawnParameters.ObjectFlags = RF_Transient;
+	ARpgInventoryAutomationTestPlayerState* PlayerState =
+		World->SpawnActor<ARpgInventoryAutomationTestPlayerState>(PlayerStateSpawnParameters);
+	if (!TestNotNull(TEXT("The drag/drop controller fixture exists"), Controller) ||
+		!TestNotNull(TEXT("The drag/drop player-state fixture exists"), PlayerState))
+	{
+		return false;
+	}
+
+	Controller->SetPlayerState(PlayerState);
+	PlayerState->SetOwner(Controller);
+	URpgInventoryManagerComponent* Inventory = PlayerState->GetInventoryManagerComponent();
+	if (!TestNotNull(TEXT("The player inventory exists"), Inventory))
+	{
+		return false;
+	}
+
+	const FRpgInventoryContainerHandle Pockets = FRpgInventoryContainerHandle::MakeRoot(
+		URpgPlayerInventoryLayoutComponent::PocketsGroupId);
+	URpgInventoryItemInstance* Backpack = Inventory->AddItemDefinitionToPlacement(
+		URpgInventoryAutomationTestBagItemDefinition::StaticClass(),
+		1,
+		MakePlacement(Pockets, 0, 0));
+	if (!TestNotNull(TEXT("The ItemContainer backpack starts in Pockets"), Backpack))
+	{
+		return false;
+	}
+
+	FRpgInventoryEntryView BackpackEntry;
+	if (!TestTrue(TEXT("The backpack entry is addressable"), GetEntryView(Inventory, Backpack->GetItemId(), BackpackEntry)))
+	{
+		return false;
+	}
+
+	URpgInventoryDragDropCoordinator* Coordinator =
+		URpgInventoryDragDropCoordinator::CreateInventoryDragDropCoordinator(Controller, Controller);
+	if (!TestNotNull(TEXT("The screen-local coordinator exists"), Coordinator) ||
+		!TestNotNull(TEXT("The coordinator owns an interaction session"), Coordinator ? Coordinator->GetInteractionSession() : nullptr))
+	{
+		return false;
+	}
+
+	FRpgInventoryDragPayload Payload;
+	Payload.SourceType = ERpgInventoryDragSourceType::InventoryEntry;
+	Payload.SourceInventory = Inventory;
+	Payload.ItemInstance = Backpack;
+	Payload.EntryId = BackpackEntry.EntryId;
+	Payload.StackCount = BackpackEntry.StackCount;
+	Payload.SourcePlacement = BackpackEntry.Placement;
+	Payload.ItemFootprint.Width = BackpackEntry.Placement.Width;
+	Payload.ItemFootprint.Height = BackpackEntry.Placement.Height;
+	const FRpgInventoryDropTarget BackpackTarget =
+		URpgInventoryDragDropCoordinator::MakeEquipmentTarget(ERpgEquipmentSlot::Backpack);
+
+	URpgInventoryInteractionSession* Session = Coordinator->GetInteractionSession();
+	TestFalse(TEXT("The session starts without a held payload"), Session->HasPayload());
+	bool bEveryPurePreviewAccepted = true;
+	for (int32 PreviewIteration = 0; PreviewIteration < 256; ++PreviewIteration)
+	{
+		bEveryPurePreviewAccepted &= Coordinator->PreviewPayloadDrop(Payload, BackpackTarget);
+	}
+	TestTrue(
+		TEXT("Repeated pure Gear.Backpack previews are accepted without recursive delegate broadcasts"),
+		bEveryPurePreviewAccepted);
+	TestEqual(
+		TEXT("The resolved indicator is Equip"),
+		Coordinator->ResolveInteractionPreview(Payload, BackpackTarget),
+		ERpgInventoryInteractionPreviewState::Equip);
+	TestFalse(TEXT("Pure preview evaluation does not start or broadcast an interaction"), Session->HasPayload());
+
+	TestTrue(TEXT("An actual hover updates the shared interaction"), Coordinator->UpdateInteractionPreview(Payload, BackpackTarget));
+	TestTrue(TEXT("Actual hover owns the payload until acknowledgement"), Session->HasPayload());
+	TestEqual(TEXT("Actual hover publishes the Equip indicator"), Session->GetPreviewState(), ERpgInventoryInteractionPreviewState::Equip);
+	TestTrue(TEXT("Dropping the backpack dispatches the authoritative equip request"), Coordinator->CommitPayloadToTarget(Payload, BackpackTarget));
+
+	FRpgInventoryEntryView EquippedBackpackEntry;
+	TestTrue(TEXT("The equipped backpack keeps its persistent identity"), GetEntryView(Inventory, Backpack->GetItemId(), EquippedBackpackEntry));
+	TestEqual(
+		TEXT("The backpack is physically located in Gear.Backpack"),
+		EquippedBackpackEntry.Placement.GetContainerHandle(),
+		FRpgInventoryContainerHandle::MakeRoot(URpgPlayerInventoryLayoutComponent::GearBackpackGroupId));
+
+	FRpgInventoryDragPayload EquippedPayload =
+		URpgInventoryDragDropCoordinator::MakeEquipmentPayload(Backpack, ERpgEquipmentSlot::Backpack);
+	FRpgInventoryGridPlacement ExactPocketsPlacement = MakePlacement(Pockets, 2, 0);
+	FRpgInventoryDropTarget ExactPocketsTarget;
+	ExactPocketsTarget.TargetType = ERpgInventoryDropTargetType::InventorySlot;
+	ExactPocketsTarget.TargetInventory = Inventory;
+	ExactPocketsTarget.TargetPlacement = ExactPocketsPlacement;
+	TestTrue(
+		TEXT("Gear-to-grid preview validates the exact visible target instead of treating it as a generic unequip"),
+		Coordinator->PreviewPayloadDrop(EquippedPayload, ExactPocketsTarget));
+	TestTrue(
+		TEXT("Gear-to-grid commit dispatches the exact spatial address"),
+		Coordinator->CommitPayloadToTarget(EquippedPayload, ExactPocketsTarget));
+
+	FRpgInventoryEntryView ReturnedBackpackEntry;
+	TestTrue(TEXT("The returned backpack remains addressable"), GetEntryView(Inventory, Backpack->GetItemId(), ReturnedBackpackEntry));
+	TestEqual(TEXT("Gear-to-grid preserves the requested X coordinate"), ReturnedBackpackEntry.Placement.X, ExactPocketsPlacement.X);
+	TestEqual(TEXT("Gear-to-grid preserves the requested Y coordinate"), ReturnedBackpackEntry.Placement.Y, ExactPocketsPlacement.Y);
+	TestEqual(
+		TEXT("Gear-to-grid moves the physical item back into Pockets"),
+		ReturnedBackpackEntry.Placement.GetContainerHandle(),
+		Pockets);
+	return true;
+}
+
+IMPLEMENT_SIMPLE_AUTOMATION_TEST(
+	FRpgInventoryQuickTransferSkipsFullPreferredContainerTest,
+	"SurvivalRpg.Inventory.QuickTransfer.SkipsFullPreferredContainer",
+	EAutomationTestFlags::EditorContext | EAutomationTestFlags::EngineFilter)
+
+bool FRpgInventoryQuickTransferSkipsFullPreferredContainerTest::RunTest(const FString& Parameters)
+{
+	using namespace RpgInventoryTransactionTests;
+	FScopedInventoryWorld TestWorld;
+	if (!InitializeTest(*this, TestWorld))
+	{
+		return false;
+	}
+
+	UWorld* World = TestWorld.GetTestWorld();
+	FActorSpawnParameters ControllerSpawnParameters;
+	ControllerSpawnParameters.Name = MakeUniqueObjectName(
+		World,
+		ARpgInventoryAutomationTestPlayerController::StaticClass(),
+		TEXT("QuickTransferController"));
+	ControllerSpawnParameters.ObjectFlags = RF_Transient;
+	ARpgInventoryAutomationTestPlayerController* Controller =
+		World->SpawnActor<ARpgInventoryAutomationTestPlayerController>(ControllerSpawnParameters);
+
+	FActorSpawnParameters PlayerStateSpawnParameters;
+	PlayerStateSpawnParameters.Name = MakeUniqueObjectName(
+		World,
+		ARpgInventoryAutomationTestPlayerState::StaticClass(),
+		TEXT("QuickTransferPlayerState"));
+	PlayerStateSpawnParameters.ObjectFlags = RF_Transient;
+	ARpgInventoryAutomationTestPlayerState* PlayerState =
+		World->SpawnActor<ARpgInventoryAutomationTestPlayerState>(PlayerStateSpawnParameters);
+	if (!TestNotNull(TEXT("The quick-transfer controller fixture exists"), Controller) ||
+		!TestNotNull(TEXT("The quick-transfer player-state fixture exists"), PlayerState))
+	{
+		return false;
+	}
+
+	Controller->SetPlayerState(PlayerState);
+	PlayerState->SetOwner(Controller);
+	URpgInventoryManagerComponent* Inventory = PlayerState->GetInventoryManagerComponent();
+	URpgPlayerInventoryLayoutComponent* Layout = Controller->GetPlayerInventoryLayoutComponent();
+	URpgInventoryUiActionComponent* UiActions = Controller->GetInventoryUiActionComponent();
+	if (!TestTrue(TEXT("The fixture runs the quick transfer on server authority"), Controller->HasAuthority()) ||
+		!TestNotNull(TEXT("The fixture uses the real player inventory"), Inventory) ||
+		!TestNotNull(TEXT("The fixture uses the real player inventory layout"), Layout) ||
+		!TestNotNull(TEXT("The fixture uses the real inventory UI action component"), UiActions))
+	{
+		return false;
+	}
+
+	const FRpgInventoryContainerHandle Pockets = FRpgInventoryContainerHandle::MakeRoot(
+		URpgPlayerInventoryLayoutComponent::PocketsGroupId);
+	const FRpgInventoryContainerHandle BackpackSlot = FRpgInventoryContainerHandle::MakeRoot(
+		URpgPlayerInventoryLayoutComponent::GearBackpackGroupId);
+	const FRpgInventoryContainerHandle BeltSlot = FRpgInventoryContainerHandle::MakeRoot(
+		URpgPlayerInventoryLayoutComponent::GearBeltGroupId);
+
+	URpgInventoryItemInstance* BackpackProvider = Inventory->AddItemDefinitionToPlacement(
+		URpgInventoryAutomationTestBagItemDefinition::StaticClass(),
+		1,
+		MakePlacement(Pockets, 0, 0));
+	URpgInventoryItemInstance* BeltProvider = Inventory->AddItemDefinitionToPlacement(
+		URpgInventoryAutomationTestBagItemDefinition::StaticClass(),
+		1,
+		MakePlacement(Pockets, 1, 0));
+	if (!TestNotNull(TEXT("The backpack provider bag was created"), BackpackProvider) ||
+		!TestNotNull(TEXT("The belt provider bag was created"), BeltProvider))
+	{
+		return false;
+	}
+
+	const FRpgInventoryMutationResult EquipBackpackResult = Inventory->ExecuteInventoryMutation(
+		MakePlacementRequest(
+			ERpgInventoryMutationOperation::Move,
+			BackpackProvider,
+			Pockets,
+			BackpackSlot,
+			0,
+			0));
+	const FRpgInventoryMutationResult EquipBeltResult = Inventory->ExecuteInventoryMutation(
+		MakePlacementRequest(
+			ERpgInventoryMutationOperation::Move,
+			BeltProvider,
+			Pockets,
+			BeltSlot,
+			0,
+			0));
+	if (!TestEqual(
+			TEXT("The first automation bag becomes the Backpack provider"),
+			EquipBackpackResult.Code,
+			ERpgInventoryMutationResultCode::Success) ||
+		!TestEqual(
+			TEXT("The second automation bag becomes the Belt provider"),
+			EquipBeltResult.Code,
+			ERpgInventoryMutationResultCode::Success))
+	{
+		return false;
+	}
+
+	const FRpgInventoryContainerHandle BackpackContents = FRpgInventoryContainerHandle::MakeItemOwned(
+		BackpackProvider->GetItemId(),
+		BagContainerId,
+		1);
+	const FRpgInventoryContainerHandle BeltContents = FRpgInventoryContainerHandle::MakeItemOwned(
+		BeltProvider->GetItemId(),
+		BagContainerId,
+		1);
+	const bool bLayoutExposesBothProviders = Layout->GetSlotGroups().ContainsByPredicate(
+		[&BackpackContents](const FRpgInventorySlotGroupView& Group)
+		{
+			return Group.ContainerHandle == BackpackContents && Group.SourceEquipmentSlotName == FName(TEXT("Backpack"));
+		}) && Layout->GetSlotGroups().ContainsByPredicate(
+		[&BeltContents](const FRpgInventorySlotGroupView& Group)
+		{
+			return Group.ContainerHandle == BeltContents && Group.SourceEquipmentSlotName == FName(TEXT("Belt"));
+		});
+	if (!TestTrue(TEXT("The real layout exposes the equipped Backpack and Belt content grids"), bLayoutExposesBothProviders))
+	{
+		return false;
+	}
+
+	URpgInventoryItemInstance* SourceItem = Inventory->AddItemDefinitionToPlacement(
+		URpgInventoryAutomationTestUnitItemDefinition::StaticClass(),
+		1,
+		MakePlacement(BackpackContents, 0, 0));
+	if (!TestNotNull(TEXT("The transfer source starts in Backpack content"), SourceItem))
+	{
+		return false;
+	}
+
+	bool bFilledPockets = true;
+	for (int32 Y = 0; Y < 2; ++Y)
+	{
+		for (int32 X = 0; X < 4; ++X)
+		{
+			bFilledPockets &= Inventory->AddItemDefinitionToPlacement(
+				URpgInventoryAutomationTestUnitItemDefinition::StaticClass(),
+				1,
+				MakePlacement(Pockets, X, Y)) != nullptr;
+		}
+	}
+	if (!TestTrue(TEXT("The first preferred Pockets target is completely full"), bFilledPockets))
+	{
+		return false;
+	}
+
+	FRpgInventoryQuickTransferRequest Request;
+	Request.RequestId = FGuid::NewGuid();
+	Request.ItemId = SourceItem->GetItemId();
+	Request.StackCount = 1;
+	Request.PreferredTargetContainers = { Pockets, BeltContents };
+
+	FRpgInventoryContainerHandle ResolvedContainer;
+	FRpgInventoryGridPlacement ResolvedPlacement;
+	TestTrue(
+		TEXT("Destination scan continues after the full first preferred container"),
+		UiActions->FindQuickTransferDestination(Inventory, Inventory, Request, ResolvedContainer, ResolvedPlacement));
+	TestEqual(TEXT("The later free Belt grid is selected"), ResolvedContainer, BeltContents);
+	TestEqual(TEXT("The deterministic Belt placement starts at X zero"), ResolvedPlacement.X, 0);
+	TestEqual(TEXT("The deterministic Belt placement starts at Y zero"), ResolvedPlacement.Y, 0);
+
+	UiActions->RequestQuickTransferItem(Inventory, Inventory, Request);
+	FRpgInventoryEntryView MovedEntry;
+	if (!TestTrue(TEXT("The committed item remains addressable by persistent id"), GetEntryView(Inventory, SourceItem->GetItemId(), MovedEntry)))
+	{
+		return false;
+	}
+	TestEqual(TEXT("The server commit uses the resolved Belt content container"), MovedEntry.Placement.GetContainerHandle(), BeltContents);
+	TestEqual(TEXT("The server commit preserves the resolved X coordinate"), MovedEntry.Placement.X, ResolvedPlacement.X);
+	TestEqual(TEXT("The server commit preserves the resolved Y coordinate"), MovedEntry.Placement.Y, ResolvedPlacement.Y);
+	TestNull(TEXT("The source cell in Backpack content is empty after the atomic move"), Inventory->GetItemAtContainerCell(BackpackContents, 0, 0));
 	return true;
 }
 
@@ -791,6 +1105,82 @@ bool FRpgInventorySwapAndRollbackTest::RunTest(const FString& Parameters)
 	TestEqual(TEXT("A 2x1 move beyond the right edge is rejected"), RejectedResult.Code, ERpgInventoryMutationResultCode::OutOfBounds);
 	TestTrue(TEXT("Rejected mutation contains no authoritative deltas"), RejectedResult.Deltas.IsEmpty());
 	TestEqual(TEXT("Rejected mutation rolls back every item and placement"), MakeInventorySignature(Inventory), BeforeRejectedMove);
+	return true;
+}
+
+IMPLEMENT_SIMPLE_AUTOMATION_TEST(
+	FRpgInventoryAsymmetricDisplacementTest,
+	"SurvivalRpg.Inventory.Transaction.AsymmetricSwapUsesReleasedSpace",
+	EAutomationTestFlags::EditorContext | EAutomationTestFlags::EngineFilter)
+
+bool FRpgInventoryAsymmetricDisplacementTest::RunTest(const FString& Parameters)
+{
+	using namespace RpgInventoryTransactionTests;
+	FScopedInventoryWorld TestWorld;
+	if (!InitializeTest(*this, TestWorld))
+	{
+		return false;
+	}
+
+	URpgInventoryManagerComponent* Inventory = TestWorld.CreateInventory(TEXT("AsymmetricDisplacementInventory"));
+	if (!TestNotNull(TEXT("Displacement inventory exists"), Inventory))
+	{
+		return false;
+	}
+
+	const FRpgInventoryContainerHandle Root = MakeStorageHandle();
+	URpgInventoryItemInstance* UnitItem = Inventory->AddItemDefinitionToPlacement(
+		URpgInventoryAutomationTestUnitItemDefinition::StaticClass(),
+		1,
+		MakePlacement(Root, 0, 0));
+	URpgInventoryItemInstance* LargeItem = Inventory->AddItemDefinitionToPlacement(
+		URpgInventoryAutomationTestLargeItemDefinition::StaticClass(),
+		1,
+		MakePlacement(Root, 1, 0));
+	TestNotNull(TEXT("The displaced 1x1 item exists"), UnitItem);
+	TestNotNull(TEXT("The moving 3x2 item exists"), LargeItem);
+	if (!UnitItem || !LargeItem)
+	{
+		return false;
+	}
+
+	FRpgInventoryMutationRequest SwapRequest = MakePlacementRequest(
+		ERpgInventoryMutationOperation::Swap,
+		LargeItem,
+		Root,
+		Root,
+		0,
+		0);
+	const FRpgInventoryMutationResult SwapPlan = Inventory->PlanInventoryMutation(SwapRequest);
+	TestEqual(TEXT("The asymmetric displacement plans successfully"), SwapPlan.Code, ERpgInventoryMutationResultCode::Success);
+	TestEqual(TEXT("The plan exposes both concrete moves"), SwapPlan.Deltas.Num(), 2);
+	if (SwapPlan.Deltas.Num() == 2)
+	{
+		const FRpgInventoryMutationDelta* UnitDelta = SwapPlan.Deltas.FindByPredicate(
+			[UnitItem](const FRpgInventoryMutationDelta& Delta)
+			{
+				return Delta.ItemId == UnitItem->GetItemId();
+			});
+		TestNotNull(TEXT("The displaced item has a planned delta"), UnitDelta);
+		if (UnitDelta)
+		{
+			TestEqual(TEXT("The displaced item uses the first fully released column"), UnitDelta->AfterPlacement.X, 3);
+			TestFalse(TEXT("Planned final footprints never overlap"), UnitDelta->AfterPlacement.Overlaps(SwapPlan.Deltas[0].ItemId == UnitItem->GetItemId()
+				? SwapPlan.Deltas[1].AfterPlacement
+				: SwapPlan.Deltas[0].AfterPlacement));
+		}
+	}
+
+	const FRpgInventoryMutationResult SwapCommit = Inventory->ExecuteInventoryMutation(SwapRequest);
+	TestEqual(TEXT("The asymmetric displacement commits atomically"), SwapCommit.Code, ERpgInventoryMutationResultCode::Success);
+
+	FRpgInventoryEntryView UnitView;
+	FRpgInventoryEntryView LargeView;
+	TestTrue(TEXT("The displaced item remains addressable"), GetEntryView(Inventory, UnitItem->GetItemId(), UnitView));
+	TestTrue(TEXT("The moving item remains addressable"), GetEntryView(Inventory, LargeItem->GetItemId(), LargeView));
+	TestEqual(TEXT("The large item reaches the requested origin"), LargeView.Placement.X, 0);
+	TestEqual(TEXT("The 1x1 item lands in the released far-right cell"), UnitView.Placement.X, 3);
+	TestFalse(TEXT("Committed final footprints never overlap"), UnitView.Placement.Overlaps(LargeView.Placement));
 	return true;
 }
 

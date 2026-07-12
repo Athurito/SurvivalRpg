@@ -105,6 +105,8 @@ namespace RpgGameplayTags
 	UE_DECLARE_GAMEPLAY_TAG_EXTERN(Rpg_Inventory_Action_Use);
 	UE_DECLARE_GAMEPLAY_TAG_EXTERN(Rpg_Inventory_Action_Drop);
 	UE_DECLARE_GAMEPLAY_TAG_EXTERN(Rpg_Inventory_Action_Equip);
+	UE_DECLARE_GAMEPLAY_TAG_EXTERN(Rpg_Inventory_Action_EquipAndActivate);
+	UE_DECLARE_GAMEPLAY_TAG_EXTERN(Rpg_Inventory_Action_MoveToCarry);
 	UE_DECLARE_GAMEPLAY_TAG_EXTERN(Feature);
 	UE_DECLARE_GAMEPLAY_TAG_EXTERN(Equipment_Slot_MainHand);
 	UE_DECLARE_GAMEPLAY_TAG_EXTERN(Equipment_Slot_OffHand);

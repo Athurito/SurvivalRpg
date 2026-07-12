@@ -18,9 +18,13 @@ class URpgInventoryItemInstance;
 class URpgInventoryManagerComponent;
 class URpgInventoryPanelNavigationCoordinator;
 class URpgInventoryPanelViewModel;
+class URpgInventoryDragVisualWidget;
+class URpgInventoryContextMenuWidget;
+class URpgInventorySplitDialogWidget;
 class URpgInventorySlotGroupViewModel;
 class UCanvasPanel;
 class UDragDropOperation;
+class UImage;
 class UPanelWidget;
 class USizeBox;
 class UTexture2D;
@@ -130,6 +134,12 @@ enum class ERpgInventorySpatialCellVisualState : uint8
 	/** Current held or dragged payload cannot be placed on this cell. */
 	InvalidPreview,
 
+	/** A locally valid placement is awaiting an authoritative server acknowledgement. */
+	PendingPreview,
+
+	/** The authoritative server rejected the most recent placement request. */
+	RejectedPreview,
+
 	/** Cell is occupied by the origin cell of an item overlay. */
 	Occupied,
 
@@ -151,7 +161,8 @@ enum class ERpgInventoryContextAction : uint8
 	QuickAccessBind,
 	QuickAccessUnbind,
 	Transfer,
-	Drop
+	Drop,
+	Unequip
 };
 
 /**
@@ -214,8 +225,41 @@ protected:
 	UFUNCTION(BlueprintImplementableEvent, Category = "Inventory|Spatial Cell", meta = (DisplayName = "On Spatial Cell State Changed"))
 	void BP_OnSpatialCellStateChanged(ERpgInventorySpatialCellVisualState NewState);
 
+	/** Optional background styled natively before Blueprint animation runs, guaranteeing stale tint reset. */
+	UPROPERTY(BlueprintReadOnly, meta = (BindWidgetOptional), Category = "Inventory|Spatial Cell|Style")
+	TObjectPtr<UImage> Image_Background = nullptr;
+
+	/** Neutral tint used for Normal, Occupied, and Covered states. */
+	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Inventory|Spatial Cell|Style")
+	FLinearColor NeutralTint = FLinearColor::White;
+
+	/** Subtle mouse-hover tint when no stronger state is active. */
+	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Inventory|Spatial Cell|Style")
+	FLinearColor HoveredTint = FLinearColor(0.36f, 0.36f, 0.36f, 1.0f);
+
+	/** Logical controller-selection tint; pointer hover never writes this state. */
+	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Inventory|Spatial Cell|Style")
+	FLinearColor SelectedTint = FLinearColor(0.85f, 0.78f, 0.42f, 1.0f);
+
+	/** Tint shared by locally valid Move, Merge, Swap, and Equip footprints. */
+	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Inventory|Spatial Cell|Style")
+	FLinearColor ValidPreviewTint = FLinearColor(0.08f, 0.82f, 0.18f, 0.82f);
+
+	/** Tint for blocked and out-of-bounds footprints. */
+	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Inventory|Spatial Cell|Style")
+	FLinearColor InvalidPreviewTint = FLinearColor(0.82f, 0.06f, 0.05f, 0.88f);
+
+	/** Tint while waiting for a server acknowledgement. */
+	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Inventory|Spatial Cell|Style")
+	FLinearColor PendingPreviewTint = FLinearColor(1.0f, 0.48f, 0.04f, 0.9f);
+
+	/** Tint used briefly after authoritative rejection. */
+	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Inventory|Spatial Cell|Style")
+	FLinearColor RejectedPreviewTint = FLinearColor(1.0f, 0.02f, 0.02f, 1.0f);
+
 private:
 	void ApplyResolvedVisualState();
+	void ApplyNativeVisualStyle(ERpgInventorySpatialCellVisualState NewState);
 	ERpgInventorySpatialCellVisualState ResolveHoveredVisualState() const;
 
 	UPROPERTY(Transient)
@@ -356,6 +400,8 @@ private:
 
 	bool bInventoryPanelActive = true;
 	bool bPendingLeftClickAccept = false;
+	FRpgInventoryDragAnchor PendingPointerDragAnchor;
+	bool bHasPendingPointerDragAnchor = false;
 };
 
 /**
@@ -506,13 +552,26 @@ public:
 	UFUNCTION(BlueprintPure, Category = "Inventory|Spatial Grid")
 	int32 GetGridHeight() const { return GridSize.Height; }
 
+	/** Current square-cell size in Slate units, used by exact drag visuals. */
+	float GetSpatialCellSize() const { return CellSize; }
+
+	/** Current gap between spatial cells in Slate units, used by exact drag visuals. */
+	float GetSpatialCellPadding() const { return CellPadding; }
+
 	bool SelectCellFromScreenPosition(FVector2D ScreenPosition, APlayerController* OwningPlayer = nullptr);
 	bool CommitPayloadToCell(const FRpgInventoryDragPayload& Payload, int32 X, int32 Y);
 	bool PreviewPayloadOnCell(const FRpgInventoryDragPayload& Payload, int32 X, int32 Y);
 	bool CommitPayloadAtScreenPosition(const FRpgInventoryDragPayload& Payload, FVector2D ScreenPosition);
 	bool PreviewPayloadAtScreenPosition(const FRpgInventoryDragPayload& Payload, FVector2D ScreenPosition);
+	/** True when the projected dragged-item center addresses this grid, even if the pointer itself is outside. */
+	bool CanAddressPayloadAtScreenPosition(const FRpgInventoryDragPayload& Payload, FVector2D ScreenPosition) const;
 	bool ContainsScreenPosition(FVector2D ScreenPosition) const;
 	bool ResolveDropTargetAtScreenPosition(const FRpgInventoryDragPayload& Payload, FVector2D ScreenPosition, FRpgInventoryDropTarget& OutTarget, FRpgInventoryGridPlacement& OutTargetPlacement, int32& OutAnchorX, int32& OutAnchorY) const;
+	/** Resolves the one candidate consumed by target ghost, footprint cells, session, and final commit. */
+	bool ResolveSpatialPreviewDescriptorAtScreenPosition(
+		const FRpgInventoryDragPayload& Payload,
+		FVector2D ScreenPosition,
+		FRpgInventorySpatialPreviewDescriptor& OutDescriptor) const;
 	void ClearExternalPreviewPayload();
 	bool IsItemWidgetFocused(const URpgInventorySpatialItemWidget* ItemWidget) const;
 
@@ -569,6 +628,10 @@ protected:
 	UPROPERTY(BlueprintReadOnly, meta = (BindWidgetOptional))
 	TObjectPtr<UCanvasPanel> ItemCanvas = nullptr;
 
+	/** Optional top-most hit-test-invisible canvas for the snapped target ghost; ItemCanvas is the runtime fallback. */
+	UPROPERTY(BlueprintReadOnly, meta = (BindWidgetOptional))
+	TObjectPtr<UCanvasPanel> PreviewCanvas = nullptr;
+
 	/** Optional SizeBox root in Blueprint; used to enforce fixed grid dimensions. */
 	UPROPERTY(BlueprintReadOnly, meta = (BindWidgetOptional))
 	TObjectPtr<USizeBox> RootSizeBox = nullptr;
@@ -581,6 +644,18 @@ protected:
 	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Inventory|Spatial Grid")
 	TSubclassOf<URpgInventorySpatialCellWidget> SpatialCellWidgetClass;
 
+	/** Designer subclass for the snapped target ghost. Native drag visual is used when unset. */
+	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Inventory|Spatial Grid|Preview")
+	TSubclassOf<URpgInventoryDragVisualWidget> SpatialPreviewWidgetClass;
+
+	/** Optional styled modal used for exact stack splitting. The functional native dialog is used when unset. */
+	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Inventory|Spatial Grid|Actions")
+	TSubclassOf<URpgInventorySplitDialogWidget> SplitDialogWidgetClass;
+
+	/** Optional styled mouse context menu. The functional native menu is used when unset. */
+	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Inventory|Spatial Grid|Actions")
+	TSubclassOf<URpgInventoryContextMenuWidget> ContextMenuWidgetClass;
+
 	/** Width and height of one cell in Slate units. */
 	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Inventory|Spatial Grid", meta = (ClampMin = "1", UIMin = "1"))
 	float CellSize = 70.0f;
@@ -588,6 +663,10 @@ protected:
 	/** Space between cells in Slate units. Does not stretch the item footprint. */
 	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Inventory|Spatial Grid", meta = (ClampMin = "0", UIMin = "0"))
 	float CellPadding = 2.0f;
+
+	/** Fraction of one cell stride retained past a snap midpoint to prevent pointer flicker at cell boundaries. */
+	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Inventory|Spatial Grid|Interaction", meta = (ClampMin = "0.0", ClampMax = "0.25", UIMin = "0.0", UIMax = "0.25"))
+	float SnapHysteresisFraction = 0.08f;
 
 	/** Base cell color for the native grid background. */
 	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Inventory|Spatial Grid|Style")
@@ -618,6 +697,9 @@ private:
 	UFUNCTION()
 	void HandleHeldPayloadChanged(bool bHasHeldPayload, const FRpgInventoryDragPayload& HeldPayload);
 
+	UFUNCTION()
+	void HandleSpatialPreviewChanged(const FRpgInventorySpatialPreviewDescriptor& Descriptor);
+
 	void EnsureRuntimeWidgets();
 	void UpdateGridSizeFromBinding();
 	void UpdateDesiredGridSize();
@@ -625,6 +707,9 @@ private:
 	void RebuildItemOverlay();
 	void ApplyEntryDimming();
 	void UpdateCellVisualStates();
+	void UpdateSpatialPreviewGhost();
+	void ClearSpatialPreviewLocal();
+	URpgInventoryDragVisualWidget* EnsureSpatialPreviewGhost();
 	ERpgInventorySpatialCellVisualState GetCellVisualState(int32 X, int32 Y) const;
 	bool ResolvePayloadPreviewCellState(const FRpgInventoryDragPayload& Payload, int32 X, int32 Y, ERpgInventorySpatialCellVisualState& OutState) const;
 	void ClearObservedSlotDelegates();
@@ -642,7 +727,6 @@ private:
 	FRpgInventoryDropTarget MakeDropTargetForCell(const FRpgInventoryDragPayload& Payload, int32 X, int32 Y) const;
 	FRpgInventoryDropTarget MakeDropTargetForPlacement(const FRpgInventoryDragPayload& Payload, const FRpgInventoryGridPlacement& TargetPlacement) const;
 	FRpgInventoryGridPlacement MakeTargetPlacementForCell(const FRpgInventoryDragPayload& Payload, int32 X, int32 Y) const;
-	FRpgInventoryGridPlacement ResolveTargetPlacementAtScreenPosition(const FRpgInventoryDragPayload& Payload, FVector2D ScreenPosition, int32& OutAnchorX, int32& OutAnchorY) const;
 	FRpgInventoryDragPayload MakePayloadFromSelectedItem() const;
 	URpgInventoryAddressSlotViewModel* FindAddressCell(int32 X, int32 Y) const;
 	URpgInventoryAddressSlotViewModel* FindAddressItemAtCell(int32 X, int32 Y) const;
@@ -696,6 +780,23 @@ private:
 	UPROPERTY(Transient)
 	TArray<TObjectPtr<URpgInventorySpatialItemWidget>> ItemWidgets;
 
+	UPROPERTY(Transient)
+	TObjectPtr<URpgInventoryDragVisualWidget> SpatialPreviewGhost = nullptr;
+
+	/** Cached ghost content; pointer movement only changes render translation and never rebuilds the icon brush. */
+	TWeakObjectPtr<URpgInventoryItemInstance> SpatialPreviewConfiguredItem;
+	FGuid SpatialPreviewConfiguredEntryId;
+	FRpgInventoryGridSize SpatialPreviewConfiguredFootprint;
+	int32 SpatialPreviewConfiguredStackCount = INDEX_NONE;
+	ERpgInventoryDragSourceType SpatialPreviewConfiguredSourceType = ERpgInventoryDragSourceType::None;
+	bool bSpatialPreviewGhostConfigured = false;
+
+	/** Weak CommonUI-owned exact-split modal, used only to replace an already open request safely. */
+	TWeakObjectPtr<URpgInventorySplitDialogWidget> ActiveSplitDialog;
+
+	/** Weak CommonUI-owned context menu, used only to replace an already open request safely. */
+	TWeakObjectPtr<URpgInventoryContextMenuWidget> ActiveContextMenu;
+
 	/** Replicated entry ids currently rendered with reduced opacity by a UI-only search/filter presenter. */
 	TSet<FGuid> DimmedEntryIds;
 
@@ -703,27 +804,23 @@ private:
 	float DimmedEntryOpacity = 0.25f;
 
 	UPROPERTY(Transient)
-	FRpgInventoryDragPayload ExternalPreviewPayload;
-
-	UPROPERTY(Transient)
-	FRpgInventoryGridPlacement ExternalPreviewTargetPlacement;
+	FRpgInventorySpatialPreviewDescriptor ActiveSpatialPreview;
 
 	int32 CursorX = 0;
 	int32 CursorY = 0;
 	bool bInventoryPanelActive = true;
 	bool bSelectionVisualSuppressed = false;
 
-	/** View-model identity captured while the exact split dialog is open. */
-	UPROPERTY(Transient)
-	TObjectPtr<URpgInventoryAddressSlotViewModel> PendingSplitAddressSlot = nullptr;
+	/** Stable replicated entry identity captured while the exact split dialog is open. */
+	FGuid PendingSplitEntryId;
 
-	UPROPERTY(Transient)
-	TObjectPtr<URpgInventoryEntryViewModel> PendingSplitEntry = nullptr;
+	/** Persistent item identity used to reject stale/recycled view-model confirmation. */
+	FRpgInventoryItemId PendingSplitItemId;
 
 	int32 PendingSplitMaximum = 0;
 	bool bPendingLeftClickAccept = false;
-	bool bHasExternalPreviewPayload = false;
-	bool bHasExternalPreviewTargetPlacement = false;
+	FVector2D LastPointerPreviewScreenPosition = FVector2D::ZeroVector;
+	bool bHasLastPointerPreviewScreenPosition = false;
 };
 
 /**

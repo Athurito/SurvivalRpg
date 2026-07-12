@@ -2,12 +2,17 @@
 
 #include "Blueprint/DragDropOperation.h"
 #include "Blueprint/WidgetBlueprintLibrary.h"
+#include "CommonUIExtensions.h"
 #include "Input/Reply.h"
 #include "InputCoreTypes.h"
 #include "MVVMSubsystem.h"
+#include "SurvivalRpg/GameplayTags/RpgGameplayTags.h"
 #include "SurvivalRpg/Inventory/RpgInventoryDragDrop.h"
+#include "SurvivalRpg/Inventory/RpgInventoryFragment_ItemTraits.h"
 #include "SurvivalRpg/Inventory/RpgInventoryItemInstance.h"
 #include "SurvivalRpg/Mvvm/Inventory/RpgLoadoutViewModels.h"
+#include "SurvivalRpg/UI/RpgInventoryActionWidgets.h"
+#include "SurvivalRpg/UI/RpgInventoryDragVisualWidget.h"
 #include "View/MVVMView.h"
 
 #include UE_INLINE_GENERATED_CPP_BY_NAME(RpgLoadoutSlotWidgets)
@@ -130,7 +135,7 @@ bool URpgEquipmentSlotWidget::PreviewPayloadDrop(const FRpgInventoryDragPayload&
 		return false;
 	}
 
-	const bool bCanDrop = DragDropCoordinator->PreviewPayloadDrop(Payload, MakeDropTarget());
+	const bool bCanDrop = DragDropCoordinator->UpdateInteractionPreview(Payload, MakeDropTarget());
 	bHasExternalPreviewState = true;
 	ExternalPreviewState = bCanDrop
 		? ERpgInventorySlotDragVisualState::ValidTarget
@@ -157,8 +162,90 @@ void URpgEquipmentSlotWidget::ClearExternalPreviewPayload()
 	RefreshDragDropVisualState();
 }
 
+bool URpgEquipmentSlotWidget::RequestEquipmentContextMenu(FVector2D ScreenPosition)
+{
+	URpgInventoryItemInstance* ItemInstance = GetRepresentedItem();
+	if (!ItemInstance || !ItemInstance->GetItemId().IsValid())
+	{
+		return false;
+	}
+
+	if (ActiveContextMenu.IsValid())
+	{
+		ActiveContextMenu->CloseContextMenu();
+		ActiveContextMenu = nullptr;
+	}
+
+	TArray<ERpgInventoryContextAction> Actions;
+	Actions.Reserve(3);
+	Actions.Add(ERpgInventoryContextAction::Inspect);
+	Actions.Add(ERpgInventoryContextAction::Unequip);
+	const URpgInventoryFragment_ItemTraits* Traits = ItemInstance->FindFragmentByClass<URpgInventoryFragment_ItemTraits>();
+	if (!Traits || Traits->GetResolvedManualDropPolicy() != ERpgInventoryManualDropPolicy::Disabled)
+	{
+		Actions.Add(ERpgInventoryContextAction::Drop);
+	}
+
+	const TSubclassOf<URpgInventoryContextMenuWidget> MenuClass = ContextMenuWidgetClass
+		? ContextMenuWidgetClass
+		: URpgInventoryContextMenuWidget::StaticClass();
+	if (ULocalPlayer* LocalPlayer = GetOwningLocalPlayer())
+	{
+		ActiveContextMenu = Cast<URpgInventoryContextMenuWidget>(
+			UCommonUIExtensions::PushContentToLayer_ForPlayer(
+				LocalPlayer,
+				RpgGameplayTags::UI_Layer_Modal,
+				MenuClass));
+	}
+
+	if (ActiveContextMenu.IsValid() && ActiveContextMenu->InitializeEquipmentContextMenu(this, Actions, ScreenPosition))
+	{
+		return true;
+	}
+
+	if (ActiveContextMenu.IsValid())
+	{
+		ActiveContextMenu->CloseContextMenu();
+		ActiveContextMenu = nullptr;
+	}
+	return false;
+}
+
+bool URpgEquipmentSlotWidget::ExecuteEquipmentContextAction(
+	ERpgInventoryContextAction Action,
+	const FRpgInventoryItemId& ExpectedItemId)
+{
+	URpgInventoryItemInstance* ItemInstance = GetRepresentedItem();
+	if (!ItemInstance || !ExpectedItemId.IsValid() || ItemInstance->GetItemId() != ExpectedItemId)
+	{
+		return false;
+	}
+
+	switch (Action)
+	{
+	case ERpgInventoryContextAction::Inspect:
+		BP_OnInspectEquipmentItemRequested(ItemInstance);
+		return true;
+
+	case ERpgInventoryContextAction::Unequip:
+		return DragDropCoordinator && DragDropCoordinator->UnequipEquipmentItem(GetResolvedEquipmentSlot(), ExpectedItemId);
+
+	case ERpgInventoryContextAction::Drop:
+		return DragDropCoordinator && DragDropCoordinator->DropEquipmentItem(GetResolvedEquipmentSlot(), ExpectedItemId);
+
+	default:
+		return false;
+	}
+}
+
 void URpgEquipmentSlotWidget::NativeDestruct()
 {
+	if (ActiveContextMenu.IsValid())
+	{
+		ActiveContextMenu->CloseContextMenu();
+		ActiveContextMenu = nullptr;
+	}
+
 	if (SlotViewModel)
 	{
 		SlotViewModel->OnSlotChanged.RemoveDynamic(this, &ThisClass::HandleSlotViewModelChanged);
@@ -202,13 +289,36 @@ FReply URpgEquipmentSlotWidget::NativeOnPreviewMouseButtonDown(const FGeometry& 
 
 FReply URpgEquipmentSlotWidget::HandlePointerButtonDown(const FGeometry& InGeometry, const FPointerEvent& InMouseEvent)
 {
-	if (InMouseEvent.GetEffectingButton() == EKeys::RightMouseButton && HandleClearAssignment())
+	if (InMouseEvent.GetEffectingButton() == EKeys::RightMouseButton &&
+		RequestEquipmentContextMenu(InMouseEvent.GetScreenSpacePosition()))
 	{
 		return FReply::Handled();
 	}
 
 	if (InMouseEvent.GetEffectingButton() == EKeys::LeftMouseButton && GetRepresentedItem())
 	{
+		if (InMouseEvent.IsControlDown())
+		{
+			return DragDropCoordinator && DragDropCoordinator->QuickTransferPlayerItem(GetRepresentedItem())
+				? FReply::Handled()
+				: FReply::Unhandled();
+		}
+		FRpgInventoryDragPayload PointerPayload = MakeDragPayload();
+		URpgInventoryDragDropCoordinator::CapturePointerDragAnchor(
+			PointerPayload,
+			InGeometry.AbsoluteToLocal(InMouseEvent.GetScreenSpacePosition()),
+			InGeometry.GetLocalSize());
+		const FVector2D ScreenTopLeft = InGeometry.LocalToAbsolute(FVector2D::ZeroVector);
+		const FVector2D ScreenBottomRight = InGeometry.LocalToAbsolute(InGeometry.GetLocalSize());
+		URpgInventoryDragDropCoordinator::CapturePointerDragAnchorScreenGeometry(
+			PointerPayload,
+			ScreenTopLeft,
+			InMouseEvent.GetScreenSpacePosition(),
+			FVector2D(
+				FMath::Abs(ScreenBottomRight.X - ScreenTopLeft.X),
+				FMath::Abs(ScreenBottomRight.Y - ScreenTopLeft.Y)));
+		PendingPointerDragAnchor = PointerPayload.DragAnchor;
+		bHasPendingPointerDragAnchor = PendingPointerDragAnchor.bValid;
 		bPendingLeftClickAccept = true;
 		return UWidgetBlueprintLibrary::DetectDragIfPressed(InMouseEvent, this, EKeys::LeftMouseButton).NativeReply;
 	}
@@ -221,6 +331,7 @@ FReply URpgEquipmentSlotWidget::NativeOnMouseButtonUp(const FGeometry& InGeometr
 	if (InMouseEvent.GetEffectingButton() == EKeys::LeftMouseButton && bPendingLeftClickAccept)
 	{
 		bPendingLeftClickAccept = false;
+		bHasPendingPointerDragAnchor = false;
 		return HandleSlotAccept() ? FReply::Handled() : FReply::Unhandled();
 	}
 
@@ -231,11 +342,42 @@ void URpgEquipmentSlotWidget::NativeOnDragDetected(const FGeometry& InGeometry, 
 {
 	bPendingLeftClickAccept = false;
 
-	const FRpgInventoryDragPayload Payload = MakeDragPayload();
+	FRpgInventoryDragPayload Payload = MakeDragPayload();
 	if (!URpgInventoryDragDropCoordinator::IsPayloadValid(Payload))
 	{
 		return;
 	}
+	if (bHasPendingPointerDragAnchor)
+	{
+		URpgInventoryDragDropCoordinator::CapturePointerDragAnchor(
+			Payload,
+			PendingPointerDragAnchor.SourcePointerOffset,
+			PendingPointerDragAnchor.SourceVisualSize);
+		Payload.DragAnchor.SourceScreenPointerOffset = PendingPointerDragAnchor.SourceScreenPointerOffset;
+		Payload.DragAnchor.SourceScreenVisualSize = PendingPointerDragAnchor.SourceScreenVisualSize;
+	}
+	else
+	{
+		URpgInventoryDragDropCoordinator::CapturePointerDragAnchor(
+			Payload,
+			InGeometry.AbsoluteToLocal(InMouseEvent.GetScreenSpacePosition()),
+			InGeometry.GetLocalSize());
+		const FVector2D ScreenTopLeft = InGeometry.LocalToAbsolute(FVector2D::ZeroVector);
+		const FVector2D ScreenBottomRight = InGeometry.LocalToAbsolute(InGeometry.GetLocalSize());
+		URpgInventoryDragDropCoordinator::CapturePointerDragAnchorScreenGeometry(
+			Payload,
+			ScreenTopLeft,
+			InMouseEvent.GetScreenSpacePosition(),
+			FVector2D(
+				FMath::Abs(ScreenBottomRight.X - ScreenTopLeft.X),
+				FMath::Abs(ScreenBottomRight.Y - ScreenTopLeft.Y)));
+	}
+	bHasPendingPointerDragAnchor = false;
+	if (!DragDropCoordinator || !DragDropCoordinator->BeginPointerDrag(Payload))
+	{
+		return;
+	}
+	Payload = DragDropCoordinator->ResolveInteractionPayload(Payload);
 
 	URpgInventoryDragDropOperation* InventoryOperation = NewObject<URpgInventoryDragDropOperation>(this);
 	if (!InventoryOperation)
@@ -243,14 +385,21 @@ void URpgEquipmentSlotWidget::NativeOnDragDetected(const FGeometry& InGeometry, 
 		return;
 	}
 
-	InventoryOperation->Pivot = EDragPivot::MouseDown;
+	InventoryOperation->Pivot = EDragPivot::TopLeft;
+	if (Payload.DragAnchor.SourceVisualSize.X > KINDA_SMALL_NUMBER && Payload.DragAnchor.SourceVisualSize.Y > KINDA_SMALL_NUMBER)
+	{
+		InventoryOperation->Offset = FVector2D(
+			-Payload.DragAnchor.SourcePointerOffset.X / Payload.DragAnchor.SourceVisualSize.X,
+			-Payload.DragAnchor.SourcePointerOffset.Y / Payload.DragAnchor.SourceVisualSize.Y);
+	}
 	InventoryOperation->Payload = GetRepresentedItem();
 	InventoryOperation->InventoryPayload = Payload;
+	InventoryOperation->SetInteractionSession(DragDropCoordinator->GetInteractionSession());
 
 	TSubclassOf<UUserWidget> VisualClass = DragVisualClass;
 	if (!VisualClass)
 	{
-		VisualClass = GetClass();
+		VisualClass = URpgInventoryDragVisualWidget::StaticClass();
 	}
 
 	if (VisualClass)
@@ -261,6 +410,10 @@ void URpgEquipmentSlotWidget::NativeOnDragDetected(const FGeometry& InGeometry, 
 			EquipmentSlotDragVisual->SetEquipmentSlotViewModel(SlotViewModel);
 			EquipmentSlotDragVisual->SetDragDropCoordinator(DragDropCoordinator);
 		}
+		if (URpgInventoryDragVisualWidget* CanonicalDragVisual = Cast<URpgInventoryDragVisualWidget>(DragVisual))
+		{
+			CanonicalDragVisual->ConfigureFromPayload(Payload, 70.0f, 2.0f);
+		}
 
 		InventoryOperation->DefaultDragVisual = DragVisual;
 	}
@@ -270,30 +423,17 @@ void URpgEquipmentSlotWidget::NativeOnDragDetected(const FGeometry& InGeometry, 
 
 bool URpgEquipmentSlotWidget::NativeOnDragOver(const FGeometry& InGeometry, const FDragDropEvent& InDragDropEvent, UDragDropOperation* InOperation)
 {
-	const URpgInventoryDragDropOperation* InventoryOperation = Cast<URpgInventoryDragDropOperation>(InOperation);
-	if (!InventoryOperation)
-	{
-		return false;
-	}
-
-	PreviewPayloadDrop(InventoryOperation->InventoryPayload);
-	return true;
+	return false;
 }
 
 bool URpgEquipmentSlotWidget::NativeOnDrop(const FGeometry& InGeometry, const FDragDropEvent& InDragDropEvent, UDragDropOperation* InOperation)
 {
-	const URpgInventoryDragDropOperation* InventoryOperation = Cast<URpgInventoryDragDropOperation>(InOperation);
-	if (!InventoryOperation)
-	{
-		return false;
-	}
-
-	return CommitPayloadDrop(InventoryOperation->InventoryPayload);
+	return false;
 }
 
 void URpgEquipmentSlotWidget::NativeOnDragLeave(const FDragDropEvent& InDragDropEvent, UDragDropOperation* InOperation)
 {
-	ClearExternalPreviewPayload();
+	// Child boundaries do not own preview lifetime; the screen resolver clears the previous target atomically.
 	Super::NativeOnDragLeave(InDragDropEvent, InOperation);
 }
 

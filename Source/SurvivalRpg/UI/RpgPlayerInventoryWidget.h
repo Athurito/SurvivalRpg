@@ -1,6 +1,7 @@
 #pragma once
 
 #include "CoreMinimal.h"
+#include "GameFramework/GameplayMessageSubsystem.h"
 #include "SurvivalRpg/Equipment/RpgEquipmentDefinition.h"
 #include "SurvivalRpg/Inventory/RpgInventoryDragDrop.h"
 #include "SurvivalRpg/UI/RpgInventoryControllerActionsWidget.h"
@@ -10,11 +11,17 @@
 class URpgActionBarTileView;
 class URpgEquipmentSlotWidget;
 class URpgInventoryDragDropCoordinator;
+class URpgInventoryDragVisualWidget;
+class URpgInventoryFeedbackToastWidget;
+class URpgInventoryItemInstance;
 class URpgInventoryPanelNavigationCoordinator;
 class URpgInventorySpatialGridWidget;
+class URpgInventorySlotGroupWidget;
 class URpgInventorySlotGroupPanelWidget;
+class URpgInventorySlotGroupViewModel;
 class URpgPlayerInventoryViewModel;
 class UDragDropOperation;
+class UWidget;
 
 /**
  * Native base for the player inventory screen.
@@ -71,6 +78,7 @@ protected:
 	virtual void NativeOnInitialized() override;
 	virtual void NativeOnActivated() override;
 	virtual void NativeOnDeactivated() override;
+	virtual void NativeDestruct() override;
 	virtual bool NativeOnDragOver(const FGeometry& InGeometry, const FDragDropEvent& InDragDropEvent, UDragDropOperation* InOperation) override;
 	virtual bool NativeOnDrop(const FGeometry& InGeometry, const FDragDropEvent& InDragDropEvent, UDragDropOperation* InOperation) override;
 	virtual void NativeOnDragLeave(const FDragDropEvent& InDragDropEvent, UDragDropOperation* InOperation) override;
@@ -92,6 +100,17 @@ protected:
 	UFUNCTION(BlueprintImplementableEvent, Category = "Inventory|Interaction", meta = (DisplayName = "On Inventory Interaction State Changed"))
 	void BP_OnInventoryInteractionStateChanged(ERpgInventoryInteractionPreviewState PreviewState, bool bHasPayload, bool bPendingRequest);
 
+	/** Optional styled owner-local result toast. A fully functional native widget is used when unset. */
+	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Inventory|Feedback")
+	TSubclassOf<URpgInventoryFeedbackToastWidget> FeedbackToastWidgetClass;
+
+	/**
+	 * Optional free pointer-ghost style. The screen-owned instance bypasses UMG's drag-start interpolation while the
+	 * underlying invisible drag operation continues to carry events; the native canonical visual is used when unset.
+	 */
+	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Inventory|Interaction")
+	TSubclassOf<URpgInventoryDragVisualWidget> FreeDragVisualWidgetClass;
+
 	/** Optional spatial group panel for the two ready-weapon roles and the offhand/shield role. */
 	UPROPERTY(BlueprintReadOnly, meta = (BindWidgetOptional))
 	TObjectPtr<URpgInventorySlotGroupPanelWidget> CarryGroupsList = nullptr;
@@ -99,6 +118,38 @@ protected:
 	/** Optional spatial group panel for normal groups such as Pockets, Backpack, Belt, Pouch, and ResourceBag. */
 	UPROPERTY(BlueprintReadOnly, meta = (BindWidgetOptional))
 	TObjectPtr<URpgInventorySlotGroupPanelWidget> InventoryGroupsList = nullptr;
+
+	/** Optional freely placed Pockets host. When present, Pockets are removed from InventoryGroupsList. */
+	UPROPERTY(BlueprintReadOnly, meta = (BindWidgetOptional))
+	TObjectPtr<URpgInventorySlotGroupWidget> Content_Pockets = nullptr;
+
+	/** Optional freely placed first ready-weapon host. When present, WeaponSlot1 is removed from CarryGroupsList. */
+	UPROPERTY(BlueprintReadOnly, meta = (BindWidgetOptional))
+	TObjectPtr<URpgInventorySlotGroupWidget> Carry_Weapon1 = nullptr;
+
+	/** Optional freely placed second ready-weapon host. When present, WeaponSlot2 is removed from CarryGroupsList. */
+	UPROPERTY(BlueprintReadOnly, meta = (BindWidgetOptional))
+	TObjectPtr<URpgInventorySlotGroupWidget> Carry_Weapon2 = nullptr;
+
+	/** Optional freely placed offhand/shield host. When present, ShieldSlot is removed from CarryGroupsList. */
+	UPROPERTY(BlueprintReadOnly, meta = (BindWidgetOptional))
+	TObjectPtr<URpgInventorySlotGroupWidget> Carry_Offhand = nullptr;
+
+	/** Optional freely placed content host for the currently equipped backpack. */
+	UPROPERTY(BlueprintReadOnly, meta = (BindWidgetOptional))
+	TObjectPtr<URpgInventorySlotGroupWidget> Content_Backpack = nullptr;
+
+	/** Optional freely placed content host for the currently equipped belt. */
+	UPROPERTY(BlueprintReadOnly, meta = (BindWidgetOptional))
+	TObjectPtr<URpgInventorySlotGroupWidget> Content_Belt = nullptr;
+
+	/** Optional freely placed content host for the currently equipped pouch. */
+	UPROPERTY(BlueprintReadOnly, meta = (BindWidgetOptional))
+	TObjectPtr<URpgInventorySlotGroupWidget> Content_Pouch = nullptr;
+
+	/** Optional freely placed content host for the currently equipped resource bag. */
+	UPROPERTY(BlueprintReadOnly, meta = (BindWidgetOptional))
+	TObjectPtr<URpgInventorySlotGroupWidget> Content_ResourceBag = nullptr;
 
 	/** Optional 1..8 actionbar preview/drop target inside the inventory screen. */
 	UPROPERTY(BlueprintReadOnly, meta = (BindWidgetOptional))
@@ -145,6 +196,7 @@ private:
 
 	UFUNCTION()
 	void HandleInventoryInteractionStateChanged(ERpgInventoryInteractionPreviewState PreviewState, bool bHasPayload, bool bPendingRequest);
+	void HandleInventoryActionFeedback(FGameplayTag Channel, const FRpgInventoryActionFeedbackMessage& Message);
 
 	void EnsurePlayerInventoryViewModel();
 	void BindViewModelDelegates();
@@ -153,12 +205,27 @@ private:
 	void RegisterPlayerInventoryNavigationPanels();
 	void QueueDeferredPlayerInventoryRefresh();
 	void ExecuteDeferredPlayerInventoryRefresh();
-	bool RouteInventoryPayloadAtScreenPosition(const FRpgInventoryDragPayload& Payload, FVector2D ScreenPosition, bool bCommit);
-	bool RoutePayloadToGearSlot(const FRpgInventoryDragPayload& Payload, FVector2D ScreenPosition, bool bCommit);
-	bool RoutePayloadToActionBar(const FRpgInventoryDragPayload& Payload, FVector2D ScreenPosition, bool bCommit);
+	bool RouteInventoryPayloadAtScreenPosition(
+		const FRpgInventoryDragPayload& Payload,
+		FVector2D ScreenPosition,
+		bool bCommit,
+		const URpgInventoryDragDropOperation* DragOperation);
+	bool RoutePayloadToGearSlot(const FRpgInventoryDragPayload& Payload, FVector2D GhostCenterScreenPosition, bool bCommit);
+	bool RoutePayloadToActionBar(const FRpgInventoryDragPayload& Payload, FVector2D GhostCenterScreenPosition, bool bCommit);
 	bool RoutePayloadToSpatialGrid(const FRpgInventoryDragPayload& Payload, FVector2D ScreenPosition, bool bCommit);
+	void SwitchActivePointerDropTarget(UWidget* NewTarget);
 	void CollectSpatialGrids(TArray<URpgInventorySpatialGridWidget*>& OutGrids) const;
 	void ClearExternalDragPreviews();
+	URpgInventorySlotGroupViewModel* FindEquipmentProvidedContentGroup(FName SourceEquipmentSlotName) const;
+	void CollectStandaloneGroupWidgets(TArray<URpgInventorySlotGroupWidget*>& OutWidgets) const;
+	void RegisterInventoryFeedbackListener();
+	void UnregisterInventoryFeedbackListener();
+	URpgInventoryFeedbackToastWidget* EnsureInventoryFeedbackToast();
+	void UpdateFreePointerDragVisual(
+		const FRpgInventoryDragPayload& Payload,
+		FVector2D PointerScreenPosition,
+		URpgInventoryDragDropOperation* DragOperation);
+	void ClearFreePointerDragVisual();
 
 	UPROPERTY(Transient)
 	TObjectPtr<URpgPlayerInventoryViewModel> PlayerInventoryViewModel = nullptr;
@@ -169,6 +236,32 @@ private:
 	UPROPERTY(Transient)
 	TObjectPtr<URpgInventoryPanelNavigationCoordinator> PlayerPanelNavigationCoordinator = nullptr;
 
+	UPROPERTY(Transient)
+	TObjectPtr<URpgInventoryFeedbackToastWidget> InventoryFeedbackToast = nullptr;
+
+	/** Screen-owned free ghost; target-local spatial ghosts remain owned by their grids. */
+	UPROPERTY(Transient)
+	TObjectPtr<URpgInventoryDragVisualWidget> FreePointerDragVisual = nullptr;
+
+	/** Active invisible UMG operation retained so rotation can refresh its canonical payload without pointer motion. */
+	UPROPERTY(Transient)
+	TObjectPtr<URpgInventoryDragDropOperation> ActivePointerDragOperation = nullptr;
+
+	FGameplayMessageListenerHandle InventoryActionFeedbackHandle;
+
 	bool bViewModelDelegatesBound = false;
 	bool bDeferredPlayerInventoryRefreshQueued = false;
+	bool bHasLastPointerDragScreenPosition = false;
+	bool bRoutingPointerPreview = false;
+	FVector2D LastPointerDragScreenPosition = FVector2D::ZeroVector;
+	FVector2D FreePointerDragVisualSize = FVector2D::ZeroVector;
+	float FreePointerDragCellSize = 70.0f;
+	float FreePointerDragCellPadding = 2.0f;
+	TWeakObjectPtr<URpgInventoryItemInstance> FreePointerDragConfiguredItem;
+	FGuid FreePointerDragConfiguredEntryId;
+	FRpgInventoryGridSize FreePointerDragConfiguredFootprint;
+	int32 FreePointerDragConfiguredStackCount = INDEX_NONE;
+	ERpgInventoryDragSourceType FreePointerDragConfiguredSourceType = ERpgInventoryDragSourceType::None;
+	bool bFreePointerDragVisualConfigured = false;
+	TWeakObjectPtr<UWidget> ActivePointerDropTarget;
 };

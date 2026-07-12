@@ -82,6 +82,23 @@ URpgInventoryAutomationTestWideItemDefinition::URpgInventoryAutomationTestWideIt
 	Fragments.Add(TraitsFragment);
 }
 
+URpgInventoryAutomationTestLargeItemDefinition::URpgInventoryAutomationTestLargeItemDefinition(
+	const FObjectInitializer& ObjectInitializer)
+	: Super(ObjectInitializer)
+{
+	DisplayName = FText::FromString(TEXT("Automation Large"));
+
+	URpgInventoryFragment_SpatialItem* SpatialFragment =
+		CreateDefaultSubobject<URpgInventoryFragment_SpatialItem>(TEXT("Spatial"));
+	ConfigureSpatialFragment(SpatialFragment, 3, 2, true);
+	Fragments.Add(SpatialFragment);
+
+	URpgInventoryFragment_ItemTraits* TraitsFragment =
+		CreateDefaultSubobject<URpgInventoryFragment_ItemTraits>(TEXT("Traits"));
+	ConfigureNonStackingTraits(TraitsFragment);
+	Fragments.Add(TraitsFragment);
+}
+
 URpgInventoryAutomationTestBagItemDefinition::URpgInventoryAutomationTestBagItemDefinition(
 	const FObjectInitializer& ObjectInitializer)
 	: Super(ObjectInitializer)
@@ -119,7 +136,9 @@ URpgInventoryAutomationTestBagEquipmentDefinition::URpgInventoryAutomationTestBa
 	const FObjectInitializer& ObjectInitializer)
 	: Super(ObjectInitializer)
 {
-	AllowedSlots = { ERpgEquipmentSlot::Backpack };
+	// The same test provider can stand in for Backpack or Belt so quick-transfer tests exercise ordered
+	// equipment-provided content grids without introducing a second otherwise identical fixture definition.
+	AllowedSlots = { ERpgEquipmentSlot::Backpack, ERpgEquipmentSlot::Belt };
 	EquipLoadWeight = 7.5f;
 }
 

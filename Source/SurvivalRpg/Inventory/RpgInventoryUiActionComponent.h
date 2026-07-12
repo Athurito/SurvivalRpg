@@ -74,11 +74,82 @@ enum class ERpgInventoryActionFeedbackResult : uint8
 	ServerRejected
 };
 
+/** Explicit server-side behavior requested for one concrete inventory item. */
+UENUM(BlueprintType)
+enum class ERpgInventoryItemActionIntent : uint8
+{
+	/** Activates only the item's configured usable behavior and never equips it as a fallback. */
+	Use,
+
+	/** Moves an equippable item to its default Gear/Carry destination and activates a Carry item when applicable. */
+	EquipAndActivate,
+
+	/** Moves an equippable item into the first compatible Carry slot without changing the active hand selection. */
+	MoveToCarry
+};
+
+/** Stable, request-correlated item action sent by the owning inventory UI. */
+USTRUCT(BlueprintType)
+struct SURVIVALRPG_API FRpgInventoryItemActionRequest
+{
+	GENERATED_BODY()
+
+	/** Client-generated correlation id copied unchanged into the reliable owning-client feedback. */
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Inventory|Actions")
+	FGuid RequestId;
+
+	/** Persistent identity resolved against Inventory on the server; no client UObject pointer is trusted. */
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Inventory|Actions")
+	FRpgInventoryItemId ItemId;
+
+	/** Exact behavior requested by the UI; hybrid usable/equippable items never rely on implicit fallback order. */
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Inventory|Actions")
+	ERpgInventoryItemActionIntent Intent = ERpgInventoryItemActionIntent::Use;
+
+	/** Number of uses requested for Use. Equipment intents always operate on the whole concrete item. */
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Inventory|Actions", meta = (ClampMin = "1", UIMin = "1"))
+	int32 StackCount = 1;
+};
+
+/** Deterministic, atomic quick-transfer request evaluated again by the server. */
+USTRUCT(BlueprintType)
+struct SURVIVALRPG_API FRpgInventoryQuickTransferRequest
+{
+	GENERATED_BODY()
+
+	/** Client-generated correlation id copied unchanged into the reliable owning-client feedback. */
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Inventory|Quick Transfer")
+	FGuid RequestId;
+
+	/** Persistent identity of the source item resolved by SourceInventory on the server. */
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Inventory|Quick Transfer")
+	FRpgInventoryItemId ItemId;
+
+	/** Requested amount. Values <= 0 mean the complete current stack; same-inventory transfer is whole-entry only. */
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Inventory|Quick Transfer")
+	int32 StackCount = 0;
+
+	/**
+	 * Ordered destination candidates. The server selects the first container that can accept the complete request.
+	 * Empty uses the player's content routing policy or the target inventory's default root.
+	 */
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Inventory|Quick Transfer")
+	TArray<FRpgInventoryContainerHandle> PreferredTargetContainers;
+};
+
 /** Gameplay message broadcast on the owning client after inventory UI commands succeed, fail, or need confirmation. */
 USTRUCT(BlueprintType)
 struct SURVIVALRPG_API FRpgInventoryActionFeedbackMessage
 {
 	GENERATED_BODY()
+
+	/** Correlation id supplied by the initiating request. Legacy pointer APIs may emit an invalid id. */
+	UPROPERTY(BlueprintReadOnly, Category = "Inventory|Feedback")
+	FGuid RequestId;
+
+	/** Persistent item identity retained even when a transfer removes or reconstructs the source UObject. */
+	UPROPERTY(BlueprintReadOnly, Category = "Inventory|Feedback")
+	FRpgInventoryItemId ItemId;
 
 	/** Semantic action that produced this feedback, such as Rpg.Inventory.Action.Drop. */
 	UPROPERTY(BlueprintReadOnly, Category = "Inventory|Feedback")
@@ -92,7 +163,7 @@ struct SURVIVALRPG_API FRpgInventoryActionFeedbackMessage
 	UPROPERTY(BlueprintReadOnly, Category = "Inventory|Feedback")
 	TObjectPtr<UActorComponent> InventoryOwner = nullptr;
 
-	/** Item involved in the request, when relevant. */
+	/** Item involved while its UObject is still owned by InventoryOwner; use ItemId after full transfer/removal. */
 	UPROPERTY(BlueprintReadOnly, Category = "Inventory|Feedback")
 	TObjectPtr<URpgInventoryItemInstance> Item = nullptr;
 
@@ -115,6 +186,33 @@ public:
 	/** Canonical reliable server RPC for item-id based mutations inside one accessible inventory graph. */
 	UFUNCTION(Server, Reliable, BlueprintCallable, Category = "Inventory|Transactions")
 	void RequestInventoryMutation(URpgInventoryManagerComponent* Inventory, FRpgInventoryMutationRequest Request);
+
+	/** Executes one explicit Use, EquipAndActivate, or MoveToCarry intent using stable item identity. */
+	UFUNCTION(Server, Reliable, BlueprintCallable, Category = "Inventory|UI Actions")
+	void RequestExecuteInventoryItemAction(URpgInventoryManagerComponent* Inventory, FRpgInventoryItemActionRequest Request);
+
+	/**
+	 * Quick-transfers a complete entry (or a cross-inventory stack amount) to the first candidate with real capacity.
+	 * Source and target may be the same player inventory; the server always rescans and commits atomically.
+	 */
+	UFUNCTION(Server, Reliable, BlueprintCallable, Category = "Inventory|Quick Transfer")
+	void RequestQuickTransferItem(
+		URpgInventoryManagerComponent* SourceInventory,
+		URpgInventoryManagerComponent* TargetInventory,
+		FRpgInventoryQuickTransferRequest Request);
+
+	/**
+	 * Resolves the first deterministic quick-transfer destination without mutating inventory state.
+	 * OutTargetPlacement is valid for same-inventory moves and for a cross-inventory new-entry location; a fully
+	 * mergeable cross-inventory stack may return only OutTargetContainer.
+	 */
+	UFUNCTION(BlueprintCallable, BlueprintPure = false, Category = "Inventory|Quick Transfer")
+	bool FindQuickTransferDestination(
+		URpgInventoryManagerComponent* SourceInventory,
+		URpgInventoryManagerComponent* TargetInventory,
+		const FRpgInventoryQuickTransferRequest& Request,
+		FRpgInventoryContainerHandle& OutTargetContainer,
+		FRpgInventoryGridPlacement& OutTargetPlacement) const;
 
 	/** Assigns an owned inventory item to an equipment slot such as MainHand, OffHand, Head, or Chest. */
 	UFUNCTION(Server, Reliable, BlueprintCallable, Category = "Inventory|UI Actions")
@@ -175,6 +273,15 @@ public:
 	/** Splits one stack into a new stack in the same inventory. SplitCount <= 0 performs the quick 50% split. */
 	UFUNCTION(Server, Reliable, BlueprintCallable, Category = "Inventory|UI Actions")
 	void RequestSplitItemStack(URpgInventoryManagerComponent* Inventory, URpgInventoryItemInstance* Item, int32 SplitCount, FRpgInventoryGridPlacement TargetPlacement);
+
+	/** ID-based split request whose reliable feedback retains the caller's correlation id and Split action tag. */
+	UFUNCTION(Server, Reliable, BlueprintCallable, Category = "Inventory|UI Actions")
+	void RequestSplitItemStackById(
+		URpgInventoryManagerComponent* Inventory,
+		FRpgInventoryItemId ItemId,
+		int32 SplitCount,
+		FRpgInventoryGridPlacement TargetPlacement,
+		FGuid RequestId);
 
 	/** Uses a usable inventory item by granting and activating its configured one-shot ability. */
 	UFUNCTION(Server, Reliable, BlueprintCallable, Category = "Inventory|UI Actions")
@@ -267,6 +374,18 @@ private:
 	URpgAbilitySystemComponent* FindPlayerAbilitySystem() const;
 	bool CanTransferItemStack(URpgInventoryManagerComponent* SourceInventory, URpgInventoryManagerComponent* TargetInventory, URpgInventoryItemInstance* Item, int32 StackCount) const;
 	bool CanTransferItemStackToPlacement(URpgInventoryManagerComponent* SourceInventory, URpgInventoryManagerComponent* TargetInventory, URpgInventoryItemInstance* Item, int32 StackCount, FRpgInventoryGridPlacement TargetPlacement) const;
+	bool TryFindTransferPlacementInContainer(
+		URpgInventoryManagerComponent* SourceInventory,
+		URpgInventoryManagerComponent* TargetInventory,
+		URpgInventoryItemInstance* Item,
+		int32 StackCount,
+		const FRpgInventoryContainerHandle& TargetContainer,
+		FRpgInventoryGridPlacement& OutPlacement) const;
+	void BuildDefaultQuickTransferTargets(
+		URpgInventoryManagerComponent* SourceInventory,
+		URpgInventoryManagerComponent* TargetInventory,
+		URpgInventoryItemInstance* Item,
+		TArray<FRpgInventoryContainerHandle>& OutTargets) const;
 	bool CanSplitItemStack(URpgInventoryManagerComponent* Inventory, URpgInventoryItemInstance* Item, int32 SplitCount, FRpgInventoryGridPlacement TargetPlacement, int32& OutSplitCount, FRpgInventoryGridPlacement& OutTargetPlacement) const;
 	bool FindFirstEmptyInventoryPlacement(URpgInventoryManagerComponent* Inventory, TSubclassOf<URpgInventoryItemDefinition> ItemDefinition, FRpgInventoryGridPlacement& OutPlacement) const;
 	bool CanAccessBaseStorageStation(const URpgBaseStorageStationComponent* Station) const;
@@ -280,10 +399,22 @@ private:
 	void SyncEquipmentLoadoutFromGearSlots() const;
 	void SyncActiveHandsFromCarrySlots() const;
 	bool TryTransferManualDrop(URpgInventoryManagerComponent* SourceInventory, URpgInventoryItemInstance* Item, int32 StackCount);
+	void ExecuteUseInventoryItem(
+		URpgInventoryManagerComponent* Inventory,
+		URpgInventoryItemInstance* Item,
+		int32 StackCount,
+		const FGuid& RequestId);
 	FTransform GetManualDropTransform() const;
-	void SendActionFeedback(FGameplayTag ActionTag, ERpgInventoryActionFeedbackResult Result, URpgInventoryManagerComponent* Inventory, URpgInventoryItemInstance* Item, int32 StackCount) const;
+	void SendActionFeedback(
+		FGameplayTag ActionTag,
+		ERpgInventoryActionFeedbackResult Result,
+		URpgInventoryManagerComponent* Inventory,
+		URpgInventoryItemInstance* Item,
+		int32 StackCount,
+		const FGuid& RequestId = FGuid(),
+		FRpgInventoryItemId ItemId = FRpgInventoryItemId()) const;
 
-	UFUNCTION(Client, Unreliable)
+	UFUNCTION(Client, Reliable)
 	void ClientBroadcastInventoryActionFeedback(const FRpgInventoryActionFeedbackMessage& Message);
 
 private:
