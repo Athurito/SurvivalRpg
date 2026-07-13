@@ -4,6 +4,8 @@
 
 #include "RpgInventoryInteractionSession.h"
 #include "RpgInventoryItemInstance.h"
+#include "RpgInventoryUiActionComponent.h"
+#include "SurvivalRpg/GameplayTags/RpgGameplayTags.h"
 #include "SurvivalRpg/UI/RpgInventoryDragVisualWidget.h"
 
 #include "Misc/AutomationTest.h"
@@ -335,6 +337,180 @@ bool FRpgInventoryDragVisualExactSizeTest::RunTest(const FString& Parameters)
 			TestCase.bRotated ? TEXT(" rotated") : TEXT(""));
 		TestTrue(*Label, ActualSize.Equals(TestCase.ExpectedSize, KINDA_SMALL_NUMBER));
 	}
+
+	return true;
+}
+
+IMPLEMENT_SIMPLE_AUTOMATION_TEST(
+	FRpgInventoryPlacedVisualRotationTest,
+	"SurvivalRpg.Inventory.Interaction.PlacedVisual.AuthoritativeRotation",
+	EAutomationTestFlags::EditorContext | EAutomationTestFlags::EngineFilter)
+
+bool FRpgInventoryPlacedVisualRotationTest::RunTest(const FString& Parameters)
+{
+	using namespace RpgInventoryInteractionTests;
+
+	URpgInventoryDragVisualWidget* Visual = NewObject<URpgInventoryDragVisualWidget>(GetTransientPackage());
+	if (!TestNotNull(TEXT("World-free placed-item visual fixture exists"), Visual))
+	{
+		return false;
+	}
+
+	FRpgInventoryDragPayload Payload;
+	Payload.ItemFootprint = MakeFootprint(3, 2);
+	Payload.StackCount = 1;
+	Payload.SourcePlacement.SetContainerHandle(FRpgInventoryContainerHandle::MakeRoot(FName(TEXT("Backpack"))));
+	Payload.SourcePlacement.X = 0;
+	Payload.SourcePlacement.Y = 0;
+	Payload.SourcePlacement.Width = 3;
+	Payload.SourcePlacement.Height = 2;
+	Payload.SourcePlacement.bRotated = true;
+	Payload.DragAnchor.bValid = true;
+	Payload.DragAnchor.bRotated = false;
+
+	Visual->ConfigureFromPayload(Payload, TestCellSize, TestCellPadding);
+	TestEqual(TEXT("Placed rotation swaps occupied width"), Visual->GetOccupiedFootprint().Width, 2);
+	TestEqual(TEXT("Placed rotation swaps occupied height"), Visual->GetOccupiedFootprint().Height, 3);
+	TestTrue(
+		TEXT("Placed rotation produces the same exact size as the snapped ghost"),
+		Visual->GetExactVisualSize().Equals(FVector2D(142.0f, 214.0f), KINDA_SMALL_NUMBER));
+
+	Payload.SourcePlacement.bRotated = false;
+	Payload.DragAnchor.bRotated = true;
+	Visual->ConfigureFromPayload(Payload, TestCellSize, TestCellPadding);
+	TestEqual(TEXT("Placement, not stale drag-anchor state, restores occupied width"), Visual->GetOccupiedFootprint().Width, 3);
+	TestEqual(TEXT("Placement, not stale drag-anchor state, restores occupied height"), Visual->GetOccupiedFootprint().Height, 2);
+	TestTrue(
+		TEXT("Unrotated placement restores its exact snapped size"),
+		Visual->GetExactVisualSize().Equals(FVector2D(214.0f, 142.0f), KINDA_SMALL_NUMBER));
+
+	return true;
+}
+
+IMPLEMENT_SIMPLE_AUTOMATION_TEST(
+	FRpgInventoryRotatedIconGeometryTest,
+	"SurvivalRpg.Inventory.Interaction.PlacedVisual.RotatedIconGeometry",
+	EAutomationTestFlags::EditorContext | EAutomationTestFlags::EngineFilter)
+
+bool FRpgInventoryRotatedIconGeometryTest::RunTest(const FString& Parameters)
+{
+	FVector2D PaintPosition;
+	FVector2D PaintSize;
+	URpgInventoryDragVisualWidget::CalculateIconPaintGeometry(
+		FVector2D(142.0f, 214.0f),
+		true,
+		4.0f,
+		PaintPosition,
+		PaintSize);
+
+	TestTrue(
+		TEXT("The pre-rotation icon quad swaps dimensions instead of stretching into the occupied bounds"),
+		PaintSize.Equals(FVector2D(206.0f, 134.0f), KINDA_SMALL_NUMBER));
+	TestTrue(
+		TEXT("The swapped icon quad remains centered before rotation"),
+		PaintPosition.Equals(FVector2D(-32.0f, 40.0f), KINDA_SMALL_NUMBER));
+
+	const FVector2D RotatedBounds(PaintSize.Y, PaintSize.X);
+	TestTrue(
+		TEXT("After rotation the icon fits the inset occupied bounds exactly"),
+		RotatedBounds.Equals(FVector2D(134.0f, 206.0f), KINDA_SMALL_NUMBER));
+
+	const FVector2D OccupiedVisualSize(142.0f, 214.0f);
+	const FVector2D RotatedRenderScale = URpgInventoryDragVisualWidget::CalculateIconRenderScale(
+		OccupiedVisualSize,
+		true);
+	const FVector2D ScaledBeforeRotation(
+		OccupiedVisualSize.X * RotatedRenderScale.X,
+		OccupiedVisualSize.Y * RotatedRenderScale.Y);
+	const FVector2D BoundsAfterRotation(ScaledBeforeRotation.Y, ScaledBeforeRotation.X);
+	TestTrue(
+		TEXT("A fill-aligned Blueprint image receives the inverse aspect correction before rotation"),
+		BoundsAfterRotation.Equals(OccupiedVisualSize, KINDA_SMALL_NUMBER));
+	TestTrue(
+		TEXT("Unrotated Blueprint images reset their render scale"),
+		URpgInventoryDragVisualWidget::CalculateIconRenderScale(OccupiedVisualSize, false)
+			.Equals(FVector2D(1.0f, 1.0f), KINDA_SMALL_NUMBER));
+
+	return true;
+}
+
+IMPLEMENT_SIMPLE_AUTOMATION_TEST(
+	FRpgInventoryQuickAccessFeedbackCorrelationTest,
+	"SurvivalRpg.Inventory.Interaction.QuickAccessFeedback.RequiresExactRequestId",
+	EAutomationTestFlags::EditorContext | EAutomationTestFlags::EngineFilter)
+
+bool FRpgInventoryQuickAccessFeedbackCorrelationTest::RunTest(const FString& Parameters)
+{
+	const FGuid PendingRequestId = FGuid::NewGuid();
+	const FRpgInventoryItemId PendingItemId = FRpgInventoryItemId::NewId();
+
+	FRpgInventoryActionFeedbackMessage Feedback;
+	Feedback.RequestId = PendingRequestId;
+	Feedback.ItemId = PendingItemId;
+	Feedback.ActionTag = RpgGameplayTags::Rpg_Inventory_Action_Transfer;
+	Feedback.Result = ERpgInventoryActionFeedbackResult::Success;
+
+	TestTrue(
+		TEXT("Exact request-correlated Quick Access feedback acknowledges the pending command"),
+		URpgInventoryInteractionSession::DoesFeedbackMatchPendingRequest(
+			PendingRequestId,
+			RpgGameplayTags::Rpg_Inventory_Action_Transfer,
+			PendingItemId,
+			Feedback,
+			true));
+
+	FRpgInventoryActionFeedbackMessage UnrelatedRequest = Feedback;
+	UnrelatedRequest.RequestId = FGuid::NewGuid();
+	TestFalse(
+		TEXT("An unrelated request cannot acknowledge a pending Quick Access command"),
+		URpgInventoryInteractionSession::DoesFeedbackMatchPendingRequest(
+			PendingRequestId,
+			RpgGameplayTags::Rpg_Inventory_Action_Transfer,
+			PendingItemId,
+			UnrelatedRequest,
+			true));
+
+	FRpgInventoryActionFeedbackMessage LegacyUncorrelated = Feedback;
+	LegacyUncorrelated.RequestId.Invalidate();
+	TestFalse(
+		TEXT("Uncorrelated legacy feedback cannot acknowledge a pending Quick Access command"),
+		URpgInventoryInteractionSession::DoesFeedbackMatchPendingRequest(
+			PendingRequestId,
+			RpgGameplayTags::Rpg_Inventory_Action_Transfer,
+			PendingItemId,
+			LegacyUncorrelated,
+			true));
+
+	FRpgInventoryActionFeedbackMessage WrongSemanticAction = Feedback;
+	WrongSemanticAction.ActionTag = RpgGameplayTags::Rpg_Inventory_Action_Equip;
+	TestFalse(
+		TEXT("A different semantic action cannot acknowledge the request even with the same id"),
+		URpgInventoryInteractionSession::DoesFeedbackMatchPendingRequest(
+			PendingRequestId,
+			RpgGameplayTags::Rpg_Inventory_Action_Transfer,
+			PendingItemId,
+			WrongSemanticAction,
+			true));
+
+	FRpgInventoryActionFeedbackMessage WrongItem = Feedback;
+	WrongItem.ItemId = FRpgInventoryItemId::NewId();
+	TestFalse(
+		TEXT("Feedback for another concrete item cannot acknowledge the Quick Access request"),
+		URpgInventoryInteractionSession::DoesFeedbackMatchPendingRequest(
+			PendingRequestId,
+			RpgGameplayTags::Rpg_Inventory_Action_Transfer,
+			PendingItemId,
+			WrongItem,
+			true));
+
+	FRpgQuickAccessMutationRequest Request;
+	Request.RequestId = PendingRequestId;
+	Request.EnsureRequestId();
+	TestEqual(TEXT("A valid caller-generated request id is preserved unchanged"), Request.RequestId, PendingRequestId);
+
+	Request.RequestId.Invalidate();
+	Request.EnsureRequestId();
+	TestTrue(TEXT("Compatibility commands still receive a valid feedback correlation id"), Request.RequestId.IsValid());
 
 	return true;
 }

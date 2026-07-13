@@ -17,6 +17,9 @@
 #include "Components/VerticalBoxSlot.h"
 #include "Input/CommonUIInputTypes.h"
 #include "InputCoreTypes.h"
+#include "SurvivalRpg/ActionBar/RpgActionBarComponent.h"
+#include "SurvivalRpg/Core/Player/RpgPlayerController.h"
+#include "SurvivalRpg/Inventory/RpgInventoryItemDefinition.h"
 #include "SurvivalRpg/Inventory/RpgInventoryItemInstance.h"
 #include "SurvivalRpg/Mvvm/Inventory/RpgPlayerInventoryViewModels.h"
 #include "SurvivalRpg/UI/RpgInventoryAddressSlotWidget.h"
@@ -88,6 +91,120 @@ void ConfigureOverlaySlot(UOverlaySlot* Slot, EHorizontalAlignment HorizontalAli
 		Slot->SetVerticalAlignment(VerticalAlignment);
 	}
 }
+}
+
+URpgInventoryContextActionEntryWidget::URpgInventoryContextActionEntryWidget(const FObjectInitializer& ObjectInitializer)
+	: Super(ObjectInitializer)
+{
+	SetIsFocusable(true);
+}
+
+void URpgInventoryContextActionEntryWidget::NativeOnInitialized()
+{
+	Super::NativeOnInitialized();
+	if (WidgetTree)
+	{
+		Text_ActionLabel = Cast<UTextBlock>(WidgetTree->FindWidget(TEXT("Text_ActionLabel")));
+		if (!Text_ActionLabel && !WidgetTree->RootWidget)
+		{
+			Text_ActionLabel = CreateNativeLabel(WidgetTree, FText::GetEmpty());
+			WidgetTree->RootWidget = Text_ActionLabel;
+		}
+	}
+	RefreshActionPresentation();
+}
+
+void URpgInventoryContextActionEntryWidget::InitializeContextAction(
+	URpgInventoryContextMenuWidget* InOwningMenu,
+	ERpgInventoryContextAction InAction,
+	const FText& InLabel)
+{
+	OwningMenu = InOwningMenu;
+	ContextAction = InAction;
+	ActionLabel = InLabel;
+	RefreshActionPresentation();
+}
+
+void URpgInventoryContextActionEntryWidget::NativeOnClicked()
+{
+	Super::NativeOnClicked();
+	if (OwningMenu)
+	{
+		OwningMenu->HandleContextActionClicked(ContextAction);
+	}
+}
+
+void URpgInventoryContextActionEntryWidget::RefreshActionPresentation()
+{
+	if (Text_ActionLabel)
+	{
+		Text_ActionLabel->SetText(ActionLabel);
+	}
+	BP_OnContextActionConfigured(ContextAction, ActionLabel);
+}
+
+URpgQuickAccessSlotPickerEntryWidget::URpgQuickAccessSlotPickerEntryWidget(const FObjectInitializer& ObjectInitializer)
+	: Super(ObjectInitializer)
+{
+	SetIsFocusable(true);
+}
+
+void URpgQuickAccessSlotPickerEntryWidget::NativeOnInitialized()
+{
+	Super::NativeOnInitialized();
+	if (WidgetTree)
+	{
+		Text_SlotLabel = Cast<UTextBlock>(WidgetTree->FindWidget(TEXT("Text_SlotLabel")));
+		if (!Text_SlotLabel && !WidgetTree->RootWidget)
+		{
+			Text_SlotLabel = CreateNativeLabel(WidgetTree, FText::GetEmpty());
+			WidgetTree->RootWidget = Text_SlotLabel;
+		}
+	}
+	RefreshSlotPresentation();
+}
+
+void URpgQuickAccessSlotPickerEntryWidget::InitializeQuickAccessSlot(
+	URpgInventoryContextMenuWidget* InOwningMenu,
+	int32 InSlotIndex,
+	const FText& InBindingLabel,
+	bool bInOccupied,
+	bool bInCurrentBinding)
+{
+	OwningMenu = InOwningMenu;
+	SlotIndex = FMath::IsWithinInclusive(InSlotIndex, 0, 7) ? InSlotIndex : INDEX_NONE;
+	BindingLabel = InBindingLabel;
+	bOccupied = bInOccupied;
+	bCurrentBinding = bInCurrentBinding;
+	SetIsEnabled(SlotIndex != INDEX_NONE);
+	RefreshSlotPresentation();
+}
+
+void URpgQuickAccessSlotPickerEntryWidget::NativeOnClicked()
+{
+	Super::NativeOnClicked();
+	if (OwningMenu && SlotIndex != INDEX_NONE)
+	{
+		OwningMenu->SelectQuickAccessSlot(SlotIndex);
+	}
+}
+
+void URpgQuickAccessSlotPickerEntryWidget::RefreshSlotPresentation()
+{
+	const int32 DisplaySlotNumber = SlotIndex == INDEX_NONE ? INDEX_NONE : SlotIndex + 1;
+	if (Text_SlotLabel)
+	{
+		FText StatusText = BindingLabel;
+		if (bCurrentBinding)
+		{
+			StatusText = FText::Format(LOCTEXT("CurrentQuickAccessSlotFormat", "{0} (Current)"), BindingLabel);
+		}
+		Text_SlotLabel->SetText(FText::Format(
+			LOCTEXT("QuickAccessPickerSlotFormat", "{0}: {1}"),
+			FText::AsNumber(DisplaySlotNumber),
+			StatusText));
+	}
+	BP_OnQuickAccessSlotConfigured(DisplaySlotNumber, BindingLabel, bOccupied, bCurrentBinding);
 }
 
 URpgInventorySplitDialogWidget::URpgInventorySplitDialogWidget(const FObjectInitializer& ObjectInitializer)
@@ -471,6 +588,8 @@ URpgInventoryContextMenuWidget::URpgInventoryContextMenuWidget(const FObjectInit
 {
 	bIsBackHandler = true;
 	SetIsFocusable(true);
+	ActionEntryWidgetClass = URpgInventoryContextActionEntryWidget::StaticClass();
+	QuickAccessSlotEntryWidgetClass = URpgQuickAccessSlotPickerEntryWidget::StaticClass();
 }
 
 TOptional<FUIInputConfig> URpgInventoryContextMenuWidget::GetDesiredInputConfig() const
@@ -510,6 +629,11 @@ void URpgInventoryContextMenuWidget::NativeTick(const FGeometry& MyGeometry, flo
 
 bool URpgInventoryContextMenuWidget::NativeOnHandleBackAction()
 {
+	if (bShowingQuickAccessPicker)
+	{
+		ShowContextActionPage();
+		return true;
+	}
 	CloseContextMenu();
 	return true;
 }
@@ -518,7 +642,14 @@ FReply URpgInventoryContextMenuWidget::NativeOnKeyDown(const FGeometry& InGeomet
 {
 	if (InKeyEvent.GetKey() == EKeys::Escape)
 	{
-		CloseContextMenu();
+		if (bShowingQuickAccessPicker)
+		{
+			ShowContextActionPage();
+		}
+		else
+		{
+			CloseContextMenu();
+		}
 		return FReply::Handled();
 	}
 
@@ -527,7 +658,21 @@ FReply URpgInventoryContextMenuWidget::NativeOnKeyDown(const FGeometry& InGeomet
 
 UWidget* URpgInventoryContextMenuWidget::NativeGetDesiredFocusTarget() const
 {
+	if (bShowingQuickAccessPicker)
+	{
+		return QuickAccessSlotButtons.IsEmpty() ? nullptr : QuickAccessSlotButtons[0].Get();
+	}
 	return ActionButtons.IsEmpty() ? nullptr : ActionButtons[0].Get();
+}
+
+int32 URpgInventoryContextMenuWidget::ToQuickAccessDisplayNumber(int32 SlotIndex)
+{
+	return FMath::IsWithinInclusive(SlotIndex, 0, 7) ? SlotIndex + 1 : INDEX_NONE;
+}
+
+int32 URpgInventoryContextMenuWidget::ToQuickAccessSlotIndex(int32 DisplaySlotNumber)
+{
+	return FMath::IsWithinInclusive(DisplaySlotNumber, 1, 8) ? DisplaySlotNumber - 1 : INDEX_NONE;
 }
 
 bool URpgInventoryContextMenuWidget::InitializeContextMenu(
@@ -556,6 +701,7 @@ bool URpgInventoryContextMenuWidget::InitializeContextMenu(
 		ContextActions.AddUnique(Action);
 	}
 
+	NormalizeQuickAccessActions();
 	RebuildActionButtons();
 	if (ActionButtons.IsEmpty())
 	{
@@ -600,6 +746,7 @@ bool URpgInventoryContextMenuWidget::InitializeEquipmentContextMenu(
 		ContextActions.AddUnique(Action);
 	}
 
+	NormalizeQuickAccessActions();
 	RebuildActionButtons();
 	if (ActionButtons.IsEmpty())
 	{
@@ -640,6 +787,7 @@ bool URpgInventoryContextMenuWidget::InitializeAddressContextMenu(
 	{
 		ContextActions.AddUnique(Action);
 	}
+	NormalizeQuickAccessActions();
 	RebuildActionButtons();
 	if (ActionButtons.IsEmpty())
 	{
@@ -659,6 +807,10 @@ bool URpgInventoryContextMenuWidget::ExecuteContextAction(ERpgInventoryContextAc
 	{
 		CloseContextMenu();
 		return false;
+	}
+	if (Action == ERpgInventoryContextAction::QuickAccessBind)
+	{
+		return ShowQuickAccessSlotPicker();
 	}
 
 	if (URpgInventorySpatialGridWidget* Grid = SourceGrid.Get())
@@ -695,6 +847,106 @@ bool URpgInventoryContextMenuWidget::ExecuteContextAction(ERpgInventoryContextAc
 	return EquipmentSlot.IsValid() && EquipmentSlot->ExecuteEquipmentContextAction(Action, ExpectedItemId);
 }
 
+bool URpgInventoryContextMenuWidget::ShowQuickAccessSlotPicker()
+{
+	if (!ContextActions.Contains(ERpgInventoryContextAction::QuickAccessBind) ||
+		(!SourceGrid && !SourceAddressSlot))
+	{
+		return false;
+	}
+
+	if (SourceGrid && (!ContextEntryId.IsValid() || SourceGrid->GetSelectedEntryId() != ContextEntryId))
+	{
+		CloseContextMenu();
+		return false;
+	}
+	if (SourceAddressSlot)
+	{
+		const URpgInventoryAddressSlotViewModel* AddressViewModel = SourceAddressSlot->GetAddressSlotViewModel();
+		const URpgInventoryItemInstance* CurrentItem = AddressViewModel ? AddressViewModel->GetItemInstance() : nullptr;
+		if (!CurrentItem || CurrentItem->GetItemId() != ContextItemId)
+		{
+			CloseContextMenu();
+			return false;
+		}
+	}
+
+	bShowingQuickAccessPicker = true;
+	RebuildQuickAccessSlotButtons();
+	if (QuickAccessSlotButtons.Num() != 8)
+	{
+		bShowingQuickAccessPicker = false;
+		ShowContextActionPage();
+		return false;
+	}
+
+	if (QuickAccessSlotsBox && QuickAccessSlotsBox != ActionsBox)
+	{
+		ActionsBox->SetVisibility(ESlateVisibility::Collapsed);
+		QuickAccessSlotsBox->SetVisibility(ESlateVisibility::Visible);
+	}
+	if (Button_QuickAccessBack)
+	{
+		Button_QuickAccessBack->SetVisibility(ESlateVisibility::Visible);
+	}
+
+	// The picker has a different desired height than the action page. Re-clamp on the
+	// following tick, after Slate has incorporated the rebuilt rows into its layout.
+	bContextPositionPending = true;
+	RequestRefreshFocus();
+	return true;
+}
+
+void URpgInventoryContextMenuWidget::ShowContextActionPage()
+{
+	bShowingQuickAccessPicker = false;
+	QuickAccessSlotButtons.Reset();
+	if (QuickAccessSlotsBox && QuickAccessSlotsBox != ActionsBox)
+	{
+		QuickAccessSlotsBox->ClearChildren();
+		QuickAccessSlotsBox->SetVisibility(ESlateVisibility::Collapsed);
+		ActionsBox->SetVisibility(ESlateVisibility::Visible);
+	}
+	RebuildActionButtons();
+	if (Button_QuickAccessBack)
+	{
+		Button_QuickAccessBack->SetVisibility(ESlateVisibility::Collapsed);
+	}
+
+	// Returning to the shorter action page changes the menu's desired size as well.
+	// Defer the viewport clamp until the rebuilt page has completed a layout pass.
+	bContextPositionPending = true;
+	RequestRefreshFocus();
+}
+
+bool URpgInventoryContextMenuWidget::SelectQuickAccessSlot(int32 SlotIndex)
+{
+	if (!bShowingQuickAccessPicker || !FMath::IsWithinInclusive(SlotIndex, 0, 7))
+	{
+		return false;
+	}
+
+	bool bDispatched = false;
+	if (URpgInventorySpatialGridWidget* Grid = SourceGrid.Get())
+	{
+		bDispatched = ContextEntryId.IsValid() && Grid->GetSelectedEntryId() == ContextEntryId &&
+			Grid->ExecuteSelectedContextAction(ERpgInventoryContextAction::QuickAccessBind, 0, SlotIndex);
+	}
+	else if (URpgInventoryAddressSlotWidget* AddressSlot = SourceAddressSlot.Get())
+	{
+		bDispatched = AddressSlot->ExecuteAddressContextAction(
+			ERpgInventoryContextAction::QuickAccessBind,
+			ContextItemId,
+			SlotIndex);
+	}
+
+	if (bDispatched)
+	{
+		CloseContextMenu();
+	}
+	return bDispatched;
+}
+
 void URpgInventoryContextMenuWidget::CloseContextMenu()
 {
 	if (IsActivated())
@@ -719,10 +971,20 @@ void URpgInventoryContextMenuWidget::EnsureContextWidgetTree()
 	ContextMenuCanvas = Cast<UCanvasPanel>(WidgetTree->FindWidget(TEXT("ContextMenuCanvas")));
 	ContextMenuBorder = Cast<UBorder>(WidgetTree->FindWidget(TEXT("ContextMenuBorder")));
 	ActionsBox = Cast<UVerticalBox>(WidgetTree->FindWidget(TEXT("ActionsBox")));
+	QuickAccessSlotsBox = Cast<UVerticalBox>(WidgetTree->FindWidget(TEXT("QuickAccessSlotsBox")));
+	Button_QuickAccessBack = Cast<UButton>(WidgetTree->FindWidget(TEXT("Button_QuickAccessBack")));
 
 	if (!Button_Dismiss || !ContextMenuCanvas || !ContextMenuBorder || !ActionsBox)
 	{
 		BuildNativeContextWidgetTree();
+	}
+	if (QuickAccessSlotsBox && !bShowingQuickAccessPicker)
+	{
+		QuickAccessSlotsBox->SetVisibility(ESlateVisibility::Collapsed);
+	}
+	if (Button_QuickAccessBack && !bShowingQuickAccessPicker)
+	{
+		Button_QuickAccessBack->SetVisibility(ESlateVisibility::Collapsed);
 	}
 }
 
@@ -758,8 +1020,24 @@ void URpgInventoryContextMenuWidget::BuildNativeContextWidgetTree()
 	MenuSize->SetWidthOverride(NativeContextMenuWidth);
 	ContextMenuBorder->SetContent(MenuSize);
 
+	UVerticalBox* PageContainer = WidgetTree->ConstructWidget<UVerticalBox>(UVerticalBox::StaticClass(), TEXT("NativeContextPageContainer"));
+	MenuSize->SetContent(PageContainer);
+
 	ActionsBox = WidgetTree->ConstructWidget<UVerticalBox>(UVerticalBox::StaticClass(), TEXT("ActionsBox"));
-	MenuSize->SetContent(ActionsBox);
+	PageContainer->AddChildToVerticalBox(ActionsBox);
+
+	QuickAccessSlotsBox = WidgetTree->ConstructWidget<UVerticalBox>(UVerticalBox::StaticClass(), TEXT("QuickAccessSlotsBox"));
+	QuickAccessSlotsBox->SetVisibility(ESlateVisibility::Collapsed);
+	PageContainer->AddChildToVerticalBox(QuickAccessSlotsBox);
+
+	Button_QuickAccessBack = WidgetTree->ConstructWidget<UButton>(UButton::StaticClass(), TEXT("Button_QuickAccessBack"));
+	Button_QuickAccessBack->SetContent(CreateNativeLabel(WidgetTree, LOCTEXT("QuickAccessBackButton", "Back")));
+	Button_QuickAccessBack->SetVisibility(ESlateVisibility::Collapsed);
+	if (UVerticalBoxSlot* BackSlot = PageContainer->AddChildToVerticalBox(Button_QuickAccessBack))
+	{
+		BackSlot->SetPadding(FMargin(0.0f, 8.0f, 0.0f, 0.0f));
+		BackSlot->SetHorizontalAlignment(HAlign_Fill);
+	}
 }
 
 void URpgInventoryContextMenuWidget::BindDismissControl()
@@ -767,6 +1045,10 @@ void URpgInventoryContextMenuWidget::BindDismissControl()
 	if (Button_Dismiss)
 	{
 		Button_Dismiss->OnClicked.AddUniqueDynamic(this, &ThisClass::HandleDismissClicked);
+	}
+	if (Button_QuickAccessBack)
+	{
+		Button_QuickAccessBack->OnClicked.AddUniqueDynamic(this, &ThisClass::HandleQuickAccessBackClicked);
 	}
 }
 
@@ -778,12 +1060,31 @@ void URpgInventoryContextMenuWidget::RebuildActionButtons()
 		return;
 	}
 
+	bShowingQuickAccessPicker = false;
+	ActionsBox->SetVisibility(ESlateVisibility::Visible);
+	if (QuickAccessSlotsBox && QuickAccessSlotsBox != ActionsBox)
+	{
+		QuickAccessSlotsBox->ClearChildren();
+		QuickAccessSlotsBox->SetVisibility(ESlateVisibility::Collapsed);
+	}
+	if (Button_QuickAccessBack)
+	{
+		Button_QuickAccessBack->SetVisibility(ESlateVisibility::Collapsed);
+	}
 	ActionsBox->ClearChildren();
 	for (ERpgInventoryContextAction Action : ContextActions)
 	{
-		UButton* ActionButton = WidgetTree->ConstructWidget<UButton>(UButton::StaticClass());
-		ActionButton->SetContent(CreateNativeLabel(WidgetTree, GetContextActionLabel(Action)));
-		BindActionButton(ActionButton, Action);
+		TSubclassOf<URpgInventoryContextActionEntryWidget> EntryClass = ActionEntryWidgetClass;
+		if (!EntryClass)
+		{
+			EntryClass = URpgInventoryContextActionEntryWidget::StaticClass();
+		}
+		URpgInventoryContextActionEntryWidget* ActionButton = WidgetTree->ConstructWidget<URpgInventoryContextActionEntryWidget>(EntryClass);
+		if (!ActionButton)
+		{
+			continue;
+		}
+		ActionButton->InitializeContextAction(this, Action, ResolveContextActionLabel(Action));
 		if (UVerticalBoxSlot* ActionSlot = ActionsBox->AddChildToVerticalBox(ActionButton))
 		{
 			ActionSlot->SetPadding(FMargin(0.0f, 2.0f));
@@ -793,54 +1094,138 @@ void URpgInventoryContextMenuWidget::RebuildActionButtons()
 	}
 }
 
-void URpgInventoryContextMenuWidget::BindActionButton(UButton* Button, ERpgInventoryContextAction Action)
+void URpgInventoryContextMenuWidget::RebuildQuickAccessSlotButtons()
 {
-	if (!Button)
+	QuickAccessSlotButtons.Reset();
+	UVerticalBox* PickerHost = QuickAccessSlotsBox ? QuickAccessSlotsBox.Get() : ActionsBox.Get();
+	if (!PickerHost || !WidgetTree)
 	{
 		return;
 	}
 
-	switch (Action)
+	PickerHost->ClearChildren();
+	const int32 CurrentSlotIndex = ResolveCurrentQuickAccessSlotIndex();
+	for (int32 SlotIndex = 0; SlotIndex < 8; ++SlotIndex)
 	{
-	case ERpgInventoryContextAction::OpenContainer:
-		Button->OnClicked.AddUniqueDynamic(this, &ThisClass::HandleOpenContainerClicked);
-		break;
-	case ERpgInventoryContextAction::Inspect:
-		Button->OnClicked.AddUniqueDynamic(this, &ThisClass::HandleInspectClicked);
-		break;
-	case ERpgInventoryContextAction::Unequip:
-		Button->OnClicked.AddUniqueDynamic(this, &ThisClass::HandleUnequipClicked);
-		break;
-	case ERpgInventoryContextAction::Use:
-		Button->OnClicked.AddUniqueDynamic(this, &ThisClass::HandleUseClicked);
-		break;
-	case ERpgInventoryContextAction::EquipAndActivate:
-		Button->OnClicked.AddUniqueDynamic(this, &ThisClass::HandleEquipAndActivateClicked);
-		break;
-	case ERpgInventoryContextAction::MoveToCarry:
-		Button->OnClicked.AddUniqueDynamic(this, &ThisClass::HandleMoveToCarryClicked);
-		break;
-	case ERpgInventoryContextAction::Split:
-		Button->OnClicked.AddUniqueDynamic(this, &ThisClass::HandleSplitClicked);
-		break;
-	case ERpgInventoryContextAction::Rotate:
-		Button->OnClicked.AddUniqueDynamic(this, &ThisClass::HandleRotateClicked);
-		break;
-	case ERpgInventoryContextAction::QuickAccessBind:
-		Button->OnClicked.AddUniqueDynamic(this, &ThisClass::HandleQuickAccessBindClicked);
-		break;
-	case ERpgInventoryContextAction::QuickAccessUnbind:
-		Button->OnClicked.AddUniqueDynamic(this, &ThisClass::HandleQuickAccessUnbindClicked);
-		break;
-	case ERpgInventoryContextAction::Transfer:
-		Button->OnClicked.AddUniqueDynamic(this, &ThisClass::HandleTransferClicked);
-		break;
-	case ERpgInventoryContextAction::Drop:
-		Button->OnClicked.AddUniqueDynamic(this, &ThisClass::HandleDropClicked);
-		break;
+		bool bOccupied = false;
+		const FText BindingLabel = ResolveQuickAccessBindingLabel(SlotIndex, bOccupied);
+		TSubclassOf<URpgQuickAccessSlotPickerEntryWidget> EntryClass = QuickAccessSlotEntryWidgetClass;
+		if (!EntryClass)
+		{
+			EntryClass = URpgQuickAccessSlotPickerEntryWidget::StaticClass();
+		}
+		URpgQuickAccessSlotPickerEntryWidget* SlotButton =
+			WidgetTree->ConstructWidget<URpgQuickAccessSlotPickerEntryWidget>(EntryClass);
+		if (!SlotButton)
+		{
+			continue;
+		}
+		SlotButton->InitializeQuickAccessSlot(this, SlotIndex, BindingLabel, bOccupied, SlotIndex == CurrentSlotIndex);
+		if (UVerticalBoxSlot* PickerSlot = PickerHost->AddChildToVerticalBox(SlotButton))
+		{
+			PickerSlot->SetPadding(FMargin(0.0f, 2.0f));
+			PickerSlot->SetHorizontalAlignment(HAlign_Fill);
+		}
+		QuickAccessSlotButtons.Add(SlotButton);
+	}
+
+	if (!Button_QuickAccessBack)
+	{
+		Button_QuickAccessBack = WidgetTree->ConstructWidget<UButton>(UButton::StaticClass(), TEXT("NativeQuickAccessBackButton"));
+		Button_QuickAccessBack->SetContent(CreateNativeLabel(WidgetTree, LOCTEXT("QuickAccessBackButton", "Back")));
+	}
+	if (Button_QuickAccessBack && !Button_QuickAccessBack->GetParent())
+	{
+		if (UVerticalBoxSlot* BackSlot = PickerHost->AddChildToVerticalBox(Button_QuickAccessBack))
+		{
+			BackSlot->SetPadding(FMargin(0.0f, 8.0f, 0.0f, 0.0f));
+			BackSlot->SetHorizontalAlignment(HAlign_Fill);
+		}
+	}
+	if (Button_QuickAccessBack)
+	{
+		Button_QuickAccessBack->OnClicked.AddUniqueDynamic(this, &ThisClass::HandleQuickAccessBackClicked);
+		Button_QuickAccessBack->SetVisibility(ESlateVisibility::Visible);
+	}
+}
+
+void URpgInventoryContextMenuWidget::NormalizeQuickAccessActions()
+{
+	const bool bHasBindableSource = SourceGrid != nullptr || SourceAddressSlot != nullptr;
+	if (!bHasBindableSource)
+	{
+		ContextActions.Remove(ERpgInventoryContextAction::QuickAccessBind);
+		ContextActions.Remove(ERpgInventoryContextAction::QuickAccessUnbind);
+		return;
+	}
+
+	if (ResolveCurrentQuickAccessSlotIndex() == INDEX_NONE)
+	{
+		ContextActions.Remove(ERpgInventoryContextAction::QuickAccessUnbind);
+	}
+}
+
+FText URpgInventoryContextMenuWidget::ResolveContextActionLabel(ERpgInventoryContextAction Action) const
+{
+	const int32 CurrentSlotIndex = ResolveCurrentQuickAccessSlotIndex();
+	if (Action == ERpgInventoryContextAction::QuickAccessBind && CurrentSlotIndex != INDEX_NONE)
+	{
+		return LOCTEXT("QuickAccessChangeAction", "Change Quick Access Slot");
+	}
+	if (Action == ERpgInventoryContextAction::QuickAccessUnbind && CurrentSlotIndex != INDEX_NONE)
+	{
+		return FText::Format(
+			LOCTEXT("QuickAccessUnbindSlotAction", "Unbind Quick Access ({0})"),
+			FText::AsNumber(ToQuickAccessDisplayNumber(CurrentSlotIndex)));
+	}
+	return GetContextActionLabel(Action);
+}
+
+int32 URpgInventoryContextMenuWidget::ResolveCurrentQuickAccessSlotIndex() const
+{
+	if (const URpgInventorySpatialGridWidget* Grid = SourceGrid.Get())
+	{
+		return Grid->GetSelectedQuickAccessSlotIndex();
+	}
+	if (const URpgInventoryAddressSlotWidget* AddressSlot = SourceAddressSlot.Get())
+	{
+		return AddressSlot->GetQuickAccessSlotIndex();
+	}
+	return INDEX_NONE;
+}
+
+FText URpgInventoryContextMenuWidget::ResolveQuickAccessBindingLabel(int32 SlotIndex, bool& bOutOccupied) const
+{
+	bOutOccupied = false;
+	const ARpgPlayerController* RpgPlayerController = Cast<ARpgPlayerController>(GetOwningPlayer());
+	const URpgActionBarComponent* ActionBar = RpgPlayerController ? RpgPlayerController->GetActionBarComponent() : nullptr;
+	if (!ActionBar || !FMath::IsWithinInclusive(SlotIndex, 0, 7))
+	{
+		return LOCTEXT("EmptyQuickAccessSlot", "Empty");
+	}
+
+	const FRpgActionBarSlot ActionBarSlot = ActionBar->GetSlot(SlotIndex);
+	bOutOccupied = !ActionBarSlot.IsEmpty();
+	switch (ActionBarSlot.SlotType)
+	{
+	case ERpgActionBarSlotType::Consumable:
+	case ERpgActionBarSlotType::InventorySlotBinding:
+		return ActionBarSlot.ConsumableDefinition
+			? ActionBarSlot.ConsumableDefinition->GetDisplayNameText()
+			: LOCTEXT("MissingConsumableQuickAccessSlot", "Missing Consumable");
+	case ERpgActionBarSlotType::CarrySlot:
+	case ERpgActionBarSlotType::CarrySlotBinding:
+		return ActionBarSlot.CarryRole.IsNone()
+			? LOCTEXT("MissingCarryQuickAccessSlot", "Missing Carry Role")
+			: FText::FromName(ActionBarSlot.CarryRole);
+	case ERpgActionBarSlotType::Ability:
+		return ActionBarSlot.AbilityId.IsValid()
+			? FText::FromString(ActionBarSlot.AbilityId.ToString())
+			: LOCTEXT("MissingAbilityQuickAccessSlot", "Missing Ability");
+	case ERpgActionBarSlotType::Empty:
 	default:
-		Button->SetIsEnabled(false);
-		break;
+		bOutOccupied = false;
+		return LOCTEXT("EmptyQuickAccessSlot", "Empty");
 	}
 }
 
@@ -874,6 +1259,20 @@ void URpgInventoryContextMenuWidget::UpdateContextMenuPosition()
 
 void URpgInventoryContextMenuWidget::ResetContextState()
 {
+	if (ActionsBox)
+	{
+		ActionsBox->SetVisibility(ESlateVisibility::Visible);
+		ActionsBox->ClearChildren();
+	}
+	if (QuickAccessSlotsBox && QuickAccessSlotsBox != ActionsBox)
+	{
+		QuickAccessSlotsBox->ClearChildren();
+		QuickAccessSlotsBox->SetVisibility(ESlateVisibility::Collapsed);
+	}
+	if (Button_QuickAccessBack)
+	{
+		Button_QuickAccessBack->SetVisibility(ESlateVisibility::Collapsed);
+	}
 	SourceGrid = nullptr;
 	SourceEquipmentSlot = nullptr;
 	SourceAddressSlot = nullptr;
@@ -881,8 +1280,10 @@ void URpgInventoryContextMenuWidget::ResetContextState()
 	ContextItemId = FRpgInventoryItemId();
 	ContextActions.Reset();
 	ActionButtons.Reset();
+	QuickAccessSlotButtons.Reset();
 	RequestedScreenPosition = FVector2D::ZeroVector;
 	bContextPositionPending = false;
+	bShowingQuickAccessPicker = false;
 }
 
 void URpgInventoryContextMenuWidget::HandleContextActionClicked(ERpgInventoryContextAction Action)
@@ -943,6 +1344,11 @@ void URpgInventoryContextMenuWidget::HandleQuickAccessBindClicked()
 void URpgInventoryContextMenuWidget::HandleQuickAccessUnbindClicked()
 {
 	HandleContextActionClicked(ERpgInventoryContextAction::QuickAccessUnbind);
+}
+
+void URpgInventoryContextMenuWidget::HandleQuickAccessBackClicked()
+{
+	ShowContextActionPage();
 }
 
 void URpgInventoryContextMenuWidget::HandleTransferClicked()

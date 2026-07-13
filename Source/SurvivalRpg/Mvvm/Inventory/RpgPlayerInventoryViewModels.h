@@ -91,6 +91,10 @@ public:
 	UFUNCTION(BlueprintPure, Category = "Inventory|Layout ViewModel")
 	int32 GetStackCount() const { return StackCount; }
 
+	/** Designer-facing label for this logical address, for example Weapon 1 or Shield. */
+	UFUNCTION(BlueprintPure, Category = "Inventory|Layout ViewModel")
+	FText GetSlotLabel() const { return SlotLabel; }
+
 	/** Short item name for compact slot or overlay presentation. */
 	UFUNCTION(BlueprintPure, Category = "Inventory|Layout ViewModel")
 	FText GetShortDisplayName() const { return ShortDisplayName; }

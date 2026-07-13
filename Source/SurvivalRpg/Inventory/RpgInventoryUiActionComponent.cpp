@@ -956,20 +956,242 @@ void URpgInventoryUiActionComponent::RequestClearActiveHands_Implementation()
 	}
 }
 
+void URpgInventoryUiActionComponent::RequestMutateQuickAccessBinding_Implementation(FRpgQuickAccessMutationRequest Request)
+{
+	Request.EnsureRequestId();
+
+	URpgActionBarComponent* ActionBar = FindActionBar();
+	URpgPlayerInventoryLayoutComponent* InventoryLayout = FindPlayerInventoryLayout();
+	URpgInventoryManagerComponent* PlayerInventory = FindPlayerInventory();
+	URpgInventoryItemInstance* ContextItem = PlayerInventory && Request.ContextItemId.IsValid()
+		? PlayerInventory->FindItemById(Request.ContextItemId)
+		: nullptr;
+	auto SendQuickAccessFeedback = [this, &Request, PlayerInventory, ContextItem](ERpgInventoryActionFeedbackResult Result)
+	{
+		SendActionFeedback(
+			RpgGameplayTags::Rpg_Inventory_Action_Transfer,
+			Result,
+			PlayerInventory,
+			ContextItem,
+			1,
+			Request.RequestId,
+			Request.ContextItemId);
+	};
+
+	if (!ActionBar || !InventoryLayout || !PlayerInventory)
+	{
+		SendQuickAccessFeedback(ERpgInventoryActionFeedbackResult::InvalidRequest);
+		return;
+	}
+	if (!FMath::IsWithinInclusive(Request.SlotIndex, 0, 7))
+	{
+		SendQuickAccessFeedback(ERpgInventoryActionFeedbackResult::InvalidSlot);
+		return;
+	}
+
+	const auto IsCarryBinding = [](const FRpgActionBarSlot& Slot)
+	{
+		return Slot.SlotType == ERpgActionBarSlotType::CarrySlot ||
+			Slot.SlotType == ERpgActionBarSlotType::CarrySlotBinding;
+	};
+	const auto IsConsumableBinding = [](const FRpgActionBarSlot& Slot)
+	{
+		return Slot.SlotType == ERpgActionBarSlotType::Consumable ||
+			Slot.SlotType == ERpgActionBarSlotType::InventorySlotBinding;
+	};
+
+	switch (Request.Operation)
+	{
+	case ERpgQuickAccessMutationOperation::BindCarry:
+	{
+		if (!Request.SourceAddress.IsValid() || Request.ExpectedCarryRole.IsNone() ||
+			Request.SourceAddress.ContainerId != Request.ExpectedCarryRole ||
+			!InventoryLayout->IsCarrySlotAddress(Request.SourceAddress))
+		{
+			SendQuickAccessFeedback(ERpgInventoryActionFeedbackResult::InvalidSlot);
+			return;
+		}
+
+		URpgInventoryItemInstance* SourceItem = InventoryLayout->GetItemInSlotAddress(Request.SourceAddress);
+		if (!Request.ContextItemId.IsValid() || !SourceItem || SourceItem->GetItemId() != Request.ContextItemId)
+		{
+			SendQuickAccessFeedback(ERpgInventoryActionFeedbackResult::MissingItem);
+			return;
+		}
+		if (!InventoryLayout->CanBindSlotAddressToActionbar(Request.SourceAddress, SourceItem))
+		{
+			SendQuickAccessFeedback(ERpgInventoryActionFeedbackResult::InvalidSlot);
+			return;
+		}
+
+		ActionBar->RequestBindCarrySlotToSlot(Request.SlotIndex, Request.SourceAddress);
+		const FRpgActionBarSlot AppliedSlot = ActionBar->GetSlot(Request.SlotIndex);
+		const bool bApplied = IsCarryBinding(AppliedSlot) &&
+			AppliedSlot.CarryRole == Request.ExpectedCarryRole &&
+			AppliedSlot.SlotAddress == Request.SourceAddress;
+		SendQuickAccessFeedback(bApplied
+			? ERpgInventoryActionFeedbackResult::Success
+			: ERpgInventoryActionFeedbackResult::ServerRejected);
+		return;
+	}
+
+	case ERpgQuickAccessMutationOperation::BindConsumable:
+	{
+		if (!Request.SourceAddress.IsValid() || !Request.ExpectedConsumableDefinition ||
+			!Request.ExpectedPreferredItemId.IsValid() ||
+			Request.ContextItemId != Request.ExpectedPreferredItemId ||
+			InventoryLayout->IsCarrySlotAddress(Request.SourceAddress))
+		{
+			SendQuickAccessFeedback(ERpgInventoryActionFeedbackResult::InvalidRequest);
+			return;
+		}
+
+		URpgInventoryItemInstance* SourceItem = InventoryLayout->GetItemInSlotAddress(Request.SourceAddress);
+		if (!SourceItem || SourceItem->GetItemId() != Request.ExpectedPreferredItemId ||
+			SourceItem->GetItemDef() != Request.ExpectedConsumableDefinition)
+		{
+			SendQuickAccessFeedback(ERpgInventoryActionFeedbackResult::MissingItem);
+			return;
+		}
+		if (!InventoryLayout->CanBindSlotAddressToActionbar(Request.SourceAddress, SourceItem) ||
+			SourceItem->FindFragmentByClass<URpgInventoryFragment_UsableItem>() == nullptr)
+		{
+			SendQuickAccessFeedback(ERpgInventoryActionFeedbackResult::CannotUse);
+			return;
+		}
+
+		ActionBar->RequestBindInventorySlotToSlot(Request.SlotIndex, Request.SourceAddress);
+		const FRpgActionBarSlot AppliedSlot = ActionBar->GetSlot(Request.SlotIndex);
+		const bool bApplied = IsConsumableBinding(AppliedSlot) &&
+			AppliedSlot.ConsumableDefinition == Request.ExpectedConsumableDefinition &&
+			AppliedSlot.PreferredItemId == Request.ExpectedPreferredItemId &&
+			AppliedSlot.SlotAddress == Request.SourceAddress;
+		SendQuickAccessFeedback(bApplied
+			? ERpgInventoryActionFeedbackResult::Success
+			: ERpgInventoryActionFeedbackResult::ServerRejected);
+		return;
+	}
+
+	case ERpgQuickAccessMutationOperation::ClearCarry:
+	{
+		if (Request.ExpectedCarryRole.IsNone())
+		{
+			SendQuickAccessFeedback(ERpgInventoryActionFeedbackResult::InvalidRequest);
+			return;
+		}
+
+		const FRpgActionBarSlot CurrentSlot = ActionBar->GetSlot(Request.SlotIndex);
+		if (!IsCarryBinding(CurrentSlot) || CurrentSlot.CarryRole != Request.ExpectedCarryRole)
+		{
+			SendQuickAccessFeedback(ERpgInventoryActionFeedbackResult::ServerRejected);
+			return;
+		}
+
+		ActionBar->RequestClearSlot(Request.SlotIndex);
+		SendQuickAccessFeedback(ActionBar->GetSlot(Request.SlotIndex).IsEmpty()
+			? ERpgInventoryActionFeedbackResult::Success
+			: ERpgInventoryActionFeedbackResult::ServerRejected);
+		return;
+	}
+
+	case ERpgQuickAccessMutationOperation::ClearConsumable:
+	{
+		if (!Request.ExpectedConsumableDefinition)
+		{
+			SendQuickAccessFeedback(ERpgInventoryActionFeedbackResult::InvalidRequest);
+			return;
+		}
+
+		const FRpgActionBarSlot CurrentSlot = ActionBar->GetSlot(Request.SlotIndex);
+		if (!IsConsumableBinding(CurrentSlot) ||
+			CurrentSlot.ConsumableDefinition != Request.ExpectedConsumableDefinition ||
+			CurrentSlot.PreferredItemId != Request.ExpectedPreferredItemId)
+		{
+			SendQuickAccessFeedback(ERpgInventoryActionFeedbackResult::ServerRejected);
+			return;
+		}
+
+		ActionBar->RequestClearSlot(Request.SlotIndex);
+		SendQuickAccessFeedback(ActionBar->GetSlot(Request.SlotIndex).IsEmpty()
+			? ERpgInventoryActionFeedbackResult::Success
+			: ERpgInventoryActionFeedbackResult::ServerRejected);
+		return;
+	}
+	}
+
+	SendQuickAccessFeedback(ERpgInventoryActionFeedbackResult::InvalidRequest);
+}
+
 void URpgInventoryUiActionComponent::RequestBindActionBarToInventorySlot_Implementation(int32 ActionBarSlotIndex, FRpgInventorySlotAddress SlotAddress)
 {
-	if (URpgActionBarComponent* ActionBar = FindActionBar())
-	{
-		ActionBar->RequestBindInventorySlotToSlot(ActionBarSlotIndex, SlotAddress);
-	}
+	const URpgPlayerInventoryLayoutComponent* InventoryLayout = FindPlayerInventoryLayout();
+	const URpgInventoryItemInstance* SourceItem = InventoryLayout
+		? InventoryLayout->GetItemInSlotAddress(SlotAddress)
+		: nullptr;
+
+	FRpgQuickAccessMutationRequest Request;
+	Request.EnsureRequestId();
+	Request.Operation = ERpgQuickAccessMutationOperation::BindConsumable;
+	Request.SlotIndex = ActionBarSlotIndex;
+	Request.SourceAddress = SlotAddress;
+	Request.ExpectedConsumableDefinition = SourceItem ? SourceItem->GetItemDef() : nullptr;
+	Request.ExpectedPreferredItemId = SourceItem ? SourceItem->GetItemId() : FRpgInventoryItemId();
+	Request.ContextItemId = Request.ExpectedPreferredItemId;
+	RequestMutateQuickAccessBinding_Implementation(Request);
 }
 
 void URpgInventoryUiActionComponent::RequestBindActionBarToCarrySlot_Implementation(int32 ActionBarSlotIndex, FRpgInventorySlotAddress CarrySlotAddress)
 {
-	if (URpgActionBarComponent* ActionBar = FindActionBar())
-	{
-		ActionBar->RequestBindCarrySlotToSlot(ActionBarSlotIndex, CarrySlotAddress);
-	}
+	const URpgPlayerInventoryLayoutComponent* InventoryLayout = FindPlayerInventoryLayout();
+	const URpgInventoryItemInstance* SourceItem = InventoryLayout
+		? InventoryLayout->GetItemInSlotAddress(CarrySlotAddress)
+		: nullptr;
+
+	FRpgQuickAccessMutationRequest Request;
+	Request.EnsureRequestId();
+	Request.Operation = ERpgQuickAccessMutationOperation::BindCarry;
+	Request.SlotIndex = ActionBarSlotIndex;
+	Request.SourceAddress = CarrySlotAddress;
+	Request.ExpectedCarryRole = CarrySlotAddress.ContainerId;
+	Request.ContextItemId = SourceItem ? SourceItem->GetItemId() : FRpgInventoryItemId();
+	RequestMutateQuickAccessBinding_Implementation(Request);
+}
+
+void URpgInventoryUiActionComponent::RequestClearActionBarCarryBinding_Implementation(
+	int32 ActionBarSlotIndex,
+	FName ExpectedCarryRole)
+{
+	URpgActionBarComponent* ActionBar = FindActionBar();
+	const FRpgActionBarSlot CurrentSlot = ActionBar ? ActionBar->GetSlot(ActionBarSlotIndex) : FRpgActionBarSlot();
+	const URpgPlayerInventoryLayoutComponent* InventoryLayout = FindPlayerInventoryLayout();
+	const URpgInventoryItemInstance* ContextItem = InventoryLayout && CurrentSlot.SlotAddress.IsValid()
+		? InventoryLayout->GetItemInSlotAddress(CurrentSlot.SlotAddress)
+		: nullptr;
+
+	FRpgQuickAccessMutationRequest Request;
+	Request.EnsureRequestId();
+	Request.Operation = ERpgQuickAccessMutationOperation::ClearCarry;
+	Request.SlotIndex = ActionBarSlotIndex;
+	Request.ExpectedCarryRole = ExpectedCarryRole;
+	Request.ContextItemId = ContextItem ? ContextItem->GetItemId() : FRpgInventoryItemId();
+	RequestMutateQuickAccessBinding_Implementation(Request);
+}
+
+void URpgInventoryUiActionComponent::RequestClearActionBarConsumableBinding_Implementation(
+	int32 ActionBarSlotIndex,
+	TSubclassOf<URpgInventoryItemDefinition> ExpectedConsumableDefinition)
+{
+	URpgActionBarComponent* ActionBar = FindActionBar();
+	const FRpgActionBarSlot CurrentSlot = ActionBar ? ActionBar->GetSlot(ActionBarSlotIndex) : FRpgActionBarSlot();
+
+	FRpgQuickAccessMutationRequest Request;
+	Request.EnsureRequestId();
+	Request.Operation = ERpgQuickAccessMutationOperation::ClearConsumable;
+	Request.SlotIndex = ActionBarSlotIndex;
+	Request.ExpectedConsumableDefinition = ExpectedConsumableDefinition;
+	Request.ExpectedPreferredItemId = CurrentSlot.PreferredItemId;
+	Request.ContextItemId = CurrentSlot.PreferredItemId;
+	RequestMutateQuickAccessBinding_Implementation(Request);
 }
 
 void URpgInventoryUiActionComponent::RequestSplitItemStack_Implementation(URpgInventoryManagerComponent* Inventory, URpgInventoryItemInstance* Item, int32 SplitCount, FRpgInventoryGridPlacement TargetPlacement)

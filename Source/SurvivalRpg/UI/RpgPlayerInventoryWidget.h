@@ -10,6 +10,8 @@
 
 class URpgActionBarTileView;
 class URpgEquipmentSlotWidget;
+class URpgInventoryCarrySlotWidget;
+class URpgInventoryContextMenuWidget;
 class URpgInventoryDragDropCoordinator;
 class URpgInventoryDragVisualWidget;
 class URpgInventoryFeedbackToastWidget;
@@ -17,10 +19,10 @@ class URpgInventoryItemInstance;
 class URpgInventoryPanelNavigationCoordinator;
 class URpgInventorySpatialGridWidget;
 class URpgInventorySlotGroupWidget;
-class URpgInventorySlotGroupPanelWidget;
 class URpgInventorySlotGroupViewModel;
 class URpgPlayerInventoryViewModel;
 class UDragDropOperation;
+class UCanvasPanel;
 class UWidget;
 
 /**
@@ -50,7 +52,7 @@ public:
 	UFUNCTION(BlueprintCallable, Category = "Inventory|Player")
 	void BindPlayerInventoryViewModel();
 
-	/** Pushes the latest slot-group VMs into CarryGroupsList and InventoryGroupsList. */
+	/** Binds the latest carry roles and content groups to their independently placed designer hosts. */
 	UFUNCTION(BlueprintCallable, Category = "Inventory|Player")
 	void RefreshSlotGroups();
 
@@ -111,29 +113,35 @@ protected:
 	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Inventory|Interaction")
 	TSubclassOf<URpgInventoryDragVisualWidget> FreeDragVisualWidgetClass;
 
-	/** Optional spatial group panel for the two ready-weapon roles and the offhand/shield role. */
-	UPROPERTY(BlueprintReadOnly, meta = (BindWidgetOptional))
-	TObjectPtr<URpgInventorySlotGroupPanelWidget> CarryGroupsList = nullptr;
+	/** Optional shared context-menu style forwarded to every player spatial, gear, and carry target. */
+	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Inventory|Context Menu")
+	TSubclassOf<URpgInventoryContextMenuWidget> ContextMenuWidgetClass;
 
-	/** Optional spatial group panel for normal groups such as Pockets, Backpack, Belt, Pouch, and ResourceBag. */
+	/**
+	 * Optional fullscreen top-most canvas that owns the free pointer ghost above gear/carry widgets.
+	 * Place it last in the screen overlay, set it hit-test-invisible, and do not clip its children.
+	 */
 	UPROPERTY(BlueprintReadOnly, meta = (BindWidgetOptional))
-	TObjectPtr<URpgInventorySlotGroupPanelWidget> InventoryGroupsList = nullptr;
+	TObjectPtr<UCanvasPanel> DragVisualCanvas = nullptr;
 
-	/** Optional freely placed Pockets host. When present, Pockets are removed from InventoryGroupsList. */
+	/** Freely placed Pockets spatial host; player screens no longer require a shared group-list layout. */
 	UPROPERTY(BlueprintReadOnly, meta = (BindWidgetOptional))
 	TObjectPtr<URpgInventorySlotGroupWidget> Content_Pockets = nullptr;
 
-	/** Optional freely placed first ready-weapon host. When present, WeaponSlot1 is removed from CarryGroupsList. */
+	/**
+	 * Migration-safe binding for the gear-like Weapon1 carry host. Canonical content uses RpgInventoryCarrySlotWidget;
+	 * legacy SlotGroup widgets remain loadable but are ignored with a clear warning until reparented in the editor.
+	 */
 	UPROPERTY(BlueprintReadOnly, meta = (BindWidgetOptional))
-	TObjectPtr<URpgInventorySlotGroupWidget> Carry_Weapon1 = nullptr;
+	TObjectPtr<UWidget> Carry_Weapon1 = nullptr;
 
-	/** Optional freely placed second ready-weapon host. When present, WeaponSlot2 is removed from CarryGroupsList. */
+	/** Migration-safe binding for the gear-like Weapon2 carry host; reparent it to RpgInventoryCarrySlotWidget. */
 	UPROPERTY(BlueprintReadOnly, meta = (BindWidgetOptional))
-	TObjectPtr<URpgInventorySlotGroupWidget> Carry_Weapon2 = nullptr;
+	TObjectPtr<UWidget> Carry_Weapon2 = nullptr;
 
-	/** Optional freely placed offhand/shield host. When present, ShieldSlot is removed from CarryGroupsList. */
+	/** Migration-safe binding for the gear-like offhand/shield carry host. */
 	UPROPERTY(BlueprintReadOnly, meta = (BindWidgetOptional))
-	TObjectPtr<URpgInventorySlotGroupWidget> Carry_Offhand = nullptr;
+	TObjectPtr<UWidget> Carry_Offhand = nullptr;
 
 	/** Optional freely placed content host for the currently equipped backpack. */
 	UPROPERTY(BlueprintReadOnly, meta = (BindWidgetOptional))
@@ -210,21 +218,40 @@ private:
 		FVector2D ScreenPosition,
 		bool bCommit,
 		const URpgInventoryDragDropOperation* DragOperation);
-	bool RoutePayloadToGearSlot(const FRpgInventoryDragPayload& Payload, FVector2D GhostCenterScreenPosition, bool bCommit);
-	bool RoutePayloadToActionBar(const FRpgInventoryDragPayload& Payload, FVector2D GhostCenterScreenPosition, bool bCommit);
+	bool RoutePayloadToGearSlot(
+		const FRpgInventoryDragPayload& Payload,
+		FVector2D GhostCenterScreenPosition,
+		bool bCommit,
+		bool& bOutTargetAddressed);
+	bool RoutePayloadToCarrySlot(
+		const FRpgInventoryDragPayload& Payload,
+		FVector2D GhostCenterScreenPosition,
+		bool bCommit,
+		bool& bOutTargetAddressed);
+	bool RoutePayloadToActionBar(
+		const FRpgInventoryDragPayload& Payload,
+		FVector2D GhostCenterScreenPosition,
+		bool bCommit,
+		bool& bOutTargetAddressed);
 	bool RoutePayloadToSpatialGrid(const FRpgInventoryDragPayload& Payload, FVector2D ScreenPosition, bool bCommit);
 	void SwitchActivePointerDropTarget(UWidget* NewTarget);
 	void CollectSpatialGrids(TArray<URpgInventorySpatialGridWidget*>& OutGrids) const;
 	void ClearExternalDragPreviews();
 	URpgInventorySlotGroupViewModel* FindEquipmentProvidedContentGroup(FName SourceEquipmentSlotName) const;
-	void CollectStandaloneGroupWidgets(TArray<URpgInventorySlotGroupWidget*>& OutWidgets) const;
+	void CollectStandaloneContentGroupWidgets(TArray<URpgInventorySlotGroupWidget*>& OutWidgets) const;
+	URpgInventoryCarrySlotWidget* ResolveCarrySlotWidget(UWidget* BoundWidget, FName BindingName, bool bLogFailure) const;
 	void RegisterInventoryFeedbackListener();
 	void UnregisterInventoryFeedbackListener();
 	URpgInventoryFeedbackToastWidget* EnsureInventoryFeedbackToast();
 	void UpdateFreePointerDragVisual(
 		const FRpgInventoryDragPayload& Payload,
 		FVector2D PointerScreenPosition,
-		URpgInventoryDragDropOperation* DragOperation);
+		URpgInventoryDragDropOperation* DragOperation,
+		bool bCenterVisualOnScreenPosition = false);
+	void UpdateControllerCarryDragVisual(
+		const FRpgInventoryDragPayload& Payload,
+		URpgInventoryCarrySlotWidget* CarrySlotWidget);
+	URpgInventoryCarrySlotWidget* FindControllerPreviewCarrySlot() const;
 	void ClearFreePointerDragVisual();
 
 	UPROPERTY(Transient)
@@ -263,5 +290,6 @@ private:
 	int32 FreePointerDragConfiguredStackCount = INDEX_NONE;
 	ERpgInventoryDragSourceType FreePointerDragConfiguredSourceType = ERpgInventoryDragSourceType::None;
 	bool bFreePointerDragVisualConfigured = false;
+	mutable TSet<FName> ReportedInvalidPlayerBindings;
 	TWeakObjectPtr<UWidget> ActivePointerDropTarget;
 };

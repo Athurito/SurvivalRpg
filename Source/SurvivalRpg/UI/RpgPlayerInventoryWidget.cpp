@@ -2,6 +2,7 @@
 
 #include "Blueprint/DragDropOperation.h"
 #include "Blueprint/WidgetLayoutLibrary.h"
+#include "Components/CanvasPanel.h"
 #include "Components/CanvasPanelSlot.h"
 #include "Components/Widget.h"
 #include "Engine/World.h"
@@ -13,6 +14,7 @@
 #include "SurvivalRpg/GameplayTags/RpgGameplayTags.h"
 #include "SurvivalRpg/Mvvm/Inventory/RpgPlayerInventoryViewModels.h"
 #include "SurvivalRpg/UI/RpgLoadoutSlotWidgets.h"
+#include "SurvivalRpg/UI/RpgInventoryCarrySlotWidget.h"
 #include "SurvivalRpg/UI/RpgInventoryDragVisualWidget.h"
 #include "SurvivalRpg/UI/RpgInventoryPanelNavigationCoordinator.h"
 #include "SurvivalRpg/UI/RpgInventoryFeedbackToastWidget.h"
@@ -21,6 +23,8 @@
 #include "View/MVVMView.h"
 
 #include UE_INLINE_GENERATED_CPP_BY_NAME(RpgPlayerInventoryWidget)
+
+DEFINE_LOG_CATEGORY_STATIC(LogRpgPlayerInventoryWidget, Log, All);
 
 namespace
 {
@@ -51,6 +55,11 @@ URpgPlayerInventoryWidget::URpgPlayerInventoryWidget(const FObjectInitializer& O
 void URpgPlayerInventoryWidget::NativeOnInitialized()
 {
 	Super::NativeOnInitialized();
+	if (DragVisualCanvas)
+	{
+		// A fullscreen drag host must never steal pointer hits from the inventory beneath it.
+		DragVisualCanvas->SetVisibility(ESlateVisibility::HitTestInvisible);
+	}
 
 	EnsurePlayerInventoryViewModel();
 	BindViewModelDelegates();
@@ -266,11 +275,14 @@ FString URpgPlayerInventoryWidget::GetPlayerInventoryWidgetDebugSummary() const
 	const int32 ActionBarCount = PlayerInventoryViewModel ? PlayerInventoryViewModel->GetActionBarSlots().Num() : INDEX_NONE;
 
 	return FString::Printf(
-		TEXT("PlayerInventoryWidget VM=%s Coordinator=%s CarryGroupsList=%s InventoryGroupsList=%s ActionBarTileView=%s CarryGroups=%d InventoryGroups=%d ActionBarSlots=%d"),
+		TEXT("PlayerInventoryWidget VM=%s Coordinator=%s Carry1=%s Carry2=%s Offhand=%s Pockets=%s Backpack=%s ActionBar=%s CarryGroups=%d InventoryGroups=%d ActionBarSlots=%d"),
 		*GetNameSafe(PlayerInventoryViewModel),
 		*GetNameSafe(PlayerDragDropCoordinator),
-		*GetNameSafe(CarryGroupsList),
-		*GetNameSafe(InventoryGroupsList),
+		*GetNameSafe(Carry_Weapon1),
+		*GetNameSafe(Carry_Weapon2),
+		*GetNameSafe(Carry_Offhand),
+		*GetNameSafe(Content_Pockets),
+		*GetNameSafe(Content_Backpack),
 		*GetNameSafe(ActionBarTileView),
 		CarryCount,
 		InventoryGroupCount,
@@ -284,69 +296,70 @@ void URpgPlayerInventoryWidget::RefreshSlotGroups()
 		return;
 	}
 
-	TSet<FRpgInventoryContainerHandle> StandaloneGroupHandles;
-	auto BindStandaloneGroup = [this, &StandaloneGroupHandles](
+	auto ReportMissingContentHost = [this](URpgInventorySlotGroupWidget* GroupWidget, FName BindingName)
+	{
+		if (!GroupWidget && !ReportedInvalidPlayerBindings.Contains(BindingName))
+		{
+			ReportedInvalidPlayerBindings.Add(BindingName);
+			UE_LOG(LogRpgPlayerInventoryWidget, Warning,
+				TEXT("%s has no direct %s widget. Add an RpgInventorySlotGroupWidget with that exact BindWidget name; player InventoryGroupsList fallback was removed."),
+				*GetNameSafe(this),
+				*BindingName.ToString());
+		}
+	};
+
+	auto BindContentGroup = [this, &ReportMissingContentHost](
 		URpgInventorySlotGroupWidget* GroupWidget,
 		URpgInventorySlotGroupViewModel* GroupViewModel,
-		FName PanelPrefix)
+		FName BindingName)
 	{
 		if (!GroupWidget)
 		{
+			ReportMissingContentHost(GroupWidget, BindingName);
 			return;
 		}
 
 		GroupWidget->SetDragDropCoordinator(PlayerDragDropCoordinator);
-		GroupWidget->SetPanelNavigationCoordinator(PlayerPanelNavigationCoordinator, PanelPrefix);
+		GroupWidget->SetPanelNavigationCoordinator(PlayerPanelNavigationCoordinator, TEXT("Content"));
 		GroupWidget->SetSlotGroupViewModel(GroupViewModel);
+		if (URpgInventorySpatialGridWidget* SpatialGrid = GroupWidget->GetSpatialGridWidget())
+		{
+			SpatialGrid->SetContextMenuWidgetClass(ContextMenuWidgetClass);
+		}
 		if (UCanvasPanelSlot* CanvasSlot = Cast<UCanvasPanelSlot>(GroupWidget->Slot))
 		{
 			// Spatial children must own their complete title + grid geometry; undersized hosts break Slate hit testing.
 			CanvasSlot->SetAutoSize(true);
 		}
 		GroupWidget->SetVisibility(GroupViewModel ? ESlateVisibility::Visible : ESlateVisibility::Collapsed);
-		if (GroupViewModel && GroupViewModel->GetContainerHandle().IsValid())
-		{
-			StandaloneGroupHandles.Add(GroupViewModel->GetContainerHandle());
-		}
 	};
 
-	BindStandaloneGroup(Carry_Weapon1, PlayerInventoryViewModel->GetSlotGroup(URpgPlayerInventoryLayoutComponent::WeaponSlot1GroupId), TEXT("Carry"));
-	BindStandaloneGroup(Carry_Weapon2, PlayerInventoryViewModel->GetSlotGroup(URpgPlayerInventoryLayoutComponent::WeaponSlot2GroupId), TEXT("Carry"));
-	BindStandaloneGroup(Carry_Offhand, PlayerInventoryViewModel->GetSlotGroup(URpgPlayerInventoryLayoutComponent::ShieldSlotGroupId), TEXT("Carry"));
-	BindStandaloneGroup(Content_Pockets, PlayerInventoryViewModel->GetSlotGroup(URpgPlayerInventoryLayoutComponent::PocketsGroupId), TEXT("Content"));
-	BindStandaloneGroup(Content_Backpack, FindEquipmentProvidedContentGroup(TEXT("Backpack")), TEXT("Content"));
-	BindStandaloneGroup(Content_Belt, FindEquipmentProvidedContentGroup(TEXT("Belt")), TEXT("Content"));
-	BindStandaloneGroup(Content_Pouch, FindEquipmentProvidedContentGroup(TEXT("Pouch")), TEXT("Content"));
-	BindStandaloneGroup(Content_ResourceBag, FindEquipmentProvidedContentGroup(TEXT("ResourceBag")), TEXT("Content"));
-
-	if (CarryGroupsList)
+	auto BindCarrySlot = [this](
+		UWidget* BoundWidget,
+		FName BindingName,
+		URpgInventorySlotGroupViewModel* GroupViewModel)
 	{
-		TArray<URpgInventorySlotGroupViewModel*> RemainingCarryGroups;
-		for (URpgInventorySlotGroupViewModel* Group : PlayerInventoryViewModel->GetCarryGroups())
+		URpgInventoryCarrySlotWidget* CarrySlot = ResolveCarrySlotWidget(BoundWidget, BindingName, true);
+		if (!CarrySlot)
 		{
-			if (Group && !StandaloneGroupHandles.Contains(Group->GetContainerHandle()))
-			{
-				RemainingCarryGroups.Add(Group);
-			}
-		}
-		CarryGroupsList->SetPanelNavigationCoordinator(PlayerPanelNavigationCoordinator, TEXT("Carry"));
-		CarryGroupsList->SetSlotGroupItems(RemainingCarryGroups);
-	}
-
-	if (InventoryGroupsList)
-	{
-		TArray<URpgInventorySlotGroupViewModel*> RemainingInventoryGroups;
-		for (URpgInventorySlotGroupViewModel* Group : PlayerInventoryViewModel->GetInventoryGroups())
-		{
-			if (Group && !StandaloneGroupHandles.Contains(Group->GetContainerHandle()))
-			{
-				RemainingInventoryGroups.Add(Group);
-			}
+			return;
 		}
 
-		InventoryGroupsList->SetPanelNavigationCoordinator(PlayerPanelNavigationCoordinator, TEXT("Content"));
-		InventoryGroupsList->SetSlotGroupItems(RemainingInventoryGroups);
-	}
+		CarrySlot->SetDragDropCoordinator(PlayerDragDropCoordinator);
+		CarrySlot->SetContextMenuWidgetClass(ContextMenuWidgetClass);
+		CarrySlot->SetCarrySlotGroupViewModel(GroupViewModel);
+		CarrySlot->SetVisibility(GroupViewModel ? ESlateVisibility::Visible : ESlateVisibility::Collapsed);
+	};
+
+	BindCarrySlot(Carry_Weapon1, TEXT("Carry_Weapon1"), PlayerInventoryViewModel->GetSlotGroup(URpgPlayerInventoryLayoutComponent::WeaponSlot1GroupId));
+	BindCarrySlot(Carry_Weapon2, TEXT("Carry_Weapon2"), PlayerInventoryViewModel->GetSlotGroup(URpgPlayerInventoryLayoutComponent::WeaponSlot2GroupId));
+	BindCarrySlot(Carry_Offhand, TEXT("Carry_Offhand"), PlayerInventoryViewModel->GetSlotGroup(URpgPlayerInventoryLayoutComponent::ShieldSlotGroupId));
+
+	BindContentGroup(Content_Pockets, PlayerInventoryViewModel->GetSlotGroup(URpgPlayerInventoryLayoutComponent::PocketsGroupId), TEXT("Content_Pockets"));
+	BindContentGroup(Content_Backpack, FindEquipmentProvidedContentGroup(TEXT("Backpack")), TEXT("Content_Backpack"));
+	BindContentGroup(Content_Belt, FindEquipmentProvidedContentGroup(TEXT("Belt")), TEXT("Content_Belt"));
+	BindContentGroup(Content_Pouch, FindEquipmentProvidedContentGroup(TEXT("Pouch")), TEXT("Content_Pouch"));
+	BindContentGroup(Content_ResourceBag, FindEquipmentProvidedContentGroup(TEXT("ResourceBag")), TEXT("Content_ResourceBag"));
 }
 
 void URpgPlayerInventoryWidget::RefreshActionBar()
@@ -403,11 +416,27 @@ void URpgPlayerInventoryWidget::HandleInventoryInteractionStateChanged(
 	bool bHasPayload,
 	bool bPendingRequest)
 {
+	const URpgInventoryInteractionSession* InteractionSession = PlayerDragDropCoordinator
+		? PlayerDragDropCoordinator->GetInteractionSession()
+		: nullptr;
 	if (!bHasPayload)
 	{
 		ActivePointerDropTarget.Reset();
 		ClearExternalDragPreviews();
 		ClearFreePointerDragVisual();
+	}
+	else if (InteractionSession &&
+		InteractionSession->GetInputMode() == ERpgInventoryInteractionInputMode::Controller)
+	{
+		if (URpgInventoryCarrySlotWidget* CarrySlot = FindControllerPreviewCarrySlot())
+		{
+			UpdateControllerCarryDragVisual(InteractionSession->GetPayload(), CarrySlot);
+		}
+		else
+		{
+			// Spatial grids own their controller preview locally; no screen ghost may remain on the previous carry slot.
+			ClearFreePointerDragVisual();
+		}
 	}
 	else if (bHasLastPointerDragScreenPosition && PlayerDragDropCoordinator)
 	{
@@ -418,7 +447,7 @@ void URpgPlayerInventoryWidget::HandleInventoryInteractionStateChanged(
 			Payload = ActivePointerDragOperation->InventoryPayload;
 		}
 
-		if (!bPendingRequest && !bRoutingPointerPreview)
+		if (!bPendingRequest && PreviewState != ERpgInventoryInteractionPreviewState::Rejected && !bRoutingPointerPreview)
 		{
 			TGuardValue<bool> RoutingGuard(bRoutingPointerPreview, true);
 			RouteInventoryPayloadAtScreenPosition(
@@ -429,6 +458,19 @@ void URpgPlayerInventoryWidget::HandleInventoryInteractionStateChanged(
 		}
 		UpdateFreePointerDragVisual(Payload, LastPointerDragScreenPosition, ActivePointerDragOperation);
 	}
+
+	// Carry slots expose semantic Pending/Rejected state through their presentation hook. Refresh all three because
+	// the interaction session target can change without replacing the held payload delegate they otherwise observe.
+	auto RefreshCarryPresentation = [this](UWidget* BoundWidget, FName BindingName)
+	{
+		if (URpgInventoryCarrySlotWidget* CarrySlot = ResolveCarrySlotWidget(BoundWidget, BindingName, false))
+		{
+			CarrySlot->RefreshCarrySlotPresentation();
+		}
+	};
+	RefreshCarryPresentation(Carry_Weapon1, TEXT("Carry_Weapon1"));
+	RefreshCarryPresentation(Carry_Weapon2, TEXT("Carry_Weapon2"));
+	RefreshCarryPresentation(Carry_Offhand, TEXT("Carry_Offhand"));
 	BP_OnInventoryInteractionStateChanged(PreviewState, bHasPayload, bPendingRequest);
 }
 
@@ -493,7 +535,8 @@ URpgInventoryFeedbackToastWidget* URpgPlayerInventoryWidget::EnsureInventoryFeed
 void URpgPlayerInventoryWidget::UpdateFreePointerDragVisual(
 	const FRpgInventoryDragPayload& Payload,
 	FVector2D PointerScreenPosition,
-	URpgInventoryDragDropOperation* DragOperation)
+	URpgInventoryDragDropOperation* DragOperation,
+	bool bCenterVisualOnScreenPosition)
 {
 	URpgInventoryDragVisualWidget* OperationVisual = nullptr;
 	if (DragOperation)
@@ -561,9 +604,24 @@ void URpgPlayerInventoryWidget::UpdateFreePointerDragVisual(
 		{
 			return;
 		}
-		FreePointerDragVisual->AddToPlayerScreen(252);
-		FreePointerDragVisual->SetAlignmentInViewport(FVector2D::ZeroVector);
-		FreePointerDragVisual->SetPositionInViewport(FVector2D::ZeroVector, true);
+		if (DragVisualCanvas)
+		{
+			if (UCanvasPanelSlot* DragCanvasSlot = DragVisualCanvas->AddChildToCanvas(FreePointerDragVisual))
+			{
+				DragCanvasSlot->SetAnchors(FAnchors(0.0f, 0.0f));
+				DragCanvasSlot->SetAlignment(FVector2D::ZeroVector);
+				DragCanvasSlot->SetPosition(FVector2D::ZeroVector);
+				DragCanvasSlot->SetAutoSize(false);
+				DragCanvasSlot->SetZOrder(1000);
+			}
+		}
+		else
+		{
+			// Migration fallback: remain above the inventory and modal-adjacent decorators until DragVisualCanvas exists.
+			FreePointerDragVisual->AddToPlayerScreen(1100);
+			FreePointerDragVisual->SetAlignmentInViewport(FVector2D::ZeroVector);
+			FreePointerDragVisual->SetPositionInViewport(FVector2D::ZeroVector, true);
+		}
 	}
 
 	const ERpgInventoryInteractionPreviewState PreviewState = Session
@@ -606,11 +664,18 @@ void URpgPlayerInventoryWidget::UpdateFreePointerDragVisual(
 	if (!FreePointerDragVisualSize.Equals(LocalVisualSize))
 	{
 		FreePointerDragVisualSize = LocalVisualSize;
-		FreePointerDragVisual->SetDesiredSizeInViewport(LocalVisualSize);
+		if (UCanvasPanelSlot* DragCanvasSlot = Cast<UCanvasPanelSlot>(FreePointerDragVisual->Slot))
+		{
+			DragCanvasSlot->SetSize(LocalVisualSize);
+		}
+		else
+		{
+			FreePointerDragVisual->SetDesiredSizeInViewport(LocalVisualSize);
+		}
 	}
 
 	FVector2D PointerFraction(0.5f, 0.5f);
-	if (ResolvedPayload.DragAnchor.bValid &&
+	if (!bCenterVisualOnScreenPosition && ResolvedPayload.DragAnchor.bValid &&
 		ResolvedPayload.DragAnchor.SourceScreenVisualSize.X > KINDA_SMALL_NUMBER &&
 		ResolvedPayload.DragAnchor.SourceScreenVisualSize.Y > KINDA_SMALL_NUMBER)
 	{
@@ -623,7 +688,7 @@ void URpgPlayerInventoryWidget::UpdateFreePointerDragVisual(
 			0.0f,
 			1.0f);
 	}
-	else if (ResolvedPayload.DragAnchor.bValid &&
+	else if (!bCenterVisualOnScreenPosition && ResolvedPayload.DragAnchor.bValid &&
 		ResolvedPayload.DragAnchor.SourceVisualSize.X > KINDA_SMALL_NUMBER &&
 		ResolvedPayload.DragAnchor.SourceVisualSize.Y > KINDA_SMALL_NUMBER)
 	{
@@ -637,14 +702,18 @@ void URpgPlayerInventoryWidget::UpdateFreePointerDragVisual(
 			1.0f);
 	}
 
+	const bool bCanvasOwnedVisual = DragVisualCanvas && FreePointerDragVisual->GetParent() == DragVisualCanvas;
 	const FGeometry PlayerScreenGeometry = UWidgetLayoutLibrary::GetPlayerScreenWidgetGeometry(GetOwningPlayer());
-	const FVector2D PlayerScreenLocalSize = PlayerScreenGeometry.GetLocalSize();
+	const FGeometry VisualSpaceGeometry = bCanvasOwnedVisual
+		? DragVisualCanvas->GetCachedGeometry()
+		: PlayerScreenGeometry;
+	const FVector2D VisualSpaceLocalSize = VisualSpaceGeometry.GetLocalSize();
 	FVector2D ScreenVisualSize = FVector2D::ZeroVector;
 	float FallbackViewportScale = 1.0f;
-	if (PlayerScreenLocalSize.X > KINDA_SMALL_NUMBER && PlayerScreenLocalSize.Y > KINDA_SMALL_NUMBER)
+	if (VisualSpaceLocalSize.X > KINDA_SMALL_NUMBER && VisualSpaceLocalSize.Y > KINDA_SMALL_NUMBER)
 	{
-		const FVector2D ScreenOrigin = PlayerScreenGeometry.LocalToAbsolute(FVector2D::ZeroVector);
-		const FVector2D ScreenExtent = PlayerScreenGeometry.LocalToAbsolute(LocalVisualSize) - ScreenOrigin;
+		const FVector2D ScreenOrigin = VisualSpaceGeometry.LocalToAbsolute(FVector2D::ZeroVector);
+		const FVector2D ScreenExtent = VisualSpaceGeometry.LocalToAbsolute(LocalVisualSize) - ScreenOrigin;
 		ScreenVisualSize = FVector2D(FMath::Abs(ScreenExtent.X), FMath::Abs(ScreenExtent.Y));
 	}
 	else
@@ -654,10 +723,10 @@ void URpgPlayerInventoryWidget::UpdateFreePointerDragVisual(
 		ScreenVisualSize = LocalVisualSize * FallbackViewportScale;
 	}
 	const FVector2D ScreenTopLeft = PointerScreenPosition - PointerFraction * ScreenVisualSize;
-	const FVector2D PlayerLocalTopLeft = PlayerScreenLocalSize.X > KINDA_SMALL_NUMBER && PlayerScreenLocalSize.Y > KINDA_SMALL_NUMBER
-		? PlayerScreenGeometry.AbsoluteToLocal(ScreenTopLeft)
+	const FVector2D VisualSpaceLocalTopLeft = VisualSpaceLocalSize.X > KINDA_SMALL_NUMBER && VisualSpaceLocalSize.Y > KINDA_SMALL_NUMBER
+		? VisualSpaceGeometry.AbsoluteToLocal(ScreenTopLeft)
 		: ScreenTopLeft / FallbackViewportScale;
-	FreePointerDragVisual->SetRenderTranslation(PlayerLocalTopLeft);
+	FreePointerDragVisual->SetRenderTranslation(VisualSpaceLocalTopLeft);
 
 	const bool bSpatialTargetOwnsGhost = Session && Session->GetSpatialPreviewDescriptor().bValid;
 	const ESlateVisibility DesiredVisibility = bSpatialTargetOwnsGhost
@@ -667,6 +736,51 @@ void URpgPlayerInventoryWidget::UpdateFreePointerDragVisual(
 	{
 		FreePointerDragVisual->SetVisibility(DesiredVisibility);
 	}
+}
+
+void URpgPlayerInventoryWidget::UpdateControllerCarryDragVisual(
+	const FRpgInventoryDragPayload& Payload,
+	URpgInventoryCarrySlotWidget* CarrySlotWidget)
+{
+	if (!CarrySlotWidget)
+	{
+		ClearFreePointerDragVisual();
+		return;
+	}
+
+	const FGeometry CarryGeometry = CarrySlotWidget->GetCachedGeometry();
+	const FVector2D CarryLocalSize = CarryGeometry.GetLocalSize();
+	if (CarryLocalSize.X <= KINDA_SMALL_NUMBER || CarryLocalSize.Y <= KINDA_SMALL_NUMBER)
+	{
+		ClearFreePointerDragVisual();
+		return;
+	}
+
+	const FVector2D CarryCenterScreenPosition = CarryGeometry.LocalToAbsolute(CarryLocalSize * 0.5f);
+	UpdateFreePointerDragVisual(Payload, CarryCenterScreenPosition, nullptr, true);
+}
+
+URpgInventoryCarrySlotWidget* URpgPlayerInventoryWidget::FindControllerPreviewCarrySlot() const
+{
+	auto ResolveTargetedCarrySlot = [this](UWidget* BoundWidget, FName BindingName)
+		-> URpgInventoryCarrySlotWidget*
+	{
+		URpgInventoryCarrySlotWidget* CarrySlot = ResolveCarrySlotWidget(BoundWidget, BindingName, false);
+		return CarrySlot &&
+			CarrySlot->GetCarryInteractionPreviewState() != ERpgInventoryInteractionPreviewState::None
+			? CarrySlot
+			: nullptr;
+	};
+
+	if (URpgInventoryCarrySlotWidget* CarrySlot = ResolveTargetedCarrySlot(Carry_Weapon1, TEXT("Carry_Weapon1")))
+	{
+		return CarrySlot;
+	}
+	if (URpgInventoryCarrySlotWidget* CarrySlot = ResolveTargetedCarrySlot(Carry_Weapon2, TEXT("Carry_Weapon2")))
+	{
+		return CarrySlot;
+	}
+	return ResolveTargetedCarrySlot(Carry_Offhand, TEXT("Carry_Offhand"));
 }
 
 void URpgPlayerInventoryWidget::ClearFreePointerDragVisual()
@@ -740,6 +854,7 @@ void URpgPlayerInventoryWidget::SetGearSlotViewModel(URpgEquipmentSlotWidget* Ge
 	}
 
 	GearSlotWidget->SetDragDropCoordinator(PlayerDragDropCoordinator);
+	GearSlotWidget->SetContextMenuWidgetClass(ContextMenuWidgetClass);
 	GearSlotWidget->SetEquipmentSlotViewModel(
 		bBagSlot
 			? PlayerInventoryViewModel->GetBagSlot(EquipmentSlot)
@@ -749,66 +864,53 @@ void URpgPlayerInventoryWidget::SetGearSlotViewModel(URpgEquipmentSlotWidget* Ge
 void URpgPlayerInventoryWidget::ForwardCoordinatorToChildren()
 {
 	TArray<URpgInventorySlotGroupWidget*> StandaloneContentGroups;
-	CollectStandaloneGroupWidgets(StandaloneContentGroups);
+	CollectStandaloneContentGroupWidgets(StandaloneContentGroups);
 	for (URpgInventorySlotGroupWidget* GroupWidget : StandaloneContentGroups)
 	{
 		if (GroupWidget)
 		{
 			GroupWidget->SetDragDropCoordinator(PlayerDragDropCoordinator);
+			if (URpgInventorySpatialGridWidget* SpatialGrid = GroupWidget->GetSpatialGridWidget())
+			{
+				SpatialGrid->SetContextMenuWidgetClass(ContextMenuWidgetClass);
+			}
 		}
 	}
 
-	if (CarryGroupsList)
+	auto ForwardCarrySlot = [this](UWidget* BoundWidget, FName BindingName)
 	{
-		CarryGroupsList->SetDragDropCoordinator(PlayerDragDropCoordinator);
-	}
-
-	if (InventoryGroupsList)
-	{
-		InventoryGroupsList->SetDragDropCoordinator(PlayerDragDropCoordinator);
-	}
+		if (URpgInventoryCarrySlotWidget* CarrySlot = ResolveCarrySlotWidget(BoundWidget, BindingName, false))
+		{
+			CarrySlot->SetDragDropCoordinator(PlayerDragDropCoordinator);
+			CarrySlot->SetContextMenuWidgetClass(ContextMenuWidgetClass);
+		}
+	};
+	ForwardCarrySlot(Carry_Weapon1, TEXT("Carry_Weapon1"));
+	ForwardCarrySlot(Carry_Weapon2, TEXT("Carry_Weapon2"));
+	ForwardCarrySlot(Carry_Offhand, TEXT("Carry_Offhand"));
 
 	if (ActionBarTileView)
 	{
 		ActionBarTileView->SetDragDropCoordinator(PlayerDragDropCoordinator);
 	}
 
-	if (Gear_Head)
+	auto ForwardGearSlot = [this](URpgEquipmentSlotWidget* GearSlot)
 	{
-		Gear_Head->SetDragDropCoordinator(PlayerDragDropCoordinator);
-	}
-	if (Gear_Chest)
-	{
-		Gear_Chest->SetDragDropCoordinator(PlayerDragDropCoordinator);
-	}
-	if (Gear_Hands)
-	{
-		Gear_Hands->SetDragDropCoordinator(PlayerDragDropCoordinator);
-	}
-	if (Gear_Legs)
-	{
-		Gear_Legs->SetDragDropCoordinator(PlayerDragDropCoordinator);
-	}
-	if (Gear_Feet)
-	{
-		Gear_Feet->SetDragDropCoordinator(PlayerDragDropCoordinator);
-	}
-	if (Gear_Backpack)
-	{
-		Gear_Backpack->SetDragDropCoordinator(PlayerDragDropCoordinator);
-	}
-	if (Gear_Belt)
-	{
-		Gear_Belt->SetDragDropCoordinator(PlayerDragDropCoordinator);
-	}
-	if (Gear_Pouch)
-	{
-		Gear_Pouch->SetDragDropCoordinator(PlayerDragDropCoordinator);
-	}
-	if (Gear_ResourceBag)
-	{
-		Gear_ResourceBag->SetDragDropCoordinator(PlayerDragDropCoordinator);
-	}
+		if (GearSlot)
+		{
+			GearSlot->SetDragDropCoordinator(PlayerDragDropCoordinator);
+			GearSlot->SetContextMenuWidgetClass(ContextMenuWidgetClass);
+		}
+	};
+	ForwardGearSlot(Gear_Head);
+	ForwardGearSlot(Gear_Chest);
+	ForwardGearSlot(Gear_Hands);
+	ForwardGearSlot(Gear_Legs);
+	ForwardGearSlot(Gear_Feet);
+	ForwardGearSlot(Gear_Backpack);
+	ForwardGearSlot(Gear_Belt);
+	ForwardGearSlot(Gear_Pouch);
+	ForwardGearSlot(Gear_ResourceBag);
 }
 
 void URpgPlayerInventoryWidget::RegisterPlayerInventoryNavigationPanels()
@@ -857,26 +959,27 @@ void URpgPlayerInventoryWidget::RegisterPlayerInventoryNavigationPanels()
 		PlayerPanelNavigationCoordinator->RegisterEquipmentPanel(TEXT("Gear.ResourceBag"), Gear_ResourceBag);
 	}
 
-	if (CarryGroupsList)
-	{
-		CarryGroupsList->SetPanelNavigationCoordinator(PlayerPanelNavigationCoordinator, TEXT("Carry"));
-	}
 
-	if (InventoryGroupsList)
+	if (URpgInventoryCarrySlotWidget* CarrySlot = ResolveCarrySlotWidget(Carry_Weapon1, TEXT("Carry_Weapon1"), false))
 	{
-		InventoryGroupsList->SetPanelNavigationCoordinator(PlayerPanelNavigationCoordinator, TEXT("Content"));
+		PlayerPanelNavigationCoordinator->RegisterCarrySlotPanel(TEXT("Carry.Weapon1"), CarrySlot);
+	}
+	if (URpgInventoryCarrySlotWidget* CarrySlot = ResolveCarrySlotWidget(Carry_Weapon2, TEXT("Carry_Weapon2"), false))
+	{
+		PlayerPanelNavigationCoordinator->RegisterCarrySlotPanel(TEXT("Carry.Weapon2"), CarrySlot);
+	}
+	if (URpgInventoryCarrySlotWidget* CarrySlot = ResolveCarrySlotWidget(Carry_Offhand, TEXT("Carry_Offhand"), false))
+	{
+		PlayerPanelNavigationCoordinator->RegisterCarrySlotPanel(TEXT("Carry.Offhand"), CarrySlot);
 	}
 
 	TArray<URpgInventorySlotGroupWidget*> StandaloneContentGroups;
-	CollectStandaloneGroupWidgets(StandaloneContentGroups);
+	CollectStandaloneContentGroupWidgets(StandaloneContentGroups);
 	for (URpgInventorySlotGroupWidget* GroupWidget : StandaloneContentGroups)
 	{
 		if (GroupWidget)
 		{
-			const FName PanelPrefix = URpgPlayerInventoryLayoutComponent::IsBuiltInCarryGroupId(GroupWidget->GetSlotGroupId())
-				? FName(TEXT("Carry"))
-				: FName(TEXT("Content"));
-			GroupWidget->SetPanelNavigationCoordinator(PlayerPanelNavigationCoordinator, PanelPrefix);
+			GroupWidget->SetPanelNavigationCoordinator(PlayerPanelNavigationCoordinator, TEXT("Content"));
 		}
 	}
 
@@ -912,14 +1015,35 @@ bool URpgPlayerInventoryWidget::RouteInventoryPayloadAtScreenPosition(
 	const FVector2D GhostCenterScreenPosition = DragOperation
 		? DragOperation->ResolveDecoratorCenterScreen(ScreenPosition)
 		: URpgInventoryDragDropCoordinator::ResolveFreeGhostCenterScreen(ResolvedPayload, ScreenPosition);
-	if (RoutePayloadToGearSlot(ResolvedPayload, GhostCenterScreenPosition, bCommit))
+	bool bTargetAddressed = false;
+	const bool bGearHandled = RoutePayloadToGearSlot(
+		ResolvedPayload,
+		GhostCenterScreenPosition,
+		bCommit,
+		bTargetAddressed);
+	if (bTargetAddressed)
 	{
-		return true;
+		return bGearHandled;
 	}
 
-	if (RoutePayloadToActionBar(ResolvedPayload, GhostCenterScreenPosition, bCommit))
+	const bool bCarryHandled = RoutePayloadToCarrySlot(
+		ResolvedPayload,
+		GhostCenterScreenPosition,
+		bCommit,
+		bTargetAddressed);
+	if (bTargetAddressed)
 	{
-		return true;
+		return bCarryHandled;
+	}
+
+	const bool bActionBarHandled = RoutePayloadToActionBar(
+		ResolvedPayload,
+		GhostCenterScreenPosition,
+		bCommit,
+		bTargetAddressed);
+	if (bTargetAddressed)
+	{
+		return bActionBarHandled;
 	}
 
 	if (RoutePayloadToSpatialGrid(ResolvedPayload, ScreenPosition, bCommit))
@@ -931,17 +1055,54 @@ bool URpgPlayerInventoryWidget::RouteInventoryPayloadAtScreenPosition(
 	return false;
 }
 
+bool URpgPlayerInventoryWidget::RoutePayloadToCarrySlot(
+	const FRpgInventoryDragPayload& Payload,
+	FVector2D GhostCenterScreenPosition,
+	bool bCommit,
+	bool& bOutTargetAddressed)
+{
+	bOutTargetAddressed = false;
+	auto TryRouteSlot = [this, &Payload, GhostCenterScreenPosition, bCommit](
+		UWidget* BoundWidget,
+		FName BindingName,
+		bool& bOutAddressed)
+	{
+		URpgInventoryCarrySlotWidget* CarrySlot = ResolveCarrySlotWidget(BoundWidget, BindingName, false);
+		if (!CarrySlot || !IsWidgetUnderScreenPosition(CarrySlot, GhostCenterScreenPosition))
+		{
+			return false;
+		}
+
+		bOutAddressed = true;
+		SwitchActivePointerDropTarget(CarrySlot);
+		if (bCommit)
+		{
+			return CarrySlot->CommitPayloadDrop(Payload);
+		}
+
+		CarrySlot->PreviewPayloadDrop(Payload);
+		return true;
+	};
+
+	return TryRouteSlot(Carry_Weapon1, TEXT("Carry_Weapon1"), bOutTargetAddressed) ||
+		TryRouteSlot(Carry_Weapon2, TEXT("Carry_Weapon2"), bOutTargetAddressed) ||
+		TryRouteSlot(Carry_Offhand, TEXT("Carry_Offhand"), bOutTargetAddressed);
+}
+
 bool URpgPlayerInventoryWidget::RoutePayloadToGearSlot(
 	const FRpgInventoryDragPayload& Payload,
 	FVector2D GhostCenterScreenPosition,
-	bool bCommit)
+	bool bCommit,
+	bool& bOutTargetAddressed)
 {
+	bOutTargetAddressed = false;
 	auto TryRouteSlot = [&](URpgEquipmentSlotWidget* SlotWidget)
 	{
 		if (!IsWidgetUnderScreenPosition(SlotWidget, GhostCenterScreenPosition))
 		{
 			return false;
 		}
+		bOutTargetAddressed = true;
 		SwitchActivePointerDropTarget(SlotWidget);
 
 		if (bCommit)
@@ -967,17 +1128,24 @@ bool URpgPlayerInventoryWidget::RoutePayloadToGearSlot(
 bool URpgPlayerInventoryWidget::RoutePayloadToActionBar(
 	const FRpgInventoryDragPayload& Payload,
 	FVector2D GhostCenterScreenPosition,
-	bool bCommit)
+	bool bCommit,
+	bool& bOutTargetAddressed)
 {
+	bOutTargetAddressed = false;
 	if (!ActionBarTileView || !IsWidgetUnderScreenPosition(ActionBarTileView, GhostCenterScreenPosition))
 	{
 		return false;
 	}
+	bOutTargetAddressed = true;
 	SwitchActivePointerDropTarget(ActionBarTileView);
 
-	return bCommit
-		? ActionBarTileView->CommitPayloadAtScreenPosition(Payload, GhostCenterScreenPosition)
-		: ActionBarTileView->PreviewPayloadAtScreenPosition(Payload, GhostCenterScreenPosition);
+	if (bCommit)
+	{
+		return ActionBarTileView->CommitPayloadAtScreenPosition(Payload, GhostCenterScreenPosition);
+	}
+
+	ActionBarTileView->PreviewPayloadAtScreenPosition(Payload, GhostCenterScreenPosition);
+	return true;
 }
 
 bool URpgPlayerInventoryWidget::RoutePayloadToSpatialGrid(const FRpgInventoryDragPayload& Payload, FVector2D ScreenPosition, bool bCommit)
@@ -1017,18 +1185,8 @@ void URpgPlayerInventoryWidget::SwitchActivePointerDropTarget(UWidget* NewTarget
 
 void URpgPlayerInventoryWidget::CollectSpatialGrids(TArray<URpgInventorySpatialGridWidget*>& OutGrids) const
 {
-	if (CarryGroupsList)
-	{
-		CarryGroupsList->GetSpatialGridWidgets(OutGrids);
-	}
-
-	if (InventoryGroupsList)
-	{
-		InventoryGroupsList->GetSpatialGridWidgets(OutGrids);
-	}
-
 	TArray<URpgInventorySlotGroupWidget*> StandaloneContentGroups;
-	CollectStandaloneGroupWidgets(StandaloneContentGroups);
+	CollectStandaloneContentGroupWidgets(StandaloneContentGroups);
 	for (URpgInventorySlotGroupWidget* GroupWidget : StandaloneContentGroups)
 	{
 		if (GroupWidget && GroupWidget->GetSlotGroupHandle().IsValid() && GroupWidget->GetSpatialGridWidget())
@@ -1059,11 +1217,8 @@ URpgInventorySlotGroupViewModel* URpgPlayerInventoryWidget::FindEquipmentProvide
 	return nullptr;
 }
 
-void URpgPlayerInventoryWidget::CollectStandaloneGroupWidgets(TArray<URpgInventorySlotGroupWidget*>& OutWidgets) const
+void URpgPlayerInventoryWidget::CollectStandaloneContentGroupWidgets(TArray<URpgInventorySlotGroupWidget*>& OutWidgets) const
 {
-	OutWidgets.Add(Carry_Weapon1);
-	OutWidgets.Add(Carry_Weapon2);
-	OutWidgets.Add(Carry_Offhand);
 	OutWidgets.Add(Content_Pockets);
 	OutWidgets.Add(Content_Backpack);
 	OutWidgets.Add(Content_Belt);
@@ -1072,8 +1227,51 @@ void URpgPlayerInventoryWidget::CollectStandaloneGroupWidgets(TArray<URpgInvento
 	OutWidgets.Remove(nullptr);
 }
 
+URpgInventoryCarrySlotWidget* URpgPlayerInventoryWidget::ResolveCarrySlotWidget(
+	UWidget* BoundWidget,
+	FName BindingName,
+	bool bLogFailure) const
+{
+	URpgInventoryCarrySlotWidget* CarrySlot = Cast<URpgInventoryCarrySlotWidget>(BoundWidget);
+	if (CarrySlot || !bLogFailure || ReportedInvalidPlayerBindings.Contains(BindingName))
+	{
+		return CarrySlot;
+	}
+
+	ReportedInvalidPlayerBindings.Add(BindingName);
+	if (BoundWidget)
+	{
+		UE_LOG(LogRpgPlayerInventoryWidget, Warning,
+			TEXT("%s binding %s still uses %s. Reparent that editor widget to RpgInventoryCarrySlotWidget; legacy mini-grid carry widgets are no longer routed."),
+			*GetNameSafe(this),
+			*BindingName.ToString(),
+			*GetNameSafe(BoundWidget->GetClass()));
+	}
+	else
+	{
+		UE_LOG(LogRpgPlayerInventoryWidget, Warning,
+			TEXT("%s is missing required carry binding %s. Add a widget derived from RpgInventoryCarrySlotWidget."),
+			*GetNameSafe(this),
+			*BindingName.ToString());
+	}
+	return nullptr;
+}
+
 void URpgPlayerInventoryWidget::ClearExternalDragPreviews()
 {
+	if (URpgInventoryCarrySlotWidget* CarrySlot = ResolveCarrySlotWidget(Carry_Weapon1, TEXT("Carry_Weapon1"), false))
+	{
+		CarrySlot->ClearExternalPreviewPayload();
+	}
+	if (URpgInventoryCarrySlotWidget* CarrySlot = ResolveCarrySlotWidget(Carry_Weapon2, TEXT("Carry_Weapon2"), false))
+	{
+		CarrySlot->ClearExternalPreviewPayload();
+	}
+	if (URpgInventoryCarrySlotWidget* CarrySlot = ResolveCarrySlotWidget(Carry_Offhand, TEXT("Carry_Offhand"), false))
+	{
+		CarrySlot->ClearExternalPreviewPayload();
+	}
+
 	if (Gear_Head)
 	{
 		Gear_Head->ClearExternalPreviewPayload();

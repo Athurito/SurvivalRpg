@@ -162,7 +162,7 @@ public:
 	UFUNCTION(BlueprintPure, Category = "Rpg|Quick Access")
 	TArray<FRpgQuickAccessBinding> GetQuickAccessBindings() const;
 
-	/** Returns one actionbar slot, or an empty slot for invalid indices. */
+	/** Returns one actionbar slot by internal zero-based index 0..7, or an empty slot for invalid indices. */
 	UFUNCTION(BlueprintPure, Category = "Rpg|Action Bar")
 	FRpgActionBarSlot GetSlot(int32 SlotIndex) const;
 

@@ -137,6 +137,75 @@ struct SURVIVALRPG_API FRpgInventoryQuickTransferRequest
 	TArray<FRpgInventoryContainerHandle> PreferredTargetContainers;
 };
 
+/** Server-authoritative operation applied to one of the eight shared Quick Access bindings. */
+UENUM(BlueprintType)
+enum class ERpgQuickAccessMutationOperation : uint8
+{
+	/** Binds the current item at SourceAddress as a consumable definition plus preferred item id. */
+	BindConsumable,
+
+	/** Binds the semantic Carry role represented by SourceAddress, never the concrete carried item. */
+	BindCarry,
+
+	/** Clears a consumable only when the authoritative binding still matches the expected definition and item id. */
+	ClearConsumable,
+
+	/** Clears a Carry binding only when the authoritative binding still matches the expected semantic role. */
+	ClearCarry
+};
+
+/**
+ * Request-correlated Quick Access bind/clear command.
+ *
+ * Expected fields are snapshots of the binding semantics displayed by the owning client. The server resolves the
+ * current inventory address and actionbar slot again, rejects stale commands, and echoes RequestId in every result.
+ */
+USTRUCT(BlueprintType)
+struct SURVIVALRPG_API FRpgQuickAccessMutationRequest
+{
+	GENERATED_BODY()
+
+	/** Client-generated correlation id echoed unchanged in owning-client action feedback. */
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Inventory|Quick Access")
+	FGuid RequestId;
+
+	/** Bind or clear operation whose semantic fields are validated by the server. */
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Inventory|Quick Access")
+	ERpgQuickAccessMutationOperation Operation = ERpgQuickAccessMutationOperation::BindConsumable;
+
+	/** Internal zero-based Quick Access index in the fixed range 0..7. */
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Inventory|Quick Access", meta = (ClampMin = "0", ClampMax = "7", UIMin = "0", UIMax = "7"))
+	int32 SlotIndex = INDEX_NONE;
+
+	/** Player-inventory address re-resolved for bind requests; ignored by clear requests. */
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Inventory|Quick Access")
+	FRpgInventorySlotAddress SourceAddress;
+
+	/** Expected semantic Carry role for Carry bind/clear; concrete Carry items may change after binding. */
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Inventory|Quick Access")
+	FName ExpectedCarryRole = NAME_None;
+
+	/** Expected consumable definition for consumable bind/clear. */
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Inventory|Quick Access")
+	TSubclassOf<URpgInventoryItemDefinition> ExpectedConsumableDefinition;
+
+	/** Expected preferred stack stored in the consumable binding, used to reject stale clear commands. */
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Inventory|Quick Access")
+	FRpgInventoryItemId ExpectedPreferredItemId;
+
+	/** Item that initiated the UI command, retained only for feedback correlation and stale bind validation. */
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Inventory|Quick Access")
+	FRpgInventoryItemId ContextItemId;
+
+	void EnsureRequestId()
+	{
+		if (!RequestId.IsValid())
+		{
+			RequestId = FGuid::NewGuid();
+		}
+	}
+};
+
 /** Gameplay message broadcast on the owning client after inventory UI commands succeed, fail, or need confirmation. */
 USTRUCT(BlueprintType)
 struct SURVIVALRPG_API FRpgInventoryActionFeedbackMessage
@@ -262,13 +331,27 @@ public:
 	UFUNCTION(Server, Reliable, BlueprintCallable, Category = "Inventory|UI Actions")
 	void RequestClearActiveHands();
 
-	/** Binds one 1..8 actionbar slot to a bindable non-carry inventory slot address. */
+	/** Canonical bind/clear path with stable request correlation and server-validated expected binding semantics. */
+	UFUNCTION(Server, Reliable, BlueprintCallable, Category = "Inventory|Quick Access")
+	void RequestMutateQuickAccessBinding(FRpgQuickAccessMutationRequest Request);
+
+	/** Compatibility path; new UI should use RequestMutateQuickAccessBinding for caller-owned request correlation. */
 	UFUNCTION(Server, Reliable, BlueprintCallable, Category = "Inventory|UI Actions")
 	void RequestBindActionBarToInventorySlot(int32 ActionBarSlotIndex, FRpgInventorySlotAddress SlotAddress);
 
-	/** Binds one 1..8 actionbar slot to a carry slot address. */
+	/** Compatibility path; new UI should use RequestMutateQuickAccessBinding for caller-owned request correlation. */
 	UFUNCTION(Server, Reliable, BlueprintCallable, Category = "Inventory|UI Actions")
 	void RequestBindActionBarToCarrySlot(int32 ActionBarSlotIndex, FRpgInventorySlotAddress CarrySlotAddress);
+
+	/** Compatibility path that still validates ExpectedCarryRole and emits correlated feedback. */
+	UFUNCTION(Server, Reliable, BlueprintCallable, Category = "Inventory|UI Actions")
+	void RequestClearActionBarCarryBinding(int32 ActionBarSlotIndex, FName ExpectedCarryRole);
+
+	/** Compatibility path that snapshots the current preferred item id before authoritative validation. */
+	UFUNCTION(Server, Reliable, BlueprintCallable, Category = "Inventory|UI Actions")
+	void RequestClearActionBarConsumableBinding(
+		int32 ActionBarSlotIndex,
+		TSubclassOf<URpgInventoryItemDefinition> ExpectedConsumableDefinition);
 
 	/** Splits one stack into a new stack in the same inventory. SplitCount <= 0 performs the quick 50% split. */
 	UFUNCTION(Server, Reliable, BlueprintCallable, Category = "Inventory|UI Actions")

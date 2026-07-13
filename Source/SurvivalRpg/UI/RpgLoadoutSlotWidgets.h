@@ -36,6 +36,10 @@ public:
 	UFUNCTION(BlueprintCallable, Category = "Equipment|Slot")
 	void SetDragDropCoordinator(URpgInventoryDragDropCoordinator* InCoordinator);
 
+	/** Overrides the styled context-menu class supplied centrally by the owning inventory screen. */
+	UFUNCTION(BlueprintCallable, Category = "Equipment|Slot|Context Menu")
+	void SetContextMenuWidgetClass(TSubclassOf<URpgInventoryContextMenuWidget> InContextMenuWidgetClass);
+
 	/** Current dedicated equipment slot VM represented by this widget. */
 	UFUNCTION(BlueprintPure, Category = "Equipment|Slot")
 	URpgEquipmentSlotViewModel* GetEquipmentSlotViewModel() const { return SlotViewModel.Get(); }

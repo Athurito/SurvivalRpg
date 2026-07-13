@@ -8,6 +8,7 @@
 class APlayerController;
 class URpgActionBarTileView;
 class URpgEquipmentSlotWidget;
+class URpgInventoryCarrySlotWidget;
 class URpgInventoryDragDropCoordinator;
 class URpgInventoryManagerComponent;
 class URpgInventorySpatialGridWidget;
@@ -39,6 +40,10 @@ struct SURVIVALRPG_API FRpgInventoryPanelNavigationEntry
 	/** Equipment slot widget that receives controller focus while this gear panel is active. */
 	UPROPERTY(BlueprintReadWrite, Category = "Inventory|Navigation")
 	TObjectPtr<URpgEquipmentSlotWidget> EquipmentSlotWidget = nullptr;
+
+	/** Gear-like single-address carry slot that receives focus without exposing a fake 1x1 spatial grid. */
+	UPROPERTY(BlueprintReadWrite, Category = "Inventory|Navigation")
+	TObjectPtr<URpgInventoryCarrySlotWidget> CarrySlotWidget = nullptr;
 
 	/** Inventory represented by the TileView; used for shortcut routing. */
 	UPROPERTY(BlueprintReadWrite, Category = "Inventory|Navigation")
@@ -108,6 +113,10 @@ public:
 	UFUNCTION(BlueprintCallable, Category = "Inventory|Navigation")
 	void RegisterEquipmentPanel(FName PanelId, URpgEquipmentSlotWidget* EquipmentSlotWidget);
 
+	/** Registers one gear-like Weapon1, Weapon2, or Offhand carry address as a single controller panel. */
+	UFUNCTION(BlueprintCallable, Category = "Inventory|Navigation")
+	void RegisterCarrySlotPanel(FName PanelId, URpgInventoryCarrySlotWidget* CarrySlotWidget);
+
 	/** Called by registered TileViews when CommonUI selection moves into or within a panel. */
 	UFUNCTION(BlueprintCallable, Category = "Inventory|Navigation")
 	void NotifyPanelSelectionChanged(URpgInventoryTileView* TileView, UObject* SelectedItem);
@@ -119,6 +128,10 @@ public:
 	/** Called by registered actionbar TileViews when CommonUI selection moves into or within the actionbar panel. */
 	UFUNCTION(BlueprintCallable, Category = "Inventory|Navigation")
 	void NotifyActionBarPanelSelectionChanged(URpgActionBarTileView* TileView, UObject* SelectedItem);
+
+	/** Called when a registered single-address carry slot receives CommonUI or pointer focus. */
+	UFUNCTION(BlueprintCallable, Category = "Inventory|Navigation")
+	void NotifyCarrySlotFocused(URpgInventoryCarrySlotWidget* CarrySlotWidget);
 
 	/** Activates a registered panel by id and focuses a sensible entry. */
 	UFUNCTION(BlueprintCallable, Category = "Inventory|Navigation")
@@ -164,6 +177,10 @@ public:
 	UFUNCTION(BlueprintPure, Category = "Inventory|Navigation")
 	URpgEquipmentSlotWidget* GetActiveEquipmentSlotWidget() const;
 
+	/** Active gear-like carry slot, or null when another panel type is active. */
+	UFUNCTION(BlueprintPure, Category = "Inventory|Navigation")
+	URpgInventoryCarrySlotWidget* GetActiveCarrySlotWidget() const;
+
 	/** Active focus target widget for CommonUI, regardless of panel implementation. */
 	UFUNCTION(BlueprintPure, Category = "Inventory|Navigation")
 	UWidget* GetActiveFocusTarget() const;
@@ -204,6 +221,10 @@ public:
 	UFUNCTION(BlueprintCallable, Category = "Inventory|Navigation")
 	bool DropActiveSelection(int32 StackCount = 0, bool bConfirmed = false);
 
+	/** Opens the native/styled context menu for the active spatial, gear, or carry selection. */
+	UFUNCTION(BlueprintCallable, Category = "Inventory|Navigation")
+	bool RequestContextMenuForActiveSelection(FVector2D ScreenPosition);
+
 	/** Fired after active panel focus changes so Blueprints can update borders/headers. */
 	UPROPERTY(BlueprintAssignable, Category = "Inventory|Navigation")
 	FRpgInventoryActivePanelChanged OnActivePanelChanged;
@@ -223,6 +244,7 @@ private:
 	int32 FindPanelIndexForSpatialGridWidget(const URpgInventorySpatialGridWidget* SpatialGridWidget) const;
 	int32 FindPanelIndexForActionBarTileView(const URpgActionBarTileView* TileView) const;
 	int32 FindPanelIndexForEquipmentSlotWidget(const URpgEquipmentSlotWidget* EquipmentSlotWidget) const;
+	int32 FindPanelIndexForCarrySlotWidget(const URpgInventoryCarrySlotWidget* CarrySlotWidget) const;
 	void BroadcastActivePanelChanged(const FRpgInventoryPanelNavigationEntry& ActivePanel);
 	void ApplyRetainedPanelMemory(FRpgInventoryPanelNavigationEntry& Panel) const;
 

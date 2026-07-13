@@ -1,6 +1,5 @@
 #include "RpgInventoryInteractionSession.h"
 
-#include "SurvivalRpg/ActionBar/RpgActionBarComponent.h"
 #include "SurvivalRpg/Equipment/RpgEquipmentLoadoutComponent.h"
 #include "SurvivalRpg/GameplayTags/RpgGameplayTags.h"
 #include "SurvivalRpg/Inventory/RpgInventoryManagerComponent.h"
@@ -284,10 +283,6 @@ void URpgInventoryInteractionSession::RegisterMessageListeners()
 		RpgGameplayTags::Rpg_EquipmentLoadout_Message_SlotsChanged,
 		this,
 		&ThisClass::HandleEquipmentChanged);
-	ActionBarChangedHandle = MessageSubsystem.RegisterListener<FRpgActionBarSlotsChangedMessage>(
-		RpgGameplayTags::Rpg_ActionBar_Message_SlotsChanged,
-		this,
-		&ThisClass::HandleActionBarChanged);
 }
 
 void URpgInventoryInteractionSession::UnregisterMessageListeners()
@@ -303,10 +298,6 @@ void URpgInventoryInteractionSession::UnregisterMessageListeners()
 	if (EquipmentChangedHandle.IsValid())
 	{
 		EquipmentChangedHandle.Unregister();
-	}
-	if (ActionBarChangedHandle.IsValid())
-	{
-		ActionBarChangedHandle.Unregister();
 	}
 }
 
@@ -371,10 +362,12 @@ bool URpgInventoryInteractionSession::IsPendingMessageRelevant(UActorComponent* 
 
 void URpgInventoryInteractionSession::HandleActionFeedback(FGameplayTag Channel, const FRpgInventoryActionFeedbackMessage& Message)
 {
-	if (!bPendingRequest ||
-		(RequestId.IsValid() && Message.RequestId.IsValid() && Message.RequestId != RequestId) ||
-		(PendingActionTag.IsValid() && Message.ActionTag != PendingActionTag) ||
-		(PendingItemId.IsValid() && Message.ItemId.IsValid() && Message.ItemId != PendingItemId))
+	if (!bPendingRequest || !DoesFeedbackMatchPendingRequest(
+		RequestId,
+		PendingActionTag,
+		PendingItemId,
+		Message,
+		Target.TargetType == ERpgInventoryDropTargetType::ActionBarSlot))
 	{
 		return;
 	}
@@ -388,7 +381,10 @@ void URpgInventoryInteractionSession::HandleActionFeedback(FGameplayTag Channel,
 
 void URpgInventoryInteractionSession::HandleInventoryChanged(FGameplayTag Channel, const FRpgInventoryChangeMessage& Message)
 {
-	if (!bPendingRequest || !IsPendingMessageRelevant(Message.InventoryOwner.Get(), Message.Instance.Get()))
+	// Quick Access never mutates inventory ownership. It must resolve only from its exact request-correlated feedback,
+	// not from an unrelated stack or placement replication that happened while the binding request was in flight.
+	if (!bPendingRequest || Target.TargetType == ERpgInventoryDropTargetType::ActionBarSlot ||
+		!IsPendingMessageRelevant(Message.InventoryOwner.Get(), Message.Instance.Get()))
 	{
 		return;
 	}
@@ -410,11 +406,28 @@ void URpgInventoryInteractionSession::HandleEquipmentChanged(FGameplayTag Channe
 	}
 }
 
-void URpgInventoryInteractionSession::HandleActionBarChanged(FGameplayTag Channel, const FRpgActionBarSlotsChangedMessage& Message)
+bool URpgInventoryInteractionSession::DoesFeedbackMatchPendingRequest(
+	const FGuid& PendingRequestId,
+	FGameplayTag PendingActionTag,
+	const FRpgInventoryItemId& PendingItemId,
+	const FRpgInventoryActionFeedbackMessage& Message,
+	bool bRequireValidRequestId)
 {
-	if (bPendingRequest && Target.TargetType == ERpgInventoryDropTargetType::ActionBarSlot &&
-		(!PlayerController || Message.Owner == PlayerController))
+	if (bRequireValidRequestId && (!PendingRequestId.IsValid() || Message.RequestId != PendingRequestId))
 	{
-		ResolvePendingRequest(true);
+		return false;
 	}
+	if (PendingRequestId.IsValid() && Message.RequestId.IsValid() && Message.RequestId != PendingRequestId)
+	{
+		return false;
+	}
+	if (PendingActionTag.IsValid() && Message.ActionTag != PendingActionTag)
+	{
+		return false;
+	}
+	if (PendingItemId.IsValid() && Message.ItemId.IsValid() && Message.ItemId != PendingItemId)
+	{
+		return false;
+	}
+	return true;
 }

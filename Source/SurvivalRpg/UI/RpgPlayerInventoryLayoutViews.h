@@ -334,6 +334,7 @@ public:
 	FGuid GetRepresentedEntryId() const;
 
 protected:
+	virtual void NativePreConstruct() override;
 	virtual int32 NativePaint(
 		const FPaintArgs& Args,
 		const FGeometry& AllottedGeometry,
@@ -364,6 +365,14 @@ protected:
 	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Inventory|Spatial Item|Drag")
 	TSubclassOf<UUserWidget> DragVisualClass;
 
+	/**
+	 * Optional canonical item presentation shared with the drag ghost.
+	 * Name a child widget "ItemVisual"; it receives the authoritative placement rotation and grid cell metrics while
+	 * this outer widget remains the hit target. When bound, native fallback icon/count painting is suppressed.
+	 */
+	UPROPERTY(BlueprintReadOnly, Category = "Inventory|Spatial Item|Bindings", meta = (BindWidgetOptional))
+	TObjectPtr<URpgInventoryDragVisualWidget> ItemVisual = nullptr;
+
 	/** Draws a minimal icon/count fallback when no Blueprint presentation is supplied. */
 	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Inventory|Spatial Item")
 	bool bUseNativeFallbackPaint = true;
@@ -379,6 +388,8 @@ private:
 	void HandleHeldPayloadChanged(bool bHasHeldPayload, const FRpgInventoryDragPayload& HeldPayload);
 
 	FRpgInventoryDragPayload MakeDragPayload() const;
+	void RefreshPlacedItemVisual();
+	bool IsPlacedItemRotated() const;
 	TSoftObjectPtr<UTexture2D> GetIcon() const;
 	int32 GetStackCount() const;
 	bool IsFocusedItem() const;
@@ -452,6 +463,10 @@ public:
 	UFUNCTION(BlueprintCallable, Category = "Inventory|Spatial Grid")
 	void SetDragDropCoordinator(URpgInventoryDragDropCoordinator* InCoordinator);
 
+	/** Overrides the styled context-menu class supplied centrally by the owning inventory screen. */
+	UFUNCTION(BlueprintCallable, Category = "Inventory|Spatial Grid|Actions")
+	void SetContextMenuWidgetClass(TSubclassOf<URpgInventoryContextMenuWidget> InContextMenuWidgetClass);
+
 	/** Registers this grid with the screen-local panel navigator so controller actions route to the logical cursor. */
 	UFUNCTION(BlueprintCallable, Category = "Inventory|Spatial Grid")
 	void SetPanelNavigationCoordinator(URpgInventoryPanelNavigationCoordinator* InPanelNavigationCoordinator, FName InPanelId);
@@ -515,6 +530,10 @@ public:
 	/** Executes a native context action or forwards UI-only actions such as Inspect/Open/Binding to Blueprint. */
 	UFUNCTION(BlueprintCallable, Category = "Inventory|Spatial Grid|Actions")
 	bool ExecuteSelectedContextAction(ERpgInventoryContextAction Action, int32 SplitCount = 0, int32 QuickAccessSlotIndex = -1);
+
+	/** Internal zero-based 0..7 Quick Access index matching the selected Carry role or consumable definition. */
+	UFUNCTION(BlueprintPure, Category = "Inventory|Spatial Grid|Actions")
+	int32 GetSelectedQuickAccessSlotIndex() const;
 
 	/** Shortcut helper for use/equip on the item under the cursor. */
 	UFUNCTION(BlueprintCallable, Category = "Inventory|Spatial Grid|Actions")

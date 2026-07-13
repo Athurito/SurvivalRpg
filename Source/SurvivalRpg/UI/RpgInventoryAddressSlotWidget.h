@@ -45,6 +45,14 @@ public:
 	UFUNCTION(BlueprintPure, Category = "Inventory|Address Slot")
 	URpgInventoryAddressSlotViewModel* GetAddressSlotViewModel() const { return SlotViewModel.Get(); }
 
+	/** Screen-local coordinator used for authoritative previews and commands; UI must not mutate inventory directly. */
+	UFUNCTION(BlueprintPure, Category = "Inventory|Address Slot")
+	URpgInventoryDragDropCoordinator* GetDragDropCoordinator() const { return DragDropCoordinator.Get(); }
+
+	/** Overrides the styled context-menu class supplied by the owning inventory screen. */
+	UFUNCTION(BlueprintCallable, Category = "Inventory|Address Slot|Context Menu")
+	void SetContextMenuWidgetClass(TSubclassOf<URpgInventoryContextMenuWidget> InContextMenuWidgetClass);
+
 	/** Controller/CommonUI Accept: pick this item up or place the held item onto this address. */
 	UFUNCTION(BlueprintCallable, Category = "Inventory|Address Slot")
 	bool HandleSlotAccept();
@@ -57,18 +65,42 @@ public:
 	UFUNCTION(BlueprintPure, Category = "Inventory|Address Slot")
 	ERpgInventorySlotDragVisualState GetCurrentDragDropVisualState() const { return CurrentDragDropVisualState; }
 
+	/** Updates mouse-drag feedback for an explicit payload while the whole widget remains the target surface. */
+	UFUNCTION(BlueprintCallable, Category = "Inventory|Address Slot|Drag")
+	bool PreviewPayloadDrop(const FRpgInventoryDragPayload& Payload);
+
+	/** Commits an explicit payload to this logical address through the server-authoritative coordinator. */
+	UFUNCTION(BlueprintCallable, Category = "Inventory|Address Slot|Drag")
+	bool CommitPayloadDrop(const FRpgInventoryDragPayload& Payload);
+
+	/** Clears target-local pointer feedback without changing held payload or gameplay state. */
+	UFUNCTION(BlueprintCallable, Category = "Inventory|Address Slot|Drag")
+	void ClearExternalPreviewPayload();
+
 	/** Context actions available for this legacy address entry, using the same semantics as spatial items. */
 	UFUNCTION(BlueprintCallable, Category = "Inventory|Address Slot|Context Menu")
 	TArray<ERpgInventoryContextAction> GetAddressContextActions() const;
 
 	/** Executes one context action after revalidating the persistent item identity captured by the menu. */
 	UFUNCTION(BlueprintCallable, Category = "Inventory|Address Slot|Context Menu")
-	bool ExecuteAddressContextAction(ERpgInventoryContextAction Action, FRpgInventoryItemId ExpectedItemId);
+	bool ExecuteAddressContextAction(
+		ERpgInventoryContextAction Action,
+		FRpgInventoryItemId ExpectedItemId,
+		int32 QuickAccessSlotIndex = -1);
+
+	/** Internal zero-based 0..7 Quick Access index matching this semantic Carry role or consumable definition. */
+	UFUNCTION(BlueprintPure, Category = "Inventory|Address Slot|Context Menu")
+	int32 GetQuickAccessSlotIndex() const;
+
+	/** Opens the configured context menu at a viewport-space position for the represented item. */
+	UFUNCTION(BlueprintCallable, Category = "Inventory|Address Slot|Context Menu")
+	bool RequestAddressContextMenu(FVector2D ScreenPosition);
 
 	/** Submits an exact split amount from the shared modal after stable-item revalidation. */
 	bool ConfirmAddressSplit(FRpgInventoryItemId ExpectedItemId, int32 SplitCount);
 
 protected:
+	virtual void NativeDestruct() override;
 	virtual void NativeOnListItemObjectSet(UObject* ListItemObject) override;
 	virtual void NativeOnEntryReleased() override;
 	virtual void NativeOnItemSelectionChanged(bool bIsSelected) override;
@@ -122,7 +154,7 @@ private:
 	void HandleHeldPayloadChanged(bool bHasHeldPayload, const FRpgInventoryDragPayload& HeldPayload);
 
 	FReply HandlePointerButtonDown(const FGeometry& InGeometry, const FPointerEvent& InMouseEvent);
-	bool RequestAddressContextMenu(FVector2D ScreenPosition);
+	void ReleaseAddressSlotState();
 	bool RequestAddressSplitDialog();
 	FRpgInventoryDragPayload MakeDragPayload(bool bAllowEmptyAddressPayload) const;
 	FRpgInventoryDropTarget MakeDropTarget() const;
@@ -147,4 +179,7 @@ private:
 	bool bPendingLeftClickAccept = false;
 	FRpgInventoryDragAnchor PendingPointerDragAnchor;
 	bool bHasPendingPointerDragAnchor = false;
+	bool bHasExternalPreviewState = false;
+	ERpgInventorySlotDragVisualState ExternalPreviewState = ERpgInventorySlotDragVisualState::Normal;
+	bool bAddressSlotStateReleased = false;
 };

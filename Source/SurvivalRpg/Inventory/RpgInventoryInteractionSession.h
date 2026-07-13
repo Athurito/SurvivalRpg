@@ -10,7 +10,6 @@
 class APlayerController;
 class UActorComponent;
 class URpgInventoryManagerComponent;
-struct FRpgActionBarSlotsChangedMessage;
 struct FRpgEquipmentLoadoutSlotsChangedMessage;
 struct FRpgInventoryActionFeedbackMessage;
 struct FRpgInventoryChangeMessage;
@@ -110,6 +109,14 @@ public:
 	UFUNCTION(BlueprintPure, Category = "Inventory|Interaction")
 	ERpgInventoryInteractionInputMode GetInputMode() const { return InputMode; }
 
+	/** Pure correlation rule shared by the runtime listener and automation regression tests. */
+	static bool DoesFeedbackMatchPendingRequest(
+		const FGuid& PendingRequestId,
+		FGameplayTag PendingActionTag,
+		const FRpgInventoryItemId& PendingItemId,
+		const FRpgInventoryActionFeedbackMessage& Message,
+		bool bRequireValidRequestId);
+
 	/** Fired when payload, rotation, target, preview, or pending state changes. */
 	UPROPERTY(BlueprintAssignable, Category = "Inventory|Interaction")
 	FRpgInventoryInteractionStateChanged OnInteractionStateChanged;
@@ -135,7 +142,6 @@ private:
 	void HandleActionFeedback(FGameplayTag Channel, const FRpgInventoryActionFeedbackMessage& Message);
 	void HandleInventoryChanged(FGameplayTag Channel, const FRpgInventoryChangeMessage& Message);
 	void HandleEquipmentChanged(FGameplayTag Channel, const FRpgEquipmentLoadoutSlotsChangedMessage& Message);
-	void HandleActionBarChanged(FGameplayTag Channel, const FRpgActionBarSlotsChangedMessage& Message);
 
 	UPROPERTY(Transient)
 	TObjectPtr<UObject> WorldContextObject = nullptr;
@@ -182,5 +188,4 @@ private:
 	FGameplayMessageListenerHandle ActionFeedbackHandle;
 	FGameplayMessageListenerHandle InventoryChangedHandle;
 	FGameplayMessageListenerHandle EquipmentChangedHandle;
-	FGameplayMessageListenerHandle ActionBarChangedHandle;
 };

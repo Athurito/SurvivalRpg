@@ -11,6 +11,7 @@
 #include "SurvivalRpg/Inventory/RpgInventoryFragment_EquippableItem.h"
 #include "SurvivalRpg/Inventory/RpgInventoryFragment_ItemContainer.h"
 #include "SurvivalRpg/Inventory/RpgInventoryFragment_ItemTraits.h"
+#include "SurvivalRpg/Inventory/RpgInventoryInteractionSession.h"
 #include "SurvivalRpg/Inventory/RpgInventoryItemInstance.h"
 #include "SurvivalRpg/Mvvm/Inventory/RpgPlayerInventoryViewModels.h"
 #include "SurvivalRpg/UI/RpgInventoryActionWidgets.h"
@@ -28,6 +29,11 @@ URpgInventoryAddressSlotWidget::URpgInventoryAddressSlotWidget(const FObjectInit
 
 void URpgInventoryAddressSlotWidget::SetDragDropCoordinator(URpgInventoryDragDropCoordinator* InCoordinator)
 {
+	if (InCoordinator)
+	{
+		bAddressSlotStateReleased = false;
+	}
+
 	if (DragDropCoordinator)
 	{
 		DragDropCoordinator->OnHeldPayloadChanged.RemoveDynamic(this, &ThisClass::HandleHeldPayloadChanged);
@@ -44,6 +50,11 @@ void URpgInventoryAddressSlotWidget::SetDragDropCoordinator(URpgInventoryDragDro
 
 void URpgInventoryAddressSlotWidget::SetAddressSlotViewModel(URpgInventoryAddressSlotViewModel* InSlotViewModel)
 {
+	if (InSlotViewModel)
+	{
+		bAddressSlotStateReleased = false;
+	}
+
 	if (SlotViewModel == InSlotViewModel)
 	{
 		BP_OnAddressSlotViewModelSet(SlotViewModel);
@@ -85,6 +96,12 @@ void URpgInventoryAddressSlotWidget::SetInventoryPanelActive(bool bInInventoryPa
 	RefreshDragDropVisualState();
 }
 
+void URpgInventoryAddressSlotWidget::SetContextMenuWidgetClass(
+	TSubclassOf<URpgInventoryContextMenuWidget> InContextMenuWidgetClass)
+{
+	ContextMenuWidgetClass = InContextMenuWidgetClass;
+}
+
 bool URpgInventoryAddressSlotWidget::HandleSlotAccept()
 {
 	if (!DragDropCoordinator || !SlotViewModel)
@@ -103,11 +120,49 @@ bool URpgInventoryAddressSlotWidget::HandleSlotAccept()
 
 void URpgInventoryAddressSlotWidget::RefreshDragDropVisualState()
 {
-	CurrentDragDropVisualState = DragDropCoordinator
-		? DragDropCoordinator->GetInventoryAddressSlotVisualState(SlotViewModel, bSlotSelected && bInventoryPanelActive)
-		: (bSlotSelected && bInventoryPanelActive ? ERpgInventorySlotDragVisualState::Focused : ERpgInventorySlotDragVisualState::Normal);
+	CurrentDragDropVisualState = bHasExternalPreviewState
+		? ExternalPreviewState
+		: (DragDropCoordinator
+			? DragDropCoordinator->GetInventoryAddressSlotVisualState(SlotViewModel, bSlotSelected && bInventoryPanelActive)
+			: (bSlotSelected && bInventoryPanelActive ? ERpgInventorySlotDragVisualState::Focused : ERpgInventorySlotDragVisualState::Normal));
 
 	BP_OnAddressSlotDragDropStateChanged(CurrentDragDropVisualState);
+}
+
+bool URpgInventoryAddressSlotWidget::PreviewPayloadDrop(const FRpgInventoryDragPayload& Payload)
+{
+	if (!DragDropCoordinator || !SlotViewModel || !URpgInventoryDragDropCoordinator::IsPayloadValid(Payload))
+	{
+		ClearExternalPreviewPayload();
+		return false;
+	}
+
+	const bool bCanDrop = DragDropCoordinator->UpdateInteractionPreview(Payload, MakeDropTarget());
+	bHasExternalPreviewState = true;
+	ExternalPreviewState = bCanDrop
+		? ERpgInventorySlotDragVisualState::ValidTarget
+		: ERpgInventorySlotDragVisualState::InvalidTarget;
+	RefreshDragDropVisualState();
+	return bCanDrop;
+}
+
+bool URpgInventoryAddressSlotWidget::CommitPayloadDrop(const FRpgInventoryDragPayload& Payload)
+{
+	ClearExternalPreviewPayload();
+	return DragDropCoordinator && SlotViewModel &&
+		DragDropCoordinator->CommitPayloadToTarget(Payload, MakeDropTarget());
+}
+
+void URpgInventoryAddressSlotWidget::ClearExternalPreviewPayload()
+{
+	if (!bHasExternalPreviewState)
+	{
+		return;
+	}
+
+	bHasExternalPreviewState = false;
+	ExternalPreviewState = ERpgInventorySlotDragVisualState::Normal;
+	RefreshDragDropVisualState();
 }
 
 void URpgInventoryAddressSlotWidget::NativeOnListItemObjectSet(UObject* ListItemObject)
@@ -116,23 +171,83 @@ void URpgInventoryAddressSlotWidget::NativeOnListItemObjectSet(UObject* ListItem
 	SetAddressSlotViewModel(Cast<URpgInventoryAddressSlotViewModel>(ListItemObject));
 }
 
+void URpgInventoryAddressSlotWidget::NativeDestruct()
+{
+	ReleaseAddressSlotState();
+	Super::NativeDestruct();
+}
+
 void URpgInventoryAddressSlotWidget::NativeOnEntryReleased()
 {
 	IUserListEntry::NativeOnEntryReleased();
-	if (ActiveContextMenu.IsValid())
+	ReleaseAddressSlotState();
+}
+
+void URpgInventoryAddressSlotWidget::ReleaseAddressSlotState()
+{
+	if (bAddressSlotStateReleased)
 	{
-		ActiveContextMenu->CloseContextMenu();
-		ActiveContextMenu = nullptr;
+		return;
 	}
-	if (ActiveSplitDialog.IsValid())
+	bAddressSlotStateReleased = true;
+
+	TWeakObjectPtr<URpgInventoryContextMenuWidget> ContextMenuToClose = ActiveContextMenu;
+	ActiveContextMenu = nullptr;
+	if (ContextMenuToClose.IsValid())
 	{
-		ActiveSplitDialog->CancelSplitDialog();
-		ActiveSplitDialog = nullptr;
+		ContextMenuToClose->CloseContextMenu();
 	}
 
+	TWeakObjectPtr<URpgInventorySplitDialogWidget> SplitDialogToClose = ActiveSplitDialog;
+	ActiveSplitDialog = nullptr;
+	if (SplitDialogToClose.IsValid())
+	{
+		SplitDialogToClose->CancelSplitDialog();
+	}
+
+	URpgInventoryDragDropCoordinator* ReleasedCoordinator = DragDropCoordinator;
+	URpgInventoryAddressSlotViewModel* ReleasedViewModel = SlotViewModel;
+	bool bOwnsCurrentPreviewTarget = false;
+	if (ReleasedCoordinator && ReleasedViewModel)
+	{
+		if (const URpgInventoryInteractionSession* Session = ReleasedCoordinator->GetInteractionSession())
+		{
+			const FRpgInventoryDropTarget& Target = Session->GetTarget();
+			bOwnsCurrentPreviewTarget = Target.TargetType == ERpgInventoryDropTargetType::PlayerInventorySlotAddress &&
+				Target.SlotAddress == ReleasedViewModel->GetSlotAddress();
+		}
+	}
+
+	if (ReleasedViewModel)
+	{
+		ReleasedViewModel->OnSlotChanged.RemoveDynamic(this, &ThisClass::HandleSlotViewModelChanged);
+	}
+	if (ReleasedCoordinator)
+	{
+		ReleasedCoordinator->OnHeldPayloadChanged.RemoveDynamic(this, &ThisClass::HandleHeldPayloadChanged);
+	}
+
+	SlotViewModel = nullptr;
+	DragDropCoordinator = nullptr;
 	bSlotSelected = false;
+	bInventoryPanelActive = true;
+	bPendingLeftClickAccept = false;
+	PendingPointerDragAnchor = FRpgInventoryDragAnchor();
+	bHasPendingPointerDragAnchor = false;
+	bHasExternalPreviewState = false;
+	ExternalPreviewState = ERpgInventorySlotDragVisualState::Normal;
+	CurrentDragDropVisualState = ERpgInventorySlotDragVisualState::Normal;
+
+	// A target preview belongs to this presentation surface and may be cleared when it disappears. A server-pending
+	// request remains owned by the screen session; ClearInteractionPreview intentionally preserves that request.
+	if (bOwnsCurrentPreviewTarget && ReleasedCoordinator)
+	{
+		ReleasedCoordinator->ClearInteractionPreview();
+	}
+
 	BP_OnAddressSlotSelectionChanged(false);
-	SetAddressSlotViewModel(nullptr);
+	BP_OnAddressSlotViewModelSet(nullptr);
+	BP_OnAddressSlotDragDropStateChanged(ERpgInventorySlotDragVisualState::Normal);
 	BP_OnAddressSlotReleased();
 }
 
@@ -424,7 +539,8 @@ TArray<ERpgInventoryContextAction> URpgInventoryAddressSlotWidget::GetAddressCon
 
 bool URpgInventoryAddressSlotWidget::ExecuteAddressContextAction(
 	ERpgInventoryContextAction Action,
-	FRpgInventoryItemId ExpectedItemId)
+	FRpgInventoryItemId ExpectedItemId,
+	int32 QuickAccessSlotIndex)
 {
 	URpgInventoryItemInstance* Item = SlotViewModel ? SlotViewModel->GetItemInstance() : nullptr;
 	if (!DragDropCoordinator || !Item || !ExpectedItemId.IsValid() || Item->GetItemId() != ExpectedItemId ||
@@ -449,15 +565,24 @@ bool URpgInventoryAddressSlotWidget::ExecuteAddressContextAction(
 		return DragDropCoordinator->QuickTransferAddressSlot(SlotViewModel);
 	case ERpgInventoryContextAction::Drop:
 		return DragDropCoordinator->DropAddressSlot(SlotViewModel);
+	case ERpgInventoryContextAction::QuickAccessBind:
+		return DragDropCoordinator->BindPayloadToQuickAccessSlot(MakeDragPayload(false), QuickAccessSlotIndex);
+	case ERpgInventoryContextAction::QuickAccessUnbind:
+		return DragDropCoordinator->ClearQuickAccessBindingForPayload(MakeDragPayload(false));
 	case ERpgInventoryContextAction::OpenContainer:
 	case ERpgInventoryContextAction::Inspect:
-	case ERpgInventoryContextAction::QuickAccessBind:
-	case ERpgInventoryContextAction::QuickAccessUnbind:
 		BP_OnDeferredAddressContextAction(Action, Item);
 		return true;
 	default:
 		return false;
 	}
+}
+
+int32 URpgInventoryAddressSlotWidget::GetQuickAccessSlotIndex() const
+{
+	return DragDropCoordinator && SlotViewModel
+		? DragDropCoordinator->FindQuickAccessSlotForPayload(MakeDragPayload(false))
+		: INDEX_NONE;
 }
 
 bool URpgInventoryAddressSlotWidget::ConfirmAddressSplit(FRpgInventoryItemId ExpectedItemId, int32 SplitCount)

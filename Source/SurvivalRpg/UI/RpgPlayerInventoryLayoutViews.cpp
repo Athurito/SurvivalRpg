@@ -655,9 +655,16 @@ URpgInventorySpatialItemWidget::URpgInventorySpatialItemWidget(const FObjectInit
 	SetIsFocusable(true);
 }
 
+void URpgInventorySpatialItemWidget::NativePreConstruct()
+{
+	Super::NativePreConstruct();
+	RefreshPlacedItemVisual();
+}
+
 void URpgInventorySpatialItemWidget::SetOwningSpatialGrid(URpgInventorySpatialGridWidget* InOwningGrid)
 {
 	OwningGrid = InOwningGrid;
+	RefreshPlacedItemVisual();
 	RefreshDragDropVisualState();
 }
 
@@ -699,6 +706,7 @@ void URpgInventorySpatialItemWidget::SetAddressSlotViewModel(URpgInventoryAddres
 		}
 	}
 
+	RefreshPlacedItemVisual();
 	BP_OnSpatialAddressItemSet(AddressSlotViewModel);
 	RefreshDragDropVisualState();
 }
@@ -725,6 +733,7 @@ void URpgInventorySpatialItemWidget::SetEntryViewModel(URpgInventoryEntryViewMod
 		}
 	}
 
+	RefreshPlacedItemVisual();
 	BP_OnSpatialEntryItemSet(EntryViewModel);
 	RefreshDragDropVisualState();
 }
@@ -769,7 +778,7 @@ int32 URpgInventorySpatialItemWidget::NativePaint(
 	bool bParentEnabled) const
 {
 	const int32 PaintedLayer = Super::NativePaint(Args, AllottedGeometry, MyCullingRect, OutDrawElements, LayerId, InWidgetStyle, bParentEnabled);
-	if (!bUseNativeFallbackPaint)
+	if (ItemVisual || !bUseNativeFallbackPaint)
 	{
 		return PaintedLayer;
 	}
@@ -779,14 +788,43 @@ int32 URpgInventorySpatialItemWidget::NativePaint(
 	{
 		FSlateBrush IconBrush;
 		IconBrush.SetResourceObject(IconTexture);
-		IconBrush.ImageSize = AllottedGeometry.GetLocalSize();
-		FSlateDrawElement::MakeBox(
-			OutDrawElements,
-			NextLayer++,
-			AllottedGeometry.ToPaintGeometry(),
-			&IconBrush,
-			ESlateDrawEffect::None,
-			InWidgetStyle.GetColorAndOpacityTint());
+		const bool bRotated = IsPlacedItemRotated();
+		FVector2D IconPosition;
+		FVector2D IconPaintSize;
+		URpgInventoryDragVisualWidget::CalculateIconPaintGeometry(
+			AllottedGeometry.GetLocalSize(),
+			bRotated,
+			0.0f,
+			IconPosition,
+			IconPaintSize);
+		IconBrush.ImageSize = IconPaintSize;
+		if (bRotated)
+		{
+			FSlateDrawElement::MakeRotatedBox(
+				OutDrawElements,
+				NextLayer++,
+				AllottedGeometry.ToPaintGeometry(
+					FVector2f(IconPaintSize),
+					FSlateLayoutTransform(FVector2f(IconPosition))),
+				&IconBrush,
+				ESlateDrawEffect::None,
+				UE_HALF_PI,
+				FVector2f(IconPaintSize * 0.5f),
+				FSlateDrawElement::RelativeToElement,
+				InWidgetStyle.GetColorAndOpacityTint());
+		}
+		else
+		{
+			FSlateDrawElement::MakeBox(
+				OutDrawElements,
+				NextLayer++,
+				AllottedGeometry.ToPaintGeometry(
+					FVector2f(IconPaintSize),
+					FSlateLayoutTransform(FVector2f(IconPosition))),
+				&IconBrush,
+				ESlateDrawEffect::None,
+				InWidgetStyle.GetColorAndOpacityTint());
+		}
 	}
 
 	const int32 StackCount = GetStackCount();
@@ -807,7 +845,7 @@ int32 URpgInventorySpatialItemWidget::NativePaint(
 			FLinearColor::White);
 	}
 
-	return NextLayer;
+	return FMath::Max(PaintedLayer, NextLayer - 1);
 }
 
 FReply URpgInventorySpatialItemWidget::NativeOnMouseButtonDown(const FGeometry& InGeometry, const FPointerEvent& InMouseEvent)
@@ -978,6 +1016,7 @@ void URpgInventorySpatialItemWidget::HandleAddressSlotChanged(URpgInventoryAddre
 {
 	if (ChangedSlotViewModel == AddressSlotViewModel)
 	{
+		RefreshPlacedItemVisual();
 		BP_OnSpatialAddressItemSet(AddressSlotViewModel);
 		RefreshDragDropVisualState();
 	}
@@ -987,6 +1026,7 @@ void URpgInventorySpatialItemWidget::HandleEntryChanged(URpgInventoryEntryViewMo
 {
 	if (ChangedEntryViewModel == EntryViewModel)
 	{
+		RefreshPlacedItemVisual();
 		BP_OnSpatialEntryItemSet(EntryViewModel);
 		RefreshDragDropVisualState();
 	}
@@ -1010,6 +1050,60 @@ FRpgInventoryDragPayload URpgInventorySpatialItemWidget::MakeDragPayload() const
 	}
 
 	return FRpgInventoryDragPayload();
+}
+
+void URpgInventorySpatialItemWidget::RefreshPlacedItemVisual()
+{
+	if (!ItemVisual)
+	{
+		return;
+	}
+
+	const FRpgInventoryDragPayload Payload = MakeDragPayload();
+	const float GridCellSize = OwningGrid ? OwningGrid->GetSpatialCellSize() : 70.0f;
+	const float GridCellPadding = OwningGrid ? OwningGrid->GetSpatialCellPadding() : 2.0f;
+	if (Payload.ItemInstance)
+	{
+		ItemVisual->ConfigureFromPayload(
+			Payload,
+			GridCellSize,
+			GridCellPadding,
+			ERpgInventoryInteractionPreviewState::None);
+	}
+	else
+	{
+		FRpgInventoryGridSize EmptyFootprint;
+		EmptyFootprint.Width = 1;
+		EmptyFootprint.Height = 1;
+		ItemVisual->ConfigureVisual(
+			TSoftObjectPtr<UTexture2D>(),
+			0,
+			EmptyFootprint,
+			GridCellSize,
+			GridCellPadding,
+			ERpgInventoryInteractionPreviewState::None,
+			false);
+	}
+
+	// The child is presentation-only; this outer spatial item remains the drag, context-menu, and focus target.
+	ItemVisual->SetVisibility(ESlateVisibility::HitTestInvisible);
+}
+
+bool URpgInventorySpatialItemWidget::IsPlacedItemRotated() const
+{
+	if (AddressSlotViewModel)
+	{
+		const FRpgInventoryGridPlacement Placement = AddressSlotViewModel->GetItemPlacement();
+		return Placement.IsValid() && Placement.bRotated;
+	}
+
+	if (EntryViewModel)
+	{
+		const FRpgInventoryGridPlacement Placement = EntryViewModel->GetPlacement();
+		return Placement.IsValid() && Placement.bRotated;
+	}
+
+	return false;
 }
 
 TSoftObjectPtr<UTexture2D> URpgInventorySpatialItemWidget::GetIcon() const
@@ -1199,6 +1293,12 @@ void URpgInventorySpatialGridWidget::SetDragDropCoordinator(URpgInventoryDragDro
 		}
 	}
 	UpdateCellVisualStates();
+}
+
+void URpgInventorySpatialGridWidget::SetContextMenuWidgetClass(
+	TSubclassOf<URpgInventoryContextMenuWidget> InContextMenuWidgetClass)
+{
+	ContextMenuWidgetClass = InContextMenuWidgetClass;
 }
 
 void URpgInventorySpatialGridWidget::SetPanelNavigationCoordinator(URpgInventoryPanelNavigationCoordinator* InPanelNavigationCoordinator, FName InPanelId)
@@ -1681,16 +1781,27 @@ bool URpgInventorySpatialGridWidget::ExecuteSelectedContextAction(
 	case ERpgInventoryContextAction::Drop:
 		return DropSelectedCell();
 
+	case ERpgInventoryContextAction::QuickAccessBind:
+		return DragDropCoordinator->BindPayloadToQuickAccessSlot(MakePayloadFromSelectedItem(), QuickAccessSlotIndex);
+
+	case ERpgInventoryContextAction::QuickAccessUnbind:
+		return DragDropCoordinator->ClearQuickAccessBindingForPayload(MakePayloadFromSelectedItem());
+
 	case ERpgInventoryContextAction::OpenContainer:
 	case ERpgInventoryContextAction::Inspect:
-	case ERpgInventoryContextAction::QuickAccessBind:
-	case ERpgInventoryContextAction::QuickAccessUnbind:
 		BP_OnDeferredInventoryContextAction(Action, Item, QuickAccessSlotIndex);
 		return true;
 
 	default:
 		return false;
 	}
+}
+
+int32 URpgInventorySpatialGridWidget::GetSelectedQuickAccessSlotIndex() const
+{
+	return DragDropCoordinator
+		? DragDropCoordinator->FindQuickAccessSlotForPayload(MakePayloadFromSelectedItem())
+		: INDEX_NONE;
 }
 
 bool URpgInventorySpatialGridWidget::UseOrEquipSelectedCell(int32 StackCount)

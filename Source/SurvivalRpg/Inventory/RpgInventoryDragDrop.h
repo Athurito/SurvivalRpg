@@ -260,7 +260,7 @@ struct SURVIVALRPG_API FRpgInventoryDropTarget
 	UPROPERTY(BlueprintReadWrite, Category = "Inventory|DragDrop")
 	FRpgInventorySlotAddress SlotAddress;
 
-	/** Target 1..8 actionbar slot index for actionbar binding drops. */
+	/** Internal zero-based actionbar index (0..7); UI labels display the corresponding number 1..8. */
 	UPROPERTY(BlueprintReadWrite, Category = "Inventory|DragDrop")
 	int32 ActionBarSlotIndex = INDEX_NONE;
 
@@ -427,7 +427,7 @@ public:
 	UFUNCTION(BlueprintCallable, Category = "Inventory|DragDrop")
 	static FRpgInventoryDropTarget MakeEquipmentTarget(ERpgEquipmentSlot EquipmentSlot);
 
-	/** Builds a target for binding a held player-inventory slot address to one 1..8 actionbar slot. */
+	/** Builds a target for an internal zero-based actionbar index (0..7, displayed to players as 1..8). */
 	UFUNCTION(BlueprintCallable, Category = "Inventory|DragDrop")
 	static FRpgInventoryDropTarget MakeActionBarSlotTarget(int32 ActionBarSlotIndex);
 
@@ -536,6 +536,24 @@ public:
 	/** Removes every shortcut transfer route on this UI-local coordinator. */
 	UFUNCTION(BlueprintCallable, Category = "Inventory|Shortcuts")
 	void ClearQuickTransferTargets();
+
+	/**
+	 * Returns the zero-based 0..7 slot currently bound to this payload's semantic Carry role or consumable
+	 * definition. Consumables intentionally match by definition so moving a preferred stack does not duplicate it.
+	 */
+	UFUNCTION(BlueprintCallable, Category = "Inventory|Quick Access")
+	int32 FindQuickAccessSlotForPayload(const FRpgInventoryDragPayload& Payload) const;
+
+	/**
+	 * Binds an item to one internal zero-based Quick Access index. Carry payloads bind their semantic role;
+	 * consumables bind definition plus preferred persistent item id. The server re-resolves the source address.
+	 */
+	UFUNCTION(BlueprintCallable, Category = "Inventory|Quick Access", meta = (ClampMin = "0", ClampMax = "7"))
+	bool BindPayloadToQuickAccessSlot(const FRpgInventoryDragPayload& Payload, int32 SlotIndex);
+
+	/** Clears the matching semantic binding without allowing stale UI state to clear an unrelated occupied slot. */
+	UFUNCTION(BlueprintCallable, Category = "Inventory|Quick Access")
+	bool ClearQuickAccessBindingForPayload(const FRpgInventoryDragPayload& Payload);
 
 	/** Resolves the shortcut transfer target for a source inventory, including player-inventory fallback. */
 	UFUNCTION(BlueprintPure, Category = "Inventory|Shortcuts")

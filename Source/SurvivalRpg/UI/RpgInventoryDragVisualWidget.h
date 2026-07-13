@@ -92,6 +92,23 @@ public:
 		float InCellSize,
 		float InCellPadding);
 
+	/**
+	 * Resolves an inset icon quad before optional clockwise rotation.
+	 * Rotated quads swap their pre-rotation dimensions and remain centered, preserving the source aspect ratio.
+	 */
+	static void CalculateIconPaintGeometry(
+		FVector2D AllottedSize,
+		bool bInRotated,
+		float InPadding,
+		FVector2D& OutPaintPosition,
+		FVector2D& OutPaintSize);
+
+	/**
+	 * Render scale for a fill-aligned UImage that rotates inside an already-rotated footprint.
+	 * The inverse aspect correction creates the pre-rotation HxW quad before the 90-degree render transform.
+	 */
+	static FVector2D CalculateIconRenderScale(FVector2D OccupiedVisualSize, bool bInRotated);
+
 protected:
 	virtual TSharedRef<SWidget> RebuildWidget() override;
 	virtual void ReleaseSlateResources(bool bReleaseChildren) override;

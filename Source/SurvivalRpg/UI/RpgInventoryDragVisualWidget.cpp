@@ -109,6 +109,7 @@ void URpgInventoryDragVisualWidget::SetCellMetrics(float InCellSize, float InCel
 	CellSize = SanitizedCellSize;
 	CellPadding = SanitizedCellPadding;
 	RefreshLayout();
+	RefreshIconRotation();
 	NotifyBlueprintVisualUpdated();
 }
 
@@ -171,6 +172,37 @@ FVector2D URpgInventoryDragVisualWidget::CalculateExactVisualSize(
 	return FVector2D(
 		OccupiedFootprint.Width * SanitizedCellSize + FMath::Max(0, OccupiedFootprint.Width - 1) * SanitizedCellPadding,
 		OccupiedFootprint.Height * SanitizedCellSize + FMath::Max(0, OccupiedFootprint.Height - 1) * SanitizedCellPadding);
+}
+
+void URpgInventoryDragVisualWidget::CalculateIconPaintGeometry(
+	FVector2D AllottedSize,
+	bool bInRotated,
+	float InPadding,
+	FVector2D& OutPaintPosition,
+	FVector2D& OutPaintSize)
+{
+	const FVector2D SanitizedAllottedSize(
+		FMath::Max(0.0f, AllottedSize.X),
+		FMath::Max(0.0f, AllottedSize.Y));
+	const float SanitizedPadding = FMath::Max(0.0f, InPadding);
+	const FVector2D InsetSize(
+		FMath::Max(0.0f, SanitizedAllottedSize.X - SanitizedPadding * 2.0f),
+		FMath::Max(0.0f, SanitizedAllottedSize.Y - SanitizedPadding * 2.0f));
+
+	OutPaintSize = bInRotated ? FVector2D(InsetSize.Y, InsetSize.X) : InsetSize;
+	OutPaintPosition = (SanitizedAllottedSize - OutPaintSize) * 0.5f;
+}
+
+FVector2D URpgInventoryDragVisualWidget::CalculateIconRenderScale(FVector2D OccupiedVisualSize, bool bInRotated)
+{
+	if (!bInRotated || OccupiedVisualSize.X <= KINDA_SMALL_NUMBER || OccupiedVisualSize.Y <= KINDA_SMALL_NUMBER)
+	{
+		return FVector2D(1.0f, 1.0f);
+	}
+
+	return FVector2D(
+		OccupiedVisualSize.Y / OccupiedVisualSize.X,
+		OccupiedVisualSize.X / OccupiedVisualSize.Y);
 }
 
 TSharedRef<SWidget> URpgInventoryDragVisualWidget::RebuildWidget()
@@ -274,33 +306,29 @@ int32 URpgInventoryDragVisualWidget::NativePaint(
 	if (!ItemIcon && Icon.Get() && WhiteBrush)
 	{
 		const FVector2D LocalSize = AllottedGeometry.GetLocalSize();
-		const float IconPadding = FMath::Max(0.0f, NativeIconPadding);
-		const FVector2D IconSize(
-			FMath::Max(0.0f, LocalSize.X - IconPadding * 2.0f),
-			FMath::Max(0.0f, LocalSize.Y - IconPadding * 2.0f));
-		if (IconSize.X > KINDA_SMALL_NUMBER && IconSize.Y > KINDA_SMALL_NUMBER)
+		const bool bRotateIcon = bRotateIconWithFootprint && bFootprintRotated;
+		FVector2D IconPosition;
+		FVector2D IconPaintSize;
+		CalculateIconPaintGeometry(LocalSize, bRotateIcon, NativeIconPadding, IconPosition, IconPaintSize);
+		if (IconPaintSize.X > KINDA_SMALL_NUMBER && IconPaintSize.Y > KINDA_SMALL_NUMBER)
 		{
 			FSlateBrush IconBrush;
 			IconBrush.SetResourceObject(Icon.Get());
-			IconBrush.ImageSize = IconSize;
+			IconBrush.ImageSize = IconPaintSize;
 			const FLinearColor IconTint = InWidgetStyle.GetColorAndOpacityTint();
 
-			if (bRotateIconWithFootprint && bFootprintRotated)
+			if (bRotateIcon)
 			{
-				const FVector2D UnrotatedIconSize(IconSize.Y, IconSize.X);
-				const FVector2D UnrotatedIconOffset(
-					IconPadding + (IconSize.X - UnrotatedIconSize.X) * 0.5f,
-					IconPadding + (IconSize.Y - UnrotatedIconSize.Y) * 0.5f);
 				FSlateDrawElement::MakeRotatedBox(
 					OutDrawElements,
 					NextLayer++,
 					AllottedGeometry.ToPaintGeometry(
-						FVector2f(UnrotatedIconSize),
-						FSlateLayoutTransform(FVector2f(UnrotatedIconOffset))),
+						FVector2f(IconPaintSize),
+						FSlateLayoutTransform(FVector2f(IconPosition))),
 					&IconBrush,
 					ESlateDrawEffect::None,
 					UE_HALF_PI,
-					FVector2f(UnrotatedIconSize * 0.5f),
+					FVector2f(IconPaintSize * 0.5f),
 					FSlateDrawElement::RelativeToElement,
 					IconTint);
 			}
@@ -310,8 +338,8 @@ int32 URpgInventoryDragVisualWidget::NativePaint(
 					OutDrawElements,
 					NextLayer++,
 					AllottedGeometry.ToPaintGeometry(
-						FVector2f(IconSize),
-						FSlateLayoutTransform(FVector2f(IconPadding, IconPadding))),
+						FVector2f(IconPaintSize),
+						FSlateLayoutTransform(FVector2f(IconPosition))),
 					&IconBrush,
 					ESlateDrawEffect::None,
 					IconTint);
@@ -403,7 +431,10 @@ void URpgInventoryDragVisualWidget::RefreshIconRotation()
 {
 	if (ItemIcon)
 	{
-		ItemIcon->SetRenderTransformAngle(bRotateIconWithFootprint && bFootprintRotated ? 90.0f : 0.0f);
+		const bool bRotateIcon = bRotateIconWithFootprint && bFootprintRotated;
+		ItemIcon->SetRenderTransformPivot(FVector2D(0.5f, 0.5f));
+		ItemIcon->SetRenderScale(CalculateIconRenderScale(ExactVisualSize, bRotateIcon));
+		ItemIcon->SetRenderTransformAngle(bRotateIcon ? 90.0f : 0.0f);
 	}
 	InvalidateNativeFallbackPaint();
 }

@@ -66,6 +66,12 @@ void URpgEquipmentSlotWidget::SetDragDropCoordinator(URpgInventoryDragDropCoordi
 	RefreshDragDropVisualState();
 }
 
+void URpgEquipmentSlotWidget::SetContextMenuWidgetClass(
+	TSubclassOf<URpgInventoryContextMenuWidget> InContextMenuWidgetClass)
+{
+	ContextMenuWidgetClass = InContextMenuWidgetClass;
+}
+
 ERpgEquipmentSlot URpgEquipmentSlotWidget::GetResolvedEquipmentSlot() const
 {
 	return SlotViewModel ? SlotViewModel->GetEquipmentSlot() : EquipmentSlot;
