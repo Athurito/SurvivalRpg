@@ -8,6 +8,7 @@
 #include "MVVMSubsystem.h"
 #include "SurvivalRpg/Inventory/RpgInventoryDragDrop.h"
 #include "SurvivalRpg/Inventory/RpgInventoryInteractionSession.h"
+#include "SurvivalRpg/Inventory/RpgInventoryItemInstance.h"
 #include "SurvivalRpg/Inventory/RpgPlayerInventoryLayoutComponent.h"
 #include "SurvivalRpg/GameplayTags/RpgGameplayTags.h"
 #include "SurvivalRpg/Mvvm/Inventory/RpgPlayerInventoryViewModels.h"
@@ -476,9 +477,11 @@ URpgInventoryFeedbackToastWidget* URpgPlayerInventoryWidget::EnsureInventoryFeed
 		return InventoryFeedbackToast;
 	}
 
-	const TSubclassOf<URpgInventoryFeedbackToastWidget> ToastClass = FeedbackToastWidgetClass
-		? FeedbackToastWidgetClass
-		: URpgInventoryFeedbackToastWidget::StaticClass();
+	TSubclassOf<URpgInventoryFeedbackToastWidget> ToastClass = FeedbackToastWidgetClass;
+	if (!ToastClass)
+	{
+		ToastClass = URpgInventoryFeedbackToastWidget::StaticClass();
+	}
 	InventoryFeedbackToast = CreateWidget<URpgInventoryFeedbackToastWidget>(GetOwningPlayer(), ToastClass);
 	if (InventoryFeedbackToast)
 	{
@@ -585,7 +588,7 @@ void URpgPlayerInventoryWidget::UpdateFreePointerDragVisual(
 			FreePointerDragCellSize,
 			FreePointerDragCellPadding,
 			PreviewState);
-		FreePointerDragConfiguredItem = ResolvedPayload.ItemInstance;
+		FreePointerDragConfiguredItem = ResolvedPayload.ItemInstance.Get();
 		FreePointerDragConfiguredEntryId = ResolvedPayload.EntryId;
 		FreePointerDragConfiguredFootprint = ResolvedPayload.ItemFootprint;
 		FreePointerDragConfiguredStackCount = ResolvedPayload.StackCount;

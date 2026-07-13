@@ -21,7 +21,7 @@ public:
 
 	/** Wait until we trace new set of interactables.  This task automatically loops. */
 	UFUNCTION(BlueprintCallable, Category="Ability|Tasks", meta = (HidePin = "OwningAbility", DefaultToSelf = "OwningAbility", BlueprintInternalUseOnly = "TRUE"))
-	static UAbilityTask_WaitForInteractableTargets_SingleLineTrace* WaitForInteractableTargets_SingleLineTrace(UGameplayAbility* OwningAbility, FInteractionQuery InteractionQuery, FCollisionProfileName TraceProfile, FGameplayAbilityTargetingLocationInfo StartLocation, float InteractionScanRange = 100, float InteractionScanRate = 0.100, bool bShowDebug = false);
+	static UAbilityTask_WaitForInteractableTargets_SingleLineTrace* WaitForInteractableTargets_SingleLineTrace(UGameplayAbility* OwningAbility, FInteractionQuery InteractionQuery, FCollisionProfileName TraceProfile, FGameplayAbilityTargetingLocationInfo StartLocation, float InteractionScanRange = 100, float InteractionScanRate = 0.100f, bool bShowDebug = false);
 
 	virtual void OnDestroy(bool AbilityEnded) override;
 protected:
@@ -37,7 +37,7 @@ private:
 	FGameplayAbilityTargetingLocationInfo StartLocation;
 
 	float InteractionScanRange = 100;
-	float InteractionScanRate = 0.100;
+	float InteractionScanRate = 0.100f;
 	bool bShowDebug = false;
 
 	FTimerHandle TimerHandle;

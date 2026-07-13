@@ -1435,9 +1435,11 @@ bool URpgInventorySpatialGridWidget::RequestSplitDialogForSelectedCell()
 
 	PendingSplitMaximum = StackCount - 1;
 	const int32 DefaultSplitCount = FMath::Clamp(StackCount / 2, 1, PendingSplitMaximum);
-	const TSubclassOf<URpgInventorySplitDialogWidget> DialogClass = SplitDialogWidgetClass
-		? SplitDialogWidgetClass
-		: URpgInventorySplitDialogWidget::StaticClass();
+	TSubclassOf<URpgInventorySplitDialogWidget> DialogClass = SplitDialogWidgetClass;
+	if (!DialogClass)
+	{
+		DialogClass = URpgInventorySplitDialogWidget::StaticClass();
+	}
 	if (ULocalPlayer* LocalPlayer = GetOwningLocalPlayer())
 	{
 		ActiveSplitDialog = Cast<URpgInventorySplitDialogWidget>(
@@ -1477,12 +1479,12 @@ bool URpgInventorySpatialGridWidget::ConfirmPendingSplit(int32 SplitCount)
 	URpgInventoryAddressSlotViewModel* PendingAddressSlot = nullptr;
 	if (GroupViewModel)
 	{
-		for (URpgInventoryAddressSlotViewModel* Slot : GroupViewModel->GetSlots())
+		for (URpgInventoryAddressSlotViewModel* AddressSlot : GroupViewModel->GetSlots())
 		{
-			if (Slot && Slot->GetEntryId() == PendingSplitEntryId && Slot->GetItemInstance() &&
-				Slot->GetItemInstance()->GetItemId() == PendingSplitItemId)
+			if (AddressSlot && AddressSlot->GetEntryId() == PendingSplitEntryId && AddressSlot->GetItemInstance() &&
+				AddressSlot->GetItemInstance()->GetItemId() == PendingSplitItemId)
 			{
-				PendingAddressSlot = Slot;
+				PendingAddressSlot = AddressSlot;
 				break;
 			}
 		}
@@ -1546,9 +1548,11 @@ bool URpgInventorySpatialGridWidget::RequestContextMenuForSelectedCell(FVector2D
 		ActiveContextMenu = nullptr;
 	}
 
-	const TSubclassOf<URpgInventoryContextMenuWidget> MenuClass = ContextMenuWidgetClass
-		? ContextMenuWidgetClass
-		: URpgInventoryContextMenuWidget::StaticClass();
+	TSubclassOf<URpgInventoryContextMenuWidget> MenuClass = ContextMenuWidgetClass;
+	if (!MenuClass)
+	{
+		MenuClass = URpgInventoryContextMenuWidget::StaticClass();
+	}
 	if (ULocalPlayer* LocalPlayer = GetOwningLocalPlayer())
 	{
 		ActiveContextMenu = Cast<URpgInventoryContextMenuWidget>(
@@ -2494,7 +2498,7 @@ void URpgInventorySpatialGridWidget::UpdateSpatialPreviewGhost()
 	if (bNeedsVisualConfiguration)
 	{
 		Ghost->ConfigureFromPayload(Payload, CellSize, CellPadding, ActiveSpatialPreview.PreviewState);
-		SpatialPreviewConfiguredItem = Payload.ItemInstance;
+		SpatialPreviewConfiguredItem = Payload.ItemInstance.Get();
 		SpatialPreviewConfiguredEntryId = Payload.EntryId;
 		SpatialPreviewConfiguredFootprint = Payload.ItemFootprint;
 		SpatialPreviewConfiguredStackCount = Payload.StackCount;

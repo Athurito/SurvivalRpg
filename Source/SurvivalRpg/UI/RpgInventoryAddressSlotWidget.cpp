@@ -482,9 +482,11 @@ bool URpgInventoryAddressSlotWidget::RequestAddressContextMenu(FVector2D ScreenP
 		ActiveContextMenu = nullptr;
 	}
 
-	const TSubclassOf<URpgInventoryContextMenuWidget> MenuClass = ContextMenuWidgetClass
-		? ContextMenuWidgetClass
-		: URpgInventoryContextMenuWidget::StaticClass();
+	TSubclassOf<URpgInventoryContextMenuWidget> MenuClass = ContextMenuWidgetClass;
+	if (!MenuClass)
+	{
+		MenuClass = URpgInventoryContextMenuWidget::StaticClass();
+	}
 	if (ULocalPlayer* LocalPlayer = GetOwningLocalPlayer())
 	{
 		ActiveContextMenu = Cast<URpgInventoryContextMenuWidget>(
@@ -516,9 +518,11 @@ bool URpgInventoryAddressSlotWidget::RequestAddressSplitDialog()
 		ActiveSplitDialog = nullptr;
 	}
 
-	const TSubclassOf<URpgInventorySplitDialogWidget> DialogClass = SplitDialogWidgetClass
-		? SplitDialogWidgetClass
-		: URpgInventorySplitDialogWidget::StaticClass();
+	TSubclassOf<URpgInventorySplitDialogWidget> DialogClass = SplitDialogWidgetClass;
+	if (!DialogClass)
+	{
+		DialogClass = URpgInventorySplitDialogWidget::StaticClass();
+	}
 	if (ULocalPlayer* LocalPlayer = GetOwningLocalPlayer())
 	{
 		ActiveSplitDialog = Cast<URpgInventorySplitDialogWidget>(

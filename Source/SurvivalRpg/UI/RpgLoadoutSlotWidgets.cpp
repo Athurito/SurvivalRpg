@@ -186,9 +186,11 @@ bool URpgEquipmentSlotWidget::RequestEquipmentContextMenu(FVector2D ScreenPositi
 		Actions.Add(ERpgInventoryContextAction::Drop);
 	}
 
-	const TSubclassOf<URpgInventoryContextMenuWidget> MenuClass = ContextMenuWidgetClass
-		? ContextMenuWidgetClass
-		: URpgInventoryContextMenuWidget::StaticClass();
+	TSubclassOf<URpgInventoryContextMenuWidget> MenuClass = ContextMenuWidgetClass;
+	if (!MenuClass)
+	{
+		MenuClass = URpgInventoryContextMenuWidget::StaticClass();
+	}
 	if (ULocalPlayer* LocalPlayer = GetOwningLocalPlayer())
 	{
 		ActiveContextMenu = Cast<URpgInventoryContextMenuWidget>(
