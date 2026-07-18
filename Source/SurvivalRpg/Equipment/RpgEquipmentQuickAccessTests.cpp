@@ -3,11 +3,67 @@
 #include "Misc/AutomationTest.h"
 
 #include "RpgAbilityBindingResolver.h"
+#include "RpgEquipmentAutomationTestTypes.h"
 #include "RpgEquipmentLoadoutComponent.h"
+#include "RpgEquipmentManagerComponent.h"
 #include "SurvivalRpg/AbilitySystem/Abilities/RpgGameplayAbility.h"
+#include "SurvivalRpg/AbilitySystem/Attributes/RpgHealthSet.h"
 #include "SurvivalRpg/AbilitySystem/RpgAbilitySystemComponent.h"
 #include "SurvivalRpg/ActionBar/RpgActionBarComponent.h"
 #include "SurvivalRpg/GameplayTags/RpgGameplayTags.h"
+
+#include "Engine/Engine.h"
+#include "Engine/GameInstance.h"
+#include "Engine/World.h"
+
+namespace RpgEquipmentAutomationTests
+{
+	class FScopedEquipmentWorld
+	{
+	public:
+		FScopedEquipmentWorld()
+		{
+			GameInstance = NewObject<UGameInstance>(GEngine, NAME_None, RF_Transient);
+			if (!GameInstance)
+			{
+				return;
+			}
+
+			GameInstance->AddToRoot();
+			GameInstance->InitializeStandalone();
+			World = GameInstance->GetWorld();
+		}
+
+		~FScopedEquipmentWorld()
+		{
+			UWorld* WorldToDestroy = World;
+			if (GameInstance)
+			{
+				GameInstance->Shutdown();
+			}
+
+			if (WorldToDestroy)
+			{
+				GEngine->DestroyWorldContext(WorldToDestroy);
+				WorldToDestroy->DestroyWorld(false);
+			}
+
+			if (GameInstance)
+			{
+				GameInstance->RemoveFromRoot();
+			}
+		}
+
+		UWorld* GetWorld() const
+		{
+			return World;
+		}
+
+	private:
+		TObjectPtr<UGameInstance> GameInstance = nullptr;
+		TObjectPtr<UWorld> World = nullptr;
+	};
+}
 
 IMPLEMENT_SIMPLE_AUTOMATION_TEST(
 	FRpgUniqueAbilityBindingResolverTest,
@@ -86,6 +142,68 @@ bool FRpgEquipmentLoadTierThresholdTest::RunTest(const FString& Parameters)
 		TEXT("23 kg enters Heavy"),
 		URpgEquipmentLoadoutComponent::ResolveLoadTierForWeight(23.0f),
 		ERpgEquipmentLoadTier::Heavy);
+	return true;
+}
+
+IMPLEMENT_SIMPLE_AUTOMATION_TEST(
+	FRpgEquipmentPersistentHealthGrantTest,
+	"SurvivalRpg.Equipment.Grants.UnchangedMaxHealthEffectSurvivesWeaponEquip",
+	EAutomationTestFlags::EditorContext | EAutomationTestFlags::EngineFilter)
+
+bool FRpgEquipmentPersistentHealthGrantTest::RunTest(const FString& Parameters)
+{
+	RpgEquipmentAutomationTests::FScopedEquipmentWorld TestWorld;
+	if (!TestNotNull(TEXT("Standalone equipment test world is available"), TestWorld.GetWorld()))
+	{
+		return false;
+	}
+
+	ARpgEquipmentAutomationTestPawn* Pawn =
+		TestWorld.GetWorld()->SpawnActor<ARpgEquipmentAutomationTestPawn>();
+	if (!TestNotNull(TEXT("Authoritative GAS equipment pawn is spawned"), Pawn))
+	{
+		return false;
+	}
+
+	URpgAbilitySystemComponent* AbilitySystemComponent = Pawn->GetRpgAbilitySystemComponent();
+	URpgEquipmentManagerComponent* EquipmentManager = Pawn->GetEquipmentManagerComponent();
+	URpgHealthSet* HealthSet = Pawn->GetHealthSet();
+	if (!TestNotNull(TEXT("Pawn owns an ability system"), AbilitySystemComponent) ||
+		!TestNotNull(TEXT("Pawn owns an equipment manager"), EquipmentManager) ||
+		!TestNotNull(TEXT("Pawn owns a health set"), HealthSet))
+	{
+		return false;
+	}
+
+	// The standalone automation world does not run the complete PlayerState component lifecycle.
+	AbilitySystemComponent->AddAttributeSetSubobject(HealthSet);
+	AbilitySystemComponent->InitAbilityActorInfo(Pawn, Pawn);
+	if (!TestNotNull(TEXT("Health set is registered with GAS"), AbilitySystemComponent->GetSet<URpgHealthSet>()))
+	{
+		return false;
+	}
+
+	TestEqual(TEXT("Fixture starts with 100 MaxHealth"), HealthSet->GetMaxHealth(), 100.0f);
+
+	URpgEquipmentInstance* Helmet = EquipmentManager->EquipItemInSlot(
+		URpgEquipmentAutomationTestHelmetDefinition::StaticClass(),
+		ERpgEquipmentSlot::Head);
+	if (!TestNotNull(TEXT("Helmet equips in the Head slot"), Helmet))
+	{
+		return false;
+	}
+
+	TestEqual(TEXT("Helmet persistent effect raises MaxHealth to 600"), HealthSet->GetMaxHealth(), 600.0f);
+	AbilitySystemComponent->SetNumericAttributeBase(URpgHealthSet::GetHealthAttribute(), 600.0f);
+	TestEqual(TEXT("Fixture can heal to the helmet-adjusted maximum"), HealthSet->GetHealth(), 600.0f);
+
+	URpgEquipmentInstance* Sword = EquipmentManager->EquipItemInSlot(
+		URpgEquipmentAutomationTestSwordDefinition::StaticClass(),
+		ERpgEquipmentSlot::MainHand);
+	TestNotNull(TEXT("Sword equips in the MainHand slot"), Sword);
+	TestEqual(TEXT("Unrelated weapon equip keeps helmet MaxHealth active"), HealthSet->GetMaxHealth(), 600.0f);
+	TestEqual(TEXT("Unrelated weapon equip does not clamp current Health"), HealthSet->GetHealth(), 600.0f);
+
 	return true;
 }
 

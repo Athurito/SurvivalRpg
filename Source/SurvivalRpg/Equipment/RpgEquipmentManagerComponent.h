@@ -13,6 +13,24 @@ class URpgEquipmentDefinition;
 class URpgEquipmentInstance;
 struct FNetDeltaSerializeInfo;
 
+/**
+ * Runtime handles for one AbilitySet source on an equipped item.
+ *
+ * The source key is stable within the equipment definition, allowing unchanged grants to survive
+ * loadout changes without briefly removing persistent GameplayEffects.
+ */
+USTRUCT()
+struct SURVIVALRPG_API FRpgAppliedEquipmentAbilityGrant
+{
+	GENERATED_BODY()
+
+	UPROPERTY()
+	TObjectPtr<const URpgAbilitySet> AbilitySet = nullptr;
+
+	UPROPERTY()
+	FRpgAbilitySet_GrantedHandles GrantedHandles;
+};
+
 USTRUCT(BlueprintType)
 struct SURVIVALRPG_API FRpgAppliedEquipmentEntry : public FFastArraySerializerItem
 {
@@ -34,7 +52,7 @@ private:
 	TObjectPtr<URpgEquipmentInstance> Instance = nullptr;
 
 	UPROPERTY(NotReplicated)
-	FRpgAbilitySet_GrantedHandles GrantedHandles;
+	TMap<int32, FRpgAppliedEquipmentAbilityGrant> AbilitySetGrants;
 };
 
 USTRUCT(BlueprintType)
