@@ -5,6 +5,7 @@
 #include "RpgInventoryInteractionSession.h"
 #include "RpgInventoryItemInstance.h"
 #include "RpgInventoryUiActionComponent.h"
+#include "SurvivalRpg/ActionBar/RpgActionBarComponent.h"
 #include "SurvivalRpg/GameplayTags/RpgGameplayTags.h"
 #include "SurvivalRpg/UI/RpgInventoryDragVisualWidget.h"
 
@@ -511,6 +512,64 @@ bool FRpgInventoryQuickAccessFeedbackCorrelationTest::RunTest(const FString& Par
 	Request.RequestId.Invalidate();
 	Request.EnsureRequestId();
 	TestTrue(TEXT("Compatibility commands still receive a valid feedback correlation id"), Request.RequestId.IsValid());
+
+	return true;
+}
+
+IMPLEMENT_SIMPLE_AUTOMATION_TEST(
+	FRpgInventoryQuickAccessReplicatedConfirmationTest,
+	"SurvivalRpg.Inventory.Interaction.QuickAccessFeedback.ReplicatedBindingConfirmation",
+	EAutomationTestFlags::EditorContext | EAutomationTestFlags::EngineFilter)
+
+bool FRpgInventoryQuickAccessReplicatedConfirmationTest::RunTest(const FString& Parameters)
+{
+	const FName CarryRole(TEXT("WeaponSlot1"));
+	const FRpgInventoryItemId PendingItemId = FRpgInventoryItemId::NewId();
+
+	FRpgInventoryDragPayload PendingCarryPayload;
+	PendingCarryPayload.SourceSlotAddress.ContainerId = CarryRole;
+	PendingCarryPayload.SourceSlotAddress.X = 0;
+	PendingCarryPayload.SourceSlotAddress.Y = 0;
+
+	FRpgActionBarSlot AppliedCarrySlot;
+	AppliedCarrySlot.SlotType = ERpgActionBarSlotType::CarrySlot;
+	AppliedCarrySlot.CarryRole = CarryRole;
+	TestTrue(
+		TEXT("Replicated Carry binding confirms and releases the matching pending drag"),
+		URpgInventoryInteractionSession::DoesActionBarSlotConfirmPendingPayload(
+			AppliedCarrySlot,
+			PendingCarryPayload,
+			PendingItemId));
+
+	AppliedCarrySlot.CarryRole = FName(TEXT("WeaponSlot2"));
+	TestFalse(
+		TEXT("An unrelated replicated Carry role cannot acknowledge the pending drag"),
+		URpgInventoryInteractionSession::DoesActionBarSlotConfirmPendingPayload(
+			AppliedCarrySlot,
+			PendingCarryPayload,
+			PendingItemId));
+
+	URpgInventoryItemInstance* PendingConsumable = NewObject<URpgInventoryItemInstance>(GetTransientPackage());
+	FRpgInventoryDragPayload PendingConsumablePayload;
+	PendingConsumablePayload.ItemInstance = PendingConsumable;
+	FRpgActionBarSlot AppliedConsumableSlot;
+	AppliedConsumableSlot.SlotType = ERpgActionBarSlotType::Consumable;
+	AppliedConsumableSlot.ConsumableDefinition = PendingConsumable->GetItemDef();
+	AppliedConsumableSlot.PreferredItemId = PendingItemId;
+	TestTrue(
+		TEXT("Replicated Consumable definition and preferred item id confirm the pending drag"),
+		URpgInventoryInteractionSession::DoesActionBarSlotConfirmPendingPayload(
+			AppliedConsumableSlot,
+			PendingConsumablePayload,
+			PendingItemId));
+
+	AppliedConsumableSlot.PreferredItemId = FRpgInventoryItemId::NewId();
+	TestFalse(
+		TEXT("A replicated Consumable binding for another item cannot acknowledge the pending drag"),
+		URpgInventoryInteractionSession::DoesActionBarSlotConfirmPendingPayload(
+			AppliedConsumableSlot,
+			PendingConsumablePayload,
+			PendingItemId));
 
 	return true;
 }

@@ -1,7 +1,9 @@
 #include "RpgInventoryInteractionSession.h"
 
+#include "SurvivalRpg/ActionBar/RpgActionBarComponent.h"
 #include "SurvivalRpg/Equipment/RpgEquipmentLoadoutComponent.h"
 #include "SurvivalRpg/GameplayTags/RpgGameplayTags.h"
+#include "SurvivalRpg/Inventory/RpgInventoryItemDefinition.h"
 #include "SurvivalRpg/Inventory/RpgInventoryManagerComponent.h"
 #include "SurvivalRpg/Inventory/RpgInventoryItemInstance.h"
 #include "SurvivalRpg/Inventory/RpgInventoryUiActionComponent.h"
@@ -275,6 +277,10 @@ void URpgInventoryInteractionSession::RegisterMessageListeners()
 		RpgGameplayTags::Rpg_Inventory_Message_ActionFeedback,
 		this,
 		&ThisClass::HandleActionFeedback);
+	ActionBarChangedHandle = MessageSubsystem.RegisterListener<FRpgActionBarSlotsChangedMessage>(
+		RpgGameplayTags::Rpg_ActionBar_Message_SlotsChanged,
+		this,
+		&ThisClass::HandleActionBarChanged);
 	InventoryChangedHandle = MessageSubsystem.RegisterListener<FRpgInventoryChangeMessage>(
 		FGameplayTag::RequestGameplayTag(TEXT("Rpg.Inventory.Message.StackChanged")),
 		this,
@@ -290,6 +296,10 @@ void URpgInventoryInteractionSession::UnregisterMessageListeners()
 	if (ActionFeedbackHandle.IsValid())
 	{
 		ActionFeedbackHandle.Unregister();
+	}
+	if (ActionBarChangedHandle.IsValid())
+	{
+		ActionBarChangedHandle.Unregister();
 	}
 	if (InventoryChangedHandle.IsValid())
 	{
@@ -379,10 +389,59 @@ void URpgInventoryInteractionSession::HandleActionFeedback(FGameplayTag Channel,
 	ResolvePendingRequest(Message.Result == ERpgInventoryActionFeedbackResult::Success);
 }
 
+bool URpgInventoryInteractionSession::DoesActionBarSlotConfirmPendingPayload(
+	const FRpgActionBarSlot& AppliedSlot,
+	const FRpgInventoryDragPayload& PendingPayload,
+	const FRpgInventoryItemId& PendingItemId)
+{
+	const bool bConsumableApplied =
+		(AppliedSlot.SlotType == ERpgActionBarSlotType::Consumable ||
+			AppliedSlot.SlotType == ERpgActionBarSlotType::InventorySlotBinding) &&
+		PendingPayload.ItemInstance &&
+		AppliedSlot.ConsumableDefinition == PendingPayload.ItemInstance->GetItemDef() &&
+		AppliedSlot.PreferredItemId == PendingItemId;
+	const FName SourceCarryRole = PendingPayload.SourceSlotAddress.IsValid()
+		? PendingPayload.SourceSlotAddress.ContainerId
+		: PendingPayload.SourcePlacement.GetContainerHandle().ContainerId;
+	const bool bCarryApplied =
+		(AppliedSlot.SlotType == ERpgActionBarSlotType::CarrySlot ||
+			AppliedSlot.SlotType == ERpgActionBarSlotType::CarrySlotBinding) &&
+		!SourceCarryRole.IsNone() &&
+		AppliedSlot.CarryRole == SourceCarryRole;
+	return bConsumableApplied || bCarryApplied;
+}
+
+void URpgInventoryInteractionSession::HandleActionBarChanged(
+	FGameplayTag Channel,
+	const FRpgActionBarSlotsChangedMessage& Message)
+{
+	if (!bPendingRequest ||
+		Target.TargetType != ERpgInventoryDropTargetType::ActionBarSlot ||
+		Target.ActionBarSlotIndex < 0 ||
+		Message.Owner != PlayerController)
+	{
+		return;
+	}
+
+	const URpgActionBarComponent* ActionBar = Cast<URpgActionBarComponent>(Message.ActionBarComponent);
+	if (!ActionBar)
+	{
+		return;
+	}
+
+	const FRpgActionBarSlot AppliedSlot = ActionBar->GetSlot(Target.ActionBarSlotIndex);
+	if (DoesActionBarSlotConfirmPendingPayload(AppliedSlot, Payload, PendingItemId))
+	{
+		// Replicated/locally broadcast actionbar state is authoritative enough to release the held ghost even
+		// when it arrives before the reliable request-correlated feedback RPC.
+		ResolvePendingRequest(true);
+	}
+}
+
 void URpgInventoryInteractionSession::HandleInventoryChanged(FGameplayTag Channel, const FRpgInventoryChangeMessage& Message)
 {
-	// Quick Access never mutates inventory ownership. It must resolve only from its exact request-correlated feedback,
-	// not from an unrelated stack or placement replication that happened while the binding request was in flight.
+	// Quick Access never mutates inventory ownership. It resolves from exact feedback or the matching actionbar
+	// binding message above, never from unrelated stack/placement replication while its request is in flight.
 	if (!bPendingRequest || Target.TargetType == ERpgInventoryDropTargetType::ActionBarSlot ||
 		!IsPendingMessageRelevant(Message.InventoryOwner.Get(), Message.Instance.Get()))
 	{

@@ -10,6 +10,7 @@
 #include "RpgInventoryDragVisualWidget.generated.h"
 
 class SBox;
+struct FStreamableHandle;
 class UBorder;
 class UImage;
 class USizeBox;
@@ -249,9 +250,18 @@ private:
 	void RefreshPreviewStyle();
 	void NotifyBlueprintVisualUpdated();
 	void InvalidateNativeFallbackPaint() const;
+	void RequestIconResource();
+	void HandleIconResourceLoaded(FSoftObjectPath LoadedPath);
+	void CancelIconResourceRequest();
 
 	UPROPERTY(Transient)
 	FVector2D ExactVisualSize = FVector2D(70.0f, 70.0f);
 
+	/** Strong presentation-only reference retained after the soft icon finishes loading. */
+	UPROPERTY(Transient)
+	TObjectPtr<UTexture2D> LoadedIcon = nullptr;
+
+	FSoftObjectPath RequestedIconPath;
+	TSharedPtr<FStreamableHandle> IconLoadHandle;
 	TSharedPtr<SBox> NativeSizeConstraint;
 };

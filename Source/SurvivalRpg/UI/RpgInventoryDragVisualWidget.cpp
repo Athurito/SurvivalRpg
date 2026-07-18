@@ -6,6 +6,8 @@
 #include "Components/Image.h"
 #include "Components/SizeBox.h"
 #include "Components/TextBlock.h"
+#include "Engine/AssetManager.h"
+#include "Engine/StreamableManager.h"
 #include "Engine/Texture2D.h"
 #include "Rendering/DrawElements.h"
 #include "Styling/CoreStyle.h"
@@ -303,7 +305,7 @@ int32 URpgInventoryDragVisualWidget::NativePaint(
 	HighestLayer = FMath::Max(HighestLayer, PaintedLayer);
 	int32 NextLayer = HighestLayer + 1;
 
-	if (!ItemIcon && Icon.Get() && WhiteBrush)
+	if (!ItemIcon && LoadedIcon && WhiteBrush)
 	{
 		const FVector2D LocalSize = AllottedGeometry.GetLocalSize();
 		const bool bRotateIcon = bRotateIconWithFootprint && bFootprintRotated;
@@ -313,7 +315,7 @@ int32 URpgInventoryDragVisualWidget::NativePaint(
 		if (IconPaintSize.X > KINDA_SMALL_NUMBER && IconPaintSize.Y > KINDA_SMALL_NUMBER)
 		{
 			FSlateBrush IconBrush;
-			IconBrush.SetResourceObject(Icon.Get());
+			IconBrush.SetResourceObject(LoadedIcon);
 			IconBrush.ImageSize = IconPaintSize;
 			const FLinearColor IconTint = InWidgetStyle.GetColorAndOpacityTint();
 
@@ -403,19 +405,8 @@ void URpgInventoryDragVisualWidget::RefreshLayout()
 
 void URpgInventoryDragVisualWidget::RefreshIconAndStack()
 {
-	if (ItemIcon)
-	{
-		if (Icon.IsNull())
-		{
-			// SetBrushFromTexture also cancels any stale async request from a previously reused drag visual.
-			ItemIcon->SetBrushFromTexture(nullptr, false);
-		}
-		else
-		{
-			ItemIcon->SetBrushFromSoftTexture(Icon, false);
-		}
-		RefreshIconRotation();
-	}
+	RequestIconResource();
+	RefreshIconRotation();
 
 	if (StackCountText)
 	{
@@ -425,6 +416,80 @@ void URpgInventoryDragVisualWidget::RefreshIconAndStack()
 		StackCountText->SetVisibility(StackCount > 0 ? ESlateVisibility::HitTestInvisible : ESlateVisibility::Collapsed);
 	}
 	InvalidateNativeFallbackPaint();
+}
+
+void URpgInventoryDragVisualWidget::RequestIconResource()
+{
+	const FSoftObjectPath DesiredPath = Icon.ToSoftObjectPath();
+	if (!DesiredPath.IsValid())
+	{
+		CancelIconResourceRequest();
+		RequestedIconPath.Reset();
+		LoadedIcon = nullptr;
+		if (ItemIcon)
+		{
+			ItemIcon->SetBrushFromTexture(nullptr, false);
+		}
+		return;
+	}
+
+	if (UTexture2D* AlreadyLoadedIcon = Icon.Get())
+	{
+		CancelIconResourceRequest();
+		RequestedIconPath = DesiredPath;
+		LoadedIcon = AlreadyLoadedIcon;
+		if (ItemIcon)
+		{
+			ItemIcon->SetBrushFromTexture(LoadedIcon, false);
+		}
+		InvalidateNativeFallbackPaint();
+		return;
+	}
+
+	if (RequestedIconPath == DesiredPath && IconLoadHandle.IsValid() && IconLoadHandle->IsActive())
+	{
+		// Initial VM/widget synchronization may configure the same visual several times in one frame.
+		// Keep the first request alive instead of repeatedly cancelling UImage's internal stream.
+		return;
+	}
+
+	CancelIconResourceRequest();
+	RequestedIconPath = DesiredPath;
+	LoadedIcon = nullptr;
+	if (ItemIcon)
+	{
+		ItemIcon->SetBrushFromTexture(nullptr, false);
+	}
+
+	IconLoadHandle = UAssetManager::GetStreamableManager().RequestAsyncLoad(
+		RequestedIconPath,
+		FStreamableDelegate::CreateUObject(this, &ThisClass::HandleIconResourceLoaded, RequestedIconPath));
+}
+
+void URpgInventoryDragVisualWidget::HandleIconResourceLoaded(FSoftObjectPath LoadedPath)
+{
+	if (LoadedPath != RequestedIconPath)
+	{
+		return;
+	}
+
+	LoadedIcon = Cast<UTexture2D>(LoadedPath.ResolveObject());
+	IconLoadHandle.Reset();
+	if (ItemIcon)
+	{
+		ItemIcon->SetBrushFromTexture(LoadedIcon, false);
+		RefreshIconRotation();
+	}
+	InvalidateNativeFallbackPaint();
+}
+
+void URpgInventoryDragVisualWidget::CancelIconResourceRequest()
+{
+	if (IconLoadHandle.IsValid())
+	{
+		IconLoadHandle->CancelHandle();
+		IconLoadHandle.Reset();
+	}
 }
 
 void URpgInventoryDragVisualWidget::RefreshIconRotation()

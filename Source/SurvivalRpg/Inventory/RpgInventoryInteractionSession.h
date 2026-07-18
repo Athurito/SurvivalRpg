@@ -10,6 +10,8 @@
 class APlayerController;
 class UActorComponent;
 class URpgInventoryManagerComponent;
+struct FRpgActionBarSlot;
+struct FRpgActionBarSlotsChangedMessage;
 struct FRpgEquipmentLoadoutSlotsChangedMessage;
 struct FRpgInventoryActionFeedbackMessage;
 struct FRpgInventoryChangeMessage;
@@ -117,6 +119,12 @@ public:
 		const FRpgInventoryActionFeedbackMessage& Message,
 		bool bRequireValidRequestId);
 
+	/** Pure authoritative-state confirmation used when actionbar replication arrives before request feedback. */
+	static bool DoesActionBarSlotConfirmPendingPayload(
+		const FRpgActionBarSlot& AppliedSlot,
+		const FRpgInventoryDragPayload& PendingPayload,
+		const FRpgInventoryItemId& PendingItemId);
+
 	/** Fired when payload, rotation, target, preview, or pending state changes. */
 	UPROPERTY(BlueprintAssignable, Category = "Inventory|Interaction")
 	FRpgInventoryInteractionStateChanged OnInteractionStateChanged;
@@ -140,6 +148,7 @@ private:
 	void UpdateSpatialPreviewState(ERpgInventoryInteractionPreviewState InPreviewState);
 	bool IsPendingMessageRelevant(UActorComponent* InventoryOwner, const UObject* Item) const;
 	void HandleActionFeedback(FGameplayTag Channel, const FRpgInventoryActionFeedbackMessage& Message);
+	void HandleActionBarChanged(FGameplayTag Channel, const FRpgActionBarSlotsChangedMessage& Message);
 	void HandleInventoryChanged(FGameplayTag Channel, const FRpgInventoryChangeMessage& Message);
 	void HandleEquipmentChanged(FGameplayTag Channel, const FRpgEquipmentLoadoutSlotsChangedMessage& Message);
 
@@ -186,6 +195,7 @@ private:
 	bool bPendingRequest = false;
 
 	FGameplayMessageListenerHandle ActionFeedbackHandle;
+	FGameplayMessageListenerHandle ActionBarChangedHandle;
 	FGameplayMessageListenerHandle InventoryChangedHandle;
 	FGameplayMessageListenerHandle EquipmentChangedHandle;
 };

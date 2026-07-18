@@ -538,6 +538,11 @@ bool URpgActionBarTileView::CommitPayloadAtScreenPosition(const FRpgInventoryDra
 	return SlotWidget->CommitPayloadDrop(Payload);
 }
 
+bool URpgActionBarTileView::HasActionBarSlotAtScreenPosition(FVector2D ScreenPosition) const
+{
+	return FindActionBarSlotWidgetAtScreenPosition(ScreenPosition) != nullptr;
+}
+
 void URpgActionBarTileView::ClearExternalPreviewPayloads()
 {
 	for (UUserWidget* EntryWidget : GetDisplayedEntryWidgets())

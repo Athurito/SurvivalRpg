@@ -78,6 +78,9 @@ public:
 	/** Commits a mouse-drag payload to the actionbar slot under a screen position. */
 	bool CommitPayloadAtScreenPosition(const FRpgInventoryDragPayload& Payload, FVector2D ScreenPosition);
 
+	/** Whether the screen position resolves to one concrete displayed 1-8 slot rather than only the TileView bounds. */
+	bool HasActionBarSlotAtScreenPosition(FVector2D ScreenPosition) const;
+
 	/** Clears transient mouse-drag feedback on displayed actionbar slots. */
 	void ClearExternalPreviewPayloads();
 

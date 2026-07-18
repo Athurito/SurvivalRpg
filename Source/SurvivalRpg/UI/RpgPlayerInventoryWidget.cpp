@@ -1132,7 +1132,9 @@ bool URpgPlayerInventoryWidget::RoutePayloadToActionBar(
 	bool& bOutTargetAddressed)
 {
 	bOutTargetAddressed = false;
-	if (!ActionBarTileView || !IsWidgetUnderScreenPosition(ActionBarTileView, GhostCenterScreenPosition))
+	if (!ActionBarTileView ||
+		!IsWidgetUnderScreenPosition(ActionBarTileView, GhostCenterScreenPosition) ||
+		!ActionBarTileView->HasActionBarSlotAtScreenPosition(GhostCenterScreenPosition))
 	{
 		return false;
 	}
@@ -1144,8 +1146,7 @@ bool URpgPlayerInventoryWidget::RoutePayloadToActionBar(
 		return ActionBarTileView->CommitPayloadAtScreenPosition(Payload, GhostCenterScreenPosition);
 	}
 
-	ActionBarTileView->PreviewPayloadAtScreenPosition(Payload, GhostCenterScreenPosition);
-	return true;
+	return ActionBarTileView->PreviewPayloadAtScreenPosition(Payload, GhostCenterScreenPosition);
 }
 
 bool URpgPlayerInventoryWidget::RoutePayloadToSpatialGrid(const FRpgInventoryDragPayload& Payload, FVector2D ScreenPosition, bool bCommit)
