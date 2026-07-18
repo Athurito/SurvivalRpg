@@ -1024,11 +1024,8 @@ void URpgInventoryUiActionComponent::RequestMutateQuickAccessBinding_Implementat
 			return;
 		}
 
-		ActionBar->RequestBindCarrySlotToSlot(Request.SlotIndex, Request.SourceAddress);
-		const FRpgActionBarSlot AppliedSlot = ActionBar->GetSlot(Request.SlotIndex);
-		const bool bApplied = IsCarryBinding(AppliedSlot) &&
-			AppliedSlot.CarryRole == Request.ExpectedCarryRole &&
-			AppliedSlot.SlotAddress == Request.SourceAddress;
+		const bool bApplied =
+			ActionBar->TryBindCarrySlotToSlotAuthority(Request.SlotIndex, Request.SourceAddress);
 		SendQuickAccessFeedback(bApplied
 			? ERpgInventoryActionFeedbackResult::Success
 			: ERpgInventoryActionFeedbackResult::ServerRejected);
@@ -1060,12 +1057,8 @@ void URpgInventoryUiActionComponent::RequestMutateQuickAccessBinding_Implementat
 			return;
 		}
 
-		ActionBar->RequestBindInventorySlotToSlot(Request.SlotIndex, Request.SourceAddress);
-		const FRpgActionBarSlot AppliedSlot = ActionBar->GetSlot(Request.SlotIndex);
-		const bool bApplied = IsConsumableBinding(AppliedSlot) &&
-			AppliedSlot.ConsumableDefinition == Request.ExpectedConsumableDefinition &&
-			AppliedSlot.PreferredItemId == Request.ExpectedPreferredItemId &&
-			AppliedSlot.SlotAddress == Request.SourceAddress;
+		const bool bApplied =
+			ActionBar->TryBindInventorySlotToSlotAuthority(Request.SlotIndex, Request.SourceAddress);
 		SendQuickAccessFeedback(bApplied
 			? ERpgInventoryActionFeedbackResult::Success
 			: ERpgInventoryActionFeedbackResult::ServerRejected);
@@ -1087,8 +1080,7 @@ void URpgInventoryUiActionComponent::RequestMutateQuickAccessBinding_Implementat
 			return;
 		}
 
-		ActionBar->RequestClearSlot(Request.SlotIndex);
-		SendQuickAccessFeedback(ActionBar->GetSlot(Request.SlotIndex).IsEmpty()
+		SendQuickAccessFeedback(ActionBar->TryClearSlotAuthority(Request.SlotIndex)
 			? ERpgInventoryActionFeedbackResult::Success
 			: ERpgInventoryActionFeedbackResult::ServerRejected);
 		return;
@@ -1111,8 +1103,7 @@ void URpgInventoryUiActionComponent::RequestMutateQuickAccessBinding_Implementat
 			return;
 		}
 
-		ActionBar->RequestClearSlot(Request.SlotIndex);
-		SendQuickAccessFeedback(ActionBar->GetSlot(Request.SlotIndex).IsEmpty()
+		SendQuickAccessFeedback(ActionBar->TryClearSlotAuthority(Request.SlotIndex)
 			? ERpgInventoryActionFeedbackResult::Success
 			: ERpgInventoryActionFeedbackResult::ServerRejected);
 		return;

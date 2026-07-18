@@ -99,6 +99,24 @@ URpgInventoryAutomationTestLargeItemDefinition::URpgInventoryAutomationTestLarge
 	Fragments.Add(TraitsFragment);
 }
 
+URpgInventoryAutomationTestWeaponItemDefinition::URpgInventoryAutomationTestWeaponItemDefinition(
+	const FObjectInitializer& ObjectInitializer)
+	: Super(ObjectInitializer)
+{
+	DisplayName = FText::FromString(TEXT("Automation Weapon"));
+
+	URpgInventoryFragment_SpatialItem* SpatialFragment =
+		CreateDefaultSubobject<URpgInventoryFragment_SpatialItem>(TEXT("Spatial"));
+	ConfigureSpatialFragment(SpatialFragment, 1, 1, true);
+	Fragments.Add(SpatialFragment);
+
+	URpgInventoryFragment_ItemTraits* TraitsFragment =
+		CreateDefaultSubobject<URpgInventoryFragment_ItemTraits>(TEXT("Traits"));
+	ConfigureNonStackingTraits(TraitsFragment);
+	TraitsFragment->ItemCategory = ERpgInventoryItemCategory::Weapon;
+	Fragments.Add(TraitsFragment);
+}
+
 URpgInventoryAutomationTestBagItemDefinition::URpgInventoryAutomationTestBagItemDefinition(
 	const FObjectInitializer& ObjectInitializer)
 	: Super(ObjectInitializer)

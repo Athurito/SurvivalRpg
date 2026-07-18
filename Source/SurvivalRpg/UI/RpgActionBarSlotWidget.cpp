@@ -165,7 +165,32 @@ bool URpgActionBarSlotWidget::NativeOnDragOver(const FGeometry& InGeometry, cons
 
 bool URpgActionBarSlotWidget::NativeOnDrop(const FGeometry& InGeometry, const FDragDropEvent& InDragDropEvent, UDragDropOperation* InOperation)
 {
-	return false;
+	URpgInventoryDragDropOperation* InventoryOperation = Cast<URpgInventoryDragDropOperation>(InOperation);
+	if (!InventoryOperation || !DragDropCoordinator ||
+		!URpgInventoryDragDropCoordinator::IsPayloadValid(InventoryOperation->InventoryPayload))
+	{
+		return false;
+	}
+
+	const FVector2D GhostCenterScreenPosition =
+		InventoryOperation->ResolveDecoratorCenterScreen(InDragDropEvent.GetScreenSpacePosition());
+	const FVector2D LocalGhostCenter = InGeometry.AbsoluteToLocal(GhostCenterScreenPosition);
+	const FVector2D SlotSize = InGeometry.GetLocalSize();
+	const bool bGhostAddressesThisSlot =
+		LocalGhostCenter.X >= 0.0f &&
+		LocalGhostCenter.Y >= 0.0f &&
+		LocalGhostCenter.X <= SlotSize.X &&
+		LocalGhostCenter.Y <= SlotSize.Y;
+	if (!bGhostAddressesThisSlot)
+	{
+		// The player-screen resolver still handles edge grabs whose pointer and visible ghost address
+		// different widgets. This fallback only commits when this exact displayed slot owns the ghost center.
+		return false;
+	}
+
+	const FRpgInventoryDragPayload ResolvedPayload =
+		DragDropCoordinator->ResolveInteractionPayload(InventoryOperation->InventoryPayload);
+	return CommitPayloadDrop(ResolvedPayload);
 }
 
 void URpgActionBarSlotWidget::NativeOnDragLeave(const FDragDropEvent& InDragDropEvent, UDragDropOperation* InOperation)

@@ -166,6 +166,21 @@ public:
 	UFUNCTION(BlueprintPure, Category = "Rpg|Action Bar")
 	FRpgActionBarSlot GetSlot(int32 SlotIndex) const;
 
+	/**
+	 * Immediately applies a validated consumable-address binding on server authority.
+	 * Server-side transaction components use this instead of nesting a second Server RPC and reading stale state.
+	 */
+	bool TryBindInventorySlotToSlotAuthority(int32 SlotIndex, const FRpgInventorySlotAddress& SlotAddress);
+
+	/**
+	 * Immediately applies a semantic Carry binding on server authority.
+	 * The binding follows the Carry role, not the concrete item currently occupying that address.
+	 */
+	bool TryBindCarrySlotToSlotAuthority(int32 SlotIndex, const FRpgInventorySlotAddress& SlotAddress);
+
+	/** Immediately clears one Quick Access binding on server authority and reports whether the slot is empty. */
+	bool TryClearSlotAuthority(int32 SlotIndex);
+
 	/** Compatibility adapter that creates a definition+item-id consumable binding from a quick-access grid cell. */
 	UFUNCTION(Server, Reliable, BlueprintCallable, Category = "Rpg|Action Bar")
 	void RequestBindInventorySlotToSlot(int32 SlotIndex, FRpgInventorySlotAddress SlotAddress);

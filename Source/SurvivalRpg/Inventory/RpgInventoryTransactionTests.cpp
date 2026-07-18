@@ -8,6 +8,7 @@
 #include "RpgInventoryItemInstance.h"
 #include "RpgInventoryManagerComponent.h"
 #include "RpgInventoryUiActionComponent.h"
+#include "SurvivalRpg/ActionBar/RpgActionBarComponent.h"
 #include "SurvivalRpg/Equipment/RpgEquipmentLoadoutComponent.h"
 #include "SurvivalRpg/GameplayTags/RpgGameplayTags.h"
 #include "SurvivalRpg/Systems/GameplayTagStack.h"
@@ -471,6 +472,134 @@ bool FRpgInventoryContainerGearDragDropTest::RunTest(const FString& Parameters)
 		TEXT("Gear-to-grid moves the physical item back into Pockets"),
 		ReturnedBackpackEntry.Placement.GetContainerHandle(),
 		Pockets);
+	return true;
+}
+
+IMPLEMENT_SIMPLE_AUTOMATION_TEST(
+	FRpgInventoryCarryQuickAccessBindingTest,
+	"SurvivalRpg.Inventory.QuickAccess.WeaponSlot1DragCommitsAuthorityBinding",
+	EAutomationTestFlags::EditorContext | EAutomationTestFlags::EngineFilter)
+
+bool FRpgInventoryCarryQuickAccessBindingTest::RunTest(const FString& Parameters)
+{
+	using namespace RpgInventoryTransactionTests;
+	FScopedInventoryWorld TestWorld;
+	if (!InitializeTest(*this, TestWorld))
+	{
+		return false;
+	}
+
+	UWorld* World = TestWorld.GetTestWorld();
+	FActorSpawnParameters ControllerSpawnParameters;
+	ControllerSpawnParameters.Name = MakeUniqueObjectName(
+		World,
+		ARpgInventoryAutomationTestPlayerController::StaticClass(),
+		TEXT("CarryQuickAccessController"));
+	ControllerSpawnParameters.ObjectFlags = RF_Transient;
+	ARpgInventoryAutomationTestPlayerController* Controller =
+		World->SpawnActor<ARpgInventoryAutomationTestPlayerController>(ControllerSpawnParameters);
+
+	FActorSpawnParameters PlayerStateSpawnParameters;
+	PlayerStateSpawnParameters.Name = MakeUniqueObjectName(
+		World,
+		ARpgInventoryAutomationTestPlayerState::StaticClass(),
+		TEXT("CarryQuickAccessPlayerState"));
+	PlayerStateSpawnParameters.ObjectFlags = RF_Transient;
+	ARpgInventoryAutomationTestPlayerState* PlayerState =
+		World->SpawnActor<ARpgInventoryAutomationTestPlayerState>(PlayerStateSpawnParameters);
+	if (!TestNotNull(TEXT("The Carry binding controller fixture exists"), Controller) ||
+		!TestNotNull(TEXT("The Carry binding player-state fixture exists"), PlayerState))
+	{
+		return false;
+	}
+
+	Controller->SetPlayerState(PlayerState);
+	PlayerState->SetOwner(Controller);
+	URpgInventoryManagerComponent* Inventory = PlayerState->GetInventoryManagerComponent();
+	URpgActionBarComponent* ActionBar = Controller->GetActionBarComponent();
+	URpgInventoryUiActionComponent* UiActions = Controller->GetInventoryUiActionComponent();
+	if (!TestTrue(TEXT("The fixture executes on server authority"), Controller->HasAuthority()) ||
+		!TestNotNull(TEXT("The player inventory exists"), Inventory) ||
+		!TestNotNull(TEXT("The controller actionbar exists"), ActionBar) ||
+		!TestNotNull(TEXT("The server inventory action component exists"), UiActions))
+	{
+		return false;
+	}
+
+	const FRpgInventoryContainerHandle Pockets =
+		FRpgInventoryContainerHandle::MakeRoot(URpgPlayerInventoryLayoutComponent::PocketsGroupId);
+	const FRpgInventoryContainerHandle WeaponSlot1 =
+		FRpgInventoryContainerHandle::MakeRoot(URpgPlayerInventoryLayoutComponent::WeaponSlot1GroupId);
+	URpgInventoryItemInstance* Weapon = Inventory->AddItemDefinitionToPlacement(
+		URpgInventoryAutomationTestWeaponItemDefinition::StaticClass(),
+		1,
+		MakePlacement(Pockets, 0, 0));
+	if (!TestNotNull(TEXT("A concrete weapon starts in Pockets"), Weapon))
+	{
+		return false;
+	}
+
+	FRpgInventorySlotAddress WeaponSlot1Address;
+	WeaponSlot1Address.SetContainerHandle(WeaponSlot1);
+	WeaponSlot1Address.X = 0;
+	WeaponSlot1Address.Y = 0;
+	UiActions->RequestMoveItemToInventorySlotAddress(Weapon, WeaponSlot1Address);
+
+	FRpgInventoryEntryView WeaponEntry;
+	if (!TestTrue(
+			TEXT("The WeaponSlot1 entry is addressable after the real layout mutation"),
+			GetEntryView(Inventory, Weapon->GetItemId(), WeaponEntry)) ||
+		!TestEqual(
+			TEXT("The weapon is physically located in WeaponSlot1"),
+			WeaponEntry.Placement.GetContainerHandle(),
+			WeaponSlot1))
+	{
+		return false;
+	}
+
+	URpgInventoryDragDropCoordinator* Coordinator =
+		URpgInventoryDragDropCoordinator::CreateInventoryDragDropCoordinator(Controller, Controller);
+	if (!TestNotNull(TEXT("The player drag/drop coordinator exists"), Coordinator))
+	{
+		return false;
+	}
+
+	FRpgInventoryDragPayload Payload;
+	Payload.SourceType = ERpgInventoryDragSourceType::InventoryEntry;
+	Payload.SourceInventory = Inventory;
+	Payload.ItemInstance = Weapon;
+	Payload.EntryId = WeaponEntry.EntryId;
+	Payload.StackCount = WeaponEntry.StackCount;
+	Payload.SourcePlacement = WeaponEntry.Placement;
+	Payload.SourceSlotAddress = WeaponSlot1Address;
+	Payload.ItemFootprint.Width = 1;
+	Payload.ItemFootprint.Height = 1;
+
+	const FRpgInventoryDropTarget ActionBarTarget =
+		URpgInventoryDragDropCoordinator::MakeActionBarSlotTarget(0);
+	TestTrue(
+		TEXT("WeaponSlot1 previews as a valid Quick Access binding"),
+		Coordinator->UpdateInteractionPreview(Payload, ActionBarTarget));
+	TestTrue(
+		TEXT("Dropping WeaponSlot1 dispatches and applies the authoritative Quick Access mutation"),
+		Coordinator->CommitPayloadToTarget(Payload, ActionBarTarget));
+
+	const FRpgActionBarSlot AppliedSlot = ActionBar->GetSlot(0);
+	TestEqual(
+		TEXT("The first Quick Access slot stores Carry semantics"),
+		AppliedSlot.SlotType,
+		ERpgActionBarSlotType::CarrySlot);
+	TestEqual(
+		TEXT("The binding follows the WeaponSlot1 role"),
+		AppliedSlot.CarryRole,
+		URpgPlayerInventoryLayoutComponent::WeaponSlot1GroupId);
+	TestEqual(
+		TEXT("The canonical Carry address is retained for presentation and validation"),
+		AppliedSlot.SlotAddress.GetContainerHandle(),
+		WeaponSlot1);
+	TestFalse(
+		TEXT("The acknowledged binding releases the held drag ghost"),
+		Coordinator->GetInteractionSession()->HasPayload());
 	return true;
 }
 

@@ -59,6 +59,19 @@ public:
 	virtual bool IsEditorOnly() const override { return true; }
 };
 
+/** Editor-only 1x1 weapon used to exercise real Carry and Quick Access authority paths. */
+UCLASS(NotBlueprintable, Transient)
+class URpgInventoryAutomationTestWeaponItemDefinition final : public URpgInventoryItemDefinition
+{
+	GENERATED_BODY()
+
+public:
+	explicit URpgInventoryAutomationTestWeaponItemDefinition(
+		const FObjectInitializer& ObjectInitializer = FObjectInitializer::Get());
+
+	virtual bool IsEditorOnly() const override { return true; }
+};
+
 /** Editor-only 1x1 bag whose 4x4 Main grid permits nested containers through depth four. */
 UCLASS(NotBlueprintable, Transient)
 class URpgInventoryAutomationTestBagItemDefinition final : public URpgInventoryItemDefinition

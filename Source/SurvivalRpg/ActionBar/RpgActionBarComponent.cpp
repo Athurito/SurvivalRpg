@@ -63,10 +63,18 @@ TArray<FRpgQuickAccessBinding> URpgActionBarComponent::GetQuickAccessBindings() 
 
 void URpgActionBarComponent::RequestBindInventorySlotToSlot_Implementation(int32 SlotIndex, FRpgInventorySlotAddress SlotAddress)
 {
+	TryBindInventorySlotToSlotAuthority(SlotIndex, SlotAddress);
+}
+
+bool URpgActionBarComponent::TryBindInventorySlotToSlotAuthority(
+	int32 SlotIndex,
+	const FRpgInventorySlotAddress& SlotAddress)
+{
 	EnsureSlotCount();
-	if (!IsValidSlotIndex(SlotIndex) || !SlotAddress.IsValid())
+	if (!GetOwner() || !GetOwner()->HasAuthority() ||
+		!IsValidSlotIndex(SlotIndex) || !SlotAddress.IsValid())
 	{
-		return;
+		return false;
 	}
 
 	const ARpgPlayerController* RpgPC = GetRpgPlayerController();
@@ -78,7 +86,7 @@ void URpgActionBarComponent::RequestBindInventorySlotToSlot_Implementation(int32
 		!BoundItem ||
 		BoundItem->FindFragmentByClass<URpgInventoryFragment_UsableItem>() == nullptr)
 	{
-		return;
+		return false;
 	}
 
 	FRpgActionBarSlot Binding;
@@ -89,14 +97,27 @@ void URpgActionBarComponent::RequestBindInventorySlotToSlot_Implementation(int32
 	ClearDuplicateBinding(SlotIndex, Binding);
 	Slots[SlotIndex] = Binding;
 	RefreshBindingsInternal(true);
+	const FRpgActionBarSlot& AppliedSlot = Slots[SlotIndex];
+	return AppliedSlot.SlotType == ERpgActionBarSlotType::Consumable &&
+		AppliedSlot.SlotAddress == SlotAddress &&
+		AppliedSlot.ConsumableDefinition == Binding.ConsumableDefinition &&
+		AppliedSlot.PreferredItemId == Binding.PreferredItemId;
 }
 
 void URpgActionBarComponent::RequestBindCarrySlotToSlot_Implementation(int32 SlotIndex, FRpgInventorySlotAddress SlotAddress)
 {
+	TryBindCarrySlotToSlotAuthority(SlotIndex, SlotAddress);
+}
+
+bool URpgActionBarComponent::TryBindCarrySlotToSlotAuthority(
+	int32 SlotIndex,
+	const FRpgInventorySlotAddress& SlotAddress)
+{
 	EnsureSlotCount();
-	if (!IsValidSlotIndex(SlotIndex) || !SlotAddress.IsValid())
+	if (!GetOwner() || !GetOwner()->HasAuthority() ||
+		!IsValidSlotIndex(SlotIndex) || !SlotAddress.IsValid())
 	{
-		return;
+		return false;
 	}
 
 	const ARpgPlayerController* RpgPC = GetRpgPlayerController();
@@ -104,7 +125,7 @@ void URpgActionBarComponent::RequestBindCarrySlotToSlot_Implementation(int32 Slo
 	if (!InventoryLayout ||
 		!InventoryLayout->IsCarrySlotAddress(SlotAddress))
 	{
-		return;
+		return false;
 	}
 
 	FRpgActionBarSlot Binding;
@@ -114,6 +135,10 @@ void URpgActionBarComponent::RequestBindCarrySlotToSlot_Implementation(int32 Slo
 	ClearDuplicateBinding(SlotIndex, Binding);
 	Slots[SlotIndex] = Binding;
 	RefreshBindingsInternal(true);
+	const FRpgActionBarSlot& AppliedSlot = Slots[SlotIndex];
+	return AppliedSlot.SlotType == ERpgActionBarSlotType::CarrySlot &&
+		AppliedSlot.SlotAddress == SlotAddress &&
+		AppliedSlot.CarryRole == SlotAddress.ContainerId;
 }
 
 void URpgActionBarComponent::RequestBindCarryRoleToSlot_Implementation(int32 SlotIndex, FName CarryRole)
@@ -177,14 +202,20 @@ void URpgActionBarComponent::RequestBindAbilityToSlot_Implementation(int32 SlotI
 
 void URpgActionBarComponent::RequestClearSlot_Implementation(int32 SlotIndex)
 {
+	TryClearSlotAuthority(SlotIndex);
+}
+
+bool URpgActionBarComponent::TryClearSlotAuthority(int32 SlotIndex)
+{
 	EnsureSlotCount();
-	if (!IsValidSlotIndex(SlotIndex))
+	if (!GetOwner() || !GetOwner()->HasAuthority() || !IsValidSlotIndex(SlotIndex))
 	{
-		return;
+		return false;
 	}
 
 	Slots[SlotIndex] = FRpgActionBarSlot();
 	RefreshBindingsInternal(true);
+	return Slots[SlotIndex].IsEmpty();
 }
 
 void URpgActionBarComponent::RestoreQuickAccessBindings(const TArray<FRpgQuickAccessBinding>& SavedBindings)
