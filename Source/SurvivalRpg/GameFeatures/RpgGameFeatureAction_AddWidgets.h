@@ -107,7 +107,7 @@ private:
 	virtual void AddToWorld(const FWorldContext& WorldContext, const FGameFeatureStateChangeContext& ChangeContext) override;
 	//~ End URpgGameFeatureAction_WorldActionBase interface
 
-	UPrimaryGameLayout* GetOrCreatePrimaryGameLayout(ULocalPlayer* LocalPlayer) const;
+	UPrimaryGameLayout* GetPrimaryGameLayout(ULocalPlayer* LocalPlayer) const;
 	void Reset(FPerContextData& ActiveData);
 	void HandleActorExtension(AActor* Actor, FName EventName, FGameFeatureStateChangeContext ChangeContext);
 	void AddWidgets(AActor* Actor, FPerContextData& ActiveData);

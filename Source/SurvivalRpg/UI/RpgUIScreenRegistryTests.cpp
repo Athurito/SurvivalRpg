@@ -14,11 +14,15 @@
 #include "Blueprint/UserWidget.h"
 #include "Blueprint/WidgetBlueprintGeneratedClass.h"
 #include "Blueprint/WidgetTree.h"
+#include "CommonActivatableWidget.h"
 #include "CommonLocalPlayer.h"
 #include "Components/PanelWidget.h"
+#include "Engine/AssetManager.h"
 #include "Engine/Engine.h"
+#include "Engine/StreamableManager.h"
 #include "Misc/AutomationTest.h"
 #include "Modules/ModuleManager.h"
+#include "PrimaryGameLayout.h"
 #include "UObject/UnrealType.h"
 
 namespace
@@ -367,6 +371,170 @@ bool FRpgUIScreenRegistryExactResolutionTest::RunTest(const FString& Parameters)
 	TestTrue(
 		TEXT("Exact fallback resolution preserves the requested Loot identity"),
 		ResolvedEntry.ScreenTag == RpgGameplayTags::UI_Screen_Loot);
+	return true;
+}
+
+IMPLEMENT_SIMPLE_AUTOMATION_TEST(
+	FRpgUIScreenAsyncCloseLifecycleTest,
+	"SurvivalRpg.UI.ScreenRouter.AsyncCloseLifecycle",
+	EAutomationTestFlags::EditorContext | EAutomationTestFlags::EngineFilter)
+
+bool FRpgUIScreenAsyncCloseLifecycleTest::RunTest(const FString& Parameters)
+{
+	if (!TestNotNull(TEXT("Engine exists for the LocalPlayer-owned test subsystem"), GEngine))
+	{
+		return false;
+	}
+
+	UCommonLocalPlayer* LocalPlayer = NewObject<UCommonLocalPlayer>(GEngine);
+	URpgUIScreenSubsystem* ScreenSubsystem = NewObject<URpgUIScreenSubsystem>(LocalPlayer);
+	if (!TestNotNull(TEXT("Transient CommonLocalPlayer exists"), LocalPlayer) ||
+		!TestNotNull(TEXT("Transient screen subsystem exists"), ScreenSubsystem))
+	{
+		return false;
+	}
+
+	const FGameplayTag ScreenTag = RpgGameplayTags::UI_Screen_MainMenu;
+	UCommonActivatableWidget* WidgetBeforeInitialize =
+		NewObject<UCommonActivatableWidget>(LocalPlayer);
+	FStreamableManager& StreamableManager =
+		UAssetManager::Get().GetStreamableManager();
+	TSharedPtr<FStreamableHandle> CompletedHandle =
+		StreamableManager.RequestSyncLoad(
+			FSoftObjectPath(
+				TEXT(
+					"/Game/SurvivalRpg/UI/Menus/BootMenu/"
+					"CUI_BootMenu.CUI_BootMenu_C")));
+	if (!TestTrue(
+			TEXT("A completed streamable handle exists for the close-race test"),
+			CompletedHandle.IsValid() &&
+				CompletedHandle->HasLoadCompleted()))
+	{
+		return false;
+	}
+
+	ScreenSubsystem->PendingScreenTags.Add(ScreenTag);
+	ScreenSubsystem->PendingScreenLoads.Add(
+		ScreenTag,
+		CompletedHandle);
+	ScreenSubsystem->CloseScreen(ScreenTag);
+	TestFalse(
+		TEXT("Close preserves the queued completion callback of an already-loaded screen"),
+		CompletedHandle->WasCanceled());
+	TestTrue(
+		TEXT("Closing a streaming screen keeps the tag pending until a terminal callback"),
+		ScreenSubsystem->PendingScreenTags.Contains(ScreenTag));
+	TestTrue(
+		TEXT("Closing a streaming screen records cancellation"),
+		ScreenSubsystem->CanceledPendingScreenTags.Contains(ScreenTag));
+
+	ScreenSubsystem->HandleScreenPushState(
+		ScreenTag,
+		EAsyncWidgetLayerState::Initialize,
+		WidgetBeforeInitialize);
+	TestFalse(
+		TEXT("A canceled screen is never tracked during CommonGame initialization"),
+		ScreenSubsystem->ActiveScreens.Contains(ScreenTag));
+	TestTrue(
+		TEXT("Initialize does not release the canceled request for a same-tag reopen"),
+		ScreenSubsystem->PendingScreenTags.Contains(ScreenTag));
+
+	ScreenSubsystem->HandleScreenPushState(
+		ScreenTag,
+		EAsyncWidgetLayerState::AfterPush,
+		WidgetBeforeInitialize);
+	TestFalse(
+		TEXT("AfterPush clears the canceled request"),
+		ScreenSubsystem->PendingScreenTags.Contains(ScreenTag));
+	TestFalse(
+		TEXT("AfterPush clears the cancellation marker"),
+		ScreenSubsystem->CanceledPendingScreenTags.Contains(ScreenTag));
+	TestFalse(
+		TEXT("AfterPush leaves no canceled widget tracked"),
+		ScreenSubsystem->ActiveScreens.Contains(ScreenTag));
+	CompletedHandle->ReleaseHandle();
+
+	UCommonActivatableWidget* WidgetDuringInitialize =
+		NewObject<UCommonActivatableWidget>(LocalPlayer);
+	ScreenSubsystem->PendingScreenTags.Add(ScreenTag);
+	ScreenSubsystem->HandleScreenPushState(
+		ScreenTag,
+		EAsyncWidgetLayerState::Initialize,
+		WidgetDuringInitialize);
+	TestTrue(
+		TEXT("A live request is tracked during CommonGame initialization"),
+		ScreenSubsystem->ActiveScreens.FindRef(ScreenTag) == WidgetDuringInitialize);
+
+	// The CommonGame container has not activated the widget yet, so CloseScreen
+	// must treat this as pending rather than as an active instance.
+	ScreenSubsystem->CloseScreen(ScreenTag);
+	TestTrue(
+		TEXT("Close during initialization retains request identity"),
+		ScreenSubsystem->PendingScreenTags.Contains(ScreenTag));
+	TestTrue(
+		TEXT("Close during initialization records cancellation"),
+		ScreenSubsystem->CanceledPendingScreenTags.Contains(ScreenTag));
+
+	ScreenSubsystem->HandleScreenPushState(
+		ScreenTag,
+		EAsyncWidgetLayerState::AfterPush,
+		WidgetDuringInitialize);
+	TestFalse(
+		TEXT("Terminal completion clears the initializing request"),
+		ScreenSubsystem->PendingScreenTags.Contains(ScreenTag));
+	TestFalse(
+		TEXT("Terminal completion removes its initializing widget"),
+		ScreenSubsystem->ActiveScreens.Contains(ScreenTag));
+
+	const FGameplayTag StalledScreenTag =
+		RpgGameplayTags::UI_Screen_Boot;
+	TSharedPtr<FStreamableHandle> StalledHandle =
+		StreamableManager.RequestAsyncLoad(
+			FSoftObjectPath(
+				TEXT(
+					"/Game/SurvivalRpg/UI/Menus/BootMenu/"
+					"CUI_BootMenu.CUI_BootMenu_C")),
+			FStreamableDelegate(),
+			FStreamableManager::DefaultAsyncLoadPriority,
+			/*bManageActiveHandle=*/ false,
+			/*bStartStalled=*/ true);
+	if (!TestTrue(
+			TEXT("A stalled streamable handle exists for the cancel test"),
+			StalledHandle.IsValid() &&
+				!StalledHandle->HasLoadCompleted()))
+	{
+		return false;
+	}
+
+	ScreenSubsystem->PendingScreenTags.Add(StalledScreenTag);
+	ScreenSubsystem->PendingScreenLoads.Add(
+		StalledScreenTag,
+		StalledHandle);
+	ScreenSubsystem->CloseScreen(StalledScreenTag);
+	TestTrue(
+		TEXT("Close cancels an incomplete streamable request"),
+		StalledHandle->WasCanceled());
+	TestTrue(
+		TEXT("A canceled load stays pending until its delayed terminal callback"),
+		ScreenSubsystem->PendingScreenTags.Contains(
+			StalledScreenTag));
+
+	// CommonGame binds this terminal state to the handle's cancel delegate.
+	// Streamable delegates are frame-delayed by default, so exercise the state
+	// transition explicitly after proving that the real handle was canceled.
+	ScreenSubsystem->HandleScreenPushState(
+		StalledScreenTag,
+		EAsyncWidgetLayerState::Canceled,
+		nullptr);
+	TestFalse(
+		TEXT("The incomplete request no longer blocks a same-tag reopen"),
+		ScreenSubsystem->PendingScreenTags.Contains(
+			StalledScreenTag));
+	TestFalse(
+		TEXT("The incomplete request releases its streamable handle"),
+		ScreenSubsystem->PendingScreenLoads.Contains(
+			StalledScreenTag));
+
 	return true;
 }
 

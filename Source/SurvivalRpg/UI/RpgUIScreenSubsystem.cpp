@@ -1,16 +1,34 @@
 #include "RpgUIScreenSubsystem.h"
 
-#include "CommonLocalPlayer.h"
 #include "CommonActivatableWidget.h"
-#include "Engine/GameInstance.h"
-#include "GameUIManagerSubsystem.h"
-#include "GameUIPolicy.h"
+#include "Engine/StreamableManager.h"
 #include "PrimaryGameLayout.h"
 #include "RpgUIScreenPayload.h"
 #include "RpgUIScreenRegistry.h"
 #include "RpgUISettings.h"
 
 DEFINE_LOG_CATEGORY_STATIC(LogRpgUIScreenSubsystem, Log, All);
+
+void URpgUIScreenSubsystem::Deinitialize()
+{
+	TArray<TSharedPtr<FStreamableHandle>> StreamingHandles;
+	PendingScreenLoads.GenerateValueArray(StreamingHandles);
+	for (const TSharedPtr<FStreamableHandle>& StreamingHandle : StreamingHandles)
+	{
+		if (StreamingHandle.IsValid())
+		{
+			StreamingHandle->CancelHandle();
+		}
+	}
+
+	ActiveScreens.Reset();
+	PendingPayloads.Reset();
+	PendingScreenTags.Reset();
+	PendingScreenLoads.Reset();
+	CanceledPendingScreenTags.Reset();
+
+	Super::Deinitialize();
+}
 
 UCommonActivatableWidget* URpgUIScreenSubsystem::OpenScreen(FGameplayTag ScreenTag, UObject* Payload)
 {
@@ -33,18 +51,22 @@ UCommonActivatableWidget* URpgUIScreenSubsystem::OpenScreen(FGameplayTag ScreenT
 		return nullptr;
 	}
 
-	if (Entry.bSingleInstance)
+	if (!Entry.bSingleInstance)
 	{
-		if (UCommonActivatableWidget* ExistingWidget = GetActiveScreen(ScreenTag))
-		{
-			ApplyPayloadToWidget(ExistingWidget, Payload);
-			return ExistingWidget;
-		}
+		UE_LOG(LogRpgUIScreenSubsystem, Warning,
+			TEXT("Screen [%s] has legacy bSingleInstance=false data. UI.Screen tags are always local-player singletons; enforcing single-instance routing."),
+			*ScreenTag.ToString());
+	}
 
-		if (PendingScreenTags.Contains(ScreenTag))
-		{
-			return nullptr;
-		}
+	if (UCommonActivatableWidget* ExistingWidget = GetActiveScreen(ScreenTag))
+	{
+		ApplyPayloadToWidget(ExistingWidget, Payload);
+		return ExistingWidget;
+	}
+
+	if (PendingScreenTags.Contains(ScreenTag))
+	{
+		return nullptr;
 	}
 
 	ULocalPlayer* LocalPlayer = GetLocalPlayer();
@@ -53,7 +75,7 @@ UCommonActivatableWidget* URpgUIScreenSubsystem::OpenScreen(FGameplayTag ScreenT
 		return nullptr;
 	}
 
-	UPrimaryGameLayout* RootLayout = GetOrCreatePrimaryGameLayout();
+	UPrimaryGameLayout* RootLayout = GetPrimaryGameLayout();
 	if (!RootLayout)
 	{
 		UE_LOG(LogRpgUIScreenSubsystem, Warning, TEXT("Cannot open [%s]: no PrimaryGameLayout exists for local player [%s]."),
@@ -87,107 +109,34 @@ UCommonActivatableWidget* URpgUIScreenSubsystem::OpenScreen(FGameplayTag ScreenT
 		*Entry.LayerTag.ToString(),
 		*Entry.WidgetClass.ToString());
 
-	RootLayout->PushWidgetToLayerStackAsync<UCommonActivatableWidget>(
+	const TWeakObjectPtr<URpgUIScreenSubsystem> WeakThis(this);
+	TSharedPtr<FStreamableHandle> StreamingHandle =
+		RootLayout->PushWidgetToLayerStackAsync<UCommonActivatableWidget>(
 		Entry.LayerTag,
 		Entry.bSuspendInputUntilLoaded,
 		Entry.WidgetClass,
-		[this, ScreenTag](EAsyncWidgetLayerState State, UCommonActivatableWidget* Widget)
+		[WeakThis, ScreenTag](EAsyncWidgetLayerState State, UCommonActivatableWidget* Widget)
 		{
-			if (State == EAsyncWidgetLayerState::Canceled)
+			if (URpgUIScreenSubsystem* ScreenSubsystem = WeakThis.Get())
 			{
-				CanceledPendingScreenTags.Remove(ScreenTag);
-				PendingPayloads.Remove(ScreenTag);
-				PendingScreenTags.Remove(ScreenTag);
-				return;
-			}
-
-			if (State == EAsyncWidgetLayerState::Initialize && Widget)
-			{
-				if (CanceledPendingScreenTags.Remove(ScreenTag) > 0)
-				{
-					Widget->DeactivateWidget();
-					PendingPayloads.Remove(ScreenTag);
-					PendingScreenTags.Remove(ScreenTag);
-					return;
-				}
-
-				ActiveScreens.Add(ScreenTag, Widget);
-
-				UObject* PayloadToApply = nullptr;
-				if (TObjectPtr<UObject>* PendingPayload = PendingPayloads.Find(ScreenTag))
-				{
-					PayloadToApply = PendingPayload->Get();
-				}
-
-				ApplyPayloadToWidget(Widget, PayloadToApply);
-				Widget->OnDeactivated().AddUObject(this, &ThisClass::HandleScreenDeactivated, ScreenTag, Widget);
-				UE_LOG(LogRpgUIScreenSubsystem, Log, TEXT("Initialized screen [%s] as widget [%s]."),
-					*ScreenTag.ToString(),
-					*GetNameSafe(Widget));
-				return;
-			}
-
-			if (State == EAsyncWidgetLayerState::AfterPush)
-			{
-				if (!Widget)
-				{
-					UE_LOG(LogRpgUIScreenSubsystem, Warning, TEXT("Screen [%s] finished pushing but no widget was created. Check that the mapped class is a CommonActivatableWidget and can load."),
-						*ScreenTag.ToString());
-				}
-
-				PendingPayloads.Remove(ScreenTag);
-				PendingScreenTags.Remove(ScreenTag);
+				ScreenSubsystem->HandleScreenPushState(ScreenTag, State, Widget);
 			}
 		});
+
+	// RequestAsyncLoad can complete inline for an already-loaded class. Only retain
+	// the handle when the completion callback has not already cleared this tag.
+	if (PendingScreenTags.Contains(ScreenTag) && StreamingHandle.IsValid())
+	{
+		PendingScreenLoads.Add(ScreenTag, MoveTemp(StreamingHandle));
+	}
 
 	return nullptr;
 }
 
-UPrimaryGameLayout* URpgUIScreenSubsystem::GetOrCreatePrimaryGameLayout() const
+UPrimaryGameLayout* URpgUIScreenSubsystem::GetPrimaryGameLayout() const
 {
 	ULocalPlayer* LocalPlayer = GetLocalPlayer();
-	if (!LocalPlayer)
-	{
-		return nullptr;
-	}
-
-	if (UPrimaryGameLayout* ExistingLayout = UPrimaryGameLayout::GetPrimaryGameLayout(LocalPlayer))
-	{
-		return ExistingLayout;
-	}
-
-	UCommonLocalPlayer* CommonLocalPlayer = Cast<UCommonLocalPlayer>(LocalPlayer);
-	if (!CommonLocalPlayer)
-	{
-		UE_LOG(LogRpgUIScreenSubsystem, Warning, TEXT("Cannot create PrimaryGameLayout for [%s]: LocalPlayer is not a CommonLocalPlayer."),
-			*GetNameSafe(LocalPlayer));
-		return nullptr;
-	}
-
-	UGameInstance* GameInstance = CommonLocalPlayer->GetGameInstance();
-	if (!GameInstance)
-	{
-		return nullptr;
-	}
-
-	if (UGameUIManagerSubsystem* UIManager = GameInstance->GetSubsystem<UGameUIManagerSubsystem>())
-	{
-		UIManager->NotifyPlayerAdded(CommonLocalPlayer);
-		if (UPrimaryGameLayout* CreatedLayout = UPrimaryGameLayout::GetPrimaryGameLayout(CommonLocalPlayer))
-		{
-			return CreatedLayout;
-		}
-
-		UE_LOG(LogRpgUIScreenSubsystem, Warning, TEXT("UIManager [%s] with policy [%s] did not create a PrimaryGameLayout for [%s]."),
-			*GetNameSafe(UIManager),
-			*GetNameSafe(UIManager->GetCurrentUIPolicy()),
-			*GetNameSafe(CommonLocalPlayer));
-		return nullptr;
-	}
-
-	UE_LOG(LogRpgUIScreenSubsystem, Warning, TEXT("Cannot create PrimaryGameLayout for [%s]: GameUIManagerSubsystem is missing."),
-		*GetNameSafe(CommonLocalPlayer));
-	return nullptr;
+	return LocalPlayer ? UPrimaryGameLayout::GetPrimaryGameLayout(LocalPlayer) : nullptr;
 }
 
 UCommonActivatableWidget* URpgUIScreenSubsystem::ToggleScreen(FGameplayTag ScreenTag, UObject* Payload)
@@ -216,9 +165,16 @@ void URpgUIScreenSubsystem::CloseScreen(FGameplayTag ScreenTag)
 
 	if (PendingScreenTags.Contains(ScreenTag))
 	{
-		PendingPayloads.Remove(ScreenTag);
-		PendingScreenTags.Remove(ScreenTag);
 		CanceledPendingScreenTags.Add(ScreenTag);
+		const TSharedPtr<FStreamableHandle> StreamingHandle =
+			PendingScreenLoads.FindRef(ScreenTag);
+		if (StreamingHandle.IsValid() &&
+			!StreamingHandle->HasLoadCompleted())
+		{
+			// Hold a local shared reference because a zero-frame delegate delay
+			// may remove this request from PendingScreenLoads synchronously.
+			StreamingHandle->CancelHandle();
+		}
 	}
 }
 
@@ -290,6 +246,80 @@ void URpgUIScreenSubsystem::ApplyPayloadToWidget(UCommonActivatableWidget* Widge
 	}
 }
 
+void URpgUIScreenSubsystem::HandleScreenPushState(
+	FGameplayTag ScreenTag,
+	EAsyncWidgetLayerState State,
+	UCommonActivatableWidget* Widget)
+{
+	if (State == EAsyncWidgetLayerState::Canceled)
+	{
+		CanceledPendingScreenTags.Remove(ScreenTag);
+		ClearPendingScreenState(ScreenTag);
+		return;
+	}
+
+	if (State == EAsyncWidgetLayerState::Initialize)
+	{
+		if (!Widget || CanceledPendingScreenTags.Contains(ScreenTag))
+		{
+			return;
+		}
+
+		ActiveScreens.Add(ScreenTag, Widget);
+
+		UObject* PayloadToApply = nullptr;
+		if (TObjectPtr<UObject>* PendingPayload = PendingPayloads.Find(ScreenTag))
+		{
+			PayloadToApply = PendingPayload->Get();
+		}
+
+		ApplyPayloadToWidget(Widget, PayloadToApply);
+		Widget->OnDeactivated().AddUObject(this, &ThisClass::HandleScreenDeactivated, ScreenTag, Widget);
+		UE_LOG(LogRpgUIScreenSubsystem, Log, TEXT("Initialized screen [%s] as widget [%s]."),
+			*ScreenTag.ToString(),
+			*GetNameSafe(Widget));
+		return;
+	}
+
+	if (State != EAsyncWidgetLayerState::AfterPush)
+	{
+		return;
+	}
+
+	const bool bWasCanceled = CanceledPendingScreenTags.Remove(ScreenTag) > 0;
+	if (bWasCanceled && Widget)
+	{
+		if (const TObjectPtr<UCommonActivatableWidget>* ActiveWidget = ActiveScreens.Find(ScreenTag))
+		{
+			if (ActiveWidget->Get() == Widget)
+			{
+				ActiveScreens.Remove(ScreenTag);
+			}
+		}
+
+		if (UPrimaryGameLayout* RootLayout = GetPrimaryGameLayout())
+		{
+			RootLayout->FindAndRemoveWidgetFromLayer(Widget);
+		}
+		else
+		{
+			Widget->DeactivateWidget();
+		}
+
+		UE_LOG(LogRpgUIScreenSubsystem, Verbose,
+			TEXT("Discarded canceled screen [%s] after its async push completed."),
+			*ScreenTag.ToString());
+	}
+	else if (!Widget)
+	{
+		UE_LOG(LogRpgUIScreenSubsystem, Warning,
+			TEXT("Screen [%s] finished pushing but no widget was created. Check that the mapped class is a CommonActivatableWidget and can load."),
+			*ScreenTag.ToString());
+	}
+
+	ClearPendingScreenState(ScreenTag);
+}
+
 void URpgUIScreenSubsystem::HandleScreenDeactivated(FGameplayTag ScreenTag, UCommonActivatableWidget* Widget)
 {
 	if (const TObjectPtr<UCommonActivatableWidget>* FoundWidget = ActiveScreens.Find(ScreenTag))
@@ -300,6 +330,18 @@ void URpgUIScreenSubsystem::HandleScreenDeactivated(FGameplayTag ScreenTag, UCom
 		}
 	}
 
+	// A widget can deactivate from its activation callback before CommonGame
+	// emits AfterPush. Keep the tag pending until that terminal callback so a
+	// same-tag reopen cannot race the still-completing async push.
+	if (!PendingScreenTags.Contains(ScreenTag))
+	{
+		PendingPayloads.Remove(ScreenTag);
+	}
+}
+
+void URpgUIScreenSubsystem::ClearPendingScreenState(FGameplayTag ScreenTag)
+{
 	PendingPayloads.Remove(ScreenTag);
 	PendingScreenTags.Remove(ScreenTag);
+	PendingScreenLoads.Remove(ScreenTag);
 }

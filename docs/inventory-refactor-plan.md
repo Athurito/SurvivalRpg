@@ -118,7 +118,7 @@ Bestätigte Asset-/Migrationsbefunde:
 
 ## Phase 1 – UI Composition und Editor-WYSIWYG
 
-Status: **In Arbeit**
+Status: **Abgeschlossen**
 
 Verbindliche UI-Verantwortungslinie:
 
@@ -221,21 +221,20 @@ Es gibt bewusst keine spekulative allgemeine Dual-Inventory-Basis.
 - [x] Quick-Access-Radial in die reguläre CommonUI-/Input-Komposition
       überführen, statt Controller-`BindKey`, `NativePaint` und direkten
       Viewport-Push zu mischen.
-- [ ] Direkte Viewport-Widgets in sichtbare CommonUI-/UIExtension-Hosts
+- [x] Direkte Viewport-Widgets in sichtbare CommonUI-/UIExtension-Hosts
       überführen, sofern sie keine echten Drag-Decorators sind.
 
-  Der native Inventory-/Gameplay-HUD-Teil und der Respawn-Pfad sind
-  abgeschlossen: Der Indicator-Manager besitzt nur noch Deskriptorzustand,
-  `CUI_RpgHudLayout` authoriert die sichtbare `RPG Indicator Layer` und
-  `BP_Rpg_PlayerController -> DeathTest` wurde durch den registrierten
-  `UI.Screen.Respawn` auf `UI.Layer.Modal` ersetzt. Der Gesamtpunkt bleibt
-  offen, bis die beiden Frontend-Pfade
-  `BP_BootMenuHud -> CUI_BootMenu` und
-  `BP_MainMenuHud -> CUI_MainMenu` ebenfalls über ihre kanonischen
-  CommonUI-Hosts laufen. Vor diesem Cutover müssen ihr
-  PlayerController-/Primary-Layout- und Map-Travel-Lifecycle explizit
-  abgesichert werden. Framework-eigene Root-/Loading-Screen-Pfade und echte
-  Drag-Decorators sind ausdrücklich kein Migrationsziel.
+  Der Inventory-/Gameplay-HUD-, Indicator-, Respawn- und Frontend-Pfad ist
+  abgeschlossen. `CUI_RpgHudLayout` authoriert die sichtbare Indicator-Layer,
+  `UI.Screen.Respawn` läuft auf `UI.Layer.Modal`, und Boot sowie Main Menu
+  werden ausschließlich als registrierte `UI.Screen.*`-Roots auf
+  `UI.Layer.Menu` geöffnet. Die Frontend-GameModes konfigurieren nur noch
+  ihren Screen-Tag; CommonGame besitzt Primary Layout und Viewport, während
+  `ARpgFrontendHUD` den Map-Lifecycle koordiniert. `CUI_BootMenu` besitzt nur
+  noch seine sichtbaren Splash-Seiten, `CUI_MainMenuStack` seine fünf
+  authorierten Navigationsstacks. Die direkten Boot-/MainMenu-HUD- und
+  Controller-Assets sind entfernt. Framework-eigene Root-/Loading-Screen-
+  Pfade und echte Drag-Decorators sind ausdrücklich kein Migrationsziel.
 
 Verifizierter UI-Zwischenstand vom 2026-07-19:
 
@@ -766,7 +765,55 @@ Verifizierter Respawn-/Modal-Composition-Schnitt vom 2026-07-19:
 - Ein interaktiver packaged Forced-Death-/Respawn-Smoke bleibt für diesen
   Teilschnitt offen.
 
-- Noch offen: den kanonischen Primary-Mismatch mit echtem OwningPlayer in PIE
+Verifizierter Frontend-/CommonUI-Abschlussschnitt vom 2026-07-19:
+
+- `BP_BootMenu_Gamemode` und `BP_MainMenuGameMode` erben vom schlanken
+  `ARpgFrontendGameModeBase` und konfigurieren ausschließlich
+  `UI.Screen.Boot` beziehungsweise `UI.Screen.MainMenu`.
+  `ACommonPlayerController` liefert den CommonGame-LocalPlayer-Lifecycle;
+  `ARpgFrontendHUD` öffnet und schließt nur den konfigurierten Registry-Tag.
+- `CUI_BootMenu` ist ein graphfreier `URpgBootScreenWidget`. Seine drei
+  sichtbaren Splash-Seiten bleiben authoriert; der native Presenter besitzt
+  die expliziten Timings 1/2/2 Sekunden und reist anschließend nach
+  `MainMenu`. `CUI_MainMenuStack` bleibt die sichtbare Authority für seine
+  fünf Stacks und pusht `CUI_MainMenu` als erste Seite.
+- Die fünf bestehenden MainMenu-Navigationsfunktionen bleiben als native,
+  LocalPlayer-sichere Kompatibilitäts-API erhalten. Unbekannte World-Kontexte
+  schlagen geschlossen fehl, statt implizit Player 0 zu verwenden.
+  `BP_BootMenuHud`, `BP_MainMenuHud` und `BP_MainMenuController` hatten keine
+  Referencer und wurden entfernt.
+- Der Screen-Router hält jeden `FStreamableHandle` bis `AfterPush`, behält
+  abgebrochene Tags bis zum terminalen Callback und entfernt ein trotz
+  Cancellation fertig initialisiertes Widget erst nach der Registrierung.
+  `SurvivalRpg.UI.ScreenRouter.AsyncCloseLifecycle` deckt Close-vor-Initialize
+  und Close-während-Initialize dauerhaft ab.
+- Ein Package-Redirect für das verschobene `SG_Settings` erhält alte
+  Audio-Settings-Saves. Der MainMenu-Runtime-Smoke lädt den alten lokalen Save
+  ohne `Setting Ref`-/`Accessed None`-Warnungen.
+- Ein frischer UE-5.8-Editor-Build ist erfolgreich.
+  `SurvivalRpg.UI` (20/20), `SurvivalRpg.Inventory` (57/57),
+  `SurvivalRpg.Crafting` (6/6) und `SurvivalRpg.Equipment` (5/5) liefen in
+  frischen Commandlet-Prozessen ohne fehlgeschlagene oder ausgelassene Tests.
+  Als bekannte, unabhängige Warnungen bleiben vier fehlende Settings-
+  Stringtable-Einträge und der bestehende Never-Tick-Hinweis des
+  Respawn-Widgets.
+- Ein Clean-`BuildCookRun` baute Editor- und Game-Target, kochte die vier Maps
+  `BootMenu`, `MainMenu`, `Lvl_ThirdPerson` und
+  `Lvl_PortalRealm_RiftGruntTrial`; 963 von 970 ermittelten Packages wurden
+  gekocht, sieben plattformspezifisch übersprungen. Pak/IoStore/Package und
+  das Development-Archiv unter `Saved/Phase1FrontendGateFinal` wurden
+  erfolgreich erzeugt.
+- `ReferencedSet.txt` und `Manifest_UFSFiles_Win64.txt` enthalten Boot-Screen,
+  MainMenu-Stack, Screen Registry und beide Frontend-GameModes; alle drei
+  entfernten Legacy-Packages kommen mit null Treffern nicht mehr vor.
+  Editor- und packaged Headless-Smokes durchliefen
+  `BootMenu -> MainMenu`; ein zusätzlicher packaged Gameplay-Smoke lud
+  `Lvl_ThirdPerson`, `RpgPrototypeExperience`, das Primary Layout und die
+  zugehörigen GameFeatures ohne Blueprint-, Linker-, Streaming- oder
+  Missing-Package-Fehler.
+
+- Weiterführende manuelle QA außerhalb des Phase-1-Abschlusskriteriums:
+  den kanonischen Primary-Mismatch mit echtem OwningPlayer in PIE
   beziehungsweise einem passenden Test-Harness abdecken sowie interaktive
   Mouse-/Gamepad-, Fokus-, Drag- und gerenderte packaged Prüfungen ausführen.
 - Bekannter Controller-Legacy-Restpunkt: `OnPossess` und

@@ -31,8 +31,11 @@ struct FRpgUIScreenRegistryEntry
 	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "UI")
 	bool bSuspendInputUntilLoaded = true;
 
-	/** Reuses an already active instance for this ScreenTag instead of pushing duplicates. */
-	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "UI")
+	/**
+	 * Semantic UI.Screen tags are always single-instance per local player.
+	 * Retained as visible serialized compatibility data for existing registries.
+	 */
+	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "UI")
 	bool bSingleInstance = true;
 };
 

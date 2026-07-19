@@ -5,7 +5,7 @@
 #include "CoreMinimal.h"
 #include "GenericTeamAgentInterface.h"
 #include "GameplayTagContainer.h"
-#include "ModularPlayerController.h"
+#include "CommonPlayerController.h"
 #include "SurvivalRpg/Inventory/RpgInventoryItemTypes.h"
 #include "RpgPlayerController.generated.h"
 
@@ -23,7 +23,7 @@ class ARpgPlayerState;
 class ARpgGameModeBase;
 
 UCLASS(Abstract)
-class SURVIVALRPG_API ARpgPlayerController : public AModularPlayerController, public IGenericTeamAgentInterface
+class SURVIVALRPG_API ARpgPlayerController : public ACommonPlayerController, public IGenericTeamAgentInterface
 {
 	GENERATED_BODY()
 

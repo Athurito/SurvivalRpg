@@ -1,15 +1,11 @@
 #include "RpgGameFeatureAction_AddWidgets.h"
 
 #include "CommonActivatableWidget.h"
-#include "CommonLocalPlayer.h"
 #include "Components/GameFrameworkComponentManager.h"
-#include "Engine/GameInstance.h"
 #include "Engine/LocalPlayer.h"
 #include "Engine/World.h"
 #include "GameFeaturesSubsystemSettings.h"
 #include "GameFramework/PlayerController.h"
-#include "GameUIManagerSubsystem.h"
-#include "GameUIPolicy.h"
 #include "PrimaryGameLayout.h"
 #include "SurvivalRpg/UI/RpgHUD.h"
 #include "UIExtensionSystem.h"
@@ -137,50 +133,9 @@ void URpgGameFeatureAction_AddWidgets::AddToWorld(const FWorldContext& WorldCont
 	}
 }
 
-UPrimaryGameLayout* URpgGameFeatureAction_AddWidgets::GetOrCreatePrimaryGameLayout(ULocalPlayer* LocalPlayer) const
+UPrimaryGameLayout* URpgGameFeatureAction_AddWidgets::GetPrimaryGameLayout(ULocalPlayer* LocalPlayer) const
 {
-	if (!LocalPlayer)
-	{
-		return nullptr;
-	}
-
-	if (UPrimaryGameLayout* ExistingLayout = UPrimaryGameLayout::GetPrimaryGameLayout(LocalPlayer))
-	{
-		return ExistingLayout;
-	}
-
-	UCommonLocalPlayer* CommonLocalPlayer = Cast<UCommonLocalPlayer>(LocalPlayer);
-	if (!CommonLocalPlayer)
-	{
-		UE_LOG(LogRpgGameFeatureAction_AddWidgets, Warning, TEXT("Cannot create PrimaryGameLayout for [%s]: LocalPlayer is not a CommonLocalPlayer."),
-			*GetNameSafe(LocalPlayer));
-		return nullptr;
-	}
-
-	UGameInstance* GameInstance = CommonLocalPlayer->GetGameInstance();
-	if (!GameInstance)
-	{
-		return nullptr;
-	}
-
-	if (UGameUIManagerSubsystem* UIManager = GameInstance->GetSubsystem<UGameUIManagerSubsystem>())
-	{
-		UIManager->NotifyPlayerAdded(CommonLocalPlayer);
-		if (UPrimaryGameLayout* CreatedLayout = UPrimaryGameLayout::GetPrimaryGameLayout(CommonLocalPlayer))
-		{
-			return CreatedLayout;
-		}
-
-		UE_LOG(LogRpgGameFeatureAction_AddWidgets, Warning, TEXT("UIManager [%s] with policy [%s] did not create a PrimaryGameLayout for [%s]."),
-			*GetNameSafe(UIManager),
-			*GetNameSafe(UIManager->GetCurrentUIPolicy()),
-			*GetNameSafe(CommonLocalPlayer));
-		return nullptr;
-	}
-
-	UE_LOG(LogRpgGameFeatureAction_AddWidgets, Warning, TEXT("Cannot create PrimaryGameLayout for [%s]: GameUIManagerSubsystem is missing."),
-		*GetNameSafe(CommonLocalPlayer));
-	return nullptr;
+	return LocalPlayer ? UPrimaryGameLayout::GetPrimaryGameLayout(LocalPlayer) : nullptr;
 }
 
 void URpgGameFeatureAction_AddWidgets::Reset(FPerContextData& ActiveData)
@@ -251,7 +206,7 @@ void URpgGameFeatureAction_AddWidgets::AddWidgets(AActor* Actor, FPerContextData
 		return;
 	}
 
-	UPrimaryGameLayout* RootLayout = GetOrCreatePrimaryGameLayout(LocalPlayer);
+	UPrimaryGameLayout* RootLayout = GetPrimaryGameLayout(LocalPlayer);
 	if (!RootLayout)
 	{
 		UE_LOG(LogRpgGameFeatureAction_AddWidgets, Warning, TEXT("Cannot add widgets for HUD [%s]: no PrimaryGameLayout."),

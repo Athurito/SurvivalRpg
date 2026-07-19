@@ -8,7 +8,9 @@
 class UCommonActivatableWidget;
 class UPrimaryGameLayout;
 class URpgUIScreenRegistry;
+struct FStreamableHandle;
 struct FRpgUIScreenRegistryEntry;
+enum class EAsyncWidgetLayerState : uint8;
 
 /**
  * Local-player UI screen router that opens CommonGame widgets by UI.Screen gameplay tag.
@@ -22,6 +24,8 @@ class SURVIVALRPG_API URpgUIScreenSubsystem : public ULocalPlayerSubsystem
 	GENERATED_BODY()
 
 public:
+	virtual void Deinitialize() override;
+
 	/** Opens the screen mapped to ScreenTag. Returns an already-active single instance, otherwise nullptr while async loading completes. */
 	UFUNCTION(BlueprintCallable, Category = "UI|Screens", meta = (Categories = "UI.Screen"))
 	UCommonActivatableWidget* OpenScreen(FGameplayTag ScreenTag, UObject* Payload = nullptr);
@@ -43,15 +47,21 @@ public:
 	bool IsScreenActiveOrPending(FGameplayTag ScreenTag) const;
 
 protected:
-	UPrimaryGameLayout* GetOrCreatePrimaryGameLayout() const;
+	UPrimaryGameLayout* GetPrimaryGameLayout() const;
 	const URpgUIScreenRegistry* GetScreenRegistry() const;
 	bool ResolveScreenEntry(FGameplayTag ScreenTag, FRpgUIScreenRegistryEntry& OutEntry) const;
 	void ApplyPayloadToWidget(UCommonActivatableWidget* Widget, UObject* Payload) const;
+	void HandleScreenPushState(
+		FGameplayTag ScreenTag,
+		EAsyncWidgetLayerState State,
+		UCommonActivatableWidget* Widget);
 	void HandleScreenDeactivated(FGameplayTag ScreenTag, UCommonActivatableWidget* Widget);
+	void ClearPendingScreenState(FGameplayTag ScreenTag);
 
 private:
 #if WITH_DEV_AUTOMATION_TESTS
 	friend class FRpgUIScreenRegistryExactResolutionTest;
+	friend class FRpgUIScreenAsyncCloseLifecycleTest;
 #endif
 
 	UPROPERTY(Transient)
@@ -62,6 +72,9 @@ private:
 
 	UPROPERTY(Transient)
 	TSet<FGameplayTag> PendingScreenTags;
+
+	/** Keeps each CommonGame async push cancelable until its AfterPush callback completes. */
+	TMap<FGameplayTag, TSharedPtr<FStreamableHandle>> PendingScreenLoads;
 
 	/** Pending pushes canceled because gameplay access disappeared before initialization completed. */
 	UPROPERTY(Transient)

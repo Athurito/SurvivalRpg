@@ -19,6 +19,7 @@ public class SurvivalRpgEditor : ModuleRules
 		{
 			"AssetRegistry",
 			"BlueprintGraph",
+			"CommonGame",
 			"CommonUI",
 			"EnhancedInput",
 			"GameplayStateTreeModule",
