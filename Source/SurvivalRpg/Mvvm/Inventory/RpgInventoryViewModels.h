@@ -171,10 +171,6 @@ public:
 	UFUNCTION(BlueprintPure, Category = "Inventory|ViewModel")
 	FRpgInventoryGridPlacement GetPlacement() const { return Placement; }
 
-	/** Visual index used only by legacy list selection helpers, derived from Placement for current widgets. */
-	UFUNCTION(BlueprintPure, Category = "Inventory|ViewModel")
-	int32 GetSlotIndex() const { return SlotIndex; }
-
 	/** Returns true for UI-only placeholder slots that do not contain an item. */
 	UFUNCTION(BlueprintPure, Category = "Inventory|ViewModel")
 	bool IsEmptySlot() const { return bIsEmptySlot; }
@@ -207,10 +203,6 @@ protected:
 	/** Server-authored spatial placement. UI may preview it, but gameplay mutations are server-validated. */
 	UPROPERTY(BlueprintReadOnly, FieldNotify, Category = "Inventory|ViewModel", meta = (AllowPrivateAccess = "true"))
 	FRpgInventoryGridPlacement Placement;
-
-	/** Visual index used by existing TileView selection helpers; not gameplay placement truth. */
-	UPROPERTY(BlueprintReadOnly, FieldNotify, Category = "Inventory|ViewModel", meta = (AllowPrivateAccess = "true"))
-	int32 SlotIndex = INDEX_NONE;
 
 	/** Full display name from the item definition. */
 	UPROPERTY(BlueprintReadOnly, FieldNotify, Category = "Inventory|ViewModel", meta = (AllowPrivateAccess = "true"))

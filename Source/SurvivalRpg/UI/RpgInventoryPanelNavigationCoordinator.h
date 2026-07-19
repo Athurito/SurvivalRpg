@@ -12,7 +12,6 @@ class URpgInventoryCarrySlotWidget;
 class URpgInventoryDragDropCoordinator;
 class URpgInventoryManagerComponent;
 class URpgInventorySpatialGridWidget;
-class URpgInventoryTileView;
 class UWidget;
 
 /** One focusable inventory panel registered for controller LB/RB navigation. */
@@ -24,10 +23,6 @@ struct SURVIVALRPG_API FRpgInventoryPanelNavigationEntry
 	/** Stable id used by screen widgets to identify this panel, for example PlayerInventory or Storage. */
 	UPROPERTY(BlueprintReadWrite, Category = "Inventory|Navigation")
 	FName PanelId;
-
-	/** TileView that receives controller focus while this panel is active. */
-	UPROPERTY(BlueprintReadWrite, Category = "Inventory|Navigation")
-	TObjectPtr<URpgInventoryTileView> TileView = nullptr;
 
 	/** Spatial grid that receives controller focus while this fixed-layout inventory panel is active. */
 	UPROPERTY(BlueprintReadWrite, Category = "Inventory|Navigation")
@@ -45,7 +40,7 @@ struct SURVIVALRPG_API FRpgInventoryPanelNavigationEntry
 	UPROPERTY(BlueprintReadWrite, Category = "Inventory|Navigation")
 	TObjectPtr<URpgInventoryCarrySlotWidget> CarrySlotWidget = nullptr;
 
-	/** Inventory represented by the TileView; used for shortcut routing. */
+	/** Inventory represented by this panel; used for shortcut routing. */
 	UPROPERTY(BlueprintReadWrite, Category = "Inventory|Navigation")
 	TObjectPtr<URpgInventoryManagerComponent> Inventory = nullptr;
 
@@ -62,7 +57,12 @@ struct SURVIVALRPG_API FRpgInventoryPanelNavigationEntry
 	int32 LastSelectedSlotIndex = INDEX_NONE;
 };
 
-DECLARE_DYNAMIC_MULTICAST_DELEGATE_FourParams(FRpgInventoryActivePanelChanged, FName, PanelId, int32, PanelIndex, URpgInventoryTileView*, TileView, URpgInventoryManagerComponent*, Inventory);
+DECLARE_DYNAMIC_MULTICAST_DELEGATE_TwoParams(
+	FRpgInventoryActivePanelChanged,
+	FName,
+	PanelId,
+	int32,
+	PanelIndex);
 DECLARE_DYNAMIC_MULTICAST_DELEGATE(FRpgInventoryActiveSelectionChanged);
 
 /**
@@ -97,10 +97,6 @@ public:
 	UFUNCTION(BlueprintCallable, Category = "Inventory|Navigation")
 	void EndPanelRefresh();
 
-	/** Registers one focusable inventory panel for LB/RB controller navigation. */
-	UFUNCTION(BlueprintCallable, Category = "Inventory|Navigation")
-	void RegisterInventoryPanel(FName PanelId, URpgInventoryTileView* TileView, URpgInventoryManagerComponent* Inventory);
-
 	/** Registers one focusable spatial inventory grid for LB/RB controller navigation. */
 	UFUNCTION(BlueprintCallable, Category = "Inventory|Navigation")
 	void RegisterSpatialInventoryPanel(FName PanelId, URpgInventorySpatialGridWidget* SpatialGridWidget, URpgInventoryManagerComponent* Inventory);
@@ -116,10 +112,6 @@ public:
 	/** Registers one gear-like Weapon1, Weapon2, or Offhand carry address as a single controller panel. */
 	UFUNCTION(BlueprintCallable, Category = "Inventory|Navigation")
 	void RegisterCarrySlotPanel(FName PanelId, URpgInventoryCarrySlotWidget* CarrySlotWidget);
-
-	/** Called by registered TileViews when CommonUI selection moves into or within a panel. */
-	UFUNCTION(BlueprintCallable, Category = "Inventory|Navigation")
-	void NotifyPanelSelectionChanged(URpgInventoryTileView* TileView, UObject* SelectedItem);
 
 	/** Called by registered spatial grids when their logical cursor moves into or within a panel. */
 	UFUNCTION(BlueprintCallable, Category = "Inventory|Navigation")
@@ -164,10 +156,6 @@ public:
 	/** Active panel id, or None when no panel is active. */
 	UFUNCTION(BlueprintPure, Category = "Inventory|Navigation")
 	FName GetActivePanelId() const;
-
-	/** Active panel TileView, or null when no panel is active. */
-	UFUNCTION(BlueprintPure, Category = "Inventory|Navigation")
-	URpgInventoryTileView* GetActiveTileView() const;
 
 	/** Active spatial grid, or null when no spatial panel is active. */
 	UFUNCTION(BlueprintPure, Category = "Inventory|Navigation")
@@ -249,7 +237,6 @@ private:
 	bool RestorePanelSelection(FRpgInventoryPanelNavigationEntry& Panel) const;
 	void ApplyActivePanelState();
 	void UpdateFocusedInventoryForActivePanel(const FRpgInventoryPanelNavigationEntry& ActivePanel);
-	int32 FindPanelIndexForTileView(const URpgInventoryTileView* TileView) const;
 	int32 FindPanelIndexForSpatialGridWidget(const URpgInventorySpatialGridWidget* SpatialGridWidget) const;
 	int32 FindPanelIndexForActionBarTileView(const URpgActionBarTileView* TileView) const;
 	int32 FindPanelIndexForEquipmentSlotWidget(const URpgEquipmentSlotWidget* EquipmentSlotWidget) const;

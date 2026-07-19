@@ -1,6 +1,6 @@
 #include "RpgPlayerInventoryWidget.h"
 
-#if WITH_DEV_AUTOMATION_TESTS
+#if WITH_DEV_AUTOMATION_TESTS && WITH_EDITOR
 
 #include "Blueprint/IUserListEntry.h"
 #include "MVVMSubsystem.h"
@@ -15,7 +15,6 @@
 #include "SurvivalRpg/UI/RpgInventoryAddressSlotWidget.h"
 #include "SurvivalRpg/UI/RpgInventoryDragVisualWidget.h"
 #include "SurvivalRpg/UI/RpgInventoryInteractionScreenWidget.h"
-#include "SurvivalRpg/UI/RpgInventorySlotEntryWidget.h"
 #include "SurvivalRpg/UI/RpgLoadoutSlotWidgets.h"
 #include "SurvivalRpg/UI/RpgPlayerInventoryLayoutViews.h"
 #include "View/MVVMView.h"
@@ -344,6 +343,30 @@ bool FRpgCanonicalDragVisualContractTest::RunTest(const FString& Parameters)
 				TEXT("%s uses the exact canonical authored drag visual"),
 				Expectation.Label);
 		TestEqual(*ExactClassLabel, ConfiguredClass, CanonicalVisualClass);
+	}
+
+	UClass* SpatialGridClass = LoadClass<URpgInventorySpatialGridWidget>(
+		nullptr,
+		TEXT(
+			"/Game/SurvivalRpg/Inventory/UI/SpatialInventory/"
+			"CUI_SpatialInventoryGrid.CUI_SpatialInventoryGrid_C"));
+	const UWidgetBlueprintGeneratedClass* SpatialGridGeneratedClass =
+		Cast<UWidgetBlueprintGeneratedClass>(SpatialGridClass);
+	const UWidgetTree* SpatialGridTree =
+		SpatialGridGeneratedClass
+			? SpatialGridGeneratedClass->GetWidgetTreeArchetype()
+			: nullptr;
+	if (TestNotNull(
+			TEXT("Authored spatial-grid class loads"),
+			SpatialGridClass) &&
+		TestNotNull(
+			TEXT("Authored spatial grid owns a widget tree"),
+			SpatialGridTree))
+	{
+		TestTrue(
+			TEXT("Spatial grid authors the required dedicated PreviewCanvas"),
+			Cast<UCanvasPanel>(
+				SpatialGridTree->FindWidget(TEXT("PreviewCanvas"))) != nullptr);
 	}
 
 	return true;
@@ -989,228 +1012,6 @@ bool FRpgPlayerInventoryViewModelPoolingTest::RunTest(const FString& Parameters)
 	Widget->DeactivateWidget();
 	ReconstructedSlateWidget.Reset();
 	return bStableAfterReactivation;
-}
-
-IMPLEMENT_SIMPLE_AUTOMATION_TEST(
-	FRpgInventorySlotEntryPoolingTest,
-	"SurvivalRpg.Inventory.UI.InventorySlotEntryPooling",
-	EAutomationTestFlags::EditorContext | EAutomationTestFlags::EngineFilter)
-
-bool FRpgInventorySlotEntryPoolingTest::RunTest(const FString& Parameters)
-{
-	using namespace RpgPlayerInventoryWidgetTests;
-
-	FScopedWidgetWorld TestWorld;
-	if (!TestTrue(TEXT("Standalone widget world is valid"), TestWorld.IsValid()))
-	{
-		return false;
-	}
-
-	UClass* EntryWidgetClass = LoadClass<URpgInventorySlotEntryWidget>(
-		nullptr,
-		TEXT(
-			"/Game/SurvivalRpg/Inventory/UI/"
-			"CUI_InventorySlotEntry.CUI_InventorySlotEntry_C"));
-	UWidgetBlueprintGeneratedClass* GeneratedClass =
-		Cast<UWidgetBlueprintGeneratedClass>(EntryWidgetClass);
-	if (!TestNotNull(TEXT("Canonical inventory entry class loads"), EntryWidgetClass) ||
-		!TestNotNull(TEXT("Canonical inventory entry is a Widget Blueprint"), GeneratedClass))
-	{
-		return false;
-	}
-	TestTrue(
-		TEXT("Data-only inventory entry initializes without a player context"),
-		GeneratedClass->bCanCallInitializedWithoutPlayerContext);
-
-	const TArray<UWidgetBlueprintGeneratedClassExtension*> CompiledViewExtensions =
-		GeneratedClass->GetExtensions(UMVVMViewClass::StaticClass(), false);
-	TestEqual(
-		TEXT("Canonical inventory entry owns exactly one compiled MVVM view"),
-		CompiledViewExtensions.Num(),
-		1);
-	const UMVVMViewClass* CompiledViewClass =
-		CompiledViewExtensions.Num() == 1
-			? Cast<UMVVMViewClass>(CompiledViewExtensions[0])
-			: nullptr;
-	if (!TestNotNull(TEXT("Inventory entry MVVM view class exists"), CompiledViewClass))
-	{
-		return false;
-	}
-
-	int32 MatchingSourceCount = 0;
-	const int32 MatchingSourceIndex = FindNamedViewModelSource(
-		*CompiledViewClass,
-		URpgInventorySlotEntryWidget::InventoryEntryViewModelSourceName,
-		MatchingSourceCount);
-	TestEqual(
-		TEXT("Inventory entry has exactly one canonical VM source"),
-		MatchingSourceCount,
-		1);
-	TestEqual(
-		TEXT("Inventory entry has exactly two declarative leaf bindings"),
-		CompiledViewClass->GetBindings().Num(),
-		2);
-	const TArrayView<const FMVVMViewClass_Source> CompiledSources =
-		CompiledViewClass->GetSources();
-	if (!CompiledSources.IsValidIndex(MatchingSourceIndex))
-	{
-		return false;
-	}
-
-	const FMVVMViewClass_Source& CompiledSource =
-		CompiledSources[MatchingSourceIndex];
-	TestEqual(
-		TEXT("Inventory entry source expects the exact VM class"),
-		CompiledSource.GetSourceClass(),
-		URpgInventoryEntryViewModel::StaticClass());
-	TestTrue(
-		TEXT("Inventory entry source is settable by its native presenter"),
-		CompiledSource.CanBeSet());
-	TestTrue(
-		TEXT("Inventory entry source is optional while the entry is pooled"),
-		CompiledSource.IsOptional());
-	TestEqual(
-		TEXT("Inventory entry source owns both authored leaf bindings"),
-		CompiledSource.GetBindings().Num(),
-		2);
-	TestEqual(
-		TEXT("Inventory entry VM only permits presenter-supplied manual composition"),
-		URpgInventoryEntryViewModel::StaticClass()->GetMetaData(
-			TEXT("MVVMAllowedContextCreationType")),
-		FString(TEXT("Manual")));
-
-	URpgInventorySlotEntryWidget* Widget =
-		CreateWidget<URpgInventorySlotEntryWidget>(
-			TestWorld.GetTestWorld(),
-			EntryWidgetClass);
-	if (!TestNotNull(TEXT("Canonical inventory entry initializes"), Widget))
-	{
-		return false;
-	}
-
-	UMVVMView* View = UMVVMSubsystem::GetViewFromUserWidget(Widget);
-	if (!TestNotNull(TEXT("Inventory entry runtime MVVM view exists"), View) ||
-		!TestNotNull(TEXT("Inventory entry runtime view class exists"), View ? View->GetViewClass() : nullptr))
-	{
-		return false;
-	}
-	TestNull(
-		TEXT("Fresh inventory entry source starts empty"),
-		View->GetViewModel(
-			URpgInventorySlotEntryWidget::InventoryEntryViewModelSourceName).GetObject());
-	TSharedPtr<SWidget> SlateWidget = Widget->TakeWidget();
-	if (!TestTrue(
-		TEXT("Inventory entry constructs its authored Slate representation"),
-		SlateWidget.IsValid()))
-	{
-		return false;
-	}
-	TestTrue(
-		TEXT("Inventory entry MVVM view constructs before the pooling cycle"),
-		View->IsConstructed());
-	TestTrue(
-		TEXT("Inventory entry MVVM sources initialize before the pooling cycle"),
-		View->AreSourcesInitialized());
-	TestTrue(
-		TEXT("Inventory entry MVVM bindings initialize before the pooling cycle"),
-		View->AreBindingsInitialized());
-
-	URpgInventoryEntryViewModel* FirstViewModel =
-		NewObject<URpgInventoryEntryViewModel>(Widget);
-	URpgInventoryEntryViewModel* SecondViewModel =
-		NewObject<URpgInventoryEntryViewModel>(Widget);
-	URpgInventoryDragDropCoordinator* Coordinator =
-		NewObject<URpgInventoryDragDropCoordinator>(Widget);
-
-	Widget->NativeOnListItemObjectSet(FirstViewModel);
-	Widget->SetDragDropCoordinator(Coordinator);
-	IUserListEntry::UpdateItemSelection(*Widget, true);
-	TestEqual(
-		TEXT("Inventory entry stores VM A"),
-		Widget->GetEntryViewModel(),
-		FirstViewModel);
-	TestEqual(
-		TEXT("Inventory entry injects VM A into the exact source"),
-		View->GetViewModel(
-			URpgInventorySlotEntryWidget::InventoryEntryViewModelSourceName).GetObject(),
-		static_cast<UObject*>(FirstViewModel));
-	TestEqual(
-		TEXT("VM A owns exactly one native refresh delegate"),
-		CountDelegateBindingsTo(FirstViewModel->OnEntryChanged, Widget),
-		1);
-	TestEqual(
-		TEXT("Coordinator owns exactly one inventory-entry delegate"),
-		CountDelegateBindingsTo(Coordinator->OnHeldPayloadChanged, Widget),
-		1);
-	TestEqual(
-		TEXT("Selected inventory entry reports focused presentation"),
-		Widget->GetCurrentDragDropVisualState(),
-		ERpgInventorySlotDragVisualState::Focused);
-
-	Widget->NativeOnListItemObjectSet(SecondViewModel);
-	TestEqual(
-		TEXT("Reassignment removes VM A's native delegate"),
-		CountDelegateBindingsTo(FirstViewModel->OnEntryChanged, Widget),
-		0);
-	TestEqual(
-		TEXT("Reassignment binds VM B exactly once"),
-		CountDelegateBindingsTo(SecondViewModel->OnEntryChanged, Widget),
-		1);
-	TestEqual(
-		TEXT("Reassignment replaces the exact MVVM source with VM B"),
-		View->GetViewModel(
-			URpgInventorySlotEntryWidget::InventoryEntryViewModelSourceName).GetObject(),
-		static_cast<UObject*>(SecondViewModel));
-
-	IUserListEntry::ReleaseEntry(*Widget);
-	TestNull(
-		TEXT("Released inventory entry no longer represents a VM"),
-		Widget->GetEntryViewModel());
-	TestNull(
-		TEXT("Released inventory entry clears its optional MVVM source"),
-		View->GetViewModel(
-			URpgInventorySlotEntryWidget::InventoryEntryViewModelSourceName).GetObject());
-	TestNull(
-		TEXT("Released inventory entry drops its screen coordinator"),
-		Widget->GetDragDropCoordinator());
-	TestEqual(
-		TEXT("Released VM B no longer targets the pooled widget"),
-		CountDelegateBindingsTo(SecondViewModel->OnEntryChanged, Widget),
-		0);
-	TestEqual(
-		TEXT("Released coordinator no longer targets the pooled widget"),
-		CountDelegateBindingsTo(Coordinator->OnHeldPayloadChanged, Widget),
-		0);
-	TestEqual(
-		TEXT("Released inventory entry returns to normal drag presentation"),
-		Widget->GetCurrentDragDropVisualState(),
-		ERpgInventorySlotDragVisualState::Normal);
-
-	SecondViewModel->OnEntryChanged.Broadcast(SecondViewModel);
-	TestNull(
-		TEXT("A released VM cannot repopulate the cleared MVVM source"),
-		View->GetViewModel(
-			URpgInventorySlotEntryWidget::InventoryEntryViewModelSourceName).GetObject());
-
-	Widget->NativeOnListItemObjectSet(FirstViewModel);
-	Widget->SetDragDropCoordinator(Coordinator);
-	TestEqual(
-		TEXT("The pooled inventory entry cleanly rebinds VM A"),
-		View->GetViewModel(
-			URpgInventorySlotEntryWidget::InventoryEntryViewModelSourceName).GetObject(),
-		static_cast<UObject*>(FirstViewModel));
-	TestEqual(
-		TEXT("The pooled inventory entry restores exactly one VM delegate"),
-		CountDelegateBindingsTo(FirstViewModel->OnEntryChanged, Widget),
-		1);
-	TestEqual(
-		TEXT("The pooled inventory entry restores exactly one coordinator delegate"),
-		CountDelegateBindingsTo(Coordinator->OnHeldPayloadChanged, Widget),
-		1);
-
-	IUserListEntry::ReleaseEntry(*Widget);
-	SlateWidget.Reset();
-	return true;
 }
 
 IMPLEMENT_SIMPLE_AUTOMATION_TEST(

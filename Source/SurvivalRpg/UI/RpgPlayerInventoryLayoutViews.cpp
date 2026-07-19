@@ -1019,7 +1019,11 @@ void URpgInventorySpatialItemWidget::NativeOnDragDetected(const FGeometry& InGeo
 				FMath::Abs(ScreenBottomRight.Y - ScreenTopLeft.Y)));
 	}
 	bHasPendingPointerDragAnchor = false;
-	if (!DragDropCoordinator || !DragDropCoordinator->BeginPointerDrag(Payload))
+	if (!DragDropCoordinator || !DragVisualClass)
+	{
+		return;
+	}
+	if (!DragDropCoordinator->BeginPointerDrag(Payload))
 	{
 		return;
 	}
@@ -1028,6 +1032,7 @@ void URpgInventorySpatialItemWidget::NativeOnDragDetected(const FGeometry& InGeo
 	URpgInventoryDragDropOperation* InventoryOperation = NewObject<URpgInventoryDragDropOperation>(this);
 	if (!InventoryOperation)
 	{
+		DragDropCoordinator->CancelHold();
 		return;
 	}
 
@@ -1042,24 +1047,19 @@ void URpgInventorySpatialItemWidget::NativeOnDragDetected(const FGeometry& InGeo
 	InventoryOperation->SetInteractionSession(DragDropCoordinator->GetInteractionSession());
 	InventoryOperation->Payload = AddressSlotViewModel ? Cast<UObject>(AddressSlotViewModel.Get()) : Cast<UObject>(EntryViewModel.Get());
 
-	TSubclassOf<URpgInventoryDragVisualWidget> VisualClass = DragVisualClass;
-	if (!VisualClass)
+	URpgInventoryDragVisualWidget* DragVisual =
+		CreateWidget<URpgInventoryDragVisualWidget>(this, DragVisualClass);
+	if (!DragVisual)
 	{
-		VisualClass = URpgInventoryDragVisualWidget::StaticClass();
-	}
-	if (VisualClass)
-	{
-		if (URpgInventoryDragVisualWidget* DragVisual =
-			CreateWidget<URpgInventoryDragVisualWidget>(this, VisualClass))
-		{
-			DragVisual->ConfigureFromPayload(
-				Payload,
-				OwningGrid ? OwningGrid->GetSpatialCellSize() : 70.0f,
-				OwningGrid ? OwningGrid->GetSpatialCellPadding() : 2.0f);
-			InventoryOperation->DefaultDragVisual = DragVisual;
-		}
+		DragDropCoordinator->CancelHold();
+		return;
 	}
 
+	DragVisual->ConfigureFromPayload(
+		Payload,
+		OwningGrid ? OwningGrid->GetSpatialCellSize() : 70.0f,
+		OwningGrid ? OwningGrid->GetSpatialCellPadding() : 2.0f);
+	InventoryOperation->DefaultDragVisual = DragVisual;
 	OutOperation = InventoryOperation;
 }
 
@@ -2619,17 +2619,12 @@ void URpgInventorySpatialGridWidget::ClearSpatialPreviewLocal()
 
 URpgInventoryDragVisualWidget* URpgInventorySpatialGridWidget::EnsureSpatialPreviewGhost()
 {
-	UCanvasPanel* TargetCanvas = PreviewCanvas ? PreviewCanvas.Get() : ItemCanvas.Get();
-	if (!TargetCanvas)
+	if (!PreviewCanvas || !SpatialPreviewWidgetClass)
 	{
 		return nullptr;
 	}
 
 	TSubclassOf<URpgInventoryDragVisualWidget> GhostClass = SpatialPreviewWidgetClass;
-	if (!GhostClass)
-	{
-		GhostClass = URpgInventoryDragVisualWidget::StaticClass();
-	}
 	if (!SpatialPreviewGhost || SpatialPreviewGhost->GetClass() != GhostClass.Get())
 	{
 		if (SpatialPreviewGhost && SpatialPreviewGhost->GetParent())
@@ -2644,9 +2639,9 @@ URpgInventoryDragVisualWidget* URpgInventorySpatialGridWidget::EnsureSpatialPrev
 		return nullptr;
 	}
 
-	if (SpatialPreviewGhost->GetParent() != TargetCanvas)
+	if (SpatialPreviewGhost->GetParent() != PreviewCanvas)
 	{
-		TargetCanvas->AddChildToCanvas(SpatialPreviewGhost);
+		PreviewCanvas->AddChildToCanvas(SpatialPreviewGhost);
 	}
 	if (SpatialPreviewGhost->GetVisibility() != ESlateVisibility::HitTestInvisible)
 	{

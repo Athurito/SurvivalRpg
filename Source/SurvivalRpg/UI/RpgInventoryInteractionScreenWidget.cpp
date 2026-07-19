@@ -1304,6 +1304,21 @@ void URpgInventoryInteractionScreenWidget::UpdateFreePointerDragVisual(
 	URpgInventoryDragDropOperation* DragOperation,
 	bool bCenterVisualOnScreenPosition)
 {
+	const auto RestoreOperationOwnedVisual =
+		[this, DragOperation]()
+		{
+			ClearFreePointerDragVisual();
+			if (DragOperation)
+			{
+				DragOperation->SetScreenOwnedDragVisualActive(false);
+			}
+		};
+	if (!FreeDragVisualWidgetClass || !DragVisualCanvas)
+	{
+		RestoreOperationOwnedVisual();
+		return;
+	}
+
 	URpgInventoryDragVisualWidget* OperationVisual = nullptr;
 	if (DragOperation)
 	{
@@ -1353,16 +1368,8 @@ void URpgInventoryInteractionScreenWidget::UpdateFreePointerDragVisual(
 			OperationVisual->GetConfiguredCellPadding();
 	}
 
-	TSubclassOf<URpgInventoryDragVisualWidget> VisualClass =
+	const TSubclassOf<URpgInventoryDragVisualWidget> VisualClass =
 		FreeDragVisualWidgetClass;
-	if (!VisualClass && OperationVisual)
-	{
-		VisualClass = OperationVisual->GetClass();
-	}
-	if (!VisualClass)
-	{
-		VisualClass = URpgInventoryDragVisualWidget::StaticClass();
-	}
 
 	if (FreePointerDragVisual &&
 		FreePointerDragVisual->GetClass() != VisualClass.Get())
@@ -1381,32 +1388,24 @@ void URpgInventoryInteractionScreenWidget::UpdateFreePointerDragVisual(
 				VisualClass);
 		if (!FreePointerDragVisual)
 		{
+			RestoreOperationOwnedVisual();
 			return;
 		}
 
-		if (DragVisualCanvas)
+		UCanvasPanelSlot* DragCanvasSlot =
+			DragVisualCanvas->AddChildToCanvas(
+				FreePointerDragVisual);
+		if (!DragCanvasSlot)
 		{
-			if (UCanvasPanelSlot* DragCanvasSlot =
-				DragVisualCanvas->AddChildToCanvas(
-					FreePointerDragVisual))
-			{
-				DragCanvasSlot->SetAnchors(FAnchors(0.0f, 0.0f));
-				DragCanvasSlot->SetAlignment(FVector2D::ZeroVector);
-				DragCanvasSlot->SetPosition(FVector2D::ZeroVector);
-				DragCanvasSlot->SetAutoSize(false);
-				DragCanvasSlot->SetZOrder(1000);
-			}
+			RestoreOperationOwnedVisual();
+			return;
 		}
-		else
-		{
-			// Migration fallback until the authored screen supplies a top-most DragVisualCanvas.
-			FreePointerDragVisual->AddToPlayerScreen(1100);
-			FreePointerDragVisual->SetAlignmentInViewport(
-				FVector2D::ZeroVector);
-			FreePointerDragVisual->SetPositionInViewport(
-				FVector2D::ZeroVector,
-				true);
-		}
+
+		DragCanvasSlot->SetAnchors(FAnchors(0.0f, 0.0f));
+		DragCanvasSlot->SetAlignment(FVector2D::ZeroVector);
+		DragCanvasSlot->SetPosition(FVector2D::ZeroVector);
+		DragCanvasSlot->SetAutoSize(false);
+		DragCanvasSlot->SetZOrder(1000);
 	}
 
 	const ERpgInventoryInteractionPreviewState PreviewState = Session

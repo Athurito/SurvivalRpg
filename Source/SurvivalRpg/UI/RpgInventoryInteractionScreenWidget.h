@@ -254,7 +254,7 @@ protected:
 	void SwitchActivePointerDropTarget(UWidget* NewTarget);
 
 	/**
-	 * Optional free pointer-ghost style. The screen-owned instance avoids UMG drag-start interpolation while the
+	 * Required authored free pointer-ghost class. The screen-owned instance avoids UMG drag-start interpolation while the
 	 * underlying invisible drag operation continues to carry pointer events.
 	 */
 	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Inventory|Interaction")
@@ -280,10 +280,10 @@ protected:
 	TObjectPtr<URpgInventoryFeedbackToastWidget> InventoryFeedbackToast = nullptr;
 
 	/**
-	 * Optional fullscreen top-most canvas that owns the free pointer ghost.
+	 * Required fullscreen top-most canvas that exclusively owns the free pointer ghost.
 	 * Place it last in the screen overlay, set it hit-test-invisible, and do not clip its children.
 	 */
-	UPROPERTY(BlueprintReadOnly, meta = (BindWidgetOptional))
+	UPROPERTY(BlueprintReadOnly, meta = (BindWidget))
 	TObjectPtr<UCanvasPanel> DragVisualCanvas = nullptr;
 
 	/**

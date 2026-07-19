@@ -1203,9 +1203,12 @@ FText URpgInventoryContextMenuWidget::ResolveQuickAccessBindingLabel(int32 SlotI
 	{
 	case ERpgActionBarSlotType::Consumable:
 	case ERpgActionBarSlotType::InventorySlotBinding:
-		return ActionBarSlot.ConsumableDefinition
-			? ActionBarSlot.ConsumableDefinition->GetDisplayNameText()
-			: LOCTEXT("MissingConsumableQuickAccessSlot", "Missing Consumable");
+		if (const URpgInventoryItemDefinition* Definition =
+			ActionBarSlot.ConsumableDefinition.GetDefaultObject())
+		{
+			return Definition->DisplayName;
+		}
+		return LOCTEXT("MissingConsumableQuickAccessSlot", "Missing Consumable");
 	case ERpgActionBarSlotType::CarrySlot:
 	case ERpgActionBarSlotType::CarrySlotBinding:
 		return ActionBarSlot.CarryRole.IsNone()

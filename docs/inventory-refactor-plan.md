@@ -233,8 +233,10 @@ Verifizierter UI-Zwischenstand vom 2026-07-19:
 - Ein frischer Editor-Prozess kompiliert das Asset ohne Blueprint-Fehler; der
   Automationtest bestätigt, dass alle vier GameplayTags auf die authorierten
   Stacks registriert werden.
-- Der native Root-Layout-Fallback bleibt vorläufig als Notfallpfad bestehen und
-  wird erst nach PIE-/Cook-/Packaged-Verifikation separat entfernt.
+- `CUI_RpgPrimaryGameLayout` ist nach Clean-Cook, Package und packaged Smoke
+  die einzige Root-Composition-Authority. Sowohl der native Policy-
+  Klassenfallback als auch die zur Laufzeit erzeugten Layer-Stacks sind
+  entfernt; fehlende Config beziehungsweise BindWidgets scheitern geschlossen.
 - `CUI_StorageSpatial` ist graphfrei mit `RootOverlay`, `ContentRow`,
   `PlayerGroupsPanel`, `SecondaryInventoryGrid`, CommonUI-ActionBar und einem
   abschließenden, hit-test-invisible `DragVisualCanvas` authoriert.
@@ -445,7 +447,10 @@ Verifizierter UI-Zwischenstand vom 2026-07-19:
 - Bewusste Restgrenze: Der tatsächlich aktive `CUI_CarrySlot` ist ein
   spezialisierter imperativer Address-Presenter ohne MVVM-Extension;
   `CUI_AddressSlotEntry` besitzt derzeit keinen Asset-Registry-Referencer und
-  bleibt bis zur Referenz-/Cook-Prüfung als Contract-Fixture erhalten.
+  blieb auch in Clean-Cook, Stage und Package referenzlos. Das Asset bleibt bis
+  zur Carry-Migration als ausdrücklich inaktives Contract-Fixture erhalten;
+  seine fehlende Drag-Visual-Konfiguration scheitert ohne aktiven Consumer
+  geschlossen.
   Carry besitzt noch doppelte VM-Beobachtung sowie fehlende Active-,
   Holstered- und Drag-State-Visuals. Das wird in Phase 6/7 separat bereinigt,
   statt den Spezialfall still als scheinbares MVVM-Leaf zu behandeln.
@@ -627,10 +632,10 @@ Verifizierter UI-Zwischenstand vom 2026-07-19:
 - Ein separater frischer UE-5.8-Commandlet-Prozess kompiliert alle drei neuen
   Widget-Blueprints ohne Fehler und lädt Registry sowie dedizierte
   BaseTerminal-Action-Tabelle erneut. Dabei wurden keine Assets gespeichert.
-- Das alte `CUI_BaseTerminal` bleibt bis zu PIE-, Cook- und
-  Packaged-Verifikation als Rollback-Asset erhalten. Interaktive Mouse-,
-  Gamepad-, Fokus-, Actionbar- und Drag-Prüfungen sowie der kanonische
-  Primary-Mismatch mit echtem OwningPlayer bleiben offen.
+- Das alte `CUI_BaseTerminal` und die zugehörige Legacy-Resource-List sind nach
+  Referenz-, Clean-Cook-, Stage- und packaged Verifikation entfernt.
+  Interaktive Mouse-, Gamepad-, Fokus-, Actionbar- und Drag-Prüfungen sowie der
+  kanonische Primary-Mismatch mit echtem OwningPlayer bleiben offen.
 - Verbindliche nächste Umsetzungsreihenfolge:
   1. [x] Gepoolte Manual-Sources in Inventory- und Actionbar-Entries beim
      Release explizit leeren und den vollständigen transienten Entry-Zustand
@@ -658,11 +663,45 @@ Verifizierter UI-Zwischenstand vom 2026-07-19:
      verankern und die Viewport-Mitte nur als Fallback verwenden.
   10. [x] Quick-Access-Radial und Gear-Drag-Visual in die gemeinsame UI-/Input-
      Komposition überführen.
-  11. [ ] Orphan-Assets und Notfall-Fallbacks erst nach Referenz-, Cook- und
+  11. [x] Orphan-Assets und Notfall-Fallbacks erst nach Referenz-, Cook- und
      Packaged-Prüfung entfernen.
+
+Verifizierter Legacy-Retirement-Schnitt vom 2026-07-19:
+
+- Ein frischer Asset-Registry-Bericht bestätigte für 14 Legacy-Packages keine
+  externen Referencer. Entfernt wurden `BP_DragOperation`, `CUI_Hotbar_Old`,
+  `CUI_ActionBar_Old`, die alten Storage-/BaseTerminal-/Crafting-Screens samt
+  Legacy-Leaves sowie `CUI_Inventory` und `CUI_InventorySlotEntry`.
+- Der geschlossene C++-Pfad aus `RpgInventoryTileView` und
+  `RpgInventorySlotEntryWidget` ist gelöscht. Coordinator, Controller-Event und
+  `URpgInventoryEntryViewModel` enthalten keine TileView-Branches oder den
+  linearisierten Legacy-`SlotIndex` mehr.
+- `URpgGameUIPolicy` und `URpgPrimaryGameLayout` besitzen keine nativen
+  Root-Layout-/Layer-Fallbacks mehr. Address-, Gear- und Spatial-Drags starten
+  ohne exakte authored Drag-Visual-Klasse keine Interaction-Session; Spatial-
+  und Screen-Ghosts verwenden ausschließlich ihre erforderlichen authored
+  Canvas-Hosts.
+- Der permanente Test `SurvivalRpg.Inventory.UI.LegacyAssetRetirement`
+  erzwingt Abwesenheit, fehlende Referencer, aktive Registry-Abhängigkeiten und
+  den korrigierten Always-Cook-Pfad von `DA_RpgGameData`.
+- Ein expliziter UE-5.8-Non-Unity-Editor-Build ist erfolgreich.
+  `SurvivalRpg.Inventory` (57/57), `SurvivalRpg.UI` (14/14),
+  `SurvivalRpg.Equipment` (5/5) und `SurvivalRpg.Crafting` (6/6) sind ohne
+  Testwarnungen, Fehler oder ausgelassene Tests erfolgreich.
+- Ein Clean `BuildCookRun` baute Editor- und Game-Target, kochte die vier Maps
+  `BootMenu`, `MainMenu`, `Lvl_ThirdPerson` und
+  `Lvl_PortalRealm_RiftGruntTrial`, stagte 967 Packages und erzeugte
+  Pak/IoStore sowie das archivierte Development-Package erfolgreich.
+- `ReferencedSet.txt` und `Manifest_UFSFiles_Win64.txt` enthalten alle
+  erwarteten Spatial-Screens und keinen der 14 entfernten Package-Namen.
+  Packaged-Headless-Smokes für BootMenu→MainMenu und `Lvl_ThirdPerson`
+  beendeten mit Exitcode 0; die Gameplay-Map lud
+  `RpgPrototypeExperience` und aktivierte ihre GameFeatures ohne Missing-
+  Package-, Linker-, Streaming-, Blueprint- oder GameFeature-Fehler.
+
 - Noch offen: den kanonischen Primary-Mismatch mit echtem OwningPlayer in PIE
   beziehungsweise einem passenden Test-Harness abdecken sowie interaktive
-  Mouse-/Gamepad-, PIE-, Cook- und Packaged-Prüfungen ausführen.
+  Mouse-/Gamepad-, Fokus-, Drag- und gerenderte packaged Prüfungen ausführen.
 - Bekannter Controller-Legacy-Restpunkt: `OnPossess` und
   `RestoreGameplayInputFocus` rufen weiterhin blind
   `SetIgnoreLookInput(false)` auf und können dadurch einen gezählten
@@ -811,16 +850,16 @@ Status: **In Arbeit**
 
 ## Phase 7 – Legacy endgültig entfernen
 
-Status: **Offen**
+Status: **In Arbeit**
 
-- [ ] Asset-Registry-Referenzbericht für deprecated Klassen, APIs und Assets
+- [x] Asset-Registry-Referenzbericht für deprecated Klassen, APIs und Assets
       erzeugen.
 - [ ] Blueprints resaven und notwendige Save-/CoreRedirect-Migrationen
       festhalten.
 - [ ] Snapshot, Index-/Global-Sort, Compatibility-Includes und tote
       BlueprintCallable-Mutatoren entfernen.
-- [ ] Legacy-`CUI_Inventory` samt TileView-/SlotEntry-Pfad erst nach der noch
-      offenen Crafting-Migration sowie Referenz-, Cook- und
+- [x] Legacy-`CUI_Inventory` samt TileView-/SlotEntry-Pfad nach abgeschlossener
+      Crafting-Migration sowie Referenz-, Cook- und
       Packaged-Verifikation löschen.
 - [ ] Das referenzlose `CUI_AddressSlotEntry` nach Carry-Migration,
       Asset-Registry-, Cook- und Packaged-Prüfung entweder einem echten
@@ -828,7 +867,9 @@ Status: **Offen**
 - [ ] Ungenutzte Spatial-Item-VM-Variablen, leere Setter-Graphwriter und den
       wirkungslosen Drag-State-Switch nach Asset-Resave entfernen.
 - [ ] Verwaiste `_Old`-, Test- und Self-only-Assets nach Referenzprüfung
-      entfernen.
+      entfernen. Der erste verifizierte Schnitt hat `CUI_Hotbar_Old`,
+      `CUI_ActionBar_Old` und die oben dokumentierten Self-only-Rollback-Assets
+      entfernt; weitere Kandidaten bleiben separat zu prüfen.
 - [ ] Übergangsbranches, `#if 0`-Blöcke und veraltete Kommentare löschen.
 
 ## Verifikation pro Phase

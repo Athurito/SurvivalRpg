@@ -346,7 +346,7 @@ protected:
 	UFUNCTION(BlueprintImplementableEvent, Category = "Inventory|Spatial Item", meta = (DisplayName = "On Spatial Item DragDrop State Changed"))
 	void BP_OnSpatialItemDragDropStateChanged(ERpgInventorySlotDragVisualState NewState);
 
-	/** Canonical presentation-only drag decorator. Unset uses the native emergency fallback until Step 11. */
+	/** Exact authored presentation-only drag decorator. Missing configuration fails closed before a drag starts. */
 	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Inventory|Spatial Item|Drag")
 	TSubclassOf<URpgInventoryDragVisualWidget> DragVisualClass;
 
@@ -646,8 +646,8 @@ protected:
 	UPROPERTY(BlueprintReadOnly, meta = (BindWidgetOptional))
 	TObjectPtr<UCanvasPanel> ItemCanvas = nullptr;
 
-	/** Optional top-most hit-test-invisible canvas for the snapped target ghost; ItemCanvas is the runtime fallback. */
-	UPROPERTY(BlueprintReadOnly, meta = (BindWidgetOptional))
+	/** Required top-most hit-test-invisible canvas that exclusively owns the snapped target ghost. */
+	UPROPERTY(BlueprintReadOnly, meta = (BindWidget))
 	TObjectPtr<UCanvasPanel> PreviewCanvas = nullptr;
 
 	/** Optional SizeBox root in Blueprint; used to enforce fixed grid dimensions. */
@@ -662,7 +662,7 @@ protected:
 	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Inventory|Spatial Grid")
 	TSubclassOf<URpgInventorySpatialCellWidget> SpatialCellWidgetClass;
 
-	/** Designer subclass for the snapped target ghost. Native drag visual is used when unset. */
+	/** Exact authored class for the snapped target ghost. Missing configuration fails closed. */
 	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Inventory|Spatial Grid|Preview")
 	TSubclassOf<URpgInventoryDragVisualWidget> SpatialPreviewWidgetClass;
 

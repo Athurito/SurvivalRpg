@@ -5,8 +5,11 @@
 #include "Engine/Engine.h"
 #include "Engine/GameInstance.h"
 #include "Engine/World.h"
+#include "GameUIPolicy.h"
 #include "Misc/AutomationTest.h"
 #include "SurvivalRpg/GameplayTags/RpgGameplayTags.h"
+#include "SurvivalRpg/UI/RpgGameUIPolicy.h"
+#include "UObject/UnrealType.h"
 
 namespace RpgPrimaryGameLayoutTests
 {
@@ -53,6 +56,61 @@ namespace RpgPrimaryGameLayoutTests
 		TObjectPtr<UGameInstance> GameInstance;
 		TObjectPtr<UWorld> World;
 	};
+}
+
+IMPLEMENT_SIMPLE_AUTOMATION_TEST(
+	FRpgPrimaryGameLayoutConfiguredPolicyTest,
+	"SurvivalRpg.UI.PrimaryGameLayout.ConfiguredPolicy",
+	EAutomationTestFlags::EditorContext | EAutomationTestFlags::EngineFilter)
+
+bool FRpgPrimaryGameLayoutConfiguredPolicyTest::RunTest(const FString& Parameters)
+{
+	constexpr TCHAR AuthoredLayoutPath[] =
+		TEXT("/Game/SurvivalRpg/UI/CUI_RpgPrimaryGameLayout.CUI_RpgPrimaryGameLayout_C");
+	const URpgGameUIPolicy* Policy = GetDefault<URpgGameUIPolicy>();
+	if (!TestNotNull(TEXT("Rpg UI policy CDO exists"), Policy))
+	{
+		return false;
+	}
+
+	const FSoftClassProperty* ConfiguredClassProperty =
+		FindFProperty<FSoftClassProperty>(
+			URpgGameUIPolicy::StaticClass(),
+			TEXT("RootLayoutClass"));
+	const FSoftClassProperty* AppliedClassProperty =
+		FindFProperty<FSoftClassProperty>(
+			UGameUIPolicy::StaticClass(),
+			TEXT("LayoutClass"));
+	if (!TestNotNull(
+			TEXT("Rpg policy exposes its configured root-layout property"),
+			ConfiguredClassProperty) ||
+		!TestNotNull(
+			TEXT("CommonGame policy exposes its applied layout property"),
+			AppliedClassProperty))
+	{
+		return false;
+	}
+
+	const FSoftObjectPtr ConfiguredClass =
+		ConfiguredClassProperty->GetPropertyValue_InContainer(Policy);
+	const FSoftObjectPtr AppliedClass =
+		AppliedClassProperty->GetPropertyValue_InContainer(Policy);
+	TestEqual(
+		TEXT("Project config selects the exact authored root layout"),
+		ConfiguredClass.ToSoftObjectPath().ToString(),
+		FString(AuthoredLayoutPath));
+	TestEqual(
+		TEXT("CommonGame receives the exact authored root layout"),
+		AppliedClass.ToSoftObjectPath().ToString(),
+		FString(AuthoredLayoutPath));
+
+	UClass* LayoutClass =
+		LoadClass<URpgPrimaryGameLayout>(nullptr, AuthoredLayoutPath);
+	TestNotNull(TEXT("Configured root-layout class loads"), LayoutClass);
+	TestTrue(
+		TEXT("Configured policy does not fall back to the native layout class"),
+		LayoutClass != URpgPrimaryGameLayout::StaticClass());
+	return true;
 }
 
 IMPLEMENT_SIMPLE_AUTOMATION_TEST(

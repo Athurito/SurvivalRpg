@@ -143,7 +143,7 @@ protected:
 	UFUNCTION(BlueprintImplementableEvent, Category = "Inventory|Address Slot", meta = (DisplayName = "On Deferred Address Context Action"))
 	void BP_OnDeferredAddressContextAction(ERpgInventoryContextAction Action, URpgInventoryItemInstance* Item);
 
-	/** Canonical presentation-only drag decorator. Unset uses the native emergency fallback until Step 11. */
+	/** Exact authored presentation-only drag decorator. Missing configuration fails closed before a drag starts. */
 	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Inventory|Address Slot|Drag")
 	TSubclassOf<URpgInventoryDragVisualWidget> DragVisualClass;
 

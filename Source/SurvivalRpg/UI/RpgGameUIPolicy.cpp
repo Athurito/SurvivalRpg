@@ -1,13 +1,5 @@
 #include "RpgGameUIPolicy.h"
 
-#include "RpgPrimaryGameLayout.h"
-
-URpgGameUIPolicy::URpgGameUIPolicy()
-{
-	RootLayoutClass = URpgPrimaryGameLayout::StaticClass();
-	ApplyRootLayoutClass();
-}
-
 void URpgGameUIPolicy::PostInitProperties()
 {
 	Super::PostInitProperties();
@@ -16,8 +8,13 @@ void URpgGameUIPolicy::PostInitProperties()
 
 void URpgGameUIPolicy::ApplyRootLayoutClass()
 {
-	if (!RootLayoutClass.IsNull())
+	if (RootLayoutClass.IsNull())
 	{
-		SetLayoutWidgetClass(RootLayoutClass);
+		ensureAlwaysMsgf(
+			false,
+			TEXT("RpgGameUIPolicy requires a config-authored RootLayoutClass."));
+		return;
 	}
+
+	SetLayoutWidgetClass(RootLayoutClass);
 }

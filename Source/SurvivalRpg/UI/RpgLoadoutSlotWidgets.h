@@ -154,7 +154,7 @@ private:
 	void ReleaseEquipmentSlotState();
 	bool InjectEquipmentSlotViewModelIntoMvvm();
 
-	/** Canonical presentation-only drag decorator. Unset uses the native emergency fallback until Step 11. */
+	/** Exact authored presentation-only drag decorator. Missing configuration fails closed before a drag starts. */
 	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Equipment|Slot|Drag", meta = (AllowPrivateAccess = "true"))
 	TSubclassOf<URpgInventoryDragVisualWidget> DragVisualClass;
 

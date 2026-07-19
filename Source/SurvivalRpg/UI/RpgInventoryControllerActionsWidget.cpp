@@ -5,7 +5,6 @@
 #include "InputCoreTypes.h"
 #include "SurvivalRpg/Inventory/RpgInventoryDragDrop.h"
 #include "SurvivalRpg/UI/RpgInventoryPanelNavigationCoordinator.h"
-#include "SurvivalRpg/UI/RpgInventoryTileView.h"
 
 #include UE_INLINE_GENERATED_CPP_BY_NAME(RpgInventoryControllerActionsWidget)
 
@@ -362,10 +361,10 @@ void URpgInventoryControllerActionsWidget::HandleBackAction()
 	}
 }
 
-void URpgInventoryControllerActionsWidget::HandleActivePanelChanged(FName PanelId, int32 PanelIndex, URpgInventoryTileView* TileView, URpgInventoryManagerComponent* Inventory)
+void URpgInventoryControllerActionsWidget::HandleActivePanelChanged(FName PanelId, int32 PanelIndex)
 {
 	RefreshInventoryActionBindingVisibility();
-	BP_OnInventoryActivePanelChanged(PanelId, PanelIndex, TileView);
+	BP_OnInventoryActivePanelChanged(PanelId, PanelIndex);
 }
 
 void URpgInventoryControllerActionsWidget::HandleActiveSelectionChanged()

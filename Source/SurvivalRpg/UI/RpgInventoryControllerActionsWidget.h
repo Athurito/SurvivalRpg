@@ -8,9 +8,7 @@
 #include "RpgInventoryControllerActionsWidget.generated.h"
 
 class URpgInventoryDragDropCoordinator;
-class URpgInventoryManagerComponent;
 class URpgInventoryPanelNavigationCoordinator;
-class URpgInventoryTileView;
 
 /**
  * Activatable inventory screen base that binds stable CommonUI DataTable action rows.
@@ -96,7 +94,7 @@ protected:
 
 	/** Called after the active panel changes so Blueprint screens can update panel header/border visuals. */
 	UFUNCTION(BlueprintImplementableEvent, Category = "Inventory|Controller", meta = (DisplayName = "On Inventory Active Panel Changed"))
-	void BP_OnInventoryActivePanelChanged(FName PanelId, int32 PanelIndex, URpgInventoryTileView* TileView);
+	void BP_OnInventoryActivePanelChanged(FName PanelId, int32 PanelIndex);
 
 private:
 	void HandlePreviousPanelAction();
@@ -108,7 +106,7 @@ private:
 	void HandleBackAction();
 
 	UFUNCTION()
-	void HandleActivePanelChanged(FName PanelId, int32 PanelIndex, URpgInventoryTileView* TileView, URpgInventoryManagerComponent* Inventory);
+	void HandleActivePanelChanged(FName PanelId, int32 PanelIndex);
 
 	UFUNCTION()
 	void HandleActiveSelectionChanged();

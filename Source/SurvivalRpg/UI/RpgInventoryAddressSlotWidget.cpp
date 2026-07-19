@@ -460,7 +460,11 @@ void URpgInventoryAddressSlotWidget::NativeOnDragDetected(const FGeometry& InGeo
 				FMath::Abs(ScreenBottomRight.Y - ScreenTopLeft.Y)));
 	}
 	bHasPendingPointerDragAnchor = false;
-	if (!DragDropCoordinator || !DragDropCoordinator->BeginPointerDrag(Payload))
+	if (!DragDropCoordinator || !DragVisualClass)
+	{
+		return;
+	}
+	if (!DragDropCoordinator->BeginPointerDrag(Payload))
 	{
 		return;
 	}
@@ -469,6 +473,7 @@ void URpgInventoryAddressSlotWidget::NativeOnDragDetected(const FGeometry& InGeo
 	URpgInventoryDragDropOperation* InventoryOperation = NewObject<URpgInventoryDragDropOperation>(this);
 	if (!InventoryOperation)
 	{
+		DragDropCoordinator->CancelHold();
 		return;
 	}
 
@@ -483,22 +488,16 @@ void URpgInventoryAddressSlotWidget::NativeOnDragDetected(const FGeometry& InGeo
 	InventoryOperation->InventoryPayload = Payload;
 	InventoryOperation->SetInteractionSession(DragDropCoordinator->GetInteractionSession());
 
-	TSubclassOf<URpgInventoryDragVisualWidget> VisualClass = DragVisualClass;
-	if (!VisualClass)
+	URpgInventoryDragVisualWidget* DragVisual =
+		CreateWidget<URpgInventoryDragVisualWidget>(this, DragVisualClass);
+	if (!DragVisual)
 	{
-		VisualClass = URpgInventoryDragVisualWidget::StaticClass();
+		DragDropCoordinator->CancelHold();
+		return;
 	}
 
-	if (VisualClass)
-	{
-		if (URpgInventoryDragVisualWidget* DragVisual =
-			CreateWidget<URpgInventoryDragVisualWidget>(this, VisualClass))
-		{
-			DragVisual->ConfigureFromPayload(Payload, 70.0f, 2.0f);
-			InventoryOperation->DefaultDragVisual = DragVisual;
-		}
-	}
-
+	DragVisual->ConfigureFromPayload(Payload, 70.0f, 2.0f);
+	InventoryOperation->DefaultDragVisual = DragVisual;
 	OutOperation = InventoryOperation;
 }
 

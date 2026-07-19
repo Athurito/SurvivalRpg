@@ -10,8 +10,7 @@ class UCommonActivatableWidgetContainerBase;
  * Project root layout that registers the standard Lyra/CommonGame UI layers.
  *
  * The configured Blueprint owns the visible static hierarchy. Its four named CommonUI stacks are required and are
- * registered here so screen lifecycle stays native and centralized. The native fallback is retained only as an
- * emergency path until the authored layout has passed packaged-game verification.
+ * registered here so screen lifecycle stays native and centralized.
  */
 UCLASS(Blueprintable, BlueprintType)
 class SURVIVALRPG_API URpgPrimaryGameLayout : public UPrimaryGameLayout
@@ -36,8 +35,4 @@ protected:
 	/** Blocking modal layer above all other registered UI layers. */
 	UPROPERTY(BlueprintReadOnly, meta = (BindWidget), Category = "UI|Layers")
 	TObjectPtr<UCommonActivatableWidgetContainerBase> ModalLayer = nullptr;
-
-private:
-	/** Temporary native safety net; authored Blueprint composition remains the canonical project path. */
-	void CreateNativeFallbackLayers();
 };

@@ -10,15 +10,6 @@
 
 DEFINE_LOG_CATEGORY_STATIC(LogRpgInventoryViewModels, Log, All);
 
-namespace
-{
-	int32 GetInventoryViewModelLinearIndex(const FRpgInventoryGridPlacement& Placement)
-	{
-		return Placement.IsValid() ? Placement.Y * 1000 + Placement.X : INDEX_NONE;
-	}
-
-}
-
 void URpgInventoryFragmentViewModel::InitializeFromEntry(const FRpgInventoryEntryView& Entry)
 {
 	ItemInstance = Entry.Instance;
@@ -85,7 +76,6 @@ void URpgInventoryEntryViewModel::InitializeFromEntry(
 	EntryId = Entry.EntryId;
 	StackCount = Entry.StackCount;
 	Placement = Entry.Placement;
-	SlotIndex = GetInventoryViewModelLinearIndex(Placement);
 	DisplayName = FText::GetEmpty();
 	ShortDisplayName = FText::GetEmpty();
 	Description = FText::GetEmpty();
@@ -159,7 +149,6 @@ void URpgInventoryEntryViewModel::InitializeFromEntry(
 	UE_MVVM_BROADCAST_FIELD_VALUE_CHANGED(EntryId);
 	UE_MVVM_BROADCAST_FIELD_VALUE_CHANGED(StackCount);
 	UE_MVVM_BROADCAST_FIELD_VALUE_CHANGED(Placement);
-	UE_MVVM_BROADCAST_FIELD_VALUE_CHANGED(SlotIndex);
 	UE_MVVM_BROADCAST_FIELD_VALUE_CHANGED(DisplayName);
 	UE_MVVM_BROADCAST_FIELD_VALUE_CHANGED(ShortDisplayName);
 	UE_MVVM_BROADCAST_FIELD_VALUE_CHANGED(Description);
