@@ -16,7 +16,6 @@ class URpgInventoryManagerComponent;
 class URpgInventoryUiActionComponent;
 class URpgPlayerInventoryLayoutComponent;
 class URpgPlayerGameplayInputRouterComponent;
-class URpgQuickAccessRadialWidget;
 class URpgWeaponAbilityLoadoutComponent;
 class URpgPawnExtensionComponent;
 class UInputMappingContext;
@@ -158,13 +157,6 @@ private:
 
 	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "Rpg|Input", meta = (AllowPrivateAccess = "true"))
 	TObjectPtr<URpgPlayerGameplayInputRouterComponent> GameplayInputRouterComponent;
-
-	/** Native fallback radial overlay; designers may replace this class without changing the eight shared bindings. */
-	UPROPERTY(EditDefaultsOnly, Category = "Rpg|Input", meta = (AllowPrivateAccess = "true"))
-	TSubclassOf<URpgQuickAccessRadialWidget> QuickAccessRadialWidgetClass;
-
-	UPROPERTY(Transient)
-	TObjectPtr<URpgQuickAccessRadialWidget> QuickAccessRadialWidget;
 
 	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "Rpg|Equipment", meta = (AllowPrivateAccess = "true"))
 	TObjectPtr<URpgEquipmentLoadoutComponent> EquipmentLoadoutComponent;

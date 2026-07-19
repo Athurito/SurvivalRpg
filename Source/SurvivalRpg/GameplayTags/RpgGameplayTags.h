@@ -35,6 +35,9 @@ namespace RpgGameplayTags
 	UE_DECLARE_GAMEPLAY_TAG_EXTERN(InputTag_Jump);   
 	UE_DECLARE_GAMEPLAY_TAG_EXTERN(InputTag_StopJump);   
 	UE_DECLARE_GAMEPLAY_TAG_EXTERN(InputTag_UI_Inventory);
+	UE_DECLARE_GAMEPLAY_TAG_EXTERN(InputTag_UI_QuickAccessRadial_Hold);
+	UE_DECLARE_GAMEPLAY_TAG_EXTERN(InputTag_UI_QuickAccessRadial_Select);
+	UE_DECLARE_GAMEPLAY_TAG_EXTERN(InputTag_UI_QuickAccessRadial_Cancel);
 	UE_DECLARE_GAMEPLAY_TAG_EXTERN(InputTag_ActionBar_Slot_1);
 	UE_DECLARE_GAMEPLAY_TAG_EXTERN(InputTag_ActionBar_Slot_2);
 	UE_DECLARE_GAMEPLAY_TAG_EXTERN(InputTag_ActionBar_Slot_3);
@@ -144,6 +147,7 @@ namespace RpgGameplayTags
 	UE_DECLARE_GAMEPLAY_TAG_EXTERN(UI_Screen_Pause);
 	UE_DECLARE_GAMEPLAY_TAG_EXTERN(UI_Screen_Settings);
 	UE_DECLARE_GAMEPLAY_TAG_EXTERN(UI_HUD_Slot_ActionBar);
+	UE_DECLARE_GAMEPLAY_TAG_EXTERN(UI_HUD_Slot_QuickAccessRadial);
 	UE_DECLARE_GAMEPLAY_TAG_EXTERN(UI_HUD_Slot_WeaponAbilityBar);
 
 	UE_DECLARE_GAMEPLAY_TAG_EXTERN(Base_Storage_Upgrade_AutoSort);

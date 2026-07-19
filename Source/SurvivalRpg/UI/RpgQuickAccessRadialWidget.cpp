@@ -1,141 +1,385 @@
 #include "RpgQuickAccessRadialWidget.h"
 
-#include "InputCoreTypes.h"
-#include "Rendering/DrawElements.h"
-#include "Styling/CoreStyle.h"
-#include "SurvivalRpg/ActionBar/RpgActionBarComponent.h"
+#include "CommonInputModeTypes.h"
+#include "Components/Border.h"
+#include "Components/Image.h"
+#include "Components/TextBlock.h"
+#include "Input/CommonUIInputTypes.h"
 #include "SurvivalRpg/Core/Player/RpgPlayerController.h"
 #include "SurvivalRpg/Core/Player/RpgPlayerGameplayInputRouterComponent.h"
-#include "SurvivalRpg/Inventory/RpgInventoryItemDefinition.h"
+#include "SurvivalRpg/Mvvm/Inventory/RpgActionBarViewModels.h"
+#include "SurvivalRpg/UI/RpgMvvmWidgetUtils.h"
 
 #include UE_INLINE_GENERATED_CPP_BY_NAME(RpgQuickAccessRadialWidget)
 
-URpgQuickAccessRadialWidget::URpgQuickAccessRadialWidget(const FObjectInitializer& ObjectInitializer)
+const FName URpgQuickAccessRadialSlotWidget::ActionBarSlotViewModelSourceName(
+	TEXT("RpgActionBarSlotViewModel"));
+
+URpgQuickAccessRadialSlotWidget::URpgQuickAccessRadialSlotWidget(
+	const FObjectInitializer& ObjectInitializer)
 	: Super(ObjectInitializer)
 {
 	SetIsFocusable(false);
+	SetVisibility(ESlateVisibility::SelfHitTestInvisible);
+}
+
+void URpgQuickAccessRadialSlotWidget::SetActionBarSlotViewModel(
+	URpgActionBarSlotViewModel* InSlotViewModel)
+{
+	if (SlotViewModel)
+	{
+		SlotViewModel->OnSlotChanged.RemoveDynamic(
+			this,
+			&ThisClass::HandleSlotViewModelChanged);
+	}
+
+	SlotViewModel = InSlotViewModel;
+	if (SlotViewModel)
+	{
+		SlotViewModel->OnSlotChanged.AddUniqueDynamic(
+			this,
+			&ThisClass::HandleSlotViewModelChanged);
+	}
+
+	RpgMvvmWidgetUtils::SetOptionalManualViewModel(
+		this,
+		ActionBarSlotViewModelSourceName,
+		SlotViewModel,
+		URpgActionBarSlotViewModel::StaticClass());
+	RefreshPresentation();
+}
+
+void URpgQuickAccessRadialSlotWidget::SetRadialSelected(bool bInSelected)
+{
+	if (bRadialSelected == bInSelected)
+	{
+		return;
+	}
+
+	bRadialSelected = bInSelected;
+	RefreshPresentation();
+}
+
+void URpgQuickAccessRadialSlotWidget::SetIconSource(
+	TSoftObjectPtr<UTexture2D> InIconSource)
+{
+	IconSource = MoveTemp(InIconSource);
+	if (ItemIcon)
+	{
+		ItemIcon->SetBrushFromSoftTexture(
+			IconSource,
+			/*bMatchSize=*/ false);
+	}
+}
+
+void URpgQuickAccessRadialSlotWidget::NativeDestruct()
+{
+	SetActionBarSlotViewModel(nullptr);
+	SetIconSource(TSoftObjectPtr<UTexture2D>());
+	bRadialSelected = false;
+	Super::NativeDestruct();
+}
+
+void URpgQuickAccessRadialSlotWidget::HandleSlotViewModelChanged(
+	URpgActionBarSlotViewModel* ChangedSlotViewModel)
+{
+	if (ChangedSlotViewModel == SlotViewModel)
+	{
+		RefreshPresentation();
+	}
+}
+
+void URpgQuickAccessRadialSlotWidget::RefreshPresentation()
+{
+	const bool bHasContent = SlotViewModel && SlotViewModel->HasContent();
+	const bool bAvailable = SlotViewModel && SlotViewModel->IsAvailable();
+	const int32 SlotIndex = SlotViewModel
+		? SlotViewModel->GetSlotIndex()
+		: INDEX_NONE;
+
+	if (SegmentBorder)
+	{
+		const FLinearColor SegmentColor = bRadialSelected
+			? SelectedSegmentColor
+			: bHasContent && !bAvailable
+				? BlockedSegmentColor
+				: bHasContent
+					? NormalSegmentColor
+					: EmptySegmentColor;
+		SegmentBorder->SetBrushColor(SegmentColor);
+	}
+
+	if (SlotNumberText)
+	{
+		SlotNumberText->SetText(
+			SlotIndex >= 0
+				? FText::AsNumber(SlotIndex + 1)
+				: FText::GetEmpty());
+	}
+
+	if (BlockedText)
+	{
+		BlockedText->SetText(
+			bHasContent && !bAvailable
+				? NSLOCTEXT(
+					"RpgQuickAccessRadial",
+					"BlockedSlot",
+					"Blocked")
+				: FText::GetEmpty());
+		BlockedText->SetVisibility(
+			bHasContent && !bAvailable
+				? ESlateVisibility::HitTestInvisible
+				: ESlateVisibility::Collapsed);
+	}
+}
+
+URpgQuickAccessRadialWidget::URpgQuickAccessRadialWidget(
+	const FObjectInitializer& ObjectInitializer)
+	: Super(ObjectInitializer)
+{
+	SetIsFocusable(false);
+	SetVisibility(ESlateVisibility::Collapsed);
+}
+
+int32 URpgQuickAccessRadialWidget::GetAuthoredSlotEntryCount() const
+{
+	int32 Result = 0;
+	for (const URpgQuickAccessRadialSlotWidget* Entry : GetAuthoredSlotEntries())
+	{
+		Result += Entry ? 1 : 0;
+	}
+	return Result;
 }
 
 void URpgQuickAccessRadialWidget::NativeConstruct()
 {
 	Super::NativeConstruct();
+	ActivateExtensionPresenter();
+}
 
-	ARpgPlayerController* PlayerController = GetRpgOwningPlayer();
-	ObservedInputRouter = PlayerController ? PlayerController->GetGameplayInputRouterComponent() : nullptr;
+void URpgQuickAccessRadialWidget::ActivateExtensionPresenter()
+{
+	if (bExtensionPresenterActive)
+	{
+		return;
+	}
+	bExtensionPresenterActive = true;
+
+	if (!ActionBarViewModel)
+	{
+		ActionBarViewModel = NewObject<URpgActionBarViewModel>(this);
+	}
+	ActionBarViewModel->OnSlotsChanged.AddUniqueDynamic(
+		this,
+		&ThisClass::HandleActionBarSlotsChanged);
+	ActionBarViewModel->BindPlayerController(GetOwningPlayer());
+
+	const ARpgPlayerController* PlayerController =
+		Cast<ARpgPlayerController>(GetOwningPlayer());
+	ObservedInputRouter = PlayerController
+		? PlayerController->GetGameplayInputRouterComponent()
+		: nullptr;
 	if (ObservedInputRouter)
 	{
-		ObservedInputRouter->OnQuickAccessRadialChanged.AddUniqueDynamic(this, &ThisClass::HandleRadialChanged);
+		ObservedInputRouter->OnQuickAccessRadialChanged.AddUniqueDynamic(
+			this,
+			&ThisClass::HandleRadialChanged);
 		bRadialOpen = ObservedInputRouter->IsQuickAccessRadialOpen();
-		SelectedSlotIndex = ObservedInputRouter->GetQuickAccessRadialSelection();
+		SelectedSlotIndex =
+			ObservedInputRouter->GetQuickAccessRadialSelection();
+	}
+	else
+	{
+		bRadialOpen = false;
+		SelectedSlotIndex = INDEX_NONE;
 	}
 
-	SetVisibility(bRadialOpen ? ESlateVisibility::HitTestInvisible : ESlateVisibility::Collapsed);
+	RefreshSlotViewModels();
+	SetVisibility(
+		bRadialOpen
+			? ESlateVisibility::SelfHitTestInvisible
+			: ESlateVisibility::Collapsed);
+	if (bRadialOpen)
+	{
+		RegisterCommonUiCancelBinding();
+	}
+	RefreshSelectionPresentation();
 }
 
 void URpgQuickAccessRadialWidget::NativeDestruct()
 {
-	if (ObservedInputRouter)
-	{
-		ObservedInputRouter->OnQuickAccessRadialChanged.RemoveDynamic(this, &ThisClass::HandleRadialChanged);
-	}
-	ObservedInputRouter = nullptr;
+	DeactivateExtensionPresenter();
 	Super::NativeDestruct();
 }
 
-int32 URpgQuickAccessRadialWidget::NativePaint(
-	const FPaintArgs& Args,
-	const FGeometry& AllottedGeometry,
-	const FSlateRect& MyCullingRect,
-	FSlateWindowElementList& OutDrawElements,
-	int32 LayerId,
-	const FWidgetStyle& InWidgetStyle,
-	bool bParentEnabled) const
+void URpgQuickAccessRadialWidget::NativeOnExtensionAdded()
 {
-	int32 NextLayer = LayerId;
-	if (bRadialOpen)
-	{
-		const FSlateBrush* WhiteBrush = FCoreStyle::Get().GetBrush(TEXT("WhiteBrush"));
-		const FSlateFontInfo SlotFont = FCoreStyle::GetDefaultFontStyle(TEXT("Regular"), 12);
-		const FVector2D Center = AllottedGeometry.GetLocalSize() * 0.5f;
-		const URpgActionBarComponent* ActionBar = GetRpgOwningPlayer()
-			? GetRpgOwningPlayer()->GetActionBarComponent()
-			: nullptr;
-
-		for (int32 SlotIndex = 0; SlotIndex < 8; ++SlotIndex)
-		{
-			const float Angle = static_cast<float>(SlotIndex) * (2.0f * PI / 8.0f);
-			const FVector2D Direction(FMath::Sin(Angle), -FMath::Cos(Angle));
-			const FVector2D TopLeft = Center + Direction * SegmentRadius - SegmentSize * 0.5f;
-			const FRpgActionBarSlot Binding = ActionBar ? ActionBar->GetSlot(SlotIndex) : FRpgActionBarSlot();
-			const FLinearColor FillColor = SlotIndex == SelectedSlotIndex
-				? SelectedSegmentColor
-				: (!Binding.IsEmpty() && !Binding.bAvailable ? BlockedSegmentColor : SegmentColor);
-
-			if (WhiteBrush)
-			{
-				FSlateDrawElement::MakeBox(
-					OutDrawElements,
-					NextLayer,
-					AllottedGeometry.ToPaintGeometry(FVector2f(SegmentSize), FSlateLayoutTransform(FVector2f(TopLeft))),
-					WhiteBrush,
-					ESlateDrawEffect::None,
-					FillColor);
-			}
-
-			FSlateDrawElement::MakeText(
-				OutDrawElements,
-				NextLayer + 1,
-				AllottedGeometry.ToPaintGeometry(FVector2f(SegmentSize - FVector2D(12.0f, 8.0f)), FSlateLayoutTransform(FVector2f(TopLeft + FVector2D(6.0f, 4.0f)))),
-				BuildSlotLabel(SlotIndex),
-				SlotFont,
-				ESlateDrawEffect::None,
-				FLinearColor::White);
-		}
-		NextLayer += 2;
-	}
-
-	return Super::NativePaint(Args, AllottedGeometry, MyCullingRect, OutDrawElements, NextLayer, InWidgetStyle, bParentEnabled);
+	ActivateExtensionPresenter();
 }
 
-void URpgQuickAccessRadialWidget::HandleRadialChanged(bool bIsOpen, int32 InSelectedSlotIndex)
+void URpgQuickAccessRadialWidget::NativeOnExtensionRemoved()
+{
+	DeactivateExtensionPresenter();
+}
+
+void URpgQuickAccessRadialWidget::DeactivateExtensionPresenter()
+{
+	if (!bExtensionPresenterActive)
+	{
+		return;
+	}
+	bExtensionPresenterActive = false;
+
+	if (ObservedInputRouter)
+	{
+		ObservedInputRouter->CancelQuickAccessRadial();
+	}
+	UnregisterCommonUiCancelBinding();
+
+	if (ObservedInputRouter)
+	{
+		ObservedInputRouter->OnQuickAccessRadialChanged.RemoveDynamic(
+			this,
+			&ThisClass::HandleRadialChanged);
+	}
+	ObservedInputRouter = nullptr;
+
+	if (ActionBarViewModel)
+	{
+		ActionBarViewModel->OnSlotsChanged.RemoveDynamic(
+			this,
+			&ThisClass::HandleActionBarSlotsChanged);
+		ActionBarViewModel->UnbindActionBar();
+	}
+
+	for (URpgQuickAccessRadialSlotWidget* Entry : GetAuthoredSlotEntries())
+	{
+		if (Entry)
+		{
+			Entry->SetRadialSelected(false);
+			Entry->SetActionBarSlotViewModel(nullptr);
+		}
+	}
+
+	bRadialOpen = false;
+	SelectedSlotIndex = INDEX_NONE;
+	SetVisibility(ESlateVisibility::Collapsed);
+}
+
+void URpgQuickAccessRadialWidget::HandleRadialChanged(
+	bool bIsOpen,
+	int32 InSelectedSlotIndex)
 {
 	bRadialOpen = bIsOpen;
 	SelectedSlotIndex = bIsOpen ? InSelectedSlotIndex : INDEX_NONE;
-	SetVisibility(bRadialOpen ? ESlateVisibility::HitTestInvisible : ESlateVisibility::Collapsed);
-	InvalidateLayoutAndVolatility();
-	BP_OnQuickAccessRadialChanged(bRadialOpen, SelectedSlotIndex);
+	if (bRadialOpen && ActionBarViewModel)
+	{
+		// HUD extensions may construct before the owning PlayerState is available.
+		// Rebinding on open resolves the latest owner-only actionbar projection.
+		ActionBarViewModel->BindPlayerController(GetOwningPlayer());
+	}
+	SetVisibility(
+		bRadialOpen
+			? ESlateVisibility::SelfHitTestInvisible
+			: ESlateVisibility::Collapsed);
+	if (bRadialOpen)
+	{
+		RegisterCommonUiCancelBinding();
+	}
+	else
+	{
+		UnregisterCommonUiCancelBinding();
+	}
+	RefreshSelectionPresentation();
 }
 
-FString URpgQuickAccessRadialWidget::BuildSlotLabel(int32 SlotIndex) const
+void URpgQuickAccessRadialWidget::HandleActionBarSlotsChanged()
 {
-	const ARpgPlayerController* PlayerController = GetRpgOwningPlayer();
-	const URpgActionBarComponent* ActionBar = PlayerController ? PlayerController->GetActionBarComponent() : nullptr;
-	const FRpgActionBarSlot Binding = ActionBar ? ActionBar->GetSlot(SlotIndex) : FRpgActionBarSlot();
-
-	FString ActionLabel(TEXT("Empty"));
-	switch (Binding.SlotType)
-	{
-	case ERpgActionBarSlotType::CarrySlot:
-		ActionLabel = Binding.CarryRole.IsNone() ? TEXT("Carry") : Binding.CarryRole.ToString();
-		break;
-	case ERpgActionBarSlotType::Consumable:
-		ActionLabel = Binding.ConsumableDefinition ? GetNameSafe(Binding.ConsumableDefinition.Get()) : TEXT("Consumable");
-		break;
-	case ERpgActionBarSlotType::Ability:
-		ActionLabel = Binding.AbilityId.IsValid() ? Binding.AbilityId.ToString() : TEXT("Ability");
-		break;
-	default:
-		break;
-	}
-
-	if (!Binding.IsEmpty() && !Binding.bAvailable)
-	{
-		ActionLabel += TEXT(" [Blocked]");
-	}
-	return FString::Printf(TEXT("%d  %s"), SlotIndex + 1, *ActionLabel);
+	RefreshSlotViewModels();
 }
 
-ARpgPlayerController* URpgQuickAccessRadialWidget::GetRpgOwningPlayer() const
+TArray<URpgQuickAccessRadialSlotWidget*>
+URpgQuickAccessRadialWidget::GetAuthoredSlotEntries() const
 {
-	return Cast<ARpgPlayerController>(GetOwningPlayer());
+	return {
+		RadialSlot_0.Get(),
+		RadialSlot_1.Get(),
+		RadialSlot_2.Get(),
+		RadialSlot_3.Get(),
+		RadialSlot_4.Get(),
+		RadialSlot_5.Get(),
+		RadialSlot_6.Get(),
+		RadialSlot_7.Get()
+	};
+}
+
+void URpgQuickAccessRadialWidget::HandleCommonUiCancel()
+{
+	if (ObservedInputRouter)
+	{
+		ObservedInputRouter->CancelQuickAccessRadial();
+	}
+}
+
+void URpgQuickAccessRadialWidget::RegisterCommonUiCancelBinding()
+{
+	if (CommonUiCancelBinding.IsValid() ||
+		!CommonUiCancelAction.DataTable ||
+		CommonUiCancelAction.RowName.IsNone())
+	{
+		return;
+	}
+
+	FBindUIActionArgs BindArgs(
+		CommonUiCancelAction,
+		/*bShouldDisplayInActionBar=*/ false,
+		FSimpleDelegate::CreateUObject(
+			this,
+			&ThisClass::HandleCommonUiCancel));
+	BindArgs.InputMode = ECommonInputMode::Game;
+	BindArgs.bConsumeInput = true;
+	BindArgs.bDisplayInActionBar = false;
+	CommonUiCancelBinding = RegisterUIActionBinding(BindArgs);
+}
+
+void URpgQuickAccessRadialWidget::UnregisterCommonUiCancelBinding()
+{
+	if (CommonUiCancelBinding.IsValid())
+	{
+		RemoveActionBinding(CommonUiCancelBinding);
+		CommonUiCancelBinding.Unregister();
+	}
+	CommonUiCancelBinding = FUIActionBindingHandle();
+}
+
+void URpgQuickAccessRadialWidget::RefreshSlotViewModels()
+{
+	const TArray<URpgQuickAccessRadialSlotWidget*> Entries =
+		GetAuthoredSlotEntries();
+	for (int32 SlotIndex = 0; SlotIndex < Entries.Num(); ++SlotIndex)
+	{
+		if (URpgQuickAccessRadialSlotWidget* Entry = Entries[SlotIndex])
+		{
+			Entry->SetActionBarSlotViewModel(
+				ActionBarViewModel
+					? ActionBarViewModel->GetSlotAtIndex(SlotIndex)
+					: nullptr);
+		}
+	}
+
+	RefreshSelectionPresentation();
+}
+
+void URpgQuickAccessRadialWidget::RefreshSelectionPresentation()
+{
+	const TArray<URpgQuickAccessRadialSlotWidget*> Entries =
+		GetAuthoredSlotEntries();
+	for (int32 SlotIndex = 0; SlotIndex < Entries.Num(); ++SlotIndex)
+	{
+		if (URpgQuickAccessRadialSlotWidget* Entry = Entries[SlotIndex])
+		{
+			Entry->SetRadialSelected(
+				bRadialOpen && SlotIndex == SelectedSlotIndex);
+		}
+	}
 }

@@ -218,7 +218,7 @@ Es gibt bewusst keine spekulative allgemeine Dual-Inventory-Basis.
 - [x] Controller-Context-Menüs an der fokussierten Item-/Slot-Geometrie statt
       an der linken oberen Viewport-Ecke verankern.
 - [x] Gear- und Spatial-Drag verwenden dieselbe authored Drag-Visual-Klasse.
-- [ ] Quick-Access-Radial in die reguläre CommonUI-/Input-Komposition
+- [x] Quick-Access-Radial in die reguläre CommonUI-/Input-Komposition
       überführen, statt Controller-`BindKey`, `NativePaint` und direkten
       Viewport-Push zu mischen.
 - [ ] Direkte Viewport-Widgets in sichtbare CommonUI-/UIExtension-Hosts
@@ -595,6 +595,35 @@ Verifizierter UI-Zwischenstand vom 2026-07-19:
   `SurvivalRpg.Inventory` (57/57), `SurvivalRpg.UI` (10/10),
   `SurvivalRpg.Equipment` (5/5) und `SurvivalRpg.Crafting` (6/6) sind ohne
   Warnungen, Fehler oder ausgelassene Tests erfolgreich.
+- Das Quick-Access-Radial ist jetzt ein passiver, authorierter
+  CommonUI-/UIExtension-Presenter im HUD-Slot
+  `UI.HUD.Slot.QuickAccessRadial`. Die Experience besitzt sowohl den
+  Widget-Beitrag als auch genau einen separaten
+  `IMC_UI_QuickAccessRadial` mit Priorität 10; `IMC_UI_PlayerHUD` enthält
+  keine konkurrierenden Radial-Mappings mehr.
+- Hold, Stick-Auswahl, Commit und Cancel laufen über native Enhanced-Input-
+  Tags und den lokalen Gameplay-Input-Router. Der Controller besitzt weder
+  direkte `BindKey`-Radialpfade noch Tick-basiertes Stick-Polling,
+  `CreateWidget`/Viewport-Komposition oder einen nativen
+  `NativePaint`-Fallback mehr. Gameplay-Aktivierung bleibt ausschließlich
+  beim bestehenden serverautoritativen Actionbar-Pfad.
+- `CUI_QuickAccessRadial` authoriert acht feste Slot-Leaves.
+  `CUI_QuickAccessRadialSlotEntry` besitzt genau eine optionale manuelle
+  `RpgActionBarSlotViewModel`-Source und drei einseitige Bindings für Icon,
+  Kurzname und kompakten Stack-Text. UIExtension-Pooling, CommonUI-Back,
+  Delegate-Cleanup und Look-Input-Suppression besitzen explizite,
+  idempotente Lifecycle-Grenzen.
+- Die permanenten Tests
+  `SurvivalRpg.UI.QuickAccessRadial.CompositionAssets`,
+  `SurvivalRpg.UI.QuickAccessRadial.InputAssets` und
+  `SurvivalRpg.UI.QuickAccessRadial.SelectionMath` sind 3/3 grün. Ein
+  separater frischer UE-5.8-Commandlet-Prozess kompilierte und speicherte die
+  Presenter-Assets ohne Ensure oder Fehler; das einmalige Autorierungstool
+  und alle Inspektionsskripte wurden anschließend vollständig entfernt.
+- Der finale UE-5.8-Editor-Build sowie die vollständigen Läufe
+  `SurvivalRpg.Inventory` (57/57), `SurvivalRpg.UI` (13/13),
+  `SurvivalRpg.Equipment` (5/5) und `SurvivalRpg.Crafting` (6/6) sind ohne
+  Fehler oder ausgelassene Tests erfolgreich.
 - Ein separater frischer UE-5.8-Commandlet-Prozess kompiliert alle drei neuen
   Widget-Blueprints ohne Fehler und lädt Registry sowie dedizierte
   BaseTerminal-Action-Tabelle erneut. Dabei wurden keine Assets gespeichert.
@@ -627,13 +656,19 @@ Verifizierter UI-Zwischenstand vom 2026-07-19:
      Servervalidierung bleibt autoritativ.
   9. [x] **P2:** Controller-Context-Menüs an der fokussierten Auswahl
      verankern und die Viewport-Mitte nur als Fallback verwenden.
-  10. [ ] Quick-Access-Radial und Gear-Drag-Visual in die gemeinsame UI-/Input-
+  10. [x] Quick-Access-Radial und Gear-Drag-Visual in die gemeinsame UI-/Input-
      Komposition überführen.
   11. [ ] Orphan-Assets und Notfall-Fallbacks erst nach Referenz-, Cook- und
      Packaged-Prüfung entfernen.
 - Noch offen: den kanonischen Primary-Mismatch mit echtem OwningPlayer in PIE
   beziehungsweise einem passenden Test-Harness abdecken sowie interaktive
   Mouse-/Gamepad-, PIE-, Cook- und Packaged-Prüfungen ausführen.
+- Bekannter Controller-Legacy-Restpunkt: `OnPossess` und
+  `RestoreGameplayInputFocus` rufen weiterhin blind
+  `SetIgnoreLookInput(false)` auf und können dadurch einen gezählten
+  Look-Input-Lock eines fremden Systems abbauen. Der neue Radial-Router besitzt
+  und löst ausschließlich sein eigenes balanciertes Lock; die beiden globalen
+  Fokus-Resets werden in einem separaten Input-Lifecycle-Schnitt bereinigt.
 
 Interaktiver Smoke-Test für den aktuellen Storage-Schnitt:
 

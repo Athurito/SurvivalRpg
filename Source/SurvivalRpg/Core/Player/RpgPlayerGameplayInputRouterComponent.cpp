@@ -1,17 +1,39 @@
 #include "RpgPlayerGameplayInputRouterComponent.h"
 
+#include "CommonInputModeTypes.h"
+#include "Engine/LocalPlayer.h"
+#include "Input/CommonUIActionRouterBase.h"
 #include "SurvivalRpg/ActionBar/RpgActionBarComponent.h"
 #include "SurvivalRpg/Core/Player/RpgPlayerController.h"
 #include "SurvivalRpg/Equipment/RpgWeaponAbilityLoadoutComponent.h"
 #include "SurvivalRpg/GameplayTags/RpgGameplayTags.h"
 #include "SurvivalRpg/UI/RpgUIScreenBlueprintLibrary.h"
-#include "SurvivalRpg/UI/RpgUIScreenSubsystem.h"
 
 #include UE_INLINE_GENERATED_CPP_BY_NAME(RpgPlayerGameplayInputRouterComponent)
 
 URpgPlayerGameplayInputRouterComponent::URpgPlayerGameplayInputRouterComponent(const FObjectInitializer& ObjectInitializer)
 	: Super(ObjectInitializer)
 {
+}
+
+void URpgPlayerGameplayInputRouterComponent::BeginPlay()
+{
+	Super::BeginPlay();
+	BindCommonUiInputRouter();
+}
+
+void URpgPlayerGameplayInputRouterComponent::EndPlay(const EEndPlayReason::Type EndPlayReason)
+{
+	CancelQuickAccessRadial();
+	SetQuickAccessLookSuppressed(false);
+	UnbindCommonUiInputRouter();
+	Super::EndPlay(EndPlayReason);
+}
+
+void URpgPlayerGameplayInputRouterComponent::ReceivedPlayer()
+{
+	Super::ReceivedPlayer();
+	BindCommonUiInputRouter();
 }
 
 void URpgPlayerGameplayInputRouterComponent::HandleGameplayInputPressed(FGameplayTag InputTag)
@@ -87,21 +109,9 @@ void URpgPlayerGameplayInputRouterComponent::HandleGameplayInputReleased(FGamepl
 
 void URpgPlayerGameplayInputRouterComponent::BeginQuickAccessRadial()
 {
-	const ARpgPlayerController* RpgPC = Cast<ARpgPlayerController>(GetOwner());
-	if (!RpgPC || !RpgPC->IsLocalController() || !RpgPC->GetPawn() || RpgPC->ShouldShowMouseCursor())
+	if (bQuickAccessRadialOpen || !CanBeginQuickAccessRadial())
 	{
 		return;
-	}
-	if (const ULocalPlayer* LocalPlayer = RpgPC->GetLocalPlayer())
-	{
-		const URpgUIScreenSubsystem* Screens = LocalPlayer->GetSubsystem<URpgUIScreenSubsystem>();
-		if (Screens &&
-			(Screens->IsScreenActiveOrPending(RpgGameplayTags::UI_Screen_Inventory) ||
-			 Screens->IsScreenActiveOrPending(RpgGameplayTags::UI_Screen_Storage) ||
-			 Screens->IsScreenActiveOrPending(RpgGameplayTags::UI_Screen_Loot)))
-		{
-			return;
-		}
 	}
 
 	SetQuickAccessRadialState(true, INDEX_NONE);
@@ -114,20 +124,9 @@ void URpgPlayerGameplayInputRouterComponent::UpdateQuickAccessRadial(FVector2D S
 		return;
 	}
 
-	int32 NewSelection = INDEX_NONE;
-	if (StickInput.SizeSquared() >= FMath::Square(QuickAccessRadialDeadZone))
-	{
-		// atan2(X, Y) makes segment zero point up and advances clockwise, matching the HUD layout.
-		constexpr float SegmentAngle = 2.0f * PI / 8.0f;
-		float ClockwiseAngle = FMath::Atan2(StickInput.X, StickInput.Y);
-		if (ClockwiseAngle < 0.0f)
-		{
-			ClockwiseAngle += 2.0f * PI;
-		}
-		NewSelection = FMath::FloorToInt((ClockwiseAngle + SegmentAngle * 0.5f) / SegmentAngle) % 8;
-	}
-
-	SetQuickAccessRadialState(true, NewSelection);
+	SetQuickAccessRadialState(
+		true,
+		ResolveQuickAccessRadialSelection(StickInput, QuickAccessRadialDeadZone));
 }
 
 void URpgPlayerGameplayInputRouterComponent::CommitQuickAccessRadial()
@@ -153,25 +152,146 @@ void URpgPlayerGameplayInputRouterComponent::CommitQuickAccessRadial()
 
 void URpgPlayerGameplayInputRouterComponent::CancelQuickAccessRadial()
 {
-	if (bQuickAccessRadialOpen)
+	SetQuickAccessRadialState(false, INDEX_NONE);
+}
+
+int32 URpgPlayerGameplayInputRouterComponent::ResolveQuickAccessRadialSelection(
+	FVector2D StickInput,
+	float DeadZone)
+{
+	if (StickInput.ContainsNaN())
 	{
-		SetQuickAccessRadialState(false, INDEX_NONE);
+		return INDEX_NONE;
+	}
+
+	const float ClampedDeadZone = FMath::Clamp(DeadZone, 0.0f, 1.0f);
+	const float StickMagnitudeSquared = StickInput.SizeSquared();
+	if (StickMagnitudeSquared <= UE_SMALL_NUMBER ||
+		StickMagnitudeSquared < FMath::Square(ClampedDeadZone))
+	{
+		return INDEX_NONE;
+	}
+
+	// atan2(X, Y) makes segment zero point up and advances clockwise, matching the authored HUD layout.
+	constexpr float SegmentAngle = 2.0f * PI / static_cast<float>(QuickAccessRadialSlotCount);
+	float ClockwiseAngle = FMath::Atan2(StickInput.X, StickInput.Y);
+	if (ClockwiseAngle < 0.0f)
+	{
+		ClockwiseAngle += 2.0f * PI;
+	}
+
+	return FMath::FloorToInt((ClockwiseAngle + SegmentAngle * 0.5f) / SegmentAngle)
+		% QuickAccessRadialSlotCount;
+}
+
+bool URpgPlayerGameplayInputRouterComponent::CanBeginQuickAccessRadial()
+{
+	const ARpgPlayerController* RpgPC = Cast<ARpgPlayerController>(GetOwner());
+	if (!RpgPC || !RpgPC->IsLocalController() || !RpgPC->GetPawn())
+	{
+		return false;
+	}
+
+	BindCommonUiInputRouter();
+	return !ObservedCommonUiInputRouter.IsValid() ||
+		ObservedCommonUiInputRouter->GetActiveInputMode(ECommonInputMode::Game) !=
+			ECommonInputMode::Menu;
+}
+
+void URpgPlayerGameplayInputRouterComponent::BindCommonUiInputRouter()
+{
+	if (ObservedCommonUiInputRouter.IsValid())
+	{
+		return;
+	}
+
+	const ARpgPlayerController* RpgPC = Cast<ARpgPlayerController>(GetOwner());
+	ULocalPlayer* LocalPlayer = RpgPC ? RpgPC->GetLocalPlayer() : nullptr;
+	UCommonUIActionRouterBase* CommonUiInputRouter =
+		LocalPlayer ? LocalPlayer->GetSubsystem<UCommonUIActionRouterBase>() : nullptr;
+	if (!CommonUiInputRouter)
+	{
+		return;
+	}
+
+	ObservedCommonUiInputRouter = CommonUiInputRouter;
+	ActiveInputModeChangedHandle =
+		CommonUiInputRouter->OnActiveInputModeChanged().AddUObject(
+			this,
+			&ThisClass::HandleActiveInputModeChanged);
+	HandleActiveInputModeChanged(
+		CommonUiInputRouter->GetActiveInputMode(ECommonInputMode::Game));
+}
+
+void URpgPlayerGameplayInputRouterComponent::UnbindCommonUiInputRouter()
+{
+	if (UCommonUIActionRouterBase* CommonUiInputRouter = ObservedCommonUiInputRouter.Get())
+	{
+		CommonUiInputRouter->OnActiveInputModeChanged().Remove(ActiveInputModeChangedHandle);
+	}
+
+	ActiveInputModeChangedHandle.Reset();
+	ObservedCommonUiInputRouter.Reset();
+}
+
+void URpgPlayerGameplayInputRouterComponent::HandleActiveInputModeChanged(
+	ECommonInputMode ActiveInputMode)
+{
+	if (ActiveInputMode == ECommonInputMode::Menu)
+	{
+		CancelQuickAccessRadial();
 	}
 }
 
 void URpgPlayerGameplayInputRouterComponent::SetQuickAccessRadialState(bool bIsOpen, int32 SelectedSlotIndex)
 {
-	SelectedSlotIndex = bIsOpen && SelectedSlotIndex >= 0 && SelectedSlotIndex < 8
+	SelectedSlotIndex =
+		bIsOpen &&
+		SelectedSlotIndex >= 0 &&
+		SelectedSlotIndex < QuickAccessRadialSlotCount
 		? SelectedSlotIndex
 		: INDEX_NONE;
 	if (bQuickAccessRadialOpen == bIsOpen && QuickAccessRadialSelection == SelectedSlotIndex)
 	{
+		SetQuickAccessLookSuppressed(bIsOpen);
 		return;
 	}
 
+	const bool bWasOpen = bQuickAccessRadialOpen;
 	bQuickAccessRadialOpen = bIsOpen;
 	QuickAccessRadialSelection = SelectedSlotIndex;
+	if (bWasOpen != bQuickAccessRadialOpen)
+	{
+		SetQuickAccessLookSuppressed(bQuickAccessRadialOpen);
+	}
 	OnQuickAccessRadialChanged.Broadcast(bQuickAccessRadialOpen, QuickAccessRadialSelection);
+}
+
+void URpgPlayerGameplayInputRouterComponent::SetQuickAccessLookSuppressed(bool bShouldSuppress)
+{
+	ARpgPlayerController* RpgPC = Cast<ARpgPlayerController>(GetOwner());
+	if (bOwnsQuickAccessLookSuppression == bShouldSuppress)
+	{
+		return;
+	}
+
+	if (bShouldSuppress)
+	{
+		if (!RpgPC || !RpgPC->IsLocalController())
+		{
+			return;
+		}
+
+		RpgPC->SetIgnoreLookInput(true);
+		bOwnsQuickAccessLookSuppression = true;
+		return;
+	}
+
+	if (RpgPC)
+	{
+		RpgPC->SetIgnoreLookInput(false);
+	}
+	bOwnsQuickAccessLookSuppression = false;
 }
 
 int32 URpgPlayerGameplayInputRouterComponent::GetActionBarSlotIndexFromInputTag(FGameplayTag InputTag)

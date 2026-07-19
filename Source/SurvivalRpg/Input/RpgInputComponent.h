@@ -27,6 +27,9 @@ public:
 	void BindNativeAction(const URpgInputConfig* InputConfig, const FGameplayTag& InputTag, ETriggerEvent TriggerEvent, UserClass* Object, FuncType Func, bool bLogIfNotFound);
 
 	template<class UserClass, typename FuncType>
+	void BindNativeAction(const URpgInputConfig* InputConfig, const FGameplayTag& InputTag, ETriggerEvent TriggerEvent, UserClass* Object, FuncType Func, TArray<uint32>& BindHandles, bool bLogIfNotFound);
+
+	template<class UserClass, typename FuncType>
 	void BindNativeActionWithTag(const URpgInputConfig* InputConfig, const FGameplayTag& InputTag, ETriggerEvent TriggerEvent, UserClass* Object, FuncType Func, bool bLogIfNotFound);
 
 	template<class UserClass, typename FuncType>
@@ -45,6 +48,16 @@ void URpgInputComponent::BindNativeAction(const URpgInputConfig* InputConfig, co
 	if (const UInputAction* IA = InputConfig->FindNativeInputActionForTag(InputTag, bLogIfNotFound))
 	{
 		BindAction(IA, TriggerEvent, Object, Func);
+	}
+}
+
+template<class UserClass, typename FuncType>
+void URpgInputComponent::BindNativeAction(const URpgInputConfig* InputConfig, const FGameplayTag& InputTag, ETriggerEvent TriggerEvent, UserClass* Object, FuncType Func, TArray<uint32>& BindHandles, bool bLogIfNotFound)
+{
+	check(InputConfig);
+	if (const UInputAction* IA = InputConfig->FindNativeInputActionForTag(InputTag, bLogIfNotFound))
+	{
+		BindHandles.Add(BindAction(IA, TriggerEvent, Object, Func).GetHandle());
 	}
 }
 

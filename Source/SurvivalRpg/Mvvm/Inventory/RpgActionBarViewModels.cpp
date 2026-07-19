@@ -133,6 +133,9 @@ void URpgActionBarSlotViewModel::InitializeSlotWithAbilitySystem(
 	SlotAddress = InSlot.SlotAddress;
 	ItemInstance = ResolvedItem;
 	StackCount = ResolvedItem ? InStackCount : 0;
+	StackCountText = StackCount > 1
+		? FText::AsNumber(StackCount)
+		: FText::GetEmpty();
 	bAvailable = InSlot.bAvailable;
 	BlockedReason = InSlot.BlockedReason;
 	AbilityId = InSlot.AbilityId;
@@ -164,6 +167,7 @@ void URpgActionBarSlotViewModel::InitializeSlotWithAbilitySystem(
 	UE_MVVM_BROADCAST_FIELD_VALUE_CHANGED(SlotAddress);
 	UE_MVVM_BROADCAST_FIELD_VALUE_CHANGED(ItemInstance);
 	UE_MVVM_BROADCAST_FIELD_VALUE_CHANGED(StackCount);
+	UE_MVVM_BROADCAST_FIELD_VALUE_CHANGED(StackCountText);
 	UE_MVVM_BROADCAST_FIELD_VALUE_CHANGED(bAvailable);
 	UE_MVVM_BROADCAST_FIELD_VALUE_CHANGED(BlockedReason);
 	UE_MVVM_BROADCAST_FIELD_VALUE_CHANGED(AbilityId);

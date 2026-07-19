@@ -30,6 +30,9 @@ namespace RpgGameplayTags
 	UE_DEFINE_GAMEPLAY_TAG_COMMENT(InputTag_Jump, "InputTag.Jump", "Jump input.");
 	UE_DEFINE_GAMEPLAY_TAG_COMMENT(InputTag_StopJump, "InputTag.StopJump", "StopJump input.");
 	UE_DEFINE_GAMEPLAY_TAG_COMMENT(InputTag_UI_Inventory, "InputTag.UI.Inventory", "Open the owning player's inventory screen.");
+	UE_DEFINE_GAMEPLAY_TAG_COMMENT(InputTag_UI_QuickAccessRadial_Hold, "InputTag.UI.QuickAccessRadial.Hold", "Hold to open the owning player's quick-access radial.");
+	UE_DEFINE_GAMEPLAY_TAG_COMMENT(InputTag_UI_QuickAccessRadial_Select, "InputTag.UI.QuickAccessRadial.Select", "Select a quick-access radial segment with the right stick.");
+	UE_DEFINE_GAMEPLAY_TAG_COMMENT(InputTag_UI_QuickAccessRadial_Cancel, "InputTag.UI.QuickAccessRadial.Cancel", "Close the quick-access radial without activating a slot.");
 	UE_DEFINE_GAMEPLAY_TAG_COMMENT(InputTag_ActionBar_Slot_1, "InputTag.ActionBar.Slot.1", "Activate general action bar slot 1.");
 	UE_DEFINE_GAMEPLAY_TAG_COMMENT(InputTag_ActionBar_Slot_2, "InputTag.ActionBar.Slot.2", "Activate general action bar slot 2.");
 	UE_DEFINE_GAMEPLAY_TAG_COMMENT(InputTag_ActionBar_Slot_3, "InputTag.ActionBar.Slot.3", "Activate general action bar slot 3.");
@@ -145,6 +148,7 @@ namespace RpgGameplayTags
 	UE_DEFINE_GAMEPLAY_TAG_COMMENT(UI_Screen_Pause, "UI.Screen.Pause", "Pause screen opened through the project UI screen registry.");
 	UE_DEFINE_GAMEPLAY_TAG_COMMENT(UI_Screen_Settings, "UI.Screen.Settings", "Settings screen opened through the project UI screen registry.");
 	UE_DEFINE_GAMEPLAY_TAG_COMMENT(UI_HUD_Slot_ActionBar, "UI.HUD.Slot.ActionBar", "UIExtension slot for the persistent general action bar HUD widget.");
+	UE_DEFINE_GAMEPLAY_TAG_COMMENT(UI_HUD_Slot_QuickAccessRadial, "UI.HUD.Slot.QuickAccessRadial", "Fullscreen UIExtension slot for the persistent quick-access radial presenter.");
 	UE_DEFINE_GAMEPLAY_TAG_COMMENT(UI_HUD_Slot_WeaponAbilityBar, "UI.HUD.Slot.WeaponAbilityBar", "UIExtension slot for the persistent weapon ability HUD widget.");
 
 	UE_DEFINE_GAMEPLAY_TAG_COMMENT(Base_Storage_Upgrade_AutoSort, "Base.Storage.Upgrade.AutoSort", "Base storage upgrade tag that unlocks shared auto-sort convenience.");

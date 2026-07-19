@@ -9,7 +9,6 @@
 #include "Framework/Application/SlateApplication.h"
 #include "GameFramework/Pawn.h"
 #include "GameFramework/PlayerInput.h"
-#include "InputCoreTypes.h"
 #include "SurvivalRpg/AbilitySystem/RpgAbilitySystemComponent.h"
 #include "SurvivalRpg/ActionBar/RpgActionBarComponent.h"
 #include "SurvivalRpg/Core/Game/RpgGameModeBase.h"
@@ -28,7 +27,6 @@
 #include "SurvivalRpg/UI/RpgUIScreenBlueprintLibrary.h"
 #include "SurvivalRpg/UI/RpgUIScreenPayload.h"
 #include "SurvivalRpg/UI/RpgUIScreenSubsystem.h"
-#include "SurvivalRpg/UI/RpgQuickAccessRadialWidget.h"
 
 ARpgPlayerController::ARpgPlayerController(const FObjectInitializer& ObjectInitializer)
 	: Super(ObjectInitializer)
@@ -39,7 +37,6 @@ ARpgPlayerController::ARpgPlayerController(const FObjectInitializer& ObjectIniti
 	EquipmentLoadoutComponent = CreateDefaultSubobject<URpgEquipmentLoadoutComponent>(TEXT("EquipmentLoadoutComponent"));
 	InventoryUiActionComponent = CreateDefaultSubobject<URpgInventoryUiActionComponent>(TEXT("InventoryUiActionComponent"));
 	PlayerInventoryLayoutComponent = CreateDefaultSubobject<URpgPlayerInventoryLayoutComponent>(TEXT("PlayerInventoryLayoutComponent"));
-	QuickAccessRadialWidgetClass = URpgQuickAccessRadialWidget::StaticClass();
 }
 
 ARpgPlayerState* ARpgPlayerController::GetRpgPlayerState() const
@@ -152,17 +149,6 @@ void ARpgPlayerController::BeginPlayingState()
 	Super::BeginPlayingState();
 	RefreshPlayerStateBindings();
 	BindToGameModeRespawnEvent();
-
-	if (IsLocalController() && !QuickAccessRadialWidget && QuickAccessRadialWidgetClass)
-	{
-		QuickAccessRadialWidget = CreateWidget<URpgQuickAccessRadialWidget>(this, QuickAccessRadialWidgetClass);
-		if (QuickAccessRadialWidget)
-		{
-			QuickAccessRadialWidget->SetAnchorsInViewport(FAnchors(0.0f, 0.0f, 1.0f, 1.0f));
-			QuickAccessRadialWidget->SetPositionInViewport(FVector2D::ZeroVector, false);
-			QuickAccessRadialWidget->AddToPlayerScreen(100);
-		}
-	}
 }
 
 void ARpgPlayerController::SetupInputComponent()
@@ -184,38 +170,13 @@ void ARpgPlayerController::SetupInputComponent()
 			}
 		}
 	}
-
-	if (GameplayInputRouterComponent && InputComponent)
-	{
-		FInputKeyBinding& OpenBinding = InputComponent->BindKey(
-			EKeys::Gamepad_DPad_Up,
-			IE_Pressed,
-			GameplayInputRouterComponent.Get(),
-			&URpgPlayerGameplayInputRouterComponent::BeginQuickAccessRadial);
-		OpenBinding.bConsumeInput = false;
-
-		FInputKeyBinding& CommitBinding = InputComponent->BindKey(
-			EKeys::Gamepad_DPad_Up,
-			IE_Released,
-			GameplayInputRouterComponent.Get(),
-			&URpgPlayerGameplayInputRouterComponent::CommitQuickAccessRadial);
-		CommitBinding.bConsumeInput = false;
-
-		FInputKeyBinding& CancelBinding = InputComponent->BindKey(
-			EKeys::Gamepad_FaceButton_Right,
-			IE_Pressed,
-			GameplayInputRouterComponent.Get(),
-			&URpgPlayerGameplayInputRouterComponent::CancelQuickAccessRadial);
-		CancelBinding.bConsumeInput = false;
-	}
 }
 
 void ARpgPlayerController::EndPlay(const EEndPlayReason::Type EndPlayReason)
 {
-	if (QuickAccessRadialWidget)
+	if (GameplayInputRouterComponent)
 	{
-		QuickAccessRadialWidget->RemoveFromParent();
-		QuickAccessRadialWidget = nullptr;
+		GameplayInputRouterComponent->CancelQuickAccessRadial();
 	}
 	UnbindFromPawnExtensionForLoadout();
 	UnbindFromGameModeRespawnEvent();
@@ -234,13 +195,6 @@ void ARpgPlayerController::PlayerTick(float DeltaTime)
 			const FVector MovementDirection = MovementRotation.RotateVector(FVector::ForwardVector);
 			CurrentPawn->AddMovementInput(MovementDirection, 1.0f);
 		}
-	}
-
-	if (IsLocalController() && GameplayInputRouterComponent && GameplayInputRouterComponent->IsQuickAccessRadialOpen())
-	{
-		GameplayInputRouterComponent->UpdateQuickAccessRadial(FVector2D(
-			GetInputAnalogKeyState(EKeys::Gamepad_RightX),
-			GetInputAnalogKeyState(EKeys::Gamepad_RightY)));
 	}
 
 	if (IsLocalController() && bHasActiveLootContext)
@@ -281,6 +235,11 @@ void ARpgPlayerController::OnPossess(APawn* InPawn)
 
 void ARpgPlayerController::OnUnPossess()
 {
+	if (GameplayInputRouterComponent)
+	{
+		GameplayInputRouterComponent->CancelQuickAccessRadial();
+	}
+
 	if (EquipmentLoadoutComponent)
 	{
 		EquipmentLoadoutComponent->UnequipLoadoutFromCurrentPawn();
@@ -458,6 +417,11 @@ void ARpgPlayerController::RestoreGameplayInputFocus()
 	if (!IsLocalController())
 	{
 		return;
+	}
+
+	if (GameplayInputRouterComponent)
+	{
+		GameplayInputRouterComponent->CancelQuickAccessRadial();
 	}
 
 	SetIgnoreMoveInput(false);

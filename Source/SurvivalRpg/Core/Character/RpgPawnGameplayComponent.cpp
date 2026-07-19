@@ -554,11 +554,77 @@ void URpgPawnGameplayComponent::Input_GameplayHotkeyReleased(FGameplayTag InputT
 	}
 }
 
+void URpgPawnGameplayComponent::Input_QuickAccessRadialStarted(
+	const FInputActionValue& InputActionValue)
+{
+	if (URpgPlayerGameplayInputRouterComponent* InputRouter = GetGameplayInputRouter())
+	{
+		InputRouter->BeginQuickAccessRadial();
+	}
+}
+
+void URpgPawnGameplayComponent::Input_QuickAccessRadialCompleted(
+	const FInputActionValue& InputActionValue)
+{
+	if (URpgPlayerGameplayInputRouterComponent* InputRouter = GetGameplayInputRouter())
+	{
+		InputRouter->CommitQuickAccessRadial();
+	}
+}
+
+void URpgPawnGameplayComponent::Input_QuickAccessRadialCanceled(
+	const FInputActionValue& InputActionValue)
+{
+	if (URpgPlayerGameplayInputRouterComponent* InputRouter = GetGameplayInputRouter())
+	{
+		InputRouter->CancelQuickAccessRadial();
+	}
+}
+
+void URpgPawnGameplayComponent::Input_QuickAccessRadialSelection(
+	const FInputActionValue& InputActionValue)
+{
+	if (URpgPlayerGameplayInputRouterComponent* InputRouter = GetGameplayInputRouter())
+	{
+		InputRouter->UpdateQuickAccessRadial(InputActionValue.Get<FVector2D>());
+	}
+}
+
+void URpgPawnGameplayComponent::Input_QuickAccessRadialSelectionEnded(
+	const FInputActionValue& InputActionValue)
+{
+	if (URpgPlayerGameplayInputRouterComponent* InputRouter = GetGameplayInputRouter())
+	{
+		InputRouter->UpdateQuickAccessRadial(FVector2D::ZeroVector);
+	}
+}
+
 void URpgPawnGameplayComponent::BindRoutedGameplayHotkeys(const URpgInputConfig* InputConfig, URpgInputComponent* RpgIC, TArray<uint32>* BindHandles)
 {
 	if (!InputConfig || !RpgIC)
 	{
 		return;
+	}
+
+	if (BindHandles)
+	{
+		RpgIC->BindNativeAction(InputConfig, RpgGameplayTags::InputTag_UI_QuickAccessRadial_Hold, ETriggerEvent::Started, this, &ThisClass::Input_QuickAccessRadialStarted, *BindHandles, /*bLogIfNotFound=*/ false);
+		RpgIC->BindNativeAction(InputConfig, RpgGameplayTags::InputTag_UI_QuickAccessRadial_Hold, ETriggerEvent::Completed, this, &ThisClass::Input_QuickAccessRadialCompleted, *BindHandles, /*bLogIfNotFound=*/ false);
+		RpgIC->BindNativeAction(InputConfig, RpgGameplayTags::InputTag_UI_QuickAccessRadial_Hold, ETriggerEvent::Canceled, this, &ThisClass::Input_QuickAccessRadialCanceled, *BindHandles, /*bLogIfNotFound=*/ false);
+		RpgIC->BindNativeAction(InputConfig, RpgGameplayTags::InputTag_UI_QuickAccessRadial_Select, ETriggerEvent::Triggered, this, &ThisClass::Input_QuickAccessRadialSelection, *BindHandles, /*bLogIfNotFound=*/ false);
+		RpgIC->BindNativeAction(InputConfig, RpgGameplayTags::InputTag_UI_QuickAccessRadial_Select, ETriggerEvent::Completed, this, &ThisClass::Input_QuickAccessRadialSelectionEnded, *BindHandles, /*bLogIfNotFound=*/ false);
+		RpgIC->BindNativeAction(InputConfig, RpgGameplayTags::InputTag_UI_QuickAccessRadial_Select, ETriggerEvent::Canceled, this, &ThisClass::Input_QuickAccessRadialSelectionEnded, *BindHandles, /*bLogIfNotFound=*/ false);
+		RpgIC->BindNativeAction(InputConfig, RpgGameplayTags::InputTag_UI_QuickAccessRadial_Cancel, ETriggerEvent::Started, this, &ThisClass::Input_QuickAccessRadialCanceled, *BindHandles, /*bLogIfNotFound=*/ false);
+	}
+	else
+	{
+		RpgIC->BindNativeAction(InputConfig, RpgGameplayTags::InputTag_UI_QuickAccessRadial_Hold, ETriggerEvent::Started, this, &ThisClass::Input_QuickAccessRadialStarted, /*bLogIfNotFound=*/ false);
+		RpgIC->BindNativeAction(InputConfig, RpgGameplayTags::InputTag_UI_QuickAccessRadial_Hold, ETriggerEvent::Completed, this, &ThisClass::Input_QuickAccessRadialCompleted, /*bLogIfNotFound=*/ false);
+		RpgIC->BindNativeAction(InputConfig, RpgGameplayTags::InputTag_UI_QuickAccessRadial_Hold, ETriggerEvent::Canceled, this, &ThisClass::Input_QuickAccessRadialCanceled, /*bLogIfNotFound=*/ false);
+		RpgIC->BindNativeAction(InputConfig, RpgGameplayTags::InputTag_UI_QuickAccessRadial_Select, ETriggerEvent::Triggered, this, &ThisClass::Input_QuickAccessRadialSelection, /*bLogIfNotFound=*/ false);
+		RpgIC->BindNativeAction(InputConfig, RpgGameplayTags::InputTag_UI_QuickAccessRadial_Select, ETriggerEvent::Completed, this, &ThisClass::Input_QuickAccessRadialSelectionEnded, /*bLogIfNotFound=*/ false);
+		RpgIC->BindNativeAction(InputConfig, RpgGameplayTags::InputTag_UI_QuickAccessRadial_Select, ETriggerEvent::Canceled, this, &ThisClass::Input_QuickAccessRadialSelectionEnded, /*bLogIfNotFound=*/ false);
+		RpgIC->BindNativeAction(InputConfig, RpgGameplayTags::InputTag_UI_QuickAccessRadial_Cancel, ETriggerEvent::Started, this, &ThisClass::Input_QuickAccessRadialCanceled, /*bLogIfNotFound=*/ false);
 	}
 
 	// UI screens are one-shot system commands. CommonUI owns their active input mode and Back handling,
@@ -615,6 +681,16 @@ void URpgPawnGameplayComponent::BindRoutedGameplayHotkeys(const URpgInputConfig*
 			RpgIC->BindNativeActionWithTag(InputConfig, InputTag, ETriggerEvent::Canceled, this, &ThisClass::Input_GameplayHotkeyReleased, /*bLogIfNotFound=*/ false);
 		}
 	}
+}
+
+URpgPlayerGameplayInputRouterComponent* URpgPawnGameplayComponent::GetGameplayInputRouter() const
+{
+	const APawn* Pawn = GetPawn<APawn>();
+	const ARpgPlayerController* Controller =
+		Pawn ? Cast<ARpgPlayerController>(Pawn->GetController()) : nullptr;
+	return Controller
+		? Controller->FindComponentByClass<URpgPlayerGameplayInputRouterComponent>()
+		: nullptr;
 }
 
 bool URpgPawnGameplayComponent::IsRoutedGameplayHotkeyTag(FGameplayTag InputTag)

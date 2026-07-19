@@ -24,8 +24,15 @@ public class SurvivalRpgEditor : ModuleRules
 			"GameplayTags",
 			"InputBlueprintNodes",
 			"InputCore",
+			"ModelViewViewModel",
+			"ModelViewViewModelBlueprint",
+			"ModelViewViewModelEditor",
 			"PropertyBindingUtils",
 			"StateTreeEditorModule",
+			"UIExtension",
+			"UMG",
+			"UMGEditor",
+			"UnrealEd",
 		});
 	}
 }

@@ -67,6 +67,9 @@ public:
 	int32 GetStackCount() const { return StackCount; }
 
 	UFUNCTION(BlueprintPure, Category = "Action Bar|ViewModel")
+	FText GetStackCountText() const { return StackCountText; }
+
+	UFUNCTION(BlueprintPure, Category = "Action Bar|ViewModel")
 	bool IsAvailable() const { return bAvailable; }
 
 	UFUNCTION(BlueprintPure, Category = "Action Bar|ViewModel")
@@ -111,6 +114,10 @@ protected:
 	/** Current stack count for the resolved item, read from the player's inventory when available. */
 	UPROPERTY(BlueprintReadOnly, FieldNotify, Category = "Action Bar|ViewModel", meta = (AllowPrivateAccess = "true"))
 	int32 StackCount = 0;
+
+	/** Compact stack label for read-only HUD leaves; empty when the resolved stack does not need a count. */
+	UPROPERTY(BlueprintReadOnly, FieldNotify, Category = "Action Bar|ViewModel", meta = (AllowPrivateAccess = "true"))
+	FText StackCountText;
 
 	/** Current server-derived availability for the typed binding. */
 	UPROPERTY(BlueprintReadOnly, FieldNotify, Category = "Action Bar|ViewModel", meta = (AllowPrivateAccess = "true"))
