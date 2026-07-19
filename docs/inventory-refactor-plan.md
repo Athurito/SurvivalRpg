@@ -224,6 +224,16 @@ Es gibt bewusst keine spekulative allgemeine Dual-Inventory-Basis.
 - [ ] Direkte Viewport-Widgets in sichtbare CommonUI-/UIExtension-Hosts
       überführen, sofern sie keine echten Drag-Decorators sind.
 
+  Der native Inventory-/Gameplay-HUD-Teil ist abgeschlossen: Der Indicator-
+  Manager besitzt nur noch Deskriptorzustand, während
+  `CUI_RpgHudLayout` die sichtbare `RPG Indicator Layer` authoriert. Der
+  Gesamtpunkt bleibt offen, bis die drei im Asset-Scan bestätigten Blueprint-
+  Pfade `BP_BootMenuHud -> CUI_BootMenu`,
+  `BP_MainMenuHud -> CUI_MainMenu` und
+  `BP_Rpg_PlayerController -> DeathTest` ebenfalls über ihre kanonischen
+  CommonUI-Hosts laufen. Framework-eigene Root-/Loading-Screen-Pfade und echte
+  Drag-Decorators sind ausdrücklich kein Migrationsziel.
+
 Verifizierter UI-Zwischenstand vom 2026-07-19:
 
 - Das Root-Layout besitzt im UMG-Designer einen `RootOverlay` und vier
@@ -698,6 +708,27 @@ Verifizierter Legacy-Retirement-Schnitt vom 2026-07-19:
   beendeten mit Exitcode 0; die Gameplay-Map lud
   `RpgPrototypeExperience` und aktivierte ihre GameFeatures ohne Missing-
   Package-, Linker-, Streaming-, Blueprint- oder GameFeature-Fehler.
+
+Verifizierter Indicator-/HUD-Composition-Schnitt vom 2026-07-19:
+
+- `CUI_RpgHudLayout` authoriert genau eine direkt unter dem Root liegende,
+  back-most, fullscreen und hit-test-invisible `RPG Indicator Layer`.
+  `RpgPrototypeExperience` pusht dieses HUD genau einmal auf `UI.Layer.Game`;
+  `LAS_Rpg_StandardUI` ergänzt den zuständigen Indicator-Manager genau einmal
+  am RPG-PlayerController.
+- `URpgIndicatorManagerComponent` ist jetzt ausschließlich Registry und
+  Delegate-Quelle. Der native `RpgIndicatorHostWidget` sowie dessen
+  `CreateWidget`-/`AddToPlayerScreen`-/`RemoveFromParent`-Lifecycle sind
+  entfernt. Im Projekt-C++ verbleiben keine direkten
+  `AddToPlayerScreen`-/`AddToViewport`-Aufrufe.
+- Ein frischer UE-5.8-Editor-Build ist erfolgreich.
+  `SurvivalRpg.UI.Indicator` (2/2), `SurvivalRpg.UI` (16/16) und
+  `SurvivalRpg.Inventory` (57/57) liefen in frischen Commandlet-Prozessen ohne
+  fehlgeschlagene oder ausgelassene Tests und jeweils mit Exitcode 0.
+- Ein vollständiger Clean-`BuildCookRun` baute Game- und Editor-Target, kochte
+  `BootMenu`, `MainMenu`, `Lvl_ThirdPerson` und
+  `Lvl_PortalRealm_RiftGruntTrial`, stagte 967 Packages und erzeugte Pak,
+  IoStore, Package und Archiv erfolgreich.
 
 - Noch offen: den kanonischen Primary-Mismatch mit echtem OwningPlayer in PIE
   beziehungsweise einem passenden Test-Harness abdecken sowie interaktive
