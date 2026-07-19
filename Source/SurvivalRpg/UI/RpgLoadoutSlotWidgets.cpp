@@ -6,13 +6,11 @@
 #include "InputCoreTypes.h"
 #include "MVVMSubsystem.h"
 #include "SurvivalRpg/Inventory/RpgInventoryDragDrop.h"
-#include "SurvivalRpg/Inventory/RpgInventoryFragment_ItemTraits.h"
 #include "SurvivalRpg/Inventory/RpgInventoryInteractionSession.h"
 #include "SurvivalRpg/Inventory/RpgInventoryItemInstance.h"
 #include "SurvivalRpg/Mvvm/Inventory/RpgLoadoutViewModels.h"
 #include "SurvivalRpg/UI/RpgInventoryDragVisualWidget.h"
 #include "SurvivalRpg/UI/RpgInventoryInteractionScreenWidget.h"
-#include "SurvivalRpg/UI/RpgPlayerInventoryLayoutViews.h"
 #include "View/MVVMView.h"
 #include "View/MVVMViewClass.h"
 
@@ -123,18 +121,15 @@ bool URpgEquipmentSlotWidget::HandleSlotAccept()
 
 bool URpgEquipmentSlotWidget::HandleClearAssignment()
 {
-	if (!DragDropCoordinator)
+	URpgInventoryItemInstance* ItemInstance = GetRepresentedItem();
+	if (!DragDropCoordinator || !ItemInstance)
 	{
 		return false;
 	}
 
-	const FRpgInventoryDragPayload Payload = MakeDragPayload();
-	if (!URpgInventoryDragDropCoordinator::IsPayloadValid(Payload))
-	{
-		return false;
-	}
-
-	return DragDropCoordinator->CommitPayloadToTarget(Payload, URpgInventoryDragDropCoordinator::MakeClearTarget());
+	return DragDropCoordinator->UnequipEquipmentItem(
+		GetResolvedEquipmentSlot(),
+		ItemInstance->GetItemId());
 }
 
 void URpgEquipmentSlotWidget::RefreshDragDropVisualState()
@@ -194,22 +189,17 @@ void URpgEquipmentSlotWidget::ClearExternalPreviewPayload()
 bool URpgEquipmentSlotWidget::RequestEquipmentContextMenu(FVector2D ScreenPosition)
 {
 	URpgInventoryItemInstance* ItemInstance = GetRepresentedItem();
-	if (!ItemInstance || !ItemInstance->GetItemId().IsValid())
+	if (!DragDropCoordinator || !ItemInstance || !ItemInstance->GetItemId().IsValid())
 	{
 		return false;
 	}
 
-	TArray<ERpgInventoryContextAction> Actions;
-	Actions.Reserve(3);
-	Actions.Add(ERpgInventoryContextAction::Inspect);
-	Actions.Add(ERpgInventoryContextAction::Unequip);
-	const URpgInventoryFragment_ItemTraits* Traits = ItemInstance->FindFragmentByClass<URpgInventoryFragment_ItemTraits>();
-	if (!Traits || Traits->GetResolvedManualDropPolicy() != ERpgInventoryManualDropPolicy::Disabled)
-	{
-		Actions.Add(ERpgInventoryContextAction::Drop);
-	}
+	const TArray<ERpgInventoryContextAction> Actions =
+		DragDropCoordinator->GetAvailableContextActions(
+			GetResolvedEquipmentSlot(),
+			ItemInstance->GetItemId());
 
-	return InventoryPresentationHost &&
+	return !Actions.IsEmpty() && InventoryPresentationHost &&
 		InventoryPresentationHost->OpenInventoryContextMenu(
 			this,
 			Actions,
@@ -221,7 +211,12 @@ bool URpgEquipmentSlotWidget::ExecuteEquipmentContextAction(
 	const FRpgInventoryItemId& ExpectedItemId)
 {
 	URpgInventoryItemInstance* ItemInstance = GetRepresentedItem();
-	if (!ItemInstance || !ExpectedItemId.IsValid() || ItemInstance->GetItemId() != ExpectedItemId)
+	if (!DragDropCoordinator || !ItemInstance || !ExpectedItemId.IsValid() ||
+		ItemInstance->GetItemId() != ExpectedItemId ||
+		!DragDropCoordinator->CanExecuteContextAction(
+			GetResolvedEquipmentSlot(),
+			ExpectedItemId,
+			Action))
 	{
 		return false;
 	}

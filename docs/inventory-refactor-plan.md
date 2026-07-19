@@ -213,7 +213,7 @@ Es gibt bewusst keine spekulative allgemeine Dual-Inventory-Basis.
 - [x] Ein authored Drop-Confirmation-Modal ergänzen, das nach erneuter stabiler
       Item-/Entry-ID-Prüfung genau einen bestätigten serverautoritativen
       Drop-Intent sendet.
-- [ ] Verfügbare Context-Actions und Klick-Revalidierung über einen gemeinsamen
+- [x] Verfügbare Context-Actions und Klick-Revalidierung über einen gemeinsamen
       Query-/Policy-Vertrag statt mehrfacher Fragment-Inferenz bestimmen.
 - [ ] Controller-Context-Menüs an der fokussierten Item-/Slot-Geometrie statt
       an der linken oberen Viewport-Ecke verankern.
@@ -547,9 +547,25 @@ Verifizierter UI-Zwischenstand vom 2026-07-19:
 - Der aktuelle UE-5.8-Editor-Build ist erfolgreich. Der fokussierte
   Exact-Placement-Test ist 1/1 grün. Die vollständigen Läufe
   `SurvivalRpg.Crafting` (6/6),
-  `SurvivalRpg.Inventory` (52/52, davon `SurvivalRpg.Inventory.UI` 19/19),
+  `SurvivalRpg.Inventory` (55/55, davon `SurvivalRpg.Inventory.UI` 19/19),
   `SurvivalRpg.UI` (10/10) und `SurvivalRpg.Equipment` (5/5) sind ebenfalls
   grün.
+- Entry-, Address- und Equipment-Präsentationen beziehen ihre geordneten
+  Context-Actions jetzt aus einem screen-scoped Coordinator-Vertrag und
+  revalidieren denselben Vertrag unmittelbar vor dem Klick-Dispatch.
+  Mutierende Actions sperren während eines pending Interaction-Requests;
+  stabile Entry-, Item-, Placement-, Address- und Equipment-Identitäten
+  verwerfen veraltete Menüs und Held-Payloads fail-closed.
+- Split und Equipment→Content verwenden dieselben read-only Placement-
+  Preflights wie ihre autoritativen Gateway-Pfade. Eine Context-Rotation ist
+  eine echte In-place-`Rotate`-Transaktion und kann nicht mehr unbemerkt einen
+  Nachbarn swappen. Die finale Servervalidierung bleibt unverändert
+  autoritativ.
+- `SurvivalRpg.Inventory.ContextActions.SourceSemanticsAndStaleState` ist 1/1
+  warnungsfrei erfolgreich. Der endgültige UE-5.8-Build sowie
+  `SurvivalRpg.Inventory` (55/55), `SurvivalRpg.UI` (10/10),
+  `SurvivalRpg.Equipment` (5/5) und `SurvivalRpg.Crafting` (6/6) sind
+  warnungsfrei grün.
 - Ein separater frischer UE-5.8-Commandlet-Prozess kompiliert alle drei neuen
   Widget-Blueprints ohne Fehler und lädt Registry sowie dedizierte
   BaseTerminal-Action-Tabelle erneut. Dabei wurden keine Assets gespeichert.
@@ -577,7 +593,7 @@ Verifizierter UI-Zwischenstand vom 2026-07-19:
      ergänzen. Confirm revalidiert stabile Item-/Entry-ID, Quelle und Menge und
      sendet genau einen Retry mit `bConfirmed=true`; Cancel, Deactivation und
      Pool-Reuse verwerfen den Request vollständig.
-  8. [ ] **P1:** Einen gemeinsamen `CanExecuteContextAction`-/AvailableActions-
+  8. [x] **P1:** Einen gemeinsamen `CanExecuteContextAction`-/AvailableActions-
      Vertrag im bestehenden Coordinator-/Policy-Pfad verwenden; die finale
      Servervalidierung bleibt autoritativ.
   9. [ ] **P2:** Controller-Context-Menüs an der fokussierten Auswahl

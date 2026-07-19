@@ -3,6 +3,7 @@
 #include "Engine/DataTable.h"
 #include "Input/UIActionBindingHandle.h"
 #include "RpgActivatableWidget.h"
+#include "SurvivalRpg/Inventory/RpgInventoryDragDrop.h"
 
 #include "RpgInventoryControllerActionsWidget.generated.h"
 
@@ -111,6 +112,9 @@ private:
 
 	UFUNCTION()
 	void HandleActiveSelectionChanged();
+
+	UFUNCTION()
+	void HandleHeldPayloadChanged(bool bHasPayload, const FRpgInventoryDragPayload& Payload);
 
 	void EnsureDefaultInventoryControllerActionRows();
 	FUIActionBindingHandle RegisterActionRow(const FDataTableRowHandle& ActionRow, const FSimpleDelegate& Delegate);

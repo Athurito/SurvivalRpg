@@ -768,7 +768,11 @@ bool URpgInventoryContextMenuWidget::InitializeContextMenu(
 	BindDismissControl();
 
 	const FGuid SelectedEntryId = InSourceGrid ? InSourceGrid->GetSelectedEntryId() : FGuid();
-	if (!InSourceGrid || !SelectedEntryId.IsValid() || InActions.IsEmpty() ||
+	const FRpgInventoryItemId SelectedItemId = InSourceGrid
+		? InSourceGrid->GetSelectedItemId()
+		: FRpgInventoryItemId();
+	if (!InSourceGrid || !SelectedEntryId.IsValid() || !SelectedItemId.IsValid() ||
+		InActions.IsEmpty() ||
 		!Button_Dismiss || !ContextMenuCanvas || !ContextMenuBorder || !ActionsBox ||
 		!QuickAccessSlotsBox || !Button_QuickAccessBack || !ActionEntryWidgetClass ||
 		!QuickAccessSlotEntryWidgetClass)
@@ -780,7 +784,7 @@ bool URpgInventoryContextMenuWidget::InitializeContextMenu(
 	SourceEquipmentSlot = nullptr;
 	SourceAddressSlot = nullptr;
 	ContextEntryId = SelectedEntryId;
-	ContextItemId = FRpgInventoryItemId();
+	ContextItemId = SelectedItemId;
 	RequestedScreenPosition = InScreenPosition;
 	ContextActions.Reset(InActions.Num());
 	for (ERpgInventoryContextAction Action : InActions)
@@ -788,7 +792,7 @@ bool URpgInventoryContextMenuWidget::InitializeContextMenu(
 		ContextActions.AddUnique(Action);
 	}
 
-	NormalizeQuickAccessActions();
+	ContextQuickAccessSlotIndex = ResolveCurrentQuickAccessSlotIndex();
 	RebuildActionButtons();
 	if (ActionButtons.IsEmpty())
 	{
@@ -834,7 +838,7 @@ bool URpgInventoryContextMenuWidget::InitializeEquipmentContextMenu(
 		ContextActions.AddUnique(Action);
 	}
 
-	NormalizeQuickAccessActions();
+	ContextQuickAccessSlotIndex = INDEX_NONE;
 	RebuildActionButtons();
 	if (ActionButtons.IsEmpty())
 	{
@@ -876,7 +880,7 @@ bool URpgInventoryContextMenuWidget::InitializeAddressContextMenu(
 	{
 		ContextActions.AddUnique(Action);
 	}
-	NormalizeQuickAccessActions();
+	ContextQuickAccessSlotIndex = ResolveCurrentQuickAccessSlotIndex();
 	RebuildActionButtons();
 	if (ActionButtons.IsEmpty())
 	{
@@ -901,10 +905,18 @@ bool URpgInventoryContextMenuWidget::ExecuteContextAction(ERpgInventoryContextAc
 	{
 		return ShowQuickAccessSlotPicker();
 	}
+	if (Action == ERpgInventoryContextAction::QuickAccessUnbind &&
+		(ContextQuickAccessSlotIndex == INDEX_NONE ||
+			ResolveCurrentQuickAccessSlotIndex() != ContextQuickAccessSlotIndex))
+	{
+		CloseContextMenu();
+		return false;
+	}
 
 	if (URpgInventorySpatialGridWidget* Grid = SourceGrid.Get())
 	{
-		if (!ContextEntryId.IsValid() || Grid->GetSelectedEntryId() != ContextEntryId)
+		if (!ContextEntryId.IsValid() || Grid->GetSelectedEntryId() != ContextEntryId ||
+			Grid->GetSelectedItemId() != ContextItemId)
 		{
 			CloseContextMenu();
 			return false;
@@ -944,16 +956,24 @@ bool URpgInventoryContextMenuWidget::ShowQuickAccessSlotPicker()
 		return false;
 	}
 
-	if (SourceGrid && (!ContextEntryId.IsValid() || SourceGrid->GetSelectedEntryId() != ContextEntryId))
+	if (SourceGrid)
 	{
-		CloseContextMenu();
-		return false;
+		if (!ContextEntryId.IsValid() || SourceGrid->GetSelectedEntryId() != ContextEntryId ||
+			SourceGrid->GetSelectedItemId() != ContextItemId ||
+			!SourceGrid->GetSelectedContextActions().Contains(
+				ERpgInventoryContextAction::QuickAccessBind))
+		{
+			CloseContextMenu();
+			return false;
+		}
 	}
 	if (SourceAddressSlot)
 	{
 		const URpgInventoryAddressSlotViewModel* AddressViewModel = SourceAddressSlot->GetAddressSlotViewModel();
 		const URpgInventoryItemInstance* CurrentItem = AddressViewModel ? AddressViewModel->GetItemInstance() : nullptr;
-		if (!CurrentItem || CurrentItem->GetItemId() != ContextItemId)
+		if (!CurrentItem || CurrentItem->GetItemId() != ContextItemId ||
+			!SourceAddressSlot->GetAddressContextActions().Contains(
+				ERpgInventoryContextAction::QuickAccessBind))
 		{
 			CloseContextMenu();
 			return false;
@@ -1019,6 +1039,7 @@ bool URpgInventoryContextMenuWidget::SelectQuickAccessSlot(int32 SlotIndex)
 	if (URpgInventorySpatialGridWidget* Grid = SourceGrid.Get())
 	{
 		bDispatched = ContextEntryId.IsValid() && Grid->GetSelectedEntryId() == ContextEntryId &&
+			Grid->GetSelectedItemId() == ContextItemId &&
 			Grid->ExecuteSelectedContextAction(ERpgInventoryContextAction::QuickAccessBind, 0, SlotIndex);
 	}
 	else if (URpgInventoryAddressSlotWidget* AddressSlot = SourceAddressSlot.Get())
@@ -1029,10 +1050,8 @@ bool URpgInventoryContextMenuWidget::SelectQuickAccessSlot(int32 SlotIndex)
 			SlotIndex);
 	}
 
-	if (bDispatched)
-	{
-		CloseContextMenu();
-	}
+	// A picker click consumes this modal even when the source became stale while the page was open.
+	CloseContextMenu();
 	return bDispatched;
 }
 
@@ -1135,22 +1154,6 @@ void URpgInventoryContextMenuWidget::RebuildQuickAccessSlotButtons()
 	{
 		Button_QuickAccessBack->OnClicked.AddUniqueDynamic(this, &ThisClass::HandleQuickAccessBackClicked);
 		Button_QuickAccessBack->SetVisibility(ESlateVisibility::Visible);
-	}
-}
-
-void URpgInventoryContextMenuWidget::NormalizeQuickAccessActions()
-{
-	const bool bHasBindableSource = SourceGrid != nullptr || SourceAddressSlot != nullptr;
-	if (!bHasBindableSource)
-	{
-		ContextActions.Remove(ERpgInventoryContextAction::QuickAccessBind);
-		ContextActions.Remove(ERpgInventoryContextAction::QuickAccessUnbind);
-		return;
-	}
-
-	if (ResolveCurrentQuickAccessSlotIndex() == INDEX_NONE)
-	{
-		ContextActions.Remove(ERpgInventoryContextAction::QuickAccessUnbind);
 	}
 }
 
@@ -1267,6 +1270,7 @@ void URpgInventoryContextMenuWidget::ResetContextState()
 	SourceAddressSlot = nullptr;
 	ContextEntryId.Invalidate();
 	ContextItemId = FRpgInventoryItemId();
+	ContextQuickAccessSlotIndex = INDEX_NONE;
 	ContextActions.Reset();
 	ActionButtons.Reset();
 	QuickAccessSlotButtons.Reset();

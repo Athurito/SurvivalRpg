@@ -17,9 +17,6 @@
 #include "Slate/UMGDragDropOp.h"
 #include "Styling/CoreStyle.h"
 #include "SurvivalRpg/Inventory/RpgInventoryDragDrop.h"
-#include "SurvivalRpg/Inventory/RpgInventoryFragment_EquippableItem.h"
-#include "SurvivalRpg/Inventory/RpgInventoryFragment_ItemContainer.h"
-#include "SurvivalRpg/Inventory/RpgInventoryFragment_ItemTraits.h"
 #include "SurvivalRpg/Inventory/RpgInventoryItemInstance.h"
 #include "SurvivalRpg/Inventory/RpgInventoryInteractionSession.h"
 #include "SurvivalRpg/Inventory/RpgInventoryManagerComponent.h"
@@ -1627,7 +1624,21 @@ bool URpgInventorySpatialGridWidget::RequestSplitDialogForSelectedCell()
 	CancelPendingSplit();
 	URpgInventoryItemInstance* Item = GetSelectedItemInstance();
 	const int32 StackCount = GetSelectedItemStackCount();
-	if (!Item || StackCount <= 1)
+	URpgInventoryAddressSlotViewModel* AddressSlot =
+		GetSelectedAddressSlot();
+	URpgInventoryEntryViewModel* EntryViewModel =
+		GetSelectedEntryViewModel();
+	const bool bCanSplit = DragDropCoordinator &&
+		(AddressSlot
+			? DragDropCoordinator->CanExecuteContextAction(
+				AddressSlot,
+				ERpgInventoryContextAction::Split,
+				true)
+			: DragDropCoordinator->CanExecuteContextAction(
+				EntryViewModel,
+				ERpgInventoryContextAction::Split,
+				true));
+	if (!Item || StackCount <= 1 || !bCanSplit)
 	{
 		return false;
 	}
@@ -1738,62 +1749,21 @@ bool URpgInventorySpatialGridWidget::RequestContextMenuForSelectedCell(FVector2D
 
 TArray<ERpgInventoryContextAction> URpgInventorySpatialGridWidget::GetSelectedContextActions() const
 {
-	TArray<ERpgInventoryContextAction> Actions;
-	URpgInventoryItemInstance* Item = GetSelectedItemInstance();
-	if (!Item)
+	if (!DragDropCoordinator)
 	{
-		return Actions;
+		return TArray<ERpgInventoryContextAction>();
 	}
 
-	if (Item->FindFragmentByClass<URpgInventoryFragment_ItemContainer>())
+	if (URpgInventoryAddressSlotViewModel* AddressSlot = GetSelectedAddressSlot())
 	{
-		Actions.Add(ERpgInventoryContextAction::OpenContainer);
+		return DragDropCoordinator->GetAvailableContextActions(
+			AddressSlot,
+			true);
 	}
-	Actions.Add(ERpgInventoryContextAction::Inspect);
-	if (Item->FindFragmentByClass<URpgInventoryFragment_UsableItem>())
-	{
-		Actions.Add(ERpgInventoryContextAction::Use);
-	}
-	if (Item->FindFragmentByClass<URpgInventoryFragment_EquippableItem>())
-	{
-		Actions.Add(ERpgInventoryContextAction::EquipAndActivate);
-		Actions.Add(ERpgInventoryContextAction::MoveToCarry);
-	}
-	else if (Item->FindFragmentByClass<URpgInventoryFragment_ItemContainer>())
-	{
-		Actions.Add(ERpgInventoryContextAction::EquipAndActivate);
-	}
-	if (GetSelectedItemStackCount() > 1)
-	{
-		Actions.Add(ERpgInventoryContextAction::Split);
-	}
-	if (const URpgInventoryFragment_SpatialItem* Spatial = Item->FindFragmentByClass<URpgInventoryFragment_SpatialItem>();
-		Spatial && Spatial->bAllowRotation)
-	{
-		Actions.Add(ERpgInventoryContextAction::Rotate);
-	}
-	if (const URpgInventoryAddressSlotViewModel* AddressSlot = GetSelectedAddressSlot();
-		AddressSlot && AddressSlot->IsActionbarBindable())
-	{
-		Actions.Add(ERpgInventoryContextAction::QuickAccessBind);
-		Actions.Add(ERpgInventoryContextAction::QuickAccessUnbind);
-	}
-	if (DragDropCoordinator)
-	{
-		const bool bCanTransfer = GetSelectedAddressSlot()
-			? DragDropCoordinator->CanQuickTransferAddressSlot(GetSelectedAddressSlot())
-			: DragDropCoordinator->CanQuickTransferEntry(GetSelectedEntryViewModel());
-		if (bCanTransfer)
-		{
-			Actions.Add(ERpgInventoryContextAction::Transfer);
-		}
-	}
-	const URpgInventoryFragment_ItemTraits* Traits = Item->FindFragmentByClass<URpgInventoryFragment_ItemTraits>();
-	if (!Traits || Traits->GetResolvedManualDropPolicy() != ERpgInventoryManualDropPolicy::Disabled)
-	{
-		Actions.Add(ERpgInventoryContextAction::Drop);
-	}
-	return Actions;
+
+	return DragDropCoordinator->GetAvailableContextActions(
+		GetSelectedEntryViewModel(),
+		true);
 }
 
 bool URpgInventorySpatialGridWidget::ExecuteSelectedContextAction(
@@ -1807,36 +1777,46 @@ bool URpgInventorySpatialGridWidget::ExecuteSelectedContextAction(
 		return false;
 	}
 
+	URpgInventoryAddressSlotViewModel* AddressSlot = GetSelectedAddressSlot();
+	URpgInventoryEntryViewModel* EntryViewModel = GetSelectedEntryViewModel();
+	const bool bCanExecute = AddressSlot
+		? DragDropCoordinator->CanExecuteContextAction(
+			AddressSlot,
+			Action,
+			true)
+		: DragDropCoordinator->CanExecuteContextAction(
+			EntryViewModel,
+			Action,
+			true);
+	if (!bCanExecute)
+	{
+		return false;
+	}
+
 	switch (Action)
 	{
 	case ERpgInventoryContextAction::Use:
-		return GetSelectedAddressSlot()
-			? DragDropCoordinator->ExecuteAddressItemAction(GetSelectedAddressSlot(), ERpgInventoryItemActionIntent::Use, 1)
-			: DragDropCoordinator->ExecuteEntryItemAction(GetSelectedEntryViewModel(), ERpgInventoryItemActionIntent::Use, 1);
+		return AddressSlot
+			? DragDropCoordinator->ExecuteAddressItemAction(AddressSlot, ERpgInventoryItemActionIntent::Use, 1)
+			: DragDropCoordinator->ExecuteEntryItemAction(EntryViewModel, ERpgInventoryItemActionIntent::Use, 1);
 
 	case ERpgInventoryContextAction::EquipAndActivate:
-		return GetSelectedAddressSlot()
-			? DragDropCoordinator->ExecuteAddressItemAction(GetSelectedAddressSlot(), ERpgInventoryItemActionIntent::EquipAndActivate, 1)
-			: DragDropCoordinator->ExecuteEntryItemAction(GetSelectedEntryViewModel(), ERpgInventoryItemActionIntent::EquipAndActivate, 1);
+		return AddressSlot
+			? DragDropCoordinator->ExecuteAddressItemAction(AddressSlot, ERpgInventoryItemActionIntent::EquipAndActivate, 1)
+			: DragDropCoordinator->ExecuteEntryItemAction(EntryViewModel, ERpgInventoryItemActionIntent::EquipAndActivate, 1);
 
 	case ERpgInventoryContextAction::MoveToCarry:
-		return GetSelectedAddressSlot()
-			? DragDropCoordinator->ExecuteAddressItemAction(GetSelectedAddressSlot(), ERpgInventoryItemActionIntent::MoveToCarry, 1)
-			: DragDropCoordinator->ExecuteEntryItemAction(GetSelectedEntryViewModel(), ERpgInventoryItemActionIntent::MoveToCarry, 1);
+		return AddressSlot
+			? DragDropCoordinator->ExecuteAddressItemAction(AddressSlot, ERpgInventoryItemActionIntent::MoveToCarry, 1)
+			: DragDropCoordinator->ExecuteEntryItemAction(EntryViewModel, ERpgInventoryItemActionIntent::MoveToCarry, 1);
 
 	case ERpgInventoryContextAction::Split:
 		return SplitCount > 0 ? (RequestSplitDialogForSelectedCell() && ConfirmPendingSplit(SplitCount)) : RequestSplitDialogForSelectedCell();
 
 	case ERpgInventoryContextAction::Rotate:
-		if (!DragDropCoordinator)
-		{
-			return false;
-		}
-		if (!DragDropCoordinator->HasHeldPayload() && !HandleAcceptSelectedCell())
-		{
-			return false;
-		}
-		return ToggleHeldItemRotation() && DragDropCoordinator->CommitDrop(MakeDropTargetAtCursor());
+		return AddressSlot
+			? DragDropCoordinator->RotateAddressSlotInPlace(AddressSlot)
+			: DragDropCoordinator->RotateEntryInPlace(EntryViewModel);
 
 	case ERpgInventoryContextAction::Transfer:
 		return QuickTransferSelectedCell();
@@ -1884,6 +1864,29 @@ bool URpgInventorySpatialGridWidget::UseOrEquipSelectedCell(int32 StackCount)
 
 bool URpgInventorySpatialGridWidget::DropSelectedCell(int32 StackCount, bool bConfirmed)
 {
+	if (!DragDropCoordinator)
+	{
+		return false;
+	}
+
+	URpgInventoryAddressSlotViewModel* AddressSlot =
+		GetSelectedAddressSlot();
+	URpgInventoryEntryViewModel* EntryViewModel =
+		GetSelectedEntryViewModel();
+	const bool bCanDrop = AddressSlot
+		? DragDropCoordinator->CanExecuteContextAction(
+			AddressSlot,
+			ERpgInventoryContextAction::Drop,
+			true)
+		: DragDropCoordinator->CanExecuteContextAction(
+			EntryViewModel,
+			ERpgInventoryContextAction::Drop,
+			true);
+	if (!bCanDrop)
+	{
+		return false;
+	}
+
 	if (!bConfirmed && InventoryPresentationHost)
 	{
 		return InventoryPresentationHost->RequestInventoryDrop(
@@ -1891,17 +1894,12 @@ bool URpgInventorySpatialGridWidget::DropSelectedCell(int32 StackCount, bool bCo
 			StackCount);
 	}
 
-	if (!DragDropCoordinator)
-	{
-		return false;
-	}
-
-	if (URpgInventoryAddressSlotViewModel* AddressSlot = GetSelectedAddressSlot())
+	if (AddressSlot)
 	{
 		return DragDropCoordinator->DropAddressSlot(AddressSlot, StackCount, bConfirmed);
 	}
 
-	return DragDropCoordinator->DropEntry(GetSelectedEntryViewModel(), StackCount, bConfirmed);
+	return DragDropCoordinator->DropEntry(EntryViewModel, StackCount, bConfirmed);
 }
 
 bool URpgInventorySpatialGridWidget::ToggleHeldItemRotation()
@@ -1985,6 +1983,14 @@ FGuid URpgInventorySpatialGridWidget::GetSelectedEntryId() const
 	}
 
 	return FGuid();
+}
+
+FRpgInventoryItemId URpgInventorySpatialGridWidget::GetSelectedItemId() const
+{
+	const URpgInventoryItemInstance* ItemInstance = GetSelectedItemInstance();
+	return ItemInstance
+		? ItemInstance->GetItemId()
+		: FRpgInventoryItemId();
 }
 
 int32 URpgInventorySpatialGridWidget::GetSelectedSlotIndex() const

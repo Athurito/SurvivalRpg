@@ -16,6 +16,8 @@
 #include "SurvivalRpg/Crafting/RpgCraftingStationComponent.h"
 #include "SurvivalRpg/Equipment/RpgEquipmentLoadoutComponent.h"
 #include "SurvivalRpg/GameplayTags/RpgGameplayTags.h"
+#include "SurvivalRpg/Mvvm/Inventory/RpgInventoryViewModels.h"
+#include "SurvivalRpg/Mvvm/Inventory/RpgPlayerInventoryViewModels.h"
 #include "SurvivalRpg/Systems/GameplayTagStack.h"
 
 #include "Engine/Engine.h"
@@ -168,6 +170,62 @@ namespace RpgInventoryTransactionTests
 		return false;
 	}
 
+	URpgInventoryEntryViewModel* MakeEntryViewModel(
+		UObject* Outer,
+		URpgInventoryManagerComponent* Inventory,
+		const FRpgInventoryItemId& ItemId)
+	{
+		FRpgInventoryEntryView Entry;
+		if (!Outer || !GetEntryView(Inventory, ItemId, Entry))
+		{
+			return nullptr;
+		}
+
+		URpgInventoryEntryViewModel* ViewModel =
+			NewObject<URpgInventoryEntryViewModel>(Outer);
+		TMap<
+			TSubclassOf<URpgInventoryItemFragment>,
+			TSubclassOf<URpgInventoryFragmentViewModel>> FragmentViewModels;
+		ViewModel->InitializeFromEntry(Entry, FragmentViewModels);
+		return ViewModel;
+	}
+
+	URpgInventoryAddressSlotViewModel* MakeAddressViewModel(
+		UObject* Outer,
+		URpgInventoryManagerComponent* Inventory,
+		URpgPlayerInventoryLayoutComponent* InventoryLayout,
+		const FRpgInventoryContainerHandle& ContainerHandle,
+		int32 X,
+		int32 Y)
+	{
+		if (!Outer || !Inventory || !InventoryLayout)
+		{
+			return nullptr;
+		}
+
+		const TArray<FRpgInventorySlotGroupView> Groups =
+			InventoryLayout->GetSlotGroups();
+		const FRpgInventorySlotGroupView* Group = Groups.FindByPredicate(
+			[&ContainerHandle](const FRpgInventorySlotGroupView& Candidate)
+			{
+				return Candidate.ContainerHandle == ContainerHandle;
+			});
+		if (!Group || !Group->ContainsCell(X, Y))
+		{
+			return nullptr;
+		}
+
+		URpgInventoryAddressSlotViewModel* ViewModel =
+			NewObject<URpgInventoryAddressSlotViewModel>(Outer);
+		ViewModel->InitializeSlot(
+			Inventory,
+			InventoryLayout,
+			*Group,
+			X,
+			Y);
+		return ViewModel;
+	}
+
 	FString MakeInventorySignature(const URpgInventoryManagerComponent* Inventory)
 	{
 		TArray<FString> Rows;
@@ -240,6 +298,777 @@ namespace RpgInventoryTransactionTests
 		}
 		return true;
 	}
+}
+
+IMPLEMENT_SIMPLE_AUTOMATION_TEST(
+	FRpgInventoryContextActionPolicyTest,
+	"SurvivalRpg.Inventory.ContextActions.SourceSemanticsAndStaleState",
+	EAutomationTestFlags::EditorContext | EAutomationTestFlags::EngineFilter)
+
+bool FRpgInventoryContextActionPolicyTest::RunTest(
+	const FString& Parameters)
+{
+	using namespace RpgInventoryTransactionTests;
+	FScopedInventoryWorld TestWorld;
+	if (!InitializeTest(*this, TestWorld))
+	{
+		return false;
+	}
+
+	UWorld* World = TestWorld.GetTestWorld();
+	FActorSpawnParameters ControllerSpawnParameters;
+	ControllerSpawnParameters.Name = MakeUniqueObjectName(
+		World,
+		ARpgInventoryAutomationTestPlayerController::StaticClass(),
+		TEXT("ContextActionPolicyController"));
+	ControllerSpawnParameters.ObjectFlags = RF_Transient;
+	ARpgInventoryAutomationTestPlayerController* Controller =
+		World->SpawnActor<ARpgInventoryAutomationTestPlayerController>(
+			ControllerSpawnParameters);
+
+	FActorSpawnParameters PlayerStateSpawnParameters;
+	PlayerStateSpawnParameters.Name = MakeUniqueObjectName(
+		World,
+		ARpgInventoryAutomationTestPlayerState::StaticClass(),
+		TEXT("ContextActionPolicyPlayerState"));
+	PlayerStateSpawnParameters.ObjectFlags = RF_Transient;
+	ARpgInventoryAutomationTestPlayerState* PlayerState =
+		World->SpawnActor<ARpgInventoryAutomationTestPlayerState>(
+			PlayerStateSpawnParameters);
+	if (!TestNotNull(TEXT("The context-policy controller exists"), Controller) ||
+		!TestNotNull(TEXT("The context-policy player state exists"), PlayerState))
+	{
+		return false;
+	}
+
+	Controller->SetPlayerState(PlayerState);
+	PlayerState->SetOwner(Controller);
+	FActorSpawnParameters ControllerPawnSpawnParameters;
+	ControllerPawnSpawnParameters.Name = MakeUniqueObjectName(
+		World,
+		APawn::StaticClass(),
+		TEXT("ContextActionPolicyPawn"));
+	ControllerPawnSpawnParameters.ObjectFlags = RF_Transient;
+	ControllerPawnSpawnParameters.SpawnCollisionHandlingOverride =
+		ESpawnActorCollisionHandlingMethod::AlwaysSpawn;
+	APawn* ControllerPawn =
+		World->SpawnActor<APawn>(ControllerPawnSpawnParameters);
+	if (!TestNotNull(
+			TEXT("The context-policy controller pawn exists"),
+			ControllerPawn))
+	{
+		return false;
+	}
+	Controller->Possess(ControllerPawn);
+
+	URpgInventoryManagerComponent* PlayerInventory =
+		PlayerState->GetInventoryManagerComponent();
+	URpgPlayerInventoryLayoutComponent* InventoryLayout =
+		Controller->GetPlayerInventoryLayoutComponent();
+	URpgInventoryUiActionComponent* UiActions =
+		Controller->GetInventoryUiActionComponent();
+	URpgEquipmentLoadoutComponent* EquipmentLoadout =
+		Controller->GetEquipmentLoadoutComponent();
+	URpgInventoryDragDropCoordinator* Coordinator =
+		URpgInventoryDragDropCoordinator::CreateInventoryDragDropCoordinator(
+			Controller,
+			Controller);
+	if (!TestNotNull(TEXT("The player inventory exists"), PlayerInventory) ||
+		!TestNotNull(TEXT("The player layout exists"), InventoryLayout) ||
+		!TestNotNull(TEXT("The inventory action gateway exists"), UiActions) ||
+		!TestNotNull(TEXT("The equipment loadout projection exists"), EquipmentLoadout) ||
+		!TestNotNull(TEXT("The screen-local context coordinator exists"), Coordinator))
+	{
+		return false;
+	}
+	Coordinator->SetUiActionComponent(UiActions);
+	TestTrue(
+		TEXT("The authoritative gateway recognizes the owned player inventory"),
+		UiActions->CanAccessInventory(PlayerInventory));
+
+	const FRpgInventoryContainerHandle Pockets =
+		FRpgInventoryContainerHandle::MakeRoot(
+			URpgPlayerInventoryLayoutComponent::PocketsGroupId);
+	const FRpgInventoryContainerHandle WeaponSlot1 =
+		FRpgInventoryContainerHandle::MakeRoot(
+			URpgPlayerInventoryLayoutComponent::WeaponSlot1GroupId);
+	const FRpgInventoryContainerHandle WeaponSlot2 =
+		FRpgInventoryContainerHandle::MakeRoot(
+			URpgPlayerInventoryLayoutComponent::WeaponSlot2GroupId);
+	URpgInventoryItemInstance* StackItem =
+		PlayerInventory->AddItemDefinitionToPlacement(
+			URpgInventoryAutomationTestStackItemDefinition::StaticClass(),
+			4,
+			MakePlacement(Pockets, 0, 0));
+	URpgInventoryItemInstance* UsableItem =
+		PlayerInventory->AddItemDefinitionToPlacement(
+			URpgInventoryAutomationTestUsableItemDefinition::StaticClass(),
+			2,
+			MakePlacement(Pockets, 1, 0));
+	URpgInventoryItemInstance* NoDropItem =
+		PlayerInventory->AddItemDefinitionToPlacement(
+			URpgInventoryAutomationTestNoDropItemDefinition::StaticClass(),
+			1,
+			MakePlacement(Pockets, 2, 0));
+	URpgInventoryItemInstance* Weapon =
+		PlayerInventory->AddItemDefinitionToPlacement(
+			URpgInventoryAutomationTestWeaponItemDefinition::StaticClass(),
+			1,
+			MakePlacement(Pockets, 3, 0));
+	URpgInventoryItemInstance* Bag =
+		PlayerInventory->AddItemDefinitionToPlacement(
+			URpgInventoryAutomationTestBagItemDefinition::StaticClass(),
+			1,
+			MakePlacement(Pockets, 0, 1));
+	if (!TestNotNull(TEXT("A player stack fixture exists"), StackItem) ||
+		!TestNotNull(TEXT("A usable player item exists"), UsableItem) ||
+		!TestNotNull(TEXT("A no-drop player item exists"), NoDropItem) ||
+		!TestNotNull(TEXT("A player weapon fixture exists"), Weapon) ||
+		!TestNotNull(TEXT("A player bag fixture exists"), Bag))
+	{
+		return false;
+	}
+
+	URpgInventoryEntryViewModel* StackViewModel =
+		MakeEntryViewModel(
+			Coordinator,
+			PlayerInventory,
+			StackItem->GetItemId());
+	URpgInventoryEntryViewModel* UsableViewModel =
+		MakeEntryViewModel(
+			Coordinator,
+			PlayerInventory,
+			UsableItem->GetItemId());
+	URpgInventoryEntryViewModel* NoDropViewModel =
+		MakeEntryViewModel(
+			Coordinator,
+			PlayerInventory,
+			NoDropItem->GetItemId());
+	URpgInventoryEntryViewModel* WeaponViewModel =
+		MakeEntryViewModel(
+			Coordinator,
+			PlayerInventory,
+			Weapon->GetItemId());
+	URpgInventoryEntryViewModel* BagViewModel =
+		MakeEntryViewModel(
+			Coordinator,
+			PlayerInventory,
+			Bag->GetItemId());
+	URpgInventoryAddressSlotViewModel* ContentAddress =
+		MakeAddressViewModel(
+			Coordinator,
+			PlayerInventory,
+			InventoryLayout,
+			Pockets,
+			0,
+			0);
+	URpgInventoryAddressSlotViewModel* UsableAddress =
+		MakeAddressViewModel(
+			Coordinator,
+			PlayerInventory,
+			InventoryLayout,
+			Pockets,
+			1,
+			0);
+	if (!TestNotNull(TEXT("The stack entry projection exists"), StackViewModel) ||
+		!TestNotNull(TEXT("The usable entry projection exists"), UsableViewModel) ||
+		!TestNotNull(TEXT("The no-drop entry projection exists"), NoDropViewModel) ||
+		!TestNotNull(TEXT("The weapon entry projection exists"), WeaponViewModel) ||
+		!TestNotNull(TEXT("The bag entry projection exists"), BagViewModel) ||
+		!TestNotNull(TEXT("The content address projection exists"), ContentAddress) ||
+		!TestNotNull(TEXT("The usable content-address projection exists"), UsableAddress))
+	{
+		return false;
+	}
+
+	const ERpgInventoryContextAction AllActions[] =
+	{
+		ERpgInventoryContextAction::OpenContainer,
+		ERpgInventoryContextAction::Inspect,
+		ERpgInventoryContextAction::Use,
+		ERpgInventoryContextAction::EquipAndActivate,
+		ERpgInventoryContextAction::MoveToCarry,
+		ERpgInventoryContextAction::Split,
+		ERpgInventoryContextAction::Rotate,
+		ERpgInventoryContextAction::QuickAccessBind,
+		ERpgInventoryContextAction::QuickAccessUnbind,
+		ERpgInventoryContextAction::Transfer,
+		ERpgInventoryContextAction::Drop,
+		ERpgInventoryContextAction::Unequip
+	};
+	auto TestEntryContract =
+		[this, Coordinator, &AllActions](
+			const TCHAR* SourceLabel,
+			URpgInventoryEntryViewModel* ViewModel,
+			bool bSupportsSpatialRotation)
+		{
+			const TArray<ERpgInventoryContextAction> Available =
+				Coordinator->GetAvailableContextActions(
+					ViewModel,
+					bSupportsSpatialRotation);
+			TSet<ERpgInventoryContextAction> UniqueActions;
+			for (const ERpgInventoryContextAction Action : Available)
+			{
+				UniqueActions.Add(Action);
+			}
+			TestEqual(
+				*FString::Printf(TEXT("%s actions contain no duplicates"), SourceLabel),
+				UniqueActions.Num(),
+				Available.Num());
+			for (const ERpgInventoryContextAction Action : AllActions)
+			{
+				TestEqual(
+					*FString::Printf(
+						TEXT("%s availability equals CanExecute for action %d"),
+						SourceLabel,
+						static_cast<int32>(Action)),
+					Available.Contains(Action),
+					Coordinator->CanExecuteContextAction(
+						ViewModel,
+						Action,
+						bSupportsSpatialRotation));
+			}
+		};
+	auto TestAddressContract =
+		[this, Coordinator, &AllActions](
+			const TCHAR* SourceLabel,
+			URpgInventoryAddressSlotViewModel* ViewModel,
+			bool bSupportsSpatialRotation)
+		{
+			const TArray<ERpgInventoryContextAction> Available =
+				Coordinator->GetAvailableContextActions(
+					ViewModel,
+					bSupportsSpatialRotation);
+			TSet<ERpgInventoryContextAction> UniqueActions;
+			for (const ERpgInventoryContextAction Action : Available)
+			{
+				UniqueActions.Add(Action);
+			}
+			TestEqual(
+				*FString::Printf(TEXT("%s actions contain no duplicates"), SourceLabel),
+				UniqueActions.Num(),
+				Available.Num());
+			for (const ERpgInventoryContextAction Action : AllActions)
+			{
+				TestEqual(
+					*FString::Printf(
+						TEXT("%s availability equals CanExecute for action %d"),
+						SourceLabel,
+						static_cast<int32>(Action)),
+					Available.Contains(Action),
+					Coordinator->CanExecuteContextAction(
+						ViewModel,
+						Action,
+						bSupportsSpatialRotation));
+			}
+		};
+	auto TestExactActionOrder =
+		[this](
+			const TCHAR* SourceLabel,
+			const TArray<ERpgInventoryContextAction>& Actual,
+			const TArray<ERpgInventoryContextAction>& Expected)
+		{
+			TestEqual(
+				*FString::Printf(TEXT("%s exposes the exact action count"), SourceLabel),
+				Actual.Num(),
+				Expected.Num());
+			const int32 ComparedActionCount =
+				FMath::Min(Actual.Num(), Expected.Num());
+			for (int32 ActionIndex = 0;
+				ActionIndex < ComparedActionCount;
+				++ActionIndex)
+			{
+				TestEqual(
+					*FString::Printf(
+						TEXT("%s action %d keeps the canonical display order"),
+						SourceLabel,
+						ActionIndex),
+					Actual[ActionIndex],
+					Expected[ActionIndex]);
+			}
+		};
+	TestEntryContract(TEXT("Player stack"), StackViewModel, true);
+	TestEntryContract(TEXT("Player usable"), UsableViewModel, true);
+	TestEntryContract(TEXT("Player weapon"), WeaponViewModel, true);
+	TestEntryContract(TEXT("Player bag"), BagViewModel, true);
+	TestAddressContract(TEXT("Player content stack"), ContentAddress, true);
+	int32 ResolvedFixtureSplitCount = 0;
+	FRpgInventoryGridPlacement ResolvedFixtureSplitPlacement;
+	TestTrue(
+		TEXT("The authoritative split preflight finds real player-content space"),
+		UiActions->CanSplitItemStack(
+			PlayerInventory,
+			StackItem,
+			0,
+			FRpgInventoryGridPlacement(),
+			ResolvedFixtureSplitCount,
+			ResolvedFixtureSplitPlacement));
+
+	const TArray<ERpgInventoryContextAction> ExpectedPlayerStackActions =
+	{
+		ERpgInventoryContextAction::Inspect,
+		ERpgInventoryContextAction::Split,
+		ERpgInventoryContextAction::Rotate,
+		ERpgInventoryContextAction::Drop
+	};
+	const TArray<ERpgInventoryContextAction> PlayerStackEntryActions =
+		Coordinator->GetAvailableContextActions(StackViewModel, true);
+	const TArray<ERpgInventoryContextAction> PlayerStackAddressActions =
+		Coordinator->GetAvailableContextActions(ContentAddress, true);
+	TestExactActionOrder(
+		TEXT("Player stack entry"),
+		PlayerStackEntryActions,
+		ExpectedPlayerStackActions);
+	TestExactActionOrder(
+		TEXT("Player stack address"),
+		PlayerStackAddressActions,
+		ExpectedPlayerStackActions);
+	TestFalse(
+		TEXT("A non-usable stack entry does not invent Quick Access semantics"),
+		PlayerStackEntryActions.Contains(
+			ERpgInventoryContextAction::QuickAccessBind));
+	TestFalse(
+		TEXT("A non-usable content address remains ineligible for Quick Access"),
+		PlayerStackAddressActions.Contains(
+			ERpgInventoryContextAction::QuickAccessBind));
+
+	TestTrue(
+		TEXT("A genuine stack action uses the shared split predictor"),
+		Coordinator->CanExecuteContextAction(
+			StackViewModel,
+			ERpgInventoryContextAction::Split,
+			true));
+	TestTrue(
+		TEXT("A rotatable spatial item exposes Rotate only to a spatial presenter"),
+		Coordinator->CanExecuteContextAction(
+			StackViewModel,
+			ERpgInventoryContextAction::Rotate,
+			true));
+	TestFalse(
+		TEXT("The same item does not expose Rotate to a non-spatial presenter"),
+		Coordinator->CanExecuteContextAction(
+			StackViewModel,
+			ERpgInventoryContextAction::Rotate));
+	TestTrue(
+		TEXT("A configured usable item exposes Use in player inventory"),
+		Coordinator->CanExecuteContextAction(
+			UsableViewModel,
+			ERpgInventoryContextAction::Use));
+	TestTrue(
+		TEXT("A player weapon exposes EquipAndActivate"),
+		Coordinator->CanExecuteContextAction(
+			WeaponViewModel,
+			ERpgInventoryContextAction::EquipAndActivate));
+	TestTrue(
+		TEXT("A player weapon exposes MoveToCarry"),
+		Coordinator->CanExecuteContextAction(
+			WeaponViewModel,
+			ERpgInventoryContextAction::MoveToCarry));
+	TestFalse(
+		TEXT("ManualDropPolicy Disabled removes Drop from the shared policy"),
+		Coordinator->CanExecuteContextAction(
+			NoDropViewModel,
+			ERpgInventoryContextAction::Drop));
+	TestTrue(
+		TEXT("A bag exposes its nested-container presentation action"),
+		Coordinator->CanExecuteContextAction(
+			BagViewModel,
+			ERpgInventoryContextAction::OpenContainer,
+			true));
+	TestFalse(
+		TEXT("A Backpack/Belt bag does not advertise the hand-only MoveToCarry action"),
+		Coordinator->CanExecuteContextAction(
+			BagViewModel,
+			ERpgInventoryContextAction::MoveToCarry,
+			true));
+	TestTrue(
+		TEXT("A content address uses the same real split predictor"),
+		Coordinator->CanExecuteContextAction(
+			ContentAddress,
+			ERpgInventoryContextAction::Split,
+			true));
+	TestAddressContract(
+		TEXT("Unbound usable content address"),
+		UsableAddress,
+		true);
+	const FRpgInventoryDragPayload UsableAddressPayload =
+		URpgInventoryDragDropCoordinator::MakeInventoryPayloadFromAddressSlot(
+			UsableAddress);
+	TestTrue(
+		TEXT("An eligible usable content address exposes Quick Access Bind"),
+		Coordinator->CanExecuteContextAction(
+			UsableAddress,
+			ERpgInventoryContextAction::QuickAccessBind,
+			true));
+	TestFalse(
+		TEXT("An unbound usable content address does not expose Quick Access Unbind"),
+		Coordinator->CanExecuteContextAction(
+			UsableAddress,
+			ERpgInventoryContextAction::QuickAccessUnbind,
+			true));
+	TestTrue(
+		TEXT("The eligible content address binds through the authoritative Quick Access gateway"),
+		Coordinator->BindPayloadToQuickAccessSlot(
+			UsableAddressPayload,
+			0));
+	TestAddressContract(
+		TEXT("Bound usable content address"),
+		UsableAddress,
+		true);
+	TestTrue(
+		TEXT("The bound content address keeps Bind available for reassignment"),
+		Coordinator->CanExecuteContextAction(
+			UsableAddress,
+			ERpgInventoryContextAction::QuickAccessBind,
+			true));
+	TestTrue(
+		TEXT("The bound content address exposes Quick Access Unbind"),
+		Coordinator->CanExecuteContextAction(
+			UsableAddress,
+			ERpgInventoryContextAction::QuickAccessUnbind,
+			true));
+	TestTrue(
+		TEXT("The same stable content payload clears its Quick Access binding"),
+		Coordinator->ClearQuickAccessBindingForPayload(
+			UsableAddressPayload));
+	TestFalse(
+		TEXT("Quick Access Unbind disappears after the binding is cleared"),
+		Coordinator->CanExecuteContextAction(
+			UsableAddress,
+			ERpgInventoryContextAction::QuickAccessUnbind,
+			true));
+
+	FActorSpawnParameters ExternalContainerSpawnParameters;
+	ExternalContainerSpawnParameters.Name = MakeUniqueObjectName(
+		World,
+		ARpgInventoryContainerActor::StaticClass(),
+		TEXT("ContextActionExternalContainer"));
+	ExternalContainerSpawnParameters.ObjectFlags = RF_Transient;
+	ExternalContainerSpawnParameters.SpawnCollisionHandlingOverride =
+		ESpawnActorCollisionHandlingMethod::AlwaysSpawn;
+	ARpgInventoryContainerActor* ExternalContainer =
+		World->SpawnActor<ARpgInventoryContainerActor>(
+			ExternalContainerSpawnParameters);
+	URpgInventoryManagerComponent* ExternalInventory = ExternalContainer
+		? ExternalContainer->GetInventoryManager()
+		: nullptr;
+	const FRpgInventoryContainerHandle ExternalRoot = ExternalInventory
+		? FRpgInventoryContainerHandle::MakeRoot(
+			ExternalInventory->GetDefaultContainerId())
+		: FRpgInventoryContainerHandle();
+	URpgInventoryItemInstance* ExternalUsable =
+		ExternalInventory
+			? ExternalInventory->AddItemDefinitionToPlacement(
+				URpgInventoryAutomationTestUsableItemDefinition::StaticClass(),
+				2,
+				MakePlacement(ExternalRoot, 0, 0))
+			: nullptr;
+	URpgInventoryItemInstance* ExternalWeapon =
+		ExternalInventory
+			? ExternalInventory->AddItemDefinitionToPlacement(
+				URpgInventoryAutomationTestWeaponItemDefinition::StaticClass(),
+				1,
+				MakePlacement(ExternalRoot, 1, 0))
+			: nullptr;
+	URpgInventoryEntryViewModel* ExternalUsableViewModel =
+		ExternalUsable
+			? MakeEntryViewModel(
+				Coordinator,
+				ExternalInventory,
+				ExternalUsable->GetItemId())
+			: nullptr;
+	URpgInventoryEntryViewModel* ExternalWeaponViewModel =
+		ExternalWeapon
+			? MakeEntryViewModel(
+				Coordinator,
+				ExternalInventory,
+				ExternalWeapon->GetItemId())
+			: nullptr;
+	if (!TestNotNull(TEXT("An accessible external container exists"), ExternalContainer) ||
+		!TestNotNull(TEXT("An external inventory exists"), ExternalInventory) ||
+		!TestNotNull(TEXT("An external usable item exists"), ExternalUsable) ||
+		!TestNotNull(TEXT("An external weapon exists"), ExternalWeapon) ||
+		!TestNotNull(TEXT("The external usable projection exists"), ExternalUsableViewModel) ||
+		!TestNotNull(TEXT("The external weapon projection exists"), ExternalWeaponViewModel))
+	{
+		return false;
+	}
+	TestTrue(
+		TEXT("The real nearby container authorizes the controller pawn"),
+		UiActions->CanAccessInventory(ExternalInventory));
+
+	Coordinator->SetQuickTransferTarget(
+		ExternalInventory,
+		PlayerInventory);
+	TestEntryContract(TEXT("External usable"), ExternalUsableViewModel, true);
+	TestEntryContract(TEXT("External weapon"), ExternalWeaponViewModel, true);
+	TestTrue(
+		TEXT("An accessible external entry exposes Transfer into player inventory"),
+		Coordinator->CanExecuteContextAction(
+			ExternalUsableViewModel,
+			ERpgInventoryContextAction::Transfer,
+			true));
+	TestTrue(
+		TEXT("External-to-player Transfer appears in the shared ordered action list"),
+		Coordinator->GetAvailableContextActions(
+				ExternalUsableViewModel,
+				true)
+			.Contains(ERpgInventoryContextAction::Transfer));
+	TestFalse(
+		TEXT("OnlyFromPlayerInventory suppresses Use for storage items"),
+		Coordinator->CanExecuteContextAction(
+			ExternalUsableViewModel,
+			ERpgInventoryContextAction::Use));
+	TestFalse(
+		TEXT("External weapons do not advertise an intent the server rejects as WrongInventory"),
+		Coordinator->CanExecuteContextAction(
+			ExternalWeaponViewModel,
+			ERpgInventoryContextAction::EquipAndActivate));
+	TestFalse(
+		TEXT("External weapons do not advertise MoveToCarry"),
+		Coordinator->CanExecuteContextAction(
+			ExternalWeaponViewModel,
+			ERpgInventoryContextAction::MoveToCarry));
+	const FString ExternalSignatureBeforeRejectedIntents =
+		MakeInventorySignature(ExternalInventory);
+	TestFalse(
+		TEXT("The Blueprint-callable explicit Equip dispatcher reuses the shared policy"),
+		Coordinator->ExecuteEntryItemAction(
+			ExternalWeaponViewModel,
+			ERpgInventoryItemActionIntent::EquipAndActivate));
+	TestFalse(
+		TEXT("The Blueprint-callable explicit Use dispatcher reuses the shared source policy"),
+		Coordinator->ExecuteEntryItemAction(
+			ExternalUsableViewModel,
+			ERpgInventoryItemActionIntent::Use));
+	TestEqual(
+		TEXT("Locally rejected external intents do not mutate inventory state"),
+		MakeInventorySignature(ExternalInventory),
+		ExternalSignatureBeforeRejectedIntents);
+
+	UiActions->RequestEquipInventoryItem(Weapon);
+	FRpgInventoryEntryView EquippedWeaponEntry;
+	if (!TestTrue(
+			TEXT("The real authoritative equip path keeps the weapon addressable"),
+			GetEntryView(
+				PlayerInventory,
+				Weapon->GetItemId(),
+				EquippedWeaponEntry)) ||
+		!TestEqual(
+			TEXT("The equipped weapon reaches its MainHand Carry role"),
+			EquippedWeaponEntry.Placement.GetContainerHandle(),
+			WeaponSlot1))
+	{
+		return false;
+	}
+	TestTrue(
+		TEXT("The old Pockets weapon projection fails closed after its placement changes"),
+		Coordinator->GetAvailableContextActions(
+				WeaponViewModel,
+				true)
+			.IsEmpty());
+	TestFalse(
+		TEXT("The direct dispatcher rejects the same placement-stale weapon projection"),
+		Coordinator->ExecuteEntryItemAction(
+			WeaponViewModel,
+			ERpgInventoryItemActionIntent::MoveToCarry));
+
+	URpgInventoryAddressSlotViewModel* CarryAddress =
+		MakeAddressViewModel(
+			Coordinator,
+			PlayerInventory,
+			InventoryLayout,
+			WeaponSlot1,
+			0,
+			0);
+	if (!TestNotNull(TEXT("The Carry address projection exists"), CarryAddress))
+	{
+		return false;
+	}
+	TestAddressContract(
+		TEXT("Player Carry weapon"),
+		CarryAddress,
+		true);
+	TestFalse(
+		TEXT("Carry addresses never offer MoveToCarry again"),
+		Coordinator->CanExecuteContextAction(
+			CarryAddress,
+			ERpgInventoryContextAction::MoveToCarry,
+			true));
+	TestFalse(
+		TEXT("Carry addresses never offer Split"),
+		Coordinator->CanExecuteContextAction(
+			CarryAddress,
+			ERpgInventoryContextAction::Split,
+			true));
+
+	const TArray<ERpgInventoryContextAction> EquipmentActions =
+		Coordinator->GetAvailableContextActions(
+			ERpgEquipmentSlot::MainHand,
+			Weapon->GetItemId());
+	TestTrue(
+		TEXT("Equipment context exposes Inspect"),
+		EquipmentActions.Contains(ERpgInventoryContextAction::Inspect));
+	TestTrue(
+		TEXT("Equipment context exposes the same physical Unequip action used by controller shortcuts"),
+		EquipmentActions.Contains(ERpgInventoryContextAction::Unequip));
+	TestTrue(
+		TEXT("Equipment context exposes Drop when manual-drop policy permits it"),
+		EquipmentActions.Contains(ERpgInventoryContextAction::Drop));
+	for (const ERpgInventoryContextAction Action : AllActions)
+	{
+		TestEqual(
+			*FString::Printf(
+				TEXT("Equipment availability equals CanExecute for action %d"),
+				static_cast<int32>(Action)),
+			EquipmentActions.Contains(Action),
+			Coordinator->CanExecuteContextAction(
+				ERpgEquipmentSlot::MainHand,
+				Weapon->GetItemId(),
+				Action));
+	}
+
+	TestEqual(
+		TEXT("The MainHand loadout projects the actively equipped weapon"),
+		EquipmentLoadout->GetItemInEquipmentSlot(ERpgEquipmentSlot::MainHand),
+		Weapon);
+	URpgInventoryItemInstance* HolsteredWeapon =
+		PlayerInventory->AddItemDefinitionToPlacement(
+			URpgInventoryAutomationTestWeaponItemDefinition::StaticClass(),
+			1,
+			MakePlacement(Pockets, 3, 0));
+	URpgInventoryEntryViewModel* HolsteredWeaponViewModel =
+		HolsteredWeapon
+			? MakeEntryViewModel(
+				Coordinator,
+				PlayerInventory,
+				HolsteredWeapon->GetItemId())
+			: nullptr;
+	if (!TestNotNull(TEXT("A second weapon exists for the holstered-slot regression"), HolsteredWeapon) ||
+		!TestNotNull(TEXT("The second weapon has a current Pockets projection"), HolsteredWeaponViewModel))
+	{
+		return false;
+	}
+	const FRpgInventoryMutationRequest HolsterRequest =
+		MakePlacementRequest(
+			ERpgInventoryMutationOperation::Equip,
+			HolsteredWeapon,
+			Pockets,
+			WeaponSlot2,
+			0,
+			0);
+	TestTrue(
+		TEXT("A current rotatable weapon payload can be held before its source moves"),
+		Coordinator->BeginHoldFromEntry(HolsteredWeaponViewModel));
+	TestTrue(
+		TEXT("The current held source initially permits a rotation toggle"),
+		Coordinator->CanToggleInteractionRotation());
+	TestTrue(
+		TEXT("The second weapon can occupy WeaponSlot2 without changing active MainHand"),
+		PlayerInventory->ExecuteInventoryMutation(HolsterRequest).IsSuccess());
+	TestTrue(
+		TEXT("The regression retains the held payload after an out-of-band authoritative move"),
+		Coordinator->HasHeldPayload());
+	TestFalse(
+		TEXT("A held payload with a placement-stale source cannot rotate"),
+		Coordinator->CanToggleInteractionRotation());
+	TestFalse(
+		TEXT("The rotation dispatcher revalidates and rejects the stale held source"),
+		Coordinator->ToggleInteractionRotation());
+	Coordinator->ForceCancelInteraction();
+	TestEqual(
+		TEXT("The active MainHand assignment still points at the first weapon"),
+		EquipmentLoadout->GetItemInEquipmentSlot(ERpgEquipmentSlot::MainHand),
+		Weapon);
+	TestFalse(
+		TEXT("MainHand context rejects a holstered WeaponSlot2 item id"),
+		Coordinator->CanExecuteContextAction(
+			ERpgEquipmentSlot::MainHand,
+			HolsteredWeapon->GetItemId(),
+			ERpgInventoryContextAction::Inspect));
+	const FString PlayerSignatureBeforeHolsteredDispatches =
+		MakeInventorySignature(PlayerInventory);
+	TestFalse(
+		TEXT("Direct MainHand Unequip rejects the holstered WeaponSlot2 item id"),
+		Coordinator->UnequipEquipmentItem(
+			ERpgEquipmentSlot::MainHand,
+			HolsteredWeapon->GetItemId()));
+	TestFalse(
+		TEXT("Direct MainHand Drop rejects the holstered WeaponSlot2 item id"),
+		Coordinator->DropEquipmentItem(
+			ERpgEquipmentSlot::MainHand,
+			HolsteredWeapon->GetItemId()));
+	TestEqual(
+		TEXT("Rejected holstered MainHand dispatches leave inventory state unchanged"),
+		MakeInventorySignature(PlayerInventory),
+		PlayerSignatureBeforeHolsteredDispatches);
+
+	const FString PlayerSignatureBeforeNoDrop =
+		MakeInventorySignature(PlayerInventory);
+	TestFalse(
+		TEXT("The direct drop dispatcher also rejects ManualDropPolicy Disabled"),
+		Coordinator->DropEntry(NoDropViewModel));
+	TestEqual(
+		TEXT("A locally rejected no-drop request leaves the player inventory unchanged"),
+		MakeInventorySignature(PlayerInventory),
+		PlayerSignatureBeforeNoDrop);
+
+	TestTrue(
+		TEXT("The authoritative fixture reduces the represented stack"),
+		PlayerInventory->RemoveItemInstanceStack(StackItem, 3));
+	TestTrue(
+		TEXT("The stale view model retains the same item identity for the regression"),
+		StackViewModel->GetItemInstance() == StackItem &&
+			StackViewModel->GetItemInstance()->GetItemId() == StackItem->GetItemId());
+	TestTrue(
+		TEXT("A stale stack projection fails closed instead of executing a cached menu row"),
+		Coordinator->GetAvailableContextActions(StackViewModel, true).IsEmpty());
+	TestTrue(
+		TEXT("The address projection for the changed stack also fails closed"),
+		Coordinator->GetAvailableContextActions(ContentAddress, true).IsEmpty());
+	TestFalse(
+		TEXT("The direct split dispatcher also rejects the stale projection"),
+		Coordinator->QuickSplitEntry(
+			StackViewModel,
+			FRpgInventoryGridPlacement(),
+			1));
+	TestFalse(
+		TEXT("The direct address split dispatcher rejects the same stale source"),
+		Coordinator->QuickSplitAddressSlot(
+			ContentAddress,
+			FRpgInventoryGridPlacement(),
+			1));
+
+	FRpgInventoryEntryView RefreshedStackEntry;
+	if (!TestTrue(
+			TEXT("The reduced stack remains addressable"),
+			GetEntryView(
+				PlayerInventory,
+				StackItem->GetItemId(),
+				RefreshedStackEntry)))
+	{
+		return false;
+	}
+	TMap<
+		TSubclassOf<URpgInventoryItemFragment>,
+		TSubclassOf<URpgInventoryFragmentViewModel>> FragmentViewModels;
+	StackViewModel->InitializeFromEntry(
+		RefreshedStackEntry,
+		FragmentViewModels);
+	TestTrue(
+		TEXT("A refreshed one-unit projection exposes Inspect again"),
+		Coordinator->CanExecuteContextAction(
+			StackViewModel,
+			ERpgInventoryContextAction::Inspect,
+			true));
+	TestFalse(
+		TEXT("A refreshed one-unit projection no longer exposes Split"),
+		Coordinator->CanExecuteContextAction(
+			StackViewModel,
+			ERpgInventoryContextAction::Split,
+			true));
+
+	return true;
 }
 
 IMPLEMENT_SIMPLE_AUTOMATION_TEST(

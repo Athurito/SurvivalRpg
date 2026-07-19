@@ -512,7 +512,6 @@ private:
 	void BindDismissControl();
 	void RebuildActionButtons();
 	void RebuildQuickAccessSlotButtons();
-	void NormalizeQuickAccessActions();
 	FText ResolveContextActionLabel(ERpgInventoryContextAction Action) const;
 	int32 ResolveCurrentQuickAccessSlotIndex() const;
 	FText ResolveQuickAccessBindingLabel(int32 SlotIndex, bool& bOutOccupied) const;
@@ -548,6 +547,9 @@ private:
 	/** Persistent item identity used to reject stale gear-menu actions after slot replication changes. */
 	UPROPERTY(Transient)
 	FRpgInventoryItemId ContextItemId;
+
+	/** Quick Access binding captured with the menu so an old Unbind row cannot clear a newly moved binding. */
+	int32 ContextQuickAccessSlotIndex = INDEX_NONE;
 
 	/** Deduplicated action order supplied by the presenter and rendered through authored row classes. */
 	UPROPERTY(Transient)

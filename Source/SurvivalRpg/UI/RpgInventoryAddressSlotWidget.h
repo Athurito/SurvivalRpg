@@ -4,7 +4,6 @@
 #include "CommonButtonBase.h"
 #include "CoreMinimal.h"
 #include "SurvivalRpg/Inventory/RpgInventoryDragDrop.h"
-#include "SurvivalRpg/UI/RpgPlayerInventoryLayoutViews.h"
 
 #include "RpgInventoryAddressSlotWidget.generated.h"
 

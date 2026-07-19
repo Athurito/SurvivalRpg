@@ -1,6 +1,7 @@
 #include "RpgInventoryPanelNavigationCoordinator.h"
 
 #include "SurvivalRpg/Inventory/RpgInventoryDragDrop.h"
+#include "SurvivalRpg/Inventory/RpgInventoryItemInstance.h"
 #include "SurvivalRpg/Inventory/RpgInventoryManagerComponent.h"
 #include "SurvivalRpg/Mvvm/Inventory/RpgActionBarViewModels.h"
 #include "SurvivalRpg/Mvvm/Inventory/RpgInventoryViewModels.h"
@@ -719,7 +720,7 @@ bool URpgInventoryPanelNavigationCoordinator::CanQuickSplitActiveSelection() con
 {
 	if (DragDropCoordinator && DragDropCoordinator->HasHeldPayload())
 	{
-		return true;
+		return DragDropCoordinator->CanToggleInteractionRotation();
 	}
 	if (!IsValidPanelIndex(ActivePanelIndex))
 	{
@@ -733,8 +734,10 @@ bool URpgInventoryPanelNavigationCoordinator::CanQuickSplitActiveSelection() con
 	}
 	if (const URpgInventoryTileView* TileView = Panel.TileView)
 	{
-		const URpgInventoryEntryViewModel* Entry = TileView->GetSelectedInventoryEntry();
-		return Entry && Entry->CanDrag() && Entry->GetStackCount() > 1;
+		return DragDropCoordinator &&
+			DragDropCoordinator->CanExecuteContextAction(
+				TileView->GetSelectedInventoryEntry(),
+				ERpgInventoryContextAction::Split);
 	}
 	if (const URpgInventoryCarrySlotWidget* CarrySlot = Panel.CarrySlotWidget)
 	{
@@ -759,8 +762,17 @@ bool URpgInventoryPanelNavigationCoordinator::CanUseOrEquipActiveSelection() con
 	}
 	if (const URpgInventoryTileView* TileView = Panel.TileView)
 	{
-		const URpgInventoryEntryViewModel* Entry = TileView->GetSelectedInventoryEntry();
-		return Entry && Entry->CanDrag() && Entry->GetItemInstance();
+		if (!DragDropCoordinator)
+		{
+			return false;
+		}
+		URpgInventoryEntryViewModel* Entry = TileView->GetSelectedInventoryEntry();
+		return DragDropCoordinator->CanExecuteContextAction(
+				Entry,
+				ERpgInventoryContextAction::Use) ||
+			DragDropCoordinator->CanExecuteContextAction(
+				Entry,
+				ERpgInventoryContextAction::EquipAndActivate);
 	}
 	if (const URpgInventoryCarrySlotWidget* CarrySlot = Panel.CarrySlotWidget)
 	{
@@ -768,7 +780,16 @@ bool URpgInventoryPanelNavigationCoordinator::CanUseOrEquipActiveSelection() con
 		return Actions.Contains(ERpgInventoryContextAction::Use) ||
 			Actions.Contains(ERpgInventoryContextAction::EquipAndActivate);
 	}
-	return Panel.EquipmentSlotWidget && Panel.EquipmentSlotWidget->GetRepresentedItem();
+	if (const URpgEquipmentSlotWidget* EquipmentSlot = Panel.EquipmentSlotWidget)
+	{
+		const URpgInventoryItemInstance* Item = EquipmentSlot->GetRepresentedItem();
+		return DragDropCoordinator && Item &&
+			DragDropCoordinator->CanExecuteContextAction(
+				EquipmentSlot->GetResolvedEquipmentSlot(),
+				Item->GetItemId(),
+				ERpgInventoryContextAction::Unequip);
+	}
+	return false;
 }
 
 bool URpgInventoryPanelNavigationCoordinator::CanDropActiveSelection() const
@@ -785,12 +806,23 @@ bool URpgInventoryPanelNavigationCoordinator::CanDropActiveSelection() const
 	}
 	if (const URpgInventoryTileView* TileView = Panel.TileView)
 	{
-		const URpgInventoryEntryViewModel* Entry = TileView->GetSelectedInventoryEntry();
-		return Entry && Entry->CanDrag();
+		return DragDropCoordinator &&
+			DragDropCoordinator->CanExecuteContextAction(
+				TileView->GetSelectedInventoryEntry(),
+				ERpgInventoryContextAction::Drop);
 	}
 	if (const URpgInventoryCarrySlotWidget* CarrySlot = Panel.CarrySlotWidget)
 	{
 		return CarrySlot->GetAddressContextActions().Contains(ERpgInventoryContextAction::Drop);
+	}
+	if (const URpgEquipmentSlotWidget* EquipmentSlot = Panel.EquipmentSlotWidget)
+	{
+		const URpgInventoryItemInstance* Item = EquipmentSlot->GetRepresentedItem();
+		return DragDropCoordinator && Item &&
+			DragDropCoordinator->CanExecuteContextAction(
+				EquipmentSlot->GetResolvedEquipmentSlot(),
+				Item->GetItemId(),
+				ERpgInventoryContextAction::Drop);
 	}
 	return false;
 }
@@ -828,7 +860,8 @@ bool URpgInventoryPanelNavigationCoordinator::QuickSplitActiveSelection(int32 Sp
 {
 	if (DragDropCoordinator && DragDropCoordinator->HasHeldPayload())
 	{
-		return DragDropCoordinator->ToggleInteractionRotation();
+		return DragDropCoordinator->CanToggleInteractionRotation() &&
+			DragDropCoordinator->ToggleInteractionRotation();
 	}
 
 	if (!IsValidPanelIndex(ActivePanelIndex))
@@ -851,7 +884,10 @@ bool URpgInventoryPanelNavigationCoordinator::QuickSplitActiveSelection(int32 Sp
 		const int32 ResolvedSplitCount = SplitCount > 0
 			? SplitCount
 			: (AddressSlot ? FMath::Max(1, AddressSlot->GetStackCount() / 2) : 0);
-		return DragDropCoordinator && AddressSlot && ResolvedSplitCount < AddressSlot->GetStackCount() &&
+		return DragDropCoordinator && AddressSlot &&
+			DragDropCoordinator->CanExecuteContextAction(
+				AddressSlot,
+				ERpgInventoryContextAction::Split) &&
 			DragDropCoordinator->QuickSplitAddressSlot(AddressSlot, FRpgInventoryGridPlacement(), ResolvedSplitCount);
 	}
 
@@ -909,6 +945,25 @@ bool URpgInventoryPanelNavigationCoordinator::DropActiveSelection(int32 StackCou
 		return CarrySlotWidget->RequestAddressItemDrop(
 			StackCount,
 			bConfirmed);
+	}
+	if (URpgEquipmentSlotWidget* EquipmentSlotWidget = Panels[ActivePanelIndex].EquipmentSlotWidget)
+	{
+		URpgInventoryItemInstance* Item = EquipmentSlotWidget->GetRepresentedItem();
+		if (!Item)
+		{
+			return false;
+		}
+
+		// Equipment slots represent whole item instances, so StackCount is intentionally not applied.
+		return bConfirmed
+			? DragDropCoordinator &&
+				DragDropCoordinator->DropEquipmentItem(
+					EquipmentSlotWidget->GetResolvedEquipmentSlot(),
+					Item->GetItemId(),
+					true)
+			: EquipmentSlotWidget->ExecuteEquipmentContextAction(
+				ERpgInventoryContextAction::Drop,
+				Item->GetItemId());
 	}
 
 	return false;

@@ -149,24 +149,6 @@ enum class ERpgInventorySpatialCellVisualState : uint8
 	Covered
 };
 
-/** Context actions exposed by the native spatial presenter to mouse and controller menus. */
-UENUM(BlueprintType)
-enum class ERpgInventoryContextAction : uint8
-{
-	OpenContainer,
-	Inspect,
-	Use,
-	EquipAndActivate,
-	MoveToCarry,
-	Split,
-	Rotate,
-	QuickAccessBind,
-	QuickAccessUnbind,
-	Transfer,
-	Drop,
-	Unequip
-};
-
 /**
  * Designable background cell for one spatial inventory grid coordinate.
  *
@@ -580,6 +562,10 @@ public:
 	/** Last selected occupied entry id, or invalid when cursor is empty. */
 	UFUNCTION(BlueprintPure, Category = "Inventory|Spatial Grid|Navigation")
 	FGuid GetSelectedEntryId() const;
+
+	/** Persistent item id under the logical cursor, or invalid when the cursor is empty. */
+	UFUNCTION(BlueprintPure, Category = "Inventory|Spatial Grid|Navigation")
+	FRpgInventoryItemId GetSelectedItemId() const;
 
 	/** Visual slot index derived from cursor coordinates. */
 	UFUNCTION(BlueprintPure, Category = "Inventory|Spatial Grid|Navigation")

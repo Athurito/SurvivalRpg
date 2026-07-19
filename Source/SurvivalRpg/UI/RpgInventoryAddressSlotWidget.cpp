@@ -6,9 +6,6 @@
 #include "InputCoreTypes.h"
 #include "MVVMSubsystem.h"
 #include "SurvivalRpg/Inventory/RpgInventoryDragDrop.h"
-#include "SurvivalRpg/Inventory/RpgInventoryFragment_EquippableItem.h"
-#include "SurvivalRpg/Inventory/RpgInventoryFragment_ItemContainer.h"
-#include "SurvivalRpg/Inventory/RpgInventoryFragment_ItemTraits.h"
 #include "SurvivalRpg/Inventory/RpgInventoryInteractionSession.h"
 #include "SurvivalRpg/Inventory/RpgInventoryItemInstance.h"
 #include "SurvivalRpg/Mvvm/Inventory/RpgPlayerInventoryViewModels.h"
@@ -537,62 +534,9 @@ void URpgInventoryAddressSlotWidget::HandleHeldPayloadChanged(bool bHasHeldPaylo
 
 TArray<ERpgInventoryContextAction> URpgInventoryAddressSlotWidget::GetAddressContextActions() const
 {
-	TArray<ERpgInventoryContextAction> Actions;
-	URpgInventoryItemInstance* Item = SlotViewModel ? SlotViewModel->GetItemInstance() : nullptr;
-	if (!Item)
-	{
-		return Actions;
-	}
-
-	if (SlotViewModel->IsGearSlot())
-	{
-		Actions.Add(ERpgInventoryContextAction::Inspect);
-		Actions.Add(ERpgInventoryContextAction::Unequip);
-	}
-	else
-	{
-		if (Item->FindFragmentByClass<URpgInventoryFragment_ItemContainer>())
-		{
-			Actions.Add(ERpgInventoryContextAction::OpenContainer);
-		}
-		Actions.Add(ERpgInventoryContextAction::Inspect);
-		if (Item->FindFragmentByClass<URpgInventoryFragment_UsableItem>())
-		{
-			Actions.Add(ERpgInventoryContextAction::Use);
-		}
-		if (Item->FindFragmentByClass<URpgInventoryFragment_EquippableItem>())
-		{
-			Actions.Add(ERpgInventoryContextAction::EquipAndActivate);
-			if (!SlotViewModel->IsCarrySlot())
-			{
-				Actions.Add(ERpgInventoryContextAction::MoveToCarry);
-			}
-		}
-		else if (Item->FindFragmentByClass<URpgInventoryFragment_ItemContainer>())
-		{
-			Actions.Add(ERpgInventoryContextAction::EquipAndActivate);
-		}
-		if (!SlotViewModel->IsCarrySlot() && SlotViewModel->GetStackCount() > 1)
-		{
-			Actions.Add(ERpgInventoryContextAction::Split);
-		}
-		if (SlotViewModel->IsActionbarBindable())
-		{
-			Actions.Add(ERpgInventoryContextAction::QuickAccessBind);
-			Actions.Add(ERpgInventoryContextAction::QuickAccessUnbind);
-		}
-		if (DragDropCoordinator && DragDropCoordinator->CanQuickTransferAddressSlot(SlotViewModel))
-		{
-			Actions.Add(ERpgInventoryContextAction::Transfer);
-		}
-	}
-
-	const URpgInventoryFragment_ItemTraits* Traits = Item->FindFragmentByClass<URpgInventoryFragment_ItemTraits>();
-	if (!Traits || Traits->GetResolvedManualDropPolicy() != ERpgInventoryManualDropPolicy::Disabled)
-	{
-		Actions.Add(ERpgInventoryContextAction::Drop);
-	}
-	return Actions;
+	return DragDropCoordinator
+		? DragDropCoordinator->GetAvailableContextActions(SlotViewModel)
+		: TArray<ERpgInventoryContextAction>();
 }
 
 bool URpgInventoryAddressSlotWidget::ExecuteAddressContextAction(
@@ -601,8 +545,9 @@ bool URpgInventoryAddressSlotWidget::ExecuteAddressContextAction(
 	int32 QuickAccessSlotIndex)
 {
 	URpgInventoryItemInstance* Item = SlotViewModel ? SlotViewModel->GetItemInstance() : nullptr;
-	if (!DragDropCoordinator || !Item || !ExpectedItemId.IsValid() || Item->GetItemId() != ExpectedItemId ||
-		!GetAddressContextActions().Contains(Action))
+	if (!DragDropCoordinator || !Item || !ExpectedItemId.IsValid() ||
+		Item->GetItemId() != ExpectedItemId ||
+		!DragDropCoordinator->CanExecuteContextAction(SlotViewModel, Action))
 	{
 		return false;
 	}
@@ -640,6 +585,14 @@ bool URpgInventoryAddressSlotWidget::RequestAddressItemDrop(
 	int32 StackCount,
 	bool bConfirmed)
 {
+	if (!DragDropCoordinator || !SlotViewModel ||
+		!DragDropCoordinator->CanExecuteContextAction(
+			SlotViewModel,
+			ERpgInventoryContextAction::Drop))
+	{
+		return false;
+	}
+
 	if (!bConfirmed && InventoryPresentationHost)
 	{
 		return InventoryPresentationHost->RequestInventoryDrop(
@@ -647,11 +600,10 @@ bool URpgInventoryAddressSlotWidget::RequestAddressItemDrop(
 			StackCount);
 	}
 
-	return DragDropCoordinator && SlotViewModel &&
-		DragDropCoordinator->DropAddressSlot(
-			SlotViewModel,
-			StackCount,
-			bConfirmed);
+	return DragDropCoordinator->DropAddressSlot(
+		SlotViewModel,
+		StackCount,
+		bConfirmed);
 }
 
 int32 URpgInventoryAddressSlotWidget::GetQuickAccessSlotIndex() const
@@ -688,7 +640,10 @@ bool URpgInventoryAddressSlotWidget::RequestAddressSplitDialog()
 {
 	URpgInventoryItemInstance* Item = SlotViewModel ? SlotViewModel->GetItemInstance() : nullptr;
 	const int32 StackCount = SlotViewModel ? SlotViewModel->GetStackCount() : 0;
-	if (!Item || SlotViewModel->IsGearSlot() || SlotViewModel->IsCarrySlot() || StackCount <= 1)
+	if (!Item || !DragDropCoordinator ||
+		!DragDropCoordinator->CanExecuteContextAction(
+			SlotViewModel,
+			ERpgInventoryContextAction::Split))
 	{
 		return false;
 	}

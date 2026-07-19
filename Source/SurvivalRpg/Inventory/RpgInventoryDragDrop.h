@@ -3,6 +3,7 @@
 #include "Blueprint/DragDropOperation.h"
 #include "CoreMinimal.h"
 #include "SurvivalRpg/Equipment/RpgEquipmentDefinition.h"
+#include "SurvivalRpg/Inventory/RpgInventoryContextActionTypes.h"
 #include "SurvivalRpg/Inventory/RpgPlayerInventoryLayoutTypes.h"
 #include "SurvivalRpg/Inventory/RpgInventoryUiActionComponent.h"
 #include "UObject/Object.h"
@@ -505,6 +506,10 @@ public:
 	UFUNCTION(BlueprintPure, Category = "Inventory|Interaction")
 	bool IsInteractionRequestPending() const;
 
+	/** Returns true when the current held payload supports a local rotation toggle. */
+	UFUNCTION(BlueprintPure, Category = "Inventory|Interaction")
+	bool CanToggleInteractionRotation() const;
+
 	/** Rotates the shared payload and grab offsets in place for mouse and controller placement. */
 	UFUNCTION(BlueprintCallable, Category = "Inventory|Interaction")
 	bool ToggleInteractionRotation();
@@ -536,6 +541,48 @@ public:
 	/** Removes every shortcut transfer route on this UI-local coordinator. */
 	UFUNCTION(BlueprintCallable, Category = "Inventory|Shortcuts")
 	void ClearQuickTransferTargets();
+
+	/**
+	 * Returns the ordered context actions that are locally meaningful for one current inventory entry.
+	 *
+	 * This is a presentation query only. bSupportsSpatialRotation describes the calling presenter; the server still
+	 * owns final access, placement, equipment, and mutation validation.
+	 */
+	TArray<ERpgInventoryContextAction> GetAvailableContextActions(
+		URpgInventoryEntryViewModel* EntryViewModel,
+		bool bSupportsSpatialRotation = false) const;
+
+	/** Revalidates one entry action immediately before UI dispatch. Never mutates gameplay state. */
+	bool CanExecuteContextAction(
+		URpgInventoryEntryViewModel* EntryViewModel,
+		ERpgInventoryContextAction Action,
+		bool bSupportsSpatialRotation = false) const;
+
+	/**
+	 * Returns the ordered context actions for one current player-layout address such as Content, Carry, or Gear.
+	 *
+	 * bSupportsSpatialRotation is true only when a spatial grid owns the rotation target and commit behavior.
+	 */
+	TArray<ERpgInventoryContextAction> GetAvailableContextActions(
+		URpgInventoryAddressSlotViewModel* SlotViewModel,
+		bool bSupportsSpatialRotation = false) const;
+
+	/** Revalidates one player-layout address action immediately before UI dispatch. */
+	bool CanExecuteContextAction(
+		URpgInventoryAddressSlotViewModel* SlotViewModel,
+		ERpgInventoryContextAction Action,
+		bool bSupportsSpatialRotation = false) const;
+
+	/** Returns the ordered context actions for the exact item currently represented by an equipment slot. */
+	TArray<ERpgInventoryContextAction> GetAvailableContextActions(
+		ERpgEquipmentSlot EquipmentSlot,
+		const FRpgInventoryItemId& ExpectedItemId) const;
+
+	/** Revalidates one equipment action against current slot ownership and item identity before UI dispatch. */
+	bool CanExecuteContextAction(
+		ERpgEquipmentSlot EquipmentSlot,
+		const FRpgInventoryItemId& ExpectedItemId,
+		ERpgInventoryContextAction Action) const;
 
 	/**
 	 * Returns the zero-based 0..7 slot currently bound to this payload's semantic Carry role or consumable
@@ -591,6 +638,13 @@ public:
 	UFUNCTION(BlueprintCallable, Category = "Inventory|Shortcuts")
 	bool QuickSplitEntry(URpgInventoryEntryViewModel* EntryViewModel, FRpgInventoryGridPlacement TargetPlacement, int32 SplitCount = 0);
 
+	/** Returns true when one logical player-inventory address can be split into separate content space. */
+	UFUNCTION(BlueprintCallable, Category = "Inventory|Shortcuts")
+	bool CanQuickSplitAddressSlot(
+		URpgInventoryAddressSlotViewModel* SlotViewModel,
+		FRpgInventoryGridPlacement TargetPlacement,
+		int32 SplitCount = 0) const;
+
 	/** Uses a usable item, otherwise tries to equip it through equipment slots. */
 	UFUNCTION(BlueprintCallable, Category = "Inventory|Shortcuts")
 	bool UseOrEquipEntry(URpgInventoryEntryViewModel* EntryViewModel, int32 StackCount = 1);
@@ -616,6 +670,12 @@ public:
 	/** Quick-splits one logical player-inventory address slot. SplitCount <= 0 performs quick 50%. */
 	UFUNCTION(BlueprintCallable, Category = "Inventory|Shortcuts")
 	bool QuickSplitAddressSlot(URpgInventoryAddressSlotViewModel* SlotViewModel, FRpgInventoryGridPlacement TargetPlacement, int32 SplitCount = 0);
+
+	/** Dispatches an exact in-place rotation for a current spatial entry; it can never merge or swap another item. */
+	bool RotateEntryInPlace(URpgInventoryEntryViewModel* EntryViewModel);
+
+	/** Dispatches the same exact in-place rotation for a current player-layout content address. */
+	bool RotateAddressSlotInPlace(URpgInventoryAddressSlotViewModel* SlotViewModel);
 
 	/** Requests a manual world drop for the focused entry. Confirmed must be true for confirm-protected items. */
 	UFUNCTION(BlueprintCallable, Category = "Inventory|Shortcuts")
@@ -729,8 +789,19 @@ private:
 	FGameplayTag ResolveActionTagForTarget(const FRpgInventoryDropTarget& Target) const;
 	void EnsureInteractionSession();
 	FGuid MarkInteractionRequestPending(const FRpgInventoryDragPayload& Payload, const FRpgInventoryDropTarget& Target);
+	bool IsPayloadSourceCurrent(const FRpgInventoryDragPayload& Payload) const;
 	bool IsHeldSourceEntry(URpgInventoryEntryViewModel* EntryViewModel) const;
 	bool IsHeldSourceAddressSlot(URpgInventoryAddressSlotViewModel* SlotViewModel) const;
+	bool CanRotateEntryInPlace(
+		URpgInventoryManagerComponent* Inventory,
+		URpgInventoryItemInstance* ItemInstance,
+		const FGuid& EntryId,
+		const FRpgInventoryGridPlacement& SourcePlacement) const;
+	bool DispatchRotateEntryInPlace(
+		URpgInventoryManagerComponent* Inventory,
+		URpgInventoryItemInstance* ItemInstance,
+		const FGuid& EntryId,
+		const FRpgInventoryGridPlacement& SourcePlacement);
 	URpgInventoryUiActionComponent* ResolveUiActionComponent() const;
 	URpgInventoryManagerComponent* FindPlayerInventory() const;
 	URpgPlayerInventoryLayoutComponent* FindPlayerInventoryLayout() const;
@@ -747,6 +818,7 @@ private:
 	bool IsManualDropRequestCurrent(
 		const URpgInventoryManagerComponent* Inventory,
 		const FRpgInventoryManualDropRequest& Request) const;
+	bool CanMoveItemOutOfAddress(const FRpgInventorySlotAddress& SourceAddress) const;
 	bool IsPlayerInventory(const URpgInventoryManagerComponent* Inventory) const;
 	void BuildPlayerQuickTransferTargets(
 		const FRpgInventoryGridPlacement& SourcePlacement,

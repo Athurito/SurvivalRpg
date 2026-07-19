@@ -65,6 +65,52 @@ URpgInventoryAutomationTestStackItemDefinition::URpgInventoryAutomationTestStack
 	Fragments.Add(TraitsFragment);
 }
 
+URpgInventoryAutomationTestUsableItemDefinition::URpgInventoryAutomationTestUsableItemDefinition(
+	const FObjectInitializer& ObjectInitializer)
+	: Super(ObjectInitializer)
+{
+	DisplayName = FText::FromString(TEXT("Automation Usable"));
+
+	URpgInventoryFragment_SpatialItem* SpatialFragment =
+		CreateDefaultSubobject<URpgInventoryFragment_SpatialItem>(TEXT("Spatial"));
+	ConfigureSpatialFragment(SpatialFragment, 1, 1, true);
+	Fragments.Add(SpatialFragment);
+
+	URpgInventoryFragment_ItemTraits* TraitsFragment =
+		CreateDefaultSubobject<URpgInventoryFragment_ItemTraits>(TEXT("Traits"));
+	TraitsFragment->ItemCategory = ERpgInventoryItemCategory::Consumable;
+	TraitsFragment->bCanStack = true;
+	TraitsFragment->MaxStackSize = 10;
+	Fragments.Add(TraitsFragment);
+
+	URpgInventoryFragment_UsableItem* UsableFragment =
+		CreateDefaultSubobject<URpgInventoryFragment_UsableItem>(TEXT("Usable"));
+	UsableFragment->UseAbility =
+		URpgInventoryAutomationTestUseAbility::StaticClass();
+	UsableFragment->ConsumeCount = 1;
+	UsableFragment->bOnlyFromPlayerInventory = true;
+	Fragments.Add(UsableFragment);
+}
+
+URpgInventoryAutomationTestNoDropItemDefinition::URpgInventoryAutomationTestNoDropItemDefinition(
+	const FObjectInitializer& ObjectInitializer)
+	: Super(ObjectInitializer)
+{
+	DisplayName = FText::FromString(TEXT("Automation No Drop"));
+
+	URpgInventoryFragment_SpatialItem* SpatialFragment =
+		CreateDefaultSubobject<URpgInventoryFragment_SpatialItem>(TEXT("Spatial"));
+	ConfigureSpatialFragment(SpatialFragment, 1, 1, true);
+	Fragments.Add(SpatialFragment);
+
+	URpgInventoryFragment_ItemTraits* TraitsFragment =
+		CreateDefaultSubobject<URpgInventoryFragment_ItemTraits>(TEXT("Traits"));
+	ConfigureNonStackingTraits(TraitsFragment);
+	TraitsFragment->ManualDropPolicy =
+		ERpgInventoryManualDropPolicy::Disabled;
+	Fragments.Add(TraitsFragment);
+}
+
 URpgInventoryAutomationTestWideItemDefinition::URpgInventoryAutomationTestWideItemDefinition(
 	const FObjectInitializer& ObjectInitializer)
 	: Super(ObjectInitializer)

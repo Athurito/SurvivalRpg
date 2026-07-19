@@ -2660,7 +2660,14 @@ bool URpgInventoryUiActionComponent::FindFirstEmptyInventoryPlacement(URpgInvent
 						Candidate.Y = Y;
 						Candidate.Width = 1;
 						Candidate.Height = 1;
-						if (Inventory->CanAddItemDefinitionToPlacement(ItemDefinition, 1, Candidate))
+						if (!Inventory->GetItemAtContainerCell(
+								Candidate.GetContainerHandle(),
+								Candidate.X,
+								Candidate.Y) &&
+							Inventory->CanAddItemDefinitionToPlacement(
+								ItemDefinition,
+								1,
+								Candidate))
 						{
 							OutPlacement = Candidate;
 							return true;
@@ -2691,7 +2698,14 @@ bool URpgInventoryUiActionComponent::FindFirstEmptyInventoryPlacement(URpgInvent
 			Candidate.Y = Y;
 			Candidate.Width = 1;
 			Candidate.Height = 1;
-			if (Inventory->CanAddItemDefinitionToPlacement(ItemDefinition, 1, Candidate))
+			if (!Inventory->GetItemAtContainerCell(
+					Candidate.GetContainerHandle(),
+					Candidate.X,
+					Candidate.Y) &&
+				Inventory->CanAddItemDefinitionToPlacement(
+					ItemDefinition,
+					1,
+					Candidate))
 			{
 				OutPlacement = Candidate;
 				return true;
@@ -3058,11 +3072,17 @@ bool URpgInventoryUiActionComponent::TryMoveItemToFirstCompatibleCarrySlot(URpgI
 	return false;
 }
 
-bool URpgInventoryUiActionComponent::TryMoveItemToFirstCompatibleContentSlot(URpgInventoryItemInstance* Item)
+bool URpgInventoryUiActionComponent::CanMoveItemToFirstCompatibleContentSlot(
+	URpgInventoryItemInstance* Item,
+	FRpgInventoryGridPlacement& OutTargetPlacement) const
 {
+	OutTargetPlacement = FRpgInventoryGridPlacement();
 	URpgInventoryManagerComponent* PlayerInventory = FindPlayerInventory();
 	URpgPlayerInventoryLayoutComponent* InventoryLayout = FindPlayerInventoryLayout();
-	if (!Item || !PlayerInventory || !InventoryLayout || PlayerInventory->GetItemStackCount(Item) <= 0)
+	const int32 StackCount = PlayerInventory && Item
+		? PlayerInventory->GetItemStackCount(Item)
+		: 0;
+	if (!Item || !PlayerInventory || !InventoryLayout || StackCount <= 0)
 	{
 		return false;
 	}
@@ -3137,11 +3157,45 @@ bool URpgInventoryUiActionComponent::TryMoveItemToFirstCompatibleContentSlot(URp
 				TargetPlacement.Y = Y;
 				TargetPlacement.Width = 1;
 				TargetPlacement.Height = 1;
-				if (PlayerInventory->CanMoveInventoryEntryToPlacement(EntryId, TargetPlacement))
+				if (PlayerInventory->CanMoveInventoryEntryToPlacement(
+						EntryId,
+						TargetPlacement) &&
+					PlayerInventory->CanAddItemInstanceToPlacementIgnoringItem(
+						Item,
+						StackCount,
+						TargetPlacement,
+						Item))
 				{
-					return PlayerInventory->MoveInventoryEntryToPlacement(EntryId, TargetPlacement);
+					OutTargetPlacement = TargetPlacement;
+					return true;
 				}
 			}
+		}
+	}
+
+	return false;
+}
+
+bool URpgInventoryUiActionComponent::TryMoveItemToFirstCompatibleContentSlot(
+	URpgInventoryItemInstance* Item)
+{
+	URpgInventoryManagerComponent* PlayerInventory = FindPlayerInventory();
+	FRpgInventoryGridPlacement TargetPlacement;
+	if (!PlayerInventory ||
+		!CanMoveItemToFirstCompatibleContentSlot(Item, TargetPlacement))
+	{
+		return false;
+	}
+
+	for (const FRpgInventoryEntryView& Entry : PlayerInventory->GetAllEntries())
+	{
+		if (Entry.Instance == Item &&
+			Entry.ItemId == Item->GetItemId() &&
+			Entry.EntryId.IsValid())
+		{
+			return PlayerInventory->MoveInventoryEntryToPlacement(
+				Entry.EntryId,
+				TargetPlacement);
 		}
 	}
 

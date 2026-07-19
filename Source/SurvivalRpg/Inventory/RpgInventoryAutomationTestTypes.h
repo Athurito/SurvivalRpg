@@ -1,6 +1,7 @@
 #pragma once
 
 #include "RpgInventoryItemDefinition.h"
+#include "SurvivalRpg/AbilitySystem/Abilities/RpgGameplayAbility.h"
 #include "SurvivalRpg/Core/Player/RpgPlayerController.h"
 #include "SurvivalRpg/Core/Player/RpgPlayerState.h"
 #include "SurvivalRpg/Equipment/RpgEquipmentDefinition.h"
@@ -28,6 +29,42 @@ class URpgInventoryAutomationTestStackItemDefinition final : public URpgInventor
 
 public:
 	explicit URpgInventoryAutomationTestStackItemDefinition(
+		const FObjectInitializer& ObjectInitializer = FObjectInitializer::Get());
+
+	virtual bool IsEditorOnly() const override { return true; }
+};
+
+/** Editor-only no-op ability class used to make usable-item context policy deterministic. */
+UCLASS(NotBlueprintable, Transient)
+class URpgInventoryAutomationTestUseAbility final : public URpgGameplayAbility
+{
+	GENERATED_BODY()
+
+public:
+	virtual bool IsEditorOnly() const override { return true; }
+};
+
+/** Editor-only usable item restricted to the owning player's inventory. */
+UCLASS(NotBlueprintable, Transient)
+class URpgInventoryAutomationTestUsableItemDefinition final : public URpgInventoryItemDefinition
+{
+	GENERATED_BODY()
+
+public:
+	explicit URpgInventoryAutomationTestUsableItemDefinition(
+		const FObjectInitializer& ObjectInitializer = FObjectInitializer::Get());
+
+	virtual bool IsEditorOnly() const override { return true; }
+};
+
+/** Editor-only item whose manual-drop policy is explicitly disabled. */
+UCLASS(NotBlueprintable, Transient)
+class URpgInventoryAutomationTestNoDropItemDefinition final : public URpgInventoryItemDefinition
+{
+	GENERATED_BODY()
+
+public:
+	explicit URpgInventoryAutomationTestNoDropItemDefinition(
 		const FObjectInitializer& ObjectInitializer = FObjectInitializer::Get());
 
 	virtual bool IsEditorOnly() const override { return true; }

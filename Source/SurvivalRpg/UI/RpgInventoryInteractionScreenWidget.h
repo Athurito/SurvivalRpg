@@ -22,7 +22,6 @@ class URpgInventoryManagerComponent;
 class URpgInventoryPanelNavigationCoordinator;
 class URpgInventorySplitDialogWidget;
 class URpgInventorySpatialGridWidget;
-enum class ERpgInventoryContextAction : uint8;
 
 /**
  * Transient owner-client snapshot for one manual drop awaiting an authoritative confirmation result.

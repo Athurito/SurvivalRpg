@@ -72,6 +72,12 @@ void URpgInventoryControllerActionsWidget::SetInventoryControllerCoordinators(UR
 		PanelNavigator->OnActivePanelChanged.RemoveDynamic(this, &ThisClass::HandleActivePanelChanged);
 		PanelNavigator->OnActiveSelectionChanged.RemoveDynamic(this, &ThisClass::HandleActiveSelectionChanged);
 	}
+	if (DragDropCoordinator)
+	{
+		DragDropCoordinator->OnHeldPayloadChanged.RemoveDynamic(
+			this,
+			&ThisClass::HandleHeldPayloadChanged);
+	}
 
 	PanelNavigator = NewPanelNavigator;
 	DragDropCoordinator = NewDragDropCoordinator;
@@ -81,6 +87,13 @@ void URpgInventoryControllerActionsWidget::SetInventoryControllerCoordinators(UR
 		PanelNavigator->OnActivePanelChanged.AddUniqueDynamic(this, &ThisClass::HandleActivePanelChanged);
 		PanelNavigator->OnActiveSelectionChanged.AddUniqueDynamic(this, &ThisClass::HandleActiveSelectionChanged);
 	}
+	if (DragDropCoordinator)
+	{
+		DragDropCoordinator->OnHeldPayloadChanged.AddUniqueDynamic(
+			this,
+			&ThisClass::HandleHeldPayloadChanged);
+	}
+	RefreshInventoryActionBindingVisibility();
 
 	UE_LOG(LogRpgInventoryControllerActionsWidget, Log, TEXT("%s controller coordinators set. PanelNavigator=%s DragDropCoordinator=%s"),
 		*GetNameSafe(this),
@@ -350,6 +363,13 @@ void URpgInventoryControllerActionsWidget::HandleActivePanelChanged(FName PanelI
 }
 
 void URpgInventoryControllerActionsWidget::HandleActiveSelectionChanged()
+{
+	RefreshInventoryActionBindingVisibility();
+}
+
+void URpgInventoryControllerActionsWidget::HandleHeldPayloadChanged(
+	bool bHasPayload,
+	const FRpgInventoryDragPayload& Payload)
 {
 	RefreshInventoryActionBindingVisibility();
 }

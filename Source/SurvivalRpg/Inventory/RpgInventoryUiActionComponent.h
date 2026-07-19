@@ -457,6 +457,28 @@ public:
 		FRpgInventoryGridPlacement TargetPlacement,
 		FGuid RequestId);
 
+	/**
+	 * Resolves split count and placement with the same read-only validation used by the authoritative request path.
+	 *
+	 * UI policy may use this for accurate availability hints; gameplay state is not mutated.
+	 */
+	bool CanSplitItemStack(
+		URpgInventoryManagerComponent* Inventory,
+		URpgInventoryItemInstance* Item,
+		int32 SplitCount,
+		FRpgInventoryGridPlacement TargetPlacement,
+		int32& OutSplitCount,
+		FRpgInventoryGridPlacement& OutTargetPlacement) const;
+
+	/**
+	 * Finds a non-swapping player Content destination using the same rules as the authoritative unequip path.
+	 *
+	 * Provider-owned content that would disappear with the source equipment is excluded.
+	 */
+	bool CanMoveItemToFirstCompatibleContentSlot(
+		URpgInventoryItemInstance* Item,
+		FRpgInventoryGridPlacement& OutTargetPlacement) const;
+
 	/** Uses a usable inventory item by granting and activating its configured one-shot ability. */
 	UFUNCTION(Server, Reliable, BlueprintCallable, Category = "Inventory|UI Actions")
 	void RequestUseInventoryItem(URpgInventoryManagerComponent* Inventory, URpgInventoryItemInstance* Item, int32 StackCount = 1);
@@ -570,7 +592,6 @@ private:
 		URpgInventoryManagerComponent* TargetInventory,
 		URpgInventoryItemInstance* Item,
 		TArray<FRpgInventoryContainerHandle>& OutTargets) const;
-	bool CanSplitItemStack(URpgInventoryManagerComponent* Inventory, URpgInventoryItemInstance* Item, int32 SplitCount, FRpgInventoryGridPlacement TargetPlacement, int32& OutSplitCount, FRpgInventoryGridPlacement& OutTargetPlacement) const;
 	bool FindFirstEmptyInventoryPlacement(URpgInventoryManagerComponent* Inventory, TSubclassOf<URpgInventoryItemDefinition> ItemDefinition, FRpgInventoryGridPlacement& OutPlacement) const;
 	bool CanAccessBaseStorageStation(const URpgBaseStorageStationComponent* Station) const;
 	bool ClearPlayerAssignmentsForItem(URpgInventoryItemInstance* Item) const;

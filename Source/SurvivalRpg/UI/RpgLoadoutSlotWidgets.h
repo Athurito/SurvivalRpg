@@ -13,7 +13,6 @@ class URpgInventoryInteractionScreenWidget;
 class URpgInventoryItemInstance;
 class UDragDropOperation;
 class UUserWidget;
-enum class ERpgInventoryContextAction : uint8;
 
 /**
  * Native button base for one equipment slot such as MainHand, OffHand, Head, Chest, Hands, Legs, or Feet.
@@ -70,7 +69,11 @@ public:
 	UFUNCTION(BlueprintCallable, Category = "Equipment|Slot")
 	bool HandleSlotAccept();
 
-	/** Clears this equipment slot assignment through the server-validated UI action path. */
+	/**
+	 * Unequips the represented item into compatible Content space through the server-validated action path.
+	 *
+	 * The legacy method name is retained for Blueprint compatibility; physical inventory placement remains truth.
+	 */
 	UFUNCTION(BlueprintCallable, Category = "Equipment|Slot")
 	bool HandleClearAssignment();
 
