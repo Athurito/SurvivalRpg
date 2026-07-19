@@ -346,9 +346,9 @@ protected:
 	UFUNCTION(BlueprintImplementableEvent, Category = "Inventory|Spatial Item", meta = (DisplayName = "On Spatial Item DragDrop State Changed"))
 	void BP_OnSpatialItemDragDropStateChanged(ERpgInventorySlotDragVisualState NewState);
 
-	/** Widget class used as the mouse drag visual. Leave unset to reuse this overlay class. */
+	/** Canonical presentation-only drag decorator. Unset uses the native emergency fallback until Step 11. */
 	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Inventory|Spatial Item|Drag")
-	TSubclassOf<UUserWidget> DragVisualClass;
+	TSubclassOf<URpgInventoryDragVisualWidget> DragVisualClass;
 
 	/**
 	 * Optional canonical item presentation shared with the drag ghost.

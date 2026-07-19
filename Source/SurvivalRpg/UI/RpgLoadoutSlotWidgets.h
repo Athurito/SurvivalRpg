@@ -9,11 +9,11 @@
 
 class URpgEquipmentSlotViewModel;
 class URpgInventoryDragDropCoordinator;
+class URpgInventoryDragVisualWidget;
 class URpgInventoryInteractionScreenWidget;
 class URpgInventoryItemInstance;
 class URpgInventoryPanelNavigationCoordinator;
 class UDragDropOperation;
-class UUserWidget;
 
 /**
  * Native button base for one equipment slot such as MainHand, OffHand, Head, Chest, Hands, Legs, or Feet.
@@ -154,9 +154,9 @@ private:
 	void ReleaseEquipmentSlotState();
 	bool InjectEquipmentSlotViewModelIntoMvvm();
 
-	/** Optional mouse drag visual class for equipped gear slots. Leave unset to reuse this slot widget class. */
+	/** Canonical presentation-only drag decorator. Unset uses the native emergency fallback until Step 11. */
 	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Equipment|Slot|Drag", meta = (AllowPrivateAccess = "true"))
-	TSubclassOf<UUserWidget> DragVisualClass;
+	TSubclassOf<URpgInventoryDragVisualWidget> DragVisualClass;
 
 	UPROPERTY(Transient)
 	TObjectPtr<URpgEquipmentSlotViewModel> SlotViewModel = nullptr;

@@ -1042,34 +1042,22 @@ void URpgInventorySpatialItemWidget::NativeOnDragDetected(const FGeometry& InGeo
 	InventoryOperation->SetInteractionSession(DragDropCoordinator->GetInteractionSession());
 	InventoryOperation->Payload = AddressSlotViewModel ? Cast<UObject>(AddressSlotViewModel.Get()) : Cast<UObject>(EntryViewModel.Get());
 
-	TSubclassOf<UUserWidget> VisualClass = DragVisualClass;
+	TSubclassOf<URpgInventoryDragVisualWidget> VisualClass = DragVisualClass;
 	if (!VisualClass)
 	{
 		VisualClass = URpgInventoryDragVisualWidget::StaticClass();
 	}
 	if (VisualClass)
 	{
-		UUserWidget* DragVisual = CreateWidget<UUserWidget>(this, VisualClass);
-		if (URpgInventorySpatialItemWidget* SpatialDragVisual = Cast<URpgInventorySpatialItemWidget>(DragVisual))
+		if (URpgInventoryDragVisualWidget* DragVisual =
+			CreateWidget<URpgInventoryDragVisualWidget>(this, VisualClass))
 		{
-			SpatialDragVisual->SetDragDropCoordinator(DragDropCoordinator);
-			if (AddressSlotViewModel)
-			{
-				SpatialDragVisual->SetAddressSlotViewModel(AddressSlotViewModel);
-			}
-			else
-			{
-				SpatialDragVisual->SetEntryViewModel(EntryViewModel);
-			}
-		}
-		if (URpgInventoryDragVisualWidget* CanonicalDragVisual = Cast<URpgInventoryDragVisualWidget>(DragVisual))
-		{
-			CanonicalDragVisual->ConfigureFromPayload(
+			DragVisual->ConfigureFromPayload(
 				Payload,
 				OwningGrid ? OwningGrid->GetSpatialCellSize() : 70.0f,
 				OwningGrid ? OwningGrid->GetSpatialCellPadding() : 2.0f);
+			InventoryOperation->DefaultDragVisual = DragVisual;
 		}
-		InventoryOperation->DefaultDragVisual = DragVisual;
 	}
 
 	OutOperation = InventoryOperation;
@@ -2642,7 +2630,7 @@ URpgInventoryDragVisualWidget* URpgInventorySpatialGridWidget::EnsureSpatialPrev
 	{
 		GhostClass = URpgInventoryDragVisualWidget::StaticClass();
 	}
-	if (!SpatialPreviewGhost || !SpatialPreviewGhost->IsA(GhostClass))
+	if (!SpatialPreviewGhost || SpatialPreviewGhost->GetClass() != GhostClass.Get())
 	{
 		if (SpatialPreviewGhost && SpatialPreviewGhost->GetParent())
 		{

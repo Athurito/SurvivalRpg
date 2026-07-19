@@ -465,7 +465,7 @@ void URpgEquipmentSlotWidget::NativeOnDragDetected(const FGeometry& InGeometry, 
 	InventoryOperation->InventoryPayload = Payload;
 	InventoryOperation->SetInteractionSession(DragDropCoordinator->GetInteractionSession());
 
-	TSubclassOf<UUserWidget> VisualClass = DragVisualClass;
+	TSubclassOf<URpgInventoryDragVisualWidget> VisualClass = DragVisualClass;
 	if (!VisualClass)
 	{
 		VisualClass = URpgInventoryDragVisualWidget::StaticClass();
@@ -473,18 +473,12 @@ void URpgEquipmentSlotWidget::NativeOnDragDetected(const FGeometry& InGeometry, 
 
 	if (VisualClass)
 	{
-		UUserWidget* DragVisual = CreateWidget<UUserWidget>(this, VisualClass);
-		if (URpgEquipmentSlotWidget* EquipmentSlotDragVisual = Cast<URpgEquipmentSlotWidget>(DragVisual))
+		if (URpgInventoryDragVisualWidget* DragVisual =
+			CreateWidget<URpgInventoryDragVisualWidget>(this, VisualClass))
 		{
-			EquipmentSlotDragVisual->SetEquipmentSlotViewModel(SlotViewModel);
-			EquipmentSlotDragVisual->SetDragDropCoordinator(DragDropCoordinator);
+			DragVisual->ConfigureFromPayload(Payload, 70.0f, 2.0f);
+			InventoryOperation->DefaultDragVisual = DragVisual;
 		}
-		if (URpgInventoryDragVisualWidget* CanonicalDragVisual = Cast<URpgInventoryDragVisualWidget>(DragVisual))
-		{
-			CanonicalDragVisual->ConfigureFromPayload(Payload, 70.0f, 2.0f);
-		}
-
-		InventoryOperation->DefaultDragVisual = DragVisual;
 	}
 
 	OutOperation = InventoryOperation;

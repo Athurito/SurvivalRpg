@@ -217,7 +217,7 @@ Es gibt bewusst keine spekulative allgemeine Dual-Inventory-Basis.
       Query-/Policy-Vertrag statt mehrfacher Fragment-Inferenz bestimmen.
 - [x] Controller-Context-Menüs an der fokussierten Item-/Slot-Geometrie statt
       an der linken oberen Viewport-Ecke verankern.
-- [ ] Gear- und Spatial-Drag verwenden dieselbe authored Drag-Visual-Klasse.
+- [x] Gear- und Spatial-Drag verwenden dieselbe authored Drag-Visual-Klasse.
 - [ ] Quick-Access-Radial in die reguläre CommonUI-/Input-Komposition
       überführen, statt Controller-`BindKey`, `NativePaint` und direkten
       Viewport-Push zu mischen.
@@ -580,6 +580,21 @@ Verifizierter UI-Zwischenstand vom 2026-07-19:
   `SurvivalRpg.UI` (10/10), `SurvivalRpg.Equipment` (5/5) und
   `SurvivalRpg.Crafting` (6/6) sind ohne Warnungen, Fehler oder ausgelassene
   Tests erfolgreich.
+- Gear-, Spatial- und Address/Carry-Dragquellen akzeptieren nur noch
+  `URpgInventoryDragVisualWidget` als presentation-only Decorator. Die drei
+  Legacy-Zweige, die vollständige Slot-/Item-Presenter als Drag-Visual
+  wiederverwendeten und dafür ViewModels sowie Coordinator injizierten, sind
+  entfernt.
+- `CUI_InventoryDragVisual_C` ist die explizite authored Klasse für Gear,
+  Spatial-Item, Spatial-Controller-Preview, Carry und die freien Ghosts aller
+  vier aktiven Interaction-Screens. Dadurch stammt die Darstellung nicht mehr
+  implizit aus der Operation-Klasse oder einem anderen Widget-Fallback.
+- `SurvivalRpg.Inventory.UI.CanonicalDragVisualContract` ist 1/1 grün und
+  erzwingt exakte Klassenidentität, typisierte native Properties und die
+  authored BindWidgets. Der UE-5.8-Editor-Build sowie
+  `SurvivalRpg.Inventory` (57/57), `SurvivalRpg.UI` (10/10),
+  `SurvivalRpg.Equipment` (5/5) und `SurvivalRpg.Crafting` (6/6) sind ohne
+  Warnungen, Fehler oder ausgelassene Tests erfolgreich.
 - Ein separater frischer UE-5.8-Commandlet-Prozess kompiliert alle drei neuen
   Widget-Blueprints ohne Fehler und lädt Registry sowie dedizierte
   BaseTerminal-Action-Tabelle erneut. Dabei wurden keine Assets gespeichert.

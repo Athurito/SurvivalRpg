@@ -1365,7 +1365,7 @@ void URpgInventoryInteractionScreenWidget::UpdateFreePointerDragVisual(
 	}
 
 	if (FreePointerDragVisual &&
-		!FreePointerDragVisual->IsA(VisualClass))
+		FreePointerDragVisual->GetClass() != VisualClass.Get())
 	{
 		FreePointerDragVisual->RemoveFromParent();
 		FreePointerDragVisual = nullptr;

@@ -13,6 +13,8 @@
 #include "SurvivalRpg/Mvvm/Inventory/RpgPlayerInventoryViewModels.h"
 #include "SurvivalRpg/UI/RpgActionBarSlotWidget.h"
 #include "SurvivalRpg/UI/RpgInventoryAddressSlotWidget.h"
+#include "SurvivalRpg/UI/RpgInventoryDragVisualWidget.h"
+#include "SurvivalRpg/UI/RpgInventoryInteractionScreenWidget.h"
 #include "SurvivalRpg/UI/RpgInventorySlotEntryWidget.h"
 #include "SurvivalRpg/UI/RpgLoadoutSlotWidgets.h"
 #include "SurvivalRpg/UI/RpgPlayerInventoryLayoutViews.h"
@@ -24,7 +26,9 @@
 #include "Blueprint/WidgetTree.h"
 #include "Components/CanvasPanel.h"
 #include "Components/CanvasPanelSlot.h"
+#include "Components/Image.h"
 #include "Components/Overlay.h"
+#include "Components/SizeBox.h"
 #include "Components/TextBlock.h"
 #include "Engine/Engine.h"
 #include "Engine/GameInstance.h"
@@ -137,6 +141,212 @@ namespace RpgPlayerInventoryWidgetTests
 		}
 		return MatchingSourceIndex;
 	}
+}
+
+IMPLEMENT_SIMPLE_AUTOMATION_TEST(
+	FRpgCanonicalDragVisualContractTest,
+	"SurvivalRpg.Inventory.UI.CanonicalDragVisualContract",
+	EAutomationTestFlags::EditorContext | EAutomationTestFlags::EngineFilter)
+
+bool FRpgCanonicalDragVisualContractTest::RunTest(const FString& Parameters)
+{
+	UClass* CanonicalVisualClass = LoadClass<URpgInventoryDragVisualWidget>(
+		nullptr,
+		TEXT(
+			"/Game/SurvivalRpg/Inventory/UI/SpatialInventory/"
+			"CUI_InventoryDragVisual.CUI_InventoryDragVisual_C"));
+	if (!TestNotNull(TEXT("Canonical authored drag-visual class loads"), CanonicalVisualClass))
+	{
+		return false;
+	}
+	TestTrue(
+		TEXT("Canonical authored class derives from the presentation-only native drag visual"),
+		CanonicalVisualClass->IsChildOf(URpgInventoryDragVisualWidget::StaticClass()));
+
+	const UWidgetBlueprintGeneratedClass* CanonicalGeneratedClass =
+		Cast<UWidgetBlueprintGeneratedClass>(CanonicalVisualClass);
+	const UWidgetTree* CanonicalWidgetTree =
+		CanonicalGeneratedClass
+			? CanonicalGeneratedClass->GetWidgetTreeArchetype()
+			: nullptr;
+	if (!TestNotNull(
+		TEXT("Canonical drag visual is an authored Widget Blueprint"),
+		CanonicalGeneratedClass) ||
+		!TestNotNull(
+			TEXT("Canonical drag visual owns an authored widget tree"),
+			CanonicalWidgetTree))
+	{
+		return false;
+	}
+	TestTrue(
+		TEXT("Canonical drag visual authors RootSizeBox"),
+		Cast<USizeBox>(CanonicalWidgetTree->FindWidget(TEXT("RootSizeBox"))) != nullptr);
+	TestTrue(
+		TEXT("Canonical drag visual authors ItemIcon"),
+		Cast<UImage>(CanonicalWidgetTree->FindWidget(TEXT("ItemIcon"))) != nullptr);
+	TestTrue(
+		TEXT("Canonical drag visual authors StackCountText"),
+		Cast<UTextBlock>(CanonicalWidgetTree->FindWidget(TEXT("StackCountText"))) != nullptr);
+
+	struct FNativePropertyExpectation
+	{
+		const TCHAR* Label;
+		UClass* OwnerClass;
+		const TCHAR* PropertyName;
+	};
+	const FNativePropertyExpectation NativeProperties[] = {
+		{
+			TEXT("Equipment drag visual"),
+			URpgEquipmentSlotWidget::StaticClass(),
+			TEXT("DragVisualClass")
+		},
+		{
+			TEXT("Address/carry drag visual"),
+			URpgInventoryAddressSlotWidget::StaticClass(),
+			TEXT("DragVisualClass")
+		},
+		{
+			TEXT("Spatial-item drag visual"),
+			URpgInventorySpatialItemWidget::StaticClass(),
+			TEXT("DragVisualClass")
+		},
+		{
+			TEXT("Spatial controller preview"),
+			URpgInventorySpatialGridWidget::StaticClass(),
+			TEXT("SpatialPreviewWidgetClass")
+		},
+		{
+			TEXT("Screen-owned free drag visual"),
+			URpgInventoryInteractionScreenWidget::StaticClass(),
+			TEXT("FreeDragVisualWidgetClass")
+		}
+	};
+
+	for (const FNativePropertyExpectation& Expectation : NativeProperties)
+	{
+		const FClassProperty* ClassProperty =
+			FindFProperty<FClassProperty>(
+				Expectation.OwnerClass,
+				Expectation.PropertyName);
+		const FString PropertyExistsLabel =
+			FString::Printf(TEXT("%s property exists"), Expectation.Label);
+		if (!TestNotNull(*PropertyExistsLabel, ClassProperty))
+		{
+			continue;
+		}
+
+		const FString PropertyTypeLabel =
+			FString::Printf(
+				TEXT("%s only accepts canonical drag-visual presenters"),
+				Expectation.Label);
+		TestEqual(
+			*PropertyTypeLabel,
+			ClassProperty->MetaClass.Get(),
+			URpgInventoryDragVisualWidget::StaticClass());
+	}
+
+	struct FAuthoredDefaultExpectation
+	{
+		const TCHAR* Label;
+		const TCHAR* ClassPath;
+		const TCHAR* PropertyName;
+	};
+	const FAuthoredDefaultExpectation AuthoredDefaults[] = {
+		{
+			TEXT("Gear"),
+			TEXT(
+				"/Game/SurvivalRpg/Inventory/UI/"
+				"CUI_GearSlot.CUI_GearSlot_C"),
+			TEXT("DragVisualClass")
+		},
+		{
+			TEXT("Spatial item"),
+			TEXT(
+				"/Game/SurvivalRpg/Inventory/UI/SpatialInventory/"
+				"CUI_SpatialInventoryItem.CUI_SpatialInventoryItem_C"),
+			TEXT("DragVisualClass")
+		},
+		{
+			TEXT("Carry"),
+			TEXT(
+				"/Game/SurvivalRpg/Inventory/UI/SpatialInventory/"
+				"CUI_CarrySlot.CUI_CarrySlot_C"),
+			TEXT("DragVisualClass")
+		},
+		{
+			TEXT("Spatial controller preview"),
+			TEXT(
+				"/Game/SurvivalRpg/Inventory/UI/SpatialInventory/"
+				"CUI_SpatialInventoryGrid.CUI_SpatialInventoryGrid_C"),
+			TEXT("SpatialPreviewWidgetClass")
+		},
+		{
+			TEXT("Player inventory free ghost"),
+			TEXT(
+				"/Game/SurvivalRpg/Inventory/UI/"
+				"CUI_PlayerInventory.CUI_PlayerInventory_C"),
+			TEXT("FreeDragVisualWidgetClass")
+		},
+		{
+			TEXT("Storage free ghost"),
+			TEXT(
+				"/Game/SurvivalRpg/UI/"
+				"CUI_StorageSpatial.CUI_StorageSpatial_C"),
+			TEXT("FreeDragVisualWidgetClass")
+		},
+		{
+			TEXT("Base terminal free ghost"),
+			TEXT(
+				"/Game/SurvivalRpg/UI/"
+				"CUI_BaseTerminalSpatial.CUI_BaseTerminalSpatial_C"),
+			TEXT("FreeDragVisualWidgetClass")
+		},
+		{
+			TEXT("Crafting free ghost"),
+			TEXT(
+				"/Game/SurvivalRpg/Crafting/UI/"
+				"CUI_CraftingStationSpatial.CUI_CraftingStationSpatial_C"),
+			TEXT("FreeDragVisualWidgetClass")
+		}
+	};
+
+	for (const FAuthoredDefaultExpectation& Expectation : AuthoredDefaults)
+	{
+		UClass* WidgetClass =
+			LoadClass<UUserWidget>(nullptr, Expectation.ClassPath);
+		const FString ClassLoadsLabel =
+			FString::Printf(TEXT("%s authored class loads"), Expectation.Label);
+		if (!TestNotNull(*ClassLoadsLabel, WidgetClass))
+		{
+			continue;
+		}
+
+		const FClassProperty* ClassProperty =
+			FindFProperty<FClassProperty>(
+				WidgetClass,
+				Expectation.PropertyName);
+		const FString PropertyExistsLabel =
+			FString::Printf(
+				TEXT("%s authored class exposes %s"),
+				Expectation.Label,
+				Expectation.PropertyName);
+		if (!TestNotNull(*PropertyExistsLabel, ClassProperty))
+		{
+			continue;
+		}
+
+		UClass* ConfiguredClass =
+			Cast<UClass>(
+				ClassProperty->GetPropertyValue_InContainer(
+					WidgetClass->GetDefaultObject()).Get());
+		const FString ExactClassLabel =
+			FString::Printf(
+				TEXT("%s uses the exact canonical authored drag visual"),
+				Expectation.Label);
+		TestEqual(*ExactClassLabel, ConfiguredClass, CanonicalVisualClass);
+	}
+
+	return true;
 }
 
 IMPLEMENT_SIMPLE_AUTOMATION_TEST(

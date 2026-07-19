@@ -8,9 +8,9 @@
 #include "RpgInventoryAddressSlotWidget.generated.h"
 
 class UDragDropOperation;
-class UUserWidget;
 class URpgInventoryAddressSlotViewModel;
 class URpgInventoryDragDropCoordinator;
+class URpgInventoryDragVisualWidget;
 class URpgInventoryInteractionScreenWidget;
 
 /**
@@ -143,9 +143,9 @@ protected:
 	UFUNCTION(BlueprintImplementableEvent, Category = "Inventory|Address Slot", meta = (DisplayName = "On Deferred Address Context Action"))
 	void BP_OnDeferredAddressContextAction(ERpgInventoryContextAction Action, URpgInventoryItemInstance* Item);
 
-	/** Widget class used as the mouse drag visual. Leave unset to reuse this slot entry class with the same view model. */
+	/** Canonical presentation-only drag decorator. Unset uses the native emergency fallback until Step 11. */
 	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Inventory|Address Slot|Drag")
-	TSubclassOf<UUserWidget> DragVisualClass;
+	TSubclassOf<URpgInventoryDragVisualWidget> DragVisualClass;
 
 private:
 #if WITH_DEV_AUTOMATION_TESTS
