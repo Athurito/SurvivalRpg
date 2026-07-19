@@ -1884,6 +1884,13 @@ bool URpgInventorySpatialGridWidget::UseOrEquipSelectedCell(int32 StackCount)
 
 bool URpgInventorySpatialGridWidget::DropSelectedCell(int32 StackCount, bool bConfirmed)
 {
+	if (!bConfirmed && InventoryPresentationHost)
+	{
+		return InventoryPresentationHost->RequestInventoryDrop(
+			this,
+			StackCount);
+	}
+
 	if (!DragDropCoordinator)
 	{
 		return false;

@@ -236,7 +236,14 @@ bool URpgEquipmentSlotWidget::ExecuteEquipmentContextAction(
 		return DragDropCoordinator && DragDropCoordinator->UnequipEquipmentItem(GetResolvedEquipmentSlot(), ExpectedItemId);
 
 	case ERpgInventoryContextAction::Drop:
-		return DragDropCoordinator && DragDropCoordinator->DropEquipmentItem(GetResolvedEquipmentSlot(), ExpectedItemId);
+		return InventoryPresentationHost
+			? InventoryPresentationHost->RequestInventoryDrop(
+				this,
+				ExpectedItemId)
+			: DragDropCoordinator &&
+				DragDropCoordinator->DropEquipmentItem(
+					GetResolvedEquipmentSlot(),
+					ExpectedItemId);
 
 	default:
 		return false;

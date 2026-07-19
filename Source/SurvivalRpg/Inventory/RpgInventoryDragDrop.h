@@ -626,6 +626,25 @@ public:
 	bool DropAddressSlot(URpgInventoryAddressSlotViewModel* SlotViewModel, int32 StackCount = 0, bool bConfirmed = false);
 
 	/**
+	 * Captures an immutable, caller-correlated manual-drop snapshot for one spatial inventory entry.
+	 *
+	 * The owning interaction screen arms this snapshot before dispatch so synchronous listen-server feedback cannot
+	 * race the confirmation presenter. The server still revalidates every field before changing inventory state.
+	 */
+	bool PrepareDropEntryRequest(
+		URpgInventoryEntryViewModel* EntryViewModel,
+		int32 StackCount,
+		URpgInventoryManagerComponent*& OutInventory,
+		FRpgInventoryManualDropRequest& OutRequest) const;
+
+	/** Captures the same stable drop snapshot for one logical player-inventory address or Carry slot. */
+	bool PrepareDropAddressSlotRequest(
+		URpgInventoryAddressSlotViewModel* SlotViewModel,
+		int32 StackCount,
+		URpgInventoryManagerComponent*& OutInventory,
+		FRpgInventoryManualDropRequest& OutRequest) const;
+
+	/**
 	 * Moves the exact persistent item currently represented by a gear slot into compatible content space.
 	 * The item id and current physical gear location are revalidated locally before the server validates again.
 	 */
@@ -638,6 +657,23 @@ public:
 	 */
 	UFUNCTION(BlueprintCallable, Category = "Inventory|Equipment Actions")
 	bool DropEquipmentItem(ERpgEquipmentSlot EquipmentSlot, FRpgInventoryItemId ExpectedItemId, bool bConfirmed = false);
+
+	/** Captures a stable drop snapshot only while the equipment slot still represents ExpectedItemId. */
+	bool PrepareDropEquipmentItemRequest(
+		ERpgEquipmentSlot EquipmentSlot,
+		FRpgInventoryItemId ExpectedItemId,
+		URpgInventoryManagerComponent*& OutInventory,
+		FRpgInventoryManualDropRequest& OutRequest) const;
+
+	/**
+	 * Revalidates and dispatches a prepared request through the ID-based server-authoritative drop path.
+	 *
+	 * Confirmation retries call this with a fresh RequestId and bConfirmed=true after atomically consuming the
+	 * screen-owned pending intent. No gameplay mutation occurs when the captured entry, source, or quantity is stale.
+	 */
+	bool DispatchManualDropRequest(
+		URpgInventoryManagerComponent* Inventory,
+		FRpgInventoryManualDropRequest Request);
 
 	/** Computes the visual drag/drop state for one inventory entry widget. */
 	UFUNCTION(BlueprintCallable, Category = "Inventory|DragDrop")
@@ -703,6 +739,14 @@ private:
 	URpgInventoryItemInstance* ResolveCurrentEquipmentItem(
 		ERpgEquipmentSlot EquipmentSlot,
 		const FRpgInventoryItemId& ExpectedItemId) const;
+	bool BuildManualDropRequest(
+		URpgInventoryManagerComponent* Inventory,
+		URpgInventoryItemInstance* ItemInstance,
+		int32 RequestedStackCount,
+		FRpgInventoryManualDropRequest& OutRequest) const;
+	bool IsManualDropRequestCurrent(
+		const URpgInventoryManagerComponent* Inventory,
+		const FRpgInventoryManualDropRequest& Request) const;
 	bool IsPlayerInventory(const URpgInventoryManagerComponent* Inventory) const;
 	void BuildPlayerQuickTransferTargets(
 		const FRpgInventoryGridPlacement& SourcePlacement,

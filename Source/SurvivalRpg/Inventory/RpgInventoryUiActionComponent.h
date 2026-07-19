@@ -207,6 +207,51 @@ struct SURVIVALRPG_API FRpgQuickAccessMutationRequest
 	}
 };
 
+/**
+ * Stable, request-correlated manual world-drop command.
+ *
+ * Every field is a snapshot of the exact replicated entry the owning client presented. The server resolves that
+ * entry again and rejects the command when identity, placement, or requested quantity has become stale.
+ */
+USTRUCT(BlueprintType)
+struct SURVIVALRPG_API FRpgInventoryManualDropRequest
+{
+	GENERATED_BODY()
+
+	/**
+	 * Client-generated id used for owning-client feedback and bounded server-side exactly-once handling.
+	 * It must be unique to this command and must not be reused by another inventory operation.
+	 */
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Inventory|Drop")
+	FGuid RequestId;
+
+	/** Stable replicated entry identity captured by the initiating inventory presenter. */
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Inventory|Drop")
+	FGuid EntryId;
+
+	/** Persistent identity of the concrete item expected in EntryId. */
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Inventory|Drop")
+	FRpgInventoryItemId ItemId;
+
+	/**
+	 * Complete source placement captured before dispatch.
+	 * Confirmed retries fail closed if the entry moved container, cell, footprint, or rotation meanwhile.
+	 */
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Inventory|Drop")
+	FRpgInventoryGridPlacement ExpectedSourcePlacement;
+
+	/** Exact number of units to drop. The server rejects non-positive or no-longer-available quantities. */
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Inventory|Drop", meta = (ClampMin = "1", UIMin = "1"))
+	int32 StackCount = 1;
+
+	/**
+	 * UI acknowledgement for items whose current authoritative manual-drop policy requires confirmation.
+	 * A confirmed follow-up is a new command and must therefore use a fresh RequestId.
+	 */
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Inventory|Drop")
+	bool bConfirmed = false;
+};
+
 /** Gameplay message broadcast on the owning client after inventory UI commands succeed, fail, or need confirmation. */
 USTRUCT(BlueprintType)
 struct SURVIVALRPG_API FRpgInventoryActionFeedbackMessage
@@ -424,9 +469,21 @@ public:
 	UFUNCTION(Server, Reliable, BlueprintCallable, Category = "Inventory|UI Actions")
 	void RequestUnequipInventoryItemToContentSlot(URpgInventoryItemInstance* Item);
 
-	/** Drops a stack or whole item entry into the world near the owning pawn. Confirmed must be true for confirm-protected items. */
+	/**
+	 * Legacy pointer-based wrapper retained for existing Blueprint callers.
+	 * New presenters should capture a stable snapshot and call RequestDropInventoryItemById.
+	 */
 	UFUNCTION(Server, Reliable, BlueprintCallable, Category = "Inventory|UI Actions")
 	void RequestDropInventoryItem(URpgInventoryManagerComponent* Inventory, URpgInventoryItemInstance* Item, int32 StackCount, bool bConfirmed);
+
+	/**
+	 * Drops the exact entry snapshot after server-side identity, placement, quantity, policy, and access validation.
+	 * Reusing RequestId with a different payload is rejected; an identical retry replays the cached result.
+	 */
+	UFUNCTION(Server, Reliable, BlueprintCallable, Category = "Inventory|UI Actions")
+	void RequestDropInventoryItemById(
+		URpgInventoryManagerComponent* Inventory,
+		FRpgInventoryManualDropRequest Request);
 
 	/** Deposits all material stacks from the player inventory into the linked base storage station. */
 	UFUNCTION(Server, Reliable, BlueprintCallable, Category = "Inventory|Base Storage")
@@ -525,12 +582,37 @@ private:
 	bool CanMoveItemOutOfGearSlot(const FRpgInventorySlotAddress& SourceAddress) const;
 	void SyncEquipmentLoadoutFromGearSlots() const;
 	void SyncActiveHandsFromCarrySlots() const;
-	bool TryTransferManualDrop(URpgInventoryManagerComponent* SourceInventory, URpgInventoryItemInstance* Item, int32 StackCount);
+	bool TryTransferManualDrop(
+		URpgInventoryManagerComponent* SourceInventory,
+		URpgInventoryItemInstance* Item,
+		int32 StackCount,
+		const FGuid& RequestId);
 	void ExecuteUseInventoryItem(
 		URpgInventoryManagerComponent* Inventory,
 		URpgInventoryItemInstance* Item,
 		int32 StackCount,
 		const FGuid& RequestId);
+	struct FRecentManualDropResult
+	{
+		TWeakObjectPtr<URpgInventoryManagerComponent> Inventory;
+		FRpgInventoryManualDropRequest Request;
+		ERpgInventoryActionFeedbackResult Result =
+			ERpgInventoryActionFeedbackResult::ServerRejected;
+		int32 FeedbackStackCount = 0;
+	};
+
+	static bool AreManualDropRequestsEquivalent(
+		const FRpgInventoryManualDropRequest& A,
+		const FRpgInventoryManualDropRequest& B);
+	bool TryReplayRecentManualDropResult(
+		URpgInventoryManagerComponent* Inventory,
+		const FRpgInventoryManualDropRequest& Request);
+	void SendAndCacheManualDropFeedback(
+		URpgInventoryManagerComponent* Inventory,
+		const FRpgInventoryManualDropRequest& Request,
+		ERpgInventoryActionFeedbackResult Result,
+		URpgInventoryItemInstance* Item,
+		int32 FeedbackStackCount);
 	FTransform GetManualDropTransform() const;
 	void SendActionFeedback(
 		FGameplayTag ActionTag,
@@ -560,4 +642,9 @@ private:
 	/** Radius in centimeters used to merge stackable manual drops into nearby dropped inventory actors. */
 	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Inventory|Drop", meta = (AllowPrivateAccess = "true", ClampMin = "0", UIMin = "0", Units = "cm"))
 	float ManualDropMergeRadius = 250.0f;
+
+	/** Server-local replay cache; transient results are bounded and never replicated or saved. */
+	TMap<FGuid, FRecentManualDropResult> RecentManualDropResults;
+	TArray<FGuid> RecentManualDropOrder;
+	static constexpr int32 MaxRecentManualDropResults = 64;
 };

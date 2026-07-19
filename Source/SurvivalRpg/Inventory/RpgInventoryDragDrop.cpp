@@ -1257,51 +1257,87 @@ bool URpgInventoryDragDropCoordinator::QuickSplitAddressSlot(URpgInventoryAddres
 
 bool URpgInventoryDragDropCoordinator::DropEntry(URpgInventoryEntryViewModel* EntryViewModel, int32 StackCount, bool bConfirmed)
 {
-	if (!EntryViewModel || !EntryViewModel->CanDrag())
+	URpgInventoryManagerComponent* Inventory = nullptr;
+	FRpgInventoryManualDropRequest Request;
+	if (!PrepareDropEntryRequest(EntryViewModel, StackCount, Inventory, Request))
 	{
 		return false;
 	}
 
-	URpgInventoryUiActionComponent* ActionComponent = ResolveUiActionComponent();
-	URpgInventoryManagerComponent* Inventory = EntryViewModel->GetInventoryManager();
-	URpgInventoryItemInstance* ItemInstance = EntryViewModel->GetItemInstance();
-	if (!ActionComponent || !Inventory || !ItemInstance || EntryViewModel->GetStackCount() <= 0)
-	{
-		return false;
-	}
-
-	if (HasHeldPayload())
-	{
-		CancelHold();
-	}
-
-	const int32 RequestedStackCount = StackCount <= 0 ? EntryViewModel->GetStackCount() : StackCount;
-	ActionComponent->RequestDropInventoryItem(Inventory, ItemInstance, RequestedStackCount, bConfirmed);
-	return true;
+	Request.bConfirmed = bConfirmed;
+	return DispatchManualDropRequest(Inventory, Request);
 }
 
 bool URpgInventoryDragDropCoordinator::DropAddressSlot(URpgInventoryAddressSlotViewModel* SlotViewModel, int32 StackCount, bool bConfirmed)
 {
-	if (!SlotViewModel || !SlotViewModel->CanDrag())
+	URpgInventoryManagerComponent* Inventory = nullptr;
+	FRpgInventoryManualDropRequest Request;
+	if (!PrepareDropAddressSlotRequest(SlotViewModel, StackCount, Inventory, Request))
 	{
 		return false;
 	}
 
-	URpgInventoryUiActionComponent* ActionComponent = ResolveUiActionComponent();
+	Request.bConfirmed = bConfirmed;
+	return DispatchManualDropRequest(Inventory, Request);
+}
+
+bool URpgInventoryDragDropCoordinator::PrepareDropEntryRequest(
+	URpgInventoryEntryViewModel* EntryViewModel,
+	int32 StackCount,
+	URpgInventoryManagerComponent*& OutInventory,
+	FRpgInventoryManualDropRequest& OutRequest) const
+{
+	OutInventory = nullptr;
+	OutRequest = FRpgInventoryManualDropRequest();
+	if (!EntryViewModel || !EntryViewModel->CanDrag() || EntryViewModel->GetStackCount() <= 0)
+	{
+		return false;
+	}
+
+	URpgInventoryManagerComponent* Inventory = EntryViewModel->GetInventoryManager();
+	URpgInventoryItemInstance* ItemInstance = EntryViewModel->GetItemInstance();
+	const int32 RequestedStackCount = StackCount <= 0 ? EntryViewModel->GetStackCount() : StackCount;
+	if (!BuildManualDropRequest(Inventory, ItemInstance, RequestedStackCount, OutRequest) ||
+		OutRequest.EntryId != EntryViewModel->GetEntryId() ||
+		OutRequest.ExpectedSourcePlacement != EntryViewModel->GetPlacement() ||
+		RequestedStackCount > EntryViewModel->GetStackCount())
+	{
+		OutRequest = FRpgInventoryManualDropRequest();
+		return false;
+	}
+
+	OutInventory = Inventory;
+	return true;
+}
+
+bool URpgInventoryDragDropCoordinator::PrepareDropAddressSlotRequest(
+	URpgInventoryAddressSlotViewModel* SlotViewModel,
+	int32 StackCount,
+	URpgInventoryManagerComponent*& OutInventory,
+	FRpgInventoryManualDropRequest& OutRequest) const
+{
+	OutInventory = nullptr;
+	OutRequest = FRpgInventoryManualDropRequest();
+	if (!SlotViewModel || !SlotViewModel->CanDrag() || SlotViewModel->GetStackCount() <= 0)
+	{
+		return false;
+	}
+
 	URpgInventoryManagerComponent* Inventory = SlotViewModel->GetInventoryManager();
 	URpgInventoryItemInstance* ItemInstance = SlotViewModel->GetItemInstance();
-	if (!ActionComponent || !Inventory || !ItemInstance || SlotViewModel->GetStackCount() <= 0)
+	const int32 RequestedStackCount = StackCount <= 0 ? SlotViewModel->GetStackCount() : StackCount;
+	const FRpgInventoryGridPlacement ExpectedViewPlacement = SlotViewModel->GetItemPlacement();
+	if (!BuildManualDropRequest(Inventory, ItemInstance, RequestedStackCount, OutRequest) ||
+		OutRequest.EntryId != SlotViewModel->GetEntryId() ||
+		!ExpectedViewPlacement.IsValid() ||
+		OutRequest.ExpectedSourcePlacement != ExpectedViewPlacement ||
+		RequestedStackCount > SlotViewModel->GetStackCount())
 	{
+		OutRequest = FRpgInventoryManualDropRequest();
 		return false;
 	}
 
-	if (HasHeldPayload())
-	{
-		CancelHold();
-	}
-
-	const int32 RequestedStackCount = StackCount <= 0 ? SlotViewModel->GetStackCount() : StackCount;
-	ActionComponent->RequestDropInventoryItem(Inventory, ItemInstance, RequestedStackCount, bConfirmed);
+	OutInventory = Inventory;
 	return true;
 }
 
@@ -1331,13 +1367,50 @@ bool URpgInventoryDragDropCoordinator::DropEquipmentItem(
 	FRpgInventoryItemId ExpectedItemId,
 	bool bConfirmed)
 {
-	URpgInventoryUiActionComponent* ActionComponent = ResolveUiActionComponent();
+	URpgInventoryManagerComponent* Inventory = nullptr;
+	FRpgInventoryManualDropRequest Request;
+	if (!PrepareDropEquipmentItemRequest(EquipmentSlot, ExpectedItemId, Inventory, Request))
+	{
+		return false;
+	}
+
+	Request.bConfirmed = bConfirmed;
+	return DispatchManualDropRequest(Inventory, Request);
+}
+
+bool URpgInventoryDragDropCoordinator::PrepareDropEquipmentItemRequest(
+	ERpgEquipmentSlot EquipmentSlot,
+	FRpgInventoryItemId ExpectedItemId,
+	URpgInventoryManagerComponent*& OutInventory,
+	FRpgInventoryManualDropRequest& OutRequest) const
+{
+	OutInventory = nullptr;
+	OutRequest = FRpgInventoryManualDropRequest();
 	URpgInventoryManagerComponent* PlayerInventory = FindPlayerInventory();
-	URpgInventoryItemInstance* ItemInstance = ResolveCurrentEquipmentItem(EquipmentSlot, ExpectedItemId);
+	URpgInventoryItemInstance* ItemInstance =
+		ResolveCurrentEquipmentItem(EquipmentSlot, ExpectedItemId);
 	const int32 StackCount = PlayerInventory && ItemInstance
 		? PlayerInventory->GetItemStackCount(ItemInstance)
 		: 0;
-	if (!ActionComponent || !PlayerInventory || !ItemInstance || StackCount <= 0)
+	if (!ExpectedItemId.IsValid() || !ItemInstance ||
+		ItemInstance->GetItemId() != ExpectedItemId ||
+		!BuildManualDropRequest(PlayerInventory, ItemInstance, StackCount, OutRequest))
+	{
+		OutRequest = FRpgInventoryManualDropRequest();
+		return false;
+	}
+
+	OutInventory = PlayerInventory;
+	return true;
+}
+
+bool URpgInventoryDragDropCoordinator::DispatchManualDropRequest(
+	URpgInventoryManagerComponent* Inventory,
+	FRpgInventoryManualDropRequest Request)
+{
+	URpgInventoryUiActionComponent* ActionComponent = ResolveUiActionComponent();
+	if (!ActionComponent || IsInteractionRequestPending() ||
+		!IsManualDropRequestCurrent(Inventory, Request))
 	{
 		return false;
 	}
@@ -1345,10 +1418,13 @@ bool URpgInventoryDragDropCoordinator::DropEquipmentItem(
 	if (HasHeldPayload())
 	{
 		CancelHold();
+		if (HasHeldPayload())
+		{
+			return false;
+		}
 	}
 
-	// RequestDropInventoryItem performs the authoritative access, drop-policy, assignment, and world-spawn checks.
-	ActionComponent->RequestDropInventoryItem(PlayerInventory, ItemInstance, StackCount, bConfirmed);
+	ActionComponent->RequestDropInventoryItemById(Inventory, Request);
 	return true;
 }
 
@@ -2196,6 +2272,69 @@ URpgInventoryItemInstance* URpgInventoryDragDropCoordinator::ResolveCurrentEquip
 	return ResolveEquipmentPayloadSourceAddress(Payload).IsValid()
 		? ItemInstance
 		: nullptr;
+}
+
+bool URpgInventoryDragDropCoordinator::BuildManualDropRequest(
+	URpgInventoryManagerComponent* Inventory,
+	URpgInventoryItemInstance* ItemInstance,
+	int32 RequestedStackCount,
+	FRpgInventoryManualDropRequest& OutRequest) const
+{
+	OutRequest = FRpgInventoryManualDropRequest();
+	if (!Inventory || !ItemInstance || RequestedStackCount <= 0 ||
+		!ItemInstance->GetItemId().IsValid())
+	{
+		return false;
+	}
+
+	for (const FRpgInventoryEntryView& Entry : Inventory->GetAllEntries())
+	{
+		if (Entry.Instance != ItemInstance ||
+			Entry.ItemId != ItemInstance->GetItemId() ||
+			!Entry.EntryId.IsValid() ||
+			!Entry.Placement.IsValid() ||
+			RequestedStackCount > Entry.StackCount)
+		{
+			continue;
+		}
+
+		OutRequest.RequestId = FGuid::NewGuid();
+		OutRequest.EntryId = Entry.EntryId;
+		OutRequest.ItemId = Entry.ItemId;
+		OutRequest.ExpectedSourcePlacement = Entry.Placement;
+		OutRequest.StackCount = RequestedStackCount;
+		OutRequest.bConfirmed = false;
+		return true;
+	}
+
+	return false;
+}
+
+bool URpgInventoryDragDropCoordinator::IsManualDropRequestCurrent(
+	const URpgInventoryManagerComponent* Inventory,
+	const FRpgInventoryManualDropRequest& Request) const
+{
+	if (!Inventory || !Request.RequestId.IsValid() ||
+		!Request.EntryId.IsValid() || !Request.ItemId.IsValid() ||
+		!Request.ExpectedSourcePlacement.IsValid() ||
+		Request.StackCount <= 0)
+	{
+		return false;
+	}
+
+	for (const FRpgInventoryEntryView& Entry : Inventory->GetAllEntries())
+	{
+		if (Entry.EntryId == Request.EntryId &&
+			Entry.ItemId == Request.ItemId &&
+			Entry.Instance &&
+			Entry.Instance->GetItemId() == Request.ItemId)
+		{
+			return Entry.Placement == Request.ExpectedSourcePlacement &&
+				Entry.StackCount >= Request.StackCount;
+		}
+	}
+
+	return false;
 }
 
 bool URpgInventoryDragDropCoordinator::IsPlayerInventory(const URpgInventoryManagerComponent* Inventory) const

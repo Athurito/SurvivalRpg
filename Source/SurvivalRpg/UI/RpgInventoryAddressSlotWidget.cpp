@@ -622,7 +622,7 @@ bool URpgInventoryAddressSlotWidget::ExecuteAddressContextAction(
 	case ERpgInventoryContextAction::Transfer:
 		return DragDropCoordinator->QuickTransferAddressSlot(SlotViewModel);
 	case ERpgInventoryContextAction::Drop:
-		return DragDropCoordinator->DropAddressSlot(SlotViewModel);
+		return RequestAddressItemDrop();
 	case ERpgInventoryContextAction::QuickAccessBind:
 		return DragDropCoordinator->BindPayloadToQuickAccessSlot(MakeDragPayload(false), QuickAccessSlotIndex);
 	case ERpgInventoryContextAction::QuickAccessUnbind:
@@ -634,6 +634,24 @@ bool URpgInventoryAddressSlotWidget::ExecuteAddressContextAction(
 	default:
 		return false;
 	}
+}
+
+bool URpgInventoryAddressSlotWidget::RequestAddressItemDrop(
+	int32 StackCount,
+	bool bConfirmed)
+{
+	if (!bConfirmed && InventoryPresentationHost)
+	{
+		return InventoryPresentationHost->RequestInventoryDrop(
+			this,
+			StackCount);
+	}
+
+	return DragDropCoordinator && SlotViewModel &&
+		DragDropCoordinator->DropAddressSlot(
+			SlotViewModel,
+			StackCount,
+			bConfirmed);
 }
 
 int32 URpgInventoryAddressSlotWidget::GetQuickAccessSlotIndex() const

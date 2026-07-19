@@ -1449,62 +1449,176 @@ void URpgInventoryUiActionComponent::RequestUnequipInventoryItemToContentSlot_Im
 
 void URpgInventoryUiActionComponent::RequestDropInventoryItem_Implementation(URpgInventoryManagerComponent* Inventory, URpgInventoryItemInstance* Item, int32 StackCount, bool bConfirmed)
 {
-	if (!Inventory || !Item)
+	FRpgInventoryManualDropRequest Request;
+	Request.RequestId = FGuid::NewGuid();
+	Request.ItemId = Item ? Item->GetItemId() : FRpgInventoryItemId();
+	Request.StackCount = StackCount;
+	Request.bConfirmed = bConfirmed;
+
+	if (Inventory && Item)
 	{
-		SendActionFeedback(RpgGameplayTags::Rpg_Inventory_Action_Drop, ERpgInventoryActionFeedbackResult::InvalidRequest, Inventory, Item, StackCount);
+		const TArray<FRpgInventoryEntryView> Entries = Inventory->GetAllEntries();
+		if (const FRpgInventoryEntryView* Entry = Entries.FindByPredicate(
+				[Item](const FRpgInventoryEntryView& Candidate)
+				{
+					return Candidate.Instance.Get() == Item;
+				}))
+		{
+			Request.EntryId = Entry->EntryId;
+			Request.ItemId = Entry->ItemId;
+			Request.ExpectedSourcePlacement = Entry->Placement;
+			// Preserve the legacy pointer API's <= 0 "whole stack" and oversized-request clamp while translating it
+			// into the exact-count ID contract. New callers must provide their exact count directly.
+			Request.StackCount = StackCount <= 0
+				? Entry->StackCount
+				: FMath::Min(StackCount, Entry->StackCount);
+		}
+	}
+
+	RequestDropInventoryItemById_Implementation(Inventory, MoveTemp(Request));
+}
+
+void URpgInventoryUiActionComponent::RequestDropInventoryItemById_Implementation(
+	URpgInventoryManagerComponent* Inventory,
+	FRpgInventoryManualDropRequest Request)
+{
+	if (TryReplayRecentManualDropResult(Inventory, Request))
+	{
+		return;
+	}
+
+	if (!Request.RequestId.IsValid() || !Inventory || !Request.EntryId.IsValid() ||
+		!Request.ItemId.IsValid() || !Request.ExpectedSourcePlacement.IsValid() ||
+		Request.StackCount <= 0)
+	{
+		SendAndCacheManualDropFeedback(
+			Inventory,
+			Request,
+			ERpgInventoryActionFeedbackResult::InvalidRequest,
+			nullptr,
+			Request.StackCount);
 		return;
 	}
 
 	if (!CanAccessInventory(Inventory))
 	{
-		SendActionFeedback(RpgGameplayTags::Rpg_Inventory_Action_Drop, ERpgInventoryActionFeedbackResult::NoAccess, Inventory, Item, StackCount);
+		SendAndCacheManualDropFeedback(
+			Inventory,
+			Request,
+			ERpgInventoryActionFeedbackResult::NoAccess,
+			nullptr,
+			Request.StackCount);
+		return;
+	}
+
+	const TArray<FRpgInventoryEntryView> Entries = Inventory->GetAllEntries();
+	const FRpgInventoryEntryView* Entry = Entries.FindByPredicate(
+		[&Request](const FRpgInventoryEntryView& Candidate)
+		{
+			return Candidate.EntryId == Request.EntryId;
+		});
+	URpgInventoryItemInstance* Item = Entry ? Entry->Instance.Get() : nullptr;
+	if (!Entry || !Item || Entry->ItemId != Request.ItemId ||
+		Item->GetItemId() != Request.ItemId ||
+		Inventory->FindItemById(Request.ItemId) != Item)
+	{
+		SendAndCacheManualDropFeedback(
+			Inventory,
+			Request,
+			ERpgInventoryActionFeedbackResult::MissingItem,
+			nullptr,
+			Request.StackCount);
+		return;
+	}
+
+	if (Entry->Placement != Request.ExpectedSourcePlacement)
+	{
+		SendAndCacheManualDropFeedback(
+			Inventory,
+			Request,
+			ERpgInventoryActionFeedbackResult::InvalidRequest,
+			Item,
+			Request.StackCount);
 		return;
 	}
 
 	const int32 AvailableCount = Inventory->GetItemStackCount(Item);
 	if (AvailableCount <= 0)
 	{
-		SendActionFeedback(RpgGameplayTags::Rpg_Inventory_Action_Drop, ERpgInventoryActionFeedbackResult::MissingItem, Inventory, Item, StackCount);
+		SendAndCacheManualDropFeedback(
+			Inventory,
+			Request,
+			ERpgInventoryActionFeedbackResult::MissingItem,
+			Item,
+			Request.StackCount);
+		return;
+	}
+
+	if (Request.StackCount > AvailableCount)
+	{
+		SendAndCacheManualDropFeedback(
+			Inventory,
+			Request,
+			ERpgInventoryActionFeedbackResult::InvalidRequest,
+			Item,
+			Request.StackCount);
 		return;
 	}
 
 	const ERpgInventoryManualDropPolicy DropPolicy = GetManualDropPolicy(Item);
 	if (DropPolicy == ERpgInventoryManualDropPolicy::Disabled)
 	{
-		SendActionFeedback(RpgGameplayTags::Rpg_Inventory_Action_Drop, ERpgInventoryActionFeedbackResult::CannotDrop, Inventory, Item, StackCount);
+		SendAndCacheManualDropFeedback(
+			Inventory,
+			Request,
+			ERpgInventoryActionFeedbackResult::CannotDrop,
+			Item,
+			Request.StackCount);
 		return;
 	}
 
-	if (DropPolicy == ERpgInventoryManualDropPolicy::Confirm && !bConfirmed)
+	if (DropPolicy == ERpgInventoryManualDropPolicy::Confirm && !Request.bConfirmed)
 	{
-		SendActionFeedback(RpgGameplayTags::Rpg_Inventory_Action_Drop, ERpgInventoryActionFeedbackResult::RequiresConfirmation, Inventory, Item, StackCount);
-		return;
-	}
-
-	const int32 RequestedCount = StackCount <= 0 ? AvailableCount : StackCount;
-	const int32 DropCount = FMath::Min(AvailableCount, RequestedCount);
-	if (DropCount <= 0)
-	{
-		SendActionFeedback(RpgGameplayTags::Rpg_Inventory_Action_Drop, ERpgInventoryActionFeedbackResult::InvalidRequest, Inventory, Item, StackCount);
+		SendAndCacheManualDropFeedback(
+			Inventory,
+			Request,
+			ERpgInventoryActionFeedbackResult::RequiresConfirmation,
+			Item,
+			Request.StackCount);
 		return;
 	}
 
 	const bool bDropAsStackTemplate = IsStackableItem(Item);
-	if (!bDropAsStackTemplate && DropCount < AvailableCount)
+	if (!bDropAsStackTemplate && Request.StackCount != AvailableCount)
 	{
-		SendActionFeedback(RpgGameplayTags::Rpg_Inventory_Action_Drop, ERpgInventoryActionFeedbackResult::InvalidRequest, Inventory, Item, StackCount);
+		SendAndCacheManualDropFeedback(
+			Inventory,
+			Request,
+			ERpgInventoryActionFeedbackResult::InvalidRequest,
+			Item,
+			Request.StackCount);
 		return;
 	}
 
 	URpgInventoryManagerComponent* PlayerInventory = FindPlayerInventory();
-	const bool bDropsWholePlayerEntry = Inventory == PlayerInventory && DropCount >= AvailableCount;
+	const bool bDropsWholePlayerEntry =
+		Inventory == PlayerInventory && Request.StackCount == AvailableCount;
 	if (bDropsWholePlayerEntry && !ClearPlayerAssignmentsForItem(Item))
 	{
-		SendActionFeedback(RpgGameplayTags::Rpg_Inventory_Action_Drop, ERpgInventoryActionFeedbackResult::ServerRejected, Inventory, Item, DropCount);
+		SendAndCacheManualDropFeedback(
+			Inventory,
+			Request,
+			ERpgInventoryActionFeedbackResult::ServerRejected,
+			Item,
+			Request.StackCount);
 		return;
 	}
 
-	if (!TryTransferManualDrop(Inventory, Item, DropCount))
+	if (!TryTransferManualDrop(
+			Inventory,
+			Item,
+			Request.StackCount,
+			Request.RequestId))
 	{
 		// Physical gear/carry placement never changed, so a failed transfer can restore runtime equipment directly.
 		if (bDropsWholePlayerEntry)
@@ -1512,7 +1626,12 @@ void URpgInventoryUiActionComponent::RequestDropInventoryItem_Implementation(URp
 			SyncEquipmentLoadoutFromGearSlots();
 			SyncActiveHandsFromCarrySlots();
 		}
-		SendActionFeedback(RpgGameplayTags::Rpg_Inventory_Action_Drop, ERpgInventoryActionFeedbackResult::ServerRejected, Inventory, Item, DropCount);
+		SendAndCacheManualDropFeedback(
+			Inventory,
+			Request,
+			ERpgInventoryActionFeedbackResult::ServerRejected,
+			Item,
+			Request.StackCount);
 		return;
 	}
 
@@ -1526,7 +1645,12 @@ void URpgInventoryUiActionComponent::RequestDropInventoryItem_Implementation(URp
 		}
 	}
 
-	SendActionFeedback(RpgGameplayTags::Rpg_Inventory_Action_Drop, ERpgInventoryActionFeedbackResult::Success, Inventory, Item, DropCount);
+	SendAndCacheManualDropFeedback(
+		Inventory,
+		Request,
+		ERpgInventoryActionFeedbackResult::Success,
+		Item,
+		Request.StackCount);
 }
 
 void URpgInventoryUiActionComponent::RequestDepositAllMaterialsToBase_Implementation(URpgBaseStorageStationComponent* Station)
@@ -3150,12 +3274,113 @@ void URpgInventoryUiActionComponent::SyncActiveHandsFromCarrySlots() const
 	}
 }
 
+bool URpgInventoryUiActionComponent::AreManualDropRequestsEquivalent(
+	const FRpgInventoryManualDropRequest& A,
+	const FRpgInventoryManualDropRequest& B)
+{
+	return A.RequestId == B.RequestId &&
+		A.EntryId == B.EntryId &&
+		A.ItemId == B.ItemId &&
+		A.ExpectedSourcePlacement == B.ExpectedSourcePlacement &&
+		A.StackCount == B.StackCount &&
+		A.bConfirmed == B.bConfirmed;
+}
+
+bool URpgInventoryUiActionComponent::TryReplayRecentManualDropResult(
+	URpgInventoryManagerComponent* Inventory,
+	const FRpgInventoryManualDropRequest& Request)
+{
+	if (!Request.RequestId.IsValid())
+	{
+		return false;
+	}
+
+	const FRecentManualDropResult* CachedResult =
+		RecentManualDropResults.Find(Request.RequestId);
+	if (!CachedResult)
+	{
+		return false;
+	}
+
+	if (CachedResult->Inventory.Get() != Inventory ||
+		!AreManualDropRequestsEquivalent(CachedResult->Request, Request))
+	{
+		UE_LOG(
+			LogRpgInventoryUiActions,
+			Warning,
+			TEXT("Rejected manual-drop RequestId collision for %s."),
+			*Request.RequestId.ToString());
+		SendActionFeedback(
+			RpgGameplayTags::Rpg_Inventory_Action_Drop,
+			ERpgInventoryActionFeedbackResult::InvalidRequest,
+			Inventory,
+			Inventory ? Inventory->FindItemById(Request.ItemId) : nullptr,
+			Request.StackCount,
+			Request.RequestId,
+			Request.ItemId);
+		return true;
+	}
+
+	URpgInventoryManagerComponent* CachedInventory =
+		CachedResult->Inventory.Get();
+	SendActionFeedback(
+		RpgGameplayTags::Rpg_Inventory_Action_Drop,
+		CachedResult->Result,
+		CachedInventory,
+		CachedInventory
+			? CachedInventory->FindItemById(CachedResult->Request.ItemId)
+			: nullptr,
+		CachedResult->FeedbackStackCount,
+		CachedResult->Request.RequestId,
+		CachedResult->Request.ItemId);
+	return true;
+}
+
+void URpgInventoryUiActionComponent::SendAndCacheManualDropFeedback(
+	URpgInventoryManagerComponent* Inventory,
+	const FRpgInventoryManualDropRequest& Request,
+	ERpgInventoryActionFeedbackResult Result,
+	URpgInventoryItemInstance* Item,
+	int32 FeedbackStackCount)
+{
+	if (Request.RequestId.IsValid())
+	{
+		FRecentManualDropResult CachedResult;
+		CachedResult.Inventory = Inventory;
+		CachedResult.Request = Request;
+		CachedResult.Result = Result;
+		CachedResult.FeedbackStackCount = FeedbackStackCount;
+		RecentManualDropResults.Add(Request.RequestId, MoveTemp(CachedResult));
+		RecentManualDropOrder.Remove(Request.RequestId);
+		RecentManualDropOrder.Add(Request.RequestId);
+		while (RecentManualDropOrder.Num() > MaxRecentManualDropResults)
+		{
+			RecentManualDropResults.Remove(RecentManualDropOrder[0]);
+			RecentManualDropOrder.RemoveAt(
+				0,
+				1,
+				EAllowShrinking::No);
+		}
+	}
+
+	SendActionFeedback(
+		RpgGameplayTags::Rpg_Inventory_Action_Drop,
+		Result,
+		Inventory,
+		Item,
+		FeedbackStackCount,
+		Request.RequestId,
+		Request.ItemId);
+}
+
 bool URpgInventoryUiActionComponent::TryTransferManualDrop(
 	URpgInventoryManagerComponent* SourceInventory,
 	URpgInventoryItemInstance* Item,
-	int32 StackCount)
+	int32 StackCount,
+	const FGuid& RequestId)
 {
-	if (!SourceInventory || !Item || StackCount <= 0 || !GetWorld() || !SourceInventory->ContainsItemInstance(Item))
+	if (!SourceInventory || !Item || StackCount <= 0 || !RequestId.IsValid() ||
+		!GetWorld() || !SourceInventory->ContainsItemInstance(Item))
 	{
 		return false;
 	}
@@ -3167,10 +3392,28 @@ bool URpgInventoryUiActionComponent::TryTransferManualDrop(
 		return false;
 	}
 
-	auto TryTransferIntoActor = [SourceInventory, Item, StackCount, &SourcePlacement](ARpgDroppedInventoryActor* DropActor)
+	const bool bTransfersWholeEntry =
+		StackCount == SourceInventory->GetItemStackCount(Item);
+	auto CanTransferIntoActor =
+		[SourceInventory, Item, StackCount, bTransfersWholeEntry](
+			const ARpgDroppedInventoryActor* DropActor)
+		{
+			URpgInventoryManagerComponent* TargetInventory =
+				DropActor ? DropActor->GetLootInventoryManager() : nullptr;
+			return TargetInventory != SourceInventory &&
+				CanTargetAcceptTransferredStack(
+				TargetInventory,
+				Item,
+				StackCount,
+				bTransfersWholeEntry);
+		};
+
+	auto TryTransferIntoActor =
+		[SourceInventory, Item, StackCount, RequestId, &SourcePlacement](
+			ARpgDroppedInventoryActor* DropActor)
 	{
 		URpgInventoryManagerComponent* TargetInventory = DropActor ? DropActor->GetLootInventoryManager() : nullptr;
-		if (!TargetInventory)
+		if (!TargetInventory || TargetInventory == SourceInventory)
 		{
 			return false;
 		}
@@ -3181,7 +3424,7 @@ bool URpgInventoryUiActionComponent::TryTransferManualDrop(
 		Request.Source = SourcePlacement.GetContainerHandle();
 		Request.Target = FRpgInventoryContainerHandle::MakeRoot(TargetInventory->GetDefaultContainerId());
 		Request.Quantity = StackCount;
-		Request.EnsureRequestId();
+		Request.RequestId = RequestId;
 		const FRpgInventoryMutationResult TransferResult = SourceInventory->ExecuteCrossInventoryTransfer(TargetInventory, Request, false);
 		if (TransferResult.IsSuccess())
 		{
@@ -3191,6 +3434,7 @@ bool URpgInventoryUiActionComponent::TryTransferManualDrop(
 		return false;
 	};
 
+	ARpgDroppedInventoryActor* TargetDropActor = nullptr;
 	if (ManualDropMergeRadius > 0.0f)
 	{
 		const float MergeRadiusSq = FMath::Square(ManualDropMergeRadius);
@@ -3199,37 +3443,45 @@ bool URpgInventoryUiActionComponent::TryTransferManualDrop(
 			ARpgDroppedInventoryActor* ExistingDrop = *It;
 			if (ExistingDrop && !ExistingDrop->IsPendingKillPending() &&
 				FVector::DistSquared(ExistingDrop->GetActorLocation(), DropTransform.GetLocation()) <= MergeRadiusSq &&
-				TryTransferIntoActor(ExistingDrop))
+				CanTransferIntoActor(ExistingDrop))
 			{
-				return true;
+				TargetDropActor = ExistingDrop;
+				break;
 			}
 		}
 	}
 
-	TSubclassOf<ARpgDroppedInventoryActor> DropClass = ManualDropActorClass;
-	if (!DropClass)
+	bool bSpawnedTargetActor = false;
+	if (!TargetDropActor)
 	{
-		DropClass = ARpgDroppedInventoryActor::StaticClass();
+		TSubclassOf<ARpgDroppedInventoryActor> DropClass = ManualDropActorClass;
+		if (!DropClass)
+		{
+			DropClass = ARpgDroppedInventoryActor::StaticClass();
+		}
+
+		AController* OwnerController = Cast<AController>(GetOwner());
+		FActorSpawnParameters SpawnParameters;
+		SpawnParameters.Owner = GetOwner();
+		SpawnParameters.Instigator = OwnerController ? OwnerController->GetPawn() : nullptr;
+		SpawnParameters.SpawnCollisionHandlingOverride = ESpawnActorCollisionHandlingMethod::AdjustIfPossibleButAlwaysSpawn;
+
+		TargetDropActor = GetWorld()->SpawnActor<ARpgDroppedInventoryActor>(
+			DropClass,
+			DropTransform,
+			SpawnParameters);
+		bSpawnedTargetActor = TargetDropActor != nullptr;
 	}
 
-	AController* OwnerController = Cast<AController>(GetOwner());
-	FActorSpawnParameters SpawnParameters;
-	SpawnParameters.Owner = GetOwner();
-	SpawnParameters.Instigator = OwnerController ? OwnerController->GetPawn() : nullptr;
-	SpawnParameters.SpawnCollisionHandlingOverride = ESpawnActorCollisionHandlingMethod::AdjustIfPossibleButAlwaysSpawn;
-
-	ARpgDroppedInventoryActor* DropActor = GetWorld()->SpawnActor<ARpgDroppedInventoryActor>(DropClass, DropTransform, SpawnParameters);
-	if (!DropActor)
-	{
-		return false;
-	}
-
-	if (TryTransferIntoActor(DropActor))
+	if (TargetDropActor && TryTransferIntoActor(TargetDropActor))
 	{
 		return true;
 	}
 
-	DropActor->Destroy();
+	if (bSpawnedTargetActor)
+	{
+		TargetDropActor->Destroy();
+	}
 	return false;
 }
 

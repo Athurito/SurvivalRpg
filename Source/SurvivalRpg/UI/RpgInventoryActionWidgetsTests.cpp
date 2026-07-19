@@ -60,6 +60,15 @@ namespace RpgInventoryActionWidgetsTests
 			"/Game/SurvivalRpg/Inventory/UI/Presentation/"
 			"CUI_InventorySplitDialogSpatial."
 			"CUI_InventorySplitDialogSpatial_C");
+	constexpr TCHAR DropConfirmationPackageName[] =
+		TEXT(
+			"/Game/SurvivalRpg/Inventory/UI/Presentation/"
+			"CUI_InventoryDropConfirmationSpatial");
+	constexpr TCHAR DropConfirmationClassPath[] =
+		TEXT(
+			"/Game/SurvivalRpg/Inventory/UI/Presentation/"
+			"CUI_InventoryDropConfirmationSpatial."
+			"CUI_InventoryDropConfirmationSpatial_C");
 	constexpr TCHAR FeedbackToastPackageName[] =
 		TEXT(
 			"/Game/SurvivalRpg/Inventory/UI/Presentation/"
@@ -176,6 +185,10 @@ bool FRpgInventoryAuthoredPresentationContractTest::RunTest(
 		LoadClass<URpgInventorySplitDialogWidget>(
 			nullptr,
 			SplitDialogClassPath);
+	UClass* DropConfirmationClass =
+		LoadClass<URpgInventoryDropConfirmationDialogWidget>(
+			nullptr,
+			DropConfirmationClassPath);
 	UClass* FeedbackToastClass =
 		LoadClass<URpgInventoryFeedbackToastWidget>(
 			nullptr,
@@ -184,6 +197,7 @@ bool FRpgInventoryAuthoredPresentationContractTest::RunTest(
 		!TestNotNull(TEXT("Authored Quick Access row loads"), QuickAccessEntryClass) ||
 		!TestNotNull(TEXT("Authored context menu loads"), ContextMenuClass) ||
 		!TestNotNull(TEXT("Authored split dialog loads"), SplitDialogClass) ||
+		!TestNotNull(TEXT("Authored drop confirmation loads"), DropConfirmationClass) ||
 		!TestNotNull(TEXT("Authored feedback toast loads"), FeedbackToastClass))
 	{
 		return false;
@@ -200,6 +214,11 @@ bool FRpgInventoryAuthoredPresentationContractTest::RunTest(
 		{QuickAccessEntryClass, URpgQuickAccessSlotPickerEntryWidget::StaticClass(), TEXT("Quick Access row")},
 		{ContextMenuClass, URpgInventoryContextMenuWidget::StaticClass(), TEXT("Context menu")},
 		{SplitDialogClass, URpgInventorySplitDialogWidget::StaticClass(), TEXT("Split dialog")},
+		{
+			DropConfirmationClass,
+			URpgInventoryDropConfirmationDialogWidget::StaticClass(),
+			TEXT("Drop confirmation")
+		},
 		{FeedbackToastClass, URpgInventoryFeedbackToastWidget::StaticClass(), TEXT("Feedback toast")}
 	};
 	for (const FClassContract& Contract : ClassContracts)
@@ -246,6 +265,9 @@ bool FRpgInventoryAuthoredPresentationContractTest::RunTest(
 			->GetWidgetTreeArchetype();
 	const UWidgetTree* SplitTree =
 		CastChecked<UWidgetBlueprintGeneratedClass>(SplitDialogClass)
+			->GetWidgetTreeArchetype();
+	const UWidgetTree* DropConfirmationTree =
+		CastChecked<UWidgetBlueprintGeneratedClass>(DropConfirmationClass)
 			->GetWidgetTreeArchetype();
 	const UWidgetTree* FeedbackTree =
 		CastChecked<UWidgetBlueprintGeneratedClass>(FeedbackToastClass)
@@ -315,6 +337,26 @@ bool FRpgInventoryAuthoredPresentationContractTest::RunTest(
 		SplitTree,
 		TEXT("Button_Cancel"),
 		TEXT("Split cancel button"));
+	HasExactWidget<UButton>(
+		*this,
+		DropConfirmationTree,
+		TEXT("Button_Backdrop"),
+		TEXT("Drop confirmation backdrop"));
+	HasExactWidget<UTextBlock>(
+		*this,
+		DropConfirmationTree,
+		TEXT("Text_Message"),
+		TEXT("Drop confirmation message"));
+	HasExactWidget<UButton>(
+		*this,
+		DropConfirmationTree,
+		TEXT("Button_Confirm"),
+		TEXT("Drop confirmation confirm button"));
+	HasExactWidget<UButton>(
+		*this,
+		DropConfirmationTree,
+		TEXT("Button_Cancel"),
+		TEXT("Drop confirmation cancel button"));
 	HasExactWidget<UBorder>(
 		*this,
 		FeedbackTree,
@@ -428,6 +470,14 @@ bool FRpgInventoryAuthoredPresentationContractTest::RunTest(
 				ScreenDefaults,
 				TEXT("SplitDialogWidgetClass")),
 			SplitDialogClass);
+		TestEqual(
+			*FString::Printf(
+				TEXT("%s uses the canonical drop confirmation"),
+				Contract.Label),
+			ReadClassDefault(
+				ScreenDefaults,
+				TEXT("DropConfirmationDialogWidgetClass")),
+			DropConfirmationClass);
 
 		const UWidgetBlueprintGeneratedClass* GeneratedScreen =
 			Cast<UWidgetBlueprintGeneratedClass>(ScreenClass);
@@ -485,6 +535,12 @@ bool FRpgInventoryAuthoredPresentationContractTest::RunTest(
 				TEXT("%s owns a cook-visible split-dialog dependency"),
 				Contract.Label),
 			ScreenDependencies.Contains(FName(SplitDialogPackageName)));
+		TestTrue(
+			*FString::Printf(
+				TEXT("%s owns a cook-visible drop-confirmation dependency"),
+				Contract.Label),
+			ScreenDependencies.Contains(
+				FName(DropConfirmationPackageName)));
 		TestTrue(
 			*FString::Printf(
 				TEXT("%s owns a cook-visible feedback-toast dependency"),

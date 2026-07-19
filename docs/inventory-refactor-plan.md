@@ -210,7 +210,7 @@ Es gibt bewusst keine spekulative allgemeine Dual-Inventory-Basis.
 - [x] Context-Menü, Split-Dialog und Feedback-Toast als authored
       Presentation-Klassen zentral am Interaction-Screen konfigurieren;
       unvollständige Assets dürfen ihre Root-Hierarchie nicht still ersetzen.
-- [ ] Ein authored Drop-Confirmation-Modal ergänzen, das nach erneuter stabiler
+- [x] Ein authored Drop-Confirmation-Modal ergänzen, das nach erneuter stabiler
       Item-/Entry-ID-Prüfung genau einen bestätigten serverautoritativen
       Drop-Intent sendet.
 - [ ] Verfügbare Context-Actions und Klick-Revalidierung über einen gemeinsamen
@@ -573,7 +573,7 @@ Verifizierter UI-Zwischenstand vom 2026-07-19:
      Die physischen Rollback-Assets werden erst in Schritt 11 entfernt.
   6. [x] Authored Context-Menü, Split-Dialog und Feedback-Toast zentralisieren
      und native Root-Replacement-Fallbacks fail-closed machen.
-  7. [ ] **P0:** Authored Drop-Confirmation-Modal am Interaction-Screen
+  7. [x] **P0:** Authored Drop-Confirmation-Modal am Interaction-Screen
      ergänzen. Confirm revalidiert stabile Item-/Entry-ID, Quelle und Menge und
      sendet genau einen Retry mit `bConfirmed=true`; Cancel, Deactivation und
      Pool-Reuse verwerfen den Request vollständig.

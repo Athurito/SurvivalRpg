@@ -4,11 +4,14 @@
 
 #include "RpgInventoryInteractionSession.h"
 #include "RpgInventoryItemInstance.h"
+#include "RpgInventoryManagerComponent.h"
 #include "RpgInventoryUiActionComponent.h"
 #include "SurvivalRpg/ActionBar/RpgActionBarComponent.h"
 #include "SurvivalRpg/GameplayTags/RpgGameplayTags.h"
 #include "SurvivalRpg/UI/RpgInventoryDragVisualWidget.h"
+#include "SurvivalRpg/UI/RpgInventoryInteractionScreenWidget.h"
 
+#include "Components/Button.h"
 #include "Misc/AutomationTest.h"
 #include "UObject/Package.h"
 
@@ -571,6 +574,165 @@ bool FRpgInventoryQuickAccessReplicatedConfirmationTest::RunTest(const FString& 
 			PendingConsumablePayload,
 			PendingItemId));
 
+	return true;
+}
+
+IMPLEMENT_SIMPLE_AUTOMATION_TEST(
+	FRpgInventoryDropConfirmationIntentTest,
+	"SurvivalRpg.Inventory.Interaction.DropConfirmation.IntentCorrelationAndConsumeOnce",
+	EAutomationTestFlags::EditorContext | EAutomationTestFlags::EngineFilter)
+
+bool FRpgInventoryDropConfirmationIntentTest::RunTest(const FString& Parameters)
+{
+	UButton* SourceWidget = NewObject<UButton>(GetTransientPackage());
+	UButton* UnrelatedSourceWidget = NewObject<UButton>(GetTransientPackage());
+	URpgInventoryManagerComponent* SourceInventory =
+		NewObject<URpgInventoryManagerComponent>(GetTransientPackage());
+	URpgInventoryManagerComponent* UnrelatedInventory =
+		NewObject<URpgInventoryManagerComponent>(GetTransientPackage());
+	if (!TestNotNull(TEXT("A transient drop source widget exists"), SourceWidget) ||
+		!TestNotNull(TEXT("An unrelated transient source widget exists"), UnrelatedSourceWidget) ||
+		!TestNotNull(TEXT("A transient source inventory exists"), SourceInventory) ||
+		!TestNotNull(TEXT("An unrelated transient inventory exists"), UnrelatedInventory))
+	{
+		return false;
+	}
+
+	FRpgInventoryManualDropRequest Request;
+	Request.RequestId = FGuid::NewGuid();
+	Request.EntryId = FGuid::NewGuid();
+	Request.ItemId = FRpgInventoryItemId::NewId();
+	Request.ExpectedSourcePlacement.SetContainerHandle(
+		FRpgInventoryContainerHandle::MakeRoot(TEXT("Pockets")));
+	Request.ExpectedSourcePlacement.X = 2;
+	Request.ExpectedSourcePlacement.Y = 1;
+	Request.ExpectedSourcePlacement.Width = 1;
+	Request.ExpectedSourcePlacement.Height = 1;
+	Request.StackCount = 3;
+
+	FRpgInventoryDropConfirmationIntent Intent;
+	if (!TestTrue(
+			TEXT("A complete unconfirmed drop snapshot arms the confirmation intent"),
+			Intent.Arm(SourceWidget, SourceInventory, Request)))
+	{
+		return false;
+	}
+	TestTrue(TEXT("The confirmation intent reports itself armed"), Intent.IsArmed());
+
+	FRpgInventoryActionFeedbackMessage Feedback;
+	Feedback.RequestId = Request.RequestId;
+	Feedback.ItemId = Request.ItemId;
+	Feedback.ActionTag = RpgGameplayTags::Rpg_Inventory_Action_Drop;
+	Feedback.Result = ERpgInventoryActionFeedbackResult::RequiresConfirmation;
+	Feedback.InventoryOwner = SourceInventory;
+	Feedback.StackCount = Request.StackCount;
+	TestTrue(
+		TEXT("Only the exact authoritative drop feedback matches the armed intent"),
+		Intent.DoesFeedbackMatch(nullptr, Feedback));
+
+	FRpgInventoryActionFeedbackMessage WrongRequest = Feedback;
+	WrongRequest.RequestId = FGuid::NewGuid();
+	TestFalse(
+		TEXT("Feedback for another request id cannot open this confirmation"),
+		Intent.DoesFeedbackMatch(nullptr, WrongRequest));
+
+	FRpgInventoryActionFeedbackMessage WrongItem = Feedback;
+	WrongItem.ItemId = FRpgInventoryItemId::NewId();
+	TestFalse(
+		TEXT("Feedback for another persistent item cannot open this confirmation"),
+		Intent.DoesFeedbackMatch(nullptr, WrongItem));
+
+	FRpgInventoryActionFeedbackMessage WrongAction = Feedback;
+	WrongAction.ActionTag = RpgGameplayTags::Rpg_Inventory_Action_Transfer;
+	TestFalse(
+		TEXT("Feedback for another semantic action cannot open this confirmation"),
+		Intent.DoesFeedbackMatch(nullptr, WrongAction));
+
+	FRpgInventoryActionFeedbackMessage WrongInventory = Feedback;
+	WrongInventory.InventoryOwner = UnrelatedInventory;
+	TestFalse(
+		TEXT("Feedback for another source inventory cannot open this confirmation"),
+		Intent.DoesFeedbackMatch(nullptr, WrongInventory));
+
+	FRpgInventoryActionFeedbackMessage WrongCount = Feedback;
+	WrongCount.StackCount = Request.StackCount - 1;
+	TestFalse(
+		TEXT("Feedback for another exact quantity cannot open this confirmation"),
+		Intent.DoesFeedbackMatch(nullptr, WrongCount));
+
+	TestFalse(
+		TEXT("Releasing an unrelated source does not reset the pending confirmation"),
+		Intent.ResetForSource(UnrelatedSourceWidget));
+	TestTrue(
+		TEXT("The pending confirmation survives an unrelated source reset"),
+		Intent.IsArmed());
+
+	const FGuid InitialRequestId = Request.RequestId;
+	URpgInventoryManagerComponent* ConfirmedSourceInventory = nullptr;
+	FRpgInventoryManualDropRequest ConfirmedRequest;
+	TestTrue(
+		TEXT("The exact initial request can be consumed once"),
+		Intent.ConsumeConfirmedRetry(
+			InitialRequestId,
+			ConfirmedSourceInventory,
+			ConfirmedRequest));
+	TestEqual(
+		TEXT("The confirmed retry retains the exact source inventory"),
+		ConfirmedSourceInventory,
+		SourceInventory);
+	TestEqual(
+		TEXT("The confirmed retry retains the stable entry id"),
+		ConfirmedRequest.EntryId,
+		Request.EntryId);
+	TestTrue(
+		TEXT("The confirmed retry retains the persistent item id"),
+		ConfirmedRequest.ItemId == Request.ItemId);
+	TestTrue(
+		TEXT("The confirmed retry retains the complete source placement"),
+		ConfirmedRequest.ExpectedSourcePlacement ==
+			Request.ExpectedSourcePlacement);
+	TestEqual(
+		TEXT("The confirmed retry retains the exact quantity"),
+		ConfirmedRequest.StackCount,
+		Request.StackCount);
+	TestTrue(
+		TEXT("The retry is explicitly confirmed"),
+		ConfirmedRequest.bConfirmed);
+	TestTrue(
+		TEXT("The retry receives a fresh valid request id"),
+		ConfirmedRequest.RequestId.IsValid() &&
+			ConfirmedRequest.RequestId != InitialRequestId);
+	TestFalse(
+		TEXT("Consuming the request clears the pending intent before dispatch"),
+		Intent.IsArmed());
+
+	ConfirmedSourceInventory = SourceInventory;
+	ConfirmedRequest = Request;
+	TestFalse(
+		TEXT("A second consume of the same initial request is rejected"),
+		Intent.ConsumeConfirmedRetry(
+			InitialRequestId,
+			ConfirmedSourceInventory,
+			ConfirmedRequest));
+	TestNull(
+		TEXT("A rejected second consume clears its output inventory"),
+		ConfirmedSourceInventory);
+	TestFalse(
+		TEXT("A rejected second consume does not leak a confirmed request"),
+		ConfirmedRequest.bConfirmed);
+	TestFalse(
+		TEXT("A rejected second consume returns no request id"),
+		ConfirmedRequest.RequestId.IsValid());
+
+	TestTrue(
+		TEXT("The same complete snapshot can arm a later independent confirmation"),
+		Intent.Arm(SourceWidget, SourceInventory, Request));
+	TestTrue(
+		TEXT("Releasing the exact source resets its pending confirmation"),
+		Intent.ResetForSource(SourceWidget));
+	TestFalse(
+		TEXT("The exact-source reset leaves no pending confirmation"),
+		Intent.IsArmed());
 	return true;
 }
 

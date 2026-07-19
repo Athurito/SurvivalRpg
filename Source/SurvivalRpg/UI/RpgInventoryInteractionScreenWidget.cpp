@@ -9,7 +9,9 @@
 #include "Engine/World.h"
 #include "SurvivalRpg/GameplayTags/RpgGameplayTags.h"
 #include "SurvivalRpg/Inventory/RpgInventoryInteractionSession.h"
+#include "SurvivalRpg/Inventory/RpgInventoryItemDefinition.h"
 #include "SurvivalRpg/Inventory/RpgInventoryItemInstance.h"
+#include "SurvivalRpg/Inventory/RpgInventoryManagerComponent.h"
 #include "SurvivalRpg/UI/RpgInventoryActionWidgets.h"
 #include "SurvivalRpg/UI/RpgInventoryAddressSlotWidget.h"
 #include "SurvivalRpg/UI/RpgInventoryDragVisualWidget.h"
@@ -21,10 +23,206 @@
 
 #include UE_INLINE_GENERATED_CPP_BY_NAME(RpgInventoryInteractionScreenWidget)
 
+bool FRpgInventoryDropConfirmationIntent::Arm(
+	UWidget* InSourceWidget,
+	URpgInventoryManagerComponent* InSourceInventory,
+	const FRpgInventoryManualDropRequest& InRequest)
+{
+	Reset();
+	if (!InSourceWidget || !InSourceInventory ||
+		!InRequest.RequestId.IsValid() ||
+		!InRequest.EntryId.IsValid() ||
+		!InRequest.ItemId.IsValid() ||
+		!InRequest.ExpectedSourcePlacement.IsValid() ||
+		InRequest.StackCount <= 0 ||
+		InRequest.bConfirmed)
+	{
+		return false;
+	}
+
+	SourceWidget = InSourceWidget;
+	SourceInventory = InSourceInventory;
+	Request = InRequest;
+	return true;
+}
+
+bool FRpgInventoryDropConfirmationIntent::IsArmed() const
+{
+	return SourceWidget.IsValid() &&
+		SourceInventory.IsValid() &&
+		Request.RequestId.IsValid() &&
+		Request.EntryId.IsValid() &&
+		Request.ItemId.IsValid() &&
+		Request.ExpectedSourcePlacement.IsValid() &&
+		Request.StackCount > 0 &&
+		!Request.bConfirmed;
+}
+
+bool FRpgInventoryDropConfirmationIntent::DoesFeedbackMatch(
+	const APlayerController* OwningPlayer,
+	const FRpgInventoryActionFeedbackMessage& Message) const
+{
+	return IsArmed() &&
+		Message.IsAddressedTo(OwningPlayer) &&
+		Message.RequestId == Request.RequestId &&
+		Message.ItemId == Request.ItemId &&
+		Message.ActionTag == RpgGameplayTags::Rpg_Inventory_Action_Drop &&
+		Message.InventoryOwner.Get() == SourceInventory.Get() &&
+		Message.StackCount == Request.StackCount;
+}
+
+bool FRpgInventoryDropConfirmationIntent::ConsumeConfirmedRetry(
+	const FGuid& InitialRequestId,
+	URpgInventoryManagerComponent*& OutSourceInventory,
+	FRpgInventoryManualDropRequest& OutConfirmedRequest)
+{
+	OutSourceInventory = nullptr;
+	OutConfirmedRequest = FRpgInventoryManualDropRequest();
+	if (!IsArmed() || InitialRequestId != Request.RequestId)
+	{
+		return false;
+	}
+
+	OutSourceInventory = SourceInventory.Get();
+	OutConfirmedRequest = Request;
+	Reset();
+
+	// The first RequestId may be cached as RequiresConfirmation. A retry is a new, exactly-once command.
+	OutConfirmedRequest.RequestId = FGuid::NewGuid();
+	OutConfirmedRequest.bConfirmed = true;
+	return OutSourceInventory != nullptr;
+}
+
+bool FRpgInventoryDropConfirmationIntent::ResetForSource(
+	const UWidget* InSourceWidget)
+{
+	if (!InSourceWidget || SourceWidget.Get() != InSourceWidget)
+	{
+		return false;
+	}
+
+	Reset();
+	return true;
+}
+
+void FRpgInventoryDropConfirmationIntent::Reset()
+{
+	SourceWidget.Reset();
+	SourceInventory.Reset();
+	Request = FRpgInventoryManualDropRequest();
+}
+
 URpgInventoryInteractionScreenWidget::URpgInventoryInteractionScreenWidget(
 	const FObjectInitializer& ObjectInitializer)
 	: Super(ObjectInitializer)
 {
+}
+
+bool URpgInventoryInteractionScreenWidget::RequestInventoryDrop(
+	URpgInventorySpatialGridWidget* SourceGrid,
+	int32 StackCount)
+{
+	if (!SourceGrid || !InventoryDragDropCoordinator)
+	{
+		return false;
+	}
+
+	URpgInventoryManagerComponent* SourceInventory = nullptr;
+	FRpgInventoryManualDropRequest Request;
+	const bool bPrepared = SourceGrid->GetSelectedAddressSlot()
+		? InventoryDragDropCoordinator->PrepareDropAddressSlotRequest(
+			SourceGrid->GetSelectedAddressSlot(),
+			StackCount,
+			SourceInventory,
+			Request)
+		: InventoryDragDropCoordinator->PrepareDropEntryRequest(
+			SourceGrid->GetSelectedEntryViewModel(),
+			StackCount,
+			SourceInventory,
+			Request);
+	return bPrepared &&
+		BeginPreparedInventoryDrop(SourceGrid, SourceInventory, Request);
+}
+
+bool URpgInventoryInteractionScreenWidget::RequestInventoryDrop(
+	URpgInventoryAddressSlotWidget* SourceAddressSlot,
+	int32 StackCount)
+{
+	if (!SourceAddressSlot || !InventoryDragDropCoordinator)
+	{
+		return false;
+	}
+
+	URpgInventoryManagerComponent* SourceInventory = nullptr;
+	FRpgInventoryManualDropRequest Request;
+	return InventoryDragDropCoordinator->PrepareDropAddressSlotRequest(
+			SourceAddressSlot->GetAddressSlotViewModel(),
+			StackCount,
+			SourceInventory,
+			Request) &&
+		BeginPreparedInventoryDrop(
+			SourceAddressSlot,
+			SourceInventory,
+			Request);
+}
+
+bool URpgInventoryInteractionScreenWidget::RequestInventoryDrop(
+	URpgEquipmentSlotWidget* SourceEquipmentSlot,
+	FRpgInventoryItemId ExpectedItemId)
+{
+	if (!SourceEquipmentSlot || !InventoryDragDropCoordinator)
+	{
+		return false;
+	}
+
+	URpgInventoryManagerComponent* SourceInventory = nullptr;
+	FRpgInventoryManualDropRequest Request;
+	return InventoryDragDropCoordinator->PrepareDropEquipmentItemRequest(
+			SourceEquipmentSlot->GetResolvedEquipmentSlot(),
+			ExpectedItemId,
+			SourceInventory,
+			Request) &&
+		BeginPreparedInventoryDrop(
+			SourceEquipmentSlot,
+			SourceInventory,
+			Request);
+}
+
+bool URpgInventoryInteractionScreenWidget::ConfirmPendingInventoryDrop(
+	FGuid InitialRequestId)
+{
+	URpgInventoryManagerComponent* SourceInventory = nullptr;
+	FRpgInventoryManualDropRequest ConfirmedRequest;
+	if (!InventoryDragDropCoordinator ||
+		!PendingDropConfirmation.ConsumeConfirmedRetry(
+			InitialRequestId,
+			SourceInventory,
+			ConfirmedRequest))
+	{
+		return false;
+	}
+
+	// Consume-before-dispatch makes button reentrancy, repeated callbacks, and pooled modal teardown harmless.
+	if (!InventoryDragDropCoordinator->DispatchManualDropRequest(
+			SourceInventory,
+			ConfirmedRequest))
+	{
+		ShowLocalDropRetryRejection(
+			SourceInventory,
+			ConfirmedRequest);
+		return false;
+	}
+
+	return true;
+}
+
+void URpgInventoryInteractionScreenWidget::CancelPendingInventoryDrop(
+	FGuid InitialRequestId)
+{
+	if (PendingDropConfirmation.GetInitialRequestId() == InitialRequestId)
+	{
+		PendingDropConfirmation.Reset();
+	}
 }
 
 bool URpgInventoryInteractionScreenWidget::OpenInventoryContextMenu(
@@ -271,6 +469,135 @@ bool URpgInventoryInteractionScreenWidget::OpenInventorySplitDialog(
 	return true;
 }
 
+bool URpgInventoryInteractionScreenWidget::BeginPreparedInventoryDrop(
+	UWidget* SourceWidget,
+	URpgInventoryManagerComponent* SourceInventory,
+	const FRpgInventoryManualDropRequest& Request)
+{
+	if (!InventoryDragDropCoordinator)
+	{
+		return false;
+	}
+
+	// Only one confirmation candidate may belong to this pooled screen. Arm before dispatch because a standalone or
+	// listen server can deliver RequiresConfirmation inside the same callstack as the server RPC.
+	DismissActiveDropConfirmationPresentation();
+	if (!PendingDropConfirmation.Arm(
+			SourceWidget,
+			SourceInventory,
+			Request))
+	{
+		return false;
+	}
+
+	if (!InventoryDragDropCoordinator->DispatchManualDropRequest(
+			SourceInventory,
+			Request))
+	{
+		PendingDropConfirmation.Reset();
+		return false;
+	}
+
+	return true;
+}
+
+bool URpgInventoryInteractionScreenWidget::OpenPendingDropConfirmation()
+{
+	if (!PendingDropConfirmation.IsArmed() ||
+		!DropConfirmationDialogWidgetClass)
+	{
+		return false;
+	}
+
+	if (URpgInventoryDropConfirmationDialogWidget* ExistingDialog =
+		ActiveDropConfirmation.Get())
+	{
+		return ExistingDialog->GetInitialRequestId() ==
+			PendingDropConfirmation.GetInitialRequestId();
+	}
+
+	ULocalPlayer* LocalPlayer = GetOwningLocalPlayer();
+	if (!LocalPlayer)
+	{
+		return false;
+	}
+
+	URpgInventoryManagerComponent* SourceInventory =
+		PendingDropConfirmation.GetSourceInventory();
+	const FRpgInventoryManualDropRequest Request =
+		PendingDropConfirmation.GetRequest();
+	URpgInventoryItemInstance* Item = SourceInventory
+		? SourceInventory->FindItemById(Request.ItemId)
+		: nullptr;
+	const URpgInventoryItemDefinition* ItemDefinition = Item &&
+		Item->GetItemDef()
+		? GetDefault<URpgInventoryItemDefinition>(Item->GetItemDef())
+		: nullptr;
+	const FText ItemName = ItemDefinition &&
+		!ItemDefinition->DisplayName.IsEmpty()
+		? ItemDefinition->DisplayName
+		: NSLOCTEXT(
+			"RpgInventoryInteractionScreen",
+			"UnknownDropItem",
+			"this item");
+
+	// The confirmation replaces the initiating action menu, but its armed request must survive that replacement.
+	DismissActiveContextMenuPresentation();
+	DismissActiveSplitDialogPresentation();
+	URpgInventoryDropConfirmationDialogWidget* DropConfirmation =
+		Cast<URpgInventoryDropConfirmationDialogWidget>(
+			UCommonUIExtensions::PushContentToLayer_ForPlayer(
+				LocalPlayer,
+				RpgGameplayTags::UI_Layer_Modal,
+				DropConfirmationDialogWidgetClass));
+	if (!DropConfirmation ||
+		!DropConfirmation->InitializeDropConfirmation(
+			this,
+			Request.RequestId,
+			ItemName,
+			Request.StackCount))
+	{
+		if (DropConfirmation)
+		{
+			DropConfirmation->CancelDropConfirmation();
+		}
+		return false;
+	}
+
+	ActiveDropConfirmation = DropConfirmation;
+	DropConfirmation->OnDeactivated().RemoveAll(this);
+	DropConfirmation->OnDeactivated().AddUObject(
+		this,
+		&ThisClass::HandleDropConfirmationDeactivated,
+		DropConfirmation);
+	if (InventoryFeedbackToast)
+	{
+		InventoryFeedbackToast->HideInventoryActionFeedback();
+	}
+	return true;
+}
+
+void URpgInventoryInteractionScreenWidget::ShowLocalDropRetryRejection(
+	URpgInventoryManagerComponent* SourceInventory,
+	const FRpgInventoryManualDropRequest& ConfirmedRequest)
+{
+	if (!InventoryFeedbackToast)
+	{
+		return;
+	}
+
+	FRpgInventoryActionFeedbackMessage Message;
+	Message.Recipient = GetOwningPlayer();
+	Message.RequestId = ConfirmedRequest.RequestId;
+	Message.ItemId = ConfirmedRequest.ItemId;
+	Message.ActionTag = RpgGameplayTags::Rpg_Inventory_Action_Drop;
+	Message.Result =
+		ERpgInventoryActionFeedbackResult::InvalidRequest;
+	Message.InventoryOwner = SourceInventory;
+	Message.StackCount = ConfirmedRequest.StackCount;
+	InventoryFeedbackToast->ShowInventoryActionFeedback(Message);
+}
+
 void URpgInventoryInteractionScreenWidget::DismissInventoryPresentationForSource(
 	const UWidget* SourceWidget)
 {
@@ -286,6 +613,17 @@ void URpgInventoryInteractionScreenWidget::DismissInventoryPresentationForSource
 	if (ActiveSplitDialogSource.Get() == SourceWidget)
 	{
 		DismissActiveSplitDialogPresentation();
+	}
+	if (PendingDropConfirmation.GetSourceWidget() == SourceWidget)
+	{
+		if (ActiveDropConfirmation.IsValid())
+		{
+			DismissActiveDropConfirmationPresentation();
+		}
+		else
+		{
+			PendingDropConfirmation.ResetForSource(SourceWidget);
+		}
 	}
 }
 
@@ -820,6 +1158,27 @@ void URpgInventoryInteractionScreenWidget::HandleInventoryActionFeedback(
 		return;
 	}
 
+	if (PendingDropConfirmation.DoesFeedbackMatch(
+			GetOwningPlayer(),
+			Message))
+	{
+		if (Message.Result ==
+			ERpgInventoryActionFeedbackResult::RequiresConfirmation)
+		{
+			if (OpenPendingDropConfirmation())
+			{
+				return;
+			}
+
+			// Missing authored presentation fails closed: never auto-confirm and never retain a hidden request.
+			PendingDropConfirmation.Reset();
+		}
+		else
+		{
+			PendingDropConfirmation.Reset();
+		}
+	}
+
 	if (InventoryFeedbackToast)
 	{
 		InventoryFeedbackToast->ShowInventoryActionFeedback(Message);
@@ -852,10 +1211,24 @@ void URpgInventoryInteractionScreenWidget::DismissActiveSplitDialogPresentation(
 	}
 }
 
+void URpgInventoryInteractionScreenWidget::DismissActiveDropConfirmationPresentation()
+{
+	TWeakObjectPtr<URpgInventoryDropConfirmationDialogWidget>
+		DropConfirmationToClose = ActiveDropConfirmation;
+	ActiveDropConfirmation.Reset();
+	PendingDropConfirmation.Reset();
+	if (DropConfirmationToClose.IsValid())
+	{
+		DropConfirmationToClose->OnDeactivated().RemoveAll(this);
+		DropConfirmationToClose->CancelDropConfirmation();
+	}
+}
+
 void URpgInventoryInteractionScreenWidget::DismissInventoryModalPresentation()
 {
 	DismissActiveContextMenuPresentation();
 	DismissActiveSplitDialogPresentation();
+	DismissActiveDropConfirmationPresentation();
 }
 
 void URpgInventoryInteractionScreenWidget::HandleContextMenuDeactivated(
@@ -883,6 +1256,20 @@ void URpgInventoryInteractionScreenWidget::HandleSplitDialogDeactivated(
 	{
 		ActiveSplitDialog.Reset();
 		ActiveSplitDialogSource.Reset();
+	}
+}
+
+void URpgInventoryInteractionScreenWidget::HandleDropConfirmationDeactivated(
+	URpgInventoryDropConfirmationDialogWidget* DeactivatedDialog)
+{
+	if (DeactivatedDialog)
+	{
+		DeactivatedDialog->OnDeactivated().RemoveAll(this);
+	}
+	if (ActiveDropConfirmation.Get() == DeactivatedDialog)
+	{
+		ActiveDropConfirmation.Reset();
+		PendingDropConfirmation.Reset();
 	}
 }
 

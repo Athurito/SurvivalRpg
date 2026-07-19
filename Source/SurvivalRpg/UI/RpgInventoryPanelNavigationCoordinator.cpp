@@ -906,8 +906,9 @@ bool URpgInventoryPanelNavigationCoordinator::DropActiveSelection(int32 StackCou
 	}
 	if (URpgInventoryCarrySlotWidget* CarrySlotWidget = Panels[ActivePanelIndex].CarrySlotWidget)
 	{
-		return DragDropCoordinator &&
-			DragDropCoordinator->DropAddressSlot(CarrySlotWidget->GetAddressSlotViewModel(), StackCount, bConfirmed);
+		return CarrySlotWidget->RequestAddressItemDrop(
+			StackCount,
+			bConfirmed);
 	}
 
 	return false;
