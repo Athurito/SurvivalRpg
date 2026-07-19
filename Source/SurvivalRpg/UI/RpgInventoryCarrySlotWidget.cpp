@@ -1,5 +1,6 @@
 #include "RpgInventoryCarrySlotWidget.h"
 
+#include "InputCoreTypes.h"
 #include "SurvivalRpg/Core/Player/RpgPlayerController.h"
 #include "SurvivalRpg/Equipment/RpgEquipmentLoadoutComponent.h"
 #include "SurvivalRpg/GameplayTags/RpgGameplayTags.h"
@@ -164,6 +165,19 @@ void URpgInventoryCarrySlotWidget::NativeOnRemovedFromFocusPath(const FFocusEven
 	ClearFocusedControllerInteractionTarget();
 	UnbindFocusedControllerInteraction();
 	Super::NativeOnRemovedFromFocusPath(InFocusEvent);
+}
+
+FReply URpgInventoryCarrySlotWidget::NativeOnPreviewMouseButtonDown(
+	const FGeometry& InGeometry,
+	const FPointerEvent& InMouseEvent)
+{
+	if (InMouseEvent.GetEffectingButton() == EKeys::RightMouseButton &&
+		PanelNavigationCoordinator)
+	{
+		PanelNavigationCoordinator->NotifyCarrySlotFocused(this);
+	}
+
+	return Super::NativeOnPreviewMouseButtonDown(InGeometry, InMouseEvent);
 }
 
 void URpgInventoryCarrySlotWidget::HandleCarryAddressSlotChanged(

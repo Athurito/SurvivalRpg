@@ -133,6 +133,10 @@ public:
 	UFUNCTION(BlueprintCallable, Category = "Inventory|Navigation")
 	void NotifyCarrySlotFocused(URpgInventoryCarrySlotWidget* CarrySlotWidget);
 
+	/** Called when a registered equipment slot receives CommonUI or pointer focus. */
+	UFUNCTION(BlueprintCallable, Category = "Inventory|Navigation")
+	void NotifyEquipmentSlotFocused(URpgEquipmentSlotWidget* EquipmentSlotWidget);
+
 	/** Activates a registered panel by id and focuses a sensible entry. */
 	UFUNCTION(BlueprintCallable, Category = "Inventory|Navigation")
 	bool ActivatePanelById(FName PanelId);
@@ -221,9 +225,14 @@ public:
 	UFUNCTION(BlueprintCallable, Category = "Inventory|Navigation")
 	bool DropActiveSelection(int32 StackCount = 0, bool bConfirmed = false);
 
-	/** Opens the native/styled context menu for the active spatial, gear, or carry selection. */
+	/**
+	 * Opens the context menu for the active spatial, gear, or carry selection.
+	 *
+	 * The source leaf resolves its absolute Slate anchor. Player-screen center is used only when that geometry is
+	 * not yet usable, so callers cannot accidentally pass viewport-local or sentinel coordinates.
+	 */
 	UFUNCTION(BlueprintCallable, Category = "Inventory|Navigation")
-	bool RequestContextMenuForActiveSelection(FVector2D ScreenPosition);
+	bool RequestContextMenuForActiveSelection();
 
 	/** Fired after active panel focus changes so Blueprints can update borders/headers. */
 	UPROPERTY(BlueprintAssignable, Category = "Inventory|Navigation")

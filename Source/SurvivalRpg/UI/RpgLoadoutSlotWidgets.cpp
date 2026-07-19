@@ -11,6 +11,7 @@
 #include "SurvivalRpg/Mvvm/Inventory/RpgLoadoutViewModels.h"
 #include "SurvivalRpg/UI/RpgInventoryDragVisualWidget.h"
 #include "SurvivalRpg/UI/RpgInventoryInteractionScreenWidget.h"
+#include "SurvivalRpg/UI/RpgInventoryPanelNavigationCoordinator.h"
 #include "View/MVVMView.h"
 #include "View/MVVMViewClass.h"
 
@@ -76,6 +77,12 @@ void URpgEquipmentSlotWidget::SetDragDropCoordinator(URpgInventoryDragDropCoordi
 	}
 
 	RefreshDragDropVisualState();
+}
+
+void URpgEquipmentSlotWidget::SetPanelNavigationCoordinator(
+	URpgInventoryPanelNavigationCoordinator* InPanelNavigationCoordinator)
+{
+	PanelNavigationCoordinator = InPanelNavigationCoordinator;
 }
 
 void URpgEquipmentSlotWidget::SetInventoryPresentationHost(
@@ -247,8 +254,18 @@ bool URpgEquipmentSlotWidget::ExecuteEquipmentContextAction(
 
 void URpgEquipmentSlotWidget::NativeDestruct()
 {
+	PanelNavigationCoordinator = nullptr;
 	ReleaseEquipmentSlotState();
 	Super::NativeDestruct();
+}
+
+void URpgEquipmentSlotWidget::NativeOnAddedToFocusPath(const FFocusEvent& InFocusEvent)
+{
+	Super::NativeOnAddedToFocusPath(InFocusEvent);
+	if (PanelNavigationCoordinator)
+	{
+		PanelNavigationCoordinator->NotifyEquipmentSlotFocused(this);
+	}
 }
 
 void URpgEquipmentSlotWidget::ReleaseEquipmentSlotState()
@@ -335,10 +352,16 @@ FReply URpgEquipmentSlotWidget::NativeOnPreviewMouseButtonDown(const FGeometry& 
 
 FReply URpgEquipmentSlotWidget::HandlePointerButtonDown(const FGeometry& InGeometry, const FPointerEvent& InMouseEvent)
 {
-	if (InMouseEvent.GetEffectingButton() == EKeys::RightMouseButton &&
-		RequestEquipmentContextMenu(InMouseEvent.GetScreenSpacePosition()))
+	if (InMouseEvent.GetEffectingButton() == EKeys::RightMouseButton)
 	{
-		return FReply::Handled();
+		if (PanelNavigationCoordinator)
+		{
+			PanelNavigationCoordinator->NotifyEquipmentSlotFocused(this);
+		}
+		if (RequestEquipmentContextMenu(InMouseEvent.GetScreenSpacePosition()))
+		{
+			return FReply::Handled();
+		}
 	}
 
 	if (InMouseEvent.GetEffectingButton() == EKeys::LeftMouseButton && GetRepresentedItem())

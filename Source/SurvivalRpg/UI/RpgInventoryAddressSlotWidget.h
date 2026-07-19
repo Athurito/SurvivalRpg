@@ -101,7 +101,7 @@ public:
 	UFUNCTION(BlueprintPure, Category = "Inventory|Address Slot|Context Menu")
 	int32 GetQuickAccessSlotIndex() const;
 
-	/** Opens the configured context menu at a viewport-space position for the represented item. */
+	/** Opens the configured context menu at an absolute Slate screen position for the represented item. */
 	UFUNCTION(BlueprintCallable, Category = "Inventory|Address Slot|Context Menu")
 	bool RequestAddressContextMenu(FVector2D ScreenPosition);
 

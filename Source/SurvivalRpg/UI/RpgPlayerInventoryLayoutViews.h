@@ -523,9 +523,15 @@ public:
 	UFUNCTION(BlueprintCallable, Category = "Inventory|Spatial Grid|Actions")
 	void CancelPendingSplit();
 
-	/** Opens the context menu for the current item and reports all locally meaningful action rows. */
+	/** Opens the context menu at an absolute Slate screen position for the current item. */
 	UFUNCTION(BlueprintCallable, Category = "Inventory|Spatial Grid|Actions")
 	bool RequestContextMenuForSelectedCell(FVector2D ScreenPosition);
+
+	/**
+	 * Resolves the selected item's footprint center, then the cursor-cell center, in absolute Slate coordinates.
+	 * Returns false before this grid has a usable layout geometry.
+	 */
+	bool TryGetSelectedContextMenuScreenAnchor(FVector2D& OutAbsoluteScreenPosition) const;
 
 	/** Returns context actions for the selected item. The server still validates every committed action. */
 	UFUNCTION(BlueprintPure, Category = "Inventory|Spatial Grid|Actions")

@@ -8,6 +8,7 @@
 #include "SurvivalRpg/Mvvm/Inventory/RpgPlayerInventoryViewModels.h"
 #include "SurvivalRpg/UI/RpgLoadoutSlotWidgets.h"
 #include "SurvivalRpg/UI/RpgInventoryCarrySlotWidget.h"
+#include "SurvivalRpg/UI/RpgInventoryUiGeometry.h"
 #include "SurvivalRpg/UI/RpgPlayerInventoryLayoutViews.h"
 #include "SurvivalRpg/UI/RpgInventoryTileView.h"
 
@@ -58,6 +59,11 @@ void URpgInventoryPanelNavigationCoordinator::ClearPanels()
 			Panel.ActionBarTileView->SetPanelNavigationCoordinator(nullptr, NAME_None);
 			Panel.ActionBarTileView->SetActionBarPanelActive(false);
 			Panel.ActionBarTileView->ClearActionBarSelectionVisual();
+		}
+
+		if (Panel.EquipmentSlotWidget)
+		{
+			Panel.EquipmentSlotWidget->SetPanelNavigationCoordinator(nullptr);
 		}
 
 		if (Panel.CarrySlotWidget)
@@ -279,6 +285,7 @@ void URpgInventoryPanelNavigationCoordinator::RegisterEquipmentPanel(FName Panel
 			Panel.EquipmentSlotWidget = EquipmentSlotWidget;
 			Panel.CarrySlotWidget = nullptr;
 			Panel.Inventory = DragDropCoordinator ? DragDropCoordinator->GetPlayerInventory() : nullptr;
+			EquipmentSlotWidget->SetPanelNavigationCoordinator(this);
 			UpdatePanelSelectionMemory(Panel);
 			ApplyActivePanelState();
 			return;
@@ -293,6 +300,7 @@ void URpgInventoryPanelNavigationCoordinator::RegisterEquipmentPanel(FName Panel
 	NewPanel.EquipmentSlotWidget = EquipmentSlotWidget;
 	NewPanel.CarrySlotWidget = nullptr;
 	NewPanel.Inventory = DragDropCoordinator ? DragDropCoordinator->GetPlayerInventory() : nullptr;
+	EquipmentSlotWidget->SetPanelNavigationCoordinator(this);
 	ApplyRetainedPanelMemory(NewPanel);
 	if (!RetainedPanelMemories.Contains(PanelId))
 	{
@@ -455,6 +463,39 @@ void URpgInventoryPanelNavigationCoordinator::NotifyCarrySlotFocused(
 	}
 
 	const int32 PanelIndex = FindPanelIndexForCarrySlotWidget(CarrySlotWidget);
+	if (!IsValidPanelIndex(PanelIndex))
+	{
+		return;
+	}
+
+	const bool bPanelChanged = ActivePanelIndex != PanelIndex;
+	if (bPanelChanged)
+	{
+		SaveActivePanelSelection();
+		ActivePanelIndex = PanelIndex;
+		ApplyActivePanelState();
+	}
+
+	FRpgInventoryPanelNavigationEntry& ActivePanel = Panels[PanelIndex];
+	UpdatePanelSelectionMemory(ActivePanel);
+	UpdateFocusedInventoryForActivePanel(ActivePanel);
+	OnActiveSelectionChanged.Broadcast();
+
+	if (bPanelChanged)
+	{
+		BroadcastActivePanelChanged(ActivePanel);
+	}
+}
+
+void URpgInventoryPanelNavigationCoordinator::NotifyEquipmentSlotFocused(
+	URpgEquipmentSlotWidget* EquipmentSlotWidget)
+{
+	if (bSuppressPanelSelectionNotifications || !EquipmentSlotWidget)
+	{
+		return;
+	}
+
+	const int32 PanelIndex = FindPanelIndexForEquipmentSlotWidget(EquipmentSlotWidget);
 	if (!IsValidPanelIndex(PanelIndex))
 	{
 		return;
@@ -969,7 +1010,7 @@ bool URpgInventoryPanelNavigationCoordinator::DropActiveSelection(int32 StackCou
 	return false;
 }
 
-bool URpgInventoryPanelNavigationCoordinator::RequestContextMenuForActiveSelection(FVector2D ScreenPosition)
+bool URpgInventoryPanelNavigationCoordinator::RequestContextMenuForActiveSelection()
 {
 	if (!IsValidPanelIndex(ActivePanelIndex))
 	{
@@ -977,17 +1018,50 @@ bool URpgInventoryPanelNavigationCoordinator::RequestContextMenuForActiveSelecti
 	}
 
 	FRpgInventoryPanelNavigationEntry& Panel = Panels[ActivePanelIndex];
+	FVector2D AbsoluteScreenAnchor;
+	bool bHasSelectionAnchor = false;
 	if (Panel.SpatialGridWidget)
 	{
-		return Panel.SpatialGridWidget->RequestContextMenuForSelectedCell(ScreenPosition);
+		bHasSelectionAnchor =
+			Panel.SpatialGridWidget->TryGetSelectedContextMenuScreenAnchor(AbsoluteScreenAnchor);
+	}
+	else if (Panel.CarrySlotWidget)
+	{
+		bHasSelectionAnchor = RpgInventoryUiGeometry::TryResolveAbsoluteCenter(
+			Panel.CarrySlotWidget->GetCachedGeometry(),
+			AbsoluteScreenAnchor);
+	}
+	else if (Panel.EquipmentSlotWidget)
+	{
+		bHasSelectionAnchor = RpgInventoryUiGeometry::TryResolveAbsoluteCenter(
+			Panel.EquipmentSlotWidget->GetCachedGeometry(),
+			AbsoluteScreenAnchor);
+	}
+	else
+	{
+		// The legacy TileView has no full context-action contract and intentionally remains fail-closed.
+		return false;
+	}
+
+	if (!bHasSelectionAnchor &&
+		!RpgInventoryUiGeometry::TryResolvePlayerScreenCenter(
+			PlayerController,
+			AbsoluteScreenAnchor))
+	{
+		return false;
+	}
+
+	if (Panel.SpatialGridWidget)
+	{
+		return Panel.SpatialGridWidget->RequestContextMenuForSelectedCell(AbsoluteScreenAnchor);
 	}
 	if (Panel.CarrySlotWidget)
 	{
-		return Panel.CarrySlotWidget->RequestAddressContextMenu(ScreenPosition);
+		return Panel.CarrySlotWidget->RequestAddressContextMenu(AbsoluteScreenAnchor);
 	}
 	if (Panel.EquipmentSlotWidget)
 	{
-		return Panel.EquipmentSlotWidget->RequestEquipmentContextMenu(ScreenPosition);
+		return Panel.EquipmentSlotWidget->RequestEquipmentContextMenu(AbsoluteScreenAnchor);
 	}
 
 	return false;

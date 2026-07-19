@@ -222,6 +222,12 @@ bool URpgInventoryControllerActionsWidget::NativeOnHandleBackAction()
 
 FReply URpgInventoryControllerActionsWidget::NativeOnKeyDown(const FGeometry& InGeometry, const FKeyEvent& InKeyEvent)
 {
+	if (InKeyEvent.GetKey() == EKeys::Gamepad_LeftTrigger &&
+		PanelNavigator &&
+		PanelNavigator->RequestContextMenuForActiveSelection())
+	{
+		return FReply::Handled();
+	}
 	if (InKeyEvent.GetKey() == EKeys::R && DragDropCoordinator && DragDropCoordinator->HasHeldPayload())
 	{
 		return DragDropCoordinator->ToggleInteractionRotation() ? FReply::Handled() : FReply::Unhandled();

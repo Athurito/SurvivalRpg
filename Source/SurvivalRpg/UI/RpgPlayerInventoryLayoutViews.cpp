@@ -27,6 +27,7 @@
 #include "SurvivalRpg/UI/RpgInventoryDragVisualWidget.h"
 #include "SurvivalRpg/UI/RpgInventoryInteractionScreenWidget.h"
 #include "SurvivalRpg/UI/RpgInventoryPanelNavigationCoordinator.h"
+#include "SurvivalRpg/UI/RpgInventoryUiGeometry.h"
 #include "View/MVVMView.h"
 #include "View/MVVMViewClass.h"
 
@@ -1747,6 +1748,46 @@ bool URpgInventorySpatialGridWidget::RequestContextMenuForSelectedCell(FVector2D
 			ScreenPosition);
 }
 
+bool URpgInventorySpatialGridWidget::TryGetSelectedContextMenuScreenAnchor(
+	FVector2D& OutAbsoluteScreenPosition) const
+{
+	const FGeometry GridGeometry = GetGridInteractionGeometry();
+	FRpgInventoryGridPlacement SelectedPlacement;
+	if (const URpgInventoryAddressSlotViewModel* AddressSlot = GetSelectedAddressSlot())
+	{
+		SelectedPlacement = AddressSlot->GetItemPlacement();
+	}
+	else if (const URpgInventoryEntryViewModel* EntryViewModel = GetSelectedEntryViewModel())
+	{
+		SelectedPlacement = EntryViewModel->GetPlacement();
+	}
+
+	if (SelectedPlacement.IsValid())
+	{
+		const FVector2D ItemCenter =
+			GetCellPosition(SelectedPlacement.X, SelectedPlacement.Y) +
+			GetPlacementSize(SelectedPlacement) * 0.5f;
+		if (RpgInventoryUiGeometry::TryResolveAbsolutePoint(
+			GridGeometry,
+			ItemCenter,
+			OutAbsoluteScreenPosition))
+		{
+			return true;
+		}
+	}
+
+	if (!IsValidCell(CursorX, CursorY))
+	{
+		OutAbsoluteScreenPosition = FVector2D::ZeroVector;
+		return false;
+	}
+
+	return RpgInventoryUiGeometry::TryResolveAbsolutePoint(
+		GridGeometry,
+		GetCellPosition(CursorX, CursorY) + FVector2D(CellSize * 0.5f),
+		OutAbsoluteScreenPosition);
+}
+
 TArray<ERpgInventoryContextAction> URpgInventorySpatialGridWidget::GetSelectedContextActions() const
 {
 	if (!DragDropCoordinator)
@@ -2418,10 +2459,6 @@ FReply URpgInventorySpatialGridWidget::NativeOnKeyDown(const FGeometry& InGeomet
 	if (Key == EKeys::Gamepad_RightTrigger)
 	{
 		return UseOrEquipSelectedCell() ? FReply::Handled() : FReply::Unhandled();
-	}
-	if (Key == EKeys::Gamepad_LeftTrigger)
-	{
-		return RequestContextMenuForSelectedCell(FVector2D::ZeroVector) ? FReply::Handled() : FReply::Unhandled();
 	}
 	if (Key == EKeys::Gamepad_FaceButton_Right && DragDropCoordinator && DragDropCoordinator->HasHeldPayload())
 	{

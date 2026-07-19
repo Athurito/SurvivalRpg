@@ -215,7 +215,7 @@ Es gibt bewusst keine spekulative allgemeine Dual-Inventory-Basis.
       Drop-Intent sendet.
 - [x] Verfügbare Context-Actions und Klick-Revalidierung über einen gemeinsamen
       Query-/Policy-Vertrag statt mehrfacher Fragment-Inferenz bestimmen.
-- [ ] Controller-Context-Menüs an der fokussierten Item-/Slot-Geometrie statt
+- [x] Controller-Context-Menüs an der fokussierten Item-/Slot-Geometrie statt
       an der linken oberen Viewport-Ecke verankern.
 - [ ] Gear- und Spatial-Drag verwenden dieselbe authored Drag-Visual-Klasse.
 - [ ] Quick-Access-Radial in die reguläre CommonUI-/Input-Komposition
@@ -566,6 +566,20 @@ Verifizierter UI-Zwischenstand vom 2026-07-19:
   `SurvivalRpg.Inventory` (55/55), `SurvivalRpg.UI` (10/10),
   `SurvivalRpg.Equipment` (5/5) und `SurvivalRpg.Crafting` (6/6) sind
   warnungsfrei grün.
+- Controller-Context-Menüs werden jetzt aus der fokussierten Spatial-Auswahl
+  beziehungsweise der gecachten Carry-/Equipment-Slot-Geometrie verankert.
+  Nur wenn keine gültige Auswahlgeometrie existiert, wird die Mitte der
+  Player-Screen-Geometrie verwendet. Die Position wird im tatsächlichen
+  Context-Menu-Canvas konvertiert und an dessen Grenzen geklemmt.
+- `Gamepad_LeftTrigger` wird zentral am Controller-Actions-Host behandelt;
+  Spatial-, Carry- und Equipment-Leaves lassen den Input dorthin hochreichen
+  und synchronisieren ihren Fokus vor einer Pointer-basierten Modalöffnung.
+- Der abschließende UE-5.8-Editor-Build ist erfolgreich.
+  `SurvivalRpg.Inventory.UI.ContextAnchor.GeometryAndClamping` ist 1/1 grün;
+  die vollständigen Läufe `SurvivalRpg.Inventory` (56/56),
+  `SurvivalRpg.UI` (10/10), `SurvivalRpg.Equipment` (5/5) und
+  `SurvivalRpg.Crafting` (6/6) sind ohne Warnungen, Fehler oder ausgelassene
+  Tests erfolgreich.
 - Ein separater frischer UE-5.8-Commandlet-Prozess kompiliert alle drei neuen
   Widget-Blueprints ohne Fehler und lädt Registry sowie dedizierte
   BaseTerminal-Action-Tabelle erneut. Dabei wurden keine Assets gespeichert.
@@ -596,7 +610,7 @@ Verifizierter UI-Zwischenstand vom 2026-07-19:
   8. [x] **P1:** Einen gemeinsamen `CanExecuteContextAction`-/AvailableActions-
      Vertrag im bestehenden Coordinator-/Policy-Pfad verwenden; die finale
      Servervalidierung bleibt autoritativ.
-  9. [ ] **P2:** Controller-Context-Menüs an der fokussierten Auswahl
+  9. [x] **P2:** Controller-Context-Menüs an der fokussierten Auswahl
      verankern und die Viewport-Mitte nur als Fallback verwenden.
   10. [ ] Quick-Access-Radial und Gear-Drag-Visual in die gemeinsame UI-/Input-
      Komposition überführen.

@@ -18,6 +18,7 @@
 #include "SurvivalRpg/Mvvm/Inventory/RpgPlayerInventoryViewModels.h"
 #include "SurvivalRpg/UI/RpgInventoryAddressSlotWidget.h"
 #include "SurvivalRpg/UI/RpgInventoryInteractionScreenWidget.h"
+#include "SurvivalRpg/UI/RpgInventoryUiGeometry.h"
 #include "SurvivalRpg/UI/RpgLoadoutSlotWidgets.h"
 
 #include UE_INLINE_GENERATED_CPP_BY_NAME(RpgInventoryActionWidgets)
@@ -1229,18 +1230,17 @@ void URpgInventoryContextMenuWidget::UpdateContextMenuPosition()
 		return;
 	}
 
-	const FGeometry& RootGeometry = GetCachedGeometry();
-	const FVector2D RootSize = RootGeometry.GetLocalSize();
-	if (RootSize.X <= 1.0f || RootSize.Y <= 1.0f)
+	ForceLayoutPrepass();
+	const FVector2D MenuSize = ContextMenuBorder->GetDesiredSize();
+	FVector2D LocalPosition;
+	if (!RpgInventoryUiGeometry::TryResolveClampedMenuCanvasPosition(
+		ContextMenuCanvas->GetCachedGeometry(),
+		RequestedScreenPosition,
+		MenuSize,
+		LocalPosition))
 	{
 		return;
 	}
-
-	ForceLayoutPrepass();
-	const FVector2D MenuSize = ContextMenuBorder->GetDesiredSize();
-	FVector2D LocalPosition = RootGeometry.AbsoluteToLocal(RequestedScreenPosition);
-	LocalPosition.X = FMath::Clamp(LocalPosition.X, 0.0f, FMath::Max(0.0f, RootSize.X - MenuSize.X));
-	LocalPosition.Y = FMath::Clamp(LocalPosition.Y, 0.0f, FMath::Max(0.0f, RootSize.Y - MenuSize.Y));
 
 	if (UCanvasPanelSlot* MenuSlot = Cast<UCanvasPanelSlot>(ContextMenuBorder->Slot))
 	{

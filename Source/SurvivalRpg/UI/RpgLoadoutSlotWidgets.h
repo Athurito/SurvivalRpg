@@ -11,6 +11,7 @@ class URpgEquipmentSlotViewModel;
 class URpgInventoryDragDropCoordinator;
 class URpgInventoryInteractionScreenWidget;
 class URpgInventoryItemInstance;
+class URpgInventoryPanelNavigationCoordinator;
 class UDragDropOperation;
 class UUserWidget;
 
@@ -37,6 +38,11 @@ public:
 	/** Assigns the screen-local drag/drop coordinator shared by inventory and equipment widgets. */
 	UFUNCTION(BlueprintCallable, Category = "Equipment|Slot")
 	void SetDragDropCoordinator(URpgInventoryDragDropCoordinator* InCoordinator);
+
+	/** Connects this focusable gear leaf to the screen-local active-panel navigator. */
+	UFUNCTION(BlueprintCallable, Category = "Equipment|Slot|Navigation")
+	void SetPanelNavigationCoordinator(
+		URpgInventoryPanelNavigationCoordinator* InPanelNavigationCoordinator);
 
 	/**
 	 * Assigns the owning inventory screen that centrally creates and owns the equipment context menu.
@@ -93,7 +99,7 @@ public:
 	UFUNCTION(BlueprintCallable, Category = "Equipment|Slot")
 	void ClearExternalPreviewPayload();
 
-	/** Opens the shared modal inventory context menu for this slot's current persistent item. */
+	/** Opens the shared modal at an absolute Slate screen position for this slot's current persistent item. */
 	UFUNCTION(BlueprintCallable, Category = "Equipment|Slot|Context Menu")
 	bool RequestEquipmentContextMenu(FVector2D ScreenPosition);
 
@@ -104,6 +110,7 @@ public:
 
 protected:
 	virtual void NativeDestruct() override;
+	virtual void NativeOnAddedToFocusPath(const FFocusEvent& InFocusEvent) override;
 	virtual void NativeOnClicked() override;
 	virtual FReply NativeOnPreviewMouseButtonDown(const FGeometry& InGeometry, const FPointerEvent& InMouseEvent) override;
 	virtual FReply NativeOnMouseButtonDown(const FGeometry& InGeometry, const FPointerEvent& InMouseEvent) override;
@@ -156,6 +163,10 @@ private:
 
 	UPROPERTY(Transient)
 	TObjectPtr<URpgInventoryDragDropCoordinator> DragDropCoordinator = nullptr;
+
+	/** Screen-local focus owner; it never participates in equipment gameplay state. */
+	UPROPERTY(Transient)
+	TObjectPtr<URpgInventoryPanelNavigationCoordinator> PanelNavigationCoordinator = nullptr;
 
 	UPROPERTY(Transient)
 	ERpgInventorySlotDragVisualState CurrentDragDropVisualState = ERpgInventorySlotDragVisualState::Normal;
