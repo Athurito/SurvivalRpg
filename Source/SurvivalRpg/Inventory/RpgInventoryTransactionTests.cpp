@@ -4,11 +4,15 @@
 
 #include "RpgPlayerInventoryLayoutComponent.h"
 #include "RpgInventoryDragDrop.h"
+#include "RpgInventoryEquipmentPlacementPolicy.h"
 #include "RpgInventoryInteractionSession.h"
+#include "RpgInventoryContainerActor.h"
 #include "RpgInventoryItemInstance.h"
 #include "RpgInventoryManagerComponent.h"
 #include "RpgInventoryUiActionComponent.h"
 #include "SurvivalRpg/ActionBar/RpgActionBarComponent.h"
+#include "SurvivalRpg/Crafting/RpgCraftingStationActor.h"
+#include "SurvivalRpg/Crafting/RpgCraftingStationComponent.h"
 #include "SurvivalRpg/Equipment/RpgEquipmentLoadoutComponent.h"
 #include "SurvivalRpg/GameplayTags/RpgGameplayTags.h"
 #include "SurvivalRpg/Systems/GameplayTagStack.h"
@@ -16,7 +20,9 @@
 #include "Engine/Engine.h"
 #include "Engine/GameInstance.h"
 #include "Engine/World.h"
+#include "GameFramework/GameplayMessageSubsystem.h"
 #include "GameFramework/Actor.h"
+#include "GameFramework/Pawn.h"
 #include "Misc/AutomationTest.h"
 #include "Serialization/MemoryWriter.h"
 
@@ -235,6 +241,97 @@ namespace RpgInventoryTransactionTests
 }
 
 IMPLEMENT_SIMPLE_AUTOMATION_TEST(
+	FRpgInventoryLocalPlayerFeedbackRoutingTest,
+	"SurvivalRpg.Inventory.Feedback.LocalPlayerRecipientRouting",
+	EAutomationTestFlags::EditorContext | EAutomationTestFlags::EngineFilter)
+
+bool FRpgInventoryLocalPlayerFeedbackRoutingTest::RunTest(
+	const FString& Parameters)
+{
+	using namespace RpgInventoryTransactionTests;
+	FScopedInventoryWorld TestWorld;
+	if (!InitializeTest(*this, TestWorld))
+	{
+		return false;
+	}
+
+	UWorld* World = TestWorld.GetTestWorld();
+	FActorSpawnParameters FirstControllerParameters;
+	FirstControllerParameters.Name = MakeUniqueObjectName(
+		World,
+		ARpgInventoryAutomationTestPlayerController::StaticClass(),
+		TEXT("FeedbackRecipientController"));
+	FirstControllerParameters.ObjectFlags = RF_Transient;
+	ARpgInventoryAutomationTestPlayerController* RecipientController =
+		World->SpawnActor<ARpgInventoryAutomationTestPlayerController>(
+			FirstControllerParameters);
+
+	FActorSpawnParameters OtherControllerParameters;
+	OtherControllerParameters.Name = MakeUniqueObjectName(
+		World,
+		ARpgInventoryAutomationTestPlayerController::StaticClass(),
+		TEXT("FeedbackOtherController"));
+	OtherControllerParameters.ObjectFlags = RF_Transient;
+	ARpgInventoryAutomationTestPlayerController* OtherController =
+		World->SpawnActor<ARpgInventoryAutomationTestPlayerController>(
+			OtherControllerParameters);
+	URpgInventoryUiActionComponent* UiActions = RecipientController
+		? RecipientController->GetInventoryUiActionComponent()
+		: nullptr;
+	if (!TestNotNull(
+			TEXT("The feedback recipient controller exists"),
+			RecipientController) ||
+		!TestNotNull(
+			TEXT("The second local controller exists"),
+			OtherController) ||
+		!TestNotNull(
+			TEXT("The recipient owns its inventory action component"),
+			UiActions))
+	{
+		return false;
+	}
+
+	int32 BroadcastCount = 0;
+	FRpgInventoryActionFeedbackMessage CapturedMessage;
+	UGameplayMessageSubsystem& MessageSubsystem =
+		UGameplayMessageSubsystem::Get(World);
+	const FGameplayMessageListenerHandle ListenerHandle =
+		MessageSubsystem.RegisterListener<FRpgInventoryActionFeedbackMessage>(
+			RpgGameplayTags::Rpg_Inventory_Message_ActionFeedback,
+			[&BroadcastCount, &CapturedMessage](
+				FGameplayTag Channel,
+				const FRpgInventoryActionFeedbackMessage& Message)
+			{
+				++BroadcastCount;
+				CapturedMessage = Message;
+			});
+
+	UiActions->RequestTransferItemStack(nullptr, nullptr, nullptr, 1);
+	MessageSubsystem.UnregisterListener(ListenerHandle);
+
+	TestEqual(
+		TEXT("Exactly one owner-local feedback message is broadcast"),
+		BroadcastCount,
+		1);
+	TestEqual(
+		TEXT("Feedback is addressed to the action component owner"),
+		CapturedMessage.Recipient.Get(),
+		static_cast<APlayerController*>(RecipientController));
+	TestTrue(
+		TEXT("The owning local player accepts the feedback"),
+		CapturedMessage.IsAddressedTo(RecipientController));
+	TestFalse(
+		TEXT("Another local player rejects the feedback"),
+		CapturedMessage.IsAddressedTo(OtherController));
+
+	FRpgInventoryActionFeedbackMessage LegacyMessage;
+	TestTrue(
+		TEXT("Legacy unaddressed feedback remains compatible"),
+		LegacyMessage.IsAddressedTo(RecipientController));
+	return true;
+}
+
+IMPLEMENT_SIMPLE_AUTOMATION_TEST(
 	FRpgInventoryFragmentedGridAndRotationTest,
 	"SurvivalRpg.Inventory.Transaction.FragmentedGridAndEdgeRotation",
 	EAutomationTestFlags::EditorContext | EAutomationTestFlags::EngineFilter)
@@ -380,7 +477,13 @@ bool FRpgInventoryContainerGearDragDropTest::RunTest(const FString& Parameters)
 	Controller->SetPlayerState(PlayerState);
 	PlayerState->SetOwner(Controller);
 	URpgInventoryManagerComponent* Inventory = PlayerState->GetInventoryManagerComponent();
-	if (!TestNotNull(TEXT("The player inventory exists"), Inventory))
+	URpgPlayerInventoryLayoutComponent* Layout = Controller->GetPlayerInventoryLayoutComponent();
+	URpgEquipmentLoadoutComponent* EquipmentLoadout = Controller->GetEquipmentLoadoutComponent();
+	URpgInventoryUiActionComponent* UiActions = Controller->GetInventoryUiActionComponent();
+	if (!TestNotNull(TEXT("The player inventory exists"), Inventory) ||
+		!TestNotNull(TEXT("The player inventory layout exists"), Layout) ||
+		!TestNotNull(TEXT("The equipment reconciliation component exists"), EquipmentLoadout) ||
+		!TestNotNull(TEXT("The authoritative inventory action component exists"), UiActions))
 	{
 		return false;
 	}
@@ -421,9 +524,93 @@ bool FRpgInventoryContainerGearDragDropTest::RunTest(const FString& Parameters)
 	Payload.ItemFootprint.Height = BackpackEntry.Placement.Height;
 	const FRpgInventoryDropTarget BackpackTarget =
 		URpgInventoryDragDropCoordinator::MakeEquipmentTarget(ERpgEquipmentSlot::Backpack);
+	const FRpgInventoryDropTarget PouchTarget =
+		URpgInventoryDragDropCoordinator::MakeEquipmentTarget(ERpgEquipmentSlot::Pouch);
+
+	FRpgInventorySlotAddress BackpackAddress;
+	FRpgInventorySlotAddress PouchAddress;
+	if (!TestTrue(
+			TEXT("The layout resolves the physical Backpack address"),
+			URpgPlayerInventoryLayoutComponent::TryMakeGearSlotAddress(
+				ERpgEquipmentSlot::Backpack,
+				BackpackAddress)) ||
+		!TestTrue(
+			TEXT("The layout resolves the physical Pouch address"),
+			URpgPlayerInventoryLayoutComponent::TryMakeGearSlotAddress(
+				ERpgEquipmentSlot::Pouch,
+				PouchAddress)))
+	{
+		return false;
+	}
+
+	TestTrue(
+		TEXT("The shared policy permits the authored Backpack provider slot"),
+		FRpgInventoryEquipmentPlacementPolicy::CanItemUseEquipmentSlot(
+			Backpack,
+			ERpgEquipmentSlot::Backpack));
+	TestFalse(
+		TEXT("The shared policy rejects the same provider from its unauthored Pouch slot"),
+		FRpgInventoryEquipmentPlacementPolicy::CanItemUseEquipmentSlot(
+			Backpack,
+			ERpgEquipmentSlot::Pouch));
+	TestTrue(
+		TEXT("The layout consumes the shared policy for Gear.Backpack"),
+		Layout->CanItemUseSlotAddress(Backpack, BackpackAddress));
+	TestFalse(
+		TEXT("The layout consumes the shared policy for Gear.Pouch"),
+		Layout->CanItemUseSlotAddress(Backpack, PouchAddress));
+	TestTrue(
+		TEXT("The loadout reconciliation accepts the same authored Backpack placement"),
+		EquipmentLoadout->CanAssignItemToEquipmentSlot(ERpgEquipmentSlot::Backpack, Backpack));
+	TestFalse(
+		TEXT("The loadout reconciliation rejects the same unauthored Pouch placement"),
+		EquipmentLoadout->CanAssignItemToEquipmentSlot(ERpgEquipmentSlot::Pouch, Backpack));
+
+	const FRpgInventoryContainerHandle PouchSlot =
+		FRpgInventoryContainerHandle::MakeRoot(URpgPlayerInventoryLayoutComponent::GearPouchGroupId);
+	const FRpgInventoryMutationRequest RejectedPouchRequest = MakePlacementRequest(
+		ERpgInventoryMutationOperation::Equip,
+		Backpack,
+		Pockets,
+		PouchSlot,
+		0,
+		0);
+	const FRpgInventoryMutationResult RejectedPouchPlan =
+		Inventory->PlanInventoryMutation(RejectedPouchRequest);
+	TestFalse(
+		TEXT("The authoritative planner rejects the same unauthored Pouch placement"),
+		RejectedPouchPlan.IsSuccess());
+	TestEqual(
+		TEXT("The planner reports the provider policy failure instead of inventory full"),
+		RejectedPouchPlan.Code,
+		ERpgInventoryMutationResultCode::ItemNotAllowed);
+	const FRpgInventoryMutationResult RejectedPouchExecute =
+		Inventory->ExecuteInventoryMutation(RejectedPouchRequest);
+	TestFalse(
+		TEXT("The authoritative commit rejects the same unauthored Pouch placement"),
+		RejectedPouchExecute.IsSuccess());
+	TestEqual(
+		TEXT("The commit preserves the provider policy failure code"),
+		RejectedPouchExecute.Code,
+		ERpgInventoryMutationResultCode::ItemNotAllowed);
+	FRpgInventoryEntryView RejectedPouchEntry;
+	TestTrue(
+		TEXT("The rejected provider remains addressable"),
+		GetEntryView(Inventory, Backpack->GetItemId(), RejectedPouchEntry));
+	TestEqual(
+		TEXT("The rejected provider remains physically in Pockets"),
+		RejectedPouchEntry.Placement.GetContainerHandle(),
+		Pockets);
 
 	URpgInventoryInteractionSession* Session = Coordinator->GetInteractionSession();
 	TestFalse(TEXT("The session starts without a held payload"), Session->HasPayload());
+	TestFalse(
+		TEXT("The UI preview rejects the same unauthored Pouch placement"),
+		Coordinator->PreviewPayloadDrop(Payload, PouchTarget));
+	TestEqual(
+		TEXT("The rejected Pouch target presents as blocked"),
+		Coordinator->ResolveInteractionPreview(Payload, PouchTarget),
+		ERpgInventoryInteractionPreviewState::Blocked);
 	bool bEveryPurePreviewAccepted = true;
 	for (int32 PreviewIteration = 0; PreviewIteration < 256; ++PreviewIteration)
 	{
@@ -472,6 +659,66 @@ bool FRpgInventoryContainerGearDragDropTest::RunTest(const FString& Parameters)
 		TEXT("Gear-to-grid moves the physical item back into Pockets"),
 		ReturnedBackpackEntry.Placement.GetContainerHandle(),
 		Pockets);
+
+	UiActions->RequestEquipSlotContainerItem(ERpgEquipmentSlot::Backpack, Backpack);
+	FRpgInventoryEntryView ReEquippedBackpackEntry;
+	TestTrue(
+		TEXT("The slot-container action physically equips the backpack again"),
+		GetEntryView(Inventory, Backpack->GetItemId(), ReEquippedBackpackEntry));
+	TestEqual(
+		TEXT("The re-equipped provider occupies Gear.Backpack"),
+		ReEquippedBackpackEntry.Placement.GetContainerHandle(),
+		FRpgInventoryContainerHandle::MakeRoot(URpgPlayerInventoryLayoutComponent::GearBackpackGroupId));
+	TestEqual(
+		TEXT("Physical equip reconciles the Backpack loadout mirror before unequip"),
+		EquipmentLoadout->GetItemInEquipmentSlot(ERpgEquipmentSlot::Backpack),
+		Backpack);
+
+	const FRpgInventoryContainerHandle BackpackContents =
+		FRpgInventoryContainerHandle::MakeItemOwned(
+			Backpack->GetItemId(),
+			BagContainerId,
+			1);
+	URpgInventoryItemInstance* PackedItem = Inventory->AddItemDefinitionToPlacement(
+		URpgInventoryAutomationTestUnitItemDefinition::StaticClass(),
+		1,
+		MakePlacement(BackpackContents, 0, 0));
+	TestNotNull(TEXT("The equipped provider owns one packed child item"), PackedItem);
+
+	UiActions->RequestUnequipSlotContainerItem(
+		ERpgEquipmentSlot::Backpack,
+		FRpgInventoryItemId::NewId());
+	FRpgInventoryEntryView StaleUnequipBackpackEntry;
+	TestTrue(
+		TEXT("The provider remains addressable after a stale unequip request"),
+		GetEntryView(Inventory, Backpack->GetItemId(), StaleUnequipBackpackEntry));
+	TestEqual(
+		TEXT("A stale expected item id cannot remove the current provider"),
+		StaleUnequipBackpackEntry.Placement.GetContainerHandle(),
+		FRpgInventoryContainerHandle::MakeRoot(URpgPlayerInventoryLayoutComponent::GearBackpackGroupId));
+
+	UiActions->RequestUnequipSlotContainerItem(
+		ERpgEquipmentSlot::Backpack,
+		Backpack->GetItemId());
+	FRpgInventoryEntryView ActionUnequippedBackpackEntry;
+	TestTrue(
+		TEXT("The unequipped provider remains addressable"),
+		GetEntryView(Inventory, Backpack->GetItemId(), ActionUnequippedBackpackEntry));
+	TestEqual(
+		TEXT("Slot-container unequip moves the physical provider into content"),
+		ActionUnequippedBackpackEntry.Placement.GetContainerHandle(),
+		Pockets);
+	TestNull(
+		TEXT("Slot-container unequip reconciles the Backpack loadout mirror"),
+		EquipmentLoadout->GetItemInEquipmentSlot(ERpgEquipmentSlot::Backpack));
+	FRpgInventoryEntryView PackedItemEntry;
+	TestTrue(
+		TEXT("The provider's packed child remains addressable after unequip"),
+		PackedItem && GetEntryView(Inventory, PackedItem->GetItemId(), PackedItemEntry));
+	TestEqual(
+		TEXT("Unequip preserves the item-owned child placement handle"),
+		PackedItemEntry.Placement.GetContainerHandle(),
+		BackpackContents);
 	return true;
 }
 
@@ -518,10 +765,14 @@ bool FRpgInventoryCarryQuickAccessBindingTest::RunTest(const FString& Parameters
 	URpgInventoryManagerComponent* Inventory = PlayerState->GetInventoryManagerComponent();
 	URpgActionBarComponent* ActionBar = Controller->GetActionBarComponent();
 	URpgInventoryUiActionComponent* UiActions = Controller->GetInventoryUiActionComponent();
+	URpgPlayerInventoryLayoutComponent* Layout = Controller->GetPlayerInventoryLayoutComponent();
+	URpgEquipmentLoadoutComponent* EquipmentLoadout = Controller->GetEquipmentLoadoutComponent();
 	if (!TestTrue(TEXT("The fixture executes on server authority"), Controller->HasAuthority()) ||
 		!TestNotNull(TEXT("The player inventory exists"), Inventory) ||
 		!TestNotNull(TEXT("The controller actionbar exists"), ActionBar) ||
-		!TestNotNull(TEXT("The server inventory action component exists"), UiActions))
+		!TestNotNull(TEXT("The server inventory action component exists"), UiActions) ||
+		!TestNotNull(TEXT("The player inventory layout exists"), Layout) ||
+		!TestNotNull(TEXT("The equipment reconciliation component exists"), EquipmentLoadout))
 	{
 		return false;
 	}
@@ -530,11 +781,18 @@ bool FRpgInventoryCarryQuickAccessBindingTest::RunTest(const FString& Parameters
 		FRpgInventoryContainerHandle::MakeRoot(URpgPlayerInventoryLayoutComponent::PocketsGroupId);
 	const FRpgInventoryContainerHandle WeaponSlot1 =
 		FRpgInventoryContainerHandle::MakeRoot(URpgPlayerInventoryLayoutComponent::WeaponSlot1GroupId);
+	const FRpgInventoryContainerHandle ShieldSlot =
+		FRpgInventoryContainerHandle::MakeRoot(URpgPlayerInventoryLayoutComponent::ShieldSlotGroupId);
 	URpgInventoryItemInstance* Weapon = Inventory->AddItemDefinitionToPlacement(
 		URpgInventoryAutomationTestWeaponItemDefinition::StaticClass(),
 		1,
 		MakePlacement(Pockets, 0, 0));
-	if (!TestNotNull(TEXT("A concrete weapon starts in Pockets"), Weapon))
+	URpgInventoryItemInstance* MainHandOnlyShield = Inventory->AddItemDefinitionToPlacement(
+		URpgInventoryAutomationTestMainHandShieldItemDefinition::StaticClass(),
+		1,
+		MakePlacement(Pockets, 1, 0));
+	if (!TestNotNull(TEXT("A concrete weapon starts in Pockets"), Weapon) ||
+		!TestNotNull(TEXT("A category-compatible but role-incompatible shield starts in Pockets"), MainHandOnlyShield))
 	{
 		return false;
 	}
@@ -543,7 +801,75 @@ bool FRpgInventoryCarryQuickAccessBindingTest::RunTest(const FString& Parameters
 	WeaponSlot1Address.SetContainerHandle(WeaponSlot1);
 	WeaponSlot1Address.X = 0;
 	WeaponSlot1Address.Y = 0;
-	UiActions->RequestMoveItemToInventorySlotAddress(Weapon, WeaponSlot1Address);
+	FRpgInventorySlotAddress ShieldSlotAddress;
+	ShieldSlotAddress.SetContainerHandle(ShieldSlot);
+	ShieldSlotAddress.X = 0;
+	ShieldSlotAddress.Y = 0;
+	TestTrue(
+		TEXT("The shared policy permits the authored MainHand role"),
+		FRpgInventoryEquipmentPlacementPolicy::CanItemUseEquipmentSlot(
+			Weapon,
+			ERpgEquipmentSlot::MainHand));
+	TestFalse(
+		TEXT("The shared policy rejects a MainHand-only item from the OffHand role"),
+		FRpgInventoryEquipmentPlacementPolicy::CanItemUseEquipmentSlot(
+			MainHandOnlyShield,
+			ERpgEquipmentSlot::OffHand));
+	const TArray<FRpgInventorySlotGroupView> SlotGroups = Layout->GetSlotGroups();
+	const bool bShieldGroupAllowsMismatchItem = SlotGroups.ContainsByPredicate(
+		[&ShieldSlot, MainHandOnlyShield](const FRpgInventorySlotGroupView& Group)
+		{
+			return Group.ContainerHandle == ShieldSlot && Group.Rule.AllowsItem(MainHandOnlyShield);
+		});
+	TestTrue(
+		TEXT("The mismatch fixture passes the Shield category filter before role validation"),
+		bShieldGroupAllowsMismatchItem);
+	TestTrue(
+		TEXT("The Carry layout accepts the weapon in a MainHand role"),
+		Layout->CanItemUseSlotAddress(Weapon, WeaponSlot1Address));
+	TestFalse(
+		TEXT("The Carry layout rejects the category-compatible item from an unauthored OffHand role"),
+		Layout->CanItemUseSlotAddress(MainHandOnlyShield, ShieldSlotAddress));
+	TestTrue(
+		TEXT("The loadout accepts the same authored MainHand role"),
+		EquipmentLoadout->CanAssignItemToEquipmentSlot(ERpgEquipmentSlot::MainHand, Weapon));
+	TestFalse(
+		TEXT("The loadout rejects the category-compatible item from the unauthored OffHand role"),
+		EquipmentLoadout->CanAssignItemToEquipmentSlot(ERpgEquipmentSlot::OffHand, MainHandOnlyShield));
+	const FRpgInventoryMutationRequest RejectedOffHandRequest = MakePlacementRequest(
+		ERpgInventoryMutationOperation::Equip,
+		MainHandOnlyShield,
+		Pockets,
+		ShieldSlot,
+		0,
+		0);
+	const FRpgInventoryMutationResult RejectedOffHandPlan =
+		Inventory->PlanInventoryMutation(RejectedOffHandRequest);
+	TestFalse(
+		TEXT("The authoritative planner rejects the unauthored OffHand Carry placement"),
+		RejectedOffHandPlan.IsSuccess());
+	TestEqual(
+		TEXT("The Carry planner reports the role policy failure instead of inventory full"),
+		RejectedOffHandPlan.Code,
+		ERpgInventoryMutationResultCode::ItemNotAllowed);
+	const FRpgInventoryMutationResult RejectedOffHandExecute =
+		Inventory->ExecuteInventoryMutation(RejectedOffHandRequest);
+	TestFalse(
+		TEXT("The authoritative commit rejects the unauthored OffHand Carry placement"),
+		RejectedOffHandExecute.IsSuccess());
+	TestEqual(
+		TEXT("The Carry commit preserves the role policy failure code"),
+		RejectedOffHandExecute.Code,
+		ERpgInventoryMutationResultCode::ItemNotAllowed);
+	FRpgInventoryEntryView RejectedOffHandEntry;
+	TestTrue(
+		TEXT("The rejected Carry item remains addressable"),
+		GetEntryView(Inventory, MainHandOnlyShield->GetItemId(), RejectedOffHandEntry));
+	TestEqual(
+		TEXT("The rejected Carry item remains physically in Pockets"),
+		RejectedOffHandEntry.Placement.GetContainerHandle(),
+		Pockets);
+	UiActions->RequestEquipInventoryItem(Weapon);
 
 	FRpgInventoryEntryView WeaponEntry;
 	if (!TestTrue(
@@ -556,6 +882,10 @@ bool FRpgInventoryCarryQuickAccessBindingTest::RunTest(const FString& Parameters
 	{
 		return false;
 	}
+	TestEqual(
+		TEXT("Default equipment activation references the item only after it reaches a compatible Carry role"),
+		EquipmentLoadout->GetItemInEquipmentSlot(ERpgEquipmentSlot::MainHand),
+		Weapon);
 
 	URpgInventoryDragDropCoordinator* Coordinator =
 		URpgInventoryDragDropCoordinator::CreateInventoryDragDropCoordinator(Controller, Controller);
@@ -574,6 +904,16 @@ bool FRpgInventoryCarryQuickAccessBindingTest::RunTest(const FString& Parameters
 	Payload.SourceSlotAddress = WeaponSlot1Address;
 	Payload.ItemFootprint.Width = 1;
 	Payload.ItemFootprint.Height = 1;
+
+	const FRpgInventoryDropTarget OffHandTarget =
+		URpgInventoryDragDropCoordinator::MakeEquipmentTarget(ERpgEquipmentSlot::OffHand);
+	TestFalse(
+		TEXT("The UI preview rejects the same unauthored OffHand role"),
+		Coordinator->PreviewPayloadDrop(Payload, OffHandTarget));
+	TestEqual(
+		TEXT("The rejected OffHand target presents as blocked"),
+		Coordinator->ResolveInteractionPreview(Payload, OffHandTarget),
+		ERpgInventoryInteractionPreviewState::Blocked);
 
 	const FRpgInventoryDropTarget ActionBarTarget =
 		URpgInventoryDragDropCoordinator::MakeActionBarSlotTarget(0);
@@ -779,6 +1119,605 @@ bool FRpgInventoryQuickTransferSkipsFullPreferredContainerTest::RunTest(const FS
 }
 
 IMPLEMENT_SIMPLE_AUTOMATION_TEST(
+	FRpgCraftingOutputWithdrawalOnlyTransferTest,
+	"SurvivalRpg.Inventory.Transfer.CraftingOutputWithdrawalOnly",
+	EAutomationTestFlags::EditorContext | EAutomationTestFlags::EngineFilter)
+
+bool FRpgCraftingOutputWithdrawalOnlyTransferTest::RunTest(const FString& Parameters)
+{
+	using namespace RpgInventoryTransactionTests;
+	FScopedInventoryWorld TestWorld;
+	if (!InitializeTest(*this, TestWorld))
+	{
+		return false;
+	}
+
+	UWorld* World = TestWorld.GetTestWorld();
+	FActorSpawnParameters ControllerSpawnParameters;
+	ControllerSpawnParameters.Name = MakeUniqueObjectName(
+		World,
+		ARpgInventoryAutomationTestPlayerController::StaticClass(),
+		TEXT("CraftingOutputTransferController"));
+	ControllerSpawnParameters.ObjectFlags = RF_Transient;
+	ControllerSpawnParameters.SpawnCollisionHandlingOverride = ESpawnActorCollisionHandlingMethod::AlwaysSpawn;
+	ARpgInventoryAutomationTestPlayerController* Controller =
+		World->SpawnActor<ARpgInventoryAutomationTestPlayerController>(ControllerSpawnParameters);
+
+	FActorSpawnParameters PawnSpawnParameters;
+	PawnSpawnParameters.Name = MakeUniqueObjectName(
+		World,
+		APawn::StaticClass(),
+		TEXT("CraftingOutputTransferPawn"));
+	PawnSpawnParameters.ObjectFlags = RF_Transient;
+	PawnSpawnParameters.SpawnCollisionHandlingOverride =
+		ESpawnActorCollisionHandlingMethod::AlwaysSpawn;
+	APawn* ControllerPawn =
+		World->SpawnActor<APawn>(PawnSpawnParameters);
+
+	FActorSpawnParameters PlayerStateSpawnParameters;
+	PlayerStateSpawnParameters.Name = MakeUniqueObjectName(
+		World,
+		ARpgInventoryAutomationTestPlayerState::StaticClass(),
+		TEXT("CraftingOutputTransferPlayerState"));
+	PlayerStateSpawnParameters.ObjectFlags = RF_Transient;
+	PlayerStateSpawnParameters.SpawnCollisionHandlingOverride = ESpawnActorCollisionHandlingMethod::AlwaysSpawn;
+	ARpgInventoryAutomationTestPlayerState* PlayerState =
+		World->SpawnActor<ARpgInventoryAutomationTestPlayerState>(PlayerStateSpawnParameters);
+
+	FActorSpawnParameters CraftingStationSpawnParameters;
+	CraftingStationSpawnParameters.Name = MakeUniqueObjectName(
+		World,
+		ARpgCraftingStationActor::StaticClass(),
+		TEXT("CraftingOutputTransferStation"));
+	CraftingStationSpawnParameters.ObjectFlags = RF_Transient;
+	CraftingStationSpawnParameters.SpawnCollisionHandlingOverride = ESpawnActorCollisionHandlingMethod::AlwaysSpawn;
+	ARpgCraftingStationActor* CraftingStationActor =
+		World->SpawnActor<ARpgCraftingStationActor>(CraftingStationSpawnParameters);
+
+	FActorSpawnParameters ContainerSpawnParameters;
+	ContainerSpawnParameters.Name = MakeUniqueObjectName(
+		World,
+		ARpgInventoryContainerActor::StaticClass(),
+		TEXT("CraftingOutputTransferRegularContainer"));
+	ContainerSpawnParameters.ObjectFlags = RF_Transient;
+	ContainerSpawnParameters.SpawnCollisionHandlingOverride = ESpawnActorCollisionHandlingMethod::AlwaysSpawn;
+	ARpgInventoryContainerActor* RegularContainer =
+		World->SpawnActor<ARpgInventoryContainerActor>(ContainerSpawnParameters);
+
+	if (!TestNotNull(TEXT("The output-policy controller fixture exists"), Controller) ||
+		!TestNotNull(TEXT("The output-policy pawn fixture exists"), ControllerPawn) ||
+		!TestNotNull(TEXT("The output-policy player-state fixture exists"), PlayerState) ||
+		!TestNotNull(TEXT("The real crafting-station fixture exists"), CraftingStationActor) ||
+		!TestNotNull(TEXT("The regular storage fixture exists"), RegularContainer))
+	{
+		return false;
+	}
+
+	Controller->SetPlayerState(PlayerState);
+	PlayerState->SetOwner(Controller);
+	Controller->Possess(ControllerPawn);
+	URpgInventoryManagerComponent* PlayerInventory = PlayerState->GetInventoryManagerComponent();
+	URpgInventoryUiActionComponent* UiActions = Controller->GetInventoryUiActionComponent();
+	URpgCraftingStationComponent* CraftingStation = CraftingStationActor->GetCraftingStationComponent();
+	URpgInventoryManagerComponent* OutputInventory = CraftingStationActor->GetOutputInventoryComponent();
+	URpgInventoryManagerComponent* RegularInventory = RegularContainer->GetInventoryManager();
+	if (!TestTrue(TEXT("The output-policy fixture executes on server authority"), Controller->HasAuthority()) ||
+		!TestNotNull(TEXT("The real player inventory exists"), PlayerInventory) ||
+		!TestNotNull(TEXT("The real UI action component exists"), UiActions) ||
+		!TestNotNull(TEXT("The real crafting component exists"), CraftingStation) ||
+		!TestNotNull(TEXT("The real crafting output inventory exists"), OutputInventory) ||
+		!TestNotNull(TEXT("The regular container inventory exists"), RegularInventory))
+	{
+		return false;
+	}
+
+	TestTrue(TEXT("The player may access the nearby crafting output"), UiActions->CanAccessInventory(OutputInventory));
+	TestTrue(TEXT("The player may access the nearby regular container"), UiActions->CanAccessInventory(RegularInventory));
+
+	const FRpgInventoryContainerHandle Pockets =
+		FRpgInventoryContainerHandle::MakeRoot(URpgPlayerInventoryLayoutComponent::PocketsGroupId);
+	const FRpgInventoryContainerHandle OutputRoot =
+		FRpgInventoryContainerHandle::MakeRoot(OutputInventory->GetDefaultContainerId());
+	const FRpgInventoryContainerHandle RegularRoot =
+		FRpgInventoryContainerHandle::MakeRoot(RegularInventory->GetDefaultContainerId());
+
+	URpgInventoryItemInstance* RejectedDepositItem = PlayerInventory->AddItemDefinitionToPlacement(
+		URpgInventoryAutomationTestUnitItemDefinition::StaticClass(),
+		1,
+		MakePlacement(Pockets, 0, 0));
+	if (!TestNotNull(TEXT("The player owns one candidate deposit item"), RejectedDepositItem))
+	{
+		return false;
+	}
+
+	FRpgCraftingOutputItem CraftedOutput;
+	CraftedOutput.ItemDefinition = URpgInventoryAutomationTestUnitItemDefinition::StaticClass();
+	CraftedOutput.Count = 1;
+	TArray<FRpgCraftingOutputItem> CraftedOutputs;
+	CraftedOutputs.Add(CraftedOutput);
+	TestTrue(
+		TEXT("The authoritative crafting producer can populate its output"),
+		CraftingStation->AddCraftingOutputs(CraftedOutputs));
+	if (!TestEqual(TEXT("The producer creates one output entry"), OutputInventory->GetUsedEntryCount(), 1))
+	{
+		return false;
+	}
+
+	const TArray<FRpgInventoryEntryView> InitialOutputEntries = OutputInventory->GetAllEntries();
+	if (!TestEqual(TEXT("Exactly one concrete crafted output exists"), InitialOutputEntries.Num(), 1) ||
+		!InitialOutputEntries.IsValidIndex(0) ||
+		!TestNotNull(
+			TEXT("The crafted output owns a concrete item instance"),
+			InitialOutputEntries[0].Instance.Get()))
+	{
+		return false;
+	}
+	const FRpgInventoryItemId CraftedOutputId = InitialOutputEntries[0].ItemId;
+
+	FRpgInventoryQuickTransferRequest RejectedQuickTransfer;
+	RejectedQuickTransfer.RequestId = FGuid::NewGuid();
+	RejectedQuickTransfer.ItemId = RejectedDepositItem->GetItemId();
+	RejectedQuickTransfer.StackCount = 1;
+	FRpgInventoryContainerHandle PredictedContainer;
+	FRpgInventoryGridPlacement PredictedPlacement;
+	TestFalse(
+		TEXT("Prediction rejects a player quick-transfer into a crafting output"),
+		UiActions->FindQuickTransferDestination(
+			PlayerInventory,
+			OutputInventory,
+			RejectedQuickTransfer,
+			PredictedContainer,
+			PredictedPlacement));
+	TestFalse(
+		TEXT("The shared auto-transfer contract rejects crafting-output deposits"),
+		UiActions->CanTransferItemStack(
+			PlayerInventory,
+			OutputInventory,
+			RejectedDepositItem,
+			1));
+
+	const FString PlayerBeforeRejectedTransfers = MakeInventorySignature(PlayerInventory);
+	const FString OutputBeforeRejectedTransfers = MakeInventorySignature(OutputInventory);
+	UiActions->RequestQuickTransferItem(PlayerInventory, OutputInventory, RejectedQuickTransfer);
+	TestEqual(
+		TEXT("The server rejects a forged quick-transfer without mutating the player"),
+		MakeInventorySignature(PlayerInventory),
+		PlayerBeforeRejectedTransfers);
+	TestEqual(
+		TEXT("The server rejects a forged quick-transfer without mutating the output"),
+		MakeInventorySignature(OutputInventory),
+		OutputBeforeRejectedTransfers);
+
+	const FRpgInventoryGridPlacement RejectedExactPlacement = MakePlacement(OutputRoot, 4, 0);
+	TestFalse(
+		TEXT("The shared exact-placement contract rejects crafting-output deposits"),
+		UiActions->CanTransferItemStackToPlacement(
+			PlayerInventory,
+			OutputInventory,
+			RejectedDepositItem,
+			1,
+			RejectedExactPlacement));
+	UiActions->RequestTransferItemStackToPlacement(
+		PlayerInventory,
+		OutputInventory,
+		RejectedDepositItem,
+		1,
+		RejectedExactPlacement);
+	TestEqual(
+		TEXT("The exact server RPC preserves the player after a forbidden deposit"),
+		MakeInventorySignature(PlayerInventory),
+		PlayerBeforeRejectedTransfers);
+	TestEqual(
+		TEXT("The exact server RPC preserves the crafting output after a forbidden deposit"),
+		MakeInventorySignature(OutputInventory),
+		OutputBeforeRejectedTransfers);
+
+	FRpgInventoryEntryView CraftedEntryBeforeMove;
+	if (!TestTrue(
+		TEXT("The crafted output remains addressable before internal reordering"),
+		GetEntryView(OutputInventory, CraftedOutputId, CraftedEntryBeforeMove)))
+	{
+		return false;
+	}
+	FRpgInventoryMutationRequest InternalMove = MakePlacementRequest(
+		ERpgInventoryMutationOperation::Move,
+		CraftedEntryBeforeMove.Instance,
+		CraftedEntryBeforeMove.Placement.GetContainerHandle(),
+		CraftedEntryBeforeMove.Placement.GetContainerHandle(),
+		3,
+		0);
+	UiActions->RequestInventoryMutation(OutputInventory, InternalMove);
+	FRpgInventoryEntryView CraftedEntryAfterMove;
+	TestTrue(
+		TEXT("The output entry remains addressable after an internal move"),
+		GetEntryView(OutputInventory, CraftedOutputId, CraftedEntryAfterMove));
+	TestEqual(TEXT("The withdrawal-only policy preserves internal output reordering"), CraftedEntryAfterMove.Placement.X, 3);
+	TestEqual(TEXT("The internal output move preserves its row"), CraftedEntryAfterMove.Placement.Y, 0);
+
+	FRpgInventoryQuickTransferRequest AllowedWithdrawalPrediction;
+	AllowedWithdrawalPrediction.ItemId = CraftedOutputId;
+	AllowedWithdrawalPrediction.StackCount = 1;
+	TestTrue(
+		TEXT("Quick-transfer prediction permits output withdrawal into player content"),
+		UiActions->FindQuickTransferDestination(
+			OutputInventory,
+			PlayerInventory,
+			AllowedWithdrawalPrediction,
+			PredictedContainer,
+			PredictedPlacement));
+
+	const FRpgInventoryGridPlacement PlayerWithdrawalPlacement = MakePlacement(Pockets, 1, 0);
+	TestTrue(
+		TEXT("The shared exact-placement contract permits output withdrawal"),
+		UiActions->CanTransferItemStackToPlacement(
+			OutputInventory,
+			PlayerInventory,
+			CraftedEntryAfterMove.Instance,
+			1,
+			PlayerWithdrawalPlacement));
+	UiActions->RequestTransferItemStackToPlacement(
+		OutputInventory,
+		PlayerInventory,
+		CraftedEntryAfterMove.Instance,
+		1,
+		PlayerWithdrawalPlacement);
+	TestNull(
+		TEXT("The withdrawn item leaves the crafting output"),
+		OutputInventory->FindItemById(CraftedOutputId));
+	TestNotNull(
+		TEXT("The withdrawn item arrives in the player inventory with stable identity"),
+		PlayerInventory->FindItemById(CraftedOutputId));
+
+	TestTrue(
+		TEXT("Crafting production remains able to add a later output after UI-policy checks"),
+		CraftingStation->AddCraftingOutputs(CraftedOutputs));
+	TestEqual(TEXT("The later production creates one new output entry"), OutputInventory->GetUsedEntryCount(), 1);
+
+	URpgInventoryItemInstance* RegularTransferItem = PlayerInventory->AddItemDefinitionToPlacement(
+		URpgInventoryAutomationTestUnitItemDefinition::StaticClass(),
+		1,
+		MakePlacement(Pockets, 2, 0));
+	if (!TestNotNull(TEXT("The player owns one normal storage-transfer item"), RegularTransferItem))
+	{
+		return false;
+	}
+	const FRpgInventoryItemId RegularTransferItemId = RegularTransferItem->GetItemId();
+	const FRpgInventoryGridPlacement RegularTargetPlacement = MakePlacement(RegularRoot, 3, 0);
+	TestTrue(
+		TEXT("The shared transfer contract still permits ordinary storage deposits"),
+		UiActions->CanTransferItemStackToPlacement(
+			PlayerInventory,
+			RegularInventory,
+			RegularTransferItem,
+			1,
+			RegularTargetPlacement));
+	UiActions->RequestTransferItemStackToPlacement(
+		PlayerInventory,
+		RegularInventory,
+		RegularTransferItem,
+		1,
+		RegularTargetPlacement);
+	TestNull(
+		TEXT("The ordinary transfer removes the item from the player"),
+		PlayerInventory->FindItemById(RegularTransferItemId));
+	TestNotNull(
+		TEXT("The ordinary transfer still reaches a regular container"),
+		RegularInventory->FindItemById(RegularTransferItemId));
+
+	URpgInventoryItemInstance* SwapSource = PlayerInventory->AddItemDefinitionToPlacement(
+		URpgInventoryAutomationTestWideItemDefinition::StaticClass(),
+		1,
+		MakePlacement(Pockets, 0, 1));
+	URpgInventoryItemInstance* SwapTarget = RegularInventory->AddItemDefinitionToPlacement(
+		URpgInventoryAutomationTestUnitItemDefinition::StaticClass(),
+		1,
+		MakePlacement(RegularRoot, 1, 0));
+	if (!TestNotNull(TEXT("The cross-inventory swap source exists"), SwapSource) ||
+		!TestNotNull(TEXT("The occupied unlike-item target exists"), SwapTarget))
+	{
+		return false;
+	}
+	TestFalse(
+		TEXT("Prediction no longer advertises an unsupported cross-inventory swap"),
+		UiActions->CanTransferItemStackToPlacement(
+			PlayerInventory,
+			RegularInventory,
+			SwapSource,
+			1,
+			MakePlacement(RegularRoot, 1, 0)));
+
+	URpgInventoryManagerComponent* AlternateOutputInventory =
+		NewObject<URpgInventoryManagerComponent>(
+			CraftingStationActor,
+			MakeUniqueObjectName(
+				CraftingStationActor,
+				URpgInventoryManagerComponent::StaticClass(),
+				TEXT("AlternateOutputInventory")),
+			RF_Transient);
+	URpgCraftingStationComponent* SecondaryCraftingStation =
+		NewObject<URpgCraftingStationComponent>(
+			CraftingStationActor,
+			MakeUniqueObjectName(
+				CraftingStationActor,
+				URpgCraftingStationComponent::StaticClass(),
+				TEXT("SecondaryCraftingStation")),
+			RF_Transient);
+	if (!TestNotNull(TEXT("The multiple-component fixture owns an alternate output inventory"), AlternateOutputInventory) ||
+		!TestNotNull(TEXT("The multiple-component fixture owns a second crafting component"), SecondaryCraftingStation))
+	{
+		return false;
+	}
+	CraftingStationActor->AddInstanceComponent(AlternateOutputInventory);
+	AlternateOutputInventory->RegisterComponent();
+	CraftingStation->SetOutputInventoryManager(AlternateOutputInventory);
+	CraftingStationActor->AddInstanceComponent(SecondaryCraftingStation);
+	SecondaryCraftingStation->RegisterComponent();
+	SecondaryCraftingStation->SetOutputInventoryManager(OutputInventory);
+	TestTrue(
+		TEXT("Output access resolves the matching crafting component even when it is not the owner's first component"),
+		UiActions->CanAccessInventory(OutputInventory));
+
+	URpgInventoryItemInstance* MultiComponentDepositItem = PlayerInventory->AddItemDefinitionToPlacement(
+		URpgInventoryAutomationTestUnitItemDefinition::StaticClass(),
+		1,
+		MakePlacement(Pockets, 2, 0));
+	if (!TestNotNull(TEXT("The player owns a candidate for the multiple-component output"), MultiComponentDepositItem))
+	{
+		return false;
+	}
+	TestFalse(
+		TEXT("Output recognition checks every crafting component instead of only the owner's first component"),
+		UiActions->CanTransferItemStackToPlacement(
+			PlayerInventory,
+			OutputInventory,
+			MultiComponentDepositItem,
+			1,
+			MakePlacement(OutputRoot, 5, 0)));
+
+	SecondaryCraftingStation->SetOutputInventoryManager(RegularInventory);
+	TestTrue(
+		TEXT("The externally assigned output remains accessible through its crafting station"),
+		UiActions->CanAccessInventory(RegularInventory));
+	TestFalse(
+		TEXT("An externally assigned crafting output remains withdrawal-only even when its owner is ordinary storage"),
+		UiActions->CanTransferItemStack(
+			PlayerInventory,
+			RegularInventory,
+			MultiComponentDepositItem,
+			1));
+	TestFalse(
+		TEXT("Exact-placement prediction also recognizes an externally assigned crafting output"),
+		UiActions->CanTransferItemStackToPlacement(
+			PlayerInventory,
+			RegularInventory,
+			MultiComponentDepositItem,
+			1,
+			MakePlacement(RegularRoot, 5, 0)));
+	return true;
+}
+
+IMPLEMENT_SIMPLE_AUTOMATION_TEST(
+	FRpgExactPlacementStackTransferPolicyTest,
+	"SurvivalRpg.Inventory.Transfer.ExactPlacement.StackCapacityAndPartialAssignment",
+	EAutomationTestFlags::EditorContext | EAutomationTestFlags::EngineFilter)
+
+bool FRpgExactPlacementStackTransferPolicyTest::RunTest(const FString& Parameters)
+{
+	using namespace RpgInventoryTransactionTests;
+	FScopedInventoryWorld TestWorld;
+	if (!InitializeTest(*this, TestWorld))
+	{
+		return false;
+	}
+
+	UWorld* World = TestWorld.GetTestWorld();
+	FActorSpawnParameters ControllerSpawnParameters;
+	ControllerSpawnParameters.Name = MakeUniqueObjectName(
+		World,
+		ARpgInventoryAutomationTestPlayerController::StaticClass(),
+		TEXT("ExactPlacementStackController"));
+	ControllerSpawnParameters.ObjectFlags = RF_Transient;
+	ControllerSpawnParameters.SpawnCollisionHandlingOverride = ESpawnActorCollisionHandlingMethod::AlwaysSpawn;
+	ARpgInventoryAutomationTestPlayerController* Controller =
+		World->SpawnActor<ARpgInventoryAutomationTestPlayerController>(ControllerSpawnParameters);
+
+	FActorSpawnParameters PawnSpawnParameters;
+	PawnSpawnParameters.Name = MakeUniqueObjectName(
+		World,
+		APawn::StaticClass(),
+		TEXT("ExactPlacementStackPawn"));
+	PawnSpawnParameters.ObjectFlags = RF_Transient;
+	PawnSpawnParameters.SpawnCollisionHandlingOverride = ESpawnActorCollisionHandlingMethod::AlwaysSpawn;
+	APawn* ControllerPawn = World->SpawnActor<APawn>(PawnSpawnParameters);
+
+	FActorSpawnParameters PlayerStateSpawnParameters;
+	PlayerStateSpawnParameters.Name = MakeUniqueObjectName(
+		World,
+		ARpgInventoryAutomationTestPlayerState::StaticClass(),
+		TEXT("ExactPlacementStackPlayerState"));
+	PlayerStateSpawnParameters.ObjectFlags = RF_Transient;
+	PlayerStateSpawnParameters.SpawnCollisionHandlingOverride = ESpawnActorCollisionHandlingMethod::AlwaysSpawn;
+	ARpgInventoryAutomationTestPlayerState* PlayerState =
+		World->SpawnActor<ARpgInventoryAutomationTestPlayerState>(PlayerStateSpawnParameters);
+
+	FActorSpawnParameters ContainerSpawnParameters;
+	ContainerSpawnParameters.Name = MakeUniqueObjectName(
+		World,
+		ARpgInventoryContainerActor::StaticClass(),
+		TEXT("ExactPlacementStackContainer"));
+	ContainerSpawnParameters.ObjectFlags = RF_Transient;
+	ContainerSpawnParameters.SpawnCollisionHandlingOverride = ESpawnActorCollisionHandlingMethod::AlwaysSpawn;
+	ARpgInventoryContainerActor* Container =
+		World->SpawnActor<ARpgInventoryContainerActor>(ContainerSpawnParameters);
+
+	if (!TestNotNull(TEXT("The exact-placement controller fixture exists"), Controller) ||
+		!TestNotNull(TEXT("The exact-placement pawn fixture exists"), ControllerPawn) ||
+		!TestNotNull(TEXT("The exact-placement player-state fixture exists"), PlayerState) ||
+		!TestNotNull(TEXT("The exact-placement target container exists"), Container))
+	{
+		return false;
+	}
+
+	Controller->SetPlayerState(PlayerState);
+	PlayerState->SetOwner(Controller);
+	Controller->Possess(ControllerPawn);
+	URpgInventoryManagerComponent* PlayerInventory = PlayerState->GetInventoryManagerComponent();
+	URpgInventoryUiActionComponent* UiActions = Controller->GetInventoryUiActionComponent();
+	URpgEquipmentLoadoutComponent* EquipmentLoadout = Controller->GetEquipmentLoadoutComponent();
+	URpgInventoryManagerComponent* TargetInventory = Container->GetInventoryManager();
+	if (!TestTrue(TEXT("The exact-placement fixture executes on server authority"), Controller->HasAuthority()) ||
+		!TestNotNull(TEXT("The exact-placement player inventory exists"), PlayerInventory) ||
+		!TestNotNull(TEXT("The exact-placement action component exists"), UiActions) ||
+		!TestNotNull(TEXT("The exact-placement equipment loadout exists"), EquipmentLoadout) ||
+		!TestNotNull(TEXT("The exact-placement target inventory exists"), TargetInventory))
+	{
+		return false;
+	}
+
+	const FRpgInventoryContainerHandle Pockets =
+		FRpgInventoryContainerHandle::MakeRoot(URpgPlayerInventoryLayoutComponent::PocketsGroupId);
+	const FRpgInventoryContainerHandle TargetRoot =
+		FRpgInventoryContainerHandle::MakeRoot(TargetInventory->GetDefaultContainerId());
+	URpgInventoryItemInstance* SourceStack = PlayerInventory->AddItemDefinitionToPlacement(
+		URpgInventoryAutomationTestStackableWeaponItemDefinition::StaticClass(),
+		3,
+		MakePlacement(Pockets, 0, 0));
+	URpgInventoryItemInstance* NearlyFullTargetStack = TargetInventory->AddItemDefinitionToPlacement(
+		URpgInventoryAutomationTestStackableWeaponItemDefinition::StaticClass(),
+		9,
+		MakePlacement(TargetRoot, 1, 0));
+	if (!TestNotNull(TEXT("The player owns a three-item source stack"), SourceStack) ||
+		!TestNotNull(TEXT("The target owns a compatible stack with one free unit"), NearlyFullTargetStack))
+	{
+		return false;
+	}
+
+	const FRpgInventoryGridPlacement TargetStackPlacement = MakePlacement(TargetRoot, 1, 0);
+	TestEqual(
+		TEXT("The compatible target stack exposes exactly one free unit"),
+		TargetInventory->GetFreeStackCapacity(NearlyFullTargetStack),
+		1);
+	TestFalse(
+		TEXT("Exact-placement preview rejects a request larger than the compatible stack's free capacity"),
+		UiActions->CanTransferItemStackToPlacement(
+			PlayerInventory,
+			TargetInventory,
+			SourceStack,
+			2,
+			TargetStackPlacement));
+	TestTrue(
+		TEXT("Exact-placement preview accepts a request that exactly fits the compatible stack"),
+		UiActions->CanTransferItemStackToPlacement(
+			PlayerInventory,
+			TargetInventory,
+			SourceStack,
+			1,
+			TargetStackPlacement));
+	NearlyFullTargetStack->AddStatTagStack(RpgGameplayTags::Rpg_Inventory_Action_Transfer, 1);
+	TestFalse(
+		TEXT("Exact-placement preview rejects a same-definition stack with incompatible runtime state"),
+		UiActions->CanTransferItemStackToPlacement(
+			PlayerInventory,
+			TargetInventory,
+			SourceStack,
+			1,
+			TargetStackPlacement));
+
+	const FRpgInventoryItemId SourceItemId = SourceStack->GetItemId();
+	const FRpgInventoryItemId ExistingTargetItemId = NearlyFullTargetStack->GetItemId();
+	UiActions->RequestAssignItemToEquipmentSlot(ERpgEquipmentSlot::MainHand, SourceStack);
+	if (!TestEqual(
+		TEXT("The source stack is active in MainHand before the partial transfer"),
+		EquipmentLoadout->GetItemInEquipmentSlot(ERpgEquipmentSlot::MainHand),
+		SourceStack))
+	{
+		return false;
+	}
+
+	FRpgInventoryEntryView SourceEntryBeforeTransfer;
+	FRpgInventoryEntryView ExistingTargetEntryBeforeTransfer;
+	if (!TestTrue(
+			TEXT("The assigned source entry is addressable before the partial transfer"),
+			GetEntryView(PlayerInventory, SourceItemId, SourceEntryBeforeTransfer)) ||
+		!TestTrue(
+			TEXT("The unrelated target entry is addressable before the partial transfer"),
+			GetEntryView(TargetInventory, ExistingTargetItemId, ExistingTargetEntryBeforeTransfer)))
+	{
+		return false;
+	}
+
+	const FRpgInventoryGridPlacement EmptyTargetPlacement = MakePlacement(TargetRoot, 0, 0);
+	TestTrue(
+		TEXT("Exact-placement preview accepts one unit into an empty target cell"),
+		UiActions->CanTransferItemStackToPlacement(
+			PlayerInventory,
+			TargetInventory,
+			SourceStack,
+			1,
+			EmptyTargetPlacement));
+	UiActions->RequestTransferItemStackToPlacement(
+		PlayerInventory,
+		TargetInventory,
+		SourceStack,
+		1,
+		EmptyTargetPlacement);
+
+	URpgInventoryItemInstance* RemainingSourceStack = PlayerInventory->FindItemById(SourceItemId);
+	if (!TestNotNull(TEXT("A partial exact transfer preserves the source item identity"), RemainingSourceStack))
+	{
+		return false;
+	}
+	TestEqual(
+		TEXT("A partial exact transfer preserves the source runtime instance"),
+		RemainingSourceStack,
+		SourceStack);
+	TestEqual(
+		TEXT("The partial exact transfer removes only the requested unit"),
+		PlayerInventory->GetItemStackCount(RemainingSourceStack),
+		2);
+	TestEqual(
+		TEXT("The surviving assigned source stack remains active in MainHand"),
+		EquipmentLoadout->GetItemInEquipmentSlot(ERpgEquipmentSlot::MainHand),
+		RemainingSourceStack);
+
+	FRpgInventoryEntryView SourceEntryAfterTransfer;
+	FRpgInventoryEntryView ExistingTargetEntryAfterTransfer;
+	if (!TestTrue(
+			TEXT("The surviving source entry remains addressable after the partial transfer"),
+			GetEntryView(PlayerInventory, SourceItemId, SourceEntryAfterTransfer)) ||
+		!TestTrue(
+			TEXT("The unrelated target entry remains addressable after the partial transfer"),
+			GetEntryView(TargetInventory, ExistingTargetItemId, ExistingTargetEntryAfterTransfer)))
+	{
+		return false;
+	}
+	TestEqual(
+		TEXT("A partial exact transfer preserves the source entry identity"),
+		SourceEntryAfterTransfer.EntryId,
+		SourceEntryBeforeTransfer.EntryId);
+	TestEqual(
+		TEXT("A cross-inventory commit preserves unrelated target runtime instances"),
+		TargetInventory->FindItemById(ExistingTargetItemId),
+		NearlyFullTargetStack);
+	TestEqual(
+		TEXT("A cross-inventory commit preserves unrelated target entry identities"),
+		ExistingTargetEntryAfterTransfer.EntryId,
+		ExistingTargetEntryBeforeTransfer.EntryId);
+
+	URpgInventoryItemInstance* TransferredUnit =
+		TargetInventory->GetItemAtContainerCell(TargetRoot, EmptyTargetPlacement.X, EmptyTargetPlacement.Y);
+	if (!TestNotNull(TEXT("The requested unit reaches the exact empty target cell"), TransferredUnit))
+	{
+		return false;
+	}
+	TestEqual(
+		TEXT("The exact target receives one unit"),
+		TargetInventory->GetItemStackCount(TransferredUnit),
+		1);
+	return true;
+}
+
+IMPLEMENT_SIMPLE_AUTOMATION_TEST(
 	FRpgEquipmentLoadIgnoresNestedContentsTest,
 	"SurvivalRpg.Equipment.Load.NestedContainerContentsAreWeightless",
 	EAutomationTestFlags::EditorContext | EAutomationTestFlags::EngineFilter)
@@ -920,6 +1859,185 @@ bool FRpgEquipmentLoadIgnoresNestedContentsTest::RunTest(const FString& Paramete
 }
 
 IMPLEMENT_SIMPLE_AUTOMATION_TEST(
+	FRpgInventoryGenericMutationRpcSafetyTest,
+	"SurvivalRpg.Inventory.Transaction.GenericUiRpcRejectsDedicatedOperations",
+	EAutomationTestFlags::EditorContext | EAutomationTestFlags::EngineFilter)
+
+bool FRpgInventoryGenericMutationRpcSafetyTest::RunTest(const FString& Parameters)
+{
+	using namespace RpgInventoryTransactionTests;
+	FScopedInventoryWorld TestWorld;
+	if (!InitializeTest(*this, TestWorld))
+	{
+		return false;
+	}
+
+	UWorld* World = TestWorld.GetTestWorld();
+	FActorSpawnParameters ControllerSpawnParameters;
+	ControllerSpawnParameters.Name = MakeUniqueObjectName(
+		World,
+		ARpgInventoryAutomationTestPlayerController::StaticClass(),
+		TEXT("GenericMutationSafetyController"));
+	ControllerSpawnParameters.ObjectFlags = RF_Transient;
+	ARpgInventoryAutomationTestPlayerController* Controller =
+		World->SpawnActor<ARpgInventoryAutomationTestPlayerController>(ControllerSpawnParameters);
+
+	FActorSpawnParameters PlayerStateSpawnParameters;
+	PlayerStateSpawnParameters.Name = MakeUniqueObjectName(
+		World,
+		ARpgInventoryAutomationTestPlayerState::StaticClass(),
+		TEXT("GenericMutationSafetyPlayerState"));
+	PlayerStateSpawnParameters.ObjectFlags = RF_Transient;
+	ARpgInventoryAutomationTestPlayerState* PlayerState =
+		World->SpawnActor<ARpgInventoryAutomationTestPlayerState>(PlayerStateSpawnParameters);
+	if (!TestNotNull(TEXT("The generic-mutation controller fixture exists"), Controller) ||
+		!TestNotNull(TEXT("The generic-mutation player-state fixture exists"), PlayerState))
+	{
+		return false;
+	}
+
+	Controller->SetPlayerState(PlayerState);
+	PlayerState->SetOwner(Controller);
+	URpgInventoryManagerComponent* Inventory = PlayerState->GetInventoryManagerComponent();
+	URpgInventoryUiActionComponent* UiActions = Controller->GetInventoryUiActionComponent();
+	if (!TestTrue(TEXT("The fixture executes on server authority"), Controller->HasAuthority()) ||
+		!TestNotNull(TEXT("The player inventory exists"), Inventory) ||
+		!TestNotNull(TEXT("The inventory action gateway exists"), UiActions))
+	{
+		return false;
+	}
+
+	const FRpgInventoryContainerHandle Pockets =
+		FRpgInventoryContainerHandle::MakeRoot(URpgPlayerInventoryLayoutComponent::PocketsGroupId);
+	URpgInventoryItemInstance* Item = Inventory->AddItemDefinitionToPlacement(
+		URpgInventoryAutomationTestUnitItemDefinition::StaticClass(),
+		1,
+		MakePlacement(Pockets, 0, 0));
+	if (!TestNotNull(TEXT("A concrete item exists before the rejected generic drop"), Item))
+	{
+		return false;
+	}
+
+	FRpgInventoryEntryView Entry;
+	if (!TestTrue(TEXT("The test item has a replicated entry identity"), GetEntryView(Inventory, Item->GetItemId(), Entry)))
+	{
+		return false;
+	}
+
+	URpgInventoryInteractionSession* Session = NewObject<URpgInventoryInteractionSession>(Controller);
+	Session->Initialize(Controller, Controller);
+	FRpgInventoryDragPayload Payload;
+	Payload.SourceType = ERpgInventoryDragSourceType::InventoryEntry;
+	Payload.SourceInventory = Inventory;
+	Payload.ItemInstance = Item;
+	Payload.EntryId = Entry.EntryId;
+	Payload.StackCount = Entry.StackCount;
+	Payload.SourcePlacement = Entry.Placement;
+	if (!TestTrue(
+		TEXT("The interaction session accepts the item payload"),
+		Session->BeginInteraction(Payload, ERpgInventoryInteractionInputMode::Mouse)))
+	{
+		return false;
+	}
+
+	FRpgInventoryDropTarget Target;
+	Target.TargetType = ERpgInventoryDropTargetType::InventoryPanel;
+	Target.TargetInventory = Inventory;
+	Session->MarkRequestPending(Target, RpgGameplayTags::Rpg_Inventory_Action_Drop);
+
+	FRpgInventoryMutationRequest DropRequest;
+	DropRequest.Operation = ERpgInventoryMutationOperation::Drop;
+	DropRequest.ItemId = Item->GetItemId();
+	DropRequest.Source = Pockets;
+	DropRequest.Quantity = 1;
+	DropRequest.RequestId = Session->GetRequestId();
+	UiActions->RequestInventoryMutation(Inventory, DropRequest);
+
+	TestNotNull(
+		TEXT("The generic mutation RPC cannot delete an item through Drop"),
+		Inventory->FindItemById(Item->GetItemId()));
+	TestEqual(TEXT("The rejected generic Drop preserves the stack"), Inventory->GetItemStackCount(Item), 1);
+	TestFalse(TEXT("InvalidRequest feedback resolves the pending request"), Session->IsRequestPending());
+	TestTrue(TEXT("Rejected feedback retains the payload for another target"), Session->HasPayload());
+	TestEqual(
+		TEXT("Rejected feedback exposes the rejected interaction state"),
+		Session->GetPreviewState(),
+		ERpgInventoryInteractionPreviewState::Rejected);
+	return true;
+}
+
+IMPLEMENT_SIMPLE_AUTOMATION_TEST(
+	FRpgInventoryMutationRejectionCacheBoundTest,
+	"SurvivalRpg.Inventory.Transaction.RejectedRequestCacheIsBounded",
+	EAutomationTestFlags::EditorContext | EAutomationTestFlags::EngineFilter)
+
+bool FRpgInventoryMutationRejectionCacheBoundTest::RunTest(const FString& Parameters)
+{
+	using namespace RpgInventoryTransactionTests;
+	FScopedInventoryWorld TestWorld;
+	if (!InitializeTest(*this, TestWorld))
+	{
+		return false;
+	}
+
+	URpgInventoryManagerComponent* Inventory = TestWorld.CreateInventory(TEXT("MutationCacheInventory"));
+	if (!TestNotNull(TEXT("Mutation-cache inventory exists"), Inventory))
+	{
+		return false;
+	}
+
+	const FRpgInventoryContainerHandle Root = MakeStorageHandle();
+	URpgInventoryItemInstance* Item = Inventory->AddItemDefinitionToPlacement(
+		URpgInventoryAutomationTestUnitItemDefinition::StaticClass(),
+		1,
+		MakePlacement(Root, 0, 0));
+	if (!TestNotNull(TEXT("A concrete item exists for the cache eviction request"), Item))
+	{
+		return false;
+	}
+
+	FRpgInventoryMutationRequest ReusedRequest = MakePlacementRequest(
+		ERpgInventoryMutationOperation::Move,
+		Item,
+		FRpgInventoryContainerHandle::MakeRoot(FName(TEXT("WrongSource"))),
+		Root,
+		1,
+		0);
+	const FRpgInventoryMutationResult InitialRejection = Inventory->ExecuteInventoryMutation(ReusedRequest);
+	TestEqual(
+		TEXT("The first payload is cached as a source mismatch"),
+		InitialRejection.Code,
+		ERpgInventoryMutationResultCode::SourceMismatch);
+
+	bool bAllFillerRequestsRejected = true;
+	for (int32 RequestIndex = 0; RequestIndex < 65; ++RequestIndex)
+	{
+		FRpgInventoryMutationRequest FillerRequest = MakePlacementRequest(
+			ERpgInventoryMutationOperation::Move,
+			nullptr,
+			Root,
+			Root,
+			1,
+			0);
+		bAllFillerRequestsRejected &=
+			Inventory->ExecuteInventoryMutation(FillerRequest).Code == ERpgInventoryMutationResultCode::ItemNotFound;
+	}
+	TestTrue(TEXT("Every unique filler request is rejected deterministically"), bAllFillerRequestsRejected);
+
+	ReusedRequest.Source = Root;
+	const FRpgInventoryMutationResult ReusedCommit = Inventory->ExecuteInventoryMutation(ReusedRequest);
+	TestEqual(
+		TEXT("The oldest rejected request is evicted and its corrected payload can execute"),
+		ReusedCommit.Code,
+		ERpgInventoryMutationResultCode::Success);
+
+	FRpgInventoryEntryView MovedEntry;
+	TestTrue(TEXT("The item remains addressable after the corrected request"), GetEntryView(Inventory, Item->GetItemId(), MovedEntry));
+	TestEqual(TEXT("The corrected request reaches its new X coordinate"), MovedEntry.Placement.X, 1);
+	return true;
+}
+
+IMPLEMENT_SIMPLE_AUTOMATION_TEST(
 	FRpgInventoryFullGridSortTest,
 	"SurvivalRpg.Inventory.Transaction.FullGridSortUsesScratchOccupancy",
 	EAutomationTestFlags::EditorContext | EAutomationTestFlags::EngineFilter)
@@ -954,7 +2072,16 @@ bool FRpgInventoryFullGridSortTest::RunTest(const FString& Parameters)
 	TestTrue(TEXT("Thirty vertical 1x2 placements fill the complete 10x6 grid"), bFilledGrid);
 	TestEqual(TEXT("The full grid contains thirty entries"), Inventory->GetUsedEntryCount(), 30);
 
-	TestTrue(TEXT("Sort can repack a completely full grid without consulting stale live occupancy"), Inventory->ApplyInventorySort(ERpgInventorySortMode::Name));
+	FRpgInventoryMutationRequest SortRequest;
+	SortRequest.Operation = ERpgInventoryMutationOperation::Sort;
+	SortRequest.Source = Root;
+	SortRequest.Quantity = static_cast<int32>(ERpgInventorySortMode::Name);
+	SortRequest.EnsureRequestId();
+	const FRpgInventoryMutationResult SortCommit = Inventory->ExecuteInventoryMutation(SortRequest);
+	TestEqual(
+		TEXT("Transactional sort can repack a completely full grid without consulting stale live occupancy"),
+		SortCommit.Code,
+		ERpgInventoryMutationResultCode::Success);
 	const TArray<FRpgInventoryEntryView> SortedEntries = Inventory->GetAllEntries();
 	TestEqual(TEXT("Sort preserves every entry"), SortedEntries.Num(), 30);
 
@@ -996,6 +2123,17 @@ bool FRpgInventoryFullGridSortTest::RunTest(const FString& Parameters)
 	const FString StableSignature = MakeInventorySignature(Inventory);
 	TestFalse(TEXT("Repeating the same deterministic sort reports no further mutation"), Inventory->ApplyInventorySort(ERpgInventorySortMode::Name));
 	TestEqual(TEXT("Repeated sort produces byte-for-byte equivalent placement state"), MakeInventorySignature(Inventory), StableSignature);
+
+	SortRequest.RequestId = FGuid::NewGuid();
+	const FRpgInventoryMutationResult NoOpSortCommit = Inventory->ExecuteInventoryMutation(SortRequest);
+	TestEqual(
+		TEXT("A valid already-sorted transaction remains a successful no-op"),
+		NoOpSortCommit.Code,
+		ERpgInventoryMutationResultCode::Success);
+	TestEqual(
+		TEXT("The successful no-op transaction preserves placement state"),
+		MakeInventorySignature(Inventory),
+		StableSignature);
 	return true;
 }
 
@@ -1163,6 +2301,113 @@ bool FRpgInventorySplitIdempotencyTest::RunTest(const FString& Parameters)
 		TEXT("The full current stack is outside the exact split range"),
 		Inventory->PlanInventoryMutation(WholeStackSplit).Code,
 		ERpgInventoryMutationResultCode::StackLimitReached);
+	return true;
+}
+
+IMPLEMENT_SIMPLE_AUTOMATION_TEST(
+	FRpgInventorySplitEquipmentPolicyTest,
+	"SurvivalRpg.Inventory.Transaction.SplitCannotBypassEquipmentPolicy",
+	EAutomationTestFlags::EditorContext | EAutomationTestFlags::EngineFilter)
+
+bool FRpgInventorySplitEquipmentPolicyTest::RunTest(const FString& Parameters)
+{
+	using namespace RpgInventoryTransactionTests;
+	FScopedInventoryWorld TestWorld;
+	if (!InitializeTest(*this, TestWorld))
+	{
+		return false;
+	}
+
+	UWorld* World = TestWorld.GetTestWorld();
+	FActorSpawnParameters ControllerSpawnParameters;
+	ControllerSpawnParameters.Name = MakeUniqueObjectName(
+		World,
+		ARpgInventoryAutomationTestPlayerController::StaticClass(),
+		TEXT("SplitEquipmentPolicyController"));
+	ControllerSpawnParameters.ObjectFlags = RF_Transient;
+	ARpgInventoryAutomationTestPlayerController* Controller =
+		World->SpawnActor<ARpgInventoryAutomationTestPlayerController>(ControllerSpawnParameters);
+
+	FActorSpawnParameters PlayerStateSpawnParameters;
+	PlayerStateSpawnParameters.Name = MakeUniqueObjectName(
+		World,
+		ARpgInventoryAutomationTestPlayerState::StaticClass(),
+		TEXT("SplitEquipmentPolicyPlayerState"));
+	PlayerStateSpawnParameters.ObjectFlags = RF_Transient;
+	ARpgInventoryAutomationTestPlayerState* PlayerState =
+		World->SpawnActor<ARpgInventoryAutomationTestPlayerState>(PlayerStateSpawnParameters);
+	if (!TestNotNull(TEXT("The split-policy controller fixture exists"), Controller) ||
+		!TestNotNull(TEXT("The split-policy player-state fixture exists"), PlayerState))
+	{
+		return false;
+	}
+
+	Controller->SetPlayerState(PlayerState);
+	PlayerState->SetOwner(Controller);
+	URpgInventoryManagerComponent* Inventory = PlayerState->GetInventoryManagerComponent();
+	if (!TestNotNull(TEXT("The split-policy player inventory exists"), Inventory) ||
+		!TestNotNull(
+			TEXT("The split-policy layout exists"),
+			Controller->GetPlayerInventoryLayoutComponent()))
+	{
+		return false;
+	}
+
+	const FRpgInventoryContainerHandle Pockets =
+		FRpgInventoryContainerHandle::MakeRoot(URpgPlayerInventoryLayoutComponent::PocketsGroupId);
+	const FRpgInventoryContainerHandle GearHead =
+		FRpgInventoryContainerHandle::MakeRoot(URpgPlayerInventoryLayoutComponent::GearHeadGroupId);
+	const FRpgInventoryContainerHandle WeaponSlot1 =
+		FRpgInventoryContainerHandle::MakeRoot(URpgPlayerInventoryLayoutComponent::WeaponSlot1GroupId);
+	URpgInventoryItemInstance* SourceStack = Inventory->AddItemDefinitionToPlacement(
+		URpgInventoryAutomationTestStackItemDefinition::StaticClass(),
+		6,
+		MakePlacement(Pockets, 0, 0));
+	if (!TestNotNull(TEXT("A six-unit consumable stack starts in Pockets"), SourceStack))
+	{
+		return false;
+	}
+
+	const FString BeforeRejectedSplits = MakeInventorySignature(Inventory);
+	FRpgInventoryMutationRequest GearSplit = MakePlacementRequest(
+		ERpgInventoryMutationOperation::Split,
+		SourceStack,
+		Pockets,
+		GearHead,
+		0,
+		0);
+	GearSplit.Quantity = 2;
+	TestEqual(
+		TEXT("A forged split into Gear.Head is rejected by the shared placement policy"),
+		Inventory->PlanInventoryMutation(GearSplit).Code,
+		ERpgInventoryMutationResultCode::ItemNotAllowed);
+	TestEqual(
+		TEXT("Executing the forged Gear.Head split remains rejected"),
+		Inventory->ExecuteInventoryMutation(GearSplit).Code,
+		ERpgInventoryMutationResultCode::ItemNotAllowed);
+
+	FRpgInventoryMutationRequest CarrySplit = MakePlacementRequest(
+		ERpgInventoryMutationOperation::Split,
+		SourceStack,
+		Pockets,
+		WeaponSlot1,
+		0,
+		0);
+	CarrySplit.Quantity = 2;
+	TestEqual(
+		TEXT("A forged split into WeaponSlot1 is rejected by the shared placement policy"),
+		Inventory->PlanInventoryMutation(CarrySplit).Code,
+		ERpgInventoryMutationResultCode::ItemNotAllowed);
+	TestEqual(
+		TEXT("Executing the forged WeaponSlot1 split remains rejected"),
+		Inventory->ExecuteInventoryMutation(CarrySplit).Code,
+		ERpgInventoryMutationResultCode::ItemNotAllowed);
+	TestEqual(
+		TEXT("Rejected equipment splits leave the complete inventory graph unchanged"),
+		MakeInventorySignature(Inventory),
+		BeforeRejectedSplits);
+	TestEqual(TEXT("Rejected equipment splits preserve the source quantity"), Inventory->GetItemStackCount(SourceStack), 6);
+	TestEqual(TEXT("Rejected equipment splits create no new entries"), Inventory->GetUsedEntryCount(), 1);
 	return true;
 }
 

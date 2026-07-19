@@ -8,8 +8,8 @@
 #include "RpgLoadoutSlotWidgets.generated.h"
 
 class URpgEquipmentSlotViewModel;
-class URpgInventoryContextMenuWidget;
 class URpgInventoryDragDropCoordinator;
+class URpgInventoryInteractionScreenWidget;
 class URpgInventoryItemInstance;
 class UDragDropOperation;
 class UUserWidget;
@@ -28,6 +28,9 @@ class SURVIVALRPG_API URpgEquipmentSlotWidget : public UCommonButtonBase
 public:
 	explicit URpgEquipmentSlotWidget(const FObjectInitializer& ObjectInitializer = FObjectInitializer::Get());
 
+	/** Exact optional Manual MVVM source owned by this native equipment-slot presenter. */
+	static const FName EquipmentSlotViewModelSourceName;
+
 	/** Assigns the VM for the dedicated equipment slot represented by this widget. */
 	UFUNCTION(BlueprintCallable, Category = "Equipment|Slot")
 	void SetEquipmentSlotViewModel(URpgEquipmentSlotViewModel* InSlotViewModel);
@@ -36,13 +39,24 @@ public:
 	UFUNCTION(BlueprintCallable, Category = "Equipment|Slot")
 	void SetDragDropCoordinator(URpgInventoryDragDropCoordinator* InCoordinator);
 
-	/** Overrides the styled context-menu class supplied centrally by the owning inventory screen. */
+	/**
+	 * Assigns the owning inventory screen that centrally creates and owns the equipment context menu.
+	 * The host is transient presentation state and never owns equipped gameplay state.
+	 */
 	UFUNCTION(BlueprintCallable, Category = "Equipment|Slot|Context Menu")
-	void SetContextMenuWidgetClass(TSubclassOf<URpgInventoryContextMenuWidget> InContextMenuWidgetClass);
+	void SetInventoryPresentationHost(URpgInventoryInteractionScreenWidget* InPresentationHost);
 
 	/** Current dedicated equipment slot VM represented by this widget. */
 	UFUNCTION(BlueprintPure, Category = "Equipment|Slot")
 	URpgEquipmentSlotViewModel* GetEquipmentSlotViewModel() const { return SlotViewModel.Get(); }
+
+	/** Screen-local coordinator used for authoritative previews and commands; UI must not mutate equipment directly. */
+	UFUNCTION(BlueprintPure, Category = "Equipment|Slot")
+	URpgInventoryDragDropCoordinator* GetDragDropCoordinator() const { return DragDropCoordinator.Get(); }
+
+	/** Current held-item/drop-target presentation state. */
+	UFUNCTION(BlueprintPure, Category = "Equipment|Slot")
+	ERpgInventorySlotDragVisualState GetCurrentDragDropVisualState() const { return CurrentDragDropVisualState; }
 
 	/** Equipment slot represented by this widget. */
 	UFUNCTION(BlueprintPure, Category = "Equipment|Slot")
@@ -113,6 +127,10 @@ protected:
 	ERpgEquipmentSlot EquipmentSlot = ERpgEquipmentSlot::Head;
 
 private:
+#if WITH_DEV_AUTOMATION_TESTS
+	friend class FRpgEquipmentSlotLifecycleTest;
+#endif
+
 	UFUNCTION()
 	void HandleSlotViewModelChanged(URpgEquipmentSlotViewModel* ChangedSlotViewModel);
 
@@ -123,14 +141,12 @@ private:
 	FRpgInventoryDragPayload MakeDragPayload() const;
 	FRpgInventoryDropTarget MakeDropTarget() const;
 	bool IsHeldSource() const;
+	void ReleaseEquipmentSlotState();
+	bool InjectEquipmentSlotViewModelIntoMvvm();
 
 	/** Optional mouse drag visual class for equipped gear slots. Leave unset to reuse this slot widget class. */
 	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Equipment|Slot|Drag", meta = (AllowPrivateAccess = "true"))
 	TSubclassOf<UUserWidget> DragVisualClass;
-
-	/** Optional styled CommonUI context menu class; the functional native fallback is used when unset. */
-	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Equipment|Slot|Context Menu", meta = (AllowPrivateAccess = "true"))
-	TSubclassOf<URpgInventoryContextMenuWidget> ContextMenuWidgetClass;
 
 	UPROPERTY(Transient)
 	TObjectPtr<URpgEquipmentSlotViewModel> SlotViewModel = nullptr;
@@ -138,12 +154,17 @@ private:
 	UPROPERTY(Transient)
 	TObjectPtr<URpgInventoryDragDropCoordinator> DragDropCoordinator = nullptr;
 
-	/** Weak CommonUI-owned modal retained so repeated RMB presses close the previous instance safely. */
-	TWeakObjectPtr<URpgInventoryContextMenuWidget> ActiveContextMenu;
+	UPROPERTY(Transient)
+	ERpgInventorySlotDragVisualState CurrentDragDropVisualState = ERpgInventorySlotDragVisualState::Normal;
+
+	/** Screen-owned presentation host, cleared whenever this pooled equipment leaf releases its binding. */
+	UPROPERTY(Transient)
+	TObjectPtr<URpgInventoryInteractionScreenWidget> InventoryPresentationHost = nullptr;
 
 	bool bPendingLeftClickAccept = false;
 	FRpgInventoryDragAnchor PendingPointerDragAnchor;
 	bool bHasPendingPointerDragAnchor = false;
 	bool bHasExternalPreviewState = false;
 	ERpgInventorySlotDragVisualState ExternalPreviewState = ERpgInventorySlotDragVisualState::Normal;
+	bool bEquipmentSlotStateReleased = false;
 };

@@ -1,7 +1,7 @@
 #include "RpgPlayerInventoryLayoutComponent.h"
 
 #include "GameFramework/GameplayMessageSubsystem.h"
-#include "RpgInventoryFragment_EquippableItem.h"
+#include "RpgInventoryEquipmentPlacementPolicy.h"
 #include "RpgInventoryFragment_ItemContainer.h"
 #include "RpgInventoryFragment_ItemTraits.h"
 #include "RpgInventoryFragment_SlotContainerProvider.h"
@@ -26,34 +26,6 @@ const FName URpgPlayerInventoryLayoutComponent::GearBackpackGroupId(TEXT("Gear.B
 const FName URpgPlayerInventoryLayoutComponent::GearBeltGroupId(TEXT("Gear.Belt"));
 const FName URpgPlayerInventoryLayoutComponent::GearPouchGroupId(TEXT("Gear.Pouch"));
 const FName URpgPlayerInventoryLayoutComponent::GearResourceBagGroupId(TEXT("Gear.ResourceBag"));
-
-namespace
-{
-	bool CanItemEquipInLayoutGearSlot(const URpgInventoryItemInstance* Item, ERpgEquipmentSlot EquipmentSlot)
-	{
-		if (!Item || EquipmentSlot == ERpgEquipmentSlot::None)
-		{
-			return false;
-		}
-
-		const URpgInventoryFragment_EquippableItem* EquippableFragment = Item->FindFragmentByClass<URpgInventoryFragment_EquippableItem>();
-		const TSubclassOf<URpgEquipmentDefinition> EquipmentDefinition = EquippableFragment ? EquippableFragment->GetEquipmentDefinition() : nullptr;
-		const URpgEquipmentDefinition* EquipmentCDO = EquipmentDefinition ? GetDefault<URpgEquipmentDefinition>(EquipmentDefinition) : nullptr;
-		if (URpgPlayerInventoryLayoutComponent::IsSlotContainerEquipmentSlot(EquipmentSlot))
-		{
-			if (!Item->FindFragmentByClass<URpgInventoryFragment_ItemContainer>())
-			{
-				return false;
-			}
-
-			// Equipment data distinguishes backpacks, belts, pouches, and resource bags. Definition-less legacy
-			// providers keep their migration compatibility until their item definitions are updated.
-			return !EquipmentCDO || EquipmentCDO->CanEquipInSlot(EquipmentSlot);
-		}
-
-		return EquipmentCDO && EquipmentCDO->CanEquipInSlot(EquipmentSlot);
-	}
-}
 
 URpgPlayerInventoryLayoutComponent::URpgPlayerInventoryLayoutComponent(const FObjectInitializer& ObjectInitializer)
 	: Super(ObjectInitializer)
@@ -210,14 +182,30 @@ bool URpgPlayerInventoryLayoutComponent::CanItemUseSlotAddress(URpgInventoryItem
 				return false;
 			}
 
+			ERpgEquipmentSlot EquipmentSlot = ERpgEquipmentSlot::None;
 			if (Group.GroupKind == ERpgInventorySlotGroupKind::Gear)
 			{
-				ERpgEquipmentSlot EquipmentSlot = ERpgEquipmentSlot::None;
-				return TryGetEquipmentSlotForGearGroupId(Group.ContainerId, EquipmentSlot) &&
-					CanItemEquipInLayoutGearSlot(Item, EquipmentSlot);
+				if (!TryGetEquipmentSlotForGearGroupId(Group.ContainerId, EquipmentSlot))
+				{
+					return false;
+				}
+			}
+			else if (Group.GroupKind == ERpgInventorySlotGroupKind::Carry)
+			{
+				if (!Group.Rule.bCarrySlot ||
+					!FRpgInventoryEquipmentPlacementPolicy::TryGetHandSlotForCarryRole(
+						Group.Rule.CarryActivationRole,
+						EquipmentSlot))
+				{
+					return false;
+				}
+			}
+			else
+			{
+				return true;
 			}
 
-			return true;
+			return FRpgInventoryEquipmentPlacementPolicy::CanItemUseEquipmentSlot(Item, EquipmentSlot);
 		}
 	}
 
@@ -403,10 +391,7 @@ void URpgPlayerInventoryLayoutComponent::ApplyLayoutCapacityToInventory()
 
 bool URpgPlayerInventoryLayoutComponent::IsSlotContainerEquipmentSlot(ERpgEquipmentSlot EquipmentSlot)
 {
-	return EquipmentSlot == ERpgEquipmentSlot::Backpack ||
-		EquipmentSlot == ERpgEquipmentSlot::Belt ||
-		EquipmentSlot == ERpgEquipmentSlot::Pouch ||
-		EquipmentSlot == ERpgEquipmentSlot::ResourceBag;
+	return FRpgInventoryEquipmentPlacementPolicy::IsSlotContainerEquipmentSlot(EquipmentSlot);
 }
 
 bool URpgPlayerInventoryLayoutComponent::CanUnequipSlotContainer(ERpgEquipmentSlot EquipmentSlot) const

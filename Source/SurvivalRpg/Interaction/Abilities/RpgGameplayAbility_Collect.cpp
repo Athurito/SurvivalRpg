@@ -3,7 +3,6 @@
 #include "GameFramework/Controller.h"
 #include "GameFramework/Pawn.h"
 #include "GameFramework/PlayerState.h"
-#include "SurvivalRpg/Equipment/RpgEquipmentDefinition.h"
 #include "SurvivalRpg/Core/Player/RpgPlayerController.h"
 #include "SurvivalRpg/Equipment/RpgEquipmentLoadoutComponent.h"
 #include "SurvivalRpg/Inventory/IPickupable.h"
@@ -14,6 +13,7 @@
 #include "SurvivalRpg/Inventory/RpgInventoryItemDefinition.h"
 #include "SurvivalRpg/Inventory/RpgInventoryItemInstance.h"
 #include "SurvivalRpg/Inventory/RpgInventoryManagerComponent.h"
+#include "SurvivalRpg/Inventory/RpgInventoryUiActionComponent.h"
 #include "SurvivalRpg/Inventory/RpgPlayerInventoryLayoutComponent.h"
 
 #include UE_INLINE_GENERATED_CPP_BY_NAME(RpgGameplayAbility_Collect)
@@ -263,7 +263,9 @@ void URpgGameplayAbility_Collect::ActivateAbility(
 						AddedItems.Add(AddedItem);
 					}
 				}
-				AssignEquippableItemsToEquipment(EquipmentLoadout, AddedItems);
+				AssignEquippableItemsToEquipment(
+					PlayerController->GetInventoryUiActionComponent(),
+					AddedItems);
 			}
 		}
 
@@ -325,7 +327,9 @@ void URpgGameplayAbility_Collect::ActivateAbility(
 	{
 		if (ARpgPlayerController* PlayerController = FindPlayerControllerForActor(InteractingActor))
 		{
-			AssignEquippableItemsToEquipment(PlayerController->GetEquipmentLoadoutComponent(), AddedItems);
+			AssignEquippableItemsToEquipment(
+				PlayerController->GetInventoryUiActionComponent(),
+				AddedItems);
 		}
 	}
 
@@ -455,24 +459,23 @@ bool URpgGameplayAbility_Collect::AddPickupToInventory(URpgInventoryManagerCompo
 	return true;
 }
 
-void URpgGameplayAbility_Collect::AssignEquippableItemsToEquipment(URpgEquipmentLoadoutComponent* EquipmentLoadout, const TArray<URpgInventoryItemInstance*>& AddedItems)
+void URpgGameplayAbility_Collect::AssignEquippableItemsToEquipment(
+	URpgInventoryUiActionComponent* InventoryActions,
+	const TArray<URpgInventoryItemInstance*>& AddedItems)
 {
-	if (EquipmentLoadout == nullptr)
+	if (!InventoryActions)
 	{
 		return;
 	}
 
 	for (URpgInventoryItemInstance* AddedItem : AddedItems)
 	{
-		const URpgInventoryFragment_EquippableItem* EquippableFragment = AddedItem ? AddedItem->FindFragmentByClass<URpgInventoryFragment_EquippableItem>() : nullptr;
-		const TSubclassOf<URpgEquipmentDefinition> EquipmentDefinition = EquippableFragment ? EquippableFragment->GetEquipmentDefinition() : nullptr;
-		const URpgEquipmentDefinition* EquipmentCDO = EquipmentDefinition ? GetDefault<URpgEquipmentDefinition>(EquipmentDefinition) : nullptr;
-		if (EquipmentCDO == nullptr)
+		if (!AddedItem ||
+			!AddedItem->FindFragmentByClass<URpgInventoryFragment_EquippableItem>())
 		{
 			continue;
 		}
 
-		const ERpgEquipmentSlot EquipmentSlot = EquipmentCDO->GetDefaultEquipSlot();
-		EquipmentLoadout->AssignItemToEquipmentSlot(EquipmentSlot, AddedItem);
+		InventoryActions->RequestEquipInventoryItem(AddedItem);
 	}
 }

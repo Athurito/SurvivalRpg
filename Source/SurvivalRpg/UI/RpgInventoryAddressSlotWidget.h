@@ -11,9 +11,8 @@
 class UDragDropOperation;
 class UUserWidget;
 class URpgInventoryAddressSlotViewModel;
-class URpgInventoryContextMenuWidget;
 class URpgInventoryDragDropCoordinator;
-class URpgInventorySplitDialogWidget;
+class URpgInventoryInteractionScreenWidget;
 
 /**
  * Native CommonUI slot entry for one logical player-inventory address such as Belt[0] or WeaponSlot1[0].
@@ -28,6 +27,9 @@ class SURVIVALRPG_API URpgInventoryAddressSlotWidget : public UCommonButtonBase,
 
 public:
 	explicit URpgInventoryAddressSlotWidget(const FObjectInitializer& ObjectInitializer = FObjectInitializer::Get());
+
+	/** Exact optional Manual MVVM source owned by this native address-slot presenter. */
+	static const FName AddressSlotViewModelSourceName;
 
 	/** Assigns the screen-local drag/drop coordinator shared by player inventory, gear slots, and actionbar. */
 	UFUNCTION(BlueprintCallable, Category = "Inventory|Address Slot")
@@ -49,9 +51,12 @@ public:
 	UFUNCTION(BlueprintPure, Category = "Inventory|Address Slot")
 	URpgInventoryDragDropCoordinator* GetDragDropCoordinator() const { return DragDropCoordinator.Get(); }
 
-	/** Overrides the styled context-menu class supplied by the owning inventory screen. */
+	/**
+	 * Assigns the owning inventory screen that centrally creates and owns context menus and split dialogs.
+	 * The host is transient presentation state and never owns the represented inventory item.
+	 */
 	UFUNCTION(BlueprintCallable, Category = "Inventory|Address Slot|Context Menu")
-	void SetContextMenuWidgetClass(TSubclassOf<URpgInventoryContextMenuWidget> InContextMenuWidgetClass);
+	void SetInventoryPresentationHost(URpgInventoryInteractionScreenWidget* InPresentationHost);
 
 	/** Controller/CommonUI Accept: pick this item up or place the held item onto this address. */
 	UFUNCTION(BlueprintCallable, Category = "Inventory|Address Slot")
@@ -138,15 +143,11 @@ protected:
 	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Inventory|Address Slot|Drag")
 	TSubclassOf<UUserWidget> DragVisualClass;
 
-	/** Optional styled context menu; the shared functional native menu is used when unset. */
-	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Inventory|Address Slot|Context Menu")
-	TSubclassOf<URpgInventoryContextMenuWidget> ContextMenuWidgetClass;
-
-	/** Optional styled exact split dialog; the shared functional native dialog is used when unset. */
-	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Inventory|Address Slot|Context Menu")
-	TSubclassOf<URpgInventorySplitDialogWidget> SplitDialogWidgetClass;
-
 private:
+#if WITH_DEV_AUTOMATION_TESTS
+	friend class FRpgInventoryAddressSlotEntryPoolingTest;
+#endif
+
 	UFUNCTION()
 	void HandleSlotViewModelChanged(URpgInventoryAddressSlotViewModel* ChangedSlotViewModel);
 
@@ -155,6 +156,7 @@ private:
 
 	FReply HandlePointerButtonDown(const FGeometry& InGeometry, const FPointerEvent& InMouseEvent);
 	void ReleaseAddressSlotState();
+	bool InjectAddressSlotViewModelIntoMvvm();
 	bool RequestAddressSplitDialog();
 	FRpgInventoryDragPayload MakeDragPayload(bool bAllowEmptyAddressPayload) const;
 	FRpgInventoryDropTarget MakeDropTarget() const;
@@ -168,11 +170,9 @@ private:
 	UPROPERTY(Transient)
 	ERpgInventorySlotDragVisualState CurrentDragDropVisualState = ERpgInventorySlotDragVisualState::Normal;
 
-	/** Weak because the CommonUI modal stack owns the opened menu. */
-	TWeakObjectPtr<URpgInventoryContextMenuWidget> ActiveContextMenu;
-
-	/** Weak because the CommonUI modal stack owns the opened split dialog. */
-	TWeakObjectPtr<URpgInventorySplitDialogWidget> ActiveSplitDialog;
+	/** Screen-owned presentation host, cleared before this pooled entry can represent another address. */
+	UPROPERTY(Transient)
+	TObjectPtr<URpgInventoryInteractionScreenWidget> InventoryPresentationHost = nullptr;
 
 	bool bSlotSelected = false;
 	bool bInventoryPanelActive = true;

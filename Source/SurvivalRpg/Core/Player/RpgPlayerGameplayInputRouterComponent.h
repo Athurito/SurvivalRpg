@@ -22,7 +22,7 @@ class SURVIVALRPG_API URpgPlayerGameplayInputRouterComponent : public UControlle
 public:
 	explicit URpgPlayerGameplayInputRouterComponent(const FObjectInitializer& ObjectInitializer = FObjectInitializer::Get());
 
-	/** Routes a pressed systemic gameplay input tag such as InputTag.ActionBar.Slot.1 or InputTag.Weapon.Ability.1. */
+	/** Routes an owning-client system command such as inventory, actionbar, or weapon-ability input. */
 	UFUNCTION(BlueprintCallable, Category = "Rpg|Input")
 	void HandleGameplayInputPressed(FGameplayTag InputTag);
 

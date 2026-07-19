@@ -33,7 +33,9 @@ bool URpgEquipmentDefinition::CanEquipInSlot(ERpgEquipmentSlot Slot) const
 		return false;
 	}
 
-	return AllowedSlots.IsEmpty() ? Slot == ERpgEquipmentSlot::MainHand : AllowedSlots.Contains(Slot);
+	return AllowedSlots.Contains(Slot) &&
+		!(Slot == ERpgEquipmentSlot::OffHand &&
+			HandOccupancy == ERpgEquipmentHandOccupancy::BothHands);
 }
 
 bool URpgEquipmentDefinition::OccupiesSlot(ERpgEquipmentSlot EquippedSlot, ERpgEquipmentSlot QuerySlot) const
@@ -53,5 +55,13 @@ bool URpgEquipmentDefinition::OccupiesSlot(ERpgEquipmentSlot EquippedSlot, ERpgE
 
 ERpgEquipmentSlot URpgEquipmentDefinition::GetDefaultEquipSlot() const
 {
-	return AllowedSlots.IsEmpty() ? ERpgEquipmentSlot::MainHand : AllowedSlots[0];
+	for (const ERpgEquipmentSlot AllowedSlot : AllowedSlots)
+	{
+		if (CanEquipInSlot(AllowedSlot))
+		{
+			return AllowedSlot;
+		}
+	}
+
+	return ERpgEquipmentSlot::None;
 }

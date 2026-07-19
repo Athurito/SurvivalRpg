@@ -29,6 +29,7 @@ namespace RpgGameplayTags
 	UE_DEFINE_GAMEPLAY_TAG_COMMENT(InputTag_AutoRun, "InputTag.AutoRun", "Auto-run input.");
 	UE_DEFINE_GAMEPLAY_TAG_COMMENT(InputTag_Jump, "InputTag.Jump", "Jump input.");
 	UE_DEFINE_GAMEPLAY_TAG_COMMENT(InputTag_StopJump, "InputTag.StopJump", "StopJump input.");
+	UE_DEFINE_GAMEPLAY_TAG_COMMENT(InputTag_UI_Inventory, "InputTag.UI.Inventory", "Open the owning player's inventory screen.");
 	UE_DEFINE_GAMEPLAY_TAG_COMMENT(InputTag_ActionBar_Slot_1, "InputTag.ActionBar.Slot.1", "Activate general action bar slot 1.");
 	UE_DEFINE_GAMEPLAY_TAG_COMMENT(InputTag_ActionBar_Slot_2, "InputTag.ActionBar.Slot.2", "Activate general action bar slot 2.");
 	UE_DEFINE_GAMEPLAY_TAG_COMMENT(InputTag_ActionBar_Slot_3, "InputTag.ActionBar.Slot.3", "Activate general action bar slot 3.");

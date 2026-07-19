@@ -161,11 +161,14 @@ public:
 	UPROPERTY(EditDefaultsOnly, Category = "Equipment")
 	TSubclassOf<URpgEquipmentInstance> InstanceType;
 
-	// Slots this equipment may be equipped into. Leave empty only for content that should never be equipped directly.
+	/**
+	 * Slots this static equipment definition may occupy. An empty array makes the definition non-equippable.
+	 * BothHands definitions cannot use OffHand even if stale authored data includes that value.
+	 */
 	UPROPERTY(EditDefaultsOnly, Category = "Equipment|Slots")
 	TArray<ERpgEquipmentSlot> AllowedSlots;
 
-	// Defines whether this item occupies only its selected slot or both hands.
+	/** Runtime hand-conflict rule; this does not reserve or remove physical Carry-grid items. */
 	UPROPERTY(EditDefaultsOnly, Category = "Equipment|Slots")
 	ERpgEquipmentHandOccupancy HandOccupancy = ERpgEquipmentHandOccupancy::SelectedSlotOnly;
 

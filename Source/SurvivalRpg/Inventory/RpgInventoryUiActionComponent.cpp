@@ -7,6 +7,7 @@
 #include "GameFramework/Pawn.h"
 #include "RpgInventoryContainerComponent.h"
 #include "RpgDroppedInventoryActor.h"
+#include "RpgInventoryEquipmentPlacementPolicy.h"
 #include "RpgInventoryFragment_EquippableItem.h"
 #include "RpgInventoryFragment_ItemContainer.h"
 #include "RpgInventoryFragment_SlotContainerProvider.h"
@@ -32,6 +33,8 @@
 #include "SurvivalRpg/Equipment/RpgEquipmentDefinition.h"
 #include "SurvivalRpg/GameplayTags/RpgGameplayTags.h"
 #include "SurvivalRpg/Inventory/RpgPlayerInventoryLayoutComponent.h"
+
+#include "UObject/UObjectIterator.h"
 
 #include UE_INLINE_GENERATED_CPP_BY_NAME(RpgInventoryUiActionComponent)
 
@@ -68,22 +71,6 @@ namespace
 		return Traits && Traits->GetMaxStackSize() > 1;
 	}
 
-	bool IsUiActionHandEquipmentSlot(ERpgEquipmentSlot EquipmentSlot)
-	{
-		return EquipmentSlot == ERpgEquipmentSlot::MainHand || EquipmentSlot == ERpgEquipmentSlot::OffHand;
-	}
-
-	bool IsUiActionManagedEquipmentSlot(ERpgEquipmentSlot EquipmentSlot)
-	{
-		return IsUiActionHandEquipmentSlot(EquipmentSlot) ||
-			EquipmentSlot == ERpgEquipmentSlot::Head ||
-			EquipmentSlot == ERpgEquipmentSlot::Chest ||
-			EquipmentSlot == ERpgEquipmentSlot::Hands ||
-			EquipmentSlot == ERpgEquipmentSlot::Legs ||
-			EquipmentSlot == ERpgEquipmentSlot::Feet ||
-			URpgPlayerInventoryLayoutComponent::IsSlotContainerEquipmentSlot(EquipmentSlot);
-	}
-
 	ERpgInventoryManualDropPolicy GetManualDropPolicy(const URpgInventoryItemInstance* Item)
 	{
 		const URpgInventoryFragment_ItemTraits* Traits = GetItemTraits(Item);
@@ -103,6 +90,78 @@ namespace
 		}
 
 		return bTransfersWholeEntry && TargetInventory->CanAddItemInstance(Item, TransferCount);
+	}
+
+	void GatherCraftingStationsForOutputInventory(
+		const URpgInventoryManagerComponent* Inventory,
+		TArray<const URpgCraftingStationComponent*>& OutStations)
+	{
+		OutStations.Reset();
+		if (!Inventory)
+		{
+			return;
+		}
+
+		const UWorld* InventoryWorld = Inventory->GetWorld();
+		auto AddMatchingStation =
+			[Inventory, InventoryWorld, &OutStations](
+				const URpgCraftingStationComponent* CraftingStation)
+			{
+				if (IsValid(CraftingStation) &&
+					!CraftingStation->HasAnyFlags(
+						RF_ClassDefaultObject | RF_ArchetypeObject) &&
+					CraftingStation->GetOutputInventory() == Inventory &&
+					(!InventoryWorld ||
+						CraftingStation->GetWorld() == InventoryWorld))
+				{
+					OutStations.AddUnique(CraftingStation);
+				}
+			};
+
+		// Dedicated station output inventories are the hot preview path. Check every station component on the owner,
+		// not just FindComponentByClass's first match, without scanning the global UObject table on every drag frame.
+		if (const AActor* InventoryOwner = Inventory->GetOwner())
+		{
+			TInlineComponentArray<URpgCraftingStationComponent*> OwnerStations;
+			InventoryOwner->GetComponents(OwnerStations);
+			for (const URpgCraftingStationComponent* CraftingStation :
+				OwnerStations)
+			{
+				AddMatchingStation(CraftingStation);
+			}
+		}
+		if (!OutStations.IsEmpty())
+		{
+			return;
+		}
+
+		// SetOutputInventoryManager also permits an externally owned inventory. This is a rare configuration path;
+		// fall back to exact live discovery so it remains secure and independent of component enumeration order.
+		for (TObjectIterator<URpgCraftingStationComponent> It; It; ++It)
+		{
+			AddMatchingStation(*It);
+		}
+	}
+
+	bool IsCraftingOutputInventory(const URpgInventoryManagerComponent* Inventory)
+	{
+		TArray<const URpgCraftingStationComponent*> CraftingStations;
+		GatherCraftingStationsForOutputInventory(Inventory, CraftingStations);
+		return !CraftingStations.IsEmpty();
+	}
+
+	bool IsUiTransferDirectionAllowed(
+		const URpgInventoryManagerComponent* SourceInventory,
+		const URpgInventoryManagerComponent* TargetInventory)
+	{
+		if (!SourceInventory || !TargetInventory)
+		{
+			return false;
+		}
+
+		// Crafting owns all deposits into its output buffer. UI transfers may only reorder it internally or withdraw.
+		return SourceInventory == TargetInventory ||
+			!IsCraftingOutputInventory(TargetInventory);
 	}
 
 	FGameplayTag GetActionTagForMutation(ERpgInventoryMutationOperation Operation)
@@ -131,6 +190,7 @@ namespace
 			return ERpgInventoryActionFeedbackResult::MissingItem;
 		case ERpgInventoryMutationResultCode::InvalidPlacement:
 		case ERpgInventoryMutationResultCode::InvalidContainer:
+		case ERpgInventoryMutationResultCode::ItemNotAllowed:
 			return ERpgInventoryActionFeedbackResult::InvalidSlot;
 		case ERpgInventoryMutationResultCode::OutOfBounds:
 		case ERpgInventoryMutationResultCode::Occupied:
@@ -144,6 +204,24 @@ namespace
 			return ERpgInventoryActionFeedbackResult::InvalidRequest;
 		default:
 			return ERpgInventoryActionFeedbackResult::ServerRejected;
+		}
+	}
+
+	bool IsGenericUiMutationOperationAllowed(ERpgInventoryMutationOperation Operation)
+	{
+		switch (Operation)
+		{
+		case ERpgInventoryMutationOperation::Move:
+		case ERpgInventoryMutationOperation::Rotate:
+		case ERpgInventoryMutationOperation::Merge:
+		case ERpgInventoryMutationOperation::Swap:
+		case ERpgInventoryMutationOperation::Split:
+		case ERpgInventoryMutationOperation::Sort:
+		case ERpgInventoryMutationOperation::Equip:
+			return true;
+
+		default:
+			return false;
 		}
 	}
 
@@ -272,6 +350,24 @@ void URpgInventoryUiActionComponent::RequestInventoryMutation_Implementation(
 {
 	Request.EnsureRequestId();
 	const FGameplayTag ActionTag = GetActionTagForMutation(Request.Operation);
+	if (!IsGenericUiMutationOperationAllowed(Request.Operation))
+	{
+		UE_LOG(
+			LogRpgInventoryUiActions,
+			Verbose,
+			TEXT("Rejected operation %d through generic RequestInventoryMutation; use its dedicated validated request API."),
+			static_cast<int32>(Request.Operation));
+		SendActionFeedback(
+			ActionTag,
+			ERpgInventoryActionFeedbackResult::InvalidRequest,
+			Inventory,
+			nullptr,
+			Request.Quantity,
+			Request.RequestId,
+			Request.ItemId);
+		return;
+	}
+
 	URpgInventoryItemInstance* ItemBeforeMutation = Inventory ? Inventory->FindItemById(Request.ItemId) : nullptr;
 	if (!Inventory || !CanAccessInventory(Inventory))
 	{
@@ -403,6 +499,13 @@ void URpgInventoryUiActionComponent::RequestQuickTransferItem_Implementation(
 		return;
 	}
 
+	if (!IsUiTransferDirectionAllowed(SourceInventory, TargetInventory))
+	{
+		SendActionFeedback(RpgGameplayTags::Rpg_Inventory_Action_Transfer, ERpgInventoryActionFeedbackResult::ServerRejected,
+			SourceInventory, nullptr, Request.StackCount, Request.RequestId, Request.ItemId);
+		return;
+	}
+
 	URpgInventoryItemInstance* Item = SourceInventory->FindItemById(Request.ItemId);
 	if (!Item)
 	{
@@ -484,7 +587,7 @@ void URpgInventoryUiActionComponent::RequestQuickTransferItem_Implementation(
 
 void URpgInventoryUiActionComponent::RequestAssignItemToEquipmentSlot_Implementation(ERpgEquipmentSlot EquipmentSlot, URpgInventoryItemInstance* Item)
 {
-	if (IsUiActionHandEquipmentSlot(EquipmentSlot))
+	if (FRpgInventoryEquipmentPlacementPolicy::IsHandEquipmentSlot(EquipmentSlot))
 	{
 		URpgInventoryManagerComponent* PlayerInventory = FindPlayerInventory();
 		if (!TryMoveAndActivateItemInCarry(Item, EquipmentSlot))
@@ -547,185 +650,58 @@ void URpgInventoryUiActionComponent::RequestTransferItemStack_Implementation(URp
 
 void URpgInventoryUiActionComponent::RequestTransferItemStackToPlacement_Implementation(URpgInventoryManagerComponent* SourceInventory, URpgInventoryManagerComponent* TargetInventory, URpgInventoryItemInstance* Item, int32 StackCount, FRpgInventoryGridPlacement TargetPlacement)
 {
+	if (!SourceInventory || !TargetInventory || !Item || SourceInventory == TargetInventory || !TargetPlacement.IsValid() ||
+		!CanAccessInventory(SourceInventory) || !CanAccessInventory(TargetInventory) ||
+		!SourceInventory->ContainsItemInstance(Item))
 	{
-		if (!SourceInventory || !TargetInventory || !Item || SourceInventory == TargetInventory || !TargetPlacement.IsValid() ||
-			!CanAccessInventory(SourceInventory) || !CanAccessInventory(TargetInventory) ||
-			!SourceInventory->ContainsItemInstance(Item))
-		{
-			SendActionFeedback(RpgGameplayTags::Rpg_Inventory_Action_Transfer, ERpgInventoryActionFeedbackResult::NoAccess, SourceInventory, Item, StackCount);
-			return;
-		}
-
-		FRpgInventoryGridPlacement SourcePlacement;
-		if (!SourceInventory->GetItemPlacement(Item, SourcePlacement))
-		{
-			SendActionFeedback(RpgGameplayTags::Rpg_Inventory_Action_Transfer, ERpgInventoryActionFeedbackResult::MissingItem, SourceInventory, Item, StackCount);
-			return;
-		}
-
-		FRpgInventoryMutationRequest Request;
-		Request.Operation = ERpgInventoryMutationOperation::Transfer;
-		Request.ItemId = Item->GetItemId();
-		Request.Source = SourcePlacement.GetContainerHandle();
-		Request.Target = TargetPlacement.GetContainerHandle();
-		Request.TargetPlacement = TargetPlacement;
-		Request.Quantity = StackCount;
-		Request.EnsureRequestId();
-		const FRpgInventoryMutationResult MutationResult = SourceInventory->ExecuteCrossInventoryTransfer(TargetInventory, Request, false);
-		if (!MutationResult.IsSuccess())
-		{
-			SendActionFeedback(RpgGameplayTags::Rpg_Inventory_Action_Transfer,
-				MutationResult.Code == ERpgInventoryMutationResultCode::NoSpace || MutationResult.Code == ERpgInventoryMutationResultCode::Occupied
-					? ERpgInventoryActionFeedbackResult::InventoryFull
-					: ERpgInventoryActionFeedbackResult::ServerRejected,
-				SourceInventory, Item, StackCount);
-			return;
-		}
-
-		if (SourceInventory == FindPlayerInventory())
-		{
-			ClearPlayerAssignmentsForItem(Item);
-		}
-		SyncEquipmentLoadoutFromGearSlots();
-		SyncActiveHandsFromCarrySlots();
-		if (URpgEquipmentLoadoutComponent* EquipmentLoadout = FindEquipmentLoadout())
-		{
-			EquipmentLoadout->RefreshEquipmentLoadState();
-		}
-		SendActionFeedback(RpgGameplayTags::Rpg_Inventory_Action_Transfer, ERpgInventoryActionFeedbackResult::Success, SourceInventory, Item, MutationResult.AppliedQuantity);
+		SendActionFeedback(RpgGameplayTags::Rpg_Inventory_Action_Transfer, ERpgInventoryActionFeedbackResult::NoAccess, SourceInventory, Item, StackCount);
 		return;
 	}
 
-#if 0
-	// Retained only as migration reference until all binary Blueprint call sites have resaved against the canonical
-	// item-id transaction path. It is excluded from compilation and owns no gameplay behavior.
-	if (!CanTransferItemStackToPlacement(SourceInventory, TargetInventory, Item, StackCount, TargetPlacement))
+	if (!IsUiTransferDirectionAllowed(SourceInventory, TargetInventory))
 	{
-		const ERpgInventoryActionFeedbackResult Result = !TargetPlacement.IsValid()
-			? ERpgInventoryActionFeedbackResult::InvalidSlot
-			: ((!CanAccessInventory(SourceInventory) || !CanAccessInventory(TargetInventory))
-				? ERpgInventoryActionFeedbackResult::NoAccess
-				: ERpgInventoryActionFeedbackResult::InventoryFull);
-		SendActionFeedback(RpgGameplayTags::Rpg_Inventory_Action_Transfer, Result, SourceInventory, Item, StackCount);
-		return;
-	}
-
-	const int32 AvailableCount = SourceInventory->GetItemStackCount(Item);
-	const int32 RequestedCount = StackCount <= 0 ? AvailableCount : StackCount;
-	const int32 TransferCount = FMath::Min(AvailableCount, RequestedCount);
-	if (TransferCount <= 0)
-	{
-		return;
-	}
-
-	FRpgInventoryGridPlacement NormalizedTargetPlacement;
-	URpgInventoryItemInstance* TargetItem = TargetInventory->GetSingleItemOverlappingPlacementForItem(Item, TargetPlacement, NormalizedTargetPlacement);
-	if (TargetItem && TargetItem->GetItemDef() == Item->GetItemDef())
-	{
-		const int32 FreeStackCapacity = TargetInventory->GetFreeStackCapacity(TargetItem);
-		if (FreeStackCapacity > 0)
-		{
-			const int32 StackTransferCount = FMath::Min(TransferCount, FreeStackCapacity);
-			if (StackTransferCount <= 0)
-			{
-				return;
-			}
-
-			if (SourceInventory == FindPlayerInventory() && StackTransferCount >= AvailableCount)
-			{
-				if (!ClearPlayerAssignmentsForItem(Item))
-				{
-					SendActionFeedback(RpgGameplayTags::Rpg_Inventory_Action_Transfer, ERpgInventoryActionFeedbackResult::ServerRejected, SourceInventory, Item, StackTransferCount);
-					return;
-				}
-			}
-
-			if (SourceInventory->RemoveItemInstanceStack(Item, StackTransferCount))
-			{
-				TargetInventory->AddStackToExistingItem(TargetItem, StackTransferCount);
-			}
-			return;
-		}
-	}
-
-	if (TransferCount >= AvailableCount &&
-		TargetInventory->CanAddItemInstanceToPlacement(Item, AvailableCount, TargetPlacement))
-	{
-		if (SourceInventory == FindPlayerInventory())
-		{
-			if (!ClearPlayerAssignmentsForItem(Item))
-			{
-				SendActionFeedback(RpgGameplayTags::Rpg_Inventory_Action_Transfer, ERpgInventoryActionFeedbackResult::ServerRejected, SourceInventory, Item, TransferCount);
-				return;
-			}
-		}
-
-		SourceInventory->RemoveItemInstance(Item);
-		TargetInventory->AddItemInstanceWithStackToPlacement(Item, AvailableCount, TargetPlacement);
-		return;
-	}
-
-	const TSubclassOf<URpgInventoryItemDefinition> ItemDefinition = Item->GetItemDef();
-	if (TargetInventory->CanAddItemDefinitionToPlacement(ItemDefinition, TransferCount, TargetPlacement))
-	{
-		if (SourceInventory == FindPlayerInventory() && TransferCount >= AvailableCount)
-		{
-			if (!ClearPlayerAssignmentsForItem(Item))
-			{
-				SendActionFeedback(RpgGameplayTags::Rpg_Inventory_Action_Transfer, ERpgInventoryActionFeedbackResult::ServerRejected, SourceInventory, Item, TransferCount);
-				return;
-			}
-		}
-
-		if (SourceInventory->RemoveItemInstanceStack(Item, TransferCount))
-		{
-			TargetInventory->AddItemDefinitionToPlacement(ItemDefinition, TransferCount, TargetPlacement);
-		}
-		return;
-	}
-
-	if (!TargetItem || TargetItem->GetItemDef() == Item->GetItemDef() || RequestedCount < AvailableCount)
-	{
+		SendActionFeedback(RpgGameplayTags::Rpg_Inventory_Action_Transfer, ERpgInventoryActionFeedbackResult::ServerRejected, SourceInventory, Item, StackCount);
 		return;
 	}
 
 	FRpgInventoryGridPlacement SourcePlacement;
-	const int32 TargetStackCount = TargetInventory->GetItemStackCount(TargetItem);
-	if (!SourceInventory->GetItemPlacement(Item, SourcePlacement) || TargetStackCount <= 0)
+	if (!SourceInventory->GetItemPlacement(Item, SourcePlacement))
 	{
+		SendActionFeedback(RpgGameplayTags::Rpg_Inventory_Action_Transfer, ERpgInventoryActionFeedbackResult::MissingItem, SourceInventory, Item, StackCount);
 		return;
 	}
 
-	if (!TargetInventory->CanAddItemInstanceToPlacementIgnoringItem(Item, AvailableCount, TargetPlacement, TargetItem) ||
-		!SourceInventory->CanAddItemInstanceToPlacementIgnoringItem(TargetItem, TargetStackCount, SourcePlacement, Item))
+	FRpgInventoryMutationRequest Request;
+	Request.Operation = ERpgInventoryMutationOperation::Transfer;
+	Request.ItemId = Item->GetItemId();
+	Request.Source = SourcePlacement.GetContainerHandle();
+	Request.Target = TargetPlacement.GetContainerHandle();
+	Request.TargetPlacement = TargetPlacement;
+	Request.Quantity = StackCount;
+	Request.EnsureRequestId();
+	const FRpgInventoryMutationResult MutationResult = SourceInventory->ExecuteCrossInventoryTransfer(TargetInventory, Request, false);
+	if (!MutationResult.IsSuccess())
 	{
-		SendActionFeedback(RpgGameplayTags::Rpg_Inventory_Action_Transfer, ERpgInventoryActionFeedbackResult::InvalidSlot, SourceInventory, Item, AvailableCount);
+		SendActionFeedback(RpgGameplayTags::Rpg_Inventory_Action_Transfer,
+			MutationResult.Code == ERpgInventoryMutationResultCode::NoSpace || MutationResult.Code == ERpgInventoryMutationResultCode::Occupied
+				? ERpgInventoryActionFeedbackResult::InventoryFull
+				: ERpgInventoryActionFeedbackResult::ServerRejected,
+			SourceInventory, Item, StackCount);
 		return;
 	}
 
-	if (SourceInventory == FindPlayerInventory())
+	if (SourceInventory == FindPlayerInventory() &&
+		!SourceInventory->FindItemById(Request.ItemId))
 	{
-		if (!ClearPlayerAssignmentsForItem(Item))
-		{
-			SendActionFeedback(RpgGameplayTags::Rpg_Inventory_Action_Transfer, ERpgInventoryActionFeedbackResult::ServerRejected, SourceInventory, Item, AvailableCount);
-			return;
-		}
+		ClearPlayerAssignmentsForItem(Item);
 	}
-
-	if (TargetInventory == FindPlayerInventory())
+	SyncEquipmentLoadoutFromGearSlots();
+	SyncActiveHandsFromCarrySlots();
+	if (URpgEquipmentLoadoutComponent* EquipmentLoadout = FindEquipmentLoadout())
 	{
-		if (!ClearPlayerAssignmentsForItem(TargetItem))
-		{
-			SendActionFeedback(RpgGameplayTags::Rpg_Inventory_Action_Transfer, ERpgInventoryActionFeedbackResult::ServerRejected, TargetInventory, TargetItem, TargetStackCount);
-			return;
-		}
+		EquipmentLoadout->RefreshEquipmentLoadState();
 	}
-
-	SourceInventory->RemoveItemInstance(Item);
-	TargetInventory->RemoveItemInstance(TargetItem);
-	SourceInventory->AddItemInstanceWithStackToPlacement(TargetItem, TargetStackCount, SourcePlacement);
-	TargetInventory->AddItemInstanceWithStackToPlacement(Item, AvailableCount, TargetPlacement);
-#endif
+	SendActionFeedback(RpgGameplayTags::Rpg_Inventory_Action_Transfer, ERpgInventoryActionFeedbackResult::Success, SourceInventory, Item, MutationResult.AppliedQuantity);
 }
 
 void URpgInventoryUiActionComponent::RequestApplyInventorySort_Implementation(URpgInventoryManagerComponent* Inventory, ERpgInventorySortMode SortMode)
@@ -900,15 +876,69 @@ void URpgInventoryUiActionComponent::RequestEquipSlotContainerItem_Implementatio
 	SendActionFeedback(RpgGameplayTags::Rpg_Inventory_Action_Equip, ERpgInventoryActionFeedbackResult::Success, PlayerInventory, Item, 1);
 }
 
-void URpgInventoryUiActionComponent::RequestUnequipSlotContainerItem_Implementation(ERpgEquipmentSlot ContainerSlot)
+void URpgInventoryUiActionComponent::RequestUnequipSlotContainerItem_Implementation(
+	ERpgEquipmentSlot ContainerSlot,
+	FRpgInventoryItemId ExpectedProviderItemId)
 {
-	URpgEquipmentLoadoutComponent* EquipmentLoadout = FindEquipmentLoadout();
-	if (!EquipmentLoadout || !URpgPlayerInventoryLayoutComponent::IsSlotContainerEquipmentSlot(ContainerSlot))
+	URpgInventoryManagerComponent* PlayerInventory = FindPlayerInventory();
+	URpgPlayerInventoryLayoutComponent* InventoryLayout = FindPlayerInventoryLayout();
+	if (!PlayerInventory ||
+		!InventoryLayout ||
+		!ExpectedProviderItemId.IsValid() ||
+		!URpgPlayerInventoryLayoutComponent::IsSlotContainerEquipmentSlot(ContainerSlot))
 	{
+		SendActionFeedback(
+			RpgGameplayTags::Rpg_Inventory_Action_Equip,
+			ERpgInventoryActionFeedbackResult::InvalidRequest,
+			PlayerInventory,
+			nullptr,
+			1);
 		return;
 	}
 
-	EquipmentLoadout->ClearEquipmentSlot(ContainerSlot);
+	FRpgInventorySlotAddress GearAddress;
+	FRpgInventoryGridPlacement GearPlacement;
+	if (!URpgPlayerInventoryLayoutComponent::TryMakeGearSlotAddress(ContainerSlot, GearAddress) ||
+		!InventoryLayout->ResolveSlotAddress(GearAddress, GearPlacement))
+	{
+		SendActionFeedback(
+			RpgGameplayTags::Rpg_Inventory_Action_Equip,
+			ERpgInventoryActionFeedbackResult::InvalidSlot,
+			PlayerInventory,
+			nullptr,
+			1);
+		return;
+	}
+
+	URpgInventoryItemInstance* ProviderItem = PlayerInventory->GetItemAtContainerCell(
+		GearPlacement.GetContainerHandle(),
+		GearPlacement.X,
+		GearPlacement.Y);
+	if (!ProviderItem)
+	{
+		// Repair a stale presentation/loadout mirror from the physical inventory truth.
+		SyncEquipmentLoadoutFromGearSlots();
+		SendActionFeedback(
+			RpgGameplayTags::Rpg_Inventory_Action_Equip,
+			ERpgInventoryActionFeedbackResult::MissingItem,
+			PlayerInventory,
+			nullptr,
+			1);
+		return;
+	}
+
+	if (ProviderItem->GetItemId() != ExpectedProviderItemId)
+	{
+		SendActionFeedback(
+			RpgGameplayTags::Rpg_Inventory_Action_Equip,
+			ERpgInventoryActionFeedbackResult::ServerRejected,
+			PlayerInventory,
+			ProviderItem,
+			1);
+		return;
+	}
+
+	RequestUnequipInventoryItemToContentSlot_Implementation(ProviderItem);
 }
 
 void URpgInventoryUiActionComponent::RequestActivateCarrySlot_Implementation(FRpgInventorySlotAddress CarrySlotAddress)
@@ -1945,18 +1975,28 @@ bool URpgInventoryUiActionComponent::CanAccessInventory(URpgInventoryManagerComp
 	const AController* OwnerController = Cast<AController>(GetOwner());
 	const AActor* RequestingActor = OwnerController ? OwnerController->GetPawn() : GetOwner();
 
+	TArray<const URpgCraftingStationComponent*> CraftingStations;
+	GatherCraftingStationsForOutputInventory(Inventory, CraftingStations);
+	if (!CraftingStations.IsEmpty())
+	{
+		// A shared/misconfigured output is accessible only when every live station claimant authorizes the actor.
+		// This makes authorization independent of component enumeration order and fails closed on ambiguity.
+		for (const URpgCraftingStationComponent* CraftingStation : CraftingStations)
+		{
+			if (!CraftingStation->CanActorAccess(RequestingActor))
+			{
+				return false;
+			}
+		}
+		return true;
+	}
+
 	const URpgInventoryManagerComponent* BaseArmoryInventory = Inventory;
 	const AActor* InventoryOwner = Inventory->GetOwner();
 	const URpgBaseStorageStationComponent* Station = InventoryOwner ? InventoryOwner->FindComponentByClass<URpgBaseStorageStationComponent>() : nullptr;
 	if (Station && Station->GetArmoryInventory() == BaseArmoryInventory)
 	{
 		return Station->CanActorAccess(RequestingActor);
-	}
-
-	const URpgCraftingStationComponent* CraftingStation = InventoryOwner ? InventoryOwner->FindComponentByClass<URpgCraftingStationComponent>() : nullptr;
-	if (CraftingStation && CraftingStation->GetOutputInventory() == Inventory)
-	{
-		return CraftingStation->CanActorAccess(RequestingActor);
 	}
 
 	const URpgInventoryContainerComponent* Container = InventoryOwner ? InventoryOwner->FindComponentByClass<URpgInventoryContainerComponent>() : nullptr;
@@ -2033,7 +2073,9 @@ bool URpgInventoryUiActionComponent::FindQuickTransferDestination(
 {
 	OutTargetContainer = FRpgInventoryContainerHandle();
 	OutTargetPlacement = FRpgInventoryGridPlacement();
-	if (!SourceInventory || !TargetInventory || !CanAccessInventory(SourceInventory) || !CanAccessInventory(TargetInventory))
+	if (!SourceInventory || !TargetInventory ||
+		!CanAccessInventory(SourceInventory) || !CanAccessInventory(TargetInventory) ||
+		!IsUiTransferDirectionAllowed(SourceInventory, TargetInventory))
 	{
 		return false;
 	}
@@ -2353,7 +2395,8 @@ bool URpgInventoryUiActionComponent::CanTransferItemStack(URpgInventoryManagerCo
 		return false;
 	}
 
-	if (!CanAccessInventory(SourceInventory) || !CanAccessInventory(TargetInventory))
+	if (!CanAccessInventory(SourceInventory) || !CanAccessInventory(TargetInventory) ||
+		!IsUiTransferDirectionAllowed(SourceInventory, TargetInventory))
 	{
 		return false;
 	}
@@ -2380,7 +2423,8 @@ bool URpgInventoryUiActionComponent::CanTransferItemStackToPlacement(URpgInvento
 		return false;
 	}
 
-	if (!CanAccessInventory(SourceInventory) || !CanAccessInventory(TargetInventory))
+	if (!CanAccessInventory(SourceInventory) || !CanAccessInventory(TargetInventory) ||
+		!IsUiTransferDirectionAllowed(SourceInventory, TargetInventory))
 	{
 		return false;
 	}
@@ -2399,9 +2443,10 @@ bool URpgInventoryUiActionComponent::CanTransferItemStackToPlacement(URpgInvento
 
 	FRpgInventoryGridPlacement NormalizedTargetPlacement;
 	URpgInventoryItemInstance* TargetItem = TargetInventory->GetSingleItemOverlappingPlacementForItem(Item, TargetPlacement, NormalizedTargetPlacement);
-	if (TargetItem && TargetItem->GetItemDef() == Item->GetItemDef())
+	if (TargetItem)
 	{
-		return TargetInventory->GetFreeStackCapacity(TargetItem) > 0;
+		return Item->IsStackCompatibleWith(TargetItem) &&
+			TargetInventory->GetFreeStackCapacity(TargetItem) >= RequestedCount;
 	}
 
 	if (RequestedCount >= AvailableCount &&
@@ -2415,17 +2460,8 @@ bool URpgInventoryUiActionComponent::CanTransferItemStackToPlacement(URpgInvento
 		return true;
 	}
 
-	if (!TargetItem || RequestedCount < AvailableCount)
-	{
-		return false;
-	}
-
-	FRpgInventoryGridPlacement SourcePlacement;
-	const int32 TargetStackCount = TargetInventory->GetItemStackCount(TargetItem);
-	return SourceInventory->GetItemPlacement(Item, SourcePlacement) &&
-		TargetStackCount > 0 &&
-		TargetInventory->CanAddItemInstanceToPlacementIgnoringItem(Item, AvailableCount, TargetPlacement, TargetItem) &&
-		SourceInventory->CanAddItemInstanceToPlacementIgnoringItem(TargetItem, TargetStackCount, SourcePlacement, Item);
+	// The canonical cross-inventory transaction does not support reciprocal swaps.
+	return false;
 }
 
 bool URpgInventoryUiActionComponent::CanSplitItemStack(URpgInventoryManagerComponent* Inventory, URpgInventoryItemInstance* Item, int32 SplitCount, FRpgInventoryGridPlacement TargetPlacement, int32& OutSplitCount, FRpgInventoryGridPlacement& OutTargetPlacement) const
@@ -2626,12 +2662,12 @@ bool URpgInventoryUiActionComponent::TryAssignItemToDefaultEquipmentDestination(
 	}
 
 	const ERpgEquipmentSlot DefaultSlot = EquipmentCDO->GetDefaultEquipSlot();
-	if (IsUiActionHandEquipmentSlot(DefaultSlot))
+	if (FRpgInventoryEquipmentPlacementPolicy::IsHandEquipmentSlot(DefaultSlot))
 	{
 		return TryMoveAndActivateItemInCarry(Item, DefaultSlot);
 	}
 
-	if (IsUiActionManagedEquipmentSlot(DefaultSlot))
+	if (FRpgInventoryEquipmentPlacementPolicy::IsManagedEquipmentSlot(DefaultSlot))
 	{
 		return TryMoveItemToGearSlot(DefaultSlot, Item);
 	}
@@ -2802,7 +2838,11 @@ bool URpgInventoryUiActionComponent::TryMoveItemToGearSlot(ERpgEquipmentSlot Equ
 {
 	URpgInventoryManagerComponent* PlayerInventory = FindPlayerInventory();
 	URpgPlayerInventoryLayoutComponent* InventoryLayout = FindPlayerInventoryLayout();
-	if (!Item || !PlayerInventory || !InventoryLayout || !IsUiActionManagedEquipmentSlot(EquipmentSlot) || IsUiActionHandEquipmentSlot(EquipmentSlot))
+	if (!Item ||
+		!PlayerInventory ||
+		!InventoryLayout ||
+		!FRpgInventoryEquipmentPlacementPolicy::IsManagedEquipmentSlot(EquipmentSlot) ||
+		FRpgInventoryEquipmentPlacementPolicy::IsHandEquipmentSlot(EquipmentSlot))
 	{
 		return false;
 	}
@@ -3239,6 +3279,19 @@ void URpgInventoryUiActionComponent::ClientBroadcastInventoryActionFeedback_Impl
 		return;
 	}
 
+	APlayerController* LocalRecipient = Cast<APlayerController>(GetOwner());
+	if (!ensureMsgf(
+			LocalRecipient,
+			TEXT("Inventory UI feedback requires a PlayerController-owned action component: %s"),
+			*GetNameSafe(this)))
+	{
+		return;
+	}
+
+	FRpgInventoryActionFeedbackMessage LocalMessage = Message;
+	LocalMessage.Recipient = LocalRecipient;
 	UGameplayMessageSubsystem& MessageSubsystem = UGameplayMessageSubsystem::Get(GetWorld());
-	MessageSubsystem.BroadcastMessage(RpgGameplayTags::Rpg_Inventory_Message_ActionFeedback, Message);
+	MessageSubsystem.BroadcastMessage(
+		RpgGameplayTags::Rpg_Inventory_Message_ActionFeedback,
+		LocalMessage);
 }

@@ -7,10 +7,9 @@
 class UPrimaryGameLayout;
 
 /**
- * Project CommonGame policy with a native root-layout fallback.
+ * Project CommonGame policy that resolves the configured, Blueprint-authored root layout.
  *
- * Designers can still subclass UGameUIPolicy in Blueprint later; this class exists so the
- * CommonGame stack is usable before a dedicated policy asset has been created.
+ * The native layout class remains a deliberate emergency fallback when project config cannot load the authored asset.
  */
 UCLASS(Blueprintable, Config = Game)
 class SURVIVALRPG_API URpgGameUIPolicy : public UGameUIPolicy
@@ -23,7 +22,7 @@ public:
 	virtual void PostInitProperties() override;
 
 protected:
-	/** Root layout class created for each CommonLocalPlayer. Defaults to URpgPrimaryGameLayout. */
+	/** Root layout class created for each CommonLocalPlayer; project config points to CUI_RpgPrimaryGameLayout. */
 	UPROPERTY(EditAnywhere, BlueprintReadOnly, Config, Category = "UI")
 	TSoftClassPtr<UPrimaryGameLayout> RootLayoutClass;
 

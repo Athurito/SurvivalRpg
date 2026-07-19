@@ -146,6 +146,41 @@ bool FRpgEquipmentLoadTierThresholdTest::RunTest(const FString& Parameters)
 }
 
 IMPLEMENT_SIMPLE_AUTOMATION_TEST(
+	FRpgEquipmentEmptyAllowedSlotsTest,
+	"SurvivalRpg.Equipment.Definition.EmptyAllowedSlotsAreDisabled",
+	EAutomationTestFlags::EditorContext | EAutomationTestFlags::EngineFilter)
+
+bool FRpgEquipmentEmptyAllowedSlotsTest::RunTest(const FString& Parameters)
+{
+	URpgEquipmentAutomationTestSwordDefinition* DisabledDefinition =
+		NewObject<URpgEquipmentAutomationTestSwordDefinition>();
+	if (!TestNotNull(TEXT("A mutable equipment-definition fixture exists"), DisabledDefinition))
+	{
+		return false;
+	}
+
+	DisabledDefinition->AllowedSlots.Reset();
+	TestFalse(
+		TEXT("An empty AllowedSlots array does not silently fall back to MainHand"),
+		DisabledDefinition->CanEquipInSlot(ERpgEquipmentSlot::MainHand));
+	TestEqual(
+		TEXT("An empty AllowedSlots array has no default equipment destination"),
+		DisabledDefinition->GetDefaultEquipSlot(),
+		ERpgEquipmentSlot::None);
+
+	DisabledDefinition->AllowedSlots = { ERpgEquipmentSlot::OffHand };
+	DisabledDefinition->HandOccupancy = ERpgEquipmentHandOccupancy::BothHands;
+	TestFalse(
+		TEXT("A BothHands definition cannot activate from OffHand even when stale data lists that slot"),
+		DisabledDefinition->CanEquipInSlot(ERpgEquipmentSlot::OffHand));
+	TestEqual(
+		TEXT("An OffHand-only BothHands definition has no unsafe default destination"),
+		DisabledDefinition->GetDefaultEquipSlot(),
+		ERpgEquipmentSlot::None);
+	return true;
+}
+
+IMPLEMENT_SIMPLE_AUTOMATION_TEST(
 	FRpgEquipmentPersistentHealthGrantTest,
 	"SurvivalRpg.Equipment.Grants.UnchangedMaxHealthEffectSurvivesWeaponEquip",
 	EAutomationTestFlags::EditorContext | EAutomationTestFlags::EngineFilter)

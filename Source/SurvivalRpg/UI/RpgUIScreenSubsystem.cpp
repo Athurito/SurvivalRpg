@@ -9,8 +9,6 @@
 #include "RpgUIScreenPayload.h"
 #include "RpgUIScreenRegistry.h"
 #include "RpgUISettings.h"
-#include "SurvivalRpg/GameplayTags/RpgGameplayTags.h"
-#include "SurvivalRpg/UI/RpgStorageInventoryWidget.h"
 
 DEFINE_LOG_CATEGORY_STATIC(LogRpgUIScreenSubsystem, Log, All);
 
@@ -264,13 +262,6 @@ bool URpgUIScreenSubsystem::ResolveScreenEntry(FGameplayTag ScreenTag, FRpgUIScr
 		{
 			return true;
 		}
-
-		// Loot uses the same dual-inventory presentation as storage. This native alias keeps old registries valid.
-		if (ScreenTag == RpgGameplayTags::UI_Screen_Loot && Registry->FindScreen(RpgGameplayTags::UI_Screen_Storage, OutEntry))
-		{
-			OutEntry.ScreenTag = ScreenTag;
-			return true;
-		}
 	}
 
 	const URpgUISettings* UISettings = GetDefault<URpgUISettings>();
@@ -288,19 +279,6 @@ bool URpgUIScreenSubsystem::ResolveScreenEntry(FGameplayTag ScreenTag, FRpgUIScr
 		}
 	}
 
-	if (ScreenTag == RpgGameplayTags::UI_Screen_Loot)
-	{
-		for (const FRpgUIScreenRegistryEntry& Entry : UISettings->DefaultScreenMappings)
-		{
-			if (Entry.ScreenTag == RpgGameplayTags::UI_Screen_Storage)
-			{
-				OutEntry = Entry;
-				OutEntry.ScreenTag = ScreenTag;
-				return true;
-			}
-		}
-	}
-
 	return false;
 }
 
@@ -309,13 +287,6 @@ void URpgUIScreenSubsystem::ApplyPayloadToWidget(UCommonActivatableWidget* Widge
 	if (Widget && Widget->GetClass()->ImplementsInterface(URpgUIScreenPayloadReceiver::StaticClass()))
 	{
 		IRpgUIScreenPayloadReceiver::Execute_ReceiveScreenPayload(Widget, Payload);
-	}
-
-	// CUI_StorageContainer historically implemented the interface in Blueprint. Finalize the native spatial
-	// presenter after that compatibility graph so both sides always use one coordinator/session during migration.
-	if (URpgStorageInventoryWidget* StorageInventoryWidget = Cast<URpgStorageInventoryWidget>(Widget))
-	{
-		StorageInventoryWidget->ApplyInventoryScreenPayload(Payload);
 	}
 }
 

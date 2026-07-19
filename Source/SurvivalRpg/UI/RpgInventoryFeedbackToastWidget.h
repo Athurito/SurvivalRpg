@@ -10,12 +10,12 @@ class UBorder;
 class UTextBlock;
 
 /**
- * Small owner-local inventory result toast with a functional native widget-tree fallback.
+ * Small authored owner-local inventory result toast.
  *
  * The server result remains authoritative. This widget only translates reliable action feedback into a short
- * success/error message; Blueprint subclasses may bind the optional controls for project-specific styling.
+ * success/error message; the canonical Widget Blueprint owns its layout and styling.
  */
-UCLASS(BlueprintType, Blueprintable)
+UCLASS(Abstract, BlueprintType, Blueprintable)
 class SURVIVALRPG_API URpgInventoryFeedbackToastWidget : public UUserWidget
 {
 	GENERATED_BODY()
@@ -35,12 +35,12 @@ protected:
 	virtual void NativeOnInitialized() override;
 	virtual void NativeDestruct() override;
 
-	/** Optional styled background. Native fallback creates it when either required binding is absent. */
-	UPROPERTY(BlueprintReadOnly, meta = (BindWidgetOptional), Category = "Inventory|Feedback")
+	/** Required authored background whose color reflects success or rejection. */
+	UPROPERTY(BlueprintReadOnly, meta = (BindWidget), Category = "Inventory|Feedback")
 	TObjectPtr<UBorder> FeedbackBorder = nullptr;
 
-	/** Optional message label. Native fallback creates it when either required binding is absent. */
-	UPROPERTY(BlueprintReadOnly, meta = (BindWidgetOptional), Category = "Inventory|Feedback")
+	/** Required authored localized feedback label. */
+	UPROPERTY(BlueprintReadOnly, meta = (BindWidget), Category = "Inventory|Feedback")
 	TObjectPtr<UTextBlock> FeedbackText = nullptr;
 
 	/** Seconds a completed action result remains visible. Cosmetic client-only tuning. */
@@ -60,8 +60,6 @@ protected:
 	void BP_OnInventoryActionFeedbackShown(const FRpgInventoryActionFeedbackMessage& Message);
 
 private:
-	void EnsureFeedbackWidgetTree();
-	void BuildNativeFeedbackWidgetTree();
 	static FText BuildFeedbackText(const FRpgInventoryActionFeedbackMessage& Message);
 
 	FTimerHandle HideTimerHandle;

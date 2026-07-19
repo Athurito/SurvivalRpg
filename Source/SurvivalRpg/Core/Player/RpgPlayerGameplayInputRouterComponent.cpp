@@ -4,6 +4,7 @@
 #include "SurvivalRpg/Core/Player/RpgPlayerController.h"
 #include "SurvivalRpg/Equipment/RpgWeaponAbilityLoadoutComponent.h"
 #include "SurvivalRpg/GameplayTags/RpgGameplayTags.h"
+#include "SurvivalRpg/UI/RpgUIScreenBlueprintLibrary.h"
 #include "SurvivalRpg/UI/RpgUIScreenSubsystem.h"
 
 #include UE_INLINE_GENERATED_CPP_BY_NAME(RpgPlayerGameplayInputRouterComponent)
@@ -18,6 +19,21 @@ void URpgPlayerGameplayInputRouterComponent::HandleGameplayInputPressed(FGamepla
 	ARpgPlayerController* RpgPC = Cast<ARpgPlayerController>(GetOwner());
 	if (!RpgPC || !InputTag.IsValid())
 	{
+		return;
+	}
+
+	if (InputTag == RpgGameplayTags::InputTag_UI_Inventory)
+	{
+		if (!RpgPC->IsLocalController())
+		{
+			return;
+		}
+
+		CancelQuickAccessRadial();
+		URpgUIScreenBlueprintLibrary::OpenUIScreen(
+			RpgPC,
+			RpgGameplayTags::UI_Screen_Inventory,
+			nullptr);
 		return;
 	}
 

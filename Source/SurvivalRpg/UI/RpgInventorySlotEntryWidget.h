@@ -26,6 +26,9 @@ class SURVIVALRPG_API URpgInventorySlotEntryWidget : public UCommonButtonBase, p
 public:
 	explicit URpgInventorySlotEntryWidget(const FObjectInitializer& ObjectInitializer = FObjectInitializer::Get());
 
+	/** Exact optional manual MVVM source owned by the canonical inventory entry Blueprint. */
+	static const FName InventoryEntryViewModelSourceName;
+
 	/** Assigns the screen-local drag/drop coordinator that owns controller held-item state. */
 	UFUNCTION(BlueprintCallable, Category = "Inventory|DragDrop")
 	void SetDragDropCoordinator(URpgInventoryDragDropCoordinator* InCoordinator);
@@ -108,6 +111,11 @@ protected:
 
 private:
 	bool TryHandleModifiedLeftMouseButtonDown(const FPointerEvent& InMouseEvent, bool bLogFailure);
+	bool InjectInventoryEntryViewModelIntoMvvm();
+
+#if WITH_DEV_AUTOMATION_TESTS
+	friend class FRpgInventorySlotEntryPoolingTest;
+#endif
 
 	UPROPERTY(Transient, BlueprintReadOnly, Category = "Inventory|Entry", meta = (AllowPrivateAccess = "true"))
 	TObjectPtr<URpgInventoryEntryViewModel> EntryViewModel = nullptr;

@@ -16,6 +16,7 @@ public class SurvivalRpg : ModuleRules
 			"CoreUObject",
 			"Engine",
 			"GameFeatures",
+			"GameplayMessageRuntime",
 			"GameplayStateTreeModule",
 			"CommonLoadingScreen",
 			"InputCore",
@@ -33,6 +34,7 @@ public class SurvivalRpg : ModuleRules
 		PrivateDependencyModuleNames.AddRange(
 			new string[]
 			{
+				"CommonInput",
 				"DeveloperSettings",
 				"EnhancedInput",
 				"CoreOnline",
@@ -41,7 +43,6 @@ public class SurvivalRpg : ModuleRules
 				"GameplayTasks",
 				"ModelViewViewModel",
 				"AdvancedSessions",
-				"GameplayMessageRuntime",
 				"OnlineSubsystem",
 				"Projects",
 			});

@@ -957,6 +957,7 @@ void URpgCraftingStationViewModel::HandleCraftingStationChanged(FGameplayTag Cha
 	if (ObservedStation.Get() == Message.Station)
 	{
 		RefreshStationState();
+		RefreshRecipesAndDetails();
 		RefreshJobs();
 	}
 }

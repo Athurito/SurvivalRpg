@@ -8,10 +8,14 @@
 #include "SurvivalRpg/Inventory/RpgInventoryManagerComponent.h"
 #include "SurvivalRpg/Mvvm/Inventory/RpgInventoryViewModels.h"
 #include "View/MVVMView.h"
+#include "View/MVVMViewClass.h"
 
 #include UE_INLINE_GENERATED_CPP_BY_NAME(RpgInventorySlotEntryWidget)
 
 DEFINE_LOG_CATEGORY_STATIC(LogRpgInventorySlotEntryWidget, Log, All);
+
+const FName URpgInventorySlotEntryWidget::InventoryEntryViewModelSourceName(
+	TEXT("RpgInventoryEntryViewModel"));
 
 URpgInventorySlotEntryWidget::URpgInventorySlotEntryWidget(const FObjectInitializer& ObjectInitializer)
 	: Super(ObjectInitializer)
@@ -98,14 +102,7 @@ void URpgInventorySlotEntryWidget::NativeOnListItemObjectSet(UObject* ListItemOb
 		EntryViewModel->OnEntryChanged.AddUniqueDynamic(this, &ThisClass::HandleEntryViewModelChanged);
 	}
 
-	if (EntryViewModel)
-	{
-		if (UMVVMView* View = UMVVMSubsystem::GetViewFromUserWidget(this))
-		{
-			View->SetViewModelByClass(EntryViewModel);
-		}
-	}
-
+	InjectInventoryEntryViewModelIntoMvvm();
 	BP_OnInventoryEntryViewModelSet(EntryViewModel);
 	RefreshDragDropVisualState();
 }
@@ -113,6 +110,7 @@ void URpgInventorySlotEntryWidget::NativeOnListItemObjectSet(UObject* ListItemOb
 void URpgInventorySlotEntryWidget::NativeOnEntryReleased()
 {
 	IUserListEntry::NativeOnEntryReleased();
+	StopAllAnimations();
 
 	if (EntryViewModel)
 	{
@@ -120,11 +118,20 @@ void URpgInventorySlotEntryWidget::NativeOnEntryReleased()
 	}
 
 	EntryViewModel = nullptr;
+	InjectInventoryEntryViewModelIntoMvvm();
 	bEntrySelected = false;
+	bInventoryPanelActive = true;
 
+	if (DragDropCoordinator)
+	{
+		DragDropCoordinator->OnHeldPayloadChanged.RemoveDynamic(this, &ThisClass::HandleHeldPayloadChanged);
+	}
+	DragDropCoordinator = nullptr;
+
+	BP_OnInventoryEntryViewModelSet(nullptr);
 	BP_OnInventoryEntrySelectionChanged(false);
-	BP_OnInventoryEntryReleased();
 	RefreshDragDropVisualState();
+	BP_OnInventoryEntryReleased();
 }
 
 void URpgInventorySlotEntryWidget::NativeOnItemSelectionChanged(bool bIsSelected)
@@ -185,6 +192,70 @@ void URpgInventorySlotEntryWidget::HandleEntryViewModelChanged(URpgInventoryEntr
 void URpgInventorySlotEntryWidget::HandleHeldPayloadChanged(bool bHasHeldPayload, const FRpgInventoryDragPayload& HeldPayload)
 {
 	RefreshDragDropVisualState();
+}
+
+bool URpgInventorySlotEntryWidget::InjectInventoryEntryViewModelIntoMvvm()
+{
+	UMVVMView* View = UMVVMSubsystem::GetViewFromUserWidget(this);
+	const UMVVMViewClass* ViewClass = View ? View->GetViewClass() : nullptr;
+	if (!View || !ViewClass)
+	{
+		if (GetClass() != StaticClass())
+		{
+			UE_LOG(
+				LogRpgInventorySlotEntryWidget,
+				Error,
+				TEXT("%s has no compiled MVVM view. Author one optional manual %s source for inventory entry data."),
+				*GetNameSafe(this),
+				*InventoryEntryViewModelSourceName.ToString());
+		}
+		return false;
+	}
+
+	const FMVVMViewClass_Source* CompiledSource = ViewClass->GetSources().FindByPredicate(
+		[](const FMVVMViewClass_Source& Candidate)
+		{
+			return Candidate.IsViewModel() &&
+				Candidate.GetName() == InventoryEntryViewModelSourceName;
+		});
+	if (!CompiledSource ||
+		!CompiledSource->CanBeSet() ||
+		!CompiledSource->IsOptional() ||
+		CompiledSource->GetSourceClass() != URpgInventoryEntryViewModel::StaticClass())
+	{
+		UE_LOG(
+			LogRpgInventorySlotEntryWidget,
+			Error,
+			TEXT("%s requires one settable optional manual MVVM source named %s with type RpgInventoryEntryViewModel."),
+			*GetNameSafe(this),
+			*InventoryEntryViewModelSourceName.ToString());
+		return false;
+	}
+
+	if (View->GetViewModel(InventoryEntryViewModelSourceName).GetObject() == EntryViewModel)
+	{
+		return true;
+	}
+
+	TScriptInterface<INotifyFieldValueChanged> ViewModelInterface;
+	if (EntryViewModel)
+	{
+		ViewModelInterface.SetObject(EntryViewModel);
+		ViewModelInterface.SetInterface(EntryViewModel.Get());
+	}
+
+	if (!View->SetViewModel(InventoryEntryViewModelSourceName, ViewModelInterface))
+	{
+		UE_LOG(
+			LogRpgInventorySlotEntryWidget,
+			Error,
+			TEXT("%s failed to inject its inventory entry VM into MVVM source %s."),
+			*GetNameSafe(this),
+			*InventoryEntryViewModelSourceName.ToString());
+		return false;
+	}
+
+	return View->GetViewModel(InventoryEntryViewModelSourceName).GetObject() == EntryViewModel;
 }
 
 bool URpgInventorySlotEntryWidget::TryHandleModifiedLeftMouseButtonDown(const FPointerEvent& InMouseEvent, bool bLogFailure)

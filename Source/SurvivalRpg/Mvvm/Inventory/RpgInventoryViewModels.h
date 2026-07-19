@@ -121,7 +121,7 @@ protected:
 /**
  * One UI row/slot generated from an inventory entry.
  */
-UCLASS(BlueprintType)
+UCLASS(BlueprintType, meta = (MVVMAllowedContextCreationType = "Manual"))
 class SURVIVALRPG_API URpgInventoryEntryViewModel : public UMVVMViewModelBase
 {
 	GENERATED_BODY()

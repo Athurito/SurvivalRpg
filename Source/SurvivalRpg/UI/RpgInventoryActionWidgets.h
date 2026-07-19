@@ -21,13 +21,13 @@ class URpgInventoryContextMenuWidget;
 struct FUIInputConfig;
 
 /**
- * Modal exact-stack split dialog with a fully functional native widget-tree fallback.
+ * Modal exact-stack split dialog backed by one authored, fail-closed Widget Blueprint.
  *
- * A Blueprint subclass may supply widgets using the optional binding names below. When it does not,
- * the class builds a slider, integer spin box, confirm button, and cancel button at runtime. The
- * selected inventory entry is captured by stable replicated entry id and revalidated before commit.
+ * Every control below is required through BindWidget. The selected inventory entry is captured by
+ * stable replicated identity and revalidated before commit; an incomplete presentation never replaces
+ * its authored hierarchy with a runtime-generated root.
  */
-UCLASS(BlueprintType, Blueprintable)
+UCLASS(Abstract, BlueprintType, Blueprintable)
 class SURVIVALRPG_API URpgInventorySplitDialogWidget : public UCommonActivatableWidget
 {
 	GENERATED_BODY()
@@ -93,25 +93,27 @@ protected:
 	virtual FReply NativeOnKeyDown(const FGeometry& InGeometry, const FKeyEvent& InKeyEvent) override;
 	virtual UWidget* NativeGetDesiredFocusTarget() const override;
 
-	/** Exact-value slider. A native fallback is created when this optional Blueprint binding is absent. */
-	UPROPERTY(BlueprintReadOnly, meta = (BindWidgetOptional), Category = "Inventory|Split|Controls")
+	/** Full-screen authored backdrop that cancels the modal without changing inventory state. */
+	UPROPERTY(BlueprintReadOnly, meta = (BindWidget), Category = "Inventory|Split|Controls")
+	TObjectPtr<UButton> Button_Backdrop = nullptr;
+
+	/** Exact-value slider authored by the canonical split-dialog Widget Blueprint. */
+	UPROPERTY(BlueprintReadOnly, meta = (BindWidget), Category = "Inventory|Split|Controls")
 	TObjectPtr<USlider> Slider_Amount = nullptr;
 
 	/** Editable numeric value synchronized with Slider_Amount and rounded to whole stack units. */
-	UPROPERTY(BlueprintReadOnly, meta = (BindWidgetOptional), Category = "Inventory|Split|Controls")
+	UPROPERTY(BlueprintReadOnly, meta = (BindWidget), Category = "Inventory|Split|Controls")
 	TObjectPtr<USpinBox> SpinBox_Amount = nullptr;
 
 	/** Commits the exact value after stable-entry and range revalidation. */
-	UPROPERTY(BlueprintReadOnly, meta = (BindWidgetOptional), Category = "Inventory|Split|Controls")
+	UPROPERTY(BlueprintReadOnly, meta = (BindWidget), Category = "Inventory|Split|Controls")
 	TObjectPtr<UButton> Button_Confirm = nullptr;
 
 	/** Cancels the pending split and closes the modal. */
-	UPROPERTY(BlueprintReadOnly, meta = (BindWidgetOptional), Category = "Inventory|Split|Controls")
+	UPROPERTY(BlueprintReadOnly, meta = (BindWidget), Category = "Inventory|Split|Controls")
 	TObjectPtr<UButton> Button_Cancel = nullptr;
 
 private:
-	void EnsureSplitWidgetTree();
-	void BuildNativeSplitWidgetTree();
 	void BindSplitControls();
 	void CloseSplitDialog();
 	void ResetSplitState(bool bCancelGridRequest);
@@ -157,10 +159,10 @@ private:
 /**
  * Designer-owned CommonUI row for one semantic inventory context action.
  *
- * Blueprint subclasses may bind Text_ActionLabel and style the CommonButton normally. The native class
- * remains a functional fallback and forwards clicks to the owning context menu without per-action delegates.
+ * The canonical Blueprint must author Text_ActionLabel and may style the CommonButton normally. The
+ * native class forwards clicks to the owning context menu without per-action delegates.
  */
-UCLASS(BlueprintType, Blueprintable)
+UCLASS(Abstract, BlueprintType, Blueprintable)
 class SURVIVALRPG_API URpgInventoryContextActionEntryWidget : public UCommonButtonBase
 {
 	GENERATED_BODY()
@@ -186,8 +188,8 @@ protected:
 	virtual void NativeOnInitialized() override;
 	virtual void NativeOnClicked() override;
 
-	/** Optional label binding for editor-authored action entry Blueprints. */
-	UPROPERTY(BlueprintReadOnly, meta = (BindWidgetOptional), Category = "Inventory|Context Menu")
+	/** Required localized label owned and styled by the canonical authored action-row Blueprint. */
+	UPROPERTY(BlueprintReadOnly, meta = (BindWidget), Category = "Inventory|Context Menu")
 	TObjectPtr<UTextBlock> Text_ActionLabel = nullptr;
 
 	/** Presentation hook for icons, colors, animations, or custom label widgets. */
@@ -213,7 +215,7 @@ private:
  * SlotIndex is always the internal zero-based index (0..7). DisplaySlotNumber is the player-facing
  * number (1..8), preventing keyboard/radial labels from becoming a second binding truth.
  */
-UCLASS(BlueprintType, Blueprintable)
+UCLASS(Abstract, BlueprintType, Blueprintable)
 class SURVIVALRPG_API URpgQuickAccessSlotPickerEntryWidget : public UCommonButtonBase
 {
 	GENERATED_BODY()
@@ -247,8 +249,8 @@ protected:
 	virtual void NativeOnInitialized() override;
 	virtual void NativeOnClicked() override;
 
-	/** Optional combined fallback label binding. */
-	UPROPERTY(BlueprintReadOnly, meta = (BindWidgetOptional), Category = "Inventory|Quick Access")
+	/** Required combined slot/occupant label owned by the canonical authored picker-row Blueprint. */
+	UPROPERTY(BlueprintReadOnly, meta = (BindWidget), Category = "Inventory|Quick Access")
 	TObjectPtr<UTextBlock> Text_SlotLabel = nullptr;
 
 	/** Presentation hook for a custom number, occupant icon/name, and current-binding indicator. */
@@ -274,13 +276,13 @@ private:
 };
 
 /**
- * Mouse-first inventory context menu with a fully functional native action-list fallback.
+ * Mouse-first authored inventory context menu.
  *
  * The widget captures the selected entry id, builds one button per supplied semantic action, positions
  * the menu at an absolute Slate screen position, and delegates every click back to its grid or gear-slot source.
  * Clicking outside the menu or invoking Back/Escape closes it without a gameplay mutation.
  */
-UCLASS(BlueprintType, Blueprintable)
+UCLASS(Abstract, BlueprintType, Blueprintable)
 class SURVIVALRPG_API URpgInventoryContextMenuWidget : public UCommonActivatableWidget
 {
 	GENERATED_BODY()
@@ -369,31 +371,31 @@ protected:
 	virtual FReply NativeOnKeyDown(const FGeometry& InGeometry, const FKeyEvent& InKeyEvent) override;
 	virtual UWidget* NativeGetDesiredFocusTarget() const override;
 
-	/** Full-screen dismiss hit target placed behind the menu; native fallback is created when absent. */
-	UPROPERTY(BlueprintReadOnly, meta = (BindWidgetOptional), Category = "Inventory|Context Menu|Controls")
+	/** Full-screen authored dismiss hit target placed behind the menu. */
+	UPROPERTY(BlueprintReadOnly, meta = (BindWidget), Category = "Inventory|Context Menu|Controls")
 	TObjectPtr<UButton> Button_Dismiss = nullptr;
 
 	/** Canvas that positions the menu independently from the inventory screen's designer-authored layout. */
-	UPROPERTY(BlueprintReadOnly, meta = (BindWidgetOptional), Category = "Inventory|Context Menu|Controls")
+	UPROPERTY(BlueprintReadOnly, meta = (BindWidget), Category = "Inventory|Context Menu|Controls")
 	TObjectPtr<UCanvasPanel> ContextMenuCanvas = nullptr;
 
 	/** Visual menu panel whose desired size is used to clamp the menu inside the viewport. */
-	UPROPERTY(BlueprintReadOnly, meta = (BindWidgetOptional), Category = "Inventory|Context Menu|Controls")
+	UPROPERTY(BlueprintReadOnly, meta = (BindWidget), Category = "Inventory|Context Menu|Controls")
 	TObjectPtr<UBorder> ContextMenuBorder = nullptr;
 
-	/** Vertical host rebuilt with one native button per supplied semantic inventory action. */
-	UPROPERTY(BlueprintReadOnly, meta = (BindWidgetOptional), Category = "Inventory|Context Menu|Controls")
+	/** Vertical host rebuilt with one authored row per supplied semantic inventory action. */
+	UPROPERTY(BlueprintReadOnly, meta = (BindWidget), Category = "Inventory|Context Menu|Controls")
 	TObjectPtr<UVerticalBox> ActionsBox = nullptr;
 
-	/** Optional designer host for the eight slot-picker rows. ActionsBox is reused as a functional fallback. */
-	UPROPERTY(BlueprintReadOnly, meta = (BindWidgetOptional), Category = "Inventory|Context Menu|Controls")
+	/** Authored host for the eight shared Quick Access slot-picker rows. */
+	UPROPERTY(BlueprintReadOnly, meta = (BindWidget), Category = "Inventory|Context Menu|Controls")
 	TObjectPtr<UVerticalBox> QuickAccessSlotsBox = nullptr;
 
-	/** Optional back button shown only on the Quick Access picker page. */
-	UPROPERTY(BlueprintReadOnly, meta = (BindWidgetOptional), Category = "Inventory|Context Menu|Controls")
+	/** Authored back button shown only on the Quick Access picker page. */
+	UPROPERTY(BlueprintReadOnly, meta = (BindWidget), Category = "Inventory|Context Menu|Controls")
 	TObjectPtr<UButton> Button_QuickAccessBack = nullptr;
 
-	/** Editor-authored CommonButton row class used for semantic actions. Native row remains the fallback. */
+	/** Exact editor-authored CommonButton row class used for semantic actions. Missing configuration fails closed. */
 	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Inventory|Context Menu|Entries")
 	TSubclassOf<URpgInventoryContextActionEntryWidget> ActionEntryWidgetClass;
 
@@ -402,8 +404,6 @@ protected:
 	TSubclassOf<URpgQuickAccessSlotPickerEntryWidget> QuickAccessSlotEntryWidgetClass;
 
 private:
-	void EnsureContextWidgetTree();
-	void BuildNativeContextWidgetTree();
 	void BindDismissControl();
 	void RebuildActionButtons();
 	void RebuildQuickAccessSlotButtons();
@@ -421,33 +421,8 @@ private:
 	UFUNCTION()
 	void HandleDismissClicked();
 
-	/** Individual reflected handlers preserve the semantic action for ordinary UButton delegates. */
-	UFUNCTION()
-	void HandleOpenContainerClicked();
-	UFUNCTION()
-	void HandleInspectClicked();
-	UFUNCTION()
-	void HandleUnequipClicked();
-	UFUNCTION()
-	void HandleUseClicked();
-	UFUNCTION()
-	void HandleEquipAndActivateClicked();
-	UFUNCTION()
-	void HandleMoveToCarryClicked();
-	UFUNCTION()
-	void HandleSplitClicked();
-	UFUNCTION()
-	void HandleRotateClicked();
-	UFUNCTION()
-	void HandleQuickAccessBindClicked();
-	UFUNCTION()
-	void HandleQuickAccessUnbindClicked();
 	UFUNCTION()
 	void HandleQuickAccessBackClicked();
-	UFUNCTION()
-	void HandleTransferClicked();
-	UFUNCTION()
-	void HandleDropClicked();
 
 	/** Grid source that resolves and dispatches semantic actions; null for equipment-source menus. */
 	UPROPERTY(Transient)
@@ -469,7 +444,7 @@ private:
 	UPROPERTY(Transient)
 	FRpgInventoryItemId ContextItemId;
 
-	/** Deduplicated action order supplied by the presenter and rendered by the native fallback. */
+	/** Deduplicated action order supplied by the presenter and rendered through authored row classes. */
 	UPROPERTY(Transient)
 	TArray<ERpgInventoryContextAction> ContextActions;
 

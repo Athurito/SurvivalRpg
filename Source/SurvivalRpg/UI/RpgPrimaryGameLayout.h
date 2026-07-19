@@ -9,8 +9,9 @@ class UCommonActivatableWidgetContainerBase;
 /**
  * Project root layout that registers the standard Lyra/CommonGame UI layers.
  *
- * If no Blueprint widget tree exists, the native class creates four full-screen stacks.
- * Blueprint children can override the layout by binding widgets with these exact property names.
+ * The configured Blueprint owns the visible static hierarchy. Its four named CommonUI stacks are required and are
+ * registered here so screen lifecycle stays native and centralized. The native fallback is retained only as an
+ * emergency path until the authored layout has passed packaged-game verification.
  */
 UCLASS(Blueprintable, BlueprintType)
 class SURVIVALRPG_API URpgPrimaryGameLayout : public UPrimaryGameLayout
@@ -20,22 +21,23 @@ class SURVIVALRPG_API URpgPrimaryGameLayout : public UPrimaryGameLayout
 protected:
 	virtual void NativeOnInitialized() override;
 
-	/** Persistent gameplay/HUD layer. Bind to a CommonActivatableWidgetStack in the root layout widget. */
-	UPROPERTY(BlueprintReadOnly, meta = (BindWidgetOptional), Category = "UI|Layers")
+	/** Persistent gameplay/HUD layer authored as a CommonActivatableWidgetStack in the root layout asset. */
+	UPROPERTY(BlueprintReadOnly, meta = (BindWidget), Category = "UI|Layers")
 	TObjectPtr<UCommonActivatableWidgetContainerBase> GameLayer = nullptr;
 
 	/** In-game menu layer for inventory, storage, loot, crafting, and character panels. */
-	UPROPERTY(BlueprintReadOnly, meta = (BindWidgetOptional), Category = "UI|Layers")
+	UPROPERTY(BlueprintReadOnly, meta = (BindWidget), Category = "UI|Layers")
 	TObjectPtr<UCommonActivatableWidgetContainerBase> GameMenuLayer = nullptr;
 
 	/** Full-screen menu layer above in-game menus. */
-	UPROPERTY(BlueprintReadOnly, meta = (BindWidgetOptional), Category = "UI|Layers")
+	UPROPERTY(BlueprintReadOnly, meta = (BindWidget), Category = "UI|Layers")
 	TObjectPtr<UCommonActivatableWidgetContainerBase> MenuLayer = nullptr;
 
 	/** Blocking modal layer above all other registered UI layers. */
-	UPROPERTY(BlueprintReadOnly, meta = (BindWidgetOptional), Category = "UI|Layers")
+	UPROPERTY(BlueprintReadOnly, meta = (BindWidget), Category = "UI|Layers")
 	TObjectPtr<UCommonActivatableWidgetContainerBase> ModalLayer = nullptr;
 
 private:
+	/** Temporary native safety net; authored Blueprint composition remains the canonical project path. */
 	void CreateNativeFallbackLayers();
 };

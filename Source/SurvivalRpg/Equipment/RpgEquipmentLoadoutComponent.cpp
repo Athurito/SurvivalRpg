@@ -12,9 +12,8 @@
 #include "SurvivalRpg/AbilitySystem/RpgAbilitySystemComponent.h"
 #include "SurvivalRpg/Core/Player/RpgPlayerState.h"
 #include "SurvivalRpg/GameplayTags/RpgGameplayTags.h"
+#include "SurvivalRpg/Inventory/RpgInventoryEquipmentPlacementPolicy.h"
 #include "SurvivalRpg/Inventory/RpgInventoryFragment_EquippableItem.h"
-#include "SurvivalRpg/Inventory/RpgInventoryFragment_ItemContainer.h"
-#include "SurvivalRpg/Inventory/RpgInventoryFragment_SlotContainerProvider.h"
 #include "SurvivalRpg/Inventory/RpgInventoryManagerComponent.h"
 #include "SurvivalRpg/Inventory/RpgPlayerInventoryLayoutComponent.h"
 #include "SurvivalRpg/Inventory/RpgInventoryUiActionComponent.h"
@@ -76,7 +75,7 @@ void URpgEquipmentLoadoutComponent::RequestClearEquipmentSlot_Implementation(ERp
 
 bool URpgEquipmentLoadoutComponent::CanAssignItemToEquipmentSlot(ERpgEquipmentSlot EquipmentSlot, const URpgInventoryItemInstance* Item) const
 {
-	if (!IsManagedEquipmentSlot(EquipmentSlot) || !Item)
+	if (!FRpgInventoryEquipmentPlacementPolicy::IsManagedEquipmentSlot(EquipmentSlot) || !Item)
 	{
 		return false;
 	}
@@ -87,15 +86,7 @@ bool URpgEquipmentLoadoutComponent::CanAssignItemToEquipmentSlot(ERpgEquipmentSl
 		return false;
 	}
 
-	if (IsSlotContainerEquipmentSlot(EquipmentSlot))
-	{
-		return Item->FindFragmentByClass<URpgInventoryFragment_ItemContainer>() != nullptr;
-	}
-
-	const URpgInventoryFragment_EquippableItem* EquippableFragment = Item->FindFragmentByClass<URpgInventoryFragment_EquippableItem>();
-	TSubclassOf<URpgEquipmentDefinition> EquipmentDefinition = EquippableFragment ? EquippableFragment->GetEquipmentDefinition() : nullptr;
-	const URpgEquipmentDefinition* EquipmentCDO = EquipmentDefinition ? GetDefault<URpgEquipmentDefinition>(EquipmentDefinition) : nullptr;
-	return EquipmentCDO && EquipmentCDO->CanEquipInSlot(EquipmentSlot);
+	return FRpgInventoryEquipmentPlacementPolicy::CanItemUseEquipmentSlot(Item, EquipmentSlot);
 }
 
 bool URpgEquipmentLoadoutComponent::AssignItemToEquipmentSlot(ERpgEquipmentSlot EquipmentSlot, URpgInventoryItemInstance* Item)
@@ -827,13 +818,7 @@ void URpgEquipmentLoadoutComponent::ApplyEquipmentLoadTierTag() const
 
 const URpgEquipmentDefinition* URpgEquipmentLoadoutComponent::FindEquipmentDefinition(const URpgInventoryItemInstance* Item)
 {
-	const URpgInventoryFragment_EquippableItem* EquippableFragment = Item
-		? Item->FindFragmentByClass<URpgInventoryFragment_EquippableItem>()
-		: nullptr;
-	const TSubclassOf<URpgEquipmentDefinition> EquipmentDefinition = EquippableFragment
-		? EquippableFragment->GetEquipmentDefinition()
-		: nullptr;
-	return EquipmentDefinition ? GetDefault<URpgEquipmentDefinition>(EquipmentDefinition) : nullptr;
+	return FRpgInventoryEquipmentPlacementPolicy::FindEquipmentDefinition(Item);
 }
 
 FGameplayTag URpgEquipmentLoadoutComponent::GetTagForEquipmentLoadTier(ERpgEquipmentLoadTier Tier)
@@ -1016,9 +1001,7 @@ bool URpgEquipmentLoadoutComponent::CanClearEquipmentSlot(ERpgEquipmentSlot Equi
 
 bool URpgEquipmentLoadoutComponent::IsTwoHandItem(const URpgInventoryItemInstance* Item) const
 {
-	const URpgInventoryFragment_EquippableItem* EquippableFragment = Item ? Item->FindFragmentByClass<URpgInventoryFragment_EquippableItem>() : nullptr;
-	const TSubclassOf<URpgEquipmentDefinition> EquipmentDefinition = EquippableFragment ? EquippableFragment->GetEquipmentDefinition() : nullptr;
-	const URpgEquipmentDefinition* EquipmentCDO = EquipmentDefinition ? GetDefault<URpgEquipmentDefinition>(EquipmentDefinition) : nullptr;
+	const URpgEquipmentDefinition* EquipmentCDO = FindEquipmentDefinition(Item);
 	return EquipmentCDO && EquipmentCDO->HandOccupancy == ERpgEquipmentHandOccupancy::BothHands;
 }
 
@@ -1222,7 +1205,7 @@ bool URpgEquipmentLoadoutComponent::AssignRuntimeEquipmentSlot(ERpgEquipmentSlot
 
 bool URpgEquipmentLoadoutComponent::IsManagedEquipmentSlot(ERpgEquipmentSlot EquipmentSlot)
 {
-	return IsRuntimeEquipmentSlot(EquipmentSlot) || IsSlotContainerEquipmentSlot(EquipmentSlot);
+	return FRpgInventoryEquipmentPlacementPolicy::IsManagedEquipmentSlot(EquipmentSlot);
 }
 
 bool URpgEquipmentLoadoutComponent::IsRuntimeEquipmentSlot(ERpgEquipmentSlot EquipmentSlot)
@@ -1238,8 +1221,5 @@ bool URpgEquipmentLoadoutComponent::IsRuntimeEquipmentSlot(ERpgEquipmentSlot Equ
 
 bool URpgEquipmentLoadoutComponent::IsSlotContainerEquipmentSlot(ERpgEquipmentSlot EquipmentSlot)
 {
-	return EquipmentSlot == ERpgEquipmentSlot::Backpack ||
-		EquipmentSlot == ERpgEquipmentSlot::Belt ||
-		EquipmentSlot == ERpgEquipmentSlot::Pouch ||
-		EquipmentSlot == ERpgEquipmentSlot::ResourceBag;
+	return FRpgInventoryEquipmentPlacementPolicy::IsSlotContainerEquipmentSlot(EquipmentSlot);
 }

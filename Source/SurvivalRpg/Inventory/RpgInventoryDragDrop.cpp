@@ -3,6 +3,7 @@
 #include "RpgInventoryFragment_ItemTraits.h"
 #include "RpgInventoryFragment_EquippableItem.h"
 #include "RpgInventoryFragment_ItemContainer.h"
+#include "RpgInventoryEquipmentPlacementPolicy.h"
 #include "RpgInventoryItemInstance.h"
 #include "RpgInventoryInteractionSession.h"
 #include "RpgInventoryManagerComponent.h"
@@ -44,18 +45,6 @@ namespace
 			TargetType == ERpgInventoryDropTargetType::InventoryPanel;
 	}
 
-	bool IsManagedEquipmentSlot(ERpgEquipmentSlot EquipmentSlot)
-	{
-		return EquipmentSlot == ERpgEquipmentSlot::MainHand ||
-			EquipmentSlot == ERpgEquipmentSlot::OffHand ||
-			EquipmentSlot == ERpgEquipmentSlot::Head ||
-			EquipmentSlot == ERpgEquipmentSlot::Chest ||
-			EquipmentSlot == ERpgEquipmentSlot::Hands ||
-			EquipmentSlot == ERpgEquipmentSlot::Legs ||
-			EquipmentSlot == ERpgEquipmentSlot::Feet ||
-			URpgPlayerInventoryLayoutComponent::IsSlotContainerEquipmentSlot(EquipmentSlot);
-	}
-
 	bool IsSplittableStackItem(const URpgInventoryItemInstance* ItemInstance)
 	{
 		const URpgInventoryFragment_ItemTraits* Traits = ItemInstance
@@ -80,97 +69,6 @@ namespace
 
 		const FRpgInventoryGridSize SpatialFootprint = SpatialFragment->GetFootprint(false);
 		return SpatialFootprint.IsValid() ? SpatialFootprint : Footprint;
-	}
-
-	bool CanInventoryItemEquipInSlot(const URpgInventoryItemInstance* ItemInstance, ERpgEquipmentSlot EquipmentSlot)
-	{
-		const URpgInventoryFragment_EquippableItem* EquippableFragment = ItemInstance
-			? ItemInstance->FindFragmentByClass<URpgInventoryFragment_EquippableItem>()
-			: nullptr;
-		const TSubclassOf<URpgEquipmentDefinition> EquipmentDefinition = EquippableFragment ? EquippableFragment->GetEquipmentDefinition() : nullptr;
-		const URpgEquipmentDefinition* EquipmentCDO = EquipmentDefinition ? GetDefault<URpgEquipmentDefinition>(EquipmentDefinition) : nullptr;
-		if (URpgPlayerInventoryLayoutComponent::IsSlotContainerEquipmentSlot(EquipmentSlot))
-		{
-			if (!ItemInstance || !ItemInstance->FindFragmentByClass<URpgInventoryFragment_ItemContainer>())
-			{
-				return false;
-			}
-
-			// Modern provider items use their equipment definition to distinguish Backpack/Belt/Pouch/ResourceBag.
-			// Definition-less legacy providers retain the old any-provider-slot compatibility during migration.
-			return !EquipmentCDO || EquipmentCDO->CanEquipInSlot(EquipmentSlot);
-		}
-
-		return EquipmentCDO && EquipmentCDO->CanEquipInSlot(EquipmentSlot);
-	}
-
-	bool CanAutoTransferPayloadToInventory(const FRpgInventoryDragPayload& Payload, const URpgInventoryManagerComponent* TargetInventory)
-	{
-		if (!Payload.SourceInventory || !TargetInventory || !Payload.ItemInstance || Payload.SourceInventory == TargetInventory)
-		{
-			return false;
-		}
-
-		const int32 AvailableCount = Payload.SourceInventory->GetItemStackCount(Payload.ItemInstance);
-		const int32 RequestedCount = Payload.StackCount <= 0 ? AvailableCount : Payload.StackCount;
-		if (AvailableCount <= 0 || RequestedCount <= 0 || RequestedCount > AvailableCount)
-		{
-			return false;
-		}
-
-		if (RequestedCount >= AvailableCount &&
-			TargetInventory->CanAddItemInstance(Payload.ItemInstance, AvailableCount))
-		{
-			return true;
-		}
-
-		return TargetInventory->CanAddItemDefinition(Payload.ItemInstance->GetItemDef(), RequestedCount);
-	}
-
-	bool CanTransferPayloadToInventoryPlacement(const FRpgInventoryDragPayload& Payload, const FRpgInventoryDropTarget& Target)
-	{
-		if (!Payload.SourceInventory || !Target.TargetInventory || !Payload.ItemInstance ||
-			Payload.SourceInventory == Target.TargetInventory || !Target.TargetPlacement.IsValid())
-		{
-			return false;
-		}
-
-		const int32 AvailableCount = Payload.SourceInventory->GetItemStackCount(Payload.ItemInstance);
-		const int32 RequestedCount = Payload.StackCount <= 0 ? AvailableCount : Payload.StackCount;
-		if (AvailableCount <= 0 || RequestedCount <= 0 || RequestedCount > AvailableCount)
-		{
-			return false;
-		}
-
-		FRpgInventoryGridPlacement NormalizedTargetPlacement;
-		URpgInventoryItemInstance* TargetItem = Target.TargetInventory->GetSingleItemOverlappingPlacementForItem(Payload.ItemInstance, Target.TargetPlacement, NormalizedTargetPlacement);
-		if (TargetItem && TargetItem->GetItemDef() == Payload.ItemInstance->GetItemDef())
-		{
-			return Target.TargetInventory->GetFreeStackCapacity(TargetItem) > 0;
-		}
-
-		if (RequestedCount >= AvailableCount &&
-			Target.TargetInventory->CanAddItemInstanceToPlacement(Payload.ItemInstance, AvailableCount, Target.TargetPlacement))
-		{
-			return true;
-		}
-
-		if (Target.TargetInventory->CanAddItemDefinitionToPlacement(Payload.ItemInstance->GetItemDef(), RequestedCount, Target.TargetPlacement))
-		{
-			return true;
-		}
-
-		if (!TargetItem || RequestedCount < AvailableCount)
-		{
-			return false;
-		}
-
-		FRpgInventoryGridPlacement SourcePlacement;
-		const int32 TargetStackCount = Target.TargetInventory->GetItemStackCount(TargetItem);
-		return Payload.SourceInventory->GetItemPlacement(Payload.ItemInstance, SourcePlacement) &&
-			TargetStackCount > 0 &&
-			Target.TargetInventory->CanAddItemInstanceToPlacementIgnoringItem(Payload.ItemInstance, AvailableCount, Target.TargetPlacement, TargetItem) &&
-			Payload.SourceInventory->CanAddItemInstanceToPlacementIgnoringItem(TargetItem, TargetStackCount, SourcePlacement, Payload.ItemInstance);
 	}
 
 }
@@ -610,7 +508,7 @@ bool URpgInventoryDragDropCoordinator::IsPayloadValid(const FRpgInventoryDragPay
 
 	case ERpgInventoryDragSourceType::EquipmentSlot:
 		return Payload.ItemInstance != nullptr &&
-			IsManagedEquipmentSlot(Payload.EquipmentSlot);
+			FRpgInventoryEquipmentPlacementPolicy::IsManagedEquipmentSlot(Payload.EquipmentSlot);
 
 	default:
 		return false;
@@ -628,7 +526,7 @@ bool URpgInventoryDragDropCoordinator::IsTargetValid(const FRpgInventoryDropTarg
 		return Target.TargetInventory != nullptr;
 
 	case ERpgInventoryDropTargetType::EquipmentSlot:
-		return IsManagedEquipmentSlot(Target.EquipmentSlot);
+		return FRpgInventoryEquipmentPlacementPolicy::IsManagedEquipmentSlot(Target.EquipmentSlot);
 
 	case ERpgInventoryDropTargetType::PlayerInventorySlotAddress:
 		return Target.SlotAddress.IsValid();
@@ -1915,7 +1813,8 @@ FGuid URpgInventoryDragDropCoordinator::MarkInteractionRequestPending(
 
 bool URpgInventoryDragDropCoordinator::CanCommitPayloadToTarget(const FRpgInventoryDragPayload& Payload, const FRpgInventoryDropTarget& Target) const
 {
-	if (!IsPayloadValid(Payload) || !IsTargetValid(Target) || !ResolveUiActionComponent() ||
+	URpgInventoryUiActionComponent* Actions = ResolveUiActionComponent();
+	if (!IsPayloadValid(Payload) || !IsTargetValid(Target) || !Actions ||
 		(InteractionSession && InteractionSession->IsRequestPending()))
 	{
 		return false;
@@ -1939,8 +1838,17 @@ bool URpgInventoryDragDropCoordinator::CanCommitPayloadToTarget(const FRpgInvent
 			}
 
 			return Target.TargetType == ERpgInventoryDropTargetType::InventorySlot
-				? CanTransferPayloadToInventoryPlacement(Payload, Target)
-				: CanAutoTransferPayloadToInventory(Payload, Target.TargetInventory);
+				? Actions->CanTransferItemStackToPlacement(
+					Payload.SourceInventory,
+					Target.TargetInventory,
+					Payload.ItemInstance,
+					Payload.StackCount,
+					Target.TargetPlacement)
+				: Actions->CanTransferItemStack(
+					Payload.SourceInventory,
+					Target.TargetInventory,
+					Payload.ItemInstance,
+					Payload.StackCount);
 		}
 
 		if (Payload.SourceType == ERpgInventoryDragSourceType::EquipmentSlot)
@@ -1976,13 +1884,17 @@ bool URpgInventoryDragDropCoordinator::CanCommitPayloadToTarget(const FRpgInvent
 		{
 			return IsPlayerInventory(Payload.SourceInventory) &&
 				Payload.ItemInstance &&
-				IsManagedEquipmentSlot(Target.EquipmentSlot) &&
-				CanInventoryItemEquipInSlot(Payload.ItemInstance, Target.EquipmentSlot);
+				FRpgInventoryEquipmentPlacementPolicy::IsManagedEquipmentSlot(Target.EquipmentSlot) &&
+				FRpgInventoryEquipmentPlacementPolicy::CanItemUseEquipmentSlot(
+					Payload.ItemInstance,
+					Target.EquipmentSlot);
 		}
 
 		return Payload.SourceType == ERpgInventoryDragSourceType::EquipmentSlot &&
-			IsManagedEquipmentSlot(Target.EquipmentSlot) &&
-			CanInventoryItemEquipInSlot(Payload.ItemInstance, Target.EquipmentSlot);
+			FRpgInventoryEquipmentPlacementPolicy::IsManagedEquipmentSlot(Target.EquipmentSlot) &&
+			FRpgInventoryEquipmentPlacementPolicy::CanItemUseEquipmentSlot(
+				Payload.ItemInstance,
+				Target.EquipmentSlot);
 	}
 
 	if (Target.TargetType == ERpgInventoryDropTargetType::PlayerInventorySlotAddress)

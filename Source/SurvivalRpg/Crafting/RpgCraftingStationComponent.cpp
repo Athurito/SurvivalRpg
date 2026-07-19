@@ -85,6 +85,43 @@ namespace
 		return Traits && Traits->IsMaterial();
 	}
 
+	bool TryBuildAggregatedResourceCosts(
+		const TArray<FRpgCraftingResourceCost>& RequiredItems,
+		TArray<FRpgCraftingResourceCost>& OutAggregatedCosts)
+	{
+		OutAggregatedCosts.Reset();
+		for (const FRpgCraftingResourceCost& RequiredItem : RequiredItems)
+		{
+			if (!RequiredItem.ItemDefinition || RequiredItem.Count <= 0)
+			{
+				OutAggregatedCosts.Reset();
+				return false;
+			}
+
+			FRpgCraftingResourceCost* ExistingCost = OutAggregatedCosts.FindByPredicate(
+				[ItemDefinition = RequiredItem.ItemDefinition](const FRpgCraftingResourceCost& Candidate)
+				{
+					return Candidate.ItemDefinition == ItemDefinition;
+				});
+			if (!ExistingCost)
+			{
+				OutAggregatedCosts.Add(RequiredItem);
+				continue;
+			}
+
+			const int64 AggregatedCount = static_cast<int64>(ExistingCost->Count) + static_cast<int64>(RequiredItem.Count);
+			if (AggregatedCount > MAX_int32)
+			{
+				OutAggregatedCosts.Reset();
+				return false;
+			}
+
+			ExistingCost->Count = static_cast<int32>(AggregatedCount);
+		}
+
+		return true;
+	}
+
 	void AddRefundCredit(
 		TArray<FRpgCraftingRefundEntry>& RefundEntries,
 		TSubclassOf<URpgInventoryItemDefinition> ItemDefinition,
@@ -223,6 +260,22 @@ bool URpgCraftingStationComponent::IsRecipeUnlocked(const URpgCraftingRecipeDefi
 	return RecipeUnlockComponent && RecipeUnlockComponent->IsRecipeUnlocked(RecipeDefinition);
 }
 
+bool URpgCraftingStationComponent::IsRecipeOfferedByStation(const URpgCraftingRecipeDefinition* RecipeDefinition) const
+{
+	if (!RecipeDefinition || !AvailableRecipeSet || !AvailableRecipeSet->Recipes.Contains(RecipeDefinition))
+	{
+		return false;
+	}
+
+	if (!RecipeDefinition->RequiredStationTags.IsEmpty() && !StationTags.HasAllExact(RecipeDefinition->RequiredStationTags))
+	{
+		return false;
+	}
+
+	const FGameplayTagContainer BaseUpgradeTags = LinkedBaseCamp ? LinkedBaseCamp->GetGrantedStorageUpgradeTags() : FGameplayTagContainer();
+	return RecipeDefinition->RequiredUnlockTags.IsEmpty() || BaseUpgradeTags.HasAllExact(RecipeDefinition->RequiredUnlockTags);
+}
+
 TArray<URpgCraftingRecipeDefinition*> URpgCraftingStationComponent::GetAvailableRecipes() const
 {
 	TArray<URpgCraftingRecipeDefinition*> Results;
@@ -231,20 +284,9 @@ TArray<URpgCraftingRecipeDefinition*> URpgCraftingStationComponent::GetAvailable
 		return Results;
 	}
 
-	const FGameplayTagContainer BaseUpgradeTags = LinkedBaseCamp ? LinkedBaseCamp->GetGrantedStorageUpgradeTags() : FGameplayTagContainer();
 	for (URpgCraftingRecipeDefinition* Recipe : AvailableRecipeSet->Recipes)
 	{
-		if (!Recipe)
-		{
-			continue;
-		}
-
-		if (!Recipe->RequiredStationTags.IsEmpty() && !StationTags.HasAllExact(Recipe->RequiredStationTags))
-		{
-			continue;
-		}
-
-		if (!Recipe->RequiredUnlockTags.IsEmpty() && !BaseUpgradeTags.HasAllExact(Recipe->RequiredUnlockTags))
+		if (!IsRecipeOfferedByStation(Recipe))
 		{
 			continue;
 		}
@@ -262,70 +304,35 @@ bool URpgCraftingStationComponent::CanCraftRecipe(AActor* RequestingActor, const
 
 bool URpgCraftingStationComponent::CanCraftRecipeQuantity(AActor* RequestingActor, const URpgCraftingRecipeDefinition* RecipeDefinition, int32 Quantity) const
 {
-	if (!RecipeDefinition || Quantity <= 0 || !CanActorAccess(RequestingActor) || !IsRecipeUnlocked(RecipeDefinition))
-	{
-		return false;
-	}
-
-	if (CraftingJobs.Num() >= FMath::Max(1, MaxQueuedJobs))
-	{
-		return false;
-	}
-
-	if (!RecipeDefinition->RequiredStationTags.IsEmpty() && !StationTags.HasAllExact(RecipeDefinition->RequiredStationTags))
-	{
-		return false;
-	}
-
-	const FGameplayTagContainer BaseUpgradeTags = LinkedBaseCamp ? LinkedBaseCamp->GetGrantedStorageUpgradeTags() : FGameplayTagContainer();
-	if (!RecipeDefinition->RequiredUnlockTags.IsEmpty() && !BaseUpgradeTags.HasAllExact(RecipeDefinition->RequiredUnlockTags))
-	{
-		return false;
-	}
-
-	for (const FRpgCraftingResourceCost& RequiredItem : RecipeDefinition->RequiredResources)
-	{
-		if (!RequiredItem.ItemDefinition || RequiredItem.Count <= 0)
-		{
-			return false;
-		}
-
-		const int64 RequiredCount = static_cast<int64>(RequiredItem.Count) * static_cast<int64>(Quantity);
-		if (RequiredCount > MAX_int32 || GetAvailableResourceCount(RequestingActor, RequiredItem.ItemDefinition) < RequiredCount)
-		{
-			return false;
-		}
-	}
-
-	return CanAcceptCraftingOutputs(RecipeDefinition->OutputItems);
+	return Quantity > 0 && Quantity <= GetMaxCraftableQuantity(RequestingActor, RecipeDefinition);
 }
 
 int32 URpgCraftingStationComponent::GetMaxCraftableQuantity(AActor* RequestingActor, const URpgCraftingRecipeDefinition* RecipeDefinition) const
 {
-	if (!RecipeDefinition || !CanActorAccess(RequestingActor) || !IsRecipeUnlocked(RecipeDefinition))
+	if (!RecipeDefinition ||
+		!CanActorAccess(RequestingActor) ||
+		!IsRecipeOfferedByStation(RecipeDefinition) ||
+		!IsRecipeUnlocked(RecipeDefinition) ||
+		CraftingJobs.Num() >= FMath::Max(1, MaxQueuedJobs) ||
+		!CanAcceptCraftingOutputs(RecipeDefinition->OutputItems))
 	{
 		return 0;
 	}
 
-	if (!RecipeDefinition->RequiredStationTags.IsEmpty() && !StationTags.HasAllExact(RecipeDefinition->RequiredStationTags))
+	TArray<FRpgCraftingResourceCost> AggregatedResourceCosts;
+	if (!TryBuildAggregatedResourceCosts(RecipeDefinition->RequiredResources, AggregatedResourceCosts))
 	{
 		return 0;
 	}
 
-	const FGameplayTagContainer BaseUpgradeTags = LinkedBaseCamp ? LinkedBaseCamp->GetGrantedStorageUpgradeTags() : FGameplayTagContainer();
-	if (!RecipeDefinition->RequiredUnlockTags.IsEmpty() && !BaseUpgradeTags.HasAllExact(RecipeDefinition->RequiredUnlockTags))
+	if (AggregatedResourceCosts.IsEmpty())
 	{
-		return 0;
+		return FMath::Max(1, MaxFreeRecipeCraftQuantity);
 	}
 
-	int32 MaxQuantity = MaxFreeRecipeCraftQuantity;
-	for (const FRpgCraftingResourceCost& RequiredItem : RecipeDefinition->RequiredResources)
+	int32 MaxQuantity = MAX_int32;
+	for (const FRpgCraftingResourceCost& RequiredItem : AggregatedResourceCosts)
 	{
-		if (!RequiredItem.ItemDefinition || RequiredItem.Count <= 0)
-		{
-			return 0;
-		}
-
 		MaxQuantity = FMath::Min(MaxQuantity, GetAvailableResourceCount(RequestingActor, RequiredItem.ItemDefinition) / RequiredItem.Count);
 	}
 
@@ -482,13 +489,14 @@ bool URpgCraftingStationComponent::ConsumeResources(AActor* RequestingActor, con
 		return false;
 	}
 
-	for (const FRpgCraftingResourceCost& RequiredItem : RequiredItems)
+	TArray<FRpgCraftingResourceCost> AggregatedRequiredItems;
+	if (!TryBuildAggregatedResourceCosts(RequiredItems, AggregatedRequiredItems))
 	{
-		if (!RequiredItem.ItemDefinition || RequiredItem.Count <= 0)
-		{
-			return false;
-		}
+		return false;
+	}
 
+	for (const FRpgCraftingResourceCost& RequiredItem : AggregatedRequiredItems)
+	{
 		if (GetAvailableResourceCount(RequestingActor, RequiredItem.ItemDefinition) < RequiredItem.Count)
 		{
 			return false;
@@ -496,7 +504,7 @@ bool URpgCraftingStationComponent::ConsumeResources(AActor* RequestingActor, con
 	}
 
 	TArray<URpgInventoryManagerComponent*> ResourceInventories = GetResourceInventories(RequestingActor);
-	for (const FRpgCraftingResourceCost& RequiredItem : RequiredItems)
+	for (const FRpgCraftingResourceCost& RequiredItem : AggregatedRequiredItems)
 	{
 		int32 RemainingCount = RequiredItem.Count;
 
@@ -610,13 +618,29 @@ void URpgCraftingStationComponent::SetOutputInventoryManager(URpgInventoryManage
 	OutputInventoryComponent = InOutputInventory;
 	if (OutputInventoryComponent)
 	{
-		OutputInventoryComponent->SetCapacityMode(ERpgInventoryCapacityMode::FixedEntries);
-		OutputInventoryComponent->SetFixedMaxEntries(OutputSlotCount);
+		if (bUseSpatialOutputCapacity)
+		{
+			// "Unlimited" disables only the legacy entry-count cap. Spatial placement still limits the tray to the
+			// authored root-grid dimensions and item footprints.
+			OutputInventoryComponent->SetCapacityMode(
+				ERpgInventoryCapacityMode::Unlimited);
+		}
+		else
+		{
+			OutputInventoryComponent->SetCapacityMode(
+				ERpgInventoryCapacityMode::FixedEntries);
+			OutputInventoryComponent->SetFixedMaxEntries(OutputSlotCount);
+		}
 	}
 }
 
 bool URpgCraftingStationComponent::CanAcceptCraftingOutputs(const TArray<FRpgCraftingOutputItem>& OutputItems) const
 {
+	if (OutputItems.IsEmpty())
+	{
+		return false;
+	}
+
 	for (const FRpgCraftingOutputItem& OutputItem : OutputItems)
 	{
 		if (!OutputItem.ItemDefinition || OutputItem.Count <= 0)
@@ -848,14 +872,22 @@ bool URpgCraftingStationComponent::ConsumeResourcesWithRefund(
 		return false;
 	}
 
-	for (const FRpgCraftingResourceCost& RequiredItem : RequiredItems)
+	TArray<FRpgCraftingResourceCost> AggregatedRequiredItems;
+	if (!TryBuildAggregatedResourceCosts(RequiredItems, AggregatedRequiredItems))
+	{
+		return false;
+	}
+
+	for (FRpgCraftingResourceCost& RequiredItem : AggregatedRequiredItems)
 	{
 		const int64 RequiredCount = static_cast<int64>(RequiredItem.Count) * static_cast<int64>(Quantity);
-		if (!RequiredItem.ItemDefinition || RequiredItem.Count <= 0 || RequiredCount > MAX_int32 ||
+		if (RequiredCount > MAX_int32 ||
 			GetAvailableResourceCount(RequestingActor, RequiredItem.ItemDefinition) < RequiredCount)
 		{
 			return false;
 		}
+
+		RequiredItem.Count = static_cast<int32>(RequiredCount);
 	}
 
 	TArray<URpgInventoryManagerComponent*> ResourceInventories = GetResourceInventories(RequestingActor);
@@ -869,9 +901,9 @@ bool URpgCraftingStationComponent::ConsumeResourcesWithRefund(
 		return false;
 	};
 
-	for (const FRpgCraftingResourceCost& RequiredItem : RequiredItems)
+	for (const FRpgCraftingResourceCost& RequiredItem : AggregatedRequiredItems)
 	{
-		int32 RemainingCount = RequiredItem.Count * Quantity;
+		int32 RemainingCount = RequiredItem.Count;
 
 		auto ConsumeFromBase = [&]()
 		{
@@ -978,6 +1010,12 @@ void URpgCraftingStationComponent::SpendRefundCreditsForCompletedUnit(FRpgCrafti
 		return;
 	}
 
+	TArray<FRpgCraftingResourceCost> AggregatedRequiredItems;
+	if (!TryBuildAggregatedResourceCosts(Job.Recipe->RequiredResources, AggregatedRequiredItems))
+	{
+		return;
+	}
+
 	auto SpendFromCredits = [&Job](TSubclassOf<URpgInventoryItemDefinition> ItemDefinition, int32& RemainingCount, bool bPreferBase)
 	{
 		for (FRpgCraftingRefundEntry& RefundEntry : Job.RefundEntries)
@@ -998,7 +1036,7 @@ void URpgCraftingStationComponent::SpendRefundCreditsForCompletedUnit(FRpgCrafti
 		}
 	};
 
-	for (const FRpgCraftingResourceCost& RequiredItem : Job.Recipe->RequiredResources)
+	for (const FRpgCraftingResourceCost& RequiredItem : AggregatedRequiredItems)
 	{
 		int32 RemainingCount = RequiredItem.Count;
 		switch (ResourceConsumeOrder)

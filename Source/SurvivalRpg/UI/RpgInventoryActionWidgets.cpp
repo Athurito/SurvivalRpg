@@ -1,15 +1,9 @@
 #include "RpgInventoryActionWidgets.h"
 
-#include "Blueprint/WidgetTree.h"
 #include "Components/Border.h"
 #include "Components/Button.h"
 #include "Components/CanvasPanel.h"
 #include "Components/CanvasPanelSlot.h"
-#include "Components/HorizontalBox.h"
-#include "Components/HorizontalBoxSlot.h"
-#include "Components/Overlay.h"
-#include "Components/OverlaySlot.h"
-#include "Components/SizeBox.h"
 #include "Components/Slider.h"
 #include "Components/SpinBox.h"
 #include "Components/TextBlock.h"
@@ -31,9 +25,6 @@
 
 namespace
 {
-constexpr float NativePanelWidth = 320.0f;
-constexpr float NativeContextMenuWidth = 220.0f;
-
 FText GetContextActionLabel(ERpgInventoryContextAction Action)
 {
 	switch (Action)
@@ -66,31 +57,6 @@ FText GetContextActionLabel(ERpgInventoryContextAction Action)
 		return LOCTEXT("UnknownContextAction", "Unknown Action");
 	}
 }
-
-UTextBlock* CreateNativeLabel(UWidgetTree* WidgetTree, const FText& Text, float FontSize = 16.0f)
-{
-	if (!WidgetTree)
-	{
-		return nullptr;
-	}
-
-	UTextBlock* Label = WidgetTree->ConstructWidget<UTextBlock>(UTextBlock::StaticClass());
-	Label->SetText(Text);
-	Label->SetColorAndOpacity(FSlateColor(FLinearColor::White));
-	FSlateFontInfo Font = Label->GetFont();
-	Font.Size = FontSize;
-	Label->SetFont(Font);
-	return Label;
-}
-
-void ConfigureOverlaySlot(UOverlaySlot* Slot, EHorizontalAlignment HorizontalAlignment, EVerticalAlignment VerticalAlignment)
-{
-	if (Slot)
-	{
-		Slot->SetHorizontalAlignment(HorizontalAlignment);
-		Slot->SetVerticalAlignment(VerticalAlignment);
-	}
-}
 }
 
 URpgInventoryContextActionEntryWidget::URpgInventoryContextActionEntryWidget(const FObjectInitializer& ObjectInitializer)
@@ -102,15 +68,6 @@ URpgInventoryContextActionEntryWidget::URpgInventoryContextActionEntryWidget(con
 void URpgInventoryContextActionEntryWidget::NativeOnInitialized()
 {
 	Super::NativeOnInitialized();
-	if (WidgetTree)
-	{
-		Text_ActionLabel = Cast<UTextBlock>(WidgetTree->FindWidget(TEXT("Text_ActionLabel")));
-		if (!Text_ActionLabel && !WidgetTree->RootWidget)
-		{
-			Text_ActionLabel = CreateNativeLabel(WidgetTree, FText::GetEmpty());
-			WidgetTree->RootWidget = Text_ActionLabel;
-		}
-	}
 	RefreshActionPresentation();
 }
 
@@ -152,15 +109,6 @@ URpgQuickAccessSlotPickerEntryWidget::URpgQuickAccessSlotPickerEntryWidget(const
 void URpgQuickAccessSlotPickerEntryWidget::NativeOnInitialized()
 {
 	Super::NativeOnInitialized();
-	if (WidgetTree)
-	{
-		Text_SlotLabel = Cast<UTextBlock>(WidgetTree->FindWidget(TEXT("Text_SlotLabel")));
-		if (!Text_SlotLabel && !WidgetTree->RootWidget)
-		{
-			Text_SlotLabel = CreateNativeLabel(WidgetTree, FText::GetEmpty());
-			WidgetTree->RootWidget = Text_SlotLabel;
-		}
-	}
 	RefreshSlotPresentation();
 }
 
@@ -223,7 +171,6 @@ void URpgInventorySplitDialogWidget::NativeOnInitialized()
 {
 	Super::NativeOnInitialized();
 
-	EnsureSplitWidgetTree();
 	BindSplitControls();
 }
 
@@ -247,9 +194,17 @@ bool URpgInventorySplitDialogWidget::NativeOnHandleBackAction()
 
 FReply URpgInventorySplitDialogWidget::NativeOnKeyDown(const FGeometry& InGeometry, const FKeyEvent& InKeyEvent)
 {
-	if (InKeyEvent.GetKey() == EKeys::Escape)
+	const FKey Key = InKeyEvent.GetKey();
+	if (Key == EKeys::Escape)
 	{
 		CancelSplitDialog();
+		return FReply::Handled();
+	}
+	if (Key == EKeys::Enter ||
+		Key == EKeys::SpaceBar ||
+		Key == EKeys::Gamepad_FaceButton_Bottom)
+	{
+		ConfirmSplitDialog();
 		return FReply::Handled();
 	}
 
@@ -273,12 +228,12 @@ bool URpgInventorySplitDialogWidget::InitializeSplitDialog(
 		ResetSplitState(true);
 	}
 
-	EnsureSplitWidgetTree();
 	BindSplitControls();
 
 	const bool bValidRange = InMinimumCount >= 1 && InMaximumCount >= InMinimumCount;
 	const bool bValidSelection = InSourceGrid && InEntryId.IsValid() && InSourceGrid->GetSelectedEntryId() == InEntryId;
-	if (!bValidRange || !bValidSelection || !Slider_Amount || !SpinBox_Amount || !Button_Confirm || !Button_Cancel)
+	if (!bValidRange || !bValidSelection || !Button_Backdrop || !Slider_Amount ||
+		!SpinBox_Amount || !Button_Confirm || !Button_Cancel)
 	{
 		if (InSourceGrid)
 		{
@@ -321,7 +276,6 @@ bool URpgInventorySplitDialogWidget::InitializeAddressSplitDialog(
 		ResetSplitState(true);
 	}
 
-	EnsureSplitWidgetTree();
 	BindSplitControls();
 	const URpgInventoryAddressSlotViewModel* AddressViewModel = InSourceAddressSlot
 		? InSourceAddressSlot->GetAddressSlotViewModel()
@@ -329,7 +283,8 @@ bool URpgInventorySplitDialogWidget::InitializeAddressSplitDialog(
 	const URpgInventoryItemInstance* CurrentItem = AddressViewModel ? AddressViewModel->GetItemInstance() : nullptr;
 	const bool bValidRange = InMinimumCount >= 1 && InMaximumCount >= InMinimumCount;
 	if (!bValidRange || !InItemId.IsValid() || !CurrentItem || CurrentItem->GetItemId() != InItemId ||
-		!Slider_Amount || !SpinBox_Amount || !Button_Confirm || !Button_Cancel)
+		!Button_Backdrop || !Slider_Amount || !SpinBox_Amount || !Button_Confirm ||
+		!Button_Cancel)
 	{
 		return false;
 	}
@@ -407,109 +362,12 @@ void URpgInventorySplitDialogWidget::SetSelectedSplitCount(int32 InSplitCount)
 	}
 }
 
-void URpgInventorySplitDialogWidget::EnsureSplitWidgetTree()
-{
-	if (!WidgetTree)
-	{
-		return;
-	}
-
-	Slider_Amount = Cast<USlider>(WidgetTree->FindWidget(TEXT("Slider_Amount")));
-	SpinBox_Amount = Cast<USpinBox>(WidgetTree->FindWidget(TEXT("SpinBox_Amount")));
-	Button_Confirm = Cast<UButton>(WidgetTree->FindWidget(TEXT("Button_Confirm")));
-	Button_Cancel = Cast<UButton>(WidgetTree->FindWidget(TEXT("Button_Cancel")));
-
-	if (!Slider_Amount || !SpinBox_Amount || !Button_Confirm || !Button_Cancel)
-	{
-		BuildNativeSplitWidgetTree();
-	}
-}
-
-void URpgInventorySplitDialogWidget::BuildNativeSplitWidgetTree()
-{
-	if (!WidgetTree)
-	{
-		return;
-	}
-
-	UOverlay* RootOverlay = WidgetTree->ConstructWidget<UOverlay>(UOverlay::StaticClass(), TEXT("NativeSplitRoot"));
-	WidgetTree->RootWidget = RootOverlay;
-
-	UButton* BackdropButton = WidgetTree->ConstructWidget<UButton>(UButton::StaticClass(), TEXT("NativeSplitBackdrop"));
-	BackdropButton->SetBackgroundColor(FLinearColor::Transparent);
-	BackdropButton->OnClicked.AddUniqueDynamic(this, &ThisClass::HandleCancelClicked);
-	UBorder* BackdropShade = WidgetTree->ConstructWidget<UBorder>(UBorder::StaticClass(), TEXT("NativeSplitBackdropShade"));
-	BackdropShade->SetBrushColor(FLinearColor(0.0f, 0.0f, 0.0f, 0.55f));
-	BackdropButton->SetContent(BackdropShade);
-	ConfigureOverlaySlot(RootOverlay->AddChildToOverlay(BackdropButton), HAlign_Fill, VAlign_Fill);
-
-	UBorder* DialogBorder = WidgetTree->ConstructWidget<UBorder>(UBorder::StaticClass(), TEXT("NativeSplitDialogBorder"));
-	DialogBorder->SetBrushColor(FLinearColor(0.045f, 0.045f, 0.05f, 0.98f));
-	DialogBorder->SetPadding(FMargin(20.0f));
-	ConfigureOverlaySlot(RootOverlay->AddChildToOverlay(DialogBorder), HAlign_Center, VAlign_Center);
-
-	USizeBox* DialogSize = WidgetTree->ConstructWidget<USizeBox>(USizeBox::StaticClass(), TEXT("NativeSplitDialogSize"));
-	DialogSize->SetWidthOverride(NativePanelWidth);
-	DialogBorder->SetContent(DialogSize);
-
-	UVerticalBox* DialogContents = WidgetTree->ConstructWidget<UVerticalBox>(UVerticalBox::StaticClass(), TEXT("NativeSplitDialogContents"));
-	DialogSize->SetContent(DialogContents);
-
-	UTextBlock* Title = CreateNativeLabel(WidgetTree, LOCTEXT("SplitDialogTitle", "Split Stack"), 22.0f);
-	if (UVerticalBoxSlot* TitleSlot = DialogContents->AddChildToVerticalBox(Title))
-	{
-		TitleSlot->SetPadding(FMargin(0.0f, 0.0f, 0.0f, 16.0f));
-		TitleSlot->SetHorizontalAlignment(HAlign_Center);
-	}
-
-	UHorizontalBox* AmountRow = WidgetTree->ConstructWidget<UHorizontalBox>(UHorizontalBox::StaticClass(), TEXT("NativeSplitAmountRow"));
-	if (UVerticalBoxSlot* AmountRowSlot = DialogContents->AddChildToVerticalBox(AmountRow))
-	{
-		AmountRowSlot->SetPadding(FMargin(0.0f, 0.0f, 0.0f, 18.0f));
-	}
-
-	Slider_Amount = WidgetTree->ConstructWidget<USlider>(USlider::StaticClass(), TEXT("Slider_Amount"));
-	if (UHorizontalBoxSlot* SliderSlot = AmountRow->AddChildToHorizontalBox(Slider_Amount))
-	{
-		SliderSlot->SetSize(FSlateChildSize(ESlateSizeRule::Fill));
-		SliderSlot->SetPadding(FMargin(0.0f, 4.0f, 12.0f, 4.0f));
-		SliderSlot->SetVerticalAlignment(VAlign_Center);
-	}
-
-	USizeBox* SpinBoxSize = WidgetTree->ConstructWidget<USizeBox>(USizeBox::StaticClass(), TEXT("NativeSplitSpinBoxSize"));
-	SpinBoxSize->SetWidthOverride(88.0f);
-	if (UHorizontalBoxSlot* SpinSizeSlot = AmountRow->AddChildToHorizontalBox(SpinBoxSize))
-	{
-		SpinSizeSlot->SetSize(FSlateChildSize(ESlateSizeRule::Automatic));
-		SpinSizeSlot->SetVerticalAlignment(VAlign_Center);
-	}
-	SpinBox_Amount = WidgetTree->ConstructWidget<USpinBox>(USpinBox::StaticClass(), TEXT("SpinBox_Amount"));
-	SpinBox_Amount->SetMinFractionalDigits(0);
-	SpinBox_Amount->SetMaxFractionalDigits(0);
-	SpinBoxSize->SetContent(SpinBox_Amount);
-
-	UHorizontalBox* ButtonRow = WidgetTree->ConstructWidget<UHorizontalBox>(UHorizontalBox::StaticClass(), TEXT("NativeSplitButtonRow"));
-	DialogContents->AddChildToVerticalBox(ButtonRow);
-
-	Button_Cancel = WidgetTree->ConstructWidget<UButton>(UButton::StaticClass(), TEXT("Button_Cancel"));
-	Button_Cancel->SetContent(CreateNativeLabel(WidgetTree, LOCTEXT("CancelSplitButton", "Cancel")));
-	if (UHorizontalBoxSlot* CancelSlot = ButtonRow->AddChildToHorizontalBox(Button_Cancel))
-	{
-		CancelSlot->SetSize(FSlateChildSize(ESlateSizeRule::Fill));
-		CancelSlot->SetPadding(FMargin(0.0f, 0.0f, 6.0f, 0.0f));
-	}
-
-	Button_Confirm = WidgetTree->ConstructWidget<UButton>(UButton::StaticClass(), TEXT("Button_Confirm"));
-	Button_Confirm->SetContent(CreateNativeLabel(WidgetTree, LOCTEXT("ConfirmSplitButton", "Split")));
-	if (UHorizontalBoxSlot* ConfirmSlot = ButtonRow->AddChildToHorizontalBox(Button_Confirm))
-	{
-		ConfirmSlot->SetSize(FSlateChildSize(ESlateSizeRule::Fill));
-		ConfirmSlot->SetPadding(FMargin(6.0f, 0.0f, 0.0f, 0.0f));
-	}
-}
-
 void URpgInventorySplitDialogWidget::BindSplitControls()
 {
+	if (Button_Backdrop)
+	{
+		Button_Backdrop->OnClicked.AddUniqueDynamic(this, &ThisClass::HandleCancelClicked);
+	}
 	if (Slider_Amount)
 	{
 		Slider_Amount->OnValueChanged.AddUniqueDynamic(this, &ThisClass::HandleSliderValueChanged);
@@ -588,8 +446,6 @@ URpgInventoryContextMenuWidget::URpgInventoryContextMenuWidget(const FObjectInit
 {
 	bIsBackHandler = true;
 	SetIsFocusable(true);
-	ActionEntryWidgetClass = URpgInventoryContextActionEntryWidget::StaticClass();
-	QuickAccessSlotEntryWidgetClass = URpgQuickAccessSlotPickerEntryWidget::StaticClass();
 }
 
 TOptional<FUIInputConfig> URpgInventoryContextMenuWidget::GetDesiredInputConfig() const
@@ -601,8 +457,15 @@ void URpgInventoryContextMenuWidget::NativeOnInitialized()
 {
 	Super::NativeOnInitialized();
 
-	EnsureContextWidgetTree();
 	BindDismissControl();
+	if (QuickAccessSlotsBox)
+	{
+		QuickAccessSlotsBox->SetVisibility(ESlateVisibility::Collapsed);
+	}
+	if (Button_QuickAccessBack)
+	{
+		Button_QuickAccessBack->SetVisibility(ESlateVisibility::Collapsed);
+	}
 }
 
 void URpgInventoryContextMenuWidget::NativeOnActivated()
@@ -680,11 +543,13 @@ bool URpgInventoryContextMenuWidget::InitializeContextMenu(
 	const TArray<ERpgInventoryContextAction>& InActions,
 	FVector2D InScreenPosition)
 {
-	EnsureContextWidgetTree();
 	BindDismissControl();
 
 	const FGuid SelectedEntryId = InSourceGrid ? InSourceGrid->GetSelectedEntryId() : FGuid();
-	if (!InSourceGrid || !SelectedEntryId.IsValid() || InActions.IsEmpty() || !ActionsBox || !ContextMenuCanvas || !ContextMenuBorder)
+	if (!InSourceGrid || !SelectedEntryId.IsValid() || InActions.IsEmpty() ||
+		!Button_Dismiss || !ContextMenuCanvas || !ContextMenuBorder || !ActionsBox ||
+		!QuickAccessSlotsBox || !Button_QuickAccessBack || !ActionEntryWidgetClass ||
+		!QuickAccessSlotEntryWidgetClass)
 	{
 		return false;
 	}
@@ -719,7 +584,6 @@ bool URpgInventoryContextMenuWidget::InitializeEquipmentContextMenu(
 	const TArray<ERpgInventoryContextAction>& InActions,
 	FVector2D InScreenPosition)
 {
-	EnsureContextWidgetTree();
 	BindDismissControl();
 
 	const URpgInventoryItemInstance* RepresentedItem = InSourceEquipmentSlot
@@ -729,7 +593,9 @@ bool URpgInventoryContextMenuWidget::InitializeEquipmentContextMenu(
 		? RepresentedItem->GetItemId()
 		: FRpgInventoryItemId();
 	if (!InSourceEquipmentSlot || !RepresentedItemId.IsValid() || InActions.IsEmpty() ||
-		!ActionsBox || !ContextMenuCanvas || !ContextMenuBorder)
+		!Button_Dismiss || !ActionsBox || !QuickAccessSlotsBox ||
+		!Button_QuickAccessBack || !ContextMenuCanvas || !ContextMenuBorder ||
+		!ActionEntryWidgetClass || !QuickAccessSlotEntryWidgetClass)
 	{
 		return false;
 	}
@@ -764,14 +630,15 @@ bool URpgInventoryContextMenuWidget::InitializeAddressContextMenu(
 	const TArray<ERpgInventoryContextAction>& InActions,
 	FVector2D InScreenPosition)
 {
-	EnsureContextWidgetTree();
 	BindDismissControl();
 	const URpgInventoryAddressSlotViewModel* AddressViewModel = InSourceAddressSlot
 		? InSourceAddressSlot->GetAddressSlotViewModel()
 		: nullptr;
 	const URpgInventoryItemInstance* Item = AddressViewModel ? AddressViewModel->GetItemInstance() : nullptr;
 	if (!InSourceAddressSlot || !Item || !Item->GetItemId().IsValid() || InActions.IsEmpty() ||
-		!ActionsBox || !ContextMenuCanvas || !ContextMenuBorder)
+		!Button_Dismiss || !ActionsBox || !QuickAccessSlotsBox ||
+		!Button_QuickAccessBack || !ContextMenuCanvas || !ContextMenuBorder ||
+		!ActionEntryWidgetClass || !QuickAccessSlotEntryWidgetClass)
 	{
 		return false;
 	}
@@ -960,86 +827,6 @@ void URpgInventoryContextMenuWidget::CloseContextMenu()
 	}
 }
 
-void URpgInventoryContextMenuWidget::EnsureContextWidgetTree()
-{
-	if (!WidgetTree)
-	{
-		return;
-	}
-
-	Button_Dismiss = Cast<UButton>(WidgetTree->FindWidget(TEXT("Button_Dismiss")));
-	ContextMenuCanvas = Cast<UCanvasPanel>(WidgetTree->FindWidget(TEXT("ContextMenuCanvas")));
-	ContextMenuBorder = Cast<UBorder>(WidgetTree->FindWidget(TEXT("ContextMenuBorder")));
-	ActionsBox = Cast<UVerticalBox>(WidgetTree->FindWidget(TEXT("ActionsBox")));
-	QuickAccessSlotsBox = Cast<UVerticalBox>(WidgetTree->FindWidget(TEXT("QuickAccessSlotsBox")));
-	Button_QuickAccessBack = Cast<UButton>(WidgetTree->FindWidget(TEXT("Button_QuickAccessBack")));
-
-	if (!Button_Dismiss || !ContextMenuCanvas || !ContextMenuBorder || !ActionsBox)
-	{
-		BuildNativeContextWidgetTree();
-	}
-	if (QuickAccessSlotsBox && !bShowingQuickAccessPicker)
-	{
-		QuickAccessSlotsBox->SetVisibility(ESlateVisibility::Collapsed);
-	}
-	if (Button_QuickAccessBack && !bShowingQuickAccessPicker)
-	{
-		Button_QuickAccessBack->SetVisibility(ESlateVisibility::Collapsed);
-	}
-}
-
-void URpgInventoryContextMenuWidget::BuildNativeContextWidgetTree()
-{
-	if (!WidgetTree)
-	{
-		return;
-	}
-
-	UOverlay* RootOverlay = WidgetTree->ConstructWidget<UOverlay>(UOverlay::StaticClass(), TEXT("NativeContextMenuRoot"));
-	WidgetTree->RootWidget = RootOverlay;
-
-	Button_Dismiss = WidgetTree->ConstructWidget<UButton>(UButton::StaticClass(), TEXT("Button_Dismiss"));
-	Button_Dismiss->SetBackgroundColor(FLinearColor::Transparent);
-	ConfigureOverlaySlot(RootOverlay->AddChildToOverlay(Button_Dismiss), HAlign_Fill, VAlign_Fill);
-
-	ContextMenuCanvas = WidgetTree->ConstructWidget<UCanvasPanel>(UCanvasPanel::StaticClass(), TEXT("ContextMenuCanvas"));
-	ContextMenuCanvas->SetVisibility(ESlateVisibility::SelfHitTestInvisible);
-	ConfigureOverlaySlot(RootOverlay->AddChildToOverlay(ContextMenuCanvas), HAlign_Fill, VAlign_Fill);
-
-	ContextMenuBorder = WidgetTree->ConstructWidget<UBorder>(UBorder::StaticClass(), TEXT("ContextMenuBorder"));
-	ContextMenuBorder->SetBrushColor(FLinearColor(0.035f, 0.035f, 0.04f, 0.98f));
-	ContextMenuBorder->SetPadding(FMargin(8.0f));
-	if (UCanvasPanelSlot* MenuSlot = ContextMenuCanvas->AddChildToCanvas(ContextMenuBorder))
-	{
-		MenuSlot->SetAutoSize(true);
-		MenuSlot->SetAnchors(FAnchors(0.0f, 0.0f));
-		MenuSlot->SetAlignment(FVector2D::ZeroVector);
-	}
-
-	USizeBox* MenuSize = WidgetTree->ConstructWidget<USizeBox>(USizeBox::StaticClass(), TEXT("NativeContextMenuSize"));
-	MenuSize->SetWidthOverride(NativeContextMenuWidth);
-	ContextMenuBorder->SetContent(MenuSize);
-
-	UVerticalBox* PageContainer = WidgetTree->ConstructWidget<UVerticalBox>(UVerticalBox::StaticClass(), TEXT("NativeContextPageContainer"));
-	MenuSize->SetContent(PageContainer);
-
-	ActionsBox = WidgetTree->ConstructWidget<UVerticalBox>(UVerticalBox::StaticClass(), TEXT("ActionsBox"));
-	PageContainer->AddChildToVerticalBox(ActionsBox);
-
-	QuickAccessSlotsBox = WidgetTree->ConstructWidget<UVerticalBox>(UVerticalBox::StaticClass(), TEXT("QuickAccessSlotsBox"));
-	QuickAccessSlotsBox->SetVisibility(ESlateVisibility::Collapsed);
-	PageContainer->AddChildToVerticalBox(QuickAccessSlotsBox);
-
-	Button_QuickAccessBack = WidgetTree->ConstructWidget<UButton>(UButton::StaticClass(), TEXT("Button_QuickAccessBack"));
-	Button_QuickAccessBack->SetContent(CreateNativeLabel(WidgetTree, LOCTEXT("QuickAccessBackButton", "Back")));
-	Button_QuickAccessBack->SetVisibility(ESlateVisibility::Collapsed);
-	if (UVerticalBoxSlot* BackSlot = PageContainer->AddChildToVerticalBox(Button_QuickAccessBack))
-	{
-		BackSlot->SetPadding(FMargin(0.0f, 8.0f, 0.0f, 0.0f));
-		BackSlot->SetHorizontalAlignment(HAlign_Fill);
-	}
-}
-
 void URpgInventoryContextMenuWidget::BindDismissControl()
 {
 	if (Button_Dismiss)
@@ -1055,7 +842,7 @@ void URpgInventoryContextMenuWidget::BindDismissControl()
 void URpgInventoryContextMenuWidget::RebuildActionButtons()
 {
 	ActionButtons.Reset();
-	if (!ActionsBox || !WidgetTree)
+	if (!ActionsBox || !WidgetTree || !ActionEntryWidgetClass)
 	{
 		return;
 	}
@@ -1074,12 +861,9 @@ void URpgInventoryContextMenuWidget::RebuildActionButtons()
 	ActionsBox->ClearChildren();
 	for (ERpgInventoryContextAction Action : ContextActions)
 	{
-		TSubclassOf<URpgInventoryContextActionEntryWidget> EntryClass = ActionEntryWidgetClass;
-		if (!EntryClass)
-		{
-			EntryClass = URpgInventoryContextActionEntryWidget::StaticClass();
-		}
-		URpgInventoryContextActionEntryWidget* ActionButton = WidgetTree->ConstructWidget<URpgInventoryContextActionEntryWidget>(EntryClass);
+		URpgInventoryContextActionEntryWidget* ActionButton =
+			WidgetTree->ConstructWidget<URpgInventoryContextActionEntryWidget>(
+				ActionEntryWidgetClass);
 		if (!ActionButton)
 		{
 			continue;
@@ -1097,8 +881,8 @@ void URpgInventoryContextMenuWidget::RebuildActionButtons()
 void URpgInventoryContextMenuWidget::RebuildQuickAccessSlotButtons()
 {
 	QuickAccessSlotButtons.Reset();
-	UVerticalBox* PickerHost = QuickAccessSlotsBox ? QuickAccessSlotsBox.Get() : ActionsBox.Get();
-	if (!PickerHost || !WidgetTree)
+	UVerticalBox* PickerHost = QuickAccessSlotsBox.Get();
+	if (!PickerHost || !WidgetTree || !QuickAccessSlotEntryWidgetClass)
 	{
 		return;
 	}
@@ -1109,13 +893,9 @@ void URpgInventoryContextMenuWidget::RebuildQuickAccessSlotButtons()
 	{
 		bool bOccupied = false;
 		const FText BindingLabel = ResolveQuickAccessBindingLabel(SlotIndex, bOccupied);
-		TSubclassOf<URpgQuickAccessSlotPickerEntryWidget> EntryClass = QuickAccessSlotEntryWidgetClass;
-		if (!EntryClass)
-		{
-			EntryClass = URpgQuickAccessSlotPickerEntryWidget::StaticClass();
-		}
 		URpgQuickAccessSlotPickerEntryWidget* SlotButton =
-			WidgetTree->ConstructWidget<URpgQuickAccessSlotPickerEntryWidget>(EntryClass);
+			WidgetTree->ConstructWidget<URpgQuickAccessSlotPickerEntryWidget>(
+				QuickAccessSlotEntryWidgetClass);
 		if (!SlotButton)
 		{
 			continue;
@@ -1129,19 +909,6 @@ void URpgInventoryContextMenuWidget::RebuildQuickAccessSlotButtons()
 		QuickAccessSlotButtons.Add(SlotButton);
 	}
 
-	if (!Button_QuickAccessBack)
-	{
-		Button_QuickAccessBack = WidgetTree->ConstructWidget<UButton>(UButton::StaticClass(), TEXT("NativeQuickAccessBackButton"));
-		Button_QuickAccessBack->SetContent(CreateNativeLabel(WidgetTree, LOCTEXT("QuickAccessBackButton", "Back")));
-	}
-	if (Button_QuickAccessBack && !Button_QuickAccessBack->GetParent())
-	{
-		if (UVerticalBoxSlot* BackSlot = PickerHost->AddChildToVerticalBox(Button_QuickAccessBack))
-		{
-			BackSlot->SetPadding(FMargin(0.0f, 8.0f, 0.0f, 0.0f));
-			BackSlot->SetHorizontalAlignment(HAlign_Fill);
-		}
-	}
 	if (Button_QuickAccessBack)
 	{
 		Button_QuickAccessBack->OnClicked.AddUniqueDynamic(this, &ThisClass::HandleQuickAccessBackClicked);
@@ -1296,69 +1063,9 @@ void URpgInventoryContextMenuWidget::HandleDismissClicked()
 	CloseContextMenu();
 }
 
-void URpgInventoryContextMenuWidget::HandleOpenContainerClicked()
-{
-	HandleContextActionClicked(ERpgInventoryContextAction::OpenContainer);
-}
-
-void URpgInventoryContextMenuWidget::HandleInspectClicked()
-{
-	HandleContextActionClicked(ERpgInventoryContextAction::Inspect);
-}
-
-void URpgInventoryContextMenuWidget::HandleUnequipClicked()
-{
-	HandleContextActionClicked(ERpgInventoryContextAction::Unequip);
-}
-
-void URpgInventoryContextMenuWidget::HandleUseClicked()
-{
-	HandleContextActionClicked(ERpgInventoryContextAction::Use);
-}
-
-void URpgInventoryContextMenuWidget::HandleEquipAndActivateClicked()
-{
-	HandleContextActionClicked(ERpgInventoryContextAction::EquipAndActivate);
-}
-
-void URpgInventoryContextMenuWidget::HandleMoveToCarryClicked()
-{
-	HandleContextActionClicked(ERpgInventoryContextAction::MoveToCarry);
-}
-
-void URpgInventoryContextMenuWidget::HandleSplitClicked()
-{
-	HandleContextActionClicked(ERpgInventoryContextAction::Split);
-}
-
-void URpgInventoryContextMenuWidget::HandleRotateClicked()
-{
-	HandleContextActionClicked(ERpgInventoryContextAction::Rotate);
-}
-
-void URpgInventoryContextMenuWidget::HandleQuickAccessBindClicked()
-{
-	HandleContextActionClicked(ERpgInventoryContextAction::QuickAccessBind);
-}
-
-void URpgInventoryContextMenuWidget::HandleQuickAccessUnbindClicked()
-{
-	HandleContextActionClicked(ERpgInventoryContextAction::QuickAccessUnbind);
-}
-
 void URpgInventoryContextMenuWidget::HandleQuickAccessBackClicked()
 {
 	ShowContextActionPage();
-}
-
-void URpgInventoryContextMenuWidget::HandleTransferClicked()
-{
-	HandleContextActionClicked(ERpgInventoryContextAction::Transfer);
-}
-
-void URpgInventoryContextMenuWidget::HandleDropClicked()
-{
-	HandleContextActionClicked(ERpgInventoryContextAction::Drop);
 }
 
 #undef LOCTEXT_NAMESPACE

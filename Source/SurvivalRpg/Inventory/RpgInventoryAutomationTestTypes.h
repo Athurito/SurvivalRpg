@@ -59,7 +59,18 @@ public:
 	virtual bool IsEditorOnly() const override { return true; }
 };
 
-/** Editor-only 1x1 weapon used to exercise real Carry and Quick Access authority paths. */
+/** Editor-only equipment data that permits the spatial test weapon only in the MainHand Carry role. */
+UCLASS(NotBlueprintable, Transient)
+class URpgInventoryAutomationTestWeaponEquipmentDefinition final : public URpgEquipmentDefinition
+{
+	GENERATED_BODY()
+
+public:
+	explicit URpgInventoryAutomationTestWeaponEquipmentDefinition(
+		const FObjectInitializer& ObjectInitializer = FObjectInitializer::Get());
+};
+
+/** Editor-only 1x1 MainHand weapon used to exercise real Carry and Quick Access authority paths. */
 UCLASS(NotBlueprintable, Transient)
 class URpgInventoryAutomationTestWeaponItemDefinition final : public URpgInventoryItemDefinition
 {
@@ -67,6 +78,35 @@ class URpgInventoryAutomationTestWeaponItemDefinition final : public URpgInvento
 
 public:
 	explicit URpgInventoryAutomationTestWeaponItemDefinition(
+		const FObjectInitializer& ObjectInitializer = FObjectInitializer::Get());
+
+	virtual bool IsEditorOnly() const override { return true; }
+};
+
+/** Editor-only stackable MainHand item used to regress partial transfers of assigned player items. */
+UCLASS(NotBlueprintable, Transient)
+class URpgInventoryAutomationTestStackableWeaponItemDefinition final : public URpgInventoryItemDefinition
+{
+	GENERATED_BODY()
+
+public:
+	explicit URpgInventoryAutomationTestStackableWeaponItemDefinition(
+		const FObjectInitializer& ObjectInitializer = FObjectInitializer::Get());
+
+	virtual bool IsEditorOnly() const override { return true; }
+};
+
+/**
+ * Editor-only Shield-category item that is deliberately MainHand-only.
+ * It isolates Carry-role validation from the category filter in placement-policy tests.
+ */
+UCLASS(NotBlueprintable, Transient)
+class URpgInventoryAutomationTestMainHandShieldItemDefinition final : public URpgInventoryItemDefinition
+{
+	GENERATED_BODY()
+
+public:
+	explicit URpgInventoryAutomationTestMainHandShieldItemDefinition(
 		const FObjectInitializer& ObjectInitializer = FObjectInitializer::Get());
 
 	virtual bool IsEditorOnly() const override { return true; }

@@ -41,7 +41,7 @@ DECLARE_DYNAMIC_MULTICAST_DELEGATE(FRpgCraftingViewModelListChanged);
 /**
  * One required ingredient row projected for the currently selected quantity.
  */
-UCLASS(BlueprintType)
+UCLASS(BlueprintType, meta = (MVVMAllowedContextCreationType = "Manual"))
 class SURVIVALRPG_API URpgCraftingIngredientViewModel : public UMVVMViewModelBase
 {
 	GENERATED_BODY()
@@ -115,7 +115,7 @@ protected:
 /**
  * One recipe list row. Widgets can bind this to a CommonButtonBase entry.
  */
-UCLASS(BlueprintType)
+UCLASS(BlueprintType, meta = (MVVMAllowedContextCreationType = "Manual"))
 class SURVIVALRPG_API URpgCraftingRecipeViewModel : public UMVVMViewModelBase
 {
 	GENERATED_BODY()
@@ -194,7 +194,7 @@ protected:
 /**
  * One active or queued crafting job row.
  */
-UCLASS(BlueprintType)
+UCLASS(BlueprintType, meta = (MVVMAllowedContextCreationType = "Manual"))
 class SURVIVALRPG_API URpgCraftingJobViewModel : public UMVVMViewModelBase
 {
 	GENERATED_BODY()
@@ -204,7 +204,7 @@ public:
 	UFUNCTION(BlueprintCallable, Category = "Crafting|ViewModel")
 	void InitializeJob(const FRpgCraftingJobEntry& Job, float ServerWorldTime);
 
-	/** Initializes this UI row and stores the station needed for cancel commands from list entry widgets. */
+	/** Initializes this UI row and stores station identity for diagnostics; command routing remains screen-owned. */
 	UFUNCTION(BlueprintCallable, Category = "Crafting|ViewModel")
 	void InitializeJobForStation(URpgCraftingStationComponent* InCraftingStation, const FRpgCraftingJobEntry& Job, float ServerWorldTime);
 
@@ -212,7 +212,7 @@ public:
 	UFUNCTION(BlueprintPure, Category = "Crafting|ViewModel")
 	FGuid GetJobId() const { return JobId; }
 
-	/** Crafting station that owns this job. Use it with RequestCancelCraftJob. */
+	/** Crafting station that owns this read-only job projection. UI leaves must not dispatch RPCs directly. */
 	UFUNCTION(BlueprintPure, Category = "Crafting|ViewModel")
 	URpgCraftingStationComponent* GetCraftingStation() const { return CraftingStation.Get(); }
 

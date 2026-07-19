@@ -3,7 +3,6 @@
 #include "Blueprint/DragDropOperation.h"
 #include "Blueprint/WidgetBlueprintLibrary.h"
 #include "Blueprint/WidgetTree.h"
-#include "CommonUIExtensions.h"
 #include "Components/CanvasPanel.h"
 #include "Components/CanvasPanelSlot.h"
 #include "Components/Image.h"
@@ -24,17 +23,19 @@
 #include "SurvivalRpg/Inventory/RpgInventoryItemInstance.h"
 #include "SurvivalRpg/Inventory/RpgInventoryInteractionSession.h"
 #include "SurvivalRpg/Inventory/RpgInventoryManagerComponent.h"
-#include "SurvivalRpg/GameplayTags/RpgGameplayTags.h"
 #include "SurvivalRpg/Mvvm/Inventory/RpgActionBarViewModels.h"
 #include "SurvivalRpg/Mvvm/Inventory/RpgInventoryViewModels.h"
 #include "SurvivalRpg/Mvvm/Inventory/RpgPlayerInventoryViewModels.h"
 #include "SurvivalRpg/UI/RpgActionBarSlotWidget.h"
-#include "SurvivalRpg/UI/RpgInventoryPanelNavigationCoordinator.h"
-#include "SurvivalRpg/UI/RpgInventoryActionWidgets.h"
 #include "SurvivalRpg/UI/RpgInventoryDragVisualWidget.h"
+#include "SurvivalRpg/UI/RpgInventoryInteractionScreenWidget.h"
+#include "SurvivalRpg/UI/RpgInventoryPanelNavigationCoordinator.h"
 #include "View/MVVMView.h"
+#include "View/MVVMViewClass.h"
 
 #include UE_INLINE_GENERATED_CPP_BY_NAME(RpgPlayerInventoryLayoutViews)
+
+DEFINE_LOG_CATEGORY_STATIC(LogRpgInventoryLayoutViews, Log, All);
 
 namespace
 {
@@ -403,6 +404,9 @@ ERpgInventorySpatialCellVisualState URpgInventorySpatialCellWidget::ResolveHover
 		: BaseVisualState;
 }
 
+const FName URpgInventorySlotGroupWidget::SlotGroupViewModelSourceName(
+	TEXT("RpgInventorySlotGroupViewModel"));
+
 URpgActionBarTileView::URpgActionBarTileView(const FObjectInitializer& ObjectInitializer)
 	: Super(ObjectInitializer)
 {
@@ -666,8 +670,19 @@ void URpgInventorySpatialItemWidget::NativePreConstruct()
 	RefreshPlacedItemVisual();
 }
 
+void URpgInventorySpatialItemWidget::NativeDestruct()
+{
+	ReleaseSpatialItemState();
+	Super::NativeDestruct();
+}
+
 void URpgInventorySpatialItemWidget::SetOwningSpatialGrid(URpgInventorySpatialGridWidget* InOwningGrid)
 {
+	if (InOwningGrid)
+	{
+		bSpatialItemStateReleased = false;
+	}
+
 	OwningGrid = InOwningGrid;
 	RefreshPlacedItemVisual();
 	RefreshDragDropVisualState();
@@ -675,6 +690,11 @@ void URpgInventorySpatialItemWidget::SetOwningSpatialGrid(URpgInventorySpatialGr
 
 void URpgInventorySpatialItemWidget::SetDragDropCoordinator(URpgInventoryDragDropCoordinator* InCoordinator)
 {
+	if (InCoordinator)
+	{
+		bSpatialItemStateReleased = false;
+	}
+
 	if (DragDropCoordinator)
 	{
 		DragDropCoordinator->OnHeldPayloadChanged.RemoveDynamic(this, &ThisClass::HandleHeldPayloadChanged);
@@ -691,6 +711,12 @@ void URpgInventorySpatialItemWidget::SetDragDropCoordinator(URpgInventoryDragDro
 
 void URpgInventorySpatialItemWidget::SetAddressSlotViewModel(URpgInventoryAddressSlotViewModel* InSlotViewModel)
 {
+	if (InSlotViewModel)
+	{
+		bSpatialItemStateReleased = false;
+	}
+
+	const bool bClearedEntryViewModel = EntryViewModel != nullptr;
 	if (AddressSlotViewModel)
 	{
 		AddressSlotViewModel->OnSlotChanged.RemoveDynamic(this, &ThisClass::HandleAddressSlotChanged);
@@ -705,19 +731,25 @@ void URpgInventorySpatialItemWidget::SetAddressSlotViewModel(URpgInventoryAddres
 	if (AddressSlotViewModel)
 	{
 		AddressSlotViewModel->OnSlotChanged.AddUniqueDynamic(this, &ThisClass::HandleAddressSlotChanged);
-		if (UMVVMView* View = UMVVMSubsystem::GetViewFromUserWidget(this))
-		{
-			View->SetViewModelByClass(AddressSlotViewModel);
-		}
 	}
 
 	RefreshPlacedItemVisual();
+	if (bClearedEntryViewModel)
+	{
+		BP_OnSpatialEntryItemSet(nullptr);
+	}
 	BP_OnSpatialAddressItemSet(AddressSlotViewModel);
 	RefreshDragDropVisualState();
 }
 
 void URpgInventorySpatialItemWidget::SetEntryViewModel(URpgInventoryEntryViewModel* InEntryViewModel)
 {
+	if (InEntryViewModel)
+	{
+		bSpatialItemStateReleased = false;
+	}
+
+	const bool bClearedAddressSlotViewModel = AddressSlotViewModel != nullptr;
 	if (AddressSlotViewModel)
 	{
 		AddressSlotViewModel->OnSlotChanged.RemoveDynamic(this, &ThisClass::HandleAddressSlotChanged);
@@ -732,15 +764,53 @@ void URpgInventorySpatialItemWidget::SetEntryViewModel(URpgInventoryEntryViewMod
 	if (EntryViewModel)
 	{
 		EntryViewModel->OnEntryChanged.AddUniqueDynamic(this, &ThisClass::HandleEntryChanged);
-		if (UMVVMView* View = UMVVMSubsystem::GetViewFromUserWidget(this))
-		{
-			View->SetViewModelByClass(EntryViewModel);
-		}
 	}
 
 	RefreshPlacedItemVisual();
+	if (bClearedAddressSlotViewModel)
+	{
+		BP_OnSpatialAddressItemSet(nullptr);
+	}
 	BP_OnSpatialEntryItemSet(EntryViewModel);
 	RefreshDragDropVisualState();
+}
+
+void URpgInventorySpatialItemWidget::ReleaseSpatialItemState()
+{
+	if (bSpatialItemStateReleased)
+	{
+		return;
+	}
+	bSpatialItemStateReleased = true;
+	StopAllAnimations();
+
+	if (AddressSlotViewModel)
+	{
+		AddressSlotViewModel->OnSlotChanged.RemoveDynamic(this, &ThisClass::HandleAddressSlotChanged);
+	}
+	if (EntryViewModel)
+	{
+		EntryViewModel->OnEntryChanged.RemoveDynamic(this, &ThisClass::HandleEntryChanged);
+	}
+	if (DragDropCoordinator)
+	{
+		DragDropCoordinator->OnHeldPayloadChanged.RemoveDynamic(this, &ThisClass::HandleHeldPayloadChanged);
+	}
+
+	AddressSlotViewModel = nullptr;
+	EntryViewModel = nullptr;
+	DragDropCoordinator = nullptr;
+	OwningGrid = nullptr;
+	bInventoryPanelActive = true;
+	bPendingLeftClickAccept = false;
+	PendingPointerDragAnchor = FRpgInventoryDragAnchor();
+	bHasPendingPointerDragAnchor = false;
+	CurrentDragDropVisualState = ERpgInventorySlotDragVisualState::Normal;
+
+	RefreshPlacedItemVisual();
+	BP_OnSpatialAddressItemSet(nullptr);
+	BP_OnSpatialEntryItemSet(nullptr);
+	BP_OnSpatialItemDragDropStateChanged(ERpgInventorySlotDragVisualState::Normal);
 }
 
 void URpgInventorySpatialItemWidget::SetInventoryPanelActive(bool bInInventoryPanelActive)
@@ -981,7 +1051,7 @@ void URpgInventorySpatialItemWidget::NativeOnDragDetected(const FGeometry& InGeo
 	}
 	if (VisualClass)
 	{
-		UUserWidget* DragVisual = CreateWidget<UUserWidget>(GetWorld(), VisualClass);
+		UUserWidget* DragVisual = CreateWidget<UUserWidget>(this, VisualClass);
 		if (URpgInventorySpatialItemWidget* SpatialDragVisual = Cast<URpgInventorySpatialItemWidget>(DragVisual))
 		{
 			SpatialDragVisual->SetDragDropCoordinator(DragDropCoordinator);
@@ -1207,6 +1277,11 @@ void URpgInventorySpatialGridWidget::BindInventoryContainerPanelViewModel(
 		return;
 	}
 
+	if (InventoryPresentationHost)
+	{
+		InventoryPresentationHost->DismissInventoryPresentationForSource(this);
+	}
+
 	ClearObservedSlotDelegates();
 	ClearObservedEntryDelegates();
 	if (PanelViewModel)
@@ -1233,7 +1308,33 @@ void URpgInventorySpatialGridWidget::BindInventoryContainerPanelViewModel(
 	UpdateGridSizeFromBinding();
 	ObserveEntryDelegates();
 	RebuildItemOverlay();
-	SelectBestCell(GetOwningPlayer(), false);
+	if (Inventory && ContainerHandle.IsValid())
+	{
+		SelectBestCell(GetOwningPlayer(), false);
+	}
+	else
+	{
+		ClearSelectionVisual();
+	}
+}
+
+void URpgInventorySpatialGridWidget::ReleaseInventoryPresentation()
+{
+	CancelPendingSplit();
+	SetInventoryPresentationHost(nullptr);
+	ClearEntryDimming();
+	SetPanelNavigationCoordinator(nullptr, NAME_None);
+	SetDragDropCoordinator(nullptr);
+	BindInventoryContainerPanelViewModel(
+		nullptr,
+		nullptr,
+		FRpgInventoryContainerHandle());
+
+	bPendingLeftClickAccept = false;
+	bHasLastPointerPreviewScreenPosition = false;
+	LastPointerPreviewScreenPosition = FVector2D::ZeroVector;
+	bInventoryPanelActive = true;
+	ClearSelectionVisual();
 }
 
 void URpgInventorySpatialGridWidget::SetDimmedEntryIds(
@@ -1300,10 +1401,15 @@ void URpgInventorySpatialGridWidget::SetDragDropCoordinator(URpgInventoryDragDro
 	UpdateCellVisualStates();
 }
 
-void URpgInventorySpatialGridWidget::SetContextMenuWidgetClass(
-	TSubclassOf<URpgInventoryContextMenuWidget> InContextMenuWidgetClass)
+void URpgInventorySpatialGridWidget::SetInventoryPresentationHost(
+	URpgInventoryInteractionScreenWidget* InPresentationHost)
 {
-	ContextMenuWidgetClass = InContextMenuWidgetClass;
+	if (InventoryPresentationHost &&
+		InventoryPresentationHost != InPresentationHost)
+	{
+		InventoryPresentationHost->DismissInventoryPresentationForSource(this);
+	}
+	InventoryPresentationHost = InPresentationHost;
 }
 
 void URpgInventorySpatialGridWidget::SetPanelNavigationCoordinator(URpgInventoryPanelNavigationCoordinator* InPanelNavigationCoordinator, FName InPanelId)
@@ -1518,11 +1624,6 @@ bool URpgInventorySpatialGridWidget::QuickSplitSelectedCell(int32 SplitCount)
 
 bool URpgInventorySpatialGridWidget::RequestSplitDialogForSelectedCell()
 {
-	if (ActiveSplitDialog.IsValid())
-	{
-		ActiveSplitDialog->CancelSplitDialog();
-		ActiveSplitDialog = nullptr;
-	}
 	CancelPendingSplit();
 	URpgInventoryItemInstance* Item = GetSelectedItemInstance();
 	const int32 StackCount = GetSelectedItemStackCount();
@@ -1540,38 +1641,19 @@ bool URpgInventorySpatialGridWidget::RequestSplitDialogForSelectedCell()
 
 	PendingSplitMaximum = StackCount - 1;
 	const int32 DefaultSplitCount = FMath::Clamp(StackCount / 2, 1, PendingSplitMaximum);
-	TSubclassOf<URpgInventorySplitDialogWidget> DialogClass = SplitDialogWidgetClass;
-	if (!DialogClass)
-	{
-		DialogClass = URpgInventorySplitDialogWidget::StaticClass();
-	}
-	if (ULocalPlayer* LocalPlayer = GetOwningLocalPlayer())
-	{
-		ActiveSplitDialog = Cast<URpgInventorySplitDialogWidget>(
-			UCommonUIExtensions::PushContentToLayer_ForPlayer(LocalPlayer, RpgGameplayTags::UI_Layer_Modal, DialogClass));
-	}
-
-	if (ActiveSplitDialog.IsValid() && ActiveSplitDialog->InitializeSplitDialog(
-		this,
-		PendingSplitEntryId,
-		1,
-		PendingSplitMaximum,
-		DefaultSplitCount))
+	if (InventoryPresentationHost &&
+		InventoryPresentationHost->OpenInventorySplitDialog(
+			this,
+			PendingSplitEntryId,
+			1,
+			PendingSplitMaximum,
+			DefaultSplitCount))
 	{
 		return true;
 	}
 
-	if (ActiveSplitDialog.IsValid())
-	{
-		ActiveSplitDialog->CancelSplitDialog();
-		ActiveSplitDialog = nullptr;
-	}
-	// Preserve the stable request for an existing Blueprint fallback when no CommonUI root/local player is available.
-	PendingSplitEntryId = GetSelectedEntryId();
-	PendingSplitItemId = Item->GetItemId();
-	PendingSplitMaximum = StackCount - 1;
-	BP_OnInventorySplitDialogRequested(Item, 1, StackCount - 1, DefaultSplitCount);
-	return true;
+	CancelPendingSplit();
+	return false;
 }
 
 bool URpgInventorySpatialGridWidget::ConfirmPendingSplit(int32 SplitCount)
@@ -1647,35 +1729,11 @@ bool URpgInventorySpatialGridWidget::RequestContextMenuForSelectedCell(FVector2D
 		return false;
 	}
 
-	if (ActiveContextMenu.IsValid())
-	{
-		ActiveContextMenu->CloseContextMenu();
-		ActiveContextMenu = nullptr;
-	}
-
-	TSubclassOf<URpgInventoryContextMenuWidget> MenuClass = ContextMenuWidgetClass;
-	if (!MenuClass)
-	{
-		MenuClass = URpgInventoryContextMenuWidget::StaticClass();
-	}
-	if (ULocalPlayer* LocalPlayer = GetOwningLocalPlayer())
-	{
-		ActiveContextMenu = Cast<URpgInventoryContextMenuWidget>(
-			UCommonUIExtensions::PushContentToLayer_ForPlayer(LocalPlayer, RpgGameplayTags::UI_Layer_Modal, MenuClass));
-	}
-
-	if (ActiveContextMenu.IsValid() && ActiveContextMenu->InitializeContextMenu(this, Actions, ScreenPosition))
-	{
-		return true;
-	}
-
-	if (ActiveContextMenu.IsValid())
-	{
-		ActiveContextMenu->CloseContextMenu();
-		ActiveContextMenu = nullptr;
-	}
-	BP_OnInventoryContextMenuRequested(Item, Actions, ScreenPosition);
-	return true;
+	return InventoryPresentationHost &&
+		InventoryPresentationHost->OpenInventoryContextMenu(
+			this,
+			Actions,
+			ScreenPosition);
 }
 
 TArray<ERpgInventoryContextAction> URpgInventorySpatialGridWidget::GetSelectedContextActions() const
@@ -2235,33 +2293,7 @@ void URpgInventorySpatialGridWidget::NativeOnInitialized()
 
 void URpgInventorySpatialGridWidget::NativeDestruct()
 {
-	if (ActiveSplitDialog.IsValid())
-	{
-		ActiveSplitDialog->CancelSplitDialog();
-		ActiveSplitDialog = nullptr;
-	}
-	if (ActiveContextMenu.IsValid())
-	{
-		ActiveContextMenu->CloseContextMenu();
-		ActiveContextMenu = nullptr;
-	}
-	CancelPendingSplit();
-	ClearSpatialPreviewLocal();
-
-	ClearObservedSlotDelegates();
-	ClearObservedEntryDelegates();
-	if (PanelViewModel)
-	{
-		PanelViewModel->OnEntriesChanged.RemoveDynamic(this, &ThisClass::RefreshFromPanelViewModel);
-	}
-	if (DragDropCoordinator)
-	{
-		DragDropCoordinator->OnHeldPayloadChanged.RemoveDynamic(this, &ThisClass::HandleHeldPayloadChanged);
-		if (URpgInventoryInteractionSession* Session = DragDropCoordinator->GetInteractionSession())
-		{
-			Session->OnSpatialPreviewChanged.RemoveDynamic(this, &ThisClass::HandleSpatialPreviewChanged);
-		}
-	}
+	ReleaseInventoryPresentation();
 
 	Super::NativeDestruct();
 }
@@ -2566,7 +2598,7 @@ URpgInventoryDragVisualWidget* URpgInventorySpatialGridWidget::EnsureSpatialPrev
 		{
 			SpatialPreviewGhost->RemoveFromParent();
 		}
-		SpatialPreviewGhost = CreateWidget<URpgInventoryDragVisualWidget>(GetWorld(), GhostClass);
+		SpatialPreviewGhost = CreateWidget<URpgInventoryDragVisualWidget>(this, GhostClass);
 		bSpatialPreviewGhostConfigured = false;
 	}
 	if (!SpatialPreviewGhost)
@@ -2770,7 +2802,7 @@ void URpgInventorySpatialGridWidget::RebuildCellLayer()
 			}
 			if (!CellWidget)
 			{
-				CellWidget = CreateWidget<URpgInventorySpatialCellWidget>(GetWorld(), SpatialCellWidgetClass);
+				CellWidget = CreateWidget<URpgInventorySpatialCellWidget>(this, SpatialCellWidgetClass);
 			}
 			if (!CellWidget)
 			{
@@ -2943,6 +2975,13 @@ void URpgInventorySpatialGridWidget::RebuildItemOverlay()
 	EnsureRuntimeWidgets();
 	if (!ItemCanvas || !SpatialItemWidgetClass)
 	{
+		for (URpgInventorySpatialItemWidget* ItemWidget : ItemWidgets)
+		{
+			if (ItemWidget)
+			{
+				ItemWidget->ReleaseSpatialItemState();
+			}
+		}
 		ItemWidgets.Reset();
 		UpdateCellVisualStates();
 		return;
@@ -2981,7 +3020,7 @@ void URpgInventorySpatialGridWidget::RebuildItemOverlay()
 		}
 		if (!ItemWidget)
 		{
-			ItemWidget = CreateWidget<URpgInventorySpatialItemWidget>(GetWorld(), SpatialItemWidgetClass);
+			ItemWidget = CreateWidget<URpgInventorySpatialItemWidget>(this, SpatialItemWidgetClass);
 		}
 		if (!ItemWidget)
 		{
@@ -3051,6 +3090,7 @@ void URpgInventorySpatialGridWidget::RebuildItemOverlay()
 	{
 		if (PreviousItem && !ReusedItems.Contains(PreviousItem))
 		{
+			PreviousItem->ReleaseSpatialItemState();
 			ItemCanvas->RemoveChild(PreviousItem);
 		}
 	}
@@ -3459,6 +3499,7 @@ void URpgInventorySlotGroupWidget::SetPanelNavigationCoordinator(URpgInventoryPa
 void URpgInventorySlotGroupWidget::SetSlotGroupViewModel(URpgInventorySlotGroupViewModel* InGroupViewModel)
 {
 	GroupViewModel = InGroupViewModel;
+	InjectSlotGroupViewModelIntoMvvm();
 	EnsureSpatialGrid();
 	if (SpatialGrid)
 	{
@@ -3467,7 +3508,71 @@ void URpgInventorySlotGroupWidget::SetSlotGroupViewModel(URpgInventorySlotGroupV
 	}
 
 	RegisterPanelNavigationEntry();
-	BP_OnSlotGroupViewModelSet(GroupViewModel);
+}
+
+bool URpgInventorySlotGroupWidget::InjectSlotGroupViewModelIntoMvvm()
+{
+	UMVVMView* View = UMVVMSubsystem::GetViewFromUserWidget(this);
+	const UMVVMViewClass* ViewClass = View ? View->GetViewClass() : nullptr;
+	if (!View || !ViewClass)
+	{
+		if (GetClass() != StaticClass())
+		{
+			UE_LOG(
+				LogRpgInventoryLayoutViews,
+				Error,
+				TEXT("%s has no compiled MVVM view. Author one optional manual %s source for stable slot-group leaf data."),
+				*GetNameSafe(this),
+				*SlotGroupViewModelSourceName.ToString());
+		}
+		return false;
+	}
+
+	const FMVVMViewClass_Source* CompiledSource = ViewClass->GetSources().FindByPredicate(
+		[](const FMVVMViewClass_Source& Candidate)
+		{
+			return Candidate.IsViewModel() &&
+				Candidate.GetName() == SlotGroupViewModelSourceName;
+		});
+	if (!CompiledSource ||
+		!CompiledSource->CanBeSet() ||
+		!CompiledSource->IsOptional() ||
+		CompiledSource->GetSourceClass() != URpgInventorySlotGroupViewModel::StaticClass())
+	{
+		UE_LOG(
+			LogRpgInventoryLayoutViews,
+			Error,
+			TEXT("%s requires one settable manual MVVM source named %s with type RpgInventorySlotGroupViewModel."),
+			*GetNameSafe(this),
+			*SlotGroupViewModelSourceName.ToString());
+		return false;
+	}
+
+	if (View->GetViewModel(SlotGroupViewModelSourceName).GetObject() == GroupViewModel)
+	{
+		return true;
+	}
+
+	TScriptInterface<INotifyFieldValueChanged> ViewModelInterface;
+	if (GroupViewModel)
+	{
+		ViewModelInterface.SetObject(GroupViewModel);
+		ViewModelInterface.SetInterface(GroupViewModel.Get());
+	}
+
+	if (!View->SetViewModel(SlotGroupViewModelSourceName, ViewModelInterface))
+	{
+		UE_LOG(
+			LogRpgInventoryLayoutViews,
+			Error,
+			TEXT("%s failed to inject its slot-group VM into MVVM source %s."),
+			*GetNameSafe(this),
+			*SlotGroupViewModelSourceName.ToString());
+		return false;
+	}
+
+	return View->GetViewModel(SlotGroupViewModelSourceName).GetObject() ==
+		GroupViewModel;
 }
 
 void URpgInventorySlotGroupWidget::NativeDestruct()
@@ -3659,7 +3764,7 @@ void URpgInventorySlotGroupPanelWidget::RebuildGroupWidgets()
 		}
 		if (!GroupWidget)
 		{
-			GroupWidget = CreateWidget<URpgInventorySlotGroupWidget>(GetWorld(), EntryClass);
+			GroupWidget = CreateWidget<URpgInventorySlotGroupWidget>(this, EntryClass);
 		}
 		if (!GroupWidget)
 		{

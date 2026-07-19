@@ -73,7 +73,7 @@ public:
 	UFUNCTION(BlueprintCallable, BlueprintPure = false, Category = "Inventory|Layout")
 	URpgInventoryItemInstance* GetItemInSlotAddress(const FRpgInventorySlotAddress& Address) const;
 
-	/** Returns true when the addressed slot exists and the item satisfies the group's server-side rule. */
+	/** Returns true when the addressed slot exists and the item satisfies both its group rule and shared Equipment policy. */
 	UFUNCTION(BlueprintCallable, BlueprintPure = false, Category = "Inventory|Layout")
 	bool CanItemUseSlotAddress(URpgInventoryItemInstance* Item, const FRpgInventorySlotAddress& Address) const;
 
@@ -109,7 +109,7 @@ public:
 	UFUNCTION(BlueprintCallable, BlueprintPure, Category = "Inventory|Layout")
 	static bool IsSlotContainerEquipmentSlot(ERpgEquipmentSlot EquipmentSlot);
 
-	/** Returns true when the provider item in EquipmentSlot can be removed without hiding occupied slots. */
+	/** Returns whether the provider item can leave EquipmentSlot; item-owned contents travel with their provider. */
 	UFUNCTION(BlueprintCallable, BlueprintPure = false, Category = "Inventory|Layout")
 	bool CanUnequipSlotContainer(ERpgEquipmentSlot EquipmentSlot) const;
 

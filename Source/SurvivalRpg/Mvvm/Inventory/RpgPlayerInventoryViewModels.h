@@ -37,7 +37,7 @@ DECLARE_DYNAMIC_MULTICAST_DELEGATE(FRpgPlayerInventoryViewModelChanged);
  * The item stays owned by URpgInventoryManagerComponent. This object only exposes group/address presentation
  * for CommonUI widgets and drag/drop commands.
  */
-UCLASS(BlueprintType)
+UCLASS(BlueprintType, meta = (MVVMAllowedContextCreationType = "Manual"))
 class SURVIVALRPG_API URpgInventoryAddressSlotViewModel : public UMVVMViewModelBase
 {
 	GENERATED_BODY()
@@ -240,7 +240,7 @@ protected:
 /**
  * UI projection for one visible player-inventory slot group such as Pockets, Backpack, Belt, or WeaponSlot1.
  */
-UCLASS(BlueprintType)
+UCLASS(BlueprintType, meta = (MVVMAllowedContextCreationType = "Manual"))
 class SURVIVALRPG_API URpgInventorySlotGroupViewModel : public UMVVMViewModelBase
 {
 	GENERATED_BODY()
@@ -330,7 +330,7 @@ protected:
  * This is the one VM CUI_PlayerInventory should bind. It mirrors replicated gameplay state from inventory,
  * equipment loadout, layout, and actionbar components without owning any gameplay truth.
  */
-UCLASS(BlueprintType)
+UCLASS(BlueprintType, meta = (MVVMAllowedContextCreationType = "Manual"))
 class SURVIVALRPG_API URpgPlayerInventoryViewModel : public UMVVMViewModelBase
 {
 	GENERATED_BODY()

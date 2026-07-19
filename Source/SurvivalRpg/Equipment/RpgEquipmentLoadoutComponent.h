@@ -129,7 +129,7 @@ public:
 	UFUNCTION(Server, Reliable, BlueprintCallable, Category = "Equipment", meta = (DeprecatedFunction, DeprecationMessage = "Use InventoryUiActionComponent.RequestClearEquipmentSlot so inventory location remains authoritative."))
 	void RequestClearEquipmentSlot(ERpgEquipmentSlot EquipmentSlot);
 
-	/** Returns true when the item is owned by this controller and its EquipmentDefinition permits the slot. */
+	/** Returns true when this controller owns the item and the shared Inventory Equipment policy permits the slot. */
 	UFUNCTION(BlueprintCallable, BlueprintPure = false, Category = "Equipment")
 	bool CanAssignItemToEquipmentSlot(ERpgEquipmentSlot EquipmentSlot, const URpgInventoryItemInstance* Item) const;
 

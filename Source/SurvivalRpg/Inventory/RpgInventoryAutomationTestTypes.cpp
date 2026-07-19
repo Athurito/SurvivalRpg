@@ -115,6 +115,65 @@ URpgInventoryAutomationTestWeaponItemDefinition::URpgInventoryAutomationTestWeap
 	ConfigureNonStackingTraits(TraitsFragment);
 	TraitsFragment->ItemCategory = ERpgInventoryItemCategory::Weapon;
 	Fragments.Add(TraitsFragment);
+
+	URpgInventoryFragment_EquippableItem* EquippableFragment =
+		CreateDefaultSubobject<URpgInventoryFragment_EquippableItem>(TEXT("Equippable"));
+	EquippableFragment->EquipmentDefinition = URpgInventoryAutomationTestWeaponEquipmentDefinition::StaticClass();
+	Fragments.Add(EquippableFragment);
+}
+
+URpgInventoryAutomationTestStackableWeaponItemDefinition::URpgInventoryAutomationTestStackableWeaponItemDefinition(
+	const FObjectInitializer& ObjectInitializer)
+	: Super(ObjectInitializer)
+{
+	DisplayName = FText::FromString(TEXT("Automation Stackable Weapon"));
+
+	URpgInventoryFragment_SpatialItem* SpatialFragment =
+		CreateDefaultSubobject<URpgInventoryFragment_SpatialItem>(TEXT("Spatial"));
+	ConfigureSpatialFragment(SpatialFragment, 1, 1, true);
+	Fragments.Add(SpatialFragment);
+
+	URpgInventoryFragment_ItemTraits* TraitsFragment =
+		CreateDefaultSubobject<URpgInventoryFragment_ItemTraits>(TEXT("Traits"));
+	TraitsFragment->ItemCategory = ERpgInventoryItemCategory::Weapon;
+	TraitsFragment->bCanStack = true;
+	TraitsFragment->MaxStackSize = 10;
+	Fragments.Add(TraitsFragment);
+
+	URpgInventoryFragment_EquippableItem* EquippableFragment =
+		CreateDefaultSubobject<URpgInventoryFragment_EquippableItem>(TEXT("Equippable"));
+	EquippableFragment->EquipmentDefinition = URpgInventoryAutomationTestWeaponEquipmentDefinition::StaticClass();
+	Fragments.Add(EquippableFragment);
+}
+
+URpgInventoryAutomationTestWeaponEquipmentDefinition::URpgInventoryAutomationTestWeaponEquipmentDefinition(
+	const FObjectInitializer& ObjectInitializer)
+	: Super(ObjectInitializer)
+{
+	AllowedSlots = { ERpgEquipmentSlot::MainHand };
+}
+
+URpgInventoryAutomationTestMainHandShieldItemDefinition::URpgInventoryAutomationTestMainHandShieldItemDefinition(
+	const FObjectInitializer& ObjectInitializer)
+	: Super(ObjectInitializer)
+{
+	DisplayName = FText::FromString(TEXT("Automation MainHand-only Shield"));
+
+	URpgInventoryFragment_SpatialItem* SpatialFragment =
+		CreateDefaultSubobject<URpgInventoryFragment_SpatialItem>(TEXT("Spatial"));
+	ConfigureSpatialFragment(SpatialFragment, 1, 1, true);
+	Fragments.Add(SpatialFragment);
+
+	URpgInventoryFragment_ItemTraits* TraitsFragment =
+		CreateDefaultSubobject<URpgInventoryFragment_ItemTraits>(TEXT("Traits"));
+	ConfigureNonStackingTraits(TraitsFragment);
+	TraitsFragment->ItemCategory = ERpgInventoryItemCategory::Shield;
+	Fragments.Add(TraitsFragment);
+
+	URpgInventoryFragment_EquippableItem* EquippableFragment =
+		CreateDefaultSubobject<URpgInventoryFragment_EquippableItem>(TEXT("Equippable"));
+	EquippableFragment->EquipmentDefinition = URpgInventoryAutomationTestWeaponEquipmentDefinition::StaticClass();
+	Fragments.Add(EquippableFragment);
 }
 
 URpgInventoryAutomationTestBagItemDefinition::URpgInventoryAutomationTestBagItemDefinition(

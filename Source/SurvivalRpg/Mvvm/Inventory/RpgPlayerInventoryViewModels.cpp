@@ -241,6 +241,8 @@ void URpgInventoryAddressSlotViewModel::InitializeSlot(
 
 void URpgInventorySlotGroupViewModel::InitializeGroup(const FRpgInventorySlotGroupView& InGroupView, const TArray<URpgInventoryAddressSlotViewModel*>& InSlots)
 {
+	const bool bDisplayNameChanged = !DisplayName.EqualTo(InGroupView.DisplayName);
+
 	ContainerHandle = InGroupView.ContainerHandle.IsValid()
 		? InGroupView.ContainerHandle
 		: FRpgInventoryContainerHandle::MakeRoot(InGroupView.ContainerId);
@@ -264,7 +266,10 @@ void URpgInventorySlotGroupViewModel::InitializeGroup(const FRpgInventorySlotGro
 
 	UE_MVVM_BROADCAST_FIELD_VALUE_CHANGED(ContainerHandle);
 	UE_MVVM_BROADCAST_FIELD_VALUE_CHANGED(ContainerId);
-	UE_MVVM_BROADCAST_FIELD_VALUE_CHANGED(DisplayName);
+	if (bDisplayNameChanged)
+	{
+		UE_MVVM_BROADCAST_FIELD_VALUE_CHANGED(DisplayName);
+	}
 	UE_MVVM_BROADCAST_FIELD_VALUE_CHANGED(Icon);
 	UE_MVVM_BROADCAST_FIELD_VALUE_CHANGED(GridSize);
 	UE_MVVM_BROADCAST_FIELD_VALUE_CHANGED(bActionbarBindable);

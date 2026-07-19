@@ -17,8 +17,13 @@ public class SurvivalRpgEditor : ModuleRules
 
 		PrivateDependencyModuleNames.AddRange(new string[]
 		{
+			"AssetRegistry",
+			"BlueprintGraph",
+			"EnhancedInput",
 			"GameplayStateTreeModule",
 			"GameplayTags",
+			"InputBlueprintNodes",
+			"InputCore",
 			"PropertyBindingUtils",
 			"StateTreeEditorModule",
 		});

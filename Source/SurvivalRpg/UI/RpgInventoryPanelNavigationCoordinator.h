@@ -239,7 +239,7 @@ private:
 	void UpdatePanelSelectionMemory(FRpgInventoryPanelNavigationEntry& Panel) const;
 	bool RestorePanelSelection(FRpgInventoryPanelNavigationEntry& Panel) const;
 	void ApplyActivePanelState();
-	void UpdateShortcutRoutesForActivePanel(const FRpgInventoryPanelNavigationEntry& ActivePanel);
+	void UpdateFocusedInventoryForActivePanel(const FRpgInventoryPanelNavigationEntry& ActivePanel);
 	int32 FindPanelIndexForTileView(const URpgInventoryTileView* TileView) const;
 	int32 FindPanelIndexForSpatialGridWidget(const URpgInventorySpatialGridWidget* SpatialGridWidget) const;
 	int32 FindPanelIndexForActionBarTileView(const URpgActionBarTileView* TileView) const;

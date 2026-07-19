@@ -25,7 +25,7 @@ DECLARE_DYNAMIC_MULTICAST_DELEGATE(FRpgEquipmentLoadoutViewModelSlotsChanged);
  *
  * The item stays owned by inventory; this view model only represents the controller-owned slot assignment.
  */
-UCLASS(BlueprintType)
+UCLASS(BlueprintType, meta = (MVVMAllowedContextCreationType = "Manual"))
 class SURVIVALRPG_API URpgEquipmentSlotViewModel : public UMVVMViewModelBase
 {
 	GENERATED_BODY()

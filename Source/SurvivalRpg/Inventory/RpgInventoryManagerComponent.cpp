@@ -26,6 +26,8 @@ DEFINE_LOG_CATEGORY_STATIC(LogRpgInventoryManager, Log, All);
 
 namespace
 {
+	constexpr int32 MaxRecentMutationResults = 64;
+
 	const URpgInventoryFragment_ItemTraits* GetItemTraits(TSubclassOf<URpgInventoryItemDefinition> ItemDef)
 	{
 		const URpgInventoryItemDefinition* ItemCDO = ItemDef ? GetDefault<URpgInventoryItemDefinition>(ItemDef) : nullptr;
@@ -653,8 +655,16 @@ int32 FRpgInventoryList::GetFreeStackCapacity(URpgInventoryItemInstance* Instanc
 	return FMath::Max(0, MaxStackSize - Entry->StackCount);
 }
 
-bool FRpgInventoryList::ApplySort(ERpgInventorySortMode SortMode, FRpgInventoryContainerHandle ContainerFilter)
+bool FRpgInventoryList::ApplySort(
+	ERpgInventorySortMode SortMode,
+	FRpgInventoryContainerHandle ContainerFilter,
+	bool* bOutSucceeded)
 {
+	if (bOutSucceeded)
+	{
+		*bOutSucceeded = false;
+	}
+
 	TArray<FRpgInventoryEntry*> SortedEntries;
 	SortedEntries.Reserve(Entries.Num());
 	for (FRpgInventoryEntry& Entry : Entries)
@@ -669,10 +679,14 @@ bool FRpgInventoryList::ApplySort(ERpgInventorySortMode SortMode, FRpgInventoryC
 	{
 		if (SortMode == ERpgInventorySortMode::Manual || SortedEntries.Num() == 0)
 		{
+			if (bOutSucceeded)
+			{
+				*bOutSucceeded = true;
+			}
 			return false;
 		}
 
-		return SetOrderFromSortedEntryPointers(SortedEntries);
+		return SetOrderFromSortedEntryPointers(SortedEntries, bOutSucceeded);
 	}
 
 	auto GetEntryDefinition = [](const FRpgInventoryEntry& Entry)
@@ -738,7 +752,7 @@ bool FRpgInventoryList::ApplySort(ERpgInventorySortMode SortMode, FRpgInventoryC
 		break;
 	}
 
-	return SetOrderFromSortedEntryPointers(SortedEntries);
+	return SetOrderFromSortedEntryPointers(SortedEntries, bOutSucceeded);
 }
 
 bool FRpgInventoryList::MoveEntry(FGuid EntryId, int32 TargetIndex)
@@ -1651,8 +1665,15 @@ void FRpgInventoryList::RebaseDescendantContainerDepths(const FRpgInventoryItemI
 	}
 }
 
-bool FRpgInventoryList::SetOrderFromSortedEntryPointers(const TArray<FRpgInventoryEntry*>& SortedEntries)
+bool FRpgInventoryList::SetOrderFromSortedEntryPointers(
+	const TArray<FRpgInventoryEntry*>& SortedEntries,
+	bool* bOutSucceeded)
 {
+	if (bOutSucceeded)
+	{
+		*bOutSucceeded = false;
+	}
+
 	const URpgInventoryManagerComponent* Inventory = Cast<URpgInventoryManagerComponent>(OwnerComponent);
 	if (!Inventory)
 	{
@@ -1707,6 +1728,10 @@ bool FRpgInventoryList::SetOrderFromSortedEntryPointers(const TArray<FRpgInvento
 		MarkArrayDirty();
 	}
 
+	if (bOutSucceeded)
+	{
+		*bOutSucceeded = true;
+	}
 	return bChanged;
 }
 
@@ -2564,6 +2589,11 @@ FRpgInventoryMutationResult URpgInventoryManagerComponent::PlanInventoryMutation
 			Result.Code = GraphCode;
 			return Result;
 		}
+		if (!InventoryList.CanEntryUsePlacement(*MovingEntry, SplitPlacement))
+		{
+			Result.Code = ERpgInventoryMutationResultCode::ItemNotAllowed;
+			return Result;
+		}
 		if (!InventoryList.IsPlacementWithinGrid(SplitPlacement))
 		{
 			Result.Code = ERpgInventoryMutationResultCode::OutOfBounds;
@@ -2638,6 +2668,11 @@ FRpgInventoryMutationResult URpgInventoryManagerComponent::PlanInventoryMutation
 	if (!InventoryList.IsPlacementWithinGrid(NormalizedTarget))
 	{
 		Result.Code = ERpgInventoryMutationResultCode::OutOfBounds;
+		return Result;
+	}
+	if (!InventoryList.CanEntryUsePlacement(*MovingEntry, NormalizedTarget))
+	{
+		Result.Code = ERpgInventoryMutationResultCode::ItemNotAllowed;
 		return Result;
 	}
 	if (!InventoryList.CanMoveEntryToPlacement(MovingEntry->EntryId, NormalizedTarget))
@@ -2754,6 +2789,25 @@ FRpgInventoryMutationResult URpgInventoryManagerComponent::PlanInventoryMutation
 	return Result;
 }
 
+FRpgInventoryMutationResult URpgInventoryManagerComponent::CacheRecentMutationResult(
+	FRpgInventoryMutationResult Result)
+{
+	if (!Result.RequestId.IsValid())
+	{
+		return Result;
+	}
+
+	RecentMutationResults.Add(Result.RequestId, Result);
+	RecentMutationOrder.Remove(Result.RequestId);
+	RecentMutationOrder.Add(Result.RequestId);
+	while (RecentMutationOrder.Num() > MaxRecentMutationResults)
+	{
+		RecentMutationResults.Remove(RecentMutationOrder[0]);
+		RecentMutationOrder.RemoveAt(0, 1, EAllowShrinking::No);
+	}
+	return Result;
+}
+
 FRpgInventoryMutationResult URpgInventoryManagerComponent::ExecuteInventoryMutation(FRpgInventoryMutationRequest Request)
 {
 	Request.EnsureRequestId();
@@ -2770,19 +2824,18 @@ FRpgInventoryMutationResult URpgInventoryManagerComponent::ExecuteInventoryMutat
 		Result.Operation = Request.Operation;
 		Result.RequestedQuantity = Request.Quantity;
 		Result.Code = ERpgInventoryMutationResultCode::AuthorityRequired;
-		return Result;
+		return CacheRecentMutationResult(MoveTemp(Result));
 	}
 
 	Result = PlanInventoryMutation(Request);
 	if (!Result.IsSuccess())
 	{
-		RecentMutationResults.Add(Request.RequestId, Result);
-		RecentMutationOrder.Add(Request.RequestId);
-		return Result;
+		return CacheRecentMutationResult(MoveTemp(Result));
 	}
 
 	FRpgInventoryEntry* Entry = InventoryList.FindEntryByItemId(Request.ItemId);
 	bool bCommitted = false;
+	bool bInventoryStateChanged = true;
 	switch (Request.Operation)
 	{
 	case ERpgInventoryMutationOperation::Move:
@@ -2851,8 +2904,10 @@ FRpgInventoryMutationResult URpgInventoryManagerComponent::ExecuteInventoryMutat
 	{
 		const int32 SortValue = FMath::Clamp(Request.Quantity, 0, static_cast<int32>(ERpgInventorySortMode::Recent));
 		const FRpgInventoryContainerHandle SortContainer = Request.Source.IsValid() ? Request.Source : Request.Target;
-		InventoryList.ApplySort(static_cast<ERpgInventorySortMode>(SortValue), SortContainer);
-		bCommitted = true;
+		bInventoryStateChanged = InventoryList.ApplySort(
+			static_cast<ERpgInventorySortMode>(SortValue),
+			SortContainer,
+			&bCommitted);
 		break;
 	}
 
@@ -2879,19 +2934,12 @@ FRpgInventoryMutationResult URpgInventoryManagerComponent::ExecuteInventoryMutat
 		Result.AppliedQuantity = 0;
 		Result.Deltas.Reset();
 	}
-	else
+	else if (bInventoryStateChanged)
 	{
 		MarkInventoryStateDirty();
 	}
 
-	RecentMutationResults.Add(Request.RequestId, Result);
-	RecentMutationOrder.Add(Request.RequestId);
-	while (RecentMutationOrder.Num() > 64)
-	{
-		RecentMutationResults.Remove(RecentMutationOrder[0]);
-		RecentMutationOrder.RemoveAt(0, 1, EAllowShrinking::No);
-	}
-	return Result;
+	return CacheRecentMutationResult(MoveTemp(Result));
 }
 
 FRpgInventoryMutationResult URpgInventoryManagerComponent::ExecuteCrossInventoryTransfer(
@@ -2914,38 +2962,38 @@ FRpgInventoryMutationResult URpgInventoryManagerComponent::ExecuteCrossInventory
 	if (!SourceOwner || !TargetOwner || !SourceOwner->HasAuthority() || !TargetOwner->HasAuthority())
 	{
 		Result.Code = ERpgInventoryMutationResultCode::AuthorityRequired;
-		return Result;
+		return CacheRecentMutationResult(MoveTemp(Result));
 	}
 	if (!TargetInventory || TargetInventory == this ||
 		(Request.Operation != ERpgInventoryMutationOperation::Transfer && Request.Operation != ERpgInventoryMutationOperation::Pickup) ||
 		!Request.Source.IsValid() || !Request.Target.IsValid())
 	{
 		Result.Code = ERpgInventoryMutationResultCode::InvalidRequest;
-		return Result;
+		return CacheRecentMutationResult(MoveTemp(Result));
 	}
 
 	const FRpgInventoryEntry* SourceEntry = InventoryList.FindEntryByItemId(Request.ItemId);
 	if (!SourceEntry || !SourceEntry->Instance)
 	{
 		Result.Code = ERpgInventoryMutationResultCode::ItemNotFound;
-		return Result;
+		return CacheRecentMutationResult(MoveTemp(Result));
 	}
 	if (SourceEntry->Placement.GetContainerHandle() != Request.Source)
 	{
 		Result.Code = ERpgInventoryMutationResultCode::SourceMismatch;
-		return Result;
+		return CacheRecentMutationResult(MoveTemp(Result));
 	}
 	if (TargetInventory->FindItemById(Request.ItemId))
 	{
 		Result.Code = ERpgInventoryMutationResultCode::DuplicateItemId;
-		return Result;
+		return CacheRecentMutationResult(MoveTemp(Result));
 	}
 
 	const int32 RequestedQuantity = Request.Quantity <= 0 ? SourceEntry->StackCount : Request.Quantity;
 	if (RequestedQuantity <= 0 || RequestedQuantity > SourceEntry->StackCount)
 	{
 		Result.Code = ERpgInventoryMutationResultCode::InvalidRequest;
-		return Result;
+		return CacheRecentMutationResult(MoveTemp(Result));
 	}
 	Result.RequestedQuantity = RequestedQuantity;
 
@@ -2961,7 +3009,7 @@ FRpgInventoryMutationResult URpgInventoryManagerComponent::ExecuteCrossInventory
 	if (!SourceSavedItem)
 	{
 		Result.Code = ERpgInventoryMutationResultCode::InternalError;
-		return Result;
+		return CacheRecentMutationResult(MoveTemp(Result));
 	}
 
 	auto IsDescendantOf = [&SourceAfter](const FRpgInventorySavedItem& Candidate, const FRpgInventoryItemId& AncestorId)
@@ -2996,7 +3044,7 @@ FRpgInventoryMutationResult URpgInventoryManagerComponent::ExecuteCrossInventory
 	if (bTransfersSubtree && RequestedQuantity != SourceEntry->StackCount)
 	{
 		Result.Code = ERpgInventoryMutationResultCode::InvalidRequest;
-		return Result;
+		return CacheRecentMutationResult(MoveTemp(Result));
 	}
 
 	auto FindFreePlacementInTarget = [&](int32 StackQuantity, FRpgInventoryGridPlacement& OutPlacement)
@@ -3049,7 +3097,7 @@ FRpgInventoryMutationResult URpgInventoryManagerComponent::ExecuteCrossInventory
 		if (!FindFreePlacementInTarget(RequestedQuantity, TargetPlacement))
 		{
 			Result.Code = ERpgInventoryMutationResultCode::NoSpace;
-			return Result;
+			return CacheRecentMutationResult(MoveTemp(Result));
 		}
 
 		const int32 DepthDelta = static_cast<int32>(TargetPlacement.GetContainerHandle().Depth) -
@@ -3064,7 +3112,7 @@ FRpgInventoryMutationResult URpgInventoryManagerComponent::ExecuteCrossInventory
 			if (!MovingSavedItem)
 			{
 				Result.Code = ERpgInventoryMutationResultCode::InternalError;
-				return Result;
+				return CacheRecentMutationResult(MoveTemp(Result));
 			}
 
 			FRpgInventorySavedItem TargetSavedItem = *MovingSavedItem;
@@ -3079,7 +3127,7 @@ FRpgInventoryMutationResult URpgInventoryManagerComponent::ExecuteCrossInventory
 				if (NewDepth <= 0 || NewDepth > RpgInventoryMaxItemOwnedDepth)
 				{
 					Result.Code = ERpgInventoryMutationResultCode::MaxDepthExceeded;
-					return Result;
+					return CacheRecentMutationResult(MoveTemp(Result));
 				}
 				TargetSavedItem.Container.Depth = static_cast<uint8>(NewDepth);
 				TargetSavedItem.Placement.SetContainerHandle(TargetSavedItem.Container);
@@ -3179,12 +3227,12 @@ FRpgInventoryMutationResult URpgInventoryManagerComponent::ExecuteCrossInventory
 		{
 			Result.Code = ERpgInventoryMutationResultCode::NoSpace;
 			Result.Deltas.Reset();
-			return Result;
+			return CacheRecentMutationResult(MoveTemp(Result));
 		}
 		if (AppliedQuantity <= 0)
 		{
 			Result.Code = ERpgInventoryMutationResultCode::NoSpace;
-			return Result;
+			return CacheRecentMutationResult(MoveTemp(Result));
 		}
 
 		SourceSavedItem = SourceAfter.Items.FindByPredicate(
@@ -3195,7 +3243,7 @@ FRpgInventoryMutationResult URpgInventoryManagerComponent::ExecuteCrossInventory
 		if (!SourceSavedItem)
 		{
 			Result.Code = ERpgInventoryMutationResultCode::InternalError;
-			return Result;
+			return CacheRecentMutationResult(MoveTemp(Result));
 		}
 		const int32 SourcePreviousQuantity = SourceSavedItem->StackCount;
 		SourceSavedItem->StackCount -= AppliedQuantity;
@@ -3228,7 +3276,7 @@ FRpgInventoryMutationResult URpgInventoryManagerComponent::ExecuteCrossInventory
 	{
 		Result.Code = TargetImportResult.Code;
 		Result.Deltas.Reset();
-		return Result;
+		return CacheRecentMutationResult(MoveTemp(Result));
 	}
 
 	FRpgInventoryMutationResult SourceImportResult;
@@ -3238,21 +3286,14 @@ FRpgInventoryMutationResult URpgInventoryManagerComponent::ExecuteCrossInventory
 		TargetInventory->ImportInventoryGraph(TargetBefore, RollbackResult);
 		Result.Code = SourceImportResult.Code;
 		Result.Deltas.Reset();
-		return Result;
+		return CacheRecentMutationResult(MoveTemp(Result));
 	}
 
 	Result.AppliedQuantity = AppliedQuantity;
 	Result.Code = AppliedQuantity == RequestedQuantity
 		? ERpgInventoryMutationResultCode::Success
 		: ERpgInventoryMutationResultCode::PartiallyApplied;
-	RecentMutationResults.Add(Request.RequestId, Result);
-	RecentMutationOrder.Add(Request.RequestId);
-	while (RecentMutationOrder.Num() > 64)
-	{
-		RecentMutationResults.Remove(RecentMutationOrder[0]);
-		RecentMutationOrder.RemoveAt(0, 1, EAllowShrinking::No);
-	}
-	return Result;
+	return CacheRecentMutationResult(MoveTemp(Result));
 }
 
 FRpgInventorySnapshot URpgInventoryManagerComponent::ExportInventorySnapshot(FName ContainerId) const
@@ -3352,6 +3393,8 @@ bool URpgInventoryManagerComponent::ImportInventoryGraph(
 		const FRpgInventorySavedItem* Saved = nullptr;
 		TSubclassOf<URpgInventoryItemDefinition> ItemDefinition;
 		TObjectPtr<URpgInventoryItemInstance> Instance;
+		TObjectPtr<URpgInventoryItemInstance> CommittedInstance;
+		FGuid CommittedEntryId;
 		FRpgInventoryGridPlacement Placement;
 	};
 
@@ -3382,6 +3425,8 @@ bool URpgInventoryManagerComponent::ImportInventoryGraph(
 		Stage.Placement = SavedItem.Placement;
 		Stage.Placement.SetContainerHandle(SavedItem.Container);
 		Stage.Instance = NewObject<URpgInventoryItemInstance>(OwningActor);
+		Stage.CommittedInstance = Stage.Instance;
+		Stage.CommittedEntryId = FGuid::NewGuid();
 		Stage.Instance->SetItemDef(ItemDefinition);
 		if (!Stage.Instance->RestoreItemId(SavedItem.ItemId))
 		{
@@ -3526,6 +3571,82 @@ bool URpgInventoryManagerComponent::ImportInventoryGraph(
 		ContainerOccupancy.Add(Stage.Placement);
 	}
 
+	// A validated graph import may only change placement, stack count, or fragment state for an item
+	// that already belongs to this inventory. Preserve that item's runtime and replicated entry identity
+	// so loadouts, UI payloads, and other gameplay references do not become stale after an atomic commit.
+	struct FExistingRuntimeEntry
+	{
+		TObjectPtr<URpgInventoryItemInstance> Instance;
+		FGuid EntryId;
+	};
+
+	TMap<FRpgInventoryItemId, FExistingRuntimeEntry> ExistingEntriesByItemId;
+	ExistingEntriesByItemId.Reserve(InventoryList.Entries.Num());
+	for (const FRpgInventoryEntry& ExistingEntry : InventoryList.Entries)
+	{
+		if (ExistingEntry.Instance && ExistingEntry.Instance->GetItemId().IsValid())
+		{
+			FExistingRuntimeEntry& ExistingRuntimeEntry =
+				ExistingEntriesByItemId.Add(ExistingEntry.Instance->GetItemId());
+			ExistingRuntimeEntry.Instance = ExistingEntry.Instance;
+			ExistingRuntimeEntry.EntryId = ExistingEntry.EntryId;
+		}
+	}
+
+	struct FRuntimeStateBackup
+	{
+		TObjectPtr<URpgInventoryItemInstance> Instance;
+		TArray<FRpgInventoryFragmentStatePayload> RuntimeState;
+	};
+
+	TArray<FRuntimeStateBackup> RuntimeStateBackups;
+	RuntimeStateBackups.Reserve(Staged.Num());
+	auto RestoreReusedRuntimeState = [&RuntimeStateBackups]()
+	{
+		for (const FRuntimeStateBackup& Backup : RuntimeStateBackups)
+		{
+			if (Backup.Instance && !Backup.Instance->ImportRuntimeState(Backup.RuntimeState))
+			{
+				UE_LOG(LogRpgInventoryManager, Error,
+					TEXT("Failed to restore runtime state for reused inventory item %s after an import commit failure."),
+					*Backup.Instance->GetItemId().ToString());
+			}
+		}
+	};
+
+	for (FStagedSavedEntry& Stage : Staged)
+	{
+		const FExistingRuntimeEntry* ExistingEntry =
+			ExistingEntriesByItemId.Find(Stage.Saved->ItemId);
+		if (!ExistingEntry || !ExistingEntry->Instance ||
+			ExistingEntry->Instance->GetItemDef() != Stage.ItemDefinition)
+		{
+			continue;
+		}
+
+		FRuntimeStateBackup Backup;
+		Backup.Instance = ExistingEntry->Instance;
+		if (!Backup.Instance->ExportRuntimeState(Backup.RuntimeState))
+		{
+			RestoreReusedRuntimeState();
+			OutResult.Code = ERpgInventoryMutationResultCode::InternalError;
+			return false;
+		}
+		RuntimeStateBackups.Add(MoveTemp(Backup));
+
+		if (!ExistingEntry->Instance->ImportRuntimeState(Stage.Saved->RuntimeState))
+		{
+			RestoreReusedRuntimeState();
+			OutResult.Code = ERpgInventoryMutationResultCode::InternalError;
+			return false;
+		}
+
+		Stage.CommittedInstance = ExistingEntry->Instance;
+		Stage.CommittedEntryId = ExistingEntry->EntryId.IsValid()
+			? ExistingEntry->EntryId
+			: FGuid::NewGuid();
+	}
+
 	if (IsUsingRegisteredSubObjectList())
 	{
 		for (const FRpgInventoryEntry& ExistingEntry : InventoryList.Entries)
@@ -3545,8 +3666,8 @@ bool URpgInventoryManagerComponent::ImportInventoryGraph(
 	for (const FStagedSavedEntry& Stage : Staged)
 	{
 		FRpgInventoryEntry& NewEntry = InventoryList.Entries.AddDefaulted_GetRef();
-		NewEntry.Instance = Stage.Instance;
-		NewEntry.EntryId = FGuid::NewGuid();
+		NewEntry.Instance = Stage.CommittedInstance;
+		NewEntry.EntryId = Stage.CommittedEntryId;
 		NewEntry.StackCount = Stage.Saved->StackCount;
 		NewEntry.Placement = Stage.Placement;
 		InventoryList.MarkItemDirty(NewEntry);

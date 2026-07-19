@@ -142,16 +142,6 @@ void URpgInventoryPanelNavigationCoordinator::RegisterInventoryPanel(FName Panel
 			Panel.Inventory = Inventory;
 			TileView->SetPanelNavigationCoordinator(this, PanelId);
 			UpdatePanelSelectionMemory(Panel);
-			if (DragDropCoordinator)
-			{
-				if (URpgInventoryManagerComponent* PlayerInventory = DragDropCoordinator->GetPlayerInventory())
-				{
-					if (Inventory != PlayerInventory)
-					{
-						DragDropCoordinator->SetQuickTransferTarget(Inventory, PlayerInventory);
-					}
-				}
-			}
 			ApplyActivePanelState();
 			return;
 		}
@@ -172,21 +162,6 @@ void URpgInventoryPanelNavigationCoordinator::RegisterInventoryPanel(FName Panel
 		UpdatePanelSelectionMemory(NewPanel);
 	}
 	TileView->SetInventoryPanelActive(false);
-
-	if (DragDropCoordinator)
-	{
-		if (URpgInventoryManagerComponent* PlayerInventory = DragDropCoordinator->GetPlayerInventory())
-		{
-			if (Inventory != PlayerInventory)
-			{
-				DragDropCoordinator->SetQuickTransferTarget(Inventory, PlayerInventory);
-				if (!DragDropCoordinator->ResolveQuickTransferTarget(PlayerInventory))
-				{
-					DragDropCoordinator->SetQuickTransferTarget(PlayerInventory, Inventory);
-				}
-			}
-		}
-	}
 
 	if (ActivePanelIndex == INDEX_NONE && !bPanelRefreshInProgress)
 	{
@@ -398,7 +373,7 @@ void URpgInventoryPanelNavigationCoordinator::NotifyPanelSelectionChanged(URpgIn
 
 	FRpgInventoryPanelNavigationEntry& ActivePanel = Panels[PanelIndex];
 	UpdatePanelSelectionMemory(ActivePanel);
-	UpdateShortcutRoutesForActivePanel(ActivePanel);
+	UpdateFocusedInventoryForActivePanel(ActivePanel);
 	OnActiveSelectionChanged.Broadcast();
 
 	if (bPanelChanged)
@@ -461,7 +436,7 @@ void URpgInventoryPanelNavigationCoordinator::NotifySpatialPanelSelectionChanged
 
 	FRpgInventoryPanelNavigationEntry& ActivePanel = Panels[PanelIndex];
 	UpdatePanelSelectionMemory(ActivePanel);
-	UpdateShortcutRoutesForActivePanel(ActivePanel);
+	UpdateFocusedInventoryForActivePanel(ActivePanel);
 	OnActiveSelectionChanged.Broadcast();
 
 	if (bPanelChanged)
@@ -494,7 +469,7 @@ void URpgInventoryPanelNavigationCoordinator::NotifyCarrySlotFocused(
 
 	FRpgInventoryPanelNavigationEntry& ActivePanel = Panels[PanelIndex];
 	UpdatePanelSelectionMemory(ActivePanel);
-	UpdateShortcutRoutesForActivePanel(ActivePanel);
+	UpdateFocusedInventoryForActivePanel(ActivePanel);
 	OnActiveSelectionChanged.Broadcast();
 
 	if (bPanelChanged)
@@ -564,7 +539,7 @@ bool URpgInventoryPanelNavigationCoordinator::ActivatePanelByIndex(int32 PanelIn
 	bSuppressPanelSelectionNotifications = false;
 
 	UpdatePanelSelectionMemory(ActivePanel);
-	UpdateShortcutRoutesForActivePanel(ActivePanel);
+	UpdateFocusedInventoryForActivePanel(ActivePanel);
 	BroadcastActivePanelChanged(ActivePanel);
 	return true;
 }
@@ -637,7 +612,7 @@ bool URpgInventoryPanelNavigationCoordinator::RefreshActivePanelFocus()
 	bSuppressPanelSelectionNotifications = false;
 
 	UpdatePanelSelectionMemory(ActivePanel);
-	UpdateShortcutRoutesForActivePanel(ActivePanel);
+	UpdateFocusedInventoryForActivePanel(ActivePanel);
 	return true;
 }
 
@@ -1129,7 +1104,7 @@ void URpgInventoryPanelNavigationCoordinator::ApplyActivePanelState()
 	}
 }
 
-void URpgInventoryPanelNavigationCoordinator::UpdateShortcutRoutesForActivePanel(const FRpgInventoryPanelNavigationEntry& ActivePanel)
+void URpgInventoryPanelNavigationCoordinator::UpdateFocusedInventoryForActivePanel(const FRpgInventoryPanelNavigationEntry& ActivePanel)
 {
 	if (!DragDropCoordinator || !ActivePanel.Inventory)
 	{
@@ -1137,13 +1112,6 @@ void URpgInventoryPanelNavigationCoordinator::UpdateShortcutRoutesForActivePanel
 	}
 
 	DragDropCoordinator->SetFocusedInventory(ActivePanel.Inventory);
-
-	URpgInventoryManagerComponent* PlayerInventory = DragDropCoordinator->GetPlayerInventory();
-	if (PlayerInventory && ActivePanel.Inventory != PlayerInventory)
-	{
-		DragDropCoordinator->SetQuickTransferTarget(PlayerInventory, ActivePanel.Inventory);
-		DragDropCoordinator->SetQuickTransferTarget(ActivePanel.Inventory, PlayerInventory);
-	}
 }
 
 int32 URpgInventoryPanelNavigationCoordinator::FindPanelIndexForTileView(const URpgInventoryTileView* TileView) const

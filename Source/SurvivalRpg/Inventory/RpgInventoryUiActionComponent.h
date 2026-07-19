@@ -11,6 +11,7 @@
 class ARpgBaseCampActor;
 class ARpgBaseConstructionSiteActor;
 class ARpgDroppedInventoryActor;
+class APlayerController;
 class URpgAbilitySystemComponent;
 class URpgEquipmentLoadoutComponent;
 class URpgBaseBuildableDefinition;
@@ -212,6 +213,13 @@ struct SURVIVALRPG_API FRpgInventoryActionFeedbackMessage
 {
 	GENERATED_BODY()
 
+	/**
+	 * Owning local controller that should present this result.
+	 * Assigned on the receiving client before the gameplay message is broadcast.
+	 */
+	UPROPERTY(BlueprintReadOnly, Category = "Inventory|Feedback")
+	TObjectPtr<APlayerController> Recipient = nullptr;
+
 	/** Correlation id supplied by the initiating request. Legacy pointer APIs may emit an invalid id. */
 	UPROPERTY(BlueprintReadOnly, Category = "Inventory|Feedback")
 	FGuid RequestId;
@@ -239,6 +247,12 @@ struct SURVIVALRPG_API FRpgInventoryActionFeedbackMessage
 	/** Requested or affected count. Zero means not count-specific. */
 	UPROPERTY(BlueprintReadOnly, Category = "Inventory|Feedback")
 	int32 StackCount = 0;
+
+	/** Returns whether this owner-local result may be consumed by the given controller. Null remains legacy-local broadcast behavior. */
+	bool IsAddressedTo(const APlayerController* Controller) const
+	{
+		return !Recipient || Recipient.Get() == Controller;
+	}
 };
 
 /**
@@ -252,7 +266,10 @@ class SURVIVALRPG_API URpgInventoryUiActionComponent : public UControllerCompone
 public:
 	explicit URpgInventoryUiActionComponent(const FObjectInitializer& ObjectInitializer = FObjectInitializer::Get());
 
-	/** Canonical reliable server RPC for item-id based mutations inside one accessible inventory graph. */
+	/**
+	 * Executes placement and stack-management mutations inside one accessible inventory graph.
+	 * Pickup, cross-inventory transfer, and physical drop use their dedicated validated request APIs.
+	 */
 	UFUNCTION(Server, Reliable, BlueprintCallable, Category = "Inventory|Transactions")
 	void RequestInventoryMutation(URpgInventoryManagerComponent* Inventory, FRpgInventoryMutationRequest Request);
 
@@ -282,6 +299,29 @@ public:
 		const FRpgInventoryQuickTransferRequest& Request,
 		FRpgInventoryContainerHandle& OutTargetContainer,
 		FRpgInventoryGridPlacement& OutTargetPlacement) const;
+
+	/**
+	 * Predicts whether an accessible target inventory can accept the requested cross-inventory stack.
+	 * This mirrors the authoritative UI-transfer direction policy; crafting outputs are withdrawal-only.
+	 */
+	UFUNCTION(BlueprintCallable, BlueprintPure, Category = "Inventory|Transfer")
+	bool CanTransferItemStack(
+		URpgInventoryManagerComponent* SourceInventory,
+		URpgInventoryManagerComponent* TargetInventory,
+		URpgInventoryItemInstance* Item,
+		int32 StackCount) const;
+
+	/**
+	 * Predicts an exact cross-inventory placement using the same direction and capacity rules as the server.
+	 * Occupied unlike-item placements are rejected because cross-inventory swaps are not a supported transaction.
+	 */
+	UFUNCTION(BlueprintCallable, BlueprintPure, Category = "Inventory|Transfer")
+	bool CanTransferItemStackToPlacement(
+		URpgInventoryManagerComponent* SourceInventory,
+		URpgInventoryManagerComponent* TargetInventory,
+		URpgInventoryItemInstance* Item,
+		int32 StackCount,
+		FRpgInventoryGridPlacement TargetPlacement) const;
 
 	/** Assigns an owned inventory item to an equipment slot such as MainHand, OffHand, Head, or Chest. */
 	UFUNCTION(Server, Reliable, BlueprintCallable, Category = "Inventory|UI Actions")
@@ -319,9 +359,15 @@ public:
 	UFUNCTION(Server, Reliable, BlueprintCallable, Category = "Inventory|UI Actions")
 	void RequestEquipSlotContainerItem(ERpgEquipmentSlot ContainerSlot, URpgInventoryItemInstance* Item);
 
-	/** Clears a bag, belt, pouch, or resource bag equipment slot if its provided slots are empty. */
+	/**
+	 * Moves a bag, belt, pouch, or resource bag out of its physical Gear slot into compatible inventory content.
+	 * Item-owned contents remain attached to the provider item and are not flattened into the player inventory.
+	 * ExpectedProviderItemId prevents a stale client action from unequipping a newer item that now occupies the slot.
+	 */
 	UFUNCTION(Server, Reliable, BlueprintCallable, Category = "Inventory|UI Actions")
-	void RequestUnequipSlotContainerItem(ERpgEquipmentSlot ContainerSlot);
+	void RequestUnequipSlotContainerItem(
+		ERpgEquipmentSlot ContainerSlot,
+		FRpgInventoryItemId ExpectedProviderItemId);
 
 	/** Activates a carry slot as MainHand or OffHand without moving the item out of the inventory. */
 	UFUNCTION(Server, Reliable, BlueprintCallable, Category = "Inventory|UI Actions")
@@ -455,8 +501,6 @@ private:
 	URpgPlayerInventoryLayoutComponent* FindPlayerInventoryLayout() const;
 	URpgActionBarComponent* FindActionBar() const;
 	URpgAbilitySystemComponent* FindPlayerAbilitySystem() const;
-	bool CanTransferItemStack(URpgInventoryManagerComponent* SourceInventory, URpgInventoryManagerComponent* TargetInventory, URpgInventoryItemInstance* Item, int32 StackCount) const;
-	bool CanTransferItemStackToPlacement(URpgInventoryManagerComponent* SourceInventory, URpgInventoryManagerComponent* TargetInventory, URpgInventoryItemInstance* Item, int32 StackCount, FRpgInventoryGridPlacement TargetPlacement) const;
 	bool TryFindTransferPlacementInContainer(
 		URpgInventoryManagerComponent* SourceInventory,
 		URpgInventoryManagerComponent* TargetInventory,

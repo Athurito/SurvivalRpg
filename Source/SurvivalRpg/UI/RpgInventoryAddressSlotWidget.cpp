@@ -2,11 +2,9 @@
 
 #include "Blueprint/DragDropOperation.h"
 #include "Blueprint/WidgetBlueprintLibrary.h"
-#include "CommonUIExtensions.h"
 #include "Input/Reply.h"
 #include "InputCoreTypes.h"
 #include "MVVMSubsystem.h"
-#include "SurvivalRpg/GameplayTags/RpgGameplayTags.h"
 #include "SurvivalRpg/Inventory/RpgInventoryDragDrop.h"
 #include "SurvivalRpg/Inventory/RpgInventoryFragment_EquippableItem.h"
 #include "SurvivalRpg/Inventory/RpgInventoryFragment_ItemContainer.h"
@@ -14,11 +12,17 @@
 #include "SurvivalRpg/Inventory/RpgInventoryInteractionSession.h"
 #include "SurvivalRpg/Inventory/RpgInventoryItemInstance.h"
 #include "SurvivalRpg/Mvvm/Inventory/RpgPlayerInventoryViewModels.h"
-#include "SurvivalRpg/UI/RpgInventoryActionWidgets.h"
 #include "SurvivalRpg/UI/RpgInventoryDragVisualWidget.h"
+#include "SurvivalRpg/UI/RpgInventoryInteractionScreenWidget.h"
 #include "View/MVVMView.h"
+#include "View/MVVMViewClass.h"
 
 #include UE_INLINE_GENERATED_CPP_BY_NAME(RpgInventoryAddressSlotWidget)
+
+DEFINE_LOG_CATEGORY_STATIC(LogRpgInventoryAddressSlotWidget, Log, All);
+
+const FName URpgInventoryAddressSlotWidget::AddressSlotViewModelSourceName(
+	TEXT("RpgInventoryAddressSlotViewModel"));
 
 URpgInventoryAddressSlotWidget::URpgInventoryAddressSlotWidget(const FObjectInitializer& ObjectInitializer)
 	: Super(ObjectInitializer)
@@ -55,8 +59,14 @@ void URpgInventoryAddressSlotWidget::SetAddressSlotViewModel(URpgInventoryAddres
 		bAddressSlotStateReleased = false;
 	}
 
+	if (SlotViewModel != InSlotViewModel && InventoryPresentationHost)
+	{
+		InventoryPresentationHost->DismissInventoryPresentationForSource(this);
+	}
+
 	if (SlotViewModel == InSlotViewModel)
 	{
+		InjectAddressSlotViewModelIntoMvvm();
 		BP_OnAddressSlotViewModelSet(SlotViewModel);
 		RefreshDragDropVisualState();
 		return;
@@ -73,14 +83,7 @@ void URpgInventoryAddressSlotWidget::SetAddressSlotViewModel(URpgInventoryAddres
 		SlotViewModel->OnSlotChanged.AddUniqueDynamic(this, &ThisClass::HandleSlotViewModelChanged);
 	}
 
-	if (SlotViewModel)
-	{
-		if (UMVVMView* View = UMVVMSubsystem::GetViewFromUserWidget(this))
-		{
-			View->SetViewModelByClass(SlotViewModel);
-		}
-	}
-
+	InjectAddressSlotViewModelIntoMvvm();
 	BP_OnAddressSlotViewModelSet(SlotViewModel);
 	RefreshDragDropVisualState();
 }
@@ -96,10 +99,19 @@ void URpgInventoryAddressSlotWidget::SetInventoryPanelActive(bool bInInventoryPa
 	RefreshDragDropVisualState();
 }
 
-void URpgInventoryAddressSlotWidget::SetContextMenuWidgetClass(
-	TSubclassOf<URpgInventoryContextMenuWidget> InContextMenuWidgetClass)
+void URpgInventoryAddressSlotWidget::SetInventoryPresentationHost(
+	URpgInventoryInteractionScreenWidget* InPresentationHost)
 {
-	ContextMenuWidgetClass = InContextMenuWidgetClass;
+	if (InPresentationHost)
+	{
+		bAddressSlotStateReleased = false;
+	}
+	if (InventoryPresentationHost &&
+		InventoryPresentationHost != InPresentationHost)
+	{
+		InventoryPresentationHost->DismissInventoryPresentationForSource(this);
+	}
+	InventoryPresentationHost = InPresentationHost;
 }
 
 bool URpgInventoryAddressSlotWidget::HandleSlotAccept()
@@ -190,25 +202,12 @@ void URpgInventoryAddressSlotWidget::ReleaseAddressSlotState()
 		return;
 	}
 	bAddressSlotStateReleased = true;
-
-	TWeakObjectPtr<URpgInventoryContextMenuWidget> ContextMenuToClose = ActiveContextMenu;
-	ActiveContextMenu = nullptr;
-	if (ContextMenuToClose.IsValid())
-	{
-		ContextMenuToClose->CloseContextMenu();
-	}
-
-	TWeakObjectPtr<URpgInventorySplitDialogWidget> SplitDialogToClose = ActiveSplitDialog;
-	ActiveSplitDialog = nullptr;
-	if (SplitDialogToClose.IsValid())
-	{
-		SplitDialogToClose->CancelSplitDialog();
-	}
+	StopAllAnimations();
 
 	URpgInventoryDragDropCoordinator* ReleasedCoordinator = DragDropCoordinator;
 	URpgInventoryAddressSlotViewModel* ReleasedViewModel = SlotViewModel;
 	bool bOwnsCurrentPreviewTarget = false;
-	if (ReleasedCoordinator && ReleasedViewModel)
+	if (bHasExternalPreviewState && ReleasedCoordinator && ReleasedViewModel)
 	{
 		if (const URpgInventoryInteractionSession* Session = ReleasedCoordinator->GetInteractionSession())
 		{
@@ -229,6 +228,8 @@ void URpgInventoryAddressSlotWidget::ReleaseAddressSlotState()
 
 	SlotViewModel = nullptr;
 	DragDropCoordinator = nullptr;
+	SetInventoryPresentationHost(nullptr);
+	InjectAddressSlotViewModelIntoMvvm();
 	bSlotSelected = false;
 	bInventoryPanelActive = true;
 	bPendingLeftClickAccept = false;
@@ -249,6 +250,63 @@ void URpgInventoryAddressSlotWidget::ReleaseAddressSlotState()
 	BP_OnAddressSlotViewModelSet(nullptr);
 	BP_OnAddressSlotDragDropStateChanged(ERpgInventorySlotDragVisualState::Normal);
 	BP_OnAddressSlotReleased();
+}
+
+bool URpgInventoryAddressSlotWidget::InjectAddressSlotViewModelIntoMvvm()
+{
+	UMVVMView* View = UMVVMSubsystem::GetViewFromUserWidget(this);
+	const UMVVMViewClass* ViewClass = View ? View->GetViewClass() : nullptr;
+	if (!View || !ViewClass)
+	{
+		// Specialized address presenters such as authored carry slots intentionally use their richer imperative
+		// presentation hook. When an MVVM view is authored, the canonical exact-source contract below is mandatory.
+		return false;
+	}
+
+	const FMVVMViewClass_Source* CompiledSource = ViewClass->GetSources().FindByPredicate(
+		[](const FMVVMViewClass_Source& Candidate)
+		{
+			return Candidate.IsViewModel() &&
+				Candidate.GetName() == AddressSlotViewModelSourceName;
+		});
+	if (!CompiledSource ||
+		!CompiledSource->CanBeSet() ||
+		!CompiledSource->IsOptional() ||
+		CompiledSource->GetSourceClass() != URpgInventoryAddressSlotViewModel::StaticClass())
+	{
+		UE_LOG(
+			LogRpgInventoryAddressSlotWidget,
+			Error,
+			TEXT("%s requires one settable optional manual MVVM source named %s with type RpgInventoryAddressSlotViewModel."),
+			*GetNameSafe(this),
+			*AddressSlotViewModelSourceName.ToString());
+		return false;
+	}
+
+	if (View->GetViewModel(AddressSlotViewModelSourceName).GetObject() == SlotViewModel)
+	{
+		return true;
+	}
+
+	TScriptInterface<INotifyFieldValueChanged> ViewModelInterface;
+	if (SlotViewModel)
+	{
+		ViewModelInterface.SetObject(SlotViewModel);
+		ViewModelInterface.SetInterface(SlotViewModel.Get());
+	}
+
+	if (!View->SetViewModel(AddressSlotViewModelSourceName, ViewModelInterface))
+	{
+		UE_LOG(
+			LogRpgInventoryAddressSlotWidget,
+			Error,
+			TEXT("%s failed to inject its address-slot VM into MVVM source %s."),
+			*GetNameSafe(this),
+			*AddressSlotViewModelSourceName.ToString());
+		return false;
+	}
+
+	return View->GetViewModel(AddressSlotViewModelSourceName).GetObject() == SlotViewModel;
 }
 
 void URpgInventoryAddressSlotWidget::NativeOnItemSelectionChanged(bool bIsSelected)
@@ -436,7 +494,7 @@ void URpgInventoryAddressSlotWidget::NativeOnDragDetected(const FGeometry& InGeo
 
 	if (VisualClass)
 	{
-		UUserWidget* DragVisual = CreateWidget<UUserWidget>(GetWorld(), VisualClass);
+		UUserWidget* DragVisual = CreateWidget<UUserWidget>(this, VisualClass);
 		if (URpgInventoryAddressSlotWidget* AddressSlotDragVisual = Cast<URpgInventoryAddressSlotWidget>(DragVisual))
 		{
 			AddressSlotDragVisual->SetAddressSlotViewModel(SlotViewModel);
@@ -601,32 +659,11 @@ bool URpgInventoryAddressSlotWidget::RequestAddressContextMenu(FVector2D ScreenP
 	{
 		return false;
 	}
-	if (ActiveContextMenu.IsValid())
-	{
-		ActiveContextMenu->CloseContextMenu();
-		ActiveContextMenu = nullptr;
-	}
-
-	TSubclassOf<URpgInventoryContextMenuWidget> MenuClass = ContextMenuWidgetClass;
-	if (!MenuClass)
-	{
-		MenuClass = URpgInventoryContextMenuWidget::StaticClass();
-	}
-	if (ULocalPlayer* LocalPlayer = GetOwningLocalPlayer())
-	{
-		ActiveContextMenu = Cast<URpgInventoryContextMenuWidget>(
-			UCommonUIExtensions::PushContentToLayer_ForPlayer(LocalPlayer, RpgGameplayTags::UI_Layer_Modal, MenuClass));
-	}
-	if (ActiveContextMenu.IsValid() && ActiveContextMenu->InitializeAddressContextMenu(this, Actions, ScreenPosition))
-	{
-		return true;
-	}
-	if (ActiveContextMenu.IsValid())
-	{
-		ActiveContextMenu->CloseContextMenu();
-		ActiveContextMenu = nullptr;
-	}
-	return false;
+	return InventoryPresentationHost &&
+		InventoryPresentationHost->OpenInventoryContextMenu(
+			this,
+			Actions,
+			ScreenPosition);
 }
 
 bool URpgInventoryAddressSlotWidget::RequestAddressSplitDialog()
@@ -637,39 +674,15 @@ bool URpgInventoryAddressSlotWidget::RequestAddressSplitDialog()
 	{
 		return false;
 	}
-	if (ActiveSplitDialog.IsValid())
-	{
-		ActiveSplitDialog->CancelSplitDialog();
-		ActiveSplitDialog = nullptr;
-	}
-
-	TSubclassOf<URpgInventorySplitDialogWidget> DialogClass = SplitDialogWidgetClass;
-	if (!DialogClass)
-	{
-		DialogClass = URpgInventorySplitDialogWidget::StaticClass();
-	}
-	if (ULocalPlayer* LocalPlayer = GetOwningLocalPlayer())
-	{
-		ActiveSplitDialog = Cast<URpgInventorySplitDialogWidget>(
-			UCommonUIExtensions::PushContentToLayer_ForPlayer(LocalPlayer, RpgGameplayTags::UI_Layer_Modal, DialogClass));
-	}
 	const int32 MaximumCount = StackCount - 1;
 	const int32 DefaultCount = FMath::Clamp(StackCount / 2, 1, MaximumCount);
-	if (ActiveSplitDialog.IsValid() && ActiveSplitDialog->InitializeAddressSplitDialog(
-		this,
-		Item->GetItemId(),
-		1,
-		MaximumCount,
-		DefaultCount))
-	{
-		return true;
-	}
-	if (ActiveSplitDialog.IsValid())
-	{
-		ActiveSplitDialog->CancelSplitDialog();
-		ActiveSplitDialog = nullptr;
-	}
-	return false;
+	return InventoryPresentationHost &&
+		InventoryPresentationHost->OpenInventorySplitDialog(
+			this,
+			Item->GetItemId(),
+			1,
+			MaximumCount,
+			DefaultCount);
 }
 
 FRpgInventoryDragPayload URpgInventoryAddressSlotWidget::MakeDragPayload(bool bAllowEmptyAddressPayload) const

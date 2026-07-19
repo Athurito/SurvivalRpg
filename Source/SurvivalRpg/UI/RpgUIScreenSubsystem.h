@@ -50,6 +50,10 @@ protected:
 	void HandleScreenDeactivated(FGameplayTag ScreenTag, UCommonActivatableWidget* Widget);
 
 private:
+#if WITH_DEV_AUTOMATION_TESTS
+	friend class FRpgUIScreenRegistryExactResolutionTest;
+#endif
+
 	UPROPERTY(Transient)
 	TMap<FGameplayTag, TObjectPtr<UCommonActivatableWidget>> ActiveScreens;
 

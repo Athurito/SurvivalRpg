@@ -98,6 +98,17 @@ void URpgInventoryControllerActionsWidget::RegisterInventoryControllerActionBind
 			*GetNameSafe(this));
 		return;
 	}
+	if (!GetOwningLocalPlayer())
+	{
+		// Preview and automation worlds can activate authored widgets without a LocalPlayer. Their navigation
+		// coordinators remain testable, but CommonUI has no input router on which action rows could be registered.
+		UE_LOG(
+			LogRpgInventoryControllerActionsWidget,
+			Verbose,
+			TEXT("%s skipped inventory action binding registration because it has no owning LocalPlayer."),
+			*GetNameSafe(this));
+		return;
+	}
 
 	if (InventoryActionBindings.Num() > 0)
 	{

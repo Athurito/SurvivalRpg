@@ -372,9 +372,10 @@ bool URpgInventoryInteractionSession::IsPendingMessageRelevant(UActorComponent* 
 
 void URpgInventoryInteractionSession::HandleActionFeedback(FGameplayTag Channel, const FRpgInventoryActionFeedbackMessage& Message)
 {
-	if (!bPendingRequest || !DoesFeedbackMatchPendingRequest(
-		RequestId,
-		PendingActionTag,
+	if (!Message.IsAddressedTo(PlayerController.Get()) ||
+		!bPendingRequest || !DoesFeedbackMatchPendingRequest(
+			RequestId,
+			PendingActionTag,
 		PendingItemId,
 		Message,
 		Target.TargetType == ERpgInventoryDropTargetType::ActionBarSlot))

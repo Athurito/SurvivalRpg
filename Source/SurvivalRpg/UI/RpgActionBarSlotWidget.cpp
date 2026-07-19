@@ -5,8 +5,14 @@
 #include "SurvivalRpg/Inventory/RpgInventoryDragDrop.h"
 #include "SurvivalRpg/Mvvm/Inventory/RpgActionBarViewModels.h"
 #include "View/MVVMView.h"
+#include "View/MVVMViewClass.h"
 
 #include UE_INLINE_GENERATED_CPP_BY_NAME(RpgActionBarSlotWidget)
+
+DEFINE_LOG_CATEGORY_STATIC(LogRpgActionBarSlotWidget, Log, All);
+
+const FName URpgActionBarSlotWidget::ActionBarSlotViewModelSourceName(
+	TEXT("RpgActionBarSlotViewModel"));
 
 URpgActionBarSlotWidget::URpgActionBarSlotWidget(const FObjectInitializer& ObjectInitializer)
 	: Super(ObjectInitializer)
@@ -28,14 +34,7 @@ void URpgActionBarSlotWidget::SetActionBarSlotViewModel(URpgActionBarSlotViewMod
 		SlotViewModel->OnSlotChanged.AddUniqueDynamic(this, &ThisClass::HandleSlotViewModelChanged);
 	}
 
-	if (SlotViewModel)
-	{
-		if (UMVVMView* View = UMVVMSubsystem::GetViewFromUserWidget(this))
-		{
-			View->SetViewModelByClass(SlotViewModel);
-		}
-	}
-
+	InjectActionBarSlotViewModelIntoMvvm();
 	BP_OnActionBarSlotViewModelSet(SlotViewModel);
 	RefreshDragDropVisualState();
 }
@@ -137,9 +136,29 @@ void URpgActionBarSlotWidget::NativeOnListItemObjectSet(UObject* ListItemObject)
 void URpgActionBarSlotWidget::NativeOnEntryReleased()
 {
 	IUserListEntry::NativeOnEntryReleased();
-	SetActionBarSlotViewModel(nullptr);
+	StopAllAnimations();
+
+	if (SlotViewModel)
+	{
+		SlotViewModel->OnSlotChanged.RemoveDynamic(this, &ThisClass::HandleSlotViewModelChanged);
+	}
+	SlotViewModel = nullptr;
+	InjectActionBarSlotViewModelIntoMvvm();
+
 	bSlotSelected = false;
+	bActionBarPanelActive = true;
+	bHasExternalPreviewState = false;
+	ExternalPreviewState = ERpgInventorySlotDragVisualState::Normal;
+
+	if (DragDropCoordinator)
+	{
+		DragDropCoordinator->OnHeldPayloadChanged.RemoveDynamic(this, &ThisClass::HandleHeldPayloadChanged);
+	}
+	DragDropCoordinator = nullptr;
+
+	BP_OnActionBarSlotViewModelSet(nullptr);
 	BP_OnActionBarSlotSelectionChanged(false);
+	RefreshDragDropVisualState();
 	BP_OnActionBarSlotReleased();
 }
 
@@ -202,14 +221,6 @@ void URpgActionBarSlotWidget::HandleSlotViewModelChanged(URpgActionBarSlotViewMo
 {
 	if (ChangedSlotViewModel == SlotViewModel)
 	{
-		if (SlotViewModel)
-		{
-			if (UMVVMView* View = UMVVMSubsystem::GetViewFromUserWidget(this))
-			{
-				View->SetViewModelByClass(SlotViewModel);
-			}
-		}
-
 		BP_OnActionBarSlotViewModelSet(SlotViewModel);
 		RefreshDragDropVisualState();
 	}
@@ -218,6 +229,70 @@ void URpgActionBarSlotWidget::HandleSlotViewModelChanged(URpgActionBarSlotViewMo
 void URpgActionBarSlotWidget::HandleHeldPayloadChanged(bool bHasHeldPayload, const FRpgInventoryDragPayload& HeldPayload)
 {
 	RefreshDragDropVisualState();
+}
+
+bool URpgActionBarSlotWidget::InjectActionBarSlotViewModelIntoMvvm()
+{
+	UMVVMView* View = UMVVMSubsystem::GetViewFromUserWidget(this);
+	const UMVVMViewClass* ViewClass = View ? View->GetViewClass() : nullptr;
+	if (!View || !ViewClass)
+	{
+		if (GetClass() != StaticClass())
+		{
+			UE_LOG(
+				LogRpgActionBarSlotWidget,
+				Error,
+				TEXT("%s has no compiled MVVM view. Author one optional manual %s source for actionbar slot data."),
+				*GetNameSafe(this),
+				*ActionBarSlotViewModelSourceName.ToString());
+		}
+		return false;
+	}
+
+	const FMVVMViewClass_Source* CompiledSource = ViewClass->GetSources().FindByPredicate(
+		[](const FMVVMViewClass_Source& Candidate)
+		{
+			return Candidate.IsViewModel() &&
+				Candidate.GetName() == ActionBarSlotViewModelSourceName;
+		});
+	if (!CompiledSource ||
+		!CompiledSource->CanBeSet() ||
+		!CompiledSource->IsOptional() ||
+		CompiledSource->GetSourceClass() != URpgActionBarSlotViewModel::StaticClass())
+	{
+		UE_LOG(
+			LogRpgActionBarSlotWidget,
+			Error,
+			TEXT("%s requires one settable optional manual MVVM source named %s with type RpgActionBarSlotViewModel."),
+			*GetNameSafe(this),
+			*ActionBarSlotViewModelSourceName.ToString());
+		return false;
+	}
+
+	if (View->GetViewModel(ActionBarSlotViewModelSourceName).GetObject() == SlotViewModel)
+	{
+		return true;
+	}
+
+	TScriptInterface<INotifyFieldValueChanged> ViewModelInterface;
+	if (SlotViewModel)
+	{
+		ViewModelInterface.SetObject(SlotViewModel);
+		ViewModelInterface.SetInterface(SlotViewModel.Get());
+	}
+
+	if (!View->SetViewModel(ActionBarSlotViewModelSourceName, ViewModelInterface))
+	{
+		UE_LOG(
+			LogRpgActionBarSlotWidget,
+			Error,
+			TEXT("%s failed to inject its actionbar slot VM into MVVM source %s."),
+			*GetNameSafe(this),
+			*ActionBarSlotViewModelSourceName.ToString());
+		return false;
+	}
+
+	return View->GetViewModel(ActionBarSlotViewModelSourceName).GetObject() == SlotViewModel;
 }
 
 FRpgInventoryDropTarget URpgActionBarSlotWidget::MakeDropTarget() const

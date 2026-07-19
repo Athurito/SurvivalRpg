@@ -561,7 +561,31 @@ void URpgPawnGameplayComponent::BindRoutedGameplayHotkeys(const URpgInputConfig*
 		return;
 	}
 
-	const FGameplayTag RoutedHotkeys[] =
+	// UI screens are one-shot system commands. CommonUI owns their active input mode and Back handling,
+	// so only Started is routed from gameplay input.
+	if (BindHandles)
+	{
+		RpgIC->BindNativeActionWithTag(
+			InputConfig,
+			RpgGameplayTags::InputTag_UI_Inventory,
+			ETriggerEvent::Started,
+			this,
+			&ThisClass::Input_GameplayHotkeyPressed,
+			*BindHandles,
+			/*bLogIfNotFound=*/ false);
+	}
+	else
+	{
+		RpgIC->BindNativeActionWithTag(
+			InputConfig,
+			RpgGameplayTags::InputTag_UI_Inventory,
+			ETriggerEvent::Started,
+			this,
+			&ThisClass::Input_GameplayHotkeyPressed,
+			/*bLogIfNotFound=*/ false);
+	}
+
+	const FGameplayTag PressReleaseHotkeys[] =
 	{
 		RpgGameplayTags::InputTag_ActionBar_Slot_1,
 		RpgGameplayTags::InputTag_ActionBar_Slot_2,
@@ -576,7 +600,7 @@ void URpgPawnGameplayComponent::BindRoutedGameplayHotkeys(const URpgInputConfig*
 		RpgGameplayTags::InputTag_Weapon_Ability_3
 	};
 
-	for (const FGameplayTag& InputTag : RoutedHotkeys)
+	for (const FGameplayTag& InputTag : PressReleaseHotkeys)
 	{
 		if (BindHandles)
 		{

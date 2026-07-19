@@ -255,7 +255,10 @@ public:
 
 	void RemoveEntry(URpgInventoryItemInstance* Instance);
 	bool RemoveEntryStack(URpgInventoryItemInstance* Instance, int32 StackCount, bool& bOutRemovedEntry);
-	bool ApplySort(ERpgInventorySortMode SortMode, FRpgInventoryContainerHandle ContainerFilter = FRpgInventoryContainerHandle());
+	bool ApplySort(
+		ERpgInventorySortMode SortMode,
+		FRpgInventoryContainerHandle ContainerFilter = FRpgInventoryContainerHandle(),
+		bool* bOutSucceeded = nullptr);
 	bool MoveEntry(FGuid EntryId, int32 TargetIndex);
 	bool CanMoveEntryToPlacement(FGuid EntryId, const FRpgInventoryGridPlacement& TargetPlacement, FRpgInventoryGridPlacement* OutNormalizedTargetPlacement = nullptr) const;
 	bool MoveEntryToPlacement(FGuid EntryId, const FRpgInventoryGridPlacement& TargetPlacement);
@@ -299,7 +302,7 @@ private:
 		FRpgInventoryGridPlacement& OutPlacement) const;
 	int32 GetLinearOrder(const FRpgInventoryGridPlacement& Placement) const;
 	void SortEntriesByPlacement();
-	bool SetOrderFromSortedEntryPointers(const TArray<FRpgInventoryEntry*>& SortedEntries);
+	bool SetOrderFromSortedEntryPointers(const TArray<FRpgInventoryEntry*>& SortedEntries, bool* bOutSucceeded = nullptr);
 	void RebaseDescendantContainerDepths(const FRpgInventoryItemId& AncestorItemId, int32 DepthDelta);
 
 private:
@@ -529,7 +532,10 @@ public:
 	UFUNCTION(BlueprintCallable, Category = "Inventory|Persistence")
 	FRpgInventoryGraphSaveData ExportInventoryGraph() const;
 
-	/** Validates the complete graph before atomically replacing runtime inventory state. */
+	/**
+	 * Validates the complete graph before atomically replacing runtime inventory state.
+	 * Existing items with matching persistent ids and definitions retain their runtime instance and entry identity.
+	 */
 	UFUNCTION(BlueprintCallable, BlueprintAuthorityOnly, Category = "Inventory|Persistence")
 	bool ImportInventoryGraph(const FRpgInventoryGraphSaveData& SaveData, FRpgInventoryMutationResult& OutResult);
 
@@ -566,6 +572,7 @@ private:
 	bool TryMakePlacementForItemInstance(URpgInventoryItemInstance* ItemInstance, FName ContainerId, int32 X, int32 Y, bool bRotated, FRpgInventoryGridPlacement& OutPlacement) const;
 	FRpgInventoryGridPlacement MakePlacementForItemDefinition(TSubclassOf<URpgInventoryItemDefinition> ItemDef, FName ContainerId, int32 X, int32 Y, bool bRotated) const;
 	FRpgInventoryGridPlacement MakePlacementForItemInstance(URpgInventoryItemInstance* ItemInstance, FName ContainerId, int32 X, int32 Y, bool bRotated) const;
+	FRpgInventoryMutationResult CacheRecentMutationResult(FRpgInventoryMutationResult Result);
 
 private:
 	/** Source used to determine how many entries this inventory may hold. */

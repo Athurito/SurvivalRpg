@@ -35,7 +35,7 @@ DECLARE_DYNAMIC_MULTICAST_DELEGATE_OneParam(FRpgWeaponAbilitySlotViewModelChange
 DECLARE_DYNAMIC_MULTICAST_DELEGATE(FRpgWeaponAbilityLoadoutViewModelSlotsChanged);
 
 /** UI projection for one 1..8 general actionbar slot. */
-UCLASS(BlueprintType)
+UCLASS(BlueprintType, meta = (MVVMAllowedContextCreationType = "Manual"))
 class SURVIVALRPG_API URpgActionBarSlotViewModel : public UMVVMViewModelBase
 {
 	GENERATED_BODY()

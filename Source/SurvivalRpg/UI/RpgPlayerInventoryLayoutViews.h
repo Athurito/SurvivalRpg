@@ -19,8 +19,7 @@ class URpgInventoryManagerComponent;
 class URpgInventoryPanelNavigationCoordinator;
 class URpgInventoryPanelViewModel;
 class URpgInventoryDragVisualWidget;
-class URpgInventoryContextMenuWidget;
-class URpgInventorySplitDialogWidget;
+class URpgInventoryInteractionScreenWidget;
 class URpgInventorySlotGroupViewModel;
 class UCanvasPanel;
 class UDragDropOperation;
@@ -338,6 +337,7 @@ public:
 
 protected:
 	virtual void NativePreConstruct() override;
+	virtual void NativeDestruct() override;
 	virtual int32 NativePaint(
 		const FPaintArgs& Args,
 		const FGeometry& AllottedGeometry,
@@ -381,6 +381,11 @@ protected:
 	bool bUseNativeFallbackPaint = true;
 
 private:
+	friend class URpgInventorySpatialGridWidget;
+#if WITH_DEV_AUTOMATION_TESTS
+	friend class FRpgSpatialItemPresentationLifecycleTest;
+#endif
+
 	UFUNCTION()
 	void HandleAddressSlotChanged(URpgInventoryAddressSlotViewModel* ChangedSlotViewModel);
 
@@ -391,6 +396,7 @@ private:
 	void HandleHeldPayloadChanged(bool bHasHeldPayload, const FRpgInventoryDragPayload& HeldPayload);
 
 	FRpgInventoryDragPayload MakeDragPayload() const;
+	void ReleaseSpatialItemState();
 	void RefreshPlacedItemVisual();
 	bool IsPlacedItemRotated() const;
 	TSoftObjectPtr<UTexture2D> GetIcon() const;
@@ -416,6 +422,7 @@ private:
 	bool bPendingLeftClickAccept = false;
 	FRpgInventoryDragAnchor PendingPointerDragAnchor;
 	bool bHasPendingPointerDragAnchor = false;
+	bool bSpatialItemStateReleased = false;
 };
 
 /**
@@ -448,6 +455,15 @@ public:
 		FRpgInventoryContainerHandle InContainerHandle);
 
 	/**
+	 * Releases the observed view model, interaction context, transient dialogs, previews, filters, and selection.
+	 *
+	 * Call this when a pooled parent screen deactivates. The authored widget tree remains intact and may bind a new
+	 * inventory later; no gameplay state is changed.
+	 */
+	UFUNCTION(BlueprintCallable, Category = "Inventory|Spatial Grid")
+	void ReleaseInventoryPresentation();
+
+	/**
 	 * Applies presentation-only dimming to the supplied replicated entry ids.
 	 * Item overlays, hit targets, view models, and server-authored grid coordinates remain present and unchanged.
 	 */
@@ -466,9 +482,12 @@ public:
 	UFUNCTION(BlueprintCallable, Category = "Inventory|Spatial Grid")
 	void SetDragDropCoordinator(URpgInventoryDragDropCoordinator* InCoordinator);
 
-	/** Overrides the styled context-menu class supplied centrally by the owning inventory screen. */
+	/**
+	 * Assigns the owning inventory screen that centrally creates and owns context menus and split dialogs.
+	 * The host is presentation-only and must never become an inventory gameplay authority.
+	 */
 	UFUNCTION(BlueprintCallable, Category = "Inventory|Spatial Grid|Actions")
-	void SetContextMenuWidgetClass(TSubclassOf<URpgInventoryContextMenuWidget> InContextMenuWidgetClass);
+	void SetInventoryPresentationHost(URpgInventoryInteractionScreenWidget* InPresentationHost);
 
 	/** Registers this grid with the screen-local panel navigator so controller actions route to the logical cursor. */
 	UFUNCTION(BlueprintCallable, Category = "Inventory|Spatial Grid")
@@ -616,21 +635,6 @@ protected:
 	virtual void NativeOnDragLeave(const FDragDropEvent& InDragDropEvent, UDragDropOperation* InOperation) override;
 	virtual FReply NativeOnFocusReceived(const FGeometry& InGeometry, const FFocusEvent& InFocusEvent) override;
 
-	/** Builds and displays the screen-specific context menu. Actions are presentation-only until explicitly executed. */
-	UFUNCTION(BlueprintImplementableEvent, Category = "Inventory|Spatial Grid|Context", meta = (DisplayName = "On Inventory Context Menu Requested"))
-	void BP_OnInventoryContextMenuRequested(
-		URpgInventoryItemInstance* Item,
-		const TArray<ERpgInventoryContextAction>& Actions,
-		FVector2D ScreenPosition);
-
-	/** Opens the screen-specific slider/text dialog for an exact split amount. */
-	UFUNCTION(BlueprintImplementableEvent, Category = "Inventory|Spatial Grid|Split", meta = (DisplayName = "On Inventory Split Dialog Requested"))
-	void BP_OnInventorySplitDialogRequested(
-		URpgInventoryItemInstance* Item,
-		int32 MinimumCount,
-		int32 MaximumCount,
-		int32 DefaultCount);
-
 	/** Handles Inspect/Open Container/Quick-Access menu decisions that require screen-specific presentation. */
 	UFUNCTION(BlueprintImplementableEvent, Category = "Inventory|Spatial Grid|Context", meta = (DisplayName = "On Deferred Inventory Context Action"))
 	void BP_OnDeferredInventoryContextAction(
@@ -669,14 +673,6 @@ protected:
 	/** Designer subclass for the snapped target ghost. Native drag visual is used when unset. */
 	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Inventory|Spatial Grid|Preview")
 	TSubclassOf<URpgInventoryDragVisualWidget> SpatialPreviewWidgetClass;
-
-	/** Optional styled modal used for exact stack splitting. The functional native dialog is used when unset. */
-	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Inventory|Spatial Grid|Actions")
-	TSubclassOf<URpgInventorySplitDialogWidget> SplitDialogWidgetClass;
-
-	/** Optional styled mouse context menu. The functional native menu is used when unset. */
-	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Inventory|Spatial Grid|Actions")
-	TSubclassOf<URpgInventoryContextMenuWidget> ContextMenuWidgetClass;
 
 	/** Width and height of one cell in Slate units. */
 	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Inventory|Spatial Grid", meta = (ClampMin = "1", UIMin = "1"))
@@ -813,11 +809,9 @@ private:
 	ERpgInventoryDragSourceType SpatialPreviewConfiguredSourceType = ERpgInventoryDragSourceType::None;
 	bool bSpatialPreviewGhostConfigured = false;
 
-	/** Weak CommonUI-owned exact-split modal, used only to replace an already open request safely. */
-	TWeakObjectPtr<URpgInventorySplitDialogWidget> ActiveSplitDialog;
-
-	/** Weak CommonUI-owned context menu, used only to replace an already open request safely. */
-	TWeakObjectPtr<URpgInventoryContextMenuWidget> ActiveContextMenu;
+	/** Screen-owned presentation host; transient and cleared whenever this pooled grid releases its binding. */
+	UPROPERTY(Transient)
+	TObjectPtr<URpgInventoryInteractionScreenWidget> InventoryPresentationHost = nullptr;
 
 	/** Replicated entry ids currently rendered with reduced opacity by a UI-only search/filter presenter. */
 	TSet<FGuid> DimmedEntryIds;
@@ -858,6 +852,9 @@ class SURVIVALRPG_API URpgInventorySlotGroupWidget : public UUserWidget
 public:
 	explicit URpgInventorySlotGroupWidget(const FObjectInitializer& ObjectInitializer = FObjectInitializer::Get());
 
+	/** Exact manual MVVM source name authored by the canonical spatial slot-group widget. */
+	static const FName SlotGroupViewModelSourceName;
+
 	/** Assigns the screen-local coordinator and forwards it to the spatial grid. */
 	UFUNCTION(BlueprintCallable, Category = "Inventory|Slot Group")
 	void SetDragDropCoordinator(URpgInventoryDragDropCoordinator* InCoordinator);
@@ -866,7 +863,10 @@ public:
 	UFUNCTION(BlueprintCallable, Category = "Inventory|Slot Group")
 	void SetPanelNavigationCoordinator(URpgInventoryPanelNavigationCoordinator* InPanelNavigationCoordinator, FName InPanelIdPrefix);
 
-	/** Assigns the group VM manually. Spatial groups are created by a panel builder, not a ListView. */
+	/**
+	 * Assigns the group VM to both the native spatial grid and the authored read-only MVVM leaf source.
+	 * Spatial groups are created by a panel builder, not a ListView.
+	 */
 	UFUNCTION(BlueprintCallable, Category = "Inventory|Slot Group")
 	void SetSlotGroupViewModel(URpgInventorySlotGroupViewModel* InGroupViewModel);
 
@@ -885,10 +885,6 @@ public:
 protected:
 	virtual void NativeDestruct() override;
 
-	/** Blueprint presentation hook called when this group receives or refreshes its VM. */
-	UFUNCTION(BlueprintImplementableEvent, Category = "Inventory|Slot Group", meta = (DisplayName = "On Slot Group ViewModel Set"))
-	void BP_OnSlotGroupViewModelSet(URpgInventorySlotGroupViewModel* NewGroupViewModel);
-
 	/** Optional inner spatial grid. Name the widget SpatialGrid for automatic binding. */
 	UPROPERTY(BlueprintReadOnly, meta = (BindWidgetOptional))
 	TObjectPtr<URpgInventorySpatialGridWidget> SpatialGrid = nullptr;
@@ -898,6 +894,7 @@ protected:
 	TSubclassOf<URpgInventorySpatialGridWidget> SpatialGridWidgetClass;
 
 private:
+	bool InjectSlotGroupViewModelIntoMvvm();
 	void EnsureSpatialGrid();
 	void RegisterPanelNavigationEntry();
 	URpgInventoryManagerComponent* ResolveGroupInventory() const;
