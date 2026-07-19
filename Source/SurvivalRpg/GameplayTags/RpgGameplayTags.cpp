@@ -145,6 +145,7 @@ namespace RpgGameplayTags
 	UE_DEFINE_GAMEPLAY_TAG_COMMENT(UI_Screen_Loot, "UI.Screen.Loot", "Loot screen opened through the project UI screen registry.");
 	UE_DEFINE_GAMEPLAY_TAG_COMMENT(UI_Screen_Crafting, "UI.Screen.Crafting", "Crafting screen opened through the project UI screen registry.");
 	UE_DEFINE_GAMEPLAY_TAG_COMMENT(UI_Screen_BaseTerminal, "UI.Screen.BaseTerminal", "Base terminal screen opened through the project UI screen registry.");
+	UE_DEFINE_GAMEPLAY_TAG_COMMENT(UI_Screen_Respawn, "UI.Screen.Respawn", "Blocking respawn screen opened while the owning player is waiting to respawn.");
 	UE_DEFINE_GAMEPLAY_TAG_COMMENT(UI_Screen_Pause, "UI.Screen.Pause", "Pause screen opened through the project UI screen registry.");
 	UE_DEFINE_GAMEPLAY_TAG_COMMENT(UI_Screen_Settings, "UI.Screen.Settings", "Settings screen opened through the project UI screen registry.");
 	UE_DEFINE_GAMEPLAY_TAG_COMMENT(UI_HUD_Slot_ActionBar, "UI.HUD.Slot.ActionBar", "UIExtension slot for the persistent general action bar HUD widget.");

@@ -108,9 +108,6 @@ protected:
 	UFUNCTION()
 	void HandleCheckpointChanged(bool bHasCheckpoint, FTransform CheckpointTransform);
 
-	UFUNCTION(BlueprintImplementableEvent, Category = "Rpg|Respawn", meta = (DisplayName = "On Respawn State Changed"))
-	void K2_OnRespawnStateChanged(bool bIsWaitingForRespawn, float RespawnAvailableServerTime);
-
 	UFUNCTION(BlueprintImplementableEvent, Category = "Rpg|Respawn", meta = (DisplayName = "On Checkpoint Changed"))
 	void K2_OnCheckpointChanged(bool bHasCheckpoint, FTransform CheckpointTransform);
 

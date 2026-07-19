@@ -180,6 +180,13 @@ void ARpgPlayerController::EndPlay(const EEndPlayReason::Type EndPlayReason)
 	}
 	UnbindFromPawnExtensionForLoadout();
 	UnbindFromGameModeRespawnEvent();
+	UnbindFromPlayerState();
+	if (IsLocalController())
+	{
+		URpgUIScreenBlueprintLibrary::CloseUIScreen(
+			this,
+			RpgGameplayTags::UI_Screen_Respawn);
+	}
 	Super::EndPlay(EndPlayReason);
 }
 
@@ -332,12 +339,25 @@ void ARpgPlayerController::ServerSetDeathDropMode_Implementation(ERpgPlayerDeath
 
 void ARpgPlayerController::HandleRespawnStateChanged(bool bIsWaitingForRespawn, float RespawnAvailableServerTime)
 {
-	K2_OnRespawnStateChanged(bIsWaitingForRespawn, RespawnAvailableServerTime);
+	(void)RespawnAvailableServerTime;
 
-	if (!bIsWaitingForRespawn && IsLocalController() && GetPawn())
+	if (!IsLocalController())
 	{
-		RestoreGameplayInputFocus();
+		return;
 	}
+
+	if (bIsWaitingForRespawn)
+	{
+		URpgUIScreenBlueprintLibrary::OpenUIScreen(
+			this,
+			RpgGameplayTags::UI_Screen_Respawn,
+			nullptr);
+		return;
+	}
+
+	URpgUIScreenBlueprintLibrary::CloseUIScreen(
+		this,
+		RpgGameplayTags::UI_Screen_Respawn);
 }
 
 void ARpgPlayerController::HandleCheckpointChanged(bool bHasCheckpoint, FTransform CheckpointTransform)

@@ -224,14 +224,17 @@ Es gibt bewusst keine spekulative allgemeine Dual-Inventory-Basis.
 - [ ] Direkte Viewport-Widgets in sichtbare CommonUI-/UIExtension-Hosts
       überführen, sofern sie keine echten Drag-Decorators sind.
 
-  Der native Inventory-/Gameplay-HUD-Teil ist abgeschlossen: Der Indicator-
-  Manager besitzt nur noch Deskriptorzustand, während
-  `CUI_RpgHudLayout` die sichtbare `RPG Indicator Layer` authoriert. Der
-  Gesamtpunkt bleibt offen, bis die drei im Asset-Scan bestätigten Blueprint-
-  Pfade `BP_BootMenuHud -> CUI_BootMenu`,
-  `BP_MainMenuHud -> CUI_MainMenu` und
-  `BP_Rpg_PlayerController -> DeathTest` ebenfalls über ihre kanonischen
-  CommonUI-Hosts laufen. Framework-eigene Root-/Loading-Screen-Pfade und echte
+  Der native Inventory-/Gameplay-HUD-Teil und der Respawn-Pfad sind
+  abgeschlossen: Der Indicator-Manager besitzt nur noch Deskriptorzustand,
+  `CUI_RpgHudLayout` authoriert die sichtbare `RPG Indicator Layer` und
+  `BP_Rpg_PlayerController -> DeathTest` wurde durch den registrierten
+  `UI.Screen.Respawn` auf `UI.Layer.Modal` ersetzt. Der Gesamtpunkt bleibt
+  offen, bis die beiden Frontend-Pfade
+  `BP_BootMenuHud -> CUI_BootMenu` und
+  `BP_MainMenuHud -> CUI_MainMenu` ebenfalls über ihre kanonischen
+  CommonUI-Hosts laufen. Vor diesem Cutover müssen ihr
+  PlayerController-/Primary-Layout- und Map-Travel-Lifecycle explizit
+  abgesichert werden. Framework-eigene Root-/Loading-Screen-Pfade und echte
   Drag-Decorators sind ausdrücklich kein Migrationsziel.
 
 Verifizierter UI-Zwischenstand vom 2026-07-19:
@@ -729,6 +732,39 @@ Verifizierter Indicator-/HUD-Composition-Schnitt vom 2026-07-19:
   `BootMenu`, `MainMenu`, `Lvl_ThirdPerson` und
   `Lvl_PortalRealm_RiftGruntTrial`, stagte 967 Packages und erzeugte Pak,
   IoStore, Package und Archiv erfolgreich.
+
+Verifizierter Respawn-/Modal-Composition-Schnitt vom 2026-07-19:
+
+- `UI.Screen.Respawn` wählt über `DA_RpgUIScreenRegistry` ausschließlich
+  `CUI_RespawnScreen` auf `UI.Layer.Modal`; Streaming suspendiert Eingabe und
+  der Screen bleibt pro LocalPlayer eine Single Instance.
+- `CUI_RespawnScreen` ist ein graphfreies, explizit `Never` tickendes
+  Designer-Asset mit sichtbarem `RootOverlay`, Respawn-Panel und
+  `RespawnButton`. Der native `URpgRespawnScreenWidget` konsumiert Back,
+  besitzt Menu-Input/Fokus und verwendet einen begrenzten Timer statt
+  Tick-Polling.
+- `ARpgPlayerState` bleibt die replizierte Respawn-Wahrheit.
+  `ARpgPlayerController` öffnet beziehungsweise schließt nur den Registry-
+  Screen; der Button sendet weiterhin lediglich den bestehenden
+  serverautoritativen `RequestRespawn`.
+- Der Blueprint-Pfad aus `CreateWidget`, `AddToViewport`,
+  `RemoveFromParent`, manuellen InputModes, Cursor-Steuerung und
+  `DeathWidget` ist aus `BP_Rpg_PlayerController` entfernt.
+  `DeathTest` hatte in einem frischen Asset-Referenzscan keine Referencer und
+  wurde anschließend gelöscht.
+- Ein frischer UE-5.8-Editor-Build ist erfolgreich.
+  `SurvivalRpg.UI` (18/18), `SurvivalRpg.Inventory` (57/57),
+  `SurvivalRpg.Crafting` (6/6) und `SurvivalRpg.Equipment` (5/5) liefen in
+  frischen Commandlet-Prozessen ohne fehlgeschlagene oder ausgelassene Tests.
+- Ein zusätzlicher Clean-`BuildCookRun` baute Editor- und Game-Target, kochte
+  `BootMenu`, `MainMenu`, `Lvl_ThirdPerson` und
+  `Lvl_PortalRealm_RiftGruntTrial`, stagte 967 Packages und erzeugte Pak,
+  IoStore, Package sowie das archivierte Development-Build erfolgreich.
+- `ReferencedSet.txt` und das archivierte `Manifest_UFSFiles_Win64.txt`
+  enthalten `DA_RpgUIScreenRegistry` und `CUI_RespawnScreen`; `DeathTest`
+  kommt in beiden mit null Treffern nicht mehr in der Liefermenge vor.
+- Ein interaktiver packaged Forced-Death-/Respawn-Smoke bleibt für diesen
+  Teilschnitt offen.
 
 - Noch offen: den kanonischen Primary-Mismatch mit echtem OwningPlayer in PIE
   beziehungsweise einem passenden Test-Harness abdecken sowie interaktive
