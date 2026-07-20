@@ -444,10 +444,10 @@ public:
 	UFUNCTION(BlueprintCallable, BlueprintAuthorityOnly, Category = "Inventory|Spatial", meta = (DeprecatedFunction, DeprecationMessage = "Use the canonical grant/placement transaction path. This low-level placement add remains only for legacy Blueprint migration."))
 	URpgInventoryItemInstance* AddItemDefinitionToPlacement(TSubclassOf<URpgInventoryItemDefinition> ItemDef, int32 StackCount, FRpgInventoryGridPlacement Placement);
 
-	UFUNCTION(BlueprintCallable, BlueprintAuthorityOnly, Category=Inventory, meta = (DeprecatedFunction, DeprecationMessage = "Use BootstrapItemInstance for detached setup data or ExecuteCrossInventoryTransfer for inventory-owned items."))
+	UFUNCTION(BlueprintCallable, BlueprintAuthorityOnly, Category=Inventory, meta = (DeprecatedFunction, DeprecationMessage = "Use BootstrapItemInstance for detached setup data or a dedicated TransferItem, PickupItem, or DropItem intent for inventory-owned items."))
 	void AddItemInstance(URpgInventoryItemInstance* ItemInstance);
 
-	UFUNCTION(BlueprintCallable, BlueprintAuthorityOnly, Category=Inventory, meta = (DeprecatedFunction, DeprecationMessage = "Use BootstrapItemInstance for detached setup data or ExecuteCrossInventoryTransfer for inventory-owned items."))
+	UFUNCTION(BlueprintCallable, BlueprintAuthorityOnly, Category=Inventory, meta = (DeprecatedFunction, DeprecationMessage = "Use BootstrapItemInstance for detached setup data or a dedicated TransferItem, PickupItem, or DropItem intent for inventory-owned items."))
 	void AddItemInstanceWithStack(URpgInventoryItemInstance* ItemInstance, int32 StackCount = 1);
 
 	/** Adds an existing item instance to an exact grid placement, preserving runtime instance data such as durability. */
@@ -546,6 +546,34 @@ public:
 	UFUNCTION(BlueprintCallable, BlueprintAuthorityOnly, Category = "Inventory|Intent")
 	bool ConsumeItemsByDefinition(TSubclassOf<URpgInventoryItemDefinition> ItemDef, int32 NumToConsume);
 
+	/** Plans a stable whole-entry move from a complete replicated source snapshot without exposing kernel operations. */
+	FRpgInventoryMutationResult PlanMoveItem(FRpgInventoryMoveIntent Intent) const;
+
+	/** Moves one whole entry from its complete expected source snapshot to an exact target placement. */
+	FRpgInventoryMutationResult MoveItem(FRpgInventoryMoveIntent Intent);
+
+	/** Transfers an exact stack amount or complete provider subtree from a complete source snapshot. */
+	FRpgInventoryMutationResult TransferItem(
+		URpgInventoryManagerComponent* TargetInventory,
+		FRpgInventoryTransferIntent Intent);
+
+	/** Collects an item into another authoritative inventory; only this intent may explicitly accept a partial stack. */
+	FRpgInventoryMutationResult PickupItem(
+		URpgInventoryManagerComponent* TargetInventory,
+		FRpgInventoryTransferIntent Intent,
+		bool bAllowPartialStack);
+
+	/** Plans subtree-safe removal before a physical dropped actor is selected or spawned. */
+	FRpgInventoryMutationResult PlanDropItem(FRpgInventoryTransferIntent Intent) const;
+
+	/**
+	 * Transfers an item into a durable drop inventory.
+	 * Callers must create or select the physical world actor before invoking this C++-only gameplay seam.
+	 */
+	FRpgInventoryMutationResult DropItem(
+		URpgInventoryManagerComponent* TargetInventory,
+		FRpgInventoryTransferIntent Intent);
+
 	/** Rewrites shared replicated order for this inventory on the server. UI should request this through the owning controller component. */
 	UFUNCTION(BlueprintCallable, BlueprintAuthorityOnly, Category = "Inventory|Sorting", meta = (DeprecatedFunction, DeprecationMessage = "Use an item-id mutation intent with operation Sort."))
 	bool ApplyInventorySort(ERpgInventorySortMode SortMode);
@@ -558,8 +586,8 @@ public:
 	UFUNCTION(BlueprintCallable, BlueprintAuthorityOnly, Category = "Inventory|Spatial", meta = (DeprecatedFunction, DeprecationMessage = "Use an item-id mutation intent so preview and authoritative commit share one plan."))
 	bool MoveInventoryEntryToPlacement(FGuid EntryId, FRpgInventoryGridPlacement TargetPlacement);
 
-	/** Returns whether a replicated entry can move, merge, or swap into an exact grid placement using server rules. */
-	UFUNCTION(BlueprintCallable, Category = "Inventory|Spatial", BlueprintPure)
+	/** Legacy preview wrapper. Dedicated clients should submit the same source snapshot to PlanMoveItem and MoveItem. */
+	UFUNCTION(BlueprintCallable, Category = "Inventory|Spatial", BlueprintPure, meta = (DeprecatedFunction, DeprecationMessage = "Use the typed move gateway so preview and commit validate the same complete source snapshot."))
 	bool CanMoveInventoryEntryToPlacement(FGuid EntryId, FRpgInventoryGridPlacement TargetPlacement) const;
 
 	/** Exports a save-ready snapshot containing item definitions, stack counts, entry ids, and shared order. */
@@ -567,22 +595,22 @@ public:
 	FRpgInventorySnapshot ExportInventorySnapshot(FName ContainerId) const;
 
 	/** Replaces this inventory with a save-ready snapshot. Server-authoritative and intended for future world-save restore paths. */
-	UFUNCTION(BlueprintCallable, BlueprintAuthorityOnly, Category = "Inventory|Snapshot")
+	UFUNCTION(BlueprintCallable, BlueprintAuthorityOnly, Category = "Inventory|Snapshot", meta = (DeprecatedFunction, DeprecationMessage = "Use RestoreInventoryGraph. Legacy snapshots omit item-owned hierarchy and fragment runtime state."))
 	void ImportInventorySnapshot(const FRpgInventorySnapshot& Snapshot);
 
 	/**
 	 * Simulates one local item-id mutation using its authoritative source rules.
-	 * Drop preview covers subtree removal only; the physical actor/target grid is validated by ExecuteCrossInventoryTransfer.
+	 * Drop preview covers subtree removal only; the physical actor/target grid is validated by DropItem.
 	 */
-	UFUNCTION(BlueprintCallable, Category = "Inventory|Transaction", BlueprintPure = false)
+	UFUNCTION(BlueprintCallable, Category = "Inventory|Transaction", BlueprintPure = false, meta = (DeprecatedFunction, DeprecationMessage = "Use PlanMoveItem or a dedicated consume, split, sort, transfer, pickup, or drop intent."))
 	FRpgInventoryMutationResult PlanInventoryMutation(FRpgInventoryMutationRequest Request) const;
 
-	/** Authoritative path for mutations contained within this inventory; physical moves use ExecuteCrossInventoryTransfer. */
-	UFUNCTION(BlueprintCallable, BlueprintAuthorityOnly, Category = "Inventory|Transaction")
+	/** Legacy authoritative kernel exposure; physical moves use the dedicated typed transfer, pickup, or drop seams. */
+	UFUNCTION(BlueprintCallable, BlueprintAuthorityOnly, Category = "Inventory|Transaction", meta = (DeprecatedFunction, DeprecationMessage = "Use MoveItem or a dedicated consume, split, sort, transfer, pickup, or drop intent."))
 	FRpgInventoryMutationResult ExecuteInventoryMutation(FRpgInventoryMutationRequest Request);
 
 	/** Atomically transfers a stack or complete item-owned subtree between two authoritative inventories. */
-	UFUNCTION(BlueprintCallable, BlueprintAuthorityOnly, Category = "Inventory|Transaction")
+	UFUNCTION(BlueprintCallable, BlueprintAuthorityOnly, Category = "Inventory|Transaction", meta = (DeprecatedFunction, DeprecationMessage = "Use TransferItem, PickupItem, or the physical dropped-actor intent."))
 	FRpgInventoryMutationResult ExecuteCrossInventoryTransfer(
 		URpgInventoryManagerComponent* TargetInventory,
 		FRpgInventoryMutationRequest Request,
@@ -593,10 +621,19 @@ public:
 	FRpgInventoryGraphSaveData ExportInventoryGraph() const;
 
 	/**
-	 * Validates the complete graph before atomically replacing runtime inventory state.
+	 * Restores a complete graph after full validation and atomically replaces runtime inventory state.
 	 * Existing items with matching persistent ids and definitions retain their runtime instance and entry identity.
 	 */
-	UFUNCTION(BlueprintCallable, BlueprintAuthorityOnly, Category = "Inventory|Persistence")
+	bool RestoreInventoryGraph(const FRpgInventoryGraphSaveData& SaveData, FRpgInventoryMutationResult& OutResult);
+
+	/**
+	 * Returns the server-local command epoch used to scope idempotent inventory requests.
+	 * Only a successful profile/disk restore advances this value; runtime transaction imports stay in the current epoch.
+	 */
+	uint64 GetMutationEpoch() const { return MutationEpoch; }
+
+	/** Compatibility name retained for existing Blueprint save code. Runtime profile restore owns the canonical C++ restore seam. */
+	UFUNCTION(BlueprintCallable, BlueprintAuthorityOnly, Category = "Inventory|Persistence", meta = (DeprecatedFunction, DeprecationMessage = "Use the authoritative profile/save restore gateway. Direct Blueprint graph import is a legacy compatibility path."))
 	bool ImportInventoryGraph(const FRpgInventoryGraphSaveData& SaveData, FRpgInventoryMutationResult& OutResult);
 
 	//~UObject interface
@@ -641,12 +678,44 @@ private:
 		TArray<FRpgInventoryMutationDelta>& OutDeltas,
 		ERpgInventoryMutationResultCode& OutCode) const;
 	bool CommitRemovalDeltas(const TArray<FRpgInventoryMutationDelta>& Deltas);
+	FRpgInventoryMutationRequest BuildMoveMutationRequest(const FRpgInventoryMoveIntent& Intent) const;
+	static FRpgInventoryMutationRequest BuildTransferMutationRequest(
+		const FRpgInventoryTransferIntent& Intent,
+		ERpgInventoryMutationOperation Operation);
+	FRpgInventoryMutationResult ExecuteTransferIntent(
+		URpgInventoryManagerComponent* TargetInventory,
+		FRpgInventoryTransferIntent Intent,
+		ERpgInventoryMutationOperation Operation,
+		bool bAllowPartialStack);
 	bool ImportInventoryGraphInternal(
 		const FRpgInventoryGraphSaveData& SaveData,
 		FRpgInventoryMutationResult& OutResult,
 		const URpgInventoryManagerComponent* AllowedSourceInventory,
-		bool bAllowOverCapacityReduction);
-	FRpgInventoryMutationResult CacheRecentMutationResult(FRpgInventoryMutationResult Result);
+		bool bAllowOverCapacityReduction,
+		bool bEstablishNewMutationEpoch);
+	struct FRecentMutationRecord
+	{
+		FRpgInventoryMutationRequest Request;
+		TWeakObjectPtr<URpgInventoryManagerComponent> TargetInventory;
+		bool bHadTargetInventory = false;
+		bool bAllowPartialStack = false;
+		uint64 SourceMutationEpoch = 0;
+		uint64 TargetMutationEpoch = 0;
+		FRpgInventoryMutationResult Result;
+	};
+	static bool AreMutationRequestsEquivalent(
+		const FRpgInventoryMutationRequest& A,
+		const FRpgInventoryMutationRequest& B);
+	bool TryReplayRecentMutation(
+		const FRpgInventoryMutationRequest& Request,
+		URpgInventoryManagerComponent* TargetInventory,
+		bool bAllowPartialStack,
+		FRpgInventoryMutationResult& OutResult);
+	FRpgInventoryMutationResult CacheRecentMutationResult(
+		const FRpgInventoryMutationRequest& Request,
+		URpgInventoryManagerComponent* TargetInventory,
+		bool bAllowPartialStack,
+		FRpgInventoryMutationResult Result);
 
 private:
 	/** Source used to determine how many entries this inventory may hold. */
@@ -684,6 +753,9 @@ private:
 	FDelegateHandle CapacityAttributeChangedHandle;
 
 	/** Short authority-side idempotency cache for retried reliable transaction requests. */
-	TMap<FGuid, FRpgInventoryMutationResult> RecentMutationResults;
+	TMap<FGuid, FRecentMutationRecord> RecentMutationResults;
 	TArray<FGuid> RecentMutationOrder;
+
+	/** Server-local generation that invalidates command replay state after a successful profile/disk restore. */
+	uint64 MutationEpoch = 0;
 };

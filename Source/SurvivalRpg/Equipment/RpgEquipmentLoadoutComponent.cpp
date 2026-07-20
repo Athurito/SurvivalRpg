@@ -1047,9 +1047,19 @@ bool URpgEquipmentLoadoutComponent::MoveInventoryItemToEquipmentSlotAddress(ERpg
 		return false;
 	}
 
-	FRpgInventoryGridPlacement CurrentPlacement;
-	if (OwnerInventory->GetItemPlacement(Item, CurrentPlacement) &&
-		CurrentPlacement.GetContainerHandle() == TargetPlacement.GetContainerHandle() &&
+	const TArray<FRpgInventoryEntryView> InventoryEntries = OwnerInventory->GetAllEntries();
+	const FRpgInventoryEntryView* SourceEntry = InventoryEntries.FindByPredicate(
+		[Item](const FRpgInventoryEntryView& Entry)
+		{
+			return Entry.Instance == Item;
+		});
+	if (!SourceEntry)
+	{
+		return false;
+	}
+
+	const FRpgInventoryGridPlacement& CurrentPlacement = SourceEntry->Placement;
+	if (CurrentPlacement.GetContainerHandle() == TargetPlacement.GetContainerHandle() &&
 		CurrentPlacement.X == TargetPlacement.X &&
 		CurrentPlacement.Y == TargetPlacement.Y)
 	{
@@ -1072,26 +1082,17 @@ bool URpgEquipmentLoadoutComponent::MoveInventoryItemToEquipmentSlotAddress(ERpg
 		}
 	}
 
-	const FGuid EntryId = FindInventoryEntryIdForItem(OwnerInventory, Item);
-	return EntryId.IsValid() && OwnerInventory->MoveInventoryEntryToPlacement(EntryId, TargetPlacement);
-}
+	FRpgInventoryMoveIntent MoveIntent;
+	MoveIntent.ItemId = SourceEntry->ItemId;
+	MoveIntent.ExpectedEntryId = SourceEntry->EntryId;
+	MoveIntent.ExpectedSourcePlacement = SourceEntry->Placement;
+	MoveIntent.ExpectedQuantity = SourceEntry->StackCount;
+	MoveIntent.TargetPlacement = TargetPlacement;
+	MoveIntent.EnsureRequestId();
 
-FGuid URpgEquipmentLoadoutComponent::FindInventoryEntryIdForItem(const URpgInventoryManagerComponent* Inventory, const URpgInventoryItemInstance* Item) const
-{
-	if (!Inventory || !Item)
-	{
-		return FGuid();
-	}
-
-	for (const FRpgInventoryEntryView& Entry : Inventory->GetAllEntries())
-	{
-		if (Entry.Instance == Item)
-		{
-			return Entry.EntryId;
-		}
-	}
-
-	return FGuid();
+	const FRpgInventoryMutationResult MoveResult = OwnerInventory->MoveItem(MoveIntent);
+	return MoveResult.IsSuccess() &&
+		MoveResult.AppliedQuantity == SourceEntry->StackCount;
 }
 
 void URpgEquipmentLoadoutComponent::RememberCurrentOffhandForActiveMainhand()

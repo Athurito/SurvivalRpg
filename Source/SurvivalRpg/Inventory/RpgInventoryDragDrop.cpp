@@ -184,6 +184,29 @@ namespace
 		return SpatialFootprint.IsValid() ? SpatialFootprint : Footprint;
 	}
 
+	bool CanPlanExactMove(
+		const URpgInventoryManagerComponent* Inventory,
+		const FRpgInventoryItemId& ItemId,
+		const FGuid& EntryId,
+		const FRpgInventoryGridPlacement& SourcePlacement,
+		int32 ExpectedQuantity,
+		const FRpgInventoryGridPlacement& TargetPlacement)
+	{
+		if (!Inventory)
+		{
+			return false;
+		}
+
+		FRpgInventoryMoveIntent Intent;
+		Intent.EnsureRequestId();
+		Intent.ItemId = ItemId;
+		Intent.ExpectedEntryId = EntryId;
+		Intent.ExpectedSourcePlacement = SourcePlacement;
+		Intent.ExpectedQuantity = ExpectedQuantity;
+		Intent.TargetPlacement = TargetPlacement;
+		return Inventory->PlanMoveItem(Intent).IsSuccess();
+	}
+
 }
 
 bool FRpgInventorySpatialPreviewDescriptor::IsEquivalentTo(const FRpgInventorySpatialPreviewDescriptor& Other) const
@@ -2045,27 +2068,56 @@ bool URpgInventoryDragDropCoordinator::CommitPayloadToTarget(const FRpgInventory
 	}
 	auto SubmitExactPlacementMutation = [this, Actions, &Payload, &Target](
 		URpgInventoryManagerComponent* Inventory,
-		const FRpgInventoryGridPlacement& SourcePlacement,
-		ERpgInventoryMutationOperation Operation)
+		const FRpgInventoryGridPlacement& SourcePlacement)
 	{
 		if (!Inventory || !Payload.ItemInstance || !SourcePlacement.IsValid() || !Target.TargetPlacement.IsValid())
 		{
 			return false;
 		}
 
-		FRpgInventoryMutationRequest Request;
-		Request.RequestId = MarkInteractionRequestPending(Payload, Target);
-		Request.Operation = Operation;
-		Request.ItemId = Payload.ItemInstance->GetItemId();
-		Request.Source = SourcePlacement.GetContainerHandle();
-		Request.Target = Target.TargetPlacement.GetContainerHandle();
-		Request.TargetPlacement = Target.TargetPlacement;
-		Request.Quantity = Payload.StackCount;
-		if (!Request.RequestId.IsValid())
+		FGuid ExpectedEntryId = Payload.EntryId;
+		FRpgInventoryGridPlacement ExpectedSourcePlacement =
+			SourcePlacement;
+		int32 ExpectedQuantity = Payload.StackCount;
+		if (!ExpectedEntryId.IsValid())
+		{
+			const TArray<FRpgInventoryEntryView> Entries =
+				Inventory->GetAllEntries();
+			const FRpgInventoryEntryView* Entry =
+				Entries.FindByPredicate(
+					[&Payload](const FRpgInventoryEntryView& Candidate)
+					{
+						return Candidate.Instance ==
+								Payload.ItemInstance &&
+							Candidate.ItemId ==
+								Payload.ItemInstance->GetItemId();
+					});
+			if (!Entry || !Entry->EntryId.IsValid() ||
+				!Entry->Placement.IsValid())
+			{
+				return false;
+			}
+			ExpectedEntryId = Entry->EntryId;
+			ExpectedSourcePlacement = Entry->Placement;
+			ExpectedQuantity = Entry->StackCount;
+		}
+
+		FRpgInventoryMoveIntent Intent;
+		Intent.RequestId =
+			MarkInteractionRequestPending(Payload, Target);
+		Intent.ItemId = Payload.ItemInstance->GetItemId();
+		Intent.ExpectedEntryId = ExpectedEntryId;
+		Intent.ExpectedSourcePlacement =
+			ExpectedSourcePlacement;
+		Intent.ExpectedQuantity = ExpectedQuantity;
+		Intent.TargetPlacement = Target.TargetPlacement;
+		if (!Intent.RequestId.IsValid())
 		{
 			return false;
 		}
-		Actions->RequestInventoryMutation(Inventory, Request);
+		Actions->RequestMoveInventoryItem(
+			Inventory,
+			Intent);
 		return true;
 	};
 
@@ -2084,29 +2136,51 @@ bool URpgInventoryDragDropCoordinator::CommitPayloadToTarget(const FRpgInventory
 					return false;
 				}
 
-				const bool bInPlaceRotation =
-					Target.TargetPlacement.GetContainerHandle() ==
-						Payload.SourcePlacement.GetContainerHandle() &&
-					Target.TargetPlacement.X == Payload.SourcePlacement.X &&
-					Target.TargetPlacement.Y == Payload.SourcePlacement.Y &&
-					Target.TargetPlacement.bRotated != Payload.SourcePlacement.bRotated;
 				return SubmitExactPlacementMutation(
 					Payload.SourceInventory,
-					Payload.SourcePlacement,
-					bInPlaceRotation
-						? ERpgInventoryMutationOperation::Rotate
-						: ERpgInventoryMutationOperation::Move);
+					Payload.SourcePlacement);
 			}
 
 			if (Target.TargetType == ERpgInventoryDropTargetType::InventorySlot)
 			{
-				MarkInteractionRequestPending(Payload, Target);
-				Actions->RequestTransferItemStackToPlacement(Payload.SourceInventory, Target.TargetInventory, Payload.ItemInstance, Payload.StackCount, Target.TargetPlacement);
+				FRpgInventoryTransferIntent Intent;
+				Intent.RequestId =
+					MarkInteractionRequestPending(Payload, Target);
+				Intent.ItemId = Payload.ItemInstance->GetItemId();
+				Intent.ExpectedEntryId = Payload.EntryId;
+				Intent.ExpectedSourcePlacement =
+					Payload.SourcePlacement;
+				Intent.TargetContainer =
+					Target.TargetPlacement.GetContainerHandle();
+				Intent.TargetPlacement = Target.TargetPlacement;
+				Intent.Quantity = Payload.StackCount;
+				if (!Intent.RequestId.IsValid())
+				{
+					return false;
+				}
+				Actions->RequestTransferInventoryItem(
+					Payload.SourceInventory,
+					Target.TargetInventory,
+					Intent);
 				return true;
 			}
 
-			MarkInteractionRequestPending(Payload, Target);
-			Actions->RequestTransferItemStack(Payload.SourceInventory, Target.TargetInventory, Payload.ItemInstance, Payload.StackCount);
+			FRpgInventoryQuickTransferRequest Request;
+			Request.RequestId =
+				MarkInteractionRequestPending(Payload, Target);
+			Request.ItemId = Payload.ItemInstance->GetItemId();
+			Request.ExpectedEntryId = Payload.EntryId;
+			Request.ExpectedSourcePlacement =
+				Payload.SourcePlacement;
+			Request.StackCount = Payload.StackCount;
+			if (!Request.RequestId.IsValid())
+			{
+				return false;
+			}
+			Actions->RequestQuickTransferItem(
+				Payload.SourceInventory,
+				Target.TargetInventory,
+				Request);
 			return true;
 		}
 
@@ -2121,9 +2195,19 @@ bool URpgInventoryDragDropCoordinator::CommitPayloadToTarget(const FRpgInventory
 			}
 
 			URpgInventoryManagerComponent* PlayerInventory = FindPlayerInventory();
-			FRpgInventoryGridPlacement SourcePlacement;
-			return PlayerInventory && PlayerInventory->GetItemPlacement(Payload.ItemInstance, SourcePlacement) &&
-				SubmitExactPlacementMutation(PlayerInventory, SourcePlacement, ERpgInventoryMutationOperation::Move);
+			FRpgInventoryGridPlacement SourcePlacement =
+				Payload.SourcePlacement;
+			if (!SourcePlacement.IsValid() && PlayerInventory)
+			{
+				PlayerInventory->GetItemPlacement(
+					Payload.ItemInstance,
+					SourcePlacement);
+			}
+			return PlayerInventory &&
+				SourcePlacement.IsValid() &&
+				SubmitExactPlacementMutation(
+					PlayerInventory,
+					SourcePlacement);
 		}
 	}
 
@@ -2138,19 +2222,42 @@ bool URpgInventoryDragDropCoordinator::CommitPayloadToTarget(const FRpgInventory
 				PlayerInventory &&
 				Payload.SourceInventory != PlayerInventory)
 			{
-				MarkInteractionRequestPending(Payload, Target);
-				Actions->RequestTransferItemStackToPlacement(
+				FRpgInventoryTransferIntent Intent;
+				Intent.RequestId =
+					MarkInteractionRequestPending(Payload, Target);
+				Intent.ItemId = Payload.ItemInstance->GetItemId();
+				Intent.ExpectedEntryId = Payload.EntryId;
+				Intent.ExpectedSourcePlacement =
+					Payload.SourcePlacement;
+				Intent.TargetContainer =
+					Target.TargetPlacement.GetContainerHandle();
+				Intent.TargetPlacement =
+					Target.TargetPlacement;
+				Intent.Quantity = Payload.StackCount;
+				if (!Intent.RequestId.IsValid())
+				{
+					return false;
+				}
+				Actions->RequestTransferInventoryItem(
 					Payload.SourceInventory,
 					PlayerInventory,
-					Payload.ItemInstance,
-					Payload.StackCount,
-					Target.TargetPlacement);
+					Intent);
 				return true;
 			}
 
-			FRpgInventoryGridPlacement SourcePlacement;
-			return PlayerInventory && PlayerInventory->GetItemPlacement(Payload.ItemInstance, SourcePlacement) &&
-				SubmitExactPlacementMutation(PlayerInventory, SourcePlacement, ERpgInventoryMutationOperation::Move);
+			FRpgInventoryGridPlacement SourcePlacement =
+				Payload.SourcePlacement;
+			if (!SourcePlacement.IsValid() && PlayerInventory)
+			{
+				PlayerInventory->GetItemPlacement(
+					Payload.ItemInstance,
+					SourcePlacement);
+			}
+			return PlayerInventory &&
+				SourcePlacement.IsValid() &&
+				SubmitExactPlacementMutation(
+					PlayerInventory,
+					SourcePlacement);
 		}
 	}
 
@@ -2438,8 +2545,12 @@ bool URpgInventoryDragDropCoordinator::CanCommitPayloadToTarget(const FRpgInvent
 						Payload.ItemInstance,
 						Payload.EntryId,
 						Payload.SourcePlacement)
-					: Payload.SourceInventory->CanMoveInventoryEntryToPlacement(
+					: CanPlanExactMove(
+						Payload.SourceInventory,
+						Payload.ItemInstance->GetItemId(),
 						Payload.EntryId,
+						Payload.SourcePlacement,
+						Payload.StackCount,
 						Target.TargetPlacement);
 			}
 
@@ -2477,7 +2588,13 @@ bool URpgInventoryDragDropCoordinator::CanCommitPayloadToTarget(const FRpgInvent
 					return Entry.Instance == Payload.ItemInstance;
 				});
 			return SourceEntry &&
-				PlayerInventory->CanMoveInventoryEntryToPlacement(SourceEntry->EntryId, Target.TargetPlacement);
+				CanPlanExactMove(
+					PlayerInventory,
+					SourceEntry->ItemId,
+					SourceEntry->EntryId,
+					SourceEntry->Placement,
+					SourceEntry->StackCount,
+					Target.TargetPlacement);
 		}
 
 		return false;
@@ -2570,8 +2687,13 @@ bool URpgInventoryDragDropCoordinator::CanCommitPayloadToTarget(const FRpgInvent
 
 		if (bSourceIsPlayerInventory && Payload.EntryId.IsValid())
 		{
-			return Payload.SourceInventory &&
-				Payload.SourceInventory->CanMoveInventoryEntryToPlacement(Payload.EntryId, Target.TargetPlacement);
+			return CanPlanExactMove(
+				Payload.SourceInventory,
+				Payload.ItemInstance->GetItemId(),
+				Payload.EntryId,
+				Payload.SourcePlacement,
+				Payload.StackCount,
+				Target.TargetPlacement);
 		}
 
 		if (URpgInventoryItemInstance* TargetItem = InventoryLayout->GetItemInSlotAddress(Target.SlotAddress))
@@ -2763,16 +2885,16 @@ bool URpgInventoryDragDropCoordinator::CanRotateEntryInPlace(
 		return false;
 	}
 
-	FRpgInventoryMutationRequest Request;
-	Request.Operation = ERpgInventoryMutationOperation::Rotate;
-	Request.ItemId = ItemInstance->GetItemId();
-	Request.Source = SourcePlacement.GetContainerHandle();
-	Request.Target = SourcePlacement.GetContainerHandle();
-	Request.Quantity = Inventory->GetItemStackCount(ItemInstance);
-	Request.TargetPlacement = SourcePlacement;
-	Request.TargetPlacement.bRotated = !SourcePlacement.bRotated;
-	return Request.Quantity > 0 &&
-		Inventory->PlanInventoryMutation(Request).IsSuccess();
+	FRpgInventoryMoveIntent Intent;
+	Intent.ItemId = ItemInstance->GetItemId();
+	Intent.ExpectedEntryId = EntryId;
+	Intent.ExpectedSourcePlacement = SourcePlacement;
+	Intent.ExpectedQuantity =
+		Inventory->GetItemStackCount(ItemInstance);
+	Intent.TargetPlacement = SourcePlacement;
+	Intent.TargetPlacement.bRotated = !SourcePlacement.bRotated;
+	return Inventory->GetItemStackCount(ItemInstance) > 0 &&
+		Inventory->PlanMoveItem(Intent).IsSuccess();
 }
 
 bool URpgInventoryDragDropCoordinator::DispatchRotateEntryInPlace(
@@ -2792,16 +2914,16 @@ bool URpgInventoryDragDropCoordinator::DispatchRotateEntryInPlace(
 		return false;
 	}
 
-	FRpgInventoryMutationRequest Request;
-	Request.RequestId = FGuid::NewGuid();
-	Request.Operation = ERpgInventoryMutationOperation::Rotate;
-	Request.ItemId = ItemInstance->GetItemId();
-	Request.Source = SourcePlacement.GetContainerHandle();
-	Request.Target = SourcePlacement.GetContainerHandle();
-	Request.Quantity = Inventory->GetItemStackCount(ItemInstance);
-	Request.TargetPlacement = SourcePlacement;
-	Request.TargetPlacement.bRotated = !SourcePlacement.bRotated;
-	Actions->RequestInventoryMutation(Inventory, Request);
+	FRpgInventoryMoveIntent Intent;
+	Intent.RequestId = FGuid::NewGuid();
+	Intent.ItemId = ItemInstance->GetItemId();
+	Intent.ExpectedEntryId = EntryId;
+	Intent.ExpectedSourcePlacement = SourcePlacement;
+	Intent.ExpectedQuantity =
+		Inventory->GetItemStackCount(ItemInstance);
+	Intent.TargetPlacement = SourcePlacement;
+	Intent.TargetPlacement.bRotated = !SourcePlacement.bRotated;
+	Actions->RequestMoveInventoryItem(Inventory, Intent);
 	return true;
 }
 

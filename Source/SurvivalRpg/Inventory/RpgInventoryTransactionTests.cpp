@@ -1444,6 +1444,42 @@ bool FRpgInventoryManualDropConfirmationAuthorityTest::RunTest(
 		CountDroppedUnits(),
 		3);
 
+	ARpgDroppedInventoryActor* PhysicalDropActor = nullptr;
+	for (TActorIterator<ARpgDroppedInventoryActor> It(World); It; ++It)
+	{
+		if (*It && !It->IsPendingKillPending())
+		{
+			PhysicalDropActor = *It;
+			break;
+		}
+	}
+	if (TestNotNull(
+			TEXT("The confirmed command owns one durable physical drop target"),
+			PhysicalDropActor))
+	{
+		const FRpgInventoryMutationResult PhysicalReplay =
+			PhysicalDropActor->TransferItemFromInventory(
+				Inventory,
+				ItemId,
+				ConfirmedRequest.StackCount,
+				ConfirmedRequest.RequestId);
+		TestEqual(
+			TEXT("The physical drop kernel replays the caller's exact request id"),
+			PhysicalReplay.RequestId,
+			ConfirmedRequest.RequestId);
+		TestTrue(
+			TEXT("The identical physical retry replays success"),
+			PhysicalReplay.IsSuccess());
+		TestEqual(
+			TEXT("The physical retry cannot consume the source twice"),
+			Inventory->GetItemStackCount(Item),
+			6);
+		TestEqual(
+			TEXT("The physical retry cannot add the dropped quantity twice"),
+			CountDroppedUnits(),
+			3);
+	}
+
 	const int32 ReplayFeedbackIndex = FeedbackMessages.Num();
 	UiActions->RequestDropInventoryItemById(
 		Inventory,
@@ -2577,14 +2613,22 @@ bool FRpgCraftingOutputWithdrawalOnlyTransferTest::RunTest(const FString& Parame
 	{
 		return false;
 	}
-	FRpgInventoryMutationRequest InternalMove = MakePlacementRequest(
-		ERpgInventoryMutationOperation::Move,
-		CraftedEntryBeforeMove.Instance,
-		CraftedEntryBeforeMove.Placement.GetContainerHandle(),
-		CraftedEntryBeforeMove.Placement.GetContainerHandle(),
-		3,
-		0);
-	UiActions->RequestInventoryMutation(OutputInventory, InternalMove);
+	FRpgInventoryMoveIntent InternalMove;
+	InternalMove.EnsureRequestId();
+	InternalMove.ItemId = CraftedEntryBeforeMove.ItemId;
+	InternalMove.ExpectedEntryId = CraftedEntryBeforeMove.EntryId;
+	InternalMove.ExpectedSourcePlacement =
+		CraftedEntryBeforeMove.Placement;
+	InternalMove.ExpectedQuantity =
+		CraftedEntryBeforeMove.StackCount;
+	InternalMove.TargetPlacement =
+		MakePlacement(
+			CraftedEntryBeforeMove.Placement.GetContainerHandle(),
+			3,
+			0);
+	UiActions->RequestMoveInventoryItem(
+		OutputInventory,
+		InternalMove);
 	FRpgInventoryEntryView CraftedEntryAfterMove;
 	TestTrue(
 		TEXT("The output entry remains addressable after an internal move"),
@@ -2613,18 +2657,43 @@ bool FRpgCraftingOutputWithdrawalOnlyTransferTest::RunTest(const FString& Parame
 			CraftedEntryAfterMove.Instance,
 			1,
 			PlayerWithdrawalPlacement));
-	UiActions->RequestTransferItemStackToPlacement(
+	FRpgInventoryTransferIntent WithdrawalIntent;
+	WithdrawalIntent.EnsureRequestId();
+	WithdrawalIntent.ItemId = CraftedEntryAfterMove.ItemId;
+	WithdrawalIntent.ExpectedEntryId = CraftedEntryAfterMove.EntryId;
+	WithdrawalIntent.ExpectedSourcePlacement =
+		CraftedEntryAfterMove.Placement;
+	WithdrawalIntent.TargetContainer =
+		PlayerWithdrawalPlacement.GetContainerHandle();
+	WithdrawalIntent.TargetPlacement =
+		PlayerWithdrawalPlacement;
+	WithdrawalIntent.Quantity = 1;
+	UiActions->RequestTransferInventoryItem(
 		OutputInventory,
 		PlayerInventory,
-		CraftedEntryAfterMove.Instance,
-		1,
-		PlayerWithdrawalPlacement);
+		WithdrawalIntent);
 	TestNull(
 		TEXT("The withdrawn item leaves the crafting output"),
 		OutputInventory->FindItemById(CraftedOutputId));
 	TestNotNull(
 		TEXT("The withdrawn item arrives in the player inventory with stable identity"),
 		PlayerInventory->FindItemById(CraftedOutputId));
+	const FString OutputAfterWithdrawal =
+		MakeInventorySignature(OutputInventory);
+	const FString PlayerAfterWithdrawal =
+		MakeInventorySignature(PlayerInventory);
+	UiActions->RequestTransferInventoryItem(
+		OutputInventory,
+		PlayerInventory,
+		WithdrawalIntent);
+	TestEqual(
+		TEXT("An exact UI transfer retry preserves the empty source"),
+		MakeInventorySignature(OutputInventory),
+		OutputAfterWithdrawal);
+	TestEqual(
+		TEXT("An exact UI transfer retry cannot add the withdrawn item twice"),
+		MakeInventorySignature(PlayerInventory),
+		PlayerAfterWithdrawal);
 
 	TestTrue(
 		TEXT("Crafting production remains able to add a later output after UI-policy checks"),
@@ -2640,6 +2709,16 @@ bool FRpgCraftingOutputWithdrawalOnlyTransferTest::RunTest(const FString& Parame
 		return false;
 	}
 	const FRpgInventoryItemId RegularTransferItemId = RegularTransferItem->GetItemId();
+	FRpgInventoryEntryView RegularTransferEntry;
+	if (!TestTrue(
+			TEXT("The normal storage-transfer source snapshot resolves"),
+			GetEntryView(
+				PlayerInventory,
+				RegularTransferItemId,
+				RegularTransferEntry)))
+	{
+		return false;
+	}
 	const FRpgInventoryGridPlacement RegularTargetPlacement = MakePlacement(RegularRoot, 3, 0);
 	TestTrue(
 		TEXT("The shared transfer contract still permits ordinary storage deposits"),
@@ -2649,18 +2728,42 @@ bool FRpgCraftingOutputWithdrawalOnlyTransferTest::RunTest(const FString& Parame
 			RegularTransferItem,
 			1,
 			RegularTargetPlacement));
-	UiActions->RequestTransferItemStackToPlacement(
+	FRpgInventoryQuickTransferRequest RegularQuickTransfer;
+	RegularQuickTransfer.RequestId = FGuid::NewGuid();
+	RegularQuickTransfer.ItemId = RegularTransferItemId;
+	RegularQuickTransfer.ExpectedEntryId =
+		RegularTransferEntry.EntryId;
+	RegularQuickTransfer.ExpectedSourcePlacement =
+		RegularTransferEntry.Placement;
+	RegularQuickTransfer.StackCount = 1;
+	RegularQuickTransfer.PreferredTargetContainers.Add(
+		RegularRoot);
+	UiActions->RequestQuickTransferItem(
 		PlayerInventory,
 		RegularInventory,
-		RegularTransferItem,
-		1,
-		RegularTargetPlacement);
+		RegularQuickTransfer);
 	TestNull(
 		TEXT("The ordinary transfer removes the item from the player"),
 		PlayerInventory->FindItemById(RegularTransferItemId));
 	TestNotNull(
 		TEXT("The ordinary transfer still reaches a regular container"),
 		RegularInventory->FindItemById(RegularTransferItemId));
+	const FString PlayerAfterRegularTransfer =
+		MakeInventorySignature(PlayerInventory);
+	const FString RegularAfterTransfer =
+		MakeInventorySignature(RegularInventory);
+	UiActions->RequestQuickTransferItem(
+		PlayerInventory,
+		RegularInventory,
+		RegularQuickTransfer);
+	TestEqual(
+		TEXT("A quick-transfer retry preserves the source after full removal"),
+		MakeInventorySignature(PlayerInventory),
+		PlayerAfterRegularTransfer);
+	TestEqual(
+		TEXT("A quick-transfer retry cannot derive and apply a second destination"),
+		MakeInventorySignature(RegularInventory),
+		RegularAfterTransfer);
 
 	URpgInventoryItemInstance* SwapSource = PlayerInventory->AddItemDefinitionToPlacement(
 		URpgInventoryAutomationTestWideItemDefinition::StaticClass(),
@@ -2838,13 +2941,13 @@ bool FRpgExactPlacementStackTransferPolicyTest::RunTest(const FString& Parameter
 		FRpgInventoryContainerHandle::MakeRoot(TargetInventory->GetDefaultContainerId());
 	URpgInventoryItemInstance* SourceStack = PlayerInventory->AddItemDefinitionToPlacement(
 		URpgInventoryAutomationTestStackableWeaponItemDefinition::StaticClass(),
-		3,
+		4,
 		MakePlacement(Pockets, 0, 0));
 	URpgInventoryItemInstance* NearlyFullTargetStack = TargetInventory->AddItemDefinitionToPlacement(
 		URpgInventoryAutomationTestStackableWeaponItemDefinition::StaticClass(),
 		9,
 		MakePlacement(TargetRoot, 1, 0));
-	if (!TestNotNull(TEXT("The player owns a three-item source stack"), SourceStack) ||
+	if (!TestNotNull(TEXT("The player owns a four-item source stack"), SourceStack) ||
 		!TestNotNull(TEXT("The target owns a compatible stack with one free unit"), NearlyFullTargetStack))
 	{
 		return false;
@@ -2906,19 +3009,46 @@ bool FRpgExactPlacementStackTransferPolicyTest::RunTest(const FString& Parameter
 
 	const FRpgInventoryGridPlacement EmptyTargetPlacement = MakePlacement(TargetRoot, 0, 0);
 	TestTrue(
-		TEXT("Exact-placement preview accepts one unit into an empty target cell"),
+		TEXT("Exact-placement preview accepts half the stack into an empty target cell"),
 		UiActions->CanTransferItemStackToPlacement(
 			PlayerInventory,
 			TargetInventory,
 			SourceStack,
-			1,
+			2,
 			EmptyTargetPlacement));
-	UiActions->RequestTransferItemStackToPlacement(
+	FRpgInventoryTransferIntent PartialTransferIntent;
+	PartialTransferIntent.EnsureRequestId();
+	PartialTransferIntent.ItemId = SourceEntryBeforeTransfer.ItemId;
+	PartialTransferIntent.ExpectedEntryId =
+		SourceEntryBeforeTransfer.EntryId;
+	PartialTransferIntent.ExpectedSourcePlacement =
+		SourceEntryBeforeTransfer.Placement;
+	PartialTransferIntent.TargetContainer =
+		EmptyTargetPlacement.GetContainerHandle();
+	PartialTransferIntent.TargetPlacement =
+		EmptyTargetPlacement;
+	PartialTransferIntent.Quantity = 2;
+	UiActions->RequestTransferInventoryItem(
 		PlayerInventory,
 		TargetInventory,
-		SourceStack,
-		1,
-		EmptyTargetPlacement);
+		PartialTransferIntent);
+
+	const FString PlayerAfterPartialTransfer =
+		MakeInventorySignature(PlayerInventory);
+	const FString TargetAfterPartialTransfer =
+		MakeInventorySignature(TargetInventory);
+	UiActions->RequestTransferInventoryItem(
+		PlayerInventory,
+		TargetInventory,
+		PartialTransferIntent);
+	TestEqual(
+		TEXT("An exact half-stack retry applies no second source mutation"),
+		MakeInventorySignature(PlayerInventory),
+		PlayerAfterPartialTransfer);
+	TestEqual(
+		TEXT("An exact half-stack retry applies no second target mutation"),
+		MakeInventorySignature(TargetInventory),
+		TargetAfterPartialTransfer);
 
 	URpgInventoryItemInstance* RemainingSourceStack = PlayerInventory->FindItemById(SourceItemId);
 	if (!TestNotNull(TEXT("A partial exact transfer preserves the source item identity"), RemainingSourceStack))
@@ -2969,9 +3099,9 @@ bool FRpgExactPlacementStackTransferPolicyTest::RunTest(const FString& Parameter
 		return false;
 	}
 	TestEqual(
-		TEXT("The exact target receives one unit"),
+		TEXT("The exact target receives the requested two units"),
 		TargetInventory->GetItemStackCount(TransferredUnit),
-		1);
+		2);
 
 	const int32 TargetCountBeforeWholeTransfer =
 		TargetInventory->GetTotalItemCountByDefinition(
@@ -2996,7 +3126,7 @@ bool FRpgExactPlacementStackTransferPolicyTest::RunTest(const FString& Parameter
 	TestEqual(
 		TEXT("The complete quick transfer deterministically merges into the compatible target stack"),
 		TargetInventory->GetItemStackCount(TransferredUnit),
-		3);
+		4);
 	return true;
 }
 
@@ -4179,6 +4309,12 @@ bool FRpgInventoryLowLevelBlueprintDeprecationTest::RunTest(const FString& Param
 		GET_FUNCTION_NAME_CHECKED(URpgInventoryManagerComponent, ApplyInventorySort),
 		GET_FUNCTION_NAME_CHECKED(URpgInventoryManagerComponent, MoveInventoryEntry),
 		GET_FUNCTION_NAME_CHECKED(URpgInventoryManagerComponent, MoveInventoryEntryToPlacement),
+		GET_FUNCTION_NAME_CHECKED(URpgInventoryManagerComponent, CanMoveInventoryEntryToPlacement),
+		GET_FUNCTION_NAME_CHECKED(URpgInventoryManagerComponent, ImportInventorySnapshot),
+		GET_FUNCTION_NAME_CHECKED(URpgInventoryManagerComponent, PlanInventoryMutation),
+		GET_FUNCTION_NAME_CHECKED(URpgInventoryManagerComponent, ExecuteInventoryMutation),
+		GET_FUNCTION_NAME_CHECKED(URpgInventoryManagerComponent, ExecuteCrossInventoryTransfer),
+		GET_FUNCTION_NAME_CHECKED(URpgInventoryManagerComponent, ImportInventoryGraph),
 	};
 
 	for (const FName FunctionName : DeprecatedFunctionNames)
@@ -4213,6 +4349,47 @@ bool FRpgInventoryLowLevelBlueprintDeprecationTest::RunTest(const FString& Param
 			URpgInventoryManagerComponent::StaticClass()->FindFunctionByName(FunctionName);
 		if (TestNotNull(
 				*FString::Printf(TEXT("%s is reflected as a canonical intent"), *FunctionName.ToString()),
+				Function))
+		{
+			TestFalse(
+				*FString::Printf(TEXT("%s is not deprecated"), *FunctionName.ToString()),
+				Function->HasMetaData(TEXT("DeprecatedFunction")));
+		}
+	}
+
+	static const FName DeprecatedUiFunctionNames[] = {
+		GET_FUNCTION_NAME_CHECKED(URpgInventoryUiActionComponent, RequestInventoryMutation),
+		GET_FUNCTION_NAME_CHECKED(URpgInventoryUiActionComponent, RequestTransferItemStack),
+		GET_FUNCTION_NAME_CHECKED(URpgInventoryUiActionComponent, RequestTransferItemStackToPlacement),
+		GET_FUNCTION_NAME_CHECKED(URpgInventoryUiActionComponent, RequestMoveInventoryEntryToPlacement),
+	};
+	for (const FName FunctionName : DeprecatedUiFunctionNames)
+	{
+		const UFunction* Function =
+			URpgInventoryUiActionComponent::StaticClass()->FindFunctionByName(FunctionName);
+		if (TestNotNull(
+				*FString::Printf(TEXT("%s remains reflected for UI Blueprint migration"), *FunctionName.ToString()),
+				Function))
+		{
+			TestTrue(
+				*FString::Printf(TEXT("%s is marked DeprecatedFunction"), *FunctionName.ToString()),
+				Function->HasMetaData(TEXT("DeprecatedFunction")));
+			TestFalse(
+				*FString::Printf(TEXT("%s explains its typed UI replacement"), *FunctionName.ToString()),
+				Function->GetMetaData(TEXT("DeprecationMessage")).IsEmpty());
+		}
+	}
+
+	static const FName CanonicalUiFunctionNames[] = {
+		GET_FUNCTION_NAME_CHECKED(URpgInventoryUiActionComponent, RequestMoveInventoryItem),
+		GET_FUNCTION_NAME_CHECKED(URpgInventoryUiActionComponent, RequestTransferInventoryItem),
+	};
+	for (const FName FunctionName : CanonicalUiFunctionNames)
+	{
+		const UFunction* Function =
+			URpgInventoryUiActionComponent::StaticClass()->FindFunctionByName(FunctionName);
+		if (TestNotNull(
+				*FString::Printf(TEXT("%s is reflected as the typed UI gateway"), *FunctionName.ToString()),
 				Function))
 		{
 			TestFalse(
@@ -5158,6 +5335,91 @@ bool FRpgInventoryBatchConsumeAtomicityTest::RunTest(
 }
 
 IMPLEMENT_SIMPLE_AUTOMATION_TEST(
+	FRpgInventoryDroppedActorStaticFallbackTest,
+	"SurvivalRpg.Inventory.Drop.NonCanonicalStaticFallbackWinsPartialGraph",
+	EAutomationTestFlags::EditorContext |
+		EAutomationTestFlags::EngineFilter)
+
+bool FRpgInventoryDroppedActorStaticFallbackTest::RunTest(
+	const FString& Parameters)
+{
+	using namespace RpgInventoryTransactionTests;
+	FScopedInventoryWorld TestWorld;
+	if (!InitializeTest(*this, TestWorld))
+	{
+		return false;
+	}
+
+	UWorld* World = TestWorld.GetTestWorld();
+	ARpgInventoryAutomationTestDroppedInventoryActor* DropActor =
+		World->SpawnActorDeferred<
+			ARpgInventoryAutomationTestDroppedInventoryActor>(
+			ARpgInventoryAutomationTestDroppedInventoryActor::
+				StaticClass(),
+			FTransform::Identity);
+	if (!TestNotNull(
+			TEXT("The deferred dropped-actor fallback fixture exists"),
+			DropActor))
+	{
+		return false;
+	}
+
+	FInventoryPickup StaticFallback;
+	FPickupTemplate& StaticTemplate =
+		StaticFallback.Templates.AddDefaulted_GetRef();
+	StaticTemplate.ItemDef =
+		URpgInventoryAutomationTestStackItemDefinition::StaticClass();
+	StaticTemplate.StackCount = 4;
+	DropActor->SetTestStaticPickupFallback(StaticFallback);
+
+	URpgInventoryManagerComponent* PartialRuntimeInventory =
+		DropActor->GetLootInventoryManager();
+	URpgInventoryItemInstance* PartialRuntimeItem =
+		PartialRuntimeInventory
+			? PartialRuntimeInventory->GrantItemDefinition(
+				URpgInventoryAutomationTestUnitItemDefinition::
+					StaticClass(),
+				1)
+			: nullptr;
+	if (!TestNotNull(
+			TEXT("The non-canonical manager contains a partial runtime row"),
+			PartialRuntimeItem))
+	{
+		DropActor->FinishSpawning(FTransform::Identity);
+		return false;
+	}
+
+	TestFalse(
+		TEXT("A deferred manager with partial rows is not canonical"),
+		DropActor->IsLootInventoryCanonical());
+	const FInventoryPickup EffectivePickup =
+		DropActor->GetPickupInventory();
+	TestEqual(
+		TEXT("A non-canonical partial graph cannot hide the static fallback"),
+		EffectivePickup.Templates.Num(),
+		1);
+	TestEqual(
+		TEXT("The effective fallback retains no partial runtime instances"),
+		EffectivePickup.Instances.Num(),
+		0);
+	if (EffectivePickup.Templates.Num() == 1)
+	{
+		TestTrue(
+			TEXT("The effective fallback retains its item definition"),
+			EffectivePickup.Templates[0].ItemDef ==
+				URpgInventoryAutomationTestStackItemDefinition::
+					StaticClass());
+		TestEqual(
+			TEXT("The effective fallback retains its full quantity"),
+			EffectivePickup.Templates[0].StackCount,
+			4);
+	}
+
+	DropActor->FinishSpawning(FTransform::Identity);
+	return true;
+}
+
+IMPLEMENT_SIMPLE_AUTOMATION_TEST(
 	FRpgInventoryPhysicalDropSubtreeTest,
 	"SurvivalRpg.Inventory.Drop.PhysicalSubtreePreservesStateAndCapacity",
 	EAutomationTestFlags::EditorContext |
@@ -5404,13 +5666,115 @@ bool FRpgInventoryPhysicalDropSubtreeTest::RunTest(
 		FirstConcreteStack->GetItemId();
 	const FRpgInventoryItemId SecondConcreteStackId =
 		SecondConcreteStack->GetItemId();
+	const FGuid FirstIdentityDropRequestId = FGuid::NewGuid();
 	const FRpgInventoryMutationResult FirstIdentityDrop =
 		DropActor->TransferItemFromInventory(
 			IdentitySource,
 			FirstConcreteStackId,
 			3,
-			FGuid::NewGuid(),
+			FirstIdentityDropRequestId,
 			true);
+	const FString IdentitySourceAfterFirstDrop =
+		MakeInventorySignature(IdentitySource);
+	const FString DropAfterFirstIdentityDrop =
+		MakeInventorySignature(DropInventory);
+	const FRpgInventoryMutationResult FirstIdentityDropReplay =
+		DropActor->TransferItemFromInventory(
+			IdentitySource,
+			FirstConcreteStackId,
+			3,
+			FirstIdentityDropRequestId,
+			true);
+	TestEqual(
+		TEXT("The first identity-preserving stack drop succeeds"),
+		FirstIdentityDrop.Code,
+		ERpgInventoryMutationResultCode::Success);
+	TestEqual(
+		TEXT("A full identity-preserving physical drop replays its original success"),
+		FirstIdentityDropReplay.Code,
+		FirstIdentityDrop.Code);
+	TestEqual(
+		TEXT("A full identity-preserving retry applies no second source mutation"),
+		MakeInventorySignature(IdentitySource),
+		IdentitySourceAfterFirstDrop);
+	TestEqual(
+		TEXT("A full identity-preserving retry derives no second target placement"),
+		MakeInventorySignature(DropInventory),
+		DropAfterFirstIdentityDrop);
+	const FRpgInventoryMutationResult IdentityPolicyCollision =
+		DropActor->TransferItemFromInventory(
+			IdentitySource,
+			FirstConcreteStackId,
+			3,
+			FirstIdentityDropRequestId,
+			false);
+	TestEqual(
+		TEXT("A physical drop request id cannot change its merge policy"),
+		IdentityPolicyCollision.Code,
+		ERpgInventoryMutationResultCode::InvalidRequest);
+	TestEqual(
+		TEXT("A physical merge-policy collision preserves the source"),
+		MakeInventorySignature(IdentitySource),
+		IdentitySourceAfterFirstDrop);
+	TestEqual(
+		TEXT("A physical merge-policy collision preserves the target"),
+		MakeInventorySignature(DropInventory),
+		DropAfterFirstIdentityDrop);
+
+	const FRpgInventoryGraphSaveData DropEpochSnapshot =
+		DropInventory->ExportInventoryGraph();
+	FRpgInventoryMutationResult DropRestoreResult;
+	TestTrue(
+		TEXT("A successful target restore establishes a fresh drop-command epoch"),
+		DropInventory->RestoreInventoryGraph(
+			DropEpochSnapshot,
+			DropRestoreResult));
+	TestEqual(
+		TEXT("The target restore preserves the current drop graph"),
+		MakeInventorySignature(DropInventory),
+		DropAfterFirstIdentityDrop);
+	const FRpgInventoryMutationResult RetryAfterTargetRestore =
+		DropActor->TransferItemFromInventory(
+			IdentitySource,
+			FirstConcreteStackId,
+			3,
+			FirstIdentityDropRequestId,
+			true);
+	TestEqual(
+		TEXT("A physical-drop result from the previous target epoch is re-evaluated"),
+		RetryAfterTargetRestore.Code,
+		ERpgInventoryMutationResultCode::ItemNotFound);
+	TestEqual(
+		TEXT("Re-evaluating the stale target-epoch request preserves the source"),
+		MakeInventorySignature(IdentitySource),
+		IdentitySourceAfterFirstDrop);
+	TestEqual(
+		TEXT("Re-evaluating the stale target-epoch request preserves the target"),
+		MakeInventorySignature(DropInventory),
+		DropAfterFirstIdentityDrop);
+	const FRpgInventoryMutationResult RetryInRestoredTargetEpoch =
+		DropActor->TransferItemFromInventory(
+			IdentitySource,
+			FirstConcreteStackId,
+			3,
+			FirstIdentityDropRequestId,
+			true);
+	TestEqual(
+		TEXT("A retry in the restored target epoch replays its re-evaluated result"),
+		RetryInRestoredTargetEpoch.Code,
+		RetryAfterTargetRestore.Code);
+	const FRpgInventoryMutationResult RestoredEpochPolicyCollision =
+		DropActor->TransferItemFromInventory(
+			IdentitySource,
+			FirstConcreteStackId,
+			3,
+			FirstIdentityDropRequestId,
+			false);
+	TestEqual(
+		TEXT("The restored target epoch still rejects a merge-policy collision"),
+		RestoredEpochPolicyCollision.Code,
+		ERpgInventoryMutationResultCode::InvalidRequest);
+
 	const FRpgInventoryMutationResult SecondIdentityDrop =
 		DropActor->TransferItemFromInventory(
 			IdentitySource,
@@ -5418,10 +5782,6 @@ bool FRpgInventoryPhysicalDropSubtreeTest::RunTest(
 			2,
 			FGuid::NewGuid(),
 			true);
-	TestEqual(
-		TEXT("The first identity-preserving stack drop succeeds"),
-		FirstIdentityDrop.Code,
-		ERpgInventoryMutationResultCode::Success);
 	TestEqual(
 		TEXT("The second identity-preserving stack drop succeeds"),
 		SecondIdentityDrop.Code,
@@ -5436,6 +5796,96 @@ bool FRpgInventoryPhysicalDropSubtreeTest::RunTest(
 		TEXT("Both identity-preserving source rows moved completely"),
 		IdentitySource->GetUsedEntryCount(),
 		0);
+
+	URpgInventoryManagerComponent* SourceEpochInventory =
+		TestWorld.CreateInventory(TEXT("PhysicalDropSourceEpoch"));
+	URpgInventoryItemInstance* SourceEpochItem =
+		SourceEpochInventory
+			? SourceEpochInventory->AddItemDefinitionToPlacement(
+				URpgInventoryAutomationTestUnitItemDefinition::
+					StaticClass(),
+				1,
+				MakePlacement(Root, 0, 0))
+			: nullptr;
+	if (!TestNotNull(
+			TEXT("The source-epoch drop fixture exists"),
+			SourceEpochItem))
+	{
+		return false;
+	}
+	const FRpgInventoryItemId SourceEpochItemId =
+		SourceEpochItem->GetItemId();
+	const FRpgInventoryGraphSaveData SourceEpochSnapshot =
+		SourceEpochInventory->ExportInventoryGraph();
+	const FRpgInventoryMutationResult RemoveSourceEpochItem =
+		SourceEpochInventory->ConsumeItemById(
+			SourceEpochItemId,
+			1);
+	TestTrue(
+		TEXT("The source-epoch fixture starts with its item absent"),
+		RemoveSourceEpochItem.IsSuccess());
+
+	const FGuid SourceEpochRequestId = FGuid::NewGuid();
+	const FRpgInventoryMutationResult MissingBeforeSourceRestore =
+		DropActor->TransferItemFromInventory(
+			SourceEpochInventory,
+			SourceEpochItemId,
+			1,
+			SourceEpochRequestId,
+			true);
+	TestEqual(
+		TEXT("The physical gateway caches the missing pre-restore source state"),
+		MissingBeforeSourceRestore.Code,
+		ERpgInventoryMutationResultCode::ItemNotFound);
+	FRpgInventoryMutationResult SourceRestoreResult;
+	TestTrue(
+		TEXT("A successful source restore establishes a fresh drop-command epoch"),
+		SourceEpochInventory->RestoreInventoryGraph(
+			SourceEpochSnapshot,
+			SourceRestoreResult));
+	const FRpgInventoryMutationResult RetryAfterSourceRestore =
+		DropActor->TransferItemFromInventory(
+			SourceEpochInventory,
+			SourceEpochItemId,
+			1,
+			SourceEpochRequestId,
+			true);
+	TestEqual(
+		TEXT("A physical-drop result from the previous source epoch is re-evaluated"),
+		RetryAfterSourceRestore.Code,
+		ERpgInventoryMutationResultCode::Success);
+	TestEqual(
+		TEXT("The re-evaluated source-epoch request moves the restored item once"),
+		SourceEpochInventory->GetUsedEntryCount(),
+		0);
+	const FString DropAfterSourceEpochRetry =
+		MakeInventorySignature(DropInventory);
+	const FRpgInventoryMutationResult ReplayInRestoredSourceEpoch =
+		DropActor->TransferItemFromInventory(
+			SourceEpochInventory,
+			SourceEpochItemId,
+			1,
+			SourceEpochRequestId,
+			true);
+	TestEqual(
+		TEXT("A retry in the restored source epoch replays success"),
+		ReplayInRestoredSourceEpoch.Code,
+		RetryAfterSourceRestore.Code);
+	TestEqual(
+		TEXT("The restored source-epoch replay cannot mutate the target twice"),
+		MakeInventorySignature(DropInventory),
+		DropAfterSourceEpochRetry);
+	const FRpgInventoryMutationResult SourceEpochPolicyCollision =
+		DropActor->TransferItemFromInventory(
+			SourceEpochInventory,
+			SourceEpochItemId,
+			1,
+			SourceEpochRequestId,
+			false);
+	TestEqual(
+		TEXT("The restored source epoch still rejects a merge-policy collision"),
+		SourceEpochPolicyCollision.Code,
+		ERpgInventoryMutationResultCode::InvalidRequest);
 
 	const FRpgInventoryContainerHandle DropRoot =
 		FRpgInventoryContainerHandle::MakeRoot(

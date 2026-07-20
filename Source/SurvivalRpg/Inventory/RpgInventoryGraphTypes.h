@@ -404,7 +404,10 @@ enum class ERpgInventoryMutationOperation : uint8
 	Pickup,
 	Transfer,
 	Drop,
-	Consume
+	Consume,
+
+	/** Atomic disk/profile graph reconstruction; appended to preserve existing serialized enum ordinals. */
+	Restore
 };
 
 /** Stable reason code returned by inventory planning and authoritative commits. */
@@ -505,9 +508,20 @@ struct SURVIVALRPG_API FRpgInventoryMutationRequest
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Inventory|Transaction")
 	FRpgInventoryItemId ItemId;
 
+	/** Optional replicated entry identity used by typed intents to reject stale entry snapshots. */
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Inventory|Transaction")
+	FGuid ExpectedEntryId;
+
 	/** Expected source container used for validation and stale-request rejection. */
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Inventory|Transaction")
 	FRpgInventoryContainerHandle Source;
+
+	/**
+	 * Optional complete source placement used by typed intents to reject stale drag snapshots.
+	 * Legacy callers may leave it invalid and receive the older container-only validation.
+	 */
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Inventory|Transaction")
+	FRpgInventoryGridPlacement ExpectedSourcePlacement;
 
 	/** Requested destination container. */
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Inventory|Transaction")
@@ -526,6 +540,102 @@ struct SURVIVALRPG_API FRpgInventoryMutationRequest
 	FGuid RequestId;
 
 	/** Assigns a request id when one was not already provided. */
+	void EnsureRequestId()
+	{
+		if (!RequestId.IsValid())
+		{
+			RequestId = FGuid::NewGuid();
+		}
+	}
+};
+
+/**
+ * Stable whole-entry move intent consumed by both read-only preview and authoritative commit.
+ *
+ * The server resolves the concrete item from ItemId and rejects the request when the complete
+ * source placement no longer matches the UI snapshot. Merge, swap, and in-place rotation are
+ * derived from the target instead of being caller-selected kernel operations.
+ */
+USTRUCT(BlueprintType)
+struct SURVIVALRPG_API FRpgInventoryMoveIntent
+{
+	GENERATED_BODY()
+
+	/** Client-generated correlation id shared by preview, commit, and owning-client feedback. */
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Inventory|Intent")
+	FGuid RequestId;
+
+	/** Persistent identity resolved against the authoritative source inventory. */
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Inventory|Intent")
+	FRpgInventoryItemId ItemId;
+
+	/** Stable replicated entry identity captured when the move began. */
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Inventory|Intent")
+	FGuid ExpectedEntryId;
+
+	/** Complete replicated source placement captured when the move began. */
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Inventory|Intent")
+	FRpgInventoryGridPlacement ExpectedSourcePlacement;
+
+	/**
+	 * Complete source stack count captured when the move began.
+	 * Whole-entry moves reject a changed count, and retries retain an immutable request fingerprint after merges.
+	 */
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Inventory|Intent", meta = (ClampMin = "1", UIMin = "1"))
+	int32 ExpectedQuantity = 0;
+
+	/** Exact desired placement; compatible overlap may merge and one unlike overlap may swap. */
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Inventory|Intent")
+	FRpgInventoryGridPlacement TargetPlacement;
+
+	void EnsureRequestId()
+	{
+		if (!RequestId.IsValid())
+		{
+			RequestId = FGuid::NewGuid();
+		}
+	}
+};
+
+/**
+ * Stable cross-inventory transfer intent with an exact source snapshot.
+ *
+ * TargetPlacement may be invalid to request deterministic merge/first-fit inside TargetContainer.
+ * The target inventory is supplied separately so the request contains no trusted UObject pointer.
+ */
+USTRUCT(BlueprintType)
+struct SURVIVALRPG_API FRpgInventoryTransferIntent
+{
+	GENERATED_BODY()
+
+	/** Client-generated correlation id shared by authoritative result and owning-client feedback. */
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Inventory|Intent")
+	FGuid RequestId;
+
+	/** Persistent identity resolved against the authoritative source inventory. */
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Inventory|Intent")
+	FRpgInventoryItemId ItemId;
+
+	/** Stable replicated entry identity captured before dispatch. */
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Inventory|Intent")
+	FGuid ExpectedEntryId;
+
+	/** Complete replicated source placement captured before dispatch. */
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Inventory|Intent")
+	FRpgInventoryGridPlacement ExpectedSourcePlacement;
+
+	/** Authoritative destination container used for merge or first-fit placement. */
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Inventory|Intent")
+	FRpgInventoryContainerHandle TargetContainer;
+
+	/** Optional exact destination placement; invalid requests merge and first-fit inside TargetContainer. */
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Inventory|Intent")
+	FRpgInventoryGridPlacement TargetPlacement;
+
+	/** Exact stack amount to transfer; full container-provider subtrees require the complete stack. */
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Inventory|Intent", meta = (ClampMin = "1", UIMin = "1"))
+	int32 Quantity = 1;
+
 	void EnsureRequestId()
 	{
 		if (!RequestId.IsValid())

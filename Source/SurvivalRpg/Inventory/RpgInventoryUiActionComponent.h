@@ -15,6 +15,7 @@ class APlayerController;
 class URpgAbilitySystemComponent;
 class URpgEquipmentLoadoutComponent;
 class URpgBaseBuildableDefinition;
+class URpgBaseStorageComponent;
 class URpgBaseStorageStationComponent;
 class URpgBaseStorageUpgradeDefinition;
 class URpgCraftingRecipeDefinition;
@@ -126,6 +127,14 @@ struct SURVIVALRPG_API FRpgInventoryQuickTransferRequest
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Inventory|Quick Transfer")
 	FRpgInventoryItemId ItemId;
 
+	/** Optional entry identity captured by an active drag; invalid keeps compatibility quick-transfer semantics. */
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Inventory|Quick Transfer")
+	FGuid ExpectedEntryId;
+
+	/** Optional complete drag-source placement used to reject stale in-container moves before transfer. */
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Inventory|Quick Transfer")
+	FRpgInventoryGridPlacement ExpectedSourcePlacement;
+
 	/** Requested amount. Values <= 0 mean the complete current stack; same-inventory transfer is whole-entry only. */
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Inventory|Quick Transfer")
 	int32 StackCount = 0;
@@ -136,6 +145,14 @@ struct SURVIVALRPG_API FRpgInventoryQuickTransferRequest
 	 */
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Inventory|Quick Transfer")
 	TArray<FRpgInventoryContainerHandle> PreferredTargetContainers;
+
+	void EnsureRequestId()
+	{
+		if (!RequestId.IsValid())
+		{
+			RequestId = FGuid::NewGuid();
+		}
+	}
 };
 
 /** Server-authoritative operation applied to one of the eight shared Quick Access bindings. */
@@ -312,11 +329,24 @@ public:
 	explicit URpgInventoryUiActionComponent(const FObjectInitializer& ObjectInitializer = FObjectInitializer::Get());
 
 	/**
-	 * Executes placement and stack-management mutations inside one accessible inventory graph.
-	 * Pickup, cross-inventory transfer, and physical drop use their dedicated validated request APIs.
+	 * Legacy generic gateway retained only for Split and Sort migration.
+	 * Move, rotate, merge, swap, equip, pickup, transfer, and drop fail closed here.
 	 */
-	UFUNCTION(Server, Reliable, BlueprintCallable, Category = "Inventory|Transactions")
+	UFUNCTION(Server, Reliable, BlueprintCallable, Category = "Inventory|Transactions", meta = (DeprecatedFunction, DeprecationMessage = "Use RequestMoveInventoryItem or a dedicated split/sort/equip request."))
 	void RequestInventoryMutation(URpgInventoryManagerComponent* Inventory, FRpgInventoryMutationRequest Request);
+
+	/** Commits one whole-entry move whose merge, swap, or rotation behavior is derived by the server planner. */
+	UFUNCTION(Server, Reliable, BlueprintCallable, Category = "Inventory|Transactions")
+	void RequestMoveInventoryItem(
+		URpgInventoryManagerComponent* Inventory,
+		FRpgInventoryMoveIntent Intent);
+
+	/** Commits one stable ID-based cross-inventory transfer and echoes the caller's request id in all feedback. */
+	UFUNCTION(Server, Reliable, BlueprintCallable, Category = "Inventory|Transactions")
+	void RequestTransferInventoryItem(
+		URpgInventoryManagerComponent* SourceInventory,
+		URpgInventoryManagerComponent* TargetInventory,
+		FRpgInventoryTransferIntent Intent);
 
 	/** Executes one explicit Use, EquipAndActivate, or MoveToCarry intent using stable item identity. */
 	UFUNCTION(Server, Reliable, BlueprintCallable, Category = "Inventory|UI Actions")
@@ -377,11 +407,11 @@ public:
 	void RequestClearEquipmentSlot(ERpgEquipmentSlot EquipmentSlot);
 
 	/** Transfers a whole item entry or partial stack between two accessible inventories. */
-	UFUNCTION(Server, Reliable, BlueprintCallable, Category = "Inventory|UI Actions")
+	UFUNCTION(Server, Reliable, BlueprintCallable, Category = "Inventory|UI Actions", meta = (DeprecatedFunction, DeprecationMessage = "Use RequestQuickTransferItem with a stable item id and caller-owned request id."))
 	void RequestTransferItemStack(URpgInventoryManagerComponent* SourceInventory, URpgInventoryManagerComponent* TargetInventory, URpgInventoryItemInstance* Item, int32 StackCount);
 
 	/** Transfers a stack into one exact target grid placement. Explicit drag/drop uses this instead of auto-stacking. */
-	UFUNCTION(Server, Reliable, BlueprintCallable, Category = "Inventory|UI Actions")
+	UFUNCTION(Server, Reliable, BlueprintCallable, Category = "Inventory|UI Actions", meta = (DeprecatedFunction, DeprecationMessage = "Use RequestTransferInventoryItem with a full expected source snapshot."))
 	void RequestTransferItemStackToPlacement(URpgInventoryManagerComponent* SourceInventory, URpgInventoryManagerComponent* TargetInventory, URpgInventoryItemInstance* Item, int32 StackCount, FRpgInventoryGridPlacement TargetPlacement);
 
 	/** Applies a shared server-side sort to an accessible inventory such as storage or loot. */
@@ -392,8 +422,8 @@ public:
 	UFUNCTION(Server, Reliable, BlueprintCallable, Category = "Inventory|UI Actions")
 	void RequestMoveInventoryEntry(URpgInventoryManagerComponent* Inventory, FGuid EntryId, int32 TargetIndex);
 
-	/** Moves, swaps, or stack-merges an accessible inventory entry into one exact grid placement. */
-	UFUNCTION(Server, Reliable, BlueprintCallable, Category = "Inventory|UI Actions")
+	/** Legacy entry-id placement wrapper; the server snapshots the source before forwarding to the typed move gateway. */
+	UFUNCTION(Server, Reliable, BlueprintCallable, Category = "Inventory|UI Actions", meta = (DeprecatedFunction, DeprecationMessage = "Use RequestMoveInventoryItem with the complete source snapshot captured when interaction begins."))
 	void RequestMoveInventoryEntryToPlacement(URpgInventoryManagerComponent* Inventory, FGuid EntryId, FRpgInventoryGridPlacement TargetPlacement);
 
 	/** Moves an owned player-inventory item into a logical player grid address such as WeaponSlot1[0,0] or Belt[2,1]. */
@@ -594,6 +624,13 @@ private:
 		TArray<FRpgInventoryContainerHandle>& OutTargets) const;
 	bool FindFirstEmptyInventoryPlacement(URpgInventoryManagerComponent* Inventory, TSubclassOf<URpgInventoryItemDefinition> ItemDefinition, FRpgInventoryGridPlacement& OutPlacement) const;
 	bool CanAccessBaseStorageStation(const URpgBaseStorageStationComponent* Station) const;
+	bool TryDepositMaterialStackToBase(
+		URpgInventoryManagerComponent* Inventory,
+		URpgBaseStorageComponent* BaseStorage,
+		FRpgInventoryItemId ItemId,
+		TSubclassOf<URpgInventoryItemDefinition> ItemDefinition,
+		int32 AvailableCount,
+		int32 CountToStore) const;
 	bool ClearPlayerAssignmentsForItem(URpgInventoryItemInstance* Item) const;
 	bool TryAssignItemToDefaultEquipmentDestination(URpgInventoryItemInstance* Item);
 	bool TryMoveAndActivateItemInCarry(URpgInventoryItemInstance* Item, ERpgEquipmentSlot PreferredHandSlot);
@@ -607,7 +644,8 @@ private:
 		URpgInventoryManagerComponent* SourceInventory,
 		URpgInventoryItemInstance* Item,
 		int32 StackCount,
-		const FGuid& RequestId);
+		const FGuid& RequestId,
+		URpgInventoryManagerComponent*& OutTargetInventory);
 	void ExecuteUseInventoryItem(
 		URpgInventoryManagerComponent* Inventory,
 		URpgInventoryItemInstance* Item,
@@ -616,6 +654,11 @@ private:
 	struct FRecentManualDropResult
 	{
 		TWeakObjectPtr<URpgInventoryManagerComponent> Inventory;
+		TWeakObjectPtr<URpgInventoryManagerComponent> TargetInventory;
+		bool bHadInventory = false;
+		bool bHadTargetInventory = false;
+		uint64 InventoryMutationEpoch = 0;
+		uint64 TargetMutationEpoch = 0;
 		FRpgInventoryManualDropRequest Request;
 		ERpgInventoryActionFeedbackResult Result =
 			ERpgInventoryActionFeedbackResult::ServerRejected;
@@ -631,6 +674,61 @@ private:
 	void SendAndCacheManualDropFeedback(
 		URpgInventoryManagerComponent* Inventory,
 		const FRpgInventoryManualDropRequest& Request,
+		ERpgInventoryActionFeedbackResult Result,
+		URpgInventoryItemInstance* Item,
+		int32 FeedbackStackCount,
+		URpgInventoryManagerComponent* TargetInventory = nullptr);
+	struct FRecentExactTransferResult
+	{
+		TWeakObjectPtr<URpgInventoryManagerComponent> SourceInventory;
+		TWeakObjectPtr<URpgInventoryManagerComponent> TargetInventory;
+		bool bHadSourceInventory = false;
+		bool bHadTargetInventory = false;
+		uint64 SourceMutationEpoch = 0;
+		uint64 TargetMutationEpoch = 0;
+		FRpgInventoryTransferIntent Intent;
+		ERpgInventoryActionFeedbackResult Result =
+			ERpgInventoryActionFeedbackResult::ServerRejected;
+		int32 FeedbackStackCount = 0;
+	};
+	static bool AreExactTransferIntentsEquivalent(
+		const FRpgInventoryTransferIntent& A,
+		const FRpgInventoryTransferIntent& B);
+	bool TryReplayRecentExactTransferResult(
+		URpgInventoryManagerComponent* SourceInventory,
+		URpgInventoryManagerComponent* TargetInventory,
+		const FRpgInventoryTransferIntent& Intent);
+	void SendAndCacheExactTransferFeedback(
+		URpgInventoryManagerComponent* SourceInventory,
+		URpgInventoryManagerComponent* TargetInventory,
+		const FRpgInventoryTransferIntent& Intent,
+		ERpgInventoryActionFeedbackResult Result,
+		URpgInventoryItemInstance* Item,
+		int32 FeedbackStackCount);
+	struct FRecentQuickTransferResult
+	{
+		TWeakObjectPtr<URpgInventoryManagerComponent> SourceInventory;
+		TWeakObjectPtr<URpgInventoryManagerComponent> TargetInventory;
+		bool bHadSourceInventory = false;
+		bool bHadTargetInventory = false;
+		uint64 SourceMutationEpoch = 0;
+		uint64 TargetMutationEpoch = 0;
+		FRpgInventoryQuickTransferRequest Request;
+		ERpgInventoryActionFeedbackResult Result =
+			ERpgInventoryActionFeedbackResult::ServerRejected;
+		int32 FeedbackStackCount = 0;
+	};
+	static bool AreQuickTransferRequestsEquivalent(
+		const FRpgInventoryQuickTransferRequest& A,
+		const FRpgInventoryQuickTransferRequest& B);
+	bool TryReplayRecentQuickTransferResult(
+		URpgInventoryManagerComponent* SourceInventory,
+		URpgInventoryManagerComponent* TargetInventory,
+		const FRpgInventoryQuickTransferRequest& Request);
+	void SendAndCacheQuickTransferFeedback(
+		URpgInventoryManagerComponent* SourceInventory,
+		URpgInventoryManagerComponent* TargetInventory,
+		const FRpgInventoryQuickTransferRequest& Request,
 		ERpgInventoryActionFeedbackResult Result,
 		URpgInventoryItemInstance* Item,
 		int32 FeedbackStackCount);
@@ -668,4 +766,14 @@ private:
 	TMap<FGuid, FRecentManualDropResult> RecentManualDropResults;
 	TArray<FGuid> RecentManualDropOrder;
 	static constexpr int32 MaxRecentManualDropResults = 64;
+
+	/** Server-local replay cache for exact transfers and their one-time equipment side effects. */
+	TMap<FGuid, FRecentExactTransferResult> RecentExactTransferResults;
+	TArray<FGuid> RecentExactTransferOrder;
+	static constexpr int32 MaxRecentExactTransferResults = 64;
+
+	/** Server-local replay cache for quick-transfer commands whose exact destination is derived once. */
+	TMap<FGuid, FRecentQuickTransferResult> RecentQuickTransferResults;
+	TArray<FGuid> RecentQuickTransferOrder;
+	static constexpr int32 MaxRecentQuickTransferResults = 64;
 };

@@ -31,6 +31,9 @@ public:
 	UFUNCTION(BlueprintCallable, BlueprintPure, Category = "Inventory|Drop")
 	URpgInventoryManagerComponent* GetLootInventoryManager() const { return LootInventoryComponent; }
 
+	/** Returns whether the replicated loot manager, rather than the pre-initialization pickup payload, is canonical. */
+	bool IsLootInventoryCanonical() const { return bLootInventoryInitialized; }
+
 	/**
 	 * Moves one concrete source stack into this actor's authoritative loot inventory.
 	 * A full container provider keeps its persistent identity, runtime state, placements, and complete descendant subtree.
@@ -54,8 +57,34 @@ public:
 
 private:
 	void EnsureDefaultPickupInteractionOption();
-	void PopulateLootInventoryFromPickup(const FInventoryPickup& PickupInventory);
+	bool PopulateLootInventoryFromPickup(const FInventoryPickup& PickupInventory);
 	FInventoryPickup BuildPickupInventoryFromLootInventory() const;
+	struct FRecentDropTransferResult
+	{
+		TWeakObjectPtr<URpgInventoryManagerComponent> SourceInventory;
+		bool bHadSourceInventory = false;
+		uint64 SourceMutationEpoch = 0;
+		TWeakObjectPtr<URpgInventoryManagerComponent> TargetInventory;
+		bool bHadTargetInventory = false;
+		uint64 TargetMutationEpoch = 0;
+		FRpgInventoryItemId ItemId;
+		int32 StackCount = 0;
+		bool bPreventStackMerge = false;
+		FRpgInventoryMutationResult Result;
+	};
+	bool TryReplayRecentDropTransfer(
+		URpgInventoryManagerComponent* SourceInventory,
+		FRpgInventoryItemId ItemId,
+		int32 StackCount,
+		const FGuid& RequestId,
+		bool bPreventStackMerge,
+		FRpgInventoryMutationResult& OutResult) const;
+	FRpgInventoryMutationResult CacheRecentDropTransfer(
+		URpgInventoryManagerComponent* SourceInventory,
+		FRpgInventoryItemId ItemId,
+		int32 StackCount,
+		bool bPreventStackMerge,
+		FRpgInventoryMutationResult Result);
 
 	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "Inventory|Drop", meta = (AllowPrivateAccess = "true"))
 	TObjectPtr<URpgInventoryManagerComponent> LootInventoryComponent;
@@ -67,4 +96,9 @@ private:
 	/** True after PostInitializeComponents makes the runtime manager canonical on this local role. */
 	UPROPERTY(Transient)
 	bool bLootInventoryInitialized = false;
+
+	/** Server-local replay cache for physical drop commands whose target placement is derived once. */
+	TMap<FGuid, FRecentDropTransferResult> RecentDropTransferResults;
+	TArray<FGuid> RecentDropTransferOrder;
+	static constexpr int32 MaxRecentDropTransferResults = 64;
 };

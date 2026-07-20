@@ -713,28 +713,145 @@ bool URpgCraftingStationComponent::FlushOutputToBaseStorage()
 		const TSubclassOf<URpgInventoryItemDefinition> ItemDefinition = OutputInstance->GetItemDef();
 		if (IsMaterialDefinition(ItemDefinition) && BaseStorage)
 		{
-			const int32 CountToStore = FMath::Min(OutputEntry.StackCount, BaseStorage->GetFreeResourceCapacity(ItemDefinition));
-			if (CountToStore > 0 && OutputInventoryComponent->RemoveItemInstanceStack(OutputInstance, CountToStore))
+			const int32 CountToStore = FMath::Min(
+				OutputEntry.StackCount,
+				BaseStorage->GetFreeResourceCapacity(ItemDefinition));
+			if (CountToStore <= 0)
 			{
-				BaseStorage->StoreResource(ItemDefinition, CountToStore);
-				bMovedAnyOutput = true;
+				continue;
 			}
+
+			const int32 EntryCountBefore =
+				OutputInventoryComponent->GetAllEntries().Num();
+			const FRpgInventoryGraphSaveData OutputGraphBefore =
+				OutputInventoryComponent->ExportInventoryGraph();
+			const FRpgInventorySavedItem* SavedOutputBefore =
+				OutputGraphBefore.Items.FindByPredicate(
+					[&OutputEntry](const FRpgInventorySavedItem& Candidate)
+					{
+						return Candidate.ItemId == OutputEntry.ItemId;
+					});
+			if (OutputGraphBefore.Items.Num() != EntryCountBefore ||
+				!SavedOutputBefore)
+			{
+				UE_LOG(
+					LogRpgCraftingStation,
+					Error,
+					TEXT("Crafting-output auto-deposit skipped %s because the exact pre-consume graph could not be exported."),
+					*OutputEntry.ItemId.ToString());
+				continue;
+			}
+
+			auto RestoreExactOutputGraph = [&]() -> bool
+			{
+				FRpgInventoryMutationResult RollbackResult;
+				const bool bGraphRestored =
+					OutputInventoryComponent->ImportInventoryGraph(
+						OutputGraphBefore,
+						RollbackResult) &&
+					RollbackResult.IsSuccess();
+				FRpgInventoryGridPlacement RestoredPlacement;
+				return bGraphRestored &&
+					OutputInventoryComponent->ContainsEntry(
+						OutputEntry.EntryId) &&
+					OutputInventoryComponent->FindItemById(
+						OutputEntry.ItemId) == OutputInstance &&
+					OutputInventoryComponent->GetItemStackCount(
+						OutputInstance) == OutputEntry.StackCount &&
+					OutputInventoryComponent->GetItemPlacement(
+						OutputInstance,
+						RestoredPlacement) &&
+					RestoredPlacement == OutputEntry.Placement;
+			};
+
+			// Keep one unit alive when the whole stack is deposited so a failed
+			// storage write can restore the same concrete instance and EntryId.
+			const int32 CountToConsumeBeforeStore =
+				CountToStore == OutputEntry.StackCount
+					? CountToStore - 1
+					: CountToStore;
+			if (CountToConsumeBeforeStore > 0)
+			{
+				const FRpgInventoryMutationResult ConsumeResult =
+					OutputInventoryComponent->ConsumeItemById(
+						OutputEntry.ItemId,
+						CountToConsumeBeforeStore);
+				if (!ConsumeResult.IsSuccess() ||
+					ConsumeResult.AppliedQuantity !=
+						CountToConsumeBeforeStore)
+				{
+					continue;
+				}
+			}
+
+			if (!BaseStorage->StoreResource(ItemDefinition, CountToStore))
+			{
+				if (!RestoreExactOutputGraph())
+				{
+					UE_LOG(
+						LogRpgCraftingStation,
+						Error,
+						TEXT("Crafting-output auto-deposit rollback failed for %s after base storage rejected %d x %s."),
+						*GetNameSafe(GetOwner()),
+						CountToStore,
+						*GetNameSafe(ItemDefinition));
+				}
+				continue;
+			}
+
+			const int32 RemainingConsumeCount =
+				CountToStore - CountToConsumeBeforeStore;
+			if (RemainingConsumeCount > 0)
+			{
+				const FRpgInventoryMutationResult FinalConsumeResult =
+					OutputInventoryComponent->ConsumeItemById(
+						OutputEntry.ItemId,
+						RemainingConsumeCount);
+				if (!FinalConsumeResult.IsSuccess() ||
+					FinalConsumeResult.AppliedQuantity !=
+						RemainingConsumeCount)
+				{
+					const bool bStorageRestored =
+						BaseStorage->WithdrawResource(
+							ItemDefinition,
+							CountToStore);
+					const bool bInventoryRestored =
+						RestoreExactOutputGraph();
+					if (!bStorageRestored || !bInventoryRestored)
+					{
+						UE_LOG(
+							LogRpgCraftingStation,
+							Error,
+							TEXT("Crafting-output auto-deposit finalization rollback failed for %s (%d x %s, Storage=%s, Inventory=%s)."),
+							*GetNameSafe(GetOwner()),
+							CountToStore,
+							*GetNameSafe(ItemDefinition),
+							bStorageRestored ? TEXT("restored") : TEXT("failed"),
+							bInventoryRestored ? TEXT("restored") : TEXT("failed"));
+					}
+					continue;
+				}
+			}
+
+			bMovedAnyOutput = true;
 			continue;
 		}
 
 		if (bAutoDepositInstanceOutputsToArmory && ArmoryInventory)
 		{
-			FRpgInventoryMutationRequest TransferRequest;
-			TransferRequest.Operation = ERpgInventoryMutationOperation::Transfer;
-			TransferRequest.ItemId = OutputEntry.ItemId;
-			TransferRequest.Source = OutputEntry.Placement.GetContainerHandle();
-			TransferRequest.Target =
+			FRpgInventoryTransferIntent TransferIntent;
+			TransferIntent.ItemId = OutputEntry.ItemId;
+			TransferIntent.ExpectedEntryId = OutputEntry.EntryId;
+			TransferIntent.ExpectedSourcePlacement = OutputEntry.Placement;
+			TransferIntent.TargetContainer =
 				FRpgInventoryContainerHandle::MakeRoot(ArmoryInventory->GetDefaultContainerId());
-			TransferRequest.Quantity = OutputEntry.StackCount;
-			TransferRequest.EnsureRequestId();
-			bMovedAnyOutput |= OutputInventoryComponent
-				->ExecuteCrossInventoryTransfer(ArmoryInventory, TransferRequest, false)
-				.IsSuccess();
+			TransferIntent.Quantity = OutputEntry.StackCount;
+			TransferIntent.EnsureRequestId();
+
+			const FRpgInventoryMutationResult TransferResult =
+				OutputInventoryComponent->TransferItem(ArmoryInventory, TransferIntent);
+			bMovedAnyOutput |= TransferResult.IsSuccess() &&
+				TransferResult.AppliedQuantity == OutputEntry.StackCount;
 		}
 	}
 

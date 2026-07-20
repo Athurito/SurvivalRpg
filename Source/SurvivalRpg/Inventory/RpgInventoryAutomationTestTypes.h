@@ -1,5 +1,6 @@
 #pragma once
 
+#include "RpgDroppedInventoryActor.h"
 #include "RpgInventoryItemDefinition.h"
 #include "SurvivalRpg/AbilitySystem/Abilities/RpgGameplayAbility.h"
 #include "SurvivalRpg/Core/Player/RpgPlayerController.h"
@@ -241,6 +242,24 @@ class ARpgInventoryAutomationTestPickupActor final : public ARpgWorldCollectable
 
 public:
 	void SetTestPickupInventory(const FInventoryPickup& InPickupInventory)
+	{
+		StaticInventory = InPickupInventory;
+	}
+};
+
+/**
+ * Deferred-spawn drop fixture used to model a non-canonical runtime graph while
+ * retaining the authoritative static pickup fallback.
+ */
+UCLASS(NotBlueprintable, Transient)
+class ARpgInventoryAutomationTestDroppedInventoryActor final
+	: public ARpgDroppedInventoryActor
+{
+	GENERATED_BODY()
+
+public:
+	void SetTestStaticPickupFallback(
+		const FInventoryPickup& InPickupInventory)
 	{
 		StaticInventory = InPickupInventory;
 	}

@@ -95,11 +95,11 @@ public:
 	UFUNCTION(BlueprintCallable, BlueprintPure = false, Category = "Rpg|Save")
 	FString GetPlayerProfileKey(const APlayerController* PC) const;
 
-	/** True once disk restore has been attempted for this profile, including profiles with no previous save. */
+	/** True once the authoritative host attempted disk restore for this controller connection, including when no save exists. */
 	UFUNCTION(BlueprintCallable, BlueprintPure = false, Category = "Rpg|Save")
 	bool IsPlayerProfileRestoreComplete(const APlayerController* PC) const;
 
-	/** True only when this session atomically restored a saved inventory graph for the profile. */
+	/** True only when this controller connection atomically restored a saved inventory graph. */
 	UFUNCTION(BlueprintCallable, BlueprintPure = false, Category = "Rpg|Save")
 	bool HasRestoredPlayerProfile(const APlayerController* PC) const;
 
@@ -257,8 +257,8 @@ private:
 	UPROPERTY(Transient)
 	TObjectPtr<URpgWorldSaveGame> ActiveAsyncSaveGame;
 
-	TSet<FString> RestoreCompletedProfileKeys;
-	TSet<FString> RestoredProfileKeys;
+	/** Connection-scoped restore result: presence means the attempt completed; true means a saved graph was restored. */
+	TMap<TWeakObjectPtr<APlayerController>, bool> PlayerProfileRestoreStates;
 	FString ResolvedOfflineProfileKey;
 	int64 NextSaveSequence = 1;
 	bool bWorldSaveDirty = false;

@@ -844,7 +844,7 @@ Interaktiver Smoke-Test für den aktuellen Storage-Schnitt:
 Status: **In Arbeit**
 
 - [x] Öffentliche Low-Level-Add/Remove/Move/Sort-Blueprintfläche deprecaten.
-- [ ] Schmale Intents für Grant/Bootstrap, Consume, Move, Transfer, Drop und
+- [x] Schmale Intents für Grant/Bootstrap, Consume, Move, Transfer, Drop und
       Restore anbieten.
 - [x] Remove/Consume/Drop grundsätzlich subtree-sicher machen.
 - [x] Raw-Add gegen fremden Outer, doppelte Item-ID und bereits enthaltene
@@ -929,6 +929,46 @@ Verifizierter Phase-2B-Zwischenstand vom 2026-07-20:
   Placement-Vertrag. Legacy-Snapshot-Restore, Collect-Ende-zu-Ende-Rollback,
   leere Drop-Actor-Lebensdauer und Ability-Effekt-vor-Consume bleiben gezielte
   Integrationsrisiken.
+
+Verifizierter Phase-2C-Zwischenstand vom 2026-07-20:
+
+- Grant/Bootstrap, Consume, Move, Transfer, Pickup, Drop und Restore besitzen
+  schmale Gameplay-Intents. Move und Transfer binden Item-ID, Entry-ID,
+  Quellplatzierung und erwartete Menge an einen Request; die generische
+  Blueprint-Mutationsfläche ist deprecatet und für aktive UI-Pfade auf Split
+  und Sort beschränkt.
+- Request-IDs sind an den vollständigen Payload einschließlich Ziel und
+  Partial-Stack-Policy gebunden. Begrenzte Replay-Caches schützen Manager,
+  Quick-/Exact-Transfer sowie manuelle und physische Drops vor doppelten
+  Mutationen und wiederholten Loadout-Seiteneffekten. Ein echter Disk-Restore
+  eröffnet bewusst eine neue Request-Epoche.
+- Der Profil-Restore wird pro PlayerController verfolgt. Persistierte
+  Platzierungen mit abweichendem aktuellem Footprint oder Rotationsvertrag
+  werden fail-closed abgelehnt; der interne Runtime-Recovery-Import bleibt vom
+  Disk-Restore getrennt.
+- Drop-Actor-Ersetzung, Crafting-Auto-Deposit und Base-Storage-Transfers
+  kompensieren fehlgeschlagene Folgeschritte. Collect erhält den
+  `StaticInventory`-Fallback, wenn ein Drop-Actor nicht kanonisch aufgebaut
+  werden konnte.
+- Drag/Drop, Collect, Crafting und Equipment verwenden die typisierten
+  Produktionspfade. `BP_Rpg_PlayerController` serialisiert noch Legacy-Knoten
+  für `RequestTransferItemStack` und `AddItemDefinition`; deren Wrapper bleiben
+  migrationssicher, Asset-Resave und endgültige Entfernung gehören zu Phase 7.
+- `SurvivalRpgEditor Win64 Development` wurde mit Unreal Engine 5.8 gebaut.
+- `SurvivalRpg.Inventory`: 74 von 74 Automationtests erfolgreich.
+- `SurvivalRpg.Equipment`: 5 von 5 Automationtests erfolgreich.
+- `SurvivalRpg.Crafting`: 6 von 6 Automationtests erfolgreich.
+- Die gezielten Wiederholungsläufe `SurvivalRpg.Inventory.Intent` (8 von 8),
+  `SurvivalRpg.Inventory.Drop` (3 von 3) und
+  `SurvivalRpg.Inventory.Transfer` (2 von 2) waren ebenfalls erfolgreich und
+  sind in der Inventory-Gesamtsuite enthalten.
+- Fortschritt Phase 2: 4 von 8 Punkten abgeschlossen (50,0 %).
+- Gesamtfortschritt der verbindlichen Checkliste: 52 von 94 Punkten
+  abgeschlossen (55,3 %), 42 Punkte offen.
+- Nächster Safety-Schnitt: physisches Equippen ausschließlich über
+  Inventory-Transaktionen führen und danach den gemeinsamen Placement-Vertrag
+  für Commit und Preview etablieren. In-place-Transfer-Deltas und ein
+  callback-atomarer gemeinsamer Commit bleiben Phase 3.
 
 ## Phase 3 – Runtime-Transfer vom Save/Load trennen
 

@@ -111,9 +111,10 @@ void ARpgGameModeBase::Logout(AController* Exiting)
 	{
 		CapturePlayerSaveData(PC);
 		FlushWorldSave();
+		PlayerProfileRestoreStates.Remove(TWeakObjectPtr<APlayerController>(PC));
 	}
 
-	// Save data stays in the map so a player can reconnect and keep host-owned progress.
+	// Profile data stays persistent, while a reconnect receives a fresh controller-scoped restore attempt.
 	Super::Logout(Exiting);
 }
 
@@ -470,12 +471,25 @@ FString ARpgGameModeBase::GetPlayerProfileKey(const APlayerController* PC) const
 
 bool ARpgGameModeBase::IsPlayerProfileRestoreComplete(const APlayerController* PC) const
 {
-	return RestoreCompletedProfileKeys.Contains(GetPlayerProfileKey(PC));
+	if (!PC)
+	{
+		return false;
+	}
+
+	const TWeakObjectPtr<APlayerController> ControllerKey(const_cast<APlayerController*>(PC));
+	return PlayerProfileRestoreStates.Contains(ControllerKey);
 }
 
 bool ARpgGameModeBase::HasRestoredPlayerProfile(const APlayerController* PC) const
 {
-	return RestoredProfileKeys.Contains(GetPlayerProfileKey(PC));
+	if (!PC)
+	{
+		return false;
+	}
+
+	const TWeakObjectPtr<APlayerController> ControllerKey(const_cast<APlayerController*>(PC));
+	const bool* bRestored = PlayerProfileRestoreStates.Find(ControllerKey);
+	return bRestored && *bRestored;
 }
 
 void ARpgGameModeBase::MarkPlayerSaveDirty(APlayerController* PC)
@@ -519,12 +533,13 @@ bool ARpgGameModeBase::RestorePlayerProfile(APlayerController* PC)
 	}
 
 	const FString ProfileKey = GetPlayerProfileKey(PC);
-	if (RestoreCompletedProfileKeys.Contains(ProfileKey))
+	const TWeakObjectPtr<APlayerController> ControllerKey(PC);
+	if (const bool* ExistingRestoreResult = PlayerProfileRestoreStates.Find(ControllerKey))
 	{
-		return RestoredProfileKeys.Contains(ProfileKey);
+		return *ExistingRestoreResult;
 	}
 
-	RestoreCompletedProfileKeys.Add(ProfileKey);
+	PlayerProfileRestoreStates.Add(ControllerKey, false);
 	const FRpgPlayerSaveData* CurrentSaveData = PlayerSaveDataMap.Find(ProfileKey);
 	if (!CurrentSaveData || !CurrentSaveData->bHasInventoryGraph)
 	{
@@ -554,7 +569,7 @@ bool ARpgGameModeBase::RestorePlayerProfile(APlayerController* PC)
 		}
 
 		PlayerSaveDataMap.Add(ProfileKey, *Candidate);
-		RestoredProfileKeys.Add(ProfileKey);
+		PlayerProfileRestoreStates.FindChecked(ControllerKey) = true;
 		if (CandidateIndex > 0)
 		{
 			UE_LOG(LogRpg, Warning, TEXT("RpgGameMode: Restored profile [%s] from a fallback disk snapshot."), *ProfileKey);
@@ -581,9 +596,9 @@ bool ARpgGameModeBase::TryRestorePlayerSaveData(APlayerController* PC, const FRp
 	}
 
 	FRpgInventoryMutationResult ImportResult;
-	if (!Inventory->ImportInventoryGraph(SaveData.InventoryGraph, ImportResult))
+	if (!Inventory->RestoreInventoryGraph(SaveData.InventoryGraph, ImportResult))
 	{
-		UE_LOG(LogRpg, Error, TEXT("RpgGameMode: Player inventory import rejected with result code %d."),
+		UE_LOG(LogRpg, Error, TEXT("RpgGameMode: Player inventory restore rejected with result code %d."),
 			static_cast<int32>(ImportResult.Code));
 		return false;
 	}
@@ -728,7 +743,7 @@ bool ARpgGameModeBase::RestoreWorldContainer(
 	{
 		FRpgInventoryMutationResult ImportResult;
 		bIsRestoringSaveState = true;
-		const bool bRestored = Inventory->ImportInventoryGraph(Candidates[CandidateIndex]->InventoryGraph, ImportResult);
+		const bool bRestored = Inventory->RestoreInventoryGraph(Candidates[CandidateIndex]->InventoryGraph, ImportResult);
 		bIsRestoringSaveState = false;
 		if (bRestored)
 		{

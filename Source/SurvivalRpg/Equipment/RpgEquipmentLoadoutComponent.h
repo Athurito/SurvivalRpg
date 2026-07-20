@@ -246,7 +246,6 @@ private:
 	bool IsTwoHandItem(const URpgInventoryItemInstance* Item) const;
 	bool IsItemInCarryActivationRole(const URpgInventoryItemInstance* Item, FGameplayTag ActivationRole) const;
 	bool MoveInventoryItemToEquipmentSlotAddress(ERpgEquipmentSlot EquipmentSlot, URpgInventoryItemInstance* Item) const;
-	FGuid FindInventoryEntryIdForItem(const URpgInventoryManagerComponent* Inventory, const URpgInventoryItemInstance* Item) const;
 	void RememberCurrentOffhandForActiveMainhand();
 	void SetRememberedOffhandForMainHand(URpgInventoryItemInstance* MainHandItem, URpgInventoryItemInstance* OffHandItem);
 	void ClearRememberedOffhandForMainHand(URpgInventoryItemInstance* MainHandItem);

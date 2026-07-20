@@ -141,34 +141,39 @@ namespace
 			for (const FRpgInventoryContainerHandle& TargetContainer : TargetContainers)
 			{
 				URpgInventoryItemInstance* CurrentItem = LootInventory->FindItemById(RootItemId);
-				if (!CurrentItem)
+				const TArray<FRpgInventoryEntryView> CurrentEntries =
+					LootInventory->GetAllEntries();
+				const FRpgInventoryEntryView* SourceEntry =
+					CurrentEntries.FindByPredicate(
+						[RootItemId](const FRpgInventoryEntryView& Entry)
+						{
+							return Entry.ItemId == RootItemId;
+						});
+				if (!CurrentItem || !SourceEntry ||
+					!SourceEntry->EntryId.IsValid() ||
+					!SourceEntry->Placement.IsValid() ||
+					SourceEntry->StackCount <= 0)
 				{
 					break;
 				}
 
-				FRpgInventoryGridPlacement SourcePlacement;
-				const int32 CurrentStackCount = LootInventory->GetItemStackCount(CurrentItem);
-				if (CurrentStackCount <= 0 || !LootInventory->GetItemPlacement(CurrentItem, SourcePlacement))
-				{
-					break;
-				}
-
+				const int32 CurrentStackCount = SourceEntry->StackCount;
 				const bool bAllowPartialStackPickup =
 					!CurrentItem->FindFragmentByClass<URpgInventoryFragment_ItemContainer>() &&
 					URpgInventoryManagerComponent::
 						GetEffectiveMaxStackSizeForDefinition(
 							CurrentItem->GetItemDef()) > 1;
 
-				FRpgInventoryMutationRequest Request;
-				Request.Operation = ERpgInventoryMutationOperation::Pickup;
-				Request.ItemId = RootItemId;
-				Request.Source = SourcePlacement.GetContainerHandle();
-				Request.Target = TargetContainer;
-				Request.Quantity = CurrentStackCount;
-				Request.EnsureRequestId();
-				const FRpgInventoryMutationResult TransferResult = LootInventory->ExecuteCrossInventoryTransfer(
+				FRpgInventoryTransferIntent Intent;
+				Intent.ItemId = RootItemId;
+				Intent.ExpectedEntryId = SourceEntry->EntryId;
+				Intent.ExpectedSourcePlacement = SourceEntry->Placement;
+				Intent.TargetContainer = TargetContainer;
+				Intent.Quantity = CurrentStackCount;
+				Intent.EnsureRequestId();
+				const FRpgInventoryMutationResult TransferResult = LootInventory->PickupItem(
 					PlayerInventory,
-					Request,
+					Intent,
 					bAllowPartialStackPickup);
 				if (!TransferResult.IsSuccess())
 				{
@@ -232,7 +237,10 @@ void URpgGameplayAbility_Collect::ActivateAbility(
 		return;
 	}
 
-	if (ARpgDroppedInventoryActor* DroppedInventoryActor = Cast<ARpgDroppedInventoryActor>(TargetActor))
+	if (ARpgDroppedInventoryActor* DroppedInventoryActor =
+			Cast<ARpgDroppedInventoryActor>(TargetActor);
+		DroppedInventoryActor &&
+		DroppedInventoryActor->IsLootInventoryCanonical())
 	{
 		URpgInventoryManagerComponent* LootInventory = DroppedInventoryActor->GetLootInventoryManager();
 		ARpgPlayerController* PlayerController = FindPlayerControllerForActor(InteractingActor);
@@ -287,7 +295,10 @@ void URpgGameplayAbility_Collect::ActivateAbility(
 	const FInventoryPickup PickupInventory = Pickup->GetPickupInventory();
 	if (!CanAddPickupToInventory(InventoryComponent, PickupInventory))
 	{
-		if (ARpgDroppedInventoryActor* DroppedInventoryActor = Cast<ARpgDroppedInventoryActor>(TargetActor))
+		if (ARpgDroppedInventoryActor* DroppedInventoryActor =
+				Cast<ARpgDroppedInventoryActor>(TargetActor);
+			DroppedInventoryActor &&
+			DroppedInventoryActor->IsLootInventoryCanonical())
 		{
 			if (URpgInventoryManagerComponent* LootInventory = DroppedInventoryActor->GetLootInventoryManager())
 			{
