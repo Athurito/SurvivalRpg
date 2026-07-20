@@ -44,7 +44,7 @@ namespace
 
 		for (const FPickupInstance& Instance : PickupInventory.Instances)
 		{
-			if (!Instance.Item)
+			if (!Instance.Item || !InventoryComponent->CanBootstrapItemInstance(Instance.Item))
 			{
 				return false;
 			}
@@ -434,7 +434,7 @@ bool URpgGameplayAbility_Collect::AddPickupToInventory(URpgInventoryManagerCompo
 		if (Template.ItemDef != nullptr && Template.StackCount > 0)
 		{
 			const int32 PreviousCount = InventoryComponent->GetTotalItemCountByDefinition(Template.ItemDef);
-			URpgInventoryItemInstance* AddedItem = InventoryComponent->AddItemDefinition(Template.ItemDef, Template.StackCount);
+			URpgInventoryItemInstance* AddedItem = InventoryComponent->GrantItemDefinition(Template.ItemDef, Template.StackCount);
 			if (!AddedItem || InventoryComponent->GetTotalItemCountByDefinition(Template.ItemDef) != PreviousCount + Template.StackCount)
 			{
 				return Rollback();
@@ -447,12 +447,13 @@ bool URpgGameplayAbility_Collect::AddPickupToInventory(URpgInventoryManagerCompo
 	{
 		if (Instance.Item != nullptr)
 		{
-			InventoryComponent->AddItemInstance(Instance.Item);
-			if (!InventoryComponent->ContainsItemInstance(Instance.Item))
+			URpgInventoryItemInstance* AddedItem =
+				InventoryComponent->BootstrapItemInstance(Instance.Item);
+			if (!AddedItem || !InventoryComponent->ContainsItemInstance(AddedItem))
 			{
 				return Rollback();
 			}
-			OutAddedItems.AddUnique(Instance.Item);
+			OutAddedItems.AddUnique(AddedItem);
 		}
 	}
 

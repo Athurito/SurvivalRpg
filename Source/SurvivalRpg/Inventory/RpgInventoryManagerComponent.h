@@ -249,8 +249,8 @@ public:
 
 	URpgInventoryItemInstance* AddEntry(TSubclassOf<URpgInventoryItemDefinition> ItemClass, int32 StackCount, TArray<URpgInventoryItemInstance*>& OutNewInstances);
 	URpgInventoryItemInstance* AddEntryAtPlacement(TSubclassOf<URpgInventoryItemDefinition> ItemClass, int32 StackCount, const FRpgInventoryGridPlacement& Placement, TArray<URpgInventoryItemInstance*>& OutNewInstances);
-	void AddEntry(URpgInventoryItemInstance* Instance, int32 StackCount = 1);
-	void AddEntryAtPlacement(URpgInventoryItemInstance* Instance, int32 StackCount, const FRpgInventoryGridPlacement& Placement);
+	bool AddEntry(URpgInventoryItemInstance* Instance, int32 StackCount = 1);
+	bool AddEntryAtPlacement(URpgInventoryItemInstance* Instance, int32 StackCount, const FRpgInventoryGridPlacement& Placement);
 	bool AddStackToEntry(URpgInventoryItemInstance* Instance, int32 StackCount);
 
 	void RemoveEntry(URpgInventoryItemInstance* Instance);
@@ -304,6 +304,8 @@ private:
 	void SortEntriesByPlacement();
 	bool SetOrderFromSortedEntryPointers(const TArray<FRpgInventoryEntry*>& SortedEntries, bool* bOutSucceeded = nullptr);
 	void RebaseDescendantContainerDepths(const FRpgInventoryItemId& AncestorItemId, int32 DepthDelta);
+	/** Rejects raw insertion unless the instance belongs to this inventory actor and has unique runtime identity. */
+	bool CanInsertOwnedInstance(const URpgInventoryItemInstance* Instance) const;
 
 private:
 	friend URpgInventoryManagerComponent;
@@ -385,7 +387,7 @@ public:
 	UFUNCTION(BlueprintCallable, BlueprintAuthorityOnly, Category=Inventory)
 	bool CanAddItemDefinition(TSubclassOf<URpgInventoryItemDefinition> ItemDef, int32 StackCount = 1) const;
 
-	UFUNCTION(BlueprintCallable, BlueprintAuthorityOnly, Category=Inventory)
+	UFUNCTION(BlueprintCallable, BlueprintAuthorityOnly, Category=Inventory, meta = (DeprecatedFunction, DeprecationMessage = "Use CanBootstrapItemInstance for detached setup data. Cross-inventory placement uses the transfer planner."))
 	bool CanAddItemInstance(URpgInventoryItemInstance* ItemInstance, int32 StackCount = 1) const;
 
 	/** Returns true when the stack can be placed or merged into one exact grid placement. */
@@ -393,40 +395,65 @@ public:
 	bool CanAddItemDefinitionToPlacement(TSubclassOf<URpgInventoryItemDefinition> ItemDef, int32 StackCount, FRpgInventoryGridPlacement Placement) const;
 
 	/** Returns true when this concrete item instance can be moved into one exact grid placement. */
-	UFUNCTION(BlueprintCallable, BlueprintAuthorityOnly, Category = "Inventory|Spatial")
+	UFUNCTION(BlueprintCallable, BlueprintAuthorityOnly, Category = "Inventory|Spatial", meta = (DeprecatedFunction, DeprecationMessage = "Use CanBootstrapItemInstance or the transfer/mutation planner. This query now describes raw actor-owned insertion only."))
 	bool CanAddItemInstanceToPlacement(URpgInventoryItemInstance* ItemInstance, int32 StackCount, FRpgInventoryGridPlacement Placement) const;
 
-	/** Returns true when an instance would fit into a placement after removing exactly one known swap counterpart. */
-	bool CanAddItemInstanceToPlacementIgnoringItem(URpgInventoryItemInstance* ItemInstance, int32 StackCount, FRpgInventoryGridPlacement Placement, URpgInventoryItemInstance* IgnoredItemInstance) const;
+	/** Spatial-only preflight for an instance that remains owned by a source inventory until an atomic transfer commits. */
+	bool CanReceiveTransferredItemInstance(URpgInventoryItemInstance* ItemInstance, int32 StackCount = 1) const;
+
+	/** Spatial-only transfer preflight for one exact target placement; source ownership is intentionally preserved. */
+	bool CanReceiveTransferredItemInstanceToPlacement(URpgInventoryItemInstance* ItemInstance, int32 StackCount, FRpgInventoryGridPlacement Placement) const;
+
+	/** Transfer/swap preflight after releasing exactly one known target item. */
+	bool CanReceiveTransferredItemInstanceToPlacementIgnoringItem(URpgInventoryItemInstance* ItemInstance, int32 StackCount, FRpgInventoryGridPlacement Placement, URpgInventoryItemInstance* IgnoredItemInstance) const;
 
 	/** Resolves the single item overlapped by this item's normalized footprint, or null for empty/multi-overlap targets. */
 	URpgInventoryItemInstance* GetSingleItemOverlappingPlacementForItem(URpgInventoryItemInstance* ItemInstance, FRpgInventoryGridPlacement Placement, FRpgInventoryGridPlacement& OutNormalizedPlacement) const;
 
-	UFUNCTION(BlueprintCallable, BlueprintAuthorityOnly, Category=Inventory)
+	/**
+	 * Grants definition-authored items through the canonical authority-owned bootstrap path.
+	 * The inventory creates all concrete instances under its owning actor and returns the first created or merged stack.
+	 */
+	UFUNCTION(BlueprintCallable, BlueprintAuthorityOnly, Category = "Inventory|Intent")
+	URpgInventoryItemInstance* GrantItemDefinition(TSubclassOf<URpgInventoryItemDefinition> ItemDef, int32 StackCount = 1);
+
+	/**
+	 * Bootstraps a detached concrete item into this inventory.
+	 * Foreign detached instances are cloned under the inventory actor with a fresh identity; inventory-owned instances
+	 * must use an explicit cross-inventory transfer instead.
+	 */
+	UFUNCTION(BlueprintCallable, BlueprintAuthorityOnly, Category = "Inventory|Intent")
+	URpgInventoryItemInstance* BootstrapItemInstance(URpgInventoryItemInstance* SourceItemInstance, int32 StackCount = 1);
+
+	/** Returns whether a detached concrete item can be bootstrapped without mutating either object. */
+	UFUNCTION(BlueprintCallable, Category = "Inventory|Intent", BlueprintPure)
+	bool CanBootstrapItemInstance(URpgInventoryItemInstance* SourceItemInstance, int32 StackCount = 1) const;
+
+	UFUNCTION(BlueprintCallable, BlueprintAuthorityOnly, Category=Inventory, meta = (DeprecatedFunction, DeprecationMessage = "Use GrantItemDefinition. Raw AddItemDefinition remains only for legacy Blueprint migration."))
 	URpgInventoryItemInstance* AddItemDefinition(TSubclassOf<URpgInventoryItemDefinition> ItemDef, int32 StackCount = 1);
 
 	/** Adds a definition-created stack to an exact grid placement instead of auto-placing into the inventory. */
-	UFUNCTION(BlueprintCallable, BlueprintAuthorityOnly, Category = "Inventory|Spatial")
+	UFUNCTION(BlueprintCallable, BlueprintAuthorityOnly, Category = "Inventory|Spatial", meta = (DeprecatedFunction, DeprecationMessage = "Use the canonical grant/placement transaction path. This low-level placement add remains only for legacy Blueprint migration."))
 	URpgInventoryItemInstance* AddItemDefinitionToPlacement(TSubclassOf<URpgInventoryItemDefinition> ItemDef, int32 StackCount, FRpgInventoryGridPlacement Placement);
 
-	UFUNCTION(BlueprintCallable, BlueprintAuthorityOnly, Category=Inventory)
+	UFUNCTION(BlueprintCallable, BlueprintAuthorityOnly, Category=Inventory, meta = (DeprecatedFunction, DeprecationMessage = "Use BootstrapItemInstance for detached setup data or ExecuteCrossInventoryTransfer for inventory-owned items."))
 	void AddItemInstance(URpgInventoryItemInstance* ItemInstance);
 
-	UFUNCTION(BlueprintCallable, BlueprintAuthorityOnly, Category=Inventory)
+	UFUNCTION(BlueprintCallable, BlueprintAuthorityOnly, Category=Inventory, meta = (DeprecatedFunction, DeprecationMessage = "Use BootstrapItemInstance for detached setup data or ExecuteCrossInventoryTransfer for inventory-owned items."))
 	void AddItemInstanceWithStack(URpgInventoryItemInstance* ItemInstance, int32 StackCount = 1);
 
 	/** Adds an existing item instance to an exact grid placement, preserving runtime instance data such as durability. */
-	UFUNCTION(BlueprintCallable, BlueprintAuthorityOnly, Category = "Inventory|Spatial")
+	UFUNCTION(BlueprintCallable, BlueprintAuthorityOnly, Category = "Inventory|Spatial", meta = (DeprecatedFunction, DeprecationMessage = "Use the canonical bootstrap/placement transaction path. Raw item instances may only be inserted when already owned by this inventory actor."))
 	void AddItemInstanceWithStackToPlacement(URpgInventoryItemInstance* ItemInstance, int32 StackCount, FRpgInventoryGridPlacement Placement);
 
 	/** Adds stack count to an existing stack entry without creating or moving an entry. */
-	UFUNCTION(BlueprintCallable, BlueprintAuthorityOnly, Category = "Inventory|Slots")
+	UFUNCTION(BlueprintCallable, BlueprintAuthorityOnly, Category = "Inventory|Slots", meta = (DeprecatedFunction, DeprecationMessage = "Use a narrow grant, consume, transfer, or stack mutation intent instead of editing stack state directly."))
 	bool AddStackToExistingItem(URpgInventoryItemInstance* ItemInstance, int32 StackCount);
 
-	UFUNCTION(BlueprintCallable, BlueprintAuthorityOnly, Category=Inventory)
+	UFUNCTION(BlueprintCallable, BlueprintAuthorityOnly, Category=Inventory, meta = (DeprecatedFunction, DeprecationMessage = "Use a narrow consume, transfer, or drop intent. Direct removal can invalidate item-owned container state."))
 	void RemoveItemInstance(URpgInventoryItemInstance* ItemInstance);
 
-	UFUNCTION(BlueprintCallable, BlueprintAuthorityOnly, Category=Inventory)
+	UFUNCTION(BlueprintCallable, BlueprintAuthorityOnly, Category=Inventory, meta = (DeprecatedFunction, DeprecationMessage = "Use a narrow consume, transfer, or drop intent. Direct stack removal remains only for legacy migration."))
 	bool RemoveItemInstanceStack(URpgInventoryItemInstance* ItemInstance, int32 StackCount = 1);
 
 	UFUNCTION(BlueprintCallable, Category=Inventory, BlueprintPure=false)
@@ -490,15 +517,15 @@ public:
 	bool ConsumeItemsByDefinition(TSubclassOf<URpgInventoryItemDefinition> ItemDef, int32 NumToConsume);
 
 	/** Rewrites shared replicated order for this inventory on the server. UI should request this through the owning controller component. */
-	UFUNCTION(BlueprintCallable, BlueprintAuthorityOnly, Category = "Inventory|Sorting")
+	UFUNCTION(BlueprintCallable, BlueprintAuthorityOnly, Category = "Inventory|Sorting", meta = (DeprecatedFunction, DeprecationMessage = "Use an item-id mutation intent with operation Sort."))
 	bool ApplyInventorySort(ERpgInventorySortMode SortMode);
 
 	/** Moves one replicated entry to a target shared index on the server. */
-	UFUNCTION(BlueprintCallable, BlueprintAuthorityOnly, Category = "Inventory|Sorting")
+	UFUNCTION(BlueprintCallable, BlueprintAuthorityOnly, Category = "Inventory|Sorting", meta = (DeprecatedFunction, DeprecationMessage = "Use an item-id mutation intent. Index-based ordering is a legacy compatibility path."))
 	bool MoveInventoryEntry(FGuid EntryId, int32 TargetIndex);
 
 	/** Moves, swaps, or stack-merges one entry into an exact replicated grid placement on the server. */
-	UFUNCTION(BlueprintCallable, BlueprintAuthorityOnly, Category = "Inventory|Spatial")
+	UFUNCTION(BlueprintCallable, BlueprintAuthorityOnly, Category = "Inventory|Spatial", meta = (DeprecatedFunction, DeprecationMessage = "Use an item-id mutation intent so preview and authoritative commit share one plan."))
 	bool MoveInventoryEntryToPlacement(FGuid EntryId, FRpgInventoryGridPlacement TargetPlacement);
 
 	/** Returns whether a replicated entry can move, merge, or swap into an exact grid placement using server rules. */
@@ -572,6 +599,9 @@ private:
 	bool TryMakePlacementForItemInstance(URpgInventoryItemInstance* ItemInstance, FName ContainerId, int32 X, int32 Y, bool bRotated, FRpgInventoryGridPlacement& OutPlacement) const;
 	FRpgInventoryGridPlacement MakePlacementForItemDefinition(TSubclassOf<URpgInventoryItemDefinition> ItemDef, FName ContainerId, int32 X, int32 Y, bool bRotated) const;
 	FRpgInventoryGridPlacement MakePlacementForItemInstance(URpgInventoryItemInstance* ItemInstance, FName ContainerId, int32 X, int32 Y, bool bRotated) const;
+	bool AddOwnedItemInstance(URpgInventoryItemInstance* ItemInstance, int32 StackCount, const FRpgInventoryGridPlacement* Placement = nullptr);
+	bool IsItemManagedByAnyInventory(const URpgInventoryItemInstance* ItemInstance) const;
+	bool HasItemIdentityConflictInAnyInventory(const URpgInventoryItemInstance* ItemInstance) const;
 	FRpgInventoryMutationResult CacheRecentMutationResult(FRpgInventoryMutationResult Result);
 
 private:

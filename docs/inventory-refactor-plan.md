@@ -1,6 +1,6 @@
 # Inventory Refactor Plan
 
-Stand: 2026-07-19
+Stand: 2026-07-20
 
 Dieses Dokument hält die verbindliche Reihenfolge für die Bereinigung des
 Tarkov-artigen Spatial Inventory fest. Es dient als Fortschrittsliste über
@@ -841,13 +841,13 @@ Interaktiver Smoke-Test für den aktuellen Storage-Schnitt:
 
 ## Phase 2 – Einheitlicher Mutation-Kernel
 
-Status: **Offen**
+Status: **In Arbeit**
 
-- [ ] Öffentliche Low-Level-Add/Remove/Move/Sort-Blueprintfläche deprecaten.
+- [x] Öffentliche Low-Level-Add/Remove/Move/Sort-Blueprintfläche deprecaten.
 - [ ] Schmale Intents für Grant/Bootstrap, Consume, Move, Transfer, Drop und
       Restore anbieten.
 - [ ] Remove/Consume/Drop grundsätzlich subtree-sicher machen.
-- [ ] Raw-Add gegen fremden Outer, doppelte Item-ID und bereits enthaltene
+- [x] Raw-Add gegen fremden Outer, doppelte Item-ID und bereits enthaltene
       Instanzen absichern.
 - [ ] Physisches Equippen ausschließlich über Inventory-Transaktionen führen.
 - [ ] Eine öffentliche Placement-Auswertung als gemeinsamen Vertrag für Move,
@@ -857,6 +857,42 @@ Status: **Offen**
       übereinstimmen.
 - [ ] `URpgEquipmentLoadoutComponent` auf Aktivierung der Hände und
       Reconciliation des physischen Gear-Zustands reduzieren.
+
+Verifizierter Phase-2A-Zwischenstand vom 2026-07-20:
+
+- `GrantItemDefinition`, `BootstrapItemInstance` und
+  `CanBootstrapItemInstance` bilden den ersten schmalen Intent-Schnitt.
+  Die gemeinsame Intent-Checkbox bleibt offen, bis auch Consume, Move,
+  Transfer, Drop und Restore auf den Zielvertrag reduziert sind.
+- Öffentliche Low-Level-Add-, Remove-, Move- und Sort-Funktionen bleiben für
+  Blueprint-Migration reflektiert, sind aber mit konkreten
+  `DeprecatedFunction`-Hinweisen versehen. Aktive Production-Grants verwenden
+  den Grant-/Bootstrap-Pfad; die in diesem Schnitt migrierten
+  inventory-eigenen Instanzen wechseln Inventories über den atomaren
+  Cross-Inventory-Transfer.
+- Raw-Add akzeptiert nur Instanzen mit exakt passendem Actor-Outer, gültiger
+  Definition und Item-ID. Bereits enthaltene Pointer, doppelte persistente IDs,
+  fremde Outer und eine zweite Referenz aus einem Sibling-Inventory desselben
+  Actors werden abgelehnt. Fremde, nicht verwaltete Setup-Instanzen werden beim
+  expliziten Bootstrap unter dem Zielactor mit frischer ID rekonstruiert.
+- Räumliche Transfer-Preflights sind vom Raw-Add-Vertrag getrennt, damit
+  Preview und Cross-Inventory-Commit eine noch im Quellinventar verwaltete
+  Instanz prüfen können, ohne die Ownership-Guards zu umgehen.
+- Vollständige Player-Quick-Transfers validieren die Lösbarkeit von
+  Equipment-Zuweisungen vor dem physischen Commit und leeren den Mirror erst
+  nach einem erfolgreichen Transfer. Fehlgeschlagene Transfers verändern
+  dadurch weder Hände noch Remembered-Offhand-Zustand.
+- `SurvivalRpgEditor Win64 Development` wurde mit Unreal Engine 5.8 gebaut.
+- `SurvivalRpg.Inventory`: 60 von 60 Automationtests erfolgreich.
+- `SurvivalRpg.Equipment`: 5 von 5 Automationtests erfolgreich.
+- `SurvivalRpg.Crafting`: 6 von 6 Automationtests erfolgreich.
+- Fortschritt Phase 2: 2 von 8 Punkten abgeschlossen (25,0 %).
+- Gesamtfortschritt der verbindlichen Checkliste: 50 von 94 Punkten
+  abgeschlossen (53,2 %), 44 Punkte offen.
+- Nächster Safety-Schnitt: vollständige Container-Subtrees bei
+  Remove/Consume/Drop atomar behandeln; partielle Container-Entfernung
+  fail-closed ablehnen. Death-Drop und Legacy-Snapshot-Import bleiben als
+  bestätigte anschließende Integritätsrisiken offen.
 
 ## Phase 3 – Runtime-Transfer vom Save/Load trennen
 

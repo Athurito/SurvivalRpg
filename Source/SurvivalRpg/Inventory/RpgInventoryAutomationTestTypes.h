@@ -4,6 +4,7 @@
 #include "SurvivalRpg/AbilitySystem/Abilities/RpgGameplayAbility.h"
 #include "SurvivalRpg/Core/Player/RpgPlayerController.h"
 #include "SurvivalRpg/Core/Player/RpgPlayerState.h"
+#include "SurvivalRpg/Core/RpgWorldCollectable.h"
 #include "SurvivalRpg/Equipment/RpgEquipmentDefinition.h"
 
 #include "RpgInventoryAutomationTestTypes.generated.h"
@@ -212,4 +213,17 @@ class ARpgInventoryAutomationTestPlayerState final : public ARpgPlayerState
 
 public:
 	virtual void PostInitializeComponents() override;
+};
+
+/** Concrete pickup fixture that exposes deterministic instance batches to inventory automation tests. */
+UCLASS(NotBlueprintable, Transient)
+class ARpgInventoryAutomationTestPickupActor final : public ARpgWorldCollectable
+{
+	GENERATED_BODY()
+
+public:
+	void SetTestPickupInventory(const FInventoryPickup& InPickupInventory)
+	{
+		StaticInventory = InPickupInventory;
+	}
 };

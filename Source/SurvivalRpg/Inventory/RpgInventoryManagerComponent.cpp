@@ -10,6 +10,7 @@
 #include "RpgInventoryItemInstance.h"
 #include "RpgPlayerInventoryLayoutComponent.h"
 #include "NativeGameplayTags.h"
+#include "GameFramework/Actor.h"
 #include "GameFramework/GameplayMessageSubsystem.h"
 #include "Net/UnrealNetwork.h"
 #include "SurvivalRpg/Core/Player/RpgPlayerController.h"
@@ -316,12 +317,11 @@ URpgInventoryItemInstance* FRpgInventoryList::AddEntryAtPlacement(TSubclassOf<UR
 	return NewEntry.Instance.Get();
 }
 
-void FRpgInventoryList::AddEntry(URpgInventoryItemInstance* Instance, int32 StackCount)
+bool FRpgInventoryList::AddEntry(URpgInventoryItemInstance* Instance, int32 StackCount)
 {
-	//Noot implemented in lyra
-	if (Instance == nullptr || StackCount <= 0)
+	if (Instance == nullptr || StackCount <= 0 || !CanInsertOwnedInstance(Instance))
 	{
-		return;
+		return false;
 	}
 
 	check(OwnerComponent);
@@ -336,7 +336,7 @@ void FRpgInventoryList::AddEntry(URpgInventoryItemInstance* Instance, int32 Stac
 			*GetNameSafe(Instance),
 			StackCount,
 			GetUsedEntryCount());
-		return;
+		return false;
 	}
 
 	FRpgInventoryEntry& NewEntry = Entries.AddDefaulted_GetRef();
@@ -346,13 +346,14 @@ void FRpgInventoryList::AddEntry(URpgInventoryItemInstance* Instance, int32 Stac
 	NewEntry.Placement = NewPlacement;
 	MarkItemDirty(NewEntry);
 	BroadcastChangeMessage(NewEntry, 0, NewEntry.StackCount);
+	return true;
 }
 
-void FRpgInventoryList::AddEntryAtPlacement(URpgInventoryItemInstance* Instance, int32 StackCount, const FRpgInventoryGridPlacement& Placement)
+bool FRpgInventoryList::AddEntryAtPlacement(URpgInventoryItemInstance* Instance, int32 StackCount, const FRpgInventoryGridPlacement& Placement)
 {
-	if (Instance == nullptr || StackCount <= 0 || !CanPlaceEntryAt(Placement))
+	if (Instance == nullptr || StackCount <= 0 || !CanInsertOwnedInstance(Instance) || !CanPlaceEntryAt(Placement))
 	{
-		return;
+		return false;
 	}
 
 	check(OwnerComponent);
@@ -366,6 +367,7 @@ void FRpgInventoryList::AddEntryAtPlacement(URpgInventoryItemInstance* Instance,
 	NewEntry.Placement = Placement;
 	MarkItemDirty(NewEntry);
 	BroadcastChangeMessage(NewEntry, 0, NewEntry.StackCount);
+	return true;
 }
 
 bool FRpgInventoryList::AddStackToEntry(URpgInventoryItemInstance* Instance, int32 StackCount)
@@ -604,6 +606,27 @@ bool FRpgInventoryList::ContainsEntry(FGuid EntryId) const
 	}
 
 	return false;
+}
+
+bool FRpgInventoryList::CanInsertOwnedInstance(const URpgInventoryItemInstance* Instance) const
+{
+	const AActor* InventoryOwner = OwnerComponent ? OwnerComponent->GetOwner() : nullptr;
+	if (!InventoryOwner || !Instance || Instance->GetOuter() != InventoryOwner ||
+		!Instance->GetItemDef() || !Instance->GetItemId().IsValid())
+	{
+		return false;
+	}
+
+	for (const FRpgInventoryEntry& Entry : Entries)
+	{
+		if (Entry.Instance == Instance ||
+			(Entry.Instance && Entry.Instance->GetItemId() == Instance->GetItemId()))
+		{
+			return false;
+		}
+	}
+
+	return true;
 }
 
 URpgInventoryItemInstance* FRpgInventoryList::GetItemAtCell(FName ContainerId, int32 X, int32 Y) const
@@ -1925,7 +1948,17 @@ bool URpgInventoryManagerComponent::CanAddItemDefinition(TSubclassOf<URpgInvento
 
 bool URpgInventoryManagerComponent::CanAddItemInstance(URpgInventoryItemInstance* ItemInstance, int32 StackCount) const
 {
-	if (ItemInstance == nullptr || StackCount <= 0)
+	return InventoryList.CanInsertOwnedInstance(ItemInstance) &&
+		!IsItemManagedByAnyInventory(ItemInstance) &&
+		!HasItemIdentityConflictInAnyInventory(ItemInstance) &&
+		CanReceiveTransferredItemInstance(ItemInstance, StackCount);
+}
+
+bool URpgInventoryManagerComponent::CanReceiveTransferredItemInstance(
+	URpgInventoryItemInstance* ItemInstance,
+	int32 StackCount) const
+{
+	if (ItemInstance == nullptr || !ItemInstance->GetItemDef() || StackCount <= 0)
 	{
 		return false;
 	}
@@ -2022,7 +2055,17 @@ bool URpgInventoryManagerComponent::CanAddItemDefinitionToPlacement(TSubclassOf<
 
 bool URpgInventoryManagerComponent::CanAddItemInstanceToPlacement(URpgInventoryItemInstance* ItemInstance, int32 StackCount, FRpgInventoryGridPlacement Placement) const
 {
-	if (!ItemInstance || StackCount <= 0)
+	return InventoryList.CanInsertOwnedInstance(ItemInstance) &&
+		!IsItemManagedByAnyInventory(ItemInstance) &&
+		CanReceiveTransferredItemInstanceToPlacement(ItemInstance, StackCount, Placement);
+}
+
+bool URpgInventoryManagerComponent::CanReceiveTransferredItemInstanceToPlacement(
+	URpgInventoryItemInstance* ItemInstance,
+	int32 StackCount,
+	FRpgInventoryGridPlacement Placement) const
+{
+	if (!ItemInstance || !ItemInstance->GetItemDef() || StackCount <= 0)
 	{
 		return false;
 	}
@@ -2075,9 +2118,13 @@ bool URpgInventoryManagerComponent::CanAddItemInstanceToPlacement(URpgInventoryI
 	return (IsCapacityUnlimited() || GetFreeEntryCount() > 0) && InventoryList.CanPlaceEntryAt(NormalizedPlacement);
 }
 
-bool URpgInventoryManagerComponent::CanAddItemInstanceToPlacementIgnoringItem(URpgInventoryItemInstance* ItemInstance, int32 StackCount, FRpgInventoryGridPlacement Placement, URpgInventoryItemInstance* IgnoredItemInstance) const
+bool URpgInventoryManagerComponent::CanReceiveTransferredItemInstanceToPlacementIgnoringItem(
+	URpgInventoryItemInstance* ItemInstance,
+	int32 StackCount,
+	FRpgInventoryGridPlacement Placement,
+	URpgInventoryItemInstance* IgnoredItemInstance) const
 {
-	if (!ItemInstance || StackCount <= 0)
+	if (!ItemInstance || !ItemInstance->GetItemDef() || StackCount <= 0)
 	{
 		return false;
 	}
@@ -2164,40 +2211,235 @@ URpgInventoryItemInstance* URpgInventoryManagerComponent::GetSingleItemOverlappi
 	return OverlappingEntries[0]->Instance.Get();
 }
 
-URpgInventoryItemInstance* URpgInventoryManagerComponent::AddItemDefinition(TSubclassOf<URpgInventoryItemDefinition> ItemDef, int32 StackCount)
+URpgInventoryItemInstance* URpgInventoryManagerComponent::GrantItemDefinition(
+	TSubclassOf<URpgInventoryItemDefinition> ItemDef,
+	int32 StackCount)
 {
-	URpgInventoryItemInstance* Result = nullptr;
-	if (CanAddItemDefinition(ItemDef, StackCount))
+	AActor* OwningActor = GetOwner();
+	if (!OwningActor || !OwningActor->HasAuthority() || !CanAddItemDefinition(ItemDef, StackCount))
 	{
-		TArray<URpgInventoryItemInstance*> NewInstances;
-		Result = InventoryList.AddEntry(ItemDef, StackCount, NewInstances);
-		MarkInventoryStateDirty();
-		
-		if (IsUsingRegisteredSubObjectList() && IsReadyForReplication())
+		return nullptr;
+	}
+
+	TArray<URpgInventoryItemInstance*> NewInstances;
+	URpgInventoryItemInstance* Result = InventoryList.AddEntry(ItemDef, StackCount, NewInstances);
+	if (!Result)
+	{
+		return nullptr;
+	}
+
+	MarkInventoryStateDirty();
+	if (IsUsingRegisteredSubObjectList() && IsReadyForReplication())
+	{
+		for (URpgInventoryItemInstance* NewInstance : NewInstances)
 		{
-			for (URpgInventoryItemInstance* NewInstance : NewInstances)
+			if (NewInstance)
 			{
-				if (NewInstance)
-				{
-					AddReplicatedSubObject(NewInstance, ReplicationPolicy == ERpgInventoryReplicationPolicy::OwnerOnly ? COND_OwnerOnly : COND_None);
-				}
+				AddReplicatedSubObject(NewInstance, ReplicationPolicy == ERpgInventoryReplicationPolicy::OwnerOnly ? COND_OwnerOnly : COND_None);
 			}
 		}
 	}
 	return Result;
 }
 
+URpgInventoryItemInstance* URpgInventoryManagerComponent::BootstrapItemInstance(
+	URpgInventoryItemInstance* SourceItemInstance,
+	int32 StackCount)
+{
+	AActor* OwningActor = GetOwner();
+	if (!OwningActor || !OwningActor->HasAuthority() ||
+		!CanBootstrapItemInstance(SourceItemInstance, StackCount))
+	{
+		return nullptr;
+	}
+
+	if (SourceItemInstance->GetOuter() == OwningActor)
+	{
+		return AddOwnedItemInstance(SourceItemInstance, StackCount) ? SourceItemInstance : nullptr;
+	}
+
+	URpgInventoryItemInstance* OwnedInstance = NewObject<URpgInventoryItemInstance>(OwningActor);
+	OwnedInstance->SetItemDef(SourceItemInstance->GetItemDef());
+	const URpgInventoryItemDefinition* ItemDefinition =
+		GetDefault<URpgInventoryItemDefinition>(SourceItemInstance->GetItemDef());
+	if (!ItemDefinition)
+	{
+		return nullptr;
+	}
+
+	for (URpgInventoryItemFragment* Fragment : ItemDefinition->Fragments)
+	{
+		if (Fragment)
+		{
+			Fragment->OnInstanceCreated(OwnedInstance);
+		}
+	}
+
+	if (!OwnedInstance->CopyRuntimeStateFrom(SourceItemInstance, false) ||
+		!AddOwnedItemInstance(OwnedInstance, StackCount))
+	{
+		return nullptr;
+	}
+
+	return OwnedInstance;
+}
+
+bool URpgInventoryManagerComponent::CanBootstrapItemInstance(
+	URpgInventoryItemInstance* SourceItemInstance,
+	int32 StackCount) const
+{
+	if (!SourceItemInstance || !SourceItemInstance->GetItemDef() ||
+		!SourceItemInstance->GetItemId().IsValid() || StackCount <= 0 ||
+		IsItemManagedByAnyInventory(SourceItemInstance))
+	{
+		return false;
+	}
+
+	const AActor* OwningActor = GetOwner();
+	if (!OwningActor)
+	{
+		return false;
+	}
+
+	if (SourceItemInstance->GetOuter() == OwningActor)
+	{
+		return CanAddItemInstance(SourceItemInstance, StackCount);
+	}
+
+	return CanReceiveTransferredItemInstance(SourceItemInstance, StackCount);
+}
+
+bool URpgInventoryManagerComponent::AddOwnedItemInstance(
+	URpgInventoryItemInstance* ItemInstance,
+	int32 StackCount,
+	const FRpgInventoryGridPlacement* Placement)
+{
+	AActor* OwningActor = GetOwner();
+	if (!OwningActor || !OwningActor->HasAuthority() || !ItemInstance ||
+		!InventoryList.CanInsertOwnedInstance(ItemInstance) ||
+		IsItemManagedByAnyInventory(ItemInstance) ||
+		HasItemIdentityConflictInAnyInventory(ItemInstance))
+	{
+		return false;
+	}
+
+	bool bAdded = false;
+	if (Placement)
+	{
+		if (!CanAddItemInstanceToPlacement(ItemInstance, StackCount, *Placement))
+		{
+			return false;
+		}
+
+		FRpgInventoryGridPlacement NormalizedPlacement = MakePlacementForItemInstance(
+			ItemInstance,
+			Placement->ContainerId,
+			Placement->X,
+			Placement->Y,
+			Placement->bRotated);
+		NormalizedPlacement.SetContainerHandle(Placement->GetContainerHandle());
+		bAdded = InventoryList.AddEntryAtPlacement(ItemInstance, StackCount, NormalizedPlacement);
+	}
+	else
+	{
+		if (!CanAddItemInstance(ItemInstance, StackCount))
+		{
+			return false;
+		}
+		bAdded = InventoryList.AddEntry(ItemInstance, StackCount);
+	}
+
+	if (!bAdded)
+	{
+		return false;
+	}
+
+	MarkInventoryStateDirty();
+	if (IsUsingRegisteredSubObjectList() && IsReadyForReplication())
+	{
+		AddReplicatedSubObject(
+			ItemInstance,
+			ReplicationPolicy == ERpgInventoryReplicationPolicy::OwnerOnly ? COND_OwnerOnly : COND_None);
+	}
+	return true;
+}
+
+bool URpgInventoryManagerComponent::IsItemManagedByAnyInventory(
+	const URpgInventoryItemInstance* ItemInstance) const
+{
+	const AActor* ItemOwner = ItemInstance ? ItemInstance->GetTypedOuter<AActor>() : nullptr;
+	if (!ItemOwner)
+	{
+		return false;
+	}
+
+	TArray<URpgInventoryManagerComponent*> InventoryComponents;
+	ItemOwner->GetComponents(InventoryComponents);
+	for (const URpgInventoryManagerComponent* InventoryComponent : InventoryComponents)
+	{
+		if (InventoryComponent && InventoryComponent->ContainsItemInstance(
+			const_cast<URpgInventoryItemInstance*>(ItemInstance)))
+		{
+			return true;
+		}
+	}
+	return false;
+}
+
+bool URpgInventoryManagerComponent::HasItemIdentityConflictInAnyInventory(
+	const URpgInventoryItemInstance* ItemInstance) const
+{
+	const AActor* ItemOwner = ItemInstance ? ItemInstance->GetTypedOuter<AActor>() : nullptr;
+	if (!ItemOwner || !ItemInstance->GetItemId().IsValid())
+	{
+		return false;
+	}
+
+	TArray<URpgInventoryManagerComponent*> InventoryComponents;
+	ItemOwner->GetComponents(InventoryComponents);
+	for (const URpgInventoryManagerComponent* InventoryComponent : InventoryComponents)
+	{
+		if (!InventoryComponent)
+		{
+			continue;
+		}
+
+		for (const FRpgInventoryEntryView& Entry : InventoryComponent->GetAllEntries())
+		{
+			if (Entry.Instance && Entry.Instance != ItemInstance &&
+				Entry.ItemId == ItemInstance->GetItemId())
+			{
+				return true;
+			}
+		}
+	}
+	return false;
+}
+
+URpgInventoryItemInstance* URpgInventoryManagerComponent::AddItemDefinition(
+	TSubclassOf<URpgInventoryItemDefinition> ItemDef,
+	int32 StackCount)
+{
+	return GrantItemDefinition(ItemDef, StackCount);
+}
+
 URpgInventoryItemInstance* URpgInventoryManagerComponent::AddItemDefinitionToPlacement(TSubclassOf<URpgInventoryItemDefinition> ItemDef, int32 StackCount, FRpgInventoryGridPlacement Placement)
 {
+	AActor* OwningActor = GetOwner();
 	URpgInventoryItemInstance* Result = nullptr;
-	if (CanAddItemDefinitionToPlacement(ItemDef, StackCount, Placement))
+	if (OwningActor && OwningActor->HasAuthority() &&
+		CanAddItemDefinitionToPlacement(ItemDef, StackCount, Placement))
 	{
 		FRpgInventoryGridPlacement NormalizedPlacement = MakePlacementForItemDefinition(ItemDef, Placement.ContainerId, Placement.X, Placement.Y, Placement.bRotated);
 		NormalizedPlacement.SetContainerHandle(Placement.GetContainerHandle());
 		TArray<URpgInventoryItemInstance*> NewInstances;
 		Result = InventoryList.AddEntryAtPlacement(ItemDef, StackCount, NormalizedPlacement, NewInstances);
-		MarkInventoryStateDirty();
+		if (!Result)
+		{
+			return nullptr;
+		}
 
+		MarkInventoryStateDirty();
 		if (IsUsingRegisteredSubObjectList() && IsReadyForReplication())
 		{
 			for (URpgInventoryItemInstance* NewInstance : NewInstances)
@@ -2219,34 +2461,12 @@ void URpgInventoryManagerComponent::AddItemInstance(URpgInventoryItemInstance* I
 
 void URpgInventoryManagerComponent::AddItemInstanceWithStack(URpgInventoryItemInstance* ItemInstance, int32 StackCount)
 {
-	if (!CanAddItemInstance(ItemInstance, StackCount))
-	{
-		return;
-	}
-
-	InventoryList.AddEntry(ItemInstance, StackCount);
-	MarkInventoryStateDirty();
-	if (IsUsingRegisteredSubObjectList() && IsReadyForReplication() && ItemInstance)
-	{
-		AddReplicatedSubObject(ItemInstance, ReplicationPolicy == ERpgInventoryReplicationPolicy::OwnerOnly ? COND_OwnerOnly : COND_None);
-	}
+	AddOwnedItemInstance(ItemInstance, StackCount);
 }
 
 void URpgInventoryManagerComponent::AddItemInstanceWithStackToPlacement(URpgInventoryItemInstance* ItemInstance, int32 StackCount, FRpgInventoryGridPlacement Placement)
 {
-	if (!CanAddItemInstanceToPlacement(ItemInstance, StackCount, Placement))
-	{
-		return;
-	}
-
-	FRpgInventoryGridPlacement NormalizedPlacement = MakePlacementForItemInstance(ItemInstance, Placement.ContainerId, Placement.X, Placement.Y, Placement.bRotated);
-	NormalizedPlacement.SetContainerHandle(Placement.GetContainerHandle());
-	InventoryList.AddEntryAtPlacement(ItemInstance, StackCount, NormalizedPlacement);
-	MarkInventoryStateDirty();
-	if (IsUsingRegisteredSubObjectList() && IsReadyForReplication() && ItemInstance)
-	{
-		AddReplicatedSubObject(ItemInstance, ReplicationPolicy == ERpgInventoryReplicationPolicy::OwnerOnly ? COND_OwnerOnly : COND_None);
-	}
+	AddOwnedItemInstance(ItemInstance, StackCount, &Placement);
 }
 
 bool URpgInventoryManagerComponent::AddStackToExistingItem(URpgInventoryItemInstance* ItemInstance, int32 StackCount)
@@ -3075,7 +3295,10 @@ FRpgInventoryMutationResult URpgInventoryManagerComponent::ExecuteCrossInventory
 				{
 					Candidate.X = X;
 					Candidate.Y = Y;
-					if (TargetInventory->CanAddItemInstanceToPlacement(SourceEntry->Instance, StackQuantity, Candidate))
+					if (TargetInventory->CanReceiveTransferredItemInstanceToPlacement(
+						SourceEntry->Instance,
+						StackQuantity,
+						Candidate))
 					{
 						OutPlacement = Candidate;
 						return true;

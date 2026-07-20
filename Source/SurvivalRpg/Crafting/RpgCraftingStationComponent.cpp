@@ -722,11 +722,19 @@ bool URpgCraftingStationComponent::FlushOutputToBaseStorage()
 			continue;
 		}
 
-		if (bAutoDepositInstanceOutputsToArmory && ArmoryInventory && ArmoryInventory->CanAddItemInstance(OutputInstance, OutputEntry.StackCount))
+		if (bAutoDepositInstanceOutputsToArmory && ArmoryInventory)
 		{
-			OutputInventoryComponent->RemoveItemInstance(OutputInstance);
-			ArmoryInventory->AddItemInstanceWithStack(OutputInstance, OutputEntry.StackCount);
-			bMovedAnyOutput = true;
+			FRpgInventoryMutationRequest TransferRequest;
+			TransferRequest.Operation = ERpgInventoryMutationOperation::Transfer;
+			TransferRequest.ItemId = OutputEntry.ItemId;
+			TransferRequest.Source = OutputEntry.Placement.GetContainerHandle();
+			TransferRequest.Target =
+				FRpgInventoryContainerHandle::MakeRoot(ArmoryInventory->GetDefaultContainerId());
+			TransferRequest.Quantity = OutputEntry.StackCount;
+			TransferRequest.EnsureRequestId();
+			bMovedAnyOutput |= OutputInventoryComponent
+				->ExecuteCrossInventoryTransfer(ArmoryInventory, TransferRequest, false)
+				.IsSuccess();
 		}
 	}
 
@@ -1101,7 +1109,7 @@ bool URpgCraftingStationComponent::RefundResourceCredit(const FRpgCraftingRefund
 	if (RefundEntry.Inventory &&
 		RefundEntry.Inventory->CanAddItemDefinition(RefundEntry.ItemDefinition, RefundEntry.Count))
 	{
-		RefundEntry.Inventory->AddItemDefinition(RefundEntry.ItemDefinition, RefundEntry.Count);
+		RefundEntry.Inventory->GrantItemDefinition(RefundEntry.ItemDefinition, RefundEntry.Count);
 		return true;
 	}
 
@@ -1298,7 +1306,7 @@ bool URpgCraftingStationComponent::AddOutputItemOrDrop(TSubclassOf<URpgInventory
 		{
 			if (ArmoryInventory->CanAddItemDefinition(ItemDefinition, RemainingCount))
 			{
-				ArmoryInventory->AddItemDefinition(ItemDefinition, RemainingCount);
+				ArmoryInventory->GrantItemDefinition(ItemDefinition, RemainingCount);
 				RemainingCount = 0;
 			}
 		}
@@ -1317,7 +1325,7 @@ bool URpgCraftingStationComponent::AddOutputItemOrDrop(TSubclassOf<URpgInventory
 			break;
 		}
 
-		OutputInventoryComponent->AddItemDefinition(ItemDefinition, CountToAdd);
+		OutputInventoryComponent->GrantItemDefinition(ItemDefinition, CountToAdd);
 		RemainingCount -= CountToAdd;
 	}
 

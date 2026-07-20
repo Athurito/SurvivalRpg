@@ -76,7 +76,7 @@ bool ARpgDroppedInventoryActor::MergePickupTemplate(TSubclassOf<URpgInventoryIte
 		return false;
 	}
 
-	if (!LootInventoryComponent->AddItemDefinition(ItemDefinition, StackCount))
+	if (!LootInventoryComponent->GrantItemDefinition(ItemDefinition, StackCount))
 	{
 		return false;
 	}
@@ -133,7 +133,7 @@ void ARpgDroppedInventoryActor::PopulateLootInventoryFromPickup(const FInventory
 	{
 		if (Template.ItemDef && Template.StackCount > 0)
 		{
-			LootInventoryComponent->AddItemDefinition(Template.ItemDef, Template.StackCount);
+			LootInventoryComponent->GrantItemDefinition(Template.ItemDef, Template.StackCount);
 		}
 	}
 
@@ -141,7 +141,7 @@ void ARpgDroppedInventoryActor::PopulateLootInventoryFromPickup(const FInventory
 	{
 		if (Instance.Item)
 		{
-			LootInventoryComponent->AddItemInstance(Instance.Item);
+			LootInventoryComponent->BootstrapItemInstance(Instance.Item);
 		}
 	}
 }

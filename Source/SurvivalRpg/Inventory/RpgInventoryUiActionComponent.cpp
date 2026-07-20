@@ -89,7 +89,8 @@ namespace
 			return TargetInventory->CanAddItemDefinition(Item->GetItemDef(), TransferCount);
 		}
 
-		return bTransfersWholeEntry && TargetInventory->CanAddItemInstance(Item, TransferCount);
+		return bTransfersWholeEntry &&
+			TargetInventory->CanReceiveTransferredItemInstance(Item, TransferCount);
 	}
 
 	void GatherCraftingStationsForOutputInventory(
@@ -541,6 +542,26 @@ void URpgInventoryUiActionComponent::RequestQuickTransferItem_Implementation(
 		return;
 	}
 
+	const bool bTransfersWholePlayerEntry =
+		SourceInventory != TargetInventory &&
+		SourceInventory == FindPlayerInventory() &&
+		RequestedCount == AvailableCount;
+	URpgEquipmentLoadoutComponent* EquipmentLoadout =
+		bTransfersWholePlayerEntry ? FindEquipmentLoadout() : nullptr;
+	if (EquipmentLoadout &&
+		!EquipmentLoadout->CanRemoveItemFromLoadout(Item))
+	{
+		SendActionFeedback(
+			RpgGameplayTags::Rpg_Inventory_Action_Transfer,
+			ERpgInventoryActionFeedbackResult::ServerRejected,
+			SourceInventory,
+			Item,
+			RequestedCount,
+			Request.RequestId,
+			Request.ItemId);
+		return;
+	}
+
 	FRpgInventoryMutationRequest MutationRequest;
 	MutationRequest.RequestId = Request.RequestId;
 	MutationRequest.ItemId = Request.ItemId;
@@ -569,14 +590,23 @@ void URpgInventoryUiActionComponent::RequestQuickTransferItem_Implementation(
 		return;
 	}
 
-	if (SourceInventory != TargetInventory && SourceInventory == FindPlayerInventory() &&
-		!SourceInventory->FindItemById(Request.ItemId))
+	if (bTransfersWholePlayerEntry)
 	{
-		ClearPlayerAssignmentsForItem(Item);
+		const bool bClearedAssignments =
+			ClearPlayerAssignmentsForItem(Item);
+		ensureMsgf(
+			bClearedAssignments,
+			TEXT("Validated player assignment clear failed after quick transfer. Item=%s ItemId=%s"),
+			*GetNameSafe(Item),
+			*Request.ItemId.ToString());
 	}
 	SyncEquipmentLoadoutFromGearSlots();
 	SyncActiveHandsFromCarrySlots();
-	if (URpgEquipmentLoadoutComponent* EquipmentLoadout = FindEquipmentLoadout())
+	if (!EquipmentLoadout)
+	{
+		EquipmentLoadout = FindEquipmentLoadout();
+	}
+	if (EquipmentLoadout)
 	{
 		EquipmentLoadout->RefreshEquipmentLoadState();
 	}
@@ -1745,7 +1775,7 @@ void URpgInventoryUiActionComponent::RequestWithdrawResourceFromBase_Implementat
 
 	if (BaseStorage->WithdrawResource(ItemDefinition, StackCount))
 	{
-		PlayerInventory->AddItemDefinition(ItemDefinition, StackCount);
+		PlayerInventory->GrantItemDefinition(ItemDefinition, StackCount);
 	}
 }
 
@@ -1760,19 +1790,16 @@ void URpgInventoryUiActionComponent::RequestStoreItemInstanceInBase_Implementati
 
 	const int32 AvailableCount = PlayerInventory->GetItemStackCount(Item);
 	const int32 RequestedCount = StackCount <= 0 ? AvailableCount : StackCount;
-	if (AvailableCount <= 0 || RequestedCount != AvailableCount || !ArmoryInventory->CanAddItemInstance(Item, AvailableCount))
+	if (AvailableCount <= 0 || RequestedCount != AvailableCount)
 	{
 		return;
 	}
 
-	if (!ClearPlayerAssignmentsForItem(Item))
-	{
-		SendActionFeedback(RpgGameplayTags::Rpg_Inventory_Action_Transfer, ERpgInventoryActionFeedbackResult::ServerRejected, PlayerInventory, Item, AvailableCount);
-		return;
-	}
-
-	PlayerInventory->RemoveItemInstance(Item);
-	ArmoryInventory->AddItemInstanceWithStack(Item, AvailableCount);
+	FRpgInventoryQuickTransferRequest TransferRequest;
+	TransferRequest.RequestId = FGuid::NewGuid();
+	TransferRequest.ItemId = Item->GetItemId();
+	TransferRequest.StackCount = AvailableCount;
+	RequestQuickTransferItem_Implementation(PlayerInventory, ArmoryInventory, MoveTemp(TransferRequest));
 }
 
 void URpgInventoryUiActionComponent::RequestTakeItemInstanceFromBase_Implementation(URpgBaseStorageStationComponent* Station, URpgInventoryItemInstance* Item, int32 StackCount)
@@ -1786,13 +1813,16 @@ void URpgInventoryUiActionComponent::RequestTakeItemInstanceFromBase_Implementat
 
 	const int32 AvailableCount = ArmoryInventory->GetItemStackCount(Item);
 	const int32 RequestedCount = StackCount <= 0 ? AvailableCount : StackCount;
-	if (AvailableCount <= 0 || RequestedCount != AvailableCount || !PlayerInventory->CanAddItemInstance(Item, AvailableCount))
+	if (AvailableCount <= 0 || RequestedCount != AvailableCount)
 	{
 		return;
 	}
 
-	ArmoryInventory->RemoveItemInstance(Item);
-	PlayerInventory->AddItemInstanceWithStack(Item, AvailableCount);
+	FRpgInventoryQuickTransferRequest TransferRequest;
+	TransferRequest.RequestId = FGuid::NewGuid();
+	TransferRequest.ItemId = Item->GetItemId();
+	TransferRequest.StackCount = AvailableCount;
+	RequestQuickTransferItem_Implementation(ArmoryInventory, PlayerInventory, MoveTemp(TransferRequest));
 }
 
 void URpgInventoryUiActionComponent::RequestInstallBaseStorageUpgrade_Implementation(URpgBaseStorageStationComponent* Station, URpgBaseStorageUpgradeDefinition* UpgradeDefinition)
@@ -2500,7 +2530,10 @@ bool URpgInventoryUiActionComponent::TryFindTransferPlacementInContainer(
 			{
 				Candidate.X = X;
 				Candidate.Y = Y;
-				if (TargetInventory->CanAddItemInstanceToPlacement(Item, RemainingCount, Candidate))
+				if (TargetInventory->CanReceiveTransferredItemInstanceToPlacement(
+					Item,
+					RemainingCount,
+					Candidate))
 				{
 					OutPlacement = Candidate;
 					return true;
@@ -2574,7 +2607,10 @@ bool URpgInventoryUiActionComponent::CanTransferItemStackToPlacement(URpgInvento
 	}
 
 	if (RequestedCount >= AvailableCount &&
-		TargetInventory->CanAddItemInstanceToPlacement(Item, AvailableCount, TargetPlacement))
+		TargetInventory->CanReceiveTransferredItemInstanceToPlacement(
+			Item,
+			AvailableCount,
+			TargetPlacement))
 	{
 		return true;
 	}
@@ -3160,7 +3196,7 @@ bool URpgInventoryUiActionComponent::CanMoveItemToFirstCompatibleContentSlot(
 				if (PlayerInventory->CanMoveInventoryEntryToPlacement(
 						EntryId,
 						TargetPlacement) &&
-					PlayerInventory->CanAddItemInstanceToPlacementIgnoringItem(
+					PlayerInventory->CanReceiveTransferredItemInstanceToPlacementIgnoringItem(
 						Item,
 						StackCount,
 						TargetPlacement,

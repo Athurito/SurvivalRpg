@@ -40,7 +40,7 @@ namespace
 
 		for (const FPickupInstance& Instance : PickupInventory.Instances)
 		{
-			if (!Instance.Item)
+			if (!Instance.Item || !InventoryComponent->CanBootstrapItemInstance(Instance.Item))
 			{
 				return false;
 			}
@@ -102,14 +102,6 @@ namespace
 			}
 		}
 
-		for (const FPickupInstance& Instance : PickupInventory.Instances)
-		{
-			if (!InventoryComponent->CanAddItemInstance(Instance.Item, 1))
-			{
-				return false;
-			}
-		}
-
 		return true;
 	}
 }
@@ -152,14 +144,48 @@ bool UPickupableStatics::AddPickupToInventory(URpgInventoryManagerComponent* Inv
 		return false;
 	}
 
+	const FRpgInventoryGraphSaveData InventoryBefore =
+		InventoryComponent->ExportInventoryGraph();
+	if (InventoryBefore.Items.Num() != InventoryComponent->GetAllEntries().Num())
+	{
+		return false;
+	}
+
+	auto Rollback = [InventoryComponent, &InventoryBefore]()
+	{
+		FRpgInventoryMutationResult RollbackResult;
+		const bool bRestored =
+			InventoryComponent->ImportInventoryGraph(
+				InventoryBefore,
+				RollbackResult);
+		ensureMsgf(
+			bRestored,
+			TEXT("Pickup batch rollback failed for inventory %s with result %d."),
+			*GetNameSafe(InventoryComponent),
+			static_cast<int32>(RollbackResult.Code));
+		return false;
+	};
+
 	for (const FPickupTemplate& Template : PickupInventory.Templates)
 	{
-		InventoryComponent->AddItemDefinition(Template.ItemDef, Template.StackCount);
+		const int32 PreviousCount =
+			InventoryComponent->GetTotalItemCountByDefinition(Template.ItemDef);
+		if (!InventoryComponent->GrantItemDefinition(
+				Template.ItemDef,
+				Template.StackCount) ||
+			InventoryComponent->GetTotalItemCountByDefinition(Template.ItemDef) !=
+				PreviousCount + Template.StackCount)
+		{
+			return Rollback();
+		}
 	}
 
 	for (const FPickupInstance& Instance : PickupInventory.Instances)
 	{
-		InventoryComponent->AddItemInstance(Instance.Item);
+		if (!InventoryComponent->BootstrapItemInstance(Instance.Item))
+		{
+			return Rollback();
+		}
 	}
 
 	return true;

@@ -2895,6 +2895,31 @@ bool FRpgExactPlacementStackTransferPolicyTest::RunTest(const FString& Parameter
 		TEXT("The exact target receives one unit"),
 		TargetInventory->GetItemStackCount(TransferredUnit),
 		1);
+
+	const int32 TargetCountBeforeWholeTransfer =
+		TargetInventory->GetTotalItemCountByDefinition(
+			URpgInventoryAutomationTestStackableWeaponItemDefinition::StaticClass());
+	UiActions->RequestTransferItemStack(
+		PlayerInventory,
+		TargetInventory,
+		RemainingSourceStack,
+		2);
+
+	TestNull(
+		TEXT("A complete quick transfer removes the surviving source stack from the player graph"),
+		PlayerInventory->FindItemById(SourceItemId));
+	TestNull(
+		TEXT("A complete quick transfer clears the active MainHand mirror before the physical commit"),
+		EquipmentLoadout->GetItemInEquipmentSlot(ERpgEquipmentSlot::MainHand));
+	TestEqual(
+		TEXT("The complete quick transfer adds the full remaining quantity to the target"),
+		TargetInventory->GetTotalItemCountByDefinition(
+			URpgInventoryAutomationTestStackableWeaponItemDefinition::StaticClass()),
+		TargetCountBeforeWholeTransfer + 2);
+	TestEqual(
+		TEXT("The complete quick transfer deterministically merges into the compatible target stack"),
+		TargetInventory->GetItemStackCount(TransferredUnit),
+		3);
 	return true;
 }
 
@@ -3736,6 +3761,385 @@ bool FRpgInventoryAsymmetricDisplacementTest::RunTest(const FString& Parameters)
 	TestEqual(TEXT("The large item reaches the requested origin"), LargeView.Placement.X, 0);
 	TestEqual(TEXT("The 1x1 item lands in the released far-right cell"), UnitView.Placement.X, 3);
 	TestFalse(TEXT("Committed final footprints never overlap"), UnitView.Placement.Overlaps(LargeView.Placement));
+	return true;
+}
+
+IMPLEMENT_SIMPLE_AUTOMATION_TEST(
+	FRpgInventoryRawAddOwnershipGuardTest,
+	"SurvivalRpg.Inventory.Transaction.RawAddOwnershipAndIdentityGuards",
+	EAutomationTestFlags::EditorContext | EAutomationTestFlags::EngineFilter)
+
+bool FRpgInventoryRawAddOwnershipGuardTest::RunTest(const FString& Parameters)
+{
+	using namespace RpgInventoryTransactionTests;
+	FScopedInventoryWorld TestWorld;
+	if (!InitializeTest(*this, TestWorld))
+	{
+		return false;
+	}
+
+	URpgInventoryManagerComponent* TargetInventory =
+		TestWorld.CreateInventory(TEXT("RawAddTarget"));
+	URpgInventoryManagerComponent* ForeignInventory =
+		TestWorld.CreateInventory(TEXT("RawAddForeign"));
+	if (!TestNotNull(TEXT("Target inventory exists"), TargetInventory) ||
+		!TestNotNull(TEXT("Foreign inventory exists"), ForeignInventory))
+	{
+		return false;
+	}
+
+	URpgInventoryItemInstance* ExistingItem = TargetInventory->GrantItemDefinition(
+		URpgInventoryAutomationTestUnitItemDefinition::StaticClass(),
+		1);
+	if (!TestNotNull(TEXT("Canonical grant creates an actor-owned fixture"), ExistingItem))
+	{
+		return false;
+	}
+	TestEqual(
+		TEXT("Granted instances use the inventory actor as exact durable Outer"),
+		ExistingItem->GetOuter(),
+		static_cast<UObject*>(TargetInventory->GetOwner()));
+
+	const FString InitialSignature = MakeInventorySignature(TargetInventory);
+	const int32 InitialEntryCount = TargetInventory->GetUsedEntryCount();
+	TestFalse(
+		TEXT("Raw-add preflight rejects an instance already contained by this inventory"),
+		TargetInventory->CanAddItemInstance(ExistingItem));
+	TargetInventory->AddItemInstanceWithStack(ExistingItem, 1);
+	TargetInventory->AddItemInstanceWithStackToPlacement(
+		ExistingItem,
+		1,
+		MakePlacement(MakeStorageHandle(), 5, 0));
+	TestEqual(
+		TEXT("Repeated raw auto/exact adds preserve the complete target graph"),
+		MakeInventorySignature(TargetInventory),
+		InitialSignature);
+	TestEqual(
+		TEXT("Repeated raw adds create no second entry"),
+		TargetInventory->GetUsedEntryCount(),
+		InitialEntryCount);
+
+	URpgInventoryItemInstance* DuplicateIdCandidate =
+		TargetInventory->GrantItemDefinition(
+			URpgInventoryAutomationTestUnitItemDefinition::StaticClass(),
+			1);
+	if (!TestNotNull(TEXT("A second actor-owned fixture exists"), DuplicateIdCandidate))
+	{
+		return false;
+	}
+	TargetInventory->RemoveItemInstance(DuplicateIdCandidate);
+	TestTrue(
+		TEXT("The detached same-owner fixture can be assigned the occupied persistent id"),
+		DuplicateIdCandidate->RestoreItemId(ExistingItem->GetItemId()));
+	const FString BeforeDuplicateIdAdd = MakeInventorySignature(TargetInventory);
+	TestFalse(
+		TEXT("Raw-add preflight rejects a different UObject with an occupied persistent id"),
+		TargetInventory->CanAddItemInstance(DuplicateIdCandidate));
+	TargetInventory->AddItemInstanceWithStack(DuplicateIdCandidate, 1);
+	TargetInventory->AddItemInstanceWithStackToPlacement(
+		DuplicateIdCandidate,
+		1,
+		MakePlacement(MakeStorageHandle(), 4, 0));
+	TestEqual(
+		TEXT("Duplicate-id raw adds preserve the authoritative graph"),
+		MakeInventorySignature(TargetInventory),
+		BeforeDuplicateIdAdd);
+	TestEqual(
+		TEXT("The original item remains the unique resolver result"),
+		TargetInventory->FindItemById(ExistingItem->GetItemId()),
+		ExistingItem);
+
+	URpgInventoryItemInstance* ForeignDetachedItem =
+		ForeignInventory->GrantItemDefinition(
+			URpgInventoryAutomationTestUnitItemDefinition::StaticClass(),
+			1);
+	if (!TestNotNull(TEXT("A foreign actor-owned fixture exists"), ForeignDetachedItem))
+	{
+		return false;
+	}
+	ForeignDetachedItem->AddStatTagStack(RpgGameplayTags::Ability_Attack_Basic, 3);
+	ForeignInventory->RemoveItemInstance(ForeignDetachedItem);
+	const FString BeforeForeignOuterAdd = MakeInventorySignature(TargetInventory);
+	TestFalse(
+		TEXT("Raw-add preflight rejects a detached instance with a foreign actor Outer"),
+		TargetInventory->CanAddItemInstance(ForeignDetachedItem));
+	TargetInventory->AddItemInstanceWithStack(ForeignDetachedItem, 1);
+	TestEqual(
+		TEXT("Foreign-Outer raw add leaves the target unchanged"),
+		MakeInventorySignature(TargetInventory),
+		BeforeForeignOuterAdd);
+
+	URpgInventoryItemInstance* BootstrappedItem =
+		TargetInventory->BootstrapItemInstance(ForeignDetachedItem);
+	if (!TestNotNull(TEXT("Explicit bootstrap accepts detached foreign setup data"), BootstrappedItem))
+	{
+		return false;
+	}
+	TestTrue(
+		TEXT("Bootstrap reconstructs a distinct runtime UObject"),
+		BootstrappedItem != ForeignDetachedItem);
+	TestEqual(
+		TEXT("Bootstrap owns the reconstructed instance under the target actor"),
+		BootstrappedItem->GetOuter(),
+		static_cast<UObject*>(TargetInventory->GetOwner()));
+	TestTrue(
+		TEXT("Bootstrap starts a fresh persistent identity instead of duplicating the setup object"),
+		BootstrappedItem->GetItemId() != ForeignDetachedItem->GetItemId());
+	TestEqual(
+		TEXT("Bootstrap preserves mutable instance state"),
+		BootstrappedItem->GetStatTagStackCount(RpgGameplayTags::Ability_Attack_Basic),
+		3);
+
+	URpgInventoryManagerComponent* SiblingInventory =
+		NewObject<URpgInventoryManagerComponent>(
+			TargetInventory->GetOwner(),
+			MakeUniqueObjectName(
+				TargetInventory->GetOwner(),
+				URpgInventoryManagerComponent::StaticClass(),
+				TEXT("SiblingInventory")),
+			RF_Transient);
+	TargetInventory->GetOwner()->AddInstanceComponent(SiblingInventory);
+	SiblingInventory->RegisterComponent();
+	if (!TestNotNull(TEXT("A sibling inventory on the same actor exists"), SiblingInventory))
+	{
+		return false;
+	}
+	TestFalse(
+		TEXT("Raw-add preflight rejects an item managed by a sibling inventory despite its matching Outer"),
+		SiblingInventory->CanAddItemInstance(ExistingItem));
+	SiblingInventory->AddItemInstanceWithStack(ExistingItem, 1);
+	TestEqual(
+		TEXT("Sibling inventory cannot acquire a second reference to the same concrete item"),
+		SiblingInventory->GetUsedEntryCount(),
+		0);
+
+	URpgInventoryItemInstance* SiblingIdentityOwner =
+		SiblingInventory->GrantItemDefinition(
+			URpgInventoryAutomationTestUnitItemDefinition::StaticClass(),
+			1);
+	URpgInventoryItemInstance* SiblingDuplicateIdCandidate =
+		TargetInventory->GrantItemDefinition(
+			URpgInventoryAutomationTestUnitItemDefinition::StaticClass(),
+			1);
+	if (!TestNotNull(
+			TEXT("A sibling-owned identity fixture exists"),
+			SiblingIdentityOwner) ||
+		!TestNotNull(
+			TEXT("A detached target-owned duplicate-id candidate exists"),
+			SiblingDuplicateIdCandidate))
+	{
+		return false;
+	}
+	TargetInventory->RemoveItemInstance(SiblingDuplicateIdCandidate);
+	TestTrue(
+		TEXT("The detached target-owned candidate can copy the sibling's occupied id"),
+		SiblingDuplicateIdCandidate->RestoreItemId(
+			SiblingIdentityOwner->GetItemId()));
+	const FString BeforeSiblingIdCollision =
+		MakeInventorySignature(TargetInventory);
+	TestFalse(
+		TEXT("Raw-add preflight rejects an ItemId occupied by another UObject in a sibling inventory"),
+		TargetInventory->CanAddItemInstance(
+			SiblingDuplicateIdCandidate));
+	TargetInventory->AddItemInstanceWithStack(
+		SiblingDuplicateIdCandidate,
+		1);
+	TestEqual(
+		TEXT("A sibling ItemId collision leaves the target graph unchanged"),
+		MakeInventorySignature(TargetInventory),
+		BeforeSiblingIdCollision);
+
+	URpgInventoryItemInstance* StillManagedForeignItem =
+		ForeignInventory->GrantItemDefinition(
+			URpgInventoryAutomationTestUnitItemDefinition::StaticClass(),
+			1);
+	TestFalse(
+		TEXT("Bootstrap refuses to copy an item that is still authoritative in another inventory"),
+		TargetInventory->CanBootstrapItemInstance(StillManagedForeignItem));
+	TestNull(
+		TEXT("Managed items require cross-inventory transfer instead of bootstrap duplication"),
+		TargetInventory->BootstrapItemInstance(StillManagedForeignItem));
+	return true;
+}
+
+IMPLEMENT_SIMPLE_AUTOMATION_TEST(
+	FRpgInventoryPickupBatchRollbackTest,
+	"SurvivalRpg.Inventory.Pickup.BatchRollbackOnSpatialFailure",
+	EAutomationTestFlags::EditorContext | EAutomationTestFlags::EngineFilter)
+
+bool FRpgInventoryPickupBatchRollbackTest::RunTest(
+	const FString& Parameters)
+{
+	using namespace RpgInventoryTransactionTests;
+	FScopedInventoryWorld TestWorld;
+	if (!InitializeTest(*this, TestWorld))
+	{
+		return false;
+	}
+
+	URpgInventoryManagerComponent* TargetInventory =
+		TestWorld.CreateInventory(TEXT("PickupRollbackTarget"));
+	URpgInventoryManagerComponent* SetupInventory =
+		TestWorld.CreateInventory(TEXT("PickupRollbackSetup"));
+	if (!TestNotNull(
+			TEXT("The pickup rollback target inventory exists"),
+			TargetInventory) ||
+		!TestNotNull(
+			TEXT("The detached pickup setup inventory exists"),
+			SetupInventory))
+	{
+		return false;
+	}
+
+	const FRpgInventoryGridSize GridSize =
+		TargetInventory->GetDefaultGridSize();
+	const int32 GridCellCount = GridSize.Width * GridSize.Height;
+	if (!TestTrue(
+			TEXT("The rollback fixture has room for at least two cells"),
+			GridCellCount >= 2) ||
+		!TestNotNull(
+			TEXT("All but one target cell can be filled"),
+			TargetInventory->GrantItemDefinition(
+				URpgInventoryAutomationTestUnitItemDefinition::StaticClass(),
+				GridCellCount - 1)))
+	{
+		return false;
+	}
+	TestEqual(
+		TEXT("Exactly one target cell remains before the pickup batch"),
+		TargetInventory->GetUsedEntryCount(),
+		GridCellCount - 1);
+
+	URpgInventoryItemInstance* FirstSetupItem =
+		SetupInventory->GrantItemDefinition(
+			URpgInventoryAutomationTestUnitItemDefinition::StaticClass(),
+			1);
+	URpgInventoryItemInstance* SecondSetupItem =
+		SetupInventory->GrantItemDefinition(
+			URpgInventoryAutomationTestUnitItemDefinition::StaticClass(),
+			1);
+	if (!TestNotNull(
+			TEXT("The first detached pickup setup item exists"),
+			FirstSetupItem) ||
+		!TestNotNull(
+			TEXT("The second detached pickup setup item exists"),
+			SecondSetupItem))
+	{
+		return false;
+	}
+	SetupInventory->RemoveItemInstance(FirstSetupItem);
+	SetupInventory->RemoveItemInstance(SecondSetupItem);
+	TestTrue(
+		TEXT("The first pickup item independently fits the last free cell"),
+		TargetInventory->CanBootstrapItemInstance(FirstSetupItem));
+	TestTrue(
+		TEXT("The second pickup item independently fits the same last free cell"),
+		TargetInventory->CanBootstrapItemInstance(SecondSetupItem));
+
+	FActorSpawnParameters PickupSpawnParameters;
+	PickupSpawnParameters.Name = MakeUniqueObjectName(
+		TestWorld.GetTestWorld(),
+		ARpgInventoryAutomationTestPickupActor::StaticClass(),
+		TEXT("PickupRollbackActor"));
+	PickupSpawnParameters.ObjectFlags = RF_Transient;
+	PickupSpawnParameters.SpawnCollisionHandlingOverride =
+		ESpawnActorCollisionHandlingMethod::AlwaysSpawn;
+	ARpgInventoryAutomationTestPickupActor* PickupActor =
+		TestWorld.GetTestWorld()->SpawnActor<
+			ARpgInventoryAutomationTestPickupActor>(
+			PickupSpawnParameters);
+	if (!TestNotNull(
+			TEXT("The concrete pickup batch fixture exists"),
+			PickupActor))
+	{
+		return false;
+	}
+
+	FInventoryPickup PickupInventory;
+	PickupInventory.Instances.AddDefaulted_GetRef().Item =
+		FirstSetupItem;
+	PickupInventory.Instances.AddDefaulted_GetRef().Item =
+		SecondSetupItem;
+	PickupActor->SetTestPickupInventory(PickupInventory);
+
+	const FString TargetBeforePickup =
+		MakeInventorySignature(TargetInventory);
+	TScriptInterface<IPickupable> PickupInterface(PickupActor);
+	TestFalse(
+		TEXT("A two-item pickup cannot commit into one remaining cell"),
+		UPickupableStatics::AddPickupToInventory(
+			TargetInventory,
+			PickupInterface));
+	TestEqual(
+		TEXT("A failed pickup batch rolls the complete target graph back"),
+		MakeInventorySignature(TargetInventory),
+		TargetBeforePickup);
+	TestEqual(
+		TEXT("Rollback restores the exact pre-pickup entry count"),
+		TargetInventory->GetUsedEntryCount(),
+		GridCellCount - 1);
+	return true;
+}
+
+IMPLEMENT_SIMPLE_AUTOMATION_TEST(
+	FRpgInventoryLowLevelBlueprintDeprecationTest,
+	"SurvivalRpg.Inventory.Transaction.LowLevelBlueprintMutationSurfaceDeprecated",
+	EAutomationTestFlags::EditorContext | EAutomationTestFlags::EngineFilter)
+
+bool FRpgInventoryLowLevelBlueprintDeprecationTest::RunTest(const FString& Parameters)
+{
+	static const FName DeprecatedFunctionNames[] = {
+		GET_FUNCTION_NAME_CHECKED(URpgInventoryManagerComponent, CanAddItemInstance),
+		GET_FUNCTION_NAME_CHECKED(URpgInventoryManagerComponent, CanAddItemInstanceToPlacement),
+		GET_FUNCTION_NAME_CHECKED(URpgInventoryManagerComponent, AddItemDefinition),
+		GET_FUNCTION_NAME_CHECKED(URpgInventoryManagerComponent, AddItemDefinitionToPlacement),
+		GET_FUNCTION_NAME_CHECKED(URpgInventoryManagerComponent, AddItemInstance),
+		GET_FUNCTION_NAME_CHECKED(URpgInventoryManagerComponent, AddItemInstanceWithStack),
+		GET_FUNCTION_NAME_CHECKED(URpgInventoryManagerComponent, AddItemInstanceWithStackToPlacement),
+		GET_FUNCTION_NAME_CHECKED(URpgInventoryManagerComponent, AddStackToExistingItem),
+		GET_FUNCTION_NAME_CHECKED(URpgInventoryManagerComponent, RemoveItemInstance),
+		GET_FUNCTION_NAME_CHECKED(URpgInventoryManagerComponent, RemoveItemInstanceStack),
+		GET_FUNCTION_NAME_CHECKED(URpgInventoryManagerComponent, ApplyInventorySort),
+		GET_FUNCTION_NAME_CHECKED(URpgInventoryManagerComponent, MoveInventoryEntry),
+		GET_FUNCTION_NAME_CHECKED(URpgInventoryManagerComponent, MoveInventoryEntryToPlacement),
+	};
+
+	for (const FName FunctionName : DeprecatedFunctionNames)
+	{
+		const UFunction* Function =
+			URpgInventoryManagerComponent::StaticClass()->FindFunctionByName(FunctionName);
+		if (!TestNotNull(
+				*FString::Printf(TEXT("%s remains reflected for Blueprint migration"), *FunctionName.ToString()),
+				Function))
+		{
+			continue;
+		}
+		TestTrue(
+			*FString::Printf(TEXT("%s is marked DeprecatedFunction"), *FunctionName.ToString()),
+			Function->HasMetaData(TEXT("DeprecatedFunction")));
+		TestFalse(
+			*FString::Printf(TEXT("%s explains its replacement"), *FunctionName.ToString()),
+			Function->GetMetaData(TEXT("DeprecationMessage")).IsEmpty());
+	}
+
+	static const FName CanonicalFunctionNames[] = {
+		GET_FUNCTION_NAME_CHECKED(URpgInventoryManagerComponent, GrantItemDefinition),
+		GET_FUNCTION_NAME_CHECKED(URpgInventoryManagerComponent, BootstrapItemInstance),
+		GET_FUNCTION_NAME_CHECKED(URpgInventoryManagerComponent, CanBootstrapItemInstance),
+	};
+	for (const FName FunctionName : CanonicalFunctionNames)
+	{
+		const UFunction* Function =
+			URpgInventoryManagerComponent::StaticClass()->FindFunctionByName(FunctionName);
+		if (TestNotNull(
+				*FString::Printf(TEXT("%s is reflected as a canonical intent"), *FunctionName.ToString()),
+				Function))
+		{
+			TestFalse(
+				*FString::Printf(TEXT("%s is not deprecated"), *FunctionName.ToString()),
+				Function->HasMetaData(TEXT("DeprecatedFunction")));
+		}
+	}
 	return true;
 }
 

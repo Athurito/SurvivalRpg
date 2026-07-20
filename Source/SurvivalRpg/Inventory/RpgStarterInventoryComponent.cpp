@@ -116,7 +116,7 @@ void URpgStarterInventoryComponent::TryGrantStarterInventory()
 
 		if (ItemInstance == nullptr)
 		{
-			ItemInstance = InventoryComponent->AddItemDefinition(ItemDefinition, Entry.StackCount);
+			ItemInstance = InventoryComponent->GrantItemDefinition(ItemDefinition, Entry.StackCount);
 		}
 
 		if (Entry.bAssignToEquipment &&
