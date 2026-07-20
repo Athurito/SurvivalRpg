@@ -403,7 +403,8 @@ enum class ERpgInventoryMutationOperation : uint8
 	Equip,
 	Pickup,
 	Transfer,
-	Drop
+	Drop,
+	Consume
 };
 
 /** Stable reason code returned by inventory planning and authoritative commits. */

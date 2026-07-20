@@ -65,10 +65,10 @@ namespace
 
 	bool IsSplittableStackItem(const URpgInventoryItemInstance* ItemInstance)
 	{
-		const URpgInventoryFragment_ItemTraits* Traits = ItemInstance
-			? ItemInstance->FindFragmentByClass<URpgInventoryFragment_ItemTraits>()
-			: nullptr;
-		return Traits && Traits->GetMaxStackSize() > 1;
+		return ItemInstance &&
+			URpgInventoryManagerComponent::
+				GetEffectiveMaxStackSizeForDefinition(
+					ItemInstance->GetItemDef()) > 1;
 	}
 
 	bool IsManualDropLocallyAllowed(const URpgInventoryItemInstance* ItemInstance)

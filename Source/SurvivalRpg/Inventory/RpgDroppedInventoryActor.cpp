@@ -1,8 +1,8 @@
 #include "RpgDroppedInventoryActor.h"
 
 #include "SurvivalRpg/Interaction/Abilities/RpgGameplayAbility_Collect.h"
-#include "SurvivalRpg/Inventory/RpgInventoryFragment_ItemTraits.h"
 #include "SurvivalRpg/Inventory/RpgInventoryContainerComponent.h"
+#include "SurvivalRpg/Inventory/RpgInventoryFragment_ItemContainer.h"
 #include "SurvivalRpg/Inventory/RpgInventoryItemDefinition.h"
 #include "SurvivalRpg/Inventory/RpgInventoryItemInstance.h"
 #include "SurvivalRpg/Inventory/RpgInventoryManagerComponent.h"
@@ -24,18 +24,28 @@ void ARpgDroppedInventoryActor::PostInitializeComponents()
 
 	EnsureDefaultPickupInteractionOption();
 
-	if (HasAuthority() && LootInventoryComponent)
+	if (LootInventoryComponent)
 	{
-		LootInventoryComponent->SetCapacityMode(ERpgInventoryCapacityMode::Unlimited);
-		PopulateLootInventoryFromPickup(StaticInventory);
-		StaticInventory = FInventoryPickup();
+		if (HasAuthority())
+		{
+			LootInventoryComponent->SetCapacityMode(
+				ERpgInventoryCapacityMode::Unlimited);
+			PopulateLootInventoryFromPickup(StaticInventory);
+			StaticInventory = FInventoryPickup();
+		}
+
+		// From PostInitializeComponents onward the replicated manager is canonical on every
+		// role. A client must not briefly resurrect local StaticInventory while waiting for
+		// FastArray entries (including empty inventories and late joins).
 		bLootInventoryInitialized = true;
 	}
 }
 
 FInventoryPickup ARpgDroppedInventoryActor::GetPickupInventory() const
 {
-	if (LootInventoryComponent && bLootInventoryInitialized)
+	if (LootInventoryComponent &&
+		(bLootInventoryInitialized ||
+			LootInventoryComponent->GetUsedEntryCount() > 0))
 	{
 		return BuildPickupInventoryFromLootInventory();
 	}
@@ -61,6 +71,134 @@ void ARpgDroppedInventoryActor::SetPickupInventory(const FInventoryPickup& NewPi
 		bLootInventoryInitialized = true;
 		ForceNetUpdate();
 	}
+}
+
+FRpgInventoryMutationResult ARpgDroppedInventoryActor::TransferItemFromInventory(
+	URpgInventoryManagerComponent* SourceInventory,
+	FRpgInventoryItemId ItemId,
+	int32 StackCount,
+	FGuid RequestId,
+	bool bPreventStackMerge)
+{
+	FRpgInventoryMutationRequest Request;
+	Request.Operation = ERpgInventoryMutationOperation::Drop;
+	Request.ItemId = ItemId;
+	Request.Quantity = StackCount;
+	Request.RequestId = RequestId;
+	Request.EnsureRequestId();
+
+	FRpgInventoryMutationResult Result;
+	Result.RequestId = Request.RequestId;
+	Result.Operation = Request.Operation;
+	Result.RequestedQuantity = StackCount;
+	if (!HasAuthority())
+	{
+		Result.Code = ERpgInventoryMutationResultCode::AuthorityRequired;
+		return Result;
+	}
+	if (!SourceInventory || SourceInventory == LootInventoryComponent ||
+		!LootInventoryComponent || !ItemId.IsValid() || StackCount <= 0)
+	{
+		Result.Code = ERpgInventoryMutationResultCode::InvalidRequest;
+		return Result;
+	}
+
+	URpgInventoryItemInstance* Item = SourceInventory->FindItemById(ItemId);
+	FRpgInventoryGridPlacement SourcePlacement;
+	if (!Item ||
+		!SourceInventory->GetItemPlacement(Item, SourcePlacement))
+	{
+		Result.Code = ERpgInventoryMutationResultCode::ItemNotFound;
+		return Result;
+	}
+
+	Request.Source = SourcePlacement.GetContainerHandle();
+	Request.Target = FRpgInventoryContainerHandle::MakeRoot(
+		LootInventoryComponent->GetDefaultContainerId());
+	if (bPreventStackMerge)
+	{
+		auto TryFindConcretePlacement =
+			[this, &Request, Item, StackCount](
+				const FRpgInventoryGridSize& GridSize)
+			{
+				for (int32 RotationIndex = 0;
+					RotationIndex < 2 &&
+						!Request.TargetPlacement.IsValid();
+					++RotationIndex)
+				{
+					for (int32 Y = 0;
+						Y < GridSize.Height &&
+							!Request.TargetPlacement.IsValid();
+						++Y)
+					{
+						for (int32 X = 0;
+							X < GridSize.Width;
+							++X)
+						{
+							FRpgInventoryGridPlacement Candidate;
+							Candidate.SetContainerHandle(
+								Request.Target);
+							Candidate.X = X;
+							Candidate.Y = Y;
+							Candidate.bRotated =
+								RotationIndex == 1;
+							if (LootInventoryComponent
+									->CanReceiveTransferredItemInstanceToPlacement(
+										Item,
+										StackCount,
+										Candidate))
+							{
+								Request.TargetPlacement =
+									Candidate;
+								break;
+							}
+						}
+					}
+				}
+			};
+
+		FRpgInventoryGridSize GridSize;
+		if (LootInventoryComponent->GetGridSizeForContainerHandle(
+				Request.Target,
+				GridSize))
+		{
+			TryFindConcretePlacement(GridSize);
+		}
+		if (!Request.TargetPlacement.IsValid())
+		{
+			const FRpgInventoryGridSize ItemSize =
+				SourcePlacement.GetUnrotatedSize();
+			FRpgInventoryGridSize ExpandedSize;
+			ExpandedSize.Width =
+				FMath::Max(GridSize.Width, ItemSize.Width);
+			ExpandedSize.Height =
+				GridSize.Height + FMath::Max(1, ItemSize.Height);
+			if (LootInventoryComponent
+					->ExpandDefaultGridToMinimum(ExpandedSize) &&
+				LootInventoryComponent->GetGridSizeForContainerHandle(
+					Request.Target,
+					GridSize))
+			{
+				TryFindConcretePlacement(GridSize);
+			}
+		}
+		if (!Request.TargetPlacement.IsValid())
+		{
+			Result.Code = ERpgInventoryMutationResultCode::NoSpace;
+			return Result;
+		}
+	}
+	Result = SourceInventory->ExecuteCrossInventoryTransfer(
+		LootInventoryComponent,
+		Request,
+		false);
+	if (Result.IsSuccess())
+	{
+		EnsureDefaultPickupInteractionOption();
+		bLootInventoryInitialized = true;
+		ForceNetUpdate();
+	}
+	return Result;
 }
 
 bool ARpgDroppedInventoryActor::MergePickupTemplate(TSubclassOf<URpgInventoryItemDefinition> ItemDefinition, int32 StackCount)
@@ -162,8 +300,9 @@ FInventoryPickup ARpgDroppedInventoryActor::BuildPickupInventoryFromLootInventor
 			continue;
 		}
 
-		const URpgInventoryFragment_ItemTraits* Traits = ItemInstance->FindFragmentByClass<URpgInventoryFragment_ItemTraits>();
-		if (Traits && Traits->GetMaxStackSize() > 1)
+		if (URpgInventoryManagerComponent::
+				GetEffectiveMaxStackSizeForDefinition(
+					ItemInstance->GetItemDef()) > 1)
 		{
 			FPickupTemplate& Template = PickupInventory.Templates.AddDefaulted_GetRef();
 			Template.ItemDef = ItemInstance->GetItemDef();

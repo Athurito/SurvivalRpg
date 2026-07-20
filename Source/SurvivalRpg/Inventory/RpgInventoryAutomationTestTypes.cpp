@@ -255,6 +255,41 @@ URpgInventoryAutomationTestBagItemDefinition::URpgInventoryAutomationTestBagItem
 	Fragments.Add(EquippableFragment);
 }
 
+URpgInventoryAutomationTestLegacyStackableBagItemDefinition::
+	URpgInventoryAutomationTestLegacyStackableBagItemDefinition(
+		const FObjectInitializer& ObjectInitializer)
+	: Super(ObjectInitializer)
+{
+	DisplayName =
+		FText::FromString(TEXT("Automation Legacy Stackable Bag"));
+
+	URpgInventoryFragment_SpatialItem* SpatialFragment =
+		CreateDefaultSubobject<URpgInventoryFragment_SpatialItem>(
+			TEXT("Spatial"));
+	ConfigureSpatialFragment(SpatialFragment, 1, 1, true);
+	Fragments.Add(SpatialFragment);
+
+	URpgInventoryFragment_ItemTraits* TraitsFragment =
+		CreateDefaultSubobject<URpgInventoryFragment_ItemTraits>(
+			TEXT("Traits"));
+	TraitsFragment->bCanStack = true;
+	TraitsFragment->MaxStackSize = 10;
+	Fragments.Add(TraitsFragment);
+
+	URpgInventoryFragment_ItemContainer* ContainerFragment =
+		CreateDefaultSubobject<URpgInventoryFragment_ItemContainer>(
+			TEXT("ItemContainer"));
+	FRpgInventoryItemContainerDefinition& MainContainer =
+		ContainerFragment->ProvidedContainers.AddDefaulted_GetRef();
+	MainContainer.ContainerId = TEXT("Main");
+	MainContainer.DisplayName = FText::FromString(TEXT("Main"));
+	MainContainer.GridSize.Width = 4;
+	MainContainer.GridSize.Height = 4;
+	MainContainer.bAllowNestedContainers = true;
+	MainContainer.MaxNestingDepth = RpgInventoryMaxItemOwnedDepth;
+	Fragments.Add(ContainerFragment);
+}
+
 URpgInventoryAutomationTestBagEquipmentDefinition::URpgInventoryAutomationTestBagEquipmentDefinition(
 	const FObjectInitializer& ObjectInitializer)
 	: Super(ObjectInitializer)

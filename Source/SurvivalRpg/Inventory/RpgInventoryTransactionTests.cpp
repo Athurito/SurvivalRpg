@@ -8,7 +8,9 @@
 #include "RpgInventoryInteractionSession.h"
 #include "RpgInventoryContainerActor.h"
 #include "RpgDroppedInventoryActor.h"
+#include "RpgInventoryFragment_ItemTraits.h"
 #include "RpgInventoryItemInstance.h"
+#include "RpgInventoryItemUseContext.h"
 #include "RpgInventoryManagerComponent.h"
 #include "RpgInventoryUiActionComponent.h"
 #include "SurvivalRpg/ActionBar/RpgActionBarComponent.h"
@@ -1505,6 +1507,81 @@ bool FRpgInventoryManualDropConfirmationAuthorityTest::RunTest(
 		1);
 	TestEqual(
 		TEXT("A request-id collision cannot add another dropped quantity"),
+		CountDroppedUnits(),
+		3);
+
+	URpgInventoryItemInstance* ProviderBag =
+		Inventory->AddItemDefinitionToPlacement(
+			URpgInventoryAutomationTestBagItemDefinition::StaticClass(),
+			1,
+			MakePlacement(Pockets, 0, 1));
+	if (!TestNotNull(
+			TEXT("A direct-drop provider bag exists"),
+			ProviderBag))
+	{
+		MessageSubsystem.UnregisterListener(ListenerHandle);
+		return false;
+	}
+	const FRpgInventoryContainerHandle ProviderContents =
+		FRpgInventoryContainerHandle::MakeItemOwned(
+			ProviderBag->GetItemId(),
+			BagContainerId,
+			1);
+	URpgInventoryItemInstance* ProtectedChild =
+		Inventory->AddItemDefinitionToPlacement(
+			URpgInventoryAutomationTestNoDropItemDefinition::StaticClass(),
+			1,
+			MakePlacement(ProviderContents, 0, 0));
+	FRpgInventoryEntryView ProviderEntry;
+	if (!TestNotNull(
+			TEXT("The provider's disabled child exists"),
+			ProtectedChild) ||
+		!TestTrue(
+			TEXT("The provider has a stable replicated entry"),
+			GetEntryView(
+				Inventory,
+				ProviderBag->GetItemId(),
+				ProviderEntry)))
+	{
+		MessageSubsystem.UnregisterListener(ListenerHandle);
+		return false;
+	}
+
+	const FString BeforeProtectedSubtreeDrop =
+		MakeInventorySignature(Inventory);
+	FRpgInventoryManualDropRequest ProtectedSubtreeRequest;
+	ProtectedSubtreeRequest.RequestId = FGuid::NewGuid();
+	ProtectedSubtreeRequest.EntryId = ProviderEntry.EntryId;
+	ProtectedSubtreeRequest.ItemId = ProviderEntry.ItemId;
+	ProtectedSubtreeRequest.ExpectedSourcePlacement =
+		ProviderEntry.Placement;
+	ProtectedSubtreeRequest.StackCount = 1;
+	ProtectedSubtreeRequest.bConfirmed = true;
+	const int32 ProtectedFeedbackIndex = FeedbackMessages.Num();
+	UiActions->RequestDropInventoryItemById(
+		Inventory,
+		ProtectedSubtreeRequest);
+	TestEqual(
+		TEXT("A protected-descendant request emits one rejection"),
+		FeedbackMessages.Num(),
+		ProtectedFeedbackIndex + 1);
+	if (FeedbackMessages.IsValidIndex(ProtectedFeedbackIndex))
+	{
+		TestEqual(
+			TEXT("A disabled descendant blocks its provider's physical drop"),
+			FeedbackMessages[ProtectedFeedbackIndex].Result,
+			ERpgInventoryActionFeedbackResult::CannotDrop);
+	}
+	TestEqual(
+		TEXT("Protected-descendant rejection preserves the complete source graph"),
+		MakeInventorySignature(Inventory),
+		BeforeProtectedSubtreeDrop);
+	TestEqual(
+		TEXT("Protected-descendant rejection creates no additional drop actor"),
+		CountDroppedActors(),
+		1);
+	TestEqual(
+		TEXT("Protected-descendant rejection adds no world-drop units"),
 		CountDroppedUnits(),
 		3);
 
@@ -4126,6 +4203,9 @@ bool FRpgInventoryLowLevelBlueprintDeprecationTest::RunTest(const FString& Param
 		GET_FUNCTION_NAME_CHECKED(URpgInventoryManagerComponent, GrantItemDefinition),
 		GET_FUNCTION_NAME_CHECKED(URpgInventoryManagerComponent, BootstrapItemInstance),
 		GET_FUNCTION_NAME_CHECKED(URpgInventoryManagerComponent, CanBootstrapItemInstance),
+		GET_FUNCTION_NAME_CHECKED(URpgInventoryManagerComponent, CanConsumeItemById),
+		GET_FUNCTION_NAME_CHECKED(URpgInventoryManagerComponent, ConsumeItemById),
+		GET_FUNCTION_NAME_CHECKED(URpgInventoryManagerComponent, ConsumeItemsByDefinition),
 	};
 	for (const FName FunctionName : CanonicalFunctionNames)
 	{
@@ -4665,6 +4745,938 @@ bool FRpgInventoryGraphPersistenceRoundTripTest::RunTest(const FString& Paramete
 				2);
 		}
 	}
+	return true;
+}
+
+IMPLEMENT_SIMPLE_AUTOMATION_TEST(
+	FRpgInventoryConsumeNestedSubtreeTest,
+	"SurvivalRpg.Inventory.Transaction.ConsumeNestedSubtreeIsAtomic",
+	EAutomationTestFlags::EditorContext |
+		EAutomationTestFlags::EngineFilter)
+
+bool FRpgInventoryConsumeNestedSubtreeTest::RunTest(
+	const FString& Parameters)
+{
+	using namespace RpgInventoryTransactionTests;
+	FScopedInventoryWorld TestWorld;
+	if (!InitializeTest(*this, TestWorld))
+	{
+		return false;
+	}
+
+	URpgInventoryManagerComponent* Inventory =
+		TestWorld.CreateInventory(TEXT("NestedConsumeInventory"));
+	if (!TestNotNull(TEXT("Nested-consume inventory exists"), Inventory))
+	{
+		return false;
+	}
+
+	const FRpgInventoryContainerHandle Root = MakeStorageHandle();
+	URpgInventoryItemInstance* RootBag =
+		Inventory->AddItemDefinitionToPlacement(
+			URpgInventoryAutomationTestBagItemDefinition::StaticClass(),
+			1,
+			MakePlacement(Root, 0, 0));
+	URpgInventoryItemInstance* IndependentSibling =
+		Inventory->AddItemDefinitionToPlacement(
+			URpgInventoryAutomationTestUnitItemDefinition::StaticClass(),
+			1,
+			MakePlacement(Root, 2, 0));
+	if (!TestNotNull(TEXT("The consumed root bag exists"), RootBag) ||
+		!TestNotNull(
+			TEXT("An independent root sibling exists"),
+			IndependentSibling))
+	{
+		return false;
+	}
+
+	const FRpgInventoryItemId RootBagId = RootBag->GetItemId();
+	const FRpgInventoryItemId SiblingId =
+		IndependentSibling->GetItemId();
+	const FRpgInventoryContainerHandle RootBagContents =
+		FRpgInventoryContainerHandle::MakeItemOwned(
+			RootBagId,
+			BagContainerId,
+			1);
+	URpgInventoryItemInstance* NestedBag =
+		Inventory->AddItemDefinitionToPlacement(
+			URpgInventoryAutomationTestBagItemDefinition::StaticClass(),
+			1,
+			MakePlacement(RootBagContents, 0, 0));
+	if (!TestNotNull(TEXT("The nested bag exists"), NestedBag))
+	{
+		return false;
+	}
+
+	const FRpgInventoryItemId NestedBagId = NestedBag->GetItemId();
+	const FRpgInventoryContainerHandle NestedBagContents =
+		FRpgInventoryContainerHandle::MakeItemOwned(
+			NestedBagId,
+			BagContainerId,
+			2);
+	URpgInventoryItemInstance* NestedLeaf =
+		Inventory->AddItemDefinitionToPlacement(
+			URpgInventoryAutomationTestStackItemDefinition::StaticClass(),
+			4,
+			MakePlacement(NestedBagContents, 1, 2));
+	if (!TestNotNull(TEXT("The depth-two leaf stack exists"), NestedLeaf))
+	{
+		return false;
+	}
+	const FRpgInventoryItemId NestedLeafId =
+		NestedLeaf->GetItemId();
+
+	FRpgInventoryMutationRequest ConsumeRequest;
+	ConsumeRequest.Operation =
+		ERpgInventoryMutationOperation::Consume;
+	ConsumeRequest.ItemId = RootBagId;
+	ConsumeRequest.Source = Root;
+	ConsumeRequest.Quantity = 1;
+	ConsumeRequest.RequestId = FGuid::NewGuid();
+	const FRpgInventoryMutationResult ConsumePlan =
+		Inventory->PlanInventoryMutation(ConsumeRequest);
+	TestEqual(
+		TEXT("A full root consume plans successfully"),
+		ConsumePlan.Code,
+		ERpgInventoryMutationResultCode::Success);
+	TestEqual(
+		TEXT("The consume plan contains root and both descendant deltas"),
+		ConsumePlan.Deltas.Num(),
+		3);
+	if (ConsumePlan.Deltas.Num() == 3)
+	{
+		TestEqual(
+			TEXT("The deepest descendant is planned before its owner"),
+			ConsumePlan.Deltas[0].BeforeContainer.Depth,
+			static_cast<uint8>(2));
+		TestEqual(
+			TEXT("The physical root is planned last"),
+			ConsumePlan.Deltas.Last().ItemId,
+			RootBagId);
+	}
+
+	const FRpgInventoryMutationResult ConsumeResult =
+		Inventory->ExecuteInventoryMutation(ConsumeRequest);
+	TestEqual(
+		TEXT("The complete nested consume commits"),
+		ConsumeResult.Code,
+		ERpgInventoryMutationResultCode::Success);
+	TestEqual(
+		TEXT("Applied quantity counts only the requested physical root"),
+		ConsumeResult.AppliedQuantity,
+		1);
+	TestEqual(
+		TEXT("Exactly one independent entry remains"),
+		Inventory->GetUsedEntryCount(),
+		1);
+	TestNull(
+		TEXT("The root bag identity is removed"),
+		Inventory->FindItemById(RootBagId));
+	TestNull(
+		TEXT("The nested bag identity is removed"),
+		Inventory->FindItemById(NestedBagId));
+	TestNull(
+		TEXT("The nested leaf identity is removed"),
+		Inventory->FindItemById(NestedLeafId));
+	TestNotNull(
+		TEXT("The unrelated root sibling survives"),
+		Inventory->FindItemById(SiblingId));
+
+	const FString AfterConsumeSignature =
+		MakeInventorySignature(Inventory);
+	const FRpgInventoryMutationResult RetriedResult =
+		Inventory->ExecuteInventoryMutation(ConsumeRequest);
+	TestEqual(
+		TEXT("A reliable consume retry returns the cached success"),
+		RetriedResult.Code,
+		ConsumeResult.Code);
+	TestEqual(
+		TEXT("A consume retry cannot remove unrelated inventory"),
+		MakeInventorySignature(Inventory),
+		AfterConsumeSignature);
+	return true;
+}
+
+IMPLEMENT_SIMPLE_AUTOMATION_TEST(
+	FRpgInventoryLegacyProviderPartialRemovalTest,
+	"SurvivalRpg.Inventory.Transaction.LegacyContainerPartialRemovalFailsClosed",
+	EAutomationTestFlags::EditorContext |
+		EAutomationTestFlags::EngineFilter)
+
+bool FRpgInventoryLegacyProviderPartialRemovalTest::RunTest(
+	const FString& Parameters)
+{
+	using namespace RpgInventoryTransactionTests;
+	FScopedInventoryWorld TestWorld;
+	if (!InitializeTest(*this, TestWorld))
+	{
+		return false;
+	}
+
+	URpgInventoryManagerComponent* Inventory =
+		TestWorld.CreateInventory(TEXT("LegacyContainerRemovalInventory"));
+	if (!TestNotNull(
+			TEXT("Legacy-container inventory exists"),
+			Inventory))
+	{
+		return false;
+	}
+
+	const FRpgInventoryContainerHandle Root = MakeStorageHandle();
+	const FRpgInventoryItemId BagId =
+		FRpgInventoryItemId::NewId();
+	FRpgInventorySnapshot LegacySnapshot;
+	LegacySnapshot.ContainerId = StorageContainerId;
+
+	FRpgInventorySnapshotEntry& BagEntry =
+		LegacySnapshot.Entries.AddDefaulted_GetRef();
+	BagEntry.EntryId = FGuid::NewGuid();
+	BagEntry.ItemId = BagId;
+	BagEntry.ItemDefinition =
+		URpgInventoryAutomationTestLegacyStackableBagItemDefinition::
+			StaticClass();
+	BagEntry.StackCount = 2;
+	BagEntry.Placement = MakePlacement(Root, 0, 0);
+	Inventory->ImportInventorySnapshot(LegacySnapshot);
+
+	URpgInventoryItemInstance* LegacyBag =
+		Inventory->FindItemById(BagId);
+	if (!TestNotNull(
+			TEXT("The legacy snapshot reconstructed its provider"),
+			LegacyBag))
+	{
+		return false;
+	}
+	TestEqual(
+		TEXT("The fixture contains a legacy two-unit provider stack"),
+		Inventory->GetItemStackCount(LegacyBag),
+		2);
+	const URpgInventoryFragment_ItemTraits* LegacyTraits =
+		LegacyBag->FindFragmentByClass<
+			URpgInventoryFragment_ItemTraits>();
+	TestTrue(
+		TEXT("The malformed legacy fixture advertises a raw stack size above one"),
+		LegacyTraits && LegacyTraits->GetMaxStackSize() > 1);
+	TestEqual(
+		TEXT("The authoritative effective stack rule clamps providers to one"),
+		URpgInventoryManagerComponent::
+			GetEffectiveMaxStackSizeForDefinition(
+				LegacyBag->GetItemDef()),
+		1);
+
+	const FString BeforeRejectedMutations =
+		MakeInventorySignature(Inventory);
+	TestFalse(
+		TEXT("Exact consume preflight rejects a partial empty provider"),
+		Inventory->CanConsumeItemById(BagId, 1));
+	FRpgInventoryMutationRequest ConsumeRequest;
+	ConsumeRequest.Operation =
+		ERpgInventoryMutationOperation::Consume;
+	ConsumeRequest.ItemId = BagId;
+	ConsumeRequest.Source = Root;
+	ConsumeRequest.Quantity = 1;
+	ConsumeRequest.RequestId = FGuid::NewGuid();
+	const FRpgInventoryMutationResult ConsumePlan =
+		Inventory->PlanInventoryMutation(ConsumeRequest);
+	TestEqual(
+		TEXT("A partial concrete container consume is rejected"),
+		ConsumePlan.Code,
+		ERpgInventoryMutationResultCode::InvalidRequest);
+	TestTrue(
+		TEXT("A rejected partial consume exposes no deltas"),
+		ConsumePlan.Deltas.IsEmpty());
+
+	FRpgInventoryMutationRequest DropRequest = ConsumeRequest;
+	DropRequest.Operation = ERpgInventoryMutationOperation::Drop;
+	DropRequest.RequestId = FGuid::NewGuid();
+	const FRpgInventoryMutationResult DropPlan =
+		Inventory->PlanInventoryMutation(DropRequest);
+	TestEqual(
+		TEXT("A partial concrete container drop is rejected"),
+		DropPlan.Code,
+		ERpgInventoryMutationResultCode::InvalidRequest);
+	TestTrue(
+		TEXT("A rejected partial drop exposes no deltas"),
+		DropPlan.Deltas.IsEmpty());
+
+	FRpgInventoryMutationRequest SplitRequest =
+		MakePlacementRequest(
+			ERpgInventoryMutationOperation::Split,
+			LegacyBag,
+			Root,
+			Root,
+			3,
+			0);
+	SplitRequest.Quantity = 1;
+	const FRpgInventoryMutationResult SplitPlan =
+		Inventory->PlanInventoryMutation(SplitRequest);
+	TestEqual(
+		TEXT("A container provider can never be split"),
+		SplitPlan.Code,
+		ERpgInventoryMutationResultCode::StackLimitReached);
+	TestFalse(
+		TEXT("The deprecated stack-removal adapter also rejects the partial provider"),
+		Inventory->RemoveItemInstanceStack(LegacyBag, 1));
+
+	UWorld* World = TestWorld.GetTestWorld();
+	FActorSpawnParameters SpawnParameters;
+	SpawnParameters.Name = MakeUniqueObjectName(
+		World,
+		ARpgDroppedInventoryActor::StaticClass(),
+		TEXT("LegacyPartialProviderDrop"));
+	SpawnParameters.ObjectFlags = RF_Transient;
+	SpawnParameters.SpawnCollisionHandlingOverride =
+		ESpawnActorCollisionHandlingMethod::AlwaysSpawn;
+	ARpgDroppedInventoryActor* DropActor =
+		World->SpawnActor<ARpgDroppedInventoryActor>(
+			ARpgDroppedInventoryActor::StaticClass(),
+			FTransform::Identity,
+			SpawnParameters);
+	if (!TestNotNull(
+			TEXT("The physical partial-provider target exists"),
+			DropActor))
+	{
+		return false;
+	}
+	const FRpgInventoryMutationResult PhysicalDropResult =
+		DropActor->TransferItemFromInventory(
+			Inventory,
+			BagId,
+			1,
+			FGuid::NewGuid());
+	TestEqual(
+		TEXT("The physical gateway also rejects a partial empty provider"),
+		PhysicalDropResult.Code,
+		ERpgInventoryMutationResultCode::InvalidRequest);
+	TestEqual(
+		TEXT("Rejected physical drop leaves its target empty"),
+		DropActor->GetLootInventoryManager()->GetUsedEntryCount(),
+		0);
+	TestFalse(
+		TEXT("Broad definition consume never selects a concrete provider"),
+		Inventory->ConsumeItemsByDefinition(
+			URpgInventoryAutomationTestLegacyStackableBagItemDefinition::
+				StaticClass(),
+			1));
+	TestEqual(
+		TEXT("Every rejected path preserves the complete legacy graph"),
+		MakeInventorySignature(Inventory),
+		BeforeRejectedMutations);
+
+	Inventory->RemoveItemInstance(LegacyBag);
+	TestEqual(
+		TEXT("The full legacy remove adapter deletes the complete provider stack"),
+		Inventory->GetUsedEntryCount(),
+		0);
+	return true;
+}
+
+IMPLEMENT_SIMPLE_AUTOMATION_TEST(
+	FRpgInventoryBatchConsumeAtomicityTest,
+	"SurvivalRpg.Inventory.Transaction.DefinitionConsumeIsAtomic",
+	EAutomationTestFlags::EditorContext |
+		EAutomationTestFlags::EngineFilter)
+
+bool FRpgInventoryBatchConsumeAtomicityTest::RunTest(
+	const FString& Parameters)
+{
+	using namespace RpgInventoryTransactionTests;
+	FScopedInventoryWorld TestWorld;
+	if (!InitializeTest(*this, TestWorld))
+	{
+		return false;
+	}
+
+	URpgInventoryManagerComponent* Inventory =
+		TestWorld.CreateInventory(TEXT("BatchConsumeInventory"));
+	if (!TestNotNull(TEXT("Batch-consume inventory exists"), Inventory))
+	{
+		return false;
+	}
+
+	const FRpgInventoryContainerHandle Root = MakeStorageHandle();
+	URpgInventoryItemInstance* FirstStack =
+		Inventory->AddItemDefinitionToPlacement(
+			URpgInventoryAutomationTestStackItemDefinition::StaticClass(),
+			3,
+			MakePlacement(Root, 0, 0));
+	URpgInventoryItemInstance* SecondStack =
+		Inventory->AddItemDefinitionToPlacement(
+			URpgInventoryAutomationTestStackItemDefinition::StaticClass(),
+			2,
+			MakePlacement(Root, 1, 0));
+	if (!TestNotNull(TEXT("The first resource stack exists"), FirstStack) ||
+		!TestNotNull(TEXT("The second resource stack exists"), SecondStack))
+	{
+		return false;
+	}
+
+	const FString BeforeInsufficientConsume =
+		MakeInventorySignature(Inventory);
+	TestFalse(
+		TEXT("An insufficient multi-stack consume is rejected"),
+		Inventory->ConsumeItemsByDefinition(
+			URpgInventoryAutomationTestStackItemDefinition::StaticClass(),
+			6));
+	TestEqual(
+		TEXT("Insufficient batch consume mutates no earlier stack"),
+		MakeInventorySignature(Inventory),
+		BeforeInsufficientConsume);
+
+	TestTrue(
+		TEXT("A satisfiable multi-stack consume commits"),
+		Inventory->ConsumeItemsByDefinition(
+			URpgInventoryAutomationTestStackItemDefinition::StaticClass(),
+			4));
+	TestEqual(
+		TEXT("The exact unconsumed quantity remains"),
+		Inventory->GetTotalItemCountByDefinition(
+			URpgInventoryAutomationTestStackItemDefinition::StaticClass()),
+		1);
+
+	URpgInventoryItemInstance* Bag =
+		Inventory->AddItemDefinitionToPlacement(
+			URpgInventoryAutomationTestBagItemDefinition::StaticClass(),
+			1,
+			MakePlacement(Root, 2, 0));
+	if (!TestNotNull(TEXT("A concrete provider exists"), Bag))
+	{
+		return false;
+	}
+	const FString BeforeProviderConsume =
+		MakeInventorySignature(Inventory);
+	TestFalse(
+		TEXT("Definition consume refuses a provider even when count is sufficient"),
+		Inventory->ConsumeItemsByDefinition(
+			URpgInventoryAutomationTestBagItemDefinition::StaticClass(),
+			1));
+	TestEqual(
+		TEXT("Rejected provider consume preserves the graph"),
+		MakeInventorySignature(Inventory),
+		BeforeProviderConsume);
+	return true;
+}
+
+IMPLEMENT_SIMPLE_AUTOMATION_TEST(
+	FRpgInventoryPhysicalDropSubtreeTest,
+	"SurvivalRpg.Inventory.Drop.PhysicalSubtreePreservesStateAndCapacity",
+	EAutomationTestFlags::EditorContext |
+		EAutomationTestFlags::EngineFilter)
+
+bool FRpgInventoryPhysicalDropSubtreeTest::RunTest(
+	const FString& Parameters)
+{
+	using namespace RpgInventoryTransactionTests;
+	FScopedInventoryWorld TestWorld;
+	if (!InitializeTest(*this, TestWorld))
+	{
+		return false;
+	}
+
+	UWorld* World = TestWorld.GetTestWorld();
+	URpgInventoryManagerComponent* SourceInventory =
+		TestWorld.CreateInventory(TEXT("PhysicalDropSource"));
+	URpgInventoryManagerComponent* CapacityTarget =
+		TestWorld.CreateInventory(TEXT("PhysicalDropCapacityTarget"));
+	if (!TestNotNull(TEXT("Physical-drop source exists"), SourceInventory) ||
+		!TestNotNull(TEXT("Capacity-limited target exists"), CapacityTarget))
+	{
+		return false;
+	}
+
+	CapacityTarget->SetCapacityMode(
+		ERpgInventoryCapacityMode::FixedEntries);
+	CapacityTarget->SetFixedMaxEntries(1);
+	const FRpgInventoryContainerHandle Root = MakeStorageHandle();
+	URpgInventoryItemInstance* SourceBag =
+		SourceInventory->AddItemDefinitionToPlacement(
+			URpgInventoryAutomationTestBagItemDefinition::StaticClass(),
+			1,
+			MakePlacement(Root, 0, 0));
+	if (!TestNotNull(TEXT("The source drop bag exists"), SourceBag))
+	{
+		return false;
+	}
+
+	const FRpgInventoryItemId BagId = SourceBag->GetItemId();
+	const FRpgInventoryContainerHandle BagContents =
+		FRpgInventoryContainerHandle::MakeItemOwned(
+			BagId,
+			BagContainerId,
+			1);
+	URpgInventoryItemInstance* SourceChild =
+		SourceInventory->AddItemDefinitionToPlacement(
+			URpgInventoryAutomationTestStackItemDefinition::StaticClass(),
+			5,
+			MakePlacement(BagContents, 2, 1));
+	if (!TestNotNull(TEXT("The source drop child exists"), SourceChild))
+	{
+		return false;
+	}
+	SourceChild->AddStatTagStack(
+		RpgGameplayTags::Ability_Attack_Basic,
+		3);
+	const FRpgInventoryItemId ChildId = SourceChild->GetItemId();
+	URpgInventoryItemInstance* RemainingSiblingA =
+		SourceInventory->AddItemDefinitionToPlacement(
+			URpgInventoryAutomationTestUnitItemDefinition::StaticClass(),
+			1,
+			MakePlacement(Root, 1, 0));
+	URpgInventoryItemInstance* RemainingSiblingB =
+		SourceInventory->AddItemDefinitionToPlacement(
+			URpgInventoryAutomationTestUnitItemDefinition::StaticClass(),
+			1,
+			MakePlacement(Root, 2, 0));
+	if (!TestNotNull(
+			TEXT("The first independent over-capacity sibling exists"),
+			RemainingSiblingA) ||
+		!TestNotNull(
+			TEXT("The second independent over-capacity sibling exists"),
+			RemainingSiblingB))
+	{
+		return false;
+	}
+
+	FRpgInventoryMutationRequest CapacityProbe;
+	CapacityProbe.Operation = ERpgInventoryMutationOperation::Drop;
+	CapacityProbe.ItemId = BagId;
+	CapacityProbe.Source = Root;
+	CapacityProbe.Target = Root;
+	CapacityProbe.Quantity = 1;
+	CapacityProbe.RequestId = FGuid::NewGuid();
+	const FString SourceBeforeCapacityRejection =
+		MakeInventorySignature(SourceInventory);
+	const FRpgInventoryMutationResult CapacityResult =
+		SourceInventory->ExecuteCrossInventoryTransfer(
+			CapacityTarget,
+			CapacityProbe,
+			false);
+	TestEqual(
+		TEXT("Entry capacity counts every member of a moved subtree"),
+		CapacityResult.Code,
+		ERpgInventoryMutationResultCode::NoSpace);
+	TestEqual(
+		TEXT("Capacity rejection applies no root quantity"),
+		CapacityResult.AppliedQuantity,
+		0);
+	TestEqual(
+		TEXT("Capacity rejection preserves the complete source graph"),
+		MakeInventorySignature(SourceInventory),
+		SourceBeforeCapacityRejection);
+	TestEqual(
+		TEXT("Capacity rejection leaves the target empty"),
+		CapacityTarget->GetUsedEntryCount(),
+		0);
+	SourceInventory->SetCapacityMode(
+		ERpgInventoryCapacityMode::FixedEntries);
+	SourceInventory->SetFixedMaxEntries(1);
+	TestTrue(
+		TEXT("The source fixture is now over its shrunken capacity"),
+		SourceInventory->GetUsedEntryCount() >
+			SourceInventory->GetMaxEntries());
+
+	FActorSpawnParameters SpawnParameters;
+	SpawnParameters.Name = MakeUniqueObjectName(
+		World,
+		ARpgDroppedInventoryActor::StaticClass(),
+		TEXT("PhysicalDropActor"));
+	SpawnParameters.ObjectFlags = RF_Transient;
+	SpawnParameters.SpawnCollisionHandlingOverride =
+		ESpawnActorCollisionHandlingMethod::AlwaysSpawn;
+	ARpgDroppedInventoryActor* DropActor =
+		World->SpawnActor<ARpgDroppedInventoryActor>(
+			ARpgDroppedInventoryActor::StaticClass(),
+			FTransform::Identity,
+			SpawnParameters);
+	if (!TestNotNull(TEXT("A durable dropped actor exists"), DropActor))
+	{
+		return false;
+	}
+
+	const FRpgInventoryMutationResult DropResult =
+		DropActor->TransferItemFromInventory(
+			SourceInventory,
+			BagId,
+			1,
+			FGuid::NewGuid());
+	TestEqual(
+		TEXT("The dedicated physical-drop gateway succeeds"),
+		DropResult.Code,
+		ERpgInventoryMutationResultCode::Success);
+	TestEqual(
+		TEXT("The physical drop retains semantic Drop operation"),
+		DropResult.Operation,
+		ERpgInventoryMutationOperation::Drop);
+	TestEqual(
+		TEXT("The physical drop reports one delta per subtree entry"),
+		DropResult.Deltas.Num(),
+		2);
+	TestEqual(
+		TEXT("An over-capacity source can shrink even while it remains over capacity"),
+		SourceInventory->GetUsedEntryCount(),
+		2);
+	TestTrue(
+		TEXT("The successful egress leaves the source above its shrunken cap"),
+		SourceInventory->GetUsedEntryCount() >
+			SourceInventory->GetMaxEntries());
+
+	URpgInventoryManagerComponent* DropInventory =
+		DropActor->GetLootInventoryManager();
+	if (!TestNotNull(
+			TEXT("The drop exposes an authoritative loot inventory"),
+			DropInventory))
+	{
+		return false;
+	}
+	TestEqual(
+		TEXT("The world inventory contains root and child"),
+		DropInventory->GetUsedEntryCount(),
+		2);
+	URpgInventoryItemInstance* DroppedBag =
+		DropInventory->FindItemById(BagId);
+	URpgInventoryItemInstance* DroppedChild =
+		DropInventory->FindItemById(ChildId);
+	TestNotNull(
+		TEXT("The dropped bag preserves its persistent identity"),
+		DroppedBag);
+	TestNotNull(
+		TEXT("The dropped child preserves its persistent identity"),
+		DroppedChild);
+	if (DroppedBag && DroppedChild)
+	{
+		TestTrue(
+			TEXT("The durable drop reconstructs the bag under its actor"),
+			DroppedBag != SourceBag);
+		TestTrue(
+			TEXT("The durable drop reconstructs the child under its actor"),
+			DroppedChild != SourceChild);
+		TestEqual(
+			TEXT("The child runtime state survives physical drop"),
+			DroppedChild->GetStatTagStackCount(
+				RpgGameplayTags::Ability_Attack_Basic),
+			3);
+		FRpgInventoryEntryView DroppedChildView;
+		TestTrue(
+			TEXT("The dropped child placement resolves"),
+			GetEntryView(DropInventory, ChildId, DroppedChildView));
+		TestEqual(
+			TEXT("The child remains owned by the dropped bag"),
+			DroppedChildView.Placement.GetContainerHandle().ItemOwnerId,
+			BagId);
+		TestEqual(
+			TEXT("The inner X placement survives physical drop"),
+			DroppedChildView.Placement.X,
+			2);
+		TestEqual(
+			TEXT("The inner Y placement survives physical drop"),
+			DroppedChildView.Placement.Y,
+			1);
+	}
+
+	URpgInventoryManagerComponent* IdentitySource =
+		TestWorld.CreateInventory(TEXT("PhysicalDropIdentitySource"));
+	if (!TestNotNull(
+			TEXT("The identity-preserving drop source exists"),
+			IdentitySource))
+	{
+		return false;
+	}
+	URpgInventoryItemInstance* FirstConcreteStack =
+		IdentitySource->AddItemDefinitionToPlacement(
+			URpgInventoryAutomationTestStackItemDefinition::StaticClass(),
+			3,
+			MakePlacement(Root, 0, 0));
+	URpgInventoryItemInstance* SecondConcreteStack =
+		IdentitySource->AddItemDefinitionToPlacement(
+			URpgInventoryAutomationTestStackItemDefinition::StaticClass(),
+			2,
+			MakePlacement(Root, 1, 0));
+	if (!TestNotNull(
+			TEXT("The first concrete death-drop stack exists"),
+			FirstConcreteStack) ||
+		!TestNotNull(
+			TEXT("The second concrete death-drop stack exists"),
+			SecondConcreteStack))
+	{
+		return false;
+	}
+	const FRpgInventoryItemId FirstConcreteStackId =
+		FirstConcreteStack->GetItemId();
+	const FRpgInventoryItemId SecondConcreteStackId =
+		SecondConcreteStack->GetItemId();
+	const FRpgInventoryMutationResult FirstIdentityDrop =
+		DropActor->TransferItemFromInventory(
+			IdentitySource,
+			FirstConcreteStackId,
+			3,
+			FGuid::NewGuid(),
+			true);
+	const FRpgInventoryMutationResult SecondIdentityDrop =
+		DropActor->TransferItemFromInventory(
+			IdentitySource,
+			SecondConcreteStackId,
+			2,
+			FGuid::NewGuid(),
+			true);
+	TestEqual(
+		TEXT("The first identity-preserving stack drop succeeds"),
+		FirstIdentityDrop.Code,
+		ERpgInventoryMutationResultCode::Success);
+	TestEqual(
+		TEXT("The second identity-preserving stack drop succeeds"),
+		SecondIdentityDrop.Code,
+		ERpgInventoryMutationResultCode::Success);
+	TestNotNull(
+		TEXT("The first compatible stack keeps its own item id"),
+		DropInventory->FindItemById(FirstConcreteStackId));
+	TestNotNull(
+		TEXT("The second compatible stack is not merged away"),
+		DropInventory->FindItemById(SecondConcreteStackId));
+	TestEqual(
+		TEXT("Both identity-preserving source rows moved completely"),
+		IdentitySource->GetUsedEntryCount(),
+		0);
+
+	const FRpgInventoryContainerHandle DropRoot =
+		FRpgInventoryContainerHandle::MakeRoot(
+			DropInventory->GetDefaultContainerId());
+	const FRpgInventoryGridSize InitialDropGrid =
+		DropInventory->GetDefaultGridSize();
+	for (int32 Y = 0; Y < InitialDropGrid.Height; ++Y)
+	{
+		for (int32 X = 0; X < InitialDropGrid.Width; ++X)
+		{
+			if (DropInventory->GetItemAtContainerCell(
+					DropRoot,
+					X,
+					Y))
+			{
+				continue;
+			}
+
+			URpgInventoryItemInstance* Filler =
+				DropInventory->AddItemDefinitionToPlacement(
+					URpgInventoryAutomationTestUnitItemDefinition::
+						StaticClass(),
+					1,
+					MakePlacement(DropRoot, X, Y));
+			if (!TestNotNull(
+					TEXT("The overflow fixture fills every free corpse cell"),
+					Filler))
+			{
+				return false;
+			}
+		}
+	}
+
+	URpgInventoryManagerComponent* OverflowSource =
+		TestWorld.CreateInventory(TEXT("PhysicalDropOverflowSource"));
+	URpgInventoryItemInstance* OverflowItem =
+		OverflowSource
+			? OverflowSource->AddItemDefinitionToPlacement(
+				URpgInventoryAutomationTestUnitItemDefinition::
+					StaticClass(),
+				1,
+				MakePlacement(Root, 0, 0))
+			: nullptr;
+	if (!TestNotNull(
+			TEXT("The corpse-overflow source exists"),
+			OverflowSource) ||
+		!TestNotNull(
+			TEXT("The corpse-overflow item exists"),
+			OverflowItem))
+	{
+		return false;
+	}
+	const FRpgInventoryItemId OverflowItemId =
+		OverflowItem->GetItemId();
+
+	const FRpgInventoryMutationResult OverflowDropResult =
+		DropActor->TransferItemFromInventory(
+			OverflowSource,
+			OverflowItemId,
+			1,
+			FGuid::NewGuid(),
+			true);
+	TestEqual(
+		TEXT("A full corpse grid expands instead of retaining the item on the player"),
+		OverflowDropResult.Code,
+		ERpgInventoryMutationResultCode::Success);
+	TestTrue(
+		TEXT("The durable corpse root grows only when its authored grid is full"),
+		DropInventory->GetDefaultGridSize().Height >
+			InitialDropGrid.Height);
+	TestNotNull(
+		TEXT("The overflow item keeps its persistent identity in the expanded corpse"),
+		DropInventory->FindItemById(OverflowItemId));
+	return true;
+}
+
+IMPLEMENT_SIMPLE_AUTOMATION_TEST(
+	FRpgInventoryItemUseContextConsumeCallbackTest,
+	"SurvivalRpg.Inventory.UseContext.ConsumeCompletionIsExactlyOnce",
+	EAutomationTestFlags::EditorContext |
+		EAutomationTestFlags::EngineFilter)
+
+bool FRpgInventoryItemUseContextConsumeCallbackTest::RunTest(
+	const FString& Parameters)
+{
+	using namespace RpgInventoryTransactionTests;
+	FScopedInventoryWorld TestWorld;
+	if (!InitializeTest(*this, TestWorld))
+	{
+		return false;
+	}
+
+	URpgInventoryManagerComponent* Inventory =
+		TestWorld.CreateInventory(TEXT("ItemUseContextInventory"));
+	if (!TestNotNull(TEXT("The item-use inventory exists"), Inventory))
+	{
+		return false;
+	}
+
+	const FRpgInventoryContainerHandle Root = MakeStorageHandle();
+	URpgInventoryItemInstance* ConsumedStack =
+		Inventory->AddItemDefinitionToPlacement(
+			URpgInventoryAutomationTestStackItemDefinition::StaticClass(),
+			2,
+			MakePlacement(Root, 0, 0));
+	if (!TestNotNull(
+			TEXT("The fully consumed source stack exists"),
+			ConsumedStack))
+	{
+		return false;
+	}
+	const FRpgInventoryItemId ConsumedStackId =
+		ConsumedStack->GetItemId();
+
+	int32 SuccessfulCompletionCount = 0;
+	URpgInventoryItemUseContext* SuccessfulContext =
+		NewObject<URpgInventoryItemUseContext>(Inventory);
+	SuccessfulContext->Initialize(
+		Inventory,
+		ConsumedStack,
+		1,
+		2);
+	SuccessfulContext->SetConsumeSucceededCallback(
+		FSimpleDelegate::CreateLambda(
+			[&SuccessfulCompletionCount]()
+			{
+				++SuccessfulCompletionCount;
+			}));
+
+	TestTrue(
+		TEXT("A full-stack item use consumes successfully"),
+		SuccessfulContext->TryConsume());
+	TestTrue(
+		TEXT("The successful context records its committed consume"),
+		SuccessfulContext->bConsumed);
+	TestNull(
+		TEXT("The fully consumed stack is removed from inventory"),
+		Inventory->FindItemById(ConsumedStackId));
+	TestEqual(
+		TEXT("A committed consume runs completion exactly once"),
+		SuccessfulCompletionCount,
+		1);
+
+	TestTrue(
+		TEXT("Retrying an already committed context is idempotent"),
+		SuccessfulContext->TryConsume());
+	TestEqual(
+		TEXT("An idempotent retry does not run completion again"),
+		SuccessfulCompletionCount,
+		1);
+
+	URpgInventoryItemInstance* RejectedStack =
+		Inventory->AddItemDefinitionToPlacement(
+			URpgInventoryAutomationTestStackItemDefinition::StaticClass(),
+			1,
+			MakePlacement(Root, 1, 0));
+	if (!TestNotNull(
+			TEXT("The insufficient source stack exists"),
+			RejectedStack))
+	{
+		return false;
+	}
+	const FRpgInventoryItemId RejectedStackId =
+		RejectedStack->GetItemId();
+
+	int32 RejectedCompletionCount = 0;
+	URpgInventoryItemUseContext* RejectedContext =
+		NewObject<URpgInventoryItemUseContext>(Inventory);
+	RejectedContext->Initialize(
+		Inventory,
+		RejectedStack,
+		1,
+		2);
+	RejectedContext->SetConsumeSucceededCallback(
+		FSimpleDelegate::CreateLambda(
+			[&RejectedCompletionCount]()
+			{
+				++RejectedCompletionCount;
+			}));
+
+	TestFalse(
+		TEXT("A consume larger than the available stack is rejected"),
+		RejectedContext->TryConsume());
+	TestFalse(
+		TEXT("A rejected context remains unconsumed"),
+		RejectedContext->bConsumed);
+	TestEqual(
+		TEXT("A rejected consume never runs completion"),
+		RejectedCompletionCount,
+		0);
+	TestEqual(
+		TEXT("A rejected consume preserves the source stack"),
+		Inventory->GetItemStackCount(
+			Inventory->FindItemById(RejectedStackId)),
+		1);
+
+	TestFalse(
+		TEXT("Retrying the still-invalid consume remains rejected"),
+		RejectedContext->TryConsume());
+	TestEqual(
+		TEXT("Repeated rejected consumes still never run completion"),
+		RejectedCompletionCount,
+		0);
+
+	int32 PreflightCompletionCount = 0;
+	int32 PreflightCallCount = 0;
+	URpgInventoryItemUseContext* PreflightRejectedContext =
+		NewObject<URpgInventoryItemUseContext>(Inventory);
+	PreflightRejectedContext->Initialize(
+		Inventory,
+		RejectedStack,
+		1,
+		1);
+	PreflightRejectedContext->SetConsumePreflightCallback(
+		FRpgInventoryUseConsumePreflight::CreateLambda(
+			[&PreflightCallCount]()
+			{
+				++PreflightCallCount;
+				return false;
+			}));
+	PreflightRejectedContext->SetConsumeSucceededCallback(
+		FSimpleDelegate::CreateLambda(
+			[&PreflightCompletionCount]()
+			{
+				++PreflightCompletionCount;
+			}));
+	TestFalse(
+		TEXT("A final delayed-use preflight can reject an otherwise valid consume"),
+		PreflightRejectedContext->TryConsume());
+	TestEqual(
+		TEXT("The final preflight runs exactly once per attempted commit"),
+		PreflightCallCount,
+		1);
+	TestEqual(
+		TEXT("Preflight rejection cannot run completion"),
+		PreflightCompletionCount,
+		0);
+	TestEqual(
+		TEXT("Preflight rejection preserves the valid source quantity"),
+		Inventory->GetItemStackCount(RejectedStack),
+		1);
 	return true;
 }
 

@@ -846,7 +846,7 @@ Status: **In Arbeit**
 - [x] Öffentliche Low-Level-Add/Remove/Move/Sort-Blueprintfläche deprecaten.
 - [ ] Schmale Intents für Grant/Bootstrap, Consume, Move, Transfer, Drop und
       Restore anbieten.
-- [ ] Remove/Consume/Drop grundsätzlich subtree-sicher machen.
+- [x] Remove/Consume/Drop grundsätzlich subtree-sicher machen.
 - [x] Raw-Add gegen fremden Outer, doppelte Item-ID und bereits enthaltene
       Instanzen absichern.
 - [ ] Physisches Equippen ausschließlich über Inventory-Transaktionen führen.
@@ -893,6 +893,42 @@ Verifizierter Phase-2A-Zwischenstand vom 2026-07-20:
   Remove/Consume/Drop atomar behandeln; partielle Container-Entfernung
   fail-closed ablehnen. Death-Drop und Legacy-Snapshot-Import bleiben als
   bestätigte anschließende Integritätsrisiken offen.
+
+Verifizierter Phase-2B-Zwischenstand vom 2026-07-20:
+
+- Exaktes Consume per persistenter Item-ID sowie Definition-Consume planen alle
+  betroffenen Einträge vor der ersten Mutation. Container-Provider werden nur
+  als vollständiger Subtree entfernt; partielle Entfernung wird auch bei
+  fehlerhaft konfigurierten Legacy-Definitionen fail-closed abgelehnt.
+- Physische Drops übertragen konkrete Runtime-Instanzen mitsamt persistenter
+  Item-ID und Hierarchie. Unzureichende Zielkapazität bleibt atomar, während
+  bereits überfüllte Quellen durch gültige Transfers schrittweise schrumpfen
+  dürfen. Der Death-Drop-Container erweitert sein Root-Grid bei Bedarf, statt
+  Restitems still im Spielerinventar zu belassen.
+- Manuelle Drops prüfen die Drop-Policy des vollständigen Subtrees und ändern
+  Hand-/Remembered-Zuweisungen erst nach erfolgreichem Transfer. Death Drop
+  schützt ausgerüstete Gear-Roots samt Descendants und entfernt
+  Blueprint-`StaticInventory` aus frisch erzeugten Runtime-Loot-Proxys.
+- Item-Use validiert positive Use-Zahlen und Multiplikationsüberläufe,
+  konsumiert über den exakten Intent und bereinigt Equipment-Zuweisungen auch
+  bei verzögerten Ability-Abschlüssen genau einmal.
+- Import- und Removal-Callbacks sehen erst einen vollständig stabilen
+  Inventarzustand. Cross-Inventory-Transfer importiert weiterhin vollständige
+  Graphen; atomare Benachrichtigungsbündel, Request-Fingerprints und
+  inkrementelle Deltas bleiben deshalb ausdrücklich Phase 3.
+- `SurvivalRpgEditor Win64 Development` wurde mit Unreal Engine 5.8 gebaut.
+- `SurvivalRpg.Inventory`: 65 von 65 Automationtests erfolgreich.
+- `SurvivalRpg.Equipment`: 5 von 5 Automationtests erfolgreich.
+- `SurvivalRpg.Crafting`: 6 von 6 Automationtests erfolgreich.
+- Fortschritt Phase 2: 3 von 8 Punkten abgeschlossen (37,5 %).
+- Gesamtfortschritt der verbindlichen Checkliste: 51 von 94 Punkten
+  abgeschlossen (54,3 %), 43 Punkte offen.
+- Nächster Safety-Schnitt: die noch gemischte öffentliche Oberfläche auf die
+  schmalen Move-/Transfer-/Drop-Intents reduzieren. Anschließend folgen
+  physisches Equippen über Inventory-Transaktionen und der gemeinsame
+  Placement-Vertrag. Legacy-Snapshot-Restore, Collect-Ende-zu-Ende-Rollback,
+  leere Drop-Actor-Lebensdauer und Ability-Effekt-vor-Consume bleiben gezielte
+  Integrationsrisiken.
 
 ## Phase 3 – Runtime-Transfer vom Save/Load trennen
 

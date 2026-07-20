@@ -364,6 +364,14 @@ public:
 	UFUNCTION(BlueprintCallable, Category = "Inventory|Capacity", BlueprintPure)
 	int32 GetFreeEntryCount() const;
 
+	/**
+	 * Returns the authoritative stack limit used by inventory mutations and UI preflight.
+	 * ItemContainer providers always resolve to one concrete instance per entry, even when
+	 * legacy trait data advertises a larger stack.
+	 */
+	static int32 GetEffectiveMaxStackSizeForDefinition(
+		TSubclassOf<URpgInventoryItemDefinition> ItemDef);
+
 	/** Returns how many new entries this item definition would need after filling compatible existing stacks. */
 	UFUNCTION(BlueprintCallable, Category = "Inventory|Capacity", BlueprintPure)
 	int32 GetRequiredNewEntryCountForItemDefinition(TSubclassOf<URpgInventoryItemDefinition> ItemDef, int32 StackCount = 1) const;
@@ -478,6 +486,13 @@ public:
 	UFUNCTION(BlueprintCallable, Category = "Inventory|Spatial", BlueprintPure)
 	FRpgInventoryGridSize GetDefaultGridSize() const { return DefaultGridSize; }
 
+	/**
+	 * Expands the non-player root grid to at least MinimumSize without moving existing entries.
+	 * Server-authoritative at runtime; intended for durable loot proxies that must not discard overflow.
+	 */
+	UFUNCTION(BlueprintCallable, BlueprintAuthorityOnly, Category = "Inventory|Spatial")
+	bool ExpandDefaultGridToMinimum(FRpgInventoryGridSize MinimumSize);
+
 	/** Resolves the grid dimensions for a player layout container or this inventory's default storage container. */
 	UFUNCTION(BlueprintCallable, Category = "Inventory|Spatial", BlueprintPure)
 	bool GetGridSizeForContainer(FName ContainerId, FRpgInventoryGridSize& OutGridSize) const;
@@ -513,7 +528,22 @@ public:
 	UFUNCTION(BlueprintCallable, Category=Inventory, BlueprintPure)
 	int32 GetTotalItemCountByDefinition(TSubclassOf<URpgInventoryItemDefinition> ItemDef) const;
 
-	UFUNCTION(BlueprintCallable, BlueprintAuthorityOnly, Category=Inventory)
+	/** Returns whether the exact quantity can be consumed without orphaning an item-owned container subtree. */
+	UFUNCTION(BlueprintCallable, Category = "Inventory|Intent", BlueprintPure)
+	bool CanConsumeItemById(FRpgInventoryItemId ItemId, int32 Quantity = 1) const;
+
+	/**
+	 * Consumes an exact quantity from one persistent item identity.
+	 * Full container entries remove their complete descendant subtree atomically; partial container consumption fails closed.
+	 */
+	UFUNCTION(BlueprintCallable, BlueprintAuthorityOnly, Category = "Inventory|Intent")
+	FRpgInventoryMutationResult ConsumeItemById(FRpgInventoryItemId ItemId, int32 Quantity = 1);
+
+	/**
+	 * Atomically consumes ordinary stacks matching one definition.
+	 * Container-provider definitions are never selected by this broad resource intent and require explicit item-id consumption.
+	 */
+	UFUNCTION(BlueprintCallable, BlueprintAuthorityOnly, Category = "Inventory|Intent")
 	bool ConsumeItemsByDefinition(TSubclassOf<URpgInventoryItemDefinition> ItemDef, int32 NumToConsume);
 
 	/** Rewrites shared replicated order for this inventory on the server. UI should request this through the owning controller component. */
@@ -540,11 +570,14 @@ public:
 	UFUNCTION(BlueprintCallable, BlueprintAuthorityOnly, Category = "Inventory|Snapshot")
 	void ImportInventorySnapshot(const FRpgInventorySnapshot& Snapshot);
 
-	/** Simulates one item-id based mutation using the same validation rules as the authoritative commit. */
+	/**
+	 * Simulates one local item-id mutation using its authoritative source rules.
+	 * Drop preview covers subtree removal only; the physical actor/target grid is validated by ExecuteCrossInventoryTransfer.
+	 */
 	UFUNCTION(BlueprintCallable, Category = "Inventory|Transaction", BlueprintPure = false)
 	FRpgInventoryMutationResult PlanInventoryMutation(FRpgInventoryMutationRequest Request) const;
 
-	/** Sole public authoritative item-id mutation path used by migrated UI and gameplay systems. */
+	/** Authoritative path for mutations contained within this inventory; physical moves use ExecuteCrossInventoryTransfer. */
 	UFUNCTION(BlueprintCallable, BlueprintAuthorityOnly, Category = "Inventory|Transaction")
 	FRpgInventoryMutationResult ExecuteInventoryMutation(FRpgInventoryMutationRequest Request);
 
@@ -602,6 +635,17 @@ private:
 	bool AddOwnedItemInstance(URpgInventoryItemInstance* ItemInstance, int32 StackCount, const FRpgInventoryGridPlacement* Placement = nullptr);
 	bool IsItemManagedByAnyInventory(const URpgInventoryItemInstance* ItemInstance) const;
 	bool HasItemIdentityConflictInAnyInventory(const URpgInventoryItemInstance* ItemInstance) const;
+	bool TryBuildRemovalDeltas(
+		const FRpgInventoryEntry& RootEntry,
+		int32 Quantity,
+		TArray<FRpgInventoryMutationDelta>& OutDeltas,
+		ERpgInventoryMutationResultCode& OutCode) const;
+	bool CommitRemovalDeltas(const TArray<FRpgInventoryMutationDelta>& Deltas);
+	bool ImportInventoryGraphInternal(
+		const FRpgInventoryGraphSaveData& SaveData,
+		FRpgInventoryMutationResult& OutResult,
+		const URpgInventoryManagerComponent* AllowedSourceInventory,
+		bool bAllowOverCapacityReduction);
 	FRpgInventoryMutationResult CacheRecentMutationResult(FRpgInventoryMutationResult Result);
 
 private:

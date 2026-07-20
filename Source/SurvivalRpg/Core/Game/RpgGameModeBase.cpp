@@ -31,6 +31,7 @@
 #include "SurvivalRpg/Inventory/RpgInventoryItemInstance.h"
 #include "SurvivalRpg/Inventory/RpgInventoryContainerComponent.h"
 #include "SurvivalRpg/Inventory/RpgInventoryManagerComponent.h"
+#include "SurvivalRpg/Inventory/RpgPlayerInventoryLayoutComponent.h"
 #include "SurvivalRpg/System/RpgAssetManager.h"
 #include "GameFramework/GameStateBase.h"
 #include "GameFramework/PlayerState.h"
@@ -1340,18 +1341,34 @@ void ARpgGameModeBase::DropInventoryForPlayerDeath(APlayerController* PC, const 
 		return;
 	}
 
-	FInventoryPickup DropPickup;
-	TArray<TPair<URpgInventoryItemInstance*, int32>> EntriesToRemove;
-
-	for (const FRpgInventoryEntryView& Entry : InventoryComponent->GetAllEntries())
+	const TArray<FRpgInventoryEntryView> InventoryEntries =
+		InventoryComponent->GetAllEntries();
+	TMap<FRpgInventoryItemId, int32> EntryIndexByItemId;
+	TArray<bool> bEntryEligible;
+	bEntryEligible.Init(false, InventoryEntries.Num());
+	for (int32 EntryIndex = 0;
+		EntryIndex < InventoryEntries.Num();
+		++EntryIndex)
 	{
+		const FRpgInventoryEntryView& Entry =
+			InventoryEntries[EntryIndex];
 		URpgInventoryItemInstance* ItemInstance = Entry.Instance;
-		if (!ItemInstance || Entry.StackCount <= 0)
+		if (!ItemInstance || Entry.StackCount <= 0 ||
+			!Entry.ItemId.IsValid())
 		{
 			continue;
 		}
+		EntryIndexByItemId.Add(Entry.ItemId, EntryIndex);
 
-		if (ItemInstance->FindFragmentByClass<URpgInventoryFragment_EquippableItem>() != nullptr)
+		const FRpgInventoryContainerHandle EntryContainer =
+			Entry.Placement.GetContainerHandle();
+		const bool bOccupiesPhysicalGearSlot =
+			EntryContainer.IsRoot() &&
+			URpgPlayerInventoryLayoutComponent::
+				IsBuiltInGearGroupId(EntryContainer.Root);
+		if (bOccupiesPhysicalGearSlot ||
+			ItemInstance->FindFragmentByClass<
+				URpgInventoryFragment_EquippableItem>() != nullptr)
 		{
 			continue;
 		}
@@ -1362,13 +1379,101 @@ void ARpgGameModeBase::DropInventoryForPlayerDeath(APlayerController* PC, const 
 			continue;
 		}
 
-		FPickupTemplate& Template = DropPickup.Templates.AddDefaulted_GetRef();
-		Template.ItemDef = ItemInstance->GetItemDef();
-		Template.StackCount = Entry.StackCount;
-		EntriesToRemove.Add(TPair<URpgInventoryItemInstance*, int32>(ItemInstance, Entry.StackCount));
+		bEntryEligible[EntryIndex] = true;
 	}
 
-	if (DropPickup.Templates.IsEmpty() || !DeathDropActorClass)
+	auto IsDescendantOf =
+		[&InventoryEntries, &EntryIndexByItemId](
+			const FRpgInventoryEntryView& Candidate,
+			const FRpgInventoryItemId& AncestorId)
+		{
+			FRpgInventoryContainerHandle Handle =
+				Candidate.Placement.GetContainerHandle();
+			TSet<FRpgInventoryItemId> VisitedOwnerIds;
+			for (int32 Guard = 0;
+				Guard <= InventoryEntries.Num() && Handle.IsItemOwned();
+				++Guard)
+			{
+				if (Handle.ItemOwnerId == AncestorId)
+				{
+					return true;
+				}
+				if (VisitedOwnerIds.Contains(Handle.ItemOwnerId))
+				{
+					break;
+				}
+
+				VisitedOwnerIds.Add(Handle.ItemOwnerId);
+				const int32* ParentIndex =
+					EntryIndexByItemId.Find(Handle.ItemOwnerId);
+				Handle = ParentIndex
+					? InventoryEntries[*ParentIndex]
+						  .Placement.GetContainerHandle()
+					: FRpgInventoryContainerHandle();
+			}
+			return false;
+		};
+
+	TArray<int32> CandidateIndices;
+	for (int32 EntryIndex = 0;
+		EntryIndex < InventoryEntries.Num();
+		++EntryIndex)
+	{
+		if (bEntryEligible[EntryIndex])
+		{
+			CandidateIndices.Add(EntryIndex);
+		}
+	}
+	CandidateIndices.Sort(
+		[&InventoryEntries](int32 A, int32 B)
+		{
+			const uint8 DepthA = InventoryEntries[A]
+				.Placement.GetContainerHandle().Depth;
+			const uint8 DepthB = InventoryEntries[B]
+				.Placement.GetContainerHandle().Depth;
+			return DepthA == DepthB ? A < B : DepthA < DepthB;
+		});
+
+	TArray<FRpgInventoryItemId> SelectedRootIds;
+	for (const int32 CandidateIndex : CandidateIndices)
+	{
+		const FRpgInventoryEntryView& Candidate =
+			InventoryEntries[CandidateIndex];
+		bool bContainsProtectedDescendant = false;
+		for (int32 PossibleDescendantIndex = 0;
+			PossibleDescendantIndex < InventoryEntries.Num();
+			++PossibleDescendantIndex)
+		{
+			if (!bEntryEligible[PossibleDescendantIndex] &&
+				IsDescendantOf(
+					InventoryEntries[PossibleDescendantIndex],
+					Candidate.ItemId))
+			{
+				bContainsProtectedDescendant = true;
+				break;
+			}
+		}
+		if (bContainsProtectedDescendant)
+		{
+			continue;
+		}
+
+		const bool bCoveredBySelectedAncestor =
+			SelectedRootIds.ContainsByPredicate(
+				[&Candidate, &IsDescendantOf](
+					const FRpgInventoryItemId& SelectedRootId)
+				{
+					return IsDescendantOf(
+						Candidate,
+						SelectedRootId);
+				});
+		if (!bCoveredBySelectedAncestor)
+		{
+			SelectedRootIds.Add(Candidate.ItemId);
+		}
+	}
+
+	if (SelectedRootIds.IsEmpty() || !DeathDropActorClass)
 	{
 		return;
 	}
@@ -1377,13 +1482,61 @@ void ARpgGameModeBase::DropInventoryForPlayerDeath(APlayerController* PC, const 
 	SpawnParams.Owner = PC;
 	SpawnParams.Instigator = PC->GetPawn();
 	ARpgDroppedInventoryActor* DropActor = GetWorld()->SpawnActor<ARpgDroppedInventoryActor>(DeathDropActorClass, DropTransform, SpawnParams);
-	if (DropActor)
+	if (!DropActor)
 	{
-		DropActor->SetPickupInventory(DropPickup);
+		return;
+	}
 
-		for (const TPair<URpgInventoryItemInstance*, int32>& EntryToRemove : EntriesToRemove)
+	// A death drop is built exclusively from the player's concrete item graph. Clear any
+	// Blueprint-authored static pickup defaults so they are not injected into every corpse.
+	DropActor->SetPickupInventory(FInventoryPickup());
+
+	bool bTransferredAnyItem = false;
+	for (const FRpgInventoryItemId& SelectedRootId :
+		SelectedRootIds)
+	{
+		URpgInventoryItemInstance* CurrentItem =
+			InventoryComponent->FindItemById(SelectedRootId);
+		const int32 CurrentStackCount = CurrentItem
+			? InventoryComponent->GetItemStackCount(CurrentItem)
+			: 0;
+		if (!CurrentItem || CurrentStackCount <= 0)
 		{
-			InventoryComponent->RemoveItemInstanceStack(EntryToRemove.Key, EntryToRemove.Value);
+			continue;
 		}
+
+		const FRpgInventoryMutationResult DropResult =
+			DropActor->TransferItemFromInventory(
+				InventoryComponent,
+				SelectedRootId,
+				CurrentStackCount,
+				FGuid::NewGuid(),
+				true);
+		if (!DropResult.IsSuccess() ||
+			DropResult.AppliedQuantity != CurrentStackCount)
+		{
+			UE_LOG(
+				LogRpg,
+				Warning,
+				TEXT("Death drop kept item %s in the player inventory because transfer failed with code %d."),
+				*SelectedRootId.ToString(),
+				static_cast<int32>(DropResult.Code));
+			continue;
+		}
+		bTransferredAnyItem = true;
+	}
+
+	if (!bTransferredAnyItem)
+	{
+		DropActor->Destroy();
+	}
+	else if (URpgEquipmentLoadoutComponent* EquipmentLoadout =
+				 PC->FindComponentByClass<
+					 URpgEquipmentLoadoutComponent>())
+	{
+		// Container-only gear providers are valid physical equipment even without an
+		// Equippable fragment. Reconcile once after all successful transfers so no slot or
+		// remembered-offhand mirror can retain an item that now belongs to the corpse.
+		EquipmentLoadout->ReconcilePhysicalEquipmentFromInventory();
 	}
 }

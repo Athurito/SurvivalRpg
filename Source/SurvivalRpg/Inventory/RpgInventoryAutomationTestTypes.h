@@ -163,6 +163,24 @@ public:
 	virtual bool IsEditorOnly() const override { return true; }
 };
 
+/**
+ * Editor-only malformed legacy provider whose raw traits advertise a stack of ten.
+ * Runtime inventory rules must still treat every concrete provider as a single entry.
+ */
+UCLASS(NotBlueprintable, Transient)
+class URpgInventoryAutomationTestLegacyStackableBagItemDefinition final
+	: public URpgInventoryItemDefinition
+{
+	GENERATED_BODY()
+
+public:
+	explicit URpgInventoryAutomationTestLegacyStackableBagItemDefinition(
+		const FObjectInitializer& ObjectInitializer =
+			FObjectInitializer::Get());
+
+	virtual bool IsEditorOnly() const override { return true; }
+};
+
 /** Editor-only equipment data that gives the spatial test backpack 7.5 kg of load. */
 UCLASS(NotBlueprintable, Transient)
 class URpgInventoryAutomationTestBagEquipmentDefinition final : public URpgEquipmentDefinition

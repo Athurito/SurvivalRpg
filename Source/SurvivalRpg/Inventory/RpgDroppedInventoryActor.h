@@ -1,6 +1,7 @@
 #pragma once
 
 #include "SurvivalRpg/Core/RpgWorldCollectable.h"
+#include "SurvivalRpg/Inventory/RpgInventoryGraphTypes.h"
 
 #include "RpgDroppedInventoryActor.generated.h"
 
@@ -30,6 +31,19 @@ public:
 	UFUNCTION(BlueprintCallable, BlueprintPure, Category = "Inventory|Drop")
 	URpgInventoryManagerComponent* GetLootInventoryManager() const { return LootInventoryComponent; }
 
+	/**
+	 * Moves one concrete source stack into this actor's authoritative loot inventory.
+	 * A full container provider keeps its persistent identity, runtime state, placements, and complete descendant subtree.
+	 * Set bPreventStackMerge for death/save semantics that must retain each source ItemId as a separate concrete stack.
+	 */
+	UFUNCTION(BlueprintCallable, BlueprintAuthorityOnly, Category = "Inventory|Drop")
+	FRpgInventoryMutationResult TransferItemFromInventory(
+		URpgInventoryManagerComponent* SourceInventory,
+		FRpgInventoryItemId ItemId,
+		int32 StackCount,
+		FGuid RequestId,
+		bool bPreventStackMerge = false);
+
 	/** Adds count to an existing template pickup with the same definition, or creates one. Server-authoritative. */
 	UFUNCTION(BlueprintCallable, BlueprintAuthorityOnly, Category = "Inventory|Drop")
 	bool MergePickupTemplate(TSubclassOf<URpgInventoryItemDefinition> ItemDefinition, int32 StackCount);
@@ -50,7 +64,7 @@ private:
 	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "Inventory|Drop", meta = (AllowPrivateAccess = "true"))
 	TObjectPtr<URpgInventoryContainerComponent> ContainerComponent;
 
-	/** True after static spawn data has been materialized into the authoritative runtime inventory. */
+	/** True after PostInitializeComponents makes the runtime manager canonical on this local role. */
 	UPROPERTY(Transient)
 	bool bLootInventoryInitialized = false;
 };

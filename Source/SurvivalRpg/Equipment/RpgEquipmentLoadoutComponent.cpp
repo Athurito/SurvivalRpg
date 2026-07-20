@@ -229,10 +229,16 @@ bool URpgEquipmentLoadoutComponent::ClearItemFromAllEquipmentSlots(URpgInventory
 		}
 	}
 
+	const int32 RememberedCountBefore = RememberedOffhands.Num();
+	ClearRememberedOffhandEntriesForItem(Item);
+	const bool bRememberedSelectionChanged =
+		RememberedOffhands.Num() != RememberedCountBefore;
+	if (bChanged || bRememberedSelectionChanged)
+	{
+		OnRep_Slots();
+	}
 	if (bChanged)
 	{
-		ClearRememberedOffhandEntriesForItem(Item);
-		OnRep_Slots();
 		if (URpgPlayerInventoryLayoutComponent* InventoryLayout = FindPlayerInventoryLayout())
 		{
 			InventoryLayout->ApplyLayoutCapacityToInventory();

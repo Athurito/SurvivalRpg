@@ -9,7 +9,6 @@
 #include "SurvivalRpg/Inventory/RpgDroppedInventoryActor.h"
 #include "SurvivalRpg/Inventory/RpgInventoryFragment_EquippableItem.h"
 #include "SurvivalRpg/Inventory/RpgInventoryFragment_ItemContainer.h"
-#include "SurvivalRpg/Inventory/RpgInventoryFragment_ItemTraits.h"
 #include "SurvivalRpg/Inventory/RpgInventoryItemDefinition.h"
 #include "SurvivalRpg/Inventory/RpgInventoryItemInstance.h"
 #include "SurvivalRpg/Inventory/RpgInventoryManagerComponent.h"
@@ -22,9 +21,8 @@ namespace
 {
 	int32 GetCollectAbilityMaxStackSizeForDefinition(TSubclassOf<URpgInventoryItemDefinition> ItemDef)
 	{
-		const URpgInventoryItemDefinition* ItemCDO = ItemDef ? GetDefault<URpgInventoryItemDefinition>(ItemDef) : nullptr;
-		const URpgInventoryFragment_ItemTraits* Traits = ItemCDO ? Cast<URpgInventoryFragment_ItemTraits>(ItemCDO->FindFragmentByClass(URpgInventoryFragment_ItemTraits::StaticClass())) : nullptr;
-		return Traits ? Traits->GetMaxStackSize() : 1;
+		return URpgInventoryManagerComponent::
+			GetEffectiveMaxStackSizeForDefinition(ItemDef);
 	}
 
 	bool CanCollectAbilityInventoryAcceptPickup(URpgInventoryManagerComponent* InventoryComponent, const FInventoryPickup& PickupInventory)
@@ -155,10 +153,11 @@ namespace
 					break;
 				}
 
-				const URpgInventoryFragment_ItemTraits* Traits = CurrentItem->FindFragmentByClass<URpgInventoryFragment_ItemTraits>();
 				const bool bAllowPartialStackPickup =
 					!CurrentItem->FindFragmentByClass<URpgInventoryFragment_ItemContainer>() &&
-					Traits && Traits->GetMaxStackSize() > 1;
+					URpgInventoryManagerComponent::
+						GetEffectiveMaxStackSizeForDefinition(
+							CurrentItem->GetItemDef()) > 1;
 
 				FRpgInventoryMutationRequest Request;
 				Request.Operation = ERpgInventoryMutationOperation::Pickup;

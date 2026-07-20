@@ -67,8 +67,10 @@ namespace
 
 	bool IsStackableItem(const URpgInventoryItemInstance* Item)
 	{
-		const URpgInventoryFragment_ItemTraits* Traits = GetItemTraits(Item);
-		return Traits && Traits->GetMaxStackSize() > 1;
+		return Item &&
+			URpgInventoryManagerComponent::
+				GetEffectiveMaxStackSizeForDefinition(
+					Item->GetItemDef()) > 1;
 	}
 
 	ERpgInventoryManualDropPolicy GetManualDropPolicy(const URpgInventoryItemInstance* Item)
@@ -84,13 +86,67 @@ namespace
 			return false;
 		}
 
-		if (IsStackableItem(Item))
+		if (Item->FindFragmentByClass<URpgInventoryFragment_ItemContainer>() !=
+				nullptr &&
+			!bTransfersWholeEntry)
 		{
-			return TargetInventory->CanAddItemDefinition(Item->GetItemDef(), TransferCount);
+			return false;
 		}
 
-		return bTransfersWholeEntry &&
-			TargetInventory->CanReceiveTransferredItemInstance(Item, TransferCount);
+		const FRpgInventoryContainerHandle TargetRoot =
+			FRpgInventoryContainerHandle::MakeRoot(
+				TargetInventory->GetDefaultContainerId());
+		int32 RemainingCount = TransferCount;
+		for (const FRpgInventoryEntryView& Entry :
+			TargetInventory->GetAllEntries())
+		{
+			if (!Entry.Instance ||
+				Entry.Placement.GetContainerHandle() != TargetRoot ||
+				!Item->IsStackCompatibleWith(Entry.Instance))
+			{
+				continue;
+			}
+
+			RemainingCount -=
+				TargetInventory->GetFreeStackCapacity(Entry.Instance);
+			if (RemainingCount <= 0)
+			{
+				return true;
+			}
+		}
+
+		FRpgInventoryGridSize GridSize;
+		if (!TargetInventory->GetGridSizeForContainerHandle(
+				TargetRoot,
+				GridSize))
+		{
+			return false;
+		}
+
+		for (int32 RotationIndex = 0; RotationIndex < 2;
+			++RotationIndex)
+		{
+			for (int32 Y = 0; Y < GridSize.Height; ++Y)
+			{
+				for (int32 X = 0; X < GridSize.Width; ++X)
+				{
+					FRpgInventoryGridPlacement Placement;
+					Placement.SetContainerHandle(TargetRoot);
+					Placement.X = X;
+					Placement.Y = Y;
+					Placement.bRotated = RotationIndex == 1;
+					if (TargetInventory
+							->CanReceiveTransferredItemInstanceToPlacement(
+								Item,
+								RemainingCount,
+								Placement))
+					{
+						return true;
+					}
+				}
+			}
+		}
+		return false;
 	}
 
 	void GatherCraftingStationsForOutputInventory(
@@ -1343,11 +1399,59 @@ void URpgInventoryUiActionComponent::ExecuteUseInventoryItem(
 		return;
 	}
 
-	const int32 UseCount = FMath::Max(1, StackCount);
-	const int32 ConsumeCount = FMath::Max(0, UsableFragment->ConsumeCount) * UseCount;
+	const int32 ConsumePerUse =
+		FMath::Max(0, UsableFragment->ConsumeCount);
+	if (StackCount <= 0 ||
+		(ConsumePerUse == 0 && StackCount != 1))
+	{
+		// Reusable/zero-cost items are one activation per request. Otherwise a client could
+		// amplify EventMagnitude and effects without any inventory-backed upper bound.
+		SendUseFeedback(
+			ERpgInventoryActionFeedbackResult::InvalidRequest,
+			StackCount);
+		return;
+	}
+
+	const int64 RequestedConsumeCount =
+		static_cast<int64>(ConsumePerUse) *
+		static_cast<int64>(StackCount);
+	if (RequestedConsumeCount > MAX_int32)
+	{
+		SendUseFeedback(
+			ERpgInventoryActionFeedbackResult::InvalidRequest,
+			StackCount);
+		return;
+	}
+
+	const int32 UseCount = StackCount;
+	const int32 ConsumeCount =
+		static_cast<int32>(RequestedConsumeCount);
 	if (ConsumeCount > AvailableCount)
 	{
 		SendUseFeedback(ERpgInventoryActionFeedbackResult::MissingItem, ConsumeCount);
+		return;
+	}
+	if (ConsumeCount > 0 &&
+		!Inventory->CanConsumeItemById(Item->GetItemId(), ConsumeCount))
+	{
+		SendUseFeedback(
+			ERpgInventoryActionFeedbackResult::ServerRejected,
+			ConsumeCount);
+		return;
+	}
+
+	const bool bConsumesWholePlayerEntry =
+		Inventory == PlayerInventory &&
+		ConsumeCount > 0 &&
+		ConsumeCount == AvailableCount;
+	URpgEquipmentLoadoutComponent* EquipmentLoadout =
+		bConsumesWholePlayerEntry ? FindEquipmentLoadout() : nullptr;
+	if (EquipmentLoadout &&
+		!EquipmentLoadout->CanRemoveItemFromLoadout(Item))
+	{
+		SendUseFeedback(
+			ERpgInventoryActionFeedbackResult::ServerRejected,
+			ConsumeCount);
 		return;
 	}
 
@@ -1369,6 +1473,87 @@ void URpgInventoryUiActionComponent::ExecuteUseInventoryItem(
 
 	URpgInventoryItemUseContext* UseContext = NewObject<URpgInventoryItemUseContext>(this);
 	UseContext->Initialize(Inventory, Item, UseCount, ConsumeCount);
+	const bool bConsumesFromPlayerInventory =
+		Inventory == PlayerInventory && ConsumeCount > 0;
+	if (bConsumesFromPlayerInventory)
+	{
+		const TWeakObjectPtr<URpgInventoryItemInstance> WeakItem = Item;
+		const TWeakObjectPtr<URpgInventoryManagerComponent> WeakInventory =
+			Inventory;
+		const FRpgInventoryItemId UsedItemId = Item->GetItemId();
+		UseContext->SetConsumePreflightCallback(
+			FRpgInventoryUseConsumePreflight::CreateWeakLambda(
+				this,
+				[this, WeakInventory, UsedItemId, ConsumeCount]()
+				{
+					URpgInventoryManagerComponent* CurrentInventory =
+						WeakInventory.Get();
+					URpgInventoryItemInstance* CurrentItem =
+						CurrentInventory
+							? CurrentInventory->FindItemById(UsedItemId)
+							: nullptr;
+					if (!CurrentItem)
+					{
+						return false;
+					}
+
+					const int32 CurrentCount =
+						CurrentInventory->GetItemStackCount(
+							CurrentItem);
+					if (ConsumeCount < CurrentCount)
+					{
+						return true;
+					}
+					if (ConsumeCount != CurrentCount)
+					{
+						return false;
+					}
+
+					URpgEquipmentLoadoutComponent* CurrentLoadout =
+						FindEquipmentLoadout();
+					return !CurrentLoadout ||
+						CurrentLoadout->CanRemoveItemFromLoadout(
+							CurrentItem);
+				}));
+		UseContext->SetConsumeSucceededCallback(
+			FSimpleDelegate::CreateWeakLambda(
+				this,
+				[this, WeakInventory, WeakItem, UsedItemId]()
+				{
+					URpgInventoryManagerComponent* CurrentInventory =
+						WeakInventory.Get();
+					if (CurrentInventory &&
+						CurrentInventory->FindItemById(UsedItemId))
+					{
+						// A delayed consume that was initially full may now be partial after
+						// another stack merge. Keep valid assignments until the concrete
+						// identity actually leaves the inventory.
+						return;
+					}
+
+					URpgInventoryItemInstance* ConsumedItem =
+						WeakItem.Get();
+					if (!ConsumedItem)
+					{
+						return;
+					}
+
+					const bool bClearedAssignments =
+						ClearPlayerAssignmentsForItem(ConsumedItem);
+					ensureMsgf(
+						bClearedAssignments,
+						TEXT("Validated player assignment clear failed after consuming item %s (%s)."),
+						*GetNameSafe(ConsumedItem),
+						*ConsumedItem->GetItemId().ToString());
+					SyncEquipmentLoadoutFromGearSlots();
+					SyncActiveHandsFromCarrySlots();
+					if (URpgEquipmentLoadoutComponent* CurrentLoadout =
+							FindEquipmentLoadout())
+					{
+						CurrentLoadout->RefreshEquipmentLoadState();
+					}
+				}));
+	}
 
 	const bool bUsesApplyEffectsContext = UsableFragment->UseAbility->IsChildOf(URpgGameplayAbility_ApplyItemEffects::StaticClass());
 	if (bUsesApplyEffectsContext)
@@ -1391,15 +1576,6 @@ void URpgInventoryUiActionComponent::ExecuteUseInventoryItem(
 
 	if (UsableFragment->bConsumeOnActivationAccepted && ConsumeCount > 0)
 	{
-		if (Inventory == PlayerInventory && ConsumeCount >= AvailableCount)
-		{
-			if (!ClearPlayerAssignmentsForItem(Item))
-			{
-				SendUseFeedback(ERpgInventoryActionFeedbackResult::ServerRejected, ConsumeCount);
-				return;
-			}
-		}
-
 		if (!UseContext->TryConsume())
 		{
 			SendUseFeedback(ERpgInventoryActionFeedbackResult::ServerRejected, ConsumeCount);
@@ -1630,10 +1806,84 @@ void URpgInventoryUiActionComponent::RequestDropInventoryItemById_Implementation
 		return;
 	}
 
+	FRpgInventoryMutationRequest DropPlanRequest;
+	DropPlanRequest.Operation = ERpgInventoryMutationOperation::Drop;
+	DropPlanRequest.ItemId = Request.ItemId;
+	DropPlanRequest.Source =
+		Request.ExpectedSourcePlacement.GetContainerHandle();
+	DropPlanRequest.Quantity = Request.StackCount;
+	DropPlanRequest.RequestId = Request.RequestId;
+	const FRpgInventoryMutationResult DropPlan =
+		Inventory->PlanInventoryMutation(DropPlanRequest);
+	if (!DropPlan.IsSuccess() ||
+		DropPlan.AppliedQuantity != Request.StackCount)
+	{
+		SendAndCacheManualDropFeedback(
+			Inventory,
+			Request,
+			GetFeedbackForMutationResult(DropPlan.Code),
+			Item,
+			Request.StackCount);
+		return;
+	}
+
+	bool bSubtreeContainsDisabledItem = false;
+	bool bSubtreeRequiresConfirmation = false;
+	for (const FRpgInventoryMutationDelta& Delta : DropPlan.Deltas)
+	{
+		URpgInventoryItemInstance* PlannedItem =
+			Inventory->FindItemById(Delta.ItemId);
+		if (!PlannedItem)
+		{
+			SendAndCacheManualDropFeedback(
+				Inventory,
+				Request,
+				ERpgInventoryActionFeedbackResult::ServerRejected,
+				Item,
+				Request.StackCount);
+			return;
+		}
+
+		switch (GetManualDropPolicy(PlannedItem))
+		{
+		case ERpgInventoryManualDropPolicy::Disabled:
+			bSubtreeContainsDisabledItem = true;
+			break;
+		case ERpgInventoryManualDropPolicy::Confirm:
+			bSubtreeRequiresConfirmation = true;
+			break;
+		default:
+			break;
+		}
+	}
+	if (bSubtreeContainsDisabledItem)
+	{
+		SendAndCacheManualDropFeedback(
+			Inventory,
+			Request,
+			ERpgInventoryActionFeedbackResult::CannotDrop,
+			Item,
+			Request.StackCount);
+		return;
+	}
+	if (bSubtreeRequiresConfirmation && !Request.bConfirmed)
+	{
+		SendAndCacheManualDropFeedback(
+			Inventory,
+			Request,
+			ERpgInventoryActionFeedbackResult::RequiresConfirmation,
+			Item,
+			Request.StackCount);
+		return;
+	}
+
 	URpgInventoryManagerComponent* PlayerInventory = FindPlayerInventory();
 	const bool bDropsWholePlayerEntry =
 		Inventory == PlayerInventory && Request.StackCount == AvailableCount;
-	if (bDropsWholePlayerEntry && !ClearPlayerAssignmentsForItem(Item))
+	URpgEquipmentLoadoutComponent* EquipmentLoadout =
+		bDropsWholePlayerEntry ? FindEquipmentLoadout() : nullptr;
+	if (EquipmentLoadout &&
+		!EquipmentLoadout->CanRemoveItemFromLoadout(Item))
 	{
 		SendAndCacheManualDropFeedback(
 			Inventory,
@@ -1650,12 +1900,6 @@ void URpgInventoryUiActionComponent::RequestDropInventoryItemById_Implementation
 			Request.StackCount,
 			Request.RequestId))
 	{
-		// Physical gear/carry placement never changed, so a failed transfer can restore runtime equipment directly.
-		if (bDropsWholePlayerEntry)
-		{
-			SyncEquipmentLoadoutFromGearSlots();
-			SyncActiveHandsFromCarrySlots();
-		}
 		SendAndCacheManualDropFeedback(
 			Inventory,
 			Request,
@@ -1667,9 +1911,16 @@ void URpgInventoryUiActionComponent::RequestDropInventoryItemById_Implementation
 
 	if (bDropsWholePlayerEntry)
 	{
+		const bool bClearedAssignments =
+			ClearPlayerAssignmentsForItem(Item);
+		ensureMsgf(
+			bClearedAssignments,
+			TEXT("Validated player assignment clear failed after dropping item %s (%s)."),
+			*GetNameSafe(Item),
+			*Request.ItemId.ToString());
 		SyncEquipmentLoadoutFromGearSlots();
 		SyncActiveHandsFromCarrySlots();
-		if (URpgEquipmentLoadoutComponent* EquipmentLoadout = FindEquipmentLoadout())
+		if (EquipmentLoadout)
 		{
 			EquipmentLoadout->RefreshEquipmentLoadState();
 		}
@@ -3476,12 +3727,6 @@ bool URpgInventoryUiActionComponent::TryTransferManualDrop(
 	}
 
 	const FTransform DropTransform = GetManualDropTransform();
-	FRpgInventoryGridPlacement SourcePlacement;
-	if (!SourceInventory->GetItemPlacement(Item, SourcePlacement))
-	{
-		return false;
-	}
-
 	const bool bTransfersWholeEntry =
 		StackCount == SourceInventory->GetItemStackCount(Item);
 	auto CanTransferIntoActor =
@@ -3499,29 +3744,23 @@ bool URpgInventoryUiActionComponent::TryTransferManualDrop(
 		};
 
 	auto TryTransferIntoActor =
-		[SourceInventory, Item, StackCount, RequestId, &SourcePlacement](
+		[SourceInventory, Item, StackCount](
 			ARpgDroppedInventoryActor* DropActor)
 	{
-		URpgInventoryManagerComponent* TargetInventory = DropActor ? DropActor->GetLootInventoryManager() : nullptr;
-		if (!TargetInventory || TargetInventory == SourceInventory)
+		if (!DropActor ||
+			DropActor->GetLootInventoryManager() == SourceInventory)
 		{
 			return false;
 		}
 
-		FRpgInventoryMutationRequest Request;
-		Request.Operation = ERpgInventoryMutationOperation::Transfer;
-		Request.ItemId = Item->GetItemId();
-		Request.Source = SourcePlacement.GetContainerHandle();
-		Request.Target = FRpgInventoryContainerHandle::MakeRoot(TargetInventory->GetDefaultContainerId());
-		Request.Quantity = StackCount;
-		Request.RequestId = RequestId;
-		const FRpgInventoryMutationResult TransferResult = SourceInventory->ExecuteCrossInventoryTransfer(TargetInventory, Request, false);
-		if (TransferResult.IsSuccess())
-		{
-			DropActor->ForceNetUpdate();
-			return true;
-		}
-		return false;
+		const FRpgInventoryMutationResult TransferResult =
+			DropActor->TransferItemFromInventory(
+				SourceInventory,
+				Item->GetItemId(),
+				StackCount,
+				FGuid::NewGuid());
+		return TransferResult.IsSuccess() &&
+			TransferResult.AppliedQuantity == StackCount;
 	};
 
 	ARpgDroppedInventoryActor* TargetDropActor = nullptr;
@@ -3561,6 +3800,14 @@ bool URpgInventoryUiActionComponent::TryTransferManualDrop(
 			DropTransform,
 			SpawnParameters);
 		bSpawnedTargetActor = TargetDropActor != nullptr;
+	}
+
+	if (bSpawnedTargetActor)
+	{
+		// A freshly spawned manual-drop actor represents only the concrete item being
+		// discarded. Blueprint defaults are for placed/world-authored loot and must not be
+		// duplicated into every player-created drop.
+		TargetDropActor->SetPickupInventory(FInventoryPickup());
 	}
 
 	if (TargetDropActor && TryTransferIntoActor(TargetDropActor))

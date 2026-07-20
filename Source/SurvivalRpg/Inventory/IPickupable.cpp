@@ -4,7 +4,6 @@
 
 #include "RpgInventoryManagerComponent.h"
 #include "GameFramework/Actor.h"
-#include "RpgInventoryFragment_ItemTraits.h"
 #include "RpgInventoryItemDefinition.h"
 #include "RpgInventoryItemInstance.h"
 #include "UObject/ScriptInterface.h"
@@ -18,9 +17,8 @@ namespace
 {
 	int32 GetPickupableMaxStackSizeForDefinition(TSubclassOf<URpgInventoryItemDefinition> ItemDef)
 	{
-		const URpgInventoryItemDefinition* ItemCDO = ItemDef ? GetDefault<URpgInventoryItemDefinition>(ItemDef) : nullptr;
-		const URpgInventoryFragment_ItemTraits* Traits = ItemCDO ? Cast<URpgInventoryFragment_ItemTraits>(ItemCDO->FindFragmentByClass(URpgInventoryFragment_ItemTraits::StaticClass())) : nullptr;
-		return Traits ? Traits->GetMaxStackSize() : 1;
+		return URpgInventoryManagerComponent::
+			GetEffectiveMaxStackSizeForDefinition(ItemDef);
 	}
 
 	bool CanPickupableInventoryAcceptPickup(URpgInventoryManagerComponent* InventoryComponent, const FInventoryPickup& PickupInventory)
