@@ -83,10 +83,10 @@ enum class ERpgInventoryItemActionIntent : uint8
 	/** Activates only the item's configured usable behavior and never equips it as a fallback. */
 	Use,
 
-	/** Moves an equippable item to its default Gear/Carry destination and activates a Carry item when applicable. */
+	/** Legacy serialized value. The server rejects it; use RequestApplyInventoryEquipmentIntent with an exact entry snapshot. */
 	EquipAndActivate,
 
-	/** Moves an equippable item into the first compatible Carry slot without changing the active hand selection. */
+	/** Legacy serialized value. The server rejects it; use RequestApplyInventoryEquipmentIntent with an exact entry snapshot. */
 	MoveToCarry
 };
 
@@ -108,9 +108,86 @@ struct SURVIVALRPG_API FRpgInventoryItemActionRequest
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Inventory|Actions")
 	ERpgInventoryItemActionIntent Intent = ERpgInventoryItemActionIntent::Use;
 
-	/** Number of uses requested for Use. Equipment intents always operate on the whole concrete item. */
+	/** Number of uses requested. This request type is restricted to Use; equipment has its own exact-snapshot intent. */
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Inventory|Actions", meta = (ClampMin = "1", UIMin = "1"))
 	int32 StackCount = 1;
+};
+
+/**
+ * Equipment behavior requested for one complete player-inventory entry.
+ *
+ * Gear and Carry locations remain inventory truth. Hand activation is an explicit selection owned by the
+ * equipment loadout and never substitutes for a physical move.
+ */
+UENUM(BlueprintType)
+enum class ERpgInventoryEquipmentIntentOperation : uint8
+{
+	/** Resolves the item's authored default Gear/Carry destination and activates it when that destination is a hand. */
+	EquipDefaultAndActivate,
+
+	/** Moves the complete entry to TargetEquipmentSlot and activates it when TargetEquipmentSlot is a hand. */
+	EquipToSlot,
+
+	/** Moves the complete entry to the first compatible Carry slot without changing active-hand selection. */
+	MoveToCarry,
+
+	/** Moves the complete entry from Gear/Carry to the first compatible Content placement. */
+	UnequipToContent,
+
+	/** Clears the selected active hand without moving its concrete item out of Carry. */
+	ClearActiveSelection
+};
+
+/**
+ * Stable, request-correlated equipment intent validated against one exact replicated inventory entry.
+ *
+ * The server resolves ItemId again and rejects stale EntryId, placement, or quantity snapshots before selecting a
+ * destination. Equipment is whole-entry only; partial stack equip/unequip is intentionally unsupported.
+ */
+USTRUCT(BlueprintType)
+struct SURVIVALRPG_API FRpgInventoryEquipmentIntent
+{
+	GENERATED_BODY()
+
+	/** Caller-owned correlation id used for exactly-once handling and owning-client feedback. */
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Inventory|Equipment")
+	FGuid RequestId;
+
+	/** Persistent identity resolved against Inventory on the authoritative server. */
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Inventory|Equipment")
+	FRpgInventoryItemId ItemId;
+
+	/** Stable replicated entry identity captured when the interaction began. */
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Inventory|Equipment")
+	FGuid ExpectedEntryId;
+
+	/** Complete source placement captured when the interaction began. */
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Inventory|Equipment")
+	FRpgInventoryGridPlacement ExpectedSourcePlacement;
+
+	/** Complete source stack count. Equipment intents reject partial or stale quantities. */
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Inventory|Equipment", meta = (ClampMin = "1", UIMin = "1"))
+	int32 ExpectedQuantity = 0;
+
+	/** Physical move or activation-only hand-selection behavior. */
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Inventory|Equipment")
+	ERpgInventoryEquipmentIntentOperation Operation =
+		ERpgInventoryEquipmentIntentOperation::EquipDefaultAndActivate;
+
+	/**
+	 * Explicit semantic target for EquipToSlot or ClearActiveSelection.
+	 * Other operations require None so a reused RequestId cannot silently change meaning through ignored payload.
+	 */
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Inventory|Equipment")
+	ERpgEquipmentSlot TargetEquipmentSlot = ERpgEquipmentSlot::None;
+
+	void EnsureRequestId()
+	{
+		if (!RequestId.IsValid())
+		{
+			RequestId = FGuid::NewGuid();
+		}
+	}
 };
 
 /** Deterministic, atomic quick-transfer request evaluated again by the server. */
@@ -348,9 +425,18 @@ public:
 		URpgInventoryManagerComponent* TargetInventory,
 		FRpgInventoryTransferIntent Intent);
 
-	/** Executes one explicit Use, EquipAndActivate, or MoveToCarry intent using stable item identity. */
-	UFUNCTION(Server, Reliable, BlueprintCallable, Category = "Inventory|UI Actions")
+	/** Executes the legacy stable-ID Use request. Equipment operations are rejected because they require an exact entry snapshot. */
+	UFUNCTION(Server, Reliable, BlueprintCallable, Category = "Inventory|UI Actions", meta = (DeprecatedFunction, DeprecationMessage = "Use this endpoint only for legacy Use requests. Equipment requires RequestApplyInventoryEquipmentIntent with an exact source snapshot."))
 	void RequestExecuteInventoryItemAction(URpgInventoryManagerComponent* Inventory, FRpgInventoryItemActionRequest Request);
+
+	/**
+	 * Applies one whole-entry equipment intent against authoritative inventory state.
+	 * Physical operations use the inventory planner; identical retries replay and RequestId collisions are rejected.
+	 */
+	UFUNCTION(Server, Reliable, BlueprintCallable, Category = "Inventory|Equipment")
+	void RequestApplyInventoryEquipmentIntent(
+		URpgInventoryManagerComponent* Inventory,
+		FRpgInventoryEquipmentIntent Intent);
 
 	/**
 	 * Quick-transfers a complete entry (or a cross-inventory stack amount) to the first candidate with real capacity.
@@ -398,12 +484,12 @@ public:
 		int32 StackCount,
 		FRpgInventoryGridPlacement TargetPlacement) const;
 
-	/** Assigns an owned inventory item to an equipment slot such as MainHand, OffHand, Head, or Chest. */
-	UFUNCTION(Server, Reliable, BlueprintCallable, Category = "Inventory|UI Actions")
+	/** Legacy pointer adapter. New callers must submit a complete RequestApplyInventoryEquipmentIntent snapshot. */
+	UFUNCTION(Server, Reliable, BlueprintCallable, Category = "Inventory|UI Actions", meta = (DeprecatedFunction, DeprecationMessage = "Use RequestApplyInventoryEquipmentIntent with stable item, entry, placement, quantity, and request identity."))
 	void RequestAssignItemToEquipmentSlot(ERpgEquipmentSlot EquipmentSlot, URpgInventoryItemInstance* Item);
 
-	/** Clears one dedicated equipment slot. */
-	UFUNCTION(Server, Reliable, BlueprintCallable, Category = "Inventory|UI Actions")
+	/** Legacy slot-only adapter retained for Blueprint migration; hand clear remains activation-only. */
+	UFUNCTION(Server, Reliable, BlueprintCallable, Category = "Inventory|UI Actions", meta = (DeprecatedFunction, DeprecationMessage = "Use RequestApplyInventoryEquipmentIntent for physical unequip, or RequestClearActiveHands for activation-only holster."))
 	void RequestClearEquipmentSlot(ERpgEquipmentSlot EquipmentSlot);
 
 	/** Transfers a whole item entry or partial stack between two accessible inventories. */
@@ -430,8 +516,8 @@ public:
 	UFUNCTION(Server, Reliable, BlueprintCallable, Category = "Inventory|UI Actions")
 	void RequestMoveItemToInventorySlotAddress(URpgInventoryItemInstance* Item, FRpgInventorySlotAddress TargetAddress);
 
-	/** Assigns a bag, belt, pouch, or resource bag item to a slot-container equipment slot. */
-	UFUNCTION(Server, Reliable, BlueprintCallable, Category = "Inventory|UI Actions")
+	/** Legacy pointer adapter for slot-container providers. */
+	UFUNCTION(Server, Reliable, BlueprintCallable, Category = "Inventory|UI Actions", meta = (DeprecatedFunction, DeprecationMessage = "Use RequestApplyInventoryEquipmentIntent with EquipToSlot."))
 	void RequestEquipSlotContainerItem(ERpgEquipmentSlot ContainerSlot, URpgInventoryItemInstance* Item);
 
 	/**
@@ -439,7 +525,7 @@ public:
 	 * Item-owned contents remain attached to the provider item and are not flattened into the player inventory.
 	 * ExpectedProviderItemId prevents a stale client action from unequipping a newer item that now occupies the slot.
 	 */
-	UFUNCTION(Server, Reliable, BlueprintCallable, Category = "Inventory|UI Actions")
+	UFUNCTION(Server, Reliable, BlueprintCallable, Category = "Inventory|UI Actions", meta = (DeprecatedFunction, DeprecationMessage = "Use RequestApplyInventoryEquipmentIntent with an exact UnequipToContent source snapshot."))
 	void RequestUnequipSlotContainerItem(
 		ERpgEquipmentSlot ContainerSlot,
 		FRpgInventoryItemId ExpectedProviderItemId);
@@ -513,12 +599,12 @@ public:
 	UFUNCTION(Server, Reliable, BlueprintCallable, Category = "Inventory|UI Actions")
 	void RequestUseInventoryItem(URpgInventoryManagerComponent* Inventory, URpgInventoryItemInstance* Item, int32 StackCount = 1);
 
-	/** Assigns an owned item to its default equipment destination, including MainHand, OffHand, and armor slots. */
-	UFUNCTION(Server, Reliable, BlueprintCallable, Category = "Inventory|UI Actions")
+	/** Legacy pointer adapter for default equip. */
+	UFUNCTION(Server, Reliable, BlueprintCallable, Category = "Inventory|UI Actions", meta = (DeprecatedFunction, DeprecationMessage = "Use RequestApplyInventoryEquipmentIntent with EquipDefaultAndActivate."))
 	void RequestEquipInventoryItem(URpgInventoryItemInstance* Item);
 
-	/** Moves an owned gear/carry item back into the first compatible content slot and clears stale runtime equipment. */
-	UFUNCTION(Server, Reliable, BlueprintCallable, Category = "Inventory|UI Actions")
+	/** Legacy pointer adapter for physical unequip. */
+	UFUNCTION(Server, Reliable, BlueprintCallable, Category = "Inventory|UI Actions", meta = (DeprecatedFunction, DeprecationMessage = "Use RequestApplyInventoryEquipmentIntent with UnequipToContent."))
 	void RequestUnequipInventoryItemToContentSlot(URpgInventoryItemInstance* Item);
 
 	/**
@@ -632,12 +718,27 @@ private:
 		int32 AvailableCount,
 		int32 CountToStore) const;
 	bool ClearPlayerAssignmentsForItem(URpgInventoryItemInstance* Item) const;
-	bool TryAssignItemToDefaultEquipmentDestination(URpgInventoryItemInstance* Item);
-	bool TryMoveAndActivateItemInCarry(URpgInventoryItemInstance* Item, ERpgEquipmentSlot PreferredHandSlot);
-	bool TryMoveItemToGearSlot(ERpgEquipmentSlot EquipmentSlot, URpgInventoryItemInstance* Item);
-	bool TryMoveItemToFirstCompatibleCarrySlot(URpgInventoryItemInstance* Item);
-	bool TryMoveItemToFirstCompatibleContentSlot(URpgInventoryItemInstance* Item);
+	bool TryBuildCurrentEquipmentIntent(
+		URpgInventoryManagerComponent* Inventory,
+		URpgInventoryItemInstance* Item,
+		ERpgInventoryEquipmentIntentOperation Operation,
+		ERpgEquipmentSlot TargetEquipmentSlot,
+		FRpgInventoryEquipmentIntent& OutIntent) const;
+	bool TryAssignItemToDefaultEquipmentDestination(
+		URpgInventoryItemInstance* Item);
+	bool TryMoveAndActivateItemInCarry(
+		URpgInventoryItemInstance* Item,
+		ERpgEquipmentSlot PreferredHandSlot);
+	bool TryMoveItemToGearSlot(
+		ERpgEquipmentSlot EquipmentSlot,
+		URpgInventoryItemInstance* Item);
+	bool TryMoveItemToFirstCompatibleCarrySlot(
+		URpgInventoryItemInstance* Item);
+	bool TryMoveItemToFirstCompatibleContentSlot(
+		URpgInventoryItemInstance* Item);
 	bool CanMoveItemOutOfGearSlot(const FRpgInventorySlotAddress& SourceAddress) const;
+	bool IsPlayerEquipmentPlacement(
+		const FRpgInventoryGridPlacement& Placement) const;
 	void SyncEquipmentLoadoutFromGearSlots() const;
 	void SyncActiveHandsFromCarrySlots() const;
 	bool TryTransferManualDrop(
@@ -732,6 +833,28 @@ private:
 		ERpgInventoryActionFeedbackResult Result,
 		URpgInventoryItemInstance* Item,
 		int32 FeedbackStackCount);
+	struct FRecentEquipmentIntentResult
+	{
+		TWeakObjectPtr<URpgInventoryManagerComponent> Inventory;
+		bool bHadInventory = false;
+		uint64 InventoryMutationEpoch = 0;
+		FRpgInventoryEquipmentIntent Intent;
+		ERpgInventoryActionFeedbackResult Result =
+			ERpgInventoryActionFeedbackResult::ServerRejected;
+		int32 FeedbackStackCount = 0;
+	};
+	static bool AreEquipmentIntentsEquivalent(
+		const FRpgInventoryEquipmentIntent& A,
+		const FRpgInventoryEquipmentIntent& B);
+	bool TryReplayRecentEquipmentIntentResult(
+		URpgInventoryManagerComponent* Inventory,
+		const FRpgInventoryEquipmentIntent& Intent);
+	void SendAndCacheEquipmentIntentFeedback(
+		URpgInventoryManagerComponent* Inventory,
+		const FRpgInventoryEquipmentIntent& Intent,
+		ERpgInventoryActionFeedbackResult Result,
+		URpgInventoryItemInstance* Item,
+		int32 FeedbackStackCount);
 	FTransform GetManualDropTransform() const;
 	void SendActionFeedback(
 		FGameplayTag ActionTag,
@@ -776,4 +899,9 @@ private:
 	TMap<FGuid, FRecentQuickTransferResult> RecentQuickTransferResults;
 	TArray<FGuid> RecentQuickTransferOrder;
 	static constexpr int32 MaxRecentQuickTransferResults = 64;
+
+	/** Server-local replay cache covering the equipment command and its one-time hand/loadout side effects. */
+	TMap<FGuid, FRecentEquipmentIntentResult> RecentEquipmentIntentResults;
+	TArray<FGuid> RecentEquipmentIntentOrder;
+	static constexpr int32 MaxRecentEquipmentIntentResults = 64;
 };

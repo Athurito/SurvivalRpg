@@ -257,9 +257,8 @@ void URpgGameplayAbility_Collect::ActivateAbility(
 			PlayerController,
 			AddedItemIds);
 
-		if (URpgEquipmentLoadoutComponent* EquipmentLoadout = PlayerController->GetEquipmentLoadoutComponent())
+		if (PlayerController->GetEquipmentLoadoutComponent())
 		{
-			EquipmentLoadout->ReconcilePhysicalEquipmentFromInventory();
 			if (bAssignCollectedEquippableItemsToEquipment && bTransferredAnything)
 			{
 				TArray<URpgInventoryItemInstance*> AddedItems;
@@ -271,6 +270,7 @@ void URpgGameplayAbility_Collect::ActivateAbility(
 					}
 				}
 				AssignEquippableItemsToEquipment(
+					InventoryComponent,
 					PlayerController->GetInventoryUiActionComponent(),
 					AddedItems);
 			}
@@ -338,6 +338,7 @@ void URpgGameplayAbility_Collect::ActivateAbility(
 		if (ARpgPlayerController* PlayerController = FindPlayerControllerForActor(InteractingActor))
 		{
 			AssignEquippableItemsToEquipment(
+				InventoryComponent,
 				PlayerController->GetInventoryUiActionComponent(),
 				AddedItems);
 		}
@@ -471,10 +472,11 @@ bool URpgGameplayAbility_Collect::AddPickupToInventory(URpgInventoryManagerCompo
 }
 
 void URpgGameplayAbility_Collect::AssignEquippableItemsToEquipment(
+	URpgInventoryManagerComponent* Inventory,
 	URpgInventoryUiActionComponent* InventoryActions,
 	const TArray<URpgInventoryItemInstance*>& AddedItems)
 {
-	if (!InventoryActions)
+	if (!Inventory || !InventoryActions)
 	{
 		return;
 	}
@@ -487,6 +489,35 @@ void URpgGameplayAbility_Collect::AssignEquippableItemsToEquipment(
 			continue;
 		}
 
-		InventoryActions->RequestEquipInventoryItem(AddedItem);
+		// A previous synchronous equip may have swapped this later item into another placement.
+		// Resolve each source snapshot immediately before submitting its own immutable command.
+		const TArray<FRpgInventoryEntryView> Entries =
+			Inventory->GetAllEntries();
+		const FRpgInventoryEntryView* Entry =
+			Entries.FindByPredicate(
+				[AddedItem](
+					const FRpgInventoryEntryView& Candidate)
+				{
+					return Candidate.Instance == AddedItem;
+				});
+		if (!Entry || !Entry->EntryId.IsValid() ||
+			!Entry->Placement.IsValid() ||
+			Entry->StackCount <= 0)
+		{
+			continue;
+		}
+
+		FRpgInventoryEquipmentIntent Intent;
+		Intent.EnsureRequestId();
+		Intent.ItemId = Entry->ItemId;
+		Intent.ExpectedEntryId = Entry->EntryId;
+		Intent.ExpectedSourcePlacement = Entry->Placement;
+		Intent.ExpectedQuantity = Entry->StackCount;
+		Intent.Operation =
+			ERpgInventoryEquipmentIntentOperation::
+				EquipDefaultAndActivate;
+		InventoryActions->RequestApplyInventoryEquipmentIntent(
+			Inventory,
+			Intent);
 	}
 }

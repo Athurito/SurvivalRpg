@@ -46,5 +46,8 @@ private:
 	static ARpgPlayerController* FindPlayerControllerForActor(AActor* Actor);
 	static bool CanAddPickupToInventory(URpgInventoryManagerComponent* InventoryComponent, const FInventoryPickup& PickupInventory);
 	static bool AddPickupToInventory(URpgInventoryManagerComponent* InventoryComponent, const FInventoryPickup& PickupInventory, TArray<URpgInventoryItemInstance*>& OutAddedItems);
-	static void AssignEquippableItemsToEquipment(URpgInventoryUiActionComponent* InventoryActions, const TArray<URpgInventoryItemInstance*>& AddedItems);
+	static void AssignEquippableItemsToEquipment(
+		URpgInventoryManagerComponent* Inventory,
+		URpgInventoryUiActionComponent* InventoryActions,
+		const TArray<URpgInventoryItemInstance*>& AddedItems);
 };

@@ -125,7 +125,37 @@ void URpgStarterInventoryComponent::TryGrantStarterInventory()
 			ItemInstance &&
 			!EquipmentLoadoutContainsItem(EquipmentLoadout, ItemInstance))
 		{
-			InventoryActions->RequestAssignItemToEquipmentSlot(Entry.EquipmentSlot, ItemInstance);
+			const TArray<FRpgInventoryEntryView> InventoryEntries =
+				InventoryComponent->GetAllEntries();
+			const FRpgInventoryEntryView* ItemEntry =
+				InventoryEntries.FindByPredicate(
+					[ItemInstance](
+						const FRpgInventoryEntryView& Candidate)
+					{
+						return Candidate.Instance == ItemInstance;
+					});
+			if (ItemEntry && ItemEntry->EntryId.IsValid() &&
+				ItemEntry->Placement.IsValid() &&
+				ItemEntry->StackCount > 0)
+			{
+				FRpgInventoryEquipmentIntent Intent;
+				Intent.EnsureRequestId();
+				Intent.ItemId = ItemEntry->ItemId;
+				Intent.ExpectedEntryId = ItemEntry->EntryId;
+				Intent.ExpectedSourcePlacement =
+					ItemEntry->Placement;
+				Intent.ExpectedQuantity =
+					ItemEntry->StackCount;
+				Intent.Operation =
+					ERpgInventoryEquipmentIntentOperation::
+						EquipToSlot;
+				Intent.TargetEquipmentSlot =
+					Entry.EquipmentSlot;
+				InventoryActions->
+					RequestApplyInventoryEquipmentIntent(
+						InventoryComponent,
+						Intent);
+			}
 		}
 	}
 

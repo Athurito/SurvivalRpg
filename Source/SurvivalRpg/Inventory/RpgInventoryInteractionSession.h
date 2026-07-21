@@ -103,7 +103,7 @@ public:
 	UFUNCTION(BlueprintPure, Category = "Inventory|Interaction")
 	ERpgInventoryInteractionPreviewState GetPreviewState() const { return PreviewState; }
 
-	/** Local request correlation id. It is UI-only until the authoritative action API gains request ids. */
+	/** Caller-owned correlation id forwarded to typed inventory/equipment/actionbar requests. */
 	UFUNCTION(BlueprintPure, Category = "Inventory|Interaction")
 	FGuid GetRequestId() const { return RequestId; }
 

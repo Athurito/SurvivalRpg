@@ -7,6 +7,7 @@
 #include "SurvivalRpg/Core/Player/RpgPlayerState.h"
 #include "SurvivalRpg/Core/RpgWorldCollectable.h"
 #include "SurvivalRpg/Equipment/RpgEquipmentDefinition.h"
+#include "SurvivalRpg/Equipment/RpgEquipmentInstance.h"
 
 #include "RpgInventoryAutomationTestTypes.generated.h"
 
@@ -98,6 +99,24 @@ public:
 	virtual bool IsEditorOnly() const override { return true; }
 };
 
+/** Runtime fixture that counts authoritative equip lifecycle callbacks without changing production behavior. */
+UCLASS(NotBlueprintable, Transient)
+class URpgInventoryAutomationTestCountingEquipmentInstance final : public URpgEquipmentInstance
+{
+	GENERATED_BODY()
+
+public:
+	virtual void OnEquipped() override;
+	virtual void OnUnequipped() override;
+
+	int32 GetEquippedCount() const { return EquippedCount; }
+	int32 GetUnequippedCount() const { return UnequippedCount; }
+
+private:
+	int32 EquippedCount = 0;
+	int32 UnequippedCount = 0;
+};
+
 /** Editor-only equipment data that permits the spatial test weapon only in the MainHand Carry role. */
 UCLASS(NotBlueprintable, Transient)
 class URpgInventoryAutomationTestWeaponEquipmentDefinition final : public URpgEquipmentDefinition
@@ -117,6 +136,78 @@ class URpgInventoryAutomationTestWeaponItemDefinition final : public URpgInvento
 
 public:
 	explicit URpgInventoryAutomationTestWeaponItemDefinition(
+		const FObjectInitializer& ObjectInitializer = FObjectInitializer::Get());
+
+	virtual bool IsEditorOnly() const override { return true; }
+};
+
+/** Editor-only OffHand equipment data with a visible four-kilogram load contribution. */
+UCLASS(NotBlueprintable, Transient)
+class URpgInventoryAutomationTestOffHandEquipmentDefinition final : public URpgEquipmentDefinition
+{
+	GENERATED_BODY()
+
+public:
+	explicit URpgInventoryAutomationTestOffHandEquipmentDefinition(
+		const FObjectInitializer& ObjectInitializer = FObjectInitializer::Get());
+};
+
+/** Editor-only stackable shield used to regress OffHand activation and derived equipment-load sync. */
+UCLASS(NotBlueprintable, Transient)
+class URpgInventoryAutomationTestStackableOffHandItemDefinition final : public URpgInventoryItemDefinition
+{
+	GENERATED_BODY()
+
+public:
+	explicit URpgInventoryAutomationTestStackableOffHandItemDefinition(
+		const FObjectInitializer& ObjectInitializer = FObjectInitializer::Get());
+
+	virtual bool IsEditorOnly() const override { return true; }
+};
+
+/** Editor-only two-handed MainHand equipment data used to exercise runtime conflict reconciliation. */
+UCLASS(NotBlueprintable, Transient)
+class URpgInventoryAutomationTestTwoHandEquipmentDefinition final : public URpgEquipmentDefinition
+{
+	GENERATED_BODY()
+
+public:
+	explicit URpgInventoryAutomationTestTwoHandEquipmentDefinition(
+		const FObjectInitializer& ObjectInitializer = FObjectInitializer::Get());
+};
+
+/** Editor-only 1x1 two-handed weapon used to regress MainHand/OffHand runtime replacement. */
+UCLASS(NotBlueprintable, Transient)
+class URpgInventoryAutomationTestTwoHandItemDefinition final : public URpgInventoryItemDefinition
+{
+	GENERATED_BODY()
+
+public:
+	explicit URpgInventoryAutomationTestTwoHandItemDefinition(
+		const FObjectInitializer& ObjectInitializer = FObjectInitializer::Get());
+
+	virtual bool IsEditorOnly() const override { return true; }
+};
+
+/** Editor-only armor equipment that can move between Chest and Head while granting persistent MaxHealth. */
+UCLASS(NotBlueprintable, Transient)
+class URpgInventoryAutomationTestMovableGrantEquipmentDefinition final : public URpgEquipmentDefinition
+{
+	GENERATED_BODY()
+
+public:
+	explicit URpgInventoryAutomationTestMovableGrantEquipmentDefinition(
+		const FObjectInitializer& ObjectInitializer = FObjectInitializer::Get());
+};
+
+/** Editor-only armor item used to detect transient duplicate grants during a physical slot-role change. */
+UCLASS(NotBlueprintable, Transient)
+class URpgInventoryAutomationTestMovableGrantItemDefinition final : public URpgInventoryItemDefinition
+{
+	GENERATED_BODY()
+
+public:
+	explicit URpgInventoryAutomationTestMovableGrantItemDefinition(
 		const FObjectInitializer& ObjectInitializer = FObjectInitializer::Get());
 
 	virtual bool IsEditorOnly() const override { return true; }

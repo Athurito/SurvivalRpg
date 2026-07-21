@@ -853,7 +853,11 @@ bool FRpgInventoryList::MoveEntry(FGuid EntryId, int32 TargetIndex)
 	return SetOrderFromSortedEntryPointers(SortedEntries);
 }
 
-bool FRpgInventoryList::CanMoveEntryToPlacement(FGuid EntryId, const FRpgInventoryGridPlacement& TargetPlacement, FRpgInventoryGridPlacement* OutNormalizedTargetPlacement) const
+bool FRpgInventoryList::CanMoveEntryToPlacement(
+	FGuid EntryId,
+	const FRpgInventoryGridPlacement& TargetPlacement,
+	FRpgInventoryGridPlacement* OutNormalizedTargetPlacement,
+	bool bAllowStackMerge) const
 {
 	if (!EntryId.IsValid() || !TargetPlacement.IsValid())
 	{
@@ -901,7 +905,8 @@ bool FRpgInventoryList::CanMoveEntryToPlacement(FGuid EntryId, const FRpgInvento
 		return false;
 	}
 
-	if (TargetEntry->Instance && !MovingEntry->Instance->FindFragmentByClass<URpgInventoryFragment_ItemContainer>() &&
+	if (bAllowStackMerge && TargetEntry->Instance &&
+		!MovingEntry->Instance->FindFragmentByClass<URpgInventoryFragment_ItemContainer>() &&
 		MovingEntry->Instance->IsStackCompatibleWith(TargetEntry->Instance))
 	{
 		const int32 MaxStackSize = GetInventoryManagerMaxStackSizeForDefinition(TargetEntry->Instance->GetItemDef());
@@ -917,10 +922,17 @@ bool FRpgInventoryList::CanMoveEntryToPlacement(FGuid EntryId, const FRpgInvento
 		TryResolveDisplacedEntryPlacement(*MovingEntry, NormalizedTargetPlacement, *TargetEntry, TargetSwapPlacement);
 }
 
-bool FRpgInventoryList::MoveEntryToPlacement(FGuid EntryId, const FRpgInventoryGridPlacement& TargetPlacement)
+bool FRpgInventoryList::MoveEntryToPlacement(
+	FGuid EntryId,
+	const FRpgInventoryGridPlacement& TargetPlacement,
+	bool bAllowStackMerge)
 {
 	FRpgInventoryGridPlacement NormalizedTargetPlacement;
-	if (!CanMoveEntryToPlacement(EntryId, TargetPlacement, &NormalizedTargetPlacement))
+	if (!CanMoveEntryToPlacement(
+			EntryId,
+			TargetPlacement,
+			&NormalizedTargetPlacement,
+			bAllowStackMerge))
 	{
 		return false;
 	}
@@ -948,7 +960,8 @@ bool FRpgInventoryList::MoveEntryToPlacement(FGuid EntryId, const FRpgInventoryG
 		return true;
 	}
 
-	if (TargetEntry->Instance && !MovingEntry->Instance->FindFragmentByClass<URpgInventoryFragment_ItemContainer>() &&
+	if (bAllowStackMerge && TargetEntry->Instance &&
+		!MovingEntry->Instance->FindFragmentByClass<URpgInventoryFragment_ItemContainer>() &&
 		MovingEntry->Instance->IsStackCompatibleWith(TargetEntry->Instance))
 	{
 		const int32 MaxStackSize = GetInventoryManagerMaxStackSizeForDefinition(TargetEntry->Instance->GetItemDef());
@@ -3036,6 +3049,20 @@ FRpgInventoryMutationRequest URpgInventoryManagerComponent::BuildMoveMutationReq
 }
 
 FRpgInventoryMutationRequest
+URpgInventoryManagerComponent::BuildEquipmentMoveMutationRequest(
+	const FRpgInventoryMoveIntent& Intent) const
+{
+	FRpgInventoryMutationRequest Request = BuildMoveMutationRequest(Intent);
+	if (Request.Operation != ERpgInventoryMutationOperation::None)
+	{
+		// Equip is an internal placement semantic. It preserves the concrete moving identity and is never accepted
+		// through the generic UI mutation RPC.
+		Request.Operation = ERpgInventoryMutationOperation::Equip;
+	}
+	return Request;
+}
+
+FRpgInventoryMutationRequest
 URpgInventoryManagerComponent::BuildTransferMutationRequest(
 	const FRpgInventoryTransferIntent& Intent,
 	ERpgInventoryMutationOperation Operation)
@@ -3097,6 +3124,58 @@ FRpgInventoryMutationResult URpgInventoryManagerComponent::MoveItem(
 			MakeRejectedIntentResult(
 				Intent.RequestId,
 				ERpgInventoryMutationOperation::Move,
+				Intent.ExpectedQuantity));
+	}
+	return ExecuteInventoryMutation(Request);
+}
+
+FRpgInventoryMutationResult
+URpgInventoryManagerComponent::PlanEquipmentMove(
+	FRpgInventoryMoveIntent Intent) const
+{
+	Intent.EnsureRequestId();
+	if (!HasCompleteSourceSnapshot(
+			Intent.ItemId,
+			Intent.ExpectedEntryId,
+			Intent.ExpectedSourcePlacement) ||
+		Intent.ExpectedQuantity <= 0 ||
+		!Intent.TargetPlacement.IsValid())
+	{
+		return MakeRejectedIntentResult(
+			Intent.RequestId,
+			ERpgInventoryMutationOperation::Equip,
+			Intent.ExpectedQuantity);
+	}
+	return PlanInventoryMutation(
+		BuildEquipmentMoveMutationRequest(Intent));
+}
+
+FRpgInventoryMutationResult
+URpgInventoryManagerComponent::MoveEquipmentItem(
+	FRpgInventoryMoveIntent Intent)
+{
+	Intent.EnsureRequestId();
+	const FRpgInventoryMutationRequest Request =
+		BuildEquipmentMoveMutationRequest(Intent);
+	FRpgInventoryMutationResult Result;
+	if (TryReplayRecentMutation(Request, nullptr, false, Result))
+	{
+		return Result;
+	}
+	if (!HasCompleteSourceSnapshot(
+			Intent.ItemId,
+			Intent.ExpectedEntryId,
+			Intent.ExpectedSourcePlacement) ||
+		Intent.ExpectedQuantity <= 0 ||
+		!Intent.TargetPlacement.IsValid())
+	{
+		return CacheRecentMutationResult(
+			Request,
+			nullptr,
+			false,
+			MakeRejectedIntentResult(
+				Intent.RequestId,
+				ERpgInventoryMutationOperation::Equip,
 				Intent.ExpectedQuantity));
 	}
 	return ExecuteInventoryMutation(Request);
@@ -3474,7 +3553,13 @@ FRpgInventoryMutationResult URpgInventoryManagerComponent::PlanInventoryMutation
 		Result.Code = ERpgInventoryMutationResultCode::ItemNotAllowed;
 		return Result;
 	}
-	if (!InventoryList.CanMoveEntryToPlacement(MovingEntry->EntryId, NormalizedTarget))
+	const bool bAllowStackMerge =
+		Request.Operation != ERpgInventoryMutationOperation::Equip;
+	if (!InventoryList.CanMoveEntryToPlacement(
+			MovingEntry->EntryId,
+			NormalizedTarget,
+			nullptr,
+			bAllowStackMerge))
 	{
 		Result.Code = ERpgInventoryMutationResultCode::Occupied;
 		return Result;
@@ -3488,7 +3573,8 @@ FRpgInventoryMutationResult URpgInventoryManagerComponent::PlanInventoryMutation
 		return Result;
 	}
 	const FRpgInventoryEntry* TargetEntry = Overlaps.Num() == 1 ? Overlaps[0] : nullptr;
-	const bool bCompatibleMerge = TargetEntry && TargetEntry->Instance &&
+	const bool bCompatibleMerge = bAllowStackMerge &&
+		TargetEntry && TargetEntry->Instance &&
 		!MovingEntry->Instance->FindFragmentByClass<URpgInventoryFragment_ItemContainer>() &&
 		MovingEntry->Instance->IsStackCompatibleWith(TargetEntry->Instance) &&
 		InventoryList.GetFreeStackCapacity(TargetEntry->Instance) > 0;
@@ -3746,7 +3832,11 @@ FRpgInventoryMutationResult URpgInventoryManagerComponent::ExecuteInventoryMutat
 		{
 			FRpgInventoryGridPlacement Placement = Request.TargetPlacement;
 			Placement.SetContainerHandle(Request.Target);
-			bCommitted = InventoryList.MoveEntryToPlacement(Entry->EntryId, Placement);
+			bCommitted = InventoryList.MoveEntryToPlacement(
+				Entry->EntryId,
+				Placement,
+				Request.Operation !=
+					ERpgInventoryMutationOperation::Equip);
 		}
 		break;
 

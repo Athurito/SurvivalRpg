@@ -14,9 +14,13 @@
 #include "RpgInventoryManagerComponent.h"
 #include "RpgInventoryUiActionComponent.h"
 #include "SurvivalRpg/ActionBar/RpgActionBarComponent.h"
+#include "SurvivalRpg/AbilitySystem/Attributes/RpgHealthSet.h"
+#include "SurvivalRpg/AbilitySystem/RpgAbilitySystemComponent.h"
 #include "SurvivalRpg/Crafting/RpgCraftingStationActor.h"
 #include "SurvivalRpg/Crafting/RpgCraftingStationComponent.h"
+#include "SurvivalRpg/Equipment/RpgEquipmentAutomationTestTypes.h"
 #include "SurvivalRpg/Equipment/RpgEquipmentLoadoutComponent.h"
+#include "SurvivalRpg/Equipment/RpgEquipmentManagerComponent.h"
 #include "SurvivalRpg/GameplayTags/RpgGameplayTags.h"
 #include "SurvivalRpg/Mvvm/Inventory/RpgInventoryViewModels.h"
 #include "SurvivalRpg/Mvvm/Inventory/RpgPlayerInventoryViewModels.h"
@@ -170,6 +174,53 @@ namespace RpgInventoryTransactionTests
 			}
 		}
 		return false;
+	}
+
+	bool MoveWholeEntryToEquipmentPlacement(
+		URpgInventoryManagerComponent* Inventory,
+		URpgInventoryItemInstance* Item,
+		const FRpgInventoryGridPlacement& TargetPlacement)
+	{
+		FRpgInventoryEntryView Entry;
+		if (!Inventory || !Item ||
+			!GetEntryView(Inventory, Item->GetItemId(), Entry))
+		{
+			return false;
+		}
+
+		FRpgInventoryMoveIntent Intent;
+		Intent.EnsureRequestId();
+		Intent.ItemId = Entry.ItemId;
+		Intent.ExpectedEntryId = Entry.EntryId;
+		Intent.ExpectedSourcePlacement = Entry.Placement;
+		Intent.ExpectedQuantity = Entry.StackCount;
+		Intent.TargetPlacement = TargetPlacement;
+		return Inventory->MoveEquipmentItem(Intent).IsSuccess();
+	}
+
+	FRpgInventoryEquipmentIntent MakeEquipmentIntent(
+		const URpgInventoryManagerComponent* Inventory,
+		const URpgInventoryItemInstance* Item,
+		ERpgInventoryEquipmentIntentOperation Operation,
+		ERpgEquipmentSlot TargetEquipmentSlot =
+			ERpgEquipmentSlot::None)
+	{
+		FRpgInventoryEquipmentIntent Intent;
+		FRpgInventoryEntryView Entry;
+		if (!Inventory || !Item ||
+			!GetEntryView(Inventory, Item->GetItemId(), Entry))
+		{
+			return Intent;
+		}
+
+		Intent.EnsureRequestId();
+		Intent.ItemId = Entry.ItemId;
+		Intent.ExpectedEntryId = Entry.EntryId;
+		Intent.ExpectedSourcePlacement = Entry.Placement;
+		Intent.ExpectedQuantity = Entry.StackCount;
+		Intent.Operation = Operation;
+		Intent.TargetEquipmentSlot = TargetEquipmentSlot;
+		return Intent;
 	}
 
 	URpgInventoryEntryViewModel* MakeEntryViewModel(
@@ -1727,6 +1778,1579 @@ bool FRpgInventoryFragmentedGridAndRotationTest::RunTest(const FString& Paramete
 		TEXT("Atomic definition add rejects the fragmented grid"),
 		FragmentedInventory->AddItemDefinition(URpgInventoryAutomationTestWideItemDefinition::StaticClass(), 1));
 	TestEqual(TEXT("Failed fragmented-grid add does not partially mutate entries"), MakeInventorySignature(FragmentedInventory), BeforeFailedAdd);
+	return true;
+}
+
+IMPLEMENT_SIMPLE_AUTOMATION_TEST(
+	FRpgInventoryEquipmentIntentRetryBoundaryTest,
+	"SurvivalRpg.Inventory.Intent.Equip.StaleSnapshotAndRetryAreAtomic",
+	EAutomationTestFlags::EditorContext |
+		EAutomationTestFlags::EngineFilter)
+
+bool FRpgInventoryEquipmentIntentRetryBoundaryTest::RunTest(
+	const FString& Parameters)
+{
+	using namespace RpgInventoryTransactionTests;
+	FScopedInventoryWorld TestWorld;
+	if (!InitializeTest(*this, TestWorld))
+	{
+		return false;
+	}
+
+	UWorld* World = TestWorld.GetTestWorld();
+	FActorSpawnParameters ControllerSpawnParameters;
+	ControllerSpawnParameters.Name = MakeUniqueObjectName(
+		World,
+		ARpgInventoryAutomationTestPlayerController::StaticClass(),
+		TEXT("EquipmentIntentRetryController"));
+	ControllerSpawnParameters.ObjectFlags = RF_Transient;
+	ARpgInventoryAutomationTestPlayerController* Controller =
+		World->SpawnActor<
+			ARpgInventoryAutomationTestPlayerController>(
+			ControllerSpawnParameters);
+
+	FActorSpawnParameters PlayerStateSpawnParameters;
+	PlayerStateSpawnParameters.Name = MakeUniqueObjectName(
+		World,
+		ARpgInventoryAutomationTestPlayerState::StaticClass(),
+		TEXT("EquipmentIntentRetryPlayerState"));
+	PlayerStateSpawnParameters.ObjectFlags = RF_Transient;
+	ARpgInventoryAutomationTestPlayerState* PlayerState =
+		World->SpawnActor<
+			ARpgInventoryAutomationTestPlayerState>(
+			PlayerStateSpawnParameters);
+	if (!TestNotNull(TEXT("The equipment-intent controller exists"), Controller) ||
+		!TestNotNull(TEXT("The equipment-intent player state exists"), PlayerState))
+	{
+		return false;
+	}
+
+	Controller->SetPlayerState(PlayerState);
+	PlayerState->SetOwner(Controller);
+	URpgInventoryManagerComponent* Inventory =
+		PlayerState->GetInventoryManagerComponent();
+	URpgInventoryUiActionComponent* UiActions =
+		Controller->GetInventoryUiActionComponent();
+	URpgEquipmentLoadoutComponent* EquipmentLoadout =
+		Controller->GetEquipmentLoadoutComponent();
+	if (!TestTrue(TEXT("The fixture executes on authority"), Controller->HasAuthority()) ||
+		!TestNotNull(TEXT("The player inventory exists"), Inventory) ||
+		!TestNotNull(TEXT("The typed UI action component exists"), UiActions) ||
+		!TestNotNull(TEXT("The equipment selection mirror exists"), EquipmentLoadout))
+	{
+		return false;
+	}
+
+	const FRpgInventoryContainerHandle Pockets =
+		FRpgInventoryContainerHandle::MakeRoot(
+			URpgPlayerInventoryLayoutComponent::PocketsGroupId);
+	const FRpgInventoryContainerHandle WeaponSlot1 =
+		FRpgInventoryContainerHandle::MakeRoot(
+			URpgPlayerInventoryLayoutComponent::
+				WeaponSlot1GroupId);
+	const FRpgInventoryContainerHandle ShieldSlot =
+		FRpgInventoryContainerHandle::MakeRoot(
+			URpgPlayerInventoryLayoutComponent::
+				ShieldSlotGroupId);
+	URpgInventoryItemInstance* Weapon =
+		Inventory->AddItemDefinitionToPlacement(
+			URpgInventoryAutomationTestWeaponItemDefinition::
+				StaticClass(),
+			1,
+			MakePlacement(Pockets, 0, 0));
+	if (!TestNotNull(TEXT("A weapon starts in Pockets"), Weapon))
+	{
+		return false;
+	}
+
+	TArray<FRpgInventoryActionFeedbackMessage> FeedbackMessages;
+	TArray<FRpgEquipmentLoadoutSlotsChangedMessage>
+		EquipmentMessages;
+	UGameplayMessageSubsystem& MessageSubsystem =
+		UGameplayMessageSubsystem::Get(World);
+	FGameplayMessageListenerHandle FeedbackHandle =
+		MessageSubsystem.RegisterListener<
+			FRpgInventoryActionFeedbackMessage>(
+			RpgGameplayTags::
+				Rpg_Inventory_Message_ActionFeedback,
+			[&FeedbackMessages](
+				FGameplayTag,
+				const FRpgInventoryActionFeedbackMessage& Message)
+			{
+				FeedbackMessages.Add(Message);
+			});
+	FGameplayMessageListenerHandle EquipmentHandle =
+		MessageSubsystem.RegisterListener<
+			FRpgEquipmentLoadoutSlotsChangedMessage>(
+			RpgGameplayTags::
+				Rpg_EquipmentLoadout_Message_SlotsChanged,
+			[&EquipmentMessages](
+				FGameplayTag,
+				const FRpgEquipmentLoadoutSlotsChangedMessage&
+					Message)
+			{
+				EquipmentMessages.Add(Message);
+			});
+
+	FRpgInventoryEntryView PendingEntry;
+	if (!TestTrue(
+			TEXT("The initial weapon snapshot is available"),
+			GetEntryView(
+				Inventory,
+				Weapon->GetItemId(),
+				PendingEntry)))
+	{
+		FeedbackHandle.Unregister();
+		EquipmentHandle.Unregister();
+		return false;
+	}
+
+	URpgInventoryInteractionSession* PendingSession =
+		NewObject<URpgInventoryInteractionSession>(Controller);
+	PendingSession->Initialize(Controller, Controller);
+	FRpgInventoryDragPayload PendingPayload;
+	PendingPayload.SourceType =
+		ERpgInventoryDragSourceType::InventoryEntry;
+	PendingPayload.SourceInventory = Inventory;
+	PendingPayload.ItemInstance = Weapon;
+	PendingPayload.EntryId = PendingEntry.EntryId;
+	PendingPayload.StackCount = PendingEntry.StackCount;
+	PendingPayload.SourcePlacement = PendingEntry.Placement;
+	FRpgInventoryDropTarget PendingEquipmentTarget;
+	PendingEquipmentTarget.TargetType =
+		ERpgInventoryDropTargetType::EquipmentSlot;
+	PendingEquipmentTarget.EquipmentSlot =
+		ERpgEquipmentSlot::MainHand;
+	TestTrue(
+		TEXT("The equipment interaction accepts an exact source payload"),
+		PendingSession->BeginInteraction(
+			PendingPayload,
+			ERpgInventoryInteractionInputMode::Mouse));
+	PendingSession->MarkRequestPending(
+		PendingEquipmentTarget,
+		RpgGameplayTags::Rpg_Inventory_Action_Equip);
+
+	FRpgInventoryMoveIntent PrematureMove;
+	PrematureMove.EnsureRequestId();
+	PrematureMove.ItemId = PendingEntry.ItemId;
+	PrematureMove.ExpectedEntryId = PendingEntry.EntryId;
+	PrematureMove.ExpectedSourcePlacement =
+		PendingEntry.Placement;
+	PrematureMove.ExpectedQuantity = PendingEntry.StackCount;
+	PrematureMove.TargetPlacement =
+		MakePlacement(Pockets, 1, 0);
+	TestTrue(
+		TEXT("The fixture emits a matching physical inventory delta"),
+		Inventory->MoveItem(PrematureMove).IsSuccess());
+	TestTrue(
+		TEXT("An intermediate inventory delta cannot acknowledge a pending equipment command"),
+		PendingSession->IsRequestPending());
+	PendingSession->RejectRequestLocally();
+	PendingSession->CancelInteraction();
+
+	FRpgInventoryEquipmentIntent ValidIntent =
+		MakeEquipmentIntent(
+			Inventory,
+			Weapon,
+			ERpgInventoryEquipmentIntentOperation::EquipToSlot,
+			ERpgEquipmentSlot::MainHand);
+	const FString InitialSignature =
+		MakeInventorySignature(Inventory);
+	FRpgInventoryItemActionRequest LegacyEquipmentRequest;
+	LegacyEquipmentRequest.RequestId = FGuid::NewGuid();
+	LegacyEquipmentRequest.ItemId = Weapon->GetItemId();
+	LegacyEquipmentRequest.Intent =
+		ERpgInventoryItemActionIntent::EquipAndActivate;
+	LegacyEquipmentRequest.StackCount = 1;
+	const int32 LegacyFeedbackIndex = FeedbackMessages.Num();
+	UiActions->RequestExecuteInventoryItemAction(
+		Inventory,
+		LegacyEquipmentRequest);
+	TestEqual(
+		TEXT("The legacy equipment action emits one rejection"),
+		FeedbackMessages.Num(),
+		LegacyFeedbackIndex + 1);
+	if (FeedbackMessages.IsValidIndex(LegacyFeedbackIndex))
+	{
+		TestEqual(
+			TEXT("The legacy stable-ID endpoint rejects equipment without an exact snapshot"),
+			FeedbackMessages[LegacyFeedbackIndex].Result,
+			ERpgInventoryActionFeedbackResult::InvalidRequest);
+	}
+	TestEqual(
+		TEXT("The rejected legacy equipment action leaves physical state unchanged"),
+		MakeInventorySignature(Inventory),
+		InitialSignature);
+	TestNull(
+		TEXT("The rejected legacy equipment action cannot activate MainHand"),
+		EquipmentLoadout->GetItemInEquipmentSlot(
+			ERpgEquipmentSlot::MainHand));
+
+	FRpgInventoryEquipmentIntent StaleEntryIntent = ValidIntent;
+	StaleEntryIntent.RequestId = FGuid::NewGuid();
+	StaleEntryIntent.ExpectedEntryId = FGuid::NewGuid();
+	const int32 StaleEntryFeedbackIndex =
+		FeedbackMessages.Num();
+	UiActions->RequestApplyInventoryEquipmentIntent(
+		Inventory,
+		StaleEntryIntent);
+	TestEqual(
+		TEXT("A stale EntryId emits one rejection"),
+		FeedbackMessages.Num(),
+		StaleEntryFeedbackIndex + 1);
+	if (FeedbackMessages.IsValidIndex(
+			StaleEntryFeedbackIndex))
+	{
+		TestEqual(
+			TEXT("A stale EntryId is rejected as an invalid snapshot"),
+			FeedbackMessages[StaleEntryFeedbackIndex].Result,
+			ERpgInventoryActionFeedbackResult::InvalidRequest);
+	}
+	TestEqual(
+		TEXT("A stale EntryId leaves the inventory byte-for-byte unchanged"),
+		MakeInventorySignature(Inventory),
+		InitialSignature);
+	TestNull(
+		TEXT("A stale EntryId cannot activate MainHand"),
+		EquipmentLoadout->GetItemInEquipmentSlot(
+			ERpgEquipmentSlot::MainHand));
+
+	FRpgInventoryEquipmentIntent StalePlacementIntent =
+		ValidIntent;
+	StalePlacementIntent.RequestId = FGuid::NewGuid();
+	++StalePlacementIntent.ExpectedSourcePlacement.X;
+	UiActions->RequestApplyInventoryEquipmentIntent(
+		Inventory,
+		StalePlacementIntent);
+	TestEqual(
+		TEXT("A stale source placement leaves the inventory unchanged"),
+		MakeInventorySignature(Inventory),
+		InitialSignature);
+	TestNull(
+		TEXT("A stale source placement cannot activate MainHand"),
+		EquipmentLoadout->GetItemInEquipmentSlot(
+			ERpgEquipmentSlot::MainHand));
+
+	FRpgInventoryEquipmentIntent StaleQuantityIntent =
+		ValidIntent;
+	StaleQuantityIntent.RequestId = FGuid::NewGuid();
+	++StaleQuantityIntent.ExpectedQuantity;
+	UiActions->RequestApplyInventoryEquipmentIntent(
+		Inventory,
+		StaleQuantityIntent);
+	TestEqual(
+		TEXT("A partial/stale equipment quantity remains atomic"),
+		MakeInventorySignature(Inventory),
+		InitialSignature);
+
+	const int32 SuccessFeedbackIndex =
+		FeedbackMessages.Num();
+	UiActions->RequestApplyInventoryEquipmentIntent(
+		Inventory,
+		ValidIntent);
+	TestEqual(
+		TEXT("The valid intent emits one result"),
+		FeedbackMessages.Num(),
+		SuccessFeedbackIndex + 1);
+	if (FeedbackMessages.IsValidIndex(SuccessFeedbackIndex))
+	{
+		TestEqual(
+			TEXT("The valid intent succeeds"),
+			FeedbackMessages[SuccessFeedbackIndex].Result,
+			ERpgInventoryActionFeedbackResult::Success);
+		TestEqual(
+			TEXT("Equipment feedback preserves the caller RequestId"),
+			FeedbackMessages[SuccessFeedbackIndex].RequestId,
+			ValidIntent.RequestId);
+	}
+
+	FRpgInventoryEntryView EquippedEntry;
+	TestTrue(
+		TEXT("The equipped weapon remains addressable"),
+		GetEntryView(
+			Inventory,
+			Weapon->GetItemId(),
+			EquippedEntry));
+	TestEqual(
+		TEXT("The physical transaction moves the weapon to WeaponSlot1"),
+		EquippedEntry.Placement.GetContainerHandle(),
+		WeaponSlot1);
+	TestEqual(
+		TEXT("The post-commit selection activates MainHand"),
+		EquipmentLoadout->GetItemInEquipmentSlot(
+			ERpgEquipmentSlot::MainHand),
+		Weapon);
+
+	const FString SignatureBeforeNoOpMove =
+		MakeInventorySignature(Inventory);
+	const int32 EquipmentMessageCountBeforeNoOpMove =
+		EquipmentMessages.Num();
+	FRpgInventoryMoveIntent NoOpMove;
+	NoOpMove.EnsureRequestId();
+	NoOpMove.ItemId = EquippedEntry.ItemId;
+	NoOpMove.ExpectedEntryId = EquippedEntry.EntryId;
+	NoOpMove.ExpectedSourcePlacement =
+		EquippedEntry.Placement;
+	NoOpMove.ExpectedQuantity = EquippedEntry.StackCount;
+	NoOpMove.TargetPlacement = EquippedEntry.Placement;
+	UiActions->RequestMoveInventoryItem(Inventory, NoOpMove);
+	UiActions->RequestMoveInventoryItem(Inventory, NoOpMove);
+	TestEqual(
+		TEXT("A no-op Gear move and its replay leave physical state unchanged"),
+		MakeInventorySignature(Inventory),
+		SignatureBeforeNoOpMove);
+	TestEqual(
+		TEXT("A no-op Gear move and its replay do not rebuild equipment state"),
+		EquipmentMessages.Num(),
+		EquipmentMessageCountBeforeNoOpMove);
+
+	URpgInventoryItemInstance* UnrelatedItem =
+		Inventory->AddItemDefinitionToPlacement(
+			URpgInventoryAutomationTestUnitItemDefinition::
+				StaticClass(),
+			1,
+			MakePlacement(Pockets, 0, 0));
+	FRpgInventoryEntryView UnrelatedEntry;
+	if (!TestNotNull(
+			TEXT("An unrelated Pockets item exists"),
+			UnrelatedItem) ||
+		!TestTrue(
+			TEXT("The unrelated item has an exact source snapshot"),
+			GetEntryView(
+				Inventory,
+				UnrelatedItem
+					? UnrelatedItem->GetItemId()
+					: FRpgInventoryItemId(),
+				UnrelatedEntry)))
+	{
+		FeedbackHandle.Unregister();
+		EquipmentHandle.Unregister();
+		return false;
+	}
+
+	const int32 EquipmentMessageCountBeforeUnrelatedMove =
+		EquipmentMessages.Num();
+	FRpgInventoryMoveIntent UnrelatedMove;
+	UnrelatedMove.EnsureRequestId();
+	UnrelatedMove.ItemId = UnrelatedEntry.ItemId;
+	UnrelatedMove.ExpectedEntryId = UnrelatedEntry.EntryId;
+	UnrelatedMove.ExpectedSourcePlacement =
+		UnrelatedEntry.Placement;
+	UnrelatedMove.ExpectedQuantity = UnrelatedEntry.StackCount;
+	UnrelatedMove.TargetPlacement =
+		MakePlacement(Pockets, 2, 0);
+	UiActions->RequestMoveInventoryItem(
+		Inventory,
+		UnrelatedMove);
+	TestEqual(
+		TEXT("A Content-only move does not rebuild equipment actors or grants"),
+		EquipmentMessages.Num(),
+		EquipmentMessageCountBeforeUnrelatedMove);
+
+	const FString SignatureBeforeReplay =
+		MakeInventorySignature(Inventory);
+	const int32 EquipmentMessageCountBeforeReplay =
+		EquipmentMessages.Num();
+	const int32 ReplayFeedbackIndex =
+		FeedbackMessages.Num();
+	UiActions->RequestApplyInventoryEquipmentIntent(
+		Inventory,
+		ValidIntent);
+	TestEqual(
+		TEXT("An identical retry replays exactly one feedback"),
+		FeedbackMessages.Num(),
+		ReplayFeedbackIndex + 1);
+	if (FeedbackMessages.IsValidIndex(ReplayFeedbackIndex))
+	{
+		TestEqual(
+			TEXT("An identical retry replays success"),
+			FeedbackMessages[ReplayFeedbackIndex].Result,
+			ERpgInventoryActionFeedbackResult::Success);
+	}
+	TestEqual(
+		TEXT("An identical retry performs no second physical mutation"),
+		MakeInventorySignature(Inventory),
+		SignatureBeforeReplay);
+	TestEqual(
+		TEXT("An identical retry performs no second loadout reconciliation"),
+		EquipmentMessages.Num(),
+		EquipmentMessageCountBeforeReplay);
+	TestEqual(
+		TEXT("An identical retry cannot toggle MainHand off"),
+		EquipmentLoadout->GetItemInEquipmentSlot(
+			ERpgEquipmentSlot::MainHand),
+		Weapon);
+
+	FRpgInventoryEquipmentIntent CollisionIntent =
+		ValidIntent;
+	CollisionIntent.TargetEquipmentSlot =
+		ERpgEquipmentSlot::OffHand;
+	const int32 CollisionFeedbackIndex =
+		FeedbackMessages.Num();
+	UiActions->RequestApplyInventoryEquipmentIntent(
+		Inventory,
+		CollisionIntent);
+	TestEqual(
+		TEXT("A RequestId collision emits one rejection"),
+		FeedbackMessages.Num(),
+		CollisionFeedbackIndex + 1);
+	if (FeedbackMessages.IsValidIndex(CollisionFeedbackIndex))
+	{
+		TestEqual(
+			TEXT("Changing the target under one RequestId is rejected"),
+			FeedbackMessages[CollisionFeedbackIndex].Result,
+			ERpgInventoryActionFeedbackResult::InvalidRequest);
+	}
+	TestEqual(
+		TEXT("The collision cannot mutate the committed placement"),
+		MakeInventorySignature(Inventory),
+		SignatureBeforeReplay);
+	TestEqual(
+		TEXT("The collision cannot change active MainHand"),
+		EquipmentLoadout->GetItemInEquipmentSlot(
+			ERpgEquipmentSlot::MainHand),
+		Weapon);
+
+	URpgInventoryItemInstance* OffHandItem =
+		Inventory->AddItemDefinitionToPlacement(
+			URpgInventoryAutomationTestStackableOffHandItemDefinition::StaticClass(),
+			1,
+			MakePlacement(Pockets, 0, 0));
+	if (!TestNotNull(TEXT("An OffHand item starts in Pockets"), OffHandItem))
+	{
+		FeedbackHandle.Unregister();
+		EquipmentHandle.Unregister();
+		return false;
+	}
+	FRpgInventoryEquipmentIntent EquipOffHandIntent =
+		MakeEquipmentIntent(
+			Inventory,
+			OffHandItem,
+			ERpgInventoryEquipmentIntentOperation::EquipToSlot,
+			ERpgEquipmentSlot::OffHand);
+	UiActions->RequestApplyInventoryEquipmentIntent(
+		Inventory,
+		EquipOffHandIntent);
+	TestEqual(
+		TEXT("The typed OffHand intent activates only OffHand"),
+		EquipmentLoadout->GetItemInEquipmentSlot(
+			ERpgEquipmentSlot::OffHand),
+		OffHandItem);
+	FRpgInventoryEntryView EquippedOffHandEntry;
+	TestTrue(
+		TEXT("The OffHand item remains addressable after equip"),
+		GetEntryView(
+			Inventory,
+			OffHandItem->GetItemId(),
+			EquippedOffHandEntry));
+	TestEqual(
+		TEXT("The physical OffHand item occupies ShieldSlot"),
+		EquippedOffHandEntry.Placement.GetContainerHandle(),
+		ShieldSlot);
+
+	FRpgInventoryEquipmentIntent ClearHandIntent =
+		MakeEquipmentIntent(
+			Inventory,
+			Weapon,
+			ERpgInventoryEquipmentIntentOperation::
+				ClearActiveSelection,
+			ERpgEquipmentSlot::MainHand);
+	const FString SignatureBeforeClear =
+		MakeInventorySignature(Inventory);
+	const int32 ClearFeedbackIndex = FeedbackMessages.Num();
+	UiActions->RequestApplyInventoryEquipmentIntent(
+		Inventory,
+		ClearHandIntent);
+	TestEqual(
+		TEXT("The activation-only clear emits one result"),
+		FeedbackMessages.Num(),
+		ClearFeedbackIndex + 1);
+	if (FeedbackMessages.IsValidIndex(ClearFeedbackIndex))
+	{
+		TestEqual(
+			TEXT("The activation-only clear succeeds"),
+			FeedbackMessages[ClearFeedbackIndex].Result,
+			ERpgInventoryActionFeedbackResult::Success);
+		TestEqual(
+			TEXT("The activation-only clear preserves request correlation"),
+			FeedbackMessages[ClearFeedbackIndex].RequestId,
+			ClearHandIntent.RequestId);
+	}
+	TestNull(
+		TEXT("The activation-only clear holsters MainHand"),
+		EquipmentLoadout->GetItemInEquipmentSlot(
+			ERpgEquipmentSlot::MainHand));
+	TestEqual(
+		TEXT("Clearing MainHand preserves the independent OffHand selection"),
+		EquipmentLoadout->GetItemInEquipmentSlot(
+			ERpgEquipmentSlot::OffHand),
+		OffHandItem);
+	TestEqual(
+		TEXT("Holstering never changes the physical Carry placement"),
+		MakeInventorySignature(Inventory),
+		SignatureBeforeClear);
+
+	const int32 EquipmentMessageCountBeforeClearReplay =
+		EquipmentMessages.Num();
+	const int32 ClearReplayFeedbackIndex =
+		FeedbackMessages.Num();
+	UiActions->RequestApplyInventoryEquipmentIntent(
+		Inventory,
+		ClearHandIntent);
+	TestEqual(
+		TEXT("A clear retry replays exactly one result"),
+		FeedbackMessages.Num(),
+		ClearReplayFeedbackIndex + 1);
+	if (FeedbackMessages.IsValidIndex(ClearReplayFeedbackIndex))
+	{
+		TestEqual(
+			TEXT("A clear retry replays success"),
+			FeedbackMessages[ClearReplayFeedbackIndex].Result,
+			ERpgInventoryActionFeedbackResult::Success);
+	}
+	TestEqual(
+		TEXT("A clear retry does not repeat loadout side effects"),
+		EquipmentMessages.Num(),
+		EquipmentMessageCountBeforeClearReplay);
+	TestEqual(
+		TEXT("A clear retry cannot mutate the physical inventory"),
+		MakeInventorySignature(Inventory),
+		SignatureBeforeClear);
+	TestEqual(
+		TEXT("A clear retry also preserves OffHand"),
+		EquipmentLoadout->GetItemInEquipmentSlot(
+			ERpgEquipmentSlot::OffHand),
+		OffHandItem);
+
+	FRpgInventoryEquipmentIntent ClearCollisionIntent =
+		ClearHandIntent;
+	ClearCollisionIntent.TargetEquipmentSlot =
+		ERpgEquipmentSlot::OffHand;
+	const int32 ClearCollisionFeedbackIndex =
+		FeedbackMessages.Num();
+	UiActions->RequestApplyInventoryEquipmentIntent(
+		Inventory,
+		ClearCollisionIntent);
+	if (FeedbackMessages.IsValidIndex(
+			ClearCollisionFeedbackIndex))
+	{
+		TestEqual(
+			TEXT("A clear RequestId collision is rejected"),
+			FeedbackMessages[ClearCollisionFeedbackIndex].Result,
+			ERpgInventoryActionFeedbackResult::InvalidRequest);
+	}
+	TestEqual(
+		TEXT("The clear RequestId collision cannot clear OffHand"),
+		EquipmentLoadout->GetItemInEquipmentSlot(
+			ERpgEquipmentSlot::OffHand),
+		OffHandItem);
+
+	FeedbackHandle.Unregister();
+	EquipmentHandle.Unregister();
+	return true;
+}
+
+IMPLEMENT_SIMPLE_AUTOMATION_TEST(
+	FRpgInventoryEquipmentRuntimeReconcileLifecycleTest,
+	"SurvivalRpg.Inventory.Intent.Equip.RuntimeReconcileIsTwoPhase",
+	EAutomationTestFlags::EditorContext |
+		EAutomationTestFlags::EngineFilter)
+
+bool FRpgInventoryEquipmentRuntimeReconcileLifecycleTest::RunTest(
+	const FString& Parameters)
+{
+	using namespace RpgInventoryTransactionTests;
+	FScopedInventoryWorld TestWorld;
+	if (!InitializeTest(*this, TestWorld))
+	{
+		return false;
+	}
+
+	UWorld* World = TestWorld.GetTestWorld();
+	FActorSpawnParameters ControllerSpawnParameters;
+	ControllerSpawnParameters.Name = MakeUniqueObjectName(
+		World,
+		ARpgInventoryAutomationTestPlayerController::StaticClass(),
+		TEXT("EquipmentRuntimeReconcileController"));
+	ControllerSpawnParameters.ObjectFlags = RF_Transient;
+	ARpgInventoryAutomationTestPlayerController* Controller =
+		World->SpawnActor<ARpgInventoryAutomationTestPlayerController>(
+			ControllerSpawnParameters);
+
+	FActorSpawnParameters PlayerStateSpawnParameters;
+	PlayerStateSpawnParameters.Name = MakeUniqueObjectName(
+		World,
+		ARpgInventoryAutomationTestPlayerState::StaticClass(),
+		TEXT("EquipmentRuntimeReconcilePlayerState"));
+	PlayerStateSpawnParameters.ObjectFlags = RF_Transient;
+	ARpgInventoryAutomationTestPlayerState* PlayerState =
+		World->SpawnActor<ARpgInventoryAutomationTestPlayerState>(
+			PlayerStateSpawnParameters);
+
+	FActorSpawnParameters PawnSpawnParameters;
+	PawnSpawnParameters.Name = MakeUniqueObjectName(
+		World,
+		ARpgEquipmentAutomationTestPawn::StaticClass(),
+		TEXT("EquipmentRuntimeReconcilePawn"));
+	PawnSpawnParameters.ObjectFlags = RF_Transient;
+	PawnSpawnParameters.SpawnCollisionHandlingOverride =
+		ESpawnActorCollisionHandlingMethod::AlwaysSpawn;
+	ARpgEquipmentAutomationTestPawn* Pawn =
+		World->SpawnActor<ARpgEquipmentAutomationTestPawn>(
+			PawnSpawnParameters);
+	if (!TestNotNull(TEXT("The runtime-reconcile controller exists"), Controller) ||
+		!TestNotNull(TEXT("The runtime-reconcile player state exists"), PlayerState) ||
+		!TestNotNull(TEXT("The authoritative GAS equipment pawn exists"), Pawn))
+	{
+		return false;
+	}
+
+	Controller->SetPlayerState(PlayerState);
+	PlayerState->SetOwner(Controller);
+	Controller->Possess(Pawn);
+	URpgInventoryManagerComponent* Inventory =
+		PlayerState->GetInventoryManagerComponent();
+	URpgEquipmentLoadoutComponent* EquipmentLoadout =
+		Controller->GetEquipmentLoadoutComponent();
+	URpgEquipmentManagerComponent* EquipmentManager =
+		Pawn->GetEquipmentManagerComponent();
+	URpgInventoryUiActionComponent* UiActions =
+		Controller->GetInventoryUiActionComponent();
+	URpgAbilitySystemComponent* AbilitySystemComponent =
+		Pawn->GetRpgAbilitySystemComponent();
+	URpgHealthSet* HealthSet = Pawn->GetHealthSet();
+	if (!TestNotNull(TEXT("The canonical player inventory exists"), Inventory) ||
+		!TestNotNull(TEXT("The controller loadout mirror exists"), EquipmentLoadout) ||
+		!TestNotNull(TEXT("The pawn equipment manager exists"), EquipmentManager) ||
+		!TestNotNull(TEXT("The typed inventory gateway exists"), UiActions) ||
+		!TestNotNull(TEXT("The pawn ability system exists"), AbilitySystemComponent) ||
+		!TestNotNull(TEXT("The pawn health set exists"), HealthSet))
+	{
+		return false;
+	}
+	if (!AbilitySystemComponent->GetSet<URpgHealthSet>())
+	{
+		AbilitySystemComponent->AddAttributeSetSubobject(HealthSet);
+	}
+	AbilitySystemComponent->InitAbilityActorInfo(Pawn, Pawn);
+
+	const FRpgInventoryContainerHandle WeaponSlot1 =
+		FRpgInventoryContainerHandle::MakeRoot(
+			URpgPlayerInventoryLayoutComponent::WeaponSlot1GroupId);
+	const FRpgInventoryContainerHandle WeaponSlot2 =
+		FRpgInventoryContainerHandle::MakeRoot(
+			URpgPlayerInventoryLayoutComponent::WeaponSlot2GroupId);
+	const FRpgInventoryContainerHandle ShieldSlot =
+		FRpgInventoryContainerHandle::MakeRoot(
+			URpgPlayerInventoryLayoutComponent::ShieldSlotGroupId);
+	URpgInventoryItemInstance* OneHandItem =
+		Inventory->AddItemDefinitionToPlacement(
+			URpgInventoryAutomationTestWeaponItemDefinition::StaticClass(),
+			1,
+			MakePlacement(
+				FRpgInventoryContainerHandle::MakeRoot(
+					URpgPlayerInventoryLayoutComponent::PocketsGroupId),
+				0,
+				0));
+	URpgInventoryItemInstance* OffHandItem =
+		Inventory->AddItemDefinitionToPlacement(
+			URpgInventoryAutomationTestStackableOffHandItemDefinition::StaticClass(),
+			1,
+			MakePlacement(
+				FRpgInventoryContainerHandle::MakeRoot(
+					URpgPlayerInventoryLayoutComponent::PocketsGroupId),
+				1,
+				0));
+	URpgInventoryItemInstance* TwoHandItem =
+		Inventory->AddItemDefinitionToPlacement(
+			URpgInventoryAutomationTestTwoHandItemDefinition::StaticClass(),
+			1,
+			MakePlacement(
+				FRpgInventoryContainerHandle::MakeRoot(
+					URpgPlayerInventoryLayoutComponent::PocketsGroupId),
+				2,
+				0));
+	if (!TestNotNull(TEXT("A one-handed Carry item exists"), OneHandItem) ||
+		!TestNotNull(TEXT("An OffHand Carry item exists"), OffHandItem) ||
+		!TestNotNull(TEXT("A two-handed Carry item exists"), TwoHandItem))
+	{
+		return false;
+	}
+	if (!TestTrue(
+			TEXT("The one-handed item moves through the trusted Carry seam"),
+			MoveWholeEntryToEquipmentPlacement(
+				Inventory,
+				OneHandItem,
+				MakePlacement(WeaponSlot1, 0, 0))) ||
+		!TestTrue(
+			TEXT("The OffHand item moves through the trusted Carry seam"),
+			MoveWholeEntryToEquipmentPlacement(
+				Inventory,
+				OffHandItem,
+				MakePlacement(ShieldSlot, 0, 0))) ||
+		!TestTrue(
+			TEXT("The two-handed item moves through the trusted Carry seam"),
+			MoveWholeEntryToEquipmentPlacement(
+				Inventory,
+				TwoHandItem,
+				MakePlacement(WeaponSlot2, 0, 0))))
+	{
+		return false;
+	}
+
+	FRpgEquipmentSelectionSaveData InitialSelection;
+	InitialSelection.ActiveMainHandItemId = OneHandItem->GetItemId();
+	InitialSelection.ActiveOffHandItemId = OffHandItem->GetItemId();
+	EquipmentLoadout->RestoreEquipmentSelection(InitialSelection);
+
+	URpgInventoryAutomationTestCountingEquipmentInstance* InitialMainRuntime =
+		Cast<URpgInventoryAutomationTestCountingEquipmentInstance>(
+			EquipmentManager->GetEquipmentInstanceInSlot(
+				ERpgEquipmentSlot::MainHand));
+	URpgInventoryAutomationTestCountingEquipmentInstance* InitialOffRuntime =
+		Cast<URpgInventoryAutomationTestCountingEquipmentInstance>(
+			EquipmentManager->GetEquipmentInstanceInSlot(
+				ERpgEquipmentSlot::OffHand));
+	if (!TestNotNull(TEXT("The initial MainHand runtime instance exists"), InitialMainRuntime) ||
+		!TestNotNull(TEXT("The initial OffHand runtime instance exists"), InitialOffRuntime))
+	{
+		return false;
+	}
+	TestEqual(TEXT("Initial MainHand receives one equip callback"), InitialMainRuntime->GetEquippedCount(), 1);
+	TestEqual(TEXT("Initial OffHand receives one equip callback"), InitialOffRuntime->GetEquippedCount(), 1);
+
+	FRpgEquipmentSelectionSaveData TwoHandSelection;
+	TwoHandSelection.ActiveMainHandItemId = TwoHandItem->GetItemId();
+	EquipmentLoadout->RestoreEquipmentSelection(TwoHandSelection);
+
+	TestEqual(TEXT("Replaced MainHand receives exactly one unequip callback"), InitialMainRuntime->GetUnequippedCount(), 1);
+	TestEqual(TEXT("The two-hand conflict removes OffHand exactly once"), InitialOffRuntime->GetUnequippedCount(), 1);
+	TestEqual(
+		TEXT("The loadout mirror selects the two-handed item"),
+		EquipmentLoadout->GetItemInEquipmentSlot(ERpgEquipmentSlot::MainHand),
+		TwoHandItem);
+	TestNull(
+		TEXT("The two-handed selection leaves no active OffHand mirror"),
+		EquipmentLoadout->GetItemInEquipmentSlot(ERpgEquipmentSlot::OffHand));
+
+	URpgInventoryAutomationTestCountingEquipmentInstance* TwoHandRuntime =
+		Cast<URpgInventoryAutomationTestCountingEquipmentInstance>(
+			EquipmentManager->GetEquipmentInstanceInSlot(
+				ERpgEquipmentSlot::MainHand));
+	if (!TestNotNull(TEXT("The two-handed runtime instance exists"), TwoHandRuntime))
+	{
+		return false;
+	}
+	TestEqual(TEXT("The replacement receives one equip callback"), TwoHandRuntime->GetEquippedCount(), 1);
+	TestEqual(TEXT("The replacement remains equipped"), TwoHandRuntime->GetUnequippedCount(), 0);
+	TestTrue(
+		TEXT("The two-handed runtime blocks OffHand input"),
+		EquipmentManager->IsEquipmentSlotBlocked(ERpgEquipmentSlot::OffHand));
+	TestEqual(
+		TEXT("Only the two-handed runtime entry survives reconciliation"),
+		EquipmentManager->GetEquipmentInstancesOfType(
+			URpgInventoryAutomationTestCountingEquipmentInstance::StaticClass()).Num(),
+		1);
+
+	TestTrue(
+		TEXT("An idempotent reconcile reports a complete target state"),
+		EquipmentLoadout->RefreshEquipmentLoadoutOnCurrentPawn());
+	TestEqual(
+		TEXT("Idempotent reconcile preserves the runtime instance"),
+		EquipmentManager->GetEquipmentInstanceInSlot(ERpgEquipmentSlot::MainHand),
+		static_cast<URpgEquipmentInstance*>(TwoHandRuntime));
+	TestEqual(TEXT("Idempotent reconcile emits no second equip callback"), TwoHandRuntime->GetEquippedCount(), 1);
+	TestEqual(TEXT("Idempotent reconcile emits no unequip callback"), TwoHandRuntime->GetUnequippedCount(), 0);
+
+	const FRpgInventoryContainerHandle Pockets =
+		FRpgInventoryContainerHandle::MakeRoot(
+			URpgPlayerInventoryLayoutComponent::PocketsGroupId);
+	URpgInventoryItemInstance* MovableGrantArmor =
+		Inventory->AddItemDefinitionToPlacement(
+			URpgInventoryAutomationTestMovableGrantItemDefinition::StaticClass(),
+			1,
+			MakePlacement(Pockets, 0, 0));
+	if (!TestNotNull(
+			TEXT("Grant-bearing armor starts in Content"),
+			MovableGrantArmor))
+	{
+		return false;
+	}
+
+	FRpgInventoryEquipmentIntent EquipChestIntent =
+		MakeEquipmentIntent(
+			Inventory,
+			MovableGrantArmor,
+			ERpgInventoryEquipmentIntentOperation::EquipToSlot,
+			ERpgEquipmentSlot::Chest);
+	UiActions->RequestApplyInventoryEquipmentIntent(
+		Inventory,
+		EquipChestIntent);
+	TestEqual(
+		TEXT("One physical armor runtime raises MaxHealth once"),
+		HealthSet->GetMaxHealth(),
+		600.0f);
+	URpgInventoryAutomationTestCountingEquipmentInstance* ChestRuntime =
+		Cast<URpgInventoryAutomationTestCountingEquipmentInstance>(
+			EquipmentManager->GetEquipmentInstanceInSlot(
+				ERpgEquipmentSlot::Chest));
+	if (!TestNotNull(
+			TEXT("The Chest runtime for grant-bearing armor exists"),
+			ChestRuntime))
+	{
+		return false;
+	}
+
+	float PeakObservedMaxHealth = HealthSet->GetMaxHealth();
+	const FDelegateHandle MaxHealthHandle =
+		AbilitySystemComponent->GetGameplayAttributeValueChangeDelegate(
+			URpgHealthSet::GetMaxHealthAttribute()).AddLambda(
+			[&PeakObservedMaxHealth](const FOnAttributeChangeData& ChangeData)
+			{
+				PeakObservedMaxHealth = FMath::Max(
+					PeakObservedMaxHealth,
+					ChangeData.NewValue);
+			});
+
+	FRpgInventoryEquipmentIntent MoveArmorToHeadIntent =
+		MakeEquipmentIntent(
+			Inventory,
+			MovableGrantArmor,
+			ERpgInventoryEquipmentIntentOperation::EquipToSlot,
+			ERpgEquipmentSlot::Head);
+	UiActions->RequestApplyInventoryEquipmentIntent(
+		Inventory,
+		MoveArmorToHeadIntent);
+	AbilitySystemComponent->GetGameplayAttributeValueChangeDelegate(
+		URpgHealthSet::GetMaxHealthAttribute()).Remove(MaxHealthHandle);
+
+	TestEqual(
+		TEXT("Moving one armor instance preserves one final MaxHealth grant"),
+		HealthSet->GetMaxHealth(),
+		600.0f);
+	TestEqual(
+		TEXT("Two-phase reconcile never exposes a duplicate MaxHealth grant"),
+		PeakObservedMaxHealth,
+		600.0f);
+	TestEqual(
+		TEXT("The replaced Chest runtime is unequipped exactly once"),
+		ChestRuntime->GetUnequippedCount(),
+		1);
+	TestNull(
+		TEXT("The old Chest runtime slot is empty"),
+		EquipmentManager->GetEquipmentInstanceInSlot(
+			ERpgEquipmentSlot::Chest));
+	URpgEquipmentInstance* HeadRuntime =
+		EquipmentManager->GetEquipmentInstanceInSlot(
+			ERpgEquipmentSlot::Head);
+	if (!TestNotNull(TEXT("The replacement Head runtime exists"), HeadRuntime))
+	{
+		return false;
+	}
+	TestEqual(
+		TEXT("The replacement runtime keeps the same concrete item instigator"),
+		HeadRuntime->GetInstigator(),
+		static_cast<UObject*>(MovableGrantArmor));
+
+	int32 RuntimeCountForArmor = 0;
+	for (URpgEquipmentInstance* RuntimeInstance :
+		EquipmentManager->GetEquipmentInstancesOfType(
+			URpgEquipmentInstance::StaticClass()))
+	{
+		RuntimeCountForArmor += RuntimeInstance &&
+			RuntimeInstance->GetInstigator() == MovableGrantArmor
+			? 1
+			: 0;
+	}
+	TestEqual(
+		TEXT("Exactly one runtime entry represents the moved armor"),
+		RuntimeCountForArmor,
+		1);
+	return true;
+}
+
+IMPLEMENT_SIMPLE_AUTOMATION_TEST(
+	FRpgInventorySpatialEquipmentIdentityMoveTest,
+	"SurvivalRpg.Inventory.Intent.Equip.SpatialDropPreservesStackIdentity",
+	EAutomationTestFlags::EditorContext |
+		EAutomationTestFlags::EngineFilter)
+
+bool FRpgInventorySpatialEquipmentIdentityMoveTest::RunTest(
+	const FString& Parameters)
+{
+	using namespace RpgInventoryTransactionTests;
+	FScopedInventoryWorld TestWorld;
+	if (!InitializeTest(*this, TestWorld))
+	{
+		return false;
+	}
+
+	UWorld* World = TestWorld.GetTestWorld();
+	FActorSpawnParameters ControllerSpawnParameters;
+	ControllerSpawnParameters.Name = MakeUniqueObjectName(
+		World,
+		ARpgInventoryAutomationTestPlayerController::StaticClass(),
+		TEXT("SpatialEquipmentIdentityController"));
+	ControllerSpawnParameters.ObjectFlags = RF_Transient;
+	ARpgInventoryAutomationTestPlayerController* Controller =
+		World->SpawnActor<ARpgInventoryAutomationTestPlayerController>(
+			ControllerSpawnParameters);
+
+	FActorSpawnParameters PlayerStateSpawnParameters;
+	PlayerStateSpawnParameters.Name = MakeUniqueObjectName(
+		World,
+		ARpgInventoryAutomationTestPlayerState::StaticClass(),
+		TEXT("SpatialEquipmentIdentityPlayerState"));
+	PlayerStateSpawnParameters.ObjectFlags = RF_Transient;
+	ARpgInventoryAutomationTestPlayerState* PlayerState =
+		World->SpawnActor<ARpgInventoryAutomationTestPlayerState>(
+			PlayerStateSpawnParameters);
+	if (!TestNotNull(TEXT("The spatial-equipment controller exists"), Controller) ||
+		!TestNotNull(TEXT("The spatial-equipment player state exists"), PlayerState))
+	{
+		return false;
+	}
+
+	Controller->SetPlayerState(PlayerState);
+	PlayerState->SetOwner(Controller);
+	URpgInventoryManagerComponent* Inventory =
+		PlayerState->GetInventoryManagerComponent();
+	URpgInventoryUiActionComponent* UiActions =
+		Controller->GetInventoryUiActionComponent();
+	URpgInventoryDragDropCoordinator* Coordinator =
+		URpgInventoryDragDropCoordinator::CreateInventoryDragDropCoordinator(
+			Controller,
+			Controller);
+	if (!TestNotNull(TEXT("The canonical player inventory exists"), Inventory) ||
+		!TestNotNull(TEXT("The typed inventory gateway exists"), UiActions) ||
+		!TestNotNull(TEXT("The screen-local drag coordinator exists"), Coordinator) ||
+		!TestNotNull(
+			TEXT("The drag coordinator owns an interaction session"),
+			Coordinator ? Coordinator->GetInteractionSession() : nullptr))
+	{
+		return false;
+	}
+	Coordinator->SetUiActionComponent(UiActions);
+
+	const FRpgInventoryContainerHandle Pockets =
+		FRpgInventoryContainerHandle::MakeRoot(
+			URpgPlayerInventoryLayoutComponent::PocketsGroupId);
+	const FRpgInventoryContainerHandle WeaponSlot1 =
+		FRpgInventoryContainerHandle::MakeRoot(
+			URpgPlayerInventoryLayoutComponent::WeaponSlot1GroupId);
+	URpgInventoryItemInstance* MovingStack =
+		Inventory->AddItemDefinitionToPlacement(
+			URpgInventoryAutomationTestStackableWeaponItemDefinition::StaticClass(),
+			4,
+			MakePlacement(Pockets, 0, 0));
+	URpgInventoryItemInstance* OccupyingStack =
+		Inventory->AddItemDefinitionToPlacement(
+			URpgInventoryAutomationTestStackableWeaponItemDefinition::StaticClass(),
+			9,
+			MakePlacement(Pockets, 1, 0));
+	if (!TestNotNull(TEXT("A four-item source stack exists"), MovingStack) ||
+		!TestNotNull(TEXT("A nine-item Carry stack exists"), OccupyingStack))
+	{
+		return false;
+	}
+	if (!TestTrue(
+			TEXT("The target stack enters Carry through the trusted setup seam"),
+			MoveWholeEntryToEquipmentPlacement(
+				Inventory,
+				OccupyingStack,
+				MakePlacement(WeaponSlot1, 0, 0))))
+	{
+		return false;
+	}
+
+	FRpgInventoryEntryView MovingEntry;
+	FRpgInventoryEntryView OccupyingEntry;
+	if (!TestTrue(
+			TEXT("The moving stack has an exact source snapshot"),
+			GetEntryView(Inventory, MovingStack->GetItemId(), MovingEntry)) ||
+		!TestTrue(
+			TEXT("The occupying stack has an exact target snapshot"),
+			GetEntryView(Inventory, OccupyingStack->GetItemId(), OccupyingEntry)))
+	{
+		return false;
+	}
+
+	FRpgInventoryDragPayload Payload;
+	Payload.SourceType = ERpgInventoryDragSourceType::InventoryEntry;
+	Payload.SourceInventory = Inventory;
+	Payload.ItemInstance = MovingStack;
+	Payload.EntryId = MovingEntry.EntryId;
+	Payload.StackCount = MovingEntry.StackCount;
+	Payload.SourcePlacement = MovingEntry.Placement;
+	Payload.ItemFootprint = MovingEntry.Placement.GetUnrotatedSize();
+	FRpgInventoryDropTarget Target;
+	Target.TargetType = ERpgInventoryDropTargetType::InventorySlot;
+	Target.TargetInventory = Inventory;
+	Target.TargetPlacement = OccupyingEntry.Placement;
+
+	TestTrue(
+		TEXT("The exact spatial equipment move has a valid preview"),
+		Coordinator->UpdateInteractionPreview(Payload, Target));
+	TestEqual(
+		TEXT("A compatible Equipment target previews an identity-preserving swap, not a merge"),
+		Coordinator->GetInteractionSession()->GetPreviewState(),
+		ERpgInventoryInteractionPreviewState::Swap);
+	TestTrue(
+		TEXT("The exact spatial equipment drop dispatches through the typed gateway"),
+		Coordinator->CommitPayloadToTarget(Payload, Target));
+
+	FRpgInventoryEntryView MovedEntry;
+	FRpgInventoryEntryView DisplacedEntry;
+	TestTrue(
+		TEXT("The moving ItemId survives the equipment drop"),
+		GetEntryView(Inventory, MovingStack->GetItemId(), MovedEntry));
+	TestTrue(
+		TEXT("The displaced ItemId survives the equipment drop"),
+		GetEntryView(Inventory, OccupyingStack->GetItemId(), DisplacedEntry));
+	TestEqual(
+		TEXT("The complete moving stack owns the Carry placement"),
+		MovedEntry.Placement.GetContainerHandle(),
+		WeaponSlot1);
+	TestEqual(
+		TEXT("The displaced stack moves atomically to the exact source placement"),
+		DisplacedEntry.Placement,
+		MovingEntry.Placement);
+	TestEqual(TEXT("The moving stack quantity is unchanged"), MovedEntry.StackCount, 4);
+	TestEqual(TEXT("The displaced stack quantity is unchanged"), DisplacedEntry.StackCount, 9);
+	TestEqual(
+		TEXT("The moving runtime instance is preserved"),
+		Inventory->FindItemById(MovingStack->GetItemId()),
+		MovingStack);
+	TestEqual(
+		TEXT("The displaced runtime instance is preserved"),
+		Inventory->FindItemById(OccupyingStack->GetItemId()),
+		OccupyingStack);
+	TestFalse(
+		TEXT("The pre-commit payload is stale after the atomic swap"),
+		Coordinator->PreviewPayloadDrop(Payload, Target));
+	TestFalse(
+		TEXT("The stale payload cannot dispatch a second mutation"),
+		Coordinator->CommitPayloadToTarget(Payload, Target));
+	return true;
+}
+
+IMPLEMENT_SIMPLE_AUTOMATION_TEST(
+	FRpgInventoryEquipmentSplitDerivedSyncTest,
+	"SurvivalRpg.Inventory.Intent.Equip.SplitIntoCarryRefreshesDerivedState",
+	EAutomationTestFlags::EditorContext |
+		EAutomationTestFlags::EngineFilter)
+
+bool FRpgInventoryEquipmentSplitDerivedSyncTest::RunTest(
+	const FString& Parameters)
+{
+	using namespace RpgInventoryTransactionTests;
+	FScopedInventoryWorld TestWorld;
+	if (!InitializeTest(*this, TestWorld))
+	{
+		return false;
+	}
+
+	UWorld* World = TestWorld.GetTestWorld();
+	FActorSpawnParameters ControllerSpawnParameters;
+	ControllerSpawnParameters.Name = MakeUniqueObjectName(
+		World,
+		ARpgInventoryAutomationTestPlayerController::StaticClass(),
+		TEXT("EquipmentSplitSyncController"));
+	ControllerSpawnParameters.ObjectFlags = RF_Transient;
+	ARpgInventoryAutomationTestPlayerController* Controller =
+		World->SpawnActor<ARpgInventoryAutomationTestPlayerController>(
+			ControllerSpawnParameters);
+
+	FActorSpawnParameters PlayerStateSpawnParameters;
+	PlayerStateSpawnParameters.Name = MakeUniqueObjectName(
+		World,
+		ARpgInventoryAutomationTestPlayerState::StaticClass(),
+		TEXT("EquipmentSplitSyncPlayerState"));
+	PlayerStateSpawnParameters.ObjectFlags = RF_Transient;
+	ARpgInventoryAutomationTestPlayerState* PlayerState =
+		World->SpawnActor<ARpgInventoryAutomationTestPlayerState>(
+			PlayerStateSpawnParameters);
+
+	FActorSpawnParameters PawnSpawnParameters;
+	PawnSpawnParameters.Name = MakeUniqueObjectName(
+		World,
+		ARpgEquipmentAutomationTestPawn::StaticClass(),
+		TEXT("EquipmentSplitSyncPawn"));
+	PawnSpawnParameters.ObjectFlags = RF_Transient;
+	PawnSpawnParameters.SpawnCollisionHandlingOverride =
+		ESpawnActorCollisionHandlingMethod::AlwaysSpawn;
+	ARpgEquipmentAutomationTestPawn* Pawn =
+		World->SpawnActor<ARpgEquipmentAutomationTestPawn>(
+			PawnSpawnParameters);
+	if (!TestNotNull(TEXT("The split-sync controller exists"), Controller) ||
+		!TestNotNull(TEXT("The split-sync player state exists"), PlayerState) ||
+		!TestNotNull(TEXT("The split-sync equipment pawn exists"), Pawn))
+	{
+		return false;
+	}
+
+	Controller->SetPlayerState(PlayerState);
+	PlayerState->SetOwner(Controller);
+	Controller->Possess(Pawn);
+	URpgInventoryManagerComponent* Inventory =
+		PlayerState->GetInventoryManagerComponent();
+	URpgInventoryUiActionComponent* UiActions =
+		Controller->GetInventoryUiActionComponent();
+	URpgEquipmentLoadoutComponent* EquipmentLoadout =
+		Controller->GetEquipmentLoadoutComponent();
+	if (!TestNotNull(TEXT("The canonical player inventory exists"), Inventory) ||
+		!TestNotNull(TEXT("The typed inventory gateway exists"), UiActions) ||
+		!TestNotNull(TEXT("The equipment derived-state mirror exists"), EquipmentLoadout))
+	{
+		return false;
+	}
+
+	const FRpgInventoryContainerHandle Pockets =
+		FRpgInventoryContainerHandle::MakeRoot(
+			URpgPlayerInventoryLayoutComponent::PocketsGroupId);
+	const FRpgInventoryContainerHandle ShieldSlot =
+		FRpgInventoryContainerHandle::MakeRoot(
+			URpgPlayerInventoryLayoutComponent::ShieldSlotGroupId);
+	URpgInventoryItemInstance* SourceStack =
+		Inventory->AddItemDefinitionToPlacement(
+			URpgInventoryAutomationTestStackableOffHandItemDefinition::StaticClass(),
+			4,
+			MakePlacement(Pockets, 0, 0));
+	if (!TestNotNull(TEXT("A four-item OffHand stack starts in Content"), SourceStack))
+	{
+		return false;
+	}
+	TestEqual(
+		TEXT("Content-only equipment data contributes no carried load"),
+		EquipmentLoadout->GetEquipmentLoadWeight(),
+		0.0f);
+
+	TArray<FRpgInventoryActionFeedbackMessage> FeedbackMessages;
+	TArray<FRpgEquipmentLoadoutSlotsChangedMessage> EquipmentMessages;
+	UGameplayMessageSubsystem& MessageSubsystem =
+		UGameplayMessageSubsystem::Get(World);
+	FGameplayMessageListenerHandle FeedbackHandle =
+		MessageSubsystem.RegisterListener<FRpgInventoryActionFeedbackMessage>(
+			RpgGameplayTags::Rpg_Inventory_Message_ActionFeedback,
+			[&FeedbackMessages](
+				FGameplayTag,
+				const FRpgInventoryActionFeedbackMessage& Message)
+			{
+				FeedbackMessages.Add(Message);
+			});
+	FGameplayMessageListenerHandle EquipmentHandle =
+		MessageSubsystem.RegisterListener<FRpgEquipmentLoadoutSlotsChangedMessage>(
+			RpgGameplayTags::Rpg_EquipmentLoadout_Message_SlotsChanged,
+			[&EquipmentMessages](
+				FGameplayTag,
+				const FRpgEquipmentLoadoutSlotsChangedMessage& Message)
+			{
+				EquipmentMessages.Add(Message);
+			});
+
+	const FGuid SplitRequestId = FGuid::NewGuid();
+	const FRpgInventoryGridPlacement ShieldPlacement =
+		MakePlacement(ShieldSlot, 0, 0);
+	FRpgInventoryEntryView SourceBeforeSplit;
+	if (!TestTrue(
+			TEXT("The split source has an exact entry snapshot"),
+			GetEntryView(
+				Inventory,
+				SourceStack->GetItemId(),
+				SourceBeforeSplit)))
+	{
+		FeedbackHandle.Unregister();
+		EquipmentHandle.Unregister();
+		return false;
+	}
+	FRpgInventoryMutationRequest SplitRequest;
+	SplitRequest.Operation = ERpgInventoryMutationOperation::Split;
+	SplitRequest.ItemId = SourceBeforeSplit.ItemId;
+	SplitRequest.ExpectedEntryId = SourceBeforeSplit.EntryId;
+	SplitRequest.Source =
+		SourceBeforeSplit.Placement.GetContainerHandle();
+	SplitRequest.ExpectedSourcePlacement =
+		SourceBeforeSplit.Placement;
+	SplitRequest.Target = ShieldSlot;
+	SplitRequest.TargetPlacement = ShieldPlacement;
+	SplitRequest.Quantity = 1;
+	SplitRequest.RequestId = SplitRequestId;
+	UiActions->RequestInventoryMutation(
+		Inventory,
+		SplitRequest);
+	if (!TestTrue(TEXT("The split emits action feedback"), FeedbackMessages.Num() > 0))
+	{
+		FeedbackHandle.Unregister();
+		EquipmentHandle.Unregister();
+		return false;
+	}
+	TestEqual(
+		TEXT("Split feedback reports success"),
+		FeedbackMessages.Last().Result,
+		ERpgInventoryActionFeedbackResult::Success);
+	TestEqual(
+		TEXT("Split feedback preserves request correlation"),
+		FeedbackMessages.Last().RequestId,
+		SplitRequestId);
+	TestEqual(
+		TEXT("The source stack retains the unsplit quantity"),
+		Inventory->GetItemStackCount(SourceStack),
+		3);
+
+	URpgInventoryItemInstance* CarryStack =
+		Inventory->GetItemAtContainerCell(ShieldSlot, 0, 0);
+	if (!TestNotNull(TEXT("The split creates a concrete Carry stack"), CarryStack))
+	{
+		FeedbackHandle.Unregister();
+		EquipmentHandle.Unregister();
+		return false;
+	}
+	TestNotEqual(
+		TEXT("The Carry split owns a distinct persistent item identity"),
+		CarryStack->GetItemId(),
+		SourceStack->GetItemId());
+	TestEqual(
+		TEXT("The Carry split contains exactly one item"),
+		Inventory->GetItemStackCount(CarryStack),
+		1);
+	TestEqual(
+		TEXT("A successful split into Carry refreshes derived equipment load"),
+		EquipmentLoadout->GetEquipmentLoadWeight(),
+		4.0f);
+	TestNull(
+		TEXT("Physical Carry placement does not implicitly activate OffHand"),
+		EquipmentLoadout->GetItemInEquipmentSlot(
+			ERpgEquipmentSlot::OffHand));
+	TestTrue(
+		TEXT("The committed Carry delta emits equipment-derived refresh"),
+		EquipmentMessages.Num() > 0);
+
+	const FString SignatureBeforeReplay = MakeInventorySignature(Inventory);
+	const int32 EquipmentMessageCountBeforeReplay = EquipmentMessages.Num();
+	const int32 FeedbackCountBeforeReplay = FeedbackMessages.Num();
+	UiActions->RequestInventoryMutation(
+		Inventory,
+		SplitRequest);
+	TestEqual(
+		TEXT("An identical split retry replays one feedback"),
+		FeedbackMessages.Num(),
+		FeedbackCountBeforeReplay + 1);
+	TestEqual(
+		TEXT("The split retry replays success"),
+		FeedbackMessages.Last().Result,
+		ERpgInventoryActionFeedbackResult::Success);
+	TestEqual(
+		TEXT("The split retry cannot mutate inventory state twice"),
+		MakeInventorySignature(Inventory),
+		SignatureBeforeReplay);
+	TestEqual(
+		TEXT("The split retry cannot repeat equipment-derived side effects"),
+		EquipmentMessages.Num(),
+		EquipmentMessageCountBeforeReplay);
+	TestEqual(
+		TEXT("The split retry preserves the derived load"),
+		EquipmentLoadout->GetEquipmentLoadWeight(),
+		4.0f);
+
+	FeedbackHandle.Unregister();
+	EquipmentHandle.Unregister();
+	return true;
+}
+
+IMPLEMENT_SIMPLE_AUTOMATION_TEST(
+	FRpgInventoryEquipmentMirrorCannotMovePhysicalItemTest,
+	"SurvivalRpg.Inventory.Intent.Equip.LoadoutMirrorCannotMovePhysicalItem",
+	EAutomationTestFlags::EditorContext |
+		EAutomationTestFlags::EngineFilter)
+
+bool FRpgInventoryEquipmentMirrorCannotMovePhysicalItemTest::RunTest(
+	const FString& Parameters)
+{
+	using namespace RpgInventoryTransactionTests;
+	FScopedInventoryWorld TestWorld;
+	if (!InitializeTest(*this, TestWorld))
+	{
+		return false;
+	}
+
+	UWorld* World = TestWorld.GetTestWorld();
+	FActorSpawnParameters ControllerSpawnParameters;
+	ControllerSpawnParameters.Name = MakeUniqueObjectName(
+		World,
+		ARpgInventoryAutomationTestPlayerController::StaticClass(),
+		TEXT("EquipmentMirrorBoundaryController"));
+	ControllerSpawnParameters.ObjectFlags = RF_Transient;
+	ARpgInventoryAutomationTestPlayerController* Controller =
+		World->SpawnActor<
+			ARpgInventoryAutomationTestPlayerController>(
+			ControllerSpawnParameters);
+	FActorSpawnParameters PlayerStateSpawnParameters;
+	PlayerStateSpawnParameters.Name = MakeUniqueObjectName(
+		World,
+		ARpgInventoryAutomationTestPlayerState::StaticClass(),
+		TEXT("EquipmentMirrorBoundaryPlayerState"));
+	PlayerStateSpawnParameters.ObjectFlags = RF_Transient;
+	ARpgInventoryAutomationTestPlayerState* PlayerState =
+		World->SpawnActor<
+			ARpgInventoryAutomationTestPlayerState>(
+			PlayerStateSpawnParameters);
+	if (!TestNotNull(TEXT("The mirror-boundary controller exists"), Controller) ||
+		!TestNotNull(TEXT("The mirror-boundary player state exists"), PlayerState))
+	{
+		return false;
+	}
+
+	Controller->SetPlayerState(PlayerState);
+	PlayerState->SetOwner(Controller);
+	URpgInventoryManagerComponent* Inventory =
+		PlayerState->GetInventoryManagerComponent();
+	URpgInventoryUiActionComponent* UiActions =
+		Controller->GetInventoryUiActionComponent();
+	URpgEquipmentLoadoutComponent* EquipmentLoadout =
+		Controller->GetEquipmentLoadoutComponent();
+	if (!TestNotNull(TEXT("The player inventory exists"), Inventory) ||
+		!TestNotNull(TEXT("The typed UI gateway exists"), UiActions) ||
+		!TestNotNull(TEXT("The loadout mirror exists"), EquipmentLoadout))
+	{
+		return false;
+	}
+
+	const FRpgInventoryContainerHandle Pockets =
+		FRpgInventoryContainerHandle::MakeRoot(
+			URpgPlayerInventoryLayoutComponent::PocketsGroupId);
+	const FRpgInventoryContainerHandle BackpackSlot =
+		FRpgInventoryContainerHandle::MakeRoot(
+			URpgPlayerInventoryLayoutComponent::
+				GearBackpackGroupId);
+	URpgInventoryItemInstance* Backpack =
+		Inventory->AddItemDefinitionToPlacement(
+			URpgInventoryAutomationTestBagItemDefinition::
+				StaticClass(),
+			1,
+			MakePlacement(Pockets, 0, 0));
+	if (!TestNotNull(TEXT("A backpack starts in Pockets"), Backpack))
+	{
+		return false;
+	}
+
+	TestFalse(
+		TEXT("The loadout mirror cannot physically equip a Pockets item"),
+		EquipmentLoadout->AssignItemToEquipmentSlot(
+			ERpgEquipmentSlot::Backpack,
+			Backpack));
+	FRpgInventoryEntryView InitialEntry;
+	TestTrue(
+		TEXT("The rejected direct mirror assignment keeps the item addressable"),
+		GetEntryView(
+			Inventory,
+			Backpack->GetItemId(),
+			InitialEntry));
+	TestEqual(
+		TEXT("The rejected direct mirror assignment leaves the item in Pockets"),
+		InitialEntry.Placement.GetContainerHandle(),
+		Pockets);
+	TestNull(
+		TEXT("The rejected direct mirror assignment cannot create a mirror entry"),
+		EquipmentLoadout->GetItemInEquipmentSlot(
+			ERpgEquipmentSlot::Backpack));
+
+	FRpgInventoryEquipmentIntent EquipIntent =
+		MakeEquipmentIntent(
+			Inventory,
+			Backpack,
+			ERpgInventoryEquipmentIntentOperation::EquipToSlot,
+			ERpgEquipmentSlot::Backpack);
+	UiActions->RequestApplyInventoryEquipmentIntent(
+		Inventory,
+		EquipIntent);
+	FRpgInventoryEntryView EquippedEntry;
+	TestTrue(
+		TEXT("The typed equip keeps the backpack addressable"),
+		GetEntryView(
+			Inventory,
+			Backpack->GetItemId(),
+			EquippedEntry));
+	TestEqual(
+		TEXT("The typed inventory transaction owns Gear.Backpack placement"),
+		EquippedEntry.Placement.GetContainerHandle(),
+		BackpackSlot);
+	TestEqual(
+		TEXT("One reconciliation mirrors the physical backpack"),
+		EquipmentLoadout->GetItemInEquipmentSlot(
+			ERpgEquipmentSlot::Backpack),
+		Backpack);
+
+	const FRpgInventoryDragPayload EquipmentPayload =
+		URpgInventoryDragDropCoordinator::MakeEquipmentPayload(
+			Backpack,
+			ERpgEquipmentSlot::Backpack);
+	FRpgInventoryDragPayload MissingSnapshotPayload;
+	MissingSnapshotPayload.SourceType =
+		ERpgInventoryDragSourceType::EquipmentSlot;
+	MissingSnapshotPayload.ItemInstance = Backpack;
+	MissingSnapshotPayload.EquipmentSlot =
+		ERpgEquipmentSlot::Backpack;
+	TestFalse(
+		TEXT("An equipment drag without an exact entry snapshot is invalid"),
+		URpgInventoryDragDropCoordinator::IsPayloadValid(
+			MissingSnapshotPayload));
+	TestEqual(
+		TEXT("An equipment-origin drag captures its owning inventory"),
+		EquipmentPayload.SourceInventory.Get(),
+		Inventory);
+	TestEqual(
+		TEXT("An equipment-origin drag captures the exact entry identity"),
+		EquipmentPayload.EntryId,
+		EquippedEntry.EntryId);
+	TestEqual(
+		TEXT("An equipment-origin drag captures the exact physical placement"),
+		EquipmentPayload.SourcePlacement,
+		EquippedEntry.Placement);
+	TestEqual(
+		TEXT("An equipment-origin drag captures the complete quantity"),
+		EquipmentPayload.StackCount,
+		EquippedEntry.StackCount);
+
+	TestNull(
+		TEXT("The mirror cannot clear an item that remains physically equipped"),
+		EquipmentLoadout->ClearEquipmentSlot(
+			ERpgEquipmentSlot::Backpack));
+	TestEqual(
+		TEXT("A rejected direct clear preserves the physical mirror"),
+		EquipmentLoadout->GetItemInEquipmentSlot(
+			ERpgEquipmentSlot::Backpack),
+		Backpack);
+
+	FRpgInventoryEquipmentIntent UnequipIntent =
+		MakeEquipmentIntent(
+			Inventory,
+			Backpack,
+			ERpgInventoryEquipmentIntentOperation::
+				UnequipToContent);
+	UiActions->RequestApplyInventoryEquipmentIntent(
+		Inventory,
+		UnequipIntent);
+	FRpgInventoryEntryView UnequippedEntry;
+	TestTrue(
+		TEXT("The typed unequip keeps the backpack addressable"),
+		GetEntryView(
+			Inventory,
+			Backpack->GetItemId(),
+			UnequippedEntry));
+	TestEqual(
+		TEXT("The typed unequip returns the backpack to Content"),
+		UnequippedEntry.Placement.GetContainerHandle(),
+		Pockets);
+	TestNull(
+		TEXT("Post-commit reconciliation clears the stale mirror"),
+		EquipmentLoadout->GetItemInEquipmentSlot(
+			ERpgEquipmentSlot::Backpack));
+
+	URpgInventoryDragDropCoordinator* Coordinator =
+		URpgInventoryDragDropCoordinator::CreateInventoryDragDropCoordinator(
+			Controller,
+			Controller);
+	if (!TestNotNull(
+			TEXT("A coordinator exists for stale equipment-payload validation"),
+			Coordinator))
+	{
+		return false;
+	}
+	Coordinator->SetUiActionComponent(UiActions);
+	FRpgInventoryDropTarget StalePayloadTarget;
+	StalePayloadTarget.TargetType =
+		ERpgInventoryDropTargetType::InventorySlot;
+	StalePayloadTarget.TargetInventory = Inventory;
+	StalePayloadTarget.TargetPlacement = MakePlacement(Pockets, 2, 0);
+	TestFalse(
+		TEXT("An equipment payload becomes stale after the physical item moves"),
+		Coordinator->PreviewPayloadDrop(
+			EquipmentPayload,
+			StalePayloadTarget));
+	TestFalse(
+		TEXT("A stale equipment payload cannot dispatch a mutation"),
+		Coordinator->CommitPayloadToTarget(
+			EquipmentPayload,
+			StalePayloadTarget));
+
+	URpgInventoryItemInstance* Armor =
+		Inventory->AddItemDefinitionToPlacement(
+			URpgInventoryAutomationTestHeavyItemDefinition::
+				StaticClass(),
+			1,
+			MakePlacement(Pockets, 1, 0));
+	if (!TestNotNull(
+			TEXT("Armor starts in normal Content"),
+			Armor))
+	{
+		return false;
+	}
+
+	TestFalse(
+		TEXT("The loadout cannot grant Pockets armor as Chest equipment"),
+		EquipmentLoadout->AssignItemToEquipmentSlot(
+			ERpgEquipmentSlot::Chest,
+			Armor));
+	TestNull(
+		TEXT("Rejected direct armor assignment creates no Chest mirror"),
+		EquipmentLoadout->GetItemInEquipmentSlot(
+			ERpgEquipmentSlot::Chest));
+
+	FRpgInventoryEquipmentIntent EquipArmorIntent =
+		MakeEquipmentIntent(
+			Inventory,
+			Armor,
+			ERpgInventoryEquipmentIntentOperation::EquipToSlot,
+			ERpgEquipmentSlot::Chest);
+	UiActions->RequestApplyInventoryEquipmentIntent(
+		Inventory,
+		EquipArmorIntent);
+	FRpgInventoryEntryView EquippedArmorEntry;
+	TestTrue(
+		TEXT("The typed armor equip keeps the instance addressable"),
+		GetEntryView(
+			Inventory,
+			Armor->GetItemId(),
+			EquippedArmorEntry));
+	TestEqual(
+		TEXT("The typed transaction owns Gear.Chest placement"),
+		EquippedArmorEntry.Placement.GetContainerHandle(),
+		FRpgInventoryContainerHandle::MakeRoot(
+			URpgPlayerInventoryLayoutComponent::
+				GearChestGroupId));
+	TestEqual(
+		TEXT("Reconciliation mirrors the physical Chest item"),
+		EquipmentLoadout->GetItemInEquipmentSlot(
+			ERpgEquipmentSlot::Chest),
+		Armor);
+
+	TestNull(
+		TEXT("Direct Chest clear fails while armor remains physically equipped"),
+		EquipmentLoadout->ClearEquipmentSlot(
+			ERpgEquipmentSlot::Chest));
+	TestFalse(
+		TEXT("The broad cleanup adapter also fails closed for physical Gear"),
+		EquipmentLoadout->ClearItemFromAllEquipmentSlots(
+			Armor));
+	TestEqual(
+		TEXT("Failed cleanup preserves the Chest mirror"),
+		EquipmentLoadout->GetItemInEquipmentSlot(
+			ERpgEquipmentSlot::Chest),
+		Armor);
+
+	FRpgInventoryEquipmentIntent UnequipArmorIntent =
+		MakeEquipmentIntent(
+			Inventory,
+			Armor,
+			ERpgInventoryEquipmentIntentOperation::
+				UnequipToContent);
+	UiActions->RequestApplyInventoryEquipmentIntent(
+		Inventory,
+		UnequipArmorIntent);
+	TestNull(
+		TEXT("Typed Chest unequip clears the mirror after the physical move"),
+		EquipmentLoadout->GetItemInEquipmentSlot(
+			ERpgEquipmentSlot::Chest));
 	return true;
 }
 
@@ -3376,6 +5000,32 @@ bool FRpgInventoryGenericMutationRpcSafetyTest::RunTest(const FString& Parameter
 		TEXT("Rejected feedback exposes the rejected interaction state"),
 		Session->GetPreviewState(),
 		ERpgInventoryInteractionPreviewState::Rejected);
+
+	const FString BeforeGenericEquip =
+		MakeInventorySignature(Inventory);
+	FRpgInventoryMutationRequest EquipRequest;
+	EquipRequest.Operation =
+		ERpgInventoryMutationOperation::Equip;
+	EquipRequest.ItemId = Entry.ItemId;
+	EquipRequest.ExpectedEntryId = Entry.EntryId;
+	EquipRequest.Source = Pockets;
+	EquipRequest.ExpectedSourcePlacement = Entry.Placement;
+	EquipRequest.Target = Pockets;
+	EquipRequest.TargetPlacement =
+		MakePlacement(Pockets, 1, 0);
+	EquipRequest.Quantity = Entry.StackCount;
+	EquipRequest.EnsureRequestId();
+	UiActions->RequestInventoryMutation(
+		Inventory,
+		EquipRequest);
+	TestEqual(
+		TEXT("The generic mutation RPC cannot perform physical Equip"),
+		MakeInventorySignature(Inventory),
+		BeforeGenericEquip);
+	TestEqual(
+		TEXT("Rejected generic Equip preserves the concrete stack"),
+		Inventory->GetItemStackCount(Item),
+		1);
 	return true;
 }
 

@@ -420,7 +420,10 @@ public:
 	UFUNCTION(BlueprintCallable, Category = "Inventory|DragDrop")
 	static FRpgInventoryDropTarget MakeInventoryPanelTarget(URpgInventoryManagerComponent* TargetInventory);
 
-	/** Builds a payload from an existing equipment assignment. */
+	/**
+	 * Builds an equipment payload with the exact owning-inventory entry snapshot captured at drag start.
+	 * Returns a payload without a valid source snapshot when the item is no longer managed by an inventory.
+	 */
 	UFUNCTION(BlueprintCallable, Category = "Inventory|DragDrop")
 	static FRpgInventoryDragPayload MakeEquipmentPayload(URpgInventoryItemInstance* ItemInstance, ERpgEquipmentSlot EquipmentSlot);
 
@@ -810,6 +813,13 @@ private:
 	URpgInventoryItemInstance* ResolveCurrentEquipmentItem(
 		ERpgEquipmentSlot EquipmentSlot,
 		const FRpgInventoryItemId& ExpectedItemId) const;
+	bool BuildEquipmentIntent(
+		const FRpgInventoryDragPayload& Payload,
+		ERpgInventoryEquipmentIntentOperation Operation,
+		ERpgEquipmentSlot TargetEquipmentSlot,
+		const FGuid& RequestId,
+		URpgInventoryManagerComponent*& OutInventory,
+		FRpgInventoryEquipmentIntent& OutIntent) const;
 	bool BuildManualDropRequest(
 		URpgInventoryManagerComponent* Inventory,
 		URpgInventoryItemInstance* ItemInstance,

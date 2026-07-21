@@ -849,7 +849,7 @@ Status: **In Arbeit**
 - [x] Remove/Consume/Drop grundsätzlich subtree-sicher machen.
 - [x] Raw-Add gegen fremden Outer, doppelte Item-ID und bereits enthaltene
       Instanzen absichern.
-- [ ] Physisches Equippen ausschließlich über Inventory-Transaktionen führen.
+- [x] Physisches Equippen ausschließlich über Inventory-Transaktionen führen.
 - [ ] Eine öffentliche Placement-Auswertung als gemeinsamen Vertrag für Move,
       Equip, Split, Add, Transfer, Auto-Placement und Restore verwenden.
 - [ ] UI-Preview aus einem echten Mutation-Plan ableiten; konkrete Belegung,
@@ -969,6 +969,43 @@ Verifizierter Phase-2C-Zwischenstand vom 2026-07-20:
   Inventory-Transaktionen führen und danach den gemeinsamen Placement-Vertrag
   für Commit und Preview etablieren. In-place-Transfer-Deltas und ein
   callback-atomarer gemeinsamer Commit bleiben Phase 3.
+
+Verifizierter Phase-2D-Zwischenstand vom 2026-07-21:
+
+- Gear und Carry werden für Spieler ausschließlich durch Inventory-Transaktionen
+  verändert. Das Loadout spiegelt den physischen Gear-Zustand und verwaltet nur
+  die aktiven Hände; der direkte Runtime-Equipment-Pfad für NPC-Combat-Loadouts
+  bleibt als bewusst getrennte Ausnahme bestehen.
+- Typisierte, pointer-freie Equipment-Intents binden Item-ID, Entry-ID,
+  Quellplatzierung und Menge an den Request. Veraltete generische
+  Equipment-Aktionen werden serverseitig abgelehnt; Replay und
+  Request-ID-Kollisionen bleiben ohne zweite Mutation.
+- Der vertrauenswürdige `Operation::Equip`-Pfad erhält die konkrete
+  Item-Identität und verwendet bei belegten Equipment-Zellen einen atomaren
+  Swap statt Stack-Merge. Same-Player-Preview und Commit teilen diesen Vertrag;
+  Equipment-Drag-Payloads ohne exakten oder mit veraltetem Snapshot werden
+  abgelehnt.
+- Die Loadout-Reconciliation entfernt zunächst abweichende Runtime-Instanzen
+  und erzeugt danach fehlende Zielinstanzen. Dadurch bleiben unveränderte
+  Instanzen bestehen, Slotwechsel verdoppeln keine GAS-Grants, Zwei-Hand-Wechsel
+  räumen Main- und Offhand genau einmal auf und slot-spezifisches Leeren lässt
+  die jeweils unabhängige andere Hand bestehen.
+- Generische Split-/Sort-Intents synchronisieren abgeleitete Loadout-Zustände
+  nur nach einer tatsächlichen Gear-/Carry-Mutation; Replays lösen keine
+  erneuten Seiteneffekte aus.
+- `SurvivalRpgEditor Win64 Development` wurde mit Unreal Engine 5.8 gebaut.
+- `SurvivalRpg.Inventory`: 79 von 79 Automationtests erfolgreich.
+- Der fokussierte Lauf `SurvivalRpg.Inventory.Intent.Equip`: 5 von 5
+  Automationtests erfolgreich und in der Inventory-Gesamtsuite enthalten.
+- `SurvivalRpg.Equipment`: 5 von 5 Automationtests erfolgreich.
+- `SurvivalRpg.Crafting`: 6 von 6 Automationtests erfolgreich.
+- Fortschritt Phase 2: 5 von 8 Punkten abgeschlossen (62,5 %).
+- Gesamtfortschritt der verbindlichen Checkliste: 53 von 94 Punkten
+  abgeschlossen (56,4 %), 41 Punkte offen.
+- Nächster Safety-Schnitt: die öffentliche Placement-Auswertung als
+  gemeinsamen Vertrag verbreitern und UI-Previews vollständig aus dem echten
+  Mutation-Plan ableiten. Danach wird die öffentliche Legacy-Fläche des
+  Loadouts auf Hand-Aktivierung und Reconciliation reduziert.
 
 ## Phase 3 – Runtime-Transfer vom Save/Load trennen
 

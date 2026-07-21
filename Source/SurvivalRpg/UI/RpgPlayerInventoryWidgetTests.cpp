@@ -7,6 +7,7 @@
 #include "SurvivalRpg/Inventory/RpgInventoryDragDrop.h"
 #include "SurvivalRpg/Inventory/RpgInventoryInteractionSession.h"
 #include "SurvivalRpg/Inventory/RpgInventoryItemInstance.h"
+#include "SurvivalRpg/Inventory/RpgInventoryManagerComponent.h"
 #include "SurvivalRpg/Mvvm/Inventory/RpgActionBarViewModels.h"
 #include "SurvivalRpg/Mvvm/Inventory/RpgInventoryViewModels.h"
 #include "SurvivalRpg/Mvvm/Inventory/RpgLoadoutViewModels.h"
@@ -139,6 +140,22 @@ namespace RpgPlayerInventoryWidgetTests
 			}
 		}
 		return MatchingSourceIndex;
+	}
+
+	void PopulateExactEquipmentSourceSnapshot(
+		FRpgInventoryDragPayload& Payload,
+		UObject* Outer,
+		FName ContainerId)
+	{
+		Payload.SourceInventory = NewObject<URpgInventoryManagerComponent>(Outer);
+		Payload.EntryId = FGuid::NewGuid();
+		Payload.StackCount = 1;
+		Payload.SourcePlacement.SetContainerHandle(
+			FRpgInventoryContainerHandle::MakeRoot(ContainerId));
+		Payload.SourcePlacement.X = 0;
+		Payload.SourcePlacement.Y = 0;
+		Payload.SourcePlacement.Width = 1;
+		Payload.SourcePlacement.Height = 1;
 	}
 }
 
@@ -1435,6 +1452,10 @@ bool FRpgInventoryAddressSlotEntryPoolingTest::RunTest(const FString& Parameters
 	PreviewPayload.SourceType = ERpgInventoryDragSourceType::EquipmentSlot;
 	PreviewPayload.ItemInstance = NewObject<URpgInventoryItemInstance>(Widget);
 	PreviewPayload.EquipmentSlot = ERpgEquipmentSlot::Head;
+	PopulateExactEquipmentSourceSnapshot(
+		PreviewPayload,
+		Widget,
+		TEXT("AddressPoolingEquipmentSource"));
 	URpgInventoryInteractionSession* InteractionSession =
 		Coordinator->GetInteractionSession();
 	TestTrue(
@@ -1701,6 +1722,10 @@ bool FRpgEquipmentSlotLifecycleTest::RunTest(const FString& Parameters)
 	PreviewPayload.SourceType = ERpgInventoryDragSourceType::EquipmentSlot;
 	PreviewPayload.ItemInstance = NewObject<URpgInventoryItemInstance>(Widget);
 	PreviewPayload.EquipmentSlot = ERpgEquipmentSlot::Head;
+	PopulateExactEquipmentSourceSnapshot(
+		PreviewPayload,
+		Widget,
+		TEXT("EquipmentPoolingSource"));
 	URpgInventoryInteractionSession* InteractionSession =
 		Coordinator->GetInteractionSession();
 	TestTrue(

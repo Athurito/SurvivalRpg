@@ -372,13 +372,20 @@ bool URpgInventoryInteractionSession::IsPendingMessageRelevant(UActorComponent* 
 
 void URpgInventoryInteractionSession::HandleActionFeedback(FGameplayTag Channel, const FRpgInventoryActionFeedbackMessage& Message)
 {
+	const bool bRequiresCorrelatedFeedback =
+		Target.TargetType ==
+			ERpgInventoryDropTargetType::ActionBarSlot ||
+		Target.TargetType ==
+			ERpgInventoryDropTargetType::EquipmentSlot ||
+		Target.TargetType ==
+			ERpgInventoryDropTargetType::ClearSlot;
 	if (!Message.IsAddressedTo(PlayerController.Get()) ||
 		!bPendingRequest || !DoesFeedbackMatchPendingRequest(
 			RequestId,
 			PendingActionTag,
 		PendingItemId,
 		Message,
-		Target.TargetType == ERpgInventoryDropTargetType::ActionBarSlot))
+		bRequiresCorrelatedFeedback))
 	{
 		return;
 	}
@@ -441,9 +448,16 @@ void URpgInventoryInteractionSession::HandleActionBarChanged(
 
 void URpgInventoryInteractionSession::HandleInventoryChanged(FGameplayTag Channel, const FRpgInventoryChangeMessage& Message)
 {
-	// Quick Access never mutates inventory ownership. It resolves from exact feedback or the matching actionbar
-	// binding message above, never from unrelated stack/placement replication while its request is in flight.
-	if (!bPendingRequest || Target.TargetType == ERpgInventoryDropTargetType::ActionBarSlot ||
+	// Quick Access and equipment commands resolve from their exact semantic state message or request-correlated
+	// feedback. A physical move may be followed by activation failure and rollback, so its intermediate inventory
+	// delta must never acknowledge an EquipmentSlot or ClearSlot command by itself.
+	if (!bPendingRequest ||
+		Target.TargetType ==
+			ERpgInventoryDropTargetType::ActionBarSlot ||
+		Target.TargetType ==
+			ERpgInventoryDropTargetType::EquipmentSlot ||
+		Target.TargetType ==
+			ERpgInventoryDropTargetType::ClearSlot ||
 		!IsPendingMessageRelevant(Message.InventoryOwner.Get(), Message.Instance.Get()))
 	{
 		return;
@@ -459,9 +473,26 @@ void URpgInventoryInteractionSession::HandleInventoryChanged(FGameplayTag Channe
 
 void URpgInventoryInteractionSession::HandleEquipmentChanged(FGameplayTag Channel, const FRpgEquipmentLoadoutSlotsChangedMessage& Message)
 {
-	if (bPendingRequest && Target.TargetType == ERpgInventoryDropTargetType::EquipmentSlot &&
-		(!PlayerController || Message.Owner == PlayerController))
+	if (!bPendingRequest ||
+		Target.TargetType !=
+			ERpgInventoryDropTargetType::EquipmentSlot ||
+		(PlayerController && Message.Owner != PlayerController))
 	{
+		return;
+	}
+
+	const FRpgEquipmentLoadoutSlot* AppliedSlot =
+		Message.Slots.FindByPredicate(
+			[this](const FRpgEquipmentLoadoutSlot& Slot)
+			{
+				return Slot.EquipmentSlot ==
+					Target.EquipmentSlot;
+			});
+	if (AppliedSlot && AppliedSlot->Item &&
+		(!PendingItemId.IsValid() ||
+			AppliedSlot->Item->GetItemId() == PendingItemId))
+	{
+		// State replication may beat reliable feedback, but only the exact slot/item pair may acknowledge this request.
 		ResolvePendingRequest(true);
 	}
 }

@@ -122,11 +122,11 @@ public:
 	URpgInventoryItemInstance* GetItemInEquipmentSlot(ERpgEquipmentSlot EquipmentSlot) const;
 
 	/** Deprecated adapter. New UI must submit the operation through URpgInventoryUiActionComponent. */
-	UFUNCTION(Server, Reliable, BlueprintCallable, Category = "Equipment", meta = (DeprecatedFunction, DeprecationMessage = "Use InventoryUiActionComponent.RequestAssignItemToEquipmentSlot so inventory location remains authoritative."))
+	UFUNCTION(Server, Reliable, BlueprintCallable, Category = "Equipment", meta = (DeprecatedFunction, DeprecationMessage = "Build a pointer-free FRpgInventoryEquipmentIntent and call InventoryUiActionComponent.RequestApplyInventoryEquipmentIntent."))
 	void RequestAssignItemToEquipmentSlot(ERpgEquipmentSlot EquipmentSlot, URpgInventoryItemInstance* Item);
 
 	/** Deprecated adapter. New UI must submit the operation through URpgInventoryUiActionComponent. */
-	UFUNCTION(Server, Reliable, BlueprintCallable, Category = "Equipment", meta = (DeprecatedFunction, DeprecationMessage = "Use InventoryUiActionComponent.RequestClearEquipmentSlot so inventory location remains authoritative."))
+	UFUNCTION(Server, Reliable, BlueprintCallable, Category = "Equipment", meta = (DeprecatedFunction, DeprecationMessage = "Use RequestApplyInventoryEquipmentIntent for physical unequip, or the activation-only hand API for holster."))
 	void RequestClearEquipmentSlot(ERpgEquipmentSlot EquipmentSlot);
 
 	/** Returns true when this controller owns the item and the shared Inventory Equipment policy permits the slot. */
@@ -141,8 +141,11 @@ public:
 	UFUNCTION(BlueprintCallable, BlueprintAuthorityOnly, Category = "Equipment", meta = (DeprecatedFunction, DeprecationMessage = "Move the physical item to content through InventoryUiActionComponent."))
 	URpgInventoryItemInstance* ClearEquipmentSlot(ERpgEquipmentSlot EquipmentSlot);
 
-	/** Clears every dedicated equipment slot reference to this item. */
-	UFUNCTION(BlueprintCallable, BlueprintAuthorityOnly, Category = "Equipment")
+	/**
+	 * Post-transaction cleanup for stale slot references.
+	 * Fails closed while the concrete item still occupies a physical Gear slot.
+	 */
+	UFUNCTION(BlueprintCallable, BlueprintAuthorityOnly, Category = "Equipment", meta = (DeprecatedFunction, DeprecationMessage = "Move the physical item first, then reconcile through InventoryUiActionComponent."))
 	bool ClearItemFromAllEquipmentSlots(URpgInventoryItemInstance* Item);
 
 	/** Returns whether the item can be removed from inventory without leaving invalid equipment or bag slots behind. */
@@ -156,6 +159,24 @@ public:
 	/** Activates a carry-slot shield/offhand item, remembering it for the currently active one-handed mainhand. */
 	UFUNCTION(BlueprintCallable, BlueprintAuthorityOnly, Category = "Equipment")
 	bool ActivateOffHandItem(URpgInventoryItemInstance* Item);
+
+	/**
+	 * Idempotently selects a ready MainHand Carry item.
+	 * Retryable inventory equipment commands must use this instead of the player-facing toggle adapter.
+	 */
+	UFUNCTION(BlueprintCallable, BlueprintAuthorityOnly, Category = "Equipment")
+	bool SetMainHandItemActive(URpgInventoryItemInstance* Item);
+
+	/**
+	 * Idempotently selects a ready OffHand Carry item.
+	 * Retryable inventory equipment commands must use this instead of the player-facing toggle adapter.
+	 */
+	UFUNCTION(BlueprintCallable, BlueprintAuthorityOnly, Category = "Equipment")
+	bool SetOffHandItemActive(URpgInventoryItemInstance* Item);
+
+	/** Clears only MainHand while preserving a valid active OffHand and its physical Carry placement. */
+	UFUNCTION(BlueprintCallable, BlueprintAuthorityOnly, Category = "Equipment")
+	bool ClearActiveMainHand();
 
 	/** Clears the active runtime hands without moving items out of their inventory carry slots. */
 	UFUNCTION(BlueprintCallable, BlueprintAuthorityOnly, Category = "Equipment")
@@ -245,7 +266,11 @@ private:
 	bool CanClearEquipmentSlot(ERpgEquipmentSlot EquipmentSlot) const;
 	bool IsTwoHandItem(const URpgInventoryItemInstance* Item) const;
 	bool IsItemInCarryActivationRole(const URpgInventoryItemInstance* Item, FGameplayTag ActivationRole) const;
-	bool MoveInventoryItemToEquipmentSlotAddress(ERpgEquipmentSlot EquipmentSlot, URpgInventoryItemInstance* Item) const;
+	bool IsItemInPhysicalGearSlot(
+		ERpgEquipmentSlot EquipmentSlot,
+		const URpgInventoryItemInstance* Item) const;
+	void ApplyEquipmentSelectionPointers(
+		const FRpgEquipmentSelectionSaveData& SaveData);
 	void RememberCurrentOffhandForActiveMainhand();
 	void SetRememberedOffhandForMainHand(URpgInventoryItemInstance* MainHandItem, URpgInventoryItemInstance* OffHandItem);
 	void ClearRememberedOffhandForMainHand(URpgInventoryItemInstance* MainHandItem);

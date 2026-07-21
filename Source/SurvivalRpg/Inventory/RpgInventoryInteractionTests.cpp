@@ -37,6 +37,22 @@ namespace RpgInventoryInteractionTests
 			Footprint.Height,
 			Property);
 	}
+
+	void PopulateExactEquipmentSourceSnapshot(
+		FRpgInventoryDragPayload& Payload,
+		UObject* Outer,
+		FName ContainerId)
+	{
+		Payload.SourceInventory = NewObject<URpgInventoryManagerComponent>(Outer);
+		Payload.EntryId = FGuid::NewGuid();
+		Payload.StackCount = 1;
+		Payload.SourcePlacement.SetContainerHandle(
+			FRpgInventoryContainerHandle::MakeRoot(ContainerId));
+		Payload.SourcePlacement.X = 0;
+		Payload.SourcePlacement.Y = 0;
+		Payload.SourcePlacement.Width = 1;
+		Payload.SourcePlacement.Height = 1;
+	}
 }
 
 IMPLEMENT_SIMPLE_AUTOMATION_TEST(
@@ -177,6 +193,10 @@ bool FRpgInventoryInteractionRotationAnchorRoundTripTest::RunTest(const FString&
 	Payload.SourceType = ERpgInventoryDragSourceType::EquipmentSlot;
 	Payload.ItemInstance = Item;
 	Payload.EquipmentSlot = ERpgEquipmentSlot::MainHand;
+	PopulateExactEquipmentSourceSnapshot(
+		Payload,
+		GetTransientPackage(),
+		TEXT("RotationAnchorEquipmentSource"));
 	Payload.ItemFootprint = MakeFootprint(3, 2);
 	Payload.DragAnchor.bValid = true;
 	Payload.DragAnchor.GrabbedCell = FIntPoint(2, 1);

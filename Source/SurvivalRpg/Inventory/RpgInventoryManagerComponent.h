@@ -260,8 +260,15 @@ public:
 		FRpgInventoryContainerHandle ContainerFilter = FRpgInventoryContainerHandle(),
 		bool* bOutSucceeded = nullptr);
 	bool MoveEntry(FGuid EntryId, int32 TargetIndex);
-	bool CanMoveEntryToPlacement(FGuid EntryId, const FRpgInventoryGridPlacement& TargetPlacement, FRpgInventoryGridPlacement* OutNormalizedTargetPlacement = nullptr) const;
-	bool MoveEntryToPlacement(FGuid EntryId, const FRpgInventoryGridPlacement& TargetPlacement);
+	bool CanMoveEntryToPlacement(
+		FGuid EntryId,
+		const FRpgInventoryGridPlacement& TargetPlacement,
+		FRpgInventoryGridPlacement* OutNormalizedTargetPlacement = nullptr,
+		bool bAllowStackMerge = true) const;
+	bool MoveEntryToPlacement(
+		FGuid EntryId,
+		const FRpgInventoryGridPlacement& TargetPlacement,
+		bool bAllowStackMerge = true);
 	FRpgInventorySnapshot ExportSnapshot(FName ContainerId) const;
 	void ImportSnapshot(const FRpgInventorySnapshot& Snapshot);
 
@@ -552,6 +559,20 @@ public:
 	/** Moves one whole entry from its complete expected source snapshot to an exact target placement. */
 	FRpgInventoryMutationResult MoveItem(FRpgInventoryMoveIntent Intent);
 
+	/**
+	 * Plans a trusted equipment placement that preserves the moving ItemId.
+	 * Compatible occupied targets use the atomic swap path instead of merging stacks.
+	 */
+	FRpgInventoryMutationResult PlanEquipmentMove(
+		FRpgInventoryMoveIntent Intent) const;
+
+	/**
+	 * Commits a trusted equipment placement while preserving both concrete item identities.
+	 * This C++-only seam is selected by the validated server equipment gateway, never by an RPC payload.
+	 */
+	FRpgInventoryMutationResult MoveEquipmentItem(
+		FRpgInventoryMoveIntent Intent);
+
 	/** Transfers an exact stack amount or complete provider subtree from a complete source snapshot. */
 	FRpgInventoryMutationResult TransferItem(
 		URpgInventoryManagerComponent* TargetInventory,
@@ -632,6 +653,9 @@ public:
 	 */
 	uint64 GetMutationEpoch() const { return MutationEpoch; }
 
+	/** Returns the replicated state revision; authoritative commits advance it, while cached command replays do not. */
+	int32 GetInventoryRevision() const { return InventoryRevision; }
+
 	/** Compatibility name retained for existing Blueprint save code. Runtime profile restore owns the canonical C++ restore seam. */
 	UFUNCTION(BlueprintCallable, BlueprintAuthorityOnly, Category = "Inventory|Persistence", meta = (DeprecatedFunction, DeprecationMessage = "Use the authoritative profile/save restore gateway. Direct Blueprint graph import is a legacy compatibility path."))
 	bool ImportInventoryGraph(const FRpgInventoryGraphSaveData& SaveData, FRpgInventoryMutationResult& OutResult);
@@ -679,6 +703,8 @@ private:
 		ERpgInventoryMutationResultCode& OutCode) const;
 	bool CommitRemovalDeltas(const TArray<FRpgInventoryMutationDelta>& Deltas);
 	FRpgInventoryMutationRequest BuildMoveMutationRequest(const FRpgInventoryMoveIntent& Intent) const;
+	FRpgInventoryMutationRequest BuildEquipmentMoveMutationRequest(
+		const FRpgInventoryMoveIntent& Intent) const;
 	static FRpgInventoryMutationRequest BuildTransferMutationRequest(
 		const FRpgInventoryTransferIntent& Intent,
 		ERpgInventoryMutationOperation Operation);
