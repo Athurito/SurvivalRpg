@@ -457,6 +457,35 @@ public:
 		FRpgInventoryQuickTransferRequest Request);
 
 	/**
+	 * Builds the exact cross-inventory placement plan used by drag preview and re-evaluated by the server commit.
+	 * Access, direction, source snapshot, player-loadout removal, concrete occupancy, and stack compatibility are read-only.
+	 */
+	FRpgInventoryPlacementPlan PlanExactTransferPlacement(
+		URpgInventoryManagerComponent* SourceInventory,
+		URpgInventoryManagerComponent* TargetInventory,
+		const FRpgInventoryTransferIntent& Intent) const;
+
+	/**
+	 * Selects the same deterministic destination and full placement plan as RequestQuickTransferItem.
+	 * A fully merged cross-inventory result may leave OutTargetPlacement invalid while retaining OutTargetContainer.
+	 */
+	FRpgInventoryPlacementPlan PlanQuickTransferDestination(
+		URpgInventoryManagerComponent* SourceInventory,
+		URpgInventoryManagerComponent* TargetInventory,
+		const FRpgInventoryQuickTransferRequest& Request,
+		FRpgInventoryContainerHandle& OutTargetContainer,
+		FRpgInventoryGridPlacement& OutTargetPlacement) const;
+
+	/**
+	 * Resolves one explicit Gear/hand equip or physical unequip intent to its concrete destination and placement plan.
+	 * Hand targets validate the current two-hand/offhand conflict; unequip excludes content supplied by the removed item.
+	 */
+	FRpgInventoryPlacementPlan PlanEquipmentIntentPlacement(
+		URpgInventoryManagerComponent* Inventory,
+		const FRpgInventoryEquipmentIntent& Intent,
+		FRpgInventoryGridPlacement& OutTargetPlacement) const;
+
+	/**
 	 * Resolves the first deterministic quick-transfer destination without mutating inventory state.
 	 * OutTargetPlacement is valid for same-inventory moves and for a cross-inventory new-entry location; a fully
 	 * mergeable cross-inventory stack may return only OutTargetContainer.
@@ -704,7 +733,7 @@ private:
 	URpgPlayerInventoryLayoutComponent* FindPlayerInventoryLayout() const;
 	URpgActionBarComponent* FindActionBar() const;
 	URpgAbilitySystemComponent* FindPlayerAbilitySystem() const;
-	bool TryFindTransferPlacementInContainer(
+	FRpgInventoryPlacementPlan PlanQuickTransferInContainer(
 		URpgInventoryManagerComponent* SourceInventory,
 		URpgInventoryManagerComponent* TargetInventory,
 		URpgInventoryItemInstance* Item,

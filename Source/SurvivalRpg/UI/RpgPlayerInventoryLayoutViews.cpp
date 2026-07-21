@@ -824,6 +824,33 @@ void URpgInventorySpatialItemWidget::SetInventoryPanelActive(bool bInInventoryPa
 
 void URpgInventorySpatialItemWidget::RefreshDragDropVisualState()
 {
+	if (DragDropVisualRefreshBatchDepth > 0)
+	{
+		bDragDropVisualRefreshPending = true;
+		return;
+	}
+
+	ApplyDragDropVisualState();
+}
+
+void URpgInventorySpatialItemWidget::BeginDragDropVisualRefreshBatch()
+{
+	++DragDropVisualRefreshBatchDepth;
+}
+
+void URpgInventorySpatialItemWidget::EndDragDropVisualRefreshBatch()
+{
+	check(DragDropVisualRefreshBatchDepth > 0);
+	--DragDropVisualRefreshBatchDepth;
+	if (DragDropVisualRefreshBatchDepth == 0 && bDragDropVisualRefreshPending)
+	{
+		bDragDropVisualRefreshPending = false;
+		ApplyDragDropVisualState();
+	}
+}
+
+void URpgInventorySpatialItemWidget::ApplyDragDropVisualState()
+{
 	const bool bIsFocused = bInventoryPanelActive && IsFocusedItem();
 	if (DragDropCoordinator && AddressSlotViewModel)
 	{
@@ -2054,14 +2081,26 @@ bool URpgInventorySpatialGridWidget::CommitPayloadToCell(const FRpgInventoryDrag
 	Descriptor.EntryId = ResolvedPayload.EntryId;
 	Descriptor.TargetPlacement = MakeTargetPlacementForCell(ResolvedPayload, X, Y);
 	Descriptor.Target = MakeDropTargetForPlacement(ResolvedPayload, Descriptor.TargetPlacement);
-	Descriptor.PreviewState = DragDropCoordinator->ResolveInteractionPreview(ResolvedPayload, Descriptor.Target);
+	const FRpgInventoryInteractionPreviewPlan PreviewPlan =
+		DragDropCoordinator->PlanInteractionPreview(
+			ResolvedPayload,
+			Descriptor.Target);
+	Descriptor.PreviewState = PreviewPlan.State;
+	if (PreviewPlan.ResolvedTargetPlacement.IsValid())
+	{
+		Descriptor.TargetPlacement =
+			PreviewPlan.ResolvedTargetPlacement;
+	}
 	Descriptor.SnappedLocalPosition = GetCellPosition(Descriptor.TargetPlacement.X, Descriptor.TargetPlacement.Y);
 	Descriptor.SnappedLocalSize = GetPlacementSize(Descriptor.TargetPlacement);
 	if (URpgInventoryInteractionSession* Session = DragDropCoordinator->GetInteractionSession())
 	{
 		Session->SetSpatialPreviewDescriptor(Descriptor);
 	}
-	return DragDropCoordinator->CommitPayloadToTarget(ResolvedPayload, Descriptor.Target);
+	return DragDropCoordinator->CommitPlannedPayloadToTarget(
+		ResolvedPayload,
+		Descriptor.Target,
+		PreviewPlan);
 }
 
 bool URpgInventorySpatialGridWidget::PreviewPayloadOnCell(const FRpgInventoryDragPayload& Payload, int32 X, int32 Y)
@@ -2085,10 +2124,22 @@ bool URpgInventorySpatialGridWidget::PreviewPayloadOnCell(const FRpgInventoryDra
 	Descriptor.EntryId = ResolvedPayload.EntryId;
 	Descriptor.TargetPlacement = MakeTargetPlacementForCell(ResolvedPayload, X, Y);
 	Descriptor.Target = MakeDropTargetForPlacement(ResolvedPayload, Descriptor.TargetPlacement);
-	Descriptor.PreviewState = DragDropCoordinator->ResolveInteractionPreview(ResolvedPayload, Descriptor.Target);
+	const FRpgInventoryInteractionPreviewPlan PreviewPlan =
+		DragDropCoordinator->PlanInteractionPreview(
+			ResolvedPayload,
+			Descriptor.Target);
+	Descriptor.PreviewState = PreviewPlan.State;
+	if (PreviewPlan.ResolvedTargetPlacement.IsValid())
+	{
+		Descriptor.TargetPlacement =
+			PreviewPlan.ResolvedTargetPlacement;
+	}
 	Descriptor.SnappedLocalPosition = GetCellPosition(Descriptor.TargetPlacement.X, Descriptor.TargetPlacement.Y);
 	Descriptor.SnappedLocalSize = GetPlacementSize(Descriptor.TargetPlacement);
-	DragDropCoordinator->UpdateInteractionPreview(ResolvedPayload, Descriptor.Target);
+	DragDropCoordinator->PublishInteractionPreview(
+		ResolvedPayload,
+		Descriptor.Target,
+		PreviewPlan);
 	if (URpgInventoryInteractionSession* Session = DragDropCoordinator->GetInteractionSession())
 	{
 		Session->SetSpatialPreviewDescriptor(Descriptor);
@@ -2097,8 +2148,7 @@ bool URpgInventorySpatialGridWidget::PreviewPayloadOnCell(const FRpgInventoryDra
 	{
 		HandleSpatialPreviewChanged(Descriptor);
 	}
-	return Descriptor.PreviewState != ERpgInventoryInteractionPreviewState::Blocked &&
-		Descriptor.PreviewState != ERpgInventoryInteractionPreviewState::OutOfBounds;
+	return PreviewPlan.IsAccepted();
 }
 
 bool URpgInventorySpatialGridWidget::CommitPayloadAtScreenPosition(const FRpgInventoryDragPayload& Payload, FVector2D ScreenPosition)
@@ -2107,7 +2157,12 @@ bool URpgInventorySpatialGridWidget::CommitPayloadAtScreenPosition(const FRpgInv
 		? DragDropCoordinator->ResolveInteractionPayload(Payload)
 		: Payload;
 	FRpgInventorySpatialPreviewDescriptor Descriptor;
-	if (!ResolveSpatialPreviewDescriptorAtScreenPosition(ResolvedPayload, ScreenPosition, Descriptor))
+	FRpgInventoryInteractionPreviewPlan PreviewPlan;
+	if (!ResolveSpatialPreviewDescriptorAtScreenPosition(
+			ResolvedPayload,
+			ScreenPosition,
+			Descriptor,
+			&PreviewPlan))
 	{
 		ClearExternalPreviewPayload();
 		return false;
@@ -2121,7 +2176,10 @@ bool URpgInventorySpatialGridWidget::CommitPayloadAtScreenPosition(const FRpgInv
 	{
 		Session->SetSpatialPreviewDescriptor(Descriptor);
 	}
-	return DragDropCoordinator->CommitPayloadToTarget(ResolvedPayload, Descriptor.Target);
+	return DragDropCoordinator->CommitPlannedPayloadToTarget(
+		ResolvedPayload,
+		Descriptor.Target,
+		PreviewPlan);
 }
 
 bool URpgInventorySpatialGridWidget::PreviewPayloadAtScreenPosition(const FRpgInventoryDragPayload& Payload, FVector2D ScreenPosition)
@@ -2130,7 +2188,12 @@ bool URpgInventorySpatialGridWidget::PreviewPayloadAtScreenPosition(const FRpgIn
 		? DragDropCoordinator->ResolveInteractionPayload(Payload)
 		: Payload;
 	FRpgInventorySpatialPreviewDescriptor Descriptor;
-	if (!ResolveSpatialPreviewDescriptorAtScreenPosition(ResolvedPayload, ScreenPosition, Descriptor))
+	FRpgInventoryInteractionPreviewPlan PreviewPlan;
+	if (!ResolveSpatialPreviewDescriptorAtScreenPosition(
+			ResolvedPayload,
+			ScreenPosition,
+			Descriptor,
+			&PreviewPlan))
 	{
 		ClearExternalPreviewPayload();
 		return false;
@@ -2144,7 +2207,10 @@ bool URpgInventorySpatialGridWidget::PreviewPayloadAtScreenPosition(const FRpgIn
 		return true;
 	}
 
-	DragDropCoordinator->UpdateInteractionPreview(ResolvedPayload, Descriptor.Target);
+	DragDropCoordinator->PublishInteractionPreview(
+		ResolvedPayload,
+		Descriptor.Target,
+		PreviewPlan);
 	if (URpgInventoryInteractionSession* Session = DragDropCoordinator->GetInteractionSession())
 	{
 		Session->SetSpatialPreviewDescriptor(Descriptor);
@@ -2161,7 +2227,10 @@ bool URpgInventorySpatialGridWidget::CanAddressPayloadAtScreenPosition(
 	FVector2D ScreenPosition) const
 {
 	FRpgInventorySpatialPreviewDescriptor Descriptor;
-	return ResolveSpatialPreviewDescriptorAtScreenPosition(Payload, ScreenPosition, Descriptor);
+	return ResolveSpatialTargetGeometryAtScreenPosition(
+		Payload,
+		ScreenPosition,
+		Descriptor);
 }
 
 bool URpgInventorySpatialGridWidget::ContainsScreenPosition(FVector2D ScreenPosition) const
@@ -2194,7 +2263,10 @@ bool URpgInventorySpatialGridWidget::ResolveDropTargetAtScreenPosition(
 	OutAnchorY = INDEX_NONE;
 
 	FRpgInventorySpatialPreviewDescriptor Descriptor;
-	if (!ResolveSpatialPreviewDescriptorAtScreenPosition(Payload, ScreenPosition, Descriptor))
+	if (!ResolveSpatialTargetGeometryAtScreenPosition(
+			Payload,
+			ScreenPosition,
+			Descriptor))
 	{
 		return false;
 	}
@@ -2218,13 +2290,63 @@ bool URpgInventorySpatialGridWidget::ResolveDropTargetAtScreenPosition(
 bool URpgInventorySpatialGridWidget::ResolveSpatialPreviewDescriptorAtScreenPosition(
 	const FRpgInventoryDragPayload& Payload,
 	FVector2D ScreenPosition,
-	FRpgInventorySpatialPreviewDescriptor& OutDescriptor) const
+	FRpgInventorySpatialPreviewDescriptor& OutDescriptor,
+	FRpgInventoryInteractionPreviewPlan* OutPreviewPlan) const
+{
+	if (OutPreviewPlan)
+	{
+		*OutPreviewPlan = FRpgInventoryInteractionPreviewPlan();
+	}
+	const FRpgInventoryDragPayload ResolvedPayload = DragDropCoordinator
+		? DragDropCoordinator->ResolveInteractionPayload(Payload)
+		: Payload;
+	if (!ResolveSpatialTargetGeometryAtScreenPosition(
+			ResolvedPayload,
+			ScreenPosition,
+			OutDescriptor))
+	{
+		return false;
+	}
+
+	FRpgInventoryInteractionPreviewPlan PreviewPlan;
+	PreviewPlan.State = ERpgInventoryInteractionPreviewState::Blocked;
+	if (DragDropCoordinator)
+	{
+		PreviewPlan = DragDropCoordinator->PlanInteractionPreview(
+			ResolvedPayload,
+			OutDescriptor.Target);
+	}
+	OutDescriptor.PreviewState = PreviewPlan.State;
+	if (PreviewPlan.ResolvedTargetPlacement.IsValid())
+	{
+		OutDescriptor.TargetPlacement =
+			PreviewPlan.ResolvedTargetPlacement;
+	}
+	OutDescriptor.SnappedLocalPosition = GetCellPosition(
+		OutDescriptor.TargetPlacement.X,
+		OutDescriptor.TargetPlacement.Y);
+	OutDescriptor.SnappedLocalSize = GetPlacementSize(
+		OutDescriptor.TargetPlacement);
+	if (OutPreviewPlan)
+	{
+		*OutPreviewPlan = MoveTemp(PreviewPlan);
+	}
+	return true;
+}
+
+bool URpgInventorySpatialGridWidget::
+	ResolveSpatialTargetGeometryAtScreenPosition(
+		const FRpgInventoryDragPayload& Payload,
+		FVector2D ScreenPosition,
+		FRpgInventorySpatialPreviewDescriptor& OutDescriptor) const
 {
 	OutDescriptor = FRpgInventorySpatialPreviewDescriptor();
 	const FRpgInventoryDragPayload ResolvedPayload = DragDropCoordinator
 		? DragDropCoordinator->ResolveInteractionPayload(Payload)
 		: Payload;
-	if (!URpgInventoryDragDropCoordinator::IsPayloadValid(ResolvedPayload) || !GridSize.IsValid())
+	if (!URpgInventoryDragDropCoordinator::IsPayloadValid(
+			ResolvedPayload) ||
+		!GridSize.IsValid())
 	{
 		return false;
 	}
@@ -2276,11 +2398,13 @@ bool URpgInventorySpatialGridWidget::ResolveSpatialPreviewDescriptorAtScreenPosi
 	OutDescriptor.TargetPlacement = MakeCellPlacement(
 		ResolveContainerHandle(), OriginX, OriginY, bTargetRotated, Footprint.Width, Footprint.Height);
 	OutDescriptor.Target = MakeDropTargetForPlacement(ResolvedPayload, OutDescriptor.TargetPlacement);
-	OutDescriptor.PreviewState = DragDropCoordinator
-		? DragDropCoordinator->ResolveInteractionPreview(ResolvedPayload, OutDescriptor.Target)
-		: ERpgInventoryInteractionPreviewState::Blocked;
-	OutDescriptor.SnappedLocalPosition = GetCellPosition(OriginX, OriginY);
-	OutDescriptor.SnappedLocalSize = GhostSize;
+	OutDescriptor.PreviewState =
+		ERpgInventoryInteractionPreviewState::None;
+	OutDescriptor.SnappedLocalPosition = GetCellPosition(
+		OutDescriptor.TargetPlacement.X,
+		OutDescriptor.TargetPlacement.Y);
+	OutDescriptor.SnappedLocalSize = GetPlacementSize(
+		OutDescriptor.TargetPlacement);
 	OutDescriptor.PointerScreenPosition = ScreenPosition;
 	return true;
 }
@@ -2536,11 +2660,13 @@ void URpgInventorySpatialGridWidget::RefreshFromPanelViewModel()
 	UpdateGridSizeFromBinding();
 	ObserveEntryDelegates();
 	RebuildItemOverlay();
+	ReplanActivePointerPreview();
 }
 
 void URpgInventorySpatialGridWidget::HandleAddressSlotChanged(URpgInventoryAddressSlotViewModel* ChangedSlotViewModel)
 {
 	RebuildItemOverlay();
+	ReplanActivePointerPreview();
 	if (PanelNavigationCoordinator && PanelNavigationCoordinator->GetActiveSpatialGridWidget() == this)
 	{
 		PanelNavigationCoordinator->OnActiveSelectionChanged.Broadcast();
@@ -2550,6 +2676,7 @@ void URpgInventorySpatialGridWidget::HandleAddressSlotChanged(URpgInventoryAddre
 void URpgInventorySpatialGridWidget::HandleEntryChanged(URpgInventoryEntryViewModel* ChangedEntryViewModel)
 {
 	RebuildItemOverlay();
+	ReplanActivePointerPreview();
 	if (PanelNavigationCoordinator && PanelNavigationCoordinator->GetActiveSpatialGridWidget() == this)
 	{
 		PanelNavigationCoordinator->OnActiveSelectionChanged.Broadcast();
@@ -2578,6 +2705,29 @@ void URpgInventorySpatialGridWidget::HandleHeldPayloadChanged(bool bHasHeldPaylo
 		return;
 	}
 	UpdateCellVisualStates();
+}
+
+void URpgInventorySpatialGridWidget::ReplanActivePointerPreview()
+{
+	if (!ActiveSpatialPreview.bValid ||
+		!bHasLastPointerPreviewScreenPosition ||
+		!DragDropCoordinator)
+	{
+		return;
+	}
+
+	URpgInventoryInteractionSession* Session =
+		DragDropCoordinator->GetInteractionSession();
+	if (!Session || !Session->HasPayload() || Session->IsRequestPending())
+	{
+		return;
+	}
+
+	// Inventory replication may change occupancy while the pointer is stationary. Re-evaluate the exact domain query
+	// so the ghost, cell colors, and next commit never retain stale Merge/Swap/capacity semantics.
+	PreviewPayloadAtScreenPosition(
+		Session->GetPayload(),
+		LastPointerPreviewScreenPosition);
 }
 
 void URpgInventorySpatialGridWidget::HandleSpatialPreviewChanged(const FRpgInventorySpatialPreviewDescriptor& Descriptor)
@@ -2844,7 +2994,8 @@ void URpgInventorySpatialGridWidget::RebuildCellLayer()
 
 			CellWidget->SetOwningSpatialGrid(this, X, Y);
 			CellWidget->SetCellViewModels(FindAddressCell(X, Y), FindEntryAtCell(X, Y));
-			CellWidget->SetCellVisualState(GetCellVisualState(X, Y));
+			CellWidget->SetCellVisualState(
+				ERpgInventorySpatialCellVisualState::Normal);
 
 			if (CellWidget->GetParent() != ResolvedCellCanvas)
 			{
@@ -2871,10 +3022,13 @@ void URpgInventorySpatialGridWidget::RebuildCellLayer()
 		}
 	}
 	CellWidgets = MoveTemp(ReconciledCells);
+	UpdateCellVisualStates();
 }
 
 void URpgInventorySpatialGridWidget::UpdateCellVisualStates()
 {
+	FRpgInventorySpatialPreviewDescriptor PreviewDescriptor;
+	BuildCellPreviewDescriptor(PreviewDescriptor);
 	for (URpgInventorySpatialCellWidget* CellWidget : CellWidgets)
 	{
 		if (!CellWidget)
@@ -2885,11 +3039,16 @@ void URpgInventorySpatialGridWidget::UpdateCellVisualStates()
 		const int32 X = CellWidget->GetCellX();
 		const int32 Y = CellWidget->GetCellY();
 		CellWidget->SetCellViewModels(FindAddressCell(X, Y), FindEntryAtCell(X, Y));
-		CellWidget->SetCellVisualState(GetCellVisualState(X, Y));
+		CellWidget->SetCellVisualState(
+			GetCellVisualState(X, Y, PreviewDescriptor));
 	}
 }
 
-ERpgInventorySpatialCellVisualState URpgInventorySpatialGridWidget::GetCellVisualState(int32 X, int32 Y) const
+ERpgInventorySpatialCellVisualState
+URpgInventorySpatialGridWidget::GetCellVisualState(
+	int32 X,
+	int32 Y,
+	const FRpgInventorySpatialPreviewDescriptor& PreviewDescriptor) const
 {
 	if (!IsValidCell(X, Y))
 	{
@@ -2898,29 +3057,16 @@ ERpgInventorySpatialCellVisualState URpgInventorySpatialGridWidget::GetCellVisua
 
 	const bool bIsSelectedCell = X == CursorX && Y == CursorY;
 	const bool bCanShowCursor = bInventoryPanelActive && !bSelectionVisualSuppressed && bIsSelectedCell;
-	if (ActiveSpatialPreview.bValid)
+	if (PreviewDescriptor.bValid)
 	{
 		ERpgInventorySpatialCellVisualState PreviewCellState = ERpgInventorySpatialCellVisualState::Normal;
-		const FRpgInventoryDragPayload Payload = DragDropCoordinator && DragDropCoordinator->HasHeldPayload()
-			? DragDropCoordinator->GetHeldPayload()
-			: FRpgInventoryDragPayload();
-		if (ResolvePayloadPreviewCellState(Payload, X, Y, PreviewCellState))
+		if (ResolvePayloadPreviewCellState(
+				PreviewDescriptor,
+				X,
+				Y,
+				PreviewCellState))
 		{
 			return PreviewCellState;
-		}
-	}
-
-	if (!ActiveSpatialPreview.bValid && bInventoryPanelActive && DragDropCoordinator &&
-		DragDropCoordinator->HasHeldPayload())
-	{
-		const URpgInventoryInteractionSession* Session = DragDropCoordinator->GetInteractionSession();
-		if (Session && Session->GetInputMode() == ERpgInventoryInteractionInputMode::Controller)
-		{
-			ERpgInventorySpatialCellVisualState PreviewState = ERpgInventorySpatialCellVisualState::Normal;
-			if (ResolvePayloadPreviewCellState(DragDropCoordinator->GetHeldPayload(), X, Y, PreviewState))
-			{
-				return PreviewState;
-			}
 		}
 	}
 
@@ -2950,34 +3096,70 @@ ERpgInventorySpatialCellVisualState URpgInventorySpatialGridWidget::GetCellVisua
 	return ERpgInventorySpatialCellVisualState::Normal;
 }
 
-bool URpgInventorySpatialGridWidget::ResolvePayloadPreviewCellState(const FRpgInventoryDragPayload& Payload, int32 X, int32 Y, ERpgInventorySpatialCellVisualState& OutState) const
+bool URpgInventorySpatialGridWidget::BuildCellPreviewDescriptor(
+	FRpgInventorySpatialPreviewDescriptor& OutDescriptor) const
 {
-	OutState = ERpgInventorySpatialCellVisualState::Normal;
-	if (!IsValidCell(X, Y))
+	OutDescriptor = ActiveSpatialPreview;
+	if (OutDescriptor.bValid || !bInventoryPanelActive ||
+		!DragDropCoordinator || !DragDropCoordinator->HasHeldPayload() ||
+		!IsValidCell(CursorX, CursorY))
+	{
+		return OutDescriptor.bValid;
+	}
+
+	const URpgInventoryInteractionSession* Session =
+		DragDropCoordinator->GetInteractionSession();
+	if (!Session || Session->GetInputMode() !=
+		ERpgInventoryInteractionInputMode::Controller)
 	{
 		return false;
 	}
 
-	FRpgInventoryGridPlacement TargetPlacement;
-	ERpgInventoryInteractionPreviewState SemanticState = ERpgInventoryInteractionPreviewState::None;
-	if (ActiveSpatialPreview.bValid)
+	const FRpgInventoryDragPayload Payload =
+		DragDropCoordinator->GetHeldPayload();
+	if (!URpgInventoryDragDropCoordinator::IsPayloadValid(Payload))
 	{
-		TargetPlacement = ActiveSpatialPreview.TargetPlacement;
-		SemanticState = ActiveSpatialPreview.PreviewState;
-	}
-	else
-	{
-		if (!DragDropCoordinator || !URpgInventoryDragDropCoordinator::IsPayloadValid(Payload) || !IsValidCell(CursorX, CursorY))
-		{
-			return false;
-		}
-		TargetPlacement = MakeTargetPlacementForCell(Payload, CursorX, CursorY);
-		SemanticState = DragDropCoordinator->ResolveInteractionPreview(
-			Payload,
-			MakeDropTargetForPlacement(Payload, TargetPlacement));
+		return false;
 	}
 
-	const bool bIsPreviewCell = PlacementFootprintContainsCellUnchecked(TargetPlacement, X, Y);
+	OutDescriptor.bValid = true;
+	OutDescriptor.EntryId = Payload.EntryId;
+	OutDescriptor.TargetPlacement =
+		MakeTargetPlacementForCell(Payload, CursorX, CursorY);
+	OutDescriptor.Target = MakeDropTargetForPlacement(
+		Payload,
+		OutDescriptor.TargetPlacement);
+	const FRpgInventoryInteractionPreviewPlan PreviewPlan =
+		DragDropCoordinator->PlanInteractionPreview(
+			Payload,
+			OutDescriptor.Target);
+	OutDescriptor.PreviewState = PreviewPlan.State;
+	if (PreviewPlan.ResolvedTargetPlacement.IsValid())
+	{
+		OutDescriptor.TargetPlacement =
+			PreviewPlan.ResolvedTargetPlacement;
+	}
+	return true;
+}
+
+bool URpgInventorySpatialGridWidget::ResolvePayloadPreviewCellState(
+	const FRpgInventorySpatialPreviewDescriptor& PreviewDescriptor,
+	int32 X,
+	int32 Y,
+	ERpgInventorySpatialCellVisualState& OutState) const
+{
+	OutState = ERpgInventorySpatialCellVisualState::Normal;
+	if (!IsValidCell(X, Y) || !PreviewDescriptor.bValid)
+	{
+		return false;
+	}
+
+	const FRpgInventoryGridPlacement& TargetPlacement =
+		PreviewDescriptor.TargetPlacement;
+	const ERpgInventoryInteractionPreviewState SemanticState =
+		PreviewDescriptor.PreviewState;
+	const bool bIsPreviewCell =
+		PlacementFootprintContainsCellUnchecked(TargetPlacement, X, Y);
 	if (!bIsPreviewCell)
 	{
 		return false;
@@ -3062,6 +3244,9 @@ void URpgInventorySpatialGridWidget::RebuildItemOverlay()
 
 		ItemWidget->SetVisibility(ESlateVisibility::Visible);
 		ItemWidget->SetIsEnabled(true);
+		// Reconciliation changes several presentation inputs for a reused widget. Defer its semantic target query until
+		// the complete candidate is bound so one rebuild performs exactly one plan without retaining gameplay truth.
+		ItemWidget->BeginDragDropVisualRefreshBatch();
 		ItemWidget->SetOwningSpatialGrid(this);
 		ItemWidget->SetDragDropCoordinator(DragDropCoordinator);
 		ItemWidget->SetInventoryPanelActive(bInventoryPanelActive);
@@ -3073,6 +3258,7 @@ void URpgInventorySpatialGridWidget::RebuildItemOverlay()
 		{
 			ItemWidget->SetEntryViewModel(EntryViewModel);
 		}
+		ItemWidget->EndDragDropVisualRefreshBatch();
 
 		if (ItemWidget->GetParent() != ItemCanvas)
 		{

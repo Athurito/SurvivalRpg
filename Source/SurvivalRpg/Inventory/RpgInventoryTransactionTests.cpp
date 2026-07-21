@@ -320,6 +320,74 @@ namespace RpgInventoryTransactionTests
 		return FString::Join(Rows, TEXT(";"));
 	}
 
+	bool ArePlacementSnapshotsExactlyEqual(
+		const FRpgInventoryGridPlacement& A,
+		const FRpgInventoryGridPlacement& B)
+	{
+		return A.ContainerHandle == B.ContainerHandle &&
+			A.ContainerId == B.ContainerId &&
+			A.X == B.X && A.Y == B.Y &&
+			A.Width == B.Width && A.Height == B.Height &&
+			A.bRotated == B.bRotated;
+	}
+
+	FString MakeStrictInventorySignature(
+		const URpgInventoryManagerComponent* Inventory)
+	{
+		if (!Inventory)
+		{
+			return TEXT("InvalidInventory");
+		}
+
+		TArray<FString> Rows;
+		for (const FRpgInventoryEntryView& Entry :
+			 Inventory->GetAllEntries())
+		{
+			Rows.Add(FString::Printf(
+				TEXT("%s|%s|%p|%d|%s|%s|%d|%d|%d|%d|%d"),
+				*Entry.EntryId.ToString(),
+				*Entry.ItemId.ToString(),
+				static_cast<const void*>(Entry.Instance.Get()),
+				Entry.StackCount,
+				*Entry.Placement.ContainerHandle.ToString(),
+				*Entry.Placement.ContainerId.ToString(),
+				Entry.Placement.X,
+				Entry.Placement.Y,
+				Entry.Placement.Width,
+				Entry.Placement.Height,
+				Entry.Placement.bRotated ? 1 : 0));
+		}
+		Rows.Sort();
+		return FString::Printf(
+			TEXT("Revision=%d;%s"),
+			Inventory->GetInventoryRevision(),
+			*FString::Join(Rows, TEXT(";")));
+	}
+
+	FRpgInventoryDragPayload MakeInventoryEntryPayload(
+		URpgInventoryManagerComponent* Inventory,
+		URpgInventoryItemInstance* Item)
+	{
+		FRpgInventoryDragPayload Payload;
+		FRpgInventoryEntryView Entry;
+		if (!Inventory || !Item ||
+			!GetEntryView(Inventory, Item->GetItemId(), Entry))
+		{
+			return Payload;
+		}
+
+		Payload.SourceType =
+			ERpgInventoryDragSourceType::InventoryEntry;
+		Payload.SourceInventory = Inventory;
+		Payload.ItemInstance = Item;
+		Payload.EntryId = Entry.EntryId;
+		Payload.StackCount = Entry.StackCount;
+		Payload.SourcePlacement = Entry.Placement;
+		Payload.ItemFootprint =
+			Entry.Placement.GetUnrotatedSize();
+		return Payload;
+	}
+
 	FRpgInventorySavedItem* FindSavedItem(
 		FRpgInventoryGraphSaveData& SaveData,
 		const FRpgInventoryItemId& ItemId)
@@ -2602,6 +2670,98 @@ bool FRpgInventoryEquipmentRuntimeReconcileLifecycleTest::RunTest(
 	TestEqual(TEXT("Idempotent reconcile emits no second equip callback"), TwoHandRuntime->GetEquippedCount(), 1);
 	TestEqual(TEXT("Idempotent reconcile emits no unequip callback"), TwoHandRuntime->GetUnequippedCount(), 0);
 
+	FRpgInventoryEntryView BlockedOffHandEntry;
+	if (!TestTrue(
+			TEXT("The inactive OffHand candidate remains physically addressable"),
+			GetEntryView(
+				Inventory,
+				OffHandItem->GetItemId(),
+				BlockedOffHandEntry)))
+	{
+		return false;
+	}
+	FRpgInventoryEquipmentIntent BlockedOffHandIntent =
+		MakeEquipmentIntent(
+			Inventory,
+			OffHandItem,
+			ERpgInventoryEquipmentIntentOperation::EquipToSlot,
+			ERpgEquipmentSlot::OffHand);
+	FRpgInventoryGridPlacement BlockedOffHandPlacement;
+	const FRpgInventoryPlacementPlan BlockedOffHandPlan =
+		UiActions->PlanEquipmentIntentPlacement(
+			Inventory,
+			BlockedOffHandIntent,
+			BlockedOffHandPlacement);
+	TestEqual(
+		TEXT("An active two-handed MainHand rejects the dynamic OffHand plan"),
+		BlockedOffHandPlan.Code,
+		ERpgInventoryMutationResultCode::ItemNotAllowed);
+	TestFalse(
+		TEXT("The dynamic hand conflict has no complete physical placement"),
+		BlockedOffHandPlan.IsCompleteSuccess());
+
+	URpgInventoryDragDropCoordinator* HandConflictCoordinator =
+		URpgInventoryDragDropCoordinator::
+			CreateInventoryDragDropCoordinator(
+				Controller,
+				Controller);
+	if (!TestNotNull(
+			TEXT("The runtime fixture owns a hand-conflict preview coordinator"),
+			HandConflictCoordinator))
+	{
+		return false;
+	}
+	HandConflictCoordinator->SetUiActionComponent(UiActions);
+	FRpgInventoryDragPayload BlockedOffHandPayload;
+	BlockedOffHandPayload.SourceType =
+		ERpgInventoryDragSourceType::InventoryEntry;
+	BlockedOffHandPayload.SourceInventory = Inventory;
+	BlockedOffHandPayload.ItemInstance = OffHandItem;
+	BlockedOffHandPayload.EntryId = BlockedOffHandEntry.EntryId;
+	BlockedOffHandPayload.StackCount = BlockedOffHandEntry.StackCount;
+	BlockedOffHandPayload.SourcePlacement =
+		BlockedOffHandEntry.Placement;
+	BlockedOffHandPayload.ItemFootprint =
+		BlockedOffHandEntry.Placement.GetUnrotatedSize();
+	const FRpgInventoryDropTarget BlockedOffHandTarget =
+		URpgInventoryDragDropCoordinator::MakeEquipmentTarget(
+			ERpgEquipmentSlot::OffHand);
+	const FRpgInventoryInteractionPreviewPlan BlockedOffHandPreview =
+		HandConflictCoordinator->PlanInteractionPreview(
+			BlockedOffHandPayload,
+			BlockedOffHandTarget);
+	TestTrue(
+		TEXT("The OffHand UI consumes the same rejected domain plan"),
+		BlockedOffHandPreview.bUsesPlacementPlan);
+	TestEqual(
+		TEXT("The active two-hand conflict previews as Blocked"),
+		BlockedOffHandPreview.State,
+		ERpgInventoryInteractionPreviewState::Blocked);
+	TestFalse(
+		TEXT("A blocked OffHand preview cannot dispatch a UI commit"),
+		HandConflictCoordinator->CommitPayloadToTarget(
+			BlockedOffHandPayload,
+			BlockedOffHandTarget));
+
+	const FString InventoryBeforeBlockedOffHand =
+		MakeInventorySignature(Inventory);
+	UiActions->RequestApplyInventoryEquipmentIntent(
+		Inventory,
+		BlockedOffHandIntent);
+	TestEqual(
+		TEXT("The authoritative dynamic-hand rejection leaves physical inventory unchanged"),
+		MakeInventorySignature(Inventory),
+		InventoryBeforeBlockedOffHand);
+	TestEqual(
+		TEXT("The rejected OffHand request preserves the active two-handed MainHand"),
+		EquipmentLoadout->GetItemInEquipmentSlot(
+			ERpgEquipmentSlot::MainHand),
+		TwoHandItem);
+	TestNull(
+		TEXT("The rejected OffHand request leaves OffHand empty"),
+		EquipmentLoadout->GetItemInEquipmentSlot(
+			ERpgEquipmentSlot::OffHand));
+
 	const FRpgInventoryContainerHandle Pockets =
 		FRpgInventoryContainerHandle::MakeRoot(
 			URpgPlayerInventoryLayoutComponent::PocketsGroupId);
@@ -2827,6 +2987,37 @@ bool FRpgInventorySpatialEquipmentIdentityMoveTest::RunTest(
 	Target.TargetType = ERpgInventoryDropTargetType::InventorySlot;
 	Target.TargetInventory = Inventory;
 	Target.TargetPlacement = OccupyingEntry.Placement;
+	const FRpgInventoryInteractionPreviewPlan PlacementPreview =
+		Coordinator->PlanInteractionPreview(Payload, Target);
+	TestTrue(
+		TEXT("The spatial preview is projected from a complete domain placement plan"),
+		PlacementPreview.bUsesPlacementPlan &&
+			PlacementPreview.PlacementPlan.IsCompleteSuccess());
+	if (!TestEqual(
+			TEXT("The equipment preview contains one atomic placement step"),
+			PlacementPreview.PlacementPlan.Steps.Num(),
+			1))
+	{
+		return false;
+	}
+	const FRpgInventoryPlacementStep& SwapStep =
+		PlacementPreview.PlacementPlan.Steps[0];
+	TestEqual(
+		TEXT("The domain plan selects Swap even for compatible equipment stacks"),
+		SwapStep.Resolution,
+		ERpgInventoryPlacementResolution::Swap);
+	TestEqual(
+		TEXT("The preview names the concrete displaced item"),
+		SwapStep.DisplacedItemId,
+		OccupyingEntry.ItemId);
+	TestEqual(
+		TEXT("The preview names the concrete displaced entry"),
+		SwapStep.DisplacedEntryId,
+		OccupyingEntry.EntryId);
+	TestEqual(
+		TEXT("The preview resolves the displaced entry to the exact source placement"),
+		SwapStep.DisplacedPlacement,
+		MovingEntry.Placement);
 
 	TestTrue(
 		TEXT("The exact spatial equipment move has a valid preview"),
@@ -3564,6 +3755,48 @@ bool FRpgInventoryContainerGearDragDropTest::RunTest(const FString& Parameters)
 
 	URpgInventoryInteractionSession* Session = Coordinator->GetInteractionSession();
 	TestFalse(TEXT("The session starts without a held payload"), Session->HasPayload());
+	FRpgInventoryEquipmentIntent BackpackIntent =
+		MakeEquipmentIntent(
+			Inventory,
+			Backpack,
+			ERpgInventoryEquipmentIntentOperation::EquipToSlot,
+			ERpgEquipmentSlot::Backpack);
+	FRpgInventoryGridPlacement PlannedBackpackPlacement;
+	const FRpgInventoryPlacementPlan BackpackPlacementPlan =
+		UiActions->PlanEquipmentIntentPlacement(
+			Inventory,
+			BackpackIntent,
+			PlannedBackpackPlacement);
+	TestTrue(
+		TEXT("The abstract Backpack target resolves to a complete concrete plan"),
+		BackpackPlacementPlan.IsCompleteSuccess());
+	TestEqual(
+		TEXT("The Backpack plan resolves the authored physical Gear container"),
+		PlannedBackpackPlacement.GetContainerHandle(),
+		FRpgInventoryContainerHandle::MakeRoot(
+			URpgPlayerInventoryLayoutComponent::GearBackpackGroupId));
+	FRpgInventoryEquipmentIntent PouchIntent = BackpackIntent;
+	PouchIntent.TargetEquipmentSlot = ERpgEquipmentSlot::Pouch;
+	FRpgInventoryGridPlacement RejectedPouchPlacement;
+	const FRpgInventoryPlacementPlan RejectedPouchPlacementPlan =
+		UiActions->PlanEquipmentIntentPlacement(
+			Inventory,
+			PouchIntent,
+			RejectedPouchPlacement);
+	TestEqual(
+		TEXT("The public equipment planner preserves the unauthored-slot reason"),
+		RejectedPouchPlacementPlan.Code,
+		ERpgInventoryMutationResultCode::ItemNotAllowed);
+	const FRpgInventoryInteractionPreviewPlan BackpackInteractionPlan =
+		Coordinator->PlanInteractionPreview(Payload, BackpackTarget);
+	TestTrue(
+		TEXT("The Gear hover consumes the complete equipment placement plan"),
+		BackpackInteractionPlan.bUsesPlacementPlan &&
+			BackpackInteractionPlan.PlacementPlan.IsCompleteSuccess());
+	TestEqual(
+		TEXT("The normalized Gear target shown by the UI matches the equipment plan"),
+		BackpackInteractionPlan.ResolvedTargetPlacement,
+		PlannedBackpackPlacement);
 	TestFalse(
 		TEXT("The UI preview rejects the same unauthored Pouch placement"),
 		Coordinator->PreviewPayloadDrop(Payload, PouchTarget));
@@ -4068,6 +4301,31 @@ bool FRpgInventoryQuickTransferSkipsFullPreferredContainerTest::RunTest(const FS
 
 	FRpgInventoryContainerHandle ResolvedContainer;
 	FRpgInventoryGridPlacement ResolvedPlacement;
+	const FRpgInventoryPlacementPlan QuickTransferPlan =
+		UiActions->PlanQuickTransferDestination(
+			Inventory,
+			Inventory,
+			Request,
+			ResolvedContainer,
+			ResolvedPlacement);
+	TestTrue(
+		TEXT("Quick transfer exposes one complete deterministic placement plan"),
+		QuickTransferPlan.IsCompleteSuccess());
+	if (!TestEqual(
+			TEXT("The one-unit quick transfer needs exactly one placement step"),
+			QuickTransferPlan.Steps.Num(),
+			1))
+	{
+		return false;
+	}
+	TestEqual(
+		TEXT("The selected quick-transfer step is a concrete placement"),
+		QuickTransferPlan.Steps[0].Resolution,
+		ERpgInventoryPlacementResolution::Place);
+	TestEqual(
+		TEXT("The public plan and resolved output expose the same target"),
+		QuickTransferPlan.Steps[0].Placement,
+		ResolvedPlacement);
 	TestTrue(
 		TEXT("Destination scan continues after the full first preferred container"),
 		UiActions->FindQuickTransferDestination(Inventory, Inventory, Request, ResolvedContainer, ResolvedPlacement));
@@ -4660,6 +4918,96 @@ bool FRpgExactPlacementStackTransferPolicyTest::RunTest(const FString& Parameter
 		TEXT("The compatible target stack exposes exactly one free unit"),
 		TargetInventory->GetFreeStackCapacity(NearlyFullTargetStack),
 		1);
+	FRpgInventoryEntryView InitialSourceEntry;
+	FRpgInventoryEntryView InitialTargetEntry;
+	if (!TestTrue(
+			TEXT("The initial exact-transfer source snapshot is addressable"),
+			GetEntryView(
+				PlayerInventory,
+				SourceStack->GetItemId(),
+				InitialSourceEntry)) ||
+		!TestTrue(
+			TEXT("The initial exact-transfer target snapshot is addressable"),
+			GetEntryView(
+				TargetInventory,
+				NearlyFullTargetStack->GetItemId(),
+				InitialTargetEntry)))
+	{
+		return false;
+	}
+	auto MakeExactTransferIntent =
+		[&InitialSourceEntry, &TargetStackPlacement](int32 Quantity)
+	{
+		FRpgInventoryTransferIntent Intent;
+		Intent.ItemId = InitialSourceEntry.ItemId;
+		Intent.ExpectedEntryId = InitialSourceEntry.EntryId;
+		Intent.ExpectedSourcePlacement = InitialSourceEntry.Placement;
+		Intent.ExpectedSourceQuantity = InitialSourceEntry.StackCount;
+		Intent.TargetContainer =
+			TargetStackPlacement.GetContainerHandle();
+		Intent.TargetPlacement = TargetStackPlacement;
+		Intent.Quantity = Quantity;
+		return Intent;
+	};
+
+	const FRpgInventoryPlacementPlan PartialCapacityPlan =
+		UiActions->PlanExactTransferPlacement(
+			PlayerInventory,
+			TargetInventory,
+			MakeExactTransferIntent(2));
+	TestEqual(
+		TEXT("The exact evaluator reports the one-unit fit as partial"),
+		PartialCapacityPlan.Code,
+		ERpgInventoryMutationResultCode::PartiallyApplied);
+	TestEqual(
+		TEXT("The partial plan covers only the target stack's free unit"),
+		PartialCapacityPlan.AppliedQuantity,
+		1);
+	TestFalse(
+		TEXT("A partial placement plan cannot authorize a full drag commit"),
+		PartialCapacityPlan.IsCompleteSuccess());
+
+	const FRpgInventoryPlacementPlan CompatibleMergePlan =
+		UiActions->PlanExactTransferPlacement(
+			PlayerInventory,
+			TargetInventory,
+			MakeExactTransferIntent(1));
+	TestTrue(
+		TEXT("A quantity matching the free capacity yields a complete plan"),
+		CompatibleMergePlan.IsCompleteSuccess());
+	if (!TestEqual(
+			TEXT("The compatible exact transfer has one merge step"),
+			CompatibleMergePlan.Steps.Num(),
+			1))
+	{
+		return false;
+	}
+	TestEqual(
+		TEXT("Runtime-compatible exact transfer resolves to Merge"),
+		CompatibleMergePlan.Steps[0].Resolution,
+		ERpgInventoryPlacementResolution::Merge);
+	TestEqual(
+		TEXT("The merge plan names the concrete target entry"),
+		CompatibleMergePlan.Steps[0].TargetEntryId,
+		InitialTargetEntry.EntryId);
+
+	FRpgInventoryTransferIntent StaleLegacyIntent =
+		MakeExactTransferIntent(1);
+	StaleLegacyIntent.ExpectedSourcePlacement.ContainerId =
+		TEXT("StaleLegacyRoot");
+	const FRpgInventoryPlacementPlan StaleLegacyPlan =
+		UiActions->PlanExactTransferPlacement(
+			PlayerInventory,
+			TargetInventory,
+			StaleLegacyIntent);
+	TestEqual(
+		TEXT("A stale raw legacy ContainerId is rejected like the authoritative manager"),
+		StaleLegacyPlan.Code,
+		ERpgInventoryMutationResultCode::SourceMismatch);
+	TestFalse(
+		TEXT("The stale legacy snapshot never becomes a complete preview plan"),
+		StaleLegacyPlan.IsCompleteSuccess());
+
 	TestFalse(
 		TEXT("Exact-placement preview rejects a request larger than the compatible stack's free capacity"),
 		UiActions->CanTransferItemStackToPlacement(
@@ -4677,6 +5025,18 @@ bool FRpgExactPlacementStackTransferPolicyTest::RunTest(const FString& Parameter
 			1,
 			TargetStackPlacement));
 	NearlyFullTargetStack->AddStatTagStack(RpgGameplayTags::Rpg_Inventory_Action_Transfer, 1);
+	const FRpgInventoryPlacementPlan RuntimeIncompatiblePlan =
+		UiActions->PlanExactTransferPlacement(
+			PlayerInventory,
+			TargetInventory,
+			MakeExactTransferIntent(1));
+	TestEqual(
+		TEXT("Same-definition stacks with different runtime state are explicitly incompatible"),
+		RuntimeIncompatiblePlan.Code,
+		ERpgInventoryMutationResultCode::StackIncompatible);
+	TestFalse(
+		TEXT("Runtime-incompatible stacks produce no accepted placement plan"),
+		RuntimeIncompatiblePlan.IsCompleteSuccess());
 	TestFalse(
 		TEXT("Exact-placement preview rejects a same-definition stack with incompatible runtime state"),
 		UiActions->CanTransferItemStackToPlacement(
@@ -4685,6 +5045,132 @@ bool FRpgExactPlacementStackTransferPolicyTest::RunTest(const FString& Parameter
 			SourceStack,
 			1,
 			TargetStackPlacement));
+
+	URpgInventoryDragDropCoordinator* Coordinator =
+		URpgInventoryDragDropCoordinator::
+			CreateInventoryDragDropCoordinator(
+				Controller,
+				Controller);
+	if (!TestNotNull(
+			TEXT("The exact-transfer fixture owns a screen-local coordinator"),
+			Coordinator))
+	{
+		return false;
+	}
+	Coordinator->SetUiActionComponent(UiActions);
+	FRpgInventoryDragPayload RuntimeIncompatiblePayload;
+	RuntimeIncompatiblePayload.SourceType =
+		ERpgInventoryDragSourceType::InventoryEntry;
+	RuntimeIncompatiblePayload.SourceInventory = PlayerInventory;
+	RuntimeIncompatiblePayload.ItemInstance = SourceStack;
+	RuntimeIncompatiblePayload.EntryId = InitialSourceEntry.EntryId;
+	RuntimeIncompatiblePayload.StackCount = InitialSourceEntry.StackCount;
+	RuntimeIncompatiblePayload.SourcePlacement =
+		InitialSourceEntry.Placement;
+	RuntimeIncompatiblePayload.ItemFootprint =
+		InitialSourceEntry.Placement.GetUnrotatedSize();
+	FRpgInventoryDropTarget RuntimeIncompatibleTarget;
+	RuntimeIncompatibleTarget.TargetType =
+		ERpgInventoryDropTargetType::InventorySlot;
+	RuntimeIncompatibleTarget.TargetInventory = TargetInventory;
+	RuntimeIncompatibleTarget.TargetPlacement = TargetStackPlacement;
+	const FRpgInventoryInteractionPreviewPlan RuntimeIncompatiblePreview =
+		Coordinator->PlanInteractionPreview(
+			RuntimeIncompatiblePayload,
+			RuntimeIncompatibleTarget);
+	TestTrue(
+		TEXT("The UI semantic is derived from the rejected domain plan"),
+		RuntimeIncompatiblePreview.bUsesPlacementPlan);
+	TestEqual(
+		TEXT("Runtime-incompatible cross-inventory stacks preview as Blocked, never Merge"),
+		RuntimeIncompatiblePreview.State,
+		ERpgInventoryInteractionPreviewState::Blocked);
+	TestEqual(
+		TEXT("The UI retains the exact StackIncompatible reason"),
+		RuntimeIncompatiblePreview.PlacementPlan.Code,
+		ERpgInventoryMutationResultCode::StackIncompatible);
+
+	URpgInventoryItemInstance* LocalRuntimeIncompatibleStack =
+		PlayerInventory->AddItemDefinitionToPlacement(
+			URpgInventoryAutomationTestStackableWeaponItemDefinition::
+				StaticClass(),
+			3,
+			MakePlacement(Pockets, 1, 0));
+	if (!TestNotNull(
+			TEXT("A same-inventory runtime-incompatible target stack exists"),
+			LocalRuntimeIncompatibleStack))
+	{
+		return false;
+	}
+	LocalRuntimeIncompatibleStack->AddStatTagStack(
+		RpgGameplayTags::Rpg_Inventory_Action_Transfer,
+		1);
+	FRpgInventoryEntryView LocalIncompatibleEntry;
+	if (!TestTrue(
+			TEXT("The local runtime-incompatible target has an exact snapshot"),
+			GetEntryView(
+				PlayerInventory,
+				LocalRuntimeIncompatibleStack->GetItemId(),
+				LocalIncompatibleEntry)))
+	{
+		return false;
+	}
+	FRpgInventoryDropTarget LocalIncompatibleTarget;
+	LocalIncompatibleTarget.TargetType =
+		ERpgInventoryDropTargetType::InventorySlot;
+	LocalIncompatibleTarget.TargetInventory = PlayerInventory;
+	LocalIncompatibleTarget.TargetPlacement =
+		LocalIncompatibleEntry.Placement;
+	const FRpgInventoryInteractionPreviewPlan LocalIncompatiblePreview =
+		Coordinator->PlanInteractionPreview(
+			RuntimeIncompatiblePayload,
+			LocalIncompatibleTarget);
+	TestEqual(
+		TEXT("Same-definition runtime-incompatible local stacks preview as Swap, never Merge"),
+		LocalIncompatiblePreview.State,
+		ERpgInventoryInteractionPreviewState::Swap);
+	if (!TestTrue(
+			TEXT("The local incompatible preview contains a complete swap plan"),
+			LocalIncompatiblePreview.PlacementPlan.IsCompleteSuccess()) ||
+		!TestEqual(
+			TEXT("The local incompatible swap contains one atomic step"),
+			LocalIncompatiblePreview.PlacementPlan.Steps.Num(),
+			1))
+	{
+		return false;
+	}
+	TestEqual(
+		TEXT("The local incompatible plan names the displaced placement"),
+		LocalIncompatiblePreview.PlacementPlan.Steps[0].
+			DisplacedPlacement,
+		InitialSourceEntry.Placement);
+	TestTrue(
+		TEXT("The same-inventory commit applies the previewed runtime-incompatible swap"),
+		Coordinator->CommitPayloadToTarget(
+			RuntimeIncompatiblePayload,
+			LocalIncompatibleTarget));
+	FRpgInventoryEntryView SourceAfterLocalSwap;
+	FRpgInventoryEntryView DisplacedAfterLocalSwap;
+	TestTrue(
+		TEXT("The local swap preserves the moving source identity"),
+		GetEntryView(
+			PlayerInventory,
+			SourceStack->GetItemId(),
+			SourceAfterLocalSwap));
+	TestTrue(
+		TEXT("The local swap preserves the displaced target identity"),
+		GetEntryView(
+			PlayerInventory,
+			LocalRuntimeIncompatibleStack->GetItemId(),
+			DisplacedAfterLocalSwap));
+	TestEqual(
+		TEXT("The moving source commits to the previewed target placement"),
+		SourceAfterLocalSwap.Placement,
+		LocalIncompatibleEntry.Placement);
+	TestEqual(
+		TEXT("The displaced local target commits to the previewed source placement"),
+		DisplacedAfterLocalSwap.Placement,
+		InitialSourceEntry.Placement);
 
 	const FRpgInventoryItemId SourceItemId = SourceStack->GetItemId();
 	const FRpgInventoryItemId ExistingTargetItemId = NearlyFullTargetStack->GetItemId();
@@ -7888,6 +8374,1434 @@ bool FRpgInventoryItemUseContextConsumeCallbackTest::RunTest(
 		TEXT("Preflight rejection preserves the valid source quantity"),
 		Inventory->GetItemStackCount(RejectedStack),
 		1);
+	return true;
+}
+
+IMPLEMENT_SIMPLE_AUTOMATION_TEST(
+	FRpgInventoryInteractionGlobalPendingSingleFlightTest,
+	"SurvivalRpg.Inventory.Interaction.Pending.GlobalSingleFlight",
+	EAutomationTestFlags::EditorContext |
+		EAutomationTestFlags::EngineFilter)
+
+bool FRpgInventoryInteractionGlobalPendingSingleFlightTest::RunTest(
+	const FString& Parameters)
+{
+	using namespace RpgInventoryTransactionTests;
+	FScopedInventoryWorld TestWorld;
+	if (!InitializeTest(*this, TestWorld))
+	{
+		return false;
+	}
+
+	UWorld* World = TestWorld.GetTestWorld();
+	FActorSpawnParameters ControllerSpawnParameters;
+	ControllerSpawnParameters.Name = MakeUniqueObjectName(
+		World,
+		ARpgInventoryAutomationTestPlayerController::StaticClass(),
+		TEXT("GlobalPendingController"));
+	ControllerSpawnParameters.ObjectFlags = RF_Transient;
+	ARpgInventoryAutomationTestPlayerController* Controller =
+		World->SpawnActor<ARpgInventoryAutomationTestPlayerController>(
+			ControllerSpawnParameters);
+
+	FActorSpawnParameters PlayerStateSpawnParameters;
+	PlayerStateSpawnParameters.Name = MakeUniqueObjectName(
+		World,
+		ARpgInventoryAutomationTestPlayerState::StaticClass(),
+		TEXT("GlobalPendingPlayerState"));
+	PlayerStateSpawnParameters.ObjectFlags = RF_Transient;
+	ARpgInventoryAutomationTestPlayerState* PlayerState =
+		World->SpawnActor<ARpgInventoryAutomationTestPlayerState>(
+			PlayerStateSpawnParameters);
+	if (!TestNotNull(TEXT("The pending-guard controller exists"), Controller) ||
+		!TestNotNull(TEXT("The pending-guard player state exists"), PlayerState))
+	{
+		return false;
+	}
+
+	Controller->SetPlayerState(PlayerState);
+	PlayerState->SetOwner(Controller);
+	URpgInventoryManagerComponent* Inventory =
+		PlayerState->GetInventoryManagerComponent();
+	URpgInventoryUiActionComponent* UiActions =
+		Controller->GetInventoryUiActionComponent();
+	if (!TestNotNull(TEXT("The pending-guard inventory exists"), Inventory) ||
+		!TestNotNull(TEXT("The pending-guard action gateway exists"), UiActions))
+	{
+		return false;
+	}
+
+	const FRpgInventoryContainerHandle Pockets =
+		FRpgInventoryContainerHandle::MakeRoot(
+			URpgPlayerInventoryLayoutComponent::PocketsGroupId);
+	URpgInventoryItemInstance* FirstItem =
+		Inventory->AddItemDefinitionToPlacement(
+			URpgInventoryAutomationTestUnitItemDefinition::StaticClass(),
+			1,
+			MakePlacement(Pockets, 0, 0));
+	URpgInventoryItemInstance* SecondItem =
+		Inventory->AddItemDefinitionToPlacement(
+			URpgInventoryAutomationTestUnitItemDefinition::StaticClass(),
+			1,
+			MakePlacement(Pockets, 1, 0));
+	if (!TestNotNull(TEXT("The first independent payload exists"), FirstItem) ||
+		!TestNotNull(TEXT("The second independent payload exists"), SecondItem))
+	{
+		return false;
+	}
+
+	const FRpgInventoryDragPayload FirstPayload =
+		MakeInventoryEntryPayload(Inventory, FirstItem);
+	const FRpgInventoryDragPayload SecondPayload =
+		MakeInventoryEntryPayload(Inventory, SecondItem);
+	if (!TestTrue(
+			TEXT("The first pending payload owns an exact source snapshot"),
+			URpgInventoryDragDropCoordinator::IsPayloadValid(FirstPayload)) ||
+		!TestTrue(
+			TEXT("The competing payload owns an exact source snapshot"),
+			URpgInventoryDragDropCoordinator::IsPayloadValid(SecondPayload)))
+	{
+		return false;
+	}
+
+	URpgInventoryDragDropCoordinator* Coordinator =
+		URpgInventoryDragDropCoordinator::
+			CreateInventoryDragDropCoordinator(Controller, Controller);
+	if (!TestNotNull(TEXT("The pending-guard coordinator exists"), Coordinator))
+	{
+		return false;
+	}
+	Coordinator->SetUiActionComponent(UiActions);
+	URpgInventoryInteractionSession* Session =
+		Coordinator->GetInteractionSession();
+	if (!TestNotNull(TEXT("The pending-guard session exists"), Session) ||
+		!TestTrue(
+			TEXT("The first payload begins the interaction"),
+			Session->BeginInteraction(
+				FirstPayload,
+				ERpgInventoryInteractionInputMode::Mouse)))
+	{
+		return false;
+	}
+
+	FRpgInventoryDropTarget FirstTarget;
+	FirstTarget.TargetType =
+		ERpgInventoryDropTargetType::InventorySlot;
+	FirstTarget.TargetInventory = Inventory;
+	FirstTarget.TargetPlacement = MakePlacement(Pockets, 2, 0);
+	Session->MarkRequestPending(
+		FirstTarget,
+		RpgGameplayTags::Rpg_Inventory_Action_Transfer);
+	const FGuid FirstRequestId = Session->GetRequestId();
+	if (!TestTrue(TEXT("The first request is pending"), Session->IsRequestPending()) ||
+		!TestTrue(TEXT("The pending request owns a correlation id"), FirstRequestId.IsValid()))
+	{
+		return false;
+	}
+
+	const FString InventoryBeforeCompetingRequest =
+		MakeStrictInventorySignature(Inventory);
+	FRpgInventoryDropTarget SecondTarget;
+	SecondTarget.TargetType =
+		ERpgInventoryDropTargetType::InventorySlot;
+	SecondTarget.TargetInventory = Inventory;
+	SecondTarget.TargetPlacement = MakePlacement(Pockets, 3, 0);
+	const FRpgInventoryInteractionPreviewPlan CompetingPreview =
+		Coordinator->PlanInteractionPreview(
+			SecondPayload,
+			SecondTarget);
+	TestEqual(
+		TEXT("Any competing payload previews as Pending while one request is in flight"),
+		CompetingPreview.State,
+		ERpgInventoryInteractionPreviewState::Pending);
+	TestFalse(
+		TEXT("The global Pending state is never accepted"),
+		CompetingPreview.IsAccepted());
+	TestFalse(
+		TEXT("A second payload cannot dispatch while the first request is pending"),
+		Coordinator->CommitPayloadToTarget(
+			SecondPayload,
+			SecondTarget));
+	TestEqual(
+		TEXT("The blocked competing commit performs no inventory mutation"),
+		MakeStrictInventorySignature(Inventory),
+		InventoryBeforeCompetingRequest);
+	TestTrue(
+		TEXT("The original request remains pending after the competing attempt"),
+		Session->IsRequestPending());
+	TestEqual(
+		TEXT("The competing attempt cannot replace the original correlation id"),
+		Session->GetRequestId(),
+		FirstRequestId);
+	TestEqual(
+		TEXT("The competing attempt cannot replace the original payload entry"),
+		Session->GetPayload().EntryId,
+		FirstPayload.EntryId);
+	TestTrue(
+		TEXT("The competing attempt cannot replace the original exact target"),
+		ArePlacementSnapshotsExactlyEqual(
+			Session->GetTarget().TargetPlacement,
+			FirstTarget.TargetPlacement));
+
+	UGameplayMessageSubsystem& MessageSubsystem =
+		UGameplayMessageSubsystem::Get(World);
+	FRpgInventoryActionFeedbackMessage MissingCorrelationFeedback;
+	MissingCorrelationFeedback.Recipient = Controller;
+	MissingCorrelationFeedback.ActionTag =
+		RpgGameplayTags::Rpg_Inventory_Action_Transfer;
+	MissingCorrelationFeedback.Result =
+		ERpgInventoryActionFeedbackResult::ServerRejected;
+	MessageSubsystem.BroadcastMessage(
+		RpgGameplayTags::Rpg_Inventory_Message_ActionFeedback,
+		MissingCorrelationFeedback);
+	TestTrue(
+		TEXT("Feedback without a request id cannot release an InventorySlot request"),
+		Session->IsRequestPending());
+	TestEqual(
+		TEXT("Uncorrelated feedback preserves the original correlation id"),
+		Session->GetRequestId(),
+		FirstRequestId);
+	TestEqual(
+		TEXT("Uncorrelated feedback preserves the original payload entry"),
+		Session->GetPayload().EntryId,
+		FirstPayload.EntryId);
+
+	FRpgInventoryActionFeedbackMessage ForeignCorrelationFeedback =
+		MissingCorrelationFeedback;
+	ForeignCorrelationFeedback.RequestId = FGuid::NewGuid();
+	ForeignCorrelationFeedback.ItemId = FirstItem->GetItemId();
+	ForeignCorrelationFeedback.InventoryOwner = Inventory;
+	ForeignCorrelationFeedback.Item = FirstItem;
+	MessageSubsystem.BroadcastMessage(
+		RpgGameplayTags::Rpg_Inventory_Message_ActionFeedback,
+		ForeignCorrelationFeedback);
+	TestTrue(
+		TEXT("Feedback with a foreign request id cannot release an InventorySlot request"),
+		Session->IsRequestPending());
+	TestEqual(
+		TEXT("Foreign feedback preserves the original correlation id"),
+		Session->GetRequestId(),
+		FirstRequestId);
+
+	FRpgInventoryActionFeedbackMessage CorrelatedFeedback =
+		ForeignCorrelationFeedback;
+	CorrelatedFeedback.RequestId = FirstRequestId;
+	MessageSubsystem.BroadcastMessage(
+		RpgGameplayTags::Rpg_Inventory_Message_ActionFeedback,
+		CorrelatedFeedback);
+	TestFalse(
+		TEXT("Exact request-correlated feedback releases the global single-flight guard"),
+		Session->IsRequestPending());
+	TestEqual(
+		TEXT("The correlated server rejection retains the original payload for retry"),
+		Session->GetPayload().EntryId,
+		FirstPayload.EntryId);
+	const FRpgInventoryInteractionPreviewPlan ReleasedPreview =
+		Coordinator->PlanInteractionPreview(
+			SecondPayload,
+			SecondTarget);
+	TestTrue(
+		TEXT("The competing payload becomes eligible after pending state resolves"),
+		ReleasedPreview.IsAccepted());
+	TestEqual(
+		TEXT("The released empty-cell move has normal Move semantics"),
+		ReleasedPreview.State,
+		ERpgInventoryInteractionPreviewState::Move);
+	return true;
+}
+
+IMPLEMENT_SIMPLE_AUTOMATION_TEST(
+	FRpgInventoryWholeDragPartialMergeAtomicityTest,
+	"SurvivalRpg.Inventory.DragDrop.WholeEntryPartialMergeBlocked",
+	EAutomationTestFlags::EditorContext |
+		EAutomationTestFlags::EngineFilter)
+
+bool FRpgInventoryWholeDragPartialMergeAtomicityTest::RunTest(
+	const FString& Parameters)
+{
+	using namespace RpgInventoryTransactionTests;
+	FScopedInventoryWorld TestWorld;
+	if (!InitializeTest(*this, TestWorld))
+	{
+		return false;
+	}
+
+	UWorld* World = TestWorld.GetTestWorld();
+	FActorSpawnParameters ControllerSpawnParameters;
+	ControllerSpawnParameters.Name = MakeUniqueObjectName(
+		World,
+		ARpgInventoryAutomationTestPlayerController::StaticClass(),
+		TEXT("WholeDragPartialMergeController"));
+	ControllerSpawnParameters.ObjectFlags = RF_Transient;
+	ARpgInventoryAutomationTestPlayerController* Controller =
+		World->SpawnActor<ARpgInventoryAutomationTestPlayerController>(
+			ControllerSpawnParameters);
+
+	FActorSpawnParameters PlayerStateSpawnParameters;
+	PlayerStateSpawnParameters.Name = MakeUniqueObjectName(
+		World,
+		ARpgInventoryAutomationTestPlayerState::StaticClass(),
+		TEXT("WholeDragPartialMergePlayerState"));
+	PlayerStateSpawnParameters.ObjectFlags = RF_Transient;
+	ARpgInventoryAutomationTestPlayerState* PlayerState =
+		World->SpawnActor<ARpgInventoryAutomationTestPlayerState>(
+			PlayerStateSpawnParameters);
+	if (!TestNotNull(TEXT("The partial-merge controller exists"), Controller) ||
+		!TestNotNull(TEXT("The partial-merge player state exists"), PlayerState))
+	{
+		return false;
+	}
+
+	Controller->SetPlayerState(PlayerState);
+	PlayerState->SetOwner(Controller);
+	URpgInventoryManagerComponent* Inventory =
+		PlayerState->GetInventoryManagerComponent();
+	URpgInventoryUiActionComponent* UiActions =
+		Controller->GetInventoryUiActionComponent();
+	if (!TestNotNull(TEXT("The partial-merge inventory exists"), Inventory) ||
+		!TestNotNull(TEXT("The partial-merge action gateway exists"), UiActions))
+	{
+		return false;
+	}
+
+	const FRpgInventoryContainerHandle Pockets =
+		FRpgInventoryContainerHandle::MakeRoot(
+			URpgPlayerInventoryLayoutComponent::PocketsGroupId);
+	URpgInventoryItemInstance* SourceStack =
+		Inventory->AddItemDefinitionToPlacement(
+			URpgInventoryAutomationTestStackItemDefinition::StaticClass(),
+			4,
+			MakePlacement(Pockets, 0, 0));
+	URpgInventoryItemInstance* TargetStack =
+		Inventory->AddItemDefinitionToPlacement(
+			URpgInventoryAutomationTestStackItemDefinition::StaticClass(),
+			9,
+			MakePlacement(Pockets, 1, 0));
+	if (!TestNotNull(TEXT("The whole-entry source stack exists"), SourceStack) ||
+		!TestNotNull(TEXT("The nearly-full compatible target exists"), TargetStack))
+	{
+		return false;
+	}
+
+	FRpgInventoryEntryView SourceBefore;
+	FRpgInventoryEntryView TargetBefore;
+	if (!TestTrue(
+			TEXT("The source owns an exact preflight snapshot"),
+			GetEntryView(Inventory, SourceStack->GetItemId(), SourceBefore)) ||
+		!TestTrue(
+			TEXT("The target owns an exact preflight snapshot"),
+			GetEntryView(Inventory, TargetStack->GetItemId(), TargetBefore)))
+	{
+		return false;
+	}
+
+	URpgInventoryDragDropCoordinator* Coordinator =
+		URpgInventoryDragDropCoordinator::
+			CreateInventoryDragDropCoordinator(Controller, Controller);
+	if (!TestNotNull(TEXT("The partial-merge coordinator exists"), Coordinator))
+	{
+		return false;
+	}
+	Coordinator->SetUiActionComponent(UiActions);
+	const FRpgInventoryDragPayload Payload =
+		MakeInventoryEntryPayload(Inventory, SourceStack);
+	FRpgInventoryDropTarget Target;
+	Target.TargetType = ERpgInventoryDropTargetType::InventorySlot;
+	Target.TargetInventory = Inventory;
+	Target.TargetPlacement = TargetBefore.Placement;
+	const FString InventoryBefore =
+		MakeStrictInventorySignature(Inventory);
+	const FRpgInventoryInteractionPreviewPlan Preview =
+		Coordinator->PlanInteractionPreview(Payload, Target);
+	TestTrue(
+		TEXT("The whole-entry hover consumes the domain placement evaluator"),
+		Preview.bUsesPlacementPlan);
+	TestEqual(
+		TEXT("The evaluator exposes the one-unit compatible fit as partial"),
+		Preview.PlacementPlan.Code,
+		ERpgInventoryMutationResultCode::PartiallyApplied);
+	TestEqual(
+		TEXT("The partial plan retains the four-unit whole-entry request"),
+		Preview.PlacementPlan.RequestedQuantity,
+		4);
+	TestEqual(
+		TEXT("The target has capacity for only one unit"),
+		Preview.PlacementPlan.AppliedQuantity,
+		1);
+	if (!TestEqual(
+			TEXT("The partial whole-entry plan contains one merge step"),
+			Preview.PlacementPlan.Steps.Num(),
+			1))
+	{
+		return false;
+	}
+	TestEqual(
+		TEXT("The partial whole-entry step resolves to Merge"),
+		Preview.PlacementPlan.Steps[0].Resolution,
+		ERpgInventoryPlacementResolution::Merge);
+	TestEqual(
+		TEXT("The partial whole-entry step names the exact receiver entry"),
+		Preview.PlacementPlan.Steps[0].TargetEntryId,
+		TargetBefore.EntryId);
+	TestEqual(
+		TEXT("The partial whole-entry step covers only one unit"),
+		Preview.PlacementPlan.Steps[0].Quantity,
+		1);
+	TestFalse(
+		TEXT("A partial merge is not a complete whole-entry plan"),
+		Preview.PlacementPlan.IsCompleteSuccess());
+	TestEqual(
+		TEXT("The UI blocks a partial whole-entry merge"),
+		Preview.State,
+		ERpgInventoryInteractionPreviewState::Blocked);
+	TestFalse(
+		TEXT("A partial whole-entry plan cannot dispatch"),
+		Coordinator->CommitPayloadToTarget(Payload, Target));
+	TestEqual(
+		TEXT("Rejected partial merge preserves identities, raw placements, quantities, and revision"),
+		MakeStrictInventorySignature(Inventory),
+		InventoryBefore);
+	TestEqual(
+		TEXT("The source runtime instance remains the same object"),
+		Inventory->FindItemById(SourceBefore.ItemId),
+		SourceBefore.Instance.Get());
+	TestEqual(
+		TEXT("The target runtime instance remains the same object"),
+		Inventory->FindItemById(TargetBefore.ItemId),
+		TargetBefore.Instance.Get());
+	TestFalse(
+		TEXT("A locally blocked partial plan never enters Pending"),
+		Coordinator->GetInteractionSession()->IsRequestPending());
+	return true;
+}
+
+IMPLEMENT_SIMPLE_AUTOMATION_TEST(
+	FRpgInventoryGearClearFullContentAtomicityTest,
+	"SurvivalRpg.Inventory.DragDrop.GearClearFullContentBlocked",
+	EAutomationTestFlags::EditorContext |
+		EAutomationTestFlags::EngineFilter)
+
+bool FRpgInventoryGearClearFullContentAtomicityTest::RunTest(
+	const FString& Parameters)
+{
+	using namespace RpgInventoryTransactionTests;
+	FScopedInventoryWorld TestWorld;
+	if (!InitializeTest(*this, TestWorld))
+	{
+		return false;
+	}
+
+	UWorld* World = TestWorld.GetTestWorld();
+	FActorSpawnParameters ControllerSpawnParameters;
+	ControllerSpawnParameters.Name = MakeUniqueObjectName(
+		World,
+		ARpgInventoryAutomationTestPlayerController::StaticClass(),
+		TEXT("GearClearFullContentController"));
+	ControllerSpawnParameters.ObjectFlags = RF_Transient;
+	ARpgInventoryAutomationTestPlayerController* Controller =
+		World->SpawnActor<ARpgInventoryAutomationTestPlayerController>(
+			ControllerSpawnParameters);
+
+	FActorSpawnParameters PlayerStateSpawnParameters;
+	PlayerStateSpawnParameters.Name = MakeUniqueObjectName(
+		World,
+		ARpgInventoryAutomationTestPlayerState::StaticClass(),
+		TEXT("GearClearFullContentPlayerState"));
+	PlayerStateSpawnParameters.ObjectFlags = RF_Transient;
+	ARpgInventoryAutomationTestPlayerState* PlayerState =
+		World->SpawnActor<ARpgInventoryAutomationTestPlayerState>(
+			PlayerStateSpawnParameters);
+	if (!TestNotNull(TEXT("The full-content controller exists"), Controller) ||
+		!TestNotNull(TEXT("The full-content player state exists"), PlayerState))
+	{
+		return false;
+	}
+
+	Controller->SetPlayerState(PlayerState);
+	PlayerState->SetOwner(Controller);
+	URpgInventoryManagerComponent* Inventory =
+		PlayerState->GetInventoryManagerComponent();
+	URpgPlayerInventoryLayoutComponent* Layout =
+		Controller->GetPlayerInventoryLayoutComponent();
+	URpgEquipmentLoadoutComponent* EquipmentLoadout =
+		Controller->GetEquipmentLoadoutComponent();
+	URpgInventoryUiActionComponent* UiActions =
+		Controller->GetInventoryUiActionComponent();
+	if (!TestNotNull(TEXT("The full-content inventory exists"), Inventory) ||
+		!TestNotNull(TEXT("The full-content layout exists"), Layout) ||
+		!TestNotNull(TEXT("The full-content loadout mirror exists"), EquipmentLoadout) ||
+		!TestNotNull(TEXT("The full-content action gateway exists"), UiActions))
+	{
+		return false;
+	}
+
+	const FRpgInventoryContainerHandle Pockets =
+		FRpgInventoryContainerHandle::MakeRoot(
+			URpgPlayerInventoryLayoutComponent::PocketsGroupId);
+	URpgInventoryItemInstance* Armor =
+		Inventory->AddItemDefinitionToPlacement(
+			URpgInventoryAutomationTestHeavyItemDefinition::StaticClass(),
+			1,
+			MakePlacement(Pockets, 0, 0));
+	if (!TestNotNull(TEXT("The Chest armor starts in Content"), Armor))
+	{
+		return false;
+	}
+
+	UiActions->RequestApplyInventoryEquipmentIntent(
+		Inventory,
+		MakeEquipmentIntent(
+			Inventory,
+			Armor,
+			ERpgInventoryEquipmentIntentOperation::EquipToSlot,
+			ERpgEquipmentSlot::Chest));
+	FRpgInventoryEntryView EquippedArmorBefore;
+	if (!TestTrue(
+			TEXT("The armor remains addressable after physical equip"),
+			GetEntryView(
+				Inventory,
+				Armor->GetItemId(),
+				EquippedArmorBefore)))
+	{
+		return false;
+	}
+	TestEqual(
+		TEXT("The armor physically occupies Gear.Chest"),
+		EquippedArmorBefore.Placement.GetContainerHandle(),
+		FRpgInventoryContainerHandle::MakeRoot(
+			URpgPlayerInventoryLayoutComponent::GearChestGroupId));
+	TestEqual(
+		TEXT("The Chest loadout mirror references the physical armor"),
+		EquipmentLoadout->GetItemInEquipmentSlot(
+			ERpgEquipmentSlot::Chest),
+		Armor);
+
+	int32 ContentCellCount = 0;
+	bool bFilledEveryContentCell = true;
+	for (const FRpgInventorySlotGroupView& Group :
+		 Layout->GetSlotGroups())
+	{
+		if (Group.GroupKind != ERpgInventorySlotGroupKind::Content)
+		{
+			continue;
+		}
+
+		for (int32 Y = 0; Y < Group.GridSize.Height; ++Y)
+		{
+			for (int32 X = 0; X < Group.GridSize.Width; ++X)
+			{
+				++ContentCellCount;
+				if (!Inventory->GetItemAtContainerCell(
+						Group.ContainerHandle,
+						X,
+						Y))
+				{
+					bFilledEveryContentCell &=
+						Inventory->AddItemDefinitionToPlacement(
+							URpgInventoryAutomationTestUnitItemDefinition::
+								StaticClass(),
+							1,
+							MakePlacement(
+								Group.ContainerHandle,
+								X,
+								Y)) != nullptr;
+				}
+			}
+		}
+	}
+	if (!TestTrue(TEXT("The layout exposes at least one Content cell"), ContentCellCount > 0) ||
+		!TestTrue(TEXT("Every compatible Content cell is occupied"), bFilledEveryContentCell))
+	{
+		return false;
+	}
+
+	URpgInventoryDragDropCoordinator* Coordinator =
+		URpgInventoryDragDropCoordinator::
+			CreateInventoryDragDropCoordinator(Controller, Controller);
+	if (!TestNotNull(TEXT("The Gear-clear coordinator exists"), Coordinator))
+	{
+		return false;
+	}
+	Coordinator->SetUiActionComponent(UiActions);
+	const FRpgInventoryDragPayload Payload =
+		URpgInventoryDragDropCoordinator::MakeEquipmentPayload(
+			Armor,
+			ERpgEquipmentSlot::Chest);
+	const FRpgInventoryDropTarget ClearTarget =
+		URpgInventoryDragDropCoordinator::MakeClearTarget();
+	const FString InventoryBeforeClear =
+		MakeStrictInventorySignature(Inventory);
+	const FRpgInventoryInteractionPreviewPlan Preview =
+		Coordinator->PlanInteractionPreview(Payload, ClearTarget);
+	TestTrue(
+		TEXT("Physical Gear clear consumes an UnequipToContent placement plan"),
+		Preview.bUsesPlacementPlan);
+	TestFalse(
+		TEXT("A full Content layout has no complete unequip placement"),
+		Preview.PlacementPlan.IsCompleteSuccess());
+	TestEqual(
+		TEXT("The full Content placement plan reports NoSpace"),
+		Preview.PlacementPlan.Code,
+		ERpgInventoryMutationResultCode::NoSpace);
+	TestEqual(
+		TEXT("A full Content layout blocks the Gear clear preview"),
+		Preview.State,
+		ERpgInventoryInteractionPreviewState::Blocked);
+	TestFalse(
+		TEXT("A blocked Gear clear cannot dispatch"),
+		Coordinator->CommitPayloadToTarget(Payload, ClearTarget));
+	TestEqual(
+		TEXT("Blocked Gear clear preserves identities, raw placements, quantities, and revision"),
+		MakeStrictInventorySignature(Inventory),
+		InventoryBeforeClear);
+	TestEqual(
+		TEXT("Blocked Gear clear preserves the Chest loadout mirror"),
+		EquipmentLoadout->GetItemInEquipmentSlot(
+			ERpgEquipmentSlot::Chest),
+		Armor);
+	FRpgInventoryEntryView EquippedArmorAfter;
+	if (!TestTrue(
+			TEXT("Blocked Gear clear preserves the armor entry"),
+			GetEntryView(
+				Inventory,
+				EquippedArmorBefore.ItemId,
+				EquippedArmorAfter)))
+	{
+		return false;
+	}
+	TestEqual(
+		TEXT("Blocked Gear clear preserves the exact entry id"),
+		EquippedArmorAfter.EntryId,
+		EquippedArmorBefore.EntryId);
+	TestEqual(
+		TEXT("Blocked Gear clear preserves the exact runtime instance"),
+		EquippedArmorAfter.Instance.Get(),
+		EquippedArmorBefore.Instance.Get());
+	TestTrue(
+		TEXT("Blocked Gear clear preserves the raw Gear placement snapshot"),
+		ArePlacementSnapshotsExactlyEqual(
+			EquippedArmorAfter.Placement,
+			EquippedArmorBefore.Placement));
+	TestFalse(
+		TEXT("A locally blocked Gear clear never enters Pending"),
+		Coordinator->GetInteractionSession()->IsRequestPending());
+	return true;
+}
+
+IMPLEMENT_SIMPLE_AUTOMATION_TEST(
+	FRpgInventoryExactCrossCoordinatorParityTest,
+	"SurvivalRpg.Inventory.DragDrop.ExactCrossInventoryPlanCommitParity",
+	EAutomationTestFlags::EditorContext |
+		EAutomationTestFlags::EngineFilter)
+
+bool FRpgInventoryExactCrossCoordinatorParityTest::RunTest(
+	const FString& Parameters)
+{
+	using namespace RpgInventoryTransactionTests;
+	FScopedInventoryWorld TestWorld;
+	if (!InitializeTest(*this, TestWorld))
+	{
+		return false;
+	}
+
+	UWorld* World = TestWorld.GetTestWorld();
+	FActorSpawnParameters ControllerSpawnParameters;
+	ControllerSpawnParameters.Name = MakeUniqueObjectName(
+		World,
+		ARpgInventoryAutomationTestPlayerController::StaticClass(),
+		TEXT("ExactCrossCoordinatorController"));
+	ControllerSpawnParameters.ObjectFlags = RF_Transient;
+	ControllerSpawnParameters.SpawnCollisionHandlingOverride =
+		ESpawnActorCollisionHandlingMethod::AlwaysSpawn;
+	ARpgInventoryAutomationTestPlayerController* Controller =
+		World->SpawnActor<ARpgInventoryAutomationTestPlayerController>(
+			ControllerSpawnParameters);
+
+	FActorSpawnParameters PawnSpawnParameters;
+	PawnSpawnParameters.Name = MakeUniqueObjectName(
+		World,
+		APawn::StaticClass(),
+		TEXT("ExactCrossCoordinatorPawn"));
+	PawnSpawnParameters.ObjectFlags = RF_Transient;
+	PawnSpawnParameters.SpawnCollisionHandlingOverride =
+		ESpawnActorCollisionHandlingMethod::AlwaysSpawn;
+	APawn* ControllerPawn = World->SpawnActor<APawn>(
+		PawnSpawnParameters);
+
+	FActorSpawnParameters PlayerStateSpawnParameters;
+	PlayerStateSpawnParameters.Name = MakeUniqueObjectName(
+		World,
+		ARpgInventoryAutomationTestPlayerState::StaticClass(),
+		TEXT("ExactCrossCoordinatorPlayerState"));
+	PlayerStateSpawnParameters.ObjectFlags = RF_Transient;
+	PlayerStateSpawnParameters.SpawnCollisionHandlingOverride =
+		ESpawnActorCollisionHandlingMethod::AlwaysSpawn;
+	ARpgInventoryAutomationTestPlayerState* PlayerState =
+		World->SpawnActor<ARpgInventoryAutomationTestPlayerState>(
+			PlayerStateSpawnParameters);
+
+	FActorSpawnParameters ContainerSpawnParameters;
+	ContainerSpawnParameters.Name = MakeUniqueObjectName(
+		World,
+		ARpgInventoryContainerActor::StaticClass(),
+		TEXT("ExactCrossCoordinatorContainer"));
+	ContainerSpawnParameters.ObjectFlags = RF_Transient;
+	ContainerSpawnParameters.SpawnCollisionHandlingOverride =
+		ESpawnActorCollisionHandlingMethod::AlwaysSpawn;
+	ARpgInventoryContainerActor* Container =
+		World->SpawnActor<ARpgInventoryContainerActor>(
+			ContainerSpawnParameters);
+	if (!TestNotNull(TEXT("The exact-cross controller exists"), Controller) ||
+		!TestNotNull(TEXT("The exact-cross pawn exists"), ControllerPawn) ||
+		!TestNotNull(TEXT("The exact-cross player state exists"), PlayerState) ||
+		!TestNotNull(TEXT("The exact-cross container exists"), Container))
+	{
+		return false;
+	}
+
+	Controller->SetPlayerState(PlayerState);
+	PlayerState->SetOwner(Controller);
+	Controller->Possess(ControllerPawn);
+	URpgInventoryManagerComponent* SourceInventory =
+		PlayerState->GetInventoryManagerComponent();
+	URpgInventoryManagerComponent* TargetInventory =
+		Container->GetInventoryManager();
+	URpgInventoryUiActionComponent* UiActions =
+		Controller->GetInventoryUiActionComponent();
+	if (!TestTrue(TEXT("The exact-cross fixture runs on authority"), Controller->HasAuthority()) ||
+		!TestNotNull(TEXT("The exact-cross source inventory exists"), SourceInventory) ||
+		!TestNotNull(TEXT("The exact-cross target inventory exists"), TargetInventory) ||
+		!TestNotNull(TEXT("The exact-cross action gateway exists"), UiActions) ||
+		!TestTrue(
+			TEXT("The possessed pawn can access the nearby target inventory"),
+			UiActions->CanAccessInventory(TargetInventory)))
+	{
+		return false;
+	}
+
+	URpgInventoryDragDropCoordinator* Coordinator =
+		URpgInventoryDragDropCoordinator::
+			CreateInventoryDragDropCoordinator(Controller, Controller);
+	if (!TestNotNull(TEXT("The exact-cross coordinator exists"), Coordinator))
+	{
+		return false;
+	}
+	Coordinator->SetUiActionComponent(UiActions);
+
+	const FRpgInventoryContainerHandle Pockets =
+		FRpgInventoryContainerHandle::MakeRoot(
+			URpgPlayerInventoryLayoutComponent::PocketsGroupId);
+	const FRpgInventoryContainerHandle TargetRoot =
+		FRpgInventoryContainerHandle::MakeRoot(
+			TargetInventory->GetDefaultContainerId());
+
+	URpgInventoryItemInstance* PartialSource =
+		SourceInventory->AddItemDefinitionToPlacement(
+			URpgInventoryAutomationTestStackItemDefinition::StaticClass(),
+			2,
+			MakePlacement(Pockets, 0, 0));
+	URpgInventoryItemInstance* PartialTarget =
+		TargetInventory->AddItemDefinitionToPlacement(
+			URpgInventoryAutomationTestStackItemDefinition::StaticClass(),
+			9,
+			MakePlacement(TargetRoot, 0, 0));
+	if (!TestNotNull(TEXT("The partial exact source exists"), PartialSource) ||
+		!TestNotNull(TEXT("The partial exact target exists"), PartialTarget))
+	{
+		return false;
+	}
+	FRpgInventoryEntryView PartialTargetEntry;
+	if (!TestTrue(
+			TEXT("The partial target owns an exact snapshot"),
+			GetEntryView(
+				TargetInventory,
+				PartialTarget->GetItemId(),
+				PartialTargetEntry)))
+	{
+		return false;
+	}
+	const FRpgInventoryDragPayload PartialPayload =
+		MakeInventoryEntryPayload(SourceInventory, PartialSource);
+	FRpgInventoryDropTarget PartialDropTarget;
+	PartialDropTarget.TargetType =
+		ERpgInventoryDropTargetType::InventorySlot;
+	PartialDropTarget.TargetInventory = TargetInventory;
+	PartialDropTarget.TargetPlacement = PartialTargetEntry.Placement;
+	const FString SourceBeforePartial =
+		MakeStrictInventorySignature(SourceInventory);
+	const FString TargetBeforePartial =
+		MakeStrictInventorySignature(TargetInventory);
+	const FRpgInventoryInteractionPreviewPlan PartialPreview =
+		Coordinator->PlanInteractionPreview(
+			PartialPayload,
+			PartialDropTarget);
+	TestTrue(
+		TEXT("The cross-inventory exact hover consumes a domain plan"),
+		PartialPreview.bUsesPlacementPlan);
+	TestEqual(
+		TEXT("The exact cross evaluator exposes insufficient stack capacity as partial"),
+		PartialPreview.PlacementPlan.Code,
+		ERpgInventoryMutationResultCode::PartiallyApplied);
+	TestEqual(
+		TEXT("The partial exact cross plan covers one of two requested units"),
+		PartialPreview.PlacementPlan.AppliedQuantity,
+		1);
+	TestEqual(
+		TEXT("The coordinator blocks the partial exact cross plan"),
+		PartialPreview.State,
+		ERpgInventoryInteractionPreviewState::Blocked);
+	TestFalse(
+		TEXT("The partial exact cross plan cannot dispatch"),
+		Coordinator->CommitPayloadToTarget(
+			PartialPayload,
+			PartialDropTarget));
+	TestEqual(
+		TEXT("Rejected partial exact transfer preserves the complete source snapshot"),
+		MakeStrictInventorySignature(SourceInventory),
+		SourceBeforePartial);
+	TestEqual(
+		TEXT("Rejected partial exact transfer preserves the complete target snapshot"),
+		MakeStrictInventorySignature(TargetInventory),
+		TargetBeforePartial);
+
+	URpgInventoryItemInstance* IncompatibleSource =
+		SourceInventory->AddItemDefinitionToPlacement(
+			URpgInventoryAutomationTestStackItemDefinition::StaticClass(),
+			1,
+			MakePlacement(Pockets, 1, 0));
+	URpgInventoryItemInstance* IncompatibleTarget =
+		TargetInventory->AddItemDefinitionToPlacement(
+			URpgInventoryAutomationTestStackItemDefinition::StaticClass(),
+			1,
+			MakePlacement(TargetRoot, 1, 0));
+	if (!TestNotNull(TEXT("The incompatible exact source exists"), IncompatibleSource) ||
+		!TestNotNull(TEXT("The incompatible exact target exists"), IncompatibleTarget))
+	{
+		return false;
+	}
+	IncompatibleTarget->AddStatTagStack(
+		RpgGameplayTags::Rpg_Inventory_Action_Transfer,
+		1);
+	FRpgInventoryEntryView IncompatibleTargetEntry;
+	if (!TestTrue(
+			TEXT("The incompatible target owns an exact snapshot"),
+			GetEntryView(
+				TargetInventory,
+				IncompatibleTarget->GetItemId(),
+				IncompatibleTargetEntry)))
+	{
+		return false;
+	}
+	const FRpgInventoryDragPayload IncompatiblePayload =
+		MakeInventoryEntryPayload(SourceInventory, IncompatibleSource);
+	FRpgInventoryDropTarget IncompatibleDropTarget;
+	IncompatibleDropTarget.TargetType =
+		ERpgInventoryDropTargetType::InventorySlot;
+	IncompatibleDropTarget.TargetInventory = TargetInventory;
+	IncompatibleDropTarget.TargetPlacement =
+		IncompatibleTargetEntry.Placement;
+	const FString SourceBeforeIncompatible =
+		MakeStrictInventorySignature(SourceInventory);
+	const FString TargetBeforeIncompatible =
+		MakeStrictInventorySignature(TargetInventory);
+	const FRpgInventoryInteractionPreviewPlan IncompatiblePreview =
+		Coordinator->PlanInteractionPreview(
+			IncompatiblePayload,
+			IncompatibleDropTarget);
+	TestTrue(
+		TEXT("The incompatible exact hover consumes a domain plan"),
+		IncompatiblePreview.bUsesPlacementPlan);
+	TestEqual(
+		TEXT("Different runtime state produces StackIncompatible"),
+		IncompatiblePreview.PlacementPlan.Code,
+		ERpgInventoryMutationResultCode::StackIncompatible);
+	TestEqual(
+		TEXT("The coordinator blocks an incompatible exact cross merge"),
+		IncompatiblePreview.State,
+		ERpgInventoryInteractionPreviewState::Blocked);
+	TestFalse(
+		TEXT("The incompatible exact cross plan cannot dispatch"),
+		Coordinator->CommitPayloadToTarget(
+			IncompatiblePayload,
+			IncompatibleDropTarget));
+	TestEqual(
+		TEXT("Rejected incompatible transfer preserves the complete source snapshot"),
+		MakeStrictInventorySignature(SourceInventory),
+		SourceBeforeIncompatible);
+	TestEqual(
+		TEXT("Rejected incompatible transfer preserves the complete target snapshot"),
+		MakeStrictInventorySignature(TargetInventory),
+		TargetBeforeIncompatible);
+	TestEqual(
+		TEXT("Rejected incompatible transfer preserves the target runtime state"),
+		IncompatibleTarget->GetStatTagStackCount(
+			RpgGameplayTags::Rpg_Inventory_Action_Transfer),
+		1);
+
+	URpgInventoryItemInstance* CompatibleSource =
+		SourceInventory->AddItemDefinitionToPlacement(
+			URpgInventoryAutomationTestStackItemDefinition::StaticClass(),
+			1,
+			MakePlacement(Pockets, 2, 0));
+	URpgInventoryItemInstance* CompatibleTarget =
+		TargetInventory->AddItemDefinitionToPlacement(
+			URpgInventoryAutomationTestStackItemDefinition::StaticClass(),
+			9,
+			MakePlacement(TargetRoot, 2, 0));
+	if (!TestNotNull(TEXT("The complete exact source exists"), CompatibleSource) ||
+		!TestNotNull(TEXT("The compatible exact target exists"), CompatibleTarget))
+	{
+		return false;
+	}
+	FRpgInventoryEntryView CompatibleSourceBefore;
+	FRpgInventoryEntryView CompatibleTargetBefore;
+	if (!TestTrue(
+			TEXT("The compatible source owns an exact snapshot"),
+			GetEntryView(
+				SourceInventory,
+				CompatibleSource->GetItemId(),
+				CompatibleSourceBefore)) ||
+		!TestTrue(
+			TEXT("The compatible target owns an exact snapshot"),
+			GetEntryView(
+				TargetInventory,
+				CompatibleTarget->GetItemId(),
+				CompatibleTargetBefore)))
+	{
+		return false;
+	}
+	const FRpgInventoryDragPayload CompatiblePayload =
+		MakeInventoryEntryPayload(SourceInventory, CompatibleSource);
+	FRpgInventoryDropTarget CompatibleDropTarget;
+	CompatibleDropTarget.TargetType =
+		ERpgInventoryDropTargetType::InventorySlot;
+	CompatibleDropTarget.TargetInventory = TargetInventory;
+	CompatibleDropTarget.TargetPlacement =
+		CompatibleTargetBefore.Placement;
+	const FString SourceBeforeCompatiblePreview =
+		MakeStrictInventorySignature(SourceInventory);
+	const FString TargetBeforeCompatiblePreview =
+		MakeStrictInventorySignature(TargetInventory);
+	const int32 SourceRevisionBeforeCommit =
+		SourceInventory->GetInventoryRevision();
+	const int32 TargetRevisionBeforeCommit =
+		TargetInventory->GetInventoryRevision();
+	const FRpgInventoryInteractionPreviewPlan CompatiblePreview =
+		Coordinator->PlanInteractionPreview(
+			CompatiblePayload,
+			CompatibleDropTarget);
+	TestTrue(
+		TEXT("The compatible exact cross plan is complete"),
+		CompatiblePreview.bUsesPlacementPlan &&
+			CompatiblePreview.PlacementPlan.IsCompleteSuccess());
+	TestEqual(
+		TEXT("The complete exact cross plan previews as Merge"),
+		CompatiblePreview.State,
+		ERpgInventoryInteractionPreviewState::Merge);
+	if (!TestEqual(
+			TEXT("The complete exact cross plan contains one atomic step"),
+			CompatiblePreview.PlacementPlan.Steps.Num(),
+			1))
+	{
+		return false;
+	}
+	TestEqual(
+		TEXT("The complete exact cross step resolves to Merge"),
+		CompatiblePreview.PlacementPlan.Steps[0].Resolution,
+		ERpgInventoryPlacementResolution::Merge);
+	TestEqual(
+		TEXT("The merge step names the concrete target entry"),
+		CompatiblePreview.PlacementPlan.Steps[0].TargetEntryId,
+		CompatibleTargetBefore.EntryId);
+	TestEqual(
+		TEXT("Compatible preview is pure for the source graph"),
+		MakeStrictInventorySignature(SourceInventory),
+		SourceBeforeCompatiblePreview);
+	TestEqual(
+		TEXT("Compatible preview is pure for the target graph"),
+		MakeStrictInventorySignature(TargetInventory),
+		TargetBeforeCompatiblePreview);
+	TestTrue(
+		TEXT("The coordinator dispatches the complete exact cross merge"),
+		Coordinator->CommitPayloadToTarget(
+			CompatiblePayload,
+			CompatibleDropTarget));
+	TestNull(
+		TEXT("The complete merge removes the consumed source identity from the source graph"),
+		SourceInventory->FindItemById(CompatibleSourceBefore.ItemId));
+	FRpgInventoryEntryView CompatibleTargetAfter;
+	if (!TestTrue(
+			TEXT("The merge receiver remains addressable"),
+			GetEntryView(
+				TargetInventory,
+				CompatibleTargetBefore.ItemId,
+				CompatibleTargetAfter)))
+	{
+		return false;
+	}
+	TestEqual(
+		TEXT("The merge preserves the receiver's persistent item id"),
+		CompatibleTargetAfter.ItemId,
+		CompatibleTargetBefore.ItemId);
+	TestEqual(
+		TEXT("The merge preserves the receiver's replicated entry id"),
+		CompatibleTargetAfter.EntryId,
+		CompatibleTargetBefore.EntryId);
+	TestEqual(
+		TEXT("The merge preserves the receiver's runtime instance"),
+		CompatibleTargetAfter.Instance.Get(),
+		CompatibleTargetBefore.Instance.Get());
+	TestEqual(
+		TEXT("The compatible receiver reaches its exact stack limit"),
+		CompatibleTargetAfter.StackCount,
+		10);
+	TestTrue(
+		TEXT("The merge preserves the receiver's raw placement snapshot"),
+		ArePlacementSnapshotsExactlyEqual(
+			CompatibleTargetAfter.Placement,
+			CompatibleTargetBefore.Placement));
+	TestTrue(
+		TEXT("The complete merge advances the source revision"),
+		SourceInventory->GetInventoryRevision() >
+			SourceRevisionBeforeCommit);
+	TestTrue(
+		TEXT("The complete merge advances the target revision"),
+		TargetInventory->GetInventoryRevision() >
+			TargetRevisionBeforeCommit);
+	return true;
+}
+
+IMPLEMENT_SIMPLE_AUTOMATION_TEST(
+	FRpgInventoryPanelQuickTransferParityTest,
+	"SurvivalRpg.Inventory.DragDrop.InventoryPanelFirstFitParity",
+	EAutomationTestFlags::EditorContext |
+		EAutomationTestFlags::EngineFilter)
+
+bool FRpgInventoryPanelQuickTransferParityTest::RunTest(
+	const FString& Parameters)
+{
+	using namespace RpgInventoryTransactionTests;
+	FScopedInventoryWorld TestWorld;
+	if (!InitializeTest(*this, TestWorld))
+	{
+		return false;
+	}
+
+	UWorld* World = TestWorld.GetTestWorld();
+	FActorSpawnParameters ControllerSpawnParameters;
+	ControllerSpawnParameters.Name = MakeUniqueObjectName(
+		World,
+		ARpgInventoryAutomationTestPlayerController::StaticClass(),
+		TEXT("InventoryPanelFirstFitController"));
+	ControllerSpawnParameters.ObjectFlags = RF_Transient;
+	ControllerSpawnParameters.SpawnCollisionHandlingOverride =
+		ESpawnActorCollisionHandlingMethod::AlwaysSpawn;
+	ARpgInventoryAutomationTestPlayerController* Controller =
+		World->SpawnActor<ARpgInventoryAutomationTestPlayerController>(
+			ControllerSpawnParameters);
+
+	FActorSpawnParameters PawnSpawnParameters;
+	PawnSpawnParameters.Name = MakeUniqueObjectName(
+		World,
+		APawn::StaticClass(),
+		TEXT("InventoryPanelFirstFitPawn"));
+	PawnSpawnParameters.ObjectFlags = RF_Transient;
+	PawnSpawnParameters.SpawnCollisionHandlingOverride =
+		ESpawnActorCollisionHandlingMethod::AlwaysSpawn;
+	APawn* ControllerPawn = World->SpawnActor<APawn>(
+		PawnSpawnParameters);
+
+	FActorSpawnParameters PlayerStateSpawnParameters;
+	PlayerStateSpawnParameters.Name = MakeUniqueObjectName(
+		World,
+		ARpgInventoryAutomationTestPlayerState::StaticClass(),
+		TEXT("InventoryPanelFirstFitPlayerState"));
+	PlayerStateSpawnParameters.ObjectFlags = RF_Transient;
+	PlayerStateSpawnParameters.SpawnCollisionHandlingOverride =
+		ESpawnActorCollisionHandlingMethod::AlwaysSpawn;
+	ARpgInventoryAutomationTestPlayerState* PlayerState =
+		World->SpawnActor<ARpgInventoryAutomationTestPlayerState>(
+			PlayerStateSpawnParameters);
+
+	FActorSpawnParameters ContainerSpawnParameters;
+	ContainerSpawnParameters.Name = MakeUniqueObjectName(
+		World,
+		ARpgInventoryContainerActor::StaticClass(),
+		TEXT("InventoryPanelFirstFitContainer"));
+	ContainerSpawnParameters.ObjectFlags = RF_Transient;
+	ContainerSpawnParameters.SpawnCollisionHandlingOverride =
+		ESpawnActorCollisionHandlingMethod::AlwaysSpawn;
+	ARpgInventoryContainerActor* Container =
+		World->SpawnActor<ARpgInventoryContainerActor>(
+			ContainerSpawnParameters);
+	if (!TestNotNull(TEXT("The InventoryPanel controller exists"), Controller) ||
+		!TestNotNull(TEXT("The InventoryPanel pawn exists"), ControllerPawn) ||
+		!TestNotNull(TEXT("The InventoryPanel player state exists"), PlayerState) ||
+		!TestNotNull(TEXT("The InventoryPanel target container exists"), Container))
+	{
+		return false;
+	}
+
+	Controller->SetPlayerState(PlayerState);
+	PlayerState->SetOwner(Controller);
+	Controller->Possess(ControllerPawn);
+	URpgInventoryManagerComponent* SourceInventory =
+		PlayerState->GetInventoryManagerComponent();
+	URpgInventoryManagerComponent* TargetInventory =
+		Container->GetInventoryManager();
+	URpgInventoryUiActionComponent* UiActions =
+		Controller->GetInventoryUiActionComponent();
+	if (!TestNotNull(TEXT("The InventoryPanel source inventory exists"), SourceInventory) ||
+		!TestNotNull(TEXT("The InventoryPanel target inventory exists"), TargetInventory) ||
+		!TestNotNull(TEXT("The InventoryPanel action gateway exists"), UiActions) ||
+		!TestTrue(
+			TEXT("The possessed pawn can access the panel target"),
+			UiActions->CanAccessInventory(TargetInventory)))
+	{
+		return false;
+	}
+
+	const FRpgInventoryContainerHandle Pockets =
+		FRpgInventoryContainerHandle::MakeRoot(
+			URpgPlayerInventoryLayoutComponent::PocketsGroupId);
+	const FRpgInventoryContainerHandle TargetRoot =
+		FRpgInventoryContainerHandle::MakeRoot(
+			TargetInventory->GetDefaultContainerId());
+	URpgInventoryItemInstance* SourceItem =
+		SourceInventory->AddItemDefinitionToPlacement(
+			URpgInventoryAutomationTestUnitItemDefinition::StaticClass(),
+			1,
+			MakePlacement(Pockets, 0, 0));
+	if (!TestNotNull(TEXT("The panel-transfer source item exists"), SourceItem))
+	{
+		return false;
+	}
+	FRpgInventoryEntryView SourceEntryBefore;
+	if (!TestTrue(
+			TEXT("The panel-transfer source owns an exact snapshot"),
+			GetEntryView(
+				SourceInventory,
+				SourceItem->GetItemId(),
+				SourceEntryBefore)))
+	{
+		return false;
+	}
+
+	URpgInventoryDragDropCoordinator* Coordinator =
+		URpgInventoryDragDropCoordinator::
+			CreateInventoryDragDropCoordinator(Controller, Controller);
+	if (!TestNotNull(TEXT("The InventoryPanel coordinator exists"), Coordinator))
+	{
+		return false;
+	}
+	Coordinator->SetUiActionComponent(UiActions);
+	const FRpgInventoryDragPayload Payload =
+		MakeInventoryEntryPayload(SourceInventory, SourceItem);
+	const FRpgInventoryDropTarget PanelTarget =
+		URpgInventoryDragDropCoordinator::MakeInventoryPanelTarget(
+			TargetInventory);
+	const FString SourceBeforePreview =
+		MakeStrictInventorySignature(SourceInventory);
+	const FString TargetBeforePreview =
+		MakeStrictInventorySignature(TargetInventory);
+	const int32 SourceRevisionBeforeCommit =
+		SourceInventory->GetInventoryRevision();
+	const int32 TargetRevisionBeforeCommit =
+		TargetInventory->GetInventoryRevision();
+	const FRpgInventoryInteractionPreviewPlan Preview =
+		Coordinator->PlanInteractionPreview(Payload, PanelTarget);
+	TestTrue(
+		TEXT("InventoryPanel preview consumes a complete FirstFit domain plan"),
+		Preview.bUsesPlacementPlan &&
+			Preview.PlacementPlan.IsCompleteSuccess());
+	TestEqual(
+		TEXT("An empty panel destination previews as Move"),
+		Preview.State,
+		ERpgInventoryInteractionPreviewState::Move);
+	if (!TestEqual(
+			TEXT("The one-unit FirstFit plan contains one placement step"),
+			Preview.PlacementPlan.Steps.Num(),
+			1))
+	{
+		return false;
+	}
+	const FRpgInventoryPlacementStep& PlannedStep =
+		Preview.PlacementPlan.Steps[0];
+	TestEqual(
+		TEXT("The FirstFit step resolves to Place"),
+		PlannedStep.Resolution,
+		ERpgInventoryPlacementResolution::Place);
+	TestTrue(
+		TEXT("The public resolved target exactly matches the domain step"),
+		ArePlacementSnapshotsExactlyEqual(
+			Preview.ResolvedTargetPlacement,
+			PlannedStep.Placement));
+	TestEqual(
+		TEXT("FirstFit selects the external inventory root"),
+		PlannedStep.Placement.GetContainerHandle(),
+		TargetRoot);
+	TestEqual(
+		TEXT("FirstFit deterministically selects X zero"),
+		PlannedStep.Placement.X,
+		0);
+	TestEqual(
+		TEXT("FirstFit deterministically selects Y zero"),
+		PlannedStep.Placement.Y,
+		0);
+	TestEqual(
+		TEXT("InventoryPanel preview is pure for the source graph"),
+		MakeStrictInventorySignature(SourceInventory),
+		SourceBeforePreview);
+	TestEqual(
+		TEXT("InventoryPanel preview is pure for the target graph"),
+		MakeStrictInventorySignature(TargetInventory),
+		TargetBeforePreview);
+	TestTrue(
+		TEXT("InventoryPanel commit dispatches the planned quick transfer"),
+		Coordinator->CommitPayloadToTarget(Payload, PanelTarget));
+	TestNull(
+		TEXT("The whole-entry FirstFit commit removes the source row"),
+		SourceInventory->FindItemById(SourceEntryBefore.ItemId));
+
+	FRpgInventoryEntryView TargetEntryAfter;
+	if (!TestTrue(
+			TEXT("The target resolves the transferred persistent item id"),
+			GetEntryView(
+				TargetInventory,
+				SourceEntryBefore.ItemId,
+				TargetEntryAfter)))
+	{
+		return false;
+	}
+	TestEqual(
+		TEXT("The FirstFit transfer preserves the persistent item id"),
+		TargetEntryAfter.ItemId,
+		SourceEntryBefore.ItemId);
+	TestTrue(
+		TEXT("The reconstructed target row owns a valid replicated entry id"),
+		TargetEntryAfter.EntryId.IsValid());
+	TestTrue(
+		TEXT("Cross-inventory FirstFit reconstructs the runtime instance"),
+		TargetEntryAfter.Instance.Get() !=
+			SourceEntryBefore.Instance.Get());
+	TestEqual(
+		TEXT("The reconstructed instance belongs to the target actor"),
+		TargetEntryAfter.Instance->GetOuter(),
+		static_cast<UObject*>(TargetInventory->GetOwner()));
+	TestTrue(
+		TEXT("The FirstFit commit uses the exact previewed raw placement"),
+		ArePlacementSnapshotsExactlyEqual(
+			TargetEntryAfter.Placement,
+			Preview.ResolvedTargetPlacement));
+	TestEqual(
+		TEXT("The FirstFit commit preserves the whole quantity"),
+		TargetEntryAfter.StackCount,
+		SourceEntryBefore.StackCount);
+	TestTrue(
+		TEXT("The FirstFit commit advances the source revision"),
+		SourceInventory->GetInventoryRevision() >
+			SourceRevisionBeforeCommit);
+	TestTrue(
+		TEXT("The FirstFit commit advances the target revision"),
+		TargetInventory->GetInventoryRevision() >
+			TargetRevisionBeforeCommit);
+	return true;
+}
+
+IMPLEMENT_SIMPLE_AUTOMATION_TEST(
+	FRpgInventoryMainHandCoordinatorParityTest,
+	"SurvivalRpg.Inventory.Intent.Equip.MainHandPlanCommitParity",
+	EAutomationTestFlags::EditorContext |
+		EAutomationTestFlags::EngineFilter)
+
+bool FRpgInventoryMainHandCoordinatorParityTest::RunTest(
+	const FString& Parameters)
+{
+	using namespace RpgInventoryTransactionTests;
+	FScopedInventoryWorld TestWorld;
+	if (!InitializeTest(*this, TestWorld))
+	{
+		return false;
+	}
+
+	UWorld* World = TestWorld.GetTestWorld();
+	FActorSpawnParameters ControllerSpawnParameters;
+	ControllerSpawnParameters.Name = MakeUniqueObjectName(
+		World,
+		ARpgInventoryAutomationTestPlayerController::StaticClass(),
+		TEXT("MainHandPlanCommitController"));
+	ControllerSpawnParameters.ObjectFlags = RF_Transient;
+	ARpgInventoryAutomationTestPlayerController* Controller =
+		World->SpawnActor<ARpgInventoryAutomationTestPlayerController>(
+			ControllerSpawnParameters);
+
+	FActorSpawnParameters PlayerStateSpawnParameters;
+	PlayerStateSpawnParameters.Name = MakeUniqueObjectName(
+		World,
+		ARpgInventoryAutomationTestPlayerState::StaticClass(),
+		TEXT("MainHandPlanCommitPlayerState"));
+	PlayerStateSpawnParameters.ObjectFlags = RF_Transient;
+	ARpgInventoryAutomationTestPlayerState* PlayerState =
+		World->SpawnActor<ARpgInventoryAutomationTestPlayerState>(
+			PlayerStateSpawnParameters);
+	if (!TestNotNull(TEXT("The MainHand parity controller exists"), Controller) ||
+		!TestNotNull(TEXT("The MainHand parity player state exists"), PlayerState))
+	{
+		return false;
+	}
+
+	Controller->SetPlayerState(PlayerState);
+	PlayerState->SetOwner(Controller);
+	URpgInventoryManagerComponent* Inventory =
+		PlayerState->GetInventoryManagerComponent();
+	URpgInventoryUiActionComponent* UiActions =
+		Controller->GetInventoryUiActionComponent();
+	URpgEquipmentLoadoutComponent* EquipmentLoadout =
+		Controller->GetEquipmentLoadoutComponent();
+	if (!TestNotNull(TEXT("The MainHand parity inventory exists"), Inventory) ||
+		!TestNotNull(TEXT("The MainHand parity action gateway exists"), UiActions) ||
+		!TestNotNull(TEXT("The MainHand parity loadout mirror exists"), EquipmentLoadout))
+	{
+		return false;
+	}
+
+	const FRpgInventoryContainerHandle Pockets =
+		FRpgInventoryContainerHandle::MakeRoot(
+			URpgPlayerInventoryLayoutComponent::PocketsGroupId);
+	const FRpgInventoryContainerHandle WeaponSlot1 =
+		FRpgInventoryContainerHandle::MakeRoot(
+			URpgPlayerInventoryLayoutComponent::WeaponSlot1GroupId);
+	URpgInventoryItemInstance* Weapon =
+		Inventory->AddItemDefinitionToPlacement(
+			URpgInventoryAutomationTestWeaponItemDefinition::StaticClass(),
+			1,
+			MakePlacement(Pockets, 0, 0));
+	if (!TestNotNull(TEXT("The MainHand weapon starts in Pockets"), Weapon))
+	{
+		return false;
+	}
+	FRpgInventoryEntryView WeaponBefore;
+	if (!TestTrue(
+			TEXT("The MainHand weapon owns an exact source snapshot"),
+			GetEntryView(
+				Inventory,
+				Weapon->GetItemId(),
+				WeaponBefore)))
+	{
+		return false;
+	}
+	TestNull(
+		TEXT("MainHand starts without an active selection"),
+		EquipmentLoadout->GetItemInEquipmentSlot(
+			ERpgEquipmentSlot::MainHand));
+
+	URpgInventoryDragDropCoordinator* Coordinator =
+		URpgInventoryDragDropCoordinator::
+			CreateInventoryDragDropCoordinator(Controller, Controller);
+	if (!TestNotNull(TEXT("The MainHand parity coordinator exists"), Coordinator))
+	{
+		return false;
+	}
+	Coordinator->SetUiActionComponent(UiActions);
+	const FRpgInventoryDragPayload Payload =
+		MakeInventoryEntryPayload(Inventory, Weapon);
+	const FRpgInventoryDropTarget MainHandTarget =
+		URpgInventoryDragDropCoordinator::MakeEquipmentTarget(
+			ERpgEquipmentSlot::MainHand);
+	const FString InventoryBeforePreview =
+		MakeStrictInventorySignature(Inventory);
+	const int32 RevisionBeforeCommit =
+		Inventory->GetInventoryRevision();
+	const FRpgInventoryInteractionPreviewPlan Preview =
+		Coordinator->PlanInteractionPreview(
+			Payload,
+			MainHandTarget);
+	TestTrue(
+		TEXT("Pockets-to-MainHand preview consumes a complete equipment plan"),
+		Preview.bUsesPlacementPlan &&
+			Preview.PlacementPlan.IsCompleteSuccess());
+	TestEqual(
+		TEXT("The accepted MainHand target previews as Equip"),
+		Preview.State,
+		ERpgInventoryInteractionPreviewState::Equip);
+	if (!TestEqual(
+			TEXT("The MainHand plan contains one atomic placement step"),
+			Preview.PlacementPlan.Steps.Num(),
+			1))
+	{
+		return false;
+	}
+	const FRpgInventoryPlacementStep& PlannedStep =
+		Preview.PlacementPlan.Steps[0];
+	TestEqual(
+		TEXT("The MainHand plan resolves to Place"),
+		PlannedStep.Resolution,
+		ERpgInventoryPlacementResolution::Place);
+	TestEqual(
+		TEXT("The MainHand plan resolves the WeaponSlot1 Carry grid"),
+		PlannedStep.Placement.GetContainerHandle(),
+		WeaponSlot1);
+	TestTrue(
+		TEXT("The public MainHand target exactly matches the domain step"),
+		ArePlacementSnapshotsExactlyEqual(
+			Preview.ResolvedTargetPlacement,
+			PlannedStep.Placement));
+	TestEqual(
+		TEXT("Pockets-to-MainHand preview preserves the full inventory snapshot"),
+		MakeStrictInventorySignature(Inventory),
+		InventoryBeforePreview);
+	TestNull(
+		TEXT("Preview alone cannot activate MainHand"),
+		EquipmentLoadout->GetItemInEquipmentSlot(
+			ERpgEquipmentSlot::MainHand));
+	TestTrue(
+		TEXT("The coordinator dispatches the accepted MainHand plan"),
+		Coordinator->CommitPayloadToTarget(
+			Payload,
+			MainHandTarget));
+
+	FRpgInventoryEntryView WeaponAfter;
+	if (!TestTrue(
+			TEXT("The equipped weapon remains addressable"),
+			GetEntryView(
+				Inventory,
+				WeaponBefore.ItemId,
+				WeaponAfter)))
+	{
+		return false;
+	}
+	TestEqual(
+		TEXT("Pockets-to-MainHand preserves the persistent item id"),
+		WeaponAfter.ItemId,
+		WeaponBefore.ItemId);
+	TestEqual(
+		TEXT("Pockets-to-MainHand preserves the replicated entry id"),
+		WeaponAfter.EntryId,
+		WeaponBefore.EntryId);
+	TestEqual(
+		TEXT("Pockets-to-MainHand preserves the runtime instance"),
+		WeaponAfter.Instance.Get(),
+		WeaponBefore.Instance.Get());
+	TestEqual(
+		TEXT("Pockets-to-MainHand preserves the whole quantity"),
+		WeaponAfter.StackCount,
+		WeaponBefore.StackCount);
+	TestTrue(
+		TEXT("MainHand commit uses the exact previewed raw placement"),
+		ArePlacementSnapshotsExactlyEqual(
+			WeaponAfter.Placement,
+			Preview.ResolvedTargetPlacement));
+	TestNull(
+		TEXT("The committed weapon leaves its original Pockets cell"),
+		Inventory->GetItemAtContainerCell(Pockets, 0, 0));
+	TestEqual(
+		TEXT("Post-commit reconciliation activates the same physical weapon"),
+		EquipmentLoadout->GetItemInEquipmentSlot(
+			ERpgEquipmentSlot::MainHand),
+		Weapon);
+	TestTrue(
+		TEXT("The accepted MainHand commit advances inventory revision"),
+		Inventory->GetInventoryRevision() > RevisionBeforeCommit);
 	return true;
 }
 

@@ -226,7 +226,7 @@ bool URpgInventoryInteractionSession::ToggleTargetRotation()
 
 void URpgInventoryInteractionSession::MarkRequestPending(const FRpgInventoryDropTarget& InTarget, FGameplayTag InActionTag)
 {
-	if (!bHasPayload)
+	if (!bHasPayload || bPendingRequest)
 	{
 		return;
 	}
@@ -372,24 +372,13 @@ bool URpgInventoryInteractionSession::IsPendingMessageRelevant(UActorComponent* 
 
 void URpgInventoryInteractionSession::HandleActionFeedback(FGameplayTag Channel, const FRpgInventoryActionFeedbackMessage& Message)
 {
-	const bool bRequiresCorrelatedFeedback =
-		Target.TargetType ==
-			ERpgInventoryDropTargetType::ActionBarSlot ||
-		Target.TargetType ==
-			ERpgInventoryDropTargetType::EquipmentSlot ||
-		Target.TargetType ==
-			ERpgInventoryDropTargetType::ClearSlot;
 	if (!Message.IsAddressedTo(PlayerController.Get()) ||
 		!bPendingRequest || !DoesFeedbackMatchPendingRequest(
 			RequestId,
 			PendingActionTag,
-		PendingItemId,
-		Message,
-		bRequiresCorrelatedFeedback))
-	{
-		return;
-	}
-	if (!Message.RequestId.IsValid() && !IsPendingMessageRelevant(Message.InventoryOwner.Get(), Message.Item.Get()))
+			PendingItemId,
+			Message,
+			true))
 	{
 		return;
 	}

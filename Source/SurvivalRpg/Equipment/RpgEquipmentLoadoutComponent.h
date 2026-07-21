@@ -133,6 +133,14 @@ public:
 	UFUNCTION(BlueprintCallable, BlueprintPure = false, Category = "Equipment")
 	bool CanAssignItemToEquipmentSlot(ERpgEquipmentSlot EquipmentSlot, const URpgInventoryItemInstance* Item) const;
 
+	/**
+	 * Side-effect-free preflight for selecting an owned item as an active hand.
+	 * Physical Carry placement is planned separately; this query adds current two-hand/offhand conflict rules.
+	 */
+	bool CanActivateItemInEquipmentSlot(
+		ERpgEquipmentSlot EquipmentSlot,
+		const URpgInventoryItemInstance* Item) const;
+
 	/** Internal reconciliation adapter. Gameplay UI should mutate inventory locations instead. */
 	UFUNCTION(BlueprintCallable, BlueprintAuthorityOnly, Category = "Equipment", meta = (DeprecatedFunction, DeprecationMessage = "Move the item to its Gear/Carry inventory location through InventoryUiActionComponent."))
 	bool AssignItemToEquipmentSlot(ERpgEquipmentSlot EquipmentSlot, URpgInventoryItemInstance* Item);

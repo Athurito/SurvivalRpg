@@ -316,6 +316,38 @@ struct SURVIVALRPG_API FRpgInventorySpatialPreviewDescriptor
 	bool IsEquivalentTo(const FRpgInventorySpatialPreviewDescriptor& Other) const;
 };
 
+/**
+ * Native, read-only projection of the gameplay placement plan for one UI candidate.
+ *
+ * The full plan remains outside Blueprint/MVVM state. Widgets consume only its semantic state and normalized target,
+ * while the authoritative request re-evaluates the same query against current server state.
+ */
+struct SURVIVALRPG_API FRpgInventoryInteractionPreviewPlan
+{
+	/** Presentation semantic derived from PlacementPlan or a non-spatial UI policy. */
+	ERpgInventoryInteractionPreviewState State =
+		ERpgInventoryInteractionPreviewState::None;
+
+	/** True when this result was projected from the inventory domain evaluator. */
+	bool bUsesPlacementPlan = false;
+
+	/** Concrete side-effect-free domain decision, including merge, swap, and displaced placement details. */
+	FRpgInventoryPlacementPlan PlacementPlan;
+
+	/** Normalized destination selected by the evaluator for presentation only. */
+	FRpgInventoryGridPlacement ResolvedTargetPlacement;
+
+	/** Returns whether this candidate may dispatch an authoritative request. */
+	bool IsAccepted() const
+	{
+		return State != ERpgInventoryInteractionPreviewState::None &&
+			State != ERpgInventoryInteractionPreviewState::Blocked &&
+			State != ERpgInventoryInteractionPreviewState::OutOfBounds &&
+			State != ERpgInventoryInteractionPreviewState::Pending &&
+			State != ERpgInventoryInteractionPreviewState::Rejected;
+	}
+};
+
 DECLARE_DYNAMIC_MULTICAST_DELEGATE_TwoParams(FRpgInventoryHeldPayloadChanged, bool, bHasHeldPayload, const FRpgInventoryDragPayload&, HeldPayload);
 
 /** One quick-transfer route used by UI shortcuts such as Ctrl+Click or controller X. */
@@ -439,7 +471,7 @@ public:
 	UFUNCTION(BlueprintCallable, Category = "Inventory|DragDrop")
 	static FRpgInventoryDropTarget MakeActionBarSlotTargetFromViewModel(URpgActionBarSlotViewModel* SlotViewModel);
 
-	/** Builds a target that clears equipment assignments without moving the owned item. */
+	/** Builds a target that holsters active hands or moves physical Gear back into compatible Content. */
 	UFUNCTION(BlueprintCallable, Category = "Inventory|DragDrop")
 	static FRpgInventoryDropTarget MakeClearTarget();
 
@@ -758,6 +790,12 @@ public:
 	UFUNCTION(BlueprintCallable, Category = "Inventory|Interaction")
 	bool UpdateInteractionPreview(const FRpgInventoryDragPayload& Payload, const FRpgInventoryDropTarget& Target);
 
+	/** Publishes a plan already evaluated by this coordinator so spatial widgets do not infer or evaluate it twice. */
+	bool PublishInteractionPreview(
+		const FRpgInventoryDragPayload& Payload,
+		const FRpgInventoryDropTarget& Target,
+		const FRpgInventoryInteractionPreviewPlan& PreviewPlan);
+
 	/** Clears the hover/focus target while retaining the active payload and rotation. */
 	UFUNCTION(BlueprintCallable, Category = "Inventory|Interaction")
 	void ClearInteractionPreview();
@@ -766,6 +804,11 @@ public:
 	UFUNCTION(BlueprintCallable, Category = "Inventory|Interaction")
 	ERpgInventoryInteractionPreviewState ResolveInteractionPreview(const FRpgInventoryDragPayload& Payload, const FRpgInventoryDropTarget& Target) const;
 
+	/** Builds the native preview from the same placement query that the authoritative request re-evaluates. */
+	FRpgInventoryInteractionPreviewPlan PlanInteractionPreview(
+		const FRpgInventoryDragPayload& Payload,
+		const FRpgInventoryDropTarget& Target) const;
+
 	/** Dispatches the current payload to a target and retains it until authoritative acknowledgement. */
 	UFUNCTION(BlueprintCallable, Category = "Inventory|DragDrop")
 	bool CommitDrop(const FRpgInventoryDropTarget& Target);
@@ -773,6 +816,15 @@ public:
 	/** Commits an explicit payload to a target, used by mouse drag/drop operations. */
 	UFUNCTION(BlueprintCallable, Category = "Inventory|DragDrop")
 	bool CommitPayloadToTarget(const FRpgInventoryDragPayload& Payload, const FRpgInventoryDropTarget& Target);
+
+	/**
+	 * Dispatches a locally precomputed accepted plan without evaluating the same UI candidate again.
+	 * The authoritative gateway always rebuilds the domain plan from current server state.
+	 */
+	bool CommitPlannedPayloadToTarget(
+		const FRpgInventoryDragPayload& Payload,
+		const FRpgInventoryDropTarget& Target,
+		const FRpgInventoryInteractionPreviewPlan& PreviewPlan);
 
 	/** Controller Accept helper for inventory slots: pick item when empty-handed, otherwise place on the slot. */
 	UFUNCTION(BlueprintCallable, Category = "Inventory|DragDrop")
@@ -791,7 +843,10 @@ private:
 	bool IsTargetPlacementOutOfBounds(const FRpgInventoryDropTarget& Target) const;
 	FGameplayTag ResolveActionTagForTarget(const FRpgInventoryDropTarget& Target) const;
 	void EnsureInteractionSession();
-	FGuid MarkInteractionRequestPending(const FRpgInventoryDragPayload& Payload, const FRpgInventoryDropTarget& Target);
+	FGuid MarkInteractionRequestPending(
+		const FRpgInventoryDragPayload& Payload,
+		const FRpgInventoryDropTarget& Target,
+		ERpgInventoryInteractionPreviewState AcceptedPreviewState);
 	bool IsPayloadSourceCurrent(const FRpgInventoryDragPayload& Payload) const;
 	bool IsHeldSourceEntry(URpgInventoryEntryViewModel* EntryViewModel) const;
 	bool IsHeldSourceAddressSlot(URpgInventoryAddressSlotViewModel* SlotViewModel) const;

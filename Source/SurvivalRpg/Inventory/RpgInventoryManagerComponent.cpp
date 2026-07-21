@@ -1116,7 +1116,7 @@ bool FRpgInventoryList::CanMoveEntryToPlacement(
 	{
 		*OutNormalizedTargetPlacement = Plan.Steps[0].Placement;
 	}
-	return Plan.IsSuccess();
+	return Plan.IsCompleteSuccess();
 }
 
 bool FRpgInventoryList::MoveEntryToPlacement(
@@ -5000,9 +5000,19 @@ FRpgInventoryMutationResult URpgInventoryManagerComponent::PlanInventoryMutation
 	PlacementQuery.ExactPlacement = Request.TargetPlacement;
 	const FRpgInventoryPlacementPlan PlacementPlan =
 		EvaluatePlacement(PlacementQuery);
-	if (!PlacementPlan.IsSuccess() || PlacementPlan.Steps.Num() != 1)
+	const bool bRequiresCompletePlacement =
+		Request.Operation != ERpgInventoryMutationOperation::Merge;
+	if (!PlacementPlan.IsSuccess() || PlacementPlan.Steps.Num() != 1 ||
+		(bRequiresCompletePlacement &&
+		 !PlacementPlan.IsCompleteSuccess()))
 	{
-		Result.Code = PlacementPlan.Code;
+		// Typed Move/Equip placement intents move one complete entry. A compatible
+		// target with insufficient capacity may still describe a read-only partial
+		// plan, while only an explicitly requested low-level Merge may commit it.
+		Result.Code = PlacementPlan.Code ==
+				ERpgInventoryMutationResultCode::PartiallyApplied
+			? ERpgInventoryMutationResultCode::StackLimitReached
+			: PlacementPlan.Code;
 		return Result;
 	}
 

@@ -286,6 +286,15 @@ struct SURVIVALRPG_API FRpgInventoryPlacementPlan
 		return Code == ERpgInventoryMutationResultCode::Success ||
 			Code == ERpgInventoryMutationResultCode::PartiallyApplied;
 	}
+
+	/** Returns true only when every requested unit is covered by at least one deterministic plan step. */
+	bool IsCompleteSuccess() const
+	{
+		return Code == ERpgInventoryMutationResultCode::Success &&
+			RequestedQuantity > 0 &&
+			AppliedQuantity == RequestedQuantity &&
+			!Steps.IsEmpty();
+	}
 };
 
 /** One save-ready inventory row used for session export/import and future world container saves. */

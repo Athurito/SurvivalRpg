@@ -78,12 +78,6 @@ Verifizierter Zwischenstand vom 2026-07-19:
 
 Bekannte Restpunkte, bereits einer späteren Phase zugeordnet:
 
-- Abstrakte Equipment-Slot-Previews prüfen noch nicht in jedem Pfad dieselbe
-  konkrete Belegung, Swap- und Handkonfliktlage wie der Transaction-Planner
-  (Phase 1/2).
-- UI-Previews konsumieren noch nicht in jedem Pfad den vollständigen
-  Placement-Plan mit konkreter Belegung, Swap und dynamischen Handkonflikten
-  (Phase 2).
 - Cross-Inventory-Transfers erhalten jetzt die Runtime- und Entry-Identität
   bestehender Items, importieren aber weiterhin beide Vollgraphen und senden
   dadurch noch unnötige Remove-/Add-Nachrichten sowie Subobject-
@@ -854,7 +848,7 @@ Status: **In Arbeit**
 - [x] Physisches Equippen ausschließlich über Inventory-Transaktionen führen.
 - [x] Eine öffentliche Placement-Auswertung als gemeinsamen Vertrag für Move,
       Equip, Split, Add, Transfer, Auto-Placement und Restore verwenden.
-- [ ] UI-Preview aus einem echten Mutation-Plan ableiten; konkrete Belegung,
+- [x] UI-Preview aus einem echten Mutation-Plan ableiten; konkrete Belegung,
       Swap und dynamische Handkonflikte müssen mit dem Server-Commit
       übereinstimmen.
 - [ ] `URpgEquipmentLoadoutComponent` auf Aktivierung der Hände und
@@ -1064,6 +1058,64 @@ Verifizierter Phase-2E-Zwischenstand vom 2026-07-21:
   Mutation-Plan ableiten. Der callback-atomare gemeinsame In-place-Commit für
   zwei Inventare bleibt bewusst Phase 3; anschließend wird die öffentliche
   Legacy-Fläche des Loadouts auf Hand-Aktivierung und Reconciliation reduziert.
+
+Verifizierter Phase-2F-Zwischenstand vom 2026-07-21:
+
+- `FRpgInventoryInteractionPreviewPlan` ist der native, screen-lokale
+  Projektionsvertrag zwischen Domain-Plan und Darstellung. Er behält den
+  vollständigen `FRpgInventoryPlacementPlan` in C++, während Blueprint/MVVM
+  weiterhin nur Semantik und normalisierte Präsentationsplatzierung sehen.
+  Der Client sendet keinen gecachten Plan; jeder Server-Gateway wertet den
+  pointer-freien Intent erneut gegen den aktuellen Graphen aus.
+- Same-Inventory-Move, Equipment-Move, exakter Cross-Inventory-Transfer und
+  FirstFit-QuickTransfer erzeugen ihre Vorschau aus `EvaluatePlacement`.
+  Die frühere Widget-Inferenz über Overlap, gleiche Item-Definition und freie
+  Stack-Kapazität ist entfernt. Runtime-inkompatible Stacks können dadurch
+  nicht mehr fälschlich als Merge erscheinen.
+- Abstrakte Gear- und Handziele werden vor der Darstellung auf eine konkrete
+  Gear-/Carry-Platzierung aufgelöst. Belegte Equipment-Ziele zeigen den
+  tatsächlichen Swap samt verdrängter Item-/Entry-ID und Zielplatzierung;
+  ein aktives Zwei-Hand-Item blockiert OffHand bereits im selben Plan, den der
+  Commit erneut konsumiert.
+- `PlanExactTransferPlacement`, `PlanQuickTransferDestination` und
+  `PlanEquipmentIntentPlacement` bündeln Access-, Direction-, Snapshot-,
+  Loadout- und Placement-Prüfung. Vollständige Drags akzeptieren nur
+  `IsCompleteSuccess`; partielle Fits bleiben sichtbar im Domain-Plan, dürfen
+  aber keinen vollständigen Commit vortäuschen.
+- Source-Snapshots vergleichen neben Item-/Entry-ID, Menge, Footprint und
+  Rotation auch den rohen Legacy-`ContainerId`. Preview, Replay-Fingerprint
+  und autoritativer Manager lehnen dadurch denselben stale Snapshot ab.
+- Spatial-Grid-Widgets evaluieren pro Kandidat einmal im Coordinator und
+  publizieren daraus Ghost, Zellfarben und Session-Semantik. Das Request-Ziel
+  bleibt unverändert servervalidierbar; nur die Darstellung verwendet die
+  normalisierte Plan-Platzierung. Entry-/Address-Änderungen planen einen
+  aktiven Hover auch ohne neue Pointerbewegung erneut. Wiederverwendete
+  Item-Widgets bündeln ihre Reconciliation-Setter und führen danach genau eine
+  semantische Target-Auswertung aus, ohne einen Domain-Plan zu speichern.
+- Eine Interaction-Session erlaubt global nur einen Pending-Request. Fehlendes
+  oder fremdes Action-Feedback kann diesen Request unabhängig vom Target nicht
+  mehr lösen; ausschließlich die exakt korrelierte `RequestId` beendet den
+  Feedback-Pfad. Separat geprüfte replizierte Zustands-Acknowledgements bleiben
+  davon unberührt.
+- `SurvivalRpgEditor Win64 Development` wurde mit Unreal Engine 5.8 gebaut
+  (8/8 Build-Actions nach den finalen Audit-Korrekturen).
+- `SurvivalRpg.Inventory`: 89 von 89 Automationtests erfolgreich. Die
+  erweiterten Tests prüfen konkrete Place-/Merge-/Swap-Schritte,
+  `DisplacedPlacement`, partiellen Fit, Runtime-State-Inkompatibilität,
+  stale Legacy-Snapshots, Gear-Zielauflösung, dynamische Handkonflikte,
+  blockiertes Gear-Clear bei vollem Content, globales Pending mit echter
+  Feedback-Korrelation sowie exakte Preview-/Commit-Zielparität für
+  Cross-Inventory-, FirstFit- und Hand-Equip-Pfade.
+- `SurvivalRpg.Equipment`: 5 von 5 Automationtests erfolgreich.
+- `SurvivalRpg.Crafting`: 6 von 6 Automationtests erfolgreich.
+- Fortschritt Phase 2: 7 von 8 Punkten abgeschlossen (87,5 %).
+- Gesamtfortschritt der verbindlichen Checkliste: 55 von 94 Punkten
+  abgeschlossen (58,5 %), 39 Punkte offen.
+- Nächster Safety-Schnitt: `URpgEquipmentLoadoutComponent` auf öffentliche
+  Hand-Aktivierung und Reconciliation des physischen Inventory-Zustands
+  reduzieren. Netzwerk-/Late-Join- und interaktive Mouse-/Gamepad-Smokes
+  bleiben ergänzende Integrations-QA, nicht Ersatz für die autoritative
+  Re-Evaluation.
 
 ## Phase 3 – Runtime-Transfer vom Save/Load trennen
 

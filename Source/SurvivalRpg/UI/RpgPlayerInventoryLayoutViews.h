@@ -378,6 +378,9 @@ private:
 	void HandleHeldPayloadChanged(bool bHasHeldPayload, const FRpgInventoryDragPayload& HeldPayload);
 
 	FRpgInventoryDragPayload MakeDragPayload() const;
+	void BeginDragDropVisualRefreshBatch();
+	void EndDragDropVisualRefreshBatch();
+	void ApplyDragDropVisualState();
 	void ReleaseSpatialItemState();
 	void RefreshPlacedItemVisual();
 	bool IsPlacedItemRotated() const;
@@ -405,6 +408,8 @@ private:
 	FRpgInventoryDragAnchor PendingPointerDragAnchor;
 	bool bHasPendingPointerDragAnchor = false;
 	bool bSpatialItemStateReleased = false;
+	int32 DragDropVisualRefreshBatchDepth = 0;
+	bool bDragDropVisualRefreshPending = false;
 };
 
 /**
@@ -604,7 +609,8 @@ public:
 	bool ResolveSpatialPreviewDescriptorAtScreenPosition(
 		const FRpgInventoryDragPayload& Payload,
 		FVector2D ScreenPosition,
-		FRpgInventorySpatialPreviewDescriptor& OutDescriptor) const;
+		FRpgInventorySpatialPreviewDescriptor& OutDescriptor,
+		FRpgInventoryInteractionPreviewPlan* OutPreviewPlan = nullptr) const;
 	void ClearExternalPreviewPayload();
 	bool IsItemWidgetFocused(const URpgInventorySpatialItemWidget* ItemWidget) const;
 
@@ -719,9 +725,23 @@ private:
 	void UpdateCellVisualStates();
 	void UpdateSpatialPreviewGhost();
 	void ClearSpatialPreviewLocal();
+	void ReplanActivePointerPreview();
 	URpgInventoryDragVisualWidget* EnsureSpatialPreviewGhost();
-	ERpgInventorySpatialCellVisualState GetCellVisualState(int32 X, int32 Y) const;
-	bool ResolvePayloadPreviewCellState(const FRpgInventoryDragPayload& Payload, int32 X, int32 Y, ERpgInventorySpatialCellVisualState& OutState) const;
+	ERpgInventorySpatialCellVisualState GetCellVisualState(
+		int32 X,
+		int32 Y,
+		const FRpgInventorySpatialPreviewDescriptor& PreviewDescriptor) const;
+	bool BuildCellPreviewDescriptor(
+		FRpgInventorySpatialPreviewDescriptor& OutDescriptor) const;
+	bool ResolvePayloadPreviewCellState(
+		const FRpgInventorySpatialPreviewDescriptor& PreviewDescriptor,
+		int32 X,
+		int32 Y,
+		ERpgInventorySpatialCellVisualState& OutState) const;
+	bool ResolveSpatialTargetGeometryAtScreenPosition(
+		const FRpgInventoryDragPayload& Payload,
+		FVector2D ScreenPosition,
+		FRpgInventorySpatialPreviewDescriptor& OutDescriptor) const;
 	void ClearObservedSlotDelegates();
 	void ObserveSlotDelegates();
 	void ClearObservedEntryDelegates();
