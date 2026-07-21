@@ -516,32 +516,51 @@ bool FRpgInventoryTypedMoveDerivationTest::RunTest(
 		MakeMoveIntent(
 			PartialSourceEntry,
 			PartialTargetEntry.Placement);
-	const FRpgInventoryMutationResult PartialMerge =
-		PartialInventory->MoveItem(PartialMergeIntent);
-	TestEqual(
-		TEXT("A capacity-limited typed merge reports partial application"),
-		PartialMerge.Code,
-		ERpgInventoryMutationResultCode::PartiallyApplied);
-	TestEqual(
-		TEXT("The partial merge applies only the target's free capacity"),
-		PartialMerge.AppliedQuantity,
-		1);
-	const FString AfterPartialMerge =
+	const FString BeforePartialMerge =
 		MakeInventorySignature(PartialInventory);
-	const FRpgInventoryMutationResult PartialMergeReplay =
+	const FRpgInventoryMutationResult PartialMergePlan =
+		PartialInventory->PlanMoveItem(PartialMergeIntent);
+	TestEqual(
+		TEXT("The public whole-entry Move plan rejects limited target capacity"),
+		PartialMergePlan.Code,
+		ERpgInventoryMutationResultCode::StackLimitReached);
+	TestEqual(
+		TEXT("The rejected whole-entry Move plan applies no quantity"),
+		PartialMergePlan.AppliedQuantity,
+		0);
+	TestEqual(
+		TEXT("Partial move planning preserves the complete source entry"),
+		MakeInventorySignature(PartialInventory),
+		BeforePartialMerge);
+
+	const FRpgInventoryMutationResult PartialMoveRejection =
 		PartialInventory->MoveItem(PartialMergeIntent);
 	TestEqual(
-		TEXT("A partial-merge retry replays its original result"),
-		PartialMergeReplay.Code,
-		PartialMerge.Code);
+		TEXT("A whole-entry Move rejects a capacity-limited merge"),
+		PartialMoveRejection.Code,
+		ERpgInventoryMutationResultCode::StackLimitReached);
 	TestEqual(
-		TEXT("A partial-merge retry preserves its original quantity"),
-		PartialMergeReplay.AppliedQuantity,
-		PartialMerge.AppliedQuantity);
+		TEXT("The rejected whole-entry Move applies no quantity"),
+		PartialMoveRejection.AppliedQuantity,
+		0);
 	TestEqual(
-		TEXT("A partial-merge retry cannot consume the reduced source again"),
+		TEXT("The rejected whole-entry Move preserves both stacks"),
 		MakeInventorySignature(PartialInventory),
-		AfterPartialMerge);
+		BeforePartialMerge);
+	const FRpgInventoryMutationResult PartialMoveReplay =
+		PartialInventory->MoveItem(PartialMergeIntent);
+	TestEqual(
+		TEXT("A rejected whole-entry Move retry replays its original result"),
+		PartialMoveReplay.Code,
+		PartialMoveRejection.Code);
+	TestEqual(
+		TEXT("A rejected whole-entry Move retry preserves zero application"),
+		PartialMoveReplay.AppliedQuantity,
+		PartialMoveRejection.AppliedQuantity);
+	TestEqual(
+		TEXT("A rejected whole-entry Move retry cannot consume the source"),
+		MakeInventorySignature(PartialInventory),
+		BeforePartialMerge);
 
 	URpgInventoryItemInstance* SwapSource =
 		Inventory->AddItemDefinitionToPlacement(

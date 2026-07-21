@@ -11,7 +11,6 @@ class ARpgPlayerController;
 class URpgInventoryItemDefinition;
 class URpgInventoryItemInstance;
 class URpgInventoryManagerComponent;
-class URpgEquipmentLoadoutComponent;
 
 USTRUCT(BlueprintType)
 struct SURVIVALRPG_API FRpgStarterInventoryEntry
@@ -72,7 +71,6 @@ private:
 	void TryGrantStarterInventory();
 	void ScheduleRetry();
 	bool ShouldWaitForPawn(const ARpgPlayerController* PlayerController) const;
-	static bool EquipmentLoadoutContainsItem(const URpgEquipmentLoadoutComponent* EquipmentLoadout, const URpgInventoryItemInstance* ItemInstance);
 
 	UPROPERTY(Transient)
 	bool bHasTriedGrant = false;

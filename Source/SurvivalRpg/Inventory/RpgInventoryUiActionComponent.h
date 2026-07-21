@@ -754,7 +754,6 @@ private:
 		TSubclassOf<URpgInventoryItemDefinition> ItemDefinition,
 		int32 AvailableCount,
 		int32 CountToStore) const;
-	bool ClearPlayerAssignmentsForItem(URpgInventoryItemInstance* Item) const;
 	bool TryBuildCurrentEquipmentIntent(
 		URpgInventoryManagerComponent* Inventory,
 		URpgInventoryItemInstance* Item,

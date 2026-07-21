@@ -34,7 +34,9 @@
 #include "GameFramework/Actor.h"
 #include "GameFramework/Pawn.h"
 #include "Misc/AutomationTest.h"
+#include "Net/UnrealNetwork.h"
 #include "Serialization/MemoryWriter.h"
+#include "UObject/UnrealType.h"
 
 namespace RpgInventoryTransactionTests
 {
@@ -167,6 +169,7 @@ namespace RpgInventoryTransactionTests
 							Request.ExpectedEntryId = Entry.EntryId;
 							Request.ExpectedSourcePlacement = Entry.Placement;
 							Request.ExpectedSourceQuantity = Entry.StackCount;
+							Request.Quantity = Entry.StackCount;
 							break;
 						}
 					}
@@ -2627,9 +2630,11 @@ bool FRpgInventoryEquipmentRuntimeReconcileLifecycleTest::RunTest(
 	TestEqual(TEXT("Initial MainHand receives one equip callback"), InitialMainRuntime->GetEquippedCount(), 1);
 	TestEqual(TEXT("Initial OffHand receives one equip callback"), InitialOffRuntime->GetEquippedCount(), 1);
 
-	FRpgEquipmentSelectionSaveData TwoHandSelection;
-	TwoHandSelection.ActiveMainHandItemId = TwoHandItem->GetItemId();
-	EquipmentLoadout->RestoreEquipmentSelection(TwoHandSelection);
+	const FString PhysicalCarryStateBeforeHandActivation =
+		MakeStrictInventorySignature(Inventory);
+	TestTrue(
+		TEXT("The native hand-selection seam activates the ready two-handed item"),
+		EquipmentLoadout->SetMainHandItemActive(TwoHandItem));
 
 	TestEqual(TEXT("Replaced MainHand receives exactly one unequip callback"), InitialMainRuntime->GetUnequippedCount(), 1);
 	TestEqual(TEXT("The two-hand conflict removes OffHand exactly once"), InitialOffRuntime->GetUnequippedCount(), 1);
@@ -2651,6 +2656,27 @@ bool FRpgInventoryEquipmentRuntimeReconcileLifecycleTest::RunTest(
 	}
 	TestEqual(TEXT("The replacement receives one equip callback"), TwoHandRuntime->GetEquippedCount(), 1);
 	TestEqual(TEXT("The replacement remains equipped"), TwoHandRuntime->GetUnequippedCount(), 0);
+	TestFalse(
+		TEXT("The native hand-selection seam rejects OffHand while a two-handed MainHand is active"),
+		EquipmentLoadout->SetOffHandItemActive(OffHandItem));
+	TestEqual(
+		TEXT("A rejected OffHand activation preserves the two-handed MainHand runtime"),
+		EquipmentManager->GetEquipmentInstanceInSlot(ERpgEquipmentSlot::MainHand),
+		static_cast<URpgEquipmentInstance*>(TwoHandRuntime));
+	TestNull(
+		TEXT("A rejected OffHand activation creates no OffHand runtime"),
+		EquipmentManager->GetEquipmentInstanceInSlot(ERpgEquipmentSlot::OffHand));
+	TestTrue(
+		TEXT("Selecting the already-active two-handed item is idempotent"),
+		EquipmentLoadout->SetMainHandItemActive(TwoHandItem));
+	TestEqual(
+		TEXT("Idempotent hand selection preserves the runtime instance"),
+		EquipmentManager->GetEquipmentInstanceInSlot(ERpgEquipmentSlot::MainHand),
+		static_cast<URpgEquipmentInstance*>(TwoHandRuntime));
+	TestEqual(
+		TEXT("Hand activation never mutates physical Carry placement"),
+		MakeStrictInventorySignature(Inventory),
+		PhysicalCarryStateBeforeHandActivation);
 	TestTrue(
 		TEXT("The two-handed runtime blocks OffHand input"),
 		EquipmentManager->IsEquipmentSlotBlocked(ERpgEquipmentSlot::OffHand));
@@ -2662,7 +2688,7 @@ bool FRpgInventoryEquipmentRuntimeReconcileLifecycleTest::RunTest(
 
 	TestTrue(
 		TEXT("An idempotent reconcile reports a complete target state"),
-		EquipmentLoadout->RefreshEquipmentLoadoutOnCurrentPawn());
+		EquipmentLoadout->ReconcileRuntimeEquipmentOnCurrentPawn());
 	TestEqual(
 		TEXT("Idempotent reconcile preserves the runtime instance"),
 		EquipmentManager->GetEquipmentInstanceInSlot(ERpgEquipmentSlot::MainHand),
@@ -2840,9 +2866,10 @@ bool FRpgInventoryEquipmentRuntimeReconcileLifecycleTest::RunTest(
 		TEXT("The old Chest runtime slot is empty"),
 		EquipmentManager->GetEquipmentInstanceInSlot(
 			ERpgEquipmentSlot::Chest));
-	URpgEquipmentInstance* HeadRuntime =
-		EquipmentManager->GetEquipmentInstanceInSlot(
-			ERpgEquipmentSlot::Head);
+	URpgInventoryAutomationTestCountingEquipmentInstance* HeadRuntime =
+		Cast<URpgInventoryAutomationTestCountingEquipmentInstance>(
+			EquipmentManager->GetEquipmentInstanceInSlot(
+				ERpgEquipmentSlot::Head));
 	if (!TestNotNull(TEXT("The replacement Head runtime exists"), HeadRuntime))
 	{
 		return false;
@@ -2851,6 +2878,39 @@ bool FRpgInventoryEquipmentRuntimeReconcileLifecycleTest::RunTest(
 		TEXT("The replacement runtime keeps the same concrete item instigator"),
 		HeadRuntime->GetInstigator(),
 		static_cast<UObject*>(MovableGrantArmor));
+
+	const FString InventoryBeforeRepeatedPhysicalReconcile =
+		MakeStrictInventorySignature(Inventory);
+	TestTrue(
+		TEXT("The first repeated physical reconcile succeeds"),
+		EquipmentLoadout->ReconcilePhysicalEquipmentFromInventory());
+	TestTrue(
+		TEXT("The second repeated physical reconcile succeeds"),
+		EquipmentLoadout->ReconcilePhysicalEquipmentFromInventory());
+	TestEqual(
+		TEXT("Repeated physical reconcile preserves the armor runtime instance"),
+		EquipmentManager->GetEquipmentInstanceInSlot(ERpgEquipmentSlot::Head),
+		static_cast<URpgEquipmentInstance*>(HeadRuntime));
+	TestEqual(
+		TEXT("Repeated physical reconcile preserves the active hand runtime instance"),
+		EquipmentManager->GetEquipmentInstanceInSlot(ERpgEquipmentSlot::MainHand),
+		static_cast<URpgEquipmentInstance*>(TwoHandRuntime));
+	TestEqual(
+		TEXT("Repeated physical reconcile emits no duplicate armor equip callback"),
+		HeadRuntime->GetEquippedCount(),
+		1);
+	TestEqual(
+		TEXT("Repeated physical reconcile does not unequip unchanged armor"),
+		HeadRuntime->GetUnequippedCount(),
+		0);
+	TestEqual(
+		TEXT("Repeated physical reconcile cannot duplicate the persistent GAS grant"),
+		HealthSet->GetMaxHealth(),
+		600.0f);
+	TestEqual(
+		TEXT("Repeated physical reconcile cannot mutate physical inventory state"),
+		MakeStrictInventorySignature(Inventory),
+		InventoryBeforeRepeatedPhysicalReconcile);
 
 	int32 RuntimeCountForArmor = 0;
 	for (URpgEquipmentInstance* RuntimeInstance :
@@ -3366,24 +3426,22 @@ bool FRpgInventoryEquipmentMirrorCannotMovePhysicalItemTest::RunTest(
 		return false;
 	}
 
-	TestFalse(
-		TEXT("The loadout mirror cannot physically equip a Pockets item"),
-		EquipmentLoadout->AssignItemToEquipmentSlot(
-			ERpgEquipmentSlot::Backpack,
-			Backpack));
+	TestTrue(
+		TEXT("Reconciling while the backpack remains in Pockets succeeds"),
+		EquipmentLoadout->ReconcilePhysicalEquipmentFromInventory());
 	FRpgInventoryEntryView InitialEntry;
 	TestTrue(
-		TEXT("The rejected direct mirror assignment keeps the item addressable"),
+		TEXT("Pockets reconciliation keeps the item addressable"),
 		GetEntryView(
 			Inventory,
 			Backpack->GetItemId(),
 			InitialEntry));
 	TestEqual(
-		TEXT("The rejected direct mirror assignment leaves the item in Pockets"),
+		TEXT("Reconciliation never moves a Pockets item into Gear"),
 		InitialEntry.Placement.GetContainerHandle(),
 		Pockets);
 	TestNull(
-		TEXT("The rejected direct mirror assignment cannot create a mirror entry"),
+		TEXT("Only physical Gear truth may create a Backpack mirror entry"),
 		EquipmentLoadout->GetItemInEquipmentSlot(
 			ERpgEquipmentSlot::Backpack));
 
@@ -3444,12 +3502,11 @@ bool FRpgInventoryEquipmentMirrorCannotMovePhysicalItemTest::RunTest(
 		EquipmentPayload.StackCount,
 		EquippedEntry.StackCount);
 
-	TestNull(
-		TEXT("The mirror cannot clear an item that remains physically equipped"),
-		EquipmentLoadout->ClearEquipmentSlot(
-			ERpgEquipmentSlot::Backpack));
+	TestTrue(
+		TEXT("Repeated reconciliation accepts the unchanged physical backpack"),
+		EquipmentLoadout->ReconcilePhysicalEquipmentFromInventory());
 	TestEqual(
-		TEXT("A rejected direct clear preserves the physical mirror"),
+		TEXT("Repeated reconciliation preserves the physical Backpack mirror"),
 		EquipmentLoadout->GetItemInEquipmentSlot(
 			ERpgEquipmentSlot::Backpack),
 		Backpack);
@@ -3519,54 +3576,55 @@ bool FRpgInventoryEquipmentMirrorCannotMovePhysicalItemTest::RunTest(
 		return false;
 	}
 
-	TestFalse(
-		TEXT("The loadout cannot grant Pockets armor as Chest equipment"),
-		EquipmentLoadout->AssignItemToEquipmentSlot(
-			ERpgEquipmentSlot::Chest,
-			Armor));
+	TestTrue(
+		TEXT("Reconciling Content armor succeeds without treating it as equipped"),
+		EquipmentLoadout->ReconcilePhysicalEquipmentFromInventory());
 	TestNull(
-		TEXT("Rejected direct armor assignment creates no Chest mirror"),
+		TEXT("Content armor creates no Chest mirror"),
 		EquipmentLoadout->GetItemInEquipmentSlot(
 			ERpgEquipmentSlot::Chest));
 
-	FRpgInventoryEquipmentIntent EquipArmorIntent =
-		MakeEquipmentIntent(
-			Inventory,
-			Armor,
-			ERpgInventoryEquipmentIntentOperation::EquipToSlot,
-			ERpgEquipmentSlot::Chest);
-	UiActions->RequestApplyInventoryEquipmentIntent(
-		Inventory,
-		EquipArmorIntent);
+	const FRpgInventoryContainerHandle GearChest =
+		FRpgInventoryContainerHandle::MakeRoot(
+			URpgPlayerInventoryLayoutComponent::GearChestGroupId);
+	if (!TestTrue(
+			TEXT("The trusted inventory seam moves armor into physical Gear.Chest"),
+			MoveWholeEntryToEquipmentPlacement(
+				Inventory,
+				Armor,
+				MakePlacement(GearChest, 0, 0))))
+	{
+		return false;
+	}
 	FRpgInventoryEntryView EquippedArmorEntry;
 	TestTrue(
-		TEXT("The typed armor equip keeps the instance addressable"),
+		TEXT("The physical armor move keeps the instance addressable"),
 		GetEntryView(
 			Inventory,
 			Armor->GetItemId(),
 			EquippedArmorEntry));
 	TestEqual(
-		TEXT("The typed transaction owns Gear.Chest placement"),
+		TEXT("The inventory graph owns Gear.Chest placement"),
 		EquippedArmorEntry.Placement.GetContainerHandle(),
-		FRpgInventoryContainerHandle::MakeRoot(
-			URpgPlayerInventoryLayoutComponent::
-				GearChestGroupId));
+		GearChest);
+	TestNull(
+		TEXT("A physical manager move cannot write the loadout mirror as a side effect"),
+		EquipmentLoadout->GetItemInEquipmentSlot(
+			ERpgEquipmentSlot::Chest));
+	TestTrue(
+		TEXT("Reconciliation imports the complete physical Gear snapshot"),
+		EquipmentLoadout->ReconcilePhysicalEquipmentFromInventory());
 	TestEqual(
 		TEXT("Reconciliation mirrors the physical Chest item"),
 		EquipmentLoadout->GetItemInEquipmentSlot(
 			ERpgEquipmentSlot::Chest),
 		Armor);
 
-	TestNull(
-		TEXT("Direct Chest clear fails while armor remains physically equipped"),
-		EquipmentLoadout->ClearEquipmentSlot(
-			ERpgEquipmentSlot::Chest));
-	TestFalse(
-		TEXT("The broad cleanup adapter also fails closed for physical Gear"),
-		EquipmentLoadout->ClearItemFromAllEquipmentSlots(
-			Armor));
+	TestTrue(
+		TEXT("Repeated reconciliation accepts unchanged Gear.Chest truth"),
+		EquipmentLoadout->ReconcilePhysicalEquipmentFromInventory());
 	TestEqual(
-		TEXT("Failed cleanup preserves the Chest mirror"),
+		TEXT("Repeated reconciliation preserves the Chest mirror"),
 		EquipmentLoadout->GetItemInEquipmentSlot(
 			ERpgEquipmentSlot::Chest),
 		Armor);
@@ -3710,13 +3768,6 @@ bool FRpgInventoryContainerGearDragDropTest::RunTest(const FString& Parameters)
 	TestFalse(
 		TEXT("The layout consumes the shared policy for Gear.Pouch"),
 		Layout->CanItemUseSlotAddress(Backpack, PouchAddress));
-	TestTrue(
-		TEXT("The loadout reconciliation accepts the same authored Backpack placement"),
-		EquipmentLoadout->CanAssignItemToEquipmentSlot(ERpgEquipmentSlot::Backpack, Backpack));
-	TestFalse(
-		TEXT("The loadout reconciliation rejects the same unauthored Pouch placement"),
-		EquipmentLoadout->CanAssignItemToEquipmentSlot(ERpgEquipmentSlot::Pouch, Backpack));
-
 	const FRpgInventoryContainerHandle PouchSlot =
 		FRpgInventoryContainerHandle::MakeRoot(URpgPlayerInventoryLayoutComponent::GearPouchGroupId);
 	const FRpgInventoryMutationRequest RejectedPouchRequest = MakePlacementRequest(
@@ -4023,12 +4074,6 @@ bool FRpgInventoryCarryQuickAccessBindingTest::RunTest(const FString& Parameters
 	TestFalse(
 		TEXT("The Carry layout rejects the category-compatible item from an unauthored OffHand role"),
 		Layout->CanItemUseSlotAddress(MainHandOnlyShield, ShieldSlotAddress));
-	TestTrue(
-		TEXT("The loadout accepts the same authored MainHand role"),
-		EquipmentLoadout->CanAssignItemToEquipmentSlot(ERpgEquipmentSlot::MainHand, Weapon));
-	TestFalse(
-		TEXT("The loadout rejects the category-compatible item from the unauthored OffHand role"),
-		EquipmentLoadout->CanAssignItemToEquipmentSlot(ERpgEquipmentSlot::OffHand, MainHandOnlyShield));
 	const FRpgInventoryMutationRequest RejectedOffHandRequest = MakePlacementRequest(
 		ERpgInventoryMutationOperation::Equip,
 		MainHandOnlyShield,
@@ -5397,7 +5442,7 @@ bool FRpgEquipmentLoadIgnoresNestedContentsTest::RunTest(const FString& Paramete
 		return false;
 	}
 
-	EquipmentLoadout->RefreshEquipmentLoadState();
+	EquipmentLoadout->ReconcileEquipmentLoadFromInventory();
 	TestEqual(TEXT("Only the equipped backpack contributes its authored load"), EquipmentLoadout->GetEquipmentLoadWeight(), 7.5f);
 	TestEqual(TEXT("A 7.5 kg backpack remains in the Light tier"), EquipmentLoadout->GetEquipmentLoadTier(), ERpgEquipmentLoadTier::Light);
 
@@ -5421,7 +5466,7 @@ bool FRpgEquipmentLoadIgnoresNestedContentsTest::RunTest(const FString& Paramete
 	}
 	TestTrue(TEXT("Sixteen 30 kg test items fill the backpack's complete 4x4 content grid"), bFilledBackpack);
 
-	EquipmentLoadout->RefreshEquipmentLoadState();
+	EquipmentLoadout->ReconcileEquipmentLoadFromInventory();
 	TestEqual(
 		TEXT("All 480 kg of nested backpack contents are excluded from equipment load"),
 		EquipmentLoadout->GetEquipmentLoadWeight(),
@@ -5449,7 +5494,7 @@ bool FRpgEquipmentLoadIgnoresNestedContentsTest::RunTest(const FString& Paramete
 	const FRpgInventoryMutationResult MoveResult = Inventory->ExecuteInventoryMutation(MoveToGear);
 	TestEqual(TEXT("The same heavy armor item can move from backpack contents into Gear.Chest"), MoveResult.Code, ERpgInventoryMutationResultCode::Success);
 
-	EquipmentLoadout->RefreshEquipmentLoadState();
+	EquipmentLoadout->ReconcileEquipmentLoadFromInventory();
 	TestEqual(
 		TEXT("Once physically in Gear, that exact item contributes its 30 kg load"),
 		EquipmentLoadout->GetEquipmentLoadWeight(),
@@ -5917,15 +5962,25 @@ bool FRpgInventorySplitIdempotencyTest::RunTest(const FString& Parameters)
 	}
 	TestEqual(TEXT("Idempotent retry still conserves total quantity"), TotalQuantity, 9);
 
-	FRpgInventoryMutationRequest ZeroSplit = SplitRequest;
-	ZeroSplit.RequestId = FGuid::NewGuid();
+	FRpgInventoryMutationRequest ZeroSplit = MakePlacementRequest(
+		ERpgInventoryMutationOperation::Split,
+		SourceStack,
+		Root,
+		Root,
+		2,
+		0);
 	ZeroSplit.Quantity = 0;
 	TestEqual(
-		TEXT("Zero is outside the exact split range"),
+		TEXT("Zero normalizes to the full entry and remains outside the exact split range"),
 		Inventory->PlanInventoryMutation(ZeroSplit).Code,
 		ERpgInventoryMutationResultCode::StackLimitReached);
-	FRpgInventoryMutationRequest WholeStackSplit = SplitRequest;
-	WholeStackSplit.RequestId = FGuid::NewGuid();
+	FRpgInventoryMutationRequest WholeStackSplit = MakePlacementRequest(
+		ERpgInventoryMutationOperation::Split,
+		SourceStack,
+		Root,
+		Root,
+		2,
+		0);
 	WholeStackSplit.Quantity = Inventory->GetItemStackCount(SourceStack);
 	TestEqual(
 		TEXT("The full current stack is outside the exact split range"),
@@ -6614,7 +6669,234 @@ bool FRpgInventoryLowLevelBlueprintDeprecationTest::RunTest(const FString& Param
 				Function->HasMetaData(TEXT("DeprecatedFunction")));
 		}
 	}
+
+	static const FName HiddenLoadoutFunctionNames[] = {
+		FName(TEXT("RequestAssignItemToEquipmentSlot")),
+		FName(TEXT("RequestClearEquipmentSlot")),
+		FName(TEXT("CanAssignItemToEquipmentSlot")),
+		FName(TEXT("AssignItemToEquipmentSlot")),
+		FName(TEXT("ClearEquipmentSlot")),
+		FName(TEXT("ClearItemFromAllEquipmentSlots")),
+		FName(TEXT("CanRemoveItemFromLoadout")),
+		FName(TEXT("GetLoadoutSlots")),
+		FName(TEXT("CanActivateItemInEquipmentSlot")),
+		FName(TEXT("ActivateMainHandItem")),
+		FName(TEXT("ActivateOffHandItem")),
+		FName(TEXT("SetMainHandItemActive")),
+		FName(TEXT("SetOffHandItemActive")),
+		FName(TEXT("ClearActiveMainHand")),
+		FName(TEXT("ClearActiveHands")),
+		FName(TEXT("ClearActiveOffHand")),
+		FName(TEXT("UnequipLoadoutFromCurrentPawn")),
+		FName(TEXT("RefreshEquipmentLoadoutOnCurrentPawn")),
+		FName(TEXT("DetachRuntimeEquipmentFromCurrentPawn")),
+		FName(TEXT("ReconcileRuntimeEquipmentOnCurrentPawn")),
+		FName(TEXT("RefreshEquipmentLoadState")),
+		FName(TEXT("ReconcileEquipmentLoadFromInventory")),
+		FName(TEXT("ReconcilePhysicalEquipmentFromInventory")),
+		FName(TEXT("ExportEquipmentSelection")),
+		FName(TEXT("RestoreEquipmentSelection")),
+	};
+	for (const FName FunctionName : HiddenLoadoutFunctionNames)
+	{
+		TestNull(
+			*FString::Printf(
+				TEXT("%s is native-only and absent from the Blueprint mutation surface"),
+				*FunctionName.ToString()),
+			URpgEquipmentLoadoutComponent::StaticClass()->
+				FindFunctionByName(FunctionName));
+	}
+
+	for (TFieldIterator<UFunction> FunctionIt(
+			 URpgEquipmentLoadoutComponent::StaticClass(),
+			 EFieldIteratorFlags::ExcludeSuper);
+		 FunctionIt;
+		 ++FunctionIt)
+	{
+		TestFalse(
+			*FString::Printf(
+				TEXT("Loadout function %s is never a player-facing Server RPC"),
+				*FunctionIt->GetName()),
+			FunctionIt->HasAnyFunctionFlags(FUNC_NetServer));
+	}
+
+	static const FName PureLoadoutGetterNames[] = {
+		GET_FUNCTION_NAME_CHECKED(
+			URpgEquipmentLoadoutComponent,
+			GetItemInEquipmentSlot),
+		GET_FUNCTION_NAME_CHECKED(
+			URpgEquipmentLoadoutComponent,
+			GetEquipmentLoadWeight),
+		GET_FUNCTION_NAME_CHECKED(
+			URpgEquipmentLoadoutComponent,
+			GetEquipmentLoadTier),
+		GET_FUNCTION_NAME_CHECKED(
+			URpgEquipmentLoadoutComponent,
+			GetEquipmentLoadTierTag),
+		GET_FUNCTION_NAME_CHECKED(
+			URpgEquipmentLoadoutComponent,
+			GetDodgeProfileForCurrentLoad),
+	};
+	for (const FName FunctionName : PureLoadoutGetterNames)
+	{
+		const UFunction* Function =
+			URpgEquipmentLoadoutComponent::StaticClass()->
+				FindFunctionByName(FunctionName);
+		if (TestNotNull(
+				*FString::Printf(
+					TEXT("%s remains reflected as read-only presentation data"),
+					*FunctionName.ToString()),
+				Function))
+		{
+			TestTrue(
+				*FString::Printf(
+					TEXT("%s is BlueprintPure"),
+					*FunctionName.ToString()),
+				Function->HasAnyFunctionFlags(FUNC_BlueprintPure));
+		}
+	}
+
+	static const FName CanonicalEquipmentGatewayNames[] = {
+		GET_FUNCTION_NAME_CHECKED(
+			URpgInventoryUiActionComponent,
+			RequestApplyInventoryEquipmentIntent),
+		GET_FUNCTION_NAME_CHECKED(
+			URpgInventoryUiActionComponent,
+			RequestActivateCarrySlot),
+		GET_FUNCTION_NAME_CHECKED(
+			URpgInventoryUiActionComponent,
+			RequestClearActiveHands),
+	};
+	for (const FName FunctionName : CanonicalEquipmentGatewayNames)
+	{
+		const UFunction* Function =
+			URpgInventoryUiActionComponent::StaticClass()->
+				FindFunctionByName(FunctionName);
+		if (TestNotNull(
+				*FString::Printf(
+					TEXT("%s remains the reflected equipment gateway"),
+					*FunctionName.ToString()),
+				Function))
+		{
+			TestTrue(
+				*FString::Printf(
+					TEXT("%s is an owning-client Server RPC"),
+					*FunctionName.ToString()),
+				Function->HasAnyFunctionFlags(FUNC_NetServer));
+			TestFalse(
+				*FString::Printf(
+					TEXT("%s is canonical rather than deprecated"),
+					*FunctionName.ToString()),
+				Function->HasMetaData(TEXT("DeprecatedFunction")));
+		}
+	}
 	return true;
+}
+
+IMPLEMENT_SIMPLE_AUTOMATION_TEST(
+	FRpgEquipmentReplicationConditionContractTest,
+	"SurvivalRpg.Inventory.Intent.Equip.ReplicationConditionsSeparatePrivateSelectionFromPawnRuntime",
+	EAutomationTestFlags::EditorContext | EAutomationTestFlags::EngineFilter)
+
+bool FRpgEquipmentReplicationConditionContractTest::RunTest(
+	const FString& Parameters)
+{
+	auto VerifyLifetimeCondition =
+		[this](
+			const UObject* Object,
+			const TArray<FLifetimeProperty>& LifetimeProperties,
+			FName PropertyName,
+			ELifetimeCondition ExpectedCondition)
+		{
+			if (!Object)
+			{
+				AddError(TEXT("A replication-contract CDO is missing"));
+				return false;
+			}
+
+			const FProperty* Property = FindFProperty<FProperty>(
+				Object->GetClass(),
+				PropertyName);
+			if (!TestNotNull(
+					*FString::Printf(
+						TEXT("Replicated property %s.%s exists"),
+						*Object->GetClass()->GetName(),
+						*PropertyName.ToString()),
+					Property))
+			{
+				return false;
+			}
+			TestTrue(
+				*FString::Printf(
+					TEXT("%s.%s carries CPF_Net"),
+					*Object->GetClass()->GetName(),
+					*PropertyName.ToString()),
+				Property->HasAnyPropertyFlags(CPF_Net));
+
+			const FLifetimeProperty* LifetimeProperty =
+				LifetimeProperties.FindByPredicate(
+					[Property](const FLifetimeProperty& Candidate)
+					{
+						return Candidate.RepIndex == Property->RepIndex;
+					});
+			if (!TestNotNull(
+					*FString::Printf(
+						TEXT("%s.%s has a lifetime replication record"),
+						*Object->GetClass()->GetName(),
+						*PropertyName.ToString()),
+					LifetimeProperty))
+			{
+				return false;
+			}
+
+			TestEqual(
+				*FString::Printf(
+					TEXT("%s.%s uses the intended replication condition"),
+					*Object->GetClass()->GetName(),
+					*PropertyName.ToString()),
+				static_cast<int32>(LifetimeProperty->Condition),
+				static_cast<int32>(ExpectedCondition));
+			return true;
+		};
+
+	const URpgEquipmentLoadoutComponent* LoadoutCDO =
+		GetDefault<URpgEquipmentLoadoutComponent>();
+	const URpgEquipmentManagerComponent* EquipmentManagerCDO =
+		GetDefault<URpgEquipmentManagerComponent>();
+	LoadoutCDO->GetClass()->SetUpRuntimeReplicationData();
+	EquipmentManagerCDO->GetClass()->SetUpRuntimeReplicationData();
+	TArray<FLifetimeProperty> LoadoutLifetimeProperties;
+	TArray<FLifetimeProperty> EquipmentManagerLifetimeProperties;
+	LoadoutCDO->GetLifetimeReplicatedProps(LoadoutLifetimeProperties);
+	EquipmentManagerCDO->GetLifetimeReplicatedProps(
+		EquipmentManagerLifetimeProperties);
+	bool bContractResolved = true;
+	bContractResolved &= VerifyLifetimeCondition(
+		LoadoutCDO,
+		LoadoutLifetimeProperties,
+		FName(TEXT("Slots")),
+		COND_OwnerOnly);
+	bContractResolved &= VerifyLifetimeCondition(
+		LoadoutCDO,
+		LoadoutLifetimeProperties,
+		FName(TEXT("RememberedOffhands")),
+		COND_OwnerOnly);
+	bContractResolved &= VerifyLifetimeCondition(
+		LoadoutCDO,
+		LoadoutLifetimeProperties,
+		FName(TEXT("CurrentEquipmentLoadWeight")),
+		COND_OwnerOnly);
+	bContractResolved &= VerifyLifetimeCondition(
+		LoadoutCDO,
+		LoadoutLifetimeProperties,
+		FName(TEXT("CurrentEquipmentLoadTier")),
+		COND_OwnerOnly);
+	bContractResolved &= VerifyLifetimeCondition(
+		EquipmentManagerCDO,
+		EquipmentManagerLifetimeProperties,
+		FName(TEXT("EquipmentList")),
+		COND_None);
+	return bContractResolved;
 }
 
 IMPLEMENT_SIMPLE_AUTOMATION_TEST(

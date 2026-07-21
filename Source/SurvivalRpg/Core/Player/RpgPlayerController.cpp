@@ -249,7 +249,7 @@ void ARpgPlayerController::OnUnPossess()
 
 	if (EquipmentLoadoutComponent)
 	{
-		EquipmentLoadoutComponent->UnequipLoadoutFromCurrentPawn();
+		EquipmentLoadoutComponent->DetachRuntimeEquipmentFromCurrentPawn();
 	}
 
 	UnbindFromPawnExtensionForLoadout();
@@ -500,7 +500,7 @@ void ARpgPlayerController::HandlePossessedPawnAbilitySystemInitialized()
 {
 	if (HasAuthority() && EquipmentLoadoutComponent)
 	{
-		EquipmentLoadoutComponent->RefreshEquipmentLoadoutOnCurrentPawn();
+		EquipmentLoadoutComponent->ReconcileRuntimeEquipmentOnCurrentPawn();
 	}
 
 	if (HasAuthority() && PlayerInventoryLayoutComponent)
@@ -518,7 +518,7 @@ void ARpgPlayerController::HandlePossessedPawnAbilitySystemUninitialized()
 {
 	if (EquipmentLoadoutComponent)
 	{
-		EquipmentLoadoutComponent->UnequipLoadoutFromCurrentPawn();
+		EquipmentLoadoutComponent->DetachRuntimeEquipmentFromCurrentPawn();
 	}
 }
 
@@ -564,7 +564,7 @@ void ARpgPlayerController::HandleGameModePlayerRespawned(APlayerController* Resp
 
 	if (EquipmentLoadoutComponent)
 	{
-		EquipmentLoadoutComponent->RefreshEquipmentLoadoutOnCurrentPawn();
+		EquipmentLoadoutComponent->ReconcileRuntimeEquipmentOnCurrentPawn();
 	}
 
 	if (PlayerInventoryLayoutComponent)

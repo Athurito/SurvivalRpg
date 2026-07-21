@@ -728,24 +728,6 @@ void URpgInventoryUiActionComponent::RequestTransferInventoryItem_Implementation
 		return;
 	}
 
-	const bool bTransfersWholePlayerEntry =
-		SourceInventory == FindPlayerInventory() &&
-		Intent.Quantity == Intent.ExpectedSourceQuantity;
-	URpgEquipmentLoadoutComponent* EquipmentLoadout =
-		bTransfersWholePlayerEntry ? FindEquipmentLoadout() : nullptr;
-	if (EquipmentLoadout &&
-		!EquipmentLoadout->CanRemoveItemFromLoadout(Item))
-	{
-		SendAndCacheExactTransferFeedback(
-			SourceInventory,
-			TargetInventory,
-			Intent,
-			ERpgInventoryActionFeedbackResult::ServerRejected,
-			Item,
-			Intent.Quantity);
-		return;
-	}
-
 	const FRpgInventoryMutationResult Result =
 		SourceInventory->TransferItem(
 			TargetInventory,
@@ -763,16 +745,6 @@ void URpgInventoryUiActionComponent::RequestTransferInventoryItem_Implementation
 		return;
 	}
 
-	if (bTransfersWholePlayerEntry)
-	{
-		const bool bClearedAssignments =
-			ClearPlayerAssignmentsForItem(Item);
-		ensureMsgf(
-			bClearedAssignments,
-			TEXT("Validated player assignment clear failed after transfer. Item=%s ItemId=%s"),
-			*GetNameSafe(Item),
-			*Intent.ItemId.ToString());
-	}
 	URpgInventoryManagerComponent* PlayerInventory =
 		FindPlayerInventory();
 	if ((SourceInventory == PlayerInventory &&
@@ -1196,25 +1168,6 @@ void URpgInventoryUiActionComponent::RequestQuickTransferItem_Implementation(
 		return;
 	}
 
-	const bool bTransfersWholePlayerEntry =
-		SourceInventory != TargetInventory &&
-		SourceInventory == FindPlayerInventory() &&
-		RequestedCount == AvailableCount;
-	URpgEquipmentLoadoutComponent* EquipmentLoadout =
-		bTransfersWholePlayerEntry ? FindEquipmentLoadout() : nullptr;
-	if (EquipmentLoadout &&
-		!EquipmentLoadout->CanRemoveItemFromLoadout(Item))
-	{
-		SendAndCacheQuickTransferFeedback(
-			SourceInventory,
-			TargetInventory,
-			Request,
-			ERpgInventoryActionFeedbackResult::ServerRejected,
-			Item,
-			RequestedCount);
-		return;
-	}
-
 	FRpgInventoryMutationResult MutationResult;
 	if (SourceInventory == TargetInventory)
 	{
@@ -1267,16 +1220,6 @@ void URpgInventoryUiActionComponent::RequestQuickTransferItem_Implementation(
 		return;
 	}
 
-	if (bTransfersWholePlayerEntry)
-	{
-		const bool bClearedAssignments =
-			ClearPlayerAssignmentsForItem(Item);
-		ensureMsgf(
-			bClearedAssignments,
-			TEXT("Validated player assignment clear failed after quick transfer. Item=%s ItemId=%s"),
-			*GetNameSafe(Item),
-			*Request.ItemId.ToString());
-	}
 	URpgInventoryManagerComponent* PlayerInventory =
 		FindPlayerInventory();
 	const bool bTargetTouchesPlayerEquipment =
@@ -2174,21 +2117,6 @@ void URpgInventoryUiActionComponent::ExecuteUseInventoryItem(
 		return;
 	}
 
-	const bool bConsumesWholePlayerEntry =
-		Inventory == PlayerInventory &&
-		ConsumeCount > 0 &&
-		ConsumeCount == AvailableCount;
-	URpgEquipmentLoadoutComponent* EquipmentLoadout =
-		bConsumesWholePlayerEntry ? FindEquipmentLoadout() : nullptr;
-	if (EquipmentLoadout &&
-		!EquipmentLoadout->CanRemoveItemFromLoadout(Item))
-	{
-		SendUseFeedback(
-			ERpgInventoryActionFeedbackResult::ServerRejected,
-			ConsumeCount);
-		return;
-	}
-
 	URpgAbilitySystemComponent* AbilitySystem = FindPlayerAbilitySystem();
 	if (!AbilitySystem)
 	{
@@ -2211,7 +2139,6 @@ void URpgInventoryUiActionComponent::ExecuteUseInventoryItem(
 		Inventory == PlayerInventory && ConsumeCount > 0;
 	if (bConsumesFromPlayerInventory)
 	{
-		const TWeakObjectPtr<URpgInventoryItemInstance> WeakItem = Item;
 		const TWeakObjectPtr<URpgInventoryManagerComponent> WeakInventory =
 			Inventory;
 		const FRpgInventoryItemId UsedItemId = Item->GetItemId();
@@ -2241,27 +2168,6 @@ void URpgInventoryUiActionComponent::ExecuteUseInventoryItem(
 								CurrentPlacement) &&
 							IsPlayerEquipmentPlacement(
 								CurrentPlacement));
-					if (!*bRequiresEquipmentCleanup)
-					{
-						if (URpgEquipmentLoadoutComponent*
-								CurrentLoadout =
-									FindEquipmentLoadout())
-						{
-							const TArray<FRpgEquipmentLoadoutSlot>
-								CurrentSlots =
-									CurrentLoadout->
-										GetLoadoutSlots();
-							*bRequiresEquipmentCleanup =
-								CurrentSlots.ContainsByPredicate(
-										[CurrentItem](
-											const FRpgEquipmentLoadoutSlot&
-												Slot)
-										{
-											return Slot.Item ==
-												CurrentItem;
-										});
-						}
-					}
 
 					const int32 CurrentCount =
 						CurrentInventory->GetItemStackCount(
@@ -2275,16 +2181,12 @@ void URpgInventoryUiActionComponent::ExecuteUseInventoryItem(
 						return false;
 					}
 
-					URpgEquipmentLoadoutComponent* CurrentLoadout =
-						FindEquipmentLoadout();
-					return !CurrentLoadout ||
-						CurrentLoadout->CanRemoveItemFromLoadout(
-							CurrentItem);
+					return true;
 				}));
 		UseContext->SetConsumeSucceededCallback(
 			FSimpleDelegate::CreateWeakLambda(
 				this,
-				[this, WeakInventory, WeakItem, UsedItemId,
+				[this, WeakInventory, UsedItemId,
 					bRequiresEquipmentCleanup]()
 				{
 					URpgInventoryManagerComponent* CurrentInventory =
@@ -2298,25 +2200,11 @@ void URpgInventoryUiActionComponent::ExecuteUseInventoryItem(
 						return;
 					}
 
-					URpgInventoryItemInstance* ConsumedItem =
-						WeakItem.Get();
-					if (!ConsumedItem)
-					{
-						return;
-					}
-
 					if (!*bRequiresEquipmentCleanup)
 					{
 						return;
 					}
 
-					const bool bClearedAssignments =
-						ClearPlayerAssignmentsForItem(ConsumedItem);
-					ensureMsgf(
-						bClearedAssignments,
-						TEXT("Validated player assignment clear failed after consuming item %s (%s)."),
-						*GetNameSafe(ConsumedItem),
-						*ConsumedItem->GetItemId().ToString());
 					SyncEquipmentLoadoutFromGearSlots();
 					SyncActiveHandsFromCarrySlots();
 				}));
@@ -2659,19 +2547,6 @@ void URpgInventoryUiActionComponent::RequestDropInventoryItemById_Implementation
 	URpgInventoryManagerComponent* PlayerInventory = FindPlayerInventory();
 	const bool bDropsWholePlayerEntry =
 		Inventory == PlayerInventory && Request.StackCount == AvailableCount;
-	URpgEquipmentLoadoutComponent* EquipmentLoadout =
-		bDropsWholePlayerEntry ? FindEquipmentLoadout() : nullptr;
-	if (EquipmentLoadout &&
-		!EquipmentLoadout->CanRemoveItemFromLoadout(Item))
-	{
-		SendAndCacheManualDropFeedback(
-			Inventory,
-			Request,
-			ERpgInventoryActionFeedbackResult::ServerRejected,
-			Item,
-			Request.StackCount);
-		return;
-	}
 
 	URpgInventoryManagerComponent* DropTargetInventory = nullptr;
 	if (!TryTransferManualDrop(
@@ -2689,21 +2564,12 @@ void URpgInventoryUiActionComponent::RequestDropInventoryItemById_Implementation
 		return;
 	}
 
-	if (bDropsWholePlayerEntry)
+	if (bDropsWholePlayerEntry &&
+		IsPlayerEquipmentPlacement(
+			Request.ExpectedSourcePlacement))
 	{
-		const bool bClearedAssignments =
-			ClearPlayerAssignmentsForItem(Item);
-		ensureMsgf(
-			bClearedAssignments,
-			TEXT("Validated player assignment clear failed after dropping item %s (%s)."),
-			*GetNameSafe(Item),
-			*Request.ItemId.ToString());
-		if (IsPlayerEquipmentPlacement(
-				Request.ExpectedSourcePlacement))
-		{
-			SyncEquipmentLoadoutFromGearSlots();
-			SyncActiveHandsFromCarrySlots();
-		}
+		SyncEquipmentLoadoutFromGearSlots();
+		SyncActiveHandsFromCarrySlots();
 	}
 
 	SendAndCacheManualDropFeedback(
@@ -3522,19 +3388,6 @@ URpgInventoryUiActionComponent::PlanExactTransferPlacement(
 			Intent.Quantity);
 	}
 
-	const bool bTransfersWholePlayerEntry =
-		SourceInventory == FindPlayerInventory() &&
-		Intent.Quantity == SourceEntry.StackCount;
-	const URpgEquipmentLoadoutComponent* EquipmentLoadout =
-		bTransfersWholePlayerEntry ? FindEquipmentLoadout() : nullptr;
-	if (EquipmentLoadout &&
-		!EquipmentLoadout->CanRemoveItemFromLoadout(Item))
-	{
-		return MakeRejectedPlacementPlan(
-			ERpgInventoryMutationResultCode::ItemNotAllowed,
-			Intent.Quantity);
-	}
-
 	FRpgInventoryPlacementQuery Query;
 	Query.Purpose = ERpgInventoryPlacementPurpose::Transfer;
 	Query.Search = ERpgInventoryPlacementSearch::Exact;
@@ -3882,20 +3735,6 @@ URpgInventoryUiActionComponent::PlanQuickTransferDestination(
 			RequestedCount);
 	}
 
-	const bool bTransfersWholePlayerEntry =
-		SourceInventory != TargetInventory &&
-		SourceInventory == FindPlayerInventory() &&
-		RequestedCount == AvailableCount;
-	const URpgEquipmentLoadoutComponent* EquipmentLoadout =
-		bTransfersWholePlayerEntry ? FindEquipmentLoadout() : nullptr;
-	if (EquipmentLoadout &&
-		!EquipmentLoadout->CanRemoveItemFromLoadout(Item))
-	{
-		return MakeRejectedPlacementPlan(
-			ERpgInventoryMutationResultCode::ItemNotAllowed,
-			RequestedCount);
-	}
-
 	TArray<FRpgInventoryContainerHandle> CandidateTargets;
 	if (!Request.PreferredTargetContainers.IsEmpty())
 	{
@@ -4168,7 +4007,10 @@ URpgInventoryUiActionComponent::PlanQuickTransferInContainer(
 							CandidatePlan.Steps[0].Placement;
 						return CandidatePlan;
 					}
-					LastPlan = MoveTemp(CandidatePlan);
+					if (!CandidatePlan.IsCompleteSuccess())
+					{
+						LastPlan = MoveTemp(CandidatePlan);
+					}
 				}
 			}
 		}
@@ -4420,16 +4262,6 @@ bool URpgInventoryUiActionComponent::CanAccessBaseStorageStation(const URpgBaseS
 	const AController* OwnerController = Cast<AController>(GetOwner());
 	const AActor* RequestingActor = OwnerController ? OwnerController->GetPawn() : GetOwner();
 	return Station->CanActorAccess(RequestingActor);
-}
-
-bool URpgInventoryUiActionComponent::ClearPlayerAssignmentsForItem(URpgInventoryItemInstance* Item) const
-{
-	if (URpgEquipmentLoadoutComponent* EquipmentLoadout = FindEquipmentLoadout())
-	{
-		return EquipmentLoadout->ClearItemFromAllEquipmentSlots(Item);
-	}
-
-	return true;
 }
 
 bool URpgInventoryUiActionComponent::TryBuildCurrentEquipmentIntent(
@@ -5070,7 +4902,7 @@ void URpgInventoryUiActionComponent::SyncEquipmentLoadoutFromGearSlots() const
 	}
 
 	// Carry changes affect load without changing the non-hand Gear mirror. Do not rebuild runtime actors or GAS grants.
-	EquipmentLoadout->RefreshEquipmentLoadState();
+	EquipmentLoadout->ReconcileEquipmentLoadFromInventory();
 }
 
 void URpgInventoryUiActionComponent::SyncActiveHandsFromCarrySlots() const

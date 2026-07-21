@@ -4,6 +4,7 @@
 
 #include "RpgAbilityBindingResolver.h"
 #include "RpgEquipmentAutomationTestTypes.h"
+#include "RpgEquipmentInstance.h"
 #include "RpgEquipmentLoadoutComponent.h"
 #include "RpgEquipmentManagerComponent.h"
 #include "SurvivalRpg/AbilitySystem/Abilities/RpgGameplayAbility.h"
@@ -209,6 +210,9 @@ bool FRpgEquipmentPersistentHealthGrantTest::RunTest(const FString& Parameters)
 	{
 		return false;
 	}
+	TestNull(
+		TEXT("The direct definition-driven runtime seam does not require a player loadout component"),
+		Pawn->FindComponentByClass<URpgEquipmentLoadoutComponent>());
 
 	// The standalone automation world does not run the complete PlayerState component lifecycle.
 	AbilitySystemComponent->AddAttributeSetSubobject(HealthSet);
@@ -227,6 +231,13 @@ bool FRpgEquipmentPersistentHealthGrantTest::RunTest(const FString& Parameters)
 	{
 		return false;
 	}
+	TestNull(
+		TEXT("Definition-driven NPC/runtime equipment intentionally has no inventory item instigator"),
+		Helmet->GetInstigator());
+	TestEqual(
+		TEXT("The direct manager seam owns the created runtime instance"),
+		EquipmentManager->GetEquipmentInstanceInSlot(ERpgEquipmentSlot::Head),
+		Helmet);
 
 	TestEqual(TEXT("Helmet persistent effect raises MaxHealth to 600"), HealthSet->GetMaxHealth(), 600.0f);
 	AbilitySystemComponent->SetNumericAttributeBase(URpgHealthSet::GetHealthAttribute(), 600.0f);

@@ -14,7 +14,7 @@ class URpgInventoryManagerComponent;
 class URpgPlayerInventoryLayoutComponent;
 class URpgWeaponAbilityLoadoutComponent;
 
-/** Persistent player-owned assignment for one equipment slot, including hands and armor. */
+/** Read-only projection of an active hand or a reconciled physical Gear slot. */
 USTRUCT(BlueprintType)
 struct SURVIVALRPG_API FRpgEquipmentLoadoutSlot
 {
@@ -24,23 +24,23 @@ struct SURVIVALRPG_API FRpgEquipmentLoadoutSlot
 	UPROPERTY(BlueprintReadOnly, Category = "Equipment")
 	ERpgEquipmentSlot EquipmentSlot = ERpgEquipmentSlot::None;
 
-	/** Inventory item assigned to the slot. The item stays owned by inventory; equipment runtime state is recreated per pawn. */
+	/** Projected inventory item; ownership and physical placement remain in the inventory graph. */
 	UPROPERTY(BlueprintReadOnly, Category = "Equipment")
 	TObjectPtr<URpgInventoryItemInstance> Item = nullptr;
 };
 
-/** Remembered offhand assignment for one mainhand item while the item remains inventory-owned. */
-USTRUCT(BlueprintType)
+/** Authority-owned runtime pairing used to restore an offhand when its main-hand item is activated again. */
+USTRUCT()
 struct SURVIVALRPG_API FRpgRememberedOffhandForMainHand
 {
 	GENERATED_BODY()
 
-	/** Mainhand item that should restore the remembered offhand when activated again. */
-	UPROPERTY(BlueprintReadOnly, Category = "Equipment")
+	/** Main-hand item that owns this transient pairing. */
+	UPROPERTY()
 	TObjectPtr<URpgInventoryItemInstance> MainHandItem = nullptr;
 
-	/** Offhand item restored for MainHandItem when still owned and valid. */
-	UPROPERTY(BlueprintReadOnly, Category = "Equipment")
+	/** Offhand item restored while both concrete items remain owned and physically ready. */
+	UPROPERTY()
 	TObjectPtr<URpgInventoryItemInstance> OffHandItem = nullptr;
 };
 
@@ -88,7 +88,7 @@ struct SURVIVALRPG_API FRpgEquipmentLoadoutSlotsChangedMessage
 	UPROPERTY(BlueprintReadOnly, Category = "Equipment")
 	TObjectPtr<AActor> Owner = nullptr;
 
-	/** Current replicated equipment slot assignments. */
+	/** Read-only replicated projection of active hands and reconciled physical Gear slots. */
 	UPROPERTY(BlueprintReadOnly, Category = "Equipment")
 	TArray<FRpgEquipmentLoadoutSlot> Slots;
 
@@ -102,10 +102,10 @@ struct SURVIVALRPG_API FRpgEquipmentLoadoutSlotsChangedMessage
 };
 
 /**
- * Controller-owned loadout for persistent equipment slots such as hands and armor.
+ * Controller-owned projection and activation state for player equipment.
  *
- * Inventory graph locations are the physical truth. This component mirrors Gear slots and stores only active
- * Main-/OffHand selection plus remembered pairings, while URpgEquipmentManagerComponent owns runtime actors/grants.
+ * Inventory graph locations are the sole physical truth. This component reconciles a read-only Gear projection,
+ * stores active Main-/OffHand selection plus remembered pairings, and drives pawn runtime equipment/GAS grants.
  */
 UCLASS(Blueprintable, meta = (BlueprintSpawnableComponent))
 class SURVIVALRPG_API URpgEquipmentLoadoutComponent : public UControllerComponent
@@ -115,111 +115,66 @@ class SURVIVALRPG_API URpgEquipmentLoadoutComponent : public UControllerComponen
 public:
 	explicit URpgEquipmentLoadoutComponent(const FObjectInitializer& ObjectInitializer = FObjectInitializer::Get());
 
-	UFUNCTION(BlueprintCallable, BlueprintPure = false, Category = "Equipment")
-	TArray<FRpgEquipmentLoadoutSlot> GetLoadoutSlots() const { return Slots; }
-
-	UFUNCTION(BlueprintCallable, BlueprintPure = false, Category = "Equipment")
+	/** Returns the read-only projected item for a hand or reconciled physical Gear slot. */
+	UFUNCTION(BlueprintPure, Category = "Equipment")
 	URpgInventoryItemInstance* GetItemInEquipmentSlot(ERpgEquipmentSlot EquipmentSlot) const;
-
-	/** Deprecated adapter. New UI must submit the operation through URpgInventoryUiActionComponent. */
-	UFUNCTION(Server, Reliable, BlueprintCallable, Category = "Equipment", meta = (DeprecatedFunction, DeprecationMessage = "Build a pointer-free FRpgInventoryEquipmentIntent and call InventoryUiActionComponent.RequestApplyInventoryEquipmentIntent."))
-	void RequestAssignItemToEquipmentSlot(ERpgEquipmentSlot EquipmentSlot, URpgInventoryItemInstance* Item);
-
-	/** Deprecated adapter. New UI must submit the operation through URpgInventoryUiActionComponent. */
-	UFUNCTION(Server, Reliable, BlueprintCallable, Category = "Equipment", meta = (DeprecatedFunction, DeprecationMessage = "Use RequestApplyInventoryEquipmentIntent for physical unequip, or the activation-only hand API for holster."))
-	void RequestClearEquipmentSlot(ERpgEquipmentSlot EquipmentSlot);
-
-	/** Returns true when this controller owns the item and the shared Inventory Equipment policy permits the slot. */
-	UFUNCTION(BlueprintCallable, BlueprintPure = false, Category = "Equipment")
-	bool CanAssignItemToEquipmentSlot(ERpgEquipmentSlot EquipmentSlot, const URpgInventoryItemInstance* Item) const;
 
 	/**
 	 * Side-effect-free preflight for selecting an owned item as an active hand.
-	 * Physical Carry placement is planned separately; this query adds current two-hand/offhand conflict rules.
+	 * Physical Carry placement is planned separately; this query adds current two-hand/offhand conflict rules and
+	 * may run against replicated owner state without mutating gameplay state.
 	 */
 	bool CanActivateItemInEquipmentSlot(
 		ERpgEquipmentSlot EquipmentSlot,
 		const URpgInventoryItemInstance* Item) const;
 
-	/** Internal reconciliation adapter. Gameplay UI should mutate inventory locations instead. */
-	UFUNCTION(BlueprintCallable, BlueprintAuthorityOnly, Category = "Equipment", meta = (DeprecatedFunction, DeprecationMessage = "Move the item to its Gear/Carry inventory location through InventoryUiActionComponent."))
-	bool AssignItemToEquipmentSlot(ERpgEquipmentSlot EquipmentSlot, URpgInventoryItemInstance* Item);
-
-	/** Internal reconciliation adapter. Gameplay UI should move the physical item to content instead. */
-	UFUNCTION(BlueprintCallable, BlueprintAuthorityOnly, Category = "Equipment", meta = (DeprecatedFunction, DeprecationMessage = "Move the physical item to content through InventoryUiActionComponent."))
-	URpgInventoryItemInstance* ClearEquipmentSlot(ERpgEquipmentSlot EquipmentSlot);
-
-	/**
-	 * Post-transaction cleanup for stale slot references.
-	 * Fails closed while the concrete item still occupies a physical Gear slot.
-	 */
-	UFUNCTION(BlueprintCallable, BlueprintAuthorityOnly, Category = "Equipment", meta = (DeprecatedFunction, DeprecationMessage = "Move the physical item first, then reconcile through InventoryUiActionComponent."))
-	bool ClearItemFromAllEquipmentSlots(URpgInventoryItemInstance* Item);
-
-	/** Returns whether the item can be removed from inventory without leaving invalid equipment or bag slots behind. */
-	UFUNCTION(BlueprintCallable, BlueprintAuthorityOnly, Category = "Equipment")
-	bool CanRemoveItemFromLoadout(URpgInventoryItemInstance* Item) const;
-
-	/** Activates a ready Carry weapon as the current MainHand, restoring remembered offhand when valid. */
-	UFUNCTION(BlueprintCallable, BlueprintAuthorityOnly, Category = "Equipment")
+	/** Server-authoritatively activates a ready Carry weapon as MainHand, restoring remembered offhand when valid. */
 	bool ActivateMainHandItem(URpgInventoryItemInstance* Item);
 
-	/** Activates a carry-slot shield/offhand item, remembering it for the currently active one-handed mainhand. */
-	UFUNCTION(BlueprintCallable, BlueprintAuthorityOnly, Category = "Equipment")
+	/** Server-authoritatively activates a ready offhand item and remembers it for the active one-handed mainhand. */
 	bool ActivateOffHandItem(URpgInventoryItemInstance* Item);
 
 	/**
-	 * Idempotently selects a ready MainHand Carry item.
+	 * Server-authoritatively and idempotently selects a ready MainHand Carry item.
 	 * Retryable inventory equipment commands must use this instead of the player-facing toggle adapter.
 	 */
-	UFUNCTION(BlueprintCallable, BlueprintAuthorityOnly, Category = "Equipment")
 	bool SetMainHandItemActive(URpgInventoryItemInstance* Item);
 
 	/**
-	 * Idempotently selects a ready OffHand Carry item.
+	 * Server-authoritatively and idempotently selects a ready OffHand Carry item.
 	 * Retryable inventory equipment commands must use this instead of the player-facing toggle adapter.
 	 */
-	UFUNCTION(BlueprintCallable, BlueprintAuthorityOnly, Category = "Equipment")
 	bool SetOffHandItemActive(URpgInventoryItemInstance* Item);
 
-	/** Clears only MainHand while preserving a valid active OffHand and its physical Carry placement. */
-	UFUNCTION(BlueprintCallable, BlueprintAuthorityOnly, Category = "Equipment")
+	/** Server-authoritatively clears MainHand while preserving valid OffHand selection and physical Carry placement. */
 	bool ClearActiveMainHand();
 
-	/** Clears the active runtime hands without moving items out of their inventory carry slots. */
-	UFUNCTION(BlueprintCallable, BlueprintAuthorityOnly, Category = "Equipment")
+	/** Server-authoritatively clears active runtime hands without moving their physical Carry items. */
 	bool ClearActiveHands();
 
-	/** Clears OffHand. When requested by the player, also forgets the active MainHand's offhand memory. */
-	UFUNCTION(BlueprintCallable, BlueprintAuthorityOnly, Category = "Equipment")
+	/** Server-authoritatively clears OffHand and optionally forgets the active MainHand's pairing. */
 	bool ClearActiveOffHand(bool bForgetForActiveMainHand = true);
 
-	/** Returns the remembered offhand item for a mainhand item, or null. */
-	UFUNCTION(BlueprintCallable, BlueprintPure = false, Category = "Equipment")
-	URpgInventoryItemInstance* GetRememberedOffhandForMainHand(URpgInventoryItemInstance* MainHandItem) const;
+	/** Server-only lifecycle seam that detaches runtime equipment before the current pawn or ASC becomes unavailable. */
+	void DetachRuntimeEquipmentFromCurrentPawn();
 
-	/** Removes this loadout's runtime equipment instances from the current pawn. */
-	UFUNCTION(BlueprintCallable, BlueprintAuthorityOnly, Category = "Equipment")
-	void UnequipLoadoutFromCurrentPawn();
-
-	/** Applies the replicated slot assignments to the current pawn when its equipment target is ready. */
-	UFUNCTION(BlueprintCallable, BlueprintAuthorityOnly, Category = "Equipment")
-	bool RefreshEquipmentLoadoutOnCurrentPawn();
+	/** Server-only lifecycle seam that reconciles projected slots once the pawn equipment manager and ASC are ready. */
+	bool ReconcileRuntimeEquipmentOnCurrentPawn();
 
 	/** Returns the authoritative Gear+Carry equipment load in kilograms. Normal container contents are excluded. */
-	UFUNCTION(BlueprintCallable, BlueprintPure, Category = "Equipment|Load")
+	UFUNCTION(BlueprintPure, Category = "Equipment|Load")
 	float GetEquipmentLoadWeight() const { return CurrentEquipmentLoadWeight; }
 
 	/** Returns the current Light, Medium, or Heavy tier selected from the designer thresholds. */
-	UFUNCTION(BlueprintCallable, BlueprintPure, Category = "Equipment|Load")
+	UFUNCTION(BlueprintPure, Category = "Equipment|Load")
 	ERpgEquipmentLoadTier GetEquipmentLoadTier() const { return CurrentEquipmentLoadTier; }
 
 	/** Returns the GAS tag corresponding to the current load tier. Exactly one tier tag is applied on the pawn ASC. */
-	UFUNCTION(BlueprintCallable, BlueprintPure, Category = "Equipment|Load")
+	UFUNCTION(BlueprintPure, Category = "Equipment|Load")
 	FGameplayTag GetEquipmentLoadTierTag() const;
 
 	/** Returns the designer-authored montage/root-motion seam for the current load tier. */
-	UFUNCTION(BlueprintCallable, BlueprintPure, Category = "Equipment|Load")
+	UFUNCTION(BlueprintPure, Category = "Equipment|Load")
 	FRpgEquipmentDodgeProfile GetDodgeProfileForCurrentLoad() const;
 
 	/** Pure threshold helper used by validation and automation tests; values at a threshold enter the higher tier. */
@@ -229,25 +184,21 @@ public:
 		float HeavyThreshold = 23.0f);
 
 	/**
-	 * Recalculates weight exclusively from items in data-driven Gear and Carry groups and updates the pawn GAS tier tag.
+	 * Server-authoritatively recalculates weight from data-driven Gear and Carry groups and updates the pawn GAS tier tag.
 	 * Inventory reconciliation calls this once after a committed transaction that changes physical equipment locations.
 	 */
-	UFUNCTION(BlueprintCallable, BlueprintAuthorityOnly, Category = "Equipment|Load")
-	void RefreshEquipmentLoadState();
+	void ReconcileEquipmentLoadFromInventory();
 
 	/**
-	 * Rebuilds non-hand equipment pointers and runtime grants from physical Gear.* inventory locations, then resolves
+	 * Server-authoritatively rebuilds non-hand projections and runtime grants from physical Gear.* locations, then resolves
 	 * the remembered active-hand selection by persistent item id. Call once after graph reconstruction or transfer.
 	 */
-	UFUNCTION(BlueprintCallable, BlueprintAuthorityOnly, Category = "Equipment")
 	bool ReconcilePhysicalEquipmentFromInventory();
 
 	/** Exports active hand selection and remembered pairs as persistent item ids; Gear/Carry placement is not duplicated. */
-	UFUNCTION(BlueprintCallable, BlueprintPure, Category = "Equipment|Persistence")
 	FRpgEquipmentSelectionSaveData ExportEquipmentSelection() const;
 
-	/** Restores pointer-free hand selection after the inventory graph and pawn ASC are ready. Invalid ids remain holstered. */
-	UFUNCTION(BlueprintCallable, BlueprintAuthorityOnly, Category = "Equipment|Persistence")
+	/** Server-only restore after the inventory graph and pawn ASC are ready; invalid ids remain holstered. */
 	void RestoreEquipmentSelection(const FRpgEquipmentSelectionSaveData& SaveData);
 
 	virtual void BeginPlay() override;
@@ -263,6 +214,9 @@ protected:
 private:
 	void EnsureDefaultSlots();
 	int32 FindSlotIndex(ERpgEquipmentSlot EquipmentSlot) const;
+	bool CanUseEquipmentSlotForOwnedItem(
+		ERpgEquipmentSlot EquipmentSlot,
+		const URpgInventoryItemInstance* Item) const;
 	URpgEquipmentInstance* EquipLoadoutItem(URpgInventoryItemInstance* SlotItem, ERpgEquipmentSlot EquipmentSlot) const;
 	void UnequipRuntimeSlot(ERpgEquipmentSlot EquipmentSlot);
 	URpgEquipmentManagerComponent* FindEquipmentManager() const;
@@ -271,28 +225,23 @@ private:
 	bool HasReadyEquipmentTarget() const;
 	void BroadcastSlotsChanged() const;
 	void RefreshWeaponAbilityLoadout() const;
-	bool CanClearEquipmentSlot(ERpgEquipmentSlot EquipmentSlot) const;
 	bool IsTwoHandItem(const URpgInventoryItemInstance* Item) const;
 	bool IsItemInCarryActivationRole(const URpgInventoryItemInstance* Item, FGameplayTag ActivationRole) const;
-	bool IsItemInPhysicalGearSlot(
-		ERpgEquipmentSlot EquipmentSlot,
-		const URpgInventoryItemInstance* Item) const;
+	URpgInventoryItemInstance* GetRememberedOffhandForMainHand(URpgInventoryItemInstance* MainHandItem) const;
 	void ApplyEquipmentSelectionPointers(
 		const FRpgEquipmentSelectionSaveData& SaveData);
 	void RememberCurrentOffhandForActiveMainhand();
 	void SetRememberedOffhandForMainHand(URpgInventoryItemInstance* MainHandItem, URpgInventoryItemInstance* OffHandItem);
 	void ClearRememberedOffhandForMainHand(URpgInventoryItemInstance* MainHandItem);
-	void ClearRememberedOffhandEntriesForItem(URpgInventoryItemInstance* Item);
 	bool AssignRuntimeEquipmentSlot(ERpgEquipmentSlot EquipmentSlot, URpgInventoryItemInstance* Item);
 	float CalculateEquipmentLoadWeight() const;
 	ERpgEquipmentLoadTier ResolveEquipmentLoadTier(float LoadWeight) const;
 	void ApplyEquipmentLoadTierTag() const;
 	static const URpgEquipmentDefinition* FindEquipmentDefinition(const URpgInventoryItemInstance* Item);
 	static FGameplayTag GetTagForEquipmentLoadTier(ERpgEquipmentLoadTier Tier);
-	static bool IsManagedEquipmentSlot(ERpgEquipmentSlot EquipmentSlot);
 	static bool IsRuntimeEquipmentSlot(ERpgEquipmentSlot EquipmentSlot);
-	static bool IsSlotContainerEquipmentSlot(ERpgEquipmentSlot EquipmentSlot);
 
+	/** Owner-only replicated projection; physical placement remains authoritative in the inventory graph. */
 	UPROPERTY(ReplicatedUsing = OnRep_Slots)
 	TArray<FRpgEquipmentLoadoutSlot> Slots;
 

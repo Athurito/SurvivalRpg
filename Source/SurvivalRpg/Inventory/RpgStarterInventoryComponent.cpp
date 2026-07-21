@@ -5,7 +5,6 @@
 #include "SurvivalRpg/Core/Game/RpgGameModeBase.h"
 #include "SurvivalRpg/Core/Player/RpgPlayerController.h"
 #include "SurvivalRpg/Core/Player/RpgPlayerState.h"
-#include "SurvivalRpg/Equipment/RpgEquipmentLoadoutComponent.h"
 #include "SurvivalRpg/Equipment/RpgEquipmentManagerComponent.h"
 #include "SurvivalRpg/Inventory/RpgInventoryItemDefinition.h"
 #include "SurvivalRpg/Inventory/RpgInventoryItemInstance.h"
@@ -61,7 +60,6 @@ void URpgStarterInventoryComponent::TryGrantStarterInventory()
 	ARpgPlayerController* PlayerController = Cast<ARpgPlayerController>(Owner);
 	ARpgPlayerState* PlayerState = PlayerController ? PlayerController->GetRpgPlayerState() : nullptr;
 	URpgInventoryManagerComponent* InventoryComponent = PlayerState ? PlayerState->GetInventoryManagerComponent() : nullptr;
-	URpgEquipmentLoadoutComponent* EquipmentLoadout = PlayerController ? PlayerController->GetEquipmentLoadoutComponent() : nullptr;
 	URpgInventoryUiActionComponent* InventoryActions = PlayerController ? PlayerController->GetInventoryUiActionComponent() : nullptr;
 	URpgPlayerInventoryLayoutComponent* InventoryLayout = PlayerController ? PlayerController->GetPlayerInventoryLayoutComponent() : nullptr;
 
@@ -120,10 +118,8 @@ void URpgStarterInventoryComponent::TryGrantStarterInventory()
 		}
 
 		if (Entry.bAssignToEquipment &&
-			EquipmentLoadout &&
 			InventoryActions &&
-			ItemInstance &&
-			!EquipmentLoadoutContainsItem(EquipmentLoadout, ItemInstance))
+			ItemInstance)
 		{
 			const TArray<FRpgInventoryEntryView> InventoryEntries =
 				InventoryComponent->GetAllEntries();
@@ -194,24 +190,6 @@ bool URpgStarterInventoryComponent::ShouldWaitForPawn(const ARpgPlayerController
 		{
 			const APawn* Pawn = PlayerController->GetPawn();
 			return Pawn == nullptr || Pawn->FindComponentByClass<URpgEquipmentManagerComponent>() == nullptr;
-		}
-	}
-
-	return false;
-}
-
-bool URpgStarterInventoryComponent::EquipmentLoadoutContainsItem(const URpgEquipmentLoadoutComponent* EquipmentLoadout, const URpgInventoryItemInstance* ItemInstance)
-{
-	if (EquipmentLoadout == nullptr || ItemInstance == nullptr)
-	{
-		return false;
-	}
-
-	for (const FRpgEquipmentLoadoutSlot& LoadoutSlot : EquipmentLoadout->GetLoadoutSlots())
-	{
-		if (LoadoutSlot.Item == ItemInstance)
-		{
-			return true;
 		}
 	}
 

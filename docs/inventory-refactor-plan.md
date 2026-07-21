@@ -27,7 +27,7 @@ mehrere Codex-Aufgaben hinweg.
 
 ## Phase 0 – Safety-Net und bestätigte Fehler
 
-Status: **In Arbeit**
+Status: **Abgeschlossen**
 
 - [x] Generischen Mutation-RPC auf sichere lokale Operationen begrenzen;
       physisches Drop/Pickup/Transfer nur über eigene Intents.
@@ -837,7 +837,7 @@ Interaktiver Smoke-Test für den aktuellen Storage-Schnitt:
 
 ## Phase 2 – Einheitlicher Mutation-Kernel
 
-Status: **In Arbeit**
+Status: **Abgeschlossen**
 
 - [x] Öffentliche Low-Level-Add/Remove/Move/Sort-Blueprintfläche deprecaten.
 - [x] Schmale Intents für Grant/Bootstrap, Consume, Move, Transfer, Drop und
@@ -851,7 +851,7 @@ Status: **In Arbeit**
 - [x] UI-Preview aus einem echten Mutation-Plan ableiten; konkrete Belegung,
       Swap und dynamische Handkonflikte müssen mit dem Server-Commit
       übereinstimmen.
-- [ ] `URpgEquipmentLoadoutComponent` auf Aktivierung der Hände und
+- [x] `URpgEquipmentLoadoutComponent` auf Aktivierung der Hände und
       Reconciliation des physischen Gear-Zustands reduzieren.
 
 Verifizierter Phase-2A-Zwischenstand vom 2026-07-20:
@@ -1116,6 +1116,52 @@ Verifizierter Phase-2F-Zwischenstand vom 2026-07-21:
   reduzieren. Netzwerk-/Late-Join- und interaktive Mouse-/Gamepad-Smokes
   bleiben ergänzende Integrations-QA, nicht Ersatz für die autoritative
   Re-Evaluation.
+
+Verifizierter Phase-2G-Abschlussstand vom 2026-07-21:
+
+- Der Inventory-Graph ist die alleinige physische Wahrheit für Gear und Carry.
+  `URpgEquipmentLoadoutComponent` besitzt keine öffentliche Blueprint-Mutation
+  und keinen Server-RPC mehr; reflektiert bleiben nur read-only Slot-, Last-,
+  Tier- und Dodge-Projektionen. Handaktivierung, Pawn-Lifecycle,
+  Reconciliation und Selection-Persistenz sind schmale native C++-Seams.
+- Physische Equipment-Aktionen laufen ausschließlich über den
+  `URpgInventoryUiActionComponent`. Starter-Equipment baut denselben
+  pointer-freien Intent aus dem aktuellen Entry-Snapshot und fragt keinen
+  parallelen Loadout-Mirror mehr ab. Transfer, Consume und Drop bereinigen
+  Hände erst nach erfolgreicher physischer Mutation durch Reconciliation.
+- Nicht-Hand-Gear wird als vollständiger Snapshot aus den kanonischen
+  Gear-Platzierungen importiert. Wiederholte Reconciliation erhält dieselben
+  Runtime-Instanzen und GAS-Grants; aktive Hände bleiben reine Auswahl über
+  physisch passende Carry-Rollen. Die eigenständige Definition-zu-Manager-Seam
+  für NPC-/Runtime-Equipment bleibt ohne Player-Loadout nutzbar.
+- Controller-private Slots, Remembered-Offhands sowie Last/Tier replizieren
+  `COND_OwnerOnly`. Die pawn-relevante `EquipmentList` des
+  `URpgEquipmentManagerComponent` bleibt `COND_None`, damit Remote-Clients und
+  Late Joiner die sichtbaren Runtime-Actors aus Pawn-Zustand rekonstruieren
+  können.
+- Der Abschlusslauf deckte zusätzlich einen Phase-2F-Fall-through auf:
+  QuickTransfer gab bei einem vollen bevorzugten Container den letzten
+  verworfenen Swap-Plan als Erfolg zurück und übersprang dadurch ein späteres
+  freies Ziel. Der Planner behält nun nur abgelehnte Kandidaten als Fallback;
+  die Regression wählt wieder deterministisch das freie Belt-Grid.
+- Der Asset-Audit fand keinen Blueprint-Knoten mit
+  `RpgEquipmentLoadoutComponent` als Funktions-Owner. Der gezielte Compile von
+  `BP_Rpg_PlayerController` endete mit 0 Fehlern und 14 bekannten
+  Migrationswarnungen aus den verbleibenden Inventory-/UiAction-Adaptern, nicht
+  aus der entfernten Loadout-Fläche.
+- `SurvivalRpgEditor Win64 Development` wurde mit Unreal Engine 5.8 gebaut
+  (4/4 Actions im finalen inkrementellen Build).
+- `SurvivalRpg.Inventory`: 90 von 90 Automationtests erfolgreich.
+- `SurvivalRpg.Equipment`: 5 von 5 Automationtests erfolgreich.
+- `SurvivalRpg.Crafting`: 6 von 6 Automationtests erfolgreich.
+- Fortschritt Phase 2: 8 von 8 Punkten abgeschlossen (100,0 %).
+- Gesamtfortschritt der verbindlichen Checkliste: 56 von 94 Punkten
+  abgeschlossen (59,6 %), 38 Punkte offen.
+- Ein echter Zwei-Client-PIE-Late-Join sowie interaktive Mouse-/Gamepad-Smokes
+  bleiben manuelle Integrations-QA und werden durch die automatisierten
+  Replikationsbedingungen nicht als ausgeführt behauptet.
+- Nächster Schnitt nach Wiederaufnahme: Phase 3, Runtime-Transfer vom
+  Save-/Load-Rekonstruktionspfad trennen.
 
 ## Phase 3 – Runtime-Transfer vom Save/Load trennen
 
