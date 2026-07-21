@@ -523,6 +523,13 @@ struct SURVIVALRPG_API FRpgInventoryMutationRequest
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Inventory|Transaction")
 	FRpgInventoryGridPlacement ExpectedSourcePlacement;
 
+	/**
+	 * Complete source stack count captured independently from Quantity.
+	 * Source-bound typed requests reject a changed count even when the requested partial amount would still fit.
+	 */
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Inventory|Transaction", meta = (ClampMin = "1", UIMin = "1"))
+	int32 ExpectedSourceQuantity = 0;
+
 	/** Requested destination container. */
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Inventory|Transaction")
 	FRpgInventoryContainerHandle Target;
@@ -624,6 +631,10 @@ struct SURVIVALRPG_API FRpgInventoryTransferIntent
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Inventory|Intent")
 	FRpgInventoryGridPlacement ExpectedSourcePlacement;
 
+	/** Complete source stack count captured independently from the requested transfer amount. */
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Inventory|Intent", meta = (ClampMin = "1", UIMin = "1"))
+	int32 ExpectedSourceQuantity = 0;
+
 	/** Authoritative destination container used for merge or first-fit placement. */
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Inventory|Intent")
 	FRpgInventoryContainerHandle TargetContainer;
@@ -632,7 +643,7 @@ struct SURVIVALRPG_API FRpgInventoryTransferIntent
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Inventory|Intent")
 	FRpgInventoryGridPlacement TargetPlacement;
 
-	/** Exact stack amount to transfer; full container-provider subtrees require the complete stack. */
+	/** Exact stack amount to transfer; this may be lower than ExpectedSourceQuantity for a partial stack transfer. */
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Inventory|Intent", meta = (ClampMin = "1", UIMin = "1"))
 	int32 Quantity = 1;
 

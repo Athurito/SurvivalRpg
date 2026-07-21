@@ -214,16 +214,77 @@ FRpgInventoryMutationResult ARpgDroppedInventoryActor::TransferItemFromInventory
 	Intent.Quantity = StackCount;
 	Intent.RequestId = RequestId;
 	Intent.EnsureRequestId();
+	if (const FRecentDropTransferResult* CachedResult =
+			RecentDropTransferResults.Find(Intent.RequestId))
+	{
+		const bool bHasSourceInventory = SourceInventory != nullptr;
+		const bool bHasTargetInventory = LootInventoryComponent != nullptr;
+		const bool bSourceEpochMatches =
+			CachedResult->bHadSourceInventory == bHasSourceInventory &&
+			(!bHasSourceInventory ||
+			 (CachedResult->SourceInventory.Get() == SourceInventory &&
+			  CachedResult->SourceMutationEpoch ==
+				  SourceInventory->GetMutationEpoch()));
+		const bool bTargetEpochMatches =
+			CachedResult->bHadTargetInventory == bHasTargetInventory &&
+			(!bHasTargetInventory ||
+			 (CachedResult->TargetInventory.Get() == LootInventoryComponent &&
+			  CachedResult->TargetMutationEpoch ==
+				  LootInventoryComponent->GetMutationEpoch()));
+		if (bSourceEpochMatches && bTargetEpochMatches &&
+			CachedResult->SourceInventory.Get() == SourceInventory &&
+			CachedResult->Intent.ItemId == ItemId &&
+			CachedResult->Intent.Quantity == StackCount &&
+			CachedResult->bPreventStackMerge == bPreventStackMerge)
+		{
+			return TransferItemFromInventoryByIntent(
+				SourceInventory,
+				CachedResult->Intent,
+				bPreventStackMerge);
+		}
+	}
+
+	if (SourceInventory && ItemId.IsValid())
+	{
+		for (const FRpgInventoryEntryView& Entry :
+			SourceInventory->GetAllEntries())
+		{
+			if (Entry.ItemId == ItemId && Entry.EntryId.IsValid() &&
+				Entry.Placement.IsValid() && Entry.StackCount > 0)
+			{
+				Intent.ExpectedEntryId = Entry.EntryId;
+				Intent.ExpectedSourcePlacement = Entry.Placement;
+				Intent.ExpectedSourceQuantity = Entry.StackCount;
+				break;
+			}
+		}
+	}
+
+	return TransferItemFromInventoryByIntent(
+		SourceInventory,
+		MoveTemp(Intent),
+		bPreventStackMerge);
+}
+
+FRpgInventoryMutationResult
+ARpgDroppedInventoryActor::TransferItemFromInventoryByIntent(
+	URpgInventoryManagerComponent* SourceInventory,
+	FRpgInventoryTransferIntent Intent,
+	bool bPreventStackMerge)
+{
+	Intent.EnsureRequestId();
+	Intent.TargetContainer = LootInventoryComponent
+		? FRpgInventoryContainerHandle::MakeRoot(
+			LootInventoryComponent->GetDefaultContainerId())
+		: FRpgInventoryContainerHandle();
 
 	FRpgInventoryMutationResult Result;
 	Result.RequestId = Intent.RequestId;
 	Result.Operation = ERpgInventoryMutationOperation::Drop;
-	Result.RequestedQuantity = StackCount;
+	Result.RequestedQuantity = Intent.Quantity;
 	if (TryReplayRecentDropTransfer(
 			SourceInventory,
-			ItemId,
-			StackCount,
-			Intent.RequestId,
+			Intent,
 			bPreventStackMerge,
 			Result))
 	{
@@ -232,15 +293,13 @@ FRpgInventoryMutationResult ARpgDroppedInventoryActor::TransferItemFromInventory
 	auto CacheResult =
 		[this,
 		 SourceInventory,
-		 ItemId,
-		 StackCount,
+		 Intent,
 		 bPreventStackMerge](
 			FRpgInventoryMutationResult ResultToCache)
 		{
 			return CacheRecentDropTransfer(
 				SourceInventory,
-				ItemId,
-				StackCount,
+				Intent,
 				bPreventStackMerge,
 				MoveTemp(ResultToCache));
 		};
@@ -251,36 +310,89 @@ FRpgInventoryMutationResult ARpgDroppedInventoryActor::TransferItemFromInventory
 		return CacheResult(MoveTemp(Result));
 	}
 	if (!SourceInventory || SourceInventory == LootInventoryComponent ||
-		!LootInventoryComponent || !ItemId.IsValid() || StackCount <= 0)
+		!LootInventoryComponent || !Intent.ItemId.IsValid() ||
+		Intent.Quantity <= 0)
 	{
 		Result.Code = ERpgInventoryMutationResultCode::InvalidRequest;
 		return CacheResult(MoveTemp(Result));
 	}
 
-	URpgInventoryItemInstance* Item = SourceInventory->FindItemById(ItemId);
-	const TArray<FRpgInventoryEntryView> SourceEntries =
-		SourceInventory->GetAllEntries();
-	const FRpgInventoryEntryView* SourceEntry =
-		SourceEntries.FindByPredicate(
-			[ItemId](const FRpgInventoryEntryView& Entry)
-			{
-				return Entry.ItemId == ItemId;
-			});
-	if (!Item || !SourceEntry || !SourceEntry->EntryId.IsValid() ||
-		!SourceEntry->Placement.IsValid())
+	URpgInventoryItemInstance* Item =
+		SourceInventory->FindItemById(Intent.ItemId);
+	if (!Item)
 	{
 		Result.Code = ERpgInventoryMutationResultCode::ItemNotFound;
 		return CacheResult(MoveTemp(Result));
 	}
+	if (!Intent.ExpectedEntryId.IsValid() ||
+		!Intent.ExpectedSourcePlacement.IsValid() ||
+		Intent.ExpectedSourceQuantity <= 0 ||
+		Intent.Quantity > Intent.ExpectedSourceQuantity)
+	{
+		Result.Code = ERpgInventoryMutationResultCode::InvalidRequest;
+		return CacheResult(MoveTemp(Result));
+	}
 
-	Intent.ExpectedEntryId = SourceEntry->EntryId;
-	Intent.ExpectedSourcePlacement = SourceEntry->Placement;
-	Intent.TargetContainer = FRpgInventoryContainerHandle::MakeRoot(
-		LootInventoryComponent->GetDefaultContainerId());
+	const TArray<FRpgInventoryEntryView> SourceEntries =
+		SourceInventory->GetAllEntries();
+	const FRpgInventoryEntryView* SourceEntry =
+		SourceEntries.FindByPredicate(
+			[&Intent](const FRpgInventoryEntryView& Entry)
+			{
+				return Entry.EntryId == Intent.ExpectedEntryId;
+			});
+	if (!SourceEntry)
+	{
+		const bool bItemStillHasAnEntry =
+			SourceEntries.ContainsByPredicate(
+				[&Intent](const FRpgInventoryEntryView& Entry)
+				{
+					return Entry.ItemId == Intent.ItemId;
+				});
+		Result.Code = bItemStillHasAnEntry
+			? ERpgInventoryMutationResultCode::SourceMismatch
+			: ERpgInventoryMutationResultCode::ItemNotFound;
+		return CacheResult(MoveTemp(Result));
+	}
+	if (!SourceEntry->EntryId.IsValid() ||
+		!SourceEntry->Placement.IsValid() || SourceEntry->Instance != Item ||
+		SourceEntry->ItemId != Intent.ItemId ||
+		SourceEntry->Placement != Intent.ExpectedSourcePlacement ||
+		SourceEntry->StackCount != Intent.ExpectedSourceQuantity)
+	{
+		Result.Code = ERpgInventoryMutationResultCode::SourceMismatch;
+		return CacheResult(MoveTemp(Result));
+	}
+
 	if (bPreventStackMerge)
 	{
+		auto TryUseConcretePlacement =
+			[this, &Intent, Item](
+				const FRpgInventoryGridPlacement& Candidate)
+			{
+				if (!LootInventoryComponent
+						->CanReceiveTransferredItemInstanceToPlacement(
+							Item,
+							Intent.Quantity,
+							Candidate))
+				{
+					return false;
+				}
+
+				Intent.TargetPlacement = Candidate;
+				return true;
+			};
+
+		const FRpgInventoryGridPlacement RequestedPlacement =
+			Intent.TargetPlacement;
+		Intent.TargetPlacement = FRpgInventoryGridPlacement();
+		if (RequestedPlacement.IsValid())
+		{
+			TryUseConcretePlacement(RequestedPlacement);
+		}
+
 		auto TryFindConcretePlacement =
-			[this, &Intent, Item, StackCount](
+			[&Intent, &TryUseConcretePlacement](
 				const FRpgInventoryGridSize& GridSize)
 			{
 				for (int32 RotationIndex = 0;
@@ -304,14 +416,8 @@ FRpgInventoryMutationResult ARpgDroppedInventoryActor::TransferItemFromInventory
 							Candidate.Y = Y;
 							Candidate.bRotated =
 								RotationIndex == 1;
-							if (LootInventoryComponent
-									->CanReceiveTransferredItemInstanceToPlacement(
-										Item,
-										StackCount,
-										Candidate))
+							if (TryUseConcretePlacement(Candidate))
 							{
-								Intent.TargetPlacement =
-									Candidate;
 								break;
 							}
 						}
@@ -362,16 +468,26 @@ FRpgInventoryMutationResult ARpgDroppedInventoryActor::TransferItemFromInventory
 	return CacheResult(MoveTemp(Result));
 }
 
+bool ARpgDroppedInventoryActor::AreDropTransferIntentsEquivalent(
+	const FRpgInventoryTransferIntent& A,
+	const FRpgInventoryTransferIntent& B)
+{
+	return A.RequestId == B.RequestId && A.ItemId == B.ItemId &&
+		A.ExpectedEntryId == B.ExpectedEntryId &&
+		A.ExpectedSourcePlacement == B.ExpectedSourcePlacement &&
+		A.ExpectedSourceQuantity == B.ExpectedSourceQuantity &&
+		A.TargetContainer == B.TargetContainer &&
+		A.TargetPlacement == B.TargetPlacement && A.Quantity == B.Quantity;
+}
+
 bool ARpgDroppedInventoryActor::TryReplayRecentDropTransfer(
 	URpgInventoryManagerComponent* SourceInventory,
-	FRpgInventoryItemId ItemId,
-	int32 StackCount,
-	const FGuid& RequestId,
+	const FRpgInventoryTransferIntent& Intent,
 	bool bPreventStackMerge,
 	FRpgInventoryMutationResult& OutResult) const
 {
 	const FRecentDropTransferResult* CachedResult =
-		RecentDropTransferResults.Find(RequestId);
+		RecentDropTransferResults.Find(Intent.RequestId);
 	if (!CachedResult)
 	{
 		return false;
@@ -402,8 +518,7 @@ bool ARpgDroppedInventoryActor::TryReplayRecentDropTransfer(
 	if (CachedResult->bHadSourceInventory == bHadSourceInventory &&
 		(!bHadSourceInventory ||
 			CachedResult->SourceInventory.Get() == SourceInventory) &&
-		CachedResult->ItemId == ItemId &&
-		CachedResult->StackCount == StackCount &&
+		AreDropTransferIntentsEquivalent(CachedResult->Intent, Intent) &&
 		CachedResult->bPreventStackMerge == bPreventStackMerge)
 	{
 		OutResult = CachedResult->Result;
@@ -411,9 +526,9 @@ bool ARpgDroppedInventoryActor::TryReplayRecentDropTransfer(
 	}
 
 	OutResult = FRpgInventoryMutationResult();
-	OutResult.RequestId = RequestId;
+	OutResult.RequestId = Intent.RequestId;
 	OutResult.Operation = ERpgInventoryMutationOperation::Drop;
-	OutResult.RequestedQuantity = StackCount;
+	OutResult.RequestedQuantity = Intent.Quantity;
 	OutResult.Code = ERpgInventoryMutationResultCode::InvalidRequest;
 	return true;
 }
@@ -421,8 +536,7 @@ bool ARpgDroppedInventoryActor::TryReplayRecentDropTransfer(
 FRpgInventoryMutationResult
 ARpgDroppedInventoryActor::CacheRecentDropTransfer(
 	URpgInventoryManagerComponent* SourceInventory,
-	FRpgInventoryItemId ItemId,
-	int32 StackCount,
+	const FRpgInventoryTransferIntent& Intent,
 	bool bPreventStackMerge,
 	FRpgInventoryMutationResult Result)
 {
@@ -443,8 +557,7 @@ ARpgDroppedInventoryActor::CacheRecentDropTransfer(
 	CachedResult.TargetMutationEpoch = LootInventoryComponent
 		? LootInventoryComponent->GetMutationEpoch()
 		: 0;
-	CachedResult.ItemId = ItemId;
-	CachedResult.StackCount = StackCount;
+	CachedResult.Intent = Intent;
 	CachedResult.bPreventStackMerge = bPreventStackMerge;
 	CachedResult.Result = Result;
 	RecentDropTransferOrder.Remove(Result.RequestId);

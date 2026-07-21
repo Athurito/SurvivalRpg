@@ -1,6 +1,6 @@
 # Inventory Refactor Plan
 
-Stand: 2026-07-20
+Stand: 2026-07-21
 
 Dieses Dokument hält die verbindliche Reihenfolge für die Bereinigung des
 Tarkov-artigen Spatial Inventory fest. Es dient als Fortschrittsliste über
@@ -81,16 +81,18 @@ Bekannte Restpunkte, bereits einer späteren Phase zugeordnet:
 - Abstrakte Equipment-Slot-Previews prüfen noch nicht in jedem Pfad dieselbe
   konkrete Belegung, Swap- und Handkonfliktlage wie der Transaction-Planner
   (Phase 1/2).
-- Legacy-Snapshot-Import und einzelne Auto-Placement-Pfade konsumieren noch
-  nicht den vollständigen Placement-Vertrag (Phase 2/4).
+- UI-Previews konsumieren noch nicht in jedem Pfad den vollständigen
+  Placement-Plan mit konkreter Belegung, Swap und dynamischen Handkonflikten
+  (Phase 2).
 - Cross-Inventory-Transfers erhalten jetzt die Runtime- und Entry-Identität
   bestehender Items, importieren aber weiterhin beide Vollgraphen und senden
   dadurch noch unnötige Remove-/Add-Nachrichten sowie Subobject-
   Registrierungs-Churn (Phase 3).
 - Collect-/Starter-Grant-Pfade sind jetzt physisch korrekt geroutet, benötigen
   aber noch eigene Ende-zu-Ende-Tests für Vollbelegung und Rollback (Phase 2).
-- Item-owned Container dürfen nicht anhand ihrer lokalen `FName`-ID wie
-  statische Gear-/Carry-Root-Slots normalisiert werden (Phase 4).
+- Der gemeinsame Placement-Evaluator unterscheidet Root- und item-owned
+  Container inzwischen über den vollständigen Handle. Verbleibende
+  Legacy-Normalisierung außerhalb dieses Vertrags wird in Phase 4 entfernt.
 - Schema-v1-Saves können Platzierungen enthalten, die vor der gemeinsamen
   Equipment-Policy nur durch Kategorieprüfung zulässig waren. Diese dürfen
   nicht stillschweigend verworfen werden, sondern brauchen einen
@@ -850,7 +852,7 @@ Status: **In Arbeit**
 - [x] Raw-Add gegen fremden Outer, doppelte Item-ID und bereits enthaltene
       Instanzen absichern.
 - [x] Physisches Equippen ausschließlich über Inventory-Transaktionen führen.
-- [ ] Eine öffentliche Placement-Auswertung als gemeinsamen Vertrag für Move,
+- [x] Eine öffentliche Placement-Auswertung als gemeinsamen Vertrag für Move,
       Equip, Split, Add, Transfer, Auto-Placement und Restore verwenden.
 - [ ] UI-Preview aus einem echten Mutation-Plan ableiten; konkrete Belegung,
       Swap und dynamische Handkonflikte müssen mit dem Server-Commit
@@ -1006,6 +1008,62 @@ Verifizierter Phase-2D-Zwischenstand vom 2026-07-21:
   gemeinsamen Vertrag verbreitern und UI-Previews vollständig aus dem echten
   Mutation-Plan ableiten. Danach wird die öffentliche Legacy-Fläche des
   Loadouts auf Hand-Aktivierung und Reconciliation reduziert.
+
+Verifizierter Phase-2E-Zwischenstand vom 2026-07-21:
+
+- `FRpgInventoryPlacementQuery`, die benannten Subject-Factories und
+  `FRpgInventoryPlacementPlan` bilden einen öffentlichen, side-effect-freien
+  C++-Vertrag. Move, Equip, Split, Add, Transfer, FirstFit-Auto-Placement und
+  Restore verwenden dieselbe Auswertung; Commit-Pfade konsumieren die
+  abgeleiteten Place-, Merge-, Swap- und NoOp-Schritte.
+- Der Vertrag trennt die Operationen bewusst: Move darf kompatibel mergen und
+  genau ein Ziel swappen, Equip darf swappen aber nie mergen, Split platziert
+  nur eine neue konkrete Instanz, Transfer darf mergen oder platzieren aber
+  nicht cross-inventory swappen, und Restore akzeptiert ausschließlich exakt
+  gestagte Place-Schritte.
+- Add unterscheidet Definition-/Generated-Grants von detached konkreten
+  Instanzen. Nur generierte Grants dürfen deterministisch in kompatible
+  Stacks mergen oder über mehrere neue Stacks auffächern; detached Identitäten
+  bleiben erhalten. Runtime-State-Kompatibilität entscheidet über Merge statt
+  nur die statische Item-Definition.
+- Source-gebundene Operationen validieren Item-ID, Entry-ID, die rohe
+  vollständige Quellplatzierung und `ExpectedSourceQuantity`. Transfer-,
+  QuickTransfer- und ManualDrop-Requests sowie ihre Replay-Fingerprints binden
+  die vollständige Quellmenge getrennt von der gewünschten Teilmenge.
+- Deterministisches FirstFit berücksichtigt Container-Reihenfolge, Zelle und
+  Rotation. Entry-Capacity zählt vollständige transferierte Subtrees;
+  Descendant-Tiefe und Container-Regeln werden vor dem Commit validiert.
+- Restore wertet jede Zeile gegen batch-lokale Grid-/Occupancy-Scratch-Daten
+  aus. Dadurch kann kein gespeicherter Overlap durch Live-Graph-Ausnahmen
+  rutschen. Root-SingleCell-Normalisierung greift nur bei echten Root-Handles;
+  ein item-owned Container mit derselben lokalen `FName`-ID behält seinen
+  eigenen Spatial-Vertrag.
+- Der identitätserhaltende physische Drop akzeptiert für seine konkrete
+  Zielzelle ausschließlich einen `Place`-Schritt. Der deprecated
+  Live-Snapshot-Adapter erneuert seinen Snapshot nach Source-/Target-Restore-
+  Epochen; wirklich fehlende Items liefern `ItemNotFound`, vorhandene aber
+  veraltete Snapshots `SourceMismatch`.
+- Manual-Drop-Presenter vergleichen Entry-ID, Placement und vollständige
+  Quellmenge mit der präsentierten Entry-/Address-View. Eine veraltete UI kann
+  dadurch keinen neuen Request gegen einen inzwischen geänderten Stack
+  erzeugen.
+- `SurvivalRpgEditor Win64 Development` wurde mit Unreal Engine 5.8 gebaut.
+- `SurvivalRpg.Inventory`: 83 von 83 Automationtests erfolgreich.
+- Die fokussierten Läufe `SurvivalRpg.Inventory.PlacementEvaluator` (4 von 4),
+  `SurvivalRpg.Inventory.Intent.Transfer` (1 von 1),
+  `SurvivalRpg.Inventory.Drop` (3 von 3),
+  `SurvivalRpg.Inventory.QuickTransfer` (1 von 1) und der ergänzte
+  Stale-Quantity-Presenter-Test waren erfolgreich und sind in der
+  Inventory-Gesamtsuite enthalten.
+- `SurvivalRpg.Equipment`: 5 von 5 Automationtests erfolgreich.
+- `SurvivalRpg.Crafting`: 6 von 6 Automationtests erfolgreich.
+- Fortschritt Phase 2: 6 von 8 Punkten abgeschlossen (75,0 %).
+- Gesamtfortschritt der verbindlichen Checkliste: 54 von 94 Punkten
+  abgeschlossen (57,4 %), 40 Punkte offen.
+- Nächster Safety-Schnitt: UI-Previews vollständig aus dem echten
+  Mutation-Plan ableiten. Der callback-atomare gemeinsame In-place-Commit für
+  zwei Inventare bleibt bewusst Phase 3; anschließend wird die öffentliche
+  Legacy-Fläche des Loadouts auf Hand-Aktivierung und Reconciliation reduziert.
 
 ## Phase 3 – Runtime-Transfer vom Save/Load trennen
 

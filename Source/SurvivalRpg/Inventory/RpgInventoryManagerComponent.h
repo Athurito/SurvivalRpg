@@ -99,6 +99,195 @@ struct FRpgInventoryEntryView
 	FRpgInventoryGridPlacement Placement;
 };
 
+/** Gameplay meaning that selects the non-configurable merge, swap, identity, and capacity rules for placement. */
+enum class ERpgInventoryPlacementPurpose : uint8
+{
+	Move,
+	Equip,
+	Split,
+	Add,
+	Transfer,
+	Restore
+};
+
+/** Whether placement evaluates one exact cell or searches the authoritative container order deterministically. */
+enum class ERpgInventoryPlacementSearch : uint8
+{
+	Exact,
+	FirstFit
+};
+
+/** Concrete outcome selected by the shared read-only placement evaluator. */
+enum class ERpgInventoryPlacementResolution : uint8
+{
+	None,
+	NoOp,
+	Place,
+	Merge,
+	Swap
+};
+
+/** Factory-authored provenance that fixes identity and merge semantics for a placement subject. */
+enum class ERpgInventoryPlacementSubjectKind : uint8
+{
+	Invalid,
+	OwnedEntry,
+	IncomingEntry,
+	DefinitionGrant,
+	GeneratedGrant,
+	DetachedInstance,
+	StagedRestore
+};
+
+/**
+ * Trusted read-only subject consumed by the shared placement evaluator.
+ *
+ * Named factories keep owned-entry snapshots, incoming instances, definition grants, and staged restore rows distinct.
+ * This transient C++ type is never accepted as an RPC payload or committed as client-authored authority.
+ */
+struct SURVIVALRPG_API FRpgInventoryPlacementSubject
+{
+	/** Builds a subject from one exact entry snapshot already owned by SourceInventory. */
+	static FRpgInventoryPlacementSubject FromOwnedEntry(
+		const URpgInventoryManagerComponent* SourceInventory,
+		const FRpgInventoryEntryView& Entry,
+		int32 Quantity = 0);
+
+	/** Builds a cross-inventory subject while retaining the complete authoritative source snapshot. */
+	static FRpgInventoryPlacementSubject FromIncomingInstance(
+		const URpgInventoryManagerComponent* SourceInventory,
+		const FRpgInventoryEntryView& Entry,
+		int32 Quantity);
+
+	/** Builds a definition-authored grant subject. Concrete runtime instances should be preferred before merging. */
+	static FRpgInventoryPlacementSubject FromDefinition(
+		TSubclassOf<URpgInventoryItemDefinition> ItemDefinition,
+		int32 Quantity);
+
+	/** Builds a freshly initialized grant whose concrete default state may be compared before a merge. */
+	static FRpgInventoryPlacementSubject FromGeneratedGrant(
+		const URpgInventoryItemInstance* ItemInstance,
+		int32 Quantity);
+
+	/** Builds a subject from a concrete detached/bootstrap instance that is not owned by an inventory entry. */
+	static FRpgInventoryPlacementSubject FromDetachedInstance(
+		const URpgInventoryItemInstance* ItemInstance,
+		int32 Quantity);
+
+	/** Builds one exact row while a versioned graph restore is still staged and not observable. */
+	static FRpgInventoryPlacementSubject FromStagedRestore(
+		const URpgInventoryItemInstance* ItemInstance,
+		FRpgInventoryItemId ItemId,
+		int32 Quantity);
+
+	/** Factory-authored provenance; callers select a named factory instead of configuring merge behavior. */
+	ERpgInventoryPlacementSubjectKind Kind = ERpgInventoryPlacementSubjectKind::Invalid;
+
+	/** Source inventory that owns the exact snapshot, or null for definition grants and staged restore rows. */
+	const URpgInventoryManagerComponent* SourceInventory = nullptr;
+
+	/** Concrete runtime item when identity or fragment-state stack compatibility matters. */
+	const URpgInventoryItemInstance* ItemInstance = nullptr;
+
+	/** Static definition used for footprint and rules; derived from ItemInstance by the named factories when possible. */
+	TSubclassOf<URpgInventoryItemDefinition> ItemDefinition;
+
+	/** Persistent concrete identity; invalid only for a definition grant that has not created its runtime instance yet. */
+	FRpgInventoryItemId ItemId;
+
+	/** Stable source entry identity captured with the read-only snapshot. */
+	FGuid ExpectedEntryId;
+
+	/** Complete source placement captured with the read-only snapshot. */
+	FRpgInventoryGridPlacement ExpectedSourcePlacement;
+
+	/** Complete source stack count captured independently from the amount being placed. */
+	int32 ExpectedSourceQuantity = 0;
+
+	/** Exact amount this evaluation must place or merge. */
+	int32 Quantity = 0;
+};
+
+/** One exact or deterministic-first-fit request evaluated against replicated inventory state without mutation. */
+struct SURVIVALRPG_API FRpgInventoryPlacementQuery
+{
+	/** Server-selected gameplay semantic; callers cannot toggle individual merge or swap rules. */
+	ERpgInventoryPlacementPurpose Purpose = ERpgInventoryPlacementPurpose::Move;
+
+	/** Exact evaluates one authored placement; FirstFit uses deterministic authoritative container/cell order. */
+	ERpgInventoryPlacementSearch Search = ERpgInventoryPlacementSearch::Exact;
+
+	/** Trusted source snapshot or staged incoming item. UObject pointers never cross an RPC boundary. */
+	FRpgInventoryPlacementSubject Subject;
+
+	/** Full root or item-owned destination. Invalid is supported only for global FirstFit content search. */
+	FRpgInventoryContainerHandle TargetContainer;
+
+	/** Requested top-left cell and orientation for Exact search; its full handle must match TargetContainer. */
+	FRpgInventoryGridPlacement ExactPlacement;
+};
+
+/** One resolved action in a shared placement plan. */
+struct SURVIVALRPG_API FRpgInventoryPlacementStep
+{
+	/** Derived gameplay action. Commit code consumes this value instead of re-deriving merge/swap policy. */
+	ERpgInventoryPlacementResolution Resolution = ERpgInventoryPlacementResolution::None;
+
+	/** Normalized authoritative destination footprint. */
+	FRpgInventoryGridPlacement Placement;
+
+	/** Number of units placed or merged by this step. */
+	int32 Quantity = 0;
+
+	/** Existing merge receiver, or the moving/placed concrete identity when it already exists. */
+	FRpgInventoryItemId TargetItemId;
+
+	/** Existing merge receiver or moving source entry id; invalid for a not-yet-created add/split row. */
+	FGuid TargetEntryId;
+
+	/** Concrete target displaced by Swap; invalid for Place, Merge, and NoOp. */
+	FRpgInventoryItemId DisplacedItemId;
+
+	/** Stable entry id displaced by Swap. */
+	FGuid DisplacedEntryId;
+
+	/** Fully normalized destination chosen for the displaced entry during Swap. */
+	FRpgInventoryGridPlacement DisplacedPlacement;
+};
+
+/**
+ * Complete side-effect-free placement decision shared by gameplay commits and UI preview.
+ *
+ * Revisions document which replicated graphs were read. They are diagnostic only; every authoritative gateway evaluates
+ * the query again and never trusts a plan returned by a client.
+ */
+struct SURVIVALRPG_API FRpgInventoryPlacementPlan
+{
+	/** Stable rejection/success reason produced without mutating either inventory graph. */
+	ERpgInventoryMutationResultCode Code = ERpgInventoryMutationResultCode::InvalidRequest;
+
+	/** Source graph revision read while validating an owned subject, or INDEX_NONE for detached/definition subjects. */
+	int32 SourceRevision = INDEX_NONE;
+
+	/** Target graph revision read by this evaluator. Authority re-evaluates instead of trusting client plans. */
+	int32 TargetRevision = INDEX_NONE;
+
+	/** Exact quantity supplied by the immutable query. */
+	int32 RequestedQuantity = 0;
+
+	/** Quantity covered by Steps; a smaller value describes a partial fit that the purpose-specific commit may reject. */
+	int32 AppliedQuantity = 0;
+
+	/** Ordered deterministic actions; compatible stacks precede new placements for FirstFit. */
+	TArray<FRpgInventoryPlacementStep> Steps;
+
+	bool IsSuccess() const
+	{
+		return Code == ERpgInventoryMutationResultCode::Success ||
+			Code == ERpgInventoryMutationResultCode::PartiallyApplied;
+	}
+};
+
 /** One save-ready inventory row used for session export/import and future world container saves. */
 USTRUCT(BlueprintType)
 struct FRpgInventorySnapshotEntry
@@ -387,6 +576,12 @@ public:
 	UFUNCTION(BlueprintCallable, Category = "Inventory|Capacity", BlueprintPure)
 	int32 GetRequiredNewEntryCountForItemInstance(URpgInventoryItemInstance* ItemInstance, int32 StackCount = 1) const;
 
+	/**
+	 * Evaluates one trusted placement query without mutating inventory, item, replication, or replay state.
+	 * Gameplay commits must evaluate again on authority; UI may consume the returned normalized steps as preview only.
+	 */
+	FRpgInventoryPlacementPlan EvaluatePlacement(const FRpgInventoryPlacementQuery& Query) const;
+
 	/** Sets the capacity mode. Server-authoritative for runtime changes; normally configured on archetypes. */
 	UFUNCTION(BlueprintCallable, BlueprintAuthorityOnly, Category = "Inventory|Capacity")
 	void SetCapacityMode(ERpgInventoryCapacityMode NewCapacityMode);
@@ -416,7 +611,7 @@ public:
 	/** Spatial-only preflight for an instance that remains owned by a source inventory until an atomic transfer commits. */
 	bool CanReceiveTransferredItemInstance(URpgInventoryItemInstance* ItemInstance, int32 StackCount = 1) const;
 
-	/** Spatial-only transfer preflight for one exact target placement; source ownership is intentionally preserved. */
+	/** Place-only transfer preflight for one empty exact target placement; source ownership is intentionally preserved. */
 	bool CanReceiveTransferredItemInstanceToPlacement(URpgInventoryItemInstance* ItemInstance, int32 StackCount, FRpgInventoryGridPlacement Placement) const;
 
 	/** Transfer/swap preflight after releasing exactly one known target item. */
@@ -693,7 +888,27 @@ private:
 	bool TryMakePlacementForItemInstance(URpgInventoryItemInstance* ItemInstance, FName ContainerId, int32 X, int32 Y, bool bRotated, FRpgInventoryGridPlacement& OutPlacement) const;
 	FRpgInventoryGridPlacement MakePlacementForItemDefinition(TSubclassOf<URpgInventoryItemDefinition> ItemDef, FName ContainerId, int32 X, int32 Y, bool bRotated) const;
 	FRpgInventoryGridPlacement MakePlacementForItemInstance(URpgInventoryItemInstance* ItemInstance, FName ContainerId, int32 X, int32 Y, bool bRotated) const;
-	bool AddOwnedItemInstance(URpgInventoryItemInstance* ItemInstance, int32 StackCount, const FRpgInventoryGridPlacement* Placement = nullptr);
+	bool AddOwnedItemInstance(
+		URpgInventoryItemInstance* ItemInstance,
+		int32 StackCount,
+		const FRpgInventoryGridPlacement* Placement = nullptr,
+		URpgInventoryItemInstance** OutResultInstance = nullptr);
+	URpgInventoryItemInstance* CommitAddPlacementPlan(
+		URpgInventoryItemInstance* StagedInstance,
+		const FRpgInventoryPlacementPlan& Plan,
+		bool bMayCreateAdditionalInstances);
+	/** Shared evaluator seam used by staged restore after its batch-local owner/rule resolution. */
+	FRpgInventoryPlacementPlan EvaluatePlacementInternal(
+		const FRpgInventoryPlacementQuery& Query,
+		const FRpgInventoryGridSize* StagedRestoreGridSize,
+		const TArray<FRpgInventoryGridPlacement>* StagedRestoreOccupancy) const;
+	bool TryNormalizePlacementForDefinition(
+		TSubclassOf<URpgInventoryItemDefinition> ItemDef,
+		const FRpgInventoryContainerHandle& ContainerHandle,
+		int32 X,
+		int32 Y,
+		bool bRotated,
+		FRpgInventoryGridPlacement& OutPlacement) const;
 	bool IsItemManagedByAnyInventory(const URpgInventoryItemInstance* ItemInstance) const;
 	bool HasItemIdentityConflictInAnyInventory(const URpgInventoryItemInstance* ItemInstance) const;
 	bool TryBuildRemovalDeltas(

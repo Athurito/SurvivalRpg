@@ -152,6 +152,27 @@ namespace RpgInventoryTransactionTests
 		Request.Target = Target;
 		Request.TargetPlacement = MakePlacement(Target, X, Y, bRotated);
 		Request.RequestId = FGuid::NewGuid();
+		if (Item)
+		{
+			if (const AActor* ItemOwner = Cast<AActor>(Item->GetOuter()))
+			{
+				if (const URpgInventoryManagerComponent* Inventory =
+					ItemOwner->FindComponentByClass<URpgInventoryManagerComponent>())
+				{
+					for (const FRpgInventoryEntryView& Entry :
+						Inventory->GetAllEntries())
+					{
+						if (Entry.ItemId == Request.ItemId)
+						{
+							Request.ExpectedEntryId = Entry.EntryId;
+							Request.ExpectedSourcePlacement = Entry.Placement;
+							Request.ExpectedSourceQuantity = Entry.StackCount;
+							break;
+						}
+					}
+				}
+			}
+		}
 		return Request;
 	}
 
@@ -1091,6 +1112,22 @@ bool FRpgInventoryContextActionPolicyTest::RunTest(
 			ContentAddress,
 			FRpgInventoryGridPlacement(),
 			1));
+	URpgInventoryManagerComponent* PreparedDropInventory = nullptr;
+	FRpgInventoryManualDropRequest PreparedDropRequest;
+	TestFalse(
+		TEXT("The entry drop presenter rejects a stale source quantity snapshot"),
+		Coordinator->PrepareDropEntryRequest(
+			StackViewModel,
+			1,
+			PreparedDropInventory,
+			PreparedDropRequest));
+	TestFalse(
+		TEXT("The address drop presenter rejects the same stale source quantity snapshot"),
+		Coordinator->PrepareDropAddressSlotRequest(
+			ContentAddress,
+			1,
+			PreparedDropInventory,
+			PreparedDropRequest));
 
 	FRpgInventoryEntryView RefreshedStackEntry;
 	if (!TestTrue(
@@ -1346,6 +1383,7 @@ bool FRpgInventoryManualDropConfirmationAuthorityTest::RunTest(
 	UnconfirmedRequest.EntryId = InitialEntry.EntryId;
 	UnconfirmedRequest.ItemId = InitialEntry.ItemId;
 	UnconfirmedRequest.ExpectedSourcePlacement = InitialEntry.Placement;
+	UnconfirmedRequest.ExpectedSourceQuantity = InitialEntry.StackCount;
 	UnconfirmedRequest.StackCount = 3;
 	const int32 UnconfirmedFeedbackIndex = FeedbackMessages.Num();
 	UiActions->RequestDropInventoryItemById(
@@ -1642,6 +1680,8 @@ bool FRpgInventoryManualDropConfirmationAuthorityTest::RunTest(
 	ProtectedSubtreeRequest.ItemId = ProviderEntry.ItemId;
 	ProtectedSubtreeRequest.ExpectedSourcePlacement =
 		ProviderEntry.Placement;
+	ProtectedSubtreeRequest.ExpectedSourceQuantity =
+		ProviderEntry.StackCount;
 	ProtectedSubtreeRequest.StackCount = 1;
 	ProtectedSubtreeRequest.bConfirmed = true;
 	const int32 ProtectedFeedbackIndex = FeedbackMessages.Num();
@@ -2971,6 +3011,8 @@ bool FRpgInventoryEquipmentSplitDerivedSyncTest::RunTest(
 		SourceBeforeSplit.Placement.GetContainerHandle();
 	SplitRequest.ExpectedSourcePlacement =
 		SourceBeforeSplit.Placement;
+	SplitRequest.ExpectedSourceQuantity =
+		SourceBeforeSplit.StackCount;
 	SplitRequest.Target = ShieldSlot;
 	SplitRequest.TargetPlacement = ShieldPlacement;
 	SplitRequest.Quantity = 1;
@@ -3991,6 +4033,13 @@ bool FRpgInventoryQuickTransferSkipsFullPreferredContainerTest::RunTest(const FS
 	{
 		return false;
 	}
+	FRpgInventoryEntryView SourceEntry;
+	if (!TestTrue(
+		TEXT("The quick-transfer source has a complete replicated snapshot"),
+		GetEntryView(Inventory, SourceItem->GetItemId(), SourceEntry)))
+	{
+		return false;
+	}
 
 	bool bFilledPockets = true;
 	for (int32 Y = 0; Y < 2; ++Y)
@@ -4011,6 +4060,9 @@ bool FRpgInventoryQuickTransferSkipsFullPreferredContainerTest::RunTest(const FS
 	FRpgInventoryQuickTransferRequest Request;
 	Request.RequestId = FGuid::NewGuid();
 	Request.ItemId = SourceItem->GetItemId();
+	Request.ExpectedEntryId = SourceEntry.EntryId;
+	Request.ExpectedSourcePlacement = SourceEntry.Placement;
+	Request.ExpectedSourceQuantity = SourceEntry.StackCount;
 	Request.StackCount = 1;
 	Request.PreferredTargetContainers = { Pockets, BeltContents };
 
@@ -4147,6 +4199,16 @@ bool FRpgCraftingOutputWithdrawalOnlyTransferTest::RunTest(const FString& Parame
 	{
 		return false;
 	}
+	FRpgInventoryEntryView RejectedDepositEntry;
+	if (!TestTrue(
+		TEXT("The rejected deposit still exposes a complete source snapshot"),
+		GetEntryView(
+			PlayerInventory,
+			RejectedDepositItem->GetItemId(),
+			RejectedDepositEntry)))
+	{
+		return false;
+	}
 
 	FRpgCraftingOutputItem CraftedOutput;
 	CraftedOutput.ItemDefinition = URpgInventoryAutomationTestUnitItemDefinition::StaticClass();
@@ -4175,6 +4237,11 @@ bool FRpgCraftingOutputWithdrawalOnlyTransferTest::RunTest(const FString& Parame
 	FRpgInventoryQuickTransferRequest RejectedQuickTransfer;
 	RejectedQuickTransfer.RequestId = FGuid::NewGuid();
 	RejectedQuickTransfer.ItemId = RejectedDepositItem->GetItemId();
+	RejectedQuickTransfer.ExpectedEntryId = RejectedDepositEntry.EntryId;
+	RejectedQuickTransfer.ExpectedSourcePlacement =
+		RejectedDepositEntry.Placement;
+	RejectedQuickTransfer.ExpectedSourceQuantity =
+		RejectedDepositEntry.StackCount;
 	RejectedQuickTransfer.StackCount = 1;
 	FRpgInventoryContainerHandle PredictedContainer;
 	FRpgInventoryGridPlacement PredictedPlacement;
@@ -4261,7 +4328,14 @@ bool FRpgCraftingOutputWithdrawalOnlyTransferTest::RunTest(const FString& Parame
 	TestEqual(TEXT("The internal output move preserves its row"), CraftedEntryAfterMove.Placement.Y, 0);
 
 	FRpgInventoryQuickTransferRequest AllowedWithdrawalPrediction;
+	AllowedWithdrawalPrediction.RequestId = FGuid::NewGuid();
 	AllowedWithdrawalPrediction.ItemId = CraftedOutputId;
+	AllowedWithdrawalPrediction.ExpectedEntryId =
+		CraftedEntryAfterMove.EntryId;
+	AllowedWithdrawalPrediction.ExpectedSourcePlacement =
+		CraftedEntryAfterMove.Placement;
+	AllowedWithdrawalPrediction.ExpectedSourceQuantity =
+		CraftedEntryAfterMove.StackCount;
 	AllowedWithdrawalPrediction.StackCount = 1;
 	TestTrue(
 		TEXT("Quick-transfer prediction permits output withdrawal into player content"),
@@ -4287,6 +4361,8 @@ bool FRpgCraftingOutputWithdrawalOnlyTransferTest::RunTest(const FString& Parame
 	WithdrawalIntent.ExpectedEntryId = CraftedEntryAfterMove.EntryId;
 	WithdrawalIntent.ExpectedSourcePlacement =
 		CraftedEntryAfterMove.Placement;
+	WithdrawalIntent.ExpectedSourceQuantity =
+		CraftedEntryAfterMove.StackCount;
 	WithdrawalIntent.TargetContainer =
 		PlayerWithdrawalPlacement.GetContainerHandle();
 	WithdrawalIntent.TargetPlacement =
@@ -4359,6 +4435,8 @@ bool FRpgCraftingOutputWithdrawalOnlyTransferTest::RunTest(const FString& Parame
 		RegularTransferEntry.EntryId;
 	RegularQuickTransfer.ExpectedSourcePlacement =
 		RegularTransferEntry.Placement;
+	RegularQuickTransfer.ExpectedSourceQuantity =
+		RegularTransferEntry.StackCount;
 	RegularQuickTransfer.StackCount = 1;
 	RegularQuickTransfer.PreferredTargetContainers.Add(
 		RegularRoot);
@@ -4647,6 +4725,8 @@ bool FRpgExactPlacementStackTransferPolicyTest::RunTest(const FString& Parameter
 		SourceEntryBeforeTransfer.EntryId;
 	PartialTransferIntent.ExpectedSourcePlacement =
 		SourceEntryBeforeTransfer.Placement;
+	PartialTransferIntent.ExpectedSourceQuantity =
+		SourceEntryBeforeTransfer.StackCount;
 	PartialTransferIntent.TargetContainer =
 		EmptyTargetPlacement.GetContainerHandle();
 	PartialTransferIntent.TargetPlacement =
@@ -5010,6 +5090,7 @@ bool FRpgInventoryGenericMutationRpcSafetyTest::RunTest(const FString& Parameter
 	EquipRequest.ExpectedEntryId = Entry.EntryId;
 	EquipRequest.Source = Pockets;
 	EquipRequest.ExpectedSourcePlacement = Entry.Placement;
+	EquipRequest.ExpectedSourceQuantity = Entry.StackCount;
 	EquipRequest.Target = Pockets;
 	EquipRequest.TargetPlacement =
 		MakePlacement(Pockets, 1, 0);
@@ -6235,11 +6316,21 @@ bool FRpgInventoryCrossInventoryMultiStackPickupTest::RunTest(const FString& Par
 	}
 	TestTrue(TEXT("Every non-stack cell in the target grid was occupied"), bFilledRemainingCells);
 	TestEqual(TEXT("The target grid has no free placement cells"), TargetInventory->GetUsedEntryCount(), 60);
+	FRpgInventoryEntryView SourceEntry;
+	if (!TestTrue(
+		TEXT("The pickup source exposes a complete snapshot"),
+		GetEntryView(SourceInventory, SourceItemId, SourceEntry)))
+	{
+		return false;
+	}
 
 	FRpgInventoryMutationRequest PickupRequest;
 	PickupRequest.Operation = ERpgInventoryMutationOperation::Pickup;
 	PickupRequest.ItemId = SourceItemId;
+	PickupRequest.ExpectedEntryId = SourceEntry.EntryId;
 	PickupRequest.Source = Root;
+	PickupRequest.ExpectedSourcePlacement = SourceEntry.Placement;
+	PickupRequest.ExpectedSourceQuantity = SourceEntry.StackCount;
 	PickupRequest.Target = Root;
 	PickupRequest.Quantity = 4;
 	PickupRequest.RequestId = FGuid::NewGuid();
@@ -6352,11 +6443,21 @@ bool FRpgInventoryCrossInventoryNestedSubtreeTest::RunTest(const FString& Parame
 		}
 	}
 	TestTrue(TEXT("Blocked transfer target was filled completely"), bFilledBlockedTarget);
+	FRpgInventoryEntryView SourceBagEntry;
+	if (!TestTrue(
+		TEXT("The nested provider exposes a complete source snapshot"),
+		GetEntryView(SourceInventory, BagItemId, SourceBagEntry)))
+	{
+		return false;
+	}
 
 	FRpgInventoryMutationRequest TransferRequest;
 	TransferRequest.Operation = ERpgInventoryMutationOperation::Transfer;
 	TransferRequest.ItemId = BagItemId;
+	TransferRequest.ExpectedEntryId = SourceBagEntry.EntryId;
 	TransferRequest.Source = Root;
+	TransferRequest.ExpectedSourcePlacement = SourceBagEntry.Placement;
+	TransferRequest.ExpectedSourceQuantity = SourceBagEntry.StackCount;
 	TransferRequest.Target = Root;
 	TransferRequest.Quantity = 1;
 	TransferRequest.RequestId = FGuid::NewGuid();
@@ -7148,11 +7249,21 @@ bool FRpgInventoryPhysicalDropSubtreeTest::RunTest(
 	{
 		return false;
 	}
+	FRpgInventoryEntryView SourceBagEntry;
+	if (!TestTrue(
+		TEXT("The physical-drop provider exposes a complete source snapshot"),
+		GetEntryView(SourceInventory, BagId, SourceBagEntry)))
+	{
+		return false;
+	}
 
 	FRpgInventoryMutationRequest CapacityProbe;
 	CapacityProbe.Operation = ERpgInventoryMutationOperation::Drop;
 	CapacityProbe.ItemId = BagId;
+	CapacityProbe.ExpectedEntryId = SourceBagEntry.EntryId;
 	CapacityProbe.Source = Root;
+	CapacityProbe.ExpectedSourcePlacement = SourceBagEntry.Placement;
+	CapacityProbe.ExpectedSourceQuantity = SourceBagEntry.StackCount;
 	CapacityProbe.Target = Root;
 	CapacityProbe.Quantity = 1;
 	CapacityProbe.RequestId = FGuid::NewGuid();

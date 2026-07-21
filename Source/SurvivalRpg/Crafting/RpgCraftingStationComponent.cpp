@@ -843,6 +843,7 @@ bool URpgCraftingStationComponent::FlushOutputToBaseStorage()
 			TransferIntent.ItemId = OutputEntry.ItemId;
 			TransferIntent.ExpectedEntryId = OutputEntry.EntryId;
 			TransferIntent.ExpectedSourcePlacement = OutputEntry.Placement;
+			TransferIntent.ExpectedSourceQuantity = OutputEntry.StackCount;
 			TransferIntent.TargetContainer =
 				FRpgInventoryContainerHandle::MakeRoot(ArmoryInventory->GetDefaultContainerId());
 			TransferIntent.Quantity = OutputEntry.StackCount;

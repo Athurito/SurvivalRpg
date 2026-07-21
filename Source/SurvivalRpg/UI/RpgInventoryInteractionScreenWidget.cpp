@@ -34,7 +34,9 @@ bool FRpgInventoryDropConfirmationIntent::Arm(
 		!InRequest.EntryId.IsValid() ||
 		!InRequest.ItemId.IsValid() ||
 		!InRequest.ExpectedSourcePlacement.IsValid() ||
+		InRequest.ExpectedSourceQuantity <= 0 ||
 		InRequest.StackCount <= 0 ||
+		InRequest.StackCount > InRequest.ExpectedSourceQuantity ||
 		InRequest.bConfirmed)
 	{
 		return false;
@@ -54,7 +56,9 @@ bool FRpgInventoryDropConfirmationIntent::IsArmed() const
 		Request.EntryId.IsValid() &&
 		Request.ItemId.IsValid() &&
 		Request.ExpectedSourcePlacement.IsValid() &&
+		Request.ExpectedSourceQuantity > 0 &&
 		Request.StackCount > 0 &&
+		Request.StackCount <= Request.ExpectedSourceQuantity &&
 		!Request.bConfirmed;
 }
 

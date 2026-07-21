@@ -628,6 +628,7 @@ bool FRpgInventoryDropConfirmationIntentTest::RunTest(const FString& Parameters)
 	Request.ExpectedSourcePlacement.Y = 1;
 	Request.ExpectedSourcePlacement.Width = 1;
 	Request.ExpectedSourcePlacement.Height = 1;
+	Request.ExpectedSourceQuantity = 5;
 	Request.StackCount = 3;
 
 	FRpgInventoryDropConfirmationIntent Intent;
@@ -711,6 +712,10 @@ bool FRpgInventoryDropConfirmationIntentTest::RunTest(const FString& Parameters)
 		TEXT("The confirmed retry retains the complete source placement"),
 		ConfirmedRequest.ExpectedSourcePlacement ==
 			Request.ExpectedSourcePlacement);
+	TestEqual(
+		TEXT("The confirmed retry retains the complete source quantity"),
+		ConfirmedRequest.ExpectedSourceQuantity,
+		Request.ExpectedSourceQuantity);
 	TestEqual(
 		TEXT("The confirmed retry retains the exact quantity"),
 		ConfirmedRequest.StackCount,

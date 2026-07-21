@@ -206,6 +206,7 @@ namespace RpgInventoryIntentTransactionTests
 		Intent.ItemId = SourceEntry.ItemId;
 		Intent.ExpectedEntryId = SourceEntry.EntryId;
 		Intent.ExpectedSourcePlacement = SourceEntry.Placement;
+		Intent.ExpectedSourceQuantity = SourceEntry.StackCount;
 		Intent.TargetContainer = MakeRoot(TargetInventory);
 		Intent.Quantity = Quantity;
 		return Intent;
@@ -1092,6 +1093,26 @@ bool FRpgInventoryTypedTransferReplayFingerprintTest::RunTest(
 		MakeInventorySignature(FirstTarget),
 		TargetBeforeStale);
 
+	FRpgInventoryTransferIntent StaleQuantityTransfer =
+		MakeTransferIntent(TransferEntry, FirstTarget, 1);
+	++StaleQuantityTransfer.ExpectedSourceQuantity;
+	const FRpgInventoryMutationResult StaleQuantityResult =
+		SourceInventory->TransferItem(
+			FirstTarget,
+			StaleQuantityTransfer);
+	TestEqual(
+		TEXT("A changed complete source stack count rejects a partial transfer"),
+		StaleQuantityResult.Code,
+		ERpgInventoryMutationResultCode::SourceMismatch);
+	TestEqual(
+		TEXT("A stale source quantity preserves the complete source graph"),
+		MakeInventorySignature(SourceInventory),
+		SourceBeforeStale);
+	TestEqual(
+		TEXT("A stale source quantity preserves the complete target graph"),
+		MakeInventorySignature(FirstTarget),
+		TargetBeforeStale);
+
 	const FRpgInventoryTransferIntent TransferIntent =
 		MakeTransferIntent(TransferEntry, FirstTarget, 1);
 	const FRpgInventoryMutationResult FirstTransfer =
@@ -1171,6 +1192,25 @@ bool FRpgInventoryTypedTransferReplayFingerprintTest::RunTest(
 		SourceAfterTransfer);
 	TestEqual(
 		TEXT("A cross payload collision preserves the target"),
+		MakeInventorySignature(FirstTarget),
+		FirstTargetAfterTransfer);
+
+	FRpgInventoryTransferIntent SourceQuantityCollision = TransferIntent;
+	++SourceQuantityCollision.ExpectedSourceQuantity;
+	const FRpgInventoryMutationResult SourceQuantityCollisionResult =
+		SourceInventory->TransferItem(
+			FirstTarget,
+			SourceQuantityCollision);
+	TestEqual(
+		TEXT("The same request id cannot change its complete source quantity snapshot"),
+		SourceQuantityCollisionResult.Code,
+		ERpgInventoryMutationResultCode::InvalidRequest);
+	TestEqual(
+		TEXT("A source-quantity fingerprint collision preserves the source"),
+		MakeInventorySignature(SourceInventory),
+		SourceAfterTransfer);
+	TestEqual(
+		TEXT("A source-quantity fingerprint collision preserves the target"),
 		MakeInventorySignature(FirstTarget),
 		FirstTargetAfterTransfer);
 

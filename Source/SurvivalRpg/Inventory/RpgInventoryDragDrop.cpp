@@ -141,6 +141,37 @@ namespace
 		return false;
 	}
 
+	bool TryCaptureSourceSnapshot(
+		const URpgInventoryManagerComponent* Inventory,
+		const URpgInventoryItemInstance* ItemInstance,
+		FGuid& OutEntryId,
+		FRpgInventoryGridPlacement& OutPlacement,
+		int32& OutSourceQuantity)
+	{
+		OutEntryId.Invalidate();
+		OutPlacement = FRpgInventoryGridPlacement();
+		OutSourceQuantity = 0;
+		if (!Inventory || !ItemInstance || !ItemInstance->GetItemId().IsValid())
+		{
+			return false;
+		}
+
+		for (const FRpgInventoryEntryView& Entry : Inventory->GetAllEntries())
+		{
+			if (Entry.Instance == ItemInstance &&
+				Entry.ItemId == ItemInstance->GetItemId() &&
+				Entry.EntryId.IsValid() && Entry.Placement.IsValid() &&
+				Entry.StackCount > 0)
+			{
+				OutEntryId = Entry.EntryId;
+				OutPlacement = Entry.Placement;
+				OutSourceQuantity = Entry.StackCount;
+				return true;
+			}
+		}
+		return false;
+	}
+
 	bool CanUseItemLocally(
 		const URpgInventoryItemInstance* ItemInstance,
 		const URpgInventoryManagerComponent* SourceInventory,
@@ -1303,6 +1334,9 @@ bool URpgInventoryDragDropCoordinator::CanQuickTransferEntry(URpgInventoryEntryV
 
 	FRpgInventoryQuickTransferRequest Request;
 	Request.ItemId = Item->GetItemId();
+	Request.ExpectedEntryId = EntryViewModel->GetEntryId();
+	Request.ExpectedSourcePlacement = EntryViewModel->GetPlacement();
+	Request.ExpectedSourceQuantity = EntryViewModel->GetStackCount();
 	Request.StackCount = EntryViewModel->GetStackCount();
 	if (SourceInventory == TargetInventory)
 	{
@@ -1346,6 +1380,9 @@ bool URpgInventoryDragDropCoordinator::QuickTransferEntry(URpgInventoryEntryView
 	FRpgInventoryQuickTransferRequest Request;
 	Request.RequestId = FGuid::NewGuid();
 	Request.ItemId = ItemInstance->GetItemId();
+	Request.ExpectedEntryId = EntryViewModel->GetEntryId();
+	Request.ExpectedSourcePlacement = EntryViewModel->GetPlacement();
+	Request.ExpectedSourceQuantity = StackCount;
 	Request.StackCount = StackCount;
 	if (SourceInventory == TargetInventory)
 	{
@@ -1379,6 +1416,9 @@ bool URpgInventoryDragDropCoordinator::CanQuickTransferAddressSlot(URpgInventory
 
 	FRpgInventoryQuickTransferRequest Request;
 	Request.ItemId = Item->GetItemId();
+	Request.ExpectedEntryId = SlotViewModel->GetEntryId();
+	Request.ExpectedSourcePlacement = SlotViewModel->GetItemPlacement();
+	Request.ExpectedSourceQuantity = SlotViewModel->GetStackCount();
 	Request.StackCount = SlotViewModel->GetStackCount();
 	if (SourceInventory == TargetInventory)
 	{
@@ -1425,6 +1465,9 @@ bool URpgInventoryDragDropCoordinator::QuickTransferAddressSlot(URpgInventoryAdd
 	FRpgInventoryQuickTransferRequest Request;
 	Request.RequestId = FGuid::NewGuid();
 	Request.ItemId = ItemInstance->GetItemId();
+	Request.ExpectedEntryId = SlotViewModel->GetEntryId();
+	Request.ExpectedSourcePlacement = SlotViewModel->GetItemPlacement();
+	Request.ExpectedSourceQuantity = StackCount;
 	Request.StackCount = StackCount;
 	if (SourceInventory == TargetInventory)
 	{
@@ -1448,15 +1491,25 @@ bool URpgInventoryDragDropCoordinator::CanQuickTransferPlayerItem(URpgInventoryI
 		return false;
 	}
 
+	FGuid ExpectedEntryId;
 	FRpgInventoryGridPlacement SourcePlacement;
-	if (!PlayerInventory->GetItemPlacement(ItemInstance, SourcePlacement))
+	int32 ExpectedSourceQuantity = 0;
+	if (!TryCaptureSourceSnapshot(
+			PlayerInventory,
+			ItemInstance,
+			ExpectedEntryId,
+			SourcePlacement,
+			ExpectedSourceQuantity))
 	{
 		return false;
 	}
 
 	FRpgInventoryQuickTransferRequest Request;
 	Request.ItemId = ItemInstance->GetItemId();
-	Request.StackCount = PlayerInventory->GetItemStackCount(ItemInstance);
+	Request.ExpectedEntryId = ExpectedEntryId;
+	Request.ExpectedSourcePlacement = SourcePlacement;
+	Request.ExpectedSourceQuantity = ExpectedSourceQuantity;
+	Request.StackCount = ExpectedSourceQuantity;
 	BuildPlayerQuickTransferTargets(SourcePlacement, Request.PreferredTargetContainers);
 	if (Request.StackCount <= 0 || Request.PreferredTargetContainers.IsEmpty())
 	{
@@ -1482,8 +1535,16 @@ bool URpgInventoryDragDropCoordinator::QuickTransferPlayerItem(URpgInventoryItem
 
 	URpgInventoryManagerComponent* PlayerInventory = FindPlayerInventory();
 	URpgInventoryUiActionComponent* Actions = ResolveUiActionComponent();
+	FGuid ExpectedEntryId;
 	FRpgInventoryGridPlacement SourcePlacement;
-	if (!PlayerInventory || !Actions || !PlayerInventory->GetItemPlacement(ItemInstance, SourcePlacement))
+	int32 ExpectedSourceQuantity = 0;
+	if (!PlayerInventory || !Actions ||
+		!TryCaptureSourceSnapshot(
+			PlayerInventory,
+			ItemInstance,
+			ExpectedEntryId,
+			SourcePlacement,
+			ExpectedSourceQuantity))
 	{
 		return false;
 	}
@@ -1496,7 +1557,10 @@ bool URpgInventoryDragDropCoordinator::QuickTransferPlayerItem(URpgInventoryItem
 	FRpgInventoryQuickTransferRequest Request;
 	Request.RequestId = FGuid::NewGuid();
 	Request.ItemId = ItemInstance->GetItemId();
-	Request.StackCount = PlayerInventory->GetItemStackCount(ItemInstance);
+	Request.ExpectedEntryId = ExpectedEntryId;
+	Request.ExpectedSourcePlacement = SourcePlacement;
+	Request.ExpectedSourceQuantity = ExpectedSourceQuantity;
+	Request.StackCount = ExpectedSourceQuantity;
 	BuildPlayerQuickTransferTargets(SourcePlacement, Request.PreferredTargetContainers);
 	Actions->RequestQuickTransferItem(PlayerInventory, PlayerInventory, Request);
 	return true;
@@ -1932,6 +1996,7 @@ bool URpgInventoryDragDropCoordinator::PrepareDropEntryRequest(
 	if (!BuildManualDropRequest(Inventory, ItemInstance, RequestedStackCount, OutRequest) ||
 		OutRequest.EntryId != EntryViewModel->GetEntryId() ||
 		OutRequest.ExpectedSourcePlacement != EntryViewModel->GetPlacement() ||
+		OutRequest.ExpectedSourceQuantity != EntryViewModel->GetStackCount() ||
 		RequestedStackCount > EntryViewModel->GetStackCount())
 	{
 		OutRequest = FRpgInventoryManualDropRequest();
@@ -1963,6 +2028,7 @@ bool URpgInventoryDragDropCoordinator::PrepareDropAddressSlotRequest(
 		OutRequest.EntryId != SlotViewModel->GetEntryId() ||
 		!ExpectedViewPlacement.IsValid() ||
 		OutRequest.ExpectedSourcePlacement != ExpectedViewPlacement ||
+		OutRequest.ExpectedSourceQuantity != SlotViewModel->GetStackCount() ||
 		RequestedStackCount > SlotViewModel->GetStackCount())
 	{
 		OutRequest = FRpgInventoryManualDropRequest();
@@ -2260,6 +2326,7 @@ bool URpgInventoryDragDropCoordinator::CommitPayloadToTarget(const FRpgInventory
 				Intent.ExpectedEntryId = Payload.EntryId;
 				Intent.ExpectedSourcePlacement =
 					Payload.SourcePlacement;
+				Intent.ExpectedSourceQuantity = Payload.StackCount;
 				Intent.TargetContainer =
 					Target.TargetPlacement.GetContainerHandle();
 				Intent.TargetPlacement = Target.TargetPlacement;
@@ -2282,6 +2349,7 @@ bool URpgInventoryDragDropCoordinator::CommitPayloadToTarget(const FRpgInventory
 			Request.ExpectedEntryId = Payload.EntryId;
 			Request.ExpectedSourcePlacement =
 				Payload.SourcePlacement;
+			Request.ExpectedSourceQuantity = Payload.StackCount;
 			Request.StackCount = Payload.StackCount;
 			if (!Request.RequestId.IsValid())
 			{
@@ -2330,6 +2398,7 @@ bool URpgInventoryDragDropCoordinator::CommitPayloadToTarget(const FRpgInventory
 				Intent.ExpectedEntryId = Payload.EntryId;
 				Intent.ExpectedSourcePlacement =
 					Payload.SourcePlacement;
+				Intent.ExpectedSourceQuantity = Payload.StackCount;
 				Intent.TargetContainer =
 					Target.TargetPlacement.GetContainerHandle();
 				Intent.TargetPlacement =
@@ -3364,6 +3433,7 @@ bool URpgInventoryDragDropCoordinator::BuildManualDropRequest(
 		OutRequest.EntryId = Entry.EntryId;
 		OutRequest.ItemId = Entry.ItemId;
 		OutRequest.ExpectedSourcePlacement = Entry.Placement;
+		OutRequest.ExpectedSourceQuantity = Entry.StackCount;
 		OutRequest.StackCount = RequestedStackCount;
 		OutRequest.bConfirmed = false;
 		return true;
@@ -3379,7 +3449,8 @@ bool URpgInventoryDragDropCoordinator::IsManualDropRequestCurrent(
 	if (!Inventory || !Request.RequestId.IsValid() ||
 		!Request.EntryId.IsValid() || !Request.ItemId.IsValid() ||
 		!Request.ExpectedSourcePlacement.IsValid() ||
-		Request.StackCount <= 0)
+		Request.ExpectedSourceQuantity <= 0 || Request.StackCount <= 0 ||
+		Request.StackCount > Request.ExpectedSourceQuantity)
 	{
 		return false;
 	}
@@ -3392,7 +3463,7 @@ bool URpgInventoryDragDropCoordinator::IsManualDropRequestCurrent(
 			Entry.Instance->GetItemId() == Request.ItemId)
 		{
 			return Entry.Placement == Request.ExpectedSourcePlacement &&
-				Entry.StackCount >= Request.StackCount;
+				Entry.StackCount == Request.ExpectedSourceQuantity;
 		}
 	}
 

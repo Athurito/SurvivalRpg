@@ -377,6 +377,36 @@ URpgInventoryAutomationTestBagItemDefinition::URpgInventoryAutomationTestBagItem
 	Fragments.Add(EquippableFragment);
 }
 
+URpgInventoryAutomationTestGearNameCollisionBagItemDefinition::
+	URpgInventoryAutomationTestGearNameCollisionBagItemDefinition(
+		const FObjectInitializer& ObjectInitializer)
+	: Super(ObjectInitializer)
+{
+	DisplayName = FText::FromString(TEXT("Automation Gear-Name Collision Bag"));
+
+	URpgInventoryFragment_SpatialItem* SpatialFragment =
+		CreateDefaultSubobject<URpgInventoryFragment_SpatialItem>(TEXT("Spatial"));
+	ConfigureSpatialFragment(SpatialFragment, 1, 1, true);
+	Fragments.Add(SpatialFragment);
+
+	URpgInventoryFragment_ItemTraits* TraitsFragment =
+		CreateDefaultSubobject<URpgInventoryFragment_ItemTraits>(TEXT("Traits"));
+	ConfigureNonStackingTraits(TraitsFragment);
+	Fragments.Add(TraitsFragment);
+
+	URpgInventoryFragment_ItemContainer* ContainerFragment =
+		CreateDefaultSubobject<URpgInventoryFragment_ItemContainer>(TEXT("ItemContainer"));
+	FRpgInventoryItemContainerDefinition& CollidingContainer =
+		ContainerFragment->ProvidedContainers.AddDefaulted_GetRef();
+	CollidingContainer.ContainerId = TEXT("Gear.Head");
+	CollidingContainer.DisplayName = FText::FromString(TEXT("Gear Name Collision"));
+	CollidingContainer.GridSize.Width = 4;
+	CollidingContainer.GridSize.Height = 4;
+	CollidingContainer.bAllowNestedContainers = true;
+	CollidingContainer.MaxNestingDepth = RpgInventoryMaxItemOwnedDepth;
+	Fragments.Add(ContainerFragment);
+}
+
 URpgInventoryAutomationTestLegacyStackableBagItemDefinition::
 	URpgInventoryAutomationTestLegacyStackableBagItemDefinition(
 		const FObjectInitializer& ObjectInitializer)

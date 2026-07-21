@@ -1512,20 +1512,35 @@ void ARpgGameModeBase::DropInventoryForPlayerDeath(APlayerController* PC, const 
 	{
 		URpgInventoryItemInstance* CurrentItem =
 			InventoryComponent->FindItemById(SelectedRootId);
-		const int32 CurrentStackCount = CurrentItem
-			? InventoryComponent->GetItemStackCount(CurrentItem)
-			: 0;
-		if (!CurrentItem || CurrentStackCount <= 0)
+		const TArray<FRpgInventoryEntryView> CurrentEntries =
+			InventoryComponent->GetAllEntries();
+		const FRpgInventoryEntryView* SourceEntry =
+			CurrentEntries.FindByPredicate(
+				[&SelectedRootId](const FRpgInventoryEntryView& Entry)
+				{
+					return Entry.ItemId == SelectedRootId;
+				});
+		if (!CurrentItem || !SourceEntry ||
+			SourceEntry->Instance != CurrentItem ||
+			!SourceEntry->EntryId.IsValid() ||
+			!SourceEntry->Placement.IsValid() ||
+			SourceEntry->StackCount <= 0)
 		{
 			continue;
 		}
+		const int32 CurrentStackCount = SourceEntry->StackCount;
+		FRpgInventoryTransferIntent DropIntent;
+		DropIntent.RequestId = FGuid::NewGuid();
+		DropIntent.ItemId = SelectedRootId;
+		DropIntent.ExpectedEntryId = SourceEntry->EntryId;
+		DropIntent.ExpectedSourcePlacement = SourceEntry->Placement;
+		DropIntent.ExpectedSourceQuantity = CurrentStackCount;
+		DropIntent.Quantity = CurrentStackCount;
 
 		const FRpgInventoryMutationResult DropResult =
-			DropActor->TransferItemFromInventory(
+			DropActor->TransferItemFromInventoryByIntent(
 				InventoryComponent,
-				SelectedRootId,
-				CurrentStackCount,
-				FGuid::NewGuid(),
+				MoveTemp(DropIntent),
 				true);
 		if (!DropResult.IsSuccess() ||
 			DropResult.AppliedQuantity != CurrentStackCount)

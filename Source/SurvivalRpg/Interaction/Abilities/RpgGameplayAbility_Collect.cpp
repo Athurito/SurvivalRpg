@@ -168,6 +168,7 @@ namespace
 				Intent.ItemId = RootItemId;
 				Intent.ExpectedEntryId = SourceEntry->EntryId;
 				Intent.ExpectedSourcePlacement = SourceEntry->Placement;
+				Intent.ExpectedSourceQuantity = CurrentStackCount;
 				Intent.TargetContainer = TargetContainer;
 				Intent.Quantity = CurrentStackCount;
 				Intent.EnsureRequestId();

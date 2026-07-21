@@ -35,11 +35,18 @@ public:
 	bool IsLootInventoryCanonical() const { return bLootInventoryInitialized; }
 
 	/**
-	 * Moves one concrete source stack into this actor's authoritative loot inventory.
+	 * Moves one exact source-entry snapshot into this actor's authoritative loot inventory.
 	 * A full container provider keeps its persistent identity, runtime state, placements, and complete descendant subtree.
 	 * Set bPreventStackMerge for death/save semantics that must retain each source ItemId as a separate concrete stack.
 	 */
 	UFUNCTION(BlueprintCallable, BlueprintAuthorityOnly, Category = "Inventory|Drop")
+	FRpgInventoryMutationResult TransferItemFromInventoryByIntent(
+		URpgInventoryManagerComponent* SourceInventory,
+		FRpgInventoryTransferIntent Intent,
+		bool bPreventStackMerge = false);
+
+	/** Legacy server-side adapter that snapshots the current entry before forwarding to the typed drop seam. */
+	UFUNCTION(BlueprintCallable, BlueprintAuthorityOnly, Category = "Inventory|Drop", meta = (DeprecatedFunction, DeprecationMessage = "Capture FRpgInventoryTransferIntent from the source entry and use TransferItemFromInventoryByIntent."))
 	FRpgInventoryMutationResult TransferItemFromInventory(
 		URpgInventoryManagerComponent* SourceInventory,
 		FRpgInventoryItemId ItemId,
@@ -67,22 +74,21 @@ private:
 		TWeakObjectPtr<URpgInventoryManagerComponent> TargetInventory;
 		bool bHadTargetInventory = false;
 		uint64 TargetMutationEpoch = 0;
-		FRpgInventoryItemId ItemId;
-		int32 StackCount = 0;
+		FRpgInventoryTransferIntent Intent;
 		bool bPreventStackMerge = false;
 		FRpgInventoryMutationResult Result;
 	};
+	static bool AreDropTransferIntentsEquivalent(
+		const FRpgInventoryTransferIntent& A,
+		const FRpgInventoryTransferIntent& B);
 	bool TryReplayRecentDropTransfer(
 		URpgInventoryManagerComponent* SourceInventory,
-		FRpgInventoryItemId ItemId,
-		int32 StackCount,
-		const FGuid& RequestId,
+		const FRpgInventoryTransferIntent& Intent,
 		bool bPreventStackMerge,
 		FRpgInventoryMutationResult& OutResult) const;
 	FRpgInventoryMutationResult CacheRecentDropTransfer(
 		URpgInventoryManagerComponent* SourceInventory,
-		FRpgInventoryItemId ItemId,
-		int32 StackCount,
+		const FRpgInventoryTransferIntent& Intent,
 		bool bPreventStackMerge,
 		FRpgInventoryMutationResult Result);
 

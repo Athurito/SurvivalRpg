@@ -204,16 +204,20 @@ struct SURVIVALRPG_API FRpgInventoryQuickTransferRequest
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Inventory|Quick Transfer")
 	FRpgInventoryItemId ItemId;
 
-	/** Optional entry identity captured by an active drag; invalid keeps compatibility quick-transfer semantics. */
+	/** Exact replicated entry identity captured by the initiating presenter. */
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Inventory|Quick Transfer")
 	FGuid ExpectedEntryId;
 
-	/** Optional complete drag-source placement used to reject stale in-container moves before transfer. */
+	/** Complete source placement captured by the initiating presenter. */
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Inventory|Quick Transfer")
 	FRpgInventoryGridPlacement ExpectedSourcePlacement;
 
-	/** Requested amount. Values <= 0 mean the complete current stack; same-inventory transfer is whole-entry only. */
-	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Inventory|Quick Transfer")
+	/** Complete source stack count captured independently from StackCount. */
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Inventory|Quick Transfer", meta = (ClampMin = "1", UIMin = "1"))
+	int32 ExpectedSourceQuantity = 0;
+
+	/** Requested transfer amount. Same-inventory quick transfer remains whole-entry only. */
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Inventory|Quick Transfer", meta = (ClampMin = "1", UIMin = "1"))
 	int32 StackCount = 0;
 
 	/**
@@ -334,6 +338,10 @@ struct SURVIVALRPG_API FRpgInventoryManualDropRequest
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Inventory|Drop")
 	FRpgInventoryGridPlacement ExpectedSourcePlacement;
 
+	/** Complete source stack count captured independently from the requested drop amount. */
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Inventory|Drop", meta = (ClampMin = "1", UIMin = "1"))
+	int32 ExpectedSourceQuantity = 0;
+
 	/** Exact number of units to drop. The server rejects non-positive or no-longer-available quantities. */
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Inventory|Drop", meta = (ClampMin = "1", UIMin = "1"))
 	int32 StackCount = 1;
@@ -439,8 +447,8 @@ public:
 		FRpgInventoryEquipmentIntent Intent);
 
 	/**
-	 * Quick-transfers a complete entry (or a cross-inventory stack amount) to the first candidate with real capacity.
-	 * Source and target may be the same player inventory; the server always rescans and commits atomically.
+	 * Quick-transfers a complete entry (or a cross-inventory stack amount) from one exact presented source snapshot.
+	 * Source and target may be the same player inventory; the server rejects stale entry, placement, or stack state.
 	 */
 	UFUNCTION(Server, Reliable, BlueprintCallable, Category = "Inventory|Quick Transfer")
 	void RequestQuickTransferItem(
@@ -611,7 +619,7 @@ public:
 	 * Legacy pointer-based wrapper retained for existing Blueprint callers.
 	 * New presenters should capture a stable snapshot and call RequestDropInventoryItemById.
 	 */
-	UFUNCTION(Server, Reliable, BlueprintCallable, Category = "Inventory|UI Actions")
+	UFUNCTION(Server, Reliable, BlueprintCallable, Category = "Inventory|UI Actions", meta = (DeprecatedFunction, DeprecationMessage = "Capture FRpgInventoryManualDropRequest from the presented entry and use RequestDropInventoryItemById."))
 	void RequestDropInventoryItem(URpgInventoryManagerComponent* Inventory, URpgInventoryItemInstance* Item, int32 StackCount, bool bConfirmed);
 
 	/**
@@ -635,12 +643,12 @@ public:
 	UFUNCTION(Server, Reliable, BlueprintCallable, Category = "Inventory|Base Storage")
 	void RequestWithdrawResourceFromBase(URpgBaseStorageStationComponent* Station, TSubclassOf<URpgInventoryItemDefinition> ItemDefinition, int32 StackCount);
 
-	/** Stores an instance-based player item in the linked base armory inventory. */
-	UFUNCTION(Server, Reliable, BlueprintCallable, Category = "Inventory|Base Storage")
+	/** Legacy pointer adapter that snapshots and stores one instance-based player item in the linked base armory. */
+	UFUNCTION(Server, Reliable, BlueprintCallable, Category = "Inventory|Base Storage", meta = (DeprecatedFunction, DeprecationMessage = "Use RequestQuickTransferItem with the presented entry's exact source snapshot."))
 	void RequestStoreItemInstanceInBase(URpgBaseStorageStationComponent* Station, URpgInventoryItemInstance* Item, int32 StackCount);
 
-	/** Takes an instance-based item from the linked base armory inventory into the player inventory. */
-	UFUNCTION(Server, Reliable, BlueprintCallable, Category = "Inventory|Base Storage")
+	/** Legacy pointer adapter that snapshots and takes one instance-based armory item into the player inventory. */
+	UFUNCTION(Server, Reliable, BlueprintCallable, Category = "Inventory|Base Storage", meta = (DeprecatedFunction, DeprecationMessage = "Use RequestQuickTransferItem with the presented entry's exact source snapshot."))
 	void RequestTakeItemInstanceFromBase(URpgBaseStorageStationComponent* Station, URpgInventoryItemInstance* Item, int32 StackCount);
 
 	/** Installs a data-driven upgrade on a base storage station after paying material costs. */
@@ -744,8 +752,7 @@ private:
 	bool TryTransferManualDrop(
 		URpgInventoryManagerComponent* SourceInventory,
 		URpgInventoryItemInstance* Item,
-		int32 StackCount,
-		const FGuid& RequestId,
+		const FRpgInventoryTransferIntent& Intent,
 		URpgInventoryManagerComponent*& OutTargetInventory);
 	void ExecuteUseInventoryItem(
 		URpgInventoryManagerComponent* Inventory,

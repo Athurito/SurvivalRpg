@@ -256,6 +256,23 @@ public:
 };
 
 /**
+ * Editor-only 1x1 bag whose 4x4 item-owned container deliberately reuses a built-in Gear root id.
+ * Full container handles must keep this grid distinct from the player's single-cell Gear slot.
+ */
+UCLASS(NotBlueprintable, Transient)
+class URpgInventoryAutomationTestGearNameCollisionBagItemDefinition final
+	: public URpgInventoryItemDefinition
+{
+	GENERATED_BODY()
+
+public:
+	explicit URpgInventoryAutomationTestGearNameCollisionBagItemDefinition(
+		const FObjectInitializer& ObjectInitializer = FObjectInitializer::Get());
+
+	virtual bool IsEditorOnly() const override { return true; }
+};
+
+/**
  * Editor-only malformed legacy provider whose raw traits advertise a stack of ten.
  * Runtime inventory rules must still treat every concrete provider as a single entry.
  */
