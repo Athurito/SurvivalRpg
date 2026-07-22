@@ -81,7 +81,9 @@ In Phase 0 bekannte Restpunkte, späteren Phasen zugeordnet:
 - Der Cross-Inventory-Vollgraph-Import war Phase 3 zugeordnet. Seit Phase 3A
   arbeiten Transfers als vorvalidierte In-place-Deltas; unnötige Remove-/Add-
   Nachrichten und pauschaler Subobject-Registrierungs-Churn sind entfernt.
-  Batch-Pickup und Collect gegen gemeinsame Scratch-Occupancy bleiben Phase 3B.
+  Der detached/static Batch-Pickup arbeitet seit Phase 3B1 gegen einen
+  gemeinsamen Scratch-Zustand; der kanonische Multi-Root-Collect aus einem
+  `ARpgDroppedInventoryActor` bleibt Phase 3B2.
 - Collect-/Starter-Grant-Pfade sind jetzt physisch korrekt geroutet, benötigen
   aber noch eigene Ende-zu-Ende-Tests für Vollbelegung und Rollback (Phase 2).
 - Der gemeinsame Placement-Evaluator unterscheidet Root- und item-owned
@@ -1218,6 +1220,45 @@ Verifizierter Phase-3A-Zwischenstand vom 2026-07-22:
 - Nächster Schnitt: Batch-Pickup und Collect als gemeinsamen, vollständig
   vorvalidierten Scratch-Occupancy-Plan ausführen, ohne zwischen Items auf
   Save-Graph-Rollback zurückzufallen.
+
+Verifizierter Phase-3B1-Zwischenstand vom 2026-07-22:
+
+- Detached und statische `FInventoryPickup`-Payloads werden über einen
+  Manager-eigenen Batch-Plan gegen einen gemeinsamen Stack-, Entry-, Kapazitäts-
+  und Spatial-Occupancy-Scratch-Zustand geprüft. Der vollständige Plan wird vor
+  dem Commit gegen den Live-Zustand revalidiert und als eine FastArray-/
+  Revisionsmutation veröffentlicht; ein Fehlschlag hinterlässt keine Teilmenge.
+- Definition-Templates dürfen deterministisch in vorhandene Stacks mergen und
+  über mehrere neue Stacks auffächern. Explizite Instanzen behalten den
+  bisherigen Bootstrap-Vertrag und werden nicht gemergt: lokale, noch nicht
+  verwaltete Instanzen behalten ihre Identität; fremde Instanzen werden mit
+  neuem actorweit eindeutigem `ItemId` und ihrem exportierten Runtime-Zustand
+  rekonstruiert. Bereits verwaltete oder kollidierende Identitäten schlagen
+  fail-closed fehl.
+- `IPickupable` und der statische Collect-Pfad delegieren auf denselben Batch-
+  Vertrag. Doppelte Kapazitäts-/Stack-Vorprüfungen sowie Save-Graph-Rollback in
+  den Adaptern sind entfernt. Der generische Helper lehnt einen kanonischen
+  `ARpgDroppedInventoryActor` bewusst ab, damit dessen Source-Inventar nicht
+  dupliziert werden kann; dessen source-owned Multi-Root-Transfer folgt in 3B2.
+- Fünf neue Tests decken gemeinsamen Scratch-Reject ohne Mutation,
+  deterministische Commit-Reihenfolge, Merge plus detached Instanz mit
+  Kapazität und Reentrancy, actorweite Identität beziehungsweise Managed-
+  Instance-Reject sowie den Duplizierungsschutz des kanonischen Drop-Helpers ab.
+- `SurvivalRpgEditor Win64 Development` wurde mit Unreal Engine 5.8 gebaut
+  (6/6 Actions im finalen inkrementellen Build).
+- `SurvivalRpg.Inventory.PickupBatch`: 5 von 5 Automationtests erfolgreich.
+- `SurvivalRpg.Inventory`: 99 von 99 Automationtests erfolgreich.
+- `SurvivalRpg.Equipment`: 5 von 5 Automationtests erfolgreich.
+- `SurvivalRpg.Crafting`: 6 von 6 Automationtests erfolgreich.
+- Fortschritt Phase 3 bleibt 6 von 7 Punkten (85,7 %), weil der letzte
+  Checklistenpunkt beide Pickup-Quellen umfasst.
+- Gesamtfortschritt der verbindlichen Checkliste bleibt 61 von 94 Punkten
+  (64,9 %), 33 Punkte offen.
+- Nächster Schnitt: die kanonischen Drop-Roots als einen source-owned
+  Collect-as-much-as-fits-Batch über gemeinsamen Target-Scratch planen und mit
+  genau einer Source- und Target-Revision committen. Partial-Stacks bleiben
+  erlaubt; Provider-/Container-Subtrees werden weiterhin nur vollständig
+  übertragen.
 
 ## Phase 4 – Datenmodell und Persistenz
 

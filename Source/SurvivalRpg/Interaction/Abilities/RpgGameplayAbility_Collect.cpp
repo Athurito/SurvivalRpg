@@ -4,7 +4,6 @@
 #include "GameFramework/Pawn.h"
 #include "GameFramework/PlayerState.h"
 #include "SurvivalRpg/Core/Player/RpgPlayerController.h"
-#include "SurvivalRpg/Equipment/RpgEquipmentLoadoutComponent.h"
 #include "SurvivalRpg/Inventory/IPickupable.h"
 #include "SurvivalRpg/Inventory/RpgDroppedInventoryActor.h"
 #include "SurvivalRpg/Inventory/RpgInventoryFragment_EquippableItem.h"
@@ -19,86 +18,6 @@
 
 namespace
 {
-	int32 GetCollectAbilityMaxStackSizeForDefinition(TSubclassOf<URpgInventoryItemDefinition> ItemDef)
-	{
-		return URpgInventoryManagerComponent::
-			GetEffectiveMaxStackSizeForDefinition(ItemDef);
-	}
-
-	bool CanCollectAbilityInventoryAcceptPickup(URpgInventoryManagerComponent* InventoryComponent, const FInventoryPickup& PickupInventory)
-	{
-		if (!InventoryComponent || (PickupInventory.Templates.IsEmpty() && PickupInventory.Instances.IsEmpty()))
-		{
-			return false;
-		}
-
-		for (const FPickupTemplate& Template : PickupInventory.Templates)
-		{
-			if (!Template.ItemDef || Template.StackCount <= 0)
-			{
-				return false;
-			}
-		}
-
-		for (const FPickupInstance& Instance : PickupInventory.Instances)
-		{
-			if (!Instance.Item || !InventoryComponent->CanBootstrapItemInstance(Instance.Item))
-			{
-				return false;
-			}
-		}
-
-		if (InventoryComponent->IsCapacityUnlimited())
-		{
-			return true;
-		}
-
-		TMap<TSubclassOf<URpgInventoryItemDefinition>, int32> ExistingFreeStackSpaceByDefinition;
-		for (const FRpgInventoryEntryView& Entry : InventoryComponent->GetAllEntries())
-		{
-			const TSubclassOf<URpgInventoryItemDefinition> EntryDefinition = Entry.Instance ? Entry.Instance->GetItemDef() : nullptr;
-			const int32 MaxStackSize = GetCollectAbilityMaxStackSizeForDefinition(EntryDefinition);
-			if (EntryDefinition && MaxStackSize > 1)
-			{
-				ExistingFreeStackSpaceByDefinition.FindOrAdd(EntryDefinition) += FMath::Max(0, MaxStackSize - Entry.StackCount);
-			}
-		}
-
-		TMap<TSubclassOf<URpgInventoryItemDefinition>, int32> RequestedTemplateCounts;
-		for (const FPickupTemplate& Template : PickupInventory.Templates)
-		{
-			RequestedTemplateCounts.FindOrAdd(Template.ItemDef) += Template.StackCount;
-		}
-
-		int32 RequiredNewEntries = 0;
-		for (const FPickupInstance& Instance : PickupInventory.Instances)
-		{
-			RequiredNewEntries += InventoryComponent->GetRequiredNewEntryCountForItemInstance(Instance.Item, 1);
-		}
-
-		for (const TPair<TSubclassOf<URpgInventoryItemDefinition>, int32>& RequestedTemplateCount : RequestedTemplateCounts)
-		{
-			const TSubclassOf<URpgInventoryItemDefinition> ItemDefinition = RequestedTemplateCount.Key;
-			const int32 MaxStackSize = GetCollectAbilityMaxStackSizeForDefinition(ItemDefinition);
-			int32 RemainingCount = RequestedTemplateCount.Value;
-
-			if (MaxStackSize > 1)
-			{
-				int32& ExistingFreeStackSpace = ExistingFreeStackSpaceByDefinition.FindOrAdd(ItemDefinition);
-				const int32 FilledExistingStackCount = FMath::Min(ExistingFreeStackSpace, RemainingCount);
-				ExistingFreeStackSpace -= FilledExistingStackCount;
-				RemainingCount -= FilledExistingStackCount;
-			}
-
-			if (RemainingCount > 0)
-			{
-				RequiredNewEntries += FMath::DivideAndRoundUp(RemainingCount, MaxStackSize);
-			}
-		}
-
-		return RequiredNewEntries <= InventoryComponent->GetFreeEntryCount();
-	}
-
 	bool TransferDroppedInventoryGraph(
 		URpgInventoryManagerComponent* LootInventory,
 		URpgInventoryManagerComponent* PlayerInventory,
@@ -294,7 +213,7 @@ void URpgGameplayAbility_Collect::ActivateAbility(
 	}
 
 	const FInventoryPickup PickupInventory = Pickup->GetPickupInventory();
-	if (!CanAddPickupToInventory(InventoryComponent, PickupInventory))
+	if (!InventoryComponent->CanAddPickupBatch(PickupInventory))
 	{
 		if (ARpgDroppedInventoryActor* DroppedInventoryActor =
 				Cast<ARpgDroppedInventoryActor>(TargetActor);
@@ -320,18 +239,23 @@ void URpgGameplayAbility_Collect::ActivateAbility(
 		return;
 	}
 
-	TArray<URpgInventoryItemInstance*> AddedItems;
-	if (!AddPickupToInventory(InventoryComponent, PickupInventory, AddedItems))
+	TArray<FRpgInventoryItemId> AddedItemIds;
+	const FRpgInventoryMutationResult PickupResult =
+		InventoryComponent->AddPickupBatch(PickupInventory, AddedItemIds);
+	if (!PickupResult.IsSuccess())
 	{
-		if (ARpgPlayerController* PlayerController = FindPlayerControllerForActor(InteractingActor))
-		{
-			if (URpgEquipmentLoadoutComponent* EquipmentLoadout = PlayerController->GetEquipmentLoadoutComponent())
-			{
-				EquipmentLoadout->ReconcilePhysicalEquipmentFromInventory();
-			}
-		}
 		EndAbility(Handle, ActorInfo, ActivationInfo, true, true);
 		return;
+	}
+
+	TArray<URpgInventoryItemInstance*> AddedItems;
+	for (const FRpgInventoryItemId& ItemId : AddedItemIds)
+	{
+		if (URpgInventoryItemInstance* AddedItem =
+				InventoryComponent->FindItemById(ItemId))
+		{
+			AddedItems.AddUnique(AddedItem);
+		}
 	}
 
 	if (bAssignCollectedEquippableItemsToEquipment)
@@ -415,61 +339,6 @@ ARpgPlayerController* URpgGameplayAbility_Collect::FindPlayerControllerForActor(
 	}
 
 	return nullptr;
-}
-
-bool URpgGameplayAbility_Collect::CanAddPickupToInventory(URpgInventoryManagerComponent* InventoryComponent, const FInventoryPickup& PickupInventory)
-{
-	return CanCollectAbilityInventoryAcceptPickup(InventoryComponent, PickupInventory);
-}
-
-bool URpgGameplayAbility_Collect::AddPickupToInventory(URpgInventoryManagerComponent* InventoryComponent, const FInventoryPickup& PickupInventory, TArray<URpgInventoryItemInstance*>& OutAddedItems)
-{
-	if (!CanAddPickupToInventory(InventoryComponent, PickupInventory))
-	{
-		return false;
-	}
-	const FRpgInventoryGraphSaveData InventoryBefore = InventoryComponent->ExportInventoryGraph();
-	if (InventoryBefore.Items.Num() != InventoryComponent->GetAllEntries().Num())
-	{
-		return false;
-	}
-	auto Rollback = [InventoryComponent, &InventoryBefore, &OutAddedItems]()
-	{
-		FRpgInventoryMutationResult RollbackResult;
-		InventoryComponent->ImportInventoryGraph(InventoryBefore, RollbackResult);
-		OutAddedItems.Reset();
-		return false;
-	};
-
-	for (const FPickupTemplate& Template : PickupInventory.Templates)
-	{
-		if (Template.ItemDef != nullptr && Template.StackCount > 0)
-		{
-			const int32 PreviousCount = InventoryComponent->GetTotalItemCountByDefinition(Template.ItemDef);
-			URpgInventoryItemInstance* AddedItem = InventoryComponent->GrantItemDefinition(Template.ItemDef, Template.StackCount);
-			if (!AddedItem || InventoryComponent->GetTotalItemCountByDefinition(Template.ItemDef) != PreviousCount + Template.StackCount)
-			{
-				return Rollback();
-			}
-			OutAddedItems.AddUnique(AddedItem);
-		}
-	}
-
-	for (const FPickupInstance& Instance : PickupInventory.Instances)
-	{
-		if (Instance.Item != nullptr)
-		{
-			URpgInventoryItemInstance* AddedItem =
-				InventoryComponent->BootstrapItemInstance(Instance.Item);
-			if (!AddedItem || !InventoryComponent->ContainsItemInstance(AddedItem))
-			{
-				return Rollback();
-			}
-			OutAddedItems.AddUnique(AddedItem);
-		}
-	}
-
-	return true;
 }
 
 void URpgGameplayAbility_Collect::AssignEquippableItemsToEquipment(

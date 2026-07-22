@@ -18,6 +18,7 @@ class UAbilitySystemComponent;
 class UObject;
 struct FOnAttributeChangeData;
 struct FFrame;
+struct FInventoryPickup;
 struct FRpgInventoryList;
 struct FNetDeltaSerializeInfo;
 struct FReplicationFlags;
@@ -648,6 +649,21 @@ public:
 	UFUNCTION(BlueprintCallable, Category = "Inventory|Intent", BlueprintPure)
 	bool CanBootstrapItemInstance(URpgInventoryItemInstance* SourceItemInstance, int32 StackCount = 1) const;
 
+	/**
+	 * Validates an all-or-nothing pickup payload against one shared stack, entry-budget, and spatial scratch graph.
+	 * This is a server-local preflight for interaction abilities; the authoritative commit always plans again.
+	 */
+	bool CanAddPickupBatch(const FInventoryPickup& Pickup) const;
+
+	/**
+	 * Adds an all-or-nothing pickup payload as one server-authoritative inventory commit.
+	 * Detached foreign instances are cloned under the inventory actor, runtime save/import is never used, and
+	 * OutAffectedItemIds contains one representative result per payload row for optional post-commit equipment routing.
+	 */
+	FRpgInventoryMutationResult AddPickupBatch(
+		const FInventoryPickup& Pickup,
+		TArray<FRpgInventoryItemId>& OutAffectedItemIds);
+
 	UFUNCTION(BlueprintCallable, BlueprintAuthorityOnly, Category=Inventory, meta = (DeprecatedFunction, DeprecationMessage = "Use GrantItemDefinition. Raw AddItemDefinition remains only for legacy Blueprint migration."))
 	URpgInventoryItemInstance* AddItemDefinition(TSubclassOf<URpgInventoryItemDefinition> ItemDef, int32 StackCount = 1);
 
@@ -906,6 +922,15 @@ private:
 		URpgInventoryItemInstance* StagedInstance,
 		const FRpgInventoryPlacementPlan& Plan,
 		bool bMayCreateAdditionalInstances);
+	struct FPreparedPickupBatch;
+	bool PreparePickupBatch(
+		const FInventoryPickup& Pickup,
+		UObject* StagingOuter,
+		FPreparedPickupBatch& OutPrepared,
+		ERpgInventoryMutationResultCode& OutCode) const;
+	bool RevalidatePickupBatch(
+		const FPreparedPickupBatch& Prepared,
+		ERpgInventoryMutationResultCode& OutCode) const;
 	/** Shared evaluator seam used by staged restore after its batch-local owner/rule resolution. */
 	FRpgInventoryPlacementPlan EvaluatePlacementInternal(
 		const FRpgInventoryPlacementQuery& Query,
@@ -1006,4 +1031,10 @@ private:
 
 	/** Server-local generation that invalidates command replay state after a successful profile/disk restore. */
 	uint64 MutationEpoch = 0;
+
+	/** Prevents one synchronous pickup notification from committing the same non-RPC batch reentrantly. */
+	bool bIsApplyingPickupBatch = false;
+
+	/** Prevents fragment initialization/copy hooks from recursively planning or applying another pickup batch. */
+	mutable bool bIsPlanningPickupBatch = false;
 };

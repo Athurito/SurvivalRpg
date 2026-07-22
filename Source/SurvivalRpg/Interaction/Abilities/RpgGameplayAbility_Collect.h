@@ -8,7 +8,6 @@ class ARpgPlayerController;
 class URpgInventoryUiActionComponent;
 class URpgInventoryItemInstance;
 class URpgInventoryManagerComponent;
-struct FInventoryPickup;
 
 /**
  * Adds a pickupable interaction target to the instigating player's inventory.
@@ -44,8 +43,6 @@ protected:
 private:
 	static URpgInventoryManagerComponent* FindInventoryManagerForActor(AActor* Actor);
 	static ARpgPlayerController* FindPlayerControllerForActor(AActor* Actor);
-	static bool CanAddPickupToInventory(URpgInventoryManagerComponent* InventoryComponent, const FInventoryPickup& PickupInventory);
-	static bool AddPickupToInventory(URpgInventoryManagerComponent* InventoryComponent, const FInventoryPickup& PickupInventory, TArray<URpgInventoryItemInstance*>& OutAddedItems);
 	static void AssignEquippableItemsToEquipment(
 		URpgInventoryManagerComponent* Inventory,
 		URpgInventoryUiActionComponent* InventoryActions,
