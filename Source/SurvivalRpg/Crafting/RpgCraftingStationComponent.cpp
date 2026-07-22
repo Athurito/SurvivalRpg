@@ -709,6 +709,13 @@ bool URpgCraftingStationComponent::FlushOutputToBaseStorage()
 		{
 			continue;
 		}
+		// Auto-deposit operates on physical roots. Moving a provider root transfers
+		// its complete subtree; visiting descendants independently would tear the
+		// authored graph apart when the provider itself must remain concrete.
+		if (OutputEntry.Placement.GetContainerHandle().IsItemOwned())
+		{
+			continue;
+		}
 
 		const TSubclassOf<URpgInventoryItemDefinition> ItemDefinition = OutputInstance->GetItemDef();
 		if (IsMaterialDefinition(ItemDefinition) && BaseStorage)
@@ -718,6 +725,17 @@ bool URpgCraftingStationComponent::FlushOutputToBaseStorage()
 				BaseStorage->GetFreeResourceCapacity(ItemDefinition));
 			if (CountToStore <= 0)
 			{
+				continue;
+			}
+			if (!BaseStorage->CanStoreResourceInstance(
+					OutputInstance,
+					CountToStore))
+			{
+				UE_LOG(
+					LogRpgCraftingStation,
+					Verbose,
+					TEXT("Crafting-output auto-deposit kept non-collapsible item %s in the concrete output inventory."),
+					*OutputEntry.ItemId.ToString());
 				continue;
 			}
 
@@ -784,7 +802,9 @@ bool URpgCraftingStationComponent::FlushOutputToBaseStorage()
 				}
 			}
 
-			if (!BaseStorage->StoreResource(ItemDefinition, CountToStore))
+			if (!BaseStorage->StoreResourceInstance(
+					OutputInstance,
+					CountToStore))
 			{
 				if (!RestoreExactOutputGraph())
 				{
@@ -1215,7 +1235,9 @@ bool URpgCraftingStationComponent::RefundResourceCredit(const FRpgCraftingRefund
 		if (URpgBaseStorageComponent* BaseStorage = GetLinkedBaseStorage())
 		{
 			if (BaseStorage->CanStoreResource(RefundEntry.ItemDefinition, RefundEntry.Count) &&
-				BaseStorage->StoreResource(RefundEntry.ItemDefinition, RefundEntry.Count))
+				BaseStorage->StoreDefinitionResource(
+					RefundEntry.ItemDefinition,
+					RefundEntry.Count))
 			{
 				return true;
 			}
@@ -1412,7 +1434,10 @@ bool URpgCraftingStationComponent::AddOutputItemOrDrop(TSubclassOf<URpgInventory
 		if (URpgBaseStorageComponent* BaseStorage = GetLinkedBaseStorage())
 		{
 			const int32 CountToStore = FMath::Min(RemainingCount, BaseStorage->GetFreeResourceCapacity(ItemDefinition));
-			if (CountToStore > 0 && BaseStorage->StoreResource(ItemDefinition, CountToStore))
+			if (CountToStore > 0 &&
+				BaseStorage->StoreDefinitionResource(
+					ItemDefinition,
+					CountToStore))
 			{
 				RemainingCount -= CountToStore;
 			}

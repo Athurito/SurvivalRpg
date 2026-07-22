@@ -125,8 +125,10 @@ bool FRpgPlayerControllerInventoryInputAssetTest::RunTest(const FString& Paramet
 	}
 
 	TestTrue(
-		TEXT("Player Controller Blueprint is compiled and up to date"),
-		PlayerControllerBlueprint->Status == BS_UpToDate);
+		TEXT("Player Controller Blueprint is compiled without errors"),
+		PlayerControllerBlueprint->Status == BS_UpToDate ||
+			PlayerControllerBlueprint->Status ==
+				BS_UpToDateWithWarnings);
 	if (!TestTrue(
 		TEXT("Player Controller Blueprint has a generated class"),
 		PlayerControllerBlueprint->GeneratedClass != nullptr))

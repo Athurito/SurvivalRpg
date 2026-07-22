@@ -1,6 +1,7 @@
 // Copyright Epic Games, Inc. All Rights Reserved.
 
 #include "RpgInventoryItemInstance.h"
+#include "RpgInventoryFragment_ItemContainer.h"
 #include "RpgInventoryItemDefinition.h"
 #include "GameFramework/Actor.h"
 #include "Net/UnrealNetwork.h"
@@ -19,6 +20,56 @@ namespace RpgInventoryItemInstance
 	constexpr int32 LegacyCoreStatTagsPayloadVersion = 1;
 	constexpr int32 CoreStatTagsPayloadVersion = 2;
 	constexpr int32 MaxSavedStatTagCount = 4096;
+
+	bool AreRuntimeStatePayloadsEqual(
+		const TArray<FRpgInventoryFragmentStatePayload>& A,
+		const TArray<FRpgInventoryFragmentStatePayload>& B)
+	{
+		if (A.Num() != B.Num())
+		{
+			return false;
+		}
+
+		for (int32 Index = 0; Index < A.Num(); ++Index)
+		{
+			if (A[Index].FragmentId != B[Index].FragmentId ||
+				A[Index].Version != B[Index].Version ||
+				A[Index].Payload != B[Index].Payload)
+			{
+				return false;
+			}
+		}
+		return true;
+	}
+}
+
+bool FRpgInventoryStackKey::IsValid() const
+{
+	if (!ItemDefinition || RuntimeState.IsEmpty())
+	{
+		return false;
+	}
+
+	for (int32 Index = 0; Index < RuntimeState.Num(); ++Index)
+	{
+		const FRpgInventoryFragmentStatePayload& Payload = RuntimeState[Index];
+		if (Payload.FragmentId.IsNone() || Payload.Version <= 0 ||
+			(Index > 0 &&
+				!RuntimeState[Index - 1].FragmentId.LexicalLess(
+					Payload.FragmentId)))
+		{
+			return false;
+		}
+	}
+	return true;
+}
+
+bool operator==(const FRpgInventoryStackKey& A, const FRpgInventoryStackKey& B)
+{
+	return A.ItemDefinition == B.ItemDefinition &&
+		RpgInventoryItemInstance::AreRuntimeStatePayloadsEqual(
+			A.RuntimeState,
+			B.RuntimeState);
 }
 
 URpgInventoryItemInstance::URpgInventoryItemInstance(const FObjectInitializer& ObjectInitializer)
@@ -133,36 +184,64 @@ bool URpgInventoryItemInstance::CopyRuntimeStateFrom(
 		}
 	}
 
+	FRpgInventoryStackKey SourceKey;
+	FRpgInventoryStackKey TargetKey;
+	return Source->TryBuildStackKey(SourceKey) &&
+		TryBuildStackKey(TargetKey) && SourceKey == TargetKey;
+}
+
+bool URpgInventoryItemInstance::TryBuildStackKey(
+	FRpgInventoryStackKey& OutKey) const
+{
+	OutKey = FRpgInventoryStackKey();
+	TArray<FRpgInventoryFragmentStatePayload> RuntimeState;
+	if (!ItemDef || !ExportRuntimeState(RuntimeState))
+	{
+		return false;
+	}
+
+	RuntimeState.Sort(
+		[](const FRpgInventoryFragmentStatePayload& A,
+			const FRpgInventoryFragmentStatePayload& B)
+		{
+			return A.FragmentId.LexicalLess(B.FragmentId);
+		});
+
+	OutKey.ItemDefinition = ItemDef;
+	OutKey.RuntimeState = MoveTemp(RuntimeState);
+	if (!OutKey.IsValid())
+	{
+		OutKey = FRpgInventoryStackKey();
+		return false;
+	}
 	return true;
 }
 
-bool URpgInventoryItemInstance::IsStackCompatibleWith(const URpgInventoryItemInstance* Other) const
+bool URpgInventoryItemInstance::IsStackCompatibleWith(
+	const URpgInventoryItemInstance* Other) const
 {
-	if (!Other || Other == this || !ItemDef || ItemDef != Other->ItemDef)
+	if (!Other || Other == this)
 	{
 		return false;
 	}
 
-	if (!StatTags.HasSameStacks(Other->StatTags))
-	{
-		return false;
-	}
+	FRpgInventoryStackKey ThisKey;
+	FRpgInventoryStackKey OtherKey;
+	return TryBuildStackKey(ThisKey) && Other->TryBuildStackKey(OtherKey) &&
+		ThisKey == OtherKey;
+}
 
-	const URpgInventoryItemDefinition* ItemCDO = GetDefault<URpgInventoryItemDefinition>(ItemDef);
-	if (!ItemCDO)
-	{
-		return false;
-	}
-
-	for (const URpgInventoryItemFragment* Fragment : ItemCDO->Fragments)
-	{
-		if (Fragment && !Fragment->AreInstancesStackCompatible(this, Other))
-		{
-			return false;
-		}
-	}
-
-	return true;
+bool URpgInventoryItemInstance::CanCollapseIntoDefinitionCount() const
+{
+	FRpgInventoryStackKey InstanceKey;
+	TArray<TPair<FGameplayTag, int32>> SemanticStatTags;
+	StatTags.GetSemanticStacks(SemanticStatTags);
+	return TryBuildStackKey(InstanceKey) &&
+		!FindFragmentByClass<URpgInventoryFragment_ItemContainer>() &&
+		SemanticStatTags.IsEmpty() &&
+		InstanceKey.RuntimeState.Num() == 1 &&
+		InstanceKey.RuntimeState[0].FragmentId ==
+			RpgInventoryItemInstance::CoreStatTagsPayloadId;
 }
 
 bool URpgInventoryItemInstance::ExportRuntimeState(
@@ -231,7 +310,8 @@ bool URpgInventoryItemInstance::ExportRuntimeState(
 			return false;
 		}
 
-		if (FragmentPayload.FragmentId != PayloadId || FragmentPayload.Version <= 0)
+		if (FragmentPayload.FragmentId != PayloadId ||
+			FragmentPayload.Version != Fragment->GetRuntimeStateVersion())
 		{
 			return false;
 		}

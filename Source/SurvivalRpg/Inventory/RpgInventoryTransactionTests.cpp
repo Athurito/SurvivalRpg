@@ -5883,6 +5883,177 @@ bool FRpgInventoryMergeCompatibilityTest::RunTest(const FString& Parameters)
 }
 
 IMPLEMENT_SIMPLE_AUTOMATION_TEST(
+	FRpgInventoryCanonicalStackKeyContractTest,
+	"SurvivalRpg.Inventory.Transaction.CanonicalStackKeyContract",
+	EAutomationTestFlags::EditorContext |
+		EAutomationTestFlags::EngineFilter)
+
+bool FRpgInventoryCanonicalStackKeyContractTest::RunTest(
+	const FString& Parameters)
+{
+	using namespace RpgInventoryTransactionTests;
+	FScopedInventoryWorld TestWorld;
+	if (!InitializeTest(*this, TestWorld))
+	{
+		return false;
+	}
+
+	URpgInventoryManagerComponent* Inventory =
+		TestWorld.CreateInventory(TEXT("CanonicalStackKeyInventory"));
+	if (!TestNotNull(TEXT("Canonical-key inventory exists"), Inventory))
+	{
+		return false;
+	}
+
+	const FRpgInventoryContainerHandle Root = MakeStorageHandle();
+	URpgInventoryItemInstance* First =
+		Inventory->AddItemDefinitionToPlacement(
+			URpgInventoryAutomationTestStatefulMaterialDefinition::
+				StaticClass(),
+			4,
+			MakePlacement(Root, 0, 0));
+	URpgInventoryItemInstance* Second =
+		Inventory->AddItemDefinitionToPlacement(
+			URpgInventoryAutomationTestStatefulMaterialDefinition::
+				StaticClass(),
+			3,
+			MakePlacement(Root, 1, 0));
+	if (!TestNotNull(TEXT("First stateful stack exists"), First) ||
+		!TestNotNull(TEXT("Second stateful stack exists"), Second))
+	{
+		return false;
+	}
+
+	FRpgInventoryStackKey FirstDefaultKey;
+	FRpgInventoryStackKey SecondDefaultKey;
+	TestTrue(
+		TEXT("First default stack builds a valid canonical key"),
+		First->TryBuildStackKey(FirstDefaultKey) &&
+			FirstDefaultKey.IsValid());
+	TestTrue(
+		TEXT("Second default stack builds a valid canonical key"),
+		Second->TryBuildStackKey(SecondDefaultKey) &&
+			SecondDefaultKey.IsValid());
+	TestTrue(
+		TEXT("Persistent identity and placement are excluded from the key"),
+		First->GetItemId() != Second->GetItemId() &&
+			FirstDefaultKey == SecondDefaultKey);
+	TestFalse(
+		TEXT("Even default fragment state stays concrete without an explicit rehydration contract"),
+		First->CanCollapseIntoDefinitionCount());
+
+	const TArray<FRpgInventoryFragmentStatePayload>& CanonicalPayloads =
+		FirstDefaultKey.GetRuntimeState();
+	TestEqual(
+		TEXT("The key contains core and stateful-fragment payloads"),
+		CanonicalPayloads.Num(),
+		2);
+	if (CanonicalPayloads.Num() == 2)
+	{
+		TestEqual(
+			TEXT("Fragment payloads are ordered lexically rather than by definition order"),
+			CanonicalPayloads[0].FragmentId,
+			FName(TEXT("Automation.Stateful")));
+		TestEqual(
+			TEXT("The canonical core payload follows the lexical fragment id"),
+			CanonicalPayloads[1].FragmentId,
+			FName(TEXT("Inventory.Core.StatTags")));
+	}
+
+	First->AddStatTagStack(RpgGameplayTags::Ability_Attack_Basic, 2);
+	First->AddStatTagStack(RpgGameplayTags::Ability_Support_Heal, 1);
+	Second->AddStatTagStack(RpgGameplayTags::Ability_Support_Heal, 1);
+	Second->AddStatTagStack(RpgGameplayTags::Ability_Attack_Basic, 2);
+	FRpgInventoryStackKey FirstTaggedKey;
+	FRpgInventoryStackKey SecondTaggedKey;
+	TestTrue(
+		TEXT("Semantically equal tags build keys regardless of insertion order"),
+		First->TryBuildStackKey(FirstTaggedKey) &&
+			Second->TryBuildStackKey(SecondTaggedKey) &&
+			FirstTaggedKey == SecondTaggedKey);
+	TestFalse(
+		TEXT("A tagged runtime variant cannot collapse into a default definition credit"),
+		First->CanCollapseIntoDefinitionCount());
+
+	const URpgInventoryAutomationTestStatefulFragment* StatefulFragment =
+		First->FindFragmentByClass<
+			URpgInventoryAutomationTestStatefulFragment>();
+	if (!TestNotNull(
+		TEXT("The test definition exposes its stateful fragment"),
+		StatefulFragment))
+	{
+		return false;
+	}
+
+	StatefulFragment->SetTestValue(Second, 37);
+	FRpgInventoryStackKey SecondVariantKey;
+	TestTrue(
+		TEXT("The fragment variant still builds a valid key"),
+		Second->TryBuildStackKey(SecondVariantKey));
+	TestTrue(
+		TEXT("Fragment-owned bytes participate in exact key equality"),
+		SecondVariantKey != FirstTaggedKey);
+	TestFalse(
+		TEXT("A fragment-only variant cannot merge with the otherwise equal stack"),
+		Second->IsStackCompatibleWith(First));
+
+	FRpgInventoryMutationRequest VariantMerge = MakePlacementRequest(
+		ERpgInventoryMutationOperation::Merge,
+		Second,
+		Root,
+		Root,
+		0,
+		0);
+	const FString BeforeVariantMerge = MakeInventorySignature(Inventory);
+	const int32 RevisionBeforeVariantMerge =
+		Inventory->GetInventoryRevision();
+	const FRpgInventoryMutationResult VariantPlan =
+		Inventory->PlanInventoryMutation(VariantMerge);
+	TestEqual(
+		TEXT("The canonical evaluator rejects a fragment-state mismatch"),
+		VariantPlan.Code,
+		ERpgInventoryMutationResultCode::StackIncompatible);
+	TestEqual(
+		TEXT("Fragment-state rejection leaves the graph unchanged"),
+		MakeInventorySignature(Inventory),
+		BeforeVariantMerge);
+	TestEqual(
+		TEXT("Fragment-state rejection does not advance revision"),
+		Inventory->GetInventoryRevision(),
+		RevisionBeforeVariantMerge);
+
+	URpgInventoryItemInstance* DifferentDefinition =
+		Inventory->AddItemDefinitionToPlacement(
+			URpgInventoryAutomationTestMaterialDefinition::StaticClass(),
+			1,
+			MakePlacement(Root, 2, 0));
+	FRpgInventoryStackKey DifferentDefinitionKey;
+	TestTrue(
+		TEXT("A different definition builds its own key"),
+		DifferentDefinition &&
+			DifferentDefinition->TryBuildStackKey(
+				DifferentDefinitionKey));
+	TestTrue(
+		TEXT("Definition identity remains part of the canonical key"),
+		DifferentDefinitionKey != FirstDefaultKey);
+	TestTrue(
+		TEXT("A stateless untagged material can collapse into a definition credit"),
+		DifferentDefinition &&
+			DifferentDefinition->CanCollapseIntoDefinitionCount());
+
+	URpgInventoryItemInstance* MissingDefinition =
+		NewObject<URpgInventoryItemInstance>(GetTransientPackage());
+	FRpgInventoryStackKey InvalidKey = FirstDefaultKey;
+	TestFalse(
+		TEXT("Missing definitions fail key construction closed"),
+		MissingDefinition->TryBuildStackKey(InvalidKey));
+	TestFalse(
+		TEXT("Failed key construction clears stale output"),
+		InvalidKey.IsValid());
+	return true;
+}
+
+IMPLEMENT_SIMPLE_AUTOMATION_TEST(
 	FRpgInventorySplitIdempotencyTest,
 	"SurvivalRpg.Inventory.Transaction.ExactHalfSplitAndIdempotency",
 	EAutomationTestFlags::EditorContext | EAutomationTestFlags::EngineFilter)
@@ -5904,7 +6075,7 @@ bool FRpgInventorySplitIdempotencyTest::RunTest(const FString& Parameters)
 
 	const FRpgInventoryContainerHandle Root = MakeStorageHandle();
 	URpgInventoryItemInstance* SourceStack = Inventory->AddItemDefinitionToPlacement(
-		URpgInventoryAutomationTestStackItemDefinition::StaticClass(),
+		URpgInventoryAutomationTestStatefulMaterialDefinition::StaticClass(),
 		9,
 		MakePlacement(Root, 0, 0));
 	if (!TestNotNull(TEXT("Nine-unit source stack exists"), SourceStack))
@@ -5912,6 +6083,16 @@ bool FRpgInventorySplitIdempotencyTest::RunTest(const FString& Parameters)
 		return false;
 	}
 	SourceStack->AddStatTagStack(RpgGameplayTags::Ability_Attack_Basic, 3);
+	const URpgInventoryAutomationTestStatefulFragment* StatefulFragment =
+		SourceStack->FindFragmentByClass<
+			URpgInventoryAutomationTestStatefulFragment>();
+	if (!TestNotNull(
+		TEXT("Split source exposes stateful fragment"),
+		StatefulFragment))
+	{
+		return false;
+	}
+	StatefulFragment->SetTestValue(SourceStack, 19);
 
 	const int32 HalfQuantity = Inventory->GetItemStackCount(SourceStack) / 2;
 	FRpgInventoryMutationRequest SplitRequest = MakePlacementRequest(
@@ -5949,7 +6130,18 @@ bool FRpgInventorySplitIdempotencyTest::RunTest(const FString& Parameters)
 	{
 		TestTrue(TEXT("Split item receives a new persistent id"), SplitStack->GetItemId() != SourceStack->GetItemId());
 		TestEqual(TEXT("Split copies stack-relevant StatTags"), SplitStack->GetStatTagStackCount(RpgGameplayTags::Ability_Attack_Basic), 3);
+		TestEqual(
+			TEXT("Split copies fragment-owned runtime state"),
+			StatefulFragment->GetTestValue(SplitStack),
+			static_cast<uint8>(19));
 		TestTrue(TEXT("Copied runtime state remains stack-compatible"), SplitStack->IsStackCompatibleWith(SourceStack));
+		FRpgInventoryStackKey SourceKey;
+		FRpgInventoryStackKey SplitKey;
+		TestTrue(
+			TEXT("Split receives the exact canonical key despite a new identity and placement"),
+			SourceStack->TryBuildStackKey(SourceKey) &&
+				SplitStack->TryBuildStackKey(SplitKey) &&
+				SourceKey == SplitKey);
 	}
 
 	const FRpgInventoryMutationResult RetriedCommit = Inventory->ExecuteInventoryMutation(SplitRequest);

@@ -7,6 +7,7 @@
 #include "RpgBaseStorageComponent.generated.h"
 
 class URpgInventoryItemDefinition;
+class URpgInventoryItemInstance;
 struct FNetDeltaSerializeInfo;
 
 /** Resource capacity contribution for one material definition. */
@@ -211,9 +212,25 @@ public:
 	UFUNCTION(BlueprintCallable, Category = "Base Storage", BlueprintPure)
 	bool CanStoreResource(TSubclassOf<URpgInventoryItemDefinition> ItemDefinition, int32 Count) const;
 
-	/** Adds resource counts to the base pool. Server-authoritative. */
-	UFUNCTION(BlueprintCallable, BlueprintAuthorityOnly, Category = "Base Storage")
-	bool StoreResource(TSubclassOf<URpgInventoryItemDefinition> ItemDefinition, int32 Count);
+	/**
+	 * Returns whether a concrete material can be losslessly projected into this definition/count pool.
+	 * Any semantic StatTag or fragment-owned payload fails closed because the pool cannot rehydrate instance state.
+	 */
+	bool CanStoreResourceInstance(const URpgInventoryItemInstance* Item, int32 Count) const;
+
+	/**
+	 * Adds a trusted synthetic/default resource credit to the base pool. Native-only and server-authoritative.
+	 * This is reserved for recipe output, refunds, and rollback; concrete inventory items must use
+	 * StoreResourceInstance so runtime variants and container subtrees cannot lose state.
+	 */
+	bool StoreDefinitionResource(TSubclassOf<URpgInventoryItemDefinition> ItemDefinition, int32 Count);
+
+	/**
+	 * Adds a validated stateless-material credit to the definition/count pool. Server-authoritative and fail-closed.
+	 * This does not consume Item or verify inventory ownership/quantity; the authoritative caller owns consume and
+	 * rollback around this credit write.
+	 */
+	bool StoreResourceInstance(const URpgInventoryItemInstance* Item, int32 Count);
 
 	/** Removes resource counts from the base pool. Server-authoritative. */
 	UFUNCTION(BlueprintCallable, BlueprintAuthorityOnly, Category = "Base Storage")

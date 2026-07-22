@@ -44,8 +44,6 @@ public:
 	void SetStackCount(FGameplayTag Tag, int32 NewCount);
 	int32 GetStackCount(FGameplayTag Tag) const;
 	bool ContainsTag(FGameplayTag Tag) const;
-	/** Compares semantic tag/count state while intentionally ignoring FastArray replication bookkeeping. */
-	bool HasSameStacks(const FGameplayTagStackContainer& Other) const;
 	/** Exports deterministic semantic tag/count pairs sorted by tag name for persistence and hashing. */
 	void GetSemanticStacks(TArray<TPair<FGameplayTag, int32>>& OutStacks) const;
 	void RebuildTagToCountMap();

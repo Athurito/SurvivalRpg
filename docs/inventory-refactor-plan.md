@@ -1311,7 +1311,7 @@ Status: **In Arbeit**
 
 - [x] Aktuelle Footprints und Rotationsregeln beim Import aus der
       Item-Definition rekonstruieren.
-- [ ] Einen kanonischen Stack-Key für Runtime-State-Kompatibilität einführen.
+- [x] Einen kanonischen Stack-Key für Runtime-State-Kompatibilität einführen.
 - [ ] Legacy Snapshot nur noch über einen versionierten Konverter zulassen und
       anschließend entfernen.
 - [ ] `ContainerHandle` kanonisch machen; Legacy-`ContainerId` nur noch als
@@ -1354,6 +1354,61 @@ Verifizierter Phase-4A-Zwischenstand vom 2026-07-22:
   Item-Definition und deterministischem Runtime-State. Dabei muss der
   definitionsbasierte Base-Storage-Pfad runtime-verschiedene Materialien
   explizit erhalten oder fail-closed ablehnen.
+
+Verifizierter Phase-4B-Zwischenstand vom 2026-07-22:
+
+- `FRpgInventoryStackKey` bildet Definition und den vollständig exportierten,
+  lexikalisch sortierten Fragment-Runtime-State bytegenau ab. Item-/Entry-ID,
+  Anzahl, Placement und Outer bleiben bewusst außerhalb des nicht
+  persistierten Schlüssels. Ein Exportfehler lehnt den Vergleich fail-closed
+  ab; ein Cache wird ohne gemeinsamen Fragment-Invalidierungsvertrag nicht
+  geführt.
+- `IsStackCompatibleWith` vergleicht ausschließlich diesen kanonischen Key.
+  Der parallele Fragment-Compatibility-Hook und vier unbenutzte,
+  definitionsbasierte List-Helfer wurden entfernt. Nach einem Split prüft
+  `CopyRuntimeStateFrom` zusätzlich, dass Quell- und Ziel-Key identisch sind.
+- Der Fragment-Exportvertrag verlangt deterministische, nebenwirkungsfreie und
+  vollständige stackrelevante Payloads mit exakt der aktuell deklarierten
+  Fragmentversion. Die Tests belegen unter anderem kanonische StatTag-
+  Reihenfolge, abweichende Fragment-Bytes, Definitionen, Split-Identität und
+  fehlende Definitionen.
+- Die definitionsbasierte Base bleibt ein bewusst zustandsloser
+  Definition-/Count-Pool. Konkrete Materialinstanzen dürfen nur projiziert
+  werden, wenn sie weder Container-Provider noch semantische StatTags oder
+  fragment-eigenen Runtime-State besitzen. UI-Deposit und Crafting-
+  Autodeposit validieren diese Grenze vor dem ersten Consume; der Caller
+  bleibt für Consume und Rollback verantwortlich. Der definitionsbasierte
+  Synthetic-/Refund-Credit ist klar benannt und nur noch nativ erreichbar.
+  Varianten verbleiben bei Ablehnung unverändert als konkrete Inventory-
+  Instanzen.
+- Crafting-Autodeposit verarbeitet ausschließlich physische Output-Roots.
+  Item-owned Descendants werden nie separat verschoben; ein übertragbarer
+  Provider bewegt seinen vollständigen Subtree, während ein nicht
+  kollabierbarer Material-Provider samt Child-Identitäten, Entry-IDs,
+  Placements und Revision unverändert im Output verbleibt.
+- `BP_Rpg_PlayerController` wurde rekompiliert und gespeichert. Der permanente
+  UI-Test akzeptiert den fehlerfreien Status `UpToDateWithWarnings`, lehnt aber
+  weiterhin Dirty- und Error-Zustände ab. Die vorhandenen Deprecation-Warnungen
+  markieren bekannte Legacy-Aufrufe und werden nicht als Compilefehler
+  kaschiert. Eine exakte Warnungs-Allowlist bleibt ein Editor-QA-Restpunkt,
+  damit später neu hinzukommende Warnungen separat auffallen.
+- Bekannter angrenzender Restpunkt: Crafting-Refund-Datensätze speichern heute
+  nur Definition und Count. Runtime-spezifische Verbrauchsmaterialien könnten
+  bei einem späteren Refund deshalb Zustand verlieren; dieser Refund-Vertrag
+  ist mit der Stack-Key-/BaseStorage-Grenze noch nicht gelöst.
+- `SurvivalRpgEditor Win64 Development` wurde mit Unreal Engine 5.8 gebaut
+  (4/4 Actions im finalen inkrementellen Build; der anschließende exakte Gate
+  meldete `Target is up to date` und UBT `Result: Succeeded`).
+- `SurvivalRpg.Inventory`: 105 von 105 Automationtests erfolgreich.
+- `SurvivalRpg.Crafting`: 8 von 8 Automationtests erfolgreich.
+- `SurvivalRpg.Equipment`: 5 von 5 Automationtests erfolgreich.
+- `SurvivalRpg.UI`: 20 von 20 Automationtests erfolgreich.
+- Fortschritt Phase 4: 2 von 6 Punkten abgeschlossen (33,3 %).
+- Gesamtfortschritt der verbindlichen Checkliste: 64 von 94 Punkten
+  abgeschlossen (68,1 %), 30 Punkte offen.
+- Nächster Schnitt: Legacy-Snapshots ausschließlich über einen explizit
+  versionierten Konverter importieren und die parallelen Restore-Wege
+  anschließend entfernen.
 
 ## Phase 5 – Datengetriebenes Layout und Editor-Validierung
 

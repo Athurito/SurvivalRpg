@@ -35,7 +35,11 @@ public:
 	/** Current schema version emitted by this fragment's runtime-state payload. */
 	virtual int32 GetRuntimeStateVersion() const;
 
-	/** Exports this fragment's state from an item. Return false when no payload should be emitted. */
+	/**
+	 * Exports this fragment's complete stack-relevant mutable state from an item.
+	 * The output must be deterministic and side-effect-free: semantically equal state must produce identical current-
+	 * version bytes, excluding identity, placement, ownership, and replication bookkeeping.
+	 */
 	virtual bool ExportRuntimeState(
 		const URpgInventoryItemInstance* Instance,
 		FRpgInventoryFragmentStatePayload& OutPayload) const;
@@ -54,11 +58,6 @@ public:
 	virtual void CopyRuntimeState(
 		const URpgInventoryItemInstance* Source,
 		URpgInventoryItemInstance* Target) const;
-
-	/** Returns whether this fragment's mutable state permits two otherwise matching items to stack. */
-	virtual bool AreInstancesStackCompatible(
-		const URpgInventoryItemInstance* A,
-		const URpgInventoryItemInstance* B) const;
 };
 
 //////////////////////////////////////////////////////////////////////

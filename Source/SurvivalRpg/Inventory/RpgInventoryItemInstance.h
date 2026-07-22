@@ -16,6 +16,37 @@ class URpgInventoryItemFragment;
 struct FFrame;
 struct FGameplayTag;
 
+/**
+ * Canonical, non-persisted value used for every stack-compatibility decision.
+ *
+ * The key contains only the static definition and canonical fragment runtime state. Persistent identity, entry
+ * identity, quantity, placement, ownership, and UObject outer are deliberately excluded.
+ */
+struct SURVIVALRPG_API FRpgInventoryStackKey
+{
+public:
+	/** Returns whether this key was built from a definition and strictly ordered, valid runtime-state payloads. */
+	bool IsValid() const;
+
+	/** Static item definition represented by this key. */
+	TSubclassOf<URpgInventoryItemDefinition> GetItemDefinition() const { return ItemDefinition; }
+
+	/** Canonically ordered, current-version runtime payloads represented by this key. */
+	const TArray<FRpgInventoryFragmentStatePayload>& GetRuntimeState() const { return RuntimeState; }
+
+	friend bool operator==(const FRpgInventoryStackKey& A, const FRpgInventoryStackKey& B);
+	friend bool operator!=(const FRpgInventoryStackKey& A, const FRpgInventoryStackKey& B)
+	{
+		return !(A == B);
+	}
+
+private:
+	TSubclassOf<URpgInventoryItemDefinition> ItemDefinition;
+	TArray<FRpgInventoryFragmentStatePayload> RuntimeState;
+
+	friend class URpgInventoryItemInstance;
+};
+
 /** Server-authored concrete item state with persistent identity independent of placement and replicated entry ids. */
 UCLASS(BlueprintType)
 class URpgInventoryItemInstance : public UObject
@@ -62,8 +93,18 @@ public:
 	 */
 	bool CopyRuntimeStateFrom(const URpgInventoryItemInstance* Source, bool bPreserveItemId);
 
-	/** Returns whether definition, StatTags, and every fragment-owned mutable state agree for stack merging. */
+	/** Builds the canonical, non-persisted definition/runtime-state key used by every stack merge decision. */
+	bool TryBuildStackKey(FRpgInventoryStackKey& OutKey) const;
+
+	/** Returns whether two distinct items have exactly the same canonical stack key. */
 	bool IsStackCompatibleWith(const URpgInventoryItemInstance* Other) const;
+
+	/**
+	 * Returns whether this concrete item can be losslessly represented by a definition/count resource credit.
+	 * Projection fails closed for container providers, semantic StatTags, or fragment-owned runtime payloads because a
+	 * definition/count pool cannot preserve owned subtrees or rehydrate mutable instance state.
+	 */
+	bool CanCollapseIntoDefinitionCount() const;
 
 	/** Exports core StatTags plus every fragment-owned versioned payload for atomic graph persistence. */
 	bool ExportRuntimeState(TArray<FRpgInventoryFragmentStatePayload>& OutPayloads) const;

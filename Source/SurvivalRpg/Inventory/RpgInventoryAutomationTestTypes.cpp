@@ -3,12 +3,16 @@
 #include "RpgInventoryFragment_EquippableItem.h"
 #include "RpgInventoryFragment_ItemContainer.h"
 #include "RpgInventoryFragment_ItemTraits.h"
+#include "RpgInventoryItemInstance.h"
 #include "SurvivalRpg/Equipment/RpgEquipmentAutomationTestTypes.h"
 
 #include UE_INLINE_GENERATED_CPP_BY_NAME(RpgInventoryAutomationTestTypes)
 
 namespace
 {
+	const FName StatefulFragmentPayloadId(TEXT("Automation.Stateful"));
+	constexpr int32 StatefulFragmentPayloadVersion = 1;
+
 	void ConfigureSpatialFragment(
 		URpgInventoryFragment_SpatialItem* SpatialFragment,
 		int32 Width,
@@ -28,6 +32,111 @@ namespace
 		TraitsFragment->bCanStack = false;
 		TraitsFragment->MaxStackSize = 1;
 	}
+}
+
+void URpgInventoryAutomationTestStatefulFragment::OnInstanceCreated(
+	URpgInventoryItemInstance* Instance) const
+{
+	for (auto It = TestValues.CreateIterator(); It; ++It)
+	{
+		if (!It.Key().IsValid())
+		{
+			It.RemoveCurrent();
+		}
+	}
+
+	if (Instance)
+	{
+		const TWeakObjectPtr<URpgInventoryItemInstance> Key(Instance);
+		TestValues.FindOrAdd(Key) = 0;
+	}
+}
+
+FName URpgInventoryAutomationTestStatefulFragment::
+	GetRuntimeStateIdentifier() const
+{
+	return StatefulFragmentPayloadId;
+}
+
+int32 URpgInventoryAutomationTestStatefulFragment::
+	GetRuntimeStateVersion() const
+{
+	return StatefulFragmentPayloadVersion;
+}
+
+bool URpgInventoryAutomationTestStatefulFragment::ExportRuntimeState(
+	const URpgInventoryItemInstance* Instance,
+	FRpgInventoryFragmentStatePayload& OutPayload) const
+{
+	if (!Instance)
+	{
+		return false;
+	}
+
+	OutPayload.FragmentId = StatefulFragmentPayloadId;
+	OutPayload.Version = StatefulFragmentPayloadVersion;
+	OutPayload.Payload = { GetTestValue(Instance) };
+	return true;
+}
+
+bool URpgInventoryAutomationTestStatefulFragment::ValidateRuntimeState(
+	const URpgInventoryItemInstance* Instance,
+	const FRpgInventoryFragmentStatePayload& Payload) const
+{
+	return Instance &&
+		Payload.FragmentId == StatefulFragmentPayloadId &&
+		Payload.Version == StatefulFragmentPayloadVersion &&
+		Payload.Payload.Num() == 1;
+}
+
+bool URpgInventoryAutomationTestStatefulFragment::ImportRuntimeState(
+	URpgInventoryItemInstance* Instance,
+	const FRpgInventoryFragmentStatePayload& Payload) const
+{
+	if (!ValidateRuntimeState(Instance, Payload))
+	{
+		return false;
+	}
+
+	SetTestValue(Instance, Payload.Payload[0]);
+	return true;
+}
+
+void URpgInventoryAutomationTestStatefulFragment::CopyRuntimeState(
+	const URpgInventoryItemInstance* Source,
+	URpgInventoryItemInstance* Target) const
+{
+	if (Source && Target)
+	{
+		SetTestValue(Target, GetTestValue(Source));
+	}
+}
+
+void URpgInventoryAutomationTestStatefulFragment::SetTestValue(
+	const URpgInventoryItemInstance* Instance,
+	uint8 Value) const
+{
+	if (Instance)
+	{
+		const TWeakObjectPtr<URpgInventoryItemInstance> Key(
+			const_cast<URpgInventoryItemInstance*>(Instance));
+		TestValues.FindOrAdd(Key) = Value;
+	}
+}
+
+uint8 URpgInventoryAutomationTestStatefulFragment::GetTestValue(
+	const URpgInventoryItemInstance* Instance) const
+{
+	if (Instance)
+	{
+		const TWeakObjectPtr<URpgInventoryItemInstance> Key(
+			const_cast<URpgInventoryItemInstance*>(Instance));
+		if (const uint8* Value = TestValues.Find(Key))
+		{
+			return *Value;
+		}
+	}
+	return 0;
 }
 
 void URpgInventoryAutomationTestCountingEquipmentInstance::OnEquipped()
@@ -76,6 +185,89 @@ URpgInventoryAutomationTestStackItemDefinition::URpgInventoryAutomationTestStack
 	TraitsFragment->bCanStack = true;
 	TraitsFragment->MaxStackSize = 10;
 	Fragments.Add(TraitsFragment);
+}
+
+URpgInventoryAutomationTestMaterialDefinition::
+	URpgInventoryAutomationTestMaterialDefinition(
+		const FObjectInitializer& ObjectInitializer)
+	: Super(ObjectInitializer)
+{
+	DisplayName = FText::FromString(TEXT("Automation Material"));
+
+	URpgInventoryFragment_SpatialItem* SpatialFragment =
+		CreateDefaultSubobject<URpgInventoryFragment_SpatialItem>(
+			TEXT("Spatial"));
+	ConfigureSpatialFragment(SpatialFragment, 1, 1, true);
+	Fragments.Add(SpatialFragment);
+
+	URpgInventoryFragment_ItemTraits* TraitsFragment =
+		CreateDefaultSubobject<URpgInventoryFragment_ItemTraits>(
+			TEXT("Traits"));
+	TraitsFragment->ItemCategory = ERpgInventoryItemCategory::Material;
+	TraitsFragment->bCanStack = true;
+	TraitsFragment->MaxStackSize = 10;
+	Fragments.Add(TraitsFragment);
+}
+
+URpgInventoryAutomationTestMaterialContainerDefinition::
+	URpgInventoryAutomationTestMaterialContainerDefinition(
+		const FObjectInitializer& ObjectInitializer)
+	: Super(ObjectInitializer)
+{
+	DisplayName = FText::FromString(
+		TEXT("Automation Material Container"));
+
+	URpgInventoryFragment_SpatialItem* SpatialFragment =
+		CreateDefaultSubobject<URpgInventoryFragment_SpatialItem>(
+			TEXT("Spatial"));
+	ConfigureSpatialFragment(SpatialFragment, 1, 1, true);
+	Fragments.Add(SpatialFragment);
+
+	URpgInventoryFragment_ItemTraits* TraitsFragment =
+		CreateDefaultSubobject<URpgInventoryFragment_ItemTraits>(
+			TEXT("Traits"));
+	ConfigureNonStackingTraits(TraitsFragment);
+	TraitsFragment->ItemCategory = ERpgInventoryItemCategory::Material;
+	Fragments.Add(TraitsFragment);
+
+	URpgInventoryFragment_ItemContainer* ContainerFragment =
+		CreateDefaultSubobject<URpgInventoryFragment_ItemContainer>(
+			TEXT("ItemContainer"));
+	FRpgInventoryItemContainerDefinition& MainContainer =
+		ContainerFragment->ProvidedContainers.AddDefaulted_GetRef();
+	MainContainer.ContainerId = TEXT("Main");
+	MainContainer.DisplayName = FText::FromString(TEXT("Main"));
+	MainContainer.GridSize.Width = 2;
+	MainContainer.GridSize.Height = 2;
+	MainContainer.bAllowNestedContainers = false;
+	Fragments.Add(ContainerFragment);
+}
+
+URpgInventoryAutomationTestStatefulMaterialDefinition::
+	URpgInventoryAutomationTestStatefulMaterialDefinition(
+		const FObjectInitializer& ObjectInitializer)
+	: Super(ObjectInitializer)
+{
+	DisplayName = FText::FromString(TEXT("Automation Stateful Material"));
+
+	URpgInventoryFragment_SpatialItem* SpatialFragment =
+		CreateDefaultSubobject<URpgInventoryFragment_SpatialItem>(
+			TEXT("Spatial"));
+	ConfigureSpatialFragment(SpatialFragment, 1, 1, true);
+	Fragments.Add(SpatialFragment);
+
+	URpgInventoryFragment_ItemTraits* TraitsFragment =
+		CreateDefaultSubobject<URpgInventoryFragment_ItemTraits>(
+			TEXT("Traits"));
+	TraitsFragment->ItemCategory = ERpgInventoryItemCategory::Material;
+	TraitsFragment->bCanStack = true;
+	TraitsFragment->MaxStackSize = 10;
+	Fragments.Add(TraitsFragment);
+
+	URpgInventoryAutomationTestStatefulFragment* StatefulFragment =
+		CreateDefaultSubobject<URpgInventoryAutomationTestStatefulFragment>(
+			TEXT("Stateful"));
+	Fragments.Add(StatefulFragment);
 }
 
 URpgInventoryAutomationTestUsableItemDefinition::URpgInventoryAutomationTestUsableItemDefinition(

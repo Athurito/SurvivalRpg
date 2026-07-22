@@ -428,9 +428,6 @@ struct FRpgInventoryList : public FFastArraySerializer
 	int32 GetStackCount(URpgInventoryItemInstance* Instance) const;
 	int32 GetFreeStackCapacity(URpgInventoryItemInstance* Instance) const;
 	int32 GetUsedEntryCount() const;
-	int32 GetRequiredNewEntryCount(TSubclassOf<URpgInventoryItemDefinition> ItemDef, int32 StackCount) const;
-	/** Simulates every stack merge and spatial allocation without mutating the replicated list. */
-	bool CanFullyAddItemDefinition(TSubclassOf<URpgInventoryItemDefinition> ItemDef, int32 StackCount) const;
 	bool ContainsItemInstance(URpgInventoryItemInstance* Instance) const;
 	bool ContainsEntry(FGuid EntryId) const;
 
@@ -446,8 +443,6 @@ public:
 		return FFastArraySerializer::FastArrayDeltaSerialize<FRpgInventoryEntry, FRpgInventoryList>(Entries, DeltaParms, *this);
 	}
 
-	URpgInventoryItemInstance* AddEntry(TSubclassOf<URpgInventoryItemDefinition> ItemClass, int32 StackCount, TArray<URpgInventoryItemInstance*>& OutNewInstances);
-	URpgInventoryItemInstance* AddEntryAtPlacement(TSubclassOf<URpgInventoryItemDefinition> ItemClass, int32 StackCount, const FRpgInventoryGridPlacement& Placement, TArray<URpgInventoryItemInstance*>& OutNewInstances);
 	bool AddEntry(URpgInventoryItemInstance* Instance, int32 StackCount = 1);
 	bool AddEntryAtPlacement(URpgInventoryItemInstance* Instance, int32 StackCount, const FRpgInventoryGridPlacement& Placement);
 	bool AddStackToEntry(URpgInventoryItemInstance* Instance, int32 StackCount);

@@ -47,13 +47,6 @@ void URpgInventoryItemFragment::CopyRuntimeState(
 {
 }
 
-bool URpgInventoryItemFragment::AreInstancesStackCompatible(
-	const URpgInventoryItemInstance* A,
-	const URpgInventoryItemInstance* B) const
-{
-	return true;
-}
-
 //////////////////////////////////////////////////////////////////////
 // URpgInventoryItemDefinition
 

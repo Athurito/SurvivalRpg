@@ -97,25 +97,6 @@ bool FGameplayTagStackContainer::ContainsTag(FGameplayTag Tag) const
 	return GetStackCount(Tag) > 0;
 }
 
-bool FGameplayTagStackContainer::HasSameStacks(const FGameplayTagStackContainer& Other) const
-{
-	if (TagToCountMap.Num() != Other.TagToCountMap.Num())
-	{
-		return false;
-	}
-
-	for (const TPair<FGameplayTag, int32>& Pair : TagToCountMap)
-	{
-		const int32* OtherCount = Other.TagToCountMap.Find(Pair.Key);
-		if (!OtherCount || *OtherCount != Pair.Value)
-		{
-			return false;
-		}
-	}
-
-	return true;
-}
-
 void FGameplayTagStackContainer::GetSemanticStacks(TArray<TPair<FGameplayTag, int32>>& OutStacks) const
 {
 	OutStacks.Reset(TagToCountMap.Num());

@@ -8,6 +8,7 @@
 #include "SurvivalRpg/Base/RpgBaseStorageComponent.h"
 #include "SurvivalRpg/Inventory/RpgDroppedInventoryActor.h"
 #include "SurvivalRpg/Inventory/RpgInventoryAutomationTestTypes.h"
+#include "SurvivalRpg/Inventory/RpgInventoryItemInstance.h"
 #include "SurvivalRpg/Inventory/RpgInventoryManagerComponent.h"
 
 #include "Engine/Engine.h"
@@ -342,7 +343,9 @@ bool FRpgCraftingResourceBackedQuantityTest::RunTest(const FString& Parameters)
 	BaseStorage->AddResourceCapacity(URpgInventoryAutomationTestUnitItemDefinition::StaticClass(), 250);
 	if (!TestTrue(
 			TEXT("The linked base stores the resource fixture"),
-			BaseStorage->StoreResource(URpgInventoryAutomationTestUnitItemDefinition::StaticClass(), 250)))
+			BaseStorage->StoreDefinitionResource(
+				URpgInventoryAutomationTestUnitItemDefinition::StaticClass(),
+				250)))
 	{
 		return false;
 	}
@@ -489,7 +492,9 @@ bool FRpgCraftingDuplicateResourceAggregationTest::RunTest(const FString& Parame
 	BaseStorage->AddResourceCapacity(URpgInventoryAutomationTestUnitItemDefinition::StaticClass(), 20);
 	if (!TestTrue(
 			TEXT("The linked base stores twenty duplicate-cost resources"),
-			BaseStorage->StoreResource(URpgInventoryAutomationTestUnitItemDefinition::StaticClass(), 20)))
+			BaseStorage->StoreDefinitionResource(
+				URpgInventoryAutomationTestUnitItemDefinition::StaticClass(),
+				20)))
 	{
 		return false;
 	}
@@ -531,6 +536,306 @@ bool FRpgCraftingDuplicateResourceAggregationTest::RunTest(const FString& Parame
 		TEXT("The complete aggregated batch cost is restored"),
 		BaseStorage->GetResourceCount(URpgInventoryAutomationTestUnitItemDefinition::StaticClass()),
 		20);
+	return true;
+}
+
+IMPLEMENT_SIMPLE_AUTOMATION_TEST(
+	FRpgCraftingRuntimeStateBaseStorageBoundaryTest,
+	"SurvivalRpg.Crafting.Output.RuntimeStateBaseStorageBoundary",
+	EAutomationTestFlags::EditorContext |
+		EAutomationTestFlags::EngineFilter)
+
+bool FRpgCraftingRuntimeStateBaseStorageBoundaryTest::RunTest(
+	const FString& Parameters)
+{
+	using namespace RpgCraftingStationTests;
+	FScopedCraftingWorld TestWorld;
+	if (!TestWorld.Initialize(*this))
+	{
+		return false;
+	}
+
+	URpgCraftingStationComponent* Station = TestWorld.GetStation();
+	URpgInventoryManagerComponent* OutputInventory =
+		Station ? Station->GetOutputInventory() : nullptr;
+	ARpgBaseCampActor* BaseCamp =
+		TestWorld.CreateLinkedBaseCamp(*this);
+	URpgBaseStorageComponent* BaseStorage =
+		BaseCamp ? BaseCamp->GetBaseStorageComponent() : nullptr;
+	if (!TestNotNull(
+			TEXT("The state-boundary output inventory exists"),
+			OutputInventory) ||
+		!TestNotNull(
+			TEXT("The state-boundary base storage exists"),
+			BaseStorage))
+	{
+		return false;
+	}
+
+	const TSubclassOf<URpgInventoryItemDefinition> PlainMaterialDefinition =
+		URpgInventoryAutomationTestMaterialDefinition::StaticClass();
+	const TSubclassOf<URpgInventoryItemDefinition> StatefulMaterialDefinition =
+		URpgInventoryAutomationTestStatefulMaterialDefinition::StaticClass();
+	BaseStorage->AddResourceCapacity(PlainMaterialDefinition, 20);
+	BaseStorage->AddResourceCapacity(StatefulMaterialDefinition, 20);
+	URpgInventoryItemInstance* DefaultMaterial =
+		OutputInventory->AddItemDefinition(PlainMaterialDefinition, 3);
+	if (!TestNotNull(
+		TEXT("A default-state material output exists"),
+		DefaultMaterial))
+	{
+		return false;
+	}
+	TestTrue(
+		TEXT("Base storage accepts a concrete reproducible default state"),
+		BaseStorage->CanStoreResourceInstance(DefaultMaterial, 3));
+	TestTrue(
+		TEXT("Default-state crafting output is projected into the base pool"),
+		Station->FlushOutputToBaseStorage());
+	TestEqual(
+		TEXT("The default material count reaches base storage"),
+		BaseStorage->GetResourceCount(PlainMaterialDefinition),
+		3);
+	TestEqual(
+		TEXT("The projected default material leaves no concrete output entry"),
+		OutputInventory->GetUsedEntryCount(),
+		0);
+
+	URpgInventoryItemInstance* VariantMaterial =
+		OutputInventory->AddItemDefinition(StatefulMaterialDefinition, 2);
+	if (!TestNotNull(
+		TEXT("A concrete runtime-state variant exists"),
+		VariantMaterial))
+	{
+		return false;
+	}
+	const URpgInventoryAutomationTestStatefulFragment* StatefulFragment =
+		VariantMaterial->FindFragmentByClass<
+			URpgInventoryAutomationTestStatefulFragment>();
+	if (!TestNotNull(
+		TEXT("The material exposes its stateful test fragment"),
+		StatefulFragment))
+	{
+		return false;
+	}
+	StatefulFragment->SetTestValue(VariantMaterial, 71);
+
+	const TArray<FRpgInventoryEntryView> EntriesBefore =
+		OutputInventory->GetAllEntries();
+	if (!TestEqual(
+		TEXT("Exactly one variant output entry is present"),
+		EntriesBefore.Num(),
+		1))
+	{
+		return false;
+	}
+	const FRpgInventoryEntryView EntryBefore = EntriesBefore[0];
+	const int32 RevisionBefore = OutputInventory->GetInventoryRevision();
+	FRpgInventoryStackKey KeyBefore;
+	if (!TestTrue(
+		TEXT("The variant output has a valid canonical key"),
+		VariantMaterial->TryBuildStackKey(KeyBefore)))
+	{
+		return false;
+	}
+
+	TestFalse(
+		TEXT("Base storage rejects a concrete non-default runtime state"),
+		BaseStorage->CanStoreResourceInstance(VariantMaterial, 2));
+	TestFalse(
+		TEXT("Crafting flush reports no movement for the rejected variant"),
+		Station->FlushOutputToBaseStorage());
+	TestEqual(
+		TEXT("Rejected variant does not change the base resource count"),
+		BaseStorage->GetResourceCount(StatefulMaterialDefinition),
+		0);
+	TestEqual(
+		TEXT("Rejected variant leaves existing stateless material credits untouched"),
+		BaseStorage->GetResourceCount(PlainMaterialDefinition),
+		3);
+	TestEqual(
+		TEXT("Rejected variant does not advance the output revision"),
+		OutputInventory->GetInventoryRevision(),
+		RevisionBefore);
+	TestTrue(
+		TEXT("Rejected variant preserves its persistent identity and UObject"),
+		OutputInventory->FindItemById(EntryBefore.ItemId) ==
+			VariantMaterial);
+	TestTrue(
+		TEXT("Rejected variant preserves its replicated entry identity"),
+		OutputInventory->ContainsEntry(EntryBefore.EntryId));
+	TestEqual(
+		TEXT("Rejected variant preserves its exact quantity"),
+		OutputInventory->GetItemStackCount(VariantMaterial),
+		EntryBefore.StackCount);
+	FRpgInventoryGridPlacement PlacementAfter;
+	TestTrue(
+		TEXT("Rejected variant preserves its exact placement"),
+		OutputInventory->GetItemPlacement(
+			VariantMaterial,
+			PlacementAfter) &&
+			PlacementAfter == EntryBefore.Placement);
+	FRpgInventoryStackKey KeyAfter;
+	TestTrue(
+		TEXT("Rejected variant preserves all fragment runtime bytes"),
+		VariantMaterial->TryBuildStackKey(KeyAfter) &&
+			KeyAfter == KeyBefore &&
+			StatefulFragment->GetTestValue(VariantMaterial) == 71);
+	return true;
+}
+
+IMPLEMENT_SIMPLE_AUTOMATION_TEST(
+	FRpgCraftingContainerProviderBaseStorageBoundaryTest,
+	"SurvivalRpg.Crafting.Output.ContainerProviderBaseStorageBoundary",
+	EAutomationTestFlags::EditorContext |
+		EAutomationTestFlags::EngineFilter)
+
+bool FRpgCraftingContainerProviderBaseStorageBoundaryTest::RunTest(
+	const FString& Parameters)
+{
+	using namespace RpgCraftingStationTests;
+	FScopedCraftingWorld TestWorld;
+	if (!TestWorld.Initialize(*this))
+	{
+		return false;
+	}
+
+	URpgCraftingStationComponent* Station = TestWorld.GetStation();
+	URpgInventoryManagerComponent* OutputInventory =
+		Station ? Station->GetOutputInventory() : nullptr;
+	ARpgBaseCampActor* BaseCamp =
+		TestWorld.CreateLinkedBaseCamp(*this);
+	URpgBaseStorageComponent* BaseStorage =
+		BaseCamp ? BaseCamp->GetBaseStorageComponent() : nullptr;
+	if (!TestNotNull(
+			TEXT("The provider-boundary output inventory exists"),
+			OutputInventory) ||
+		!TestNotNull(
+			TEXT("The provider-boundary base storage exists"),
+			BaseStorage))
+	{
+		return false;
+	}
+
+	const TSubclassOf<URpgInventoryItemDefinition> ProviderDefinition =
+		URpgInventoryAutomationTestMaterialContainerDefinition::
+			StaticClass();
+	BaseStorage->AddResourceCapacity(ProviderDefinition, 10);
+	URpgInventoryItemInstance* Provider =
+		OutputInventory->AddItemDefinition(ProviderDefinition, 1);
+	if (!TestNotNull(
+			TEXT("A material container provider exists"),
+			Provider))
+	{
+		return false;
+	}
+
+	FRpgInventoryGridPlacement RequestedChildPlacement;
+	RequestedChildPlacement.SetContainerHandle(
+		FRpgInventoryContainerHandle::MakeItemOwned(
+			Provider->GetItemId(),
+			TEXT("Main"),
+			1));
+	RequestedChildPlacement.X = 0;
+	RequestedChildPlacement.Y = 0;
+	RequestedChildPlacement.Width = 1;
+	RequestedChildPlacement.Height = 1;
+	URpgInventoryItemInstance* Child =
+		OutputInventory->AddItemDefinitionToPlacement(
+			URpgInventoryAutomationTestUnitItemDefinition::StaticClass(),
+			1,
+			RequestedChildPlacement);
+	if (!TestNotNull(
+			TEXT("The material provider owns one concrete child"),
+			Child))
+	{
+		return false;
+	}
+
+	const TArray<FRpgInventoryEntryView> EntriesBefore =
+		OutputInventory->GetAllEntries();
+	const FRpgInventoryEntryView* ProviderEntryBefore =
+		EntriesBefore.FindByPredicate(
+			[Provider](const FRpgInventoryEntryView& Entry)
+			{
+				return Entry.Instance == Provider;
+			});
+	const FRpgInventoryEntryView* ChildEntryBefore =
+		EntriesBefore.FindByPredicate(
+			[Child](const FRpgInventoryEntryView& Entry)
+			{
+				return Entry.Instance == Child;
+			});
+	if (!TestNotNull(
+			TEXT("The provider has a replicated entry"),
+			ProviderEntryBefore) ||
+		!TestNotNull(
+			TEXT("The child has a replicated entry"),
+			ChildEntryBefore))
+	{
+		return false;
+	}
+
+	const FGuid ProviderEntryId =
+		ProviderEntryBefore->EntryId;
+	const FGuid ChildEntryId = ChildEntryBefore->EntryId;
+	const FRpgInventoryGridPlacement ProviderPlacementBefore =
+		ProviderEntryBefore->Placement;
+	const FRpgInventoryGridPlacement ChildPlacementBefore =
+		ChildEntryBefore->Placement;
+	const int32 RevisionBefore =
+		OutputInventory->GetInventoryRevision();
+
+	TestFalse(
+		TEXT("A container provider cannot collapse into definition/count"),
+		Provider->CanCollapseIntoDefinitionCount());
+	TestFalse(
+		TEXT("Base storage rejects a material container before consume"),
+		BaseStorage->CanStoreResourceInstance(Provider, 1));
+	TestFalse(
+		TEXT("Crafting flush reports no movement for the rejected provider"),
+		Station->FlushOutputToBaseStorage());
+	TestEqual(
+		TEXT("Rejected provider creates no base resource credit"),
+		BaseStorage->GetResourceCount(ProviderDefinition),
+		0);
+	TestEqual(
+		TEXT("Rejected provider does not advance the output revision"),
+		OutputInventory->GetInventoryRevision(),
+		RevisionBefore);
+	TestEqual(
+		TEXT("Rejected provider preserves both graph entries"),
+		OutputInventory->GetUsedEntryCount(),
+		2);
+	TestTrue(
+		TEXT("Rejected provider preserves its exact identity and UObject"),
+		OutputInventory->FindItemById(Provider->GetItemId()) == Provider &&
+			OutputInventory->ContainsEntry(ProviderEntryId));
+	TestTrue(
+		TEXT("Rejected provider preserves its exact placement"),
+		[OutputInventory, Provider, ProviderPlacementBefore]()
+		{
+			FRpgInventoryGridPlacement PlacementAfter;
+			return OutputInventory->GetItemPlacement(
+				Provider,
+				PlacementAfter) &&
+				PlacementAfter == ProviderPlacementBefore;
+		}());
+	TestTrue(
+		TEXT("Rejected provider preserves its child identity and entry"),
+		OutputInventory->FindItemById(Child->GetItemId()) == Child &&
+			OutputInventory->ContainsEntry(ChildEntryId));
+	TestTrue(
+		TEXT("Rejected provider preserves the child placement and count"),
+		[OutputInventory, Child, ChildPlacementBefore]()
+		{
+			FRpgInventoryGridPlacement PlacementAfter;
+			return OutputInventory->GetItemPlacement(
+				Child,
+				PlacementAfter) &&
+				PlacementAfter == ChildPlacementBefore &&
+				OutputInventory->GetItemStackCount(Child) == 1;
+		}());
 	return true;
 }
 

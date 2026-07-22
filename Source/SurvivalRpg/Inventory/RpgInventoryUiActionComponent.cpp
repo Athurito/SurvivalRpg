@@ -2613,6 +2613,7 @@ bool URpgInventoryUiActionComponent::TryDepositMaterialStackToBase(
 				return Candidate.ItemId == ItemId;
 			});
 	if (!EntryBefore || !EntryBefore->Instance ||
+		EntryBefore->Instance->GetItemDef() != ItemDefinition ||
 		EntryBefore->StackCount != AvailableCount ||
 		GraphBefore.Items.Num() != EntriesBefore.Num() ||
 		!SavedItemBefore)
@@ -2621,6 +2622,17 @@ bool URpgInventoryUiActionComponent::TryDepositMaterialStackToBase(
 			LogRpgInventoryUiActions,
 			Error,
 			TEXT("Material deposit skipped for %s because its exact pre-consume graph could not be exported."),
+			*ItemId.ToString());
+		return false;
+	}
+	if (!BaseStorage->CanStoreResourceInstance(
+			EntryBefore->Instance,
+			CountToStore))
+	{
+		UE_LOG(
+			LogRpgInventoryUiActions,
+			Verbose,
+			TEXT("Material deposit kept runtime-state item %s in concrete inventory because BaseStorage only represents stateless definition/count credits."),
 			*ItemId.ToString());
 		return false;
 	}
@@ -2713,8 +2725,8 @@ bool URpgInventoryUiActionComponent::TryDepositMaterialStackToBase(
 		}
 	}
 
-	if (!BaseStorage->StoreResource(
-			ItemDefinition,
+	if (!BaseStorage->StoreResourceInstance(
+			InstanceBefore,
 			CountToStore))
 	{
 		RestoreExactInventoryGraph();
@@ -2861,7 +2873,7 @@ void URpgInventoryUiActionComponent::RequestWithdrawResourceFromBase_Implementat
 		if (!PlayerInventory->GrantItemDefinition(
 				ItemDefinition,
 				StackCount) &&
-			!BaseStorage->StoreResource(
+			!BaseStorage->StoreDefinitionResource(
 				ItemDefinition,
 				StackCount))
 		{

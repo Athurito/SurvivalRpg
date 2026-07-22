@@ -37,6 +37,93 @@ public:
 	virtual bool IsEditorOnly() const override { return true; }
 };
 
+/** Editor-only stackable material with no fragment-owned runtime state. */
+UCLASS(NotBlueprintable, Transient)
+class URpgInventoryAutomationTestMaterialDefinition final
+	: public URpgInventoryItemDefinition
+{
+	GENERATED_BODY()
+
+public:
+	explicit URpgInventoryAutomationTestMaterialDefinition(
+		const FObjectInitializer& ObjectInitializer =
+			FObjectInitializer::Get());
+
+	virtual bool IsEditorOnly() const override { return true; }
+};
+
+/** Editor-only non-stackable material that owns a nested container, used to prevent BaseStorage subtree loss. */
+UCLASS(NotBlueprintable, Transient)
+class URpgInventoryAutomationTestMaterialContainerDefinition final
+	: public URpgInventoryItemDefinition
+{
+	GENERATED_BODY()
+
+public:
+	explicit URpgInventoryAutomationTestMaterialContainerDefinition(
+		const FObjectInitializer& ObjectInitializer =
+			FObjectInitializer::Get());
+
+	virtual bool IsEditorOnly() const override { return true; }
+};
+
+/**
+ * Editor-only fragment that owns one byte of per-instance state outside StatTags.
+ * It proves that canonical stack keys and split copying include fragment payloads rather than only core state.
+ */
+UCLASS(NotBlueprintable, Transient)
+class URpgInventoryAutomationTestStatefulFragment final
+	: public URpgInventoryItemFragment
+{
+	GENERATED_BODY()
+
+public:
+	virtual bool IsEditorOnly() const override { return true; }
+	virtual void OnInstanceCreated(
+		URpgInventoryItemInstance* Instance) const override;
+	virtual FName GetRuntimeStateIdentifier() const override;
+	virtual int32 GetRuntimeStateVersion() const override;
+	virtual bool ExportRuntimeState(
+		const URpgInventoryItemInstance* Instance,
+		FRpgInventoryFragmentStatePayload& OutPayload) const override;
+	virtual bool ValidateRuntimeState(
+		const URpgInventoryItemInstance* Instance,
+		const FRpgInventoryFragmentStatePayload& Payload) const override;
+	virtual bool ImportRuntimeState(
+		URpgInventoryItemInstance* Instance,
+		const FRpgInventoryFragmentStatePayload& Payload) const override;
+	virtual void CopyRuntimeState(
+		const URpgInventoryItemInstance* Source,
+		URpgInventoryItemInstance* Target) const override;
+
+	/** Changes the opaque fragment state used only by automation tests. */
+	void SetTestValue(
+		const URpgInventoryItemInstance* Instance,
+		uint8 Value) const;
+
+	/** Returns the opaque fragment state used only by automation tests. */
+	uint8 GetTestValue(const URpgInventoryItemInstance* Instance) const;
+
+private:
+	mutable TMap<TWeakObjectPtr<URpgInventoryItemInstance>, uint8>
+		TestValues;
+};
+
+/** Editor-only stackable material whose fragment payload exercises canonical keys and BaseStorage rejection. */
+UCLASS(NotBlueprintable, Transient)
+class URpgInventoryAutomationTestStatefulMaterialDefinition final
+	: public URpgInventoryItemDefinition
+{
+	GENERATED_BODY()
+
+public:
+	explicit URpgInventoryAutomationTestStatefulMaterialDefinition(
+		const FObjectInitializer& ObjectInitializer =
+			FObjectInitializer::Get());
+
+	virtual bool IsEditorOnly() const override { return true; }
+};
+
 /** Editor-only no-op ability class used to make usable-item context policy deterministic. */
 UCLASS(NotBlueprintable, Transient)
 class URpgInventoryAutomationTestUseAbility final : public URpgGameplayAbility
