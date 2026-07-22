@@ -3,6 +3,7 @@
 #include "RpgInventoryItemInstance.h"
 #include "RpgInventoryFragment_ItemContainer.h"
 #include "RpgInventoryItemDefinition.h"
+#include "RpgInventoryManagerComponent.h"
 #include "GameFramework/Actor.h"
 #include "Net/UnrealNetwork.h"
 #include "Serialization/MemoryReader.h"
@@ -146,6 +147,20 @@ bool URpgInventoryItemInstance::RestoreItemId(const FRpgInventoryItemId& InItemI
 	if (!HasAuthorityForMutation() || !InItemId.IsValid())
 	{
 		return false;
+	}
+	if (const AActor* OuterActor = GetTypedOuter<AActor>())
+	{
+		TArray<URpgInventoryManagerComponent*> Inventories;
+		const_cast<AActor*>(OuterActor)->GetComponents(Inventories);
+		if (Inventories.ContainsByPredicate(
+			[this](const URpgInventoryManagerComponent* Inventory)
+			{
+				return Inventory && Inventory->ContainsItemInstance(
+					const_cast<URpgInventoryItemInstance*>(this));
+			}))
+		{
+			return false;
+		}
 	}
 
 	ItemId = InItemId;

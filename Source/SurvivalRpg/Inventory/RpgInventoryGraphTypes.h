@@ -352,11 +352,13 @@ struct SURVIVALRPG_API FRpgInventoryGridPlacement
 	bool ContainsCell(int32 CellX, int32 CellY) const
 	{
 		const FRpgInventoryGridSize OccupiedSize = GetOccupiedSize();
+		const int64 Right = static_cast<int64>(X) + OccupiedSize.Width;
+		const int64 Bottom = static_cast<int64>(Y) + OccupiedSize.Height;
 		return IsValid() &&
 			CellX >= X &&
 			CellY >= Y &&
-			CellX < X + OccupiedSize.Width &&
-			CellY < Y + OccupiedSize.Height;
+			CellX < Right &&
+			CellY < Bottom;
 	}
 
 	bool Overlaps(const FRpgInventoryGridPlacement& Other) const
@@ -368,10 +370,14 @@ struct SURVIVALRPG_API FRpgInventoryGridPlacement
 
 		const FRpgInventoryGridSize ThisSize = GetOccupiedSize();
 		const FRpgInventoryGridSize OtherSize = Other.GetOccupiedSize();
-		return X < Other.X + OtherSize.Width &&
-			X + ThisSize.Width > Other.X &&
-			Y < Other.Y + OtherSize.Height &&
-			Y + ThisSize.Height > Other.Y;
+		const int64 ThisRight = static_cast<int64>(X) + ThisSize.Width;
+		const int64 ThisBottom = static_cast<int64>(Y) + ThisSize.Height;
+		const int64 OtherRight =
+			static_cast<int64>(Other.X) + OtherSize.Width;
+		const int64 OtherBottom =
+			static_cast<int64>(Other.Y) + OtherSize.Height;
+		return X < OtherRight && ThisRight > Other.X &&
+			Y < OtherBottom && ThisBottom > Other.Y;
 	}
 
 	friend bool operator==(const FRpgInventoryGridPlacement& A, const FRpgInventoryGridPlacement& B)
@@ -430,7 +436,10 @@ enum class ERpgInventoryMutationResultCode : uint8
 	CycleDetected,
 	MaxDepthExceeded,
 	DuplicateItemId,
-	InternalError
+	InternalError,
+
+	/** Two runtime rows reused the same inventory-local FastArray entry identity. Appended to preserve serialized ordinals. */
+	DuplicateEntryId
 };
 
 /** Kind of authoritative state change represented by one transaction delta. */

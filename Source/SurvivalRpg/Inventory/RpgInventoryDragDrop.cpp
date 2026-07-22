@@ -3170,8 +3170,10 @@ bool URpgInventoryDragDropCoordinator::IsTargetPlacementOutOfBounds(const FRpgIn
 	const FRpgInventoryGridSize OccupiedSize = Target.TargetPlacement.GetOccupiedSize();
 	return Target.TargetPlacement.X < 0 ||
 		Target.TargetPlacement.Y < 0 ||
-		Target.TargetPlacement.X + OccupiedSize.Width > GridSize.Width ||
-		Target.TargetPlacement.Y + OccupiedSize.Height > GridSize.Height;
+		static_cast<int64>(Target.TargetPlacement.X) + OccupiedSize.Width >
+			GridSize.Width ||
+		static_cast<int64>(Target.TargetPlacement.Y) + OccupiedSize.Height >
+			GridSize.Height;
 }
 
 FGameplayTag URpgInventoryDragDropCoordinator::ResolveActionTagForTarget(const FRpgInventoryDropTarget& Target) const

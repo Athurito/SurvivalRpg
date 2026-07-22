@@ -1307,7 +1307,7 @@ Verifizierter Phase-3B2-Abschluss vom 2026-07-22:
 
 ## Phase 4 – Datenmodell und Persistenz
 
-Status: **In Arbeit**
+Status: **Abgeschlossen**
 
 - [x] Aktuelle Footprints und Rotationsregeln beim Import aus der
       Item-Definition rekonstruieren.
@@ -1319,7 +1319,7 @@ Status: **In Arbeit**
 - [x] Normalisierung und Root-Slot-Erkennung immer mit dem vollständigen
       `FRpgInventoryContainerHandle` statt nur mit lokaler `FName`-ID
       durchführen.
-- [ ] MaxEntries, Tiefe, Cycles, Duplicate IDs und Subtree-Grenzen in allen
+- [x] MaxEntries, Tiefe, Cycles, Duplicate IDs und Subtree-Grenzen in allen
       Import-/Transferpfaden einheitlich validieren.
 
 Verifizierter Phase-4A-Zwischenstand vom 2026-07-22:
@@ -1568,6 +1568,51 @@ Verifizierter Phase-4E-Zwischenstand vom 2026-07-22:
 - Nächster Schnitt: `MaxEntries`, maximale Tiefe, Cycles, Duplicate IDs und
   Subtree-Grenzen in allen Import- und Transferpfaden über gemeinsame
   Graphinvarianten vereinheitlichen.
+
+Verifizierter Phase-4F-Zwischenstand vom 2026-07-22:
+
+- `ValidateInventoryGraph` ist der gemeinsame fail-closed Vertrag für
+  Restore, Cross-Inventory-Transfer, Collect und Pickup. Er erzeugt kanonische
+  Item-, Entry-, Parent- und Root-Indizes sowie die relative Subtree-Tiefe und
+  prüft daraus denselben vollständigen Graphen vor jedem Commit.
+- Die Prüfung unterscheidet stabile Ursachen für Kapazität, maximale Tiefe,
+  Cycles, doppelte Item- und Entry-IDs, ungültige Owner/Outer, fehlende
+  Provider oder lokale Container, falsche Parent-Child-Tiefe, Stack-Limits,
+  Definition/Placement-Regeln, kanonische Footprints, Bounds und Occupancy.
+  `DuplicateEntryId` wurde ordinalschonend am Ende des Result-Code-Vertrags
+  ergänzt. Aktuelle Schemadaten ohne gültigen kanonischen Container-Handle
+  liefern einheitlich `InvalidContainer` statt des früheren Sammelcodes.
+- Kapazität ist eine Admission-Regel für Restore-, Pickup-, Collect- und
+  Zielgraphen. Ein bereits übervoller Quellgraph darf weiterhin durch einen
+  atomaren Egress verkleinert werden; kein Import oder Zielcommit kann
+  `MaxEntries` überschreiten.
+- Subtrees werden vor dem Commit gegen die exakte Zielrebasierung geprüft.
+  Der vollständige Descendant-Pfad muss nach dem Move innerhalb der maximalen
+  Tiefe bleiben; Parent-Handles, lokale Container und relative Tiefe dürfen
+  weder verwaisen noch einen Cycle erzeugen.
+- Restore und die Batch-/Cross-Inventory-Pfade besitzen gemeinsame
+  Reentrancy-Sperren, halten gestagte beziehungsweise entfernte Item-UObjects
+  während synchroner Callbacks stark referenziert und validieren den
+  projizierten Source-/Target-Endzustand vor der ersten sichtbaren Mutation.
+  Ablehnungen bewahren Graph, UObject- und Entry-Identität, Runtime-State,
+  Revision, Mutation-Epoch und Nachrichtenanzahl vollständig.
+- Der relevante UE-5.8-Build kompilierte alle geänderten Inventory-Einheiten
+  und linkte beide Module erfolgreich (23/23 Actions); der abschließende
+  inkrementelle Gate war ebenfalls grün (6/6 Actions, UBT
+  `Result: Succeeded`).
+- `SurvivalRpg.Inventory`: 112 von 112 Automationtests erfolgreich.
+- `SurvivalRpg.Save.WorldSave.MemoryRoundTrip`: 1 von 1 Automationtests
+  erfolgreich.
+- `SurvivalRpg.Equipment`: 5 von 5 Automationtests erfolgreich.
+- `SurvivalRpg.Crafting`: 8 von 8 Automationtests erfolgreich.
+- `SurvivalRpg.UI`: 20 von 20 Automationtests erfolgreich.
+- `CompileAllBlueprints` endete mit Prozesscode 0, 0 Compilerfehlern,
+  16 bekannten Compilerwarnungen und 0 nicht ladbaren Blueprints.
+- Fortschritt Phase 4: 6 von 6 Punkten abgeschlossen (100,0 %).
+- Gesamtfortschritt der verbindlichen Checkliste: 68 von 94 Punkten
+  abgeschlossen (72,3 %), 26 Punkte offen.
+- Nächster Schnitt: Phase 5 beginnt mit der datengetriebenen Zuweisung von
+  `URpgPlayerInventoryLayoutDefinition` über PawnData/Experience.
 
 ## Phase 5 – Datengetriebenes Layout und Editor-Validierung
 

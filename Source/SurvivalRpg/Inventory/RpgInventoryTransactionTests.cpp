@@ -429,6 +429,74 @@ namespace RpgInventoryTransactionTests
 		return true;
 	}
 
+	bool CopyInventoryEntryIdForTest(
+		URpgInventoryManagerComponent* Inventory,
+		int32 SourceEntryIndex,
+		int32 TargetEntryIndex)
+	{
+		if (!Inventory)
+		{
+			return false;
+		}
+
+		const FStructProperty* InventoryListProperty =
+			FindFProperty<FStructProperty>(
+				URpgInventoryManagerComponent::StaticClass(),
+				TEXT("InventoryList"));
+		if (!InventoryListProperty ||
+			InventoryListProperty->Struct != FRpgInventoryList::StaticStruct())
+		{
+			return false;
+		}
+
+		void* InventoryListMemory =
+			InventoryListProperty->ContainerPtrToValuePtr<void>(Inventory);
+		const FArrayProperty* EntriesProperty = FindFProperty<FArrayProperty>(
+			FRpgInventoryList::StaticStruct(),
+			TEXT("Entries"));
+		const FStructProperty* EntryProperty = EntriesProperty
+			? CastField<FStructProperty>(EntriesProperty->Inner)
+			: nullptr;
+		if (!InventoryListMemory || !EntriesProperty || !EntryProperty ||
+			EntryProperty->Struct != FRpgInventoryEntry::StaticStruct())
+		{
+			return false;
+		}
+
+		void* EntriesMemory =
+			EntriesProperty->ContainerPtrToValuePtr<void>(InventoryListMemory);
+		FScriptArrayHelper Entries(EntriesProperty, EntriesMemory);
+		if (!Entries.IsValidIndex(SourceEntryIndex) ||
+			!Entries.IsValidIndex(TargetEntryIndex))
+		{
+			return false;
+		}
+
+		const FStructProperty* EntryIdProperty =
+			FindFProperty<FStructProperty>(
+				FRpgInventoryEntry::StaticStruct(),
+				TEXT("EntryId"));
+		if (!EntryIdProperty ||
+			EntryIdProperty->Struct != TBaseStructure<FGuid>::Get())
+		{
+			return false;
+		}
+
+		const FGuid* SourceEntryId =
+			EntryIdProperty->ContainerPtrToValuePtr<FGuid>(
+				Entries.GetRawPtr(SourceEntryIndex));
+		FGuid* TargetEntryId =
+			EntryIdProperty->ContainerPtrToValuePtr<FGuid>(
+				Entries.GetRawPtr(TargetEntryIndex));
+		if (!SourceEntryId || !SourceEntryId->IsValid() || !TargetEntryId)
+		{
+			return false;
+		}
+
+		EntryIdProperty->CopyCompleteValue(TargetEntryId, SourceEntryId);
+		return *TargetEntryId == *SourceEntryId;
+	}
+
 	bool InitializeTest(FAutomationTestBase& Test, FScopedInventoryWorld& TestWorld)
 	{
 		if (!TestWorld.IsValid())
@@ -6635,6 +6703,13 @@ bool FRpgInventoryRawAddOwnershipGuardTest::RunTest(const FString& Parameters)
 		TEXT("Granted instances use the inventory actor as exact durable Outer"),
 		ExistingItem->GetOuter(),
 		static_cast<UObject*>(TargetInventory->GetOwner()));
+	const FRpgInventoryItemId ExistingItemId = ExistingItem->GetItemId();
+	TestFalse(
+		TEXT("A live managed item cannot rewrite its persistent identity"),
+		ExistingItem->RestoreItemId(FRpgInventoryItemId::NewId()));
+	TestTrue(
+		TEXT("Rejected live identity rewrite preserves the canonical ItemId"),
+		ExistingItem->GetItemId() == ExistingItemId);
 
 	const FString InitialSignature = MakeInventorySignature(TargetInventory);
 	const int32 InitialEntryCount = TargetInventory->GetUsedEntryCount();
@@ -7464,6 +7539,78 @@ bool FRpgInventoryNestedGraphValidationTest::RunTest(const FString& Parameters)
 	}
 
 	const FRpgInventoryGraphSaveData RootGraph = SourceInventory->ExportInventoryGraph();
+	URpgInventoryManagerComponent* CapacityTarget =
+		TestWorld.CreateInventory(TEXT("NestedCapacityTarget"));
+	if (!TestNotNull(TEXT("Capacity validation target exists"), CapacityTarget))
+	{
+		return false;
+	}
+
+	CapacityTarget->SetCapacityMode(ERpgInventoryCapacityMode::FixedEntries);
+	CapacityTarget->SetFixedMaxEntries(RootGraph.Items.Num());
+	FRpgInventoryMutationResult ExactCapacityResult;
+	TestTrue(
+		TEXT("An import that exactly fills MaxEntries is accepted"),
+		CapacityTarget->RestoreInventoryGraph(
+			RootGraph,
+			ExactCapacityResult));
+	TestEqual(
+		TEXT("The exact-capacity import reports success"),
+		ExactCapacityResult.Code,
+		ERpgInventoryMutationResultCode::Success);
+	TestEqual(
+		TEXT("The exact-capacity import restores every row"),
+		CapacityTarget->GetUsedEntryCount(),
+		RootGraph.Items.Num());
+
+	URpgInventoryManagerComponent* CapacityOverflowTarget =
+		TestWorld.CreateInventory(TEXT("NestedCapacityOverflowTarget"));
+	if (!TestNotNull(
+			TEXT("Capacity overflow validation target exists"),
+			CapacityOverflowTarget))
+	{
+		return false;
+	}
+
+	CapacityOverflowTarget->SetCapacityMode(
+		ERpgInventoryCapacityMode::FixedEntries);
+	CapacityOverflowTarget->SetFixedMaxEntries(RootGraph.Items.Num() - 1);
+	const FString BeforeCapacityOverflow =
+		MakeStrictInventorySignature(CapacityOverflowTarget);
+	const int32 RevisionBeforeCapacityOverflow =
+		CapacityOverflowTarget->GetInventoryRevision();
+	const uint64 EpochBeforeCapacityOverflow =
+		CapacityOverflowTarget->GetMutationEpoch();
+	FRpgInventoryMutationResult CapacityOverflowResult;
+	TestFalse(
+		TEXT("An import one entry above MaxEntries is rejected"),
+		CapacityOverflowTarget->RestoreInventoryGraph(
+			RootGraph,
+			CapacityOverflowResult));
+	TestEqual(
+		TEXT("Capacity overflow reports NoSpace"),
+		CapacityOverflowResult.Code,
+		ERpgInventoryMutationResultCode::NoSpace);
+	TestEqual(
+		TEXT("Capacity rejection preserves the complete empty target graph"),
+		MakeStrictInventorySignature(CapacityOverflowTarget),
+		BeforeCapacityOverflow);
+	TestEqual(
+		TEXT("Capacity rejection does not advance inventory revision"),
+		CapacityOverflowTarget->GetInventoryRevision(),
+		RevisionBeforeCapacityOverflow);
+	TestEqual(
+		TEXT("Capacity rejection does not advance mutation epoch"),
+		CapacityOverflowTarget->GetMutationEpoch(),
+		EpochBeforeCapacityOverflow);
+	TestEqual(
+		TEXT("Capacity rejection applies no rows"),
+		CapacityOverflowResult.AppliedQuantity,
+		0);
+	TestTrue(
+		TEXT("Capacity rejection exposes no deltas"),
+		CapacityOverflowResult.Deltas.IsEmpty());
+
 	FRpgInventoryGraphSaveData DepthFourGraph = RootGraph;
 	bool bBuiltDepthFourGraph = SetSavedPlacement(DepthFourGraph, Bags[0]->GetItemId(), Root, 0, 0);
 	bBuiltDepthFourGraph &= SetSavedPlacement(
@@ -7484,13 +7631,108 @@ bool FRpgInventoryNestedGraphValidationTest::RunTest(const FString& Parameters)
 		FRpgInventoryContainerHandle::MakeItemOwned(Bags[3]->GetItemId(), BagContainerId, 4));
 	TestTrue(TEXT("Depth-four graph DTO was constructed"), bBuiltDepthFourGraph);
 
-	URpgInventoryManagerComponent* DepthTarget = TestWorld.CreateInventory(TEXT("DepthTarget"));
+	URpgInventoryManagerComponent* DepthTarget =
+		TestWorld.CreateInventory(TEXT("DepthTarget"));
+	if (!TestNotNull(TEXT("Nested depth validation target exists"), DepthTarget))
+	{
+		return false;
+	}
 	FRpgInventoryMutationResult DepthImportResult;
-	TestTrue(TEXT("Four item-owned levels are accepted"), DepthTarget->RestoreInventoryGraph(DepthFourGraph, DepthImportResult));
+	if (!TestTrue(
+			TEXT("Four item-owned levels are accepted"),
+			DepthTarget->RestoreInventoryGraph(
+				DepthFourGraph,
+				DepthImportResult)))
+	{
+		return false;
+	}
 	TestEqual(TEXT("Accepted depth-four import reports success"), DepthImportResult.Code, ERpgInventoryMutationResultCode::Success);
 	FRpgInventoryEntryView DepthFourView;
 	TestTrue(TEXT("Depth-four item keeps its persistent identity"), GetEntryView(DepthTarget, DepthFourItem->GetItemId(), DepthFourView));
 	TestEqual(TEXT("Imported item remains at depth four"), DepthFourView.Placement.GetContainerHandle().Depth, static_cast<uint8>(4));
+	URpgInventoryItemInstance* RuntimeStateSentinel =
+		DepthTarget->FindItemById(DepthFiveProbe->GetItemId());
+	if (!TestNotNull(
+			TEXT("Rejected-restore runtime-state sentinel exists"),
+			RuntimeStateSentinel))
+	{
+		return false;
+	}
+	RuntimeStateSentinel->AddStatTagStack(
+		RpgGameplayTags::Ability_Attack_Basic,
+		3);
+	TestEqual(
+		TEXT("Runtime-state sentinel starts with its non-default tag stack"),
+		RuntimeStateSentinel->GetStatTagStackCount(
+			RpgGameplayTags::Ability_Attack_Basic),
+		3);
+	const FRpgInventoryItemId RuntimeStateSentinelId =
+		RuntimeStateSentinel->GetItemId();
+	const FString BeforeRejectedImports =
+		MakeStrictInventorySignature(DepthTarget);
+	const int32 RevisionBeforeRejectedImports =
+		DepthTarget->GetInventoryRevision();
+	const uint64 EpochBeforeRejectedImports =
+		DepthTarget->GetMutationEpoch();
+	auto VerifyRejectedRestoreIsAtomic =
+		[this,
+		 DepthTarget,
+		 RuntimeStateSentinel,
+		 RuntimeStateSentinelId,
+		 &BeforeRejectedImports,
+		 RevisionBeforeRejectedImports,
+		 EpochBeforeRejectedImports](
+			const TCHAR* RejectionName,
+			const FRpgInventoryMutationResult& RejectionResult)
+		{
+			TestEqual(
+				*FString::Printf(
+					TEXT("%s preserves the complete live graph"),
+					RejectionName),
+				MakeStrictInventorySignature(DepthTarget),
+				BeforeRejectedImports);
+			TestEqual(
+				*FString::Printf(
+					TEXT("%s preserves the inventory revision"),
+					RejectionName),
+				DepthTarget->GetInventoryRevision(),
+				RevisionBeforeRejectedImports);
+			TestEqual(
+				*FString::Printf(
+					TEXT("%s preserves the mutation epoch"),
+					RejectionName),
+				DepthTarget->GetMutationEpoch(),
+				EpochBeforeRejectedImports);
+			URpgInventoryItemInstance* CurrentRuntimeStateSentinel =
+				DepthTarget->FindItemById(RuntimeStateSentinelId);
+			TestEqual(
+				*FString::Printf(
+					TEXT("%s preserves the runtime-state sentinel UObject"),
+					RejectionName),
+				CurrentRuntimeStateSentinel,
+				RuntimeStateSentinel);
+			if (CurrentRuntimeStateSentinel)
+			{
+				TestEqual(
+					*FString::Printf(
+						TEXT("%s preserves the runtime-state sentinel payload"),
+						RejectionName),
+					CurrentRuntimeStateSentinel->GetStatTagStackCount(
+						RpgGameplayTags::Ability_Attack_Basic),
+					3);
+			}
+			TestEqual(
+				*FString::Printf(
+					TEXT("%s applies no rows"),
+					RejectionName),
+				RejectionResult.AppliedQuantity,
+				0);
+			TestTrue(
+				*FString::Printf(
+					TEXT("%s exposes no deltas"),
+					RejectionName),
+				RejectionResult.Deltas.IsEmpty());
+		};
 
 	FRpgInventoryGraphSaveData DepthFiveGraph = DepthFourGraph;
 	TestTrue(
@@ -7499,14 +7741,108 @@ bool FRpgInventoryNestedGraphValidationTest::RunTest(const FString& Parameters)
 			DepthFiveGraph,
 			DepthFiveProbe->GetItemId(),
 			FRpgInventoryContainerHandle::MakeItemOwned(DepthFourItem->GetItemId(), BagContainerId, 5)));
-	const FString BeforeDepthFiveImport = MakeInventorySignature(DepthTarget);
 	FRpgInventoryMutationResult DepthFiveResult;
 	TestFalse(TEXT("A fifth item-owned level is rejected"), DepthTarget->RestoreInventoryGraph(DepthFiveGraph, DepthFiveResult));
+	TestEqual(
+		TEXT("Depth-five rejection reports MaxDepthExceeded"),
+		DepthFiveResult.Code,
+		ERpgInventoryMutationResultCode::MaxDepthExceeded);
+	VerifyRejectedRestoreIsAtomic(
+		TEXT("Depth-five rejection"),
+		DepthFiveResult);
+
+	FRpgInventoryGraphSaveData OrphanGraph = RootGraph;
 	TestTrue(
-		TEXT("Depth-five rejection uses a stable validation error"),
-		DepthFiveResult.Code == ERpgInventoryMutationResultCode::InvalidRequest ||
-		DepthFiveResult.Code == ERpgInventoryMutationResultCode::MaxDepthExceeded);
-	TestEqual(TEXT("Rejected depth-five import leaves the last valid graph intact"), MakeInventorySignature(DepthTarget), BeforeDepthFiveImport);
+		TEXT("Missing-owner DTO was constructed"),
+		SetSavedPlacement(
+			OrphanGraph,
+			DepthFiveProbe->GetItemId(),
+			FRpgInventoryContainerHandle::MakeItemOwned(
+				FRpgInventoryItemId::NewId(),
+				BagContainerId,
+				1)));
+	FRpgInventoryMutationResult OrphanResult;
+	TestFalse(
+		TEXT("An item-owned container with a missing owner is rejected"),
+		DepthTarget->RestoreInventoryGraph(OrphanGraph, OrphanResult));
+	TestEqual(
+		TEXT("A missing owner reports InvalidContainer"),
+		OrphanResult.Code,
+		ERpgInventoryMutationResultCode::InvalidContainer);
+	VerifyRejectedRestoreIsAtomic(
+		TEXT("Missing-owner rejection"),
+		OrphanResult);
+
+	FRpgInventoryGraphSaveData UnknownLocalContainerGraph = RootGraph;
+	TestTrue(
+		TEXT("Unknown local-container DTO was constructed"),
+		SetSavedPlacement(
+			UnknownLocalContainerGraph,
+			DepthFourItem->GetItemId(),
+			FRpgInventoryContainerHandle::MakeItemOwned(
+				Bags[0]->GetItemId(),
+				FName(TEXT("Missing")),
+				1)));
+	FRpgInventoryMutationResult UnknownLocalContainerResult;
+	TestFalse(
+		TEXT("An owner that does not expose the requested local container is rejected"),
+		DepthTarget->RestoreInventoryGraph(
+			UnknownLocalContainerGraph,
+			UnknownLocalContainerResult));
+	TestEqual(
+		TEXT("An unknown local container reports InvalidContainer"),
+		UnknownLocalContainerResult.Code,
+		ERpgInventoryMutationResultCode::InvalidContainer);
+	VerifyRejectedRestoreIsAtomic(
+		TEXT("Unknown-container rejection"),
+		UnknownLocalContainerResult);
+
+	FRpgInventoryGraphSaveData DepthMismatchGraph = RootGraph;
+	TestTrue(
+		TEXT("Parent-child depth-mismatch DTO was constructed"),
+		SetSavedPlacement(
+			DepthMismatchGraph,
+			Bags[1]->GetItemId(),
+			FRpgInventoryContainerHandle::MakeItemOwned(
+				Bags[0]->GetItemId(),
+				BagContainerId,
+				2)));
+	FRpgInventoryMutationResult DepthMismatchResult;
+	TestFalse(
+		TEXT("A child whose depth is not parent depth plus one is rejected"),
+		DepthTarget->RestoreInventoryGraph(
+			DepthMismatchGraph,
+			DepthMismatchResult));
+	TestEqual(
+		TEXT("A parent-child depth mismatch reports InvalidContainer"),
+		DepthMismatchResult.Code,
+		ERpgInventoryMutationResultCode::InvalidContainer);
+	VerifyRejectedRestoreIsAtomic(
+		TEXT("Depth-mismatch rejection"),
+		DepthMismatchResult);
+
+	FRpgInventoryGraphSaveData IntMaxXGraph = RootGraph;
+	TestTrue(
+		TEXT("INT_MAX-X DTO was constructed"),
+		SetSavedPlacement(
+			IntMaxXGraph,
+			DepthFiveProbe->GetItemId(),
+			Root,
+			MAX_int32,
+			0));
+	FRpgInventoryMutationResult IntMaxXResult;
+	TestFalse(
+		TEXT("An INT_MAX X coordinate is rejected without overflow"),
+		DepthTarget->RestoreInventoryGraph(
+			IntMaxXGraph,
+			IntMaxXResult));
+	TestEqual(
+		TEXT("An INT_MAX X coordinate reports OutOfBounds"),
+		IntMaxXResult.Code,
+		ERpgInventoryMutationResultCode::OutOfBounds);
+	VerifyRejectedRestoreIsAtomic(
+		TEXT("INT_MAX-X rejection"),
+		IntMaxXResult);
 
 	FRpgInventoryGraphSaveData CycleGraph = RootGraph;
 	TestTrue(
@@ -7524,7 +7860,9 @@ bool FRpgInventoryNestedGraphValidationTest::RunTest(const FString& Parameters)
 	FRpgInventoryMutationResult CycleResult;
 	TestFalse(TEXT("Mutually owning containers are rejected"), DepthTarget->RestoreInventoryGraph(CycleGraph, CycleResult));
 	TestEqual(TEXT("Cycle rejection is distinguishable for UI/save diagnostics"), CycleResult.Code, ERpgInventoryMutationResultCode::CycleDetected);
-	TestEqual(TEXT("Cycle rejection is atomic"), MakeInventorySignature(DepthTarget), BeforeDepthFiveImport);
+	VerifyRejectedRestoreIsAtomic(
+		TEXT("Cycle rejection"),
+		CycleResult);
 
 	FRpgInventoryGraphSaveData DuplicateGraph = RootGraph;
 	FRpgInventorySavedItem DuplicateRow = DuplicateGraph.Items[0];
@@ -7533,7 +7871,163 @@ bool FRpgInventoryNestedGraphValidationTest::RunTest(const FString& Parameters)
 	FRpgInventoryMutationResult DuplicateResult;
 	TestFalse(TEXT("Duplicate persistent item identities are rejected"), DepthTarget->RestoreInventoryGraph(DuplicateGraph, DuplicateResult));
 	TestEqual(TEXT("Duplicate id has an explicit result code"), DuplicateResult.Code, ERpgInventoryMutationResultCode::DuplicateItemId);
-	TestEqual(TEXT("Duplicate-id rejection preserves the valid graph"), MakeInventorySignature(DepthTarget), BeforeDepthFiveImport);
+	VerifyRejectedRestoreIsAtomic(
+		TEXT("Duplicate-id rejection"),
+		DuplicateResult);
+	return true;
+}
+
+IMPLEMENT_SIMPLE_AUTOMATION_TEST(
+	FRpgInventoryDuplicateEntryIdTransferTest,
+	"SurvivalRpg.Inventory.Graph.DuplicateEntryIdTransferIsAtomic",
+	EAutomationTestFlags::EditorContext | EAutomationTestFlags::EngineFilter)
+
+bool FRpgInventoryDuplicateEntryIdTransferTest::RunTest(
+	const FString& Parameters)
+{
+	using namespace RpgInventoryTransactionTests;
+	FScopedInventoryWorld TestWorld;
+	if (!InitializeTest(*this, TestWorld))
+	{
+		return false;
+	}
+
+	URpgInventoryManagerComponent* SourceInventory =
+		TestWorld.CreateInventory(TEXT("DuplicateEntryIdSource"));
+	URpgInventoryManagerComponent* TargetInventory =
+		TestWorld.CreateInventory(TEXT("DuplicateEntryIdTarget"));
+	if (!TestNotNull(TEXT("Duplicate-entry source inventory exists"), SourceInventory) ||
+		!TestNotNull(TEXT("Duplicate-entry target inventory exists"), TargetInventory))
+	{
+		return false;
+	}
+
+	const FRpgInventoryContainerHandle Root = MakeStorageHandle();
+	URpgInventoryItemInstance* FirstItem =
+		SourceInventory->AddItemDefinitionToPlacement(
+			URpgInventoryAutomationTestUnitItemDefinition::StaticClass(),
+			1,
+			MakePlacement(Root, 0, 0));
+	URpgInventoryItemInstance* SecondItem =
+		SourceInventory->AddItemDefinitionToPlacement(
+			URpgInventoryAutomationTestUnitItemDefinition::StaticClass(),
+			1,
+			MakePlacement(Root, 1, 0));
+	if (!TestNotNull(TEXT("First valid source row exists"), FirstItem) ||
+		!TestNotNull(TEXT("Second valid source row exists"), SecondItem))
+	{
+		return false;
+	}
+
+	FRpgInventoryEntryView FirstEntry;
+	FRpgInventoryEntryView SecondEntry;
+	if (!TestTrue(
+			TEXT("First source row exposes a complete snapshot"),
+			GetEntryView(SourceInventory, FirstItem->GetItemId(), FirstEntry)) ||
+		!TestTrue(
+			TEXT("Second source row exposes a complete snapshot"),
+			GetEntryView(SourceInventory, SecondItem->GetItemId(), SecondEntry)))
+	{
+		return false;
+	}
+	TestNotEqual(
+		TEXT("The valid fixture starts with distinct entry ids"),
+		FirstEntry.EntryId,
+		SecondEntry.EntryId);
+	if (!TestTrue(
+			TEXT("Reflection duplicates the second row's EntryId"),
+			CopyInventoryEntryIdForTest(SourceInventory, 0, 1)))
+	{
+		return false;
+	}
+
+	const int32 SourceRevisionBefore = SourceInventory->GetInventoryRevision();
+	const int32 TargetRevisionBefore = TargetInventory->GetInventoryRevision();
+	const uint64 SourceEpochBefore = SourceInventory->GetMutationEpoch();
+	const uint64 TargetEpochBefore = TargetInventory->GetMutationEpoch();
+	const FString SourceBefore = MakeStrictInventorySignature(SourceInventory);
+	const FString TargetBefore = MakeStrictInventorySignature(TargetInventory);
+	const FRpgInventoryItemId FirstItemId = FirstItem->GetItemId();
+	const FRpgInventoryItemId SecondItemId = SecondItem->GetItemId();
+
+	FRpgInventoryMutationRequest TransferRequest;
+	TransferRequest.Operation = ERpgInventoryMutationOperation::Transfer;
+	TransferRequest.ItemId = FirstEntry.ItemId;
+	TransferRequest.ExpectedEntryId = FirstEntry.EntryId;
+	TransferRequest.Source = Root;
+	TransferRequest.ExpectedSourcePlacement = FirstEntry.Placement;
+	TransferRequest.ExpectedSourceQuantity = FirstEntry.StackCount;
+	TransferRequest.Target = Root;
+	TransferRequest.TargetPlacement = MakePlacement(Root, 0, 0);
+	TransferRequest.Quantity = FirstEntry.StackCount;
+	TransferRequest.RequestId = FGuid::NewGuid();
+
+	int32 ChangeMessageCount = 0;
+	UGameplayMessageSubsystem& MessageSubsystem =
+		UGameplayMessageSubsystem::Get(TestWorld.GetTestWorld());
+	const FGameplayMessageListenerHandle ListenerHandle =
+		MessageSubsystem.RegisterListener<FRpgInventoryChangeMessage>(
+			FGameplayTag::RequestGameplayTag(
+				TEXT("Rpg.Inventory.Message.StackChanged")),
+			[&ChangeMessageCount](
+				FGameplayTag,
+				const FRpgInventoryChangeMessage&)
+			{
+				++ChangeMessageCount;
+			});
+	const FRpgInventoryMutationResult Result =
+		SourceInventory->ExecuteCrossInventoryTransfer(
+			TargetInventory,
+			TransferRequest,
+			false);
+	MessageSubsystem.UnregisterListener(ListenerHandle);
+	TestEqual(
+		TEXT("A corrupt source graph reports DuplicateEntryId exactly"),
+		Result.Code,
+		ERpgInventoryMutationResultCode::DuplicateEntryId);
+	TestEqual(
+		TEXT("Duplicate-entry rejection applies no quantity"),
+		Result.AppliedQuantity,
+		0);
+	TestTrue(
+		TEXT("Duplicate-entry rejection exposes no deltas"),
+		Result.Deltas.IsEmpty());
+	TestEqual(
+		TEXT("Duplicate-entry rejection preserves the source revision"),
+		SourceInventory->GetInventoryRevision(),
+		SourceRevisionBefore);
+	TestEqual(
+		TEXT("Duplicate-entry rejection preserves the target revision"),
+		TargetInventory->GetInventoryRevision(),
+		TargetRevisionBefore);
+	TestEqual(
+		TEXT("Duplicate-entry rejection preserves the source mutation epoch"),
+		SourceInventory->GetMutationEpoch(),
+		SourceEpochBefore);
+	TestEqual(
+		TEXT("Duplicate-entry rejection preserves the target mutation epoch"),
+		TargetInventory->GetMutationEpoch(),
+		TargetEpochBefore);
+	TestEqual(
+		TEXT("Duplicate-entry rejection emits no inventory change messages"),
+		ChangeMessageCount,
+		0);
+	TestEqual(
+		TEXT("Duplicate-entry rejection preserves the complete corrupt source graph"),
+		MakeStrictInventorySignature(SourceInventory),
+		SourceBefore);
+	TestEqual(
+		TEXT("Duplicate-entry rejection preserves the complete target graph"),
+		MakeStrictInventorySignature(TargetInventory),
+		TargetBefore);
+	TestEqual(
+		TEXT("The first source item keeps its exact UObject"),
+		SourceInventory->FindItemById(FirstItemId),
+		FirstItem);
+	TestEqual(
+		TEXT("The second source item keeps its exact UObject"),
+		SourceInventory->FindItemById(SecondItemId),
+		SecondItem);
 	return true;
 }
 

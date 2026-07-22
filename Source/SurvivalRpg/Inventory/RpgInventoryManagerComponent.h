@@ -909,6 +909,38 @@ private:
 		FRpgInventoryGridPlacement& OutPlacement) const;
 	bool IsItemManagedByAnyInventory(const URpgInventoryItemInstance* ItemInstance) const;
 	bool HasItemIdentityConflictInAnyInventory(const URpgInventoryItemInstance* ItemInstance) const;
+	/** Canonical read-only index produced only after every row in one complete inventory graph passed validation. */
+	struct FValidatedInventoryGraph
+	{
+		TMap<FRpgInventoryItemId, int32> IndexByItemId;
+		TMap<FGuid, int32> IndexByEntryId;
+		TArray<int32> ParentIndexByEntry;
+		TArray<int32> RootIndexByEntry;
+		TArray<uint8> DeepestRelativeDepthByEntry;
+
+		/** Appends the root and every transitive descendant in stable source-array order. */
+		bool GatherSubtreeIndices(int32 RootIndex, TArray<int32>& OutIndices) const;
+	};
+	/**
+	 * Validates one complete current or prospective graph without mutating gameplay state.
+	 *
+	 * Capacity is enforced for imports and target projections. Source projections may opt out so a graph whose capacity
+	 * was reduced at runtime can still shrink through egress. Entry identity remains inventory-local; item identity,
+	 * ancestry, provider rules, canonical footprints, bounds, and occupancy are validated for every row.
+	 */
+	bool ValidateInventoryGraph(
+		const TArray<FRpgInventoryEntry>& Entries,
+		const UObject* ExpectedInstanceOuter,
+		bool bEnforceCapacity,
+		FValidatedInventoryGraph& OutGraph,
+		ERpgInventoryMutationResultCode& OutCode) const;
+	/** Applies the canonical graph contract to the component's current replicated FastArray. */
+	bool ValidateLiveInventoryGraph(
+		bool bEnforceCapacity,
+		FValidatedInventoryGraph& OutGraph,
+		ERpgInventoryMutationResultCode& OutCode) const;
+	/** True while a multi-step authoritative operation must reject nested inventory mutation. */
+	bool IsInventoryMutationLocked() const;
 	bool TryBuildRemovalDeltas(
 		const FRpgInventoryEntry& RootEntry,
 		int32 Quantity,
@@ -1024,4 +1056,10 @@ private:
 
 	/** Prevents a multi-root collect from being reentered through fragment hooks or synchronous inventory listeners. */
 	bool bIsApplyingCollectBatch = false;
+
+	/** Prevents fragment hooks and listeners from reentering either side of a cross-inventory transfer. */
+	bool bIsApplyingCrossInventoryTransfer = false;
+
+	/** Prevents fragment restore hooks and synchronous load notifications from reentering an authoritative mutation. */
+	bool bIsRestoringInventoryGraph = false;
 };

@@ -984,4 +984,237 @@ bool FRpgInventoryTransferDeltaSubtreeReconstructionTest::RunTest(
 	return true;
 }
 
+IMPLEMENT_SIMPLE_AUTOMATION_TEST(
+	FRpgInventoryTransferDeltaSubtreeDepthRebaseRejectionTest,
+	"SurvivalRpg.Inventory.TransferDelta.SubtreeDepthRebaseRejectionIsAtomic",
+	EAutomationTestFlags::EditorContext | EAutomationTestFlags::EngineFilter)
+
+bool FRpgInventoryTransferDeltaSubtreeDepthRebaseRejectionTest::RunTest(
+	const FString& Parameters)
+{
+	using namespace RpgInventoryTransferDeltaTests;
+	FScopedInventoryWorld TestWorld;
+	if (!InitializeTest(*this, TestWorld))
+	{
+		return false;
+	}
+
+	URpgInventoryManagerComponent* SourceInventory =
+		TestWorld.CreateInventory(TEXT("DepthRebaseSource"));
+	URpgInventoryManagerComponent* TargetInventory =
+		TestWorld.CreateInventory(TEXT("DepthRebaseTarget"));
+	if (!TestNotNull(TEXT("Source inventory exists"), SourceInventory) ||
+		!TestNotNull(TEXT("Target inventory exists"), TargetInventory))
+	{
+		return false;
+	}
+
+	const FRpgInventoryContainerHandle Root = MakeStorageHandle();
+	URpgInventoryItemInstance* SourceProvider =
+		SourceInventory->AddItemDefinitionToPlacement(
+			URpgInventoryAutomationTestBagItemDefinition::StaticClass(),
+			1,
+			MakePlacement(Root, 0, 0));
+	if (!TestNotNull(TEXT("Source provider exists"), SourceProvider))
+	{
+		return false;
+	}
+
+	const FRpgInventoryContainerHandle SourceContents =
+		FRpgInventoryContainerHandle::MakeItemOwned(
+			SourceProvider->GetItemId(),
+			BagContainerId,
+			1);
+	URpgInventoryItemInstance* SourceChildProvider =
+		SourceInventory->AddItemDefinitionToPlacement(
+			URpgInventoryAutomationTestBagItemDefinition::StaticClass(),
+			1,
+			MakePlacement(SourceContents, 0, 0));
+	if (!TestNotNull(
+			TEXT("Source root owns a nested provider"),
+			SourceChildProvider))
+	{
+		return false;
+	}
+	const FRpgInventoryContainerHandle SourceGrandchildContainer =
+		FRpgInventoryContainerHandle::MakeItemOwned(
+			SourceChildProvider->GetItemId(),
+			BagContainerId,
+			2);
+	URpgInventoryItemInstance* SourceDescendant =
+		SourceInventory->AddItemDefinitionToPlacement(
+			URpgInventoryAutomationTestUnitItemDefinition::StaticClass(),
+			1,
+			MakePlacement(SourceGrandchildContainer, 0, 0));
+	if (!TestNotNull(
+			TEXT("Nested source provider owns a depth-two descendant"),
+			SourceDescendant))
+	{
+		return false;
+	}
+
+	URpgInventoryItemInstance* TargetRootProvider =
+		TargetInventory->AddItemDefinitionToPlacement(
+			URpgInventoryAutomationTestBagItemDefinition::StaticClass(),
+			1,
+			MakePlacement(Root, 0, 0));
+	if (!TestNotNull(TEXT("Target root provider exists"), TargetRootProvider))
+	{
+		return false;
+	}
+
+	URpgInventoryItemInstance* TargetDeepestProvider = TargetRootProvider;
+	FRpgInventoryContainerHandle DeepTarget =
+		FRpgInventoryContainerHandle::MakeItemOwned(
+			TargetRootProvider->GetItemId(),
+			BagContainerId,
+			1);
+	for (uint8 Depth = 2; Depth <= 3; ++Depth)
+	{
+		TargetDeepestProvider =
+			TargetInventory->AddItemDefinitionToPlacement(
+				URpgInventoryAutomationTestBagItemDefinition::StaticClass(),
+				1,
+				MakePlacement(DeepTarget, 0, 0));
+		if (!TestNotNull(
+			TEXT("Target nested provider exists"),
+			TargetDeepestProvider))
+		{
+			return false;
+		}
+
+		DeepTarget = FRpgInventoryContainerHandle::MakeItemOwned(
+			TargetDeepestProvider->GetItemId(),
+			BagContainerId,
+			Depth);
+	}
+	TestEqual(
+		TEXT("Transfer target leaves the isolated root provider valid at depth three"),
+		DeepTarget.Depth,
+		static_cast<uint8>(3));
+
+	FRpgInventoryEntryView SourceProviderBefore;
+	FRpgInventoryEntryView SourceChildProviderBefore;
+	FRpgInventoryEntryView SourceDescendantBefore;
+	FRpgInventoryEntryView TargetDeepestProviderBefore;
+	if (!TestTrue(
+		TEXT("Source provider snapshot exists"),
+		FindEntry(
+			SourceInventory,
+			SourceProvider->GetItemId(),
+			SourceProviderBefore)) ||
+		!TestTrue(
+			TEXT("Source child-provider snapshot exists"),
+			FindEntry(
+				SourceInventory,
+				SourceChildProvider->GetItemId(),
+				SourceChildProviderBefore)) ||
+		!TestTrue(
+			TEXT("Source descendant snapshot exists"),
+			FindEntry(
+				SourceInventory,
+				SourceDescendant->GetItemId(),
+				SourceDescendantBefore)) ||
+		!TestTrue(
+			TEXT("Deepest target provider snapshot exists"),
+			FindEntry(
+				TargetInventory,
+				TargetDeepestProvider->GetItemId(),
+				TargetDeepestProviderBefore)))
+	{
+		return false;
+	}
+
+	const FString SourceSignatureBefore = MakeStrictSignature(SourceInventory);
+	const FString TargetSignatureBefore = MakeStrictSignature(TargetInventory);
+	const int32 SourceRevisionBefore =
+		SourceInventory->GetInventoryRevision();
+	const int32 TargetRevisionBefore =
+		TargetInventory->GetInventoryRevision();
+	const uint64 SourceEpochBefore =
+		SourceInventory->GetMutationEpoch();
+	const uint64 TargetEpochBefore =
+		TargetInventory->GetMutationEpoch();
+	const FRpgInventoryGridPlacement TargetPlacement =
+		MakePlacement(DeepTarget, 1, 1);
+	const FRpgInventoryMutationRequest Request = MakeTransferRequest(
+		SourceInventory,
+		SourceProvider,
+		ERpgInventoryMutationOperation::Transfer,
+		DeepTarget,
+		&TargetPlacement);
+
+	int32 MessageCount = 0;
+	UGameplayMessageSubsystem& MessageSubsystem =
+		UGameplayMessageSubsystem::Get(TestWorld.GetWorld());
+	const FGameplayMessageListenerHandle ListenerHandle =
+		MessageSubsystem.RegisterListener<FRpgInventoryChangeMessage>(
+			GetInventoryChangedChannel(),
+			[&MessageCount](
+				FGameplayTag Channel,
+				const FRpgInventoryChangeMessage& Message)
+			{
+				++MessageCount;
+			});
+	const FRpgInventoryMutationResult TransferResult =
+		SourceInventory->ExecuteCrossInventoryTransfer(
+			TargetInventory,
+			Request,
+			false);
+	MessageSubsystem.UnregisterListener(ListenerHandle);
+
+	TestEqual(
+		TEXT("A subtree whose descendant would rebase to depth five is rejected"),
+		TransferResult.Code,
+		ERpgInventoryMutationResultCode::MaxDepthExceeded);
+	TestEqual(
+		TEXT("Rejected depth rebase applies no provider quantity"),
+		TransferResult.AppliedQuantity,
+		0);
+	TestTrue(
+		TEXT("Rejected depth rebase exposes no authoritative deltas"),
+		TransferResult.Deltas.IsEmpty());
+	TestEqual(
+		TEXT("Rejected depth rebase emits no inventory messages"),
+		MessageCount,
+		0);
+	TestEqual(
+		TEXT("Rejected depth rebase preserves the complete source graph"),
+		MakeStrictSignature(SourceInventory),
+		SourceSignatureBefore);
+	TestEqual(
+		TEXT("Rejected depth rebase preserves the complete target graph"),
+		MakeStrictSignature(TargetInventory),
+		TargetSignatureBefore);
+	TestEqual(
+		TEXT("Rejected depth rebase does not advance the source revision"),
+		SourceInventory->GetInventoryRevision(),
+		SourceRevisionBefore);
+	TestEqual(
+		TEXT("Rejected depth rebase does not advance the target revision"),
+		TargetInventory->GetInventoryRevision(),
+		TargetRevisionBefore);
+	TestEqual(
+		TEXT("Rejected depth rebase does not advance the source epoch"),
+		SourceInventory->GetMutationEpoch(),
+		SourceEpochBefore);
+	TestEqual(
+		TEXT("Rejected depth rebase does not advance the target epoch"),
+		TargetInventory->GetMutationEpoch(),
+		TargetEpochBefore);
+	TestTrue(
+		TEXT("The rejected provider keeps UObject and EntryId identity"),
+		HasStableIdentity(SourceInventory, SourceProviderBefore));
+	TestTrue(
+		TEXT("The rejected nested provider keeps UObject and EntryId identity"),
+		HasStableIdentity(SourceInventory, SourceChildProviderBefore));
+	TestTrue(
+		TEXT("The rejected descendant keeps UObject and EntryId identity"),
+		HasStableIdentity(SourceInventory, SourceDescendantBefore));
+	TestTrue(
+		TEXT("The deepest target provider keeps UObject and EntryId identity"),
+		HasStableIdentity(TargetInventory, TargetDeepestProviderBefore));
+	return true;
+}
+
 #endif // WITH_DEV_AUTOMATION_TESTS

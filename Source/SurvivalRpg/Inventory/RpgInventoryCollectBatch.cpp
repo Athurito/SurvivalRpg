@@ -52,8 +52,10 @@ namespace RpgInventoryCollectBatchPrivate
 		}
 		const FRpgInventoryGridSize Occupied = Placement.GetOccupiedSize();
 		return Placement.X >= 0 && Placement.Y >= 0 &&
-			Placement.X + Occupied.Width <= GridSize.Width &&
-			Placement.Y + Occupied.Height <= GridSize.Height;
+			static_cast<int64>(Placement.X) + Occupied.Width <=
+				GridSize.Width &&
+			static_cast<int64>(Placement.Y) + Occupied.Height <=
+				GridSize.Height;
 	}
 
 	bool OverlapsScratch(
@@ -83,6 +85,14 @@ namespace RpgInventoryCollectBatchPrivate
 			}
 		}
 		return true;
+	}
+
+	bool IsItemOwnedHandleDepthOverflow(
+		const FRpgInventoryContainerHandle& Handle)
+	{
+		return Handle.Root.IsNone() && Handle.ItemOwnerId.IsValid() &&
+			!Handle.ContainerId.IsNone() &&
+			Handle.Depth > RpgInventoryMaxItemOwnedDepth;
 	}
 }
 
@@ -273,10 +283,8 @@ FRpgInventoryMutationResult URpgInventoryManagerComponent::CollectRootItemsBatch
 	};
 
 	if (!RequestId.IsValid() || !TargetInventory || TargetInventory == this ||
-		bIsApplyingCollectBatch || TargetInventory->bIsApplyingCollectBatch ||
-		bIsApplyingPickupBatch || bIsPlanningPickupBatch ||
-		TargetInventory->bIsApplyingPickupBatch ||
-		TargetInventory->bIsPlanningPickupBatch)
+		IsInventoryMutationLocked() ||
+		TargetInventory->IsInventoryMutationLocked())
 	{
 		return Reject(ERpgInventoryMutationResultCode::InvalidRequest);
 	}
@@ -353,6 +361,12 @@ bool URpgInventoryManagerComponent::PrepareCollectRootItemsBatch(
 	TSet<FRpgInventoryContainerHandle> SeenTargetContainers;
 	for (const FRpgInventoryContainerHandle& Container : TargetContainers)
 	{
+		if (IsItemOwnedHandleDepthOverflow(Container))
+		{
+			OutCode =
+				ERpgInventoryMutationResultCode::MaxDepthExceeded;
+			return false;
+		}
 		FRpgInventoryGridSize GridSize;
 		if (!Container.IsValid() ||
 			SeenTargetContainers.Contains(Container) ||
@@ -367,130 +381,32 @@ bool URpgInventoryManagerComponent::PrepareCollectRootItemsBatch(
 		SeenTargetContainers.Add(Container);
 	}
 
-	auto BuildLiveIndex = [](
-		URpgInventoryManagerComponent* Inventory,
-		const AActor* ExpectedOwner,
-		TMap<FRpgInventoryItemId, int32>& OutIndexByItemId,
-		TSet<FGuid>& OutEntryIds,
-		ERpgInventoryMutationResultCode& OutGraphCode)
-	{
-		OutIndexByItemId.Reset();
-		OutEntryIds.Reset();
-		OutIndexByItemId.Reserve(Inventory->InventoryList.Entries.Num());
-		OutEntryIds.Reserve(Inventory->InventoryList.Entries.Num());
-		for (int32 EntryIndex = 0;
-			 EntryIndex < Inventory->InventoryList.Entries.Num();
-			 ++EntryIndex)
-		{
-			const FRpgInventoryEntry& Entry =
-				Inventory->InventoryList.Entries[EntryIndex];
-			if (!Entry.Instance || Entry.Instance->GetOuter() != ExpectedOwner ||
-				!Entry.Instance->GetItemDef() ||
-				!Entry.Instance->GetItemId().IsValid() ||
-				!Entry.EntryId.IsValid() || Entry.StackCount <= 0 ||
-				Entry.StackCount >
-					URpgInventoryManagerComponent::
-						GetEffectiveMaxStackSizeForDefinition(
-							Entry.Instance->GetItemDef()) ||
-				!Entry.Placement.IsValid() ||
-				!Entry.Placement.GetContainerHandle().IsValid())
-			{
-				OutGraphCode = ERpgInventoryMutationResultCode::InternalError;
-				return false;
-			}
-			if (OutIndexByItemId.Contains(Entry.Instance->GetItemId()))
-			{
-				OutGraphCode = ERpgInventoryMutationResultCode::DuplicateItemId;
-				return false;
-			}
-			if (OutEntryIds.Contains(Entry.EntryId))
-			{
-				OutGraphCode = ERpgInventoryMutationResultCode::InternalError;
-				return false;
-			}
-			OutIndexByItemId.Add(Entry.Instance->GetItemId(), EntryIndex);
-			OutEntryIds.Add(Entry.EntryId);
-		}
-
-		for (int32 EntryIndex = 0;
-			 EntryIndex < Inventory->InventoryList.Entries.Num();
-			 ++EntryIndex)
-		{
-			const FRpgInventoryEntry& Entry =
-				Inventory->InventoryList.Entries[EntryIndex];
-			FRpgInventoryGridPlacement Normalized;
-			ERpgInventoryMutationResultCode PlacementCode =
-				ERpgInventoryMutationResultCode::Success;
-			if (!Inventory->TryNormalizePlacementForDefinition(
-					Entry.Instance->GetItemDef(),
-					Entry.Placement.GetContainerHandle(),
-					Entry.Placement.X,
-					Entry.Placement.Y,
-					Entry.Placement.bRotated,
-					Normalized) ||
-				!ArePlacementsExactlyEqual(Normalized, Entry.Placement) ||
-				!Inventory->InventoryList.IsPlacementWithinGrid(
-					Entry.Placement) ||
-				!Inventory->ValidatePlacementGraphRules(
-					Entry,
-					Entry.Placement,
-					PlacementCode))
-			{
-				OutGraphCode = PlacementCode ==
-					ERpgInventoryMutationResultCode::Success
-						? ERpgInventoryMutationResultCode::InvalidPlacement
-						: PlacementCode;
-				return false;
-			}
-
-			for (int32 OtherIndex = EntryIndex + 1;
-				 OtherIndex < Inventory->InventoryList.Entries.Num();
-				 ++OtherIndex)
-			{
-				const FRpgInventoryEntry& Other =
-					Inventory->InventoryList.Entries[OtherIndex];
-				if (Entry.Placement.GetContainerHandle() ==
-						Other.Placement.GetContainerHandle() &&
-					Entry.Placement.Overlaps(Other.Placement))
-				{
-					OutGraphCode = ERpgInventoryMutationResultCode::Occupied;
-					return false;
-				}
-			}
-		}
-
-		OutGraphCode = ERpgInventoryMutationResultCode::Success;
-		return true;
-	};
-
-	TMap<FRpgInventoryItemId, int32> SourceIndexByItemId;
-	TMap<FRpgInventoryItemId, int32> TargetIndexByItemId;
-	TSet<FGuid> SourceEntryIds;
-	TSet<FGuid> TargetEntryIds;
+	FValidatedInventoryGraph SourceGraph;
+	FValidatedInventoryGraph TargetGraph;
 	ERpgInventoryMutationResultCode GraphCode =
 		ERpgInventoryMutationResultCode::Success;
-	if (!BuildLiveIndex(
-			this,
-			SourceOwner,
-			SourceIndexByItemId,
-			SourceEntryIds,
-			GraphCode) ||
-		!BuildLiveIndex(
-			TargetInventory,
-			TargetOwner,
-			TargetIndexByItemId,
-			TargetEntryIds,
+	if (!ValidateLiveInventoryGraph(false, SourceGraph, GraphCode) ||
+		!TargetInventory->ValidateLiveInventoryGraph(
+			true,
+			TargetGraph,
 			GraphCode))
 	{
 		OutCode = GraphCode;
 		return false;
 	}
-	if (!TargetInventory->IsCapacityUnlimited() &&
-		TargetInventory->InventoryList.Entries.Num() >
-			TargetInventory->GetMaxEntries())
+	const TMap<FRpgInventoryItemId, int32>& SourceIndexByItemId =
+		SourceGraph.IndexByItemId;
+	const TMap<FRpgInventoryItemId, int32>& TargetIndexByItemId =
+		TargetGraph.IndexByItemId;
+	TSet<FGuid> SourceEntryIds;
+	for (const TPair<FGuid, int32>& Pair : SourceGraph.IndexByEntryId)
 	{
-		OutCode = ERpgInventoryMutationResultCode::NoSpace;
-		return false;
+		SourceEntryIds.Add(Pair.Key);
+	}
+	TSet<FGuid> TargetEntryIds;
+	for (const TPair<FGuid, int32>& Pair : TargetGraph.IndexByEntryId)
+	{
+		TargetEntryIds.Add(Pair.Key);
 	}
 
 	OutPrepared.SourceEntries.Reserve(InventoryList.Entries.Num());
@@ -539,51 +455,23 @@ bool URpgInventoryManagerComponent::PrepareCollectRootItemsBatch(
 		 SourceIndex < OutPrepared.SourceEntries.Num();
 		 ++SourceIndex)
 	{
-		const FRpgInventoryEntry& Entry =
-			OutPrepared.SourceEntries[SourceIndex].Before;
-		if (Entry.Placement.GetContainerHandle().IsRoot())
+		if (!SourceGraph.RootIndexByEntry.IsValidIndex(SourceIndex))
 		{
-			OutPrepared.RootSourceIndices.Add(SourceIndex);
-			OutPrepared.SubtreeIndicesByRoot.FindOrAdd(SourceIndex).Add(
-				SourceIndex);
-			continue;
+			OutCode = ERpgInventoryMutationResultCode::InvalidContainer;
+			return false;
 		}
-
-		int32 CurrentIndex = SourceIndex;
-		TSet<int32> Visited;
-		int32 RootIndex = INDEX_NONE;
-		while (OutPrepared.SourceEntries.IsValidIndex(CurrentIndex))
-		{
-			if (Visited.Contains(CurrentIndex))
-			{
-				OutCode = ERpgInventoryMutationResultCode::CycleDetected;
-				return false;
-			}
-			Visited.Add(CurrentIndex);
-			const FRpgInventoryContainerHandle Handle =
-				OutPrepared.SourceEntries[CurrentIndex]
-					.Before.Placement.GetContainerHandle();
-			if (Handle.IsRoot())
-			{
-				RootIndex = CurrentIndex;
-				break;
-			}
-			const int32* ParentIndex =
-				SourceIndexByItemId.Find(Handle.ItemOwnerId);
-			if (!ParentIndex)
-			{
-				OutCode = ERpgInventoryMutationResultCode::InvalidContainer;
-				return false;
-			}
-			CurrentIndex = *ParentIndex;
-		}
-		if (RootIndex == INDEX_NONE)
+		const int32 RootIndex = SourceGraph.RootIndexByEntry[SourceIndex];
+		if (!OutPrepared.SourceEntries.IsValidIndex(RootIndex))
 		{
 			OutCode = ERpgInventoryMutationResultCode::InvalidContainer;
 			return false;
 		}
 		OutPrepared.SubtreeIndicesByRoot.FindOrAdd(RootIndex).Add(
 			SourceIndex);
+		if (RootIndex == SourceIndex)
+		{
+			OutPrepared.RootSourceIndices.Add(SourceIndex);
+		}
 	}
 
 	OutPrepared.RootSourceIndices.Sort(
@@ -913,6 +801,8 @@ bool URpgInventoryManagerComponent::PrepareCollectRootItemsBatch(
 			}
 
 			bool bPreparedSubtree = true;
+			ERpgInventoryMutationResultCode SubtreePreparationCode =
+				ERpgInventoryMutationResultCode::InternalError;
 			for (const int32 SourceIndex : Subtree)
 			{
 				FPreparedCollectBatch::FSourceEntry& Source =
@@ -959,6 +849,10 @@ bool URpgInventoryManagerComponent::PrepareCollectRootItemsBatch(
 						RebasedDepth <= 0 ||
 						RebasedDepth > RpgInventoryMaxItemOwnedDepth)
 					{
+						SubtreePreparationCode =
+							RebasedDepth > RpgInventoryMaxItemOwnedDepth
+								? ERpgInventoryMutationResultCode::MaxDepthExceeded
+								: ERpgInventoryMutationResultCode::InvalidContainer;
 						bPreparedSubtree = false;
 						break;
 					}
@@ -974,7 +868,7 @@ bool URpgInventoryManagerComponent::PrepareCollectRootItemsBatch(
 			}
 			if (!bPreparedSubtree)
 			{
-				OutCode = ERpgInventoryMutationResultCode::InternalError;
+				OutCode = SubtreePreparationCode;
 				return false;
 			}
 
@@ -1336,77 +1230,17 @@ bool URpgInventoryManagerComponent::RevalidateCollectRootItemsBatch(
 		}
 	}
 
-	auto ValidateLiveGraph = [](
-		const URpgInventoryManagerComponent* Inventory,
-		ERpgInventoryMutationResultCode& OutGraphCode)
-	{
-		for (int32 EntryIndex = 0;
-			 EntryIndex < Inventory->InventoryList.Entries.Num();
-			 ++EntryIndex)
-		{
-			const FRpgInventoryEntry& Entry =
-				Inventory->InventoryList.Entries[EntryIndex];
-			FRpgInventoryGridPlacement Normalized;
-			ERpgInventoryMutationResultCode PlacementCode =
-				ERpgInventoryMutationResultCode::Success;
-			if (!Entry.Instance || !Entry.Instance->GetItemDef() ||
-				!Inventory->TryNormalizePlacementForDefinition(
-					Entry.Instance->GetItemDef(),
-					Entry.Placement.GetContainerHandle(),
-					Entry.Placement.X,
-					Entry.Placement.Y,
-					Entry.Placement.bRotated,
-					Normalized) ||
-				!ArePlacementsExactlyEqual(Normalized, Entry.Placement) ||
-				!Inventory->InventoryList.IsPlacementWithinGrid(
-					Entry.Placement) ||
-				!Inventory->ValidatePlacementGraphRules(
-					Entry,
-					Entry.Placement,
-					PlacementCode))
-			{
-				OutGraphCode = PlacementCode ==
-					ERpgInventoryMutationResultCode::Success
-						? ERpgInventoryMutationResultCode::InvalidPlacement
-						: PlacementCode;
-				return false;
-			}
-			for (int32 OtherIndex = EntryIndex + 1;
-				 OtherIndex < Inventory->InventoryList.Entries.Num();
-				 ++OtherIndex)
-			{
-				const FRpgInventoryEntry& Other =
-					Inventory->InventoryList.Entries[OtherIndex];
-				if (Entry.Placement.GetContainerHandle() ==
-						Other.Placement.GetContainerHandle() &&
-					Entry.Placement.Overlaps(Other.Placement))
-				{
-					OutGraphCode = ERpgInventoryMutationResultCode::Occupied;
-					return false;
-				}
-			}
-		}
-		OutGraphCode = ERpgInventoryMutationResultCode::Success;
-		return true;
-	};
-
+	FValidatedInventoryGraph SourceLiveGraph;
+	FValidatedInventoryGraph TargetLiveGraph;
 	ERpgInventoryMutationResultCode GraphCode =
 		ERpgInventoryMutationResultCode::Success;
-	if (!ValidateLiveGraph(this, GraphCode) ||
-		!ValidateLiveGraph(TargetInventory, GraphCode))
+	if (!ValidateLiveInventoryGraph(false, SourceLiveGraph, GraphCode) ||
+		!TargetInventory->ValidateLiveInventoryGraph(
+			true,
+			TargetLiveGraph,
+			GraphCode))
 	{
 		OutCode = GraphCode;
-		return false;
-	}
-
-	const int32 PlannedAdditionCount =
-		Prepared.TargetEntries.Num() - Prepared.TargetEntryCount;
-	if (PlannedAdditionCount < 0 ||
-		(!TargetInventory->IsCapacityUnlimited() &&
-		 TargetInventory->InventoryList.Entries.Num() +
-			 PlannedAdditionCount > TargetInventory->GetMaxEntries()))
-	{
-		OutCode = ERpgInventoryMutationResultCode::NoSpace;
 		return false;
 	}
 
@@ -1527,9 +1361,11 @@ bool URpgInventoryManagerComponent::RevalidateCollectRootItemsBatch(
 			TargetItemIds.Contains(Target.ItemId) ||
 			TargetInstance->GetOuter() != TargetOwner)
 		{
-			OutCode = TargetItemIds.Contains(Target.ItemId)
-				? ERpgInventoryMutationResultCode::DuplicateItemId
-				: ERpgInventoryMutationResultCode::InternalError;
+			OutCode = EntryIds.Contains(Target.EntryId)
+				? ERpgInventoryMutationResultCode::DuplicateEntryId
+				: TargetItemIds.Contains(Target.ItemId)
+					? ERpgInventoryMutationResultCode::DuplicateItemId
+					: ERpgInventoryMutationResultCode::InternalError;
 			return false;
 		}
 
@@ -1593,6 +1429,15 @@ bool URpgInventoryManagerComponent::RevalidateCollectRootItemsBatch(
 				: 0;
 			const int32 ExpectedDepth =
 				static_cast<int32>(ExpectedContainer.Depth) + DepthDelta;
+			if (ExpectedContainer.IsItemOwned() &&
+				(ExpectedDepth <= 0 ||
+				 ExpectedDepth > RpgInventoryMaxItemOwnedDepth))
+			{
+				OutCode = ExpectedDepth > RpgInventoryMaxItemOwnedDepth
+					? ERpgInventoryMutationResultCode::MaxDepthExceeded
+					: ERpgInventoryMutationResultCode::InvalidContainer;
+				return false;
+			}
 			if (ExpectedContainer.IsItemOwned() && ExpectedDepth > 0 &&
 				ExpectedDepth <= RpgInventoryMaxItemOwnedDepth)
 			{
@@ -1690,6 +1535,56 @@ bool URpgInventoryManagerComponent::RevalidateCollectRootItemsBatch(
 	if (RecomputedAppliedQuantity != Prepared.AppliedQuantity)
 	{
 		OutCode = ERpgInventoryMutationResultCode::InternalError;
+		return false;
+	}
+
+	TArray<FRpgInventoryEntry> ProjectedSourceEntries;
+	ProjectedSourceEntries.Reserve(Prepared.SourceEntries.Num());
+	for (const FPreparedCollectBatch::FSourceEntry& Source :
+		Prepared.SourceEntries)
+	{
+		if (Source.bRemove)
+		{
+			continue;
+		}
+		FRpgInventoryEntry& Entry =
+			ProjectedSourceEntries.Add_GetRef(Source.Before);
+		Entry.StackCount = Source.PlannedCount;
+	}
+
+	TArray<FRpgInventoryEntry> ProjectedTargetEntries;
+	ProjectedTargetEntries.Reserve(Prepared.TargetEntries.Num());
+	for (const FPreparedCollectBatch::FTargetEntry& Target :
+		Prepared.TargetEntries)
+	{
+		FRpgInventoryEntry& Entry =
+			ProjectedTargetEntries.AddDefaulted_GetRef();
+		Entry.Instance = Target.bExisting
+			? Target.Before.Instance
+			: Target.StagedInstance;
+		Entry.EntryId = Target.EntryId;
+		Entry.StackCount = Target.PlannedCount;
+		Entry.Placement = Target.Placement;
+	}
+
+	FValidatedInventoryGraph ProjectedSourceGraph;
+	FValidatedInventoryGraph ProjectedTargetGraph;
+	ERpgInventoryMutationResultCode ProjectedGraphCode =
+		ERpgInventoryMutationResultCode::Success;
+	if (!ValidateInventoryGraph(
+			ProjectedSourceEntries,
+			SourceOwner,
+			false,
+			ProjectedSourceGraph,
+			ProjectedGraphCode) ||
+		!TargetInventory->ValidateInventoryGraph(
+			ProjectedTargetEntries,
+			TargetOwner,
+			true,
+			ProjectedTargetGraph,
+			ProjectedGraphCode))
+	{
+		OutCode = ProjectedGraphCode;
 		return false;
 	}
 

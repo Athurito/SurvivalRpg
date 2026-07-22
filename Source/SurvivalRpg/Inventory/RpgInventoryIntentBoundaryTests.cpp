@@ -404,9 +404,9 @@ bool FRpgInventoryRestoreIntentBoundaryTest::RunTest(
 			LegacyOnlyPlacementGraph,
 			LegacyOnlyPlacementResult));
 	TestEqual(
-		TEXT("A deprecated-only current-schema placement reports an invalid request"),
+		TEXT("A deprecated-only current-schema placement reports an invalid container"),
 		LegacyOnlyPlacementResult.Code,
-		ERpgInventoryMutationResultCode::InvalidRequest);
+		ERpgInventoryMutationResultCode::InvalidContainer);
 	TestEqual(
 		TEXT("Rejected deprecated-only restore preserves the inventory revision"),
 		ValidTarget->GetInventoryRevision(),

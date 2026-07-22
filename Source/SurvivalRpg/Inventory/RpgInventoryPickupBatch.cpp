@@ -34,8 +34,10 @@ namespace RpgInventoryPickupBatchPrivate
 		const FRpgInventoryGridSize OccupiedSize = Placement.GetOccupiedSize();
 		return Placement.X >= 0 &&
 			Placement.Y >= 0 &&
-			Placement.X + OccupiedSize.Width <= GridSize.Width &&
-			Placement.Y + OccupiedSize.Height <= GridSize.Height;
+			static_cast<int64>(Placement.X) + OccupiedSize.Width <=
+				GridSize.Width &&
+			static_cast<int64>(Placement.Y) + OccupiedSize.Height <=
+				GridSize.Height;
 	}
 
 	bool OverlapsScratch(
@@ -159,8 +161,7 @@ struct URpgInventoryManagerComponent::FPreparedPickupBatch
 bool URpgInventoryManagerComponent::CanAddPickupBatch(
 	const FInventoryPickup& Pickup) const
 {
-	if (bIsApplyingPickupBatch || bIsPlanningPickupBatch ||
-		bIsApplyingCollectBatch)
+	if (IsInventoryMutationLocked())
 	{
 		return false;
 	}
@@ -201,6 +202,11 @@ bool URpgInventoryManagerComponent::PreparePickupBatch(
 	}
 	if (!StagingOuter ||
 		!TryGetRequestedQuantity(Pickup, OutPrepared.RequestedQuantity))
+	{
+		return false;
+	}
+	FValidatedInventoryGraph LiveGraph;
+	if (!ValidateLiveInventoryGraph(true, LiveGraph, OutCode))
 	{
 		return false;
 	}
@@ -871,6 +877,11 @@ bool URpgInventoryManagerComponent::RevalidatePickupBatch(
 		OutCode = ERpgInventoryMutationResultCode::SourceMismatch;
 		return false;
 	}
+	FValidatedInventoryGraph LiveGraph;
+	if (!ValidateLiveInventoryGraph(true, LiveGraph, OutCode))
+	{
+		return false;
+	}
 
 	for (const FPreparedPickupBatch::FPayloadSource& Source :
 		Prepared.PayloadSources)
@@ -1101,7 +1112,14 @@ bool URpgInventoryManagerComponent::RevalidatePickupBatch(
 				PreparedEntry.Placement,
 				ScratchOccupancy))
 		{
-			OutCode = ERpgInventoryMutationResultCode::DuplicateItemId;
+			OutCode = EntryIds.Contains(PreparedEntry.EntryId)
+				? ERpgInventoryMutationResultCode::DuplicateEntryId
+				: ActorItemIds.Contains(
+					PreparedEntry.Instance
+						? PreparedEntry.Instance->GetItemId()
+						: FRpgInventoryItemId())
+					? ERpgInventoryMutationResultCode::DuplicateItemId
+					: ERpgInventoryMutationResultCode::InternalError;
 			return false;
 		}
 
@@ -1152,6 +1170,28 @@ bool URpgInventoryManagerComponent::RevalidatePickupBatch(
 		ScratchOccupancy.Add(PreparedEntry.Placement);
 	}
 
+	TArray<FRpgInventoryEntry> ProjectedEntries;
+	ProjectedEntries.Reserve(Prepared.Entries.Num());
+	for (const FPreparedPickupBatch::FEntry& PreparedEntry :
+		Prepared.Entries)
+	{
+		FRpgInventoryEntry& Entry = ProjectedEntries.AddDefaulted_GetRef();
+		Entry.Instance = PreparedEntry.Instance;
+		Entry.EntryId = PreparedEntry.EntryId;
+		Entry.StackCount = PreparedEntry.PlannedCount;
+		Entry.Placement = PreparedEntry.Placement;
+	}
+	FValidatedInventoryGraph ProjectedGraph;
+	if (!ValidateInventoryGraph(
+			ProjectedEntries,
+			OwningActor,
+			true,
+			ProjectedGraph,
+			OutCode))
+	{
+		return false;
+	}
+
 	if (InventoryRevision != Prepared.BaseRevision)
 	{
 		OutCode = ERpgInventoryMutationResultCode::SourceMismatch;
@@ -1174,8 +1214,7 @@ FRpgInventoryMutationResult URpgInventoryManagerComponent::AddPickupBatch(
 	RpgInventoryPickupBatchPrivate::TryGetRequestedQuantity(
 		Pickup,
 		Result.RequestedQuantity);
-	if (bIsApplyingPickupBatch || bIsPlanningPickupBatch ||
-		bIsApplyingCollectBatch)
+	if (IsInventoryMutationLocked())
 	{
 		return Result;
 	}
