@@ -940,8 +940,6 @@ private:
 	bool ImportInventoryGraphInternal(
 		const FRpgInventoryGraphSaveData& SaveData,
 		FRpgInventoryMutationResult& OutResult,
-		const URpgInventoryManagerComponent* AllowedSourceInventory,
-		bool bAllowOverCapacityReduction,
 		bool bEstablishNewMutationEpoch);
 	struct FRecentMutationRecord
 	{

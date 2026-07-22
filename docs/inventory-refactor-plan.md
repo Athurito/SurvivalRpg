@@ -1,6 +1,6 @@
 # Inventory Refactor Plan
 
-Stand: 2026-07-21
+Stand: 2026-07-22
 
 Dieses Dokument hält die verbindliche Reihenfolge für die Bereinigung des
 Tarkov-artigen Spatial Inventory fest. Es dient als Fortschrittsliste über
@@ -76,12 +76,12 @@ Verifizierter Zwischenstand vom 2026-07-19:
   dokumentierten Legacy-Fallback. Dieser wird erst nach Asset-Migration und
   Data Validation entfernt.
 
-Bekannte Restpunkte, bereits einer späteren Phase zugeordnet:
+In Phase 0 bekannte Restpunkte, späteren Phasen zugeordnet:
 
-- Cross-Inventory-Transfers erhalten jetzt die Runtime- und Entry-Identität
-  bestehender Items, importieren aber weiterhin beide Vollgraphen und senden
-  dadurch noch unnötige Remove-/Add-Nachrichten sowie Subobject-
-  Registrierungs-Churn (Phase 3).
+- Der Cross-Inventory-Vollgraph-Import war Phase 3 zugeordnet. Seit Phase 3A
+  arbeiten Transfers als vorvalidierte In-place-Deltas; unnötige Remove-/Add-
+  Nachrichten und pauschaler Subobject-Registrierungs-Churn sind entfernt.
+  Batch-Pickup und Collect gegen gemeinsame Scratch-Occupancy bleiben Phase 3B.
 - Collect-/Starter-Grant-Pfade sind jetzt physisch korrekt geroutet, benötigen
   aber noch eigene Ende-zu-Ende-Tests für Vollbelegung und Rollback (Phase 2).
 - Der gemeinsame Placement-Evaluator unterscheidet Root- und item-owned
@@ -1165,16 +1165,59 @@ Verifizierter Phase-2G-Abschlussstand vom 2026-07-21:
 
 ## Phase 3 – Runtime-Transfer vom Save/Load trennen
 
-Status: **Offen**
+Status: **In Arbeit**
 
-- [ ] Source und Target vollständig vorvalidieren.
-- [ ] Transfer als In-place-Delta atomar committen.
-- [ ] Nur den übertragenen Subtree für den neuen Actor-Outer rekonstruieren.
+- [x] Source und Target vollständig vorvalidieren.
+- [x] Transfer als In-place-Delta atomar committen.
+- [x] Nur den übertragenen Subtree für den neuen Actor-Outer rekonstruieren.
 - [x] UObject- und EntryId-Identität aller überlebenden und unbeteiligten
       Items beim aktuellen Graph-Commit erhalten.
-- [ ] Notifications und FastArray-Deltas einmal pro Commit bündeln.
-- [ ] Rollback ohne extern sichtbaren Zwischenzustand sicherstellen.
+- [x] Notifications und FastArray-Deltas einmal pro Commit bündeln.
+- [x] Rollback ohne extern sichtbaren Zwischenzustand sicherstellen.
 - [ ] Batch-Pickup und Collect gegen Scratch-Occupancy planen.
+
+Verifizierter Phase-3A-Zwischenstand vom 2026-07-22:
+
+- Der Runtime-Transfer verwendet keinen Export-/Import- oder Save-Graph-Pfad
+  mehr. Die interne Import-Oberfläche enthält keine Transfer-Ausnahmen für
+  Source-Inventare oder temporäre Überkapazität mehr.
+- Source- und Target-Graph, Revisionen, Platzierungsplan, Merge-Ziele,
+  Subtree-Beziehungen, Kapazität sowie persistente Item- und Entry-Identitäten
+  werden vor dem Commit geprüft und unmittelbar davor gegen den Live-Zustand
+  revalidiert. Legacy-Partial ist für generische Transfer-/Drop-Intents
+  fail-closed; nur der explizite Pickup-Intent darf partiell anwenden.
+- Vollständige Same-Actor-Transfers ohne Merge verwenden die bestehende Item-
+  Instanz mit frischer Ziel-`EntryId` weiter. Cross-Actor-Transfers
+  rekonstruieren ausschließlich den bewegten Subtree unter dem neuen Actor-
+  Outer; unbeteiligte und überlebende Items behalten UObject- und Entry-
+  Identität. Vorbereitete und gerade entfernte Instanzen bleiben bis zum Ende
+  synchroner Callbacks GC-sicher referenziert.
+- Nur geänderte beziehungsweise neue FastArray-Zeilen werden dirty markiert;
+  strukturelles `MarkArrayDirty` und Inventory-Revision erfolgen pro
+  betroffenem Inventar genau einmal. Die Subobject-Registrierung ändert sich
+  nur je tatsächlich entfernter oder hinzugefügter Instanz. Der Replay-Cache
+  wird vor Benachrichtigungen veröffentlicht, und alle Listener sehen bereits
+  beide finalen Graphen. Der Persistenz-`MutationEpoch` bleibt von Runtime-
+  Transfers unberührt.
+- Vier neue Transfer-Delta-Tests decken Merge-plus-Place mit reentrantem
+  Request-Replay, fail-closed Legacy-Partial, Same-Actor-UObject-Reuse und die
+  Cross-Actor-Rekonstruktion eines Container-Subtrees ab. Sie prüfen außerdem
+  exakte Benachrichtigungs-, Revisions-, Identitäts- und Seiteneffektverträge.
+- `SurvivalRpgEditor Win64 Development` wurde mit Unreal Engine 5.8 gebaut
+  (4/4 Actions im finalen inkrementellen Build).
+- `SurvivalRpg.Inventory`: 94 von 94 Automationtests erfolgreich.
+- `SurvivalRpg.Equipment`: 5 von 5 Automationtests erfolgreich.
+- `SurvivalRpg.Crafting`: 6 von 6 Automationtests erfolgreich.
+- Fortschritt Phase 3: 6 von 7 Punkten abgeschlossen (85,7 %).
+- Gesamtfortschritt der verbindlichen Checkliste: 61 von 94 Punkten
+  abgeschlossen (64,9 %), 33 Punkte offen.
+- Die Standalone-Automation prüft Server- und Callback-Atomizität sowie den
+  finalen Zustand für spätere Leser, aber keine echten ActorChannel-Pakete.
+  Zwei-Client-PIE, FastArray-/Subobject-Replikation und Late Join bleiben
+  deshalb gezielte Netzwerk-QA und werden nicht als ausgeführt behauptet.
+- Nächster Schnitt: Batch-Pickup und Collect als gemeinsamen, vollständig
+  vorvalidierten Scratch-Occupancy-Plan ausführen, ohne zwischen Items auf
+  Save-Graph-Rollback zurückzufallen.
 
 ## Phase 4 – Datenmodell und Persistenz
 
