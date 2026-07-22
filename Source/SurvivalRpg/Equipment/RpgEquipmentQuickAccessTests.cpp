@@ -16,6 +16,8 @@
 #include "Engine/Engine.h"
 #include "Engine/GameInstance.h"
 #include "Engine/World.h"
+#include "GameFramework/Actor.h"
+#include "UObject/UnrealType.h"
 
 namespace RpgEquipmentAutomationTests
 {
@@ -117,6 +119,185 @@ bool FRpgQuickAccessBindingContractTest::RunTest(const FString& Parameters)
 			Bindings[Index].SlotType,
 			ERpgActionBarSlotType::Empty);
 	}
+	return true;
+}
+
+IMPLEMENT_SIMPLE_AUTOMATION_TEST(
+	FRpgQuickAccessLegacySlotAddressRestoreTest,
+	"SurvivalRpg.Inventory.QuickAccess.LegacySlotAddressRestore",
+	EAutomationTestFlags::EditorContext | EAutomationTestFlags::EngineFilter)
+
+bool FRpgQuickAccessLegacySlotAddressRestoreTest::RunTest(const FString& Parameters)
+{
+	RpgEquipmentAutomationTests::FScopedEquipmentWorld TestWorld;
+	UWorld* World = TestWorld.GetWorld();
+	if (!TestNotNull(TEXT("Standalone Quick Access restore world is available"), World))
+	{
+		return false;
+	}
+
+	FActorSpawnParameters SpawnParameters;
+	SpawnParameters.Name = MakeUniqueObjectName(
+		World,
+		AActor::StaticClass(),
+		TEXT("QuickAccessRestoreOwner"));
+	SpawnParameters.ObjectFlags = RF_Transient;
+	AActor* OwnerActor = World->SpawnActor<AActor>(SpawnParameters);
+	if (!TestNotNull(TEXT("Quick Access restore owner is spawned"), OwnerActor) ||
+		!TestTrue(TEXT("Quick Access restore owner has server authority"), OwnerActor->HasAuthority()))
+	{
+		return false;
+	}
+
+	URpgActionBarComponent* ActionBar = NewObject<URpgActionBarComponent>(
+		OwnerActor,
+		MakeUniqueObjectName(
+			OwnerActor,
+			URpgActionBarComponent::StaticClass(),
+			TEXT("ActionBar")),
+		RF_Transient);
+	if (!TestNotNull(TEXT("Actor-owned Quick Access component is created"), ActionBar))
+	{
+		return false;
+	}
+
+	OwnerActor->AddInstanceComponent(ActionBar);
+	ActionBar->RegisterComponent();
+	if (!TestTrue(TEXT("Actor-owned Quick Access component is registered"), ActionBar->IsRegistered()))
+	{
+		return false;
+	}
+
+	FNameProperty* LegacyContainerIdProperty = FindFProperty<FNameProperty>(
+		FRpgInventorySlotAddress::StaticStruct(),
+		TEXT("ContainerId"));
+	if (!TestNotNull(
+		TEXT("Historical SlotAddress ContainerId is available to the restore converter"),
+		LegacyContainerIdProperty))
+	{
+		return false;
+	}
+
+	auto SetLegacyContainerId = [LegacyContainerIdProperty](
+		FRpgInventorySlotAddress& Address,
+		FName ContainerId)
+	{
+		*LegacyContainerIdProperty->ContainerPtrToValuePtr<FName>(&Address) = ContainerId;
+	};
+	auto GetLegacyContainerId = [LegacyContainerIdProperty](
+		const FRpgInventorySlotAddress& Address)
+	{
+		return LegacyContainerIdProperty->GetPropertyValue_InContainer(&Address);
+	};
+
+	const FName LegacyOnlyRoot(TEXT("Pockets"));
+	const FName MatchingRoot(TEXT("Backpack"));
+	const FName MatchingItemOwnedLocalId(TEXT("Main"));
+	const FRpgInventoryContainerHandle MatchingItemOwnedHandle =
+		FRpgInventoryContainerHandle::MakeItemOwned(
+			FRpgInventoryItemId(FGuid(11, 22, 33, 44)),
+			MatchingItemOwnedLocalId,
+			1);
+	const FName ConflictingCanonicalRoot(TEXT("Belt"));
+	const FName ConflictingLegacyRoot(TEXT("Gear.Head"));
+
+	TArray<FRpgQuickAccessBinding> SavedBindings;
+	SavedBindings.SetNum(4);
+
+	FRpgQuickAccessBinding& LegacyOnlyBinding = SavedBindings[0];
+	LegacyOnlyBinding.SlotType = ERpgActionBarSlotType::Empty;
+	LegacyOnlyBinding.SlotAddress.X = 2;
+	LegacyOnlyBinding.SlotAddress.Y = 3;
+	SetLegacyContainerId(LegacyOnlyBinding.SlotAddress, LegacyOnlyRoot);
+
+	FRpgQuickAccessBinding& MatchingBinding = SavedBindings[1];
+	MatchingBinding.SlotType = ERpgActionBarSlotType::Empty;
+	MatchingBinding.SlotAddress.SetContainerHandle(
+		FRpgInventoryContainerHandle::MakeRoot(MatchingRoot));
+	MatchingBinding.SlotAddress.X = 4;
+	MatchingBinding.SlotAddress.Y = 5;
+	SetLegacyContainerId(MatchingBinding.SlotAddress, MatchingRoot);
+
+	FRpgQuickAccessBinding& MatchingItemOwnedBinding = SavedBindings[2];
+	MatchingItemOwnedBinding.SlotType = ERpgActionBarSlotType::Empty;
+	MatchingItemOwnedBinding.SlotAddress.SetContainerHandle(
+		MatchingItemOwnedHandle);
+	MatchingItemOwnedBinding.SlotAddress.X = 1;
+	MatchingItemOwnedBinding.SlotAddress.Y = 2;
+	SetLegacyContainerId(
+		MatchingItemOwnedBinding.SlotAddress,
+		MatchingItemOwnedLocalId);
+
+	FRpgQuickAccessBinding& ConflictingBinding = SavedBindings[3];
+	ConflictingBinding.SlotType = ERpgActionBarSlotType::Empty;
+	ConflictingBinding.SlotAddress.SetContainerHandle(
+		FRpgInventoryContainerHandle::MakeRoot(ConflictingCanonicalRoot));
+	ConflictingBinding.SlotAddress.X = 6;
+	ConflictingBinding.SlotAddress.Y = 7;
+	SetLegacyContainerId(ConflictingBinding.SlotAddress, ConflictingLegacyRoot);
+
+	ActionBar->RestoreQuickAccessBindings(SavedBindings);
+	const TArray<FRpgQuickAccessBinding> RestoredBindings = ActionBar->GetQuickAccessBindings();
+	if (!TestEqual(TEXT("Restore preserves the fixed eight-binding contract"), RestoredBindings.Num(), 8))
+	{
+		return false;
+	}
+
+	const FRpgQuickAccessBinding& RestoredLegacyOnly = RestoredBindings[0];
+	TestEqual(
+		TEXT("Legacy-only root address is promoted to its canonical handle"),
+		RestoredLegacyOnly.SlotAddress.GetContainerHandle(),
+		FRpgInventoryContainerHandle::MakeRoot(LegacyOnlyRoot));
+	TestEqual(TEXT("Legacy-only restore preserves X"), RestoredLegacyOnly.SlotAddress.X, 2);
+	TestEqual(TEXT("Legacy-only restore preserves Y"), RestoredLegacyOnly.SlotAddress.Y, 3);
+	TestTrue(TEXT("Promoted legacy-only address is runtime-valid"), RestoredLegacyOnly.SlotAddress.IsValid());
+	TestTrue(
+		TEXT("Legacy-only restore clears the historical ContainerId shadow"),
+		GetLegacyContainerId(RestoredLegacyOnly.SlotAddress).IsNone());
+
+	const FRpgQuickAccessBinding& RestoredMatching = RestoredBindings[1];
+	TestEqual(
+		TEXT("Matching canonical and legacy roots preserve the exact canonical handle"),
+		RestoredMatching.SlotAddress.GetContainerHandle(),
+		FRpgInventoryContainerHandle::MakeRoot(MatchingRoot));
+	TestEqual(TEXT("Matching-root restore preserves X"), RestoredMatching.SlotAddress.X, 4);
+	TestEqual(TEXT("Matching-root restore preserves Y"), RestoredMatching.SlotAddress.Y, 5);
+	TestTrue(
+		TEXT("Matching-root restore clears the historical ContainerId shadow"),
+		GetLegacyContainerId(RestoredMatching.SlotAddress).IsNone());
+
+	const FRpgQuickAccessBinding& RestoredMatchingItemOwned = RestoredBindings[2];
+	TestEqual(
+		TEXT("Matching item-owned legacy shadow preserves the exact canonical owner"),
+		RestoredMatchingItemOwned.SlotAddress.GetContainerHandle(),
+		MatchingItemOwnedHandle);
+	TestEqual(
+		TEXT("Matching item-owned restore preserves X"),
+		RestoredMatchingItemOwned.SlotAddress.X,
+		1);
+	TestEqual(
+		TEXT("Matching item-owned restore preserves Y"),
+		RestoredMatchingItemOwned.SlotAddress.Y,
+		2);
+	TestTrue(
+		TEXT("Matching item-owned restore clears only the historical local-id shadow"),
+		GetLegacyContainerId(RestoredMatchingItemOwned.SlotAddress).IsNone());
+
+	const FRpgQuickAccessBinding& RestoredConflict = RestoredBindings[3];
+	TestEqual(
+		TEXT("Conflicting canonical and legacy roots reset the binding"),
+		RestoredConflict.SlotType,
+		ERpgActionBarSlotType::Empty);
+	TestFalse(
+		TEXT("Conflicting roots cannot leave a runtime-valid slot address"),
+		RestoredConflict.SlotAddress.IsValid());
+	TestFalse(
+		TEXT("Conflicting roots cannot preserve either container handle"),
+		RestoredConflict.SlotAddress.GetContainerHandle().IsValid());
+	TestTrue(
+		TEXT("Reset conflict does not retain the historical ContainerId shadow"),
+		GetLegacyContainerId(RestoredConflict.SlotAddress).IsNone());
+
 	return true;
 }
 

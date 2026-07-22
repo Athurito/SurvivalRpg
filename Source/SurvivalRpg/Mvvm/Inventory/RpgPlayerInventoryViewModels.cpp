@@ -243,9 +243,7 @@ void URpgInventorySlotGroupViewModel::InitializeGroup(const FRpgInventorySlotGro
 {
 	const bool bDisplayNameChanged = !DisplayName.EqualTo(InGroupView.DisplayName);
 
-	ContainerHandle = InGroupView.ContainerHandle.IsValid()
-		? InGroupView.ContainerHandle
-		: FRpgInventoryContainerHandle::MakeRoot(InGroupView.ContainerId);
+	ContainerHandle = InGroupView.ContainerHandle;
 	ContainerId = InGroupView.ContainerId;
 	DisplayName = InGroupView.DisplayName;
 	Icon = InGroupView.Icon;
@@ -586,7 +584,7 @@ void URpgPlayerInventoryViewModel::RefreshSlotGroups()
 
 			for (URpgInventoryAddressSlotViewModel* Slot : Group->GetSlots())
 			{
-				if (Slot)
+				if (Slot && Slot->GetSlotAddress().IsValid())
 				{
 					ReusableSlots.Add(Slot->GetSlotAddress(), Slot);
 				}
@@ -599,7 +597,7 @@ void URpgPlayerInventoryViewModel::RefreshSlotGroups()
 	{
 		for (URpgInventorySlotGroupViewModel* Group : Groups)
 		{
-			if (Group)
+			if (Group && Group->GetContainerHandle().IsValid())
 			{
 				ReusableGroups.Add(Group->GetContainerHandle(), Group);
 			}
@@ -618,6 +616,12 @@ void URpgPlayerInventoryViewModel::RefreshSlotGroups()
 	{
 		for (const FRpgInventorySlotGroupView& GroupView : InventoryLayout->GetSlotGroups())
 		{
+			const FRpgInventoryContainerHandle GroupHandle = GroupView.ContainerHandle;
+			if (!GroupHandle.IsValid() || !GroupView.GridSize.IsValid())
+			{
+				continue;
+			}
+
 			TArray<URpgInventoryAddressSlotViewModel*> GroupSlots;
 			GroupSlots.Reserve(GroupView.GridSize.Width * GroupView.GridSize.Height);
 
@@ -637,9 +641,6 @@ void URpgPlayerInventoryViewModel::RefreshSlotGroups()
 				}
 			}
 
-			const FRpgInventoryContainerHandle GroupHandle = GroupView.ContainerHandle.IsValid()
-				? GroupView.ContainerHandle
-				: FRpgInventoryContainerHandle::MakeRoot(GroupView.ContainerId);
 			URpgInventorySlotGroupViewModel* GroupViewModel = FindReusableGroup(ReusableGroups, GroupHandle);
 			if (!GroupViewModel)
 			{

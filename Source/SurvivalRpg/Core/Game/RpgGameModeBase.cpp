@@ -1378,9 +1378,8 @@ void ARpgGameModeBase::DropInventoryForPlayerDeath(APlayerController* PC, const 
 		const FRpgInventoryContainerHandle EntryContainer =
 			Entry.Placement.GetContainerHandle();
 		const bool bOccupiesPhysicalGearSlot =
-			EntryContainer.IsRoot() &&
 			URpgPlayerInventoryLayoutComponent::
-				IsBuiltInGearGroupId(EntryContainer.Root);
+				IsBuiltInGearContainer(EntryContainer);
 		if (bOccupiesPhysicalGearSlot ||
 			ItemInstance->FindFragmentByClass<
 				URpgInventoryFragment_EquippableItem>() != nullptr)

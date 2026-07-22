@@ -61,10 +61,6 @@ public:
 	UFUNCTION(BlueprintCallable, BlueprintPure = false, Category = "Inventory|Layout")
 	bool TryMakeSlotAddressFromPlacement(const FRpgInventoryGridPlacement& Placement, FRpgInventorySlotAddress& OutAddress) const;
 
-	/** Returns the dimensions of one active logical grid container. */
-	UFUNCTION(BlueprintCallable, BlueprintPure = false, Category = "Inventory|Layout")
-	bool GetGridSizeForContainer(FName ContainerId, FRpgInventoryGridSize& OutGridSize) const;
-
 	/** Returns dimensions for an unambiguous root or item-owned container handle. */
 	UFUNCTION(BlueprintCallable, BlueprintPure = false, Category = "Inventory|Layout")
 	bool GetGridSizeForContainerHandle(FRpgInventoryContainerHandle ContainerHandle, FRpgInventoryGridSize& OutGridSize) const;
@@ -113,21 +109,17 @@ public:
 	UFUNCTION(BlueprintCallable, BlueprintPure = false, Category = "Inventory|Layout")
 	bool CanUnequipSlotContainer(ERpgEquipmentSlot EquipmentSlot) const;
 
-	/** Returns true when a logical container id is one of the built-in carry slot containers. */
+	/** Returns true only when the complete graph address is one of the built-in root gear containers. */
 	UFUNCTION(BlueprintCallable, BlueprintPure, Category = "Inventory|Layout")
-	static bool IsBuiltInCarryGroupId(FName GroupId);
-
-	/** Returns true when a logical container id is one of the built-in dedicated gear slot containers. */
-	UFUNCTION(BlueprintCallable, BlueprintPure, Category = "Inventory|Layout")
-	static bool IsBuiltInGearGroupId(FName GroupId);
+	static bool IsBuiltInGearContainer(FRpgInventoryContainerHandle ContainerHandle);
 
 	/** Builds the logical gear-slot address for an equipment slot such as Head or Backpack. */
 	UFUNCTION(BlueprintCallable, BlueprintPure, Category = "Inventory|Layout")
 	static bool TryMakeGearSlotAddress(ERpgEquipmentSlot EquipmentSlot, FRpgInventorySlotAddress& OutAddress);
 
-	/** Resolves a Gear.* group id back to its equipment slot. */
+	/** Resolves a complete built-in root gear address; item-owned containers with the same local id are rejected. */
 	UFUNCTION(BlueprintCallable, BlueprintPure, Category = "Inventory|Layout")
-	static bool TryGetEquipmentSlotForGearGroupId(FName GroupId, ERpgEquipmentSlot& OutEquipmentSlot);
+	static bool TryGetEquipmentSlotForGearContainer(FRpgInventoryContainerHandle ContainerHandle, ERpgEquipmentSlot& OutEquipmentSlot);
 
 	/** Built-in group ids used by carry/actionbar UI. */
 	static const FName WeaponSlot1GroupId;
@@ -151,6 +143,8 @@ private:
 	void AppendGroupViews(const TArray<FRpgInventorySlotGroupDefinition>& GroupDefinitions, bool bProvidedByEquipment, ERpgEquipmentSlot SourceEquipmentSlot, TArray<FRpgInventorySlotGroupView>& OutGroups) const;
 	void AppendItemContainerViews(const URpgInventoryItemInstance* ProviderItem, ERpgEquipmentSlot SourceEquipmentSlot, TArray<FRpgInventorySlotGroupView>& OutGroups) const;
 	void BroadcastLayoutChanged() const;
+	static bool IsBuiltInGearGroupId(FName GroupId);
+	static bool TryGetEquipmentSlotForGearGroupId(FName GroupId, ERpgEquipmentSlot& OutEquipmentSlot);
 	static FName EquipmentSlotToSourceName(ERpgEquipmentSlot EquipmentSlot);
 	static FRpgInventorySlotGroupDefinition MakeStaticGroup(FName ContainerId, const FText& DisplayName, int32 GridWidth, int32 GridHeight, const TArray<ERpgInventoryItemCategory>& AllowedCategories, bool bActionbarBindable, bool bCarrySlot, ERpgInventorySlotGroupKind GroupKind, FGameplayTag CarryActivationRole = FGameplayTag());
 

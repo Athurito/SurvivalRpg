@@ -381,7 +381,6 @@ struct FRpgInventoryList : public FFastArraySerializer
 
 	TArray<URpgInventoryItemInstance*> GetAllItems() const;
 	TArray<FRpgInventoryEntryView> GetAllEntries() const;
-	URpgInventoryItemInstance* GetItemAtCell(FName ContainerId, int32 X, int32 Y) const;
 	URpgInventoryItemInstance* GetItemAtCell(const FRpgInventoryContainerHandle& ContainerHandle, int32 X, int32 Y) const;
 	bool GetPlacementForItem(URpgInventoryItemInstance* Instance, FRpgInventoryGridPlacement& OutPlacement) const;
 	int32 GetStackCount(URpgInventoryItemInstance* Instance) const;
@@ -425,8 +424,6 @@ private:
 	const FRpgInventoryEntry* FindEntryByEntryId(FGuid EntryId) const;
 	FRpgInventoryEntry* FindEntryByItemId(const FRpgInventoryItemId& ItemId);
 	const FRpgInventoryEntry* FindEntryByItemId(const FRpgInventoryItemId& ItemId) const;
-	FRpgInventoryEntry* FindEntryAtCell(FName ContainerId, int32 X, int32 Y);
-	const FRpgInventoryEntry* FindEntryAtCell(FName ContainerId, int32 X, int32 Y) const;
 	FRpgInventoryEntry* FindEntryOverlapping(const FRpgInventoryGridPlacement& Placement, const FRpgInventoryEntry* IgnoredEntry = nullptr);
 	const FRpgInventoryEntry* FindEntryOverlapping(const FRpgInventoryGridPlacement& Placement, const FRpgInventoryEntry* IgnoredEntry = nullptr) const;
 	void FindEntriesOverlapping(const FRpgInventoryGridPlacement& Placement, const FRpgInventoryEntry* IgnoredEntry, TArray<const FRpgInventoryEntry*>& OutEntries) const;
@@ -644,10 +641,6 @@ public:
 	UFUNCTION(BlueprintCallable, Category=Inventory, BlueprintPure=false)
 	TArray<FRpgInventoryEntryView> GetAllEntries() const;
 
-	/** Returns the item occupying one replicated grid cell, or nullptr for empty/invalid cells. */
-	UFUNCTION(BlueprintCallable, Category = "Inventory|Spatial", BlueprintPure)
-	URpgInventoryItemInstance* GetItemAtCell(FName ContainerId, int32 X, int32 Y) const;
-
 	/** Returns the item occupying a cell in an unambiguous root or item-owned container. */
 	UFUNCTION(BlueprintCallable, Category = "Inventory|Spatial", BlueprintPure)
 	URpgInventoryItemInstance* GetItemAtContainerCell(FRpgInventoryContainerHandle ContainerHandle, int32 X, int32 Y) const;
@@ -666,10 +659,6 @@ public:
 	 */
 	UFUNCTION(BlueprintCallable, BlueprintAuthorityOnly, Category = "Inventory|Spatial")
 	bool ExpandDefaultGridToMinimum(FRpgInventoryGridSize MinimumSize);
-
-	/** Resolves the grid dimensions for a player layout container or this inventory's default storage container. */
-	UFUNCTION(BlueprintCallable, Category = "Inventory|Spatial", BlueprintPure)
-	bool GetGridSizeForContainer(FName ContainerId, FRpgInventoryGridSize& OutGridSize) const;
 
 	/** Resolves grid dimensions for a root or concrete item-owned container. */
 	UFUNCTION(BlueprintCallable, Category = "Inventory|Spatial", BlueprintPure)
@@ -871,14 +860,10 @@ private:
 	void HandleCapacityAttributeChanged(const FOnAttributeChangeData& Data);
 	void BroadcastCapacityChanged() const;
 	const URpgPlayerInventoryLayoutComponent* FindOwningPlayerInventoryLayout() const;
-	bool ShouldUseSingleCellPlacementForContainer(FName ContainerId) const;
+	bool ShouldUseSingleCellPlacementForContainer(const FRpgInventoryContainerHandle& ContainerHandle) const;
 	bool GetItemContainerDefinition(const FRpgInventoryContainerHandle& ContainerHandle, struct FRpgInventoryItemContainerDefinition& OutDefinition) const;
 	bool ValidatePlacementGraphRules(const FRpgInventoryEntry& Entry, const FRpgInventoryGridPlacement& Placement, ERpgInventoryMutationResultCode& OutCode) const;
 	bool WouldCreateContainerCycle(const FRpgInventoryItemId& MovingItemId, const FRpgInventoryContainerHandle& TargetContainer) const;
-	bool TryMakePlacementForItemDefinition(TSubclassOf<URpgInventoryItemDefinition> ItemDef, FName ContainerId, int32 X, int32 Y, bool bRotated, FRpgInventoryGridPlacement& OutPlacement) const;
-	bool TryMakePlacementForItemInstance(URpgInventoryItemInstance* ItemInstance, FName ContainerId, int32 X, int32 Y, bool bRotated, FRpgInventoryGridPlacement& OutPlacement) const;
-	FRpgInventoryGridPlacement MakePlacementForItemDefinition(TSubclassOf<URpgInventoryItemDefinition> ItemDef, FName ContainerId, int32 X, int32 Y, bool bRotated) const;
-	FRpgInventoryGridPlacement MakePlacementForItemInstance(URpgInventoryItemInstance* ItemInstance, FName ContainerId, int32 X, int32 Y, bool bRotated) const;
 	bool AddOwnedItemInstance(
 		URpgInventoryItemInstance* ItemInstance,
 		int32 StackCount,

@@ -1249,26 +1249,11 @@ void URpgInventorySpatialGridWidget::BindSlotGroupViewModel(URpgInventorySlotGro
 	GroupViewModel = InGroupViewModel;
 	PanelViewModel = nullptr;
 	Inventory = nullptr;
-	ContainerId = GroupViewModel ? GroupViewModel->GetGroupId() : NAME_None;
 	ContainerHandle = GroupViewModel ? GroupViewModel->GetContainerHandle() : FRpgInventoryContainerHandle();
 	UpdateGridSizeFromBinding();
 	ObserveSlotDelegates();
 	RebuildItemOverlay();
 	SelectBestCell(GetOwningPlayer(), false);
-}
-
-void URpgInventorySpatialGridWidget::BindInventoryPanelViewModel(URpgInventoryPanelViewModel* InPanelViewModel, URpgInventoryManagerComponent* InInventory, FName InContainerId)
-{
-	URpgInventoryManagerComponent* ResolvedInventory = InInventory
-		? InInventory
-		: (InPanelViewModel ? InPanelViewModel->GetObservedInventory() : nullptr);
-	const FName ResolvedContainerId = !InContainerId.IsNone()
-		? InContainerId
-		: (ResolvedInventory ? ResolvedInventory->GetDefaultContainerId() : NAME_None);
-	BindInventoryContainerPanelViewModel(
-		InPanelViewModel,
-		ResolvedInventory,
-		FRpgInventoryContainerHandle::MakeRoot(ResolvedContainerId));
 }
 
 void URpgInventorySpatialGridWidget::BindInventoryContainerPanelViewModel(
@@ -1299,15 +1284,17 @@ void URpgInventorySpatialGridWidget::BindInventoryContainerPanelViewModel(
 	PanelViewModel = InPanelViewModel;
 	Inventory = InInventory ? InInventory : (PanelViewModel ? PanelViewModel->GetObservedInventory() : nullptr);
 	ContainerHandle = InContainerHandle;
-	if (!ContainerHandle.IsValid() && Inventory)
-	{
-		ContainerHandle = FRpgInventoryContainerHandle::MakeRoot(Inventory->GetDefaultContainerId());
-	}
-	ContainerId = ContainerHandle.ContainerId;
 
 	if (PanelViewModel)
 	{
-		PanelViewModel->BindInventoryContainer(Inventory, ContainerHandle);
+		if (Inventory && ContainerHandle.IsValid())
+		{
+			PanelViewModel->BindInventoryContainer(Inventory, ContainerHandle);
+		}
+		else
+		{
+			PanelViewModel->UnbindInventory();
+		}
 		PanelViewModel->OnEntriesChanged.AddUniqueDynamic(this, &ThisClass::RefreshFromPanelViewModel);
 	}
 
@@ -2902,18 +2889,23 @@ void URpgInventorySpatialGridWidget::UpdateGridSizeFromBinding()
 	if (GroupViewModel)
 	{
 		GridSize = GroupViewModel->GetGridSize();
-		ContainerId = GroupViewModel->GetGroupId();
 		ContainerHandle = GroupViewModel->GetContainerHandle();
 	}
 	else if (Inventory)
 	{
 		FRpgInventoryGridSize ResolvedGridSize;
 		const FRpgInventoryContainerHandle ResolvedContainerHandle = ResolveContainerHandle();
-		GridSize = Inventory->GetGridSizeForContainerHandle(ResolvedContainerHandle, ResolvedGridSize)
-			? ResolvedGridSize
-			: Inventory->GetDefaultGridSize();
+		if (ResolvedContainerHandle.IsValid() &&
+			Inventory->GetGridSizeForContainerHandle(ResolvedContainerHandle, ResolvedGridSize))
+		{
+			GridSize = ResolvedGridSize;
+		}
+		else
+		{
+			GridSize.Width = 0;
+			GridSize.Height = 0;
+		}
 		ContainerHandle = ResolvedContainerHandle;
-		ContainerId = ResolvedContainerHandle.ContainerId;
 	}
 	else
 	{
@@ -3660,20 +3652,7 @@ FVector2D URpgInventorySpatialGridWidget::GetPlacementSize(const FRpgInventoryGr
 
 FRpgInventoryContainerHandle URpgInventorySpatialGridWidget::ResolveContainerHandle() const
 {
-	if (ContainerHandle.IsValid())
-	{
-		return ContainerHandle;
-	}
-
-	const FName ResolvedId = !ContainerId.IsNone()
-		? ContainerId
-		: (Inventory ? Inventory->GetDefaultContainerId() : NAME_None);
-	return FRpgInventoryContainerHandle::MakeRoot(ResolvedId);
-}
-
-FName URpgInventorySpatialGridWidget::ResolveContainerId() const
-{
-	return ResolveContainerHandle().ContainerId;
+	return ContainerHandle;
 }
 
 bool URpgInventorySpatialGridWidget::IsValidCell(int32 X, int32 Y) const

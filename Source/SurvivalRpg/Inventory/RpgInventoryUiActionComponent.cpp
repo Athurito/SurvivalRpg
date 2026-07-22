@@ -1487,13 +1487,14 @@ void URpgInventoryUiActionComponent::RequestMoveItemToInventorySlotAddress_Imple
 	if (bHasSourceAddress && InventoryLayout->IsGearSlotAddress(SourceAddress))
 	{
 		ERpgEquipmentSlot SourceEquipmentSlot = ERpgEquipmentSlot::None;
-		if (URpgPlayerInventoryLayoutComponent::TryGetEquipmentSlotForGearGroupId(SourceAddress.ContainerId, SourceEquipmentSlot) &&
+		if (URpgPlayerInventoryLayoutComponent::TryGetEquipmentSlotForGearContainer(
+				SourceAddress.GetContainerHandle(), SourceEquipmentSlot) &&
 			URpgPlayerInventoryLayoutComponent::IsSlotContainerEquipmentSlot(SourceEquipmentSlot))
 		{
 			bool bTargetIsStaticContent = false;
 			for (const FRpgInventorySlotGroupView& Group : InventoryLayout->GetSlotGroups())
 			{
-				if (Group.MakeAddress(TargetAddress.X, TargetAddress.Y).GetContainerHandle() == TargetAddress.GetContainerHandle() &&
+				if (Group.ContainerHandle == TargetAddress.GetContainerHandle() &&
 					Group.ContainsCell(TargetAddress.X, TargetAddress.Y))
 				{
 					bTargetIsStaticContent = Group.GroupKind == ERpgInventorySlotGroupKind::Content && !Group.bProvidedByEquipment;
@@ -1787,8 +1788,11 @@ void URpgInventoryUiActionComponent::RequestMutateQuickAccessBinding_Implementat
 	{
 	case ERpgQuickAccessMutationOperation::BindCarry:
 	{
+		const FRpgInventoryContainerHandle SourceContainer =
+			Request.SourceAddress.GetContainerHandle();
 		if (!Request.SourceAddress.IsValid() || Request.ExpectedCarryRole.IsNone() ||
-			Request.SourceAddress.ContainerId != Request.ExpectedCarryRole ||
+			!SourceContainer.IsRoot() ||
+			SourceContainer.Root != Request.ExpectedCarryRole ||
 			!InventoryLayout->IsCarrySlotAddress(Request.SourceAddress))
 		{
 			SendQuickAccessFeedback(ERpgInventoryActionFeedbackResult::InvalidSlot);
@@ -1926,7 +1930,12 @@ void URpgInventoryUiActionComponent::RequestBindActionBarToCarrySlot_Implementat
 	Request.Operation = ERpgQuickAccessMutationOperation::BindCarry;
 	Request.SlotIndex = ActionBarSlotIndex;
 	Request.SourceAddress = CarrySlotAddress;
-	Request.ExpectedCarryRole = CarrySlotAddress.ContainerId;
+	const FRpgInventoryContainerHandle CarryContainer =
+		CarrySlotAddress.GetContainerHandle();
+	Request.ExpectedCarryRole =
+		CarryContainer.IsRoot()
+			? CarryContainer.Root
+			: NAME_None;
 	Request.ContextItemId = SourceItem ? SourceItem->GetItemId() : FRpgInventoryItemId();
 	RequestMutateQuickAccessBinding_Implementation(Request);
 }
@@ -3523,8 +3532,8 @@ URpgInventoryUiActionComponent::PlanEquipmentIntentPlacement(
 			ERpgEquipmentSlot::None;
 		if (InventoryLayout->IsGearSlotAddress(SourceAddress) &&
 			URpgPlayerInventoryLayoutComponent::
-				TryGetEquipmentSlotForGearGroupId(
-					SourceAddress.ContainerId,
+				TryGetEquipmentSlotForGearContainer(
+					SourceAddress.GetContainerHandle(),
 					SourceEquipmentSlot) &&
 			URpgPlayerInventoryLayoutComponent::
 				IsSlotContainerEquipmentSlot(SourceEquipmentSlot))
@@ -3845,13 +3854,17 @@ void URpgInventoryUiActionComponent::BuildDefaultQuickTransferTargets(
 	}
 
 	const TArray<FRpgInventorySlotGroupView> Groups = InventoryLayout->GetSlotGroups();
-	auto AddGroups = [&Groups, Item, &OutTargets](FName ContainerId, FName ProviderSlotName)
+	auto AddGroups = [&Groups, Item, &OutTargets](
+		const FRpgInventoryContainerHandle& ContainerHandle,
+		FName ProviderSlotName)
 	{
 		for (const FRpgInventorySlotGroupView& Group : Groups)
 		{
-			const bool bMatchesContainer = !ContainerId.IsNone() && Group.ContainerId == ContainerId;
+			const bool bMatchesContainer = ContainerHandle.IsValid() &&
+				Group.ContainerHandle == ContainerHandle;
 			const bool bMatchesProvider = !ProviderSlotName.IsNone() && Group.SourceEquipmentSlotName == ProviderSlotName;
 			if (Group.GroupKind == ERpgInventorySlotGroupKind::Content &&
+				Group.ContainerHandle.IsValid() &&
 				(bMatchesContainer || bMatchesProvider) && Group.Rule.AllowsItem(Item))
 			{
 				OutTargets.AddUnique(Group.ContainerHandle);
@@ -3863,13 +3876,17 @@ void URpgInventoryUiActionComponent::BuildDefaultQuickTransferTargets(
 	{
 		// External loot/storage enters quick-access content first, then the equipped backpack, followed by any
 		// additional designer-defined content groups in their stable layout order.
-		AddGroups(URpgPlayerInventoryLayoutComponent::PocketsGroupId, NAME_None);
-		AddGroups(NAME_None, TEXT("Belt"));
-		AddGroups(NAME_None, TEXT("Pouch"));
-		AddGroups(NAME_None, TEXT("Backpack"));
+		AddGroups(
+			FRpgInventoryContainerHandle::MakeRoot(
+				URpgPlayerInventoryLayoutComponent::PocketsGroupId),
+			NAME_None);
+		AddGroups(FRpgInventoryContainerHandle(), TEXT("Belt"));
+		AddGroups(FRpgInventoryContainerHandle(), TEXT("Pouch"));
+		AddGroups(FRpgInventoryContainerHandle(), TEXT("Backpack"));
 		for (const FRpgInventorySlotGroupView& Group : Groups)
 		{
-			if (Group.GroupKind == ERpgInventorySlotGroupKind::Content && Group.Rule.AllowsItem(Item))
+			if (Group.GroupKind == ERpgInventorySlotGroupKind::Content &&
+				Group.ContainerHandle.IsValid() && Group.Rule.AllowsItem(Item))
 			{
 				OutTargets.AddUnique(Group.ContainerHandle);
 			}
@@ -3890,24 +3907,28 @@ void URpgInventoryUiActionComponent::BuildDefaultQuickTransferTargets(
 		});
 	const bool bSourceIsBackpackContent = SourceGroup && SourceGroup->SourceEquipmentSlotName == FName(TEXT("Backpack"));
 	const bool bSourceIsQuickContent = SourceGroup &&
-		(SourceGroup->ContainerId == URpgPlayerInventoryLayoutComponent::PocketsGroupId ||
+		(SourceGroup->ContainerHandle == FRpgInventoryContainerHandle::MakeRoot(
+			URpgPlayerInventoryLayoutComponent::PocketsGroupId) ||
 		 SourceGroup->SourceEquipmentSlotName == FName(TEXT("Belt")) ||
 		 SourceGroup->SourceEquipmentSlotName == FName(TEXT("Pouch")));
 
 	if (bSourceIsBackpackContent)
 	{
-		AddGroups(URpgPlayerInventoryLayoutComponent::PocketsGroupId, NAME_None);
-		AddGroups(NAME_None, TEXT("Belt"));
-		AddGroups(NAME_None, TEXT("Pouch"));
+		AddGroups(
+			FRpgInventoryContainerHandle::MakeRoot(
+				URpgPlayerInventoryLayoutComponent::PocketsGroupId),
+			NAME_None);
+		AddGroups(FRpgInventoryContainerHandle(), TEXT("Belt"));
+		AddGroups(FRpgInventoryContainerHandle(), TEXT("Pouch"));
 	}
 	else if (bSourceIsQuickContent)
 	{
-		AddGroups(NAME_None, TEXT("Backpack"));
+		AddGroups(FRpgInventoryContainerHandle(), TEXT("Backpack"));
 	}
 	else
 	{
 		// Gear, Carry, and any other player roots quick-transfer into the backpack without activating equipment.
-		AddGroups(NAME_None, TEXT("Backpack"));
+		AddGroups(FRpgInventoryContainerHandle(), TEXT("Backpack"));
 	}
 }
 
@@ -4708,7 +4729,9 @@ bool URpgInventoryUiActionComponent::TryMoveItemToFirstCompatibleCarrySlot(
 
 	for (const FRpgInventorySlotGroupView& Group : InventoryLayout->GetSlotGroups())
 	{
-		if (Group.GroupKind != ERpgInventorySlotGroupKind::Carry || !Group.Rule.bCarrySlot || !Group.Rule.AllowsItem(Item))
+		if (Group.GroupKind != ERpgInventorySlotGroupKind::Carry ||
+			!Group.ContainerHandle.IsRoot() ||
+			!Group.Rule.bCarrySlot || !Group.Rule.AllowsItem(Item))
 		{
 			continue;
 		}
@@ -4718,9 +4741,7 @@ bool URpgInventoryUiActionComponent::TryMoveItemToFirstCompatibleCarrySlot(
 			for (int32 X = 0; X < Group.GridSize.Width; ++X)
 			{
 				FRpgInventoryGridPlacement TargetPlacement;
-				TargetPlacement.SetContainerHandle(Group.ContainerHandle.IsValid()
-					? Group.ContainerHandle
-					: FRpgInventoryContainerHandle::MakeRoot(Group.ContainerId));
+				TargetPlacement.SetContainerHandle(Group.ContainerHandle);
 				TargetPlacement.X = X;
 				TargetPlacement.Y = Y;
 				TargetPlacement.Width = 1;
@@ -4828,7 +4849,8 @@ bool URpgInventoryUiActionComponent::TryMoveItemToFirstCompatibleContentSlot(
 bool URpgInventoryUiActionComponent::CanMoveItemOutOfGearSlot(const FRpgInventorySlotAddress& SourceAddress) const
 {
 	ERpgEquipmentSlot EquipmentSlot = ERpgEquipmentSlot::None;
-	if (!URpgPlayerInventoryLayoutComponent::TryGetEquipmentSlotForGearGroupId(SourceAddress.ContainerId, EquipmentSlot))
+	if (!URpgPlayerInventoryLayoutComponent::TryGetEquipmentSlotForGearContainer(
+			SourceAddress.GetContainerHandle(), EquipmentSlot))
 	{
 		return true;
 	}

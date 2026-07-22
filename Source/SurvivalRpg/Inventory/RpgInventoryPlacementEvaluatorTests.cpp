@@ -4,6 +4,7 @@
 
 #include "RpgInventoryItemInstance.h"
 #include "RpgInventoryManagerComponent.h"
+#include "RpgPlayerInventoryLayoutComponent.h"
 #include "SurvivalRpg/GameplayTags/RpgGameplayTags.h"
 
 #include "Engine/Engine.h"
@@ -660,6 +661,96 @@ bool FRpgInventoryPlacementHandleAndSubtreeCapacityTest::RunTest(
 			CollisionBag->GetItemId(),
 			TEXT("Gear.Head"),
 			1);
+	const FRpgInventoryContainerHandle RootGearHead =
+		FRpgInventoryContainerHandle::MakeRoot(
+			URpgPlayerInventoryLayoutComponent::GearHeadGroupId);
+	TestTrue(
+		TEXT("The exact built-in root Gear.Head handle is classified as gear"),
+		URpgPlayerInventoryLayoutComponent::IsBuiltInGearContainer(
+			RootGearHead));
+	TestFalse(
+		TEXT("An item-owned Gear.Head handle is not classified as built-in gear"),
+		URpgPlayerInventoryLayoutComponent::IsBuiltInGearContainer(
+			CollidingContents));
+
+	ERpgEquipmentSlot RootEquipmentSlot = ERpgEquipmentSlot::None;
+	TestTrue(
+		TEXT("The exact root Gear.Head handle resolves to an equipment slot"),
+		URpgPlayerInventoryLayoutComponent::TryGetEquipmentSlotForGearContainer(
+			RootGearHead,
+			RootEquipmentSlot));
+	TestEqual(
+		TEXT("The built-in root Gear.Head handle maps to the Head slot"),
+		RootEquipmentSlot,
+		ERpgEquipmentSlot::Head);
+
+	ERpgEquipmentSlot CollidingEquipmentSlot = ERpgEquipmentSlot::Head;
+	TestFalse(
+		TEXT("The item-owned Gear.Head handle cannot resolve as equipment"),
+		URpgPlayerInventoryLayoutComponent::TryGetEquipmentSlotForGearContainer(
+			CollidingContents,
+			CollidingEquipmentSlot));
+	TestEqual(
+		TEXT("Rejected item-owned gear-name aliases leave no equipment slot"),
+		CollidingEquipmentSlot,
+		ERpgEquipmentSlot::None);
+
+	const URpgPlayerInventoryLayoutComponent* DefaultLayout =
+		GetDefault<URpgPlayerInventoryLayoutComponent>();
+	FRpgInventorySlotAddress RootGearAddress;
+	FRpgInventoryGridPlacement RootGearPlacement;
+	if (!TestNotNull(TEXT("The default player inventory layout exists"), DefaultLayout) ||
+		!TestTrue(
+			TEXT("The Head equipment slot produces a canonical root address"),
+			URpgPlayerInventoryLayoutComponent::TryMakeGearSlotAddress(
+				ERpgEquipmentSlot::Head,
+				RootGearAddress)) ||
+		!TestEqual(
+			TEXT("The canonical Head address keeps the complete root handle"),
+			RootGearAddress.GetContainerHandle(),
+			RootGearHead) ||
+		!TestTrue(
+			TEXT("The root Gear.Head address normalizes to a layout placement"),
+			DefaultLayout->ResolveSlotAddress(
+				RootGearAddress,
+				RootGearPlacement)))
+	{
+		return false;
+	}
+	TestEqual(
+		TEXT("Root Gear.Head normalization keeps the exact root handle"),
+		RootGearPlacement.GetContainerHandle(),
+		RootGearHead);
+	TestEqual(
+		TEXT("Root Gear.Head normalization uses single-cell width"),
+		RootGearPlacement.Width,
+		1);
+	TestEqual(
+		TEXT("Root Gear.Head normalization uses single-cell height"),
+		RootGearPlacement.Height,
+		1);
+	TestFalse(
+		TEXT("Root Gear.Head single-cell normalization disables rotation"),
+		RootGearPlacement.bRotated);
+
+	FRpgInventoryGridSize CollidingGridSize;
+	if (!TestTrue(
+		TEXT("The exact item-owned Gear.Head handle resolves its provider grid"),
+		CollisionInventory->GetGridSizeForContainerHandle(
+			CollidingContents,
+			CollidingGridSize)))
+	{
+		return false;
+	}
+	TestEqual(
+		TEXT("The item-owned Gear.Head grid retains its real width"),
+		CollidingGridSize.Width,
+		4);
+	TestEqual(
+		TEXT("The item-owned Gear.Head grid retains its real height"),
+		CollidingGridSize.Height,
+		4);
+
 	const FRpgInventoryPlacementSubject WideSubject =
 		FRpgInventoryPlacementSubject::FromDefinition(
 			URpgInventoryAutomationTestWideItemDefinition::StaticClass(),

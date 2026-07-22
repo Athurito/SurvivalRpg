@@ -128,17 +128,23 @@ bool URpgActionBarComponent::TryBindCarrySlotToSlotAuthority(
 		return false;
 	}
 
+	const FRpgInventoryContainerHandle CarryContainer = SlotAddress.GetContainerHandle();
+	if (!CarryContainer.IsRoot())
+	{
+		return false;
+	}
+
 	FRpgActionBarSlot Binding;
 	Binding.SlotType = ERpgActionBarSlotType::CarrySlot;
 	Binding.SlotAddress = SlotAddress;
-	Binding.CarryRole = SlotAddress.ContainerId;
+	Binding.CarryRole = CarryContainer.Root;
 	ClearDuplicateBinding(SlotIndex, Binding);
 	Slots[SlotIndex] = Binding;
 	RefreshBindingsInternal(true);
 	const FRpgActionBarSlot& AppliedSlot = Slots[SlotIndex];
 	return AppliedSlot.SlotType == ERpgActionBarSlotType::CarrySlot &&
 		AppliedSlot.SlotAddress == SlotAddress &&
-		AppliedSlot.CarryRole == SlotAddress.ContainerId;
+		AppliedSlot.CarryRole == CarryContainer.Root;
 }
 
 void URpgActionBarComponent::RequestBindCarryRoleToSlot_Implementation(int32 SlotIndex, FName CarryRole)
@@ -232,6 +238,12 @@ void URpgActionBarComponent::RestoreQuickAccessBindings(const TArray<FRpgQuickAc
 		TargetBinding = SavedBindings.IsValidIndex(SlotIndex)
 			? SavedBindings[SlotIndex]
 			: FRpgQuickAccessBinding();
+		if (!TargetBinding.SlotAddress.TryMigrateDeprecatedRootForSave())
+		{
+			TargetBinding.Reset();
+			continue;
+		}
+
 		if (TargetBinding.SlotType == ERpgActionBarSlotType::InventorySlotBinding)
 		{
 			TargetBinding.SlotType = ERpgActionBarSlotType::Consumable;
@@ -556,7 +568,7 @@ bool URpgActionBarComponent::IsValidCarryRole(FName CarryRole, FRpgInventorySlot
 
 	for (const FRpgInventorySlotGroupView& Group : InventoryLayout->GetSlotGroups())
 	{
-		if (Group.ContainerId == CarryRole &&
+		if (Group.ContainerHandle == FRpgInventoryContainerHandle::MakeRoot(CarryRole) &&
 			Group.GroupKind == ERpgInventorySlotGroupKind::Carry &&
 			Group.Rule.bCarrySlot &&
 			Group.ContainsCell(0, 0))
@@ -593,9 +605,15 @@ void URpgActionBarComponent::RefreshBindingAvailability(
 	if (Slot.SlotType == ERpgActionBarSlotType::CarrySlot)
 	{
 		// Migrate pre-typed actionbar data whose numeric enum value already maps to CarrySlot.
-		if (Slot.CarryRole.IsNone() && Slot.SlotAddress.IsValid())
+		const FRpgInventoryContainerHandle SavedCarryContainer =
+			Slot.SlotAddress.GetContainerHandle();
+		FRpgInventorySlotAddress MigratedCarryAddress;
+		if (Slot.CarryRole.IsNone() &&
+			Slot.SlotAddress.IsValid() &&
+			SavedCarryContainer.IsRoot() &&
+			IsValidCarryRole(SavedCarryContainer.Root, MigratedCarryAddress))
 		{
-			Slot.CarryRole = Slot.SlotAddress.ContainerId;
+			Slot.CarryRole = SavedCarryContainer.Root;
 		}
 
 		FRpgInventorySlotAddress CarryAddress;

@@ -550,7 +550,8 @@ bool FRpgInventoryQuickAccessReplicatedConfirmationTest::RunTest(const FString& 
 	const FRpgInventoryItemId PendingItemId = FRpgInventoryItemId::NewId();
 
 	FRpgInventoryDragPayload PendingCarryPayload;
-	PendingCarryPayload.SourceSlotAddress.ContainerId = CarryRole;
+	PendingCarryPayload.SourceSlotAddress.SetContainerHandle(
+		FRpgInventoryContainerHandle::MakeRoot(CarryRole));
 	PendingCarryPayload.SourceSlotAddress.X = 0;
 	PendingCarryPayload.SourceSlotAddress.Y = 0;
 

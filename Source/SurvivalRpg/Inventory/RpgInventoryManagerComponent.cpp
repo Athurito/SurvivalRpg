@@ -658,12 +658,6 @@ bool FRpgInventoryList::CanInsertOwnedInstance(const URpgInventoryItemInstance* 
 	return true;
 }
 
-URpgInventoryItemInstance* FRpgInventoryList::GetItemAtCell(FName ContainerId, int32 X, int32 Y) const
-{
-	const FRpgInventoryEntry* Entry = FindEntryAtCell(ContainerId, X, Y);
-	return Entry ? Entry->Instance.Get() : nullptr;
-}
-
 URpgInventoryItemInstance* FRpgInventoryList::GetItemAtCell(const FRpgInventoryContainerHandle& ContainerHandle, int32 X, int32 Y) const
 {
 	if (!ContainerHandle.IsValid())
@@ -1093,34 +1087,6 @@ const FRpgInventoryEntry* FRpgInventoryList::FindEntryByItemId(const FRpgInvento
 	});
 }
 
-FRpgInventoryEntry* FRpgInventoryList::FindEntryAtCell(FName ContainerId, int32 X, int32 Y)
-{
-	for (FRpgInventoryEntry& Entry : Entries)
-	{
-		if (Entry.Instance != nullptr && Entry.StackCount > 0 && Entry.Placement.ContainsCell(X, Y) &&
-			Entry.Placement.GetContainerHandle() == FRpgInventoryContainerHandle::MakeRoot(ContainerId))
-		{
-			return &Entry;
-		}
-	}
-
-	return nullptr;
-}
-
-const FRpgInventoryEntry* FRpgInventoryList::FindEntryAtCell(FName ContainerId, int32 X, int32 Y) const
-{
-	for (const FRpgInventoryEntry& Entry : Entries)
-	{
-		if (Entry.Instance != nullptr && Entry.StackCount > 0 && Entry.Placement.ContainsCell(X, Y) &&
-			Entry.Placement.GetContainerHandle() == FRpgInventoryContainerHandle::MakeRoot(ContainerId))
-		{
-			return &Entry;
-		}
-	}
-
-	return nullptr;
-}
-
 FRpgInventoryEntry* FRpgInventoryList::FindEntryOverlapping(const FRpgInventoryGridPlacement& Placement, const FRpgInventoryEntry* IgnoredEntry)
 {
 	for (FRpgInventoryEntry& Entry : Entries)
@@ -1433,13 +1399,14 @@ bool FRpgInventoryList::FindFirstFitPlacement(
 		return false;
 	}
 
+	const FRpgInventoryContainerHandle DefaultHandle =
+		FRpgInventoryContainerHandle::MakeRoot(Inventory->DefaultContainerId);
 	FRpgInventoryGridSize DefaultGridSize;
-	if (!Inventory->GetGridSizeForContainer(Inventory->DefaultContainerId, DefaultGridSize))
+	if (!Inventory->GetGridSizeForContainerHandle(DefaultHandle, DefaultGridSize))
 	{
 		return false;
 	}
 
-	const FRpgInventoryContainerHandle DefaultHandle = FRpgInventoryContainerHandle::MakeRoot(Inventory->DefaultContainerId);
 	return TryFindInGrid(DefaultHandle, DefaultGridSize, OutPlacement);
 }
 
@@ -1483,8 +1450,7 @@ bool FRpgInventoryList::FindFirstFitPlacementInContainer(
 	FRpgInventoryGridSize Footprint =
 		GetInventoryManagerFootprintForDefinition(ItemDef, false);
 	bool bAllowRotation = CanInventoryManagerRotateDefinition(ItemDef);
-	if (ContainerHandle.IsRoot() &&
-		Inventory->ShouldUseSingleCellPlacementForContainer(ContainerHandle.Root))
+	if (Inventory->ShouldUseSingleCellPlacementForContainer(ContainerHandle))
 	{
 		Footprint.Width = 1;
 		Footprint.Height = 1;
@@ -1605,7 +1571,7 @@ bool FRpgInventoryList::SetOrderFromSortedEntryPointers(
 		FRpgInventoryGridPlacement NewPlacement = Entry->Placement;
 		const FRpgInventoryContainerHandle EntryContainer = Entry->Placement.GetContainerHandle();
 		TArray<FRpgInventoryGridPlacement>& ContainerScratch = ScratchOccupancyByContainer.FindOrAdd(EntryContainer);
-		if (!(EntryContainer.IsRoot() && Inventory->ShouldUseSingleCellPlacementForContainer(EntryContainer.Root)) &&
+		if (!Inventory->ShouldUseSingleCellPlacementForContainer(EntryContainer) &&
 			!FindFirstFitPlacementInContainer(Entry->Instance->GetItemDef(), EntryContainer, ContainerScratch, NewPlacement))
 		{
 			// Sort is a single mutation. Never leave a fragmented container half repacked.
@@ -1805,8 +1771,7 @@ bool URpgInventoryManagerComponent::TryNormalizePlacementForDefinition(
 
 	// Gear/Carry single-cell semantics are a property of a root layout group. An item-owned
 	// container may legitimately reuse the same local name and must retain the item's real footprint.
-	if (ContainerHandle.IsRoot() &&
-		ShouldUseSingleCellPlacementForContainer(ContainerHandle.Root))
+	if (ShouldUseSingleCellPlacementForContainer(ContainerHandle))
 	{
 		OutPlacement.Width = 1;
 		OutPlacement.Height = 1;
@@ -2648,7 +2613,7 @@ FRpgInventoryPlacementPlan URpgInventoryManagerComponent::EvaluatePlacementInter
 			FRpgInventoryGridSize Footprint =
 				GetInventoryManagerFootprintForDefinition(Subject.ItemDefinition, false);
 			bool bAllowRotation = CanInventoryManagerRotateDefinition(Subject.ItemDefinition);
-			if (Container.IsRoot() && ShouldUseSingleCellPlacementForContainer(Container.Root))
+			if (ShouldUseSingleCellPlacementForContainer(Container))
 			{
 				Footprint.Width = 1;
 				Footprint.Height = 1;
@@ -3934,11 +3899,6 @@ TArray<URpgInventoryItemInstance*> URpgInventoryManagerComponent::GetAllItems() 
 TArray<FRpgInventoryEntryView> URpgInventoryManagerComponent::GetAllEntries() const
 {
 	return InventoryList.GetAllEntries();
-}
-
-URpgInventoryItemInstance* URpgInventoryManagerComponent::GetItemAtCell(FName ContainerId, int32 X, int32 Y) const
-{
-	return InventoryList.GetItemAtCell(ContainerId, X, Y);
 }
 
 URpgInventoryItemInstance* URpgInventoryManagerComponent::GetItemAtContainerCell(FRpgInventoryContainerHandle ContainerHandle, int32 X, int32 Y) const
@@ -6404,7 +6364,7 @@ bool URpgInventoryManagerComponent::RestoreInventoryGraphInternal(
 		const FRpgInventoryContainerHandle Handle = Stage.Placement.GetContainerHandle();
 		if (Handle.IsRoot())
 		{
-			if (!GetGridSizeForContainer(Handle.Root, GridSize))
+			if (!GetGridSizeForContainerHandle(Handle, GridSize))
 			{
 				OutResult.Code = ERpgInventoryMutationResultCode::InvalidContainer;
 				return false;
@@ -6716,28 +6676,6 @@ const URpgPlayerInventoryLayoutComponent* URpgInventoryManagerComponent::FindOwn
 	return InventoryLayout && RpgPlayerState && RpgPlayerState->GetInventoryManagerComponent() == this ? InventoryLayout : nullptr;
 }
 
-bool URpgInventoryManagerComponent::GetGridSizeForContainer(FName ContainerId, FRpgInventoryGridSize& OutGridSize) const
-{
-	OutGridSize = FRpgInventoryGridSize();
-	if (ContainerId.IsNone())
-	{
-		return false;
-	}
-
-	if (const URpgPlayerInventoryLayoutComponent* InventoryLayout = FindOwningPlayerInventoryLayout())
-	{
-		return InventoryLayout->GetGridSizeForContainer(ContainerId, OutGridSize);
-	}
-
-	if (ContainerId == DefaultContainerId)
-	{
-		OutGridSize = DefaultGridSize;
-		return OutGridSize.IsValid();
-	}
-
-	return false;
-}
-
 bool URpgInventoryManagerComponent::GetGridSizeForContainerHandle(FRpgInventoryContainerHandle ContainerHandle, FRpgInventoryGridSize& OutGridSize) const
 {
 	OutGridSize = FRpgInventoryGridSize();
@@ -6748,7 +6686,21 @@ bool URpgInventoryManagerComponent::GetGridSizeForContainerHandle(FRpgInventoryC
 
 	if (ContainerHandle.IsRoot())
 	{
-		return GetGridSizeForContainer(ContainerHandle.Root, OutGridSize);
+		if (const URpgPlayerInventoryLayoutComponent* InventoryLayout = FindOwningPlayerInventoryLayout())
+		{
+			return InventoryLayout->GetGridSizeForContainerHandle(
+				ContainerHandle,
+				OutGridSize);
+		}
+
+		if (ContainerHandle ==
+			FRpgInventoryContainerHandle::MakeRoot(DefaultContainerId))
+		{
+			OutGridSize = DefaultGridSize;
+			return OutGridSize.IsValid();
+		}
+
+		return false;
 	}
 
 	FRpgInventoryItemContainerDefinition Definition;
@@ -6915,10 +6867,10 @@ bool URpgInventoryManagerComponent::WouldCreateContainerCycle(
 	return AncestorItemId.IsValid();
 }
 
-bool URpgInventoryManagerComponent::ShouldUseSingleCellPlacementForContainer(FName ContainerId) const
+bool URpgInventoryManagerComponent::ShouldUseSingleCellPlacementForContainer(
+	const FRpgInventoryContainerHandle& ContainerHandle) const
 {
-	const FName ResolvedContainerId = ContainerId.IsNone() ? DefaultContainerId : ContainerId;
-	if (ResolvedContainerId.IsNone())
+	if (!ContainerHandle.IsRoot())
 	{
 		return false;
 	}
@@ -6931,7 +6883,7 @@ bool URpgInventoryManagerComponent::ShouldUseSingleCellPlacementForContainer(FNa
 
 	for (const FRpgInventorySlotGroupView& Group : InventoryLayout->GetSlotGroups())
 	{
-		if (Group.ContainerId == ResolvedContainerId)
+		if (Group.ContainerHandle == ContainerHandle)
 		{
 			return Group.GroupKind == ERpgInventorySlotGroupKind::Gear ||
 				Group.GroupKind == ERpgInventorySlotGroupKind::Carry;
@@ -6939,55 +6891,6 @@ bool URpgInventoryManagerComponent::ShouldUseSingleCellPlacementForContainer(FNa
 	}
 
 	return false;
-}
-
-bool URpgInventoryManagerComponent::TryMakePlacementForItemDefinition(
-	TSubclassOf<URpgInventoryItemDefinition> ItemDef,
-	FName ContainerId,
-	int32 X,
-	int32 Y,
-	bool bRotated,
-	FRpgInventoryGridPlacement& OutPlacement) const
-{
-	const FName ResolvedContainerId = ContainerId.IsNone() ? DefaultContainerId : ContainerId;
-	if (ResolvedContainerId.IsNone())
-	{
-		OutPlacement = FRpgInventoryGridPlacement();
-		return false;
-	}
-
-	return TryNormalizePlacementForDefinition(
-		ItemDef,
-		FRpgInventoryContainerHandle::MakeRoot(ResolvedContainerId),
-		X,
-		Y,
-		bRotated,
-		OutPlacement);
-}
-
-bool URpgInventoryManagerComponent::TryMakePlacementForItemInstance(
-	URpgInventoryItemInstance* ItemInstance,
-	FName ContainerId,
-	int32 X,
-	int32 Y,
-	bool bRotated,
-	FRpgInventoryGridPlacement& OutPlacement) const
-{
-	return TryMakePlacementForItemDefinition(ItemInstance ? ItemInstance->GetItemDef() : nullptr, ContainerId, X, Y, bRotated, OutPlacement);
-}
-
-FRpgInventoryGridPlacement URpgInventoryManagerComponent::MakePlacementForItemDefinition(TSubclassOf<URpgInventoryItemDefinition> ItemDef, FName ContainerId, int32 X, int32 Y, bool bRotated) const
-{
-	FRpgInventoryGridPlacement Placement;
-	TryMakePlacementForItemDefinition(ItemDef, ContainerId, X, Y, bRotated, Placement);
-	return Placement;
-}
-
-FRpgInventoryGridPlacement URpgInventoryManagerComponent::MakePlacementForItemInstance(URpgInventoryItemInstance* ItemInstance, FName ContainerId, int32 X, int32 Y, bool bRotated) const
-{
-	FRpgInventoryGridPlacement Placement;
-	TryMakePlacementForItemInstance(ItemInstance, ContainerId, X, Y, bRotated, Placement);
-	return Placement;
 }
 
 UAbilitySystemComponent* URpgInventoryManagerComponent::FindCapacityAbilitySystem() const

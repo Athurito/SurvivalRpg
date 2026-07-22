@@ -21,6 +21,24 @@ bool FRpgWorldSaveGameMemoryRoundTripTest::RunTest(const FString& Parameters)
 	Player.CheckpointTransform = FTransform(FRotator::ZeroRotator, FVector(100.0, 200.0, 300.0));
 	Player.bHasInventoryGraph = true;
 	Player.QuickAccessBindings.SetNum(8);
+
+	const FRpgInventoryContainerHandle CarryContainer =
+		FRpgInventoryContainerHandle::MakeRoot(TEXT("Carry.Weapon1"));
+	FRpgInventorySlotAddress& CarryAddress = Player.QuickAccessBindings[0].SlotAddress;
+	Player.QuickAccessBindings[0].SlotType = ERpgActionBarSlotType::CarrySlot;
+	Player.QuickAccessBindings[0].CarryRole = CarryContainer.Root;
+	CarryAddress.SetContainerHandle(CarryContainer);
+	CarryAddress.X = 2;
+	CarryAddress.Y = 3;
+
+	const FRpgInventoryItemId ContainerOwnerId(FGuid(0x8BB80217, 0xD34D4FD0, 0xAD68868A, 0x719F23D1));
+	const FRpgInventoryContainerHandle NestedItemContainer =
+		FRpgInventoryContainerHandle::MakeItemOwned(ContainerOwnerId, TEXT("Main"), 2);
+	FRpgInventorySlotAddress& NestedItemAddress = Player.QuickAccessBindings[1].SlotAddress;
+	Player.QuickAccessBindings[1].SlotType = ERpgActionBarSlotType::Consumable;
+	NestedItemAddress.SetContainerHandle(NestedItemContainer);
+	NestedItemAddress.X = 5;
+	NestedItemAddress.Y = 7;
 	Source->Players.Add(TEXT("Offline:Automation"), Player);
 
 	FRpgWorldContainerSaveData Container;
@@ -48,6 +66,34 @@ bool FRpgWorldSaveGameMemoryRoundTripTest::RunTest(const FString& Parameters)
 		TestTrue(TEXT("Checkpoint flag survives serialization"), RestoredPlayer->bHasCheckpoint);
 		TestEqual(TEXT("Exactly eight quick-access bindings survive serialization"), RestoredPlayer->QuickAccessBindings.Num(), 8);
 		TestTrue(TEXT("Inventory graph presence survives serialization"), RestoredPlayer->bHasInventoryGraph);
+
+		const FRpgInventorySlotAddress& RestoredCarryAddress = RestoredPlayer->QuickAccessBindings[0].SlotAddress;
+		TestEqual(
+			TEXT("Root Carry slot preserves its complete container handle"),
+			RestoredCarryAddress.GetContainerHandle(),
+			CarryContainer);
+		TestEqual(TEXT("Root Carry slot preserves X"), RestoredCarryAddress.X, 2);
+		TestEqual(TEXT("Root Carry slot preserves Y"), RestoredCarryAddress.Y, 3);
+
+		const FRpgInventorySlotAddress& RestoredNestedItemAddress = RestoredPlayer->QuickAccessBindings[1].SlotAddress;
+		TestEqual(
+			TEXT("Nested item slot preserves its complete item-owned container handle"),
+			RestoredNestedItemAddress.GetContainerHandle(),
+			NestedItemContainer);
+		TestEqual(
+			TEXT("Nested item slot preserves its owning item identity"),
+			RestoredNestedItemAddress.GetContainerHandle().ItemOwnerId,
+			ContainerOwnerId);
+		TestEqual(
+			TEXT("Nested item slot preserves its definition-local container id"),
+			RestoredNestedItemAddress.GetContainerHandle().ContainerId,
+			FName(TEXT("Main")));
+		TestEqual(
+			TEXT("Nested item slot preserves its graph depth"),
+			RestoredNestedItemAddress.GetContainerHandle().Depth,
+			static_cast<uint8>(2));
+		TestEqual(TEXT("Nested item slot preserves X"), RestoredNestedItemAddress.X, 5);
+		TestEqual(TEXT("Nested item slot preserves Y"), RestoredNestedItemAddress.Y, 7);
 	}
 	TestTrue(TEXT("Persistent world-container id survives serialization"), Restored->WorldContainers.Contains(TEXT("AutomationChest")));
 	return true;

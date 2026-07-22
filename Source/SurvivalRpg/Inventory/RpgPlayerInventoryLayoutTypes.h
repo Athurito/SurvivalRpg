@@ -9,6 +9,7 @@
 #include "RpgPlayerInventoryLayoutTypes.generated.h"
 
 class UTexture2D;
+class URpgActionBarComponent;
 class URpgInventoryItemDefinition;
 class URpgInventoryItemInstance;
 
@@ -23,31 +24,27 @@ struct SURVIVALRPG_API FRpgInventorySlotAddress
 {
 	GENERATED_BODY()
 
-	/** Stable root or item-owned graph address. Invalid legacy values fall back to ContainerId as a root. */
-	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Inventory|Layout")
+	/** Stable root or item-owned graph address. This is the only authoritative runtime identity. */
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, SaveGame, Category = "Inventory|Layout")
 	FRpgInventoryContainerHandle ContainerHandle;
 
-	/** Logical grid container, for example WeaponSlot1, Belt, Backpack, or Pockets. */
-	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Inventory|Layout")
-	FName ContainerId = NAME_None;
-
-	/** Zero-based grid cell X coordinate inside ContainerId. */
-	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Inventory|Layout", meta = (ClampMin = "0", UIMin = "0"))
+	/** Zero-based grid cell X coordinate inside ContainerHandle. */
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, SaveGame, Category = "Inventory|Layout", meta = (ClampMin = "0", UIMin = "0"))
 	int32 X = INDEX_NONE;
 
-	/** Zero-based grid cell Y coordinate inside ContainerId. */
-	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Inventory|Layout", meta = (ClampMin = "0", UIMin = "0"))
+	/** Zero-based grid cell Y coordinate inside ContainerHandle. */
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, SaveGame, Category = "Inventory|Layout", meta = (ClampMin = "0", UIMin = "0"))
 	int32 Y = INDEX_NONE;
 
 	FRpgInventoryContainerHandle GetContainerHandle() const
 	{
-		return ContainerHandle.IsValid() ? ContainerHandle : FRpgInventoryContainerHandle::MakeRoot(ContainerId);
+		return ContainerHandle;
 	}
 
 	void SetContainerHandle(const FRpgInventoryContainerHandle& InHandle)
 	{
 		ContainerHandle = InHandle;
-		ContainerId = InHandle.ContainerId;
+		ContainerId_DEPRECATED = NAME_None;
 	}
 
 	bool IsValid() const { return GetContainerHandle().IsValid() && X >= 0 && Y >= 0; }
@@ -65,6 +62,47 @@ struct SURVIVALRPG_API FRpgInventorySlotAddress
 	friend uint32 GetTypeHash(const FRpgInventorySlotAddress& Address)
 	{
 		return HashCombine(HashCombine(GetTypeHash(Address.GetContainerHandle()), GetTypeHash(Address.X)), GetTypeHash(Address.Y));
+	}
+
+private:
+	friend class URpgActionBarComponent;
+
+	/** Historical root/local container id read only by the authoritative Quick Access save converter. */
+	UPROPERTY(SaveGame)
+	FName ContainerId_DEPRECATED = NAME_None;
+
+	/** Promotes a legacy-only root address or clears its matching dual-written shadow; conflicts fail closed. */
+	bool TryMigrateDeprecatedRootForSave()
+	{
+		if (ContainerId_DEPRECATED.IsNone())
+		{
+			return true;
+		}
+
+		const bool bCanonicalHandleIsUnset =
+			ContainerHandle.Root.IsNone() &&
+			!ContainerHandle.ItemOwnerId.IsValid() &&
+			ContainerHandle.ContainerId.IsNone() &&
+			ContainerHandle.Depth == 0;
+		if (bCanonicalHandleIsUnset)
+		{
+			const FRpgInventoryContainerHandle LegacyRoot =
+				FRpgInventoryContainerHandle::MakeRoot(ContainerId_DEPRECATED);
+			if (!LegacyRoot.IsValid())
+			{
+				return false;
+			}
+
+			ContainerHandle = LegacyRoot;
+		}
+		else if (!ContainerHandle.IsValid() ||
+			ContainerHandle.ContainerId != ContainerId_DEPRECATED)
+		{
+			return false;
+		}
+
+		ContainerId_DEPRECATED = NAME_None;
+		return true;
 	}
 };
 
@@ -132,7 +170,7 @@ struct SURVIVALRPG_API FRpgInventorySlotGroupDefinition
 {
 	GENERATED_BODY()
 
-	/** Stable grid id used in FRpgInventorySlotAddress and replicated item placements. */
+	/** Definition-local grid id. Runtime addresses combine it with root or provider-item identity in ContainerHandle. */
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Inventory|Layout")
 	FName ContainerId = NAME_None;
 
@@ -169,7 +207,7 @@ struct SURVIVALRPG_API FRpgInventorySlotGroupView
 	UPROPERTY(BlueprintReadOnly, Category = "Inventory|Layout")
 	FRpgInventoryContainerHandle ContainerHandle;
 
-	/** Stable grid id used in FRpgInventorySlotAddress and replicated item placements. */
+	/** Definition-local id used for labels and designer-authored group semantics; never use it as graph identity. */
 	UPROPERTY(BlueprintReadOnly, Category = "Inventory|Layout")
 	FName ContainerId = NAME_None;
 
@@ -204,7 +242,7 @@ struct SURVIVALRPG_API FRpgInventorySlotGroupView
 	FRpgInventorySlotAddress MakeAddress(int32 X, int32 Y) const
 	{
 		FRpgInventorySlotAddress Address;
-		Address.SetContainerHandle(ContainerHandle.IsValid() ? ContainerHandle : FRpgInventoryContainerHandle::MakeRoot(ContainerId));
+		Address.SetContainerHandle(ContainerHandle);
 		Address.X = X;
 		Address.Y = Y;
 		return Address;

@@ -430,10 +430,6 @@ public:
 	UFUNCTION(BlueprintCallable, Category = "Inventory|Spatial Grid")
 	void BindSlotGroupViewModel(URpgInventorySlotGroupViewModel* InGroupViewModel);
 
-	/** Binds this grid to one storage/crafting inventory panel and concrete container id. */
-	UFUNCTION(BlueprintCallable, Category = "Inventory|Spatial Grid")
-	void BindInventoryPanelViewModel(URpgInventoryPanelViewModel* InPanelViewModel, URpgInventoryManagerComponent* InInventory, FName InContainerId);
-
 	/** Binds this grid to one exact root or item-owned container in an inventory graph. */
 	UFUNCTION(BlueprintCallable, Category = "Inventory|Spatial Grid")
 	void BindInventoryContainerPanelViewModel(
@@ -767,7 +763,6 @@ private:
 	FVector2D GetCellPosition(int32 X, int32 Y) const;
 	FVector2D GetPlacementSize(const FRpgInventoryGridPlacement& Placement) const;
 	FRpgInventoryContainerHandle ResolveContainerHandle() const;
-	FName ResolveContainerId() const;
 	bool IsValidCell(int32 X, int32 Y) const;
 
 	UPROPERTY(Transient)
@@ -788,10 +783,7 @@ private:
 	UPROPERTY(Transient)
 	FName PanelNavigationId = NAME_None;
 
-	UPROPERTY(Transient)
-	FName ContainerId = NAME_None;
-
-	/** Exact graph identity; ContainerId remains as a legacy root-container adapter. */
+	/** Exact graph identity used by every cell, preview, and interaction in this grid. */
 	UPROPERTY(Transient)
 	FRpgInventoryContainerHandle ContainerHandle;
 

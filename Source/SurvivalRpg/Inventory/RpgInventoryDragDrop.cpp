@@ -1264,14 +1264,21 @@ int32 URpgInventoryDragDropCoordinator::FindQuickAccessSlotForPayload(const FRpg
 		return INDEX_NONE;
 	}
 
+	const FRpgInventoryContainerHandle SourceContainer =
+		SourceAddress.GetContainerHandle();
 	const bool bCarryBinding = InventoryLayout->IsCarrySlotAddress(SourceAddress);
+	if (bCarryBinding &&
+		!SourceContainer.IsRoot())
+	{
+		return INDEX_NONE;
+	}
 	const TSubclassOf<URpgInventoryItemDefinition> ConsumableDefinition = CurrentItem->GetItemDef();
 	for (int32 SlotIndex = 0; SlotIndex < ActionBar->GetNumSlots(); ++SlotIndex)
 	{
 		const FRpgActionBarSlot Slot = ActionBar->GetSlot(SlotIndex);
 		const bool bMatchesCarry = bCarryBinding &&
 			(Slot.SlotType == ERpgActionBarSlotType::CarrySlot || Slot.SlotType == ERpgActionBarSlotType::CarrySlotBinding) &&
-			Slot.CarryRole == SourceAddress.ContainerId;
+			Slot.CarryRole == SourceContainer.Root;
 		const bool bMatchesConsumable = !bCarryBinding &&
 			(Slot.SlotType == ERpgActionBarSlotType::Consumable || Slot.SlotType == ERpgActionBarSlotType::InventorySlotBinding) &&
 			Slot.ConsumableDefinition == ConsumableDefinition;
@@ -1315,8 +1322,15 @@ bool URpgInventoryDragDropCoordinator::BindPayloadToQuickAccessSlot(
 	Request.ContextItemId = CurrentItem->GetItemId();
 	if (InventoryLayout->IsCarrySlotAddress(SourceAddress))
 	{
+		const FRpgInventoryContainerHandle SourceContainer =
+			SourceAddress.GetContainerHandle();
+		if (!SourceContainer.IsRoot())
+		{
+			return false;
+		}
+
 		Request.Operation = ERpgQuickAccessMutationOperation::BindCarry;
-		Request.ExpectedCarryRole = SourceAddress.ContainerId;
+		Request.ExpectedCarryRole = SourceContainer.Root;
 	}
 	else
 	{
@@ -2558,6 +2572,15 @@ bool URpgInventoryDragDropCoordinator::CommitPlannedPayloadToTarget(
 		{
 			return false;
 		}
+		const bool bSourceIsCarry =
+			InventoryLayout->IsCarrySlotAddress(SourceAddress);
+		const FRpgInventoryContainerHandle SourceContainer =
+			SourceAddress.GetContainerHandle();
+		if (bSourceIsCarry &&
+			!SourceContainer.IsRoot())
+		{
+			return false;
+		}
 
 		FRpgQuickAccessMutationRequest Request;
 		Request.RequestId = MarkInteractionRequestPending(
@@ -2572,10 +2595,10 @@ bool URpgInventoryDragDropCoordinator::CommitPlannedPayloadToTarget(
 			return false;
 		}
 
-		if (InventoryLayout->IsCarrySlotAddress(SourceAddress))
+		if (bSourceIsCarry)
 		{
 			Request.Operation = ERpgQuickAccessMutationOperation::BindCarry;
-			Request.ExpectedCarryRole = SourceAddress.ContainerId;
+			Request.ExpectedCarryRole = SourceContainer.Root;
 		}
 		else
 		{
@@ -3025,8 +3048,8 @@ URpgInventoryDragDropCoordinator::PlanInteractionPreview(
 			const bool bSourceIsSlotContainer =
 				InventoryLayout->IsGearSlotAddress(SourceAddress) &&
 				URpgPlayerInventoryLayoutComponent::
-					TryGetEquipmentSlotForGearGroupId(
-						SourceAddress.GetContainerHandle().ContainerId,
+					TryGetEquipmentSlotForGearContainer(
+						SourceAddress.GetContainerHandle(),
 						SourceEquipmentSlot) &&
 				URpgPlayerInventoryLayoutComponent::
 					IsSlotContainerEquipmentSlot(
@@ -3045,12 +3068,8 @@ URpgInventoryDragDropCoordinator::PlanInteractionPreview(
 				for (const FRpgInventorySlotGroupView& Group :
 					 InventoryLayout->GetSlotGroups())
 				{
-					const FRpgInventoryContainerHandle GroupHandle =
-						Group.ContainerHandle.IsValid()
-							? Group.ContainerHandle
-							: FRpgInventoryContainerHandle::MakeRoot(
-								Group.ContainerId);
-					if (GroupHandle ==
+					if (Group.ContainerHandle.IsValid() &&
+						Group.ContainerHandle ==
 							Target.SlotAddress.GetContainerHandle() &&
 						Group.ContainsCell(
 							Target.SlotAddress.X,
@@ -3708,8 +3727,8 @@ bool URpgInventoryDragDropCoordinator::CanMoveItemOutOfAddress(
 	}
 
 	ERpgEquipmentSlot EquipmentSlot = ERpgEquipmentSlot::None;
-	if (!URpgPlayerInventoryLayoutComponent::TryGetEquipmentSlotForGearGroupId(
-			SourceAddress.ContainerId,
+	if (!URpgPlayerInventoryLayoutComponent::TryGetEquipmentSlotForGearContainer(
+			SourceAddress.GetContainerHandle(),
 			EquipmentSlot) ||
 		!URpgPlayerInventoryLayoutComponent::IsSlotContainerEquipmentSlot(EquipmentSlot))
 	{
@@ -3760,7 +3779,8 @@ void URpgInventoryDragDropCoordinator::BuildPlayerQuickTransferTargets(
 	{
 		AddMatchingGroups([](const FRpgInventorySlotGroupView& Group)
 		{
-			return Group.ContainerId == URpgPlayerInventoryLayoutComponent::PocketsGroupId;
+			return Group.ContainerHandle == FRpgInventoryContainerHandle::MakeRoot(
+				URpgPlayerInventoryLayoutComponent::PocketsGroupId);
 		});
 		AddMatchingGroups([](const FRpgInventorySlotGroupView& Group)
 		{

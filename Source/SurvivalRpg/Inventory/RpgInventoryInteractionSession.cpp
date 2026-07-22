@@ -397,9 +397,13 @@ bool URpgInventoryInteractionSession::DoesActionBarSlotConfirmPendingPayload(
 		PendingPayload.ItemInstance &&
 		AppliedSlot.ConsumableDefinition == PendingPayload.ItemInstance->GetItemDef() &&
 		AppliedSlot.PreferredItemId == PendingItemId;
-	const FName SourceCarryRole = PendingPayload.SourceSlotAddress.IsValid()
-		? PendingPayload.SourceSlotAddress.ContainerId
-		: PendingPayload.SourcePlacement.GetContainerHandle().ContainerId;
+	const FRpgInventoryContainerHandle SourceContainer =
+		PendingPayload.SourceSlotAddress.IsValid()
+			? PendingPayload.SourceSlotAddress.GetContainerHandle()
+			: PendingPayload.SourcePlacement.GetContainerHandle();
+	const FName SourceCarryRole = SourceContainer.IsRoot()
+		? SourceContainer.Root
+		: NAME_None;
 	const bool bCarryApplied =
 		(AppliedSlot.SlotType == ERpgActionBarSlotType::CarrySlot ||
 			AppliedSlot.SlotType == ERpgActionBarSlotType::CarrySlotBinding) &&

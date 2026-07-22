@@ -4173,6 +4173,73 @@ bool FRpgInventoryCarryQuickAccessBindingTest::RunTest(const FString& Parameters
 	TestFalse(
 		TEXT("The acknowledged binding releases the held drag ghost"),
 		Coordinator->GetInteractionSession()->HasPayload());
+
+	FArrayProperty* StaticSlotGroupsProperty = FindFProperty<FArrayProperty>(
+		URpgPlayerInventoryLayoutComponent::StaticClass(),
+		TEXT("StaticSlotGroups"));
+	if (!TestNotNull(
+		TEXT("The designer-authored static group array remains reflected"),
+		StaticSlotGroupsProperty))
+	{
+		return false;
+	}
+
+	TArray<FRpgInventorySlotGroupDefinition>* StaticSlotGroups =
+		StaticSlotGroupsProperty->ContainerPtrToValuePtr<
+			TArray<FRpgInventorySlotGroupDefinition>>(Layout);
+	if (!TestNotNull(
+		TEXT("The fixture can author a custom static Carry group"),
+		StaticSlotGroups))
+	{
+		return false;
+	}
+
+	const FName CustomCarryRole(TEXT("DesignerCarrySlot"));
+	FRpgInventorySlotGroupDefinition& CustomCarryGroup =
+		StaticSlotGroups->AddDefaulted_GetRef();
+	CustomCarryGroup.ContainerId = CustomCarryRole;
+	CustomCarryGroup.GroupKind = ERpgInventorySlotGroupKind::Carry;
+	CustomCarryGroup.GridSize.Width = 1;
+	CustomCarryGroup.GridSize.Height = 1;
+	CustomCarryGroup.Rule.bActionbarBindable = true;
+	CustomCarryGroup.Rule.bCarrySlot = true;
+	CustomCarryGroup.Rule.CarryActivationRole =
+		RpgGameplayTags::Equipment_Slot_MainHand;
+
+	const FRpgInventoryContainerHandle CustomCarryHandle =
+		FRpgInventoryContainerHandle::MakeRoot(CustomCarryRole);
+	FRpgInventorySlotAddress CustomCarryAddress;
+	CustomCarryAddress.SetContainerHandle(CustomCarryHandle);
+	CustomCarryAddress.X = 0;
+	CustomCarryAddress.Y = 0;
+	TestTrue(
+		TEXT("The custom Carry root is not one of the three built-in role ids"),
+		CustomCarryRole != URpgPlayerInventoryLayoutComponent::WeaponSlot1GroupId &&
+		CustomCarryRole != URpgPlayerInventoryLayoutComponent::WeaponSlot2GroupId &&
+		CustomCarryRole != URpgPlayerInventoryLayoutComponent::ShieldSlotGroupId);
+	TestTrue(
+		TEXT("The custom root address remains classified as Carry from authored data"),
+		Layout->IsCarrySlotAddress(CustomCarryAddress));
+	TestTrue(
+		TEXT("The custom root address remains actionbar-bindable"),
+		Layout->IsSlotAddressActionbarBindable(CustomCarryAddress));
+	TestTrue(
+		TEXT("The authority path binds a custom canonical Carry address"),
+		ActionBar->TryBindCarrySlotToSlotAuthority(1, CustomCarryAddress));
+
+	const FRpgActionBarSlot CustomAppliedSlot = ActionBar->GetSlot(1);
+	TestEqual(
+		TEXT("The custom binding retains Carry semantics"),
+		CustomAppliedSlot.SlotType,
+		ERpgActionBarSlotType::CarrySlot);
+	TestEqual(
+		TEXT("The custom binding follows the designer-defined role"),
+		CustomAppliedSlot.CarryRole,
+		CustomCarryRole);
+	TestEqual(
+		TEXT("The custom binding retains its complete canonical root handle"),
+		CustomAppliedSlot.SlotAddress.GetContainerHandle(),
+		CustomCarryHandle);
 	return true;
 }
 
@@ -4313,6 +4380,96 @@ bool FRpgInventoryQuickTransferSkipsFullPreferredContainerTest::RunTest(const FS
 	{
 		return false;
 	}
+
+	FRpgInventorySlotAddress BackpackAddress;
+	BackpackAddress.SetContainerHandle(BackpackContents);
+	BackpackAddress.X = 0;
+	BackpackAddress.Y = 0;
+	FRpgInventorySlotAddress BeltAddress;
+	BeltAddress.SetContainerHandle(BeltContents);
+	BeltAddress.X = BackpackAddress.X;
+	BeltAddress.Y = BackpackAddress.Y;
+	TestFalse(
+		TEXT("Same-cell addresses in Backpack Main and Belt Main keep distinct provider identities"),
+		BackpackAddress == BeltAddress);
+
+	FRpgInventoryGridPlacement ResolvedBackpackPlacement;
+	FRpgInventoryGridPlacement ResolvedBeltPlacement;
+	if (!TestTrue(
+			TEXT("The layout resolves the exact Backpack Main address"),
+			Layout->ResolveSlotAddress(BackpackAddress, ResolvedBackpackPlacement)) ||
+		!TestTrue(
+			TEXT("The layout resolves the exact Belt Main address"),
+			Layout->ResolveSlotAddress(BeltAddress, ResolvedBeltPlacement)))
+	{
+		return false;
+	}
+	TestEqual(
+		TEXT("Backpack address resolution preserves its provider-owned handle"),
+		ResolvedBackpackPlacement.GetContainerHandle(),
+		BackpackContents);
+	TestEqual(
+		TEXT("Belt address resolution preserves its provider-owned handle"),
+		ResolvedBeltPlacement.GetContainerHandle(),
+		BeltContents);
+
+	FRpgInventorySlotAddress RoundTrippedBackpackAddress;
+	FRpgInventorySlotAddress RoundTrippedBeltAddress;
+	if (!TestTrue(
+			TEXT("The resolved Backpack placement converts back to a visible address"),
+			Layout->TryMakeSlotAddressFromPlacement(
+				ResolvedBackpackPlacement,
+				RoundTrippedBackpackAddress)) ||
+		!TestTrue(
+			TEXT("The resolved Belt placement converts back to a visible address"),
+			Layout->TryMakeSlotAddressFromPlacement(
+				ResolvedBeltPlacement,
+				RoundTrippedBeltAddress)))
+	{
+		return false;
+	}
+	TestTrue(
+		TEXT("Backpack placement round-trip preserves the complete slot address"),
+		RoundTrippedBackpackAddress == BackpackAddress);
+	TestTrue(
+		TEXT("Belt placement round-trip preserves the complete slot address"),
+		RoundTrippedBeltAddress == BeltAddress);
+
+	FRpgInventoryGridSize BackpackGridSize;
+	FRpgInventoryGridSize BeltGridSize;
+	if (!TestTrue(
+			TEXT("Grid-size lookup resolves the exact Backpack Main handle"),
+			Layout->GetGridSizeForContainerHandle(
+				BackpackContents,
+				BackpackGridSize)) ||
+		!TestTrue(
+			TEXT("Grid-size lookup resolves the exact Belt Main handle"),
+			Layout->GetGridSizeForContainerHandle(
+				BeltContents,
+				BeltGridSize)))
+	{
+		return false;
+	}
+	TestEqual(TEXT("Backpack Main keeps its authored width"), BackpackGridSize.Width, 4);
+	TestEqual(TEXT("Backpack Main keeps its authored height"), BackpackGridSize.Height, 4);
+	TestEqual(TEXT("Belt Main keeps its authored width"), BeltGridSize.Width, 4);
+	TestEqual(TEXT("Belt Main keeps its authored height"), BeltGridSize.Height, 4);
+	const FRpgInventoryContainerHandle UnknownMain = FRpgInventoryContainerHandle::MakeItemOwned(
+		FRpgInventoryItemId::NewId(),
+		BagContainerId,
+		1);
+	FRpgInventoryGridSize UnknownGridSize;
+	TestFalse(
+		TEXT("A matching local Main id cannot resolve without the exact provider identity"),
+		Layout->GetGridSizeForContainerHandle(UnknownMain, UnknownGridSize));
+
+	TestEqual(
+		TEXT("Backpack Main address lookup returns the item in that exact provider grid"),
+		Layout->GetItemInSlotAddress(BackpackAddress),
+		SourceItem);
+	TestNull(
+		TEXT("The same Belt Main coordinates do not alias the occupied Backpack Main cell"),
+		Layout->GetItemInSlotAddress(BeltAddress));
 
 	bool bFilledPockets = true;
 	for (int32 Y = 0; Y < 2; ++Y)

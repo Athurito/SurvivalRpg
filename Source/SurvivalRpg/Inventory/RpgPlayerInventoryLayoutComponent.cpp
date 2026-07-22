@@ -119,26 +119,6 @@ bool URpgPlayerInventoryLayoutComponent::TryMakeSlotAddressFromPlacement(const F
 	return false;
 }
 
-bool URpgPlayerInventoryLayoutComponent::GetGridSizeForContainer(FName ContainerId, FRpgInventoryGridSize& OutGridSize) const
-{
-	OutGridSize = FRpgInventoryGridSize();
-	if (ContainerId.IsNone())
-	{
-		return false;
-	}
-
-	for (const FRpgInventorySlotGroupView& Group : BuildSlotGroups())
-	{
-		if (Group.ContainerId == ContainerId && Group.GridSize.IsValid())
-		{
-			OutGridSize = Group.GridSize;
-			return true;
-		}
-	}
-
-	return false;
-}
-
 bool URpgPlayerInventoryLayoutComponent::GetGridSizeForContainerHandle(FRpgInventoryContainerHandle ContainerHandle, FRpgInventoryGridSize& OutGridSize) const
 {
 	OutGridSize = FRpgInventoryGridSize();
@@ -185,7 +165,7 @@ bool URpgPlayerInventoryLayoutComponent::CanItemUseSlotAddress(URpgInventoryItem
 			ERpgEquipmentSlot EquipmentSlot = ERpgEquipmentSlot::None;
 			if (Group.GroupKind == ERpgInventorySlotGroupKind::Gear)
 			{
-				if (!TryGetEquipmentSlotForGearGroupId(Group.ContainerId, EquipmentSlot))
+				if (!TryGetEquipmentSlotForGearContainer(Group.ContainerHandle, EquipmentSlot))
 				{
 					return false;
 				}
@@ -402,13 +382,6 @@ bool URpgPlayerInventoryLayoutComponent::CanUnequipSlotContainer(ERpgEquipmentSl
 	return true;
 }
 
-bool URpgPlayerInventoryLayoutComponent::IsBuiltInCarryGroupId(FName GroupId)
-{
-	return GroupId == WeaponSlot1GroupId ||
-		GroupId == WeaponSlot2GroupId ||
-		GroupId == ShieldSlotGroupId;
-}
-
 bool URpgPlayerInventoryLayoutComponent::IsBuiltInGearGroupId(FName GroupId)
 {
 	return GroupId == GearHeadGroupId ||
@@ -422,43 +395,53 @@ bool URpgPlayerInventoryLayoutComponent::IsBuiltInGearGroupId(FName GroupId)
 		GroupId == GearResourceBagGroupId;
 }
 
+bool URpgPlayerInventoryLayoutComponent::IsBuiltInGearContainer(
+	FRpgInventoryContainerHandle ContainerHandle)
+{
+	return ContainerHandle.IsRoot() &&
+		IsBuiltInGearGroupId(ContainerHandle.Root);
+}
+
 bool URpgPlayerInventoryLayoutComponent::TryMakeGearSlotAddress(ERpgEquipmentSlot EquipmentSlot, FRpgInventorySlotAddress& OutAddress)
 {
 	OutAddress = FRpgInventorySlotAddress();
+	FName GearGroupId = NAME_None;
 
 	switch (EquipmentSlot)
 	{
 	case ERpgEquipmentSlot::Head:
-		OutAddress.ContainerId = GearHeadGroupId;
+		GearGroupId = GearHeadGroupId;
 		break;
 	case ERpgEquipmentSlot::Chest:
-		OutAddress.ContainerId = GearChestGroupId;
+		GearGroupId = GearChestGroupId;
 		break;
 	case ERpgEquipmentSlot::Hands:
-		OutAddress.ContainerId = GearHandsGroupId;
+		GearGroupId = GearHandsGroupId;
 		break;
 	case ERpgEquipmentSlot::Legs:
-		OutAddress.ContainerId = GearLegsGroupId;
+		GearGroupId = GearLegsGroupId;
 		break;
 	case ERpgEquipmentSlot::Feet:
-		OutAddress.ContainerId = GearFeetGroupId;
+		GearGroupId = GearFeetGroupId;
 		break;
 	case ERpgEquipmentSlot::Backpack:
-		OutAddress.ContainerId = GearBackpackGroupId;
+		GearGroupId = GearBackpackGroupId;
 		break;
 	case ERpgEquipmentSlot::Belt:
-		OutAddress.ContainerId = GearBeltGroupId;
+		GearGroupId = GearBeltGroupId;
 		break;
 	case ERpgEquipmentSlot::Pouch:
-		OutAddress.ContainerId = GearPouchGroupId;
+		GearGroupId = GearPouchGroupId;
 		break;
 	case ERpgEquipmentSlot::ResourceBag:
-		OutAddress.ContainerId = GearResourceBagGroupId;
+		GearGroupId = GearResourceBagGroupId;
 		break;
 	default:
 		return false;
 	}
 
+	OutAddress.SetContainerHandle(
+		FRpgInventoryContainerHandle::MakeRoot(GearGroupId));
 	OutAddress.X = 0;
 	OutAddress.Y = 0;
 	return true;
@@ -506,6 +489,17 @@ bool URpgPlayerInventoryLayoutComponent::TryGetEquipmentSlotForGearGroupId(FName
 	}
 
 	return OutEquipmentSlot != ERpgEquipmentSlot::None;
+}
+
+bool URpgPlayerInventoryLayoutComponent::TryGetEquipmentSlotForGearContainer(
+	FRpgInventoryContainerHandle ContainerHandle,
+	ERpgEquipmentSlot& OutEquipmentSlot)
+{
+	OutEquipmentSlot = ERpgEquipmentSlot::None;
+	return ContainerHandle.IsRoot() &&
+		TryGetEquipmentSlotForGearGroupId(
+			ContainerHandle.Root,
+			OutEquipmentSlot);
 }
 
 URpgInventoryManagerComponent* URpgPlayerInventoryLayoutComponent::FindPlayerInventory() const

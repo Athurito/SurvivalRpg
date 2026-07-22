@@ -1316,7 +1316,7 @@ Status: **In Arbeit**
       anschließend entfernen.
 - [x] `ContainerHandle` kanonisch machen; Legacy-`ContainerId` nur noch als
       echte Deprecated-/Migrationsproperty führen.
-- [ ] Normalisierung und Root-Slot-Erkennung immer mit dem vollständigen
+- [x] Normalisierung und Root-Slot-Erkennung immer mit dem vollständigen
       `FRpgInventoryContainerHandle` statt nur mit lokaler `FName`-ID
       durchführen.
 - [ ] MaxEntries, Tiefe, Cycles, Duplicate IDs und Subtree-Grenzen in allen
@@ -1518,6 +1518,56 @@ Verifizierter Phase-4D-Zwischenstand vom 2026-07-22:
   `FRpgInventoryContainerHandle` umstellen. Insbesondere der eigene
   `FRpgInventorySlotAddress::ContainerId`-Fallback und root-only `FName`-APIs
   bleiben bewusst diesem nächsten Checklistenpunkt zugeordnet.
+
+Verifizierter Phase-4E-Zwischenstand vom 2026-07-22:
+
+- `FRpgInventorySlotAddress::ContainerHandle` ist die einzige kanonische
+  Laufzeitidentität einer Zelle. Gleichheit, Hashing, Lookup und Reverse-
+  Lookup berücksichtigen Owner, Item und lokale Container-ID vollständig;
+  gleich benannte item-owned Container verschiedener Provider können daher
+  weder miteinander noch mit einem Root-Container kollidieren.
+- Das historische SlotAddress-Feld ist nur noch als privater
+  `ContainerId_DEPRECATED`-SaveGame-Shadow vorhanden. Es wird ausschließlich
+  beim autoritativen Quick-Access-Restore zu einem eindeutigen Root-Handle
+  migriert. Passende, von der Vorgängerversion doppelt geschriebene Root- und
+  item-owned Handles behalten ihre vollständige Identität und löschen nur den
+  Shadow. Widersprüchliche Werte setzen das Binding fail-closed zurück;
+  normale Runtime-Zugriffe synthetisieren daraus keinen Handle.
+- Normalisierung, Grid-Größe, First-Fit, Single-Cell-, Carry- und Gear-
+  Erkennung arbeiten produktiv nur noch mit vollständigen Handles. Die
+  öffentlichen root-only-`FName`-APIs, `FName`-Placement-Helfer und der
+  mehrdeutige Panel-Binder wurden entfernt. Lokale Namen wie `Main` oder
+  `Gear.Head` erben in item-owned Containern keine Root-Semantik.
+- UI, MVVM, Drag-and-drop, Quick-Transfer und Interaction-Sessions reichen
+  exakte Handles weiter. Fehlende Handles führen zu einer ungebundenen oder
+  nicht ausführbaren Ansicht statt zu einem stillen Root-Fallback. Die UI
+  bleibt Projektion; autoritative Mutationen validieren den eingebauten
+  Root-Handle erneut.
+- Der Carry-RPC leitet die Rolle nach der exakten Layoutvalidierung aus dem
+  tatsächlich adressierten Carry-Root ab. Eine vom Client mitgeschickte
+  abweichende Rolle kann damit keine Mutation mehr gegen einen anderen
+  Carry-Vertrag auslösen; designerdefinierte Carry-Roots bleiben unterstützt.
+- Automation deckt kanonische Adressgleichheit und Hashing, SaveGame-
+  Reflection und Memory-Roundtrip, Legacy-Quick-Access-Migration,
+  providerübergreifende `Main`-Kollisionen sowie Root- gegen item-owned
+  `Gear.Head` ab. Zusätzlich bleibt ein designerdefinierter Carry-Root über
+  den vollständigen Handle bis in den autoritativen ActionBar-Pfad bindbar.
+- `SurvivalRpgEditor Win64 Development` wurde mit Unreal Engine 5.8 gebaut
+  (31/31 Actions, UBT `Result: Succeeded`).
+- `SurvivalRpg.Inventory`: 110 von 110 Automationtests erfolgreich.
+- `SurvivalRpg.Save.WorldSave.MemoryRoundTrip`: 1 von 1 Automationtests
+  erfolgreich.
+- `SurvivalRpg.Equipment`: 5 von 5 Automationtests erfolgreich.
+- `SurvivalRpg.Crafting`: 8 von 8 Automationtests erfolgreich.
+- `SurvivalRpg.UI`: 20 von 20 Automationtests erfolgreich.
+- `CompileAllBlueprints` endete mit Prozesscode 0, 0 Compilerfehlern,
+  16 bekannten Compilerwarnungen und 0 nicht ladbaren Blueprints.
+- Fortschritt Phase 4: 5 von 6 Punkten abgeschlossen (83,3 %).
+- Gesamtfortschritt der verbindlichen Checkliste: 67 von 94 Punkten
+  abgeschlossen (71,3 %), 27 Punkte offen.
+- Nächster Schnitt: `MaxEntries`, maximale Tiefe, Cycles, Duplicate IDs und
+  Subtree-Grenzen in allen Import- und Transferpfaden über gemeinsame
+  Graphinvarianten vereinheitlichen.
 
 ## Phase 5 – Datengetriebenes Layout und Editor-Validierung
 
