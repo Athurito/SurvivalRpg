@@ -221,13 +221,12 @@ namespace RpgInventoryLegacySnapshotTests
 			 Inventory->GetAllEntries())
 		{
 			Rows.Add(FString::Printf(
-				TEXT("%s|%s|%p|%d|%s|%s|%d|%d|%d|%d|%d"),
+				TEXT("%s|%s|%p|%d|%s|%d|%d|%d|%d|%d"),
 				*Entry.EntryId.ToString(),
 				*Entry.ItemId.ToString(),
 				static_cast<const void*>(Entry.Instance.Get()),
 				Entry.StackCount,
 				*Entry.Placement.ContainerHandle.ToString(),
-				*Entry.Placement.ContainerId.ToString(),
 				Entry.Placement.X,
 				Entry.Placement.Y,
 				Entry.Placement.Width,
@@ -280,7 +279,7 @@ bool FRpgLegacySpatialSnapshotConversionTest::RunTest(
 		URpgInventoryAutomationTestUnitItemDefinition::StaticClass();
 	LegacyEntry.StackCount = 1;
 	// SpatialV1 could contain only the compatibility ContainerId rather than an explicit graph handle.
-	LegacyEntry.Placement.ContainerId = RootId;
+	LegacyEntry.Placement.ContainerId_DEPRECATED = RootId;
 	LegacyEntry.Placement.X = 2;
 	LegacyEntry.Placement.Y = 1;
 	LegacyEntry.Placement.Width = 37;
@@ -320,6 +319,9 @@ bool FRpgLegacySpatialSnapshotConversionTest::RunTest(
 		TEXT("Placement owns the same canonical root handle"),
 		ConvertedItem.Placement.GetContainerHandle(),
 		Root);
+	TestTrue(
+		TEXT("Conversion removes the deprecated root-id shadow from current graph output"),
+		ConvertedItem.Placement.ContainerId_DEPRECATED.IsNone());
 	TestEqual(TEXT("Spatial X is preserved"), ConvertedItem.Placement.X, 2);
 	TestEqual(TEXT("Spatial Y is preserved"), ConvertedItem.Placement.Y, 1);
 	TestEqual(
@@ -689,6 +691,15 @@ bool FRpgLegacySnapshotFailClosedTest::RunTest(
 		ERpgLegacyInventorySnapshotVersion::SpatialV1,
 		EnvelopeMismatch);
 
+	FRpgInventorySnapshot ConflictingDeprecatedRoot =
+		MakeValidSpatialSnapshot();
+	ConflictingDeprecatedRoot.Entries[0]
+		.Placement.ContainerId_DEPRECATED = TEXT("OtherRoot");
+	ExpectFailure(
+		TEXT("Canonical legacy handle and deprecated root mismatch"),
+		ERpgLegacyInventorySnapshotVersion::SpatialV1,
+		ConflictingDeprecatedRoot);
+
 	FRpgInventorySnapshot ItemOwnedPlacement = MakeValidSpatialSnapshot();
 	ItemOwnedPlacement.Entries[0].Placement.SetContainerHandle(
 		FRpgInventoryContainerHandle::MakeItemOwned(
@@ -704,7 +715,7 @@ bool FRpgLegacySnapshotFailClosedTest::RunTest(
 	PartialHandle.Entries[0].Placement.ContainerHandle =
 		FRpgInventoryContainerHandle();
 	PartialHandle.Entries[0].Placement.ContainerHandle.Root = RootId;
-	PartialHandle.Entries[0].Placement.ContainerId = RootId;
+	PartialHandle.Entries[0].Placement.ContainerId_DEPRECATED = RootId;
 	ExpectFailure(
 		TEXT("Partially populated container handle"),
 		ERpgLegacyInventorySnapshotVersion::SpatialV1,

@@ -386,6 +386,94 @@ bool FRpgInventoryRestoreIntentBoundaryTest::RunTest(
 		ValidRestoreResult.Code,
 		ERpgInventoryMutationResultCode::Success);
 
+	const TArray<FRpgInventoryEntryView> ValidEntriesBeforeLegacyOnlyRestore =
+		ValidTarget->GetAllEntries();
+	const int32 ValidRevisionBeforeLegacyOnlyRestore =
+		ValidTarget->GetInventoryRevision();
+	const uint64 ValidEpochBeforeLegacyOnlyRestore =
+		ValidTarget->GetMutationEpoch();
+	FRpgInventoryGraphSaveData LegacyOnlyPlacementGraph = ValidGraph;
+	LegacyOnlyPlacementGraph.Items[0].Placement.ContainerId_DEPRECATED =
+		LegacyOnlyPlacementGraph.Items[0].Container.Root;
+	LegacyOnlyPlacementGraph.Items[0].Placement.ContainerHandle =
+		FRpgInventoryContainerHandle();
+	FRpgInventoryMutationResult LegacyOnlyPlacementResult;
+	TestFalse(
+		TEXT("Current-schema restore rejects a placement that only carries the deprecated root id"),
+		ValidTarget->RestoreInventoryGraph(
+			LegacyOnlyPlacementGraph,
+			LegacyOnlyPlacementResult));
+	TestEqual(
+		TEXT("A deprecated-only current-schema placement reports an invalid request"),
+		LegacyOnlyPlacementResult.Code,
+		ERpgInventoryMutationResultCode::InvalidRequest);
+	TestEqual(
+		TEXT("Rejected deprecated-only restore preserves the inventory revision"),
+		ValidTarget->GetInventoryRevision(),
+		ValidRevisionBeforeLegacyOnlyRestore);
+	TestEqual(
+		TEXT("Rejected deprecated-only restore preserves the mutation epoch"),
+		ValidTarget->GetMutationEpoch(),
+		ValidEpochBeforeLegacyOnlyRestore);
+	const TArray<FRpgInventoryEntryView> ValidEntriesAfterLegacyOnlyRestore =
+		ValidTarget->GetAllEntries();
+	if (TestEqual(
+			TEXT("Rejected deprecated-only restore preserves the live entry"),
+			ValidEntriesAfterLegacyOnlyRestore.Num(),
+			ValidEntriesBeforeLegacyOnlyRestore.Num()) &&
+		ValidEntriesAfterLegacyOnlyRestore.IsValidIndex(0) &&
+		ValidEntriesBeforeLegacyOnlyRestore.IsValidIndex(0))
+	{
+		TestEqual(
+			TEXT("Rejected deprecated-only restore preserves the runtime instance"),
+			ValidEntriesAfterLegacyOnlyRestore[0].Instance.Get(),
+			ValidEntriesBeforeLegacyOnlyRestore[0].Instance.Get());
+		TestTrue(
+			TEXT("Rejected deprecated-only restore preserves persistent identity"),
+			ValidEntriesAfterLegacyOnlyRestore[0].ItemId ==
+				ValidEntriesBeforeLegacyOnlyRestore[0].ItemId);
+	}
+
+	FRpgInventoryGraphSaveData ConflictingShadowGraph = ValidGraph;
+	ConflictingShadowGraph.Items[0].Placement.ContainerId_DEPRECATED =
+		TEXT("ConflictingDeprecatedRoot");
+	FRpgInventoryMutationResult ConflictingShadowResult;
+	TestTrue(
+		TEXT("A canonical current-schema handle remains authoritative over a conflicting deprecated shadow"),
+		ValidTarget->RestoreInventoryGraph(
+			ConflictingShadowGraph,
+			ConflictingShadowResult));
+	TestEqual(
+		TEXT("The canonical conflicting-shadow restore succeeds"),
+		ConflictingShadowResult.Code,
+		ERpgInventoryMutationResultCode::Success);
+	const TArray<FRpgInventoryEntryView> EntriesAfterConflictingShadowRestore =
+		ValidTarget->GetAllEntries();
+	if (TestEqual(
+			TEXT("The canonical conflicting-shadow restore retains one entry"),
+			EntriesAfterConflictingShadowRestore.Num(),
+			1) &&
+		EntriesAfterConflictingShadowRestore.IsValidIndex(0))
+	{
+		TestTrue(
+			TEXT("Canonical restore removes the deprecated shadow from runtime state"),
+			EntriesAfterConflictingShadowRestore[0]
+				.Placement.ContainerId_DEPRECATED.IsNone());
+	}
+	const FRpgInventoryGraphSaveData ReExportedConflictingShadowGraph =
+		ValidTarget->ExportInventoryGraph();
+	if (TestEqual(
+			TEXT("Re-export after canonical restore retains one row"),
+			ReExportedConflictingShadowGraph.Items.Num(),
+			1) &&
+		ReExportedConflictingShadowGraph.Items.IsValidIndex(0))
+	{
+		TestTrue(
+			TEXT("Current graph export never rewrites the deprecated shadow"),
+			ReExportedConflictingShadowGraph.Items[0]
+				.Placement.ContainerId_DEPRECATED.IsNone());
+	}
+
 	FRpgInventoryGraphSaveData FootprintDriftGraph = ValidGraph;
 	FootprintDriftGraph.Items[0].Placement.Width = 37;
 	FootprintDriftGraph.Items[0].Placement.Height = 0;

@@ -122,7 +122,6 @@ namespace
 			!Placement.ContainerHandle.ItemOwnerId.IsValid() &&
 			Placement.ContainerHandle.ContainerId.IsNone() &&
 			Placement.ContainerHandle.Depth == 0 &&
-			Placement.ContainerId.IsNone() &&
 			Placement.X == INDEX_NONE &&
 			Placement.Y == INDEX_NONE &&
 			Placement.Width == 1 &&
@@ -134,13 +133,7 @@ namespace
 		const FRpgInventoryGridPlacement& A,
 		const FRpgInventoryGridPlacement& B)
 	{
-		return A.ContainerHandle == B.ContainerHandle &&
-			A.ContainerId == B.ContainerId &&
-			A.X == B.X &&
-			A.Y == B.Y &&
-			A.Width == B.Width &&
-			A.Height == B.Height &&
-			A.bRotated == B.bRotated;
+		return A == B;
 	}
 
 	ERpgInventoryMutationResultCode EvaluateScratchPlacement(
@@ -349,7 +342,7 @@ FString FRpgInventoryEntry::GetDebugString() const
 		*GetNameSafe(Instance),
 		StackCount,
 		*GetNameSafe(ItemDef),
-		*Placement.ContainerId.ToString(),
+		*Placement.ContainerHandle.ToString(),
 		Placement.X,
 		Placement.Y,
 		Placement.Width,
@@ -849,62 +842,6 @@ bool FRpgInventoryList::MoveEntry(FGuid EntryId, int32 TargetIndex)
 	return SetOrderFromSortedEntryPointers(SortedEntries);
 }
 
-bool FRpgInventoryList::CanMoveEntryToPlacement(
-	FGuid EntryId,
-	const FRpgInventoryGridPlacement& TargetPlacement,
-	FRpgInventoryGridPlacement* OutNormalizedTargetPlacement,
-	bool bAllowStackMerge) const
-{
-	const URpgInventoryManagerComponent* Inventory =
-		Cast<URpgInventoryManagerComponent>(OwnerComponent);
-	const FRpgInventoryEntry* MovingEntry = FindEntryByEntryId(EntryId);
-	if (!Inventory || !MovingEntry || !MovingEntry->Instance)
-	{
-		return false;
-	}
-
-	FRpgInventoryGridPlacement CanonicalTarget = TargetPlacement;
-	if (!CanonicalTarget.ContainerHandle.IsValid())
-	{
-		const bool bHasMalformedExplicitHandle =
-			!CanonicalTarget.ContainerHandle.Root.IsNone() ||
-			CanonicalTarget.ContainerHandle.ItemOwnerId.IsValid() ||
-			!CanonicalTarget.ContainerHandle.ContainerId.IsNone() ||
-			CanonicalTarget.ContainerHandle.Depth != 0;
-		if (bHasMalformedExplicitHandle || CanonicalTarget.ContainerId.IsNone())
-		{
-			return false;
-		}
-		CanonicalTarget.SetContainerHandle(
-			FRpgInventoryContainerHandle::MakeRoot(CanonicalTarget.ContainerId));
-	}
-
-	FRpgInventoryEntryView View;
-	View.InventoryOwner = OwnerComponent;
-	View.Instance = MovingEntry->Instance;
-	View.EntryId = MovingEntry->EntryId;
-	View.ItemId = MovingEntry->Instance->GetItemId();
-	View.StackCount = MovingEntry->StackCount;
-	View.Placement = MovingEntry->Placement;
-	FRpgInventoryPlacementQuery Query;
-	Query.Purpose = bAllowStackMerge
-		? ERpgInventoryPlacementPurpose::Move
-		: ERpgInventoryPlacementPurpose::Equip;
-	Query.Search = ERpgInventoryPlacementSearch::Exact;
-	Query.Subject = FRpgInventoryPlacementSubject::FromOwnedEntry(
-		Inventory,
-		View);
-	Query.TargetContainer = CanonicalTarget.ContainerHandle;
-	Query.ExactPlacement = CanonicalTarget;
-	const FRpgInventoryPlacementPlan Plan = Inventory->EvaluatePlacement(Query);
-
-	if (OutNormalizedTargetPlacement && !Plan.Steps.IsEmpty())
-	{
-		*OutNormalizedTargetPlacement = Plan.Steps[0].Placement;
-	}
-	return Plan.IsCompleteSuccess();
-}
-
 bool FRpgInventoryList::MoveEntryToPlacement(
 	FGuid EntryId,
 	const FRpgInventoryGridPlacement& TargetPlacement,
@@ -913,25 +850,10 @@ bool FRpgInventoryList::MoveEntryToPlacement(
 	URpgInventoryManagerComponent* Inventory =
 		Cast<URpgInventoryManagerComponent>(OwnerComponent);
 	FRpgInventoryEntry* MovingEntry = FindEntryByEntryId(EntryId);
-	if (!Inventory || !MovingEntry || !MovingEntry->Instance)
+	if (!Inventory || !MovingEntry || !MovingEntry->Instance ||
+		!TargetPlacement.ContainerHandle.IsValid())
 	{
 		return false;
-	}
-
-	FRpgInventoryGridPlacement CanonicalTarget = TargetPlacement;
-	if (!CanonicalTarget.ContainerHandle.IsValid())
-	{
-		const bool bHasMalformedExplicitHandle =
-			!CanonicalTarget.ContainerHandle.Root.IsNone() ||
-			CanonicalTarget.ContainerHandle.ItemOwnerId.IsValid() ||
-			!CanonicalTarget.ContainerHandle.ContainerId.IsNone() ||
-			CanonicalTarget.ContainerHandle.Depth != 0;
-		if (bHasMalformedExplicitHandle || CanonicalTarget.ContainerId.IsNone())
-		{
-			return false;
-		}
-		CanonicalTarget.SetContainerHandle(
-			FRpgInventoryContainerHandle::MakeRoot(CanonicalTarget.ContainerId));
 	}
 
 	FRpgInventoryEntryView View;
@@ -949,8 +871,8 @@ bool FRpgInventoryList::MoveEntryToPlacement(
 	Query.Subject = FRpgInventoryPlacementSubject::FromOwnedEntry(
 		Inventory,
 		View);
-	Query.TargetContainer = CanonicalTarget.ContainerHandle;
-	Query.ExactPlacement = CanonicalTarget;
+	Query.TargetContainer = TargetPlacement.ContainerHandle;
+	Query.ExactPlacement = TargetPlacement;
 	const FRpgInventoryPlacementPlan Plan = Inventory->EvaluatePlacement(Query);
 	if (!Plan.IsSuccess() || Plan.Steps.Num() != 1)
 	{
@@ -965,13 +887,19 @@ bool FRpgInventoryList::MoveEntryToPlacement(
 
 	if (Step.Resolution == ERpgInventoryPlacementResolution::Place)
 	{
-		const int32 DepthDelta = static_cast<int32>(Step.Placement.GetContainerHandle().Depth) -
+		const int32 DepthDelta =
+			static_cast<int32>(Step.Placement.GetContainerHandle().Depth) -
 			static_cast<int32>(MovingEntry->Placement.GetContainerHandle().Depth);
-		const FRpgInventoryItemId MovingItemId = MovingEntry->Instance->GetItemId();
+		const FRpgInventoryItemId MovingItemId =
+			MovingEntry->Instance->GetItemId();
 		MovingEntry->Placement = Step.Placement;
 		RebaseDescendantContainerDepths(MovingItemId, DepthDelta);
 		MarkItemDirty(*MovingEntry);
-		BroadcastChangeMessage(*MovingEntry, MovingEntry->StackCount, MovingEntry->StackCount, true);
+		BroadcastChangeMessage(
+			*MovingEntry,
+			MovingEntry->StackCount,
+			MovingEntry->StackCount,
+			true);
 		SortEntriesByPlacement();
 		MarkArrayDirty();
 		return true;
@@ -979,7 +907,8 @@ bool FRpgInventoryList::MoveEntryToPlacement(
 
 	if (Step.Resolution == ERpgInventoryPlacementResolution::Merge)
 	{
-		FRpgInventoryEntry* TargetEntry = FindEntryByEntryId(Step.TargetEntryId);
+		FRpgInventoryEntry* TargetEntry =
+			FindEntryByEntryId(Step.TargetEntryId);
 		if (!TargetEntry || !TargetEntry->Instance || Step.Quantity <= 0 ||
 			!MovingEntry->Instance->IsStackCompatibleWith(TargetEntry->Instance) ||
 			Step.Quantity > GetFreeStackCapacity(TargetEntry->Instance))
@@ -992,15 +921,20 @@ bool FRpgInventoryList::MoveEntryToPlacement(
 		MovingEntry->StackCount -= Step.Quantity;
 		TargetEntry->StackCount += Step.Quantity;
 		MarkItemDirty(*TargetEntry);
-		BroadcastChangeMessage(*TargetEntry, TargetOldCount, TargetEntry->StackCount);
+		BroadcastChangeMessage(
+			*TargetEntry,
+			TargetOldCount,
+			TargetEntry->StackCount);
 		if (MovingEntry->StackCount <= 0)
 		{
-			URpgInventoryItemInstance* RemovedInstance = MovingEntry->Instance.Get();
+			URpgInventoryItemInstance* RemovedInstance =
+				MovingEntry->Instance.Get();
 			BroadcastChangeMessage(*MovingEntry, MovingOldCount, 0);
-			Entries.RemoveAll([EntryId](const FRpgInventoryEntry& Entry)
-			{
-				return Entry.EntryId == EntryId;
-			});
+			Entries.RemoveAll(
+				[EntryId](const FRpgInventoryEntry& Entry)
+				{
+					return Entry.EntryId == EntryId;
+				});
 			MarkArrayDirty();
 			if (RemovedInstance && Inventory->IsUsingRegisteredSubObjectList())
 			{
@@ -1010,7 +944,10 @@ bool FRpgInventoryList::MoveEntryToPlacement(
 		else
 		{
 			MarkItemDirty(*MovingEntry);
-			BroadcastChangeMessage(*MovingEntry, MovingOldCount, MovingEntry->StackCount);
+			BroadcastChangeMessage(
+				*MovingEntry,
+				MovingOldCount,
+				MovingEntry->StackCount);
 		}
 		return true;
 	}
@@ -1019,27 +956,40 @@ bool FRpgInventoryList::MoveEntryToPlacement(
 	{
 		return false;
 	}
-	FRpgInventoryEntry* TargetEntry = FindEntryByEntryId(Step.DisplacedEntryId);
+	FRpgInventoryEntry* TargetEntry =
+		FindEntryByEntryId(Step.DisplacedEntryId);
 	if (!TargetEntry || !TargetEntry->Instance ||
 		TargetEntry->Instance->GetItemId() != Step.DisplacedItemId)
 	{
 		return false;
 	}
 
-	const int32 MovingDepthDelta = static_cast<int32>(Step.Placement.GetContainerHandle().Depth) -
+	const int32 MovingDepthDelta =
+		static_cast<int32>(Step.Placement.GetContainerHandle().Depth) -
 		static_cast<int32>(MovingEntry->Placement.GetContainerHandle().Depth);
-	const int32 TargetDepthDelta = static_cast<int32>(Step.DisplacedPlacement.GetContainerHandle().Depth) -
+	const int32 TargetDepthDelta =
+		static_cast<int32>(Step.DisplacedPlacement.GetContainerHandle().Depth) -
 		static_cast<int32>(TargetEntry->Placement.GetContainerHandle().Depth);
-	const FRpgInventoryItemId MovingItemId = MovingEntry->Instance->GetItemId();
-	const FRpgInventoryItemId TargetItemId = TargetEntry->Instance->GetItemId();
+	const FRpgInventoryItemId MovingItemId =
+		MovingEntry->Instance->GetItemId();
+	const FRpgInventoryItemId TargetItemId =
+		TargetEntry->Instance->GetItemId();
 	MovingEntry->Placement = Step.Placement;
 	TargetEntry->Placement = Step.DisplacedPlacement;
 	RebaseDescendantContainerDepths(MovingItemId, MovingDepthDelta);
 	RebaseDescendantContainerDepths(TargetItemId, TargetDepthDelta);
 	MarkItemDirty(*MovingEntry);
 	MarkItemDirty(*TargetEntry);
-	BroadcastChangeMessage(*MovingEntry, MovingEntry->StackCount, MovingEntry->StackCount, true);
-	BroadcastChangeMessage(*TargetEntry, TargetEntry->StackCount, TargetEntry->StackCount, true);
+	BroadcastChangeMessage(
+		*MovingEntry,
+		MovingEntry->StackCount,
+		MovingEntry->StackCount,
+		true);
+	BroadcastChangeMessage(
+		*TargetEntry,
+		TargetEntry->StackCount,
+		TargetEntry->StackCount,
+		true);
 	SortEntriesByPlacement();
 	MarkArrayDirty();
 	return true;
@@ -1655,7 +1605,7 @@ bool FRpgInventoryList::SetOrderFromSortedEntryPointers(
 		FRpgInventoryGridPlacement NewPlacement = Entry->Placement;
 		const FRpgInventoryContainerHandle EntryContainer = Entry->Placement.GetContainerHandle();
 		TArray<FRpgInventoryGridPlacement>& ContainerScratch = ScratchOccupancyByContainer.FindOrAdd(EntryContainer);
-		if (!(EntryContainer.IsRoot() && Inventory->ShouldUseSingleCellPlacementForContainer(Entry->Placement.ContainerId)) &&
+		if (!(EntryContainer.IsRoot() && Inventory->ShouldUseSingleCellPlacementForContainer(EntryContainer.Root)) &&
 			!FindFirstFitPlacementInContainer(Entry->Instance->GetItemDef(), EntryContainer, ContainerScratch, NewPlacement))
 		{
 			// Sort is a single mutation. Never leave a fragmented container half repacked.
@@ -2959,16 +2909,7 @@ bool URpgInventoryManagerComponent::CanAddItemDefinitionToPlacement(TSubclassOf<
 
 	if (!Placement.ContainerHandle.IsValid())
 	{
-		const bool bMalformed = !Placement.ContainerHandle.Root.IsNone() ||
-			Placement.ContainerHandle.ItemOwnerId.IsValid() ||
-			!Placement.ContainerHandle.ContainerId.IsNone() ||
-			Placement.ContainerHandle.Depth != 0;
-		if (bMalformed || Placement.ContainerId.IsNone())
-		{
-			return false;
-		}
-		Placement.SetContainerHandle(
-			FRpgInventoryContainerHandle::MakeRoot(Placement.ContainerId));
+		return false;
 	}
 
 	URpgInventoryItemInstance* StagedInstance =
@@ -3005,16 +2946,7 @@ bool URpgInventoryManagerComponent::CanAddItemInstanceToPlacement(URpgInventoryI
 	}
 	if (!Placement.ContainerHandle.IsValid())
 	{
-		const bool bMalformed = !Placement.ContainerHandle.Root.IsNone() ||
-			Placement.ContainerHandle.ItemOwnerId.IsValid() ||
-			!Placement.ContainerHandle.ContainerId.IsNone() ||
-			Placement.ContainerHandle.Depth != 0;
-		if (bMalformed || Placement.ContainerId.IsNone())
-		{
-			return false;
-		}
-		Placement.SetContainerHandle(
-			FRpgInventoryContainerHandle::MakeRoot(Placement.ContainerId));
+		return false;
 	}
 	FRpgInventoryPlacementQuery Query;
 	Query.Purpose = ERpgInventoryPlacementPurpose::Add;
@@ -3044,16 +2976,7 @@ bool URpgInventoryManagerComponent::CanReceiveTransferredItemInstanceToPlacement
 	}
 	if (!Placement.ContainerHandle.IsValid())
 	{
-		const bool bMalformed = !Placement.ContainerHandle.Root.IsNone() ||
-			Placement.ContainerHandle.ItemOwnerId.IsValid() ||
-			!Placement.ContainerHandle.ContainerId.IsNone() ||
-			Placement.ContainerHandle.Depth != 0;
-		if (bMalformed || Placement.ContainerId.IsNone())
-		{
-			return false;
-		}
-		Placement.SetContainerHandle(
-			FRpgInventoryContainerHandle::MakeRoot(Placement.ContainerId));
+		return false;
 	}
 	FRpgInventoryPlacementQuery Query;
 	Query.Purpose = ERpgInventoryPlacementPurpose::Transfer;
@@ -3089,16 +3012,7 @@ bool URpgInventoryManagerComponent::CanReceiveTransferredItemInstanceToPlacement
 	}
 	if (!Placement.ContainerHandle.IsValid())
 	{
-		const bool bMalformed = !Placement.ContainerHandle.Root.IsNone() ||
-			Placement.ContainerHandle.ItemOwnerId.IsValid() ||
-			!Placement.ContainerHandle.ContainerId.IsNone() ||
-			Placement.ContainerHandle.Depth != 0;
-		if (bMalformed || Placement.ContainerId.IsNone())
-		{
-			return false;
-		}
-		Placement.SetContainerHandle(
-			FRpgInventoryContainerHandle::MakeRoot(Placement.ContainerId));
+		return false;
 	}
 
 	FRpgInventoryGridPlacement NormalizedPlacement;
@@ -3588,18 +3502,7 @@ bool URpgInventoryManagerComponent::AddOwnedItemInstance(
 		FRpgInventoryGridPlacement CanonicalPlacement = *Placement;
 		if (!CanonicalPlacement.ContainerHandle.IsValid())
 		{
-			const bool bMalformed =
-				!CanonicalPlacement.ContainerHandle.Root.IsNone() ||
-				CanonicalPlacement.ContainerHandle.ItemOwnerId.IsValid() ||
-				!CanonicalPlacement.ContainerHandle.ContainerId.IsNone() ||
-				CanonicalPlacement.ContainerHandle.Depth != 0;
-			if (bMalformed || CanonicalPlacement.ContainerId.IsNone())
-			{
-				return false;
-			}
-			CanonicalPlacement.SetContainerHandle(
-				FRpgInventoryContainerHandle::MakeRoot(
-					CanonicalPlacement.ContainerId));
+			return false;
 		}
 		Query.Search = ERpgInventoryPlacementSearch::Exact;
 		Query.TargetContainer = CanonicalPlacement.ContainerHandle;
@@ -3695,16 +3598,7 @@ URpgInventoryItemInstance* URpgInventoryManagerComponent::AddItemDefinitionToPla
 	}
 	if (!Placement.ContainerHandle.IsValid())
 	{
-		const bool bMalformed = !Placement.ContainerHandle.Root.IsNone() ||
-			Placement.ContainerHandle.ItemOwnerId.IsValid() ||
-			!Placement.ContainerHandle.ContainerId.IsNone() ||
-			Placement.ContainerHandle.Depth != 0;
-		if (bMalformed || Placement.ContainerId.IsNone())
-		{
-			return nullptr;
-		}
-		Placement.SetContainerHandle(
-			FRpgInventoryContainerHandle::MakeRoot(Placement.ContainerId));
+		return nullptr;
 	}
 
 	URpgInventoryItemInstance* StagedInstance =
@@ -6369,15 +6263,15 @@ bool URpgInventoryManagerComponent::RestoreInventoryGraphInternal(
 	for (const FRpgInventorySavedItem& SavedItem : SaveData.Items)
 	{
 		if (!SavedItem.ItemId.IsValid() || StagedIndexById.Contains(SavedItem.ItemId) || SavedItem.StackCount <= 0 ||
-			!SavedItem.Container.IsValid() || SavedItem.Placement.X < 0 || SavedItem.Placement.Y < 0)
+			!SavedItem.Container.IsValid() || !SavedItem.Placement.ContainerHandle.IsValid() ||
+			SavedItem.Placement.X < 0 || SavedItem.Placement.Y < 0)
 		{
 			OutResult.Code = StagedIndexById.Contains(SavedItem.ItemId)
 				? ERpgInventoryMutationResultCode::DuplicateItemId
 				: ERpgInventoryMutationResultCode::InvalidRequest;
 			return false;
 		}
-		if (SavedItem.Placement.GetContainerHandle() !=
-			SavedItem.Container)
+		if (SavedItem.Placement.ContainerHandle != SavedItem.Container)
 		{
 			OutResult.Code =
 				ERpgInventoryMutationResultCode::InvalidPlacement;

@@ -282,21 +282,21 @@ struct SURVIVALRPG_API FRpgInventoryGridSize
 /**
  * One concrete server-authored item placement inside an inventory graph container.
  *
- * ContainerHandle is the authoritative graph address. ContainerId remains serialized and synchronized as a legacy
- * Blueprint/UI seam while old assets and RPCs migrate from root-only grids to item-owned nested containers.
+ * ContainerHandle is the only authoritative graph address. ContainerId_DEPRECATED is retained solely so the
+ * versioned legacy-snapshot converter can read historical root-only placement data; runtime code must ignore it.
  */
 USTRUCT(BlueprintType)
 struct SURVIVALRPG_API FRpgInventoryGridPlacement
 {
 	GENERATED_BODY()
 
-	/** Stable root or item-owned graph address. Invalid values fall back to legacy root ContainerId during migration. */
+	/** Stable root or item-owned graph address used by runtime, replication, persistence, and UI. */
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, SaveGame, Category = "Inventory|Spatial")
 	FRpgInventoryContainerHandle ContainerHandle;
 
-	/** Legacy root/local grid id retained for existing Blueprints; SetContainerHandle keeps it synchronized. */
-	UPROPERTY(EditAnywhere, BlueprintReadWrite, SaveGame, Category = "Inventory|Spatial")
-	FName ContainerId = NAME_None;
+	/** Historical root-only address read exclusively by explicit versioned migration code. Never runtime truth. */
+	UPROPERTY(SaveGame)
+	FName ContainerId_DEPRECATED = NAME_None;
 
 	/** Top-left occupied grid cell X coordinate. */
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, SaveGame, Category = "Inventory|Spatial", meta = (ClampMin = "0", UIMin = "0"))
@@ -318,19 +318,17 @@ struct SURVIVALRPG_API FRpgInventoryGridPlacement
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, SaveGame, Category = "Inventory|Spatial")
 	bool bRotated = false;
 
-	/** Returns the graph handle, adapting an existing ContainerId-only placement to a root handle when necessary. */
+	/** Returns the authoritative graph handle without interpreting deprecated root-only data. */
 	FRpgInventoryContainerHandle GetContainerHandle() const
 	{
-		return ContainerHandle.IsValid()
-			? ContainerHandle
-			: FRpgInventoryContainerHandle::MakeRoot(ContainerId);
+		return ContainerHandle;
 	}
 
-	/** Assigns the graph handle and keeps the legacy ContainerId seam synchronized. */
+	/** Assigns the authoritative graph handle and removes any stale legacy shadow value. */
 	void SetContainerHandle(const FRpgInventoryContainerHandle& InContainerHandle)
 	{
 		ContainerHandle = InContainerHandle;
-		ContainerId = InContainerHandle.ContainerId;
+		ContainerId_DEPRECATED = NAME_None;
 	}
 
 	bool IsValid() const

@@ -1314,7 +1314,7 @@ Status: **In Arbeit**
 - [x] Einen kanonischen Stack-Key für Runtime-State-Kompatibilität einführen.
 - [x] Legacy Snapshot nur noch über einen versionierten Konverter zulassen und
       anschließend entfernen.
-- [ ] `ContainerHandle` kanonisch machen; Legacy-`ContainerId` nur noch als
+- [x] `ContainerHandle` kanonisch machen; Legacy-`ContainerId` nur noch als
       echte Deprecated-/Migrationsproperty führen.
 - [ ] Normalisierung und Root-Slot-Erkennung immer mit dem vollständigen
       `FRpgInventoryContainerHandle` statt nur mit lokaler `FName`-ID
@@ -1468,6 +1468,56 @@ Verifizierter Phase-4C-Zwischenstand vom 2026-07-22:
 - Nächster Schnitt: `FRpgInventoryContainerHandle` zur einzigen kanonischen
   Containeradresse machen und `FRpgInventoryGridPlacement::ContainerId` nur
   noch als echte Deprecated-/Migrationsproperty führen.
+
+Verifizierter Phase-4D-Zwischenstand vom 2026-07-22:
+
+- `FRpgInventoryGridPlacement::ContainerHandle` ist die einzige kanonische
+  Laufzeitadresse. `GetContainerHandle`, Placement-Vergleiche, Overlap,
+  Restore, Sortierung, Debug-Ausgabe, UI-Helfer und sämtliche Add-, Transfer-
+  und Move-Eingänge synthetisieren keinen Root-Handle mehr aus einer lokalen
+  `FName`-ID; ein Placement ohne gültigen vollständigen Handle wird
+  fail-closed und ohne Revision-/Epoch-/Ownership-Änderung abgelehnt.
+- Das historische Feld wird in C++ nur noch als
+  `ContainerId_DEPRECATED` geführt. UHT reflektiert es migrationskompatibel
+  weiterhin unter `ContainerId` mit `SaveGame`- und `Deprecated`-Flag, aber
+  weder editor- noch Blueprint-sichtbar. Ein Tagged-Serialization-Test lädt
+  den historischen `ContainerId`-Property-Tag tatsächlich in dieses Feld,
+  ohne daraus still einen kanonischen Handle zu erzeugen.
+- Produktiv liest ausschließlich der explizite, versionierte
+  Legacy-Snapshot-Konverter die Deprecated-Property. Er übernimmt nur eine
+  widerspruchsfreie historische Root-Adresse; ein Konflikt mit einem bereits
+  vorhandenen vollständigen Handle verwirft die komplette Konvertierung.
+  Kanonische Runtime- und erneut exportierte Graphdaten löschen den
+  Deprecated-Shadow.
+- Source-Snapshot- und Placement-Vergleiche berücksichtigen ausschließlich
+  den kanonischen Handle. Veraltete Deprecated-Daten können deshalb keinen
+  falschen Stale-Konflikt erzeugen, während eine abweichende vollständige
+  Adresse weiterhin korrekt abgelehnt wird.
+- Ein ASCII-/UTF-16-Scan von Content und Plugins fand keine serialisierte
+  Referenz auf `FRpgInventoryGridPlacement`, `ContainerHandle` oder den
+  historischen Placement-Pfad. Die zwei Asset-Treffer auf `ContainerId`
+  gehören zu weiterhin gültigen Layout-/Item-Container-Definitionen und
+  erfordern keine Property-Weiterleitung oder Asset-Migration.
+- Ein frischer `CompileAllBlueprints`-Lauf lud alle erreichbaren Blueprints
+  und schloss mit 0 Fehlern sowie 0 nicht ladbaren Blueprints ab. Die 16
+  Warnungen entsprechen den bereits dokumentierten Deprecated-, UI- und
+  Lokalisierungsrestpunkten.
+- `SurvivalRpgEditor Win64 Development` wurde mit Unreal Engine 5.8 gebaut;
+  der exakte abschließende Gate meldete UBT `Result: Succeeded`.
+- Die fokussierten Placement-, Intent-Boundary- und Legacy-Snapshot-Tests
+  prüfen historische Tagged-Daten, alle entfernten Runtime-Fallbacks,
+  atomaren Restore sowie widersprüchliche Shadow-Werte erfolgreich.
+- `SurvivalRpg.Inventory`: 108 von 108 Automationtests erfolgreich.
+- `SurvivalRpg.Crafting`: 8 von 8 Automationtests erfolgreich.
+- `SurvivalRpg.Equipment`: 5 von 5 Automationtests erfolgreich.
+- `SurvivalRpg.UI`: 20 von 20 Automationtests erfolgreich.
+- Fortschritt Phase 4: 4 von 6 Punkten abgeschlossen (66,7 %).
+- Gesamtfortschritt der verbindlichen Checkliste: 66 von 94 Punkten
+  abgeschlossen (70,2 %), 28 Punkte offen.
+- Nächster Schnitt: Normalisierung und Root-Slot-Erkennung vollständig auf
+  `FRpgInventoryContainerHandle` umstellen. Insbesondere der eigene
+  `FRpgInventorySlotAddress::ContainerId`-Fallback und root-only `FName`-APIs
+  bleiben bewusst diesem nächsten Checklistenpunkt zugeordnet.
 
 ## Phase 5 – Datengetriebenes Layout und Editor-Validierung
 

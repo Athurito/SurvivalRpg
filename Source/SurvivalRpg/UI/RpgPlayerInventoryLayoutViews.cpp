@@ -133,7 +133,7 @@ namespace
 
 	bool PlacementFootprintContainsCellUnchecked(const FRpgInventoryGridPlacement& Placement, int32 CellX, int32 CellY)
 	{
-		if (Placement.ContainerId.IsNone() || Placement.Width <= 0 || Placement.Height <= 0)
+		if (!Placement.ContainerHandle.IsValid() || Placement.Width <= 0 || Placement.Height <= 0)
 		{
 			return false;
 		}
@@ -145,18 +145,6 @@ namespace
 			CellY < Placement.Y + OccupiedSize.Height;
 	}
 
-	FRpgInventoryGridPlacement MakeCellPlacement(FName ContainerId, int32 X, int32 Y, bool bRotated, int32 Width = 1, int32 Height = 1)
-	{
-		FRpgInventoryGridPlacement Placement;
-		Placement.ContainerId = ContainerId;
-		Placement.X = X;
-		Placement.Y = Y;
-		Placement.Width = FMath::Max(1, Width);
-		Placement.Height = FMath::Max(1, Height);
-		Placement.bRotated = bRotated;
-		return Placement;
-	}
-
 	FRpgInventoryGridPlacement MakeCellPlacement(
 		const FRpgInventoryContainerHandle& ContainerHandle,
 		int32 X,
@@ -165,8 +153,13 @@ namespace
 		int32 Width = 1,
 		int32 Height = 1)
 	{
-		FRpgInventoryGridPlacement Placement = MakeCellPlacement(ContainerHandle.ContainerId, X, Y, bRotated, Width, Height);
+		FRpgInventoryGridPlacement Placement;
 		Placement.SetContainerHandle(ContainerHandle);
+		Placement.X = X;
+		Placement.Y = Y;
+		Placement.Width = FMath::Max(1, Width);
+		Placement.Height = FMath::Max(1, Height);
+		Placement.bRotated = bRotated;
 		return Placement;
 	}
 

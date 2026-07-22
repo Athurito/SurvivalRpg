@@ -52,15 +52,16 @@ namespace RpgInventoryLegacySnapshotPrivate
 			OutRoot = RawHandle.Root;
 		}
 
-		if (!Placement.ContainerId.IsNone())
+		if (!Placement.ContainerId_DEPRECATED.IsNone())
 		{
-			if (!OutRoot.IsNone() && OutRoot != Placement.ContainerId)
+			if (!OutRoot.IsNone() &&
+				OutRoot != Placement.ContainerId_DEPRECATED)
 			{
 				OutError = TEXT("legacy placement ContainerId disagrees with its root container handle");
 				return false;
 			}
 
-			OutRoot = Placement.ContainerId;
+			OutRoot = Placement.ContainerId_DEPRECATED;
 		}
 
 		return true;

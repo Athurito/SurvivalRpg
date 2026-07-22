@@ -19,11 +19,7 @@ namespace RpgInventoryCollectBatchPrivate
 		const FRpgInventoryGridPlacement& A,
 		const FRpgInventoryGridPlacement& B)
 	{
-		return A.ContainerHandle == B.ContainerHandle &&
-			A.ContainerId == B.ContainerId &&
-			A.X == B.X && A.Y == B.Y &&
-			A.Width == B.Width && A.Height == B.Height &&
-			A.bRotated == B.bRotated;
+		return A == B;
 	}
 
 	bool AreRuntimeStatesExactlyEqual(

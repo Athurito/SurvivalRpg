@@ -413,11 +413,6 @@ public:
 		FRpgInventoryContainerHandle ContainerFilter = FRpgInventoryContainerHandle(),
 		bool* bOutSucceeded = nullptr);
 	bool MoveEntry(FGuid EntryId, int32 TargetIndex);
-	bool CanMoveEntryToPlacement(
-		FGuid EntryId,
-		const FRpgInventoryGridPlacement& TargetPlacement,
-		FRpgInventoryGridPlacement* OutNormalizedTargetPlacement = nullptr,
-		bool bAllowStackMerge = true) const;
 	bool MoveEntryToPlacement(
 		FGuid EntryId,
 		const FRpgInventoryGridPlacement& TargetPlacement,

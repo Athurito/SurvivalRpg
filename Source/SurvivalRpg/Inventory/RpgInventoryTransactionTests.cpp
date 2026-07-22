@@ -327,11 +327,7 @@ namespace RpgInventoryTransactionTests
 		const FRpgInventoryGridPlacement& A,
 		const FRpgInventoryGridPlacement& B)
 	{
-		return A.ContainerHandle == B.ContainerHandle &&
-			A.ContainerId == B.ContainerId &&
-			A.X == B.X && A.Y == B.Y &&
-			A.Width == B.Width && A.Height == B.Height &&
-			A.bRotated == B.bRotated;
+		return A == B;
 	}
 
 	FString MakeStrictInventorySignature(
@@ -347,13 +343,12 @@ namespace RpgInventoryTransactionTests
 			 Inventory->GetAllEntries())
 		{
 			Rows.Add(FString::Printf(
-				TEXT("%s|%s|%p|%d|%s|%s|%d|%d|%d|%d|%d"),
+				TEXT("%s|%s|%p|%d|%s|%d|%d|%d|%d|%d"),
 				*Entry.EntryId.ToString(),
 				*Entry.ItemId.ToString(),
 				static_cast<const void*>(Entry.Instance.Get()),
 				Entry.StackCount,
 				*Entry.Placement.ContainerHandle.ToString(),
-				*Entry.Placement.ContainerId.ToString(),
 				Entry.Placement.X,
 				Entry.Placement.Y,
 				Entry.Placement.Width,
@@ -5038,20 +5033,33 @@ bool FRpgExactPlacementStackTransferPolicyTest::RunTest(const FString& Parameter
 
 	FRpgInventoryTransferIntent StaleLegacyIntent =
 		MakeExactTransferIntent(1);
-	StaleLegacyIntent.ExpectedSourcePlacement.ContainerId =
+	StaleLegacyIntent.ExpectedSourcePlacement.ContainerId_DEPRECATED =
 		TEXT("StaleLegacyRoot");
 	const FRpgInventoryPlacementPlan StaleLegacyPlan =
 		UiActions->PlanExactTransferPlacement(
 			PlayerInventory,
 			TargetInventory,
 			StaleLegacyIntent);
+	TestTrue(
+		TEXT("A stale deprecated ContainerId cannot change the canonical source snapshot"),
+		StaleLegacyPlan.IsCompleteSuccess());
+
+	FRpgInventoryTransferIntent StaleCanonicalIntent =
+		MakeExactTransferIntent(1);
+	StaleCanonicalIntent.ExpectedSourcePlacement.SetContainerHandle(
+		FRpgInventoryContainerHandle::MakeRoot(TEXT("StaleCanonicalRoot")));
+	const FRpgInventoryPlacementPlan StaleCanonicalPlan =
+		UiActions->PlanExactTransferPlacement(
+			PlayerInventory,
+			TargetInventory,
+			StaleCanonicalIntent);
 	TestEqual(
-		TEXT("A stale raw legacy ContainerId is rejected like the authoritative manager"),
-		StaleLegacyPlan.Code,
+		TEXT("A stale canonical handle is rejected as a source mismatch"),
+		StaleCanonicalPlan.Code,
 		ERpgInventoryMutationResultCode::SourceMismatch);
 	TestFalse(
-		TEXT("The stale legacy snapshot never becomes a complete preview plan"),
-		StaleLegacyPlan.IsCompleteSuccess());
+		TEXT("A stale canonical source snapshot never becomes a complete preview plan"),
+		StaleCanonicalPlan.IsCompleteSuccess());
 
 	TestFalse(
 		TEXT("Exact-placement preview rejects a request larger than the compatible stack's free capacity"),
@@ -6630,6 +6638,155 @@ bool FRpgInventoryRawAddOwnershipGuardTest::RunTest(const FString& Parameters)
 	TestNull(
 		TEXT("Managed items require cross-inventory transfer instead of bootstrap duplication"),
 		TargetInventory->BootstrapItemInstance(StillManagedForeignItem));
+	return true;
+}
+
+IMPLEMENT_SIMPLE_AUTOMATION_TEST(
+	FRpgDeprecatedPlacementIngressRejectedTest,
+	"SurvivalRpg.Inventory.IntentBoundary.DeprecatedPlacementIngressRejected",
+	EAutomationTestFlags::EditorContext | EAutomationTestFlags::EngineFilter)
+
+bool FRpgDeprecatedPlacementIngressRejectedTest::RunTest(
+	const FString& Parameters)
+{
+	using namespace RpgInventoryTransactionTests;
+	FScopedInventoryWorld TestWorld;
+	if (!InitializeTest(*this, TestWorld))
+	{
+		return false;
+	}
+
+	URpgInventoryManagerComponent* TargetInventory =
+		TestWorld.CreateInventory(TEXT("DeprecatedPlacementTarget"));
+	URpgInventoryManagerComponent* SourceInventory =
+		TestWorld.CreateInventory(TEXT("DeprecatedPlacementSource"));
+	if (!TestNotNull(TEXT("The deprecated-placement target exists"), TargetInventory) ||
+		!TestNotNull(TEXT("The deprecated-placement source exists"), SourceInventory))
+	{
+		return false;
+	}
+
+	const FRpgInventoryContainerHandle Storage = MakeStorageHandle();
+	URpgInventoryItemInstance* TargetItem =
+		TargetInventory->AddItemDefinitionToPlacement(
+			URpgInventoryAutomationTestUnitItemDefinition::StaticClass(),
+			1,
+			MakePlacement(Storage, 0, 0));
+	URpgInventoryItemInstance* SourceItem =
+		SourceInventory->AddItemDefinitionToPlacement(
+			URpgInventoryAutomationTestUnitItemDefinition::StaticClass(),
+			1,
+			MakePlacement(Storage, 0, 0));
+	URpgInventoryItemInstance* DetachedTargetItem =
+		TargetInventory->GrantItemDefinition(
+			URpgInventoryAutomationTestUnitItemDefinition::StaticClass(),
+			1);
+	if (!TestNotNull(TEXT("The target fixture item exists"), TargetItem) ||
+		!TestNotNull(TEXT("The incoming source fixture exists"), SourceItem) ||
+		!TestNotNull(TEXT("The detachable target-owned fixture exists"), DetachedTargetItem))
+	{
+		return false;
+	}
+	TargetInventory->RemoveItemInstance(DetachedTargetItem);
+
+	const TArray<FRpgInventoryEntryView> TargetEntries =
+		TargetInventory->GetAllEntries();
+	if (!TestEqual(TEXT("The target retains one managed fixture"), TargetEntries.Num(), 1) ||
+		!TargetEntries.IsValidIndex(0))
+	{
+		return false;
+	}
+
+	FRpgInventoryGridPlacement DeprecatedOnlyPlacement;
+	DeprecatedOnlyPlacement.ContainerId_DEPRECATED = Storage.Root;
+	DeprecatedOnlyPlacement.X = 4;
+	DeprecatedOnlyPlacement.Y = 0;
+	DeprecatedOnlyPlacement.Width = 1;
+	DeprecatedOnlyPlacement.Height = 1;
+	TestFalse(
+		TEXT("The deprecated-only fixture has no canonical runtime handle"),
+		DeprecatedOnlyPlacement.IsValid());
+
+	const FString TargetBefore = MakeInventorySignature(TargetInventory);
+	const FString SourceBefore = MakeInventorySignature(SourceInventory);
+	const int32 TargetRevisionBefore = TargetInventory->GetInventoryRevision();
+	const int32 SourceRevisionBefore = SourceInventory->GetInventoryRevision();
+	const uint64 TargetEpochBefore = TargetInventory->GetMutationEpoch();
+	const uint64 SourceEpochBefore = SourceInventory->GetMutationEpoch();
+
+	TestFalse(
+		TEXT("Definition preflight rejects a deprecated-only placement"),
+		TargetInventory->CanAddItemDefinitionToPlacement(
+			URpgInventoryAutomationTestUnitItemDefinition::StaticClass(),
+			1,
+			DeprecatedOnlyPlacement));
+	TestNull(
+		TEXT("Definition insertion rejects a deprecated-only placement"),
+		TargetInventory->AddItemDefinitionToPlacement(
+			URpgInventoryAutomationTestUnitItemDefinition::StaticClass(),
+			1,
+			DeprecatedOnlyPlacement));
+	TestFalse(
+		TEXT("Detached-instance preflight rejects a deprecated-only placement"),
+		TargetInventory->CanAddItemInstanceToPlacement(
+			DetachedTargetItem,
+			1,
+			DeprecatedOnlyPlacement));
+	TargetInventory->AddItemInstanceWithStackToPlacement(
+		DetachedTargetItem,
+		1,
+		DeprecatedOnlyPlacement);
+	TestFalse(
+		TEXT("Incoming-transfer preflight rejects a deprecated-only placement"),
+		TargetInventory->CanReceiveTransferredItemInstanceToPlacement(
+			SourceItem,
+			1,
+			DeprecatedOnlyPlacement));
+	TestFalse(
+		TEXT("Swap-style incoming preflight rejects a deprecated-only placement"),
+		TargetInventory->CanReceiveTransferredItemInstanceToPlacementIgnoringItem(
+			SourceItem,
+			1,
+			DeprecatedOnlyPlacement,
+			TargetItem));
+	TestFalse(
+		TEXT("Move preflight rejects a deprecated-only target"),
+		TargetInventory->CanMoveInventoryEntryToPlacement(
+			TargetEntries[0].EntryId,
+			DeprecatedOnlyPlacement));
+	TestFalse(
+		TEXT("Move commit rejects a deprecated-only target"),
+		TargetInventory->MoveInventoryEntryToPlacement(
+			TargetEntries[0].EntryId,
+			DeprecatedOnlyPlacement));
+
+	TestEqual(
+		TEXT("Rejected deprecated placement ingress preserves the target graph"),
+		MakeInventorySignature(TargetInventory),
+		TargetBefore);
+	TestEqual(
+		TEXT("Rejected deprecated placement ingress preserves the source graph"),
+		MakeInventorySignature(SourceInventory),
+		SourceBefore);
+	TestEqual(
+		TEXT("Rejected deprecated placement ingress preserves target revision"),
+		TargetInventory->GetInventoryRevision(),
+		TargetRevisionBefore);
+	TestEqual(
+		TEXT("Rejected deprecated placement ingress preserves source revision"),
+		SourceInventory->GetInventoryRevision(),
+		SourceRevisionBefore);
+	TestEqual(
+		TEXT("Rejected deprecated placement ingress preserves target mutation epoch"),
+		TargetInventory->GetMutationEpoch(),
+		TargetEpochBefore);
+	TestEqual(
+		TEXT("Rejected deprecated placement ingress preserves source mutation epoch"),
+		SourceInventory->GetMutationEpoch(),
+		SourceEpochBefore);
+	TestFalse(
+		TEXT("The detached instance never becomes managed through deprecated placement ingress"),
+		TargetInventory->ContainsItemInstance(DetachedTargetItem));
 	return true;
 }
 
