@@ -1312,7 +1312,7 @@ Status: **In Arbeit**
 - [x] Aktuelle Footprints und Rotationsregeln beim Import aus der
       Item-Definition rekonstruieren.
 - [x] Einen kanonischen Stack-Key für Runtime-State-Kompatibilität einführen.
-- [ ] Legacy Snapshot nur noch über einen versionierten Konverter zulassen und
+- [x] Legacy Snapshot nur noch über einen versionierten Konverter zulassen und
       anschließend entfernen.
 - [ ] `ContainerHandle` kanonisch machen; Legacy-`ContainerId` nur noch als
       echte Deprecated-/Migrationsproperty führen.
@@ -1409,6 +1409,65 @@ Verifizierter Phase-4B-Zwischenstand vom 2026-07-22:
 - Nächster Schnitt: Legacy-Snapshots ausschließlich über einen explizit
   versionierten Konverter importieren und die parallelen Restore-Wege
   anschließend entfernen.
+
+Verifizierter Phase-4C-Zwischenstand vom 2026-07-22:
+
+- Die historischen DTOs liegen getrennt in `RpgInventoryLegacySnapshot` und
+  sind nur noch Eingabe für einen nativen, nebenwirkungsfreien Konverter.
+  `SingleSlotV0` liest den wieder explizit als deprecated geführten
+  `SortIndex` und packt nach aktueller Definition, aktuellem Layout sowie
+  gemeinsamem First-Fit-Scratch. `SpatialV1` übernimmt ausschließlich
+  widerspruchsfreie Root-Platzierungen; item-owned oder partiell ungültige
+  Handles werden geschlossen abgelehnt.
+- Gültige persistente Item-IDs bleiben erhalten. Fehlt die erst später
+  eingeführte Item-ID, wird eine gültige historische Entry-ID deterministisch
+  genau einmal als Item-ID übernommen. Fehlende oder doppelte resultierende
+  Identitäten verwerfen den vollständigen Konvertierungsoutput. Historische
+  Entry-IDs werden nicht als neue FastArray-Entry-IDs restauriert.
+- Da die alten Snapshot-Zeilen keinen Fragmentzustand besaßen, initialisiert
+  der explizite Legacy-Pfad eine transiente Default-Instanz und exportiert
+  daraus den heutigen versionierten Runtime-State. Der Konverter mutiert kein
+  Live-Inventar und liefert immer nur ein DTO im aktuellen Graphschema;
+  autoritativ kann es ausschließlich nach der vollständigen Prüfung durch
+  `RestoreInventoryGraph` werden.
+- Der unversionierte direkte `FRpgInventoryList::ImportSnapshot`-/
+  `ExportSnapshot`-Pfad sowie die reflektierten
+  `ImportInventorySnapshot`-/`ExportInventorySnapshot`-Funktionen sind
+  entfernt. Auch der mehrdeutige Blueprint-Pfad `ImportInventoryGraph` ist
+  entfernt. Interne atomare Rollbacks verwenden nun die native, klar
+  begrenzte Funktion `RestoreRuntimeCheckpoint`, während Disk-/Profil-Restore
+  weiterhin eine neue Command-Epoch über `RestoreInventoryGraph` etabliert.
+- Ein alter Test, der über den direkten Snapshot-Bypass absichtlich einen
+  unmöglichen Provider-Stack erzeugte, wurde durch die stärkere Grenzprüfung
+  ersetzt: Der Legacy-Konverter darf das historische DTO syntaktisch lesen,
+  aber der kanonische Restore lehnt den Provider-Stack atomar ab und lässt
+  Graph, UObject-/Entry-Identität, Revision und Mutation-Epoch unverändert.
+- Es wurde kein belastbarer historischer Disk-Byte-Fixture gefunden; die alten
+  Snapshot-Felder waren bis auf die später ergänzte Item-ID nicht als
+  `SaveGame` markiert. Der neue Pfad ist deshalb eine explizite
+  DTO-/Asset-Migration und keine unbelegte Zusage, beliebige alte Binärsaves
+  automatisch lesen zu können.
+- Der Reflection-Test bestätigt, dass die drei entfernten Blueprint-Funktionen
+  nicht mehr existieren. Zusätzlich kompilierte `CompileAllBlueprints` alle
+  erreichbaren Blueprints mit 0 Fehlern und 0 nicht ladbaren Blueprints; die
+  16 Compilerwarnungen gehören zu bereits dokumentierten Deprecated-/UI- und
+  Lokalisierungsrestpunkten. In Content, Config und Plugins wurde zudem keine
+  serialisierte Referenz auf die entfernten Funktionsnamen gefunden.
+- `SurvivalRpgEditor Win64 Development` wurde mit Unreal Engine 5.8 gebaut
+  (24/24 Actions).
+- Die drei fokussierten `SurvivalRpg.Inventory.LegacySnapshot`-Tests sind
+  erfolgreich: V0-First-Fit, deterministische V1-Konvertierung samt
+  Identity-Retention sowie Fail-closed-/Atomizitätsmatrix.
+- `SurvivalRpg.Inventory`: 107 von 107 Automationtests erfolgreich.
+- `SurvivalRpg.Crafting`: 8 von 8 Automationtests erfolgreich.
+- `SurvivalRpg.Equipment`: 5 von 5 Automationtests erfolgreich.
+- `SurvivalRpg.UI`: 20 von 20 Automationtests erfolgreich.
+- Fortschritt Phase 4: 3 von 6 Punkten abgeschlossen (50,0 %).
+- Gesamtfortschritt der verbindlichen Checkliste: 65 von 94 Punkten
+  abgeschlossen (69,1 %), 29 Punkte offen.
+- Nächster Schnitt: `FRpgInventoryContainerHandle` zur einzigen kanonischen
+  Containeradresse machen und `FRpgInventoryGridPlacement::ContainerId` nur
+  noch als echte Deprecated-/Migrationsproperty führen.
 
 ## Phase 5 – Datengetriebenes Layout und Editor-Validierung
 

@@ -764,7 +764,7 @@ bool URpgCraftingStationComponent::FlushOutputToBaseStorage()
 			{
 				FRpgInventoryMutationResult RollbackResult;
 				const bool bGraphRestored =
-					OutputInventoryComponent->ImportInventoryGraph(
+					OutputInventoryComponent->RestoreRuntimeCheckpoint(
 						OutputGraphBefore,
 						RollbackResult) &&
 					RollbackResult.IsSuccess();

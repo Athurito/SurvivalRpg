@@ -44,7 +44,7 @@ void ARpgDroppedInventoryActor::PostInitializeComponents()
 			{
 				FRpgInventoryMutationResult RollbackResult;
 				const bool bRolledBack =
-					LootInventoryComponent->ImportInventoryGraph(
+					LootInventoryComponent->RestoreRuntimeCheckpoint(
 						EmptyGraph,
 						RollbackResult);
 				UE_LOG(
@@ -99,7 +99,7 @@ void ARpgDroppedInventoryActor::SetPickupInventory(const FInventoryPickup& NewPi
 				[this, &ExistingGraph](const TCHAR* FailureContext)
 				{
 					FRpgInventoryMutationResult RestoreResult;
-					if (!LootInventoryComponent->ImportInventoryGraph(
+					if (!LootInventoryComponent->RestoreRuntimeCheckpoint(
 							ExistingGraph,
 							RestoreResult))
 					{

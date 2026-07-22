@@ -962,14 +962,18 @@ bool FRpgInventoryRestoreMutationEpochTest::RunTest(
 		Inventory->GetMutationEpoch(),
 		InitialMutationEpoch);
 
-	FRpgInventoryMutationResult RuntimeImportResult;
+	FRpgInventoryMutationResult RuntimeCheckpointResult;
 	TestTrue(
-		TEXT("A runtime recovery import succeeds inside the current epoch"),
-		Inventory->ImportInventoryGraph(
+		TEXT("A runtime checkpoint restore succeeds inside the current epoch"),
+		Inventory->RestoreRuntimeCheckpoint(
 			Inventory->ExportInventoryGraph(),
-			RuntimeImportResult));
+			RuntimeCheckpointResult));
 	TestEqual(
-		TEXT("A runtime recovery import does not invalidate request replay"),
+		TEXT("A runtime checkpoint reports restore semantics"),
+		RuntimeCheckpointResult.Operation,
+		ERpgInventoryMutationOperation::Restore);
+	TestEqual(
+		TEXT("A runtime checkpoint restore does not invalidate request replay"),
 		Inventory->GetMutationEpoch(),
 		InitialMutationEpoch);
 

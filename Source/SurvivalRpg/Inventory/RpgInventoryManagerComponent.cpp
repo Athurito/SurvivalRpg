@@ -1045,88 +1045,6 @@ bool FRpgInventoryList::MoveEntryToPlacement(
 	return true;
 }
 
-FRpgInventorySnapshot FRpgInventoryList::ExportSnapshot(FName ContainerId) const
-{
-	FRpgInventorySnapshot Snapshot;
-	Snapshot.ContainerId = ContainerId;
-	Snapshot.Entries.Reserve(Entries.Num());
-
-	TArray<const FRpgInventoryEntry*> SortedEntries;
-	SortedEntries.Reserve(Entries.Num());
-	for (const FRpgInventoryEntry& Entry : Entries)
-	{
-		SortedEntries.Add(&Entry);
-	}
-
-	SortedEntries.Sort([this](const FRpgInventoryEntry& A, const FRpgInventoryEntry& B)
-	{
-		return GetLinearOrder(A.Placement) < GetLinearOrder(B.Placement);
-	});
-
-	for (const FRpgInventoryEntry* Entry : SortedEntries)
-	{
-		if (!Entry || !Entry->Instance || Entry->StackCount <= 0)
-		{
-			continue;
-		}
-
-		FRpgInventorySnapshotEntry& SnapshotEntry = Snapshot.Entries.AddDefaulted_GetRef();
-		SnapshotEntry.EntryId = Entry->EntryId;
-		SnapshotEntry.ItemId = Entry->Instance->GetItemId();
-		SnapshotEntry.ItemDefinition = Entry->Instance->GetItemDef();
-		SnapshotEntry.StackCount = Entry->StackCount;
-		SnapshotEntry.Placement = Entry->Placement;
-	}
-
-	return Snapshot;
-}
-
-void FRpgInventoryList::ImportSnapshot(const FRpgInventorySnapshot& Snapshot)
-{
-	check(OwnerComponent);
-	AActor* OwningActor = OwnerComponent->GetOwner();
-	check(OwningActor && OwningActor->HasAuthority());
-
-	for (FRpgInventoryEntry& Entry : Entries)
-	{
-		BroadcastChangeMessage(Entry, Entry.StackCount, 0);
-	}
-
-	Entries.Reset();
-	MarkArrayDirty();
-
-	for (const FRpgInventorySnapshotEntry& SnapshotEntry : Snapshot.Entries)
-	{
-		if (!SnapshotEntry.ItemDefinition || SnapshotEntry.StackCount <= 0)
-		{
-			continue;
-		}
-
-		FRpgInventoryEntry& NewEntry = Entries.AddDefaulted_GetRef();
-		NewEntry.Instance = NewObject<URpgInventoryItemInstance>(OwnerComponent->GetOwner());
-		NewEntry.Instance->SetItemDef(SnapshotEntry.ItemDefinition);
-		if (SnapshotEntry.ItemId.IsValid())
-		{
-			NewEntry.Instance->RestoreItemId(SnapshotEntry.ItemId);
-		}
-		for (URpgInventoryItemFragment* Fragment : GetDefault<URpgInventoryItemDefinition>(SnapshotEntry.ItemDefinition)->Fragments)
-		{
-			if (Fragment != nullptr)
-			{
-				Fragment->OnInstanceCreated(NewEntry.Instance);
-			}
-		}
-		NewEntry.EntryId = SnapshotEntry.EntryId.IsValid() ? SnapshotEntry.EntryId : FGuid::NewGuid();
-		NewEntry.StackCount = SnapshotEntry.StackCount;
-		NewEntry.Placement = SnapshotEntry.Placement;
-		NewEntry.LastObservedCount = INDEX_NONE;
-		MarkItemDirty(NewEntry);
-		BroadcastChangeMessage(NewEntry, 0, NewEntry.StackCount, true);
-	}
-
-	SortEntriesByPlacement();
-}
-
 FRpgInventoryEntry* FRpgInventoryList::FindEntryByInstance(URpgInventoryItemInstance* Instance)
 {
 	if (!Instance)
@@ -6346,46 +6264,6 @@ FRpgInventoryMutationResult URpgInventoryManagerComponent::ExecuteCrossInventory
 	return Result;
 }
 
-FRpgInventorySnapshot URpgInventoryManagerComponent::ExportInventorySnapshot(FName ContainerId) const
-{
-	return InventoryList.ExportSnapshot(ContainerId);
-}
-
-void URpgInventoryManagerComponent::ImportInventorySnapshot(const FRpgInventorySnapshot& Snapshot)
-{
-	AActor* OwningActor = GetOwner();
-	if (bIsApplyingCollectBatch || !OwningActor ||
-		!OwningActor->HasAuthority())
-	{
-		return;
-	}
-
-	if (IsUsingRegisteredSubObjectList())
-	{
-		for (const FRpgInventoryEntry& Entry : InventoryList.Entries)
-		{
-			if (Entry.Instance)
-			{
-				RemoveReplicatedSubObject(Entry.Instance);
-			}
-		}
-	}
-
-	InventoryList.ImportSnapshot(Snapshot);
-	MarkInventoryStateDirty();
-
-	if (IsUsingRegisteredSubObjectList() && IsReadyForReplication())
-	{
-		for (const FRpgInventoryEntry& Entry : InventoryList.Entries)
-		{
-			if (Entry.Instance)
-			{
-				AddReplicatedSubObject(Entry.Instance, ReplicationPolicy == ERpgInventoryReplicationPolicy::OwnerOnly ? COND_OwnerOnly : COND_None);
-			}
-		}
-	}
-}
-
 FRpgInventoryGraphSaveData URpgInventoryManagerComponent::ExportInventoryGraph() const
 {
 	FRpgInventoryGraphSaveData SaveData;
@@ -6421,34 +6299,31 @@ bool URpgInventoryManagerComponent::RestoreInventoryGraph(
 	const FRpgInventoryGraphSaveData& SaveData,
 	FRpgInventoryMutationResult& OutResult)
 {
-	const bool bRestored = ImportInventoryGraphInternal(
+	const bool bRestored = RestoreInventoryGraphInternal(
 		SaveData,
 		OutResult,
 		true);
-	OutResult.Operation = ERpgInventoryMutationOperation::Restore;
 	return bRestored;
 }
 
-bool URpgInventoryManagerComponent::ImportInventoryGraph(
+bool URpgInventoryManagerComponent::RestoreRuntimeCheckpoint(
 	const FRpgInventoryGraphSaveData& SaveData,
 	FRpgInventoryMutationResult& OutResult)
 {
-	// Compatibility/runtime-recovery callers retain the legacy import result
-	// semantic. Disk/profile reconstruction must use RestoreInventoryGraph.
-	return ImportInventoryGraphInternal(
+	return RestoreInventoryGraphInternal(
 		SaveData,
 		OutResult,
 		false);
 }
 
-bool URpgInventoryManagerComponent::ImportInventoryGraphInternal(
+bool URpgInventoryManagerComponent::RestoreInventoryGraphInternal(
 	const FRpgInventoryGraphSaveData& SaveData,
 	FRpgInventoryMutationResult& OutResult,
 	bool bEstablishNewMutationEpoch)
 {
 	OutResult = FRpgInventoryMutationResult();
 	OutResult.RequestId = FGuid::NewGuid();
-	OutResult.Operation = ERpgInventoryMutationOperation::Transfer;
+	OutResult.Operation = ERpgInventoryMutationOperation::Restore;
 	OutResult.RequestedQuantity = SaveData.Items.Num();
 
 	AActor* OwningActor = GetOwner();

@@ -6774,11 +6774,9 @@ bool FRpgInventoryLowLevelBlueprintDeprecationTest::RunTest(const FString& Param
 		GET_FUNCTION_NAME_CHECKED(URpgInventoryManagerComponent, MoveInventoryEntry),
 		GET_FUNCTION_NAME_CHECKED(URpgInventoryManagerComponent, MoveInventoryEntryToPlacement),
 		GET_FUNCTION_NAME_CHECKED(URpgInventoryManagerComponent, CanMoveInventoryEntryToPlacement),
-		GET_FUNCTION_NAME_CHECKED(URpgInventoryManagerComponent, ImportInventorySnapshot),
 		GET_FUNCTION_NAME_CHECKED(URpgInventoryManagerComponent, PlanInventoryMutation),
 		GET_FUNCTION_NAME_CHECKED(URpgInventoryManagerComponent, ExecuteInventoryMutation),
 		GET_FUNCTION_NAME_CHECKED(URpgInventoryManagerComponent, ExecuteCrossInventoryTransfer),
-		GET_FUNCTION_NAME_CHECKED(URpgInventoryManagerComponent, ImportInventoryGraph),
 	};
 
 	for (const FName FunctionName : DeprecatedFunctionNames)
@@ -6797,6 +6795,18 @@ bool FRpgInventoryLowLevelBlueprintDeprecationTest::RunTest(const FString& Param
 		TestFalse(
 			*FString::Printf(TEXT("%s explains its replacement"), *FunctionName.ToString()),
 			Function->GetMetaData(TEXT("DeprecationMessage")).IsEmpty());
+	}
+
+	static const FName RemovedPersistenceFunctionNames[] = {
+		TEXT("ExportInventorySnapshot"),
+		TEXT("ImportInventorySnapshot"),
+		TEXT("ImportInventoryGraph"),
+	};
+	for (const FName FunctionName : RemovedPersistenceFunctionNames)
+	{
+		TestNull(
+			*FString::Printf(TEXT("%s is no longer exposed to Blueprint"), *FunctionName.ToString()),
+			URpgInventoryManagerComponent::StaticClass()->FindFunctionByName(FunctionName));
 	}
 
 	static const FName CanonicalFunctionNames[] = {
@@ -7162,7 +7172,7 @@ bool FRpgInventoryNestedGraphValidationTest::RunTest(const FString& Parameters)
 
 	URpgInventoryManagerComponent* DepthTarget = TestWorld.CreateInventory(TEXT("DepthTarget"));
 	FRpgInventoryMutationResult DepthImportResult;
-	TestTrue(TEXT("Four item-owned levels are accepted"), DepthTarget->ImportInventoryGraph(DepthFourGraph, DepthImportResult));
+	TestTrue(TEXT("Four item-owned levels are accepted"), DepthTarget->RestoreInventoryGraph(DepthFourGraph, DepthImportResult));
 	TestEqual(TEXT("Accepted depth-four import reports success"), DepthImportResult.Code, ERpgInventoryMutationResultCode::Success);
 	FRpgInventoryEntryView DepthFourView;
 	TestTrue(TEXT("Depth-four item keeps its persistent identity"), GetEntryView(DepthTarget, DepthFourItem->GetItemId(), DepthFourView));
@@ -7177,7 +7187,7 @@ bool FRpgInventoryNestedGraphValidationTest::RunTest(const FString& Parameters)
 			FRpgInventoryContainerHandle::MakeItemOwned(DepthFourItem->GetItemId(), BagContainerId, 5)));
 	const FString BeforeDepthFiveImport = MakeInventorySignature(DepthTarget);
 	FRpgInventoryMutationResult DepthFiveResult;
-	TestFalse(TEXT("A fifth item-owned level is rejected"), DepthTarget->ImportInventoryGraph(DepthFiveGraph, DepthFiveResult));
+	TestFalse(TEXT("A fifth item-owned level is rejected"), DepthTarget->RestoreInventoryGraph(DepthFiveGraph, DepthFiveResult));
 	TestTrue(
 		TEXT("Depth-five rejection uses a stable validation error"),
 		DepthFiveResult.Code == ERpgInventoryMutationResultCode::InvalidRequest ||
@@ -7198,7 +7208,7 @@ bool FRpgInventoryNestedGraphValidationTest::RunTest(const FString& Parameters)
 			Bags[1]->GetItemId(),
 			FRpgInventoryContainerHandle::MakeItemOwned(Bags[0]->GetItemId(), BagContainerId, 1)));
 	FRpgInventoryMutationResult CycleResult;
-	TestFalse(TEXT("Mutually owning containers are rejected"), DepthTarget->ImportInventoryGraph(CycleGraph, CycleResult));
+	TestFalse(TEXT("Mutually owning containers are rejected"), DepthTarget->RestoreInventoryGraph(CycleGraph, CycleResult));
 	TestEqual(TEXT("Cycle rejection is distinguishable for UI/save diagnostics"), CycleResult.Code, ERpgInventoryMutationResultCode::CycleDetected);
 	TestEqual(TEXT("Cycle rejection is atomic"), MakeInventorySignature(DepthTarget), BeforeDepthFiveImport);
 
@@ -7207,7 +7217,7 @@ bool FRpgInventoryNestedGraphValidationTest::RunTest(const FString& Parameters)
 	DuplicateRow.Placement.X = 9;
 	DuplicateGraph.Items.Add(DuplicateRow);
 	FRpgInventoryMutationResult DuplicateResult;
-	TestFalse(TEXT("Duplicate persistent item identities are rejected"), DepthTarget->ImportInventoryGraph(DuplicateGraph, DuplicateResult));
+	TestFalse(TEXT("Duplicate persistent item identities are rejected"), DepthTarget->RestoreInventoryGraph(DuplicateGraph, DuplicateResult));
 	TestEqual(TEXT("Duplicate id has an explicit result code"), DuplicateResult.Code, ERpgInventoryMutationResultCode::DuplicateItemId);
 	TestEqual(TEXT("Duplicate-id rejection preserves the valid graph"), MakeInventorySignature(DepthTarget), BeforeDepthFiveImport);
 	return true;
@@ -7538,7 +7548,7 @@ bool FRpgInventoryGraphPersistenceRoundTripTest::RunTest(const FString& Paramete
 	TestEqual(TEXT("New exports use deterministic core payload v2"), ExportedCorePayload->Version, 2);
 
 	FRpgInventoryMutationResult ImportResult;
-	TestTrue(TEXT("A fully validated graph imports atomically"), RestoredInventory->ImportInventoryGraph(ExportedGraph, ImportResult));
+	TestTrue(TEXT("A fully validated graph restores atomically"), RestoredInventory->RestoreInventoryGraph(ExportedGraph, ImportResult));
 	TestEqual(TEXT("Round-trip import reports success"), ImportResult.Code, ERpgInventoryMutationResultCode::Success);
 	URpgInventoryItemInstance* RestoredItem = RestoredInventory->FindItemById(PersistentId);
 	TestNotNull(TEXT("Restored inventory resolves the original persistent id"), RestoredItem);
@@ -7577,7 +7587,7 @@ bool FRpgInventoryGraphPersistenceRoundTripTest::RunTest(const FString& Paramete
 		FRpgInventoryMutationResult SecondImportResult;
 		TestTrue(
 			TEXT("Re-exported runtime payload remains importable"),
-			SecondRestoredInventory->ImportInventoryGraph(ReExportedGraph, SecondImportResult));
+			SecondRestoredInventory->RestoreInventoryGraph(ReExportedGraph, SecondImportResult));
 		URpgInventoryItemInstance* SecondRestoredItem = SecondRestoredInventory->FindItemById(PersistentId);
 		TestNotNull(TEXT("Second restore still resolves the persistent id"), SecondRestoredItem);
 		if (SecondRestoredItem)
@@ -7618,7 +7628,7 @@ bool FRpgInventoryGraphPersistenceRoundTripTest::RunTest(const FString& Paramete
 		FRpgInventoryMutationResult LegacyImportResult;
 		TestTrue(
 			TEXT("Legacy FastArray-based core payload v1 remains importable"),
-			LegacyRestoredInventory->ImportInventoryGraph(LegacyV1Graph, LegacyImportResult));
+			LegacyRestoredInventory->RestoreInventoryGraph(LegacyV1Graph, LegacyImportResult));
 		URpgInventoryItemInstance* LegacyRestoredItem = LegacyRestoredInventory->FindItemById(PersistentId);
 		TestNotNull(TEXT("Legacy v1 import preserves persistent identity"), LegacyRestoredItem);
 		if (LegacyRestoredItem)
@@ -7785,179 +7795,6 @@ bool FRpgInventoryConsumeNestedSubtreeTest::RunTest(
 	return true;
 }
 
-IMPLEMENT_SIMPLE_AUTOMATION_TEST(
-	FRpgInventoryLegacyProviderPartialRemovalTest,
-	"SurvivalRpg.Inventory.Transaction.LegacyContainerPartialRemovalFailsClosed",
-	EAutomationTestFlags::EditorContext |
-		EAutomationTestFlags::EngineFilter)
-
-bool FRpgInventoryLegacyProviderPartialRemovalTest::RunTest(
-	const FString& Parameters)
-{
-	using namespace RpgInventoryTransactionTests;
-	FScopedInventoryWorld TestWorld;
-	if (!InitializeTest(*this, TestWorld))
-	{
-		return false;
-	}
-
-	URpgInventoryManagerComponent* Inventory =
-		TestWorld.CreateInventory(TEXT("LegacyContainerRemovalInventory"));
-	if (!TestNotNull(
-			TEXT("Legacy-container inventory exists"),
-			Inventory))
-	{
-		return false;
-	}
-
-	const FRpgInventoryContainerHandle Root = MakeStorageHandle();
-	const FRpgInventoryItemId BagId =
-		FRpgInventoryItemId::NewId();
-	FRpgInventorySnapshot LegacySnapshot;
-	LegacySnapshot.ContainerId = StorageContainerId;
-
-	FRpgInventorySnapshotEntry& BagEntry =
-		LegacySnapshot.Entries.AddDefaulted_GetRef();
-	BagEntry.EntryId = FGuid::NewGuid();
-	BagEntry.ItemId = BagId;
-	BagEntry.ItemDefinition =
-		URpgInventoryAutomationTestLegacyStackableBagItemDefinition::
-			StaticClass();
-	BagEntry.StackCount = 2;
-	BagEntry.Placement = MakePlacement(Root, 0, 0);
-	Inventory->ImportInventorySnapshot(LegacySnapshot);
-
-	URpgInventoryItemInstance* LegacyBag =
-		Inventory->FindItemById(BagId);
-	if (!TestNotNull(
-			TEXT("The legacy snapshot reconstructed its provider"),
-			LegacyBag))
-	{
-		return false;
-	}
-	TestEqual(
-		TEXT("The fixture contains a legacy two-unit provider stack"),
-		Inventory->GetItemStackCount(LegacyBag),
-		2);
-	const URpgInventoryFragment_ItemTraits* LegacyTraits =
-		LegacyBag->FindFragmentByClass<
-			URpgInventoryFragment_ItemTraits>();
-	TestTrue(
-		TEXT("The malformed legacy fixture advertises a raw stack size above one"),
-		LegacyTraits && LegacyTraits->GetMaxStackSize() > 1);
-	TestEqual(
-		TEXT("The authoritative effective stack rule clamps providers to one"),
-		URpgInventoryManagerComponent::
-			GetEffectiveMaxStackSizeForDefinition(
-				LegacyBag->GetItemDef()),
-		1);
-
-	const FString BeforeRejectedMutations =
-		MakeInventorySignature(Inventory);
-	TestFalse(
-		TEXT("Exact consume preflight rejects a partial empty provider"),
-		Inventory->CanConsumeItemById(BagId, 1));
-	FRpgInventoryMutationRequest ConsumeRequest;
-	ConsumeRequest.Operation =
-		ERpgInventoryMutationOperation::Consume;
-	ConsumeRequest.ItemId = BagId;
-	ConsumeRequest.Source = Root;
-	ConsumeRequest.Quantity = 1;
-	ConsumeRequest.RequestId = FGuid::NewGuid();
-	const FRpgInventoryMutationResult ConsumePlan =
-		Inventory->PlanInventoryMutation(ConsumeRequest);
-	TestEqual(
-		TEXT("A partial concrete container consume is rejected"),
-		ConsumePlan.Code,
-		ERpgInventoryMutationResultCode::InvalidRequest);
-	TestTrue(
-		TEXT("A rejected partial consume exposes no deltas"),
-		ConsumePlan.Deltas.IsEmpty());
-
-	FRpgInventoryMutationRequest DropRequest = ConsumeRequest;
-	DropRequest.Operation = ERpgInventoryMutationOperation::Drop;
-	DropRequest.RequestId = FGuid::NewGuid();
-	const FRpgInventoryMutationResult DropPlan =
-		Inventory->PlanInventoryMutation(DropRequest);
-	TestEqual(
-		TEXT("A partial concrete container drop is rejected"),
-		DropPlan.Code,
-		ERpgInventoryMutationResultCode::InvalidRequest);
-	TestTrue(
-		TEXT("A rejected partial drop exposes no deltas"),
-		DropPlan.Deltas.IsEmpty());
-
-	FRpgInventoryMutationRequest SplitRequest =
-		MakePlacementRequest(
-			ERpgInventoryMutationOperation::Split,
-			LegacyBag,
-			Root,
-			Root,
-			3,
-			0);
-	SplitRequest.Quantity = 1;
-	const FRpgInventoryMutationResult SplitPlan =
-		Inventory->PlanInventoryMutation(SplitRequest);
-	TestEqual(
-		TEXT("A container provider can never be split"),
-		SplitPlan.Code,
-		ERpgInventoryMutationResultCode::StackLimitReached);
-	TestFalse(
-		TEXT("The deprecated stack-removal adapter also rejects the partial provider"),
-		Inventory->RemoveItemInstanceStack(LegacyBag, 1));
-
-	UWorld* World = TestWorld.GetTestWorld();
-	FActorSpawnParameters SpawnParameters;
-	SpawnParameters.Name = MakeUniqueObjectName(
-		World,
-		ARpgDroppedInventoryActor::StaticClass(),
-		TEXT("LegacyPartialProviderDrop"));
-	SpawnParameters.ObjectFlags = RF_Transient;
-	SpawnParameters.SpawnCollisionHandlingOverride =
-		ESpawnActorCollisionHandlingMethod::AlwaysSpawn;
-	ARpgDroppedInventoryActor* DropActor =
-		World->SpawnActor<ARpgDroppedInventoryActor>(
-			ARpgDroppedInventoryActor::StaticClass(),
-			FTransform::Identity,
-			SpawnParameters);
-	if (!TestNotNull(
-			TEXT("The physical partial-provider target exists"),
-			DropActor))
-	{
-		return false;
-	}
-	const FRpgInventoryMutationResult PhysicalDropResult =
-		DropActor->TransferItemFromInventory(
-			Inventory,
-			BagId,
-			1,
-			FGuid::NewGuid());
-	TestEqual(
-		TEXT("The physical gateway also rejects a partial empty provider"),
-		PhysicalDropResult.Code,
-		ERpgInventoryMutationResultCode::InvalidRequest);
-	TestEqual(
-		TEXT("Rejected physical drop leaves its target empty"),
-		DropActor->GetLootInventoryManager()->GetUsedEntryCount(),
-		0);
-	TestFalse(
-		TEXT("Broad definition consume never selects a concrete provider"),
-		Inventory->ConsumeItemsByDefinition(
-			URpgInventoryAutomationTestLegacyStackableBagItemDefinition::
-				StaticClass(),
-			1));
-	TestEqual(
-		TEXT("Every rejected path preserves the complete legacy graph"),
-		MakeInventorySignature(Inventory),
-		BeforeRejectedMutations);
-
-	Inventory->RemoveItemInstance(LegacyBag);
-	TestEqual(
-		TEXT("The full legacy remove adapter deletes the complete provider stack"),
-		Inventory->GetUsedEntryCount(),
-		0);
-	return true;
-}
 
 IMPLEMENT_SIMPLE_AUTOMATION_TEST(
 	FRpgInventoryBatchConsumeAtomicityTest,

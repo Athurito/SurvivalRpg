@@ -6,6 +6,7 @@
 #include "Components/ActorComponent.h"
 #include "Misc/Guid.h"
 #include "Net/Serialization/FastArraySerializer.h"
+#include "RpgInventoryLegacySnapshot.h"
 #include "RpgInventorySpatialTypes.h"
 
 #include "RpgInventoryManagerComponent.generated.h"
@@ -298,48 +299,6 @@ struct SURVIVALRPG_API FRpgInventoryPlacementPlan
 	}
 };
 
-/** One save-ready inventory row used for session export/import and future world container saves. */
-USTRUCT(BlueprintType)
-struct FRpgInventorySnapshotEntry
-{
-	GENERATED_BODY()
-
-	/** Stable entry id preserved when restoring a saved container order. */
-	UPROPERTY(BlueprintReadWrite, Category = "Inventory|Snapshot")
-	FGuid EntryId;
-
-	/** Persistent concrete item identity preserved across containers and disk restore. */
-	UPROPERTY(BlueprintReadWrite, SaveGame, Category = "Inventory|Snapshot")
-	FRpgInventoryItemId ItemId;
-
-	/** Static item definition to recreate for this saved stack. */
-	UPROPERTY(BlueprintReadWrite, Category = "Inventory|Snapshot")
-	TSubclassOf<URpgInventoryItemDefinition> ItemDefinition;
-
-	/** Saved stack count for this entry. */
-	UPROPERTY(BlueprintReadWrite, Category = "Inventory|Snapshot")
-	int32 StackCount = 0;
-
-	/** Saved spatial placement for this entry. */
-	UPROPERTY(BlueprintReadWrite, Category = "Inventory|Snapshot")
-	FRpgInventoryGridPlacement Placement;
-};
-
-/** Save-ready inventory snapshot for a player inventory or world container. */
-USTRUCT(BlueprintType)
-struct FRpgInventorySnapshot
-{
-	GENERATED_BODY()
-
-	/** Stable id for the container that owns these entries. Player inventories may leave this None. */
-	UPROPERTY(BlueprintReadWrite, Category = "Inventory|Snapshot")
-	FName ContainerId;
-
-	/** Saved item entries in shared order. */
-	UPROPERTY(BlueprintReadWrite, Category = "Inventory|Snapshot")
-	TArray<FRpgInventorySnapshotEntry> Entries;
-};
-
 /** A message when an item is added to the inventory */
 USTRUCT(BlueprintType)
 struct FRpgInventoryChangeMessage
@@ -463,8 +422,6 @@ public:
 		FGuid EntryId,
 		const FRpgInventoryGridPlacement& TargetPlacement,
 		bool bAllowStackMerge = true);
-	FRpgInventorySnapshot ExportSnapshot(FName ContainerId) const;
-	void ImportSnapshot(const FRpgInventorySnapshot& Snapshot);
 
 private:
 	FRpgInventoryEntry* FindEntryByInstance(URpgInventoryItemInstance* Instance);
@@ -837,14 +794,6 @@ public:
 	UFUNCTION(BlueprintCallable, Category = "Inventory|Spatial", BlueprintPure, meta = (DeprecatedFunction, DeprecationMessage = "Use the typed move gateway so preview and commit validate the same complete source snapshot."))
 	bool CanMoveInventoryEntryToPlacement(FGuid EntryId, FRpgInventoryGridPlacement TargetPlacement) const;
 
-	/** Exports a save-ready snapshot containing item definitions, stack counts, entry ids, and shared order. */
-	UFUNCTION(BlueprintCallable, Category = "Inventory|Snapshot")
-	FRpgInventorySnapshot ExportInventorySnapshot(FName ContainerId) const;
-
-	/** Replaces this inventory with a save-ready snapshot. Server-authoritative and intended for future world-save restore paths. */
-	UFUNCTION(BlueprintCallable, BlueprintAuthorityOnly, Category = "Inventory|Snapshot", meta = (DeprecatedFunction, DeprecationMessage = "Use RestoreInventoryGraph. Legacy snapshots omit item-owned hierarchy and fragment runtime state."))
-	void ImportInventorySnapshot(const FRpgInventorySnapshot& Snapshot);
-
 	/**
 	 * Simulates one local item-id mutation using its authoritative source rules.
 	 * Drop preview covers subtree removal only; the physical actor/target grid is validated by DropItem.
@@ -868,6 +817,17 @@ public:
 	FRpgInventoryGraphSaveData ExportInventoryGraph() const;
 
 	/**
+	 * Converts one explicitly versioned root-only legacy snapshot into the current graph DTO without mutating live state.
+	 * The returned graph must still pass RestoreInventoryGraph's canonical validation before it can become authoritative.
+	 */
+	bool ConvertLegacyInventorySnapshot(
+		ERpgLegacyInventorySnapshotVersion Version,
+		const FRpgInventorySnapshot& Snapshot,
+		FName FallbackRootContainerId,
+		FRpgInventoryGraphSaveData& OutSaveData,
+		FString& OutError) const;
+
+	/**
 	 * Restores a complete graph after full validation and atomically replaces runtime inventory state.
 	 * Existing items with matching persistent ids and definitions retain their runtime instance and entry identity.
 	 */
@@ -882,9 +842,14 @@ public:
 	/** Returns the replicated state revision; authoritative commits advance it, while cached command replays do not. */
 	int32 GetInventoryRevision() const { return InventoryRevision; }
 
-	/** Compatibility name retained for existing Blueprint save code. Runtime profile restore owns the canonical C++ restore seam. */
-	UFUNCTION(BlueprintCallable, BlueprintAuthorityOnly, Category = "Inventory|Persistence", meta = (DeprecatedFunction, DeprecationMessage = "Use the authoritative profile/save restore gateway. Direct Blueprint graph import is a legacy compatibility path."))
-	bool ImportInventoryGraph(const FRpgInventoryGraphSaveData& SaveData, FRpgInventoryMutationResult& OutResult);
+	/**
+	 * Restores a previously exported runtime checkpoint without starting a new command epoch.
+	 * This native-only seam is reserved for rollback inside one authoritative transaction; disk/profile loads use
+	 * RestoreInventoryGraph so stale request replays cannot cross the persistence boundary.
+	 */
+	bool RestoreRuntimeCheckpoint(
+		const FRpgInventoryGraphSaveData& SaveData,
+		FRpgInventoryMutationResult& OutResult);
 
 	//~UObject interface
 	virtual void BeginPlay() override;
@@ -981,7 +946,7 @@ private:
 		FRpgInventoryTransferIntent Intent,
 		ERpgInventoryMutationOperation Operation,
 		bool bAllowPartialStack);
-	bool ImportInventoryGraphInternal(
+	bool RestoreInventoryGraphInternal(
 		const FRpgInventoryGraphSaveData& SaveData,
 		FRpgInventoryMutationResult& OutResult,
 		bool bEstablishNewMutationEpoch);

@@ -2646,7 +2646,7 @@ bool URpgInventoryUiActionComponent::TryDepositMaterialStackToBase(
 	auto RestoreExactInventoryGraph = [&]()
 	{
 		FRpgInventoryMutationResult RollbackResult;
-		if (!Inventory->ImportInventoryGraph(
+		if (!Inventory->RestoreRuntimeCheckpoint(
 				GraphBefore,
 				RollbackResult) ||
 			!RollbackResult.IsSuccess())
