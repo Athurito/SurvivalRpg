@@ -103,6 +103,12 @@ public:
 	UFUNCTION(BlueprintCallable, BlueprintPure = false, Category = "Rpg|Save")
 	bool HasRestoredPlayerProfile(const APlayerController* PC) const;
 
+	/**
+	 * Idempotently attempts the pending profile restore once PlayerState PawnData and its inventory layout are ready.
+	 * Returns true after this server connection has recorded a restore result, and false while prerequisites are missing.
+	 */
+	bool TryRestorePlayerProfileWhenReady(APlayerController* PC);
+
 	/** Marks player state dirty and restarts the two-second asynchronous disk-save debounce. */
 	UFUNCTION(BlueprintCallable, BlueprintAuthorityOnly, Category = "Rpg|Save")
 	void MarkPlayerSaveDirty(APlayerController* PC);
@@ -197,6 +203,7 @@ private:
 	/** Runtime-only respawn key retained for the existing replicated session state. */
 	static FUniqueNetIdRepl GetNetIdForPC(const APlayerController* PC);
 
+	bool IsPlayerProfileRestoreReady(const APlayerController* PC) const;
 	bool RestorePlayerProfile(APlayerController* PC);
 	bool TryRestorePlayerSaveData(APlayerController* PC, const FRpgPlayerSaveData& SaveData);
 	void CapturePlayerSaveData(APlayerController* PC);

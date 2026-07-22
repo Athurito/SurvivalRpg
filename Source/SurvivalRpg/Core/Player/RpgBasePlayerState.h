@@ -14,6 +14,9 @@ class URpgHealthSet;
 class URpgPawnData;
 struct FGameplayTagContainer;
 
+/** Native lifecycle signal fired after this PlayerState receives authoritative or replicated PawnData. */
+DECLARE_MULTICAST_DELEGATE_OneParam(FOnRpgPawnDataChanged, const URpgPawnData*);
+
 /**
  * Shared PlayerState base for player and AI-controlled pawns.
  *
@@ -51,6 +54,9 @@ public:
 	/** Sets replicated PawnData, applies startup tags, grants AbilitySets, and initializes team data. Authority-only. */
 	void SetPawnData(const URpgPawnData* InPawnData);
 
+	/** Returns the native PawnData-ready signal used by controller-owned gameplay projections. */
+	FOnRpgPawnDataChanged& OnPawnDataChanged() { return PawnDataChanged; }
+
 	UFUNCTION(BlueprintPure, Category = "Rpg|Team")
 	int32 GetTeamId() const;
 
@@ -79,6 +85,8 @@ protected:
 	uint8 TeamId = 255;
 
 private:
+	FOnRpgPawnDataChanged PawnDataChanged;
+
 	/** Health attribute set owned by the PlayerState ASC. */
 	UPROPERTY()
 	TObjectPtr<const URpgHealthSet> HealthSet;

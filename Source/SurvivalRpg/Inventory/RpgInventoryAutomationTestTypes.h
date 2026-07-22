@@ -11,6 +11,9 @@
 
 #include "RpgInventoryAutomationTestTypes.generated.h"
 
+class URpgPawnData;
+class URpgPlayerInventoryLayoutDefinition;
+
 /** Editor-only 1x1 non-stackable item definition used by inventory automation tests. */
 UCLASS(NotBlueprintable, Transient)
 class URpgInventoryAutomationTestUnitItemDefinition final : public URpgInventoryItemDefinition
@@ -439,7 +442,25 @@ class ARpgInventoryAutomationTestPlayerState final : public ARpgPlayerState
 	GENERATED_BODY()
 
 public:
+	virtual void PostActorCreated() override;
 	virtual void PostInitializeComponents() override;
+
+	/** Returns the fixture-owned mutable layout definition used to author test-only groups. */
+	URpgPlayerInventoryLayoutDefinition* GetMutableTestInventoryLayoutDefinition() const
+	{
+		return TestInventoryLayoutDefinition.Get();
+	}
+
+private:
+	void InitializeTestPawnData();
+
+	/** Transient PawnData that supplies the fixture layout without loading production assets. */
+	UPROPERTY(Transient)
+	TObjectPtr<URpgPawnData> TestPawnData;
+
+	/** Per-fixture mutable layout definition; never shared with production content or other tests. */
+	UPROPERTY(Transient)
+	TObjectPtr<URpgPlayerInventoryLayoutDefinition> TestInventoryLayoutDefinition;
 };
 
 /** Concrete pickup fixture that exposes deterministic instance batches to inventory automation tests. */

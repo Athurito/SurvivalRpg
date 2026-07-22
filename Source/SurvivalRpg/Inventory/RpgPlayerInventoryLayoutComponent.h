@@ -9,6 +9,7 @@
 class URpgEquipmentLoadoutComponent;
 class URpgInventoryItemInstance;
 class URpgInventoryManagerComponent;
+class URpgPlayerInventoryLayoutDefinition;
 
 /** Gameplay message emitted when the player's inventory layout groups or capacity should be refreshed by UI. */
 USTRUCT(BlueprintType)
@@ -43,7 +44,11 @@ class SURVIVALRPG_API URpgPlayerInventoryLayoutComponent : public UControllerCom
 public:
 	explicit URpgPlayerInventoryLayoutComponent(const FObjectInitializer& ObjectInitializer = FObjectInitializer::Get());
 
-	virtual void BeginPlay() override;
+	/** Returns the immutable layout selected by the owning controller's replicated PlayerState PawnData. */
+	const URpgPlayerInventoryLayoutDefinition* GetLayoutDefinition() const;
+
+	/** Re-evaluates PawnData-backed layout state and notifies server gameplay or owning-client presentation. */
+	void RefreshLayoutFromPawnData();
 
 	/** Returns all active slot groups in stable visual/global order. */
 	UFUNCTION(BlueprintCallable, BlueprintPure = false, Category = "Inventory|Layout")
@@ -97,7 +102,7 @@ public:
 	UFUNCTION(BlueprintCallable, BlueprintPure = false, Category = "Inventory|Layout")
 	bool IsContentSlotAddress(const FRpgInventorySlotAddress& Address) const;
 
-	/** Applies the current layout cell count to the player inventory as a fixed entry capacity on the server. */
+	/** Keeps the spatial player inventory grid-driven, then broadcasts that its active layout should be re-evaluated. */
 	UFUNCTION(BlueprintCallable, BlueprintAuthorityOnly, Category = "Inventory|Layout")
 	void ApplyLayoutCapacityToInventory();
 
@@ -146,9 +151,4 @@ private:
 	static bool IsBuiltInGearGroupId(FName GroupId);
 	static bool TryGetEquipmentSlotForGearGroupId(FName GroupId, ERpgEquipmentSlot& OutEquipmentSlot);
 	static FName EquipmentSlotToSourceName(ERpgEquipmentSlot EquipmentSlot);
-	static FRpgInventorySlotGroupDefinition MakeStaticGroup(FName ContainerId, const FText& DisplayName, int32 GridWidth, int32 GridHeight, const TArray<ERpgInventoryItemCategory>& AllowedCategories, bool bActionbarBindable, bool bCarrySlot, ERpgInventorySlotGroupKind GroupKind, FGameplayTag CarryActivationRole = FGameplayTag());
-
-	/** Built-in body/carry/content containers. Runtime item-provider containers are appended after these. */
-	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Inventory|Layout", meta = (AllowPrivateAccess = "true", TitleProperty = "ContainerId"))
-	TArray<FRpgInventorySlotGroupDefinition> StaticSlotGroups;
 };

@@ -3,6 +3,7 @@
 #if WITH_DEV_AUTOMATION_TESTS
 
 #include "RpgPlayerInventoryLayoutComponent.h"
+#include "RpgPlayerInventoryLayoutDefinition.h"
 #include "RpgInventoryDragDrop.h"
 #include "RpgInventoryEquipmentPlacementPolicy.h"
 #include "RpgInventoryInteractionSession.h"
@@ -4242,29 +4243,18 @@ bool FRpgInventoryCarryQuickAccessBindingTest::RunTest(const FString& Parameters
 		TEXT("The acknowledged binding releases the held drag ghost"),
 		Coordinator->GetInteractionSession()->HasPayload());
 
-	FArrayProperty* StaticSlotGroupsProperty = FindFProperty<FArrayProperty>(
-		URpgPlayerInventoryLayoutComponent::StaticClass(),
-		TEXT("StaticSlotGroups"));
+	URpgPlayerInventoryLayoutDefinition* TestLayoutDefinition =
+		PlayerState->GetMutableTestInventoryLayoutDefinition();
 	if (!TestNotNull(
-		TEXT("The designer-authored static group array remains reflected"),
-		StaticSlotGroupsProperty))
-	{
-		return false;
-	}
-
-	TArray<FRpgInventorySlotGroupDefinition>* StaticSlotGroups =
-		StaticSlotGroupsProperty->ContainerPtrToValuePtr<
-			TArray<FRpgInventorySlotGroupDefinition>>(Layout);
-	if (!TestNotNull(
-		TEXT("The fixture can author a custom static Carry group"),
-		StaticSlotGroups))
+		TEXT("The fixture owns a mutable transient layout definition"),
+		TestLayoutDefinition))
 	{
 		return false;
 	}
 
 	const FName CustomCarryRole(TEXT("DesignerCarrySlot"));
 	FRpgInventorySlotGroupDefinition& CustomCarryGroup =
-		StaticSlotGroups->AddDefaulted_GetRef();
+		TestLayoutDefinition->StaticSlotGroups.AddDefaulted_GetRef();
 	CustomCarryGroup.ContainerId = CustomCarryRole;
 	CustomCarryGroup.GroupKind = ERpgInventorySlotGroupKind::Carry;
 	CustomCarryGroup.GridSize.Width = 1;

@@ -5,6 +5,8 @@
 #include "RpgInventoryItemInstance.h"
 #include "RpgInventoryManagerComponent.h"
 #include "RpgPlayerInventoryLayoutComponent.h"
+#include "RpgPlayerInventoryLayoutDefinition.h"
+#include "SurvivalRpg/Core/Character/RpgPawnData.h"
 #include "SurvivalRpg/GameplayTags/RpgGameplayTags.h"
 
 #include "Engine/Engine.h"
@@ -52,6 +54,11 @@ namespace RpgInventoryPlacementEvaluatorTests
 		bool IsValid() const
 		{
 			return GameInstance != nullptr && World != nullptr;
+		}
+
+		UWorld* GetWorld() const
+		{
+			return World;
 		}
 
 		URpgInventoryManagerComponent* CreateInventory(const TCHAR* DebugName)
@@ -695,11 +702,52 @@ bool FRpgInventoryPlacementHandleAndSubtreeCapacityTest::RunTest(
 		CollidingEquipmentSlot,
 		ERpgEquipmentSlot::None);
 
+	FActorSpawnParameters LayoutControllerParameters;
+	LayoutControllerParameters.Name = MakeUniqueObjectName(
+		TestWorld.GetWorld(),
+		ARpgInventoryAutomationTestPlayerController::StaticClass(),
+		TEXT("PlacementHandleLayoutController"));
+	LayoutControllerParameters.ObjectFlags = RF_Transient;
+	ARpgInventoryAutomationTestPlayerController* LayoutController =
+		TestWorld.GetWorld()->SpawnActor<ARpgInventoryAutomationTestPlayerController>(
+			LayoutControllerParameters);
+
+	FActorSpawnParameters LayoutPlayerStateParameters;
+	LayoutPlayerStateParameters.Name = MakeUniqueObjectName(
+		TestWorld.GetWorld(),
+		ARpgInventoryAutomationTestPlayerState::StaticClass(),
+		TEXT("PlacementHandleLayoutPlayerState"));
+	LayoutPlayerStateParameters.ObjectFlags = RF_Transient;
+	ARpgInventoryAutomationTestPlayerState* LayoutPlayerState =
+		TestWorld.GetWorld()->SpawnActor<ARpgInventoryAutomationTestPlayerState>(
+			LayoutPlayerStateParameters);
+	if (!TestNotNull(TEXT("The layout controller fixture exists"), LayoutController) ||
+		!TestNotNull(TEXT("The layout PlayerState fixture exists"), LayoutPlayerState))
+	{
+		return false;
+	}
+
+	LayoutController->SetPlayerState(LayoutPlayerState);
+	LayoutPlayerState->SetOwner(LayoutController);
+	const URpgPawnData* LayoutPawnData =
+		LayoutPlayerState->GetPawnData<URpgPawnData>();
+	const URpgPlayerInventoryLayoutDefinition* LayoutDefinition =
+		LayoutPawnData ? LayoutPawnData->InventoryLayoutDefinition : nullptr;
 	const URpgPlayerInventoryLayoutComponent* DefaultLayout =
-		GetDefault<URpgPlayerInventoryLayoutComponent>();
+		LayoutController->GetPlayerInventoryLayoutComponent();
 	FRpgInventorySlotAddress RootGearAddress;
 	FRpgInventoryGridPlacement RootGearPlacement;
-	if (!TestNotNull(TEXT("The default player inventory layout exists"), DefaultLayout) ||
+	if (!TestNotNull(TEXT("The fixture PawnData exists"), LayoutPawnData) ||
+		!TestNotNull(TEXT("The fixture layout definition exists"), LayoutDefinition) ||
+		!TestEqual(
+			TEXT("The fixture layout definition contains all static groups"),
+			LayoutDefinition ? LayoutDefinition->StaticSlotGroups.Num() : 0,
+			13) ||
+		!TestNotNull(TEXT("The default player inventory layout exists"), DefaultLayout) ||
+		!TestEqual(
+			TEXT("The component resolves all fixture layout groups"),
+			DefaultLayout ? DefaultLayout->GetSlotGroups().Num() : 0,
+			13) ||
 		!TestTrue(
 			TEXT("The Head equipment slot produces a canonical root address"),
 			URpgPlayerInventoryLayoutComponent::TryMakeGearSlotAddress(

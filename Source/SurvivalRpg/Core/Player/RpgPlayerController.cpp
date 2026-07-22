@@ -12,6 +12,7 @@
 #include "SurvivalRpg/AbilitySystem/RpgAbilitySystemComponent.h"
 #include "SurvivalRpg/ActionBar/RpgActionBarComponent.h"
 #include "SurvivalRpg/Core/Game/RpgGameModeBase.h"
+#include "SurvivalRpg/Core/Character/RpgPawnData.h"
 #include "SurvivalRpg/Core/Character/RpgPawnExtensionComponent.h"
 #include "SurvivalRpg/Core/Player/RpgBasePlayerState.h"
 #include "SurvivalRpg/Core/Player/RpgPlayerGameplayInputRouterComponent.h"
@@ -387,6 +388,7 @@ void ARpgPlayerController::BindToPlayerState(ARpgPlayerState* NewPlayerState)
 	BoundPlayerState = NewPlayerState;
 	BoundPlayerState->OnRespawnStateChanged.AddDynamic(this, &ThisClass::HandleRespawnStateChanged);
 	BoundPlayerState->OnCheckpointChanged.AddDynamic(this, &ThisClass::HandleCheckpointChanged);
+	BoundPlayerState->OnPawnDataChanged().AddUObject(this, &ThisClass::HandlePawnDataChanged);
 
 	HandleRespawnStateChanged(
 		BoundPlayerState->IsWaitingForRespawn(),
@@ -396,10 +398,8 @@ void ARpgPlayerController::BindToPlayerState(ARpgPlayerState* NewPlayerState)
 		BoundPlayerState->HasCheckpoint(),
 		BoundPlayerState->GetCheckpointTransform());
 
-	if (HasAuthority() && PlayerInventoryLayoutComponent)
-	{
-		PlayerInventoryLayoutComponent->ApplyLayoutCapacityToInventory();
-	}
+	// Close the race where PawnData arrived before the controller established its PlayerState bindings.
+	HandlePawnDataChanged(BoundPlayerState->GetPawnData<URpgPawnData>());
 }
 
 void ARpgPlayerController::UnbindFromPlayerState()
@@ -411,7 +411,17 @@ void ARpgPlayerController::UnbindFromPlayerState()
 
 	BoundPlayerState->OnRespawnStateChanged.RemoveDynamic(this, &ThisClass::HandleRespawnStateChanged);
 	BoundPlayerState->OnCheckpointChanged.RemoveDynamic(this, &ThisClass::HandleCheckpointChanged);
+	BoundPlayerState->OnPawnDataChanged().RemoveAll(this);
 	BoundPlayerState = nullptr;
+}
+
+void ARpgPlayerController::HandlePawnDataChanged(const URpgPawnData* NewPawnData)
+{
+	(void)NewPawnData;
+	if (PlayerInventoryLayoutComponent)
+	{
+		PlayerInventoryLayoutComponent->RefreshLayoutFromPawnData();
+	}
 }
 
 void ARpgPlayerController::OnStartAutoRun()

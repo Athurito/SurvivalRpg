@@ -69,7 +69,8 @@ void ARpgGameModeBase::InitGameState()
 
 	URpgExperienceManagerComponent* ExperienceComponent = GameState ? GameState->FindComponentByClass<URpgExperienceManagerComponent>() : nullptr;
 	check(ExperienceComponent);
-	ExperienceComponent->CallOrRegister_OnExperienceLoaded(FOnRpgExperienceLoaded::FDelegate::CreateUObject(this, &ThisClass::OnExperienceLoaded));
+	// PlayerStates receive PawnData on the normal-priority callback. Restore and spawning must run afterwards.
+	ExperienceComponent->CallOrRegister_OnExperienceLoaded_LowPriority(FOnRpgExperienceLoaded::FDelegate::CreateUObject(this, &ThisClass::OnExperienceLoaded));
 }
 
 void ARpgGameModeBase::StartPlay()
@@ -98,7 +99,7 @@ void ARpgGameModeBase::PostLogin(APlayerController* NewPlayer)
 {
 	GetOrCreatePlayerSaveData(NewPlayer);
 	GetOrCreatePlayerRespawnState(NewPlayer);
-	RestorePlayerProfile(NewPlayer);
+	TryRestorePlayerProfileWhenReady(NewPlayer);
 	SyncPlayerCheckpointDataToPlayerState(NewPlayer);
 	SyncPlayerRespawnStateToPlayerState(NewPlayer);
 
@@ -303,10 +304,29 @@ void ARpgGameModeBase::OnMatchAssignmentGiven(FPrimaryAssetId ExperienceId, cons
 
 void ARpgGameModeBase::OnExperienceLoaded(const URpgExperienceDefinition* CurrentExperience)
 {
+	(void)CurrentExperience;
 	for (FConstPlayerControllerIterator Iterator = GetWorld()->GetPlayerControllerIterator(); Iterator; ++Iterator)
 	{
 		APlayerController* PC = Iterator->Get();
-		if (PC && PC->GetPawn() == nullptr && PlayerCanRestart(PC))
+		if (!PC)
+		{
+			continue;
+		}
+
+		// Attempt restore while the PlayerState inventory exists and before the first pawn consumes equipment selection.
+		if (!TryRestorePlayerProfileWhenReady(PC))
+		{
+			const FRpgPlayerSaveData* SaveData = PlayerSaveDataMap.Find(GetPlayerProfileKey(PC));
+			bDiskWritesBlockedByRestoreFailure = true;
+			UE_LOG(LogRpg, Error,
+				TEXT("RpgGameMode: Experience loaded without a PawnData-backed inventory layout for profile [%s] (%s); disk writes are blocked."),
+				*GetPlayerProfileKey(PC),
+				SaveData && SaveData->bHasInventoryGraph
+					? TEXT("saved graph cannot be restored")
+					: TEXT("new profile cannot initialize its player layout"));
+		}
+
+		if (PC->GetPawn() == nullptr && PlayerCanRestart(PC))
 		{
 			RestartPlayer(PC);
 		}
@@ -492,6 +512,27 @@ bool ARpgGameModeBase::HasRestoredPlayerProfile(const APlayerController* PC) con
 	return bRestored && *bRestored;
 }
 
+bool ARpgGameModeBase::TryRestorePlayerProfileWhenReady(APlayerController* PC)
+{
+	if (!PC || !HasAuthority())
+	{
+		return false;
+	}
+
+	if (IsPlayerProfileRestoreComplete(PC))
+	{
+		return true;
+	}
+
+	if (!IsPlayerProfileRestoreReady(PC))
+	{
+		return false;
+	}
+
+	RestorePlayerProfile(PC);
+	return IsPlayerProfileRestoreComplete(PC);
+}
+
 void ARpgGameModeBase::MarkPlayerSaveDirty(APlayerController* PC)
 {
 	if (!HasAuthority() || !PC)
@@ -525,9 +566,25 @@ void ARpgGameModeBase::MarkWorldContainerSaveDirty(
 	MarkWorldSaveDirty();
 }
 
+bool ARpgGameModeBase::IsPlayerProfileRestoreReady(const APlayerController* PC) const
+{
+	const ARpgPlayerController* RpgPC = Cast<ARpgPlayerController>(PC);
+	const ARpgPlayerState* PlayerState = RpgPC ? RpgPC->GetRpgPlayerState() : nullptr;
+	const URpgPawnData* PawnData = PlayerState ? PlayerState->GetPawnData<URpgPawnData>() : nullptr;
+	const URpgPlayerInventoryLayoutComponent* LayoutComponent = RpgPC
+		? RpgPC->GetPlayerInventoryLayoutComponent()
+		: nullptr;
+	return PlayerState &&
+		PlayerState->GetInventoryManagerComponent() &&
+		PawnData &&
+		PawnData->InventoryLayoutDefinition &&
+		LayoutComponent &&
+		LayoutComponent->GetLayoutDefinition() == PawnData->InventoryLayoutDefinition;
+}
+
 bool ARpgGameModeBase::RestorePlayerProfile(APlayerController* PC)
 {
-	if (!PC || !HasAuthority())
+	if (!PC || !HasAuthority() || !IsPlayerProfileRestoreReady(PC))
 	{
 		return false;
 	}

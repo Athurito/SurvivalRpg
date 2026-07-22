@@ -4,7 +4,11 @@
 #include "RpgInventoryFragment_ItemContainer.h"
 #include "RpgInventoryFragment_ItemTraits.h"
 #include "RpgInventoryItemInstance.h"
+#include "RpgPlayerInventoryLayoutComponent.h"
+#include "RpgPlayerInventoryLayoutDefinition.h"
+#include "SurvivalRpg/Core/Character/RpgPawnData.h"
 #include "SurvivalRpg/Equipment/RpgEquipmentAutomationTestTypes.h"
+#include "SurvivalRpg/GameplayTags/RpgGameplayTags.h"
 
 #include UE_INLINE_GENERATED_CPP_BY_NAME(RpgInventoryAutomationTestTypes)
 
@@ -31,6 +35,30 @@ namespace
 		TraitsFragment->ItemCategory = ERpgInventoryItemCategory::Misc;
 		TraitsFragment->bCanStack = false;
 		TraitsFragment->MaxStackSize = 1;
+	}
+
+	FRpgInventorySlotGroupDefinition MakeTestStaticGroup(
+		FName ContainerId,
+		const FText& DisplayName,
+		int32 GridWidth,
+		int32 GridHeight,
+		const TArray<ERpgInventoryItemCategory>& AllowedCategories,
+		bool bActionbarBindable,
+		bool bCarrySlot,
+		ERpgInventorySlotGroupKind GroupKind,
+		FGameplayTag CarryActivationRole = FGameplayTag())
+	{
+		FRpgInventorySlotGroupDefinition Group;
+		Group.ContainerId = ContainerId;
+		Group.DisplayName = DisplayName;
+		Group.GroupKind = GroupKind;
+		Group.GridSize.Width = FMath::Max(1, GridWidth);
+		Group.GridSize.Height = FMath::Max(1, GridHeight);
+		Group.Rule.AllowedCategories = AllowedCategories;
+		Group.Rule.bActionbarBindable = bActionbarBindable;
+		Group.Rule.bCarrySlot = bCarrySlot;
+		Group.Rule.CarryActivationRole = CarryActivationRole;
+		return Group;
 	}
 }
 
@@ -692,8 +720,61 @@ URpgInventoryAutomationTestHeavyItemDefinition::URpgInventoryAutomationTestHeavy
 	Fragments.Add(EquippableFragment);
 }
 
+void ARpgInventoryAutomationTestPlayerState::PostActorCreated()
+{
+	Super::PostActorCreated();
+	InitializeTestPawnData();
+}
+
 void ARpgInventoryAutomationTestPlayerState::PostInitializeComponents()
 {
-	// The inventory/loadout test does not compose a full Experience-backed GameState.
-	APlayerState::PostInitializeComponents();
+	// Keep the shared ASC lifecycle, but skip ARpgPlayerState's Experience/GameState hook.
+	ARpgBasePlayerState::PostInitializeComponents();
+	InitializeTestPawnData();
+}
+
+void ARpgInventoryAutomationTestPlayerState::InitializeTestPawnData()
+{
+	if (TestPawnData && TestInventoryLayoutDefinition)
+	{
+		return;
+	}
+
+	TestInventoryLayoutDefinition =
+		NewObject<URpgPlayerInventoryLayoutDefinition>(
+			this,
+			TEXT("InventoryAutomationLayoutDefinition"),
+			RF_Transient);
+	check(TestInventoryLayoutDefinition);
+
+	// Keep the compact 4x2 Pockets baseline used by transaction fixtures. The
+	// production 6x6 contract is covered by the asset-composition test.
+	TestInventoryLayoutDefinition->StaticSlotGroups =
+	{
+		MakeTestStaticGroup(URpgPlayerInventoryLayoutComponent::GearHeadGroupId, NSLOCTEXT("RpgInventoryLayout", "GearHead", "Head"), 1, 1, { ERpgInventoryItemCategory::Armor }, false, false, ERpgInventorySlotGroupKind::Gear),
+		MakeTestStaticGroup(URpgPlayerInventoryLayoutComponent::GearChestGroupId, NSLOCTEXT("RpgInventoryLayout", "GearChest", "Chest"), 1, 1, { ERpgInventoryItemCategory::Armor }, false, false, ERpgInventorySlotGroupKind::Gear),
+		MakeTestStaticGroup(URpgPlayerInventoryLayoutComponent::GearHandsGroupId, NSLOCTEXT("RpgInventoryLayout", "GearHands", "Hands"), 1, 1, { ERpgInventoryItemCategory::Armor }, false, false, ERpgInventorySlotGroupKind::Gear),
+		MakeTestStaticGroup(URpgPlayerInventoryLayoutComponent::GearLegsGroupId, NSLOCTEXT("RpgInventoryLayout", "GearLegs", "Legs"), 1, 1, { ERpgInventoryItemCategory::Armor }, false, false, ERpgInventorySlotGroupKind::Gear),
+		MakeTestStaticGroup(URpgPlayerInventoryLayoutComponent::GearFeetGroupId, NSLOCTEXT("RpgInventoryLayout", "GearFeet", "Feet"), 1, 1, { ERpgInventoryItemCategory::Armor }, false, false, ERpgInventorySlotGroupKind::Gear),
+		MakeTestStaticGroup(URpgPlayerInventoryLayoutComponent::GearBackpackGroupId, NSLOCTEXT("RpgInventoryLayout", "GearBackpack", "Backpack"), 1, 1, {}, false, false, ERpgInventorySlotGroupKind::Gear),
+		MakeTestStaticGroup(URpgPlayerInventoryLayoutComponent::GearBeltGroupId, NSLOCTEXT("RpgInventoryLayout", "GearBelt", "Belt"), 1, 1, {}, false, false, ERpgInventorySlotGroupKind::Gear),
+		MakeTestStaticGroup(URpgPlayerInventoryLayoutComponent::GearPouchGroupId, NSLOCTEXT("RpgInventoryLayout", "GearPouch", "Pouch"), 1, 1, {}, false, false, ERpgInventorySlotGroupKind::Gear),
+		MakeTestStaticGroup(URpgPlayerInventoryLayoutComponent::GearResourceBagGroupId, NSLOCTEXT("RpgInventoryLayout", "GearResourceBag", "Resource Bag"), 1, 1, {}, false, false, ERpgInventorySlotGroupKind::Gear),
+		MakeTestStaticGroup(URpgPlayerInventoryLayoutComponent::WeaponSlot1GroupId, NSLOCTEXT("RpgInventoryLayout", "WeaponSlot1", "Weapon 1"), 1, 1, { ERpgInventoryItemCategory::Weapon }, true, true, ERpgInventorySlotGroupKind::Carry, RpgGameplayTags::Equipment_Slot_MainHand),
+		MakeTestStaticGroup(URpgPlayerInventoryLayoutComponent::WeaponSlot2GroupId, NSLOCTEXT("RpgInventoryLayout", "WeaponSlot2", "Weapon 2"), 1, 1, { ERpgInventoryItemCategory::Weapon }, true, true, ERpgInventorySlotGroupKind::Carry, RpgGameplayTags::Equipment_Slot_MainHand),
+		MakeTestStaticGroup(URpgPlayerInventoryLayoutComponent::ShieldSlotGroupId, NSLOCTEXT("RpgInventoryLayout", "ShieldSlot", "Shield"), 1, 1, { ERpgInventoryItemCategory::Shield }, true, true, ERpgInventorySlotGroupKind::Carry, RpgGameplayTags::Equipment_Slot_OffHand),
+		MakeTestStaticGroup(URpgPlayerInventoryLayoutComponent::PocketsGroupId, NSLOCTEXT("RpgInventoryLayout", "Pockets", "Pockets"), 4, 2, {}, true, false, ERpgInventorySlotGroupKind::Content)
+	};
+
+	TestPawnData = NewObject<URpgPawnData>(
+		this,
+		TEXT("InventoryAutomationPawnData"),
+		RF_Transient);
+	check(TestPawnData);
+	TestPawnData->InventoryLayoutDefinition = TestInventoryLayoutDefinition;
+
+	// Manually spawned PlayerState fixtures can still have ROLE_None while
+	// PostActorCreated runs. Inject the fixture-owned static data directly;
+	// production PawnData lifecycle and delegate behavior are covered separately.
+	PawnData = TestPawnData;
 }

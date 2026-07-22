@@ -7,6 +7,9 @@
 #include "RpgInventoryFragment_SlotContainerProvider.h"
 #include "RpgInventoryItemInstance.h"
 #include "RpgInventoryManagerComponent.h"
+#include "RpgPlayerInventoryLayoutDefinition.h"
+#include "SurvivalRpg/Core/Character/RpgPawnData.h"
+#include "SurvivalRpg/Core/Player/RpgBasePlayerState.h"
 #include "SurvivalRpg/Core/Player/RpgPlayerState.h"
 #include "SurvivalRpg/Equipment/RpgEquipmentLoadoutComponent.h"
 #include "SurvivalRpg/GameplayTags/RpgGameplayTags.h"
@@ -31,30 +34,30 @@ URpgPlayerInventoryLayoutComponent::URpgPlayerInventoryLayoutComponent(const FOb
 	: Super(ObjectInitializer)
 {
 	SetIsReplicatedByDefault(true);
-
-	StaticSlotGroups =
-	{
-		MakeStaticGroup(GearHeadGroupId, NSLOCTEXT("RpgInventoryLayout", "GearHead", "Head"), 1, 1, { ERpgInventoryItemCategory::Armor }, false, false, ERpgInventorySlotGroupKind::Gear),
-		MakeStaticGroup(GearChestGroupId, NSLOCTEXT("RpgInventoryLayout", "GearChest", "Chest"), 1, 1, { ERpgInventoryItemCategory::Armor }, false, false, ERpgInventorySlotGroupKind::Gear),
-		MakeStaticGroup(GearHandsGroupId, NSLOCTEXT("RpgInventoryLayout", "GearHands", "Hands"), 1, 1, { ERpgInventoryItemCategory::Armor }, false, false, ERpgInventorySlotGroupKind::Gear),
-		MakeStaticGroup(GearLegsGroupId, NSLOCTEXT("RpgInventoryLayout", "GearLegs", "Legs"), 1, 1, { ERpgInventoryItemCategory::Armor }, false, false, ERpgInventorySlotGroupKind::Gear),
-		MakeStaticGroup(GearFeetGroupId, NSLOCTEXT("RpgInventoryLayout", "GearFeet", "Feet"), 1, 1, { ERpgInventoryItemCategory::Armor }, false, false, ERpgInventorySlotGroupKind::Gear),
-		MakeStaticGroup(GearBackpackGroupId, NSLOCTEXT("RpgInventoryLayout", "GearBackpack", "Backpack"), 1, 1, {}, false, false, ERpgInventorySlotGroupKind::Gear),
-		MakeStaticGroup(GearBeltGroupId, NSLOCTEXT("RpgInventoryLayout", "GearBelt", "Belt"), 1, 1, {}, false, false, ERpgInventorySlotGroupKind::Gear),
-		MakeStaticGroup(GearPouchGroupId, NSLOCTEXT("RpgInventoryLayout", "GearPouch", "Pouch"), 1, 1, {}, false, false, ERpgInventorySlotGroupKind::Gear),
-		MakeStaticGroup(GearResourceBagGroupId, NSLOCTEXT("RpgInventoryLayout", "GearResourceBag", "Resource Bag"), 1, 1, {}, false, false, ERpgInventorySlotGroupKind::Gear),
-		MakeStaticGroup(WeaponSlot1GroupId, NSLOCTEXT("RpgInventoryLayout", "WeaponSlot1", "Weapon 1"), 1, 1, { ERpgInventoryItemCategory::Weapon }, true, true, ERpgInventorySlotGroupKind::Carry, RpgGameplayTags::Equipment_Slot_MainHand),
-		MakeStaticGroup(WeaponSlot2GroupId, NSLOCTEXT("RpgInventoryLayout", "WeaponSlot2", "Weapon 2"), 1, 1, { ERpgInventoryItemCategory::Weapon }, true, true, ERpgInventorySlotGroupKind::Carry, RpgGameplayTags::Equipment_Slot_MainHand),
-		MakeStaticGroup(ShieldSlotGroupId, NSLOCTEXT("RpgInventoryLayout", "ShieldSlot", "Shield"), 1, 1, { ERpgInventoryItemCategory::Shield }, true, true, ERpgInventorySlotGroupKind::Carry, RpgGameplayTags::Equipment_Slot_OffHand),
-		MakeStaticGroup(PocketsGroupId, NSLOCTEXT("RpgInventoryLayout", "Pockets", "Pockets"), 4, 2, {}, true, false, ERpgInventorySlotGroupKind::Content)
-	};
 }
 
-void URpgPlayerInventoryLayoutComponent::BeginPlay()
+const URpgPlayerInventoryLayoutDefinition* URpgPlayerInventoryLayoutComponent::GetLayoutDefinition() const
 {
-	Super::BeginPlay();
+	const AController* OwnerController = Cast<AController>(GetOwner());
+	const ARpgBasePlayerState* PlayerState = OwnerController
+		? OwnerController->GetPlayerState<ARpgBasePlayerState>()
+		: nullptr;
+	const URpgPawnData* PawnData = PlayerState
+		? PlayerState->GetPawnData<URpgPawnData>()
+		: nullptr;
+	return PawnData ? PawnData->InventoryLayoutDefinition : nullptr;
+}
 
-	ApplyLayoutCapacityToInventory();
+void URpgPlayerInventoryLayoutComponent::RefreshLayoutFromPawnData()
+{
+	const AActor* OwnerActor = GetOwner();
+	if (OwnerActor && OwnerActor->HasAuthority())
+	{
+		ApplyLayoutCapacityToInventory();
+		return;
+	}
+
+	BroadcastLayoutChanged();
 }
 
 TArray<FRpgInventorySlotGroupView> URpgPlayerInventoryLayoutComponent::GetSlotGroups() const
@@ -518,7 +521,13 @@ TArray<FRpgInventorySlotGroupView> URpgPlayerInventoryLayoutComponent::BuildSlot
 {
 	TArray<FRpgInventorySlotGroupView> Groups;
 
-	AppendGroupViews(StaticSlotGroups, false, ERpgEquipmentSlot::None, Groups);
+	const URpgPlayerInventoryLayoutDefinition* LayoutDefinition = GetLayoutDefinition();
+	if (!LayoutDefinition)
+	{
+		return Groups;
+	}
+
+	AppendGroupViews(LayoutDefinition->StaticSlotGroups, false, ERpgEquipmentSlot::None, Groups);
 
 	URpgInventoryManagerComponent* PlayerInventory = FindPlayerInventory();
 	const ERpgEquipmentSlot ProviderSlots[] =
@@ -683,28 +692,4 @@ FName URpgPlayerInventoryLayoutComponent::EquipmentSlotToSourceName(ERpgEquipmen
 	default:
 		return NAME_None;
 	}
-}
-
-FRpgInventorySlotGroupDefinition URpgPlayerInventoryLayoutComponent::MakeStaticGroup(
-	FName ContainerId,
-	const FText& DisplayName,
-	int32 GridWidth,
-	int32 GridHeight,
-	const TArray<ERpgInventoryItemCategory>& AllowedCategories,
-	bool bActionbarBindable,
-	bool bCarrySlot,
-	ERpgInventorySlotGroupKind GroupKind,
-	FGameplayTag CarryActivationRole)
-{
-	FRpgInventorySlotGroupDefinition Group;
-	Group.ContainerId = ContainerId;
-	Group.DisplayName = DisplayName;
-	Group.GroupKind = GroupKind;
-	Group.GridSize.Width = FMath::Max(1, GridWidth);
-	Group.GridSize.Height = FMath::Max(1, GridHeight);
-	Group.Rule.AllowedCategories = AllowedCategories;
-	Group.Rule.bActionbarBindable = bActionbarBindable;
-	Group.Rule.bCarrySlot = bCarrySlot;
-	Group.Rule.CarryActivationRole = CarryActivationRole;
-	return Group;
 }

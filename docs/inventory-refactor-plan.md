@@ -1569,7 +1569,7 @@ Verifizierter Phase-4E-Zwischenstand vom 2026-07-22:
   Subtree-Grenzen in allen Import- und Transferpfaden über gemeinsame
   Graphinvarianten vereinheitlichen.
 
-Verifizierter Phase-4F-Zwischenstand vom 2026-07-22:
+Verifizierter Phase-4F-Abschlussstand vom 2026-07-22:
 
 - `ValidateInventoryGraph` ist der gemeinsame fail-closed Vertrag für
   Restore, Cross-Inventory-Transfer, Collect und Pickup. Er erzeugt kanonische
@@ -1616,9 +1616,9 @@ Verifizierter Phase-4F-Zwischenstand vom 2026-07-22:
 
 ## Phase 5 – Datengetriebenes Layout und Editor-Validierung
 
-Status: **Offen**
+Status: **In Arbeit**
 
-- [ ] `URpgPlayerInventoryLayoutDefinition` als DataAsset über
+- [x] `URpgPlayerInventoryLayoutDefinition` als DataAsset über
       PawnData/Experience zuweisen.
 - [ ] Semantische Rollen statt Logik aus hartcodierten `FName`-IDs verwenden.
 - [ ] Gear-/Carry-Gruppen erhalten eine explizite, typisierte
@@ -1632,6 +1632,56 @@ Status: **Offen**
       Migrationswarnungen abbilden.
 - [ ] Widget-Compiler-/Editor-Validierung für erforderliche BindWidgets,
       Layer und Input-Actions ergänzen.
+
+Verifizierter Phase-5A-Zwischenstand vom 2026-07-22:
+
+- `URpgPlayerInventoryLayoutDefinition` ist die immutable,
+  designer-authored Quelle für statische Gear-, Carry- und Content-Roots.
+  `DA_PlayerInventoryLayout_Default` enthält 13 Gruppen und 48 Zellen;
+  `Pockets` behält die im PlayerController-Blueprint konfigurierte Größe
+  6 x 6. Dynamische, von Items bereitgestellte Container bleiben
+  Runtime-Projektionen.
+- `DA_PawnData` referenziert das Layout hart; `RpgPrototypeExperience`
+  referenziert weiterhin `DA_PawnData`. Der Asset-Composition-Test prüft die
+  konkrete Experience-/PawnData-/Layout-Abhängigkeitskette sowie Reihenfolge,
+  Gruppenarten, Kategorien, Regeln und Carry-Rollen.
+- `URpgPlayerInventoryLayoutComponent` besitzt kein reflektiertes
+  `StaticSlotGroups` mehr und löst die statische Definition ausschließlich
+  über das replizierte PlayerState-PawnData auf. `BP_Rpg_PlayerController`
+  wurde neu gespeichert; sein serialisierter Legacy-Override ist entfernt.
+- Ein gemeinsames PawnData-Changed-Signal für Authority und `OnRep_PawnData`
+  sowie der sofortige Controller-Rebind schließen beide
+  Initialisierungsreihenfolgen. Fehlende Definitionen liefern fail-closed
+  keine statischen Gruppen; ein fehlendes Player-Layout nach Experience-Load
+  blockiert außerdem persistente Schreibvorgänge.
+- Profil-Restore wartet auf PlayerState, Inventory, PawnData und exakt dessen
+  Layoutdefinition. Der idempotente Retry läuft nach der PawnData-Zuweisung
+  und vor dem ersten Pawn-Restart; der Per-Controller-Test verwendet dafür
+  genau einen echten `PostLogin` pro Verbindung und keinen künstlichen
+  Framework-Reentry.
+- Automation-Fixtures besitzen eigene transiente PawnData- und
+  Layoutdefinitionen. Sie initialisieren diese auch in Standalone-Testwelten
+  sicher über `PostActorCreated`; ihr bewusst kompaktes 4-x-2-Pockets-Layout
+  bleibt vom produktiven 6-x-6-Assetvertrag getrennt.
+- `SurvivalRpgEditor Win64 Development` wurde mit Unreal Engine 5.8 gebaut
+  (`Result: Succeeded`).
+- `SurvivalRpg.Inventory`: 113 von 113 Automationtests erfolgreich.
+- `SurvivalRpg.Save.WorldSave.MemoryRoundTrip`: 1 von 1 Automationtests
+  erfolgreich.
+- `SurvivalRpg.Equipment`: 5 von 5 Automationtests erfolgreich.
+- `SurvivalRpg.Crafting`: 8 von 8 Automationtests erfolgreich.
+- `SurvivalRpg.UI`: 20 von 20 Automationtests erfolgreich.
+- `CompileAllBlueprints` endete mit Prozesscode 0; seine Compile-Zusammenfassung
+  meldete 0 Fehler, 16 Warnungen und 0 nicht ladbare Blueprints. Die
+  abschließende Prozesszusammenfassung zählte 49 bekannte Warnemissionen:
+  44 `LogBlueprint`-Compilerzeilen (42 Deprecated- und 2 UI-Tick-Warnungen),
+  4 fehlende StringTable-Einträge und 1
+  GameplayCue-Pfadkonfigurationswarnung.
+- Fortschritt Phase 5: 1 von 7 Punkten abgeschlossen (14,3 %).
+- Gesamtfortschritt der verbindlichen Checkliste: 69 von 94 Punkten
+  abgeschlossen (73,4 %), 25 Punkte offen.
+- Nächster Schnitt: semantische Rollen statt Logik aus hartcodierten
+  `FName`-Container-IDs verwenden.
 
 ## Phase 6 – MVVM, Refresh und Komponentenschnitt
 

@@ -18,6 +18,7 @@ class URpgPlayerInventoryLayoutComponent;
 class URpgPlayerGameplayInputRouterComponent;
 class URpgWeaponAbilityLoadoutComponent;
 class URpgPawnExtensionComponent;
+class URpgPawnData;
 class UInputMappingContext;
 class ARpgPlayerState;
 class ARpgGameModeBase;
@@ -138,6 +139,7 @@ private:
 	void RefreshPlayerStateBindings();
 	void BindToPlayerState(ARpgPlayerState* NewPlayerState);
 	void UnbindFromPlayerState();
+	void HandlePawnDataChanged(const URpgPawnData* NewPawnData);
 	void OpenInventoryContainerScreen(FGameplayTag ScreenTag, URpgInventoryManagerComponent* PrimaryInventory, URpgInventoryManagerComponent* SecondaryInventory, AActor* ContextActor);
 
 	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Input", meta = (AllowPrivateAccess = "true"))

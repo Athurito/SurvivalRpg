@@ -4,6 +4,8 @@
 
 #include "RpgInventoryManagerComponent.h"
 #include "RpgPlayerInventoryLayoutComponent.h"
+#include "RpgPlayerInventoryLayoutDefinition.h"
+#include "SurvivalRpg/Core/Character/RpgPawnData.h"
 #include "SurvivalRpg/Core/Game/RpgGameModeBase.h"
 
 #include "Engine/Engine.h"
@@ -176,6 +178,35 @@ namespace RpgInventoryIntentBoundaryTests
 		OutInventory = OutPlayerState->GetInventoryManagerComponent();
 		return OutInventory != nullptr;
 	}
+
+	bool AssignTransientLayoutPawnData(APlayerController* Controller)
+	{
+		ARpgPlayerState* PlayerState = Controller
+			? Controller->GetPlayerState<ARpgPlayerState>()
+			: nullptr;
+		if (!PlayerState || PlayerState->GetPawnData<URpgPawnData>())
+		{
+			return false;
+		}
+
+		URpgPlayerInventoryLayoutDefinition* LayoutDefinition =
+			NewObject<URpgPlayerInventoryLayoutDefinition>(
+				PlayerState,
+				NAME_None,
+				RF_Transient);
+		URpgPawnData* PawnData = NewObject<URpgPawnData>(
+			PlayerState,
+			NAME_None,
+			RF_Transient);
+		if (!LayoutDefinition || !PawnData)
+		{
+			return false;
+		}
+
+		PawnData->InventoryLayoutDefinition = LayoutDefinition;
+		PlayerState->SetPawnData(PawnData);
+		return PlayerState->GetPawnData<URpgPawnData>() == PawnData;
+	}
 }
 
 IMPLEMENT_SIMPLE_AUTOMATION_TEST(
@@ -268,24 +299,54 @@ bool FRpgInventoryRestoreStatusPerControllerTest::RunTest(
 	TestFalse(
 		TEXT("The second connection has no restore result before PostLogin"),
 		GameMode->IsPlayerProfileRestoreComplete(SecondController));
+	FRpgPlayerSaveData& SharedSaveData =
+		GameMode->GetOrCreatePlayerSaveData(FirstController);
+	SharedSaveData.bHasInventoryGraph = true;
+	SharedSaveData.InventoryGraph = FRpgInventoryGraphSaveData();
 
 	GameMode->PostLogin(FirstController);
-	TestTrue(
-		TEXT("The first connection records its completed no-save restore attempt"),
+	TestFalse(
+		TEXT("PostLogin before PawnData does not cache a failed restore attempt"),
 		GameMode->IsPlayerProfileRestoreComplete(FirstController));
 	TestFalse(
-		TEXT("A completed attempt is not reported as a restored graph"),
-		GameMode->HasRestoredPlayerProfile(FirstController));
-	TestFalse(
-		TEXT("The same profile key does not complete another controller's restore"),
+		TEXT("The same profile key does not affect another controller's restore state"),
 		GameMode->IsPlayerProfileRestoreComplete(SecondController));
+	if (!TestTrue(
+			TEXT("The first PlayerState receives a transient PawnData-backed layout"),
+			AssignTransientLayoutPawnData(FirstController)))
+	{
+		return false;
+	}
+
+	TestTrue(
+		TEXT("The real deferred retry attempts the first restore once PawnData is ready"),
+		GameMode->TryRestorePlayerProfileWhenReady(FirstController));
+	TestTrue(
+		TEXT("The first connection restores after its PawnData layout becomes ready"),
+		GameMode->IsPlayerProfileRestoreComplete(FirstController));
+	TestTrue(
+		TEXT("The deferred first graph restore succeeds instead of retaining an early failure"),
+		GameMode->HasRestoredPlayerProfile(FirstController));
 
 	GameMode->PostLogin(SecondController);
-	TestTrue(
-		TEXT("The second connection receives its own restore attempt"),
-		GameMode->IsPlayerProfileRestoreComplete(SecondController));
 	TestFalse(
-		TEXT("The second no-save attempt is not reported as a restored graph"),
+		TEXT("The second connection independently waits for its own PawnData layout"),
+		GameMode->IsPlayerProfileRestoreComplete(SecondController));
+	if (!TestTrue(
+			TEXT("The second PlayerState receives a transient PawnData-backed layout"),
+			AssignTransientLayoutPawnData(SecondController)))
+	{
+		return false;
+	}
+
+	TestTrue(
+		TEXT("The real deferred retry attempts the second restore once PawnData is ready"),
+		GameMode->TryRestorePlayerProfileWhenReady(SecondController));
+	TestTrue(
+		TEXT("The second connection receives its own completed restore attempt"),
+		GameMode->IsPlayerProfileRestoreComplete(SecondController));
+	TestTrue(
+		TEXT("The second connection restores the shared saved graph independently"),
 		GameMode->HasRestoredPlayerProfile(SecondController));
 
 	GameMode->Logout(FirstController);

@@ -163,11 +163,13 @@ void ARpgBasePlayerState::SetPawnData(const URpgPawnData* InPawnData)
 
 	SendAbilitiesChangedEvent();
 	UGameFrameworkComponentManager::SendGameFrameworkComponentExtensionEvent(this, NAME_RpgAbilityReady);
+	PawnDataChanged.Broadcast(PawnData);
 	ForceNetUpdate();
 }
 
 void ARpgBasePlayerState::OnRep_PawnData()
 {
+	PawnDataChanged.Broadcast(PawnData);
 }
 
 void ARpgBasePlayerState::ApplyStartupLooseTags(const FGameplayTagContainer& TagContainer) const
