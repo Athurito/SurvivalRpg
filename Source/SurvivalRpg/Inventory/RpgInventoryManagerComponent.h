@@ -804,6 +804,17 @@ public:
 		FRpgInventoryTransferIntent Intent,
 		bool bAllowPartialStack);
 
+	/**
+	 * Collects as many top-level source roots as fit into the ordered target containers using one shared scratch plan.
+	 * Ordinary stacks may transfer partially; item-container providers and their descendants transfer only as a whole.
+	 * RequestId identifies one immutable server-side command, and affected ids resolve the changed target root rows.
+	 */
+	FRpgInventoryMutationResult CollectRootItemsBatch(
+		URpgInventoryManagerComponent* TargetInventory,
+		const TArray<FRpgInventoryContainerHandle>& TargetContainers,
+		FGuid RequestId,
+		TArray<FRpgInventoryItemId>& OutAffectedTargetItemIds);
+
 	/** Plans subtree-safe removal before a physical dropped actor is selected or spawned. */
 	FRpgInventoryMutationResult PlanDropItem(FRpgInventoryTransferIntent Intent) const;
 
@@ -931,6 +942,19 @@ private:
 	bool RevalidatePickupBatch(
 		const FPreparedPickupBatch& Prepared,
 		ERpgInventoryMutationResultCode& OutCode) const;
+	struct FPreparedCollectBatch;
+	bool PrepareCollectRootItemsBatch(
+		URpgInventoryManagerComponent* TargetInventory,
+		const TArray<FRpgInventoryContainerHandle>& TargetContainers,
+		FGuid RequestId,
+		FPreparedCollectBatch& OutPrepared,
+		ERpgInventoryMutationResultCode& OutCode);
+	bool RevalidateCollectRootItemsBatch(
+		const FPreparedCollectBatch& Prepared,
+		ERpgInventoryMutationResultCode& OutCode) const;
+	FRpgInventoryMutationResult CommitCollectRootItemsBatch(
+		FPreparedCollectBatch& Prepared,
+		TArray<FRpgInventoryItemId>& OutAffectedTargetItemIds);
 	/** Shared evaluator seam used by staged restore after its batch-local owner/rule resolution. */
 	FRpgInventoryPlacementPlan EvaluatePlacementInternal(
 		const FRpgInventoryPlacementQuery& Query,
@@ -968,7 +992,16 @@ private:
 		bool bEstablishNewMutationEpoch);
 	struct FRecentMutationRecord
 	{
+		enum class EKind : uint8
+		{
+			SingleMutation,
+			CollectRootBatch
+		};
+
+		EKind Kind = EKind::SingleMutation;
 		FRpgInventoryMutationRequest Request;
+		TArray<FRpgInventoryContainerHandle> TargetContainers;
+		TArray<FRpgInventoryItemId> AffectedTargetItemIds;
 		TWeakObjectPtr<URpgInventoryManagerComponent> TargetInventory;
 		bool bHadTargetInventory = false;
 		bool bAllowPartialStack = false;
@@ -989,6 +1022,17 @@ private:
 		URpgInventoryManagerComponent* TargetInventory,
 		bool bAllowPartialStack,
 		FRpgInventoryMutationResult Result);
+	bool TryReplayRecentCollectRootBatch(
+		FGuid RequestId,
+		URpgInventoryManagerComponent* TargetInventory,
+		const TArray<FRpgInventoryContainerHandle>& TargetContainers,
+		FRpgInventoryMutationResult& OutResult,
+		TArray<FRpgInventoryItemId>& OutAffectedTargetItemIds);
+	FRpgInventoryMutationResult CacheRecentCollectRootBatchResult(
+		URpgInventoryManagerComponent* TargetInventory,
+		const TArray<FRpgInventoryContainerHandle>& TargetContainers,
+		FRpgInventoryMutationResult Result,
+		const TArray<FRpgInventoryItemId>& AffectedTargetItemIds);
 
 private:
 	/** Source used to determine how many entries this inventory may hold. */
@@ -1037,4 +1081,7 @@ private:
 
 	/** Prevents fragment initialization/copy hooks from recursively planning or applying another pickup batch. */
 	mutable bool bIsPlanningPickupBatch = false;
+
+	/** Prevents a multi-root collect from being reentered through fragment hooks or synchronous inventory listeners. */
+	bool bIsApplyingCollectBatch = false;
 };

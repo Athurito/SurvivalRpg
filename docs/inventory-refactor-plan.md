@@ -81,9 +81,9 @@ In Phase 0 bekannte Restpunkte, späteren Phasen zugeordnet:
 - Der Cross-Inventory-Vollgraph-Import war Phase 3 zugeordnet. Seit Phase 3A
   arbeiten Transfers als vorvalidierte In-place-Deltas; unnötige Remove-/Add-
   Nachrichten und pauschaler Subobject-Registrierungs-Churn sind entfernt.
-  Der detached/static Batch-Pickup arbeitet seit Phase 3B1 gegen einen
-  gemeinsamen Scratch-Zustand; der kanonische Multi-Root-Collect aus einem
-  `ARpgDroppedInventoryActor` bleibt Phase 3B2.
+  Detached/static Pickup-Payloads und der kanonische Multi-Root-Collect aus
+  einem `ARpgDroppedInventoryActor` planen seit Phase 3B1/3B2 jeweils gegen
+  einen gemeinsamen Scratch-Zustand und committen ohne sichtbare Zwischenlage.
 - Collect-/Starter-Grant-Pfade sind jetzt physisch korrekt geroutet, benötigen
   aber noch eigene Ende-zu-Ende-Tests für Vollbelegung und Rollback (Phase 2).
 - Der gemeinsame Placement-Evaluator unterscheidet Root- und item-owned
@@ -1167,7 +1167,7 @@ Verifizierter Phase-2G-Abschlussstand vom 2026-07-21:
 
 ## Phase 3 – Runtime-Transfer vom Save/Load trennen
 
-Status: **In Arbeit**
+Status: **Abgeschlossen**
 
 - [x] Source und Target vollständig vorvalidieren.
 - [x] Transfer als In-place-Delta atomar committen.
@@ -1176,7 +1176,7 @@ Status: **In Arbeit**
       Items beim aktuellen Graph-Commit erhalten.
 - [x] Notifications und FastArray-Deltas einmal pro Commit bündeln.
 - [x] Rollback ohne extern sichtbaren Zwischenzustand sicherstellen.
-- [ ] Batch-Pickup und Collect gegen Scratch-Occupancy planen.
+- [x] Batch-Pickup und Collect gegen Scratch-Occupancy planen.
 
 Verifizierter Phase-3A-Zwischenstand vom 2026-07-22:
 
@@ -1259,6 +1259,51 @@ Verifizierter Phase-3B1-Zwischenstand vom 2026-07-22:
   genau einer Source- und Target-Revision committen. Partial-Stacks bleiben
   erlaubt; Provider-/Container-Subtrees werden weiterhin nur vollständig
   übertragen.
+
+Verifizierter Phase-3B2-Abschluss vom 2026-07-22:
+
+- Der kanonische Drop-Collect plant alle physischen Source-Roots in
+  deterministischer Reihenfolge gegen einen gemeinsamen Target-Scratch. Die
+  authored Reihenfolge der Content-Container bleibt erhalten; ein unpassender
+  Root blockiert kleinere, später passende Roots nicht.
+- Gewöhnliche Stacks dürfen vorhandene kompatible Stacks auffüllen und
+  teilweise in der Source verbleiben. Container-Provider und ihre vollständigen
+  Descendant-Graphen werden weiterhin ausschließlich als unteilbarer Subtree
+  übertragen.
+- Source- und Target-Graph, Revisionen, Entry-Kapazität, Spatial-Occupancy,
+  actorweite Item-/Entry-Identitäten und exportierter Fragment-Runtime-State
+  werden vor dem Commit erfasst und unmittelbar davor revalidiert. Cross-Actor-
+  Items werden unter dem dauerhaften Target-Actor rekonstruiert; Same-Actor-
+  Vollmoves können ihre Instanzidentität behalten.
+- Der gemeinsame Commit markiert nur tatsächlich geänderte FastArray-Zeilen,
+  ändert jede Inventory-Revision genau einmal und veröffentlicht synchrone
+  Notifications erst, nachdem beide finalen Graphen sichtbar sind. Exakte
+  Request-Replays liefern das gecachte Ergebnis und dieselben Autoequip-IDs
+  ohne eine zweite Mutation.
+- Die Collect-Ability delegiert den kanonischen Pfad auf genau einen
+  source-owned Batch-Aufruf. Nur tatsächlich betroffene Target-Root-IDs gehen
+  an Autoequip; ein vollständig geleerter Drop kann zerstört werden, während
+  ein Restbestand das Loot-Inventar öffnet.
+- Fünf neue Collect-Batch-Tests decken Mixed Roots mit Shared Scratch,
+  Skip-and-Continue, Provider-Subtree und Partial-Merge, vollständiges Leeren
+  plus exakten Replay, Callback-Reentrancy, Root- und item-owned Target-
+  Container mit Depth-Rebase, Merge-then-Place sowie leere und vollständig
+  blockierte Quellen ohne Seiteneffekte ab.
+- `SurvivalRpgEditor Win64 Development` wurde mit Unreal Engine 5.8 gebaut
+  (16/16 Actions im vollständigen Build, 6/6 Actions im finalen
+  inkrementellen Build).
+- `SurvivalRpg.Inventory.CollectBatch`: 5 von 5 Automationtests erfolgreich.
+- `SurvivalRpg.Inventory`: 104 von 104 Automationtests erfolgreich.
+- `SurvivalRpg.Equipment`: 5 von 5 Automationtests erfolgreich.
+- `SurvivalRpg.Crafting`: 6 von 6 Automationtests erfolgreich.
+- Fortschritt Phase 3: 7 von 7 Punkten abgeschlossen (100,0 %).
+- Gesamtfortschritt der verbindlichen Checkliste: 62 von 94 Punkten
+  abgeschlossen (66,0 %), 32 Punkte offen.
+- Die Automation prüft den autoritativen Manager-Commit und kanonische Drop-
+  Quellen, aber keinen echten Zwei-Client-PIE-/Late-Join-Datenstrom und nicht
+  den vollständigen GAS-/Client-RPC-Lifecycle der Collect-Ability. Diese Punkte
+  bleiben gezielte Integrations-QA und werden nicht als ausgeführt behauptet.
+- Nächster Schnitt nach Wiederaufnahme: Phase 4 – Datenmodell und Persistenz.
 
 ## Phase 4 – Datenmodell und Persistenz
 

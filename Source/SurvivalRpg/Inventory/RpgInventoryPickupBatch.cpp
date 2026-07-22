@@ -165,7 +165,8 @@ struct URpgInventoryManagerComponent::FPreparedPickupBatch
 bool URpgInventoryManagerComponent::CanAddPickupBatch(
 	const FInventoryPickup& Pickup) const
 {
-	if (bIsApplyingPickupBatch || bIsPlanningPickupBatch)
+	if (bIsApplyingPickupBatch || bIsPlanningPickupBatch ||
+		bIsApplyingCollectBatch)
 	{
 		return false;
 	}
@@ -1179,7 +1180,8 @@ FRpgInventoryMutationResult URpgInventoryManagerComponent::AddPickupBatch(
 	RpgInventoryPickupBatchPrivate::TryGetRequestedQuantity(
 		Pickup,
 		Result.RequestedQuantity);
-	if (bIsApplyingPickupBatch || bIsPlanningPickupBatch)
+	if (bIsApplyingPickupBatch || bIsPlanningPickupBatch ||
+		bIsApplyingCollectBatch)
 	{
 		return Result;
 	}

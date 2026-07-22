@@ -7,8 +7,6 @@
 #include "SurvivalRpg/Inventory/IPickupable.h"
 #include "SurvivalRpg/Inventory/RpgDroppedInventoryActor.h"
 #include "SurvivalRpg/Inventory/RpgInventoryFragment_EquippableItem.h"
-#include "SurvivalRpg/Inventory/RpgInventoryFragment_ItemContainer.h"
-#include "SurvivalRpg/Inventory/RpgInventoryItemDefinition.h"
 #include "SurvivalRpg/Inventory/RpgInventoryItemInstance.h"
 #include "SurvivalRpg/Inventory/RpgInventoryManagerComponent.h"
 #include "SurvivalRpg/Inventory/RpgInventoryUiActionComponent.h"
@@ -45,73 +43,13 @@ namespace
 			return false;
 		}
 
-		TArray<FRpgInventoryItemId> RootItemIds;
-		for (const FRpgInventoryEntryView& Entry : LootInventory->GetAllEntries())
-		{
-			if (Entry.ItemId.IsValid() && Entry.Placement.GetContainerHandle().IsRoot())
-			{
-				RootItemIds.Add(Entry.ItemId);
-			}
-		}
-
-		bool bTransferredAnything = false;
-		for (const FRpgInventoryItemId& RootItemId : RootItemIds)
-		{
-			for (const FRpgInventoryContainerHandle& TargetContainer : TargetContainers)
-			{
-				URpgInventoryItemInstance* CurrentItem = LootInventory->FindItemById(RootItemId);
-				const TArray<FRpgInventoryEntryView> CurrentEntries =
-					LootInventory->GetAllEntries();
-				const FRpgInventoryEntryView* SourceEntry =
-					CurrentEntries.FindByPredicate(
-						[RootItemId](const FRpgInventoryEntryView& Entry)
-						{
-							return Entry.ItemId == RootItemId;
-						});
-				if (!CurrentItem || !SourceEntry ||
-					!SourceEntry->EntryId.IsValid() ||
-					!SourceEntry->Placement.IsValid() ||
-					SourceEntry->StackCount <= 0)
-				{
-					break;
-				}
-
-				const int32 CurrentStackCount = SourceEntry->StackCount;
-				const bool bAllowPartialStackPickup =
-					!CurrentItem->FindFragmentByClass<URpgInventoryFragment_ItemContainer>() &&
-					URpgInventoryManagerComponent::
-						GetEffectiveMaxStackSizeForDefinition(
-							CurrentItem->GetItemDef()) > 1;
-
-				FRpgInventoryTransferIntent Intent;
-				Intent.ItemId = RootItemId;
-				Intent.ExpectedEntryId = SourceEntry->EntryId;
-				Intent.ExpectedSourcePlacement = SourceEntry->Placement;
-				Intent.ExpectedSourceQuantity = CurrentStackCount;
-				Intent.TargetContainer = TargetContainer;
-				Intent.Quantity = CurrentStackCount;
-				Intent.EnsureRequestId();
-				const FRpgInventoryMutationResult TransferResult = LootInventory->PickupItem(
-					PlayerInventory,
-					Intent,
-					bAllowPartialStackPickup);
-				if (!TransferResult.IsSuccess())
-				{
-					continue;
-				}
-
-				bTransferredAnything = true;
-				for (const FRpgInventoryMutationDelta& Delta : TransferResult.Deltas)
-				{
-					if (Delta.ItemId.IsValid() && Delta.AfterContainer == TargetContainer)
-					{
-						OutAddedItemIds.AddUnique(Delta.ItemId);
-					}
-				}
-			}
-		}
-
-		return bTransferredAnything;
+		const FRpgInventoryMutationResult Result =
+			LootInventory->CollectRootItemsBatch(
+				PlayerInventory,
+				TargetContainers,
+				FGuid::NewGuid(),
+				OutAddedItemIds);
+		return Result.IsSuccess() && Result.AppliedQuantity > 0;
 	}
 }
 
@@ -215,20 +153,6 @@ void URpgGameplayAbility_Collect::ActivateAbility(
 	const FInventoryPickup PickupInventory = Pickup->GetPickupInventory();
 	if (!InventoryComponent->CanAddPickupBatch(PickupInventory))
 	{
-		if (ARpgDroppedInventoryActor* DroppedInventoryActor =
-				Cast<ARpgDroppedInventoryActor>(TargetActor);
-			DroppedInventoryActor &&
-			DroppedInventoryActor->IsLootInventoryCanonical())
-		{
-			if (URpgInventoryManagerComponent* LootInventory = DroppedInventoryActor->GetLootInventoryManager())
-			{
-				if (ARpgPlayerController* PlayerController = FindPlayerControllerForActor(InteractingActor))
-				{
-					PlayerController->ClientOpenLootInventory(InventoryComponent, LootInventory, DroppedInventoryActor);
-				}
-			}
-		}
-
 		EndAbility(Handle, ActorInfo, ActivationInfo, true, true);
 		return;
 	}

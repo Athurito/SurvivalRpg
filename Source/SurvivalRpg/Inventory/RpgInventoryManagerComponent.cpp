@@ -3057,6 +3057,10 @@ FRpgInventoryPlacementPlan URpgInventoryManagerComponent::EvaluatePlacementInter
 
 void URpgInventoryManagerComponent::SetCapacityMode(ERpgInventoryCapacityMode NewCapacityMode)
 {
+	if (bIsApplyingCollectBatch)
+	{
+		return;
+	}
 	AActor* OwningActor = GetOwner();
 	UWorld* World = OwningActor ? OwningActor->GetWorld() : nullptr;
 	const bool bIsRuntimeGameWorld = World && World->IsGameWorld() && IsRegistered() && !HasAnyFlags(RF_ClassDefaultObject | RF_ArchetypeObject);
@@ -3080,6 +3084,10 @@ void URpgInventoryManagerComponent::SetCapacityMode(ERpgInventoryCapacityMode Ne
 
 void URpgInventoryManagerComponent::SetFixedMaxEntries(int32 NewFixedMaxEntries)
 {
+	if (bIsApplyingCollectBatch)
+	{
+		return;
+	}
 	AActor* OwningActor = GetOwner();
 	UWorld* World = OwningActor ? OwningActor->GetWorld() : nullptr;
 	const bool bIsRuntimeGameWorld = World && World->IsGameWorld() && IsRegistered() && !HasAnyFlags(RF_ClassDefaultObject | RF_ArchetypeObject);
@@ -3103,6 +3111,10 @@ void URpgInventoryManagerComponent::SetFixedMaxEntries(int32 NewFixedMaxEntries)
 
 void URpgInventoryManagerComponent::SetCapacityAttribute(FGameplayAttribute NewCapacityAttribute)
 {
+	if (bIsApplyingCollectBatch)
+	{
+		return;
+	}
 	AActor* OwningActor = GetOwner();
 	UWorld* World = OwningActor ? OwningActor->GetWorld() : nullptr;
 	const bool bIsRuntimeGameWorld = World && World->IsGameWorld() && IsRegistered() && !HasAnyFlags(RF_ClassDefaultObject | RF_ArchetypeObject);
@@ -3127,6 +3139,10 @@ void URpgInventoryManagerComponent::SetCapacityAttribute(FGameplayAttribute NewC
 bool URpgInventoryManagerComponent::ExpandDefaultGridToMinimum(
 	FRpgInventoryGridSize MinimumSize)
 {
+	if (bIsApplyingCollectBatch)
+	{
+		return false;
+	}
 	AActor* OwningActor = GetOwner();
 	UWorld* World = OwningActor ? OwningActor->GetWorld() : nullptr;
 	const bool bIsRuntimeGameWorld =
@@ -3478,7 +3494,8 @@ URpgInventoryItemInstance* URpgInventoryManagerComponent::CommitAddPlacementPlan
 	bool bMayCreateAdditionalInstances)
 {
 	AActor* OwningActor = GetOwner();
-	if (!OwningActor || !OwningActor->HasAuthority() || !StagedInstance ||
+	if (bIsApplyingCollectBatch || !OwningActor ||
+		!OwningActor->HasAuthority() || !StagedInstance ||
 		StagedInstance->GetOuter() != OwningActor ||
 		Plan.Code != ERpgInventoryMutationResultCode::Success ||
 		Plan.AppliedQuantity != Plan.RequestedQuantity ||
@@ -3688,7 +3705,8 @@ URpgInventoryItemInstance* URpgInventoryManagerComponent::GrantItemDefinition(
 	int32 StackCount)
 {
 	AActor* OwningActor = GetOwner();
-	if (!OwningActor || !OwningActor->HasAuthority() || !ItemDef || StackCount <= 0)
+	if (bIsApplyingCollectBatch || !OwningActor ||
+		!OwningActor->HasAuthority() || !ItemDef || StackCount <= 0)
 	{
 		return nullptr;
 	}
@@ -3722,7 +3740,8 @@ URpgInventoryItemInstance* URpgInventoryManagerComponent::BootstrapItemInstance(
 	int32 StackCount)
 {
 	AActor* OwningActor = GetOwner();
-	if (!OwningActor || !OwningActor->HasAuthority() ||
+	if (bIsApplyingCollectBatch || !OwningActor ||
+		!OwningActor->HasAuthority() ||
 		!CanBootstrapItemInstance(SourceItemInstance, StackCount))
 	{
 		return nullptr;
@@ -3847,7 +3866,8 @@ bool URpgInventoryManagerComponent::AddOwnedItemInstance(
 		*OutResultInstance = nullptr;
 	}
 	AActor* OwningActor = GetOwner();
-	if (!OwningActor || !OwningActor->HasAuthority() || !ItemInstance ||
+	if (bIsApplyingCollectBatch || !OwningActor ||
+		!OwningActor->HasAuthority() || !ItemInstance ||
 		!InventoryList.CanInsertOwnedInstance(ItemInstance) ||
 		IsItemManagedByAnyInventory(ItemInstance) ||
 		HasItemIdentityConflictInAnyInventory(ItemInstance))
@@ -3964,7 +3984,8 @@ URpgInventoryItemInstance* URpgInventoryManagerComponent::AddItemDefinition(
 URpgInventoryItemInstance* URpgInventoryManagerComponent::AddItemDefinitionToPlacement(TSubclassOf<URpgInventoryItemDefinition> ItemDef, int32 StackCount, FRpgInventoryGridPlacement Placement)
 {
 	AActor* OwningActor = GetOwner();
-	if (!OwningActor || !OwningActor->HasAuthority() || !ItemDef ||
+	if (bIsApplyingCollectBatch || !OwningActor ||
+		!OwningActor->HasAuthority() || !ItemDef ||
 		StackCount <= 0)
 	{
 		return nullptr;
@@ -4026,7 +4047,8 @@ void URpgInventoryManagerComponent::AddItemInstanceWithStackToPlacement(URpgInve
 bool URpgInventoryManagerComponent::AddStackToExistingItem(URpgInventoryItemInstance* ItemInstance, int32 StackCount)
 {
 	AActor* OwningActor = GetOwner();
-	if (!OwningActor || !OwningActor->HasAuthority())
+	if (bIsApplyingCollectBatch || !OwningActor ||
+		!OwningActor->HasAuthority())
 	{
 		return false;
 	}
@@ -4149,7 +4171,8 @@ bool URpgInventoryManagerComponent::CommitRemovalDeltas(
 	const TArray<FRpgInventoryMutationDelta>& Deltas)
 {
 	AActor* OwningActor = GetOwner();
-	if (!OwningActor || !OwningActor->HasAuthority() || Deltas.IsEmpty())
+	if (bIsApplyingCollectBatch || !OwningActor ||
+		!OwningActor->HasAuthority() || Deltas.IsEmpty())
 	{
 		return false;
 	}
@@ -4753,7 +4776,8 @@ FRpgInventoryMutationResult URpgInventoryManagerComponent::DropItem(
 bool URpgInventoryManagerComponent::ApplyInventorySort(ERpgInventorySortMode SortMode)
 {
 	AActor* OwningActor = GetOwner();
-	if (!OwningActor || !OwningActor->HasAuthority())
+	if (bIsApplyingCollectBatch || !OwningActor ||
+		!OwningActor->HasAuthority())
 	{
 		return false;
 	}
@@ -4769,7 +4793,8 @@ bool URpgInventoryManagerComponent::ApplyInventorySort(ERpgInventorySortMode Sor
 bool URpgInventoryManagerComponent::MoveInventoryEntry(FGuid EntryId, int32 TargetIndex)
 {
 	AActor* OwningActor = GetOwner();
-	if (!OwningActor || !OwningActor->HasAuthority())
+	if (bIsApplyingCollectBatch || !OwningActor ||
+		!OwningActor->HasAuthority())
 	{
 		return false;
 	}
@@ -5187,7 +5212,8 @@ bool URpgInventoryManagerComponent::TryReplayRecentMutation(
 		Record->bHadTargetInventory == bHasTargetInventory &&
 		(!bHasTargetInventory ||
 			CachedTargetInventory == TargetInventory);
-	if (AreMutationRequestsEquivalent(Record->Request, Request) &&
+	if (Record->Kind == FRecentMutationRecord::EKind::SingleMutation &&
+		AreMutationRequestsEquivalent(Record->Request, Request) &&
 		bTargetMatches &&
 		Record->bAllowPartialStack == bAllowPartialStack)
 	{
@@ -5219,7 +5245,10 @@ FRpgInventoryMutationResult URpgInventoryManagerComponent::CacheRecentMutationRe
 
 	FRecentMutationRecord& Record =
 		RecentMutationResults.FindOrAdd(Result.RequestId);
+	Record.Kind = FRecentMutationRecord::EKind::SingleMutation;
 	Record.Request = Request;
+	Record.TargetContainers.Reset();
+	Record.AffectedTargetItemIds.Reset();
 	Record.TargetInventory = TargetInventory;
 	Record.bHadTargetInventory = TargetInventory != nullptr;
 	Record.bAllowPartialStack = bAllowPartialStack;
@@ -5254,6 +5283,14 @@ FRpgInventoryMutationResult URpgInventoryManagerComponent::ExecuteInventoryMutat
 			false,
 			MoveTemp(ResultToCache));
 	};
+	if (bIsApplyingCollectBatch)
+	{
+		Result.RequestId = Request.RequestId;
+		Result.Operation = Request.Operation;
+		Result.RequestedQuantity = Request.Quantity;
+		Result.Code = ERpgInventoryMutationResultCode::InvalidRequest;
+		return CacheResult(MoveTemp(Result));
+	}
 
 	AActor* OwningActor = GetOwner();
 	if (!OwningActor || !OwningActor->HasAuthority())
@@ -5428,6 +5465,11 @@ FRpgInventoryMutationResult URpgInventoryManagerComponent::ExecuteCrossInventory
 		Result.Deltas.Reset();
 		return CacheResult(MoveTemp(Result));
 	};
+	if (bIsApplyingCollectBatch ||
+		(TargetInventory && TargetInventory->bIsApplyingCollectBatch))
+	{
+		return Reject(ERpgInventoryMutationResultCode::InvalidRequest);
+	}
 
 	AActor* const SourceOwner = GetOwner();
 	AActor* const TargetOwner = TargetInventory ? TargetInventory->GetOwner() : nullptr;
@@ -6527,7 +6569,8 @@ FRpgInventorySnapshot URpgInventoryManagerComponent::ExportInventorySnapshot(FNa
 void URpgInventoryManagerComponent::ImportInventorySnapshot(const FRpgInventorySnapshot& Snapshot)
 {
 	AActor* OwningActor = GetOwner();
-	if (!OwningActor || !OwningActor->HasAuthority())
+	if (bIsApplyingCollectBatch || !OwningActor ||
+		!OwningActor->HasAuthority())
 	{
 		return;
 	}
@@ -6624,6 +6667,11 @@ bool URpgInventoryManagerComponent::ImportInventoryGraphInternal(
 	OutResult.RequestedQuantity = SaveData.Items.Num();
 
 	AActor* OwningActor = GetOwner();
+	if (bIsApplyingCollectBatch)
+	{
+		OutResult.Code = ERpgInventoryMutationResultCode::InvalidRequest;
+		return false;
+	}
 	if (!OwningActor || !OwningActor->HasAuthority())
 	{
 		OutResult.Code = ERpgInventoryMutationResultCode::AuthorityRequired;
