@@ -735,7 +735,11 @@ struct SURVIVALRPG_API FRpgInventorySavedItem
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, SaveGame, Category = "Inventory|Persistence")
 	FRpgInventoryContainerHandle Container;
 
-	/** Saved top-left grid placement, footprint, and rotation inside Container. */
+	/**
+	 * Saved top-left position and requested orientation inside Container.
+	 * Width and Height remain serialized for compatibility and diagnostics, but import reconstructs them from the
+	 * current item definition and root-container layout rules before validating the complete graph.
+	 */
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, SaveGame, Category = "Inventory|Persistence")
 	FRpgInventoryGridPlacement Placement;
 

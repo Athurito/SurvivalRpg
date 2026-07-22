@@ -141,6 +141,23 @@ URpgInventoryAutomationTestWideItemDefinition::URpgInventoryAutomationTestWideIt
 	Fragments.Add(TraitsFragment);
 }
 
+URpgInventoryAutomationTestFixedWideItemDefinition::URpgInventoryAutomationTestFixedWideItemDefinition(
+	const FObjectInitializer& ObjectInitializer)
+	: Super(ObjectInitializer)
+{
+	DisplayName = FText::FromString(TEXT("Automation Fixed Wide"));
+
+	URpgInventoryFragment_SpatialItem* SpatialFragment =
+		CreateDefaultSubobject<URpgInventoryFragment_SpatialItem>(TEXT("Spatial"));
+	ConfigureSpatialFragment(SpatialFragment, 2, 1, false);
+	Fragments.Add(SpatialFragment);
+
+	URpgInventoryFragment_ItemTraits* TraitsFragment =
+		CreateDefaultSubobject<URpgInventoryFragment_ItemTraits>(TEXT("Traits"));
+	ConfigureNonStackingTraits(TraitsFragment);
+	Fragments.Add(TraitsFragment);
+}
+
 URpgInventoryAutomationTestLargeItemDefinition::URpgInventoryAutomationTestLargeItemDefinition(
 	const FObjectInitializer& ObjectInitializer)
 	: Super(ObjectInitializer)

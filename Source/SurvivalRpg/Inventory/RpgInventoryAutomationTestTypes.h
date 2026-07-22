@@ -86,6 +86,19 @@ public:
 	virtual bool IsEditorOnly() const override { return true; }
 };
 
+/** Editor-only fixed-orientation 2x1 item definition used by persistence validation tests. */
+UCLASS(NotBlueprintable, Transient)
+class URpgInventoryAutomationTestFixedWideItemDefinition final : public URpgInventoryItemDefinition
+{
+	GENERATED_BODY()
+
+public:
+	explicit URpgInventoryAutomationTestFixedWideItemDefinition(
+		const FObjectInitializer& ObjectInitializer = FObjectInitializer::Get());
+
+	virtual bool IsEditorOnly() const override { return true; }
+};
+
 /** Editor-only 3x2 item definition used to regress size-asymmetric displacement. */
 UCLASS(NotBlueprintable, Transient)
 class URpgInventoryAutomationTestLargeItemDefinition final : public URpgInventoryItemDefinition

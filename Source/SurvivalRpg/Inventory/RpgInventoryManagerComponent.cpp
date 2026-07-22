@@ -6709,7 +6709,7 @@ bool URpgInventoryManagerComponent::ImportInventoryGraphInternal(
 	for (const FRpgInventorySavedItem& SavedItem : SaveData.Items)
 	{
 		if (!SavedItem.ItemId.IsValid() || StagedIndexById.Contains(SavedItem.ItemId) || SavedItem.StackCount <= 0 ||
-			!SavedItem.Container.IsValid() || !SavedItem.Placement.IsValid())
+			!SavedItem.Container.IsValid() || SavedItem.Placement.X < 0 || SavedItem.Placement.Y < 0)
 		{
 			OutResult.Code = StagedIndexById.Contains(SavedItem.ItemId)
 				? ERpgInventoryMutationResultCode::DuplicateItemId
@@ -6749,27 +6749,15 @@ bool URpgInventoryManagerComponent::ImportInventoryGraphInternal(
 			return false;
 		}
 
-		const bool bUsesSingleCellRootPlacement =
-			SavedItem.Container.IsRoot() &&
-			ShouldUseSingleCellPlacementForContainer(
-				SavedItem.Container.ContainerId);
-		const FRpgInventoryGridSize CurrentFootprint =
-			bUsesSingleCellRootPlacement
-				? FRpgInventoryGridSize()
-				: GetInventoryManagerFootprintForDefinition(
-					ItemDefinition,
-					false);
-		const bool bRotationAllowed =
-			!bUsesSingleCellRootPlacement &&
-			CanInventoryManagerRotateDefinition(ItemDefinition);
-		if (!CurrentFootprint.IsValid() ||
-			SavedItem.Placement.Width != CurrentFootprint.Width ||
-			SavedItem.Placement.Height != CurrentFootprint.Height ||
-			(SavedItem.Placement.bRotated && !bRotationAllowed))
+		FRpgInventoryGridPlacement CanonicalPlacement;
+		if (!TryNormalizePlacementForDefinition(
+				ItemDefinition,
+				SavedItem.Container,
+				SavedItem.Placement.X,
+				SavedItem.Placement.Y,
+				SavedItem.Placement.bRotated,
+				CanonicalPlacement))
 		{
-			// Current-schema data must already match the live definition contract.
-			// Silently accepting an old footprint can overlap another entry after a
-			// definition change; schema migration must rewrite it explicitly.
 			OutResult.Code =
 				ERpgInventoryMutationResultCode::InvalidPlacement;
 			return false;
@@ -6778,8 +6766,7 @@ bool URpgInventoryManagerComponent::ImportInventoryGraphInternal(
 		FStagedSavedEntry& Stage = Staged.AddDefaulted_GetRef();
 		Stage.Saved = &SavedItem;
 		Stage.ItemDefinition = ItemDefinition;
-		Stage.Placement = SavedItem.Placement;
-		Stage.Placement.SetContainerHandle(SavedItem.Container);
+		Stage.Placement = CanonicalPlacement;
 		Stage.Instance = NewObject<URpgInventoryItemInstance>(OwningActor);
 		Stage.CommittedInstance = Stage.Instance;
 		Stage.CommittedEntryId = FGuid::NewGuid();

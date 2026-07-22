@@ -1307,9 +1307,9 @@ Verifizierter Phase-3B2-Abschluss vom 2026-07-22:
 
 ## Phase 4 – Datenmodell und Persistenz
 
-Status: **Offen**
+Status: **In Arbeit**
 
-- [ ] Aktuelle Footprints und Rotationsregeln beim Import aus der
+- [x] Aktuelle Footprints und Rotationsregeln beim Import aus der
       Item-Definition rekonstruieren.
 - [ ] Einen kanonischen Stack-Key für Runtime-State-Kompatibilität einführen.
 - [ ] Legacy Snapshot nur noch über einen versionierten Konverter zulassen und
@@ -1321,6 +1321,39 @@ Status: **Offen**
       durchführen.
 - [ ] MaxEntries, Tiefe, Cycles, Duplicate IDs und Subtree-Grenzen in allen
       Import-/Transferpfaden einheitlich validieren.
+
+Verifizierter Phase-4A-Zwischenstand vom 2026-07-22:
+
+- Graph-Restore behandelt Container, Position und gewünschte Orientierung als
+  persistierte Eingaben. Gespeicherte Breite und Höhe bleiben nur
+  kompatibilitäts- beziehungsweise diagnosehalber im DTO und werden vor jeder
+  Graphvalidierung aus der aktuellen Item-Definition rekonstruiert.
+- Eine aktuell erlaubte Rotation bleibt erhalten; eine von der heutigen
+  Item-Definition verbotene Rotation wird atomar abgelehnt. Echte Gear-/Carry-
+  Root-Container normalisieren auf ihren semantischen `1x1`-/unrotierten
+  Vertrag. Item-owned Container werden weiterhin über ihren vollständigen
+  Handle ausgewertet.
+- Der vollständig normalisierte Batch durchläuft weiterhin denselben
+  Restore-Evaluator mit Bounds-, Regel- und Scratch-Occupancy-Prüfung. Ein nach
+  Definition-Änderung größer gewordenes Item kann deshalb keinen Overlap
+  einschleusen; der komplette Graph bleibt bei einem Konflikt unverändert.
+- Das Graphschema bleibt bei Version 1, weil weder DTO-Shape noch persistierte
+  Bedeutung von Position und Orientierung geändert wurden. `Width` und
+  `Height` sind nun ausdrücklich abgeleitete Kompatibilitätsfelder.
+- `SurvivalRpgEditor Win64 Development` wurde mit Unreal Engine 5.8 gebaut
+  (24/24 Actions).
+- `SurvivalRpg.Inventory.IntentBoundary.RestoreReconstructsDefinitionPlacement`:
+  1 von 1 Automationtests erfolgreich.
+- `SurvivalRpg.Inventory`: 104 von 104 Automationtests erfolgreich.
+- `SurvivalRpg.Equipment`: 5 von 5 Automationtests erfolgreich.
+- `SurvivalRpg.Crafting`: 6 von 6 Automationtests erfolgreich.
+- Fortschritt Phase 4: 1 von 6 Punkten abgeschlossen (16,7 %).
+- Gesamtfortschritt der verbindlichen Checkliste: 63 von 94 Punkten
+  abgeschlossen (67,0 %), 31 Punkte offen.
+- Nächster Schnitt: ein kanonischer, nicht persistierter Stack-Key aus
+  Item-Definition und deterministischem Runtime-State. Dabei muss der
+  definitionsbasierte Base-Storage-Pfad runtime-verschiedene Materialien
+  explizit erhalten oder fail-closed ablehnen.
 
 ## Phase 5 – Datengetriebenes Layout und Editor-Validierung
 

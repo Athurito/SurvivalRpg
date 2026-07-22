@@ -300,7 +300,7 @@ bool FRpgInventoryRestoreStatusPerControllerTest::RunTest(
 
 IMPLEMENT_SIMPLE_AUTOMATION_TEST(
 	FRpgInventoryRestoreIntentBoundaryTest,
-	"SurvivalRpg.Inventory.IntentBoundary.RestoreReportsIntentAndRejectsPlacementDrift",
+	"SurvivalRpg.Inventory.IntentBoundary.RestoreReconstructsDefinitionPlacement",
 	EAutomationTestFlags::EditorContext |
 		EAutomationTestFlags::EngineFilter)
 
@@ -324,6 +324,10 @@ bool FRpgInventoryRestoreIntentBoundaryTest::RunTest(
 		TestWorld.CreateInventory(TEXT("RestoreIntentValidTarget"));
 	URpgInventoryManagerComponent* FootprintDriftTarget =
 		TestWorld.CreateInventory(TEXT("RestoreIntentFootprintTarget"));
+	URpgInventoryManagerComponent* RotatedFootprintTarget =
+		TestWorld.CreateInventory(TEXT("RestoreIntentRotatedFootprintTarget"));
+	URpgInventoryManagerComponent* ReconstructedOverlapTarget =
+		TestWorld.CreateInventory(TEXT("RestoreIntentReconstructedOverlapTarget"));
 	if (!TestNotNull(
 			TEXT("The restore source inventory exists"),
 			SourceInventory) ||
@@ -332,7 +336,13 @@ bool FRpgInventoryRestoreIntentBoundaryTest::RunTest(
 			ValidTarget) ||
 		!TestNotNull(
 			TEXT("The footprint-drift target exists"),
-			FootprintDriftTarget))
+			FootprintDriftTarget) ||
+		!TestNotNull(
+			TEXT("The rotated-footprint target exists"),
+			RotatedFootprintTarget) ||
+		!TestNotNull(
+			TEXT("The reconstructed-overlap target exists"),
+			ReconstructedOverlapTarget))
 	{
 		return false;
 	}
@@ -377,25 +387,129 @@ bool FRpgInventoryRestoreIntentBoundaryTest::RunTest(
 		ERpgInventoryMutationResultCode::Success);
 
 	FRpgInventoryGraphSaveData FootprintDriftGraph = ValidGraph;
-	FootprintDriftGraph.Items[0].Placement.Width += 1;
+	FootprintDriftGraph.Items[0].Placement.Width = 37;
+	FootprintDriftGraph.Items[0].Placement.Height = 0;
+	const int32 FootprintRevisionBeforeRestore =
+		FootprintDriftTarget->GetInventoryRevision();
 	FRpgInventoryMutationResult FootprintDriftResult;
-	TestFalse(
-		TEXT("Current-schema footprint drift is rejected fail-closed"),
+	TestTrue(
+		TEXT("Saved footprint fields are reconstructed from the current item definition"),
 		FootprintDriftTarget->RestoreInventoryGraph(
 			FootprintDriftGraph,
 			FootprintDriftResult));
 	TestEqual(
-		TEXT("A rejected persistence reconstruction still reports Restore"),
+		TEXT("Definition-based persistence reconstruction reports Restore"),
 		FootprintDriftResult.Operation,
 		ERpgInventoryMutationOperation::Restore);
 	TestEqual(
-		TEXT("Footprint drift is classified as invalid placement"),
+		TEXT("Definition-based footprint reconstruction succeeds"),
 		FootprintDriftResult.Code,
-		ERpgInventoryMutationResultCode::InvalidPlacement);
+		ERpgInventoryMutationResultCode::Success);
 	TestEqual(
-		TEXT("A rejected footprint graph leaves the target empty"),
+		TEXT("The reconstructed graph contains its original item"),
 		FootprintDriftTarget->GetUsedEntryCount(),
+		1);
+	TestTrue(
+		TEXT("A successful reconstructed restore advances the inventory revision"),
+		FootprintDriftTarget->GetInventoryRevision() >
+			FootprintRevisionBeforeRestore);
+	const TArray<FRpgInventoryEntryView> ReconstructedEntries =
+		FootprintDriftTarget->GetAllEntries();
+	if (!TestEqual(
+			TEXT("Exactly one reconstructed entry is available"),
+			ReconstructedEntries.Num(),
+			1) ||
+		!ReconstructedEntries.IsValidIndex(0))
+	{
+		return false;
+	}
+	TestTrue(
+		TEXT("Footprint reconstruction preserves persistent item identity"),
+		ReconstructedEntries[0].ItemId == ValidGraph.Items[0].ItemId);
+	TestEqual(
+		TEXT("The current wide definition restores its canonical width"),
+		ReconstructedEntries[0].Placement.Width,
+		2);
+	TestEqual(
+		TEXT("The current wide definition restores its canonical height"),
+		ReconstructedEntries[0].Placement.Height,
+		1);
+	TestFalse(
+		TEXT("The unrotated save intent remains unrotated"),
+		ReconstructedEntries[0].Placement.bRotated);
+
+	FRpgInventoryGraphSaveData RotatedFootprintGraph = ValidGraph;
+	RotatedFootprintGraph.Items[0].Placement.Width = 0;
+	RotatedFootprintGraph.Items[0].Placement.Height = 99;
+	RotatedFootprintGraph.Items[0].Placement.bRotated = true;
+	FRpgInventoryMutationResult RotatedFootprintResult;
+	TestTrue(
+		TEXT("A permitted saved rotation survives definition-based reconstruction"),
+		RotatedFootprintTarget->RestoreInventoryGraph(
+			RotatedFootprintGraph,
+			RotatedFootprintResult));
+	TestEqual(
+		TEXT("A permitted reconstructed rotation reports success"),
+		RotatedFootprintResult.Code,
+		ERpgInventoryMutationResultCode::Success);
+	const TArray<FRpgInventoryEntryView> RotatedEntries =
+		RotatedFootprintTarget->GetAllEntries();
+	if (!TestEqual(
+			TEXT("Exactly one rotated reconstructed entry is available"),
+			RotatedEntries.Num(),
+			1) ||
+		!RotatedEntries.IsValidIndex(0))
+	{
+		return false;
+	}
+	TestEqual(
+		TEXT("Rotated reconstruction keeps the definition's unrotated width"),
+		RotatedEntries[0].Placement.Width,
+		2);
+	TestEqual(
+		TEXT("Rotated reconstruction keeps the definition's unrotated height"),
+		RotatedEntries[0].Placement.Height,
+		1);
+	TestTrue(
+		TEXT("Rotated reconstruction preserves an allowed orientation"),
+		RotatedEntries[0].Placement.bRotated);
+	TestEqual(
+		TEXT("The rotated item occupies one grid column"),
+		RotatedEntries[0].Placement.GetOccupiedSize().Width,
+		1);
+	TestEqual(
+		TEXT("The rotated item occupies two grid rows"),
+		RotatedEntries[0].Placement.GetOccupiedSize().Height,
+		2);
+
+	FRpgInventoryGraphSaveData ReconstructedOverlapGraph = ValidGraph;
+	ReconstructedOverlapGraph.Items[0].Placement.Width = 1;
+	ReconstructedOverlapGraph.Items[0].Placement.Height = 1;
+	FRpgInventorySavedItem OverlappingRow =
+		ReconstructedOverlapGraph.Items[0];
+	OverlappingRow.ItemId = FRpgInventoryItemId::NewId();
+	OverlappingRow.Placement.X = 1;
+	ReconstructedOverlapGraph.Items.Add(MoveTemp(OverlappingRow));
+	const int32 OverlapRevisionBeforeRestore =
+		ReconstructedOverlapTarget->GetInventoryRevision();
+	FRpgInventoryMutationResult ReconstructedOverlapResult;
+	TestFalse(
+		TEXT("Current footprints that overlap after reconstruction reject the complete graph"),
+		ReconstructedOverlapTarget->RestoreInventoryGraph(
+			ReconstructedOverlapGraph,
+			ReconstructedOverlapResult));
+	TestEqual(
+		TEXT("A reconstructed overlap reports the shared occupied result"),
+		ReconstructedOverlapResult.Code,
+		ERpgInventoryMutationResultCode::Occupied);
+	TestEqual(
+		TEXT("Rejected reconstructed overlap leaves the target empty"),
+		ReconstructedOverlapTarget->GetUsedEntryCount(),
 		0);
+	TestEqual(
+		TEXT("Rejected reconstructed overlap does not advance the revision"),
+		ReconstructedOverlapTarget->GetInventoryRevision(),
+		OverlapRevisionBeforeRestore);
 
 	URpgInventoryManagerComponent* RotationSource =
 		TestWorld.CreateInventory(TEXT("RestoreIntentRotationSource"));
@@ -456,23 +570,99 @@ bool FRpgInventoryRestoreIntentBoundaryTest::RunTest(
 	}
 
 	FRpgInventoryMutationResult RotationDriftResult;
-	TestFalse(
-		TEXT("A rotated save row for a non-rotating Carry cell is rejected"),
+	TestTrue(
+		TEXT("A Carry-root save row is reconstructed to its current single-cell contract"),
 		RotationDriftTarget->RestoreInventoryGraph(
 			RotationDriftGraph,
 			RotationDriftResult));
 	TestEqual(
-		TEXT("Rejected rotation drift remains a Restore operation"),
+		TEXT("Single-cell reconstruction remains a Restore operation"),
 		RotationDriftResult.Operation,
 		ERpgInventoryMutationOperation::Restore);
 	TestEqual(
-		TEXT("Rotation drift is classified as invalid placement"),
+		TEXT("Single-cell reconstruction reports success"),
 		RotationDriftResult.Code,
+		ERpgInventoryMutationResultCode::Success);
+	TestEqual(
+		TEXT("The reconstructed Carry graph contains its item"),
+		RotationDriftTarget->GetUsedEntryCount(),
+		1);
+	const TArray<FRpgInventoryEntryView> CarryEntries =
+		RotationDriftTarget->GetAllEntries();
+	if (!TestEqual(
+			TEXT("Exactly one reconstructed Carry entry is available"),
+			CarryEntries.Num(),
+			1) ||
+		!CarryEntries.IsValidIndex(0))
+	{
+		return false;
+	}
+	TestEqual(
+		TEXT("Carry reconstruction enforces one-cell width"),
+		CarryEntries[0].Placement.Width,
+		1);
+	TestEqual(
+		TEXT("Carry reconstruction enforces one-cell height"),
+		CarryEntries[0].Placement.Height,
+		1);
+	TestFalse(
+		TEXT("Rotation is semantically removed from a single-cell Carry root"),
+		CarryEntries[0].Placement.bRotated);
+
+	URpgInventoryManagerComponent* FixedRotationSource =
+		TestWorld.CreateInventory(TEXT("RestoreIntentFixedRotationSource"));
+	URpgInventoryManagerComponent* FixedRotationTarget =
+		TestWorld.CreateInventory(TEXT("RestoreIntentFixedRotationTarget"));
+	if (!TestNotNull(
+			TEXT("The fixed-orientation source exists"),
+			FixedRotationSource) ||
+		!TestNotNull(
+			TEXT("The fixed-orientation target exists"),
+			FixedRotationTarget))
+	{
+		return false;
+	}
+	URpgInventoryItemInstance* FixedWideItem =
+		FixedRotationSource->AddItemDefinitionToPlacement(
+			URpgInventoryAutomationTestFixedWideItemDefinition::StaticClass(),
+			1,
+			MakeRootPlacement(TEXT("Storage"), 0, 0));
+	if (!TestNotNull(
+			TEXT("The fixed-orientation item fixture exists"),
+			FixedWideItem))
+	{
+		return false;
+	}
+	FRpgInventoryGraphSaveData DisallowedRotationGraph =
+		FixedRotationSource->ExportInventoryGraph();
+	if (!TestEqual(
+			TEXT("The fixed-orientation fixture exports one item"),
+			DisallowedRotationGraph.Items.Num(),
+			1))
+	{
+		return false;
+	}
+	DisallowedRotationGraph.Items[0].Placement.bRotated = true;
+	const int32 FixedRotationRevisionBeforeRestore =
+		FixedRotationTarget->GetInventoryRevision();
+	FRpgInventoryMutationResult DisallowedRotationResult;
+	TestFalse(
+		TEXT("A saved rotation forbidden by the current item definition is rejected"),
+		FixedRotationTarget->RestoreInventoryGraph(
+			DisallowedRotationGraph,
+			DisallowedRotationResult));
+	TestEqual(
+		TEXT("A definition-forbidden rotation reports invalid placement"),
+		DisallowedRotationResult.Code,
 		ERpgInventoryMutationResultCode::InvalidPlacement);
 	TestEqual(
-		TEXT("A rejected rotation graph leaves the player inventory empty"),
-		RotationDriftTarget->GetUsedEntryCount(),
+		TEXT("Rejected definition rotation leaves the target empty"),
+		FixedRotationTarget->GetUsedEntryCount(),
 		0);
+	TestEqual(
+		TEXT("Rejected definition rotation does not advance the revision"),
+		FixedRotationTarget->GetInventoryRevision(),
+		FixedRotationRevisionBeforeRestore);
 	return true;
 }
 
