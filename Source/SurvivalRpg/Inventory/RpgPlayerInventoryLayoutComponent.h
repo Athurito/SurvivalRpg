@@ -131,8 +131,8 @@ public:
 	bool IsGearContainer(FRpgInventoryContainerHandle ContainerHandle) const;
 
 	/**
-	 * Returns whether every authored static root has an unambiguous container id and typed equipment contract.
-	 * Runtime authority may use this native preflight before destructive operations that must classify Gear safely.
+	 * Returns whether the PawnData layout passes the physical-root and typed-Gear subset of shared validation.
+	 * Semantic/actionbar diagnostics do not widen this destructive-operation preflight beyond classification safety.
 	 */
 	bool HasValidStaticEquipmentRoleContract() const;
 
@@ -163,7 +163,9 @@ private:
 	URpgInventoryManagerComponent* FindPlayerInventory() const;
 	URpgEquipmentLoadoutComponent* FindEquipmentLoadout() const;
 	TArray<FRpgInventorySlotGroupView> BuildSlotGroups() const;
-	void AppendGroupViews(const TArray<FRpgInventorySlotGroupDefinition>& GroupDefinitions, bool bProvidedByEquipment, ERpgEquipmentSlot SourceEquipmentSlot, TArray<FRpgInventorySlotGroupView>& OutGroups) const;
+	void AppendStaticGroupViews(
+		const URpgPlayerInventoryLayoutDefinition& LayoutDefinition,
+		TArray<FRpgInventorySlotGroupView>& OutGroups) const;
 	void AppendItemContainerViews(const URpgInventoryItemInstance* ProviderItem, ERpgEquipmentSlot SourceEquipmentSlot, TArray<FRpgInventorySlotGroupView>& OutGroups) const;
 	void BroadcastLayoutChanged() const;
 };

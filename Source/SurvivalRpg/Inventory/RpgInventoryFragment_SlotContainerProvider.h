@@ -23,4 +23,10 @@ public:
 
 	/** Appends native item-owned definitions followed by compatible conversions of legacy ProvidedSlotGroups rows. */
 	virtual void GetProvidedContainers(TArray<FRpgInventoryItemContainerDefinition>& OutContainers) const override;
+
+	/**
+	 * Appends native rows and every converted legacy row without runtime filtering so malformed authored data is visible.
+	 */
+	virtual void GetAuthoredContainerDefinitions(
+		TArray<FRpgInventoryItemContainerDefinition>& OutContainers) const override;
 };

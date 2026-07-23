@@ -14,6 +14,7 @@
 #include "Interfaces/IPluginManager.h"
 #include "Misc/AssetRegistryInterface.h"
 #include "Misc/AutomationTest.h"
+#include "Misc/DataValidation.h"
 #include "Modules/ModuleManager.h"
 #include "UObject/Package.h"
 #include "UObject/UnrealType.h"
@@ -34,7 +35,7 @@ namespace
 	constexpr TCHAR PrototypeExperiencePackage[] =
 		TEXT("/Game/SurvivalRpg/System/Experiences/RpgPrototypeExperience");
 
-	TArray<FName> GetInventoryItemDefinitionContentRoots()
+	TArray<FName> GetProjectContentRoots()
 	{
 		TArray<FName> ContentRoots = { FName(TEXT("/Game")) };
 		for (const TSharedRef<IPlugin>& Plugin :
@@ -54,6 +55,105 @@ namespace
 			}
 		}
 		return ContentRoots;
+	}
+
+	FRpgInventorySlotGroupDefinition MakeValidationGroup(
+		FName ContainerId,
+		ERpgInventorySlotGroupKind GroupKind,
+		ERpgEquipmentSlot EquipmentSlotRole,
+		FGameplayTag SemanticRole = FGameplayTag(),
+		bool bActionbarBindable = false)
+	{
+		FRpgInventorySlotGroupDefinition Group;
+		Group.ContainerId = ContainerId;
+		Group.SemanticRole = SemanticRole;
+		Group.DisplayName = FText::FromName(ContainerId);
+		Group.GroupKind = GroupKind;
+		Group.EquipmentSlotRole = EquipmentSlotRole;
+		Group.GridSize.Width = 1;
+		Group.GridSize.Height = 1;
+		Group.Rule.bActionbarBindable = bActionbarBindable;
+		return Group;
+	}
+
+	URpgPlayerInventoryLayoutDefinition* MakeValidTransientLayout()
+	{
+		URpgPlayerInventoryLayoutDefinition* Layout =
+			NewObject<URpgPlayerInventoryLayoutDefinition>(
+				GetTransientPackage(),
+				NAME_None,
+				RF_Transient);
+		if (!Layout)
+		{
+			return nullptr;
+		}
+
+		FRpgInventorySlotGroupDefinition Content = MakeValidationGroup(
+			TEXT("Content.Root"),
+			ERpgInventorySlotGroupKind::Content,
+			ERpgEquipmentSlot::None,
+			FGameplayTag::RequestGameplayTag(
+				TEXT("Rpg.Inventory.Layout.Role.Content.Primary")));
+		Content.GridSize.Width = 4;
+		Content.GridSize.Height = 3;
+
+		Layout->StaticSlotGroups =
+		{
+			Content,
+			MakeValidationGroup(
+				TEXT("Carry.Primary"),
+				ERpgInventorySlotGroupKind::Carry,
+				ERpgEquipmentSlot::MainHand,
+				FGameplayTag::RequestGameplayTag(
+					TEXT("Rpg.Inventory.Layout.Role.Carry.Primary")),
+				true),
+			MakeValidationGroup(
+				TEXT("Carry.Secondary"),
+				ERpgInventorySlotGroupKind::Carry,
+				ERpgEquipmentSlot::MainHand,
+				FGameplayTag::RequestGameplayTag(
+					TEXT("Rpg.Inventory.Layout.Role.Carry.Secondary")),
+				true),
+			MakeValidationGroup(
+				TEXT("Gear.Head"),
+				ERpgInventorySlotGroupKind::Gear,
+				ERpgEquipmentSlot::Head)
+		};
+		return Layout;
+	}
+
+	struct FLayoutDataValidationSnapshot
+	{
+		EDataValidationResult Result = EDataValidationResult::NotValidated;
+		TArray<FString> Errors;
+	};
+
+	FLayoutDataValidationSnapshot ValidateLayoutForTest(
+		const URpgPlayerInventoryLayoutDefinition& Layout)
+	{
+		FLayoutDataValidationSnapshot Snapshot;
+		FDataValidationContext Context;
+		Snapshot.Result = Layout.IsDataValid(Context);
+		for (const FDataValidationContext::FIssue& Issue :
+			Context.GetIssues())
+		{
+			if (Issue.Severity == EMessageSeverity::Error)
+			{
+				Snapshot.Errors.Add(Issue.Message.ToString());
+			}
+		}
+		return Snapshot;
+	}
+
+	bool ContainsValidationError(
+		const FLayoutDataValidationSnapshot& Snapshot,
+		const TCHAR* ExpectedFragment)
+	{
+		return Snapshot.Errors.ContainsByPredicate(
+			[ExpectedFragment](const FString& Error)
+			{
+				return Error.Contains(ExpectedFragment);
+			});
 	}
 }
 
@@ -85,6 +185,16 @@ bool FRpgPlayerInventoryLayoutAssetCompositionTest::RunTest(const FString& Param
 		TEXT("The default player inventory layout has the exact native definition class"),
 		Layout->GetClass() ==
 			URpgPlayerInventoryLayoutDefinition::StaticClass());
+	const FLayoutDataValidationSnapshot LayoutValidation =
+		ValidateLayoutForTest(*Layout);
+	TestEqual(
+		TEXT("The real default player inventory layout passes native data validation"),
+		LayoutValidation.Result,
+		EDataValidationResult::Valid);
+	TestEqual(
+		TEXT("The real default player inventory layout produces no validation errors"),
+		LayoutValidation.Errors.Num(),
+		0);
 
 	const URpgExperienceDefinition* PrototypeExperience =
 		PrototypeExperienceBlueprint->GeneratedClass
@@ -385,6 +495,394 @@ bool FRpgPlayerInventoryLayoutAssetCompositionTest::RunTest(const FString& Param
 }
 
 IMPLEMENT_SIMPLE_AUTOMATION_TEST(
+	FRpgPlayerInventoryLayoutDataValidationTest,
+	"SurvivalRpg.Inventory.Layout.DataValidation",
+	EAutomationTestFlags::EditorContext | EAutomationTestFlags::EngineFilter)
+
+bool FRpgPlayerInventoryLayoutDataValidationTest::RunTest(
+	const FString& Parameters)
+{
+	URpgPlayerInventoryLayoutDefinition* ValidLayout =
+		MakeValidTransientLayout();
+	if (!TestNotNull(
+			TEXT("A valid transient player inventory layout can be created"),
+			ValidLayout))
+	{
+		return false;
+	}
+
+	const FRpgInventoryStaticLayoutValidationResult ValidContract =
+		ValidLayout->ValidateStaticSlotGroups();
+	TestTrue(
+		TEXT("Two distinct Carry roots may share the typed MainHand role"),
+		ValidContract.IsValid());
+	TestTrue(
+		TEXT("The valid layout also passes the physical equipment preflight"),
+		ValidContract.PassesPhysicalEquipmentPreflight());
+	const FLayoutDataValidationSnapshot ValidSnapshot =
+		ValidateLayoutForTest(*ValidLayout);
+	TestEqual(
+		TEXT("The shared valid contract also passes UObject data validation"),
+		ValidSnapshot.Result,
+		EDataValidationResult::Valid);
+	TestEqual(
+		TEXT("The valid transient layout has no editor diagnostics"),
+		ValidSnapshot.Errors.Num(),
+		0);
+
+	auto TestSingleGroupFailure =
+		[this](
+			const TCHAR* Description,
+			TFunctionRef<void(URpgPlayerInventoryLayoutDefinition&)> Mutate,
+			ERpgInventoryStaticLayoutValidationIssue ExpectedIssue,
+			int32 ExpectedGroupIndex,
+			bool bExpectedToMaterialize,
+			const TCHAR* ExpectedMessageFragment)
+		{
+			URpgPlayerInventoryLayoutDefinition* Layout =
+				MakeValidTransientLayout();
+			if (!TestNotNull(
+				*FString::Printf(
+					TEXT("%s creates a transient layout"),
+					Description),
+				Layout))
+			{
+				return;
+			}
+
+			Mutate(*Layout);
+			const FRpgInventoryStaticLayoutValidationResult Contract =
+				Layout->ValidateStaticSlotGroups();
+			TestFalse(
+				*FString::Printf(
+					TEXT("%s invalidates the shared layout contract"),
+					Description),
+				Contract.IsValid());
+			const bool bIsSemanticOnlyFailure =
+				ExpectedIssue ==
+				ERpgInventoryStaticLayoutValidationIssue::
+					MissingActionbarCarrySemanticRole ||
+				ExpectedIssue ==
+					ERpgInventoryStaticLayoutValidationIssue::
+						SemanticRoleOutsideLayoutNamespace;
+			TestEqual(
+				*FString::Printf(
+					TEXT("%s keeps the physical equipment preflight appropriately scoped"),
+					Description),
+				Contract.PassesPhysicalEquipmentPreflight(),
+				bIsSemanticOnlyFailure);
+			TestTrue(
+				*FString::Printf(
+					TEXT("%s reports its exact rule"),
+					Description),
+				Contract.HasIssue(ExpectedIssue, ExpectedGroupIndex));
+			TestEqual(
+				*FString::Printf(
+					TEXT("%s exposes the expected runtime materialization state"),
+					Description),
+				Contract.CanMaterializeGroup(ExpectedGroupIndex),
+				bExpectedToMaterialize);
+
+			const FLayoutDataValidationSnapshot Snapshot =
+				ValidateLayoutForTest(*Layout);
+			TestEqual(
+				*FString::Printf(
+					TEXT("%s is rejected by IsDataValid"),
+					Description),
+				Snapshot.Result,
+				EDataValidationResult::Invalid);
+			TestTrue(
+				*FString::Printf(
+					TEXT("%s emits an actionable editor diagnostic"),
+					Description),
+				ContainsValidationError(
+					Snapshot,
+					ExpectedMessageFragment));
+		};
+
+	TestSingleGroupFailure(
+		TEXT("A missing ContainerId"),
+		[](URpgPlayerInventoryLayoutDefinition& Layout)
+		{
+			Layout.StaticSlotGroups[0].ContainerId = NAME_None;
+		},
+		ERpgInventoryStaticLayoutValidationIssue::MissingContainerId,
+		0,
+		false,
+		TEXT("has no ContainerId"));
+
+	TestSingleGroupFailure(
+		TEXT("A non-positive grid footprint"),
+		[](URpgPlayerInventoryLayoutDefinition& Layout)
+		{
+			Layout.StaticSlotGroups[0].GridSize.Width = 0;
+		},
+		ERpgInventoryStaticLayoutValidationIssue::InvalidGridSize,
+		0,
+		false,
+		TEXT("Width and height must both be at least one cell"));
+
+	TestSingleGroupFailure(
+		TEXT("An unknown GroupKind"),
+		[](URpgPlayerInventoryLayoutDefinition& Layout)
+		{
+			Layout.StaticSlotGroups[0].GroupKind =
+				static_cast<ERpgInventorySlotGroupKind>(255);
+		},
+		ERpgInventoryStaticLayoutValidationIssue::InvalidGroupKind,
+		0,
+		false,
+		TEXT("has an unknown GroupKind"));
+
+	TestSingleGroupFailure(
+		TEXT("A Content group with an equipment role"),
+		[](URpgPlayerInventoryLayoutDefinition& Layout)
+		{
+			Layout.StaticSlotGroups[0].EquipmentSlotRole =
+				ERpgEquipmentSlot::MainHand;
+		},
+		ERpgInventoryStaticLayoutValidationIssue::
+			ContentHasEquipmentSlotRole,
+		0,
+		false,
+		TEXT("Content groups must use None"));
+
+	TestSingleGroupFailure(
+		TEXT("A Carry group with a non-hand equipment role"),
+		[](URpgPlayerInventoryLayoutDefinition& Layout)
+		{
+			Layout.StaticSlotGroups[1].EquipmentSlotRole =
+				ERpgEquipmentSlot::Chest;
+		},
+		ERpgInventoryStaticLayoutValidationIssue::
+			CarryHasInvalidEquipmentSlotRole,
+		1,
+		false,
+		TEXT("Carry groups must use MainHand or OffHand"));
+
+	TestSingleGroupFailure(
+		TEXT("A Gear group with a hand equipment role"),
+		[](URpgPlayerInventoryLayoutDefinition& Layout)
+		{
+			Layout.StaticSlotGroups[3].EquipmentSlotRole =
+				ERpgEquipmentSlot::MainHand;
+		},
+		ERpgInventoryStaticLayoutValidationIssue::
+			GearHasInvalidEquipmentSlotRole,
+		3,
+		false,
+		TEXT("Gear groups require one managed non-hand slot"));
+
+	TestSingleGroupFailure(
+		TEXT("A multi-cell Carry group"),
+		[](URpgPlayerInventoryLayoutDefinition& Layout)
+		{
+			Layout.StaticSlotGroups[1].GridSize.Width = 2;
+		},
+		ERpgInventoryStaticLayoutValidationIssue::
+			EquipmentGroupIsNotSingleCell,
+		1,
+		false,
+		TEXT("Equipment groups must be exactly 1 x 1"));
+
+	TestSingleGroupFailure(
+		TEXT("An actionbar Carry group without a semantic role"),
+		[](URpgPlayerInventoryLayoutDefinition& Layout)
+		{
+			Layout.StaticSlotGroups[1].SemanticRole = FGameplayTag();
+		},
+		ERpgInventoryStaticLayoutValidationIssue::
+			MissingActionbarCarrySemanticRole,
+		1,
+		true,
+		TEXT("without a SemanticRole"));
+
+	TestSingleGroupFailure(
+		TEXT("A valid semantic role outside the layout namespace"),
+		[](URpgPlayerInventoryLayoutDefinition& Layout)
+		{
+			Layout.StaticSlotGroups[0].SemanticRole =
+				FGameplayTag::RequestGameplayTag(
+					TEXT("UI.Screen.Inventory"));
+		},
+		ERpgInventoryStaticLayoutValidationIssue::
+			SemanticRoleOutsideLayoutNamespace,
+		0,
+		true,
+		TEXT("outside the Rpg.Inventory.Layout.Role namespace"));
+
+	{
+		URpgPlayerInventoryLayoutDefinition* Layout =
+			MakeValidTransientLayout();
+		Layout->StaticSlotGroups[3].ContainerId =
+			Layout->StaticSlotGroups[0].ContainerId;
+		const FRpgInventoryStaticLayoutValidationResult Contract =
+			Layout->ValidateStaticSlotGroups();
+		TestFalse(
+			TEXT("Duplicate ContainerIds invalidate the shared contract"),
+			Contract.IsValid());
+		TestFalse(
+			TEXT("Duplicate ContainerIds fail the physical equipment preflight"),
+			Contract.PassesPhysicalEquipmentPreflight());
+		TestTrue(
+			TEXT("The duplicate ContainerId is diagnosed"),
+			Contract.HasIssue(
+				ERpgInventoryStaticLayoutValidationIssue::
+					DuplicateContainerId,
+				3));
+		TestFalse(
+			TEXT("The first colliding physical root is filtered"),
+			Contract.CanMaterializeGroup(0));
+		TestFalse(
+			TEXT("The second colliding physical root is filtered"),
+			Contract.CanMaterializeGroup(3));
+		const FLayoutDataValidationSnapshot Snapshot =
+			ValidateLayoutForTest(*Layout);
+		TestTrue(
+			TEXT("The duplicate ContainerId diagnostic identifies its earlier entry"),
+			ContainsValidationError(
+				Snapshot,
+				TEXT("from StaticSlotGroups[0]")));
+	}
+
+	{
+		URpgPlayerInventoryLayoutDefinition* Layout =
+			MakeValidTransientLayout();
+		Layout->StaticSlotGroups[3].SemanticRole =
+			Layout->StaticSlotGroups[0].SemanticRole;
+		const FRpgInventoryStaticLayoutValidationResult Contract =
+			Layout->ValidateStaticSlotGroups();
+		TestFalse(
+			TEXT("Duplicate semantic roles invalidate the shared contract"),
+			Contract.IsValid());
+		TestTrue(
+			TEXT("Duplicate semantic roles do not widen the physical equipment preflight"),
+			Contract.PassesPhysicalEquipmentPreflight());
+		TestTrue(
+			TEXT("The duplicate semantic role is diagnosed"),
+			Contract.HasIssue(
+				ERpgInventoryStaticLayoutValidationIssue::
+					DuplicateSemanticRole,
+				3));
+		TestTrue(
+			TEXT("The first semantic collision remains visible to the unique runtime resolver"),
+			Contract.CanMaterializeGroup(0));
+		TestTrue(
+			TEXT("The second semantic collision remains visible to the unique runtime resolver"),
+			Contract.CanMaterializeGroup(3));
+		const FLayoutDataValidationSnapshot Snapshot =
+			ValidateLayoutForTest(*Layout);
+		TestTrue(
+			TEXT("The semantic-role diagnostic explains singleton scope"),
+			ContainsValidationError(
+				Snapshot,
+				TEXT("layout-wide singleton keys")));
+	}
+
+	{
+		URpgPlayerInventoryLayoutDefinition* Layout =
+			MakeValidTransientLayout();
+		Layout->StaticSlotGroups.Add(
+			MakeValidationGroup(
+				TEXT("Gear.Head.Alternate"),
+				ERpgInventorySlotGroupKind::Gear,
+				ERpgEquipmentSlot::Head));
+		const int32 DuplicateGearIndex =
+			Layout->StaticSlotGroups.Num() - 1;
+		const FRpgInventoryStaticLayoutValidationResult Contract =
+			Layout->ValidateStaticSlotGroups();
+		TestFalse(
+			TEXT("Duplicate Gear roles invalidate the shared contract"),
+			Contract.IsValid());
+		TestFalse(
+			TEXT("Duplicate Gear roles fail the physical equipment preflight"),
+			Contract.PassesPhysicalEquipmentPreflight());
+		TestTrue(
+			TEXT("The duplicate Gear role is diagnosed"),
+			Contract.HasIssue(
+				ERpgInventoryStaticLayoutValidationIssue::
+					DuplicateGearEquipmentSlotRole,
+				DuplicateGearIndex));
+		TestTrue(
+			TEXT("Both Gear-role candidates remain visible to the unique runtime resolver"),
+			Contract.CanMaterializeGroup(DuplicateGearIndex));
+		const FLayoutDataValidationSnapshot Snapshot =
+			ValidateLayoutForTest(*Layout);
+		TestTrue(
+			TEXT("The duplicate Gear-role diagnostic explains the unique-root requirement"),
+			ContainsValidationError(
+				Snapshot,
+				TEXT("exactly one static root")));
+	}
+
+	return true;
+}
+
+IMPLEMENT_SIMPLE_AUTOMATION_TEST(
+	FRpgPlayerInventoryLayoutAuthoredAssetDataValidationTest,
+	"SurvivalRpg.Inventory.Layout.AuthoredAssetsDataValidation",
+	EAutomationTestFlags::EditorContext | EAutomationTestFlags::EngineFilter)
+
+bool FRpgPlayerInventoryLayoutAuthoredAssetDataValidationTest::RunTest(
+	const FString& Parameters)
+{
+	IAssetRegistry& AssetRegistry =
+		FModuleManager::LoadModuleChecked<FAssetRegistryModule>(
+			TEXT("AssetRegistry")).Get();
+	AssetRegistry.WaitForCompletion();
+
+	FARFilter LayoutFilter;
+	LayoutFilter.ClassPaths.Add(
+		URpgPlayerInventoryLayoutDefinition::StaticClass()->GetClassPathName());
+	LayoutFilter.bRecursiveClasses = true;
+	LayoutFilter.bRecursivePaths = true;
+	for (const FName ContentRoot : GetProjectContentRoots())
+	{
+		LayoutFilter.PackagePaths.Add(ContentRoot);
+	}
+
+	TArray<FAssetData> LayoutAssets;
+	AssetRegistry.GetAssets(LayoutFilter, LayoutAssets);
+	LayoutAssets.Sort(
+		[](const FAssetData& Left, const FAssetData& Right)
+		{
+			return Left.PackageName.LexicalLess(Right.PackageName);
+		});
+
+	for (const FAssetData& LayoutAsset : LayoutAssets)
+	{
+		const URpgPlayerInventoryLayoutDefinition* Layout =
+			Cast<URpgPlayerInventoryLayoutDefinition>(
+				LayoutAsset.GetAsset());
+		if (!Layout)
+		{
+			AddError(
+				FString::Printf(
+					TEXT("%s did not load as a player inventory layout definition"),
+					*LayoutAsset.GetObjectPathString()));
+			continue;
+		}
+
+		const FLayoutDataValidationSnapshot Snapshot =
+			ValidateLayoutForTest(*Layout);
+		if (Snapshot.Result != EDataValidationResult::Valid ||
+			!Snapshot.Errors.IsEmpty())
+		{
+			AddError(
+				FString::Printf(
+					TEXT("%s failed native layout validation: %s"),
+					*LayoutAsset.GetObjectPathString(),
+					*FString::Join(Snapshot.Errors, TEXT("\n"))));
+		}
+	}
+
+	TestTrue(
+		TEXT("AssetRegistry found at least one authored player inventory layout definition"),
+		!LayoutAssets.IsEmpty());
+	return true;
+}
+
+IMPLEMENT_SIMPLE_AUTOMATION_TEST(
 	FRpgInventoryItemDefinitionExplicitSpatialFragmentAssetTest,
 	"SurvivalRpg.Inventory.ItemDefinitions.ExplicitSpatialFragments",
 	EAutomationTestFlags::EditorContext | EAutomationTestFlags::EngineFilter)
@@ -407,7 +905,7 @@ bool FRpgInventoryItemDefinitionExplicitSpatialFragmentAssetTest::RunTest(
 	BlueprintFilter.ClassPaths.Add(UBlueprint::StaticClass()->GetClassPathName());
 	BlueprintFilter.bRecursiveClasses = true;
 	BlueprintFilter.bRecursivePaths = true;
-	for (const FName ContentRoot : GetInventoryItemDefinitionContentRoots())
+	for (const FName ContentRoot : GetProjectContentRoots())
 	{
 		BlueprintFilter.PackagePaths.Add(ContentRoot);
 	}

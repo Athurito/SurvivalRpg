@@ -4407,6 +4407,23 @@ bool FRpgInventoryCarryQuickAccessBindingTest::RunTest(const FString& Parameters
 		Layout->CanBindSlotAddressToActionbar(
 			CustomCarryAddress,
 			Weapon));
+	const FGameplayTag ForeignSemanticRole =
+		FGameplayTag::RequestGameplayTag(TEXT("UI.Screen.Inventory"));
+	CustomCarryGroup.SemanticRole = ForeignSemanticRole;
+	TestFalse(
+		TEXT("A Carry role outside the layout namespace is not advertised as actionbar-bindable"),
+		Layout->IsSlotAddressActionbarBindable(CustomCarryAddress));
+	TestFalse(
+		TEXT("The detailed Carry binding predicate rejects the same foreign semantic role"),
+		Layout->CanBindSlotAddressToActionbar(
+			CustomCarryAddress,
+			Weapon));
+	FRpgInventorySlotGroupView ForeignSemanticGroup;
+	TestFalse(
+		TEXT("The runtime semantic resolver fails closed for roles outside the layout namespace"),
+		Layout->TryGetSlotGroupBySemanticRole(
+			ForeignSemanticRole,
+			ForeignSemanticGroup));
 	CustomCarryGroup.SemanticRole =
 		RpgGameplayTags::Rpg_Inventory_Layout_Role_Carry_Utility;
 	TestTrue(

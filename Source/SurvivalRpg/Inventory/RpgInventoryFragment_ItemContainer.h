@@ -96,6 +96,19 @@ public:
 	/** Appends effective item-owned definitions. Compatibility fragments override this to migrate legacy layout data. */
 	virtual void GetProvidedContainers(TArray<FRpgInventoryItemContainerDefinition>& OutContainers) const;
 
+	/**
+	 * Appends every authored row used to verify this fragment's structural container contract.
+	 * Unlike the runtime view, compatibility overrides must retain malformed and duplicate legacy rows for diagnostics.
+	 */
+	virtual void GetAuthoredContainerDefinitions(
+		TArray<FRpgInventoryItemContainerDefinition>& OutContainers) const;
+
+	/**
+	 * Returns whether every authored container row has a usable id and grid, with no fragment-local id repeats.
+	 * This runtime-safe helper shares the same unfiltered authored view consumed by editor asset validation.
+	 */
+	bool HasStructurallyValidProvidedContainers() const;
+
 	/** Finds one native container definition by its definition-local id. */
 	const FRpgInventoryItemContainerDefinition* FindProvidedContainer(FName ContainerId) const;
 };

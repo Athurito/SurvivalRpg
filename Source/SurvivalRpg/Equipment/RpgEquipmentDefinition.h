@@ -9,6 +9,7 @@ class AActor;
 class UAnimMontage;
 class URpgAbilitySet;
 class URpgEquipmentInstance;
+class FDataValidationContext;
 
 /** Server-authoritative equipment load tier used to select dodge presentation and root motion. */
 UENUM(BlueprintType)
@@ -153,11 +154,25 @@ class SURVIVALRPG_API URpgEquipmentDefinition : public UObject
 public:
 	URpgEquipmentDefinition(const FObjectInitializer& ObjectInitializer = FObjectInitializer::Get());
 
+	/** Returns whether Slot identifies a concrete equipment destination rather than None or an unknown enum value. */
+	static bool IsConcreteEquipmentSlot(ERpgEquipmentSlot Slot);
+
+	/**
+	 * Returns whether authored slot references are internally consistent.
+	 * An empty AllowedSlots array remains structurally valid and means non-equippable; semantic hand rules are separate.
+	 */
+	bool HasStructurallyValidSlotReferences() const;
+
 	bool CanEquipInSlot(ERpgEquipmentSlot Slot) const;
 	bool OccupiesSlot(ERpgEquipmentSlot EquippedSlot, ERpgEquipmentSlot QuerySlot) const;
 	ERpgEquipmentSlot GetDefaultEquipSlot() const;
 
-	// Runtime instance class created when this equipment is equipped. Use URpgWeaponInstance for weapons/shields.
+#if WITH_EDITOR
+	/** Reports malformed generic slot references without applying semantic equipment migration policy. */
+	virtual EDataValidationResult IsDataValid(FDataValidationContext& Context) const override;
+#endif
+
+	/** Runtime instance class created when this equipment is equipped. Use URpgWeaponInstance for weapons and shields. */
 	UPROPERTY(EditDefaultsOnly, Category = "Equipment")
 	TSubclassOf<URpgEquipmentInstance> InstanceType;
 
@@ -183,7 +198,7 @@ public:
 	UPROPERTY(EditDefaultsOnly, Category = "Equipment")
 	TArray<TObjectPtr<const URpgAbilitySet>> AbilitySetsToGrant;
 
-	// Slot-specific AbilitySets granted by the equipment manager after resolving hand role and block ownership.
+	/** Slot-specific AbilitySets granted after the equipment manager resolves hand role and block ownership. */
 	UPROPERTY(EditDefaultsOnly, Category = "Equipment|Slot Grants", meta = (TitleProperty = "AbilitySet"))
 	TArray<FRpgEquipmentSlotAbilitySet> SlotAbilitySetsToGrant;
 

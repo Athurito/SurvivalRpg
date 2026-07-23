@@ -1627,7 +1627,7 @@ Status: **In Arbeit**
       `ERpgEquipmentSlot`-Rolle statt indirekter Namens- oder
       Kategorieableitung.
 - [x] Explizites Spatial-Fragment für jedes gridfähige Item verlangen.
-- [ ] `IsDataValid` für ItemDefinitions, Container-IDs, Footprints,
+- [x] `IsDataValid` für ItemDefinitions, Container-IDs, Footprints,
       Equipment-Slots, LayoutDefinition und ScreenRegistry ergänzen.
 - [ ] `BothHands + OffHand`, leere `AllowedSlots` bei ausrüstbaren Items und
       definitionlose Provider als konkrete Validierungsfehler bzw.
@@ -1838,6 +1838,65 @@ Verifizierter Phase-5D-Zwischenstand vom 2026-07-23:
   ScreenRegistry ergänzen; dabei die bereits fail-closed behandelten
   Duplicate- und ungültigen Spatial-Fragmente als konkrete Editordiagnosen
   und Runtime-Regressionen festschreiben.
+
+Verifizierter Phase-5E-Zwischenstand vom 2026-07-23:
+
+- `URpgInventoryItemDefinition::IsDataValid` diagnostiziert fehlende,
+  doppelte und nicht-positive Spatial-Fragmente mit Assetpfad, Fragmentindex
+  und konkreten Maßen. Der Editorvertrag endet weiterhin im selben
+  fail-closed `FindValidSpatialItemFragment`, den die Runtime verwendet.
+- Das erste runtime-wirksame ItemContainer-Fragment validiert über
+  `GetAuthoredContainerDefinitions` seine ungefilterte Authoring-Sicht.
+  Fehlende oder fragmentlokal doppelte `ContainerId`s und nicht-positive
+  Grid-Größen werden für native Container und sämtliche konvertierten
+  Legacy-Compatibility-Zeilen mit Fragment- und Containerindex gemeldet.
+  `GetProvidedContainers` behält seine bisherige gefilterte Runtime-Sicht;
+  spätere Fragmentduplikate behalten bewusst die bestehende
+  First-Match-Semantik.
+- Ein effektives Equippable-Fragment ohne `EquipmentDefinition` ist ungültig.
+  EquipmentDefinitions lehnen `None`, unbekannte oder doppelte
+  `AllowedSlots` sowie unvollständige oder unerreichbare
+  `SlotAbilitySetsToGrant` ab. Leere `AllowedSlots` und
+  `BothHands + OffHand` bleiben ausdrücklich dem separaten Phase-5F-
+  Migrationsschnitt vorbehalten.
+- `URpgPlayerInventoryLayoutDefinition` besitzt einen gemeinsamen
+  Editor-/Runtime-Regelpass für eindeutige Root-`ContainerId`s, positive
+  Größen, gültige GroupKinds, die Content-/Carry-/Gear-Zuordnung typisierter
+  Equipment-Rollen, 1-x-1-Equipmentgruppen, eindeutige Gear-Rollen sowie
+  konkrete und eindeutige `Rpg.Inventory.Layout.Role.*`-Tags.
+  Actionbar-bindbares Carry ohne SemanticRole wird ebenfalls konkret
+  diagnostiziert.
+- Runtime-View-Filter und der physische Equipment-Preflight konsumieren
+  denselben Layout-Regelpass. Reine SemanticRole-/Actionbar-Fehler bleiben
+  Editorfehler und blockieren weder Death-Drop noch Equipment-Reconciliation;
+  ihre exakten Runtime-Resolver scheitern bei Verwendung weiterhin
+  fail-closed.
+- `URpgUIScreenRegistry::IsDataValid` verlangt eindeutige konkrete
+  `UI.Screen.*`-Tags, konkrete `UI.Layer.*`-Tags und gesetzte, ladbare,
+  nicht-abstrakte `UCommonActivatableWidget`-Klassen.
+  `bSingleInstance=false` erzeugt eine Migrationswarnung. `FindScreen` behält
+  seinen exakten First-Match-Vertrag; der Legacy-Config-Fallback wird nicht
+  zu einer zweiten validierten Composition Authority ausgebaut.
+- Permanente AssetRegistry-Gates validieren sämtliche konkreten
+  Item-/Equipment-Blueprint-CDOs sowie alle LayoutDefinition- und
+  ScreenRegistry-Assets unter `/Game` und in gemounteten Projekt-Plugins.
+  Die aktuell authorierten Assets erfüllen die neuen Verträge ohne
+  Validierungsfehler.
+- `SurvivalRpgEditor Win64 Development` wurde mit Unreal Engine 5.8 gebaut
+  (finaler inkrementeller Build 4/4 Actions, UBT `Result: Succeeded`).
+- `SurvivalRpg.Inventory`: 122 von 122 Automationtests erfolgreich.
+- `SurvivalRpg.Save`: 2 von 2 Automationtests erfolgreich.
+- `SurvivalRpg.Equipment`: 6 von 6 Automationtests erfolgreich.
+- `SurvivalRpg.Crafting`: 8 von 8 Automationtests erfolgreich.
+- `SurvivalRpg.UI`: 22 von 22 Automationtests erfolgreich.
+- `CompileAllBlueprints` endete mit Prozesscode 0, 0 Compilerfehlern,
+  16 bekannten Compilerwarnungen und 0 nicht ladbaren Blueprints.
+- Fortschritt Phase 5: 5 von 7 Punkten abgeschlossen (71,4 %).
+- Gesamtfortschritt der verbindlichen Checkliste: 73 von 94 Punkten
+  abgeschlossen (77,7 %), 21 Punkte offen.
+- Nächster Schnitt: `BothHands + OffHand`, leere `AllowedSlots` bei
+  ausrüstbaren Items und definitionlose Provider als konkrete
+  Validierungsfehler beziehungsweise Migrationswarnungen abbilden.
 
 ## Phase 6 – MVVM, Refresh und Komponentenschnitt
 

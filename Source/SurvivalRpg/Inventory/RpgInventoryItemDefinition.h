@@ -11,6 +11,7 @@ template <typename T> class TSubclassOf;
 
 class URpgInventoryFragment_SpatialItem;
 class URpgInventoryItemInstance;
+class FDataValidationContext;
 struct FFrame;
 
 //////////////////////////////////////////////////////////////////////
@@ -93,6 +94,14 @@ public:
 	/** Resolves the valid SpatialItem contract from an item-definition class default object, or null on malformed data. */
 	static const URpgInventoryFragment_SpatialItem* ResolveValidSpatialItemFragment(
 		TSubclassOf<URpgInventoryItemDefinition> ItemDefinition);
+
+#if WITH_EDITOR
+	/**
+	 * Reports malformed static fragment contracts to the editor.
+	 * Runtime placement remains authoritative and consumes the same fail-closed SpatialItem resolver.
+	 */
+	virtual EDataValidationResult IsDataValid(FDataValidationContext& Context) const override;
+#endif
 };
 
 //@TODO: Make into a subsystem instead?
