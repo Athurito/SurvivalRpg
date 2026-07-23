@@ -11,6 +11,7 @@
 #include "Misc/AssetRegistryInterface.h"
 #include "Misc/AutomationTest.h"
 #include "Modules/ModuleManager.h"
+#include "UObject/UnrealType.h"
 
 namespace
 {
@@ -109,6 +110,22 @@ bool FRpgPlayerInventoryLayoutAssetCompositionTest::RunTest(const FString& Param
 		FGameplayTag::RequestGameplayTag(TEXT("Rpg.Inventory.Layout.Role.Carry.OffHand")),
 		FGameplayTag::RequestGameplayTag(TEXT("Rpg.Inventory.Layout.Role.Content.Primary"))
 	};
+	const TArray<ERpgEquipmentSlot> ExpectedEquipmentSlotRoles =
+	{
+		ERpgEquipmentSlot::Head,
+		ERpgEquipmentSlot::Chest,
+		ERpgEquipmentSlot::Hands,
+		ERpgEquipmentSlot::Legs,
+		ERpgEquipmentSlot::Feet,
+		ERpgEquipmentSlot::Backpack,
+		ERpgEquipmentSlot::Belt,
+		ERpgEquipmentSlot::Pouch,
+		ERpgEquipmentSlot::ResourceBag,
+		ERpgEquipmentSlot::MainHand,
+		ERpgEquipmentSlot::MainHand,
+		ERpgEquipmentSlot::OffHand,
+		ERpgEquipmentSlot::None
+	};
 	const TArray<FRpgInventorySlotGroupDefinition>& Groups =
 		Layout->StaticSlotGroups;
 	if (!TestEqual(
@@ -132,6 +149,10 @@ bool FRpgPlayerInventoryLayoutAssetCompositionTest::RunTest(const FString& Param
 			FString::Printf(TEXT("Group %d keeps its explicit semantic role"), Index),
 			Group.SemanticRole,
 			ExpectedSemanticRoles[Index]);
+		TestEqual(
+			FString::Printf(TEXT("Group %d keeps its explicit equipment-slot role"), Index),
+			Group.EquipmentSlotRole,
+			ExpectedEquipmentSlotRoles[Index]);
 		if (Group.SemanticRole.IsValid())
 		{
 			TestFalse(
@@ -174,12 +195,6 @@ bool FRpgPlayerInventoryLayoutAssetCompositionTest::RunTest(const FString& Param
 		TestFalse(
 			FString::Printf(TEXT("%s is not actionbar bindable"), *GearGroup.ContainerId.ToString()),
 			GearGroup.Rule.bActionbarBindable);
-		TestFalse(
-			FString::Printf(TEXT("%s is not a carry slot"), *GearGroup.ContainerId.ToString()),
-			GearGroup.Rule.bCarrySlot);
-		TestFalse(
-			FString::Printf(TEXT("%s has no carry activation role"), *GearGroup.ContainerId.ToString()),
-			GearGroup.Rule.CarryActivationRole.IsValid());
 	}
 
 	for (int32 Index = 0; Index < 5; ++Index)
@@ -208,7 +223,7 @@ bool FRpgPlayerInventoryLayoutAssetCompositionTest::RunTest(const FString& Param
 		const TCHAR* Description,
 		const FRpgInventorySlotGroupDefinition& Group,
 		ERpgInventoryItemCategory ExpectedCategory,
-		const FGameplayTag& ExpectedRole)
+		ERpgEquipmentSlot ExpectedEquipmentSlotRole)
 	{
 		TestTrue(
 			FString::Printf(TEXT("%s remains a carry group"), Description),
@@ -216,9 +231,6 @@ bool FRpgPlayerInventoryLayoutAssetCompositionTest::RunTest(const FString& Param
 		TestTrue(
 			FString::Printf(TEXT("%s remains actionbar bindable"), Description),
 			Group.Rule.bActionbarBindable);
-		TestTrue(
-			FString::Printf(TEXT("%s remains a carry slot"), Description),
-			Group.Rule.bCarrySlot);
 		TestEqual(
 			FString::Printf(TEXT("%s accepts exactly one broad category"), Description),
 			Group.Rule.AllowedCategories.Num(),
@@ -229,25 +241,26 @@ bool FRpgPlayerInventoryLayoutAssetCompositionTest::RunTest(const FString& Param
 				FString::Printf(TEXT("%s keeps its authored item category"), Description),
 				Group.Rule.AllowedCategories[0] == ExpectedCategory);
 		}
-		TestTrue(
-			FString::Printf(TEXT("%s keeps its authored carry activation role"), Description),
-			Group.Rule.CarryActivationRole == ExpectedRole);
+		TestEqual(
+			FString::Printf(TEXT("%s keeps its authored equipment-slot role"), Description),
+			Group.EquipmentSlotRole,
+			ExpectedEquipmentSlotRole);
 	};
 	TestCarryGroup(
 		TEXT("WeaponSlot1"),
 		Groups[9],
 		ERpgInventoryItemCategory::Weapon,
-		FGameplayTag::RequestGameplayTag(TEXT("Equipment.Slot.MainHand")));
+		ERpgEquipmentSlot::MainHand);
 	TestCarryGroup(
 		TEXT("WeaponSlot2"),
 		Groups[10],
 		ERpgInventoryItemCategory::Weapon,
-		FGameplayTag::RequestGameplayTag(TEXT("Equipment.Slot.MainHand")));
+		ERpgEquipmentSlot::MainHand);
 	TestCarryGroup(
 		TEXT("ShieldSlot"),
 		Groups[11],
 		ERpgInventoryItemCategory::Shield,
-		FGameplayTag::RequestGameplayTag(TEXT("Equipment.Slot.OffHand")));
+		ERpgEquipmentSlot::OffHand);
 
 	TestTrue(
 		TEXT("Pockets remains a content group"),
@@ -255,10 +268,10 @@ bool FRpgPlayerInventoryLayoutAssetCompositionTest::RunTest(const FString& Param
 	TestTrue(
 		TEXT("Pockets remains actionbar bindable"),
 		Pockets.Rule.bActionbarBindable);
-	TestFalse(TEXT("Pockets is not a carry slot"), Pockets.Rule.bCarrySlot);
-	TestFalse(
-		TEXT("Pockets has no carry activation role"),
-		Pockets.Rule.CarryActivationRole.IsValid());
+	TestEqual(
+		TEXT("Pockets has no equipment-slot role"),
+		Pockets.EquipmentSlotRole,
+		ERpgEquipmentSlot::None);
 	TestTrue(
 		TEXT("Pockets keeps its unrestricted broad category rule"),
 		Pockets.Rule.AllowedCategories.IsEmpty());
@@ -271,6 +284,47 @@ bool FRpgPlayerInventoryLayoutAssetCompositionTest::RunTest(const FString& Param
 		TestTrue(
 			FString::Printf(TEXT("%s has no blocked item-tag override"), *Group.ContainerId.ToString()),
 			Group.Rule.BlockedItemTags.IsEmpty());
+	}
+
+	TestNull(
+		TEXT("The slot rule no longer exposes the redundant bCarrySlot property"),
+		FRpgInventorySlotRule::StaticStruct()->FindPropertyByName(
+			TEXT("bCarrySlot")));
+	TestNull(
+		TEXT("The slot rule no longer exposes the gameplay-tag CarryActivationRole property"),
+		FRpgInventorySlotRule::StaticStruct()->FindPropertyByName(
+			TEXT("CarryActivationRole")));
+
+	const FEnumProperty* DefinitionEquipmentSlotRoleProperty =
+		FindFProperty<FEnumProperty>(
+			FRpgInventorySlotGroupDefinition::StaticStruct(),
+			GET_MEMBER_NAME_CHECKED(
+				FRpgInventorySlotGroupDefinition,
+				EquipmentSlotRole));
+	if (TestNotNull(
+			TEXT("Static group definitions expose EquipmentSlotRole as an enum property"),
+			DefinitionEquipmentSlotRoleProperty))
+	{
+		TestEqual(
+			TEXT("Definition EquipmentSlotRole uses ERpgEquipmentSlot"),
+			DefinitionEquipmentSlotRoleProperty->GetEnum(),
+			StaticEnum<ERpgEquipmentSlot>());
+	}
+
+	const FEnumProperty* ViewEquipmentSlotRoleProperty =
+		FindFProperty<FEnumProperty>(
+			FRpgInventorySlotGroupView::StaticStruct(),
+			GET_MEMBER_NAME_CHECKED(
+				FRpgInventorySlotGroupView,
+				EquipmentSlotRole));
+	if (TestNotNull(
+			TEXT("Runtime group views expose EquipmentSlotRole as an enum property"),
+			ViewEquipmentSlotRoleProperty))
+	{
+		TestEqual(
+			TEXT("View EquipmentSlotRole uses ERpgEquipmentSlot"),
+			ViewEquipmentSlotRoleProperty->GetEnum(),
+			StaticEnum<ERpgEquipmentSlot>());
 	}
 
 	TestNull(

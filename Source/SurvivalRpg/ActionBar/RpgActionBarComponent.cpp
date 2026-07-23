@@ -7,6 +7,7 @@
 #include "SurvivalRpg/Core/Player/RpgPlayerState.h"
 #include "SurvivalRpg/Equipment/RpgAbilityBindingResolver.h"
 #include "SurvivalRpg/GameplayTags/RpgGameplayTags.h"
+#include "SurvivalRpg/Inventory/RpgInventoryEquipmentPlacementPolicy.h"
 #include "SurvivalRpg/Inventory/RpgInventoryFragment_ItemTraits.h"
 #include "SurvivalRpg/Inventory/RpgInventoryItemDefinition.h"
 #include "SurvivalRpg/Inventory/RpgInventoryItemInstance.h"
@@ -582,7 +583,8 @@ bool URpgActionBarComponent::TryResolveCarrySemanticRole(
 			CarrySemanticRole,
 			CarryGroup) ||
 		CarryGroup.GroupKind != ERpgInventorySlotGroupKind::Carry ||
-		!CarryGroup.Rule.bCarrySlot ||
+		!FRpgInventoryEquipmentPlacementPolicy::IsHandEquipmentSlot(
+			CarryGroup.EquipmentSlotRole) ||
 		CarryGroup.GridSize.Width != 1 ||
 		CarryGroup.GridSize.Height != 1 ||
 		!CarryGroup.ContainsCell(0, 0))

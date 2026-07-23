@@ -1,7 +1,6 @@
 #pragma once
 
 #include "CoreMinimal.h"
-#include "GameplayTagContainer.h"
 #include "SurvivalRpg/Equipment/RpgEquipmentDefinition.h"
 
 class URpgEquipmentDefinition;
@@ -23,9 +22,6 @@ struct SURVIVALRPG_API FRpgInventoryEquipmentPlacementPolicy
 
 	/** Returns true for equipment slots whose item contributes item-owned inventory containers. */
 	static bool IsSlotContainerEquipmentSlot(ERpgEquipmentSlot EquipmentSlot);
-
-	/** Resolves an exact Carry activation role to its corresponding runtime hand slot. */
-	static bool TryGetHandSlotForCarryRole(FGameplayTag CarryRole, ERpgEquipmentSlot& OutEquipmentSlot);
 
 	/** Returns the static equipment definition referenced by the item's equippable fragment, if configured. */
 	static const URpgEquipmentDefinition* FindEquipmentDefinition(const URpgInventoryItemInstance* Item);

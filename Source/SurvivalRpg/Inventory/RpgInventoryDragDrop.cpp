@@ -3062,10 +3062,9 @@ URpgInventoryDragDropCoordinator::PlanInteractionPreview(
 				ERpgEquipmentSlot::None;
 			const bool bSourceIsSlotContainer =
 				InventoryLayout->IsGearSlotAddress(SourceAddress) &&
-				URpgPlayerInventoryLayoutComponent::
-					TryGetEquipmentSlotForGearContainer(
-						SourceAddress.GetContainerHandle(),
-						SourceEquipmentSlot) &&
+				InventoryLayout->TryGetEquipmentSlotForGearContainer(
+					SourceAddress.GetContainerHandle(),
+					SourceEquipmentSlot) &&
 				URpgPlayerInventoryLayoutComponent::
 					IsSlotContainerEquipmentSlot(
 						SourceEquipmentSlot);
@@ -3539,7 +3538,7 @@ FRpgInventorySlotAddress URpgInventoryDragDropCoordinator::ResolveEquipmentPaylo
 		return Address;
 	}
 
-	if (URpgPlayerInventoryLayoutComponent::TryMakeGearSlotAddress(Payload.EquipmentSlot, Address) &&
+	if (InventoryLayout->TryMakeGearSlotAddress(Payload.EquipmentSlot, Address) &&
 		InventoryLayout->GetItemInSlotAddress(Address) == Payload.ItemInstance)
 	{
 		return Address;
@@ -3547,7 +3546,10 @@ FRpgInventorySlotAddress URpgInventoryDragDropCoordinator::ResolveEquipmentPaylo
 
 	for (const FRpgInventorySlotGroupView& Group : InventoryLayout->GetSlotGroups())
 	{
-		if (Group.GroupKind != ERpgInventorySlotGroupKind::Carry || !Group.Rule.bCarrySlot)
+		if (Group.GroupKind != ERpgInventorySlotGroupKind::Carry ||
+			Group.EquipmentSlotRole != Payload.EquipmentSlot ||
+			!FRpgInventoryEquipmentPlacementPolicy::IsHandEquipmentSlot(
+				Group.EquipmentSlotRole))
 		{
 			continue;
 		}
@@ -3586,7 +3588,7 @@ URpgInventoryItemInstance* URpgInventoryDragDropCoordinator::ResolveCurrentEquip
 	}
 
 	FRpgInventorySlotAddress GearAddress;
-	if (URpgPlayerInventoryLayoutComponent::TryMakeGearSlotAddress(EquipmentSlot, GearAddress))
+	if (InventoryLayout->TryMakeGearSlotAddress(EquipmentSlot, GearAddress))
 	{
 		return InventoryLayout->GetItemInSlotAddress(GearAddress) == ItemInstance
 			? ItemInstance
@@ -3606,11 +3608,15 @@ URpgInventoryItemInstance* URpgInventoryDragDropCoordinator::ResolveCurrentEquip
 	const FRpgInventorySlotAddress PhysicalSourceAddress =
 		ResolveEquipmentPayloadSourceAddress(
 			MakeEquipmentPayload(ItemInstance, EquipmentSlot));
+	ERpgEquipmentSlot PhysicalSourceRole = ERpgEquipmentSlot::None;
 	return EquipmentLoadout &&
 		EquipmentLoadout->GetItemInEquipmentSlot(EquipmentSlot) ==
 			ItemInstance &&
 		PhysicalSourceAddress.IsValid() &&
-		InventoryLayout->IsCarrySlotAddress(PhysicalSourceAddress)
+		InventoryLayout->TryGetEquipmentSlotRoleForAddress(
+			PhysicalSourceAddress,
+			PhysicalSourceRole) &&
+		PhysicalSourceRole == EquipmentSlot
 		? ItemInstance
 		: nullptr;
 }
@@ -3747,8 +3753,15 @@ bool URpgInventoryDragDropCoordinator::CanMoveItemOutOfAddress(
 		return false;
 	}
 
+	const URpgPlayerInventoryLayoutComponent* InventoryLayout =
+		FindPlayerInventoryLayout();
+	if (!InventoryLayout)
+	{
+		return false;
+	}
+
 	ERpgEquipmentSlot EquipmentSlot = ERpgEquipmentSlot::None;
-	if (!URpgPlayerInventoryLayoutComponent::TryGetEquipmentSlotForGearContainer(
+	if (!InventoryLayout->TryGetEquipmentSlotForGearContainer(
 			SourceAddress.GetContainerHandle(),
 			EquipmentSlot) ||
 		!URpgPlayerInventoryLayoutComponent::IsSlotContainerEquipmentSlot(EquipmentSlot))
@@ -3756,10 +3769,7 @@ bool URpgInventoryDragDropCoordinator::CanMoveItemOutOfAddress(
 		return true;
 	}
 
-	const URpgPlayerInventoryLayoutComponent* InventoryLayout =
-		FindPlayerInventoryLayout();
-	return InventoryLayout &&
-		InventoryLayout->CanUnequipSlotContainer(EquipmentSlot);
+	return InventoryLayout->CanUnequipSlotContainer(EquipmentSlot);
 }
 
 bool URpgInventoryDragDropCoordinator::IsPlayerInventory(const URpgInventoryManagerComponent* Inventory) const

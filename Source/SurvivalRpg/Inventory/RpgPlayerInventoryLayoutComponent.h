@@ -102,9 +102,9 @@ public:
 	UFUNCTION(BlueprintCallable, BlueprintPure = false, Category = "Inventory|Layout")
 	bool IsCarrySlotAddress(const FRpgInventorySlotAddress& Address) const;
 
-	/** Returns the data-driven equipment role activated by a carry address, or an invalid tag for non-carry groups. */
+	/** Resolves the explicit typed role for a valid Gear or Carry address; malformed definition data fails closed. */
 	UFUNCTION(BlueprintCallable, BlueprintPure = false, Category = "Inventory|Layout")
-	FGameplayTag GetCarryActivationRole(const FRpgInventorySlotAddress& Address) const;
+	bool TryGetEquipmentSlotRoleForAddress(const FRpgInventorySlotAddress& Address, ERpgEquipmentSlot& OutEquipmentSlot) const;
 
 	/** Returns true when the addressed group is a dedicated gear slot such as Gear.Head or Gear.Backpack. */
 	UFUNCTION(BlueprintCallable, BlueprintPure = false, Category = "Inventory|Layout")
@@ -126,19 +126,25 @@ public:
 	UFUNCTION(BlueprintCallable, BlueprintPure = false, Category = "Inventory|Layout")
 	bool CanUnequipSlotContainer(ERpgEquipmentSlot EquipmentSlot) const;
 
-	/** Returns true only when the complete graph address is one of the built-in root gear containers. */
-	UFUNCTION(BlueprintCallable, BlueprintPure, Category = "Inventory|Layout")
-	static bool IsBuiltInGearContainer(FRpgInventoryContainerHandle ContainerHandle);
+	/** Returns true only when the complete graph address resolves to a valid, uniquely typed static Gear group. */
+	UFUNCTION(BlueprintCallable, BlueprintPure = false, Category = "Inventory|Layout")
+	bool IsGearContainer(FRpgInventoryContainerHandle ContainerHandle) const;
 
-	/** Builds the logical gear-slot address for an equipment slot such as Head or Backpack. */
-	UFUNCTION(BlueprintCallable, BlueprintPure, Category = "Inventory|Layout")
-	static bool TryMakeGearSlotAddress(ERpgEquipmentSlot EquipmentSlot, FRpgInventorySlotAddress& OutAddress);
+	/**
+	 * Returns whether every authored static root has an unambiguous container id and typed equipment contract.
+	 * Runtime authority may use this native preflight before destructive operations that must classify Gear safely.
+	 */
+	bool HasValidStaticEquipmentRoleContract() const;
 
-	/** Resolves a complete built-in root gear address; item-owned containers with the same local id are rejected. */
-	UFUNCTION(BlueprintCallable, BlueprintPure, Category = "Inventory|Layout")
-	static bool TryGetEquipmentSlotForGearContainer(FRpgInventoryContainerHandle ContainerHandle, ERpgEquipmentSlot& OutEquipmentSlot);
+	/** Builds the logical address for exactly one static Gear group with the requested typed role. */
+	UFUNCTION(BlueprintCallable, BlueprintPure = false, Category = "Inventory|Layout")
+	bool TryMakeGearSlotAddress(ERpgEquipmentSlot EquipmentSlot, FRpgInventorySlotAddress& OutAddress) const;
 
-	/** Built-in group ids used by carry/actionbar UI. */
+	/** Resolves a complete static Gear container to its explicit typed role; duplicates and item-owned handles fail closed. */
+	UFUNCTION(BlueprintCallable, BlueprintPure = false, Category = "Inventory|Layout")
+	bool TryGetEquipmentSlotForGearContainer(FRpgInventoryContainerHandle ContainerHandle, ERpgEquipmentSlot& OutEquipmentSlot) const;
+
+	/** Default layout ids retained as physical address identity and automation-fixture defaults. */
 	static const FName WeaponSlot1GroupId;
 	static const FName WeaponSlot2GroupId;
 	static const FName ShieldSlotGroupId;
@@ -160,6 +166,4 @@ private:
 	void AppendGroupViews(const TArray<FRpgInventorySlotGroupDefinition>& GroupDefinitions, bool bProvidedByEquipment, ERpgEquipmentSlot SourceEquipmentSlot, TArray<FRpgInventorySlotGroupView>& OutGroups) const;
 	void AppendItemContainerViews(const URpgInventoryItemInstance* ProviderItem, ERpgEquipmentSlot SourceEquipmentSlot, TArray<FRpgInventorySlotGroupView>& OutGroups) const;
 	void BroadcastLayoutChanged() const;
-	static bool IsBuiltInGearGroupId(FName GroupId);
-	static bool TryGetEquipmentSlotForGearGroupId(FName GroupId, ERpgEquipmentSlot& OutEquipmentSlot);
 };

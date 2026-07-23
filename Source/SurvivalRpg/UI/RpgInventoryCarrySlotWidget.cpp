@@ -3,7 +3,6 @@
 #include "InputCoreTypes.h"
 #include "SurvivalRpg/Core/Player/RpgPlayerController.h"
 #include "SurvivalRpg/Equipment/RpgEquipmentLoadoutComponent.h"
-#include "SurvivalRpg/GameplayTags/RpgGameplayTags.h"
 #include "SurvivalRpg/Inventory/RpgInventoryDragDrop.h"
 #include "SurvivalRpg/Inventory/RpgInventoryInteractionSession.h"
 #include "SurvivalRpg/Inventory/RpgInventoryItemInstance.h"
@@ -107,17 +106,12 @@ bool URpgInventoryCarrySlotWidget::IsCarryItemActive() const
 		return false;
 	}
 
-	const FGameplayTag ActivationRole = InventoryLayout->GetCarryActivationRole(AddressSlotViewModel->GetSlotAddress());
-	if (ActivationRole == RpgGameplayTags::Equipment_Slot_MainHand)
-	{
-		return EquipmentLoadout->GetItemInEquipmentSlot(ERpgEquipmentSlot::MainHand) == Item;
-	}
-	if (ActivationRole == RpgGameplayTags::Equipment_Slot_OffHand)
-	{
-		return EquipmentLoadout->GetItemInEquipmentSlot(ERpgEquipmentSlot::OffHand) == Item;
-	}
-
-	return false;
+	const FRpgInventorySlotAddress Address = AddressSlotViewModel->GetSlotAddress();
+	ERpgEquipmentSlot EquipmentSlot = ERpgEquipmentSlot::None;
+	return InventoryLayout->TryGetEquipmentSlotRoleForAddress(Address, EquipmentSlot) &&
+		(EquipmentSlot == ERpgEquipmentSlot::MainHand ||
+			EquipmentSlot == ERpgEquipmentSlot::OffHand) &&
+		EquipmentLoadout->GetItemInEquipmentSlot(EquipmentSlot) == Item;
 }
 
 ERpgInventoryInteractionPreviewState URpgInventoryCarrySlotWidget::GetCarryInteractionPreviewState() const

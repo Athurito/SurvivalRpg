@@ -668,39 +668,9 @@ bool FRpgInventoryPlacementHandleAndSubtreeCapacityTest::RunTest(
 			CollisionBag->GetItemId(),
 			TEXT("Gear.Head"),
 			1);
-	const FRpgInventoryContainerHandle RootGearHead =
+	const FRpgInventoryContainerHandle LegacyNamedGearHead =
 		FRpgInventoryContainerHandle::MakeRoot(
 			URpgPlayerInventoryLayoutComponent::GearHeadGroupId);
-	TestTrue(
-		TEXT("The exact built-in root Gear.Head handle is classified as gear"),
-		URpgPlayerInventoryLayoutComponent::IsBuiltInGearContainer(
-			RootGearHead));
-	TestFalse(
-		TEXT("An item-owned Gear.Head handle is not classified as built-in gear"),
-		URpgPlayerInventoryLayoutComponent::IsBuiltInGearContainer(
-			CollidingContents));
-
-	ERpgEquipmentSlot RootEquipmentSlot = ERpgEquipmentSlot::None;
-	TestTrue(
-		TEXT("The exact root Gear.Head handle resolves to an equipment slot"),
-		URpgPlayerInventoryLayoutComponent::TryGetEquipmentSlotForGearContainer(
-			RootGearHead,
-			RootEquipmentSlot));
-	TestEqual(
-		TEXT("The built-in root Gear.Head handle maps to the Head slot"),
-		RootEquipmentSlot,
-		ERpgEquipmentSlot::Head);
-
-	ERpgEquipmentSlot CollidingEquipmentSlot = ERpgEquipmentSlot::Head;
-	TestFalse(
-		TEXT("The item-owned Gear.Head handle cannot resolve as equipment"),
-		URpgPlayerInventoryLayoutComponent::TryGetEquipmentSlotForGearContainer(
-			CollidingContents,
-			CollidingEquipmentSlot));
-	TestEqual(
-		TEXT("Rejected item-owned gear-name aliases leave no equipment slot"),
-		CollidingEquipmentSlot,
-		ERpgEquipmentSlot::None);
 
 	FActorSpawnParameters LayoutControllerParameters;
 	LayoutControllerParameters.Name = MakeUniqueObjectName(
@@ -731,26 +701,87 @@ bool FRpgInventoryPlacementHandleAndSubtreeCapacityTest::RunTest(
 	LayoutPlayerState->SetOwner(LayoutController);
 	const URpgPawnData* LayoutPawnData =
 		LayoutPlayerState->GetPawnData<URpgPawnData>();
-	const URpgPlayerInventoryLayoutDefinition* LayoutDefinition =
-		LayoutPawnData ? LayoutPawnData->InventoryLayoutDefinition : nullptr;
+	URpgPlayerInventoryLayoutDefinition* LayoutDefinition =
+		LayoutPlayerState->GetMutableTestInventoryLayoutDefinition();
 	const URpgPlayerInventoryLayoutComponent* DefaultLayout =
 		LayoutController->GetPlayerInventoryLayoutComponent();
-	FRpgInventorySlotAddress RootGearAddress;
-	FRpgInventoryGridPlacement RootGearPlacement;
 	if (!TestNotNull(TEXT("The fixture PawnData exists"), LayoutPawnData) ||
 		!TestNotNull(TEXT("The fixture layout definition exists"), LayoutDefinition) ||
-		!TestEqual(
+		!TestNotNull(TEXT("The default player inventory layout exists"), DefaultLayout))
+	{
+		return false;
+	}
+
+	FRpgInventorySlotGroupDefinition* HeadGroup =
+		LayoutDefinition->StaticSlotGroups.FindByPredicate(
+			[](const FRpgInventorySlotGroupDefinition& Group)
+			{
+				return Group.GroupKind ==
+						ERpgInventorySlotGroupKind::Gear &&
+					Group.EquipmentSlotRole ==
+						ERpgEquipmentSlot::Head;
+			});
+	if (!TestNotNull(
+			TEXT("The fixture layout owns an explicitly typed Head group"),
+			HeadGroup))
+	{
+		return false;
+	}
+
+	const FName RenamedHeadContainerId(TEXT("Designer.HeadSlot"));
+	HeadGroup->ContainerId = RenamedHeadContainerId;
+	const FRpgInventoryContainerHandle RootGearHead =
+		FRpgInventoryContainerHandle::MakeRoot(
+			RenamedHeadContainerId);
+	TestTrue(
+		TEXT("The renamed Head root is classified from its typed role"),
+		DefaultLayout->IsGearContainer(RootGearHead));
+	TestFalse(
+		TEXT("The old Gear.Head root no longer inherits Gear semantics from its name"),
+		DefaultLayout->IsGearContainer(LegacyNamedGearHead));
+	TestFalse(
+		TEXT("An item-owned Gear.Head handle does not inherit Gear semantics from its local id"),
+		DefaultLayout->IsGearContainer(CollidingContents));
+	TestTrue(
+		TEXT("The authored fixture starts with an unambiguous static equipment contract"),
+		DefaultLayout->HasValidStaticEquipmentRoleContract());
+
+	ERpgEquipmentSlot RootEquipmentSlot = ERpgEquipmentSlot::None;
+	TestTrue(
+		TEXT("The renamed Head root resolves to an equipment slot"),
+		DefaultLayout->TryGetEquipmentSlotForGearContainer(
+			RootGearHead,
+			RootEquipmentSlot));
+	TestEqual(
+		TEXT("The renamed root retains its explicit Head role"),
+		RootEquipmentSlot,
+		ERpgEquipmentSlot::Head);
+
+	ERpgEquipmentSlot CollidingEquipmentSlot =
+		ERpgEquipmentSlot::Head;
+	TestFalse(
+		TEXT("The item-owned Gear.Head handle cannot resolve as equipment"),
+		DefaultLayout->TryGetEquipmentSlotForGearContainer(
+			CollidingContents,
+			CollidingEquipmentSlot));
+	TestEqual(
+		TEXT("Rejected item-owned aliases leave no equipment role"),
+		CollidingEquipmentSlot,
+		ERpgEquipmentSlot::None);
+
+	FRpgInventorySlotAddress RootGearAddress;
+	FRpgInventoryGridPlacement RootGearPlacement;
+	if (!TestEqual(
 			TEXT("The fixture layout definition contains all static groups"),
-			LayoutDefinition ? LayoutDefinition->StaticSlotGroups.Num() : 0,
+			LayoutDefinition->StaticSlotGroups.Num(),
 			13) ||
-		!TestNotNull(TEXT("The default player inventory layout exists"), DefaultLayout) ||
 		!TestEqual(
 			TEXT("The component resolves all fixture layout groups"),
-			DefaultLayout ? DefaultLayout->GetSlotGroups().Num() : 0,
+			DefaultLayout->GetSlotGroups().Num(),
 			13) ||
 		!TestTrue(
-			TEXT("The Head equipment slot produces a canonical root address"),
-			URpgPlayerInventoryLayoutComponent::TryMakeGearSlotAddress(
+			TEXT("The Head equipment role produces the renamed root address"),
+			DefaultLayout->TryMakeGearSlotAddress(
 				ERpgEquipmentSlot::Head,
 				RootGearAddress)) ||
 		!TestEqual(
@@ -758,7 +789,7 @@ bool FRpgInventoryPlacementHandleAndSubtreeCapacityTest::RunTest(
 			RootGearAddress.GetContainerHandle(),
 			RootGearHead) ||
 		!TestTrue(
-			TEXT("The root Gear.Head address normalizes to a layout placement"),
+			TEXT("The renamed Head address normalizes to a layout placement"),
 			DefaultLayout->ResolveSlotAddress(
 				RootGearAddress,
 				RootGearPlacement)))
@@ -766,7 +797,7 @@ bool FRpgInventoryPlacementHandleAndSubtreeCapacityTest::RunTest(
 		return false;
 	}
 	TestEqual(
-		TEXT("Root Gear.Head normalization keeps the exact root handle"),
+		TEXT("Renamed Head normalization keeps the exact root handle"),
 		RootGearPlacement.GetContainerHandle(),
 		RootGearHead);
 	TestEqual(
@@ -778,8 +809,107 @@ bool FRpgInventoryPlacementHandleAndSubtreeCapacityTest::RunTest(
 		RootGearPlacement.Height,
 		1);
 	TestFalse(
-		TEXT("Root Gear.Head single-cell normalization disables rotation"),
+		TEXT("Renamed Head single-cell normalization disables rotation"),
 		RootGearPlacement.bRotated);
+
+	FRpgInventorySlotGroupDefinition DuplicateHeadGroup = *HeadGroup;
+	DuplicateHeadGroup.ContainerId = TEXT("Designer.HeadSlot.Duplicate");
+	LayoutDefinition->StaticSlotGroups.Add(DuplicateHeadGroup);
+	TestFalse(
+		TEXT("A duplicate typed Gear role invalidates the static equipment contract"),
+		DefaultLayout->HasValidStaticEquipmentRoleContract());
+	AddExpectedError(
+		TEXT("Inventory Gear role"),
+		EAutomationExpectedErrorFlags::Contains,
+		2);
+
+	FRpgInventorySlotAddress AmbiguousHeadAddress;
+	TestFalse(
+		TEXT("A duplicate Head role prevents slot-to-address resolution"),
+		DefaultLayout->TryMakeGearSlotAddress(
+			ERpgEquipmentSlot::Head,
+			AmbiguousHeadAddress));
+	ERpgEquipmentSlot AmbiguousHeadRole =
+		ERpgEquipmentSlot::None;
+	TestFalse(
+		TEXT("A duplicate Head role prevents address-to-slot resolution"),
+		DefaultLayout->TryGetEquipmentSlotRoleForAddress(
+			RootGearAddress,
+			AmbiguousHeadRole));
+	TestEqual(
+		TEXT("Ambiguous Gear lookup fails without leaking a role"),
+		AmbiguousHeadRole,
+		ERpgEquipmentSlot::None);
+	LayoutDefinition->StaticSlotGroups.RemoveAt(
+		LayoutDefinition->StaticSlotGroups.Num() - 1);
+	TestTrue(
+		TEXT("Removing the duplicate Gear role restores the static equipment contract"),
+		DefaultLayout->HasValidStaticEquipmentRoleContract());
+
+	const FRpgInventorySlotGroupDefinition* RestoredHeadGroup =
+		LayoutDefinition->StaticSlotGroups.FindByPredicate(
+			[](const FRpgInventorySlotGroupDefinition& Group)
+			{
+				return Group.GroupKind ==
+						ERpgInventorySlotGroupKind::Gear &&
+					Group.EquipmentSlotRole ==
+						ERpgEquipmentSlot::Head;
+			});
+	if (!TestNotNull(
+			TEXT("The renamed Head definition remains available for duplicate-id coverage"),
+			RestoredHeadGroup))
+	{
+		return false;
+	}
+
+	FRpgInventorySlotGroupDefinition DuplicateContainerGroup =
+		*RestoredHeadGroup;
+	LayoutDefinition->StaticSlotGroups.Add(DuplicateContainerGroup);
+	TestFalse(
+		TEXT("A duplicate static ContainerId invalidates the equipment contract before view filtering"),
+		DefaultLayout->HasValidStaticEquipmentRoleContract());
+	AddExpectedError(
+		TEXT("Duplicate inventory container id"),
+		EAutomationExpectedErrorFlags::Contains,
+		1);
+	const TArray<FRpgInventorySlotGroupView> DuplicateIdGroups =
+		DefaultLayout->GetSlotGroups();
+	TestFalse(
+		TEXT("Both definitions with a duplicate ContainerId are rejected instead of keeping the first"),
+		DuplicateIdGroups.ContainsByPredicate(
+			[RootGearHead](const FRpgInventorySlotGroupView& Group)
+			{
+				return Group.ContainerHandle == RootGearHead;
+			}));
+	LayoutDefinition->StaticSlotGroups.RemoveAt(
+		LayoutDefinition->StaticSlotGroups.Num() - 1);
+	TestTrue(
+		TEXT("Removing the duplicate ContainerId restores the equipment contract"),
+		DefaultLayout->HasValidStaticEquipmentRoleContract());
+
+	FRpgInventorySlotGroupDefinition* MalformedHeadGroup =
+		LayoutDefinition->StaticSlotGroups.FindByPredicate(
+			[](const FRpgInventorySlotGroupDefinition& Group)
+			{
+				return Group.GroupKind ==
+						ERpgInventorySlotGroupKind::Gear &&
+					Group.EquipmentSlotRole ==
+						ERpgEquipmentSlot::Head;
+			});
+	if (!TestNotNull(
+			TEXT("The Head definition remains available for malformed-contract coverage"),
+			MalformedHeadGroup))
+	{
+		return false;
+	}
+	MalformedHeadGroup->GridSize.Width = 2;
+	TestFalse(
+		TEXT("A multi-cell Gear definition invalidates destructive-operation preflight"),
+		DefaultLayout->HasValidStaticEquipmentRoleContract());
+	MalformedHeadGroup->GridSize.Width = 1;
+	TestTrue(
+		TEXT("Restoring the single-cell Gear contract passes preflight again"),
+		DefaultLayout->HasValidStaticEquipmentRoleContract());
 
 	FRpgInventoryGridSize CollidingGridSize;
 	if (!TestTrue(

@@ -3,7 +3,6 @@
 #include "RpgInventoryFragment_EquippableItem.h"
 #include "RpgInventoryFragment_ItemContainer.h"
 #include "RpgInventoryItemInstance.h"
-#include "SurvivalRpg/GameplayTags/RpgGameplayTags.h"
 
 bool FRpgInventoryEquipmentPlacementPolicy::IsManagedEquipmentSlot(ERpgEquipmentSlot EquipmentSlot)
 {
@@ -40,23 +39,6 @@ bool FRpgInventoryEquipmentPlacementPolicy::IsSlotContainerEquipmentSlot(ERpgEqu
 		EquipmentSlot == ERpgEquipmentSlot::Belt ||
 		EquipmentSlot == ERpgEquipmentSlot::Pouch ||
 		EquipmentSlot == ERpgEquipmentSlot::ResourceBag;
-}
-
-bool FRpgInventoryEquipmentPlacementPolicy::TryGetHandSlotForCarryRole(
-	FGameplayTag CarryRole,
-	ERpgEquipmentSlot& OutEquipmentSlot)
-{
-	OutEquipmentSlot = ERpgEquipmentSlot::None;
-	if (CarryRole == RpgGameplayTags::Equipment_Slot_MainHand)
-	{
-		OutEquipmentSlot = ERpgEquipmentSlot::MainHand;
-	}
-	else if (CarryRole == RpgGameplayTags::Equipment_Slot_OffHand)
-	{
-		OutEquipmentSlot = ERpgEquipmentSlot::OffHand;
-	}
-
-	return OutEquipmentSlot != ERpgEquipmentSlot::None;
 }
 
 const URpgEquipmentDefinition* FRpgInventoryEquipmentPlacementPolicy::FindEquipmentDefinition(

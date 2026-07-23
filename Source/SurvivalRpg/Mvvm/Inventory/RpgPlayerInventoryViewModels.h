@@ -127,9 +127,17 @@ public:
 	UFUNCTION(BlueprintPure, Category = "Inventory|Layout ViewModel")
 	bool IsActionbarBindable() const { return bActionbarBindable; }
 
+	/** Explicit gameplay equipment role for this slot, or None for regular content storage. */
+	UFUNCTION(BlueprintPure, Category = "Inventory|Layout ViewModel")
+	ERpgEquipmentSlot GetEquipmentSlotRole() const { return EquipmentSlotRole; }
+
 	/** True when this address activates MainHand or OffHand as a carry slot. */
 	UFUNCTION(BlueprintPure, Category = "Inventory|Layout ViewModel")
-	bool IsCarrySlot() const { return bCarrySlot; }
+	bool IsCarrySlot() const
+	{
+		return EquipmentSlotRole == ERpgEquipmentSlot::MainHand ||
+			EquipmentSlotRole == ERpgEquipmentSlot::OffHand;
+	}
 
 	/** True when this address belongs to a dedicated gear slot such as Gear.Head or Gear.Backpack. */
 	UFUNCTION(BlueprintPure, Category = "Inventory|Layout ViewModel")
@@ -228,9 +236,9 @@ protected:
 	UPROPERTY(BlueprintReadOnly, FieldNotify, Category = "Inventory|Layout ViewModel", meta = (AllowPrivateAccess = "true"))
 	bool bActionbarBindable = false;
 
-	/** Whether this slot is a weapon/tool/shield carry slot. */
+	/** Explicit gameplay equipment role projected from immutable layout definition data. */
 	UPROPERTY(BlueprintReadOnly, FieldNotify, Category = "Inventory|Layout ViewModel", meta = (AllowPrivateAccess = "true"))
-	bool bCarrySlot = false;
+	ERpgEquipmentSlot EquipmentSlotRole = ERpgEquipmentSlot::None;
 
 	/** Whether this slot is a dedicated gear slot. Gear slots are normally rendered by CUI_GearSlot widgets. */
 	UPROPERTY(BlueprintReadOnly, FieldNotify, Category = "Inventory|Layout ViewModel", meta = (AllowPrivateAccess = "true"))
@@ -278,7 +286,11 @@ public:
 	UFUNCTION(BlueprintPure, Category = "Inventory|Layout ViewModel")
 	ERpgEquipmentSlot GetSourceEquipmentSlot() const { return SourceEquipmentSlot; }
 
-	/** True only for a dedicated authored Carry group whose rule enables Carry activation. */
+	/** Explicit gameplay equipment role for this group, or None for regular/item-owned content storage. */
+	UFUNCTION(BlueprintPure, Category = "Inventory|Layout ViewModel")
+	ERpgEquipmentSlot GetEquipmentSlotRole() const { return EquipmentSlotRole; }
+
+	/** True only for a dedicated authored Carry group with a MainHand or OffHand role. */
 	UFUNCTION(BlueprintPure, Category = "Inventory|Layout ViewModel")
 	bool IsCarryGroup() const { return bCarryGroup; }
 
@@ -310,6 +322,10 @@ protected:
 	/** Grid dimensions for this visible container. */
 	UPROPERTY(BlueprintReadOnly, FieldNotify, Category = "Inventory|Layout ViewModel", meta = (AllowPrivateAccess = "true"))
 	FRpgInventoryGridSize GridSize;
+
+	/** Explicit gameplay equipment role projected from immutable layout definition data. */
+	UPROPERTY(BlueprintReadOnly, FieldNotify, Category = "Inventory|Layout ViewModel", meta = (AllowPrivateAccess = "true"))
+	ERpgEquipmentSlot EquipmentSlotRole = ERpgEquipmentSlot::None;
 
 	/** True when every slot in this group may be bound to the 1..8 actionbar. */
 	UPROPERTY(BlueprintReadOnly, FieldNotify, Category = "Inventory|Layout ViewModel", meta = (AllowPrivateAccess = "true"))

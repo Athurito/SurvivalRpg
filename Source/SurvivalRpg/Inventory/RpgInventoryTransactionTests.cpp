@@ -1141,6 +1141,47 @@ bool FRpgInventoryContextActionPolicyTest::RunTest(
 				Action));
 	}
 
+	URpgPlayerInventoryLayoutDefinition* ContextLayoutDefinition =
+		PlayerState->GetMutableTestInventoryLayoutDefinition();
+	FRpgInventorySlotGroupDefinition* PrimaryCarryDefinition =
+		ContextLayoutDefinition
+			? ContextLayoutDefinition->StaticSlotGroups.FindByPredicate(
+				[](const FRpgInventorySlotGroupDefinition& Group)
+				{
+					return Group.ContainerId ==
+						URpgPlayerInventoryLayoutComponent::
+							WeaponSlot1GroupId;
+				})
+			: nullptr;
+	if (!TestNotNull(
+			TEXT("The context fixture exposes the primary Carry definition"),
+			PrimaryCarryDefinition))
+	{
+		return false;
+	}
+	const ERpgEquipmentSlot AuthoredPrimaryCarryRole =
+		PrimaryCarryDefinition->EquipmentSlotRole;
+	PrimaryCarryDefinition->EquipmentSlotRole =
+		ERpgEquipmentSlot::OffHand;
+	TestFalse(
+		TEXT("MainHand context fails closed when the physical Carry group is reauthored as OffHand"),
+		Coordinator->CanExecuteContextAction(
+			ERpgEquipmentSlot::MainHand,
+			Weapon->GetItemId(),
+			ERpgInventoryContextAction::Inspect));
+	TestTrue(
+		TEXT("The cross-role regression still has the same active MainHand mirror"),
+		EquipmentLoadout->GetItemInEquipmentSlot(
+			ERpgEquipmentSlot::MainHand) == Weapon);
+	PrimaryCarryDefinition->EquipmentSlotRole =
+		AuthoredPrimaryCarryRole;
+	TestTrue(
+		TEXT("Restoring the exact MainHand Carry role restores equipment context"),
+		Coordinator->CanExecuteContextAction(
+			ERpgEquipmentSlot::MainHand,
+			Weapon->GetItemId(),
+			ERpgInventoryContextAction::Inspect));
+
 	TestEqual(
 		TEXT("The MainHand loadout projects the actively equipped weapon"),
 		EquipmentLoadout->GetItemInEquipmentSlot(ERpgEquipmentSlot::MainHand),
@@ -3697,6 +3738,54 @@ bool FRpgInventoryEquipmentMirrorCannotMovePhysicalItemTest::RunTest(
 			ERpgEquipmentSlot::Chest),
 		Armor);
 
+	URpgPlayerInventoryLayoutDefinition* MutableLayoutDefinition =
+		PlayerState->GetMutableTestInventoryLayoutDefinition();
+	if (!TestNotNull(
+			TEXT("The mirror regression owns a mutable transient layout definition"),
+			MutableLayoutDefinition))
+	{
+		return false;
+	}
+	const int32 ChestDefinitionIndex =
+		MutableLayoutDefinition->StaticSlotGroups.IndexOfByPredicate(
+			[](const FRpgInventorySlotGroupDefinition& Group)
+			{
+				return Group.GroupKind ==
+						ERpgInventorySlotGroupKind::Gear &&
+					Group.EquipmentSlotRole ==
+						ERpgEquipmentSlot::Chest;
+			});
+	if (!TestTrue(
+			TEXT("The fixture exposes its required typed Chest definition"),
+			MutableLayoutDefinition->StaticSlotGroups.IsValidIndex(
+				ChestDefinitionIndex)))
+	{
+		return false;
+	}
+	const FRpgInventorySlotGroupDefinition SavedChestDefinition =
+		MutableLayoutDefinition->StaticSlotGroups[ChestDefinitionIndex];
+	MutableLayoutDefinition->StaticSlotGroups.RemoveAt(
+		ChestDefinitionIndex);
+	TestFalse(
+		TEXT("Physical reconciliation fails when a required typed Gear address is missing"),
+		EquipmentLoadout->ReconcilePhysicalEquipmentFromInventory());
+	TestEqual(
+		TEXT("Failed structural preflight preserves the existing Chest mirror atomically"),
+		EquipmentLoadout->GetItemInEquipmentSlot(
+			ERpgEquipmentSlot::Chest),
+		Armor);
+	MutableLayoutDefinition->StaticSlotGroups.Insert(
+		SavedChestDefinition,
+		ChestDefinitionIndex);
+	TestTrue(
+		TEXT("Restoring the required Chest definition makes reconciliation valid again"),
+		EquipmentLoadout->ReconcilePhysicalEquipmentFromInventory());
+	TestEqual(
+		TEXT("Successful reconciliation still preserves the physical Chest mirror"),
+		EquipmentLoadout->GetItemInEquipmentSlot(
+			ERpgEquipmentSlot::Chest),
+		Armor);
+
 	FRpgInventoryEquipmentIntent UnequipArmorIntent =
 		MakeEquipmentIntent(
 			Inventory,
@@ -3808,12 +3897,12 @@ bool FRpgInventoryContainerGearDragDropTest::RunTest(const FString& Parameters)
 	FRpgInventorySlotAddress PouchAddress;
 	if (!TestTrue(
 			TEXT("The layout resolves the physical Backpack address"),
-			URpgPlayerInventoryLayoutComponent::TryMakeGearSlotAddress(
+			Layout->TryMakeGearSlotAddress(
 				ERpgEquipmentSlot::Backpack,
 				BackpackAddress)) ||
 		!TestTrue(
 			TEXT("The layout resolves the physical Pouch address"),
-			URpgPlayerInventoryLayoutComponent::TryMakeGearSlotAddress(
+			Layout->TryMakeGearSlotAddress(
 				ERpgEquipmentSlot::Pouch,
 				PouchAddress)))
 	{
@@ -4267,9 +4356,7 @@ bool FRpgInventoryCarryQuickAccessBindingTest::RunTest(const FString& Parameters
 	CustomCarryGroup.GridSize.Width = 1;
 	CustomCarryGroup.GridSize.Height = 1;
 	CustomCarryGroup.Rule.bActionbarBindable = true;
-	CustomCarryGroup.Rule.bCarrySlot = true;
-	CustomCarryGroup.Rule.CarryActivationRole =
-		RpgGameplayTags::Equipment_Slot_MainHand;
+	CustomCarryGroup.EquipmentSlotRole = ERpgEquipmentSlot::MainHand;
 
 	const FRpgInventoryContainerHandle CustomCarryHandle =
 		FRpgInventoryContainerHandle::MakeRoot(CustomCarryContainerId);
@@ -4288,6 +4375,23 @@ bool FRpgInventoryCarryQuickAccessBindingTest::RunTest(const FString& Parameters
 	TestTrue(
 		TEXT("The custom root address remains actionbar-bindable"),
 		Layout->IsSlotAddressActionbarBindable(CustomCarryAddress));
+	TestTrue(
+		TEXT("The custom Carry structure and item pass the detailed actionbar predicate"),
+		Layout->CanBindSlotAddressToActionbar(
+			CustomCarryAddress,
+			Weapon));
+
+	CustomCarryGroup.SemanticRole = FGameplayTag();
+	TestFalse(
+		TEXT("A Carry group without a stable semantic role is not advertised as actionbar-bindable"),
+		Layout->IsSlotAddressActionbarBindable(CustomCarryAddress));
+	TestFalse(
+		TEXT("The detailed Carry binding predicate rejects the same missing semantic role"),
+		Layout->CanBindSlotAddressToActionbar(
+			CustomCarryAddress,
+			Weapon));
+	CustomCarryGroup.SemanticRole =
+		RpgGameplayTags::Rpg_Inventory_Layout_Role_Carry_Utility;
 	TestTrue(
 		TEXT("The authority path binds a custom canonical Carry address"),
 		ActionBar->TryBindCarrySlotToSlotAuthority(1, CustomCarryAddress));
@@ -4323,6 +4427,10 @@ bool FRpgInventoryCarryQuickAccessBindingTest::RunTest(const FString& Parameters
 	}
 
 	CustomCarryGroup.GridSize.Width = 2;
+	AddExpectedError(
+		TEXT("has an invalid GroupKind, EquipmentSlotRole, or grid-size contract"),
+		EAutomationExpectedErrorFlags::Contains,
+		1);
 	TestFalse(
 		TEXT("A semantic Carry role fails closed when a designer authors a multi-cell group"),
 		ActionBar->TryBindCarrySlotToSlotAuthority(2, CustomCarryAddress));
@@ -4343,6 +4451,15 @@ bool FRpgInventoryCarryQuickAccessBindingTest::RunTest(const FString& Parameters
 
 	CustomCarryGroup.SemanticRole =
 		RpgGameplayTags::Rpg_Inventory_Layout_Role_Carry_Primary;
+	TestFalse(
+		TEXT("A duplicate Carry semantic role is not advertised as actionbar-bindable"),
+		Layout->IsSlotAddressActionbarBindable(
+			CustomCarryAddress));
+	TestFalse(
+		TEXT("The detailed binding predicate rejects the same duplicate Carry role"),
+		Layout->CanBindSlotAddressToActionbar(
+			CustomCarryAddress,
+			Weapon));
 	AddExpectedError(
 		TEXT("is not a unique static root"),
 		EAutomationExpectedErrorFlags::Contains,
@@ -4656,12 +4773,49 @@ bool FRpgInventoryQuickTransferSkipsFullPreferredContainerTest::RunTest(const FS
 		BeltProvider->GetItemId(),
 		BagContainerId,
 		1);
-	const bool bLayoutExposesBothProviders = Layout->GetSlotGroups().ContainsByPredicate(
+	const TArray<FRpgInventorySlotGroupView> SlotGroups = Layout->GetSlotGroups();
+	const FRpgInventorySlotGroupView* StaticBackpackGroup = SlotGroups.FindByPredicate(
+		[&BackpackSlot](const FRpgInventorySlotGroupView& Group)
+		{
+			return Group.ContainerHandle == BackpackSlot;
+		});
+	if (!TestNotNull(TEXT("The layout exposes the static Gear.Backpack group"), StaticBackpackGroup))
+	{
+		return false;
+	}
+	TestEqual(
+		TEXT("The static Gear.Backpack group owns the Backpack equipment-slot role"),
+		StaticBackpackGroup->EquipmentSlotRole,
+		ERpgEquipmentSlot::Backpack);
+	TestEqual(
+		TEXT("The static Gear.Backpack group has no provider provenance"),
+		StaticBackpackGroup->SourceEquipmentSlot,
+		ERpgEquipmentSlot::None);
+
+	const FRpgInventorySlotGroupView* BackpackProviderGroup = SlotGroups.FindByPredicate(
+		[&BackpackContents](const FRpgInventorySlotGroupView& Group)
+		{
+			return Group.ContainerHandle == BackpackContents;
+		});
+	if (!TestNotNull(TEXT("The layout exposes the item-owned Backpack content group"), BackpackProviderGroup))
+	{
+		return false;
+	}
+	TestEqual(
+		TEXT("The item-owned Backpack content group has no equipment-slot role"),
+		BackpackProviderGroup->EquipmentSlotRole,
+		ERpgEquipmentSlot::None);
+	TestEqual(
+		TEXT("The item-owned Backpack content group preserves Backpack provider provenance"),
+		BackpackProviderGroup->SourceEquipmentSlot,
+		ERpgEquipmentSlot::Backpack);
+
+	const bool bLayoutExposesBothProviders = SlotGroups.ContainsByPredicate(
 		[&BackpackContents](const FRpgInventorySlotGroupView& Group)
 		{
 			return Group.ContainerHandle == BackpackContents &&
 				Group.SourceEquipmentSlot == ERpgEquipmentSlot::Backpack;
-		}) && Layout->GetSlotGroups().ContainsByPredicate(
+		}) && SlotGroups.ContainsByPredicate(
 		[&BeltContents](const FRpgInventorySlotGroupView& Group)
 		{
 			return Group.ContainerHandle == BeltContents &&

@@ -1416,6 +1416,28 @@ void ARpgGameModeBase::DropInventoryForPlayerDeath(APlayerController* PC, const 
 		return;
 	}
 
+	const ARpgPlayerController* RpgPlayerController =
+		Cast<ARpgPlayerController>(PC);
+	const URpgPlayerInventoryLayoutComponent* InventoryLayout =
+		RpgPlayerController
+			? RpgPlayerController->GetPlayerInventoryLayoutComponent()
+			: nullptr;
+	if (!InventoryLayout)
+	{
+		InventoryLayout = PC->FindComponentByClass<
+			URpgPlayerInventoryLayoutComponent>();
+	}
+	if (!InventoryLayout ||
+		!InventoryLayout->HasValidStaticEquipmentRoleContract())
+	{
+		UE_LOG(
+			LogRpg,
+			Error,
+			TEXT("RpgGameMode: Death drop aborted for [%s] because the player inventory layout cannot classify physical Gear safely."),
+			*GetNameSafe(PC));
+		return;
+	}
+
 	const TArray<FRpgInventoryEntryView> InventoryEntries =
 		InventoryComponent->GetAllEntries();
 	TMap<FRpgInventoryItemId, int32> EntryIndexByItemId;
@@ -1438,8 +1460,7 @@ void ARpgGameModeBase::DropInventoryForPlayerDeath(APlayerController* PC, const 
 		const FRpgInventoryContainerHandle EntryContainer =
 			Entry.Placement.GetContainerHandle();
 		const bool bOccupiesPhysicalGearSlot =
-			URpgPlayerInventoryLayoutComponent::
-				IsBuiltInGearContainer(EntryContainer);
+			InventoryLayout->IsGearContainer(EntryContainer);
 		if (bOccupiesPhysicalGearSlot ||
 			ItemInstance->FindFragmentByClass<
 				URpgInventoryFragment_EquippableItem>() != nullptr)

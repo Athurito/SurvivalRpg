@@ -226,7 +226,9 @@ private:
 	void BroadcastSlotsChanged() const;
 	void RefreshWeaponAbilityLoadout() const;
 	bool IsTwoHandItem(const URpgInventoryItemInstance* Item) const;
-	bool IsItemInCarryActivationRole(const URpgInventoryItemInstance* Item, FGameplayTag ActivationRole) const;
+	bool IsItemInCarryEquipmentSlot(
+		const URpgInventoryItemInstance* Item,
+		ERpgEquipmentSlot EquipmentSlot) const;
 	URpgInventoryItemInstance* GetRememberedOffhandForMainHand(URpgInventoryItemInstance* MainHandItem) const;
 	void ApplyEquipmentSelectionPointers(
 		const FRpgEquipmentSelectionSaveData& SaveData);

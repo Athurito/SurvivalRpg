@@ -7,6 +7,7 @@
 #include "SurvivalRpg/Equipment/RpgEquipmentLoadoutComponent.h"
 #include "SurvivalRpg/GameplayTags/RpgGameplayTags.h"
 #include "SurvivalRpg/Inventory/RpgInventoryFragment_ItemTraits.h"
+#include "SurvivalRpg/Inventory/RpgInventoryEquipmentPlacementPolicy.h"
 #include "SurvivalRpg/Inventory/RpgInventoryItemDefinition.h"
 #include "SurvivalRpg/Inventory/RpgInventoryItemInstance.h"
 #include "SurvivalRpg/Inventory/RpgInventoryManagerComponent.h"
@@ -109,6 +110,14 @@ namespace
 
 		return nullptr;
 	}
+
+	bool IsTypedCarryGroupView(
+		const FRpgInventorySlotGroupView& GroupView)
+	{
+		return GroupView.GroupKind == ERpgInventorySlotGroupKind::Carry &&
+			FRpgInventoryEquipmentPlacementPolicy::IsHandEquipmentSlot(
+				GroupView.EquipmentSlotRole);
+	}
 }
 
 void URpgInventoryAddressSlotViewModel::InitializeSlot(
@@ -180,7 +189,7 @@ void URpgInventoryAddressSlotViewModel::InitializeSlot(
 		bItemCoveredCell != bNewItemCoveredCell ||
 		bRenderItemVisual != bCanRepresentItemFromThisCell ||
 		bActionbarBindable != bNewActionbarBindable ||
-		bCarrySlot != (InGroupView.GroupKind == ERpgInventorySlotGroupKind::Carry && InGroupView.Rule.bCarrySlot) ||
+		EquipmentSlotRole != InGroupView.EquipmentSlotRole ||
 		bGearSlot != (InGroupView.GroupKind == ERpgInventorySlotGroupKind::Gear);
 
 	Inventory = InInventory;
@@ -205,7 +214,7 @@ void URpgInventoryAddressSlotViewModel::InitializeSlot(
 	bRenderItemVisual = bCanRepresentItemFromThisCell;
 	bCanDrag = bCanRepresentItemFromThisCell && StackCount > 0;
 	bActionbarBindable = bNewActionbarBindable;
-	bCarrySlot = InGroupView.GroupKind == ERpgInventorySlotGroupKind::Carry && InGroupView.Rule.bCarrySlot;
+	EquipmentSlotRole = InGroupView.EquipmentSlotRole;
 	bGearSlot = InGroupView.GroupKind == ERpgInventorySlotGroupKind::Gear;
 
 	UE_MVVM_BROADCAST_FIELD_VALUE_CHANGED(Inventory);
@@ -230,7 +239,7 @@ void URpgInventoryAddressSlotViewModel::InitializeSlot(
 	UE_MVVM_BROADCAST_FIELD_VALUE_CHANGED(bRenderItemVisual);
 	UE_MVVM_BROADCAST_FIELD_VALUE_CHANGED(bCanDrag);
 	UE_MVVM_BROADCAST_FIELD_VALUE_CHANGED(bActionbarBindable);
-	UE_MVVM_BROADCAST_FIELD_VALUE_CHANGED(bCarrySlot);
+	UE_MVVM_BROADCAST_FIELD_VALUE_CHANGED(EquipmentSlotRole);
 	UE_MVVM_BROADCAST_FIELD_VALUE_CHANGED(bGearSlot);
 
 	if (bWasChanged)
@@ -249,8 +258,9 @@ void URpgInventorySlotGroupViewModel::InitializeGroup(const FRpgInventorySlotGro
 	DisplayName = InGroupView.DisplayName;
 	Icon = InGroupView.Icon;
 	GridSize = InGroupView.GridSize;
+	EquipmentSlotRole = InGroupView.EquipmentSlotRole;
 	bActionbarBindable = InGroupView.Rule.bActionbarBindable;
-	bCarryGroup = InGroupView.GroupKind == ERpgInventorySlotGroupKind::Carry && InGroupView.Rule.bCarrySlot;
+	bCarryGroup = IsTypedCarryGroupView(InGroupView);
 	bGearGroup = InGroupView.GroupKind == ERpgInventorySlotGroupKind::Gear;
 	bContentGroup = InGroupView.GroupKind == ERpgInventorySlotGroupKind::Content;
 	bProvidedByEquipment = InGroupView.bProvidedByEquipment;
@@ -272,6 +282,7 @@ void URpgInventorySlotGroupViewModel::InitializeGroup(const FRpgInventorySlotGro
 	}
 	UE_MVVM_BROADCAST_FIELD_VALUE_CHANGED(Icon);
 	UE_MVVM_BROADCAST_FIELD_VALUE_CHANGED(GridSize);
+	UE_MVVM_BROADCAST_FIELD_VALUE_CHANGED(EquipmentSlotRole);
 	UE_MVVM_BROADCAST_FIELD_VALUE_CHANGED(bActionbarBindable);
 	UE_MVVM_BROADCAST_FIELD_VALUE_CHANGED(bCarryGroup);
 	UE_MVVM_BROADCAST_FIELD_VALUE_CHANGED(bGearGroup);
@@ -517,23 +528,23 @@ void URpgPlayerInventoryViewModel::UnregisterMessageListeners()
 
 void URpgPlayerInventoryViewModel::RefreshGearSlots()
 {
-	URpgEquipmentLoadoutComponent* EquipmentLoadout = ObservedEquipmentLoadout.Get();
 	URpgInventoryManagerComponent* PlayerInventory = ObservedPlayerInventory.Get();
 	URpgPlayerInventoryLayoutComponent* InventoryLayout = ObservedInventoryLayout.Get();
 
-	auto ResolveGearSlotItem = [PlayerInventory, InventoryLayout, EquipmentLoadout](ERpgEquipmentSlot EquipmentSlot)
+	auto ResolveGearSlotItem = [PlayerInventory, InventoryLayout](
+		ERpgEquipmentSlot EquipmentSlot)
 	{
 		FRpgInventorySlotAddress GearAddress;
 		FRpgInventoryGridPlacement GearPlacement;
 		if (PlayerInventory &&
 			InventoryLayout &&
-			URpgPlayerInventoryLayoutComponent::TryMakeGearSlotAddress(EquipmentSlot, GearAddress) &&
+			InventoryLayout->TryMakeGearSlotAddress(EquipmentSlot, GearAddress) &&
 			InventoryLayout->ResolveSlotAddress(GearAddress, GearPlacement))
 		{
 			return PlayerInventory->GetItemAtContainerCell(GearPlacement.GetContainerHandle(), GearPlacement.X, GearPlacement.Y);
 		}
 
-		return EquipmentLoadout ? EquipmentLoadout->GetItemInEquipmentSlot(EquipmentSlot) : nullptr;
+		return static_cast<URpgInventoryItemInstance*>(nullptr);
 	};
 
 	auto RefreshSlotsForOrder = [this, &ResolveGearSlotItem](TArray<TObjectPtr<URpgEquipmentSlotViewModel>>& InOutSlots, TConstArrayView<ERpgEquipmentSlot> SlotOrder)

@@ -1621,7 +1621,7 @@ Status: **In Arbeit**
 - [x] `URpgPlayerInventoryLayoutDefinition` als DataAsset über
       PawnData/Experience zuweisen.
 - [x] Semantische Rollen statt Logik aus hartcodierten `FName`-IDs verwenden.
-- [ ] Gear-/Carry-Gruppen erhalten eine explizite, typisierte
+- [x] Gear-/Carry-Gruppen erhalten eine explizite, typisierte
       `ERpgEquipmentSlot`-Rolle statt indirekter Namens- oder
       Kategorieableitung.
 - [ ] Explizites Spatial-Fragment für jedes gridfähige Item verlangen.
@@ -1728,6 +1728,72 @@ Verifizierter Phase-5B-Zwischenstand vom 2026-07-23:
 - Nächster Schnitt: Gear-/Carry-Definitionen und ihre Views erhalten eine
   explizite `ERpgEquipmentSlot`-Rolle; die verbleibende Ableitung aus
   Gear-Container-Namen wird anschließend entfernt.
+
+Verifizierter Phase-5C-Zwischenstand vom 2026-07-23:
+
+- Statische Layoutdefinitionen und ihre Runtime-Views besitzen mit
+  `EquipmentSlotRole` eine explizite `ERpgEquipmentSlot`-Rolle. Gear verwendet
+  genau eine nicht-handbezogene Rolle, Carry verwendet `MainHand` oder
+  `OffHand`, und Content sowie item-owned Gruppen verwenden `None`.
+- Die redundanten Felder `bCarrySlot` und `CarryActivationRole` sowie der
+  GameplayTag-zu-EquipmentSlot-Konverter sind entfernt. Gear-Adressen werden
+  nicht mehr aus `Gear.*`-Namen konstruiert oder zurückübersetzt, sondern über
+  die aktive PawnData-Layoutdefinition aufgelöst.
+- Gear- und Carry-Gruppen müssen exakt 1 x 1 groß sein. Doppelte Gear-Rollen,
+  fehlende beziehungsweise zur Gruppenart unpassende Rollen und mehrzellige
+  Equipment-Gruppen werden zur Laufzeit fail-closed abgelehnt. Mehrere
+  Carry-Gruppen mit `MainHand` bleiben dagegen ausdrücklich erlaubt, damit
+  Primär- und Sekundärwaffe dieselbe Aktivierungsrolle besitzen können.
+- Doppelte statische `ContainerId`-Werte verwerfen alle kollidierenden
+  Definitionen statt reihenfolgeabhängig die erste zu behalten. Der rohe
+  statische Equipment-Vertrag wird vor Death-Drop vollständig geprüft; ein
+  fehlendes Layout sowie mehrdeutige oder fehlerhafte Gear-Klassifikation
+  brechen die destruktive Operation ohne Teilmutation ab.
+- `ContainerId` bleibt unverändert die physische Inventory-/Save-Identität;
+  `SemanticRole` bleibt die eindeutige UI-/ActionBar-Identität.
+  `SourceEquipmentSlot` bleibt davon getrennt die Herkunft item-owned
+  Container. Dadurch kann `Gear.Backpack` nicht mit dem Inhalt eines
+  ausgerüsteten Backpacks verwechselt werden.
+- Equipment-Loadout, serverautoritative Equipment-Intents, ActionBar,
+  Drag/drop, Death-Drop-Filter, MVVM und Carry-Widgets konsumieren den
+  typisierten Vertrag. Export und Restore aktiver Hände validieren ihre
+  physische Carry-Rolle ebenfalls gegen das aktuelle Layout.
+- Physische Equipment-Reconciliation löst alle benötigten Gear-Adressen vor
+  der ersten Mirror-/Runtime-Mutation auf. Ein fehlender typisierter Slot
+  liefert `false`, ohne einen bestehenden Mirror oder GAS-Runtimezustand
+  teilweise zu leeren. Equipment-Dragquellen müssen außerdem exakt zur
+  angefragten Handrolle passen.
+- Carry-Gruppen werden nur als ActionBar-bindbar angekündigt, wenn ihre
+  `SemanticRole` gültig und layoutweit eindeutig auf genau diesen statischen
+  Root zeigt. Vorschau, detaillierte Bindungsprüfung und Autorität verwenden
+  damit denselben fail-closed Vertrag.
+- `DA_PlayerInventoryLayout_Default` wurde mit den neun Gear-Rollen,
+  `MainHand` für `WeaponSlot1` und `WeaponSlot2`, `OffHand` für `ShieldSlot`
+  sowie `None` für `Pockets` neu gespeichert. Das Asset enthält weder
+  `bCarrySlot` noch `CarryActivationRole`.
+- Regressionen sichern umbenannte Head-Container, item-owned
+  `Gear.Head`-Namenskollisionen, doppelte Gear-Rollen und Container-IDs,
+  Death-Drop-Preflight bei fehlerhaftem Layout, fehlende Gear-Adressen ohne
+  Mirror-Verlust, Cross-Role-Dragquellen, eindeutige Carry-ActionBar-Rollen,
+  zusätzliche MainHand-Carry-Gruppen, Provider-Provenienz, Asset-Reflection
+  und die
+  typisierte MVVM-Projektion ab.
+- `SurvivalRpgEditor Win64 Development` wurde mit Unreal Engine 5.8 gebaut;
+  der abschließende inkrementelle Gate meldete UBT `Result: Succeeded`.
+- `SurvivalRpg.Inventory`: 113 von 113 Automationtests erfolgreich.
+- `SurvivalRpg.Save`: 2 von 2 Automationtests erfolgreich.
+- `SurvivalRpg.Equipment`: 5 von 5 Automationtests erfolgreich.
+- `SurvivalRpg.Crafting`: 8 von 8 Automationtests erfolgreich.
+- `SurvivalRpg.UI`: 20 von 20 Automationtests erfolgreich.
+- `CompileAllBlueprints` beendete das Commandlet mit Ergebnis 0,
+  0 Compilerfehlern, 16 bekannten Compilerwarnungen und 0 nicht ladbaren
+  Blueprints.
+- Fortschritt Phase 5: 3 von 7 Punkten abgeschlossen (42,9 %).
+- Gesamtfortschritt der verbindlichen Checkliste: 71 von 94 Punkten
+  abgeschlossen (75,5 %), 23 Punkte offen.
+- Nächster Schnitt: gridfähige Items benötigen ein explizites
+  Spatial-Fragment; implizite Footprint-Fallbacks werden anschließend
+  inventarisiert, migriert und fail-closed entfernt.
 
 ## Phase 6 – MVVM, Refresh und Komponentenschnitt
 

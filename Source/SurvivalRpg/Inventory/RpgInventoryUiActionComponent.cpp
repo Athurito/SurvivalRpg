@@ -997,18 +997,17 @@ void URpgInventoryUiActionComponent::
 		URpgPlayerInventoryLayoutComponent* InventoryLayout =
 			FindPlayerInventoryLayout();
 		FRpgInventorySlotAddress SourceAddress;
-		const FGameplayTag ExpectedActivationRole =
-			Intent.TargetEquipmentSlot ==
-				ERpgEquipmentSlot::MainHand
-				? RpgGameplayTags::Equipment_Slot_MainHand
-				: RpgGameplayTags::Equipment_Slot_OffHand;
+		ERpgEquipmentSlot SourceEquipmentSlot =
+			ERpgEquipmentSlot::None;
 		if (!EquipmentLoadout ||
 			!InventoryLayout ||
 			!InventoryLayout->TryMakeSlotAddressFromPlacement(
 				CurrentEntry.Placement,
 				SourceAddress) ||
-			InventoryLayout->GetCarryActivationRole(SourceAddress) !=
-				ExpectedActivationRole ||
+			!InventoryLayout->TryGetEquipmentSlotRoleForAddress(
+				SourceAddress,
+				SourceEquipmentSlot) ||
+			SourceEquipmentSlot != Intent.TargetEquipmentSlot ||
 			EquipmentLoadout->GetItemInEquipmentSlot(
 				Intent.TargetEquipmentSlot) != Item)
 		{
@@ -1322,7 +1321,7 @@ void URpgInventoryUiActionComponent::RequestClearEquipmentSlot_Implementation(ER
 		FindPlayerInventoryLayout();
 	URpgInventoryItemInstance* SlotItem = nullptr;
 	if (InventoryLayout &&
-		URpgPlayerInventoryLayoutComponent::TryMakeGearSlotAddress(
+		InventoryLayout->TryMakeGearSlotAddress(
 			EquipmentSlot,
 			GearAddress))
 	{
@@ -1487,7 +1486,7 @@ void URpgInventoryUiActionComponent::RequestMoveItemToInventorySlotAddress_Imple
 	if (bHasSourceAddress && InventoryLayout->IsGearSlotAddress(SourceAddress))
 	{
 		ERpgEquipmentSlot SourceEquipmentSlot = ERpgEquipmentSlot::None;
-		if (URpgPlayerInventoryLayoutComponent::TryGetEquipmentSlotForGearContainer(
+		if (InventoryLayout->TryGetEquipmentSlotForGearContainer(
 				SourceAddress.GetContainerHandle(), SourceEquipmentSlot) &&
 			URpgPlayerInventoryLayoutComponent::IsSlotContainerEquipmentSlot(SourceEquipmentSlot))
 		{
@@ -1632,7 +1631,7 @@ void URpgInventoryUiActionComponent::RequestUnequipSlotContainerItem_Implementat
 
 	FRpgInventorySlotAddress GearAddress;
 	FRpgInventoryGridPlacement GearPlacement;
-	if (!URpgPlayerInventoryLayoutComponent::TryMakeGearSlotAddress(ContainerSlot, GearAddress) ||
+	if (!InventoryLayout->TryMakeGearSlotAddress(ContainerSlot, GearAddress) ||
 		!InventoryLayout->ResolveSlotAddress(GearAddress, GearPlacement))
 	{
 		SendActionFeedback(
@@ -1742,13 +1741,16 @@ void URpgInventoryUiActionComponent::RequestActivateCarrySlot_Implementation(
 		return;
 	}
 
-	const FGameplayTag ActivationRole = InventoryLayout->GetCarryActivationRole(CarrySlotAddress);
+	ERpgEquipmentSlot EquipmentSlotRole = ERpgEquipmentSlot::None;
 	bool bActivated = false;
-	if (ActivationRole == RpgGameplayTags::Equipment_Slot_OffHand)
+	if (InventoryLayout->TryGetEquipmentSlotRoleForAddress(
+			CarrySlotAddress,
+			EquipmentSlotRole) &&
+		EquipmentSlotRole == ERpgEquipmentSlot::OffHand)
 	{
 		bActivated = EquipmentLoadout->ActivateOffHandItem(Item);
 	}
-	else if (ActivationRole == RpgGameplayTags::Equipment_Slot_MainHand)
+	else if (EquipmentSlotRole == ERpgEquipmentSlot::MainHand)
 	{
 		bActivated = EquipmentLoadout->ActivateMainHandItem(Item);
 	}
@@ -3564,10 +3566,9 @@ URpgInventoryUiActionComponent::PlanEquipmentIntentPlacement(
 		ERpgEquipmentSlot SourceEquipmentSlot =
 			ERpgEquipmentSlot::None;
 		if (InventoryLayout->IsGearSlotAddress(SourceAddress) &&
-			URpgPlayerInventoryLayoutComponent::
-				TryGetEquipmentSlotForGearContainer(
-					SourceAddress.GetContainerHandle(),
-					SourceEquipmentSlot) &&
+			InventoryLayout->TryGetEquipmentSlotForGearContainer(
+				SourceAddress.GetContainerHandle(),
+				SourceEquipmentSlot) &&
 			URpgPlayerInventoryLayoutComponent::
 				IsSlotContainerEquipmentSlot(SourceEquipmentSlot))
 		{
@@ -3641,17 +3642,13 @@ URpgInventoryUiActionComponent::PlanEquipmentIntentPlacement(
 				Intent.ExpectedQuantity);
 		}
 
-		const FGameplayTag ActivationRole =
-			Intent.TargetEquipmentSlot == ERpgEquipmentSlot::OffHand
-				? RpgGameplayTags::Equipment_Slot_OffHand
-				: RpgGameplayTags::Equipment_Slot_MainHand;
 		for (const FRpgInventorySlotGroupView& Group :
 			 InventoryLayout->GetSlotGroups())
 		{
 			if (Group.GroupKind !=
 					ERpgInventorySlotGroupKind::Carry ||
-				!Group.Rule.bCarrySlot ||
-				Group.Rule.CarryActivationRole != ActivationRole ||
+				Group.EquipmentSlotRole !=
+					Intent.TargetEquipmentSlot ||
 				!Group.Rule.AllowsItem(Item))
 			{
 				continue;
@@ -3692,7 +3689,7 @@ URpgInventoryUiActionComponent::PlanEquipmentIntentPlacement(
 	}
 
 	FRpgInventorySlotAddress TargetAddress;
-	if (!URpgPlayerInventoryLayoutComponent::TryMakeGearSlotAddress(
+	if (!InventoryLayout->TryMakeGearSlotAddress(
 			Intent.TargetEquipmentSlot,
 			TargetAddress) ||
 		!InventoryLayout->ResolveSlotAddress(
@@ -4490,45 +4487,43 @@ bool URpgInventoryUiActionComponent::TryMoveAndActivateItemInCarry(
 		EquipmentLoadout->ExportEquipmentSelection();
 	const TArray<FRpgInventorySlotGroupView> Groups = InventoryLayout->GetSlotGroups();
 
-	auto TryActivateRole = [EquipmentLoadout, Item](const FGameplayTag& ActivationRole)
+	auto TryActivateSlot = [EquipmentLoadout, Item](
+		ERpgEquipmentSlot EquipmentSlot)
 	{
-		return ActivationRole == RpgGameplayTags::Equipment_Slot_MainHand
+		return EquipmentSlot == ERpgEquipmentSlot::MainHand
 			? EquipmentLoadout->SetMainHandItemActive(Item)
-			: ActivationRole == RpgGameplayTags::Equipment_Slot_OffHand &&
+			: EquipmentSlot == ERpgEquipmentSlot::OffHand &&
 				EquipmentLoadout->SetOffHandItemActive(Item);
 	};
-	auto MatchesPreferredRole = [PreferredHandSlot](const FGameplayTag& ActivationRole)
+	auto MatchesPreferredSlot = [PreferredHandSlot](
+		ERpgEquipmentSlot EquipmentSlot)
 	{
 		return PreferredHandSlot == ERpgEquipmentSlot::None ||
-			(PreferredHandSlot == ERpgEquipmentSlot::MainHand && ActivationRole == RpgGameplayTags::Equipment_Slot_MainHand) ||
-			(PreferredHandSlot == ERpgEquipmentSlot::OffHand && ActivationRole == RpgGameplayTags::Equipment_Slot_OffHand);
+			PreferredHandSlot == EquipmentSlot;
 	};
 
-	// None prefers MainHand deterministically; an explicit preferred hand probes exactly one semantic role.
-	TArray<FGameplayTag, TInlineAllocator<2>> RoleOrder;
+	// None prefers MainHand deterministically; an explicit preferred hand probes exactly one typed role.
+	TArray<ERpgEquipmentSlot, TInlineAllocator<2>> SlotOrder;
 	if (PreferredHandSlot == ERpgEquipmentSlot::OffHand)
 	{
-		RoleOrder.Add(RpgGameplayTags::Equipment_Slot_OffHand);
+		SlotOrder.Add(ERpgEquipmentSlot::OffHand);
 	}
 	else
 	{
-		RoleOrder.Add(RpgGameplayTags::Equipment_Slot_MainHand);
+		SlotOrder.Add(ERpgEquipmentSlot::MainHand);
 		if (PreferredHandSlot == ERpgEquipmentSlot::None)
 		{
-			RoleOrder.Add(RpgGameplayTags::Equipment_Slot_OffHand);
+			SlotOrder.Add(ERpgEquipmentSlot::OffHand);
 		}
 	}
-	for (const FGameplayTag& DesiredRole : RoleOrder)
+	for (const ERpgEquipmentSlot DesiredSlot : SlotOrder)
 	{
-		if (!MatchesPreferredRole(DesiredRole))
+		if (!MatchesPreferredSlot(DesiredSlot))
 		{
 			continue;
 		}
-		const ERpgEquipmentSlot RuntimeSlot = DesiredRole == RpgGameplayTags::Equipment_Slot_OffHand
-			? ERpgEquipmentSlot::OffHand
-			: ERpgEquipmentSlot::MainHand;
 		if (!EquipmentLoadout->CanActivateItemInEquipmentSlot(
-				RuntimeSlot,
+				DesiredSlot,
 				Item))
 		{
 			continue;
@@ -4537,8 +4532,7 @@ bool URpgInventoryUiActionComponent::TryMoveAndActivateItemInCarry(
 		for (const FRpgInventorySlotGroupView& Group : Groups)
 		{
 			if (Group.GroupKind != ERpgInventorySlotGroupKind::Carry ||
-				!Group.Rule.bCarrySlot ||
-				Group.Rule.CarryActivationRole != DesiredRole ||
+				Group.EquipmentSlotRole != DesiredSlot ||
 				!Group.Rule.AllowsItem(Item))
 			{
 				continue;
@@ -4569,7 +4563,7 @@ bool URpgInventoryUiActionComponent::TryMoveAndActivateItemInCarry(
 						OriginalPlacement.Y == TargetPlacement.Y;
 					if (bAlreadyAtTarget)
 					{
-						return TryActivateRole(DesiredRole);
+						return TryActivateSlot(DesiredSlot);
 					}
 
 					FRpgInventoryMoveIntent EquipIntent;
@@ -4596,7 +4590,7 @@ bool URpgInventoryUiActionComponent::TryMoveAndActivateItemInCarry(
 						return false;
 					}
 
-					if (TryActivateRole(DesiredRole))
+					if (TryActivateSlot(DesiredSlot))
 					{
 						return true;
 					}
@@ -4753,7 +4747,9 @@ bool URpgInventoryUiActionComponent::TryMoveItemToFirstCompatibleCarrySlot(
 	{
 		if (Group.GroupKind != ERpgInventorySlotGroupKind::Carry ||
 			!Group.ContainerHandle.IsRoot() ||
-			!Group.Rule.bCarrySlot || !Group.Rule.AllowsItem(Item))
+			!FRpgInventoryEquipmentPlacementPolicy::IsHandEquipmentSlot(
+				Group.EquipmentSlotRole) ||
+			!Group.Rule.AllowsItem(Item))
 		{
 			continue;
 		}
@@ -4870,11 +4866,14 @@ bool URpgInventoryUiActionComponent::TryMoveItemToFirstCompatibleContentSlot(
 
 bool URpgInventoryUiActionComponent::CanMoveItemOutOfGearSlot(const FRpgInventorySlotAddress& SourceAddress) const
 {
+	const URpgPlayerInventoryLayoutComponent* InventoryLayout =
+		FindPlayerInventoryLayout();
 	ERpgEquipmentSlot EquipmentSlot = ERpgEquipmentSlot::None;
-	if (!URpgPlayerInventoryLayoutComponent::TryGetEquipmentSlotForGearContainer(
+	if (!InventoryLayout ||
+		!InventoryLayout->TryGetEquipmentSlotForGearContainer(
 			SourceAddress.GetContainerHandle(), EquipmentSlot))
 	{
-		return true;
+		return false;
 	}
 
 	if (!URpgPlayerInventoryLayoutComponent::IsSlotContainerEquipmentSlot(EquipmentSlot))
@@ -4882,8 +4881,7 @@ bool URpgInventoryUiActionComponent::CanMoveItemOutOfGearSlot(const FRpgInventor
 		return true;
 	}
 
-	const URpgPlayerInventoryLayoutComponent* InventoryLayout = FindPlayerInventoryLayout();
-	return !InventoryLayout || InventoryLayout->CanUnequipSlotContainer(EquipmentSlot);
+	return InventoryLayout->CanUnequipSlotContainer(EquipmentSlot);
 }
 
 bool URpgInventoryUiActionComponent::IsPlayerEquipmentPlacement(
@@ -4930,7 +4928,7 @@ void URpgInventoryUiActionComponent::SyncEquipmentLoadoutFromGearSlots() const
 	{
 		FRpgInventorySlotAddress Address;
 		URpgInventoryItemInstance* PhysicalItem = nullptr;
-		if (URpgPlayerInventoryLayoutComponent::TryMakeGearSlotAddress(
+		if (InventoryLayout->TryMakeGearSlotAddress(
 				EquipmentSlot,
 				Address))
 		{
@@ -4966,7 +4964,9 @@ void URpgInventoryUiActionComponent::SyncActiveHandsFromCarrySlots() const
 		return;
 	}
 
-	auto IsItemInCarrySlot = [InventoryLayout](const URpgInventoryItemInstance* Item, bool bOffHand)
+	auto IsItemInCarrySlot = [InventoryLayout](
+		const URpgInventoryItemInstance* Item,
+		ERpgEquipmentSlot EquipmentSlotRole)
 	{
 		if (!Item)
 		{
@@ -4975,13 +4975,8 @@ void URpgInventoryUiActionComponent::SyncActiveHandsFromCarrySlots() const
 
 		for (const FRpgInventorySlotGroupView& Group : InventoryLayout->GetSlotGroups())
 		{
-			if (Group.GroupKind != ERpgInventorySlotGroupKind::Carry || !Group.Rule.bCarrySlot)
-			{
-				continue;
-			}
-
-			const bool bGroupIsOffHand = Group.Rule.CarryActivationRole == RpgGameplayTags::Equipment_Slot_OffHand;
-			if (bGroupIsOffHand != bOffHand)
+			if (Group.GroupKind != ERpgInventorySlotGroupKind::Carry ||
+				Group.EquipmentSlotRole != EquipmentSlotRole)
 			{
 				continue;
 			}
@@ -5002,13 +4997,19 @@ void URpgInventoryUiActionComponent::SyncActiveHandsFromCarrySlots() const
 	};
 
 	if (URpgInventoryItemInstance* MainHandItem = EquipmentLoadout->GetItemInEquipmentSlot(ERpgEquipmentSlot::MainHand);
-		MainHandItem && !IsItemInCarrySlot(MainHandItem, false))
+		MainHandItem &&
+		!IsItemInCarrySlot(
+			MainHandItem,
+			ERpgEquipmentSlot::MainHand))
 	{
 		EquipmentLoadout->ClearActiveMainHand();
 	}
 
 	if (URpgInventoryItemInstance* OffHandItem = EquipmentLoadout->GetItemInEquipmentSlot(ERpgEquipmentSlot::OffHand);
-		OffHandItem && !IsItemInCarrySlot(OffHandItem, true))
+		OffHandItem &&
+		!IsItemInCarrySlot(
+			OffHandItem,
+			ERpgEquipmentSlot::OffHand))
 	{
 		EquipmentLoadout->ClearActiveOffHand(true);
 	}

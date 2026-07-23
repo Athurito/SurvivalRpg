@@ -148,14 +148,6 @@ struct SURVIVALRPG_API FRpgInventorySlotRule
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Inventory|Layout")
 	bool bActionbarBindable = false;
 
-	/** True when this slot group represents a weapon/tool/shield carry slot that can become active hands. */
-	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Inventory|Layout")
-	bool bCarrySlot = false;
-
-	/** Semantic equipment role activated by this carry group, normally MainHand or OffHand. */
-	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Inventory|Layout", meta = (EditCondition = "bCarrySlot", Categories = "Equipment.Slot"))
-	FGameplayTag CarryActivationRole;
-
 	/** Returns whether the item satisfies this slot rule. Null items are never accepted. */
 	bool AllowsItem(const URpgInventoryItemInstance* Item) const;
 
@@ -193,6 +185,14 @@ struct SURVIVALRPG_API FRpgInventorySlotGroupDefinition
 	/** Layout area this group belongs to. Content accepts auto-added inventory items; gear and carry require explicit moves. */
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Inventory|Layout")
 	ERpgInventorySlotGroupKind GroupKind = ERpgInventorySlotGroupKind::Content;
+
+	/**
+	 * Explicit gameplay equipment role for this static Gear or Carry group.
+	 * Gear uses a non-hand slot, Carry uses MainHand or OffHand, and Content must remain None.
+	 * This is immutable definition data; ContainerId and item categories never imply equipment behavior.
+	 */
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Inventory|Layout")
+	ERpgEquipmentSlot EquipmentSlotRole = ERpgEquipmentSlot::None;
 
 	/** Grid dimensions contributed by this container. Gear and carry containers should remain 1x1. */
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Inventory|Layout", meta = (ClampMin = "1", UIMin = "1"))
@@ -234,6 +234,10 @@ struct SURVIVALRPG_API FRpgInventorySlotGroupView
 	/** Layout area this group belongs to. UI uses this to split gear, carry, and item storage. */
 	UPROPERTY(BlueprintReadOnly, Category = "Inventory|Layout")
 	ERpgInventorySlotGroupKind GroupKind = ERpgInventorySlotGroupKind::Content;
+
+	/** Explicit gameplay equipment role copied from static definition data, or None for content/item-owned groups. */
+	UPROPERTY(BlueprintReadOnly, Category = "Inventory|Layout")
+	ERpgEquipmentSlot EquipmentSlotRole = ERpgEquipmentSlot::None;
 
 	/** Grid dimensions for this visible container. */
 	UPROPERTY(BlueprintReadOnly, Category = "Inventory|Layout")

@@ -95,7 +95,7 @@ bool URpgEquipmentLoadoutComponent::ActivateMainHandItem(URpgInventoryItemInstan
 
 	EnsureDefaultSlots();
 	if (!CanActivateItemInEquipmentSlot(ERpgEquipmentSlot::MainHand, Item) ||
-		!IsItemInCarryActivationRole(Item, RpgGameplayTags::Equipment_Slot_MainHand))
+		!IsItemInCarryEquipmentSlot(Item, ERpgEquipmentSlot::MainHand))
 	{
 		return false;
 	}
@@ -118,9 +118,9 @@ bool URpgEquipmentLoadoutComponent::SetMainHandItemActive(
 
 	EnsureDefaultSlots();
 	if (!CanActivateItemInEquipmentSlot(ERpgEquipmentSlot::MainHand, Item) ||
-		!IsItemInCarryActivationRole(
+		!IsItemInCarryEquipmentSlot(
 			Item,
-			RpgGameplayTags::Equipment_Slot_MainHand))
+			ERpgEquipmentSlot::MainHand))
 	{
 		return false;
 	}
@@ -167,7 +167,7 @@ bool URpgEquipmentLoadoutComponent::ActivateOffHandItem(URpgInventoryItemInstanc
 
 	EnsureDefaultSlots();
 	if (!CanActivateItemInEquipmentSlot(ERpgEquipmentSlot::OffHand, Item) ||
-		!IsItemInCarryActivationRole(Item, RpgGameplayTags::Equipment_Slot_OffHand))
+		!IsItemInCarryEquipmentSlot(Item, ERpgEquipmentSlot::OffHand))
 	{
 		return false;
 	}
@@ -190,9 +190,9 @@ bool URpgEquipmentLoadoutComponent::SetOffHandItemActive(
 
 	EnsureDefaultSlots();
 	if (!CanActivateItemInEquipmentSlot(ERpgEquipmentSlot::OffHand, Item) ||
-		!IsItemInCarryActivationRole(
+		!IsItemInCarryEquipmentSlot(
 			Item,
-			RpgGameplayTags::Equipment_Slot_OffHand))
+			ERpgEquipmentSlot::OffHand))
 	{
 		return false;
 	}
@@ -319,7 +319,7 @@ URpgInventoryItemInstance* URpgEquipmentLoadoutComponent::GetRememberedOffhandFo
 			Entry.OffHandItem &&
 			OwnerInventory &&
 			OwnerInventory->ContainsItemInstance(Entry.OffHandItem) &&
-			IsItemInCarryActivationRole(Entry.OffHandItem, RpgGameplayTags::Equipment_Slot_OffHand) &&
+			IsItemInCarryEquipmentSlot(Entry.OffHandItem, ERpgEquipmentSlot::OffHand) &&
 			CanUseEquipmentSlotForOwnedItem(ERpgEquipmentSlot::OffHand, Entry.OffHandItem))
 		{
 			return Entry.OffHandItem;
@@ -377,9 +377,9 @@ bool URpgEquipmentLoadoutComponent::ReconcileRuntimeEquipmentOnCurrentPawn()
 
 		if (Slot.Item &&
 			((Slot.EquipmentSlot == ERpgEquipmentSlot::MainHand &&
-				!IsItemInCarryActivationRole(Slot.Item, RpgGameplayTags::Equipment_Slot_MainHand)) ||
+				!IsItemInCarryEquipmentSlot(Slot.Item, ERpgEquipmentSlot::MainHand)) ||
 			(Slot.EquipmentSlot == ERpgEquipmentSlot::OffHand &&
-				!IsItemInCarryActivationRole(Slot.Item, RpgGameplayTags::Equipment_Slot_OffHand))))
+				!IsItemInCarryEquipmentSlot(Slot.Item, ERpgEquipmentSlot::OffHand))))
 		{
 			Slot.Item = nullptr;
 			bClearedInvalidHandSelection = true;
@@ -548,13 +548,13 @@ bool URpgEquipmentLoadoutComponent::ReconcilePhysicalEquipmentFromInventory()
 
 	URpgInventoryManagerComponent* OwnerInventory = FindOwnerInventory();
 	URpgPlayerInventoryLayoutComponent* InventoryLayout = FindPlayerInventoryLayout();
-	if (!OwnerInventory || !InventoryLayout)
+	if (!OwnerInventory ||
+		!InventoryLayout ||
+		!InventoryLayout->HasValidStaticEquipmentRoleContract())
 	{
 		return false;
 	}
 
-	const FRpgEquipmentSelectionSaveData PreviousSelection = ExportEquipmentSelection();
-	EnsureDefaultSlots();
 	const ERpgEquipmentSlot PhysicalSlots[] =
 	{
 		ERpgEquipmentSlot::Head,
@@ -568,15 +568,33 @@ bool URpgEquipmentLoadoutComponent::ReconcilePhysicalEquipmentFromInventory()
 		ERpgEquipmentSlot::ResourceBag
 	};
 
-	bool bAllReconciled = true;
-	for (const ERpgEquipmentSlot EquipmentSlot : PhysicalSlots)
+	FRpgInventorySlotAddress PhysicalAddresses[
+		UE_ARRAY_COUNT(PhysicalSlots)];
+	for (int32 SlotIndex = 0;
+		SlotIndex < UE_ARRAY_COUNT(PhysicalSlots);
+		++SlotIndex)
 	{
-		FRpgInventorySlotAddress Address;
-		URpgInventoryItemInstance* PhysicalItem = nullptr;
-		if (URpgPlayerInventoryLayoutComponent::TryMakeGearSlotAddress(EquipmentSlot, Address))
+		if (!InventoryLayout->TryMakeGearSlotAddress(
+				PhysicalSlots[SlotIndex],
+				PhysicalAddresses[SlotIndex]))
 		{
-			PhysicalItem = InventoryLayout->GetItemInSlotAddress(Address);
+			return false;
 		}
+	}
+
+	const FRpgEquipmentSelectionSaveData PreviousSelection =
+		ExportEquipmentSelection();
+	EnsureDefaultSlots();
+	bool bAllReconciled = true;
+	for (int32 PhysicalSlotIndex = 0;
+		PhysicalSlotIndex < UE_ARRAY_COUNT(PhysicalSlots);
+		++PhysicalSlotIndex)
+	{
+		const ERpgEquipmentSlot EquipmentSlot =
+			PhysicalSlots[PhysicalSlotIndex];
+		URpgInventoryItemInstance* PhysicalItem =
+			InventoryLayout->GetItemInSlotAddress(
+				PhysicalAddresses[PhysicalSlotIndex]);
 
 		const int32 SlotIndex = FindSlotIndex(EquipmentSlot);
 		if (!Slots.IsValidIndex(SlotIndex))
@@ -610,12 +628,12 @@ FRpgEquipmentSelectionSaveData URpgEquipmentLoadoutComponent::ExportEquipmentSel
 {
 	FRpgEquipmentSelectionSaveData Result;
 	if (const URpgInventoryItemInstance* MainHandItem = GetItemInEquipmentSlot(ERpgEquipmentSlot::MainHand);
-		IsItemInCarryActivationRole(MainHandItem, RpgGameplayTags::Equipment_Slot_MainHand))
+		IsItemInCarryEquipmentSlot(MainHandItem, ERpgEquipmentSlot::MainHand))
 	{
 		Result.ActiveMainHandItemId = MainHandItem->GetItemId();
 	}
 	if (const URpgInventoryItemInstance* OffHandItem = GetItemInEquipmentSlot(ERpgEquipmentSlot::OffHand);
-		IsItemInCarryActivationRole(OffHandItem, RpgGameplayTags::Equipment_Slot_OffHand))
+		IsItemInCarryEquipmentSlot(OffHandItem, ERpgEquipmentSlot::OffHand))
 	{
 		Result.ActiveOffHandItemId = OffHandItem->GetItemId();
 	}
@@ -624,8 +642,8 @@ FRpgEquipmentSelectionSaveData URpgEquipmentLoadoutComponent::ExportEquipmentSel
 	for (const FRpgRememberedOffhandForMainHand& Pairing : RememberedOffhands)
 	{
 		if (!Pairing.MainHandItem || !Pairing.OffHandItem ||
-			!IsItemInCarryActivationRole(Pairing.MainHandItem, RpgGameplayTags::Equipment_Slot_MainHand) ||
-			!IsItemInCarryActivationRole(Pairing.OffHandItem, RpgGameplayTags::Equipment_Slot_OffHand))
+			!IsItemInCarryEquipmentSlot(Pairing.MainHandItem, ERpgEquipmentSlot::MainHand) ||
+			!IsItemInCarryEquipmentSlot(Pairing.OffHandItem, ERpgEquipmentSlot::OffHand))
 		{
 			continue;
 		}
@@ -934,22 +952,27 @@ bool URpgEquipmentLoadoutComponent::IsTwoHandItem(const URpgInventoryItemInstanc
 	return EquipmentCDO && EquipmentCDO->HandOccupancy == ERpgEquipmentHandOccupancy::BothHands;
 }
 
-bool URpgEquipmentLoadoutComponent::IsItemInCarryActivationRole(
+bool URpgEquipmentLoadoutComponent::IsItemInCarryEquipmentSlot(
 	const URpgInventoryItemInstance* Item,
-	FGameplayTag ActivationRole) const
+	ERpgEquipmentSlot EquipmentSlot) const
 {
 	const URpgInventoryManagerComponent* OwnerInventory = FindOwnerInventory();
 	const URpgPlayerInventoryLayoutComponent* InventoryLayout = FindPlayerInventoryLayout();
-	if (!OwnerInventory || !InventoryLayout || !Item || !ActivationRole.IsValid())
+	if (!OwnerInventory ||
+		!InventoryLayout ||
+		!Item ||
+		!FRpgInventoryEquipmentPlacementPolicy::IsHandEquipmentSlot(EquipmentSlot))
 	{
 		return false;
 	}
 
 	FRpgInventoryGridPlacement Placement;
 	FRpgInventorySlotAddress Address;
+	ERpgEquipmentSlot AddressEquipmentSlot = ERpgEquipmentSlot::None;
 	return OwnerInventory->GetItemPlacement(const_cast<URpgInventoryItemInstance*>(Item), Placement) &&
 		InventoryLayout->TryMakeSlotAddressFromPlacement(Placement, Address) &&
-		InventoryLayout->GetCarryActivationRole(Address) == ActivationRole;
+		InventoryLayout->TryGetEquipmentSlotRoleForAddress(Address, AddressEquipmentSlot) &&
+		AddressEquipmentSlot == EquipmentSlot;
 }
 
 void URpgEquipmentLoadoutComponent::ApplyEquipmentSelectionPointers(
@@ -979,9 +1002,9 @@ void URpgEquipmentLoadoutComponent::ApplyEquipmentSelectionPointers(
 	URpgInventoryItemInstance* MainHandItem =
 		OwnerInventory->FindItemById(
 			SaveData.ActiveMainHandItemId);
-	if (!IsItemInCarryActivationRole(
+	if (!IsItemInCarryEquipmentSlot(
 			MainHandItem,
-			RpgGameplayTags::Equipment_Slot_MainHand) ||
+			ERpgEquipmentSlot::MainHand) ||
 		!CanUseEquipmentSlotForOwnedItem(
 			ERpgEquipmentSlot::MainHand,
 			MainHandItem))
@@ -992,9 +1015,9 @@ void URpgEquipmentLoadoutComponent::ApplyEquipmentSelectionPointers(
 	URpgInventoryItemInstance* OffHandItem =
 		OwnerInventory->FindItemById(
 			SaveData.ActiveOffHandItemId);
-	if (!IsItemInCarryActivationRole(
+	if (!IsItemInCarryEquipmentSlot(
 			OffHandItem,
-			RpgGameplayTags::Equipment_Slot_OffHand) ||
+			ERpgEquipmentSlot::OffHand) ||
 		!CanUseEquipmentSlotForOwnedItem(
 			ERpgEquipmentSlot::OffHand,
 			OffHandItem) ||
@@ -1019,12 +1042,12 @@ void URpgEquipmentLoadoutComponent::ApplyEquipmentSelectionPointers(
 		if (SavedMainHand && SavedOffHand &&
 			SavedMainHand != SavedOffHand &&
 			!IsTwoHandItem(SavedMainHand) &&
-			IsItemInCarryActivationRole(
+			IsItemInCarryEquipmentSlot(
 				SavedMainHand,
-				RpgGameplayTags::Equipment_Slot_MainHand) &&
-			IsItemInCarryActivationRole(
+				ERpgEquipmentSlot::MainHand) &&
+			IsItemInCarryEquipmentSlot(
 				SavedOffHand,
-				RpgGameplayTags::Equipment_Slot_OffHand) &&
+				ERpgEquipmentSlot::OffHand) &&
 			CanUseEquipmentSlotForOwnedItem(
 				ERpgEquipmentSlot::MainHand,
 				SavedMainHand) &&
