@@ -481,6 +481,14 @@ URpgInventoryAutomationTestWeaponEquipmentDefinition::URpgInventoryAutomationTes
 	AllowedSlots = { ERpgEquipmentSlot::MainHand };
 }
 
+URpgInventoryAutomationTestDisabledEquipmentDefinition::
+	URpgInventoryAutomationTestDisabledEquipmentDefinition(
+		const FObjectInitializer& ObjectInitializer)
+	: Super(ObjectInitializer)
+{
+	AllowedSlots.Reset();
+}
+
 URpgInventoryAutomationTestOffHandEquipmentDefinition::URpgInventoryAutomationTestOffHandEquipmentDefinition(
 	const FObjectInitializer& ObjectInitializer)
 	: Super(ObjectInitializer)

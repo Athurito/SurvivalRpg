@@ -891,13 +891,10 @@ void URpgInventoryUiActionComponent::
 	const bool bHasEquippableFragment =
 		Item->FindFragmentByClass<
 			URpgInventoryFragment_EquippableItem>() != nullptr;
-	const bool bHasContainerFragment =
-		Item->FindFragmentByClass<
-			URpgInventoryFragment_ItemContainer>() != nullptr;
 	if (Intent.Operation !=
 			ERpgInventoryEquipmentIntentOperation::
 				UnequipToContent &&
-		!bHasEquippableFragment && !bHasContainerFragment)
+		!bHasEquippableFragment)
 	{
 		SendAndCacheEquipmentIntentFeedback(
 			Inventory,
@@ -1566,7 +1563,8 @@ void URpgInventoryUiActionComponent::RequestEquipSlotContainerItem_Implementatio
 		return;
 	}
 
-	if (Item->FindFragmentByClass<URpgInventoryFragment_ItemContainer>() == nullptr)
+	if (Item->FindFragmentByClass<URpgInventoryFragment_ItemContainer>() == nullptr ||
+		Item->FindFragmentByClass<URpgInventoryFragment_EquippableItem>() == nullptr)
 	{
 		SendActionFeedback(RpgGameplayTags::Rpg_Inventory_Action_Equip, ERpgInventoryActionFeedbackResult::NotEquippable, PlayerInventory, Item, 1);
 		return;
@@ -2274,8 +2272,7 @@ void URpgInventoryUiActionComponent::RequestEquipInventoryItem_Implementation(UR
 		return;
 	}
 
-	if (Item->FindFragmentByClass<URpgInventoryFragment_EquippableItem>() == nullptr &&
-		Item->FindFragmentByClass<URpgInventoryFragment_ItemContainer>() == nullptr)
+	if (Item->FindFragmentByClass<URpgInventoryFragment_EquippableItem>() == nullptr)
 	{
 		SendActionFeedback(RpgGameplayTags::Rpg_Inventory_Action_Equip, ERpgInventoryActionFeedbackResult::NotEquippable, PlayerInventory, Item, 1);
 		return;
@@ -4381,22 +4378,6 @@ bool URpgInventoryUiActionComponent::TryAssignItemToDefaultEquipmentDestination(
 				{
 					return true;
 				}
-			}
-		}
-
-		const ERpgEquipmentSlot FallbackSlots[] =
-		{
-			ERpgEquipmentSlot::Backpack,
-			ERpgEquipmentSlot::Belt,
-			ERpgEquipmentSlot::Pouch,
-			ERpgEquipmentSlot::ResourceBag
-		};
-
-		for (const ERpgEquipmentSlot FallbackSlot : FallbackSlots)
-		{
-			if (TryMoveItemToGearSlot(FallbackSlot, Item))
-			{
-				return true;
 			}
 		}
 	}

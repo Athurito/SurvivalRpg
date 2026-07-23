@@ -101,16 +101,30 @@ bool URpgEquipmentDefinition::HasStructurallyValidSlotReferences() const
 	return true;
 }
 
+bool URpgEquipmentDefinition::HasValidHandOccupancyContract() const
+{
+	switch (HandOccupancy)
+	{
+	case ERpgEquipmentHandOccupancy::SelectedSlotOnly:
+		return true;
+
+	case ERpgEquipmentHandOccupancy::BothHands:
+		return !AllowedSlots.Contains(ERpgEquipmentSlot::OffHand);
+
+	default:
+		return false;
+	}
+}
+
 bool URpgEquipmentDefinition::CanEquipInSlot(ERpgEquipmentSlot Slot) const
 {
-	if (!IsConcreteEquipmentSlot(Slot))
+	if (!IsConcreteEquipmentSlot(Slot) ||
+		!HasValidHandOccupancyContract())
 	{
 		return false;
 	}
 
-	return AllowedSlots.Contains(Slot) &&
-		!(Slot == ERpgEquipmentSlot::OffHand &&
-			HandOccupancy == ERpgEquipmentHandOccupancy::BothHands);
+	return AllowedSlots.Contains(Slot);
 }
 
 bool URpgEquipmentDefinition::OccupiesSlot(ERpgEquipmentSlot EquippedSlot, ERpgEquipmentSlot QuerySlot) const
@@ -120,12 +134,17 @@ bool URpgEquipmentDefinition::OccupiesSlot(ERpgEquipmentSlot EquippedSlot, ERpgE
 		return false;
 	}
 
-	if (HandOccupancy == ERpgEquipmentHandOccupancy::BothHands)
+	switch (HandOccupancy)
 	{
-		return QuerySlot == ERpgEquipmentSlot::MainHand || QuerySlot == ERpgEquipmentSlot::OffHand;
-	}
+	case ERpgEquipmentHandOccupancy::SelectedSlotOnly:
+		return EquippedSlot == QuerySlot;
 
-	return EquippedSlot == QuerySlot;
+	case ERpgEquipmentHandOccupancy::BothHands:
+		return QuerySlot == ERpgEquipmentSlot::MainHand || QuerySlot == ERpgEquipmentSlot::OffHand;
+
+	default:
+		return false;
+	}
 }
 
 ERpgEquipmentSlot URpgEquipmentDefinition::GetDefaultEquipSlot() const
@@ -148,14 +167,18 @@ EDataValidationResult URpgEquipmentDefinition::IsDataValid(
 	EDataValidationResult Result = CombineDataValidationResults(
 		Super::IsDataValid(Context),
 		EDataValidationResult::Valid);
-	if (HasStructurallyValidSlotReferences())
-	{
-		return Result;
-	}
-
-	Result = EDataValidationResult::Invalid;
 	const FText DefinitionPath =
 		GetEquipmentDefinitionValidationPath(this);
+	const bool bHasValidSlotReferences =
+		HasStructurallyValidSlotReferences();
+	const bool bHasValidHandContract =
+		HasValidHandOccupancyContract();
+
+	if (!bHasValidSlotReferences)
+	{
+		Result = EDataValidationResult::Invalid;
+	}
+
 	TSet<ERpgEquipmentSlot> UniqueAllowedSlots;
 	for (int32 SlotIndex = 0; SlotIndex < AllowedSlots.Num(); ++SlotIndex)
 	{
@@ -236,6 +259,35 @@ EDataValidationResult URpgEquipmentDefinition::IsDataValid(
 							static_cast<int64>(
 								SlotAbilitySet.EquippedSlot))),
 					FText::AsNumber(GrantIndex)));
+		}
+	}
+
+	if (!bHasValidHandContract)
+	{
+		Result = EDataValidationResult::Invalid;
+		if (HandOccupancy == ERpgEquipmentHandOccupancy::BothHands &&
+			AllowedSlots.Contains(ERpgEquipmentSlot::OffHand))
+		{
+			Context.AddError(
+				FText::Format(
+					LOCTEXT(
+						"BothHandsAllowsOffHand",
+						"Equipment definition '{0}' uses HandOccupancy 'BothHands' while AllowedSlots contains "
+						"'OffHand'. BothHands equipment occupies both hand slots and cannot be equipped into OffHand; "
+						"remove OffHand or change HandOccupancy to SelectedSlotOnly."),
+					DefinitionPath));
+		}
+		else
+		{
+			Context.AddError(
+				FText::Format(
+					LOCTEXT(
+						"InvalidHandOccupancy",
+						"Equipment definition '{0}' has invalid HandOccupancy value '{1}'. "
+						"Choose SelectedSlotOnly or BothHands."),
+					DefinitionPath,
+					FText::AsNumber(
+						static_cast<int64>(HandOccupancy))));
 		}
 	}
 

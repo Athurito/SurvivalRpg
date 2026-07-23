@@ -553,7 +553,7 @@ public:
 	UFUNCTION(Server, Reliable, BlueprintCallable, Category = "Inventory|UI Actions")
 	void RequestMoveItemToInventorySlotAddress(URpgInventoryItemInstance* Item, FRpgInventorySlotAddress TargetAddress);
 
-	/** Legacy pointer adapter for slot-container providers. */
+	/** Legacy pointer adapter for item-container providers with an explicit EquippableItem contract. */
 	UFUNCTION(Server, Reliable, BlueprintCallable, Category = "Inventory|UI Actions", meta = (DeprecatedFunction, DeprecationMessage = "Use RequestApplyInventoryEquipmentIntent with EquipToSlot."))
 	void RequestEquipSlotContainerItem(ERpgEquipmentSlot ContainerSlot, URpgInventoryItemInstance* Item);
 
@@ -639,7 +639,7 @@ public:
 	UFUNCTION(Server, Reliable, BlueprintCallable, Category = "Inventory|UI Actions")
 	void RequestUseInventoryItem(URpgInventoryManagerComponent* Inventory, URpgInventoryItemInstance* Item, int32 StackCount = 1);
 
-	/** Legacy pointer adapter for default equip. */
+	/** Legacy pointer adapter for default equip of an item with an explicit EquippableItem contract. */
 	UFUNCTION(Server, Reliable, BlueprintCallable, Category = "Inventory|UI Actions", meta = (DeprecatedFunction, DeprecationMessage = "Use RequestApplyInventoryEquipmentIntent with EquipDefaultAndActivate."))
 	void RequestEquipInventoryItem(URpgInventoryItemInstance* Item);
 

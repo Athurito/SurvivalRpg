@@ -82,6 +82,10 @@ struct SURVIVALRPG_API FRpgInventoryItemContainerDefinition
  *
  * The fragment contains only immutable designer data. URpgInventoryManagerComponent remains the sole owner and
  * mutation authority for entries placed in these containers.
+ *
+ * This fragment alone describes a portable or nested container; it does not make the item a wearable Gear provider.
+ * Wearable backpacks, belts, pouches, and resource bags additionally require an EquippableItem fragment whose
+ * EquipmentDefinition explicitly allows the matching provider slot.
  */
 UCLASS(BlueprintType)
 class SURVIVALRPG_API URpgInventoryFragment_ItemContainer : public URpgInventoryItemFragment

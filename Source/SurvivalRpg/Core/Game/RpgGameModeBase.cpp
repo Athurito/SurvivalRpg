@@ -1644,9 +1644,9 @@ void ARpgGameModeBase::DropInventoryForPlayerDeath(APlayerController* PC, const 
 				 PC->FindComponentByClass<
 					 URpgEquipmentLoadoutComponent>())
 	{
-		// Container-only gear providers are valid physical equipment even without an
-		// Equippable fragment. Reconcile once after all successful transfers so no slot or
-		// remembered-offhand mirror can retain an item that now belongs to the corpse.
+		// Reconcile once after all successful transfers so no slot or remembered-offhand
+		// mirror can retain an item that now belongs to the corpse. This also repairs
+		// pre-migration container-only providers that no longer qualify for Gear.
 		EquipmentLoadout->ReconcilePhysicalEquipmentFromInventory();
 	}
 }

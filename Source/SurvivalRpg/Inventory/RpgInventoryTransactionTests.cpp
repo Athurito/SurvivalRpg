@@ -640,11 +640,20 @@ bool FRpgInventoryContextActionPolicyTest::RunTest(
 			URpgInventoryAutomationTestBagItemDefinition::StaticClass(),
 			1,
 			MakePlacement(Pockets, 0, 1));
+	URpgInventoryItemInstance* DefinitionlessContainer =
+		PlayerInventory->AddItemDefinitionToPlacement(
+			URpgInventoryAutomationTestGearNameCollisionBagItemDefinition::
+				StaticClass(),
+			1,
+			MakePlacement(Pockets, 1, 1));
 	if (!TestNotNull(TEXT("A player stack fixture exists"), StackItem) ||
 		!TestNotNull(TEXT("A usable player item exists"), UsableItem) ||
 		!TestNotNull(TEXT("A no-drop player item exists"), NoDropItem) ||
 		!TestNotNull(TEXT("A player weapon fixture exists"), Weapon) ||
-		!TestNotNull(TEXT("A player bag fixture exists"), Bag))
+		!TestNotNull(TEXT("A player bag fixture exists"), Bag) ||
+		!TestNotNull(
+			TEXT("A portable definitionless container fixture exists"),
+			DefinitionlessContainer))
 	{
 		return false;
 	}
@@ -674,6 +683,11 @@ bool FRpgInventoryContextActionPolicyTest::RunTest(
 			Coordinator,
 			PlayerInventory,
 			Bag->GetItemId());
+	URpgInventoryEntryViewModel* DefinitionlessContainerViewModel =
+		MakeEntryViewModel(
+			Coordinator,
+			PlayerInventory,
+			DefinitionlessContainer->GetItemId());
 	URpgInventoryAddressSlotViewModel* ContentAddress =
 		MakeAddressViewModel(
 			Coordinator,
@@ -690,13 +704,28 @@ bool FRpgInventoryContextActionPolicyTest::RunTest(
 			Pockets,
 			1,
 			0);
+	URpgInventoryAddressSlotViewModel*
+		DefinitionlessContainerAddress =
+			MakeAddressViewModel(
+				Coordinator,
+				PlayerInventory,
+				InventoryLayout,
+				Pockets,
+				1,
+				1);
 	if (!TestNotNull(TEXT("The stack entry projection exists"), StackViewModel) ||
 		!TestNotNull(TEXT("The usable entry projection exists"), UsableViewModel) ||
 		!TestNotNull(TEXT("The no-drop entry projection exists"), NoDropViewModel) ||
 		!TestNotNull(TEXT("The weapon entry projection exists"), WeaponViewModel) ||
 		!TestNotNull(TEXT("The bag entry projection exists"), BagViewModel) ||
+		!TestNotNull(
+			TEXT("The definitionless container entry projection exists"),
+			DefinitionlessContainerViewModel) ||
 		!TestNotNull(TEXT("The content address projection exists"), ContentAddress) ||
-		!TestNotNull(TEXT("The usable content-address projection exists"), UsableAddress))
+		!TestNotNull(TEXT("The usable content-address projection exists"), UsableAddress) ||
+		!TestNotNull(
+			TEXT("The definitionless container address projection exists"),
+			DefinitionlessContainerAddress))
 	{
 		return false;
 	}
@@ -811,7 +840,15 @@ bool FRpgInventoryContextActionPolicyTest::RunTest(
 	TestEntryContract(TEXT("Player usable"), UsableViewModel, true);
 	TestEntryContract(TEXT("Player weapon"), WeaponViewModel, true);
 	TestEntryContract(TEXT("Player bag"), BagViewModel, true);
+	TestEntryContract(
+		TEXT("Player definitionless container"),
+		DefinitionlessContainerViewModel,
+		true);
 	TestAddressContract(TEXT("Player content stack"), ContentAddress, true);
+	TestAddressContract(
+		TEXT("Player definitionless container address"),
+		DefinitionlessContainerAddress,
+		true);
 	int32 ResolvedFixtureSplitCount = 0;
 	FRpgInventoryGridPlacement ResolvedFixtureSplitPlacement;
 	TestTrue(
@@ -895,12 +932,52 @@ bool FRpgInventoryContextActionPolicyTest::RunTest(
 			BagViewModel,
 			ERpgInventoryContextAction::OpenContainer,
 			true));
+	TestTrue(
+		TEXT("An explicit bag provider exposes EquipAndActivate"),
+		Coordinator->CanExecuteContextAction(
+			BagViewModel,
+			ERpgInventoryContextAction::EquipAndActivate,
+			true));
 	TestFalse(
 		TEXT("A Backpack/Belt bag does not advertise the hand-only MoveToCarry action"),
 		Coordinator->CanExecuteContextAction(
 			BagViewModel,
 			ERpgInventoryContextAction::MoveToCarry,
 			true));
+	TestTrue(
+		TEXT("A definitionless container still exposes its presentation action"),
+		Coordinator->CanExecuteContextAction(
+			DefinitionlessContainerViewModel,
+			ERpgInventoryContextAction::OpenContainer,
+			true));
+	TestFalse(
+		TEXT("A definitionless container entry does not expose EquipAndActivate"),
+		Coordinator->CanExecuteContextAction(
+			DefinitionlessContainerViewModel,
+			ERpgInventoryContextAction::EquipAndActivate,
+			true));
+	TestFalse(
+		TEXT("A definitionless container address does not expose EquipAndActivate"),
+		Coordinator->CanExecuteContextAction(
+			DefinitionlessContainerAddress,
+			ERpgInventoryContextAction::EquipAndActivate,
+			true));
+	const FString DefinitionlessQuickActionSignature =
+		MakeInventorySignature(PlayerInventory);
+	TestFalse(
+		TEXT("Entry quick action does not dispatch Equip for a definitionless container"),
+		Coordinator->UseOrEquipEntry(
+			DefinitionlessContainerViewModel,
+			1));
+	TestFalse(
+		TEXT("Address quick action does not dispatch Equip for a definitionless container"),
+		Coordinator->UseOrEquipAddressSlot(
+			DefinitionlessContainerAddress,
+			1));
+	TestEqual(
+		TEXT("Rejected definitionless quick actions preserve inventory state"),
+		MakeInventorySignature(PlayerInventory),
+		DefinitionlessQuickActionSignature);
 	TestTrue(
 		TEXT("A content address uses the same real split predictor"),
 		Coordinator->CanExecuteContextAction(
@@ -3877,7 +3954,16 @@ bool FRpgInventoryContainerGearDragDropTest::RunTest(const FString& Parameters)
 		URpgInventoryAutomationTestBagItemDefinition::StaticClass(),
 		1,
 		MakePlacement(Pockets, 0, 0));
-	if (!TestNotNull(TEXT("The ItemContainer backpack starts in Pockets"), Backpack))
+	URpgInventoryItemInstance* DefinitionlessContainer =
+		Inventory->AddItemDefinitionToPlacement(
+			URpgInventoryAutomationTestGearNameCollisionBagItemDefinition::
+				StaticClass(),
+			1,
+			MakePlacement(Pockets, 1, 0));
+	if (!TestNotNull(TEXT("The ItemContainer backpack starts in Pockets"), Backpack) ||
+		!TestNotNull(
+			TEXT("The portable definitionless container starts in Pockets"),
+			DefinitionlessContainer))
 	{
 		return false;
 	}
@@ -3942,6 +4028,66 @@ bool FRpgInventoryContainerGearDragDropTest::RunTest(const FString& Parameters)
 	TestFalse(
 		TEXT("The layout consumes the shared policy for Gear.Pouch"),
 		Layout->CanItemUseSlotAddress(Backpack, PouchAddress));
+	TestFalse(
+		TEXT("A definitionless ItemContainer is not an implicit Backpack provider"),
+		FRpgInventoryEquipmentPlacementPolicy::CanItemUseEquipmentSlot(
+			DefinitionlessContainer,
+			ERpgEquipmentSlot::Backpack));
+	TestFalse(
+		TEXT("The layout rejects the same definitionless Backpack provider"),
+		Layout->CanItemUseSlotAddress(
+			DefinitionlessContainer,
+			BackpackAddress));
+	const FRpgInventoryContainerHandle BackpackSlot =
+		FRpgInventoryContainerHandle::MakeRoot(
+			URpgPlayerInventoryLayoutComponent::
+				GearBackpackGroupId);
+	const FRpgInventoryMutationRequest
+		DefinitionlessBackpackRequest = MakePlacementRequest(
+			ERpgInventoryMutationOperation::Equip,
+			DefinitionlessContainer,
+			Pockets,
+			BackpackSlot,
+			0,
+			0);
+	const FRpgInventoryMutationResult
+		DefinitionlessBackpackPlan =
+			Inventory->PlanInventoryMutation(
+				DefinitionlessBackpackRequest);
+	TestFalse(
+		TEXT("The authoritative planner rejects a definitionless Backpack provider"),
+		DefinitionlessBackpackPlan.IsSuccess());
+	TestEqual(
+		TEXT("The definitionless provider reports the shared policy failure"),
+		DefinitionlessBackpackPlan.Code,
+		ERpgInventoryMutationResultCode::ItemNotAllowed);
+	const FRpgInventoryMutationResult
+		DefinitionlessBackpackExecute =
+			Inventory->ExecuteInventoryMutation(
+				DefinitionlessBackpackRequest);
+	TestFalse(
+		TEXT("The authoritative commit rejects a definitionless Backpack provider"),
+		DefinitionlessBackpackExecute.IsSuccess());
+	TestEqual(
+		TEXT("The rejected definitionless provider preserves the policy result"),
+		DefinitionlessBackpackExecute.Code,
+		ERpgInventoryMutationResultCode::ItemNotAllowed);
+	UiActions->RequestEquipSlotContainerItem(
+		ERpgEquipmentSlot::Backpack,
+		DefinitionlessContainer);
+	UiActions->RequestEquipInventoryItem(
+		DefinitionlessContainer);
+	FRpgInventoryEntryView DefinitionlessContainerEntry;
+	TestTrue(
+		TEXT("The rejected definitionless container remains addressable"),
+		GetEntryView(
+			Inventory,
+			DefinitionlessContainer->GetItemId(),
+			DefinitionlessContainerEntry));
+	TestEqual(
+		TEXT("Planner, commit, explicit-slot, and default-equip actions leave the definitionless container in Pockets"),
+		DefinitionlessContainerEntry.Placement.GetContainerHandle(),
+		Pockets);
 	const FRpgInventoryContainerHandle PouchSlot =
 		FRpgInventoryContainerHandle::MakeRoot(URpgPlayerInventoryLayoutComponent::GearPouchGroupId);
 	const FRpgInventoryMutationRequest RejectedPouchRequest = MakePlacementRequest(
@@ -4137,6 +4283,26 @@ bool FRpgInventoryContainerGearDragDropTest::RunTest(const FString& Parameters)
 		TEXT("Unequip preserves the item-owned child placement handle"),
 		PackedItemEntry.Placement.GetContainerHandle(),
 		BackpackContents);
+
+	UiActions->RequestEquipInventoryItem(Backpack);
+	FRpgInventoryEntryView DefaultReEquippedBackpackEntry;
+	TestTrue(
+		TEXT("The default-equip provider remains addressable"),
+		GetEntryView(
+			Inventory,
+			Backpack->GetItemId(),
+			DefaultReEquippedBackpackEntry));
+	TestEqual(
+		TEXT("Default equipment destination uses the authored Backpack slot"),
+		DefaultReEquippedBackpackEntry.Placement.GetContainerHandle(),
+		FRpgInventoryContainerHandle::MakeRoot(
+			URpgPlayerInventoryLayoutComponent::
+				GearBackpackGroupId));
+	TestEqual(
+		TEXT("Default provider equip reconciles the Backpack loadout mirror"),
+		EquipmentLoadout->GetItemInEquipmentSlot(
+			ERpgEquipmentSlot::Backpack),
+		Backpack);
 	return true;
 }
 

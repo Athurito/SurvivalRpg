@@ -163,8 +163,19 @@ public:
 	 */
 	bool HasStructurallyValidSlotReferences() const;
 
+	/**
+	 * Returns whether the authored hand rule is compatible with AllowedSlots.
+	 * BothHands equipment cannot list OffHand; an empty AllowedSlots array remains valid and disabled.
+	 */
+	bool HasValidHandOccupancyContract() const;
+
+	/** Returns whether this definition may enter Slot, failing closed for malformed hand contracts. */
 	bool CanEquipInSlot(ERpgEquipmentSlot Slot) const;
+
+	/** Returns whether a valid equipped hand rule claims QuerySlot; unknown rules claim no runtime slot. */
 	bool OccupiesSlot(ERpgEquipmentSlot EquippedSlot, ERpgEquipmentSlot QuerySlot) const;
+
+	/** Returns the first usable authored destination, or None when the definition is disabled or malformed. */
 	ERpgEquipmentSlot GetDefaultEquipSlot() const;
 
 #if WITH_EDITOR

@@ -277,7 +277,7 @@ class SURVIVALRPG_API URpgInventoryFragment_UsableItem : public URpgInventoryIte
 
 public:
 	/**
-	 * Alt+LMB behavior when this same item also has an EquippableItem or ItemContainer fragment.
+	 * Alt+LMB behavior when this same item also has an explicit EquippableItem fragment.
 	 * Ignored for usable-only items. Static designer data; the server still validates the explicit intent.
 	 */
 	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Inventory|Use|Quick Action")

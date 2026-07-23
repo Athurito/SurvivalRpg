@@ -97,7 +97,9 @@ public:
 
 #if WITH_EDITOR
 	/**
-	 * Reports malformed static fragment contracts to the editor.
+	 * Reports malformed static fragment and cross-definition equipment contracts to the editor.
+	 * Definitionless item containers remain usable as portable containers but emit a migration warning because Gear
+	 * provider placement requires an explicit EquippableItem definition.
 	 * Runtime placement remains authoritative and consumes the same fail-closed SpatialItem resolver.
 	 */
 	virtual EDataValidationResult IsDataValid(FDataValidationContext& Context) const override;

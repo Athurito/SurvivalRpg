@@ -1,7 +1,6 @@
 #include "RpgInventoryDragDrop.h"
 
 #include "RpgInventoryFragment_ItemTraits.h"
-#include "RpgInventoryFragment_EquippableItem.h"
 #include "RpgInventoryFragment_ItemContainer.h"
 #include "RpgInventoryEquipmentPlacementPolicy.h"
 #include "RpgInventoryItemDefinition.h"
@@ -97,6 +96,19 @@ namespace
 			: nullptr;
 		return ItemInstance &&
 			(!Traits || Traits->GetResolvedManualDropPolicy() != ERpgInventoryManualDropPolicy::Disabled);
+	}
+
+	bool HasUsableDefaultEquipmentDestination(
+		const URpgInventoryItemInstance* ItemInstance)
+	{
+		const URpgEquipmentDefinition* EquipmentDefinition =
+			FRpgInventoryEquipmentPlacementPolicy::
+				FindEquipmentDefinition(ItemInstance);
+		return EquipmentDefinition &&
+			FRpgInventoryEquipmentPlacementPolicy::
+				CanItemUseEquipmentSlot(
+					ItemInstance,
+					EquipmentDefinition->GetDefaultEquipSlot());
 	}
 
 	bool IsEntryViewCurrent(const URpgInventoryEntryViewModel* EntryViewModel)
@@ -1050,8 +1062,7 @@ bool URpgInventoryDragDropCoordinator::CanExecuteContextAction(
 
 	case ERpgInventoryContextAction::EquipAndActivate:
 		return bCanMutate && IsPlayerInventory(Inventory) &&
-			(ItemInstance->FindFragmentByClass<URpgInventoryFragment_EquippableItem>() != nullptr ||
-				ItemInstance->FindFragmentByClass<URpgInventoryFragment_ItemContainer>() != nullptr);
+			HasUsableDefaultEquipmentDestination(ItemInstance);
 
 	case ERpgInventoryContextAction::MoveToCarry:
 		return bCanMutate && IsPlayerInventory(Inventory) &&
@@ -1157,8 +1168,7 @@ bool URpgInventoryDragDropCoordinator::CanExecuteContextAction(
 
 	case ERpgInventoryContextAction::EquipAndActivate:
 		return !bIsGear && bCanMutate && IsPlayerInventory(Inventory) &&
-			(ItemInstance->FindFragmentByClass<URpgInventoryFragment_EquippableItem>() != nullptr ||
-				ItemInstance->FindFragmentByClass<URpgInventoryFragment_ItemContainer>() != nullptr);
+			HasUsableDefaultEquipmentDestination(ItemInstance);
 
 	case ERpgInventoryContextAction::MoveToCarry:
 		return !bIsGear && !bIsCarry && bCanMutate && IsPlayerInventory(Inventory) &&
@@ -1801,8 +1811,8 @@ bool URpgInventoryDragDropCoordinator::UseOrEquipEntry(URpgInventoryEntryViewMod
 	}
 
 	const URpgInventoryFragment_UsableItem* Usable = ItemInstance->FindFragmentByClass<URpgInventoryFragment_UsableItem>();
-	const bool bEquippable = ItemInstance->FindFragmentByClass<URpgInventoryFragment_EquippableItem>() != nullptr ||
-		ItemInstance->FindFragmentByClass<URpgInventoryFragment_ItemContainer>() != nullptr;
+	const bool bEquippable =
+		HasUsableDefaultEquipmentDestination(ItemInstance);
 	const ERpgInventoryItemActionIntent QuickIntent = Usable && bEquippable
 		? (Usable->HybridQuickAction == ERpgInventoryHybridQuickAction::EquipAndActivate
 			? ERpgInventoryItemActionIntent::EquipAndActivate
@@ -1927,8 +1937,8 @@ bool URpgInventoryDragDropCoordinator::UseOrEquipAddressSlot(URpgInventoryAddres
 	}
 
 	const URpgInventoryFragment_UsableItem* Usable = ItemInstance->FindFragmentByClass<URpgInventoryFragment_UsableItem>();
-	const bool bEquippable = ItemInstance->FindFragmentByClass<URpgInventoryFragment_EquippableItem>() != nullptr ||
-		ItemInstance->FindFragmentByClass<URpgInventoryFragment_ItemContainer>() != nullptr;
+	const bool bEquippable =
+		HasUsableDefaultEquipmentDestination(ItemInstance);
 	const ERpgInventoryItemActionIntent QuickIntent = Usable && bEquippable
 		? (Usable->HybridQuickAction == ERpgInventoryHybridQuickAction::EquipAndActivate
 			? ERpgInventoryItemActionIntent::EquipAndActivate

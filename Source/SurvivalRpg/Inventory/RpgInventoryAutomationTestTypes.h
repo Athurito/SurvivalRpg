@@ -263,6 +263,19 @@ public:
 		const FObjectInitializer& ObjectInitializer = FObjectInitializer::Get());
 };
 
+/** Editor-only dormant equipment definition used to validate item references whose AllowedSlots are empty. */
+UCLASS(NotBlueprintable, Transient)
+class URpgInventoryAutomationTestDisabledEquipmentDefinition final
+	: public URpgEquipmentDefinition
+{
+	GENERATED_BODY()
+
+public:
+	explicit URpgInventoryAutomationTestDisabledEquipmentDefinition(
+		const FObjectInitializer& ObjectInitializer =
+			FObjectInitializer::Get());
+};
+
 /** Editor-only 1x1 MainHand weapon used to exercise real Carry and Quick Access authority paths. */
 UCLASS(NotBlueprintable, Transient)
 class URpgInventoryAutomationTestWeaponItemDefinition final : public URpgInventoryItemDefinition

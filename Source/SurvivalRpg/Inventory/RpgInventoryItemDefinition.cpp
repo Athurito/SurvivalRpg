@@ -281,19 +281,63 @@ EDataValidationResult URpgInventoryItemDefinition::IsDataValid(
 		Cast<URpgInventoryFragment_EquippableItem>(
 			FindFragmentByClass(
 				URpgInventoryFragment_EquippableItem::StaticClass()));
-	if (EquippableFragment &&
-		!EquippableFragment->GetEquipmentDefinition())
+	if (EquippableFragment)
 	{
-		Result = EDataValidationResult::Invalid;
-		Context.AddError(
+		const int32 EquippableFragmentIndex =
+			Fragments.IndexOfByKey(EquippableFragment);
+		const TSubclassOf<URpgEquipmentDefinition>
+			EquipmentDefinitionClass =
+				EquippableFragment->GetEquipmentDefinition();
+		if (!EquipmentDefinitionClass)
+		{
+			Result = EDataValidationResult::Invalid;
+			Context.AddError(
+				FText::Format(
+					LOCTEXT(
+						"MissingEquipmentDefinition",
+						"Item definition '{0}' has an effective EquippableItem fragment at Fragments[{1}] without an "
+						"EquipmentDefinition. Assign the equipment definition or remove the fragment."),
+					DefinitionPath,
+					FText::AsNumber(EquippableFragmentIndex)));
+		}
+		else
+		{
+			const URpgEquipmentDefinition* EquipmentDefinition =
+				GetDefault<URpgEquipmentDefinition>(
+					EquipmentDefinitionClass);
+			if (EquipmentDefinition &&
+				EquipmentDefinition->AllowedSlots.IsEmpty())
+			{
+				Result = EDataValidationResult::Invalid;
+				Context.AddError(
+					FText::Format(
+						LOCTEXT(
+							"EmptyEquippableAllowedSlots",
+							"Item definition '{0}' has an effective EquippableItem fragment at Fragments[{1}] whose "
+							"EquipmentDefinition '{2}' has empty AllowedSlots. Add at least one explicit destination "
+							"slot or remove the EquippableItem fragment; runtime equipment placement fails closed."),
+						DefinitionPath,
+						FText::AsNumber(EquippableFragmentIndex),
+						FText::FromString(
+							GetPathNameSafe(
+								EquipmentDefinitionClass.Get()))));
+			}
+		}
+	}
+
+	if (ContainerFragment && !EquippableFragment)
+	{
+		Context.AddWarning(
 			FText::Format(
 				LOCTEXT(
-					"MissingEquipmentDefinition",
-					"Item definition '{0}' has an effective EquippableItem fragment at Fragments[{1}] without an "
-					"EquipmentDefinition. Assign the equipment definition or remove the fragment."),
+					"DefinitionlessContainerProvider",
+					"Item definition '{0}' has an effective ItemContainer fragment at Fragments[{1}] but no effective "
+					"EquippableItem fragment. It remains a valid portable or nested container, but is no longer "
+					"eligible for a Gear provider slot. If it is intended to be worn, add an EquippableItem fragment "
+					"with an EquipmentDefinition that explicitly allows the provider slot."),
 				DefinitionPath,
 				FText::AsNumber(
-					Fragments.IndexOfByKey(EquippableFragment))));
+					Fragments.IndexOfByKey(ContainerFragment))));
 	}
 
 	return Result;

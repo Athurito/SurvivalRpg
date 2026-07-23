@@ -359,6 +359,40 @@ bool FRpgEquipmentEmptyAllowedSlotsTest::RunTest(const FString& Parameters)
 		TEXT("An OffHand-only BothHands definition has no unsafe default destination"),
 		DisabledDefinition->GetDefaultEquipSlot(),
 		ERpgEquipmentSlot::None);
+
+	DisabledDefinition->AllowedSlots =
+	{
+		ERpgEquipmentSlot::MainHand,
+		ERpgEquipmentSlot::OffHand
+	};
+	TestFalse(
+		TEXT("A malformed BothHands definition fails closed even for its listed MainHand slot"),
+		DisabledDefinition->CanEquipInSlot(
+			ERpgEquipmentSlot::MainHand));
+	TestEqual(
+		TEXT("The malformed BothHands definition does not expose an unsafe default"),
+		DisabledDefinition->GetDefaultEquipSlot(),
+		ERpgEquipmentSlot::None);
+
+	DisabledDefinition->AllowedSlots =
+	{
+		ERpgEquipmentSlot::MainHand
+	};
+	DisabledDefinition->HandOccupancy =
+		static_cast<ERpgEquipmentHandOccupancy>(255);
+	TestFalse(
+		TEXT("An unknown HandOccupancy value fails closed during runtime equip"),
+		DisabledDefinition->CanEquipInSlot(
+			ERpgEquipmentSlot::MainHand));
+	TestEqual(
+		TEXT("An unknown HandOccupancy value has no default equipment destination"),
+		DisabledDefinition->GetDefaultEquipSlot(),
+		ERpgEquipmentSlot::None);
+	TestFalse(
+		TEXT("An unknown HandOccupancy value cannot claim a runtime slot"),
+		DisabledDefinition->OccupiesSlot(
+			ERpgEquipmentSlot::MainHand,
+			ERpgEquipmentSlot::MainHand));
 	return true;
 }
 

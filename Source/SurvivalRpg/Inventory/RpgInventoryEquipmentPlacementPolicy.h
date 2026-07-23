@@ -29,8 +29,8 @@ struct SURVIVALRPG_API FRpgInventoryEquipmentPlacementPolicy
 	/**
 	 * Returns whether the item is compatible with the requested Gear or hand role.
 	 *
-	 * Slot-container equipment additionally requires an ItemContainer fragment. Definition-less providers retain
-	 * their explicit legacy compatibility until the versioned inventory migration removes that fallback.
+	 * Slot-container equipment additionally requires an ItemContainer fragment. Every managed equipment role
+	 * requires an explicit equippable fragment with an equipment definition that allows the requested slot.
 	 */
 	static bool CanItemUseEquipmentSlot(const URpgInventoryItemInstance* Item, ERpgEquipmentSlot EquipmentSlot);
 };

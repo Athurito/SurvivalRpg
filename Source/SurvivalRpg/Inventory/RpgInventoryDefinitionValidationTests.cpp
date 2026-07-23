@@ -34,6 +34,34 @@ namespace
 		return FString::Join(ErrorStrings, TEXT("\n"));
 	}
 
+	FString CollectValidationWarnings(
+		const FDataValidationContext& Context)
+	{
+		TArray<FString> WarningStrings;
+		for (const FDataValidationContext::FIssue& Issue :
+			Context.GetIssues())
+		{
+			if (Issue.Severity == EMessageSeverity::Warning)
+			{
+				WarningStrings.Add(Issue.Message.ToString());
+			}
+		}
+		return FString::Join(WarningStrings, TEXT("\n"));
+	}
+
+	int32 CountValidationWarnings(
+		const FDataValidationContext& Context)
+	{
+		int32 WarningCount = 0;
+		for (const FDataValidationContext::FIssue& Issue :
+			Context.GetIssues())
+		{
+			WarningCount +=
+				Issue.Severity == EMessageSeverity::Warning ? 1 : 0;
+		}
+		return WarningCount;
+	}
+
 	bool ValidateAs(
 		const UObject* Object,
 		EDataValidationResult ExpectedResult,
@@ -231,6 +259,31 @@ bool FRpgInventoryItemDefinitionEquippableDataValidationTest::RunTest(
 		ValidReferenceContext.GetNumErrors(),
 		0u);
 
+	EquippableFragment->EquipmentDefinition =
+		URpgInventoryAutomationTestDisabledEquipmentDefinition::
+			StaticClass();
+	FDataValidationContext EmptyAllowedSlotsContext;
+	TestTrue(
+		TEXT("An equippable item cannot reference an EquipmentDefinition with empty AllowedSlots"),
+		ValidateAs(
+			Definition,
+			EDataValidationResult::Invalid,
+			EmptyAllowedSlotsContext));
+	const FString EmptyAllowedSlotsErrors =
+		CollectValidationErrors(EmptyAllowedSlotsContext);
+	TestTrue(
+		TEXT("The empty AllowedSlots error identifies the item, fragment, and referenced equipment class"),
+		EmptyAllowedSlotsErrors.Contains(Definition->GetPathName()) &&
+			EmptyAllowedSlotsErrors.Contains(TEXT("Fragments[2]")) &&
+			EmptyAllowedSlotsErrors.Contains(
+				URpgInventoryAutomationTestDisabledEquipmentDefinition::
+					StaticClass()->GetPathName()) &&
+			EmptyAllowedSlotsErrors.Contains(
+				TEXT("empty AllowedSlots")));
+
+	EquippableFragment->EquipmentDefinition =
+		URpgInventoryAutomationTestWeaponEquipmentDefinition::
+			StaticClass();
 	URpgInventoryFragment_EquippableItem* IgnoredDuplicate =
 		NewObject<URpgInventoryFragment_EquippableItem>(Definition);
 	Definition->Fragments.Add(IgnoredDuplicate);
@@ -306,6 +359,57 @@ bool FRpgInventoryItemDefinitionContainerDataValidationTest::RunTest(
 		TEXT("A valid native item-container contract emits no errors"),
 		ValidContext.GetNumErrors(),
 		0u);
+	const FString DefinitionlessProviderWarnings =
+		CollectValidationWarnings(ValidContext);
+	TestEqual(
+		TEXT("A definitionless ItemContainer emits exactly one migration warning"),
+		CountValidationWarnings(ValidContext),
+		1);
+	TestTrue(
+		TEXT("A definitionless ItemContainer remains valid but receives a Gear migration warning"),
+		DefinitionlessProviderWarnings.Contains(
+			Definition->GetPathName()) &&
+			DefinitionlessProviderWarnings.Contains(
+				TEXT("Fragments[2]")) &&
+			DefinitionlessProviderWarnings.Contains(
+				TEXT("no effective EquippableItem fragment")) &&
+			DefinitionlessProviderWarnings.Contains(
+				TEXT("no longer eligible for a Gear provider slot")));
+
+	URpgInventoryFragment_EquippableItem* ProviderEquippableFragment =
+		NewObject<URpgInventoryFragment_EquippableItem>(Definition);
+	ProviderEquippableFragment->EquipmentDefinition =
+		URpgInventoryAutomationTestBagEquipmentDefinition::
+			StaticClass();
+	Definition->Fragments.Add(ProviderEquippableFragment);
+	FDataValidationContext ExplicitProviderContext;
+	TestTrue(
+		TEXT("An explicit bag EquipmentDefinition resolves the Gear provider migration warning"),
+		ValidateAs(
+			Definition,
+			EDataValidationResult::Valid,
+			ExplicitProviderContext));
+	TestTrue(
+		TEXT("An explicit provider contract emits no migration warnings"),
+		CountValidationWarnings(ExplicitProviderContext) == 0 &&
+			CollectValidationWarnings(
+				ExplicitProviderContext).IsEmpty());
+
+	URpgInventoryAutomationTestBagItemDefinition*
+		AuthoredProviderFixture =
+			NewObject<
+				URpgInventoryAutomationTestBagItemDefinition>();
+	FDataValidationContext AuthoredProviderContext;
+	TestTrue(
+		TEXT("The runtime bag-provider fixture satisfies the explicit editor contract"),
+		ValidateAs(
+			AuthoredProviderFixture,
+			EDataValidationResult::Valid,
+			AuthoredProviderContext));
+	TestEqual(
+		TEXT("The explicit runtime bag-provider fixture emits no migration warnings"),
+		CountValidationWarnings(AuthoredProviderContext),
+		0);
 
 	FRpgInventoryItemContainerDefinition& MissingIdContainer =
 		ContainerFragment->ProvidedContainers.AddDefaulted_GetRef();
@@ -809,10 +913,11 @@ bool FRpgEquipmentDefinitionSlotReferenceDataValidationTest::RunTest(
 	Definition->AllowedSlots.Reset();
 	FDataValidationContext EmptyAllowedSlotsContext;
 	TestTrue(
-		TEXT("An entirely empty AllowedSlots array remains structurally valid in Phase 5E"),
-		Definition->HasStructurallyValidSlotReferences());
+		TEXT("An entirely empty AllowedSlots array remains a structurally valid disabled standalone definition"),
+		Definition->HasStructurallyValidSlotReferences() &&
+			Definition->HasValidHandOccupancyContract());
 	TestTrue(
-		TEXT("Phase 5E does not pre-empt the separate empty-equippable migration rule"),
+		TEXT("Empty AllowedSlots remains valid until an equippable item references the definition"),
 		ValidateAs(
 			Definition,
 			EDataValidationResult::Valid,
@@ -821,16 +926,44 @@ bool FRpgEquipmentDefinitionSlotReferenceDataValidationTest::RunTest(
 	Definition->AllowedSlots = { ERpgEquipmentSlot::OffHand };
 	Definition->HandOccupancy =
 		ERpgEquipmentHandOccupancy::BothHands;
-	FDataValidationContext DeferredHandPolicyContext;
+	FDataValidationContext InvalidHandPolicyContext;
 	TestTrue(
-		TEXT("BothHands plus OffHand remains outside structural Phase 5E validation"),
+		TEXT("BothHands plus OffHand remains structurally well-formed"),
 		Definition->HasStructurallyValidSlotReferences());
+	TestFalse(
+		TEXT("The semantic hand contract rejects BothHands plus OffHand"),
+		Definition->HasValidHandOccupancyContract());
 	TestTrue(
-		TEXT("Phase 5E does not pre-empt the separate BothHands migration rule"),
+		TEXT("BothHands plus OffHand is invalid editor data"),
 		ValidateAs(
 			Definition,
-			EDataValidationResult::Valid,
-			DeferredHandPolicyContext));
+			EDataValidationResult::Invalid,
+			InvalidHandPolicyContext));
+	ErrorText = CollectValidationErrors(InvalidHandPolicyContext);
+	TestTrue(
+		TEXT("The hand-contract error names the definition and conflicting values"),
+		ErrorText.Contains(Definition->GetPathName()) &&
+			ErrorText.Contains(TEXT("BothHands")) &&
+			ErrorText.Contains(TEXT("OffHand")));
+
+	Definition->AllowedSlots = { ERpgEquipmentSlot::MainHand };
+	Definition->HandOccupancy =
+		static_cast<ERpgEquipmentHandOccupancy>(255);
+	FDataValidationContext UnknownHandPolicyContext;
+	TestFalse(
+		TEXT("The semantic hand helper rejects unknown HandOccupancy values"),
+		Definition->HasValidHandOccupancyContract());
+	TestTrue(
+		TEXT("An unknown HandOccupancy value is invalid editor data"),
+		ValidateAs(
+			Definition,
+			EDataValidationResult::Invalid,
+			UnknownHandPolicyContext));
+	ErrorText = CollectValidationErrors(UnknownHandPolicyContext);
+	TestTrue(
+		TEXT("The unknown hand-contract error names the field and raw value"),
+		ErrorText.Contains(TEXT("HandOccupancy")) &&
+			ErrorText.Contains(TEXT("255")));
 
 	return true;
 }

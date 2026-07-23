@@ -70,7 +70,7 @@ bool FRpgInventoryEquipmentPlacementPolicy::CanItemUseEquipmentSlot(
 			return false;
 		}
 
-		return !EquipmentDefinition || EquipmentDefinition->CanEquipInSlot(EquipmentSlot);
+		return EquipmentDefinition && EquipmentDefinition->CanEquipInSlot(EquipmentSlot);
 	}
 
 	return EquipmentDefinition && EquipmentDefinition->CanEquipInSlot(EquipmentSlot);

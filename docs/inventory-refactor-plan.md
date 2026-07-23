@@ -72,9 +72,11 @@ Verifizierter Zwischenstand vom 2026-07-19:
   validiert.
 - Noch offen in Phase 0: Server/Client-, Late-Join- und interaktive
   Editor-/Gamepad-Prüfung.
-- Definitionlose Slot-Provider besitzen vorläufig einen ausdrücklich
-  dokumentierten Legacy-Fallback. Dieser wird erst nach Asset-Migration und
-  Data Validation entfernt.
+- Definitionlose Slot-Provider besaßen vorläufig einen ausdrücklich
+  dokumentierten Legacy-Fallback. Phase 5F hat ihn nach Asset-Audit und
+  Data Validation entfernt; definitionlose ItemContainer bleiben normale
+  portable beziehungsweise verschachtelbare Container, aber keine
+  impliziten Gear-Provider.
 
 In Phase 0 bekannte Restpunkte, späteren Phasen zugeordnet:
 
@@ -1629,7 +1631,7 @@ Status: **In Arbeit**
 - [x] Explizites Spatial-Fragment für jedes gridfähige Item verlangen.
 - [x] `IsDataValid` für ItemDefinitions, Container-IDs, Footprints,
       Equipment-Slots, LayoutDefinition und ScreenRegistry ergänzen.
-- [ ] `BothHands + OffHand`, leere `AllowedSlots` bei ausrüstbaren Items und
+- [x] `BothHands + OffHand`, leere `AllowedSlots` bei ausrüstbaren Items und
       definitionlose Provider als konkrete Validierungsfehler bzw.
       Migrationswarnungen abbilden.
 - [ ] Widget-Compiler-/Editor-Validierung für erforderliche BindWidgets,
@@ -1897,6 +1899,63 @@ Verifizierter Phase-5E-Zwischenstand vom 2026-07-23:
 - Nächster Schnitt: `BothHands + OffHand`, leere `AllowedSlots` bei
   ausrüstbaren Items und definitionlose Provider als konkrete
   Validierungsfehler beziehungsweise Migrationswarnungen abbilden.
+
+Verifizierter Phase-5F-Zwischenstand vom 2026-07-23:
+
+- `URpgEquipmentDefinition` trennt strukturelle Slotreferenzen von einem
+  expliziten Handbelegungsvertrag. `BothHands` zusammen mit einem
+  `OffHand`-Eintrag sowie unbekannte `HandOccupancy`-Werte sind konkrete,
+  pfad- und wertbezogene Data-Validation-Fehler. Solche Definitionen können
+  zur Runtime nicht neu ausgerüstet werden und liefern keinen Default-Slot;
+  unbekannte Handregeln beanspruchen außerdem keinen Runtime-Slot. Eine
+  bereits vorhandene bekannte `BothHands`-Belegung bleibt für defensives
+  Legacy-Reconciliation konservativ als Belegung beider Hände sichtbar.
+- Leere `AllowedSlots` bleiben auf einer eigenständigen
+  EquipmentDefinition ein gültiger, bewusst deaktivierter Zustand. Erst ein
+  tatsächlich ausrüstbares Item, dessen effektives `EquippableItem`-Fragment
+  auf diese Definition zeigt, ist ungültig. Die Diagnose nennt Itempfad,
+  Fragmentindex und referenzierte Equipment-Klasse.
+- Gear-Provider benötigen jetzt die explizite Kette
+  `ItemContainer -> EquippableItem -> EquipmentDefinition -> AllowedSlot`.
+  Der gemeinsame Placement-Vertrag, serverseitiger Planner/Commit und die
+  generischen beziehungsweise slotbezogenen UI-Equip-Pfade besitzen keinen
+  definitionlosen Backpack-/Belt-/Pouch-/ResourceBag-Fallback mehr.
+  Kontextmenü und Doppelklick klassifizieren reine ItemContainer ebenfalls
+  nicht mehr als ausrüstbar; ihre Container-Präsentation bleibt verfügbar.
+  `UnequipToContent` bleibt für vor der Migration vorhandenen Altbestand
+  erreichbar.
+- Ein definitionloses `ItemContainer` bleibt als portabler oder
+  verschachtelbarer Container vollständig gültig und erhält genau eine
+  Migrationswarnung, dass es nicht mehr als Gear-Provider verwendet werden
+  kann. Ein explizit konfigurierter Provider erzeugt keine Warnung.
+- Der read-only Asset-Audit prüfte zwölf konkrete ItemDefinition- und sieben
+  konkrete EquipmentDefinition-Blueprints. `ID_TestBackpack` ist der einzige
+  aktuell authorisierte Provider und verweist vollständig auf
+  `EQ_TestBackpack` mit `AllowedSlots = Backpack`. Es existieren keine
+  definitionlosen oder Legacy-Provider-Assets, keine ausrüstbaren Items mit
+  leeren Slots und keine `BothHands + OffHand`-Definition; daher war keine
+  Asset-Migration erforderlich. Die bekannte, derzeit unreferenzierte
+  `EQ_TestShield`-Semantik bleibt bewusst Phase 7 zugeordnet.
+- Permanente Regressionen prüfen den negativen definitionlosen Provider und
+  den positiven Backpack-Vertrag durch gemeinsame Policy, Layout,
+  serverseitigen Planner/Commit, explizite Slot-Action und generisches
+  Default-Equip. Editor-Tests sichern Fehlertexte, Warnungsanzahl,
+  Cross-Asset-Referenzen und den vollständigen authorisierten Assetbestand.
+- `SurvivalRpgEditor Win64 Development` wurde mit Unreal Engine 5.8 gebaut
+  (voller Lauf 32/32 Actions; finaler inkrementeller Gate 23/23 Actions;
+  jeweils UBT `Result: Succeeded`).
+- `SurvivalRpg.Inventory`: 122 von 122 Automationtests erfolgreich.
+- `SurvivalRpg.Save`: 2 von 2 Automationtests erfolgreich.
+- `SurvivalRpg.Equipment`: 6 von 6 Automationtests erfolgreich.
+- `SurvivalRpg.Crafting`: 8 von 8 Automationtests erfolgreich.
+- `SurvivalRpg.UI`: 22 von 22 Automationtests erfolgreich.
+- `CompileAllBlueprints` endete mit Prozesscode 0, 0 Compilerfehlern,
+  16 bekannten Compilerwarnungen und 0 nicht ladbaren Blueprints.
+- Fortschritt Phase 5: 6 von 7 Punkten abgeschlossen (85,7 %).
+- Gesamtfortschritt der verbindlichen Checkliste: 74 von 94 Punkten
+  abgeschlossen (78,7 %), 20 Punkte offen.
+- Nächster Schnitt: Widget-Compiler-/Editor-Validierung für erforderliche
+  BindWidgets, Layer und Input-Actions ergänzen.
 
 ## Phase 6 – MVVM, Refresh und Komponentenschnitt
 
