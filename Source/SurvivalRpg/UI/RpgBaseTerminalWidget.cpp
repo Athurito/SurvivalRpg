@@ -7,6 +7,7 @@
 #include "SurvivalRpg/Base/RpgBaseStorageComponent.h"
 #include "SurvivalRpg/Base/RpgBaseStorageStationComponent.h"
 #include "SurvivalRpg/Base/RpgBaseStorageUpgradeDefinition.h"
+#include "SurvivalRpg/GameplayTags/RpgGameplayTags.h"
 #include "SurvivalRpg/Inventory/RpgInventoryDragDrop.h"
 #include "SurvivalRpg/Inventory/RpgInventoryManagerComponent.h"
 #include "SurvivalRpg/Inventory/RpgInventoryUiActionComponent.h"
@@ -254,9 +255,28 @@ bool URpgBaseTerminalWidget::BindBaseTerminalContext()
 		PlayerInventory = CanonicalPlayerInventory;
 	}
 
+	const URpgPlayerInventoryLayoutComponent* InventoryLayout =
+		GetOwningPlayer()
+			? GetOwningPlayer()->FindComponentByClass<URpgPlayerInventoryLayoutComponent>()
+			: nullptr;
+	FRpgInventorySlotGroupView PrimaryContentGroup;
+	if (!InventoryLayout ||
+		!InventoryLayout->TryGetSlotGroupBySemanticRole(
+			RpgGameplayTags::Rpg_Inventory_Layout_Role_Content_Primary,
+			PrimaryContentGroup) ||
+		PrimaryContentGroup.GroupKind != ERpgInventorySlotGroupKind::Content)
+	{
+		UE_LOG(
+			LogRpgBaseTerminalWidget,
+			Warning,
+			TEXT("%s rejected BaseTerminal payload: the owning player's layout has no unique primary content role."),
+			*GetNameSafe(this));
+		ResetBaseTerminalContext();
+		return false;
+	}
+
 	bBaseTerminalContextBound = true;
-	PlayerPaneContainerHandle = FRpgInventoryContainerHandle::MakeRoot(
-		URpgPlayerInventoryLayoutComponent::PocketsGroupId);
+	PlayerPaneContainerHandle = PrimaryContentGroup.ContainerHandle;
 
 	EnsureBaseStorageViewModel();
 	if (BaseStorageViewModel)

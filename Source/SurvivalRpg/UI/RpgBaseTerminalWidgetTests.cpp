@@ -6,9 +6,11 @@
 #include "SurvivalRpg/Base/RpgBaseStorageComponent.h"
 #include "SurvivalRpg/Base/RpgBaseStorageStationComponent.h"
 #include "SurvivalRpg/Inventory/RpgInventoryDragDrop.h"
+#include "SurvivalRpg/Inventory/RpgInventoryAutomationTestTypes.h"
 #include "SurvivalRpg/Inventory/RpgInventoryItemInstance.h"
 #include "SurvivalRpg/Inventory/RpgInventoryManagerComponent.h"
 #include "SurvivalRpg/Inventory/RpgPlayerInventoryLayoutComponent.h"
+#include "SurvivalRpg/GameplayTags/RpgGameplayTags.h"
 #include "SurvivalRpg/Mvvm/Base/RpgBaseStorageViewModels.h"
 #include "SurvivalRpg/Mvvm/Inventory/RpgInventoryViewModels.h"
 #include "SurvivalRpg/UI/RpgBaseResourceListWidget.h"
@@ -22,6 +24,7 @@
 #include "Blueprint/WidgetBlueprintGeneratedClass.h"
 #include "Blueprint/WidgetTree.h"
 #include "CommonListView.h"
+#include "CommonLocalPlayer.h"
 #include "Components/Button.h"
 #include "Components/CanvasPanel.h"
 #include "Components/HorizontalBox.h"
@@ -118,6 +121,45 @@ namespace RpgBaseTerminalWidgetTests
 			GameInstance->AddToRoot();
 			GameInstance->InitializeStandalone();
 			World = GameInstance->GetWorld();
+			if (!World)
+			{
+				return;
+			}
+
+			FActorSpawnParameters ControllerSpawnParameters;
+			ControllerSpawnParameters.Name = MakeUniqueObjectName(
+				World,
+				ARpgInventoryAutomationTestPlayerController::StaticClass(),
+				TEXT("BaseTerminalPlayerController"));
+			ControllerSpawnParameters.ObjectFlags = RF_Transient;
+			Controller = World->SpawnActor<
+				ARpgInventoryAutomationTestPlayerController>(
+				ControllerSpawnParameters);
+
+			FActorSpawnParameters PlayerStateSpawnParameters;
+			PlayerStateSpawnParameters.Name = MakeUniqueObjectName(
+				World,
+				ARpgInventoryAutomationTestPlayerState::StaticClass(),
+				TEXT("BaseTerminalPlayerState"));
+			PlayerStateSpawnParameters.ObjectFlags = RF_Transient;
+			PlayerState = World->SpawnActor<
+				ARpgInventoryAutomationTestPlayerState>(
+				PlayerStateSpawnParameters);
+			LocalPlayer = NewObject<UCommonLocalPlayer>(
+				GEngine,
+				NAME_None,
+				RF_Transient);
+			if (Controller && PlayerState && LocalPlayer)
+			{
+				Controller->SetPlayerState(PlayerState);
+				PlayerState->SetOwner(Controller);
+
+				// InitializeStandalone creates an uninitialized dummy world, so
+				// controller PostInitializeComponents has not populated the
+				// player-controller list used by UMG's owning-player lookup.
+				World->AddController(Controller);
+				Controller->SetPlayer(LocalPlayer);
+			}
 		}
 
 		~FScopedWidgetWorld()
@@ -142,12 +184,20 @@ namespace RpgBaseTerminalWidgetTests
 
 		bool IsValid() const
 		{
-			return World != nullptr;
+			return World != nullptr && Controller != nullptr &&
+				LocalPlayer != nullptr &&
+				PlayerState != nullptr &&
+				PlayerState->GetInventoryManagerComponent() != nullptr;
 		}
 
 		UWorld* GetTestWorld() const
 		{
 			return World;
+		}
+
+		ARpgInventoryAutomationTestPlayerController* GetPlayerController() const
+		{
+			return Controller;
 		}
 
 		URpgInventoryManagerComponent* CreateInventory(const TCHAR* DebugName)
@@ -232,14 +282,18 @@ namespace RpgBaseTerminalWidgetTests
 				Result.BaseCamp->GetBaseStorageComponent();
 			Result.ArmoryInventory =
 				Result.BaseCamp->GetArmoryInventoryComponent();
-			Result.PlayerInventory = CreateInventory(
-				*FString::Printf(TEXT("%s_PlayerInventory"), DebugName));
+			Result.PlayerInventory = PlayerState
+				? PlayerState->GetInventoryManagerComponent()
+				: nullptr;
 			return Result;
 		}
 
 	private:
 		TObjectPtr<UGameInstance> GameInstance;
 		TObjectPtr<UWorld> World;
+		TObjectPtr<ARpgInventoryAutomationTestPlayerController> Controller;
+		TObjectPtr<ARpgInventoryAutomationTestPlayerState> PlayerState;
+		TObjectPtr<UCommonLocalPlayer> LocalPlayer;
 	};
 
 	URpgBaseStorageScreenPayload* MakePayload(
@@ -784,6 +838,37 @@ bool FRpgBaseTerminalContextLifecycleTest::RunTest(
 		return false;
 	}
 
+	ARpgInventoryAutomationTestPlayerController* TestController =
+		TestWorld.GetPlayerController();
+	ARpgInventoryAutomationTestPlayerState* TestPlayerState =
+		TestController
+			? Cast<ARpgInventoryAutomationTestPlayerState>(
+				TestController->PlayerState)
+			: nullptr;
+	URpgPlayerInventoryLayoutComponent* InventoryLayout =
+		TestController
+			? TestController->GetPlayerInventoryLayoutComponent()
+			: nullptr;
+	FRpgInventorySlotGroupView PrimaryContentGroup;
+	if (!TestNotNull(
+			TEXT("Base Terminal fixture controller owns its PlayerState"),
+			TestPlayerState) ||
+		!TestNotNull(
+			TEXT("Base Terminal fixture controller owns its layout component"),
+			InventoryLayout) ||
+		!TestNotNull(
+			TEXT("Base Terminal fixture layout resolves from PawnData"),
+			InventoryLayout ? InventoryLayout->GetLayoutDefinition() : nullptr) ||
+		!TestTrue(
+			TEXT("Base Terminal fixture exposes one primary content role"),
+			InventoryLayout &&
+				InventoryLayout->TryGetSlotGroupBySemanticRole(
+					RpgGameplayTags::Rpg_Inventory_Layout_Role_Content_Primary,
+					PrimaryContentGroup)))
+	{
+		return false;
+	}
+
 	const FScopedWidgetWorld::FBaseTerminalContext ContextA =
 		TestWorld.CreateBaseTerminalContext(TEXT("ContextA"));
 	const FScopedWidgetWorld::FBaseTerminalContext ContextB =
@@ -810,9 +895,32 @@ bool FRpgBaseTerminalContextLifecycleTest::RunTest(
 
 	URpgBaseTerminalWidget* Widget =
 		CreateWidget<URpgBaseTerminalWidget>(
-			TestWorld.GetTestWorld(),
+			TestWorld.GetPlayerController(),
 			BaseTerminalClass);
 	if (!TestNotNull(TEXT("Base Terminal widget exists"), Widget))
+	{
+		return false;
+	}
+
+	URpgPlayerInventoryLayoutComponent* WidgetInventoryLayout =
+		Widget->GetOwningPlayer()
+			? Widget->GetOwningPlayer()->FindComponentByClass<
+				URpgPlayerInventoryLayoutComponent>()
+			: nullptr;
+	FRpgInventorySlotGroupView WidgetPrimaryContentGroup;
+	if (!TestEqual(
+			TEXT("Base Terminal widget retains the fixture player controller"),
+			Widget->GetOwningPlayer(),
+			static_cast<APlayerController*>(TestController)) ||
+		!TestNotNull(
+			TEXT("Base Terminal widget discovers the controller layout component"),
+			WidgetInventoryLayout) ||
+		!TestTrue(
+			TEXT("Base Terminal widget-facing layout exposes the primary content role"),
+			WidgetInventoryLayout &&
+				WidgetInventoryLayout->TryGetSlotGroupBySemanticRole(
+					RpgGameplayTags::Rpg_Inventory_Layout_Role_Content_Primary,
+					WidgetPrimaryContentGroup)))
 	{
 		return false;
 	}
@@ -1354,7 +1462,7 @@ bool FRpgBaseTerminalContextLifecycleTest::RunTest(
 	URpgBaseStorageScreenPayload* PrimaryMismatchPayload =
 		MakePayload(Widget, ContextA);
 	PrimaryMismatchPayload->PrimaryInventory =
-		ContextB.PlayerInventory;
+		TestWorld.CreateInventory(TEXT("MismatchedPlayerInventory"));
 	ExpectRejectedPayload(
 		TEXT("A payload whose PrimaryInventory duplicates another source"),
 		PrimaryMismatchPayload);

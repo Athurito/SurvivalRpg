@@ -46,7 +46,13 @@ public:
 	void InitializeSlot(int32 InSlotIndex, const FRpgActionBarSlot& InSlot, URpgInventoryItemInstance* ResolvedItem, int32 InStackCount);
 
 	/** Rebuilds this slot and resolves ability presentation from the owning ASC. */
-	void InitializeSlotWithAbilitySystem(int32 InSlotIndex, const FRpgActionBarSlot& InSlot, URpgInventoryItemInstance* ResolvedItem, int32 InStackCount, const URpgAbilitySystemComponent* AbilitySystem);
+	void InitializeSlotWithAbilitySystem(
+		int32 InSlotIndex,
+		const FRpgActionBarSlot& InSlot,
+		URpgInventoryItemInstance* ResolvedItem,
+		int32 InStackCount,
+		const URpgAbilitySystemComponent* AbilitySystem,
+		FText CarryDisplayName = FText::GetEmpty());
 
 	UFUNCTION(BlueprintPure, Category = "Action Bar|ViewModel")
 	int32 GetSlotIndex() const { return SlotIndex; }
@@ -77,6 +83,9 @@ public:
 
 	UFUNCTION(BlueprintPure, Category = "Action Bar|ViewModel")
 	FGameplayTag GetAbilityId() const { return AbilityId; }
+
+	UFUNCTION(BlueprintPure, Category = "Action Bar|ViewModel")
+	FGameplayTag GetCarrySemanticRole() const { return CarrySemanticRole; }
 
 	UFUNCTION(BlueprintPure, Category = "Action Bar|ViewModel")
 	TSoftObjectPtr<UTexture2D> GetIcon() const { return Icon; }
@@ -130,6 +139,10 @@ protected:
 	/** Semantic ability id for Ability bindings; invalid for item/carry bindings. */
 	UPROPERTY(BlueprintReadOnly, FieldNotify, Category = "Action Bar|ViewModel", meta = (AllowPrivateAccess = "true"))
 	FGameplayTag AbilityId;
+
+	/** Stable layout role for Carry bindings; invalid for consumables, abilities, and empty slots. */
+	UPROPERTY(BlueprintReadOnly, FieldNotify, Category = "Action Bar|ViewModel", meta = (AllowPrivateAccess = "true"))
+	FGameplayTag CarrySemanticRole;
 
 	/** Optional item icon read from the item currently resolved from SlotAddress. */
 	UPROPERTY(BlueprintReadOnly, FieldNotify, Category = "Action Bar|ViewModel", meta = (AllowPrivateAccess = "true"))

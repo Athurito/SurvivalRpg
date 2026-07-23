@@ -2,6 +2,7 @@
 
 #include "RpgDroppedInventoryActor.h"
 #include "RpgInventoryItemDefinition.h"
+#include "SurvivalRpg/ActionBar/RpgActionBarComponent.h"
 #include "SurvivalRpg/AbilitySystem/Abilities/RpgGameplayAbility.h"
 #include "SurvivalRpg/Core/Player/RpgPlayerController.h"
 #include "SurvivalRpg/Core/Player/RpgPlayerState.h"
@@ -13,6 +14,22 @@
 
 class URpgPawnData;
 class URpgPlayerInventoryLayoutDefinition;
+
+/** Frozen tagged-property shape used to prove version-one CarryRole bytes still load into the migration shadow. */
+USTRUCT()
+struct FRpgQuickAccessBindingV1TaggedFixture
+{
+	GENERATED_BODY()
+
+	UPROPERTY(SaveGame)
+	ERpgActionBarSlotType SlotType = ERpgActionBarSlotType::Empty;
+
+	UPROPERTY(SaveGame)
+	FRpgInventorySlotAddress SlotAddress;
+
+	UPROPERTY(SaveGame)
+	FName CarryRole = NAME_None;
+};
 
 /** Editor-only 1x1 non-stackable item definition used by inventory automation tests. */
 UCLASS(NotBlueprintable, Transient)

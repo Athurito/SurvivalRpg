@@ -4,6 +4,7 @@
 
 #include "Kismet/GameplayStatics.h"
 #include "Misc/AutomationTest.h"
+#include "SurvivalRpg/GameplayTags/RpgGameplayTags.h"
 #include "SurvivalRpg/Inventory/RpgInventoryItemDefinition.h"
 
 IMPLEMENT_SIMPLE_AUTOMATION_TEST(
@@ -26,7 +27,8 @@ bool FRpgWorldSaveGameMemoryRoundTripTest::RunTest(const FString& Parameters)
 		FRpgInventoryContainerHandle::MakeRoot(TEXT("Carry.Weapon1"));
 	FRpgInventorySlotAddress& CarryAddress = Player.QuickAccessBindings[0].SlotAddress;
 	Player.QuickAccessBindings[0].SlotType = ERpgActionBarSlotType::CarrySlot;
-	Player.QuickAccessBindings[0].CarryRole = CarryContainer.Root;
+	Player.QuickAccessBindings[0].CarrySemanticRole =
+		RpgGameplayTags::Rpg_Inventory_Layout_Role_Carry_Primary;
 	CarryAddress.SetContainerHandle(CarryContainer);
 	CarryAddress.X = 2;
 	CarryAddress.Y = 3;
@@ -74,6 +76,10 @@ bool FRpgWorldSaveGameMemoryRoundTripTest::RunTest(const FString& Parameters)
 			CarryContainer);
 		TestEqual(TEXT("Root Carry slot preserves X"), RestoredCarryAddress.X, 2);
 		TestEqual(TEXT("Root Carry slot preserves Y"), RestoredCarryAddress.Y, 3);
+		TestTrue(
+			TEXT("Carry semantic role survives serialization independently from the container id"),
+			RestoredPlayer->QuickAccessBindings[0].CarrySemanticRole ==
+				RpgGameplayTags::Rpg_Inventory_Layout_Role_Carry_Primary);
 
 		const FRpgInventorySlotAddress& RestoredNestedItemAddress = RestoredPlayer->QuickAccessBindings[1].SlotAddress;
 		TestEqual(
@@ -109,6 +115,16 @@ bool FRpgWorldSaveGameValidationTest::RunTest(const FString& Parameters)
 	FString ValidationError;
 	URpgWorldSaveGame* Save = NewObject<URpgWorldSaveGame>();
 	TestTrue(TEXT("Fresh save validates"), Save->ValidateForLoad(ValidationError));
+
+	FRpgPlayerSaveData VersionedPlayer;
+	VersionedPlayer.SchemaVersion = FRpgPlayerSaveData::MinimumSupportedSchemaVersion;
+	TestTrue(TEXT("Legacy player schema remains eligible for explicit restore migration"), VersionedPlayer.IsSchemaSupported());
+	VersionedPlayer.SchemaVersion = FRpgPlayerSaveData::CurrentSchemaVersion;
+	TestTrue(TEXT("Current player schema is accepted"), VersionedPlayer.IsSchemaSupported());
+	VersionedPlayer.SchemaVersion = FRpgPlayerSaveData::MinimumSupportedSchemaVersion - 1;
+	TestFalse(TEXT("Player schemas older than the migration floor are rejected"), VersionedPlayer.IsSchemaSupported());
+	VersionedPlayer.SchemaVersion = FRpgPlayerSaveData::CurrentSchemaVersion + 1;
+	TestFalse(TEXT("Unknown future player schemas are rejected"), VersionedPlayer.IsSchemaSupported());
 
 	Save->SchemaVersion = URpgWorldSaveGame::CurrentSchemaVersion + 1;
 	TestFalse(TEXT("Unknown top-level schema is rejected"), Save->ValidateForLoad(ValidationError));

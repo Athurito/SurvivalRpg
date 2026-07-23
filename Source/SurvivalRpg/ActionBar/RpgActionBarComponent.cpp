@@ -122,47 +122,27 @@ bool URpgActionBarComponent::TryBindCarrySlotToSlotAuthority(
 
 	const ARpgPlayerController* RpgPC = GetRpgPlayerController();
 	const URpgPlayerInventoryLayoutComponent* InventoryLayout = RpgPC ? RpgPC->GetPlayerInventoryLayoutComponent() : nullptr;
+	FGameplayTag CarrySemanticRole;
+	FRpgInventorySlotAddress CanonicalCarryAddress;
 	if (!InventoryLayout ||
-		!InventoryLayout->IsCarrySlotAddress(SlotAddress))
-	{
-		return false;
-	}
-
-	const FRpgInventoryContainerHandle CarryContainer = SlotAddress.GetContainerHandle();
-	if (!CarryContainer.IsRoot())
+		!InventoryLayout->IsCarrySlotAddress(SlotAddress) ||
+		!InventoryLayout->TryGetSemanticRoleForAddress(SlotAddress, CarrySemanticRole) ||
+		!TryResolveCarrySemanticRole(CarrySemanticRole, CanonicalCarryAddress))
 	{
 		return false;
 	}
 
 	FRpgActionBarSlot Binding;
 	Binding.SlotType = ERpgActionBarSlotType::CarrySlot;
-	Binding.SlotAddress = SlotAddress;
-	Binding.CarryRole = CarryContainer.Root;
+	Binding.SlotAddress = CanonicalCarryAddress;
+	Binding.CarrySemanticRole = CarrySemanticRole;
 	ClearDuplicateBinding(SlotIndex, Binding);
 	Slots[SlotIndex] = Binding;
 	RefreshBindingsInternal(true);
 	const FRpgActionBarSlot& AppliedSlot = Slots[SlotIndex];
 	return AppliedSlot.SlotType == ERpgActionBarSlotType::CarrySlot &&
-		AppliedSlot.SlotAddress == SlotAddress &&
-		AppliedSlot.CarryRole == CarryContainer.Root;
-}
-
-void URpgActionBarComponent::RequestBindCarryRoleToSlot_Implementation(int32 SlotIndex, FName CarryRole)
-{
-	EnsureSlotCount();
-	FRpgInventorySlotAddress CarryAddress;
-	if (!IsValidSlotIndex(SlotIndex) || !IsValidCarryRole(CarryRole, CarryAddress))
-	{
-		return;
-	}
-
-	FRpgActionBarSlot Binding;
-	Binding.SlotType = ERpgActionBarSlotType::CarrySlot;
-	Binding.CarryRole = CarryRole;
-	Binding.SlotAddress = CarryAddress;
-	ClearDuplicateBinding(SlotIndex, Binding);
-	Slots[SlotIndex] = Binding;
-	RefreshBindingsInternal(true);
+		AppliedSlot.SlotAddress == CanonicalCarryAddress &&
+		AppliedSlot.CarrySemanticRole == CarrySemanticRole;
 }
 
 void URpgActionBarComponent::RequestBindConsumableToSlot_Implementation(
@@ -224,7 +204,9 @@ bool URpgActionBarComponent::TryClearSlotAuthority(int32 SlotIndex)
 	return Slots[SlotIndex].IsEmpty();
 }
 
-void URpgActionBarComponent::RestoreQuickAccessBindings(const TArray<FRpgQuickAccessBinding>& SavedBindings)
+void URpgActionBarComponent::RestoreQuickAccessBindings(
+	const TArray<FRpgQuickAccessBinding>& SavedBindings,
+	bool bAllowLegacyCarryRootMigration)
 {
 	if (!GetOwner() || !GetOwner()->HasAuthority())
 	{
@@ -238,6 +220,20 @@ void URpgActionBarComponent::RestoreQuickAccessBindings(const TArray<FRpgQuickAc
 		TargetBinding = SavedBindings.IsValidIndex(SlotIndex)
 			? SavedBindings[SlotIndex]
 			: FRpgQuickAccessBinding();
+		const bool bHasLegacyEnum =
+			TargetBinding.SlotType == ERpgActionBarSlotType::InventorySlotBinding ||
+			TargetBinding.SlotType == ERpgActionBarSlotType::CarrySlotBinding;
+		const bool bHasLegacyAddress =
+			!TargetBinding.SlotAddress.ContainerId_DEPRECATED.IsNone();
+		const bool bHasLegacyCarryRoot =
+			!TargetBinding.CarryRole_DEPRECATED.IsNone();
+		if (!bAllowLegacyCarryRootMigration &&
+			(bHasLegacyEnum || bHasLegacyAddress || bHasLegacyCarryRoot))
+		{
+			TargetBinding.Reset();
+			continue;
+		}
+
 		if (!TargetBinding.SlotAddress.TryMigrateDeprecatedRootForSave())
 		{
 			TargetBinding.Reset();
@@ -260,6 +256,24 @@ void URpgActionBarComponent::RestoreQuickAccessBindings(const TArray<FRpgQuickAc
 			TargetBinding.SlotType == ERpgActionBarSlotType::Ability;
 		if (!bKnownType)
 		{
+			TargetBinding.Reset();
+			continue;
+		}
+
+		if (TargetBinding.SlotType == ERpgActionBarSlotType::CarrySlot)
+		{
+			const bool bCarryBindingIsValid = bAllowLegacyCarryRootMigration
+				? TryPromoteLegacyCarrySemanticRole(
+					TargetBinding)
+				: TargetBinding.CarrySemanticRole.IsValid();
+			if (!bCarryBindingIsValid)
+			{
+				TargetBinding.Reset();
+			}
+		}
+		else if (bHasLegacyCarryRoot)
+		{
+			// A historical Carry root on another binding type is conflicting tagged data, not a migration source.
 			TargetBinding.Reset();
 		}
 	}
@@ -325,7 +339,7 @@ void URpgActionBarComponent::ActivateSlot(int32 SlotIndex)
 		return;
 	}
 
-	if (Slot.IsEmpty() || (Slot.SlotType == ERpgActionBarSlotType::Ability && !Slot.bAvailable))
+	if (Slot.IsEmpty() || !Slot.bAvailable)
 	{
 		return;
 	}
@@ -348,11 +362,9 @@ void URpgActionBarComponent::ActivateSlot(int32 SlotIndex)
 
 	if (Slot.SlotType == ERpgActionBarSlotType::CarrySlot)
 	{
-		FRpgInventorySlotAddress CarryAddress;
-		if (IsValidCarryRole(Slot.CarryRole, CarryAddress))
-		{
-			UiActions->RequestActivateCarrySlot(CarryAddress);
-		}
+		UiActions->RequestActivateCarrySlot(
+			SlotIndex,
+			Slot.CarrySemanticRole);
 		return;
 	}
 
@@ -480,7 +492,8 @@ void URpgActionBarComponent::ClearDuplicateBinding(int32 TargetSlotIndex, const 
 		}
 
 		const bool bSameSource =
-			(Binding.SlotType == ERpgActionBarSlotType::CarrySlot && Slots[Index].CarryRole == Binding.CarryRole) ||
+			(Binding.SlotType == ERpgActionBarSlotType::CarrySlot &&
+				Slots[Index].CarrySemanticRole == Binding.CarrySemanticRole) ||
 			(Binding.SlotType == ERpgActionBarSlotType::Consumable && Slots[Index].ConsumableDefinition == Binding.ConsumableDefinition) ||
 			(Binding.SlotType == ERpgActionBarSlotType::Ability && Slots[Index].AbilityId == Binding.AbilityId);
 		if (bSameSource)
@@ -556,29 +569,178 @@ URpgInventoryItemInstance* URpgActionBarComponent::ResolveConsumableItem(
 	return FallbackItem;
 }
 
-bool URpgActionBarComponent::IsValidCarryRole(FName CarryRole, FRpgInventorySlotAddress& OutAddress) const
+bool URpgActionBarComponent::TryResolveCarrySemanticRole(
+	FGameplayTag CarrySemanticRole,
+	FRpgInventorySlotAddress& OutAddress) const
 {
 	OutAddress = FRpgInventorySlotAddress();
 	const ARpgPlayerController* RpgPC = GetRpgPlayerController();
 	const URpgPlayerInventoryLayoutComponent* InventoryLayout = RpgPC ? RpgPC->GetPlayerInventoryLayoutComponent() : nullptr;
-	if (!InventoryLayout || CarryRole.IsNone())
+	FRpgInventorySlotGroupView CarryGroup;
+	if (!InventoryLayout || !CarrySemanticRole.IsValid() ||
+		!InventoryLayout->TryGetSlotGroupBySemanticRole(
+			CarrySemanticRole,
+			CarryGroup) ||
+		CarryGroup.GroupKind != ERpgInventorySlotGroupKind::Carry ||
+		!CarryGroup.Rule.bCarrySlot ||
+		CarryGroup.GridSize.Width != 1 ||
+		CarryGroup.GridSize.Height != 1 ||
+		!CarryGroup.ContainsCell(0, 0))
+	{
+		OutAddress = FRpgInventorySlotAddress();
+		return false;
+	}
+	OutAddress = CarryGroup.MakeAddress(0, 0);
+
+	FGameplayTag ResolvedSemanticRole;
+	if (!InventoryLayout->TryGetSemanticRoleForAddress(
+			OutAddress,
+			ResolvedSemanticRole) ||
+		ResolvedSemanticRole != CarrySemanticRole)
+	{
+		OutAddress = FRpgInventorySlotAddress();
+		return false;
+	}
+
+	return true;
+}
+
+bool URpgActionBarComponent::TryResolveLegacyCarryRoot(
+	FName LegacyCarryRoot,
+	FGameplayTag& OutCarrySemanticRole) const
+{
+	OutCarrySemanticRole = FGameplayTag();
+	const ARpgPlayerController* RpgPC = GetRpgPlayerController();
+	const URpgPlayerInventoryLayoutComponent* InventoryLayout = RpgPC
+		? RpgPC->GetPlayerInventoryLayoutComponent()
+		: nullptr;
+	if (!InventoryLayout || LegacyCarryRoot.IsNone())
 	{
 		return false;
 	}
 
-	for (const FRpgInventorySlotGroupView& Group : InventoryLayout->GetSlotGroups())
+	FRpgInventorySlotAddress LegacyAddress;
+	LegacyAddress.SetContainerHandle(
+		FRpgInventoryContainerHandle::MakeRoot(LegacyCarryRoot));
+	LegacyAddress.X = 0;
+	LegacyAddress.Y = 0;
+	FRpgInventorySlotAddress CanonicalCarryAddress;
+	if (InventoryLayout->TryGetSemanticRoleForAddress(
+			LegacyAddress,
+			OutCarrySemanticRole) &&
+		TryResolveCarrySemanticRole(
+			OutCarrySemanticRole,
+			CanonicalCarryAddress))
 	{
-		if (Group.ContainerHandle == FRpgInventoryContainerHandle::MakeRoot(CarryRole) &&
-			Group.GroupKind == ERpgInventorySlotGroupKind::Carry &&
-			Group.Rule.bCarrySlot &&
-			Group.ContainsCell(0, 0))
-		{
-			OutAddress = Group.MakeAddress(0, 0);
-			return true;
-		}
+		return true;
 	}
 
-	return false;
+	// Version-one saves predate semantic roles. Keep their three shipped root ids quarantined at this converter
+	// boundary so a later physical container rename cannot strand a supported historical save.
+	if (LegacyCarryRoot == URpgPlayerInventoryLayoutComponent::WeaponSlot1GroupId)
+	{
+		OutCarrySemanticRole =
+			RpgGameplayTags::Rpg_Inventory_Layout_Role_Carry_Primary;
+	}
+	else if (LegacyCarryRoot ==
+		URpgPlayerInventoryLayoutComponent::WeaponSlot2GroupId)
+	{
+		OutCarrySemanticRole =
+			RpgGameplayTags::Rpg_Inventory_Layout_Role_Carry_Secondary;
+	}
+	else if (LegacyCarryRoot ==
+		URpgPlayerInventoryLayoutComponent::ShieldSlotGroupId)
+	{
+		OutCarrySemanticRole =
+			RpgGameplayTags::Rpg_Inventory_Layout_Role_Carry_OffHand;
+	}
+	else
+	{
+		OutCarrySemanticRole = FGameplayTag();
+		return false;
+	}
+
+	return TryResolveCarrySemanticRole(
+		OutCarrySemanticRole,
+		CanonicalCarryAddress);
+}
+
+bool URpgActionBarComponent::TryPromoteLegacyCarrySemanticRole(
+	FRpgQuickAccessBinding& Slot) const
+{
+	if (Slot.CarrySemanticRole.IsValid())
+	{
+		if (Slot.CarryRole_DEPRECATED.IsNone())
+		{
+			return true;
+		}
+
+		FGameplayTag LegacySemanticRole;
+		if (!TryResolveLegacyCarryRoot(
+				Slot.CarryRole_DEPRECATED,
+				LegacySemanticRole) ||
+			LegacySemanticRole != Slot.CarrySemanticRole)
+		{
+			Slot.Reset();
+			return false;
+		}
+
+		Slot.CarryRole_DEPRECATED = NAME_None;
+		return true;
+	}
+
+	const bool bHasLegacyShadow = !Slot.CarryRole_DEPRECATED.IsNone();
+	const FRpgInventoryContainerHandle SavedContainer =
+		Slot.SlotAddress.GetContainerHandle();
+	const bool bHasLegacyRootAddress =
+		Slot.SlotAddress.IsValid() && SavedContainer.IsRoot();
+	if (!bHasLegacyShadow && !bHasLegacyRootAddress)
+	{
+		return false;
+	}
+
+	if (bHasLegacyShadow && bHasLegacyRootAddress &&
+		Slot.CarryRole_DEPRECATED != SavedContainer.Root)
+	{
+		Slot.Reset();
+		return false;
+	}
+
+	FGameplayTag ShadowSemanticRole;
+	if (bHasLegacyShadow &&
+		!TryResolveLegacyCarryRoot(
+			Slot.CarryRole_DEPRECATED,
+			ShadowSemanticRole))
+	{
+		return false;
+	}
+
+	FGameplayTag AddressSemanticRole;
+	if (bHasLegacyRootAddress &&
+		!TryResolveLegacyCarryRoot(
+			SavedContainer.Root,
+			AddressSemanticRole))
+	{
+		return false;
+	}
+
+	if (ShadowSemanticRole.IsValid() && AddressSemanticRole.IsValid() &&
+		ShadowSemanticRole != AddressSemanticRole)
+	{
+		Slot.Reset();
+		return false;
+	}
+
+	Slot.CarrySemanticRole = ShadowSemanticRole.IsValid()
+		? ShadowSemanticRole
+		: AddressSemanticRole;
+	if (!Slot.CarrySemanticRole.IsValid())
+	{
+		return false;
+	}
+
+	Slot.CarryRole_DEPRECATED = NAME_None;
+	return true;
 }
 
 void URpgActionBarComponent::RefreshBindingAvailability(
@@ -604,20 +766,20 @@ void URpgActionBarComponent::RefreshBindingAvailability(
 
 	if (Slot.SlotType == ERpgActionBarSlotType::CarrySlot)
 	{
-		// Migrate pre-typed actionbar data whose numeric enum value already maps to CarrySlot.
-		const FRpgInventoryContainerHandle SavedCarryContainer =
-			Slot.SlotAddress.GetContainerHandle();
-		FRpgInventorySlotAddress MigratedCarryAddress;
-		if (Slot.CarryRole.IsNone() &&
-			Slot.SlotAddress.IsValid() &&
-			SavedCarryContainer.IsRoot() &&
-			IsValidCarryRole(SavedCarryContainer.Root, MigratedCarryAddress))
+		FRpgInventorySlotAddress CarryAddress;
+		if (!TryPromoteLegacyCarrySemanticRole(Slot))
 		{
-			Slot.CarryRole = SavedCarryContainer.Root;
+			if (!Slot.IsEmpty())
+			{
+				Slot.BlockedReason =
+					ERpgQuickAccessBlockedReason::InvalidCarryRole;
+			}
+			return;
 		}
 
-		FRpgInventorySlotAddress CarryAddress;
-		if (!IsValidCarryRole(Slot.CarryRole, CarryAddress))
+		if (!TryResolveCarrySemanticRole(
+				Slot.CarrySemanticRole,
+				CarryAddress))
 		{
 			Slot.BlockedReason = ERpgQuickAccessBlockedReason::InvalidCarryRole;
 			return;
@@ -710,7 +872,7 @@ bool URpgActionBarComponent::AreBindingsEquivalent(
 {
 	return A.SlotType == B.SlotType &&
 		A.SlotAddress == B.SlotAddress &&
-		A.CarryRole == B.CarryRole &&
+		A.CarrySemanticRole == B.CarrySemanticRole &&
 		A.ConsumableDefinition == B.ConsumableDefinition &&
 		A.PreferredItemId == B.PreferredItemId &&
 		A.AbilityId == B.AbilityId &&

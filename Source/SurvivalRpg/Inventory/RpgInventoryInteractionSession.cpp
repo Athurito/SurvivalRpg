@@ -33,6 +33,7 @@ bool URpgInventoryInteractionSession::BeginInteraction(const FRpgInventoryDragPa
 	InputMode = InInputMode;
 	RequestId.Invalidate();
 	PendingActionTag = FGameplayTag();
+	PendingCarrySemanticRole = FGameplayTag();
 	PendingSourceInventory = nullptr;
 	PendingTargetInventory = nullptr;
 	PendingItem = nullptr;
@@ -56,6 +57,7 @@ void URpgInventoryInteractionSession::CancelInteraction()
 	InputMode = ERpgInventoryInteractionInputMode::None;
 	RequestId.Invalidate();
 	PendingActionTag = FGameplayTag();
+	PendingCarrySemanticRole = FGameplayTag();
 	PendingSourceInventory = nullptr;
 	PendingTargetInventory = nullptr;
 	PendingItem = nullptr;
@@ -224,7 +226,10 @@ bool URpgInventoryInteractionSession::ToggleTargetRotation()
 	return true;
 }
 
-void URpgInventoryInteractionSession::MarkRequestPending(const FRpgInventoryDropTarget& InTarget, FGameplayTag InActionTag)
+void URpgInventoryInteractionSession::MarkRequestPending(
+	const FRpgInventoryDropTarget& InTarget,
+	FGameplayTag InActionTag,
+	FGameplayTag InExpectedCarrySemanticRole)
 {
 	if (!bHasPayload || bPendingRequest)
 	{
@@ -235,6 +240,7 @@ void URpgInventoryInteractionSession::MarkRequestPending(const FRpgInventoryDrop
 	PreviewState = ERpgInventoryInteractionPreviewState::Pending;
 	RequestId = FGuid::NewGuid();
 	PendingActionTag = InActionTag;
+	PendingCarrySemanticRole = InExpectedCarrySemanticRole;
 	PendingSourceInventory = Payload.SourceInventory;
 	PendingTargetInventory = InTarget.TargetInventory;
 	PendingItem = Payload.ItemInstance;
@@ -327,6 +333,7 @@ void URpgInventoryInteractionSession::ResolvePendingRequest(bool bSucceeded)
 	bPendingRequest = false;
 	RequestId.Invalidate();
 	PendingActionTag = FGameplayTag();
+	PendingCarrySemanticRole = FGameplayTag();
 	PendingSourceInventory = nullptr;
 	PendingTargetInventory = nullptr;
 	PendingItem = nullptr;
@@ -389,7 +396,8 @@ void URpgInventoryInteractionSession::HandleActionFeedback(FGameplayTag Channel,
 bool URpgInventoryInteractionSession::DoesActionBarSlotConfirmPendingPayload(
 	const FRpgActionBarSlot& AppliedSlot,
 	const FRpgInventoryDragPayload& PendingPayload,
-	const FRpgInventoryItemId& PendingItemId)
+	const FRpgInventoryItemId& PendingItemId,
+	FGameplayTag ExpectedCarrySemanticRole)
 {
 	const bool bConsumableApplied =
 		(AppliedSlot.SlotType == ERpgActionBarSlotType::Consumable ||
@@ -397,18 +405,21 @@ bool URpgInventoryInteractionSession::DoesActionBarSlotConfirmPendingPayload(
 		PendingPayload.ItemInstance &&
 		AppliedSlot.ConsumableDefinition == PendingPayload.ItemInstance->GetItemDef() &&
 		AppliedSlot.PreferredItemId == PendingItemId;
-	const FRpgInventoryContainerHandle SourceContainer =
-		PendingPayload.SourceSlotAddress.IsValid()
-			? PendingPayload.SourceSlotAddress.GetContainerHandle()
-			: PendingPayload.SourcePlacement.GetContainerHandle();
-	const FName SourceCarryRole = SourceContainer.IsRoot()
-		? SourceContainer.Root
-		: NAME_None;
+	FRpgInventorySlotAddress SourceAddress = PendingPayload.SourceSlotAddress;
+	if (!SourceAddress.IsValid() && PendingPayload.SourcePlacement.IsValid())
+	{
+		SourceAddress.SetContainerHandle(
+			PendingPayload.SourcePlacement.GetContainerHandle());
+		SourceAddress.X = PendingPayload.SourcePlacement.X;
+		SourceAddress.Y = PendingPayload.SourcePlacement.Y;
+	}
 	const bool bCarryApplied =
 		(AppliedSlot.SlotType == ERpgActionBarSlotType::CarrySlot ||
 			AppliedSlot.SlotType == ERpgActionBarSlotType::CarrySlotBinding) &&
-		!SourceCarryRole.IsNone() &&
-		AppliedSlot.CarryRole == SourceCarryRole;
+		ExpectedCarrySemanticRole.IsValid() &&
+		AppliedSlot.CarrySemanticRole == ExpectedCarrySemanticRole &&
+		SourceAddress.IsValid() &&
+		AppliedSlot.SlotAddress == SourceAddress;
 	return bConsumableApplied || bCarryApplied;
 }
 
@@ -431,7 +442,11 @@ void URpgInventoryInteractionSession::HandleActionBarChanged(
 	}
 
 	const FRpgActionBarSlot AppliedSlot = ActionBar->GetSlot(Target.ActionBarSlotIndex);
-	if (DoesActionBarSlotConfirmPendingPayload(AppliedSlot, Payload, PendingItemId))
+	if (DoesActionBarSlotConfirmPendingPayload(
+			AppliedSlot,
+			Payload,
+			PendingItemId,
+			PendingCarrySemanticRole))
 	{
 		// Replicated/locally broadcast actionbar state is authoritative enough to release the held ghost even
 		// when it arrives before the reliable request-correlated feedback RPC.

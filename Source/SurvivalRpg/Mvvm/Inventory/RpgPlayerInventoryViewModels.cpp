@@ -245,6 +245,7 @@ void URpgInventorySlotGroupViewModel::InitializeGroup(const FRpgInventorySlotGro
 
 	ContainerHandle = InGroupView.ContainerHandle;
 	ContainerId = InGroupView.ContainerId;
+	SemanticRole = InGroupView.SemanticRole;
 	DisplayName = InGroupView.DisplayName;
 	Icon = InGroupView.Icon;
 	GridSize = InGroupView.GridSize;
@@ -253,7 +254,7 @@ void URpgInventorySlotGroupViewModel::InitializeGroup(const FRpgInventorySlotGro
 	bGearGroup = InGroupView.GroupKind == ERpgInventorySlotGroupKind::Gear;
 	bContentGroup = InGroupView.GroupKind == ERpgInventorySlotGroupKind::Content;
 	bProvidedByEquipment = InGroupView.bProvidedByEquipment;
-	SourceEquipmentSlotName = InGroupView.SourceEquipmentSlotName;
+	SourceEquipmentSlot = InGroupView.SourceEquipmentSlot;
 
 	Slots.Reset();
 	Slots.Reserve(InSlots.Num());
@@ -264,6 +265,7 @@ void URpgInventorySlotGroupViewModel::InitializeGroup(const FRpgInventorySlotGro
 
 	UE_MVVM_BROADCAST_FIELD_VALUE_CHANGED(ContainerHandle);
 	UE_MVVM_BROADCAST_FIELD_VALUE_CHANGED(ContainerId);
+	UE_MVVM_BROADCAST_FIELD_VALUE_CHANGED(SemanticRole);
 	if (bDisplayNameChanged)
 	{
 		UE_MVVM_BROADCAST_FIELD_VALUE_CHANGED(DisplayName);
@@ -275,7 +277,7 @@ void URpgInventorySlotGroupViewModel::InitializeGroup(const FRpgInventorySlotGro
 	UE_MVVM_BROADCAST_FIELD_VALUE_CHANGED(bGearGroup);
 	UE_MVVM_BROADCAST_FIELD_VALUE_CHANGED(bContentGroup);
 	UE_MVVM_BROADCAST_FIELD_VALUE_CHANGED(bProvidedByEquipment);
-	UE_MVVM_BROADCAST_FIELD_VALUE_CHANGED(SourceEquipmentSlotName);
+	UE_MVVM_BROADCAST_FIELD_VALUE_CHANGED(SourceEquipmentSlot);
 	UE_MVVM_BROADCAST_FIELD_VALUE_CHANGED(Slots);
 }
 
@@ -404,25 +406,21 @@ URpgEquipmentSlotViewModel* URpgPlayerInventoryViewModel::GetBagSlot(ERpgEquipme
 	return nullptr;
 }
 
-URpgInventorySlotGroupViewModel* URpgPlayerInventoryViewModel::GetSlotGroup(FName GroupId) const
+URpgInventorySlotGroupViewModel* URpgPlayerInventoryViewModel::GetSlotGroupBySemanticRole(
+	FGameplayTag SemanticRole) const
 {
-	for (URpgInventorySlotGroupViewModel* Group : CarryGroups)
+	const URpgPlayerInventoryLayoutComponent* InventoryLayout =
+		ObservedInventoryLayout.Get();
+	FRpgInventorySlotGroupView ResolvedGroup;
+	if (!InventoryLayout ||
+		!InventoryLayout->TryGetSlotGroupBySemanticRole(
+			SemanticRole,
+			ResolvedGroup))
 	{
-		if (Group && Group->GetGroupId() == GroupId)
-		{
-			return Group;
-		}
+		return nullptr;
 	}
 
-	for (URpgInventorySlotGroupViewModel* Group : InventoryGroups)
-	{
-		if (Group && Group->GetGroupId() == GroupId)
-		{
-			return Group;
-		}
-	}
-
-	return nullptr;
+	return GetSlotGroupByHandle(ResolvedGroup.ContainerHandle);
 }
 
 URpgInventorySlotGroupViewModel* URpgPlayerInventoryViewModel::GetSlotGroupByHandle(FRpgInventoryContainerHandle ContainerHandle) const
@@ -691,7 +689,25 @@ void URpgPlayerInventoryViewModel::RefreshActionBarSlots()
 		const FRpgActionBarSlot& SourceSlot = SourceSlots.IsValidIndex(SlotIndex) ? SourceSlots[SlotIndex] : EmptySlot;
 		URpgInventoryItemInstance* ResolvedItem = InventoryLayout ? InventoryLayout->GetItemInSlotAddress(SourceSlot.SlotAddress) : nullptr;
 		const int32 StackCount = (PlayerInventory && ResolvedItem) ? PlayerInventory->GetItemStackCount(ResolvedItem) : 0;
-		SlotViewModel->InitializeSlot(SlotIndex, SourceSlot, ResolvedItem, StackCount);
+		FText CarryDisplayName;
+		if (InventoryLayout && SourceSlot.CarrySemanticRole.IsValid())
+		{
+			FRpgInventorySlotGroupView CarryGroup;
+			if (InventoryLayout->TryGetSlotGroupBySemanticRole(
+					SourceSlot.CarrySemanticRole,
+					CarryGroup) &&
+				CarryGroup.GroupKind == ERpgInventorySlotGroupKind::Carry)
+			{
+				CarryDisplayName = CarryGroup.DisplayName;
+			}
+		}
+		SlotViewModel->InitializeSlotWithAbilitySystem(
+			SlotIndex,
+			SourceSlot,
+			ResolvedItem,
+			StackCount,
+			nullptr,
+			CarryDisplayName);
 		ActionBarSlots.Add(SlotViewModel);
 	}
 

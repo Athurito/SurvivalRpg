@@ -23,6 +23,7 @@
 #include "SurvivalRpg/Equipment/RpgEquipmentLoadoutComponent.h"
 #include "SurvivalRpg/Equipment/RpgEquipmentManagerComponent.h"
 #include "SurvivalRpg/GameplayTags/RpgGameplayTags.h"
+#include "SurvivalRpg/Mvvm/Inventory/RpgActionBarViewModels.h"
 #include "SurvivalRpg/Mvvm/Inventory/RpgInventoryViewModels.h"
 #include "SurvivalRpg/Mvvm/Inventory/RpgPlayerInventoryViewModels.h"
 #include "SurvivalRpg/Systems/GameplayTagStack.h"
@@ -36,7 +37,10 @@
 #include "GameFramework/Pawn.h"
 #include "Misc/AutomationTest.h"
 #include "Net/UnrealNetwork.h"
+#include "Serialization/Formatters/BinaryArchiveFormatter.h"
+#include "Serialization/MemoryReader.h"
 #include "Serialization/MemoryWriter.h"
+#include "Serialization/StructuredArchive.h"
 #include "UObject/UnrealType.h"
 
 namespace RpgInventoryTransactionTests
@@ -4231,10 +4235,10 @@ bool FRpgInventoryCarryQuickAccessBindingTest::RunTest(const FString& Parameters
 		TEXT("The first Quick Access slot stores Carry semantics"),
 		AppliedSlot.SlotType,
 		ERpgActionBarSlotType::CarrySlot);
-	TestEqual(
-		TEXT("The binding follows the WeaponSlot1 role"),
-		AppliedSlot.CarryRole,
-		URpgPlayerInventoryLayoutComponent::WeaponSlot1GroupId);
+	TestTrue(
+		TEXT("The binding follows the primary Carry semantic role"),
+		AppliedSlot.CarrySemanticRole ==
+			RpgGameplayTags::Rpg_Inventory_Layout_Role_Carry_Primary);
 	TestEqual(
 		TEXT("The canonical Carry address is retained for presentation and validation"),
 		AppliedSlot.SlotAddress.GetContainerHandle(),
@@ -4252,10 +4256,13 @@ bool FRpgInventoryCarryQuickAccessBindingTest::RunTest(const FString& Parameters
 		return false;
 	}
 
-	const FName CustomCarryRole(TEXT("DesignerCarrySlot"));
+	const FName CustomCarryContainerId(TEXT("DesignerCarrySlot"));
 	FRpgInventorySlotGroupDefinition& CustomCarryGroup =
 		TestLayoutDefinition->StaticSlotGroups.AddDefaulted_GetRef();
-	CustomCarryGroup.ContainerId = CustomCarryRole;
+	CustomCarryGroup.ContainerId = CustomCarryContainerId;
+	CustomCarryGroup.SemanticRole =
+		RpgGameplayTags::Rpg_Inventory_Layout_Role_Carry_Utility;
+	CustomCarryGroup.DisplayName = FText::FromString(TEXT("Utility Carry"));
 	CustomCarryGroup.GroupKind = ERpgInventorySlotGroupKind::Carry;
 	CustomCarryGroup.GridSize.Width = 1;
 	CustomCarryGroup.GridSize.Height = 1;
@@ -4265,16 +4272,16 @@ bool FRpgInventoryCarryQuickAccessBindingTest::RunTest(const FString& Parameters
 		RpgGameplayTags::Equipment_Slot_MainHand;
 
 	const FRpgInventoryContainerHandle CustomCarryHandle =
-		FRpgInventoryContainerHandle::MakeRoot(CustomCarryRole);
+		FRpgInventoryContainerHandle::MakeRoot(CustomCarryContainerId);
 	FRpgInventorySlotAddress CustomCarryAddress;
 	CustomCarryAddress.SetContainerHandle(CustomCarryHandle);
 	CustomCarryAddress.X = 0;
 	CustomCarryAddress.Y = 0;
 	TestTrue(
-		TEXT("The custom Carry root is not one of the three built-in role ids"),
-		CustomCarryRole != URpgPlayerInventoryLayoutComponent::WeaponSlot1GroupId &&
-		CustomCarryRole != URpgPlayerInventoryLayoutComponent::WeaponSlot2GroupId &&
-		CustomCarryRole != URpgPlayerInventoryLayoutComponent::ShieldSlotGroupId);
+		TEXT("The custom Carry root remains independent from built-in physical ids"),
+		CustomCarryContainerId != URpgPlayerInventoryLayoutComponent::WeaponSlot1GroupId &&
+		CustomCarryContainerId != URpgPlayerInventoryLayoutComponent::WeaponSlot2GroupId &&
+		CustomCarryContainerId != URpgPlayerInventoryLayoutComponent::ShieldSlotGroupId);
 	TestTrue(
 		TEXT("The custom root address remains classified as Carry from authored data"),
 		Layout->IsCarrySlotAddress(CustomCarryAddress));
@@ -4290,14 +4297,254 @@ bool FRpgInventoryCarryQuickAccessBindingTest::RunTest(const FString& Parameters
 		TEXT("The custom binding retains Carry semantics"),
 		CustomAppliedSlot.SlotType,
 		ERpgActionBarSlotType::CarrySlot);
-	TestEqual(
+	TestTrue(
 		TEXT("The custom binding follows the designer-defined role"),
-		CustomAppliedSlot.CarryRole,
-		CustomCarryRole);
+		CustomAppliedSlot.CarrySemanticRole ==
+			RpgGameplayTags::Rpg_Inventory_Layout_Role_Carry_Utility);
 	TestEqual(
 		TEXT("The custom binding retains its complete canonical root handle"),
 		CustomAppliedSlot.SlotAddress.GetContainerHandle(),
 		CustomCarryHandle);
+
+	URpgPlayerInventoryViewModel* AggregatePlayerViewModel =
+		NewObject<URpgPlayerInventoryViewModel>(Controller);
+	AggregatePlayerViewModel->BindPlayerController(Controller);
+	const TArray<URpgActionBarSlotViewModel*> AggregateActionBarSlots =
+		AggregatePlayerViewModel->GetActionBarSlots();
+	if (TestTrue(
+		TEXT("The aggregate PlayerInventory VM exposes the custom Carry binding"),
+		AggregateActionBarSlots.IsValidIndex(1) &&
+			AggregateActionBarSlots[1] != nullptr))
+	{
+		TestEqual(
+			TEXT("The aggregate PlayerInventory VM preserves the authored Carry display name"),
+			AggregateActionBarSlots[1]->GetShortDisplayName().ToString(),
+			FString(TEXT("Utility Carry")));
+	}
+
+	CustomCarryGroup.GridSize.Width = 2;
+	TestFalse(
+		TEXT("A semantic Carry role fails closed when a designer authors a multi-cell group"),
+		ActionBar->TryBindCarrySlotToSlotAuthority(2, CustomCarryAddress));
+	CustomCarryGroup.GridSize.Width = 1;
+
+	const FName RenamedCustomCarryContainerId(TEXT("RenamedDesignerCarrySlot"));
+	CustomCarryGroup.ContainerId = RenamedCustomCarryContainerId;
+	ActionBar->RefreshBindings();
+	const FRpgActionBarSlot RenamedCustomAppliedSlot = ActionBar->GetSlot(1);
+	TestTrue(
+		TEXT("Renaming a physical Carry container does not change the saved semantic binding"),
+		RenamedCustomAppliedSlot.CarrySemanticRole ==
+			RpgGameplayTags::Rpg_Inventory_Layout_Role_Carry_Utility);
+	TestEqual(
+		TEXT("Role revalidation follows the renamed Carry container's current address"),
+		RenamedCustomAppliedSlot.SlotAddress.GetContainerHandle(),
+		FRpgInventoryContainerHandle::MakeRoot(RenamedCustomCarryContainerId));
+
+	CustomCarryGroup.SemanticRole =
+		RpgGameplayTags::Rpg_Inventory_Layout_Role_Carry_Primary;
+	AddExpectedError(
+		TEXT("is not a unique static root"),
+		EAutomationExpectedErrorFlags::Contains,
+		1);
+	FRpgInventorySlotGroupView DuplicateRoleGroup;
+	TestFalse(
+		TEXT("Duplicate semantic roles fail closed instead of selecting the first group"),
+		Layout->TryGetSlotGroupBySemanticRole(
+			RpgGameplayTags::Rpg_Inventory_Layout_Role_Carry_Primary,
+			DuplicateRoleGroup));
+	CustomCarryGroup.SemanticRole =
+		RpgGameplayTags::Rpg_Inventory_Layout_Role_Carry_Utility;
+	FRpgInventorySlotGroupDefinition* GearGroup =
+		TestLayoutDefinition->StaticSlotGroups.FindByPredicate(
+			[](const FRpgInventorySlotGroupDefinition& Group)
+			{
+				return Group.GroupKind ==
+					ERpgInventorySlotGroupKind::Gear;
+			});
+	if (!TestNotNull(
+		TEXT("The fixture exposes a Gear definition for global role-uniqueness coverage"),
+		GearGroup))
+	{
+		return false;
+	}
+	GearGroup->SemanticRole =
+		RpgGameplayTags::Rpg_Inventory_Layout_Role_Carry_Primary;
+	AddExpectedError(
+		TEXT("is not a unique static root"),
+		EAutomationExpectedErrorFlags::Contains,
+		1);
+	TestNull(
+		TEXT("The aggregate VM cannot hide a Gear/Carry role collision by omitting Gear groups"),
+		AggregatePlayerViewModel->GetSlotGroupBySemanticRole(
+			RpgGameplayTags::Rpg_Inventory_Layout_Role_Carry_Primary));
+	GearGroup->SemanticRole = FGameplayTag();
+
+	FNameProperty* LegacyCarryRoleProperty = FindFProperty<FNameProperty>(
+		FRpgQuickAccessBinding::StaticStruct(),
+		TEXT("CarryRole"));
+	if (!TestNotNull(
+		TEXT("The version-one CarryRole field remains reflected for save migration"),
+		LegacyCarryRoleProperty))
+	{
+		return false;
+	}
+	TestTrue(
+		TEXT("The historical CarryRole name remains available to tagged SaveGame loading"),
+		LegacyCarryRoleProperty->HasAnyPropertyFlags(CPF_SaveGame));
+	TestTrue(
+		TEXT("The legacy CarryRole shadow is marked deprecated"),
+		LegacyCarryRoleProperty->HasAnyPropertyFlags(CPF_Deprecated));
+	TestTrue(
+		TEXT("The legacy CarryRole shadow is excluded from owner replication"),
+		LegacyCarryRoleProperty->HasAnyPropertyFlags(CPF_RepSkip));
+
+	FRpgQuickAccessBindingV1TaggedFixture HistoricalBinding;
+	HistoricalBinding.SlotType = ERpgActionBarSlotType::CarrySlot;
+	HistoricalBinding.SlotAddress = WeaponSlot1Address;
+	HistoricalBinding.CarryRole =
+		URpgPlayerInventoryLayoutComponent::WeaponSlot1GroupId;
+	TArray<uint8> HistoricalTaggedBytes;
+	{
+		FMemoryWriter Writer(HistoricalTaggedBytes, true);
+		FBinaryArchiveFormatter Formatter(Writer);
+		FStructuredArchive Archive(Formatter);
+		FRpgQuickAccessBindingV1TaggedFixture::StaticStruct()->
+			SerializeTaggedProperties(
+				Archive.Open(),
+				reinterpret_cast<uint8*>(&HistoricalBinding),
+				nullptr,
+				nullptr);
+	}
+	FRpgQuickAccessBinding LoadedHistoricalBinding;
+	{
+		FMemoryReader Reader(HistoricalTaggedBytes, true);
+		FBinaryArchiveFormatter Formatter(Reader);
+		FStructuredArchive Archive(Formatter);
+		FRpgQuickAccessBinding::StaticStruct()->SerializeTaggedProperties(
+			Archive.Open(),
+			reinterpret_cast<uint8*>(&LoadedHistoricalBinding),
+			nullptr,
+			nullptr);
+	}
+	TestEqual(
+		TEXT("Tagged version-one CarryRole bytes load into the reflected migration shadow"),
+		LegacyCarryRoleProperty->GetPropertyValue_InContainer(
+			&LoadedHistoricalBinding),
+		URpgPlayerInventoryLayoutComponent::WeaponSlot1GroupId);
+
+	TArray<FRpgQuickAccessBinding> LegacyBindings;
+	LegacyBindings.SetNum(8);
+	LegacyBindings[0] = LoadedHistoricalBinding;
+	ActionBar->RestoreQuickAccessBindings(LegacyBindings, true);
+	const FRpgQuickAccessBinding MigratedCarryBinding =
+		ActionBar->GetQuickAccessBindings()[0];
+	TestTrue(
+		TEXT("A version-one Carry root migrates through the active layout's authored role"),
+		MigratedCarryBinding.CarrySemanticRole ==
+			RpgGameplayTags::Rpg_Inventory_Layout_Role_Carry_Primary);
+	TestTrue(
+		TEXT("Successful Carry-role promotion clears the legacy save shadow"),
+		LegacyCarryRoleProperty->GetPropertyValue_InContainer(
+			&MigratedCarryBinding).IsNone());
+
+	FRpgInventorySlotGroupDefinition* PrimaryCarryGroup =
+		TestLayoutDefinition->StaticSlotGroups.FindByPredicate(
+			[](const FRpgInventorySlotGroupDefinition& Group)
+			{
+				return Group.SemanticRole ==
+					RpgGameplayTags::Rpg_Inventory_Layout_Role_Carry_Primary;
+			});
+	if (!TestNotNull(
+		TEXT("The fixture exposes its primary Carry definition for migration regression coverage"),
+		PrimaryCarryGroup))
+	{
+		return false;
+	}
+	const FName OriginalPrimaryContainerId = PrimaryCarryGroup->ContainerId;
+	const FName RenamedPrimaryContainerId(TEXT("RenamedPrimaryCarry"));
+	PrimaryCarryGroup->ContainerId = RenamedPrimaryContainerId;
+	LegacyBindings[0] = LoadedHistoricalBinding;
+	ActionBar->RestoreQuickAccessBindings(LegacyBindings, true);
+	const FRpgQuickAccessBinding RenamedLegacyBinding =
+		ActionBar->GetQuickAccessBindings()[0];
+	TestTrue(
+		TEXT("A skipped-version v1 binding migrates through the historical id alias after a physical rename"),
+		RenamedLegacyBinding.CarrySemanticRole ==
+			RpgGameplayTags::Rpg_Inventory_Layout_Role_Carry_Primary);
+	TestEqual(
+		TEXT("The migrated v1 binding immediately adopts the renamed role address"),
+		RenamedLegacyBinding.SlotAddress.GetContainerHandle(),
+		FRpgInventoryContainerHandle::MakeRoot(RenamedPrimaryContainerId));
+	PrimaryCarryGroup->ContainerId = OriginalPrimaryContainerId;
+	ActionBar->RefreshBindings();
+	TestTrue(
+		TEXT("The restored primary Carry binding is available before policy is disabled"),
+		ActionBar->GetSlot(0).bAvailable);
+	TestTrue(
+		TEXT("The activation regression starts with empty runtime hands"),
+		EquipmentLoadout->ClearActiveHands());
+	PrimaryCarryGroup->Rule.bActionbarBindable = false;
+	ActionBar->RefreshBindings();
+	TestFalse(
+		TEXT("Disabling the authored actionbar rule blocks the bound Carry slot"),
+		ActionBar->GetSlot(0).bAvailable);
+	UiActions->RequestActivateCarrySlot(
+		0,
+		RpgGameplayTags::Rpg_Inventory_Layout_Role_Carry_Primary);
+	TestNull(
+		TEXT("The server gateway cannot activate an authored non-bindable Carry role"),
+		EquipmentLoadout->GetItemInEquipmentSlot(
+			ERpgEquipmentSlot::MainHand));
+	PrimaryCarryGroup->Rule.bActionbarBindable = true;
+	ActionBar->RefreshBindings();
+	UiActions->RequestActivateCarrySlot(
+		0,
+		RpgGameplayTags::Rpg_Inventory_Layout_Role_Carry_Secondary);
+	TestNull(
+		TEXT("A forged semantic role cannot activate another bound Carry slot"),
+		EquipmentLoadout->GetItemInEquipmentSlot(
+			ERpgEquipmentSlot::MainHand));
+	UiActions->RequestActivateCarrySlot(
+		0,
+		RpgGameplayTags::Rpg_Inventory_Layout_Role_Carry_Primary);
+	TestEqual(
+		TEXT("The exact available server binding still activates through the canonical gateway"),
+		EquipmentLoadout->GetItemInEquipmentSlot(
+			ERpgEquipmentSlot::MainHand),
+		Weapon);
+	EquipmentLoadout->ClearActiveHands();
+
+	TArray<FRpgQuickAccessBinding> IncompleteCurrentBindings;
+	IncompleteCurrentBindings.SetNum(8);
+	IncompleteCurrentBindings[0].SlotType =
+		ERpgActionBarSlotType::CarrySlot;
+	IncompleteCurrentBindings[0].SlotAddress = WeaponSlot1Address;
+	ActionBar->RestoreQuickAccessBindings(
+		IncompleteCurrentBindings,
+		false);
+	TestTrue(
+		TEXT("Schema v2 cannot infer a missing semantic role from its physical address"),
+		ActionBar->GetQuickAccessBindings()[0].IsEmpty());
+
+	TArray<FRpgQuickAccessBinding> UnknownLegacyBindings;
+	UnknownLegacyBindings.SetNum(8);
+	FRpgQuickAccessBinding& UnknownLegacyBinding =
+		UnknownLegacyBindings[0];
+	UnknownLegacyBinding.SlotType = ERpgActionBarSlotType::CarrySlot;
+	UnknownLegacyBinding.SlotAddress.SetContainerHandle(
+		FRpgInventoryContainerHandle::MakeRoot(TEXT("UnknownLegacyCarry")));
+	UnknownLegacyBinding.SlotAddress.X = 0;
+	UnknownLegacyBinding.SlotAddress.Y = 0;
+	LegacyCarryRoleProperty->SetPropertyValue_InContainer(
+		&UnknownLegacyBinding,
+		FName(TEXT("UnknownLegacyCarry")));
+	ActionBar->RestoreQuickAccessBindings(
+		UnknownLegacyBindings,
+		true);
+	TestTrue(
+		TEXT("An unmappable v1 Carry root is reset immediately instead of leaking an unsavable shadow"),
+		ActionBar->GetQuickAccessBindings()[0].IsEmpty());
 	return true;
 }
 
@@ -4412,11 +4659,13 @@ bool FRpgInventoryQuickTransferSkipsFullPreferredContainerTest::RunTest(const FS
 	const bool bLayoutExposesBothProviders = Layout->GetSlotGroups().ContainsByPredicate(
 		[&BackpackContents](const FRpgInventorySlotGroupView& Group)
 		{
-			return Group.ContainerHandle == BackpackContents && Group.SourceEquipmentSlotName == FName(TEXT("Backpack"));
+			return Group.ContainerHandle == BackpackContents &&
+				Group.SourceEquipmentSlot == ERpgEquipmentSlot::Backpack;
 		}) && Layout->GetSlotGroups().ContainsByPredicate(
 		[&BeltContents](const FRpgInventorySlotGroupView& Group)
 		{
-			return Group.ContainerHandle == BeltContents && Group.SourceEquipmentSlotName == FName(TEXT("Belt"));
+			return Group.ContainerHandle == BeltContents &&
+				Group.SourceEquipmentSlot == ERpgEquipmentSlot::Belt;
 		});
 	if (!TestTrue(TEXT("The real layout exposes the equipped Backpack and Belt content grids"), bLayoutExposesBothProviders))
 	{

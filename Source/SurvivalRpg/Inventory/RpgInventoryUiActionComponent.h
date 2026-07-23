@@ -280,9 +280,9 @@ struct SURVIVALRPG_API FRpgQuickAccessMutationRequest
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Inventory|Quick Access")
 	FRpgInventorySlotAddress SourceAddress;
 
-	/** Expected semantic Carry role for Carry bind/clear; concrete Carry items may change after binding. */
-	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Inventory|Quick Access")
-	FName ExpectedCarryRole = NAME_None;
+	/** Expected explicit Carry group role for bind/clear; concrete Carry items and container ids may change. */
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Inventory|Quick Access", meta = (Categories = "Rpg.Inventory.Layout.Role.Carry"))
+	FGameplayTag ExpectedCarrySemanticRole;
 
 	/** Expected consumable definition for consumable bind/clear. */
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Inventory|Quick Access")
@@ -567,9 +567,12 @@ public:
 		ERpgEquipmentSlot ContainerSlot,
 		FRpgInventoryItemId ExpectedProviderItemId);
 
-	/** Activates a carry slot as MainHand or OffHand without moving the item out of the inventory. */
+	/**
+	 * Activates the server-authoritative Carry binding in one Quick Access slot.
+	 * The expected semantic role rejects stale or forged client input; physical addresses are resolved on the server.
+	 */
 	UFUNCTION(Server, Reliable, BlueprintCallable, Category = "Inventory|UI Actions")
-	void RequestActivateCarrySlot(FRpgInventorySlotAddress CarrySlotAddress);
+	void RequestActivateCarrySlot(int32 ActionBarSlotIndex, FGameplayTag ExpectedCarrySemanticRole);
 
 	/** Clears the active MainHand/OffHand runtime state. Items remain in their inventory carry slots. */
 	UFUNCTION(Server, Reliable, BlueprintCallable, Category = "Inventory|UI Actions")
@@ -587,9 +590,9 @@ public:
 	UFUNCTION(Server, Reliable, BlueprintCallable, Category = "Inventory|UI Actions")
 	void RequestBindActionBarToCarrySlot(int32 ActionBarSlotIndex, FRpgInventorySlotAddress CarrySlotAddress);
 
-	/** Compatibility path that still validates ExpectedCarryRole and emits correlated feedback. */
+	/** Compatibility path that validates the explicit Carry semantic role and emits correlated feedback. */
 	UFUNCTION(Server, Reliable, BlueprintCallable, Category = "Inventory|UI Actions")
-	void RequestClearActionBarCarryBinding(int32 ActionBarSlotIndex, FName ExpectedCarryRole);
+	void RequestClearActionBarCarryBinding(int32 ActionBarSlotIndex, FGameplayTag ExpectedCarrySemanticRole);
 
 	/** Compatibility path that snapshots the current preferred item id before authoritative validation. */
 	UFUNCTION(Server, Reliable, BlueprintCallable, Category = "Inventory|UI Actions")

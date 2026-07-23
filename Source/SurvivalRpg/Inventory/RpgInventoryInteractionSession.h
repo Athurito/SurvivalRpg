@@ -70,7 +70,10 @@ public:
 	bool ToggleTargetRotation();
 
 	/** Marks a dispatched server request pending while retaining the payload until acknowledgement. */
-	void MarkRequestPending(const FRpgInventoryDropTarget& InTarget, FGameplayTag InActionTag);
+	void MarkRequestPending(
+		const FRpgInventoryDropTarget& InTarget,
+		FGameplayTag InActionTag,
+		FGameplayTag InExpectedCarrySemanticRole = FGameplayTag());
 
 	/** Marks a locally dispatched request as rejected when no server request could be sent. */
 	void RejectRequestLocally();
@@ -123,7 +126,8 @@ public:
 	static bool DoesActionBarSlotConfirmPendingPayload(
 		const FRpgActionBarSlot& AppliedSlot,
 		const FRpgInventoryDragPayload& PendingPayload,
-		const FRpgInventoryItemId& PendingItemId);
+		const FRpgInventoryItemId& PendingItemId,
+		FGameplayTag ExpectedCarrySemanticRole);
 
 	/** Fired when payload, rotation, target, preview, or pending state changes. */
 	UPROPERTY(BlueprintAssignable, Category = "Inventory|Interaction")
@@ -178,6 +182,10 @@ private:
 
 	UPROPERTY(Transient)
 	FGameplayTag PendingActionTag;
+
+	/** Exact Carry role submitted with a pending Quick Access bind; invalid for all other interactions. */
+	UPROPERTY(Transient)
+	FGameplayTag PendingCarrySemanticRole;
 
 	UPROPERTY(Transient)
 	TObjectPtr<URpgInventoryManagerComponent> PendingSourceInventory = nullptr;

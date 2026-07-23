@@ -258,6 +258,10 @@ public:
 	UFUNCTION(BlueprintPure, Category = "Inventory|Layout ViewModel")
 	FRpgInventoryContainerHandle GetContainerHandle() const { return ContainerHandle; }
 
+	/** Explicit static-group role used by authored presenters; invalid for generic and item-owned groups. */
+	UFUNCTION(BlueprintPure, Category = "Inventory|Layout ViewModel")
+	FGameplayTag GetSemanticRole() const { return SemanticRole; }
+
 	/** Grid size of this visible container. */
 	UFUNCTION(BlueprintPure, Category = "Inventory|Layout ViewModel")
 	FRpgInventoryGridSize GetGridSize() const { return GridSize; }
@@ -270,9 +274,17 @@ public:
 	UFUNCTION(BlueprintPure, Category = "Inventory|Layout ViewModel")
 	bool IsProvidedByEquipment() const { return bProvidedByEquipment; }
 
-	/** Equipment slot name that currently provides this item-owned content grid. */
+	/** Typed equipment slot that currently provides this item-owned content grid. */
 	UFUNCTION(BlueprintPure, Category = "Inventory|Layout ViewModel")
-	FName GetSourceEquipmentSlotName() const { return SourceEquipmentSlotName; }
+	ERpgEquipmentSlot GetSourceEquipmentSlot() const { return SourceEquipmentSlot; }
+
+	/** True only for a dedicated authored Carry group whose rule enables Carry activation. */
+	UFUNCTION(BlueprintPure, Category = "Inventory|Layout ViewModel")
+	bool IsCarryGroup() const { return bCarryGroup; }
+
+	/** True only for a regular content-storage group. */
+	UFUNCTION(BlueprintPure, Category = "Inventory|Layout ViewModel")
+	bool IsContentGroup() const { return bContentGroup; }
 
 protected:
 	/** Stable graph address. Item-owned containers with the same local id remain distinct. */
@@ -282,6 +294,10 @@ protected:
 	/** Stable container id such as WeaponSlot1, Pockets, Backpack, or Belt. */
 	UPROPERTY(BlueprintReadOnly, FieldNotify, Category = "Inventory|Layout ViewModel", meta = (AllowPrivateAccess = "true"))
 	FName ContainerId = NAME_None;
+
+	/** Exact semantic singleton role copied from static layout definition data. */
+	UPROPERTY(BlueprintReadOnly, FieldNotify, Category = "Inventory|Layout ViewModel", meta = (AllowPrivateAccess = "true"))
+	FGameplayTag SemanticRole;
 
 	/** Player-facing group header text. */
 	UPROPERTY(BlueprintReadOnly, FieldNotify, Category = "Inventory|Layout ViewModel", meta = (AllowPrivateAccess = "true"))
@@ -315,9 +331,9 @@ protected:
 	UPROPERTY(BlueprintReadOnly, FieldNotify, Category = "Inventory|Layout ViewModel", meta = (AllowPrivateAccess = "true"))
 	bool bProvidedByEquipment = false;
 
-	/** Equipment slot name whose item provided this group. */
+	/** Typed equipment slot whose item provided this group. */
 	UPROPERTY(BlueprintReadOnly, FieldNotify, Category = "Inventory|Layout ViewModel", meta = (AllowPrivateAccess = "true"))
-	FName SourceEquipmentSlotName = NAME_None;
+	ERpgEquipmentSlot SourceEquipmentSlot = ERpgEquipmentSlot::None;
 
 	/** Slot VMs in stable visual order. */
 	UPROPERTY(BlueprintReadOnly, FieldNotify, Category = "Inventory|Layout ViewModel", meta = (AllowPrivateAccess = "true"))
@@ -376,9 +392,9 @@ public:
 	UFUNCTION(BlueprintPure, Category = "Inventory|Player ViewModel")
 	URpgEquipmentSlotViewModel* GetBagSlot(ERpgEquipmentSlot EquipmentSlot) const;
 
-	/** Returns the group VM for a group id, if currently visible. */
+	/** Returns exactly one group VM for an explicit semantic role; missing or duplicate roles fail closed. */
 	UFUNCTION(BlueprintPure, Category = "Inventory|Player ViewModel")
-	URpgInventorySlotGroupViewModel* GetSlotGroup(FName GroupId) const;
+	URpgInventorySlotGroupViewModel* GetSlotGroupBySemanticRole(FGameplayTag SemanticRole) const;
 
 	/** Returns the exact root or item-owned group addressed by its full graph handle. */
 	UFUNCTION(BlueprintPure, Category = "Inventory|Player ViewModel")

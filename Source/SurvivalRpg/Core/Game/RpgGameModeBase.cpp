@@ -667,7 +667,10 @@ bool ARpgGameModeBase::TryRestorePlayerSaveData(APlayerController* PC, const FRp
 	}
 	if (URpgActionBarComponent* ActionBar = RpgPC->GetActionBarComponent())
 	{
-		ActionBar->RestoreQuickAccessBindings(SaveData.QuickAccessBindings);
+		ActionBar->RestoreQuickAccessBindings(
+			SaveData.QuickAccessBindings,
+			SaveData.SchemaVersion <
+				FRpgPlayerSaveData::SemanticCarryRoleSchemaVersion);
 	}
 	if (URpgEquipmentLoadoutComponent* EquipmentLoadout = RpgPC->GetEquipmentLoadoutComponent())
 	{

@@ -546,32 +546,47 @@ IMPLEMENT_SIMPLE_AUTOMATION_TEST(
 
 bool FRpgInventoryQuickAccessReplicatedConfirmationTest::RunTest(const FString& Parameters)
 {
-	const FName CarryRole(TEXT("WeaponSlot1"));
+	const FName CarryContainerId(TEXT("WeaponSlot1"));
 	const FRpgInventoryItemId PendingItemId = FRpgInventoryItemId::NewId();
 
 	FRpgInventoryDragPayload PendingCarryPayload;
 	PendingCarryPayload.SourceSlotAddress.SetContainerHandle(
-		FRpgInventoryContainerHandle::MakeRoot(CarryRole));
+		FRpgInventoryContainerHandle::MakeRoot(CarryContainerId));
 	PendingCarryPayload.SourceSlotAddress.X = 0;
 	PendingCarryPayload.SourceSlotAddress.Y = 0;
 
 	FRpgActionBarSlot AppliedCarrySlot;
 	AppliedCarrySlot.SlotType = ERpgActionBarSlotType::CarrySlot;
-	AppliedCarrySlot.CarryRole = CarryRole;
+	AppliedCarrySlot.CarrySemanticRole =
+		RpgGameplayTags::Rpg_Inventory_Layout_Role_Carry_Primary;
+	AppliedCarrySlot.SlotAddress = PendingCarryPayload.SourceSlotAddress;
 	TestTrue(
 		TEXT("Replicated Carry binding confirms and releases the matching pending drag"),
 		URpgInventoryInteractionSession::DoesActionBarSlotConfirmPendingPayload(
 			AppliedCarrySlot,
 			PendingCarryPayload,
-			PendingItemId));
+			PendingItemId,
+			RpgGameplayTags::Rpg_Inventory_Layout_Role_Carry_Primary));
 
-	AppliedCarrySlot.CarryRole = FName(TEXT("WeaponSlot2"));
+	AppliedCarrySlot.CarrySemanticRole =
+		RpgGameplayTags::Rpg_Inventory_Layout_Role_Carry_Secondary;
+	TestFalse(
+		TEXT("A different semantic Carry role on the same physical address cannot acknowledge the pending drag"),
+		URpgInventoryInteractionSession::DoesActionBarSlotConfirmPendingPayload(
+			AppliedCarrySlot,
+			PendingCarryPayload,
+			PendingItemId,
+			RpgGameplayTags::Rpg_Inventory_Layout_Role_Carry_Primary));
+
+	AppliedCarrySlot.SlotAddress.SetContainerHandle(
+		FRpgInventoryContainerHandle::MakeRoot(TEXT("WeaponSlot2")));
 	TestFalse(
 		TEXT("An unrelated replicated Carry role cannot acknowledge the pending drag"),
 		URpgInventoryInteractionSession::DoesActionBarSlotConfirmPendingPayload(
 			AppliedCarrySlot,
 			PendingCarryPayload,
-			PendingItemId));
+			PendingItemId,
+			RpgGameplayTags::Rpg_Inventory_Layout_Role_Carry_Primary));
 
 	URpgInventoryItemInstance* PendingConsumable = NewObject<URpgInventoryItemInstance>(GetTransientPackage());
 	FRpgInventoryDragPayload PendingConsumablePayload;
@@ -585,7 +600,8 @@ bool FRpgInventoryQuickAccessReplicatedConfirmationTest::RunTest(const FString& 
 		URpgInventoryInteractionSession::DoesActionBarSlotConfirmPendingPayload(
 			AppliedConsumableSlot,
 			PendingConsumablePayload,
-			PendingItemId));
+			PendingItemId,
+			FGameplayTag()));
 
 	AppliedConsumableSlot.PreferredItemId = FRpgInventoryItemId::NewId();
 	TestFalse(
@@ -593,7 +609,8 @@ bool FRpgInventoryQuickAccessReplicatedConfirmationTest::RunTest(const FString& 
 		URpgInventoryInteractionSession::DoesActionBarSlotConfirmPendingPayload(
 			AppliedConsumableSlot,
 			PendingConsumablePayload,
-			PendingItemId));
+			PendingItemId,
+			FGameplayTag()));
 
 	return true;
 }

@@ -107,7 +107,7 @@ namespace
 
 void URpgActionBarSlotViewModel::InitializeSlot(int32 InSlotIndex, const FRpgActionBarSlot& InSlot, URpgInventoryItemInstance* ResolvedItem, int32 InStackCount)
 {
-	InitializeSlotWithAbilitySystem(InSlotIndex, InSlot, ResolvedItem, InStackCount, nullptr);
+	InitializeSlotWithAbilitySystem(InSlotIndex, InSlot, ResolvedItem, InStackCount, nullptr, FText::GetEmpty());
 }
 
 void URpgActionBarSlotViewModel::InitializeSlotWithAbilitySystem(
@@ -115,7 +115,8 @@ void URpgActionBarSlotViewModel::InitializeSlotWithAbilitySystem(
 	const FRpgActionBarSlot& InSlot,
 	URpgInventoryItemInstance* ResolvedItem,
 	int32 InStackCount,
-	const URpgAbilitySystemComponent* AbilitySystem)
+	const URpgAbilitySystemComponent* AbilitySystem,
+	FText CarryDisplayName)
 {
 	const bool bWasChanged =
 		SlotIndex != InSlotIndex ||
@@ -125,7 +126,8 @@ void URpgActionBarSlotViewModel::InitializeSlotWithAbilitySystem(
 		StackCount != InStackCount ||
 		bAvailable != InSlot.bAvailable ||
 		BlockedReason != InSlot.BlockedReason ||
-		AbilityId != InSlot.AbilityId;
+		AbilityId != InSlot.AbilityId ||
+		CarrySemanticRole != InSlot.CarrySemanticRole;
 
 	SlotIndex = InSlotIndex;
 	SlotType = InSlot.SlotType;
@@ -139,6 +141,7 @@ void URpgActionBarSlotViewModel::InitializeSlotWithAbilitySystem(
 	bAvailable = InSlot.bAvailable;
 	BlockedReason = InSlot.BlockedReason;
 	AbilityId = InSlot.AbilityId;
+	CarrySemanticRole = InSlot.CarrySemanticRole;
 	HotkeyActionRowName = InSlotIndex >= 0
 		? FName(*FString::Printf(TEXT("UI.ActionBar.Slot.%d"), InSlotIndex + 1))
 		: NAME_None;
@@ -158,7 +161,9 @@ void URpgActionBarSlotViewModel::InitializeSlotWithAbilitySystem(
 	ShortDisplayName = !Presentation.ShortDisplayName.IsEmpty()
 		? Presentation.ShortDisplayName
 		: InSlot.SlotType == ERpgActionBarSlotType::CarrySlot
-			? FText::FromName(InSlot.CarryRole)
+			? (!CarryDisplayName.IsEmpty()
+				? CarryDisplayName
+				: NSLOCTEXT("RpgActionBar", "CarrySlotFallback", "Carry Slot"))
 			: (bHasContent ? FText::FromName(InSlot.AbilityId.GetTagName()) : FText::GetEmpty());
 
 	UE_MVVM_BROADCAST_FIELD_VALUE_CHANGED(SlotIndex);
@@ -171,6 +176,7 @@ void URpgActionBarSlotViewModel::InitializeSlotWithAbilitySystem(
 	UE_MVVM_BROADCAST_FIELD_VALUE_CHANGED(bAvailable);
 	UE_MVVM_BROADCAST_FIELD_VALUE_CHANGED(BlockedReason);
 	UE_MVVM_BROADCAST_FIELD_VALUE_CHANGED(AbilityId);
+	UE_MVVM_BROADCAST_FIELD_VALUE_CHANGED(CarrySemanticRole);
 	UE_MVVM_BROADCAST_FIELD_VALUE_CHANGED(Icon);
 	UE_MVVM_BROADCAST_FIELD_VALUE_CHANGED(ShortDisplayName);
 	UE_MVVM_BROADCAST_FIELD_VALUE_CHANGED(HotkeyActionRowName);
@@ -249,7 +255,25 @@ void URpgActionBarViewModel::RefreshSlots()
 		const int32 StackCount = (PlayerInventory && ResolvedItem)
 			? PlayerInventory->GetItemStackCount(ResolvedItem)
 			: 0;
-		SlotViewModel->InitializeSlotWithAbilitySystem(SlotIndex, SourceSlot, ResolvedItem, StackCount, AbilitySystem);
+		FText CarryDisplayName;
+		if (InventoryLayout && SourceSlot.CarrySemanticRole.IsValid())
+		{
+			FRpgInventorySlotGroupView CarryGroup;
+			if (InventoryLayout->TryGetSlotGroupBySemanticRole(
+					SourceSlot.CarrySemanticRole,
+					CarryGroup) &&
+				CarryGroup.GroupKind == ERpgInventorySlotGroupKind::Carry)
+			{
+				CarryDisplayName = CarryGroup.DisplayName;
+			}
+		}
+		SlotViewModel->InitializeSlotWithAbilitySystem(
+			SlotIndex,
+			SourceSlot,
+			ResolvedItem,
+			StackCount,
+			AbilitySystem,
+			CarryDisplayName);
 		Slots.Add(SlotViewModel);
 	}
 

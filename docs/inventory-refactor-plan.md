@@ -1,6 +1,6 @@
 # Inventory Refactor Plan
 
-Stand: 2026-07-22
+Stand: 2026-07-23
 
 Dieses Dokument hält die verbindliche Reihenfolge für die Bereinigung des
 Tarkov-artigen Spatial Inventory fest. Es dient als Fortschrittsliste über
@@ -1620,7 +1620,7 @@ Status: **In Arbeit**
 
 - [x] `URpgPlayerInventoryLayoutDefinition` als DataAsset über
       PawnData/Experience zuweisen.
-- [ ] Semantische Rollen statt Logik aus hartcodierten `FName`-IDs verwenden.
+- [x] Semantische Rollen statt Logik aus hartcodierten `FName`-IDs verwenden.
 - [ ] Gear-/Carry-Gruppen erhalten eine explizite, typisierte
       `ERpgEquipmentSlot`-Rolle statt indirekter Namens- oder
       Kategorieableitung.
@@ -1682,6 +1682,52 @@ Verifizierter Phase-5A-Zwischenstand vom 2026-07-22:
   abgeschlossen (73,4 %), 25 Punkte offen.
 - Nächster Schnitt: semantische Rollen statt Logik aus hartcodierten
   `FName`-Container-IDs verwenden.
+
+Verifizierter Phase-5B-Zwischenstand vom 2026-07-23:
+
+- Statische Slot-Gruppen besitzen mit `SemanticRole` eine exakte
+  `FGameplayTag`-Rolle. Die Rollen `Content.Primary`, `Carry.Primary`,
+  `Carry.Secondary`, `Carry.OffHand` und `Carry.Utility` beschreiben ihre
+  Gameplay-Bedeutung unabhängig von der physischen, weiterhin gespeicherten
+  `ContainerId`.
+- Semantische Rollen sind für statische Gruppen layoutweit eindeutig.
+  Doppelte Rollen, ungültige Rollenanfragen und Carry-Rollen auf nicht
+  exakt 1 x 1 großen Gruppen werden fail-closed abgelehnt. Item-owned
+  Container erhalten bewusst keine globale semantische Rolle.
+- ActionBar-Bindings speichern und replizieren seit Schema 2 die semantische
+  Carry-Rolle. Der explizite Tagged-Schema-1-Import akzeptiert nur einen
+  eindeutig auflösbaren historischen Root und besitzt für `WeaponSlot1`,
+  `WeaponSlot2` und `ShieldSlot` zusätzlich feste Aliase über physische
+  Umbenennungen hinweg. Aktuelle Schemadaten ohne gültige Rolle werden
+  zurückgesetzt statt aus Namen rekonstruiert.
+- Die serverautoritative ActionBar-Aktivierung validiert Slotindex und
+  erwartete Rolle gegen das aktuelle Binding und löst erst danach die
+  physische Inventory-Adresse aus dem aktuellen Layout auf. Drag/drop und
+  Interaction-Confirmation führen dieselbe erwartete Rolle bis zur
+  autoritativen Revalidierung mit.
+- Equipment-provided Gruppen tragen ihre Herkunft nun typisiert als
+  `ERpgEquipmentSlot`. Player-, BaseTerminal-, MVVM- und ActionBar-
+  Projektionen lösen primären Content und Carry-Slots über Rollen auf;
+  physische IDs bleiben nur Adresse, Save-Identität, Debugbezeichnung oder
+  ausdrücklich versionierter Legacy-Input.
+- `DA_PlayerInventoryLayout_Default` sowie die Automation-Fixtures besitzen
+  die exakten Rollen. Asset-, Eindeutigkeits-, Migrations-, Authority-,
+  Interaction-, UI- und Pooling-Regressionen sichern den Vertrag ab.
+- `SurvivalRpgEditor Win64 Development` wurde mit Unreal Engine 5.8 gebaut;
+  der abschließende inkrementelle Gate meldete UBT `Result: Succeeded`.
+- `SurvivalRpg.Inventory`: 113 von 113 Automationtests erfolgreich.
+- `SurvivalRpg.Save`: 2 von 2 Automationtests erfolgreich.
+- `SurvivalRpg.Equipment`: 5 von 5 Automationtests erfolgreich.
+- `SurvivalRpg.Crafting`: 8 von 8 Automationtests erfolgreich.
+- `SurvivalRpg.UI`: 20 von 20 Automationtests erfolgreich.
+- `CompileAllBlueprints` endete mit Prozesscode 0, 0 Compilerfehlern,
+  16 bekannten Compilerwarnungen und 0 nicht ladbaren Blueprints.
+- Fortschritt Phase 5: 2 von 7 Punkten abgeschlossen (28,6 %).
+- Gesamtfortschritt der verbindlichen Checkliste: 70 von 94 Punkten
+  abgeschlossen (74,5 %), 24 Punkte offen.
+- Nächster Schnitt: Gear-/Carry-Definitionen und ihre Views erhalten eine
+  explizite `ERpgEquipmentSlot`-Rolle; die verbleibende Ableitung aus
+  Gear-Container-Namen wird anschließend entfernt.
 
 ## Phase 6 – MVVM, Refresh und Komponentenschnitt
 

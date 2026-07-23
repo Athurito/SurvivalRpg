@@ -54,6 +54,18 @@ public:
 	UFUNCTION(BlueprintCallable, BlueprintPure = false, Category = "Inventory|Layout")
 	TArray<FRpgInventorySlotGroupView> GetSlotGroups() const;
 
+	/** Resolves exactly one static group by its explicit semantic role; missing or duplicate roles fail closed. */
+	UFUNCTION(BlueprintCallable, BlueprintPure = false, Category = "Inventory|Layout")
+	bool TryGetSlotGroupBySemanticRole(FGameplayTag SemanticRole, FRpgInventorySlotGroupView& OutGroup) const;
+
+	/** Returns the unique semantic role authored for an addressed static group. */
+	UFUNCTION(BlueprintCallable, BlueprintPure = false, Category = "Inventory|Layout")
+	bool TryGetSemanticRoleForAddress(const FRpgInventorySlotAddress& Address, FGameplayTag& OutSemanticRole) const;
+
+	/** Builds the first-cell address for exactly one static group with SemanticRole. */
+	UFUNCTION(BlueprintCallable, BlueprintPure = false, Category = "Inventory|Layout")
+	bool TryMakeSlotAddressForSemanticRole(FGameplayTag SemanticRole, FRpgInventorySlotAddress& OutAddress) const;
+
 	/** Returns the total number of grid cells currently exposed by this layout. */
 	UFUNCTION(BlueprintCallable, BlueprintPure = false, Category = "Inventory|Layout")
 	int32 GetTotalCellCount() const;
@@ -150,5 +162,4 @@ private:
 	void BroadcastLayoutChanged() const;
 	static bool IsBuiltInGearGroupId(FName GroupId);
 	static bool TryGetEquipmentSlotForGearGroupId(FName GroupId, ERpgEquipmentSlot& OutEquipmentSlot);
-	static FName EquipmentSlotToSourceName(ERpgEquipmentSlot EquipmentSlot);
 };

@@ -1695,12 +1695,29 @@ void URpgInventoryUiActionComponent::RequestUnequipSlotContainerItem_Implementat
 		MoveTemp(Intent));
 }
 
-void URpgInventoryUiActionComponent::RequestActivateCarrySlot_Implementation(FRpgInventorySlotAddress CarrySlotAddress)
+void URpgInventoryUiActionComponent::RequestActivateCarrySlot_Implementation(
+	int32 ActionBarSlotIndex,
+	FGameplayTag ExpectedCarrySemanticRole)
 {
 	URpgInventoryManagerComponent* PlayerInventory = FindPlayerInventory();
 	URpgPlayerInventoryLayoutComponent* InventoryLayout = FindPlayerInventoryLayout();
 	URpgEquipmentLoadoutComponent* EquipmentLoadout = FindEquipmentLoadout();
-	if (!PlayerInventory || !InventoryLayout || !EquipmentLoadout || !InventoryLayout->IsCarrySlotAddress(CarrySlotAddress))
+	URpgActionBarComponent* ActionBar = FindActionBar();
+	const FRpgActionBarSlot CurrentSlot = ActionBar
+		? ActionBar->GetSlot(ActionBarSlotIndex)
+		: FRpgActionBarSlot();
+	const bool bCurrentSlotIsCarry =
+		CurrentSlot.SlotType == ERpgActionBarSlotType::CarrySlot ||
+		CurrentSlot.SlotType == ERpgActionBarSlotType::CarrySlotBinding;
+	FRpgInventorySlotAddress CarrySlotAddress;
+	if (!PlayerInventory || !InventoryLayout || !EquipmentLoadout ||
+		!ActionBar || !FMath::IsWithinInclusive(ActionBarSlotIndex, 0, 7) ||
+		!ExpectedCarrySemanticRole.IsValid() || !bCurrentSlotIsCarry ||
+		CurrentSlot.CarrySemanticRole != ExpectedCarrySemanticRole ||
+		!InventoryLayout->TryMakeSlotAddressForSemanticRole(
+			ExpectedCarrySemanticRole,
+			CarrySlotAddress) ||
+		!InventoryLayout->IsCarrySlotAddress(CarrySlotAddress))
 	{
 		SendActionFeedback(RpgGameplayTags::Rpg_Inventory_Action_Equip, ERpgInventoryActionFeedbackResult::InvalidSlot, PlayerInventory, nullptr, 1);
 		return;
@@ -1710,6 +1727,18 @@ void URpgInventoryUiActionComponent::RequestActivateCarrySlot_Implementation(FRp
 	if (!Item)
 	{
 		SendActionFeedback(RpgGameplayTags::Rpg_Inventory_Action_Equip, ERpgInventoryActionFeedbackResult::MissingItem, PlayerInventory, nullptr, 1);
+		return;
+	}
+	if (!InventoryLayout->CanBindSlotAddressToActionbar(
+			CarrySlotAddress,
+			Item))
+	{
+		SendActionFeedback(
+			RpgGameplayTags::Rpg_Inventory_Action_Equip,
+			ERpgInventoryActionFeedbackResult::InvalidSlot,
+			PlayerInventory,
+			Item,
+			1);
 		return;
 	}
 
@@ -1788,11 +1817,13 @@ void URpgInventoryUiActionComponent::RequestMutateQuickAccessBinding_Implementat
 	{
 	case ERpgQuickAccessMutationOperation::BindCarry:
 	{
-		const FRpgInventoryContainerHandle SourceContainer =
-			Request.SourceAddress.GetContainerHandle();
-		if (!Request.SourceAddress.IsValid() || Request.ExpectedCarryRole.IsNone() ||
-			!SourceContainer.IsRoot() ||
-			SourceContainer.Root != Request.ExpectedCarryRole ||
+		FGameplayTag AuthoritativeSemanticRole;
+		if (!Request.SourceAddress.IsValid() ||
+			!Request.ExpectedCarrySemanticRole.IsValid() ||
+			!InventoryLayout->TryGetSemanticRoleForAddress(
+				Request.SourceAddress,
+				AuthoritativeSemanticRole) ||
+			AuthoritativeSemanticRole != Request.ExpectedCarrySemanticRole ||
 			!InventoryLayout->IsCarrySlotAddress(Request.SourceAddress))
 		{
 			SendQuickAccessFeedback(ERpgInventoryActionFeedbackResult::InvalidSlot);
@@ -1854,14 +1885,15 @@ void URpgInventoryUiActionComponent::RequestMutateQuickAccessBinding_Implementat
 
 	case ERpgQuickAccessMutationOperation::ClearCarry:
 	{
-		if (Request.ExpectedCarryRole.IsNone())
+		if (!Request.ExpectedCarrySemanticRole.IsValid())
 		{
 			SendQuickAccessFeedback(ERpgInventoryActionFeedbackResult::InvalidRequest);
 			return;
 		}
 
 		const FRpgActionBarSlot CurrentSlot = ActionBar->GetSlot(Request.SlotIndex);
-		if (!IsCarryBinding(CurrentSlot) || CurrentSlot.CarryRole != Request.ExpectedCarryRole)
+		if (!IsCarryBinding(CurrentSlot) ||
+			CurrentSlot.CarrySemanticRole != Request.ExpectedCarrySemanticRole)
 		{
 			SendQuickAccessFeedback(ERpgInventoryActionFeedbackResult::ServerRejected);
 			return;
@@ -1930,19 +1962,19 @@ void URpgInventoryUiActionComponent::RequestBindActionBarToCarrySlot_Implementat
 	Request.Operation = ERpgQuickAccessMutationOperation::BindCarry;
 	Request.SlotIndex = ActionBarSlotIndex;
 	Request.SourceAddress = CarrySlotAddress;
-	const FRpgInventoryContainerHandle CarryContainer =
-		CarrySlotAddress.GetContainerHandle();
-	Request.ExpectedCarryRole =
-		CarryContainer.IsRoot()
-			? CarryContainer.Root
-			: NAME_None;
+	if (InventoryLayout)
+	{
+		InventoryLayout->TryGetSemanticRoleForAddress(
+			CarrySlotAddress,
+			Request.ExpectedCarrySemanticRole);
+	}
 	Request.ContextItemId = SourceItem ? SourceItem->GetItemId() : FRpgInventoryItemId();
 	RequestMutateQuickAccessBinding_Implementation(Request);
 }
 
 void URpgInventoryUiActionComponent::RequestClearActionBarCarryBinding_Implementation(
 	int32 ActionBarSlotIndex,
-	FName ExpectedCarryRole)
+	FGameplayTag ExpectedCarrySemanticRole)
 {
 	URpgActionBarComponent* ActionBar = FindActionBar();
 	const FRpgActionBarSlot CurrentSlot = ActionBar ? ActionBar->GetSlot(ActionBarSlotIndex) : FRpgActionBarSlot();
@@ -1955,7 +1987,7 @@ void URpgInventoryUiActionComponent::RequestClearActionBarCarryBinding_Implement
 	Request.EnsureRequestId();
 	Request.Operation = ERpgQuickAccessMutationOperation::ClearCarry;
 	Request.SlotIndex = ActionBarSlotIndex;
-	Request.ExpectedCarryRole = ExpectedCarryRole;
+	Request.ExpectedCarrySemanticRole = ExpectedCarrySemanticRole;
 	Request.ContextItemId = ContextItem ? ContextItem->GetItemId() : FRpgInventoryItemId();
 	RequestMutateQuickAccessBinding_Implementation(Request);
 }
@@ -3527,7 +3559,8 @@ URpgInventoryUiActionComponent::PlanEquipmentIntentPlacement(
 				Intent.ExpectedQuantity);
 		}
 
-		FName DisappearingProviderSourceName = NAME_None;
+		ERpgEquipmentSlot DisappearingProviderSlot =
+			ERpgEquipmentSlot::None;
 		ERpgEquipmentSlot SourceEquipmentSlot =
 			ERpgEquipmentSlot::None;
 		if (InventoryLayout->IsGearSlotAddress(SourceAddress) &&
@@ -3538,24 +3571,7 @@ URpgInventoryUiActionComponent::PlanEquipmentIntentPlacement(
 			URpgPlayerInventoryLayoutComponent::
 				IsSlotContainerEquipmentSlot(SourceEquipmentSlot))
 		{
-			switch (SourceEquipmentSlot)
-			{
-			case ERpgEquipmentSlot::Backpack:
-				DisappearingProviderSourceName = FName(TEXT("Backpack"));
-				break;
-			case ERpgEquipmentSlot::Belt:
-				DisappearingProviderSourceName = FName(TEXT("Belt"));
-				break;
-			case ERpgEquipmentSlot::Pouch:
-				DisappearingProviderSourceName = FName(TEXT("Pouch"));
-				break;
-			case ERpgEquipmentSlot::ResourceBag:
-				DisappearingProviderSourceName =
-					FName(TEXT("ResourceBag"));
-				break;
-			default:
-				break;
-			}
+			DisappearingProviderSlot = SourceEquipmentSlot;
 		}
 
 		for (const FRpgInventorySlotGroupView& Group :
@@ -3564,10 +3580,9 @@ URpgInventoryUiActionComponent::PlanEquipmentIntentPlacement(
 			if (Group.GroupKind !=
 					ERpgInventorySlotGroupKind::Content ||
 				!Group.Rule.AllowsItem(Item) ||
-				(!DisappearingProviderSourceName.IsNone() &&
+				(DisappearingProviderSlot != ERpgEquipmentSlot::None &&
 				 Group.bProvidedByEquipment &&
-				 Group.SourceEquipmentSlotName ==
-					 DisappearingProviderSourceName))
+				 Group.SourceEquipmentSlot == DisappearingProviderSlot))
 			{
 				continue;
 			}
@@ -3854,15 +3869,23 @@ void URpgInventoryUiActionComponent::BuildDefaultQuickTransferTargets(
 	}
 
 	const TArray<FRpgInventorySlotGroupView> Groups = InventoryLayout->GetSlotGroups();
+	FRpgInventorySlotGroupView PrimaryContentGroup;
+	const FRpgInventoryContainerHandle PrimaryContentHandle =
+		InventoryLayout->TryGetSlotGroupBySemanticRole(
+			RpgGameplayTags::Rpg_Inventory_Layout_Role_Content_Primary,
+			PrimaryContentGroup)
+			? PrimaryContentGroup.ContainerHandle
+			: FRpgInventoryContainerHandle();
 	auto AddGroups = [&Groups, Item, &OutTargets](
 		const FRpgInventoryContainerHandle& ContainerHandle,
-		FName ProviderSlotName)
+		ERpgEquipmentSlot ProviderSlot)
 	{
 		for (const FRpgInventorySlotGroupView& Group : Groups)
 		{
 			const bool bMatchesContainer = ContainerHandle.IsValid() &&
 				Group.ContainerHandle == ContainerHandle;
-			const bool bMatchesProvider = !ProviderSlotName.IsNone() && Group.SourceEquipmentSlotName == ProviderSlotName;
+			const bool bMatchesProvider = ProviderSlot != ERpgEquipmentSlot::None &&
+				Group.SourceEquipmentSlot == ProviderSlot;
 			if (Group.GroupKind == ERpgInventorySlotGroupKind::Content &&
 				Group.ContainerHandle.IsValid() &&
 				(bMatchesContainer || bMatchesProvider) && Group.Rule.AllowsItem(Item))
@@ -3877,12 +3900,11 @@ void URpgInventoryUiActionComponent::BuildDefaultQuickTransferTargets(
 		// External loot/storage enters quick-access content first, then the equipped backpack, followed by any
 		// additional designer-defined content groups in their stable layout order.
 		AddGroups(
-			FRpgInventoryContainerHandle::MakeRoot(
-				URpgPlayerInventoryLayoutComponent::PocketsGroupId),
-			NAME_None);
-		AddGroups(FRpgInventoryContainerHandle(), TEXT("Belt"));
-		AddGroups(FRpgInventoryContainerHandle(), TEXT("Pouch"));
-		AddGroups(FRpgInventoryContainerHandle(), TEXT("Backpack"));
+			PrimaryContentHandle,
+			ERpgEquipmentSlot::None);
+		AddGroups(FRpgInventoryContainerHandle(), ERpgEquipmentSlot::Belt);
+		AddGroups(FRpgInventoryContainerHandle(), ERpgEquipmentSlot::Pouch);
+		AddGroups(FRpgInventoryContainerHandle(), ERpgEquipmentSlot::Backpack);
 		for (const FRpgInventorySlotGroupView& Group : Groups)
 		{
 			if (Group.GroupKind == ERpgInventorySlotGroupKind::Content &&
@@ -3905,30 +3927,30 @@ void URpgInventoryUiActionComponent::BuildDefaultQuickTransferTargets(
 		{
 			return Group.ContainerHandle == SourcePlacement.GetContainerHandle();
 		});
-	const bool bSourceIsBackpackContent = SourceGroup && SourceGroup->SourceEquipmentSlotName == FName(TEXT("Backpack"));
+	const bool bSourceIsBackpackContent = SourceGroup &&
+		SourceGroup->SourceEquipmentSlot == ERpgEquipmentSlot::Backpack;
 	const bool bSourceIsQuickContent = SourceGroup &&
-		(SourceGroup->ContainerHandle == FRpgInventoryContainerHandle::MakeRoot(
-			URpgPlayerInventoryLayoutComponent::PocketsGroupId) ||
-		 SourceGroup->SourceEquipmentSlotName == FName(TEXT("Belt")) ||
-		 SourceGroup->SourceEquipmentSlotName == FName(TEXT("Pouch")));
+		((PrimaryContentHandle.IsValid() &&
+		  SourceGroup->ContainerHandle == PrimaryContentHandle) ||
+		 SourceGroup->SourceEquipmentSlot == ERpgEquipmentSlot::Belt ||
+		 SourceGroup->SourceEquipmentSlot == ERpgEquipmentSlot::Pouch);
 
 	if (bSourceIsBackpackContent)
 	{
 		AddGroups(
-			FRpgInventoryContainerHandle::MakeRoot(
-				URpgPlayerInventoryLayoutComponent::PocketsGroupId),
-			NAME_None);
-		AddGroups(FRpgInventoryContainerHandle(), TEXT("Belt"));
-		AddGroups(FRpgInventoryContainerHandle(), TEXT("Pouch"));
+			PrimaryContentHandle,
+			ERpgEquipmentSlot::None);
+		AddGroups(FRpgInventoryContainerHandle(), ERpgEquipmentSlot::Belt);
+		AddGroups(FRpgInventoryContainerHandle(), ERpgEquipmentSlot::Pouch);
 	}
 	else if (bSourceIsQuickContent)
 	{
-		AddGroups(FRpgInventoryContainerHandle(), TEXT("Backpack"));
+		AddGroups(FRpgInventoryContainerHandle(), ERpgEquipmentSlot::Backpack);
 	}
 	else
 	{
 		// Gear, Carry, and any other player roots quick-transfer into the backpack without activating equipment.
-		AddGroups(FRpgInventoryContainerHandle(), TEXT("Backpack"));
+		AddGroups(FRpgInventoryContainerHandle(), ERpgEquipmentSlot::Backpack);
 	}
 }
 

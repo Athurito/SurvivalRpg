@@ -93,6 +93,22 @@ bool FRpgPlayerInventoryLayoutAssetCompositionTest::RunTest(const FString& Param
 		TEXT("ShieldSlot"),
 		TEXT("Pockets")
 	};
+	const TArray<FGameplayTag> ExpectedSemanticRoles =
+	{
+		FGameplayTag(),
+		FGameplayTag(),
+		FGameplayTag(),
+		FGameplayTag(),
+		FGameplayTag(),
+		FGameplayTag(),
+		FGameplayTag(),
+		FGameplayTag(),
+		FGameplayTag(),
+		FGameplayTag::RequestGameplayTag(TEXT("Rpg.Inventory.Layout.Role.Carry.Primary")),
+		FGameplayTag::RequestGameplayTag(TEXT("Rpg.Inventory.Layout.Role.Carry.Secondary")),
+		FGameplayTag::RequestGameplayTag(TEXT("Rpg.Inventory.Layout.Role.Carry.OffHand")),
+		FGameplayTag::RequestGameplayTag(TEXT("Rpg.Inventory.Layout.Role.Content.Primary"))
+	};
 	const TArray<FRpgInventorySlotGroupDefinition>& Groups =
 		Layout->StaticSlotGroups;
 	if (!TestEqual(
@@ -104,6 +120,7 @@ bool FRpgPlayerInventoryLayoutAssetCompositionTest::RunTest(const FString& Param
 	}
 
 	int32 TotalCellCount = 0;
+	TSet<FGameplayTag> AuthoredSemanticRoles;
 	for (int32 Index = 0; Index < Groups.Num(); ++Index)
 	{
 		const FRpgInventorySlotGroupDefinition& Group = Groups[Index];
@@ -111,8 +128,23 @@ bool FRpgPlayerInventoryLayoutAssetCompositionTest::RunTest(const FString& Param
 			FString::Printf(TEXT("Group %d keeps its authored container id"), Index),
 			Group.ContainerId,
 			ExpectedContainerIds[Index]);
+		TestEqual(
+			FString::Printf(TEXT("Group %d keeps its explicit semantic role"), Index),
+			Group.SemanticRole,
+			ExpectedSemanticRoles[Index]);
+		if (Group.SemanticRole.IsValid())
+		{
+			TestFalse(
+				FString::Printf(TEXT("Semantic role %s is unique"), *Group.SemanticRole.ToString()),
+				AuthoredSemanticRoles.Contains(Group.SemanticRole));
+			AuthoredSemanticRoles.Add(Group.SemanticRole);
+		}
 		TotalCellCount += Group.GridSize.Width * Group.GridSize.Height;
 	}
+	TestEqual(
+		TEXT("The default layout exposes exactly four authored singleton roles"),
+		AuthoredSemanticRoles.Num(),
+		4);
 	TestEqual(
 		TEXT("The static player layout exposes exactly 48 cells"),
 		TotalCellCount,

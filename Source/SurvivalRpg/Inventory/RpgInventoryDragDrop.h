@@ -846,7 +846,8 @@ private:
 	FGuid MarkInteractionRequestPending(
 		const FRpgInventoryDragPayload& Payload,
 		const FRpgInventoryDropTarget& Target,
-		ERpgInventoryInteractionPreviewState AcceptedPreviewState);
+		ERpgInventoryInteractionPreviewState AcceptedPreviewState,
+		FGameplayTag ExpectedCarrySemanticRole = FGameplayTag());
 	bool IsPayloadSourceCurrent(const FRpgInventoryDragPayload& Payload) const;
 	bool IsHeldSourceEntry(URpgInventoryEntryViewModel* EntryViewModel) const;
 	bool IsHeldSourceAddressSlot(URpgInventoryAddressSlotViewModel* SlotViewModel) const;

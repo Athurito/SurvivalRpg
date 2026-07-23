@@ -236,7 +236,7 @@ bool FRpgQuickAccessLegacySlotAddressRestoreTest::RunTest(const FString& Paramet
 	ConflictingBinding.SlotAddress.Y = 7;
 	SetLegacyContainerId(ConflictingBinding.SlotAddress, ConflictingLegacyRoot);
 
-	ActionBar->RestoreQuickAccessBindings(SavedBindings);
+	ActionBar->RestoreQuickAccessBindings(SavedBindings, true);
 	const TArray<FRpgQuickAccessBinding> RestoredBindings = ActionBar->GetQuickAccessBindings();
 	if (!TestEqual(TEXT("Restore preserves the fixed eight-binding contract"), RestoredBindings.Num(), 8))
 	{

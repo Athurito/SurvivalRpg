@@ -4,6 +4,7 @@
 #include "GameplayTagContainer.h"
 #include "RpgInventoryItemTypes.h"
 #include "RpgInventorySpatialTypes.h"
+#include "SurvivalRpg/Equipment/RpgEquipmentDefinition.h"
 #include "UObject/SoftObjectPtr.h"
 
 #include "RpgPlayerInventoryLayoutTypes.generated.h"
@@ -174,6 +175,13 @@ struct SURVIVALRPG_API FRpgInventorySlotGroupDefinition
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Inventory|Layout")
 	FName ContainerId = NAME_None;
 
+	/**
+	 * Stable semantic role used to find this static group without interpreting ContainerId.
+	 * Roles are exact, layout-local singleton keys. Leave empty for generic groups and item-provided content.
+	 */
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Inventory|Layout", meta = (Categories = "Rpg.Inventory.Layout.Role"))
+	FGameplayTag SemanticRole;
+
 	/** Player-facing label shown by inventory screens. */
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Inventory|Layout")
 	FText DisplayName;
@@ -211,6 +219,10 @@ struct SURVIVALRPG_API FRpgInventorySlotGroupView
 	UPROPERTY(BlueprintReadOnly, Category = "Inventory|Layout")
 	FName ContainerId = NAME_None;
 
+	/** Exact designer-authored role used for stable static-group lookup; invalid for generic or item-owned groups. */
+	UPROPERTY(BlueprintReadOnly, Category = "Inventory|Layout")
+	FGameplayTag SemanticRole;
+
 	/** Player-facing label shown by inventory screens. */
 	UPROPERTY(BlueprintReadOnly, Category = "Inventory|Layout")
 	FText DisplayName;
@@ -235,9 +247,9 @@ struct SURVIVALRPG_API FRpgInventorySlotGroupView
 	UPROPERTY(BlueprintReadOnly, Category = "Inventory|Layout")
 	bool bProvidedByEquipment = false;
 
-	/** Equipment slot name whose item provides this group, or None for built-in body slots. */
+	/** Typed equipment slot whose item provides this group, or None for static groups. */
 	UPROPERTY(BlueprintReadOnly, Category = "Inventory|Layout")
-	FName SourceEquipmentSlotName = NAME_None;
+	ERpgEquipmentSlot SourceEquipmentSlot = ERpgEquipmentSlot::None;
 
 	FRpgInventorySlotAddress MakeAddress(int32 X, int32 Y) const
 	{

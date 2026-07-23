@@ -46,10 +46,12 @@ namespace
 		bool bActionbarBindable,
 		bool bCarrySlot,
 		ERpgInventorySlotGroupKind GroupKind,
-		FGameplayTag CarryActivationRole = FGameplayTag())
+		FGameplayTag CarryActivationRole = FGameplayTag(),
+		FGameplayTag SemanticRole = FGameplayTag())
 	{
 		FRpgInventorySlotGroupDefinition Group;
 		Group.ContainerId = ContainerId;
+		Group.SemanticRole = SemanticRole;
 		Group.DisplayName = DisplayName;
 		Group.GroupKind = GroupKind;
 		Group.GridSize.Width = FMath::Max(1, GridWidth);
@@ -760,10 +762,10 @@ void ARpgInventoryAutomationTestPlayerState::InitializeTestPawnData()
 		MakeTestStaticGroup(URpgPlayerInventoryLayoutComponent::GearBeltGroupId, NSLOCTEXT("RpgInventoryLayout", "GearBelt", "Belt"), 1, 1, {}, false, false, ERpgInventorySlotGroupKind::Gear),
 		MakeTestStaticGroup(URpgPlayerInventoryLayoutComponent::GearPouchGroupId, NSLOCTEXT("RpgInventoryLayout", "GearPouch", "Pouch"), 1, 1, {}, false, false, ERpgInventorySlotGroupKind::Gear),
 		MakeTestStaticGroup(URpgPlayerInventoryLayoutComponent::GearResourceBagGroupId, NSLOCTEXT("RpgInventoryLayout", "GearResourceBag", "Resource Bag"), 1, 1, {}, false, false, ERpgInventorySlotGroupKind::Gear),
-		MakeTestStaticGroup(URpgPlayerInventoryLayoutComponent::WeaponSlot1GroupId, NSLOCTEXT("RpgInventoryLayout", "WeaponSlot1", "Weapon 1"), 1, 1, { ERpgInventoryItemCategory::Weapon }, true, true, ERpgInventorySlotGroupKind::Carry, RpgGameplayTags::Equipment_Slot_MainHand),
-		MakeTestStaticGroup(URpgPlayerInventoryLayoutComponent::WeaponSlot2GroupId, NSLOCTEXT("RpgInventoryLayout", "WeaponSlot2", "Weapon 2"), 1, 1, { ERpgInventoryItemCategory::Weapon }, true, true, ERpgInventorySlotGroupKind::Carry, RpgGameplayTags::Equipment_Slot_MainHand),
-		MakeTestStaticGroup(URpgPlayerInventoryLayoutComponent::ShieldSlotGroupId, NSLOCTEXT("RpgInventoryLayout", "ShieldSlot", "Shield"), 1, 1, { ERpgInventoryItemCategory::Shield }, true, true, ERpgInventorySlotGroupKind::Carry, RpgGameplayTags::Equipment_Slot_OffHand),
-		MakeTestStaticGroup(URpgPlayerInventoryLayoutComponent::PocketsGroupId, NSLOCTEXT("RpgInventoryLayout", "Pockets", "Pockets"), 4, 2, {}, true, false, ERpgInventorySlotGroupKind::Content)
+		MakeTestStaticGroup(URpgPlayerInventoryLayoutComponent::WeaponSlot1GroupId, NSLOCTEXT("RpgInventoryLayout", "WeaponSlot1", "Weapon 1"), 1, 1, { ERpgInventoryItemCategory::Weapon }, true, true, ERpgInventorySlotGroupKind::Carry, RpgGameplayTags::Equipment_Slot_MainHand, RpgGameplayTags::Rpg_Inventory_Layout_Role_Carry_Primary),
+		MakeTestStaticGroup(URpgPlayerInventoryLayoutComponent::WeaponSlot2GroupId, NSLOCTEXT("RpgInventoryLayout", "WeaponSlot2", "Weapon 2"), 1, 1, { ERpgInventoryItemCategory::Weapon }, true, true, ERpgInventorySlotGroupKind::Carry, RpgGameplayTags::Equipment_Slot_MainHand, RpgGameplayTags::Rpg_Inventory_Layout_Role_Carry_Secondary),
+		MakeTestStaticGroup(URpgPlayerInventoryLayoutComponent::ShieldSlotGroupId, NSLOCTEXT("RpgInventoryLayout", "ShieldSlot", "Shield"), 1, 1, { ERpgInventoryItemCategory::Shield }, true, true, ERpgInventorySlotGroupKind::Carry, RpgGameplayTags::Equipment_Slot_OffHand, RpgGameplayTags::Rpg_Inventory_Layout_Role_Carry_OffHand),
+		MakeTestStaticGroup(URpgPlayerInventoryLayoutComponent::PocketsGroupId, NSLOCTEXT("RpgInventoryLayout", "Pockets", "Pockets"), 4, 2, {}, true, false, ERpgInventorySlotGroupKind::Content, FGameplayTag(), RpgGameplayTags::Rpg_Inventory_Layout_Role_Content_Primary)
 	};
 
 	TestPawnData = NewObject<URpgPawnData>(

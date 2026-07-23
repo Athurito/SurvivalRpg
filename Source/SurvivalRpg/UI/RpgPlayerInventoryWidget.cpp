@@ -3,6 +3,7 @@
 #include "Components/CanvasPanelSlot.h"
 #include "Components/Widget.h"
 #include "MVVMSubsystem.h"
+#include "SurvivalRpg/GameplayTags/RpgGameplayTags.h"
 #include "SurvivalRpg/Inventory/RpgInventoryDragDrop.h"
 #include "SurvivalRpg/Inventory/RpgPlayerInventoryLayoutComponent.h"
 #include "SurvivalRpg/Mvvm/Inventory/RpgPlayerInventoryViewModels.h"
@@ -173,15 +174,28 @@ void URpgPlayerInventoryWidget::RefreshSlotGroups()
 		CarrySlot->SetVisibility(GroupViewModel ? ESlateVisibility::Visible : ESlateVisibility::Collapsed);
 	};
 
-	BindCarrySlot(Carry_Weapon1, TEXT("Carry_Weapon1"), PlayerInventoryViewModel->GetSlotGroup(URpgPlayerInventoryLayoutComponent::WeaponSlot1GroupId));
-	BindCarrySlot(Carry_Weapon2, TEXT("Carry_Weapon2"), PlayerInventoryViewModel->GetSlotGroup(URpgPlayerInventoryLayoutComponent::WeaponSlot2GroupId));
-	BindCarrySlot(Carry_Offhand, TEXT("Carry_Offhand"), PlayerInventoryViewModel->GetSlotGroup(URpgPlayerInventoryLayoutComponent::ShieldSlotGroupId));
+	auto ResolveCarryRole = [this](FGameplayTag SemanticRole)
+	{
+		URpgInventorySlotGroupViewModel* Group =
+			PlayerInventoryViewModel->GetSlotGroupBySemanticRole(SemanticRole);
+		return Group && Group->IsCarryGroup() ? Group : nullptr;
+	};
+	auto ResolveContentRole = [this](FGameplayTag SemanticRole)
+	{
+		URpgInventorySlotGroupViewModel* Group =
+			PlayerInventoryViewModel->GetSlotGroupBySemanticRole(SemanticRole);
+		return Group && Group->IsContentGroup() ? Group : nullptr;
+	};
 
-	BindContentGroup(Content_Pockets, PlayerInventoryViewModel->GetSlotGroup(URpgPlayerInventoryLayoutComponent::PocketsGroupId), TEXT("Content_Pockets"));
-	BindContentGroup(Content_Backpack, FindEquipmentProvidedContentGroup(TEXT("Backpack")), TEXT("Content_Backpack"));
-	BindContentGroup(Content_Belt, FindEquipmentProvidedContentGroup(TEXT("Belt")), TEXT("Content_Belt"));
-	BindContentGroup(Content_Pouch, FindEquipmentProvidedContentGroup(TEXT("Pouch")), TEXT("Content_Pouch"));
-	BindContentGroup(Content_ResourceBag, FindEquipmentProvidedContentGroup(TEXT("ResourceBag")), TEXT("Content_ResourceBag"));
+	BindCarrySlot(Carry_Weapon1, TEXT("Carry_Weapon1"), ResolveCarryRole(RpgGameplayTags::Rpg_Inventory_Layout_Role_Carry_Primary));
+	BindCarrySlot(Carry_Weapon2, TEXT("Carry_Weapon2"), ResolveCarryRole(RpgGameplayTags::Rpg_Inventory_Layout_Role_Carry_Secondary));
+	BindCarrySlot(Carry_Offhand, TEXT("Carry_Offhand"), ResolveCarryRole(RpgGameplayTags::Rpg_Inventory_Layout_Role_Carry_OffHand));
+
+	BindContentGroup(Content_Pockets, ResolveContentRole(RpgGameplayTags::Rpg_Inventory_Layout_Role_Content_Primary), TEXT("Content_Pockets"));
+	BindContentGroup(Content_Backpack, FindEquipmentProvidedContentGroup(ERpgEquipmentSlot::Backpack), TEXT("Content_Backpack"));
+	BindContentGroup(Content_Belt, FindEquipmentProvidedContentGroup(ERpgEquipmentSlot::Belt), TEXT("Content_Belt"));
+	BindContentGroup(Content_Pouch, FindEquipmentProvidedContentGroup(ERpgEquipmentSlot::Pouch), TEXT("Content_Pouch"));
+	BindContentGroup(Content_ResourceBag, FindEquipmentProvidedContentGroup(ERpgEquipmentSlot::ResourceBag), TEXT("Content_ResourceBag"));
 }
 
 void URpgPlayerInventoryWidget::RefreshActionBar()
@@ -687,9 +701,10 @@ bool URpgPlayerInventoryWidget::RoutePayloadToActionBar(
 	return ActionBarTileView->PreviewPayloadAtScreenPosition(Payload, GhostCenterScreenPosition);
 }
 
-URpgInventorySlotGroupViewModel* URpgPlayerInventoryWidget::FindEquipmentProvidedContentGroup(FName SourceEquipmentSlotName) const
+URpgInventorySlotGroupViewModel* URpgPlayerInventoryWidget::FindEquipmentProvidedContentGroup(
+	ERpgEquipmentSlot SourceEquipmentSlot) const
 {
-	if (!PlayerInventoryViewModel || SourceEquipmentSlotName.IsNone())
+	if (!PlayerInventoryViewModel || SourceEquipmentSlot == ERpgEquipmentSlot::None)
 	{
 		return nullptr;
 	}
@@ -697,7 +712,7 @@ URpgInventorySlotGroupViewModel* URpgPlayerInventoryWidget::FindEquipmentProvide
 	for (URpgInventorySlotGroupViewModel* Group : PlayerInventoryViewModel->GetInventoryGroups())
 	{
 		if (Group && Group->IsProvidedByEquipment() &&
-			Group->GetSourceEquipmentSlotName() == SourceEquipmentSlotName)
+			Group->GetSourceEquipmentSlot() == SourceEquipmentSlot)
 		{
 			return Group;
 		}

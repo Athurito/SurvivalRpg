@@ -173,7 +173,7 @@ private:
 		FVector2D GhostCenterScreenPosition,
 		bool bCommit,
 		bool& bOutTargetAddressed);
-	URpgInventorySlotGroupViewModel* FindEquipmentProvidedContentGroup(FName SourceEquipmentSlotName) const;
+	URpgInventorySlotGroupViewModel* FindEquipmentProvidedContentGroup(ERpgEquipmentSlot SourceEquipmentSlot) const;
 	void CollectStandaloneContentGroupWidgets(TArray<URpgInventorySlotGroupWidget*>& OutWidgets) const;
 	URpgInventoryCarrySlotWidget* ResolveCarrySlotWidget(UWidget* BoundWidget, FName BindingName, bool bLogFailure) const;
 	void UpdateControllerCarryDragVisual(

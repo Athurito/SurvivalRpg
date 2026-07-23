@@ -18,8 +18,14 @@ struct SURVIVALRPG_API FRpgPlayerSaveData
 {
 	GENERATED_BODY()
 
-	/** Current per-player schema emitted by this build. */
-	static constexpr int32 CurrentSchemaVersion = 1;
+	/** Oldest per-player schema accepted for explicit in-memory migration during restore. */
+	static constexpr int32 MinimumSupportedSchemaVersion = 1;
+
+	/** First per-player schema whose Carry bindings must contain canonical semantic roles. */
+	static constexpr int32 SemanticCarryRoleSchemaVersion = 2;
+
+	/** Current per-player schema emitted by this build. Version 2 stores Carry bindings by semantic layout role. */
+	static constexpr int32 CurrentSchemaVersion = SemanticCarryRoleSchemaVersion;
 
 	/** Selects the migration/validation path before any runtime player state is changed. */
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, SaveGame, Category = "Rpg|Save", meta = (ClampMin = "1", UIMin = "1"))
@@ -52,7 +58,8 @@ struct SURVIVALRPG_API FRpgPlayerSaveData
 	/** Lightweight envelope validation; the inventory manager performs the authoritative deep graph validation. */
 	bool IsSchemaSupported() const
 	{
-		return SchemaVersion == CurrentSchemaVersion &&
+		return SchemaVersion >= MinimumSupportedSchemaVersion &&
+			SchemaVersion <= CurrentSchemaVersion &&
 			(!bHasInventoryGraph || InventoryGraph.SchemaVersion == FRpgInventoryGraphSaveData::CurrentSchemaVersion) &&
 			(QuickAccessBindings.IsEmpty() || QuickAccessBindings.Num() == 8);
 	}

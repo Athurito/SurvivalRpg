@@ -26,7 +26,7 @@ enum class ERpgActionBarSlotType : uint8
 	/** Uses a compatible stack from designer-marked quick-access grids, preferring one persistent item id. */
 	Consumable = 1,
 
-	/** Activates or holsters the current item in a semantic Carry role such as WeaponSlot1 or ShieldSlot. */
+	/** Activates or holsters the current item in a semantic Carry role such as Primary, Secondary, or OffHand. */
 	CarrySlot = 2,
 
 	/** Presses the one granted GAS spec identified by a unique semantic AbilityId. */
@@ -82,9 +82,9 @@ struct SURVIVALRPG_API FRpgQuickAccessBinding
 	UPROPERTY(BlueprintReadOnly, SaveGame, Category = "Quick Access")
 	FRpgInventorySlotAddress SlotAddress;
 
-	/** Data-driven Carry group/role whose current item is activated; no concrete item pointer is saved. */
-	UPROPERTY(BlueprintReadOnly, SaveGame, Category = "Quick Access")
-	FName CarryRole = NAME_None;
+	/** Stable data-driven Carry role whose current item is activated; the physical container id may change independently. */
+	UPROPERTY(BlueprintReadOnly, SaveGame, Category = "Quick Access", meta = (Categories = "Rpg.Inventory.Layout.Role"))
+	FGameplayTag CarrySemanticRole;
 
 	/** Consumable definition resolved only from designer-marked quick-access grids. */
 	UPROPERTY(BlueprintReadOnly, SaveGame, Category = "Quick Access")
@@ -108,6 +108,13 @@ struct SURVIVALRPG_API FRpgQuickAccessBinding
 
 	bool IsEmpty() const { return SlotType == ERpgActionBarSlotType::Empty; }
 	void Reset() { *this = FRpgQuickAccessBinding(); }
+
+private:
+	friend class URpgActionBarComponent;
+
+	/** Historical Carry root id retained only so authoritative restore can promote version-one Quick Access saves. */
+	UPROPERTY(SaveGame, NotReplicated, meta = (DeprecatedProperty, DeprecationMessage = "Use CarrySemanticRole. This field is retained only for legacy save migration."))
+	FName CarryRole_DEPRECATED = NAME_None;
 };
 
 /** Backward-compatible actionbar slot name; every slot now carries the canonical quick-access binding payload. */
@@ -189,10 +196,6 @@ public:
 	UFUNCTION(Server, Reliable, BlueprintCallable, Category = "Rpg|Action Bar")
 	void RequestBindCarrySlotToSlot(int32 SlotIndex, FRpgInventorySlotAddress SlotAddress);
 
-	/** Binds a semantic Carry role such as WeaponSlot1 or ShieldSlot to one shared quick-access slot. */
-	UFUNCTION(Server, Reliable, BlueprintCallable, Category = "Rpg|Quick Access")
-	void RequestBindCarryRoleToSlot(int32 SlotIndex, FName CarryRole);
-
 	/** Binds a consumable definition and preferred persistent stack id to one shared quick-access slot. */
 	UFUNCTION(Server, Reliable, BlueprintCallable, Category = "Rpg|Quick Access")
 	void RequestBindConsumableToSlot(
@@ -208,9 +211,14 @@ public:
 	UFUNCTION(Server, Reliable, BlueprintCallable, Category = "Rpg|Action Bar")
 	void RequestClearSlot(int32 SlotIndex);
 
-	/** Restores up to eight pointer-free bindings after the inventory graph has resolved persistent item ids. */
+	/**
+	 * Restores up to eight pointer-free bindings after the inventory graph and layout are ready.
+	 * Legacy Carry roots may be promoted only for player-save schema v1; current schemas fail closed on legacy data.
+	 */
 	UFUNCTION(BlueprintCallable, BlueprintAuthorityOnly, Category = "Rpg|Quick Access")
-	void RestoreQuickAccessBindings(const TArray<FRpgQuickAccessBinding>& SavedBindings);
+	void RestoreQuickAccessBindings(
+		const TArray<FRpgQuickAccessBinding>& SavedBindings,
+		bool bAllowLegacyCarryRootMigration);
 
 	/** Revalidates all eight bindings after inventory, equipment, progression, or GAS grants change. */
 	UFUNCTION(BlueprintCallable, BlueprintAuthorityOnly, Category = "Rpg|Quick Access")
@@ -239,7 +247,9 @@ private:
 	bool IsValidSlotIndex(int32 SlotIndex) const;
 	ARpgPlayerController* GetRpgPlayerController() const;
 	URpgInventoryItemInstance* ResolveConsumableItem(const FRpgActionBarSlot& Slot, FRpgInventorySlotAddress* OutAddress = nullptr) const;
-	bool IsValidCarryRole(FName CarryRole, FRpgInventorySlotAddress& OutAddress) const;
+	bool TryResolveCarrySemanticRole(FGameplayTag CarrySemanticRole, FRpgInventorySlotAddress& OutAddress) const;
+	bool TryResolveLegacyCarryRoot(FName LegacyCarryRoot, FGameplayTag& OutCarrySemanticRole) const;
+	bool TryPromoteLegacyCarrySemanticRole(FRpgQuickAccessBinding& Slot) const;
 	void ClearDuplicateBinding(int32 TargetSlotIndex, const FRpgActionBarSlot& Binding);
 	void RefreshBindingsInternal(bool bForceBroadcast);
 	void RefreshBindingAvailability(int32 SlotIndex, FRpgActionBarSlot& Slot, URpgAbilitySystemComponent* AbilitySystemComponent);

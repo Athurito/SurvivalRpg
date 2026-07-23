@@ -15,6 +15,7 @@
 #include "SurvivalRpg/Core/Player/RpgPlayerController.h"
 #include "SurvivalRpg/Inventory/RpgInventoryItemDefinition.h"
 #include "SurvivalRpg/Inventory/RpgInventoryItemInstance.h"
+#include "SurvivalRpg/Inventory/RpgPlayerInventoryLayoutComponent.h"
 #include "SurvivalRpg/Mvvm/Inventory/RpgPlayerInventoryViewModels.h"
 #include "SurvivalRpg/UI/RpgInventoryAddressSlotWidget.h"
 #include "SurvivalRpg/UI/RpgInventoryInteractionScreenWidget.h"
@@ -1211,9 +1212,20 @@ FText URpgInventoryContextMenuWidget::ResolveQuickAccessBindingLabel(int32 SlotI
 		return LOCTEXT("MissingConsumableQuickAccessSlot", "Missing Consumable");
 	case ERpgActionBarSlotType::CarrySlot:
 	case ERpgActionBarSlotType::CarrySlotBinding:
-		return ActionBarSlot.CarryRole.IsNone()
-			? LOCTEXT("MissingCarryQuickAccessSlot", "Missing Carry Role")
-			: FText::FromName(ActionBarSlot.CarryRole);
+	{
+		const URpgPlayerInventoryLayoutComponent* InventoryLayout =
+			RpgPlayerController
+				? RpgPlayerController->GetPlayerInventoryLayoutComponent()
+				: nullptr;
+		FRpgInventorySlotGroupView CarryGroup;
+		return InventoryLayout &&
+				InventoryLayout->TryGetSlotGroupBySemanticRole(
+					ActionBarSlot.CarrySemanticRole,
+					CarryGroup) &&
+			CarryGroup.GroupKind == ERpgInventorySlotGroupKind::Carry
+			? CarryGroup.DisplayName
+			: LOCTEXT("MissingCarryQuickAccessSlot", "Missing Carry Role");
+	}
 	case ERpgActionBarSlotType::Ability:
 		return ActionBarSlot.AbilityId.IsValid()
 			? FText::FromString(ActionBarSlot.AbilityId.ToString())
