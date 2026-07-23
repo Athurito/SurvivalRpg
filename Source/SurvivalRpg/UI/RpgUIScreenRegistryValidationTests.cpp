@@ -13,6 +13,11 @@
 #include "Misc/AutomationTest.h"
 #include "Misc/DataValidation.h"
 #include "Modules/ModuleManager.h"
+#include "NativeGameplayTags.h"
+
+UE_DEFINE_GAMEPLAY_TAG_STATIC(
+	TAG_RpgUIScreenRegistry_UnregisteredLayer,
+	"UI.Layer.Automation.UnregisteredScreenLayer");
 
 namespace
 {
@@ -163,6 +168,44 @@ bool FRpgUIScreenRegistryAuthoredAssetValidationTest::RunTest(
 						"a validation error"),
 					*AssetPath));
 		}
+
+		for (int32 EntryIndex = 0;
+			EntryIndex < Registry->Screens.Num();
+			++EntryIndex)
+		{
+			const UClass* WidgetClass =
+				Registry->Screens[EntryIndex].
+					WidgetClass.LoadSynchronous();
+			if (!TestNotNull(
+				*FString::Printf(
+					TEXT(
+						"%s Screens[%d].WidgetClass loads"),
+					*AssetPath,
+					EntryIndex),
+				WidgetClass))
+			{
+				continue;
+			}
+
+			TestTrue(
+				*FString::Printf(
+					TEXT(
+						"%s Screens[%d].WidgetClass derives "
+						"from CommonActivatableWidget"),
+					*AssetPath,
+					EntryIndex),
+				WidgetClass->IsChildOf(
+					UCommonActivatableWidget::StaticClass()));
+			TestFalse(
+				*FString::Printf(
+					TEXT(
+						"%s Screens[%d].WidgetClass is "
+						"concrete"),
+					*AssetPath,
+					EntryIndex),
+				WidgetClass->HasAnyClassFlags(
+					CLASS_Abstract));
+		}
 	}
 
 	TestTrue(
@@ -218,6 +261,17 @@ bool FRpgUIScreenRegistryValidationDiagnosticsTest::RunTest(
 		URpgActivatableWidget::StaticClass();
 	Registry->Screens.Add(AbstractClassEntry);
 
+	FRpgUIScreenRegistryEntry StaleObjectEntry =
+		MakeValidScreenEntry(
+			RpgGameplayTags::UI_Screen_Crafting);
+	StaleObjectEntry.WidgetClass =
+		TSoftClassPtr<UCommonActivatableWidget>(
+			FSoftObjectPath(
+				TEXT(
+					"/Game/SurvivalRpg/UI/CUI_StorageSpatial."
+					"StaleScreenClass_C")));
+	Registry->Screens.Add(StaleObjectEntry);
+
 	FDataValidationContext Context;
 	const EDataValidationResult Result =
 		Registry->IsDataValid(Context);
@@ -227,7 +281,7 @@ bool FRpgUIScreenRegistryValidationDiagnosticsTest::RunTest(
 	TestEqual(
 		TEXT("Every malformed field receives one focused error"),
 		Context.GetNumErrors(),
-		8u);
+		9u);
 	TestEqual(
 		TEXT(
 			"Legacy multi-instance data receives one migration "
@@ -244,6 +298,7 @@ bool FRpgUIScreenRegistryValidationDiagnosticsTest::RunTest(
 			TEXT("must be a descendant of UI.Layer"),
 			TEXT("WidgetClass is unset"),
 			TEXT("is abstract"),
+			TEXT("StaleScreenClass_C' could not be loaded"),
 			TEXT("always single-instance")
 		})
 	{
@@ -257,6 +312,83 @@ bool FRpgUIScreenRegistryValidationDiagnosticsTest::RunTest(
 				Context,
 				ExpectedDiagnostic));
 	}
+
+	return true;
+}
+
+IMPLEMENT_SIMPLE_AUTOMATION_TEST(
+	FRpgUIScreenRegistryRegisteredLayerContractTest,
+	"SurvivalRpg.UI.ScreenRegistry.Validation.RegisteredLayerContract",
+	EAutomationTestFlags::EditorContext |
+		EAutomationTestFlags::EngineFilter)
+
+bool FRpgUIScreenRegistryRegisteredLayerContractTest::RunTest(
+	const FString& Parameters)
+{
+	URpgUIScreenRegistry* Registry =
+		NewObject<URpgUIScreenRegistry>(
+			GetTransientPackage());
+	if (!TestNotNull(
+		TEXT("Transient screen registry exists"),
+		Registry))
+	{
+		return false;
+	}
+
+	const TPair<FGameplayTag, FGameplayTag> RegisteredMappings[] = {
+		{
+			RpgGameplayTags::UI_Screen_Inventory,
+			RpgGameplayTags::UI_Layer_Game
+		},
+		{
+			RpgGameplayTags::UI_Screen_Storage,
+			RpgGameplayTags::UI_Layer_GameMenu
+		},
+		{
+			RpgGameplayTags::UI_Screen_MainMenu,
+			RpgGameplayTags::UI_Layer_Menu
+		},
+		{
+			RpgGameplayTags::UI_Screen_Respawn,
+			RpgGameplayTags::UI_Layer_Modal
+		}
+	};
+
+	for (const TPair<FGameplayTag, FGameplayTag>& Mapping :
+		RegisteredMappings)
+	{
+		FRpgUIScreenRegistryEntry Entry =
+			MakeValidScreenEntry(Mapping.Key);
+		Entry.LayerTag = Mapping.Value;
+		Registry->Screens.Add(MoveTemp(Entry));
+	}
+
+	FDataValidationContext ValidContext;
+	TestEqual(
+		TEXT("All four registered root layers validate"),
+		Registry->IsDataValid(ValidContext),
+		EDataValidationResult::Valid);
+	TestEqual(
+		TEXT("Registered root layers emit no validation errors"),
+		ValidContext.GetNumErrors(),
+		0u);
+
+	Registry->Screens[0].LayerTag =
+		TAG_RpgUIScreenRegistry_UnregisteredLayer;
+	FDataValidationContext UnsupportedContext;
+	TestEqual(
+		TEXT("A valid UI.Layer descendant not owned by the root layout is rejected"),
+		Registry->IsDataValid(UnsupportedContext),
+		EDataValidationResult::Invalid);
+	TestEqual(
+		TEXT("The unsupported layer receives one focused error"),
+		UnsupportedContext.GetNumErrors(),
+		1u);
+	TestTrue(
+		TEXT("The unsupported-layer diagnostic names root-layout registration"),
+		HasIssueContaining(
+			UnsupportedContext,
+			TEXT("not registered by URpgPrimaryGameLayout")));
 
 	return true;
 }

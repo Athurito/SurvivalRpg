@@ -1620,7 +1620,7 @@ Verifizierter Phase-4F-Abschlussstand vom 2026-07-22:
 
 ## Phase 5 – Datengetriebenes Layout und Editor-Validierung
 
-Status: **In Arbeit**
+Status: **Abgeschlossen**
 
 - [x] `URpgPlayerInventoryLayoutDefinition` als DataAsset über
       PawnData/Experience zuweisen.
@@ -1634,7 +1634,7 @@ Status: **In Arbeit**
 - [x] `BothHands + OffHand`, leere `AllowedSlots` bei ausrüstbaren Items und
       definitionlose Provider als konkrete Validierungsfehler bzw.
       Migrationswarnungen abbilden.
-- [ ] Widget-Compiler-/Editor-Validierung für erforderliche BindWidgets,
+- [x] Widget-Compiler-/Editor-Validierung für erforderliche BindWidgets,
       Layer und Input-Actions ergänzen.
 
 Verifizierter Phase-5A-Zwischenstand vom 2026-07-22:
@@ -1956,6 +1956,62 @@ Verifizierter Phase-5F-Zwischenstand vom 2026-07-23:
   abgeschlossen (78,7 %), 20 Punkte offen.
 - Nächster Schnitt: Widget-Compiler-/Editor-Validierung für erforderliche
   BindWidgets, Layer und Input-Actions ergänzen.
+
+Verifizierter Phase-5G-Abschlussstand vom 2026-07-23:
+
+- Die kanonischen Player-, Storage-, Base-Terminal- und Crafting-Screens
+  deklarieren ihre strukturell erforderlichen WidgetTree-Knoten jetzt als
+  echte `BindWidget`-Verträge. Carry-Slots besitzen zusätzlich den exakten
+  nativen Typ `URpgInventoryCarrySlotWidget`; optionale Pointer-Aktionen am
+  Base-Terminal bleiben bewusst optional.
+- Die gemeinsamen Inventory- sowie die spezialisierten Base-Terminal- und
+  Crafting-Input-Actions sind vollständig in den Widget-Blueprint-Defaults
+  authorisiert. Der Widget-Compiler lehnt fehlende Tabellen, RowNames,
+  falsche RowStructs und nicht vorhandene Rows ab. Der bisherige
+  hardcodierte Runtime-Load-/Fallback-Pfad ist entfernt; Back bleibt
+  ausschließlich vollständig leer als CommonUI-delegierte Option zulässig.
+- Die vier Inventory-Präsentationsklassen für Drag-Visual, Kontextmenü,
+  Split-Dialog und Drop-Bestätigung sind explizite, konkrete
+  Widget-Blueprint-Verträge. Automation prüft außerdem die sechs gemeinsamen
+  Action-Rows, die spezialisierten Rows und die konkreten authored Defaults
+  aller vier Screens.
+- `URpgPrimaryGameLayout`, `URpgUIScreenRegistry` und
+  `URpgGameFeatureAction_AddWidgets` verwenden einen gemeinsamen Vertrag für
+  exakt `UI.Layer.Game`, `UI.Layer.GameMenu`, `UI.Layer.Menu` und
+  `UI.Layer.Modal`. Unbekannte Layer, fehlende oder nicht auflösbare Klassen
+  sowie geladene falsche beziehungsweise abstrakte Klassen werden
+  diagnostiziert. Ungeladene Blueprint-Klassen werden über ihren exakten
+  `GeneratedClassPath` im AssetRegistry geprüft; transiente `SKEL_`-,
+  `REINST_`- und veraltete Klassen werden nicht als stabile Klassen akzeptiert.
+  Subobject-Suffixe und nicht exakt zum authored Pfad passende geladene
+  Klassen werden ebenfalls abgelehnt.
+  Soft-Class-Validierung lädt während eines Blueprint-Compiles keine
+  abhängigen Widget-Blueprints rekursiv.
+- `URpgInputConfig::IsDataValid` lehnt Null-Actions, ungültige oder falsch
+  namespacete Input-Tags und doppelte Tags innerhalb sowie zwischen Native-
+  und Ability-Mappings ab. Eine InputAction darf weiterhin bewusst mehreren
+  unterschiedlichen semantischen Tags zugeordnet werden. Ein AssetRegistry-
+  Test validiert alle gemounteten Projekt-InputConfigs.
+- Die sieben betroffenen Widget-Blueprints wurden nach der Action-Row- und
+  BindWidget-Migration neu kompiliert und gespeichert. Der gezielte
+  `RpgPrototypeExperience`-Compile endete `BS_UP_TO_DATE`.
+- `SurvivalRpgEditor Win64 Development` wurde mit Unreal Engine 5.8 gebaut
+  (vollständiger relevanter Build 26/26 Actions; finaler inkrementeller
+  Exaktstand 7/7 Actions, jeweils UBT `Result: Succeeded`).
+- `SurvivalRpg.Inventory`: 122 von 122 Automationtests erfolgreich.
+- `SurvivalRpg.Save`: 2 von 2 Automationtests erfolgreich.
+- `SurvivalRpg.Equipment`: 6 von 6 Automationtests erfolgreich.
+- `SurvivalRpg.Crafting`: 8 von 8 Automationtests erfolgreich.
+- `SurvivalRpg.UI`: 25 von 25 Automationtests erfolgreich.
+- `SurvivalRpg.Input`: 2 von 2 Automationtests erfolgreich.
+- `SurvivalRpg.GameFeatures`: 3 von 3 Automationtests erfolgreich.
+- `CompileAllBlueprints` endete mit Prozesscode 0, 0 Compilerfehlern,
+  16 bekannten Compilerwarnungen und 0 nicht ladbaren Blueprints.
+- Fortschritt Phase 5: 7 von 7 Punkten abgeschlossen (100,0 %).
+- Gesamtfortschritt der verbindlichen Checkliste: 75 von 94 Punkten
+  abgeschlossen (79,8 %), 19 Punkte offen.
+- Nächster Schnitt: Phase 6 – stabile Child-VMs pro Item-ID und
+  Container-Handle verwenden.
 
 ## Phase 6 – MVVM, Refresh und Komponentenschnitt
 

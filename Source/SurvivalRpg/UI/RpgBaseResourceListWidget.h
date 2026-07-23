@@ -38,11 +38,8 @@ public:
 protected:
 	virtual void NativeDestruct() override;
 
-	/**
-	 * Required by the canonical authored resource list. Optional metadata keeps the native class constructible for
-	 * diagnostics; composition tests enforce the child on CUI_BaseResourceListSpatial.
-	 */
-	UPROPERTY(BlueprintReadOnly, meta = (BindWidgetOptional))
+	/** Required authored list receiving the read-only base-resource projection. */
+	UPROPERTY(BlueprintReadOnly, meta = (BindWidget))
 	TObjectPtr<UCommonListView> ResourceList = nullptr;
 
 private:

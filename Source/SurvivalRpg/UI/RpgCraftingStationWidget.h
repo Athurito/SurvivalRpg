@@ -105,6 +105,9 @@ protected:
 	virtual void NativeOnDeactivated() override;
 	virtual void NativeDestruct() override;
 	virtual UWidget* NativeGetDesiredFocusTarget() const override;
+#if WITH_EDITOR
+	virtual void ValidateCompiledDefaults(class IWidgetCompilerLog& CompileLog) const override;
+#endif
 
 	//~IRpgUIScreenPayloadReceiver interface
 	virtual void ReceiveScreenPayload_Implementation(UObject* Payload) override;
@@ -122,62 +125,75 @@ protected:
 	 * Authored player-side spatial groups. Dynamic group children reflect equipped containers, while this host and
 	 * its placement remain static and visible in CUI_CraftingStationSpatial.
 	 */
-	UPROPERTY(BlueprintReadOnly, meta = (BindWidgetOptional))
+	UPROPERTY(BlueprintReadOnly, meta = (BindWidget))
 	TObjectPtr<URpgInventorySlotGroupPanelWidget> PlayerGroupsPanel = nullptr;
 
 	/** Authored reusable pane bound to the station output root. */
-	UPROPERTY(BlueprintReadOnly, meta = (BindWidgetOptional))
+	UPROPERTY(BlueprintReadOnly, meta = (BindWidget))
 	TObjectPtr<URpgInventorySpatialPaneWidget> OutputInventoryPane = nullptr;
 
 	/** Authored recipe rows, populated from stable recipe view models. */
-	UPROPERTY(BlueprintReadOnly, meta = (BindWidgetOptional))
+	UPROPERTY(BlueprintReadOnly, meta = (BindWidget))
 	TObjectPtr<UCommonListView> RecipeList = nullptr;
 
 	/** Authored ingredient rows for the selected quantity. */
-	UPROPERTY(BlueprintReadOnly, meta = (BindWidgetOptional))
+	UPROPERTY(BlueprintReadOnly, meta = (BindWidget))
 	TObjectPtr<UCommonListView> IngredientList = nullptr;
 
 	/** Authored replicated queue rows. */
-	UPROPERTY(BlueprintReadOnly, meta = (BindWidgetOptional))
+	UPROPERTY(BlueprintReadOnly, meta = (BindWidget))
 	TObjectPtr<UCommonListView> CraftingJobsList = nullptr;
 
-	UPROPERTY(BlueprintReadOnly, meta = (BindWidgetOptional))
+	/** Required read-only title for the currently selected recipe. */
+	UPROPERTY(BlueprintReadOnly, meta = (BindWidget))
 	TObjectPtr<UCommonTextBlock> RecipeNameText = nullptr;
 
-	UPROPERTY(BlueprintReadOnly, meta = (BindWidgetOptional))
+	/** Required read-only description for the currently selected recipe. */
+	UPROPERTY(BlueprintReadOnly, meta = (BindWidget))
 	TObjectPtr<UCommonTextBlock> RecipeDescriptionText = nullptr;
 
-	UPROPERTY(BlueprintReadOnly, meta = (BindWidgetOptional))
+	/** Required read-only formatted craft duration for the current selection. */
+	UPROPERTY(BlueprintReadOnly, meta = (BindWidget))
 	TObjectPtr<UCommonTextBlock> CraftTimeText = nullptr;
 
-	UPROPERTY(BlueprintReadOnly, meta = (BindWidgetOptional))
+	/** Required read-only formatted requested craft quantity. */
+	UPROPERTY(BlueprintReadOnly, meta = (BindWidget))
 	TObjectPtr<UCommonTextBlock> CraftQuantityText = nullptr;
 
-	UPROPERTY(BlueprintReadOnly, meta = (BindWidgetOptional))
+	/** Required cosmetic icon for the currently selected recipe. */
+	UPROPERTY(BlueprintReadOnly, meta = (BindWidget))
 	TObjectPtr<UCommonLazyImage> RecipeIcon = nullptr;
 
-	UPROPERTY(BlueprintReadOnly, meta = (BindWidgetOptional))
+	/** Required pointer-facing submit control; authority remains in the crafting station. */
+	UPROPERTY(BlueprintReadOnly, meta = (BindWidget))
 	TObjectPtr<URpgCraftingActionButtonWidget> CraftButton = nullptr;
 
-	UPROPERTY(BlueprintReadOnly, meta = (BindWidgetOptional))
+	/** Required pointer-facing pause/resume control for the selected server-owned job. */
+	UPROPERTY(BlueprintReadOnly, meta = (BindWidget))
 	TObjectPtr<URpgCraftingActionButtonWidget> PauseButton = nullptr;
 
-	UPROPERTY(BlueprintReadOnly, meta = (BindWidgetOptional))
+	/** Required pointer control that decreases the local requested quantity by one. */
+	UPROPERTY(BlueprintReadOnly, meta = (BindWidget))
 	TObjectPtr<URpgCraftingActionButtonWidget> QuantityMinusButton = nullptr;
 
-	UPROPERTY(BlueprintReadOnly, meta = (BindWidgetOptional))
+	/** Required pointer control that increases the local requested quantity by one. */
+	UPROPERTY(BlueprintReadOnly, meta = (BindWidget))
 	TObjectPtr<URpgCraftingActionButtonWidget> QuantityPlusButton = nullptr;
 
-	UPROPERTY(BlueprintReadOnly, meta = (BindWidgetOptional))
+	/** Required pointer shortcut that requests five crafts before server validation. */
+	UPROPERTY(BlueprintReadOnly, meta = (BindWidget))
 	TObjectPtr<URpgCraftingActionButtonWidget> QuantityFiveButton = nullptr;
 
-	UPROPERTY(BlueprintReadOnly, meta = (BindWidgetOptional))
+	/** Required pointer shortcut that requests ten crafts before server validation. */
+	UPROPERTY(BlueprintReadOnly, meta = (BindWidget))
 	TObjectPtr<URpgCraftingActionButtonWidget> QuantityTenButton = nullptr;
 
-	UPROPERTY(BlueprintReadOnly, meta = (BindWidgetOptional))
+	/** Required pointer shortcut that selects the locally projected maximum quantity. */
+	UPROPERTY(BlueprintReadOnly, meta = (BindWidget))
 	TObjectPtr<URpgCraftingActionButtonWidget> QuantityMaxButton = nullptr;
 
-	UPROPERTY(BlueprintReadOnly, meta = (BindWidgetOptional))
+	/** Required local preference controlling whether completed output targets base storage. */
+	UPROPERTY(BlueprintReadOnly, meta = (BindWidget))
 	TObjectPtr<UCheckBox> AutoDepositCheckBox = nullptr;
 
 	/** CommonUI action row for the selected recipe submit intent. */
@@ -223,7 +239,6 @@ private:
 	void ConfigureQuickTransferRoutes();
 	void StartJobProgressRefresh();
 	void StopJobProgressRefresh();
-	void EnsureDefaultCraftingActionRows();
 	void RegisterCraftingActionBindings();
 	void UnregisterCraftingActionBindings();
 	URpgInventoryUiActionComponent* ResolveInventoryUiActionComponent() const;

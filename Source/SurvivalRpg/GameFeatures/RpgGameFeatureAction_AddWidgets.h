@@ -28,7 +28,7 @@ struct FRpgGameFeatureWidgetLayoutEntry
 	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "UI", meta = (AssetBundles = "Client"))
 	TSoftClassPtr<UCommonActivatableWidget> LayoutClass;
 
-	/** CommonGame UI layer that receives the layout, usually UI.Layer.Game for the persistent HUD. */
+	/** Exact layer registered by URpgPrimaryGameLayout that receives the layout, usually UI.Layer.Game for the HUD. */
 	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "UI", meta = (Categories = "UI.Layer"))
 	FGameplayTag LayerTag;
 };

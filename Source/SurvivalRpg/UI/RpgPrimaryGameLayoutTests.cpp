@@ -9,6 +9,7 @@
 #include "Misc/AutomationTest.h"
 #include "SurvivalRpg/GameplayTags/RpgGameplayTags.h"
 #include "SurvivalRpg/UI/RpgGameUIPolicy.h"
+#include "SurvivalRpg/UI/RpgPrimaryGameLayerContract.h"
 #include "UObject/UnrealType.h"
 
 namespace RpgPrimaryGameLayoutTests
@@ -149,10 +150,29 @@ bool FRpgPrimaryGameLayoutAuthoredLayersTest::RunTest(const FString& Parameters)
 	TestNotNull(TEXT("MenuLayer is authored in the Widget Blueprint"), Layout->GetWidgetFromName(TEXT("MenuLayer")));
 	TestNotNull(TEXT("ModalLayer is authored in the Widget Blueprint"), Layout->GetWidgetFromName(TEXT("ModalLayer")));
 
-	TestNotNull(TEXT("Gameplay layer is registered"), Layout->GetLayerWidget(RpgGameplayTags::UI_Layer_Game));
-	TestNotNull(TEXT("Game-menu layer is registered"), Layout->GetLayerWidget(RpgGameplayTags::UI_Layer_GameMenu));
-	TestNotNull(TEXT("Menu layer is registered"), Layout->GetLayerWidget(RpgGameplayTags::UI_Layer_Menu));
-	TestNotNull(TEXT("Modal layer is registered"), Layout->GetLayerWidget(RpgGameplayTags::UI_Layer_Modal));
+	const RpgPrimaryGameLayers::FContract& LayerContract =
+		RpgPrimaryGameLayers::GetContract();
+	TestTrue(
+		TEXT("Layer contract exposes UI.Layer.Game"),
+		LayerContract.Game ==
+			RpgGameplayTags::UI_Layer_Game);
+	TestTrue(
+		TEXT("Layer contract exposes UI.Layer.GameMenu"),
+		LayerContract.GameMenu ==
+			RpgGameplayTags::UI_Layer_GameMenu);
+	TestTrue(
+		TEXT("Layer contract exposes UI.Layer.Menu"),
+		LayerContract.Menu ==
+			RpgGameplayTags::UI_Layer_Menu);
+	TestTrue(
+		TEXT("Layer contract exposes UI.Layer.Modal"),
+		LayerContract.Modal ==
+			RpgGameplayTags::UI_Layer_Modal);
+
+	TestNotNull(TEXT("Gameplay layer is registered"), Layout->GetLayerWidget(LayerContract.Game));
+	TestNotNull(TEXT("Game-menu layer is registered"), Layout->GetLayerWidget(LayerContract.GameMenu));
+	TestNotNull(TEXT("Menu layer is registered"), Layout->GetLayerWidget(LayerContract.Menu));
+	TestNotNull(TEXT("Modal layer is registered"), Layout->GetLayerWidget(LayerContract.Modal));
 	return true;
 }
 

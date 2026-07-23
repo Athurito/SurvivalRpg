@@ -21,6 +21,10 @@
 #include "SurvivalRpg/UI/RpgPlayerInventoryLayoutViews.h"
 #include "TimerManager.h"
 
+#if WITH_EDITOR
+#include "Editor/WidgetCompilerLog.h"
+#endif
+
 #include UE_INLINE_GENERATED_CPP_BY_NAME(RpgInventoryInteractionScreenWidget)
 
 bool FRpgInventoryDropConfirmationIntent::Arm(
@@ -645,6 +649,67 @@ void URpgInventoryInteractionScreenWidget::NativeOnInitialized()
 		InventoryFeedbackToast->HideInventoryActionFeedback();
 	}
 }
+
+#if WITH_EDITOR
+
+void URpgInventoryInteractionScreenWidget::ValidateCompiledDefaults(
+	IWidgetCompilerLog& CompileLog) const
+{
+	Super::ValidateCompiledDefaults(CompileLog);
+
+	const auto ValidateRequiredPresentationClass =
+		[&CompileLog](const UClass* WidgetClass, const FText& PropertyLabel)
+		{
+			if (!WidgetClass)
+			{
+				CompileLog.Error(FText::Format(
+					NSLOCTEXT(
+						"RpgInventoryInteractionScreenWidget",
+						"MissingPresentationClass",
+						"{0} requires an explicitly authored widget class; runtime class fallbacks are not supported."),
+					PropertyLabel));
+				return;
+			}
+
+			if (WidgetClass->HasAnyClassFlags(CLASS_Abstract))
+			{
+				CompileLog.Error(FText::Format(
+					NSLOCTEXT(
+						"RpgInventoryInteractionScreenWidget",
+						"AbstractPresentationClass",
+						"{0} references abstract widget class '{1}'."),
+					PropertyLabel,
+					FText::FromString(WidgetClass->GetPathName())));
+			}
+		};
+
+	ValidateRequiredPresentationClass(
+		FreeDragVisualWidgetClass.Get(),
+		NSLOCTEXT(
+			"RpgInventoryInteractionScreenWidget",
+			"FreeDragVisualWidgetClassLabel",
+			"FreeDragVisualWidgetClass"));
+	ValidateRequiredPresentationClass(
+		ContextMenuWidgetClass.Get(),
+		NSLOCTEXT(
+			"RpgInventoryInteractionScreenWidget",
+			"ContextMenuWidgetClassLabel",
+			"ContextMenuWidgetClass"));
+	ValidateRequiredPresentationClass(
+		SplitDialogWidgetClass.Get(),
+		NSLOCTEXT(
+			"RpgInventoryInteractionScreenWidget",
+			"SplitDialogWidgetClassLabel",
+			"SplitDialogWidgetClass"));
+	ValidateRequiredPresentationClass(
+		DropConfirmationDialogWidgetClass.Get(),
+		NSLOCTEXT(
+			"RpgInventoryInteractionScreenWidget",
+			"DropConfirmationDialogWidgetClassLabel",
+			"DropConfirmationDialogWidgetClass"));
+}
+
+#endif
 
 void URpgInventoryInteractionScreenWidget::NativeOnActivated()
 {

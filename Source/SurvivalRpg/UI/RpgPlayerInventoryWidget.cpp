@@ -158,11 +158,9 @@ void URpgPlayerInventoryWidget::RefreshSlotGroups()
 	};
 
 	auto BindCarrySlot = [this](
-		UWidget* BoundWidget,
-		FName BindingName,
+		URpgInventoryCarrySlotWidget* CarrySlot,
 		URpgInventorySlotGroupViewModel* GroupViewModel)
 	{
-		URpgInventoryCarrySlotWidget* CarrySlot = ResolveCarrySlotWidget(BoundWidget, BindingName, true);
 		if (!CarrySlot)
 		{
 			return;
@@ -187,9 +185,9 @@ void URpgPlayerInventoryWidget::RefreshSlotGroups()
 		return Group && Group->IsContentGroup() ? Group : nullptr;
 	};
 
-	BindCarrySlot(Carry_Weapon1, TEXT("Carry_Weapon1"), ResolveCarryRole(RpgGameplayTags::Rpg_Inventory_Layout_Role_Carry_Primary));
-	BindCarrySlot(Carry_Weapon2, TEXT("Carry_Weapon2"), ResolveCarryRole(RpgGameplayTags::Rpg_Inventory_Layout_Role_Carry_Secondary));
-	BindCarrySlot(Carry_Offhand, TEXT("Carry_Offhand"), ResolveCarryRole(RpgGameplayTags::Rpg_Inventory_Layout_Role_Carry_OffHand));
+	BindCarrySlot(Carry_Weapon1, ResolveCarryRole(RpgGameplayTags::Rpg_Inventory_Layout_Role_Carry_Primary));
+	BindCarrySlot(Carry_Weapon2, ResolveCarryRole(RpgGameplayTags::Rpg_Inventory_Layout_Role_Carry_Secondary));
+	BindCarrySlot(Carry_Offhand, ResolveCarryRole(RpgGameplayTags::Rpg_Inventory_Layout_Role_Carry_OffHand));
 
 	BindContentGroup(Content_Pockets, ResolveContentRole(RpgGameplayTags::Rpg_Inventory_Layout_Role_Content_Primary), TEXT("Content_Pockets"));
 	BindContentGroup(Content_Backpack, FindEquipmentProvidedContentGroup(ERpgEquipmentSlot::Backpack), TEXT("Content_Backpack"));
@@ -271,16 +269,17 @@ void URpgPlayerInventoryWidget::RefreshInventoryScreenSpecificInteractionPresent
 
 	// Carry slots expose semantic Pending/Rejected state through their presentation hook. Refresh all three because
 	// the interaction session target can change without replacing the held payload delegate they otherwise observe.
-	auto RefreshCarryPresentation = [this](UWidget* BoundWidget, FName BindingName)
+	auto RefreshCarryPresentation =
+		[](URpgInventoryCarrySlotWidget* CarrySlot)
 	{
-		if (URpgInventoryCarrySlotWidget* CarrySlot = ResolveCarrySlotWidget(BoundWidget, BindingName, false))
+		if (CarrySlot)
 		{
 			CarrySlot->RefreshCarrySlotPresentation();
 		}
 	};
-	RefreshCarryPresentation(Carry_Weapon1, TEXT("Carry_Weapon1"));
-	RefreshCarryPresentation(Carry_Weapon2, TEXT("Carry_Weapon2"));
-	RefreshCarryPresentation(Carry_Offhand, TEXT("Carry_Offhand"));
+	RefreshCarryPresentation(Carry_Weapon1);
+	RefreshCarryPresentation(Carry_Weapon2);
+	RefreshCarryPresentation(Carry_Offhand);
 }
 
 void URpgPlayerInventoryWidget::UpdateControllerCarryDragVisual(
@@ -307,25 +306,26 @@ void URpgPlayerInventoryWidget::UpdateControllerCarryDragVisual(
 
 URpgInventoryCarrySlotWidget* URpgPlayerInventoryWidget::FindControllerPreviewCarrySlot() const
 {
-	auto ResolveTargetedCarrySlot = [this](UWidget* BoundWidget, FName BindingName)
-		-> URpgInventoryCarrySlotWidget*
+	auto ResolveTargetedCarrySlot =
+		[](URpgInventoryCarrySlotWidget* CarrySlot)
 	{
-		URpgInventoryCarrySlotWidget* CarrySlot = ResolveCarrySlotWidget(BoundWidget, BindingName, false);
 		return CarrySlot &&
 			CarrySlot->GetCarryInteractionPreviewState() != ERpgInventoryInteractionPreviewState::None
 			? CarrySlot
 			: nullptr;
 	};
 
-	if (URpgInventoryCarrySlotWidget* CarrySlot = ResolveTargetedCarrySlot(Carry_Weapon1, TEXT("Carry_Weapon1")))
+	if (URpgInventoryCarrySlotWidget* CarrySlot =
+			ResolveTargetedCarrySlot(Carry_Weapon1))
 	{
 		return CarrySlot;
 	}
-	if (URpgInventoryCarrySlotWidget* CarrySlot = ResolveTargetedCarrySlot(Carry_Weapon2, TEXT("Carry_Weapon2")))
+	if (URpgInventoryCarrySlotWidget* CarrySlot =
+			ResolveTargetedCarrySlot(Carry_Weapon2))
 	{
 		return CarrySlot;
 	}
-	return ResolveTargetedCarrySlot(Carry_Offhand, TEXT("Carry_Offhand"));
+	return ResolveTargetedCarrySlot(Carry_Offhand);
 }
 
 void URpgPlayerInventoryWidget::EnsurePlayerInventoryViewModel()
@@ -447,17 +447,18 @@ void URpgPlayerInventoryWidget::ForwardInventoryInteractionContextToChildren()
 		}
 	}
 
-	auto ForwardCarrySlot = [this](UWidget* BoundWidget, FName BindingName)
+	auto ForwardCarrySlot =
+		[this](URpgInventoryCarrySlotWidget* CarrySlot)
 	{
-		if (URpgInventoryCarrySlotWidget* CarrySlot = ResolveCarrySlotWidget(BoundWidget, BindingName, false))
+		if (CarrySlot)
 		{
 			CarrySlot->SetDragDropCoordinator(GetScreenDragDropCoordinator());
 			CarrySlot->SetInventoryPresentationHost(this);
 		}
 	};
-	ForwardCarrySlot(Carry_Weapon1, TEXT("Carry_Weapon1"));
-	ForwardCarrySlot(Carry_Weapon2, TEXT("Carry_Weapon2"));
-	ForwardCarrySlot(Carry_Offhand, TEXT("Carry_Offhand"));
+	ForwardCarrySlot(Carry_Weapon1);
+	ForwardCarrySlot(Carry_Weapon2);
+	ForwardCarrySlot(Carry_Offhand);
 
 	if (ActionBarTileView)
 	{
@@ -528,17 +529,17 @@ void URpgPlayerInventoryWidget::RegisterInventoryScreenNavigationPanels(
 		Navigator->RegisterEquipmentPanel(TEXT("Gear.ResourceBag"), Gear_ResourceBag);
 	}
 
-	if (URpgInventoryCarrySlotWidget* CarrySlot = ResolveCarrySlotWidget(Carry_Weapon1, TEXT("Carry_Weapon1"), false))
+	if (Carry_Weapon1)
 	{
-		Navigator->RegisterCarrySlotPanel(TEXT("Carry.Weapon1"), CarrySlot);
+		Navigator->RegisterCarrySlotPanel(TEXT("Carry.Weapon1"), Carry_Weapon1);
 	}
-	if (URpgInventoryCarrySlotWidget* CarrySlot = ResolveCarrySlotWidget(Carry_Weapon2, TEXT("Carry_Weapon2"), false))
+	if (Carry_Weapon2)
 	{
-		Navigator->RegisterCarrySlotPanel(TEXT("Carry.Weapon2"), CarrySlot);
+		Navigator->RegisterCarrySlotPanel(TEXT("Carry.Weapon2"), Carry_Weapon2);
 	}
-	if (URpgInventoryCarrySlotWidget* CarrySlot = ResolveCarrySlotWidget(Carry_Offhand, TEXT("Carry_Offhand"), false))
+	if (Carry_Offhand)
 	{
-		Navigator->RegisterCarrySlotPanel(TEXT("Carry.Offhand"), CarrySlot);
+		Navigator->RegisterCarrySlotPanel(TEXT("Carry.Offhand"), Carry_Offhand);
 	}
 
 	TArray<URpgInventorySlotGroupWidget*> StandaloneContentGroups;
@@ -615,11 +616,9 @@ bool URpgPlayerInventoryWidget::RoutePayloadToCarrySlot(
 {
 	bOutTargetAddressed = false;
 	auto TryRouteSlot = [this, &Payload, GhostCenterScreenPosition, bCommit](
-		UWidget* BoundWidget,
-		FName BindingName,
+		URpgInventoryCarrySlotWidget* CarrySlot,
 		bool& bOutAddressed)
 	{
-		URpgInventoryCarrySlotWidget* CarrySlot = ResolveCarrySlotWidget(BoundWidget, BindingName, false);
 		if (!CarrySlot || !IsWidgetUnderScreenPosition(CarrySlot, GhostCenterScreenPosition))
 		{
 			return false;
@@ -636,9 +635,9 @@ bool URpgPlayerInventoryWidget::RoutePayloadToCarrySlot(
 		return true;
 	};
 
-	return TryRouteSlot(Carry_Weapon1, TEXT("Carry_Weapon1"), bOutTargetAddressed) ||
-		TryRouteSlot(Carry_Weapon2, TEXT("Carry_Weapon2"), bOutTargetAddressed) ||
-		TryRouteSlot(Carry_Offhand, TEXT("Carry_Offhand"), bOutTargetAddressed);
+	return TryRouteSlot(Carry_Weapon1, bOutTargetAddressed) ||
+		TryRouteSlot(Carry_Weapon2, bOutTargetAddressed) ||
+		TryRouteSlot(Carry_Offhand, bOutTargetAddressed);
 }
 
 bool URpgPlayerInventoryWidget::RoutePayloadToGearSlot(
@@ -731,49 +730,19 @@ void URpgPlayerInventoryWidget::CollectStandaloneContentGroupWidgets(TArray<URpg
 	OutWidgets.Remove(nullptr);
 }
 
-URpgInventoryCarrySlotWidget* URpgPlayerInventoryWidget::ResolveCarrySlotWidget(
-	UWidget* BoundWidget,
-	FName BindingName,
-	bool bLogFailure) const
-{
-	URpgInventoryCarrySlotWidget* CarrySlot = Cast<URpgInventoryCarrySlotWidget>(BoundWidget);
-	if (CarrySlot || !bLogFailure || ReportedInvalidPlayerBindings.Contains(BindingName))
-	{
-		return CarrySlot;
-	}
-
-	ReportedInvalidPlayerBindings.Add(BindingName);
-	if (BoundWidget)
-	{
-		UE_LOG(LogRpgPlayerInventoryWidget, Warning,
-			TEXT("%s binding %s still uses %s. Reparent that editor widget to RpgInventoryCarrySlotWidget; legacy mini-grid carry widgets are no longer routed."),
-			*GetNameSafe(this),
-			*BindingName.ToString(),
-			*GetNameSafe(BoundWidget->GetClass()));
-	}
-	else
-	{
-		UE_LOG(LogRpgPlayerInventoryWidget, Warning,
-			TEXT("%s is missing required carry binding %s. Add a widget derived from RpgInventoryCarrySlotWidget."),
-			*GetNameSafe(this),
-			*BindingName.ToString());
-	}
-	return nullptr;
-}
-
 void URpgPlayerInventoryWidget::ClearInventoryScreenSpecificDragPreviews()
 {
-	if (URpgInventoryCarrySlotWidget* CarrySlot = ResolveCarrySlotWidget(Carry_Weapon1, TEXT("Carry_Weapon1"), false))
+	if (Carry_Weapon1)
 	{
-		CarrySlot->ClearExternalPreviewPayload();
+		Carry_Weapon1->ClearExternalPreviewPayload();
 	}
-	if (URpgInventoryCarrySlotWidget* CarrySlot = ResolveCarrySlotWidget(Carry_Weapon2, TEXT("Carry_Weapon2"), false))
+	if (Carry_Weapon2)
 	{
-		CarrySlot->ClearExternalPreviewPayload();
+		Carry_Weapon2->ClearExternalPreviewPayload();
 	}
-	if (URpgInventoryCarrySlotWidget* CarrySlot = ResolveCarrySlotWidget(Carry_Offhand, TEXT("Carry_Offhand"), false))
+	if (Carry_Offhand)
 	{
-		CarrySlot->ClearExternalPreviewPayload();
+		Carry_Offhand->ClearExternalPreviewPayload();
 	}
 
 	if (Gear_Head)

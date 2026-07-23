@@ -64,17 +64,16 @@ protected:
 	/**
 	 * Canonical combined player-side panel authored in CUI_StorageSpatial.
 	 * Carry roles are listed first, followed by Pockets and equipped item-owned grids.
-	 * Optional metadata keeps the retired CUI_StorageContainer asset loadable as a rollback artifact; the canonical
-	 * asset contract is enforced by SurvivalRpg.Inventory.UI.StorageSpatialComposition.
+	 * This is required static screen composition; dynamic group children still reflect runtime equipment state.
 	 */
-	UPROPERTY(BlueprintReadOnly, meta = (BindWidgetOptional))
+	UPROPERTY(BlueprintReadOnly, meta = (BindWidget))
 	TObjectPtr<URpgInventorySlotGroupPanelWidget> PlayerGroupsPanel = nullptr;
 
 	/**
 	 * Canonical authored spatial root grid for the payload's secondary inventory (10x6 by default).
-	 * Optional only for loading the retired rollback asset; CUI_StorageSpatial is tested to provide this binding.
+	 * The secondary inventory and root handle are runtime payload state, but the presenter itself is required.
 	 */
-	UPROPERTY(BlueprintReadOnly, meta = (BindWidgetOptional))
+	UPROPERTY(BlueprintReadOnly, meta = (BindWidget))
 	TObjectPtr<URpgInventorySpatialGridWidget> SecondaryInventoryGrid = nullptr;
 
 private:

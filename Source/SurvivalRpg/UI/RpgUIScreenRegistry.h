@@ -21,7 +21,7 @@ struct FRpgUIScreenRegistryEntry
 	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "UI", meta = (Categories = "UI.Screen"))
 	FGameplayTag ScreenTag;
 
-	/** CommonGame layer that receives the widget. Must be a descendant of UI.Layer. */
+	/** Exact CommonGame layer registered by URpgPrimaryGameLayout that receives this widget. */
 	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "UI", meta = (Categories = "UI.Layer"))
 	FGameplayTag LayerTag;
 

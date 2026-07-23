@@ -78,10 +78,10 @@ protected:
 	virtual void NativeDestruct() override;
 
 	/**
-	 * Required in canonical authored panes. Optional metadata keeps the native class constructible for diagnostics;
-	 * composition tests enforce the exact child on CUI_SpatialInventoryPane.
+	 * Required authored spatial grid for this pane. Runtime tests may instantiate the native class directly, but every
+	 * concrete Widget Blueprint must provide this exact typed binding.
 	 */
-	UPROPERTY(BlueprintReadOnly, meta = (BindWidgetOptional))
+	UPROPERTY(BlueprintReadOnly, meta = (BindWidget))
 	TObjectPtr<URpgInventorySpatialGridWidget> SpatialGrid = nullptr;
 
 private:

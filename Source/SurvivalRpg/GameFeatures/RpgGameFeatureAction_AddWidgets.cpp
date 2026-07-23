@@ -1,5 +1,6 @@
 #include "RpgGameFeatureAction_AddWidgets.h"
 
+#include "Blueprint/UserWidget.h"
 #include "CommonActivatableWidget.h"
 #include "Components/GameFrameworkComponentManager.h"
 #include "Engine/LocalPlayer.h"
@@ -8,10 +9,29 @@
 #include "GameFramework/PlayerController.h"
 #include "PrimaryGameLayout.h"
 #include "SurvivalRpg/UI/RpgHUD.h"
+#include "SurvivalRpg/UI/RpgPrimaryGameLayerContract.h"
+#include "SurvivalRpg/UI/RpgWidgetClassValidation.h"
 #include "UIExtensionSystem.h"
 
 #if WITH_EDITOR
 #include "Misc/DataValidation.h"
+
+namespace
+{
+	bool IsStrictTagDescendant(
+		const FGameplayTag Tag,
+		const FName RootTagName)
+	{
+		const FGameplayTag RootTag =
+			FGameplayTag::RequestGameplayTag(
+				RootTagName,
+				/*ErrorIfNotFound=*/ false);
+		return Tag.IsValid() &&
+			RootTag.IsValid() &&
+			Tag != RootTag &&
+			Tag.MatchesTag(RootTag);
+	}
+}
 #endif
 
 #define LOCTEXT_NAMESPACE "RpgGameFeatures"
@@ -66,6 +86,15 @@ void URpgGameFeatureAction_AddWidgets::AddAdditionalAssetBundleData(FAssetBundle
 EDataValidationResult URpgGameFeatureAction_AddWidgets::IsDataValid(FDataValidationContext& Context) const
 {
 	EDataValidationResult Result = CombineDataValidationResults(Super::IsDataValid(Context), EDataValidationResult::Valid);
+	const RpgPrimaryGameLayers::FContract& LayerContract =
+		RpgPrimaryGameLayers::GetContract();
+
+	const auto AddError =
+		[&Context, &Result](const FText& Error)
+		{
+			Context.AddError(Error);
+			Result = EDataValidationResult::Invalid;
+		};
 
 	for (int32 EntryIndex = 0; EntryIndex < Layouts.Num(); ++EntryIndex)
 	{
@@ -73,14 +102,77 @@ EDataValidationResult URpgGameFeatureAction_AddWidgets::IsDataValid(FDataValidat
 
 		if (Entry.LayoutClass.IsNull())
 		{
-			Result = EDataValidationResult::Invalid;
-			Context.AddError(FText::Format(LOCTEXT("LayoutHasNullClass", "Null LayoutClass at index {0} in Layouts."), FText::AsNumber(EntryIndex)));
+			AddError(FText::Format(
+				LOCTEXT(
+					"LayoutHasNullClass",
+					"Layouts[{0}].LayoutClass is unset. Assign a concrete CommonActivatableWidget class."),
+				FText::AsNumber(EntryIndex)));
+		}
+		else
+		{
+			bool bDeferredClassValidation = false;
+			const UClass* LoadedLayoutClass =
+				RpgWidgetClassValidation::
+					ResolveAuthoredClassWithoutLoading(
+					Entry.LayoutClass.ToSoftObjectPath(),
+					Entry.LayoutClass.Get(),
+					bDeferredClassValidation);
+			if (!LoadedLayoutClass &&
+				!bDeferredClassValidation)
+			{
+				AddError(FText::Format(
+					LOCTEXT(
+						"LayoutClassUnresolved",
+						"Layouts[{0}].LayoutClass '{1}' could not be loaded. Fix or replace the authored class reference."),
+					FText::AsNumber(EntryIndex),
+					FText::FromString(
+						Entry.LayoutClass
+							.ToSoftObjectPath()
+							.ToString())));
+			}
+			else if (LoadedLayoutClass &&
+				!LoadedLayoutClass->IsChildOf(
+				UCommonActivatableWidget::StaticClass()))
+			{
+				AddError(FText::Format(
+					LOCTEXT(
+						"LayoutClassHasInvalidBase",
+						"Layouts[{0}].LayoutClass '{1}' is not a CommonActivatableWidget class."),
+					FText::AsNumber(EntryIndex),
+					FText::FromString(
+						LoadedLayoutClass->GetPathName())));
+			}
+			else if (LoadedLayoutClass &&
+				LoadedLayoutClass->HasAnyClassFlags(
+				CLASS_Abstract))
+			{
+				AddError(FText::Format(
+					LOCTEXT(
+						"LayoutClassIsAbstract",
+						"Layouts[{0}].LayoutClass '{1}' is abstract. Assign a concrete CommonActivatableWidget class."),
+					FText::AsNumber(EntryIndex),
+					FText::FromString(
+						LoadedLayoutClass->GetPathName())));
+			}
 		}
 
 		if (!Entry.LayerTag.IsValid())
 		{
-			Result = EDataValidationResult::Invalid;
-			Context.AddError(FText::Format(LOCTEXT("LayoutHasNoLayerTag", "LayerTag is not set at index {0} in Layouts."), FText::AsNumber(EntryIndex)));
+			AddError(FText::Format(
+				LOCTEXT(
+					"LayoutHasNoLayerTag",
+					"Layouts[{0}].LayerTag is unset. Assign one of the layers registered by URpgPrimaryGameLayout."),
+				FText::AsNumber(EntryIndex)));
+		}
+		else if (!LayerContract.Contains(Entry.LayerTag))
+		{
+			AddError(FText::Format(
+				LOCTEXT(
+					"LayoutLayerIsNotRegistered",
+					"Layouts[{0}].LayerTag '{1}' is not registered by URpgPrimaryGameLayout. Use exactly UI.Layer.Game, UI.Layer.GameMenu, UI.Layer.Menu, or UI.Layer.Modal."),
+				FText::AsNumber(EntryIndex),
+				FText::FromName(
+					Entry.LayerTag.GetTagName())));
 		}
 	}
 
@@ -90,14 +182,79 @@ EDataValidationResult URpgGameFeatureAction_AddWidgets::IsDataValid(FDataValidat
 
 		if (Entry.WidgetClass.IsNull())
 		{
-			Result = EDataValidationResult::Invalid;
-			Context.AddError(FText::Format(LOCTEXT("WidgetHasNullClass", "Null WidgetClass at index {0} in Widgets."), FText::AsNumber(EntryIndex)));
+			AddError(FText::Format(
+				LOCTEXT(
+					"WidgetHasNullClass",
+					"Widgets[{0}].WidgetClass is unset. Assign a concrete UserWidget class."),
+				FText::AsNumber(EntryIndex)));
+		}
+		else
+		{
+			bool bDeferredClassValidation = false;
+			const UClass* LoadedWidgetClass =
+				RpgWidgetClassValidation::
+					ResolveAuthoredClassWithoutLoading(
+					Entry.WidgetClass.ToSoftObjectPath(),
+					Entry.WidgetClass.Get(),
+					bDeferredClassValidation);
+			if (!LoadedWidgetClass &&
+				!bDeferredClassValidation)
+			{
+				AddError(FText::Format(
+					LOCTEXT(
+						"WidgetClassUnresolved",
+						"Widgets[{0}].WidgetClass '{1}' could not be loaded. Fix or replace the authored class reference."),
+					FText::AsNumber(EntryIndex),
+					FText::FromString(
+						Entry.WidgetClass
+							.ToSoftObjectPath()
+							.ToString())));
+			}
+			else if (LoadedWidgetClass &&
+				!LoadedWidgetClass->IsChildOf(
+				UUserWidget::StaticClass()))
+			{
+				AddError(FText::Format(
+					LOCTEXT(
+						"WidgetClassHasInvalidBase",
+						"Widgets[{0}].WidgetClass '{1}' is not a UserWidget class."),
+					FText::AsNumber(EntryIndex),
+					FText::FromString(
+						LoadedWidgetClass->GetPathName())));
+			}
+			else if (LoadedWidgetClass &&
+				LoadedWidgetClass->HasAnyClassFlags(
+				CLASS_Abstract))
+			{
+				AddError(FText::Format(
+					LOCTEXT(
+						"WidgetClassIsAbstract",
+						"Widgets[{0}].WidgetClass '{1}' is abstract. Assign a concrete UserWidget class."),
+					FText::AsNumber(EntryIndex),
+					FText::FromString(
+						LoadedWidgetClass->GetPathName())));
+			}
 		}
 
 		if (!Entry.SlotTag.IsValid())
 		{
-			Result = EDataValidationResult::Invalid;
-			Context.AddError(FText::Format(LOCTEXT("WidgetHasNoSlotTag", "SlotTag is not set at index {0} in Widgets."), FText::AsNumber(EntryIndex)));
+			AddError(FText::Format(
+				LOCTEXT(
+					"WidgetHasNoSlotTag",
+					"Widgets[{0}].SlotTag is unset. Assign the matching UIExtension slot tag."),
+				FText::AsNumber(EntryIndex)));
+		}
+		else if (!IsStrictTagDescendant(
+			Entry.SlotTag,
+			TEXT("UI.HUD.Slot")))
+		{
+			AddError(FText::Format(
+				LOCTEXT(
+					"WidgetSlotHasInvalidNamespace",
+					"Widgets[{0}].SlotTag '{1}' must be a strict descendant of UI.HUD.Slot and match an authored UIExtension point."),
+				FText::AsNumber(EntryIndex),
+				FText::FromName(
+					Entry.SlotTag.GetTagName())));
 		}
 	}
 

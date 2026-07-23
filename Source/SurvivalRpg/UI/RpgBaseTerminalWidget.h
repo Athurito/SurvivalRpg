@@ -80,6 +80,9 @@ protected:
 	virtual void NativeOnInitialized() override;
 	virtual void NativeOnActivated() override;
 	virtual void NativeOnDeactivated() override;
+#if WITH_EDITOR
+	virtual void ValidateCompiledDefaults(class IWidgetCompilerLog& CompileLog) const override;
+#endif
 
 	//~IRpgUIScreenPayloadReceiver interface
 	virtual void ReceiveScreenPayload_Implementation(UObject* Payload) override;
@@ -94,14 +97,13 @@ protected:
 		TArray<URpgInventorySpatialGridWidget*>& OutGrids) const override;
 
 	/**
-	 * Canonical authored Pockets pane. Optional metadata keeps the retired asset loadable during migration;
-	 * SurvivalRpg.Inventory.UI.BaseTerminalSpatialComposition enforces it on the registry-selected asset.
+	 * Required authored Pockets pane. Its container binding is runtime state; the pane itself is static composition.
 	 */
-	UPROPERTY(BlueprintReadOnly, meta = (BindWidgetOptional))
+	UPROPERTY(BlueprintReadOnly, meta = (BindWidget))
 	TObjectPtr<URpgInventorySpatialPaneWidget> PlayerInventoryPane = nullptr;
 
-	/** Typed authored resource list fed by the stable screen-owned base-storage VM. */
-	UPROPERTY(BlueprintReadOnly, meta = (BindWidgetOptional))
+	/** Required typed resource list fed by the stable screen-owned base-storage VM. */
+	UPROPERTY(BlueprintReadOnly, meta = (BindWidget))
 	TObjectPtr<URpgBaseResourceListWidget> BaseResourceList = nullptr;
 
 	/** Optional authored pointer button for the server-validated deposit-all convenience action. */
@@ -132,7 +134,6 @@ private:
 	bool IsPayloadCoherent(const URpgBaseStorageScreenPayload* Payload) const;
 	bool BindBaseTerminalContext();
 	void EnsureBaseStorageViewModel();
-	void EnsureDefaultBaseTerminalActionRows();
 	void RegisterBaseTerminalActionBindings();
 	void UnregisterBaseTerminalActionBindings();
 	void ResetBaseTerminalContext();

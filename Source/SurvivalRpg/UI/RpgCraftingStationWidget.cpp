@@ -24,9 +24,15 @@
 #include "SurvivalRpg/UI/RpgPlayerInventoryLayoutViews.h"
 #include "TimerManager.h"
 
+#if WITH_EDITOR
+#include "Editor/WidgetCompilerLog.h"
+#endif
+
 #include UE_INLINE_GENERATED_CPP_BY_NAME(RpgCraftingStationWidget)
 
 DEFINE_LOG_CATEGORY_STATIC(LogRpgCraftingStationWidget, Log, All);
+
+#define LOCTEXT_NAMESPACE "RpgCraftingStationWidget"
 
 namespace
 {
@@ -60,6 +66,27 @@ namespace
 			FText::AsNumber(FMath::Max(0.0f, Seconds)));
 	}
 }
+
+#if WITH_EDITOR
+
+void URpgCraftingStationWidget::ValidateCompiledDefaults(
+	IWidgetCompilerLog& CompileLog) const
+{
+	Super::ValidateCompiledDefaults(CompileLog);
+
+	ValidateCommonInputActionRow(
+		CompileLog,
+		CraftInputAction,
+		LOCTEXT("CraftInputActionLabel", "CraftInputAction"),
+		/*bRequired=*/ true);
+	ValidateCommonInputActionRow(
+		CompileLog,
+		TogglePauseInputAction,
+		LOCTEXT("TogglePauseInputActionLabel", "TogglePauseInputAction"),
+		/*bRequired=*/ true);
+}
+
+#endif
 
 void URpgCraftingStationWidget::NativeOnInitialized()
 {
@@ -984,42 +1011,11 @@ void URpgCraftingStationWidget::StopJobProgressRefresh()
 	JobProgressTimer.Invalidate();
 }
 
-void URpgCraftingStationWidget::EnsureDefaultCraftingActionRows()
-{
-	if (CraftInputAction.DataTable &&
-		!CraftInputAction.RowName.IsNone() &&
-		TogglePauseInputAction.DataTable &&
-		!TogglePauseInputAction.RowName.IsNone())
-	{
-		return;
-	}
-
-	UDataTable* ActionTable = LoadObject<UDataTable>(
-		nullptr,
-		TEXT("/Game/SurvivalRpg/UI/Input/DT_RpgUIActions_Crafting.DT_RpgUIActions_Crafting"));
-	if (!ActionTable)
-	{
-		UE_LOG(
-			LogRpgCraftingStationWidget,
-			Warning,
-			TEXT("%s could not load the Crafting CommonUI action table."),
-			*GetNameSafe(this));
-		return;
-	}
-
-	CraftInputAction.DataTable = ActionTable;
-	CraftInputAction.RowName = TEXT("UI.Crafting.Craft");
-	TogglePauseInputAction.DataTable = ActionTable;
-	TogglePauseInputAction.RowName = TEXT("UI.Crafting.TogglePause");
-}
-
 void URpgCraftingStationWidget::RegisterCraftingActionBindings()
 {
 	UnregisterCraftingActionBindings();
-	EnsureDefaultCraftingActionRows();
 
-	if (CraftInputAction.DataTable &&
-		!CraftInputAction.RowName.IsNone())
+	if (IsActionRowValid(CraftInputAction))
 	{
 		CraftActionBinding = RegisterUIActionBinding(
 			FBindUIActionArgs(
@@ -1029,8 +1025,7 @@ void URpgCraftingStationWidget::RegisterCraftingActionBindings()
 					this,
 					&ThisClass::RequestCraftSelectedRecipe)));
 	}
-	if (TogglePauseInputAction.DataTable &&
-		!TogglePauseInputAction.RowName.IsNone())
+	if (IsActionRowValid(TogglePauseInputAction))
 	{
 		TogglePauseActionBinding = RegisterUIActionBinding(
 			FBindUIActionArgs(
@@ -1190,3 +1185,5 @@ void URpgCraftingStationWidget::HandlePlayerSlotGroupsChanged()
 		RefreshInventoryScreenNavigationPanels();
 	}
 }
+
+#undef LOCTEXT_NAMESPACE

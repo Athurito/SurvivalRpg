@@ -2,6 +2,8 @@
 
 #if WITH_EDITOR
 #include "Misc/DataValidation.h"
+#include "SurvivalRpg/UI/RpgPrimaryGameLayerContract.h"
+#include "SurvivalRpg/UI/RpgWidgetClassValidation.h"
 
 namespace
 {
@@ -18,6 +20,7 @@ namespace
 			Tag != RootTag &&
 			Tag.MatchesTag(RootTag);
 	}
+
 }
 #endif
 
@@ -133,6 +136,17 @@ EDataValidationResult URpgUIScreenRegistry::IsDataValid(
 				FText::FromName(
 					Entry.LayerTag.GetTagName())));
 		}
+		else if (!RpgPrimaryGameLayers::GetContract().Contains(
+			Entry.LayerTag))
+		{
+			AddEntryError(FText::Format(
+				LOCTEXT(
+					"UnregisteredLayerTag",
+					"Screens[{0}].LayerTag '{1}' is in the UI.Layer namespace but is not registered by URpgPrimaryGameLayout. Use exactly UI.Layer.Game, UI.Layer.GameMenu, UI.Layer.Menu, or UI.Layer.Modal."),
+				FText::AsNumber(EntryIndex),
+				FText::FromName(
+					Entry.LayerTag.GetTagName())));
+		}
 
 		if (Entry.WidgetClass.IsNull())
 		{
@@ -144,9 +158,15 @@ EDataValidationResult URpgUIScreenRegistry::IsDataValid(
 		}
 		else
 		{
+			bool bDeferredClassValidation = false;
 			const UClass* LoadedWidgetClass =
-				Entry.WidgetClass.LoadSynchronous();
-			if (!LoadedWidgetClass)
+				RpgWidgetClassValidation::
+					ResolveAuthoredClassWithoutLoading(
+					Entry.WidgetClass.ToSoftObjectPath(),
+					Entry.WidgetClass.Get(),
+					bDeferredClassValidation);
+			if (!LoadedWidgetClass &&
+				!bDeferredClassValidation)
 			{
 				AddEntryError(FText::Format(
 					LOCTEXT(
@@ -158,7 +178,8 @@ EDataValidationResult URpgUIScreenRegistry::IsDataValid(
 							.ToSoftObjectPath()
 							.ToString())));
 			}
-			else if (!LoadedWidgetClass->IsChildOf(
+			else if (LoadedWidgetClass &&
+				!LoadedWidgetClass->IsChildOf(
 				UCommonActivatableWidget::StaticClass()))
 			{
 				AddEntryError(FText::Format(
@@ -169,7 +190,8 @@ EDataValidationResult URpgUIScreenRegistry::IsDataValid(
 					FText::FromString(
 						LoadedWidgetClass->GetPathName())));
 			}
-			else if (LoadedWidgetClass->HasAnyClassFlags(
+			else if (LoadedWidgetClass &&
+				LoadedWidgetClass->HasAnyClassFlags(
 				CLASS_Abstract))
 			{
 				AddEntryError(FText::Format(

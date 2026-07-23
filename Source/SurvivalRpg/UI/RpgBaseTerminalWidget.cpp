@@ -18,9 +18,36 @@
 #include "SurvivalRpg/UI/RpgInventorySpatialPaneWidget.h"
 #include "SurvivalRpg/UI/RpgPlayerInventoryLayoutViews.h"
 
+#if WITH_EDITOR
+#include "Editor/WidgetCompilerLog.h"
+#endif
+
 #include UE_INLINE_GENERATED_CPP_BY_NAME(RpgBaseTerminalWidget)
 
 DEFINE_LOG_CATEGORY_STATIC(LogRpgBaseTerminalWidget, Log, All);
+
+#define LOCTEXT_NAMESPACE "RpgBaseTerminalWidget"
+
+#if WITH_EDITOR
+
+void URpgBaseTerminalWidget::ValidateCompiledDefaults(
+	IWidgetCompilerLog& CompileLog) const
+{
+	Super::ValidateCompiledDefaults(CompileLog);
+
+	ValidateCommonInputActionRow(
+		CompileLog,
+		DepositAllInputAction,
+		LOCTEXT("DepositAllInputActionLabel", "DepositAllInputAction"),
+		/*bRequired=*/ true);
+	ValidateCommonInputActionRow(
+		CompileLog,
+		InstallUpgradeInputAction,
+		LOCTEXT("InstallUpgradeInputActionLabel", "InstallUpgradeInputAction"),
+		/*bRequired=*/ true);
+}
+
+#endif
 
 void URpgBaseTerminalWidget::NativeOnInitialized()
 {
@@ -312,42 +339,11 @@ void URpgBaseTerminalWidget::EnsureBaseStorageViewModel()
 	}
 }
 
-void URpgBaseTerminalWidget::EnsureDefaultBaseTerminalActionRows()
-{
-	if (DepositAllInputAction.DataTable &&
-		!DepositAllInputAction.RowName.IsNone() &&
-		InstallUpgradeInputAction.DataTable &&
-		!InstallUpgradeInputAction.RowName.IsNone())
-	{
-		return;
-	}
-
-	UDataTable* ActionTable = LoadObject<UDataTable>(
-		nullptr,
-		TEXT("/Game/SurvivalRpg/UI/Input/DT_RpgUIActions_BaseTerminal.DT_RpgUIActions_BaseTerminal"));
-	if (!ActionTable)
-	{
-		UE_LOG(
-			LogRpgBaseTerminalWidget,
-			Warning,
-			TEXT("%s could not load the BaseTerminal CommonUI action table."),
-			*GetNameSafe(this));
-		return;
-	}
-
-	DepositAllInputAction.DataTable = ActionTable;
-	DepositAllInputAction.RowName = TEXT("UI.BaseTerminal.DepositAll");
-	InstallUpgradeInputAction.DataTable = ActionTable;
-	InstallUpgradeInputAction.RowName = TEXT("UI.BaseTerminal.InstallUpgrade");
-}
-
 void URpgBaseTerminalWidget::RegisterBaseTerminalActionBindings()
 {
 	UnregisterBaseTerminalActionBindings();
-	EnsureDefaultBaseTerminalActionRows();
 
-	if (DepositAllInputAction.DataTable &&
-		!DepositAllInputAction.RowName.IsNone())
+	if (IsActionRowValid(DepositAllInputAction))
 	{
 		DepositAllActionBinding = RegisterUIActionBinding(
 			FBindUIActionArgs(
@@ -357,8 +353,7 @@ void URpgBaseTerminalWidget::RegisterBaseTerminalActionBindings()
 					this,
 					&ThisClass::RequestDepositAllMaterials)));
 	}
-	if (InstallUpgradeInputAction.DataTable &&
-		!InstallUpgradeInputAction.RowName.IsNone())
+	if (IsActionRowValid(InstallUpgradeInputAction))
 	{
 		InstallUpgradeActionBinding = RegisterUIActionBinding(
 			FBindUIActionArgs(
@@ -496,3 +491,5 @@ void URpgBaseTerminalWidget::HandleInstalledUpgradesChanged(
 		UpdateTerminalActionAvailability();
 	}
 }
+
+#undef LOCTEXT_NAMESPACE

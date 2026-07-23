@@ -29,8 +29,8 @@ public:
 protected:
 	virtual void NativeOnInitialized() override;
 
-	/** Required label in the canonical authored crafting-button asset. */
-	UPROPERTY(BlueprintReadOnly, meta = (BindWidgetOptional))
+	/** Required authored label receiving the button's presentation text. */
+	UPROPERTY(BlueprintReadOnly, meta = (BindWidget))
 	TObjectPtr<UCommonTextBlock> Text = nullptr;
 
 private:

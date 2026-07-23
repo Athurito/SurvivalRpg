@@ -151,6 +151,9 @@ protected:
 	virtual void NativeOnActivated() override;
 	virtual void NativeOnDeactivated() override;
 	virtual void NativeDestruct() override;
+#if WITH_EDITOR
+	virtual void ValidateCompiledDefaults(class IWidgetCompilerLog& CompileLog) const override;
+#endif
 	virtual bool NativeOnDragOver(
 		const FGeometry& InGeometry,
 		const FDragDropEvent& InDragDropEvent,

@@ -29,6 +29,12 @@ public:
 	virtual TOptional<FUIInputConfig> GetDesiredInputConfig() const override;
 	//~End of UCommonActivatableWidget interface
 
+#if WITH_EDITOR
+	//~UWidget interface
+	virtual void ValidateCompiledDefaults(class IWidgetCompilerLog& CompileLog) const override;
+	//~End of UWidget interface
+#endif
+
 	/** Assigns the UI-local coordinators used by the controller action handlers. */
 	UFUNCTION(BlueprintCallable, Category = "Inventory|Controller")
 	void SetInventoryControllerCoordinators(URpgInventoryPanelNavigationCoordinator* InPanelNavigator, URpgInventoryDragDropCoordinator* InDragDropCoordinator);
@@ -59,6 +65,21 @@ protected:
 	virtual bool NativeOnHandleBackAction() override;
 	virtual FReply NativeOnKeyDown(const FGeometry& InGeometry, const FKeyEvent& InKeyEvent) override;
 	virtual UWidget* NativeGetDesiredFocusTarget() const override;
+
+	/** True only when this handle resolves to a CommonUI action row suitable for runtime binding. */
+	static bool IsActionRowValid(const FDataTableRowHandle& ActionRow);
+
+#if WITH_EDITOR
+	/**
+	 * Emits an actionable Widget Blueprint compiler error for an unset or malformed CommonUI action row.
+	 * Optional rows may be completely empty, but partial or stale references still fail compilation.
+	 */
+	static void ValidateCommonInputActionRow(
+		class IWidgetCompilerLog& CompileLog,
+		const FDataTableRowHandle& ActionRow,
+		const FText& PropertyLabel,
+		bool bRequired);
+#endif
 
 	/** Action row for previous inventory panel, usually LB or Q. */
 	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Input|Inventory Controller", meta = (RowType = "/Script/CommonUI.CommonInputActionDataBase"))
@@ -114,11 +135,9 @@ private:
 	UFUNCTION()
 	void HandleHeldPayloadChanged(bool bHasPayload, const FRpgInventoryDragPayload& Payload);
 
-	void EnsureDefaultInventoryControllerActionRows();
 	FUIActionBindingHandle RegisterActionRow(const FDataTableRowHandle& ActionRow, const FSimpleDelegate& Delegate);
 	void RefreshInventoryActionBindingVisibility();
 	bool HandleInventoryBackAction();
-	static bool IsActionRowValid(const FDataTableRowHandle& ActionRow);
 
 	UPROPERTY(Transient)
 	TObjectPtr<URpgInventoryPanelNavigationCoordinator> PanelNavigator = nullptr;

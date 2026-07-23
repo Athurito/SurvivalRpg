@@ -69,72 +69,76 @@ protected:
 		bool bHasPayload,
 		bool bPendingRequest) override;
 
-	/** Freely placed Pockets spatial host; player screens no longer require a shared group-list layout. */
-	UPROPERTY(BlueprintReadOnly, meta = (BindWidgetOptional))
+	/** Required freely placed Pockets spatial host; its projected group remains runtime read-only state. */
+	UPROPERTY(BlueprintReadOnly, meta = (BindWidget))
 	TObjectPtr<URpgInventorySlotGroupWidget> Content_Pockets = nullptr;
 
-	/**
-	 * Migration-safe binding for the gear-like Weapon1 carry host. Canonical content uses RpgInventoryCarrySlotWidget;
-	 * legacy SlotGroup widgets remain loadable but are ignored with a clear warning until reparented in the editor.
-	 */
-	UPROPERTY(BlueprintReadOnly, meta = (BindWidgetOptional))
-	TObjectPtr<UWidget> Carry_Weapon1 = nullptr;
+	/** Required primary-weapon carry presenter. */
+	UPROPERTY(BlueprintReadOnly, meta = (BindWidget))
+	TObjectPtr<URpgInventoryCarrySlotWidget> Carry_Weapon1 = nullptr;
 
-	/** Migration-safe binding for the gear-like Weapon2 carry host; reparent it to RpgInventoryCarrySlotWidget. */
-	UPROPERTY(BlueprintReadOnly, meta = (BindWidgetOptional))
-	TObjectPtr<UWidget> Carry_Weapon2 = nullptr;
+	/** Required secondary-weapon carry presenter. */
+	UPROPERTY(BlueprintReadOnly, meta = (BindWidget))
+	TObjectPtr<URpgInventoryCarrySlotWidget> Carry_Weapon2 = nullptr;
 
-	/** Migration-safe binding for the gear-like offhand/shield carry host. */
-	UPROPERTY(BlueprintReadOnly, meta = (BindWidgetOptional))
-	TObjectPtr<UWidget> Carry_Offhand = nullptr;
+	/** Required offhand carry presenter. */
+	UPROPERTY(BlueprintReadOnly, meta = (BindWidget))
+	TObjectPtr<URpgInventoryCarrySlotWidget> Carry_Offhand = nullptr;
 
-	/** Optional freely placed content host for the currently equipped backpack. */
-	UPROPERTY(BlueprintReadOnly, meta = (BindWidgetOptional))
+	/** Required static host for the currently equipped backpack's optional runtime container. */
+	UPROPERTY(BlueprintReadOnly, meta = (BindWidget))
 	TObjectPtr<URpgInventorySlotGroupWidget> Content_Backpack = nullptr;
 
-	/** Optional freely placed content host for the currently equipped belt. */
-	UPROPERTY(BlueprintReadOnly, meta = (BindWidgetOptional))
+	/** Required static host for the currently equipped belt's optional runtime container. */
+	UPROPERTY(BlueprintReadOnly, meta = (BindWidget))
 	TObjectPtr<URpgInventorySlotGroupWidget> Content_Belt = nullptr;
 
-	/** Optional freely placed content host for the currently equipped pouch. */
-	UPROPERTY(BlueprintReadOnly, meta = (BindWidgetOptional))
+	/** Required static host for the currently equipped pouch's optional runtime container. */
+	UPROPERTY(BlueprintReadOnly, meta = (BindWidget))
 	TObjectPtr<URpgInventorySlotGroupWidget> Content_Pouch = nullptr;
 
-	/** Optional freely placed content host for the currently equipped resource bag. */
-	UPROPERTY(BlueprintReadOnly, meta = (BindWidgetOptional))
+	/** Required static host for the currently equipped resource bag's optional runtime container. */
+	UPROPERTY(BlueprintReadOnly, meta = (BindWidget))
 	TObjectPtr<URpgInventorySlotGroupWidget> Content_ResourceBag = nullptr;
 
-	/** Optional 1..8 actionbar preview/drop target inside the inventory screen. */
-	UPROPERTY(BlueprintReadOnly, meta = (BindWidgetOptional))
+	/** Required 1..8 actionbar preview/drop target inside the inventory screen. */
+	UPROPERTY(BlueprintReadOnly, meta = (BindWidget))
 	TObjectPtr<URpgActionBarTileView> ActionBarTileView = nullptr;
 
-	/** Optional fixed armor slot widgets. */
-	UPROPERTY(BlueprintReadOnly, meta = (BindWidgetOptional))
+	/** Required fixed head armor slot presenter. */
+	UPROPERTY(BlueprintReadOnly, meta = (BindWidget))
 	TObjectPtr<URpgEquipmentSlotWidget> Gear_Head = nullptr;
 
-	UPROPERTY(BlueprintReadOnly, meta = (BindWidgetOptional))
+	/** Required fixed chest armor slot presenter. */
+	UPROPERTY(BlueprintReadOnly, meta = (BindWidget))
 	TObjectPtr<URpgEquipmentSlotWidget> Gear_Chest = nullptr;
 
-	UPROPERTY(BlueprintReadOnly, meta = (BindWidgetOptional))
+	/** Required fixed hands armor slot presenter. */
+	UPROPERTY(BlueprintReadOnly, meta = (BindWidget))
 	TObjectPtr<URpgEquipmentSlotWidget> Gear_Hands = nullptr;
 
-	UPROPERTY(BlueprintReadOnly, meta = (BindWidgetOptional))
+	/** Required fixed legs armor slot presenter. */
+	UPROPERTY(BlueprintReadOnly, meta = (BindWidget))
 	TObjectPtr<URpgEquipmentSlotWidget> Gear_Legs = nullptr;
 
-	UPROPERTY(BlueprintReadOnly, meta = (BindWidgetOptional))
+	/** Required fixed feet armor slot presenter. */
+	UPROPERTY(BlueprintReadOnly, meta = (BindWidget))
 	TObjectPtr<URpgEquipmentSlotWidget> Gear_Feet = nullptr;
 
-	/** Optional bag/provider equipment slot widgets. */
-	UPROPERTY(BlueprintReadOnly, meta = (BindWidgetOptional))
+	/** Required backpack equipment slot presenter. */
+	UPROPERTY(BlueprintReadOnly, meta = (BindWidget))
 	TObjectPtr<URpgEquipmentSlotWidget> Gear_Backpack = nullptr;
 
-	UPROPERTY(BlueprintReadOnly, meta = (BindWidgetOptional))
+	/** Required belt equipment slot presenter. */
+	UPROPERTY(BlueprintReadOnly, meta = (BindWidget))
 	TObjectPtr<URpgEquipmentSlotWidget> Gear_Belt = nullptr;
 
-	UPROPERTY(BlueprintReadOnly, meta = (BindWidgetOptional))
+	/** Required pouch equipment slot presenter. */
+	UPROPERTY(BlueprintReadOnly, meta = (BindWidget))
 	TObjectPtr<URpgEquipmentSlotWidget> Gear_Pouch = nullptr;
 
-	UPROPERTY(BlueprintReadOnly, meta = (BindWidgetOptional))
+	/** Required resource-bag equipment slot presenter. */
+	UPROPERTY(BlueprintReadOnly, meta = (BindWidget))
 	TObjectPtr<URpgEquipmentSlotWidget> Gear_ResourceBag = nullptr;
 
 private:
@@ -175,7 +179,6 @@ private:
 		bool& bOutTargetAddressed);
 	URpgInventorySlotGroupViewModel* FindEquipmentProvidedContentGroup(ERpgEquipmentSlot SourceEquipmentSlot) const;
 	void CollectStandaloneContentGroupWidgets(TArray<URpgInventorySlotGroupWidget*>& OutWidgets) const;
-	URpgInventoryCarrySlotWidget* ResolveCarrySlotWidget(UWidget* BoundWidget, FName BindingName, bool bLogFailure) const;
 	void UpdateControllerCarryDragVisual(
 		const FRpgInventoryDragPayload& Payload,
 		URpgInventoryCarrySlotWidget* CarrySlotWidget);

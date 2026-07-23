@@ -6,31 +6,21 @@
 #include "SurvivalRpg/Inventory/RpgInventoryDragDrop.h"
 #include "SurvivalRpg/UI/RpgInventoryPanelNavigationCoordinator.h"
 
+#if WITH_EDITOR
+#include "Editor/WidgetCompilerLog.h"
+#endif
+
 #include UE_INLINE_GENERATED_CPP_BY_NAME(RpgInventoryControllerActionsWidget)
 
 DEFINE_LOG_CATEGORY_STATIC(LogRpgInventoryControllerActionsWidget, Log, All);
+
+#define LOCTEXT_NAMESPACE "RpgInventoryControllerActionsWidget"
 
 namespace
 {
 FString DescribeActionRow(const FDataTableRowHandle& ActionRow)
 {
 	return FString::Printf(TEXT("%s::%s"), *GetNameSafe(ActionRow.DataTable), *ActionRow.RowName.ToString());
-}
-
-bool DoesActionRowResolve(const FDataTableRowHandle& ActionRow)
-{
-	return ActionRow.DataTable != nullptr &&
-		ActionRow.RowName != NAME_None &&
-		ActionRow.DataTable->GetRowNames().Contains(ActionRow.RowName);
-}
-
-void FillMissingActionRow(FDataTableRowHandle& ActionRow, UDataTable* DataTable, FName RowName)
-{
-	if (!DoesActionRowResolve(ActionRow))
-	{
-		ActionRow.DataTable = DataTable;
-		ActionRow.RowName = RowName;
-	}
 }
 }
 
@@ -45,6 +35,116 @@ TOptional<FUIInputConfig> URpgInventoryControllerActionsWidget::GetDesiredInputC
 {
 	return FUIInputConfig(ECommonInputMode::Menu, EMouseCaptureMode::NoCapture);
 }
+
+#if WITH_EDITOR
+
+void URpgInventoryControllerActionsWidget::ValidateCompiledDefaults(
+	IWidgetCompilerLog& CompileLog) const
+{
+	Super::ValidateCompiledDefaults(CompileLog);
+
+	ValidateCommonInputActionRow(
+		CompileLog,
+		PreviousPanelInputAction,
+		LOCTEXT("PreviousPanelInputActionLabel", "PreviousPanelInputAction"),
+		/*bRequired=*/ true);
+	ValidateCommonInputActionRow(
+		CompileLog,
+		NextPanelInputAction,
+		LOCTEXT("NextPanelInputActionLabel", "NextPanelInputAction"),
+		/*bRequired=*/ true);
+	ValidateCommonInputActionRow(
+		CompileLog,
+		QuickTransferInputAction,
+		LOCTEXT("QuickTransferInputActionLabel", "QuickTransferInputAction"),
+		/*bRequired=*/ true);
+	ValidateCommonInputActionRow(
+		CompileLog,
+		QuickSplitInputAction,
+		LOCTEXT("QuickSplitInputActionLabel", "QuickSplitInputAction"),
+		/*bRequired=*/ true);
+	ValidateCommonInputActionRow(
+		CompileLog,
+		UseOrEquipInputAction,
+		LOCTEXT("UseOrEquipInputActionLabel", "UseOrEquipInputAction"),
+		/*bRequired=*/ true);
+	ValidateCommonInputActionRow(
+		CompileLog,
+		DropInputAction,
+		LOCTEXT("DropInputActionLabel", "DropInputAction"),
+		/*bRequired=*/ true);
+	ValidateCommonInputActionRow(
+		CompileLog,
+		BackInputAction,
+		LOCTEXT("BackInputActionLabel", "BackInputAction"),
+		/*bRequired=*/ false);
+}
+
+void URpgInventoryControllerActionsWidget::ValidateCommonInputActionRow(
+	IWidgetCompilerLog& CompileLog,
+	const FDataTableRowHandle& ActionRow,
+	const FText& PropertyLabel,
+	bool bRequired)
+{
+	const bool bCompletelyUnset =
+		ActionRow.DataTable == nullptr &&
+		ActionRow.RowName.IsNone();
+	if (!bRequired && bCompletelyUnset)
+	{
+		return;
+	}
+
+	if (!ActionRow.DataTable)
+	{
+		CompileLog.Error(FText::Format(
+			LOCTEXT(
+				"MissingCommonInputActionTable",
+				"{0} requires an authored CommonUI action DataTable; runtime path fallbacks are not supported."),
+			PropertyLabel));
+		return;
+	}
+
+	if (ActionRow.RowName.IsNone())
+	{
+		CompileLog.Error(FText::Format(
+			LOCTEXT(
+				"MissingCommonInputActionRowName",
+				"{0} uses DataTable '{1}' but has no RowName."),
+			PropertyLabel,
+			FText::FromString(ActionRow.DataTable->GetPathName())));
+		return;
+	}
+
+	const UScriptStruct* RowStruct =
+		ActionRow.DataTable->GetRowStruct();
+	if (!RowStruct ||
+		!RowStruct->IsChildOf(
+			FCommonInputActionDataBase::StaticStruct()))
+	{
+		CompileLog.Error(FText::Format(
+			LOCTEXT(
+				"InvalidCommonInputActionRowStruct",
+				"{0} references DataTable '{1}', whose row type '{2}' is not CommonInputActionDataBase."),
+			PropertyLabel,
+			FText::FromString(ActionRow.DataTable->GetPathName()),
+			FText::FromString(GetNameSafe(RowStruct))));
+		return;
+	}
+
+	if (!ActionRow.DataTable->FindRowUnchecked(
+		ActionRow.RowName))
+	{
+		CompileLog.Error(FText::Format(
+			LOCTEXT(
+				"MissingCommonInputActionRow",
+				"{0} references missing row '{1}' in DataTable '{2}'."),
+			PropertyLabel,
+			FText::FromName(ActionRow.RowName),
+			FText::FromString(ActionRow.DataTable->GetPathName())));
+	}
+}
+
+#endif
 
 void URpgInventoryControllerActionsWidget::SetInventoryControllerCoordinators(URpgInventoryPanelNavigationCoordinator* InPanelNavigator, URpgInventoryDragDropCoordinator* InDragDropCoordinator)
 {
@@ -102,8 +202,6 @@ void URpgInventoryControllerActionsWidget::SetInventoryControllerCoordinators(UR
 
 void URpgInventoryControllerActionsWidget::RegisterInventoryControllerActionBindings()
 {
-	EnsureDefaultInventoryControllerActionRows();
-
 	if (!IsActivated())
 	{
 		UE_LOG(LogRpgInventoryControllerActionsWidget, Verbose, TEXT("%s skipped inventory action binding registration because the widget is not active."),
@@ -148,7 +246,17 @@ void URpgInventoryControllerActionsWidget::RegisterInventoryControllerActionBind
 			*GetNameSafe(this));
 	}
 	DropActionBinding = RegisterActionRow(DropInputAction, FSimpleDelegate::CreateUObject(this, &ThisClass::HandleDropAction));
-	RegisterActionRow(BackInputAction, FSimpleDelegate::CreateUObject(this, &ThisClass::HandleBackAction));
+	if (BackInputAction.DataTable ||
+		!BackInputAction.RowName.IsNone())
+	{
+		// A completely unset Back row intentionally delegates cancel/back
+		// routing to the CommonUI activatable-widget contract.
+		RegisterActionRow(
+			BackInputAction,
+			FSimpleDelegate::CreateUObject(
+				this,
+				&ThisClass::HandleBackAction));
+	}
 	RefreshInventoryActionBindingVisibility();
 
 	UE_LOG(LogRpgInventoryControllerActionsWidget, Log, TEXT("%s registered %d inventory controller action binding(s). Previous=%s Next=%s Transfer=%s Split=%s UseOrEquip=%s Drop=%s Back=%s"),
@@ -431,33 +539,6 @@ FUIActionBindingHandle URpgInventoryControllerActionsWidget::RegisterActionRow(
 	return BindingHandle;
 }
 
-void URpgInventoryControllerActionsWidget::EnsureDefaultInventoryControllerActionRows()
-{
-	if (IsActionRowValid(PreviousPanelInputAction) &&
-		IsActionRowValid(NextPanelInputAction) &&
-		IsActionRowValid(QuickTransferInputAction) &&
-		IsActionRowValid(QuickSplitInputAction) &&
-		IsActionRowValid(UseOrEquipInputAction) &&
-		IsActionRowValid(DropInputAction))
-	{
-		return;
-	}
-
-	UDataTable* ActionTable = LoadObject<UDataTable>(nullptr, TEXT("/Game/SurvivalRpg/UI/Input/DT_RpgUIActions_Inventory.DT_RpgUIActions_Inventory"));
-	if (!ActionTable)
-	{
-		UE_LOG(LogRpgInventoryControllerActionsWidget, Warning, TEXT("%s could not load default inventory controller action table."), *GetNameSafe(this));
-		return;
-	}
-
-	FillMissingActionRow(PreviousPanelInputAction, ActionTable, TEXT("UI.Inventory.PreviousPanel"));
-	FillMissingActionRow(NextPanelInputAction, ActionTable, TEXT("UI.Inventory.NextPanel"));
-	FillMissingActionRow(QuickTransferInputAction, ActionTable, TEXT("UI.Inventory.QuickTransfer"));
-	FillMissingActionRow(QuickSplitInputAction, ActionTable, TEXT("UI.Inventory.QuickSplit"));
-	FillMissingActionRow(UseOrEquipInputAction, ActionTable, TEXT("UI.Inventory.UseOrEquip"));
-	FillMissingActionRow(DropInputAction, ActionTable, TEXT("UI.Inventory.Drop"));
-}
-
 bool URpgInventoryControllerActionsWidget::HandleInventoryBackAction()
 {
 	if (DragDropCoordinator && DragDropCoordinator->HasHeldPayload())
@@ -471,5 +552,17 @@ bool URpgInventoryControllerActionsWidget::HandleInventoryBackAction()
 
 bool URpgInventoryControllerActionsWidget::IsActionRowValid(const FDataTableRowHandle& ActionRow)
 {
-	return DoesActionRowResolve(ActionRow);
+	const UScriptStruct* RowStruct =
+		ActionRow.DataTable
+			? ActionRow.DataTable->GetRowStruct()
+			: nullptr;
+	return ActionRow.DataTable != nullptr &&
+		!ActionRow.RowName.IsNone() &&
+		RowStruct &&
+		RowStruct->IsChildOf(
+			FCommonInputActionDataBase::StaticStruct()) &&
+		ActionRow.DataTable->FindRowUnchecked(
+			ActionRow.RowName) != nullptr;
 }
+
+#undef LOCTEXT_NAMESPACE
