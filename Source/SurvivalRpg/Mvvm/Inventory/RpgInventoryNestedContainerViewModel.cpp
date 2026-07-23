@@ -286,7 +286,7 @@ void URpgInventoryNestedContainerViewModel::RefreshFilterPresentation()
 			}
 
 			FRpgInventoryEntryFilterPresentation& Presentation = EntryFilterPresentation.AddDefaulted_GetRef();
-			Presentation.ItemId = Entry->GetItemInstance()->GetItemId();
+			Presentation.ItemId = Entry->GetItemId();
 			Presentation.EntryId = Entry->GetEntryId();
 			Presentation.bMatchesFilter = DoesEntryMatchQuery(Entry, QueryTokens);
 			Presentation.bDimmed = !Presentation.bMatchesFilter;

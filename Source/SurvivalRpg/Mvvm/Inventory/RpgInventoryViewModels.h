@@ -147,7 +147,11 @@ public:
 	UFUNCTION(BlueprintPure, Category = "Inventory|ViewModel")
 	URpgInventoryItemInstance* GetItemInstance() const { return ItemInstance.Get(); }
 
-	/** Stable replicated entry id used for shared manual ordering. */
+	/** Persistent item identity used to keep this child VM stable across entry reconstruction. */
+	UFUNCTION(BlueprintPure, Category = "Inventory|ViewModel")
+	FRpgInventoryItemId GetItemId() const { return ItemId; }
+
+	/** Inventory-local replicated entry id used for shared manual ordering and stale-request validation. */
 	UFUNCTION(BlueprintPure, Category = "Inventory|ViewModel")
 	FGuid GetEntryId() const { return EntryId; }
 
@@ -192,7 +196,11 @@ protected:
 	UPROPERTY(BlueprintReadOnly, FieldNotify, Category = "Inventory|ViewModel", meta = (AllowPrivateAccess = "true"))
 	TObjectPtr<URpgInventoryItemInstance> ItemInstance = nullptr;
 
-	/** Stable replicated entry id for manual ordering. */
+	/** Persistent item identity. UI list reconciliation uses this instead of the inventory-local EntryId. */
+	UPROPERTY(BlueprintReadOnly, FieldNotify, Category = "Inventory|ViewModel", meta = (AllowPrivateAccess = "true"))
+	FRpgInventoryItemId ItemId;
+
+	/** Inventory-local replicated entry id for manual ordering and stale-request validation. */
 	UPROPERTY(BlueprintReadOnly, FieldNotify, Category = "Inventory|ViewModel", meta = (AllowPrivateAccess = "true"))
 	FGuid EntryId;
 

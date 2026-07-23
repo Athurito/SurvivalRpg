@@ -2038,7 +2038,7 @@ Status: **In Arbeit**
 - [x] Wirkungslose Spatial-Item-MVVM-Injection entfernen, Address-/Entry-Modus
       exklusiv machen und die Reconciliation-/Destruct-Grenze einschließlich
       OwningPlayer-Kontext dauerhaft testen.
-- [ ] Stabile Child-VMs pro Item-ID und Container-Handle verwenden.
+- [x] Stabile Child-VMs pro Item-ID und Container-Handle verwenden.
 - [ ] Nur tatsächlich geänderte FieldNotify-Felder senden.
 - [ ] Inventory-Invalidierungen pro Commit/Tick bündeln.
 - [x] Player- und Storage-Projektionen bei Deaktivierung unbinden, ohne ihre
@@ -2067,6 +2067,54 @@ Status: **In Arbeit**
 - [ ] Manager intern in Storage, Rules/Planner, Transactions und Persistence
       schneiden, ohne die öffentliche Autorität zu duplizieren.
 - [ ] Große UI-Sammeldateien in eine Klasse pro Datei aufteilen.
+
+Verifizierter Phase-6A-Zwischenstand vom 2026-07-23:
+
+- `URpgInventoryEntryViewModel` projiziert die persistente
+  `FRpgInventoryItemId` nun ausdrücklich als read-only FieldNotify-Feld.
+  `URpgInventoryPanelViewModel` reconciled seine Child-VMs über diese
+  Item-ID statt über die inventarlokale `EntryId`. Eine rekonstruierte
+  Inventory-Zeile oder Item-Instanz übernimmt dadurch weiterhin dieselbe
+  VM; die neue `EntryId`, Instanz, Platzierung und Stackdaten werden in
+  dieser stabilen VM aktualisiert.
+- Der Item-Child-Lifecycle endet weiterhin bewusst, sobald das Item die
+  gebundene Projektion verlässt oder der Screen unbindet. Es gibt keinen
+  unbegrenzten Cache veralteter Gameplay-Referenzen. Ungültige Item-IDs
+  werden nicht gecacht; ein gecachter Pointer kann pro Refresh höchstens
+  einmal wiederverwendet werden.
+- Slot-Gruppen bleiben über den vollständigen
+  `FRpgInventoryContainerHandle` stabil. Zwei gleichzeitig ausgerüstete
+  Provider mit demselben definition-lokalen Container-Namen `Main` bleiben
+  wegen ihrer verschiedenen Owner-Item-IDs getrennte Child-VMs.
+  Address-Slots bleiben davon unabhängig über ihre vollständige
+  `(ContainerHandle, X, Y)`-Adresse stabil; Gear- und Actionbar-VMs behalten
+  ihre feste Slotsemantik.
+- Gear-Gruppen werden vor der Content-/Carry-Child-Erzeugung ausgespart.
+  Damit entstehen bei `RefreshSlotGroups()` nicht länger neun unreferenzierte
+  Gear-Group- und Address-VMs, die anschließend sofort verworfen wurden.
+- Zwei neue Regressionen verwenden den echten PlayerController-/
+  PlayerState-/Equipment-Pfad sowie einen typisierten
+  Cross-Inventory-Transfer-Roundtrip. Sie sichern neue inventarlokale
+  `EntryId` bei gleicher Item-ID, stabile beteiligte und unbeteiligte
+  Entry-VM-Pointer, vollständige Container-Handle-Trennung, wiederholtes
+  Refresh-Reuse und konstante direkte Child-Objektzahlen ab.
+- Die optionalen Fragment-Presenter werden weiterhin bei Entry-Refresh
+  klassenbasiert neu aufgebaut. Da aktuell kein aktiver Consumer existiert,
+  bleibt dieser Grandchild-Vertrag ein dokumentierter separater
+  MVVM-Legacy-Rest und wurde nicht mit dem Item-/Container-Identitätsschnitt
+  vermischt.
+- `SurvivalRpgEditor Win64 Development` wurde mit Unreal Engine 5.8 gebaut;
+  der abschließende Build meldete 4 von 4 Actions und
+  `Result: Succeeded`.
+- Die vollständige `SurvivalRpg`-Automation meldete 172 von 172 Tests
+  erfolgreich: Combat 1, Crafting 8, Equipment 6, GameFeatures 3,
+  Harvesting 1, Input 2, Inventory 124, Save 2 und UI 25.
+- `CompileAllBlueprints` endete mit Prozesscode 0, 0 Compilerfehlern,
+  16 bekannten Compilerwarnungen und 0 nicht ladbaren Blueprints.
+- Fortschritt Phase 6: 10 von 22 Punkten abgeschlossen (45,5 %).
+- Gesamtfortschritt der verbindlichen Checkliste: 76 von 94 Punkten
+  abgeschlossen (80,9 %), 18 Punkte offen.
+- Nächster Schnitt: nur tatsächlich geänderte FieldNotify-Felder senden.
 
 ## Phase 7 – Legacy endgültig entfernen
 

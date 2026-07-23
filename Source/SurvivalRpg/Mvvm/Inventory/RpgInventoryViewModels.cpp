@@ -63,6 +63,7 @@ void URpgInventoryEntryViewModel::InitializeFromEntry(
 	const bool bWasChanged =
 		InventoryOwner != Entry.InventoryOwner ||
 		ItemInstance != Entry.Instance ||
+		ItemId != Entry.ItemId ||
 		EntryId != Entry.EntryId ||
 		StackCount != Entry.StackCount ||
 		Placement.GetContainerHandle() != Entry.Placement.GetContainerHandle() ||
@@ -73,6 +74,7 @@ void URpgInventoryEntryViewModel::InitializeFromEntry(
 
 	InventoryOwner = Entry.InventoryOwner;
 	ItemInstance = Entry.Instance;
+	ItemId = Entry.ItemId;
 	EntryId = Entry.EntryId;
 	StackCount = Entry.StackCount;
 	Placement = Entry.Placement;
@@ -146,6 +148,7 @@ void URpgInventoryEntryViewModel::InitializeFromEntry(
 
 	UE_MVVM_BROADCAST_FIELD_VALUE_CHANGED(InventoryOwner);
 	UE_MVVM_BROADCAST_FIELD_VALUE_CHANGED(ItemInstance);
+	UE_MVVM_BROADCAST_FIELD_VALUE_CHANGED(ItemId);
 	UE_MVVM_BROADCAST_FIELD_VALUE_CHANGED(EntryId);
 	UE_MVVM_BROADCAST_FIELD_VALUE_CHANGED(StackCount);
 	UE_MVVM_BROADCAST_FIELD_VALUE_CHANGED(Placement);
@@ -274,12 +277,12 @@ void URpgInventoryPanelViewModel::RefreshEntries()
 	};
 
 	TArray<TObjectPtr<URpgInventoryEntryViewModel>> PreviousEntries = MoveTemp(Entries);
-	TMap<FGuid, TObjectPtr<URpgInventoryEntryViewModel>> PreviousEntriesById;
+	TMap<FRpgInventoryItemId, TObjectPtr<URpgInventoryEntryViewModel>> PreviousEntriesByItemId;
 	for (URpgInventoryEntryViewModel* PreviousEntry : PreviousEntries)
 	{
-		if (PreviousEntry && PreviousEntry->GetEntryId().IsValid())
+		if (PreviousEntry && PreviousEntry->GetItemId().IsValid())
 		{
-			PreviousEntriesById.Add(PreviousEntry->GetEntryId(), PreviousEntry);
+			PreviousEntriesByItemId.Add(PreviousEntry->GetItemId(), PreviousEntry);
 		}
 	}
 	Entries.Reset();
@@ -287,12 +290,22 @@ void URpgInventoryPanelViewModel::RefreshEntries()
 	Entries.Reserve(EntryViews.Num());
 	for (int32 EntryIndex = 0; EntryIndex < EntryViews.Num(); ++EntryIndex)
 	{
-		URpgInventoryEntryViewModel* EntryViewModel = PreviousEntriesById.FindRef(EntryViews[EntryIndex].EntryId);
+		const FRpgInventoryEntryView& EntryView = EntryViews[EntryIndex];
+		URpgInventoryEntryViewModel* EntryViewModel = nullptr;
+		if (EntryView.ItemId.IsValid())
+		{
+			if (const TObjectPtr<URpgInventoryEntryViewModel>* ReusableEntry =
+					PreviousEntriesByItemId.Find(EntryView.ItemId))
+			{
+				EntryViewModel = ReusableEntry->Get();
+				PreviousEntriesByItemId.Remove(EntryView.ItemId);
+			}
+		}
 		if (!EntryViewModel)
 		{
 			EntryViewModel = NewObject<URpgInventoryEntryViewModel>(this);
 		}
-		AddEntryViewModel(EntryViewModel, EntryViews[EntryIndex]);
+		AddEntryViewModel(EntryViewModel, EntryView);
 	}
 
 	UE_MVVM_BROADCAST_FIELD_VALUE_CHANGED(Entries);

@@ -625,6 +625,12 @@ void URpgPlayerInventoryViewModel::RefreshSlotGroups()
 	{
 		for (const FRpgInventorySlotGroupView& GroupView : InventoryLayout->GetSlotGroups())
 		{
+			if (GroupView.GroupKind != ERpgInventorySlotGroupKind::Carry &&
+				GroupView.GroupKind != ERpgInventorySlotGroupKind::Content)
+			{
+				continue;
+			}
+
 			const FRpgInventoryContainerHandle GroupHandle = GroupView.ContainerHandle;
 			if (!GroupHandle.IsValid() || !GroupView.GridSize.IsValid())
 			{
