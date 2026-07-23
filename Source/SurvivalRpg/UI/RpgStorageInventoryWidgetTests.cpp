@@ -2,6 +2,7 @@
 
 #if WITH_DEV_AUTOMATION_TESTS
 
+#include "SurvivalRpg/Inventory/RpgInventoryAutomationTestTypes.h"
 #include "SurvivalRpg/Inventory/RpgInventoryDragDrop.h"
 #include "SurvivalRpg/Inventory/RpgInventoryItemInstance.h"
 #include "SurvivalRpg/Inventory/RpgInventoryManagerComponent.h"
@@ -410,9 +411,17 @@ bool FRpgStorageInventoryWidgetContextLifecycleTest::RunTest(const FString& Para
 	FRpgInventoryDragPayload HeldPayload;
 	HeldPayload.SourceType = ERpgInventoryDragSourceType::InventoryEntry;
 	HeldPayload.SourceInventory = SecondaryA;
-	HeldPayload.ItemInstance = NewObject<URpgInventoryItemInstance>(SecondaryA);
 	HeldPayload.EntryId = FGuid::NewGuid();
 	HeldPayload.StackCount = 1;
+	if (!TestTrue(
+			TEXT("Transient Storage payload owns canonical item metadata"),
+			RpgInventoryAutomationTestTypes::PopulateCanonicalSpatialItem(
+				HeldPayload,
+				SecondaryA,
+				URpgInventoryAutomationTestUnitItemDefinition::StaticClass())))
+	{
+		return false;
+	}
 	TestTrue(TEXT("A transient interaction starts before the context switch"), Coordinator->BeginHold(HeldPayload));
 	Coordinator->SetFocusedInventory(SecondaryA);
 

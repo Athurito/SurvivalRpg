@@ -2,6 +2,7 @@
 
 #include "RpgInventoryLegacySnapshot.h"
 
+#include "RpgInventoryFragment_ItemTraits.h"
 #include "RpgInventoryItemDefinition.h"
 #include "RpgInventoryItemInstance.h"
 #include "RpgInventoryManagerComponent.h"
@@ -209,13 +210,33 @@ bool URpgInventoryManagerComponent::ConvertLegacyInventorySnapshot(
 					LegacyEntry.Placement.Y));
 			}
 
+			const URpgInventoryFragment_SpatialItem* SpatialFragment =
+				URpgInventoryItemDefinition::
+					ResolveValidSpatialItemFragment(
+						SourceItems[SourceIndex].ItemDefinition);
+			if (!SpatialFragment)
+			{
+				return Reject(FString::Printf(
+					TEXT("Legacy SpatialV1 row %d has no valid current SpatialItem contract."),
+					SourceIndex));
+			}
+			if (LegacyEntry.Placement.bRotated &&
+				!SpatialFragment->bAllowRotation)
+			{
+				return Reject(FString::Printf(
+					TEXT("Legacy SpatialV1 row %d requests rotation that its current SpatialItem contract does not allow."),
+					SourceIndex));
+			}
+
 			FPlannedLegacyItem& Planned = PlannedItems.Add_GetRef(SourceItems[SourceIndex]);
 			Planned.SavedItem.Container = FRpgInventoryContainerHandle::MakeRoot(ResolvedRoot);
 			Planned.SavedItem.Placement = FRpgInventoryGridPlacement();
 			Planned.SavedItem.Placement.X = LegacyEntry.Placement.X;
 			Planned.SavedItem.Placement.Y = LegacyEntry.Placement.Y;
-			Planned.SavedItem.Placement.Width = 1;
-			Planned.SavedItem.Placement.Height = 1;
+			Planned.SavedItem.Placement.Width =
+				SpatialFragment->Footprint.Width;
+			Planned.SavedItem.Placement.Height =
+				SpatialFragment->Footprint.Height;
 			Planned.SavedItem.Placement.bRotated = LegacyEntry.Placement.bRotated;
 			Planned.SavedItem.Placement.SetContainerHandle(Planned.SavedItem.Container);
 		}

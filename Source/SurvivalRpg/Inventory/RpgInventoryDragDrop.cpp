@@ -4,6 +4,7 @@
 #include "RpgInventoryFragment_EquippableItem.h"
 #include "RpgInventoryFragment_ItemContainer.h"
 #include "RpgInventoryEquipmentPlacementPolicy.h"
+#include "RpgInventoryItemDefinition.h"
 #include "RpgInventoryItemInstance.h"
 #include "RpgInventoryInteractionSession.h"
 #include "RpgInventoryManagerComponent.h"
@@ -26,6 +27,30 @@
 
 namespace
 {
+	FRpgInventoryGridSize MakeInvalidSpatialSize()
+	{
+		FRpgInventoryGridSize InvalidSize;
+		InvalidSize.Width = 0;
+		InvalidSize.Height = 0;
+		return InvalidSize;
+	}
+
+	const URpgInventoryFragment_SpatialItem* ResolvePayloadSpatialContract(
+		const FRpgInventoryDragPayload& Payload)
+	{
+		const TSubclassOf<URpgInventoryItemDefinition> ItemDefinition =
+			Payload.ItemInstance
+				? Payload.ItemInstance->GetItemDef()
+				: nullptr;
+		const URpgInventoryFragment_SpatialItem* SpatialFragment =
+			URpgInventoryItemDefinition::ResolveValidSpatialItemFragment(
+				ItemDefinition);
+		return SpatialFragment &&
+				Payload.ItemFootprint == SpatialFragment->Footprint
+			? SpatialFragment
+			: nullptr;
+	}
+
 	constexpr ERpgInventoryContextAction ContextActionDisplayOrder[] =
 	{
 		ERpgInventoryContextAction::OpenContainer,
@@ -44,17 +69,11 @@ namespace
 
 	FRpgInventoryGridSize ResolvePayloadOccupiedSize(const FRpgInventoryDragPayload& Payload, bool bRotated)
 	{
-		FRpgInventoryGridSize Footprint = Payload.ItemFootprint;
-		if (!Footprint.IsValid() && Payload.SourcePlacement.IsValid())
+		if (!Payload.ItemFootprint.IsValid())
 		{
-			Footprint = Payload.SourcePlacement.GetUnrotatedSize();
+			return MakeInvalidSpatialSize();
 		}
-		if (!Footprint.IsValid())
-		{
-			Footprint.Width = 1;
-			Footprint.Height = 1;
-		}
-		return Footprint.GetRotated(bRotated);
+		return Payload.ItemFootprint.GetRotated(bRotated);
 	}
 
 	bool IsInventoryTargetType(ERpgInventoryDropTargetType TargetType)
@@ -199,20 +218,14 @@ namespace
 
 	FRpgInventoryGridSize GetDragPayloadItemFootprint(const URpgInventoryItemInstance* ItemInstance)
 	{
-		FRpgInventoryGridSize Footprint;
-		Footprint.Width = 1;
-		Footprint.Height = 1;
-
-		const URpgInventoryFragment_SpatialItem* SpatialFragment = ItemInstance
-			? ItemInstance->FindFragmentByClass<URpgInventoryFragment_SpatialItem>()
-			: nullptr;
-		if (!SpatialFragment)
-		{
-			return Footprint;
-		}
-
-		const FRpgInventoryGridSize SpatialFootprint = SpatialFragment->GetFootprint(false);
-		return SpatialFootprint.IsValid() ? SpatialFootprint : Footprint;
+		const TSubclassOf<URpgInventoryItemDefinition> ItemDefinition =
+			ItemInstance ? ItemInstance->GetItemDef() : nullptr;
+		const URpgInventoryFragment_SpatialItem* SpatialFragment =
+			URpgInventoryItemDefinition::ResolveValidSpatialItemFragment(
+				ItemDefinition);
+		return SpatialFragment
+			? SpatialFragment->Footprint
+			: MakeInvalidSpatialSize();
 	}
 
 	bool IsEquipmentPlacement(
@@ -597,6 +610,11 @@ FVector2D URpgInventoryDragDropCoordinator::ResolveTargetGrabPixels(
 	float CellPadding)
 {
 	const FRpgInventoryGridSize OccupiedSize = ResolvePayloadOccupiedSize(Payload, bTargetRotated);
+	if (!OccupiedSize.IsValid())
+	{
+		return FVector2D::ZeroVector;
+	}
+
 	const float SafeCellSize = FMath::Max(1.0f, CellSize);
 	const float SafePadding = FMath::Max(0.0f, CellPadding);
 	const float Stride = SafeCellSize + SafePadding;
@@ -807,11 +825,14 @@ bool URpgInventoryDragDropCoordinator::IsPayloadValid(const FRpgInventoryDragPay
 		return Payload.SourceInventory != nullptr &&
 			Payload.ItemInstance != nullptr &&
 			Payload.EntryId.IsValid() &&
-			Payload.StackCount > 0;
+			Payload.StackCount > 0 &&
+			ResolvePayloadSpatialContract(Payload) != nullptr;
 
 	case ERpgInventoryDragSourceType::PlayerInventorySlotAddress:
 		return Payload.SourceInventory != nullptr &&
-			Payload.SourceSlotAddress.IsValid();
+			Payload.SourceSlotAddress.IsValid() &&
+			(!Payload.ItemInstance ||
+			 ResolvePayloadSpatialContract(Payload) != nullptr);
 
 	case ERpgInventoryDragSourceType::EquipmentSlot:
 		return Payload.SourceInventory != nullptr &&
@@ -819,6 +840,7 @@ bool URpgInventoryDragDropCoordinator::IsPayloadValid(const FRpgInventoryDragPay
 			Payload.EntryId.IsValid() &&
 			Payload.SourcePlacement.IsValid() &&
 			Payload.StackCount > 0 &&
+			ResolvePayloadSpatialContract(Payload) != nullptr &&
 			FRpgInventoryEquipmentPlacementPolicy::IsManagedEquipmentSlot(Payload.EquipmentSlot);
 
 	default:
@@ -917,9 +939,8 @@ bool URpgInventoryDragDropCoordinator::CanToggleInteractionRotation() const
 	}
 
 	const FRpgInventoryDragPayload Payload = InteractionSession->GetPayload();
-	const URpgInventoryFragment_SpatialItem* SpatialFragment = Payload.ItemInstance
-		? Payload.ItemInstance->FindFragmentByClass<URpgInventoryFragment_SpatialItem>()
-		: nullptr;
+	const URpgInventoryFragment_SpatialItem* SpatialFragment =
+		ResolvePayloadSpatialContract(Payload);
 	return IsPayloadSourceCurrent(Payload) &&
 		SpatialFragment &&
 		SpatialFragment->bAllowRotation;
@@ -3387,9 +3408,11 @@ bool URpgInventoryDragDropCoordinator::CanRotateEntryInPlace(
 	const FGuid& EntryId,
 	const FRpgInventoryGridPlacement& SourcePlacement) const
 {
-	const URpgInventoryFragment_SpatialItem* SpatialFragment = ItemInstance
-		? ItemInstance->FindFragmentByClass<URpgInventoryFragment_SpatialItem>()
-		: nullptr;
+	const TSubclassOf<URpgInventoryItemDefinition> ItemDefinition =
+		ItemInstance ? ItemInstance->GetItemDef() : nullptr;
+	const URpgInventoryFragment_SpatialItem* SpatialFragment =
+		URpgInventoryItemDefinition::ResolveValidSpatialItemFragment(
+			ItemDefinition);
 	if (!Inventory || !ItemInstance || !EntryId.IsValid() ||
 		!SourcePlacement.IsValid() || !SpatialFragment ||
 		!SpatialFragment->bAllowRotation)

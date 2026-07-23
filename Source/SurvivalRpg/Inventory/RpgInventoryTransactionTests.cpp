@@ -10,6 +10,7 @@
 #include "RpgInventoryContainerActor.h"
 #include "RpgDroppedInventoryActor.h"
 #include "RpgInventoryFragment_ItemTraits.h"
+#include "RpgInventoryItemDefinition.h"
 #include "RpgInventoryItemInstance.h"
 #include "RpgInventoryItemUseContext.h"
 #include "RpgInventoryManagerComponent.h"
@@ -386,8 +387,14 @@ namespace RpgInventoryTransactionTests
 		Payload.EntryId = Entry.EntryId;
 		Payload.StackCount = Entry.StackCount;
 		Payload.SourcePlacement = Entry.Placement;
-		Payload.ItemFootprint =
-			Entry.Placement.GetUnrotatedSize();
+		Payload.ItemFootprint.Width = 0;
+		Payload.ItemFootprint.Height = 0;
+		if (const URpgInventoryFragment_SpatialItem* SpatialFragment =
+				URpgInventoryItemDefinition::ResolveValidSpatialItemFragment(
+					Item->GetItemDef()))
+		{
+			Payload.ItemFootprint = SpatialFragment->Footprint;
+		}
 		return Payload;
 	}
 
@@ -2136,6 +2143,16 @@ bool FRpgInventoryEquipmentIntentRetryBoundaryTest::RunTest(
 	PendingPayload.EntryId = PendingEntry.EntryId;
 	PendingPayload.StackCount = PendingEntry.StackCount;
 	PendingPayload.SourcePlacement = PendingEntry.Placement;
+	const URpgInventoryFragment_SpatialItem* PendingSpatialFragment =
+		URpgInventoryItemDefinition::ResolveValidSpatialItemFragment(
+			Weapon->GetItemDef());
+	if (!TestNotNull(
+			TEXT("The pending weapon owns a canonical spatial contract"),
+			PendingSpatialFragment))
+	{
+		return false;
+	}
+	PendingPayload.ItemFootprint = PendingSpatialFragment->Footprint;
 	FRpgInventoryDropTarget PendingEquipmentTarget;
 	PendingEquipmentTarget.TargetType =
 		ERpgInventoryDropTargetType::EquipmentSlot;
@@ -6207,6 +6224,16 @@ bool FRpgInventoryGenericMutationRpcSafetyTest::RunTest(const FString& Parameter
 	Payload.EntryId = Entry.EntryId;
 	Payload.StackCount = Entry.StackCount;
 	Payload.SourcePlacement = Entry.Placement;
+	const URpgInventoryFragment_SpatialItem* SpatialFragment =
+		URpgInventoryItemDefinition::ResolveValidSpatialItemFragment(
+			Item->GetItemDef());
+	if (!TestNotNull(
+			TEXT("The interaction item owns a canonical spatial contract"),
+			SpatialFragment))
+	{
+		return false;
+	}
+	Payload.ItemFootprint = SpatialFragment->Footprint;
 	if (!TestTrue(
 		TEXT("The interaction session accepts the item payload"),
 		Session->BeginInteraction(Payload, ERpgInventoryInteractionInputMode::Mouse)))

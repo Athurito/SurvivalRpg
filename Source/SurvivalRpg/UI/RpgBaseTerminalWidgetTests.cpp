@@ -1098,11 +1098,17 @@ bool FRpgBaseTerminalContextLifecycleTest::RunTest(
 	HeldPayload.SourceType =
 		ERpgInventoryDragSourceType::InventoryEntry;
 	HeldPayload.SourceInventory = ContextA.PlayerInventory;
-	HeldPayload.ItemInstance =
-		NewObject<URpgInventoryItemInstance>(
-			ContextA.PlayerInventory);
 	HeldPayload.EntryId = FGuid::NewGuid();
 	HeldPayload.StackCount = 1;
+	if (!TestTrue(
+			TEXT("Transient Base Terminal payload owns canonical item metadata"),
+			RpgInventoryAutomationTestTypes::PopulateCanonicalSpatialItem(
+				HeldPayload,
+				ContextA.PlayerInventory,
+				URpgInventoryAutomationTestUnitItemDefinition::StaticClass())))
+	{
+		return false;
+	}
 	TestTrue(
 		TEXT("A transient interaction starts before the context switch"),
 		Coordinator->BeginHold(HeldPayload));

@@ -108,11 +108,13 @@ Bestätigte Asset-/Migrationsbefunde:
   verwaist. `ID_TestSword1` bleibt als `Misc` aus Weapon-Slots ausgeschlossen.
 - `ED_BasicSword` erlaubt `OffHand`, während das aktuelle ShieldSlot-Layout
   dort nur `Shield` akzeptiert; diese Asset-Regel ist effektiv unerreichbar.
-- `ID_BasicTwoHandedSword` besitzt für den Player-Pfad weder Weapon-Traits noch
-  ein Spatial-Fragment. Der Enemy-Loadout-Pfad kann weiterhin gültig sein.
-- Diese Assets werden nicht blind geändert. Phase 5 ergänzt Cross-Asset
-  Data Validation; Phase 7 entscheidet anschließend referenzbasiert über
-  Korrektur, Migration oder Löschung.
+- `ID_BasicTwoHandedSword` besitzt für den Player-Pfad weiterhin keine
+  Weapon-Traits. Sein zuvor fehlendes Spatial-Fragment wurde in Phase 5D
+  verhaltensneutral als 1 x 1 und nicht rotierbar ergänzt; der
+  Enemy-Loadout-Pfad kann weiterhin gültig sein.
+- Semantische Asset-Korrekturen bleiben von der technischen Spatial-Migration
+  getrennt. Phase 5 ergänzt Cross-Asset-Data-Validation; Phase 7 entscheidet
+  anschließend referenzbasiert über Korrektur, weitere Migration oder Löschung.
 
 ## Phase 1 – UI Composition und Editor-WYSIWYG
 
@@ -1624,7 +1626,7 @@ Status: **In Arbeit**
 - [x] Gear-/Carry-Gruppen erhalten eine explizite, typisierte
       `ERpgEquipmentSlot`-Rolle statt indirekter Namens- oder
       Kategorieableitung.
-- [ ] Explizites Spatial-Fragment für jedes gridfähige Item verlangen.
+- [x] Explizites Spatial-Fragment für jedes gridfähige Item verlangen.
 - [ ] `IsDataValid` für ItemDefinitions, Container-IDs, Footprints,
       Equipment-Slots, LayoutDefinition und ScreenRegistry ergänzen.
 - [ ] `BothHands + OffHand`, leere `AllowedSlots` bei ausrüstbaren Items und
@@ -1794,6 +1796,48 @@ Verifizierter Phase-5C-Zwischenstand vom 2026-07-23:
 - Nächster Schnitt: gridfähige Items benötigen ein explizites
   Spatial-Fragment; implizite Footprint-Fallbacks werden anschließend
   inventarisiert, migriert und fail-closed entfernt.
+
+Verifizierter Phase-5D-Zwischenstand vom 2026-07-23:
+
+- `URpgInventoryItemDefinition` besitzt einen gemeinsamen Spatial-Vertrag:
+  Genau ein `URpgInventoryFragment_SpatialItem` mit positivem Footprint ist
+  gültig. Fehlende, doppelte oder ungültige Fragmente liefern keinen
+  synthetischen 1-x-1-Footprint.
+- Placement-Evaluator, First-Fit, Sort, Graph-Restore, Legacy-Import,
+  Quick-Transfer und Drag/drop konsumieren denselben Vertrag. Gear und Carry
+  normalisieren erst nach erfolgreicher Definitionvalidierung auf ihre
+  ausdrückliche 1-x-1-Containersemantik.
+- Leere Drag-Payloads starten mit einem ungültigen 0-x-0-Footprint.
+  Interaktionen akzeptieren ausschließlich die zur ItemDefinition passende
+  kanonische Größe; ein vom Client erfundener 1-x-1-Wert kann ein fehlendes
+  Spatial-Fragment nicht ersetzen. Reine Presenter-Geometrie arbeitet dagegen
+  weiterhin deterministisch mit bereits explizit übergebenen Größen und bleibt
+  von der Gameplay-Validierung getrennt.
+- Alle zwölf aktuell gefundenen Blueprint-ItemDefinitions besitzen exakt ein
+  gültiges Spatial-Fragment. Acht Legacy-Assets wurden verhaltensneutral auf
+  explizit 1 x 1 und nicht rotierbar migriert; die vier bereits räumlich
+  authorierten Definitionen behielten ihre Maße und Rotationsregeln.
+- Ein permanenter AssetRegistry-Test prüft konkrete ItemDefinitions in
+  `/Game` sowie in allen gemounteten Projekt-Plugins. Runtime-Regressionen
+  sichern Exact, FirstFit, Content-/Gear-/Carry-Restore, atomaren Rollback und
+  Drag-Payload-Spoofing bei fehlendem Spatial-Vertrag ab.
+- `SurvivalRpgEditor Win64 Development` wurde mit Unreal Engine 5.8 gebaut
+  (26/26 Actions, UBT `Result: Succeeded`).
+- `SurvivalRpg.Inventory`: 115 von 115 Automationtests erfolgreich.
+- `SurvivalRpg.Save`: 2 von 2 Automationtests erfolgreich.
+- `SurvivalRpg.Equipment`: 5 von 5 Automationtests erfolgreich.
+- `SurvivalRpg.Crafting`: 8 von 8 Automationtests erfolgreich.
+- `SurvivalRpg.UI`: 20 von 20 Automationtests erfolgreich.
+- `CompileAllBlueprints` endete mit Prozesscode 0, 0 Compilerfehlern,
+  16 bekannten Compilerwarnungen und 0 nicht ladbaren Blueprints.
+- Fortschritt Phase 5: 4 von 7 Punkten abgeschlossen (57,1 %).
+- Gesamtfortschritt der verbindlichen Checkliste: 72 von 94 Punkten
+  abgeschlossen (76,6 %), 22 Punkte offen.
+- Nächster Schnitt: gemeinsames `IsDataValid` für ItemDefinitions,
+  Container-IDs, Footprints, Equipment-Slots, LayoutDefinition und
+  ScreenRegistry ergänzen; dabei die bereits fail-closed behandelten
+  Duplicate- und ungültigen Spatial-Fragmente als konkrete Editordiagnosen
+  und Runtime-Regressionen festschreiben.
 
 ## Phase 6 – MVVM, Refresh und Komponentenschnitt
 

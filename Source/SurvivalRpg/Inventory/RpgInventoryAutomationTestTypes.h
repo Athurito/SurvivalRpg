@@ -14,6 +14,21 @@
 
 class URpgPawnData;
 class URpgPlayerInventoryLayoutDefinition;
+struct FRpgInventoryDragPayload;
+
+#if WITH_DEV_AUTOMATION_TESTS
+namespace RpgInventoryAutomationTestTypes
+{
+	/**
+	 * Creates a transient item instance and copies its canonical Spatial contract into a drag payload.
+	 * Test-only reflection is centralized here because ItemDef is intentionally private in production.
+	 */
+	bool PopulateCanonicalSpatialItem(
+		FRpgInventoryDragPayload& Payload,
+		UObject* Outer,
+		TSubclassOf<URpgInventoryItemDefinition> ItemDefinition);
+}
+#endif
 
 /** Frozen tagged-property shape used to prove version-one CarryRole bytes still load into the migration shadow. */
 USTRUCT()
@@ -440,6 +455,45 @@ class URpgInventoryAutomationTestHeavyItemDefinition final : public URpgInventor
 
 public:
 	explicit URpgInventoryAutomationTestHeavyItemDefinition(
+		const FObjectInitializer& ObjectInitializer = FObjectInitializer::Get());
+
+	virtual bool IsEditorOnly() const override { return true; }
+};
+
+/** Editor-only regular item that deliberately omits the mandatory spatial fragment. */
+UCLASS(NotBlueprintable, Transient)
+class URpgInventoryAutomationTestMissingSpatialItemDefinition final : public URpgInventoryItemDefinition
+{
+	GENERATED_BODY()
+
+public:
+	explicit URpgInventoryAutomationTestMissingSpatialItemDefinition(
+		const FObjectInitializer& ObjectInitializer = FObjectInitializer::Get());
+
+	virtual bool IsEditorOnly() const override { return true; }
+};
+
+/** Editor-only chest item that is otherwise valid but deliberately omits the mandatory spatial fragment. */
+UCLASS(NotBlueprintable, Transient)
+class URpgInventoryAutomationTestMissingSpatialArmorItemDefinition final : public URpgInventoryItemDefinition
+{
+	GENERATED_BODY()
+
+public:
+	explicit URpgInventoryAutomationTestMissingSpatialArmorItemDefinition(
+		const FObjectInitializer& ObjectInitializer = FObjectInitializer::Get());
+
+	virtual bool IsEditorOnly() const override { return true; }
+};
+
+/** Editor-only main-hand item that is otherwise valid but deliberately omits the mandatory spatial fragment. */
+UCLASS(NotBlueprintable, Transient)
+class URpgInventoryAutomationTestMissingSpatialWeaponItemDefinition final : public URpgInventoryItemDefinition
+{
+	GENERATED_BODY()
+
+public:
+	explicit URpgInventoryAutomationTestMissingSpatialWeaponItemDefinition(
 		const FObjectInitializer& ObjectInitializer = FObjectInitializer::Get());
 
 	virtual bool IsEditorOnly() const override { return true; }

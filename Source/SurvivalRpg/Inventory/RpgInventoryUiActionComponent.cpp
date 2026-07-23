@@ -407,28 +407,13 @@ namespace
 		}
 	}
 
-	FRpgInventoryGridSize GetUiActionFootprint(const URpgInventoryItemInstance* Item)
+	const URpgInventoryFragment_SpatialItem* GetUiActionSpatialContract(
+		const URpgInventoryItemInstance* Item)
 	{
-		const URpgInventoryFragment_SpatialItem* SpatialFragment = Item
-			? Item->FindFragmentByClass<URpgInventoryFragment_SpatialItem>()
-			: nullptr;
-		if (SpatialFragment && SpatialFragment->Footprint.IsValid())
-		{
-			return SpatialFragment->Footprint;
-		}
-
-		FRpgInventoryGridSize Fallback;
-		Fallback.Width = 1;
-		Fallback.Height = 1;
-		return Fallback;
-	}
-
-	bool CanUiActionRotate(const URpgInventoryItemInstance* Item)
-	{
-		const URpgInventoryFragment_SpatialItem* SpatialFragment = Item
-			? Item->FindFragmentByClass<URpgInventoryFragment_SpatialItem>()
-			: nullptr;
-		return SpatialFragment && SpatialFragment->bAllowRotation;
+		const TSubclassOf<URpgInventoryItemDefinition> ItemDefinition =
+			Item ? Item->GetItemDef() : nullptr;
+		return URpgInventoryItemDefinition::
+			ResolveValidSpatialItemFragment(ItemDefinition);
 	}
 
 	int32 GetAvailableUpgradeCostCount(
@@ -4003,9 +3988,19 @@ URpgInventoryUiActionComponent::PlanQuickTransferInContainer(
 				StackCount);
 		}
 
+		const URpgInventoryFragment_SpatialItem* SpatialFragment =
+			GetUiActionSpatialContract(Item);
+		if (!SpatialFragment)
+		{
+			return MakeRejectedPlacementPlan(
+				ERpgInventoryMutationResultCode::InvalidPlacement,
+				StackCount);
+		}
+
 		const FRpgInventoryGridSize Footprint =
-			GetUiActionFootprint(Item);
-		const int32 RotationCount = CanUiActionRotate(Item) ? 2 : 1;
+			SpatialFragment->Footprint;
+		const int32 RotationCount =
+			SpatialFragment->bAllowRotation ? 2 : 1;
 		FRpgInventoryPlacementPlan LastPlan =
 			MakeRejectedPlacementPlan(
 				ERpgInventoryMutationResultCode::NoSpace,

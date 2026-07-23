@@ -169,6 +169,13 @@ struct SURVIVALRPG_API FRpgInventoryDragPayload
 {
 	GENERATED_BODY()
 
+	/** Creates an empty payload without an implicit 1x1 item footprint. */
+	FRpgInventoryDragPayload()
+	{
+		ItemFootprint.Width = 0;
+		ItemFootprint.Height = 0;
+	}
+
 	/** Source UI area that produced this payload. */
 	UPROPERTY(BlueprintReadWrite, Category = "Inventory|DragDrop")
 	ERpgInventoryDragSourceType SourceType = ERpgInventoryDragSourceType::None;

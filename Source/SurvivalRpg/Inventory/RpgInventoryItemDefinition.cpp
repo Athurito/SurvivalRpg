@@ -2,6 +2,7 @@
 
 #include "RpgInventoryItemDefinition.h"
 
+#include "RpgInventoryFragment_ItemTraits.h"
 #include "Templates/SubclassOf.h"
 #include "UObject/ObjectPtr.h"
 
@@ -69,6 +70,39 @@ const URpgInventoryItemFragment* URpgInventoryItemDefinition::FindFragmentByClas
 	}
 
 	return nullptr;
+}
+
+const URpgInventoryFragment_SpatialItem*
+URpgInventoryItemDefinition::FindValidSpatialItemFragment() const
+{
+	const URpgInventoryFragment_SpatialItem* ResolvedFragment = nullptr;
+	for (const URpgInventoryItemFragment* Fragment : Fragments)
+	{
+		const URpgInventoryFragment_SpatialItem* SpatialFragment =
+			Cast<URpgInventoryFragment_SpatialItem>(Fragment);
+		if (!SpatialFragment)
+		{
+			continue;
+		}
+
+		if (ResolvedFragment || !SpatialFragment->Footprint.IsValid())
+		{
+			return nullptr;
+		}
+		ResolvedFragment = SpatialFragment;
+	}
+
+	return ResolvedFragment;
+}
+
+const URpgInventoryFragment_SpatialItem*
+URpgInventoryItemDefinition::ResolveValidSpatialItemFragment(
+	TSubclassOf<URpgInventoryItemDefinition> ItemDefinition)
+{
+	const URpgInventoryItemDefinition* ItemCDO = ItemDefinition
+		? GetDefault<URpgInventoryItemDefinition>(ItemDefinition)
+		: nullptr;
+	return ItemCDO ? ItemCDO->FindValidSpatialItemFragment() : nullptr;
 }
 
 //////////////////////////////////////////////////////////////////////

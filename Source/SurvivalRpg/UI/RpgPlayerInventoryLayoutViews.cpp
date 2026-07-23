@@ -163,38 +163,38 @@ namespace
 		return Placement;
 	}
 
+	FRpgInventoryGridSize GetPayloadUnrotatedFootprint(
+		const FRpgInventoryDragPayload& Payload);
+
 	FRpgInventoryGridSize GetPayloadOccupiedSize(const FRpgInventoryDragPayload& Payload, bool bTargetRotated)
 	{
-		FRpgInventoryGridPlacement Placement;
-		Placement.Width = Payload.ItemFootprint.IsValid()
-			? Payload.ItemFootprint.Width
-			: (Payload.SourcePlacement.IsValid() ? Payload.SourcePlacement.Width : 1);
-		Placement.Height = Payload.ItemFootprint.IsValid()
-			? Payload.ItemFootprint.Height
-			: (Payload.SourcePlacement.IsValid() ? Payload.SourcePlacement.Height : 1);
-		Placement.Width = FMath::Max(1, Placement.Width);
-		Placement.Height = FMath::Max(1, Placement.Height);
-		Placement.bRotated = bTargetRotated;
-		return Placement.GetOccupiedSize();
+		const FRpgInventoryGridSize Footprint =
+			GetPayloadUnrotatedFootprint(Payload);
+		return Footprint.IsValid()
+			? Footprint.GetRotated(bTargetRotated)
+			: Footprint;
 	}
 
 	FRpgInventoryGridSize GetPayloadUnrotatedFootprint(const FRpgInventoryDragPayload& Payload)
 	{
-		FRpgInventoryGridSize Footprint;
-		Footprint.Width = Payload.ItemFootprint.IsValid()
-			? Payload.ItemFootprint.Width
-			: (Payload.SourcePlacement.IsValid() ? Payload.SourcePlacement.Width : 1);
-		Footprint.Height = Payload.ItemFootprint.IsValid()
-			? Payload.ItemFootprint.Height
-			: (Payload.SourcePlacement.IsValid() ? Payload.SourcePlacement.Height : 1);
-		Footprint.Width = FMath::Max(1, Footprint.Width);
-		Footprint.Height = FMath::Max(1, Footprint.Height);
-		return Footprint;
+		if (Payload.ItemFootprint.IsValid())
+		{
+			return Payload.ItemFootprint;
+		}
+
+		FRpgInventoryGridSize InvalidFootprint;
+		InvalidFootprint.Width = 0;
+		InvalidFootprint.Height = 0;
+		return InvalidFootprint;
 	}
 
 	FIntPoint ClampSpatialGrabOffset(const FRpgInventoryDragPayload& Payload, bool bTargetRotated)
 	{
 		const FRpgInventoryGridSize OccupiedSize = GetPayloadOccupiedSize(Payload, bTargetRotated);
+		if (!OccupiedSize.IsValid())
+		{
+			return FIntPoint::ZeroValue;
+		}
 		const int32 MaxOffsetX = FMath::Max(0, OccupiedSize.Width - 1);
 		const int32 MaxOffsetY = FMath::Max(0, OccupiedSize.Height - 1);
 		return Payload.bHasSpatialGrabOffset
@@ -204,9 +204,27 @@ namespace
 
 	void SetSpatialGrabOffset(FRpgInventoryDragPayload& Payload, int32 OffsetX, int32 OffsetY)
 	{
+		const FRpgInventoryGridSize OccupiedSize =
+			GetPayloadOccupiedSize(
+				Payload,
+				Payload.SourcePlacement.bRotated);
+		if (!OccupiedSize.IsValid())
+		{
+			Payload.bHasSpatialGrabOffset = false;
+			Payload.GrabCellOffsetX = 0;
+			Payload.GrabCellOffsetY = 0;
+			return;
+		}
+
 		Payload.bHasSpatialGrabOffset = true;
-		Payload.GrabCellOffsetX = FMath::Clamp(OffsetX, 0, FMath::Max(0, GetPayloadOccupiedSize(Payload, Payload.SourcePlacement.bRotated).Width - 1));
-		Payload.GrabCellOffsetY = FMath::Clamp(OffsetY, 0, FMath::Max(0, GetPayloadOccupiedSize(Payload, Payload.SourcePlacement.bRotated).Height - 1));
+		Payload.GrabCellOffsetX = FMath::Clamp(
+			OffsetX,
+			0,
+			OccupiedSize.Width - 1);
+		Payload.GrabCellOffsetY = FMath::Clamp(
+			OffsetY,
+			0,
+			OccupiedSize.Height - 1);
 	}
 
 	void ApplySpatialGrabOffsetFromCell(FRpgInventoryDragPayload& Payload, int32 CellX, int32 CellY)
@@ -2343,6 +2361,10 @@ bool URpgInventorySpatialGridWidget::
 		CellPadding);
 	const FVector2D UnsnappedTopLeft = LocalPointer - GrabPixels;
 	const FRpgInventoryGridSize Footprint = GetPayloadUnrotatedFootprint(ResolvedPayload);
+	if (!Footprint.IsValid())
+	{
+		return false;
+	}
 	FRpgInventoryGridPlacement SizePlacement = MakeCellPlacement(
 		ResolveContainerHandle(), 0, 0, bTargetRotated, Footprint.Width, Footprint.Height);
 	const FVector2D GhostSize = GetPlacementSize(SizePlacement);
@@ -3507,11 +3529,20 @@ FRpgInventoryGridPlacement URpgInventorySpatialGridWidget::MakeTargetPlacementFo
 	const FRpgInventoryDragPayload ResolvedPayload = DragDropCoordinator
 		? DragDropCoordinator->ResolveInteractionPayload(Payload)
 		: Payload;
+	if (!URpgInventoryDragDropCoordinator::IsPayloadValid(ResolvedPayload))
+	{
+		return FRpgInventoryGridPlacement();
+	}
+
 	const bool bTargetRotated = DragDropCoordinator
 		? DragDropCoordinator->GetTargetRotationForPayload(ResolvedPayload)
 		: (ResolvedPayload.SourcePlacement.IsValid() && ResolvedPayload.SourcePlacement.bRotated);
 	const FIntPoint GrabOffset = ClampSpatialGrabOffset(ResolvedPayload, bTargetRotated);
 	const FRpgInventoryGridSize Footprint = GetPayloadUnrotatedFootprint(ResolvedPayload);
+	if (!Footprint.IsValid())
+	{
+		return FRpgInventoryGridPlacement();
+	}
 
 	return MakeCellPlacement(
 		ResolveContainerHandle(),

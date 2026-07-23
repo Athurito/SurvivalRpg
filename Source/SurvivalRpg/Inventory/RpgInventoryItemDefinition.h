@@ -9,6 +9,7 @@
 
 template <typename T> class TSubclassOf;
 
+class URpgInventoryFragment_SpatialItem;
 class URpgInventoryItemInstance;
 struct FFrame;
 
@@ -82,6 +83,16 @@ public:
 public:
 	/** Finds the first fragment compatible with FragmentClass. */
 	const URpgInventoryItemFragment* FindFragmentByClass(TSubclassOf<URpgInventoryItemFragment> FragmentClass) const;
+
+	/**
+	 * Returns the sole valid SpatialItem fragment that defines this item's unrotated grid footprint.
+	 * Missing, duplicate, or non-positive SpatialItem data fails closed so runtime placement never invents 1x1 metadata.
+	 */
+	const URpgInventoryFragment_SpatialItem* FindValidSpatialItemFragment() const;
+
+	/** Resolves the valid SpatialItem contract from an item-definition class default object, or null on malformed data. */
+	static const URpgInventoryFragment_SpatialItem* ResolveValidSpatialItemFragment(
+		TSubclassOf<URpgInventoryItemDefinition> ItemDefinition);
 };
 
 //@TODO: Make into a subsystem instead?

@@ -30,6 +30,7 @@ public class SurvivalRpgEditor : ModuleRules
 			"ModelViewViewModelBlueprint",
 			"ModelViewViewModelEditor",
 			"PropertyBindingUtils",
+			"Projects",
 			"StateTreeEditorModule",
 			"UIExtension",
 			"UMG",

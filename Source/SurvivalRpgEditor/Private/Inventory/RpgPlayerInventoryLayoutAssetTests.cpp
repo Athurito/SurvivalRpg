@@ -2,15 +2,20 @@
 
 #include "SurvivalRpg/Core/Character/RpgPawnData.h"
 #include "SurvivalRpg/Core/Game/Experience/RpgExperienceDefinition.h"
+#include "SurvivalRpg/Inventory/RpgInventoryFragment_ItemTraits.h"
+#include "SurvivalRpg/Inventory/RpgInventoryItemDefinition.h"
 #include "SurvivalRpg/Inventory/RpgPlayerInventoryLayoutComponent.h"
 #include "SurvivalRpg/Inventory/RpgPlayerInventoryLayoutDefinition.h"
 
 #include "AssetRegistry/AssetRegistryModule.h"
 #include "AssetRegistry/IAssetRegistry.h"
+#include "Blueprint/BlueprintSupport.h"
 #include "Engine/Blueprint.h"
+#include "Interfaces/IPluginManager.h"
 #include "Misc/AssetRegistryInterface.h"
 #include "Misc/AutomationTest.h"
 #include "Modules/ModuleManager.h"
+#include "UObject/Package.h"
 #include "UObject/UnrealType.h"
 
 namespace
@@ -28,6 +33,28 @@ namespace
 		TEXT("/Game/SurvivalRpg/Core/Character/DA_PawnData");
 	constexpr TCHAR PrototypeExperiencePackage[] =
 		TEXT("/Game/SurvivalRpg/System/Experiences/RpgPrototypeExperience");
+
+	TArray<FName> GetInventoryItemDefinitionContentRoots()
+	{
+		TArray<FName> ContentRoots = { FName(TEXT("/Game")) };
+		for (const TSharedRef<IPlugin>& Plugin :
+			IPluginManager::Get().GetEnabledPluginsWithContent())
+		{
+			if (!Plugin->IsMounted() ||
+				Plugin->GetType() != EPluginType::Project)
+			{
+				continue;
+			}
+
+			FString MountedAssetPath = Plugin->GetMountedAssetPath();
+			MountedAssetPath.RemoveFromEnd(TEXT("/"));
+			if (!MountedAssetPath.IsEmpty())
+			{
+				ContentRoots.AddUnique(FName(*MountedAssetPath));
+			}
+		}
+		return ContentRoots;
+	}
 }
 
 IMPLEMENT_SIMPLE_AUTOMATION_TEST(
@@ -354,6 +381,127 @@ bool FRpgPlayerInventoryLayoutAssetCompositionTest::RunTest(const FString& Param
 			UE::AssetRegistry::EDependencyCategory::Package,
 			HardPackageQuery));
 
+	return true;
+}
+
+IMPLEMENT_SIMPLE_AUTOMATION_TEST(
+	FRpgInventoryItemDefinitionExplicitSpatialFragmentAssetTest,
+	"SurvivalRpg.Inventory.ItemDefinitions.ExplicitSpatialFragments",
+	EAutomationTestFlags::EditorContext | EAutomationTestFlags::EngineFilter)
+
+bool FRpgInventoryItemDefinitionExplicitSpatialFragmentAssetTest::RunTest(
+	const FString& Parameters)
+{
+	IAssetRegistry& AssetRegistry =
+		FModuleManager::LoadModuleChecked<FAssetRegistryModule>(
+			TEXT("AssetRegistry")).Get();
+	AssetRegistry.WaitForCompletion();
+
+	TSet<FTopLevelAssetPath> DerivedItemDefinitionClassPaths;
+	AssetRegistry.GetDerivedClassNames(
+		{ URpgInventoryItemDefinition::StaticClass()->GetClassPathName() },
+		TSet<FTopLevelAssetPath>(),
+		DerivedItemDefinitionClassPaths);
+
+	FARFilter BlueprintFilter;
+	BlueprintFilter.ClassPaths.Add(UBlueprint::StaticClass()->GetClassPathName());
+	BlueprintFilter.bRecursiveClasses = true;
+	BlueprintFilter.bRecursivePaths = true;
+	for (const FName ContentRoot : GetInventoryItemDefinitionContentRoots())
+	{
+		BlueprintFilter.PackagePaths.Add(ContentRoot);
+	}
+
+	TArray<FAssetData> BlueprintAssets;
+	AssetRegistry.GetAssets(BlueprintFilter, BlueprintAssets);
+	BlueprintAssets.Sort(
+		[](const FAssetData& Left, const FAssetData& Right)
+		{
+			return Left.PackageName.LexicalLess(Right.PackageName);
+		});
+
+	int32 ConcreteItemDefinitionCount = 0;
+	for (const FAssetData& BlueprintAsset : BlueprintAssets)
+	{
+		const FString GeneratedClassExportPath =
+			BlueprintAsset.GetTagValueRef<FString>(
+				FBlueprintTags::GeneratedClassPath);
+		if (GeneratedClassExportPath.IsEmpty())
+		{
+			continue;
+		}
+
+		const FTopLevelAssetPath GeneratedClassPath(
+			FPackageName::ExportTextPathToObjectPath(
+				GeneratedClassExportPath));
+		if (!DerivedItemDefinitionClassPaths.Contains(GeneratedClassPath))
+		{
+			continue;
+		}
+
+		UClass* GeneratedClass = LoadObject<UClass>(
+			nullptr,
+			*GeneratedClassPath.ToString());
+		if (!TestNotNull(
+			*FString::Printf(
+				TEXT("%s generated class loads"),
+				*BlueprintAsset.GetObjectPathString()),
+			GeneratedClass))
+		{
+			continue;
+		}
+		if (GeneratedClass->HasAnyClassFlags(
+			CLASS_Abstract |
+			CLASS_Deprecated |
+			CLASS_NewerVersionExists))
+		{
+			continue;
+		}
+
+		const URpgInventoryItemDefinition* ItemDefinition =
+			Cast<URpgInventoryItemDefinition>(
+				GeneratedClass->GetDefaultObject());
+		if (!TestNotNull(
+			*FString::Printf(
+				TEXT("%s generated defaults are an item definition"),
+				*BlueprintAsset.GetObjectPathString()),
+			ItemDefinition))
+		{
+			continue;
+		}
+
+		++ConcreteItemDefinitionCount;
+		TArray<const URpgInventoryFragment_SpatialItem*> SpatialFragments;
+		for (const URpgInventoryItemFragment* Fragment :
+			ItemDefinition->Fragments)
+		{
+			if (const URpgInventoryFragment_SpatialItem* SpatialFragment =
+				Cast<URpgInventoryFragment_SpatialItem>(Fragment))
+			{
+				SpatialFragments.Add(SpatialFragment);
+			}
+		}
+
+		if (!TestEqual(
+			*FString::Printf(
+				TEXT("%s has exactly one explicit Spatial fragment"),
+				*BlueprintAsset.GetObjectPathString()),
+			SpatialFragments.Num(),
+			1))
+		{
+			continue;
+		}
+
+		TestTrue(
+			*FString::Printf(
+				TEXT("%s has a valid positive Spatial footprint"),
+				*BlueprintAsset.GetObjectPathString()),
+			SpatialFragments[0]->Footprint.IsValid());
+	}
+
+	TestTrue(
+		TEXT("AssetRegistry found at least one concrete Blueprint item definition"),
+		ConcreteItemDefinitionCount > 0);
 	return true;
 }
 

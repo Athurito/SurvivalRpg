@@ -59,20 +59,26 @@ namespace
 
 	FRpgInventoryGridSize GetInventoryManagerFootprintForDefinition(TSubclassOf<URpgInventoryItemDefinition> ItemDef, bool bRotated)
 	{
-		const URpgInventoryItemDefinition* ItemCDO = ItemDef ? GetDefault<URpgInventoryItemDefinition>(ItemDef) : nullptr;
-		const URpgInventoryFragment_SpatialItem* SpatialFragment = ItemCDO
-			? Cast<URpgInventoryFragment_SpatialItem>(ItemCDO->FindFragmentByClass(URpgInventoryFragment_SpatialItem::StaticClass()))
-			: nullptr;
-		return SpatialFragment ? SpatialFragment->GetFootprint(bRotated) : FRpgInventoryGridSize();
+		const URpgInventoryFragment_SpatialItem* SpatialFragment =
+			URpgInventoryItemDefinition::ResolveValidSpatialItemFragment(
+				ItemDef);
+		if (SpatialFragment)
+		{
+			return SpatialFragment->GetFootprint(bRotated);
+		}
+
+		FRpgInventoryGridSize InvalidFootprint;
+		InvalidFootprint.Width = 0;
+		InvalidFootprint.Height = 0;
+		return InvalidFootprint;
 	}
 
 	bool CanInventoryManagerRotateDefinition(TSubclassOf<URpgInventoryItemDefinition> ItemDef)
 	{
-		const URpgInventoryItemDefinition* ItemCDO = ItemDef ? GetDefault<URpgInventoryItemDefinition>(ItemDef) : nullptr;
-		const URpgInventoryFragment_SpatialItem* SpatialFragment = ItemCDO
-			? Cast<URpgInventoryFragment_SpatialItem>(ItemCDO->FindFragmentByClass(URpgInventoryFragment_SpatialItem::StaticClass()))
-			: nullptr;
-		return SpatialFragment ? SpatialFragment->bAllowRotation : true;
+		const URpgInventoryFragment_SpatialItem* SpatialFragment =
+			URpgInventoryItemDefinition::ResolveValidSpatialItemFragment(
+				ItemDef);
+		return SpatialFragment && SpatialFragment->bAllowRotation;
 	}
 
 	FString GetDisplayNameForDefinition(TSubclassOf<URpgInventoryItemDefinition> ItemDef)
@@ -1508,6 +1514,10 @@ bool FRpgInventoryList::FindFirstFitPlacementInContainer(
 
 	FRpgInventoryGridSize Footprint =
 		GetInventoryManagerFootprintForDefinition(ItemDef, false);
+	if (!Footprint.IsValid())
+	{
+		return false;
+	}
 	bool bAllowRotation = CanInventoryManagerRotateDefinition(ItemDef);
 	if (Inventory->ShouldUseSingleCellPlacementForContainer(ContainerHandle))
 	{
@@ -1630,8 +1640,19 @@ bool FRpgInventoryList::SetOrderFromSortedEntryPointers(
 		FRpgInventoryGridPlacement NewPlacement = Entry->Placement;
 		const FRpgInventoryContainerHandle EntryContainer = Entry->Placement.GetContainerHandle();
 		TArray<FRpgInventoryGridPlacement>& ContainerScratch = ScratchOccupancyByContainer.FindOrAdd(EntryContainer);
-		if (!Inventory->ShouldUseSingleCellPlacementForContainer(EntryContainer) &&
-			!FindFirstFitPlacementInContainer(Entry->Instance->GetItemDef(), EntryContainer, ContainerScratch, NewPlacement))
+		const bool bSingleCellContainer =
+			Inventory->ShouldUseSingleCellPlacementForContainer(
+				EntryContainer);
+		if ((bSingleCellContainer &&
+			 !GetInventoryManagerFootprintForDefinition(
+				 Entry->Instance->GetItemDef(),
+				 false).IsValid()) ||
+			(!bSingleCellContainer &&
+			 !FindFirstFitPlacementInContainer(
+				 Entry->Instance->GetItemDef(),
+				 EntryContainer,
+				 ContainerScratch,
+				 NewPlacement)))
 		{
 			// Sort is a single mutation. Never leave a fragmented container half repacked.
 			return false;
@@ -1824,6 +1845,13 @@ bool URpgInventoryManagerComponent::TryNormalizePlacementForDefinition(
 		return false;
 	}
 
+	const FRpgInventoryGridSize Footprint =
+		GetInventoryManagerFootprintForDefinition(ItemDef, false);
+	if (!Footprint.IsValid())
+	{
+		return false;
+	}
+
 	OutPlacement.SetContainerHandle(ContainerHandle);
 	OutPlacement.X = X;
 	OutPlacement.Y = Y;
@@ -1839,13 +1867,6 @@ bool URpgInventoryManagerComponent::TryNormalizePlacementForDefinition(
 	}
 
 	if (bRotated && !CanInventoryManagerRotateDefinition(ItemDef))
-	{
-		return false;
-	}
-
-	const FRpgInventoryGridSize Footprint =
-		GetInventoryManagerFootprintForDefinition(ItemDef, false);
-	if (!Footprint.IsValid())
 	{
 		return false;
 	}
@@ -1985,6 +2006,18 @@ FRpgInventoryPlacementPlan URpgInventoryManagerComponent::EvaluatePlacementInter
 		Plan.Code = ERpgInventoryMutationResultCode::InvalidRequest;
 		return Plan;
 	}
+
+	const FRpgInventoryGridSize DefinitionFootprint =
+		GetInventoryManagerFootprintForDefinition(
+			Subject.ItemDefinition,
+			false);
+	if (!DefinitionFootprint.IsValid())
+	{
+		Plan.Code = ERpgInventoryMutationResultCode::InvalidPlacement;
+		return Plan;
+	}
+	const bool bDefinitionAllowsRotation =
+		CanInventoryManagerRotateDefinition(Subject.ItemDefinition);
 
 	const int32 MaxStackSize =
 		GetInventoryManagerMaxStackSizeForDefinition(Subject.ItemDefinition);
@@ -2670,9 +2703,8 @@ FRpgInventoryPlacementPlan URpgInventoryManagerComponent::EvaluatePlacementInter
 		for (const FRpgInventoryContainerHandle& Container : SearchContainers)
 		{
 			FRpgInventoryGridSize GridSize;
-			FRpgInventoryGridSize Footprint =
-				GetInventoryManagerFootprintForDefinition(Subject.ItemDefinition, false);
-			bool bAllowRotation = CanInventoryManagerRotateDefinition(Subject.ItemDefinition);
+			FRpgInventoryGridSize Footprint = DefinitionFootprint;
+			bool bAllowRotation = bDefinitionAllowsRotation;
 			if (ShouldUseSingleCellPlacementForContainer(Container))
 			{
 				Footprint.Width = 1;

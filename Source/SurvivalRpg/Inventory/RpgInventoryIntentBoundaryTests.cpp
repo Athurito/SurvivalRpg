@@ -2,6 +2,8 @@
 
 #if WITH_DEV_AUTOMATION_TESTS
 
+#include "RpgInventoryDragDrop.h"
+#include "RpgInventoryItemInstance.h"
 #include "RpgInventoryManagerComponent.h"
 #include "RpgPlayerInventoryLayoutComponent.h"
 #include "RpgPlayerInventoryLayoutDefinition.h"
@@ -15,6 +17,7 @@
 #include "Engine/World.h"
 #include "GameFramework/Actor.h"
 #include "Misc/AutomationTest.h"
+#include "UObject/UnrealType.h"
 
 namespace RpgInventoryIntentBoundaryTests
 {
@@ -356,6 +359,394 @@ bool FRpgInventoryRestoreStatusPerControllerTest::RunTest(
 	TestTrue(
 		TEXT("Logout preserves the other controller's restore result"),
 		GameMode->IsPlayerProfileRestoreComplete(SecondController));
+	return true;
+}
+
+IMPLEMENT_SIMPLE_AUTOMATION_TEST(
+	FRpgInventoryMissingSpatialFragmentContractTest,
+	"SurvivalRpg.Inventory.IntentBoundary.MissingSpatialFragmentFailsClosed",
+	EAutomationTestFlags::EditorContext |
+		EAutomationTestFlags::EngineFilter)
+
+bool FRpgInventoryMissingSpatialFragmentContractTest::RunTest(
+	const FString& Parameters)
+{
+	(void)Parameters;
+	using namespace RpgInventoryIntentBoundaryTests;
+
+	FScopedIntentBoundaryWorld TestWorld;
+	if (!TestTrue(
+			TEXT("An isolated missing-spatial contract world exists"),
+			TestWorld.IsValid()))
+	{
+		return false;
+	}
+
+	ARpgInventoryAutomationTestPlayerController* Controller = nullptr;
+	ARpgInventoryAutomationTestPlayerState* PlayerState = nullptr;
+	URpgInventoryManagerComponent* Inventory = nullptr;
+	if (!TestTrue(
+			TEXT("A real player-inventory fixture exists"),
+			CreatePlayerInventoryFixture(
+				TestWorld.GetWorld(),
+				TEXT("MissingSpatialContract"),
+				Controller,
+				PlayerState,
+				Inventory)))
+	{
+		return false;
+	}
+
+	const FRpgInventoryContainerHandle Pockets =
+		FRpgInventoryContainerHandle::MakeRoot(
+			URpgPlayerInventoryLayoutComponent::PocketsGroupId);
+	const FRpgInventoryContainerHandle GearChest =
+		FRpgInventoryContainerHandle::MakeRoot(
+			URpgPlayerInventoryLayoutComponent::GearChestGroupId);
+	const FRpgInventoryContainerHandle CarryMainHand =
+		FRpgInventoryContainerHandle::MakeRoot(
+			URpgPlayerInventoryLayoutComponent::WeaponSlot1GroupId);
+	FRpgInventoryGridSize GridSize;
+	if (!TestTrue(
+			TEXT("The Content fixture handle resolves"),
+			Inventory->GetGridSizeForContainerHandle(Pockets, GridSize)) ||
+		!TestTrue(
+			TEXT("The Gear fixture handle resolves"),
+			Inventory->GetGridSizeForContainerHandle(GearChest, GridSize)) ||
+		!TestTrue(
+			TEXT("The Carry fixture handle resolves"),
+			Inventory->GetGridSizeForContainerHandle(
+				CarryMainHand,
+				GridSize)))
+	{
+		return false;
+	}
+
+	const int32 EmptyRevision = Inventory->GetInventoryRevision();
+	const uint64 EmptyEpoch = Inventory->GetMutationEpoch();
+	FRpgInventoryPlacementQuery ExactQuery;
+	ExactQuery.Purpose = ERpgInventoryPlacementPurpose::Add;
+	ExactQuery.Search = ERpgInventoryPlacementSearch::Exact;
+	ExactQuery.Subject = FRpgInventoryPlacementSubject::FromDefinition(
+		URpgInventoryAutomationTestMissingSpatialItemDefinition::
+			StaticClass(),
+		1);
+	ExactQuery.TargetContainer = Pockets;
+	ExactQuery.ExactPlacement = MakeRootPlacement(
+		URpgPlayerInventoryLayoutComponent::PocketsGroupId,
+		1,
+		0);
+	const FRpgInventoryPlacementPlan ExactPlan =
+		Inventory->EvaluatePlacement(ExactQuery);
+	TestEqual(
+		TEXT("Exact Content evaluation reports an invalid placement"),
+		ExactPlan.Code,
+		ERpgInventoryMutationResultCode::InvalidPlacement);
+	TestFalse(
+		TEXT("Exact Content evaluation does not produce a successful plan"),
+		ExactPlan.IsSuccess());
+	TestEqual(
+		TEXT("Exact Content evaluation produces no placement steps"),
+		ExactPlan.Steps.Num(),
+		0);
+	TestEqual(
+		TEXT("Exact Content evaluation applies no quantity"),
+		ExactPlan.AppliedQuantity,
+		0);
+	TestFalse(
+		TEXT("The exact legacy preflight rejects the malformed definition"),
+		Inventory->CanAddItemDefinitionToPlacement(
+			URpgInventoryAutomationTestMissingSpatialItemDefinition::
+				StaticClass(),
+			1,
+			ExactQuery.ExactPlacement));
+	TestNull(
+		TEXT("The exact legacy mutation seam cannot create the malformed item"),
+		Inventory->AddItemDefinitionToPlacement(
+			URpgInventoryAutomationTestMissingSpatialItemDefinition::
+				StaticClass(),
+			1,
+			ExactQuery.ExactPlacement));
+
+	FRpgInventoryPlacementQuery FirstFitQuery;
+	FirstFitQuery.Purpose = ERpgInventoryPlacementPurpose::Add;
+	FirstFitQuery.Search = ERpgInventoryPlacementSearch::FirstFit;
+	FirstFitQuery.Subject = FRpgInventoryPlacementSubject::FromDefinition(
+		URpgInventoryAutomationTestMissingSpatialItemDefinition::
+			StaticClass(),
+		1);
+	FirstFitQuery.TargetContainer = Pockets;
+	const FRpgInventoryPlacementPlan FirstFitPlan =
+		Inventory->EvaluatePlacement(FirstFitQuery);
+	TestEqual(
+		TEXT("FirstFit Content evaluation reports an invalid placement instead of NoSpace"),
+		FirstFitPlan.Code,
+		ERpgInventoryMutationResultCode::InvalidPlacement);
+	TestFalse(
+		TEXT("FirstFit Content evaluation does not produce a successful plan"),
+		FirstFitPlan.IsSuccess());
+	TestEqual(
+		TEXT("FirstFit Content evaluation produces no placement steps"),
+		FirstFitPlan.Steps.Num(),
+		0);
+	TestEqual(
+		TEXT("FirstFit Content evaluation applies no quantity"),
+		FirstFitPlan.AppliedQuantity,
+		0);
+	TestFalse(
+		TEXT("The FirstFit legacy preflight rejects the malformed definition"),
+		Inventory->CanAddItemDefinition(
+			URpgInventoryAutomationTestMissingSpatialItemDefinition::
+				StaticClass(),
+			1));
+	TestNull(
+		TEXT("The FirstFit legacy mutation seam cannot create the malformed item"),
+		Inventory->AddItemDefinition(
+			URpgInventoryAutomationTestMissingSpatialItemDefinition::
+				StaticClass(),
+			1));
+	TestEqual(
+		TEXT("Rejected placement paths leave the inventory empty"),
+		Inventory->GetUsedEntryCount(),
+		0);
+	TestEqual(
+		TEXT("Rejected placement paths preserve the inventory revision"),
+		Inventory->GetInventoryRevision(),
+		EmptyRevision);
+	TestEqual(
+		TEXT("Rejected placement paths preserve the mutation epoch"),
+		Inventory->GetMutationEpoch(),
+		EmptyEpoch);
+
+	URpgInventoryItemInstance* Sentinel =
+		Inventory->AddItemDefinitionToPlacement(
+			URpgInventoryAutomationTestUnitItemDefinition::StaticClass(),
+			1,
+			MakeRootPlacement(
+				URpgPlayerInventoryLayoutComponent::PocketsGroupId,
+				0,
+				0));
+	if (!TestNotNull(
+			TEXT("A valid sentinel item exists before malformed restores"),
+			Sentinel))
+	{
+		return false;
+	}
+	const TArray<FRpgInventoryEntryView> BaselineEntries =
+		Inventory->GetAllEntries();
+	if (!TestEqual(
+			TEXT("The restore baseline contains exactly one entry"),
+			BaselineEntries.Num(),
+			1) ||
+		!BaselineEntries.IsValidIndex(0))
+	{
+		return false;
+	}
+	const FRpgInventoryEntryView BaselineEntry = BaselineEntries[0];
+	const int32 BaselineRevision = Inventory->GetInventoryRevision();
+	const uint64 BaselineEpoch = Inventory->GetMutationEpoch();
+
+	auto TestRejectedRestore =
+		[this,
+		 Inventory,
+		 &BaselineEntry,
+		 BaselineRevision,
+		 BaselineEpoch](
+			const TCHAR* CaseName,
+			TSubclassOf<URpgInventoryItemDefinition> ItemDefinition,
+			const FRpgInventoryContainerHandle& Container) -> bool
+	{
+		FRpgInventoryGraphSaveData Graph;
+		FRpgInventorySavedItem& Row =
+			Graph.Items.AddDefaulted_GetRef();
+		Row.ItemId = FRpgInventoryItemId::NewId();
+		Row.ItemDefinition = ItemDefinition;
+		Row.StackCount = 1;
+		Row.Container = Container;
+		Row.Placement.SetContainerHandle(Container);
+		Row.Placement.X = 0;
+		Row.Placement.Y = 0;
+		Row.Placement.Width = 1;
+		Row.Placement.Height = 1;
+
+		FRpgInventoryMutationResult RestoreResult;
+		const bool bRestored =
+			Inventory->RestoreInventoryGraph(Graph, RestoreResult);
+		TestFalse(
+			*FString::Printf(
+				TEXT("%s restore rejects the malformed definition"),
+				CaseName),
+			bRestored);
+		TestEqual(
+			*FString::Printf(
+				TEXT("%s rejection remains a Restore operation"),
+				CaseName),
+			RestoreResult.Operation,
+			ERpgInventoryMutationOperation::Restore);
+		TestEqual(
+			*FString::Printf(
+				TEXT("%s rejection reports InvalidPlacement"),
+				CaseName),
+			RestoreResult.Code,
+			ERpgInventoryMutationResultCode::InvalidPlacement);
+		TestEqual(
+			*FString::Printf(
+				TEXT("%s rejection applies no quantity"),
+				CaseName),
+			RestoreResult.AppliedQuantity,
+			0);
+		TestTrue(
+			*FString::Printf(
+				TEXT("%s rejection publishes no mutation deltas"),
+				CaseName),
+			RestoreResult.Deltas.IsEmpty());
+		TestEqual(
+			*FString::Printf(
+				TEXT("%s rejection preserves the inventory revision"),
+				CaseName),
+			Inventory->GetInventoryRevision(),
+			BaselineRevision);
+		TestEqual(
+			*FString::Printf(
+				TEXT("%s rejection preserves the mutation epoch"),
+				CaseName),
+			Inventory->GetMutationEpoch(),
+			BaselineEpoch);
+
+		const TArray<FRpgInventoryEntryView> Entries =
+			Inventory->GetAllEntries();
+		if (!TestEqual(
+				*FString::Printf(
+					TEXT("%s rejection preserves the live entry count"),
+					CaseName),
+				Entries.Num(),
+				1) ||
+			!Entries.IsValidIndex(0))
+		{
+			return false;
+		}
+		TestEqual(
+			*FString::Printf(
+				TEXT("%s rejection preserves the runtime instance"),
+				CaseName),
+			Entries[0].Instance.Get(),
+			BaselineEntry.Instance.Get());
+		TestEqual(
+			*FString::Printf(
+				TEXT("%s rejection preserves the entry id"),
+				CaseName),
+			Entries[0].EntryId,
+			BaselineEntry.EntryId);
+		TestTrue(
+			*FString::Printf(
+				TEXT("%s rejection preserves the item id"),
+				CaseName),
+			Entries[0].ItemId == BaselineEntry.ItemId);
+		TestEqual(
+			*FString::Printf(
+				TEXT("%s rejection preserves the placement"),
+				CaseName),
+			Entries[0].Placement,
+			BaselineEntry.Placement);
+		TestEqual(
+			*FString::Printf(
+				TEXT("%s rejection preserves the stack count"),
+				CaseName),
+			Entries[0].StackCount,
+			BaselineEntry.StackCount);
+		return !bRestored;
+	};
+
+	if (!TestRejectedRestore(
+			TEXT("Content"),
+			URpgInventoryAutomationTestMissingSpatialItemDefinition::
+				StaticClass(),
+			Pockets) ||
+		!TestRejectedRestore(
+			TEXT("Gear"),
+			URpgInventoryAutomationTestMissingSpatialArmorItemDefinition::
+				StaticClass(),
+			GearChest) ||
+		!TestRejectedRestore(
+			TEXT("Carry"),
+			URpgInventoryAutomationTestMissingSpatialWeaponItemDefinition::
+				StaticClass(),
+			CarryMainHand))
+	{
+		return false;
+	}
+
+	URpgInventoryItemInstance* DetachedMissingSpatialItem =
+		NewObject<URpgInventoryItemInstance>(
+			GetTransientPackage(),
+			NAME_None,
+			RF_Transient);
+	FObjectPropertyBase* ItemDefinitionProperty =
+		FindFProperty<FObjectPropertyBase>(
+			URpgInventoryItemInstance::StaticClass(),
+			TEXT("ItemDef"));
+	if (!TestNotNull(
+			TEXT("The test can initialize the private replicated definition field"),
+			ItemDefinitionProperty) ||
+		!TestNotNull(
+			TEXT("A detached malformed drag fixture exists"),
+			DetachedMissingSpatialItem))
+	{
+		return false;
+	}
+	ItemDefinitionProperty->SetObjectPropertyValue_InContainer(
+		DetachedMissingSpatialItem,
+		URpgInventoryAutomationTestMissingSpatialWeaponItemDefinition::
+			StaticClass());
+	if (!TestTrue(
+			TEXT("The detached drag fixture owns the intended malformed definition"),
+			DetachedMissingSpatialItem->GetItemDef() ==
+				URpgInventoryAutomationTestMissingSpatialWeaponItemDefinition::
+					StaticClass()))
+	{
+		return false;
+	}
+
+	FRpgInventoryDragPayload Payload =
+		URpgInventoryDragDropCoordinator::MakeEquipmentPayload(
+			DetachedMissingSpatialItem,
+			ERpgEquipmentSlot::MainHand);
+	Payload.SourceInventory = Inventory;
+	Payload.EntryId = FGuid::NewGuid();
+	Payload.StackCount = 1;
+	Payload.SourcePlacement = MakeRootPlacement(
+		URpgPlayerInventoryLayoutComponent::WeaponSlot1GroupId,
+		0,
+		0);
+	TestTrue(
+		TEXT("The drag fixture isolates the missing spatial contract behind otherwise valid equipment data"),
+		Payload.SourceInventory != nullptr &&
+			Payload.ItemInstance != nullptr &&
+			Payload.EntryId.IsValid() &&
+			Payload.StackCount > 0 &&
+			Payload.SourcePlacement.IsValid() &&
+			Payload.EquipmentSlot == ERpgEquipmentSlot::MainHand);
+	TestFalse(
+		TEXT("The drag payload factory does not synthesize a 1x1 footprint"),
+		Payload.ItemFootprint.IsValid());
+	TestFalse(
+		TEXT("A missing-spatial equipment payload fails closed"),
+		URpgInventoryDragDropCoordinator::IsPayloadValid(Payload));
+	FRpgInventoryDragPayload SpoofedUnitPayload = Payload;
+	SpoofedUnitPayload.ItemFootprint.Width = 1;
+	SpoofedUnitPayload.ItemFootprint.Height = 1;
+	TestFalse(
+		TEXT("A client-supplied 1x1 footprint cannot replace the missing definition contract"),
+		URpgInventoryDragDropCoordinator::IsPayloadValid(
+			SpoofedUnitPayload));
+	TestEqual(
+		TEXT("Rejected drag payload validation preserves the inventory revision"),
+		Inventory->GetInventoryRevision(),
+		BaselineRevision);
+	TestEqual(
+		TEXT("Rejected drag payload validation preserves the mutation epoch"),
+		Inventory->GetMutationEpoch(),
+		BaselineEpoch);
 	return true;
 }
 

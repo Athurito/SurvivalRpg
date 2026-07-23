@@ -4,6 +4,7 @@
 
 #include "Blueprint/IUserListEntry.h"
 #include "MVVMSubsystem.h"
+#include "SurvivalRpg/Inventory/RpgInventoryAutomationTestTypes.h"
 #include "SurvivalRpg/Inventory/RpgInventoryDragDrop.h"
 #include "SurvivalRpg/Inventory/RpgInventoryInteractionSession.h"
 #include "SurvivalRpg/Inventory/RpgInventoryItemInstance.h"
@@ -157,6 +158,7 @@ namespace RpgPlayerInventoryWidgetTests
 		Payload.SourcePlacement.Width = 1;
 		Payload.SourcePlacement.Height = 1;
 	}
+
 }
 
 IMPLEMENT_SIMPLE_AUTOMATION_TEST(
@@ -1450,8 +1452,16 @@ bool FRpgInventoryAddressSlotEntryPoolingTest::RunTest(const FString& Parameters
 
 	FRpgInventoryDragPayload PreviewPayload;
 	PreviewPayload.SourceType = ERpgInventoryDragSourceType::EquipmentSlot;
-	PreviewPayload.ItemInstance = NewObject<URpgInventoryItemInstance>(Widget);
 	PreviewPayload.EquipmentSlot = ERpgEquipmentSlot::Head;
+	if (!TestTrue(
+			TEXT("Address pooling preview owns canonical item metadata"),
+			RpgInventoryAutomationTestTypes::PopulateCanonicalSpatialItem(
+				PreviewPayload,
+				Widget,
+				URpgInventoryAutomationTestUnitItemDefinition::StaticClass())))
+	{
+		return false;
+	}
 	PopulateExactEquipmentSourceSnapshot(
 		PreviewPayload,
 		Widget,
@@ -1720,8 +1730,16 @@ bool FRpgEquipmentSlotLifecycleTest::RunTest(const FString& Parameters)
 
 	FRpgInventoryDragPayload PreviewPayload;
 	PreviewPayload.SourceType = ERpgInventoryDragSourceType::EquipmentSlot;
-	PreviewPayload.ItemInstance = NewObject<URpgInventoryItemInstance>(Widget);
 	PreviewPayload.EquipmentSlot = ERpgEquipmentSlot::Head;
+	if (!TestTrue(
+			TEXT("Equipment pooling preview owns canonical item metadata"),
+			RpgInventoryAutomationTestTypes::PopulateCanonicalSpatialItem(
+				PreviewPayload,
+				Widget,
+				URpgInventoryAutomationTestUnitItemDefinition::StaticClass())))
+	{
+		return false;
+	}
 	PopulateExactEquipmentSourceSnapshot(
 		PreviewPayload,
 		Widget,

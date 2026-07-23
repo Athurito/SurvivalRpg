@@ -1,5 +1,6 @@
 #include "RpgInventoryAutomationTestTypes.h"
 
+#include "RpgInventoryDragDrop.h"
 #include "RpgInventoryFragment_EquippableItem.h"
 #include "RpgInventoryFragment_ItemContainer.h"
 #include "RpgInventoryFragment_ItemTraits.h"
@@ -9,6 +10,7 @@
 #include "SurvivalRpg/Core/Character/RpgPawnData.h"
 #include "SurvivalRpg/Equipment/RpgEquipmentAutomationTestTypes.h"
 #include "SurvivalRpg/GameplayTags/RpgGameplayTags.h"
+#include "UObject/UnrealType.h"
 
 #include UE_INLINE_GENERATED_CPP_BY_NAME(RpgInventoryAutomationTestTypes)
 
@@ -61,6 +63,35 @@ namespace
 		return Group;
 	}
 }
+
+#if WITH_DEV_AUTOMATION_TESTS
+bool RpgInventoryAutomationTestTypes::PopulateCanonicalSpatialItem(
+	FRpgInventoryDragPayload& Payload,
+	UObject* Outer,
+	TSubclassOf<URpgInventoryItemDefinition> ItemDefinition)
+{
+	URpgInventoryItemInstance* Item =
+		Outer ? NewObject<URpgInventoryItemInstance>(Outer) : nullptr;
+	FObjectPropertyBase* ItemDefinitionProperty =
+		FindFProperty<FObjectPropertyBase>(
+			URpgInventoryItemInstance::StaticClass(),
+			TEXT("ItemDef"));
+	const URpgInventoryFragment_SpatialItem* SpatialFragment =
+		URpgInventoryItemDefinition::ResolveValidSpatialItemFragment(
+			ItemDefinition);
+	if (!Item || !ItemDefinitionProperty || !SpatialFragment)
+	{
+		return false;
+	}
+
+	ItemDefinitionProperty->SetObjectPropertyValue_InContainer(
+		Item,
+		ItemDefinition.Get());
+	Payload.ItemInstance = Item;
+	Payload.ItemFootprint = SpatialFragment->Footprint;
+	return Item->GetItemDef() == ItemDefinition;
+}
+#endif
 
 void URpgInventoryAutomationTestStatefulFragment::OnInstanceCreated(
 	URpgInventoryItemInstance* Instance) const
@@ -717,6 +748,55 @@ URpgInventoryAutomationTestHeavyItemDefinition::URpgInventoryAutomationTestHeavy
 	URpgInventoryFragment_EquippableItem* EquippableFragment =
 		CreateDefaultSubobject<URpgInventoryFragment_EquippableItem>(TEXT("Equippable"));
 	EquippableFragment->EquipmentDefinition = URpgInventoryAutomationTestHeavyEquipmentDefinition::StaticClass();
+	Fragments.Add(EquippableFragment);
+}
+
+URpgInventoryAutomationTestMissingSpatialItemDefinition::URpgInventoryAutomationTestMissingSpatialItemDefinition(
+	const FObjectInitializer& ObjectInitializer)
+	: Super(ObjectInitializer)
+{
+	DisplayName = FText::FromString(TEXT("Automation Missing Spatial Item"));
+
+	URpgInventoryFragment_ItemTraits* TraitsFragment =
+		CreateDefaultSubobject<URpgInventoryFragment_ItemTraits>(TEXT("Traits"));
+	ConfigureNonStackingTraits(TraitsFragment);
+	TraitsFragment->ItemCategory = ERpgInventoryItemCategory::Misc;
+	Fragments.Add(TraitsFragment);
+}
+
+URpgInventoryAutomationTestMissingSpatialArmorItemDefinition::URpgInventoryAutomationTestMissingSpatialArmorItemDefinition(
+	const FObjectInitializer& ObjectInitializer)
+	: Super(ObjectInitializer)
+{
+	DisplayName = FText::FromString(TEXT("Automation Missing Spatial Armor"));
+
+	URpgInventoryFragment_ItemTraits* TraitsFragment =
+		CreateDefaultSubobject<URpgInventoryFragment_ItemTraits>(TEXT("Traits"));
+	ConfigureNonStackingTraits(TraitsFragment);
+	TraitsFragment->ItemCategory = ERpgInventoryItemCategory::Armor;
+	Fragments.Add(TraitsFragment);
+
+	URpgInventoryFragment_EquippableItem* EquippableFragment =
+		CreateDefaultSubobject<URpgInventoryFragment_EquippableItem>(TEXT("Equippable"));
+	EquippableFragment->EquipmentDefinition = URpgInventoryAutomationTestHeavyEquipmentDefinition::StaticClass();
+	Fragments.Add(EquippableFragment);
+}
+
+URpgInventoryAutomationTestMissingSpatialWeaponItemDefinition::URpgInventoryAutomationTestMissingSpatialWeaponItemDefinition(
+	const FObjectInitializer& ObjectInitializer)
+	: Super(ObjectInitializer)
+{
+	DisplayName = FText::FromString(TEXT("Automation Missing Spatial Weapon"));
+
+	URpgInventoryFragment_ItemTraits* TraitsFragment =
+		CreateDefaultSubobject<URpgInventoryFragment_ItemTraits>(TEXT("Traits"));
+	ConfigureNonStackingTraits(TraitsFragment);
+	TraitsFragment->ItemCategory = ERpgInventoryItemCategory::Weapon;
+	Fragments.Add(TraitsFragment);
+
+	URpgInventoryFragment_EquippableItem* EquippableFragment =
+		CreateDefaultSubobject<URpgInventoryFragment_EquippableItem>(TEXT("Equippable"));
+	EquippableFragment->EquipmentDefinition = URpgInventoryAutomationTestWeaponEquipmentDefinition::StaticClass();
 	Fragments.Add(EquippableFragment);
 }
 

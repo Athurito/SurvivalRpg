@@ -2,6 +2,7 @@
 
 #if WITH_DEV_AUTOMATION_TESTS
 
+#include "RpgInventoryAutomationTestTypes.h"
 #include "RpgInventoryInteractionSession.h"
 #include "RpgInventoryItemInstance.h"
 #include "RpgInventoryManagerComponent.h"
@@ -181,23 +182,28 @@ bool FRpgInventoryInteractionRotationAnchorRoundTripTest::RunTest(const FString&
 {
 	using namespace RpgInventoryInteractionTests;
 
-	URpgInventoryItemInstance* Item = NewObject<URpgInventoryItemInstance>(GetTransientPackage());
 	URpgInventoryInteractionSession* Session = NewObject<URpgInventoryInteractionSession>(GetTransientPackage());
-	if (!TestNotNull(TEXT("Transient item fixture exists"), Item) ||
-		!TestNotNull(TEXT("World-free interaction session exists"), Session))
+	if (!TestNotNull(TEXT("World-free interaction session exists"), Session))
 	{
 		return false;
 	}
 
 	FRpgInventoryDragPayload Payload;
 	Payload.SourceType = ERpgInventoryDragSourceType::EquipmentSlot;
-	Payload.ItemInstance = Item;
 	Payload.EquipmentSlot = ERpgEquipmentSlot::MainHand;
+	if (!TestTrue(
+			TEXT("Transient item fixture owns the canonical 3x2 spatial contract"),
+			RpgInventoryAutomationTestTypes::PopulateCanonicalSpatialItem(
+				Payload,
+				GetTransientPackage(),
+				URpgInventoryAutomationTestLargeItemDefinition::StaticClass())))
+	{
+		return false;
+	}
 	PopulateExactEquipmentSourceSnapshot(
 		Payload,
 		GetTransientPackage(),
 		TEXT("RotationAnchorEquipmentSource"));
-	Payload.ItemFootprint = MakeFootprint(3, 2);
 	Payload.DragAnchor.bValid = true;
 	Payload.DragAnchor.GrabbedCell = FIntPoint(2, 1);
 	Payload.DragAnchor.WithinCellNormalized = FVector2D(0.25f, 0.75f);
