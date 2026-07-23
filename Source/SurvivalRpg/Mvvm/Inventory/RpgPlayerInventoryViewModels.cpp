@@ -19,6 +19,10 @@
 
 namespace
 {
+	constexpr ETextIdenticalModeFlags FieldNotifyTextIdentityFlags =
+		ETextIdenticalModeFlags::DeepCompare |
+		ETextIdenticalModeFlags::LexicalCompareInvariants;
+
 	struct FRpgPlayerInventoryItemPresentation
 	{
 		TSoftObjectPtr<UTexture2D> Icon;
@@ -118,6 +122,27 @@ namespace
 			FRpgInventoryEquipmentPlacementPolicy::IsHandEquipmentSlot(
 				GroupView.EquipmentSlotRole);
 	}
+
+	template <typename ViewModelType>
+	bool AreViewModelArraysEqual(
+		const TArray<TObjectPtr<ViewModelType>>& A,
+		const TArray<TObjectPtr<ViewModelType>>& B)
+	{
+		if (A.Num() != B.Num())
+		{
+			return false;
+		}
+
+		for (int32 Index = 0; Index < A.Num(); ++Index)
+		{
+			if (A[Index].Get() != B[Index].Get())
+			{
+				return false;
+			}
+		}
+
+		return true;
+	}
 }
 
 void URpgInventoryAddressSlotViewModel::InitializeSlot(
@@ -163,34 +188,79 @@ void URpgInventoryAddressSlotViewModel::InitializeSlot(
 	const bool bNewActionbarBindable = InInventoryLayout
 		? bCanRepresentItemFromThisCell && InInventoryLayout->CanBindSlotAddressToActionbar(NewAddress, NewItem)
 		: false;
+	const FText NewSlotLabel = BuildAddressSlotLabel(InGroupView, InX, InY);
+	const FText NewShortDisplayName = Presentation.ShortDisplayName;
+	const TSoftObjectPtr<UTexture2D> NewIcon = Presentation.Icon;
+	const bool bNewIsEmptySlot = NewItem == nullptr;
+	const bool bNewRenderItemVisual = bCanRepresentItemFromThisCell;
+	const bool bNewCanDrag =
+		bCanRepresentItemFromThisCell && NewStackCount > 0;
+	const ERpgEquipmentSlot NewEquipmentSlotRole =
+		InGroupView.EquipmentSlotRole;
+	const bool bNewGearSlot =
+		InGroupView.GroupKind == ERpgInventorySlotGroupKind::Gear;
 
+	const bool bInventoryChanged = Inventory != InInventory;
+	const bool bInventoryLayoutChanged =
+		InventoryLayout != InInventoryLayout;
+	const bool bContainerIdChanged = ContainerId != InGroupView.ContainerId;
+	const bool bSlotAddressChanged = SlotAddress != NewAddress;
+	const bool bXChanged = X != InX;
+	const bool bYChanged = Y != InY;
+	const bool bPlacementChanged = Placement != NewPlacement;
+	const bool bItemPlacementChanged = ItemPlacement != NewItemPlacement;
+	const bool bItemOccupiedWidthChanged =
+		ItemOccupiedWidth != NewItemOccupiedWidth;
+	const bool bItemOccupiedHeightChanged =
+		ItemOccupiedHeight != NewItemOccupiedHeight;
+	const bool bEntryIdChanged = EntryId != NewEntryId;
+	const bool bItemInstanceChanged = ItemInstance != NewItem;
+	const bool bStackCountChanged = StackCount != NewStackCount;
+	const bool bSlotLabelChanged =
+		!SlotLabel.IdenticalTo(NewSlotLabel, FieldNotifyTextIdentityFlags);
+	const bool bShortDisplayNameChanged =
+		!ShortDisplayName.IdenticalTo(
+			NewShortDisplayName,
+			FieldNotifyTextIdentityFlags);
+	const bool bIconChanged = Icon != NewIcon;
+	const bool bIsEmptySlotChanged = bIsEmptySlot != bNewIsEmptySlot;
+	const bool bItemOriginCellChanged =
+		bItemOriginCell != bNewItemOriginCell;
+	const bool bItemCoveredCellChanged =
+		bItemCoveredCell != bNewItemCoveredCell;
+	const bool bRenderItemVisualChanged =
+		bRenderItemVisual != bNewRenderItemVisual;
+	const bool bCanDragChanged = bCanDrag != bNewCanDrag;
+	const bool bActionbarBindableChanged =
+		bActionbarBindable != bNewActionbarBindable;
+	const bool bEquipmentSlotRoleChanged =
+		EquipmentSlotRole != NewEquipmentSlotRole;
+	const bool bGearSlotChanged = bGearSlot != bNewGearSlot;
 	const bool bWasChanged =
-		Inventory != InInventory ||
-		InventoryLayout != InInventoryLayout ||
-		ContainerId != InGroupView.ContainerId ||
-		SlotAddress != NewAddress ||
-		X != InX ||
-		Y != InY ||
-		Placement.GetContainerHandle() != NewPlacement.GetContainerHandle() ||
-		Placement.X != NewPlacement.X ||
-		Placement.Y != NewPlacement.Y ||
-		ItemPlacement.GetContainerHandle() != NewItemPlacement.GetContainerHandle() ||
-		ItemPlacement.X != NewItemPlacement.X ||
-		ItemPlacement.Y != NewItemPlacement.Y ||
-		ItemPlacement.Width != NewItemPlacement.Width ||
-		ItemPlacement.Height != NewItemPlacement.Height ||
-		ItemPlacement.bRotated != NewItemPlacement.bRotated ||
-		ItemOccupiedWidth != NewItemOccupiedWidth ||
-		ItemOccupiedHeight != NewItemOccupiedHeight ||
-		EntryId != NewEntryId ||
-		ItemInstance != NewItem ||
-		StackCount != NewStackCount ||
-		bItemOriginCell != bNewItemOriginCell ||
-		bItemCoveredCell != bNewItemCoveredCell ||
-		bRenderItemVisual != bCanRepresentItemFromThisCell ||
-		bActionbarBindable != bNewActionbarBindable ||
-		EquipmentSlotRole != InGroupView.EquipmentSlotRole ||
-		bGearSlot != (InGroupView.GroupKind == ERpgInventorySlotGroupKind::Gear);
+		bInventoryChanged ||
+		bInventoryLayoutChanged ||
+		bContainerIdChanged ||
+		bSlotAddressChanged ||
+		bXChanged ||
+		bYChanged ||
+		bPlacementChanged ||
+		bItemPlacementChanged ||
+		bItemOccupiedWidthChanged ||
+		bItemOccupiedHeightChanged ||
+		bEntryIdChanged ||
+		bItemInstanceChanged ||
+		bStackCountChanged ||
+		bSlotLabelChanged ||
+		bShortDisplayNameChanged ||
+		bIconChanged ||
+		bIsEmptySlotChanged ||
+		bItemOriginCellChanged ||
+		bItemCoveredCellChanged ||
+		bRenderItemVisualChanged ||
+		bCanDragChanged ||
+		bActionbarBindableChanged ||
+		bEquipmentSlotRoleChanged ||
+		bGearSlotChanged;
 
 	Inventory = InInventory;
 	InventoryLayout = InInventoryLayout;
@@ -205,42 +275,114 @@ void URpgInventoryAddressSlotViewModel::InitializeSlot(
 	EntryId = NewEntryId;
 	ItemInstance = NewItem;
 	StackCount = NewStackCount;
-	SlotLabel = BuildAddressSlotLabel(InGroupView, InX, InY);
-	ShortDisplayName = Presentation.ShortDisplayName;
-	Icon = Presentation.Icon;
-	bIsEmptySlot = ItemInstance == nullptr;
+	SlotLabel = NewSlotLabel;
+	ShortDisplayName = NewShortDisplayName;
+	Icon = NewIcon;
+	bIsEmptySlot = bNewIsEmptySlot;
 	bItemOriginCell = bNewItemOriginCell;
 	bItemCoveredCell = bNewItemCoveredCell;
-	bRenderItemVisual = bCanRepresentItemFromThisCell;
-	bCanDrag = bCanRepresentItemFromThisCell && StackCount > 0;
+	bRenderItemVisual = bNewRenderItemVisual;
+	bCanDrag = bNewCanDrag;
 	bActionbarBindable = bNewActionbarBindable;
-	EquipmentSlotRole = InGroupView.EquipmentSlotRole;
-	bGearSlot = InGroupView.GroupKind == ERpgInventorySlotGroupKind::Gear;
+	EquipmentSlotRole = NewEquipmentSlotRole;
+	bGearSlot = bNewGearSlot;
 
-	UE_MVVM_BROADCAST_FIELD_VALUE_CHANGED(Inventory);
-	UE_MVVM_BROADCAST_FIELD_VALUE_CHANGED(InventoryLayout);
-	UE_MVVM_BROADCAST_FIELD_VALUE_CHANGED(ContainerId);
-	UE_MVVM_BROADCAST_FIELD_VALUE_CHANGED(SlotAddress);
-	UE_MVVM_BROADCAST_FIELD_VALUE_CHANGED(X);
-	UE_MVVM_BROADCAST_FIELD_VALUE_CHANGED(Y);
-	UE_MVVM_BROADCAST_FIELD_VALUE_CHANGED(Placement);
-	UE_MVVM_BROADCAST_FIELD_VALUE_CHANGED(ItemPlacement);
-	UE_MVVM_BROADCAST_FIELD_VALUE_CHANGED(ItemOccupiedWidth);
-	UE_MVVM_BROADCAST_FIELD_VALUE_CHANGED(ItemOccupiedHeight);
-	UE_MVVM_BROADCAST_FIELD_VALUE_CHANGED(EntryId);
-	UE_MVVM_BROADCAST_FIELD_VALUE_CHANGED(ItemInstance);
-	UE_MVVM_BROADCAST_FIELD_VALUE_CHANGED(StackCount);
-	UE_MVVM_BROADCAST_FIELD_VALUE_CHANGED(SlotLabel);
-	UE_MVVM_BROADCAST_FIELD_VALUE_CHANGED(ShortDisplayName);
-	UE_MVVM_BROADCAST_FIELD_VALUE_CHANGED(Icon);
-	UE_MVVM_BROADCAST_FIELD_VALUE_CHANGED(bIsEmptySlot);
-	UE_MVVM_BROADCAST_FIELD_VALUE_CHANGED(bItemOriginCell);
-	UE_MVVM_BROADCAST_FIELD_VALUE_CHANGED(bItemCoveredCell);
-	UE_MVVM_BROADCAST_FIELD_VALUE_CHANGED(bRenderItemVisual);
-	UE_MVVM_BROADCAST_FIELD_VALUE_CHANGED(bCanDrag);
-	UE_MVVM_BROADCAST_FIELD_VALUE_CHANGED(bActionbarBindable);
-	UE_MVVM_BROADCAST_FIELD_VALUE_CHANGED(EquipmentSlotRole);
-	UE_MVVM_BROADCAST_FIELD_VALUE_CHANGED(bGearSlot);
+	if (bInventoryChanged)
+	{
+		UE_MVVM_BROADCAST_FIELD_VALUE_CHANGED(Inventory);
+	}
+	if (bInventoryLayoutChanged)
+	{
+		UE_MVVM_BROADCAST_FIELD_VALUE_CHANGED(InventoryLayout);
+	}
+	if (bContainerIdChanged)
+	{
+		UE_MVVM_BROADCAST_FIELD_VALUE_CHANGED(ContainerId);
+	}
+	if (bSlotAddressChanged)
+	{
+		UE_MVVM_BROADCAST_FIELD_VALUE_CHANGED(SlotAddress);
+	}
+	if (bXChanged)
+	{
+		UE_MVVM_BROADCAST_FIELD_VALUE_CHANGED(X);
+	}
+	if (bYChanged)
+	{
+		UE_MVVM_BROADCAST_FIELD_VALUE_CHANGED(Y);
+	}
+	if (bPlacementChanged)
+	{
+		UE_MVVM_BROADCAST_FIELD_VALUE_CHANGED(Placement);
+	}
+	if (bItemPlacementChanged)
+	{
+		UE_MVVM_BROADCAST_FIELD_VALUE_CHANGED(ItemPlacement);
+	}
+	if (bItemOccupiedWidthChanged)
+	{
+		UE_MVVM_BROADCAST_FIELD_VALUE_CHANGED(ItemOccupiedWidth);
+	}
+	if (bItemOccupiedHeightChanged)
+	{
+		UE_MVVM_BROADCAST_FIELD_VALUE_CHANGED(ItemOccupiedHeight);
+	}
+	if (bEntryIdChanged)
+	{
+		UE_MVVM_BROADCAST_FIELD_VALUE_CHANGED(EntryId);
+	}
+	if (bItemInstanceChanged)
+	{
+		UE_MVVM_BROADCAST_FIELD_VALUE_CHANGED(ItemInstance);
+	}
+	if (bStackCountChanged)
+	{
+		UE_MVVM_BROADCAST_FIELD_VALUE_CHANGED(StackCount);
+	}
+	if (bSlotLabelChanged)
+	{
+		UE_MVVM_BROADCAST_FIELD_VALUE_CHANGED(SlotLabel);
+	}
+	if (bShortDisplayNameChanged)
+	{
+		UE_MVVM_BROADCAST_FIELD_VALUE_CHANGED(ShortDisplayName);
+	}
+	if (bIconChanged)
+	{
+		UE_MVVM_BROADCAST_FIELD_VALUE_CHANGED(Icon);
+	}
+	if (bIsEmptySlotChanged)
+	{
+		UE_MVVM_BROADCAST_FIELD_VALUE_CHANGED(bIsEmptySlot);
+	}
+	if (bItemOriginCellChanged)
+	{
+		UE_MVVM_BROADCAST_FIELD_VALUE_CHANGED(bItemOriginCell);
+	}
+	if (bItemCoveredCellChanged)
+	{
+		UE_MVVM_BROADCAST_FIELD_VALUE_CHANGED(bItemCoveredCell);
+	}
+	if (bRenderItemVisualChanged)
+	{
+		UE_MVVM_BROADCAST_FIELD_VALUE_CHANGED(bRenderItemVisual);
+	}
+	if (bCanDragChanged)
+	{
+		UE_MVVM_BROADCAST_FIELD_VALUE_CHANGED(bCanDrag);
+	}
+	if (bActionbarBindableChanged)
+	{
+		UE_MVVM_BROADCAST_FIELD_VALUE_CHANGED(bActionbarBindable);
+	}
+	if (bEquipmentSlotRoleChanged)
+	{
+		UE_MVVM_BROADCAST_FIELD_VALUE_CHANGED(EquipmentSlotRole);
+	}
+	if (bGearSlotChanged)
+	{
+		UE_MVVM_BROADCAST_FIELD_VALUE_CHANGED(bGearSlot);
+	}
 
 	if (bWasChanged)
 	{
@@ -250,46 +392,123 @@ void URpgInventoryAddressSlotViewModel::InitializeSlot(
 
 void URpgInventorySlotGroupViewModel::InitializeGroup(const FRpgInventorySlotGroupView& InGroupView, const TArray<URpgInventoryAddressSlotViewModel*>& InSlots)
 {
-	const bool bDisplayNameChanged = !DisplayName.EqualTo(InGroupView.DisplayName);
-
-	ContainerHandle = InGroupView.ContainerHandle;
-	ContainerId = InGroupView.ContainerId;
-	SemanticRole = InGroupView.SemanticRole;
-	DisplayName = InGroupView.DisplayName;
-	Icon = InGroupView.Icon;
-	GridSize = InGroupView.GridSize;
-	EquipmentSlotRole = InGroupView.EquipmentSlotRole;
-	bActionbarBindable = InGroupView.Rule.bActionbarBindable;
-	bCarryGroup = IsTypedCarryGroupView(InGroupView);
-	bGearGroup = InGroupView.GroupKind == ERpgInventorySlotGroupKind::Gear;
-	bContentGroup = InGroupView.GroupKind == ERpgInventorySlotGroupKind::Content;
-	bProvidedByEquipment = InGroupView.bProvidedByEquipment;
-	SourceEquipmentSlot = InGroupView.SourceEquipmentSlot;
-
-	Slots.Reset();
-	Slots.Reserve(InSlots.Num());
+	const FRpgInventoryContainerHandle NewContainerHandle =
+		InGroupView.ContainerHandle;
+	const FName NewContainerId = InGroupView.ContainerId;
+	const FGameplayTag NewSemanticRole = InGroupView.SemanticRole;
+	const FText NewDisplayName = InGroupView.DisplayName;
+	const TSoftObjectPtr<UTexture2D> NewIcon = InGroupView.Icon;
+	const FRpgInventoryGridSize NewGridSize = InGroupView.GridSize;
+	const ERpgEquipmentSlot NewEquipmentSlotRole =
+		InGroupView.EquipmentSlotRole;
+	const bool bNewActionbarBindable = InGroupView.Rule.bActionbarBindable;
+	const bool bNewCarryGroup = IsTypedCarryGroupView(InGroupView);
+	const bool bNewGearGroup =
+		InGroupView.GroupKind == ERpgInventorySlotGroupKind::Gear;
+	const bool bNewContentGroup =
+		InGroupView.GroupKind == ERpgInventorySlotGroupKind::Content;
+	const bool bNewProvidedByEquipment = InGroupView.bProvidedByEquipment;
+	const ERpgEquipmentSlot NewSourceEquipmentSlot =
+		InGroupView.SourceEquipmentSlot;
+	TArray<TObjectPtr<URpgInventoryAddressSlotViewModel>> NewSlots;
+	NewSlots.Reserve(InSlots.Num());
 	for (URpgInventoryAddressSlotViewModel* Slot : InSlots)
 	{
-		Slots.Add(Slot);
+		NewSlots.Add(Slot);
 	}
 
-	UE_MVVM_BROADCAST_FIELD_VALUE_CHANGED(ContainerHandle);
-	UE_MVVM_BROADCAST_FIELD_VALUE_CHANGED(ContainerId);
-	UE_MVVM_BROADCAST_FIELD_VALUE_CHANGED(SemanticRole);
+	const bool bContainerHandleChanged =
+		ContainerHandle != NewContainerHandle;
+	const bool bContainerIdChanged = ContainerId != NewContainerId;
+	const bool bSemanticRoleChanged = SemanticRole != NewSemanticRole;
+	const bool bDisplayNameChanged =
+		!DisplayName.IdenticalTo(NewDisplayName, FieldNotifyTextIdentityFlags);
+	const bool bIconChanged = Icon != NewIcon;
+	const bool bGridSizeChanged = GridSize != NewGridSize;
+	const bool bEquipmentSlotRoleChanged =
+		EquipmentSlotRole != NewEquipmentSlotRole;
+	const bool bActionbarBindableChanged =
+		bActionbarBindable != bNewActionbarBindable;
+	const bool bCarryGroupChanged = bCarryGroup != bNewCarryGroup;
+	const bool bGearGroupChanged = bGearGroup != bNewGearGroup;
+	const bool bContentGroupChanged = bContentGroup != bNewContentGroup;
+	const bool bProvidedByEquipmentChanged =
+		bProvidedByEquipment != bNewProvidedByEquipment;
+	const bool bSourceEquipmentSlotChanged =
+		SourceEquipmentSlot != NewSourceEquipmentSlot;
+	const bool bSlotsChanged = !AreViewModelArraysEqual(Slots, NewSlots);
+
+	ContainerHandle = NewContainerHandle;
+	ContainerId = NewContainerId;
+	SemanticRole = NewSemanticRole;
+	DisplayName = NewDisplayName;
+	Icon = NewIcon;
+	GridSize = NewGridSize;
+	EquipmentSlotRole = NewEquipmentSlotRole;
+	bActionbarBindable = bNewActionbarBindable;
+	bCarryGroup = bNewCarryGroup;
+	bGearGroup = bNewGearGroup;
+	bContentGroup = bNewContentGroup;
+	bProvidedByEquipment = bNewProvidedByEquipment;
+	SourceEquipmentSlot = NewSourceEquipmentSlot;
+	Slots = MoveTemp(NewSlots);
+
+	if (bContainerHandleChanged)
+	{
+		UE_MVVM_BROADCAST_FIELD_VALUE_CHANGED(ContainerHandle);
+	}
+	if (bContainerIdChanged)
+	{
+		UE_MVVM_BROADCAST_FIELD_VALUE_CHANGED(ContainerId);
+	}
+	if (bSemanticRoleChanged)
+	{
+		UE_MVVM_BROADCAST_FIELD_VALUE_CHANGED(SemanticRole);
+	}
 	if (bDisplayNameChanged)
 	{
 		UE_MVVM_BROADCAST_FIELD_VALUE_CHANGED(DisplayName);
 	}
-	UE_MVVM_BROADCAST_FIELD_VALUE_CHANGED(Icon);
-	UE_MVVM_BROADCAST_FIELD_VALUE_CHANGED(GridSize);
-	UE_MVVM_BROADCAST_FIELD_VALUE_CHANGED(EquipmentSlotRole);
-	UE_MVVM_BROADCAST_FIELD_VALUE_CHANGED(bActionbarBindable);
-	UE_MVVM_BROADCAST_FIELD_VALUE_CHANGED(bCarryGroup);
-	UE_MVVM_BROADCAST_FIELD_VALUE_CHANGED(bGearGroup);
-	UE_MVVM_BROADCAST_FIELD_VALUE_CHANGED(bContentGroup);
-	UE_MVVM_BROADCAST_FIELD_VALUE_CHANGED(bProvidedByEquipment);
-	UE_MVVM_BROADCAST_FIELD_VALUE_CHANGED(SourceEquipmentSlot);
-	UE_MVVM_BROADCAST_FIELD_VALUE_CHANGED(Slots);
+	if (bIconChanged)
+	{
+		UE_MVVM_BROADCAST_FIELD_VALUE_CHANGED(Icon);
+	}
+	if (bGridSizeChanged)
+	{
+		UE_MVVM_BROADCAST_FIELD_VALUE_CHANGED(GridSize);
+	}
+	if (bEquipmentSlotRoleChanged)
+	{
+		UE_MVVM_BROADCAST_FIELD_VALUE_CHANGED(EquipmentSlotRole);
+	}
+	if (bActionbarBindableChanged)
+	{
+		UE_MVVM_BROADCAST_FIELD_VALUE_CHANGED(bActionbarBindable);
+	}
+	if (bCarryGroupChanged)
+	{
+		UE_MVVM_BROADCAST_FIELD_VALUE_CHANGED(bCarryGroup);
+	}
+	if (bGearGroupChanged)
+	{
+		UE_MVVM_BROADCAST_FIELD_VALUE_CHANGED(bGearGroup);
+	}
+	if (bContentGroupChanged)
+	{
+		UE_MVVM_BROADCAST_FIELD_VALUE_CHANGED(bContentGroup);
+	}
+	if (bProvidedByEquipmentChanged)
+	{
+		UE_MVVM_BROADCAST_FIELD_VALUE_CHANGED(bProvidedByEquipment);
+	}
+	if (bSourceEquipmentSlotChanged)
+	{
+		UE_MVVM_BROADCAST_FIELD_VALUE_CHANGED(SourceEquipmentSlot);
+	}
+	if (bSlotsChanged)
+	{
+		UE_MVVM_BROADCAST_FIELD_VALUE_CHANGED(Slots);
+	}
 }
 
 TArray<URpgInventoryAddressSlotViewModel*> URpgInventorySlotGroupViewModel::GetSlots() const
@@ -547,7 +766,10 @@ void URpgPlayerInventoryViewModel::RefreshGearSlots()
 		return static_cast<URpgInventoryItemInstance*>(nullptr);
 	};
 
-	auto RefreshSlotsForOrder = [this, &ResolveGearSlotItem](TArray<TObjectPtr<URpgEquipmentSlotViewModel>>& InOutSlots, TConstArrayView<ERpgEquipmentSlot> SlotOrder)
+	auto RefreshSlotsForOrder =
+		[this, &ResolveGearSlotItem](
+			TArray<TObjectPtr<URpgEquipmentSlotViewModel>>& InOutSlots,
+			TConstArrayView<ERpgEquipmentSlot> SlotOrder)
 	{
 		TArray<TObjectPtr<URpgEquipmentSlotViewModel>> PreviousSlots = MoveTemp(InOutSlots);
 		InOutSlots.Reset();
@@ -566,13 +788,23 @@ void URpgPlayerInventoryViewModel::RefreshGearSlots()
 			SlotViewModel->InitializeSlot(EquipmentSlot, Item);
 			InOutSlots.Add(SlotViewModel);
 		}
+
+		return !AreViewModelArraysEqual(PreviousSlots, InOutSlots);
 	};
 
-	RefreshSlotsForOrder(ArmorSlots, GetArmorSlotOrder());
-	RefreshSlotsForOrder(BagSlots, GetBagSlotOrder());
+	const bool bArmorSlotsChanged =
+		RefreshSlotsForOrder(ArmorSlots, GetArmorSlotOrder());
+	const bool bBagSlotsChanged =
+		RefreshSlotsForOrder(BagSlots, GetBagSlotOrder());
 
-	UE_MVVM_BROADCAST_FIELD_VALUE_CHANGED(ArmorSlots);
-	UE_MVVM_BROADCAST_FIELD_VALUE_CHANGED(BagSlots);
+	if (bArmorSlotsChanged)
+	{
+		UE_MVVM_BROADCAST_FIELD_VALUE_CHANGED(ArmorSlots);
+	}
+	if (bBagSlotsChanged)
+	{
+		UE_MVVM_BROADCAST_FIELD_VALUE_CHANGED(BagSlots);
+	}
 	OnGearSlotsChanged.Broadcast();
 }
 
@@ -674,11 +906,22 @@ void URpgPlayerInventoryViewModel::RefreshSlotGroups()
 		}
 	}
 
+	const bool bCarryGroupsChanged =
+		!AreViewModelArraysEqual(CarryGroups, NewCarryGroups);
+	const bool bInventoryGroupsChanged =
+		!AreViewModelArraysEqual(InventoryGroups, NewInventoryGroups);
+
 	CarryGroups = MoveTemp(NewCarryGroups);
 	InventoryGroups = MoveTemp(NewInventoryGroups);
 
-	UE_MVVM_BROADCAST_FIELD_VALUE_CHANGED(CarryGroups);
-	UE_MVVM_BROADCAST_FIELD_VALUE_CHANGED(InventoryGroups);
+	if (bCarryGroupsChanged)
+	{
+		UE_MVVM_BROADCAST_FIELD_VALUE_CHANGED(CarryGroups);
+	}
+	if (bInventoryGroupsChanged)
+	{
+		UE_MVVM_BROADCAST_FIELD_VALUE_CHANGED(InventoryGroups);
+	}
 	OnSlotGroupsChanged.Broadcast();
 }
 
@@ -728,7 +971,10 @@ void URpgPlayerInventoryViewModel::RefreshActionBarSlots()
 		ActionBarSlots.Add(SlotViewModel);
 	}
 
-	UE_MVVM_BROADCAST_FIELD_VALUE_CHANGED(ActionBarSlots);
+	if (!AreViewModelArraysEqual(PreviousSlots, ActionBarSlots))
+	{
+		UE_MVVM_BROADCAST_FIELD_VALUE_CHANGED(ActionBarSlots);
+	}
 	OnActionBarSlotsChanged.Broadcast();
 }
 

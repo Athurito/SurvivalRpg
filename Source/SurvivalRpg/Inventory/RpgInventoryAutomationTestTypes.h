@@ -30,6 +30,34 @@ namespace RpgInventoryAutomationTestTypes
 }
 #endif
 
+/** Test-only UObject target that counts no-argument dynamic multicast delegate invocations. */
+UCLASS(NotBlueprintable, Transient)
+class URpgInventoryAutomationTestDynamicDelegateCounter final : public UObject
+{
+	GENERATED_BODY()
+
+public:
+	/** Records one invocation from a no-argument dynamic multicast delegate. */
+	UFUNCTION()
+	void RecordInvocation()
+	{
+		++InvocationCount;
+	}
+
+	void ResetInvocationCount()
+	{
+		InvocationCount = 0;
+	}
+
+	int32 GetInvocationCount() const
+	{
+		return InvocationCount;
+	}
+
+private:
+	int32 InvocationCount = 0;
+};
+
 /** Frozen tagged-property shape used to prove version-one CarryRole bytes still load into the migration shadow. */
 USTRUCT()
 struct FRpgQuickAccessBindingV1TaggedFixture

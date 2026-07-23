@@ -10,115 +10,204 @@
 
 DEFINE_LOG_CATEGORY_STATIC(LogRpgInventoryViewModels, Log, All);
 
+namespace
+{
+	constexpr ETextIdenticalModeFlags FieldNotifyTextIdentityFlags =
+		ETextIdenticalModeFlags::DeepCompare |
+		ETextIdenticalModeFlags::LexicalCompareInvariants;
+
+	template <typename ViewModelType>
+	bool AreViewModelArraysEqual(
+		const TArray<TObjectPtr<ViewModelType>>& A,
+		const TArray<TObjectPtr<ViewModelType>>& B)
+	{
+		if (A.Num() != B.Num())
+		{
+			return false;
+		}
+
+		for (int32 Index = 0; Index < A.Num(); ++Index)
+		{
+			if (A[Index].Get() != B[Index].Get())
+			{
+				return false;
+			}
+		}
+
+		return true;
+	}
+}
+
 void URpgInventoryFragmentViewModel::InitializeFromEntry(const FRpgInventoryEntryView& Entry)
 {
-	ItemInstance = Entry.Instance;
-	EntryId = Entry.EntryId;
-	UE_MVVM_BROADCAST_FIELD_VALUE_CHANGED(ItemInstance);
-	UE_MVVM_BROADCAST_FIELD_VALUE_CHANGED(EntryId);
+	const TObjectPtr<URpgInventoryItemInstance> NewItemInstance = Entry.Instance;
+	const FGuid NewEntryId = Entry.EntryId;
+	const bool bItemInstanceChanged = ItemInstance != NewItemInstance;
+	const bool bEntryIdChanged = EntryId != NewEntryId;
+
+	ItemInstance = NewItemInstance;
+	EntryId = NewEntryId;
+
+	if (bItemInstanceChanged)
+	{
+		UE_MVVM_BROADCAST_FIELD_VALUE_CHANGED(ItemInstance);
+	}
+	if (bEntryIdChanged)
+	{
+		UE_MVVM_BROADCAST_FIELD_VALUE_CHANGED(EntryId);
+	}
 }
 
 void URpgInventoryStackFragmentViewModel::InitializeFromEntry(const FRpgInventoryEntryView& Entry)
 {
+	const int32 NewStackCount = Entry.StackCount;
+	const bool bStackCountChanged = StackCount != NewStackCount;
+	StackCount = NewStackCount;
+
 	Super::InitializeFromEntry(Entry);
 
-	StackCount = Entry.StackCount;
-	UE_MVVM_BROADCAST_FIELD_VALUE_CHANGED(StackCount);
+	if (bStackCountChanged)
+	{
+		UE_MVVM_BROADCAST_FIELD_VALUE_CHANGED(StackCount);
+	}
 }
 
 void URpgInventoryTraitsFragmentViewModel::InitializeFromEntry(const FRpgInventoryEntryView& Entry)
 {
+	const URpgInventoryFragment_ItemTraits* Traits = Entry.Instance ? Entry.Instance->FindFragmentByClass<URpgInventoryFragment_ItemTraits>() : nullptr;
+	const ERpgInventoryItemCategory NewItemCategory =
+		Traits ? Traits->ItemCategory : ERpgInventoryItemCategory::Misc;
+	const FGameplayTagContainer NewItemTags =
+		Traits ? Traits->ItemTags : FGameplayTagContainer();
+	const bool bNewIsMaterial = Traits ? Traits->IsMaterial() : false;
+	const bool bItemCategoryChanged = ItemCategory != NewItemCategory;
+	const bool bItemTagsChanged = ItemTags != NewItemTags;
+	const bool bIsMaterialChanged = bIsMaterial != bNewIsMaterial;
+
+	ItemCategory = NewItemCategory;
+	ItemTags = NewItemTags;
+	bIsMaterial = bNewIsMaterial;
+
 	Super::InitializeFromEntry(Entry);
 
-	const URpgInventoryFragment_ItemTraits* Traits = Entry.Instance ? Entry.Instance->FindFragmentByClass<URpgInventoryFragment_ItemTraits>() : nullptr;
-	ItemCategory = Traits ? Traits->ItemCategory : ERpgInventoryItemCategory::Misc;
-	ItemTags = Traits ? Traits->ItemTags : FGameplayTagContainer();
-	bIsMaterial = Traits ? Traits->IsMaterial() : false;
-
-	UE_MVVM_BROADCAST_FIELD_VALUE_CHANGED(ItemCategory);
-	UE_MVVM_BROADCAST_FIELD_VALUE_CHANGED(ItemTags);
-	UE_MVVM_BROADCAST_FIELD_VALUE_CHANGED(bIsMaterial);
+	if (bItemCategoryChanged)
+	{
+		UE_MVVM_BROADCAST_FIELD_VALUE_CHANGED(ItemCategory);
+	}
+	if (bItemTagsChanged)
+	{
+		UE_MVVM_BROADCAST_FIELD_VALUE_CHANGED(ItemTags);
+	}
+	if (bIsMaterialChanged)
+	{
+		UE_MVVM_BROADCAST_FIELD_VALUE_CHANGED(bIsMaterial);
+	}
 }
 
 void URpgInventoryUiDataFragmentViewModel::InitializeFromEntry(const FRpgInventoryEntryView& Entry)
 {
+	const URpgInventoryFragment_UIData* UIData = Entry.Instance ? Entry.Instance->FindFragmentByClass<URpgInventoryFragment_UIData>() : nullptr;
+	const TSoftObjectPtr<UTexture2D> NewIcon =
+		UIData ? UIData->Icon : TSoftObjectPtr<UTexture2D>();
+	const FText NewShortDisplayName =
+		UIData ? UIData->ShortDisplayName : FText::GetEmpty();
+	const FText NewDescription =
+		UIData ? UIData->Description : FText::GetEmpty();
+	const FGameplayTagContainer NewPresentationTags =
+		UIData ? UIData->PresentationTags : FGameplayTagContainer();
+	const bool bIconChanged = Icon != NewIcon;
+	const bool bShortDisplayNameChanged =
+		!ShortDisplayName.IdenticalTo(
+			NewShortDisplayName,
+			FieldNotifyTextIdentityFlags);
+	const bool bDescriptionChanged =
+		!Description.IdenticalTo(NewDescription, FieldNotifyTextIdentityFlags);
+	const bool bPresentationTagsChanged =
+		PresentationTags != NewPresentationTags;
+
+	Icon = NewIcon;
+	ShortDisplayName = NewShortDisplayName;
+	Description = NewDescription;
+	PresentationTags = NewPresentationTags;
+
 	Super::InitializeFromEntry(Entry);
 
-	const URpgInventoryFragment_UIData* UIData = Entry.Instance ? Entry.Instance->FindFragmentByClass<URpgInventoryFragment_UIData>() : nullptr;
-	Icon = UIData ? UIData->Icon : TSoftObjectPtr<UTexture2D>();
-	ShortDisplayName = UIData ? UIData->ShortDisplayName : FText::GetEmpty();
-	Description = UIData ? UIData->Description : FText::GetEmpty();
-	PresentationTags = UIData ? UIData->PresentationTags : FGameplayTagContainer();
-
-	UE_MVVM_BROADCAST_FIELD_VALUE_CHANGED(Icon);
-	UE_MVVM_BROADCAST_FIELD_VALUE_CHANGED(ShortDisplayName);
-	UE_MVVM_BROADCAST_FIELD_VALUE_CHANGED(Description);
-	UE_MVVM_BROADCAST_FIELD_VALUE_CHANGED(PresentationTags);
+	if (bIconChanged)
+	{
+		UE_MVVM_BROADCAST_FIELD_VALUE_CHANGED(Icon);
+	}
+	if (bShortDisplayNameChanged)
+	{
+		UE_MVVM_BROADCAST_FIELD_VALUE_CHANGED(ShortDisplayName);
+	}
+	if (bDescriptionChanged)
+	{
+		UE_MVVM_BROADCAST_FIELD_VALUE_CHANGED(Description);
+	}
+	if (bPresentationTagsChanged)
+	{
+		UE_MVVM_BROADCAST_FIELD_VALUE_CHANGED(PresentationTags);
+	}
 }
 
 void URpgInventoryEntryViewModel::InitializeFromEntry(
 	const FRpgInventoryEntryView& Entry,
 	const TMap<TSubclassOf<URpgInventoryItemFragment>, TSubclassOf<URpgInventoryFragmentViewModel>>& FragmentViewModelClasses)
 {
-	const bool bWasChanged =
-		InventoryOwner != Entry.InventoryOwner ||
-		ItemInstance != Entry.Instance ||
-		ItemId != Entry.ItemId ||
-		EntryId != Entry.EntryId ||
-		StackCount != Entry.StackCount ||
-		Placement.GetContainerHandle() != Entry.Placement.GetContainerHandle() ||
-		Placement.X != Entry.Placement.X ||
-		Placement.Y != Entry.Placement.Y ||
-		Placement.bRotated != Entry.Placement.bRotated ||
-		bIsEmptySlot != (Entry.Instance == nullptr);
+	const TObjectPtr<UActorComponent> NewInventoryOwner = Entry.InventoryOwner;
+	const TObjectPtr<URpgInventoryItemInstance> NewItemInstance = Entry.Instance;
+	const FRpgInventoryItemId NewItemId = Entry.ItemId;
+	const FGuid NewEntryId = Entry.EntryId;
+	const int32 NewStackCount = Entry.StackCount;
+	const FRpgInventoryGridPlacement NewPlacement = Entry.Placement;
+	FText NewDisplayName = FText::GetEmpty();
+	FText NewShortDisplayName = FText::GetEmpty();
+	FText NewDescription = FText::GetEmpty();
+	TSoftObjectPtr<UTexture2D> NewIcon;
+	ERpgInventoryItemCategory NewItemCategory = ERpgInventoryItemCategory::Misc;
+	FGameplayTagContainer NewItemTags;
+	FGameplayTagContainer NewPresentationTags;
+	const bool bNewCanDrag = NewItemInstance != nullptr && NewStackCount > 0;
+	const bool bNewIsEmptySlot = NewItemInstance == nullptr;
+	TArray<TObjectPtr<URpgInventoryFragmentViewModel>> NewFragmentViewModels;
 
-	InventoryOwner = Entry.InventoryOwner;
-	ItemInstance = Entry.Instance;
-	ItemId = Entry.ItemId;
-	EntryId = Entry.EntryId;
-	StackCount = Entry.StackCount;
-	Placement = Entry.Placement;
-	DisplayName = FText::GetEmpty();
-	ShortDisplayName = FText::GetEmpty();
-	Description = FText::GetEmpty();
-	Icon.Reset();
-	ItemCategory = ERpgInventoryItemCategory::Misc;
-	ItemTags.Reset();
-	PresentationTags.Reset();
-	bCanDrag = ItemInstance != nullptr && StackCount > 0;
-	bIsEmptySlot = ItemInstance == nullptr;
-	FragmentViewModels.Reset();
-
-	if (ItemInstance)
+	if (NewItemInstance)
 	{
-		if (const TSubclassOf<URpgInventoryItemDefinition> ItemDef = ItemInstance->GetItemDef())
+		if (const TSubclassOf<URpgInventoryItemDefinition> ItemDef =
+				NewItemInstance->GetItemDef())
 		{
 			if (const URpgInventoryItemDefinition* ItemCDO = GetDefault<URpgInventoryItemDefinition>(ItemDef))
 			{
-				DisplayName = ItemCDO->DisplayName;
+				NewDisplayName = ItemCDO->DisplayName;
 			}
 		}
 
-		if (const URpgInventoryFragment_UIData* UIData = ItemInstance->FindFragmentByClass<URpgInventoryFragment_UIData>())
+		if (const URpgInventoryFragment_UIData* UIData =
+				NewItemInstance->FindFragmentByClass<URpgInventoryFragment_UIData>())
 		{
-			Icon = UIData->Icon;
-			ShortDisplayName = UIData->ShortDisplayName.IsEmpty() ? DisplayName : UIData->ShortDisplayName;
-			Description = UIData->Description;
-			PresentationTags = UIData->PresentationTags;
+			NewIcon = UIData->Icon;
+			NewShortDisplayName = UIData->ShortDisplayName.IsEmpty()
+				? NewDisplayName
+				: UIData->ShortDisplayName;
+			NewDescription = UIData->Description;
+			NewPresentationTags = UIData->PresentationTags;
 		}
 		else
 		{
-			ShortDisplayName = DisplayName;
+			NewShortDisplayName = NewDisplayName;
 		}
 
-		if (const URpgInventoryFragment_ItemTraits* Traits = ItemInstance->FindFragmentByClass<URpgInventoryFragment_ItemTraits>())
+		if (const URpgInventoryFragment_ItemTraits* Traits =
+				NewItemInstance->FindFragmentByClass<URpgInventoryFragment_ItemTraits>())
 		{
-			ItemCategory = Traits->ItemCategory;
-			ItemTags = Traits->ItemTags;
+			NewItemCategory = Traits->ItemCategory;
+			NewItemTags = Traits->ItemTags;
 		}
 	}
 
-	auto AddFragmentViewModel = [this, &Entry](TSubclassOf<URpgInventoryFragmentViewModel> ViewModelClass)
+	auto AddFragmentViewModel =
+		[this, &Entry, &NewFragmentViewModels](
+			TSubclassOf<URpgInventoryFragmentViewModel> ViewModelClass)
 	{
 		if (!ViewModelClass)
 		{
@@ -129,39 +218,145 @@ void URpgInventoryEntryViewModel::InitializeFromEntry(
 		if (FragmentViewModel)
 		{
 			FragmentViewModel->InitializeFromEntry(Entry);
-			FragmentViewModels.Add(FragmentViewModel);
+			NewFragmentViewModels.Add(FragmentViewModel);
 		}
 	};
 
-	if (ItemInstance)
+	if (NewItemInstance)
 	{
 		AddFragmentViewModel(URpgInventoryStackFragmentViewModel::StaticClass());
 
 		for (const TPair<TSubclassOf<URpgInventoryItemFragment>, TSubclassOf<URpgInventoryFragmentViewModel>>& Mapping : FragmentViewModelClasses)
 		{
-			if (Mapping.Key && Mapping.Value && ItemInstance->FindFragmentByClass(Mapping.Key) != nullptr)
+			if (Mapping.Key && Mapping.Value &&
+				NewItemInstance->FindFragmentByClass(Mapping.Key) != nullptr)
 			{
 				AddFragmentViewModel(Mapping.Value);
 			}
 		}
 	}
 
-	UE_MVVM_BROADCAST_FIELD_VALUE_CHANGED(InventoryOwner);
-	UE_MVVM_BROADCAST_FIELD_VALUE_CHANGED(ItemInstance);
-	UE_MVVM_BROADCAST_FIELD_VALUE_CHANGED(ItemId);
-	UE_MVVM_BROADCAST_FIELD_VALUE_CHANGED(EntryId);
-	UE_MVVM_BROADCAST_FIELD_VALUE_CHANGED(StackCount);
-	UE_MVVM_BROADCAST_FIELD_VALUE_CHANGED(Placement);
-	UE_MVVM_BROADCAST_FIELD_VALUE_CHANGED(DisplayName);
-	UE_MVVM_BROADCAST_FIELD_VALUE_CHANGED(ShortDisplayName);
-	UE_MVVM_BROADCAST_FIELD_VALUE_CHANGED(Description);
-	UE_MVVM_BROADCAST_FIELD_VALUE_CHANGED(Icon);
-	UE_MVVM_BROADCAST_FIELD_VALUE_CHANGED(ItemCategory);
-	UE_MVVM_BROADCAST_FIELD_VALUE_CHANGED(ItemTags);
-	UE_MVVM_BROADCAST_FIELD_VALUE_CHANGED(PresentationTags);
-	UE_MVVM_BROADCAST_FIELD_VALUE_CHANGED(bCanDrag);
-	UE_MVVM_BROADCAST_FIELD_VALUE_CHANGED(bIsEmptySlot);
-	UE_MVVM_BROADCAST_FIELD_VALUE_CHANGED(FragmentViewModels);
+	const bool bInventoryOwnerChanged = InventoryOwner != NewInventoryOwner;
+	const bool bItemInstanceChanged = ItemInstance != NewItemInstance;
+	const bool bItemIdChanged = ItemId != NewItemId;
+	const bool bEntryIdChanged = EntryId != NewEntryId;
+	const bool bStackCountChanged = StackCount != NewStackCount;
+	const bool bPlacementChanged = !(Placement == NewPlacement);
+	const bool bDisplayNameChanged =
+		!DisplayName.IdenticalTo(NewDisplayName, FieldNotifyTextIdentityFlags);
+	const bool bShortDisplayNameChanged =
+		!ShortDisplayName.IdenticalTo(
+			NewShortDisplayName,
+			FieldNotifyTextIdentityFlags);
+	const bool bDescriptionChanged =
+		!Description.IdenticalTo(NewDescription, FieldNotifyTextIdentityFlags);
+	const bool bIconChanged = Icon != NewIcon;
+	const bool bItemCategoryChanged = ItemCategory != NewItemCategory;
+	const bool bItemTagsChanged = ItemTags != NewItemTags;
+	const bool bPresentationTagsChanged =
+		PresentationTags != NewPresentationTags;
+	const bool bCanDragChanged = bCanDrag != bNewCanDrag;
+	const bool bIsEmptySlotChanged = bIsEmptySlot != bNewIsEmptySlot;
+	const bool bFragmentViewModelsChanged =
+		!AreViewModelArraysEqual(FragmentViewModels, NewFragmentViewModels);
+	const bool bWasChanged =
+		bInventoryOwnerChanged ||
+		bItemInstanceChanged ||
+		bItemIdChanged ||
+		bEntryIdChanged ||
+		bStackCountChanged ||
+		bPlacementChanged ||
+		bDisplayNameChanged ||
+		bShortDisplayNameChanged ||
+		bDescriptionChanged ||
+		bIconChanged ||
+		bItemCategoryChanged ||
+		bItemTagsChanged ||
+		bPresentationTagsChanged ||
+		bCanDragChanged ||
+		bIsEmptySlotChanged;
+
+	InventoryOwner = NewInventoryOwner;
+	ItemInstance = NewItemInstance;
+	ItemId = NewItemId;
+	EntryId = NewEntryId;
+	StackCount = NewStackCount;
+	Placement = NewPlacement;
+	DisplayName = NewDisplayName;
+	ShortDisplayName = NewShortDisplayName;
+	Description = NewDescription;
+	Icon = NewIcon;
+	ItemCategory = NewItemCategory;
+	ItemTags = NewItemTags;
+	PresentationTags = NewPresentationTags;
+	bCanDrag = bNewCanDrag;
+	bIsEmptySlot = bNewIsEmptySlot;
+	FragmentViewModels = MoveTemp(NewFragmentViewModels);
+
+	if (bInventoryOwnerChanged)
+	{
+		UE_MVVM_BROADCAST_FIELD_VALUE_CHANGED(InventoryOwner);
+	}
+	if (bItemInstanceChanged)
+	{
+		UE_MVVM_BROADCAST_FIELD_VALUE_CHANGED(ItemInstance);
+	}
+	if (bItemIdChanged)
+	{
+		UE_MVVM_BROADCAST_FIELD_VALUE_CHANGED(ItemId);
+	}
+	if (bEntryIdChanged)
+	{
+		UE_MVVM_BROADCAST_FIELD_VALUE_CHANGED(EntryId);
+	}
+	if (bStackCountChanged)
+	{
+		UE_MVVM_BROADCAST_FIELD_VALUE_CHANGED(StackCount);
+	}
+	if (bPlacementChanged)
+	{
+		UE_MVVM_BROADCAST_FIELD_VALUE_CHANGED(Placement);
+	}
+	if (bDisplayNameChanged)
+	{
+		UE_MVVM_BROADCAST_FIELD_VALUE_CHANGED(DisplayName);
+	}
+	if (bShortDisplayNameChanged)
+	{
+		UE_MVVM_BROADCAST_FIELD_VALUE_CHANGED(ShortDisplayName);
+	}
+	if (bDescriptionChanged)
+	{
+		UE_MVVM_BROADCAST_FIELD_VALUE_CHANGED(Description);
+	}
+	if (bIconChanged)
+	{
+		UE_MVVM_BROADCAST_FIELD_VALUE_CHANGED(Icon);
+	}
+	if (bItemCategoryChanged)
+	{
+		UE_MVVM_BROADCAST_FIELD_VALUE_CHANGED(ItemCategory);
+	}
+	if (bItemTagsChanged)
+	{
+		UE_MVVM_BROADCAST_FIELD_VALUE_CHANGED(ItemTags);
+	}
+	if (bPresentationTagsChanged)
+	{
+		UE_MVVM_BROADCAST_FIELD_VALUE_CHANGED(PresentationTags);
+	}
+	if (bCanDragChanged)
+	{
+		UE_MVVM_BROADCAST_FIELD_VALUE_CHANGED(bCanDrag);
+	}
+	if (bIsEmptySlotChanged)
+	{
+		UE_MVVM_BROADCAST_FIELD_VALUE_CHANGED(bIsEmptySlot);
+	}
+	if (bFragmentViewModelsChanged)
+	{
+		UE_MVVM_BROADCAST_FIELD_VALUE_CHANGED(FragmentViewModels);
+	}
 	if (bWasChanged)
 	{
 		OnEntryChanged.Broadcast(this);
@@ -211,7 +406,7 @@ void URpgInventoryPanelViewModel::BindInventoryContainer(
 		return;
 	}
 
-	UnbindInventory();
+	UnregisterInventoryMessageListener();
 	ObservedInventory = InInventory;
 	ContainerFilter = InContainerHandle;
 	RegisterInventoryMessageListener();
@@ -223,21 +418,29 @@ void URpgInventoryPanelViewModel::UnbindInventory()
 	UnregisterInventoryMessageListener();
 	ObservedInventory.Reset();
 	ContainerFilter = FRpgInventoryContainerHandle();
+	const bool bEntriesChanged = !Entries.IsEmpty();
 	Entries.Reset();
 	bRefreshEntriesQueued = false;
 	RefreshCapacityFields(nullptr);
-	UE_MVVM_BROADCAST_FIELD_VALUE_CHANGED(Entries);
+	if (bEntriesChanged)
+	{
+		UE_MVVM_BROADCAST_FIELD_VALUE_CHANGED(Entries);
+	}
 	OnEntriesChanged.Broadcast();
 }
 
 void URpgInventoryPanelViewModel::RefreshEntries()
 {
 	URpgInventoryManagerComponent* Inventory = ObservedInventory.Get();
-	RefreshCapacityFields(Inventory);
 	if (!Inventory)
 	{
+		const bool bEntriesChanged = !Entries.IsEmpty();
 		Entries.Reset();
-		UE_MVVM_BROADCAST_FIELD_VALUE_CHANGED(Entries);
+		RefreshCapacityFields(nullptr);
+		if (bEntriesChanged)
+		{
+			UE_MVVM_BROADCAST_FIELD_VALUE_CHANGED(Entries);
+		}
 		OnEntriesChanged.Broadcast();
 		return;
 	}
@@ -308,36 +511,70 @@ void URpgInventoryPanelViewModel::RefreshEntries()
 		AddEntryViewModel(EntryViewModel, EntryView);
 	}
 
-	UE_MVVM_BROADCAST_FIELD_VALUE_CHANGED(Entries);
+	RefreshCapacityFields(Inventory);
+
+	if (!AreViewModelArraysEqual(PreviousEntries, Entries))
+	{
+		UE_MVVM_BROADCAST_FIELD_VALUE_CHANGED(Entries);
+	}
 	OnEntriesChanged.Broadcast();
 }
 
 void URpgInventoryPanelViewModel::RefreshCapacityFields(URpgInventoryManagerComponent* Inventory)
 {
-	if (!Inventory)
+	int32 NewUsedEntries = 0;
+	int32 NewMaxEntries = 0;
+	int32 NewFreeEntries = 0;
+	bool bNewIsUnlimited = false;
+	FText NewCapacityText = FText::GetEmpty();
+
+	if (Inventory)
 	{
-		UsedEntries = 0;
-		MaxEntries = 0;
-		FreeEntries = 0;
-		bIsUnlimited = false;
-		CapacityText = FText::GetEmpty();
-	}
-	else
-	{
-		UsedEntries = Inventory->GetUsedEntryCount();
-		MaxEntries = Inventory->GetMaxEntries();
-		FreeEntries = Inventory->GetFreeEntryCount();
-		bIsUnlimited = Inventory->IsCapacityUnlimited();
-		CapacityText = bIsUnlimited
+		NewUsedEntries = Inventory->GetUsedEntryCount();
+		NewMaxEntries = Inventory->GetMaxEntries();
+		NewFreeEntries = Inventory->GetFreeEntryCount();
+		bNewIsUnlimited = Inventory->IsCapacityUnlimited();
+		NewCapacityText = bNewIsUnlimited
 			? FText::FromString(TEXT("Unlimited"))
-			: FText::FromString(FString::Printf(TEXT("%d / %d"), UsedEntries, MaxEntries));
+			: FText::FromString(FString::Printf(
+				TEXT("%d / %d"),
+				NewUsedEntries,
+				NewMaxEntries));
 	}
 
-	UE_MVVM_BROADCAST_FIELD_VALUE_CHANGED(UsedEntries);
-	UE_MVVM_BROADCAST_FIELD_VALUE_CHANGED(MaxEntries);
-	UE_MVVM_BROADCAST_FIELD_VALUE_CHANGED(FreeEntries);
-	UE_MVVM_BROADCAST_FIELD_VALUE_CHANGED(bIsUnlimited);
-	UE_MVVM_BROADCAST_FIELD_VALUE_CHANGED(CapacityText);
+	const bool bUsedEntriesChanged = UsedEntries != NewUsedEntries;
+	const bool bMaxEntriesChanged = MaxEntries != NewMaxEntries;
+	const bool bFreeEntriesChanged = FreeEntries != NewFreeEntries;
+	const bool bIsUnlimitedChanged = bIsUnlimited != bNewIsUnlimited;
+	const bool bCapacityTextChanged =
+		!CapacityText.IdenticalTo(NewCapacityText, FieldNotifyTextIdentityFlags);
+
+	UsedEntries = NewUsedEntries;
+	MaxEntries = NewMaxEntries;
+	FreeEntries = NewFreeEntries;
+	bIsUnlimited = bNewIsUnlimited;
+	CapacityText = NewCapacityText;
+
+	if (bUsedEntriesChanged)
+	{
+		UE_MVVM_BROADCAST_FIELD_VALUE_CHANGED(UsedEntries);
+	}
+	if (bMaxEntriesChanged)
+	{
+		UE_MVVM_BROADCAST_FIELD_VALUE_CHANGED(MaxEntries);
+	}
+	if (bFreeEntriesChanged)
+	{
+		UE_MVVM_BROADCAST_FIELD_VALUE_CHANGED(FreeEntries);
+	}
+	if (bIsUnlimitedChanged)
+	{
+		UE_MVVM_BROADCAST_FIELD_VALUE_CHANGED(bIsUnlimited);
+	}
+	if (bCapacityTextChanged)
+	{
+		UE_MVVM_BROADCAST_FIELD_VALUE_CHANGED(CapacityText);
+	}
 }
 
 void URpgInventoryPanelViewModel::RequestRefreshEntries()

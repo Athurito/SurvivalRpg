@@ -10,6 +10,13 @@
 
 #include UE_INLINE_GENERATED_CPP_BY_NAME(RpgInventoryNestedContainerViewModel)
 
+namespace
+{
+	constexpr ETextIdenticalModeFlags FieldNotifyTextIdentityFlags =
+		ETextIdenticalModeFlags::DeepCompare |
+		ETextIdenticalModeFlags::LexicalCompareInvariants;
+}
+
 bool URpgInventoryNestedContainerViewModel::OpenContainerByItemId(
 	URpgInventoryManagerComponent* Inventory,
 	FRpgInventoryItemId ItemId,
@@ -76,24 +83,59 @@ bool URpgInventoryNestedContainerViewModel::OpenContainerHandle(
 		return false;
 	}
 
-	EnsurePanelViewModel();
+	const bool bPanelViewModelChanged = EnsurePanelViewModel();
 	if (!PanelViewModel)
 	{
 		return false;
 	}
 
 	ObservedInventory = Inventory;
+	const FRpgInventoryItemId ResolvedOwnerItemId =
+		ContainerHandle.IsItemOwned() ? ContainerHandle.ItemOwnerId : FRpgInventoryItemId();
+	const bool bActiveContainerHandleChanged = ActiveContainerHandle != ContainerHandle;
+	const bool bOpenOwnerItemIdChanged = OpenOwnerItemId != ResolvedOwnerItemId;
+	const bool bBreadcrumbsChanged = Breadcrumbs != ResolvedBreadcrumbs;
+	const bool bTitleChanged =
+		!Title.IdenticalTo(ResolvedTitle, FieldNotifyTextIdentityFlags);
+	const bool bIsOpenChanged = !bIsOpen;
+
 	ActiveContainerHandle = ContainerHandle;
-	OpenOwnerItemId = ContainerHandle.IsItemOwned() ? ContainerHandle.ItemOwnerId : FRpgInventoryItemId();
-	Breadcrumbs = MoveTemp(ResolvedBreadcrumbs);
-	Title = MoveTemp(ResolvedTitle);
+	OpenOwnerItemId = ResolvedOwnerItemId;
+	Breadcrumbs = ResolvedBreadcrumbs;
+	Title = ResolvedTitle;
 	bIsOpen = true;
 
 	bSuppressPanelEntryCallback = true;
 	PanelViewModel->BindInventoryContainer(Inventory, ContainerHandle);
 	bSuppressPanelEntryCallback = false;
 	RefreshFilterPresentation();
-	BroadcastPresentationFields();
+
+	if (bActiveContainerHandleChanged)
+	{
+		UE_MVVM_BROADCAST_FIELD_VALUE_CHANGED(ActiveContainerHandle);
+	}
+	if (bOpenOwnerItemIdChanged)
+	{
+		UE_MVVM_BROADCAST_FIELD_VALUE_CHANGED(OpenOwnerItemId);
+	}
+	if (bBreadcrumbsChanged)
+	{
+		UE_MVVM_BROADCAST_FIELD_VALUE_CHANGED(Breadcrumbs);
+	}
+	if (bTitleChanged)
+	{
+		UE_MVVM_BROADCAST_FIELD_VALUE_CHANGED(Title);
+	}
+	if (bIsOpenChanged)
+	{
+		UE_MVVM_BROADCAST_FIELD_VALUE_CHANGED(bIsOpen);
+	}
+	if (bPanelViewModelChanged)
+	{
+		UE_MVVM_BROADCAST_FIELD_VALUE_CHANGED(PanelViewModel);
+	}
+
+	OnPresentationChanged.Broadcast();
 	return true;
 }
 
@@ -107,6 +149,26 @@ bool URpgInventoryNestedContainerViewModel::NavigateToBreadcrumb(int32 Breadcrum
 
 void URpgInventoryNestedContainerViewModel::CloseContainer()
 {
+	const FText EmptyText = FText::GetEmpty();
+	const bool bIsOpenChanged = bIsOpen;
+	const bool bOpenOwnerItemIdChanged = OpenOwnerItemId.IsValid();
+	const bool bActiveContainerHandleChanged = ActiveContainerHandle.IsValid();
+	const bool bTitleChanged =
+		!Title.IdenticalTo(EmptyText, FieldNotifyTextIdentityFlags);
+	const bool bBreadcrumbsChanged = !Breadcrumbs.IsEmpty();
+	const bool bFilterQueryChanged =
+		!FilterQuery.IdenticalTo(EmptyText, FieldNotifyTextIdentityFlags);
+	const bool bEntryFilterPresentationChanged = !EntryFilterPresentation.IsEmpty();
+
+	ObservedInventory.Reset();
+	bIsOpen = false;
+	OpenOwnerItemId = FRpgInventoryItemId();
+	ActiveContainerHandle = FRpgInventoryContainerHandle();
+	Title = EmptyText;
+	Breadcrumbs.Reset();
+	FilterQuery = EmptyText;
+	EntryFilterPresentation.Reset();
+
 	bSuppressPanelEntryCallback = true;
 	if (PanelViewModel)
 	{
@@ -114,20 +176,43 @@ void URpgInventoryNestedContainerViewModel::CloseContainer()
 	}
 	bSuppressPanelEntryCallback = false;
 
-	ObservedInventory.Reset();
-	bIsOpen = false;
-	OpenOwnerItemId.Reset();
-	ActiveContainerHandle = FRpgInventoryContainerHandle();
-	Title = FText::GetEmpty();
-	Breadcrumbs.Reset();
-	FilterQuery = FText::GetEmpty();
-	EntryFilterPresentation.Reset();
-	BroadcastPresentationFields();
+	if (bIsOpenChanged)
+	{
+		UE_MVVM_BROADCAST_FIELD_VALUE_CHANGED(bIsOpen);
+	}
+	if (bOpenOwnerItemIdChanged)
+	{
+		UE_MVVM_BROADCAST_FIELD_VALUE_CHANGED(OpenOwnerItemId);
+	}
+	if (bActiveContainerHandleChanged)
+	{
+		UE_MVVM_BROADCAST_FIELD_VALUE_CHANGED(ActiveContainerHandle);
+	}
+	if (bTitleChanged)
+	{
+		UE_MVVM_BROADCAST_FIELD_VALUE_CHANGED(Title);
+	}
+	if (bBreadcrumbsChanged)
+	{
+		UE_MVVM_BROADCAST_FIELD_VALUE_CHANGED(Breadcrumbs);
+	}
+	if (bFilterQueryChanged)
+	{
+		UE_MVVM_BROADCAST_FIELD_VALUE_CHANGED(FilterQuery);
+	}
+	if (bEntryFilterPresentationChanged)
+	{
+		UE_MVVM_BROADCAST_FIELD_VALUE_CHANGED(EntryFilterPresentation);
+	}
+
+	OnPresentationChanged.Broadcast();
 }
 
 void URpgInventoryNestedContainerViewModel::SetFilterQuery(const FText& NewFilterQuery)
 {
-	if (FilterQuery.EqualTo(NewFilterQuery))
+	if (FilterQuery.IdenticalTo(
+			NewFilterQuery,
+			FieldNotifyTextIdentityFlags))
 	{
 		return;
 	}
@@ -198,19 +283,20 @@ void URpgInventoryNestedContainerViewModel::HandlePanelEntriesChanged()
 	}
 
 	RefreshFilterPresentation();
-	BroadcastPresentationFields();
+	OnPresentationChanged.Broadcast();
 }
 
-void URpgInventoryNestedContainerViewModel::EnsurePanelViewModel()
+bool URpgInventoryNestedContainerViewModel::EnsurePanelViewModel()
 {
 	if (PanelViewModel)
 	{
-		return;
+		return false;
 	}
 
-	PanelViewModel = NewObject<URpgInventoryPanelViewModel>(this);
-	PanelViewModel->OnEntriesChanged.AddUniqueDynamic(this, &ThisClass::HandlePanelEntriesChanged);
-	UE_MVVM_BROADCAST_FIELD_VALUE_CHANGED(PanelViewModel);
+	URpgInventoryPanelViewModel* NewPanelViewModel = NewObject<URpgInventoryPanelViewModel>(this);
+	NewPanelViewModel->OnEntriesChanged.AddUniqueDynamic(this, &ThisClass::HandlePanelEntriesChanged);
+	PanelViewModel = NewPanelViewModel;
+	return true;
 }
 
 bool URpgInventoryNestedContainerViewModel::RevalidateOpenContainerBinding()
@@ -252,10 +338,17 @@ bool URpgInventoryNestedContainerViewModel::RevalidateOpenContainerBinding()
 	}
 
 	const bool bHandleChanged = ActiveContainerHandle != ResolvedHandle;
+	const FRpgInventoryItemId ResolvedOwnerItemId =
+		ResolvedHandle.IsItemOwned() ? ResolvedHandle.ItemOwnerId : FRpgInventoryItemId();
+	const bool bOpenOwnerItemIdChanged = OpenOwnerItemId != ResolvedOwnerItemId;
+	const bool bBreadcrumbsChanged = Breadcrumbs != ResolvedBreadcrumbs;
+	const bool bTitleChanged =
+		!Title.IdenticalTo(ResolvedTitle, FieldNotifyTextIdentityFlags);
+
 	ActiveContainerHandle = ResolvedHandle;
-	OpenOwnerItemId = ResolvedHandle.IsItemOwned() ? ResolvedHandle.ItemOwnerId : FRpgInventoryItemId();
-	Breadcrumbs = MoveTemp(ResolvedBreadcrumbs);
-	Title = MoveTemp(ResolvedTitle);
+	OpenOwnerItemId = ResolvedOwnerItemId;
+	Breadcrumbs = ResolvedBreadcrumbs;
+	Title = ResolvedTitle;
 	if (bHandleChanged && PanelViewModel)
 	{
 		bSuppressPanelEntryCallback = true;
@@ -263,12 +356,28 @@ bool URpgInventoryNestedContainerViewModel::RevalidateOpenContainerBinding()
 		bSuppressPanelEntryCallback = false;
 	}
 
+	if (bHandleChanged)
+	{
+		UE_MVVM_BROADCAST_FIELD_VALUE_CHANGED(ActiveContainerHandle);
+	}
+	if (bOpenOwnerItemIdChanged)
+	{
+		UE_MVVM_BROADCAST_FIELD_VALUE_CHANGED(OpenOwnerItemId);
+	}
+	if (bBreadcrumbsChanged)
+	{
+		UE_MVVM_BROADCAST_FIELD_VALUE_CHANGED(Breadcrumbs);
+	}
+	if (bTitleChanged)
+	{
+		UE_MVVM_BROADCAST_FIELD_VALUE_CHANGED(Title);
+	}
 	return true;
 }
 
-void URpgInventoryNestedContainerViewModel::RefreshFilterPresentation()
+bool URpgInventoryNestedContainerViewModel::RefreshFilterPresentation()
 {
-	EntryFilterPresentation.Reset();
+	TArray<FRpgInventoryEntryFilterPresentation> NewFilterPresentation;
 
 	FString NormalizedQuery = FilterQuery.ToString();
 	NormalizedQuery.TrimStartAndEndInline();
@@ -285,7 +394,7 @@ void URpgInventoryNestedContainerViewModel::RefreshFilterPresentation()
 				continue;
 			}
 
-			FRpgInventoryEntryFilterPresentation& Presentation = EntryFilterPresentation.AddDefaulted_GetRef();
+			FRpgInventoryEntryFilterPresentation& Presentation = NewFilterPresentation.AddDefaulted_GetRef();
 			Presentation.ItemId = Entry->GetItemId();
 			Presentation.EntryId = Entry->GetEntryId();
 			Presentation.bMatchesFilter = DoesEntryMatchQuery(Entry, QueryTokens);
@@ -293,7 +402,7 @@ void URpgInventoryNestedContainerViewModel::RefreshFilterPresentation()
 		}
 	}
 
-	UE_MVVM_BROADCAST_FIELD_VALUE_CHANGED(EntryFilterPresentation);
+	return UE_MVVM_SET_PROPERTY_VALUE(EntryFilterPresentation, NewFilterPresentation);
 }
 
 bool URpgInventoryNestedContainerViewModel::BuildBreadcrumbs(
@@ -454,16 +563,4 @@ bool URpgInventoryNestedContainerViewModel::DoesEntryMatchQuery(
 		}
 	}
 	return true;
-}
-
-void URpgInventoryNestedContainerViewModel::BroadcastPresentationFields()
-{
-	UE_MVVM_BROADCAST_FIELD_VALUE_CHANGED(bIsOpen);
-	UE_MVVM_BROADCAST_FIELD_VALUE_CHANGED(OpenOwnerItemId);
-	UE_MVVM_BROADCAST_FIELD_VALUE_CHANGED(ActiveContainerHandle);
-	UE_MVVM_BROADCAST_FIELD_VALUE_CHANGED(Title);
-	UE_MVVM_BROADCAST_FIELD_VALUE_CHANGED(Breadcrumbs);
-	UE_MVVM_BROADCAST_FIELD_VALUE_CHANGED(FilterQuery);
-	UE_MVVM_BROADCAST_FIELD_VALUE_CHANGED(EntryFilterPresentation);
-	OnPresentationChanged.Broadcast();
 }

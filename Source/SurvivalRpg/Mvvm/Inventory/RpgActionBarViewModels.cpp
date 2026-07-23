@@ -16,6 +16,10 @@
 
 namespace
 {
+	constexpr ETextIdenticalModeFlags FieldNotifyTextIdentityFlags =
+		ETextIdenticalModeFlags::DeepCompare |
+		ETextIdenticalModeFlags::LexicalCompareInvariants;
+
 	struct FRpgActionSlotPresentation
 	{
 		TSoftObjectPtr<UTexture2D> Icon;
@@ -103,6 +107,27 @@ namespace
 		NumberFormatting.MaximumFractionalDigits = 0;
 		return FText::AsNumber(FMath::CeilToInt(RemainingSeconds), &NumberFormatting);
 	}
+
+	template <typename ViewModelType>
+	bool AreViewModelArraysEqual(
+		const TArray<TObjectPtr<ViewModelType>>& A,
+		const TArray<TObjectPtr<ViewModelType>>& B)
+	{
+		if (A.Num() != B.Num())
+		{
+			return false;
+		}
+
+		for (int32 Index = 0; Index < A.Num(); ++Index)
+		{
+			if (A[Index].Get() != B[Index].Get())
+			{
+				return false;
+			}
+		}
+
+		return true;
+	}
 }
 
 void URpgActionBarSlotViewModel::InitializeSlot(int32 InSlotIndex, const FRpgActionBarSlot& InSlot, URpgInventoryItemInstance* ResolvedItem, int32 InStackCount)
@@ -118,36 +143,29 @@ void URpgActionBarSlotViewModel::InitializeSlotWithAbilitySystem(
 	const URpgAbilitySystemComponent* AbilitySystem,
 	FText CarryDisplayName)
 {
-	const bool bWasChanged =
-		SlotIndex != InSlotIndex ||
-		SlotType != InSlot.SlotType ||
-		SlotAddress != InSlot.SlotAddress ||
-		ItemInstance != ResolvedItem ||
-		StackCount != InStackCount ||
-		bAvailable != InSlot.bAvailable ||
-		BlockedReason != InSlot.BlockedReason ||
-		AbilityId != InSlot.AbilityId ||
-		CarrySemanticRole != InSlot.CarrySemanticRole;
-
-	SlotIndex = InSlotIndex;
-	SlotType = InSlot.SlotType;
-	bHasContent = !InSlot.IsEmpty();
-	SlotAddress = InSlot.SlotAddress;
-	ItemInstance = ResolvedItem;
-	StackCount = ResolvedItem ? InStackCount : 0;
-	StackCountText = StackCount > 1
-		? FText::AsNumber(StackCount)
+	const int32 NewSlotIndex = InSlotIndex;
+	const ERpgActionBarSlotType NewSlotType = InSlot.SlotType;
+	const bool bNewHasContent = !InSlot.IsEmpty();
+	const FRpgInventorySlotAddress NewSlotAddress = InSlot.SlotAddress;
+	const TObjectPtr<URpgInventoryItemInstance> NewItemInstance =
+		ResolvedItem;
+	const int32 NewStackCount = ResolvedItem ? InStackCount : 0;
+	const FText NewStackCountText = NewStackCount > 1
+		? FText::AsNumber(NewStackCount)
 		: FText::GetEmpty();
-	bAvailable = InSlot.bAvailable;
-	BlockedReason = InSlot.BlockedReason;
-	AbilityId = InSlot.AbilityId;
-	CarrySemanticRole = InSlot.CarrySemanticRole;
-	HotkeyActionRowName = InSlotIndex >= 0
+	const bool bNewAvailable = InSlot.bAvailable;
+	const ERpgQuickAccessBlockedReason NewBlockedReason =
+		InSlot.BlockedReason;
+	const FGameplayTag NewAbilityId = InSlot.AbilityId;
+	const FGameplayTag NewCarrySemanticRole = InSlot.CarrySemanticRole;
+	const FName NewHotkeyActionRowName = InSlotIndex >= 0
 		? FName(*FString::Printf(TEXT("UI.ActionBar.Slot.%d"), InSlotIndex + 1))
 		: NAME_None;
 
-	FRpgActionSlotPresentation Presentation = BuildActionBarItemPresentation(ItemInstance);
-	if (InSlot.SlotType == ERpgActionBarSlotType::Consumable && !ItemInstance)
+	FRpgActionSlotPresentation Presentation =
+		BuildActionBarItemPresentation(NewItemInstance);
+	if (InSlot.SlotType == ERpgActionBarSlotType::Consumable &&
+		!NewItemInstance)
 	{
 		Presentation = BuildActionBarDefinitionPresentation(InSlot.ConsumableDefinition);
 	}
@@ -157,29 +175,126 @@ void URpgActionBarSlotViewModel::InitializeSlotWithAbilitySystem(
 		Presentation.Icon = AbilityPresentation.Icon;
 		Presentation.ShortDisplayName = AbilityPresentation.DisplayName;
 	}
-	Icon = Presentation.Icon;
-	ShortDisplayName = !Presentation.ShortDisplayName.IsEmpty()
+	const TSoftObjectPtr<UTexture2D> NewIcon = Presentation.Icon;
+	const FText NewShortDisplayName = !Presentation.ShortDisplayName.IsEmpty()
 		? Presentation.ShortDisplayName
 		: InSlot.SlotType == ERpgActionBarSlotType::CarrySlot
 			? (!CarryDisplayName.IsEmpty()
 				? CarryDisplayName
 				: NSLOCTEXT("RpgActionBar", "CarrySlotFallback", "Carry Slot"))
-			: (bHasContent ? FText::FromName(InSlot.AbilityId.GetTagName()) : FText::GetEmpty());
+			: (bNewHasContent
+				? FText::FromName(InSlot.AbilityId.GetTagName())
+				: FText::GetEmpty());
 
-	UE_MVVM_BROADCAST_FIELD_VALUE_CHANGED(SlotIndex);
-	UE_MVVM_BROADCAST_FIELD_VALUE_CHANGED(SlotType);
-	UE_MVVM_BROADCAST_FIELD_VALUE_CHANGED(bHasContent);
-	UE_MVVM_BROADCAST_FIELD_VALUE_CHANGED(SlotAddress);
-	UE_MVVM_BROADCAST_FIELD_VALUE_CHANGED(ItemInstance);
-	UE_MVVM_BROADCAST_FIELD_VALUE_CHANGED(StackCount);
-	UE_MVVM_BROADCAST_FIELD_VALUE_CHANGED(StackCountText);
-	UE_MVVM_BROADCAST_FIELD_VALUE_CHANGED(bAvailable);
-	UE_MVVM_BROADCAST_FIELD_VALUE_CHANGED(BlockedReason);
-	UE_MVVM_BROADCAST_FIELD_VALUE_CHANGED(AbilityId);
-	UE_MVVM_BROADCAST_FIELD_VALUE_CHANGED(CarrySemanticRole);
-	UE_MVVM_BROADCAST_FIELD_VALUE_CHANGED(Icon);
-	UE_MVVM_BROADCAST_FIELD_VALUE_CHANGED(ShortDisplayName);
-	UE_MVVM_BROADCAST_FIELD_VALUE_CHANGED(HotkeyActionRowName);
+	const bool bSlotIndexChanged = SlotIndex != NewSlotIndex;
+	const bool bSlotTypeChanged = SlotType != NewSlotType;
+	const bool bHasContentChanged = bHasContent != bNewHasContent;
+	const bool bSlotAddressChanged = SlotAddress != NewSlotAddress;
+	const bool bItemInstanceChanged = ItemInstance != NewItemInstance;
+	const bool bStackCountChanged = StackCount != NewStackCount;
+	const bool bStackCountTextChanged =
+		!StackCountText.IdenticalTo(
+			NewStackCountText,
+			FieldNotifyTextIdentityFlags);
+	const bool bAvailableChanged = bAvailable != bNewAvailable;
+	const bool bBlockedReasonChanged = BlockedReason != NewBlockedReason;
+	const bool bAbilityIdChanged = AbilityId != NewAbilityId;
+	const bool bCarrySemanticRoleChanged =
+		CarrySemanticRole != NewCarrySemanticRole;
+	const bool bIconChanged = Icon != NewIcon;
+	const bool bShortDisplayNameChanged =
+		!ShortDisplayName.IdenticalTo(
+			NewShortDisplayName,
+			FieldNotifyTextIdentityFlags);
+	const bool bHotkeyActionRowNameChanged =
+		HotkeyActionRowName != NewHotkeyActionRowName;
+	const bool bWasChanged =
+		bSlotIndexChanged ||
+		bSlotTypeChanged ||
+		bHasContentChanged ||
+		bSlotAddressChanged ||
+		bItemInstanceChanged ||
+		bStackCountChanged ||
+		bStackCountTextChanged ||
+		bAvailableChanged ||
+		bBlockedReasonChanged ||
+		bAbilityIdChanged ||
+		bCarrySemanticRoleChanged ||
+		bIconChanged ||
+		bShortDisplayNameChanged ||
+		bHotkeyActionRowNameChanged;
+
+	SlotIndex = NewSlotIndex;
+	SlotType = NewSlotType;
+	bHasContent = bNewHasContent;
+	SlotAddress = NewSlotAddress;
+	ItemInstance = NewItemInstance;
+	StackCount = NewStackCount;
+	StackCountText = NewStackCountText;
+	bAvailable = bNewAvailable;
+	BlockedReason = NewBlockedReason;
+	AbilityId = NewAbilityId;
+	CarrySemanticRole = NewCarrySemanticRole;
+	Icon = NewIcon;
+	ShortDisplayName = NewShortDisplayName;
+	HotkeyActionRowName = NewHotkeyActionRowName;
+
+	if (bSlotIndexChanged)
+	{
+		UE_MVVM_BROADCAST_FIELD_VALUE_CHANGED(SlotIndex);
+	}
+	if (bSlotTypeChanged)
+	{
+		UE_MVVM_BROADCAST_FIELD_VALUE_CHANGED(SlotType);
+	}
+	if (bHasContentChanged)
+	{
+		UE_MVVM_BROADCAST_FIELD_VALUE_CHANGED(bHasContent);
+	}
+	if (bSlotAddressChanged)
+	{
+		UE_MVVM_BROADCAST_FIELD_VALUE_CHANGED(SlotAddress);
+	}
+	if (bItemInstanceChanged)
+	{
+		UE_MVVM_BROADCAST_FIELD_VALUE_CHANGED(ItemInstance);
+	}
+	if (bStackCountChanged)
+	{
+		UE_MVVM_BROADCAST_FIELD_VALUE_CHANGED(StackCount);
+	}
+	if (bStackCountTextChanged)
+	{
+		UE_MVVM_BROADCAST_FIELD_VALUE_CHANGED(StackCountText);
+	}
+	if (bAvailableChanged)
+	{
+		UE_MVVM_BROADCAST_FIELD_VALUE_CHANGED(bAvailable);
+	}
+	if (bBlockedReasonChanged)
+	{
+		UE_MVVM_BROADCAST_FIELD_VALUE_CHANGED(BlockedReason);
+	}
+	if (bAbilityIdChanged)
+	{
+		UE_MVVM_BROADCAST_FIELD_VALUE_CHANGED(AbilityId);
+	}
+	if (bCarrySemanticRoleChanged)
+	{
+		UE_MVVM_BROADCAST_FIELD_VALUE_CHANGED(CarrySemanticRole);
+	}
+	if (bIconChanged)
+	{
+		UE_MVVM_BROADCAST_FIELD_VALUE_CHANGED(Icon);
+	}
+	if (bShortDisplayNameChanged)
+	{
+		UE_MVVM_BROADCAST_FIELD_VALUE_CHANGED(ShortDisplayName);
+	}
+	if (bHotkeyActionRowNameChanged)
+	{
+		UE_MVVM_BROADCAST_FIELD_VALUE_CHANGED(HotkeyActionRowName);
+	}
 
 	if (bWasChanged)
 	{
@@ -277,7 +392,10 @@ void URpgActionBarViewModel::RefreshSlots()
 		Slots.Add(SlotViewModel);
 	}
 
-	UE_MVVM_BROADCAST_FIELD_VALUE_CHANGED(Slots);
+	if (!AreViewModelArraysEqual(PreviousSlots, Slots))
+	{
+		UE_MVVM_BROADCAST_FIELD_VALUE_CHANGED(Slots);
+	}
 	OnSlotsChanged.Broadcast();
 }
 
@@ -386,37 +504,77 @@ void URpgWeaponAbilitySlotViewModel::InitializeSlotWithAbilitySystem(
 	const FRpgWeaponAbilityLoadoutSlot& InSlot,
 	const URpgAbilitySystemComponent* InAbilitySystem)
 {
-	const bool bWasChanged =
-		SlotIndex != InSlotIndex ||
-		AbilityIdTag != InSlot.AbilityIdTag ||
-		bAvailable != InSlot.bAvailable;
-	const FRpgAbilitySlotPresentation Presentation = BuildAbilityPresentation(InSlot.AbilityIdTag, InAbilitySystem);
-	const bool bPresentationChanged =
-		!DisplayName.EqualTo(Presentation.DisplayName) ||
-		!Description.EqualTo(Presentation.Description) ||
-		Icon != Presentation.Icon;
-
-	SlotIndex = InSlotIndex;
-	AbilityIdTag = InSlot.AbilityIdTag;
-	bAvailable = InSlot.bAvailable;
-	DisplayName = Presentation.DisplayName;
-	Description = Presentation.Description;
-	Icon = Presentation.Icon;
-	HotkeyActionRowName = InSlotIndex >= 0
+	const int32 NewSlotIndex = InSlotIndex;
+	const FGameplayTag NewAbilityIdTag = InSlot.AbilityIdTag;
+	const bool bNewAvailable = InSlot.bAvailable;
+	const FRpgAbilitySlotPresentation Presentation =
+		BuildAbilityPresentation(NewAbilityIdTag, InAbilitySystem);
+	const FText NewDisplayName = Presentation.DisplayName;
+	const FText NewDescription = Presentation.Description;
+	const TSoftObjectPtr<UTexture2D> NewIcon = Presentation.Icon;
+	const FName NewHotkeyActionRowName = InSlotIndex >= 0
 		? FName(*FString::Printf(TEXT("UI.WeaponAbility.%d"), InSlotIndex + 1))
 		: NAME_None;
 
-	UE_MVVM_BROADCAST_FIELD_VALUE_CHANGED(SlotIndex);
-	UE_MVVM_BROADCAST_FIELD_VALUE_CHANGED(AbilityIdTag);
-	UE_MVVM_BROADCAST_FIELD_VALUE_CHANGED(bAvailable);
-	UE_MVVM_BROADCAST_FIELD_VALUE_CHANGED(DisplayName);
-	UE_MVVM_BROADCAST_FIELD_VALUE_CHANGED(Description);
-	UE_MVVM_BROADCAST_FIELD_VALUE_CHANGED(Icon);
-	UE_MVVM_BROADCAST_FIELD_VALUE_CHANGED(HotkeyActionRowName);
+	const bool bSlotIndexChanged = SlotIndex != NewSlotIndex;
+	const bool bAbilityIdTagChanged = AbilityIdTag != NewAbilityIdTag;
+	const bool bAvailableChanged = bAvailable != bNewAvailable;
+	const bool bDisplayNameChanged =
+		!DisplayName.IdenticalTo(NewDisplayName, FieldNotifyTextIdentityFlags);
+	const bool bDescriptionChanged =
+		!Description.IdenticalTo(NewDescription, FieldNotifyTextIdentityFlags);
+	const bool bIconChanged = Icon != NewIcon;
+	const bool bHotkeyActionRowNameChanged =
+		HotkeyActionRowName != NewHotkeyActionRowName;
+	const bool bWasChanged =
+		bSlotIndexChanged ||
+		bAbilityIdTagChanged ||
+		bAvailableChanged ||
+		bDisplayNameChanged ||
+		bDescriptionChanged ||
+		bIconChanged ||
+		bHotkeyActionRowNameChanged;
+
+	SlotIndex = NewSlotIndex;
+	AbilityIdTag = NewAbilityIdTag;
+	bAvailable = bNewAvailable;
+	DisplayName = NewDisplayName;
+	Description = NewDescription;
+	Icon = NewIcon;
+	HotkeyActionRowName = NewHotkeyActionRowName;
 
 	RefreshCooldown(InAbilitySystem);
 
-	if (bWasChanged || bPresentationChanged)
+	if (bSlotIndexChanged)
+	{
+		UE_MVVM_BROADCAST_FIELD_VALUE_CHANGED(SlotIndex);
+	}
+	if (bAbilityIdTagChanged)
+	{
+		UE_MVVM_BROADCAST_FIELD_VALUE_CHANGED(AbilityIdTag);
+	}
+	if (bAvailableChanged)
+	{
+		UE_MVVM_BROADCAST_FIELD_VALUE_CHANGED(bAvailable);
+	}
+	if (bDisplayNameChanged)
+	{
+		UE_MVVM_BROADCAST_FIELD_VALUE_CHANGED(DisplayName);
+	}
+	if (bDescriptionChanged)
+	{
+		UE_MVVM_BROADCAST_FIELD_VALUE_CHANGED(Description);
+	}
+	if (bIconChanged)
+	{
+		UE_MVVM_BROADCAST_FIELD_VALUE_CHANGED(Icon);
+	}
+	if (bHotkeyActionRowNameChanged)
+	{
+		UE_MVVM_BROADCAST_FIELD_VALUE_CHANGED(HotkeyActionRowName);
+	}
+
+	if (bWasChanged)
 	{
 		OnSlotChanged.Broadcast(this);
 	}
@@ -436,25 +594,44 @@ void URpgWeaponAbilitySlotViewModel::RefreshCooldown(const URpgAbilitySystemComp
 		: 0.0f;
 	const FText NewCooldownText = bNewOnCooldown ? BuildCooldownText(NewCooldownRemainingTime) : FText::GetEmpty();
 
-	const bool bCooldownChanged =
-		bOnCooldown != bNewOnCooldown ||
-		!FMath::IsNearlyEqual(CooldownRemainingTime, NewCooldownRemainingTime, 0.01f) ||
-		!FMath::IsNearlyEqual(CooldownDuration, NewCooldownDuration, 0.01f) ||
-		!FMath::IsNearlyEqual(CooldownPercent, NewCooldownPercent, 0.001f) ||
-		!CooldownText.EqualTo(NewCooldownText);
+	const float PublishedCooldownRemainingTime =
+		bNewOnCooldown ? NewCooldownRemainingTime : 0.0f;
+	const float PublishedCooldownDuration =
+		bNewOnCooldown ? NewCooldownDuration : 0.0f;
+	const bool bOnCooldownChanged = bOnCooldown != bNewOnCooldown;
+	const bool bCooldownRemainingTimeChanged =
+		CooldownRemainingTime != PublishedCooldownRemainingTime;
+	const bool bCooldownDurationChanged =
+		CooldownDuration != PublishedCooldownDuration;
+	const bool bCooldownPercentChanged =
+		CooldownPercent != NewCooldownPercent;
+	const bool bCooldownTextChanged =
+		!CooldownText.IdenticalTo(NewCooldownText, FieldNotifyTextIdentityFlags);
 
 	bOnCooldown = bNewOnCooldown;
-	CooldownRemainingTime = bNewOnCooldown ? NewCooldownRemainingTime : 0.0f;
-	CooldownDuration = bNewOnCooldown ? NewCooldownDuration : 0.0f;
+	CooldownRemainingTime = PublishedCooldownRemainingTime;
+	CooldownDuration = PublishedCooldownDuration;
 	CooldownPercent = NewCooldownPercent;
 	CooldownText = NewCooldownText;
 
-	if (bCooldownChanged)
+	if (bOnCooldownChanged)
 	{
 		UE_MVVM_BROADCAST_FIELD_VALUE_CHANGED(bOnCooldown);
+	}
+	if (bCooldownRemainingTimeChanged)
+	{
 		UE_MVVM_BROADCAST_FIELD_VALUE_CHANGED(CooldownRemainingTime);
+	}
+	if (bCooldownDurationChanged)
+	{
 		UE_MVVM_BROADCAST_FIELD_VALUE_CHANGED(CooldownDuration);
+	}
+	if (bCooldownPercentChanged)
+	{
 		UE_MVVM_BROADCAST_FIELD_VALUE_CHANGED(CooldownPercent);
+	}
+	if (bCooldownTextChanged)
+	{
 		UE_MVVM_BROADCAST_FIELD_VALUE_CHANGED(CooldownText);
 	}
 }
@@ -524,7 +701,10 @@ void URpgWeaponAbilityLoadoutViewModel::RefreshSlots()
 		Slots.Add(SlotViewModel);
 	}
 
-	UE_MVVM_BROADCAST_FIELD_VALUE_CHANGED(Slots);
+	if (!AreViewModelArraysEqual(PreviousSlots, Slots))
+	{
+		UE_MVVM_BROADCAST_FIELD_VALUE_CHANGED(Slots);
+	}
 	OnSlotsChanged.Broadcast();
 }
 

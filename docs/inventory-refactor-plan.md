@@ -2039,7 +2039,7 @@ Status: **In Arbeit**
       exklusiv machen und die Reconciliation-/Destruct-Grenze einschließlich
       OwningPlayer-Kontext dauerhaft testen.
 - [x] Stabile Child-VMs pro Item-ID und Container-Handle verwenden.
-- [ ] Nur tatsächlich geänderte FieldNotify-Felder senden.
+- [x] Nur tatsächlich geänderte FieldNotify-Felder senden.
 - [ ] Inventory-Invalidierungen pro Commit/Tick bündeln.
 - [x] Player- und Storage-Projektionen bei Deaktivierung unbinden, ohne ihre
       screen-owned VM-Instanzen beim Pooling zu ersetzen.
@@ -2116,6 +2116,71 @@ Verifizierter Phase-6A-Zwischenstand vom 2026-07-23:
   abgeschlossen (80,9 %), 18 Punkte offen.
 - Nächster Schnitt: nur tatsächlich geänderte FieldNotify-Felder senden.
 
+Verifizierter Phase-6B-Zwischenstand vom 2026-07-23:
+
+- Der vollständige aktive Inventory-MVVM-Schnitt wurde geprüft und
+  vereinheitlicht: Inventory-Fragmente, Entry und Panel, Player-Address-,
+  Group- und Aggregate-VMs, Loadout, Actionbar und Weapon-Cooldown, Nested
+  Container, BaseStorage sowie Crafting-Ingredient, -Output, -Recipe, -Job
+  und -Station. Die 234 zuvor vorhandenen FieldNotify-Emit-Pfade wurden dabei
+  auf ihren tatsächlichen Änderungsvertrag und ihre Callback-Reihenfolge
+  geprüft.
+- Zusammengehörige Refreshes berechnen jetzt zuerst den vollständigen neuen
+  Snapshot und alle Änderungsflags, weisen anschließend sämtliche finalen
+  Felder zu und senden erst danach FieldNotify. Ein Callback kann dadurch
+  nicht mehr die Hälfte des alten und die Hälfte des neuen Zustands sehen.
+  Jedes Feld wird höchstens dann gemeldet, wenn sein eigener Wert tatsächlich
+  geändert wurde.
+- Parent-Arrays melden nur noch echte strukturelle Änderungen an Anzahl,
+  Reihenfolge oder Child-VM-Pointer. In-place aktualisierte stabile Child-VMs
+  erzeugen keine künstliche Parent-Array-Änderung. Die bewusst weiterhin pro
+  Entry neu aufgebauten optionalen Fragment-Presenter bleiben davon
+  ausgenommen; ihr Pointer-Array ändert sich real und bleibt ein separat
+  dokumentierter MVVM-Legacy-Rest.
+- Neu erzeugte `FText::Format`-, `AsNumber`-, `FromString`- und
+  `FromName`-Werte werden tief beziehungsweise invariant-lexikalisch
+  verglichen. Dadurch entfallen identische Refresh-Notifications, ohne die
+  Localization-History oder verschiedene Text-Keys mit momentan gleicher
+  Übersetzung zusammenzulegen.
+- Panel- und Crafting-Rebinds wechseln Listener und finale Quellen jetzt
+  direkt. Sie veröffentlichen weder ein kurzzeitig leeres Entry-Array noch
+  `null` für Station oder RequestingActor. Der erste FieldNotify-Callback
+  sieht bereits die vollständige neue Bindung. Explizites Unbind behält
+  dagegen seinen neutralen Endzustand und seine bisherigen imperativen
+  Delegates.
+- Nested Container behält `OnPresentationChanged` als imperatives
+  Präsentationsende bei erfolgreichem Open, Panel-Refresh und explizitem
+  Close, während seine deklarativen Felder nur bei echten Änderungen
+  melden. Crafting finalisiert Jobs, Pause-/Resume-Text und davon abhängige
+  Action-Verfügbarkeit vor dem ersten Jobs-Callback. Cooldown-Felder werden
+  einzeln und exakt publiziert.
+- Dieser Schnitt ändert weder Gameplay-Autorität noch Replikation,
+  Inventartransaktionen oder Save-Daten. Die UI bleibt eine read-only
+  Projektion der serverautoritativen Lyra-rooted RPG-Systeme. Für diese reine
+  C++-/Testphase sind keine manuellen Widget-, MVVM- oder Asset-Anpassungen
+  im Editor erforderlich.
+- Acht neue Automationtests prüfen identische Refreshes, isolierte
+  Feldänderungen, stabile Parent-Arrays, atomare erste Callback-Snapshots,
+  Panel-A-zu-B-Rebind, Nested-Presentation, BaseStorage-Ressourcen und
+  Crafting-Station-Rebind. Die gezielten Suiten meldeten Inventory 5 von 5,
+  BaseStorage 1 von 1 und Crafting 2 von 2 erfolgreich.
+- `SurvivalRpgEditor Win64 Development` wurde mit Unreal Engine 5.8 gebaut.
+  Der vollständige Source-Build meldete 29 von 29 Actions, der
+  Fixture-Korrektur-Build 4 von 4 Actions; beide endeten mit
+  `Result: Succeeded`.
+- Die vollständige `SurvivalRpg`-Automation meldete 180 von 180 Tests
+  erfolgreich: BaseStorage 1, Combat 1, Crafting 10, Equipment 6,
+  GameFeatures 3, Harvesting 1, Input 2, Inventory 129, Save 2 und UI 25.
+- `CompileAllBlueprints` endete mit Prozesscode 0, 0 Compilerfehlern,
+  16 bekannten Compilerwarnungen und 0 nicht ladbaren Blueprints.
+- Fortschritt Phase 6: 11 von 22 Punkten abgeschlossen (50,0 %).
+- Gesamtfortschritt der erweiterten verbindlichen Checkliste: 77 von 97
+  Punkten abgeschlossen (79,4 %), 20 Punkte offen. Die Gesamtzahl enthält
+  jetzt die drei auf Nutzerwunsch vorgemerkten Abschlussaufgaben aus
+  Phase 8; deshalb ist der Prozentsatz trotz eines weiteren abgeschlossenen
+  Implementierungspunkts gegenüber dem vorherigen 94-Punkte-Stand niedriger.
+- Nächster Schnitt: Inventory-Invalidierungen pro Commit/Tick bündeln.
+
 ## Phase 7 – Legacy endgültig entfernen
 
 Status: **In Arbeit**
@@ -2150,3 +2215,27 @@ Status: **In Arbeit**
   Payload-Wechsel, Fokus, Gamepad und Mouse-Drag prüfen.
 - Erst nach tatsächlich ausgeführter Verifikation Build-, Netzwerk- oder
   Editor-Korrektheit als bestätigt markieren.
+
+## Phase 8 – Abschlussauswertung und Editor-Handbuch
+
+Status: **Vorgemerkt**
+
+Diese Phase wird erst nach den Implementierungs- und Legacy-Phasen
+abgeschlossen. Ihr Inhalt wird aus dem dann tatsächlich verifizierten
+Repository-, Asset- und Build-Stand erzeugt, nicht aus veralteten
+Zwischenannahmen.
+
+- [ ] Eine vollständige Abschlussauswertung ergänzen: umgesetzte Änderungen,
+      entfernte Legacy-Pfade, verbleibende bewusste Grenzen und die endgültigen
+      Zuständigkeiten für Gameplay-Autorität, ViewModels, Presenter und Widgets
+      nachvollziehbar nach Systembereichen zusammenfassen.
+- [ ] Die erreichten Verbesserungen als Vorher-/Nachher-Auswertung festhalten:
+      Korrektheit, Netzwerk- und Lifecycle-Sicherheit, Editor-Verständlichkeit,
+      UI-Komposition, MVVM-Konsistenz, Wartbarkeit, Testabdeckung und bekannte
+      Restrisiken konkret benennen.
+- [ ] Eine ausführbare Editor-/Blueprint-Checkliste erstellen: notwendige
+      Asset-Resaves, MVVM-Sources und Bindings, Widget- und Screen-Registry-
+      Zuordnungen, Input-/Focus-/Drag-Konfiguration, zu löschende oder zu
+      ersetzende Legacy-Assets sowie die abschließende Compile-, Cook-,
+      Package- und Playtest-Reihenfolge in Pflicht-, Empfehlungs- und
+      „keine manuelle Änderung nötig“-Punkte gliedern.

@@ -31,6 +31,17 @@ struct SURVIVALRPG_API FRpgInventoryContainerBreadcrumb
 	/** True only for the currently displayed breadcrumb. */
 	UPROPERTY(BlueprintReadOnly, Category = "Inventory|Nested Container")
 	bool bCurrent = false;
+
+	friend bool operator==(const FRpgInventoryContainerBreadcrumb& A, const FRpgInventoryContainerBreadcrumb& B)
+	{
+		return A.Label.IdenticalTo(
+				B.Label,
+				ETextIdenticalModeFlags::DeepCompare |
+					ETextIdenticalModeFlags::LexicalCompareInvariants)
+			&& A.Handle == B.Handle
+			&& A.OwnerItemId == B.OwnerItemId
+			&& A.bCurrent == B.bCurrent;
+	}
 };
 
 /** Search presentation for one entry; filtering never removes it or changes its replicated grid placement. */
@@ -54,6 +65,14 @@ struct SURVIVALRPG_API FRpgInventoryEntryFilterPresentation
 	/** UI hint for rendering a non-match with reduced opacity while preserving its exact grid coordinates. */
 	UPROPERTY(BlueprintReadOnly, Category = "Inventory|Nested Container|Filter")
 	bool bDimmed = false;
+
+	friend bool operator==(const FRpgInventoryEntryFilterPresentation& A, const FRpgInventoryEntryFilterPresentation& B)
+	{
+		return A.ItemId == B.ItemId
+			&& A.EntryId == B.EntryId
+			&& A.bMatchesFilter == B.bMatchesFilter
+			&& A.bDimmed == B.bDimmed;
+	}
 };
 
 /** Fired after open/close, breadcrumb, entry, or search presentation changes. */
@@ -175,9 +194,9 @@ private:
 	UFUNCTION()
 	void HandlePanelEntriesChanged();
 
-	void EnsurePanelViewModel();
+	bool EnsurePanelViewModel();
 	bool RevalidateOpenContainerBinding();
-	void RefreshFilterPresentation();
+	bool RefreshFilterPresentation();
 	bool BuildBreadcrumbs(
 		URpgInventoryManagerComponent* Inventory,
 		const FRpgInventoryContainerHandle& ContainerHandle,
@@ -187,7 +206,6 @@ private:
 		URpgInventoryManagerComponent* Inventory,
 		const FRpgInventoryContainerHandle& ContainerHandle) const;
 	bool DoesEntryMatchQuery(const URpgInventoryEntryViewModel* Entry, const TArray<FString>& QueryTokens) const;
-	void BroadcastPresentationFields();
 
 	TWeakObjectPtr<URpgInventoryManagerComponent> ObservedInventory;
 	bool bSuppressPanelEntryCallback = false;
