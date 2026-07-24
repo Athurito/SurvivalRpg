@@ -369,17 +369,17 @@ class SURVIVALRPG_API URpgPlayerInventoryViewModel : public UMVVMViewModelBase
 	GENERATED_BODY()
 
 public:
-	/** Resolves all owner components from an RPG player controller and starts observing them. */
-	UFUNCTION(BlueprintCallable, Category = "Inventory|Player ViewModel")
+	/**
+	 * Native presenter lifecycle entry point that resolves and observes the owning player's gameplay components.
+	 * Rebinding the same controller is supported and refreshes the read-only projection without replacing child VMs.
+	 */
 	void BindPlayerController(APlayerController* InPlayerController);
 
-	/** Stops observing gameplay components and clears presentation lists. */
-	UFUNCTION(BlueprintCallable, Category = "Inventory|Player ViewModel")
+	/**
+	 * Native presenter lifecycle exit point that releases gameplay observation and resets read-only projections.
+	 * The aggregate VM itself remains screen-owned so CommonUI can safely reuse it after deactivation.
+	 */
 	void UnbindPlayerInventory();
-
-	/** Rebuilds gear slots, slot groups, and actionbar slot projections. */
-	UFUNCTION(BlueprintCallable, Category = "Inventory|Player ViewModel")
-	void RefreshAll();
 
 	/** Fixed armor slot VMs in Head, Chest, Hands, Legs, Feet order. */
 	UFUNCTION(BlueprintPure, Category = "Inventory|Player ViewModel")
@@ -450,6 +450,8 @@ protected:
 	TArray<TObjectPtr<URpgActionBarSlotViewModel>> ActionBarSlots;
 
 private:
+	/** Rebuilds every aggregate projection; lifecycle entry points and gameplay-message handlers own refresh timing. */
+	void RefreshAll();
 	void RegisterMessageListeners();
 	void UnregisterMessageListeners();
 	void RequestRefresh(uint8 RefreshDomains);
@@ -467,7 +469,6 @@ private:
 	static TConstArrayView<ERpgEquipmentSlot> GetArmorSlotOrder();
 	static TConstArrayView<ERpgEquipmentSlot> GetBagSlotOrder();
 
-	TWeakObjectPtr<APlayerController> OwningPlayerController;
 	TWeakObjectPtr<URpgInventoryManagerComponent> ObservedPlayerInventory;
 	TWeakObjectPtr<URpgPlayerInventoryLayoutComponent> ObservedInventoryLayout;
 	TWeakObjectPtr<URpgEquipmentLoadoutComponent> ObservedEquipmentLoadout;

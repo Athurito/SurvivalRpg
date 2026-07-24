@@ -2053,7 +2053,7 @@ Status: **In Arbeit**
 - [x] Beim stabilen Root `CUI_PlayerInventory` den öffentlich generierten
       Manual-Source-Setter durch einen unverletzbaren nativen
       Getter-/PropertyPath-Vertrag ersetzen.
-- [ ] BlueprintCallable Lifecycle-Mutatoren der Aggregate-VM nach
+- [x] BlueprintCallable Lifecycle-Mutatoren der Aggregate-VM nach
       Asset-Referenzprüfung auf eine native Presenter-Oberfläche reduzieren.
 - [ ] Player-/Storage-Lifecycle mit echtem PlayerController, PlayerState,
       kanonischem Inventory und Listener-Cleanup als Integrationstest
@@ -2420,6 +2420,54 @@ Verifizierter Phase-6F-Zwischenstand vom 2026-07-24:
   Punkten abgeschlossen (83,5 %), 16 Punkte offen.
 - Nächster Schnitt: BlueprintCallable Lifecycle-Mutatoren der Aggregate-VM
   nach Asset-Referenzprüfung auf eine native Presenter-Oberfläche reduzieren.
+
+Verifizierter Phase-6G-Zwischenstand vom 2026-07-24:
+
+- Der Vorabscan über 2.318 Projektpakete aus `Content` und `Plugins`
+  (2.314 `.uasset`, 4 `.umap`) fand keinen exakten Blueprint-Aufruf von
+  `BindPlayerController`, `UnbindPlayerInventory` oder `RefreshAll` auf
+  `URpgPlayerInventoryViewModel`. Die beiden reinen Namenstreffer für
+  `BindPlayerController` gehören nachweislich zu den getrennten
+  `URpgActionBarViewModel`- und
+  `URpgWeaponAbilityLoadoutViewModel`-Verträgen und bleiben unangetastet.
+- `BindPlayerController` und `UnbindPlayerInventory` sind jetzt öffentliche,
+  nicht reflektierte C++-Lifecycle-Einstiege für die nativen Player-, Storage-
+  und Crafting-Presenter. `RefreshAll` ist private Implementierung der
+  Aggregate-VM. Damit können Blueprints die Beobachtungs- und Refresh-Grenze
+  nicht mehr umgehen; die Blueprint-Oberfläche bleibt auf read-only Getter
+  und Präsentationssignale beschränkt.
+- Der ungenutzte Weak Pointer `OwningPlayerController` wurde entfernt. Die
+  bestehenden Identitäts- und FieldNotify-Verträge lösen eine erneute
+  Projektion jetzt über den echten idempotenten Presenter-Rebind aus, statt
+  den privaten Komplettrefresh direkt aufzurufen.
+- Der permanente Vertrag
+  `SurvivalRpg.Inventory.UI.PlayerAggregateVmLifecycleAssetReferences`
+  erzwingt, dass alle drei Lifecycle-Methoden nicht reflektiert sind. Er lädt
+  und untersucht außerdem alle Projekt-Blueprints sowie Level-Script-
+  Blueprints aus Projektmaps und prüft Funktionsname plus exakten Owner, damit
+  gleichnamige APIs anderer ViewModels keine falschen Treffer erzeugen.
+  Der verifizierte Lauf scannte 228 Blueprint-/Level-Script-Objekte,
+  4 Maps, 2 Level Scripts und 974 CallFunction-Nodes ohne Aggregate-
+  Lifecycle-Aufruf.
+- Der UE-5.8-Build `SurvivalRpgEditor Win64 Development` endete mit
+  `Result: Succeeded`. Die gezielte Suite
+  `SurvivalRpg.Inventory.ViewModel` meldete 12 von 12, die vollständige Suite
+  `SurvivalRpg.Inventory` 139 von 139 und `SurvivalRpg.UI` 26 von 26
+  Automationtests erfolgreich.
+- `CompileAllBlueprints` endete mit Prozesscode 0, 0 Compilerfehlern,
+  16 bekannten Blueprint-Compilerwarnungen und 0 nicht ladbaren Blueprints.
+  Damit ist nach dem Entfernen der Reflection-Metadaten kein verborgener
+  serialisierter K2-Aufruf übrig.
+- Es wurden keine Editor-Assets geändert; Resave, CoreRedirect oder manuelle
+  Blueprint-Migration sind für diesen Schnitt nicht nötig. Als optionale
+  interaktive QA bleiben Aktivieren, Deaktivieren und erneutes Aktivieren der
+  Player-, Storage- und Crafting-Screens sinnvoll.
+- Fortschritt Phase 6: 16 von 22 Punkten abgeschlossen (72,7 %).
+- Gesamtfortschritt der erweiterten verbindlichen Checkliste: 82 von 97
+  Punkten abgeschlossen (84,5 %), 15 Punkte offen.
+- Nächster Schnitt: Player-/Storage-Lifecycle mit echtem PlayerController,
+  PlayerState, kanonischem Inventory und Listener-Cleanup als Integrationstest
+  abdecken.
 
 ## Phase 7 – Legacy endgültig entfernen
 

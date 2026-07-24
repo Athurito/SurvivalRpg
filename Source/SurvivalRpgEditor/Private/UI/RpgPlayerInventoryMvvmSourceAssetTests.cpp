@@ -3,16 +3,84 @@
 #include "SurvivalRpg/Mvvm/Inventory/RpgPlayerInventoryViewModels.h"
 #include "SurvivalRpg/UI/RpgPlayerInventoryWidget.h"
 
+#include "AssetRegistry/AssetData.h"
+#include "AssetRegistry/AssetRegistryModule.h"
+#include "AssetRegistry/IAssetRegistry.h"
 #include "Bindings/MVVMBindingHelper.h"
 #include "Blueprint/WidgetBlueprintGeneratedClass.h"
+#include "EdGraph/EdGraph.h"
+#include "Engine/Blueprint.h"
+#include "Engine/Level.h"
+#include "Engine/LevelScriptBlueprint.h"
+#include "Engine/World.h"
 #include "Editor.h"
+#include "Interfaces/IPluginManager.h"
+#include "K2Node_CallFunction.h"
 #include "Misc/AutomationTest.h"
+#include "Modules/ModuleManager.h"
 #include "MVVMBlueprintView.h"
 #include "MVVMBlueprintViewModelContext.h"
 #include "MVVMEditorSubsystem.h"
 #include "UObject/UnrealType.h"
 #include "View/MVVMViewClass.h"
 #include "WidgetBlueprint.h"
+
+namespace
+{
+	TArray<FName> GetProjectBlueprintContentRoots()
+	{
+		TArray<FName> ContentRoots = { FName(TEXT("/Game")) };
+		for (const TSharedRef<IPlugin>& Plugin :
+			IPluginManager::Get().GetEnabledPluginsWithContent())
+		{
+			if (!Plugin->IsMounted() ||
+				Plugin->GetType() != EPluginType::Project)
+			{
+				continue;
+			}
+
+			FString MountedAssetPath = Plugin->GetMountedAssetPath();
+			MountedAssetPath.RemoveFromEnd(TEXT("/"));
+			if (!MountedAssetPath.IsEmpty())
+			{
+				ContentRoots.AddUnique(FName(*MountedAssetPath));
+			}
+		}
+		return ContentRoots;
+	}
+
+	bool IsPlayerAggregateLifecycleCall(
+		const UK2Node_CallFunction& CallNode,
+		const UBlueprint& Blueprint,
+		const TSet<FName>& LifecycleFunctionNames)
+	{
+		if (!LifecycleFunctionNames.Contains(
+				CallNode.FunctionReference.GetMemberName()))
+		{
+			return false;
+		}
+
+		UClass* BlueprintScope =
+			Blueprint.SkeletonGeneratedClass
+				? Blueprint.SkeletonGeneratedClass
+				: Blueprint.GeneratedClass;
+		const UFunction* TargetFunction =
+			CallNode.GetTargetFunction();
+		const UClass* TargetOwner =
+			TargetFunction
+				? TargetFunction->GetOwnerClass()
+				: CallNode.FunctionReference.GetMemberParentClass(
+					BlueprintScope);
+		return (
+			TargetOwner &&
+				TargetOwner->IsChildOf(
+					URpgPlayerInventoryViewModel::StaticClass())) ||
+			CallNode.FunctionReference.IsSelfContext() &&
+				BlueprintScope &&
+				BlueprintScope->IsChildOf(
+					URpgPlayerInventoryViewModel::StaticClass());
+	}
+}
 
 IMPLEMENT_SIMPLE_AUTOMATION_TEST(
 	FRpgPlayerInventoryMvvmSourceAssetContractTest,
@@ -307,6 +375,205 @@ bool FRpgPlayerInventoryMvvmSourceAssetContractTest::RunTest(
 			TEXT("MVVMAllowedContextCreationType")),
 		FString(TEXT("PropertyPath")));
 
+	return bValid;
+}
+
+IMPLEMENT_SIMPLE_AUTOMATION_TEST(
+	FRpgPlayerInventoryAggregateLifecycleAssetReferenceTest,
+	"SurvivalRpg.Inventory.UI.PlayerAggregateVmLifecycleAssetReferences",
+	EAutomationTestFlags::EditorContext |
+		EAutomationTestFlags::EngineFilter)
+
+bool FRpgPlayerInventoryAggregateLifecycleAssetReferenceTest::RunTest(
+	const FString& Parameters)
+{
+	const TSet<FName> LifecycleFunctionNames =
+	{
+		FName(TEXT("BindPlayerController")),
+		FName(TEXT("UnbindPlayerInventory")),
+		FName(TEXT("RefreshAll")),
+	};
+
+	bool bValid = true;
+	for (const FName LifecycleFunctionName :
+		LifecycleFunctionNames)
+	{
+		bValid &= TestNull(
+			*FString::Printf(
+				TEXT(
+					"Player aggregate lifecycle method %s is not reflected to Blueprint"),
+				*LifecycleFunctionName.ToString()),
+			URpgPlayerInventoryViewModel::StaticClass()->
+				FindFunctionByName(LifecycleFunctionName));
+	}
+
+	IAssetRegistry& AssetRegistry =
+		FModuleManager::LoadModuleChecked<FAssetRegistryModule>(
+			TEXT("AssetRegistry")).Get();
+	AssetRegistry.WaitForCompletion();
+
+	const TArray<FName> ContentRoots =
+		GetProjectBlueprintContentRoots();
+	FARFilter BlueprintFilter;
+	BlueprintFilter.ClassPaths.Add(
+		UBlueprint::StaticClass()->GetClassPathName());
+	BlueprintFilter.bRecursiveClasses = true;
+	BlueprintFilter.bRecursivePaths = true;
+	for (const FName ContentRoot : ContentRoots)
+	{
+		BlueprintFilter.PackagePaths.Add(ContentRoot);
+	}
+
+	TArray<FAssetData> BlueprintAssets;
+	AssetRegistry.GetAssets(BlueprintFilter, BlueprintAssets);
+	BlueprintAssets.Sort(
+		[](const FAssetData& Left, const FAssetData& Right)
+		{
+			return Left.PackageName.LexicalLess(
+				Right.PackageName);
+		});
+
+	int32 ScannedBlueprintCount = 0;
+	int32 ScannedMapCount = 0;
+	int32 ScannedLevelScriptCount = 0;
+	int32 ScannedCallNodeCount = 0;
+	int32 LifecycleCallCount = 0;
+	const auto ScanBlueprint =
+		[this,
+		 &LifecycleFunctionNames,
+		 &ScannedBlueprintCount,
+		 &ScannedCallNodeCount,
+		 &LifecycleCallCount](
+			const UBlueprint& Blueprint,
+			const FString& AssetLabel)
+		{
+			++ScannedBlueprintCount;
+			TArray<UEdGraph*> Graphs;
+			Blueprint.GetAllGraphs(Graphs);
+			for (const UEdGraph* Graph : Graphs)
+			{
+				if (!Graph)
+				{
+					continue;
+				}
+
+				for (const UEdGraphNode* Node : Graph->Nodes)
+				{
+					const UK2Node_CallFunction* CallNode =
+						Cast<UK2Node_CallFunction>(Node);
+					if (!CallNode)
+					{
+						continue;
+					}
+
+					++ScannedCallNodeCount;
+					if (!IsPlayerAggregateLifecycleCall(
+							*CallNode,
+							Blueprint,
+							LifecycleFunctionNames))
+					{
+						continue;
+					}
+
+					++LifecycleCallCount;
+					AddError(
+						FString::Printf(
+							TEXT(
+								"%s graph %s still calls Player aggregate lifecycle mutator %s"),
+							*AssetLabel,
+							*Graph->GetName(),
+							*CallNode->FunctionReference.
+								GetMemberName().ToString()));
+				}
+			}
+		};
+
+	for (const FAssetData& BlueprintAsset : BlueprintAssets)
+	{
+		const UBlueprint* Blueprint =
+			Cast<UBlueprint>(BlueprintAsset.GetAsset());
+		if (!Blueprint)
+		{
+			AddError(
+				FString::Printf(
+					TEXT("Project Blueprint failed to load: %s"),
+					*BlueprintAsset.GetObjectPathString()));
+			bValid = false;
+			continue;
+		}
+
+		ScanBlueprint(
+			*Blueprint,
+			BlueprintAsset.GetObjectPathString());
+	}
+
+	FARFilter WorldFilter;
+	WorldFilter.ClassPaths.Add(
+		UWorld::StaticClass()->GetClassPathName());
+	WorldFilter.bRecursiveClasses = true;
+	WorldFilter.bRecursivePaths = true;
+	for (const FName ContentRoot : ContentRoots)
+	{
+		WorldFilter.PackagePaths.Add(ContentRoot);
+	}
+
+	TArray<FAssetData> WorldAssets;
+	AssetRegistry.GetAssets(WorldFilter, WorldAssets);
+	WorldAssets.Sort(
+		[](const FAssetData& Left, const FAssetData& Right)
+		{
+			return Left.PackageName.LexicalLess(
+				Right.PackageName);
+		});
+	for (const FAssetData& WorldAsset : WorldAssets)
+	{
+		UWorld* World = Cast<UWorld>(WorldAsset.GetAsset());
+		if (!World)
+		{
+			AddError(
+				FString::Printf(
+					TEXT("Project map failed to load: %s"),
+					*WorldAsset.GetObjectPathString()));
+			bValid = false;
+			continue;
+		}
+
+		++ScannedMapCount;
+		for (ULevel* Level : World->GetLevels())
+		{
+			ULevelScriptBlueprint* LevelScript =
+				Level
+					? Level->GetLevelScriptBlueprint(
+						/*bDontCreate=*/ true)
+					: nullptr;
+			if (!LevelScript)
+			{
+				continue;
+			}
+
+			++ScannedLevelScriptCount;
+			ScanBlueprint(
+				*LevelScript,
+				FString::Printf(
+					TEXT("%s [%s]"),
+					*WorldAsset.GetObjectPathString(),
+					*Level->GetName()));
+		}
+	}
+
+	AddInfo(
+		FString::Printf(
+			TEXT(
+				"Scanned %d project Blueprints/level scripts, %d maps, %d level scripts, and %d call nodes for Player aggregate lifecycle references."),
+			ScannedBlueprintCount,
+			ScannedMapCount,
+			ScannedLevelScriptCount,
+			ScannedCallNodeCount));
+	bValid &= TestEqual(
+		TEXT(
+			"Project Blueprint assets and maps own no Player aggregate lifecycle mutator calls"),
+		LifecycleCallCount,
+		0);
 	return bValid;
 }
 

@@ -621,23 +621,23 @@ bool FRpgInventorySlotGroupViewModelStableContainerIdentityTest::RunTest(
 		BeltGroup->GetContainerHandle(),
 		BeltContents);
 
-	PlayerViewModel->RefreshAll();
+	PlayerViewModel->BindPlayerController(Controller);
 	TestEqual(
-		TEXT("A refresh reuses the exact Backpack child VM"),
+		TEXT("A presenter rebind reuses the exact Backpack child VM"),
 		PlayerViewModel->GetSlotGroupByHandle(BackpackContents),
 		BackpackGroup);
 	TestEqual(
-		TEXT("A refresh reuses the exact Belt child VM"),
+		TEXT("A presenter rebind reuses the exact Belt child VM"),
 		PlayerViewModel->GetSlotGroupByHandle(BeltContents),
 		BeltGroup);
 	TestEqual(
-		TEXT("A refresh does not accumulate stale group VMs"),
+		TEXT("A presenter rebind does not accumulate stale group VMs"),
 		CountDirectObjectsOfClass(
 			PlayerViewModel,
 			URpgInventorySlotGroupViewModel::StaticClass()),
 		ExposedGroupCount);
 	TestEqual(
-		TEXT("A refresh does not accumulate stale address VMs"),
+		TEXT("A presenter rebind does not accumulate stale address VMs"),
 		CountDirectObjectsOfClass(
 			PlayerViewModel,
 			URpgInventoryAddressSlotViewModel::StaticClass()),

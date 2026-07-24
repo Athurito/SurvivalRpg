@@ -538,7 +538,6 @@ void URpgPlayerInventoryViewModel::BindPlayerController(APlayerController* InPla
 
 	UnregisterMessageListeners();
 
-	OwningPlayerController = InPlayerController;
 	ObservedPlayerInventory = RpgPlayerState ? RpgPlayerState->GetInventoryManagerComponent() : nullptr;
 	ObservedInventoryLayout = RpgPlayerController ? RpgPlayerController->GetPlayerInventoryLayoutComponent() : nullptr;
 	ObservedEquipmentLoadout = RpgPlayerController ? RpgPlayerController->GetEquipmentLoadoutComponent() : nullptr;
@@ -551,7 +550,6 @@ void URpgPlayerInventoryViewModel::BindPlayerController(APlayerController* InPla
 void URpgPlayerInventoryViewModel::UnbindPlayerInventory()
 {
 	UnregisterMessageListeners();
-	OwningPlayerController.Reset();
 	ObservedPlayerInventory.Reset();
 	ObservedInventoryLayout.Reset();
 	ObservedEquipmentLoadout.Reset();

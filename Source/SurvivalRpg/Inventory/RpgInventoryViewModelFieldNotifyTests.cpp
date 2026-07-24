@@ -885,10 +885,10 @@ bool FRpgPlayerInventoryAggregateFieldNotifyTest::RunTest(
 		return false;
 	}
 
-	ViewModel->RefreshAll();
+	ViewModel->BindPlayerController(Controller);
 	VerifyFieldCounts(
 		*this,
-		TEXT("Unchanged player aggregate refresh"),
+		TEXT("Unchanged player aggregate presenter rebind"),
 		Counter,
 		{});
 
