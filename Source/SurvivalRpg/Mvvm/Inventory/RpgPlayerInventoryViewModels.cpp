@@ -132,7 +132,7 @@ namespace
 	}
 
 	template <typename ViewModelType>
-	bool AreViewModelArraysEqual(
+	bool ArePlayerInventoryViewModelArraysEqual(
 		const TArray<TObjectPtr<ViewModelType>>& A,
 		const TArray<TObjectPtr<ViewModelType>>& B)
 	{
@@ -444,7 +444,8 @@ void URpgInventorySlotGroupViewModel::InitializeGroup(const FRpgInventorySlotGro
 		bProvidedByEquipment != bNewProvidedByEquipment;
 	const bool bSourceEquipmentSlotChanged =
 		SourceEquipmentSlot != NewSourceEquipmentSlot;
-	const bool bSlotsChanged = !AreViewModelArraysEqual(Slots, NewSlots);
+	const bool bSlotsChanged =
+		!ArePlayerInventoryViewModelArraysEqual(Slots, NewSlots);
 
 	ContainerHandle = NewContainerHandle;
 	ContainerId = NewContainerId;
@@ -868,7 +869,9 @@ void URpgPlayerInventoryViewModel::RefreshGearSlots()
 			InOutSlots.Add(SlotViewModel);
 		}
 
-		return !AreViewModelArraysEqual(PreviousSlots, InOutSlots);
+		return !ArePlayerInventoryViewModelArraysEqual(
+			PreviousSlots,
+			InOutSlots);
 	};
 
 	const bool bArmorSlotsChanged =
@@ -986,9 +989,13 @@ void URpgPlayerInventoryViewModel::RefreshSlotGroups()
 	}
 
 	const bool bCarryGroupsChanged =
-		!AreViewModelArraysEqual(CarryGroups, NewCarryGroups);
+		!ArePlayerInventoryViewModelArraysEqual(
+			CarryGroups,
+			NewCarryGroups);
 	const bool bInventoryGroupsChanged =
-		!AreViewModelArraysEqual(InventoryGroups, NewInventoryGroups);
+		!ArePlayerInventoryViewModelArraysEqual(
+			InventoryGroups,
+			NewInventoryGroups);
 
 	CarryGroups = MoveTemp(NewCarryGroups);
 	InventoryGroups = MoveTemp(NewInventoryGroups);
@@ -1050,7 +1057,9 @@ void URpgPlayerInventoryViewModel::RefreshActionBarSlots()
 		ActionBarSlots.Add(SlotViewModel);
 	}
 
-	if (!AreViewModelArraysEqual(PreviousSlots, ActionBarSlots))
+	if (!ArePlayerInventoryViewModelArraysEqual(
+		PreviousSlots,
+		ActionBarSlots))
 	{
 		UE_MVVM_BROADCAST_FIELD_VALUE_CHANGED(ActionBarSlots);
 	}

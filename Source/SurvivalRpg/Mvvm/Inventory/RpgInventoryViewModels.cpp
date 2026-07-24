@@ -17,7 +17,7 @@ namespace
 		ETextIdenticalModeFlags::LexicalCompareInvariants;
 
 	template <typename ViewModelType>
-	bool AreViewModelArraysEqual(
+	bool AreInventoryViewModelArraysEqual(
 		const TArray<TObjectPtr<ViewModelType>>& A,
 		const TArray<TObjectPtr<ViewModelType>>& B)
 	{
@@ -258,7 +258,9 @@ void URpgInventoryEntryViewModel::InitializeFromEntry(
 	const bool bCanDragChanged = bCanDrag != bNewCanDrag;
 	const bool bIsEmptySlotChanged = bIsEmptySlot != bNewIsEmptySlot;
 	const bool bFragmentViewModelsChanged =
-		!AreViewModelArraysEqual(FragmentViewModels, NewFragmentViewModels);
+		!AreInventoryViewModelArraysEqual(
+			FragmentViewModels,
+			NewFragmentViewModels);
 	const bool bWasChanged =
 		bInventoryOwnerChanged ||
 		bItemInstanceChanged ||
@@ -515,7 +517,7 @@ void URpgInventoryPanelViewModel::RefreshEntries()
 
 	RefreshCapacityFields(Inventory);
 
-	if (!AreViewModelArraysEqual(PreviousEntries, Entries))
+	if (!AreInventoryViewModelArraysEqual(PreviousEntries, Entries))
 	{
 		UE_MVVM_BROADCAST_FIELD_VALUE_CHANGED(Entries);
 	}

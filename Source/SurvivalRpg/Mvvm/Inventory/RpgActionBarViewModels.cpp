@@ -109,7 +109,7 @@ namespace
 	}
 
 	template <typename ViewModelType>
-	bool AreViewModelArraysEqual(
+	bool AreActionBarViewModelArraysEqual(
 		const TArray<TObjectPtr<ViewModelType>>& A,
 		const TArray<TObjectPtr<ViewModelType>>& B)
 	{
@@ -394,7 +394,7 @@ void URpgActionBarViewModel::RefreshSlots()
 		Slots.Add(SlotViewModel);
 	}
 
-	if (!AreViewModelArraysEqual(PreviousSlots, Slots))
+	if (!AreActionBarViewModelArraysEqual(PreviousSlots, Slots))
 	{
 		UE_MVVM_BROADCAST_FIELD_VALUE_CHANGED(Slots);
 	}
@@ -747,7 +747,7 @@ void URpgWeaponAbilityLoadoutViewModel::RefreshSlots()
 		Slots.Add(SlotViewModel);
 	}
 
-	if (!AreViewModelArraysEqual(PreviousSlots, Slots))
+	if (!AreActionBarViewModelArraysEqual(PreviousSlots, Slots))
 	{
 		UE_MVVM_BROADCAST_FIELD_VALUE_CHANGED(Slots);
 	}

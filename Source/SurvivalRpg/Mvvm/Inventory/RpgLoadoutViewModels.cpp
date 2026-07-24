@@ -83,7 +83,7 @@ namespace
 	}
 
 	template <typename ViewModelType>
-	bool AreViewModelArraysEqual(
+	bool AreLoadoutViewModelArraysEqual(
 		const TArray<TObjectPtr<ViewModelType>>& A,
 		const TArray<TObjectPtr<ViewModelType>>& B)
 	{
@@ -223,7 +223,7 @@ void URpgEquipmentLoadoutViewModel::RefreshSlots()
 		++SlotViewModelIndex;
 	}
 
-	if (!AreViewModelArraysEqual(PreviousSlots, Slots))
+	if (!AreLoadoutViewModelArraysEqual(PreviousSlots, Slots))
 	{
 		UE_MVVM_BROADCAST_FIELD_VALUE_CHANGED(Slots);
 	}

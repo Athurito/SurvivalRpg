@@ -86,7 +86,7 @@ namespace
 	}
 
 	template <typename ViewModelType>
-	bool AreViewModelArraysEqual(
+	bool AreCraftingViewModelArraysEqual(
 		const TArray<TObjectPtr<ViewModelType>>& A,
 		const TArray<TObjectPtr<ViewModelType>>& B)
 	{
@@ -1225,7 +1225,7 @@ void URpgCraftingStationViewModel::RebuildRecipeList()
 	}
 
 	const bool bRecipeListChanged =
-		!AreViewModelArraysEqual(FilteredRecipes, NewFilteredRecipes);
+		!AreCraftingViewModelArraysEqual(FilteredRecipes, NewFilteredRecipes);
 	const bool bRecipeOrderChanged =
 		!AreRecipeOrdersEqual(PreviousRecipeOrder, NewFilteredRecipes);
 	SelectedRecipe = NewSelectedRecipe;
@@ -1313,11 +1313,13 @@ void URpgCraftingStationViewModel::RebuildSelectedRecipeDetails()
 			NewPauseResumeButtonText,
 			CraftingTextIdentityFlags);
 	const bool bSelectedIngredientsChanged =
-		!AreViewModelArraysEqual(
+		!AreCraftingViewModelArraysEqual(
 			SelectedIngredients,
 			NewSelectedIngredients);
 	const bool bSelectedOutputsChanged =
-		!AreViewModelArraysEqual(SelectedOutputs, NewSelectedOutputs);
+		!AreCraftingViewModelArraysEqual(
+			SelectedOutputs,
+			NewSelectedOutputs);
 
 	CraftQuantity = NewCraftQuantity;
 	MaxSelectedCraftQuantity = NewMaxSelectedCraftQuantity;
@@ -1406,7 +1408,8 @@ void URpgCraftingStationViewModel::RebuildJobs()
 
 	const FText NewPauseResumeButtonText =
 		MakePauseResumeButtonText(bNewStationPaused);
-	const bool bJobListChanged = !AreViewModelArraysEqual(Jobs, NewJobs);
+	const bool bJobListChanged =
+		!AreCraftingViewModelArraysEqual(Jobs, NewJobs);
 	const bool bJobOrderChanged =
 		!AreJobOrdersEqual(PreviousJobOrder, NewJobs);
 	const bool bStationPausedChanged = bStationPaused != bNewStationPaused;
