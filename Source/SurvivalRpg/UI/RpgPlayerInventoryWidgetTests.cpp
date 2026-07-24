@@ -427,6 +427,16 @@ bool FRpgPlayerInventoryViewModelCompositionTest::RunTest(const FString& Paramet
 	TestTrue(
 		TEXT("Screen-owned VM initializes before an owning player context is assigned"),
 		PlayerWidgetGeneratedClass->bCanCallInitializedWithoutPlayerContext);
+	TestNotNull(
+		TEXT("Native presenter exposes the canonical PropertyPath getter"),
+		PlayerWidgetClass->FindFunctionByName(
+			GET_FUNCTION_NAME_CHECKED(
+				URpgPlayerInventoryWidget,
+				GetPlayerInventoryViewModel)));
+	TestNull(
+		TEXT("Compiled widget exposes no generated Player VM setter"),
+		PlayerWidgetClass->FindFunctionByName(
+			TEXT("SetRpgPlayerInventoryViewModel")));
 
 	URpgPlayerInventoryWidget* Widget =
 		CreateWidget<URpgPlayerInventoryWidget>(
@@ -451,10 +461,10 @@ bool FRpgPlayerInventoryViewModelCompositionTest::RunTest(const FString& Paramet
 		CountDirectPlayerInventoryViewModels(Widget),
 		1);
 	TestEqual(
-		TEXT("Aggregate VM only permits native/manual MVVM composition"),
+		TEXT("Aggregate VM only permits native PropertyPath composition"),
 		URpgPlayerInventoryViewModel::StaticClass()->GetMetaData(
 			TEXT("MVVMAllowedContextCreationType")),
-		FString(TEXT("Manual")));
+		FString(TEXT("PropertyPath")));
 
 	UMVVMView* View = UMVVMSubsystem::GetViewFromUserWidget(Widget);
 	if (!TestNotNull(TEXT("Authored Player Inventory has a compiled MVVM view"), View) ||
@@ -462,6 +472,19 @@ bool FRpgPlayerInventoryViewModelCompositionTest::RunTest(const FString& Paramet
 	{
 		return false;
 	}
+
+	// PropertyPath sources follow the normal MVVM lifecycle and resolve when the authored Slate view constructs.
+	ICommonInputModule::GetSettings().LoadData();
+	TSharedPtr<SWidget> SlateWidget = Widget->TakeWidget();
+	if (!TestTrue(
+			TEXT("Player Inventory constructs its authored Slate representation"),
+			SlateWidget.IsValid()))
+	{
+		return false;
+	}
+	TestTrue(
+		TEXT("Player Inventory PropertyPath source initializes during construction"),
+		View->AreSourcesInitialized());
 
 	const TArrayView<const FMVVMViewClass_Source> CompiledSources =
 		View->GetViewClass()->GetSources();
@@ -494,14 +517,14 @@ bool FRpgPlayerInventoryViewModelCompositionTest::RunTest(const FString& Paramet
 		TEXT("Canonical source expects the aggregate Player Inventory VM class"),
 		CompiledSource.GetSourceClass(),
 		URpgPlayerInventoryViewModel::StaticClass());
-	TestTrue(
-		TEXT("Canonical source is settable by the native presenter"),
+	TestFalse(
+		TEXT("Canonical PropertyPath source cannot be replaced"),
 		CompiledSource.CanBeSet());
-	TestTrue(
-		TEXT("Canonical manual source is optional until native initialization injects it"),
+	TestFalse(
+		TEXT("Canonical source is non-optional because native ownership precedes MVVM initialization"),
 		CompiledSource.IsOptional());
-	TestTrue(
-		TEXT("Runtime source records explicit native injection"),
+	TestFalse(
+		TEXT("Runtime source was resolved from the native getter instead of injected manually"),
 		RuntimeSource.bSetManually);
 	TestEqual(
 		TEXT("Runtime MVVM source is exactly the native-owned aggregate VM"),
@@ -916,19 +939,62 @@ bool FRpgPlayerInventoryViewModelPoolingTest::RunTest(const FString& Parameters)
 		return false;
 	}
 
+	// Commandlet automation does not run the normal CommonInput startup path, while CommonActivatableWidget::NativeConstruct
+	// requires its default back-action data. Load the project settings before exercising the real Slate lifecycle.
+	ICommonInputModule::GetSettings().LoadData();
+	TestFalse(
+		TEXT("CreateWidget alone does not initialize the PropertyPath source"),
+		View->AreSourcesInitialized());
+	Widget->ActivateWidget();
+	TestTrue(
+		TEXT("Player screen may activate before its first Slate construction"),
+		Widget->IsActivated());
+	TestEqual(
+		TEXT("Activation before construction retains the native-owned VM"),
+		Widget->GetPlayerInventoryViewModel(),
+		ViewModel);
+	TestFalse(
+		TEXT("Activation before construction does not fabricate a runtime MVVM source"),
+		View->AreSourcesInitialized());
+	Widget->DeactivateWidget();
+	TestFalse(
+		TEXT("Pre-construction Player screen deactivates cleanly"),
+		Widget->IsActivated());
+
+	TSharedPtr<SWidget> FirstSlateWidget = Widget->TakeWidget();
+	if (!TestTrue(
+			TEXT("Player screen constructs its first Slate representation"),
+			FirstSlateWidget.IsValid()))
+	{
+		return false;
+	}
+	TestTrue(
+		TEXT("Player screen initializes its native PropertyPath source during construction"),
+		View->AreSourcesInitialized());
+
 	auto VerifyStableComposition = [this, Widget, ViewModel, View](
-		const TCHAR* Phase) -> bool
+		const TCHAR* Phase,
+		const bool bExpectSourceInitialized) -> bool
 	{
 		const FString Prefix(Phase);
 		const bool bVmStable = TestEqual(
 			*(Prefix + TEXT(": native VM pointer remains stable")),
 			Widget->GetPlayerInventoryViewModel(),
 			ViewModel);
-		const bool bSourceStable = TestEqual(
-			*(Prefix + TEXT(": MVVM source pointer remains stable")),
-			View->GetViewModel(
-				URpgPlayerInventoryWidget::PlayerInventoryViewModelSourceName).GetObject(),
-			static_cast<UObject*>(ViewModel));
+		const bool bSourceInitializationMatches = TestEqual(
+			*(Prefix + TEXT(": MVVM source initialization follows the Slate lifecycle")),
+			View->AreSourcesInitialized(),
+			bExpectSourceInitialized);
+		const UObject* RuntimeSource = View->GetViewModel(
+			URpgPlayerInventoryWidget::PlayerInventoryViewModelSourceName).GetObject();
+		const bool bSourceMatchesLifecycle = bExpectSourceInitialized
+			? TestEqual(
+				*(Prefix + TEXT(": initialized PropertyPath resolves the native VM")),
+				RuntimeSource,
+				static_cast<const UObject*>(ViewModel))
+			: TestNull(
+				*(Prefix + TEXT(": released Slate deinitializes the runtime MVVM source")),
+				RuntimeSource);
 		const bool bOuterStable = TestEqual(
 			*(Prefix + TEXT(": VM remains screen-owned")),
 			ViewModel->GetOuter(),
@@ -950,7 +1016,8 @@ bool FRpgPlayerInventoryViewModelPoolingTest::RunTest(const FString& Parameters)
 			CountDelegateBindingsTo(ViewModel->OnActionBarSlotsChanged, Widget),
 			1);
 		return bVmStable &&
-			bSourceStable &&
+			bSourceInitializationMatches &&
+			bSourceMatchesLifecycle &&
 			bOuterStable &&
 			bSingleVm &&
 			bGearDelegateUnique &&
@@ -958,50 +1025,43 @@ bool FRpgPlayerInventoryViewModelPoolingTest::RunTest(const FString& Parameters)
 			bActionBarDelegateUnique;
 	};
 
-	if (!VerifyStableComposition(TEXT("Initialized")))
+	if (!VerifyStableComposition(TEXT("Initialized"), true))
 	{
 		return false;
 	}
 
-	// UE 5.8 exposes settable Manual sources on Create Widget. Simulate a Blueprint ExposeOnSpawn assignment that
-	// runs after NativeOnInitialized and prove that the activation boundary reclaims the native ownership contract.
+	// The PropertyPath source must reject the same replacement that UE 5.8's generated Manual setter previously
+	// allowed. This proves the native getter is the only source authority, including while the screen is active.
 	URpgPlayerInventoryViewModel* ForeignViewModel =
 		NewObject<URpgPlayerInventoryViewModel>(TestWorld.GetTestWorld());
 	TScriptInterface<INotifyFieldValueChanged> ForeignViewModelInterface;
 	ForeignViewModelInterface.SetObject(ForeignViewModel);
 	ForeignViewModelInterface.SetInterface(ForeignViewModel);
-	TestTrue(
-		TEXT("Test can simulate a post-initialization ExposeOnSpawn MVVM assignment"),
+	AddExpectedError(
+		TEXT("cannot be set"),
+		EAutomationExpectedErrorFlags::Contains,
+		1);
+	TestFalse(
+		TEXT("Runtime MVVM API rejects replacement of the native PropertyPath source"),
 		View->SetViewModel(
 			URpgPlayerInventoryWidget::PlayerInventoryViewModelSourceName,
 			ForeignViewModelInterface));
 	TestEqual(
-		TEXT("Simulated ExposeOnSpawn assignment temporarily replaces the MVVM source"),
+		TEXT("Rejected replacement leaves the native-owned VM in the MVVM source"),
 		View->GetViewModel(
 			URpgPlayerInventoryWidget::PlayerInventoryViewModelSourceName).GetObject(),
-		static_cast<UObject*>(ForeignViewModel));
-
-	// Commandlet automation does not run the normal CommonInput startup path, while CommonActivatableWidget::NativeConstruct
-	// requires its default back-action data. Load the project settings before exercising the real Slate lifecycle.
-	ICommonInputModule::GetSettings().LoadData();
-	TSharedPtr<SWidget> FirstSlateWidget = Widget->TakeWidget();
-	if (!TestTrue(
-		TEXT("Player screen constructs its first Slate representation"),
-		FirstSlateWidget.IsValid()))
-	{
-		return false;
-	}
+		static_cast<UObject*>(ViewModel));
 
 	Widget->ActivateWidget();
 	TestTrue(TEXT("Player screen activates through CommonUI"), Widget->IsActivated());
-	if (!VerifyStableComposition(TEXT("Activated")))
+	if (!VerifyStableComposition(TEXT("Activated"), true))
 	{
 		return false;
 	}
 
 	Widget->DeactivateWidget();
 	TestFalse(TEXT("Player screen deactivates through CommonUI"), Widget->IsActivated());
-	if (!VerifyStableComposition(TEXT("Deactivated")))
+	if (!VerifyStableComposition(TEXT("Deactivated"), true))
 	{
 		return false;
 	}
@@ -1010,7 +1070,7 @@ bool FRpgPlayerInventoryViewModelPoolingTest::RunTest(const FString& Parameters)
 	TestFalse(
 		TEXT("Releasing the final Slate reference runs the screen Destruct/release path"),
 		Widget->GetCachedWidget().IsValid());
-	if (!VerifyStableComposition(TEXT("Slate released")))
+	if (!VerifyStableComposition(TEXT("Slate released"), false))
 	{
 		return false;
 	}
@@ -1019,7 +1079,7 @@ bool FRpgPlayerInventoryViewModelPoolingTest::RunTest(const FString& Parameters)
 	if (!TestTrue(
 		TEXT("Pooled Player screen reconstructs its Slate representation"),
 		ReconstructedSlateWidget.IsValid()) ||
-		!VerifyStableComposition(TEXT("Slate reconstructed")))
+		!VerifyStableComposition(TEXT("Slate reconstructed"), true))
 	{
 		return false;
 	}
@@ -1027,7 +1087,7 @@ bool FRpgPlayerInventoryViewModelPoolingTest::RunTest(const FString& Parameters)
 	Widget->ActivateWidget();
 	TestTrue(TEXT("Pooled Player screen reactivates through CommonUI"), Widget->IsActivated());
 	const bool bStableAfterReactivation =
-		VerifyStableComposition(TEXT("Reactivated"));
+		VerifyStableComposition(TEXT("Reactivated"), true);
 	Widget->DeactivateWidget();
 	ReconstructedSlateWidget.Reset();
 	return bStableAfterReactivation;

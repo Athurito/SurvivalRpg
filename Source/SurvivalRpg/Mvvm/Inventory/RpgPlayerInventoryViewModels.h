@@ -363,7 +363,7 @@ protected:
  * This is the one VM CUI_PlayerInventory should bind. It mirrors replicated gameplay state from inventory,
  * equipment loadout, layout, and actionbar components without owning any gameplay truth.
  */
-UCLASS(BlueprintType, meta = (MVVMAllowedContextCreationType = "Manual"))
+UCLASS(BlueprintType, meta = (MVVMAllowedContextCreationType = "PropertyPath"))
 class SURVIVALRPG_API URpgPlayerInventoryViewModel : public UMVVMViewModelBase
 {
 	GENERATED_BODY()

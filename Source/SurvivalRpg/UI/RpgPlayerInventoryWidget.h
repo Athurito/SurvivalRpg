@@ -20,10 +20,11 @@ class UWidget;
 /**
  * Native base for the player inventory screen.
  *
- * The native presenter owns exactly one screen-scoped player-inventory view model and injects that instance into
- * the authored manual MVVM source. It then wires the read-only projection into named Blueprint widgets so the
- * screen does not need manual slot loops or per-entry coordinator setup. Gameplay state stays in inventory,
- * layout, equipment, and actionbar components; this widget only connects view models to CommonUI views.
+ * The native presenter owns exactly one screen-scoped player-inventory view model. The authored MVVM source reads
+ * that stable instance through GetPlayerInventoryViewModel and cannot replace it. The presenter then wires the
+ * read-only projection into named Blueprint widgets so the screen does not need manual slot loops or per-entry
+ * coordinator setup. Gameplay state stays in inventory, layout, equipment, and actionbar components; this widget
+ * only connects view models to CommonUI views.
  */
 UCLASS(Abstract, Blueprintable)
 class SURVIVALRPG_API URpgPlayerInventoryWidget : public URpgInventoryInteractionScreenWidget
@@ -33,12 +34,12 @@ class SURVIVALRPG_API URpgPlayerInventoryWidget : public URpgInventoryInteractio
 public:
 	explicit URpgPlayerInventoryWidget(const FObjectInitializer& ObjectInitializer = FObjectInitializer::Get());
 
-	/** Exact manual MVVM source name authored in CUI_PlayerInventory and populated by this native presenter. */
+	/** Exact read-only PropertyPath MVVM source name authored in CUI_PlayerInventory. */
 	static const FName PlayerInventoryViewModelSourceName;
 
 	/**
-	 * Native-owned aggregate MVVM projection used by this screen.
-	 * Its UObject Outer is this widget and the same instance is retained across CommonUI pooling.
+	 * Native-owned aggregate MVVM projection and the only valid source for CUI_PlayerInventory's PropertyPath.
+	 * Its UObject Outer is this widget, it exists before MVVM initializes, and it remains stable across pooling.
 	 */
 	UFUNCTION(BlueprintPure, Category = "Inventory|Player")
 	URpgPlayerInventoryViewModel* GetPlayerInventoryViewModel() const { return PlayerInventoryViewModel; }
@@ -152,7 +153,7 @@ private:
 	void HandleActionBarSlotsChanged();
 
 	void EnsurePlayerInventoryViewModel();
-	bool InjectPlayerInventoryViewModelIntoMvvm();
+	bool ValidatePlayerInventoryViewModelMvvmContract() const;
 	void BindViewModelDelegates();
 	void RefreshPlayerInventoryViews();
 	void RefreshSlotGroups();

@@ -308,25 +308,24 @@ Verifizierter UI-Zwischenstand vom 2026-07-19:
   `CUI_StorageSpatial` als auch das unreferenzierte Legacy-Rollback-Asset
   `CUI_StorageContainer` nach der nativen Vererbungsänderung ohne
   Blueprint-Compilerfehler; dabei wurden keine Assets gespeichert.
-- Der Player-Presenter besitzt jetzt genau eine screen-scoped
-  `URpgPlayerInventoryViewModel` mit dem Screen als Outer. Er injiziert sie
-  unter dem exakten Namen `RpgPlayerInventoryViewModel` in eine manuelle
-  Blueprint-MVVM-Quelle; Source-Scan, Blueprint-`CreateInstance` und
-  konkurrierender nativer Fallback sind entfernt.
+- Der Player-Presenter besitzt genau eine screen-scoped
+  `URpgPlayerInventoryViewModel` mit dem Screen als Outer und erzeugt sie vor
+  `Super::NativeOnInitialized()`. Die authored Source
+  `RpgPlayerInventoryViewModel` liest diese Instanz über den exakten nativen
+  PropertyPath `GetPlayerInventoryViewModel`; Source-Scan,
+  Blueprint-`CreateInstance`, manuelle Injection und konkurrierender nativer
+  Fallback sind entfernt.
 - `URpgPlayerInventoryViewModel` erlaubt über
-  `MVVMAllowedContextCreationType` nur noch `Manual`. Das kanonische
-  `CUI_PlayerInventory` ist entsprechend gespeichert, optional und
-  initialisiert seine native Ownership auch ohne bereits zugewiesenen
-  Player-Kontext.
-- UE 5.8 generiert für eine setzbare manuelle Source einen
-  Expose-on-Spawn-Setter. Der Player-Presenter validiert deshalb die
-  Pointer-Identität erneut an der Activation-Grenze und holt eine nach
-  `NativeOnInitialized` überschriebene Source auf seine native Instanz zurück.
+  `MVVMAllowedContextCreationType` nur noch `PropertyPath`. Das kanonische
+  `CUI_PlayerInventory` ist nicht optional gespeichert, kann ohne bereits
+  zugewiesenen Player-Kontext initialisieren und besitzt weder einen
+  öffentlichen generierten Setter noch eine `ExposeOnSpawn`-Source.
 - Composition- und Pooling-Tests erzwingen exakt eine direkte Player-VM,
   Screen-Outer, stabile Pointer, eindeutige Delegate-Bindungen,
-  Player-/Storage-getrennte VM-Instanzen und den Expose-on-Spawn-Reclaim. Der
-  Player-Test durchläuft zusätzlich einen echten Slate-Release samt
-  `NativeDestruct` und anschließendem `NativeConstruct`.
+  Player-/Storage-getrennte VM-Instanzen, abgelehnte Fremdzuweisung und
+  Activation vor dem ersten Slate-Construct. Der Player-Test durchläuft
+  zusätzlich einen echten Slate-Release samt `NativeDestruct` und
+  anschließendem `NativeConstruct`.
 - Ein vollständiger Scan von 1.272 Assets und Maps fand keine serialisierten
   Aufrufer der entfernten Player-Blueprint-Lifecycle- und Refresh-Wrapper.
   Diese nachweislich unbenutzte Oberfläche wurde aus dem nativen Presenter
@@ -335,12 +334,11 @@ Verifizierter UI-Zwischenstand vom 2026-07-19:
   MVVM-Bindings. Das erste stabile Leaf `CUI_InventorySlotGroupEntry` verwendet
   jetzt dagegen genau eine optionale manuelle Source und genau ein
   `DisplayName -> Text_GroupName.Text`-Binding.
-- Der Activation-Reclaim schließt den normalen Create-Widget/
-  Expose-on-Spawn-Pfad. Der von UE 5.8 generierte öffentliche Manual-Source-
-  Setter könnte bei einem späteren aktiven Blueprint-Aufruf jedoch erneut
-  eine fremde VM setzen. Aktuell existiert kein gefundener Asset-Aufrufer;
-  langfristig soll ein nativer Getter-/PropertyPath-Vertrag den Setter ganz
-  vermeiden.
+- Der frühere Activation-Reclaim des Player-Roots ist nicht mehr nötig:
+  `CreateWidget` bietet keinen VM-Eingabepin mehr an, und der kompilierte
+  PropertyPath-Vertrag lehnt eine spätere fremde `SetViewModel`-Zuweisung ab.
+  Die dynamischen Leaf-Sources bleiben davon getrennt, weil ihre Presenter
+  Pointerwechsel von A nach B und anschließend auf `null` abbilden müssen.
 - Die Headless-Ownership-Tests verwenden bewusst ownerlose Widgets. Ein
   Integrationstest mit echtem `ARpgPlayerController`, `ARpgPlayerState` und
   kanonischem Player-Inventar bleibt für Listener, Projektion,
@@ -2017,9 +2015,10 @@ Verifizierter Phase-5G-Abschlussstand vom 2026-07-23:
 
 Status: **In Arbeit**
 
-- [x] Der Player-Screen besitzt genau eine native screen-scoped VM, injiziert
-      sie in eine exakte manuelle MVVM-Quelle und behält VM, Source und
-      Delegate-Bindungen stabil über CommonUI-Pooling.
+- [x] Der Player-Screen besitzt genau eine native screen-scoped VM, stellt sie
+      über eine exakte nicht optionale Getter-/PropertyPath-Source read-only
+      bereit und behält VM, Source und Delegate-Bindungen stabil über
+      CommonUI-Pooling.
 - [x] `CUI_InventorySlotGroupEntry` als erstes deklaratives Leaf abschließen:
       genau eine optionale manuelle Source, genau ein
       `DisplayName -> Text_GroupName.Text`-Binding und kein konkurrierender
@@ -2051,8 +2050,9 @@ Status: **In Arbeit**
       BP-Events nur für Animation und imperative Präsentation. Der
       Carry-Spezialfall und die Spatial-Item-Legacy-Graphwriter bleiben den
       ausdrücklich getrennten Folgepunkten zugeordnet.
-- [ ] Den öffentlich generierten Manual-Source-Setter durch einen
-      unverletzbaren nativen Getter-/PropertyPath-Vertrag ersetzen.
+- [x] Beim stabilen Root `CUI_PlayerInventory` den öffentlich generierten
+      Manual-Source-Setter durch einen unverletzbaren nativen
+      Getter-/PropertyPath-Vertrag ersetzen.
 - [ ] BlueprintCallable Lifecycle-Mutatoren der Aggregate-VM nach
       Asset-Referenzprüfung auf eine native Presenter-Oberfläche reduzieren.
 - [ ] Player-/Storage-Lifecycle mit echtem PlayerController, PlayerState,
@@ -2367,6 +2367,59 @@ Verifizierter Phase-6E-Zwischenstand vom 2026-07-24:
   Punkten abgeschlossen (82,5 %), 17 Punkte offen.
 - Nächster Schnitt: Den öffentlich generierten Manual-Source-Setter durch
   einen unverletzbaren nativen Getter-/PropertyPath-Vertrag ersetzen.
+
+Verifizierter Phase-6F-Zwischenstand vom 2026-07-24:
+
+- `CUI_PlayerInventory` besitzt weiterhin genau eine screen-scoped
+  `URpgPlayerInventoryViewModel`. Der native Presenter erzeugt diese stabile
+  Instanz vor `Super::NativeOnInitialized()`, sodass sie bereits vorhanden ist,
+  wenn die MVVM-View-Extension an das Widget gebunden wird.
+- Die authored Source `RpgPlayerInventoryViewModel` verwendet exakt den
+  PropertyPath `GetPlayerInventoryViewModel`. Sie ist nicht optional und
+  kompiliert nicht setzbar. Es werden weder ein öffentlicher Source-Setter noch
+  ein zusätzlicher Getter generiert; die interne Source-Property ist
+  `BlueprintReadOnly`, nicht `ExposeOnSpawn`, `BlueprintPrivate` und besitzt
+  keinen `BlueprintSetter`.
+- `URpgPlayerInventoryViewModel` erlaubt über
+  `MVVMAllowedContextCreationType` nur noch `PropertyPath`. Die frühere
+  manuelle Source-Injektion und das erneute Zurücksetzen beziehungsweise
+  Zurückerobern der Source bei Aktivierung sind entfernt.
+- Initialisierung, Freigabe und erneute Auswertung der Source folgen dem
+  regulären MVVM-Construct-/Destruct-/Reconstruct-Lifecycle. Die native
+  VM-Instanz bleibt über CommonUI-Pooling stabil; ein fremder
+  `SetViewModel`-Versuch wird vom kompilierten Vertrag abgelehnt und kann die
+  native Source nicht ersetzen. Eine gültige Activation vor dem ersten
+  Slate-Construct prüft bereits den kompilierten Vertrag, erwartet den
+  Runtime-Source-Pointer aber erst nach MVVM-Source-Initialisierung.
+- Bewusste Grenze: Die dynamischen Leaves ActionBar, Address, Gear und
+  BaseResource bleiben optionale Manual-Sources. Ihre Presenter wechseln den
+  Source-Pointer während ihrer Lebensdauer von A nach B und anschließend auf
+  `null`; ein authored PropertyPath wird bei diesen Wechseln nicht automatisch
+  neu ausgewertet. Ihre spätere Migration benötigt deshalb eine explizite
+  Source-Reinitialisierung oder stabile Adapter. Phase 6F behauptet ausdrücklich
+  nicht, dass global alle Manual-Source-Setter entfernt wurden.
+- Die permanenten Verträge
+  `SurvivalRpg.Inventory.UI.PlayerMvvmSourceAssetContract`,
+  `SurvivalRpg.Inventory.UI.PlayerViewModelComposition`,
+  `SurvivalRpg.Inventory.UI.PlayerViewModelPooling` und
+  `SurvivalRpg.Inventory.UI.PlayerAuthoredContentHosts` liefen im gezielten
+  Player-Filter 4 von 4 erfolgreich. Der UE-5.8-Build
+  `SurvivalRpgEditor Win64 Development` endete mit `Result: Succeeded`.
+- Die vollständige Suite `SurvivalRpg.Inventory` meldete 138 von 138
+  Automationtests erfolgreich; `SurvivalRpg.UI` meldete 26 von 26
+  Automationtests erfolgreich.
+- `CompileAllBlueprints` endete mit Prozesscode 0, 0 Compilerfehlern,
+  16 bekannten Blueprint-Compilerwarnungen und 0 nicht ladbaren Blueprints.
+- Das migrierte `CUI_PlayerInventory`-Asset ist kompiliert und gespeichert;
+  im Editor ist daher keine verpflichtende MVVM-Source- oder Blueprint-Arbeit
+  nötig. Als interaktive QA bleiben wiederholtes Öffnen, Schließen und erneutes
+  Öffnen des Inventory-Screens sowie die Kontrolle sinnvoll, dass
+  `CreateWidget` keinen Eingabepin für die Player-Inventory-VM anbietet.
+- Fortschritt Phase 6: 15 von 22 Punkten abgeschlossen (68,2 %).
+- Gesamtfortschritt der erweiterten verbindlichen Checkliste: 81 von 97
+  Punkten abgeschlossen (83,5 %), 16 Punkte offen.
+- Nächster Schnitt: BlueprintCallable Lifecycle-Mutatoren der Aggregate-VM
+  nach Asset-Referenzprüfung auf eine native Presenter-Oberfläche reduzieren.
 
 ## Phase 7 – Legacy endgültig entfernen
 

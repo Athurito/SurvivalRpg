@@ -49,21 +49,19 @@ URpgPlayerInventoryWidget::URpgPlayerInventoryWidget(const FObjectInitializer& O
 
 void URpgPlayerInventoryWidget::NativeOnInitialized()
 {
+	// Create the screen-owned VM before Super attaches the compiled MVVM view. The source may initialize now or
+	// later during construction, but its non-optional PropertyPath can therefore never observe a null owner value.
+	EnsurePlayerInventoryViewModel();
 	Super::NativeOnInitialized();
 
-	EnsurePlayerInventoryViewModel();
 	BindViewModelDelegates();
-	InjectPlayerInventoryViewModelIntoMvvm();
 }
 
 void URpgPlayerInventoryWidget::BindInventoryScreenPresentation()
 {
 	EnsurePlayerInventoryViewModel();
 	BindViewModelDelegates();
-	// Manual MVVM sources generate an ExposeOnSpawn setter in UE 5.8. A Blueprint Create Widget node can therefore
-	// assign that source after NativeOnInitialized. Reassert the native-owned instance at the activation boundary so
-	// the presenter and every MVVM leaf always observe the same screen-scoped projection.
-	InjectPlayerInventoryViewModelIntoMvvm();
+	ValidatePlayerInventoryViewModelMvvmContract();
 
 	if (PlayerInventoryViewModel)
 	{
@@ -336,10 +334,15 @@ void URpgPlayerInventoryWidget::EnsurePlayerInventoryViewModel()
 	}
 }
 
-bool URpgPlayerInventoryWidget::InjectPlayerInventoryViewModelIntoMvvm()
+bool URpgPlayerInventoryWidget::ValidatePlayerInventoryViewModelMvvmContract() const
 {
 	if (!PlayerInventoryViewModel)
 	{
+		UE_LOG(
+			LogRpgPlayerInventoryWidget,
+			Error,
+			TEXT("%s has no native-owned player-inventory VM before MVVM validation."),
+			*GetNameSafe(this));
 		return false;
 	}
 
@@ -350,7 +353,7 @@ bool URpgPlayerInventoryWidget::InjectPlayerInventoryViewModelIntoMvvm()
 		UE_LOG(
 			LogRpgPlayerInventoryWidget,
 			Error,
-			TEXT("%s has no compiled MVVM view. Author one manual %s source for the native player-inventory VM."),
+			TEXT("%s has no compiled MVVM view. Author one read-only PropertyPath source named %s."),
 			*GetNameSafe(this),
 			*PlayerInventoryViewModelSourceName.ToString());
 		return false;
@@ -363,40 +366,41 @@ bool URpgPlayerInventoryWidget::InjectPlayerInventoryViewModelIntoMvvm()
 				Candidate.GetName() == PlayerInventoryViewModelSourceName;
 		});
 	if (!CompiledSource ||
-		!CompiledSource->CanBeSet() ||
-		!PlayerInventoryViewModel->IsA(CompiledSource->GetSourceClass()))
+		CompiledSource->CanBeSet() ||
+		CompiledSource->IsOptional() ||
+		CompiledSource->GetSourceClass() !=
+			URpgPlayerInventoryViewModel::StaticClass())
 	{
 		UE_LOG(
 			LogRpgPlayerInventoryWidget,
 			Error,
-			TEXT("%s requires one settable manual MVVM source named %s with type RpgPlayerInventoryViewModel."),
+			TEXT("%s requires one non-optional, non-settable PropertyPath MVVM source named %s with type RpgPlayerInventoryViewModel."),
 			*GetNameSafe(this),
 			*PlayerInventoryViewModelSourceName.ToString());
 		return false;
 	}
 
-	TScriptInterface<INotifyFieldValueChanged> ViewModelInterface;
-	ViewModelInterface.SetObject(PlayerInventoryViewModel);
-	ViewModelInterface.SetInterface(PlayerInventoryViewModel.Get());
-	if (View->GetViewModel(PlayerInventoryViewModelSourceName).GetObject() ==
-		PlayerInventoryViewModel)
+	// CommonUI permits activation before the first Slate construction. In that valid state the compiled contract
+	// already exists, but MVVM has not evaluated any runtime source yet. Pointer identity becomes meaningful only
+	// after InitializeSources and is checked on every later activation.
+	if (!View->AreSourcesInitialized())
 	{
 		return true;
 	}
 
-	if (!View->SetViewModel(PlayerInventoryViewModelSourceName, ViewModelInterface))
+	if (View->GetViewModel(PlayerInventoryViewModelSourceName).GetObject() !=
+		PlayerInventoryViewModel)
 	{
 		UE_LOG(
 			LogRpgPlayerInventoryWidget,
 			Error,
-			TEXT("%s failed to inject its native player-inventory VM into MVVM source %s."),
+			TEXT("%s MVVM source %s did not resolve through GetPlayerInventoryViewModel to the native-owned VM."),
 			*GetNameSafe(this),
 			*PlayerInventoryViewModelSourceName.ToString());
 		return false;
 	}
 
-	return View->GetViewModel(PlayerInventoryViewModelSourceName).GetObject() ==
-		PlayerInventoryViewModel;
+	return true;
 }
 
 void URpgPlayerInventoryWidget::BindViewModelDelegates()
