@@ -3011,6 +3011,69 @@ Verifizierter Phase-6L2D-Zwischenstand vom 2026-07-24:
   Manager-Fassade bleiben in der Core-Datei; der große Cross-Inventory-
   Commit wird als eigener grüner Transactions-Unterschnitt behandelt.
 
+Verifizierter Phase-6L2E1-Zwischenstand vom 2026-07-24:
+
+- Der erste autoritative Transactions-Cluster ist physisch aus der
+  Manager-Hauptdatei nach `RpgInventoryManagerTransactions.cpp` verschoben:
+  Add-Plan-Commit, Grant, Bootstrap samt Preflight, Owned-Instance-Insert,
+  sechs Legacy-Add-/Stack-Wrapper, Removal-Delta-Commit, beide
+  Remove-Wrapper sowie die beiden öffentlichen Consume-Fassaden.
+- 16 Definitionen mit zusammen 712 Implementierungszeilen wurden aus dem
+  Core-TU verschoben. Gegen den vorherigen Stand sind sie bis auf die
+  beabsichtigte, Unity-sichere Umbenennung des TU-lokalen Stacksize-Helpers
+  unverändert. Der Helper liegt nun eindeutig in
+  `RpgInventoryManagerTransactionsPrivate`; `Templates/Greater.h` ist für
+  `TGreater<int32>` explizit eingebunden.
+- Die Abhängigkeitsrichtung bleibt unverändert: Authority, Mutation-Lock,
+  FastArray, Revision, replizierte Subobject-Registrierung und
+  Fragment-Lifecycle gehören weiterhin derselben
+  `URpgInventoryManagerComponent`-Instanz. Der neue TU ist nur eine
+  Implementierungsgrenze und weder ein zweiter Manager noch ein neues
+  UObject, Subsystem oder replizierter State-Owner.
+- `BootstrapSameOwnerReuseAndPreflightPurity` deckt erstmals den erfolgreichen
+  Same-Owner-Rebootstrap ab: wiederholte Preflights lassen Graph, Revision,
+  Mutation-Epoch, UObject, ItemId, Outer, Definition und Runtime-State
+  unverändert; der Commit verwendet dasselbe detached UObject und dieselbe
+  persistente Identität wieder.
+- `ConsumeFacadePreflightCommitParityAndPurity` deckt erstmals die öffentliche
+  Consume-Preflight-Fassade funktional ab: gültige, übergroße, Null- und
+  ungültige Mengen, read-only Preflights sowie ein partieller Commit mit
+  vollständigem Result-, Delta-, Placement-, Identity- und
+  Revisionsvertrag.
+- Drei bereits vorher bestehende Risiken bleiben bewusst als Debt sichtbar:
+  `CanBootstrapItemInstance` ist `BlueprintPure`, erzeugt für fremde detached
+  Items aber ein transientes UObject samt GUID und ruft Fragment-Hooks auf;
+  Pure bedeutet hier nur Inventory-State-Purity, nicht globale Hook-Purity.
+  Zusätzliche Grant-Split-Instanzen führen Fragment-Hooks nach der
+  Plan-/Revisionsprüfung ohne zweiten Revalidation-Gate aus. Außerdem
+  broadcastet `CommitRemovalDeltas` den neuen Graph noch vor
+  `MarkInventoryStateDirty`, sodass synchrone Listener kurz den neuen Graph
+  mit der alten Revision sehen und reentrant mutieren können. Diese
+  Semantiken wurden im mechanischen TU-Schnitt nicht nebenbei verändert.
+- Die Manager-Hauptimplementierung umfasst jetzt 3.512 statt ursprünglich
+  7.510 Zeilen. `RpgInventoryManagerTransactions.cpp` umfasst 752 und
+  `RpgInventoryManagerRulesPlanner.cpp` weiterhin 2.891 Zeilen. Header,
+  UHT/Reflection, Blueprint-/MVVM-Verträge, Save-DTOs und Editor-Assets
+  blieben unverändert; es sind keine CoreRedirects, Resaves oder manuellen
+  Editor-Anpassungen nötig.
+- Der adaptive UE-5.8-Build kompilierte Core, Transactions und die geänderte
+  Testdatei eigenständig und endete mit 8 von 8 Actions erfolgreich. Der
+  echte `-ForceUnity -DisableAdaptiveUnity`-Build endete mit 6 von 6 Actions;
+  beide meldeten `Result: Succeeded`.
+- Die beiden neuen Tests meldeten einzeln jeweils 1 von 1, der vollständige
+  Filter `SurvivalRpg.Inventory.Transaction` 18 von 18 und
+  `SurvivalRpg.Inventory` 152 von 152 Automationtests erfolgreich.
+- Der Manager-Checklistenpunkt bleibt offen, bis Intent-Execute/Replay,
+  Cross-Inventory und Storage ebenfalls physisch getrennt und der
+  Gesamt-Facade-Schnitt geprüft sind. Phase 6 bleibt bei 20 von 22 Punkten
+  (90,9 %), der Gesamtplan bei 86 von 97 Punkten (88,7 %), 11 Punkte sind
+  offen.
+- Nächster Transactions-Schnitt: typed Move/Equip/Transfer/Drop-Fassaden,
+  Replay-Cache und `ExecuteInventoryMutation` als zusammenhängenden
+  Commit-Cluster in den Transactions-TU verschieben. Der mehr als tausend
+  Zeilen große `ExecuteCrossInventoryTransfer`-Commit bleibt ein eigener
+  grüner Unterschnitt, damit Fehlerursachen und Build-Gates eng bleiben.
+
 ## Phase 7 – Legacy endgültig entfernen
 
 Status: **In Arbeit**

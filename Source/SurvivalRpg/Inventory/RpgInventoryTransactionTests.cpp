@@ -7722,6 +7722,151 @@ bool FRpgInventoryRawAddOwnershipGuardTest::RunTest(const FString& Parameters)
 }
 
 IMPLEMENT_SIMPLE_AUTOMATION_TEST(
+	FRpgInventoryBootstrapSameOwnerReuseAndPreflightPurityTest,
+	"SurvivalRpg.Inventory.Transaction.BootstrapSameOwnerReuseAndPreflightPurity",
+	EAutomationTestFlags::EditorContext |
+		EAutomationTestFlags::EngineFilter)
+
+bool FRpgInventoryBootstrapSameOwnerReuseAndPreflightPurityTest::RunTest(
+	const FString& Parameters)
+{
+	using namespace RpgInventoryTransactionTests;
+	FScopedInventoryWorld TestWorld;
+	if (!InitializeTest(*this, TestWorld))
+	{
+		return false;
+	}
+
+	URpgInventoryManagerComponent* Inventory =
+		TestWorld.CreateInventory(TEXT("SameOwnerBootstrapInventory"));
+	if (!TestNotNull(TEXT("The same-owner bootstrap inventory exists"), Inventory))
+	{
+		return false;
+	}
+
+	URpgInventoryItemInstance* DetachedItem =
+		Inventory->GrantItemDefinition(
+			URpgInventoryAutomationTestStackItemDefinition::StaticClass(),
+			1);
+	if (!TestNotNull(TEXT("The same-owner bootstrap fixture exists"), DetachedItem))
+	{
+		return false;
+	}
+
+	DetachedItem->AddStatTagStack(
+		RpgGameplayTags::Ability_Attack_Basic,
+		3);
+	const FRpgInventoryItemId OriginalItemId = DetachedItem->GetItemId();
+	UObject* const OriginalOuter = DetachedItem->GetOuter();
+	const TSubclassOf<URpgInventoryItemDefinition> OriginalDefinition =
+		DetachedItem->GetItemDef();
+	Inventory->RemoveItemInstance(DetachedItem);
+	if (!TestFalse(
+			TEXT("The same-owner fixture is detached before bootstrap"),
+			Inventory->ContainsItemInstance(DetachedItem)))
+	{
+		return false;
+	}
+
+	const FString GraphBeforePreflight =
+		MakeInventorySignature(Inventory);
+	const int32 RevisionBeforePreflight =
+		Inventory->GetInventoryRevision();
+	const uint64 EpochBeforePreflight =
+		Inventory->GetMutationEpoch();
+
+	TestTrue(
+		TEXT("A detached same-owner item passes bootstrap preflight"),
+		Inventory->CanBootstrapItemInstance(DetachedItem, 2));
+	TestTrue(
+		TEXT("Repeated same-owner bootstrap preflight remains deterministic"),
+		Inventory->CanBootstrapItemInstance(DetachedItem, 2));
+	TestEqual(
+		TEXT("Bootstrap preflight preserves the complete graph"),
+		MakeInventorySignature(Inventory),
+		GraphBeforePreflight);
+	TestEqual(
+		TEXT("Bootstrap preflight preserves inventory revision"),
+		Inventory->GetInventoryRevision(),
+		RevisionBeforePreflight);
+	TestEqual(
+		TEXT("Bootstrap preflight preserves mutation epoch"),
+		Inventory->GetMutationEpoch(),
+		EpochBeforePreflight);
+	TestFalse(
+		TEXT("Bootstrap preflight does not make the detached item authoritative"),
+		Inventory->ContainsItemInstance(DetachedItem));
+	TestTrue(
+		TEXT("Bootstrap preflight preserves the detached item identity"),
+		DetachedItem->GetItemId() == OriginalItemId);
+	TestEqual(
+		TEXT("Bootstrap preflight preserves the detached item outer"),
+		DetachedItem->GetOuter(),
+		OriginalOuter);
+	TestTrue(
+		TEXT("Bootstrap preflight preserves the detached item definition"),
+		DetachedItem->GetItemDef() == OriginalDefinition);
+	TestEqual(
+		TEXT("Bootstrap preflight preserves mutable runtime state"),
+		DetachedItem->GetStatTagStackCount(
+			RpgGameplayTags::Ability_Attack_Basic),
+		3);
+
+	URpgInventoryItemInstance* ReusedItem =
+		Inventory->BootstrapItemInstance(DetachedItem, 2);
+	if (!TestNotNull(
+			TEXT("Same-owner bootstrap commits the detached item"),
+			ReusedItem))
+	{
+		return false;
+	}
+
+	TestEqual(
+		TEXT("Same-owner bootstrap reuses the exact UObject"),
+		ReusedItem,
+		DetachedItem);
+	TestEqual(
+		TEXT("Same-owner bootstrap preserves the actor outer"),
+		ReusedItem->GetOuter(),
+		OriginalOuter);
+	TestTrue(
+		TEXT("Same-owner bootstrap preserves the persistent identity"),
+		ReusedItem->GetItemId() == OriginalItemId);
+	TestTrue(
+		TEXT("Same-owner bootstrap preserves the item definition"),
+		ReusedItem->GetItemDef() == OriginalDefinition);
+	TestEqual(
+		TEXT("Same-owner bootstrap preserves mutable runtime state"),
+		ReusedItem->GetStatTagStackCount(
+			RpgGameplayTags::Ability_Attack_Basic),
+		3);
+	TestTrue(
+		TEXT("The reused item is authoritative in the inventory again"),
+		Inventory->ContainsItemInstance(ReusedItem));
+	TestEqual(
+		TEXT("The reused item resolves through its original identity"),
+		Inventory->FindItemById(OriginalItemId),
+		ReusedItem);
+	TestEqual(
+		TEXT("Same-owner bootstrap applies the requested stack quantity"),
+		Inventory->GetItemStackCount(ReusedItem),
+		2);
+	TestEqual(
+		TEXT("Same-owner bootstrap creates exactly one entry"),
+		Inventory->GetUsedEntryCount(),
+		1);
+	TestEqual(
+		TEXT("Same-owner bootstrap advances inventory revision exactly once"),
+		Inventory->GetInventoryRevision(),
+		RevisionBeforePreflight + 1);
+	TestEqual(
+		TEXT("Same-owner bootstrap does not replace the mutation epoch"),
+		Inventory->GetMutationEpoch(),
+		EpochBeforePreflight);
+	return true;
+}
+
+IMPLEMENT_SIMPLE_AUTOMATION_TEST(
 	FRpgDeprecatedPlacementIngressRejectedTest,
 	"SurvivalRpg.Inventory.IntentBoundary.DeprecatedPlacementIngressRejected",
 	EAutomationTestFlags::EditorContext | EAutomationTestFlags::EngineFilter)
@@ -9535,6 +9680,164 @@ bool FRpgInventoryBatchConsumeAtomicityTest::RunTest(
 		TEXT("Rejected provider consume preserves the graph"),
 		MakeInventorySignature(Inventory),
 		BeforeProviderConsume);
+	return true;
+}
+
+IMPLEMENT_SIMPLE_AUTOMATION_TEST(
+	FRpgInventoryConsumeFacadePreflightCommitParityAndPurityTest,
+	"SurvivalRpg.Inventory.Transaction.ConsumeFacadePreflightCommitParityAndPurity",
+	EAutomationTestFlags::EditorContext |
+		EAutomationTestFlags::EngineFilter)
+
+bool FRpgInventoryConsumeFacadePreflightCommitParityAndPurityTest::RunTest(
+	const FString& Parameters)
+{
+	using namespace RpgInventoryTransactionTests;
+	FScopedInventoryWorld TestWorld;
+	if (!InitializeTest(*this, TestWorld))
+	{
+		return false;
+	}
+
+	URpgInventoryManagerComponent* Inventory =
+		TestWorld.CreateInventory(TEXT("ConsumeFacadeInventory"));
+	if (!TestNotNull(TEXT("The consume-facade inventory exists"), Inventory))
+	{
+		return false;
+	}
+
+	const FRpgInventoryContainerHandle Root = MakeStorageHandle();
+	const FRpgInventoryGridPlacement InitialPlacement =
+		MakePlacement(Root, 0, 0);
+	URpgInventoryItemInstance* Item =
+		Inventory->AddItemDefinitionToPlacement(
+			URpgInventoryAutomationTestStackItemDefinition::StaticClass(),
+			3,
+			InitialPlacement);
+	if (!TestNotNull(TEXT("The consume-facade stack exists"), Item))
+	{
+		return false;
+	}
+
+	const FRpgInventoryItemId ItemId = Item->GetItemId();
+	const FString GraphBeforePreflight =
+		MakeInventorySignature(Inventory);
+	const int32 RevisionBeforePreflight =
+		Inventory->GetInventoryRevision();
+	const uint64 EpochBeforePreflight =
+		Inventory->GetMutationEpoch();
+
+	TestTrue(
+		TEXT("Consume preflight accepts an available partial quantity"),
+		Inventory->CanConsumeItemById(ItemId, 2));
+	TestTrue(
+		TEXT("Repeated consume preflight remains deterministic"),
+		Inventory->CanConsumeItemById(ItemId, 2));
+	TestFalse(
+		TEXT("Consume preflight rejects an oversized quantity"),
+		Inventory->CanConsumeItemById(ItemId, 4));
+	TestFalse(
+		TEXT("Consume preflight rejects a zero quantity"),
+		Inventory->CanConsumeItemById(ItemId, 0));
+	TestFalse(
+		TEXT("Consume preflight rejects an invalid item identity"),
+		Inventory->CanConsumeItemById(FRpgInventoryItemId(), 1));
+	TestEqual(
+		TEXT("Consume preflights preserve the complete graph"),
+		MakeInventorySignature(Inventory),
+		GraphBeforePreflight);
+	TestEqual(
+		TEXT("Consume preflights preserve inventory revision"),
+		Inventory->GetInventoryRevision(),
+		RevisionBeforePreflight);
+	TestEqual(
+		TEXT("Consume preflights preserve mutation epoch"),
+		Inventory->GetMutationEpoch(),
+		EpochBeforePreflight);
+	TestEqual(
+		TEXT("Consume preflights preserve the concrete stack quantity"),
+		Inventory->GetItemStackCount(Item),
+		3);
+
+	const FRpgInventoryMutationResult Result =
+		Inventory->ConsumeItemById(ItemId, 2);
+	TestEqual(
+		TEXT("The direct consume facade commits successfully"),
+		Result.Code,
+		ERpgInventoryMutationResultCode::Success);
+	TestEqual(
+		TEXT("The direct consume facade reports Consume"),
+		Result.Operation,
+		ERpgInventoryMutationOperation::Consume);
+	TestTrue(
+		TEXT("The direct consume facade assigns a request id"),
+		Result.RequestId.IsValid());
+	TestEqual(
+		TEXT("The direct consume facade preserves requested quantity"),
+		Result.RequestedQuantity,
+		2);
+	TestEqual(
+		TEXT("The direct consume facade applies the complete requested quantity"),
+		Result.AppliedQuantity,
+		2);
+	TestEqual(
+		TEXT("A partial direct consume emits one authoritative delta"),
+		Result.Deltas.Num(),
+		1);
+	if (Result.Deltas.Num() == 1)
+	{
+		const FRpgInventoryMutationDelta& Delta = Result.Deltas[0];
+		TestEqual(
+			TEXT("The direct consume emits a stack-change delta"),
+			Delta.Kind,
+			ERpgInventoryMutationDeltaKind::StackChanged);
+		TestTrue(
+			TEXT("The stack-change delta retains the concrete item identity"),
+			Delta.ItemId == ItemId);
+		TestEqual(
+			TEXT("The stack-change delta records the previous quantity"),
+			Delta.PreviousQuantity,
+			3);
+		TestEqual(
+			TEXT("The stack-change delta records the remaining quantity"),
+			Delta.NewQuantity,
+			1);
+		TestTrue(
+			TEXT("The stack-change delta preserves its source container"),
+			Delta.BeforeContainer == Root &&
+				Delta.AfterContainer == Root);
+		TestTrue(
+			TEXT("The stack-change delta preserves its placement"),
+			Delta.BeforePlacement == InitialPlacement &&
+				Delta.AfterPlacement == InitialPlacement);
+	}
+
+	TestEqual(
+		TEXT("Partial consume preserves the concrete UObject"),
+		Inventory->FindItemById(ItemId),
+		Item);
+	TestEqual(
+		TEXT("Partial consume leaves the exact remaining quantity"),
+		Inventory->GetItemStackCount(Item),
+		1);
+	TestEqual(
+		TEXT("Partial consume preserves the single inventory entry"),
+		Inventory->GetUsedEntryCount(),
+		1);
+	TestEqual(
+		TEXT("Partial consume advances inventory revision exactly once"),
+		Inventory->GetInventoryRevision(),
+		RevisionBeforePreflight + 1);
+	TestEqual(
+		TEXT("Partial consume does not replace the mutation epoch"),
+		Inventory->GetMutationEpoch(),
+		EpochBeforePreflight);
+	TestFalse(
+		TEXT("The consumed quantity is no longer available"),
+		Inventory->CanConsumeItemById(ItemId, 2));
+	TestTrue(
+		TEXT("The exact remaining quantity remains consumable"),
+		Inventory->CanConsumeItemById(ItemId, 1));
 	return true;
 }
 
