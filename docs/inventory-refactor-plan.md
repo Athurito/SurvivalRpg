@@ -2829,6 +2829,61 @@ Verifizierter Phase-6L2A-Zwischenstand vom 2026-07-24:
   Regeln und die dazugehörigen CanAdd-/CanReceive-Preflights in denselben
   read-only Rules/Planner-TU verschieben.
 
+Verifizierter Phase-6L2B-Zwischenstand vom 2026-07-24:
+
+- Der Placement-/Capacity-Kern liegt jetzt im kanonischen
+  `RpgInventoryManagerRulesPlanner.cpp`: `TryNormalizePlacementForDefinition`,
+  `EvaluatePlacement`, der vollständige interne Evaluator, die read-only
+  Capacity-Abfragen und die effektive Max-Stack-Regel. Insgesamt wurden 973
+  Member-Implementierungszeilen aus der Manager-Hauptdatei verschoben.
+- Der Evaluator deckt weiterhin Add, Move, Equip, Split, Transfer und Restore,
+  Exact sowie FirstFit, Merge, Place, Swap und NoOp ab. Source-Snapshots,
+  Graph-/Depth-/Containerregeln, Scratch-Occupancy, Entry-Kapazität und
+  Revisionen werden unverändert gelesen; der Rules-TU besitzt weiterhin
+  keinen eigenen Zustand und keine Commit-Autorität.
+- Die kanonische Container-vor-Traits-Max-Stack-Policy besitzt jetzt genau
+  eine Implementierung im Rules-TU. Der noch von Storage und Transactions
+  benötigte dateilokale Component-Helfer delegiert auf diese statische
+  Manager-Regel. Capacity-Setter, GAS-Attribut-Binding, Replikation,
+  Mutation-Lock, Replay/Epoch und sämtliche Commit-Pfade verbleiben bewusst
+  auf der Manager-Component.
+- Ein unabhängiger Paritätscheck bestätigte die 934 Evaluatorzeilen nach den
+  acht notwendigen, Unity-sicheren Rules-Helper-Umbenennungen bytegenau.
+  Die verschobenen Capacity-Abfragen sind nach Whitespace-Normalisierung
+  tokenidentisch; der Max-Stack-Callgraph ist azyklisch und behält Container,
+  Traits sowie den Fallbackwert `1` unverändert bei.
+- Der unbenutzte alte Container-Regel-Helper wurde entfernt. Beide
+  Übersetzungseinheiten besitzen ihre direkten Includes; insbesondere
+  `AbilitySystemComponent`, Spatial-/Traits-Typen und UObject-Globals werden
+  nicht mehr durch Unity- oder Player-Includes verborgen.
+- Die Manager-Hauptimplementierung umfasst nun 5.310 statt ursprünglich
+  7.510 Zeilen. Der Rules/Planner-TU ist von 680 auf 1.790 Zeilen gewachsen.
+  Alle reflektierten APIs, Properties, Save-DTOs und Enum-Ordnungen bleiben
+  unverändert.
+- `SurvivalRpgEditor Win64 Development` unter der zum Projekt gehörenden
+  UE-5.8-Toolchain baute den finalen separaten Stand mit 4 von 4 Actions und
+  den echten `-ForceUnity -DisableAdaptiveUnity`-Stand mit 10 von 10 Actions;
+  beide endeten mit `Result: Succeeded`.
+- `SurvivalRpg.Inventory.PlacementEvaluator` meldete 4 von 4 und der
+  vollständige Filter `SurvivalRpg.Inventory` 145 von 145 Automationtests
+  erfolgreich. Damit sind insbesondere Plan-Purity, alle Operationen,
+  Rotation, Root-/ItemOwned-Handles, Subtree-Kapazität und Restore-Scratch
+  auf dem verschobenen Pfad abgedeckt.
+- Es wurden keine Editor-Assets oder Blueprint-Verträge geändert. Im Editor
+  ist kein Resave und keine manuelle MVVM-/Widget-Anpassung nötig; nach einem
+  noch offenen Hot-Reload-Prozess sollte vor manueller QA weiterhin ein
+  vollständiger Editor-Neustart erfolgen.
+- Der Manager-Checklistenpunkt bleibt bis zu den vollständigen
+  Rules/Planner-, Transactions- und Storage-Schnitten offen. Phase 6 bleibt
+  bei 20 von 22 Punkten (90,9 %), der Gesamtplan bei 86 von 97 Punkten
+  (88,7 %), 11 Punkte sind offen.
+- Nächster Schnitt: die öffentlichen CanAdd-/CanReceive- und
+  RequiredNewEntryCount-Preflights samt ausschließlich benötigter
+  Identitätsauflösung in den Rules-TU verschieben. Dabei soll ein gemeinsamer
+  `PublicPreflightParityAndPurity`-Test die bisher fehlenden positiven
+  Transfer-Preflights, wiederholte deterministische Planung, Revision,
+  Mutation-Epoch und Ownership explizit einfrieren.
+
 ## Phase 7 – Legacy endgültig entfernen
 
 Status: **In Arbeit**
