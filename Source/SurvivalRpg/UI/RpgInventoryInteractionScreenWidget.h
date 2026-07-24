@@ -307,6 +307,14 @@ private:
 	void DismissActiveSplitDialogPresentation();
 	void DismissActiveDropConfirmationPresentation();
 	void DismissInventoryModalPresentation();
+	void TrackContextMenuCheckout(
+		URpgInventoryContextMenuWidget& ContextMenu,
+		UWidget* SourceWidget);
+	void TrackSplitDialogCheckout(
+		URpgInventorySplitDialogWidget& SplitDialog,
+		UWidget* SourceWidget);
+	void TrackDropConfirmationCheckout(
+		URpgInventoryDropConfirmationDialogWidget& DropConfirmation);
 	void HandleContextMenuDeactivated(URpgInventoryContextMenuWidget* DeactivatedMenu);
 	void HandleSplitDialogDeactivated(URpgInventorySplitDialogWidget* DeactivatedDialog);
 	void HandleDropConfirmationDeactivated(URpgInventoryDropConfirmationDialogWidget* DeactivatedDialog);
@@ -323,6 +331,7 @@ private:
 	void HandleInventoryActionFeedback(
 		FGameplayTag Channel,
 		const FRpgInventoryActionFeedbackMessage& Message);
+	void ReleaseInventoryScreenPresentation();
 
 	UFUNCTION()
 	void HandleInventoryInteractionStateChanged(

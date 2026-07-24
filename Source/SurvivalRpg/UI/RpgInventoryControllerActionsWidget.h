@@ -62,6 +62,7 @@ public:
 protected:
 	virtual void NativeOnActivated() override;
 	virtual void NativeOnDeactivated() override;
+	virtual void NativeDestruct() override;
 	virtual bool NativeOnHandleBackAction() override;
 	virtual FReply NativeOnKeyDown(const FGeometry& InGeometry, const FKeyEvent& InKeyEvent) override;
 	virtual UWidget* NativeGetDesiredFocusTarget() const override;

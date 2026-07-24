@@ -317,6 +317,15 @@ void URpgInventoryControllerActionsWidget::NativeOnDeactivated()
 	Super::NativeOnDeactivated();
 }
 
+void URpgInventoryControllerActionsWidget::NativeDestruct()
+{
+	// Ownerless automation/reconstruct paths do not always have a GameInstance
+	// through which CommonActivatableWidget can force a final deactivation.
+	UnregisterInventoryControllerActionBindings();
+
+	Super::NativeDestruct();
+}
+
 bool URpgInventoryControllerActionsWidget::NativeOnHandleBackAction()
 {
 	if (HandleInventoryBackAction())

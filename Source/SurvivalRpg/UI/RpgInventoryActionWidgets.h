@@ -194,6 +194,7 @@ protected:
 	virtual void NativeOnInitialized() override;
 	virtual void NativeOnActivated() override;
 	virtual void NativeOnDeactivated() override;
+	virtual void NativeDestruct() override;
 	virtual bool NativeOnHandleBackAction() override;
 	virtual FReply NativeOnKeyDown(const FGeometry& InGeometry, const FKeyEvent& InKeyEvent) override;
 	virtual UWidget* NativeGetDesiredFocusTarget() const override;
@@ -239,12 +240,13 @@ private:
 	UFUNCTION()
 	void HandleCancelClicked();
 
-	/** Source grid remains UI-only; gameplay mutation still routes through its authoritative coordinator path. */
+	/** Weak UI-only source; gameplay mutation still routes through its authoritative coordinator path. */
 	UPROPERTY(Transient)
-	TObjectPtr<URpgInventorySpatialGridWidget> SourceGrid = nullptr;
+	TWeakObjectPtr<URpgInventorySpatialGridWidget> SourceGrid;
 
+	/** Weak logical-address source so a pooled modal cannot retain its previous screen. */
 	UPROPERTY(Transient)
-	TObjectPtr<URpgInventoryAddressSlotWidget> SourceAddressSlot = nullptr;
+	TWeakObjectPtr<URpgInventoryAddressSlotWidget> SourceAddressSlot;
 
 	/** Stable replicated entry identity used to prevent committing against a different selected stack. */
 	UPROPERTY(Transient)
@@ -471,6 +473,7 @@ protected:
 	virtual void NativeOnInitialized() override;
 	virtual void NativeOnActivated() override;
 	virtual void NativeOnDeactivated() override;
+	virtual void NativeDestruct() override;
 	virtual void NativeTick(const FGeometry& MyGeometry, float InDeltaTime) override;
 	virtual bool NativeOnHandleBackAction() override;
 	virtual FReply NativeOnKeyDown(const FGeometry& InGeometry, const FKeyEvent& InKeyEvent) override;
@@ -528,17 +531,17 @@ private:
 	UFUNCTION()
 	void HandleQuickAccessBackClicked();
 
-	/** Grid source that resolves and dispatches semantic actions; null for equipment-source menus. */
+	/** Weak grid source so a pooled menu cannot retain the screen that opened it. */
 	UPROPERTY(Transient)
-	TObjectPtr<URpgInventorySpatialGridWidget> SourceGrid = nullptr;
+	TWeakObjectPtr<URpgInventorySpatialGridWidget> SourceGrid;
 
-	/** Gear slot source used instead of SourceGrid for equipment-context actions. */
+	/** Weak gear-slot source used instead of SourceGrid for equipment-context actions. */
 	UPROPERTY(Transient)
-	TObjectPtr<URpgEquipmentSlotWidget> SourceEquipmentSlot = nullptr;
+	TWeakObjectPtr<URpgEquipmentSlotWidget> SourceEquipmentSlot;
 
-	/** Legacy address source; spatial player UI normally uses SourceGrid instead. */
+	/** Weak legacy address source; spatial player UI normally uses SourceGrid instead. */
 	UPROPERTY(Transient)
-	TObjectPtr<URpgInventoryAddressSlotWidget> SourceAddressSlot = nullptr;
+	TWeakObjectPtr<URpgInventoryAddressSlotWidget> SourceAddressSlot;
 
 	/** Stable selected entry identity captured before any menu click can change focus. */
 	UPROPERTY(Transient)

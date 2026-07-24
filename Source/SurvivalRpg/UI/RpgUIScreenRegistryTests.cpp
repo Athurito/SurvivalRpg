@@ -5,6 +5,7 @@
 #include "SurvivalRpg/GameplayTags/RpgGameplayTags.h"
 #include "SurvivalRpg/UI/RpgBaseTerminalWidget.h"
 #include "SurvivalRpg/UI/RpgCraftingStationWidget.h"
+#include "SurvivalRpg/UI/RpgInventoryInteractionScreenWidget.h"
 #include "SurvivalRpg/UI/RpgPlayerInventoryWidget.h"
 #include "SurvivalRpg/UI/RpgStorageInventoryWidget.h"
 #include "SurvivalRpg/UI/RpgUIScreenSubsystem.h"
@@ -20,7 +21,9 @@
 #include "Engine/AssetManager.h"
 #include "Engine/Engine.h"
 #include "Engine/StreamableManager.h"
+#include "Interfaces/IPluginManager.h"
 #include "Misc/AutomationTest.h"
+#include "Misc/PackageName.h"
 #include "Modules/ModuleManager.h"
 #include "PrimaryGameLayout.h"
 #include "UObject/UnrealType.h"
@@ -69,6 +72,208 @@ namespace
 		TSoftObjectPtr<URpgUIScreenRegistry> OriginalRegistry;
 		TArray<FRpgUIScreenRegistryEntry> OriginalMappings;
 	};
+
+	TArray<FString> GetProjectContentRootPrefixes()
+	{
+		TArray<FString> ContentRoots = { TEXT("/Game/") };
+		for (const TSharedRef<IPlugin>& Plugin :
+			IPluginManager::Get().GetEnabledPluginsWithContent())
+		{
+			if (!Plugin->IsMounted() ||
+				Plugin->GetType() != EPluginType::Project)
+			{
+				continue;
+			}
+
+			FString MountedAssetPath = Plugin->GetMountedAssetPath();
+			MountedAssetPath.RemoveFromEnd(TEXT("/"));
+			if (!MountedAssetPath.IsEmpty())
+			{
+				ContentRoots.AddUnique(MountedAssetPath + TEXT("/"));
+			}
+		}
+		return ContentRoots;
+	}
+
+	bool IsProjectContentPackage(
+		const FString& PackageName,
+		const TArray<FString>& ContentRootPrefixes)
+	{
+		for (const FString& ContentRootPrefix : ContentRootPrefixes)
+		{
+			if (PackageName.StartsWith(ContentRootPrefix))
+			{
+				return true;
+			}
+		}
+		return false;
+	}
+}
+
+IMPLEMENT_SIMPLE_AUTOMATION_TEST(
+	FRpgInventoryScreenFamilyClosureTest,
+	"SurvivalRpg.UI.ScreenRegistry.InventoryScreenFamilyClosure",
+	EAutomationTestFlags::EditorContext | EAutomationTestFlags::EngineFilter)
+
+bool FRpgInventoryScreenFamilyClosureTest::RunTest(
+	const FString& Parameters)
+{
+	IAssetRegistry& AssetRegistry =
+		FModuleManager::LoadModuleChecked<FAssetRegistryModule>(
+			TEXT("AssetRegistry"))
+			.Get();
+	AssetRegistry.WaitForCompletion();
+	TSet<FTopLevelAssetPath> DerivedScreenClassPaths;
+	AssetRegistry.GetDerivedClassNames(
+		{
+			URpgInventoryInteractionScreenWidget::StaticClass()
+				->GetClassPathName()
+		},
+		{},
+		DerivedScreenClassPaths);
+
+	TSet<FString> ProjectScreenClassPaths;
+	const TArray<FString> ProjectContentRootPrefixes =
+		GetProjectContentRootPrefixes();
+	for (const FTopLevelAssetPath& ClassPath : DerivedScreenClassPaths)
+	{
+		const FString PackageName =
+			ClassPath.GetPackageName().ToString();
+		const FString ClassPathString = ClassPath.ToString();
+		const FString AuthoredGeneratedClassName =
+			FPackageName::GetShortName(PackageName) + TEXT("_C");
+		if (IsProjectContentPackage(
+				PackageName,
+				ProjectContentRootPrefixes) &&
+			ClassPath.GetAssetName().ToString() ==
+				AuthoredGeneratedClassName)
+		{
+			ProjectScreenClassPaths.Add(ClassPathString);
+		}
+	}
+
+	const TSet<FString> ExpectedScreenClassPaths = {
+		TEXT(
+			"/Game/SurvivalRpg/Inventory/UI/"
+			"CUI_PlayerInventory.CUI_PlayerInventory_C"),
+		TEXT(
+			"/Game/SurvivalRpg/UI/"
+			"CUI_StorageSpatial.CUI_StorageSpatial_C"),
+		TEXT(
+			"/Game/SurvivalRpg/UI/"
+			"CUI_BaseTerminalSpatial.CUI_BaseTerminalSpatial_C"),
+		TEXT(
+			"/Game/SurvivalRpg/Crafting/UI/"
+			"CUI_CraftingStationSpatial.CUI_CraftingStationSpatial_C")
+	};
+	TestEqual(
+		TEXT("Exactly four authored InventoryInteraction screens exist"),
+		ProjectScreenClassPaths.Num(),
+		ExpectedScreenClassPaths.Num());
+	for (const FString& ExpectedClassPath : ExpectedScreenClassPaths)
+	{
+		TestTrue(
+			*FString::Printf(
+				TEXT("Expected inventory screen exists: %s"),
+				*ExpectedClassPath),
+			ProjectScreenClassPaths.Contains(ExpectedClassPath));
+	}
+	for (const FString& ActualClassPath : ProjectScreenClassPaths)
+	{
+		TestTrue(
+			*FString::Printf(
+				TEXT("Inventory screen belongs to the closed authored family: %s"),
+				*ActualClassPath),
+			ExpectedScreenClassPaths.Contains(ActualClassPath));
+	}
+
+	const URpgUIScreenRegistry* Registry =
+		LoadObject<URpgUIScreenRegistry>(
+			nullptr,
+			TEXT(
+				"/Game/SurvivalRpg/UI/"
+				"DA_RpgUIScreenRegistry.DA_RpgUIScreenRegistry"));
+	if (!TestNotNull(TEXT("UI screen registry loads"), Registry))
+	{
+		return false;
+	}
+
+	struct FExpectedSemanticRoute
+	{
+		FGameplayTag ScreenTag;
+		const TCHAR* WidgetClassPath = nullptr;
+	};
+	const FExpectedSemanticRoute ExpectedRoutes[] = {
+		{
+			RpgGameplayTags::UI_Screen_Inventory,
+			TEXT(
+				"/Game/SurvivalRpg/Inventory/UI/"
+				"CUI_PlayerInventory.CUI_PlayerInventory_C")
+		},
+		{
+			RpgGameplayTags::UI_Screen_Storage,
+			TEXT(
+				"/Game/SurvivalRpg/UI/"
+				"CUI_StorageSpatial.CUI_StorageSpatial_C")
+		},
+		{
+			RpgGameplayTags::UI_Screen_Loot,
+			TEXT(
+				"/Game/SurvivalRpg/UI/"
+				"CUI_StorageSpatial.CUI_StorageSpatial_C")
+		},
+		{
+			RpgGameplayTags::UI_Screen_BaseTerminal,
+			TEXT(
+				"/Game/SurvivalRpg/UI/"
+				"CUI_BaseTerminalSpatial.CUI_BaseTerminalSpatial_C")
+		},
+		{
+			RpgGameplayTags::UI_Screen_Crafting,
+			TEXT(
+				"/Game/SurvivalRpg/Crafting/UI/"
+				"CUI_CraftingStationSpatial.CUI_CraftingStationSpatial_C")
+		}
+	};
+	for (const FExpectedSemanticRoute& ExpectedRoute : ExpectedRoutes)
+	{
+		FRpgUIScreenRegistryEntry Entry;
+		const bool bFound =
+			Registry->FindScreen(ExpectedRoute.ScreenTag, Entry);
+		TestTrue(
+			*FString::Printf(
+				TEXT("Semantic inventory route exists: %s"),
+				*ExpectedRoute.ScreenTag.ToString()),
+			bFound);
+		if (!bFound)
+		{
+			continue;
+		}
+
+		TestEqual(
+			*FString::Printf(
+				TEXT("Semantic route keeps its canonical screen: %s"),
+				*ExpectedRoute.ScreenTag.ToString()),
+			Entry.WidgetClass.ToSoftObjectPath().ToString(),
+			FString(ExpectedRoute.WidgetClassPath));
+		TestTrue(
+			*FString::Printf(
+				TEXT("Semantic route uses the GameMenu layer: %s"),
+				*ExpectedRoute.ScreenTag.ToString()),
+			Entry.LayerTag == RpgGameplayTags::UI_Layer_GameMenu);
+		TestTrue(
+			*FString::Printf(
+				TEXT("Semantic route suspends input while loading: %s"),
+				*ExpectedRoute.ScreenTag.ToString()),
+			Entry.bSuspendInputUntilLoaded);
+		TestTrue(
+			*FString::Printf(
+				TEXT("Semantic route is single-instance: %s"),
+				*ExpectedRoute.ScreenTag.ToString()),
+			Entry.bSingleInstance);
+	}
+
+	return true;
 }
 
 IMPLEMENT_SIMPLE_AUTOMATION_TEST(

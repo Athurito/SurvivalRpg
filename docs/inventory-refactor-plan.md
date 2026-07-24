@@ -2045,7 +2045,7 @@ Status: **In Arbeit**
       screen-owned VM-Instanzen beim Pooling zu ersetzen.
 - [x] BaseTerminal auf denselben stabilen Unbind-/Pooling-Vertrag bringen.
 - [x] Crafting auf denselben stabilen Unbind-/Pooling-Vertrag bringen.
-- [ ] Weitere gepoolte Screens auf denselben Unbind-/Pooling-Vertrag bringen.
+- [x] Weitere gepoolte Screens auf denselben Unbind-/Pooling-Vertrag bringen.
 - [ ] Blueprint-MVVM als einzigen Leaf-Datenbindungsweg verwenden; BP-Events
       nur für Animation und imperative Präsentation.
 - [ ] Den öffentlich generierten Manual-Source-Setter durch einen
@@ -2240,6 +2240,65 @@ Verifizierter Phase-6C-Zwischenstand vom 2026-07-24:
   Punkten abgeschlossen (80,4 %), 19 Punkte offen.
 - Nächster Schnitt: weitere gepoolte Screens auf denselben
   Unbind-/Pooling-Vertrag bringen.
+
+Verifizierter Phase-6D-Zwischenstand vom 2026-07-24:
+
+- Der zentrale CommonUI-Screen-Router verwaltet Deactivation-Bindungen jetzt
+  pro konkretem Pool-Checkout über eine eindeutige Checkout-ID und das exakte
+  Delegate-Handle. Abgebrochene Async-Pushes, synchrones Reuse derselben
+  Widget-Instanz und LocalPlayer-Teardown können dadurch keinen Callback eines
+  alten Checkouts auf einen neueren Screen anwenden.
+- Context-Menü, Split-Dialog und Drop-Confirmation werden auf allen sechs
+  Öffnungspfaden im Initialisierungs-Callback des CommonUI-Layer-Pushes
+  vollständig vorbereitet und vom Host verfolgt, bevor die gepoolte Instanz
+  aktiviert wird. Ein `OnActivated`-Pfad sieht dadurch bereits ausschließlich
+  den Zustand des aktuellen Checkouts.
+- Context- und Split-Quellen werden nur noch schwach gehalten. Deactivation und
+  `NativeDestruct` neutralisieren Quellen, IDs, Requests, Actions,
+  Auswahlwerte und dynamische Controls. Der Interaction-Screen und sein
+  Controller-Action-Host verwenden dieselbe idempotente Release-Grenze auch
+  bei einem Slate-Reconstruct ohne vorherige Aktivierung.
+- Ein AssetRegistry-Vertrag schließt die project-owned
+  Inventory-Interaction-Screen-Familie auf `CUI_PlayerInventory`,
+  `CUI_StorageSpatial`, `CUI_BaseTerminalSpatial` und
+  `CUI_CraftingStationSpatial`. Die fünf semantischen Routen Inventory,
+  Storage, Loot, BaseTerminal und Crafting bleiben auf `UI.Layer.GameMenu`,
+  Input-Suspension und Single-Instance festgelegt. Editor-transiente
+  `SKEL_`-/Reinstancing-Klassen werden dabei nicht als authored Screens
+  fehlgezählt.
+- Eine neue Lifecycle-Regression prüft für Context, Split und Drop die
+  Sequenz Checkout A ohne Aktivierung, Slate-Destruct, Reconstruct, Checkout B,
+  Aktivierung und Deaktivierung. Sie belegt den ownerless
+  `NativeDestruct`-Fallback, den bereits initialisierten Zustand beim
+  Aktivieren sowie die vollständige Neutralisierung zwischen zwei
+  Pool-Nutzungen; die sechs realen Host-Push-Pfade werden zusätzlich durch
+  ihren gemeinsamen CommonUI-Initialisierungs-Callback abgesichert.
+- Gameplay-Autorität, Replikation, Inventory-Transaktionen und Save-Daten
+  wurden nicht verändert. Die UI bleibt eine read-only Projektion der
+  serverautoritativen Lyra-rooted RPG-Systeme. Für diesen C++-/Test-Schnitt
+  sind keine manuellen Widget-, MVVM-, Blueprint- oder Asset-Anpassungen im
+  Editor erforderlich. Als interaktive QA bleiben wiederholtes Öffnen,
+  Payload A nach B, Back/Fokus sowie Context, Split und Drop mit Mouse und
+  Gamepad empfohlen.
+- `SurvivalRpgEditor Win64 Development` wurde mit Unreal Engine 5.8 gebaut;
+  der abschließende Build meldete 6 von 6 Actions und
+  `Result: Succeeded`.
+- Die gezielten Regressionen
+  `SurvivalRpg.Inventory.UI.ActionModalPoolingLifecycle` und
+  `SurvivalRpg.UI.ScreenRegistry.InventoryScreenFamilyClosure` meldeten
+  jeweils 1 von 1 Test erfolgreich.
+- `SurvivalRpg.Inventory` meldete 135 von 135 Automationtests erfolgreich.
+- `SurvivalRpg.UI` meldete 26 von 26 Automationtests erfolgreich; darin sind
+  auch der Screen-Family-Vertrag und der zuvor gehärtete
+  `ScreenRouter.AsyncCloseLifecycle` enthalten.
+- `CompileAllBlueprints` endete mit Prozesscode 0, 0 Compilerfehlern,
+  16 bekannten Blueprint-Compilerwarnungen und 0 nicht ladbaren Blueprints.
+- Fortschritt Phase 6: 13 von 22 Punkten abgeschlossen (59,1 %).
+- Gesamtfortschritt der erweiterten verbindlichen Checkliste: 79 von 97
+  Punkten abgeschlossen (81,4 %), 18 Punkte offen.
+- Nächster Schnitt: Blueprint-MVVM als einzigen Leaf-Datenbindungsweg
+  verwenden; Blueprint-Events bleiben Animation und imperativer Präsentation
+  vorbehalten.
 
 ## Phase 7 – Legacy endgültig entfernen
 

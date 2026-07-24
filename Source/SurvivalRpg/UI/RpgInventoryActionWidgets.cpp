@@ -11,8 +11,10 @@
 #include "Components/VerticalBoxSlot.h"
 #include "Input/CommonUIInputTypes.h"
 #include "InputCoreTypes.h"
+#include "PrimaryGameLayout.h"
 #include "SurvivalRpg/ActionBar/RpgActionBarComponent.h"
 #include "SurvivalRpg/Core/Player/RpgPlayerController.h"
+#include "SurvivalRpg/GameplayTags/RpgGameplayTags.h"
 #include "SurvivalRpg/Inventory/RpgInventoryItemDefinition.h"
 #include "SurvivalRpg/Inventory/RpgInventoryItemInstance.h"
 #include "SurvivalRpg/Inventory/RpgPlayerInventoryLayoutComponent.h"
@@ -59,6 +61,25 @@ FText GetContextActionLabel(ERpgInventoryContextAction Action)
 	default:
 		return LOCTEXT("UnknownContextAction", "Unknown Action");
 	}
+}
+
+bool RemoveInventoryModalFromOwningLayer(
+	UCommonActivatableWidget& Modal)
+{
+	ULocalPlayer* LocalPlayer = Modal.GetOwningLocalPlayer();
+	UPrimaryGameLayout* RootLayout = LocalPlayer
+		? UPrimaryGameLayout::GetPrimaryGameLayout(LocalPlayer)
+		: nullptr;
+	UCommonActivatableWidgetContainerBase* ModalLayer = RootLayout
+		? RootLayout->GetLayerWidget(RpgGameplayTags::UI_Layer_Modal)
+		: nullptr;
+	if (!ModalLayer || !ModalLayer->GetWidgetList().Contains(&Modal))
+	{
+		return false;
+	}
+
+	ModalLayer->RemoveWidget(Modal);
+	return true;
 }
 }
 
@@ -219,7 +240,10 @@ void URpgInventoryDropConfirmationDialogWidget::CloseDropConfirmation()
 	else
 	{
 		ResetDropConfirmationState(true);
-		RemoveFromParent();
+		if (!RemoveInventoryModalFromOwningLayer(*this))
+		{
+			RemoveFromParent();
+		}
 	}
 }
 
@@ -408,6 +432,12 @@ void URpgInventorySplitDialogWidget::NativeOnDeactivated()
 {
 	ResetSplitState(true);
 	Super::NativeOnDeactivated();
+}
+
+void URpgInventorySplitDialogWidget::NativeDestruct()
+{
+	ResetSplitState(true);
+	Super::NativeDestruct();
 }
 
 bool URpgInventorySplitDialogWidget::NativeOnHandleBackAction()
@@ -618,15 +648,20 @@ void URpgInventorySplitDialogWidget::CloseSplitDialog()
 	}
 	else
 	{
-		RemoveFromParent();
+		ResetSplitState(false);
+		if (!RemoveInventoryModalFromOwningLayer(*this))
+		{
+			RemoveFromParent();
+		}
 	}
 }
 
 void URpgInventorySplitDialogWidget::ResetSplitState(bool bCancelGridRequest)
 {
-	if (bCancelGridRequest && bHasOpenSplitRequest && SourceGrid)
+	if (URpgInventorySpatialGridWidget* Grid = SourceGrid.Get();
+		bCancelGridRequest && bHasOpenSplitRequest && Grid)
 	{
-		SourceGrid->CancelPendingSplit();
+		Grid->CancelPendingSplit();
 	}
 
 	bHasOpenSplitRequest = false;
@@ -703,6 +738,12 @@ void URpgInventoryContextMenuWidget::NativeOnDeactivated()
 {
 	ResetContextState();
 	Super::NativeOnDeactivated();
+}
+
+void URpgInventoryContextMenuWidget::NativeDestruct()
+{
+	ResetContextState();
+	Super::NativeDestruct();
 }
 
 void URpgInventoryContextMenuWidget::NativeTick(const FGeometry& MyGeometry, float InDeltaTime)
@@ -952,29 +993,35 @@ bool URpgInventoryContextMenuWidget::ExecuteContextAction(ERpgInventoryContextAc
 
 bool URpgInventoryContextMenuWidget::ShowQuickAccessSlotPicker()
 {
-	if (!ContextActions.Contains(ERpgInventoryContextAction::QuickAccessBind) ||
-		(!SourceGrid && !SourceAddressSlot))
+	URpgInventorySpatialGridWidget* Grid = SourceGrid.Get();
+	URpgInventoryAddressSlotWidget* AddressSlot =
+		SourceAddressSlot.Get();
+	if (!ContextActions.Contains(
+			ERpgInventoryContextAction::QuickAccessBind) ||
+		(!Grid && !AddressSlot))
 	{
 		return false;
 	}
 
-	if (SourceGrid)
+	if (Grid)
 	{
-		if (!ContextEntryId.IsValid() || SourceGrid->GetSelectedEntryId() != ContextEntryId ||
-			SourceGrid->GetSelectedItemId() != ContextItemId ||
-			!SourceGrid->GetSelectedContextActions().Contains(
+		if (!ContextEntryId.IsValid() ||
+			Grid->GetSelectedEntryId() != ContextEntryId ||
+			Grid->GetSelectedItemId() != ContextItemId ||
+			!Grid->GetSelectedContextActions().Contains(
 				ERpgInventoryContextAction::QuickAccessBind))
 		{
 			CloseContextMenu();
 			return false;
 		}
 	}
-	if (SourceAddressSlot)
+	if (AddressSlot)
 	{
-		const URpgInventoryAddressSlotViewModel* AddressViewModel = SourceAddressSlot->GetAddressSlotViewModel();
+		const URpgInventoryAddressSlotViewModel* AddressViewModel =
+			AddressSlot->GetAddressSlotViewModel();
 		const URpgInventoryItemInstance* CurrentItem = AddressViewModel ? AddressViewModel->GetItemInstance() : nullptr;
 		if (!CurrentItem || CurrentItem->GetItemId() != ContextItemId ||
-			!SourceAddressSlot->GetAddressContextActions().Contains(
+			!AddressSlot->GetAddressContextActions().Contains(
 				ERpgInventoryContextAction::QuickAccessBind))
 		{
 			CloseContextMenu();
@@ -1066,7 +1113,10 @@ void URpgInventoryContextMenuWidget::CloseContextMenu()
 	else
 	{
 		ResetContextState();
-		RemoveFromParent();
+		if (!RemoveInventoryModalFromOwningLayer(*this))
+		{
+			RemoveFromParent();
+		}
 	}
 }
 

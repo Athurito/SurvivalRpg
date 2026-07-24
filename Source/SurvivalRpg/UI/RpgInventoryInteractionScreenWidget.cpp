@@ -2,11 +2,11 @@
 
 #include "Blueprint/DragDropOperation.h"
 #include "Blueprint/WidgetLayoutLibrary.h"
-#include "CommonUIExtensions.h"
 #include "Components/CanvasPanel.h"
 #include "Components/CanvasPanelSlot.h"
 #include "Components/Widget.h"
 #include "Engine/World.h"
+#include "PrimaryGameLayout.h"
 #include "SurvivalRpg/GameplayTags/RpgGameplayTags.h"
 #include "SurvivalRpg/Inventory/RpgInventoryInteractionSession.h"
 #include "SurvivalRpg/Inventory/RpgInventoryItemDefinition.h"
@@ -26,6 +26,39 @@
 #endif
 
 #include UE_INLINE_GENERATED_CPP_BY_NAME(RpgInventoryInteractionScreenWidget)
+
+namespace
+{
+template <typename ModalWidgetType>
+ModalWidgetType* PushInitializedInventoryModal(
+	ULocalPlayer* LocalPlayer,
+	TSubclassOf<ModalWidgetType> ModalClass,
+	TFunctionRef<bool(ModalWidgetType&)> InitializeModal,
+	bool& bOutInitialized)
+{
+	bOutInitialized = false;
+	UPrimaryGameLayout* RootLayout =
+		LocalPlayer
+			? UPrimaryGameLayout::GetPrimaryGameLayout(LocalPlayer)
+			: nullptr;
+	if (!RootLayout || !ModalClass)
+	{
+		return nullptr;
+	}
+
+	return RootLayout->PushWidgetToLayerStack<ModalWidgetType>(
+		RpgGameplayTags::UI_Layer_Modal,
+		ModalClass.Get(),
+		[&InitializeModal, &bOutInitialized](
+			ModalWidgetType& Modal)
+		{
+			// CommonUI invokes this callback before registering and activating
+			// a pooled instance, so OnActivated never observes stale state.
+			bOutInitialized = InitializeModal(Modal);
+		});
+}
+
+}
 
 bool FRpgInventoryDropConfirmationIntent::Arm(
 	UWidget* InSourceWidget,
@@ -250,14 +283,28 @@ bool URpgInventoryInteractionScreenWidget::OpenInventoryContextMenu(
 	}
 
 	DismissInventoryModalPresentation();
+	bool bModalInitializedByCheckout = false;
 	URpgInventoryContextMenuWidget* ContextMenu =
-		Cast<URpgInventoryContextMenuWidget>(
-			UCommonUIExtensions::PushContentToLayer_ForPlayer(
-				LocalPlayer,
-				RpgGameplayTags::UI_Layer_Modal,
-				ContextMenuWidgetClass));
+		PushInitializedInventoryModal<URpgInventoryContextMenuWidget>(
+			LocalPlayer,
+			ContextMenuWidgetClass,
+			[this, SourceGrid, &Actions, ScreenPosition](
+				URpgInventoryContextMenuWidget& Modal)
+			{
+				const bool bModalInitialized =
+					Modal.InitializeContextMenu(
+						SourceGrid,
+						Actions,
+						ScreenPosition);
+				if (bModalInitialized)
+				{
+					TrackContextMenuCheckout(Modal, SourceGrid);
+				}
+				return bModalInitialized;
+			},
+			bModalInitializedByCheckout);
 	if (!ContextMenu ||
-		!ContextMenu->InitializeContextMenu(SourceGrid, Actions, ScreenPosition))
+		!bModalInitializedByCheckout)
 	{
 		if (ContextMenu)
 		{
@@ -266,13 +313,6 @@ bool URpgInventoryInteractionScreenWidget::OpenInventoryContextMenu(
 		return false;
 	}
 
-	ActiveContextMenu = ContextMenu;
-	ActiveContextMenuSource = SourceGrid;
-	ContextMenu->OnDeactivated().RemoveAll(this);
-	ContextMenu->OnDeactivated().AddUObject(
-		this,
-		&ThisClass::HandleContextMenuDeactivated,
-		ContextMenu);
 	return true;
 }
 
@@ -293,17 +333,30 @@ bool URpgInventoryInteractionScreenWidget::OpenInventoryContextMenu(
 	}
 
 	DismissInventoryModalPresentation();
+	bool bModalInitializedByCheckout = false;
 	URpgInventoryContextMenuWidget* ContextMenu =
-		Cast<URpgInventoryContextMenuWidget>(
-			UCommonUIExtensions::PushContentToLayer_ForPlayer(
-				LocalPlayer,
-				RpgGameplayTags::UI_Layer_Modal,
-				ContextMenuWidgetClass));
+		PushInitializedInventoryModal<URpgInventoryContextMenuWidget>(
+			LocalPlayer,
+			ContextMenuWidgetClass,
+			[this, SourceAddressSlot, &Actions, ScreenPosition](
+				URpgInventoryContextMenuWidget& Modal)
+			{
+				const bool bModalInitialized =
+					Modal.InitializeAddressContextMenu(
+						SourceAddressSlot,
+						Actions,
+						ScreenPosition);
+				if (bModalInitialized)
+				{
+					TrackContextMenuCheckout(
+						Modal,
+						SourceAddressSlot);
+				}
+				return bModalInitialized;
+			},
+			bModalInitializedByCheckout);
 	if (!ContextMenu ||
-		!ContextMenu->InitializeAddressContextMenu(
-			SourceAddressSlot,
-			Actions,
-			ScreenPosition))
+		!bModalInitializedByCheckout)
 	{
 		if (ContextMenu)
 		{
@@ -312,13 +365,6 @@ bool URpgInventoryInteractionScreenWidget::OpenInventoryContextMenu(
 		return false;
 	}
 
-	ActiveContextMenu = ContextMenu;
-	ActiveContextMenuSource = SourceAddressSlot;
-	ContextMenu->OnDeactivated().RemoveAll(this);
-	ContextMenu->OnDeactivated().AddUObject(
-		this,
-		&ThisClass::HandleContextMenuDeactivated,
-		ContextMenu);
 	return true;
 }
 
@@ -339,17 +385,30 @@ bool URpgInventoryInteractionScreenWidget::OpenInventoryContextMenu(
 	}
 
 	DismissInventoryModalPresentation();
+	bool bModalInitializedByCheckout = false;
 	URpgInventoryContextMenuWidget* ContextMenu =
-		Cast<URpgInventoryContextMenuWidget>(
-			UCommonUIExtensions::PushContentToLayer_ForPlayer(
-				LocalPlayer,
-				RpgGameplayTags::UI_Layer_Modal,
-				ContextMenuWidgetClass));
+		PushInitializedInventoryModal<URpgInventoryContextMenuWidget>(
+			LocalPlayer,
+			ContextMenuWidgetClass,
+			[this, SourceEquipmentSlot, &Actions, ScreenPosition](
+				URpgInventoryContextMenuWidget& Modal)
+			{
+				const bool bModalInitialized =
+					Modal.InitializeEquipmentContextMenu(
+						SourceEquipmentSlot,
+						Actions,
+						ScreenPosition);
+				if (bModalInitialized)
+				{
+					TrackContextMenuCheckout(
+						Modal,
+						SourceEquipmentSlot);
+				}
+				return bModalInitialized;
+			},
+			bModalInitializedByCheckout);
 	if (!ContextMenu ||
-		!ContextMenu->InitializeEquipmentContextMenu(
-			SourceEquipmentSlot,
-			Actions,
-			ScreenPosition))
+		!bModalInitializedByCheckout)
 	{
 		if (ContextMenu)
 		{
@@ -358,13 +417,6 @@ bool URpgInventoryInteractionScreenWidget::OpenInventoryContextMenu(
 		return false;
 	}
 
-	ActiveContextMenu = ContextMenu;
-	ActiveContextMenuSource = SourceEquipmentSlot;
-	ContextMenu->OnDeactivated().RemoveAll(this);
-	ContextMenu->OnDeactivated().AddUObject(
-		this,
-		&ThisClass::HandleContextMenuDeactivated,
-		ContextMenu);
 	return true;
 }
 
@@ -392,19 +444,36 @@ bool URpgInventoryInteractionScreenWidget::OpenInventorySplitDialog(
 	}
 
 	DismissInventoryModalPresentation();
+	bool bModalInitializedByCheckout = false;
 	URpgInventorySplitDialogWidget* SplitDialog =
-		Cast<URpgInventorySplitDialogWidget>(
-			UCommonUIExtensions::PushContentToLayer_ForPlayer(
-				LocalPlayer,
-				RpgGameplayTags::UI_Layer_Modal,
-				SplitDialogWidgetClass));
+		PushInitializedInventoryModal<URpgInventorySplitDialogWidget>(
+			LocalPlayer,
+			SplitDialogWidgetClass,
+			[
+				this,
+				SourceGrid,
+				EntryId,
+				MinimumCount,
+				MaximumCount,
+				DefaultCount
+			](URpgInventorySplitDialogWidget& Modal)
+			{
+				const bool bModalInitialized =
+					Modal.InitializeSplitDialog(
+						SourceGrid,
+						EntryId,
+						MinimumCount,
+						MaximumCount,
+						DefaultCount);
+				if (bModalInitialized)
+				{
+					TrackSplitDialogCheckout(Modal, SourceGrid);
+				}
+				return bModalInitialized;
+			},
+			bModalInitializedByCheckout);
 	if (!SplitDialog ||
-		!SplitDialog->InitializeSplitDialog(
-			SourceGrid,
-			EntryId,
-			MinimumCount,
-			MaximumCount,
-			DefaultCount))
+		!bModalInitializedByCheckout)
 	{
 		if (SplitDialog)
 		{
@@ -417,13 +486,6 @@ bool URpgInventoryInteractionScreenWidget::OpenInventorySplitDialog(
 		return false;
 	}
 
-	ActiveSplitDialog = SplitDialog;
-	ActiveSplitDialogSource = SourceGrid;
-	SplitDialog->OnDeactivated().RemoveAll(this);
-	SplitDialog->OnDeactivated().AddUObject(
-		this,
-		&ThisClass::HandleSplitDialogDeactivated,
-		SplitDialog);
 	return true;
 }
 
@@ -446,19 +508,38 @@ bool URpgInventoryInteractionScreenWidget::OpenInventorySplitDialog(
 	}
 
 	DismissInventoryModalPresentation();
+	bool bModalInitializedByCheckout = false;
 	URpgInventorySplitDialogWidget* SplitDialog =
-		Cast<URpgInventorySplitDialogWidget>(
-			UCommonUIExtensions::PushContentToLayer_ForPlayer(
-				LocalPlayer,
-				RpgGameplayTags::UI_Layer_Modal,
-				SplitDialogWidgetClass));
+		PushInitializedInventoryModal<URpgInventorySplitDialogWidget>(
+			LocalPlayer,
+			SplitDialogWidgetClass,
+			[
+				this,
+				SourceAddressSlot,
+				ItemId,
+				MinimumCount,
+				MaximumCount,
+				DefaultCount
+			](URpgInventorySplitDialogWidget& Modal)
+			{
+				const bool bModalInitialized =
+					Modal.InitializeAddressSplitDialog(
+						SourceAddressSlot,
+						ItemId,
+						MinimumCount,
+						MaximumCount,
+						DefaultCount);
+				if (bModalInitialized)
+				{
+					TrackSplitDialogCheckout(
+						Modal,
+						SourceAddressSlot);
+				}
+				return bModalInitialized;
+			},
+			bModalInitializedByCheckout);
 	if (!SplitDialog ||
-		!SplitDialog->InitializeAddressSplitDialog(
-			SourceAddressSlot,
-			ItemId,
-			MinimumCount,
-			MaximumCount,
-			DefaultCount))
+		!bModalInitializedByCheckout)
 	{
 		if (SplitDialog)
 		{
@@ -467,13 +548,6 @@ bool URpgInventoryInteractionScreenWidget::OpenInventorySplitDialog(
 		return false;
 	}
 
-	ActiveSplitDialog = SplitDialog;
-	ActiveSplitDialogSource = SourceAddressSlot;
-	SplitDialog->OnDeactivated().RemoveAll(this);
-	SplitDialog->OnDeactivated().AddUObject(
-		this,
-		&ThisClass::HandleSplitDialogDeactivated,
-		SplitDialog);
 	return true;
 }
 
@@ -552,18 +626,30 @@ bool URpgInventoryInteractionScreenWidget::OpenPendingDropConfirmation()
 	// The confirmation replaces the initiating action menu, but its armed request must survive that replacement.
 	DismissActiveContextMenuPresentation();
 	DismissActiveSplitDialogPresentation();
+	bool bModalInitializedByCheckout = false;
 	URpgInventoryDropConfirmationDialogWidget* DropConfirmation =
-		Cast<URpgInventoryDropConfirmationDialogWidget>(
-			UCommonUIExtensions::PushContentToLayer_ForPlayer(
-				LocalPlayer,
-				RpgGameplayTags::UI_Layer_Modal,
-				DropConfirmationDialogWidgetClass));
+		PushInitializedInventoryModal<
+			URpgInventoryDropConfirmationDialogWidget>(
+			LocalPlayer,
+			DropConfirmationDialogWidgetClass,
+			[this, &Request, &ItemName](
+				URpgInventoryDropConfirmationDialogWidget& Modal)
+			{
+				const bool bModalInitialized =
+					Modal.InitializeDropConfirmation(
+						this,
+						Request.RequestId,
+						ItemName,
+						Request.StackCount);
+				if (bModalInitialized)
+				{
+					TrackDropConfirmationCheckout(Modal);
+				}
+				return bModalInitialized;
+			},
+			bModalInitializedByCheckout);
 	if (!DropConfirmation ||
-		!DropConfirmation->InitializeDropConfirmation(
-			this,
-			Request.RequestId,
-			ItemName,
-			Request.StackCount))
+		!bModalInitializedByCheckout)
 	{
 		if (DropConfirmation)
 		{
@@ -572,12 +658,6 @@ bool URpgInventoryInteractionScreenWidget::OpenPendingDropConfirmation()
 		return false;
 	}
 
-	ActiveDropConfirmation = DropConfirmation;
-	DropConfirmation->OnDeactivated().RemoveAll(this);
-	DropConfirmation->OnDeactivated().AddUObject(
-		this,
-		&ThisClass::HandleDropConfirmationDeactivated,
-		DropConfirmation);
 	if (InventoryFeedbackToast)
 	{
 		InventoryFeedbackToast->HideInventoryActionFeedback();
@@ -727,6 +807,20 @@ void URpgInventoryInteractionScreenWidget::NativeOnActivated()
 
 void URpgInventoryInteractionScreenWidget::NativeOnDeactivated()
 {
+	ReleaseInventoryScreenPresentation();
+
+	Super::NativeOnDeactivated();
+}
+
+void URpgInventoryInteractionScreenWidget::NativeDestruct()
+{
+	ReleaseInventoryScreenPresentation();
+
+	Super::NativeDestruct();
+}
+
+void URpgInventoryInteractionScreenWidget::ReleaseInventoryScreenPresentation()
+{
 	DismissInventoryModalPresentation();
 
 	if (InventoryDragDropCoordinator && InventoryDragDropCoordinator->HasHeldPayload())
@@ -752,30 +846,6 @@ void URpgInventoryInteractionScreenWidget::NativeOnDeactivated()
 	}
 
 	UnbindInventoryScreenPresentation();
-
-	Super::NativeOnDeactivated();
-}
-
-void URpgInventoryInteractionScreenWidget::NativeDestruct()
-{
-	DismissInventoryModalPresentation();
-	UnregisterInventoryFeedbackListener();
-	if (InventoryDragDropCoordinator && InventoryDragDropCoordinator->GetInteractionSession())
-	{
-		InventoryDragDropCoordinator->GetInteractionSession()->OnInteractionStateChanged.RemoveDynamic(
-			this,
-			&ThisClass::HandleInventoryInteractionStateChanged);
-	}
-
-	ClearFreePointerDragVisual();
-	if (InventoryFeedbackToast)
-	{
-		InventoryFeedbackToast->HideInventoryActionFeedback();
-	}
-
-	UnbindInventoryScreenPresentation();
-
-	Super::NativeDestruct();
 }
 
 bool URpgInventoryInteractionScreenWidget::NativeOnDragOver(
@@ -1298,6 +1368,43 @@ void URpgInventoryInteractionScreenWidget::DismissInventoryModalPresentation()
 	DismissActiveContextMenuPresentation();
 	DismissActiveSplitDialogPresentation();
 	DismissActiveDropConfirmationPresentation();
+}
+
+void URpgInventoryInteractionScreenWidget::TrackContextMenuCheckout(
+	URpgInventoryContextMenuWidget& ContextMenu,
+	UWidget* SourceWidget)
+{
+	ContextMenu.OnDeactivated().RemoveAll(this);
+	ActiveContextMenu = &ContextMenu;
+	ActiveContextMenuSource = SourceWidget;
+	ContextMenu.OnDeactivated().AddUObject(
+		this,
+		&ThisClass::HandleContextMenuDeactivated,
+		&ContextMenu);
+}
+
+void URpgInventoryInteractionScreenWidget::TrackSplitDialogCheckout(
+	URpgInventorySplitDialogWidget& SplitDialog,
+	UWidget* SourceWidget)
+{
+	SplitDialog.OnDeactivated().RemoveAll(this);
+	ActiveSplitDialog = &SplitDialog;
+	ActiveSplitDialogSource = SourceWidget;
+	SplitDialog.OnDeactivated().AddUObject(
+		this,
+		&ThisClass::HandleSplitDialogDeactivated,
+		&SplitDialog);
+}
+
+void URpgInventoryInteractionScreenWidget::TrackDropConfirmationCheckout(
+	URpgInventoryDropConfirmationDialogWidget& DropConfirmation)
+{
+	DropConfirmation.OnDeactivated().RemoveAll(this);
+	ActiveDropConfirmation = &DropConfirmation;
+	DropConfirmation.OnDeactivated().AddUObject(
+		this,
+		&ThisClass::HandleDropConfirmationDeactivated,
+		&DropConfirmation);
 }
 
 void URpgInventoryInteractionScreenWidget::HandleContextMenuDeactivated(
