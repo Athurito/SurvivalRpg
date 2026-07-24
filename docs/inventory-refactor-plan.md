@@ -2947,6 +2947,70 @@ Verifizierter Phase-6L2C-Zwischenstand vom 2026-07-24:
   Replay- und Commit-Pfade bleiben für den anschließenden Transactions-
   Schnitt auf der Manager-Autorität.
 
+Verifizierter Phase-6L2D-Zwischenstand vom 2026-07-24:
+
+- Der eigentliche Mutation-Planner ist nun ebenfalls im Rules/Planner-TU
+  gebündelt: alle sechs `FRpgInventoryPlacementSubject`-Factories,
+  subtree-sichere Removal-Deltas, Consume- und Legacy-Move-Previews,
+  Move-/Equip-/Transfer-Request-Builder sowie PlanMove, PlanEquipment,
+  PlanDrop und der vollständige lokale `PlanInventoryMutation`-Kernel.
+- 16 Definitionen mit zusammen 638 Implementierungs-/Factory-Zeilen
+  beziehungsweise 654 physischen Zeilen inklusive Trennern wurden aus der
+  Manager-Hauptdatei verschoben. Der einzige neue private Rules-Helper baut
+  abgelehnte Intent-Ergebnisse; die Source-Snapshot- und Placement-Vergleiche
+  verwenden die bereits kanonischen Rules-Helper.
+- Der unabhängige Paritätscheck bestätigte alle 16 Definitionen nach genau
+  drei erwarteten Helper-Umbenennungen tokenidentisch zum vorherigen Stand.
+  Jede Definition existiert repo-weit genau einmal. Die gleichartigen
+  Component-Helper bleiben bewusst bestehen, weil Execute-, Transfer- und
+  Replay-Pfade sie weiterhin benötigen.
+- Der Planner schreibt weder FastArray/InventoryList noch Revision,
+  Mutation-Epoch, Replay-Cache oder UObject-Ownership. Fremde Inventories
+  werden nur synchron über vollständige Source-Snapshots gelesen; Authority,
+  Same-World, Replay, Revalidation und Commit bleiben ausschließlich bei den
+  Execute-/Transactions-Pfaden. Der Rules-TU ist Game-Thread-only und keine
+  Async-Lifetime-Grenze.
+- `PlacementSubject.FactoryContract` friert alle Felder der sechs Factories
+  ein: Owned-Default-/Teilmenge, Incoming-Provenienz, Definition-only,
+  Detached versus Generated sowie das StagedRestore-ItemId-Override.
+- Zwei direkte Planner-Contracts ergänzen die vorher nur transitive
+  Abdeckung: Move prüft Same-Cell-NoOp versus Rotate, Delta-Semantik und stale
+  EntryId-/Placement-/Quantity-Snapshots; Drop prüft gewöhnliche
+  Partial-Removal-Deltas sowie stale und übergroße Mengen. Beide beweisen
+  unveränderten Graph, Revision und Mutation-Epoch.
+- Bewusste Read-only-Grenze: By-Value-Planaufrufe erzeugen bei fehlender
+  RequestId weiterhin lokal eine GUID. Insbesondere die als `BlueprintPure`
+  exponierten CanConsume-/CanMove-Wrapper verwerfen diese GUID wieder. Das
+  mutiert keinen Inventory-State, verursacht aber unnötigen GUID-Churn und
+  macht Result-IDs ohne mitgelieferte RequestId nicht deterministisch. Ein
+  ID-freier Planner-Core mit RequestId-Erzeugung ausschließlich an Command-
+  Grenzen bleibt als gezielter Folgeschnitt dokumentiert.
+- Die Manager-Hauptimplementierung umfasst jetzt 4.240 statt ursprünglich
+  7.510 Zeilen; `RpgInventoryManagerRulesPlanner.cpp` umfasst 2.891 Zeilen.
+  Der Rules/Planner-Domänenschnitt ist damit physisch vollständig; die
+  öffentliche und replizierte Autorität bleibt weiterhin ausschließlich
+  `URpgInventoryManagerComponent`.
+- Der finale separate UE-5.8-Build kompilierte beide Produktionseinheiten
+  und beide geänderten Testdateien eigenständig und endete mit 7 von 7
+  Actions erfolgreich. Der echte `-ForceUnity -DisableAdaptiveUnity`-Build
+  endete mit 5 von 5 Actions; beide meldeten `Result: Succeeded`.
+- Die neuen gezielten Filter meldeten 2 von 2 Intent-Planner- und 1 von 1
+  PlacementSubject-Test erfolgreich. Der vollständige Filter
+  `SurvivalRpg.Inventory` meldete 150 von 150 Automationtests erfolgreich.
+- Header, Reflection, Blueprint-/MVVM-Verträge, Save-DTOs und Editor-Assets
+  blieben unverändert. Es sind keine CoreRedirects, Resaves oder manuellen
+  Editor-Anpassungen nötig; nach offenem Live Coding sollte der Editor vor
+  manueller QA vollständig neu gestartet werden.
+- Der Manager-Checklistenpunkt bleibt offen, bis Transactions und Storage
+  ebenfalls getrennt und der Gesamt-Facade-Schnitt geprüft sind. Phase 6
+  bleibt bei 20 von 22 Punkten (90,9 %), der Gesamtplan bei 86 von
+  97 Punkten (88,7 %), 11 Punkte sind offen.
+- Nächster Domänenschnitt: autoritative Grant-/Bootstrap-/Removal- und
+  Intent-Commitpfade in `RpgInventoryManagerTransactions.cpp` verschieben.
+  Replikationslifecycle, Capacity-Binding und die schmale öffentliche
+  Manager-Fassade bleiben in der Core-Datei; der große Cross-Inventory-
+  Commit wird als eigener grüner Transactions-Unterschnitt behandelt.
+
 ## Phase 7 – Legacy endgültig entfernen
 
 Status: **In Arbeit**

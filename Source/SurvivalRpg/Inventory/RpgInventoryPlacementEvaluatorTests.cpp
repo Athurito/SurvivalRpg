@@ -251,6 +251,203 @@ namespace RpgInventoryPlacementEvaluatorTests
 }
 
 IMPLEMENT_SIMPLE_AUTOMATION_TEST(
+	FRpgInventoryPlacementSubjectFactoryContractTest,
+	"SurvivalRpg.Inventory.PlacementSubject.FactoryContract",
+	EAutomationTestFlags::EditorContext |
+		EAutomationTestFlags::EngineFilter)
+
+bool FRpgInventoryPlacementSubjectFactoryContractTest::RunTest(
+	const FString& Parameters)
+{
+	using namespace RpgInventoryPlacementEvaluatorTests;
+	FScopedInventoryWorld TestWorld;
+	if (!InitializeTest(*this, TestWorld))
+	{
+		return false;
+	}
+
+	URpgInventoryManagerComponent* Inventory =
+		TestWorld.CreateInventory(TEXT("PlacementSubjectFactoryInventory"));
+	if (!TestNotNull(TEXT("The subject factory inventory exists"), Inventory))
+	{
+		return false;
+	}
+
+	const FRpgInventoryContainerHandle Root = MakeRoot(Inventory);
+	URpgInventoryItemInstance* OwnedItem =
+		Inventory->AddItemDefinitionToPlacement(
+			URpgInventoryAutomationTestStackItemDefinition::StaticClass(),
+			4,
+			MakePlacement(Root, 0, 0));
+	FRpgInventoryEntryView OwnedEntry;
+	if (!TestNotNull(TEXT("The owned subject item exists"), OwnedItem) ||
+		!TestTrue(
+			TEXT("The owned subject exposes a complete entry snapshot"),
+			OwnedItem &&
+				GetEntryView(
+					Inventory,
+					OwnedItem->GetItemId(),
+					OwnedEntry)))
+	{
+		return false;
+	}
+
+	auto HasExactSourceSnapshot =
+		[Inventory, &OwnedEntry](
+			const FRpgInventoryPlacementSubject& Subject,
+			ERpgInventoryPlacementSubjectKind ExpectedKind,
+			int32 ExpectedQuantity)
+		{
+			return Subject.Kind == ExpectedKind &&
+				Subject.SourceInventory == Inventory &&
+				Subject.ItemInstance == OwnedEntry.Instance.Get() &&
+				Subject.ItemDefinition ==
+					OwnedEntry.Instance->GetItemDef() &&
+				Subject.ItemId == OwnedEntry.ItemId &&
+				Subject.ExpectedEntryId == OwnedEntry.EntryId &&
+				Subject.ExpectedSourcePlacement == OwnedEntry.Placement &&
+				Subject.ExpectedSourceQuantity == OwnedEntry.StackCount &&
+				Subject.Quantity == ExpectedQuantity;
+		};
+
+	const FRpgInventoryPlacementSubject OwnedDefault =
+		FRpgInventoryPlacementSubject::FromOwnedEntry(
+			Inventory,
+			OwnedEntry);
+	TestTrue(
+		TEXT("OwnedEntry records every source field and defaults to the full stack"),
+		HasExactSourceSnapshot(
+			OwnedDefault,
+			ERpgInventoryPlacementSubjectKind::OwnedEntry,
+			OwnedEntry.StackCount));
+
+	constexpr int32 ExplicitOwnedQuantity = 2;
+	const FRpgInventoryPlacementSubject OwnedExplicit =
+		FRpgInventoryPlacementSubject::FromOwnedEntry(
+			Inventory,
+			OwnedEntry,
+			ExplicitOwnedQuantity);
+	TestTrue(
+		TEXT("OwnedEntry preserves its full snapshot with an explicit quantity"),
+		HasExactSourceSnapshot(
+			OwnedExplicit,
+			ERpgInventoryPlacementSubjectKind::OwnedEntry,
+			ExplicitOwnedQuantity));
+
+	constexpr int32 IncomingQuantity = 3;
+	const FRpgInventoryPlacementSubject Incoming =
+		FRpgInventoryPlacementSubject::FromIncomingInstance(
+			Inventory,
+			OwnedEntry,
+			IncomingQuantity);
+	TestTrue(
+		TEXT("IncomingEntry changes only provenance and evaluated quantity"),
+		HasExactSourceSnapshot(
+			Incoming,
+			ERpgInventoryPlacementSubjectKind::IncomingEntry,
+			IncomingQuantity));
+
+	constexpr int32 DefinitionQuantity = 5;
+	const FRpgInventoryPlacementSubject Definition =
+		FRpgInventoryPlacementSubject::FromDefinition(
+			URpgInventoryAutomationTestUnitItemDefinition::StaticClass(),
+			DefinitionQuantity);
+	TestTrue(
+		TEXT("DefinitionGrant records only definition provenance and quantity"),
+		Definition.Kind ==
+				ERpgInventoryPlacementSubjectKind::DefinitionGrant &&
+			Definition.SourceInventory == nullptr &&
+			Definition.ItemInstance == nullptr &&
+			Definition.ItemDefinition ==
+				URpgInventoryAutomationTestUnitItemDefinition::StaticClass() &&
+			!Definition.ItemId.IsValid() &&
+			!Definition.ExpectedEntryId.IsValid() &&
+			!Definition.ExpectedSourcePlacement.IsValid() &&
+			Definition.ExpectedSourceQuantity == 0 &&
+			Definition.Quantity == DefinitionQuantity);
+
+	URpgInventoryItemInstance* DetachedItem =
+		Inventory->AddItemDefinitionToPlacement(
+			URpgInventoryAutomationTestStackItemDefinition::StaticClass(),
+			1,
+			MakePlacement(Root, 1, 0));
+	if (!TestNotNull(TEXT("The detached subject item exists"), DetachedItem))
+	{
+		return false;
+	}
+	Inventory->RemoveItemInstance(DetachedItem);
+	if (!TestFalse(
+			TEXT("The subject item is detached before factory evaluation"),
+			Inventory->ContainsItemInstance(DetachedItem)))
+	{
+		return false;
+	}
+
+	auto HasExactDetachedFields =
+		[DetachedItem](
+			const FRpgInventoryPlacementSubject& Subject,
+			ERpgInventoryPlacementSubjectKind ExpectedKind,
+			FRpgInventoryItemId ExpectedItemId,
+			int32 ExpectedQuantity)
+		{
+			return Subject.Kind == ExpectedKind &&
+				Subject.SourceInventory == nullptr &&
+				Subject.ItemInstance == DetachedItem &&
+				Subject.ItemDefinition == DetachedItem->GetItemDef() &&
+				Subject.ItemId == ExpectedItemId &&
+				!Subject.ExpectedEntryId.IsValid() &&
+				!Subject.ExpectedSourcePlacement.IsValid() &&
+				Subject.ExpectedSourceQuantity == 0 &&
+				Subject.Quantity == ExpectedQuantity;
+		};
+
+	constexpr int32 DetachedQuantity = 2;
+	const FRpgInventoryPlacementSubject Detached =
+		FRpgInventoryPlacementSubject::FromDetachedInstance(
+			DetachedItem,
+			DetachedQuantity);
+	TestTrue(
+		TEXT("DetachedInstance records concrete identity without a source snapshot"),
+		HasExactDetachedFields(
+			Detached,
+			ERpgInventoryPlacementSubjectKind::DetachedInstance,
+			DetachedItem->GetItemId(),
+			DetachedQuantity));
+
+	constexpr int32 GeneratedQuantity = 3;
+	const FRpgInventoryPlacementSubject Generated =
+		FRpgInventoryPlacementSubject::FromGeneratedGrant(
+			DetachedItem,
+			GeneratedQuantity);
+	TestTrue(
+		TEXT("GeneratedGrant changes only detached provenance and quantity"),
+		HasExactDetachedFields(
+			Generated,
+			ERpgInventoryPlacementSubjectKind::GeneratedGrant,
+			DetachedItem->GetItemId(),
+			GeneratedQuantity) &&
+			Detached.Kind != Generated.Kind);
+
+	const FRpgInventoryItemId StagedItemId =
+		FRpgInventoryItemId::NewId();
+	constexpr int32 StagedQuantity = 4;
+	const FRpgInventoryPlacementSubject Staged =
+		FRpgInventoryPlacementSubject::FromStagedRestore(
+			DetachedItem,
+			StagedItemId,
+			StagedQuantity);
+	TestTrue(
+		TEXT("StagedRestore overrides the concrete instance item id"),
+		HasExactDetachedFields(
+			Staged,
+			ERpgInventoryPlacementSubjectKind::StagedRestore,
+			StagedItemId,
+			StagedQuantity) &&
+			Staged.ItemId != DetachedItem->GetItemId());
+	return true;
+}
+
+IMPLEMENT_SIMPLE_AUTOMATION_TEST(
 	FRpgInventoryPlacementOperationMatrixTest,
 	"SurvivalRpg.Inventory.PlacementEvaluator.OperationMatrix",
 	EAutomationTestFlags::EditorContext |

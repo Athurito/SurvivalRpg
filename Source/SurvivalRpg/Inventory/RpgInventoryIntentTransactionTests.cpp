@@ -214,6 +214,270 @@ namespace RpgInventoryIntentTransactionTests
 }
 
 IMPLEMENT_SIMPLE_AUTOMATION_TEST(
+	FRpgInventoryTypedMovePlannerContractTest,
+	"SurvivalRpg.Inventory.Intent.Planner.MoveDerivationStaleSnapshotsAndPurity",
+	EAutomationTestFlags::EditorContext |
+		EAutomationTestFlags::EngineFilter)
+
+bool FRpgInventoryTypedMovePlannerContractTest::RunTest(
+	const FString& Parameters)
+{
+	using namespace RpgInventoryIntentTransactionTests;
+	FScopedInventoryWorld TestWorld;
+	if (!InitializeTest(*this, TestWorld))
+	{
+		return false;
+	}
+
+	URpgInventoryManagerComponent* Inventory =
+		TestWorld.CreateInventory(TEXT("TypedMovePlannerInventory"));
+	if (!TestNotNull(TEXT("The move planner inventory exists"), Inventory))
+	{
+		return false;
+	}
+
+	const FRpgInventoryContainerHandle Root = MakeRoot(Inventory);
+	URpgInventoryItemInstance* Item =
+		Inventory->AddItemDefinitionToPlacement(
+			URpgInventoryAutomationTestWideItemDefinition::StaticClass(),
+			1,
+			MakePlacement(Root, 0, 0));
+	if (!TestNotNull(TEXT("The move planner item exists"), Item))
+	{
+		return false;
+	}
+
+	FRpgInventoryEntryView SourceEntry;
+	if (!TestTrue(
+			TEXT("The complete move planner snapshot resolves"),
+			GetEntryView(
+				Inventory,
+				Item->GetItemId(),
+				SourceEntry)))
+	{
+		return false;
+	}
+
+	const FString GraphBefore = MakeInventorySignature(Inventory);
+	const int32 RevisionBefore = Inventory->GetInventoryRevision();
+	const uint64 EpochBefore = Inventory->GetMutationEpoch();
+
+	const FRpgInventoryMoveIntent NoOpIntent =
+		MakeMoveIntent(SourceEntry, SourceEntry.Placement);
+	const FRpgInventoryMutationResult NoOpPlan =
+		Inventory->PlanMoveItem(NoOpIntent);
+	TestEqual(
+		TEXT("An identical same-cell placement derives Move semantics"),
+		NoOpPlan.Operation,
+		ERpgInventoryMutationOperation::Move);
+	TestEqual(
+		TEXT("An identical same-cell placement plans successfully"),
+		NoOpPlan.Code,
+		ERpgInventoryMutationResultCode::Success);
+	TestEqual(
+		TEXT("A same-cell no-op covers the complete entry"),
+		NoOpPlan.AppliedQuantity,
+		SourceEntry.StackCount);
+	TestTrue(
+		TEXT("A same-cell no-op emits no mutation delta"),
+		NoOpPlan.Deltas.IsEmpty());
+
+	FRpgInventoryGridPlacement RotatedPlacement = SourceEntry.Placement;
+	RotatedPlacement.bRotated = !RotatedPlacement.bRotated;
+	const FRpgInventoryMoveIntent RotateIntent =
+		MakeMoveIntent(SourceEntry, RotatedPlacement);
+	const FRpgInventoryMutationResult RotatePlan =
+		Inventory->PlanMoveItem(RotateIntent);
+	TestEqual(
+		TEXT("A same-cell orientation change derives Rotate semantics"),
+		RotatePlan.Operation,
+		ERpgInventoryMutationOperation::Rotate);
+	TestEqual(
+		TEXT("A valid same-cell rotation plans successfully"),
+		RotatePlan.Code,
+		ERpgInventoryMutationResultCode::Success);
+	TestEqual(
+		TEXT("A rotation plan emits exactly one delta"),
+		RotatePlan.Deltas.Num(),
+		1);
+	if (RotatePlan.Deltas.Num() == 1)
+	{
+		TestEqual(
+			TEXT("The derived rotation delta has Rotated semantics"),
+			RotatePlan.Deltas[0].Kind,
+			ERpgInventoryMutationDeltaKind::Rotated);
+		TestEqual(
+			TEXT("The derived rotation preserves the requested orientation"),
+			RotatePlan.Deltas[0].AfterPlacement.bRotated,
+			RotatedPlacement.bRotated);
+	}
+
+	FRpgInventoryMoveIntent StaleEntryIntent =
+		MakeMoveIntent(
+			SourceEntry,
+			MakePlacement(Root, 3, 0));
+	StaleEntryIntent.ExpectedEntryId = FGuid::NewGuid();
+	TestEqual(
+		TEXT("Move planning rejects a stale entry identity"),
+		Inventory->PlanMoveItem(StaleEntryIntent).Code,
+		ERpgInventoryMutationResultCode::SourceMismatch);
+
+	FRpgInventoryMoveIntent StalePlacementIntent =
+		MakeMoveIntent(
+			SourceEntry,
+			MakePlacement(Root, 3, 0));
+	++StalePlacementIntent.ExpectedSourcePlacement.X;
+	TestEqual(
+		TEXT("Move planning rejects a stale full source placement"),
+		Inventory->PlanMoveItem(StalePlacementIntent).Code,
+		ERpgInventoryMutationResultCode::SourceMismatch);
+
+	FRpgInventoryMoveIntent StaleQuantityIntent =
+		MakeMoveIntent(
+			SourceEntry,
+			MakePlacement(Root, 3, 0));
+	++StaleQuantityIntent.ExpectedQuantity;
+	TestEqual(
+		TEXT("Move planning rejects a stale complete source quantity"),
+		Inventory->PlanMoveItem(StaleQuantityIntent).Code,
+		ERpgInventoryMutationResultCode::SourceMismatch);
+
+	TestEqual(
+		TEXT("All direct move plans preserve the complete graph"),
+		MakeInventorySignature(Inventory),
+		GraphBefore);
+	TestEqual(
+		TEXT("All direct move plans preserve the replicated revision"),
+		Inventory->GetInventoryRevision(),
+		RevisionBefore);
+	TestEqual(
+		TEXT("All direct move plans preserve the mutation epoch"),
+		Inventory->GetMutationEpoch(),
+		EpochBefore);
+	return true;
+}
+
+IMPLEMENT_SIMPLE_AUTOMATION_TEST(
+	FRpgInventoryDropPlannerContractTest,
+	"SurvivalRpg.Inventory.Intent.Planner.DropPartialStaleOversizedAndPurity",
+	EAutomationTestFlags::EditorContext |
+		EAutomationTestFlags::EngineFilter)
+
+bool FRpgInventoryDropPlannerContractTest::RunTest(
+	const FString& Parameters)
+{
+	using namespace RpgInventoryIntentTransactionTests;
+	FScopedInventoryWorld TestWorld;
+	if (!InitializeTest(*this, TestWorld))
+	{
+		return false;
+	}
+
+	URpgInventoryManagerComponent* Inventory =
+		TestWorld.CreateInventory(TEXT("DropPlannerInventory"));
+	if (!TestNotNull(TEXT("The drop planner inventory exists"), Inventory))
+	{
+		return false;
+	}
+
+	const FRpgInventoryContainerHandle Root = MakeRoot(Inventory);
+	URpgInventoryItemInstance* Item =
+		Inventory->AddItemDefinitionToPlacement(
+			URpgInventoryAutomationTestStackItemDefinition::StaticClass(),
+			5,
+			MakePlacement(Root, 0, 0));
+	if (!TestNotNull(TEXT("The drop planner stack exists"), Item))
+	{
+		return false;
+	}
+
+	FRpgInventoryEntryView SourceEntry;
+	if (!TestTrue(
+			TEXT("The complete drop planner snapshot resolves"),
+			GetEntryView(
+				Inventory,
+				Item->GetItemId(),
+				SourceEntry)))
+	{
+		return false;
+	}
+
+	const FString GraphBefore = MakeInventorySignature(Inventory);
+	const int32 RevisionBefore = Inventory->GetInventoryRevision();
+	const uint64 EpochBefore = Inventory->GetMutationEpoch();
+
+	constexpr int32 PartialDropQuantity = 2;
+	const FRpgInventoryTransferIntent PartialDropIntent =
+		MakeTransferIntent(
+			SourceEntry,
+			nullptr,
+			PartialDropQuantity);
+	const FRpgInventoryMutationResult PartialDropPlan =
+		Inventory->PlanDropItem(PartialDropIntent);
+	TestEqual(
+		TEXT("An ordinary partial drop retains Drop semantics"),
+		PartialDropPlan.Operation,
+		ERpgInventoryMutationOperation::Drop);
+	TestEqual(
+		TEXT("An ordinary partial drop plans successfully"),
+		PartialDropPlan.Code,
+		ERpgInventoryMutationResultCode::Success);
+	TestEqual(
+		TEXT("The partial drop plans the requested quantity"),
+		PartialDropPlan.AppliedQuantity,
+		PartialDropQuantity);
+	TestEqual(
+		TEXT("An ordinary partial drop emits one stack delta"),
+		PartialDropPlan.Deltas.Num(),
+		1);
+	if (PartialDropPlan.Deltas.Num() == 1)
+	{
+		TestEqual(
+			TEXT("The partial drop changes the source stack"),
+			PartialDropPlan.Deltas[0].Kind,
+			ERpgInventoryMutationDeltaKind::StackChanged);
+		TestEqual(
+			TEXT("The partial drop keeps the uncommitted remainder"),
+			PartialDropPlan.Deltas[0].NewQuantity,
+			SourceEntry.StackCount - PartialDropQuantity);
+	}
+
+	FRpgInventoryTransferIntent StaleDropIntent = PartialDropIntent;
+	++StaleDropIntent.ExpectedSourceQuantity;
+	TestEqual(
+		TEXT("Drop planning rejects a stale complete source quantity"),
+		Inventory->PlanDropItem(StaleDropIntent).Code,
+		ERpgInventoryMutationResultCode::SourceMismatch);
+
+	FRpgInventoryTransferIntent OversizedDropIntent = PartialDropIntent;
+	OversizedDropIntent.Quantity = SourceEntry.StackCount + 1;
+	const FRpgInventoryMutationResult OversizedDropPlan =
+		Inventory->PlanDropItem(OversizedDropIntent);
+	TestEqual(
+		TEXT("Drop planning rejects more than the complete source stack"),
+		OversizedDropPlan.Code,
+		ERpgInventoryMutationResultCode::InvalidRequest);
+	TestEqual(
+		TEXT("An oversized drop applies no quantity"),
+		OversizedDropPlan.AppliedQuantity,
+		0);
+
+	TestEqual(
+		TEXT("All direct drop plans preserve the complete graph"),
+		MakeInventorySignature(Inventory),
+		GraphBefore);
+	TestEqual(
+		TEXT("All direct drop plans preserve the replicated revision"),
+		Inventory->GetInventoryRevision(),
+		RevisionBefore);
+	TestEqual(
+		TEXT("All direct drop plans preserve the mutation epoch"),
+		Inventory->GetMutationEpoch(),
+		EpochBefore);
+	return true;
+}
+
+IMPLEMENT_SIMPLE_AUTOMATION_TEST(
 	FRpgInventoryTypedMoveStaleSnapshotTest,
 	"SurvivalRpg.Inventory.Intent.Move.StaleSnapshotIsAtomic",
 	EAutomationTestFlags::EditorContext |
