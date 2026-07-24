@@ -1,6 +1,6 @@
 # Inventory Refactor Plan
 
-Stand: 2026-07-23
+Stand: 2026-07-24
 
 Dieses Dokument hält die verbindliche Reihenfolge für die Bereinigung des
 Tarkov-artigen Spatial Inventory fest. Es dient als Fortschrittsliste über
@@ -2060,7 +2060,7 @@ Status: **In Arbeit**
       abdecken.
 - [x] Gear-, Carry- und Content-Widgets auf denselben Coordinator-/MVVM-Pfad
       bringen; Kontextmenüs fragen Fähigkeiten statt Fragmente zu erraten.
-- [ ] `CUI_CarrySlot` auf genau eine VM-Beobachtung reduzieren und eine
+- [x] `CUI_CarrySlot` auf genau eine VM-Beobachtung reduzieren und eine
       ausdrückliche Presenter-Policy festlegen: deklarative Itemdaten über die
       exakte Address-Source, imperative Hooks nur für Active/Holstered,
       Interaktion und Animation.
@@ -2597,6 +2597,80 @@ Verifizierter Phase-6I-Zwischenstand vom 2026-07-24:
 - Nächster Schnitt: `CUI_CarrySlot` auf genau eine VM-Beobachtung reduzieren
   und seine deklarative Address-Source von imperativer Active-/Holstered-,
   Interaktions- und Animationspräsentation eindeutig trennen.
+
+Verifizierter Phase-6J-Zwischenstand vom 2026-07-24:
+
+- `URpgInventoryAddressSlotWidget` besitzt weiterhin den einzigen nativen
+  `OnSlotChanged`-Delegate. Sein neuer virtueller
+  `RefreshAddressSlotPresentation`-Seam erlaubt spezialisierten
+  Address-Presentern, ihren Zustand aus derselben Änderung abzuleiten, ohne
+  dieselbe VM ein zweites Mal zu beobachten. Der getrennte
+  `ObservedCarryAddress`-/Handler-Pfad wurde aus dem Carry-Slot entfernt.
+- `CUI_CarrySlot` besitzt nun genau eine optionale manuelle Source mit dem
+  kanonischen Namen `RpgInventoryAddressSlotViewModel` und dem exakten Typ
+  `URpgInventoryAddressSlotViewModel`. Genau zwei OneWay-Bindings projizieren
+  stabile Itemdaten: `Icon -> Self.SetCarryItemIcon` und
+  `bRenderItemVisual -> Self.SetCarryItemVisualVisible`.
+- Die Presenter-Policy ist damit ausdrücklich getrennt: stabile Itemdaten
+  kommen ausschließlich deklarativ aus der exakten Address-Source.
+  `Empty`, `Holstered` und `Active`, der semantische Interaction-Preview-State
+  sowie Animation/Styling bleiben imperative Präsentation. Dafür existiert
+  nur noch der schmale `BP_OnCarrySlotStateChanged`-Hook ohne Item-, Address-
+  oder Occupied-Daten. Der alte itemdatenhaltige
+  `BP_OnCarrySlotPresentationChanged`-Pfad und seine Legacy-Getter/-Writer
+  wurden entfernt.
+- Die Lifecycle-Mutatoren für Group-Binding, Panel-Navigation und manuellen
+  Refresh sind nicht mehr `BlueprintCallable`. `CUI_PlayerInventory` bleibt
+  der native Composition Root; im Blueprint sind nur read-only Zustand, die
+  beiden MVVM-Destinations und der schmale Animations-/Styling-Hook sichtbar.
+- `ActiveIndicator` und `HolsteredIndicator` werden jetzt nativ aus einem
+  gegenseitig ausschließenden Präsentationszustand gesetzt; zuvor waren sie
+  nach `Construct` nur eingeklappt und wurden nicht mehr aktualisiert.
+  Equipment-/Handwechsel aktualisieren Carry erst nach der zugehörigen
+  SlotGroup-Reconciliation, sodass kein kurzlebiger falscher Zustand eine
+  zweite Animation auslöst. Screen-lokale Pending-/Rejected-Wechsel
+  refreshen alle drei Carry-Slots ausdrücklich. Die UI bleibt read-only;
+  Inventory-, Layout- und Equipment-Autorität wurden nicht verschoben.
+- Ein Carry-Binding akzeptiert fail-closed nur noch eine semantische
+  MainHand-/OffHand-Carry-Gruppe mit `1x1`-Grid, genau einer passenden
+  Carry-Address, identischem Container-Handle und Koordinate `[0,0]`.
+  Malformed Gruppen werden weder sichtbar noch beim Screen-Kontext und
+  Navigator registriert. Rebind `A -> B`, Release und Pool-Reuse lösen Source
+  und Delegate atomisch; weil das Leeren einer optionalen MVVM-Source keine
+  Defaultwerte in Ziele schreibt, neutralisiert Release Icon und Sichtbarkeit
+  zusätzlich ausdrücklich.
+- Der Assetvertrag prüft am echten `CUI_CarrySlot` exakten Parent, genau eine
+  Source, genau zwei Bindings und die Abwesenheit der Legacy-Graphwriter.
+  Der neue Carry-Lifecycle-Test prüft `A -> B -> Release -> Reuse` mit
+  Delegate-Anzahlen `1 -> 1/0 -> 0 -> 1`. Der echte
+  Player-/Storage-Lifecycle prüft die MVVM-Source und den Address-Delegate
+  über Aktivierung, Deaktivierung und Reaktivierung als
+  `aktuell/1 -> null/0 -> aktuell/1`. Er grantet zusätzlich ein echtes
+  Weapon-Item, verschiebt es über den autoritativen Equipment-Intent nach
+  Carry und beweist den Präsentationswechsel
+  `Holstered -> Active -> Holstered` über den realen Loadout-Pfad.
+- Das authored Asset wurde automatisch migriert, kompiliert und gespeichert.
+  Im Editor sind keine manuelle Source-, Binding-, Graph- oder
+  CoreRedirect-Anpassung nötig. Empfohlene interaktive QA: alle drei
+  Carry-Slots leer, holstered und active prüfen; Handwechsel, Pending/
+  Rejected, Mouse-/Gamepad-Interaktion, Drag und wiederholtes
+  Schließen/Öffnen des gepoolten Inventory-Screens durchspielen.
+- Der abschließende UE-5.8-Build
+  `SurvivalRpgEditor Win64 Development` endete mit
+  `Result: Succeeded`. Die gezielten Carry-Lifecycle-, Asset-, Pooling-,
+  Context-Action- und Player-/Storage-Regressionen waren erfolgreich.
+  `SurvivalRpg.Inventory` meldete 142 von 142 und `SurvivalRpg.UI` 26 von 26
+  Automationtests erfolgreich.
+- `CompileAllBlueprints -ProjectOnly` endete mit Ergebnis 0,
+  0 Compilerfehlern, 16 bekannten Compilerwarnungen und 0 nicht ladbaren
+  Blueprints. `CUI_CarrySlot` kompilierte dabei erfolgreich; `git lfs fsck`
+  meldete einen intakten LFS-Zustand.
+- Fortschritt Phase 6: 19 von 22 Punkten abgeschlossen (86,4 %).
+- Gesamtfortschritt der erweiterten verbindlichen Checkliste: 85 von 97
+  Punkten abgeschlossen (87,6 %), 12 Punkte offen.
+- Nächster Schnitt: `RpgInventoryUiActionComponent` in schmale
+  Domain-Handler aufteilen; der Controller bleibt RPC-Eigentümer und kann
+  während der Migration als Fassade bestehen.
 
 ## Phase 7 – Legacy endgültig entfernen
 

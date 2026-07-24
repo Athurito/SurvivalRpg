@@ -86,7 +86,7 @@ void URpgInventoryAddressSlotWidget::SetAddressSlotViewModel(URpgInventoryAddres
 	if (SlotViewModel == InSlotViewModel)
 	{
 		InjectAddressSlotViewModelIntoMvvm();
-		RefreshDragDropVisualState();
+		RefreshAddressSlotPresentation();
 		return;
 	}
 
@@ -102,7 +102,7 @@ void URpgInventoryAddressSlotWidget::SetAddressSlotViewModel(URpgInventoryAddres
 	}
 
 	InjectAddressSlotViewModelIntoMvvm();
-	RefreshDragDropVisualState();
+	RefreshAddressSlotPresentation();
 }
 
 void URpgInventoryAddressSlotWidget::SetInventoryPanelActive(bool bInInventoryPanelActive)
@@ -156,6 +156,11 @@ void URpgInventoryAddressSlotWidget::RefreshDragDropVisualState()
 			: (bSlotSelected && bInventoryPanelActive ? ERpgInventorySlotDragVisualState::Focused : ERpgInventorySlotDragVisualState::Normal));
 
 	BP_OnAddressSlotDragDropStateChanged(CurrentDragDropVisualState);
+}
+
+void URpgInventoryAddressSlotWidget::RefreshAddressSlotPresentation()
+{
+	RefreshDragDropVisualState();
 }
 
 bool URpgInventoryAddressSlotWidget::PreviewPayloadDrop(const FRpgInventoryDragPayload& Payload)
@@ -274,8 +279,8 @@ bool URpgInventoryAddressSlotWidget::InjectAddressSlotViewModelIntoMvvm()
 	const UMVVMViewClass* ViewClass = View ? View->GetViewClass() : nullptr;
 	if (!View || !ViewClass)
 	{
-		// Specialized address presenters such as authored carry slots intentionally use their richer imperative
-		// presentation hook. When an MVVM view is authored, the canonical exact-source contract below is mandatory.
+		// Purely native test/utility presenters may omit MVVM. Every authored data-presenting leaf must satisfy the
+		// canonical exact-source contract below.
 		return false;
 	}
 
@@ -534,7 +539,7 @@ void URpgInventoryAddressSlotWidget::HandleSlotViewModelChanged(URpgInventoryAdd
 {
 	if (ChangedSlotViewModel == SlotViewModel)
 	{
-		RefreshDragDropVisualState();
+		RefreshAddressSlotPresentation();
 	}
 }
 

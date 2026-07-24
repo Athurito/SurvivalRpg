@@ -153,6 +153,7 @@ private:
 	UFUNCTION()
 	void HandleActionBarSlotsChanged();
 
+	void RefreshCarrySlotPresentations();
 	void EnsurePlayerInventoryViewModel();
 	bool ValidatePlayerInventoryViewModelMvvmContract() const;
 	void BindViewModelDelegates();

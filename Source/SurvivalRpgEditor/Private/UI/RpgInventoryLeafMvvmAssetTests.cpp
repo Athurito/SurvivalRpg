@@ -7,6 +7,7 @@
 #include "SurvivalRpg/UI/RpgActionBarSlotWidget.h"
 #include "SurvivalRpg/UI/RpgBaseResourceEntryWidget.h"
 #include "SurvivalRpg/UI/RpgInventoryAddressSlotWidget.h"
+#include "SurvivalRpg/UI/RpgInventoryCarrySlotWidget.h"
 #include "SurvivalRpg/UI/RpgLoadoutSlotWidgets.h"
 
 #include "Blueprint/WidgetBlueprintGeneratedClass.h"
@@ -703,6 +704,40 @@ bool FRpgInventoryLeafMvvmAssetContractsTest::RunTest(
 			}
 		},
 		{
+			TEXT("Carry slot"),
+			TEXT(
+				"/Game/SurvivalRpg/Inventory/UI/SpatialInventory/"
+				"CUI_CarrySlot.CUI_CarrySlot"),
+			URpgInventoryCarrySlotWidget::StaticClass(),
+			URpgInventoryAddressSlotViewModel::StaticClass(),
+			URpgInventoryAddressSlotWidget::
+				AddressSlotViewModelSourceName,
+			2,
+			{
+				{
+					TEXT("Icon"),
+					NAME_None,
+					TEXT("SetCarryItemIcon"),
+					NAME_None
+				},
+				{
+					TEXT("bRenderItemVisual"),
+					NAME_None,
+					TEXT("SetCarryItemVisualVisible"),
+					NAME_None
+				}
+			},
+			{ TEXT("BP_OnCarrySlotPresentationChanged") },
+			{
+				TEXT("BP_OnCarrySlotPresentationChanged"),
+				TEXT("GetCarryItemIcon"),
+				TEXT("IsCarrySlotOccupied"),
+				TEXT("IsCarryItemHolstered"),
+				TEXT("SetCarryItemIcon"),
+				TEXT("SetCarryItemVisualVisible")
+			}
+		},
+		{
 			TEXT("Equipment slot"),
 			TEXT(
 				"/Game/SurvivalRpg/Inventory/UI/"
@@ -789,6 +824,11 @@ bool FRpgInventoryLeafMvvmAssetContractsTest::RunTest(
 			TEXT("Address"),
 			URpgInventoryAddressSlotWidget::StaticClass(),
 			TEXT("BP_OnAddressSlotViewModelSet")
+		},
+		{
+			TEXT("Carry"),
+			URpgInventoryCarrySlotWidget::StaticClass(),
+			TEXT("BP_OnCarrySlotPresentationChanged")
 		},
 		{
 			TEXT("Equipment"),

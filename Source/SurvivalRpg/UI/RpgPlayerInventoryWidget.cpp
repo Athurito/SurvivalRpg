@@ -170,7 +170,10 @@ void URpgPlayerInventoryWidget::RefreshSlotGroups()
 			GroupViewModel,
 			MakeInventoryScreenPresentationContext(),
 			PanelId);
-		CarrySlot->SetVisibility(GroupViewModel ? ESlateVisibility::Visible : ESlateVisibility::Collapsed);
+		CarrySlot->SetVisibility(
+			CarrySlot->GetCarrySlotGroupViewModel()
+				? ESlateVisibility::Visible
+				: ESlateVisibility::Collapsed);
 	};
 
 	auto ResolveCarryRole = [this](FGameplayTag SemanticRole)
@@ -277,6 +280,11 @@ void URpgPlayerInventoryWidget::RefreshInventoryScreenSpecificInteractionPresent
 
 	// Carry slots expose semantic Pending/Rejected state through their presentation hook. Refresh all three because
 	// the interaction session target can change without replacing the held payload delegate they otherwise observe.
+	RefreshCarrySlotPresentations();
+}
+
+void URpgPlayerInventoryWidget::RefreshCarrySlotPresentations()
+{
 	auto RefreshCarryPresentation =
 		[](URpgInventoryCarrySlotWidget* CarrySlot)
 	{
@@ -548,15 +556,18 @@ void URpgPlayerInventoryWidget::RegisterInventoryScreenNavigationPanels(
 		Navigator->RegisterEquipmentPanel(TEXT("Gear.ResourceBag"), Gear_ResourceBag);
 	}
 
-	if (Carry_Weapon1)
+	if (Carry_Weapon1 &&
+		Carry_Weapon1->GetCarrySlotGroupViewModel())
 	{
 		Navigator->RegisterCarrySlotPanel(TEXT("Carry.Weapon1"), Carry_Weapon1);
 	}
-	if (Carry_Weapon2)
+	if (Carry_Weapon2 &&
+		Carry_Weapon2->GetCarrySlotGroupViewModel())
 	{
 		Navigator->RegisterCarrySlotPanel(TEXT("Carry.Weapon2"), Carry_Weapon2);
 	}
-	if (Carry_Offhand)
+	if (Carry_Offhand &&
+		Carry_Offhand->GetCarrySlotGroupViewModel())
 	{
 		Navigator->RegisterCarrySlotPanel(TEXT("Carry.Offhand"), Carry_Offhand);
 	}

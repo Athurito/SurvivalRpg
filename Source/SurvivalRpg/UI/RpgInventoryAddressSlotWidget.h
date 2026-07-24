@@ -137,6 +137,13 @@ public:
 	bool ConfirmAddressSplit(FRpgInventoryItemId ExpectedItemId, int32 SplitCount);
 
 protected:
+	/**
+	 * Refreshes presentation derived from the currently assigned address VM.
+	 * The base owns the sole OnSlotChanged observer; specialized address presenters extend this seam instead of
+	 * subscribing to the same VM again.
+	 */
+	virtual void RefreshAddressSlotPresentation();
+
 	virtual void NativeDestruct() override;
 	virtual void NativeOnListItemObjectSet(UObject* ListItemObject) override;
 	virtual void NativeOnEntryReleased() override;

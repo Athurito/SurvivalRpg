@@ -11,6 +11,7 @@
 #include "SurvivalRpg/Inventory/RpgInventoryAutomationTestTypes.h"
 #include "SurvivalRpg/Inventory/RpgInventoryDragDrop.h"
 #include "SurvivalRpg/Inventory/RpgInventoryManagerComponent.h"
+#include "SurvivalRpg/Inventory/RpgInventoryUiActionComponent.h"
 #include "SurvivalRpg/Inventory/RpgPlayerInventoryLayoutComponent.h"
 #include "SurvivalRpg/Mvvm/Inventory/RpgLoadoutViewModels.h"
 #include "SurvivalRpg/Mvvm/Inventory/RpgPlayerInventoryViewModels.h"
@@ -794,6 +795,8 @@ bool FRpgPlayerStorageInventoryLifecycleIntegrationTest::RunTest(
 
 	UMVVMView* GearHeadMvvmView =
 		UMVVMSubsystem::GetViewFromUserWidget(GearHead);
+	UMVVMView* CarryWeapon1MvvmView =
+		UMVVMSubsystem::GetViewFromUserWidget(CarryWeapon1);
 	UMVVMView* ContentPocketsMvvmView =
 		UMVVMSubsystem::GetViewFromUserWidget(ContentPockets);
 	URpgInventoryDragDropCoordinator* PlayerScreenCoordinator =
@@ -830,6 +833,9 @@ bool FRpgPlayerStorageInventoryLifecycleIntegrationTest::RunTest(
 		!TestNotNull(
 			TEXT("Gear_Head owns its compiled MVVM view"),
 			GearHeadMvvmView) ||
+		!TestNotNull(
+			TEXT("Carry_Weapon1 owns its compiled MVVM view"),
+			CarryWeapon1MvvmView) ||
 		!TestNotNull(
 			TEXT("Content_Pockets owns its compiled MVVM view"),
 			ContentPocketsMvvmView) ||
@@ -931,6 +937,12 @@ bool FRpgPlayerStorageInventoryLifecycleIntegrationTest::RunTest(
 			InitialCarryWeapon1Group->GetSlots().Contains(
 				InitialCarryWeapon1Address)) ||
 		!TestEqual(
+			TEXT("Carry_Weapon1 injects its exact optional MVVM source"),
+			CarryWeapon1MvvmView->GetViewModel(
+				URpgInventoryAddressSlotWidget::
+					AddressSlotViewModelSourceName).GetObject(),
+			static_cast<UObject*>(InitialCarryWeapon1Address)) ||
+		!TestEqual(
 			TEXT("Content_Pockets injects the aggregate VM's exact semantic group"),
 			ContentPocketsMvvmView->GetViewModel(
 				URpgInventorySlotGroupWidget::
@@ -973,6 +985,12 @@ bool FRpgPlayerStorageInventoryLifecycleIntegrationTest::RunTest(
 				GearHead),
 			1) ||
 		!TestEqual(
+			TEXT("Carry_Weapon1 observes its canonical address exactly once"),
+			CountDelegateBindingsTo(
+				InitialCarryWeapon1Address->OnSlotChanged,
+				CarryWeapon1),
+			1) ||
+		!TestEqual(
 			TEXT("Content_Pockets grid observes its first address exactly once"),
 			CountDelegateBindingsTo(
 				InitialContentPocketsAddress->OnSlotChanged,
@@ -1007,6 +1025,128 @@ bool FRpgPlayerStorageInventoryLifecycleIntegrationTest::RunTest(
 			TEXT("Content navigation retains canonical inventory authority"),
 			PlayerScreenNavigator->GetActiveInventory(),
 			CanonicalInventory))
+	{
+		return false;
+	}
+
+	PlayerCounters.Reset();
+	StorageCounters.Reset();
+	URpgInventoryItemInstance* CarryWeapon1Item =
+		CanonicalInventory->GrantItemDefinition(
+			URpgInventoryAutomationTestWeaponItemDefinition::
+				StaticClass(),
+			1);
+	if (!TestNotNull(
+			TEXT("The canonical grant path creates a real Carry-capable weapon"),
+			CarryWeapon1Item))
+	{
+		return false;
+	}
+	const TArray<FRpgInventoryEntryView> GrantedEntries =
+		CanonicalInventory->GetAllEntries();
+	const FRpgInventoryEntryView* GrantedCarryEntry =
+		GrantedEntries.FindByPredicate(
+			[CarryWeapon1Item](
+				const FRpgInventoryEntryView& Entry)
+			{
+				return Entry.Instance == CarryWeapon1Item;
+			});
+	URpgInventoryUiActionComponent* UiActions =
+		Controller->GetInventoryUiActionComponent();
+	if (!TestNotNull(
+			TEXT("The granted weapon has an exact source snapshot"),
+			GrantedCarryEntry) ||
+		!TestNotNull(
+			TEXT("The real controller exposes its authoritative UI action gateway"),
+			UiActions))
+	{
+		return false;
+	}
+	if (GrantedCarryEntry->Placement.GetContainerHandle() !=
+		InitialCarryWeapon1Group->GetContainerHandle())
+	{
+		FRpgInventoryEquipmentIntent MoveToCarryIntent;
+		MoveToCarryIntent.RequestId = FGuid::NewGuid();
+		MoveToCarryIntent.ItemId = GrantedCarryEntry->ItemId;
+		MoveToCarryIntent.ExpectedEntryId =
+			GrantedCarryEntry->EntryId;
+		MoveToCarryIntent.ExpectedSourcePlacement =
+			GrantedCarryEntry->Placement;
+		MoveToCarryIntent.ExpectedQuantity =
+			GrantedCarryEntry->StackCount;
+		MoveToCarryIntent.Operation =
+			ERpgInventoryEquipmentIntentOperation::MoveToCarry;
+		UiActions->RequestApplyInventoryEquipmentIntent(
+			CanonicalInventory,
+			MoveToCarryIntent);
+	}
+	FRpgInventoryGridPlacement ActualCarryPlacement;
+	if (!TestTrue(
+			TEXT("The authoritative equipment intent places the weapon in Carry"),
+			CanonicalInventory->GetItemPlacement(
+				CarryWeapon1Item,
+				ActualCarryPlacement)) ||
+		!TestEqual(
+			TEXT("The physical weapon reaches the primary Carry group"),
+			ActualCarryPlacement.GetContainerHandle(),
+			InitialCarryWeapon1Group->GetContainerHandle()))
+	{
+		return false;
+	}
+	TestWorld.AdvanceTimerFrame();
+	if (!TestEqual(
+			TEXT("A stored inactive Carry weapon presents as Holstered"),
+			CarryWeapon1->GetCarryPresentationState(),
+			ERpgInventoryCarryPresentationState::Holstered) ||
+		!TestEqual(
+			TEXT("The sole Carry address observer projects the real stored weapon"),
+			CarryWeapon1->GetAddressSlotViewModel()
+				? CarryWeapon1->GetAddressSlotViewModel()->
+					GetItemInstance()
+				: nullptr,
+			CarryWeapon1Item))
+	{
+		return false;
+	}
+
+	PlayerCounters.Reset();
+	StorageCounters.Reset();
+	if (!TestTrue(
+			TEXT("The real loadout activates the stored primary Carry weapon"),
+			EquipmentLoadout->SetMainHandItemActive(
+				CarryWeapon1Item)))
+	{
+		return false;
+	}
+	TestWorld.AdvanceTimerFrame();
+	if (!TestEqual(
+			TEXT("An active primary Carry weapon presents as Active"),
+			CarryWeapon1->GetCarryPresentationState(),
+			ERpgInventoryCarryPresentationState::Active) ||
+		!TestEqual(
+			TEXT("Active presentation preserves the exact physical Carry item"),
+			CarryWeapon1->GetAddressSlotViewModel()
+				? CarryWeapon1->GetAddressSlotViewModel()->
+					GetItemInstance()
+				: nullptr,
+			CarryWeapon1Item))
+	{
+		return false;
+	}
+
+	PlayerCounters.Reset();
+	StorageCounters.Reset();
+	if (!TestTrue(
+			TEXT("The real loadout can holster the active primary Carry weapon"),
+			EquipmentLoadout->ClearActiveMainHand()))
+	{
+		return false;
+	}
+	TestWorld.AdvanceTimerFrame();
+	if (!TestEqual(
+			TEXT("Clearing the active hand returns the stored Carry weapon to Holstered"),
+			CarryWeapon1->GetCarryPresentationState(),
+			ERpgInventoryCarryPresentationState::Holstered))
 	{
 		return false;
 	}
@@ -1173,6 +1313,11 @@ bool FRpgPlayerStorageInventoryLifecycleIntegrationTest::RunTest(
 		!TestNull(
 			TEXT("Deactivated Carry_Weapon1 releases its address VM"),
 			CarryWeapon1->GetAddressSlotViewModel()) ||
+		!TestNull(
+			TEXT("Deactivated Carry_Weapon1 clears its optional MVVM source"),
+			CarryWeapon1MvvmView->GetViewModel(
+				URpgInventoryAddressSlotWidget::
+					AddressSlotViewModelSourceName).GetObject()) ||
 		!TestNull(
 			TEXT("Deactivated Carry_Weapon1 releases its coordinator"),
 			CarryWeapon1->GetDragDropCoordinator()) ||
@@ -1418,6 +1563,13 @@ bool FRpgPlayerStorageInventoryLifecycleIntegrationTest::RunTest(
 				ReactivatedCarryWeapon1Group->GetSlots().Contains(
 					ReactivatedCarryWeapon1Address)) ||
 		!TestEqual(
+			TEXT("Reactivated Carry_Weapon1 restores its exact MVVM source"),
+			CarryWeapon1MvvmView->GetViewModel(
+				URpgInventoryAddressSlotWidget::
+					AddressSlotViewModelSourceName).GetObject(),
+			static_cast<UObject*>(
+				ReactivatedCarryWeapon1Address)) ||
+		!TestEqual(
 			TEXT("Reactivated Content_Pockets restores its exact MVVM source"),
 			ContentPocketsMvvmView->GetViewModel(
 				URpgInventorySlotGroupWidget::
@@ -1468,16 +1620,19 @@ bool FRpgPlayerStorageInventoryLifecycleIntegrationTest::RunTest(
 				ContentPocketsGrid),
 			1) ||
 		!TestEqual(
-			TEXT("Reactivation does not reconnect the released Carry address"),
+			TEXT("Reactivated Carry_Weapon1 observes its current address exactly once"),
+			CountDelegateBindingsTo(
+				ReactivatedCarryWeapon1Address->OnSlotChanged,
+				CarryWeapon1),
+			1) ||
+		!TestEqual(
+			TEXT("Reactivation leaves no stale observer on a replaced Carry address"),
 			CountDelegateBindingsTo(
 				InitialCarryWeapon1Address->OnSlotChanged,
 				CarryWeapon1),
 			InitialCarryWeapon1Address ==
 					ReactivatedCarryWeapon1Address
-				? CountDelegateBindingsTo(
-					ReactivatedCarryWeapon1Address->
-						OnSlotChanged,
-					CarryWeapon1)
+				? 1
 				: 0) ||
 		!TestEqual(
 			TEXT("Reactivation does not reconnect the released Content address"),

@@ -1,5 +1,7 @@
 #include "RpgInventoryCarrySlotWidget.h"
 
+#include "CommonLazyImage.h"
+#include "Components/Border.h"
 #include "InputCoreTypes.h"
 #include "SurvivalRpg/Core/Player/RpgPlayerController.h"
 #include "SurvivalRpg/Equipment/RpgEquipmentLoadoutComponent.h"
@@ -25,6 +27,12 @@ void URpgInventoryCarrySlotWidget::BindInventoryPresentation(
 
 	// Resolve the exact address first so a previous source-owned modal is dismissed through the previous host.
 	SetCarrySlotGroupViewModel(InGroupViewModel);
+	if (!CarrySlotGroupViewModel)
+	{
+		ReleaseInventoryPresentation();
+		return;
+	}
+
 	SetDragDropCoordinator(InContext.DragDropCoordinator);
 	SetInventoryPresentationHost(InContext.PresentationHost);
 	SetPanelNavigationCoordinator(
@@ -37,44 +45,53 @@ void URpgInventoryCarrySlotWidget::ReleaseInventoryPresentation()
 	ClearFocusedControllerInteractionTarget();
 	UnbindFocusedControllerInteraction();
 	SetCarrySlotGroupViewModel(nullptr);
+	SetCarryItemVisualVisible(false);
+	SetCarryItemIcon(TSoftObjectPtr<UTexture2D>());
 	PanelNavigationCoordinator = nullptr;
 	PanelNavigationId = NAME_None;
 	Super::ReleaseInventoryPresentation();
+	bCarryPresentationStateInitialized = false;
 }
 
 void URpgInventoryCarrySlotWidget::SetCarrySlotGroupViewModel(
 	URpgInventorySlotGroupViewModel* InGroupViewModel)
 {
-	UnbindCarryAddressObserver();
-	CarrySlotGroupViewModel = InGroupViewModel;
-
+	CarrySlotGroupViewModel = nullptr;
 	URpgInventoryAddressSlotViewModel* CanonicalAddress = nullptr;
-	if (CarrySlotGroupViewModel)
+	if (InGroupViewModel &&
+		InGroupViewModel->IsCarryGroup() &&
+		InGroupViewModel->GetContainerHandle().IsValid() &&
+		InGroupViewModel->GetGridSize().Width == 1 &&
+		InGroupViewModel->GetGridSize().Height == 1 &&
+		(InGroupViewModel->GetEquipmentSlotRole() == ERpgEquipmentSlot::MainHand ||
+			InGroupViewModel->GetEquipmentSlotRole() == ERpgEquipmentSlot::OffHand))
 	{
-		for (URpgInventoryAddressSlotViewModel* Candidate : CarrySlotGroupViewModel->GetSlots())
+		const TArray<URpgInventoryAddressSlotViewModel*> Slots =
+			InGroupViewModel->GetSlots();
+		if (Slots.Num() == 1)
 		{
-			if (!Candidate || !Candidate->IsCarrySlot())
+			URpgInventoryAddressSlotViewModel* Candidate = Slots[0];
+			if (Candidate &&
+				Candidate->IsCarrySlot() &&
+				Candidate->GetEquipmentSlotRole() ==
+					InGroupViewModel->GetEquipmentSlotRole())
 			{
-				continue;
-			}
-
-			const FRpgInventorySlotAddress Address = Candidate->GetSlotAddress();
-			if (Address.X == 0 && Address.Y == 0)
-			{
-				CanonicalAddress = Candidate;
-				break;
+				const FRpgInventorySlotAddress Address =
+					Candidate->GetSlotAddress();
+				if (Address.IsValid() &&
+					Address.GetContainerHandle() ==
+						InGroupViewModel->GetContainerHandle() &&
+					Address.X == 0 &&
+					Address.Y == 0)
+				{
+					CarrySlotGroupViewModel = InGroupViewModel;
+					CanonicalAddress = Candidate;
+				}
 			}
 		}
 	}
 
 	SetAddressSlotViewModel(CanonicalAddress);
-	ObservedCarryAddress = CanonicalAddress;
-	if (ObservedCarryAddress)
-	{
-		ObservedCarryAddress->OnSlotChanged.AddUniqueDynamic(this, &ThisClass::HandleCarryAddressSlotChanged);
-	}
-
-	RefreshCarrySlotPresentation();
 }
 
 void URpgInventoryCarrySlotWidget::SetPanelNavigationCoordinator(
@@ -87,37 +104,20 @@ void URpgInventoryCarrySlotWidget::SetPanelNavigationCoordinator(
 
 void URpgInventoryCarrySlotWidget::RefreshCarrySlotPresentation()
 {
-	URpgInventoryAddressSlotViewModel* AddressSlotViewModel = GetAddressSlotViewModel();
-	URpgInventoryItemInstance* Item = GetCarryItem();
-	const bool bOccupied = Item != nullptr;
-	const bool bActive = bOccupied && IsCarryItemActive();
-	BP_OnCarrySlotPresentationChanged(AddressSlotViewModel, Item, bOccupied, bActive, bOccupied && !bActive);
-	RefreshDragDropVisualState();
+	RefreshAddressSlotPresentation();
 }
 
-FText URpgInventoryCarrySlotWidget::GetCarrySlotLabel() const
+void URpgInventoryCarrySlotWidget::RefreshAddressSlotPresentation()
 {
-	return GetAddressSlotViewModel() ? GetAddressSlotViewModel()->GetSlotLabel() : FText::GetEmpty();
+	ApplyCarryPresentationState(
+		ResolveCarryPresentationState(),
+		GetCarryInteractionPreviewState());
+	Super::RefreshAddressSlotPresentation();
 }
 
 URpgInventoryItemInstance* URpgInventoryCarrySlotWidget::GetCarryItem() const
 {
 	return GetAddressSlotViewModel() ? GetAddressSlotViewModel()->GetItemInstance() : nullptr;
-}
-
-TSoftObjectPtr<UTexture2D> URpgInventoryCarrySlotWidget::GetCarryItemIcon() const
-{
-	return GetAddressSlotViewModel() ? GetAddressSlotViewModel()->GetIcon() : TSoftObjectPtr<UTexture2D>();
-}
-
-int32 URpgInventoryCarrySlotWidget::GetCarryStackCount() const
-{
-	return GetAddressSlotViewModel() ? GetAddressSlotViewModel()->GetStackCount() : 0;
-}
-
-bool URpgInventoryCarrySlotWidget::IsCarrySlotOccupied() const
-{
-	return GetCarryItem() != nullptr;
 }
 
 bool URpgInventoryCarrySlotWidget::IsCarryItemActive() const
@@ -144,6 +144,18 @@ bool URpgInventoryCarrySlotWidget::IsCarryItemActive() const
 		EquipmentLoadout->GetItemInEquipmentSlot(EquipmentSlot) == Item;
 }
 
+ERpgInventoryCarryPresentationState URpgInventoryCarrySlotWidget::ResolveCarryPresentationState() const
+{
+	if (!GetCarryItem())
+	{
+		return ERpgInventoryCarryPresentationState::Empty;
+	}
+
+	return IsCarryItemActive()
+		? ERpgInventoryCarryPresentationState::Active
+		: ERpgInventoryCarryPresentationState::Holstered;
+}
+
 ERpgInventoryInteractionPreviewState URpgInventoryCarrySlotWidget::GetCarryInteractionPreviewState() const
 {
 	const URpgInventoryDragDropCoordinator* Coordinator = GetDragDropCoordinator();
@@ -159,6 +171,61 @@ ERpgInventoryInteractionPreviewState URpgInventoryCarrySlotWidget::GetCarryInter
 		Target.SlotAddress == AddressSlotViewModel->GetSlotAddress()
 		? Session->GetPreviewState()
 		: ERpgInventoryInteractionPreviewState::None;
+}
+
+void URpgInventoryCarrySlotWidget::SetCarryItemVisualVisible(bool bVisible)
+{
+	if (ItemIcon)
+	{
+		ItemIcon->SetVisibility(
+			bVisible
+				? ESlateVisibility::HitTestInvisible
+				: ESlateVisibility::Collapsed);
+	}
+}
+
+void URpgInventoryCarrySlotWidget::SetCarryItemIcon(
+	TSoftObjectPtr<UTexture2D> Icon)
+{
+	if (ItemIcon)
+	{
+		ItemIcon->SetBrushFromLazyTexture(Icon);
+	}
+}
+
+void URpgInventoryCarrySlotWidget::ApplyCarryPresentationState(
+	ERpgInventoryCarryPresentationState NewState,
+	ERpgInventoryInteractionPreviewState NewInteractionPreviewState)
+{
+	if (ActiveIndicator)
+	{
+		ActiveIndicator->SetVisibility(
+			NewState == ERpgInventoryCarryPresentationState::Active
+				? ESlateVisibility::HitTestInvisible
+				: ESlateVisibility::Collapsed);
+	}
+	if (HolsteredIndicator)
+	{
+		HolsteredIndicator->SetVisibility(
+			NewState == ERpgInventoryCarryPresentationState::Holstered
+				? ESlateVisibility::HitTestInvisible
+				: ESlateVisibility::Collapsed);
+	}
+
+	const bool bStateChanged =
+		!bCarryPresentationStateInitialized ||
+		CarryPresentationState != NewState ||
+		CarryInteractionPreviewState != NewInteractionPreviewState;
+	CarryPresentationState = NewState;
+	CarryInteractionPreviewState = NewInteractionPreviewState;
+	bCarryPresentationStateInitialized = true;
+
+	if (bStateChanged)
+	{
+		BP_OnCarrySlotStateChanged(
+			CarryPresentationState,
+			CarryInteractionPreviewState);
+	}
 }
 
 void URpgInventoryCarrySlotWidget::NativeDestruct()
@@ -197,24 +264,6 @@ FReply URpgInventoryCarrySlotWidget::NativeOnPreviewMouseButtonDown(
 	}
 
 	return Super::NativeOnPreviewMouseButtonDown(InGeometry, InMouseEvent);
-}
-
-void URpgInventoryCarrySlotWidget::HandleCarryAddressSlotChanged(
-	URpgInventoryAddressSlotViewModel* ChangedSlotViewModel)
-{
-	if (ChangedSlotViewModel == ObservedCarryAddress)
-	{
-		RefreshCarrySlotPresentation();
-	}
-}
-
-void URpgInventoryCarrySlotWidget::UnbindCarryAddressObserver()
-{
-	if (ObservedCarryAddress)
-	{
-		ObservedCarryAddress->OnSlotChanged.RemoveDynamic(this, &ThisClass::HandleCarryAddressSlotChanged);
-	}
-	ObservedCarryAddress = nullptr;
 }
 
 void URpgInventoryCarrySlotWidget::HandleFocusedControllerHeldPayloadChanged(

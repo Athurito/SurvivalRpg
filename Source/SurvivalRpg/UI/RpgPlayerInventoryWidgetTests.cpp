@@ -15,6 +15,7 @@
 #include "SurvivalRpg/Mvvm/Inventory/RpgPlayerInventoryViewModels.h"
 #include "SurvivalRpg/UI/RpgActionBarSlotWidget.h"
 #include "SurvivalRpg/UI/RpgInventoryAddressSlotWidget.h"
+#include "SurvivalRpg/UI/RpgInventoryCarrySlotWidget.h"
 #include "SurvivalRpg/UI/RpgInventoryDragVisualWidget.h"
 #include "SurvivalRpg/UI/RpgInventoryInteractionScreenWidget.h"
 #include "SurvivalRpg/UI/RpgLoadoutSlotWidgets.h"
@@ -1775,6 +1776,423 @@ bool FRpgInventoryAddressSlotEntryPoolingTest::RunTest(const FString& Parameters
 		1);
 
 	IUserListEntry::ReleaseEntry(*Widget);
+	SlateWidget.Reset();
+	return true;
+}
+
+IMPLEMENT_SIMPLE_AUTOMATION_TEST(
+	FRpgCarrySlotPresentationLifecycleTest,
+	"SurvivalRpg.Inventory.UI.CarrySlotPresentationLifecycle",
+	EAutomationTestFlags::EditorContext | EAutomationTestFlags::EngineFilter)
+
+bool FRpgCarrySlotPresentationLifecycleTest::RunTest(const FString& Parameters)
+{
+	using namespace RpgPlayerInventoryWidgetTests;
+
+	FScopedWidgetWorld TestWorld;
+	if (!TestTrue(TEXT("Standalone widget world is valid"), TestWorld.IsValid()))
+	{
+		return false;
+	}
+
+	UClass* CarryWidgetClass =
+		LoadClass<URpgInventoryCarrySlotWidget>(
+			nullptr,
+			TEXT(
+				"/Game/SurvivalRpg/Inventory/UI/SpatialInventory/"
+				"CUI_CarrySlot.CUI_CarrySlot_C"));
+	UWidgetBlueprintGeneratedClass* GeneratedClass =
+		Cast<UWidgetBlueprintGeneratedClass>(CarryWidgetClass);
+	if (!TestNotNull(
+			TEXT("Canonical Carry slot class loads"),
+			CarryWidgetClass) ||
+		!TestNotNull(
+			TEXT("Canonical Carry slot is a Widget Blueprint"),
+			GeneratedClass))
+	{
+		return false;
+	}
+	TestTrue(
+		TEXT("Carry slot initializes without a player context"),
+		GeneratedClass->
+			bCanCallInitializedWithoutPlayerContext);
+
+	const TArray<UWidgetBlueprintGeneratedClassExtension*>
+		CompiledViewExtensions =
+			GeneratedClass->GetExtensions(
+				UMVVMViewClass::StaticClass(),
+				false);
+	TestEqual(
+		TEXT("Carry slot owns exactly one compiled MVVM view"),
+		CompiledViewExtensions.Num(),
+		1);
+	const UMVVMViewClass* CompiledViewClass =
+		CompiledViewExtensions.Num() == 1
+			? Cast<UMVVMViewClass>(
+				CompiledViewExtensions[0])
+			: nullptr;
+	if (!TestNotNull(
+			TEXT("Carry slot compiled MVVM view exists"),
+			CompiledViewClass))
+	{
+		return false;
+	}
+
+	int32 MatchingSourceCount = 0;
+	const int32 MatchingSourceIndex =
+		FindNamedViewModelSource(
+			*CompiledViewClass,
+			URpgInventoryAddressSlotWidget::
+				AddressSlotViewModelSourceName,
+			MatchingSourceCount);
+	TestEqual(
+		TEXT("Carry slot has exactly one canonical Address VM source"),
+		MatchingSourceCount,
+		1);
+	TestEqual(
+		TEXT("Carry slot owns exactly two declarative item bindings"),
+		CompiledViewClass->GetBindings().Num(),
+		2);
+	const TArrayView<const FMVVMViewClass_Source>
+		CompiledSources =
+			CompiledViewClass->GetSources();
+	if (!CompiledSources.IsValidIndex(
+			MatchingSourceIndex))
+	{
+		return false;
+	}
+
+	const FMVVMViewClass_Source& CompiledSource =
+		CompiledSources[MatchingSourceIndex];
+	TestEqual(
+		TEXT("Carry source expects the exact Address VM class"),
+		CompiledSource.GetSourceClass(),
+		URpgInventoryAddressSlotViewModel::StaticClass());
+	TestTrue(
+		TEXT("Carry source is manually settable"),
+		CompiledSource.CanBeSet());
+	TestTrue(
+		TEXT("Carry source is optional while the screen is pooled"),
+		CompiledSource.IsOptional());
+	TestEqual(
+		TEXT("Carry source owns both declarative item bindings"),
+		CompiledSource.GetBindings().Num(),
+		2);
+
+	URpgInventoryCarrySlotWidget* Widget =
+		CreateWidget<URpgInventoryCarrySlotWidget>(
+			TestWorld.GetTestWorld(),
+			CarryWidgetClass);
+	if (!TestNotNull(
+			TEXT("Canonical Carry slot initializes"),
+			Widget))
+	{
+		return false;
+	}
+	UMVVMView* View =
+		UMVVMSubsystem::GetViewFromUserWidget(Widget);
+	if (!TestNotNull(
+			TEXT("Carry slot runtime MVVM view exists"),
+			View))
+	{
+		return false;
+	}
+	TestNull(
+		TEXT("Fresh Carry source starts empty"),
+		View->GetViewModel(
+			URpgInventoryAddressSlotWidget::
+				AddressSlotViewModelSourceName).GetObject());
+	TSharedPtr<SWidget> SlateWidget =
+		Widget->TakeWidget();
+	if (!TestTrue(
+			TEXT("Carry slot constructs its authored Slate representation"),
+			SlateWidget.IsValid()))
+	{
+		return false;
+	}
+
+	auto MakeCarryGroupView =
+		[](
+			FName ContainerId,
+			ERpgEquipmentSlot EquipmentSlot)
+		{
+			FRpgInventorySlotGroupView GroupView;
+			GroupView.ContainerHandle =
+				FRpgInventoryContainerHandle::MakeRoot(
+					ContainerId);
+			GroupView.ContainerId = ContainerId;
+			GroupView.DisplayName =
+				FText::FromName(ContainerId);
+			GroupView.GroupKind =
+				ERpgInventorySlotGroupKind::Carry;
+			GroupView.EquipmentSlotRole =
+				EquipmentSlot;
+			GroupView.GridSize.Width = 1;
+			GroupView.GridSize.Height = 1;
+			return GroupView;
+		};
+	auto MakeCarryGroup =
+		[Widget, &MakeCarryGroupView](
+			FName ContainerId,
+			ERpgEquipmentSlot EquipmentSlot,
+			URpgInventorySlotGroupViewModel*& OutGroup,
+			URpgInventoryAddressSlotViewModel*& OutAddress)
+		{
+			const FRpgInventorySlotGroupView GroupView =
+				MakeCarryGroupView(
+					ContainerId,
+					EquipmentSlot);
+
+			OutAddress =
+				NewObject<URpgInventoryAddressSlotViewModel>(
+					Widget);
+			OutAddress->InitializeSlot(
+				nullptr,
+				nullptr,
+				GroupView,
+				0,
+				0);
+			OutGroup =
+				NewObject<URpgInventorySlotGroupViewModel>(
+					Widget);
+			OutGroup->InitializeGroup(
+				GroupView,
+				{ OutAddress });
+		};
+
+	URpgInventorySlotGroupViewModel* FirstGroup =
+		nullptr;
+	URpgInventoryAddressSlotViewModel* FirstAddress =
+		nullptr;
+	URpgInventorySlotGroupViewModel* SecondGroup =
+		nullptr;
+	URpgInventoryAddressSlotViewModel* SecondAddress =
+		nullptr;
+	MakeCarryGroup(
+		TEXT("CarryLifecycleA"),
+		ERpgEquipmentSlot::MainHand,
+		FirstGroup,
+		FirstAddress);
+	MakeCarryGroup(
+		TEXT("CarryLifecycleB"),
+		ERpgEquipmentSlot::OffHand,
+		SecondGroup,
+		SecondAddress);
+
+	Widget->SetCarrySlotGroupViewModel(FirstGroup);
+	TestEqual(
+		TEXT("Carry slot stores group A"),
+		Widget->GetCarrySlotGroupViewModel(),
+		FirstGroup);
+	TestEqual(
+		TEXT("Carry slot resolves address A"),
+		Widget->GetAddressSlotViewModel(),
+		FirstAddress);
+	TestEqual(
+		TEXT("Carry slot injects address A into its exact source"),
+		View->GetViewModel(
+			URpgInventoryAddressSlotWidget::
+				AddressSlotViewModelSourceName).GetObject(),
+		static_cast<UObject*>(FirstAddress));
+	TestEqual(
+		TEXT("Carry address A owns exactly one native observer"),
+		CountDelegateBindingsTo(
+			FirstAddress->OnSlotChanged,
+			Widget),
+		1);
+
+	Widget->SetCarrySlotGroupViewModel(SecondGroup);
+	TestEqual(
+		TEXT("Carry rebind removes address A's observer"),
+		CountDelegateBindingsTo(
+			FirstAddress->OnSlotChanged,
+			Widget),
+		0);
+	TestEqual(
+		TEXT("Carry rebind adds exactly one observer to address B"),
+		CountDelegateBindingsTo(
+			SecondAddress->OnSlotChanged,
+			Widget),
+		1);
+	TestEqual(
+		TEXT("Carry rebind replaces the exact source with address B"),
+		View->GetViewModel(
+			URpgInventoryAddressSlotWidget::
+				AddressSlotViewModelSourceName).GetObject(),
+		static_cast<UObject*>(SecondAddress));
+
+	Widget->ReleaseInventoryPresentation();
+	TestNull(
+		TEXT("Released Carry slot clears its group"),
+		Widget->GetCarrySlotGroupViewModel());
+	TestNull(
+		TEXT("Released Carry slot clears its address"),
+		Widget->GetAddressSlotViewModel());
+	TestNull(
+		TEXT("Released Carry slot clears its optional MVVM source"),
+		View->GetViewModel(
+			URpgInventoryAddressSlotWidget::
+				AddressSlotViewModelSourceName).GetObject());
+	TestNull(
+		TEXT("Released Carry slot clears its coordinator"),
+		Widget->GetDragDropCoordinator());
+	TestEqual(
+		TEXT("Released Carry address B owns no observer"),
+		CountDelegateBindingsTo(
+			SecondAddress->OnSlotChanged,
+			Widget),
+		0);
+	TestEqual(
+		TEXT("Released Carry slot returns to Empty presentation"),
+		Widget->GetCarryPresentationState(),
+		ERpgInventoryCarryPresentationState::Empty);
+	TestEqual(
+		TEXT("Released Carry slot clears its interaction preview"),
+		Widget->GetCarryInteractionPreviewState(),
+		ERpgInventoryInteractionPreviewState::None);
+
+	Widget->SetCarrySlotGroupViewModel(FirstGroup);
+	TestEqual(
+		TEXT("Pooled Carry slot restores address A"),
+		View->GetViewModel(
+			URpgInventoryAddressSlotWidget::
+				AddressSlotViewModelSourceName).GetObject(),
+		static_cast<UObject*>(FirstAddress));
+	TestEqual(
+		TEXT("Pooled Carry slot restores exactly one address observer"),
+		CountDelegateBindingsTo(
+			FirstAddress->OnSlotChanged,
+			Widget),
+		1);
+
+	auto VerifyRejectedGroup =
+		[this, Widget, View](
+			const TCHAR* Label,
+			URpgInventorySlotGroupViewModel* RejectedGroup)
+		{
+			Widget->SetCarrySlotGroupViewModel(RejectedGroup);
+			const FString Prefix(Label);
+			bool bValid = true;
+			bValid &= TestNull(
+				*(Prefix + TEXT(" clears the malformed group")),
+				Widget->GetCarrySlotGroupViewModel());
+			bValid &= TestNull(
+				*(Prefix + TEXT(" clears the malformed address")),
+				Widget->GetAddressSlotViewModel());
+			bValid &= TestNull(
+				*(Prefix + TEXT(" clears the exact optional source")),
+				View->GetViewModel(
+					URpgInventoryAddressSlotWidget::
+						AddressSlotViewModelSourceName).GetObject());
+			for (URpgInventoryAddressSlotViewModel* Address :
+				RejectedGroup
+					? RejectedGroup->GetSlots()
+					: TArray<URpgInventoryAddressSlotViewModel*>())
+			{
+				if (Address)
+				{
+					bValid &= TestEqual(
+						*(Prefix + TEXT(" installs no malformed observer")),
+						CountDelegateBindingsTo(
+							Address->OnSlotChanged,
+							Widget),
+						0);
+				}
+			}
+			return bValid;
+		};
+
+	const FRpgInventorySlotGroupView NoSlotsView =
+		MakeCarryGroupView(
+			TEXT("CarryMalformedEmpty"),
+			ERpgEquipmentSlot::MainHand);
+	URpgInventorySlotGroupViewModel* NoSlotsGroup =
+		NewObject<URpgInventorySlotGroupViewModel>(Widget);
+	NoSlotsGroup->InitializeGroup(NoSlotsView, {});
+	VerifyRejectedGroup(
+		TEXT("A 1x1 Carry group without an address"),
+		NoSlotsGroup);
+
+	const FRpgInventorySlotGroupView TwoSlotsView =
+		MakeCarryGroupView(
+			TEXT("CarryMalformedTwoSlots"),
+			ERpgEquipmentSlot::MainHand);
+	URpgInventoryAddressSlotViewModel* TwoSlotsAddressA =
+		NewObject<URpgInventoryAddressSlotViewModel>(Widget);
+	URpgInventoryAddressSlotViewModel* TwoSlotsAddressB =
+		NewObject<URpgInventoryAddressSlotViewModel>(Widget);
+	TwoSlotsAddressA->InitializeSlot(
+		nullptr,
+		nullptr,
+		TwoSlotsView,
+		0,
+		0);
+	TwoSlotsAddressB->InitializeSlot(
+		nullptr,
+		nullptr,
+		TwoSlotsView,
+		0,
+		0);
+	URpgInventorySlotGroupViewModel* TwoSlotsGroup =
+		NewObject<URpgInventorySlotGroupViewModel>(Widget);
+	TwoSlotsGroup->InitializeGroup(
+		TwoSlotsView,
+		{ TwoSlotsAddressA, TwoSlotsAddressB });
+	VerifyRejectedGroup(
+		TEXT("A 1x1 Carry group with two addresses"),
+		TwoSlotsGroup);
+
+	const FRpgInventorySlotGroupView MainHandView =
+		MakeCarryGroupView(
+			TEXT("CarryMalformedRole"),
+			ERpgEquipmentSlot::MainHand);
+	FRpgInventorySlotGroupView OffHandAddressView =
+		MainHandView;
+	OffHandAddressView.EquipmentSlotRole =
+		ERpgEquipmentSlot::OffHand;
+	URpgInventoryAddressSlotViewModel* WrongRoleAddress =
+		NewObject<URpgInventoryAddressSlotViewModel>(Widget);
+	WrongRoleAddress->InitializeSlot(
+		nullptr,
+		nullptr,
+		OffHandAddressView,
+		0,
+		0);
+	URpgInventorySlotGroupViewModel* WrongRoleGroup =
+		NewObject<URpgInventorySlotGroupViewModel>(Widget);
+	WrongRoleGroup->InitializeGroup(
+		MainHandView,
+		{ WrongRoleAddress });
+	VerifyRejectedGroup(
+		TEXT("A Carry group with a cross-role address"),
+		WrongRoleGroup);
+
+	const FRpgInventorySlotGroupView GroupHandleView =
+		MakeCarryGroupView(
+			TEXT("CarryMalformedGroupHandle"),
+			ERpgEquipmentSlot::MainHand);
+	const FRpgInventorySlotGroupView ForeignAddressView =
+		MakeCarryGroupView(
+			TEXT("CarryMalformedForeignHandle"),
+			ERpgEquipmentSlot::MainHand);
+	URpgInventoryAddressSlotViewModel* ForeignHandleAddress =
+		NewObject<URpgInventoryAddressSlotViewModel>(Widget);
+	ForeignHandleAddress->InitializeSlot(
+		nullptr,
+		nullptr,
+		ForeignAddressView,
+		0,
+		0);
+	URpgInventorySlotGroupViewModel* ForeignHandleGroup =
+		NewObject<URpgInventorySlotGroupViewModel>(Widget);
+	ForeignHandleGroup->InitializeGroup(
+		GroupHandleView,
+		{ ForeignHandleAddress });
+	VerifyRejectedGroup(
+		TEXT("A Carry group with a foreign address handle"),
+		ForeignHandleGroup);
+
+	Widget->ReleaseInventoryPresentation();
 	SlateWidget.Reset();
 	return true;
 }
