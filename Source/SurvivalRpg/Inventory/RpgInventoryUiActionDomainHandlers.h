@@ -1,6 +1,7 @@
 #pragma once
 
 #include "RpgInventoryUiActionComponent.h"
+#include "RpgInventoryItemUseContext.h"
 
 DECLARE_LOG_CATEGORY_EXTERN(LogRpgInventoryUiActions, Log, All);
 
@@ -30,6 +31,52 @@ protected:
 	bool CanAccessBaseStorageStation(
 		const URpgBaseStorageStationComponent* Station) const;
 	URpgInventoryManagerComponent* FindPlayerInventory() const;
+	URpgEquipmentLoadoutComponent* FindEquipmentLoadout() const;
+	URpgPlayerInventoryLayoutComponent* FindPlayerInventoryLayout() const;
+	URpgActionBarComponent* FindActionBar() const;
+	URpgAbilitySystemComponent* FindPlayerAbilitySystem() const;
+
+	bool IsPlayerEquipmentPlacement(
+		const FRpgInventoryGridPlacement& Placement) const;
+	void SyncEquipmentLoadoutFromGearSlots() const;
+	void SyncActiveHandsFromCarrySlots() const;
+
+	void SendActionFeedback(
+		FGameplayTag ActionTag,
+		ERpgInventoryActionFeedbackResult Result,
+		URpgInventoryManagerComponent* Inventory,
+		URpgInventoryItemInstance* Item,
+		int32 StackCount,
+		const FGuid& RequestId = FGuid(),
+		FRpgInventoryItemId ItemId = FRpgInventoryItemId()) const;
+
+	bool TryReplayRecentManualDropResult(
+		URpgInventoryManagerComponent* Inventory,
+		const FRpgInventoryManualDropRequest& Request);
+	void SendAndCacheManualDropFeedback(
+		URpgInventoryManagerComponent* Inventory,
+		const FRpgInventoryManualDropRequest& Request,
+		ERpgInventoryActionFeedbackResult Result,
+		URpgInventoryItemInstance* Item,
+		int32 FeedbackStackCount,
+		URpgInventoryManagerComponent* TargetInventory = nullptr);
+
+	UObject* GetItemUseContextOuter() const;
+	FRpgInventoryUseConsumePreflight MakeUseConsumePreflight(
+		TWeakObjectPtr<URpgInventoryManagerComponent> Inventory,
+		FRpgInventoryItemId ItemId,
+		int32 ConsumeCount,
+		TSharedRef<bool> RequiresEquipmentCleanup) const;
+	FSimpleDelegate MakeUseConsumeSucceeded(
+		TWeakObjectPtr<URpgInventoryManagerComponent> Inventory,
+		FRpgInventoryItemId ItemId,
+		TSharedRef<bool> RequiresEquipmentCleanup) const;
+
+	TSubclassOf<ARpgDroppedInventoryActor>
+		GetManualDropActorClass() const;
+	float GetManualDropForwardDistance() const;
+	float GetManualDropUpOffset() const;
+	float GetManualDropMergeRadius() const;
 
 	void RequestQuickTransferItem(
 		URpgInventoryManagerComponent* SourceInventory,
@@ -38,6 +85,78 @@ protected:
 
 private:
 	URpgInventoryUiActionComponent& ActionComponent;
+};
+
+/** Server-side Quick Access binding and Carry activation handler. */
+class FRpgInventoryQuickAccessActionHandler final
+	: public FRpgInventoryUiActionDomainHandler
+{
+public:
+	using FRpgInventoryUiActionDomainHandler::
+		FRpgInventoryUiActionDomainHandler;
+
+	void ActivateCarrySlot(
+		int32 ActionBarSlotIndex,
+		FGameplayTag ExpectedCarrySemanticRole);
+	void ClearActiveHands();
+	void MutateBinding(FRpgQuickAccessMutationRequest Request);
+	void BindInventorySlot(
+		int32 ActionBarSlotIndex,
+		FRpgInventorySlotAddress SlotAddress);
+	void BindCarrySlot(
+		int32 ActionBarSlotIndex,
+		FRpgInventorySlotAddress CarrySlotAddress);
+	void ClearCarryBinding(
+		int32 ActionBarSlotIndex,
+		FGameplayTag ExpectedCarrySemanticRole);
+	void ClearConsumableBinding(
+		int32 ActionBarSlotIndex,
+		TSubclassOf<URpgInventoryItemDefinition>
+			ExpectedConsumableDefinition);
+};
+
+/** Server-side item-use capability, GAS activation, and consume handler. */
+class FRpgInventoryItemUseActionHandler final
+	: public FRpgInventoryUiActionDomainHandler
+{
+public:
+	using FRpgInventoryUiActionDomainHandler::
+		FRpgInventoryUiActionDomainHandler;
+
+	void ExecuteItemAction(
+		URpgInventoryManagerComponent* Inventory,
+		FRpgInventoryItemActionRequest Request);
+	void UseInventoryItem(
+		URpgInventoryManagerComponent* Inventory,
+		URpgInventoryItemInstance* Item,
+		int32 StackCount,
+		const FGuid& RequestId = FGuid());
+};
+
+/** Server-side manual-drop validation, world-spawn, and transfer handler. */
+class FRpgInventoryManualDropActionHandler final
+	: public FRpgInventoryUiActionDomainHandler
+{
+public:
+	using FRpgInventoryUiActionDomainHandler::
+		FRpgInventoryUiActionDomainHandler;
+
+	void DropInventoryItem(
+		URpgInventoryManagerComponent* Inventory,
+		URpgInventoryItemInstance* Item,
+		int32 StackCount,
+		bool bConfirmed);
+	void DropInventoryItemById(
+		URpgInventoryManagerComponent* Inventory,
+		FRpgInventoryManualDropRequest Request);
+
+private:
+	bool TryTransferManualDrop(
+		URpgInventoryManagerComponent* SourceInventory,
+		URpgInventoryItemInstance* Item,
+		const FRpgInventoryTransferIntent& Intent,
+		URpgInventoryManagerComponent*& OutTargetInventory);
+	FTransform GetManualDropTransform() const;
 };
 
 /** Server-side base resource, armory, and upgrade command handler. */

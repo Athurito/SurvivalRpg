@@ -776,16 +776,6 @@ private:
 		const FRpgInventoryGridPlacement& Placement) const;
 	void SyncEquipmentLoadoutFromGearSlots() const;
 	void SyncActiveHandsFromCarrySlots() const;
-	bool TryTransferManualDrop(
-		URpgInventoryManagerComponent* SourceInventory,
-		URpgInventoryItemInstance* Item,
-		const FRpgInventoryTransferIntent& Intent,
-		URpgInventoryManagerComponent*& OutTargetInventory);
-	void ExecuteUseInventoryItem(
-		URpgInventoryManagerComponent* Inventory,
-		URpgInventoryItemInstance* Item,
-		int32 StackCount,
-		const FGuid& RequestId);
 	struct FRecentManualDropResult
 	{
 		TWeakObjectPtr<URpgInventoryManagerComponent> Inventory;
@@ -889,7 +879,6 @@ private:
 		ERpgInventoryActionFeedbackResult Result,
 		URpgInventoryItemInstance* Item,
 		int32 FeedbackStackCount);
-	FTransform GetManualDropTransform() const;
 	void SendActionFeedback(
 		FGameplayTag ActionTag,
 		ERpgInventoryActionFeedbackResult Result,

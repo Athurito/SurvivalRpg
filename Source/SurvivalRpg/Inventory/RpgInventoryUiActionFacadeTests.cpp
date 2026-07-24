@@ -13,6 +13,21 @@ static_assert(
 static_assert(
 	!TIsDerivedFrom<FRpgCraftingActionHandler, UObject>::Value,
 	"Inventory UI action domain handlers must remain non-UObject policy types.");
+static_assert(
+	!TIsDerivedFrom<
+		FRpgInventoryQuickAccessActionHandler,
+		UObject>::Value,
+	"Inventory UI action domain handlers must remain non-UObject policy types.");
+static_assert(
+	!TIsDerivedFrom<
+		FRpgInventoryItemUseActionHandler,
+		UObject>::Value,
+	"Inventory UI action domain handlers must remain non-UObject policy types.");
+static_assert(
+	!TIsDerivedFrom<
+		FRpgInventoryManualDropActionHandler,
+		UObject>::Value,
+	"Inventory UI action domain handlers must remain non-UObject policy types.");
 
 #if WITH_DEV_AUTOMATION_TESTS
 
