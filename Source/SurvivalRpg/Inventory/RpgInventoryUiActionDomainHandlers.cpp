@@ -2,6 +2,61 @@
 
 #include "GameFramework/Controller.h"
 #include "GameFramework/Pawn.h"
+#include "RpgInventoryContainerComponent.h"
+#include "RpgInventoryManagerComponent.h"
+#include "SurvivalRpg/Base/RpgBaseStorageStationComponent.h"
+#include "SurvivalRpg/Crafting/RpgCraftingStationComponent.h"
+#include "UObject/UObjectIterator.h"
+
+namespace
+{
+	void GatherUiActionCraftingStationsForOutputInventory(
+		const URpgInventoryManagerComponent* Inventory,
+		TArray<const URpgCraftingStationComponent*>& OutStations)
+	{
+		OutStations.Reset();
+		if (!Inventory)
+		{
+			return;
+		}
+
+		const UWorld* InventoryWorld = Inventory->GetWorld();
+		auto AddMatchingStation =
+			[Inventory, InventoryWorld, &OutStations](
+				const URpgCraftingStationComponent* CraftingStation)
+			{
+				if (IsValid(CraftingStation) &&
+					!CraftingStation->HasAnyFlags(
+						RF_ClassDefaultObject | RF_ArchetypeObject) &&
+					CraftingStation->GetOutputInventory() == Inventory &&
+					(!InventoryWorld ||
+						CraftingStation->GetWorld() == InventoryWorld))
+				{
+					OutStations.AddUnique(CraftingStation);
+				}
+			};
+
+		if (const AActor* InventoryOwner = Inventory->GetOwner())
+		{
+			TInlineComponentArray<URpgCraftingStationComponent*> OwnerStations;
+			InventoryOwner->GetComponents(OwnerStations);
+			for (const URpgCraftingStationComponent* CraftingStation :
+				OwnerStations)
+			{
+				AddMatchingStation(CraftingStation);
+			}
+		}
+		if (!OutStations.IsEmpty())
+		{
+			return;
+		}
+
+		for (TObjectIterator<URpgCraftingStationComponent> It; It; ++It)
+		{
+			AddMatchingStation(*It);
+		}
+	}
+}
 
 AActor* FRpgInventoryUiActionDomainHandler::GetOwner() const
 {
@@ -19,10 +74,85 @@ AActor* FRpgInventoryUiActionDomainHandler::GetRequestingActor() const
 	return OwnerController ? OwnerController->GetPawn() : GetOwner();
 }
 
+bool FRpgInventoryUiActionDomainHandler::EvaluateInventoryAccess(
+	URpgInventoryManagerComponent* Inventory) const
+{
+	if (!Inventory)
+	{
+		return false;
+	}
+
+	if (Inventory == FindPlayerInventory())
+	{
+		return true;
+	}
+
+	const AActor* RequestingActor = GetRequestingActor();
+	TArray<const URpgCraftingStationComponent*> CraftingStations;
+	GatherUiActionCraftingStationsForOutputInventory(
+		Inventory,
+		CraftingStations);
+	if (!CraftingStations.IsEmpty())
+	{
+		// Shared output inventories fail closed unless every live claimant
+		// authorizes the requesting actor.
+		for (const URpgCraftingStationComponent* CraftingStation :
+			CraftingStations)
+		{
+			if (!CraftingStation->CanActorAccess(RequestingActor))
+			{
+				return false;
+			}
+		}
+		return true;
+	}
+
+	const AActor* InventoryOwner = Inventory->GetOwner();
+	const URpgBaseStorageStationComponent* Station =
+		InventoryOwner
+			? InventoryOwner->FindComponentByClass<
+				URpgBaseStorageStationComponent>()
+			: nullptr;
+	if (Station && Station->GetArmoryInventory() == Inventory)
+	{
+		return Station->CanActorAccess(RequestingActor);
+	}
+
+	const URpgInventoryContainerComponent* Container =
+		InventoryOwner
+			? InventoryOwner->FindComponentByClass<
+				URpgInventoryContainerComponent>()
+			: nullptr;
+	return Container && Container->CanActorAccess(RequestingActor);
+}
+
 bool FRpgInventoryUiActionDomainHandler::CanAccessInventory(
 	URpgInventoryManagerComponent* Inventory) const
 {
-	return ActionComponent.CanAccessInventory(Inventory);
+	return EvaluateInventoryAccess(Inventory);
+}
+
+bool FRpgInventoryUiActionDomainHandler::IsUiTransferDirectionAllowed(
+	const URpgInventoryManagerComponent* SourceInventory,
+	const URpgInventoryManagerComponent* TargetInventory) const
+{
+	if (!SourceInventory || !TargetInventory)
+	{
+		return false;
+	}
+
+	if (SourceInventory == TargetInventory)
+	{
+		return true;
+	}
+
+	// Crafting owns deposits into output buffers. UI actions may only
+	// reorder an output internally or withdraw from it.
+	TArray<const URpgCraftingStationComponent*> CraftingStations;
+	GatherUiActionCraftingStationsForOutputInventory(
+		TargetInventory,
+		CraftingStations);
+	return CraftingStations.IsEmpty();
 }
 
 bool FRpgInventoryUiActionDomainHandler::CanAccessBaseStorageStation(
@@ -99,11 +229,97 @@ void FRpgInventoryUiActionDomainHandler::SendActionFeedback(
 }
 
 bool FRpgInventoryUiActionDomainHandler::
+	TryReplayRecentExactTransferResult(
+		URpgInventoryManagerComponent* SourceInventory,
+		URpgInventoryManagerComponent* TargetInventory,
+		const FRpgInventoryTransferIntent& Intent)
+{
+	return GetMutableActionComponent().TryReplayRecentExactTransferResult(
+		SourceInventory,
+		TargetInventory,
+		Intent);
+}
+
+void FRpgInventoryUiActionDomainHandler::
+	SendAndCacheExactTransferFeedback(
+		URpgInventoryManagerComponent* SourceInventory,
+		URpgInventoryManagerComponent* TargetInventory,
+		const FRpgInventoryTransferIntent& Intent,
+		ERpgInventoryActionFeedbackResult Result,
+		URpgInventoryItemInstance* Item,
+		int32 FeedbackStackCount)
+{
+	GetMutableActionComponent().SendAndCacheExactTransferFeedback(
+		SourceInventory,
+		TargetInventory,
+		Intent,
+		Result,
+		Item,
+		FeedbackStackCount);
+}
+
+bool FRpgInventoryUiActionDomainHandler::
+	TryReplayRecentQuickTransferResult(
+		URpgInventoryManagerComponent* SourceInventory,
+		URpgInventoryManagerComponent* TargetInventory,
+		const FRpgInventoryQuickTransferRequest& Request)
+{
+	return GetMutableActionComponent().TryReplayRecentQuickTransferResult(
+		SourceInventory,
+		TargetInventory,
+		Request);
+}
+
+void FRpgInventoryUiActionDomainHandler::
+	SendAndCacheQuickTransferFeedback(
+		URpgInventoryManagerComponent* SourceInventory,
+		URpgInventoryManagerComponent* TargetInventory,
+		const FRpgInventoryQuickTransferRequest& Request,
+		ERpgInventoryActionFeedbackResult Result,
+		URpgInventoryItemInstance* Item,
+		int32 FeedbackStackCount)
+{
+	GetMutableActionComponent().SendAndCacheQuickTransferFeedback(
+		SourceInventory,
+		TargetInventory,
+		Request,
+		Result,
+		Item,
+		FeedbackStackCount);
+}
+
+bool FRpgInventoryUiActionDomainHandler::
+	TryReplayRecentEquipmentIntentResult(
+		URpgInventoryManagerComponent* Inventory,
+		const FRpgInventoryEquipmentIntent& Intent)
+{
+	return GetMutableActionComponent().TryReplayRecentEquipmentIntentResult(
+		Inventory,
+		Intent);
+}
+
+void FRpgInventoryUiActionDomainHandler::
+	SendAndCacheEquipmentIntentFeedback(
+		URpgInventoryManagerComponent* Inventory,
+		const FRpgInventoryEquipmentIntent& Intent,
+		ERpgInventoryActionFeedbackResult Result,
+		URpgInventoryItemInstance* Item,
+		int32 FeedbackStackCount)
+{
+	GetMutableActionComponent().SendAndCacheEquipmentIntentFeedback(
+		Inventory,
+		Intent,
+		Result,
+		Item,
+		FeedbackStackCount);
+}
+
+bool FRpgInventoryUiActionDomainHandler::
 	TryReplayRecentManualDropResult(
 		URpgInventoryManagerComponent* Inventory,
 		const FRpgInventoryManualDropRequest& Request)
 {
-	return ActionComponent.TryReplayRecentManualDropResult(
+	return GetMutableActionComponent().TryReplayRecentManualDropResult(
 		Inventory,
 		Request);
 }
@@ -117,7 +333,7 @@ void FRpgInventoryUiActionDomainHandler::
 		int32 FeedbackStackCount,
 		URpgInventoryManagerComponent* TargetInventory)
 {
-	ActionComponent.SendAndCacheManualDropFeedback(
+	GetMutableActionComponent().SendAndCacheManualDropFeedback(
 		Inventory,
 		Request,
 		Result,
@@ -129,7 +345,7 @@ void FRpgInventoryUiActionDomainHandler::
 UObject* FRpgInventoryUiActionDomainHandler::
 	GetItemUseContextOuter() const
 {
-	return &ActionComponent;
+	return &GetMutableActionComponent();
 }
 
 FRpgInventoryUseConsumePreflight
@@ -139,7 +355,8 @@ FRpgInventoryUiActionDomainHandler::MakeUseConsumePreflight(
 	int32 ConsumeCount,
 	TSharedRef<bool> RequiresEquipmentCleanup) const
 {
-	URpgInventoryUiActionComponent* Component = &ActionComponent;
+	URpgInventoryUiActionComponent* Component =
+		&GetMutableActionComponent();
 	return FRpgInventoryUseConsumePreflight::CreateWeakLambda(
 		Component,
 		[Component, Inventory, ItemId, ConsumeCount,
@@ -180,7 +397,8 @@ FRpgInventoryUiActionDomainHandler::MakeUseConsumeSucceeded(
 	FRpgInventoryItemId ItemId,
 	TSharedRef<bool> RequiresEquipmentCleanup) const
 {
-	URpgInventoryUiActionComponent* Component = &ActionComponent;
+	URpgInventoryUiActionComponent* Component =
+		&GetMutableActionComponent();
 	return FSimpleDelegate::CreateWeakLambda(
 		Component,
 		[Component, Inventory, ItemId,
@@ -234,7 +452,8 @@ void FRpgInventoryUiActionDomainHandler::RequestQuickTransferItem(
 	URpgInventoryManagerComponent* TargetInventory,
 	FRpgInventoryQuickTransferRequest Request)
 {
-	ActionComponent.RequestQuickTransferItem_Implementation(
+	FRpgInventoryTransactionActionHandler(
+		GetMutableActionComponent()).QuickTransferItem(
 		SourceInventory,
 		TargetInventory,
 		MoveTemp(Request));

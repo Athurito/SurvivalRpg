@@ -2064,7 +2064,7 @@ Status: **In Arbeit**
       ausdrückliche Presenter-Policy festlegen: deklarative Itemdaten über die
       exakte Address-Source, imperative Hooks nur für Active/Holstered,
       Interaktion und Animation.
-- [ ] `RpgInventoryUiActionComponent` in schmale Domain-Handler aufteilen;
+- [x] `RpgInventoryUiActionComponent` in schmale Domain-Handler aufteilen;
       Controller bleibt RPC-Eigentümer und kann vorübergehend als Fassade
       bestehen.
 - [ ] Manager intern in Storage, Rules/Planner, Transactions und Persistence
@@ -2671,6 +2671,70 @@ Verifizierter Phase-6J-Zwischenstand vom 2026-07-24:
 - Nächster Schnitt: `RpgInventoryUiActionComponent` in schmale
   Domain-Handler aufteilen; der Controller bleibt RPC-Eigentümer und kann
   während der Migration als Fassade bestehen.
+
+Verifizierter Phase-6K-Zwischenstand vom 2026-07-24:
+
+- `URpgInventoryUiActionComponent` ist jetzt eine schmale, Controller-owned
+  Netzwerkfassade. Alle 46 bisherigen `Server, Reliable, BlueprintCallable`
+  Request-RPCs sowie der eine `Client, Reliable` Feedback-Endpunkt bleiben
+  dort mit unveränderten Namen und Reflection-Flags bestehen. Ein
+  Reflection-Vertragstest prüft die exakte Menge und weist fehlende,
+  zusätzliche oder falsch markierte RPCs ab.
+- Die synchrone Aktionslogik ist nach acht klaren Domänen getrennt:
+  Transaction, Equipment, QuickAccess, ItemUse, ManualDrop, BaseStorage,
+  BaseBuilding und Crafting. Die Handler sind kleine stateless C++-Objekte,
+  werden nur für einen Aufruf erzeugt und besitzen weder UObject-Lifecycle
+  noch replizierten Zustand.
+- Transaction und Equipment trennen zusätzlich reine Leseplanung in
+  `FRpgInventoryTransactionQueryHandler` und
+  `FRpgInventoryEquipmentQueryHandler`. Compile-time-Verträge sichern, dass
+  Command-Handler ausschließlich einen mutablen Component-Kontext erhalten,
+  während die Query-Handler mit einem const Kontext auskommen.
+- Replay-Caches, Request-Fingerprints, Mutation-Epochen und
+  Owning-Client-Feedback bleiben als querschnittlicher Netzwerkzustand auf
+  der Component. Die Gameplay-Autorität liegt weiterhin bei Inventory
+  Manager, Layout, Loadout und Stationen; UI, ViewModels und Handler erzeugen
+  keine parallele autoritative Zuständigkeit.
+- Inventory-Zugriff und Transfer-Richtung verwenden nun dieselbe zentrale
+  Ermittlung von Crafting-Output-Inventories. Null-, PlayerInventory-,
+  Crafting-, BaseArmory- und WorldContainer-Zugriff behalten ihre bisherige
+  fail-closed Policy. Doppelte anonyme Hilfsfunktionen wurden eindeutig
+  benannt oder zusammengeführt, damit adaptive Einzelkompilierung keine
+  späteren Unity-Build-Kollisionen verdeckt.
+- Die Fassade schrumpfte von ungefähr 4.129 Zeilen nach Phase 6K2 auf
+  1.359 Zeilen. Server-Einstieg, Replay-/Feedback-Infrastruktur und
+  Controller-Kontext sind dadurch direkt auffindbar; Domänenänderungen
+  erfordern nicht mehr die Bearbeitung einer einzigen mehrere tausend Zeilen
+  langen Sammeldatei.
+- Es wurden keine UFUNCTION-Signaturen, RPC-Metadaten, Blueprint-Verträge
+  oder Editor-Assets migriert. Im Editor sind deshalb kein Asset-Resave,
+  kein CoreRedirect und keine manuelle Widget-/MVVM-Neuzuordnung nötig.
+  Falls der Editor während der C++-Änderung offen war, sollte er vor der
+  interaktiven QA vollständig neu gestartet werden. Empfohlen bleibt ein
+  Maus-/Gamepad-Playtest für Move, Transfer, Split, Quick Access, Equip,
+  Unequip, Drop, BaseStorage und Crafting.
+- Der abschließende UE-5.8-Build
+  `SurvivalRpgEditor Win64 Development` wurde mit `-ForceUnity` und
+  `-DisableAdaptiveUnity` ausgeführt. Die echten Unity-Module kompilierten
+  gemeinsam in 6 von 6 Actions; UBT meldete `Result: Succeeded`. Der
+  vorangegangene adaptive Exaktstand war ebenfalls mit 13 von 13 Actions
+  erfolgreich.
+- `SurvivalRpg.Inventory` meldete 143 von 143,
+  `SurvivalRpg.Equipment` 6 von 6 und `SurvivalRpg.UI` 26 von 26
+  Automationtests erfolgreich. `CompileAllBlueprints -ProjectOnly` endete
+  mit Prozesscode 0, 0 Compilerfehlern, 16 bekannten Compilerwarnungen und
+  0 nicht ladbaren Blueprints.
+- Bewusste Verifikationsgrenze: Dieser Schnitt ergänzt keinen echten
+  Remote-Client/Server-Transport- oder Late-Join-Automationstest. Abgesichert
+  sind Reflection-/Facade-Vertrag, standalone Server-Autorität und die
+  bestehenden Black-Box-Regressionen; echte Netzwerk-PIE-QA bleibt für die
+  phasenübergreifende Replikationsprüfung offen.
+- Fortschritt Phase 6: 20 von 22 Punkten abgeschlossen (90,9 %).
+- Gesamtfortschritt der erweiterten verbindlichen Checkliste: 86 von 97
+  Punkten abgeschlossen (88,7 %), 11 Punkte offen.
+- Nächster Schnitt: Manager intern in Storage, Rules/Planner, Transactions
+  und Persistence aufteilen, ohne seine öffentliche Autorität zu
+  duplizieren.
 
 ## Phase 7 – Legacy endgültig entfernen
 

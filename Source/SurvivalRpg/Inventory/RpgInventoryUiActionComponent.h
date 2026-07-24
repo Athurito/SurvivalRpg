@@ -739,39 +739,7 @@ private:
 	URpgPlayerInventoryLayoutComponent* FindPlayerInventoryLayout() const;
 	URpgActionBarComponent* FindActionBar() const;
 	URpgAbilitySystemComponent* FindPlayerAbilitySystem() const;
-	FRpgInventoryPlacementPlan PlanQuickTransferInContainer(
-		URpgInventoryManagerComponent* SourceInventory,
-		URpgInventoryManagerComponent* TargetInventory,
-		URpgInventoryItemInstance* Item,
-		int32 StackCount,
-		const FRpgInventoryContainerHandle& TargetContainer,
-		FRpgInventoryGridPlacement& OutPlacement) const;
-	void BuildDefaultQuickTransferTargets(
-		URpgInventoryManagerComponent* SourceInventory,
-		URpgInventoryManagerComponent* TargetInventory,
-		URpgInventoryItemInstance* Item,
-		TArray<FRpgInventoryContainerHandle>& OutTargets) const;
-	bool FindFirstEmptyInventoryPlacement(URpgInventoryManagerComponent* Inventory, TSubclassOf<URpgInventoryItemDefinition> ItemDefinition, FRpgInventoryGridPlacement& OutPlacement) const;
 	bool CanAccessBaseStorageStation(const URpgBaseStorageStationComponent* Station) const;
-	bool TryBuildCurrentEquipmentIntent(
-		URpgInventoryManagerComponent* Inventory,
-		URpgInventoryItemInstance* Item,
-		ERpgInventoryEquipmentIntentOperation Operation,
-		ERpgEquipmentSlot TargetEquipmentSlot,
-		FRpgInventoryEquipmentIntent& OutIntent) const;
-	bool TryAssignItemToDefaultEquipmentDestination(
-		URpgInventoryItemInstance* Item);
-	bool TryMoveAndActivateItemInCarry(
-		URpgInventoryItemInstance* Item,
-		ERpgEquipmentSlot PreferredHandSlot);
-	bool TryMoveItemToGearSlot(
-		ERpgEquipmentSlot EquipmentSlot,
-		URpgInventoryItemInstance* Item);
-	bool TryMoveItemToFirstCompatibleCarrySlot(
-		URpgInventoryItemInstance* Item);
-	bool TryMoveItemToFirstCompatibleContentSlot(
-		URpgInventoryItemInstance* Item);
-	bool CanMoveItemOutOfGearSlot(const FRpgInventorySlotAddress& SourceAddress) const;
 	bool IsPlayerEquipmentPlacement(
 		const FRpgInventoryGridPlacement& Placement) const;
 	void SyncEquipmentLoadoutFromGearSlots() const;

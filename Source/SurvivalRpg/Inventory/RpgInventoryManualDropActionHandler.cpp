@@ -12,7 +12,8 @@
 
 namespace
 {
-	bool IsStackableItem(const URpgInventoryItemInstance* Item)
+	bool IsManualDropStackableItem(
+		const URpgInventoryItemInstance* Item)
 	{
 		return Item &&
 			URpgInventoryManagerComponent::
@@ -20,14 +21,15 @@ namespace
 					Item->GetItemDef()) > 1;
 	}
 
-	bool IsExactInventoryPlacementSnapshot(
+	bool IsExactManualDropPlacementSnapshot(
 		const FRpgInventoryGridPlacement& A,
 		const FRpgInventoryGridPlacement& B)
 	{
 		return A == B;
 	}
 
-	ERpgInventoryActionFeedbackResult GetFeedbackForMutationResult(
+	ERpgInventoryActionFeedbackResult
+		GetManualDropFeedbackForMutationResult(
 		ERpgInventoryMutationResultCode Code)
 	{
 		switch (Code)
@@ -56,7 +58,7 @@ namespace
 		}
 	}
 
-	bool CanTargetAcceptTransferredStack(
+	bool CanManualDropTargetAcceptTransferredStack(
 		URpgInventoryManagerComponent* TargetInventory,
 		URpgInventoryItemInstance* Item,
 		int32 TransferCount,
@@ -227,7 +229,7 @@ void FRpgInventoryManualDropActionHandler::DropInventoryItemById(
 		return;
 	}
 
-	if (!IsExactInventoryPlacementSnapshot(
+	if (!IsExactManualDropPlacementSnapshot(
 			Entry->Placement,
 			Request.ExpectedSourcePlacement) ||
 		Entry->StackCount != Request.ExpectedSourceQuantity)
@@ -289,7 +291,8 @@ void FRpgInventoryManualDropActionHandler::DropInventoryItemById(
 		return;
 	}
 
-	const bool bDropAsStackTemplate = IsStackableItem(Item);
+	const bool bDropAsStackTemplate =
+		IsManualDropStackableItem(Item);
 	if (!bDropAsStackTemplate && Request.StackCount != AvailableCount)
 	{
 		SendAndCacheManualDropFeedback(
@@ -318,7 +321,7 @@ void FRpgInventoryManualDropActionHandler::DropInventoryItemById(
 		SendAndCacheManualDropFeedback(
 			Inventory,
 			Request,
-			GetFeedbackForMutationResult(DropPlan.Code),
+			GetManualDropFeedbackForMutationResult(DropPlan.Code),
 			Item,
 			Request.StackCount);
 		return;
@@ -443,7 +446,7 @@ bool FRpgInventoryManualDropActionHandler::TryTransferManualDrop(
 					? DropActor->GetLootInventoryManager()
 					: nullptr;
 			return TargetInventory != SourceInventory &&
-				CanTargetAcceptTransferredStack(
+				CanManualDropTargetAcceptTransferredStack(
 					TargetInventory,
 					Item,
 					Intent.Quantity,

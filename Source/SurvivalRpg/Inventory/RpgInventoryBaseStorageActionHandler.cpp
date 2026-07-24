@@ -51,7 +51,7 @@ namespace
 		return Traits && Traits->IsMaterial();
 	}
 
-	bool TryGetInventoryEntrySnapshot(
+	bool TryGetBaseStorageEntrySnapshot(
 		const URpgInventoryManagerComponent* Inventory,
 		const FRpgInventoryItemId& ItemId,
 		FRpgInventoryEntryView& OutEntry)
@@ -614,7 +614,7 @@ void FRpgBaseStorageActionHandler::StoreItemInstance(
 		return;
 	}
 	FRpgInventoryEntryView SourceEntry;
-	if (!TryGetInventoryEntrySnapshot(
+	if (!TryGetBaseStorageEntrySnapshot(
 			PlayerInventory,
 			Item->GetItemId(),
 			SourceEntry))
@@ -666,7 +666,7 @@ void FRpgBaseStorageActionHandler::TakeItemInstance(
 		return;
 	}
 	FRpgInventoryEntryView SourceEntry;
-	if (!TryGetInventoryEntrySnapshot(
+	if (!TryGetBaseStorageEntrySnapshot(
 			ArmoryInventory,
 			Item->GetItemId(),
 			SourceEntry))
