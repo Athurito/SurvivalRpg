@@ -4,12 +4,15 @@
 
 #include "AttributeSet.h"
 #include "Components/ActorComponent.h"
+#include "Logging/LogMacros.h"
 #include "Misc/Guid.h"
 #include "Net/Serialization/FastArraySerializer.h"
 #include "RpgInventoryLegacySnapshot.h"
 #include "RpgInventorySpatialTypes.h"
 
 #include "RpgInventoryManagerComponent.generated.h"
+
+DECLARE_LOG_CATEGORY_EXTERN(LogRpgInventoryManager, Log, All);
 
 class URpgInventoryItemDefinition;
 class URpgInventoryItemInstance;
@@ -485,7 +488,13 @@ struct TStructOpsTypeTraits<FRpgInventoryList> : public TStructOpsTypeTraitsBase
 
 
 /**
- * Manages an inventory
+ * Sole server-authoritative owner of one replicated RPG inventory graph.
+ *
+ * The component owns FastArray storage, item-subobject replication, mutation
+ * replay state, and persistence publication. Member implementations may be
+ * organized into domain translation units, but those files are never
+ * independent gameplay authorities. UI and ViewModels may observe this
+ * component but never own or commit inventory state.
  */
 UCLASS(BlueprintType)
 class URpgInventoryManagerComponent : public UActorComponent

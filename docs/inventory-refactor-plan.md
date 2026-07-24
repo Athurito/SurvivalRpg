@@ -2736,6 +2736,62 @@ Verifizierter Phase-6K-Zwischenstand vom 2026-07-24:
   und Persistence aufteilen, ohne seine öffentliche Autorität zu
   duplizieren.
 
+Verifizierter Phase-6L1-Zwischenstand vom 2026-07-24:
+
+- Der erste Manager-Unterschnitt ist als verhaltensneutraler
+  Translation-Unit-Split umgesetzt. `ExportInventoryGraph`,
+  `RestoreInventoryGraph`, `RestoreRuntimeCheckpoint` und der vollständige
+  atomare Restore-Commit liegen jetzt in
+  `RpgInventoryManagerPersistence.cpp`; der versionierte Legacy-Konverter
+  bleibt als Persistence-Sibling in `RpgInventoryLegacySnapshot.cpp`.
+- Alle 604 verschobenen Methodenzeilen wurden gegen den vorherigen Stand
+  abgeglichen. Authority- und Mutation-Lock-Gates, Runtime-State-Rollback,
+  starke UObject-Roots, Replay-Cache-Invalidierung, Mutation-Epoch,
+  FastArray-Dirtiness, Item-Subobject-Registrierung und die Reihenfolge der
+  synchronen Removed-/Added-Nachrichten sind unverändert.
+- `URpgInventoryManagerComponent` bleibt die einzige reflektierte und
+  replizierte Inventory-Autorität. `InventoryList`, `InventoryRevision`,
+  ReplicationPolicy, Replay-Caches, Mutation-Epoch, Reentrancy-Flags,
+  Lifecycle und Subobject-Replikation wurden nicht in einen zweiten Manager,
+  Handler oder ein UObject verschoben. Save-Daten bleiben validierte
+  Rekonstruktionsdaten und keine Live-Gameplay-Wahrheit.
+- Die Hauptimplementierung schrumpfte von 7.510 auf 6.906 Zeilen; der
+  eigenständig kompilierbare Persistence-TU umfasst 662 Zeilen mit direkten
+  Includes und eindeutig benannten privaten Helpers. Der bestehende
+  `LogRpgInventoryManager`-Kanal bleibt über beide Dateien erhalten.
+- Zwei neue Contract-Tests frieren die Grenze für die folgenden Unterschnitte
+  ein: Der Manager bleibt `BlueprintType`, replizierte
+  `UActorComponent` ohne eigene Net-RPCs; repräsentative
+  AuthorityOnly-/Pure-/Deprecated-Funktionen und native-only Intents bleiben
+  unverändert. Zusätzlich werden `COND_None`/`COND_Dynamic`, RepNotify-Namen,
+  der FastArray-NetDelta-Trait sowie ItemInstance-Replikation und
+  `ItemId`-SaveGame-Metadaten geprüft.
+- Es wurden keine UFUNCTION-Signaturen, UPROPERTY-Namen, Save-DTOs,
+  Enum-Ordnungen, Blueprint-Verträge oder Editor-Assets geändert. Im Editor
+  sind kein Resave, kein CoreRedirect und keine manuelle Widget-/MVVM-
+  Anpassung nötig. Nach offenem Hot Reload sollte der Editor vor weiterer QA
+  vollständig neu gestartet werden.
+- `SurvivalRpgEditor Win64 Development` wurde sowohl vollständig ohne Unity
+  als auch mit echtem erzwungenem Unity gebaut: Non-Unity 408 von 408
+  Actions, finaler adaptiver Exaktstand 55 von 55 Actions und finaler
+  `-ForceUnity -DisableAdaptiveUnity`-Stand 6 von 6 Actions; jeweils
+  `Result: Succeeded`.
+- `SurvivalRpg.Inventory` meldete einschließlich der neuen Contracts
+  145 von 145 und `SurvivalRpg.Save` 2 von 2 Automationtests erfolgreich.
+- Bewusste Grenze: Standalone-Reflection- und Black-Box-Tests beweisen noch
+  keinen echten FastArray-Transport, OwnerOnly versus ActorRelevant oder
+  Late Join. Diese Netzwerk-PIE-Prüfung bleibt ebenso offen wie die
+  Absicherung, dass `SetReplicationPolicy` nach begonnener
+  Subobject-Replikation nicht mehr geändert werden darf.
+- Der verbindliche Manager-Checklistenpunkt bleibt bewusst offen, bis auch
+  Rules/Planner, Transactions und Storage physisch getrennt sowie ihre
+  Abhängigkeitsrichtung geprüft sind. Fortschritt Phase 6 bleibt damit
+  20 von 22 Punkten (90,9 %); Gesamtfortschritt bleibt 86 von 97 Punkten
+  (88,7 %), 11 Punkte offen.
+- Nächster Schnitt: Placement-, Capacity- und Graphregeln in einen
+  eigenständigen read-only `RpgInventoryManagerRulesPlanner.cpp` verschieben,
+  ohne Fragment-Staging fälschlich als nebenwirkungsfreie Query auszugeben.
+
 ## Phase 7 – Legacy endgültig entfernen
 
 Status: **In Arbeit**
