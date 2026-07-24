@@ -2792,6 +2792,43 @@ Verifizierter Phase-6L1-Zwischenstand vom 2026-07-24:
   eigenständigen read-only `RpgInventoryManagerRulesPlanner.cpp` verschieben,
   ohne Fragment-Staging fälschlich als nebenwirkungsfreie Query auszugeben.
 
+Verifizierter Phase-6L2A-Zwischenstand vom 2026-07-24:
+
+- Der Rules/Planner-TU besitzt jetzt den ersten vollständigen kanonischen
+  Regelblock: Player-Layout-Auflösung, validierter Graphaufbau,
+  Subtree-Indizes, Live-Graph-Validierung, Root-/ItemContainer-
+  Größenauflösung, Containerdefinitionen, Placement-Graphregeln,
+  Cycle-Erkennung und Single-Cell-Policy für Gear/Carry.
+- 579 Member-Implementierungszeilen wurden verhaltensneutral aus der
+  Component nach `RpgInventoryManagerRulesPlanner.cpp` verschoben. Die
+  dateilokalen Container-, Depth-, Placement- und Scratch-Helfer besitzen
+  eindeutige Rules-Präfixe; der TU ist sowohl eigenständig kompilierbar als
+  auch Unity-sicher.
+- Der querschnittliche `IsInventoryMutationLocked`-Vertrag bleibt bewusst in
+  `RpgInventoryManagerComponent.cpp`. Ebenso verbleiben FastArray-Storage,
+  Replikation, Replay/Epoch, Commit-Gates und sämtliche öffentliche API auf
+  der Component. Der Rules-TU besitzt keinen eigenen Zustand und keine
+  Mutationsautorität.
+- Die Manager-Hauptimplementierung umfasst nun 6.327 statt ursprünglich
+  7.510 Zeilen; der Rules/Planner-TU umfasst aktuell 680 Zeilen und wird im
+  nächsten Unterschnitt um den Placement-/Capacity-Planer ergänzt.
+- Der eigenständige adaptive Build kompilierte beide betroffenen TUs und
+  endete mit 6 von 6 Actions erfolgreich. Der echte
+  `-ForceUnity -DisableAdaptiveUnity`-Build endete mit 5 von 5 Actions und
+  `Result: Succeeded`.
+- `SurvivalRpg.Inventory` meldete erneut 145 von 145 Automationtests
+  erfolgreich. Damit sind insbesondere Restore, Nested Container,
+  Placement, Transfer, Pickup/Collect, Replay und die Manager-Contracts auf
+  dem verschobenen Graphregelpfad grün.
+- Es wurden weiterhin keine Reflection-, Blueprint-, Save-DTO- oder
+  Editor-Asset-Verträge geändert; im Editor ist keine manuelle Anpassung
+  nötig.
+- Der Manager-Checklistenpunkt bleibt offen. Phase 6 bleibt bei 20 von
+  22 Punkten (90,9 %), der Gesamtplan bei 86 von 97 Punkten (88,7 %).
+- Nächster Schnitt: `EvaluatePlacement`, Definition-/Rotation-/Capacity-
+  Regeln und die dazugehörigen CanAdd-/CanReceive-Preflights in denselben
+  read-only Rules/Planner-TU verschieben.
+
 ## Phase 7 – Legacy endgültig entfernen
 
 Status: **In Arbeit**
