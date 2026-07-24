@@ -450,6 +450,10 @@ protected:
 	TArray<TObjectPtr<URpgActionBarSlotViewModel>> ActionBarSlots;
 
 private:
+#if WITH_DEV_AUTOMATION_TESTS
+	friend class FRpgPlayerStorageInventoryLifecycleIntegrationTest;
+#endif
+
 	/** Rebuilds every aggregate projection; lifecycle entry points and gameplay-message handlers own refresh timing. */
 	void RefreshAll();
 	void RegisterMessageListeners();

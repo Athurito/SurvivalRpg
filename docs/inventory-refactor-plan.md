@@ -2055,7 +2055,7 @@ Status: **In Arbeit**
       Getter-/PropertyPath-Vertrag ersetzen.
 - [x] BlueprintCallable Lifecycle-Mutatoren der Aggregate-VM nach
       Asset-Referenzprüfung auf eine native Presenter-Oberfläche reduzieren.
-- [ ] Player-/Storage-Lifecycle mit echtem PlayerController, PlayerState,
+- [x] Player-/Storage-Lifecycle mit echtem PlayerController, PlayerState,
       kanonischem Inventory und Listener-Cleanup als Integrationstest
       abdecken.
 - [ ] Gear-, Carry- und Content-Widgets auf denselben Coordinator-/MVVM-Pfad
@@ -2468,6 +2468,60 @@ Verifizierter Phase-6G-Zwischenstand vom 2026-07-24:
 - Nächster Schnitt: Player-/Storage-Lifecycle mit echtem PlayerController,
   PlayerState, kanonischem Inventory und Listener-Cleanup als Integrationstest
   abdecken.
+
+Verifizierter Phase-6H-Zwischenstand vom 2026-07-24:
+
+- Der dauerhafte Integrationstest
+  `SurvivalRpg.Inventory.UI.PlayerStorageLifecycleIntegration` schließt die
+  Lücke der bisherigen Pooling-Tests: Er verwendet einen echten
+  projektabgeleiteten PlayerController und PlayerState, das tatsächlich am
+  PlayerState liegende kanonische Inventory sowie die realen Layout-,
+  Equipment- und Actionbar-Komponenten des Controllers.
+- Die authored Screens `CUI_PlayerInventory` und `CUI_StorageSpatial` werden
+  mit demselben OwningPlayer erzeugt. Storage erhält das kanonische
+  PlayerState-Inventory als Primary und ein getrenntes Secondary-Inventory;
+  dadurch wird auch der kanonische Primary-Guard des Storage-Presenters
+  tatsächlich durchlaufen.
+- Beide Screens behalten getrennte, screen-owned Aggregate-VMs, beobachten
+  aber exakt dieselben vier Gameplay-Quellen. Der Test prüft für Inventory,
+  Layout, Equipment und Actionbar jeweils einen eigenen gültigen
+  GameplayMessage-Handle sowie nach dem Unbind vier freigegebene Quellen,
+  vier ungültige Handles und keine ausstehende Refresh-Domain.
+- Alle vier Nachrichtenwege werden einzeln mit ihrer exakten Domain-Maske und
+  ihren erwarteten Gear-, SlotGroup- und Actionbar-Callbacks geprüft. Der
+  Inventory-Pfad läuft zusätzlich über einen echten
+  `GrantItemDefinition`-Producer statt nur über einen synthetischen
+  Test-Broadcast.
+- Vor der Deaktivierung vorgemerkte Refreshes werden verworfen. Nach dem
+  Player-Unbind reagiert nur noch der aktive Storage-Screen; nach dem
+  Storage-Unbind reagiert keine VM mehr. Eine erneute Aktivierung verwendet
+  dieselben gepoolten VM-Instanzen, registriert wieder exakt vier Listener
+  pro Screen und erzeugt für den gemischten Nachrichtenburst genau einen
+  präsentationswirksamen Refresh je Domain. Doppelte rohe Router-Aufrufe
+  würden durch die Invalidation-Queue koalesziert und sind bewusst nicht
+  Gegenstand dieses Tests.
+- Der Test deckt bewusst den nativen Presenter- und
+  Activation-/Deactivation-Lifecycle der authored Screens in einer
+  isolierten Standalone-Welt ab. Er ist kein vollständiger CommonUI-
+  Layer-/ActionRouter-E2E-Test; die bekannten Controller-Action-Warnungen
+  des Commandlet-Fixtures ohne Root-Layer berühren die geprüften
+  Lifecycle-Invarianten nicht.
+- Für diesen reinen C++-/Test-Schnitt sind keine manuellen Blueprint-,
+  MVVM- oder Asset-Anpassungen im Editor nötig. Als optionale interaktive QA
+  bleiben Player-Inventory und Storage wiederholt öffnen, zwischen beiden
+  wechseln, schließen und erneut öffnen sowie Live-Updates in beiden aktiven
+  Screens prüfen.
+- Der abschließende UE-5.8-Build
+  `SurvivalRpgEditor Win64 Development` endete mit
+  `Result: Succeeded`. Der gezielte Integrationstest meldete 1 von 1,
+  `SurvivalRpg.Inventory` 140 von 140 und `SurvivalRpg.UI` 26 von 26
+  Automationtests erfolgreich.
+- Fortschritt Phase 6: 17 von 22 Punkten abgeschlossen (77,3 %).
+- Gesamtfortschritt der erweiterten verbindlichen Checkliste: 83 von 97
+  Punkten abgeschlossen (85,6 %), 14 Punkte offen.
+- Nächster Schnitt: Gear-, Carry- und Content-Widgets auf denselben
+  Coordinator-/MVVM-Pfad bringen und Kontextmenüs Fähigkeiten abfragen
+  lassen, statt Fragmente zu erraten.
 
 ## Phase 7 – Legacy endgültig entfernen
 
