@@ -3074,6 +3074,88 @@ Verifizierter Phase-6L2E1-Zwischenstand vom 2026-07-24:
   Zeilen große `ExecuteCrossInventoryTransfer`-Commit bleibt ein eigener
   grüner Unterschnitt, damit Fehlerursachen und Build-Gates eng bleiben.
 
+Verifizierter Phase-6L2E2-Zwischenstand vom 2026-07-24:
+
+- Der zweite autoritative Transactions-Cluster ist physisch aus der
+  Manager-Hauptdatei nach `RpgInventoryManagerTransactions.cpp` verschoben:
+  die typed Move-/Equipment-/Transfer-/Pickup-/Drop-Fassaden samt gemeinsamem
+  Transfer-Einstieg, die drei Legacy-Sort-/Index-/Placement-Fassaden,
+  Request-Äquivalenz, Single-Mutation-Replay und -Cache sowie
+  `ExecuteInventoryMutation`.
+- 13 Definitionen mit zusammen 490 fortlaufenden Clusterzeilen wurden aus dem
+  Core-TU verschoben. Gegen den vorherigen Stand sind sie token-identisch bis
+  auf genau sechs beabsichtigte, Unity-sichere Umbenennungen TU-lokaler
+  Helper beziehungsweise Konstanten:
+  `TransactionsMaxRecentMutationResults`,
+  `MakeTransactionsRejectedIntentResult`,
+  `IsTransactionsCompleteSourceSnapshot`,
+  `IsTransactionsCompletelyUnsetPlacement`,
+  `AreTransactionsPlacementSnapshotsExactlyEqual` und
+  `IsTransactionsItemOwnedHandleDepthOverflow`. Die Namen liegen eindeutig in
+  `RpgInventoryManagerTransactionsPrivate`; die vom verbleibenden
+  Cross-Inventory-Commit weiterhin benötigten Core-Gegenstücke bleiben bis
+  zum nächsten Schnitt bewusst bestehen.
+- Die Autoritäts- und Ownership-Grenze bleibt unverändert:
+  `URpgInventoryManagerComponent` ist weiterhin die einzige autoritative und
+  replizierte Instanz. Typed Single-Inventory-Intents enden im
+  Authority-/Mutation-Lock-Gate von `ExecuteInventoryMutation`; Transfer,
+  Pickup und Drop delegieren ausschließlich an
+  `ExecuteCrossInventoryTransfer`, das beide Inventories, beide Owner,
+  Same-World, Operation und Partial-Policy erneut prüft. Der Transactions-TU
+  ist nur eine Implementierungsgrenze und kein zweiter Manager, UObject,
+  Subsystem oder State-Owner.
+- `AuthorityAndLegacyFacadeRevisionContract` deckt die autorisierten
+  Legacy-Sort-, Index- und Placement-Fassaden einschließlich exakter
+  Revisionsfortschreibung und No-op-Verhalten ab. Dieselben Legacy-Fassaden,
+  typed Move, trusted Equipment-Move, generischer Execute und Transfer werden
+  ohne Authority atomar abgelehnt; Quell-/Zielgraph, Revision und
+  Mutation-Epoch bleiben unverändert.
+- `ForeignWorldTargetIsRejectedAtomically` deckt den Same-World-Vertrag der
+  typed Transfer-Fassade ab. Ein fremder Ziel-World wird mit stabiler
+  Request-Korrelation abgelehnt, der identische Retry liefert den gecachten
+  Reject, und beide Graphen, Revisionen und Mutation-Epochen bleiben
+  unverändert.
+- Der mechanische TU-Schnitt behebt bewusst keine bereits vorhandene
+  Reentrancy- oder Replay-Schuld. `ExecuteInventoryMutation` prüft bestehende
+  Batch-/Cross-/Restore-Locks, setzt aber keinen eigenen
+  Single-Mutation-Guard; insbesondere Split-Fragment-Hooks laufen nach der
+  Planung ohne vollständiges Revalidation-Gate und können synchron
+  reentrant mutieren. Auch Single-Inventory-Broadcast und Replay-Cache werden
+  schwächer koordiniert als im beidseitig geguardeten Cross-Inventory-Commit.
+- Zwei weitere bestehende Replay-Risiken bleiben dokumentiert: Wird das
+  `TWeakObjectPtr`-Ziel eines Cache-Eintrags zerstört, entfernt der
+  Epoch-/Identity-Check den Eintrag und dieselbe RequestId kann anschließend
+  gegen ein neues Ziel wieder frisch ausgeführt werden. Außerdem begrenzen
+  Single-Mutation- und Collect-Batch-Code denselben Cache über getrennte
+  lokale 64er-Konstanten, die bei späteren Änderungen auseinanderlaufen
+  können. Die in Phase 6L2E1 dokumentierten Grant-, Bootstrap-,
+  Fragment-Hook- und Removal-Broadcast-Schulden bleiben ebenfalls offen.
+- Die Manager-Hauptimplementierung umfasst jetzt 2.997 statt ursprünglich
+  7.510 Zeilen. `RpgInventoryManagerTransactions.cpp` umfasst 1.310 und
+  `RpgInventoryManagerRulesPlanner.cpp` weiterhin 2.891 Zeilen. Öffentliche
+  API, Header, UHT/Reflection, Blueprint-/MVVM-Verträge und Editor-Assets
+  blieben unverändert; es sind keine CoreRedirects, Resaves oder manuellen
+  Editor-Anpassungen nötig.
+- Die adaptiven UE-5.8-Builds endeten zunächst mit 9 von 9 und nach der
+  finalen Testergänzung mit 6 von 6 Actions erfolgreich. Der echte
+  `-ForceUnity -DisableAdaptiveUnity`-Build endete mit 5 von 5 Actions; alle
+  drei Builds meldeten `Result: Succeeded`.
+- Die beiden neuen Einzeltests meldeten jeweils 1 von 1 erfolgreich. Die
+  vollständigen Filter `SurvivalRpg.Inventory.Intent`,
+  `SurvivalRpg.Inventory.Transaction` und `SurvivalRpg.Inventory` meldeten
+  20 von 20, 19 von 19 beziehungsweise 154 von 154 Automationtests
+  erfolgreich.
+- Der Manager-Checklistenpunkt bleibt offen, bis Cross-Inventory und Storage
+  ebenfalls physisch getrennt und der Gesamt-Facade-Schnitt geprüft sind.
+  Phase 6 bleibt bei 20 von 22 Punkten (90,9 %), der Gesamtplan bei 86 von
+  97 Punkten (88,7 %), 11 Punkte sind offen.
+- Nächster Transactions-Schnitt 6L2E3:
+  `ExecuteCrossInventoryTransfer` als unteilbare, ungefähr 1.051 Zeilen große
+  Funktion in den Transactions-TU verschieben. Lokale Prepare-Strukturen,
+  Revalidation, beidseitige Guards und die No-fail-Commitregion bleiben für
+  diesen mechanischen Schnitt zusammen; eine interne Zerlegung erfolgt nicht
+  nebenbei.
+
 ## Phase 7 – Legacy endgültig entfernen
 
 Status: **In Arbeit**

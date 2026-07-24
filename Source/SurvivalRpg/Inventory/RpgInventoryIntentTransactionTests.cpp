@@ -1581,4 +1581,437 @@ bool FRpgInventoryTypedTransferReplayFingerprintTest::RunTest(
 	return true;
 }
 
+IMPLEMENT_SIMPLE_AUTOMATION_TEST(
+	FRpgInventoryAuthorityAndLegacyFacadeRevisionContractTest,
+	"SurvivalRpg.Inventory.Transaction.AuthorityAndLegacyFacadeRevisionContract",
+	EAutomationTestFlags::EditorContext |
+		EAutomationTestFlags::EngineFilter)
+
+bool FRpgInventoryAuthorityAndLegacyFacadeRevisionContractTest::RunTest(
+	const FString& Parameters)
+{
+	using namespace RpgInventoryIntentTransactionTests;
+	FScopedInventoryWorld TestWorld;
+	if (!InitializeTest(*this, TestWorld))
+	{
+		return false;
+	}
+
+	URpgInventoryManagerComponent* Inventory =
+		TestWorld.CreateInventory(TEXT("AuthorityLegacyFacadeInventory"));
+	URpgInventoryManagerComponent* TargetInventory =
+		TestWorld.CreateInventory(TEXT("AuthorityLegacyFacadeTarget"));
+	if (!TestNotNull(TEXT("The authority-test inventory exists"), Inventory) ||
+		!TestNotNull(
+			TEXT("The authority-test transfer target exists"),
+			TargetInventory))
+	{
+		return false;
+	}
+
+	const FRpgInventoryContainerHandle Root = MakeRoot(Inventory);
+	URpgInventoryItemInstance* FirstItem =
+		Inventory->AddItemDefinitionToPlacement(
+			URpgInventoryAutomationTestUnitItemDefinition::StaticClass(),
+			1,
+			MakePlacement(Root, 7, 0));
+	URpgInventoryItemInstance* SecondItem =
+		Inventory->AddItemDefinitionToPlacement(
+			URpgInventoryAutomationTestUnitItemDefinition::StaticClass(),
+			1,
+			MakePlacement(Root, 8, 0));
+	if (!TestNotNull(TEXT("The first legacy-wrapper item exists"), FirstItem) ||
+		!TestNotNull(TEXT("The second legacy-wrapper item exists"), SecondItem))
+	{
+		return false;
+	}
+
+	const uint64 MutationEpochBeforeLegacyOperations =
+		Inventory->GetMutationEpoch();
+	int32 ExpectedRevision = Inventory->GetInventoryRevision();
+	const FString BeforeSort = MakeInventorySignature(Inventory);
+	TestTrue(
+		TEXT("The authority-only legacy sort repacks a displaced inventory"),
+		Inventory->ApplyInventorySort(ERpgInventorySortMode::Name));
+	++ExpectedRevision;
+	TestEqual(
+		TEXT("A changed legacy sort advances revision exactly once"),
+		Inventory->GetInventoryRevision(),
+		ExpectedRevision);
+	TestEqual(
+		TEXT("A runtime legacy sort preserves the mutation epoch"),
+		Inventory->GetMutationEpoch(),
+		MutationEpochBeforeLegacyOperations);
+	TestNotEqual(
+		TEXT("The changed legacy sort rewrites placement state"),
+		MakeInventorySignature(Inventory),
+		BeforeSort);
+
+	const FString StableSortedGraph = MakeInventorySignature(Inventory);
+	TestFalse(
+		TEXT("Repeating the same legacy sort reports no mutation"),
+		Inventory->ApplyInventorySort(ERpgInventorySortMode::Name));
+	TestEqual(
+		TEXT("A no-op legacy sort does not advance revision"),
+		Inventory->GetInventoryRevision(),
+		ExpectedRevision);
+	TestEqual(
+		TEXT("A no-op legacy sort preserves the graph"),
+		MakeInventorySignature(Inventory),
+		StableSortedGraph);
+
+	const TArray<FRpgInventoryEntryView> SortedEntries =
+		Inventory->GetAllEntries();
+	if (!TestEqual(
+			TEXT("The legacy-order fixture retains both entries"),
+			SortedEntries.Num(),
+			2) ||
+		!SortedEntries.IsValidIndex(0))
+	{
+		return false;
+	}
+
+	const FGuid ReorderedEntryId = SortedEntries[0].EntryId;
+	const FRpgInventoryItemId ReorderedItemId = SortedEntries[0].ItemId;
+	const FString BeforeIndexMove = MakeInventorySignature(Inventory);
+	TestTrue(
+		TEXT("The authority-only legacy index move changes shared order"),
+		Inventory->MoveInventoryEntry(
+			ReorderedEntryId,
+			SortedEntries.Num() - 1));
+	++ExpectedRevision;
+	TestEqual(
+		TEXT("A changed legacy index move advances revision exactly once"),
+		Inventory->GetInventoryRevision(),
+		ExpectedRevision);
+	TestEqual(
+		TEXT("A legacy index move preserves the mutation epoch"),
+		Inventory->GetMutationEpoch(),
+		MutationEpochBeforeLegacyOperations);
+	TestNotEqual(
+		TEXT("The changed legacy index move rewrites placement order"),
+		MakeInventorySignature(Inventory),
+		BeforeIndexMove);
+
+	const FString StableIndexGraph = MakeInventorySignature(Inventory);
+	TestFalse(
+		TEXT("Moving the same entry to its current final index is a no-op"),
+		Inventory->MoveInventoryEntry(
+			ReorderedEntryId,
+			SortedEntries.Num() - 1));
+	TestEqual(
+		TEXT("A no-op legacy index move does not advance revision"),
+		Inventory->GetInventoryRevision(),
+		ExpectedRevision);
+	TestEqual(
+		TEXT("A no-op legacy index move preserves the graph"),
+		MakeInventorySignature(Inventory),
+		StableIndexGraph);
+
+	const FRpgInventoryGridPlacement ExactLegacyPlacement =
+		MakePlacement(Root, 5, 2);
+	TestTrue(
+		TEXT("The authority-only legacy placement wrapper commits"),
+		Inventory->MoveInventoryEntryToPlacement(
+			ReorderedEntryId,
+			ExactLegacyPlacement));
+	++ExpectedRevision;
+	TestEqual(
+		TEXT("A changed legacy placement advances revision exactly once"),
+		Inventory->GetInventoryRevision(),
+		ExpectedRevision);
+	TestEqual(
+		TEXT("A legacy placement move preserves the mutation epoch"),
+		Inventory->GetMutationEpoch(),
+		MutationEpochBeforeLegacyOperations);
+
+	FRpgInventoryEntryView AuthorityEntry;
+	if (!TestTrue(
+			TEXT("The legacy-moved entry remains addressable"),
+			GetEntryView(
+				Inventory,
+				ReorderedItemId,
+				AuthorityEntry)))
+	{
+		return false;
+	}
+	TestEqual(
+		TEXT("The legacy placement wrapper reaches the requested X coordinate"),
+		AuthorityEntry.Placement.X,
+		ExactLegacyPlacement.X);
+	TestEqual(
+		TEXT("The legacy placement wrapper reaches the requested Y coordinate"),
+		AuthorityEntry.Placement.Y,
+		ExactLegacyPlacement.Y);
+
+	const FString StablePlacementGraph =
+		MakeInventorySignature(Inventory);
+	TestTrue(
+		TEXT("Repeating an exact legacy placement remains a successful no-op"),
+		Inventory->MoveInventoryEntryToPlacement(
+			ReorderedEntryId,
+			ExactLegacyPlacement));
+	TestEqual(
+		TEXT("A no-op legacy placement does not advance revision"),
+		Inventory->GetInventoryRevision(),
+		ExpectedRevision);
+	TestEqual(
+		TEXT("A no-op legacy placement preserves the graph"),
+		MakeInventorySignature(Inventory),
+		StablePlacementGraph);
+
+	AActor* InventoryOwner = Inventory->GetOwner();
+	if (!TestNotNull(
+			TEXT("The authority-test inventory owns an actor"),
+			InventoryOwner))
+	{
+		return false;
+	}
+
+	const FString SourceBeforeAuthorityRejections =
+		MakeInventorySignature(Inventory);
+	const FString TargetBeforeAuthorityRejections =
+		MakeInventorySignature(TargetInventory);
+	const int32 SourceRevisionBeforeAuthorityRejections =
+		Inventory->GetInventoryRevision();
+	const int32 TargetRevisionBeforeAuthorityRejections =
+		TargetInventory->GetInventoryRevision();
+	const uint64 SourceEpochBeforeAuthorityRejections =
+		Inventory->GetMutationEpoch();
+	const uint64 TargetEpochBeforeAuthorityRejections =
+		TargetInventory->GetMutationEpoch();
+
+	InventoryOwner->SetRole(ROLE_SimulatedProxy);
+	TestFalse(
+		TEXT("The mutation owner no longer has authority"),
+		InventoryOwner->HasAuthority());
+	TestEqual(
+		TEXT("The mutation owner now behaves as a simulated proxy"),
+		static_cast<int32>(InventoryOwner->GetLocalRole()),
+		static_cast<int32>(ROLE_SimulatedProxy));
+
+	const FRpgInventoryMutationResult MoveResult =
+		Inventory->MoveItem(MakeMoveIntent(
+			AuthorityEntry,
+			MakePlacement(Root, 6, 2)));
+	TestEqual(
+		TEXT("A simulated proxy cannot commit a typed move"),
+		MoveResult.Code,
+		ERpgInventoryMutationResultCode::AuthorityRequired);
+
+	const FRpgInventoryMutationResult EquipmentMoveResult =
+		Inventory->MoveEquipmentItem(MakeMoveIntent(
+			AuthorityEntry,
+			MakePlacement(Root, 7, 2)));
+	TestEqual(
+		TEXT("A simulated proxy cannot commit a trusted equipment move"),
+		EquipmentMoveResult.Code,
+		ERpgInventoryMutationResultCode::AuthorityRequired);
+
+	FRpgInventoryMutationRequest GenericMoveRequest;
+	GenericMoveRequest.RequestId = FGuid::NewGuid();
+	GenericMoveRequest.Operation = ERpgInventoryMutationOperation::Move;
+	GenericMoveRequest.ItemId = AuthorityEntry.ItemId;
+	GenericMoveRequest.ExpectedEntryId = AuthorityEntry.EntryId;
+	GenericMoveRequest.Source =
+		AuthorityEntry.Placement.GetContainerHandle();
+	GenericMoveRequest.ExpectedSourcePlacement =
+		AuthorityEntry.Placement;
+	GenericMoveRequest.ExpectedSourceQuantity =
+		AuthorityEntry.StackCount;
+	GenericMoveRequest.Target = Root;
+	GenericMoveRequest.TargetPlacement =
+		MakePlacement(Root, 8, 2);
+	GenericMoveRequest.Quantity = AuthorityEntry.StackCount;
+	const FRpgInventoryMutationResult GenericMoveResult =
+		Inventory->ExecuteInventoryMutation(GenericMoveRequest);
+	TestEqual(
+		TEXT("A simulated proxy cannot execute the generic mutation kernel"),
+		GenericMoveResult.Code,
+		ERpgInventoryMutationResultCode::AuthorityRequired);
+
+	const FRpgInventoryMutationResult TransferResult =
+		Inventory->TransferItem(
+			TargetInventory,
+			MakeTransferIntent(
+				AuthorityEntry,
+				TargetInventory,
+				AuthorityEntry.StackCount));
+	TestEqual(
+		TEXT("A simulated source cannot execute a typed transfer"),
+		TransferResult.Code,
+		ERpgInventoryMutationResultCode::AuthorityRequired);
+
+	TestFalse(
+		TEXT("A simulated proxy cannot invoke the legacy sort wrapper"),
+		Inventory->ApplyInventorySort(ERpgInventorySortMode::Name));
+	TestFalse(
+		TEXT("A simulated proxy cannot invoke the legacy index wrapper"),
+		Inventory->MoveInventoryEntry(ReorderedEntryId, 0));
+	TestFalse(
+		TEXT("A simulated proxy cannot invoke the legacy placement wrapper"),
+		Inventory->MoveInventoryEntryToPlacement(
+			ReorderedEntryId,
+			MakePlacement(Root, 9, 2)));
+
+	TestEqual(
+		TEXT("Every authority rejection preserves the complete source graph"),
+		MakeInventorySignature(Inventory),
+		SourceBeforeAuthorityRejections);
+	TestEqual(
+		TEXT("Every authority rejection preserves the complete target graph"),
+		MakeInventorySignature(TargetInventory),
+		TargetBeforeAuthorityRejections);
+	TestEqual(
+		TEXT("Authority rejection does not advance source revision"),
+		Inventory->GetInventoryRevision(),
+		SourceRevisionBeforeAuthorityRejections);
+	TestEqual(
+		TEXT("Authority rejection does not advance target revision"),
+		TargetInventory->GetInventoryRevision(),
+		TargetRevisionBeforeAuthorityRejections);
+	TestEqual(
+		TEXT("Authority rejection preserves the source command epoch"),
+		Inventory->GetMutationEpoch(),
+		SourceEpochBeforeAuthorityRejections);
+	TestEqual(
+		TEXT("Authority rejection preserves the target command epoch"),
+		TargetInventory->GetMutationEpoch(),
+		TargetEpochBeforeAuthorityRejections);
+
+	InventoryOwner->SetRole(ROLE_Authority);
+	TestTrue(
+		TEXT("The test restores authority before world teardown"),
+		InventoryOwner->HasAuthority());
+	return true;
+}
+
+IMPLEMENT_SIMPLE_AUTOMATION_TEST(
+	FRpgInventoryForeignWorldTargetAtomicityTest,
+	"SurvivalRpg.Inventory.Intent.Transfer.ForeignWorldTargetIsRejectedAtomically",
+	EAutomationTestFlags::EditorContext |
+		EAutomationTestFlags::EngineFilter)
+
+bool FRpgInventoryForeignWorldTargetAtomicityTest::RunTest(
+	const FString& Parameters)
+{
+	using namespace RpgInventoryIntentTransactionTests;
+	FScopedInventoryWorld SourceWorld;
+	FScopedInventoryWorld TargetWorld;
+	if (!InitializeTest(*this, SourceWorld) ||
+		!InitializeTest(*this, TargetWorld))
+	{
+		return false;
+	}
+
+	URpgInventoryManagerComponent* SourceInventory =
+		SourceWorld.CreateInventory(TEXT("ForeignWorldTransferSource"));
+	URpgInventoryManagerComponent* TargetInventory =
+		TargetWorld.CreateInventory(TEXT("ForeignWorldTransferTarget"));
+	if (!TestNotNull(
+			TEXT("The foreign-world source inventory exists"),
+			SourceInventory) ||
+		!TestNotNull(
+			TEXT("The foreign-world target inventory exists"),
+			TargetInventory))
+	{
+		return false;
+	}
+
+	TestNotEqual(
+		TEXT("The transfer fixtures belong to different worlds"),
+		SourceInventory->GetWorld(),
+		TargetInventory->GetWorld());
+
+	const FRpgInventoryContainerHandle SourceRoot =
+		MakeRoot(SourceInventory);
+	URpgInventoryItemInstance* SourceItem =
+		SourceInventory->AddItemDefinitionToPlacement(
+			URpgInventoryAutomationTestUnitItemDefinition::StaticClass(),
+			1,
+			MakePlacement(SourceRoot, 0, 0));
+	if (!TestNotNull(
+		TEXT("The foreign-world transfer source item exists"),
+		SourceItem))
+	{
+		return false;
+	}
+
+	FRpgInventoryEntryView SourceEntry;
+	if (!TestTrue(
+			TEXT("The foreign-world source snapshot resolves"),
+			GetEntryView(
+				SourceInventory,
+				SourceItem->GetItemId(),
+				SourceEntry)))
+	{
+		return false;
+	}
+
+	const FRpgInventoryTransferIntent Intent =
+		MakeTransferIntent(
+			SourceEntry,
+			TargetInventory,
+			SourceEntry.StackCount);
+	const FString SourceBefore =
+		MakeInventorySignature(SourceInventory);
+	const FString TargetBefore =
+		MakeInventorySignature(TargetInventory);
+	const int32 SourceRevisionBefore =
+		SourceInventory->GetInventoryRevision();
+	const int32 TargetRevisionBefore =
+		TargetInventory->GetInventoryRevision();
+	const uint64 SourceEpochBefore =
+		SourceInventory->GetMutationEpoch();
+	const uint64 TargetEpochBefore =
+		TargetInventory->GetMutationEpoch();
+
+	const FRpgInventoryMutationResult Result =
+		SourceInventory->TransferItem(
+			TargetInventory,
+			Intent);
+	TestEqual(
+		TEXT("A foreign-world transfer target is rejected"),
+		Result.Code,
+		ERpgInventoryMutationResultCode::InvalidRequest);
+	TestEqual(
+		TEXT("The foreign-world rejection preserves request correlation"),
+		Result.RequestId,
+		Intent.RequestId);
+
+	const FRpgInventoryMutationResult Replay =
+		SourceInventory->TransferItem(
+			TargetInventory,
+			Intent);
+	TestEqual(
+		TEXT("An identical foreign-world retry replays its rejection"),
+		Replay.Code,
+		Result.Code);
+	TestEqual(
+		TEXT("The foreign-world rejection and replay preserve the source graph"),
+		MakeInventorySignature(SourceInventory),
+		SourceBefore);
+	TestEqual(
+		TEXT("The foreign-world rejection and replay preserve the target graph"),
+		MakeInventorySignature(TargetInventory),
+		TargetBefore);
+	TestEqual(
+		TEXT("A foreign-world rejection does not advance source revision"),
+		SourceInventory->GetInventoryRevision(),
+		SourceRevisionBefore);
+	TestEqual(
+		TEXT("A foreign-world rejection does not advance target revision"),
+		TargetInventory->GetInventoryRevision(),
+		TargetRevisionBefore);
+	TestEqual(
+		TEXT("A foreign-world rejection preserves the source command epoch"),
+		SourceInventory->GetMutationEpoch(),
+		SourceEpochBefore);
+	TestEqual(
+		TEXT("A foreign-world rejection preserves the target command epoch"),
+		TargetInventory->GetMutationEpoch(),
+		TargetEpochBefore);
+	return true;
+}
+
 #endif // WITH_DEV_AUTOMATION_TESTS
