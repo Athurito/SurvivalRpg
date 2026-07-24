@@ -19,9 +19,17 @@
 
 namespace
 {
-	constexpr ETextIdenticalModeFlags FieldNotifyTextIdentityFlags =
+	constexpr ETextIdenticalModeFlags PlayerInventoryTextIdentityFlags =
 		ETextIdenticalModeFlags::DeepCompare |
 		ETextIdenticalModeFlags::LexicalCompareInvariants;
+
+	namespace PlayerInventoryRefreshDomains
+	{
+		constexpr uint8 Gear = 1 << 0;
+		constexpr uint8 SlotGroups = 1 << 1;
+		constexpr uint8 ActionBar = 1 << 2;
+		constexpr uint8 All = Gear | SlotGroups | ActionBar;
+	}
 
 	struct FRpgPlayerInventoryItemPresentation
 	{
@@ -217,11 +225,11 @@ void URpgInventoryAddressSlotViewModel::InitializeSlot(
 	const bool bItemInstanceChanged = ItemInstance != NewItem;
 	const bool bStackCountChanged = StackCount != NewStackCount;
 	const bool bSlotLabelChanged =
-		!SlotLabel.IdenticalTo(NewSlotLabel, FieldNotifyTextIdentityFlags);
+		!SlotLabel.IdenticalTo(NewSlotLabel, PlayerInventoryTextIdentityFlags);
 	const bool bShortDisplayNameChanged =
 		!ShortDisplayName.IdenticalTo(
 			NewShortDisplayName,
-			FieldNotifyTextIdentityFlags);
+			PlayerInventoryTextIdentityFlags);
 	const bool bIconChanged = Icon != NewIcon;
 	const bool bIsEmptySlotChanged = bIsEmptySlot != bNewIsEmptySlot;
 	const bool bItemOriginCellChanged =
@@ -422,7 +430,7 @@ void URpgInventorySlotGroupViewModel::InitializeGroup(const FRpgInventorySlotGro
 	const bool bContainerIdChanged = ContainerId != NewContainerId;
 	const bool bSemanticRoleChanged = SemanticRole != NewSemanticRole;
 	const bool bDisplayNameChanged =
-		!DisplayName.IdenticalTo(NewDisplayName, FieldNotifyTextIdentityFlags);
+		!DisplayName.IdenticalTo(NewDisplayName, PlayerInventoryTextIdentityFlags);
 	const bool bIconChanged = Icon != NewIcon;
 	const bool bGridSizeChanged = GridSize != NewGridSize;
 	const bool bEquipmentSlotRoleChanged =
@@ -552,6 +560,7 @@ void URpgPlayerInventoryViewModel::UnbindPlayerInventory()
 
 void URpgPlayerInventoryViewModel::RefreshAll()
 {
+	CancelQueuedRefresh();
 	RefreshGearSlots();
 	RefreshSlotGroups();
 	RefreshActionBarSlots();
@@ -677,6 +686,7 @@ URpgInventorySlotGroupViewModel* URpgPlayerInventoryViewModel::GetSlotGroupByHan
 void URpgPlayerInventoryViewModel::BeginDestroy()
 {
 	UnregisterMessageListeners();
+	CancelQueuedRefresh();
 	Super::BeginDestroy();
 }
 
@@ -743,6 +753,75 @@ void URpgPlayerInventoryViewModel::UnregisterMessageListeners()
 	{
 		ActionBarChangedHandle.Unregister();
 	}
+}
+
+void URpgPlayerInventoryViewModel::RequestRefresh(uint8 RefreshDomains)
+{
+	PendingRefreshDomains |= RefreshDomains;
+
+	UWorld* World = nullptr;
+	if (URpgInventoryManagerComponent* PlayerInventory = ObservedPlayerInventory.Get())
+	{
+		World = PlayerInventory->GetWorld();
+	}
+	else if (URpgPlayerInventoryLayoutComponent* InventoryLayout = ObservedInventoryLayout.Get())
+	{
+		World = InventoryLayout->GetWorld();
+	}
+	else if (URpgEquipmentLoadoutComponent* EquipmentLoadout = ObservedEquipmentLoadout.Get())
+	{
+		World = EquipmentLoadout->GetWorld();
+	}
+	else if (URpgActionBarComponent* ActionBar = ObservedActionBar.Get())
+	{
+		World = ActionBar->GetWorld();
+	}
+
+	if (!World)
+	{
+		FlushPendingRefreshes();
+		return;
+	}
+
+	RefreshQueue.Queue(
+		World,
+		this,
+		&ThisClass::ExecuteQueuedRefresh);
+}
+
+void URpgPlayerInventoryViewModel::ExecuteQueuedRefresh()
+{
+	if (!RefreshQueue.Consume())
+	{
+		return;
+	}
+
+	FlushPendingRefreshes();
+}
+
+void URpgPlayerInventoryViewModel::FlushPendingRefreshes()
+{
+	const uint8 RefreshDomains = PendingRefreshDomains;
+	PendingRefreshDomains = 0;
+
+	if ((RefreshDomains & PlayerInventoryRefreshDomains::Gear) != 0)
+	{
+		RefreshGearSlots();
+	}
+	if ((RefreshDomains & PlayerInventoryRefreshDomains::SlotGroups) != 0)
+	{
+		RefreshSlotGroups();
+	}
+	if ((RefreshDomains & PlayerInventoryRefreshDomains::ActionBar) != 0)
+	{
+		RefreshActionBarSlots();
+	}
+}
+
+void URpgPlayerInventoryViewModel::CancelQueuedRefresh()
+{
+	RefreshQueue.Cancel();
+	PendingRefreshDomains = 0;
 }
 
 void URpgPlayerInventoryViewModel::RefreshGearSlots()
@@ -983,8 +1062,9 @@ void URpgPlayerInventoryViewModel::HandleInventoryChanged(FGameplayTag Channel, 
 	const URpgInventoryManagerComponent* PlayerInventory = ObservedPlayerInventory.Get();
 	if (PlayerInventory && Message.InventoryOwner == PlayerInventory)
 	{
-		RefreshSlotGroups();
-		RefreshActionBarSlots();
+		RequestRefresh(
+			PlayerInventoryRefreshDomains::SlotGroups |
+			PlayerInventoryRefreshDomains::ActionBar);
 	}
 }
 
@@ -993,8 +1073,9 @@ void URpgPlayerInventoryViewModel::HandleLayoutChanged(FGameplayTag Channel, con
 	const URpgPlayerInventoryLayoutComponent* InventoryLayout = ObservedInventoryLayout.Get();
 	if (InventoryLayout && Message.LayoutComponent == InventoryLayout)
 	{
-		RefreshSlotGroups();
-		RefreshActionBarSlots();
+		RequestRefresh(
+			PlayerInventoryRefreshDomains::SlotGroups |
+			PlayerInventoryRefreshDomains::ActionBar);
 	}
 }
 
@@ -1003,9 +1084,7 @@ void URpgPlayerInventoryViewModel::HandleEquipmentSlotsChanged(FGameplayTag Chan
 	const URpgEquipmentLoadoutComponent* EquipmentLoadout = ObservedEquipmentLoadout.Get();
 	if (EquipmentLoadout && Message.Owner == EquipmentLoadout->GetOwner())
 	{
-		RefreshGearSlots();
-		RefreshSlotGroups();
-		RefreshActionBarSlots();
+		RequestRefresh(PlayerInventoryRefreshDomains::All);
 	}
 }
 
@@ -1014,7 +1093,7 @@ void URpgPlayerInventoryViewModel::HandleActionBarSlotsChanged(FGameplayTag Chan
 	const URpgActionBarComponent* ActionBar = ObservedActionBar.Get();
 	if (ActionBar && Message.ActionBarComponent == ActionBar)
 	{
-		RefreshActionBarSlots();
+		RequestRefresh(PlayerInventoryRefreshDomains::ActionBar);
 	}
 }
 

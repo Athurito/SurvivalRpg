@@ -14,6 +14,7 @@
 
 class URpgPawnData;
 class URpgPlayerInventoryLayoutDefinition;
+class URpgInventoryManagerComponent;
 struct FRpgInventoryDragPayload;
 
 #if WITH_DEV_AUTOMATION_TESTS
@@ -56,6 +57,41 @@ public:
 
 private:
 	int32 InvocationCount = 0;
+};
+
+/**
+ * Test-only dynamic delegate target that emits one reentrant inventory
+ * invalidation from its first invocation.
+ */
+UCLASS(NotBlueprintable, Transient)
+class URpgInventoryAutomationTestReentrantInvalidationTarget final
+	: public UObject
+{
+	GENERATED_BODY()
+
+public:
+	void Configure(
+		UObject* InWorldContext,
+		URpgInventoryManagerComponent* InInventory);
+
+	/** Records the callback and broadcasts exactly one nested inventory message. */
+	UFUNCTION()
+	void RecordAndBroadcastInventoryChange();
+
+	int32 GetInvocationCount() const
+	{
+		return InvocationCount;
+	}
+
+private:
+	UPROPERTY(Transient)
+	TObjectPtr<UObject> WorldContext;
+
+	UPROPERTY(Transient)
+	TObjectPtr<URpgInventoryManagerComponent> Inventory;
+
+	int32 InvocationCount = 0;
+	bool bNestedMessageBroadcast = false;
 };
 
 /** Frozen tagged-property shape used to prove version-one CarryRole bytes still load into the migration shadow. */

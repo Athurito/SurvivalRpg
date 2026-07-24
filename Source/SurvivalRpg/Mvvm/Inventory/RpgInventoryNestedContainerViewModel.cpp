@@ -12,7 +12,7 @@
 
 namespace
 {
-	constexpr ETextIdenticalModeFlags FieldNotifyTextIdentityFlags =
+	constexpr ETextIdenticalModeFlags NestedContainerTextIdentityFlags =
 		ETextIdenticalModeFlags::DeepCompare |
 		ETextIdenticalModeFlags::LexicalCompareInvariants;
 }
@@ -96,7 +96,7 @@ bool URpgInventoryNestedContainerViewModel::OpenContainerHandle(
 	const bool bOpenOwnerItemIdChanged = OpenOwnerItemId != ResolvedOwnerItemId;
 	const bool bBreadcrumbsChanged = Breadcrumbs != ResolvedBreadcrumbs;
 	const bool bTitleChanged =
-		!Title.IdenticalTo(ResolvedTitle, FieldNotifyTextIdentityFlags);
+		!Title.IdenticalTo(ResolvedTitle, NestedContainerTextIdentityFlags);
 	const bool bIsOpenChanged = !bIsOpen;
 
 	ActiveContainerHandle = ContainerHandle;
@@ -154,10 +154,10 @@ void URpgInventoryNestedContainerViewModel::CloseContainer()
 	const bool bOpenOwnerItemIdChanged = OpenOwnerItemId.IsValid();
 	const bool bActiveContainerHandleChanged = ActiveContainerHandle.IsValid();
 	const bool bTitleChanged =
-		!Title.IdenticalTo(EmptyText, FieldNotifyTextIdentityFlags);
+		!Title.IdenticalTo(EmptyText, NestedContainerTextIdentityFlags);
 	const bool bBreadcrumbsChanged = !Breadcrumbs.IsEmpty();
 	const bool bFilterQueryChanged =
-		!FilterQuery.IdenticalTo(EmptyText, FieldNotifyTextIdentityFlags);
+		!FilterQuery.IdenticalTo(EmptyText, NestedContainerTextIdentityFlags);
 	const bool bEntryFilterPresentationChanged = !EntryFilterPresentation.IsEmpty();
 
 	ObservedInventory.Reset();
@@ -212,7 +212,7 @@ void URpgInventoryNestedContainerViewModel::SetFilterQuery(const FText& NewFilte
 {
 	if (FilterQuery.IdenticalTo(
 			NewFilterQuery,
-			FieldNotifyTextIdentityFlags))
+			NestedContainerTextIdentityFlags))
 	{
 		return;
 	}
@@ -343,7 +343,7 @@ bool URpgInventoryNestedContainerViewModel::RevalidateOpenContainerBinding()
 	const bool bOpenOwnerItemIdChanged = OpenOwnerItemId != ResolvedOwnerItemId;
 	const bool bBreadcrumbsChanged = Breadcrumbs != ResolvedBreadcrumbs;
 	const bool bTitleChanged =
-		!Title.IdenticalTo(ResolvedTitle, FieldNotifyTextIdentityFlags);
+		!Title.IdenticalTo(ResolvedTitle, NestedContainerTextIdentityFlags);
 
 	ActiveContainerHandle = ResolvedHandle;
 	OpenOwnerItemId = ResolvedOwnerItemId;

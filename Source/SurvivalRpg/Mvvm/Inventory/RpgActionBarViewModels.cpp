@@ -16,7 +16,7 @@
 
 namespace
 {
-	constexpr ETextIdenticalModeFlags FieldNotifyTextIdentityFlags =
+	constexpr ETextIdenticalModeFlags ActionBarTextIdentityFlags =
 		ETextIdenticalModeFlags::DeepCompare |
 		ETextIdenticalModeFlags::LexicalCompareInvariants;
 
@@ -195,7 +195,7 @@ void URpgActionBarSlotViewModel::InitializeSlotWithAbilitySystem(
 	const bool bStackCountTextChanged =
 		!StackCountText.IdenticalTo(
 			NewStackCountText,
-			FieldNotifyTextIdentityFlags);
+			ActionBarTextIdentityFlags);
 	const bool bAvailableChanged = bAvailable != bNewAvailable;
 	const bool bBlockedReasonChanged = BlockedReason != NewBlockedReason;
 	const bool bAbilityIdChanged = AbilityId != NewAbilityId;
@@ -205,7 +205,7 @@ void URpgActionBarSlotViewModel::InitializeSlotWithAbilitySystem(
 	const bool bShortDisplayNameChanged =
 		!ShortDisplayName.IdenticalTo(
 			NewShortDisplayName,
-			FieldNotifyTextIdentityFlags);
+			ActionBarTextIdentityFlags);
 	const bool bHotkeyActionRowNameChanged =
 		HotkeyActionRowName != NewHotkeyActionRowName;
 	const bool bWasChanged =
@@ -344,6 +344,8 @@ void URpgActionBarViewModel::UnbindActionBar()
 
 void URpgActionBarViewModel::RefreshSlots()
 {
+	CancelQueuedRefreshSlots();
+
 	const URpgActionBarComponent* ActionBar = ObservedActionBar.Get();
 	const URpgInventoryManagerComponent* PlayerInventory = ObservedPlayerInventory.Get();
 	URpgPlayerInventoryLayoutComponent* InventoryLayout = ObservedInventoryLayout.Get();
@@ -418,6 +420,7 @@ URpgActionBarSlotViewModel* URpgActionBarViewModel::GetSlotAtIndex(int32 SlotInd
 void URpgActionBarViewModel::BeginDestroy()
 {
 	UnregisterMessageListener();
+	CancelQueuedRefreshSlots();
 	Super::BeginDestroy();
 }
 
@@ -467,12 +470,55 @@ void URpgActionBarViewModel::UnregisterMessageListener()
 	}
 }
 
+void URpgActionBarViewModel::RequestRefreshSlots()
+{
+	UWorld* World = nullptr;
+	if (URpgActionBarComponent* ActionBar = ObservedActionBar.Get())
+	{
+		World = ActionBar->GetWorld();
+	}
+	else if (URpgInventoryManagerComponent* PlayerInventory = ObservedPlayerInventory.Get())
+	{
+		World = PlayerInventory->GetWorld();
+	}
+	else if (URpgPlayerInventoryLayoutComponent* InventoryLayout = ObservedInventoryLayout.Get())
+	{
+		World = InventoryLayout->GetWorld();
+	}
+
+	if (!World)
+	{
+		RefreshSlots();
+		return;
+	}
+
+	RefreshSlotsQueue.Queue(
+		World,
+		this,
+		&ThisClass::ExecuteQueuedRefreshSlots);
+}
+
+void URpgActionBarViewModel::ExecuteQueuedRefreshSlots()
+{
+	if (!RefreshSlotsQueue.Consume())
+	{
+		return;
+	}
+
+	RefreshSlots();
+}
+
+void URpgActionBarViewModel::CancelQueuedRefreshSlots()
+{
+	RefreshSlotsQueue.Cancel();
+}
+
 void URpgActionBarViewModel::HandleActionBarSlotsChanged(FGameplayTag Channel, const FRpgActionBarSlotsChangedMessage& Message)
 {
 	const URpgActionBarComponent* ActionBar = ObservedActionBar.Get();
 	if (ActionBar && Message.ActionBarComponent == ActionBar)
 	{
-		RefreshSlots();
+		RequestRefreshSlots();
 	}
 }
 
@@ -481,7 +527,7 @@ void URpgActionBarViewModel::HandlePlayerInventoryChanged(FGameplayTag Channel, 
 	const URpgInventoryManagerComponent* PlayerInventory = ObservedPlayerInventory.Get();
 	if (PlayerInventory && Message.InventoryOwner == PlayerInventory)
 	{
-		RefreshSlots();
+		RequestRefreshSlots();
 	}
 }
 
@@ -490,7 +536,7 @@ void URpgActionBarViewModel::HandlePlayerInventoryLayoutChanged(FGameplayTag Cha
 	const URpgPlayerInventoryLayoutComponent* InventoryLayout = ObservedInventoryLayout.Get();
 	if (InventoryLayout && Message.LayoutComponent == InventoryLayout)
 	{
-		RefreshSlots();
+		RequestRefreshSlots();
 	}
 }
 
@@ -520,9 +566,9 @@ void URpgWeaponAbilitySlotViewModel::InitializeSlotWithAbilitySystem(
 	const bool bAbilityIdTagChanged = AbilityIdTag != NewAbilityIdTag;
 	const bool bAvailableChanged = bAvailable != bNewAvailable;
 	const bool bDisplayNameChanged =
-		!DisplayName.IdenticalTo(NewDisplayName, FieldNotifyTextIdentityFlags);
+		!DisplayName.IdenticalTo(NewDisplayName, ActionBarTextIdentityFlags);
 	const bool bDescriptionChanged =
-		!Description.IdenticalTo(NewDescription, FieldNotifyTextIdentityFlags);
+		!Description.IdenticalTo(NewDescription, ActionBarTextIdentityFlags);
 	const bool bIconChanged = Icon != NewIcon;
 	const bool bHotkeyActionRowNameChanged =
 		HotkeyActionRowName != NewHotkeyActionRowName;
@@ -606,7 +652,7 @@ void URpgWeaponAbilitySlotViewModel::RefreshCooldown(const URpgAbilitySystemComp
 	const bool bCooldownPercentChanged =
 		CooldownPercent != NewCooldownPercent;
 	const bool bCooldownTextChanged =
-		!CooldownText.IdenticalTo(NewCooldownText, FieldNotifyTextIdentityFlags);
+		!CooldownText.IdenticalTo(NewCooldownText, ActionBarTextIdentityFlags);
 
 	bOnCooldown = bNewOnCooldown;
 	CooldownRemainingTime = PublishedCooldownRemainingTime;

@@ -2040,7 +2040,7 @@ Status: **In Arbeit**
       OwningPlayer-Kontext dauerhaft testen.
 - [x] Stabile Child-VMs pro Item-ID und Container-Handle verwenden.
 - [x] Nur tatsächlich geänderte FieldNotify-Felder senden.
-- [ ] Inventory-Invalidierungen pro Commit/Tick bündeln.
+- [x] Inventory-Invalidierungen pro Commit/Tick bündeln.
 - [x] Player- und Storage-Projektionen bei Deaktivierung unbinden, ohne ihre
       screen-owned VM-Instanzen beim Pooling zu ersetzen.
 - [x] BaseTerminal auf denselben stabilen Unbind-/Pooling-Vertrag bringen.
@@ -2180,6 +2180,66 @@ Verifizierter Phase-6B-Zwischenstand vom 2026-07-23:
   Phase 8; deshalb ist der Prozentsatz trotz eines weiteren abgeschlossenen
   Implementierungspunkts gegenüber dem vorherigen 94-Punkte-Stand niedriger.
 - Nächster Schnitt: Inventory-Invalidierungen pro Commit/Tick bündeln.
+
+Verifizierter Phase-6C-Zwischenstand vom 2026-07-24:
+
+- Message-getriebene Invalidierungen der aktiven Inventory-Panel-, Player-,
+  Actionbar-, BaseStorage- und Crafting-Projektionen werden jetzt pro
+  ViewModel und betroffener Refresh-Domain bis zum nächsten World-Tick
+  gebündelt. Mehrere Nachrichten desselben autoritativen Commits erzeugen
+  dadurch höchstens einen entsprechenden UI-Rebuild je Consumer, ohne
+  getrennte Inventare oder ViewModel-Instanzen zusammenzulegen.
+- Die gemeinsame presentation-only `FRpgViewModelInvalidationQueue` verwendet
+  einen Weak-Target-Timer, den ursprünglichen World-TimerManager und eine
+  Generation zum Verwerfen veralteter Callbacks. Der Callback konsumiert
+  seinen Pending-Zustand vor dem Rebuild, sodass eine reentrante Nachricht
+  sauber einen weiteren Tick einplanen kann.
+- Player Inventory und Crafting vereinigen gleichzeitig ankommende
+  Teilinvalidierungen als Domain-Maske und führen Gear, Slot-Gruppen und
+  Actionbar beziehungsweise Station, Rezepte/Details und Jobs in
+  deterministischer Reihenfolge aus. Ein expliziter Teilrefresh kann eine
+  bereits vorgemerkte Crafting-Domain erfüllen, ohne andere Pending-Domains
+  zu verlieren.
+- Explizite Refresh-, Bind-, Unbind- und Destruct-Pfade bleiben synchron und
+  löschen ihre Pending-Queue, bevor sie den finalen Zustand publizieren.
+  Gameplay-Messages selbst bleiben synchron; Gameplay-Autorität,
+  Replikation, RPCs, Inventartransaktionen und Save-Daten wurden nicht
+  verändert. Die UI bleibt eine read-only Projektion der
+  serverautoritativen Lyra-rooted RPG-Systeme.
+- Die echte Unity-Kompilierung deckte einen zuvor verdeckten Namenskonflikt
+  gleichnamiger dateilokaler FieldNotify-Textflags auf. Die betroffenen
+  Konstanten besitzen nun pro Implementierungsdatei eindeutige Namen; ihr
+  Verhalten ist unverändert.
+- Sieben neue Regressionen sichern Commit-Bündelung, Trennung verschiedener
+  Inventare, Cancellation und stale Callbacks, Reentrancy über zwei Ticks,
+  selektive Player-Domain-Vereinigung sowie BaseStorage- und
+  Crafting-Nachrichtenbursts. Die gezielten Suiten meldeten Inventory
+  5 von 5, BaseStorage 1 von 1 und Crafting 1 von 1 erfolgreich.
+- Bewusst offen bleiben die separaten Loadout- und Weapon-Cooldown-
+  Projektionen sowie widget-lokale doppelte Refreshes. Auch der
+  BaseStorage-Producer sendet für seine erste Ressourcenzeile weiterhin zwei
+  Rohmeldungen ohne gemeinsame Commit-/Revision-ID; die UI bündelt diese
+  bereits, die Producer-Bereinigung ist jedoch ein eigener späterer Schnitt.
+  Ältere Split-, Move-, Rebase- und Sort-Producer können weiterhin partielle
+  Zustände melden und werden nicht durch diese Präsentationsoptimierung als
+  atomar eingestuft. Ein echter Seamless-Travel-/World-Teardown-Lauf bleibt
+  außerdem manuelle Integrations-QA.
+- Für diese reine C++-/Testphase sind keine manuellen Widget-, MVVM-,
+  Blueprint- oder Asset-Anpassungen im Editor erforderlich.
+- `SurvivalRpgEditor Win64 Development` wurde mit Unreal Engine 5.8 gebaut.
+  Der Build nach der Unity-Korrektur meldete 12 von 12 Actions, der
+  abschließende Test-Fixture-Build 4 von 4 Actions; beide endeten mit
+  `Result: Succeeded`.
+- Die vollständige `SurvivalRpg`-Automation meldete 187 von 187 Tests
+  erfolgreich: BaseStorage 2, Combat 1, Crafting 11, Equipment 6,
+  GameFeatures 3, Harvesting 1, Input 2, Inventory 134, Save 2 und UI 25.
+- `CompileAllBlueprints` endete mit Prozesscode 0, 0 Compilerfehlern,
+  16 bekannten Blueprint-Compilerwarnungen und 0 nicht ladbaren Blueprints.
+- Fortschritt Phase 6: 12 von 22 Punkten abgeschlossen (54,5 %).
+- Gesamtfortschritt der erweiterten verbindlichen Checkliste: 78 von 97
+  Punkten abgeschlossen (80,4 %), 19 Punkte offen.
+- Nächster Schnitt: weitere gepoolte Screens auf denselben
+  Unbind-/Pooling-Vertrag bringen.
 
 ## Phase 7 – Legacy endgültig entfernen
 

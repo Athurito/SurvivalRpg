@@ -6,6 +6,7 @@
 #include "MVVMViewModelBase.h"
 #include "SurvivalRpg/ActionBar/RpgActionBarComponent.h"
 #include "SurvivalRpg/Equipment/RpgWeaponAbilityLoadoutComponent.h"
+#include "SurvivalRpg/Mvvm/RpgViewModelInvalidationQueue.h"
 #include "TimerManager.h"
 #include "UObject/SoftObjectPtr.h"
 
@@ -205,6 +206,9 @@ protected:
 private:
 	void RegisterMessageListener();
 	void UnregisterMessageListener();
+	void RequestRefreshSlots();
+	void ExecuteQueuedRefreshSlots();
+	void CancelQueuedRefreshSlots();
 	void HandleActionBarSlotsChanged(FGameplayTag Channel, const FRpgActionBarSlotsChangedMessage& Message);
 	void HandlePlayerInventoryChanged(FGameplayTag Channel, const FRpgInventoryChangeMessage& Message);
 	void HandlePlayerInventoryLayoutChanged(FGameplayTag Channel, const FRpgPlayerInventoryLayoutChangedMessage& Message);
@@ -215,6 +219,7 @@ private:
 	FGameplayMessageListenerHandle SlotsChangedHandle;
 	FGameplayMessageListenerHandle InventoryChangedHandle;
 	FGameplayMessageListenerHandle LayoutChangedHandle;
+	FRpgViewModelInvalidationQueue RefreshSlotsQueue;
 };
 
 /** UI projection for one Q/E/R weapon ability slot. */

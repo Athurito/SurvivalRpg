@@ -11,7 +11,7 @@
 
 namespace
 {
-	constexpr ETextIdenticalModeFlags FieldNotifyTextIdentityFlags =
+	constexpr ETextIdenticalModeFlags LoadoutTextIdentityFlags =
 		ETextIdenticalModeFlags::DeepCompare |
 		ETextIdenticalModeFlags::LexicalCompareInvariants;
 
@@ -119,14 +119,14 @@ void URpgEquipmentSlotViewModel::InitializeSlot(ERpgEquipmentSlot InEquipmentSlo
 	const bool bEquipmentSlotChanged =
 		EquipmentSlot != NewEquipmentSlot;
 	const bool bSlotLabelChanged =
-		!SlotLabel.IdenticalTo(NewSlotLabel, FieldNotifyTextIdentityFlags);
+		!SlotLabel.IdenticalTo(NewSlotLabel, LoadoutTextIdentityFlags);
 	const bool bItemInstanceChanged = ItemInstance != NewItemInstance;
 	const bool bHasItemChanged = bHasItem != bNewHasItem;
 	const bool bIconChanged = Icon != NewIcon;
 	const bool bShortDisplayNameChanged =
 		!ShortDisplayName.IdenticalTo(
 			NewShortDisplayName,
-			FieldNotifyTextIdentityFlags);
+			LoadoutTextIdentityFlags);
 	const bool bWasChanged =
 		bEquipmentSlotChanged ||
 		bSlotLabelChanged ||

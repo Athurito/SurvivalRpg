@@ -12,7 +12,7 @@ DEFINE_LOG_CATEGORY_STATIC(LogRpgInventoryViewModels, Log, All);
 
 namespace
 {
-	constexpr ETextIdenticalModeFlags FieldNotifyTextIdentityFlags =
+	constexpr ETextIdenticalModeFlags InventoryTextIdentityFlags =
 		ETextIdenticalModeFlags::DeepCompare |
 		ETextIdenticalModeFlags::LexicalCompareInvariants;
 
@@ -119,9 +119,9 @@ void URpgInventoryUiDataFragmentViewModel::InitializeFromEntry(const FRpgInvento
 	const bool bShortDisplayNameChanged =
 		!ShortDisplayName.IdenticalTo(
 			NewShortDisplayName,
-			FieldNotifyTextIdentityFlags);
+			InventoryTextIdentityFlags);
 	const bool bDescriptionChanged =
-		!Description.IdenticalTo(NewDescription, FieldNotifyTextIdentityFlags);
+		!Description.IdenticalTo(NewDescription, InventoryTextIdentityFlags);
 	const bool bPresentationTagsChanged =
 		PresentationTags != NewPresentationTags;
 
@@ -243,13 +243,13 @@ void URpgInventoryEntryViewModel::InitializeFromEntry(
 	const bool bStackCountChanged = StackCount != NewStackCount;
 	const bool bPlacementChanged = !(Placement == NewPlacement);
 	const bool bDisplayNameChanged =
-		!DisplayName.IdenticalTo(NewDisplayName, FieldNotifyTextIdentityFlags);
+		!DisplayName.IdenticalTo(NewDisplayName, InventoryTextIdentityFlags);
 	const bool bShortDisplayNameChanged =
 		!ShortDisplayName.IdenticalTo(
 			NewShortDisplayName,
-			FieldNotifyTextIdentityFlags);
+			InventoryTextIdentityFlags);
 	const bool bDescriptionChanged =
-		!Description.IdenticalTo(NewDescription, FieldNotifyTextIdentityFlags);
+		!Description.IdenticalTo(NewDescription, InventoryTextIdentityFlags);
 	const bool bIconChanged = Icon != NewIcon;
 	const bool bItemCategoryChanged = ItemCategory != NewItemCategory;
 	const bool bItemTagsChanged = ItemTags != NewItemTags;
@@ -416,11 +416,11 @@ void URpgInventoryPanelViewModel::BindInventoryContainer(
 void URpgInventoryPanelViewModel::UnbindInventory()
 {
 	UnregisterInventoryMessageListener();
+	CancelQueuedRefreshEntries();
 	ObservedInventory.Reset();
 	ContainerFilter = FRpgInventoryContainerHandle();
 	const bool bEntriesChanged = !Entries.IsEmpty();
 	Entries.Reset();
-	bRefreshEntriesQueued = false;
 	RefreshCapacityFields(nullptr);
 	if (bEntriesChanged)
 	{
@@ -431,6 +431,8 @@ void URpgInventoryPanelViewModel::UnbindInventory()
 
 void URpgInventoryPanelViewModel::RefreshEntries()
 {
+	CancelQueuedRefreshEntries();
+
 	URpgInventoryManagerComponent* Inventory = ObservedInventory.Get();
 	if (!Inventory)
 	{
@@ -547,7 +549,7 @@ void URpgInventoryPanelViewModel::RefreshCapacityFields(URpgInventoryManagerComp
 	const bool bFreeEntriesChanged = FreeEntries != NewFreeEntries;
 	const bool bIsUnlimitedChanged = bIsUnlimited != bNewIsUnlimited;
 	const bool bCapacityTextChanged =
-		!CapacityText.IdenticalTo(NewCapacityText, FieldNotifyTextIdentityFlags);
+		!CapacityText.IdenticalTo(NewCapacityText, InventoryTextIdentityFlags);
 
 	UsedEntries = NewUsedEntries;
 	MaxEntries = NewMaxEntries;
@@ -579,11 +581,6 @@ void URpgInventoryPanelViewModel::RefreshCapacityFields(URpgInventoryManagerComp
 
 void URpgInventoryPanelViewModel::RequestRefreshEntries()
 {
-	if (bRefreshEntriesQueued)
-	{
-		return;
-	}
-
 	URpgInventoryManagerComponent* Inventory = ObservedInventory.Get();
 	UWorld* World = Inventory ? Inventory->GetWorld() : nullptr;
 	if (!World)
@@ -592,14 +589,25 @@ void URpgInventoryPanelViewModel::RequestRefreshEntries()
 		return;
 	}
 
-	bRefreshEntriesQueued = true;
-	World->GetTimerManager().SetTimerForNextTick(FTimerDelegate::CreateUObject(this, &ThisClass::ExecuteQueuedRefreshEntries));
+	RefreshEntriesQueue.Queue(
+		World,
+		this,
+		&ThisClass::ExecuteQueuedRefreshEntries);
 }
 
 void URpgInventoryPanelViewModel::ExecuteQueuedRefreshEntries()
 {
-	bRefreshEntriesQueued = false;
+	if (!RefreshEntriesQueue.Consume())
+	{
+		return;
+	}
+
 	RefreshEntries();
+}
+
+void URpgInventoryPanelViewModel::CancelQueuedRefreshEntries()
+{
+	RefreshEntriesQueue.Cancel();
 }
 
 void URpgInventoryPanelViewModel::BeginDestroy()

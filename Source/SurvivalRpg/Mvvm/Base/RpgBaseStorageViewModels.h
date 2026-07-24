@@ -3,6 +3,7 @@
 #include "GameFramework/GameplayMessageSubsystem.h"
 #include "MVVMViewModelBase.h"
 #include "SurvivalRpg/Base/RpgBaseStorageComponent.h"
+#include "SurvivalRpg/Mvvm/RpgViewModelInvalidationQueue.h"
 #include "UObject/SoftObjectPtr.h"
 
 #include "RpgBaseStorageViewModels.generated.h"
@@ -139,8 +140,12 @@ protected:
 private:
 	void RegisterBaseStorageMessageListener();
 	void UnregisterBaseStorageMessageListener();
+	void RequestRefreshResources();
+	void ExecuteQueuedRefreshResources();
+	void CancelQueuedRefreshResources();
 	void RebuildResources();
 	void HandleBaseStorageChanged(FGameplayTag Channel, const FRpgBaseResourceChangeMessage& Message);
 
 	FGameplayMessageListenerHandle BaseStorageChangedHandle;
+	FRpgViewModelInvalidationQueue RefreshResourcesQueue;
 };

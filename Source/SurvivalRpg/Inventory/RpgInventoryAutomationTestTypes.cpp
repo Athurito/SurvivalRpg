@@ -5,11 +5,13 @@
 #include "RpgInventoryFragment_ItemContainer.h"
 #include "RpgInventoryFragment_ItemTraits.h"
 #include "RpgInventoryItemInstance.h"
+#include "RpgInventoryManagerComponent.h"
 #include "RpgPlayerInventoryLayoutComponent.h"
 #include "RpgPlayerInventoryLayoutDefinition.h"
 #include "SurvivalRpg/Core/Character/RpgPawnData.h"
 #include "SurvivalRpg/Equipment/RpgEquipmentAutomationTestTypes.h"
 #include "SurvivalRpg/GameplayTags/RpgGameplayTags.h"
+#include "GameFramework/GameplayMessageSubsystem.h"
 #include "UObject/UnrealType.h"
 
 #include UE_INLINE_GENERATED_CPP_BY_NAME(RpgInventoryAutomationTestTypes)
@@ -62,6 +64,34 @@ namespace
 		Group.Rule.bActionbarBindable = bActionbarBindable;
 		return Group;
 	}
+}
+
+void URpgInventoryAutomationTestReentrantInvalidationTarget::Configure(
+	UObject* InWorldContext,
+	URpgInventoryManagerComponent* InInventory)
+{
+	WorldContext = InWorldContext;
+	Inventory = InInventory;
+	InvocationCount = 0;
+	bNestedMessageBroadcast = false;
+}
+
+void URpgInventoryAutomationTestReentrantInvalidationTarget::
+	RecordAndBroadcastInventoryChange()
+{
+	++InvocationCount;
+	if (bNestedMessageBroadcast || !WorldContext || !Inventory)
+	{
+		return;
+	}
+
+	bNestedMessageBroadcast = true;
+	FRpgInventoryChangeMessage Message;
+	Message.InventoryOwner = Inventory;
+	UGameplayMessageSubsystem::Get(WorldContext).BroadcastMessage(
+		FGameplayTag::RequestGameplayTag(
+			TEXT("Rpg.Inventory.Message.StackChanged")),
+		Message);
 }
 
 #if WITH_DEV_AUTOMATION_TESTS

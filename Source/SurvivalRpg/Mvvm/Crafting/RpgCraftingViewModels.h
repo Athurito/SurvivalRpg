@@ -4,6 +4,7 @@
 #include "GameFramework/GameplayMessageSubsystem.h"
 #include "MVVMViewModelBase.h"
 #include "SurvivalRpg/Crafting/RpgCraftingStationComponent.h"
+#include "SurvivalRpg/Mvvm/RpgViewModelInvalidationQueue.h"
 #include "UObject/SoftObjectPtr.h"
 
 #include "RpgCraftingViewModels.generated.h"
@@ -502,6 +503,11 @@ protected:
 private:
 	void RegisterMessageListeners();
 	void UnregisterMessageListeners();
+	void RequestRefresh(uint8 RefreshDomains);
+	void ExecuteQueuedRefresh();
+	void FlushPendingRefreshes();
+	void CancelQueuedRefresh();
+	void SatisfyPendingRefresh(uint8 RefreshDomains);
 	void RebuildStationState();
 	void RebuildRecipeList();
 	void RebuildSelectedRecipeDetails();
@@ -516,4 +522,6 @@ private:
 	FGameplayMessageListenerHandle RecipeUnlockChangedHandle;
 	FGameplayMessageListenerHandle InventoryChangedHandle;
 	FGameplayMessageListenerHandle BaseStorageChangedHandle;
+	FRpgViewModelInvalidationQueue RefreshQueue;
+	uint8 PendingRefreshDomains = 0;
 };

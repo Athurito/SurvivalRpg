@@ -13,9 +13,17 @@
 
 namespace
 {
-	constexpr ETextIdenticalModeFlags FieldNotifyTextIdentityFlags =
+	constexpr ETextIdenticalModeFlags CraftingTextIdentityFlags =
 		ETextIdenticalModeFlags::DeepCompare |
 		ETextIdenticalModeFlags::LexicalCompareInvariants;
+
+	namespace CraftingRefreshDomains
+	{
+		constexpr uint8 Station = 1 << 0;
+		constexpr uint8 RecipesAndDetails = 1 << 1;
+		constexpr uint8 Jobs = 1 << 2;
+		constexpr uint8 All = Station | RecipesAndDetails | Jobs;
+	}
 
 	const URpgInventoryItemDefinition* GetItemDefinitionCDO(TSubclassOf<URpgInventoryItemDefinition> ItemDefinition)
 	{
@@ -172,7 +180,7 @@ void URpgCraftingIngredientViewModel::InitializeIngredient(TSubclassOf<URpgInven
 
 	const bool bItemDefinitionChanged = ItemDefinition != NewItemDefinition;
 	const bool bDisplayNameChanged =
-		!DisplayName.IdenticalTo(NewDisplayName, FieldNotifyTextIdentityFlags);
+		!DisplayName.IdenticalTo(NewDisplayName, CraftingTextIdentityFlags);
 	const bool bIconChanged = Icon != NewIcon;
 	const bool bRequiredCountChanged = RequiredCount != NewRequiredCount;
 	const bool bAvailableCountChanged = AvailableCount != NewAvailableCount;
@@ -226,7 +234,7 @@ void URpgCraftingOutputViewModel::InitializeOutput(TSubclassOf<URpgInventoryItem
 
 	const bool bItemDefinitionChanged = ItemDefinition != NewItemDefinition;
 	const bool bDisplayNameChanged =
-		!DisplayName.IdenticalTo(NewDisplayName, FieldNotifyTextIdentityFlags);
+		!DisplayName.IdenticalTo(NewDisplayName, CraftingTextIdentityFlags);
 	const bool bIconChanged = Icon != NewIcon;
 	const bool bOutputCountChanged = OutputCount != NewOutputCount;
 
@@ -314,9 +322,9 @@ void URpgCraftingRecipeViewModel::InitializeRecipe(URpgCraftingStationComponent*
 
 	const bool bRecipeDefinitionChanged = RecipeDefinition != NewRecipeDefinition;
 	const bool bDisplayNameChanged =
-		!DisplayName.IdenticalTo(NewDisplayName, FieldNotifyTextIdentityFlags);
+		!DisplayName.IdenticalTo(NewDisplayName, CraftingTextIdentityFlags);
 	const bool bDescriptionChanged =
-		!Description.IdenticalTo(NewDescription, FieldNotifyTextIdentityFlags);
+		!Description.IdenticalTo(NewDescription, CraftingTextIdentityFlags);
 	const bool bIconChanged = Icon != NewIcon;
 	const bool bRecipeCategoryChanged = RecipeCategory != NewRecipeCategory;
 	const bool bRecipeTierChanged = RecipeTier != NewRecipeTier;
@@ -327,7 +335,7 @@ void URpgCraftingRecipeViewModel::InitializeRecipe(URpgCraftingStationComponent*
 	const bool bCanCraftOneChanged = bCanCraftOne != bNewCanCraftOne;
 	const bool bHasMissingResourcesChanged = bHasMissingResources != bNewHasMissingResources;
 	const bool bOutputSummaryChanged =
-		!OutputSummary.IdenticalTo(NewOutputSummary, FieldNotifyTextIdentityFlags);
+		!OutputSummary.IdenticalTo(NewOutputSummary, CraftingTextIdentityFlags);
 
 	RecipeDefinition = NewRecipeDefinition;
 	DisplayName = NewDisplayName;
@@ -446,7 +454,7 @@ void URpgCraftingJobViewModel::InitializeJobForStation(URpgCraftingStationCompon
 	const bool bJobIdChanged = JobId != NewJobId;
 	const bool bRecipeDefinitionChanged = RecipeDefinition != NewRecipeDefinition;
 	const bool bDisplayNameChanged =
-		!DisplayName.IdenticalTo(NewDisplayName, FieldNotifyTextIdentityFlags);
+		!DisplayName.IdenticalTo(NewDisplayName, CraftingTextIdentityFlags);
 	const bool bIconChanged = Icon != NewIcon;
 	const bool bQuantityTotalChanged = QuantityTotal != NewQuantityTotal;
 	const bool bQuantityCompletedChanged = QuantityCompleted != NewQuantityCompleted;
@@ -551,6 +559,7 @@ void URpgCraftingStationViewModel::BindCraftingStation(URpgCraftingStationCompon
 void URpgCraftingStationViewModel::UnbindCraftingStation()
 {
 	UnregisterMessageListeners();
+	CancelQueuedRefresh();
 
 	const FText NewPauseResumeButtonText = MakePauseResumeButtonText(false);
 	const bool bObservedStationChanged = ObservedStation != nullptr;
@@ -565,7 +574,7 @@ void URpgCraftingStationViewModel::UnbindCraftingStation()
 	const bool bPauseResumeButtonTextChanged =
 		!PauseResumeButtonText.IdenticalTo(
 			NewPauseResumeButtonText,
-			FieldNotifyTextIdentityFlags);
+			CraftingTextIdentityFlags);
 	const bool bCanAutoDepositCraftingOutputsChanged = bCanAutoDepositCraftingOutputs;
 	const bool bAutoDepositCraftingOutputsEnabledChanged =
 		bAutoDepositCraftingOutputsEnabled;
@@ -671,6 +680,7 @@ void URpgCraftingStationViewModel::UnbindCraftingStation()
 
 void URpgCraftingStationViewModel::Refresh()
 {
+	CancelQueuedRefresh();
 	RefreshStationState();
 	RefreshRecipesAndDetails();
 	RefreshJobs();
@@ -678,11 +688,13 @@ void URpgCraftingStationViewModel::Refresh()
 
 void URpgCraftingStationViewModel::RefreshStationState()
 {
+	SatisfyPendingRefresh(CraftingRefreshDomains::Station);
 	RebuildStationState();
 }
 
 void URpgCraftingStationViewModel::RefreshRecipesAndDetails()
 {
+	SatisfyPendingRefresh(CraftingRefreshDomains::RecipesAndDetails);
 	URpgCraftingRecipeDefinition* PreviousSelectedRecipe = SelectedRecipe.Get();
 	const int32 PreviousCraftQuantity = CraftQuantity;
 	RebuildRecipeList();
@@ -710,6 +722,7 @@ void URpgCraftingStationViewModel::RefreshSelectedRecipeDetails()
 
 void URpgCraftingStationViewModel::RefreshJobs()
 {
+	SatisfyPendingRefresh(CraftingRefreshDomains::Jobs);
 	RebuildJobs();
 }
 
@@ -908,6 +921,72 @@ void URpgCraftingStationViewModel::UnregisterMessageListeners()
 	}
 }
 
+void URpgCraftingStationViewModel::RequestRefresh(uint8 RefreshDomains)
+{
+	PendingRefreshDomains |= RefreshDomains;
+
+	UWorld* World = ObservedStation ? ObservedStation->GetWorld() : nullptr;
+	if (!World)
+	{
+		FlushPendingRefreshes();
+		return;
+	}
+
+	RefreshQueue.Queue(
+		World,
+		this,
+		&ThisClass::ExecuteQueuedRefresh);
+}
+
+void URpgCraftingStationViewModel::ExecuteQueuedRefresh()
+{
+	if (!RefreshQueue.Consume())
+	{
+		return;
+	}
+
+	FlushPendingRefreshes();
+}
+
+void URpgCraftingStationViewModel::FlushPendingRefreshes()
+{
+	const uint8 RefreshDomains = PendingRefreshDomains;
+	PendingRefreshDomains = 0;
+
+	if ((RefreshDomains & CraftingRefreshDomains::Station) != 0)
+	{
+		RefreshStationState();
+	}
+	if ((RefreshDomains & CraftingRefreshDomains::RecipesAndDetails) != 0)
+	{
+		RefreshRecipesAndDetails();
+	}
+	if ((RefreshDomains & CraftingRefreshDomains::Jobs) != 0)
+	{
+		RefreshJobs();
+	}
+}
+
+void URpgCraftingStationViewModel::CancelQueuedRefresh()
+{
+	RefreshQueue.Cancel();
+	PendingRefreshDomains = 0;
+}
+
+void URpgCraftingStationViewModel::SatisfyPendingRefresh(uint8 RefreshDomains)
+{
+	if ((PendingRefreshDomains & RefreshDomains) == 0)
+	{
+		return;
+	}
+
+	PendingRefreshDomains &= ~RefreshDomains;
+	if (PendingRefreshDomains == 0)
+	{
+		RefreshQueue.Cancel();
+	}
+}
+
 void URpgCraftingStationViewModel::RebuildStationState()
 {
 	URpgCraftingStationComponent* Station = ObservedStation.Get();
@@ -928,7 +1007,7 @@ void URpgCraftingStationViewModel::RebuildStationState()
 	const bool bPauseResumeButtonTextChanged =
 		!PauseResumeButtonText.IdenticalTo(
 			NewPauseResumeButtonText,
-			FieldNotifyTextIdentityFlags);
+			CraftingTextIdentityFlags);
 	const bool bCanAutoDepositCraftingOutputsChanged =
 		bCanAutoDepositCraftingOutputs != bNewCanAutoDepositCraftingOutputs;
 	const bool bAutoDepositCraftingOutputsEnabledChanged =
@@ -1232,7 +1311,7 @@ void URpgCraftingStationViewModel::RebuildSelectedRecipeDetails()
 	const bool bPauseResumeButtonTextChanged =
 		!PauseResumeButtonText.IdenticalTo(
 			NewPauseResumeButtonText,
-			FieldNotifyTextIdentityFlags);
+			CraftingTextIdentityFlags);
 	const bool bSelectedIngredientsChanged =
 		!AreViewModelArraysEqual(
 			SelectedIngredients,
@@ -1334,7 +1413,7 @@ void URpgCraftingStationViewModel::RebuildJobs()
 	const bool bPauseResumeButtonTextChanged =
 		!PauseResumeButtonText.IdenticalTo(
 			NewPauseResumeButtonText,
-			FieldNotifyTextIdentityFlags);
+			CraftingTextIdentityFlags);
 
 	Jobs = MoveTemp(NewJobs);
 	bStationPaused = bNewStationPaused;
@@ -1455,15 +1534,13 @@ void URpgCraftingStationViewModel::HandleCraftingStationChanged(FGameplayTag Cha
 {
 	if (ObservedStation.Get() == Message.Station)
 	{
-		RefreshStationState();
-		RefreshRecipesAndDetails();
-		RefreshJobs();
+		RequestRefresh(CraftingRefreshDomains::All);
 	}
 }
 
 void URpgCraftingStationViewModel::HandleRecipeUnlockChanged(FGameplayTag Channel, const FRpgRecipeUnlockChangeMessage& Message)
 {
-	RefreshRecipesAndDetails();
+	RequestRefresh(CraftingRefreshDomains::RecipesAndDetails);
 }
 
 void URpgCraftingStationViewModel::HandleInventoryChanged(FGameplayTag Channel, const FRpgInventoryChangeMessage& Message)
@@ -1482,19 +1559,20 @@ void URpgCraftingStationViewModel::HandleInventoryChanged(FGameplayTag Channel, 
 
 	if (ChangedInventory == Station->GetOutputInventory())
 	{
-		RefreshStationState();
-		RefreshJobs();
+		RequestRefresh(
+			CraftingRefreshDomains::Station |
+			CraftingRefreshDomains::Jobs);
 		return;
 	}
 
 	const TArray<URpgInventoryManagerComponent*> ResourceInventories = Station->GetResourceInventories(RequestingActor.Get());
 	if (ResourceInventories.Contains(ChangedInventory))
 	{
-		RefreshRecipesAndDetails();
+		RequestRefresh(CraftingRefreshDomains::RecipesAndDetails);
 	}
 }
 
 void URpgCraftingStationViewModel::HandleBaseStorageChanged(FGameplayTag Channel, const FRpgBaseResourceChangeMessage& Message)
 {
-	RefreshRecipesAndDetails();
+	RequestRefresh(CraftingRefreshDomains::RecipesAndDetails);
 }

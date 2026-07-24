@@ -5,6 +5,7 @@
 #include "MVVMViewModelBase.h"
 #include "SurvivalRpg/Equipment/RpgEquipmentDefinition.h"
 #include "SurvivalRpg/Inventory/RpgPlayerInventoryLayoutTypes.h"
+#include "SurvivalRpg/Mvvm/RpgViewModelInvalidationQueue.h"
 #include "UObject/SoftObjectPtr.h"
 
 #include "RpgPlayerInventoryViewModels.generated.h"
@@ -451,6 +452,10 @@ protected:
 private:
 	void RegisterMessageListeners();
 	void UnregisterMessageListeners();
+	void RequestRefresh(uint8 RefreshDomains);
+	void ExecuteQueuedRefresh();
+	void FlushPendingRefreshes();
+	void CancelQueuedRefresh();
 	void RefreshGearSlots();
 	void RefreshSlotGroups();
 	void RefreshActionBarSlots();
@@ -472,4 +477,6 @@ private:
 	FGameplayMessageListenerHandle LayoutChangedHandle;
 	FGameplayMessageListenerHandle EquipmentChangedHandle;
 	FGameplayMessageListenerHandle ActionBarChangedHandle;
+	FRpgViewModelInvalidationQueue RefreshQueue;
+	uint8 PendingRefreshDomains = 0;
 };

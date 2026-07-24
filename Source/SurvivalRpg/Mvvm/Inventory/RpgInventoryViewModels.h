@@ -3,6 +3,7 @@
 #include "GameplayTagContainer.h"
 #include "GameFramework/GameplayMessageSubsystem.h"
 #include "MVVMViewModelBase.h"
+#include "SurvivalRpg/Mvvm/RpgViewModelInvalidationQueue.h"
 #include "SurvivalRpg/Inventory/RpgInventoryItemDefinition.h"
 #include "SurvivalRpg/Inventory/RpgInventoryItemTypes.h"
 #include "SurvivalRpg/Inventory/RpgInventoryManagerComponent.h"
@@ -329,6 +330,7 @@ protected:
 private:
 	void RequestRefreshEntries();
 	void ExecuteQueuedRefreshEntries();
+	void CancelQueuedRefreshEntries();
 	void RefreshCapacityFields(URpgInventoryManagerComponent* Inventory);
 	void RegisterInventoryMessageListener();
 	void UnregisterInventoryMessageListener();
@@ -341,5 +343,5 @@ private:
 	FRpgInventoryContainerHandle ContainerFilter;
 
 	FGameplayMessageListenerHandle InventoryChangedHandle;
-	bool bRefreshEntriesQueued = false;
+	FRpgViewModelInvalidationQueue RefreshEntriesQueue;
 };

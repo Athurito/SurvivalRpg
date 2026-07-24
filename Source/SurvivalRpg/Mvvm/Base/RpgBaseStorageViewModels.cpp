@@ -9,7 +9,7 @@
 
 namespace
 {
-	constexpr ETextIdenticalModeFlags FieldNotifyTextIdentityFlags =
+	constexpr ETextIdenticalModeFlags BaseStorageTextIdentityFlags =
 		ETextIdenticalModeFlags::DeepCompare |
 		ETextIdenticalModeFlags::LexicalCompareInvariants;
 
@@ -68,7 +68,7 @@ void URpgBaseResourceEntryViewModel::InitializeFromResourceEntry(const FRpgBaseR
 
 	const bool bItemDefinitionChanged = ItemDefinition != NewItemDefinition;
 	const bool bDisplayNameChanged =
-		!DisplayName.IdenticalTo(NewDisplayName, FieldNotifyTextIdentityFlags);
+		!DisplayName.IdenticalTo(NewDisplayName, BaseStorageTextIdentityFlags);
 	const bool bIconChanged = Icon != NewIcon;
 	const bool bCountChanged = Count != NewCount;
 	const bool bCapacityChanged = Capacity != NewCapacity;
@@ -170,6 +170,7 @@ void URpgBaseStorageViewModel::BindBaseStorageStation(URpgBaseStorageStationComp
 void URpgBaseStorageViewModel::UnbindBaseStorage()
 {
 	UnregisterBaseStorageMessageListener();
+	CancelQueuedRefreshResources();
 	const TArray<TSubclassOf<URpgInventoryItemDefinition>> EmptyAllowedResources;
 	const TArray<TObjectPtr<URpgBaseResourceEntryViewModel>> EmptyResources;
 	const bool bObservedBaseStorageChanged = ObservedBaseStorage != nullptr;
@@ -202,6 +203,7 @@ void URpgBaseStorageViewModel::UnbindBaseStorage()
 
 void URpgBaseStorageViewModel::RefreshResources()
 {
+	CancelQueuedRefreshResources();
 	RebuildResources();
 }
 
@@ -251,6 +253,36 @@ void URpgBaseStorageViewModel::UnregisterBaseStorageMessageListener()
 	{
 		BaseStorageChangedHandle.Unregister();
 	}
+}
+
+void URpgBaseStorageViewModel::RequestRefreshResources()
+{
+	UWorld* World = ObservedBaseStorage ? ObservedBaseStorage->GetWorld() : nullptr;
+	if (!World)
+	{
+		RefreshResources();
+		return;
+	}
+
+	RefreshResourcesQueue.Queue(
+		World,
+		this,
+		&ThisClass::ExecuteQueuedRefreshResources);
+}
+
+void URpgBaseStorageViewModel::ExecuteQueuedRefreshResources()
+{
+	if (!RefreshResourcesQueue.Consume())
+	{
+		return;
+	}
+
+	RefreshResources();
+}
+
+void URpgBaseStorageViewModel::CancelQueuedRefreshResources()
+{
+	RefreshResourcesQueue.Cancel();
 }
 
 void URpgBaseStorageViewModel::RebuildResources()
@@ -363,6 +395,6 @@ void URpgBaseStorageViewModel::HandleBaseStorageChanged(FGameplayTag Channel, co
 {
 	if (ObservedBaseStorage && Message.StorageOwner.Get() == ObservedBaseStorage)
 	{
-		RefreshResources();
+		RequestRefreshResources();
 	}
 }
