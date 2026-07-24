@@ -3,6 +3,7 @@
 #include "RpgInventoryManagerComponent.h"
 
 #include "AbilitySystemComponent.h"
+#include "GameFramework/Actor.h"
 #include "RpgInventoryFragment_ItemContainer.h"
 #include "RpgInventoryFragment_ItemTraits.h"
 #include "RpgInventoryItemDefinition.h"
@@ -203,6 +204,43 @@ namespace RpgInventoryManagerRulesPlannerPrivate
 
 		return false;
 	}
+
+	bool FindRulesManagedInventoryEntry(
+		const URpgInventoryItemInstance* ItemInstance,
+		const URpgInventoryManagerComponent*& OutInventory,
+		FRpgInventoryEntryView& OutEntry)
+	{
+		OutInventory = nullptr;
+		OutEntry = FRpgInventoryEntryView();
+		const AActor* ItemOwner = ItemInstance
+			? ItemInstance->GetTypedOuter<AActor>()
+			: nullptr;
+		if (!ItemOwner)
+		{
+			return false;
+		}
+
+		TArray<URpgInventoryManagerComponent*> Inventories;
+		ItemOwner->GetComponents(Inventories);
+		for (const URpgInventoryManagerComponent* Inventory : Inventories)
+		{
+			if (!Inventory)
+			{
+				continue;
+			}
+			for (const FRpgInventoryEntryView& Entry :
+				Inventory->GetAllEntries())
+			{
+				if (Entry.Instance == ItemInstance)
+				{
+					OutInventory = Inventory;
+					OutEntry = Entry;
+					return true;
+				}
+			}
+		}
+		return false;
+	}
 }
 
 using RpgInventoryManagerRulesPlannerPrivate::
@@ -213,6 +251,8 @@ using RpgInventoryManagerRulesPlannerPrivate::
 	EvaluateRulesScratchPlacement;
 using RpgInventoryManagerRulesPlannerPrivate::
 	FindRulesFirstFitInScratch;
+using RpgInventoryManagerRulesPlannerPrivate::
+	FindRulesManagedInventoryEntry;
 using RpgInventoryManagerRulesPlannerPrivate::
 	GetRulesItemContainerRuleFailureCode;
 using RpgInventoryManagerRulesPlannerPrivate::
@@ -1787,4 +1827,396 @@ FRpgInventoryPlacementPlan URpgInventoryManagerComponent::EvaluatePlacementInter
 		? ERpgInventoryMutationResultCode::Success
 		: ERpgInventoryMutationResultCode::PartiallyApplied;
 	return Plan;
+}
+
+int32 URpgInventoryManagerComponent::GetRequiredNewEntryCountForItemDefinition(TSubclassOf<URpgInventoryItemDefinition> ItemDef, int32 StackCount) const
+{
+	if (!ItemDef || StackCount <= 0)
+	{
+		return 0;
+	}
+
+	URpgInventoryItemInstance* StagedInstance =
+		NewObject<URpgInventoryItemInstance>(GetTransientPackage());
+	StagedInstance->SetItemDef(ItemDef);
+	for (URpgInventoryItemFragment* Fragment :
+		GetDefault<URpgInventoryItemDefinition>(ItemDef)->Fragments)
+	{
+		if (Fragment)
+		{
+			Fragment->OnInstanceCreated(StagedInstance);
+		}
+	}
+	FRpgInventoryPlacementQuery Query;
+	Query.Purpose = ERpgInventoryPlacementPurpose::Add;
+	Query.Search = ERpgInventoryPlacementSearch::FirstFit;
+	Query.Subject = FRpgInventoryPlacementSubject::FromGeneratedGrant(
+		StagedInstance,
+		StackCount);
+	const FRpgInventoryPlacementPlan Plan = EvaluatePlacement(Query);
+	int32 MergeQuantity = 0;
+	for (const FRpgInventoryPlacementStep& Step : Plan.Steps)
+	{
+		if (Step.Resolution == ERpgInventoryPlacementResolution::Merge)
+		{
+			MergeQuantity += Step.Quantity;
+		}
+	}
+	const int32 RemainingQuantity = FMath::Max(0, StackCount - MergeQuantity);
+	return RemainingQuantity > 0
+		? FMath::DivideAndRoundUp(
+			RemainingQuantity,
+			GetRulesInventoryMaxStackSizeForDefinition(ItemDef))
+		: 0;
+}
+
+int32 URpgInventoryManagerComponent::GetRequiredNewEntryCountForItemInstance(URpgInventoryItemInstance* ItemInstance, int32 StackCount) const
+{
+	if (!ItemInstance || StackCount <= 0)
+	{
+		return 0;
+	}
+
+	return ItemInstance && StackCount > 0 ? 1 : 0;
+}
+
+bool URpgInventoryManagerComponent::CanAddItemDefinition(TSubclassOf<URpgInventoryItemDefinition> ItemDef, int32 StackCount) const
+{
+	if (ItemDef == nullptr || StackCount <= 0)
+	{
+		return false;
+	}
+
+	URpgInventoryItemInstance* StagedInstance =
+		NewObject<URpgInventoryItemInstance>(GetTransientPackage());
+	StagedInstance->SetItemDef(ItemDef);
+	for (URpgInventoryItemFragment* Fragment :
+		GetDefault<URpgInventoryItemDefinition>(ItemDef)->Fragments)
+	{
+		if (Fragment)
+		{
+			Fragment->OnInstanceCreated(StagedInstance);
+		}
+	}
+	FRpgInventoryPlacementQuery Query;
+	Query.Purpose = ERpgInventoryPlacementPurpose::Add;
+	Query.Search = ERpgInventoryPlacementSearch::FirstFit;
+	Query.Subject = FRpgInventoryPlacementSubject::FromGeneratedGrant(
+		StagedInstance,
+		StackCount);
+	const FRpgInventoryPlacementPlan Plan = EvaluatePlacement(Query);
+	return Plan.Code == ERpgInventoryMutationResultCode::Success &&
+		Plan.AppliedQuantity == StackCount;
+}
+
+bool URpgInventoryManagerComponent::CanAddItemInstance(URpgInventoryItemInstance* ItemInstance, int32 StackCount) const
+{
+	if (!InventoryList.CanInsertOwnedInstance(ItemInstance) ||
+		IsItemManagedByAnyInventory(ItemInstance) ||
+		HasItemIdentityConflictInAnyInventory(ItemInstance))
+	{
+		return false;
+	}
+	FRpgInventoryPlacementQuery Query;
+	Query.Purpose = ERpgInventoryPlacementPurpose::Add;
+	Query.Search = ERpgInventoryPlacementSearch::FirstFit;
+	Query.Subject = FRpgInventoryPlacementSubject::FromDetachedInstance(
+		ItemInstance,
+		StackCount);
+	const FRpgInventoryPlacementPlan Plan = EvaluatePlacement(Query);
+	return Plan.Code == ERpgInventoryMutationResultCode::Success &&
+		Plan.AppliedQuantity == StackCount;
+}
+
+bool URpgInventoryManagerComponent::CanReceiveTransferredItemInstance(
+	URpgInventoryItemInstance* ItemInstance,
+	int32 StackCount) const
+{
+	const URpgInventoryManagerComponent* SourceInventory = nullptr;
+	FRpgInventoryEntryView SourceEntry;
+	if (StackCount <= 0 ||
+		!FindRulesManagedInventoryEntry(ItemInstance, SourceInventory, SourceEntry) ||
+		SourceInventory == this)
+	{
+		return false;
+	}
+	FRpgInventoryPlacementQuery Query;
+	Query.Purpose = ERpgInventoryPlacementPurpose::Transfer;
+	Query.Search = ERpgInventoryPlacementSearch::FirstFit;
+	Query.Subject = FRpgInventoryPlacementSubject::FromIncomingInstance(
+		SourceInventory,
+		SourceEntry,
+		StackCount);
+	const FRpgInventoryPlacementPlan Plan = EvaluatePlacement(Query);
+	return Plan.Code == ERpgInventoryMutationResultCode::Success &&
+		Plan.AppliedQuantity == StackCount;
+}
+
+bool URpgInventoryManagerComponent::CanAddItemDefinitionToPlacement(TSubclassOf<URpgInventoryItemDefinition> ItemDef, int32 StackCount, FRpgInventoryGridPlacement Placement) const
+{
+	if (!ItemDef || StackCount <= 0)
+	{
+		return false;
+	}
+
+	if (!Placement.ContainerHandle.IsValid())
+	{
+		return false;
+	}
+
+	URpgInventoryItemInstance* StagedInstance =
+		NewObject<URpgInventoryItemInstance>(GetTransientPackage());
+	StagedInstance->SetItemDef(ItemDef);
+	for (URpgInventoryItemFragment* Fragment :
+		GetDefault<URpgInventoryItemDefinition>(ItemDef)->Fragments)
+	{
+		if (Fragment)
+		{
+			Fragment->OnInstanceCreated(StagedInstance);
+		}
+	}
+	FRpgInventoryPlacementQuery Query;
+	Query.Purpose = ERpgInventoryPlacementPurpose::Add;
+	Query.Search = ERpgInventoryPlacementSearch::Exact;
+	Query.Subject = FRpgInventoryPlacementSubject::FromGeneratedGrant(
+		StagedInstance,
+		StackCount);
+	Query.TargetContainer = Placement.ContainerHandle;
+	Query.ExactPlacement = Placement;
+	const FRpgInventoryPlacementPlan Plan = EvaluatePlacement(Query);
+	return Plan.Code == ERpgInventoryMutationResultCode::Success &&
+		Plan.AppliedQuantity == StackCount;
+}
+
+bool URpgInventoryManagerComponent::CanAddItemInstanceToPlacement(URpgInventoryItemInstance* ItemInstance, int32 StackCount, FRpgInventoryGridPlacement Placement) const
+{
+	if (!InventoryList.CanInsertOwnedInstance(ItemInstance) ||
+		IsItemManagedByAnyInventory(ItemInstance) ||
+		HasItemIdentityConflictInAnyInventory(ItemInstance))
+	{
+		return false;
+	}
+	if (!Placement.ContainerHandle.IsValid())
+	{
+		return false;
+	}
+	FRpgInventoryPlacementQuery Query;
+	Query.Purpose = ERpgInventoryPlacementPurpose::Add;
+	Query.Search = ERpgInventoryPlacementSearch::Exact;
+	Query.Subject = FRpgInventoryPlacementSubject::FromDetachedInstance(
+		ItemInstance,
+		StackCount);
+	Query.TargetContainer = Placement.ContainerHandle;
+	Query.ExactPlacement = Placement;
+	const FRpgInventoryPlacementPlan Plan = EvaluatePlacement(Query);
+	return Plan.Code == ERpgInventoryMutationResultCode::Success &&
+		Plan.AppliedQuantity == StackCount;
+}
+
+bool URpgInventoryManagerComponent::CanReceiveTransferredItemInstanceToPlacement(
+	URpgInventoryItemInstance* ItemInstance,
+	int32 StackCount,
+	FRpgInventoryGridPlacement Placement) const
+{
+	const URpgInventoryManagerComponent* SourceInventory = nullptr;
+	FRpgInventoryEntryView SourceEntry;
+	if (StackCount <= 0 ||
+		!FindRulesManagedInventoryEntry(ItemInstance, SourceInventory, SourceEntry) ||
+		SourceInventory == this)
+	{
+		return false;
+	}
+	if (!Placement.ContainerHandle.IsValid())
+	{
+		return false;
+	}
+	FRpgInventoryPlacementQuery Query;
+	Query.Purpose = ERpgInventoryPlacementPurpose::Transfer;
+	Query.Search = ERpgInventoryPlacementSearch::Exact;
+	Query.Subject = FRpgInventoryPlacementSubject::FromIncomingInstance(
+		SourceInventory,
+		SourceEntry,
+		StackCount);
+	Query.TargetContainer = Placement.ContainerHandle;
+	Query.ExactPlacement = Placement;
+	const FRpgInventoryPlacementPlan Plan = EvaluatePlacement(Query);
+	return Plan.Code == ERpgInventoryMutationResultCode::Success &&
+		Plan.AppliedQuantity == StackCount && Plan.Steps.Num() == 1 &&
+		Plan.Steps[0].Resolution ==
+			ERpgInventoryPlacementResolution::Place;
+}
+
+bool URpgInventoryManagerComponent::CanReceiveTransferredItemInstanceToPlacementIgnoringItem(
+	URpgInventoryItemInstance* ItemInstance,
+	int32 StackCount,
+	FRpgInventoryGridPlacement Placement,
+	URpgInventoryItemInstance* IgnoredItemInstance) const
+{
+	const URpgInventoryManagerComponent* SourceInventory = nullptr;
+	FRpgInventoryEntryView SourceEntry;
+	if (!ItemInstance || !ItemInstance->GetItemDef() || StackCount <= 0 ||
+		!FindRulesManagedInventoryEntry(
+			ItemInstance,
+			SourceInventory,
+			SourceEntry) ||
+		SourceInventory == this ||
+		StackCount > SourceEntry.StackCount)
+	{
+		return false;
+	}
+
+	const int32 MaxStackSize = GetRulesInventoryMaxStackSizeForDefinition(ItemInstance->GetItemDef());
+	if (StackCount > MaxStackSize)
+	{
+		return false;
+	}
+	if (!Placement.ContainerHandle.IsValid())
+	{
+		return false;
+	}
+
+	FRpgInventoryGridPlacement NormalizedPlacement;
+	if (!TryNormalizePlacementForDefinition(
+			ItemInstance->GetItemDef(),
+			Placement.ContainerHandle,
+			Placement.X,
+			Placement.Y,
+			Placement.bRotated,
+			NormalizedPlacement))
+	{
+		return false;
+	}
+
+	if (!InventoryList.IsPlacementWithinGrid(NormalizedPlacement))
+	{
+		return false;
+	}
+
+	FRpgInventoryEntry ProposedEntry;
+	ProposedEntry.Instance = ItemInstance;
+	if (const FRpgInventoryEntry* ExistingEntry = InventoryList.FindEntryByInstance(ItemInstance))
+	{
+		ProposedEntry.Placement = ExistingEntry->Placement;
+	}
+	ERpgInventoryMutationResultCode GraphRuleCode = ERpgInventoryMutationResultCode::Success;
+	if (!ValidatePlacementGraphRules(ProposedEntry, NormalizedPlacement, GraphRuleCode))
+	{
+		return false;
+	}
+
+	if (NormalizedPlacement.GetContainerHandle().IsRoot())
+	{
+		if (const URpgPlayerInventoryLayoutComponent* InventoryLayout = FindOwningPlayerInventoryLayout())
+		{
+			FRpgInventorySlotAddress Address;
+			Address.SetContainerHandle(NormalizedPlacement.GetContainerHandle());
+			Address.X = NormalizedPlacement.X;
+			Address.Y = NormalizedPlacement.Y;
+			if (!InventoryLayout->CanItemUseSlotAddress(ItemInstance, Address))
+			{
+				return false;
+			}
+		}
+	}
+
+	const FRpgInventoryEntry* IgnoredEntry = InventoryList.FindEntryByInstance(IgnoredItemInstance);
+	const bool bReplacingExistingEntry =
+		IgnoredEntry &&
+		IgnoredEntry->Placement.Overlaps(NormalizedPlacement);
+	const FRpgInventoryEntry* EntryToIgnore =
+		bReplacingExistingEntry ? IgnoredEntry : nullptr;
+	return (bReplacingExistingEntry || IsCapacityUnlimited() || GetFreeEntryCount() > 0) &&
+		InventoryList.CanPlaceEntryAt(NormalizedPlacement, EntryToIgnore);
+}
+
+URpgInventoryItemInstance* URpgInventoryManagerComponent::GetSingleItemOverlappingPlacementForItem(URpgInventoryItemInstance* ItemInstance, FRpgInventoryGridPlacement Placement, FRpgInventoryGridPlacement& OutNormalizedPlacement) const
+{
+	OutNormalizedPlacement = FRpgInventoryGridPlacement();
+	if (!ItemInstance || !Placement.IsValid())
+	{
+		return nullptr;
+	}
+
+	if (!Placement.ContainerHandle.IsValid())
+	{
+		return nullptr;
+	}
+	FRpgInventoryGridPlacement NormalizedPlacement;
+	if (!TryNormalizePlacementForDefinition(
+			ItemInstance->GetItemDef(),
+			Placement.ContainerHandle,
+			Placement.X,
+			Placement.Y,
+			Placement.bRotated,
+			NormalizedPlacement))
+	{
+		return nullptr;
+	}
+
+	if (!InventoryList.IsPlacementWithinGrid(NormalizedPlacement))
+	{
+		return nullptr;
+	}
+
+	TArray<const FRpgInventoryEntry*> OverlappingEntries;
+	InventoryList.FindEntriesOverlapping(NormalizedPlacement, nullptr, OverlappingEntries);
+	if (OverlappingEntries.Num() != 1 || !OverlappingEntries[0] || !OverlappingEntries[0]->Instance)
+	{
+		return nullptr;
+	}
+
+	OutNormalizedPlacement = NormalizedPlacement;
+	return OverlappingEntries[0]->Instance.Get();
+}
+
+bool URpgInventoryManagerComponent::IsItemManagedByAnyInventory(
+	const URpgInventoryItemInstance* ItemInstance) const
+{
+	const AActor* ItemOwner = ItemInstance ? ItemInstance->GetTypedOuter<AActor>() : nullptr;
+	if (!ItemOwner)
+	{
+		return false;
+	}
+
+	TArray<URpgInventoryManagerComponent*> InventoryComponents;
+	ItemOwner->GetComponents(InventoryComponents);
+	for (const URpgInventoryManagerComponent* InventoryComponent : InventoryComponents)
+	{
+		if (InventoryComponent && InventoryComponent->ContainsItemInstance(
+			const_cast<URpgInventoryItemInstance*>(ItemInstance)))
+		{
+			return true;
+		}
+	}
+	return false;
+}
+
+bool URpgInventoryManagerComponent::HasItemIdentityConflictInAnyInventory(
+	const URpgInventoryItemInstance* ItemInstance) const
+{
+	const AActor* ItemOwner = ItemInstance ? ItemInstance->GetTypedOuter<AActor>() : nullptr;
+	if (!ItemOwner || !ItemInstance->GetItemId().IsValid())
+	{
+		return false;
+	}
+
+	TArray<URpgInventoryManagerComponent*> InventoryComponents;
+	ItemOwner->GetComponents(InventoryComponents);
+	for (const URpgInventoryManagerComponent* InventoryComponent : InventoryComponents)
+	{
+		if (!InventoryComponent)
+		{
+			continue;
+		}
+
+		for (const FRpgInventoryEntryView& Entry : InventoryComponent->GetAllEntries())
+		{
+			if (Entry.Instance && Entry.Instance != ItemInstance &&
+				Entry.ItemId == ItemInstance->GetItemId())
+			{
+				return true;
+			}
+		}
+	}
+	return false;
 }

@@ -2884,6 +2884,69 @@ Verifizierter Phase-6L2B-Zwischenstand vom 2026-07-24:
   Transfer-Preflights, wiederholte deterministische Planung, Revision,
   Mutation-Epoch und Ownership explizit einfrieren.
 
+Verifizierter Phase-6L2C-Zwischenstand vom 2026-07-24:
+
+- Sämtliche öffentlichen read-only Placement-Preflights liegen jetzt beim
+  kanonischen Evaluator im Rules/Planner-TU: beide
+  `GetRequiredNewEntryCount`-Varianten, CanAdd FirstFit/Exact, CanReceive
+  FirstFit/Exact/IgnoringItem, die Single-Overlap-Abfrage sowie die
+  actorweite Managed-/Identity-Prüfung.
+- 368 Member-Implementierungszeilen und der ausschließlich von den
+  Transfer-Preflights benötigte 35-zeilige Managed-Inventory-Helfer wurden
+  aus der Manager-Hauptdatei verschoben. Der alte anonyme Helfer ist
+  vollständig entfernt; die Rules-Version besitzt einen eindeutigen Namen
+  und einen direkten `GameFramework/Actor.h`-Include.
+- Der verhaltensneutrale Anteil wurde unabhängig gegen den vorherigen Stand
+  geprüft: Alle zwölf Memberdefinitionen und der Helper sind bis auf genau
+  zwei erwartete Rules-Helper-Umbenennungen und Zeilenumbruchformatierung
+  identisch. Jede Definition existiert repo-weit genau einmal; Component-
+  Helper und direkte Includes besitzen weiterhin reale Nutzer.
+- Ein dabei gefundener echter Preflight-Fehler ist behoben:
+  `CanReceiveTransferredItemInstanceToPlacementIgnoringItem` akzeptiert nur
+  noch ein tatsächlich von einem anderen Inventory verwaltetes Incoming
+  Item und lässt bei vollem Entry-Budget nur ein Zielitem als Ersatz gelten,
+  dessen Placement den normalisierten Zielbereich wirklich überlappt. Ein
+  beliebiges Item an anderer Stelle kann damit keine freie Kapazität mehr
+  vortäuschen; der echte überlappende Replacement-Fall bleibt erlaubt.
+- `PublicPreflightParityAndPurity` friert CanAdd und CanReceive für FirstFit
+  und Exact gegen den gemeinsamen Evaluator ein, einschließlich Merge plus
+  Rest-Placement, RequiredNewEntryCount, vollständiger Plan-Signatur und
+  wiederholter Deterministik. Vor und nach allen Queries bleiben Source- und
+  Target-Graph, Revision, Mutation-Epoch, Stackmengen, UObject-Outer,
+  ItemIds, Definitionen, Runtime-Stack-Keys und Membership unverändert.
+- `IgnoredNonOverlapDoesNotBypassCapacity` deckt den behobenen Safety-Fall
+  separat ab: echter überlappender Ersatz bei vollem FixedEntries-Budget ist
+  gültig; detached Incoming Items und nicht überlappende Ignored Items
+  werden abgelehnt, ohne Source- oder Target-Graph zu verändern.
+- Bewusste Purity-Grenze: Die Definition-Preflights erzeugen weiterhin
+  transiente Instanzen und rufen `Fragment->OnInstanceCreated` auf. Die
+  Tests beweisen deshalb Inventory-/Graph-State-Purity, nicht globale
+  Nebenwirkungsfreiheit beliebiger Fragment-Hooks. Der als `BlueprintPure`
+  exponierte `GetRequiredNewEntryCountForItemDefinition` bleibt wegen
+  potenziellem UObject-/GUID-Churn ein dokumentierter Folgekandidat für eine
+  staging-sichere Default-State-Factory.
+- Die Manager-Hauptimplementierung umfasst jetzt 4.894 statt ursprünglich
+  7.510 Zeilen; der Rules/Planner-TU umfasst 2.222 Zeilen. Header, UHT,
+  UFUNCTION-Flags, Blueprint-Pins, Save-DTOs, Enum-Ordnungen und
+  Editor-Assets blieben unverändert. Es sind keine CoreRedirects, Resaves
+  oder manuellen MVVM-/Widget-Anpassungen nötig.
+- Der separate UE-5.8-Build kompilierte Manager, Rules/Planner und die
+  Testdatei eigenständig und endete mit 12 von 12 Actions erfolgreich. Der
+  echte `-ForceUnity -DisableAdaptiveUnity`-Build endete mit 5 von 5 Actions;
+  beide meldeten `Result: Succeeded`.
+- `SurvivalRpg.Inventory.PlacementEvaluator` meldete nun 6 von 6 und der
+  vollständige Filter `SurvivalRpg.Inventory` 147 von 147 Automationtests
+  erfolgreich.
+- Der Manager-Checklistenpunkt bleibt bis zum vollständigen Planner-,
+  Transactions- und Storage-Schnitt offen. Phase 6 bleibt bei 20 von
+  22 Punkten (90,9 %), der Gesamtplan bei 86 von 97 Punkten (88,7 %),
+  11 Punkte sind offen.
+- Nächster Rules-Schnitt: PlacementSubject-Factories,
+  `BuildMoveMutationRequest`, `PlanMoveItem`, `PlanDropItem` und
+  `PlanInventoryMutation` in den read-only Planner-TU verschieben; Execute-,
+  Replay- und Commit-Pfade bleiben für den anschließenden Transactions-
+  Schnitt auf der Manager-Autorität.
+
 ## Phase 7 – Legacy endgültig entfernen
 
 Status: **In Arbeit**

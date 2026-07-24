@@ -167,6 +167,48 @@ namespace RpgInventoryPlacementEvaluatorTests
 		return FString::Join(Rows, TEXT(";"));
 	}
 
+	FString MakePlacementPlanSignature(
+		const FRpgInventoryPlacementPlan& Plan)
+	{
+		TArray<FString> Steps;
+		Steps.Reserve(Plan.Steps.Num());
+		for (const FRpgInventoryPlacementStep& Step : Plan.Steps)
+		{
+			const FRpgInventoryGridPlacement& Placement = Step.Placement;
+			const FRpgInventoryGridPlacement& Displaced =
+				Step.DisplacedPlacement;
+			Steps.Add(FString::Printf(
+				TEXT("%d|%s|%d|%d|%d|%d|%d|%d|%s|%s|%s|%s|%s|%d|%d|%d|%d|%d"),
+				static_cast<int32>(Step.Resolution),
+				*Placement.GetContainerHandle().ToString(),
+				Placement.X,
+				Placement.Y,
+				Placement.Width,
+				Placement.Height,
+				Placement.bRotated ? 1 : 0,
+				Step.Quantity,
+				*Step.TargetItemId.ToString(),
+				*Step.TargetEntryId.ToString(),
+				*Step.DisplacedItemId.ToString(),
+				*Step.DisplacedEntryId.ToString(),
+				*Displaced.GetContainerHandle().ToString(),
+				Displaced.X,
+				Displaced.Y,
+				Displaced.Width,
+				Displaced.Height,
+				Displaced.bRotated ? 1 : 0));
+		}
+
+		return FString::Printf(
+			TEXT("%d|%d|%d|%d|%d|%s"),
+			static_cast<int32>(Plan.Code),
+			Plan.SourceRevision,
+			Plan.TargetRevision,
+			Plan.RequestedQuantity,
+			Plan.AppliedQuantity,
+			*FString::Join(Steps, TEXT(";")));
+	}
+
 	FRpgInventoryPlacementQuery MakeExactQuery(
 		ERpgInventoryPlacementPurpose Purpose,
 		const FRpgInventoryPlacementSubject& Subject,
@@ -465,6 +507,460 @@ bool FRpgInventoryPlacementOperationMatrixTest::RunTest(
 		TEXT("Read-only evaluation does not advance the source revision"),
 		SourceInventory->GetInventoryRevision(),
 		SourceRevisionBefore);
+	return true;
+}
+
+IMPLEMENT_SIMPLE_AUTOMATION_TEST(
+	FRpgInventoryPlacementPublicPreflightParityAndPurityTest,
+	"SurvivalRpg.Inventory.PlacementEvaluator.PublicPreflightParityAndPurity",
+	EAutomationTestFlags::EditorContext |
+		EAutomationTestFlags::EngineFilter)
+
+bool FRpgInventoryPlacementPublicPreflightParityAndPurityTest::RunTest(
+	const FString& Parameters)
+{
+	using namespace RpgInventoryPlacementEvaluatorTests;
+	FScopedInventoryWorld TestWorld;
+	if (!InitializeTest(*this, TestWorld))
+	{
+		return false;
+	}
+
+	URpgInventoryManagerComponent* TargetInventory =
+		TestWorld.CreateInventory(TEXT("PlacementPublicPreflightTarget"));
+	URpgInventoryManagerComponent* SourceInventory =
+		TestWorld.CreateInventory(TEXT("PlacementPublicPreflightSource"));
+	if (!TestNotNull(TEXT("The preflight target exists"), TargetInventory) ||
+		!TestNotNull(TEXT("The preflight source exists"), SourceInventory))
+	{
+		return false;
+	}
+
+	const FRpgInventoryContainerHandle TargetRoot = MakeRoot(TargetInventory);
+	const FRpgInventoryContainerHandle SourceRoot = MakeRoot(SourceInventory);
+	URpgInventoryItemInstance* MergeTarget =
+		TargetInventory->AddItemDefinitionToPlacement(
+			URpgInventoryAutomationTestStackItemDefinition::StaticClass(),
+			8,
+			MakePlacement(TargetRoot, 0, 0));
+	URpgInventoryItemInstance* IncomingItem =
+		SourceInventory->AddItemDefinitionToPlacement(
+			URpgInventoryAutomationTestStackItemDefinition::StaticClass(),
+			1,
+			MakePlacement(SourceRoot, 0, 0));
+	URpgInventoryItemInstance* GeneratedAddProbe =
+		SourceInventory->AddItemDefinitionToPlacement(
+			URpgInventoryAutomationTestStackItemDefinition::StaticClass(),
+			1,
+			MakePlacement(SourceRoot, 1, 0));
+	if (!TestNotNull(TEXT("The compatible merge target exists"), MergeTarget) ||
+		!TestNotNull(TEXT("The incoming source item exists"), IncomingItem) ||
+		!TestNotNull(TEXT("The generated add probe exists"), GeneratedAddProbe))
+	{
+		return false;
+	}
+
+	SourceInventory->RemoveItemInstance(GeneratedAddProbe);
+	if (!TestFalse(
+			TEXT("The generated add probe is detached before read-only planning"),
+			SourceInventory->ContainsItemInstance(GeneratedAddProbe)))
+	{
+		return false;
+	}
+
+	FRpgInventoryEntryView IncomingEntry;
+	if (!TestTrue(
+			TEXT("The incoming item exposes a complete source snapshot"),
+			GetEntryView(
+				SourceInventory,
+				IncomingItem->GetItemId(),
+				IncomingEntry)))
+	{
+		return false;
+	}
+
+	FRpgInventoryStackKey MergeTargetKeyBefore;
+	FRpgInventoryStackKey IncomingKeyBefore;
+	FRpgInventoryStackKey AddProbeKeyBefore;
+	if (!TestTrue(
+			TEXT("The merge target exposes canonical item state"),
+			MergeTarget->TryBuildStackKey(MergeTargetKeyBefore)) ||
+		!TestTrue(
+			TEXT("The incoming item exposes canonical item state"),
+			IncomingItem->TryBuildStackKey(IncomingKeyBefore)) ||
+		!TestTrue(
+			TEXT("The detached add probe exposes canonical item state"),
+			GeneratedAddProbe->TryBuildStackKey(AddProbeKeyBefore)))
+	{
+		return false;
+	}
+
+	const FString TargetGraphBefore =
+		MakeInventorySignature(TargetInventory);
+	const FString SourceGraphBefore =
+		MakeInventorySignature(SourceInventory);
+	const int32 TargetRevisionBefore =
+		TargetInventory->GetInventoryRevision();
+	const int32 SourceRevisionBefore =
+		SourceInventory->GetInventoryRevision();
+	const uint64 TargetEpochBefore = TargetInventory->GetMutationEpoch();
+	const uint64 SourceEpochBefore = SourceInventory->GetMutationEpoch();
+	UObject* const MergeTargetOuterBefore = MergeTarget->GetOuter();
+	UObject* const IncomingOuterBefore = IncomingItem->GetOuter();
+	UObject* const AddProbeOuterBefore = GeneratedAddProbe->GetOuter();
+	const FRpgInventoryItemId MergeTargetIdBefore =
+		MergeTarget->GetItemId();
+	const FRpgInventoryItemId IncomingIdBefore = IncomingItem->GetItemId();
+	const FRpgInventoryItemId AddProbeIdBefore =
+		GeneratedAddProbe->GetItemId();
+	const TSubclassOf<URpgInventoryItemDefinition> MergeTargetDefBefore =
+		MergeTarget->GetItemDef();
+	const TSubclassOf<URpgInventoryItemDefinition> IncomingDefBefore =
+		IncomingItem->GetItemDef();
+	const TSubclassOf<URpgInventoryItemDefinition> AddProbeDefBefore =
+		GeneratedAddProbe->GetItemDef();
+	const int32 MergeTargetCountBefore =
+		TargetInventory->GetItemStackCount(MergeTarget);
+	const int32 IncomingCountBefore =
+		SourceInventory->GetItemStackCount(IncomingItem);
+
+	constexpr int32 AddQuantity = 3;
+	const FRpgInventoryPlacementSubject AddSubject =
+		FRpgInventoryPlacementSubject::FromGeneratedGrant(
+			GeneratedAddProbe,
+			AddQuantity);
+	const FRpgInventoryPlacementQuery AddFirstFitQuery =
+		MakeFirstFitQuery(
+			ERpgInventoryPlacementPurpose::Add,
+			AddSubject,
+			FRpgInventoryContainerHandle());
+	const FRpgInventoryPlacementPlan AddFirstFitPlan =
+		TargetInventory->EvaluatePlacement(AddFirstFitQuery);
+	const FRpgInventoryPlacementPlan AddFirstFitRepeat =
+		TargetInventory->EvaluatePlacement(AddFirstFitQuery);
+	TestTrue(
+		TEXT("FirstFit add planning accepts the complete definition quantity"),
+		AddFirstFitPlan.IsCompleteSuccess());
+	TestEqual(
+		TEXT("CanAddItemDefinition matches the shared FirstFit evaluator"),
+		TargetInventory->CanAddItemDefinition(
+			URpgInventoryAutomationTestStackItemDefinition::StaticClass(),
+			AddQuantity),
+		AddFirstFitPlan.IsCompleteSuccess());
+	TestEqual(
+		TEXT("Repeated FirstFit add planning is deterministic"),
+		MakePlacementPlanSignature(AddFirstFitRepeat),
+		MakePlacementPlanSignature(AddFirstFitPlan));
+	TestEqual(
+		TEXT("FirstFit add merges then creates one remaining entry"),
+		AddFirstFitPlan.Steps.Num(),
+		2);
+	if (AddFirstFitPlan.Steps.Num() == 2)
+	{
+		TestEqual(
+			TEXT("FirstFit add fills the compatible stack first"),
+			AddFirstFitPlan.Steps[0].Resolution,
+			ERpgInventoryPlacementResolution::Merge);
+		TestEqual(
+			TEXT("FirstFit add merges exactly the free stack capacity"),
+			AddFirstFitPlan.Steps[0].Quantity,
+			2);
+		TestEqual(
+			TEXT("FirstFit add places the remaining quantity"),
+			AddFirstFitPlan.Steps[1].Resolution,
+			ERpgInventoryPlacementResolution::Place);
+		TestEqual(
+			TEXT("FirstFit add needs one placed unit after merging"),
+			AddFirstFitPlan.Steps[1].Quantity,
+			1);
+	}
+
+	const FRpgInventoryGridPlacement ExactAddPlacement =
+		MakePlacement(TargetRoot, 3, 0);
+	const FRpgInventoryPlacementQuery ExactAddQuery =
+		MakeExactQuery(
+			ERpgInventoryPlacementPurpose::Add,
+			FRpgInventoryPlacementSubject::FromGeneratedGrant(
+				GeneratedAddProbe,
+				1),
+			ExactAddPlacement);
+	const FRpgInventoryPlacementPlan ExactAddPlan =
+		TargetInventory->EvaluatePlacement(ExactAddQuery);
+	const FRpgInventoryPlacementPlan ExactAddRepeat =
+		TargetInventory->EvaluatePlacement(ExactAddQuery);
+	TestTrue(
+		TEXT("Exact add planning accepts the empty requested cell"),
+		ExactAddPlan.IsCompleteSuccess());
+	TestEqual(
+		TEXT("CanAddItemDefinitionToPlacement matches the shared Exact evaluator"),
+		TargetInventory->CanAddItemDefinitionToPlacement(
+			URpgInventoryAutomationTestStackItemDefinition::StaticClass(),
+			1,
+			ExactAddPlacement),
+		ExactAddPlan.IsCompleteSuccess());
+	TestEqual(
+		TEXT("Repeated Exact add planning is deterministic"),
+		MakePlacementPlanSignature(ExactAddRepeat),
+		MakePlacementPlanSignature(ExactAddPlan));
+
+	const int32 RequiredDefinitionEntries =
+		TargetInventory->GetRequiredNewEntryCountForItemDefinition(
+			URpgInventoryAutomationTestStackItemDefinition::StaticClass(),
+			AddQuantity);
+	TestEqual(
+		TEXT("Definition entry preflight accounts for the two-unit merge"),
+		RequiredDefinitionEntries,
+		1);
+	TestEqual(
+		TEXT("Repeated definition entry preflight is deterministic"),
+		TargetInventory->GetRequiredNewEntryCountForItemDefinition(
+			URpgInventoryAutomationTestStackItemDefinition::StaticClass(),
+			AddQuantity),
+		RequiredDefinitionEntries);
+	const int32 RequiredInstanceEntries =
+		TargetInventory->GetRequiredNewEntryCountForItemInstance(
+			GeneratedAddProbe,
+			1);
+	TestEqual(
+		TEXT("A concrete detached instance requires one identity-preserving entry"),
+		RequiredInstanceEntries,
+		1);
+	TestEqual(
+		TEXT("Repeated instance entry preflight is deterministic"),
+		TargetInventory->GetRequiredNewEntryCountForItemInstance(
+			GeneratedAddProbe,
+			1),
+		RequiredInstanceEntries);
+
+	const FRpgInventoryPlacementSubject IncomingSubject =
+		FRpgInventoryPlacementSubject::FromIncomingInstance(
+			SourceInventory,
+			IncomingEntry,
+			1);
+	const FRpgInventoryPlacementQuery ReceiveFirstFitQuery =
+		MakeFirstFitQuery(
+			ERpgInventoryPlacementPurpose::Transfer,
+			IncomingSubject,
+			FRpgInventoryContainerHandle());
+	const FRpgInventoryPlacementPlan ReceiveFirstFitPlan =
+		TargetInventory->EvaluatePlacement(ReceiveFirstFitQuery);
+	const FRpgInventoryPlacementPlan ReceiveFirstFitRepeat =
+		TargetInventory->EvaluatePlacement(ReceiveFirstFitQuery);
+	TestTrue(
+		TEXT("FirstFit receive planning accepts the complete incoming quantity"),
+		ReceiveFirstFitPlan.IsCompleteSuccess());
+	TestEqual(
+		TEXT("CanReceiveTransferredItemInstance matches the shared FirstFit evaluator"),
+		TargetInventory->CanReceiveTransferredItemInstance(IncomingItem, 1),
+		ReceiveFirstFitPlan.IsCompleteSuccess());
+	TestEqual(
+		TEXT("Repeated FirstFit receive planning is deterministic"),
+		MakePlacementPlanSignature(ReceiveFirstFitRepeat),
+		MakePlacementPlanSignature(ReceiveFirstFitPlan));
+	if (ReceiveFirstFitPlan.Steps.IsValidIndex(0))
+	{
+		TestEqual(
+			TEXT("FirstFit receive selects the compatible merge target"),
+			ReceiveFirstFitPlan.Steps[0].Resolution,
+			ERpgInventoryPlacementResolution::Merge);
+	}
+
+	const FRpgInventoryGridPlacement ExactReceivePlacement =
+		MakePlacement(TargetRoot, 4, 0);
+	const FRpgInventoryPlacementQuery ExactReceiveQuery =
+		MakeExactQuery(
+			ERpgInventoryPlacementPurpose::Transfer,
+			IncomingSubject,
+			ExactReceivePlacement);
+	const FRpgInventoryPlacementPlan ExactReceivePlan =
+		TargetInventory->EvaluatePlacement(ExactReceiveQuery);
+	const FRpgInventoryPlacementPlan ExactReceiveRepeat =
+		TargetInventory->EvaluatePlacement(ExactReceiveQuery);
+	const bool bExactReceiveIsOnePlace =
+		ExactReceivePlan.IsCompleteSuccess() &&
+		ExactReceivePlan.Steps.Num() == 1 &&
+		ExactReceivePlan.Steps[0].Resolution ==
+			ERpgInventoryPlacementResolution::Place;
+	TestTrue(
+		TEXT("Exact receive planning selects one empty placement"),
+		bExactReceiveIsOnePlace);
+	TestEqual(
+		TEXT("CanReceiveTransferredItemInstanceToPlacement matches the shared Exact evaluator"),
+		TargetInventory->CanReceiveTransferredItemInstanceToPlacement(
+			IncomingItem,
+			1,
+			ExactReceivePlacement),
+		bExactReceiveIsOnePlace);
+	TestEqual(
+		TEXT("Repeated Exact receive planning is deterministic"),
+		MakePlacementPlanSignature(ExactReceiveRepeat),
+		MakePlacementPlanSignature(ExactReceivePlan));
+
+	TestEqual(
+		TEXT("Public preflights preserve the complete target graph"),
+		MakeInventorySignature(TargetInventory),
+		TargetGraphBefore);
+	TestEqual(
+		TEXT("Public preflights preserve the complete source graph"),
+		MakeInventorySignature(SourceInventory),
+		SourceGraphBefore);
+	TestTrue(
+		TEXT("Public preflights do not advance either graph revision"),
+		TargetInventory->GetInventoryRevision() == TargetRevisionBefore &&
+			SourceInventory->GetInventoryRevision() == SourceRevisionBefore);
+	TestTrue(
+		TEXT("Public preflights do not advance either mutation epoch"),
+		TargetInventory->GetMutationEpoch() == TargetEpochBefore &&
+			SourceInventory->GetMutationEpoch() == SourceEpochBefore);
+	TestTrue(
+		TEXT("Every concrete item keeps its original UObject outer"),
+		MergeTarget->GetOuter() == MergeTargetOuterBefore &&
+			IncomingItem->GetOuter() == IncomingOuterBefore &&
+			GeneratedAddProbe->GetOuter() == AddProbeOuterBefore);
+	TestTrue(
+		TEXT("Every concrete item keeps its persistent identity"),
+		MergeTarget->GetItemId() == MergeTargetIdBefore &&
+			IncomingItem->GetItemId() == IncomingIdBefore &&
+			GeneratedAddProbe->GetItemId() == AddProbeIdBefore);
+	TestTrue(
+		TEXT("Every concrete item keeps its static definition"),
+		MergeTarget->GetItemDef() == MergeTargetDefBefore &&
+			IncomingItem->GetItemDef() == IncomingDefBefore &&
+			GeneratedAddProbe->GetItemDef() == AddProbeDefBefore);
+	TestTrue(
+		TEXT("Both managed stack quantities remain unchanged"),
+		TargetInventory->GetItemStackCount(MergeTarget) ==
+				MergeTargetCountBefore &&
+			SourceInventory->GetItemStackCount(IncomingItem) ==
+				IncomingCountBefore);
+
+	FRpgInventoryStackKey MergeTargetKeyAfter;
+	FRpgInventoryStackKey IncomingKeyAfter;
+	FRpgInventoryStackKey AddProbeKeyAfter;
+	TestTrue(
+		TEXT("Every item still exposes canonical runtime state"),
+		MergeTarget->TryBuildStackKey(MergeTargetKeyAfter) &&
+			IncomingItem->TryBuildStackKey(IncomingKeyAfter) &&
+			GeneratedAddProbe->TryBuildStackKey(AddProbeKeyAfter));
+	TestTrue(
+		TEXT("Every item's canonical runtime state remains unchanged"),
+		MergeTargetKeyAfter == MergeTargetKeyBefore &&
+			IncomingKeyAfter == IncomingKeyBefore &&
+			AddProbeKeyAfter == AddProbeKeyBefore);
+	TestTrue(
+		TEXT("Target, source, and detached ownership remain unchanged"),
+		TargetInventory->ContainsItemInstance(MergeTarget) &&
+			!SourceInventory->ContainsItemInstance(MergeTarget) &&
+			SourceInventory->ContainsItemInstance(IncomingItem) &&
+			!TargetInventory->ContainsItemInstance(IncomingItem) &&
+			!SourceInventory->ContainsItemInstance(GeneratedAddProbe) &&
+			!TargetInventory->ContainsItemInstance(GeneratedAddProbe));
+	return true;
+}
+
+IMPLEMENT_SIMPLE_AUTOMATION_TEST(
+	FRpgInventoryPlacementIgnoredNonOverlapCapacityTest,
+	"SurvivalRpg.Inventory.PlacementEvaluator.IgnoredNonOverlapDoesNotBypassCapacity",
+	EAutomationTestFlags::EditorContext |
+		EAutomationTestFlags::EngineFilter)
+
+bool FRpgInventoryPlacementIgnoredNonOverlapCapacityTest::RunTest(
+	const FString& Parameters)
+{
+	using namespace RpgInventoryPlacementEvaluatorTests;
+	FScopedInventoryWorld TestWorld;
+	if (!InitializeTest(*this, TestWorld))
+	{
+		return false;
+	}
+
+	URpgInventoryManagerComponent* TargetInventory =
+		TestWorld.CreateInventory(TEXT("PlacementIgnoredCapacityTarget"));
+	URpgInventoryManagerComponent* SourceInventory =
+		TestWorld.CreateInventory(TEXT("PlacementIgnoredCapacitySource"));
+	if (!TestNotNull(TEXT("The capacity target exists"), TargetInventory) ||
+		!TestNotNull(TEXT("The capacity source exists"), SourceInventory))
+	{
+		return false;
+	}
+
+	const FRpgInventoryContainerHandle TargetRoot = MakeRoot(TargetInventory);
+	URpgInventoryItemInstance* IgnoredItem =
+		TargetInventory->AddItemDefinitionToPlacement(
+			URpgInventoryAutomationTestUnitItemDefinition::StaticClass(),
+			1,
+			MakePlacement(TargetRoot, 0, 0));
+	URpgInventoryItemInstance* IncomingItem =
+		SourceInventory->AddItemDefinitionToPlacement(
+			URpgInventoryAutomationTestUnitItemDefinition::StaticClass(),
+			1,
+			MakePlacement(MakeRoot(SourceInventory), 0, 0));
+	URpgInventoryItemInstance* DetachedIncomingItem =
+		SourceInventory->AddItemDefinitionToPlacement(
+			URpgInventoryAutomationTestUnitItemDefinition::StaticClass(),
+			1,
+			MakePlacement(MakeRoot(SourceInventory), 1, 0));
+	if (!TestNotNull(TEXT("The ignored target item exists"), IgnoredItem) ||
+		!TestNotNull(TEXT("The incoming source item exists"), IncomingItem) ||
+		!TestNotNull(
+			TEXT("The detached incoming probe exists"),
+			DetachedIncomingItem))
+	{
+		return false;
+	}
+	SourceInventory->RemoveItemInstance(DetachedIncomingItem);
+	TestFalse(
+		TEXT("The detached incoming probe is no longer source-managed"),
+		SourceInventory->ContainsItemInstance(DetachedIncomingItem));
+
+	TargetInventory->SetFixedMaxEntries(1);
+	TargetInventory->SetCapacityMode(ERpgInventoryCapacityMode::FixedEntries);
+	const FRpgInventoryGridPlacement EmptyPlacement =
+		MakePlacement(TargetRoot, 2, 0);
+	TestEqual(
+		TEXT("The target entry budget is full"),
+		TargetInventory->GetFreeEntryCount(),
+		0);
+	TestNull(
+		TEXT("The requested cell is empty and does not replace the ignored item"),
+		TargetInventory->GetItemAtContainerCell(TargetRoot, 2, 0));
+
+	const FString TargetGraphBefore =
+		MakeInventorySignature(TargetInventory);
+	const FString SourceGraphBefore =
+		MakeInventorySignature(SourceInventory);
+	TestTrue(
+		TEXT("The overlapping ignored item can be replaced at full capacity"),
+		TargetInventory
+			->CanReceiveTransferredItemInstanceToPlacementIgnoringItem(
+				IncomingItem,
+				1,
+				MakePlacement(TargetRoot, 0, 0),
+				IgnoredItem));
+	TestFalse(
+		TEXT("A detached item cannot masquerade as an incoming transfer"),
+		TargetInventory
+			->CanReceiveTransferredItemInstanceToPlacementIgnoringItem(
+				DetachedIncomingItem,
+				1,
+				MakePlacement(TargetRoot, 0, 0),
+				IgnoredItem));
+	TestFalse(
+		TEXT("A non-overlapping ignored item cannot bypass full target capacity"),
+		TargetInventory
+			->CanReceiveTransferredItemInstanceToPlacementIgnoringItem(
+				IncomingItem,
+				1,
+				EmptyPlacement,
+				IgnoredItem));
+	TestEqual(
+		TEXT("Rejected capacity preflight preserves the target graph"),
+		MakeInventorySignature(TargetInventory),
+		TargetGraphBefore);
+	TestEqual(
+		TEXT("Rejected capacity preflight preserves the source graph"),
+		MakeInventorySignature(SourceInventory),
+		SourceGraphBefore);
 	return true;
 }
 
