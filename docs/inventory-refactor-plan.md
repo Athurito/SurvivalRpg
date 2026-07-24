@@ -2058,7 +2058,7 @@ Status: **In Arbeit**
 - [x] Player-/Storage-Lifecycle mit echtem PlayerController, PlayerState,
       kanonischem Inventory und Listener-Cleanup als Integrationstest
       abdecken.
-- [ ] Gear-, Carry- und Content-Widgets auf denselben Coordinator-/MVVM-Pfad
+- [x] Gear-, Carry- und Content-Widgets auf denselben Coordinator-/MVVM-Pfad
       bringen; Kontextmenüs fragen Fähigkeiten statt Fragmente zu erraten.
 - [ ] `CUI_CarrySlot` auf genau eine VM-Beobachtung reduzieren und eine
       ausdrückliche Presenter-Policy festlegen: deklarative Itemdaten über die
@@ -2522,6 +2522,81 @@ Verifizierter Phase-6H-Zwischenstand vom 2026-07-24:
 - Nächster Schnitt: Gear-, Carry- und Content-Widgets auf denselben
   Coordinator-/MVVM-Pfad bringen und Kontextmenüs Fähigkeiten abfragen
   lassen, statt Fragmente zu erraten.
+
+Verifizierter Phase-6I-Zwischenstand vom 2026-07-24:
+
+- `FRpgInventoryScreenPresentationContext` bildet nun den einen transienten
+  Composition-Vertrag aus screen-owned Drag-/Action-Coordinator, Panel-
+  Navigator und Modal-Presenter. Gear-, Carry- und Content-Leaves erhalten
+  diesen Kontext zusammen mit ihrer exakten VM über einen gemeinsamen
+  `BindInventoryPresentation`-/`ReleaseInventoryPresentation`-Lifecycle.
+  Unvollständige Kontexte werden fail-closed freigegeben statt teilweise
+  gebunden.
+- `CUI_PlayerInventory` bleibt der Composition Root: Es bindet zuerst die
+  stabile Aggregate-VM und komponiert daraus die authored Gear-, Carry- und
+  Content-Leaves. Beim Deaktivieren wird zuerst die Aggregate-Projektion
+  ungebunden, danach werden alle Leaf-VMs, Manual-MVVM-Sources, Delegates,
+  Coordinatoren, Presenter-Hosts, Selection- und Preview-Zustände gelöst.
+  Der Navigator wird als letzter Schritt geleert, damit ein finaler
+  Aggregate-Callback keinen inaktiven Pooling-Screen erneut registriert.
+- Ein Base-Lifecycle-Guard paart CommonUI-Aktivierung und -Deaktivierung
+  exakt. Das spätere `NativeDestruct` eines bereits deaktivierten gepoolten
+  Screens löst damit keinen zweiten Aggregate-Unbind und keine kurzzeitige
+  Re-Komposition seiner Leaves mehr aus. Der Carry-Destruct-Pfad dispatcht
+  seinen virtuellen Release ebenfalls nur noch einmal.
+- `IRpgInventoryContextActionSource` und
+  `FRpgInventoryContextActionSnapshot` vereinheitlichen Content-Entry,
+  Address/Carry und Equipment als exakte, read-only Kontextquelle. Der
+  Screen besitzt nur noch einen Open-Pfad und das gepoolte Kontextmenü nur
+  noch einen Initialisierungs-, Revalidierungs- und Dispatch-Pfad. Vor jeder
+  Aktion werden Source-Art, Item-/Entry-ID, Platzierung, Address oder
+  Equipment-Slot, Menge und aktuell verfügbare Action erneut verglichen.
+  Ein veralteter Quick-Access-Picker schließt fail-closed.
+- `FRpgInventoryItemCapabilities` ist die gemeinsame stateless Domain-Grenze
+  für gültige Item-Container-Grids, Use-Vertrag und Verbrauchsmenge,
+  Manual-Drop-Policy, räumliche Größe/Rotation und die primäre
+  Use-versus-Equip-Hybridentscheidung. Coordinator und autoritative
+  `RpgInventoryUiActionComponent` verwenden dieselben abgeleiteten Regeln;
+  UI oder ViewModels speichern keine Capability-Bools und mutieren weiterhin
+  keinen Gameplay-State.
+- Die Server-Autorität bleibt unverändert bei Inventory, Layout, Equipment
+  und `RpgInventoryUiActionComponent`: Die Capability-Projektion ist nur
+  lokale Darstellung. Server-RPCs prüfen Zugriff, aktuelle Identität,
+  Placement, Menge, Equipment-Konflikte, Container-Subtrees und Gameplay-
+  Zustand weiterhin erneut.
+- Der echte
+  `SurvivalRpg.Inventory.UI.PlayerStorageLifecycleIntegration`-Test prüft
+  zusätzlich die authored `Gear_Head`-, `Carry_Weapon1`- und
+  `Content_Pockets`-Leaves im tatsächlichen `CUI_PlayerInventory`-
+  WidgetTree: gemeinsame screen-owned Coordinatoren, exakte Gear-/Content-
+  MVVM-Sources, eindeutige Delegates, vollständiges Deactivate-Release,
+  leeren Navigator und sauberen Rebind derselben gepoolten Screen-Objekte.
+- Bewusste Restgrenze: `CUI_CarrySlot` besitzt weiterhin seinen getrennt
+  geplanten zweiten Address-Observer und noch keine eigene deklarative
+  Itemdaten-Source. Phase 6I behauptet ausdrücklich weder dessen
+  Ein-Observer-Migration noch die endgültige Active-/Holstered-Presenter-
+  Policy; beides bleibt der direkt folgende Checklistenpunkt.
+- Es wurden keine Editor-Assets geändert. Für diesen Schnitt sind daher
+  kein Resave, kein CoreRedirect und keine manuelle MVVM-/Blueprint-
+  Anpassung nötig. Optionale interaktive QA: Player-Inventory wiederholt
+  öffnen/schließen, zwischen Gear, Carry und Content per Maus/Gamepad
+  wechseln und Kontextmenü, Quick Access, Split, Drop und Pooling-Reopen
+  prüfen.
+- Der abschließende UE-5.8-Build
+  `SurvivalRpgEditor Win64 Development` endete mit
+  `Result: Succeeded`. Die gezielten Capability-, Context-Action-, Modal-
+  Pooling- und Player-/Storage-Lifecycle-Regressionen waren erfolgreich;
+  `SurvivalRpg.Inventory` meldete 141 von 141 und `SurvivalRpg.UI` 26 von 26
+  Automationtests erfolgreich.
+- `CompileAllBlueprints -ProjectOnly` endete mit Prozesscode 0,
+  0 Compilerfehlern, 16 bekannten Compilerwarnungen und 0 nicht ladbaren
+  Blueprints.
+- Fortschritt Phase 6: 18 von 22 Punkten abgeschlossen (81,8 %).
+- Gesamtfortschritt der erweiterten verbindlichen Checkliste: 84 von 97
+  Punkten abgeschlossen (86,6 %), 13 Punkte offen.
+- Nächster Schnitt: `CUI_CarrySlot` auf genau eine VM-Beobachtung reduzieren
+  und seine deklarative Address-Source von imperativer Active-/Holstered-,
+  Interaktions- und Animationspräsentation eindeutig trennen.
 
 ## Phase 7 – Legacy endgültig entfernen
 

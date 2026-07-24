@@ -4,6 +4,8 @@
 #include "CommonButtonBase.h"
 #include "CoreMinimal.h"
 #include "SurvivalRpg/Inventory/RpgInventoryDragDrop.h"
+#include "SurvivalRpg/UI/RpgInventoryContextActionSource.h"
+#include "SurvivalRpg/UI/RpgInventoryScreenPresentationContext.h"
 
 #include "RpgInventoryAddressSlotWidget.generated.h"
 
@@ -20,7 +22,10 @@ class URpgInventoryInteractionScreenWidget;
  * drag/drop and controller Accept to URpgInventoryDragDropCoordinator.
  */
 UCLASS(Abstract, Blueprintable)
-class SURVIVALRPG_API URpgInventoryAddressSlotWidget : public UCommonButtonBase, public IUserObjectListEntry
+class SURVIVALRPG_API URpgInventoryAddressSlotWidget
+	: public UCommonButtonBase
+	, public IUserObjectListEntry
+	, public IRpgInventoryContextActionSource
 {
 	GENERATED_BODY()
 
@@ -29,6 +34,20 @@ public:
 
 	/** Exact optional Manual MVVM source owned by this native address-slot presenter. */
 	static const FName AddressSlotViewModelSourceName;
+
+	/**
+	 * Atomically binds one logical address leaf to its exact VM and active screen-owned presentation context.
+	 * This native composition seam is idempotent and never changes inventory gameplay state.
+	 */
+	void BindInventoryPresentation(
+		URpgInventoryAddressSlotViewModel* InSlotViewModel,
+		const FRpgInventoryScreenPresentationContext& InContext);
+
+	/**
+	 * Releases VM, MVVM source, delegates, coordinator, host, selection, and preview state for pooling.
+	 * Subclasses may extend this cleanup but must call the base implementation.
+	 */
+	virtual void ReleaseInventoryPresentation();
 
 	/** Assigns the screen-local drag/drop coordinator shared by player inventory, gear slots, and actionbar. */
 	UFUNCTION(BlueprintCallable, Category = "Inventory|Address Slot")
@@ -104,6 +123,15 @@ public:
 	/** Opens the configured context menu at an absolute Slate screen position for the represented item. */
 	UFUNCTION(BlueprintCallable, Category = "Inventory|Address Slot|Context Menu")
 	bool RequestAddressContextMenu(FVector2D ScreenPosition);
+
+	//~IRpgInventoryContextActionSource interface
+	virtual bool QueryInventoryContextActions(
+		FRpgInventoryContextActionSnapshot& OutSnapshot) const override;
+	virtual bool ExecuteInventoryContextAction(
+		const FRpgInventoryContextActionSnapshot& ExpectedSnapshot,
+		ERpgInventoryContextAction Action,
+		int32 QuickAccessSlotIndex = INDEX_NONE) override;
+	//~End of IRpgInventoryContextActionSource interface
 
 	/** Submits an exact split amount from the shared modal after stable-item revalidation. */
 	bool ConfirmAddressSplit(FRpgInventoryItemId ExpectedItemId, int32 SplitCount);

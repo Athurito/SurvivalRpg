@@ -88,22 +88,12 @@ public:
 	explicit URpgInventoryInteractionScreenWidget(
 		const FObjectInitializer& ObjectInitializer = FObjectInitializer::Get());
 
-	/** Opens the canonical screen-owned context modal for one spatial-grid selection. */
+	/**
+	 * Opens the canonical screen-owned context modal for any native Content, Address/Carry, or Gear source.
+	 * The modal queries the source's current capability snapshot instead of accepting a caller-authored action array.
+	 */
 	bool OpenInventoryContextMenu(
-		URpgInventorySpatialGridWidget* SourceGrid,
-		const TArray<ERpgInventoryContextAction>& Actions,
-		FVector2D ScreenPosition);
-
-	/** Opens the canonical screen-owned context modal for one logical address/carry entry. */
-	bool OpenInventoryContextMenu(
-		URpgInventoryAddressSlotWidget* SourceAddressSlot,
-		const TArray<ERpgInventoryContextAction>& Actions,
-		FVector2D ScreenPosition);
-
-	/** Opens the canonical screen-owned context modal for one equipped item. */
-	bool OpenInventoryContextMenu(
-		URpgEquipmentSlotWidget* SourceEquipmentSlot,
-		const TArray<ERpgInventoryContextAction>& Actions,
+		UWidget* ContextSource,
 		FVector2D ScreenPosition);
 
 	/** Opens the canonical exact split modal for a stable spatial entry request. */
@@ -369,6 +359,8 @@ private:
 
 	FGameplayMessageListenerHandle InventoryActionFeedbackHandle;
 
+	/** Guards the paired CommonUI activation/deactivation composition transaction, including pooled destruction. */
+	bool bInventoryScreenPresentationBound = false;
 	bool bDeferredInventoryScreenRefreshQueued = false;
 	bool bHasLastPointerDragScreenPosition = false;
 	bool bRoutingPointerPreview = false;

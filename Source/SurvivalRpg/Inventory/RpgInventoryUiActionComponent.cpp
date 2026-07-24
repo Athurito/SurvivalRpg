@@ -12,6 +12,7 @@
 #include "RpgInventoryFragment_ItemContainer.h"
 #include "RpgInventoryFragment_SlotContainerProvider.h"
 #include "RpgInventoryFragment_ItemTraits.h"
+#include "RpgInventoryItemCapabilities.h"
 #include "RpgInventoryItemDefinition.h"
 #include "RpgInventoryItemInstance.h"
 #include "RpgInventoryItemUseContext.h"
@@ -183,12 +184,6 @@ namespace
 		Plan.Code = Code;
 		Plan.RequestedQuantity = RequestedQuantity;
 		return Plan;
-	}
-
-	ERpgInventoryManualDropPolicy GetManualDropPolicy(const URpgInventoryItemInstance* Item)
-	{
-		const URpgInventoryFragment_ItemTraits* Traits = GetItemTraits(Item);
-		return Traits ? Traits->GetResolvedManualDropPolicy() : ERpgInventoryManualDropPolicy::Direct;
 	}
 
 	bool CanTargetAcceptTransferredStack(URpgInventoryManagerComponent* TargetInventory, URpgInventoryItemInstance* Item, int32 TransferCount, bool bTransfersWholeEntry)
@@ -407,13 +402,10 @@ namespace
 		}
 	}
 
-	const URpgInventoryFragment_SpatialItem* GetUiActionSpatialContract(
+	FRpgInventorySpatialCapability GetUiActionSpatialContract(
 		const URpgInventoryItemInstance* Item)
 	{
-		const TSubclassOf<URpgInventoryItemDefinition> ItemDefinition =
-			Item ? Item->GetItemDef() : nullptr;
-		return URpgInventoryItemDefinition::
-			ResolveValidSpatialItemFragment(ItemDefinition);
+		return FRpgInventoryItemCapabilities::ResolveSpatial(Item);
 	}
 
 	int32 GetAvailableUpgradeCostCount(
@@ -1854,7 +1846,7 @@ void URpgInventoryUiActionComponent::RequestMutateQuickAccessBinding_Implementat
 			return;
 		}
 		if (!InventoryLayout->CanBindSlotAddressToActionbar(Request.SourceAddress, SourceItem) ||
-			SourceItem->FindFragmentByClass<URpgInventoryFragment_UsableItem>() == nullptr)
+			!FRpgInventoryItemCapabilities::HasUsableContract(SourceItem))
 		{
 			SendQuickAccessFeedback(ERpgInventoryActionFeedbackResult::CannotUse);
 			return;
@@ -2084,52 +2076,54 @@ void URpgInventoryUiActionComponent::ExecuteUseInventoryItem(
 		return;
 	}
 
-	const URpgInventoryFragment_UsableItem* UsableFragment = Item->FindFragmentByClass<URpgInventoryFragment_UsableItem>();
-	if (!UsableFragment || !UsableFragment->UseAbility)
-	{
-		SendUseFeedback(ERpgInventoryActionFeedbackResult::CannotUse, StackCount);
-		return;
-	}
-
 	URpgInventoryManagerComponent* PlayerInventory = FindPlayerInventory();
-	if (UsableFragment->bOnlyFromPlayerInventory && Inventory != PlayerInventory)
+	const FRpgInventoryUseCapabilityEvaluation UseCapability =
+		FRpgInventoryItemCapabilities::EvaluateUse(
+			Item,
+			Inventory,
+			PlayerInventory,
+			AvailableCount,
+			StackCount);
+	switch (UseCapability.Result)
 	{
-		SendUseFeedback(ERpgInventoryActionFeedbackResult::WrongInventory, StackCount);
+	case ERpgInventoryUseCapabilityResult::NotConfigured:
+		SendUseFeedback(
+			ERpgInventoryActionFeedbackResult::CannotUse,
+			StackCount);
 		return;
-	}
 
-	const int32 ConsumePerUse =
-		FMath::Max(0, UsableFragment->ConsumeCount);
-	if (StackCount <= 0 ||
-		(ConsumePerUse == 0 && StackCount != 1))
-	{
-		// Reusable/zero-cost items are one activation per request. Otherwise a client could
-		// amplify EventMagnitude and effects without any inventory-backed upper bound.
+	case ERpgInventoryUseCapabilityResult::WrongInventory:
+		SendUseFeedback(
+			ERpgInventoryActionFeedbackResult::WrongInventory,
+			StackCount);
+		return;
+
+	case ERpgInventoryUseCapabilityResult::InvalidRequest:
 		SendUseFeedback(
 			ERpgInventoryActionFeedbackResult::InvalidRequest,
 			StackCount);
 		return;
-	}
 
-	const int64 RequestedConsumeCount =
-		static_cast<int64>(ConsumePerUse) *
-		static_cast<int64>(StackCount);
-	if (RequestedConsumeCount > MAX_int32)
-	{
+	case ERpgInventoryUseCapabilityResult::InsufficientQuantity:
 		SendUseFeedback(
-			ERpgInventoryActionFeedbackResult::InvalidRequest,
+			ERpgInventoryActionFeedbackResult::MissingItem,
+			UseCapability.RequiredConsumeCount);
+		return;
+
+	case ERpgInventoryUseCapabilityResult::Available:
+		break;
+
+	default:
+		SendUseFeedback(
+			ERpgInventoryActionFeedbackResult::CannotUse,
 			StackCount);
 		return;
 	}
 
+	const URpgInventoryFragment_UsableItem* UsableFragment =
+		UseCapability.UseContract;
 	const int32 UseCount = StackCount;
-	const int32 ConsumeCount =
-		static_cast<int32>(RequestedConsumeCount);
-	if (ConsumeCount > AvailableCount)
-	{
-		SendUseFeedback(ERpgInventoryActionFeedbackResult::MissingItem, ConsumeCount);
-		return;
-	}
+	const int32 ConsumeCount = UseCapability.RequiredConsumeCount;
 	if (ConsumeCount > 0 &&
 		!Inventory->CanConsumeItemById(Item->GetItemId(), ConsumeCount))
 	{
@@ -2457,7 +2451,8 @@ void URpgInventoryUiActionComponent::RequestDropInventoryItemById_Implementation
 		return;
 	}
 
-	const ERpgInventoryManualDropPolicy DropPolicy = GetManualDropPolicy(Item);
+	const ERpgInventoryManualDropPolicy DropPolicy =
+		FRpgInventoryItemCapabilities::ResolveManualDropPolicy(Item);
 	if (DropPolicy == ERpgInventoryManualDropPolicy::Disabled)
 	{
 		SendAndCacheManualDropFeedback(
@@ -2532,7 +2527,8 @@ void URpgInventoryUiActionComponent::RequestDropInventoryItemById_Implementation
 			return;
 		}
 
-		switch (GetManualDropPolicy(PlannedItem))
+		switch (FRpgInventoryItemCapabilities::
+			ResolveManualDropPolicy(PlannedItem))
 		{
 		case ERpgInventoryManualDropPolicy::Disabled:
 			bSubtreeContainsDisabledItem = true;
@@ -3985,9 +3981,9 @@ URpgInventoryUiActionComponent::PlanQuickTransferInContainer(
 				StackCount);
 		}
 
-		const URpgInventoryFragment_SpatialItem* SpatialFragment =
+		const FRpgInventorySpatialCapability SpatialCapability =
 			GetUiActionSpatialContract(Item);
-		if (!SpatialFragment)
+		if (!SpatialCapability.IsValid())
 		{
 			return MakeRejectedPlacementPlan(
 				ERpgInventoryMutationResultCode::InvalidPlacement,
@@ -3995,9 +3991,9 @@ URpgInventoryUiActionComponent::PlanQuickTransferInContainer(
 		}
 
 		const FRpgInventoryGridSize Footprint =
-			SpatialFragment->Footprint;
+			SpatialCapability.Footprint;
 		const int32 RotationCount =
-			SpatialFragment->bAllowRotation ? 2 : 1;
+			SpatialCapability.bAllowRotation ? 2 : 1;
 		FRpgInventoryPlacementPlan LastPlan =
 			MakeRejectedPlacementPlan(
 				ERpgInventoryMutationResultCode::NoSpace,

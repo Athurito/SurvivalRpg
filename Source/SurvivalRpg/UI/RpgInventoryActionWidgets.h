@@ -385,8 +385,8 @@ private:
 /**
  * Mouse-first authored inventory context menu.
  *
- * The widget captures the selected entry id, builds one button per supplied semantic action, positions
- * the menu at an absolute Slate screen position, and delegates every click back to its grid or gear-slot source.
+ * The widget captures one exact capability snapshot, builds one button per queried semantic action, positions
+ * the menu at an absolute Slate screen position, and delegates every click through the shared native source seam.
  * Clicking outside the menu or invoking Back/Escape closes it without a gameplay mutation.
  */
 UCLASS(Abstract, BlueprintType, Blueprintable)
@@ -398,35 +398,15 @@ public:
 	explicit URpgInventoryContextMenuWidget(const FObjectInitializer& ObjectInitializer = FObjectInitializer::Get());
 
 	/**
-	 * Initializes and populates the context menu for the grid's current stable selection.
+	 * Initializes and populates the context menu from one Content, Address/Carry, or Gear capability source.
 	 *
-	 * @param InSourceGrid Grid that owns the selected inventory item and executes semantic actions.
-	 * @param InActions Locally meaningful action rows to display; duplicate rows are removed.
+	 * @param InContextSource Native source that queries and revalidates its exact current item snapshot.
 	 * @param InScreenPosition Absolute Slate screen position at which the menu should open.
-	 * @return True when the grid, selected entry, and action list are valid.
+	 * @return True when the source snapshot and authored controls are valid.
 	 */
 	UFUNCTION(BlueprintCallable, Category = "Inventory|Context Menu")
 	bool InitializeContextMenu(
-		URpgInventorySpatialGridWidget* InSourceGrid,
-		const TArray<ERpgInventoryContextAction>& InActions,
-		FVector2D InScreenPosition);
-
-	/**
-	 * Initializes the same modal action list for one dedicated gear slot.
-	 *
-	 * The represented item's persistent id is captured at open time. Every action revalidates that
-	 * the source slot still represents that exact item before a gameplay request or Inspect hook runs.
-	 */
-	UFUNCTION(BlueprintCallable, Category = "Inventory|Context Menu")
-	bool InitializeEquipmentContextMenu(
-		URpgEquipmentSlotWidget* InSourceEquipmentSlot,
-		const TArray<ERpgInventoryContextAction>& InActions,
-		FVector2D InScreenPosition);
-
-	/** Initializes the shared context menu for a legacy logical address entry. */
-	bool InitializeAddressContextMenu(
-		URpgInventoryAddressSlotWidget* InSourceAddressSlot,
-		const TArray<ERpgInventoryContextAction>& InActions,
+		UWidget* InContextSource,
 		FVector2D InScreenPosition);
 
 	/** Executes one displayed semantic action after stable-entry revalidation, then closes the menu. */
@@ -531,17 +511,13 @@ private:
 	UFUNCTION()
 	void HandleQuickAccessBackClicked();
 
-	/** Weak grid source so a pooled menu cannot retain the screen that opened it. */
+	/** Weak native capability source so a pooled menu cannot retain the screen that opened it. */
 	UPROPERTY(Transient)
-	TWeakObjectPtr<URpgInventorySpatialGridWidget> SourceGrid;
+	TWeakObjectPtr<UWidget> ContextSource;
 
-	/** Weak gear-slot source used instead of SourceGrid for equipment-context actions. */
+	/** Exact represented state captured before the modal is activated. */
 	UPROPERTY(Transient)
-	TWeakObjectPtr<URpgEquipmentSlotWidget> SourceEquipmentSlot;
-
-	/** Weak legacy address source; spatial player UI normally uses SourceGrid instead. */
-	UPROPERTY(Transient)
-	TWeakObjectPtr<URpgInventoryAddressSlotWidget> SourceAddressSlot;
+	FRpgInventoryContextActionSnapshot ContextSnapshot;
 
 	/** Stable selected entry identity captured before any menu click can change focus. */
 	UPROPERTY(Transient)

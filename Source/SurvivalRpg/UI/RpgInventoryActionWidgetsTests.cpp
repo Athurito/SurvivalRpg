@@ -5,9 +5,12 @@
 #include "SurvivalRpg/Inventory/RpgInventoryAutomationTestTypes.h"
 #include "SurvivalRpg/Inventory/RpgInventoryItemInstance.h"
 #include "SurvivalRpg/Inventory/RpgInventoryManagerComponent.h"
+#include "SurvivalRpg/UI/RpgInventoryAddressSlotWidget.h"
+#include "SurvivalRpg/UI/RpgInventoryContextActionSource.h"
 #include "SurvivalRpg/UI/RpgInventoryFeedbackToastWidget.h"
 #include "SurvivalRpg/UI/RpgInventoryInteractionScreenWidget.h"
 #include "SurvivalRpg/UI/RpgInventorySpatialPaneWidget.h"
+#include "SurvivalRpg/UI/RpgLoadoutSlotWidgets.h"
 #include "SurvivalRpg/UI/RpgPlayerInventoryLayoutViews.h"
 
 #include "AssetRegistry/AssetRegistryModule.h"
@@ -754,11 +757,40 @@ bool FRpgInventoryActionModalPoolingLifecycleTest::RunTest(
 		Inventory,
 		FRpgInventoryContainerHandle::MakeRoot(
 			Inventory->GetDefaultContainerId()));
+	URpgInventoryDragDropCoordinator* ContextCoordinator =
+		URpgInventoryDragDropCoordinator::
+			CreateInventoryDragDropCoordinator(
+				Pane,
+				nullptr);
+	Pane->SetInteractionContext(
+		ContextCoordinator,
+		nullptr,
+		NAME_None,
+		nullptr);
 	URpgInventorySpatialGridWidget* Grid = Pane->GetSpatialGrid();
-	if (!TestNotNull(TEXT("Modal source pane exposes its grid"), Grid))
+	if (!TestNotNull(
+			TEXT("Modal source pane exposes its grid"),
+			Grid) ||
+		!TestNotNull(
+			TEXT("Modal source owns one query coordinator"),
+			ContextCoordinator))
 	{
 		return false;
 	}
+	TestTrue(
+		TEXT("Spatial Content implements the shared context-source contract"),
+		Grid->GetClass()->ImplementsInterface(
+			URpgInventoryContextActionSource::StaticClass()));
+	TestTrue(
+		TEXT("Address and Carry inherit the shared context-source contract"),
+		URpgInventoryAddressSlotWidget::StaticClass()->
+			ImplementsInterface(
+				URpgInventoryContextActionSource::StaticClass()));
+	TestTrue(
+		TEXT("Gear implements the shared context-source contract"),
+		URpgEquipmentSlotWidget::StaticClass()->
+			ImplementsInterface(
+				URpgInventoryContextActionSource::StaticClass()));
 
 	UClass* ContextClass =
 		LoadClass<URpgInventoryContextMenuWidget>(
@@ -787,15 +819,10 @@ bool FRpgInventoryActionModalPoolingLifecycleTest::RunTest(
 	const FGuid ContextEntryA = Grid->GetSelectedEntryId();
 	const FRpgInventoryItemId ContextItemA =
 		Grid->GetSelectedItemId();
-	const TArray<ERpgInventoryContextAction> ContextActionsA = {
-		ERpgInventoryContextAction::Inspect,
-		ERpgInventoryContextAction::Rotate
-	};
 	TestTrue(
 		TEXT("Context A initializes before activation"),
 		Context->InitializeContextMenu(
 			Grid,
-			ContextActionsA,
 			FVector2D(120.0f, 80.0f)));
 	TestEqual(
 		TEXT("Context A captures entry A"),
@@ -809,11 +836,11 @@ bool FRpgInventoryActionModalPoolingLifecycleTest::RunTest(
 		Cast<UPanelWidget>(
 			Context->GetWidgetFromName(TEXT("ActionsBox")));
 	TestEqual(
-		TEXT("Context A owns exactly its two action rows"),
+		TEXT("Context A owns exactly the queried Inspect row"),
 		ContextActionHostA
 			? ContextActionHostA->GetChildrenCount()
 			: INDEX_NONE,
-		2);
+		1);
 
 	// A is deliberately never activated. With no GameInstance on the modal,
 	// only this class's NativeDestruct fallback can clear checkout state.
@@ -860,7 +887,6 @@ bool FRpgInventoryActionModalPoolingLifecycleTest::RunTest(
 		TEXT("Pooled context B initializes before activation"),
 		Context->InitializeContextMenu(
 			Grid,
-			{ERpgInventoryContextAction::Inspect},
 			FVector2D(240.0f, 160.0f)));
 	Context->ActivateWidget();
 	TestEqual(

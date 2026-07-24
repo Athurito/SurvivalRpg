@@ -10,6 +10,7 @@
 #include "SurvivalRpg/UI/RpgLoadoutSlotWidgets.h"
 #include "SurvivalRpg/UI/RpgInventoryCarrySlotWidget.h"
 #include "SurvivalRpg/UI/RpgInventoryPanelNavigationCoordinator.h"
+#include "SurvivalRpg/UI/RpgInventoryScreenPresentationContext.h"
 #include "SurvivalRpg/UI/RpgPlayerInventoryLayoutViews.h"
 #include "View/MVVMView.h"
 #include "View/MVVMViewClass.h"
@@ -79,6 +80,10 @@ void URpgPlayerInventoryWidget::UnbindInventoryScreenPresentation()
 		// presentation is closed so pooled widgets cannot rebuild projections or retain stale player references.
 		PlayerInventoryViewModel->UnbindPlayerInventory();
 	}
+
+	// Aggregate unbind emits its final empty projections. Release leaves afterwards so no callback can immediately
+	// restore a Manual MVVM source or screen-owned delegate on the inactive pooled screen.
+	ReleasePlayerInventoryChildPresentations();
 }
 
 void URpgPlayerInventoryWidget::RefreshPlayerInventoryViews()
@@ -86,7 +91,6 @@ void URpgPlayerInventoryWidget::RefreshPlayerInventoryViews()
 	RefreshGearSlots();
 	RefreshSlotGroups();
 	RefreshActionBar();
-	RefreshInventoryScreenNavigationPanels();
 }
 
 FString URpgPlayerInventoryWidget::GetPlayerInventoryWidgetDebugSummary() const
@@ -140,13 +144,10 @@ void URpgPlayerInventoryWidget::RefreshSlotGroups()
 			return;
 		}
 
-		GroupWidget->SetDragDropCoordinator(GetScreenDragDropCoordinator());
-		GroupWidget->SetPanelNavigationCoordinator(GetScreenPanelNavigationCoordinator(), TEXT("Content"));
-		GroupWidget->SetSlotGroupViewModel(GroupViewModel);
-		if (URpgInventorySpatialGridWidget* SpatialGrid = GroupWidget->GetSpatialGridWidget())
-		{
-			SpatialGrid->SetInventoryPresentationHost(this);
-		}
+		GroupWidget->BindInventoryPresentation(
+			GroupViewModel,
+			MakeInventoryScreenPresentationContext(),
+			TEXT("Content"));
 		if (UCanvasPanelSlot* CanvasSlot = Cast<UCanvasPanelSlot>(GroupWidget->Slot))
 		{
 			// Spatial children must own their complete title + grid geometry; undersized hosts break Slate hit testing.
@@ -157,16 +158,18 @@ void URpgPlayerInventoryWidget::RefreshSlotGroups()
 
 	auto BindCarrySlot = [this](
 		URpgInventoryCarrySlotWidget* CarrySlot,
-		URpgInventorySlotGroupViewModel* GroupViewModel)
+		URpgInventorySlotGroupViewModel* GroupViewModel,
+		FName PanelId)
 	{
 		if (!CarrySlot)
 		{
 			return;
 		}
 
-		CarrySlot->SetDragDropCoordinator(GetScreenDragDropCoordinator());
-		CarrySlot->SetInventoryPresentationHost(this);
-		CarrySlot->SetCarrySlotGroupViewModel(GroupViewModel);
+		CarrySlot->BindInventoryPresentation(
+			GroupViewModel,
+			MakeInventoryScreenPresentationContext(),
+			PanelId);
 		CarrySlot->SetVisibility(GroupViewModel ? ESlateVisibility::Visible : ESlateVisibility::Collapsed);
 	};
 
@@ -183,9 +186,18 @@ void URpgPlayerInventoryWidget::RefreshSlotGroups()
 		return Group && Group->IsContentGroup() ? Group : nullptr;
 	};
 
-	BindCarrySlot(Carry_Weapon1, ResolveCarryRole(RpgGameplayTags::Rpg_Inventory_Layout_Role_Carry_Primary));
-	BindCarrySlot(Carry_Weapon2, ResolveCarryRole(RpgGameplayTags::Rpg_Inventory_Layout_Role_Carry_Secondary));
-	BindCarrySlot(Carry_Offhand, ResolveCarryRole(RpgGameplayTags::Rpg_Inventory_Layout_Role_Carry_OffHand));
+	BindCarrySlot(
+		Carry_Weapon1,
+		ResolveCarryRole(RpgGameplayTags::Rpg_Inventory_Layout_Role_Carry_Primary),
+		TEXT("Carry.Weapon1"));
+	BindCarrySlot(
+		Carry_Weapon2,
+		ResolveCarryRole(RpgGameplayTags::Rpg_Inventory_Layout_Role_Carry_Secondary),
+		TEXT("Carry.Weapon2"));
+	BindCarrySlot(
+		Carry_Offhand,
+		ResolveCarryRole(RpgGameplayTags::Rpg_Inventory_Layout_Role_Carry_OffHand),
+		TEXT("Carry.Offhand"));
 
 	BindContentGroup(Content_Pockets, ResolveContentRole(RpgGameplayTags::Rpg_Inventory_Layout_Role_Content_Primary), TEXT("Content_Pockets"));
 	BindContentGroup(Content_Backpack, FindEquipmentProvidedContentGroup(ERpgEquipmentSlot::Backpack), TEXT("Content_Backpack"));
@@ -202,10 +214,8 @@ void URpgPlayerInventoryWidget::RefreshActionBar()
 	}
 
 	ActionBarTileView->SetActionBarSlotItems(PlayerInventoryViewModel->GetActionBarSlots());
-	if (URpgInventoryPanelNavigationCoordinator* Navigator = GetScreenPanelNavigationCoordinator())
-	{
-		Navigator->RegisterActionBarPanel(TEXT("Actionbar"), ActionBarTileView);
-	}
+	ActionBarTileView->SetDragDropCoordinator(
+		GetScreenDragDropCoordinator());
 }
 
 void URpgPlayerInventoryWidget::RefreshGearSlots()
@@ -425,67 +435,72 @@ void URpgPlayerInventoryWidget::SetGearSlotViewModel(
 		return;
 	}
 
-	GearSlotWidget->SetDragDropCoordinator(GetScreenDragDropCoordinator());
-	GearSlotWidget->SetInventoryPresentationHost(this);
-	GearSlotWidget->SetEquipmentSlotViewModel(
+	GearSlotWidget->BindInventoryPresentation(
 		bBagSlot
 			? PlayerInventoryViewModel->GetBagSlot(EquipmentSlot)
-			: PlayerInventoryViewModel->GetArmorSlot(EquipmentSlot));
+			: PlayerInventoryViewModel->GetArmorSlot(EquipmentSlot),
+		MakeInventoryScreenPresentationContext());
+}
+
+FRpgInventoryScreenPresentationContext
+URpgPlayerInventoryWidget::MakeInventoryScreenPresentationContext()
+{
+	FRpgInventoryScreenPresentationContext Context;
+	Context.DragDropCoordinator =
+		GetScreenDragDropCoordinator();
+	Context.PanelNavigationCoordinator =
+		GetScreenPanelNavigationCoordinator();
+	Context.PresentationHost = this;
+	return Context;
+}
+
+void URpgPlayerInventoryWidget::ReleasePlayerInventoryChildPresentations()
+{
+	TArray<URpgInventorySlotGroupWidget*> ContentGroups;
+	CollectStandaloneContentGroupWidgets(ContentGroups);
+	for (URpgInventorySlotGroupWidget* ContentGroup :
+		ContentGroups)
+	{
+		if (ContentGroup)
+		{
+			ContentGroup->ReleaseInventoryPresentation();
+		}
+	}
+
+	TArray<URpgInventoryCarrySlotWidget*> CarrySlots;
+	CollectCarrySlotWidgets(CarrySlots);
+	for (URpgInventoryCarrySlotWidget* CarrySlot :
+		CarrySlots)
+	{
+		if (CarrySlot)
+		{
+			CarrySlot->ReleaseInventoryPresentation();
+		}
+	}
+
+	TArray<URpgEquipmentSlotWidget*> GearSlots;
+	CollectGearSlotWidgets(GearSlots);
+	for (URpgEquipmentSlotWidget* GearSlot : GearSlots)
+	{
+		if (GearSlot)
+		{
+			GearSlot->ReleaseInventoryPresentation();
+		}
+	}
+
+	if (ActionBarTileView)
+	{
+		ActionBarTileView->SetDragDropCoordinator(nullptr);
+	}
 }
 
 void URpgPlayerInventoryWidget::ForwardInventoryInteractionContextToChildren()
 {
-	URpgInventoryDragDropCoordinator* Coordinator = GetScreenDragDropCoordinator();
-
-	TArray<URpgInventorySlotGroupWidget*> StandaloneContentGroups;
-	CollectStandaloneContentGroupWidgets(StandaloneContentGroups);
-	for (URpgInventorySlotGroupWidget* GroupWidget : StandaloneContentGroups)
-	{
-		if (GroupWidget)
-		{
-			GroupWidget->SetDragDropCoordinator(Coordinator);
-			if (URpgInventorySpatialGridWidget* SpatialGrid = GroupWidget->GetSpatialGridWidget())
-			{
-				SpatialGrid->SetInventoryPresentationHost(this);
-			}
-		}
-	}
-
-	auto ForwardCarrySlot =
-		[this](URpgInventoryCarrySlotWidget* CarrySlot)
-	{
-		if (CarrySlot)
-		{
-			CarrySlot->SetDragDropCoordinator(GetScreenDragDropCoordinator());
-			CarrySlot->SetInventoryPresentationHost(this);
-		}
-	};
-	ForwardCarrySlot(Carry_Weapon1);
-	ForwardCarrySlot(Carry_Weapon2);
-	ForwardCarrySlot(Carry_Offhand);
-
 	if (ActionBarTileView)
 	{
-		ActionBarTileView->SetDragDropCoordinator(Coordinator);
+		ActionBarTileView->SetDragDropCoordinator(
+			GetScreenDragDropCoordinator());
 	}
-
-	auto ForwardGearSlot = [this, Coordinator](URpgEquipmentSlotWidget* GearSlot)
-	{
-		if (GearSlot)
-		{
-			GearSlot->SetDragDropCoordinator(Coordinator);
-			GearSlot->SetInventoryPresentationHost(this);
-		}
-	};
-	ForwardGearSlot(Gear_Head);
-	ForwardGearSlot(Gear_Chest);
-	ForwardGearSlot(Gear_Hands);
-	ForwardGearSlot(Gear_Legs);
-	ForwardGearSlot(Gear_Feet);
-	ForwardGearSlot(Gear_Backpack);
-	ForwardGearSlot(Gear_Belt);
-	ForwardGearSlot(Gear_Pouch);
-	ForwardGearSlot(Gear_ResourceBag);
 }
 
 void URpgPlayerInventoryWidget::RegisterInventoryScreenNavigationPanels(
@@ -731,6 +746,30 @@ void URpgPlayerInventoryWidget::CollectStandaloneContentGroupWidgets(TArray<URpg
 	OutWidgets.Add(Content_Belt);
 	OutWidgets.Add(Content_Pouch);
 	OutWidgets.Add(Content_ResourceBag);
+	OutWidgets.Remove(nullptr);
+}
+
+void URpgPlayerInventoryWidget::CollectCarrySlotWidgets(
+	TArray<URpgInventoryCarrySlotWidget*>& OutWidgets) const
+{
+	OutWidgets.Add(Carry_Weapon1);
+	OutWidgets.Add(Carry_Weapon2);
+	OutWidgets.Add(Carry_Offhand);
+	OutWidgets.Remove(nullptr);
+}
+
+void URpgPlayerInventoryWidget::CollectGearSlotWidgets(
+	TArray<URpgEquipmentSlotWidget*>& OutWidgets) const
+{
+	OutWidgets.Add(Gear_Head);
+	OutWidgets.Add(Gear_Chest);
+	OutWidgets.Add(Gear_Hands);
+	OutWidgets.Add(Gear_Legs);
+	OutWidgets.Add(Gear_Feet);
+	OutWidgets.Add(Gear_Backpack);
+	OutWidgets.Add(Gear_Belt);
+	OutWidgets.Add(Gear_Pouch);
+	OutWidgets.Add(Gear_ResourceBag);
 	OutWidgets.Remove(nullptr);
 }
 

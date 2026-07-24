@@ -4,6 +4,8 @@
 #include "CoreMinimal.h"
 #include "SurvivalRpg/Equipment/RpgEquipmentDefinition.h"
 #include "SurvivalRpg/Inventory/RpgInventoryDragDrop.h"
+#include "SurvivalRpg/UI/RpgInventoryContextActionSource.h"
+#include "SurvivalRpg/UI/RpgInventoryScreenPresentationContext.h"
 
 #include "RpgLoadoutSlotWidgets.generated.h"
 
@@ -21,7 +23,9 @@ class UDragDropOperation;
  * Use this as the parent for CUI equipment slot widgets in the player inventory screen.
  */
 UCLASS(Abstract, Blueprintable)
-class SURVIVALRPG_API URpgEquipmentSlotWidget : public UCommonButtonBase
+class SURVIVALRPG_API URpgEquipmentSlotWidget
+	: public UCommonButtonBase
+	, public IRpgInventoryContextActionSource
 {
 	GENERATED_BODY()
 
@@ -30,6 +34,17 @@ public:
 
 	/** Exact optional Manual MVVM source owned by this native equipment-slot presenter. */
 	static const FName EquipmentSlotViewModelSourceName;
+
+	/**
+	 * Atomically binds one Gear leaf to its stable VM and active screen-owned presentation context.
+	 * The operation is presentation-only and may be repeated with the same inputs.
+	 */
+	void BindInventoryPresentation(
+		URpgEquipmentSlotViewModel* InSlotViewModel,
+		const FRpgInventoryScreenPresentationContext& InContext);
+
+	/** Releases every screen/VM reference and transient interaction state while retaining the authored widget tree. */
+	void ReleaseInventoryPresentation();
 
 	/** Assigns the VM for the dedicated equipment slot represented by this widget. */
 	UFUNCTION(BlueprintCallable, Category = "Equipment|Slot")
@@ -107,6 +122,15 @@ public:
 	bool ExecuteEquipmentContextAction(
 		ERpgInventoryContextAction Action,
 		const FRpgInventoryItemId& ExpectedItemId);
+
+	//~IRpgInventoryContextActionSource interface
+	virtual bool QueryInventoryContextActions(
+		FRpgInventoryContextActionSnapshot& OutSnapshot) const override;
+	virtual bool ExecuteInventoryContextAction(
+		const FRpgInventoryContextActionSnapshot& ExpectedSnapshot,
+		ERpgInventoryContextAction Action,
+		int32 QuickAccessSlotIndex = INDEX_NONE) override;
+	//~End of IRpgInventoryContextActionSource interface
 
 protected:
 	virtual void NativeDestruct() override;

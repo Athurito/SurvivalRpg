@@ -6,12 +6,43 @@
 #include "SurvivalRpg/Mvvm/Inventory/RpgActionBarViewModels.h"
 #include "SurvivalRpg/Mvvm/Inventory/RpgInventoryViewModels.h"
 #include "SurvivalRpg/Mvvm/Inventory/RpgPlayerInventoryViewModels.h"
+#include "SurvivalRpg/UI/RpgInventoryContextActionSource.h"
 #include "SurvivalRpg/UI/RpgLoadoutSlotWidgets.h"
 #include "SurvivalRpg/UI/RpgInventoryCarrySlotWidget.h"
 #include "SurvivalRpg/UI/RpgInventoryUiGeometry.h"
 #include "SurvivalRpg/UI/RpgPlayerInventoryLayoutViews.h"
 
 #include UE_INLINE_GENERATED_CPP_BY_NAME(RpgInventoryPanelNavigationCoordinator)
+
+namespace
+{
+	const UWidget* ResolvePanelContextActionSource(
+		const FRpgInventoryPanelNavigationEntry& Panel)
+	{
+		if (Panel.SpatialGridWidget)
+		{
+			return Panel.SpatialGridWidget.Get();
+		}
+		if (Panel.CarrySlotWidget)
+		{
+			return Panel.CarrySlotWidget.Get();
+		}
+		return Panel.EquipmentSlotWidget.Get();
+	}
+
+	bool QueryPanelContextActions(
+		const FRpgInventoryPanelNavigationEntry& Panel,
+		FRpgInventoryContextActionSnapshot& OutSnapshot)
+	{
+		OutSnapshot = FRpgInventoryContextActionSnapshot();
+		const IRpgInventoryContextActionSource* Source =
+			Cast<IRpgInventoryContextActionSource>(
+				ResolvePanelContextActionSource(Panel));
+		return Source &&
+			Source->QueryInventoryContextActions(
+				OutSnapshot);
+	}
+}
 
 URpgInventoryPanelNavigationCoordinator* URpgInventoryPanelNavigationCoordinator::CreateInventoryPanelNavigationCoordinator(UObject* WorldContextObject, APlayerController* InPlayerController, URpgInventoryDragDropCoordinator* InDragDropCoordinator)
 {
@@ -647,16 +678,12 @@ bool URpgInventoryPanelNavigationCoordinator::CanQuickSplitActiveSelection() con
 		return false;
 	}
 
-	const FRpgInventoryPanelNavigationEntry& Panel = Panels[ActivePanelIndex];
-	if (const URpgInventorySpatialGridWidget* Grid = Panel.SpatialGridWidget)
-	{
-		return Grid->GetSelectedContextActions().Contains(ERpgInventoryContextAction::Split);
-	}
-	if (const URpgInventoryCarrySlotWidget* CarrySlot = Panel.CarrySlotWidget)
-	{
-		return CarrySlot->GetAddressContextActions().Contains(ERpgInventoryContextAction::Split);
-	}
-	return false;
+	FRpgInventoryContextActionSnapshot Snapshot;
+	return QueryPanelContextActions(
+			Panels[ActivePanelIndex],
+			Snapshot) &&
+		Snapshot.Actions.Contains(
+			ERpgInventoryContextAction::Split);
 }
 
 bool URpgInventoryPanelNavigationCoordinator::CanUseOrEquipActiveSelection() const
@@ -666,29 +693,16 @@ bool URpgInventoryPanelNavigationCoordinator::CanUseOrEquipActiveSelection() con
 		return false;
 	}
 
-	const FRpgInventoryPanelNavigationEntry& Panel = Panels[ActivePanelIndex];
-	if (const URpgInventorySpatialGridWidget* Grid = Panel.SpatialGridWidget)
-	{
-		const TArray<ERpgInventoryContextAction> Actions = Grid->GetSelectedContextActions();
-		return Actions.Contains(ERpgInventoryContextAction::Use) ||
-			Actions.Contains(ERpgInventoryContextAction::EquipAndActivate);
-	}
-	if (const URpgInventoryCarrySlotWidget* CarrySlot = Panel.CarrySlotWidget)
-	{
-		const TArray<ERpgInventoryContextAction> Actions = CarrySlot->GetAddressContextActions();
-		return Actions.Contains(ERpgInventoryContextAction::Use) ||
-			Actions.Contains(ERpgInventoryContextAction::EquipAndActivate);
-	}
-	if (const URpgEquipmentSlotWidget* EquipmentSlot = Panel.EquipmentSlotWidget)
-	{
-		const URpgInventoryItemInstance* Item = EquipmentSlot->GetRepresentedItem();
-		return DragDropCoordinator && Item &&
-			DragDropCoordinator->CanExecuteContextAction(
-				EquipmentSlot->GetResolvedEquipmentSlot(),
-				Item->GetItemId(),
-				ERpgInventoryContextAction::Unequip);
-	}
-	return false;
+	FRpgInventoryContextActionSnapshot Snapshot;
+	return QueryPanelContextActions(
+			Panels[ActivePanelIndex],
+			Snapshot) &&
+		(Snapshot.Actions.Contains(
+				ERpgInventoryContextAction::Use) ||
+			Snapshot.Actions.Contains(
+				ERpgInventoryContextAction::EquipAndActivate) ||
+			Snapshot.Actions.Contains(
+				ERpgInventoryContextAction::Unequip));
 }
 
 bool URpgInventoryPanelNavigationCoordinator::CanDropActiveSelection() const
@@ -698,25 +712,12 @@ bool URpgInventoryPanelNavigationCoordinator::CanDropActiveSelection() const
 		return false;
 	}
 
-	const FRpgInventoryPanelNavigationEntry& Panel = Panels[ActivePanelIndex];
-	if (const URpgInventorySpatialGridWidget* Grid = Panel.SpatialGridWidget)
-	{
-		return Grid->GetSelectedContextActions().Contains(ERpgInventoryContextAction::Drop);
-	}
-	if (const URpgInventoryCarrySlotWidget* CarrySlot = Panel.CarrySlotWidget)
-	{
-		return CarrySlot->GetAddressContextActions().Contains(ERpgInventoryContextAction::Drop);
-	}
-	if (const URpgEquipmentSlotWidget* EquipmentSlot = Panel.EquipmentSlotWidget)
-	{
-		const URpgInventoryItemInstance* Item = EquipmentSlot->GetRepresentedItem();
-		return DragDropCoordinator && Item &&
-			DragDropCoordinator->CanExecuteContextAction(
-				EquipmentSlot->GetResolvedEquipmentSlot(),
-				Item->GetItemId(),
-				ERpgInventoryContextAction::Drop);
-	}
-	return false;
+	FRpgInventoryContextActionSnapshot Snapshot;
+	return QueryPanelContextActions(
+			Panels[ActivePanelIndex],
+			Snapshot) &&
+		Snapshot.Actions.Contains(
+			ERpgInventoryContextAction::Drop);
 }
 
 bool URpgInventoryPanelNavigationCoordinator::QuickTransferActiveSelection()

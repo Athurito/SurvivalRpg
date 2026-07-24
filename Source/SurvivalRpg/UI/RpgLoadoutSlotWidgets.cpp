@@ -29,6 +29,30 @@ URpgEquipmentSlotWidget::URpgEquipmentSlotWidget(const FObjectInitializer& Objec
 	SetIsInteractionEnabled(true);
 }
 
+void URpgEquipmentSlotWidget::BindInventoryPresentation(
+	URpgEquipmentSlotViewModel* InSlotViewModel,
+	const FRpgInventoryScreenPresentationContext& InContext)
+{
+	if (!InContext.IsComplete())
+	{
+		ReleaseInventoryPresentation();
+		return;
+	}
+
+	// Preserve the previous host until the represented VM has dismissed any source-owned modal.
+	SetEquipmentSlotViewModel(InSlotViewModel);
+	SetDragDropCoordinator(InContext.DragDropCoordinator);
+	SetPanelNavigationCoordinator(
+		InContext.PanelNavigationCoordinator);
+	SetInventoryPresentationHost(InContext.PresentationHost);
+}
+
+void URpgEquipmentSlotWidget::ReleaseInventoryPresentation()
+{
+	SetPanelNavigationCoordinator(nullptr);
+	ReleaseEquipmentSlotState();
+}
+
 void URpgEquipmentSlotWidget::SetEquipmentSlotViewModel(URpgEquipmentSlotViewModel* InSlotViewModel)
 {
 	if (InSlotViewModel)
@@ -194,22 +218,49 @@ void URpgEquipmentSlotWidget::ClearExternalPreviewPayload()
 
 bool URpgEquipmentSlotWidget::RequestEquipmentContextMenu(FVector2D ScreenPosition)
 {
-	URpgInventoryItemInstance* ItemInstance = GetRepresentedItem();
-	if (!DragDropCoordinator || !ItemInstance || !ItemInstance->GetItemId().IsValid())
+	return InventoryPresentationHost &&
+		InventoryPresentationHost->OpenInventoryContextMenu(
+			this,
+			ScreenPosition);
+}
+
+bool URpgEquipmentSlotWidget::QueryInventoryContextActions(
+	FRpgInventoryContextActionSnapshot& OutSnapshot) const
+{
+	OutSnapshot = FRpgInventoryContextActionSnapshot();
+	const URpgInventoryItemInstance* ItemInstance =
+		GetRepresentedItem();
+	if (!DragDropCoordinator || !ItemInstance ||
+		!ItemInstance->GetItemId().IsValid())
 	{
 		return false;
 	}
 
-	const TArray<ERpgInventoryContextAction> Actions =
+	OutSnapshot.SourceKind =
+		ERpgInventoryContextActionSourceKind::Equipment;
+	OutSnapshot.ItemId = ItemInstance->GetItemId();
+	OutSnapshot.EquipmentSlot =
+		GetResolvedEquipmentSlot();
+	OutSnapshot.Actions =
 		DragDropCoordinator->GetAvailableContextActions(
-			GetResolvedEquipmentSlot(),
-			ItemInstance->GetItemId());
+			OutSnapshot.EquipmentSlot,
+			OutSnapshot.ItemId);
+	return OutSnapshot.IsValid();
+}
 
-	return !Actions.IsEmpty() && InventoryPresentationHost &&
-		InventoryPresentationHost->OpenInventoryContextMenu(
-			this,
-			Actions,
-			ScreenPosition);
+bool URpgEquipmentSlotWidget::ExecuteInventoryContextAction(
+	const FRpgInventoryContextActionSnapshot& ExpectedSnapshot,
+	ERpgInventoryContextAction Action,
+	int32 QuickAccessSlotIndex)
+{
+	(void)QuickAccessSlotIndex;
+	FRpgInventoryContextActionSnapshot CurrentSnapshot;
+	return QueryInventoryContextActions(CurrentSnapshot) &&
+		ExpectedSnapshot.MatchesStableSource(CurrentSnapshot) &&
+		CurrentSnapshot.Actions.Contains(Action) &&
+		ExecuteEquipmentContextAction(
+			Action,
+			ExpectedSnapshot.ItemId);
 }
 
 bool URpgEquipmentSlotWidget::ExecuteEquipmentContextAction(
@@ -253,8 +304,7 @@ bool URpgEquipmentSlotWidget::ExecuteEquipmentContextAction(
 
 void URpgEquipmentSlotWidget::NativeDestruct()
 {
-	PanelNavigationCoordinator = nullptr;
-	ReleaseEquipmentSlotState();
+	ReleaseInventoryPresentation();
 	Super::NativeDestruct();
 }
 

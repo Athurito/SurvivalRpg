@@ -16,6 +16,7 @@ class URpgInventorySlotGroupWidget;
 class URpgInventorySlotGroupViewModel;
 class URpgPlayerInventoryViewModel;
 class UWidget;
+struct FRpgInventoryScreenPresentationContext;
 
 /**
  * Native base for the player inventory screen.
@@ -159,6 +160,8 @@ private:
 	void RefreshSlotGroups();
 	void RefreshActionBar();
 	void RefreshGearSlots();
+	FRpgInventoryScreenPresentationContext MakeInventoryScreenPresentationContext();
+	void ReleasePlayerInventoryChildPresentations();
 	void SetGearSlotViewModel(
 		URpgEquipmentSlotWidget* GearSlotWidget,
 		ERpgEquipmentSlot EquipmentSlot,
@@ -180,6 +183,8 @@ private:
 		bool& bOutTargetAddressed);
 	URpgInventorySlotGroupViewModel* FindEquipmentProvidedContentGroup(ERpgEquipmentSlot SourceEquipmentSlot) const;
 	void CollectStandaloneContentGroupWidgets(TArray<URpgInventorySlotGroupWidget*>& OutWidgets) const;
+	void CollectCarrySlotWidgets(TArray<URpgInventoryCarrySlotWidget*>& OutWidgets) const;
+	void CollectGearSlotWidgets(TArray<URpgEquipmentSlotWidget*>& OutWidgets) const;
 	void UpdateControllerCarryDragVisual(
 		const FRpgInventoryDragPayload& Payload,
 		URpgInventoryCarrySlotWidget* CarrySlotWidget);

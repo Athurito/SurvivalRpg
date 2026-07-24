@@ -14,6 +14,7 @@
 #include "SurvivalRpg/Inventory/RpgInventoryManagerComponent.h"
 #include "SurvivalRpg/UI/RpgInventoryActionWidgets.h"
 #include "SurvivalRpg/UI/RpgInventoryAddressSlotWidget.h"
+#include "SurvivalRpg/UI/RpgInventoryContextActionSource.h"
 #include "SurvivalRpg/UI/RpgInventoryDragVisualWidget.h"
 #include "SurvivalRpg/UI/RpgInventoryFeedbackToastWidget.h"
 #include "SurvivalRpg/UI/RpgInventoryPanelNavigationCoordinator.h"
@@ -267,11 +268,13 @@ void URpgInventoryInteractionScreenWidget::CancelPendingInventoryDrop(
 }
 
 bool URpgInventoryInteractionScreenWidget::OpenInventoryContextMenu(
-	URpgInventorySpatialGridWidget* SourceGrid,
-	const TArray<ERpgInventoryContextAction>& Actions,
+	UWidget* ContextSource,
 	FVector2D ScreenPosition)
 {
-	if (!SourceGrid || Actions.IsEmpty() || !ContextMenuWidgetClass)
+	if (!ContextSource ||
+		!ContextSource->GetClass()->ImplementsInterface(
+			URpgInventoryContextActionSource::StaticClass()) ||
+		!ContextMenuWidgetClass)
 	{
 		return false;
 	}
@@ -288,121 +291,18 @@ bool URpgInventoryInteractionScreenWidget::OpenInventoryContextMenu(
 		PushInitializedInventoryModal<URpgInventoryContextMenuWidget>(
 			LocalPlayer,
 			ContextMenuWidgetClass,
-			[this, SourceGrid, &Actions, ScreenPosition](
+			[this, ContextSource, ScreenPosition](
 				URpgInventoryContextMenuWidget& Modal)
 			{
 				const bool bModalInitialized =
 					Modal.InitializeContextMenu(
-						SourceGrid,
-						Actions,
-						ScreenPosition);
-				if (bModalInitialized)
-				{
-					TrackContextMenuCheckout(Modal, SourceGrid);
-				}
-				return bModalInitialized;
-			},
-			bModalInitializedByCheckout);
-	if (!ContextMenu ||
-		!bModalInitializedByCheckout)
-	{
-		if (ContextMenu)
-		{
-			ContextMenu->CloseContextMenu();
-		}
-		return false;
-	}
-
-	return true;
-}
-
-bool URpgInventoryInteractionScreenWidget::OpenInventoryContextMenu(
-	URpgInventoryAddressSlotWidget* SourceAddressSlot,
-	const TArray<ERpgInventoryContextAction>& Actions,
-	FVector2D ScreenPosition)
-{
-	if (!SourceAddressSlot || Actions.IsEmpty() || !ContextMenuWidgetClass)
-	{
-		return false;
-	}
-
-	ULocalPlayer* LocalPlayer = GetOwningLocalPlayer();
-	if (!LocalPlayer)
-	{
-		return false;
-	}
-
-	DismissInventoryModalPresentation();
-	bool bModalInitializedByCheckout = false;
-	URpgInventoryContextMenuWidget* ContextMenu =
-		PushInitializedInventoryModal<URpgInventoryContextMenuWidget>(
-			LocalPlayer,
-			ContextMenuWidgetClass,
-			[this, SourceAddressSlot, &Actions, ScreenPosition](
-				URpgInventoryContextMenuWidget& Modal)
-			{
-				const bool bModalInitialized =
-					Modal.InitializeAddressContextMenu(
-						SourceAddressSlot,
-						Actions,
+						ContextSource,
 						ScreenPosition);
 				if (bModalInitialized)
 				{
 					TrackContextMenuCheckout(
 						Modal,
-						SourceAddressSlot);
-				}
-				return bModalInitialized;
-			},
-			bModalInitializedByCheckout);
-	if (!ContextMenu ||
-		!bModalInitializedByCheckout)
-	{
-		if (ContextMenu)
-		{
-			ContextMenu->CloseContextMenu();
-		}
-		return false;
-	}
-
-	return true;
-}
-
-bool URpgInventoryInteractionScreenWidget::OpenInventoryContextMenu(
-	URpgEquipmentSlotWidget* SourceEquipmentSlot,
-	const TArray<ERpgInventoryContextAction>& Actions,
-	FVector2D ScreenPosition)
-{
-	if (!SourceEquipmentSlot || Actions.IsEmpty() || !ContextMenuWidgetClass)
-	{
-		return false;
-	}
-
-	ULocalPlayer* LocalPlayer = GetOwningLocalPlayer();
-	if (!LocalPlayer)
-	{
-		return false;
-	}
-
-	DismissInventoryModalPresentation();
-	bool bModalInitializedByCheckout = false;
-	URpgInventoryContextMenuWidget* ContextMenu =
-		PushInitializedInventoryModal<URpgInventoryContextMenuWidget>(
-			LocalPlayer,
-			ContextMenuWidgetClass,
-			[this, SourceEquipmentSlot, &Actions, ScreenPosition](
-				URpgInventoryContextMenuWidget& Modal)
-			{
-				const bool bModalInitialized =
-					Modal.InitializeEquipmentContextMenu(
-						SourceEquipmentSlot,
-						Actions,
-						ScreenPosition);
-				if (bModalInitialized)
-				{
-					TrackContextMenuCheckout(
-						Modal,
-						SourceEquipmentSlot);
+						ContextSource);
 				}
 				return bModalInitialized;
 			},
@@ -794,7 +694,11 @@ void URpgInventoryInteractionScreenWidget::ValidateCompiledDefaults(
 void URpgInventoryInteractionScreenWidget::NativeOnActivated()
 {
 	EnsureInventoryInteractionObjects();
-	BindInventoryScreenPresentation();
+	if (!bInventoryScreenPresentationBound)
+	{
+		bInventoryScreenPresentationBound = true;
+		BindInventoryScreenPresentation();
+	}
 	ForwardInventoryInteractionContextToChildren();
 	RefreshInventoryScreenNavigationPanels();
 	RegisterInventoryFeedbackListener();
@@ -821,6 +725,13 @@ void URpgInventoryInteractionScreenWidget::NativeDestruct()
 
 void URpgInventoryInteractionScreenWidget::ReleaseInventoryScreenPresentation()
 {
+	if (!bInventoryScreenPresentationBound)
+	{
+		return;
+	}
+
+	// Clear the lifecycle guard before any delegate or modal callback can re-enter teardown.
+	bInventoryScreenPresentationBound = false;
 	DismissInventoryModalPresentation();
 
 	if (InventoryDragDropCoordinator && InventoryDragDropCoordinator->HasHeldPayload())
@@ -846,6 +757,13 @@ void URpgInventoryInteractionScreenWidget::ReleaseInventoryScreenPresentation()
 	}
 
 	UnbindInventoryScreenPresentation();
+
+	if (InventoryPanelNavigationCoordinator)
+	{
+		// Aggregate unbinds may broadcast their final empty projection through still-authored leaves. Clear the
+		// navigator last so no callback can re-register an inactive pooled screen after its presentation released.
+		InventoryPanelNavigationCoordinator->ClearPanels();
+	}
 }
 
 bool URpgInventoryInteractionScreenWidget::NativeOnDragOver(

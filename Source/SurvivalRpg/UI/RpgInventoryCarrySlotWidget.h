@@ -22,6 +22,18 @@ class SURVIVALRPG_API URpgInventoryCarrySlotWidget : public URpgInventoryAddress
 	GENERATED_BODY()
 
 public:
+	/**
+	 * Atomically binds this Carry presenter to its semantic group and the active screen-owned presentation context.
+	 * The specialized second Carry observer remains temporary until the dedicated Carry-MVVM migration.
+	 */
+	void BindInventoryPresentation(
+		URpgInventorySlotGroupViewModel* InGroupViewModel,
+		const FRpgInventoryScreenPresentationContext& InContext,
+		FName InPanelId);
+
+	/** Releases the Carry-specific observer/focus state and the inherited Address presentation for screen pooling. */
+	virtual void ReleaseInventoryPresentation() override;
+
 	/** Binds the canonical 0,0 carry address from a Weapon1, Weapon2, or Offhand group. */
 	UFUNCTION(BlueprintCallable, Category = "Inventory|Carry Slot")
 	void SetCarrySlotGroupViewModel(URpgInventorySlotGroupViewModel* InGroupViewModel);

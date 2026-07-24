@@ -2,6 +2,7 @@
 
 #if WITH_DEV_AUTOMATION_TESTS
 
+#include "MVVMSubsystem.h"
 #include "RpgStorageInventoryWidget.h"
 #include "SurvivalRpg/ActionBar/RpgActionBarComponent.h"
 #include "SurvivalRpg/Core/Player/RpgPlayerController.h"
@@ -11,9 +12,16 @@
 #include "SurvivalRpg/Inventory/RpgInventoryDragDrop.h"
 #include "SurvivalRpg/Inventory/RpgInventoryManagerComponent.h"
 #include "SurvivalRpg/Inventory/RpgPlayerInventoryLayoutComponent.h"
+#include "SurvivalRpg/Mvvm/Inventory/RpgLoadoutViewModels.h"
 #include "SurvivalRpg/Mvvm/Inventory/RpgPlayerInventoryViewModels.h"
+#include "SurvivalRpg/UI/RpgInventoryCarrySlotWidget.h"
+#include "SurvivalRpg/UI/RpgInventoryPanelNavigationCoordinator.h"
+#include "SurvivalRpg/UI/RpgLoadoutSlotWidgets.h"
+#include "SurvivalRpg/UI/RpgPlayerInventoryLayoutViews.h"
 #include "SurvivalRpg/UI/RpgUIScreenPayload.h"
+#include "View/MVVMView.h"
 
+#include "Blueprint/WidgetTree.h"
 #include "CommonLocalPlayer.h"
 #include "CoreGlobals.h"
 #include "Engine/Engine.h"
@@ -38,6 +46,22 @@ namespace RpgPlayerStorageInventoryLifecycleIntegrationTests
 		GearRefreshDomain |
 		SlotGroupsRefreshDomain |
 		ActionBarRefreshDomain;
+
+	template <typename DelegateType>
+	int32 CountDelegateBindingsTo(
+		const DelegateType& Delegate,
+		const UObject* Target)
+	{
+		int32 Count = 0;
+		for (const UObject* BoundObject : Delegate.GetAllObjects())
+		{
+			if (BoundObject == Target)
+			{
+				++Count;
+			}
+		}
+		return Count;
+	}
 
 	class FScopedPlayerWidgetWorld
 	{
@@ -729,6 +753,105 @@ bool FRpgPlayerStorageInventoryLifecycleIntegrationTest::RunTest(
 		return false;
 	}
 
+	UWidgetTree* PlayerWidgetTree = PlayerWidget->WidgetTree;
+	URpgEquipmentSlotWidget* GearHead =
+		PlayerWidgetTree
+			? Cast<URpgEquipmentSlotWidget>(
+				PlayerWidgetTree->FindWidget(TEXT("Gear_Head")))
+			: nullptr;
+	URpgInventoryCarrySlotWidget* CarryWeapon1 =
+		PlayerWidgetTree
+			? Cast<URpgInventoryCarrySlotWidget>(
+				PlayerWidgetTree->FindWidget(TEXT("Carry_Weapon1")))
+			: nullptr;
+	URpgInventorySlotGroupWidget* ContentPockets =
+		PlayerWidgetTree
+			? Cast<URpgInventorySlotGroupWidget>(
+				PlayerWidgetTree->FindWidget(TEXT("Content_Pockets")))
+			: nullptr;
+	URpgInventorySpatialGridWidget* ContentPocketsGrid =
+		ContentPockets
+			? ContentPockets->GetSpatialGridWidget()
+			: nullptr;
+	if (!TestNotNull(
+			TEXT("The real Player screen owns its runtime WidgetTree"),
+			PlayerWidgetTree) ||
+		!TestNotNull(
+			TEXT("The real Player WidgetTree contains Gear_Head"),
+			GearHead) ||
+		!TestNotNull(
+			TEXT("The real Player WidgetTree contains Carry_Weapon1"),
+			CarryWeapon1) ||
+		!TestNotNull(
+			TEXT("The real Player WidgetTree contains Content_Pockets"),
+			ContentPockets) ||
+		!TestNotNull(
+			TEXT("The authored Content_Pockets host owns its spatial grid"),
+			ContentPocketsGrid))
+	{
+		return false;
+	}
+
+	UMVVMView* GearHeadMvvmView =
+		UMVVMSubsystem::GetViewFromUserWidget(GearHead);
+	UMVVMView* ContentPocketsMvvmView =
+		UMVVMSubsystem::GetViewFromUserWidget(ContentPockets);
+	URpgInventoryDragDropCoordinator* PlayerScreenCoordinator =
+		PlayerWidget->GetInventoryDragDropCoordinator();
+	URpgInventoryPanelNavigationCoordinator* PlayerScreenNavigator =
+		PlayerWidget->GetInventoryPanelNavigator();
+	URpgEquipmentSlotViewModel* InitialGearHeadViewModel =
+		PlayerViewModel->GetArmorSlot(ERpgEquipmentSlot::Head);
+	URpgInventorySlotGroupViewModel* InitialCarryWeapon1Group =
+		PlayerViewModel->GetSlotGroupBySemanticRole(
+			RpgGameplayTags::
+				Rpg_Inventory_Layout_Role_Carry_Primary);
+	URpgInventoryAddressSlotViewModel* InitialCarryWeapon1Address =
+		CarryWeapon1->GetAddressSlotViewModel();
+	URpgInventorySlotGroupViewModel* InitialContentPocketsGroup =
+		PlayerViewModel->GetSlotGroupBySemanticRole(
+			RpgGameplayTags::
+				Rpg_Inventory_Layout_Role_Content_Primary);
+	const TArray<URpgInventoryAddressSlotViewModel*>
+		InitialContentPocketsAddresses =
+			InitialContentPocketsGroup
+				? InitialContentPocketsGroup->GetSlots()
+				: TArray<URpgInventoryAddressSlotViewModel*>();
+	URpgInventoryAddressSlotViewModel* InitialContentPocketsAddress =
+		InitialContentPocketsAddresses.IsEmpty()
+			? nullptr
+			: InitialContentPocketsAddresses[0];
+	if (!TestNotNull(
+			TEXT("The active Player screen owns one drag/drop coordinator"),
+			PlayerScreenCoordinator) ||
+		!TestNotNull(
+			TEXT("The active Player screen owns one panel navigator"),
+			PlayerScreenNavigator) ||
+		!TestNotNull(
+			TEXT("Gear_Head owns its compiled MVVM view"),
+			GearHeadMvvmView) ||
+		!TestNotNull(
+			TEXT("Content_Pockets owns its compiled MVVM view"),
+			ContentPocketsMvvmView) ||
+		!TestNotNull(
+			TEXT("The active aggregate VM provides Head"),
+			InitialGearHeadViewModel) ||
+		!TestNotNull(
+			TEXT("The active aggregate VM provides Carry Weapon1"),
+			InitialCarryWeapon1Group) ||
+		!TestNotNull(
+			TEXT("Carry_Weapon1 resolves its canonical address"),
+			InitialCarryWeapon1Address) ||
+		!TestNotNull(
+			TEXT("The active aggregate VM provides Content Pockets"),
+			InitialContentPocketsGroup) ||
+		!TestNotNull(
+			TEXT("Content Pockets provides at least one address"),
+			InitialContentPocketsAddress))
+	{
+		return false;
+	}
+
 	FViewModelDelegateCounters PlayerCounters;
 	FViewModelDelegateCounters StorageCounters;
 	if (!TestTrue(
@@ -784,6 +907,110 @@ bool FRpgPlayerStorageInventoryLifecycleIntegrationTest::RunTest(
 		};
 
 	TestWorld.PrimeTimerManager();
+	const FName ContentPocketsPanelId(
+		*FString::Printf(
+			TEXT("Content.%s"),
+			*InitialContentPocketsGroup->
+				GetContainerHandle().ToString()));
+	if (!TestEqual(
+			TEXT("Gear_Head consumes the aggregate VM's exact Head child"),
+			GearHead->GetEquipmentSlotViewModel(),
+			InitialGearHeadViewModel) ||
+		!TestEqual(
+			TEXT("Gear_Head injects its exact optional MVVM source"),
+			GearHeadMvvmView->GetViewModel(
+				URpgEquipmentSlotWidget::
+					EquipmentSlotViewModelSourceName).GetObject(),
+			static_cast<UObject*>(InitialGearHeadViewModel)) ||
+		!TestEqual(
+			TEXT("Carry_Weapon1 consumes the aggregate VM's exact semantic group"),
+			CarryWeapon1->GetCarrySlotGroupViewModel(),
+			InitialCarryWeapon1Group) ||
+		!TestTrue(
+			TEXT("Carry_Weapon1's canonical address belongs to its bound group"),
+			InitialCarryWeapon1Group->GetSlots().Contains(
+				InitialCarryWeapon1Address)) ||
+		!TestEqual(
+			TEXT("Content_Pockets injects the aggregate VM's exact semantic group"),
+			ContentPocketsMvvmView->GetViewModel(
+				URpgInventorySlotGroupWidget::
+					SlotGroupViewModelSourceName).GetObject(),
+			static_cast<UObject*>(InitialContentPocketsGroup)) ||
+		!TestEqual(
+			TEXT("Content_Pockets retains the exact group handle"),
+			ContentPockets->GetSlotGroupHandle(),
+			InitialContentPocketsGroup->GetContainerHandle()) ||
+		!TestEqual(
+			TEXT("Gear_Head shares the Player screen coordinator"),
+			GearHead->GetDragDropCoordinator(),
+			PlayerScreenCoordinator) ||
+		!TestEqual(
+			TEXT("Carry_Weapon1 shares the Player screen coordinator"),
+			CarryWeapon1->GetDragDropCoordinator(),
+			PlayerScreenCoordinator) ||
+		!TestEqual(
+			TEXT("Gear_Head owns exactly one coordinator delegate"),
+			CountDelegateBindingsTo(
+				PlayerScreenCoordinator->OnHeldPayloadChanged,
+				GearHead),
+			1) ||
+		!TestEqual(
+			TEXT("Carry_Weapon1 owns exactly one coordinator delegate while Content is focused"),
+			CountDelegateBindingsTo(
+				PlayerScreenCoordinator->OnHeldPayloadChanged,
+				CarryWeapon1),
+			1) ||
+		!TestEqual(
+			TEXT("Content_Pockets grid owns exactly one coordinator delegate"),
+			CountDelegateBindingsTo(
+				PlayerScreenCoordinator->OnHeldPayloadChanged,
+				ContentPocketsGrid),
+			1) ||
+		!TestEqual(
+			TEXT("Gear_Head owns exactly one VM delegate"),
+			CountDelegateBindingsTo(
+				InitialGearHeadViewModel->OnSlotChanged,
+				GearHead),
+			1) ||
+		!TestEqual(
+			TEXT("Content_Pockets grid observes its first address exactly once"),
+			CountDelegateBindingsTo(
+				InitialContentPocketsAddress->OnSlotChanged,
+				ContentPocketsGrid),
+			1) ||
+		!TestTrue(
+			TEXT("The shared navigator activates authored Gear_Head"),
+			PlayerScreenNavigator->ActivatePanelById(
+				TEXT("Gear.Head"))) ||
+		!TestEqual(
+			TEXT("Gear navigation resolves the authored Gear_Head leaf"),
+			PlayerScreenNavigator->
+				GetActiveEquipmentSlotWidget(),
+			GearHead) ||
+		!TestTrue(
+			TEXT("The shared navigator activates authored Carry_Weapon1"),
+			PlayerScreenNavigator->ActivatePanelById(
+				TEXT("Carry.Weapon1"))) ||
+		!TestEqual(
+			TEXT("Carry navigation resolves the authored Carry_Weapon1 leaf"),
+			PlayerScreenNavigator->GetActiveCarrySlotWidget(),
+			CarryWeapon1) ||
+		!TestTrue(
+			TEXT("The shared navigator activates authored Content_Pockets"),
+			PlayerScreenNavigator->ActivatePanelById(
+				ContentPocketsPanelId)) ||
+		!TestEqual(
+			TEXT("Content navigation resolves the authored Pockets grid"),
+			PlayerScreenNavigator->GetActiveSpatialGridWidget(),
+			ContentPocketsGrid) ||
+		!TestEqual(
+			TEXT("Content navigation retains canonical inventory authority"),
+			PlayerScreenNavigator->GetActiveInventory(),
+			CanonicalInventory))
+	{
+		return false;
+	}
+
 	PlayerCounters.Reset();
 	StorageCounters.Reset();
 	if (!TestNotNull(
@@ -920,7 +1147,93 @@ bool FRpgPlayerStorageInventoryLifecycleIntegrationTest::RunTest(
 		!TestEqual(
 			TEXT("Storage remains fully registered while its screen stays active"),
 			CountValidListenerHandles(StorageViewModel),
-			4))
+			4) ||
+		!TestEqual(
+			TEXT("Deactivation retains the screen-owned drag/drop coordinator"),
+			PlayerWidget->GetInventoryDragDropCoordinator(),
+			PlayerScreenCoordinator) ||
+		!TestEqual(
+			TEXT("Deactivation retains the screen-owned panel navigator"),
+			PlayerWidget->GetInventoryPanelNavigator(),
+			PlayerScreenNavigator) ||
+		!TestNull(
+			TEXT("Deactivated Gear_Head releases its VM"),
+			GearHead->GetEquipmentSlotViewModel()) ||
+		!TestNull(
+			TEXT("Deactivated Gear_Head clears its optional MVVM source"),
+			GearHeadMvvmView->GetViewModel(
+				URpgEquipmentSlotWidget::
+					EquipmentSlotViewModelSourceName).GetObject()) ||
+		!TestNull(
+			TEXT("Deactivated Gear_Head releases its coordinator"),
+			GearHead->GetDragDropCoordinator()) ||
+		!TestNull(
+			TEXT("Deactivated Carry_Weapon1 releases its group VM"),
+			CarryWeapon1->GetCarrySlotGroupViewModel()) ||
+		!TestNull(
+			TEXT("Deactivated Carry_Weapon1 releases its address VM"),
+			CarryWeapon1->GetAddressSlotViewModel()) ||
+		!TestNull(
+			TEXT("Deactivated Carry_Weapon1 releases its coordinator"),
+			CarryWeapon1->GetDragDropCoordinator()) ||
+		!TestNull(
+			TEXT("Deactivated Content_Pockets clears its optional MVVM source"),
+			ContentPocketsMvvmView->GetViewModel(
+				URpgInventorySlotGroupWidget::
+					SlotGroupViewModelSourceName).GetObject()) ||
+		!TestFalse(
+			TEXT("Deactivated Content_Pockets releases its group handle"),
+			ContentPockets->GetSlotGroupHandle().IsValid()) ||
+		!TestEqual(
+			TEXT("Deactivated Gear_Head releases its VM delegate"),
+			CountDelegateBindingsTo(
+				InitialGearHeadViewModel->OnSlotChanged,
+				GearHead),
+			0) ||
+		!TestEqual(
+			TEXT("Deactivated Carry_Weapon1 releases every address observer"),
+			CountDelegateBindingsTo(
+				InitialCarryWeapon1Address->OnSlotChanged,
+				CarryWeapon1),
+			0) ||
+		!TestEqual(
+			TEXT("Deactivated Content_Pockets grid releases its address delegate"),
+			CountDelegateBindingsTo(
+				InitialContentPocketsAddress->OnSlotChanged,
+				ContentPocketsGrid),
+			0) ||
+		!TestEqual(
+			TEXT("Deactivated Gear_Head releases its coordinator delegate"),
+			CountDelegateBindingsTo(
+				PlayerScreenCoordinator->OnHeldPayloadChanged,
+				GearHead),
+			0) ||
+		!TestEqual(
+			TEXT("Deactivated Carry_Weapon1 releases its coordinator delegates"),
+			CountDelegateBindingsTo(
+				PlayerScreenCoordinator->OnHeldPayloadChanged,
+				CarryWeapon1),
+			0) ||
+		!TestEqual(
+			TEXT("Deactivated Content_Pockets grid releases its coordinator delegate"),
+			CountDelegateBindingsTo(
+				PlayerScreenCoordinator->OnHeldPayloadChanged,
+				ContentPocketsGrid),
+			0) ||
+		!TestEqual(
+			TEXT("Deactivation clears the shared navigation registry"),
+			PlayerScreenNavigator->GetActivePanelIndex(),
+			INDEX_NONE) ||
+		!TestNull(
+			TEXT("Deactivation leaves no active Gear panel"),
+			PlayerScreenNavigator->
+				GetActiveEquipmentSlotWidget()) ||
+		!TestNull(
+			TEXT("Deactivation leaves no active Carry panel"),
+			PlayerScreenNavigator->GetActiveCarrySlotWidget()) ||
+		!TestNull(
+			TEXT("Deactivation leaves no active Content grid"),
+			PlayerScreenNavigator->GetActiveSpatialGridWidget()))
 	{
 		return false;
 	}
@@ -1042,6 +1355,143 @@ bool FRpgPlayerStorageInventoryLifecycleIntegrationTest::RunTest(
 	}
 
 	TestWorld.AdvanceTimerFrame();
+	URpgEquipmentSlotViewModel* ReactivatedGearHeadViewModel =
+		PlayerViewModel->GetArmorSlot(ERpgEquipmentSlot::Head);
+	URpgInventorySlotGroupViewModel* ReactivatedCarryWeapon1Group =
+		PlayerViewModel->GetSlotGroupBySemanticRole(
+			RpgGameplayTags::
+				Rpg_Inventory_Layout_Role_Carry_Primary);
+	URpgInventoryAddressSlotViewModel* ReactivatedCarryWeapon1Address =
+		CarryWeapon1->GetAddressSlotViewModel();
+	URpgInventorySlotGroupViewModel* ReactivatedContentPocketsGroup =
+		PlayerViewModel->GetSlotGroupBySemanticRole(
+			RpgGameplayTags::
+				Rpg_Inventory_Layout_Role_Content_Primary);
+	const TArray<URpgInventoryAddressSlotViewModel*>
+		ReactivatedContentPocketsAddresses =
+			ReactivatedContentPocketsGroup
+				? ReactivatedContentPocketsGroup->GetSlots()
+				: TArray<URpgInventoryAddressSlotViewModel*>();
+	URpgInventoryAddressSlotViewModel*
+		ReactivatedContentPocketsAddress =
+			ReactivatedContentPocketsAddresses.IsEmpty()
+				? nullptr
+				: ReactivatedContentPocketsAddresses[0];
+	if (!TestNotNull(
+			TEXT("Reactivated Carry_Weapon1 resolves its current address"),
+			ReactivatedCarryWeapon1Address) ||
+		!TestNotNull(
+			TEXT("Reactivated Content_Pockets resolves its current group"),
+			ReactivatedContentPocketsGroup) ||
+		!TestNotNull(
+			TEXT("Reactivated Content_Pockets resolves its first address"),
+			ReactivatedContentPocketsAddress) ||
+		!TestEqual(
+			TEXT("Reactivation retains the same screen-owned drag/drop coordinator"),
+			PlayerWidget->GetInventoryDragDropCoordinator(),
+			PlayerScreenCoordinator) ||
+		!TestEqual(
+			TEXT("Reactivation retains the same screen-owned panel navigator"),
+			PlayerWidget->GetInventoryPanelNavigator(),
+			PlayerScreenNavigator) ||
+		!TestEqual(
+			TEXT("Reactivated Gear_Head reuses its stable child VM"),
+			ReactivatedGearHeadViewModel,
+			InitialGearHeadViewModel) ||
+		!TestEqual(
+			TEXT("Reactivated Gear_Head consumes the current aggregate child"),
+			GearHead->GetEquipmentSlotViewModel(),
+			ReactivatedGearHeadViewModel) ||
+		!TestEqual(
+			TEXT("Reactivated Gear_Head restores its exact MVVM source"),
+			GearHeadMvvmView->GetViewModel(
+				URpgEquipmentSlotWidget::
+					EquipmentSlotViewModelSourceName).GetObject(),
+			static_cast<UObject*>(ReactivatedGearHeadViewModel)) ||
+		!TestEqual(
+			TEXT("Reactivated Carry_Weapon1 consumes the current semantic group"),
+			CarryWeapon1->GetCarrySlotGroupViewModel(),
+			ReactivatedCarryWeapon1Group) ||
+		!TestTrue(
+			TEXT("Reactivated Carry_Weapon1 consumes an address from that group"),
+			ReactivatedCarryWeapon1Group &&
+				ReactivatedCarryWeapon1Group->GetSlots().Contains(
+					ReactivatedCarryWeapon1Address)) ||
+		!TestEqual(
+			TEXT("Reactivated Content_Pockets restores its exact MVVM source"),
+			ContentPocketsMvvmView->GetViewModel(
+				URpgInventorySlotGroupWidget::
+					SlotGroupViewModelSourceName).GetObject(),
+			static_cast<UObject*>(
+				ReactivatedContentPocketsGroup)) ||
+		!TestEqual(
+			TEXT("Reactivated Content_Pockets restores its group handle"),
+			ContentPockets->GetSlotGroupHandle(),
+			ReactivatedContentPocketsGroup->
+				GetContainerHandle()) ||
+		!TestTrue(
+			TEXT("Reactivated navigation restores Content_Pockets"),
+			PlayerScreenNavigator->ActivatePanelById(
+				ContentPocketsPanelId)) ||
+		!TestEqual(
+			TEXT("Reactivated Content navigation resolves the same authored grid"),
+			PlayerScreenNavigator->GetActiveSpatialGridWidget(),
+			ContentPocketsGrid) ||
+		!TestEqual(
+			TEXT("Reactivated Gear_Head restores exactly one VM delegate"),
+			CountDelegateBindingsTo(
+				ReactivatedGearHeadViewModel->OnSlotChanged,
+				GearHead),
+			1) ||
+		!TestEqual(
+			TEXT("Reactivated Gear_Head restores exactly one coordinator delegate"),
+			CountDelegateBindingsTo(
+				PlayerScreenCoordinator->OnHeldPayloadChanged,
+				GearHead),
+			1) ||
+		!TestEqual(
+			TEXT("Reactivated Carry_Weapon1 restores exactly one coordinator delegate while Content is focused"),
+			CountDelegateBindingsTo(
+				PlayerScreenCoordinator->OnHeldPayloadChanged,
+				CarryWeapon1),
+			1) ||
+		!TestEqual(
+			TEXT("Reactivated Content_Pockets restores exactly one coordinator delegate"),
+			CountDelegateBindingsTo(
+				PlayerScreenCoordinator->OnHeldPayloadChanged,
+				ContentPocketsGrid),
+			1) ||
+		!TestEqual(
+			TEXT("Reactivated Content_Pockets observes its current address exactly once"),
+			CountDelegateBindingsTo(
+				ReactivatedContentPocketsAddress->OnSlotChanged,
+				ContentPocketsGrid),
+			1) ||
+		!TestEqual(
+			TEXT("Reactivation does not reconnect the released Carry address"),
+			CountDelegateBindingsTo(
+				InitialCarryWeapon1Address->OnSlotChanged,
+				CarryWeapon1),
+			InitialCarryWeapon1Address ==
+					ReactivatedCarryWeapon1Address
+				? CountDelegateBindingsTo(
+					ReactivatedCarryWeapon1Address->
+						OnSlotChanged,
+					CarryWeapon1)
+				: 0) ||
+		!TestEqual(
+			TEXT("Reactivation does not reconnect the released Content address"),
+			CountDelegateBindingsTo(
+				InitialContentPocketsAddress->OnSlotChanged,
+				ContentPocketsGrid),
+			InitialContentPocketsAddress ==
+					ReactivatedContentPocketsAddress
+				? 1
+				: 0))
+	{
+		return false;
+	}
+
 	PlayerCounters.Reset();
 	StorageCounters.Reset();
 	BroadcastAllPlayerPresentationMessages(

@@ -12,6 +12,36 @@
 
 #include UE_INLINE_GENERATED_CPP_BY_NAME(RpgInventoryCarrySlotWidget)
 
+void URpgInventoryCarrySlotWidget::BindInventoryPresentation(
+	URpgInventorySlotGroupViewModel* InGroupViewModel,
+	const FRpgInventoryScreenPresentationContext& InContext,
+	FName InPanelId)
+{
+	if (!InContext.IsComplete() || InPanelId.IsNone())
+	{
+		ReleaseInventoryPresentation();
+		return;
+	}
+
+	// Resolve the exact address first so a previous source-owned modal is dismissed through the previous host.
+	SetCarrySlotGroupViewModel(InGroupViewModel);
+	SetDragDropCoordinator(InContext.DragDropCoordinator);
+	SetInventoryPresentationHost(InContext.PresentationHost);
+	SetPanelNavigationCoordinator(
+		InContext.PanelNavigationCoordinator,
+		InPanelId);
+}
+
+void URpgInventoryCarrySlotWidget::ReleaseInventoryPresentation()
+{
+	ClearFocusedControllerInteractionTarget();
+	UnbindFocusedControllerInteraction();
+	SetCarrySlotGroupViewModel(nullptr);
+	PanelNavigationCoordinator = nullptr;
+	PanelNavigationId = NAME_None;
+	Super::ReleaseInventoryPresentation();
+}
+
 void URpgInventoryCarrySlotWidget::SetCarrySlotGroupViewModel(
 	URpgInventorySlotGroupViewModel* InGroupViewModel)
 {
@@ -133,12 +163,7 @@ ERpgInventoryInteractionPreviewState URpgInventoryCarrySlotWidget::GetCarryInter
 
 void URpgInventoryCarrySlotWidget::NativeDestruct()
 {
-	ClearFocusedControllerInteractionTarget();
-	UnbindFocusedControllerInteraction();
-	UnbindCarryAddressObserver();
-	CarrySlotGroupViewModel = nullptr;
-	PanelNavigationCoordinator = nullptr;
-	PanelNavigationId = NAME_None;
+	// The Address base owns the lifecycle hook and dispatches our virtual release exactly once.
 	Super::NativeDestruct();
 }
 

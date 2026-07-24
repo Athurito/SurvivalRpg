@@ -123,6 +123,21 @@ public:
 	virtual bool IsEditorOnly() const override { return true; }
 };
 
+/** Editor-only spatial item with no ItemTraits fragment, used to verify capability fallbacks. */
+UCLASS(NotBlueprintable, Transient)
+class URpgInventoryAutomationTestNoTraitsItemDefinition final
+	: public URpgInventoryItemDefinition
+{
+	GENERATED_BODY()
+
+public:
+	explicit URpgInventoryAutomationTestNoTraitsItemDefinition(
+		const FObjectInitializer& ObjectInitializer =
+			FObjectInitializer::Get());
+
+	virtual bool IsEditorOnly() const override { return true; }
+};
+
 /** Editor-only 1x1 stackable item definition with a maximum stack size of ten. */
 UCLASS(NotBlueprintable, Transient)
 class URpgInventoryAutomationTestStackItemDefinition final : public URpgInventoryItemDefinition
@@ -246,6 +261,21 @@ public:
 	virtual bool IsEditorOnly() const override { return true; }
 };
 
+/** Editor-only malformed UsableItem contract with no ability, used to verify fail-closed use evaluation. */
+UCLASS(NotBlueprintable, Transient)
+class URpgInventoryAutomationTestMalformedUsableItemDefinition final
+	: public URpgInventoryItemDefinition
+{
+	GENERATED_BODY()
+
+public:
+	explicit URpgInventoryAutomationTestMalformedUsableItemDefinition(
+		const FObjectInitializer& ObjectInitializer =
+			FObjectInitializer::Get());
+
+	virtual bool IsEditorOnly() const override { return true; }
+};
+
 /** Editor-only item whose manual-drop policy is explicitly disabled. */
 UCLASS(NotBlueprintable, Transient)
 class URpgInventoryAutomationTestNoDropItemDefinition final : public URpgInventoryItemDefinition
@@ -349,6 +379,21 @@ class URpgInventoryAutomationTestWeaponItemDefinition final : public URpgInvento
 public:
 	explicit URpgInventoryAutomationTestWeaponItemDefinition(
 		const FObjectInitializer& ObjectInitializer = FObjectInitializer::Get());
+
+	virtual bool IsEditorOnly() const override { return true; }
+};
+
+/** Editor-only reusable MainHand weapon whose authored hybrid quick action prefers equip and activation. */
+UCLASS(NotBlueprintable, Transient)
+class URpgInventoryAutomationTestHybridWeaponItemDefinition final
+	: public URpgInventoryItemDefinition
+{
+	GENERATED_BODY()
+
+public:
+	explicit URpgInventoryAutomationTestHybridWeaponItemDefinition(
+		const FObjectInitializer& ObjectInitializer =
+			FObjectInitializer::Get());
 
 	virtual bool IsEditorOnly() const override { return true; }
 };

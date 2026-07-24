@@ -257,6 +257,21 @@ URpgInventoryAutomationTestUnitItemDefinition::URpgInventoryAutomationTestUnitIt
 	Fragments.Add(TraitsFragment);
 }
 
+URpgInventoryAutomationTestNoTraitsItemDefinition::
+	URpgInventoryAutomationTestNoTraitsItemDefinition(
+		const FObjectInitializer& ObjectInitializer)
+	: Super(ObjectInitializer)
+{
+	DisplayName = FText::FromString(
+		TEXT("Automation No Traits"));
+
+	URpgInventoryFragment_SpatialItem* SpatialFragment =
+		CreateDefaultSubobject<URpgInventoryFragment_SpatialItem>(
+			TEXT("Spatial"));
+	ConfigureSpatialFragment(SpatialFragment, 1, 1, true);
+	Fragments.Add(SpatialFragment);
+}
+
 URpgInventoryAutomationTestStackItemDefinition::URpgInventoryAutomationTestStackItemDefinition(
 	const FObjectInitializer& ObjectInitializer)
 	: Super(ObjectInitializer)
@@ -386,6 +401,33 @@ URpgInventoryAutomationTestUsableItemDefinition::URpgInventoryAutomationTestUsab
 	Fragments.Add(UsableFragment);
 }
 
+URpgInventoryAutomationTestMalformedUsableItemDefinition::
+	URpgInventoryAutomationTestMalformedUsableItemDefinition(
+		const FObjectInitializer& ObjectInitializer)
+	: Super(ObjectInitializer)
+{
+	DisplayName = FText::FromString(
+		TEXT("Automation Malformed Usable"));
+
+	URpgInventoryFragment_SpatialItem* SpatialFragment =
+		CreateDefaultSubobject<URpgInventoryFragment_SpatialItem>(
+			TEXT("Spatial"));
+	ConfigureSpatialFragment(SpatialFragment, 1, 1, true);
+	Fragments.Add(SpatialFragment);
+
+	URpgInventoryFragment_ItemTraits* TraitsFragment =
+		CreateDefaultSubobject<URpgInventoryFragment_ItemTraits>(
+			TEXT("Traits"));
+	ConfigureNonStackingTraits(TraitsFragment);
+	Fragments.Add(TraitsFragment);
+
+	URpgInventoryFragment_UsableItem* UsableFragment =
+		CreateDefaultSubobject<URpgInventoryFragment_UsableItem>(
+			TEXT("Usable"));
+	UsableFragment->UseAbility = nullptr;
+	Fragments.Add(UsableFragment);
+}
+
 URpgInventoryAutomationTestNoDropItemDefinition::URpgInventoryAutomationTestNoDropItemDefinition(
 	const FObjectInitializer& ObjectInitializer)
 	: Super(ObjectInitializer)
@@ -476,6 +518,48 @@ URpgInventoryAutomationTestWeaponItemDefinition::URpgInventoryAutomationTestWeap
 	URpgInventoryFragment_EquippableItem* EquippableFragment =
 		CreateDefaultSubobject<URpgInventoryFragment_EquippableItem>(TEXT("Equippable"));
 	EquippableFragment->EquipmentDefinition = URpgInventoryAutomationTestWeaponEquipmentDefinition::StaticClass();
+	Fragments.Add(EquippableFragment);
+}
+
+URpgInventoryAutomationTestHybridWeaponItemDefinition::
+	URpgInventoryAutomationTestHybridWeaponItemDefinition(
+		const FObjectInitializer& ObjectInitializer)
+	: Super(ObjectInitializer)
+{
+	DisplayName = FText::FromString(
+		TEXT("Automation Hybrid Weapon"));
+
+	URpgInventoryFragment_SpatialItem* SpatialFragment =
+		CreateDefaultSubobject<URpgInventoryFragment_SpatialItem>(
+			TEXT("Spatial"));
+	ConfigureSpatialFragment(SpatialFragment, 1, 1, true);
+	Fragments.Add(SpatialFragment);
+
+	URpgInventoryFragment_ItemTraits* TraitsFragment =
+		CreateDefaultSubobject<URpgInventoryFragment_ItemTraits>(
+			TEXT("Traits"));
+	ConfigureNonStackingTraits(TraitsFragment);
+	TraitsFragment->ItemCategory =
+		ERpgInventoryItemCategory::Weapon;
+	Fragments.Add(TraitsFragment);
+
+	URpgInventoryFragment_UsableItem* UsableFragment =
+		CreateDefaultSubobject<URpgInventoryFragment_UsableItem>(
+			TEXT("Usable"));
+	UsableFragment->UseAbility =
+		URpgInventoryAutomationTestUseAbility::StaticClass();
+	UsableFragment->ConsumeCount = 0;
+	UsableFragment->bOnlyFromPlayerInventory = true;
+	UsableFragment->HybridQuickAction =
+		ERpgInventoryHybridQuickAction::EquipAndActivate;
+	Fragments.Add(UsableFragment);
+
+	URpgInventoryFragment_EquippableItem* EquippableFragment =
+		CreateDefaultSubobject<URpgInventoryFragment_EquippableItem>(
+			TEXT("Equippable"));
+	EquippableFragment->EquipmentDefinition =
+		URpgInventoryAutomationTestWeaponEquipmentDefinition::
+			StaticClass();
 	Fragments.Add(EquippableFragment);
 }
 

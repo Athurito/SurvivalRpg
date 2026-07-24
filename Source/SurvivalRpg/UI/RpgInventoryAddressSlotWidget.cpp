@@ -28,6 +28,28 @@ URpgInventoryAddressSlotWidget::URpgInventoryAddressSlotWidget(const FObjectInit
 	SetIsInteractionEnabled(true);
 }
 
+void URpgInventoryAddressSlotWidget::BindInventoryPresentation(
+	URpgInventoryAddressSlotViewModel* InSlotViewModel,
+	const FRpgInventoryScreenPresentationContext& InContext)
+{
+	if (!InContext.IsComplete())
+	{
+		ReleaseInventoryPresentation();
+		return;
+	}
+
+	// Rebind the represented source first so an open modal is dismissed through the previous host before that weak
+	// presentation relationship is replaced.
+	SetAddressSlotViewModel(InSlotViewModel);
+	SetDragDropCoordinator(InContext.DragDropCoordinator);
+	SetInventoryPresentationHost(InContext.PresentationHost);
+}
+
+void URpgInventoryAddressSlotWidget::ReleaseInventoryPresentation()
+{
+	ReleaseAddressSlotState();
+}
+
 void URpgInventoryAddressSlotWidget::SetDragDropCoordinator(URpgInventoryDragDropCoordinator* InCoordinator)
 {
 	if (InCoordinator)
@@ -180,14 +202,14 @@ void URpgInventoryAddressSlotWidget::NativeOnListItemObjectSet(UObject* ListItem
 
 void URpgInventoryAddressSlotWidget::NativeDestruct()
 {
-	ReleaseAddressSlotState();
+	ReleaseInventoryPresentation();
 	Super::NativeDestruct();
 }
 
 void URpgInventoryAddressSlotWidget::NativeOnEntryReleased()
 {
 	IUserListEntry::NativeOnEntryReleased();
-	ReleaseAddressSlotState();
+	ReleaseInventoryPresentation();
 }
 
 void URpgInventoryAddressSlotWidget::ReleaseAddressSlotState()
@@ -528,6 +550,49 @@ TArray<ERpgInventoryContextAction> URpgInventoryAddressSlotWidget::GetAddressCon
 		: TArray<ERpgInventoryContextAction>();
 }
 
+bool URpgInventoryAddressSlotWidget::QueryInventoryContextActions(
+	FRpgInventoryContextActionSnapshot& OutSnapshot) const
+{
+	OutSnapshot = FRpgInventoryContextActionSnapshot();
+	const URpgInventoryItemInstance* Item =
+		SlotViewModel ? SlotViewModel->GetItemInstance() : nullptr;
+	if (!DragDropCoordinator || !SlotViewModel || !Item)
+	{
+		return false;
+	}
+
+	OutSnapshot.SourceKind =
+		ERpgInventoryContextActionSourceKind::Address;
+	OutSnapshot.EntryId = SlotViewModel->GetEntryId();
+	OutSnapshot.ItemId = Item->GetItemId();
+	OutSnapshot.SourcePlacement =
+		SlotViewModel->GetItemPlacement();
+	OutSnapshot.SlotAddress =
+		SlotViewModel->GetSlotAddress();
+	OutSnapshot.StackCount = SlotViewModel->GetStackCount();
+	OutSnapshot.QuickAccessSlotIndex =
+		GetQuickAccessSlotIndex();
+	OutSnapshot.Actions =
+		DragDropCoordinator->GetAvailableContextActions(
+			SlotViewModel);
+	return OutSnapshot.IsValid();
+}
+
+bool URpgInventoryAddressSlotWidget::ExecuteInventoryContextAction(
+	const FRpgInventoryContextActionSnapshot& ExpectedSnapshot,
+	ERpgInventoryContextAction Action,
+	int32 QuickAccessSlotIndex)
+{
+	FRpgInventoryContextActionSnapshot CurrentSnapshot;
+	return QueryInventoryContextActions(CurrentSnapshot) &&
+		ExpectedSnapshot.MatchesStableSource(CurrentSnapshot) &&
+		CurrentSnapshot.Actions.Contains(Action) &&
+		ExecuteAddressContextAction(
+			Action,
+			ExpectedSnapshot.ItemId,
+			QuickAccessSlotIndex);
+}
+
 bool URpgInventoryAddressSlotWidget::ExecuteAddressContextAction(
 	ERpgInventoryContextAction Action,
 	FRpgInventoryItemId ExpectedItemId,
@@ -612,16 +677,9 @@ bool URpgInventoryAddressSlotWidget::ConfirmAddressSplit(FRpgInventoryItemId Exp
 
 bool URpgInventoryAddressSlotWidget::RequestAddressContextMenu(FVector2D ScreenPosition)
 {
-	URpgInventoryItemInstance* Item = SlotViewModel ? SlotViewModel->GetItemInstance() : nullptr;
-	const TArray<ERpgInventoryContextAction> Actions = GetAddressContextActions();
-	if (!Item || Actions.IsEmpty())
-	{
-		return false;
-	}
 	return InventoryPresentationHost &&
 		InventoryPresentationHost->OpenInventoryContextMenu(
 			this,
-			Actions,
 			ScreenPosition);
 }
 

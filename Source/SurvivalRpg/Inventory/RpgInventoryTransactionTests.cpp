@@ -10,6 +10,7 @@
 #include "RpgInventoryContainerActor.h"
 #include "RpgDroppedInventoryActor.h"
 #include "RpgInventoryFragment_ItemTraits.h"
+#include "RpgInventoryItemCapabilities.h"
 #include "RpgInventoryItemDefinition.h"
 #include "RpgInventoryItemInstance.h"
 #include "RpgInventoryItemUseContext.h"
@@ -518,6 +519,250 @@ namespace RpgInventoryTransactionTests
 		}
 		return true;
 	}
+}
+
+IMPLEMENT_SIMPLE_AUTOMATION_TEST(
+	FRpgInventoryItemCapabilitiesTest,
+	"SurvivalRpg.Inventory.ItemCapabilities.DefinitionSemanticsAndUseParity",
+	EAutomationTestFlags::EditorContext |
+		EAutomationTestFlags::EngineFilter)
+
+bool FRpgInventoryItemCapabilitiesTest::RunTest(
+	const FString& Parameters)
+{
+	using namespace RpgInventoryTransactionTests;
+	FScopedInventoryWorld TestWorld;
+	if (!InitializeTest(*this, TestWorld))
+	{
+		return false;
+	}
+
+	URpgInventoryManagerComponent* PlayerInventory =
+		TestWorld.CreateInventory(TEXT("CapabilityPlayerInventory"));
+	URpgInventoryManagerComponent* ExternalInventory =
+		TestWorld.CreateInventory(TEXT("CapabilityExternalInventory"));
+	if (!TestNotNull(
+			TEXT("The capability player inventory exists"),
+			PlayerInventory) ||
+		!TestNotNull(
+			TEXT("The capability external inventory exists"),
+			ExternalInventory))
+	{
+		return false;
+	}
+
+	const FRpgInventoryContainerHandle Root = MakeStorageHandle();
+	URpgInventoryItemInstance* NoTraitsItem =
+		PlayerInventory->AddItemDefinitionToPlacement(
+			URpgInventoryAutomationTestNoTraitsItemDefinition::
+				StaticClass(),
+			1,
+			MakePlacement(Root, 0, 0));
+	URpgInventoryItemInstance* UsableItem =
+		PlayerInventory->AddItemDefinitionToPlacement(
+			URpgInventoryAutomationTestUsableItemDefinition::
+				StaticClass(),
+			2,
+			MakePlacement(Root, 1, 0));
+	URpgInventoryItemInstance* MalformedUsableItem =
+		PlayerInventory->AddItemDefinitionToPlacement(
+			URpgInventoryAutomationTestMalformedUsableItemDefinition::
+				StaticClass(),
+			1,
+			MakePlacement(Root, 2, 0));
+	URpgInventoryItemInstance* FixedWideItem =
+		PlayerInventory->AddItemDefinitionToPlacement(
+			URpgInventoryAutomationTestFixedWideItemDefinition::
+				StaticClass(),
+			1,
+			MakePlacement(Root, 3, 0));
+	URpgInventoryItemInstance* BagItem =
+		PlayerInventory->AddItemDefinitionToPlacement(
+			URpgInventoryAutomationTestGearNameCollisionBagItemDefinition::
+				StaticClass(),
+			1,
+			MakePlacement(Root, 5, 0));
+	URpgInventoryItemInstance* NoDropItem =
+		PlayerInventory->AddItemDefinitionToPlacement(
+			URpgInventoryAutomationTestNoDropItemDefinition::
+				StaticClass(),
+			1,
+			MakePlacement(Root, 6, 0));
+	URpgInventoryItemInstance* HybridItem =
+		PlayerInventory->AddItemDefinitionToPlacement(
+			URpgInventoryAutomationTestHybridWeaponItemDefinition::
+				StaticClass(),
+			1,
+			MakePlacement(Root, 7, 0));
+	if (!TestNotNull(
+			TEXT("The no-traits capability fixture exists"),
+			NoTraitsItem) ||
+		!TestNotNull(
+			TEXT("The usable capability fixture exists"),
+			UsableItem) ||
+		!TestNotNull(
+			TEXT("The malformed usable capability fixture exists"),
+			MalformedUsableItem) ||
+		!TestNotNull(
+			TEXT("The fixed-orientation capability fixture exists"),
+			FixedWideItem) ||
+		!TestNotNull(
+			TEXT("The item-container capability fixture exists"),
+			BagItem) ||
+		!TestNotNull(
+			TEXT("The no-drop capability fixture exists"),
+			NoDropItem) ||
+		!TestNotNull(
+			TEXT("The hybrid capability fixture exists"),
+			HybridItem))
+	{
+		return false;
+	}
+
+	TestEqual(
+		TEXT("Missing ItemTraits preserves the historical direct-drop fallback"),
+		FRpgInventoryItemCapabilities::ResolveManualDropPolicy(
+			NoTraitsItem),
+		ERpgInventoryManualDropPolicy::Direct);
+	TestEqual(
+		TEXT("An explicit disabled manual-drop policy remains disabled"),
+		FRpgInventoryItemCapabilities::ResolveManualDropPolicy(
+			NoDropItem),
+		ERpgInventoryManualDropPolicy::Disabled);
+	TestEqual(
+		TEXT("A default weapon policy still resolves to confirmation"),
+		FRpgInventoryItemCapabilities::ResolveManualDropPolicy(
+			HybridItem),
+		ERpgInventoryManualDropPolicy::Confirm);
+
+	TestFalse(
+		TEXT("A normal spatial item does not invent an item-container contract"),
+		FRpgInventoryItemCapabilities::HasItemContainerContract(
+			NoTraitsItem));
+	TestTrue(
+		TEXT("A non-equippable portable container retains its valid grid capability"),
+		FRpgInventoryItemCapabilities::HasItemContainerContract(
+			BagItem));
+
+	const FRpgInventorySpatialCapability FixedSpatial =
+		FRpgInventoryItemCapabilities::ResolveSpatial(FixedWideItem);
+	TestTrue(
+		TEXT("The fixed-orientation item exposes a valid spatial contract"),
+		FixedSpatial.IsValid());
+	TestEqual(
+		TEXT("The spatial capability preserves the unrotated width"),
+		FixedSpatial.Footprint.Width,
+		2);
+	TestEqual(
+		TEXT("The spatial capability preserves the unrotated height"),
+		FixedSpatial.Footprint.Height,
+		1);
+	TestFalse(
+		TEXT("The fixed-orientation item does not advertise rotation"),
+		FixedSpatial.bAllowRotation);
+
+	const FRpgInventoryUseCapabilityEvaluation PlayerUse =
+		FRpgInventoryItemCapabilities::EvaluateUse(
+			UsableItem,
+			PlayerInventory,
+			PlayerInventory,
+			2,
+			1);
+	TestTrue(
+		TEXT("A configured owned usable item is locally available"),
+		PlayerUse.Result ==
+			ERpgInventoryUseCapabilityResult::Available);
+	TestEqual(
+		TEXT("The shared use contract resolves the exact consume count"),
+		PlayerUse.RequiredConsumeCount,
+		1);
+	TestNotNull(
+		TEXT("Available use retains its immutable execution contract"),
+		PlayerUse.UseContract);
+
+	const FRpgInventoryUseCapabilityEvaluation ExternalUse =
+		FRpgInventoryItemCapabilities::EvaluateUse(
+			UsableItem,
+			ExternalInventory,
+			PlayerInventory,
+			2,
+			1);
+	TestTrue(
+		TEXT("OnlyFromPlayerInventory uses the same wrong-inventory result as authority"),
+		ExternalUse.Result ==
+			ERpgInventoryUseCapabilityResult::WrongInventory);
+
+	const FRpgInventoryUseCapabilityEvaluation InsufficientUse =
+		FRpgInventoryItemCapabilities::EvaluateUse(
+			UsableItem,
+			PlayerInventory,
+			PlayerInventory,
+			2,
+			3);
+	TestTrue(
+		TEXT("An oversized use request reports insufficient represented quantity"),
+		InsufficientUse.Result ==
+			ERpgInventoryUseCapabilityResult::InsufficientQuantity);
+	TestEqual(
+		TEXT("Insufficient use retains the exact required consume count"),
+		InsufficientUse.RequiredConsumeCount,
+		3);
+
+	const FRpgInventoryUseCapabilityEvaluation InvalidUse =
+		FRpgInventoryItemCapabilities::EvaluateUse(
+			UsableItem,
+			PlayerInventory,
+			PlayerInventory,
+			2,
+			0);
+	TestTrue(
+		TEXT("A non-positive use count remains an invalid request"),
+		InvalidUse.Result ==
+			ERpgInventoryUseCapabilityResult::InvalidRequest);
+
+	TestTrue(
+		TEXT("A zero-cost usable item cannot amplify multiple activations in one request"),
+		FRpgInventoryItemCapabilities::EvaluateUse(
+			HybridItem,
+			PlayerInventory,
+			PlayerInventory,
+			1,
+			2)
+			.Result ==
+			ERpgInventoryUseCapabilityResult::InvalidRequest);
+
+	TestTrue(
+		TEXT("A malformed UsableItem remains recognizable for legacy binding semantics"),
+		FRpgInventoryItemCapabilities::HasUsableContract(
+			MalformedUsableItem));
+	TestTrue(
+		TEXT("A malformed UsableItem without an ability fails closed for execution"),
+		FRpgInventoryItemCapabilities::EvaluateUse(
+			MalformedUsableItem,
+			PlayerInventory,
+			PlayerInventory,
+			1,
+			1)
+			.Result ==
+			ERpgInventoryUseCapabilityResult::NotConfigured);
+
+	TestTrue(
+		TEXT("The default hybrid preference keeps Use when a usable contract is present"),
+		FRpgInventoryItemCapabilities::ShouldUseAsPrimaryAction(
+			UsableItem,
+			true));
+	TestFalse(
+		TEXT("An authored EquipAndActivate hybrid preference is preserved"),
+		FRpgInventoryItemCapabilities::ShouldUseAsPrimaryAction(
+			HybridItem,
+			true));
+	TestTrue(
+		TEXT("Without an equipment destination every primary action still falls back to Use"),
+		FRpgInventoryItemCapabilities::ShouldUseAsPrimaryAction(
+			HybridItem,
+			false));
+
+	return true;
 }
 
 IMPLEMENT_SIMPLE_AUTOMATION_TEST(

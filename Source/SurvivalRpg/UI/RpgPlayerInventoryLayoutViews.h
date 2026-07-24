@@ -5,6 +5,8 @@
 #include "Blueprint/UserWidget.h"
 #include "SurvivalRpg/Inventory/RpgInventoryDragDrop.h"
 #include "SurvivalRpg/Inventory/RpgInventorySpatialTypes.h"
+#include "SurvivalRpg/UI/RpgInventoryContextActionSource.h"
+#include "SurvivalRpg/UI/RpgInventoryScreenPresentationContext.h"
 
 #include "RpgPlayerInventoryLayoutViews.generated.h"
 
@@ -419,7 +421,9 @@ private:
  * It supports both player layout groups and storage inventory panels without using TileView/ListView for spatial data.
  */
 UCLASS(BlueprintType, Blueprintable)
-class SURVIVALRPG_API URpgInventorySpatialGridWidget : public UUserWidget
+class SURVIVALRPG_API URpgInventorySpatialGridWidget
+	: public UUserWidget
+	, public IRpgInventoryContextActionSource
 {
 	GENERATED_BODY()
 
@@ -545,6 +549,15 @@ public:
 	/** Internal zero-based 0..7 Quick Access index matching the selected Carry role or consumable definition. */
 	UFUNCTION(BlueprintPure, Category = "Inventory|Spatial Grid|Actions")
 	int32 GetSelectedQuickAccessSlotIndex() const;
+
+	//~IRpgInventoryContextActionSource interface
+	virtual bool QueryInventoryContextActions(
+		FRpgInventoryContextActionSnapshot& OutSnapshot) const override;
+	virtual bool ExecuteInventoryContextAction(
+		const FRpgInventoryContextActionSnapshot& ExpectedSnapshot,
+		ERpgInventoryContextAction Action,
+		int32 QuickAccessSlotIndex = INDEX_NONE) override;
+	//~End of IRpgInventoryContextActionSource interface
 
 	/** Shortcut helper for use/equip on the item under the cursor. */
 	UFUNCTION(BlueprintCallable, Category = "Inventory|Spatial Grid|Actions")
@@ -858,6 +871,18 @@ public:
 
 	/** Exact manual MVVM source name authored by the canonical spatial slot-group widget. */
 	static const FName SlotGroupViewModelSourceName;
+
+	/**
+	 * Atomically composes the group MVVM source, spatial grid, coordinator, navigator, and screen presentation host.
+	 * Static host geometry remains designer-authored; this method binds only transient read/interaction state.
+	 */
+	void BindInventoryPresentation(
+		URpgInventorySlotGroupViewModel* InGroupViewModel,
+		const FRpgInventoryScreenPresentationContext& InContext,
+		FName InPanelIdPrefix);
+
+	/** Releases the group MVVM source and complete spatial presentation context for CommonUI pooling. */
+	void ReleaseInventoryPresentation();
 
 	/** Assigns the screen-local coordinator and forwards it to the spatial grid. */
 	UFUNCTION(BlueprintCallable, Category = "Inventory|Slot Group")
