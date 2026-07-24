@@ -3156,6 +3156,94 @@ Verifizierter Phase-6L2E2-Zwischenstand vom 2026-07-24:
   diesen mechanischen Schnitt zusammen; eine interne Zerlegung erfolgt nicht
   nebenbei.
 
+Verifizierter Phase-6L2E3-Zwischenstand vom 2026-07-24:
+
+- Der vollständige Cross-Inventory-Commit ist jetzt physisch aus der
+  Manager-Hauptdatei nach `RpgInventoryManagerTransactions.cpp` verschoben.
+  `ExecuteCrossInventoryTransfer` blieb dabei als geschlossene Funktion mit
+  1.051 Definitionszeilen erhalten; Prepare-Strukturen, beidseitige Guards,
+  Revalidation, No-fail-Commitregion und Notification-Reihenfolge wurden
+  nicht nebenbei zerlegt.
+- Gegen den vorherigen Stand ist die Funktion token-identisch bis auf genau
+  fünf beabsichtigte, Unity-sichere Helper-Renames für Stackgröße,
+  Unset-Placement, Placement-Gleichheit, Tiefenüberlauf und
+  Runtime-State-Gleichheit. Der neue
+  `AreTransactionsInventoryRuntimeStatesExactlyEqual`-Helper entspricht
+  semantisch exakt dem vorherigen Core-Helper und liegt gemeinsam mit den
+  bereits vorhandenen Gegenstücken eindeutig in
+  `RpgInventoryManagerTransactionsPrivate`.
+- Der Core-TU benötigt die vier Cross-spezifischen Helper
+  `IsCompletelyUnsetPlacement`, `ArePlacementSnapshotsExactlyEqual`,
+  `IsItemOwnedHandleDepthOverflow` und
+  `AreInventoryRuntimeStatesExactlyEqual` nicht mehr. Ebenfalls vollständig
+  nach Transactions verlagert beziehungsweise dort bereits vorhanden sind
+  die direkten Abhängigkeiten `Templates/Greater.h` und
+  `UObject/StrongObjectPtr.h`.
+- `RpgInventoryFragment_ItemContainer.h` muss dagegen bewusst in beiden TUs
+  eingebunden bleiben. Transactions benötigt den Fragmenttyp für Consume und
+  Cross-Transfer; Core konstruiert weiterhin eine vollständige
+  `FRpgInventoryItemContainerDefinition` in den verbleibenden
+  FRpgInventoryList-Regeln. Der adaptive Build hat diese echte
+  Include-Grenze sichtbar gemacht und damit die zunächst angenommene
+  Core-Entfernung als falsch widerlegt.
+- Die Architekturgrenze bleibt unverändert:
+  `URpgInventoryManagerComponent` besitzt weiterhin allein InventoryList,
+  Revision, ReplicationPolicy, Replay-Cache, Mutation-Epoch,
+  Cross-Reentrancy-Flag und Subobject-Lifecycle. Der verschobene Commit
+  arbeitet weiterhin direkt auf derselben autoritativen Component-Instanz;
+  es entstand weder ein zweiter Manager noch ein neues UObject, Subsystem
+  oder replizierter State-Owner.
+- Der vollständige Paritäts- und Correctness-Audit blieb grün. Beide Owner
+  müssen Authority besitzen und derselben World angehören; der Replay-
+  Fingerprint bindet Request, konkretes Weak-Target und Partial-Policy.
+  Beide Inventories bleiben bis nach dem Cache und allen Notifications
+  geguardet. Source-/Target-Revision, Mutation-Epoch, Projected-Graph-
+  Revalidation, FastArray-Dirtiness, Subobject-Abmeldung/-Registrierung sowie
+  die tiefste-zuerst Source- und flachste-zuerst Target-Benachrichtigung
+  entsprechen exakt dem vorherigen Verhalten.
+- Der erste adaptive UE-5.8-Build schlug nachvollziehbar fehl, weil
+  `RpgInventoryFragment_ItemContainer.h` zunächst irrtümlich aus Core
+  entfernt worden war und dort der vollständige
+  `FRpgInventoryItemContainerDefinition`-Typ fehlte. Transactions hatte in
+  diesem Lauf bereits eigenständig erfolgreich kompiliert. Nach
+  Wiederherstellung des notwendigen Includes endete der finale adaptive Build
+  mit 4 von 4 Actions und `Result: Succeeded`.
+- Der echte `-ForceUnity -DisableAdaptiveUnity`-Build endete mit 5 von 5
+  Actions und `Result: Succeeded`. Der gezielte Filter
+  `SurvivalRpg.Inventory.TransferDelta` meldete 5 von 5 und der vollständige
+  Filter `SurvivalRpg.Inventory` 154 von 154 Automationtests erfolgreich.
+- Die Manager-Hauptimplementierung umfasst jetzt 1.893 statt ursprünglich
+  7.510 Zeilen. `RpgInventoryManagerTransactions.cpp` umfasst 2.385 und
+  `RpgInventoryManagerRulesPlanner.cpp` weiterhin 2.891 Zeilen. Öffentliche
+  API, Header, UHT/Reflection, Blueprint-/MVVM-Verträge und Editor-Assets
+  blieben unverändert; es sind keine CoreRedirects, Resaves oder manuellen
+  Editor-Anpassungen nötig.
+- Der mechanische Schnitt behebt bewusst keine bereits vorhandene
+  Cross-Inventory-Schuld. Fragment-Hooks können weiterhin externe
+  Seiteneffekte oder Target-Lifetime-Änderungen auslösen, ohne dass
+  Target-Validity, Authority und Same-World nach den Hooks vollständig neu
+  geprüft werden. Zwei authority-fähige Owner ohne World bestehen weiterhin
+  den bloßen Null-World-Gleichheitscheck; ein direkt mit Null-Target
+  aufgerufener Legacy-Kernel liefert wegen der Prüf-Reihenfolge
+  `AuthorityRequired`, während die typed Fassade `InvalidRequest` liefert.
+- Ebenfalls offen bleiben die Wiederverwendung einer RequestId nach
+  verschwundenem Weak-Target, die getrennt gepflegten 64er-Grenzen des
+  gemeinsamen Replay-Caches, ein echter Netzwerk-PIE-Nachweis für
+  FastArray-Transport, OwnerOnly versus ActorRelevant und Late Join sowie
+  mögliche registrierte Subobject-Condition-Drift, wenn
+  `SetReplicationPolicy` nach begonnenem Replication-Lifecycle geändert wird.
+  Keine dieser Schulden wurde durch die physische Verschiebung als behoben
+  markiert.
+- Der Manager-Checklistenpunkt bleibt offen, bis Storage, Persistence und die
+  verbleibende Fassade abschließend getrennt und gemeinsam verifiziert sind.
+  Phase 6 bleibt bei 20 von 22 Punkten (90,9 %), der Gesamtplan bei 86 von
+  97 Punkten (88,7 %), 11 Punkte sind offen.
+- Nächster Manager-Schnitt: Storage-, Persistence- und Facade-Verantwortung
+  der verbleibenden Hauptdatei prüfen und physisch auf die bereits
+  etablierten Domänengrenzen reduzieren. Die replizierte
+  `URpgInventoryManagerComponent` bleibt dabei weiterhin der einzige
+  öffentliche und autoritative Einstieg.
+
 ## Phase 7 – Legacy endgültig entfernen
 
 Status: **In Arbeit**
