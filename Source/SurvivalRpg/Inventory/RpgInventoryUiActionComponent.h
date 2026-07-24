@@ -12,6 +12,7 @@ class ARpgBaseCampActor;
 class ARpgBaseConstructionSiteActor;
 class ARpgDroppedInventoryActor;
 class APlayerController;
+class FRpgInventoryUiActionDomainHandler;
 class URpgAbilitySystemComponent;
 class URpgEquipmentLoadoutComponent;
 class URpgBaseBuildableDefinition;
@@ -731,6 +732,8 @@ public:
 	bool CanAccessInventory(URpgInventoryManagerComponent* Inventory) const;
 
 private:
+	friend class FRpgInventoryUiActionDomainHandler;
+
 	URpgInventoryManagerComponent* FindPlayerInventory() const;
 	URpgEquipmentLoadoutComponent* FindEquipmentLoadout() const;
 	URpgPlayerInventoryLayoutComponent* FindPlayerInventoryLayout() const;
@@ -750,13 +753,6 @@ private:
 		TArray<FRpgInventoryContainerHandle>& OutTargets) const;
 	bool FindFirstEmptyInventoryPlacement(URpgInventoryManagerComponent* Inventory, TSubclassOf<URpgInventoryItemDefinition> ItemDefinition, FRpgInventoryGridPlacement& OutPlacement) const;
 	bool CanAccessBaseStorageStation(const URpgBaseStorageStationComponent* Station) const;
-	bool TryDepositMaterialStackToBase(
-		URpgInventoryManagerComponent* Inventory,
-		URpgBaseStorageComponent* BaseStorage,
-		FRpgInventoryItemId ItemId,
-		TSubclassOf<URpgInventoryItemDefinition> ItemDefinition,
-		int32 AvailableCount,
-		int32 CountToStore) const;
 	bool TryBuildCurrentEquipmentIntent(
 		URpgInventoryManagerComponent* Inventory,
 		URpgInventoryItemInstance* Item,
