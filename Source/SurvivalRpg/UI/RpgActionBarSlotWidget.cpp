@@ -3,6 +3,7 @@
 #include "Blueprint/DragDropOperation.h"
 #include "MVVMSubsystem.h"
 #include "SurvivalRpg/Inventory/RpgInventoryDragDrop.h"
+#include "SurvivalRpg/Inventory/RpgInventoryInteractionSession.h"
 #include "SurvivalRpg/Mvvm/Inventory/RpgActionBarViewModels.h"
 #include "View/MVVMView.h"
 #include "View/MVVMViewClass.h"
@@ -23,6 +24,11 @@ URpgActionBarSlotWidget::URpgActionBarSlotWidget(const FObjectInitializer& Objec
 
 void URpgActionBarSlotWidget::SetActionBarSlotViewModel(URpgActionBarSlotViewModel* InSlotViewModel)
 {
+	if (InSlotViewModel)
+	{
+		bActionBarSlotStateReleased = false;
+	}
+
 	if (SlotViewModel)
 	{
 		SlotViewModel->OnSlotChanged.RemoveDynamic(this, &ThisClass::HandleSlotViewModelChanged);
@@ -35,12 +41,16 @@ void URpgActionBarSlotWidget::SetActionBarSlotViewModel(URpgActionBarSlotViewMod
 	}
 
 	InjectActionBarSlotViewModelIntoMvvm();
-	BP_OnActionBarSlotViewModelSet(SlotViewModel);
 	RefreshDragDropVisualState();
 }
 
 void URpgActionBarSlotWidget::SetDragDropCoordinator(URpgInventoryDragDropCoordinator* InCoordinator)
 {
+	if (InCoordinator)
+	{
+		bActionBarSlotStateReleased = false;
+	}
+
 	if (DragDropCoordinator)
 	{
 		DragDropCoordinator->OnHeldPayloadChanged.RemoveDynamic(this, &ThisClass::HandleHeldPayloadChanged);
@@ -100,8 +110,10 @@ bool URpgActionBarSlotWidget::PreviewPayloadDrop(const FRpgInventoryDragPayload&
 		return false;
 	}
 
-	const bool bCanDrop = DragDropCoordinator->UpdateInteractionPreview(Payload, MakeDropTarget());
+	const FRpgInventoryDropTarget PreviewTarget = MakeDropTarget();
+	const bool bCanDrop = DragDropCoordinator->UpdateInteractionPreview(Payload, PreviewTarget);
 	bHasExternalPreviewState = true;
+	ExternalPreviewActionBarSlotIndex = PreviewTarget.ActionBarSlotIndex;
 	ExternalPreviewState = bCanDrop
 		? ERpgInventorySlotDragVisualState::ValidTarget
 		: ERpgInventorySlotDragVisualState::InvalidTarget;
@@ -123,6 +135,7 @@ void URpgActionBarSlotWidget::ClearExternalPreviewPayload()
 	}
 
 	bHasExternalPreviewState = false;
+	ExternalPreviewActionBarSlotIndex = INDEX_NONE;
 	ExternalPreviewState = ERpgInventorySlotDragVisualState::Normal;
 	RefreshDragDropVisualState();
 }
@@ -133,32 +146,70 @@ void URpgActionBarSlotWidget::NativeOnListItemObjectSet(UObject* ListItemObject)
 	SetActionBarSlotViewModel(Cast<URpgActionBarSlotViewModel>(ListItemObject));
 }
 
+void URpgActionBarSlotWidget::NativeDestruct()
+{
+	ReleaseActionBarSlotState();
+	Super::NativeDestruct();
+}
+
 void URpgActionBarSlotWidget::NativeOnEntryReleased()
 {
 	IUserListEntry::NativeOnEntryReleased();
+	ReleaseActionBarSlotState();
+}
+
+void URpgActionBarSlotWidget::ReleaseActionBarSlotState()
+{
+	if (bActionBarSlotStateReleased)
+	{
+		return;
+	}
+	bActionBarSlotStateReleased = true;
 	StopAllAnimations();
 
-	if (SlotViewModel)
+	URpgInventoryDragDropCoordinator* ReleasedCoordinator = DragDropCoordinator;
+	URpgActionBarSlotViewModel* ReleasedViewModel = SlotViewModel;
+	bool bOwnsCurrentPreviewTarget = false;
+	if (bHasExternalPreviewState && ReleasedCoordinator &&
+		ExternalPreviewActionBarSlotIndex != INDEX_NONE)
 	{
-		SlotViewModel->OnSlotChanged.RemoveDynamic(this, &ThisClass::HandleSlotViewModelChanged);
+		if (const URpgInventoryInteractionSession* Session = ReleasedCoordinator->GetInteractionSession())
+		{
+			const FRpgInventoryDropTarget& Target = Session->GetTarget();
+			bOwnsCurrentPreviewTarget =
+				Target.TargetType == ERpgInventoryDropTargetType::ActionBarSlot &&
+				Target.ActionBarSlotIndex == ExternalPreviewActionBarSlotIndex;
+		}
 	}
-	SlotViewModel = nullptr;
-	InjectActionBarSlotViewModelIntoMvvm();
 
+	if (ReleasedViewModel)
+	{
+		ReleasedViewModel->OnSlotChanged.RemoveDynamic(this, &ThisClass::HandleSlotViewModelChanged);
+	}
+	if (ReleasedCoordinator)
+	{
+		ReleasedCoordinator->OnHeldPayloadChanged.RemoveDynamic(this, &ThisClass::HandleHeldPayloadChanged);
+	}
+
+	SlotViewModel = nullptr;
+	DragDropCoordinator = nullptr;
+	InjectActionBarSlotViewModelIntoMvvm();
 	bSlotSelected = false;
 	bActionBarPanelActive = true;
 	bHasExternalPreviewState = false;
 	ExternalPreviewState = ERpgInventorySlotDragVisualState::Normal;
+	ExternalPreviewActionBarSlotIndex = INDEX_NONE;
+	CurrentDragDropVisualState = ERpgInventorySlotDragVisualState::Normal;
 
-	if (DragDropCoordinator)
+	// This leaf may clear only the exact logical target it published. Another actionbar slot may already own
+	// the shared screen session, and a pending server request remains intentionally session-owned.
+	if (bOwnsCurrentPreviewTarget && ReleasedCoordinator)
 	{
-		DragDropCoordinator->OnHeldPayloadChanged.RemoveDynamic(this, &ThisClass::HandleHeldPayloadChanged);
+		ReleasedCoordinator->ClearInteractionPreview();
 	}
-	DragDropCoordinator = nullptr;
 
-	BP_OnActionBarSlotViewModelSet(nullptr);
 	BP_OnActionBarSlotSelectionChanged(false);
-	RefreshDragDropVisualState();
+	BP_OnActionBarSlotDragDropStateChanged(ERpgInventorySlotDragVisualState::Normal);
 	BP_OnActionBarSlotReleased();
 }
 
@@ -221,7 +272,6 @@ void URpgActionBarSlotWidget::HandleSlotViewModelChanged(URpgActionBarSlotViewMo
 {
 	if (ChangedSlotViewModel == SlotViewModel)
 	{
-		BP_OnActionBarSlotViewModelSet(SlotViewModel);
 		RefreshDragDropVisualState();
 	}
 }

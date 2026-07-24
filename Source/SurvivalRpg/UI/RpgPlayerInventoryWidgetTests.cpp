@@ -1161,8 +1161,20 @@ bool FRpgActionBarSlotEntryPoolingTest::RunTest(const FString& Parameters)
 		NewObject<URpgActionBarSlotViewModel>(Widget);
 	URpgActionBarSlotViewModel* SecondViewModel =
 		NewObject<URpgActionBarSlotViewModel>(Widget);
+	const FRpgActionBarSlot EmptyActionBarSlot;
+	FirstViewModel->InitializeSlot(2, EmptyActionBarSlot, nullptr, 0);
+	SecondViewModel->InitializeSlot(3, EmptyActionBarSlot, nullptr, 0);
 	URpgInventoryDragDropCoordinator* Coordinator =
-		NewObject<URpgInventoryDragDropCoordinator>(Widget);
+		URpgInventoryDragDropCoordinator::CreateInventoryDragDropCoordinator(
+			Widget,
+			nullptr);
+	if (!TestNotNull(TEXT("Actionbar test coordinator initializes"), Coordinator) ||
+		!TestNotNull(
+			TEXT("Actionbar test interaction session initializes"),
+			Coordinator ? Coordinator->GetInteractionSession() : nullptr))
+	{
+		return false;
+	}
 
 	Widget->SetActionBarSlotViewModel(FirstViewModel);
 	Widget->SetDragDropCoordinator(Coordinator);
@@ -1204,16 +1216,71 @@ bool FRpgActionBarSlotEntryPoolingTest::RunTest(const FString& Parameters)
 			URpgActionBarSlotWidget::ActionBarSlotViewModelSourceName).GetObject(),
 		static_cast<UObject*>(SecondViewModel));
 
-	Widget->bHasExternalPreviewState = true;
-	Widget->ExternalPreviewState =
-		ERpgInventorySlotDragVisualState::InvalidTarget;
-	Widget->RefreshDragDropVisualState();
+	FRpgInventoryDragPayload PreviewPayload;
+	PreviewPayload.SourceType = ERpgInventoryDragSourceType::EquipmentSlot;
+	PreviewPayload.EquipmentSlot = ERpgEquipmentSlot::Head;
+	if (!TestTrue(
+			TEXT("Actionbar pooling preview owns canonical item metadata"),
+			RpgInventoryAutomationTestTypes::PopulateCanonicalSpatialItem(
+				PreviewPayload,
+				Widget,
+				URpgInventoryAutomationTestUnitItemDefinition::StaticClass())))
+	{
+		return false;
+	}
+	PopulateExactEquipmentSourceSnapshot(
+		PreviewPayload,
+		Widget,
+		TEXT("ActionBarPoolingEquipmentSource"));
+	URpgInventoryInteractionSession* InteractionSession =
+		Coordinator->GetInteractionSession();
+	Widget->PreviewPayloadDrop(PreviewPayload);
+	TestTrue(
+		TEXT("Actionbar presenter records ownership after publishing a real preview"),
+		Widget->bHasExternalPreviewState);
 	TestEqual(
-		TEXT("Test primes a stale external preview state"),
+		TEXT("Actionbar preview publishes its exact logical target"),
+		InteractionSession->GetTarget().TargetType,
+		ERpgInventoryDropTargetType::ActionBarSlot);
+	TestEqual(
+		TEXT("Actionbar preview publishes VM B's slot index"),
+		InteractionSession->GetTarget().ActionBarSlotIndex,
+		SecondViewModel->GetSlotIndex());
+	TestEqual(
+		TEXT("Actionbar preview without a player-layout context is visibly blocked"),
 		Widget->GetCurrentDragDropVisualState(),
 		ERpgInventorySlotDragVisualState::InvalidTarget);
 
+	URpgActionBarSlotWidget* PeerWidget =
+		CreateWidget<URpgActionBarSlotWidget>(
+			TestWorld.GetTestWorld(),
+			EntryWidgetClass);
+	if (!TestNotNull(TEXT("Peer actionbar presenter initializes"), PeerWidget))
+	{
+		return false;
+	}
+	PeerWidget->SetActionBarSlotViewModel(FirstViewModel);
+	PeerWidget->SetDragDropCoordinator(Coordinator);
+	PeerWidget->PreviewPayloadDrop(PreviewPayload);
+	TestEqual(
+		TEXT("Peer actionbar presenter replaces the shared preview target"),
+		InteractionSession->GetTarget().ActionBarSlotIndex,
+		FirstViewModel->GetSlotIndex());
+
 	IUserListEntry::ReleaseEntry(*Widget);
+	TestEqual(
+		TEXT("Releasing an actionbar presenter preserves another slot's preview"),
+		InteractionSession->GetTarget().TargetType,
+		ERpgInventoryDropTargetType::ActionBarSlot);
+	TestEqual(
+		TEXT("Releasing an actionbar presenter preserves the peer slot index"),
+		InteractionSession->GetTarget().ActionBarSlotIndex,
+		FirstViewModel->GetSlotIndex());
+	IUserListEntry::ReleaseEntry(*PeerWidget);
+	TestEqual(
+		TEXT("Releasing the actionbar presenter that owns the preview clears it"),
+		InteractionSession->GetTarget().TargetType,
+		ERpgInventoryDropTargetType::None);
 	TestNull(
 		TEXT("Released actionbar entry no longer represents a VM"),
 		Widget->GetActionBarSlotViewModel());
@@ -1239,6 +1306,10 @@ bool FRpgActionBarSlotEntryPoolingTest::RunTest(const FString& Parameters)
 		TEXT("Released actionbar entry clears the external preview value"),
 		Widget->ExternalPreviewState,
 		ERpgInventorySlotDragVisualState::Normal);
+	TestEqual(
+		TEXT("Released actionbar entry forgets its published preview slot"),
+		Widget->ExternalPreviewActionBarSlotIndex,
+		INDEX_NONE);
 	TestEqual(
 		TEXT("Released actionbar entry returns to normal drag presentation"),
 		Widget->GetCurrentDragDropVisualState(),
@@ -1268,6 +1339,94 @@ bool FRpgActionBarSlotEntryPoolingTest::RunTest(const FString& Parameters)
 
 	IUserListEntry::ReleaseEntry(*Widget);
 	SlateWidget.Reset();
+	TestNull(
+		TEXT("Destruct after ListView release keeps the actionbar source cleared"),
+		View->GetViewModel(
+			URpgActionBarSlotWidget::ActionBarSlotViewModelSourceName).GetObject());
+	TestEqual(
+		TEXT("Destruct after ListView release does not restore the VM delegate"),
+		CountDelegateBindingsTo(FirstViewModel->OnSlotChanged, Widget),
+		0);
+	TestEqual(
+		TEXT("Destruct after ListView release does not restore the coordinator delegate"),
+		CountDelegateBindingsTo(Coordinator->OnHeldPayloadChanged, Widget),
+		0);
+
+	URpgActionBarSlotWidget* ManuallyPlacedWidget =
+		CreateWidget<URpgActionBarSlotWidget>(
+			TestWorld.GetTestWorld(),
+			EntryWidgetClass);
+	if (!TestNotNull(TEXT("Manually placed actionbar presenter initializes"), ManuallyPlacedWidget))
+	{
+		return false;
+	}
+	TSharedPtr<SWidget> ManuallyPlacedSlateWidget =
+		ManuallyPlacedWidget->TakeWidget();
+	UMVVMView* ManuallyPlacedView =
+		UMVVMSubsystem::GetViewFromUserWidget(ManuallyPlacedWidget);
+	if (!TestTrue(
+			TEXT("Manually placed actionbar presenter constructs its Slate representation"),
+			ManuallyPlacedSlateWidget.IsValid()) ||
+		!TestNotNull(
+			TEXT("Manually placed actionbar presenter owns its runtime MVVM view"),
+			ManuallyPlacedView))
+	{
+		return false;
+	}
+	URpgActionBarSlotViewModel* ManuallyPlacedViewModel =
+		NewObject<URpgActionBarSlotViewModel>(ManuallyPlacedWidget);
+	ManuallyPlacedViewModel->InitializeSlot(4, EmptyActionBarSlot, nullptr, 0);
+	ManuallyPlacedWidget->SetActionBarSlotViewModel(ManuallyPlacedViewModel);
+	ManuallyPlacedWidget->SetDragDropCoordinator(Coordinator);
+	ManuallyPlacedWidget->PreviewPayloadDrop(PreviewPayload);
+	TestEqual(
+		TEXT("Manually placed actionbar presenter publishes its exact preview target"),
+		InteractionSession->GetTarget().ActionBarSlotIndex,
+		ManuallyPlacedViewModel->GetSlotIndex());
+	TestEqual(
+		TEXT("Manual actionbar VM owns exactly one presenter delegate before destruct"),
+		CountDelegateBindingsTo(ManuallyPlacedViewModel->OnSlotChanged, ManuallyPlacedWidget),
+		1);
+	TestEqual(
+		TEXT("Coordinator owns exactly one manual actionbar delegate before destruct"),
+		CountDelegateBindingsTo(Coordinator->OnHeldPayloadChanged, ManuallyPlacedWidget),
+		1);
+
+	ManuallyPlacedSlateWidget.Reset();
+	TestEqual(
+		TEXT("Destruct clears a manually placed actionbar preview"),
+		InteractionSession->GetTarget().TargetType,
+		ERpgInventoryDropTargetType::None);
+	TestNull(
+		TEXT("Destruct clears a manually placed actionbar VM"),
+		ManuallyPlacedWidget->GetActionBarSlotViewModel());
+	TestNull(
+		TEXT("Destruct clears a manually placed actionbar MVVM source"),
+		ManuallyPlacedView->GetViewModel(
+			URpgActionBarSlotWidget::ActionBarSlotViewModelSourceName).GetObject());
+	TestNull(
+		TEXT("Destruct drops a manually placed actionbar coordinator"),
+		ManuallyPlacedWidget->DragDropCoordinator.Get());
+	TestEqual(
+		TEXT("Destruct removes the manual actionbar VM delegate"),
+		CountDelegateBindingsTo(ManuallyPlacedViewModel->OnSlotChanged, ManuallyPlacedWidget),
+		0);
+	TestEqual(
+		TEXT("Destruct removes the manual actionbar coordinator delegate"),
+		CountDelegateBindingsTo(Coordinator->OnHeldPayloadChanged, ManuallyPlacedWidget),
+		0);
+	TestFalse(
+		TEXT("Destruct clears manual external-preview ownership"),
+		ManuallyPlacedWidget->bHasExternalPreviewState);
+	TestEqual(
+		TEXT("Destruct forgets the manual presenter preview slot"),
+		ManuallyPlacedWidget->ExternalPreviewActionBarSlotIndex,
+		INDEX_NONE);
+	TestEqual(
+		TEXT("Destruct restores normal manual actionbar presentation"),
+		ManuallyPlacedWidget->GetCurrentDragDropVisualState(),
+		ERpgInventorySlotDragVisualState::Normal);
+
 	return true;
 }
 

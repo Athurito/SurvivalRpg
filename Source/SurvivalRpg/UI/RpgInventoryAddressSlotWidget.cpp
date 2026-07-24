@@ -64,7 +64,6 @@ void URpgInventoryAddressSlotWidget::SetAddressSlotViewModel(URpgInventoryAddres
 	if (SlotViewModel == InSlotViewModel)
 	{
 		InjectAddressSlotViewModelIntoMvvm();
-		BP_OnAddressSlotViewModelSet(SlotViewModel);
 		RefreshDragDropVisualState();
 		return;
 	}
@@ -81,7 +80,6 @@ void URpgInventoryAddressSlotWidget::SetAddressSlotViewModel(URpgInventoryAddres
 	}
 
 	InjectAddressSlotViewModelIntoMvvm();
-	BP_OnAddressSlotViewModelSet(SlotViewModel);
 	RefreshDragDropVisualState();
 }
 
@@ -244,7 +242,6 @@ void URpgInventoryAddressSlotWidget::ReleaseAddressSlotState()
 	}
 
 	BP_OnAddressSlotSelectionChanged(false);
-	BP_OnAddressSlotViewModelSet(nullptr);
 	BP_OnAddressSlotDragDropStateChanged(ERpgInventorySlotDragVisualState::Normal);
 	BP_OnAddressSlotReleased();
 }
@@ -515,7 +512,6 @@ void URpgInventoryAddressSlotWidget::HandleSlotViewModelChanged(URpgInventoryAdd
 {
 	if (ChangedSlotViewModel == SlotViewModel)
 	{
-		BP_OnAddressSlotViewModelSet(ChangedSlotViewModel);
 		RefreshDragDropVisualState();
 	}
 }

@@ -17,7 +17,7 @@ DECLARE_DYNAMIC_MULTICAST_DELEGATE(FRpgBaseStorageViewModelListChanged);
 /**
  * One resource row projected from the shared base storage pool.
  */
-UCLASS(BlueprintType)
+UCLASS(BlueprintType, meta = (MVVMAllowedContextCreationType = "Manual"))
 class SURVIVALRPG_API URpgBaseResourceEntryViewModel : public UMVVMViewModelBase
 {
 	GENERATED_BODY()

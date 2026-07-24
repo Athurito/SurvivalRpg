@@ -123,10 +123,6 @@ protected:
 	virtual bool NativeOnDragOver(const FGeometry& InGeometry, const FDragDropEvent& InDragDropEvent, UDragDropOperation* InOperation) override;
 	virtual bool NativeOnDrop(const FGeometry& InGeometry, const FDragDropEvent& InDragDropEvent, UDragDropOperation* InOperation) override;
 
-	/** Blueprint presentation hook called when this recycled entry receives a new address slot VM. */
-	UFUNCTION(BlueprintImplementableEvent, Category = "Inventory|Address Slot", meta = (DisplayName = "On Address Slot ViewModel Set"))
-	void BP_OnAddressSlotViewModelSet(URpgInventoryAddressSlotViewModel* NewSlotViewModel);
-
 	/** Blueprint presentation hook called when this entry is released for reuse. */
 	UFUNCTION(BlueprintImplementableEvent, Category = "Inventory|Address Slot", meta = (DisplayName = "On Address Slot Released"))
 	void BP_OnAddressSlotReleased();

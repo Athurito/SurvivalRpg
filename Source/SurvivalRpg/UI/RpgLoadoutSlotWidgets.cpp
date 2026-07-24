@@ -54,7 +54,6 @@ void URpgEquipmentSlotWidget::SetEquipmentSlotViewModel(URpgEquipmentSlotViewMod
 	}
 
 	InjectEquipmentSlotViewModelIntoMvvm();
-	BP_OnEquipmentSlotUpdated(SlotViewModel, GetRepresentedItem(), GetRepresentedItem() != nullptr);
 	RefreshDragDropVisualState();
 }
 
@@ -318,7 +317,6 @@ void URpgEquipmentSlotWidget::ReleaseEquipmentSlotState()
 		ReleasedCoordinator->ClearInteractionPreview();
 	}
 
-	BP_OnEquipmentSlotUpdated(nullptr, nullptr, false);
 	BP_OnEquipmentSlotDragDropStateChanged(ERpgInventorySlotDragVisualState::Normal);
 }
 
@@ -503,7 +501,6 @@ void URpgEquipmentSlotWidget::HandleSlotViewModelChanged(URpgEquipmentSlotViewMo
 {
 	if (ChangedSlotViewModel == SlotViewModel)
 	{
-		BP_OnEquipmentSlotUpdated(SlotViewModel, GetRepresentedItem(), GetRepresentedItem() != nullptr);
 		RefreshDragDropVisualState();
 	}
 }

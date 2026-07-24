@@ -2046,8 +2046,11 @@ Status: **In Arbeit**
 - [x] BaseTerminal auf denselben stabilen Unbind-/Pooling-Vertrag bringen.
 - [x] Crafting auf denselben stabilen Unbind-/Pooling-Vertrag bringen.
 - [x] Weitere gepoolte Screens auf denselben Unbind-/Pooling-Vertrag bringen.
-- [ ] Blueprint-MVVM als einzigen Leaf-Datenbindungsweg verwenden; BP-Events
-      nur für Animation und imperative Präsentation.
+- [x] Bei den deklarativen MVVM-Leaves ActionBar, Address, Gear und
+      BaseResource Blueprint-MVVM als einzigen Datenbindungsweg verwenden;
+      BP-Events nur für Animation und imperative Präsentation. Der
+      Carry-Spezialfall und die Spatial-Item-Legacy-Graphwriter bleiben den
+      ausdrücklich getrennten Folgepunkten zugeordnet.
 - [ ] Den öffentlich generierten Manual-Source-Setter durch einen
       unverletzbaren nativen Getter-/PropertyPath-Vertrag ersetzen.
 - [ ] BlueprintCallable Lifecycle-Mutatoren der Aggregate-VM nach
@@ -2299,6 +2302,71 @@ Verifizierter Phase-6D-Zwischenstand vom 2026-07-24:
 - Nächster Schnitt: Blueprint-MVVM als einzigen Leaf-Datenbindungsweg
   verwenden; Blueprint-Events bleiben Animation und imperativer Präsentation
   vorbehalten.
+
+Verifizierter Phase-6E-Zwischenstand vom 2026-07-24:
+
+- Die vier deklarativen MVVM-Leaf-Verträge `CUI_ActionBarSlotEntry`,
+  `CUI_AddressSlotEntry`, `CUI_GearSlot` und `CUI_BaseResourceEntry` besitzen
+  jetzt jeweils genau einen typisierten nativen Presenter sowie genau eine
+  optionale, manuell gesetzte MVVM-Source. Stabile Itemdaten gelangen nur noch
+  über diese Source in die authored OneWay-to-Destination-Bindings.
+- Die parallelen Datenereignisse `BP_OnActionBarSlotViewModelSet`,
+  `BP_OnAddressSlotViewModelSet` und `BP_OnEquipmentSlotUpdated` samt nativen
+  Aufrufen wurden entfernt. Der noch tatsächlich authorisierte Gear-Graph
+  wurde aus `CUI_GearSlot` entfernt und das Asset kompiliert und gespeichert.
+  Blueprint-Hooks bleiben nur für Release, Auswahl/Fokus, Drag/Drop,
+  Inspektion, Animation und andere imperative Präsentation bestehen.
+- `CUI_BaseResourceEntry` erbt nun von
+  `URpgBaseResourceEntryWidget`. Der native `IUserObjectListEntry`-Presenter
+  übernimmt List-Item-Zuweisung, exakte Source-Injektion, Release und
+  `NativeDestruct`; der frühere Blueprint-Pfad zur Source-Zuweisung ist
+  entfernt. Das Widget ist wie die übrigen datengetriebenen Leaves auch ohne
+  Player-Kontext initialisierbar und räumt seine optionale Source beim Pooling
+  zuverlässig.
+- Der ActionBar-Presenter verwendet für ListView-Release und
+  `NativeDestruct` dieselbe idempotente Release-Grenze. Er entfernt Delegates,
+  VM, Coordinator, MVVM-Source und lokalen Preview-State und löscht aus der
+  gemeinsamen Interaction-Session nur den exakt von ihm veröffentlichten
+  ActionBar-Slot; ein inzwischen aktiver Peer-Slot bleibt erhalten.
+- Der permanente Editor-Vertrag prüft alle authored Ubergraph-, Function-,
+  Macro- und Delegate-Graphs auf parallele Datenwriter. Zusätzlich sichert er
+  pro Leaf die exakten Source-Felder, Destination-Widgets beziehungsweise
+  Destination-Funktionen, Conversion-Funktionen, Binding-Richtung sowie die
+  einzige kanonische Manual-Source ab. Die Runtime-Regressionen prüfen
+  BaseResource-VM-A/B/Release/Rebind und den ActionBar-Pfad mit realem
+  Preview-Target, Peer-Wechsel, Pool-Reuse und Destruct eines manuell
+  platzierten Slots.
+- Gameplay-Autorität, Inventory-Transaktionen, Replikation und Save-Daten
+  wurden nicht verändert. Die UI bleibt eine read-only Projektion der
+  serverautoritativen Lyra-rooted RPG-Systeme.
+- Die beiden betroffenen Widget-Blueprints wurden durch die Migration
+  kompiliert, gespeichert und erfolgreich validiert. Für diesen Schnitt sind
+  deshalb keine manuellen Reparent-, MVVM-Source- oder Event-Graph-Arbeiten im
+  Editor nötig. Als interaktive Sichtprüfung bleiben ActionBar/Gear mit
+  wechselnden Items sowie BaseResource-Listen über wiederholtes
+  Öffnen/Schließen sinnvoll.
+- Bewusste Grenze: `CUI_CarrySlot` bleibt bis zu seinem eigenen Folgepunkt der
+  aktive imperative Address-Spezialfall mit gemischter Beobachtung. Die
+  ungenutzten Spatial-Item-VM-Writer und der wirkungslose Drag-State-Switch
+  bleiben der referenzbasierten Phase-7-Bereinigung zugeordnet; sie werden hier
+  nicht fälschlich als abgeschlossene MVVM-Leaves gewertet.
+- `SurvivalRpgEditor Win64 Development` wurde mit Unreal Engine 5.8 gebaut;
+  der abschließende Build meldete 10 von 10 Actions und
+  `Result: Succeeded`.
+- Die gezielten Regressionen
+  `SurvivalRpg.Inventory.UI.ActionBarSlotEntryPooling`,
+  `SurvivalRpg.Inventory.UI.BaseResourceEntryPooling` und
+  `SurvivalRpg.Inventory.UI.LeafMvvmAssetContracts` meldeten jeweils 1 von 1
+  Test erfolgreich.
+- `SurvivalRpg.Inventory` meldete 137 von 137 Automationtests erfolgreich.
+- `SurvivalRpg.UI` meldete 26 von 26 Automationtests erfolgreich.
+- `CompileAllBlueprints` endete mit Prozesscode 0, 0 Compilerfehlern,
+  16 bekannten Blueprint-Compilerwarnungen und 0 nicht ladbaren Blueprints.
+- Fortschritt Phase 6: 14 von 22 Punkten abgeschlossen (63,6 %).
+- Gesamtfortschritt der erweiterten verbindlichen Checkliste: 80 von 97
+  Punkten abgeschlossen (82,5 %), 17 Punkte offen.
+- Nächster Schnitt: Den öffentlich generierten Manual-Source-Setter durch
+  einen unverletzbaren nativen Getter-/PropertyPath-Vertrag ersetzen.
 
 ## Phase 7 – Legacy endgültig entfernen
 

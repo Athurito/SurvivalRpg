@@ -120,10 +120,6 @@ protected:
 	virtual bool NativeOnDrop(const FGeometry& InGeometry, const FDragDropEvent& InDragDropEvent, UDragDropOperation* InOperation) override;
 	virtual void NativeOnDragLeave(const FDragDropEvent& InDragDropEvent, UDragDropOperation* InOperation) override;
 
-	/** Blueprint presentation hook called whenever the represented equipment slot changes. */
-	UFUNCTION(BlueprintImplementableEvent, Category = "Equipment|Slot", meta = (DisplayName = "On Equipment Slot Updated"))
-	void BP_OnEquipmentSlotUpdated(URpgEquipmentSlotViewModel* NewSlotViewModel, URpgInventoryItemInstance* ItemInstance, bool bHasItem);
-
 	/** Blueprint presentation hook for held-item/drop-target highlights. */
 	UFUNCTION(BlueprintImplementableEvent, Category = "Equipment|Slot", meta = (DisplayName = "On Equipment Slot DragDrop State Changed"))
 	void BP_OnEquipmentSlotDragDropStateChanged(ERpgInventorySlotDragVisualState NewState);
