@@ -1,5 +1,6 @@
 #pragma once
 
+#include "Delegates/Delegate.h"
 #include "GameplayTagContainer.h"
 #include "Subsystems/LocalPlayerSubsystem.h"
 
@@ -55,7 +56,17 @@ protected:
 		FGameplayTag ScreenTag,
 		EAsyncWidgetLayerState State,
 		UCommonActivatableWidget* Widget);
-	void HandleScreenDeactivated(FGameplayTag ScreenTag, UCommonActivatableWidget* Widget);
+	void HandleScreenDeactivated(
+		FGameplayTag ScreenTag,
+		UCommonActivatableWidget* Widget,
+		uint64 CheckoutId);
+	uint64 RegisterScreenDeactivationBinding(
+		FGameplayTag ScreenTag,
+		UCommonActivatableWidget* Widget);
+	void ReleaseScreenDeactivationBinding(uint64 CheckoutId);
+	void ReleaseScreenDeactivationBindings(
+		FGameplayTag ScreenTag,
+		UCommonActivatableWidget* Widget);
 	void ClearPendingScreenState(FGameplayTag ScreenTag);
 
 private:
@@ -64,8 +75,21 @@ private:
 	friend class FRpgUIScreenAsyncCloseLifecycleTest;
 #endif
 
+	struct FScreenDeactivationBinding
+	{
+		FGameplayTag ScreenTag;
+		TWeakObjectPtr<UCommonActivatableWidget> Widget;
+		FDelegateHandle DelegateHandle;
+	};
+
 	UPROPERTY(Transient)
 	TMap<FGameplayTag, TObjectPtr<UCommonActivatableWidget>> ActiveScreens;
+
+	/** Checkout identity prevents an old pooled callback from clearing a newer same-tag screen. */
+	TMap<FGameplayTag, uint64> ActiveScreenCheckoutIds;
+
+	/** Exact delegate ownership; overlapping callbacks are valid during synchronous pool reuse. */
+	TMap<uint64, FScreenDeactivationBinding> ScreenDeactivationBindings;
 
 	UPROPERTY(Transient)
 	TMap<FGameplayTag, TObjectPtr<UObject>> PendingPayloads;
@@ -79,4 +103,7 @@ private:
 	/** Pending pushes canceled because gameplay access disappeared before initialization completed. */
 	UPROPERTY(Transient)
 	TSet<FGameplayTag> CanceledPendingScreenTags;
+
+	uint64 NextScreenCheckoutId = 0;
+	bool bIsDeinitializing = false;
 };

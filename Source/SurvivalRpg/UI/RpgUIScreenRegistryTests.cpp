@@ -485,6 +485,10 @@ bool FRpgUIScreenAsyncCloseLifecycleTest::RunTest(const FString& Parameters)
 	TestFalse(
 		TEXT("Terminal completion removes its initializing widget"),
 		ScreenSubsystem->ActiveScreens.Contains(ScreenTag));
+	TestFalse(
+		TEXT("A canceled never-activated widget releases its router callback"),
+		WidgetDuringInitialize->OnDeactivated().IsBoundToObject(
+			ScreenSubsystem));
 
 	const FGameplayTag StalledScreenTag =
 		RpgGameplayTags::UI_Screen_Boot;
@@ -534,6 +538,167 @@ bool FRpgUIScreenAsyncCloseLifecycleTest::RunTest(const FString& Parameters)
 		TEXT("The incomplete request releases its streamable handle"),
 		ScreenSubsystem->PendingScreenLoads.Contains(
 			StalledScreenTag));
+
+	const FGameplayTag FirstPooledTag =
+		RpgGameplayTags::UI_Screen_Inventory;
+	const FGameplayTag SecondPooledTag =
+		RpgGameplayTags::UI_Screen_Storage;
+	UCommonActivatableWidget* PooledWidget =
+		NewObject<UCommonActivatableWidget>(LocalPlayer);
+	ScreenSubsystem->HandleScreenPushState(
+		FirstPooledTag,
+		EAsyncWidgetLayerState::Initialize,
+		PooledWidget);
+	TestTrue(
+		TEXT("A pooled screen checkout owns one router deactivation callback"),
+		PooledWidget->OnDeactivated().IsBoundToObject(ScreenSubsystem));
+
+	bool bReusedDuringFirstDeactivation = false;
+	bool bObservedOverlappingCheckoutBindings = false;
+	const FDelegateHandle ReuseDuringDeactivationHandle =
+		PooledWidget->OnDeactivated().AddLambda(
+			[&]()
+			{
+				if (bReusedDuringFirstDeactivation)
+				{
+					return;
+				}
+
+				bReusedDuringFirstDeactivation = true;
+				ScreenSubsystem->HandleScreenPushState(
+					SecondPooledTag,
+					EAsyncWidgetLayerState::Initialize,
+					PooledWidget);
+				bObservedOverlappingCheckoutBindings =
+					ScreenSubsystem->ScreenDeactivationBindings.Num() == 2;
+			});
+	PooledWidget->ActivateWidget();
+	PooledWidget->DeactivateWidget();
+	TestTrue(
+		TEXT("The deactivation callback synchronously checks out the same pooled widget"),
+		bReusedDuringFirstDeactivation);
+	TestTrue(
+		TEXT("Reentrant reuse preserves separate old and new checkout callbacks until each completes"),
+		bObservedOverlappingCheckoutBindings);
+	TestFalse(
+		TEXT("The first pooled screen tag is no longer tracked"),
+		ScreenSubsystem->ActiveScreens.Contains(FirstPooledTag));
+	TestTrue(
+		TEXT("The reentrant second checkout remains tracked after the first callback completes"),
+		ScreenSubsystem->ActiveScreens.FindRef(SecondPooledTag) ==
+			PooledWidget);
+	TestTrue(
+		TEXT("The reentrant second checkout retains its own router callback"),
+		PooledWidget->OnDeactivated().IsBoundToObject(ScreenSubsystem));
+
+	PooledWidget->ActivateWidget();
+	PooledWidget->DeactivateWidget();
+	TestFalse(
+		TEXT("The second pooled screen tag is released normally"),
+		ScreenSubsystem->ActiveScreens.Contains(SecondPooledTag));
+	TestFalse(
+		TEXT("The second pooled checkout also releases its router callback"),
+		PooledWidget->OnDeactivated().IsBoundToObject(ScreenSubsystem));
+	PooledWidget->OnDeactivated().Remove(
+		ReuseDuringDeactivationHandle);
+
+	const FGameplayTag ReentrantSameTag =
+		RpgGameplayTags::UI_Screen_BaseTerminal;
+	UCommonActivatableWidget* SameTagPooledWidget =
+		NewObject<UCommonActivatableWidget>(LocalPlayer);
+	ScreenSubsystem->HandleScreenPushState(
+		ReentrantSameTag,
+		EAsyncWidgetLayerState::Initialize,
+		SameTagPooledWidget);
+	bool bReusedForSameTagDuringDeactivation = false;
+	bool bObservedSameTagCheckoutOverlap = false;
+	const FDelegateHandle SameTagReuseHandle =
+		SameTagPooledWidget->OnDeactivated().AddLambda(
+			[&]()
+			{
+				if (bReusedForSameTagDuringDeactivation)
+				{
+					return;
+				}
+
+				bReusedForSameTagDuringDeactivation = true;
+				ScreenSubsystem->HandleScreenPushState(
+					ReentrantSameTag,
+					EAsyncWidgetLayerState::Initialize,
+					SameTagPooledWidget);
+				bObservedSameTagCheckoutOverlap =
+					ScreenSubsystem->ScreenDeactivationBindings.Num() == 2;
+			});
+	SameTagPooledWidget->ActivateWidget();
+	SameTagPooledWidget->DeactivateWidget();
+	TestTrue(
+		TEXT("Same-tag reentrant reuse overlaps two checkout callbacks"),
+		bObservedSameTagCheckoutOverlap);
+	TestTrue(
+		TEXT("An old same-tag callback cannot clear the newer checkout"),
+		ScreenSubsystem->ActiveScreens.FindRef(ReentrantSameTag) ==
+			SameTagPooledWidget);
+	TestTrue(
+		TEXT("The newer same-tag checkout retains its router callback"),
+		SameTagPooledWidget->OnDeactivated().IsBoundToObject(
+			ScreenSubsystem));
+	SameTagPooledWidget->ActivateWidget();
+	SameTagPooledWidget->DeactivateWidget();
+	TestFalse(
+		TEXT("The newer same-tag checkout releases normally"),
+		ScreenSubsystem->ActiveScreens.Contains(ReentrantSameTag));
+	TestFalse(
+		TEXT("Same-tag reuse leaves no router callback behind"),
+		SameTagPooledWidget->OnDeactivated().IsBoundToObject(
+			ScreenSubsystem));
+	SameTagPooledWidget->OnDeactivated().Remove(
+		SameTagReuseHandle);
+
+	UCommonActivatableWidget* TeardownWidget =
+		NewObject<UCommonActivatableWidget>(LocalPlayer);
+	ScreenSubsystem->HandleScreenPushState(
+		RpgGameplayTags::UI_Screen_Loot,
+		EAsyncWidgetLayerState::Initialize,
+		TeardownWidget);
+	TeardownWidget->ActivateWidget();
+	TestTrue(
+		TEXT("The teardown fixture starts activated"),
+		TeardownWidget->IsActivated());
+	TestTrue(
+		TEXT("The teardown fixture owns a router callback"),
+		TeardownWidget->OnDeactivated().IsBoundToObject(ScreenSubsystem));
+
+	ScreenSubsystem->Deinitialize();
+	TestFalse(
+		TEXT("Subsystem teardown deactivates its active screen"),
+		TeardownWidget->IsActivated());
+	TestFalse(
+		TEXT("Subsystem teardown removes its callback from a pool-retained widget"),
+		TeardownWidget->OnDeactivated().IsBoundToObject(ScreenSubsystem));
+
+	UCommonActivatableWidget* LateInitializeWidget =
+		NewObject<UCommonActivatableWidget>(LocalPlayer);
+	ScreenSubsystem->HandleScreenPushState(
+		RpgGameplayTags::UI_Screen_Crafting,
+		EAsyncWidgetLayerState::Initialize,
+		LateInitializeWidget);
+	TestFalse(
+		TEXT("A push initialized during teardown is never tracked"),
+		ScreenSubsystem->ActiveScreens.Contains(
+			RpgGameplayTags::UI_Screen_Crafting));
+	TestFalse(
+		TEXT("A push initialized during teardown never binds a router callback"),
+		LateInitializeWidget->OnDeactivated().IsBoundToObject(
+			ScreenSubsystem));
+
+	LateInitializeWidget->ActivateWidget();
+	ScreenSubsystem->HandleScreenPushState(
+		RpgGameplayTags::UI_Screen_Crafting,
+		EAsyncWidgetLayerState::AfterPush,
+		LateInitializeWidget);
+	TestFalse(
+		TEXT("A late terminal push is deactivated during subsystem teardown"),
+		LateInitializeWidget->IsActivated());
 
 	return true;
 }
