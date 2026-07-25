@@ -1,6 +1,6 @@
 # Inventory Refactor Plan
 
-Stand: 2026-07-24
+Stand: 2026-07-25
 
 Dieses Dokument hält die verbindliche Reihenfolge für die Bereinigung des
 Tarkov-artigen Spatial Inventory fest. Es dient als Fortschrittsliste über
@@ -2067,7 +2067,7 @@ Status: **In Arbeit**
 - [x] `RpgInventoryUiActionComponent` in schmale Domain-Handler aufteilen;
       Controller bleibt RPC-Eigentümer und kann vorübergehend als Fassade
       bestehen.
-- [ ] Manager intern in Storage, Rules/Planner, Transactions und Persistence
+- [x] Manager intern in Storage, Rules/Planner, Transactions und Persistence
       schneiden, ohne die öffentliche Autorität zu duplizieren.
 - [ ] Große UI-Sammeldateien in eine Klasse pro Datei aufteilen.
 
@@ -3243,6 +3243,41 @@ Verifizierter Phase-6L2E3-Zwischenstand vom 2026-07-24:
   etablierten Domänengrenzen reduzieren. Die replizierte
   `URpgInventoryManagerComponent` bleibt dabei weiterhin der einzige
   öffentliche und autoritative Einstieg.
+
+Verifizierter Phase-6L2F-Zwischenstand vom 2026-07-25:
+
+- Der Storage-Schnitt ist jetzt physisch aus der Manager-Hauptdatei nach
+  `RpgInventoryManagerStorage.cpp` verschoben. Der mechanische Block umfasst
+  1.438 Zeilen mit 46 Definitionen von `FRpgInventoryEntry` und
+  `FRpgInventoryList` sowie acht TU-privaten Storage-Helpern.
+- Die Architektur- und Ownership-Grenze bleibt unverändert:
+  `URpgInventoryManagerComponent` ist weiterhin die einzige autoritative und
+  replizierte Inventory-Instanz. Der neue Storage-TU arbeitet auf derselben
+  Component und ist weder eine neue State-Owner-Klasse noch eine neue
+  öffentliche API, ein UObject, Subsystem oder paralleler Manager.
+- Der gemeinsam verwendete Stack-Changed-GameplayTag wird über
+  `RpgInventoryManagerMessageTags.h` deklariert und genau einmal in
+  `RpgInventoryManagerComponent.cpp` definiert. Core und Storage verwenden
+  dadurch denselben Tag, ohne unter Unity eine zweite native
+  Tag-Registrierung zu erzeugen.
+- Die Manager-Hauptimplementierung umfasst jetzt 454 statt ursprünglich
+  7.510 Zeilen. `RpgInventoryManagerStorage.cpp` umfasst 1.465,
+  `RpgInventoryManagerRulesPlanner.cpp` 2.891,
+  `RpgInventoryManagerTransactions.cpp` 2.385 und
+  `RpgInventoryManagerPersistence.cpp` 662 Zeilen.
+- Der adaptive UE-5.8-Build endete mit 7 von 7 Actions erfolgreich. Der echte
+  `-ForceUnity -DisableAdaptiveUnity`-Build endete mit 5 von 5 Actions; beide
+  meldeten `Result: Succeeded`.
+- Der vollständige Filter `SurvivalRpg.Inventory` meldete 154 von 154 und
+  `SurvivalRpg.Save` 2 von 2 Automationtests erfolgreich.
+- Der Manager-Checklistenpunkt ist damit abgeschlossen: Storage,
+  Rules/Planner, Transactions und Persistence besitzen klare physische
+  Implementierungsgrenzen, ohne die öffentliche oder replizierte Autorität zu
+  vervielfachen. Phase 6 steht bei 21 von 22 Punkten (95,5 %), der Gesamtplan
+  bei 87 von 97 Punkten (89,7 %); 10 Punkte sind offen.
+- Nächster Phase-6-Schnitt: die großen UI-Sammeldateien in eine Klasse pro
+  Datei aufteilen und die bestehenden MVVM-, Presenter- und Widget-Verträge
+  dabei unverändert halten.
 
 ## Phase 7 – Legacy endgültig entfernen
 
