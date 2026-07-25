@@ -4,10 +4,8 @@
 
 #include "Misc/AutomationTest.h"
 #include "RpgPlayerInventoryLayoutTypes.h"
-#include "Serialization/Formatters/BinaryArchiveFormatter.h"
 #include "Serialization/MemoryReader.h"
 #include "Serialization/MemoryWriter.h"
-#include "Serialization/StructuredArchive.h"
 #include "UObject/UnrealType.h"
 
 IMPLEMENT_SIMPLE_AUTOMATION_TEST(
@@ -159,74 +157,65 @@ bool FRpgInventorySlotAddressCanonicalIdentityAutomationTest::RunTest(const FStr
 }
 
 IMPLEMENT_SIMPLE_AUTOMATION_TEST(
-	FRpgInventoryGraphPlacementAutomationTest,
-	"SurvivalRpg.Inventory.Graph.PlacementCompatibility",
+	FRpgInventoryGraphPlacementHandleContractAutomationTest,
+	"SurvivalRpg.Inventory.Graph.PlacementHandleContract",
 	EAutomationTestFlags::EditorContext | EAutomationTestFlags::EngineFilter)
 
-bool FRpgInventoryGraphPlacementAutomationTest::RunTest(const FString& Parameters)
+bool FRpgInventoryGraphPlacementHandleContractAutomationTest::RunTest(
+	const FString& Parameters)
 {
-	FRpgInventoryGridPlacement LegacyPlacement;
-	LegacyPlacement.ContainerId_DEPRECATED = TEXT("Pockets");
-	LegacyPlacement.X = 0;
-	LegacyPlacement.Y = 0;
-	LegacyPlacement.Width = 2;
-	LegacyPlacement.Height = 1;
+	const FRpgInventoryContainerHandle PocketsHandle =
+		FRpgInventoryContainerHandle::MakeRoot(TEXT("Pockets"));
+	FRpgInventoryGridPlacement ExplicitRootPlacement;
+	ExplicitRootPlacement.SetContainerHandle(PocketsHandle);
+	ExplicitRootPlacement.X = 0;
+	ExplicitRootPlacement.Y = 0;
+	ExplicitRootPlacement.Width = 2;
+	ExplicitRootPlacement.Height = 1;
 
-	FRpgInventoryGridPlacement ExplicitRootPlacement = LegacyPlacement;
-	ExplicitRootPlacement.SetContainerHandle(FRpgInventoryContainerHandle::MakeRoot(TEXT("Pockets")));
-	TestFalse(TEXT("A deprecated ContainerId-only placement is not runtime-valid"), LegacyPlacement.IsValid());
-	TestFalse(TEXT("Deprecated root-only data does not synthesize a runtime handle"), LegacyPlacement.GetContainerHandle().IsValid());
-	TestFalse(TEXT("A deprecated-only placement cannot overlap canonical runtime state"), LegacyPlacement.Overlaps(ExplicitRootPlacement));
-	TestTrue(TEXT("An explicit root handle produces a valid placement"), ExplicitRootPlacement.IsValid());
-	TestTrue(TEXT("Assigning a canonical handle clears the deprecated shadow"), ExplicitRootPlacement.ContainerId_DEPRECATED.IsNone());
+	TestTrue(
+		TEXT("An explicit root handle produces a valid placement"),
+		ExplicitRootPlacement.IsValid());
+	TestTrue(
+		TEXT("SetContainerHandle stores the exact canonical graph address"),
+		ExplicitRootPlacement.GetContainerHandle() == PocketsHandle);
 
-	FRpgInventoryGridPlacement StaleLegacyShadow = ExplicitRootPlacement;
-	StaleLegacyShadow.ContainerId_DEPRECATED = TEXT("StaleRoot");
-	TestTrue(TEXT("A stale deprecated shadow cannot change canonical placement equality"), StaleLegacyShadow == ExplicitRootPlacement);
-	TestTrue(TEXT("A stale deprecated shadow cannot change canonical overlap"), StaleLegacyShadow.Overlaps(ExplicitRootPlacement));
-
-	const FProperty* LegacyProperty = FindFProperty<FProperty>(
-		FRpgInventoryGridPlacement::StaticStruct(),
-		TEXT("ContainerId"));
-	if (TestNotNull(TEXT("The historical serialized property remains loadable by its original name"), LegacyProperty))
-	{
-		TestTrue(TEXT("The historical property is flagged deprecated"), LegacyProperty->HasAnyPropertyFlags(CPF_Deprecated));
-		TestTrue(TEXT("The historical property remains available to SaveGame migration"), LegacyProperty->HasAnyPropertyFlags(CPF_SaveGame));
-		TestFalse(TEXT("The historical property is no longer editable"), LegacyProperty->HasAnyPropertyFlags(CPF_Edit));
-		TestFalse(TEXT("The historical property is no longer Blueprint-visible"), LegacyProperty->HasAnyPropertyFlags(CPF_BlueprintVisible));
-	}
-
-	FRpgInventoryContainerHandle HistoricalTaggedLayout;
-	HistoricalTaggedLayout.ContainerId = TEXT("HistoricalRoot");
-	TArray<uint8> HistoricalTaggedBytes;
-	{
-		FMemoryWriter Writer(HistoricalTaggedBytes, true);
-		FBinaryArchiveFormatter Formatter(Writer);
-		FStructuredArchive Archive(Formatter);
-		FRpgInventoryContainerHandle::StaticStruct()->SerializeTaggedProperties(
-			Archive.Open(),
-			reinterpret_cast<uint8*>(&HistoricalTaggedLayout),
-			nullptr,
-			nullptr);
-	}
-	FRpgInventoryGridPlacement LoadedHistoricalPlacement;
-	{
-		FMemoryReader Reader(HistoricalTaggedBytes, true);
-		FBinaryArchiveFormatter Formatter(Reader);
-		FStructuredArchive Archive(Formatter);
-		FRpgInventoryGridPlacement::StaticStruct()->SerializeTaggedProperties(
-			Archive.Open(),
-			reinterpret_cast<uint8*>(&LoadedHistoricalPlacement),
-			nullptr,
-			nullptr);
-	}
-	TestEqual(
-		TEXT("A historical tagged ContainerId still loads into the deprecated migration field"),
-		LoadedHistoricalPlacement.ContainerId_DEPRECATED,
-		FName(TEXT("HistoricalRoot")));
+	FRpgInventoryGridPlacement MissingHandlePlacement = ExplicitRootPlacement;
+	MissingHandlePlacement.SetContainerHandle(FRpgInventoryContainerHandle());
 	TestFalse(
-		TEXT("Loading historical tagged data never synthesizes a canonical runtime handle"),
-		LoadedHistoricalPlacement.ContainerHandle.IsValid());
+		TEXT("A placement without a canonical handle is invalid"),
+		MissingHandlePlacement.IsValid());
+	TestFalse(
+		TEXT("A placement without a canonical handle cannot overlap runtime state"),
+		MissingHandlePlacement.Overlaps(ExplicitRootPlacement));
+
+	const FProperty* ContainerHandleProperty = FindFProperty<FProperty>(
+		FRpgInventoryGridPlacement::StaticStruct(),
+		GET_MEMBER_NAME_CHECKED(
+			FRpgInventoryGridPlacement,
+			ContainerHandle));
+	if (TestNotNull(
+		TEXT("ContainerHandle remains the reflected placement address"),
+		ContainerHandleProperty))
+	{
+		TestTrue(
+			TEXT("The canonical placement address remains persisted"),
+			ContainerHandleProperty->HasAnyPropertyFlags(CPF_SaveGame));
+		TestTrue(
+			TEXT("The canonical placement address remains Blueprint-visible"),
+			ContainerHandleProperty->HasAnyPropertyFlags(CPF_BlueprintVisible));
+	}
+
+	TestNull(
+		TEXT("The historical root-only ContainerId placement property is retired"),
+		FindFProperty<FProperty>(
+			FRpgInventoryGridPlacement::StaticStruct(),
+			TEXT("ContainerId")));
+	TestNull(
+		TEXT("No C++-named deprecated placement shadow remains reflected"),
+		FindFProperty<FProperty>(
+			FRpgInventoryGridPlacement::StaticStruct(),
+			TEXT("ContainerId_DEPRECATED")));
 
 	FRpgInventoryGridPlacement RotatedPlacement = ExplicitRootPlacement;
 	RotatedPlacement.bRotated = true;

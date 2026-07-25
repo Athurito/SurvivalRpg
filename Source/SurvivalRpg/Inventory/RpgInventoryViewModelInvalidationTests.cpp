@@ -12,9 +12,9 @@
 #include "SurvivalRpg/GameplayTags/RpgGameplayTags.h"
 #include "SurvivalRpg/Mvvm/Base/RpgBaseStorageViewModels.h"
 #include "SurvivalRpg/Mvvm/Crafting/RpgCraftingViewModels.h"
-#include "SurvivalRpg/Mvvm/Inventory/RpgActionBarViewModels.h"
-#include "SurvivalRpg/Mvvm/Inventory/RpgInventoryViewModels.h"
-#include "SurvivalRpg/Mvvm/Inventory/RpgPlayerInventoryViewModels.h"
+#include "SurvivalRpg/Mvvm/Inventory/RpgActionBarViewModel.h"
+#include "SurvivalRpg/Mvvm/Inventory/RpgInventoryPanelViewModel.h"
+#include "SurvivalRpg/Mvvm/Inventory/RpgPlayerInventoryViewModel.h"
 
 #include "CoreGlobals.h"
 #include "Engine/Engine.h"

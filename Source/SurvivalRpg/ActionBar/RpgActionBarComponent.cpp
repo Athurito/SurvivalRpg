@@ -378,7 +378,13 @@ void URpgActionBarComponent::ActivateSlot(int32 SlotIndex)
 		{
 			if (Item->FindFragmentByClass<URpgInventoryFragment_UsableItem>() != nullptr)
 			{
-				UiActions->RequestUseInventoryItem(PlayerInventory, Item, 1);
+				FRpgInventoryUseRequest Request;
+				Request.RequestId = FGuid::NewGuid();
+				Request.ItemId = Item->GetItemId();
+				Request.UseCount = 1;
+				UiActions->RequestUseInventoryItemById(
+					PlayerInventory,
+					Request);
 			}
 		}
 	}
@@ -445,7 +451,6 @@ void URpgActionBarComponent::OnRep_Slots()
 void URpgActionBarComponent::EnsureSlotCount()
 {
 	constexpr int32 RequiredSlotCount = 8;
-	SlotCount = RequiredSlotCount;
 	if (Slots.Num() != RequiredSlotCount)
 	{
 		Slots.SetNum(RequiredSlotCount);

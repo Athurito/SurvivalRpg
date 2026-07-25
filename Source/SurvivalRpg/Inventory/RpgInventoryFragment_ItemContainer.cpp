@@ -53,22 +53,15 @@ void URpgInventoryFragment_ItemContainer::GetProvidedContainers(
 	OutContainers.Append(ProvidedContainers);
 }
 
-void URpgInventoryFragment_ItemContainer::
-	GetAuthoredContainerDefinitions(
-		TArray<FRpgInventoryItemContainerDefinition>& OutContainers) const
-{
-	OutContainers.Append(ProvidedContainers);
-}
-
 bool URpgInventoryFragment_ItemContainer::
 	HasStructurallyValidProvidedContainers() const
 {
-	TArray<FRpgInventoryItemContainerDefinition> AuthoredContainers;
-	GetAuthoredContainerDefinitions(AuthoredContainers);
+	TArray<FRpgInventoryItemContainerDefinition> ContainerDefinitions;
+	GetProvidedContainers(ContainerDefinitions);
 
 	TSet<FName> UniqueContainerIds;
 	for (const FRpgInventoryItemContainerDefinition& Definition :
-		AuthoredContainers)
+		ContainerDefinitions)
 	{
 		if (!Definition.IsValid() ||
 			UniqueContainerIds.Contains(Definition.ContainerId))

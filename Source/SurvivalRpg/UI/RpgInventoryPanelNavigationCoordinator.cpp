@@ -1,16 +1,17 @@
 #include "RpgInventoryPanelNavigationCoordinator.h"
 
-#include "SurvivalRpg/Inventory/RpgInventoryDragDrop.h"
+#include "SurvivalRpg/Inventory/RpgInventoryDragDropCoordinator.h"
 #include "SurvivalRpg/Inventory/RpgInventoryItemInstance.h"
 #include "SurvivalRpg/Inventory/RpgInventoryManagerComponent.h"
-#include "SurvivalRpg/Mvvm/Inventory/RpgActionBarViewModels.h"
-#include "SurvivalRpg/Mvvm/Inventory/RpgInventoryViewModels.h"
-#include "SurvivalRpg/Mvvm/Inventory/RpgPlayerInventoryViewModels.h"
+#include "SurvivalRpg/Mvvm/Inventory/RpgActionBarSlotViewModel.h"
+#include "SurvivalRpg/Mvvm/Inventory/RpgInventoryAddressSlotViewModel.h"
+#include "SurvivalRpg/Mvvm/Inventory/RpgInventoryEntryViewModel.h"
 #include "SurvivalRpg/UI/RpgInventoryContextActionSource.h"
 #include "SurvivalRpg/UI/RpgLoadoutSlotWidgets.h"
 #include "SurvivalRpg/UI/RpgInventoryCarrySlotWidget.h"
 #include "SurvivalRpg/UI/RpgInventoryUiGeometry.h"
-#include "SurvivalRpg/UI/RpgPlayerInventoryLayoutViews.h"
+#include "SurvivalRpg/UI/RpgActionBarTileView.h"
+#include "SurvivalRpg/UI/RpgInventorySpatialGridWidget.h"
 
 #include UE_INLINE_GENERATED_CPP_BY_NAME(RpgInventoryPanelNavigationCoordinator)
 

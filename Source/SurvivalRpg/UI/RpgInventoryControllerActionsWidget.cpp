@@ -3,7 +3,8 @@
 #include "CommonUITypes.h"
 #include "Input/CommonUIInputTypes.h"
 #include "InputCoreTypes.h"
-#include "SurvivalRpg/Inventory/RpgInventoryDragDrop.h"
+#include "SurvivalRpg/Inventory/RpgInventoryDragDropCoordinator.h"
+#include "SurvivalRpg/Inventory/RpgInventoryDragDropTypes.h"
 #include "SurvivalRpg/UI/RpgInventoryPanelNavigationCoordinator.h"
 
 #if WITH_EDITOR

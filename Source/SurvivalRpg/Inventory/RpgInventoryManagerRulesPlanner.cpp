@@ -1924,25 +1924,6 @@ bool URpgInventoryManagerComponent::CanAddItemDefinition(TSubclassOf<URpgInvento
 		Plan.AppliedQuantity == StackCount;
 }
 
-bool URpgInventoryManagerComponent::CanAddItemInstance(URpgInventoryItemInstance* ItemInstance, int32 StackCount) const
-{
-	if (!InventoryList.CanInsertOwnedInstance(ItemInstance) ||
-		IsItemManagedByAnyInventory(ItemInstance) ||
-		HasItemIdentityConflictInAnyInventory(ItemInstance))
-	{
-		return false;
-	}
-	FRpgInventoryPlacementQuery Query;
-	Query.Purpose = ERpgInventoryPlacementPurpose::Add;
-	Query.Search = ERpgInventoryPlacementSearch::FirstFit;
-	Query.Subject = FRpgInventoryPlacementSubject::FromDetachedInstance(
-		ItemInstance,
-		StackCount);
-	const FRpgInventoryPlacementPlan Plan = EvaluatePlacement(Query);
-	return Plan.Code == ERpgInventoryMutationResultCode::Success &&
-		Plan.AppliedQuantity == StackCount;
-}
-
 bool URpgInventoryManagerComponent::CanReceiveTransferredItemInstance(
 	URpgInventoryItemInstance* ItemInstance,
 	int32 StackCount) const
@@ -1995,31 +1976,6 @@ bool URpgInventoryManagerComponent::CanAddItemDefinitionToPlacement(TSubclassOf<
 	Query.Search = ERpgInventoryPlacementSearch::Exact;
 	Query.Subject = FRpgInventoryPlacementSubject::FromGeneratedGrant(
 		StagedInstance,
-		StackCount);
-	Query.TargetContainer = Placement.ContainerHandle;
-	Query.ExactPlacement = Placement;
-	const FRpgInventoryPlacementPlan Plan = EvaluatePlacement(Query);
-	return Plan.Code == ERpgInventoryMutationResultCode::Success &&
-		Plan.AppliedQuantity == StackCount;
-}
-
-bool URpgInventoryManagerComponent::CanAddItemInstanceToPlacement(URpgInventoryItemInstance* ItemInstance, int32 StackCount, FRpgInventoryGridPlacement Placement) const
-{
-	if (!InventoryList.CanInsertOwnedInstance(ItemInstance) ||
-		IsItemManagedByAnyInventory(ItemInstance) ||
-		HasItemIdentityConflictInAnyInventory(ItemInstance))
-	{
-		return false;
-	}
-	if (!Placement.ContainerHandle.IsValid())
-	{
-		return false;
-	}
-	FRpgInventoryPlacementQuery Query;
-	Query.Purpose = ERpgInventoryPlacementPurpose::Add;
-	Query.Search = ERpgInventoryPlacementSearch::Exact;
-	Query.Subject = FRpgInventoryPlacementSubject::FromDetachedInstance(
-		ItemInstance,
 		StackCount);
 	Query.TargetContainer = Placement.ContainerHandle;
 	Query.ExactPlacement = Placement;
@@ -2560,25 +2516,6 @@ FRpgInventoryMutationResult URpgInventoryManagerComponent::PlanDropItem(
 			ERpgInventoryMutationOperation::Drop));
 }
 
-bool URpgInventoryManagerComponent::CanMoveInventoryEntryToPlacement(FGuid EntryId, FRpgInventoryGridPlacement TargetPlacement) const
-{
-	const FRpgInventoryEntry* Entry =
-		InventoryList.FindEntryByEntryId(EntryId);
-	if (!Entry || !Entry->Instance)
-	{
-		return false;
-	}
-
-	FRpgInventoryMoveIntent Intent;
-	Intent.EnsureRequestId();
-	Intent.ItemId = Entry->Instance->GetItemId();
-	Intent.ExpectedEntryId = Entry->EntryId;
-	Intent.ExpectedSourcePlacement = Entry->Placement;
-	Intent.ExpectedQuantity = Entry->StackCount;
-	Intent.TargetPlacement = TargetPlacement;
-	return PlanMoveItem(Intent).IsSuccess();
-}
-
 FRpgInventoryMutationResult URpgInventoryManagerComponent::PlanInventoryMutation(FRpgInventoryMutationRequest Request) const
 {
 	Request.EnsureRequestId();
@@ -2590,27 +2527,6 @@ FRpgInventoryMutationResult URpgInventoryManagerComponent::PlanInventoryMutation
 	if (Request.Operation == ERpgInventoryMutationOperation::None)
 	{
 		Result.Code = ERpgInventoryMutationResultCode::InvalidRequest;
-		return Result;
-	}
-
-	if (Request.Operation == ERpgInventoryMutationOperation::Sort)
-	{
-		const FRpgInventoryContainerHandle SortContainer = Request.Source.IsValid() ? Request.Source : Request.Target;
-		FRpgInventoryGridSize GridSize;
-		if (!SortContainer.IsValid() || !GetGridSizeForContainerHandle(SortContainer, GridSize))
-		{
-			Result.Code = ERpgInventoryMutationResultCode::InvalidContainer;
-			return Result;
-		}
-
-		Result.Code = ERpgInventoryMutationResultCode::Success;
-		for (const FRpgInventoryEntry& Entry : InventoryList.Entries)
-		{
-			if (Entry.Placement.GetContainerHandle() == SortContainer)
-			{
-				++Result.AppliedQuantity;
-			}
-		}
 		return Result;
 	}
 

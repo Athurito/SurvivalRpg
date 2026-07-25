@@ -8,7 +8,7 @@
 #include "SurvivalRpg/Base/RpgBaseStorageStationComponent.h"
 #include "SurvivalRpg/Base/RpgBaseStorageUpgradeDefinition.h"
 #include "SurvivalRpg/GameplayTags/RpgGameplayTags.h"
-#include "SurvivalRpg/Inventory/RpgInventoryDragDrop.h"
+#include "SurvivalRpg/Inventory/RpgInventoryDragDropCoordinator.h"
 #include "SurvivalRpg/Inventory/RpgInventoryManagerComponent.h"
 #include "SurvivalRpg/Inventory/RpgInventoryUiActionComponent.h"
 #include "SurvivalRpg/Inventory/RpgPlayerInventoryLayoutComponent.h"
@@ -16,7 +16,7 @@
 #include "SurvivalRpg/UI/RpgBaseResourceListWidget.h"
 #include "SurvivalRpg/UI/RpgInventoryPanelNavigationCoordinator.h"
 #include "SurvivalRpg/UI/RpgInventorySpatialPaneWidget.h"
-#include "SurvivalRpg/UI/RpgPlayerInventoryLayoutViews.h"
+#include "SurvivalRpg/UI/RpgInventorySpatialGridWidget.h"
 
 #if WITH_EDITOR
 #include "Editor/WidgetCompilerLog.h"

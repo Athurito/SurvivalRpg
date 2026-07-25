@@ -3,7 +3,7 @@
 #include "GameplayTagContainer.h"
 #include "RpgInventoryItemDefinition.h"
 #include "RpgInventoryItemTypes.h"
-#include "RpgInventorySpatialTypes.h"
+#include "RpgInventoryGraphTypes.h"
 #include "Templates/SubclassOf.h"
 #include "UObject/SoftObjectPtr.h"
 

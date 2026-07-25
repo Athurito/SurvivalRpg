@@ -1,4 +1,8 @@
-#include "RpgInventoryActionWidgets.h"
+#include "RpgInventoryContextActionEntryWidget.h"
+#include "RpgInventoryContextMenuWidget.h"
+#include "RpgInventoryDropConfirmationDialogWidget.h"
+#include "RpgInventorySplitDialogWidget.h"
+#include "RpgQuickAccessSlotPickerEntryWidget.h"
 
 #if WITH_DEV_AUTOMATION_TESTS
 
@@ -11,7 +15,7 @@
 #include "SurvivalRpg/UI/RpgInventoryInteractionScreenWidget.h"
 #include "SurvivalRpg/UI/RpgInventorySpatialPaneWidget.h"
 #include "SurvivalRpg/UI/RpgLoadoutSlotWidgets.h"
-#include "SurvivalRpg/UI/RpgPlayerInventoryLayoutViews.h"
+#include "SurvivalRpg/UI/RpgInventorySpatialGridWidget.h"
 
 #include "AssetRegistry/AssetRegistryModule.h"
 #include "AssetRegistry/IAssetRegistry.h"

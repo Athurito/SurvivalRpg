@@ -15,12 +15,6 @@
 
 namespace RpgInventoryManagerStoragePrivate
 {
-	const URpgInventoryFragment_ItemTraits* GetStorageItemTraits(TSubclassOf<URpgInventoryItemDefinition> ItemDef)
-	{
-		const URpgInventoryItemDefinition* ItemCDO = ItemDef ? GetDefault<URpgInventoryItemDefinition>(ItemDef) : nullptr;
-		return ItemCDO ? Cast<URpgInventoryFragment_ItemTraits>(ItemCDO->FindFragmentByClass(URpgInventoryFragment_ItemTraits::StaticClass())) : nullptr;
-	}
-
 	int32 GetStorageInventoryMaxStackSizeForDefinition(TSubclassOf<URpgInventoryItemDefinition> ItemDef)
 	{
 		return URpgInventoryManagerComponent::
@@ -49,22 +43,6 @@ namespace RpgInventoryManagerStoragePrivate
 			URpgInventoryItemDefinition::ResolveValidSpatialItemFragment(
 				ItemDef);
 		return SpatialFragment && SpatialFragment->bAllowRotation;
-	}
-
-	FString GetStorageDisplayNameForDefinition(TSubclassOf<URpgInventoryItemDefinition> ItemDef)
-	{
-		const URpgInventoryItemDefinition* ItemCDO = ItemDef ? GetDefault<URpgInventoryItemDefinition>(ItemDef) : nullptr;
-		return ItemCDO ? ItemCDO->DisplayName.ToString() : FString();
-	}
-
-	ERpgInventoryItemCategory GetStorageCategoryForDefinition(TSubclassOf<URpgInventoryItemDefinition> ItemDef)
-	{
-		if (const URpgInventoryFragment_ItemTraits* Traits = GetStorageItemTraits(ItemDef))
-		{
-			return Traits->ItemCategory;
-		}
-
-		return ERpgInventoryItemCategory::Misc;
 	}
 
 	ERpgInventoryMutationResultCode EvaluateStorageScratchPlacement(
@@ -148,10 +126,6 @@ using RpgInventoryManagerStoragePrivate::
 	CanStorageInventoryRotateDefinition;
 using RpgInventoryManagerStoragePrivate::
 	FindStorageFirstFitInScratch;
-using RpgInventoryManagerStoragePrivate::
-	GetStorageCategoryForDefinition;
-using RpgInventoryManagerStoragePrivate::
-	GetStorageDisplayNameForDefinition;
 using RpgInventoryManagerStoragePrivate::
 	GetStorageInventoryFootprintForDefinition;
 using RpgInventoryManagerStoragePrivate::
@@ -531,141 +505,6 @@ int32 FRpgInventoryList::GetFreeStackCapacity(URpgInventoryItemInstance* Instanc
 
 	const int32 MaxStackSize = GetStorageInventoryMaxStackSizeForDefinition(Entry->Instance->GetItemDef());
 	return FMath::Max(0, MaxStackSize - Entry->StackCount);
-}
-
-bool FRpgInventoryList::ApplySort(
-	ERpgInventorySortMode SortMode,
-	FRpgInventoryContainerHandle ContainerFilter,
-	bool* bOutSucceeded)
-{
-	if (bOutSucceeded)
-	{
-		*bOutSucceeded = false;
-	}
-
-	TArray<FRpgInventoryEntry*> SortedEntries;
-	SortedEntries.Reserve(Entries.Num());
-	for (FRpgInventoryEntry& Entry : Entries)
-	{
-		if (!ContainerFilter.IsValid() || Entry.Placement.GetContainerHandle() == ContainerFilter)
-		{
-			SortedEntries.Add(&Entry);
-		}
-	}
-
-	if (SortedEntries.Num() <= 1)
-	{
-		if (SortMode == ERpgInventorySortMode::Manual || SortedEntries.Num() == 0)
-		{
-			if (bOutSucceeded)
-			{
-				*bOutSucceeded = true;
-			}
-			return false;
-		}
-
-		return SetOrderFromSortedEntryPointers(SortedEntries, bOutSucceeded);
-	}
-
-	auto GetEntryDefinition = [](const FRpgInventoryEntry& Entry)
-	{
-		return Entry.Instance ? Entry.Instance->GetItemDef() : TSubclassOf<URpgInventoryItemDefinition>();
-	};
-
-	auto GetEntryName = [&GetEntryDefinition](const FRpgInventoryEntry& Entry)
-	{
-		return GetStorageDisplayNameForDefinition(GetEntryDefinition(Entry));
-	};
-
-	switch (SortMode)
-	{
-	case ERpgInventorySortMode::Manual:
-		SortedEntries.Sort([this](const FRpgInventoryEntry& A, const FRpgInventoryEntry& B)
-		{
-			return GetLinearOrder(A.Placement) < GetLinearOrder(B.Placement);
-		});
-		break;
-
-	case ERpgInventorySortMode::Name:
-		SortedEntries.Sort([this, &GetEntryName](const FRpgInventoryEntry& A, const FRpgInventoryEntry& B)
-		{
-			const int32 NameCompare = GetEntryName(A).Compare(GetEntryName(B), ESearchCase::IgnoreCase);
-			return NameCompare != 0 ? NameCompare < 0 : GetLinearOrder(A.Placement) < GetLinearOrder(B.Placement);
-		});
-		break;
-
-	case ERpgInventorySortMode::Category:
-		SortedEntries.Sort([this, &GetEntryDefinition, &GetEntryName](const FRpgInventoryEntry& A, const FRpgInventoryEntry& B)
-		{
-			const int32 CategoryA = static_cast<int32>(GetStorageCategoryForDefinition(GetEntryDefinition(A)));
-			const int32 CategoryB = static_cast<int32>(GetStorageCategoryForDefinition(GetEntryDefinition(B)));
-			if (CategoryA != CategoryB)
-			{
-				return CategoryA < CategoryB;
-			}
-
-			const int32 NameCompare = GetEntryName(A).Compare(GetEntryName(B), ESearchCase::IgnoreCase);
-			return NameCompare != 0 ? NameCompare < 0 : GetLinearOrder(A.Placement) < GetLinearOrder(B.Placement);
-		});
-		break;
-
-	case ERpgInventorySortMode::StackCount:
-		SortedEntries.Sort([this, &GetEntryName](const FRpgInventoryEntry& A, const FRpgInventoryEntry& B)
-		{
-			if (A.StackCount != B.StackCount)
-			{
-				return A.StackCount > B.StackCount;
-			}
-
-			const int32 NameCompare = GetEntryName(A).Compare(GetEntryName(B), ESearchCase::IgnoreCase);
-			return NameCompare != 0 ? NameCompare < 0 : GetLinearOrder(A.Placement) < GetLinearOrder(B.Placement);
-		});
-		break;
-
-	case ERpgInventorySortMode::Recent:
-		SortedEntries.Sort([this](const FRpgInventoryEntry& A, const FRpgInventoryEntry& B)
-		{
-			return GetLinearOrder(A.Placement) > GetLinearOrder(B.Placement);
-		});
-		break;
-	}
-
-	return SetOrderFromSortedEntryPointers(SortedEntries, bOutSucceeded);
-}
-
-bool FRpgInventoryList::MoveEntry(FGuid EntryId, int32 TargetIndex)
-{
-	if (!EntryId.IsValid() || Entries.Num() <= 0)
-	{
-		return false;
-	}
-
-	TArray<FRpgInventoryEntry*> SortedEntries;
-	SortedEntries.Reserve(Entries.Num());
-	FRpgInventoryEntry* MovingEntry = nullptr;
-	for (FRpgInventoryEntry& Entry : Entries)
-	{
-		SortedEntries.Add(&Entry);
-		if (Entry.EntryId == EntryId)
-		{
-			MovingEntry = &Entry;
-		}
-	}
-
-	if (!MovingEntry)
-	{
-		return false;
-	}
-
-	SortedEntries.Sort([this](const FRpgInventoryEntry& A, const FRpgInventoryEntry& B)
-	{
-		return GetLinearOrder(A.Placement) < GetLinearOrder(B.Placement);
-	});
-
-	SortedEntries.Remove(MovingEntry);
-	const int32 ClampedTargetIndex = FMath::Clamp(TargetIndex, 0, SortedEntries.Num());
-	SortedEntries.Insert(MovingEntry, ClampedTargetIndex);
-	return SetOrderFromSortedEntryPointers(SortedEntries);
 }
 
 bool FRpgInventoryList::MoveEntryToPlacement(
@@ -1381,85 +1220,4 @@ void FRpgInventoryList::RebaseDescendantContainerDepths(const FRpgInventoryItemI
 		MarkItemDirty(Candidate);
 		BroadcastChangeMessage(Candidate, Candidate.StackCount, Candidate.StackCount, true);
 	}
-}
-
-bool FRpgInventoryList::SetOrderFromSortedEntryPointers(
-	const TArray<FRpgInventoryEntry*>& SortedEntries,
-	bool* bOutSucceeded)
-{
-	if (bOutSucceeded)
-	{
-		*bOutSucceeded = false;
-	}
-
-	const URpgInventoryManagerComponent* Inventory = Cast<URpgInventoryManagerComponent>(OwnerComponent);
-	if (!Inventory)
-	{
-		return false;
-	}
-
-	TMap<FRpgInventoryContainerHandle, TArray<FRpgInventoryGridPlacement>> ScratchOccupancyByContainer;
-	TMap<FRpgInventoryEntry*, FRpgInventoryGridPlacement> PlannedPlacements;
-	PlannedPlacements.Reserve(SortedEntries.Num());
-
-	for (FRpgInventoryEntry* Entry : SortedEntries)
-	{
-		if (!Entry || !Entry->Instance)
-		{
-			return false;
-		}
-
-		FRpgInventoryGridPlacement NewPlacement = Entry->Placement;
-		const FRpgInventoryContainerHandle EntryContainer = Entry->Placement.GetContainerHandle();
-		TArray<FRpgInventoryGridPlacement>& ContainerScratch = ScratchOccupancyByContainer.FindOrAdd(EntryContainer);
-		const bool bSingleCellContainer =
-			Inventory->ShouldUseSingleCellPlacementForContainer(
-				EntryContainer);
-		if ((bSingleCellContainer &&
-			 !GetStorageInventoryFootprintForDefinition(
-				 Entry->Instance->GetItemDef(),
-				 false).IsValid()) ||
-			(!bSingleCellContainer &&
-			 !FindFirstFitPlacementInContainer(
-				 Entry->Instance->GetItemDef(),
-				 EntryContainer,
-				 ContainerScratch,
-				 NewPlacement)))
-		{
-			// Sort is a single mutation. Never leave a fragmented container half repacked.
-			return false;
-		}
-
-		ContainerScratch.Add(NewPlacement);
-		PlannedPlacements.Add(Entry, NewPlacement);
-	}
-
-	bool bChanged = false;
-	for (const TPair<FRpgInventoryEntry*, FRpgInventoryGridPlacement>& PlannedPair : PlannedPlacements)
-	{
-		FRpgInventoryEntry* Entry = PlannedPair.Key;
-		const FRpgInventoryGridPlacement& NewPlacement = PlannedPair.Value;
-		if (Entry->Placement.GetContainerHandle() != NewPlacement.GetContainerHandle() ||
-			Entry->Placement.X != NewPlacement.X ||
-			Entry->Placement.Y != NewPlacement.Y ||
-			Entry->Placement.bRotated != NewPlacement.bRotated)
-		{
-			Entry->Placement = NewPlacement;
-			MarkItemDirty(*Entry);
-			BroadcastChangeMessage(*Entry, Entry->StackCount, Entry->StackCount, true);
-			bChanged = true;
-		}
-	}
-
-	if (bChanged)
-	{
-		SortEntriesByPlacement();
-		MarkArrayDirty();
-	}
-
-	if (bOutSucceeded)
-	{
-		*bOutSucceeded = true;
-	}
-	return bChanged;
 }

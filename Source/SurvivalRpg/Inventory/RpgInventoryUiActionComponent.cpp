@@ -15,6 +15,7 @@
 #include "SurvivalRpg/Equipment/RpgEquipmentLoadoutComponent.h"
 #include "SurvivalRpg/GameplayTags/RpgGameplayTags.h"
 #include "SurvivalRpg/Inventory/RpgPlayerInventoryLayoutComponent.h"
+#include "UObject/UObjectGlobals.h"
 
 #include UE_INLINE_GENERATED_CPP_BY_NAME(RpgInventoryUiActionComponent)
 
@@ -72,15 +73,6 @@ URpgInventoryUiActionComponent::URpgInventoryUiActionComponent(const FObjectInit
 	ManualDropActorClass = ARpgDroppedInventoryActor::StaticClass();
 }
 
-void URpgInventoryUiActionComponent::RequestInventoryMutation_Implementation(
-	URpgInventoryManagerComponent* Inventory,
-	FRpgInventoryMutationRequest Request)
-{
-	FRpgInventoryTransactionActionHandler(*this).InventoryMutation(
-		Inventory,
-		MoveTemp(Request));
-}
-
 void URpgInventoryUiActionComponent::RequestMoveInventoryItem_Implementation(
 	URpgInventoryManagerComponent* Inventory,
 	FRpgInventoryMoveIntent Intent)
@@ -101,13 +93,80 @@ void URpgInventoryUiActionComponent::RequestTransferInventoryItem_Implementation
 		MoveTemp(Intent));
 }
 
-void URpgInventoryUiActionComponent::RequestExecuteInventoryItemAction_Implementation(
+void URpgInventoryUiActionComponent::RequestUseInventoryItemById_Implementation(
 	URpgInventoryManagerComponent* Inventory,
-	FRpgInventoryItemActionRequest Request)
+	FRpgInventoryUseRequest Request)
 {
-	FRpgInventoryItemUseActionHandler(*this).ExecuteItemAction(
-		Inventory,
-		MoveTemp(Request));
+	URpgInventoryManagerComponent* SafeInventory =
+		IsValid(Inventory) ? Inventory : nullptr;
+	if (!GetOwner() || !GetOwner()->HasAuthority())
+	{
+		SendActionFeedback(
+			RpgGameplayTags::Rpg_Inventory_Action_Use,
+			ERpgInventoryActionFeedbackResult::ServerRejected,
+			SafeInventory,
+			nullptr,
+			Request.UseCount,
+			Request.RequestId,
+			Request.ItemId);
+		return;
+	}
+
+	const FUseRequestAdmission Admission =
+		AdmitUseRequest(SafeInventory, Request);
+	switch (Admission.Disposition)
+	{
+	case EUseRequestAdmissionDisposition::InFlight:
+		// A reliable retry can re-enter while GAS is still synchronously activating.
+		return;
+
+	case EUseRequestAdmissionDisposition::Replay:
+		SendActionFeedback(
+			RpgGameplayTags::Rpg_Inventory_Action_Use,
+			Admission.Result,
+			SafeInventory,
+			Admission.FeedbackItem.Get(),
+			Admission.FeedbackUseCount,
+			Request.RequestId,
+			Request.ItemId);
+		return;
+
+	case EUseRequestAdmissionDisposition::Reject:
+		// A collision may reference an inventory that has not passed access validation.
+		// Reject feedback therefore carries stable identity only, never a freshly resolved item pointer.
+		SendActionFeedback(
+			RpgGameplayTags::Rpg_Inventory_Action_Use,
+			ERpgInventoryActionFeedbackResult::InvalidRequest,
+			SafeInventory,
+			nullptr,
+			Request.UseCount,
+			Request.RequestId,
+			Request.ItemId);
+		return;
+
+	case EUseRequestAdmissionDisposition::Execute:
+	default:
+		break;
+	}
+
+	const FRpgInventoryItemUseExecutionResult ExecutionResult =
+		FRpgInventoryItemUseActionHandler(*this).ExecuteUseRequest(
+			SafeInventory,
+			Request);
+	FinalizeUseRequest(
+		SafeInventory,
+		Request,
+		ExecutionResult.Result,
+		ExecutionResult.Item,
+		ExecutionResult.FeedbackUseCount);
+	SendActionFeedback(
+		RpgGameplayTags::Rpg_Inventory_Action_Use,
+		ExecutionResult.Result,
+		SafeInventory,
+		ExecutionResult.Item,
+		ExecutionResult.FeedbackUseCount,
+		Request.RequestId,
+		Request.ItemId);
 }
 
 void URpgInventoryUiActionComponent::
@@ -131,102 +190,6 @@ void URpgInventoryUiActionComponent::RequestQuickTransferItem_Implementation(
 		MoveTemp(Request));
 }
 
-void URpgInventoryUiActionComponent::RequestAssignItemToEquipmentSlot_Implementation(ERpgEquipmentSlot EquipmentSlot, URpgInventoryItemInstance* Item)
-{
-	FRpgInventoryEquipmentActionHandler(*this).AssignItemToEquipmentSlot(
-		EquipmentSlot,
-		Item);
-}
-
-void URpgInventoryUiActionComponent::RequestClearEquipmentSlot_Implementation(ERpgEquipmentSlot EquipmentSlot)
-{
-	FRpgInventoryEquipmentActionHandler(*this).ClearEquipmentSlot(EquipmentSlot);
-}
-
-void URpgInventoryUiActionComponent::RequestTransferItemStack_Implementation(
-	URpgInventoryManagerComponent* SourceInventory,
-	URpgInventoryManagerComponent* TargetInventory,
-	URpgInventoryItemInstance* Item,
-	int32 StackCount)
-{
-	FRpgInventoryTransactionActionHandler(*this).TransferItemStack(
-		SourceInventory,
-		TargetInventory,
-		Item,
-		StackCount);
-}
-
-void URpgInventoryUiActionComponent::RequestTransferItemStackToPlacement_Implementation(
-	URpgInventoryManagerComponent* SourceInventory,
-	URpgInventoryManagerComponent* TargetInventory,
-	URpgInventoryItemInstance* Item,
-	int32 StackCount,
-	FRpgInventoryGridPlacement TargetPlacement)
-{
-	FRpgInventoryTransactionActionHandler(*this).
-		TransferItemStackToPlacement(
-			SourceInventory,
-			TargetInventory,
-			Item,
-			StackCount,
-			TargetPlacement);
-}
-
-void URpgInventoryUiActionComponent::RequestApplyInventorySort_Implementation(
-	URpgInventoryManagerComponent* Inventory,
-	ERpgInventorySortMode SortMode)
-{
-	FRpgInventoryTransactionActionHandler(*this).ApplyInventorySort(
-		Inventory,
-		SortMode);
-}
-
-void URpgInventoryUiActionComponent::RequestMoveInventoryEntry_Implementation(
-	URpgInventoryManagerComponent* Inventory,
-	FGuid EntryId,
-	int32 TargetIndex)
-{
-	FRpgInventoryTransactionActionHandler(*this).MoveInventoryEntry(
-		Inventory,
-		EntryId,
-		TargetIndex);
-}
-
-void URpgInventoryUiActionComponent::RequestMoveInventoryEntryToPlacement_Implementation(
-	URpgInventoryManagerComponent* Inventory,
-	FGuid EntryId,
-	FRpgInventoryGridPlacement TargetPlacement)
-{
-	FRpgInventoryTransactionActionHandler(*this).
-		MoveInventoryEntryToPlacement(
-			Inventory,
-			EntryId,
-			TargetPlacement);
-}
-
-void URpgInventoryUiActionComponent::RequestMoveItemToInventorySlotAddress_Implementation(URpgInventoryItemInstance* Item, FRpgInventorySlotAddress TargetAddress)
-{
-	FRpgInventoryEquipmentActionHandler(*this).MoveItemToInventorySlotAddress(
-		Item,
-		TargetAddress);
-}
-
-void URpgInventoryUiActionComponent::RequestEquipSlotContainerItem_Implementation(ERpgEquipmentSlot ContainerSlot, URpgInventoryItemInstance* Item)
-{
-	FRpgInventoryEquipmentActionHandler(*this).EquipSlotContainerItem(
-		ContainerSlot,
-		Item);
-}
-
-void URpgInventoryUiActionComponent::RequestUnequipSlotContainerItem_Implementation(
-	ERpgEquipmentSlot ContainerSlot,
-	FRpgInventoryItemId ExpectedProviderItemId)
-{
-	FRpgInventoryEquipmentActionHandler(*this).UnequipSlotContainerItem(
-		ContainerSlot,
-		ExpectedProviderItemId);
-}
-
 void URpgInventoryUiActionComponent::RequestActivateCarrySlot_Implementation(
 	int32 ActionBarSlotIndex,
 	FGameplayTag ExpectedCarrySemanticRole)
@@ -247,91 +210,13 @@ void URpgInventoryUiActionComponent::RequestMutateQuickAccessBinding_Implementat
 		MoveTemp(Request));
 }
 
-void URpgInventoryUiActionComponent::RequestBindActionBarToInventorySlot_Implementation(int32 ActionBarSlotIndex, FRpgInventorySlotAddress SlotAddress)
-{
-	FRpgInventoryQuickAccessActionHandler(*this).BindInventorySlot(
-		ActionBarSlotIndex,
-		SlotAddress);
-}
-
-void URpgInventoryUiActionComponent::RequestBindActionBarToCarrySlot_Implementation(int32 ActionBarSlotIndex, FRpgInventorySlotAddress CarrySlotAddress)
-{
-	FRpgInventoryQuickAccessActionHandler(*this).BindCarrySlot(
-		ActionBarSlotIndex,
-		CarrySlotAddress);
-}
-
-void URpgInventoryUiActionComponent::RequestClearActionBarCarryBinding_Implementation(
-	int32 ActionBarSlotIndex,
-	FGameplayTag ExpectedCarrySemanticRole)
-{
-	FRpgInventoryQuickAccessActionHandler(*this).ClearCarryBinding(
-		ActionBarSlotIndex,
-		ExpectedCarrySemanticRole);
-}
-
-void URpgInventoryUiActionComponent::RequestClearActionBarConsumableBinding_Implementation(
-	int32 ActionBarSlotIndex,
-	TSubclassOf<URpgInventoryItemDefinition> ExpectedConsumableDefinition)
-{
-	FRpgInventoryQuickAccessActionHandler(*this).ClearConsumableBinding(
-		ActionBarSlotIndex,
-		ExpectedConsumableDefinition);
-}
-
-void URpgInventoryUiActionComponent::RequestSplitItemStack_Implementation(
-	URpgInventoryManagerComponent* Inventory,
-	URpgInventoryItemInstance* Item,
-	int32 SplitCount,
-	FRpgInventoryGridPlacement TargetPlacement)
-{
-	FRpgInventoryTransactionActionHandler(*this).SplitItemStack(
-		Inventory,
-		Item,
-		SplitCount,
-		TargetPlacement);
-}
-
 void URpgInventoryUiActionComponent::RequestSplitItemStackById_Implementation(
 	URpgInventoryManagerComponent* Inventory,
-	FRpgInventoryItemId ItemId,
-	int32 SplitCount,
-	FRpgInventoryGridPlacement TargetPlacement,
-	FGuid RequestId)
+	FRpgInventorySplitRequest Request)
 {
 	FRpgInventoryTransactionActionHandler(*this).SplitItemStackById(
 		Inventory,
-		ItemId,
-		SplitCount,
-		TargetPlacement,
-		RequestId);
-}
-
-void URpgInventoryUiActionComponent::RequestUseInventoryItem_Implementation(URpgInventoryManagerComponent* Inventory, URpgInventoryItemInstance* Item, int32 StackCount)
-{
-	FRpgInventoryItemUseActionHandler(*this).UseInventoryItem(
-		Inventory,
-		Item,
-		StackCount);
-}
-
-void URpgInventoryUiActionComponent::RequestEquipInventoryItem_Implementation(URpgInventoryItemInstance* Item)
-{
-	FRpgInventoryEquipmentActionHandler(*this).EquipInventoryItem(Item);
-}
-
-void URpgInventoryUiActionComponent::RequestUnequipInventoryItemToContentSlot_Implementation(URpgInventoryItemInstance* Item)
-{
-	FRpgInventoryEquipmentActionHandler(*this).UnequipInventoryItemToContentSlot(Item);
-}
-
-void URpgInventoryUiActionComponent::RequestDropInventoryItem_Implementation(URpgInventoryManagerComponent* Inventory, URpgInventoryItemInstance* Item, int32 StackCount, bool bConfirmed)
-{
-	FRpgInventoryManualDropActionHandler(*this).DropInventoryItem(
-		Inventory,
-		Item,
-		StackCount,
-		bConfirmed);
+		MoveTemp(Request));
 }
 
 void URpgInventoryUiActionComponent::RequestDropInventoryItemById_Implementation(
@@ -361,22 +246,6 @@ void URpgInventoryUiActionComponent::RequestWithdrawResourceFromBase_Implementat
 	FRpgBaseStorageActionHandler(*this).WithdrawResource(
 		Station,
 		ItemDefinition,
-		StackCount);
-}
-
-void URpgInventoryUiActionComponent::RequestStoreItemInstanceInBase_Implementation(URpgBaseStorageStationComponent* Station, URpgInventoryItemInstance* Item, int32 StackCount)
-{
-	FRpgBaseStorageActionHandler(*this).StoreItemInstance(
-		Station,
-		Item,
-		StackCount);
-}
-
-void URpgInventoryUiActionComponent::RequestTakeItemInstanceFromBase_Implementation(URpgBaseStorageStationComponent* Station, URpgInventoryItemInstance* Item, int32 StackCount)
-{
-	FRpgBaseStorageActionHandler(*this).TakeItemInstance(
-		Station,
-		Item,
 		StackCount);
 }
 
@@ -581,36 +450,6 @@ bool URpgInventoryUiActionComponent::FindQuickTransferDestination(
 
 
 
-bool URpgInventoryUiActionComponent::CanTransferItemStack(
-	URpgInventoryManagerComponent* SourceInventory,
-	URpgInventoryManagerComponent* TargetInventory,
-	URpgInventoryItemInstance* Item,
-	int32 StackCount) const
-{
-	return FRpgInventoryTransactionQueryHandler(*this).
-		CanTransferItemStack(
-			SourceInventory,
-			TargetInventory,
-			Item,
-			StackCount);
-}
-
-bool URpgInventoryUiActionComponent::CanTransferItemStackToPlacement(
-	URpgInventoryManagerComponent* SourceInventory,
-	URpgInventoryManagerComponent* TargetInventory,
-	URpgInventoryItemInstance* Item,
-	int32 StackCount,
-	FRpgInventoryGridPlacement TargetPlacement) const
-{
-	return FRpgInventoryTransactionQueryHandler(*this).
-		CanTransferItemStackToPlacement(
-			SourceInventory,
-			TargetInventory,
-			Item,
-			StackCount,
-			TargetPlacement);
-}
-
 bool URpgInventoryUiActionComponent::CanSplitItemStack(
 	URpgInventoryManagerComponent* Inventory,
 	URpgInventoryItemInstance* Item,
@@ -781,6 +620,303 @@ void URpgInventoryUiActionComponent::SyncActiveHandsFromCarrySlots() const
 	}
 }
 
+bool URpgInventoryUiActionComponent::AreUseRequestsEquivalent(
+	const FRpgInventoryUseRequest& A,
+	const FRpgInventoryUseRequest& B)
+{
+	return A.RequestId == B.RequestId &&
+		A.ItemId == B.ItemId &&
+		A.UseCount == B.UseCount;
+}
+
+URpgInventoryUiActionComponent::FUseRequestAdmission
+	URpgInventoryUiActionComponent::AdmitUseRequest(
+	URpgInventoryManagerComponent* Inventory,
+	const FRpgInventoryUseRequest& Request)
+{
+	FUseRequestAdmission Admission;
+	if (!Request.RequestId.IsValid())
+	{
+		return Admission;
+	}
+
+	const bool bHasInventory = IsValid(Inventory);
+	if (FRecentUseRequestResult* CachedResult =
+		RecentUseRequestResults.Find(Request.RequestId))
+	{
+		// Retain a tombstone for an inventory that disappeared so this cached
+		// RequestId cannot execute GAS against an unrelated inventory.
+		if (CachedResult->bHadInventory &&
+			!CachedResult->Inventory.IsValid())
+		{
+			return Admission;
+		}
+
+		if (CachedResult->bHadInventory != bHasInventory ||
+			(bHasInventory && CachedResult->Inventory.Get() != Inventory))
+		{
+			return Admission;
+		}
+
+		const uint64 CurrentMutationEpoch = bHasInventory
+			? Inventory->GetMutationEpoch()
+			: 0;
+		if (CachedResult->InventoryMutationEpoch !=
+			CurrentMutationEpoch)
+		{
+			if (CachedResult->bInFlight)
+			{
+				// An in-flight entry is never evicted. The changed restore epoch
+				// makes this a different fingerprint and therefore a collision.
+				return Admission;
+			}
+
+			RemoveRecentUseRequest(Request.RequestId);
+		}
+		else
+		{
+			if (!AreUseRequestsEquivalent(
+					CachedResult->Request,
+					Request))
+			{
+				return Admission;
+			}
+
+			if (CachedResult->bInFlight)
+			{
+				Admission.Disposition =
+					EUseRequestAdmissionDisposition::InFlight;
+				return Admission;
+			}
+
+			Admission.Disposition =
+				EUseRequestAdmissionDisposition::Replay;
+			Admission.Result = CachedResult->Result;
+			Admission.FeedbackItem = CachedResult->FeedbackItem;
+			Admission.FeedbackUseCount =
+				CachedResult->FeedbackUseCount;
+			return Admission;
+		}
+	}
+
+	if (!MakeRoomForUseRequest())
+	{
+		return Admission;
+	}
+
+	FRecentUseRequestResult PendingResult;
+	PendingResult.Inventory = Inventory;
+	PendingResult.bHadInventory = bHasInventory;
+	PendingResult.InventoryMutationEpoch = bHasInventory
+		? Inventory->GetMutationEpoch()
+		: 0;
+	PendingResult.Request = Request;
+	RecentUseRequestResults.Add(
+		Request.RequestId,
+		MoveTemp(PendingResult));
+	RecentUseRequestOrder.Add(Request.RequestId);
+	Admission.Disposition =
+		EUseRequestAdmissionDisposition::Execute;
+	return Admission;
+}
+
+void URpgInventoryUiActionComponent::FinalizeUseRequest(
+	URpgInventoryManagerComponent* Inventory,
+	const FRpgInventoryUseRequest& Request,
+	ERpgInventoryActionFeedbackResult Result,
+	URpgInventoryItemInstance* FeedbackItem,
+	int32 FeedbackUseCount)
+{
+	FRecentUseRequestResult* PendingResult =
+		RecentUseRequestResults.Find(Request.RequestId);
+	if (!PendingResult || !PendingResult->bInFlight ||
+		!AreUseRequestsEquivalent(PendingResult->Request, Request))
+	{
+		return;
+	}
+
+	PendingResult->Result = Result;
+	PendingResult->FeedbackItem = FeedbackItem;
+	PendingResult->FeedbackUseCount = FeedbackUseCount;
+	PendingResult->bInFlight = false;
+
+	if (PendingResult->bHadInventory)
+	{
+		if (!PendingResult->Inventory.IsValid())
+		{
+			// Keep the completed tombstone so retries fail closed.
+			return;
+		}
+
+		if (PendingResult->Inventory.Get() != Inventory ||
+			!IsValid(Inventory) ||
+			PendingResult->InventoryMutationEpoch !=
+				Inventory->GetMutationEpoch())
+		{
+			// Persistence restore changes MutationEpoch and invalidates replay.
+			RemoveRecentUseRequest(Request.RequestId);
+		}
+	}
+	else if (IsValid(Inventory))
+	{
+		RemoveRecentUseRequest(Request.RequestId);
+	}
+}
+
+void URpgInventoryUiActionComponent::RemoveRecentUseRequest(
+	const FGuid& RequestId)
+{
+	RecentUseRequestResults.Remove(RequestId);
+	RecentUseRequestOrder.Remove(RequestId);
+}
+
+bool URpgInventoryUiActionComponent::MakeRoomForUseRequest()
+{
+	for (int32 Index = 0;
+		Index < RecentUseRequestOrder.Num() &&
+		RecentUseRequestResults.Num() >= MaxRecentUseRequestResults;)
+	{
+		const FGuid CandidateId = RecentUseRequestOrder[Index];
+		const FRecentUseRequestResult* Candidate =
+			RecentUseRequestResults.Find(CandidateId);
+		if (!Candidate || !Candidate->bInFlight)
+		{
+			RecentUseRequestResults.Remove(CandidateId);
+			RecentUseRequestOrder.RemoveAt(
+				Index,
+				1,
+				EAllowShrinking::No);
+			continue;
+		}
+
+		++Index;
+	}
+
+	return RecentUseRequestResults.Num() <
+		MaxRecentUseRequestResults;
+}
+
+bool URpgInventoryUiActionComponent::AreSplitRequestsEquivalent(
+	const FRpgInventorySplitRequest& A,
+	const FRpgInventorySplitRequest& B)
+{
+	return A.RequestId == B.RequestId &&
+		A.ItemId == B.ItemId &&
+		A.ExpectedEntryId == B.ExpectedEntryId &&
+		IsExactUiActionPlacementSnapshot(
+			A.ExpectedSourcePlacement,
+			B.ExpectedSourcePlacement) &&
+		A.ExpectedSourceQuantity == B.ExpectedSourceQuantity &&
+		A.SplitCount == B.SplitCount &&
+		IsExactUiActionPlacementSnapshot(
+			A.TargetPlacement,
+			B.TargetPlacement);
+}
+
+bool URpgInventoryUiActionComponent::TryReplayRecentSplitResult(
+	URpgInventoryManagerComponent* Inventory,
+	const FRpgInventorySplitRequest& Request)
+{
+	if (!Request.RequestId.IsValid())
+	{
+		return false;
+	}
+
+	const FRecentSplitRequestResult* CachedResult =
+		RecentSplitRequestResults.Find(Request.RequestId);
+	if (!CachedResult)
+	{
+		return false;
+	}
+
+	if (!IsReplayEpochCurrent(
+			CachedResult->Inventory,
+			CachedResult->bHadInventory,
+			CachedResult->InventoryMutationEpoch))
+	{
+		RecentSplitRequestResults.Remove(Request.RequestId);
+		RecentSplitRequestOrder.Remove(Request.RequestId);
+		return false;
+	}
+
+	if (CachedResult->Inventory.Get() != Inventory ||
+		!AreSplitRequestsEquivalent(CachedResult->Request, Request))
+	{
+		UE_LOG(
+			LogRpgInventoryUiActions,
+			Warning,
+			TEXT("Rejected split RequestId collision for %s."),
+			*Request.RequestId.ToString());
+		SendActionFeedback(
+			RpgGameplayTags::Rpg_Inventory_Action_Split,
+			ERpgInventoryActionFeedbackResult::InvalidRequest,
+			Inventory,
+			nullptr,
+			Request.SplitCount,
+			Request.RequestId,
+			Request.ItemId);
+		return true;
+	}
+
+	URpgInventoryManagerComponent* CachedInventory =
+		CachedResult->Inventory.Get();
+	SendActionFeedback(
+		RpgGameplayTags::Rpg_Inventory_Action_Split,
+		CachedResult->Result,
+		CachedInventory,
+		CachedResult->FeedbackItem.Get(),
+		CachedResult->FeedbackStackCount,
+		CachedResult->Request.RequestId,
+		CachedResult->Request.ItemId);
+	return true;
+}
+
+void URpgInventoryUiActionComponent::SendAndCacheSplitFeedback(
+	URpgInventoryManagerComponent* Inventory,
+	const FRpgInventorySplitRequest& Request,
+	ERpgInventoryActionFeedbackResult Result,
+	URpgInventoryItemInstance* Item,
+	int32 FeedbackStackCount)
+{
+	if (Request.RequestId.IsValid())
+	{
+		FRecentSplitRequestResult CachedResult;
+		CachedResult.Inventory = Inventory;
+		CachedResult.bHadInventory = Inventory != nullptr;
+		CachedResult.InventoryMutationEpoch = Inventory
+			? Inventory->GetMutationEpoch()
+			: 0;
+		CachedResult.Request = Request;
+		CachedResult.Result = Result;
+		CachedResult.FeedbackItem = Item;
+		CachedResult.FeedbackStackCount = FeedbackStackCount;
+		RecentSplitRequestResults.Add(
+			Request.RequestId,
+			MoveTemp(CachedResult));
+		RecentSplitRequestOrder.Remove(Request.RequestId);
+		RecentSplitRequestOrder.Add(Request.RequestId);
+		while (RecentSplitRequestOrder.Num() >
+			MaxRecentSplitRequestResults)
+		{
+			RecentSplitRequestResults.Remove(
+				RecentSplitRequestOrder[0]);
+			RecentSplitRequestOrder.RemoveAt(
+				0,
+				1,
+				EAllowShrinking::No);
+		}
+	}
+
+	SendActionFeedback(
+		RpgGameplayTags::Rpg_Inventory_Action_Split,
+		Result,
+		Inventory,
+		Item,
+		FeedbackStackCount,
+		Request.RequestId,
+		Request.ItemId);
+}
+
 bool URpgInventoryUiActionComponent::AreEquipmentIntentsEquivalent(
 	const FRpgInventoryEquipmentIntent& A,
 	const FRpgInventoryEquipmentIntent& B)
@@ -837,9 +973,7 @@ bool URpgInventoryUiActionComponent::
 			GetActionTagForEquipmentIntent(Intent.Operation),
 			ERpgInventoryActionFeedbackResult::InvalidRequest,
 			Inventory,
-			Inventory
-				? Inventory->FindItemById(Intent.ItemId)
-				: nullptr,
+			nullptr,
 			Intent.ExpectedQuantity,
 			Intent.RequestId,
 			Intent.ItemId);
@@ -853,10 +987,7 @@ bool URpgInventoryUiActionComponent::
 			CachedResult->Intent.Operation),
 		CachedResult->Result,
 		CachedInventory,
-		CachedInventory
-			? CachedInventory->FindItemById(
-				CachedResult->Intent.ItemId)
-			: nullptr,
+		CachedResult->FeedbackItem.Get(),
 		CachedResult->FeedbackStackCount,
 		CachedResult->Intent.RequestId,
 		CachedResult->Intent.ItemId);
@@ -881,6 +1012,7 @@ void URpgInventoryUiActionComponent::
 			: 0;
 		CachedResult.Intent = Intent;
 		CachedResult.Result = Result;
+		CachedResult.FeedbackItem = Item;
 		CachedResult.FeedbackStackCount = FeedbackStackCount;
 		RecentEquipmentIntentResults.Add(
 			Intent.RequestId,
@@ -971,9 +1103,7 @@ bool URpgInventoryUiActionComponent::TryReplayRecentExactTransferResult(
 			RpgGameplayTags::Rpg_Inventory_Action_Transfer,
 			ERpgInventoryActionFeedbackResult::InvalidRequest,
 			SourceInventory,
-			SourceInventory
-				? SourceInventory->FindItemById(Intent.ItemId)
-				: nullptr,
+			nullptr,
 			Intent.Quantity,
 			Intent.RequestId,
 			Intent.ItemId);
@@ -986,10 +1116,7 @@ bool URpgInventoryUiActionComponent::TryReplayRecentExactTransferResult(
 		RpgGameplayTags::Rpg_Inventory_Action_Transfer,
 		CachedResult->Result,
 		CachedSource,
-		CachedSource
-			? CachedSource->FindItemById(
-				CachedResult->Intent.ItemId)
-			: nullptr,
+		CachedResult->FeedbackItem.Get(),
 		CachedResult->FeedbackStackCount,
 		CachedResult->Intent.RequestId,
 		CachedResult->Intent.ItemId);
@@ -1019,6 +1146,7 @@ void URpgInventoryUiActionComponent::SendAndCacheExactTransferFeedback(
 			: 0;
 		CachedResult.Intent = Intent;
 		CachedResult.Result = Result;
+		CachedResult.FeedbackItem = Item;
 		CachedResult.FeedbackStackCount = FeedbackStackCount;
 		RecentExactTransferResults.Add(
 			Intent.RequestId,
@@ -1108,9 +1236,7 @@ bool URpgInventoryUiActionComponent::TryReplayRecentQuickTransferResult(
 			RpgGameplayTags::Rpg_Inventory_Action_Transfer,
 			ERpgInventoryActionFeedbackResult::InvalidRequest,
 			SourceInventory,
-			SourceInventory
-				? SourceInventory->FindItemById(Request.ItemId)
-				: nullptr,
+			nullptr,
 			Request.StackCount,
 			Request.RequestId,
 			Request.ItemId);
@@ -1123,10 +1249,7 @@ bool URpgInventoryUiActionComponent::TryReplayRecentQuickTransferResult(
 		RpgGameplayTags::Rpg_Inventory_Action_Transfer,
 		CachedResult->Result,
 		CachedSource,
-		CachedSource
-			? CachedSource->FindItemById(
-				CachedResult->Request.ItemId)
-			: nullptr,
+		CachedResult->FeedbackItem.Get(),
 		CachedResult->FeedbackStackCount,
 		CachedResult->Request.RequestId,
 		CachedResult->Request.ItemId);
@@ -1156,6 +1279,7 @@ void URpgInventoryUiActionComponent::SendAndCacheQuickTransferFeedback(
 			: 0;
 		CachedResult.Request = Request;
 		CachedResult.Result = Result;
+		CachedResult.FeedbackItem = Item;
 		CachedResult.FeedbackStackCount = FeedbackStackCount;
 		RecentQuickTransferResults.Add(
 			Request.RequestId,
@@ -1241,7 +1365,7 @@ bool URpgInventoryUiActionComponent::TryReplayRecentManualDropResult(
 			RpgGameplayTags::Rpg_Inventory_Action_Drop,
 			ERpgInventoryActionFeedbackResult::InvalidRequest,
 			Inventory,
-			Inventory ? Inventory->FindItemById(Request.ItemId) : nullptr,
+			nullptr,
 			Request.StackCount,
 			Request.RequestId,
 			Request.ItemId);
@@ -1254,9 +1378,7 @@ bool URpgInventoryUiActionComponent::TryReplayRecentManualDropResult(
 		RpgGameplayTags::Rpg_Inventory_Action_Drop,
 		CachedResult->Result,
 		CachedInventory,
-		CachedInventory
-			? CachedInventory->FindItemById(CachedResult->Request.ItemId)
-			: nullptr,
+		CachedResult->FeedbackItem.Get(),
 		CachedResult->FeedbackStackCount,
 		CachedResult->Request.RequestId,
 		CachedResult->Request.ItemId);
@@ -1287,6 +1409,7 @@ void URpgInventoryUiActionComponent::SendAndCacheManualDropFeedback(
 			: 0;
 		CachedResult.Request = Request;
 		CachedResult.Result = Result;
+		CachedResult.FeedbackItem = Item;
 		CachedResult.FeedbackStackCount = FeedbackStackCount;
 		RecentManualDropResults.Add(Request.RequestId, MoveTemp(CachedResult));
 		RecentManualDropOrder.Remove(Request.RequestId);

@@ -3,6 +3,7 @@
 #include "SurvivalRpg/ActionBar/RpgActionBarComponent.h"
 #include "SurvivalRpg/Equipment/RpgEquipmentLoadoutComponent.h"
 #include "SurvivalRpg/GameplayTags/RpgGameplayTags.h"
+#include "SurvivalRpg/Inventory/RpgInventoryDragDropCoordinator.h"
 #include "SurvivalRpg/Inventory/RpgInventoryItemDefinition.h"
 #include "SurvivalRpg/Inventory/RpgInventoryManagerComponent.h"
 #include "SurvivalRpg/Inventory/RpgInventoryItemInstance.h"
@@ -198,18 +199,6 @@ bool URpgInventoryInteractionSession::ToggleTargetRotation()
 			Payload.DragAnchor.SourceScreenVisualSize = FVector2D(OldScreenSize.Y, OldScreenSize.X);
 		}
 		Payload.DragAnchor.bRotated = bTargetRotated;
-	}
-
-	if (Payload.bHasPointerGrabOffset && Payload.DragVisualSize.X > KINDA_SMALL_NUMBER && Payload.DragVisualSize.Y > KINDA_SMALL_NUMBER)
-	{
-		const FVector2D OldVisualSize = Payload.DragVisualSize;
-		const FVector2D OldOffset(
-			FMath::Clamp(Payload.PointerGrabOffset.X, 0.0f, OldVisualSize.X),
-			FMath::Clamp(Payload.PointerGrabOffset.Y, 0.0f, OldVisualSize.Y));
-		Payload.PointerGrabOffset = !bWasRotated
-			? FVector2D(OldVisualSize.Y - OldOffset.Y, OldOffset.X)
-			: FVector2D(OldOffset.Y, OldVisualSize.X - OldOffset.X);
-		Payload.DragVisualSize = FVector2D(OldVisualSize.Y, OldVisualSize.X);
 	}
 
 	Target = FRpgInventoryDropTarget();

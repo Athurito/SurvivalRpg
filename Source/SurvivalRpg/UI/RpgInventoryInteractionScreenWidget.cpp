@@ -12,14 +12,16 @@
 #include "SurvivalRpg/Inventory/RpgInventoryItemDefinition.h"
 #include "SurvivalRpg/Inventory/RpgInventoryItemInstance.h"
 #include "SurvivalRpg/Inventory/RpgInventoryManagerComponent.h"
-#include "SurvivalRpg/UI/RpgInventoryActionWidgets.h"
+#include "SurvivalRpg/UI/RpgInventoryContextMenuWidget.h"
+#include "SurvivalRpg/UI/RpgInventoryDropConfirmationDialogWidget.h"
+#include "SurvivalRpg/UI/RpgInventorySplitDialogWidget.h"
 #include "SurvivalRpg/UI/RpgInventoryAddressSlotWidget.h"
 #include "SurvivalRpg/UI/RpgInventoryContextActionSource.h"
 #include "SurvivalRpg/UI/RpgInventoryDragVisualWidget.h"
 #include "SurvivalRpg/UI/RpgInventoryFeedbackToastWidget.h"
 #include "SurvivalRpg/UI/RpgInventoryPanelNavigationCoordinator.h"
 #include "SurvivalRpg/UI/RpgLoadoutSlotWidgets.h"
-#include "SurvivalRpg/UI/RpgPlayerInventoryLayoutViews.h"
+#include "SurvivalRpg/UI/RpgInventorySpatialGridWidget.h"
 #include "TimerManager.h"
 
 #if WITH_EDITOR

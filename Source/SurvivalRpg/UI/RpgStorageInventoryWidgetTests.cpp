@@ -3,14 +3,16 @@
 #if WITH_DEV_AUTOMATION_TESTS
 
 #include "SurvivalRpg/Inventory/RpgInventoryAutomationTestTypes.h"
-#include "SurvivalRpg/Inventory/RpgInventoryDragDrop.h"
+#include "SurvivalRpg/Inventory/RpgInventoryDragDropCoordinator.h"
+#include "SurvivalRpg/Inventory/RpgInventoryDragDropTypes.h"
 #include "SurvivalRpg/Inventory/RpgInventoryItemInstance.h"
 #include "SurvivalRpg/Inventory/RpgInventoryManagerComponent.h"
-#include "SurvivalRpg/Mvvm/Inventory/RpgPlayerInventoryViewModels.h"
+#include "SurvivalRpg/Mvvm/Inventory/RpgPlayerInventoryViewModel.h"
 #include "SurvivalRpg/UI/RpgInventoryInteractionScreenWidget.h"
 #include "SurvivalRpg/UI/RpgInventoryPanelNavigationCoordinator.h"
 #include "SurvivalRpg/UI/RpgPlayerInventoryWidget.h"
-#include "SurvivalRpg/UI/RpgPlayerInventoryLayoutViews.h"
+#include "SurvivalRpg/UI/RpgInventorySlotGroupPanelWidget.h"
+#include "SurvivalRpg/UI/RpgInventorySpatialGridWidget.h"
 #include "SurvivalRpg/UI/RpgUIScreenPayload.h"
 
 #include "Blueprint/UserWidget.h"

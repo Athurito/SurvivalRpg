@@ -2,7 +2,7 @@
 
 #include "CoreMinimal.h"
 #include "RpgInventoryItemTypes.h"
-#include "RpgInventorySpatialTypes.h"
+#include "RpgInventoryGraphTypes.h"
 
 class URpgInventoryFragment_UsableItem;
 class URpgInventoryItemInstance;

@@ -4,7 +4,7 @@
 #include "SurvivalRpg/GameFeatures/RpgGameFeatureAction_AddInputContextMapping.h"
 #include "SurvivalRpg/GameFeatures/RpgGameFeatureAction_AddWidgets.h"
 #include "SurvivalRpg/Input/RpgInputConfig.h"
-#include "SurvivalRpg/Mvvm/Inventory/RpgActionBarViewModels.h"
+#include "SurvivalRpg/Mvvm/Inventory/RpgActionBarSlotViewModel.h"
 #include "SurvivalRpg/UI/RpgQuickAccessRadialWidget.h"
 
 #include "Blueprint/WidgetBlueprintGeneratedClass.h"

@@ -133,45 +133,6 @@ namespace
 	}
 }
 
-void FRpgInventoryManualDropActionHandler::DropInventoryItem(
-	URpgInventoryManagerComponent* Inventory,
-	URpgInventoryItemInstance* Item,
-	int32 StackCount,
-	bool bConfirmed)
-{
-	FRpgInventoryManualDropRequest Request;
-	Request.RequestId = FGuid::NewGuid();
-	Request.ItemId = Item ? Item->GetItemId() : FRpgInventoryItemId();
-	Request.StackCount = StackCount;
-	Request.bConfirmed = bConfirmed;
-
-	if (Inventory && Item)
-	{
-		const TArray<FRpgInventoryEntryView> Entries =
-			Inventory->GetAllEntries();
-		if (const FRpgInventoryEntryView* Entry =
-				Entries.FindByPredicate(
-					[Item](const FRpgInventoryEntryView& Candidate)
-					{
-						return Candidate.Instance.Get() == Item;
-					}))
-		{
-			Request.EntryId = Entry->EntryId;
-			Request.ItemId = Entry->ItemId;
-			Request.ExpectedSourcePlacement = Entry->Placement;
-			Request.ExpectedSourceQuantity = Entry->StackCount;
-			// Preserve the legacy pointer API's <= 0 "whole stack" and
-			// oversized-request clamp while translating it into the exact-count
-			// ID contract. New callers must provide their exact count directly.
-			Request.StackCount = StackCount <= 0
-				? Entry->StackCount
-				: FMath::Min(StackCount, Entry->StackCount);
-		}
-	}
-
-	DropInventoryItemById(Inventory, MoveTemp(Request));
-}
-
 void FRpgInventoryManualDropActionHandler::DropInventoryItemById(
 	URpgInventoryManagerComponent* Inventory,
 	FRpgInventoryManualDropRequest Request)

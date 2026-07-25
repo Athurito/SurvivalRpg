@@ -3,7 +3,7 @@
 #include "CoreMinimal.h"
 #include "GameplayTagContainer.h"
 #include "RpgInventoryItemTypes.h"
-#include "RpgInventorySpatialTypes.h"
+#include "RpgInventoryGraphTypes.h"
 #include "SurvivalRpg/Equipment/RpgEquipmentDefinition.h"
 #include "UObject/SoftObjectPtr.h"
 

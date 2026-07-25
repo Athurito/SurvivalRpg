@@ -1582,12 +1582,12 @@ bool FRpgInventoryTypedTransferReplayFingerprintTest::RunTest(
 }
 
 IMPLEMENT_SIMPLE_AUTOMATION_TEST(
-	FRpgInventoryAuthorityAndLegacyFacadeRevisionContractTest,
-	"SurvivalRpg.Inventory.Transaction.AuthorityAndLegacyFacadeRevisionContract",
+	FRpgInventoryAuthorityAndLegacyPlacementFacadeRevisionContractTest,
+	"SurvivalRpg.Inventory.Transaction.AuthorityAndLegacyPlacementFacadeRevisionContract",
 	EAutomationTestFlags::EditorContext |
 		EAutomationTestFlags::EngineFilter)
 
-bool FRpgInventoryAuthorityAndLegacyFacadeRevisionContractTest::RunTest(
+bool FRpgInventoryAuthorityAndLegacyPlacementFacadeRevisionContractTest::RunTest(
 	const FString& Parameters)
 {
 	using namespace RpgInventoryIntentTransactionTests;
@@ -1626,95 +1626,28 @@ bool FRpgInventoryAuthorityAndLegacyFacadeRevisionContractTest::RunTest(
 		return false;
 	}
 
-	const uint64 MutationEpochBeforeLegacyOperations =
-		Inventory->GetMutationEpoch();
-	int32 ExpectedRevision = Inventory->GetInventoryRevision();
-	const FString BeforeSort = MakeInventorySignature(Inventory);
-	TestTrue(
-		TEXT("The authority-only legacy sort repacks a displaced inventory"),
-		Inventory->ApplyInventorySort(ERpgInventorySortMode::Name));
-	++ExpectedRevision;
-	TestEqual(
-		TEXT("A changed legacy sort advances revision exactly once"),
-		Inventory->GetInventoryRevision(),
-		ExpectedRevision);
-	TestEqual(
-		TEXT("A runtime legacy sort preserves the mutation epoch"),
-		Inventory->GetMutationEpoch(),
-		MutationEpochBeforeLegacyOperations);
-	TestNotEqual(
-		TEXT("The changed legacy sort rewrites placement state"),
-		MakeInventorySignature(Inventory),
-		BeforeSort);
-
-	const FString StableSortedGraph = MakeInventorySignature(Inventory);
-	TestFalse(
-		TEXT("Repeating the same legacy sort reports no mutation"),
-		Inventory->ApplyInventorySort(ERpgInventorySortMode::Name));
-	TestEqual(
-		TEXT("A no-op legacy sort does not advance revision"),
-		Inventory->GetInventoryRevision(),
-		ExpectedRevision);
-	TestEqual(
-		TEXT("A no-op legacy sort preserves the graph"),
-		MakeInventorySignature(Inventory),
-		StableSortedGraph);
-
-	const TArray<FRpgInventoryEntryView> SortedEntries =
-		Inventory->GetAllEntries();
-	if (!TestEqual(
-			TEXT("The legacy-order fixture retains both entries"),
-			SortedEntries.Num(),
-			2) ||
-		!SortedEntries.IsValidIndex(0))
+	FRpgInventoryEntryView PlacementEntry;
+	if (!TestTrue(
+			TEXT("The selected legacy-placement item remains addressable"),
+			GetEntryView(
+				Inventory,
+				FirstItem->GetItemId(),
+				PlacementEntry)))
 	{
 		return false;
 	}
 
-	const FGuid ReorderedEntryId = SortedEntries[0].EntryId;
-	const FRpgInventoryItemId ReorderedItemId = SortedEntries[0].ItemId;
-	const FString BeforeIndexMove = MakeInventorySignature(Inventory);
-	TestTrue(
-		TEXT("The authority-only legacy index move changes shared order"),
-		Inventory->MoveInventoryEntry(
-			ReorderedEntryId,
-			SortedEntries.Num() - 1));
-	++ExpectedRevision;
-	TestEqual(
-		TEXT("A changed legacy index move advances revision exactly once"),
-		Inventory->GetInventoryRevision(),
-		ExpectedRevision);
-	TestEqual(
-		TEXT("A legacy index move preserves the mutation epoch"),
-		Inventory->GetMutationEpoch(),
-		MutationEpochBeforeLegacyOperations);
-	TestNotEqual(
-		TEXT("The changed legacy index move rewrites placement order"),
-		MakeInventorySignature(Inventory),
-		BeforeIndexMove);
-
-	const FString StableIndexGraph = MakeInventorySignature(Inventory);
-	TestFalse(
-		TEXT("Moving the same entry to its current final index is a no-op"),
-		Inventory->MoveInventoryEntry(
-			ReorderedEntryId,
-			SortedEntries.Num() - 1));
-	TestEqual(
-		TEXT("A no-op legacy index move does not advance revision"),
-		Inventory->GetInventoryRevision(),
-		ExpectedRevision);
-	TestEqual(
-		TEXT("A no-op legacy index move preserves the graph"),
-		MakeInventorySignature(Inventory),
-		StableIndexGraph);
-
+	const FRpgInventoryItemId PlacementItemId = PlacementEntry.ItemId;
+	const uint64 MutationEpochBeforeLegacyPlacement =
+		Inventory->GetMutationEpoch();
+	int32 ExpectedRevision = Inventory->GetInventoryRevision();
 	const FRpgInventoryGridPlacement ExactLegacyPlacement =
 		MakePlacement(Root, 5, 2);
 	TestTrue(
-		TEXT("The authority-only legacy placement wrapper commits"),
-		Inventory->MoveInventoryEntryToPlacement(
-			ReorderedEntryId,
-			ExactLegacyPlacement));
+		TEXT("The authority-only typed placement intent commits"),
+		Inventory->MoveItem(MakeMoveIntent(
+			PlacementEntry,
+			ExactLegacyPlacement)).IsSuccess());
 	++ExpectedRevision;
 	TestEqual(
 		TEXT("A changed legacy placement advances revision exactly once"),
@@ -1723,14 +1656,14 @@ bool FRpgInventoryAuthorityAndLegacyFacadeRevisionContractTest::RunTest(
 	TestEqual(
 		TEXT("A legacy placement move preserves the mutation epoch"),
 		Inventory->GetMutationEpoch(),
-		MutationEpochBeforeLegacyOperations);
+		MutationEpochBeforeLegacyPlacement);
 
 	FRpgInventoryEntryView AuthorityEntry;
 	if (!TestTrue(
 			TEXT("The legacy-moved entry remains addressable"),
 			GetEntryView(
 				Inventory,
-				ReorderedItemId,
+				PlacementItemId,
 				AuthorityEntry)))
 	{
 		return false;
@@ -1747,10 +1680,10 @@ bool FRpgInventoryAuthorityAndLegacyFacadeRevisionContractTest::RunTest(
 	const FString StablePlacementGraph =
 		MakeInventorySignature(Inventory);
 	TestTrue(
-		TEXT("Repeating an exact legacy placement remains a successful no-op"),
-		Inventory->MoveInventoryEntryToPlacement(
-			ReorderedEntryId,
-			ExactLegacyPlacement));
+		TEXT("Repeating an exact typed placement remains a successful no-op"),
+		Inventory->MoveItem(MakeMoveIntent(
+			AuthorityEntry,
+			ExactLegacyPlacement)).IsSuccess());
 	TestEqual(
 		TEXT("A no-op legacy placement does not advance revision"),
 		Inventory->GetInventoryRevision(),
@@ -1843,16 +1776,10 @@ bool FRpgInventoryAuthorityAndLegacyFacadeRevisionContractTest::RunTest(
 		ERpgInventoryMutationResultCode::AuthorityRequired);
 
 	TestFalse(
-		TEXT("A simulated proxy cannot invoke the legacy sort wrapper"),
-		Inventory->ApplyInventorySort(ERpgInventorySortMode::Name));
-	TestFalse(
-		TEXT("A simulated proxy cannot invoke the legacy index wrapper"),
-		Inventory->MoveInventoryEntry(ReorderedEntryId, 0));
-	TestFalse(
-		TEXT("A simulated proxy cannot invoke the legacy placement wrapper"),
-		Inventory->MoveInventoryEntryToPlacement(
-			ReorderedEntryId,
-			MakePlacement(Root, 9, 2)));
+		TEXT("A simulated proxy cannot commit another typed placement intent"),
+		Inventory->MoveItem(MakeMoveIntent(
+			AuthorityEntry,
+			MakePlacement(Root, 9, 2))).IsSuccess());
 
 	TestEqual(
 		TEXT("Every authority rejection preserves the complete source graph"),

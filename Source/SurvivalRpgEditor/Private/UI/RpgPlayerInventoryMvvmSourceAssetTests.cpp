@@ -1,6 +1,6 @@
 #if WITH_DEV_AUTOMATION_TESTS
 
-#include "SurvivalRpg/Mvvm/Inventory/RpgPlayerInventoryViewModels.h"
+#include "SurvivalRpg/Mvvm/Inventory/RpgPlayerInventoryViewModel.h"
 #include "SurvivalRpg/UI/RpgPlayerInventoryWidget.h"
 
 #include "AssetRegistry/AssetData.h"

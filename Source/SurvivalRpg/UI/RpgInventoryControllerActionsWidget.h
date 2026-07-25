@@ -3,7 +3,8 @@
 #include "Engine/DataTable.h"
 #include "Input/UIActionBindingHandle.h"
 #include "RpgActivatableWidget.h"
-#include "SurvivalRpg/Inventory/RpgInventoryDragDrop.h"
+#include "SurvivalRpg/Inventory/RpgInventoryDragDropCoordinator.h"
+#include "SurvivalRpg/Inventory/RpgInventoryDragDropTypes.h"
 
 #include "RpgInventoryControllerActionsWidget.generated.h"
 

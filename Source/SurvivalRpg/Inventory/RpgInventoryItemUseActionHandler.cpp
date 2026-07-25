@@ -12,114 +12,58 @@
 #include "SurvivalRpg/GameplayTags/RpgGameplayTags.h"
 #include "UObject/UObjectGlobals.h"
 
-void FRpgInventoryItemUseActionHandler::ExecuteItemAction(
+FRpgInventoryItemUseExecutionResult
+	FRpgInventoryItemUseActionHandler::ExecuteUseRequest(
 	URpgInventoryManagerComponent* Inventory,
-	FRpgInventoryItemActionRequest Request)
+	const FRpgInventoryUseRequest& Request)
 {
-	const FGameplayTag ActionTag =
-		Request.Intent == ERpgInventoryItemActionIntent::Use
-			? RpgGameplayTags::Rpg_Inventory_Action_Use
-			: Request.Intent ==
-					ERpgInventoryItemActionIntent::MoveToCarry
-				? RpgGameplayTags::
-						Rpg_Inventory_Action_MoveToCarry
-				: RpgGameplayTags::
-						Rpg_Inventory_Action_EquipAndActivate;
-	if (Request.Intent != ERpgInventoryItemActionIntent::Use)
+	auto MakeResult = [](
+		ERpgInventoryActionFeedbackResult Result,
+		URpgInventoryItemInstance* Item,
+		int32 FeedbackUseCount)
 	{
-		SendActionFeedback(
-			ActionTag,
+		FRpgInventoryItemUseExecutionResult ExecutionResult;
+		ExecutionResult.Result = Result;
+		ExecutionResult.Item = Item;
+		ExecutionResult.FeedbackUseCount = FeedbackUseCount;
+		return ExecutionResult;
+	};
+
+	if (!IsValid(Inventory) || !Request.ItemId.IsValid() ||
+		Request.UseCount <= 0)
+	{
+		return MakeResult(
 			ERpgInventoryActionFeedbackResult::InvalidRequest,
-			Inventory,
 			nullptr,
-			Request.StackCount,
-			Request.RequestId,
-			Request.ItemId);
-		return;
-	}
-
-	if (!Inventory || !CanAccessInventory(Inventory))
-	{
-		SendActionFeedback(
-			ActionTag,
-			ERpgInventoryActionFeedbackResult::NoAccess,
-			Inventory,
-			nullptr,
-			Request.StackCount,
-			Request.RequestId,
-			Request.ItemId);
-		return;
-	}
-
-	URpgInventoryItemInstance* Item =
-		Inventory->FindItemById(Request.ItemId);
-	if (!Item)
-	{
-		SendActionFeedback(
-			ActionTag,
-			ERpgInventoryActionFeedbackResult::MissingItem,
-			Inventory,
-			nullptr,
-			Request.StackCount,
-			Request.RequestId,
-			Request.ItemId);
-		return;
-	}
-
-	UseInventoryItem(
-		Inventory,
-		Item,
-		Request.StackCount,
-		Request.RequestId);
-}
-
-void FRpgInventoryItemUseActionHandler::UseInventoryItem(
-	URpgInventoryManagerComponent* Inventory,
-	URpgInventoryItemInstance* Item,
-	int32 StackCount,
-	const FGuid& RequestId)
-{
-	const FRpgInventoryItemId ItemId =
-		Item ? Item->GetItemId() : FRpgInventoryItemId();
-	auto SendUseFeedback =
-		[this, Inventory, Item, &RequestId, ItemId](
-			ERpgInventoryActionFeedbackResult Result,
-			int32 Count)
-		{
-			SendActionFeedback(
-				RpgGameplayTags::Rpg_Inventory_Action_Use,
-				Result,
-				Inventory,
-				Item,
-				Count,
-				RequestId,
-				ItemId);
-		};
-
-	if (!Inventory || !Item)
-	{
-		SendUseFeedback(
-			ERpgInventoryActionFeedbackResult::InvalidRequest,
-			StackCount);
-		return;
+			Request.UseCount);
 	}
 
 	if (!CanAccessInventory(Inventory))
 	{
-		SendUseFeedback(
+		return MakeResult(
 			ERpgInventoryActionFeedbackResult::NoAccess,
-			StackCount);
-		return;
+			nullptr,
+			Request.UseCount);
+	}
+
+	URpgInventoryItemInstance* Item =
+		Inventory->FindItemById(Request.ItemId);
+	if (!IsValid(Item))
+	{
+		return MakeResult(
+			ERpgInventoryActionFeedbackResult::MissingItem,
+			nullptr,
+			Request.UseCount);
 	}
 
 	const int32 AvailableCount =
 		Inventory->GetItemStackCount(Item);
 	if (AvailableCount <= 0)
 	{
-		SendUseFeedback(
+		return MakeResult(
 			ERpgInventoryActionFeedbackResult::MissingItem,
-			StackCount);
-		return;
+			Item,
+			Request.UseCount);
 	}
 
 	URpgInventoryManagerComponent* PlayerInventory =
@@ -130,46 +74,54 @@ void FRpgInventoryItemUseActionHandler::UseInventoryItem(
 			Inventory,
 			PlayerInventory,
 			AvailableCount,
-			StackCount);
+			Request.UseCount);
 	switch (UseCapability.Result)
 	{
 	case ERpgInventoryUseCapabilityResult::NotConfigured:
-		SendUseFeedback(
+		return MakeResult(
 			ERpgInventoryActionFeedbackResult::CannotUse,
-			StackCount);
-		return;
+			Item,
+			Request.UseCount);
 
 	case ERpgInventoryUseCapabilityResult::WrongInventory:
-		SendUseFeedback(
+		return MakeResult(
 			ERpgInventoryActionFeedbackResult::WrongInventory,
-			StackCount);
-		return;
+			Item,
+			Request.UseCount);
 
 	case ERpgInventoryUseCapabilityResult::InvalidRequest:
-		SendUseFeedback(
+		return MakeResult(
 			ERpgInventoryActionFeedbackResult::InvalidRequest,
-			StackCount);
-		return;
+			Item,
+			Request.UseCount);
 
 	case ERpgInventoryUseCapabilityResult::InsufficientQuantity:
-		SendUseFeedback(
+		return MakeResult(
 			ERpgInventoryActionFeedbackResult::MissingItem,
+			Item,
 			UseCapability.RequiredConsumeCount);
-		return;
 
 	case ERpgInventoryUseCapabilityResult::Available:
 		break;
 
 	default:
-		SendUseFeedback(
+		return MakeResult(
 			ERpgInventoryActionFeedbackResult::CannotUse,
-			StackCount);
-		return;
+			Item,
+			Request.UseCount);
 	}
 
 	const URpgInventoryFragment_UsableItem* UsableFragment =
 		UseCapability.UseContract;
-	const int32 UseCount = StackCount;
+	if (!UsableFragment || !UsableFragment->UseAbility)
+	{
+		return MakeResult(
+			ERpgInventoryActionFeedbackResult::CannotUse,
+			Item,
+			Request.UseCount);
+	}
+
+	const int32 UseCount = Request.UseCount;
 	const int32 ConsumeCount =
 		UseCapability.RequiredConsumeCount;
 	if (ConsumeCount > 0 &&
@@ -177,20 +129,20 @@ void FRpgInventoryItemUseActionHandler::UseInventoryItem(
 			Item->GetItemId(),
 			ConsumeCount))
 	{
-		SendUseFeedback(
+		return MakeResult(
 			ERpgInventoryActionFeedbackResult::ServerRejected,
+			Item,
 			ConsumeCount);
-		return;
 	}
 
 	URpgAbilitySystemComponent* AbilitySystem =
 		FindPlayerAbilitySystem();
 	if (!AbilitySystem)
 	{
-		SendUseFeedback(
+		return MakeResult(
 			ERpgInventoryActionFeedbackResult::ServerRejected,
-			StackCount);
-		return;
+			Item,
+			Request.UseCount);
 	}
 
 	AActor* AvatarActor = GetRequestingActor();
@@ -264,10 +216,10 @@ void FRpgInventoryItemUseActionHandler::UseInventoryItem(
 					Item);
 		}
 
-		SendUseFeedback(
+		return MakeResult(
 			ERpgInventoryActionFeedbackResult::AbilityRejected,
-			StackCount);
-		return;
+			Item,
+			Request.UseCount);
 	}
 
 	if (UsableFragment->bConsumeOnActivationAccepted &&
@@ -275,15 +227,16 @@ void FRpgInventoryItemUseActionHandler::UseInventoryItem(
 	{
 		if (!UseContext->TryConsume())
 		{
-			SendUseFeedback(
+			return MakeResult(
 				ERpgInventoryActionFeedbackResult::
 					ServerRejected,
+				Item,
 				ConsumeCount);
-			return;
 		}
 	}
 
-	SendUseFeedback(
+	return MakeResult(
 		ERpgInventoryActionFeedbackResult::Success,
+		Item,
 		ConsumeCount);
 }

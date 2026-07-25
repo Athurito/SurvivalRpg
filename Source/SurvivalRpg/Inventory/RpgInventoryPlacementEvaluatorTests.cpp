@@ -375,7 +375,11 @@ bool FRpgInventoryPlacementSubjectFactoryContractTest::RunTest(
 	{
 		return false;
 	}
-	Inventory->RemoveItemInstance(DetachedItem);
+	TestTrue(
+		TEXT("Canonical consume detaches the placement subject"),
+		Inventory->ConsumeItemById(
+			DetachedItem->GetItemId(),
+			Inventory->GetItemStackCount(DetachedItem)).IsSuccess());
 	if (!TestFalse(
 			TEXT("The subject item is detached before factory evaluation"),
 			Inventory->ContainsItemInstance(DetachedItem)))
@@ -757,7 +761,11 @@ bool FRpgInventoryPlacementPublicPreflightParityAndPurityTest::RunTest(
 		return false;
 	}
 
-	SourceInventory->RemoveItemInstance(GeneratedAddProbe);
+	TestTrue(
+		TEXT("Canonical consume detaches the generated add probe"),
+		SourceInventory->ConsumeItemById(
+			GeneratedAddProbe->GetItemId(),
+			SourceInventory->GetItemStackCount(GeneratedAddProbe)).IsSuccess());
 	if (!TestFalse(
 			TEXT("The generated add probe is detached before read-only planning"),
 			SourceInventory->ContainsItemInstance(GeneratedAddProbe)))
@@ -1105,7 +1113,11 @@ bool FRpgInventoryPlacementIgnoredNonOverlapCapacityTest::RunTest(
 	{
 		return false;
 	}
-	SourceInventory->RemoveItemInstance(DetachedIncomingItem);
+	TestTrue(
+		TEXT("Canonical consume detaches the incoming probe"),
+		SourceInventory->ConsumeItemById(
+			DetachedIncomingItem->GetItemId(),
+			SourceInventory->GetItemStackCount(DetachedIncomingItem)).IsSuccess());
 	TestFalse(
 		TEXT("The detached incoming probe is no longer source-managed"),
 		SourceInventory->ContainsItemInstance(DetachedIncomingItem));

@@ -97,19 +97,12 @@ public:
 	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Inventory|Container", meta = (TitleProperty = "ContainerId"))
 	TArray<FRpgInventoryItemContainerDefinition> ProvidedContainers;
 
-	/** Appends effective item-owned definitions. Compatibility fragments override this to migrate legacy layout data. */
+	/** Appends every designer-authored item-owned grid in definition order for runtime and validation consumers. */
 	virtual void GetProvidedContainers(TArray<FRpgInventoryItemContainerDefinition>& OutContainers) const;
 
 	/**
-	 * Appends every authored row used to verify this fragment's structural container contract.
-	 * Unlike the runtime view, compatibility overrides must retain malformed and duplicate legacy rows for diagnostics.
-	 */
-	virtual void GetAuthoredContainerDefinitions(
-		TArray<FRpgInventoryItemContainerDefinition>& OutContainers) const;
-
-	/**
-	 * Returns whether every authored container row has a usable id and grid, with no fragment-local id repeats.
-	 * This runtime-safe helper shares the same unfiltered authored view consumed by editor asset validation.
+	 * Returns whether every provided container has a usable id and grid, with no fragment-local id repeats.
+	 * Runtime and editor validation intentionally inspect the same designer-authored ProvidedContainers rows.
 	 */
 	bool HasStructurallyValidProvidedContainers() const;
 

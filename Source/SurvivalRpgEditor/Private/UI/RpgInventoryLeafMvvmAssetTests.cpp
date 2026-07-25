@@ -1,9 +1,9 @@
 #if WITH_DEV_AUTOMATION_TESTS
 
 #include "SurvivalRpg/Mvvm/Base/RpgBaseStorageViewModels.h"
-#include "SurvivalRpg/Mvvm/Inventory/RpgActionBarViewModels.h"
+#include "SurvivalRpg/Mvvm/Inventory/RpgActionBarSlotViewModel.h"
 #include "SurvivalRpg/Mvvm/Inventory/RpgLoadoutViewModels.h"
-#include "SurvivalRpg/Mvvm/Inventory/RpgPlayerInventoryViewModels.h"
+#include "SurvivalRpg/Mvvm/Inventory/RpgInventoryAddressSlotViewModel.h"
 #include "SurvivalRpg/UI/RpgActionBarSlotWidget.h"
 #include "SurvivalRpg/UI/RpgBaseResourceEntryWidget.h"
 #include "SurvivalRpg/UI/RpgInventoryAddressSlotWidget.h"
@@ -668,37 +668,6 @@ bool FRpgInventoryLeafMvvmAssetContractsTest::RunTest(
 			{
 				TEXT("BP_OnActionBarSlotViewModelSet"),
 				TEXT("SetInputAction"),
-				TEXT("SetSlotIcon"),
-				TEXT("SetStackSize")
-			}
-		},
-		{
-			TEXT("Address slot"),
-			TEXT(
-				"/Game/SurvivalRpg/Inventory/UI/"
-				"CUI_AddressSlotEntry.CUI_AddressSlotEntry"),
-			URpgInventoryAddressSlotWidget::StaticClass(),
-			URpgInventoryAddressSlotViewModel::StaticClass(),
-			URpgInventoryAddressSlotWidget::
-				AddressSlotViewModelSourceName,
-			2,
-			{
-				{
-					TEXT("Icon"),
-					NAME_None,
-					TEXT("SetSlotIcon"),
-					NAME_None
-				},
-				{
-					TEXT("StackCount"),
-					NAME_None,
-					TEXT("SetStackSize"),
-					NAME_None
-				}
-			},
-			{ TEXT("BP_OnAddressSlotViewModelSet") },
-			{
-				TEXT("BP_OnAddressSlotViewModelSet"),
 				TEXT("SetSlotIcon"),
 				TEXT("SetStackSize")
 			}

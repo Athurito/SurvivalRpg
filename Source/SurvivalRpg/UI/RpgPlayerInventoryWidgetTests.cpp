@@ -5,21 +5,26 @@
 #include "Blueprint/IUserListEntry.h"
 #include "MVVMSubsystem.h"
 #include "SurvivalRpg/Inventory/RpgInventoryAutomationTestTypes.h"
-#include "SurvivalRpg/Inventory/RpgInventoryDragDrop.h"
+#include "SurvivalRpg/Inventory/RpgInventoryDragDropCoordinator.h"
+#include "SurvivalRpg/Inventory/RpgInventoryDragDropTypes.h"
 #include "SurvivalRpg/Inventory/RpgInventoryInteractionSession.h"
 #include "SurvivalRpg/Inventory/RpgInventoryItemInstance.h"
 #include "SurvivalRpg/Inventory/RpgInventoryManagerComponent.h"
-#include "SurvivalRpg/Mvvm/Inventory/RpgActionBarViewModels.h"
-#include "SurvivalRpg/Mvvm/Inventory/RpgInventoryViewModels.h"
+#include "SurvivalRpg/Mvvm/Inventory/RpgActionBarSlotViewModel.h"
+#include "SurvivalRpg/Mvvm/Inventory/RpgInventoryEntryViewModel.h"
 #include "SurvivalRpg/Mvvm/Inventory/RpgLoadoutViewModels.h"
-#include "SurvivalRpg/Mvvm/Inventory/RpgPlayerInventoryViewModels.h"
+#include "SurvivalRpg/Mvvm/Inventory/RpgInventoryAddressSlotViewModel.h"
+#include "SurvivalRpg/Mvvm/Inventory/RpgInventorySlotGroupViewModel.h"
+#include "SurvivalRpg/Mvvm/Inventory/RpgPlayerInventoryViewModel.h"
 #include "SurvivalRpg/UI/RpgActionBarSlotWidget.h"
 #include "SurvivalRpg/UI/RpgInventoryAddressSlotWidget.h"
 #include "SurvivalRpg/UI/RpgInventoryCarrySlotWidget.h"
 #include "SurvivalRpg/UI/RpgInventoryDragVisualWidget.h"
 #include "SurvivalRpg/UI/RpgInventoryInteractionScreenWidget.h"
 #include "SurvivalRpg/UI/RpgLoadoutSlotWidgets.h"
-#include "SurvivalRpg/UI/RpgPlayerInventoryLayoutViews.h"
+#include "SurvivalRpg/UI/RpgInventorySlotGroupWidget.h"
+#include "SurvivalRpg/UI/RpgInventorySpatialGridWidget.h"
+#include "SurvivalRpg/UI/RpgInventorySpatialItemWidget.h"
 #include "View/MVVMView.h"
 #include "View/MVVMViewClass.h"
 
@@ -1493,7 +1498,7 @@ bool FRpgActionBarSlotEntryPoolingTest::RunTest(const FString& Parameters)
 
 IMPLEMENT_SIMPLE_AUTOMATION_TEST(
 	FRpgInventoryAddressSlotEntryPoolingTest,
-	"SurvivalRpg.Inventory.UI.InventoryAddressSlotEntryPooling",
+	"SurvivalRpg.Inventory.UI.CarrySlotInheritedAddressPooling",
 	EAutomationTestFlags::EditorContext | EAutomationTestFlags::EngineFilter)
 
 bool FRpgInventoryAddressSlotEntryPoolingTest::RunTest(const FString& Parameters)
@@ -1509,12 +1514,12 @@ bool FRpgInventoryAddressSlotEntryPoolingTest::RunTest(const FString& Parameters
 	UClass* EntryWidgetClass = LoadClass<URpgInventoryAddressSlotWidget>(
 		nullptr,
 		TEXT(
-			"/Game/SurvivalRpg/Inventory/UI/"
-			"CUI_AddressSlotEntry.CUI_AddressSlotEntry_C"));
+			"/Game/SurvivalRpg/Inventory/UI/SpatialInventory/"
+			"CUI_CarrySlot.CUI_CarrySlot_C"));
 	UWidgetBlueprintGeneratedClass* GeneratedClass =
 		Cast<UWidgetBlueprintGeneratedClass>(EntryWidgetClass);
-	if (!TestNotNull(TEXT("Canonical address-slot entry class loads"), EntryWidgetClass) ||
-		!TestNotNull(TEXT("Canonical address-slot entry is a Widget Blueprint"), GeneratedClass))
+	if (!TestNotNull(TEXT("Canonical Carry slot class loads"), EntryWidgetClass) ||
+		!TestNotNull(TEXT("Canonical Carry slot is a Widget Blueprint"), GeneratedClass))
 	{
 		return false;
 	}
@@ -1587,6 +1592,9 @@ bool FRpgInventoryAddressSlotEntryPoolingTest::RunTest(const FString& Parameters
 	{
 		return false;
 	}
+	TestTrue(
+		TEXT("Inherited address pooling runs on the canonical Carry presenter"),
+		Widget->IsA<URpgInventoryCarrySlotWidget>());
 
 	UMVVMView* View = UMVVMSubsystem::GetViewFromUserWidget(Widget);
 	if (!TestNotNull(TEXT("Address-slot entry runtime MVVM view exists"), View) ||

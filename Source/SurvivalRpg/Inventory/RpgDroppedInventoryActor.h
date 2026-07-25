@@ -45,15 +45,6 @@ public:
 		FRpgInventoryTransferIntent Intent,
 		bool bPreventStackMerge = false);
 
-	/** Legacy server-side adapter that snapshots the current entry before forwarding to the typed drop seam. */
-	UFUNCTION(BlueprintCallable, BlueprintAuthorityOnly, Category = "Inventory|Drop", meta = (DeprecatedFunction, DeprecationMessage = "Capture FRpgInventoryTransferIntent from the source entry and use TransferItemFromInventoryByIntent."))
-	FRpgInventoryMutationResult TransferItemFromInventory(
-		URpgInventoryManagerComponent* SourceInventory,
-		FRpgInventoryItemId ItemId,
-		int32 StackCount,
-		FGuid RequestId,
-		bool bPreventStackMerge = false);
-
 	/** Adds count to an existing template pickup with the same definition, or creates one. Server-authoritative. */
 	UFUNCTION(BlueprintCallable, BlueprintAuthorityOnly, Category = "Inventory|Drop")
 	bool MergePickupTemplate(TSubclassOf<URpgInventoryItemDefinition> ItemDefinition, int32 StackCount);

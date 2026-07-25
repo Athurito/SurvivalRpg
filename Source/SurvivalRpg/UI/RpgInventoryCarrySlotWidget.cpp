@@ -5,11 +5,13 @@
 #include "InputCoreTypes.h"
 #include "SurvivalRpg/Core/Player/RpgPlayerController.h"
 #include "SurvivalRpg/Equipment/RpgEquipmentLoadoutComponent.h"
-#include "SurvivalRpg/Inventory/RpgInventoryDragDrop.h"
+#include "SurvivalRpg/Inventory/RpgInventoryDragDropCoordinator.h"
+#include "SurvivalRpg/Inventory/RpgInventoryDragDropTypes.h"
 #include "SurvivalRpg/Inventory/RpgInventoryInteractionSession.h"
 #include "SurvivalRpg/Inventory/RpgInventoryItemInstance.h"
 #include "SurvivalRpg/Inventory/RpgPlayerInventoryLayoutComponent.h"
-#include "SurvivalRpg/Mvvm/Inventory/RpgPlayerInventoryViewModels.h"
+#include "SurvivalRpg/Mvvm/Inventory/RpgInventoryAddressSlotViewModel.h"
+#include "SurvivalRpg/Mvvm/Inventory/RpgInventorySlotGroupViewModel.h"
 #include "SurvivalRpg/UI/RpgInventoryPanelNavigationCoordinator.h"
 
 #include UE_INLINE_GENERATED_CPP_BY_NAME(RpgInventoryCarrySlotWidget)
@@ -42,14 +44,17 @@ void URpgInventoryCarrySlotWidget::BindInventoryPresentation(
 
 void URpgInventoryCarrySlotWidget::ReleaseInventoryPresentation()
 {
-	ClearFocusedControllerInteractionTarget();
+	// Preserve the inherited external-preview ownership marker until the Address presenter compares its still-bound
+	// slot against the shared session target. Controller previews are cleared here; mouse previews are then cleared
+	// by the base only when this presenter owns the exact address.
+	ClearFocusedControllerInteractionTarget(false);
 	UnbindFocusedControllerInteraction();
-	SetCarrySlotGroupViewModel(nullptr);
-	SetCarryItemVisualVisible(false);
-	SetCarryItemIcon(TSoftObjectPtr<UTexture2D>());
 	PanelNavigationCoordinator = nullptr;
 	PanelNavigationId = NAME_None;
 	Super::ReleaseInventoryPresentation();
+	CarrySlotGroupViewModel = nullptr;
+	SetCarryItemVisualVisible(false);
+	SetCarryItemIcon(TSoftObjectPtr<UTexture2D>());
 	bCarryPresentationStateInitialized = false;
 }
 
@@ -328,7 +333,8 @@ void URpgInventoryCarrySlotWidget::RefreshFocusedControllerInteractionTarget()
 	PreviewPayloadDrop(Session->GetPayload());
 }
 
-void URpgInventoryCarrySlotWidget::ClearFocusedControllerInteractionTarget()
+void URpgInventoryCarrySlotWidget::ClearFocusedControllerInteractionTarget(
+	bool bClearExternalPreviewState)
 {
 	URpgInventoryDragDropCoordinator* Coordinator = FocusedControllerDragDropCoordinator
 		? FocusedControllerDragDropCoordinator.Get()
@@ -346,5 +352,8 @@ void URpgInventoryCarrySlotWidget::ClearFocusedControllerInteractionTarget()
 		}
 	}
 
-	ClearExternalPreviewPayload();
+	if (bClearExternalPreviewState)
+	{
+		ClearExternalPreviewPayload();
+	}
 }

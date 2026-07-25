@@ -263,10 +263,6 @@ private:
 	UPROPERTY(ReplicatedUsing = OnRep_Slots, SaveGame)
 	TArray<FRpgActionBarSlot> Slots;
 
-	/** Fixed-size compatibility property. Editor clamps both ends to eight so keyboard and radial can never diverge. */
-	UPROPERTY(EditDefaultsOnly, Category = "Action Bar", meta = (ClampMin = 8, ClampMax = 8, UIMin = 8, UIMax = 8))
-	int32 SlotCount = 8;
-
 	FGameplayMessageListenerHandle InventoryChangedHandle;
 	FGameplayMessageListenerHandle InventoryLayoutChangedHandle;
 };

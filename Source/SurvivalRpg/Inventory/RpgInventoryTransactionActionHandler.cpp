@@ -68,22 +68,6 @@ namespace
 		return Plan;
 	}
 
-	FGameplayTag GetTransactionActionTagForMutation(
-		ERpgInventoryMutationOperation Operation)
-	{
-		switch (Operation)
-		{
-		case ERpgInventoryMutationOperation::Split:
-			return RpgGameplayTags::Rpg_Inventory_Action_Split;
-		case ERpgInventoryMutationOperation::Equip:
-			return RpgGameplayTags::Rpg_Inventory_Action_Equip;
-		case ERpgInventoryMutationOperation::Drop:
-			return RpgGameplayTags::Rpg_Inventory_Action_Drop;
-		default:
-			return RpgGameplayTags::Rpg_Inventory_Action_Transfer;
-		}
-	}
-
 	ERpgInventoryActionFeedbackResult GetTransactionFeedbackForMutationResult(
 		ERpgInventoryMutationResultCode Code)
 	{
@@ -113,110 +97,11 @@ namespace
 		}
 	}
 
-	bool IsGenericTransactionMutationOperationAllowed(
-		ERpgInventoryMutationOperation Operation)
-	{
-		switch (Operation)
-		{
-		case ERpgInventoryMutationOperation::Split:
-		case ERpgInventoryMutationOperation::Sort:
-			return true;
-		default:
-			return false;
-		}
-	}
-
 	FRpgInventorySpatialCapability GetTransactionSpatialContract(
 		const URpgInventoryItemInstance* Item)
 	{
 		return FRpgInventoryItemCapabilities::ResolveSpatial(Item);
 	}
-}
-
-void FRpgInventoryTransactionActionHandler::InventoryMutation(
-	URpgInventoryManagerComponent* Inventory,
-	FRpgInventoryMutationRequest Request)
-{
-	Request.EnsureRequestId();
-	const FGameplayTag ActionTag =
-		GetTransactionActionTagForMutation(Request.Operation);
-	if (!IsGenericTransactionMutationOperationAllowed(Request.Operation))
-	{
-		UE_LOG(
-			LogRpgInventoryUiActions,
-			Verbose,
-			TEXT("Rejected operation %d through generic RequestInventoryMutation; use its dedicated validated request API."),
-			static_cast<int32>(Request.Operation));
-		SendActionFeedback(
-			ActionTag,
-			ERpgInventoryActionFeedbackResult::InvalidRequest,
-			Inventory,
-			nullptr,
-			Request.Quantity,
-			Request.RequestId,
-			Request.ItemId);
-		return;
-	}
-
-	URpgInventoryItemInstance* ItemBeforeMutation =
-		Inventory
-			? Inventory->FindItemById(Request.ItemId)
-			: nullptr;
-	if (!Inventory || !CanAccessInventory(Inventory))
-	{
-		SendActionFeedback(
-			ActionTag,
-			ERpgInventoryActionFeedbackResult::NoAccess,
-			Inventory,
-			ItemBeforeMutation,
-			Request.Quantity,
-			Request.RequestId,
-			Request.ItemId);
-		return;
-	}
-
-	const int32 InventoryRevisionBefore =
-		Inventory->GetInventoryRevision();
-	const FRpgInventoryMutationResult Result =
-		Inventory->ExecuteInventoryMutation(Request);
-	if (!Result.IsSuccess())
-	{
-		SendActionFeedback(
-			ActionTag,
-			GetTransactionFeedbackForMutationResult(Result.Code),
-			Inventory,
-			ItemBeforeMutation,
-			Request.Quantity,
-			Result.RequestId,
-			Request.ItemId);
-		return;
-	}
-
-	const bool bCommittedPlayerEquipmentMutation =
-		Inventory == FindPlayerInventory() &&
-		Inventory->GetInventoryRevision() != InventoryRevisionBefore &&
-		Result.Deltas.ContainsByPredicate(
-			[this](const FRpgInventoryMutationDelta& Delta)
-			{
-				return IsPlayerEquipmentPlacement(
-						Delta.BeforePlacement) ||
-					IsPlayerEquipmentPlacement(
-						Delta.AfterPlacement);
-			});
-	if (bCommittedPlayerEquipmentMutation)
-	{
-		SyncEquipmentLoadoutFromGearSlots();
-		SyncActiveHandsFromCarrySlots();
-	}
-
-	SendActionFeedback(
-		ActionTag,
-		ERpgInventoryActionFeedbackResult::Success,
-		Inventory,
-		ItemBeforeMutation,
-		Result.AppliedQuantity,
-		Result.RequestId,
-		Request.ItemId);
 }
 
 void FRpgInventoryTransactionActionHandler::MoveInventoryItem(
@@ -602,221 +487,167 @@ void FRpgInventoryTransactionActionHandler::QuickTransferItem(
 		MutationResult.AppliedQuantity);
 }
 
-void FRpgInventoryTransactionActionHandler::TransferItemStack(
-	URpgInventoryManagerComponent* SourceInventory,
-	URpgInventoryManagerComponent* TargetInventory,
-	URpgInventoryItemInstance* Item,
-	int32 StackCount)
-{
-	FRpgInventoryQuickTransferRequest Request;
-	Request.EnsureRequestId();
-	Request.ItemId =
-		Item ? Item->GetItemId() : FRpgInventoryItemId();
-	Request.StackCount = StackCount;
-	FRpgInventoryEntryView SourceEntry;
-	if (TryGetTransactionEntrySnapshot(
-			SourceInventory,
-			Request.ItemId,
-			SourceEntry))
-	{
-		Request.ExpectedEntryId = SourceEntry.EntryId;
-		Request.ExpectedSourcePlacement = SourceEntry.Placement;
-		Request.ExpectedSourceQuantity = SourceEntry.StackCount;
-		Request.StackCount = StackCount <= 0
-			? SourceEntry.StackCount
-			: FMath::Min(StackCount, SourceEntry.StackCount);
-	}
-	QuickTransferItem(
-		SourceInventory,
-		TargetInventory,
-		MoveTemp(Request));
-}
-
-void FRpgInventoryTransactionActionHandler::
-	TransferItemStackToPlacement(
-		URpgInventoryManagerComponent* SourceInventory,
-		URpgInventoryManagerComponent* TargetInventory,
-		URpgInventoryItemInstance* Item,
-		int32 StackCount,
-		FRpgInventoryGridPlacement TargetPlacement)
-{
-	FRpgInventoryTransferIntent Intent;
-	Intent.EnsureRequestId();
-	Intent.ItemId =
-		Item ? Item->GetItemId() : FRpgInventoryItemId();
-	Intent.TargetContainer =
-		TargetPlacement.GetContainerHandle();
-	Intent.TargetPlacement = TargetPlacement;
-	Intent.Quantity = StackCount;
-	FRpgInventoryEntryView SourceEntry;
-	if (TryGetTransactionEntrySnapshot(
-			SourceInventory,
-			Intent.ItemId,
-			SourceEntry))
-	{
-		Intent.ExpectedEntryId = SourceEntry.EntryId;
-		Intent.ExpectedSourcePlacement = SourceEntry.Placement;
-		Intent.ExpectedSourceQuantity = SourceEntry.StackCount;
-	}
-	TransferInventoryItem(
-		SourceInventory,
-		TargetInventory,
-		MoveTemp(Intent));
-}
-
-void FRpgInventoryTransactionActionHandler::ApplyInventorySort(
-	URpgInventoryManagerComponent* Inventory,
-	ERpgInventorySortMode SortMode)
-{
-	if (!CanAccessInventory(Inventory))
-	{
-		return;
-	}
-
-	Inventory->ApplyInventorySort(SortMode);
-}
-
-void FRpgInventoryTransactionActionHandler::MoveInventoryEntry(
-	URpgInventoryManagerComponent* Inventory,
-	FGuid EntryId,
-	int32 TargetIndex)
-{
-	if (!CanAccessInventory(Inventory) ||
-		!Inventory->ContainsEntry(EntryId))
-	{
-		return;
-	}
-
-	Inventory->MoveInventoryEntry(EntryId, TargetIndex);
-}
-
-void FRpgInventoryTransactionActionHandler::
-	MoveInventoryEntryToPlacement(
-		URpgInventoryManagerComponent* Inventory,
-		FGuid EntryId,
-		FRpgInventoryGridPlacement TargetPlacement)
-{
-	if (!Inventory || !CanAccessInventory(Inventory) ||
-		!Inventory->ContainsEntry(EntryId))
-	{
-		SendActionFeedback(
-			RpgGameplayTags::Rpg_Inventory_Action_Transfer,
-			ERpgInventoryActionFeedbackResult::NoAccess,
-			Inventory,
-			nullptr,
-			1);
-		return;
-	}
-
-	const TArray<FRpgInventoryEntryView> Entries =
-		Inventory->GetAllEntries();
-	const FRpgInventoryEntryView* Entry = Entries.FindByPredicate(
-		[EntryId](const FRpgInventoryEntryView& Candidate)
-		{
-			return Candidate.EntryId == EntryId;
-		});
-	if (!Entry || !Entry->Instance)
-	{
-		SendActionFeedback(
-			RpgGameplayTags::Rpg_Inventory_Action_Transfer,
-			ERpgInventoryActionFeedbackResult::MissingItem,
-			Inventory,
-			nullptr,
-			1);
-		return;
-	}
-
-	FRpgInventoryMoveIntent Intent;
-	Intent.EnsureRequestId();
-	Intent.ItemId = Entry->ItemId;
-	Intent.ExpectedEntryId = Entry->EntryId;
-	Intent.ExpectedSourcePlacement = Entry->Placement;
-	Intent.ExpectedQuantity = Entry->StackCount;
-	Intent.TargetPlacement = TargetPlacement;
-	MoveInventoryItem(Inventory, MoveTemp(Intent));
-}
-
-void FRpgInventoryTransactionActionHandler::SplitItemStack(
-	URpgInventoryManagerComponent* Inventory,
-	URpgInventoryItemInstance* Item,
-	int32 SplitCount,
-	FRpgInventoryGridPlacement TargetPlacement)
-{
-	SplitItemStackById(
-		Inventory,
-		Item ? Item->GetItemId() : FRpgInventoryItemId(),
-		SplitCount,
-		TargetPlacement,
-		FGuid());
-}
-
 void FRpgInventoryTransactionActionHandler::SplitItemStackById(
 	URpgInventoryManagerComponent* Inventory,
-	FRpgInventoryItemId ItemId,
-	int32 SplitCount,
-	FRpgInventoryGridPlacement TargetPlacement,
-	FGuid RequestId)
+	FRpgInventorySplitRequest Request)
 {
+	if (TryReplayRecentSplitResult(Inventory, Request))
+	{
+		return;
+	}
+
+	if (!Request.RequestId.IsValid() ||
+		!Request.ItemId.IsValid() ||
+		!Request.ExpectedEntryId.IsValid() ||
+		!Request.ExpectedSourcePlacement.IsValid() ||
+		Request.ExpectedSourceQuantity <= 1 ||
+		Request.SplitCount <= 0 ||
+		Request.SplitCount >= Request.ExpectedSourceQuantity ||
+		!Request.TargetPlacement.IsValid())
+	{
+		SendAndCacheSplitFeedback(
+			Inventory,
+			Request,
+			ERpgInventoryActionFeedbackResult::InvalidRequest,
+			nullptr,
+			Request.SplitCount);
+		return;
+	}
+
+	if (!Inventory || !CanAccessInventory(Inventory))
+	{
+		SendAndCacheSplitFeedback(
+			Inventory,
+			Request,
+			ERpgInventoryActionFeedbackResult::NoAccess,
+			nullptr,
+			Request.SplitCount);
+		return;
+	}
+
+	FRpgInventoryEntryView SourceEntry;
 	URpgInventoryItemInstance* Item =
-		Inventory ? Inventory->FindItemById(ItemId) : nullptr;
-	int32 ActualSplitCount = 0;
-	FRpgInventoryGridPlacement ActualTargetPlacement;
+		Inventory->FindItemById(Request.ItemId);
+	if (!TryGetTransactionEntrySnapshot(
+			Inventory,
+			Request.ItemId,
+			SourceEntry) ||
+		!Item)
+	{
+		SendAndCacheSplitFeedback(
+			Inventory,
+			Request,
+			ERpgInventoryActionFeedbackResult::MissingItem,
+			nullptr,
+			Request.SplitCount);
+		return;
+	}
+	if (SourceEntry.Instance != Item ||
+		SourceEntry.EntryId != Request.ExpectedEntryId ||
+		!IsExactTransactionPlacementSnapshot(
+			SourceEntry.Placement,
+			Request.ExpectedSourcePlacement) ||
+		SourceEntry.StackCount != Request.ExpectedSourceQuantity)
+	{
+		SendAndCacheSplitFeedback(
+			Inventory,
+			Request,
+			ERpgInventoryActionFeedbackResult::InvalidRequest,
+			Item,
+			Request.SplitCount);
+		return;
+	}
+	if (!IsTransactionStackableItem(Item))
+	{
+		SendAndCacheSplitFeedback(
+			Inventory,
+			Request,
+			ERpgInventoryActionFeedbackResult::NotStackable,
+			Item,
+			Request.SplitCount);
+		return;
+	}
+
+	int32 ResolvedSplitCount = 0;
+	FRpgInventoryGridPlacement ResolvedTargetPlacement;
 	const FRpgInventoryTransactionQueryHandler QueryHandler(
 		GetReadOnlyActionComponent());
 	if (!QueryHandler.CanSplitItemStack(
 			Inventory,
 			Item,
-			SplitCount,
-			TargetPlacement,
-			ActualSplitCount,
-			ActualTargetPlacement))
+			Request.SplitCount,
+			Request.TargetPlacement,
+			ResolvedSplitCount,
+			ResolvedTargetPlacement) ||
+		ResolvedSplitCount != Request.SplitCount ||
+		!IsExactTransactionPlacementSnapshot(
+			ResolvedTargetPlacement,
+			Request.TargetPlacement))
 	{
-		const ERpgInventoryActionFeedbackResult Result =
-			!Item || !IsTransactionStackableItem(Item)
-				? ERpgInventoryActionFeedbackResult::NotStackable
-				: ERpgInventoryActionFeedbackResult::InventoryFull;
-		SendActionFeedback(
-			RpgGameplayTags::Rpg_Inventory_Action_Split,
-			Result,
+		SendAndCacheSplitFeedback(
 			Inventory,
+			Request,
+			ERpgInventoryActionFeedbackResult::InventoryFull,
 			Item,
-			SplitCount,
-			RequestId,
-			ItemId);
+			Request.SplitCount);
 		return;
 	}
 
-	FRpgInventoryEntryView SourceEntry;
-	if (!TryGetTransactionEntrySnapshot(
-			Inventory,
-			ItemId,
-			SourceEntry))
+	FRpgInventoryMutationRequest MutationRequest;
+	MutationRequest.Operation = ERpgInventoryMutationOperation::Split;
+	MutationRequest.ItemId = Request.ItemId;
+	MutationRequest.ExpectedEntryId = Request.ExpectedEntryId;
+	MutationRequest.Source =
+		Request.ExpectedSourcePlacement.GetContainerHandle();
+	MutationRequest.ExpectedSourcePlacement =
+		Request.ExpectedSourcePlacement;
+	MutationRequest.ExpectedSourceQuantity =
+		Request.ExpectedSourceQuantity;
+	MutationRequest.Target =
+		Request.TargetPlacement.GetContainerHandle();
+	MutationRequest.TargetPlacement = Request.TargetPlacement;
+	MutationRequest.Quantity = Request.SplitCount;
+	MutationRequest.RequestId = Request.RequestId;
+
+	const int32 InventoryRevisionBefore =
+		Inventory->GetInventoryRevision();
+	const FRpgInventoryMutationResult Result =
+		Inventory->ExecuteInventoryMutation(MoveTemp(MutationRequest));
+	if (!Result.IsSuccess() ||
+		Result.AppliedQuantity != Request.SplitCount)
 	{
-		SendActionFeedback(
-			RpgGameplayTags::Rpg_Inventory_Action_Split,
-			ERpgInventoryActionFeedbackResult::MissingItem,
+		SendAndCacheSplitFeedback(
 			Inventory,
+			Request,
+			GetTransactionFeedbackForMutationResult(Result.Code),
 			Item,
-			ActualSplitCount,
-			RequestId,
-			ItemId);
+			Request.SplitCount);
 		return;
 	}
 
-	FRpgInventoryMutationRequest Request;
-	Request.Operation = ERpgInventoryMutationOperation::Split;
-	Request.ItemId = ItemId;
-	Request.ExpectedEntryId = SourceEntry.EntryId;
-	Request.Source =
-		SourceEntry.Placement.GetContainerHandle();
-	Request.ExpectedSourcePlacement = SourceEntry.Placement;
-	Request.ExpectedSourceQuantity = SourceEntry.StackCount;
-	Request.Target =
-		ActualTargetPlacement.GetContainerHandle();
-	Request.TargetPlacement = ActualTargetPlacement;
-	Request.Quantity = ActualSplitCount;
-	Request.RequestId = RequestId;
-	InventoryMutation(Inventory, Request);
+	const bool bCommittedPlayerEquipmentMutation =
+		Inventory == FindPlayerInventory() &&
+		Inventory->GetInventoryRevision() != InventoryRevisionBefore &&
+		Result.Deltas.ContainsByPredicate(
+			[this](const FRpgInventoryMutationDelta& Delta)
+			{
+				return IsPlayerEquipmentPlacement(
+						Delta.BeforePlacement) ||
+					IsPlayerEquipmentPlacement(
+						Delta.AfterPlacement);
+			});
+	if (bCommittedPlayerEquipmentMutation)
+	{
+		SyncEquipmentLoadoutFromGearSlots();
+		SyncActiveHandsFromCarrySlots();
+	}
+
+	SendAndCacheSplitFeedback(
+		Inventory,
+		Request,
+		ERpgInventoryActionFeedbackResult::Success,
+		Item,
+		Result.AppliedQuantity);
 }
 
 FRpgInventoryPlacementPlan
@@ -1347,102 +1178,6 @@ FRpgInventoryTransactionQueryHandler::
 	return Plan;
 }
 
-bool FRpgInventoryTransactionQueryHandler::CanTransferItemStack(
-	URpgInventoryManagerComponent* SourceInventory,
-	URpgInventoryManagerComponent* TargetInventory,
-	URpgInventoryItemInstance* Item,
-	int32 StackCount) const
-{
-	if (!SourceInventory || !TargetInventory ||
-		SourceInventory == TargetInventory || !Item)
-	{
-		return false;
-	}
-
-	FRpgInventoryEntryView SourceEntry;
-	if (!TryGetTransactionEntrySnapshot(
-			SourceInventory,
-			Item->GetItemId(),
-			SourceEntry) ||
-		SourceEntry.Instance != Item)
-	{
-		return false;
-	}
-
-	const int32 RequestedCount = StackCount <= 0
-		? SourceEntry.StackCount
-		: StackCount;
-	if (RequestedCount <= 0 ||
-		RequestedCount > SourceEntry.StackCount)
-	{
-		return false;
-	}
-
-	FRpgInventoryQuickTransferRequest Request;
-	Request.ItemId = SourceEntry.ItemId;
-	Request.ExpectedEntryId = SourceEntry.EntryId;
-	Request.ExpectedSourcePlacement = SourceEntry.Placement;
-	Request.ExpectedSourceQuantity = SourceEntry.StackCount;
-	Request.StackCount = RequestedCount;
-	FRpgInventoryContainerHandle TargetContainer;
-	FRpgInventoryGridPlacement TargetPlacement;
-	return PlanQuickTransferDestination(
-		SourceInventory,
-		TargetInventory,
-		Request,
-		TargetContainer,
-		TargetPlacement).IsCompleteSuccess();
-}
-
-bool FRpgInventoryTransactionQueryHandler::
-	CanTransferItemStackToPlacement(
-		URpgInventoryManagerComponent* SourceInventory,
-		URpgInventoryManagerComponent* TargetInventory,
-		URpgInventoryItemInstance* Item,
-		int32 StackCount,
-		FRpgInventoryGridPlacement TargetPlacement) const
-{
-	if (!SourceInventory || !TargetInventory ||
-		SourceInventory == TargetInventory || !Item ||
-		!TargetPlacement.IsValid())
-	{
-		return false;
-	}
-
-	FRpgInventoryEntryView SourceEntry;
-	if (!TryGetTransactionEntrySnapshot(
-			SourceInventory,
-			Item->GetItemId(),
-			SourceEntry) ||
-		SourceEntry.Instance != Item)
-	{
-		return false;
-	}
-
-	const int32 RequestedCount = StackCount <= 0
-		? SourceEntry.StackCount
-		: StackCount;
-	if (RequestedCount <= 0 ||
-		RequestedCount > SourceEntry.StackCount)
-	{
-		return false;
-	}
-
-	FRpgInventoryTransferIntent Intent;
-	Intent.ItemId = SourceEntry.ItemId;
-	Intent.ExpectedEntryId = SourceEntry.EntryId;
-	Intent.ExpectedSourcePlacement = SourceEntry.Placement;
-	Intent.ExpectedSourceQuantity = SourceEntry.StackCount;
-	Intent.TargetContainer =
-		TargetPlacement.GetContainerHandle();
-	Intent.TargetPlacement = TargetPlacement;
-	Intent.Quantity = RequestedCount;
-	return PlanExactTransferPlacement(
-		SourceInventory,
-		TargetInventory,
-		Intent).IsCompleteSuccess();
-}
-
 bool FRpgInventoryTransactionQueryHandler::CanSplitItemStack(
 	URpgInventoryManagerComponent* Inventory,
 	URpgInventoryItemInstance* Item,
@@ -1460,8 +1195,17 @@ bool FRpgInventoryTransactionQueryHandler::CanSplitItemStack(
 		return false;
 	}
 
-	const int32 AvailableCount =
-		Inventory->GetItemStackCount(Item);
+	FRpgInventoryEntryView SourceEntry;
+	if (!TryGetTransactionEntrySnapshot(
+			Inventory,
+			Item->GetItemId(),
+			SourceEntry) ||
+		SourceEntry.Instance != Item)
+	{
+		return false;
+	}
+
+	const int32 AvailableCount = SourceEntry.StackCount;
 	if (AvailableCount <= 1)
 	{
 		return false;
@@ -1486,25 +1230,34 @@ bool FRpgInventoryTransactionQueryHandler::CanSplitItemStack(
 		return false;
 	}
 
-	if (!ResolvedTargetPlacement.IsValid() ||
-		Inventory->GetItemAtContainerCell(
-			ResolvedTargetPlacement.GetContainerHandle(),
-			ResolvedTargetPlacement.X,
-			ResolvedTargetPlacement.Y) != nullptr)
+	if (!ResolvedTargetPlacement.IsValid())
 	{
 		return false;
 	}
 
-	if (!Inventory->CanAddItemDefinitionToPlacement(
-			Item->GetItemDef(),
-			RequestedSplitCount,
-			ResolvedTargetPlacement))
+	FRpgInventoryPlacementQuery Query;
+	Query.Purpose = ERpgInventoryPlacementPurpose::Split;
+	Query.Search = ERpgInventoryPlacementSearch::Exact;
+	Query.Subject = FRpgInventoryPlacementSubject::FromOwnedEntry(
+		Inventory,
+		SourceEntry,
+		RequestedSplitCount);
+	Query.TargetContainer =
+		ResolvedTargetPlacement.GetContainerHandle();
+	Query.ExactPlacement = ResolvedTargetPlacement;
+	const FRpgInventoryPlacementPlan Plan =
+		Inventory->EvaluatePlacement(Query);
+	if (!Plan.IsCompleteSuccess() ||
+		Plan.AppliedQuantity != RequestedSplitCount ||
+		Plan.Steps.Num() != 1 ||
+		Plan.Steps[0].Resolution !=
+			ERpgInventoryPlacementResolution::Place)
 	{
 		return false;
 	}
 
 	OutSplitCount = RequestedSplitCount;
-	OutTargetPlacement = ResolvedTargetPlacement;
+	OutTargetPlacement = Plan.Steps[0].Placement;
 	return true;
 }
 

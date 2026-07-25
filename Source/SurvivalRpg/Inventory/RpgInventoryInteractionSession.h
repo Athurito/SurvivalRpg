@@ -2,7 +2,7 @@
 
 #include "CoreMinimal.h"
 #include "GameFramework/GameplayMessageSubsystem.h"
-#include "RpgInventoryDragDrop.h"
+#include "RpgInventoryDragDropTypes.h"
 #include "UObject/Object.h"
 
 #include "RpgInventoryInteractionSession.generated.h"

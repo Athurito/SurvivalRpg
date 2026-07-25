@@ -3,7 +3,6 @@
 #include "RpgInventoryAutomationTestTypes.h"
 #include "RpgInventoryFragment_EquippableItem.h"
 #include "RpgInventoryFragment_ItemContainer.h"
-#include "RpgInventoryFragment_SlotContainerProvider.h"
 #include "RpgInventoryFragment_ItemTraits.h"
 #include "SurvivalRpg/Equipment/RpgEquipmentAutomationTestTypes.h"
 
@@ -437,20 +436,20 @@ bool FRpgInventoryItemDefinitionContainerDataValidationTest::RunTest(
 		TEXT("The missing-id error identifies its fragment and container indices"),
 		InvalidErrors.Contains(Definition->GetPathName()) &&
 			InvalidErrors.Contains(
-				TEXT("Fragments[2].AuthoredContainers[1]")) &&
+				TEXT("Fragments[2].ProvidedContainers[1]")) &&
 			InvalidErrors.Contains(TEXT("no ContainerId")));
 	TestTrue(
 		TEXT("The invalid-grid error reports dimensions and its exact row"),
 		InvalidErrors.Contains(TEXT("0 x -2")) &&
 			InvalidErrors.Contains(
-				TEXT("Fragments[2].AuthoredContainers[1]")));
+				TEXT("Fragments[2].ProvidedContainers[1]")));
 	TestTrue(
 		TEXT("The duplicate-id error identifies both declarations"),
 		InvalidErrors.Contains(TEXT("ContainerId 'Main'")) &&
 			InvalidErrors.Contains(
-				TEXT("Fragments[2].AuthoredContainers[2]")) &&
+				TEXT("Fragments[2].ProvidedContainers[2]")) &&
 			InvalidErrors.Contains(
-				TEXT("first declared at AuthoredContainers[0]")));
+				TEXT("first declared at ProvidedContainers[0]")));
 
 	ContainerFragment->ProvidedContainers.RemoveAt(1, 2);
 	URpgInventoryFragment_ItemContainer* IgnoredLaterFragment =
@@ -486,144 +485,6 @@ bool FRpgInventoryItemDefinitionContainerDataValidationTest::RunTest(
 			Definition,
 			EDataValidationResult::Invalid,
 			MalformedFirstContext));
-
-	return true;
-}
-
-IMPLEMENT_SIMPLE_AUTOMATION_TEST(
-	FRpgInventoryCompatibilityContainerDataValidationTest,
-	"SurvivalRpg.Inventory.ItemDefinitions.DataValidation.CompatibilityContainers",
-	EAutomationTestFlags::EditorContext |
-		EAutomationTestFlags::EngineFilter)
-
-bool FRpgInventoryCompatibilityContainerDataValidationTest::RunTest(
-	const FString& Parameters)
-{
-	URpgInventoryAutomationTestUnitItemDefinition* Definition =
-		NewObject<URpgInventoryAutomationTestUnitItemDefinition>();
-	URpgInventoryFragment_SlotContainerProvider* CompatibilityFragment =
-		NewObject<URpgInventoryFragment_SlotContainerProvider>(
-			Definition);
-	Definition->Fragments.Add(CompatibilityFragment);
-
-	FRpgInventoryItemContainerDefinition& NativeContainer =
-		CompatibilityFragment->ProvidedContainers.AddDefaulted_GetRef();
-	NativeContainer.ContainerId = TEXT("Main");
-	NativeContainer.GridSize.Width = 2;
-	NativeContainer.GridSize.Height = 2;
-
-	CompatibilityFragment->ProvidedSlotGroups.SetNum(4);
-	CompatibilityFragment->ProvidedSlotGroups[0].ContainerId =
-		NAME_None;
-	CompatibilityFragment->ProvidedSlotGroups[0].GridSize.Width = 1;
-	CompatibilityFragment->ProvidedSlotGroups[0].GridSize.Height = 1;
-	CompatibilityFragment->ProvidedSlotGroups[1].ContainerId =
-		TEXT("Main");
-	CompatibilityFragment->ProvidedSlotGroups[1].GridSize.Width = 1;
-	CompatibilityFragment->ProvidedSlotGroups[1].GridSize.Height = 1;
-	CompatibilityFragment->ProvidedSlotGroups[2].ContainerId =
-		TEXT("LegacyGrid");
-	CompatibilityFragment->ProvidedSlotGroups[2].GridSize.Width = 0;
-	CompatibilityFragment->ProvidedSlotGroups[2].GridSize.Height = 2;
-	CompatibilityFragment->ProvidedSlotGroups[3].ContainerId =
-		TEXT("LegacyGrid");
-	CompatibilityFragment->ProvidedSlotGroups[3].GridSize.Width = 1;
-	CompatibilityFragment->ProvidedSlotGroups[3].GridSize.Height = 1;
-
-	TArray<FRpgInventoryItemContainerDefinition> RuntimeContainers;
-	CompatibilityFragment->GetProvidedContainers(RuntimeContainers);
-	TestEqual(
-		TEXT("The runtime compatibility view still filters missing and duplicate legacy ids"),
-		RuntimeContainers.Num(),
-		2);
-	if (RuntimeContainers.Num() == 2)
-	{
-		TestEqual(
-			TEXT("The native container remains the first runtime definition"),
-			RuntimeContainers[0].ContainerId,
-			FName(TEXT("Main")));
-		TestEqual(
-			TEXT("The distinct legacy row remains visible to existing runtime consumers"),
-			RuntimeContainers[1].ContainerId,
-			FName(TEXT("LegacyGrid")));
-	}
-
-	TArray<FRpgInventoryItemContainerDefinition> AuthoredContainers;
-	CompatibilityFragment->GetAuthoredContainerDefinitions(
-		AuthoredContainers);
-	TestEqual(
-		TEXT("The authored contract view retains native and every legacy row"),
-		AuthoredContainers.Num(),
-		5);
-	if (AuthoredContainers.Num() == 5)
-	{
-		TestTrue(
-			TEXT("The authored contract view retains the filtered missing-id row"),
-			AuthoredContainers[1].ContainerId.IsNone());
-		TestEqual(
-			TEXT("The authored contract view retains a legacy id duplicated across native and legacy data"),
-			AuthoredContainers[2].ContainerId,
-			FName(TEXT("Main")));
-		TestEqual(
-			TEXT("The authored contract view retains ids duplicated only among legacy rows"),
-			AuthoredContainers[4].ContainerId,
-			FName(TEXT("LegacyGrid")));
-	}
-
-	FDataValidationContext InvalidContext;
-	TestFalse(
-		TEXT("The shared helper evaluates every authored compatibility row before runtime filtering"),
-		CompatibilityFragment->
-			HasStructurallyValidProvidedContainers());
-	TestTrue(
-		TEXT("Malformed converted compatibility containers are rejected"),
-		ValidateAs(
-			Definition,
-			EDataValidationResult::Invalid,
-			InvalidContext));
-	const FString InvalidErrors =
-		CollectValidationErrors(InvalidContext);
-	TestTrue(
-		TEXT("The compatibility missing-id error identifies its authored row"),
-		InvalidErrors.Contains(Definition->GetPathName()) &&
-			InvalidErrors.Contains(
-				TEXT("Fragments[2].AuthoredContainers[1]")) &&
-			InvalidErrors.Contains(TEXT("no ContainerId")));
-	TestTrue(
-		TEXT("The compatibility duplicate-id error identifies both native and legacy rows"),
-		InvalidErrors.Contains(TEXT("ContainerId 'Main'")) &&
-			InvalidErrors.Contains(
-				TEXT("Fragments[2].AuthoredContainers[2]")) &&
-			InvalidErrors.Contains(
-				TEXT("first declared at AuthoredContainers[0]")));
-	TestTrue(
-		TEXT("The compatibility grid error identifies its authored row and converted dimensions"),
-		InvalidErrors.Contains(
-				TEXT("Fragments[2].AuthoredContainers[3]")) &&
-			InvalidErrors.Contains(TEXT("0 x 2")));
-	TestTrue(
-		TEXT("The compatibility duplicate-id error also identifies two legacy declarations"),
-		InvalidErrors.Contains(
-				TEXT("Fragments[2].AuthoredContainers[4]")) &&
-			InvalidErrors.Contains(
-				TEXT("first declared at AuthoredContainers[3]")));
-
-	CompatibilityFragment->ProvidedSlotGroups[0].ContainerId =
-		TEXT("LegacySecondary");
-	CompatibilityFragment->ProvidedSlotGroups[1].ContainerId =
-		TEXT("LegacyTertiary");
-	CompatibilityFragment->ProvidedSlotGroups[2].GridSize.Width = 2;
-	CompatibilityFragment->ProvidedSlotGroups[3].ContainerId =
-		TEXT("LegacyQuaternary");
-	FDataValidationContext ValidContext;
-	TestTrue(
-		TEXT("Repairing every compatibility source row repairs the shared authored contract"),
-		CompatibilityFragment->
-			HasStructurallyValidProvidedContainers() &&
-			ValidateAs(
-				Definition,
-				EDataValidationResult::Valid,
-				ValidContext));
 
 	return true;
 }

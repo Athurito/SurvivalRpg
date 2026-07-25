@@ -77,41 +77,80 @@ enum class ERpgInventoryActionFeedbackResult : uint8
 	ServerRejected
 };
 
-/** Explicit server-side behavior requested for one concrete inventory item. */
-UENUM(BlueprintType)
-enum class ERpgInventoryItemActionIntent : uint8
-{
-	/** Activates only the item's configured usable behavior and never equips it as a fallback. */
-	Use,
-
-	/** Legacy serialized value. The server rejects it; use RequestApplyInventoryEquipmentIntent with an exact entry snapshot. */
-	EquipAndActivate,
-
-	/** Legacy serialized value. The server rejects it; use RequestApplyInventoryEquipmentIntent with an exact entry snapshot. */
-	MoveToCarry
-};
-
-/** Stable, request-correlated item action sent by the owning inventory UI. */
+/** Stable, request-correlated command for using one inventory item. */
 USTRUCT(BlueprintType)
-struct SURVIVALRPG_API FRpgInventoryItemActionRequest
+struct SURVIVALRPG_API FRpgInventoryUseRequest
 {
 	GENERATED_BODY()
 
-	/** Client-generated correlation id copied unchanged into the reliable owning-client feedback. */
-	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Inventory|Actions")
+	/** Caller-owned correlation id used for bounded replay-window deduplication and reliable owning-client feedback. */
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Inventory|Use")
 	FGuid RequestId;
 
 	/** Persistent identity resolved against Inventory on the server; no client UObject pointer is trusted. */
-	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Inventory|Actions")
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Inventory|Use")
 	FRpgInventoryItemId ItemId;
 
-	/** Exact behavior requested by the UI; hybrid usable/equippable items never rely on implicit fallback order. */
-	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Inventory|Actions")
-	ERpgInventoryItemActionIntent Intent = ERpgInventoryItemActionIntent::Use;
+	/** Number of uses requested; the server derives any consumed quantity from the authored usable-item contract. */
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Inventory|Use", meta = (ClampMin = "1", UIMin = "1"))
+	int32 UseCount = 1;
 
-	/** Number of uses requested. This request type is restricted to Use; equipment has its own exact-snapshot intent. */
-	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Inventory|Actions", meta = (ClampMin = "1", UIMin = "1"))
-	int32 StackCount = 1;
+	/** Generates a caller-owned request id when a native presenter has not assigned one yet. */
+	void EnsureRequestId()
+	{
+		if (!RequestId.IsValid())
+		{
+			RequestId = FGuid::NewGuid();
+		}
+	}
+};
+
+/**
+ * Stable, request-correlated split command for one exact replicated inventory entry.
+ *
+ * The server resolves ItemId again and rejects stale entry identity, placement, quantity, or target state before
+ * creating the new stack. SplitCount is always explicit; quick-split policy is resolved by the presenter first.
+ */
+USTRUCT(BlueprintType)
+struct SURVIVALRPG_API FRpgInventorySplitRequest
+{
+	GENERATED_BODY()
+
+	/** Caller-owned correlation id used for bounded replay-window deduplication and owning-client feedback. */
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Inventory|Split")
+	FGuid RequestId;
+
+	/** Persistent source item identity resolved against Inventory on the authoritative server. */
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Inventory|Split")
+	FRpgInventoryItemId ItemId;
+
+	/** Stable replicated entry identity captured by the initiating presenter. */
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Inventory|Split")
+	FGuid ExpectedEntryId;
+
+	/** Complete source placement captured by the initiating presenter. */
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Inventory|Split")
+	FRpgInventoryGridPlacement ExpectedSourcePlacement;
+
+	/** Complete source stack count captured independently from SplitCount. */
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Inventory|Split", meta = (ClampMin = "2", UIMin = "2"))
+	int32 ExpectedSourceQuantity = 0;
+
+	/** Exact number of units moved into the new stack; must be smaller than ExpectedSourceQuantity. */
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Inventory|Split", meta = (ClampMin = "1", UIMin = "1"))
+	int32 SplitCount = 0;
+
+	/** Exact empty destination placement in the same inventory, revalidated by the server. */
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Inventory|Split")
+	FRpgInventoryGridPlacement TargetPlacement;
+
+	void EnsureRequestId()
+	{
+		if (!RequestId.IsValid())
+		{
+			RequestId = FGuid::NewGuid();
+		}
+	}
 };
 
 /**
@@ -150,7 +189,7 @@ struct SURVIVALRPG_API FRpgInventoryEquipmentIntent
 {
 	GENERATED_BODY()
 
-	/** Caller-owned correlation id used for exactly-once handling and owning-client feedback. */
+	/** Caller-owned correlation id used for bounded replay-window deduplication and owning-client feedback. */
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Inventory|Equipment")
 	FGuid RequestId;
 
@@ -318,7 +357,7 @@ struct SURVIVALRPG_API FRpgInventoryManualDropRequest
 	GENERATED_BODY()
 
 	/**
-	 * Client-generated id used for owning-client feedback and bounded server-side exactly-once handling.
+	 * Client-generated id used for owning-client feedback and bounded server-side replay deduplication.
 	 * It must be unique to this command and must not be reused by another inventory operation.
 	 */
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Inventory|Drop")
@@ -368,7 +407,7 @@ struct SURVIVALRPG_API FRpgInventoryActionFeedbackMessage
 	UPROPERTY(BlueprintReadOnly, Category = "Inventory|Feedback")
 	TObjectPtr<APlayerController> Recipient = nullptr;
 
-	/** Correlation id supplied by the initiating request. Legacy pointer APIs may emit an invalid id. */
+	/** Correlation id supplied by the initiating request. Feature commands without caller correlation may emit an invalid id. */
 	UPROPERTY(BlueprintReadOnly, Category = "Inventory|Feedback")
 	FGuid RequestId;
 
@@ -414,13 +453,6 @@ class SURVIVALRPG_API URpgInventoryUiActionComponent : public UControllerCompone
 public:
 	explicit URpgInventoryUiActionComponent(const FObjectInitializer& ObjectInitializer = FObjectInitializer::Get());
 
-	/**
-	 * Legacy generic gateway retained only for Split and Sort migration.
-	 * Move, rotate, merge, swap, equip, pickup, transfer, and drop fail closed here.
-	 */
-	UFUNCTION(Server, Reliable, BlueprintCallable, Category = "Inventory|Transactions", meta = (DeprecatedFunction, DeprecationMessage = "Use RequestMoveInventoryItem or a dedicated split/sort/equip request."))
-	void RequestInventoryMutation(URpgInventoryManagerComponent* Inventory, FRpgInventoryMutationRequest Request);
-
 	/** Commits one whole-entry move whose merge, swap, or rotation behavior is derived by the server planner. */
 	UFUNCTION(Server, Reliable, BlueprintCallable, Category = "Inventory|Transactions")
 	void RequestMoveInventoryItem(
@@ -434,9 +466,11 @@ public:
 		URpgInventoryManagerComponent* TargetInventory,
 		FRpgInventoryTransferIntent Intent);
 
-	/** Executes the legacy stable-ID Use request. Equipment operations are rejected because they require an exact entry snapshot. */
-	UFUNCTION(Server, Reliable, BlueprintCallable, Category = "Inventory|UI Actions", meta = (DeprecatedFunction, DeprecationMessage = "Use this endpoint only for legacy Use requests. Equipment requires RequestApplyInventoryEquipmentIntent with an exact source snapshot."))
-	void RequestExecuteInventoryItemAction(URpgInventoryManagerComponent* Inventory, FRpgInventoryItemActionRequest Request);
+	/** Resolves and uses one stable item identity through the authoritative capability and GAS path. */
+	UFUNCTION(Server, Reliable, BlueprintCallable, Category = "Inventory|Use")
+	void RequestUseInventoryItemById(
+		URpgInventoryManagerComponent* Inventory,
+		FRpgInventoryUseRequest Request);
 
 	/**
 	 * Applies one whole-entry equipment intent against authoritative inventory state.
@@ -500,75 +534,6 @@ public:
 		FRpgInventoryGridPlacement& OutTargetPlacement) const;
 
 	/**
-	 * Predicts whether an accessible target inventory can accept the requested cross-inventory stack.
-	 * This mirrors the authoritative UI-transfer direction policy; crafting outputs are withdrawal-only.
-	 */
-	UFUNCTION(BlueprintCallable, BlueprintPure, Category = "Inventory|Transfer")
-	bool CanTransferItemStack(
-		URpgInventoryManagerComponent* SourceInventory,
-		URpgInventoryManagerComponent* TargetInventory,
-		URpgInventoryItemInstance* Item,
-		int32 StackCount) const;
-
-	/**
-	 * Predicts an exact cross-inventory placement using the same direction and capacity rules as the server.
-	 * Occupied unlike-item placements are rejected because cross-inventory swaps are not a supported transaction.
-	 */
-	UFUNCTION(BlueprintCallable, BlueprintPure, Category = "Inventory|Transfer")
-	bool CanTransferItemStackToPlacement(
-		URpgInventoryManagerComponent* SourceInventory,
-		URpgInventoryManagerComponent* TargetInventory,
-		URpgInventoryItemInstance* Item,
-		int32 StackCount,
-		FRpgInventoryGridPlacement TargetPlacement) const;
-
-	/** Legacy pointer adapter. New callers must submit a complete RequestApplyInventoryEquipmentIntent snapshot. */
-	UFUNCTION(Server, Reliable, BlueprintCallable, Category = "Inventory|UI Actions", meta = (DeprecatedFunction, DeprecationMessage = "Use RequestApplyInventoryEquipmentIntent with stable item, entry, placement, quantity, and request identity."))
-	void RequestAssignItemToEquipmentSlot(ERpgEquipmentSlot EquipmentSlot, URpgInventoryItemInstance* Item);
-
-	/** Legacy slot-only adapter retained for Blueprint migration; hand clear remains activation-only. */
-	UFUNCTION(Server, Reliable, BlueprintCallable, Category = "Inventory|UI Actions", meta = (DeprecatedFunction, DeprecationMessage = "Use RequestApplyInventoryEquipmentIntent for physical unequip, or RequestClearActiveHands for activation-only holster."))
-	void RequestClearEquipmentSlot(ERpgEquipmentSlot EquipmentSlot);
-
-	/** Transfers a whole item entry or partial stack between two accessible inventories. */
-	UFUNCTION(Server, Reliable, BlueprintCallable, Category = "Inventory|UI Actions", meta = (DeprecatedFunction, DeprecationMessage = "Use RequestQuickTransferItem with a stable item id and caller-owned request id."))
-	void RequestTransferItemStack(URpgInventoryManagerComponent* SourceInventory, URpgInventoryManagerComponent* TargetInventory, URpgInventoryItemInstance* Item, int32 StackCount);
-
-	/** Transfers a stack into one exact target grid placement. Explicit drag/drop uses this instead of auto-stacking. */
-	UFUNCTION(Server, Reliable, BlueprintCallable, Category = "Inventory|UI Actions", meta = (DeprecatedFunction, DeprecationMessage = "Use RequestTransferInventoryItem with a full expected source snapshot."))
-	void RequestTransferItemStackToPlacement(URpgInventoryManagerComponent* SourceInventory, URpgInventoryManagerComponent* TargetInventory, URpgInventoryItemInstance* Item, int32 StackCount, FRpgInventoryGridPlacement TargetPlacement);
-
-	/** Applies a shared server-side sort to an accessible inventory such as storage or loot. */
-	UFUNCTION(Server, Reliable, BlueprintCallable, Category = "Inventory|UI Actions")
-	void RequestApplyInventorySort(URpgInventoryManagerComponent* Inventory, ERpgInventorySortMode SortMode);
-
-	/** Moves one accessible inventory entry to a shared replicated index for manual storage ordering. */
-	UFUNCTION(Server, Reliable, BlueprintCallable, Category = "Inventory|UI Actions")
-	void RequestMoveInventoryEntry(URpgInventoryManagerComponent* Inventory, FGuid EntryId, int32 TargetIndex);
-
-	/** Legacy entry-id placement wrapper; the server snapshots the source before forwarding to the typed move gateway. */
-	UFUNCTION(Server, Reliable, BlueprintCallable, Category = "Inventory|UI Actions", meta = (DeprecatedFunction, DeprecationMessage = "Use RequestMoveInventoryItem with the complete source snapshot captured when interaction begins."))
-	void RequestMoveInventoryEntryToPlacement(URpgInventoryManagerComponent* Inventory, FGuid EntryId, FRpgInventoryGridPlacement TargetPlacement);
-
-	/** Moves an owned player-inventory item into a logical player grid address such as WeaponSlot1[0,0] or Belt[2,1]. */
-	UFUNCTION(Server, Reliable, BlueprintCallable, Category = "Inventory|UI Actions")
-	void RequestMoveItemToInventorySlotAddress(URpgInventoryItemInstance* Item, FRpgInventorySlotAddress TargetAddress);
-
-	/** Legacy pointer adapter for item-container providers with an explicit EquippableItem contract. */
-	UFUNCTION(Server, Reliable, BlueprintCallable, Category = "Inventory|UI Actions", meta = (DeprecatedFunction, DeprecationMessage = "Use RequestApplyInventoryEquipmentIntent with EquipToSlot."))
-	void RequestEquipSlotContainerItem(ERpgEquipmentSlot ContainerSlot, URpgInventoryItemInstance* Item);
-
-	/**
-	 * Moves a bag, belt, pouch, or resource bag out of its physical Gear slot into compatible inventory content.
-	 * Item-owned contents remain attached to the provider item and are not flattened into the player inventory.
-	 * ExpectedProviderItemId prevents a stale client action from unequipping a newer item that now occupies the slot.
-	 */
-	UFUNCTION(Server, Reliable, BlueprintCallable, Category = "Inventory|UI Actions", meta = (DeprecatedFunction, DeprecationMessage = "Use RequestApplyInventoryEquipmentIntent with an exact UnequipToContent source snapshot."))
-	void RequestUnequipSlotContainerItem(
-		ERpgEquipmentSlot ContainerSlot,
-		FRpgInventoryItemId ExpectedProviderItemId);
-
-	/**
 	 * Activates the server-authoritative Carry binding in one Quick Access slot.
 	 * The expected semantic role rejects stale or forged client input; physical addresses are resolved on the server.
 	 */
@@ -583,36 +548,11 @@ public:
 	UFUNCTION(Server, Reliable, BlueprintCallable, Category = "Inventory|Quick Access")
 	void RequestMutateQuickAccessBinding(FRpgQuickAccessMutationRequest Request);
 
-	/** Compatibility path; new UI should use RequestMutateQuickAccessBinding for caller-owned request correlation. */
-	UFUNCTION(Server, Reliable, BlueprintCallable, Category = "Inventory|UI Actions")
-	void RequestBindActionBarToInventorySlot(int32 ActionBarSlotIndex, FRpgInventorySlotAddress SlotAddress);
-
-	/** Compatibility path; new UI should use RequestMutateQuickAccessBinding for caller-owned request correlation. */
-	UFUNCTION(Server, Reliable, BlueprintCallable, Category = "Inventory|UI Actions")
-	void RequestBindActionBarToCarrySlot(int32 ActionBarSlotIndex, FRpgInventorySlotAddress CarrySlotAddress);
-
-	/** Compatibility path that validates the explicit Carry semantic role and emits correlated feedback. */
-	UFUNCTION(Server, Reliable, BlueprintCallable, Category = "Inventory|UI Actions")
-	void RequestClearActionBarCarryBinding(int32 ActionBarSlotIndex, FGameplayTag ExpectedCarrySemanticRole);
-
-	/** Compatibility path that snapshots the current preferred item id before authoritative validation. */
-	UFUNCTION(Server, Reliable, BlueprintCallable, Category = "Inventory|UI Actions")
-	void RequestClearActionBarConsumableBinding(
-		int32 ActionBarSlotIndex,
-		TSubclassOf<URpgInventoryItemDefinition> ExpectedConsumableDefinition);
-
-	/** Splits one stack into a new stack in the same inventory. SplitCount <= 0 performs the quick 50% split. */
-	UFUNCTION(Server, Reliable, BlueprintCallable, Category = "Inventory|UI Actions")
-	void RequestSplitItemStack(URpgInventoryManagerComponent* Inventory, URpgInventoryItemInstance* Item, int32 SplitCount, FRpgInventoryGridPlacement TargetPlacement);
-
-	/** ID-based split request whose reliable feedback retains the caller's correlation id and Split action tag. */
+	/** Splits one exact stable-ID source snapshot and deduplicates identical retries inside the bounded replay window. */
 	UFUNCTION(Server, Reliable, BlueprintCallable, Category = "Inventory|UI Actions")
 	void RequestSplitItemStackById(
 		URpgInventoryManagerComponent* Inventory,
-		FRpgInventoryItemId ItemId,
-		int32 SplitCount,
-		FRpgInventoryGridPlacement TargetPlacement,
-		FGuid RequestId);
+		FRpgInventorySplitRequest Request);
 
 	/**
 	 * Resolves split count and placement with the same read-only validation used by the authoritative request path.
@@ -636,25 +576,6 @@ public:
 		URpgInventoryItemInstance* Item,
 		FRpgInventoryGridPlacement& OutTargetPlacement) const;
 
-	/** Uses a usable inventory item by granting and activating its configured one-shot ability. */
-	UFUNCTION(Server, Reliable, BlueprintCallable, Category = "Inventory|UI Actions")
-	void RequestUseInventoryItem(URpgInventoryManagerComponent* Inventory, URpgInventoryItemInstance* Item, int32 StackCount = 1);
-
-	/** Legacy pointer adapter for default equip of an item with an explicit EquippableItem contract. */
-	UFUNCTION(Server, Reliable, BlueprintCallable, Category = "Inventory|UI Actions", meta = (DeprecatedFunction, DeprecationMessage = "Use RequestApplyInventoryEquipmentIntent with EquipDefaultAndActivate."))
-	void RequestEquipInventoryItem(URpgInventoryItemInstance* Item);
-
-	/** Legacy pointer adapter for physical unequip. */
-	UFUNCTION(Server, Reliable, BlueprintCallable, Category = "Inventory|UI Actions", meta = (DeprecatedFunction, DeprecationMessage = "Use RequestApplyInventoryEquipmentIntent with UnequipToContent."))
-	void RequestUnequipInventoryItemToContentSlot(URpgInventoryItemInstance* Item);
-
-	/**
-	 * Legacy pointer-based wrapper retained for existing Blueprint callers.
-	 * New presenters should capture a stable snapshot and call RequestDropInventoryItemById.
-	 */
-	UFUNCTION(Server, Reliable, BlueprintCallable, Category = "Inventory|UI Actions", meta = (DeprecatedFunction, DeprecationMessage = "Capture FRpgInventoryManualDropRequest from the presented entry and use RequestDropInventoryItemById."))
-	void RequestDropInventoryItem(URpgInventoryManagerComponent* Inventory, URpgInventoryItemInstance* Item, int32 StackCount, bool bConfirmed);
-
 	/**
 	 * Drops the exact entry snapshot after server-side identity, placement, quantity, policy, and access validation.
 	 * Reusing RequestId with a different payload is rejected; an identical retry replays the cached result.
@@ -675,14 +596,6 @@ public:
 	/** Withdraws resources from the linked base storage station into the player inventory. */
 	UFUNCTION(Server, Reliable, BlueprintCallable, Category = "Inventory|Base Storage")
 	void RequestWithdrawResourceFromBase(URpgBaseStorageStationComponent* Station, TSubclassOf<URpgInventoryItemDefinition> ItemDefinition, int32 StackCount);
-
-	/** Legacy pointer adapter that snapshots and stores one instance-based player item in the linked base armory. */
-	UFUNCTION(Server, Reliable, BlueprintCallable, Category = "Inventory|Base Storage", meta = (DeprecatedFunction, DeprecationMessage = "Use RequestQuickTransferItem with the presented entry's exact source snapshot."))
-	void RequestStoreItemInstanceInBase(URpgBaseStorageStationComponent* Station, URpgInventoryItemInstance* Item, int32 StackCount);
-
-	/** Legacy pointer adapter that snapshots and takes one instance-based armory item into the player inventory. */
-	UFUNCTION(Server, Reliable, BlueprintCallable, Category = "Inventory|Base Storage", meta = (DeprecatedFunction, DeprecationMessage = "Use RequestQuickTransferItem with the presented entry's exact source snapshot."))
-	void RequestTakeItemInstanceFromBase(URpgBaseStorageStationComponent* Station, URpgInventoryItemInstance* Item, int32 StackCount);
 
 	/** Installs a data-driven upgrade on a base storage station after paying material costs. */
 	UFUNCTION(Server, Reliable, BlueprintCallable, Category = "Inventory|Base Storage")
@@ -733,6 +646,7 @@ public:
 
 private:
 	friend class FRpgInventoryUiActionDomainHandler;
+	friend class FRpgInventoryUseRequestReplayCacheContractTest;
 
 	URpgInventoryManagerComponent* FindPlayerInventory() const;
 	URpgEquipmentLoadoutComponent* FindEquipmentLoadout() const;
@@ -744,6 +658,80 @@ private:
 		const FRpgInventoryGridPlacement& Placement) const;
 	void SyncEquipmentLoadoutFromGearSlots() const;
 	void SyncActiveHandsFromCarrySlots() const;
+
+	enum class EUseRequestAdmissionDisposition : uint8
+	{
+		Execute,
+		Replay,
+		InFlight,
+		Reject
+	};
+
+	struct FUseRequestAdmission
+	{
+		EUseRequestAdmissionDisposition Disposition =
+			EUseRequestAdmissionDisposition::Reject;
+		ERpgInventoryActionFeedbackResult Result =
+			ERpgInventoryActionFeedbackResult::InvalidRequest;
+		TWeakObjectPtr<URpgInventoryItemInstance> FeedbackItem;
+		int32 FeedbackUseCount = 0;
+	};
+
+	struct FRecentUseRequestResult
+	{
+		TWeakObjectPtr<URpgInventoryManagerComponent> Inventory;
+		bool bHadInventory = false;
+		uint64 InventoryMutationEpoch = 0;
+		FRpgInventoryUseRequest Request;
+		bool bInFlight = true;
+		ERpgInventoryActionFeedbackResult Result =
+			ERpgInventoryActionFeedbackResult::ServerRejected;
+		/** Item context authorized by the original execution; replay never resolves a fresh pointer. */
+		TWeakObjectPtr<URpgInventoryItemInstance> FeedbackItem;
+		int32 FeedbackUseCount = 0;
+	};
+
+	static bool AreUseRequestsEquivalent(
+		const FRpgInventoryUseRequest& A,
+		const FRpgInventoryUseRequest& B);
+	FUseRequestAdmission AdmitUseRequest(
+		URpgInventoryManagerComponent* Inventory,
+		const FRpgInventoryUseRequest& Request);
+	void FinalizeUseRequest(
+		URpgInventoryManagerComponent* Inventory,
+		const FRpgInventoryUseRequest& Request,
+		ERpgInventoryActionFeedbackResult Result,
+		URpgInventoryItemInstance* FeedbackItem,
+		int32 FeedbackUseCount);
+	void RemoveRecentUseRequest(const FGuid& RequestId);
+	bool MakeRoomForUseRequest();
+
+	struct FRecentSplitRequestResult
+	{
+		TWeakObjectPtr<URpgInventoryManagerComponent> Inventory;
+		bool bHadInventory = false;
+		uint64 InventoryMutationEpoch = 0;
+		FRpgInventorySplitRequest Request;
+		ERpgInventoryActionFeedbackResult Result =
+			ERpgInventoryActionFeedbackResult::ServerRejected;
+		/** Item context authorized by the original execution; replay never resolves a fresh pointer. */
+		TWeakObjectPtr<URpgInventoryItemInstance> FeedbackItem;
+		int32 FeedbackStackCount = 0;
+	};
+
+	static bool AreSplitRequestsEquivalent(
+		const FRpgInventorySplitRequest& A,
+		const FRpgInventorySplitRequest& B);
+	bool TryReplayRecentSplitResult(
+		URpgInventoryManagerComponent* Inventory,
+		const FRpgInventorySplitRequest& Request);
+	void SendAndCacheSplitFeedback(
+		URpgInventoryManagerComponent* Inventory,
+		const FRpgInventorySplitRequest& Request,
+		ERpgInventoryActionFeedbackResult Result,
+		URpgInventoryItemInstance* Item,
+		int32 FeedbackStackCount);
+
 	struct FRecentManualDropResult
 	{
 		TWeakObjectPtr<URpgInventoryManagerComponent> Inventory;
@@ -755,6 +743,8 @@ private:
 		FRpgInventoryManualDropRequest Request;
 		ERpgInventoryActionFeedbackResult Result =
 			ERpgInventoryActionFeedbackResult::ServerRejected;
+		/** Item context authorized by the original execution; replay never resolves a fresh pointer. */
+		TWeakObjectPtr<URpgInventoryItemInstance> FeedbackItem;
 		int32 FeedbackStackCount = 0;
 	};
 
@@ -782,6 +772,8 @@ private:
 		FRpgInventoryTransferIntent Intent;
 		ERpgInventoryActionFeedbackResult Result =
 			ERpgInventoryActionFeedbackResult::ServerRejected;
+		/** Item context authorized by the original execution; replay never resolves a fresh pointer. */
+		TWeakObjectPtr<URpgInventoryItemInstance> FeedbackItem;
 		int32 FeedbackStackCount = 0;
 	};
 	static bool AreExactTransferIntentsEquivalent(
@@ -809,6 +801,8 @@ private:
 		FRpgInventoryQuickTransferRequest Request;
 		ERpgInventoryActionFeedbackResult Result =
 			ERpgInventoryActionFeedbackResult::ServerRejected;
+		/** Item context authorized by the original execution; replay never resolves a fresh pointer. */
+		TWeakObjectPtr<URpgInventoryItemInstance> FeedbackItem;
 		int32 FeedbackStackCount = 0;
 	};
 	static bool AreQuickTransferRequestsEquivalent(
@@ -833,6 +827,8 @@ private:
 		FRpgInventoryEquipmentIntent Intent;
 		ERpgInventoryActionFeedbackResult Result =
 			ERpgInventoryActionFeedbackResult::ServerRejected;
+		/** Item context authorized by the original execution; replay never resolves a fresh pointer. */
+		TWeakObjectPtr<URpgInventoryItemInstance> FeedbackItem;
 		int32 FeedbackStackCount = 0;
 	};
 	static bool AreEquipmentIntentsEquivalent(
@@ -875,6 +871,16 @@ private:
 	/** Radius in centimeters used to merge stackable manual drops into nearby dropped inventory actors. */
 	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Inventory|Drop", meta = (AllowPrivateAccess = "true", ClampMin = "0", UIMin = "0", Units = "cm"))
 	float ManualDropMergeRadius = 250.0f;
+
+	/** Server-local bounded replay-window guard for item use; in-flight records are never capacity-evicted. */
+	TMap<FGuid, FRecentUseRequestResult> RecentUseRequestResults;
+	TArray<FGuid> RecentUseRequestOrder;
+	static constexpr int32 MaxRecentUseRequestResults = 64;
+
+	/** Server-local bounded replay cache for exact split commands and their one-time equipment side effects. */
+	TMap<FGuid, FRecentSplitRequestResult> RecentSplitRequestResults;
+	TArray<FGuid> RecentSplitRequestOrder;
+	static constexpr int32 MaxRecentSplitRequestResults = 64;
 
 	/** Server-local replay cache; transient results are bounded and never replicated or saved. */
 	TMap<FGuid, FRecentManualDropResult> RecentManualDropResults;

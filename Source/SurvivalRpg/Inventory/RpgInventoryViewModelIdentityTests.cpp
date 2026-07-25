@@ -5,8 +5,11 @@
 #include "RpgInventoryItemInstance.h"
 #include "RpgInventoryManagerComponent.h"
 #include "RpgPlayerInventoryLayoutComponent.h"
-#include "SurvivalRpg/Mvvm/Inventory/RpgInventoryViewModels.h"
-#include "SurvivalRpg/Mvvm/Inventory/RpgPlayerInventoryViewModels.h"
+#include "SurvivalRpg/Mvvm/Inventory/RpgInventoryEntryViewModel.h"
+#include "SurvivalRpg/Mvvm/Inventory/RpgInventoryPanelViewModel.h"
+#include "SurvivalRpg/Mvvm/Inventory/RpgInventoryAddressSlotViewModel.h"
+#include "SurvivalRpg/Mvvm/Inventory/RpgInventorySlotGroupViewModel.h"
+#include "SurvivalRpg/Mvvm/Inventory/RpgPlayerInventoryViewModel.h"
 
 #include "Engine/Engine.h"
 #include "Engine/GameInstance.h"

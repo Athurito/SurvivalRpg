@@ -4,7 +4,8 @@
 
 #include "RpgPlayerInventoryLayoutComponent.h"
 #include "RpgPlayerInventoryLayoutDefinition.h"
-#include "RpgInventoryDragDrop.h"
+#include "RpgInventoryDragDropCoordinator.h"
+#include "RpgInventoryDragDropTypes.h"
 #include "RpgInventoryEquipmentPlacementPolicy.h"
 #include "RpgInventoryInteractionSession.h"
 #include "RpgInventoryContainerActor.h"
@@ -19,15 +20,18 @@
 #include "SurvivalRpg/ActionBar/RpgActionBarComponent.h"
 #include "SurvivalRpg/AbilitySystem/Attributes/RpgHealthSet.h"
 #include "SurvivalRpg/AbilitySystem/RpgAbilitySystemComponent.h"
+#include "SurvivalRpg/Base/RpgBaseStorageComponent.h"
 #include "SurvivalRpg/Crafting/RpgCraftingStationActor.h"
 #include "SurvivalRpg/Crafting/RpgCraftingStationComponent.h"
 #include "SurvivalRpg/Equipment/RpgEquipmentAutomationTestTypes.h"
 #include "SurvivalRpg/Equipment/RpgEquipmentLoadoutComponent.h"
 #include "SurvivalRpg/Equipment/RpgEquipmentManagerComponent.h"
 #include "SurvivalRpg/GameplayTags/RpgGameplayTags.h"
-#include "SurvivalRpg/Mvvm/Inventory/RpgActionBarViewModels.h"
-#include "SurvivalRpg/Mvvm/Inventory/RpgInventoryViewModels.h"
-#include "SurvivalRpg/Mvvm/Inventory/RpgPlayerInventoryViewModels.h"
+#include "SurvivalRpg/Mvvm/Inventory/RpgActionBarSlotViewModel.h"
+#include "SurvivalRpg/Mvvm/Inventory/RpgInventoryEntryViewModel.h"
+#include "SurvivalRpg/Mvvm/Inventory/RpgInventoryFragmentViewModel.h"
+#include "SurvivalRpg/Mvvm/Inventory/RpgInventoryAddressSlotViewModel.h"
+#include "SurvivalRpg/Mvvm/Inventory/RpgPlayerInventoryViewModel.h"
 #include "SurvivalRpg/Systems/GameplayTagStack.h"
 
 #include "Engine/Engine.h"
@@ -205,6 +209,99 @@ namespace RpgInventoryTransactionTests
 			}
 		}
 		return false;
+	}
+
+	bool ConsumeWholeItem(
+		URpgInventoryManagerComponent* Inventory,
+		const URpgInventoryItemInstance* Item)
+	{
+		if (!Inventory || !Item)
+		{
+			return false;
+		}
+
+		const int32 Quantity = Inventory->GetItemStackCount(
+			const_cast<URpgInventoryItemInstance*>(Item));
+		const FRpgInventoryMutationResult Result =
+			Inventory->ConsumeItemById(Item->GetItemId(), Quantity);
+		return Quantity > 0 && Result.IsSuccess() &&
+			Result.AppliedQuantity == Quantity;
+	}
+
+	FRpgInventoryTransferIntent MakeTransferIntent(
+		const URpgInventoryManagerComponent* SourceInventory,
+		const FRpgInventoryItemId& ItemId,
+		int32 Quantity,
+		FGuid RequestId = FGuid::NewGuid())
+	{
+		FRpgInventoryTransferIntent Intent;
+		Intent.ItemId = ItemId;
+		Intent.Quantity = Quantity;
+		Intent.RequestId = RequestId;
+		Intent.EnsureRequestId();
+		FRpgInventoryEntryView Entry;
+		if (GetEntryView(SourceInventory, ItemId, Entry))
+		{
+			Intent.ExpectedEntryId = Entry.EntryId;
+			Intent.ExpectedSourcePlacement = Entry.Placement;
+			Intent.ExpectedSourceQuantity = Entry.StackCount;
+		}
+		return Intent;
+	}
+
+	FRpgInventoryTransferIntent MakeExactTransferIntent(
+		const URpgInventoryManagerComponent* SourceInventory,
+		const FRpgInventoryItemId& ItemId,
+		int32 Quantity,
+		const FRpgInventoryGridPlacement& TargetPlacement,
+		FGuid RequestId = FGuid::NewGuid())
+	{
+		FRpgInventoryTransferIntent Intent = MakeTransferIntent(
+			SourceInventory,
+			ItemId,
+			Quantity,
+			RequestId);
+		Intent.TargetContainer = TargetPlacement.GetContainerHandle();
+		Intent.TargetPlacement = TargetPlacement;
+		return Intent;
+	}
+
+	FRpgInventoryQuickTransferRequest MakeQuickTransferRequest(
+		const URpgInventoryManagerComponent* SourceInventory,
+		const FRpgInventoryItemId& ItemId,
+		int32 Quantity)
+	{
+		FRpgInventoryQuickTransferRequest Request;
+		Request.RequestId = FGuid::NewGuid();
+		Request.ItemId = ItemId;
+		Request.StackCount = Quantity;
+		FRpgInventoryEntryView Entry;
+		if (GetEntryView(SourceInventory, ItemId, Entry))
+		{
+			Request.ExpectedEntryId = Entry.EntryId;
+			Request.ExpectedSourcePlacement = Entry.Placement;
+			Request.ExpectedSourceQuantity = Entry.StackCount;
+		}
+		return Request;
+	}
+
+	FRpgInventoryMoveIntent MakeMoveIntent(
+		const URpgInventoryManagerComponent* Inventory,
+		const FRpgInventoryItemId& ItemId,
+		const FRpgInventoryGridPlacement& TargetPlacement)
+	{
+		FRpgInventoryMoveIntent Intent;
+		Intent.EnsureRequestId();
+		Intent.ItemId = ItemId;
+		Intent.TargetPlacement = TargetPlacement;
+		FRpgInventoryEntryView Entry;
+		if (GetEntryView(Inventory, ItemId, Entry))
+		{
+			Intent.ExpectedEntryId = Entry.EntryId;
+			Intent.ExpectedSourcePlacement = Entry.Placement;
+			Intent.ExpectedQuantity = Entry.StackCount;
+		}
+		return Intent;
 	}
 
 	bool MoveWholeEntryToEquipmentPlacement(
@@ -1377,18 +1474,24 @@ bool FRpgInventoryContextActionPolicyTest::RunTest(
 		TEXT("The Blueprint-callable explicit Equip dispatcher reuses the shared policy"),
 		Coordinator->ExecuteEntryItemAction(
 			ExternalWeaponViewModel,
-			ERpgInventoryItemActionIntent::EquipAndActivate));
+			ERpgInventoryContextAction::EquipAndActivate));
 	TestFalse(
 		TEXT("The Blueprint-callable explicit Use dispatcher reuses the shared source policy"),
 		Coordinator->ExecuteEntryItemAction(
 			ExternalUsableViewModel,
-			ERpgInventoryItemActionIntent::Use));
+			ERpgInventoryContextAction::Use));
 	TestEqual(
 		TEXT("Locally rejected external intents do not mutate inventory state"),
 		MakeInventorySignature(ExternalInventory),
 		ExternalSignatureBeforeRejectedIntents);
 
-	UiActions->RequestEquipInventoryItem(Weapon);
+	UiActions->RequestApplyInventoryEquipmentIntent(
+		PlayerInventory,
+		MakeEquipmentIntent(
+			PlayerInventory,
+			Weapon,
+			ERpgInventoryEquipmentIntentOperation::
+				EquipDefaultAndActivate));
 	FRpgInventoryEntryView EquippedWeaponEntry;
 	if (!TestTrue(
 			TEXT("The real authoritative equip path keeps the weapon addressable"),
@@ -1413,7 +1516,7 @@ bool FRpgInventoryContextActionPolicyTest::RunTest(
 		TEXT("The direct dispatcher rejects the same placement-stale weapon projection"),
 		Coordinator->ExecuteEntryItemAction(
 			WeaponViewModel,
-			ERpgInventoryItemActionIntent::MoveToCarry));
+			ERpgInventoryContextAction::MoveToCarry));
 
 	URpgInventoryAddressSlotViewModel* CarryAddress =
 		MakeAddressViewModel(
@@ -1596,9 +1699,11 @@ bool FRpgInventoryContextActionPolicyTest::RunTest(
 		MakeInventorySignature(PlayerInventory),
 		PlayerSignatureBeforeNoDrop);
 
+	const FRpgInventoryMutationResult ReducedStackResult =
+		PlayerInventory->ConsumeItemById(StackItem->GetItemId(), 3);
 	TestTrue(
 		TEXT("The authoritative fixture reduces the represented stack"),
-		PlayerInventory->RemoveItemInstanceStack(StackItem, 3));
+		ReducedStackResult.IsSuccess() && ReducedStackResult.AppliedQuantity == 3);
 	TestTrue(
 		TEXT("The stale view model retains the same item identity for the regression"),
 		StackViewModel->GetItemInstance() == StackItem &&
@@ -1736,7 +1841,13 @@ bool FRpgInventoryLocalPlayerFeedbackRoutingTest::RunTest(
 				CapturedMessage = Message;
 			});
 
-	UiActions->RequestTransferItemStack(nullptr, nullptr, nullptr, 1);
+	FRpgInventoryQuickTransferRequest InvalidTransferRequest;
+	InvalidTransferRequest.RequestId = FGuid::NewGuid();
+	InvalidTransferRequest.StackCount = 1;
+	UiActions->RequestQuickTransferItem(
+		nullptr,
+		nullptr,
+		InvalidTransferRequest);
 	MessageSubsystem.UnregisterListener(ListenerHandle);
 
 	TestEqual(
@@ -2055,12 +2166,19 @@ bool FRpgInventoryManualDropConfirmationAuthorityTest::RunTest(
 			TEXT("The confirmed command owns one durable physical drop target"),
 			PhysicalDropActor))
 	{
+		FRpgInventoryTransferIntent PhysicalReplayIntent;
+		PhysicalReplayIntent.RequestId = ConfirmedRequest.RequestId;
+		PhysicalReplayIntent.ItemId = ConfirmedRequest.ItemId;
+		PhysicalReplayIntent.ExpectedEntryId = ConfirmedRequest.EntryId;
+		PhysicalReplayIntent.ExpectedSourcePlacement =
+			ConfirmedRequest.ExpectedSourcePlacement;
+		PhysicalReplayIntent.ExpectedSourceQuantity =
+			ConfirmedRequest.ExpectedSourceQuantity;
+		PhysicalReplayIntent.Quantity = ConfirmedRequest.StackCount;
 		const FRpgInventoryMutationResult PhysicalReplay =
-			PhysicalDropActor->TransferItemFromInventory(
+			PhysicalDropActor->TransferItemFromInventoryByIntent(
 				Inventory,
-				ItemId,
-				ConfirmedRequest.StackCount,
-				ConfirmedRequest.RequestId);
+				PhysicalReplayIntent);
 		TestEqual(
 			TEXT("The physical drop kernel replays the caller's exact request id"),
 			PhysicalReplay.RequestId,
@@ -2515,35 +2633,6 @@ bool FRpgInventoryEquipmentIntentRetryBoundaryTest::RunTest(
 			ERpgEquipmentSlot::MainHand);
 	const FString InitialSignature =
 		MakeInventorySignature(Inventory);
-	FRpgInventoryItemActionRequest LegacyEquipmentRequest;
-	LegacyEquipmentRequest.RequestId = FGuid::NewGuid();
-	LegacyEquipmentRequest.ItemId = Weapon->GetItemId();
-	LegacyEquipmentRequest.Intent =
-		ERpgInventoryItemActionIntent::EquipAndActivate;
-	LegacyEquipmentRequest.StackCount = 1;
-	const int32 LegacyFeedbackIndex = FeedbackMessages.Num();
-	UiActions->RequestExecuteInventoryItemAction(
-		Inventory,
-		LegacyEquipmentRequest);
-	TestEqual(
-		TEXT("The legacy equipment action emits one rejection"),
-		FeedbackMessages.Num(),
-		LegacyFeedbackIndex + 1);
-	if (FeedbackMessages.IsValidIndex(LegacyFeedbackIndex))
-	{
-		TestEqual(
-			TEXT("The legacy stable-ID endpoint rejects equipment without an exact snapshot"),
-			FeedbackMessages[LegacyFeedbackIndex].Result,
-			ERpgInventoryActionFeedbackResult::InvalidRequest);
-	}
-	TestEqual(
-		TEXT("The rejected legacy equipment action leaves physical state unchanged"),
-		MakeInventorySignature(Inventory),
-		InitialSignature);
-	TestNull(
-		TEXT("The rejected legacy equipment action cannot activate MainHand"),
-		EquipmentLoadout->GetItemInEquipmentSlot(
-			ERpgEquipmentSlot::MainHand));
 
 	FRpgInventoryEquipmentIntent StaleEntryIntent = ValidIntent;
 	StaleEntryIntent.RequestId = FGuid::NewGuid();
@@ -3702,21 +3791,17 @@ bool FRpgInventoryEquipmentSplitDerivedSyncTest::RunTest(
 		EquipmentHandle.Unregister();
 		return false;
 	}
-	FRpgInventoryMutationRequest SplitRequest;
-	SplitRequest.Operation = ERpgInventoryMutationOperation::Split;
+	FRpgInventorySplitRequest SplitRequest;
+	SplitRequest.RequestId = SplitRequestId;
 	SplitRequest.ItemId = SourceBeforeSplit.ItemId;
 	SplitRequest.ExpectedEntryId = SourceBeforeSplit.EntryId;
-	SplitRequest.Source =
-		SourceBeforeSplit.Placement.GetContainerHandle();
 	SplitRequest.ExpectedSourcePlacement =
 		SourceBeforeSplit.Placement;
 	SplitRequest.ExpectedSourceQuantity =
 		SourceBeforeSplit.StackCount;
-	SplitRequest.Target = ShieldSlot;
 	SplitRequest.TargetPlacement = ShieldPlacement;
-	SplitRequest.Quantity = 1;
-	SplitRequest.RequestId = SplitRequestId;
-	UiActions->RequestInventoryMutation(
+	SplitRequest.SplitCount = 1;
+	UiActions->RequestSplitItemStackById(
 		Inventory,
 		SplitRequest);
 	if (!TestTrue(TEXT("The split emits action feedback"), FeedbackMessages.Num() > 0))
@@ -3733,6 +3818,8 @@ bool FRpgInventoryEquipmentSplitDerivedSyncTest::RunTest(
 		TEXT("Split feedback preserves request correlation"),
 		FeedbackMessages.Last().RequestId,
 		SplitRequestId);
+	const FRpgInventoryActionFeedbackMessage OriginalSplitFeedback =
+		FeedbackMessages.Last();
 	TestEqual(
 		TEXT("The source stack retains the unsplit quantity"),
 		Inventory->GetItemStackCount(SourceStack),
@@ -3769,17 +3856,37 @@ bool FRpgInventoryEquipmentSplitDerivedSyncTest::RunTest(
 	const FString SignatureBeforeReplay = MakeInventorySignature(Inventory);
 	const int32 EquipmentMessageCountBeforeReplay = EquipmentMessages.Num();
 	const int32 FeedbackCountBeforeReplay = FeedbackMessages.Num();
-	UiActions->RequestInventoryMutation(
+	UiActions->RequestSplitItemStackById(
 		Inventory,
 		SplitRequest);
 	TestEqual(
-		TEXT("An identical split retry replays one feedback"),
+		TEXT("An identical split retry inside the bounded replay window emits one feedback"),
 		FeedbackMessages.Num(),
 		FeedbackCountBeforeReplay + 1);
 	TestEqual(
 		TEXT("The split retry replays success"),
 		FeedbackMessages.Last().Result,
 		ERpgInventoryActionFeedbackResult::Success);
+	TestEqual(
+		TEXT("The split retry replays the exact affected count"),
+		FeedbackMessages.Last().StackCount,
+		OriginalSplitFeedback.StackCount);
+	TestEqual(
+		TEXT("The split retry replays the exact action tag"),
+		FeedbackMessages.Last().ActionTag,
+		OriginalSplitFeedback.ActionTag);
+	TestTrue(
+		TEXT("The split retry replays the exact stable item identity"),
+		FeedbackMessages.Last().ItemId ==
+			OriginalSplitFeedback.ItemId);
+	TestEqual(
+		TEXT("The split retry replays the exact inventory context"),
+		FeedbackMessages.Last().InventoryOwner.Get(),
+		OriginalSplitFeedback.InventoryOwner.Get());
+	TestEqual(
+		TEXT("The split retry replays the exact authorized item context"),
+		FeedbackMessages.Last().Item.Get(),
+		OriginalSplitFeedback.Item.Get());
 	TestEqual(
 		TEXT("The split retry cannot mutate inventory state twice"),
 		MakeInventorySignature(Inventory),
@@ -3792,6 +3899,53 @@ bool FRpgInventoryEquipmentSplitDerivedSyncTest::RunTest(
 		TEXT("The split retry preserves the derived load"),
 		EquipmentLoadout->GetEquipmentLoadWeight(),
 		4.0f);
+
+	FRpgInventorySplitRequest PayloadCollision = SplitRequest;
+	PayloadCollision.SplitCount = 2;
+	const int32 FeedbackCountBeforeCollision = FeedbackMessages.Num();
+	UiActions->RequestSplitItemStackById(
+		Inventory,
+		PayloadCollision);
+	TestEqual(
+		TEXT("A split RequestId payload collision emits one rejection"),
+		FeedbackMessages.Num(),
+		FeedbackCountBeforeCollision + 1);
+	TestEqual(
+		TEXT("A split RequestId payload collision is InvalidRequest"),
+		FeedbackMessages.Last().Result,
+		ERpgInventoryActionFeedbackResult::InvalidRequest);
+	TestEqual(
+		TEXT("A split RequestId payload collision cannot mutate inventory"),
+		MakeInventorySignature(Inventory),
+		SignatureBeforeReplay);
+	TestEqual(
+		TEXT("A split RequestId payload collision cannot repeat equipment side effects"),
+		EquipmentMessages.Num(),
+		EquipmentMessageCountBeforeReplay);
+
+	FRpgInventorySplitRequest StaleSnapshotRequest = SplitRequest;
+	StaleSnapshotRequest.RequestId = FGuid::NewGuid();
+	const int32 FeedbackCountBeforeStaleSnapshot =
+		FeedbackMessages.Num();
+	UiActions->RequestSplitItemStackById(
+		Inventory,
+		StaleSnapshotRequest);
+	TestEqual(
+		TEXT("A stale split snapshot emits one rejection"),
+		FeedbackMessages.Num(),
+		FeedbackCountBeforeStaleSnapshot + 1);
+	TestEqual(
+		TEXT("A stale split snapshot is InvalidRequest"),
+		FeedbackMessages.Last().Result,
+		ERpgInventoryActionFeedbackResult::InvalidRequest);
+	TestEqual(
+		TEXT("A stale split snapshot cannot mutate inventory"),
+		MakeInventorySignature(Inventory),
+		SignatureBeforeReplay);
+	TestEqual(
+		TEXT("A stale split snapshot cannot repeat equipment side effects"),
+		EquipmentMessages.Num(),
+		EquipmentMessageCountBeforeReplay);
 
 	FeedbackHandle.Unregister();
 	EquipmentHandle.Unregister();
@@ -4317,11 +4471,20 @@ bool FRpgInventoryContainerGearDragDropTest::RunTest(const FString& Parameters)
 		TEXT("The rejected definitionless provider preserves the policy result"),
 		DefinitionlessBackpackExecute.Code,
 		ERpgInventoryMutationResultCode::ItemNotAllowed);
-	UiActions->RequestEquipSlotContainerItem(
-		ERpgEquipmentSlot::Backpack,
-		DefinitionlessContainer);
-	UiActions->RequestEquipInventoryItem(
-		DefinitionlessContainer);
+	UiActions->RequestApplyInventoryEquipmentIntent(
+		Inventory,
+		MakeEquipmentIntent(
+			Inventory,
+			DefinitionlessContainer,
+			ERpgInventoryEquipmentIntentOperation::EquipToSlot,
+			ERpgEquipmentSlot::Backpack));
+	UiActions->RequestApplyInventoryEquipmentIntent(
+		Inventory,
+		MakeEquipmentIntent(
+			Inventory,
+			DefinitionlessContainer,
+			ERpgInventoryEquipmentIntentOperation::
+				EquipDefaultAndActivate));
 	FRpgInventoryEntryView DefinitionlessContainerEntry;
 	TestTrue(
 		TEXT("The rejected definitionless container remains addressable"),
@@ -4469,7 +4632,13 @@ bool FRpgInventoryContainerGearDragDropTest::RunTest(const FString& Parameters)
 		ReturnedBackpackEntry.Placement.GetContainerHandle(),
 		Pockets);
 
-	UiActions->RequestEquipSlotContainerItem(ERpgEquipmentSlot::Backpack, Backpack);
+	UiActions->RequestApplyInventoryEquipmentIntent(
+		Inventory,
+		MakeEquipmentIntent(
+			Inventory,
+			Backpack,
+			ERpgInventoryEquipmentIntentOperation::EquipToSlot,
+			ERpgEquipmentSlot::Backpack));
 	FRpgInventoryEntryView ReEquippedBackpackEntry;
 	TestTrue(
 		TEXT("The slot-container action physically equips the backpack again"),
@@ -4494,9 +4663,16 @@ bool FRpgInventoryContainerGearDragDropTest::RunTest(const FString& Parameters)
 		MakePlacement(BackpackContents, 0, 0));
 	TestNotNull(TEXT("The equipped provider owns one packed child item"), PackedItem);
 
-	UiActions->RequestUnequipSlotContainerItem(
-		ERpgEquipmentSlot::Backpack,
-		FRpgInventoryItemId::NewId());
+	FRpgInventoryEquipmentIntent StaleUnequipIntent =
+		MakeEquipmentIntent(
+			Inventory,
+			Backpack,
+			ERpgInventoryEquipmentIntentOperation::
+				UnequipToContent);
+	StaleUnequipIntent.ItemId = FRpgInventoryItemId::NewId();
+	UiActions->RequestApplyInventoryEquipmentIntent(
+		Inventory,
+		StaleUnequipIntent);
 	FRpgInventoryEntryView StaleUnequipBackpackEntry;
 	TestTrue(
 		TEXT("The provider remains addressable after a stale unequip request"),
@@ -4506,9 +4682,13 @@ bool FRpgInventoryContainerGearDragDropTest::RunTest(const FString& Parameters)
 		StaleUnequipBackpackEntry.Placement.GetContainerHandle(),
 		FRpgInventoryContainerHandle::MakeRoot(URpgPlayerInventoryLayoutComponent::GearBackpackGroupId));
 
-	UiActions->RequestUnequipSlotContainerItem(
-		ERpgEquipmentSlot::Backpack,
-		Backpack->GetItemId());
+	UiActions->RequestApplyInventoryEquipmentIntent(
+		Inventory,
+		MakeEquipmentIntent(
+			Inventory,
+			Backpack,
+			ERpgInventoryEquipmentIntentOperation::
+				UnequipToContent));
 	FRpgInventoryEntryView ActionUnequippedBackpackEntry;
 	TestTrue(
 		TEXT("The unequipped provider remains addressable"),
@@ -4529,7 +4709,13 @@ bool FRpgInventoryContainerGearDragDropTest::RunTest(const FString& Parameters)
 		PackedItemEntry.Placement.GetContainerHandle(),
 		BackpackContents);
 
-	UiActions->RequestEquipInventoryItem(Backpack);
+	UiActions->RequestApplyInventoryEquipmentIntent(
+		Inventory,
+		MakeEquipmentIntent(
+			Inventory,
+			Backpack,
+			ERpgInventoryEquipmentIntentOperation::
+				EquipDefaultAndActivate));
 	FRpgInventoryEntryView DefaultReEquippedBackpackEntry;
 	TestTrue(
 		TEXT("The default-equip provider remains addressable"),
@@ -4692,7 +4878,13 @@ bool FRpgInventoryCarryQuickAccessBindingTest::RunTest(const FString& Parameters
 		TEXT("The rejected Carry item remains physically in Pockets"),
 		RejectedOffHandEntry.Placement.GetContainerHandle(),
 		Pockets);
-	UiActions->RequestEquipInventoryItem(Weapon);
+	UiActions->RequestApplyInventoryEquipmentIntent(
+		Inventory,
+		MakeEquipmentIntent(
+			Inventory,
+			Weapon,
+			ERpgInventoryEquipmentIntentOperation::
+				EquipDefaultAndActivate));
 
 	FRpgInventoryEntryView WeaponEntry;
 	if (!TestTrue(
@@ -5616,11 +5808,12 @@ bool FRpgCraftingOutputWithdrawalOnlyTransferTest::RunTest(const FString& Parame
 			PredictedPlacement));
 	TestFalse(
 		TEXT("The shared auto-transfer contract rejects crafting-output deposits"),
-		UiActions->CanTransferItemStack(
+		UiActions->FindQuickTransferDestination(
 			PlayerInventory,
 			OutputInventory,
-			RejectedDepositItem,
-			1));
+			RejectedQuickTransfer,
+			PredictedContainer,
+			PredictedPlacement));
 
 	const FString PlayerBeforeRejectedTransfers = MakeInventorySignature(PlayerInventory);
 	const FString OutputBeforeRejectedTransfers = MakeInventorySignature(OutputInventory);
@@ -5637,18 +5830,22 @@ bool FRpgCraftingOutputWithdrawalOnlyTransferTest::RunTest(const FString& Parame
 	const FRpgInventoryGridPlacement RejectedExactPlacement = MakePlacement(OutputRoot, 4, 0);
 	TestFalse(
 		TEXT("The shared exact-placement contract rejects crafting-output deposits"),
-		UiActions->CanTransferItemStackToPlacement(
+		UiActions->PlanExactTransferPlacement(
 			PlayerInventory,
 			OutputInventory,
-			RejectedDepositItem,
-			1,
-			RejectedExactPlacement));
-	UiActions->RequestTransferItemStackToPlacement(
+			MakeExactTransferIntent(
+				PlayerInventory,
+				RejectedDepositItem->GetItemId(),
+				1,
+				RejectedExactPlacement)).IsCompleteSuccess());
+	UiActions->RequestTransferInventoryItem(
 		PlayerInventory,
 		OutputInventory,
-		RejectedDepositItem,
-		1,
-		RejectedExactPlacement);
+		MakeExactTransferIntent(
+			PlayerInventory,
+			RejectedDepositItem->GetItemId(),
+			1,
+			RejectedExactPlacement));
 	TestEqual(
 		TEXT("The exact server RPC preserves the player after a forbidden deposit"),
 		MakeInventorySignature(PlayerInventory),
@@ -5708,27 +5905,17 @@ bool FRpgCraftingOutputWithdrawalOnlyTransferTest::RunTest(const FString& Parame
 			PredictedPlacement));
 
 	const FRpgInventoryGridPlacement PlayerWithdrawalPlacement = MakePlacement(Pockets, 1, 0);
+	FRpgInventoryTransferIntent WithdrawalIntent = MakeExactTransferIntent(
+		OutputInventory,
+		CraftedEntryAfterMove.ItemId,
+		1,
+		PlayerWithdrawalPlacement);
 	TestTrue(
 		TEXT("The shared exact-placement contract permits output withdrawal"),
-		UiActions->CanTransferItemStackToPlacement(
+		UiActions->PlanExactTransferPlacement(
 			OutputInventory,
 			PlayerInventory,
-			CraftedEntryAfterMove.Instance,
-			1,
-			PlayerWithdrawalPlacement));
-	FRpgInventoryTransferIntent WithdrawalIntent;
-	WithdrawalIntent.EnsureRequestId();
-	WithdrawalIntent.ItemId = CraftedEntryAfterMove.ItemId;
-	WithdrawalIntent.ExpectedEntryId = CraftedEntryAfterMove.EntryId;
-	WithdrawalIntent.ExpectedSourcePlacement =
-		CraftedEntryAfterMove.Placement;
-	WithdrawalIntent.ExpectedSourceQuantity =
-		CraftedEntryAfterMove.StackCount;
-	WithdrawalIntent.TargetContainer =
-		PlayerWithdrawalPlacement.GetContainerHandle();
-	WithdrawalIntent.TargetPlacement =
-		PlayerWithdrawalPlacement;
-	WithdrawalIntent.Quantity = 1;
+			WithdrawalIntent).IsCompleteSuccess());
 	UiActions->RequestTransferInventoryItem(
 		OutputInventory,
 		PlayerInventory,
@@ -5783,12 +5970,14 @@ bool FRpgCraftingOutputWithdrawalOnlyTransferTest::RunTest(const FString& Parame
 	const FRpgInventoryGridPlacement RegularTargetPlacement = MakePlacement(RegularRoot, 3, 0);
 	TestTrue(
 		TEXT("The shared transfer contract still permits ordinary storage deposits"),
-		UiActions->CanTransferItemStackToPlacement(
+		UiActions->PlanExactTransferPlacement(
 			PlayerInventory,
 			RegularInventory,
-			RegularTransferItem,
-			1,
-			RegularTargetPlacement));
+			MakeExactTransferIntent(
+				PlayerInventory,
+				RegularTransferItem->GetItemId(),
+				1,
+				RegularTargetPlacement)).IsCompleteSuccess());
 	FRpgInventoryQuickTransferRequest RegularQuickTransfer;
 	RegularQuickTransfer.RequestId = FGuid::NewGuid();
 	RegularQuickTransfer.ItemId = RegularTransferItemId;
@@ -5843,12 +6032,14 @@ bool FRpgCraftingOutputWithdrawalOnlyTransferTest::RunTest(const FString& Parame
 	}
 	TestFalse(
 		TEXT("Prediction no longer advertises an unsupported cross-inventory swap"),
-		UiActions->CanTransferItemStackToPlacement(
+		UiActions->PlanExactTransferPlacement(
 			PlayerInventory,
 			RegularInventory,
-			SwapSource,
-			1,
-			MakePlacement(RegularRoot, 1, 0)));
+			MakeExactTransferIntent(
+				PlayerInventory,
+				SwapSource->GetItemId(),
+				1,
+				MakePlacement(RegularRoot, 1, 0))).IsCompleteSuccess());
 
 	URpgInventoryManagerComponent* AlternateOutputInventory =
 		NewObject<URpgInventoryManagerComponent>(
@@ -5891,12 +6082,14 @@ bool FRpgCraftingOutputWithdrawalOnlyTransferTest::RunTest(const FString& Parame
 	}
 	TestFalse(
 		TEXT("Output recognition checks every crafting component instead of only the owner's first component"),
-		UiActions->CanTransferItemStackToPlacement(
+		UiActions->PlanExactTransferPlacement(
 			PlayerInventory,
 			OutputInventory,
-			MultiComponentDepositItem,
-			1,
-			MakePlacement(OutputRoot, 5, 0)));
+			MakeExactTransferIntent(
+				PlayerInventory,
+				MultiComponentDepositItem->GetItemId(),
+				1,
+				MakePlacement(OutputRoot, 5, 0))).IsCompleteSuccess());
 
 	SecondaryCraftingStation->SetOutputInventoryManager(RegularInventory);
 	TestTrue(
@@ -5904,19 +6097,25 @@ bool FRpgCraftingOutputWithdrawalOnlyTransferTest::RunTest(const FString& Parame
 		UiActions->CanAccessInventory(RegularInventory));
 	TestFalse(
 		TEXT("An externally assigned crafting output remains withdrawal-only even when its owner is ordinary storage"),
-		UiActions->CanTransferItemStack(
+		UiActions->FindQuickTransferDestination(
 			PlayerInventory,
 			RegularInventory,
-			MultiComponentDepositItem,
-			1));
+			MakeQuickTransferRequest(
+				PlayerInventory,
+				MultiComponentDepositItem->GetItemId(),
+				1),
+			PredictedContainer,
+			PredictedPlacement));
 	TestFalse(
 		TEXT("Exact-placement prediction also recognizes an externally assigned crafting output"),
-		UiActions->CanTransferItemStackToPlacement(
+		UiActions->PlanExactTransferPlacement(
 			PlayerInventory,
 			RegularInventory,
-			MultiComponentDepositItem,
-			1,
-			MakePlacement(RegularRoot, 5, 0)));
+			MakeExactTransferIntent(
+				PlayerInventory,
+				MultiComponentDepositItem->GetItemId(),
+				1,
+				MakePlacement(RegularRoot, 5, 0))).IsCompleteSuccess());
 	return true;
 }
 
@@ -6094,18 +6293,18 @@ bool FRpgExactPlacementStackTransferPolicyTest::RunTest(const FString& Parameter
 		CompatibleMergePlan.Steps[0].TargetEntryId,
 		InitialTargetEntry.EntryId);
 
-	FRpgInventoryTransferIntent StaleLegacyIntent =
+	FRpgInventoryTransferIntent MatchingCanonicalHandleIntent =
 		MakeExactTransferIntent(1);
-	StaleLegacyIntent.ExpectedSourcePlacement.ContainerId_DEPRECATED =
-		TEXT("StaleLegacyRoot");
-	const FRpgInventoryPlacementPlan StaleLegacyPlan =
+	MatchingCanonicalHandleIntent.ExpectedSourcePlacement.SetContainerHandle(
+		InitialSourceEntry.Placement.GetContainerHandle());
+	const FRpgInventoryPlacementPlan MatchingCanonicalHandlePlan =
 		UiActions->PlanExactTransferPlacement(
 			PlayerInventory,
 			TargetInventory,
-			StaleLegacyIntent);
+			MatchingCanonicalHandleIntent);
 	TestTrue(
-		TEXT("A stale deprecated ContainerId cannot change the canonical source snapshot"),
-		StaleLegacyPlan.IsCompleteSuccess());
+		TEXT("An exact matching canonical handle preserves the source snapshot"),
+		MatchingCanonicalHandlePlan.IsCompleteSuccess());
 
 	FRpgInventoryTransferIntent StaleCanonicalIntent =
 		MakeExactTransferIntent(1);
@@ -6126,20 +6325,16 @@ bool FRpgExactPlacementStackTransferPolicyTest::RunTest(const FString& Parameter
 
 	TestFalse(
 		TEXT("Exact-placement preview rejects a request larger than the compatible stack's free capacity"),
-		UiActions->CanTransferItemStackToPlacement(
+		UiActions->PlanExactTransferPlacement(
 			PlayerInventory,
 			TargetInventory,
-			SourceStack,
-			2,
-			TargetStackPlacement));
+			MakeExactTransferIntent(2)).IsCompleteSuccess());
 	TestTrue(
 		TEXT("Exact-placement preview accepts a request that exactly fits the compatible stack"),
-		UiActions->CanTransferItemStackToPlacement(
+		UiActions->PlanExactTransferPlacement(
 			PlayerInventory,
 			TargetInventory,
-			SourceStack,
-			1,
-			TargetStackPlacement));
+			MakeExactTransferIntent(1)).IsCompleteSuccess());
 	NearlyFullTargetStack->AddStatTagStack(RpgGameplayTags::Rpg_Inventory_Action_Transfer, 1);
 	const FRpgInventoryPlacementPlan RuntimeIncompatiblePlan =
 		UiActions->PlanExactTransferPlacement(
@@ -6155,12 +6350,10 @@ bool FRpgExactPlacementStackTransferPolicyTest::RunTest(const FString& Parameter
 		RuntimeIncompatiblePlan.IsCompleteSuccess());
 	TestFalse(
 		TEXT("Exact-placement preview rejects a same-definition stack with incompatible runtime state"),
-		UiActions->CanTransferItemStackToPlacement(
+		UiActions->PlanExactTransferPlacement(
 			PlayerInventory,
 			TargetInventory,
-			SourceStack,
-			1,
-			TargetStackPlacement));
+			MakeExactTransferIntent(1)).IsCompleteSuccess());
 
 	URpgInventoryDragDropCoordinator* Coordinator =
 		URpgInventoryDragDropCoordinator::
@@ -6290,7 +6483,13 @@ bool FRpgExactPlacementStackTransferPolicyTest::RunTest(const FString& Parameter
 
 	const FRpgInventoryItemId SourceItemId = SourceStack->GetItemId();
 	const FRpgInventoryItemId ExistingTargetItemId = NearlyFullTargetStack->GetItemId();
-	UiActions->RequestAssignItemToEquipmentSlot(ERpgEquipmentSlot::MainHand, SourceStack);
+	UiActions->RequestApplyInventoryEquipmentIntent(
+		PlayerInventory,
+		MakeEquipmentIntent(
+			PlayerInventory,
+			SourceStack,
+			ERpgInventoryEquipmentIntentOperation::EquipToSlot,
+			ERpgEquipmentSlot::MainHand));
 	if (!TestEqual(
 		TEXT("The source stack is active in MainHand before the partial transfer"),
 		EquipmentLoadout->GetItemInEquipmentSlot(ERpgEquipmentSlot::MainHand),
@@ -6314,12 +6513,14 @@ bool FRpgExactPlacementStackTransferPolicyTest::RunTest(const FString& Parameter
 	const FRpgInventoryGridPlacement EmptyTargetPlacement = MakePlacement(TargetRoot, 0, 0);
 	TestTrue(
 		TEXT("Exact-placement preview accepts half the stack into an empty target cell"),
-		UiActions->CanTransferItemStackToPlacement(
+		UiActions->PlanExactTransferPlacement(
 			PlayerInventory,
 			TargetInventory,
-			SourceStack,
-			2,
-			EmptyTargetPlacement));
+			RpgInventoryTransactionTests::MakeExactTransferIntent(
+				PlayerInventory,
+				SourceStack->GetItemId(),
+				2,
+				EmptyTargetPlacement)).IsCompleteSuccess());
 	FRpgInventoryTransferIntent PartialTransferIntent;
 	PartialTransferIntent.EnsureRequestId();
 	PartialTransferIntent.ItemId = SourceEntryBeforeTransfer.ItemId;
@@ -6412,11 +6613,13 @@ bool FRpgExactPlacementStackTransferPolicyTest::RunTest(const FString& Parameter
 	const int32 TargetCountBeforeWholeTransfer =
 		TargetInventory->GetTotalItemCountByDefinition(
 			URpgInventoryAutomationTestStackableWeaponItemDefinition::StaticClass());
-	UiActions->RequestTransferItemStack(
+	UiActions->RequestQuickTransferItem(
 		PlayerInventory,
 		TargetInventory,
-		RemainingSourceStack,
-		2);
+		MakeQuickTransferRequest(
+			PlayerInventory,
+			RemainingSourceStack->GetItemId(),
+			2));
 
 	TestNull(
 		TEXT("A complete quick transfer removes the surviving source stack from the player graph"),
@@ -6578,151 +6781,6 @@ bool FRpgEquipmentLoadIgnoresNestedContentsTest::RunTest(const FString& Paramete
 }
 
 IMPLEMENT_SIMPLE_AUTOMATION_TEST(
-	FRpgInventoryGenericMutationRpcSafetyTest,
-	"SurvivalRpg.Inventory.Transaction.GenericUiRpcRejectsDedicatedOperations",
-	EAutomationTestFlags::EditorContext | EAutomationTestFlags::EngineFilter)
-
-bool FRpgInventoryGenericMutationRpcSafetyTest::RunTest(const FString& Parameters)
-{
-	using namespace RpgInventoryTransactionTests;
-	FScopedInventoryWorld TestWorld;
-	if (!InitializeTest(*this, TestWorld))
-	{
-		return false;
-	}
-
-	UWorld* World = TestWorld.GetTestWorld();
-	FActorSpawnParameters ControllerSpawnParameters;
-	ControllerSpawnParameters.Name = MakeUniqueObjectName(
-		World,
-		ARpgInventoryAutomationTestPlayerController::StaticClass(),
-		TEXT("GenericMutationSafetyController"));
-	ControllerSpawnParameters.ObjectFlags = RF_Transient;
-	ARpgInventoryAutomationTestPlayerController* Controller =
-		World->SpawnActor<ARpgInventoryAutomationTestPlayerController>(ControllerSpawnParameters);
-
-	FActorSpawnParameters PlayerStateSpawnParameters;
-	PlayerStateSpawnParameters.Name = MakeUniqueObjectName(
-		World,
-		ARpgInventoryAutomationTestPlayerState::StaticClass(),
-		TEXT("GenericMutationSafetyPlayerState"));
-	PlayerStateSpawnParameters.ObjectFlags = RF_Transient;
-	ARpgInventoryAutomationTestPlayerState* PlayerState =
-		World->SpawnActor<ARpgInventoryAutomationTestPlayerState>(PlayerStateSpawnParameters);
-	if (!TestNotNull(TEXT("The generic-mutation controller fixture exists"), Controller) ||
-		!TestNotNull(TEXT("The generic-mutation player-state fixture exists"), PlayerState))
-	{
-		return false;
-	}
-
-	Controller->SetPlayerState(PlayerState);
-	PlayerState->SetOwner(Controller);
-	URpgInventoryManagerComponent* Inventory = PlayerState->GetInventoryManagerComponent();
-	URpgInventoryUiActionComponent* UiActions = Controller->GetInventoryUiActionComponent();
-	if (!TestTrue(TEXT("The fixture executes on server authority"), Controller->HasAuthority()) ||
-		!TestNotNull(TEXT("The player inventory exists"), Inventory) ||
-		!TestNotNull(TEXT("The inventory action gateway exists"), UiActions))
-	{
-		return false;
-	}
-
-	const FRpgInventoryContainerHandle Pockets =
-		FRpgInventoryContainerHandle::MakeRoot(URpgPlayerInventoryLayoutComponent::PocketsGroupId);
-	URpgInventoryItemInstance* Item = Inventory->AddItemDefinitionToPlacement(
-		URpgInventoryAutomationTestUnitItemDefinition::StaticClass(),
-		1,
-		MakePlacement(Pockets, 0, 0));
-	if (!TestNotNull(TEXT("A concrete item exists before the rejected generic drop"), Item))
-	{
-		return false;
-	}
-
-	FRpgInventoryEntryView Entry;
-	if (!TestTrue(TEXT("The test item has a replicated entry identity"), GetEntryView(Inventory, Item->GetItemId(), Entry)))
-	{
-		return false;
-	}
-
-	URpgInventoryInteractionSession* Session = NewObject<URpgInventoryInteractionSession>(Controller);
-	Session->Initialize(Controller, Controller);
-	FRpgInventoryDragPayload Payload;
-	Payload.SourceType = ERpgInventoryDragSourceType::InventoryEntry;
-	Payload.SourceInventory = Inventory;
-	Payload.ItemInstance = Item;
-	Payload.EntryId = Entry.EntryId;
-	Payload.StackCount = Entry.StackCount;
-	Payload.SourcePlacement = Entry.Placement;
-	const URpgInventoryFragment_SpatialItem* SpatialFragment =
-		URpgInventoryItemDefinition::ResolveValidSpatialItemFragment(
-			Item->GetItemDef());
-	if (!TestNotNull(
-			TEXT("The interaction item owns a canonical spatial contract"),
-			SpatialFragment))
-	{
-		return false;
-	}
-	Payload.ItemFootprint = SpatialFragment->Footprint;
-	if (!TestTrue(
-		TEXT("The interaction session accepts the item payload"),
-		Session->BeginInteraction(Payload, ERpgInventoryInteractionInputMode::Mouse)))
-	{
-		return false;
-	}
-
-	FRpgInventoryDropTarget Target;
-	Target.TargetType = ERpgInventoryDropTargetType::InventoryPanel;
-	Target.TargetInventory = Inventory;
-	Session->MarkRequestPending(Target, RpgGameplayTags::Rpg_Inventory_Action_Drop);
-
-	FRpgInventoryMutationRequest DropRequest;
-	DropRequest.Operation = ERpgInventoryMutationOperation::Drop;
-	DropRequest.ItemId = Item->GetItemId();
-	DropRequest.Source = Pockets;
-	DropRequest.Quantity = 1;
-	DropRequest.RequestId = Session->GetRequestId();
-	UiActions->RequestInventoryMutation(Inventory, DropRequest);
-
-	TestNotNull(
-		TEXT("The generic mutation RPC cannot delete an item through Drop"),
-		Inventory->FindItemById(Item->GetItemId()));
-	TestEqual(TEXT("The rejected generic Drop preserves the stack"), Inventory->GetItemStackCount(Item), 1);
-	TestFalse(TEXT("InvalidRequest feedback resolves the pending request"), Session->IsRequestPending());
-	TestTrue(TEXT("Rejected feedback retains the payload for another target"), Session->HasPayload());
-	TestEqual(
-		TEXT("Rejected feedback exposes the rejected interaction state"),
-		Session->GetPreviewState(),
-		ERpgInventoryInteractionPreviewState::Rejected);
-
-	const FString BeforeGenericEquip =
-		MakeInventorySignature(Inventory);
-	FRpgInventoryMutationRequest EquipRequest;
-	EquipRequest.Operation =
-		ERpgInventoryMutationOperation::Equip;
-	EquipRequest.ItemId = Entry.ItemId;
-	EquipRequest.ExpectedEntryId = Entry.EntryId;
-	EquipRequest.Source = Pockets;
-	EquipRequest.ExpectedSourcePlacement = Entry.Placement;
-	EquipRequest.ExpectedSourceQuantity = Entry.StackCount;
-	EquipRequest.Target = Pockets;
-	EquipRequest.TargetPlacement =
-		MakePlacement(Pockets, 1, 0);
-	EquipRequest.Quantity = Entry.StackCount;
-	EquipRequest.EnsureRequestId();
-	UiActions->RequestInventoryMutation(
-		Inventory,
-		EquipRequest);
-	TestEqual(
-		TEXT("The generic mutation RPC cannot perform physical Equip"),
-		MakeInventorySignature(Inventory),
-		BeforeGenericEquip);
-	TestEqual(
-		TEXT("Rejected generic Equip preserves the concrete stack"),
-		Inventory->GetItemStackCount(Item),
-		1);
-	return true;
-}
-
-IMPLEMENT_SIMPLE_AUTOMATION_TEST(
 	FRpgInventoryMutationRejectionCacheBoundTest,
 	"SurvivalRpg.Inventory.Transaction.RejectedRequestCacheIsBounded",
 	EAutomationTestFlags::EditorContext | EAutomationTestFlags::EngineFilter)
@@ -6794,12 +6852,126 @@ bool FRpgInventoryMutationRejectionCacheBoundTest::RunTest(const FString& Parame
 }
 
 IMPLEMENT_SIMPLE_AUTOMATION_TEST(
-	FRpgInventoryFullGridSortTest,
-	"SurvivalRpg.Inventory.Transaction.FullGridSortUsesScratchOccupancy",
+	FRpgInventoryLegacyOrderingSurfaceRemovedTest,
+	"SurvivalRpg.Inventory.Transaction.LegacyOrderingSurfaceRemoved",
 	EAutomationTestFlags::EditorContext | EAutomationTestFlags::EngineFilter)
 
-bool FRpgInventoryFullGridSortTest::RunTest(const FString& Parameters)
+bool FRpgInventoryLegacyOrderingSurfaceRemovedTest::RunTest(const FString& Parameters)
 {
+	const UEnum* MutationOperationEnum =
+		StaticEnum<ERpgInventoryMutationOperation>();
+	if (!TestNotNull(
+			TEXT("The inventory mutation operation enum remains reflected"),
+			MutationOperationEnum))
+	{
+		return false;
+	}
+
+	TestEqual(
+		TEXT("The retired Sort enumerator is absent from reflection"),
+		MutationOperationEnum->GetValueByNameString(TEXT("Sort")),
+		static_cast<int64>(INDEX_NONE));
+
+	struct FOperationOrdinalContract
+	{
+		ERpgInventoryMutationOperation Operation;
+		int32 ExpectedOrdinal;
+		const TCHAR* Label;
+	};
+	static const FOperationOrdinalContract OrdinalContracts[] = {
+		{ERpgInventoryMutationOperation::Equip, 7, TEXT("Equip")},
+		{ERpgInventoryMutationOperation::Pickup, 8, TEXT("Pickup")},
+		{ERpgInventoryMutationOperation::Transfer, 9, TEXT("Transfer")},
+		{ERpgInventoryMutationOperation::Drop, 10, TEXT("Drop")},
+		{ERpgInventoryMutationOperation::Consume, 11, TEXT("Consume")},
+		{ERpgInventoryMutationOperation::Restore, 12, TEXT("Restore")},
+	};
+	for (const FOperationOrdinalContract& Contract : OrdinalContracts)
+	{
+		TestEqual(
+			*FString::Printf(
+				TEXT("%s keeps its serialized mutation ordinal"),
+				Contract.Label),
+			static_cast<int32>(Contract.Operation),
+			Contract.ExpectedOrdinal);
+	}
+
+	static const FName RemovedManagerFunctions[] = {
+		TEXT("ApplyInventorySort"),
+		TEXT("MoveInventoryEntry"),
+	};
+	for (const FName FunctionName : RemovedManagerFunctions)
+	{
+		TestNull(
+			*FString::Printf(
+				TEXT("%s is absent from the inventory manager reflection surface"),
+				*FunctionName.ToString()),
+			URpgInventoryManagerComponent::StaticClass()->FindFunctionByName(
+				FunctionName));
+	}
+
+	static const FName RemovedUiFunctions[] = {
+		TEXT("RequestApplyInventorySort"),
+		TEXT("RequestMoveInventoryEntry"),
+	};
+	for (const FName FunctionName : RemovedUiFunctions)
+	{
+		TestNull(
+			*FString::Printf(
+				TEXT("%s is absent from the inventory UI action reflection surface"),
+				*FunctionName.ToString()),
+			URpgInventoryUiActionComponent::StaticClass()->FindFunctionByName(
+				FunctionName));
+	}
+
+	TestNotNull(
+		TEXT("BaseStorage keeps the shared resource-sort mode enum"),
+		StaticEnum<ERpgInventorySortMode>());
+	static const FName PreservedBaseStorageRequests[] = {
+		TEXT("RequestApplyBaseResourceSort"),
+		TEXT("RequestMoveBaseResourceEntry"),
+	};
+	for (const FName FunctionName : PreservedBaseStorageRequests)
+	{
+		const UFunction* Function =
+			URpgInventoryUiActionComponent::StaticClass()->FindFunctionByName(
+				FunctionName);
+		if (!TestNotNull(
+				*FString::Printf(
+					TEXT("BaseStorage keeps the reflected %s request"),
+					*FunctionName.ToString()),
+				Function))
+		{
+			continue;
+		}
+
+		TestTrue(
+			*FString::Printf(
+				TEXT("%s remains a server RPC"),
+				*FunctionName.ToString()),
+			Function->HasAnyFunctionFlags(FUNC_NetServer));
+		TestTrue(
+			*FString::Printf(
+				TEXT("%s remains reliable"),
+				*FunctionName.ToString()),
+			Function->HasAnyFunctionFlags(FUNC_NetReliable));
+		TestTrue(
+			*FString::Printf(
+				TEXT("%s remains BlueprintCallable"),
+				*FunctionName.ToString()),
+			Function->HasAnyFunctionFlags(FUNC_BlueprintCallable));
+		TestFalse(
+			*FString::Printf(
+				TEXT("%s is not a client RPC"),
+				*FunctionName.ToString()),
+			Function->HasAnyFunctionFlags(FUNC_NetClient));
+		TestFalse(
+			*FString::Printf(
+				TEXT("%s is not a multicast RPC"),
+				*FunctionName.ToString()),
+			Function->HasAnyFunctionFlags(FUNC_NetMulticast));
+	}
+
 	using namespace RpgInventoryTransactionTests;
 	FScopedInventoryWorld TestWorld;
 	if (!InitializeTest(*this, TestWorld))
@@ -6807,89 +6979,145 @@ bool FRpgInventoryFullGridSortTest::RunTest(const FString& Parameters)
 		return false;
 	}
 
-	URpgInventoryManagerComponent* Inventory = TestWorld.CreateInventory(TEXT("FullGridSortInventory"));
-	if (!TestNotNull(TEXT("Sort inventory exists"), Inventory))
+	UWorld* World = TestWorld.GetTestWorld();
+	FActorSpawnParameters SpawnParameters;
+	SpawnParameters.Name = MakeUniqueObjectName(
+		World,
+		AActor::StaticClass(),
+		TEXT("LegacyOrderingBaseStorageOwner"));
+	SpawnParameters.ObjectFlags = RF_Transient;
+	AActor* BaseStorageOwner = World->SpawnActor<AActor>(SpawnParameters);
+	URpgBaseStorageComponent* BaseStorage = BaseStorageOwner
+		? NewObject<URpgBaseStorageComponent>(
+			BaseStorageOwner,
+			TEXT("BaseStorage"),
+			RF_Transient)
+		: nullptr;
+	if (!TestNotNull(
+			TEXT("The BaseStorage ordering fixture owns an actor"),
+			BaseStorageOwner) ||
+		!TestNotNull(
+			TEXT("The BaseStorage ordering fixture owns a storage component"),
+			BaseStorage))
 	{
 		return false;
 	}
+	BaseStorageOwner->AddInstanceComponent(BaseStorage);
+	BaseStorage->RegisterComponent();
+	TestTrue(
+		TEXT("The BaseStorage ordering fixture is server-authoritative"),
+		BaseStorageOwner->HasAuthority());
 
-	const FRpgInventoryContainerHandle Root = MakeStorageHandle();
-	bool bFilledGrid = true;
-	for (int32 Y = 0; Y < 6; Y += 2)
+	const TSubclassOf<URpgInventoryItemDefinition> AlphabeticalFirst =
+		URpgInventoryAutomationTestMaterialDefinition::StaticClass();
+	const TSubclassOf<URpgInventoryItemDefinition> AlphabeticalSecond =
+		URpgInventoryAutomationTestStatefulMaterialDefinition::StaticClass();
+	constexpr int32 FirstCount = 3;
+	constexpr int32 SecondCount = 7;
+	constexpr int32 ResourceCapacity = 20;
+
+	BaseStorage->AddResourceCapacity(
+		AlphabeticalSecond,
+		ResourceCapacity);
+	TestTrue(
+		TEXT("The later-alphabetical BaseStorage resource receives a count"),
+		BaseStorage->StoreDefinitionResource(
+			AlphabeticalSecond,
+			SecondCount));
+	BaseStorage->AddResourceCapacity(
+		AlphabeticalFirst,
+		ResourceCapacity);
+	TestTrue(
+		TEXT("The earlier-alphabetical BaseStorage resource receives a count"),
+		BaseStorage->StoreDefinitionResource(
+			AlphabeticalFirst,
+			FirstCount));
+	TestEqual(
+		TEXT("The earlier-alphabetical resource keeps its configured capacity"),
+		BaseStorage->GetResourceCapacity(AlphabeticalFirst),
+		ResourceCapacity);
+	TestEqual(
+		TEXT("The later-alphabetical resource keeps its configured capacity"),
+		BaseStorage->GetResourceCapacity(AlphabeticalSecond),
+		ResourceCapacity);
+	TestEqual(
+		TEXT("The earlier-alphabetical resource keeps its stored count"),
+		BaseStorage->GetResourceCount(AlphabeticalFirst),
+		FirstCount);
+	TestEqual(
+		TEXT("The later-alphabetical resource keeps its stored count"),
+		BaseStorage->GetResourceCount(AlphabeticalSecond),
+		SecondCount);
+
+	const TArray<FRpgBaseResourceEntryView> InitialRows =
+		BaseStorage->GetAllResources();
+	if (!TestEqual(
+			TEXT("The BaseStorage ordering fixture contains two rows"),
+			InitialRows.Num(),
+			2))
 	{
-		for (int32 X = 0; X < 10; ++X)
-		{
-			bFilledGrid &= Inventory->AddItemDefinitionToPlacement(
-				URpgInventoryAutomationTestWideItemDefinition::StaticClass(),
-				1,
-				MakePlacement(Root, X, Y, true)) != nullptr;
-		}
+		return false;
 	}
-	TestTrue(TEXT("Thirty vertical 1x2 placements fill the complete 10x6 grid"), bFilledGrid);
-	TestEqual(TEXT("The full grid contains thirty entries"), Inventory->GetUsedEntryCount(), 30);
+	TestTrue(
+		TEXT("The fixture starts in insertion order rather than name order"),
+		InitialRows[0].ItemDefinition == AlphabeticalSecond);
+	TestTrue(
+		TEXT("Insertion order keeps a strictly increasing BaseStorage SortIndex"),
+		InitialRows[0].SortIndex < InitialRows[1].SortIndex);
 
-	FRpgInventoryMutationRequest SortRequest;
-	SortRequest.Operation = ERpgInventoryMutationOperation::Sort;
-	SortRequest.Source = Root;
-	SortRequest.Quantity = static_cast<int32>(ERpgInventorySortMode::Name);
-	SortRequest.EnsureRequestId();
-	const FRpgInventoryMutationResult SortCommit = Inventory->ExecuteInventoryMutation(SortRequest);
-	TestEqual(
-		TEXT("Transactional sort can repack a completely full grid without consulting stale live occupancy"),
-		SortCommit.Code,
-		ERpgInventoryMutationResultCode::Success);
-	const TArray<FRpgInventoryEntryView> SortedEntries = Inventory->GetAllEntries();
-	TestEqual(TEXT("Sort preserves every entry"), SortedEntries.Num(), 30);
-
-	TArray<bool> OccupiedCells;
-	OccupiedCells.Init(false, 60);
-	bool bAllUnrotated = true;
-	bool bNoOverlapOrBoundsFailure = true;
-	int32 OccupiedCellCount = 0;
-	for (const FRpgInventoryEntryView& Entry : SortedEntries)
+	TestTrue(
+		TEXT("BaseStorage name sort rewrites the resource-row order"),
+		BaseStorage->ApplyResourceSort(ERpgInventorySortMode::Name));
+	const TArray<FRpgBaseResourceEntryView> NameSortedRows =
+		BaseStorage->GetAllResources();
+	if (!TestEqual(
+			TEXT("Name sort preserves both BaseStorage rows"),
+			NameSortedRows.Num(),
+			2))
 	{
-		bAllUnrotated &= !Entry.Placement.bRotated;
-		const FRpgInventoryGridSize OccupiedSize = Entry.Placement.GetOccupiedSize();
-		for (int32 LocalY = 0; LocalY < OccupiedSize.Height; ++LocalY)
-		{
-			for (int32 LocalX = 0; LocalX < OccupiedSize.Width; ++LocalX)
-			{
-				const int32 X = Entry.Placement.X + LocalX;
-				const int32 Y = Entry.Placement.Y + LocalY;
-				if (X < 0 || X >= 10 || Y < 0 || Y >= 6)
-				{
-					bNoOverlapOrBoundsFailure = false;
-					continue;
-				}
-
-				const int32 CellIndex = Y * 10 + X;
-				if (OccupiedCells[CellIndex])
-				{
-					bNoOverlapOrBoundsFailure = false;
-				}
-				OccupiedCells[CellIndex] = true;
-				++OccupiedCellCount;
-			}
-		}
+		return false;
 	}
-	TestTrue(TEXT("Deterministic first-fit sort prefers the unrotated orientation"), bAllUnrotated);
-	TestTrue(TEXT("Sorted placements are non-overlapping and inside the grid"), bNoOverlapOrBoundsFailure);
-	TestEqual(TEXT("Sorted footprints still occupy all sixty cells"), OccupiedCellCount, 60);
-
-	const FString StableSignature = MakeInventorySignature(Inventory);
-	TestFalse(TEXT("Repeating the same deterministic sort reports no further mutation"), Inventory->ApplyInventorySort(ERpgInventorySortMode::Name));
-	TestEqual(TEXT("Repeated sort produces byte-for-byte equivalent placement state"), MakeInventorySignature(Inventory), StableSignature);
-
-	SortRequest.RequestId = FGuid::NewGuid();
-	const FRpgInventoryMutationResult NoOpSortCommit = Inventory->ExecuteInventoryMutation(SortRequest);
+	TestTrue(
+		TEXT("Name sort places the alphabetically earlier resource first"),
+		NameSortedRows[0].ItemDefinition == AlphabeticalFirst);
+	TestTrue(
+		TEXT("Name sort places the alphabetically later resource second"),
+		NameSortedRows[1].ItemDefinition == AlphabeticalSecond);
 	TestEqual(
-		TEXT("A valid already-sorted transaction remains a successful no-op"),
-		NoOpSortCommit.Code,
-		ERpgInventoryMutationResultCode::Success);
+		TEXT("Name sort assigns contiguous SortIndex zero"),
+		NameSortedRows[0].SortIndex,
+		0);
 	TestEqual(
-		TEXT("The successful no-op transaction preserves placement state"),
-		MakeInventorySignature(Inventory),
-		StableSignature);
+		TEXT("Name sort assigns contiguous SortIndex one"),
+		NameSortedRows[1].SortIndex,
+		1);
+
+	TestTrue(
+		TEXT("BaseStorage manual move returns the later resource to index zero"),
+		BaseStorage->MoveResourceEntry(AlphabeticalSecond, 0));
+	const TArray<FRpgBaseResourceEntryView> ManuallyMovedRows =
+		BaseStorage->GetAllResources();
+	if (!TestEqual(
+			TEXT("Manual move preserves both BaseStorage rows"),
+			ManuallyMovedRows.Num(),
+			2))
+	{
+		return false;
+	}
+	TestTrue(
+		TEXT("Manual move places the requested resource first"),
+		ManuallyMovedRows[0].ItemDefinition == AlphabeticalSecond);
+	TestTrue(
+		TEXT("Manual move places the other resource second"),
+		ManuallyMovedRows[1].ItemDefinition == AlphabeticalFirst);
+	TestEqual(
+		TEXT("Manual move reassigns contiguous SortIndex zero"),
+		ManuallyMovedRows[0].SortIndex,
+		0);
+	TestEqual(
+		TEXT("Manual move reassigns contiguous SortIndex one"),
+		ManuallyMovedRows[1].SortIndex,
+		1);
 	return true;
 }
 
@@ -7562,19 +7790,17 @@ bool FRpgInventoryRawAddOwnershipGuardTest::RunTest(const FString& Parameters)
 	const FString InitialSignature = MakeInventorySignature(TargetInventory);
 	const int32 InitialEntryCount = TargetInventory->GetUsedEntryCount();
 	TestFalse(
-		TEXT("Raw-add preflight rejects an instance already contained by this inventory"),
-		TargetInventory->CanAddItemInstance(ExistingItem));
-	TargetInventory->AddItemInstanceWithStack(ExistingItem, 1);
-	TargetInventory->AddItemInstanceWithStackToPlacement(
-		ExistingItem,
-		1,
-		MakePlacement(MakeStorageHandle(), 5, 0));
+		TEXT("Bootstrap preflight rejects an instance already contained by this inventory"),
+		TargetInventory->CanBootstrapItemInstance(ExistingItem));
+	TestNull(
+		TEXT("Bootstrap cannot duplicate an already managed instance"),
+		TargetInventory->BootstrapItemInstance(ExistingItem));
 	TestEqual(
-		TEXT("Repeated raw auto/exact adds preserve the complete target graph"),
+		TEXT("Rejected managed-instance bootstrap preserves the complete target graph"),
 		MakeInventorySignature(TargetInventory),
 		InitialSignature);
 	TestEqual(
-		TEXT("Repeated raw adds create no second entry"),
+		TEXT("Rejected managed-instance bootstrap creates no second entry"),
 		TargetInventory->GetUsedEntryCount(),
 		InitialEntryCount);
 
@@ -7586,21 +7812,21 @@ bool FRpgInventoryRawAddOwnershipGuardTest::RunTest(const FString& Parameters)
 	{
 		return false;
 	}
-	TargetInventory->RemoveItemInstance(DuplicateIdCandidate);
+	TestTrue(
+		TEXT("Canonical consume detaches the duplicate-id fixture"),
+		ConsumeWholeItem(TargetInventory, DuplicateIdCandidate));
 	TestTrue(
 		TEXT("The detached same-owner fixture can be assigned the occupied persistent id"),
 		DuplicateIdCandidate->RestoreItemId(ExistingItem->GetItemId()));
 	const FString BeforeDuplicateIdAdd = MakeInventorySignature(TargetInventory);
 	TestFalse(
-		TEXT("Raw-add preflight rejects a different UObject with an occupied persistent id"),
-		TargetInventory->CanAddItemInstance(DuplicateIdCandidate));
-	TargetInventory->AddItemInstanceWithStack(DuplicateIdCandidate, 1);
-	TargetInventory->AddItemInstanceWithStackToPlacement(
-		DuplicateIdCandidate,
-		1,
-		MakePlacement(MakeStorageHandle(), 4, 0));
+		TEXT("Bootstrap preflight rejects a different UObject with an occupied persistent id"),
+		TargetInventory->CanBootstrapItemInstance(DuplicateIdCandidate));
+	TestNull(
+		TEXT("Bootstrap rejects the occupied persistent id"),
+		TargetInventory->BootstrapItemInstance(DuplicateIdCandidate));
 	TestEqual(
-		TEXT("Duplicate-id raw adds preserve the authoritative graph"),
+		TEXT("Duplicate-id bootstrap rejection preserves the authoritative graph"),
 		MakeInventorySignature(TargetInventory),
 		BeforeDuplicateIdAdd);
 	TestEqual(
@@ -7617,14 +7843,15 @@ bool FRpgInventoryRawAddOwnershipGuardTest::RunTest(const FString& Parameters)
 		return false;
 	}
 	ForeignDetachedItem->AddStatTagStack(RpgGameplayTags::Ability_Attack_Basic, 3);
-	ForeignInventory->RemoveItemInstance(ForeignDetachedItem);
+	TestTrue(
+		TEXT("Canonical consume detaches the foreign setup fixture"),
+		ConsumeWholeItem(ForeignInventory, ForeignDetachedItem));
 	const FString BeforeForeignOuterAdd = MakeInventorySignature(TargetInventory);
-	TestFalse(
-		TEXT("Raw-add preflight rejects a detached instance with a foreign actor Outer"),
-		TargetInventory->CanAddItemInstance(ForeignDetachedItem));
-	TargetInventory->AddItemInstanceWithStack(ForeignDetachedItem, 1);
+	TestTrue(
+		TEXT("Bootstrap preflight accepts detached foreign setup data"),
+		TargetInventory->CanBootstrapItemInstance(ForeignDetachedItem));
 	TestEqual(
-		TEXT("Foreign-Outer raw add leaves the target unchanged"),
+		TEXT("Read-only foreign bootstrap preflight leaves the target unchanged"),
 		MakeInventorySignature(TargetInventory),
 		BeforeForeignOuterAdd);
 
@@ -7664,9 +7891,11 @@ bool FRpgInventoryRawAddOwnershipGuardTest::RunTest(const FString& Parameters)
 		return false;
 	}
 	TestFalse(
-		TEXT("Raw-add preflight rejects an item managed by a sibling inventory despite its matching Outer"),
-		SiblingInventory->CanAddItemInstance(ExistingItem));
-	SiblingInventory->AddItemInstanceWithStack(ExistingItem, 1);
+		TEXT("Bootstrap preflight rejects an item managed by a sibling inventory despite its matching Outer"),
+		SiblingInventory->CanBootstrapItemInstance(ExistingItem));
+	TestNull(
+		TEXT("Bootstrap cannot duplicate a sibling-managed concrete item"),
+		SiblingInventory->BootstrapItemInstance(ExistingItem));
 	TestEqual(
 		TEXT("Sibling inventory cannot acquire a second reference to the same concrete item"),
 		SiblingInventory->GetUsedEntryCount(),
@@ -7689,7 +7918,9 @@ bool FRpgInventoryRawAddOwnershipGuardTest::RunTest(const FString& Parameters)
 	{
 		return false;
 	}
-	TargetInventory->RemoveItemInstance(SiblingDuplicateIdCandidate);
+	TestTrue(
+		TEXT("Canonical consume detaches the sibling-id fixture"),
+		ConsumeWholeItem(TargetInventory, SiblingDuplicateIdCandidate));
 	TestTrue(
 		TEXT("The detached target-owned candidate can copy the sibling's occupied id"),
 		SiblingDuplicateIdCandidate->RestoreItemId(
@@ -7697,12 +7928,13 @@ bool FRpgInventoryRawAddOwnershipGuardTest::RunTest(const FString& Parameters)
 	const FString BeforeSiblingIdCollision =
 		MakeInventorySignature(TargetInventory);
 	TestFalse(
-		TEXT("Raw-add preflight rejects an ItemId occupied by another UObject in a sibling inventory"),
-		TargetInventory->CanAddItemInstance(
+		TEXT("Bootstrap preflight rejects an ItemId occupied by another UObject in a sibling inventory"),
+		TargetInventory->CanBootstrapItemInstance(
 			SiblingDuplicateIdCandidate));
-	TargetInventory->AddItemInstanceWithStack(
-		SiblingDuplicateIdCandidate,
-		1);
+	TestNull(
+		TEXT("Bootstrap rejects the sibling ItemId collision"),
+		TargetInventory->BootstrapItemInstance(
+			SiblingDuplicateIdCandidate));
 	TestEqual(
 		TEXT("A sibling ItemId collision leaves the target graph unchanged"),
 		MakeInventorySignature(TargetInventory),
@@ -7760,7 +7992,9 @@ bool FRpgInventoryBootstrapSameOwnerReuseAndPreflightPurityTest::RunTest(
 	UObject* const OriginalOuter = DetachedItem->GetOuter();
 	const TSubclassOf<URpgInventoryItemDefinition> OriginalDefinition =
 		DetachedItem->GetItemDef();
-	Inventory->RemoveItemInstance(DetachedItem);
+	TestTrue(
+		TEXT("Canonical consume detaches the bootstrap fixture"),
+		ConsumeWholeItem(Inventory, DetachedItem));
 	if (!TestFalse(
 			TEXT("The same-owner fixture is detached before bootstrap"),
 			Inventory->ContainsItemInstance(DetachedItem)))
@@ -7867,11 +8101,11 @@ bool FRpgInventoryBootstrapSameOwnerReuseAndPreflightPurityTest::RunTest(
 }
 
 IMPLEMENT_SIMPLE_AUTOMATION_TEST(
-	FRpgDeprecatedPlacementIngressRejectedTest,
-	"SurvivalRpg.Inventory.IntentBoundary.DeprecatedPlacementIngressRejected",
+	FRpgMissingHandlePlacementIngressRejectedTest,
+	"SurvivalRpg.Inventory.IntentBoundary.MissingHandlePlacementIngressRejected",
 	EAutomationTestFlags::EditorContext | EAutomationTestFlags::EngineFilter)
 
-bool FRpgDeprecatedPlacementIngressRejectedTest::RunTest(
+bool FRpgMissingHandlePlacementIngressRejectedTest::RunTest(
 	const FString& Parameters)
 {
 	using namespace RpgInventoryTransactionTests;
@@ -7882,11 +8116,11 @@ bool FRpgDeprecatedPlacementIngressRejectedTest::RunTest(
 	}
 
 	URpgInventoryManagerComponent* TargetInventory =
-		TestWorld.CreateInventory(TEXT("DeprecatedPlacementTarget"));
+		TestWorld.CreateInventory(TEXT("MissingHandlePlacementTarget"));
 	URpgInventoryManagerComponent* SourceInventory =
-		TestWorld.CreateInventory(TEXT("DeprecatedPlacementSource"));
-	if (!TestNotNull(TEXT("The deprecated-placement target exists"), TargetInventory) ||
-		!TestNotNull(TEXT("The deprecated-placement source exists"), SourceInventory))
+		TestWorld.CreateInventory(TEXT("MissingHandlePlacementSource"));
+	if (!TestNotNull(TEXT("The missing-handle target exists"), TargetInventory) ||
+		!TestNotNull(TEXT("The missing-handle source exists"), SourceInventory))
 	{
 		return false;
 	}
@@ -7912,7 +8146,9 @@ bool FRpgDeprecatedPlacementIngressRejectedTest::RunTest(
 	{
 		return false;
 	}
-	TargetInventory->RemoveItemInstance(DetachedTargetItem);
+	TestTrue(
+		TEXT("Canonical consume detaches the placement fixture"),
+		ConsumeWholeItem(TargetInventory, DetachedTargetItem));
 
 	const TArray<FRpgInventoryEntryView> TargetEntries =
 		TargetInventory->GetAllEntries();
@@ -7922,15 +8158,14 @@ bool FRpgDeprecatedPlacementIngressRejectedTest::RunTest(
 		return false;
 	}
 
-	FRpgInventoryGridPlacement DeprecatedOnlyPlacement;
-	DeprecatedOnlyPlacement.ContainerId_DEPRECATED = Storage.Root;
-	DeprecatedOnlyPlacement.X = 4;
-	DeprecatedOnlyPlacement.Y = 0;
-	DeprecatedOnlyPlacement.Width = 1;
-	DeprecatedOnlyPlacement.Height = 1;
+	FRpgInventoryGridPlacement MissingHandlePlacement;
+	MissingHandlePlacement.X = 4;
+	MissingHandlePlacement.Y = 0;
+	MissingHandlePlacement.Width = 1;
+	MissingHandlePlacement.Height = 1;
 	TestFalse(
-		TEXT("The deprecated-only fixture has no canonical runtime handle"),
-		DeprecatedOnlyPlacement.IsValid());
+		TEXT("The fixture is invalid without its required canonical handle"),
+		MissingHandlePlacement.IsValid());
 
 	const FString TargetBefore = MakeInventorySignature(TargetInventory);
 	const FString SourceBefore = MakeInventorySignature(SourceInventory);
@@ -7940,77 +8175,67 @@ bool FRpgDeprecatedPlacementIngressRejectedTest::RunTest(
 	const uint64 SourceEpochBefore = SourceInventory->GetMutationEpoch();
 
 	TestFalse(
-		TEXT("Definition preflight rejects a deprecated-only placement"),
+		TEXT("Definition preflight rejects a placement without a handle"),
 		TargetInventory->CanAddItemDefinitionToPlacement(
 			URpgInventoryAutomationTestUnitItemDefinition::StaticClass(),
 			1,
-			DeprecatedOnlyPlacement));
+			MissingHandlePlacement));
 	TestNull(
-		TEXT("Definition insertion rejects a deprecated-only placement"),
+		TEXT("Definition insertion rejects a placement without a handle"),
 		TargetInventory->AddItemDefinitionToPlacement(
 			URpgInventoryAutomationTestUnitItemDefinition::StaticClass(),
 			1,
-			DeprecatedOnlyPlacement));
+			MissingHandlePlacement));
 	TestFalse(
-		TEXT("Detached-instance preflight rejects a deprecated-only placement"),
-		TargetInventory->CanAddItemInstanceToPlacement(
-			DetachedTargetItem,
-			1,
-			DeprecatedOnlyPlacement));
-	TargetInventory->AddItemInstanceWithStackToPlacement(
-		DetachedTargetItem,
-		1,
-		DeprecatedOnlyPlacement);
-	TestFalse(
-		TEXT("Incoming-transfer preflight rejects a deprecated-only placement"),
+		TEXT("Incoming-transfer preflight rejects a placement without a handle"),
 		TargetInventory->CanReceiveTransferredItemInstanceToPlacement(
 			SourceItem,
 			1,
-			DeprecatedOnlyPlacement));
+			MissingHandlePlacement));
 	TestFalse(
-		TEXT("Swap-style incoming preflight rejects a deprecated-only placement"),
+		TEXT("Swap-style incoming preflight rejects a placement without a handle"),
 		TargetInventory->CanReceiveTransferredItemInstanceToPlacementIgnoringItem(
 			SourceItem,
 			1,
-			DeprecatedOnlyPlacement,
+			MissingHandlePlacement,
 			TargetItem));
+	const FRpgInventoryMoveIntent MissingHandleMoveIntent = MakeMoveIntent(
+		TargetInventory,
+		TargetEntries[0].ItemId,
+		MissingHandlePlacement);
 	TestFalse(
-		TEXT("Move preflight rejects a deprecated-only target"),
-		TargetInventory->CanMoveInventoryEntryToPlacement(
-			TargetEntries[0].EntryId,
-			DeprecatedOnlyPlacement));
+		TEXT("Typed move preflight rejects a target without a handle"),
+		TargetInventory->PlanMoveItem(MissingHandleMoveIntent).IsSuccess());
 	TestFalse(
-		TEXT("Move commit rejects a deprecated-only target"),
-		TargetInventory->MoveInventoryEntryToPlacement(
-			TargetEntries[0].EntryId,
-			DeprecatedOnlyPlacement));
+		TEXT("Typed move commit rejects a target without a handle"),
+		TargetInventory->MoveItem(MissingHandleMoveIntent).IsSuccess());
 
 	TestEqual(
-		TEXT("Rejected deprecated placement ingress preserves the target graph"),
+		TEXT("Rejected missing-handle ingress preserves the target graph"),
 		MakeInventorySignature(TargetInventory),
 		TargetBefore);
 	TestEqual(
-		TEXT("Rejected deprecated placement ingress preserves the source graph"),
+		TEXT("Rejected missing-handle ingress preserves the source graph"),
 		MakeInventorySignature(SourceInventory),
 		SourceBefore);
 	TestEqual(
-		TEXT("Rejected deprecated placement ingress preserves target revision"),
+		TEXT("Rejected missing-handle ingress preserves target revision"),
 		TargetInventory->GetInventoryRevision(),
 		TargetRevisionBefore);
 	TestEqual(
-		TEXT("Rejected deprecated placement ingress preserves source revision"),
+		TEXT("Rejected missing-handle ingress preserves source revision"),
 		SourceInventory->GetInventoryRevision(),
 		SourceRevisionBefore);
 	TestEqual(
-		TEXT("Rejected deprecated placement ingress preserves target mutation epoch"),
+		TEXT("Rejected missing-handle ingress preserves target mutation epoch"),
 		TargetInventory->GetMutationEpoch(),
 		TargetEpochBefore);
 	TestEqual(
-		TEXT("Rejected deprecated placement ingress preserves source mutation epoch"),
+		TEXT("Rejected missing-handle ingress preserves source mutation epoch"),
 		SourceInventory->GetMutationEpoch(),
 		SourceEpochBefore);
 	TestFalse(
-		TEXT("The detached instance never becomes managed through deprecated placement ingress"),
+		TEXT("The detached instance never becomes managed through missing-handle ingress"),
 		TargetInventory->ContainsItemInstance(DetachedTargetItem));
 	return true;
 }
@@ -8080,8 +8305,12 @@ bool FRpgInventoryPickupBatchRollbackTest::RunTest(
 	{
 		return false;
 	}
-	SetupInventory->RemoveItemInstance(FirstSetupItem);
-	SetupInventory->RemoveItemInstance(SecondSetupItem);
+	TestTrue(
+		TEXT("Canonical consume detaches the first pickup setup item"),
+		ConsumeWholeItem(SetupInventory, FirstSetupItem));
+	TestTrue(
+		TEXT("Canonical consume detaches the second pickup setup item"),
+		ConsumeWholeItem(SetupInventory, SecondSetupItem));
 	TestTrue(
 		TEXT("The first pickup item independently fits the last free cell"),
 		TargetInventory->CanBootstrapItemInstance(FirstSetupItem));
@@ -8135,48 +8364,35 @@ bool FRpgInventoryPickupBatchRollbackTest::RunTest(
 }
 
 IMPLEMENT_SIMPLE_AUTOMATION_TEST(
-	FRpgInventoryLowLevelBlueprintDeprecationTest,
-	"SurvivalRpg.Inventory.Transaction.LowLevelBlueprintMutationSurfaceDeprecated",
+	FRpgInventoryBlueprintMutationSurfaceContractTest,
+	"SurvivalRpg.Inventory.Transaction.BlueprintMutationSurfaceContract",
 	EAutomationTestFlags::EditorContext | EAutomationTestFlags::EngineFilter)
 
-bool FRpgInventoryLowLevelBlueprintDeprecationTest::RunTest(const FString& Parameters)
+bool FRpgInventoryBlueprintMutationSurfaceContractTest::RunTest(
+	const FString& Parameters)
 {
-	static const FName DeprecatedFunctionNames[] = {
-		GET_FUNCTION_NAME_CHECKED(URpgInventoryManagerComponent, CanAddItemInstance),
-		GET_FUNCTION_NAME_CHECKED(URpgInventoryManagerComponent, CanAddItemInstanceToPlacement),
-		GET_FUNCTION_NAME_CHECKED(URpgInventoryManagerComponent, AddItemDefinition),
-		GET_FUNCTION_NAME_CHECKED(URpgInventoryManagerComponent, AddItemDefinitionToPlacement),
-		GET_FUNCTION_NAME_CHECKED(URpgInventoryManagerComponent, AddItemInstance),
-		GET_FUNCTION_NAME_CHECKED(URpgInventoryManagerComponent, AddItemInstanceWithStack),
-		GET_FUNCTION_NAME_CHECKED(URpgInventoryManagerComponent, AddItemInstanceWithStackToPlacement),
-		GET_FUNCTION_NAME_CHECKED(URpgInventoryManagerComponent, AddStackToExistingItem),
-		GET_FUNCTION_NAME_CHECKED(URpgInventoryManagerComponent, RemoveItemInstance),
-		GET_FUNCTION_NAME_CHECKED(URpgInventoryManagerComponent, RemoveItemInstanceStack),
-		GET_FUNCTION_NAME_CHECKED(URpgInventoryManagerComponent, ApplyInventorySort),
-		GET_FUNCTION_NAME_CHECKED(URpgInventoryManagerComponent, MoveInventoryEntry),
-		GET_FUNCTION_NAME_CHECKED(URpgInventoryManagerComponent, MoveInventoryEntryToPlacement),
-		GET_FUNCTION_NAME_CHECKED(URpgInventoryManagerComponent, CanMoveInventoryEntryToPlacement),
-		GET_FUNCTION_NAME_CHECKED(URpgInventoryManagerComponent, PlanInventoryMutation),
-		GET_FUNCTION_NAME_CHECKED(URpgInventoryManagerComponent, ExecuteInventoryMutation),
-		GET_FUNCTION_NAME_CHECKED(URpgInventoryManagerComponent, ExecuteCrossInventoryTransfer),
+	static const FName RetiredOrNativeOnlyFunctionNames[] = {
+		TEXT("CanAddItemInstance"),
+		TEXT("CanAddItemInstanceToPlacement"),
+		TEXT("AddItemDefinition"),
+		TEXT("AddItemDefinitionToPlacement"),
+		TEXT("AddItemInstance"),
+		TEXT("AddItemInstanceWithStack"),
+		TEXT("AddItemInstanceWithStackToPlacement"),
+		TEXT("AddStackToExistingItem"),
+		TEXT("RemoveItemInstance"),
+		TEXT("RemoveItemInstanceStack"),
+		TEXT("MoveInventoryEntryToPlacement"),
+		TEXT("CanMoveInventoryEntryToPlacement"),
+		TEXT("PlanInventoryMutation"),
+		TEXT("ExecuteInventoryMutation"),
+		TEXT("ExecuteCrossInventoryTransfer"),
 	};
-
-	for (const FName FunctionName : DeprecatedFunctionNames)
+	for (const FName FunctionName : RetiredOrNativeOnlyFunctionNames)
 	{
-		const UFunction* Function =
-			URpgInventoryManagerComponent::StaticClass()->FindFunctionByName(FunctionName);
-		if (!TestNotNull(
-				*FString::Printf(TEXT("%s remains reflected for Blueprint migration"), *FunctionName.ToString()),
-				Function))
-		{
-			continue;
-		}
-		TestTrue(
-			*FString::Printf(TEXT("%s is marked DeprecatedFunction"), *FunctionName.ToString()),
-			Function->HasMetaData(TEXT("DeprecatedFunction")));
-		TestFalse(
-			*FString::Printf(TEXT("%s explains its replacement"), *FunctionName.ToString()),
-			Function->GetMetaData(TEXT("DeprecationMessage")).IsEmpty());
+		TestNull(
+			*FString::Printf(TEXT("%s is absent from the Blueprint surface"), *FunctionName.ToString()),
+			URpgInventoryManagerComponent::StaticClass()->FindFunctionByName(FunctionName));
 	}
 
 	static const FName RemovedPersistenceFunctionNames[] = {
@@ -8213,32 +8429,53 @@ bool FRpgInventoryLowLevelBlueprintDeprecationTest::RunTest(const FString& Param
 		}
 	}
 
-	static const FName DeprecatedUiFunctionNames[] = {
-		GET_FUNCTION_NAME_CHECKED(URpgInventoryUiActionComponent, RequestInventoryMutation),
-		GET_FUNCTION_NAME_CHECKED(URpgInventoryUiActionComponent, RequestTransferItemStack),
-		GET_FUNCTION_NAME_CHECKED(URpgInventoryUiActionComponent, RequestTransferItemStackToPlacement),
-		GET_FUNCTION_NAME_CHECKED(URpgInventoryUiActionComponent, RequestMoveInventoryEntryToPlacement),
+	static const FName RetiredUiFunctionNames[] = {
+		TEXT("RequestInventoryMutation"),
+		TEXT("RequestAssignItemToEquipmentSlot"),
+		TEXT("RequestClearEquipmentSlot"),
+		TEXT("RequestTransferItemStack"),
+		TEXT("RequestTransferItemStackToPlacement"),
+		TEXT("RequestMoveItemToInventorySlotAddress"),
+		TEXT("RequestEquipSlotContainerItem"),
+		TEXT("RequestUnequipSlotContainerItem"),
+		TEXT("RequestBindActionBarToInventorySlot"),
+		TEXT("RequestBindActionBarToCarrySlot"),
+		TEXT("RequestClearActionBarCarryBinding"),
+		TEXT("RequestClearActionBarConsumableBinding"),
+		TEXT("RequestSplitItemStack"),
+		TEXT("RequestEquipInventoryItem"),
+		TEXT("RequestUnequipInventoryItemToContentSlot"),
+		TEXT("RequestDropInventoryItem"),
+		TEXT("RequestStoreItemInstanceInBase"),
+		TEXT("RequestTakeItemInstanceFromBase"),
 	};
-	for (const FName FunctionName : DeprecatedUiFunctionNames)
+	for (const FName FunctionName : RetiredUiFunctionNames)
 	{
-		const UFunction* Function =
-			URpgInventoryUiActionComponent::StaticClass()->FindFunctionByName(FunctionName);
-		if (TestNotNull(
-				*FString::Printf(TEXT("%s remains reflected for UI Blueprint migration"), *FunctionName.ToString()),
-				Function))
-		{
-			TestTrue(
-				*FString::Printf(TEXT("%s is marked DeprecatedFunction"), *FunctionName.ToString()),
-				Function->HasMetaData(TEXT("DeprecatedFunction")));
-			TestFalse(
-				*FString::Printf(TEXT("%s explains its typed UI replacement"), *FunctionName.ToString()),
-				Function->GetMetaData(TEXT("DeprecationMessage")).IsEmpty());
-		}
+		TestNull(
+			*FString::Printf(
+				TEXT("%s is retired from the Blueprint UI facade"),
+				*FunctionName.ToString()),
+			URpgInventoryUiActionComponent::StaticClass()->
+				FindFunctionByName(FunctionName));
 	}
+	TestNull(
+		TEXT("RequestMoveInventoryEntryToPlacement is retired from the UI facade"),
+		URpgInventoryUiActionComponent::StaticClass()->FindFunctionByName(
+			TEXT("RequestMoveInventoryEntryToPlacement")));
+	TestNull(
+		TEXT("TransferItemFromInventory is retired from dropped actors"),
+		ARpgDroppedInventoryActor::StaticClass()->FindFunctionByName(
+			TEXT("TransferItemFromInventory")));
 
 	static const FName CanonicalUiFunctionNames[] = {
 		GET_FUNCTION_NAME_CHECKED(URpgInventoryUiActionComponent, RequestMoveInventoryItem),
 		GET_FUNCTION_NAME_CHECKED(URpgInventoryUiActionComponent, RequestTransferInventoryItem),
+		GET_FUNCTION_NAME_CHECKED(URpgInventoryUiActionComponent, RequestUseInventoryItemById),
+		GET_FUNCTION_NAME_CHECKED(URpgInventoryUiActionComponent, RequestApplyInventoryEquipmentIntent),
+		GET_FUNCTION_NAME_CHECKED(URpgInventoryUiActionComponent, RequestQuickTransferItem),
+		GET_FUNCTION_NAME_CHECKED(URpgInventoryUiActionComponent, RequestSplitItemStackById),
+		GET_FUNCTION_NAME_CHECKED(URpgInventoryUiActionComponent, RequestDropInventoryItemById),
+		GET_FUNCTION_NAME_CHECKED(URpgInventoryUiActionComponent, RequestMutateQuickAccessBinding),
 	};
 	for (const FName FunctionName : CanonicalUiFunctionNames)
 	{
@@ -8251,12 +8488,40 @@ bool FRpgInventoryLowLevelBlueprintDeprecationTest::RunTest(const FString& Param
 			TestFalse(
 				*FString::Printf(TEXT("%s is not deprecated"), *FunctionName.ToString()),
 				Function->HasMetaData(TEXT("DeprecatedFunction")));
+			TestTrue(
+				*FString::Printf(TEXT("%s is an owning-client Server RPC"), *FunctionName.ToString()),
+				Function->HasAnyFunctionFlags(FUNC_NetServer));
+		}
+	}
+
+	const UFunction* SplitFunction =
+		URpgInventoryUiActionComponent::StaticClass()->FindFunctionByName(
+			GET_FUNCTION_NAME_CHECKED(
+				URpgInventoryUiActionComponent,
+				RequestSplitItemStackById));
+	if (TestNotNull(
+			TEXT("The canonical split gateway remains reflected"),
+			SplitFunction))
+	{
+		const FStructProperty* SplitRequestProperty =
+			FindFProperty<FStructProperty>(
+				SplitFunction,
+				TEXT("Request"));
+		if (TestNotNull(
+				TEXT("The canonical split gateway accepts one typed request"),
+				SplitRequestProperty))
+		{
+			TestTrue(
+				TEXT("The split request parameter uses FRpgInventorySplitRequest"),
+				SplitRequestProperty->Struct ==
+					FRpgInventorySplitRequest::StaticStruct());
+			TestTrue(
+				TEXT("The typed split request is an RPC parameter"),
+				SplitRequestProperty->HasAnyPropertyFlags(CPF_Parm));
 		}
 	}
 
 	static const FName HiddenLoadoutFunctionNames[] = {
-		FName(TEXT("RequestAssignItemToEquipmentSlot")),
-		FName(TEXT("RequestClearEquipmentSlot")),
 		FName(TEXT("CanAssignItemToEquipmentSlot")),
 		FName(TEXT("AssignItemToEquipmentSlot")),
 		FName(TEXT("ClearEquipmentSlot")),
@@ -10072,12 +10337,12 @@ bool FRpgInventoryPhysicalDropSubtreeTest::RunTest(
 		return false;
 	}
 
+	const FRpgInventoryTransferIntent BagDropIntent =
+		MakeTransferIntent(SourceInventory, BagId, 1);
 	const FRpgInventoryMutationResult DropResult =
-		DropActor->TransferItemFromInventory(
+		DropActor->TransferItemFromInventoryByIntent(
 			SourceInventory,
-			BagId,
-			1,
-			FGuid::NewGuid());
+			BagDropIntent);
 	TestEqual(
 		TEXT("The dedicated physical-drop gateway succeeds"),
 		DropResult.Code,
@@ -10184,23 +10449,25 @@ bool FRpgInventoryPhysicalDropSubtreeTest::RunTest(
 	const FRpgInventoryItemId SecondConcreteStackId =
 		SecondConcreteStack->GetItemId();
 	const FGuid FirstIdentityDropRequestId = FGuid::NewGuid();
-	const FRpgInventoryMutationResult FirstIdentityDrop =
-		DropActor->TransferItemFromInventory(
+	const FRpgInventoryTransferIntent FirstIdentityDropIntent =
+		MakeTransferIntent(
 			IdentitySource,
 			FirstConcreteStackId,
 			3,
-			FirstIdentityDropRequestId,
+			FirstIdentityDropRequestId);
+	const FRpgInventoryMutationResult FirstIdentityDrop =
+		DropActor->TransferItemFromInventoryByIntent(
+			IdentitySource,
+			FirstIdentityDropIntent,
 			true);
 	const FString IdentitySourceAfterFirstDrop =
 		MakeInventorySignature(IdentitySource);
 	const FString DropAfterFirstIdentityDrop =
 		MakeInventorySignature(DropInventory);
 	const FRpgInventoryMutationResult FirstIdentityDropReplay =
-		DropActor->TransferItemFromInventory(
+		DropActor->TransferItemFromInventoryByIntent(
 			IdentitySource,
-			FirstConcreteStackId,
-			3,
-			FirstIdentityDropRequestId,
+			FirstIdentityDropIntent,
 			true);
 	TestEqual(
 		TEXT("The first identity-preserving stack drop succeeds"),
@@ -10219,11 +10486,9 @@ bool FRpgInventoryPhysicalDropSubtreeTest::RunTest(
 		MakeInventorySignature(DropInventory),
 		DropAfterFirstIdentityDrop);
 	const FRpgInventoryMutationResult IdentityPolicyCollision =
-		DropActor->TransferItemFromInventory(
+		DropActor->TransferItemFromInventoryByIntent(
 			IdentitySource,
-			FirstConcreteStackId,
-			3,
-			FirstIdentityDropRequestId,
+			FirstIdentityDropIntent,
 			false);
 	TestEqual(
 		TEXT("A physical drop request id cannot change its merge policy"),
@@ -10251,11 +10516,9 @@ bool FRpgInventoryPhysicalDropSubtreeTest::RunTest(
 		MakeInventorySignature(DropInventory),
 		DropAfterFirstIdentityDrop);
 	const FRpgInventoryMutationResult RetryAfterTargetRestore =
-		DropActor->TransferItemFromInventory(
+		DropActor->TransferItemFromInventoryByIntent(
 			IdentitySource,
-			FirstConcreteStackId,
-			3,
-			FirstIdentityDropRequestId,
+			FirstIdentityDropIntent,
 			true);
 	TestEqual(
 		TEXT("A physical-drop result from the previous target epoch is re-evaluated"),
@@ -10270,22 +10533,18 @@ bool FRpgInventoryPhysicalDropSubtreeTest::RunTest(
 		MakeInventorySignature(DropInventory),
 		DropAfterFirstIdentityDrop);
 	const FRpgInventoryMutationResult RetryInRestoredTargetEpoch =
-		DropActor->TransferItemFromInventory(
+		DropActor->TransferItemFromInventoryByIntent(
 			IdentitySource,
-			FirstConcreteStackId,
-			3,
-			FirstIdentityDropRequestId,
+			FirstIdentityDropIntent,
 			true);
 	TestEqual(
 		TEXT("A retry in the restored target epoch replays its re-evaluated result"),
 		RetryInRestoredTargetEpoch.Code,
 		RetryAfterTargetRestore.Code);
 	const FRpgInventoryMutationResult RestoredEpochPolicyCollision =
-		DropActor->TransferItemFromInventory(
+		DropActor->TransferItemFromInventoryByIntent(
 			IdentitySource,
-			FirstConcreteStackId,
-			3,
-			FirstIdentityDropRequestId,
+			FirstIdentityDropIntent,
 			false);
 	TestEqual(
 		TEXT("The restored target epoch still rejects a merge-policy collision"),
@@ -10293,11 +10552,12 @@ bool FRpgInventoryPhysicalDropSubtreeTest::RunTest(
 		ERpgInventoryMutationResultCode::InvalidRequest);
 
 	const FRpgInventoryMutationResult SecondIdentityDrop =
-		DropActor->TransferItemFromInventory(
+		DropActor->TransferItemFromInventoryByIntent(
 			IdentitySource,
-			SecondConcreteStackId,
-			2,
-			FGuid::NewGuid(),
+			MakeTransferIntent(
+				IdentitySource,
+				SecondConcreteStackId,
+				2),
 			true);
 	TestEqual(
 		TEXT("The second identity-preserving stack drop succeeds"),
@@ -10332,6 +10592,7 @@ bool FRpgInventoryPhysicalDropSubtreeTest::RunTest(
 	}
 	const FRpgInventoryItemId SourceEpochItemId =
 		SourceEpochItem->GetItemId();
+	const FGuid SourceEpochRequestId = FGuid::NewGuid();
 	const FRpgInventoryGraphSaveData SourceEpochSnapshot =
 		SourceEpochInventory->ExportInventoryGraph();
 	const FRpgInventoryMutationResult RemoveSourceEpochItem =
@@ -10342,13 +10603,14 @@ bool FRpgInventoryPhysicalDropSubtreeTest::RunTest(
 		TEXT("The source-epoch fixture starts with its item absent"),
 		RemoveSourceEpochItem.IsSuccess());
 
-	const FGuid SourceEpochRequestId = FGuid::NewGuid();
 	const FRpgInventoryMutationResult MissingBeforeSourceRestore =
-		DropActor->TransferItemFromInventory(
+		DropActor->TransferItemFromInventoryByIntent(
 			SourceEpochInventory,
-			SourceEpochItemId,
-			1,
-			SourceEpochRequestId,
+			MakeTransferIntent(
+				SourceEpochInventory,
+				SourceEpochItemId,
+				1,
+				SourceEpochRequestId),
 			true);
 	TestEqual(
 		TEXT("The physical gateway caches the missing pre-restore source state"),
@@ -10360,12 +10622,16 @@ bool FRpgInventoryPhysicalDropSubtreeTest::RunTest(
 		SourceEpochInventory->RestoreInventoryGraph(
 			SourceEpochSnapshot,
 			SourceRestoreResult));
-	const FRpgInventoryMutationResult RetryAfterSourceRestore =
-		DropActor->TransferItemFromInventory(
+	const FRpgInventoryTransferIntent RestoredSourceEpochIntent =
+		MakeTransferIntent(
 			SourceEpochInventory,
 			SourceEpochItemId,
 			1,
-			SourceEpochRequestId,
+			SourceEpochRequestId);
+	const FRpgInventoryMutationResult RetryAfterSourceRestore =
+		DropActor->TransferItemFromInventoryByIntent(
+			SourceEpochInventory,
+			RestoredSourceEpochIntent,
 			true);
 	TestEqual(
 		TEXT("A physical-drop result from the previous source epoch is re-evaluated"),
@@ -10378,11 +10644,9 @@ bool FRpgInventoryPhysicalDropSubtreeTest::RunTest(
 	const FString DropAfterSourceEpochRetry =
 		MakeInventorySignature(DropInventory);
 	const FRpgInventoryMutationResult ReplayInRestoredSourceEpoch =
-		DropActor->TransferItemFromInventory(
+		DropActor->TransferItemFromInventoryByIntent(
 			SourceEpochInventory,
-			SourceEpochItemId,
-			1,
-			SourceEpochRequestId,
+			RestoredSourceEpochIntent,
 			true);
 	TestEqual(
 		TEXT("A retry in the restored source epoch replays success"),
@@ -10393,11 +10657,9 @@ bool FRpgInventoryPhysicalDropSubtreeTest::RunTest(
 		MakeInventorySignature(DropInventory),
 		DropAfterSourceEpochRetry);
 	const FRpgInventoryMutationResult SourceEpochPolicyCollision =
-		DropActor->TransferItemFromInventory(
+		DropActor->TransferItemFromInventoryByIntent(
 			SourceEpochInventory,
-			SourceEpochItemId,
-			1,
-			SourceEpochRequestId,
+			RestoredSourceEpochIntent,
 			false);
 	TestEqual(
 		TEXT("The restored source epoch still rejects a merge-policy collision"),
@@ -10459,11 +10721,12 @@ bool FRpgInventoryPhysicalDropSubtreeTest::RunTest(
 		OverflowItem->GetItemId();
 
 	const FRpgInventoryMutationResult OverflowDropResult =
-		DropActor->TransferItemFromInventory(
+		DropActor->TransferItemFromInventoryByIntent(
 			OverflowSource,
-			OverflowItemId,
-			1,
-			FGuid::NewGuid(),
+			MakeTransferIntent(
+				OverflowSource,
+				OverflowItemId,
+				1),
 			true);
 	TestEqual(
 		TEXT("A full corpse grid expands instead of retaining the item on the player"),

@@ -2,7 +2,9 @@
 
 #include "CoreMinimal.h"
 #include "GameFramework/GameplayMessageSubsystem.h"
-#include "SurvivalRpg/Inventory/RpgInventoryDragDrop.h"
+#include "SurvivalRpg/Inventory/RpgInventoryDragDropCoordinator.h"
+#include "SurvivalRpg/Inventory/RpgInventoryDragDropOperation.h"
+#include "SurvivalRpg/Inventory/RpgInventoryDragDropTypes.h"
 #include "SurvivalRpg/UI/RpgInventoryControllerActionsWidget.h"
 
 #include "RpgInventoryInteractionScreenWidget.generated.h"

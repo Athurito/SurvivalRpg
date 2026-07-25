@@ -1,4 +1,5 @@
-#include "RpgInventoryDragDrop.h"
+#include "RpgInventoryDragDropCoordinator.h"
+#include "RpgInventoryDragDropTypes.h"
 
 #if WITH_DEV_AUTOMATION_TESTS
 

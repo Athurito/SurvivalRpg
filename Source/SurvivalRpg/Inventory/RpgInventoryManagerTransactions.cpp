@@ -582,38 +582,6 @@ URpgInventoryItemInstance* URpgInventoryManagerComponent::AddItemDefinitionToPla
 		false);
 }
 
-void URpgInventoryManagerComponent::AddItemInstance(URpgInventoryItemInstance* ItemInstance)
-{
-	AddItemInstanceWithStack(ItemInstance, 1);
-}
-
-void URpgInventoryManagerComponent::AddItemInstanceWithStack(URpgInventoryItemInstance* ItemInstance, int32 StackCount)
-{
-	AddOwnedItemInstance(ItemInstance, StackCount);
-}
-
-void URpgInventoryManagerComponent::AddItemInstanceWithStackToPlacement(URpgInventoryItemInstance* ItemInstance, int32 StackCount, FRpgInventoryGridPlacement Placement)
-{
-	AddOwnedItemInstance(ItemInstance, StackCount, &Placement);
-}
-
-bool URpgInventoryManagerComponent::AddStackToExistingItem(URpgInventoryItemInstance* ItemInstance, int32 StackCount)
-{
-	AActor* OwningActor = GetOwner();
-	if (IsInventoryMutationLocked() || !OwningActor ||
-		!OwningActor->HasAuthority())
-	{
-		return false;
-	}
-
-	const bool bAddedStack = InventoryList.AddStackToEntry(ItemInstance, StackCount);
-	if (bAddedStack)
-	{
-		MarkInventoryStateDirty();
-	}
-	return bAddedStack;
-}
-
 bool URpgInventoryManagerComponent::CommitRemovalDeltas(
 	const TArray<FRpgInventoryMutationDelta>& Deltas)
 {
@@ -747,33 +715,6 @@ bool URpgInventoryManagerComponent::CommitRemovalDeltas(
 
 	MarkInventoryStateDirty();
 	return true;
-}
-
-void URpgInventoryManagerComponent::RemoveItemInstance(URpgInventoryItemInstance* ItemInstance)
-{
-	if (!ItemInstance || !ContainsItemInstance(ItemInstance))
-	{
-		return;
-	}
-
-	const int32 StackCount = GetItemStackCount(ItemInstance);
-	if (StackCount > 0)
-	{
-		ConsumeItemById(ItemInstance->GetItemId(), StackCount);
-	}
-}
-
-bool URpgInventoryManagerComponent::RemoveItemInstanceStack(URpgInventoryItemInstance* ItemInstance, int32 StackCount)
-{
-	if (!ItemInstance || !ContainsItemInstance(ItemInstance) || StackCount <= 0)
-	{
-		return false;
-	}
-
-	const FRpgInventoryMutationResult Result =
-		ConsumeItemById(ItemInstance->GetItemId(), StackCount);
-	return Result.Code == ERpgInventoryMutationResultCode::Success &&
-		Result.AppliedQuantity == StackCount;
 }
 
 FRpgInventoryMutationResult URpgInventoryManagerComponent::ConsumeItemById(
@@ -1003,59 +944,6 @@ FRpgInventoryMutationResult URpgInventoryManagerComponent::DropItem(
 		MoveTemp(Intent),
 		ERpgInventoryMutationOperation::Drop,
 		false);
-}
-
-bool URpgInventoryManagerComponent::ApplyInventorySort(ERpgInventorySortMode SortMode)
-{
-	AActor* OwningActor = GetOwner();
-	if (IsInventoryMutationLocked() || !OwningActor ||
-		!OwningActor->HasAuthority())
-	{
-		return false;
-	}
-
-	const bool bChanged = InventoryList.ApplySort(SortMode);
-	if (bChanged)
-	{
-		MarkInventoryStateDirty();
-	}
-	return bChanged;
-}
-
-bool URpgInventoryManagerComponent::MoveInventoryEntry(FGuid EntryId, int32 TargetIndex)
-{
-	AActor* OwningActor = GetOwner();
-	if (IsInventoryMutationLocked() || !OwningActor ||
-		!OwningActor->HasAuthority())
-	{
-		return false;
-	}
-
-	const bool bChanged = InventoryList.MoveEntry(EntryId, TargetIndex);
-	if (bChanged)
-	{
-		MarkInventoryStateDirty();
-	}
-	return bChanged;
-}
-
-bool URpgInventoryManagerComponent::MoveInventoryEntryToPlacement(FGuid EntryId, FRpgInventoryGridPlacement TargetPlacement)
-{
-	const FRpgInventoryEntry* Entry =
-		InventoryList.FindEntryByEntryId(EntryId);
-	if (!Entry || !Entry->Instance)
-	{
-		return false;
-	}
-
-	FRpgInventoryMoveIntent Intent;
-	Intent.EnsureRequestId();
-	Intent.ItemId = Entry->Instance->GetItemId();
-	Intent.ExpectedEntryId = Entry->EntryId;
-	Intent.ExpectedSourcePlacement = Entry->Placement;
-	Intent.ExpectedQuantity = Entry->StackCount;
-	Intent.TargetPlacement = TargetPlacement;
-	return MoveItem(Intent).IsSuccess();
 }
 
 bool URpgInventoryManagerComponent::AreMutationRequestsEquivalent(
@@ -1297,17 +1185,6 @@ FRpgInventoryMutationResult URpgInventoryManagerComponent::ExecuteInventoryMutat
 			}
 		}
 		break;
-
-	case ERpgInventoryMutationOperation::Sort:
-	{
-		const int32 SortValue = FMath::Clamp(Request.Quantity, 0, static_cast<int32>(ERpgInventorySortMode::Recent));
-		const FRpgInventoryContainerHandle SortContainer = Request.Source.IsValid() ? Request.Source : Request.Target;
-		bInventoryStateChanged = InventoryList.ApplySort(
-			static_cast<ERpgInventorySortMode>(SortValue),
-			SortContainer,
-			&bCommitted);
-		break;
-	}
 
 	case ERpgInventoryMutationOperation::Consume:
 		bInventoryStateChanged = false;

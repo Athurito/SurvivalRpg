@@ -2,9 +2,11 @@
 
 #include "Blueprint/DragDropOperation.h"
 #include "MVVMSubsystem.h"
-#include "SurvivalRpg/Inventory/RpgInventoryDragDrop.h"
+#include "SurvivalRpg/Inventory/RpgInventoryDragDropCoordinator.h"
+#include "SurvivalRpg/Inventory/RpgInventoryDragDropOperation.h"
+#include "SurvivalRpg/Inventory/RpgInventoryDragDropTypes.h"
 #include "SurvivalRpg/Inventory/RpgInventoryInteractionSession.h"
-#include "SurvivalRpg/Mvvm/Inventory/RpgActionBarViewModels.h"
+#include "SurvivalRpg/Mvvm/Inventory/RpgActionBarSlotViewModel.h"
 #include "View/MVVMView.h"
 #include "View/MVVMViewClass.h"
 

@@ -17,6 +17,7 @@
 #include "InputAction.h"
 #include "InputCoreTypes.h"
 #include "InputMappingContext.h"
+#include "K2Node.h"
 #include "K2Node_CallFunction.h"
 #include "K2Node_EnhancedInputAction.h"
 #include "K2Node_InputKey.h"
@@ -41,6 +42,36 @@ namespace
 		TEXT("/Game/SurvivalRpg/Core/Character/BP_Rpg_Character.BP_Rpg_Character");
 	constexpr TCHAR PrototypeExperiencePath[] =
 		TEXT("/Game/SurvivalRpg/System/Experiences/RpgPrototypeExperience.RpgPrototypeExperience");
+	constexpr int32 MigratedPlayerControllerEventGraphK2NodeCount = 54;
+
+	const TSet<FName>& GetRetiredInventoryApiCallNames()
+	{
+		static const TSet<FName> Names = {
+			FName(TEXT("AddItemDefinition")),
+			FName(TEXT("RequestMoveInventoryEntryToPlacement")),
+			FName(TEXT("RequestExecuteInventoryItemAction")),
+			FName(TEXT("RequestUseInventoryItem")),
+			FName(TEXT("RequestInventoryMutation")),
+			FName(TEXT("RequestAssignItemToEquipmentSlot")),
+			FName(TEXT("RequestClearEquipmentSlot")),
+			FName(TEXT("RequestTransferItemStack")),
+			FName(TEXT("RequestTransferItemStackToPlacement")),
+			FName(TEXT("RequestMoveItemToInventorySlotAddress")),
+			FName(TEXT("RequestEquipSlotContainerItem")),
+			FName(TEXT("RequestUnequipSlotContainerItem")),
+			FName(TEXT("RequestBindActionBarToInventorySlot")),
+			FName(TEXT("RequestBindActionBarToCarrySlot")),
+			FName(TEXT("RequestClearActionBarCarryBinding")),
+			FName(TEXT("RequestClearActionBarConsumableBinding")),
+			FName(TEXT("RequestSplitItemStack")),
+			FName(TEXT("RequestEquipInventoryItem")),
+			FName(TEXT("RequestUnequipInventoryItemToContentSlot")),
+			FName(TEXT("RequestDropInventoryItem")),
+			FName(TEXT("RequestStoreItemInstanceInBase")),
+			FName(TEXT("RequestTakeItemInstanceFromBase")),
+		};
+		return Names;
+	}
 
 	const FGameplayTag& GetInventoryInputTag()
 	{
@@ -93,6 +124,104 @@ namespace
 		}
 		return Count;
 	}
+}
+
+IMPLEMENT_SIMPLE_AUTOMATION_TEST(
+	FRpgPlayerControllerInventoryDebugHarnessRetiredAssetTest,
+	"SurvivalRpg.Inventory.UI.PlayerControllerDebugHarnessRetiredAssetContract",
+	EAutomationTestFlags::EditorContext | EAutomationTestFlags::EngineFilter)
+
+bool FRpgPlayerControllerInventoryDebugHarnessRetiredAssetTest::RunTest(
+	const FString& Parameters)
+{
+	UBlueprint* PlayerControllerBlueprint =
+		LoadObject<UBlueprint>(nullptr, PlayerControllerBlueprintPath);
+	if (!TestNotNull(
+		TEXT("BP_Rpg_PlayerController loads"),
+		PlayerControllerBlueprint))
+	{
+		return false;
+	}
+
+	TArray<UEdGraph*> Graphs;
+	PlayerControllerBlueprint->GetAllGraphs(Graphs);
+	const UEdGraph* EventGraph = nullptr;
+	int32 EventGraphCount = 0;
+	int32 TestingGraphCount = 0;
+	int32 RetiredCallReferenceCount = 0;
+	int32 NullTargetRetiredCallCount = 0;
+
+	for (const UEdGraph* Graph : Graphs)
+	{
+		if (!Graph)
+		{
+			continue;
+		}
+
+		if (Graph->GetName() == TEXT("EventGraph"))
+		{
+			EventGraph = Graph;
+			++EventGraphCount;
+		}
+		else if (Graph->GetName() == TEXT("Testing"))
+		{
+			++TestingGraphCount;
+		}
+
+		for (const UEdGraphNode* Node : Graph->Nodes)
+		{
+			const UK2Node_CallFunction* CallNode =
+				Cast<UK2Node_CallFunction>(Node);
+			if (!CallNode ||
+				!GetRetiredInventoryApiCallNames().Contains(
+					CallNode->FunctionReference.GetMemberName()))
+			{
+				continue;
+			}
+
+			++RetiredCallReferenceCount;
+			NullTargetRetiredCallCount +=
+				CallNode->GetTargetFunction() == nullptr ? 1 : 0;
+			AddError(FString::Printf(
+				TEXT("Graph %s retains retired inventory debug call %s"),
+				*Graph->GetName(),
+				*CallNode->FunctionReference.GetMemberName().ToString()));
+		}
+	}
+
+	TestEqual(
+		TEXT("BP_Rpg_PlayerController has exactly one EventGraph"),
+		EventGraphCount,
+		1);
+	TestEqual(
+		TEXT("BP_Rpg_PlayerController no longer has a Testing graph"),
+		TestingGraphCount,
+		0);
+	if (TestNotNull(
+		TEXT("BP_Rpg_PlayerController EventGraph exists"),
+		EventGraph))
+	{
+		int32 EventGraphK2NodeCount = 0;
+		for (const UEdGraphNode* Node : EventGraph->Nodes)
+		{
+			EventGraphK2NodeCount += Cast<UK2Node>(Node) != nullptr ? 1 : 0;
+		}
+
+		TestEqual(
+			TEXT("Migrated EventGraph keeps the audited 54-node K2 source contract"),
+			EventGraphK2NodeCount,
+			MigratedPlayerControllerEventGraphK2NodeCount);
+	}
+	TestEqual(
+		TEXT("No retired inventory debug call member references remain"),
+		RetiredCallReferenceCount,
+		0);
+	TestEqual(
+		TEXT("No unresolved retired inventory debug calls remain"),
+		NullTargetRetiredCallCount,
+		0);
+
+	return !HasAnyErrors();
 }
 
 IMPLEMENT_SIMPLE_AUTOMATION_TEST(

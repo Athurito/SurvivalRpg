@@ -2,7 +2,8 @@
 
 #if WITH_DEV_AUTOMATION_TESTS
 
-#include "RpgInventoryDragDrop.h"
+#include "RpgInventoryDragDropCoordinator.h"
+#include "RpgInventoryDragDropTypes.h"
 #include "RpgInventoryItemInstance.h"
 #include "RpgInventoryManagerComponent.h"
 #include "RpgPlayerInventoryLayoutComponent.h"
@@ -838,92 +839,76 @@ bool FRpgInventoryRestoreIntentBoundaryTest::RunTest(
 		ValidRestoreResult.Code,
 		ERpgInventoryMutationResultCode::Success);
 
-	const TArray<FRpgInventoryEntryView> ValidEntriesBeforeLegacyOnlyRestore =
-		ValidTarget->GetAllEntries();
-	const int32 ValidRevisionBeforeLegacyOnlyRestore =
-		ValidTarget->GetInventoryRevision();
-	const uint64 ValidEpochBeforeLegacyOnlyRestore =
-		ValidTarget->GetMutationEpoch();
-	FRpgInventoryGraphSaveData LegacyOnlyPlacementGraph = ValidGraph;
-	LegacyOnlyPlacementGraph.Items[0].Placement.ContainerId_DEPRECATED =
-		LegacyOnlyPlacementGraph.Items[0].Container.Root;
-	LegacyOnlyPlacementGraph.Items[0].Placement.ContainerHandle =
-		FRpgInventoryContainerHandle();
-	FRpgInventoryMutationResult LegacyOnlyPlacementResult;
-	TestFalse(
-		TEXT("Current-schema restore rejects a placement that only carries the deprecated root id"),
-		ValidTarget->RestoreInventoryGraph(
-			LegacyOnlyPlacementGraph,
-			LegacyOnlyPlacementResult));
-	TestEqual(
-		TEXT("A deprecated-only current-schema placement reports an invalid container"),
-		LegacyOnlyPlacementResult.Code,
-		ERpgInventoryMutationResultCode::InvalidContainer);
-	TestEqual(
-		TEXT("Rejected deprecated-only restore preserves the inventory revision"),
-		ValidTarget->GetInventoryRevision(),
-		ValidRevisionBeforeLegacyOnlyRestore);
-	TestEqual(
-		TEXT("Rejected deprecated-only restore preserves the mutation epoch"),
-		ValidTarget->GetMutationEpoch(),
-		ValidEpochBeforeLegacyOnlyRestore);
-	const TArray<FRpgInventoryEntryView> ValidEntriesAfterLegacyOnlyRestore =
+	const TArray<FRpgInventoryEntryView> ValidEntriesBeforeMissingHandleRestore =
 		ValidTarget->GetAllEntries();
 	if (TestEqual(
-			TEXT("Rejected deprecated-only restore preserves the live entry"),
-			ValidEntriesAfterLegacyOnlyRestore.Num(),
-			ValidEntriesBeforeLegacyOnlyRestore.Num()) &&
-		ValidEntriesAfterLegacyOnlyRestore.IsValidIndex(0) &&
-		ValidEntriesBeforeLegacyOnlyRestore.IsValidIndex(0))
-	{
-		TestEqual(
-			TEXT("Rejected deprecated-only restore preserves the runtime instance"),
-			ValidEntriesAfterLegacyOnlyRestore[0].Instance.Get(),
-			ValidEntriesBeforeLegacyOnlyRestore[0].Instance.Get());
-		TestTrue(
-			TEXT("Rejected deprecated-only restore preserves persistent identity"),
-			ValidEntriesAfterLegacyOnlyRestore[0].ItemId ==
-				ValidEntriesBeforeLegacyOnlyRestore[0].ItemId);
-	}
-
-	FRpgInventoryGraphSaveData ConflictingShadowGraph = ValidGraph;
-	ConflictingShadowGraph.Items[0].Placement.ContainerId_DEPRECATED =
-		TEXT("ConflictingDeprecatedRoot");
-	FRpgInventoryMutationResult ConflictingShadowResult;
-	TestTrue(
-		TEXT("A canonical current-schema handle remains authoritative over a conflicting deprecated shadow"),
-		ValidTarget->RestoreInventoryGraph(
-			ConflictingShadowGraph,
-			ConflictingShadowResult));
-	TestEqual(
-		TEXT("The canonical conflicting-shadow restore succeeds"),
-		ConflictingShadowResult.Code,
-		ERpgInventoryMutationResultCode::Success);
-	const TArray<FRpgInventoryEntryView> EntriesAfterConflictingShadowRestore =
-		ValidTarget->GetAllEntries();
-	if (TestEqual(
-			TEXT("The canonical conflicting-shadow restore retains one entry"),
-			EntriesAfterConflictingShadowRestore.Num(),
-			1) &&
-		EntriesAfterConflictingShadowRestore.IsValidIndex(0))
+		TEXT("The restored current-schema graph retains one live entry"),
+		ValidEntriesBeforeMissingHandleRestore.Num(),
+		1) &&
+		ValidEntriesBeforeMissingHandleRestore.IsValidIndex(0))
 	{
 		TestTrue(
-			TEXT("Canonical restore removes the deprecated shadow from runtime state"),
-			EntriesAfterConflictingShadowRestore[0]
-				.Placement.ContainerId_DEPRECATED.IsNone());
+			TEXT("Restore preserves the exact canonical placement handle"),
+			ValidEntriesBeforeMissingHandleRestore[0]
+				.Placement.GetContainerHandle() ==
+				ValidGraph.Items[0].Placement.GetContainerHandle());
 	}
-	const FRpgInventoryGraphSaveData ReExportedConflictingShadowGraph =
+	const FRpgInventoryGraphSaveData ReExportedValidGraph =
 		ValidTarget->ExportInventoryGraph();
 	if (TestEqual(
-			TEXT("Re-export after canonical restore retains one row"),
-			ReExportedConflictingShadowGraph.Items.Num(),
-			1) &&
-		ReExportedConflictingShadowGraph.Items.IsValidIndex(0))
+		TEXT("Re-export retains one current-schema row"),
+		ReExportedValidGraph.Items.Num(),
+		1) &&
+		ReExportedValidGraph.Items.IsValidIndex(0))
 	{
 		TestTrue(
-			TEXT("Current graph export never rewrites the deprecated shadow"),
-			ReExportedConflictingShadowGraph.Items[0]
-				.Placement.ContainerId_DEPRECATED.IsNone());
+			TEXT("Current graph export writes the exact canonical placement handle"),
+			ReExportedValidGraph.Items[0].Placement.GetContainerHandle() ==
+				ValidGraph.Items[0].Placement.GetContainerHandle());
+	}
+
+	const int32 ValidRevisionBeforeMissingHandleRestore =
+		ValidTarget->GetInventoryRevision();
+	const uint64 ValidEpochBeforeMissingHandleRestore =
+		ValidTarget->GetMutationEpoch();
+	FRpgInventoryGraphSaveData MissingHandlePlacementGraph = ValidGraph;
+	MissingHandlePlacementGraph.Items[0].Placement.SetContainerHandle(
+		FRpgInventoryContainerHandle());
+	FRpgInventoryMutationResult MissingHandlePlacementResult;
+	TestFalse(
+		TEXT("Current-schema restore requires every placement to carry a canonical handle"),
+		ValidTarget->RestoreInventoryGraph(
+			MissingHandlePlacementGraph,
+			MissingHandlePlacementResult));
+	TestEqual(
+		TEXT("A current-schema placement without a handle reports an invalid container"),
+		MissingHandlePlacementResult.Code,
+		ERpgInventoryMutationResultCode::InvalidContainer);
+	TestEqual(
+		TEXT("Rejected missing-handle restore preserves the inventory revision"),
+		ValidTarget->GetInventoryRevision(),
+		ValidRevisionBeforeMissingHandleRestore);
+	TestEqual(
+		TEXT("Rejected missing-handle restore preserves the mutation epoch"),
+		ValidTarget->GetMutationEpoch(),
+		ValidEpochBeforeMissingHandleRestore);
+	const TArray<FRpgInventoryEntryView> ValidEntriesAfterMissingHandleRestore =
+		ValidTarget->GetAllEntries();
+	if (TestEqual(
+			TEXT("Rejected missing-handle restore preserves the live entry"),
+			ValidEntriesAfterMissingHandleRestore.Num(),
+			ValidEntriesBeforeMissingHandleRestore.Num()) &&
+		ValidEntriesAfterMissingHandleRestore.IsValidIndex(0) &&
+		ValidEntriesBeforeMissingHandleRestore.IsValidIndex(0))
+	{
+		TestEqual(
+			TEXT("Rejected missing-handle restore preserves the runtime instance"),
+			ValidEntriesAfterMissingHandleRestore[0].Instance.Get(),
+			ValidEntriesBeforeMissingHandleRestore[0].Instance.Get());
+		TestTrue(
+			TEXT("Rejected missing-handle restore preserves persistent identity"),
+			ValidEntriesAfterMissingHandleRestore[0].ItemId ==
+				ValidEntriesBeforeMissingHandleRestore[0].ItemId);
 	}
 
 	FRpgInventoryGraphSaveData FootprintDriftGraph = ValidGraph;

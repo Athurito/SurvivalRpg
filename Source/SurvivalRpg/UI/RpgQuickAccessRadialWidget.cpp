@@ -7,7 +7,8 @@
 #include "Input/CommonUIInputTypes.h"
 #include "SurvivalRpg/Core/Player/RpgPlayerController.h"
 #include "SurvivalRpg/Core/Player/RpgPlayerGameplayInputRouterComponent.h"
-#include "SurvivalRpg/Mvvm/Inventory/RpgActionBarViewModels.h"
+#include "SurvivalRpg/Mvvm/Inventory/RpgActionBarSlotViewModel.h"
+#include "SurvivalRpg/Mvvm/Inventory/RpgActionBarViewModel.h"
 #include "SurvivalRpg/UI/RpgMvvmWidgetUtils.h"
 
 #include UE_INLINE_GENERATED_CPP_BY_NAME(RpgQuickAccessRadialWidget)

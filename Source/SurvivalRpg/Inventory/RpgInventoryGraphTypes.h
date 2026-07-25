@@ -282,8 +282,7 @@ struct SURVIVALRPG_API FRpgInventoryGridSize
 /**
  * One concrete server-authored item placement inside an inventory graph container.
  *
- * ContainerHandle is the only authoritative graph address. ContainerId_DEPRECATED is retained solely so the
- * versioned legacy-snapshot converter can read historical root-only placement data; runtime code must ignore it.
+ * ContainerHandle is the only graph address. Placements never synthesize or migrate root-only container ids.
  */
 USTRUCT(BlueprintType)
 struct SURVIVALRPG_API FRpgInventoryGridPlacement
@@ -293,10 +292,6 @@ struct SURVIVALRPG_API FRpgInventoryGridPlacement
 	/** Stable root or item-owned graph address used by runtime, replication, persistence, and UI. */
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, SaveGame, Category = "Inventory|Spatial")
 	FRpgInventoryContainerHandle ContainerHandle;
-
-	/** Historical root-only address read exclusively by explicit versioned migration code. Never runtime truth. */
-	UPROPERTY(SaveGame)
-	FName ContainerId_DEPRECATED = NAME_None;
 
 	/** Top-left occupied grid cell X coordinate. */
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, SaveGame, Category = "Inventory|Spatial", meta = (ClampMin = "0", UIMin = "0"))
@@ -318,17 +313,16 @@ struct SURVIVALRPG_API FRpgInventoryGridPlacement
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, SaveGame, Category = "Inventory|Spatial")
 	bool bRotated = false;
 
-	/** Returns the authoritative graph handle without interpreting deprecated root-only data. */
+	/** Returns the authoritative graph handle. */
 	FRpgInventoryContainerHandle GetContainerHandle() const
 	{
 		return ContainerHandle;
 	}
 
-	/** Assigns the authoritative graph handle and removes any stale legacy shadow value. */
+	/** Assigns the authoritative graph handle. */
 	void SetContainerHandle(const FRpgInventoryContainerHandle& InContainerHandle)
 	{
 		ContainerHandle = InContainerHandle;
-		ContainerId_DEPRECATED = NAME_None;
 	}
 
 	bool IsValid() const
@@ -397,21 +391,22 @@ struct SURVIVALRPG_API FRpgInventoryGridPlacement
 UENUM(BlueprintType)
 enum class ERpgInventoryMutationOperation : uint8
 {
-	None,
-	Move,
-	Rotate,
-	Merge,
-	Swap,
-	Split,
-	Sort,
-	Equip,
-	Pickup,
-	Transfer,
-	Drop,
-	Consume,
+	None = 0,
+	Move = 1,
+	Rotate = 2,
+	Merge = 3,
+	Swap = 4,
+	Split = 5,
 
-	/** Atomic disk/profile graph reconstruction; appended to preserve existing serialized enum ordinals. */
-	Restore
+	// Value 6 was the retired container-wide Sort operation. Keep the ordinal unused for serialized compatibility.
+	Equip = 7,
+	Pickup = 8,
+	Transfer = 9,
+	Drop = 10,
+	Consume = 11,
+
+	/** Atomic disk/profile graph reconstruction. */
+	Restore = 12
 };
 
 /** Stable reason code returned by inventory planning and authoritative commits. */
@@ -511,7 +506,7 @@ struct SURVIVALRPG_API FRpgInventoryMutationRequest
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Inventory|Transaction")
 	ERpgInventoryMutationOperation Operation = ERpgInventoryMutationOperation::None;
 
-	/** Persistent identity of the primary item; may be invalid for a container-wide Sort operation. */
+	/** Persistent identity of the primary item targeted by the mutation. */
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Inventory|Transaction")
 	FRpgInventoryItemId ItemId;
 

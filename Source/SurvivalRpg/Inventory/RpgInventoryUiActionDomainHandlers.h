@@ -94,6 +94,16 @@ protected:
 		URpgInventoryItemInstance* Item,
 		int32 FeedbackStackCount);
 
+	bool TryReplayRecentSplitResult(
+		URpgInventoryManagerComponent* Inventory,
+		const FRpgInventorySplitRequest& Request);
+	void SendAndCacheSplitFeedback(
+		URpgInventoryManagerComponent* Inventory,
+		const FRpgInventorySplitRequest& Request,
+		ERpgInventoryActionFeedbackResult Result,
+		URpgInventoryItemInstance* Item,
+		int32 FeedbackStackCount);
+
 	bool TryReplayRecentEquipmentIntentResult(
 		URpgInventoryManagerComponent* Inventory,
 		const FRpgInventoryEquipmentIntent& Intent);
@@ -131,11 +141,6 @@ protected:
 	float GetManualDropForwardDistance() const;
 	float GetManualDropUpOffset() const;
 	float GetManualDropMergeRadius() const;
-
-	void RequestQuickTransferItem(
-		URpgInventoryManagerComponent* SourceInventory,
-		URpgInventoryManagerComponent* TargetInventory,
-		FRpgInventoryQuickTransferRequest Request);
 
 private:
 	URpgInventoryUiActionComponent& GetMutableActionComponent() const
@@ -176,17 +181,6 @@ public:
 		const FRpgInventoryQuickTransferRequest& Request,
 		FRpgInventoryContainerHandle& OutTargetContainer,
 		FRpgInventoryGridPlacement& OutTargetPlacement) const;
-	bool CanTransferItemStack(
-		URpgInventoryManagerComponent* SourceInventory,
-		URpgInventoryManagerComponent* TargetInventory,
-		URpgInventoryItemInstance* Item,
-		int32 StackCount) const;
-	bool CanTransferItemStackToPlacement(
-		URpgInventoryManagerComponent* SourceInventory,
-		URpgInventoryManagerComponent* TargetInventory,
-		URpgInventoryItemInstance* Item,
-		int32 StackCount,
-		FRpgInventoryGridPlacement TargetPlacement) const;
 	bool CanSplitItemStack(
 		URpgInventoryManagerComponent* Inventory,
 		URpgInventoryItemInstance* Item,
@@ -225,9 +219,6 @@ public:
 	{
 	}
 
-	void InventoryMutation(
-		URpgInventoryManagerComponent* Inventory,
-		FRpgInventoryMutationRequest Request);
 	void MoveInventoryItem(
 		URpgInventoryManagerComponent* Inventory,
 		FRpgInventoryMoveIntent Intent);
@@ -239,39 +230,9 @@ public:
 		URpgInventoryManagerComponent* SourceInventory,
 		URpgInventoryManagerComponent* TargetInventory,
 		FRpgInventoryQuickTransferRequest Request);
-	void TransferItemStack(
-		URpgInventoryManagerComponent* SourceInventory,
-		URpgInventoryManagerComponent* TargetInventory,
-		URpgInventoryItemInstance* Item,
-		int32 StackCount);
-	void TransferItemStackToPlacement(
-		URpgInventoryManagerComponent* SourceInventory,
-		URpgInventoryManagerComponent* TargetInventory,
-		URpgInventoryItemInstance* Item,
-		int32 StackCount,
-		FRpgInventoryGridPlacement TargetPlacement);
-	void ApplyInventorySort(
-		URpgInventoryManagerComponent* Inventory,
-		ERpgInventorySortMode SortMode);
-	void MoveInventoryEntry(
-		URpgInventoryManagerComponent* Inventory,
-		FGuid EntryId,
-		int32 TargetIndex);
-	void MoveInventoryEntryToPlacement(
-		URpgInventoryManagerComponent* Inventory,
-		FGuid EntryId,
-		FRpgInventoryGridPlacement TargetPlacement);
-	void SplitItemStack(
-		URpgInventoryManagerComponent* Inventory,
-		URpgInventoryItemInstance* Item,
-		int32 SplitCount,
-		FRpgInventoryGridPlacement TargetPlacement);
 	void SplitItemStackById(
 		URpgInventoryManagerComponent* Inventory,
-		FRpgInventoryItemId ItemId,
-		int32 SplitCount,
-		FRpgInventoryGridPlacement TargetPlacement,
-		FGuid RequestId);
+		FRpgInventorySplitRequest Request);
 };
 
 /** Read-only physical equipment placement and content-routing policy. */
@@ -310,30 +271,7 @@ public:
 	void ApplyInventoryEquipmentIntent(
 		URpgInventoryManagerComponent* Inventory,
 		FRpgInventoryEquipmentIntent Intent);
-	void AssignItemToEquipmentSlot(
-		ERpgEquipmentSlot EquipmentSlot,
-		URpgInventoryItemInstance* Item);
-	void ClearEquipmentSlot(ERpgEquipmentSlot EquipmentSlot);
-	void MoveItemToInventorySlotAddress(
-		URpgInventoryItemInstance* Item,
-		FRpgInventorySlotAddress TargetAddress);
-	void EquipSlotContainerItem(
-		ERpgEquipmentSlot ContainerSlot,
-		URpgInventoryItemInstance* Item);
-	void UnequipSlotContainerItem(
-		ERpgEquipmentSlot ContainerSlot,
-		FRpgInventoryItemId ExpectedProviderItemId);
-	void EquipInventoryItem(URpgInventoryItemInstance* Item);
-	void UnequipInventoryItemToContentSlot(
-		URpgInventoryItemInstance* Item);
-
 private:
-	bool TryBuildCurrentEquipmentIntent(
-		URpgInventoryManagerComponent* Inventory,
-		URpgInventoryItemInstance* Item,
-		ERpgInventoryEquipmentIntentOperation Operation,
-		ERpgEquipmentSlot TargetEquipmentSlot,
-		FRpgInventoryEquipmentIntent& OutIntent) const;
 	bool TryAssignItemToDefaultEquipmentDestination(
 		URpgInventoryItemInstance* Item);
 	bool TryMoveAndActivateItemInCarry(
@@ -364,22 +302,18 @@ public:
 		FGameplayTag ExpectedCarrySemanticRole);
 	void ClearActiveHands();
 	void MutateBinding(FRpgQuickAccessMutationRequest Request);
-	void BindInventorySlot(
-		int32 ActionBarSlotIndex,
-		FRpgInventorySlotAddress SlotAddress);
-	void BindCarrySlot(
-		int32 ActionBarSlotIndex,
-		FRpgInventorySlotAddress CarrySlotAddress);
-	void ClearCarryBinding(
-		int32 ActionBarSlotIndex,
-		FGameplayTag ExpectedCarrySemanticRole);
-	void ClearConsumableBinding(
-		int32 ActionBarSlotIndex,
-		TSubclassOf<URpgInventoryItemDefinition>
-			ExpectedConsumableDefinition);
 };
 
-/** Server-side item-use capability, GAS activation, and consume handler. */
+/** Synchronous outcome returned before the owning facade finalizes replay state and emits feedback. */
+struct FRpgInventoryItemUseExecutionResult
+{
+	ERpgInventoryActionFeedbackResult Result =
+		ERpgInventoryActionFeedbackResult::InvalidRequest;
+	URpgInventoryItemInstance* Item = nullptr;
+	int32 FeedbackUseCount = 0;
+};
+
+/** Server-side stable-ID resolution, item-use capability, GAS activation, and consume handler. */
 class FRpgInventoryItemUseActionHandler final
 	: public FRpgInventoryUiActionDomainHandler
 {
@@ -390,14 +324,9 @@ public:
 	{
 	}
 
-	void ExecuteItemAction(
+	FRpgInventoryItemUseExecutionResult ExecuteUseRequest(
 		URpgInventoryManagerComponent* Inventory,
-		FRpgInventoryItemActionRequest Request);
-	void UseInventoryItem(
-		URpgInventoryManagerComponent* Inventory,
-		URpgInventoryItemInstance* Item,
-		int32 StackCount,
-		const FGuid& RequestId = FGuid());
+		const FRpgInventoryUseRequest& Request);
 };
 
 /** Server-side manual-drop validation, world-spawn, and transfer handler. */
@@ -411,11 +340,6 @@ public:
 	{
 	}
 
-	void DropInventoryItem(
-		URpgInventoryManagerComponent* Inventory,
-		URpgInventoryItemInstance* Item,
-		int32 StackCount,
-		bool bConfirmed);
 	void DropInventoryItemById(
 		URpgInventoryManagerComponent* Inventory,
 		FRpgInventoryManualDropRequest Request);
@@ -448,14 +372,6 @@ public:
 	void WithdrawResource(
 		URpgBaseStorageStationComponent* Station,
 		TSubclassOf<URpgInventoryItemDefinition> ItemDefinition,
-		int32 StackCount);
-	void StoreItemInstance(
-		URpgBaseStorageStationComponent* Station,
-		URpgInventoryItemInstance* Item,
-		int32 StackCount);
-	void TakeItemInstance(
-		URpgBaseStorageStationComponent* Station,
-		URpgInventoryItemInstance* Item,
 		int32 StackCount);
 	void InstallUpgrade(
 		URpgBaseStorageStationComponent* Station,

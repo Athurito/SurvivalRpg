@@ -5,10 +5,12 @@
 #include "Input/Reply.h"
 #include "InputCoreTypes.h"
 #include "MVVMSubsystem.h"
-#include "SurvivalRpg/Inventory/RpgInventoryDragDrop.h"
+#include "SurvivalRpg/Inventory/RpgInventoryDragDropCoordinator.h"
+#include "SurvivalRpg/Inventory/RpgInventoryDragDropOperation.h"
+#include "SurvivalRpg/Inventory/RpgInventoryDragDropTypes.h"
 #include "SurvivalRpg/Inventory/RpgInventoryInteractionSession.h"
 #include "SurvivalRpg/Inventory/RpgInventoryItemInstance.h"
-#include "SurvivalRpg/Mvvm/Inventory/RpgPlayerInventoryViewModels.h"
+#include "SurvivalRpg/Mvvm/Inventory/RpgInventoryAddressSlotViewModel.h"
 #include "SurvivalRpg/UI/RpgInventoryDragVisualWidget.h"
 #include "SurvivalRpg/UI/RpgInventoryInteractionScreenWidget.h"
 #include "View/MVVMView.h"
@@ -616,11 +618,11 @@ bool URpgInventoryAddressSlotWidget::ExecuteAddressContextAction(
 	case ERpgInventoryContextAction::Unequip:
 		return SlotViewModel->IsGearSlot() && DragDropCoordinator->UseOrEquipAddressSlot(SlotViewModel);
 	case ERpgInventoryContextAction::Use:
-		return DragDropCoordinator->ExecuteAddressItemAction(SlotViewModel, ERpgInventoryItemActionIntent::Use, 1);
+		return DragDropCoordinator->ExecuteAddressItemAction(SlotViewModel, ERpgInventoryContextAction::Use, 1);
 	case ERpgInventoryContextAction::EquipAndActivate:
-		return DragDropCoordinator->ExecuteAddressItemAction(SlotViewModel, ERpgInventoryItemActionIntent::EquipAndActivate, 1);
+		return DragDropCoordinator->ExecuteAddressItemAction(SlotViewModel, ERpgInventoryContextAction::EquipAndActivate, 1);
 	case ERpgInventoryContextAction::MoveToCarry:
-		return DragDropCoordinator->ExecuteAddressItemAction(SlotViewModel, ERpgInventoryItemActionIntent::MoveToCarry, 1);
+		return DragDropCoordinator->ExecuteAddressItemAction(SlotViewModel, ERpgInventoryContextAction::MoveToCarry, 1);
 	case ERpgInventoryContextAction::Split:
 		return RequestAddressSplitDialog();
 	case ERpgInventoryContextAction::Transfer:

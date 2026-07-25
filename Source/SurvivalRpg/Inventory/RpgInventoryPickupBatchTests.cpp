@@ -630,7 +630,11 @@ bool FRpgInventoryPickupBatchMixedMergeDetachedCapacityTest::RunTest(
 	SameOwnerDetached->AddStatTagStack(
 		RpgGameplayTags::Ability_Attack_Basic,
 		1);
-	Inventory->RemoveItemInstance(SameOwnerDetached);
+	TestTrue(
+		TEXT("Canonical consume detaches the same-owner concrete fixture"),
+		Inventory->ConsumeItemById(
+			SameOwnerDetached->GetItemId(),
+			Inventory->GetItemStackCount(SameOwnerDetached)).IsSuccess());
 	TestFalse(
 		TEXT("The same-owner concrete fixture is detached before pickup"),
 		Inventory->ContainsItemInstance(SameOwnerDetached));
@@ -658,8 +662,16 @@ bool FRpgInventoryPickupBatchMixedMergeDetachedCapacityTest::RunTest(
 	ForeignTaggedDetached->AddStatTagStack(
 		RpgGameplayTags::Ability_Support_Heal,
 		2);
-	ForeignSetupInventory->RemoveItemInstance(ForeignTaggedDetached);
-	ForeignSetupInventory->RemoveItemInstance(ForeignCompatibleDetached);
+	TestTrue(
+		TEXT("Canonical consume detaches the tagged foreign fixture"),
+		ForeignSetupInventory->ConsumeItemById(
+			ForeignTaggedDetached->GetItemId(),
+			ForeignSetupInventory->GetItemStackCount(ForeignTaggedDetached)).IsSuccess());
+	TestTrue(
+		TEXT("Canonical consume detaches the compatible foreign fixture"),
+		ForeignSetupInventory->ConsumeItemById(
+			ForeignCompatibleDetached->GetItemId(),
+			ForeignSetupInventory->GetItemStackCount(ForeignCompatibleDetached)).IsSuccess());
 	TestEqual(
 		TEXT("Both foreign concrete fixtures are detached"),
 		ForeignSetupInventory->GetUsedEntryCount(),
@@ -1033,7 +1045,11 @@ bool FRpgInventoryPickupBatchActorWideIdentityTest::RunTest(
 		return false;
 	}
 
-	TargetInventory->RemoveItemInstance(DuplicateIdCandidate);
+	TestTrue(
+		TEXT("Canonical consume detaches the duplicate-id candidate"),
+		TargetInventory->ConsumeItemById(
+			DuplicateIdCandidate->GetItemId(),
+			TargetInventory->GetItemStackCount(DuplicateIdCandidate)).IsSuccess());
 	TestTrue(
 		TEXT("The detached target-owned candidate accepts the sibling id"),
 		DuplicateIdCandidate->RestoreItemId(

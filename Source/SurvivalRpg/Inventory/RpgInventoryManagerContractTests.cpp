@@ -2,6 +2,7 @@
 
 #include "RpgInventoryManagerComponent.h"
 #include "RpgInventoryItemInstance.h"
+#include "SurvivalRpg/Equipment/RpgEquipmentManagerComponent.h"
 
 #include "Components/ActorComponent.h"
 #include "Misc/AutomationTest.h"
@@ -118,35 +119,31 @@ bool FRpgInventoryManagerPublicReflectionContractTest::RunTest(
 				FUNC_BlueprintPure));
 	}
 
-	const FName DeprecatedFunctions[] = {
+	const FName RetiredOrNativeOnlyFunctions[] = {
 		FName(TEXT("CanAddItemInstance")),
+		FName(TEXT("CanAddItemInstanceToPlacement")),
+		FName(TEXT("AddItemDefinition")),
+		FName(TEXT("AddItemDefinitionToPlacement")),
+		FName(TEXT("AddItemInstance")),
+		FName(TEXT("AddItemInstanceWithStack")),
+		FName(TEXT("AddItemInstanceWithStackToPlacement")),
+		FName(TEXT("AddStackToExistingItem")),
+		FName(TEXT("RemoveItemInstance")),
+		FName(TEXT("RemoveItemInstanceStack")),
+		FName(TEXT("MoveInventoryEntryToPlacement")),
+		FName(TEXT("CanMoveInventoryEntryToPlacement")),
 		FName(TEXT("PlanInventoryMutation")),
+		FName(TEXT("ExecuteInventoryMutation")),
 		FName(TEXT("ExecuteCrossInventoryTransfer")),
+		FName(TEXT("ExpandDefaultGridToMinimum")),
 	};
-	for (const FName FunctionName : DeprecatedFunctions)
+	for (const FName FunctionName : RetiredOrNativeOnlyFunctions)
 	{
-		const UFunction* Function =
-			ManagerClass->FindFunctionByName(FunctionName);
-		if (!TestNotNull(
-				*FString::Printf(
-					TEXT("%s remains reflected for Blueprint migration"),
-					*FunctionName.ToString()),
-				Function))
-		{
-			continue;
-		}
-
-		TestTrue(
+		TestNull(
 			*FString::Printf(
-				TEXT("%s remains marked DeprecatedFunction"),
+				TEXT("%s is absent from the Blueprint surface"),
 				*FunctionName.ToString()),
-			Function->HasMetaData(TEXT("DeprecatedFunction")));
-		TestFalse(
-			*FString::Printf(
-				TEXT("%s retains an actionable deprecation message"),
-				*FunctionName.ToString()),
-			Function->GetMetaData(
-				TEXT("DeprecationMessage")).IsEmpty());
+			ManagerClass->FindFunctionByName(FunctionName));
 	}
 
 	int32 ManagerNetFunctionCount = 0;
@@ -184,7 +181,6 @@ bool FRpgInventoryManagerPublicReflectionContractTest::RunTest(
 		FName(TEXT("CollectRootItemsBatch")),
 		FName(TEXT("PlanDropItem")),
 		FName(TEXT("DropItem")),
-		FName(TEXT("ConvertLegacyInventorySnapshot")),
 		FName(TEXT("RestoreInventoryGraph")),
 		FName(TEXT("RestoreRuntimeCheckpoint")),
 	};
@@ -193,6 +189,43 @@ bool FRpgInventoryManagerPublicReflectionContractTest::RunTest(
 		TestNull(
 			*FString::Printf(
 				TEXT("%s remains native-only"),
+				*FunctionName.ToString()),
+			ManagerClass->FindFunctionByName(FunctionName));
+	}
+
+	return true;
+}
+
+IMPLEMENT_SIMPLE_AUTOMATION_TEST(
+	FRpgEquipmentManagerNativeMutationReflectionContractTest,
+	"SurvivalRpg.Equipment.Manager.NativeMutationReflectionContract",
+	EAutomationTestFlags::EditorContext |
+		EAutomationTestFlags::EngineFilter)
+
+bool FRpgEquipmentManagerNativeMutationReflectionContractTest::RunTest(
+	const FString& Parameters)
+{
+	const UClass* ManagerClass =
+		URpgEquipmentManagerComponent::StaticClass();
+	if (!TestNotNull(
+			TEXT("The RPG equipment manager class exists"),
+			ManagerClass))
+	{
+		return false;
+	}
+
+	const FName NativeMutationFunctions[] = {
+		FName(TEXT("EquipItem")),
+		FName(TEXT("EquipItemInSlot")),
+		FName(TEXT("EquipItemInSlotWithInstigator")),
+		FName(TEXT("UnequipItem")),
+		FName(TEXT("UnequipItemInSlot")),
+	};
+	for (const FName FunctionName : NativeMutationFunctions)
+	{
+		TestNull(
+			*FString::Printf(
+				TEXT("%s is absent from the Blueprint surface"),
 				*FunctionName.ToString()),
 			ManagerClass->FindFunctionByName(FunctionName));
 	}

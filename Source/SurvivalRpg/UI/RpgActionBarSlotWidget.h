@@ -3,7 +3,8 @@
 #include "Blueprint/IUserObjectListEntry.h"
 #include "CommonButtonBase.h"
 #include "CoreMinimal.h"
-#include "SurvivalRpg/Inventory/RpgInventoryDragDrop.h"
+#include "SurvivalRpg/Inventory/RpgInventoryDragDropCoordinator.h"
+#include "SurvivalRpg/Inventory/RpgInventoryDragDropTypes.h"
 
 #include "RpgActionBarSlotWidget.generated.h"
 

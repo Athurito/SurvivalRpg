@@ -1,8 +1,8 @@
 #include "RpgInventoryNestedContainerDetailWidget.h"
 
-#include "SurvivalRpg/Inventory/RpgInventoryDragDrop.h"
+#include "SurvivalRpg/Inventory/RpgInventoryDragDropCoordinator.h"
 #include "SurvivalRpg/Inventory/RpgInventoryManagerComponent.h"
-#include "SurvivalRpg/UI/RpgPlayerInventoryLayoutViews.h"
+#include "SurvivalRpg/UI/RpgInventorySpatialGridWidget.h"
 
 #include UE_INLINE_GENERATED_CPP_BY_NAME(RpgInventoryNestedContainerDetailWidget)
 

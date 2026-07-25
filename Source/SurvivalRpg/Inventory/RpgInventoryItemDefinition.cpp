@@ -215,16 +215,16 @@ EDataValidationResult URpgInventoryItemDefinition::IsDataValid(
 		const int32 FragmentIndex =
 			Fragments.IndexOfByKey(ContainerFragment);
 		TArray<FRpgInventoryItemContainerDefinition>
-			AuthoredContainers;
-		ContainerFragment->GetAuthoredContainerDefinitions(
-			AuthoredContainers);
+			ProvidedContainers;
+		ContainerFragment->GetProvidedContainers(
+			ProvidedContainers);
 		TMap<FName, int32> FirstContainerIndices;
 		for (int32 ContainerIndex = 0;
-			ContainerIndex < AuthoredContainers.Num();
+			ContainerIndex < ProvidedContainers.Num();
 			++ContainerIndex)
 		{
 			const FRpgInventoryItemContainerDefinition& Container =
-				AuthoredContainers[ContainerIndex];
+				ProvidedContainers[ContainerIndex];
 			if (Container.ContainerId.IsNone())
 			{
 				Context.AddError(
@@ -232,7 +232,7 @@ EDataValidationResult URpgInventoryItemDefinition::IsDataValid(
 						LOCTEXT(
 							"MissingProvidedContainerId",
 							"Item definition '{0}' has no ContainerId at "
-							"Fragments[{1}].AuthoredContainers[{2}]. Set a definition-local id."),
+							"Fragments[{1}].ProvidedContainers[{2}]. Set a definition-local id."),
 						DefinitionPath,
 						FText::AsNumber(FragmentIndex),
 						FText::AsNumber(ContainerIndex)));
@@ -245,8 +245,8 @@ EDataValidationResult URpgInventoryItemDefinition::IsDataValid(
 						LOCTEXT(
 							"DuplicateProvidedContainerId",
 							"Item definition '{0}' repeats ContainerId '{1}' at "
-							"Fragments[{2}].AuthoredContainers[{3}]; it was first declared at "
-							"AuthoredContainers[{4}]. Keep ids unique within the ItemContainer fragment."),
+							"Fragments[{2}].ProvidedContainers[{3}]; it was first declared at "
+							"ProvidedContainers[{4}]. Keep ids unique within the ItemContainer fragment."),
 						DefinitionPath,
 						FText::FromName(Container.ContainerId),
 						FText::AsNumber(FragmentIndex),
@@ -267,7 +267,7 @@ EDataValidationResult URpgInventoryItemDefinition::IsDataValid(
 						LOCTEXT(
 							"InvalidProvidedContainerGrid",
 							"Item definition '{0}' has an invalid item-container grid {1} x {2} at "
-							"Fragments[{3}].AuthoredContainers[{4}]. Set both dimensions to a positive number of cells."),
+							"Fragments[{3}].ProvidedContainers[{4}]. Set both dimensions to a positive number of cells."),
 						DefinitionPath,
 						FText::AsNumber(Container.GridSize.Width),
 						FText::AsNumber(Container.GridSize.Height),

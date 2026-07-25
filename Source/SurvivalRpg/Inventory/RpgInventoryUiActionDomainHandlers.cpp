@@ -288,6 +288,30 @@ void FRpgInventoryUiActionDomainHandler::
 		FeedbackStackCount);
 }
 
+bool FRpgInventoryUiActionDomainHandler::TryReplayRecentSplitResult(
+	URpgInventoryManagerComponent* Inventory,
+	const FRpgInventorySplitRequest& Request)
+{
+	return GetMutableActionComponent().TryReplayRecentSplitResult(
+		Inventory,
+		Request);
+}
+
+void FRpgInventoryUiActionDomainHandler::SendAndCacheSplitFeedback(
+	URpgInventoryManagerComponent* Inventory,
+	const FRpgInventorySplitRequest& Request,
+	ERpgInventoryActionFeedbackResult Result,
+	URpgInventoryItemInstance* Item,
+	int32 FeedbackStackCount)
+{
+	GetMutableActionComponent().SendAndCacheSplitFeedback(
+		Inventory,
+		Request,
+		Result,
+		Item,
+		FeedbackStackCount);
+}
+
 bool FRpgInventoryUiActionDomainHandler::
 	TryReplayRecentEquipmentIntentResult(
 		URpgInventoryManagerComponent* Inventory,
@@ -445,16 +469,4 @@ float FRpgInventoryUiActionDomainHandler::
 	GetManualDropMergeRadius() const
 {
 	return ActionComponent.ManualDropMergeRadius;
-}
-
-void FRpgInventoryUiActionDomainHandler::RequestQuickTransferItem(
-	URpgInventoryManagerComponent* SourceInventory,
-	URpgInventoryManagerComponent* TargetInventory,
-	FRpgInventoryQuickTransferRequest Request)
-{
-	FRpgInventoryTransactionActionHandler(
-		GetMutableActionComponent()).QuickTransferItem(
-		SourceInventory,
-		TargetInventory,
-		MoveTemp(Request));
 }

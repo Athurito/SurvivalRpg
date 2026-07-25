@@ -4,7 +4,7 @@
 
 #include "Blueprint/UserWidget.h"
 #include "CoreMinimal.h"
-#include "SurvivalRpg/Inventory/RpgInventoryDragDrop.h"
+#include "SurvivalRpg/Inventory/RpgInventoryDragDropTypes.h"
 #include "UObject/SoftObjectPtr.h"
 
 #include "RpgInventoryDragVisualWidget.generated.h"

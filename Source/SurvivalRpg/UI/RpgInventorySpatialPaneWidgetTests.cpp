@@ -3,11 +3,11 @@
 #if WITH_DEV_AUTOMATION_TESTS
 
 #include "MVVMSubsystem.h"
-#include "SurvivalRpg/Inventory/RpgInventoryDragDrop.h"
+#include "SurvivalRpg/Inventory/RpgInventoryDragDropCoordinator.h"
 #include "SurvivalRpg/Inventory/RpgInventoryManagerComponent.h"
-#include "SurvivalRpg/Mvvm/Inventory/RpgInventoryViewModels.h"
+#include "SurvivalRpg/Mvvm/Inventory/RpgInventoryPanelViewModel.h"
 #include "SurvivalRpg/UI/RpgInventoryPanelNavigationCoordinator.h"
-#include "SurvivalRpg/UI/RpgPlayerInventoryLayoutViews.h"
+#include "SurvivalRpg/UI/RpgInventorySpatialGridWidget.h"
 #include "SurvivalRpg/UI/RpgUIScreenPayload.h"
 #include "View/MVVMViewClass.h"
 

@@ -2,18 +2,26 @@
 
 #if WITH_DEV_AUTOMATION_TESTS
 
+#include "SurvivalRpg/UI/RpgInventorySpatialItemWidget.h"
+
 #include "AssetRegistry/AssetData.h"
 #include "AssetRegistry/AssetRegistryModule.h"
 #include "AssetRegistry/IAssetRegistry.h"
+#include "EdGraph/EdGraph.h"
 #include "Engine/AssetManager.h"
 #include "Engine/AssetManagerSettings.h"
 #include "Engine/AssetManagerTypes.h"
+#include "Engine/Blueprint.h"
+#include "K2Node_Event.h"
+#include "K2Node_VariableGet.h"
 #include "Misc/AutomationTest.h"
 #include "Misc/PackageName.h"
 #include "Modules/ModuleManager.h"
 #include "UObject/PrimaryAssetId.h"
 #include "UObject/SoftObjectPath.h"
+#include "UObject/UnrealType.h"
 #include "UObject/UObjectGlobals.h"
+#include "WidgetBlueprint.h"
 
 IMPLEMENT_SIMPLE_AUTOMATION_TEST(
 	FRpgInventoryLegacyAssetRetirementTest,
@@ -45,6 +53,11 @@ bool FRpgInventoryLegacyAssetRetirementTest::RunTest(
 		TEXT("/Game/SurvivalRpg/Crafting/UI/CUI_CraftButtonBase"),
 		TEXT("/Game/SurvivalRpg/Inventory/UI/CUI_Inventory"),
 		TEXT("/Game/SurvivalRpg/Inventory/UI/CUI_InventorySlotEntry"),
+		TEXT("/Game/SurvivalRpg/Inventory/UI/CUI_AddressSlotEntry"),
+		TEXT("/Game/SurvivalRpg/Equipment/Definitions/Test/EQ_TestShield"),
+		TEXT("/Game/SurvivalRpg/Crafting/BP_TestDrop"),
+		TEXT("/Game/SurvivalRpg/Inventory/Items/Test/ID_Cheese"),
+		TEXT("/Game/SurvivalRpg/Inventory/Items/Test/ID_TestSword1"),
 	};
 
 	for (const TCHAR* PackageName : RetiredPackages)
@@ -116,6 +129,10 @@ bool FRpgInventoryLegacyAssetRetirementTest::RunTest(
 			TEXT("/Game/SurvivalRpg/Inventory/UI/Inventory_Slot_Background"),
 		},
 		{
+			TEXT("/Game/SurvivalRpg/Inventory/UI/SpatialInventory/CUI_SpatialInventoryGrid"),
+			TEXT("/Game/SurvivalRpg/Inventory/UI/SpatialInventory/CUI_SpatialInventoryItem"),
+		},
+		{
 			TEXT("/Game/SurvivalRpg/UI/CUI_BaseResourceListSpatial"),
 			TEXT("/Game/SurvivalRpg/UI/CUI_BaseResourceEntry"),
 		},
@@ -136,6 +153,179 @@ bool FRpgInventoryLegacyAssetRetirementTest::RunTest(
 				FName(Contract.Owner),
 				FName(Contract.Dependency),
 				UE::AssetRegistry::EDependencyCategory::Package));
+	}
+
+	constexpr TCHAR SpatialItemObjectPath[] =
+		TEXT(
+			"/Game/SurvivalRpg/Inventory/UI/SpatialInventory/"
+			"CUI_SpatialInventoryItem.CUI_SpatialInventoryItem");
+	UWidgetBlueprint* SpatialItemBlueprint =
+		LoadObject<UWidgetBlueprint>(
+			nullptr,
+			SpatialItemObjectPath);
+	if (!TestNotNull(
+			TEXT("The active spatial-item Widget Blueprint loads"),
+			SpatialItemBlueprint))
+	{
+		return false;
+	}
+
+	TestEqual(
+		TEXT("The spatial-item asset keeps its exact native presenter"),
+		SpatialItemBlueprint->ParentClass.Get(),
+		URpgInventorySpatialItemWidget::StaticClass());
+	TestTrue(
+		TEXT("The cleaned spatial-item Blueprint is compiled"),
+		SpatialItemBlueprint->Status == BS_UpToDate ||
+			SpatialItemBlueprint->Status == BS_UpToDateWithWarnings);
+
+	static const TSet<FName> RetiredSpatialItemMembers = {
+		TEXT("InventoryAddressViewModel"),
+		TEXT("InventoryEntryViewModel"),
+	};
+	for (const FBPVariableDescription& Variable :
+		SpatialItemBlueprint->NewVariables)
+	{
+		TestFalse(
+			*FString::Printf(
+				TEXT("Spatial item no longer authors member %s"),
+				*Variable.VarName.ToString()),
+			RetiredSpatialItemMembers.Contains(Variable.VarName));
+	}
+	TestEqual(
+		TEXT("Spatial item owns no Blueprint member-variable data path"),
+		SpatialItemBlueprint->NewVariables.Num(),
+		0);
+
+	static const TSet<FName> RetiredSpatialItemImplementations = {
+		TEXT("BP_OnSpatialAddressItemSet"),
+		TEXT("BP_OnSpatialEntryItemSet"),
+		TEXT("BP_OnSpatialItemDragDropStateChanged"),
+	};
+	TArray<UEdGraph*> AuthoredGraphs;
+	SpatialItemBlueprint->GetAllGraphs(AuthoredGraphs);
+	TestEqual(
+		TEXT("Spatial item owns exactly one authored graph"),
+		AuthoredGraphs.Num(),
+		1);
+	for (const UEdGraph* Graph : AuthoredGraphs)
+	{
+		if (!Graph)
+		{
+			continue;
+		}
+
+		TestFalse(
+			*FString::Printf(
+				TEXT("Spatial item no longer owns implementation graph %s"),
+				*Graph->GetName()),
+			RetiredSpatialItemImplementations.Contains(
+				Graph->GetFName()));
+
+		TestEqual(
+			TEXT("Spatial item retains only its EventGraph"),
+			Graph->GetFName(),
+			FName(TEXT("EventGraph")));
+		TestEqual(
+			TEXT("Spatial item EventGraph retains exactly three audited nodes"),
+			Graph->Nodes.Num(),
+			3);
+
+		int32 EventNodeCount = 0;
+		int32 VariableGetNodeCount = 0;
+		int32 UnexpectedNodeCount = 0;
+		for (const UEdGraphNode* Node : Graph->Nodes)
+		{
+			const UK2Node_Event* EventNode =
+				Cast<UK2Node_Event>(Node);
+			if (EventNode)
+			{
+				++EventNodeCount;
+				TestFalse(
+					*FString::Printf(
+						TEXT(
+							"Spatial item graph %s no longer implements event %s"),
+						*Graph->GetName(),
+						*EventNode->GetFunctionName().ToString()),
+					RetiredSpatialItemImplementations.Contains(
+						EventNode->GetFunctionName()));
+			}
+			else if (Cast<UK2Node_VariableGet>(Node))
+			{
+				++VariableGetNodeCount;
+			}
+			else
+			{
+				++UnexpectedNodeCount;
+			}
+		}
+		TestEqual(
+			TEXT("Spatial item EventGraph retains three event nodes"),
+			EventNodeCount,
+			3);
+		TestEqual(
+			TEXT("Spatial item EventGraph retains no variable-get nodes"),
+			VariableGetNodeCount,
+			0);
+		TestEqual(
+			TEXT("Spatial item EventGraph has no other node classes"),
+			UnexpectedNodeCount,
+			0);
+	}
+
+	UClass* SpatialItemGeneratedClass =
+		SpatialItemBlueprint->GeneratedClass;
+	if (!TestNotNull(
+			TEXT("The active spatial item has a generated class"),
+			SpatialItemGeneratedClass))
+	{
+		return false;
+	}
+	for (TFieldIterator<FProperty> PropertyIt(
+			SpatialItemGeneratedClass,
+			EFieldIteratorFlags::ExcludeSuper);
+		PropertyIt;
+		++PropertyIt)
+	{
+		TestFalse(
+			*FString::Printf(
+				TEXT("Generated spatial item no longer owns property %s"),
+				*PropertyIt->GetName()),
+			RetiredSpatialItemMembers.Contains(
+				PropertyIt->GetFName()));
+	}
+
+	for (const FName FunctionName : RetiredSpatialItemImplementations)
+	{
+		const UFunction* NativeFunction =
+			URpgInventorySpatialItemWidget::StaticClass()->
+				FindFunctionByName(FunctionName);
+		const UFunction* ResolvedFunction =
+			SpatialItemGeneratedClass->FindFunctionByName(FunctionName);
+		if (TestNotNull(
+				*FString::Printf(
+					TEXT("Native spatial-item API %s remains available"),
+					*FunctionName.ToString()),
+				NativeFunction) &&
+			TestNotNull(
+				*FString::Printf(
+					TEXT("Generated spatial item resolves native API %s"),
+					*FunctionName.ToString()),
+				ResolvedFunction))
+		{
+			TestTrue(
+				*FString::Printf(
+					TEXT("%s remains a Blueprint event seam"),
+					*FunctionName.ToString()),
+				NativeFunction->HasAnyFunctionFlags(
+					FUNC_BlueprintEvent));
+			TestEqual(
+				*FString::Printf(
+					TEXT("%s is inherited instead of graph-overridden"),
+					*FunctionName.ToString()),
+				ResolvedFunction->GetOwnerClass(),
+				URpgInventorySpatialItemWidget::StaticClass());
+		}
 	}
 
 	constexpr TCHAR GameDataPackage[] =

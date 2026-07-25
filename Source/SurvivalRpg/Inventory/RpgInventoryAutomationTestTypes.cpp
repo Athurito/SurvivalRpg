@@ -1,6 +1,6 @@
 #include "RpgInventoryAutomationTestTypes.h"
 
-#include "RpgInventoryDragDrop.h"
+#include "RpgInventoryDragDropTypes.h"
 #include "RpgInventoryFragment_EquippableItem.h"
 #include "RpgInventoryFragment_ItemContainer.h"
 #include "RpgInventoryFragment_ItemTraits.h"

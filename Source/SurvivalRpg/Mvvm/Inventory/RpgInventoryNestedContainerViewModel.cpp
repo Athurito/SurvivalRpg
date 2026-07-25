@@ -6,7 +6,8 @@
 #include "SurvivalRpg/Inventory/RpgInventoryItemDefinition.h"
 #include "SurvivalRpg/Inventory/RpgInventoryItemInstance.h"
 #include "SurvivalRpg/Inventory/RpgInventoryManagerComponent.h"
-#include "SurvivalRpg/Mvvm/Inventory/RpgInventoryViewModels.h"
+#include "SurvivalRpg/Mvvm/Inventory/RpgInventoryEntryViewModel.h"
+#include "SurvivalRpg/Mvvm/Inventory/RpgInventoryPanelViewModel.h"
 
 #include UE_INLINE_GENERATED_CPP_BY_NAME(RpgInventoryNestedContainerViewModel)
 

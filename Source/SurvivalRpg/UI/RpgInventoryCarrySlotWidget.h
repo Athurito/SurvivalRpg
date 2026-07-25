@@ -129,7 +129,7 @@ private:
 	void BindFocusedControllerInteraction();
 	void UnbindFocusedControllerInteraction();
 	void RefreshFocusedControllerInteractionTarget();
-	void ClearFocusedControllerInteractionTarget();
+	void ClearFocusedControllerInteractionTarget(bool bClearExternalPreviewState = true);
 
 	UPROPERTY(Transient)
 	TObjectPtr<URpgInventorySlotGroupViewModel> CarrySlotGroupViewModel = nullptr;

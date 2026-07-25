@@ -104,26 +104,25 @@ class SURVIVALRPG_API URpgEquipmentManagerComponent : public UPawnComponent
 public:
 	URpgEquipmentManagerComponent(const FObjectInitializer& ObjectInitializer = FObjectInitializer::Get());
 
-	UFUNCTION(BlueprintCallable, BlueprintAuthorityOnly, Category = "Equipment")
+	/** Native authority seam that equips the definition into its default slot. */
 	URpgEquipmentInstance* EquipItem(TSubclassOf<URpgEquipmentDefinition> EquipmentDefinition);
 
-	UFUNCTION(BlueprintCallable, BlueprintAuthorityOnly, Category = "Equipment")
+	/** Native authority seam that equips the definition into one explicit slot. */
 	URpgEquipmentInstance* EquipItemInSlot(TSubclassOf<URpgEquipmentDefinition> EquipmentDefinition, ERpgEquipmentSlot Slot);
 
 	/**
 	 * Creates runtime equipment with its inventory source assigned before actors or GAS grants are built.
 	 * Inventory/loadout reconciliation should use this path so ability SourceObject is never temporarily null.
 	 */
-	UFUNCTION(BlueprintCallable, BlueprintAuthorityOnly, Category = "Equipment")
 	URpgEquipmentInstance* EquipItemInSlotWithInstigator(
 		TSubclassOf<URpgEquipmentDefinition> EquipmentDefinition,
 		ERpgEquipmentSlot Slot,
 		UObject* SourceItemInstigator);
 
-	UFUNCTION(BlueprintCallable, BlueprintAuthorityOnly, Category = "Equipment")
+	/** Native authority seam that removes one exact runtime equipment instance. */
 	void UnequipItem(URpgEquipmentInstance* ItemInstance);
 
-	UFUNCTION(BlueprintCallable, BlueprintAuthorityOnly, Category = "Equipment")
+	/** Native authority seam that removes the runtime equipment occupying Slot. */
 	void UnequipItemInSlot(ERpgEquipmentSlot Slot);
 
 	UFUNCTION(BlueprintCallable, BlueprintPure, Category = "Equipment")

@@ -8,8 +8,11 @@
 #include "SurvivalRpg/Mvvm/Base/RpgBaseStorageViewModels.h"
 #include "SurvivalRpg/Mvvm/Crafting/RpgCraftingViewModels.h"
 #include "SurvivalRpg/Mvvm/Inventory/RpgInventoryNestedContainerViewModel.h"
-#include "SurvivalRpg/Mvvm/Inventory/RpgInventoryViewModels.h"
-#include "SurvivalRpg/Mvvm/Inventory/RpgPlayerInventoryViewModels.h"
+#include "SurvivalRpg/Mvvm/Inventory/RpgInventoryEntryViewModel.h"
+#include "SurvivalRpg/Mvvm/Inventory/RpgInventoryPanelViewModel.h"
+#include "SurvivalRpg/Mvvm/Inventory/RpgInventoryAddressSlotViewModel.h"
+#include "SurvivalRpg/Mvvm/Inventory/RpgInventorySlotGroupViewModel.h"
+#include "SurvivalRpg/Mvvm/Inventory/RpgPlayerInventoryViewModel.h"
 
 #include "Components/SceneComponent.h"
 #include "Engine/Engine.h"
