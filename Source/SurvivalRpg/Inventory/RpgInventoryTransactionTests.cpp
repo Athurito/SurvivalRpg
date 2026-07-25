@@ -1873,6 +1873,694 @@ bool FRpgInventoryLocalPlayerFeedbackRoutingTest::RunTest(
 }
 
 IMPLEMENT_SIMPLE_AUTOMATION_TEST(
+	FRpgInventoryUnauthorizedFeedbackRedactionTest,
+	"SurvivalRpg.Inventory.Transfer.AuthorizationFeedbackRedactionAndReplay",
+	EAutomationTestFlags::EditorContext |
+		EAutomationTestFlags::EngineFilter)
+
+bool FRpgInventoryUnauthorizedFeedbackRedactionTest::RunTest(
+	const FString& Parameters)
+{
+	using namespace RpgInventoryTransactionTests;
+	FScopedInventoryWorld TestWorld;
+	if (!InitializeTest(*this, TestWorld))
+	{
+		return false;
+	}
+
+	UWorld* World = TestWorld.GetTestWorld();
+	FActorSpawnParameters ControllerParameters;
+	ControllerParameters.Name = MakeUniqueObjectName(
+		World,
+		ARpgInventoryAutomationTestPlayerController::StaticClass(),
+		TEXT("AuthorizationFeedbackController"));
+	ControllerParameters.ObjectFlags = RF_Transient;
+	ControllerParameters.SpawnCollisionHandlingOverride =
+		ESpawnActorCollisionHandlingMethod::AlwaysSpawn;
+	ARpgInventoryAutomationTestPlayerController* Controller =
+		World->SpawnActor<ARpgInventoryAutomationTestPlayerController>(
+			ControllerParameters);
+
+	FActorSpawnParameters PlayerStateParameters;
+	PlayerStateParameters.Name = MakeUniqueObjectName(
+		World,
+		ARpgInventoryAutomationTestPlayerState::StaticClass(),
+		TEXT("AuthorizationFeedbackPlayerState"));
+	PlayerStateParameters.ObjectFlags = RF_Transient;
+	PlayerStateParameters.SpawnCollisionHandlingOverride =
+		ESpawnActorCollisionHandlingMethod::AlwaysSpawn;
+	ARpgInventoryAutomationTestPlayerState* PlayerState =
+		World->SpawnActor<ARpgInventoryAutomationTestPlayerState>(
+			PlayerStateParameters);
+
+	FActorSpawnParameters PawnParameters;
+	PawnParameters.Name = MakeUniqueObjectName(
+		World,
+		APawn::StaticClass(),
+		TEXT("AuthorizationFeedbackPawn"));
+	PawnParameters.ObjectFlags = RF_Transient;
+	PawnParameters.SpawnCollisionHandlingOverride =
+		ESpawnActorCollisionHandlingMethod::AlwaysSpawn;
+	APawn* ControllerPawn = World->SpawnActor<APawn>(PawnParameters);
+
+	FActorSpawnParameters ContainerParameters;
+	ContainerParameters.Name = MakeUniqueObjectName(
+		World,
+		ARpgInventoryContainerActor::StaticClass(),
+		TEXT("AuthorizationFeedbackContainer"));
+	ContainerParameters.ObjectFlags = RF_Transient;
+	ContainerParameters.SpawnCollisionHandlingOverride =
+		ESpawnActorCollisionHandlingMethod::AlwaysSpawn;
+	ARpgInventoryContainerActor* Container =
+		World->SpawnActor<ARpgInventoryContainerActor>(
+			ContainerParameters);
+
+	if (!TestNotNull(TEXT("The authorization controller exists"), Controller) ||
+		!TestNotNull(TEXT("The authorization player state exists"), PlayerState) ||
+		!TestNotNull(TEXT("The authorization pawn exists"), ControllerPawn) ||
+		!TestNotNull(TEXT("The authorization container exists"), Container))
+	{
+		return false;
+	}
+
+	Controller->SetPlayerState(PlayerState);
+	PlayerState->SetOwner(Controller);
+	Controller->Possess(ControllerPawn);
+	ControllerPawn->SetActorLocation(FVector::ZeroVector);
+	Container->SetActorLocation(FVector::ZeroVector);
+
+	URpgInventoryUiActionComponent* UiActions =
+		Controller->GetInventoryUiActionComponent();
+	URpgInventoryManagerComponent* PlayerInventory =
+		PlayerState->GetInventoryManagerComponent();
+	URpgInventoryManagerComponent* ContainerInventory =
+		Container->GetInventoryManager();
+	if (!TestNotNull(TEXT("The authorization action gateway exists"), UiActions) ||
+		!TestNotNull(TEXT("The player inventory exists"), PlayerInventory) ||
+		!TestNotNull(TEXT("The container inventory exists"), ContainerInventory))
+	{
+		return false;
+	}
+
+	const FRpgInventoryContainerHandle Pockets =
+		FRpgInventoryContainerHandle::MakeRoot(
+			URpgPlayerInventoryLayoutComponent::PocketsGroupId);
+	const FRpgInventoryContainerHandle ContainerRoot =
+		FRpgInventoryContainerHandle::MakeRoot(
+			ContainerInventory->GetDefaultContainerId());
+	URpgInventoryItemInstance* SourceItem =
+		ContainerInventory->AddItemDefinitionToPlacement(
+			URpgInventoryAutomationTestStackItemDefinition::StaticClass(),
+			3,
+			MakePlacement(ContainerRoot, 0, 0));
+	if (!TestNotNull(TEXT("The container source item exists"), SourceItem) ||
+		!TestTrue(
+			TEXT("The nearby container is initially authorized"),
+			UiActions->CanAccessInventory(ContainerInventory)))
+	{
+		return false;
+	}
+
+	TArray<FRpgInventoryActionFeedbackMessage> FeedbackMessages;
+	UGameplayMessageSubsystem& MessageSubsystem =
+		UGameplayMessageSubsystem::Get(World);
+	const FGameplayMessageListenerHandle ListenerHandle =
+		MessageSubsystem.RegisterListener<
+			FRpgInventoryActionFeedbackMessage>(
+			RpgGameplayTags::Rpg_Inventory_Message_ActionFeedback,
+			[&FeedbackMessages](
+				FGameplayTag,
+				const FRpgInventoryActionFeedbackMessage& Message)
+			{
+				FeedbackMessages.Add(Message);
+			});
+
+	const FRpgInventoryTransferIntent AuthorizedIntent =
+		MakeExactTransferIntent(
+			ContainerInventory,
+			SourceItem->GetItemId(),
+			1,
+			MakePlacement(Pockets, 0, 0));
+	const int32 AuthorizedFeedbackIndex = FeedbackMessages.Num();
+	UiActions->RequestTransferInventoryItem(
+		ContainerInventory,
+		PlayerInventory,
+		AuthorizedIntent);
+	TestEqual(
+		TEXT("The authorized transfer emits one result"),
+		FeedbackMessages.Num(),
+		AuthorizedFeedbackIndex + 1);
+	if (FeedbackMessages.IsValidIndex(AuthorizedFeedbackIndex))
+	{
+		const FRpgInventoryActionFeedbackMessage& Feedback =
+			FeedbackMessages[AuthorizedFeedbackIndex];
+		TestEqual(
+			TEXT("The nearby transfer succeeds"),
+			Feedback.Result,
+			ERpgInventoryActionFeedbackResult::Success);
+		TestEqual(
+			TEXT("Authorized feedback may retain its live source item context"),
+			Feedback.Item.Get(),
+			SourceItem);
+	}
+
+	Container->SetActorLocation(FVector(10000.0, 0.0, 0.0));
+	TestFalse(
+		TEXT("Moving the container out of range revokes access"),
+		UiActions->CanAccessInventory(ContainerInventory));
+	const FString SourceBeforeDeniedRequests =
+		MakeStrictInventorySignature(ContainerInventory);
+	const FString TargetBeforeDeniedRequests =
+		MakeStrictInventorySignature(PlayerInventory);
+
+	const int32 RevokedReplayIndex = FeedbackMessages.Num();
+	UiActions->RequestTransferInventoryItem(
+		ContainerInventory,
+		PlayerInventory,
+		AuthorizedIntent);
+	TestEqual(
+		TEXT("A replay after access revocation emits one denial"),
+		FeedbackMessages.Num(),
+		RevokedReplayIndex + 1);
+	if (FeedbackMessages.IsValidIndex(RevokedReplayIndex))
+	{
+		const FRpgInventoryActionFeedbackMessage& Feedback =
+			FeedbackMessages[RevokedReplayIndex];
+		TestEqual(
+			TEXT("Current access is revalidated before replaying transfer feedback"),
+			Feedback.Result,
+			ERpgInventoryActionFeedbackResult::NoAccess);
+		TestNull(
+			TEXT("A revoked replay cannot expose its previously authorized item"),
+			Feedback.Item.Get());
+		TestEqual(
+			TEXT("A revoked replay keeps stable ItemId correlation"),
+			Feedback.ItemId,
+			AuthorizedIntent.ItemId);
+	}
+
+	FRpgInventoryEntryView CurrentSourceEntry;
+	if (!TestTrue(
+			TEXT("The remaining foreign source entry is addressable by the server"),
+			GetEntryView(
+				ContainerInventory,
+				SourceItem->GetItemId(),
+				CurrentSourceEntry)))
+	{
+		MessageSubsystem.UnregisterListener(ListenerHandle);
+		return false;
+	}
+
+	FRpgInventoryMoveIntent DeniedMove;
+	DeniedMove.EnsureRequestId();
+	DeniedMove.ItemId = CurrentSourceEntry.ItemId;
+	DeniedMove.ExpectedEntryId = CurrentSourceEntry.EntryId;
+	DeniedMove.ExpectedSourcePlacement = CurrentSourceEntry.Placement;
+	DeniedMove.ExpectedQuantity = CurrentSourceEntry.StackCount;
+	DeniedMove.TargetPlacement = MakePlacement(ContainerRoot, 1, 0);
+	const int32 DeniedMoveIndex = FeedbackMessages.Num();
+	UiActions->RequestMoveInventoryItem(
+		ContainerInventory,
+		DeniedMove);
+	TestEqual(
+		TEXT("An unauthorized move emits one denial"),
+		FeedbackMessages.Num(),
+		DeniedMoveIndex + 1);
+	if (FeedbackMessages.IsValidIndex(DeniedMoveIndex))
+	{
+		const FRpgInventoryActionFeedbackMessage& Feedback =
+			FeedbackMessages[DeniedMoveIndex];
+		TestEqual(
+			TEXT("The foreign move is rejected as NoAccess"),
+			Feedback.Result,
+			ERpgInventoryActionFeedbackResult::NoAccess);
+		TestNull(
+			TEXT("Unauthorized move feedback cannot expose the foreign item"),
+			Feedback.Item.Get());
+		TestEqual(
+			TEXT("Unauthorized move feedback keeps stable ItemId correlation"),
+			Feedback.ItemId,
+			DeniedMove.ItemId);
+	}
+
+	FRpgInventoryTransferIntent DeniedTransfer =
+		MakeExactTransferIntent(
+			ContainerInventory,
+			SourceItem->GetItemId(),
+			1,
+			MakePlacement(Pockets, 1, 0));
+	const int32 DeniedTransferIndex = FeedbackMessages.Num();
+	UiActions->RequestTransferInventoryItem(
+		ContainerInventory,
+		PlayerInventory,
+		DeniedTransfer);
+	TestEqual(
+		TEXT("An unauthorized exact transfer emits one denial"),
+		FeedbackMessages.Num(),
+		DeniedTransferIndex + 1);
+	if (FeedbackMessages.IsValidIndex(DeniedTransferIndex))
+	{
+		const FRpgInventoryActionFeedbackMessage& Feedback =
+			FeedbackMessages[DeniedTransferIndex];
+		TestEqual(
+			TEXT("The foreign exact transfer is rejected as NoAccess"),
+			Feedback.Result,
+			ERpgInventoryActionFeedbackResult::NoAccess);
+		TestNull(
+			TEXT("Unauthorized transfer feedback cannot expose the foreign item"),
+			Feedback.Item.Get());
+		TestEqual(
+			TEXT("Unauthorized transfer feedback keeps stable ItemId correlation"),
+			Feedback.ItemId,
+			DeniedTransfer.ItemId);
+	}
+
+	Container->SetActorLocation(FVector::ZeroVector);
+	TestTrue(
+		TEXT("Returning the container restores access"),
+		UiActions->CanAccessInventory(ContainerInventory));
+	const int32 DeniedReplayIndex = FeedbackMessages.Num();
+	UiActions->RequestTransferInventoryItem(
+		ContainerInventory,
+		PlayerInventory,
+		DeniedTransfer);
+	TestEqual(
+		TEXT("The cached denial replays exactly once"),
+		FeedbackMessages.Num(),
+		DeniedReplayIndex + 1);
+	if (FeedbackMessages.IsValidIndex(DeniedReplayIndex))
+	{
+		const FRpgInventoryActionFeedbackMessage& Feedback =
+			FeedbackMessages[DeniedReplayIndex];
+		TestEqual(
+			TEXT("The identical request keeps its original NoAccess result"),
+			Feedback.Result,
+			ERpgInventoryActionFeedbackResult::NoAccess);
+		TestNull(
+			TEXT("The cached denial never replays a foreign item pointer"),
+			Feedback.Item.Get());
+		TestEqual(
+			TEXT("The cached denial retains stable ItemId correlation"),
+			Feedback.ItemId,
+			DeniedTransfer.ItemId);
+	}
+
+	TestEqual(
+		TEXT("Denied requests preserve the foreign source graph"),
+		MakeStrictInventorySignature(ContainerInventory),
+		SourceBeforeDeniedRequests);
+	TestEqual(
+		TEXT("Denied requests preserve the player target graph"),
+		MakeStrictInventorySignature(PlayerInventory),
+		TargetBeforeDeniedRequests);
+
+	auto VerifyRevokedReplayStaysRedacted =
+		[this, Container, ContainerInventory, PlayerInventory, UiActions,
+			&FeedbackMessages](
+			const TCHAR* Context,
+			const FGuid& RequestId,
+			const FRpgInventoryItemId& ItemId,
+			auto&& ReplayRequest)
+		{
+			const FString ForeignSignatureBeforeReplay =
+				MakeStrictInventorySignature(ContainerInventory);
+			const FString PlayerSignatureBeforeReplay =
+				MakeStrictInventorySignature(PlayerInventory);
+			Container->SetActorLocation(FVector(10000.0, 0.0, 0.0));
+			TestFalse(
+				*FString::Printf(
+					TEXT("%s access is revoked"),
+					Context),
+				UiActions->CanAccessInventory(ContainerInventory));
+
+			const int32 RevokedIndex = FeedbackMessages.Num();
+			ReplayRequest();
+			TestEqual(
+				*FString::Printf(
+					TEXT("%s revoked replay emits exactly one result"),
+					Context),
+				FeedbackMessages.Num(),
+				RevokedIndex + 1);
+			if (FeedbackMessages.IsValidIndex(RevokedIndex))
+			{
+				const FRpgInventoryActionFeedbackMessage& Feedback =
+					FeedbackMessages[RevokedIndex];
+				TestEqual(
+					*FString::Printf(
+						TEXT("%s replay revalidates current access"),
+						Context),
+					Feedback.Result,
+					ERpgInventoryActionFeedbackResult::NoAccess);
+				TestNull(
+					*FString::Printf(
+						TEXT("%s revoked replay redacts its item pointer"),
+						Context),
+					Feedback.Item.Get());
+				TestEqual(
+					*FString::Printf(
+						TEXT("%s revoked replay retains ItemId"),
+						Context),
+					Feedback.ItemId,
+					ItemId);
+				TestEqual(
+					*FString::Printf(
+						TEXT("%s revoked replay retains RequestId"),
+						Context),
+					Feedback.RequestId,
+					RequestId);
+			}
+
+			Container->SetActorLocation(FVector::ZeroVector);
+			TestTrue(
+				*FString::Printf(
+					TEXT("%s access is restored"),
+					Context),
+				UiActions->CanAccessInventory(ContainerInventory));
+			const int32 RestoredIndex = FeedbackMessages.Num();
+			ReplayRequest();
+			TestEqual(
+				*FString::Printf(
+					TEXT("%s restored replay emits exactly one result"),
+					Context),
+				FeedbackMessages.Num(),
+				RestoredIndex + 1);
+			if (FeedbackMessages.IsValidIndex(RestoredIndex))
+			{
+				const FRpgInventoryActionFeedbackMessage& Feedback =
+					FeedbackMessages[RestoredIndex];
+				TestEqual(
+					*FString::Printf(
+						TEXT("%s restored replay keeps cached NoAccess"),
+						Context),
+					Feedback.Result,
+					ERpgInventoryActionFeedbackResult::NoAccess);
+				TestNull(
+					*FString::Printf(
+						TEXT("%s cached denial remains redacted"),
+						Context),
+					Feedback.Item.Get());
+				TestEqual(
+					*FString::Printf(
+						TEXT("%s cached denial retains ItemId"),
+						Context),
+					Feedback.ItemId,
+					ItemId);
+			}
+
+			TestEqual(
+				*FString::Printf(
+					TEXT("%s revoked and restored replays preserve the foreign graph"),
+					Context),
+				MakeStrictInventorySignature(ContainerInventory),
+				ForeignSignatureBeforeReplay);
+			TestEqual(
+				*FString::Printf(
+					TEXT("%s revoked and restored replays preserve the player graph"),
+					Context),
+				MakeStrictInventorySignature(PlayerInventory),
+				PlayerSignatureBeforeReplay);
+		};
+
+	URpgInventoryItemInstance* SplitItem =
+		ContainerInventory->AddItemDefinitionToPlacement(
+			URpgInventoryAutomationTestStackItemDefinition::StaticClass(),
+			4,
+			MakePlacement(ContainerRoot, 2, 0));
+	URpgInventoryItemInstance* SplitBlocker =
+		ContainerInventory->AddItemDefinitionToPlacement(
+			URpgInventoryAutomationTestUnitItemDefinition::StaticClass(),
+			1,
+			MakePlacement(ContainerRoot, 3, 0));
+	FRpgInventoryEntryView SplitEntry;
+	if (!TestNotNull(TEXT("The split replay item exists"), SplitItem) ||
+		!TestNotNull(TEXT("The split replay blocker exists"), SplitBlocker) ||
+		!TestTrue(
+			TEXT("The split replay item has an exact entry snapshot"),
+			GetEntryView(
+				ContainerInventory,
+				SplitItem ? SplitItem->GetItemId() : FRpgInventoryItemId(),
+				SplitEntry)))
+	{
+		MessageSubsystem.UnregisterListener(ListenerHandle);
+		return false;
+	}
+
+	FRpgInventorySplitRequest SplitRequest;
+	SplitRequest.RequestId = FGuid::NewGuid();
+	SplitRequest.ItemId = SplitEntry.ItemId;
+	SplitRequest.ExpectedEntryId = SplitEntry.EntryId;
+	SplitRequest.ExpectedSourcePlacement = SplitEntry.Placement;
+	SplitRequest.ExpectedSourceQuantity = SplitEntry.StackCount;
+	SplitRequest.SplitCount = 1;
+	SplitRequest.TargetPlacement = MakePlacement(ContainerRoot, 3, 0);
+	const int32 AuthorizedSplitIndex = FeedbackMessages.Num();
+	UiActions->RequestSplitItemStackById(ContainerInventory, SplitRequest);
+	TestEqual(
+		TEXT("The authorized split attempt emits one result"),
+		FeedbackMessages.Num(),
+		AuthorizedSplitIndex + 1);
+	if (FeedbackMessages.IsValidIndex(AuthorizedSplitIndex))
+	{
+		const FRpgInventoryActionFeedbackMessage& Feedback =
+			FeedbackMessages[AuthorizedSplitIndex];
+		TestEqual(
+			TEXT("The blocked authorized split reports InventoryFull"),
+			Feedback.Result,
+			ERpgInventoryActionFeedbackResult::InventoryFull);
+		TestEqual(
+			TEXT("Authorized split feedback may retain its item context"),
+			Feedback.Item.Get(),
+			SplitItem);
+	}
+	VerifyRevokedReplayStaysRedacted(
+		TEXT("Split"),
+		SplitRequest.RequestId,
+		SplitRequest.ItemId,
+		[UiActions, ContainerInventory, SplitRequest]()
+		{
+			UiActions->RequestSplitItemStackById(
+				ContainerInventory,
+				SplitRequest);
+		});
+
+	URpgInventoryItemInstance* EquipmentItem =
+		ContainerInventory->AddItemDefinitionToPlacement(
+			URpgInventoryAutomationTestUnitItemDefinition::StaticClass(),
+			1,
+			MakePlacement(ContainerRoot, 4, 0));
+	if (!TestNotNull(
+			TEXT("The equipment replay item exists"),
+			EquipmentItem))
+	{
+		MessageSubsystem.UnregisterListener(ListenerHandle);
+		return false;
+	}
+	const FRpgInventoryEquipmentIntent EquipmentIntent =
+		MakeEquipmentIntent(
+			ContainerInventory,
+			EquipmentItem,
+			ERpgInventoryEquipmentIntentOperation::
+				EquipDefaultAndActivate);
+	const int32 AuthorizedEquipmentIndex = FeedbackMessages.Num();
+	UiActions->RequestApplyInventoryEquipmentIntent(
+		ContainerInventory,
+		EquipmentIntent);
+	TestEqual(
+		TEXT("The authorized foreign equipment intent emits one result"),
+		FeedbackMessages.Num(),
+		AuthorizedEquipmentIndex + 1);
+	if (FeedbackMessages.IsValidIndex(AuthorizedEquipmentIndex))
+	{
+		const FRpgInventoryActionFeedbackMessage& Feedback =
+			FeedbackMessages[AuthorizedEquipmentIndex];
+		TestEqual(
+			TEXT("The authorized foreign intent reports WrongInventory"),
+			Feedback.Result,
+			ERpgInventoryActionFeedbackResult::WrongInventory);
+		TestEqual(
+			TEXT("Authorized equipment feedback may retain item context"),
+			Feedback.Item.Get(),
+			EquipmentItem);
+	}
+	VerifyRevokedReplayStaysRedacted(
+		TEXT("Equipment"),
+		EquipmentIntent.RequestId,
+		EquipmentIntent.ItemId,
+		[UiActions, ContainerInventory, EquipmentIntent]()
+		{
+			UiActions->RequestApplyInventoryEquipmentIntent(
+				ContainerInventory,
+				EquipmentIntent);
+		});
+
+	URpgInventoryItemInstance* DropItem =
+		ContainerInventory->AddItemDefinitionToPlacement(
+			URpgInventoryAutomationTestNoDropItemDefinition::StaticClass(),
+			1,
+			MakePlacement(ContainerRoot, 5, 0));
+	FRpgInventoryEntryView DropEntry;
+	if (!TestNotNull(TEXT("The manual-drop replay item exists"), DropItem) ||
+		!TestTrue(
+			TEXT("The manual-drop replay item has an exact entry snapshot"),
+			GetEntryView(
+				ContainerInventory,
+				DropItem ? DropItem->GetItemId() : FRpgInventoryItemId(),
+				DropEntry)))
+	{
+		MessageSubsystem.UnregisterListener(ListenerHandle);
+		return false;
+	}
+	FRpgInventoryManualDropRequest DropRequest;
+	DropRequest.RequestId = FGuid::NewGuid();
+	DropRequest.EntryId = DropEntry.EntryId;
+	DropRequest.ItemId = DropEntry.ItemId;
+	DropRequest.ExpectedSourcePlacement = DropEntry.Placement;
+	DropRequest.ExpectedSourceQuantity = DropEntry.StackCount;
+	DropRequest.StackCount = 1;
+	DropRequest.bConfirmed = true;
+	const int32 AuthorizedDropIndex = FeedbackMessages.Num();
+	UiActions->RequestDropInventoryItemById(ContainerInventory, DropRequest);
+	TestEqual(
+		TEXT("The authorized manual-drop attempt emits one result"),
+		FeedbackMessages.Num(),
+		AuthorizedDropIndex + 1);
+	if (FeedbackMessages.IsValidIndex(AuthorizedDropIndex))
+	{
+		const FRpgInventoryActionFeedbackMessage& Feedback =
+			FeedbackMessages[AuthorizedDropIndex];
+		TestEqual(
+			TEXT("The no-drop item reports CannotDrop"),
+			Feedback.Result,
+			ERpgInventoryActionFeedbackResult::CannotDrop);
+		TestEqual(
+			TEXT("Authorized drop feedback may retain item context"),
+			Feedback.Item.Get(),
+			DropItem);
+	}
+	VerifyRevokedReplayStaysRedacted(
+		TEXT("Manual drop"),
+		DropRequest.RequestId,
+		DropRequest.ItemId,
+		[UiActions, ContainerInventory, DropRequest]()
+		{
+			UiActions->RequestDropInventoryItemById(
+				ContainerInventory,
+				DropRequest);
+		});
+
+	URpgInventoryItemInstance* ForeignQuickItem =
+		ContainerInventory->AddItemDefinitionToPlacement(
+			URpgInventoryAutomationTestStackItemDefinition::StaticClass(),
+			3,
+			MakePlacement(ContainerRoot, 6, 0));
+	if (!TestNotNull(
+			TEXT("The foreign quick-transfer replay item exists"),
+			ForeignQuickItem))
+	{
+		MessageSubsystem.UnregisterListener(ListenerHandle);
+		return false;
+	}
+	FRpgInventoryQuickTransferRequest ForeignQuickRequest =
+		MakeQuickTransferRequest(
+			ContainerInventory,
+			ForeignQuickItem->GetItemId(),
+			1);
+	ForeignQuickRequest.PreferredTargetContainers.Add(Pockets);
+	const int32 AuthorizedForeignQuickIndex = FeedbackMessages.Num();
+	UiActions->RequestQuickTransferItem(
+		ContainerInventory,
+		PlayerInventory,
+		ForeignQuickRequest);
+	TestEqual(
+		TEXT("The authorized source-side quick transfer emits one result"),
+		FeedbackMessages.Num(),
+		AuthorizedForeignQuickIndex + 1);
+	if (FeedbackMessages.IsValidIndex(AuthorizedForeignQuickIndex))
+	{
+		const FRpgInventoryActionFeedbackMessage& Feedback =
+			FeedbackMessages[AuthorizedForeignQuickIndex];
+		TestEqual(
+			TEXT("The source-side quick transfer succeeds"),
+			Feedback.Result,
+			ERpgInventoryActionFeedbackResult::Success);
+		TestEqual(
+			TEXT("The partial quick transfer retains source item context"),
+			Feedback.Item.Get(),
+			ForeignQuickItem);
+	}
+	VerifyRevokedReplayStaysRedacted(
+		TEXT("Quick transfer source"),
+		ForeignQuickRequest.RequestId,
+		ForeignQuickRequest.ItemId,
+		[UiActions, ContainerInventory, PlayerInventory,
+			ForeignQuickRequest]()
+		{
+			UiActions->RequestQuickTransferItem(
+				ContainerInventory,
+				PlayerInventory,
+				ForeignQuickRequest);
+		});
+
+	URpgInventoryItemInstance* PlayerQuickItem =
+		PlayerInventory->AddItemDefinitionToPlacement(
+			URpgInventoryAutomationTestStackItemDefinition::StaticClass(),
+			3,
+			MakePlacement(Pockets, 2, 0));
+	if (!TestNotNull(
+			TEXT("The player quick-transfer replay item exists"),
+			PlayerQuickItem))
+	{
+		MessageSubsystem.UnregisterListener(ListenerHandle);
+		return false;
+	}
+	FRpgInventoryQuickTransferRequest PlayerQuickRequest =
+		MakeQuickTransferRequest(
+			PlayerInventory,
+			PlayerQuickItem->GetItemId(),
+			1);
+	PlayerQuickRequest.PreferredTargetContainers.Add(ContainerRoot);
+	const int32 AuthorizedPlayerQuickIndex = FeedbackMessages.Num();
+	UiActions->RequestQuickTransferItem(
+		PlayerInventory,
+		ContainerInventory,
+		PlayerQuickRequest);
+	TestEqual(
+		TEXT("The authorized target-side quick transfer emits one result"),
+		FeedbackMessages.Num(),
+		AuthorizedPlayerQuickIndex + 1);
+	if (FeedbackMessages.IsValidIndex(AuthorizedPlayerQuickIndex))
+	{
+		const FRpgInventoryActionFeedbackMessage& Feedback =
+			FeedbackMessages[AuthorizedPlayerQuickIndex];
+		TestEqual(
+			TEXT("The target-side quick transfer succeeds"),
+			Feedback.Result,
+			ERpgInventoryActionFeedbackResult::Success);
+		TestEqual(
+			TEXT("The partial player transfer retains source item context"),
+			Feedback.Item.Get(),
+			PlayerQuickItem);
+	}
+	TestTrue(
+		TEXT("The target-loss fixture keeps its player source accessible"),
+		UiActions->CanAccessInventory(PlayerInventory));
+	VerifyRevokedReplayStaysRedacted(
+		TEXT("Quick transfer target"),
+		PlayerQuickRequest.RequestId,
+		PlayerQuickRequest.ItemId,
+		[UiActions, PlayerInventory, ContainerInventory,
+			PlayerQuickRequest]()
+		{
+			UiActions->RequestQuickTransferItem(
+				PlayerInventory,
+				ContainerInventory,
+				PlayerQuickRequest);
+		});
+	MessageSubsystem.UnregisterListener(ListenerHandle);
+	return true;
+}
+
+IMPLEMENT_SIMPLE_AUTOMATION_TEST(
 	FRpgInventoryManualDropConfirmationAuthorityTest,
 	"SurvivalRpg.Inventory.Drop.ConfirmationAuthorityAndReplay",
 	EAutomationTestFlags::EditorContext | EAutomationTestFlags::EngineFilter)
@@ -8423,9 +9111,11 @@ bool FRpgInventoryBlueprintMutationSurfaceContractTest::RunTest(
 				*FString::Printf(TEXT("%s is reflected as a canonical intent"), *FunctionName.ToString()),
 				Function))
 		{
+#if WITH_EDITOR
 			TestFalse(
 				*FString::Printf(TEXT("%s is not deprecated"), *FunctionName.ToString()),
 				Function->HasMetaData(TEXT("DeprecatedFunction")));
+#endif
 		}
 	}
 
@@ -8485,9 +9175,11 @@ bool FRpgInventoryBlueprintMutationSurfaceContractTest::RunTest(
 				*FString::Printf(TEXT("%s is reflected as the typed UI gateway"), *FunctionName.ToString()),
 				Function))
 		{
+#if WITH_EDITOR
 			TestFalse(
 				*FString::Printf(TEXT("%s is not deprecated"), *FunctionName.ToString()),
 				Function->HasMetaData(TEXT("DeprecatedFunction")));
+#endif
 			TestTrue(
 				*FString::Printf(TEXT("%s is an owning-client Server RPC"), *FunctionName.ToString()),
 				Function->HasAnyFunctionFlags(FUNC_NetServer));
@@ -8632,11 +9324,13 @@ bool FRpgInventoryBlueprintMutationSurfaceContractTest::RunTest(
 					TEXT("%s is an owning-client Server RPC"),
 					*FunctionName.ToString()),
 				Function->HasAnyFunctionFlags(FUNC_NetServer));
+#if WITH_EDITOR
 			TestFalse(
 				*FString::Printf(
 					TEXT("%s is canonical rather than deprecated"),
 					*FunctionName.ToString()),
 				Function->HasMetaData(TEXT("DeprecatedFunction")));
+#endif
 		}
 	}
 	return true;

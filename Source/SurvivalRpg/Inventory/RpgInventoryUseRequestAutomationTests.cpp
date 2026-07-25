@@ -3,6 +3,7 @@
 #if WITH_DEV_AUTOMATION_TESTS
 
 #include "RpgInventoryAutomationTestTypes.h"
+#include "RpgInventoryContainerActor.h"
 #include "RpgInventoryItemInstance.h"
 #include "RpgInventoryManagerComponent.h"
 #include "RpgInventoryUiActionComponent.h"
@@ -431,6 +432,215 @@ bool FRpgInventoryUseRequestExactlyOnceEndToEndTest::RunTest(
 		TEXT("The completed replay performs no inventory mutation"),
 		MutationEpochAfterCompletedRetry,
 		MutationEpochBeforeCompletedRetry);
+	return true;
+}
+
+IMPLEMENT_SIMPLE_AUTOMATION_TEST(
+	FRpgInventoryUseRequestAuthorizationReplayRedactionTest,
+	"SurvivalRpg.Inventory.UseRequest.AuthorizationReplayRedaction",
+	EAutomationTestFlags::EditorContext |
+		EAutomationTestFlags::EngineFilter)
+
+bool FRpgInventoryUseRequestAuthorizationReplayRedactionTest::RunTest(
+	const FString& Parameters)
+{
+	(void)Parameters;
+	using namespace RpgInventoryUseRequestAutomationTests;
+
+	FScopedUseRequestWorld TestWorld;
+	if (!TestTrue(
+			TEXT("An isolated use-authorization world exists"),
+			TestWorld.IsValid()))
+	{
+		return false;
+	}
+
+	UWorld* World = TestWorld.GetWorld();
+	FActorSpawnParameters ControllerParameters;
+	ControllerParameters.Name = MakeUniqueObjectName(
+		World,
+		ARpgInventoryAutomationTestPlayerController::StaticClass(),
+		TEXT("UseAuthorizationController"));
+	ControllerParameters.ObjectFlags = RF_Transient;
+	ControllerParameters.SpawnCollisionHandlingOverride =
+		ESpawnActorCollisionHandlingMethod::AlwaysSpawn;
+	ARpgInventoryAutomationTestPlayerController* Controller =
+		World->SpawnActor<ARpgInventoryAutomationTestPlayerController>(
+			ControllerParameters);
+
+	FActorSpawnParameters PlayerStateParameters;
+	PlayerStateParameters.Name = MakeUniqueObjectName(
+		World,
+		ARpgInventoryAutomationTestPlayerState::StaticClass(),
+		TEXT("UseAuthorizationPlayerState"));
+	PlayerStateParameters.ObjectFlags = RF_Transient;
+	PlayerStateParameters.SpawnCollisionHandlingOverride =
+		ESpawnActorCollisionHandlingMethod::AlwaysSpawn;
+	ARpgInventoryAutomationTestPlayerState* PlayerState =
+		World->SpawnActor<ARpgInventoryAutomationTestPlayerState>(
+			PlayerStateParameters);
+
+	FActorSpawnParameters PawnParameters;
+	PawnParameters.Name = MakeUniqueObjectName(
+		World,
+		APawn::StaticClass(),
+		TEXT("UseAuthorizationPawn"));
+	PawnParameters.ObjectFlags = RF_Transient;
+	PawnParameters.SpawnCollisionHandlingOverride =
+		ESpawnActorCollisionHandlingMethod::AlwaysSpawn;
+	APawn* Pawn = World->SpawnActor<APawn>(PawnParameters);
+
+	FActorSpawnParameters ContainerParameters;
+	ContainerParameters.Name = MakeUniqueObjectName(
+		World,
+		ARpgInventoryContainerActor::StaticClass(),
+		TEXT("UseAuthorizationContainer"));
+	ContainerParameters.ObjectFlags = RF_Transient;
+	ContainerParameters.SpawnCollisionHandlingOverride =
+		ESpawnActorCollisionHandlingMethod::AlwaysSpawn;
+	ARpgInventoryContainerActor* Container =
+		World->SpawnActor<ARpgInventoryContainerActor>(
+			ContainerParameters);
+	if (!TestNotNull(TEXT("The authorization controller exists"), Controller) ||
+		!TestNotNull(TEXT("The authorization player state exists"), PlayerState) ||
+		!TestNotNull(TEXT("The authorization pawn exists"), Pawn) ||
+		!TestNotNull(TEXT("The authorization container exists"), Container))
+	{
+		return false;
+	}
+
+	Controller->SetPlayerState(PlayerState);
+	PlayerState->SetOwner(Controller);
+	Controller->Possess(Pawn);
+	Pawn->SetActorLocation(FVector::ZeroVector);
+	Container->SetActorLocation(FVector::ZeroVector);
+
+	URpgInventoryUiActionComponent* ActionComponent =
+		Controller->GetInventoryUiActionComponent();
+	URpgInventoryManagerComponent* Inventory =
+		Container->GetInventoryManager();
+	if (!TestNotNull(TEXT("The action gateway exists"), ActionComponent) ||
+		!TestNotNull(TEXT("The foreign inventory exists"), Inventory) ||
+		!TestTrue(
+			TEXT("The nearby foreign inventory is initially accessible"),
+			ActionComponent->CanAccessInventory(Inventory)))
+	{
+		return false;
+	}
+
+	FRpgInventoryGridPlacement Placement;
+	Placement.SetContainerHandle(
+		FRpgInventoryContainerHandle::MakeRoot(
+			Inventory->GetDefaultContainerId()));
+	Placement.X = 0;
+	Placement.Y = 0;
+	URpgInventoryItemInstance* Item =
+		Inventory->AddItemDefinitionToPlacement(
+			URpgInventoryAutomationTestStackItemDefinition::StaticClass(),
+			2,
+			Placement);
+	if (!TestNotNull(TEXT("The foreign use-test item exists"), Item))
+	{
+		return false;
+	}
+
+	FRpgInventoryUseRequest Request;
+	Request.RequestId = FGuid::NewGuid();
+	Request.ItemId = Item->GetItemId();
+	Request.UseCount = 1;
+	const int32 RevisionBeforeRequests = Inventory->GetInventoryRevision();
+
+	TArray<FRpgInventoryActionFeedbackMessage> FeedbackMessages;
+	UGameplayMessageSubsystem& MessageSubsystem =
+		UGameplayMessageSubsystem::Get(World);
+	FGameplayMessageListenerHandle FeedbackHandle =
+		MessageSubsystem.RegisterListener<
+			FRpgInventoryActionFeedbackMessage>(
+			RpgGameplayTags::Rpg_Inventory_Message_ActionFeedback,
+			[&FeedbackMessages, &Request](
+				FGameplayTag,
+				const FRpgInventoryActionFeedbackMessage& Message)
+			{
+				if (Message.RequestId == Request.RequestId)
+				{
+					FeedbackMessages.Add(Message);
+				}
+			});
+
+	ActionComponent->RequestUseInventoryItemById(Inventory, Request);
+	TestEqual(
+		TEXT("The authorized request emits one result"),
+		FeedbackMessages.Num(),
+		1);
+	if (FeedbackMessages.IsValidIndex(0))
+	{
+		TestEqual(
+			TEXT("The configured item is not usable"),
+			FeedbackMessages[0].Result,
+			ERpgInventoryActionFeedbackResult::CannotUse);
+		TestEqual(
+			TEXT("Authorized feedback may include its owned item context"),
+			FeedbackMessages[0].Item.Get(),
+			Item);
+	}
+
+	Container->SetActorLocation(FVector(10000.0, 0.0, 0.0));
+	TestFalse(
+		TEXT("Moving the foreign inventory away revokes access"),
+		ActionComponent->CanAccessInventory(Inventory));
+	ActionComponent->RequestUseInventoryItemById(Inventory, Request);
+	TestEqual(
+		TEXT("The revoked retry emits one replay denial"),
+		FeedbackMessages.Num(),
+		2);
+	if (FeedbackMessages.IsValidIndex(1))
+	{
+		TestEqual(
+			TEXT("Use replay revalidates current access"),
+			FeedbackMessages[1].Result,
+			ERpgInventoryActionFeedbackResult::NoAccess);
+		TestNull(
+			TEXT("The revoked replay cannot expose its old item pointer"),
+			FeedbackMessages[1].Item.Get());
+		TestEqual(
+			TEXT("The revoked replay retains stable ItemId correlation"),
+			FeedbackMessages[1].ItemId,
+			Request.ItemId);
+	}
+
+	Container->SetActorLocation(FVector::ZeroVector);
+	TestTrue(
+		TEXT("Returning the foreign inventory restores access"),
+		ActionComponent->CanAccessInventory(Inventory));
+	ActionComponent->RequestUseInventoryItemById(Inventory, Request);
+	FeedbackHandle.Unregister();
+	TestEqual(
+		TEXT("The restored retry replays the cached denial once"),
+		FeedbackMessages.Num(),
+		3);
+	if (FeedbackMessages.IsValidIndex(2))
+	{
+		TestEqual(
+			TEXT("Restored access cannot revive the original use result"),
+			FeedbackMessages[2].Result,
+			ERpgInventoryActionFeedbackResult::NoAccess);
+		TestNull(
+			TEXT("The cached use denial remains pointer-redacted"),
+			FeedbackMessages[2].Item.Get());
+		TestEqual(
+			TEXT("The cached use denial retains stable ItemId correlation"),
+			FeedbackMessages[2].ItemId,
+			Request.ItemId);
+	}
+
+	TestEqual(
+		TEXT("Use replays do not mutate the foreign inventory"),
+		Inventory->GetInventoryRevision(),
+		RevisionBeforeRequests);
+	TestEqual(
+		TEXT("Use replays preserve the foreign stack"),
+		Inventory->GetItemStackCount(Item),
+		2);
 	return true;
 }
 

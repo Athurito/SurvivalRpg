@@ -61,7 +61,7 @@ void URpgInventoryCarrySlotWidget::ReleaseInventoryPresentation()
 void URpgInventoryCarrySlotWidget::SetCarrySlotGroupViewModel(
 	URpgInventorySlotGroupViewModel* InGroupViewModel)
 {
-	CarrySlotGroupViewModel = nullptr;
+	URpgInventorySlotGroupViewModel* CanonicalGroup = nullptr;
 	URpgInventoryAddressSlotViewModel* CanonicalAddress = nullptr;
 	if (InGroupViewModel &&
 		InGroupViewModel->IsCarryGroup() &&
@@ -89,13 +89,22 @@ void URpgInventoryCarrySlotWidget::SetCarrySlotGroupViewModel(
 					Address.X == 0 &&
 					Address.Y == 0)
 				{
-					CarrySlotGroupViewModel = InGroupViewModel;
+					CanonicalGroup = InGroupViewModel;
 					CanonicalAddress = Candidate;
 				}
 			}
 		}
 	}
 
+	if (CarrySlotGroupViewModel != CanonicalGroup ||
+		GetAddressSlotViewModel() != CanonicalAddress)
+	{
+		// The inherited presenter must compare the still-bound address against the shared session before this group
+		// loss/rebind replaces it. Its exact ownership check preserves a preview published by any peer presenter.
+		ClearOwnedAddressInteractionPreview();
+	}
+
+	CarrySlotGroupViewModel = CanonicalGroup;
 	SetAddressSlotViewModel(CanonicalAddress);
 }
 

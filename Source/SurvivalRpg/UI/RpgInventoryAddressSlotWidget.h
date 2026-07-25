@@ -145,6 +145,12 @@ protected:
 	 */
 	virtual void RefreshAddressSlotPresentation();
 
+	/**
+	 * Drops this presenter's local preview ownership and clears the shared target only when it still names this
+	 * exact address. Specialized address presenters call this before replacing their represented source.
+	 */
+	void ClearOwnedAddressInteractionPreview();
+
 	virtual void NativeDestruct() override;
 	virtual void NativeOnListItemObjectSet(UObject* ListItemObject) override;
 	virtual void NativeOnEntryReleased() override;

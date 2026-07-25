@@ -689,6 +689,17 @@ URpgInventoryUiActionComponent::FUseRequestAdmission
 				return Admission;
 			}
 
+			// A completed retry must revalidate the authorization that made
+			// its original item context safe to expose. Persist the redacted
+			// denial so restoring access cannot revive the old object pointer.
+			if (bHasInventory && !CanAccessInventory(Inventory))
+			{
+				CachedResult->Result =
+					ERpgInventoryActionFeedbackResult::NoAccess;
+				CachedResult->FeedbackItem.Reset();
+				CachedResult->FeedbackUseCount = Request.UseCount;
+			}
+
 			Admission.Disposition =
 				EUseRequestAdmissionDisposition::Replay;
 			Admission.Result = CachedResult->Result;
@@ -735,8 +746,12 @@ void URpgInventoryUiActionComponent::FinalizeUseRequest(
 		return;
 	}
 
+	URpgInventoryItemInstance* AuthorizedFeedbackItem =
+		Result == ERpgInventoryActionFeedbackResult::NoAccess
+			? nullptr
+			: FeedbackItem;
 	PendingResult->Result = Result;
-	PendingResult->FeedbackItem = FeedbackItem;
+	PendingResult->FeedbackItem = AuthorizedFeedbackItem;
 	PendingResult->FeedbackUseCount = FeedbackUseCount;
 	PendingResult->bInFlight = false;
 
@@ -858,6 +873,17 @@ bool URpgInventoryUiActionComponent::TryReplayRecentSplitResult(
 		return true;
 	}
 
+	if (!CanAccessInventory(Inventory))
+	{
+		SendAndCacheSplitFeedback(
+			Inventory,
+			Request,
+			ERpgInventoryActionFeedbackResult::NoAccess,
+			nullptr,
+			Request.SplitCount);
+		return true;
+	}
+
 	URpgInventoryManagerComponent* CachedInventory =
 		CachedResult->Inventory.Get();
 	SendActionFeedback(
@@ -878,6 +904,10 @@ void URpgInventoryUiActionComponent::SendAndCacheSplitFeedback(
 	URpgInventoryItemInstance* Item,
 	int32 FeedbackStackCount)
 {
+	URpgInventoryItemInstance* AuthorizedFeedbackItem =
+		Result == ERpgInventoryActionFeedbackResult::NoAccess
+			? nullptr
+			: Item;
 	if (Request.RequestId.IsValid())
 	{
 		FRecentSplitRequestResult CachedResult;
@@ -888,7 +918,7 @@ void URpgInventoryUiActionComponent::SendAndCacheSplitFeedback(
 			: 0;
 		CachedResult.Request = Request;
 		CachedResult.Result = Result;
-		CachedResult.FeedbackItem = Item;
+		CachedResult.FeedbackItem = AuthorizedFeedbackItem;
 		CachedResult.FeedbackStackCount = FeedbackStackCount;
 		RecentSplitRequestResults.Add(
 			Request.RequestId,
@@ -911,7 +941,7 @@ void URpgInventoryUiActionComponent::SendAndCacheSplitFeedback(
 		RpgGameplayTags::Rpg_Inventory_Action_Split,
 		Result,
 		Inventory,
-		Item,
+		AuthorizedFeedbackItem,
 		FeedbackStackCount,
 		Request.RequestId,
 		Request.ItemId);
@@ -980,6 +1010,17 @@ bool URpgInventoryUiActionComponent::
 		return true;
 	}
 
+	if (!CanAccessInventory(Inventory))
+	{
+		SendAndCacheEquipmentIntentFeedback(
+			Inventory,
+			Intent,
+			ERpgInventoryActionFeedbackResult::NoAccess,
+			nullptr,
+			Intent.ExpectedQuantity);
+		return true;
+	}
+
 	URpgInventoryManagerComponent* CachedInventory =
 		CachedResult->Inventory.Get();
 	SendActionFeedback(
@@ -1002,6 +1043,10 @@ void URpgInventoryUiActionComponent::
 		URpgInventoryItemInstance* Item,
 		int32 FeedbackStackCount)
 {
+	URpgInventoryItemInstance* AuthorizedFeedbackItem =
+		Result == ERpgInventoryActionFeedbackResult::NoAccess
+			? nullptr
+			: Item;
 	if (Intent.RequestId.IsValid())
 	{
 		FRecentEquipmentIntentResult CachedResult;
@@ -1012,7 +1057,7 @@ void URpgInventoryUiActionComponent::
 			: 0;
 		CachedResult.Intent = Intent;
 		CachedResult.Result = Result;
-		CachedResult.FeedbackItem = Item;
+		CachedResult.FeedbackItem = AuthorizedFeedbackItem;
 		CachedResult.FeedbackStackCount = FeedbackStackCount;
 		RecentEquipmentIntentResults.Add(
 			Intent.RequestId,
@@ -1035,7 +1080,7 @@ void URpgInventoryUiActionComponent::
 		GetActionTagForEquipmentIntent(Intent.Operation),
 		Result,
 		Inventory,
-		Item,
+		AuthorizedFeedbackItem,
 		FeedbackStackCount,
 		Intent.RequestId,
 		Intent.ItemId);
@@ -1110,6 +1155,22 @@ bool URpgInventoryUiActionComponent::TryReplayRecentExactTransferResult(
 		return true;
 	}
 
+	// Replay must not outlive the authorization that made the original
+	// feedback item safe to expose. Replace the cached result with a redacted
+	// denial so a later access change cannot reveal the old item context.
+	if (!CanAccessInventory(SourceInventory) ||
+		!CanAccessInventory(TargetInventory))
+	{
+		SendAndCacheExactTransferFeedback(
+			SourceInventory,
+			TargetInventory,
+			Intent,
+			ERpgInventoryActionFeedbackResult::NoAccess,
+			nullptr,
+			Intent.Quantity);
+		return true;
+	}
+
 	URpgInventoryManagerComponent* CachedSource =
 		CachedResult->SourceInventory.Get();
 	SendActionFeedback(
@@ -1131,6 +1192,10 @@ void URpgInventoryUiActionComponent::SendAndCacheExactTransferFeedback(
 	URpgInventoryItemInstance* Item,
 	int32 FeedbackStackCount)
 {
+	URpgInventoryItemInstance* AuthorizedFeedbackItem =
+		Result == ERpgInventoryActionFeedbackResult::NoAccess
+			? nullptr
+			: Item;
 	if (Intent.RequestId.IsValid())
 	{
 		FRecentExactTransferResult CachedResult;
@@ -1146,7 +1211,7 @@ void URpgInventoryUiActionComponent::SendAndCacheExactTransferFeedback(
 			: 0;
 		CachedResult.Intent = Intent;
 		CachedResult.Result = Result;
-		CachedResult.FeedbackItem = Item;
+		CachedResult.FeedbackItem = AuthorizedFeedbackItem;
 		CachedResult.FeedbackStackCount = FeedbackStackCount;
 		RecentExactTransferResults.Add(
 			Intent.RequestId,
@@ -1169,7 +1234,7 @@ void URpgInventoryUiActionComponent::SendAndCacheExactTransferFeedback(
 		RpgGameplayTags::Rpg_Inventory_Action_Transfer,
 		Result,
 		SourceInventory,
-		Item,
+		AuthorizedFeedbackItem,
 		FeedbackStackCount,
 		Intent.RequestId,
 		Intent.ItemId);
@@ -1243,6 +1308,19 @@ bool URpgInventoryUiActionComponent::TryReplayRecentQuickTransferResult(
 		return true;
 	}
 
+	if (!CanAccessInventory(SourceInventory) ||
+		!CanAccessInventory(TargetInventory))
+	{
+		SendAndCacheQuickTransferFeedback(
+			SourceInventory,
+			TargetInventory,
+			Request,
+			ERpgInventoryActionFeedbackResult::NoAccess,
+			nullptr,
+			Request.StackCount);
+		return true;
+	}
+
 	URpgInventoryManagerComponent* CachedSource =
 		CachedResult->SourceInventory.Get();
 	SendActionFeedback(
@@ -1264,6 +1342,10 @@ void URpgInventoryUiActionComponent::SendAndCacheQuickTransferFeedback(
 	URpgInventoryItemInstance* Item,
 	int32 FeedbackStackCount)
 {
+	URpgInventoryItemInstance* AuthorizedFeedbackItem =
+		Result == ERpgInventoryActionFeedbackResult::NoAccess
+			? nullptr
+			: Item;
 	if (Request.RequestId.IsValid())
 	{
 		FRecentQuickTransferResult CachedResult;
@@ -1279,7 +1361,7 @@ void URpgInventoryUiActionComponent::SendAndCacheQuickTransferFeedback(
 			: 0;
 		CachedResult.Request = Request;
 		CachedResult.Result = Result;
-		CachedResult.FeedbackItem = Item;
+		CachedResult.FeedbackItem = AuthorizedFeedbackItem;
 		CachedResult.FeedbackStackCount = FeedbackStackCount;
 		RecentQuickTransferResults.Add(
 			Request.RequestId,
@@ -1302,7 +1384,7 @@ void URpgInventoryUiActionComponent::SendAndCacheQuickTransferFeedback(
 		RpgGameplayTags::Rpg_Inventory_Action_Transfer,
 		Result,
 		SourceInventory,
-		Item,
+		AuthorizedFeedbackItem,
 		FeedbackStackCount,
 		Request.RequestId,
 		Request.ItemId);
@@ -1372,6 +1454,23 @@ bool URpgInventoryUiActionComponent::TryReplayRecentManualDropResult(
 		return true;
 	}
 
+	URpgInventoryManagerComponent* CachedTargetInventory =
+		CachedResult->TargetInventory.Get();
+	// The target is a server-created drop result, not a client-selected
+	// inventory. Revalidate only the requested source; the target epoch above
+	// remains part of replay integrity without changing completed-result access.
+	if (!CanAccessInventory(Inventory))
+	{
+		SendAndCacheManualDropFeedback(
+			Inventory,
+			Request,
+			ERpgInventoryActionFeedbackResult::NoAccess,
+			nullptr,
+			Request.StackCount,
+			CachedTargetInventory);
+		return true;
+	}
+
 	URpgInventoryManagerComponent* CachedInventory =
 		CachedResult->Inventory.Get();
 	SendActionFeedback(
@@ -1393,6 +1492,10 @@ void URpgInventoryUiActionComponent::SendAndCacheManualDropFeedback(
 	int32 FeedbackStackCount,
 	URpgInventoryManagerComponent* TargetInventory)
 {
+	URpgInventoryItemInstance* AuthorizedFeedbackItem =
+		Result == ERpgInventoryActionFeedbackResult::NoAccess
+			? nullptr
+			: Item;
 	if (Request.RequestId.IsValid())
 	{
 		FRecentManualDropResult CachedResult;
@@ -1409,7 +1512,7 @@ void URpgInventoryUiActionComponent::SendAndCacheManualDropFeedback(
 			: 0;
 		CachedResult.Request = Request;
 		CachedResult.Result = Result;
-		CachedResult.FeedbackItem = Item;
+		CachedResult.FeedbackItem = AuthorizedFeedbackItem;
 		CachedResult.FeedbackStackCount = FeedbackStackCount;
 		RecentManualDropResults.Add(Request.RequestId, MoveTemp(CachedResult));
 		RecentManualDropOrder.Remove(Request.RequestId);
@@ -1428,7 +1531,7 @@ void URpgInventoryUiActionComponent::SendAndCacheManualDropFeedback(
 		RpgGameplayTags::Rpg_Inventory_Action_Drop,
 		Result,
 		Inventory,
-		Item,
+		AuthorizedFeedbackItem,
 		FeedbackStackCount,
 		Request.RequestId,
 		Request.ItemId);
@@ -1449,9 +1552,14 @@ void URpgInventoryUiActionComponent::SendActionFeedback(
 	Message.ActionTag = ActionTag;
 	Message.Result = Result;
 	Message.InventoryOwner = Inventory;
-	// Full transfers and merges can unregister the source subobject before this reliable RPC serializes. Stable ItemId
-	// remains authoritative; include the UObject only while it is still owned by the reported inventory.
-	Message.Item = Inventory && Item && Inventory->ContainsItemInstance(Item) ? Item : nullptr;
+	// Stable ItemId remains authoritative. A live object may cross the client
+	// boundary only while the current caller can still access its owning inventory.
+	Message.Item =
+		Result != ERpgInventoryActionFeedbackResult::NoAccess &&
+		Inventory && Item && CanAccessInventory(Inventory) &&
+		Inventory->ContainsItemInstance(Item)
+			? Item
+			: nullptr;
 	Message.StackCount = StackCount;
 
 	const_cast<URpgInventoryUiActionComponent*>(this)->ClientBroadcastInventoryActionFeedback(Message);

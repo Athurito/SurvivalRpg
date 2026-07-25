@@ -48,9 +48,11 @@ bool FRpgInventoryManagerPublicReflectionContractTest::RunTest(
 	TestTrue(
 		TEXT("The RPG inventory manager remains an actor component"),
 		ManagerClass->IsChildOf(UActorComponent::StaticClass()));
+#if WITH_EDITOR
 	TestTrue(
 		TEXT("The RPG inventory manager remains a BlueprintType"),
 		ManagerClass->GetBoolMetaData(TEXT("BlueprintType")));
+#endif
 	TestTrue(
 		TEXT("The RPG inventory manager replicates by default"),
 		ManagerCDO->GetIsReplicated());

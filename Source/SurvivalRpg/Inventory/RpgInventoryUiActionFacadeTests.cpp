@@ -410,17 +410,16 @@ bool FRpgInventoryUseRequestReplayCacheContractTest::RunTest(
 			URpgInventoryUiActionComponent::
 				EUseRequestAdmissionDisposition::Replay);
 	TestEqual(
-		TEXT("Replay preserves the finalized result"),
+		TEXT("An ownerless replay fails closed after access revalidation"),
 		CompletedRetry.Result,
-		ERpgInventoryActionFeedbackResult::Success);
+		ERpgInventoryActionFeedbackResult::NoAccess);
 	TestEqual(
-		TEXT("Replay preserves the finalized feedback quantity"),
+		TEXT("The redacted replay retains the requested feedback quantity"),
 		CompletedRetry.FeedbackUseCount,
-		1);
-	TestEqual(
-		TEXT("Replay preserves the originally authorized feedback item"),
-		CompletedRetry.FeedbackItem.Get(),
-		AuthorizedFeedbackItem);
+		Request.UseCount);
+	TestNull(
+		TEXT("Access revalidation redacts the previously cached item"),
+		CompletedRetry.FeedbackItem.Get());
 
 	FRpgInventoryUseRequest Collision = Request;
 	++Collision.UseCount;

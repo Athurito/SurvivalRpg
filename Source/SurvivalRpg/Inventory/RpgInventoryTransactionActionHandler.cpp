@@ -109,8 +109,21 @@ void FRpgInventoryTransactionActionHandler::MoveInventoryItem(
 	FRpgInventoryMoveIntent Intent)
 {
 	Intent.EnsureRequestId();
+	if (!Inventory || !CanAccessInventory(Inventory))
+	{
+		SendActionFeedback(
+			RpgGameplayTags::Rpg_Inventory_Action_Transfer,
+			ERpgInventoryActionFeedbackResult::NoAccess,
+			Inventory,
+			nullptr,
+			Intent.ExpectedQuantity,
+			Intent.RequestId,
+			Intent.ItemId);
+		return;
+	}
+
 	URpgInventoryItemInstance* Item =
-		Inventory ? Inventory->FindItemById(Intent.ItemId) : nullptr;
+		Inventory->FindItemById(Intent.ItemId);
 	FRpgInventoryEntryView SourceBeforeMove;
 	const bool bCommitsCurrentSourceSnapshot =
 		TryGetTransactionEntrySnapshot(
@@ -122,18 +135,6 @@ void FRpgInventoryTransactionActionHandler::MoveInventoryItem(
 			SourceBeforeMove.Placement,
 			Intent.ExpectedSourcePlacement) &&
 		SourceBeforeMove.StackCount == Intent.ExpectedQuantity;
-	if (!Inventory || !CanAccessInventory(Inventory))
-	{
-		SendActionFeedback(
-			RpgGameplayTags::Rpg_Inventory_Action_Transfer,
-			ERpgInventoryActionFeedbackResult::NoAccess,
-			Inventory,
-			Item,
-			Intent.ExpectedQuantity,
-			Intent.RequestId,
-			Intent.ItemId);
-		return;
-	}
 
 	const bool bPreservesEquipmentIdentity =
 		Inventory == FindPlayerInventory() &&
@@ -205,10 +206,6 @@ void FRpgInventoryTransactionActionHandler::TransferInventoryItem(
 			Intent.Quantity);
 		return;
 	}
-	URpgInventoryItemInstance* Item =
-		SourceInventory
-			? SourceInventory->FindItemById(Intent.ItemId)
-			: nullptr;
 	if (!SourceInventory || !TargetInventory ||
 		!CanAccessInventory(SourceInventory) ||
 		!CanAccessInventory(TargetInventory))
@@ -218,10 +215,13 @@ void FRpgInventoryTransactionActionHandler::TransferInventoryItem(
 			TargetInventory,
 			Intent,
 			ERpgInventoryActionFeedbackResult::NoAccess,
-			Item,
+			nullptr,
 			Intent.Quantity);
 		return;
 	}
+
+	URpgInventoryItemInstance* Item =
+		SourceInventory->FindItemById(Intent.ItemId);
 	if (!IsUiTransferDirectionAllowed(
 			SourceInventory,
 			TargetInventory))

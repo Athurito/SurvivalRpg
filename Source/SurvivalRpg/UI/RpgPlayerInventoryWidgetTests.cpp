@@ -2009,7 +2009,60 @@ bool FRpgCarrySlotPresentationLifecycleTest::RunTest(const FString& Parameters)
 			Widget),
 		1);
 
+	URpgInventoryDragDropCoordinator* Coordinator =
+		URpgInventoryDragDropCoordinator::
+			CreateInventoryDragDropCoordinator(
+				Widget,
+				nullptr);
+	if (!TestNotNull(
+			TEXT("Carry rebind coordinator initializes"),
+			Coordinator) ||
+		!TestNotNull(
+			TEXT("Carry rebind interaction session initializes"),
+			Coordinator
+				? Coordinator->GetInteractionSession()
+				: nullptr))
+	{
+		return false;
+	}
+	Widget->SetDragDropCoordinator(Coordinator);
+
+	FRpgInventoryDragPayload PreviewPayload;
+	PreviewPayload.SourceType =
+		ERpgInventoryDragSourceType::EquipmentSlot;
+	PreviewPayload.EquipmentSlot = ERpgEquipmentSlot::Head;
+	if (!TestTrue(
+			TEXT("Carry rebind preview owns canonical item metadata"),
+			RpgInventoryAutomationTestTypes::
+				PopulateCanonicalSpatialItem(
+					PreviewPayload,
+					Widget,
+					URpgInventoryAutomationTestUnitItemDefinition::
+						StaticClass())))
+	{
+		return false;
+	}
+	PopulateExactEquipmentSourceSnapshot(
+		PreviewPayload,
+		Widget,
+		TEXT("CarryRebindEquipmentSource"));
+	URpgInventoryInteractionSession* InteractionSession =
+		Coordinator->GetInteractionSession();
+	Widget->PreviewPayloadDrop(PreviewPayload);
+	TestEqual(
+		TEXT("Carry A preview publishes an address target"),
+		InteractionSession->GetTarget().TargetType,
+		ERpgInventoryDropTargetType::PlayerInventorySlotAddress);
+	TestTrue(
+		TEXT("Carry A preview publishes its exact address"),
+		InteractionSession->GetTarget().SlotAddress ==
+			FirstAddress->GetSlotAddress());
+
 	Widget->SetCarrySlotGroupViewModel(SecondGroup);
+	TestEqual(
+		TEXT("Carry rebind clears the preview owned by the previous address"),
+		InteractionSession->GetTarget().TargetType,
+		ERpgInventoryDropTargetType::None);
 	TestEqual(
 		TEXT("Carry rebind removes address A's observer"),
 		CountDelegateBindingsTo(
@@ -2028,6 +2081,56 @@ bool FRpgCarrySlotPresentationLifecycleTest::RunTest(const FString& Parameters)
 			URpgInventoryAddressSlotWidget::
 				AddressSlotViewModelSourceName).GetObject(),
 		static_cast<UObject*>(SecondAddress));
+
+	Widget->PreviewPayloadDrop(PreviewPayload);
+	TestTrue(
+		TEXT("Carry B preview publishes its exact address"),
+		InteractionSession->GetTarget().SlotAddress ==
+			SecondAddress->GetSlotAddress());
+
+	URpgInventoryCarrySlotWidget* PeerWidget =
+		CreateWidget<URpgInventoryCarrySlotWidget>(
+			TestWorld.GetTestWorld(),
+			CarryWidgetClass);
+	if (!TestNotNull(
+			TEXT("Peer Carry presenter initializes"),
+			PeerWidget))
+	{
+		return false;
+	}
+	TSharedPtr<SWidget> PeerSlateWidget = PeerWidget->TakeWidget();
+	PeerWidget->SetCarrySlotGroupViewModel(FirstGroup);
+	PeerWidget->SetDragDropCoordinator(Coordinator);
+	PeerWidget->PreviewPayloadDrop(PreviewPayload);
+	TestTrue(
+		TEXT("Peer Carry presenter replaces the shared preview target"),
+		InteractionSession->GetTarget().SlotAddress ==
+			FirstAddress->GetSlotAddress());
+
+	Widget->SetCarrySlotGroupViewModel(nullptr);
+	TestEqual(
+		TEXT("Carry group loss preserves a preview owned by a peer address"),
+		InteractionSession->GetTarget().TargetType,
+		ERpgInventoryDropTargetType::PlayerInventorySlotAddress);
+	TestTrue(
+		TEXT("Carry group loss preserves the peer's exact address"),
+		InteractionSession->GetTarget().SlotAddress ==
+			FirstAddress->GetSlotAddress());
+	PeerWidget->ReleaseInventoryPresentation();
+	TestEqual(
+		TEXT("Releasing the peer that owns the Carry preview clears it"),
+		InteractionSession->GetTarget().TargetType,
+		ERpgInventoryDropTargetType::None);
+	PeerSlateWidget.Reset();
+
+	Widget->SetCarrySlotGroupViewModel(SecondGroup);
+	Widget->PreviewPayloadDrop(PreviewPayload);
+	Widget->SetCarrySlotGroupViewModel(nullptr);
+	TestEqual(
+		TEXT("Carry group loss clears its own active preview"),
+		InteractionSession->GetTarget().TargetType,
+		ERpgInventoryDropTargetType::None);
+	Widget->SetCarrySlotGroupViewModel(SecondGroup);
 
 	Widget->ReleaseInventoryPresentation();
 	TestNull(

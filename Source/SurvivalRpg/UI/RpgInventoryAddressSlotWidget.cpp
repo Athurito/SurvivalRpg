@@ -230,16 +230,7 @@ void URpgInventoryAddressSlotWidget::ReleaseAddressSlotState()
 
 	URpgInventoryDragDropCoordinator* ReleasedCoordinator = DragDropCoordinator;
 	URpgInventoryAddressSlotViewModel* ReleasedViewModel = SlotViewModel;
-	bool bOwnsCurrentPreviewTarget = false;
-	if (bHasExternalPreviewState && ReleasedCoordinator && ReleasedViewModel)
-	{
-		if (const URpgInventoryInteractionSession* Session = ReleasedCoordinator->GetInteractionSession())
-		{
-			const FRpgInventoryDropTarget& Target = Session->GetTarget();
-			bOwnsCurrentPreviewTarget = Target.TargetType == ERpgInventoryDropTargetType::PlayerInventorySlotAddress &&
-				Target.SlotAddress == ReleasedViewModel->GetSlotAddress();
-		}
-	}
+	ClearOwnedAddressInteractionPreview();
 
 	if (ReleasedViewModel)
 	{
@@ -259,20 +250,38 @@ void URpgInventoryAddressSlotWidget::ReleaseAddressSlotState()
 	bPendingLeftClickAccept = false;
 	PendingPointerDragAnchor = FRpgInventoryDragAnchor();
 	bHasPendingPointerDragAnchor = false;
-	bHasExternalPreviewState = false;
-	ExternalPreviewState = ERpgInventorySlotDragVisualState::Normal;
 	CurrentDragDropVisualState = ERpgInventorySlotDragVisualState::Normal;
-
-	// A target preview belongs to this presentation surface and may be cleared when it disappears. A server-pending
-	// request remains owned by the screen session; ClearInteractionPreview intentionally preserves that request.
-	if (bOwnsCurrentPreviewTarget && ReleasedCoordinator)
-	{
-		ReleasedCoordinator->ClearInteractionPreview();
-	}
 
 	BP_OnAddressSlotSelectionChanged(false);
 	BP_OnAddressSlotDragDropStateChanged(ERpgInventorySlotDragVisualState::Normal);
 	BP_OnAddressSlotReleased();
+}
+
+void URpgInventoryAddressSlotWidget::ClearOwnedAddressInteractionPreview()
+{
+	URpgInventoryDragDropCoordinator* PreviewCoordinator = DragDropCoordinator;
+	URpgInventoryAddressSlotViewModel* PreviewViewModel = SlotViewModel;
+	bool bOwnsCurrentPreviewTarget = false;
+	if (bHasExternalPreviewState && PreviewCoordinator && PreviewViewModel)
+	{
+		if (const URpgInventoryInteractionSession* Session = PreviewCoordinator->GetInteractionSession())
+		{
+			const FRpgInventoryDropTarget& Target = Session->GetTarget();
+			bOwnsCurrentPreviewTarget =
+				Target.TargetType == ERpgInventoryDropTargetType::PlayerInventorySlotAddress &&
+				Target.SlotAddress == PreviewViewModel->GetSlotAddress();
+		}
+	}
+
+	bHasExternalPreviewState = false;
+	ExternalPreviewState = ERpgInventorySlotDragVisualState::Normal;
+
+	// The exact target belongs to this presentation surface and may be cleared when its source changes. A target
+	// published by a peer remains untouched, and ClearInteractionPreview preserves every held or pending request.
+	if (bOwnsCurrentPreviewTarget)
+	{
+		PreviewCoordinator->ClearInteractionPreview();
+	}
 }
 
 bool URpgInventoryAddressSlotWidget::InjectAddressSlotViewModelIntoMvvm()
