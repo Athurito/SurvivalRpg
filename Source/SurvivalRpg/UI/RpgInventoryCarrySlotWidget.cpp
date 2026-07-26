@@ -2,6 +2,7 @@
 
 #include "CommonLazyImage.h"
 #include "Components/Border.h"
+#include "Components/PanelWidget.h"
 #include "InputCoreTypes.h"
 #include "SurvivalRpg/Core/Player/RpgPlayerController.h"
 #include "SurvivalRpg/Equipment/RpgEquipmentLoadoutComponent.h"
@@ -15,6 +16,12 @@
 #include "SurvivalRpg/UI/RpgInventoryPanelNavigationCoordinator.h"
 
 #include UE_INLINE_GENERATED_CPP_BY_NAME(RpgInventoryCarrySlotWidget)
+
+void URpgInventoryCarrySlotWidget::NativeOnInitialized()
+{
+	Super::NativeOnInitialized();
+	EnsureItemIconPaintsAboveStateIndicators();
+}
 
 void URpgInventoryCarrySlotWidget::BindInventoryPresentation(
 	URpgInventorySlotGroupViewModel* InGroupViewModel,
@@ -168,6 +175,37 @@ ERpgInventoryCarryPresentationState URpgInventoryCarrySlotWidget::ResolveCarryPr
 	return IsCarryItemActive()
 		? ERpgInventoryCarryPresentationState::Active
 		: ERpgInventoryCarryPresentationState::Holstered;
+}
+
+void URpgInventoryCarrySlotWidget::EnsureItemIconPaintsAboveStateIndicators()
+{
+	UPanelWidget* IndicatorParent = ActiveIndicator
+		? ActiveIndicator->GetParent()
+		: HolsteredIndicator
+			? HolsteredIndicator->GetParent()
+			: nullptr;
+	if (!ItemIcon || !IndicatorParent ||
+		(ActiveIndicator && ActiveIndicator->GetParent() != IndicatorParent) ||
+		(HolsteredIndicator &&
+			HolsteredIndicator->GetParent() != IndicatorParent))
+	{
+		return;
+	}
+
+	// The authored status borders are full-slot fills. Keep their color as a state backdrop, but move the direct
+	// item-visual branch above them before Slate is built so neither Active nor Holstered can cover the icon.
+	UWidget* ItemVisualLayer = ItemIcon;
+	while (ItemVisualLayer &&
+		ItemVisualLayer->GetParent() != IndicatorParent)
+	{
+		ItemVisualLayer = ItemVisualLayer->GetParent();
+	}
+	if (ItemVisualLayer && IndicatorParent->HasChild(ItemVisualLayer))
+	{
+		IndicatorParent->ShiftChild(
+			IndicatorParent->GetChildrenCount() - 1,
+			ItemVisualLayer);
+	}
 }
 
 ERpgInventoryInteractionPreviewState URpgInventoryCarrySlotWidget::GetCarryInteractionPreviewState() const

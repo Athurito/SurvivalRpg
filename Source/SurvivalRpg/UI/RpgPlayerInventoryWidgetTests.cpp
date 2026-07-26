@@ -3,6 +3,7 @@
 #if WITH_DEV_AUTOMATION_TESTS && WITH_EDITOR
 
 #include "Blueprint/IUserListEntry.h"
+#include "CommonLazyImage.h"
 #include "MVVMSubsystem.h"
 #include "SurvivalRpg/Inventory/RpgInventoryAutomationTestTypes.h"
 #include "SurvivalRpg/Inventory/RpgInventoryDragDropCoordinator.h"
@@ -33,8 +34,10 @@
 #include "Blueprint/WidgetTree.h"
 #include "Components/CanvasPanel.h"
 #include "Components/CanvasPanelSlot.h"
+#include "Components/Border.h"
 #include "Components/Image.h"
 #include "Components/Overlay.h"
+#include "Components/PanelWidget.h"
 #include "Components/SizeBox.h"
 #include "Components/TextBlock.h"
 #include "Engine/Engine.h"
@@ -1897,6 +1900,63 @@ bool FRpgCarrySlotPresentationLifecycleTest::RunTest(const FString& Parameters)
 	{
 		return false;
 	}
+	UCommonLazyImage* ItemIcon = Widget->WidgetTree
+		? Cast<UCommonLazyImage>(
+			Widget->WidgetTree->FindWidget(TEXT("ItemIcon")))
+		: nullptr;
+	UBorder* ActiveIndicator = Widget->WidgetTree
+		? Cast<UBorder>(
+			Widget->WidgetTree->FindWidget(TEXT("ActiveIndicator")))
+		: nullptr;
+	UBorder* HolsteredIndicator = Widget->WidgetTree
+		? Cast<UBorder>(
+			Widget->WidgetTree->FindWidget(TEXT("HolsteredIndicator")))
+		: nullptr;
+	UPanelWidget* IndicatorParent = ActiveIndicator
+		? ActiveIndicator->GetParent()
+		: nullptr;
+	auto ResolveDirectChild =
+		[](UWidget* Descendant, const UPanelWidget* Parent)
+		{
+			UWidget* Child = Descendant;
+			while (Child && Child->GetParent() != Parent)
+			{
+				Child = Child->GetParent();
+			}
+			return Child;
+		};
+	UWidget* ItemVisualLayer =
+		ResolveDirectChild(ItemIcon, IndicatorParent);
+	if (!TestNotNull(
+			TEXT("Carry slot authors its required item icon"),
+			ItemIcon) ||
+		!TestNotNull(
+			TEXT("Carry slot authors its active indicator"),
+			ActiveIndicator) ||
+		!TestNotNull(
+			TEXT("Carry slot authors its holstered indicator"),
+			HolsteredIndicator) ||
+		!TestNotNull(
+			TEXT("Carry state indicators share a panel"),
+			IndicatorParent) ||
+		!TestEqual(
+			TEXT("Carry state indicators remain sibling layers"),
+			HolsteredIndicator->GetParent(),
+			IndicatorParent) ||
+		!TestNotNull(
+			TEXT("Carry item icon resolves to a direct sibling layer"),
+			ItemVisualLayer))
+	{
+		return false;
+	}
+	TestTrue(
+		TEXT("Carry item icon paints above the active state fill"),
+		IndicatorParent->GetChildIndex(ItemVisualLayer) >
+			IndicatorParent->GetChildIndex(ActiveIndicator));
+	TestTrue(
+		TEXT("Carry item icon paints above the holstered state fill"),
+		IndicatorParent->GetChildIndex(ItemVisualLayer) >
+			IndicatorParent->GetChildIndex(HolsteredIndicator));
 	UMVVMView* View =
 		UMVVMSubsystem::GetViewFromUserWidget(Widget);
 	if (!TestNotNull(

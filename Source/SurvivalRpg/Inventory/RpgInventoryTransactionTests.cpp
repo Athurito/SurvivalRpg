@@ -3687,6 +3687,263 @@ bool FRpgInventoryEquipmentIntentRetryBoundaryTest::RunTest(
 }
 
 IMPLEMENT_SIMPLE_AUTOMATION_TEST(
+	FRpgInventoryCarryAddressDropActivatesHandTest,
+	"SurvivalRpg.Inventory.DragDrop.CarryAddressDropMovesAndActivatesExactHand",
+	EAutomationTestFlags::EditorContext |
+		EAutomationTestFlags::EngineFilter)
+
+bool FRpgInventoryCarryAddressDropActivatesHandTest::RunTest(
+	const FString& Parameters)
+{
+	using namespace RpgInventoryTransactionTests;
+	FScopedInventoryWorld TestWorld;
+	if (!InitializeTest(*this, TestWorld))
+	{
+		return false;
+	}
+
+	UWorld* World = TestWorld.GetTestWorld();
+	FActorSpawnParameters ControllerSpawnParameters;
+	ControllerSpawnParameters.Name = MakeUniqueObjectName(
+		World,
+		ARpgInventoryAutomationTestPlayerController::StaticClass(),
+		TEXT("CarryAddressEquipController"));
+	ControllerSpawnParameters.ObjectFlags = RF_Transient;
+	ARpgInventoryAutomationTestPlayerController* Controller =
+		World->SpawnActor<ARpgInventoryAutomationTestPlayerController>(
+			ControllerSpawnParameters);
+
+	FActorSpawnParameters PlayerStateSpawnParameters;
+	PlayerStateSpawnParameters.Name = MakeUniqueObjectName(
+		World,
+		ARpgInventoryAutomationTestPlayerState::StaticClass(),
+		TEXT("CarryAddressEquipPlayerState"));
+	PlayerStateSpawnParameters.ObjectFlags = RF_Transient;
+	ARpgInventoryAutomationTestPlayerState* PlayerState =
+		World->SpawnActor<ARpgInventoryAutomationTestPlayerState>(
+			PlayerStateSpawnParameters);
+	if (!TestNotNull(TEXT("The Carry-drop controller exists"), Controller) ||
+		!TestNotNull(TEXT("The Carry-drop player state exists"), PlayerState))
+	{
+		return false;
+	}
+
+	Controller->SetPlayerState(PlayerState);
+	PlayerState->SetOwner(Controller);
+	URpgInventoryManagerComponent* Inventory =
+		PlayerState->GetInventoryManagerComponent();
+	URpgInventoryUiActionComponent* UiActions =
+		Controller->GetInventoryUiActionComponent();
+	URpgPlayerInventoryLayoutComponent* InventoryLayout =
+		Controller->GetPlayerInventoryLayoutComponent();
+	URpgEquipmentLoadoutComponent* EquipmentLoadout =
+		Controller->GetEquipmentLoadoutComponent();
+	if (!TestTrue(TEXT("The Carry-drop fixture has authority"), Controller->HasAuthority()) ||
+		!TestNotNull(TEXT("The Carry-drop inventory exists"), Inventory) ||
+		!TestNotNull(TEXT("The Carry-drop action gateway exists"), UiActions) ||
+		!TestNotNull(TEXT("The Carry-drop layout exists"), InventoryLayout) ||
+		!TestNotNull(TEXT("The Carry-drop loadout exists"), EquipmentLoadout))
+	{
+		return false;
+	}
+
+	const FRpgInventoryContainerHandle Pockets =
+		FRpgInventoryContainerHandle::MakeRoot(
+			URpgPlayerInventoryLayoutComponent::PocketsGroupId);
+	const FRpgInventoryContainerHandle WeaponSlot2 =
+		FRpgInventoryContainerHandle::MakeRoot(
+			URpgPlayerInventoryLayoutComponent::WeaponSlot2GroupId);
+	const FRpgInventoryContainerHandle ShieldSlot =
+		FRpgInventoryContainerHandle::MakeRoot(
+			URpgPlayerInventoryLayoutComponent::ShieldSlotGroupId);
+	URpgInventoryItemInstance* Weapon =
+		Inventory->AddItemDefinitionToPlacement(
+			URpgInventoryAutomationTestWeaponItemDefinition::StaticClass(),
+			1,
+			MakePlacement(Pockets, 0, 0));
+	if (!TestNotNull(TEXT("A weapon starts in Pockets"), Weapon))
+	{
+		return false;
+	}
+
+	URpgInventoryAddressSlotViewModel* CarryTargetViewModel =
+		MakeAddressViewModel(
+			Controller,
+			Inventory,
+			InventoryLayout,
+			WeaponSlot2,
+			0,
+			0);
+	URpgInventoryAddressSlotViewModel* PocketsTargetViewModel =
+		MakeAddressViewModel(
+			Controller,
+			Inventory,
+			InventoryLayout,
+			Pockets,
+			2,
+			0);
+	URpgInventoryAddressSlotViewModel* ShieldTargetViewModel =
+		MakeAddressViewModel(
+			Controller,
+			Inventory,
+			InventoryLayout,
+			ShieldSlot,
+			0,
+			0);
+	URpgInventoryDragDropCoordinator* Coordinator =
+		URpgInventoryDragDropCoordinator::
+			CreateInventoryDragDropCoordinator(
+				Controller,
+				Controller);
+	if (!TestNotNull(
+			TEXT("The exact Carry target VM exists"),
+			CarryTargetViewModel) ||
+		!TestNotNull(
+			TEXT("The Pockets return target VM exists"),
+			PocketsTargetViewModel) ||
+		!TestNotNull(
+			TEXT("The exact Shield target VM exists"),
+			ShieldTargetViewModel) ||
+		!TestNotNull(
+			TEXT("The Carry-drop coordinator exists"),
+			Coordinator))
+	{
+		return false;
+	}
+	Coordinator->SetUiActionComponent(UiActions);
+
+	const FRpgInventoryDropTarget CarryTarget =
+		URpgInventoryDragDropCoordinator::
+			MakePlayerInventorySlotAddressTarget(
+				CarryTargetViewModel);
+	const FRpgInventoryDropTarget PocketsTarget =
+		URpgInventoryDragDropCoordinator::
+			MakePlayerInventorySlotAddressTarget(
+				PocketsTargetViewModel);
+	const FRpgInventoryDropTarget ShieldTarget =
+		URpgInventoryDragDropCoordinator::
+			MakePlayerInventorySlotAddressTarget(
+				ShieldTargetViewModel);
+	FRpgInventoryDragPayload Payload =
+		MakeInventoryEntryPayload(Inventory, Weapon);
+	FRpgInventoryInteractionPreviewPlan Preview =
+		Coordinator->PlanInteractionPreview(Payload, CarryTarget);
+	TestEqual(
+		TEXT("Dropping a player item on a Carry address previews Equip"),
+		Preview.State,
+		ERpgInventoryInteractionPreviewState::Equip);
+	TestTrue(
+		TEXT("Carry Equip preview uses the authoritative placement planner"),
+		Preview.bUsesPlacementPlan);
+	TestEqual(
+		TEXT("Carry Equip preview retains the exact authored Weapon 2 target"),
+		Preview.ResolvedTargetPlacement.GetContainerHandle(),
+		WeaponSlot2);
+	TestTrue(
+		TEXT("The first Carry drop dispatches"),
+		Coordinator->CommitPayloadToTarget(Payload, CarryTarget));
+
+	FRpgInventoryEntryView EquippedEntry;
+	TestTrue(
+		TEXT("The equipped weapon remains addressable"),
+		GetEntryView(Inventory, Weapon->GetItemId(), EquippedEntry));
+	TestEqual(
+		TEXT("The Carry drop preserves its exact Weapon 2 destination"),
+		EquippedEntry.Placement.GetContainerHandle(),
+		WeaponSlot2);
+	TestEqual(
+		TEXT("The Carry drop activates MainHand"),
+		EquipmentLoadout->GetItemInEquipmentSlot(
+			ERpgEquipmentSlot::MainHand),
+		Weapon);
+	TestFalse(
+		TEXT("Synchronous authority feedback clears the Carry request"),
+		Coordinator->IsInteractionRequestPending());
+
+	Payload = MakeInventoryEntryPayload(Inventory, Weapon);
+	Preview = Coordinator->PlanInteractionPreview(Payload, PocketsTarget);
+	TestEqual(
+		TEXT("Dragging an active Carry item back to Content previews Move"),
+		Preview.State,
+		ERpgInventoryInteractionPreviewState::Move);
+	TestTrue(
+		TEXT("Dragging the active weapon back to Pockets dispatches"),
+		Coordinator->CommitPayloadToTarget(Payload, PocketsTarget));
+	FRpgInventoryEntryView HolsteredEntry;
+	TestTrue(
+		TEXT("The returned weapon remains addressable"),
+		GetEntryView(Inventory, Weapon->GetItemId(), HolsteredEntry));
+	TestEqual(
+		TEXT("The return drop moves the weapon to Pockets"),
+		HolsteredEntry.Placement.GetContainerHandle(),
+		Pockets);
+	TestNull(
+		TEXT("Leaving Carry clears the active MainHand selection"),
+		EquipmentLoadout->GetItemInEquipmentSlot(
+			ERpgEquipmentSlot::MainHand));
+
+	Payload = MakeInventoryEntryPayload(Inventory, Weapon);
+	Preview = Coordinator->PlanInteractionPreview(Payload, CarryTarget);
+	TestEqual(
+		TEXT("Returning the weapon to Carry previews Equip again"),
+		Preview.State,
+		ERpgInventoryInteractionPreviewState::Equip);
+	TestTrue(
+		TEXT("Returning the weapon to Carry dispatches"),
+		Coordinator->CommitPayloadToTarget(Payload, CarryTarget));
+	FRpgInventoryEntryView ReequippedEntry;
+	TestTrue(
+		TEXT("The re-equipped weapon remains addressable"),
+		GetEntryView(Inventory, Weapon->GetItemId(), ReequippedEntry));
+	TestEqual(
+		TEXT("Re-equipping returns to the exact Weapon 2 Carry slot"),
+		ReequippedEntry.Placement.GetContainerHandle(),
+		WeaponSlot2);
+	TestEqual(
+		TEXT("Returning to Carry reactivates MainHand"),
+		EquipmentLoadout->GetItemInEquipmentSlot(
+			ERpgEquipmentSlot::MainHand),
+		Weapon);
+
+	URpgInventoryItemInstance* Shield =
+		Inventory->AddItemDefinitionToPlacement(
+			URpgInventoryAutomationTestStackableOffHandItemDefinition::
+				StaticClass(),
+			1,
+			MakePlacement(Pockets, 1, 0));
+	if (!TestNotNull(TEXT("A shield starts in Pockets"), Shield))
+	{
+		return false;
+	}
+	Payload = MakeInventoryEntryPayload(Inventory, Shield);
+	Preview = Coordinator->PlanInteractionPreview(Payload, ShieldTarget);
+	TestEqual(
+		TEXT("Dropping the shield on its Carry address previews Equip"),
+		Preview.State,
+		ERpgInventoryInteractionPreviewState::Equip);
+	TestTrue(
+		TEXT("The shield Carry drop dispatches"),
+		Coordinator->CommitPayloadToTarget(Payload, ShieldTarget));
+	FRpgInventoryEntryView EquippedShieldEntry;
+	TestTrue(
+		TEXT("The equipped shield remains addressable"),
+		GetEntryView(
+			Inventory,
+			Shield->GetItemId(),
+			EquippedShieldEntry));
+	TestEqual(
+		TEXT("The shield occupies the exact OffHand Carry slot"),
+		EquippedShieldEntry.Placement.GetContainerHandle(),
+		ShieldSlot);
+	TestEqual(
+		TEXT("The shield Carry drop activates OffHand"),
+		EquipmentLoadout->GetItemInEquipmentSlot(
+			ERpgEquipmentSlot::OffHand),
+		Shield);
+	return true;
+}
+
+IMPLEMENT_SIMPLE_AUTOMATION_TEST(
 	FRpgInventoryEquipmentRuntimeReconcileLifecycleTest,
 	"SurvivalRpg.Inventory.Intent.Equip.RuntimeReconcileIsTwoPhase",
 	EAutomationTestFlags::EditorContext |

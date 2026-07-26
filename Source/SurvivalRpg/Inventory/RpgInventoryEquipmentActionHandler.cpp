@@ -132,7 +132,14 @@ void FRpgInventoryEquipmentActionHandler::
 			FRpgInventoryEquipmentPlacementPolicy::
 				IsHandEquipmentSlot(Intent.TargetEquipmentSlot);
 	}
+	const bool bExactTargetMatchesOperation =
+		!Intent.ExactTargetPlacement.IsValid() ||
+		(Intent.Operation ==
+				ERpgInventoryEquipmentIntentOperation::EquipToSlot &&
+			FRpgInventoryEquipmentPlacementPolicy::IsHandEquipmentSlot(
+				Intent.TargetEquipmentSlot));
 	if (!bKnownOperation || !bTargetSlotMatchesOperation ||
+		!bExactTargetMatchesOperation ||
 		!Intent.ItemId.IsValid() ||
 		!Intent.ExpectedEntryId.IsValid() ||
 		!Intent.ExpectedSourcePlacement.IsValid() ||
@@ -237,7 +244,8 @@ void FRpgInventoryEquipmentActionHandler::
 				IsHandEquipmentSlot(Intent.TargetEquipmentSlot)
 				? TryMoveAndActivateItemInCarry(
 					Item,
-					Intent.TargetEquipmentSlot)
+					Intent.TargetEquipmentSlot,
+					Intent.ExactTargetPlacement)
 				: TryMoveItemToGearSlot(
 					Intent.TargetEquipmentSlot,
 					Item);
@@ -367,9 +375,14 @@ FRpgInventoryEquipmentQueryHandler::PlanEquipmentIntentPlacement(
 					Intent.TargetEquipmentSlot)) ||
 		(bPlansUnequipToContent &&
 			Intent.TargetEquipmentSlot == ERpgEquipmentSlot::None);
+	const bool bExactTargetMatchesOperation =
+		!Intent.ExactTargetPlacement.IsValid() ||
+		(bPlansEquipToSlot &&
+			FRpgInventoryEquipmentPlacementPolicy::IsHandEquipmentSlot(
+				Intent.TargetEquipmentSlot));
 	if (!Inventory || Inventory != FindPlayerInventory() ||
 		!CanAccessInventory(Inventory) ||
-		!bOperationMatchesTarget ||
+		!bOperationMatchesTarget || !bExactTargetMatchesOperation ||
 		!Intent.ItemId.IsValid() ||
 		!Intent.ExpectedEntryId.IsValid() ||
 		!Intent.ExpectedSourcePlacement.IsValid() ||
@@ -541,6 +554,45 @@ FRpgInventoryEquipmentQueryHandler::PlanEquipmentIntentPlacement(
 			return MakeRejectedEquipmentPlacementPlan(
 				ERpgInventoryMutationResultCode::ItemNotAllowed,
 				Intent.ExpectedQuantity);
+		}
+
+		if (Intent.ExactTargetPlacement.IsValid())
+		{
+			FRpgInventorySlotAddress ExactTargetAddress;
+			ERpgEquipmentSlot ExactTargetRole =
+				ERpgEquipmentSlot::None;
+			FRpgInventoryGridPlacement ResolvedExactPlacement;
+			if (!InventoryLayout->TryMakeSlotAddressFromPlacement(
+					Intent.ExactTargetPlacement,
+					ExactTargetAddress) ||
+				!InventoryLayout->IsCarrySlotAddress(
+					ExactTargetAddress) ||
+				!InventoryLayout->TryGetEquipmentSlotRoleForAddress(
+					ExactTargetAddress,
+					ExactTargetRole) ||
+				ExactTargetRole != Intent.TargetEquipmentSlot ||
+				!InventoryLayout->CanItemUseSlotAddress(
+					Item,
+					ExactTargetAddress) ||
+				!InventoryLayout->ResolveSlotAddress(
+					ExactTargetAddress,
+					ResolvedExactPlacement) ||
+				!IsSameLogicalEquipmentPlacement(
+					ResolvedExactPlacement,
+					Intent.ExactTargetPlacement))
+			{
+				return MakeRejectedEquipmentPlacementPlan(
+					ERpgInventoryMutationResultCode::ItemNotAllowed,
+					Intent.ExpectedQuantity);
+			}
+
+			FRpgInventoryPlacementPlan Plan =
+				EvaluateCandidate(ResolvedExactPlacement);
+			if (Plan.IsCompleteSuccess())
+			{
+				OutTargetPlacement = Plan.Steps[0].Placement;
+			}
+			return Plan;
 		}
 
 		for (const FRpgInventorySlotGroupView& Group :
@@ -739,7 +791,8 @@ bool FRpgInventoryEquipmentActionHandler::
 bool FRpgInventoryEquipmentActionHandler::
 	TryMoveAndActivateItemInCarry(
 		URpgInventoryItemInstance* Item,
-		ERpgEquipmentSlot PreferredHandSlot)
+		ERpgEquipmentSlot PreferredHandSlot,
+		const FRpgInventoryGridPlacement& ExactTargetPlacement)
 {
 	URpgInventoryManagerComponent* PlayerInventory =
 		FindPlayerInventory();
@@ -780,6 +833,8 @@ bool FRpgInventoryEquipmentActionHandler::
 		EquipmentIntent.Operation =
 			ERpgInventoryEquipmentIntentOperation::EquipToSlot;
 		EquipmentIntent.TargetEquipmentSlot = PreferredHandSlot;
+		EquipmentIntent.ExactTargetPlacement =
+			ExactTargetPlacement;
 		const FRpgInventoryEquipmentQueryHandler QueryHandler(
 			GetReadOnlyActionComponent());
 		if (!QueryHandler.PlanEquipmentIntentPlacement(

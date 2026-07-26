@@ -959,7 +959,10 @@ bool URpgInventoryUiActionComponent::AreEquipmentIntentsEquivalent(
 			B.ExpectedSourcePlacement) &&
 		A.ExpectedQuantity == B.ExpectedQuantity &&
 		A.Operation == B.Operation &&
-		A.TargetEquipmentSlot == B.TargetEquipmentSlot;
+		A.TargetEquipmentSlot == B.TargetEquipmentSlot &&
+		IsExactUiActionPlacementSnapshot(
+			A.ExactTargetPlacement,
+			B.ExactTargetPlacement);
 }
 
 bool URpgInventoryUiActionComponent::

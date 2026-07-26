@@ -276,7 +276,9 @@ private:
 		URpgInventoryItemInstance* Item);
 	bool TryMoveAndActivateItemInCarry(
 		URpgInventoryItemInstance* Item,
-		ERpgEquipmentSlot PreferredHandSlot);
+		ERpgEquipmentSlot PreferredHandSlot,
+		const FRpgInventoryGridPlacement& ExactTargetPlacement =
+			FRpgInventoryGridPlacement());
 	bool TryMoveItemToGearSlot(
 		ERpgEquipmentSlot EquipmentSlot,
 		URpgInventoryItemInstance* Item);

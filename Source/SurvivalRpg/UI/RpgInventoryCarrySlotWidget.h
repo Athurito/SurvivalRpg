@@ -87,6 +87,7 @@ public:
 	void SetCarryItemVisualVisible(bool bVisible);
 
 protected:
+	virtual void NativeOnInitialized() override;
 	virtual void RefreshAddressSlotPresentation() override;
 	virtual void NativeDestruct() override;
 	virtual void NativeOnAddedToFocusPath(const FFocusEvent& InFocusEvent) override;
@@ -123,6 +124,7 @@ private:
 	URpgInventoryItemInstance* GetCarryItem() const;
 	bool IsCarryItemActive() const;
 	ERpgInventoryCarryPresentationState ResolveCarryPresentationState() const;
+	void EnsureItemIconPaintsAboveStateIndicators();
 	void ApplyCarryPresentationState(
 		ERpgInventoryCarryPresentationState NewState,
 		ERpgInventoryInteractionPreviewState NewInteractionPreviewState);

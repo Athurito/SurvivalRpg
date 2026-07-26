@@ -221,6 +221,13 @@ struct SURVIVALRPG_API FRpgInventoryEquipmentIntent
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Inventory|Equipment")
 	ERpgEquipmentSlot TargetEquipmentSlot = ERpgEquipmentSlot::None;
 
+	/**
+	 * Optional exact physical Carry destination for a hand EquipToSlot request.
+	 * Invalid preserves deterministic first-compatible routing; every other operation rejects a populated value.
+	 */
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Inventory|Equipment")
+	FRpgInventoryGridPlacement ExactTargetPlacement;
+
 	void EnsureRequestId()
 	{
 		if (!RequestId.IsValid())

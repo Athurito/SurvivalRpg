@@ -460,7 +460,9 @@ private:
 	bool CanCommitPayloadToTarget(const FRpgInventoryDragPayload& Payload, const FRpgInventoryDropTarget& Target) const;
 	bool IsSameInteractionPayload(const FRpgInventoryDragPayload& A, const FRpgInventoryDragPayload& B) const;
 	bool IsTargetPlacementOutOfBounds(const FRpgInventoryDropTarget& Target) const;
-	FGameplayTag ResolveActionTagForTarget(const FRpgInventoryDropTarget& Target) const;
+	FGameplayTag ResolveActionTagForTarget(
+		const FRpgInventoryDropTarget& Target,
+		ERpgInventoryInteractionPreviewState AcceptedPreviewState) const;
 	void EnsureInteractionSession();
 	FGuid MarkInteractionRequestPending(
 		const FRpgInventoryDragPayload& Payload,
@@ -494,7 +496,12 @@ private:
 		ERpgEquipmentSlot TargetEquipmentSlot,
 		const FGuid& RequestId,
 		URpgInventoryManagerComponent*& OutInventory,
-		FRpgInventoryEquipmentIntent& OutIntent) const;
+		FRpgInventoryEquipmentIntent& OutIntent,
+		const FRpgInventoryGridPlacement& ExactTargetPlacement =
+			FRpgInventoryGridPlacement()) const;
+	bool TryResolveHandEquipmentTarget(
+		const FRpgInventoryDropTarget& Target,
+		ERpgEquipmentSlot& OutEquipmentSlot) const;
 	bool BuildManualDropRequest(
 		URpgInventoryManagerComponent* Inventory,
 		URpgInventoryItemInstance* ItemInstance,
