@@ -50,12 +50,20 @@ namespace RpgQuickAccessRadialAssetTests
 		TEXT(
 			"/Game/SurvivalRpg/Input/InputMappings/"
 			"IMC_UI_PlayerHUD.IMC_UI_PlayerHUD");
+	constexpr TCHAR MovementMappingContextPath[] =
+		TEXT(
+			"/Game/SurvivalRpg/Input/InputMappings/"
+			"IMC_Movement.IMC_Movement");
 	constexpr TCHAR RadialMappingContextPath[] =
 		TEXT(
 			"/Game/SurvivalRpg/Input/InputMappings/"
 			"IMC_UI_QuickAccessRadial.IMC_UI_QuickAccessRadial");
 	constexpr TCHAR PlayerInputConfigPath[] =
 		TEXT("/Game/SurvivalRpg/Input/DA_InputConfig.DA_InputConfig");
+	constexpr TCHAR InteractActionPath[] =
+		TEXT(
+			"/Game/SurvivalRpg/Input/Actions/MovementActions/"
+			"IA_Interact.IA_Interact");
 
 	constexpr TCHAR HudLayoutClassPath[] =
 		TEXT(
@@ -405,6 +413,121 @@ bool FRpgQuickAccessRadialInputAssetTest::RunTest(
 				/*bLogNotFound=*/ false),
 			Action);
 	}
+
+	return true;
+}
+
+IMPLEMENT_SIMPLE_AUTOMATION_TEST(
+	FRpgInteractionInputAssetTest,
+	"SurvivalRpg.Interaction.InputAssets.ExclusiveMKey",
+	EAutomationTestFlags::EditorContext | EAutomationTestFlags::EngineFilter)
+
+bool FRpgInteractionInputAssetTest::RunTest(
+	const FString& Parameters)
+{
+	using namespace RpgQuickAccessRadialAssetTests;
+
+	const UInputMappingContext* MovementContext =
+		LoadObject<UInputMappingContext>(
+			nullptr,
+			MovementMappingContextPath);
+	const UInputMappingContext* PlayerHudContext =
+		LoadObject<UInputMappingContext>(
+			nullptr,
+			PlayerHudMappingContextPath);
+	const UInputAction* InteractAction =
+		LoadObject<UInputAction>(nullptr, InteractActionPath);
+	const URpgInputConfig* PlayerInputConfig =
+		LoadObject<URpgInputConfig>(nullptr, PlayerInputConfigPath);
+	if (!TestNotNull(
+			TEXT("IMC_Movement loads"),
+			MovementContext) ||
+		!TestNotNull(
+			TEXT("IMC_UI_PlayerHUD loads"),
+			PlayerHudContext) ||
+		!TestNotNull(
+			TEXT("IA_Interact loads"),
+			InteractAction) ||
+		!TestNotNull(
+			TEXT("DA_InputConfig loads"),
+			PlayerInputConfig))
+	{
+		return false;
+	}
+
+	int32 InteractionMappingCount = 0;
+	for (const FEnhancedActionKeyMapping& Mapping :
+		MovementContext->GetMappings())
+	{
+		const bool bUsesInteractAction =
+			Mapping.Action == InteractAction;
+		const bool bUsesInteractionKey = Mapping.Key == EKeys::M;
+		if (!bUsesInteractAction && !bUsesInteractionKey)
+		{
+			continue;
+		}
+
+		++InteractionMappingCount;
+		TestTrue(
+			TEXT("The interaction mapping uses IA_Interact"),
+			bUsesInteractAction);
+		TestTrue(
+			TEXT("The interaction mapping uses M"),
+			bUsesInteractionKey);
+	}
+	TestEqual(
+		TEXT("IMC_Movement owns one exclusive M interaction mapping"),
+		InteractionMappingCount,
+		1);
+
+	int32 PlayerHudMMappingCount = 0;
+	for (const FEnhancedActionKeyMapping& Mapping :
+		PlayerHudContext->GetMappings())
+	{
+		PlayerHudMMappingCount += Mapping.Key == EKeys::M ? 1 : 0;
+	}
+	TestEqual(
+		TEXT("IMC_UI_PlayerHUD does not consume the interaction key M"),
+		PlayerHudMMappingCount,
+		0);
+
+	const FGameplayTag InteractionTag =
+		FGameplayTag::RequestGameplayTag(
+			FName(TEXT("InputTag.Ability.Interact")),
+			/*ErrorIfNotFound=*/ false);
+	TestTrue(
+		TEXT("The interaction ability input tag is registered"),
+		InteractionTag.IsValid());
+
+	int32 AbilityMappingCount = 0;
+	for (const FRpgInputAction& Mapping :
+		PlayerInputConfig->AbilityInputActions)
+	{
+		if (Mapping.InputAction.Get() != InteractAction &&
+			Mapping.InputTag != InteractionTag)
+		{
+			continue;
+		}
+
+		++AbilityMappingCount;
+		TestEqual(
+			TEXT("Interaction ability input uses IA_Interact"),
+			Mapping.InputAction.Get(),
+			InteractAction);
+		TestTrue(
+			TEXT("Interaction ability input uses the interaction tag"),
+			Mapping.InputTag == InteractionTag);
+	}
+	TestEqual(
+		TEXT("DA_InputConfig owns one interaction ability mapping"),
+		AbilityMappingCount,
+		1);
+	TestEqual(
+		TEXT("The interaction tag resolves to IA_Interact"),
+		PlayerInputConfig->FindAbilityInputActionForTag(
+			InteractionTag,
+			/*bLogNotFound=*/ false),
+		InteractAction);
 
 	return true;
 }
