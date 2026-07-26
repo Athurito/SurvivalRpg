@@ -13,8 +13,12 @@
 #include "Blueprint/UserWidget.h"
 #include "Components/Overlay.h"
 #include "Components/OverlaySlot.h"
+#include "Engine/AssetManager.h"
+#include "Engine/AssetManagerSettings.h"
+#include "Engine/AssetManagerTypes.h"
 #include "Engine/Blueprint.h"
 #include "Misc/AutomationTest.h"
+#include "UObject/SoftObjectPath.h"
 
 namespace RpgIndicatorCompositionAssetTests
 {
@@ -30,6 +34,9 @@ namespace RpgIndicatorCompositionAssetTests
 		TEXT(
 			"/Game/SurvivalRpg/System/Experiences/ActionSets/"
 			"LAS_Rpg_StandardUI.LAS_Rpg_StandardUI");
+	constexpr TCHAR StandardUiActionSetDirectory[] =
+		TEXT(
+			"/Game/SurvivalRpg/System/Experiences/ActionSets");
 }
 
 IMPLEMENT_SIMPLE_AUTOMATION_TEST(
@@ -42,6 +49,79 @@ bool FRpgIndicatorHudCompositionAssetTest::RunTest(
 	const FString& Parameters)
 {
 	using namespace RpgIndicatorCompositionAssetTests;
+
+	const UAssetManagerSettings* AssetManagerSettings =
+		GetDefault<UAssetManagerSettings>();
+	const FPrimaryAssetTypeInfo* ActionSetTypeInfo = nullptr;
+	int32 ActionSetTypeCount = 0;
+	for (const FPrimaryAssetTypeInfo& TypeInfo :
+		AssetManagerSettings->PrimaryAssetTypesToScan)
+	{
+		if (TypeInfo.PrimaryAssetType ==
+			FName(TEXT("RpgExperienceActionSet")))
+		{
+			++ActionSetTypeCount;
+			ActionSetTypeInfo = &TypeInfo;
+		}
+	}
+
+	TestEqual(
+		TEXT(
+			"RpgExperienceActionSet has exactly one AssetManager "
+			"scan rule"),
+		ActionSetTypeCount,
+		1);
+	if (ActionSetTypeInfo)
+	{
+		const TArray<FDirectoryPath>& ActionSetDirectories =
+			ActionSetTypeInfo->GetDirectories();
+		TestEqual(
+			TEXT(
+				"RpgExperienceActionSet scans exactly one "
+				"content directory"),
+			ActionSetDirectories.Num(),
+			1);
+		if (ActionSetDirectories.Num() == 1)
+		{
+			TestEqual(
+				TEXT(
+					"RpgExperienceActionSet scans the shared "
+					"ActionSets directory"),
+				ActionSetDirectories[0].Path,
+				FString(StandardUiActionSetDirectory));
+		}
+		TestEqual(
+			TEXT(
+				"RpgExperienceActionSet has no competing "
+				"explicit asset list"),
+			ActionSetTypeInfo->GetSpecificAssets().Num(),
+			0);
+		TestFalse(
+			TEXT(
+				"RpgExperienceActionSet assets are concrete "
+				"UObjects"),
+			ActionSetTypeInfo->bHasBlueprintClasses);
+		TestFalse(
+			TEXT(
+				"RpgExperienceActionSet is available at "
+				"runtime"),
+			ActionSetTypeInfo->bIsEditorOnly);
+		TestTrue(
+			TEXT("RpgExperienceActionSet assets are always cooked"),
+			ActionSetTypeInfo->Rules.CookRule ==
+				EPrimaryAssetCookRule::AlwaysCook);
+		TestEqual(
+			TEXT(
+				"RpgExperienceActionSet scans the exact native "
+				"base class"),
+			ActionSetTypeInfo->GetAssetBaseClass()
+				.ToSoftObjectPath()
+				.ToString(),
+			FString(
+				TEXT(
+					"/Script/SurvivalRpg."
+					"RpgExperienceActionSet")));
+	}
 
 	UClass* HudLayoutClass =
 		LoadClass<UUserWidget>(
@@ -67,6 +147,31 @@ bool FRpgIndicatorHudCompositionAssetTest::RunTest(
 	{
 		return false;
 	}
+
+	const FPrimaryAssetId StandardUiActionSetId =
+		StandardUiActionSet->GetPrimaryAssetId();
+	const FSoftObjectPath ExpectedActionSetPath(
+		StandardUiActionSetPath);
+	TestTrue(
+		TEXT("LAS_Rpg_StandardUI has a valid primary asset id"),
+		StandardUiActionSetId.IsValid());
+	TestTrue(
+		TEXT(
+			"LAS_Rpg_StandardUI uses the "
+			"RpgExperienceActionSet type"),
+		StandardUiActionSetId.PrimaryAssetType ==
+			FPrimaryAssetType(TEXT("RpgExperienceActionSet")));
+	TestTrue(
+		TEXT(
+			"AssetManager resolves LAS_Rpg_StandardUI by its "
+			"primary asset id"),
+		UAssetManager::Get().GetPrimaryAssetPath(
+			StandardUiActionSetId) == ExpectedActionSetPath);
+	TestTrue(
+		TEXT("LAS_Rpg_StandardUI remains AlwaysCook"),
+		UAssetManager::Get()
+			.GetPrimaryAssetRules(StandardUiActionSetId)
+			.CookRule == EPrimaryAssetCookRule::AlwaysCook);
 
 	const UWidgetBlueprintGeneratedClass* HudGeneratedClass =
 		Cast<UWidgetBlueprintGeneratedClass>(

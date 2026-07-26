@@ -3514,12 +3514,6 @@ Damit gibt es keinen zweiten UI- oder MVVM-State-Owner. Im Einzelnen gilt:
   Drag-and-drop und die Dialogbedienung wurden im finalen Gate nicht manuell
   ausgeführt. Diese Punkte stehen deshalb unten als empfohlener manueller
   Playtest und werden nicht als verifiziert behauptet.
-- Der packaged Gameplay-Smoke meldet einmal die Warnung `Invalid Primary Asset
-  Id RpgExperienceActionSet:LAS_Rpg_StandardUI`. Experience-Aktivierung,
-  GameFeature-Aktivierung und HUD-Registrierungen laufen trotzdem vollständig
-  durch und der Prozess beendet sich sauber; die Warnung ist für diesen
-  Refactor nicht blockierend, sollte aber im zugehörigen
-  Loadout-/PrimaryAsset-Content separat bereinigt werden.
 
 ### Editor-/Blueprint-Checkliste
 
@@ -3575,9 +3569,7 @@ Damit gibt es keinen zweiten UI- oder MVVM-State-Owner. Im Einzelnen gilt:
   beobachten und einen Late Join nach mehreren Move-/Split-/Equip-
   Transaktionen testen.
 - Die gelöschten Assets im Source-Control-Review noch einmal als bewusste
-  Deletions kontrollieren und das nicht blockierende
-  `RpgExperienceActionSet:LAS_Rpg_StandardUI`-PrimaryAsset-Warning separat
-  untersuchen.
+  Deletions kontrollieren.
 
 #### Keine manuelle Änderung nötig
 
@@ -3615,10 +3607,18 @@ aufbauenden Abschlussstand tatsächlich ausgeführt:
 | `SurvivalRpg.Inventory.Transaction.ExactHalfSplitAndIdempotency` | 1 von 1 Test erfolgreich. |
 | `SurvivalRpg.Inventory` | 154 von 154 Tests erfolgreich. |
 | `SurvivalRpg` | 209 von 209 Tests erfolgreich. |
+| `SurvivalRpg.UI.Indicator.CompositionAssets` nach dem ActionSet-Fix | 1 von 1 Test erfolgreich; Scanregel, nativer Typ, `AlwaysCook` und Primary-Asset-ID-Auflösung sind abgedeckt. |
 | Sauberer `BuildCookRun` für die finalen Maps | 948 Packages, `BUILD SUCCESSFUL`. |
 | Cook-/Package-Manifest-Gate | 11 erforderliche Packages in `Manifest_UFSFiles_Win64.txt` und `ReferencedSet.txt` vorhanden; 19 retired Packages in beiden Dateien abwesend. |
 | Packaged Smoke `BootMenu`/`MainMenu` | Sauberer Exit, keine harten Fehler. |
-| Packaged Smoke `Lvl_ThirdPerson` | Sauberer Exit, keine harten Fehler; Experience, Game Features und HUD wurden vollständig aktiviert. Einzig die oben dokumentierte nicht blockierende `RpgExperienceActionSet:LAS_Rpg_StandardUI`-Warnung blieb. |
+| Erneuter Clean-`BuildCookRun` nach dem ActionSet-Fix | Editor- und Game-Target frisch gebaut, 948 Packages, Stage und Archive erfolgreich. |
+| Packaged Smoke `Lvl_ThirdPerson` | Sauberer Exit, keine harten Fehler; Experience, Game Features und HUD wurden vollständig aktiviert. Die frühere `RpgExperienceActionSet:LAS_Rpg_StandardUI`-Warnung tritt nicht mehr auf. |
+
+`LAS_Rpg_StandardUI` wird jetzt über den dedizierten Verzeichnis-Scan für
+`RpgExperienceActionSet` registriert. Damit kann der Experience Manager das
+ActionSet im gepackten Build über seine Primary-Asset-ID auflösen und dessen
+Client-/Server-Bundles zuverlässig laden. Dafür sind keine manuellen
+Blueprint- oder Editor-Anpassungen nötig.
 
 Der Manifestvertrag bestätigt insbesondere die aktiven Assets
 `CUI_SpatialInventoryItem`, `CUI_SpatialInventoryGrid`, `CUI_CarrySlot`,
