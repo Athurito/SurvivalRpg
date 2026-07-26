@@ -109,6 +109,13 @@ protected:
 	TObjectPtr<UBorder> HolsteredIndicator = nullptr;
 
 	/**
+	 * Opacity applied to the authored Active/Holstered fill colors behind the item icon.
+	 * Designer-tuned, cosmetic-only, and never used to derive equipment state.
+	 */
+	UPROPERTY(EditDefaultsOnly, Category = "Inventory|Carry Slot|Appearance", meta = (ClampMin = "0.0", ClampMax = "1.0", UIMin = "0.0", UIMax = "1.0"))
+	float StateIndicatorOpacity = 0.08f;
+
+	/**
 	 * Presentation-only transition hook for animation and styling.
 	 * Stable item data is intentionally absent and remains owned by the Address MVVM source.
 	 */
@@ -124,6 +131,7 @@ private:
 	URpgInventoryItemInstance* GetCarryItem() const;
 	bool IsCarryItemActive() const;
 	ERpgInventoryCarryPresentationState ResolveCarryPresentationState() const;
+	void ApplyStateIndicatorOpacity();
 	void EnsureItemIconPaintsAboveStateIndicators();
 	void ApplyCarryPresentationState(
 		ERpgInventoryCarryPresentationState NewState,

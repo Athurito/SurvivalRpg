@@ -20,6 +20,7 @@
 void URpgInventoryCarrySlotWidget::NativeOnInitialized()
 {
 	Super::NativeOnInitialized();
+	ApplyStateIndicatorOpacity();
 	EnsureItemIconPaintsAboveStateIndicators();
 }
 
@@ -175,6 +176,27 @@ ERpgInventoryCarryPresentationState URpgInventoryCarrySlotWidget::ResolveCarryPr
 	return IsCarryItemActive()
 		? ERpgInventoryCarryPresentationState::Active
 		: ERpgInventoryCarryPresentationState::Holstered;
+}
+
+void URpgInventoryCarrySlotWidget::ApplyStateIndicatorOpacity()
+{
+	const float ClampedOpacity =
+		FMath::Clamp(StateIndicatorOpacity, 0.0f, 1.0f);
+	const auto ApplyOpacity =
+		[ClampedOpacity](UBorder* Indicator)
+		{
+			if (!Indicator)
+			{
+				return;
+			}
+
+			FLinearColor BrushColor = Indicator->GetBrushColor();
+			BrushColor.A = ClampedOpacity;
+			Indicator->SetBrushColor(BrushColor);
+		};
+
+	ApplyOpacity(ActiveIndicator);
+	ApplyOpacity(HolsteredIndicator);
 }
 
 void URpgInventoryCarrySlotWidget::EnsureItemIconPaintsAboveStateIndicators()

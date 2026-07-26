@@ -1957,6 +1957,12 @@ bool FRpgCarrySlotPresentationLifecycleTest::RunTest(const FString& Parameters)
 		TEXT("Carry item icon paints above the holstered state fill"),
 		IndicatorParent->GetChildIndex(ItemVisualLayer) >
 			IndicatorParent->GetChildIndex(HolsteredIndicator));
+	TestTrue(
+		TEXT("Carry active state remains a subtle background tint"),
+		ActiveIndicator->GetBrushColor().A <= 0.1f);
+	TestTrue(
+		TEXT("Carry holstered state remains a subtle background tint"),
+		HolsteredIndicator->GetBrushColor().A <= 0.1f);
 	UMVVMView* View =
 		UMVVMSubsystem::GetViewFromUserWidget(Widget);
 	if (!TestNotNull(
