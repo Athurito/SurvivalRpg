@@ -315,44 +315,69 @@ void URpgGameplayAbility_Interact::RefreshInteractionIndicators()
 	{
 		return;
 	}
+	ReconcileInteractionIndicators(IndicatorManager);
+}
 
+void URpgGameplayAbility_Interact::ReconcileInteractionIndicators(URpgIndicatorManagerComponent* IndicatorManager)
+{
+	check(IndicatorManager);
 	const bool bShowFocus = !CurrentOptions.IsEmpty() && CurrentOptions[0].PromptState != ERpgInteractionPromptState::Hidden;
 	if (bShowFocus)
 	{
 		const FInteractionOption& Option = CurrentOptions[0];
-		if (!FocusPromptData)
-		{
-			FocusPromptData = NewObject<URpgInteractionPromptData>(this);
-		}
-		FocusPromptData->UpdateFromOption(Option, Option.PromptState);
-		if (!FocusIndicator)
-		{
-			FocusIndicator = NewObject<UIndicatorDescriptor>(this);
-			FocusIndicator->SetDataObject(FocusPromptData);
-			FocusIndicator->SetAutoRemoveWhenIndicatorComponentIsNull(true);
-			IndicatorManager->AddIndicator(FocusIndicator);
-		}
+		const TSoftClassPtr<UUserWidget> DesiredWidgetClass = Option.Prompt.FocusWidgetClass.IsNull()
+			? DefaultInteractionWidgetClass
+			: Option.Prompt.FocusWidgetClass;
 		USceneComponent* Anchor = Option.TargetRef.TargetComponent.Get();
 		if (!Anchor && Option.TargetRef.TargetActor.IsValid())
 		{
 			Anchor = Option.TargetRef.TargetActor->GetRootComponent();
 		}
+
+		if (!FocusPromptData)
+		{
+			FocusPromptData = NewObject<URpgInteractionPromptData>(this);
+		}
+		FocusPromptData->UpdateFromOption(Option, Option.PromptState);
+
+		// The actor canvas resolves the widget class synchronously from AddIndicator. Recreate only
+		// when the authored class changes, and fully configure the replacement before registration.
+		if (FocusIndicator && FocusIndicator->GetIndicatorClass() != DesiredWidgetClass)
+		{
+			IndicatorManager->RemoveIndicator(FocusIndicator);
+			FocusIndicator = nullptr;
+		}
+
+		bool bRegisterIndicator = false;
+		if (!FocusIndicator)
+		{
+			FocusIndicator = NewObject<UIndicatorDescriptor>(this);
+			FocusIndicator->SetDataObject(FocusPromptData);
+			// This ability owns the descriptor lifetime. Keeping it registered across a temporary
+			// focus loss avoids widget-pool churn and lets range re-entry reuse the same prompt.
+			FocusIndicator->SetAutoRemoveWhenIndicatorComponentIsNull(false);
+			bRegisterIndicator = true;
+		}
 		FocusIndicator->SetSceneComponent(Anchor);
 		FocusIndicator->SetAbsoluteWorldPosition(Option.GetInteractionWorldLocation());
-		FocusIndicator->SetIndicatorClass(Option.Prompt.FocusWidgetClass.IsNull()
-			? DefaultInteractionWidgetClass
-			: Option.Prompt.FocusWidgetClass);
+		FocusIndicator->SetIndicatorClass(DesiredWidgetClass);
 		FocusIndicator->SetPriority(Option.Prompt.InteractionPriority);
 		FocusIndicator->SetDesiredVisibility(true);
+		if (bRegisterIndicator)
+		{
+			IndicatorManager->AddIndicator(FocusIndicator);
+		}
 	}
 	else if (FocusIndicator)
 	{
-		IndicatorManager->RemoveIndicator(FocusIndicator);
-		FocusIndicator = nullptr;
-		FocusPromptData = nullptr;
+		FocusIndicator->SetDesiredVisibility(false);
+		if (FocusPromptData)
+		{
+			FocusPromptData->Clear();
+		}
 	}
 
-	const FString FocusKey = CurrentOptions.IsEmpty() ? FString() : MakeOptionKey(CurrentOptions[0]);
+	const FString FocusKey = bShowFocus ? MakeOptionKey(CurrentOptions[0]) : FString();
 	TSet<FString> DesiredNearbyKeys;
 	for (const FInteractionOption& Option : CurrentNearbyOptions)
 	{
@@ -370,14 +395,25 @@ void URpgGameplayAbility_Interact::RefreshInteractionIndicators()
 		}
 		Data->UpdateFromOption(Option, ERpgInteractionPromptState::Nearby);
 
+		const TSoftClassPtr<UUserWidget> DesiredWidgetClass = Option.Prompt.NearbyWidgetClass.IsNull()
+			? DefaultNearbyWidgetClass
+			: Option.Prompt.NearbyWidgetClass;
 		UIndicatorDescriptor* Descriptor = NearbyIndicators.FindRef(Key);
+		if (Descriptor && Descriptor->GetIndicatorClass() != DesiredWidgetClass)
+		{
+			IndicatorManager->RemoveIndicator(Descriptor);
+			NearbyIndicators.Remove(Key);
+			Descriptor = nullptr;
+		}
+
+		bool bRegisterIndicator = false;
 		if (!Descriptor)
 		{
 			Descriptor = NewObject<UIndicatorDescriptor>(this);
 			Descriptor->SetDataObject(Data);
-			Descriptor->SetAutoRemoveWhenIndicatorComponentIsNull(true);
+			Descriptor->SetAutoRemoveWhenIndicatorComponentIsNull(false);
 			NearbyIndicators.Add(Key, Descriptor);
-			IndicatorManager->AddIndicator(Descriptor);
+			bRegisterIndicator = true;
 		}
 		USceneComponent* Anchor = Option.TargetRef.TargetComponent.Get();
 		if (!Anchor && Option.TargetRef.TargetActor.IsValid())
@@ -386,11 +422,13 @@ void URpgGameplayAbility_Interact::RefreshInteractionIndicators()
 		}
 		Descriptor->SetSceneComponent(Anchor);
 		Descriptor->SetAbsoluteWorldPosition(Option.GetInteractionWorldLocation());
-		Descriptor->SetIndicatorClass(Option.Prompt.NearbyWidgetClass.IsNull()
-			? DefaultNearbyWidgetClass
-			: Option.Prompt.NearbyWidgetClass);
+		Descriptor->SetIndicatorClass(DesiredWidgetClass);
 		Descriptor->SetPriority(Option.Prompt.InteractionPriority);
 		Descriptor->SetDesiredVisibility(true);
+		if (bRegisterIndicator)
+		{
+			IndicatorManager->AddIndicator(Descriptor);
+		}
 	}
 
 	for (auto It = NearbyIndicators.CreateIterator(); It; ++It)

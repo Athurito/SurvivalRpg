@@ -1,8 +1,10 @@
 #if WITH_DEV_AUTOMATION_TESTS
 
 #include "RpgInteractionPromptData.h"
+#include "RpgInteractionPromptAutomationTestTypes.h"
 #include "RpgInteractionPromptWidget.h"
 
+#include "Components/SphereComponent.h"
 #include "InputAction.h"
 #include "Misc/AutomationTest.h"
 #include "SurvivalRpg/Core/Character/RpgPawnData.h"
@@ -10,6 +12,7 @@
 #include "SurvivalRpg/Input/RpgInputConfig.h"
 #include "SurvivalRpg/Interaction/InteractionOption.h"
 #include "SurvivalRpg/UI/IndicatorSystem/IndicatorDescriptor.h"
+#include "SurvivalRpg/UI/IndicatorSystem/RpgIndicatorManagerComponent.h"
 
 IMPLEMENT_SIMPLE_AUTOMATION_TEST(
 	FRpgInteractionPromptDataSemanticDiffTest,
@@ -66,6 +69,74 @@ bool FRpgInteractionPromptDataSemanticDiffTest::RunTest(const FString& Parameter
 	PromptData->Clear();
 	TestEqual(TEXT("Only the first clear broadcasts"), BroadcastCount, 3);
 	TestEqual(TEXT("Clear hides the presentation"), PromptData->State, ERpgInteractionPromptState::Hidden);
+	return true;
+}
+
+IMPLEMENT_SIMPLE_AUTOMATION_TEST(
+	FRpgInteractionPromptRangeReentryTest,
+	"SurvivalRpg.UI.Interaction.PromptRangeReentry",
+	EAutomationTestFlags::EditorContext |
+		EAutomationTestFlags::EngineFilter)
+
+bool FRpgInteractionPromptRangeReentryTest::RunTest(const FString& Parameters)
+{
+	(void)Parameters;
+	URpgInteractionPromptAutomationAbility* Ability =
+		NewObject<URpgInteractionPromptAutomationAbility>();
+	URpgIndicatorManagerComponent* IndicatorManager =
+		NewObject<URpgIndicatorManagerComponent>();
+	USphereComponent* TargetComponent = NewObject<USphereComponent>();
+
+	FInteractionOption Option;
+	Option.InteractionTag = RpgGameplayTags::Rpg_Interaction_Action_Generic;
+	Option.TargetRef.TargetComponent = TargetComponent;
+	Option.TargetRef.WorldLocation = FVector(100.0, 0.0, 50.0);
+	Option.Prompt.ActionText = FText::FromString(TEXT("Open"));
+	Option.Prompt.TargetText = FText::FromString(TEXT("Storage"));
+	Option.Prompt.FocusWidgetClass = URpgInteractionPromptWidget::StaticClass();
+	Option.PromptState = ERpgInteractionPromptState::Ready;
+
+	int32 AddedCount = 0;
+	bool bWasConfiguredBeforeRegistration = false;
+	IndicatorManager->OnIndicatorAdded.AddLambda(
+		[&](UIndicatorDescriptor* Descriptor)
+		{
+			++AddedCount;
+			bWasConfiguredBeforeRegistration = Descriptor &&
+				!Descriptor->GetIndicatorClass().IsNull() &&
+				Descriptor->GetSceneComponent() == TargetComponent &&
+				Descriptor->GetDataObject() != nullptr;
+		});
+
+	Ability->ReconcileFocusForTesting(IndicatorManager, { Option });
+	TestEqual(TEXT("The focus descriptor is registered once"), IndicatorManager->GetIndicators().Num(), 1);
+	TestEqual(TEXT("The actor canvas receives one add event"), AddedCount, 1);
+	TestTrue(TEXT("The descriptor is fully configured before registration"), bWasConfiguredBeforeRegistration);
+
+	UIndicatorDescriptor* InitialDescriptor = IndicatorManager->GetIndicators()[0];
+	Ability->ReconcileFocusForTesting(IndicatorManager, {});
+	TestEqual(TEXT("Range exit retains the stable descriptor"), IndicatorManager->GetIndicators().Num(), 1);
+	TestEqual(TEXT("Range exit does not recreate or re-register the widget"), AddedCount, 1);
+	TestFalse(TEXT("Range exit hides the retained descriptor"), InitialDescriptor->GetIsVisible());
+	const URpgInteractionPromptData* HiddenData =
+		Cast<URpgInteractionPromptData>(InitialDescriptor->GetDataObject());
+	TestNotNull(TEXT("The retained descriptor keeps its stable data object"), HiddenData);
+	if (HiddenData)
+	{
+		TestEqual(TEXT("Range exit clears presentation state"), HiddenData->State, ERpgInteractionPromptState::Hidden);
+	}
+
+	Ability->ReconcileFocusForTesting(IndicatorManager, { Option });
+	TestEqual(TEXT("Range re-entry still has exactly one descriptor"), IndicatorManager->GetIndicators().Num(), 1);
+	TestEqual(TEXT("Range re-entry reuses the registered widget"), AddedCount, 1);
+	TestEqual(TEXT("Range re-entry reuses the same descriptor"), IndicatorManager->GetIndicators()[0], InitialDescriptor);
+	TestTrue(TEXT("Range re-entry makes the prompt visible again"), InitialDescriptor->GetIsVisible());
+	const URpgInteractionPromptData* RestoredData =
+		Cast<URpgInteractionPromptData>(InitialDescriptor->GetDataObject());
+	if (RestoredData)
+	{
+		TestEqual(TEXT("Range re-entry restores ready state"), RestoredData->State, ERpgInteractionPromptState::Ready);
+	}
 	return true;
 }
 

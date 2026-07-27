@@ -107,6 +107,9 @@ protected:
 	UPROPERTY(BlueprintReadOnly, Category = "Rpg|Interaction")
 	TArray<FInteractionOption> CurrentOptions;
 
+	/** Reconciles the current focus and nearby options into locally owned indicator descriptors. */
+	void ReconcileInteractionIndicators(URpgIndicatorManagerComponent* IndicatorManager);
+
 private:
 	UFUNCTION()
 	void HandleFocusedOptionsChanged(const TArray<FInteractionOption>& InteractiveOptions);
