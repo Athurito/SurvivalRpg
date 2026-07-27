@@ -4,6 +4,7 @@
 
 #include "CoreMinimal.h"
 #include "Components/ActorComponent.h"
+#include "SurvivalRpg/Interaction/IInteractableTarget.h"
 #include "RpgDownedComponent.generated.h"
 
 class URpgAbilitySystemComponent;
@@ -20,8 +21,9 @@ DECLARE_DYNAMIC_MULTICAST_DELEGATE_OneParam(FRpgDowned_StateChanged, ERpgDownedS
 DECLARE_DYNAMIC_MULTICAST_DELEGATE_OneParam(FRpgDowned_ReviveEvent, AActor*, Reviver);
 DECLARE_DYNAMIC_MULTICAST_DELEGATE(FRpgDowned_BleedoutExpired);
 
+/** Server-owned downed/revive state that also exposes a Lyra-style Revive interaction. */
 UCLASS(ClassGroup=(Custom), meta=(BlueprintSpawnableComponent))
-class SURVIVALRPG_API URpgDownedComponent : public UActorComponent
+class SURVIVALRPG_API URpgDownedComponent : public UActorComponent, public IInteractableTarget
 {
 	GENERATED_BODY()
 
@@ -29,6 +31,7 @@ public:
 	URpgDownedComponent(const FObjectInitializer& ObjectInitializer = FObjectInitializer::Get());
 
 	virtual void GetLifetimeReplicatedProps(TArray<FLifetimeProperty>& OutLifetimeProps) const override;
+	virtual void GatherInteractionOptions(const FInteractionQuery& InteractQuery, FInteractionOptionBuilder& InteractionBuilder) override;
 
 	UFUNCTION(BlueprintPure, Category = "Rpg|Downed")
 	static URpgDownedComponent* FindDownedComponent(const AActor* Actor) { return (Actor ? Actor->FindComponentByClass<URpgDownedComponent>() : nullptr); }
@@ -61,7 +64,7 @@ public:
 	bool IsDowned() const;
 
 	UFUNCTION(BlueprintPure, Category = "Rpg|Downed")
-	bool IsBeingRevived() const { return CurrentReviver.IsValid(); }
+	bool IsBeingRevived() const { return CurrentReviver && IsValid(CurrentReviver.Get()); }
 
 	UFUNCTION(BlueprintPure, Category = "Rpg|Downed")
 	ERpgDownedState GetDownedState() const { return DownedState; }
@@ -99,6 +102,10 @@ public:
 protected:
 	virtual void OnUnregister() override;
 
+	/** Designer-tunable prompt and range data for reviving this component's owning pawn. */
+	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Rpg|Downed|Interaction")
+	FInteractionOption ReviveInteractionOption;
+
 private:
 	UFUNCTION()
 	void OnRep_DownedState(ERpgDownedState OldState);
@@ -128,8 +135,9 @@ private:
 	UPROPERTY(EditDefaultsOnly, Category = "Rpg|Downed", meta = (ClampMin = "0.05", ClampMax = "1.0"))
 	float ReviveHealthPercent = 0.3f;
 
-	UPROPERTY()
-	TWeakObjectPtr<AActor> CurrentReviver = nullptr;
+	/** Current server-authoritative reviver, replicated so other clients render a blocked prompt correctly. */
+	UPROPERTY(Replicated)
+	TObjectPtr<AActor> CurrentReviver = nullptr;
 
 	bool bPendingDeath = false;
 };

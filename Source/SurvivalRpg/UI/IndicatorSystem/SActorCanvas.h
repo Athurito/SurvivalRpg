@@ -34,6 +34,7 @@ public:
 		FVector2D ScreenPosition = FVector2D::ZeroVector;
 		float Depth = 0.0f;
 		bool bHasValidPosition = false;
+		uint32 ProjectedRevision = 0;
 	};
 
 	SLATE_BEGIN_ARGS(SActorCanvas)

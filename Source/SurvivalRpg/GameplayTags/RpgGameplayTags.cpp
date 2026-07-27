@@ -29,6 +29,7 @@ namespace RpgGameplayTags
 	UE_DEFINE_GAMEPLAY_TAG_COMMENT(InputTag_AutoRun, "InputTag.AutoRun", "Auto-run input.");
 	UE_DEFINE_GAMEPLAY_TAG_COMMENT(InputTag_Jump, "InputTag.Jump", "Jump input.");
 	UE_DEFINE_GAMEPLAY_TAG_COMMENT(InputTag_StopJump, "InputTag.StopJump", "StopJump input.");
+	UE_DEFINE_GAMEPLAY_TAG_COMMENT(InputTag_Ability_Interact, "InputTag.Ability.Interact", "Activate the currently focused world interaction.");
 	UE_DEFINE_GAMEPLAY_TAG_COMMENT(InputTag_UI_Inventory, "InputTag.UI.Inventory", "Open the owning player's inventory screen.");
 	UE_DEFINE_GAMEPLAY_TAG_COMMENT(InputTag_UI_QuickAccessRadial_Hold, "InputTag.UI.QuickAccessRadial.Hold", "Hold to open the owning player's quick-access radial.");
 	UE_DEFINE_GAMEPLAY_TAG_COMMENT(InputTag_UI_QuickAccessRadial_Select, "InputTag.UI.QuickAccessRadial.Select", "Select a quick-access radial segment with the right stick.");
@@ -61,6 +62,21 @@ namespace RpgGameplayTags
 	UE_DEFINE_GAMEPLAY_TAG_COMMENT(GameplayEvent_RequestReset, "GameplayEvent.RequestReset", "Event to request a player's pawn to be instantly replaced with a new one at a valid spawn location.");
 	UE_DEFINE_GAMEPLAY_TAG_COMMENT(GameplayEvent_Downed, "GameplayEvent.Downed", "Event that fires when a target enters the downed state.");
 	UE_DEFINE_GAMEPLAY_TAG_COMMENT(GameplayEvent_Revive, "GameplayEvent.Revive", "Event that fires when a target is revived.");
+
+	UE_DEFINE_GAMEPLAY_TAG_COMMENT(Ability_Interaction_Activate, "Ability.Interaction.Activate", "Generic GAS event used to activate a validated interaction ability.");
+	UE_DEFINE_GAMEPLAY_TAG_COMMENT(Rpg_Interaction_Action, "Rpg.Interaction.Action", "Root tag for stable world-interaction action identifiers.");
+	UE_DEFINE_GAMEPLAY_TAG_COMMENT(Rpg_Interaction_Action_Generic, "Rpg.Interaction.Action.Generic", "Fallback id for legacy interaction options that have not yet authored a specific action tag.");
+	UE_DEFINE_GAMEPLAY_TAG_COMMENT(Rpg_Interaction_Action_Collect, "Rpg.Interaction.Action.Collect", "Collect a world pickup or dropped loot cache.");
+	UE_DEFINE_GAMEPLAY_TAG_COMMENT(Rpg_Interaction_Action_OpenStorage, "Rpg.Interaction.Action.OpenStorage", "Open an inventory storage interaction after server validation.");
+	UE_DEFINE_GAMEPLAY_TAG_COMMENT(Rpg_Interaction_Action_OpenCrafting, "Rpg.Interaction.Action.OpenCrafting", "Open a crafting-station interaction after server validation.");
+	UE_DEFINE_GAMEPLAY_TAG_COMMENT(Rpg_Interaction_Action_OpenBaseStorage, "Rpg.Interaction.Action.OpenBaseStorage", "Open a base-storage station after server validation.");
+	UE_DEFINE_GAMEPLAY_TAG_COMMENT(Rpg_Interaction_Action_Revive, "Rpg.Interaction.Action.Revive", "Revive a downed allied player.");
+	UE_DEFINE_GAMEPLAY_TAG_COMMENT(Rpg_Interaction_Action_Door_Open, "Rpg.Interaction.Action.Door.Open", "Open an unlocked interactable door.");
+	UE_DEFINE_GAMEPLAY_TAG_COMMENT(Rpg_Interaction_Action_Door_Close, "Rpg.Interaction.Action.Door.Close", "Close an open interactable door.");
+	UE_DEFINE_GAMEPLAY_TAG_COMMENT(Rpg_Interaction_Action_Door_Unlock, "Rpg.Interaction.Action.Door.Unlock", "Consume a target-defined requirement to unlock a door.");
+	UE_DEFINE_GAMEPLAY_TAG_COMMENT(Rpg_Interaction_Message_Started, "Rpg.Interaction.Message.Started", "Server-local gameplay message emitted after an interaction request validates and begins.");
+	UE_DEFINE_GAMEPLAY_TAG_COMMENT(Rpg_Interaction_Message_Ended, "Rpg.Interaction.Message.Ended", "Server-local gameplay message emitted after an interaction finishes successfully.");
+	UE_DEFINE_GAMEPLAY_TAG_COMMENT(Rpg_Interaction_Message_Rejected, "Rpg.Interaction.Message.Rejected", "Server-local gameplay message emitted when an interaction fails authoritative validation.");
 	
 	// ---------------- Status ----------------
 	UE_DEFINE_GAMEPLAY_TAG_COMMENT(Status_Crouching, "Status.Crouching", "Target is crouching.");

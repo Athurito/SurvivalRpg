@@ -11,6 +11,8 @@
 #include "GameFramework/PlayerInput.h"
 #include "SurvivalRpg/AbilitySystem/RpgAbilitySystemComponent.h"
 #include "SurvivalRpg/ActionBar/RpgActionBarComponent.h"
+#include "SurvivalRpg/Base/RpgBaseStorageStationComponent.h"
+#include "SurvivalRpg/Crafting/RpgCraftingStationComponent.h"
 #include "SurvivalRpg/Core/Game/RpgGameModeBase.h"
 #include "SurvivalRpg/Core/Character/RpgPawnData.h"
 #include "SurvivalRpg/Core/Character/RpgPawnExtensionComponent.h"
@@ -87,6 +89,76 @@ void ARpgPlayerController::ClientRestoreGameplayInputFocus_Implementation()
 void ARpgPlayerController::ClientOpenLootInventory_Implementation(URpgInventoryManagerComponent* PrimaryInventory, URpgInventoryManagerComponent* LootInventory, AActor* LootActor)
 {
 	OpenInventoryContainerScreen(RpgGameplayTags::UI_Screen_Loot, PrimaryInventory, LootInventory, LootActor);
+}
+
+void ARpgPlayerController::ClientOpenStorageInteraction_Implementation(AActor* StorageActor)
+{
+	const ARpgPlayerState* RpgPlayerState = GetPlayerState<ARpgPlayerState>();
+	URpgInventoryManagerComponent* PlayerInventory = RpgPlayerState
+		? RpgPlayerState->GetInventoryManagerComponent()
+		: nullptr;
+	URpgInventoryContainerComponent* Container = StorageActor
+		? StorageActor->FindComponentByClass<URpgInventoryContainerComponent>()
+		: nullptr;
+	OpenStorageInventory(
+		PlayerInventory,
+		Container ? Container->GetInventoryManager() : nullptr,
+		StorageActor);
+}
+
+void ARpgPlayerController::ClientOpenCraftingInteraction_Implementation(AActor* CraftingActor)
+{
+	const ARpgPlayerState* RpgPlayerState = GetPlayerState<ARpgPlayerState>();
+	URpgInventoryManagerComponent* PlayerInventory = RpgPlayerState
+		? RpgPlayerState->GetInventoryManagerComponent()
+		: nullptr;
+	URpgCraftingStationComponent* CraftingStation = CraftingActor
+		? CraftingActor->FindComponentByClass<URpgCraftingStationComponent>()
+		: nullptr;
+	if (!IsLocalController() || !PlayerInventory || !CraftingStation)
+	{
+		return;
+	}
+
+	URpgCraftingStationScreenPayload* Payload = NewObject<URpgCraftingStationScreenPayload>(this);
+	Payload->ScreenTag = RpgGameplayTags::UI_Screen_Crafting;
+	Payload->PrimaryInventory = PlayerInventory;
+	Payload->SecondaryInventory = CraftingStation->GetOutputInventory();
+	Payload->ContextActor = CraftingActor;
+	Payload->ContextComponent = CraftingStation;
+	Payload->PlayerInventory = PlayerInventory;
+	Payload->CraftingStation = CraftingStation;
+	Payload->OutputInventory = CraftingStation->GetOutputInventory();
+	Payload->RequestingActor = GetPawn();
+	URpgUIScreenBlueprintLibrary::OpenUIScreen(this, RpgGameplayTags::UI_Screen_Crafting, Payload);
+}
+
+void ARpgPlayerController::ClientOpenBaseStorageInteraction_Implementation(AActor* BaseStorageActor)
+{
+	const ARpgPlayerState* RpgPlayerState = GetPlayerState<ARpgPlayerState>();
+	URpgInventoryManagerComponent* PlayerInventory = RpgPlayerState
+		? RpgPlayerState->GetInventoryManagerComponent()
+		: nullptr;
+	URpgBaseStorageStationComponent* Station = BaseStorageActor
+		? BaseStorageActor->FindComponentByClass<URpgBaseStorageStationComponent>()
+		: nullptr;
+	if (!IsLocalController() || !PlayerInventory || !Station)
+	{
+		return;
+	}
+
+	URpgBaseStorageScreenPayload* Payload = NewObject<URpgBaseStorageScreenPayload>(this);
+	Payload->ScreenTag = RpgGameplayTags::UI_Screen_BaseTerminal;
+	Payload->PrimaryInventory = PlayerInventory;
+	Payload->SecondaryInventory = Station->GetArmoryInventory();
+	Payload->ContextActor = BaseStorageActor;
+	Payload->ContextComponent = Station;
+	Payload->PlayerInventory = PlayerInventory;
+	Payload->BaseStorage = Station->GetBaseStorage();
+	Payload->ArmoryInventory = Station->GetArmoryInventory();
+	Payload->StationComponent = Station;
+	Payload->AllowedResources = Station->GetAllowedResourceDefinitions();
+	URpgUIScreenBlueprintLibrary::OpenUIScreen(this, RpgGameplayTags::UI_Screen_BaseTerminal, Payload);
 }
 
 void ARpgPlayerController::OpenStorageInventory(

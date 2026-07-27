@@ -1,6 +1,10 @@
 #include "AbilitySystem/Abilities/RpgGameplayAbility_ExitPortal.h"
 
 #include "Portals/RpgPortalExitActor.h"
+#include "SurvivalRpg/GameplayTags/RpgGameplayTags.h"
+#include "SurvivalRpg/Interaction/InteractionOption.h"
+#include "SurvivalRpg/Interaction/InteractionQuery.h"
+#include "SurvivalRpg/Interaction/InteractionStatics.h"
 
 #include UE_INLINE_GENERATED_CPP_BY_NAME(RpgGameplayAbility_ExitPortal)
 
@@ -19,26 +23,37 @@ void URpgGameplayAbility_ExitPortal::ActivateAbility(
 {
 	Super::ActivateAbility(Handle, ActorInfo, ActivationInfo, TriggerEventData);
 
-	if (!ActorInfo || !ActorInfo->IsNetAuthority())
+	FInteractionOption ValidatedOption;
+	FInteractionQuery AuthoritativeQuery;
+	FText FailureReason;
+	if (!ActorInfo || !ActorInfo->IsNetAuthority() ||
+		!UInteractionStatics::ValidateInteractionEventData(
+			*ActorInfo,
+			TriggerEventData,
+			ValidatedOption,
+			AuthoritativeQuery,
+			FailureReason))
 	{
 		EndAbility(Handle, ActorInfo, ActivationInfo, true, true);
 		return;
 	}
 
-	if (!CommitAbility(Handle, ActorInfo, ActivationInfo))
+	AActor* ExitingActor = ActorInfo->AvatarActor.Get();
+	ARpgPortalExitActor* ExitPortal = Cast<ARpgPortalExitActor>(ValidatedOption.TargetRef.TargetActor.Get());
+	if (!ExitPortal || !CommitAbility(Handle, ActorInfo, ActivationInfo))
 	{
+		UInteractionStatics::BroadcastInteractionMessage(this, RpgGameplayTags::Rpg_Interaction_Message_Rejected, ValidatedOption, ExitingActor, false);
 		EndAbility(Handle, ActorInfo, ActivationInfo, true, true);
 		return;
-	}
-
-	ARpgPortalExitActor* ExitPortal = ResolveExitPortalTarget(ActorInfo, TriggerEventData);
-	AActor* ExitingActor = TriggerEventData ? const_cast<AActor*>(ToRawPtr(TriggerEventData->Instigator)) : nullptr;
-	if (!ExitingActor && ActorInfo->AvatarActor.IsValid())
-	{
-		ExitingActor = ActorInfo->AvatarActor.Get();
 	}
 
 	const bool bExited = ExitPortal && ExitPortal->TryUseExitPortal(ExitingActor);
+	UInteractionStatics::BroadcastInteractionMessage(
+		this,
+		bExited ? RpgGameplayTags::Rpg_Interaction_Message_Ended : RpgGameplayTags::Rpg_Interaction_Message_Rejected,
+		ValidatedOption,
+		ExitingActor,
+		bExited);
 	EndAbility(Handle, ActorInfo, ActivationInfo, true, !bExited);
 }
 

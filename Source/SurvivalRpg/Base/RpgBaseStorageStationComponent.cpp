@@ -5,6 +5,7 @@
 #include "Net/UnrealNetwork.h"
 #include "RpgBaseCampActor.h"
 #include "RpgBaseStorageUpgradeDefinition.h"
+#include "SurvivalRpg/GameplayTags/RpgGameplayTags.h"
 #include "SurvivalRpg/Interaction/Abilities/RpgGameplayAbility_OpenBaseStorageStation.h"
 #include "SurvivalRpg/Interaction/InteractionQuery.h"
 #include "SurvivalRpg/Inventory/RpgInventoryItemDefinition.h"
@@ -18,8 +19,10 @@ URpgBaseStorageStationComponent::URpgBaseStorageStationComponent(const FObjectIn
 	PrimaryComponentTick.bCanEverTick = false;
 	SetIsReplicatedByDefault(true);
 
-	OpenStationOption.Text = NSLOCTEXT("RpgBaseStorage", "OpenBaseStorageText", "Open");
-	OpenStationOption.SubText = NSLOCTEXT("RpgBaseStorage", "OpenBaseStorageSubText", "Base Storage");
+	OpenStationOption.InteractionTag = RpgGameplayTags::Rpg_Interaction_Action_OpenBaseStorage;
+	OpenStationOption.Prompt.ActionText = NSLOCTEXT("RpgBaseStorage", "OpenBaseStorageText", "Open");
+	OpenStationOption.Prompt.TargetText = NSLOCTEXT("RpgBaseStorage", "OpenBaseStorageSubText", "Base Storage");
+	OpenStationOption.Prompt.InteractionPriority = 50;
 	OpenStationOption.InteractionAbilityToGrant = URpgGameplayAbility_OpenBaseStorageStation::StaticClass();
 }
 
@@ -81,10 +84,30 @@ void URpgBaseStorageStationComponent::OnRep_InstalledUpgrades()
 
 void URpgBaseStorageStationComponent::GatherInteractionOptions(const FInteractionQuery& InteractQuery, FInteractionOptionBuilder& InteractionBuilder)
 {
-	if (CanActorAccess(InteractQuery.RequestingAvatar.Get()))
+	FInteractionOption Option = OpenStationOption;
+	Option.InteractionTag = RpgGameplayTags::Rpg_Interaction_Action_OpenBaseStorage;
+	Option.TargetRef.TargetActor = GetOwner();
+	Option.Prompt.InteractionRange = InteractionRadius > 0.0f
+		? InteractionRadius
+		: Option.Prompt.InteractionRange;
+
+	const AActor* RequestingActor = InteractQuery.RequestingAvatar.Get();
+	const APawn* RequestingPawn = Cast<APawn>(RequestingActor);
+	const AController* RequestingController = Cast<AController>(RequestingActor);
+	if (!RequestingController && RequestingPawn)
 	{
-		InteractionBuilder.AddInteractionOption(OpenStationOption);
+		RequestingController = RequestingPawn->GetController();
 	}
+	const bool bSemanticallyAccessible = bAccessible && LinkedBaseCamp && GetOwner() &&
+		RequestingController && RequestingController->IsPlayerController();
+	Option.Availability = bSemanticallyAccessible
+		? ERpgInteractionAvailability::Available
+		: ERpgInteractionAvailability::Blocked;
+	if (!bSemanticallyAccessible)
+	{
+		Option.Prompt.BlockedReason = NSLOCTEXT("RpgBaseStorage", "BaseStorageUnavailable", "Base storage is unavailable");
+	}
+	InteractionBuilder.AddInteractionOption(Option);
 }
 
 URpgBaseStorageComponent* URpgBaseStorageStationComponent::GetBaseStorage() const

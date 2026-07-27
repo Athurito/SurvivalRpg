@@ -7,8 +7,10 @@
 #include "TimerManager.h"
 #include "SurvivalRpg/SurvivalRpg.h"
 #include "SurvivalRpg/AbilitySystem/RpgAbilitySystemComponent.h"
+#include "SurvivalRpg/AbilitySystem/Abilities/RpgGameplayAbility_Revive.h"
 #include "SurvivalRpg/AbilitySystem/Attributes/RpgHealthSet.h"
 #include "SurvivalRpg/GameplayTags/RpgGameplayTags.h"
+#include "SurvivalRpg/Interaction/InteractionQuery.h"
 
 URpgDownedComponent::URpgDownedComponent(const FObjectInitializer& ObjectInitializer)
 	: Super(ObjectInitializer)
@@ -17,6 +19,15 @@ URpgDownedComponent::URpgDownedComponent(const FObjectInitializer& ObjectInitial
 	PrimaryComponentTick.bCanEverTick = false;
 
 	SetIsReplicatedByDefault(true);
+
+	ReviveInteractionOption.InteractionTag = RpgGameplayTags::Rpg_Interaction_Action_Revive;
+	ReviveInteractionOption.Prompt.ActionText = NSLOCTEXT("RpgInteraction", "ReviveAction", "Revive");
+	ReviveInteractionOption.Prompt.TargetText = NSLOCTEXT("RpgInteraction", "ReviveTarget", "Downed Ally");
+	ReviveInteractionOption.Prompt.AwarenessRange = 900.0f;
+	ReviveInteractionOption.Prompt.FocusRange = 650.0f;
+	ReviveInteractionOption.Prompt.InteractionRange = 250.0f;
+	ReviveInteractionOption.Prompt.InteractionPriority = 100;
+	ReviveInteractionOption.InteractionAbilityToGrant = URpgGameplayAbility_Revive::StaticClass();
 }
 
 void URpgDownedComponent::GetLifetimeReplicatedProps(TArray<FLifetimeProperty>& OutLifetimeProps) const
@@ -24,6 +35,40 @@ void URpgDownedComponent::GetLifetimeReplicatedProps(TArray<FLifetimeProperty>& 
 	Super::GetLifetimeReplicatedProps(OutLifetimeProps);
 
 	DOREPLIFETIME(URpgDownedComponent, DownedState);
+	DOREPLIFETIME(URpgDownedComponent, CurrentReviver);
+}
+
+void URpgDownedComponent::GatherInteractionOptions(
+	const FInteractionQuery& InteractQuery,
+	FInteractionOptionBuilder& InteractionBuilder)
+{
+	if (!IsDowned() || !GetOwner())
+	{
+		return;
+	}
+
+	FInteractionOption Option = ReviveInteractionOption;
+	Option.InteractionTag = RpgGameplayTags::Rpg_Interaction_Action_Revive;
+	Option.TargetRef.TargetActor = GetOwner();
+	AActor* RequestingActor = InteractQuery.RequestingAvatar.Get();
+	if (!RequestingActor || RequestingActor == GetOwner())
+	{
+		Option.Availability = ERpgInteractionAvailability::Blocked;
+		Option.Prompt.BlockedReason = NSLOCTEXT("RpgInteraction", "CannotReviveSelf", "You cannot revive yourself");
+	}
+	else if (!CanBeRevivedBy(RequestingActor))
+	{
+		Option.Availability = ERpgInteractionAvailability::Blocked;
+		Option.Prompt.BlockedReason = CurrentReviver && CurrentReviver != RequestingActor
+			? NSLOCTEXT("RpgInteraction", "AlreadyBeingRevived", "Another player is already reviving this ally")
+			: NSLOCTEXT("RpgInteraction", "CannotBeRevived", "This ally cannot be revived");
+	}
+	else
+	{
+		Option.Availability = ERpgInteractionAvailability::Available;
+	}
+
+	InteractionBuilder.AddInteractionOption(Option);
 }
 
 void URpgDownedComponent::OnUnregister()
@@ -95,7 +140,7 @@ bool URpgDownedComponent::IsDowned() const
 
 bool URpgDownedComponent::TryEnterDowned()
 {
-	if (!AbilitySystemComponent || !HealthComponent)
+	if (!GetOwner() || !GetOwner()->HasAuthority() || !AbilitySystemComponent || !HealthComponent)
 	{
 		return false;
 	}
@@ -131,7 +176,7 @@ bool URpgDownedComponent::TryEnterDowned()
 
 void URpgDownedComponent::ForceDeathFromDowned()
 {
-	if (!IsDowned())
+	if (!GetOwner() || !GetOwner()->HasAuthority() || !IsDowned())
 	{
 		return;
 	}
@@ -166,17 +211,17 @@ bool URpgDownedComponent::CanBeRevivedBy(const AActor* Reviver) const
 		return false;
 	}
 
-	return !CurrentReviver.IsValid() || CurrentReviver.Get() == Reviver;
+	return !CurrentReviver || CurrentReviver == Reviver;
 }
 
 bool URpgDownedComponent::BeginRevive(AActor* Reviver)
 {
-	if (!CanBeRevivedBy(Reviver))
+	if (!GetOwner() || !GetOwner()->HasAuthority() || !CanBeRevivedBy(Reviver))
 	{
 		return false;
 	}
 
-	if (CurrentReviver.Get() == Reviver)
+	if (CurrentReviver == Reviver)
 	{
 		return true;
 	}
@@ -195,12 +240,12 @@ bool URpgDownedComponent::BeginRevive(AActor* Reviver)
 
 void URpgDownedComponent::CancelRevive(AActor* Reviver)
 {
-	if (!CurrentReviver.IsValid())
+	if (!GetOwner() || !GetOwner()->HasAuthority() || !CurrentReviver)
 	{
 		return;
 	}
 
-	if (Reviver && CurrentReviver.Get() != Reviver)
+	if (Reviver && CurrentReviver != Reviver)
 	{
 		return;
 	}
@@ -219,7 +264,7 @@ void URpgDownedComponent::CancelRevive(AActor* Reviver)
 
 void URpgDownedComponent::CompleteRevive(AActor* Reviver)
 {
-	if (!CanBeRevivedBy(Reviver))
+	if (!GetOwner() || !GetOwner()->HasAuthority() || !CanBeRevivedBy(Reviver))
 	{
 		return;
 	}

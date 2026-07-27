@@ -37,8 +37,10 @@ URpgCraftingStationComponent::URpgCraftingStationComponent(const FObjectInitiali
 	SetIsReplicatedByDefault(true);
 	DroppedOutputActorClass = ARpgDroppedInventoryActor::StaticClass();
 
-	OpenCraftingOption.Text = NSLOCTEXT("RpgCrafting", "OpenCraftingStationText", "Open");
-	OpenCraftingOption.SubText = NSLOCTEXT("RpgCrafting", "OpenCraftingStationSubText", "Crafting");
+	OpenCraftingOption.InteractionTag = RpgGameplayTags::Rpg_Interaction_Action_OpenCrafting;
+	OpenCraftingOption.Prompt.ActionText = NSLOCTEXT("RpgCrafting", "OpenCraftingStationText", "Open");
+	OpenCraftingOption.Prompt.TargetText = NSLOCTEXT("RpgCrafting", "OpenCraftingStationSubText", "Crafting Station");
+	OpenCraftingOption.Prompt.InteractionPriority = 50;
 	OpenCraftingOption.InteractionAbilityToGrant = URpgGameplayAbility_OpenCraftingStation::StaticClass();
 }
 
@@ -65,10 +67,29 @@ void URpgCraftingStationComponent::GetLifetimeReplicatedProps(TArray<FLifetimePr
 
 void URpgCraftingStationComponent::GatherInteractionOptions(const FInteractionQuery& InteractQuery, FInteractionOptionBuilder& InteractionBuilder)
 {
-	if (CanActorAccess(InteractQuery.RequestingAvatar.Get()))
+	FInteractionOption Option = OpenCraftingOption;
+	Option.InteractionTag = RpgGameplayTags::Rpg_Interaction_Action_OpenCrafting;
+	Option.TargetRef.TargetActor = GetOwner();
+	Option.Prompt.InteractionRange = InteractionRadius > 0.0f
+		? InteractionRadius
+		: Option.Prompt.InteractionRange;
+
+	const AActor* RequestingActor = InteractQuery.RequestingAvatar.Get();
+	const APawn* RequestingPawn = Cast<APawn>(RequestingActor);
+	const AController* RequestingController = Cast<AController>(RequestingActor);
+	if (!RequestingController && RequestingPawn)
 	{
-		InteractionBuilder.AddInteractionOption(OpenCraftingOption);
+		RequestingController = RequestingPawn->GetController();
 	}
+	const bool bSemanticallyAccessible = GetOwner() && RequestingController && RequestingController->IsPlayerController();
+	Option.Availability = bSemanticallyAccessible
+		? ERpgInteractionAvailability::Available
+		: ERpgInteractionAvailability::Blocked;
+	if (!bSemanticallyAccessible)
+	{
+		Option.Prompt.BlockedReason = NSLOCTEXT("RpgCrafting", "CraftingStationUnavailable", "Crafting station is unavailable");
+	}
+	InteractionBuilder.AddInteractionOption(Option);
 }
 
 namespace

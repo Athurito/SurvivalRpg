@@ -3,6 +3,7 @@
 #include "AbilitySystemComponent.h"
 #include "CollisionShape.h"
 #include "Components/ActorComponent.h"
+#include "Components/PrimitiveComponent.h"
 #include "Engine/World.h"
 #include "GameFramework/Controller.h"
 #include "GameplayEffectTypes.h"
@@ -139,7 +140,7 @@ bool URpgGameplayAbility_Stoneburst::FindHarvestTarget(
 
 	for (const FHitResult& Hit : Hits)
 	{
-		UObject* CandidateReceiver = FindHarvestReceiver(Hit.GetActor());
+		UObject* CandidateReceiver = FindHarvestReceiver(Hit);
 		if (!CandidateReceiver)
 		{
 			continue;
@@ -165,8 +166,17 @@ bool URpgGameplayAbility_Stoneburst::FindHarvestTarget(
 	return false;
 }
 
-UObject* URpgGameplayAbility_Stoneburst::FindHarvestReceiver(AActor* HitActor)
+UObject* URpgGameplayAbility_Stoneburst::FindHarvestReceiver(const FHitResult& Hit)
 {
+	// Instance identity belongs to the hit component. Prefer it before an actor-level
+	// implementation or unrelated components on an actor with multiple resource meshes.
+	if (UPrimitiveComponent* HitComponent = Hit.GetComponent();
+		HitComponent && HitComponent->GetClass()->ImplementsInterface(URpgHarvestableTarget::StaticClass()))
+	{
+		return HitComponent;
+	}
+
+	AActor* HitActor = Hit.GetActor();
 	if (!HitActor)
 	{
 		return nullptr;
@@ -180,7 +190,7 @@ UObject* URpgGameplayAbility_Stoneburst::FindHarvestReceiver(AActor* HitActor)
 	TInlineComponentArray<UActorComponent*> Components(HitActor);
 	for (UActorComponent* Component : Components)
 	{
-		if (Component && Component->GetClass()->ImplementsInterface(URpgHarvestableTarget::StaticClass()))
+		if (Component && Component != Hit.GetComponent() && Component->GetClass()->ImplementsInterface(URpgHarvestableTarget::StaticClass()))
 		{
 			return Component;
 		}

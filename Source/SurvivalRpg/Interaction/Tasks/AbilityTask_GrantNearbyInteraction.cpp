@@ -6,6 +6,7 @@
 #include "Engine/OverlapResult.h"
 #include "Engine/World.h"
 #include "GameFramework/Controller.h"
+#include "GameFramework/Pawn.h"
 #include "TimerManager.h"
 #include "SurvivalRpg/Interaction/IInteractableTarget.h"
 #include "SurvivalRpg/Interaction/InteractionQuery.h"
@@ -27,12 +28,59 @@ UAbilityTask_GrantNearbyInteraction* UAbilityTask_GrantNearbyInteraction::GrantA
 	return MyObj;
 }
 
+#if WITH_DEV_AUTOMATION_TESTS
+UAbilityTask_GrantNearbyInteraction* UAbilityTask_GrantNearbyInteraction::CreateForTesting(
+	UAbilitySystemComponent* InAbilitySystemComponent,
+	const float InInteractionScanRange)
+{
+	ThisClass* Task = NewObject<ThisClass>(InAbilitySystemComponent);
+	Task->InitTask(
+		*InAbilitySystemComponent,
+		InAbilitySystemComponent->GetGameplayTaskDefaultPriority());
+	Task->SetAbilitySystemComponent(InAbilitySystemComponent);
+	Task->InteractionScanRange = InInteractionScanRange;
+	return Task;
+}
+
+void UAbilityTask_GrantNearbyInteraction::ReconcileAbilityClassesForTesting(
+	const TArray<TSubclassOf<UGameplayAbility>>& RequiredAbilityClasses)
+{
+	TMap<TSubclassOf<UGameplayAbility>, int32> DesiredAbilityReferenceCounts;
+	for (const TSubclassOf<UGameplayAbility> AbilityClass : RequiredAbilityClasses)
+	{
+		if (AbilityClass)
+		{
+			DesiredAbilityReferenceCounts.FindOrAdd(AbilityClass)++;
+		}
+	}
+	ReconcileAbilities(MoveTemp(DesiredAbilityReferenceCounts));
+}
+
+void UAbilityTask_GrantNearbyInteraction::StartQueryTimerForTesting()
+{
+	StartQueryTimer();
+}
+
+bool UAbilityTask_GrantNearbyInteraction::IsQueryTimerActiveForTesting() const
+{
+	const UWorld* World = GetWorld();
+	return World && World->GetTimerManager().IsTimerActive(QueryTimerHandle);
+}
+#endif
+
 void UAbilityTask_GrantNearbyInteraction::Activate()
 {
 	SetWaitingOnAvatar();
+	StartQueryTimer();
+}
 
-	UWorld* World = GetWorld();
-	World->GetTimerManager().SetTimer(QueryTimerHandle, this, &ThisClass::QueryInteractables, InteractionScanRate, true);
+void UAbilityTask_GrantNearbyInteraction::StartQueryTimer()
+{
+	QueryInteractables();
+	if (UWorld* World = GetWorld())
+	{
+		World->GetTimerManager().SetTimer(QueryTimerHandle, this, &ThisClass::QueryInteractables, InteractionScanRate, true);
+	}
 }
 
 void UAbilityTask_GrantNearbyInteraction::OnDestroy(bool AbilityEnded)
@@ -42,54 +90,122 @@ void UAbilityTask_GrantNearbyInteraction::OnDestroy(bool AbilityEnded)
 		World->GetTimerManager().ClearTimer(QueryTimerHandle);
 	}
 
+	if (AbilitySystemComponent.IsValid() && AbilitySystemComponent->IsOwnerActorAuthoritative())
+	{
+		for (const TPair<TSubclassOf<UGameplayAbility>, FGameplayAbilitySpecHandle>& Entry : InteractionAbilityCache)
+		{
+			if (FGameplayAbilitySpec* Spec = AbilitySystemComponent->FindAbilitySpecFromHandle(Entry.Value))
+			{
+				if (Spec->IsActive())
+				{
+					AbilitySystemComponent->SetRemoveAbilityOnEnd(Entry.Value);
+				}
+				else
+				{
+					AbilitySystemComponent->ClearAbility(Entry.Value);
+				}
+			}
+		}
+	}
+	InteractionAbilityCache.Reset();
+	InteractionAbilityReferenceCounts.Reset();
+
 	Super::OnDestroy(AbilityEnded);
 }
 
 void UAbilityTask_GrantNearbyInteraction::QueryInteractables()
 {
 	UWorld* World = GetWorld();
-	AActor* ActorOwner = GetAvatarActor();
+	AActor* ActorOwner = AbilitySystemComponent.IsValid()
+		? AbilitySystemComponent->GetAvatarActor()
+		: GetAvatarActor();
 	
-	if (World && ActorOwner)
+	if (World && ActorOwner && AbilitySystemComponent.IsValid() && AbilitySystemComponent->IsOwnerActorAuthoritative())
 	{
 		FCollisionQueryParams Params(SCENE_QUERY_STAT(UAbilityTask_GrantNearbyInteraction), false);
 
 		TArray<FOverlapResult> OverlapResults;
 		World->OverlapMultiByChannel(OUT OverlapResults, ActorOwner->GetActorLocation(), FQuat::Identity, Rpg_TraceChannel_Interaction, FCollisionShape::MakeSphere(InteractionScanRange), Params);
 
-		if (OverlapResults.Num() > 0)
-		{
-			TArray<TScriptInterface<IInteractableTarget>> InteractableTargets;
-			UInteractionStatics::AppendInteractableTargetsFromOverlapResults(OverlapResults, OUT InteractableTargets);
+		TArray<TScriptInterface<IInteractableTarget>> InteractableTargets;
+		UInteractionStatics::AppendInteractableTargetsFromOverlapResults(OverlapResults, OUT InteractableTargets);
 			
-			FInteractionQuery InteractionQuery;
-			InteractionQuery.RequestingAvatar = ActorOwner;
-			InteractionQuery.RequestingController = Cast<AController>(ActorOwner->GetOwner());
-
-			TArray<FInteractionOption> Options;
-			for (TScriptInterface<IInteractableTarget>& InteractiveTarget : InteractableTargets)
+		FInteractionQuery InteractionQuery;
+		InteractionQuery.RequestingAvatar = ActorOwner;
+		InteractionQuery.RequestingController = Cast<AController>(ActorOwner->GetOwner());
+		if (!InteractionQuery.RequestingController.IsValid())
+		{
+			if (const APawn* Pawn = Cast<APawn>(ActorOwner))
 			{
-				FInteractionOptionBuilder InteractionBuilder(InteractiveTarget, Options);
-				InteractiveTarget->GatherInteractionOptions(InteractionQuery, InteractionBuilder);
-			}
-
-			// Check if any of the options need to grant the ability to the user before they can be used.
-			for (FInteractionOption& Option : Options)
-			{
-				if (Option.InteractionAbilityToGrant)
-				{
-					// Grant the ability to the GAS, otherwise it won't be able to do whatever the interaction is.
-					FObjectKey ObjectKey(Option.InteractionAbilityToGrant);
-				if (!InteractionAbilityCache.Find(ObjectKey))
-				{
-					// The ability spec can replicate; do not use this transient ability task as SourceObject.
-					FGameplayAbilitySpec Spec(Option.InteractionAbilityToGrant, 1, INDEX_NONE, ActorOwner);
-					FGameplayAbilitySpecHandle Handle = AbilitySystemComponent->GiveAbility(Spec);
-					InteractionAbilityCache.Add(ObjectKey, Handle);
-				}
-				}
+				InteractionQuery.RequestingController = Pawn->GetController();
 			}
 		}
+		InteractionQuery.QueryMode = ERpgInteractionQueryMode::Nearby;
+		InteractionQuery.QueryOrigin = ActorOwner->GetActorLocation();
+		InteractionQuery.QueryRadius = InteractionScanRange;
+
+		TArray<FInteractionOption> Options;
+		for (TScriptInterface<IInteractableTarget>& InteractiveTarget : InteractableTargets)
+		{
+			FInteractionOptionBuilder InteractionBuilder(InteractiveTarget, Options);
+			InteractiveTarget->GatherInteractionOptions(InteractionQuery, InteractionBuilder);
+		}
+
+		TMap<TSubclassOf<UGameplayAbility>, int32> DesiredAbilityReferenceCounts;
+		for (const FInteractionOption& Option : Options)
+		{
+			if (Option.InteractionAbilityToGrant && Option.Availability != ERpgInteractionAvailability::Hidden)
+			{
+				DesiredAbilityReferenceCounts.FindOrAdd(Option.InteractionAbilityToGrant)++;
+			}
+		}
+
+		ReconcileAbilities(MoveTemp(DesiredAbilityReferenceCounts));
 	}
+}
+
+void UAbilityTask_GrantNearbyInteraction::ReconcileAbilities(
+	TMap<TSubclassOf<UGameplayAbility>, int32> DesiredAbilityReferenceCounts)
+{
+	if (!AbilitySystemComponent.IsValid() || !AbilitySystemComponent->IsOwnerActorAuthoritative())
+	{
+		return;
+	}
+
+	for (auto It = InteractionAbilityCache.CreateIterator(); It; ++It)
+	{
+		FGameplayAbilitySpec* Spec = AbilitySystemComponent->FindAbilitySpecFromHandle(It.Value());
+		if (!Spec)
+		{
+			It.RemoveCurrent();
+			continue;
+		}
+		if (DesiredAbilityReferenceCounts.Contains(It.Key()))
+		{
+			Spec->RemoveAfterActivation = false;
+			continue;
+		}
+		if (Spec->IsActive())
+		{
+			AbilitySystemComponent->SetRemoveAbilityOnEnd(It.Value());
+		}
+		else
+		{
+			AbilitySystemComponent->ClearAbility(It.Value());
+			It.RemoveCurrent();
+		}
+	}
+
+	AActor* AbilitySourceActor = AbilitySystemComponent->GetAvatarActor();
+	for (const TPair<TSubclassOf<UGameplayAbility>, int32>& DesiredEntry : DesiredAbilityReferenceCounts)
+	{
+		const TSubclassOf<UGameplayAbility> AbilityClass = DesiredEntry.Key;
+		if (!InteractionAbilityCache.Contains(AbilityClass))
+		{
+			FGameplayAbilitySpec Spec(AbilityClass, 1, INDEX_NONE, AbilitySourceActor);
+			InteractionAbilityCache.Add(AbilityClass, AbilitySystemComponent->GiveAbility(Spec));
+		}
+	}
+	InteractionAbilityReferenceCounts = MoveTemp(DesiredAbilityReferenceCounts);
 }
 

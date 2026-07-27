@@ -17,6 +17,7 @@ ARpgAICharacter::ARpgAICharacter(const FObjectInitializer& ObjectInitializer)
 	ExperienceRewardComponent = CreateDefaultSubobject<URpgExperienceRewardComponent>(TEXT("ExperienceRewardComponent"));
 	LootInventoryComponent = CreateDefaultSubobject<URpgInventoryManagerComponent>(TEXT("LootInventoryComponent"));
 	LootContainerComponent = CreateDefaultSubobject<URpgInventoryContainerComponent>(TEXT("LootContainerComponent"));
+	LootContainerComponent->ConfigureAsDeathLootContainer();
 	LootSourceComponent = CreateDefaultSubobject<URpgLootSourceComponent>(TEXT("LootSourceComponent"));
 }
 

@@ -7,6 +7,8 @@
 #include "Engine/World.h"
 #include "GameFramework/PlayerController.h"
 #include "SurvivalRpg/Interaction/IInteractableTarget.h"
+#include "SurvivalRpg/Interaction/InteractionQuery.h"
+#include "SurvivalRpg/Interaction/InteractionStatics.h"
 
 #include UE_INLINE_GENERATED_CPP_BY_NAME(AbilityTask_WaitForInteractableTargets)
 
@@ -108,16 +110,36 @@ bool UAbilityTask_WaitForInteractableTargets::ClipCameraRayToAbilityRange(FVecto
 void UAbilityTask_WaitForInteractableTargets::UpdateInteractableOptions(const FInteractionQuery& InteractQuery, const TArray<TScriptInterface<IInteractableTarget>>& InteractableTargets)
 {
 	TArray<FInteractionOption> NewOptions;
+	GatherInteractableOptions(InteractQuery, InteractableTargets, NewOptions);
+	CommitInteractableOptions(MoveTemp(NewOptions));
+}
+
+void UAbilityTask_WaitForInteractableTargets::GatherInteractableOptions(
+	const FInteractionQuery& InteractQuery,
+	const TArray<TScriptInterface<IInteractableTarget>>& InteractableTargets,
+	TArray<FInteractionOption>& OutOptions) const
+{
 
 	for (const TScriptInterface<IInteractableTarget>& InteractiveTarget : InteractableTargets)
 	{
+		if (!InteractiveTarget)
+		{
+			continue;
+		}
 		TArray<FInteractionOption> TempOptions;
 		FInteractionOptionBuilder InteractionBuilder(InteractiveTarget, TempOptions);
 		InteractiveTarget->GatherInteractionOptions(InteractQuery, InteractionBuilder);
 
 		for (FInteractionOption& Option : TempOptions)
 		{
+			UInteractionStatics::NormalizeInteractionOption(InteractQuery, InteractiveTarget, Option);
+			if (Option.Availability == ERpgInteractionAvailability::Hidden)
+			{
+				continue;
+			}
+
 			FGameplayAbilitySpec* InteractionAbilitySpec = nullptr;
+			UAbilitySystemComponent* TargetAbilitySystem = Option.TargetAbilitySystem;
 
 			// if there is a handle an a target ability system, we're triggering the ability on the target.
 			if (Option.TargetAbilitySystem && Option.TargetInteractionAbilityHandle.IsValid())
@@ -136,25 +158,40 @@ void UAbilityTask_WaitForInteractableTargets::UpdateInteractableOptions(const FI
 					// update the option
 					Option.TargetAbilitySystem = AbilitySystemComponent.Get();
 					Option.TargetInteractionAbilityHandle = InteractionAbilitySpec->Handle;
+					TargetAbilitySystem = AbilitySystemComponent.Get();
 				}
 			}
 
-			if (InteractionAbilitySpec)
+			bool bCanActivate = false;
+			if (InteractionAbilitySpec && InteractionAbilitySpec->Ability && TargetAbilitySystem && TargetAbilitySystem->AbilityActorInfo.IsValid())
 			{
-				// Filter any options that we can't activate right now for whatever reason.
-				if (InteractionAbilitySpec->Ability->CanActivateAbility(InteractionAbilitySpec->Handle, AbilitySystemComponent->AbilityActorInfo.Get()))
+				bCanActivate = InteractionAbilitySpec->Ability->CanActivateAbility(
+					InteractionAbilitySpec->Handle,
+					TargetAbilitySystem->AbilityActorInfo.Get());
+			}
+
+			if (!bCanActivate && Option.Availability == ERpgInteractionAvailability::Available)
+			{
+				Option.Availability = ERpgInteractionAvailability::Blocked;
+				if (Option.Prompt.BlockedReason.IsEmpty())
 				{
-					NewOptions.Add(Option);
+					Option.Prompt.BlockedReason = InteractionAbilitySpec
+						? NSLOCTEXT("RpgInteraction", "AbilityBlocked", "Currently unavailable")
+						: NSLOCTEXT("RpgInteraction", "AbilityPending", "Interaction is not ready");
 				}
 			}
+
+			OutOptions.Add(MoveTemp(Option));
 		}
 	}
+}
 
-	bool bOptionsChanged = false;
+void UAbilityTask_WaitForInteractableTargets::CommitInteractableOptions(TArray<FInteractionOption> NewOptions)
+{
+	NewOptions.Sort();
+	bool bOptionsChanged = NewOptions.Num() != CurrentOptions.Num();
 	if (NewOptions.Num() == CurrentOptions.Num())
 	{
-		NewOptions.Sort();
-
 		for (int OptionIndex = 0; OptionIndex < NewOptions.Num(); OptionIndex++)
 		{
 			const FInteractionOption& NewOption = NewOptions[OptionIndex];
@@ -167,11 +204,6 @@ void UAbilityTask_WaitForInteractableTargets::UpdateInteractableOptions(const FI
 			}
 		}
 	}
-	else
-	{
-		bOptionsChanged = true;
-	}
-
 	if (bOptionsChanged)
 	{
 		CurrentOptions = NewOptions;

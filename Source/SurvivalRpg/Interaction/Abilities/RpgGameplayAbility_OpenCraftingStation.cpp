@@ -6,6 +6,9 @@
 #include "SurvivalRpg/Crafting/RpgCraftingStationComponent.h"
 #include "SurvivalRpg/GameplayTags/RpgGameplayTags.h"
 #include "SurvivalRpg/Inventory/RpgInventoryManagerComponent.h"
+#include "SurvivalRpg/Interaction/InteractionOption.h"
+#include "SurvivalRpg/Interaction/InteractionQuery.h"
+#include "SurvivalRpg/Interaction/InteractionStatics.h"
 #include "SurvivalRpg/UI/RpgUIScreenBlueprintLibrary.h"
 #include "SurvivalRpg/UI/RpgUIScreenPayload.h"
 
@@ -15,7 +18,7 @@ URpgGameplayAbility_OpenCraftingStation::URpgGameplayAbility_OpenCraftingStation
 	: Super(ObjectInitializer)
 {
 	InstancingPolicy = EGameplayAbilityInstancingPolicy::InstancedPerActor;
-	NetExecutionPolicy = EGameplayAbilityNetExecutionPolicy::LocalOnly;
+	NetExecutionPolicy = EGameplayAbilityNetExecutionPolicy::ServerOnly;
 }
 
 void URpgGameplayAbility_OpenCraftingStation::ActivateAbility(
@@ -26,54 +29,42 @@ void URpgGameplayAbility_OpenCraftingStation::ActivateAbility(
 {
 	Super::ActivateAbility(Handle, ActorInfo, ActivationInfo, TriggerEventData);
 
-	AActor* InteractingActor = TriggerEventData ? const_cast<AActor*>(ToRawPtr(TriggerEventData->Instigator)) : nullptr;
-	if (InteractingActor == nullptr && ActorInfo && ActorInfo->AvatarActor.IsValid())
+	FInteractionOption ValidatedOption;
+	FInteractionQuery AuthoritativeQuery;
+	FText FailureReason;
+	if (!ActorInfo || !UInteractionStatics::ValidateInteractionEventData(
+			*ActorInfo,
+			TriggerEventData,
+			ValidatedOption,
+			AuthoritativeQuery,
+			FailureReason))
 	{
-		InteractingActor = ActorInfo->AvatarActor.Get();
-	}
-
-	ARpgPlayerController* PlayerController = FindPlayerControllerForActor(InteractingActor);
-	if (PlayerController == nullptr)
-	{
-		PlayerController = Cast<ARpgPlayerController>(GetControllerFromActorInfo());
-	}
-
-	AActor* TargetActor = TriggerEventData ? const_cast<AActor*>(ToRawPtr(TriggerEventData->Target)) : nullptr;
-	URpgCraftingStationComponent* CraftingStation = FindCraftingStationComponent(TargetActor);
-	URpgInventoryManagerComponent* PlayerInventory = FindPlayerInventory(PlayerController);
-	URpgInventoryManagerComponent* OutputInventory = CraftingStation ? CraftingStation->GetOutputInventory() : nullptr;
-
-	APawn* RequestingPawn = nullptr;
-	if (PlayerController)
-	{
-		RequestingPawn = PlayerController->GetPawn();
-	}
-	else
-	{
-		RequestingPawn = Cast<APawn>(InteractingActor);
-	}
-	AActor* RequestingActor = RequestingPawn ? static_cast<AActor*>(RequestingPawn) : InteractingActor;
-
-	if (!PlayerController || !CraftingStation || !PlayerInventory || !CraftingStation->CanActorAccess(RequestingActor))
-	{
-		EndAbility(Handle, ActorInfo, ActivationInfo, false, true);
+		EndAbility(Handle, ActorInfo, ActivationInfo, true, true);
 		return;
 	}
 
-	URpgCraftingStationScreenPayload* Payload = NewObject<URpgCraftingStationScreenPayload>(PlayerController);
-	Payload->ScreenTag = RpgGameplayTags::UI_Screen_Crafting;
-	Payload->PrimaryInventory = PlayerInventory;
-	Payload->SecondaryInventory = OutputInventory;
-	Payload->ContextActor = TargetActor;
-	Payload->ContextComponent = CraftingStation;
-	Payload->PlayerInventory = PlayerInventory;
-	Payload->CraftingStation = CraftingStation;
-	Payload->OutputInventory = OutputInventory;
-	Payload->RequestingActor = RequestingActor;
+	AActor* InteractingActor = ActorInfo->AvatarActor.Get();
+	AActor* TargetActor = ValidatedOption.TargetRef.TargetActor.Get();
+	ARpgPlayerController* PlayerController = Cast<ARpgPlayerController>(ActorInfo->PlayerController.Get());
+	URpgCraftingStationComponent* CraftingStation = FindCraftingStationComponent(TargetActor);
+	const bool bCanOpen = PlayerController && CraftingStation &&
+		FindPlayerInventory(PlayerController) && CraftingStation->CanActorAccess(InteractingActor) &&
+		CommitAbility(Handle, ActorInfo, ActivationInfo);
+	if (!bCanOpen)
+	{
+		UInteractionStatics::BroadcastInteractionMessage(
+			this,
+			RpgGameplayTags::Rpg_Interaction_Message_Rejected,
+			ValidatedOption,
+			InteractingActor,
+			false);
+		EndAbility(Handle, ActorInfo, ActivationInfo, true, true);
+		return;
+	}
 
-	URpgUIScreenBlueprintLibrary::OpenUIScreen(PlayerController, RpgGameplayTags::UI_Screen_Crafting, Payload);
-
-	EndAbility(Handle, ActorInfo, ActivationInfo, false, false);
+	PlayerController->ClientOpenCraftingInteraction(TargetActor);
+	UInteractionStatics::BroadcastInteractionMessage(this, RpgGameplayTags::Rpg_Interaction_Message_Ended, ValidatedOption, InteractingActor, true);
+	EndAbility(Handle, ActorInfo, ActivationInfo, true, false);
 }
 
 ARpgPlayerController* URpgGameplayAbility_OpenCraftingStation::FindPlayerControllerForActor(AActor* Actor)

@@ -1,6 +1,10 @@
 #include "RpgDroppedInventoryActor.h"
 
+#include "GameFramework/Controller.h"
+#include "GameFramework/Pawn.h"
 #include "SurvivalRpg/Interaction/Abilities/RpgGameplayAbility_Collect.h"
+#include "SurvivalRpg/GameplayTags/RpgGameplayTags.h"
+#include "SurvivalRpg/Interaction/InteractionQuery.h"
 #include "SurvivalRpg/Inventory/RpgInventoryContainerComponent.h"
 #include "SurvivalRpg/Inventory/RpgInventoryFragment_ItemContainer.h"
 #include "SurvivalRpg/Inventory/RpgInventoryItemDefinition.h"
@@ -550,6 +554,24 @@ bool ARpgDroppedInventoryActor::CanMergePickupTemplate(TSubclassOf<URpgInventory
 	return Entries.IsEmpty() || LootInventoryComponent->CanAddItemDefinition(ItemDefinition, 1);
 }
 
+FInteractionOption ARpgDroppedInventoryActor::BuildCollectInteractionOption(
+	const FInteractionQuery& InteractQuery) const
+{
+	FInteractionOption Result = Super::BuildCollectInteractionOption(InteractQuery);
+	const AController* RequestingController = InteractQuery.RequestingController.Get();
+	const AActor* DropOwner = GetOwner();
+	const bool bOwnedByRequester = DropOwner &&
+		(DropOwner == RequestingController || DropOwner == InteractQuery.RequestingAvatar.Get() ||
+			(Cast<APawn>(DropOwner) && CastChecked<APawn>(DropOwner)->GetController() == RequestingController));
+
+	Result.InteractionTag = RpgGameplayTags::Rpg_Interaction_Action_Collect;
+	Result.Prompt.ActionText = bOwnedByRequester
+		? NSLOCTEXT("RpgInventory", "RecoverOwnedDroppedInventory", "Recover Loot")
+		: NSLOCTEXT("RpgInventory", "LootSharedDroppedInventory", "Loot");
+	Result.Prompt.InteractionPriority = 40;
+	return Result;
+}
+
 void ARpgDroppedInventoryActor::EnsureDefaultPickupInteractionOption()
 {
 	if (!Option.InteractionAbilityToGrant)
@@ -557,15 +579,17 @@ void ARpgDroppedInventoryActor::EnsureDefaultPickupInteractionOption()
 		Option.InteractionAbilityToGrant = URpgGameplayAbility_Collect::StaticClass();
 	}
 
-	if (Option.Text.IsEmpty())
+	Option.InteractionTag = RpgGameplayTags::Rpg_Interaction_Action_Collect;
+	if (Option.Prompt.ActionText.IsEmpty())
 	{
-		Option.Text = NSLOCTEXT("RpgInventory", "PickupDroppedInventoryText", "Pick Up");
+		Option.Prompt.ActionText = NSLOCTEXT("RpgInventory", "PickupDroppedInventoryText", "Loot");
 	}
 
-	if (Option.SubText.IsEmpty())
+	if (Option.Prompt.TargetText.IsEmpty())
 	{
-		Option.SubText = NSLOCTEXT("RpgInventory", "PickupDroppedInventorySubText", "Loot");
+		Option.Prompt.TargetText = NSLOCTEXT("RpgInventory", "PickupDroppedInventorySubText", "Loot Cache");
 	}
+	Option.Prompt.InteractionPriority = 40;
 }
 
 bool ARpgDroppedInventoryActor::PopulateLootInventoryFromPickup(

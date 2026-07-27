@@ -60,5 +60,5 @@ protected:
 
 private:
 	bool FindHarvestTarget(const FGameplayAbilityActorInfo& ActorInfo, FHitResult& OutHit, UObject*& OutReceiver, FRpgHarvestRequest& OutRequest) const;
-	static UObject* FindHarvestReceiver(AActor* HitActor);
+	static UObject* FindHarvestReceiver(const FHitResult& Hit);
 };

@@ -4,6 +4,10 @@
 #include "GameFramework/Pawn.h"
 #include "GameFramework/PlayerState.h"
 #include "SurvivalRpg/Core/Player/RpgPlayerController.h"
+#include "SurvivalRpg/GameplayTags/RpgGameplayTags.h"
+#include "SurvivalRpg/Interaction/InteractionOption.h"
+#include "SurvivalRpg/Interaction/InteractionQuery.h"
+#include "SurvivalRpg/Interaction/InteractionStatics.h"
 #include "SurvivalRpg/Inventory/IPickupable.h"
 #include "SurvivalRpg/Inventory/RpgDroppedInventoryActor.h"
 #include "SurvivalRpg/Inventory/RpgInventoryFragment_EquippableItem.h"
@@ -74,16 +78,35 @@ void URpgGameplayAbility_Collect::ActivateAbility(
 		return;
 	}
 
-	AActor* InteractingActor = TriggerEventData ? const_cast<AActor*>(ToRawPtr(TriggerEventData->Instigator)) : nullptr;
-	if (InteractingActor == nullptr && ActorInfo->AvatarActor.IsValid())
-	{
-		InteractingActor = ActorInfo->AvatarActor.Get();
-	}
-
-	AActor* TargetActor = TriggerEventData ? const_cast<AActor*>(ToRawPtr(TriggerEventData->Target)) : nullptr;
-	if (TargetActor == nullptr)
+	FInteractionOption ValidatedOption;
+	FInteractionQuery AuthoritativeQuery;
+	FText FailureReason;
+	if (!UInteractionStatics::ValidateInteractionEventData(
+			*ActorInfo,
+			TriggerEventData,
+			ValidatedOption,
+			AuthoritativeQuery,
+			FailureReason))
 	{
 		EndAbility(Handle, ActorInfo, ActivationInfo, true, true);
+		return;
+	}
+
+	AActor* InteractingActor = ActorInfo->AvatarActor.Get();
+	AActor* TargetActor = ValidatedOption.TargetRef.TargetActor.Get();
+	auto RejectInteraction = [this, Handle, ActorInfo, ActivationInfo, &ValidatedOption, InteractingActor]()
+	{
+		UInteractionStatics::BroadcastInteractionMessage(
+			this,
+			RpgGameplayTags::Rpg_Interaction_Message_Rejected,
+			ValidatedOption,
+			InteractingActor,
+			false);
+		EndAbility(Handle, ActorInfo, ActivationInfo, true, true);
+	};
+	if (TargetActor == nullptr)
+	{
+		RejectInteraction();
 		return;
 	}
 
@@ -91,7 +114,7 @@ void URpgGameplayAbility_Collect::ActivateAbility(
 	URpgInventoryManagerComponent* InventoryComponent = FindInventoryManagerForActor(InteractingActor);
 	if (!Pickup || InventoryComponent == nullptr)
 	{
-		EndAbility(Handle, ActorInfo, ActivationInfo, true, true);
+		RejectInteraction();
 		return;
 	}
 
@@ -104,7 +127,7 @@ void URpgGameplayAbility_Collect::ActivateAbility(
 		ARpgPlayerController* PlayerController = FindPlayerControllerForActor(InteractingActor);
 		if (!LootInventory || !PlayerController || !CommitAbility(Handle, ActorInfo, ActivationInfo))
 		{
-			EndAbility(Handle, ActorInfo, ActivationInfo, true, true);
+			RejectInteraction();
 			return;
 		}
 
@@ -134,7 +157,18 @@ void URpgGameplayAbility_Collect::ActivateAbility(
 			}
 		}
 
-		if (LootInventory->GetAllEntries().IsEmpty())
+		const bool bHasRemainingLoot = !LootInventory->GetAllEntries().IsEmpty();
+		const bool bInteractionSucceeded = bTransferredAnything || bHasRemainingLoot;
+		UInteractionStatics::BroadcastInteractionMessage(
+			this,
+			bInteractionSucceeded
+				? RpgGameplayTags::Rpg_Interaction_Message_Ended
+				: RpgGameplayTags::Rpg_Interaction_Message_Rejected,
+			ValidatedOption,
+			InteractingActor,
+			bInteractionSucceeded);
+
+		if (!bHasRemainingLoot)
 		{
 			if (bDestroyCollectedActor && TargetActor->HasAuthority() && TargetActor != InteractingActor)
 			{
@@ -146,20 +180,20 @@ void URpgGameplayAbility_Collect::ActivateAbility(
 			PlayerController->ClientOpenLootInventory(InventoryComponent, LootInventory, DroppedInventoryActor);
 		}
 
-		EndAbility(Handle, ActorInfo, ActivationInfo, true, false);
+		EndAbility(Handle, ActorInfo, ActivationInfo, true, !bInteractionSucceeded);
 		return;
 	}
 
 	const FInventoryPickup PickupInventory = Pickup->GetPickupInventory();
 	if (!InventoryComponent->CanAddPickupBatch(PickupInventory))
 	{
-		EndAbility(Handle, ActorInfo, ActivationInfo, true, true);
+		RejectInteraction();
 		return;
 	}
 
 	if (!CommitAbility(Handle, ActorInfo, ActivationInfo))
 	{
-		EndAbility(Handle, ActorInfo, ActivationInfo, true, true);
+		RejectInteraction();
 		return;
 	}
 
@@ -168,6 +202,12 @@ void URpgGameplayAbility_Collect::ActivateAbility(
 		InventoryComponent->AddPickupBatch(PickupInventory, AddedItemIds);
 	if (!PickupResult.IsSuccess())
 	{
+		UInteractionStatics::BroadcastInteractionMessage(
+			this,
+			RpgGameplayTags::Rpg_Interaction_Message_Rejected,
+			ValidatedOption,
+			InteractingActor,
+			false);
 		EndAbility(Handle, ActorInfo, ActivationInfo, true, true);
 		return;
 	}
@@ -192,6 +232,13 @@ void URpgGameplayAbility_Collect::ActivateAbility(
 				AddedItems);
 		}
 	}
+
+	UInteractionStatics::BroadcastInteractionMessage(
+		this,
+		RpgGameplayTags::Rpg_Interaction_Message_Ended,
+		ValidatedOption,
+		InteractingActor,
+		true);
 
 	if (bDestroyCollectedActor && TargetActor->HasAuthority() && TargetActor != InteractingActor)
 	{

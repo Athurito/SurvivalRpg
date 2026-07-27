@@ -50,12 +50,26 @@ public:
 	UFUNCTION(BlueprintCallable)
 	USceneComponent* GetSceneComponent() const { return Component; }
 	UFUNCTION(BlueprintCallable)
-	void SetSceneComponent(USceneComponent* InComponent) { Component = InComponent; }
+	void SetSceneComponent(USceneComponent* InComponent)
+	{
+		if (Component != InComponent)
+		{
+			Component = InComponent;
+			MarkProjectionDirty();
+		}
+	}
 
 	UFUNCTION(BlueprintCallable)
 	FName GetComponentSocketName() const { return ComponentSocketName; }
 	UFUNCTION(BlueprintCallable)
-	void SetComponentSocketName(FName SocketName) { ComponentSocketName = SocketName; }
+	void SetComponentSocketName(FName SocketName)
+	{
+		if (ComponentSocketName != SocketName)
+		{
+			ComponentSocketName = SocketName;
+			MarkProjectionDirty();
+		}
+	}
 
 	UFUNCTION(BlueprintCallable)
 	TSoftClassPtr<UUserWidget> GetIndicatorClass() const { return IndicatorWidgetClass; }
@@ -91,17 +105,18 @@ public:
 	bool GetIsVisible() const { return IsValid(GetSceneComponent()) && bVisible; }
 	
 	UFUNCTION(BlueprintCallable)
-	void SetDesiredVisibility(bool InVisible)
-	{
-		bVisible = InVisible;
-	}
+	void SetDesiredVisibility(bool InVisible);
 
 	UFUNCTION(BlueprintCallable)
 	EActorCanvasProjectionMode GetProjectionMode() const { return ProjectionMode; }
 	UFUNCTION(BlueprintCallable)
 	void SetProjectionMode(EActorCanvasProjectionMode InProjectionMode)
 	{
-		ProjectionMode = InProjectionMode;
+		if (ProjectionMode != InProjectionMode)
+		{
+			ProjectionMode = InProjectionMode;
+			MarkProjectionDirty();
+		}
 	}
 
 	// Horizontal alignment to the point in space to place the indicator at.
@@ -110,7 +125,11 @@ public:
 	UFUNCTION(BlueprintCallable)
 	void SetHAlign(EHorizontalAlignment InHAlignment)
 	{
-		HAlignment = InHAlignment;
+		if (HAlignment != InHAlignment)
+		{
+			HAlignment = InHAlignment;
+			MarkProjectionDirty();
+		}
 	}
 
 	// Vertical alignment to the point in space to place the indicator at.
@@ -119,7 +138,11 @@ public:
 	UFUNCTION(BlueprintCallable)
 	void SetVAlign(EVerticalAlignment InVAlignment)
 	{
-		VAlignment = InVAlignment;
+		if (VAlignment != InVAlignment)
+		{
+			VAlignment = InVAlignment;
+			MarkProjectionDirty();
+		}
 	}
 
 	// Clamp the indicator to the edge of the screen?
@@ -128,7 +151,11 @@ public:
 	UFUNCTION(BlueprintCallable)
 	void SetClampToScreen(bool bValue)
 	{
-		bClampToScreen = bValue;
+		if (bClampToScreen != bValue)
+		{
+			bClampToScreen = bValue;
+			MarkProjectionDirty();
+		}
 	}
 
 	// Show the arrow if clamping to the edge of the screen?
@@ -146,8 +173,60 @@ public:
 	UFUNCTION(BlueprintCallable)
 	void SetWorldPositionOffset(FVector Offset)
 	{
-		WorldPositionOffset = Offset;
+		if (WorldPositionOffset != Offset)
+		{
+			WorldPositionOffset = Offset;
+			MarkProjectionDirty();
+		}
 	}
+
+	/** Whether projection uses an explicit world point instead of the component or socket origin. */
+	UFUNCTION(BlueprintPure, Category = "Indicator|Projection")
+	bool HasWorldPositionOverride() const { return bUseWorldPositionOverride; }
+
+	/** Explicit world point used for ISM/HISM instances and other component sub-elements. */
+	UFUNCTION(BlueprintPure, Category = "Indicator|Projection")
+	FVector GetWorldPositionOverride() const { return WorldPositionOverride; }
+
+	/** Projects this descriptor from an explicit world point while retaining its component lifetime anchor. */
+	UFUNCTION(BlueprintCallable, Category = "Indicator|Projection")
+	void SetWorldPositionOverride(FVector InWorldPosition)
+	{
+		if (!bUseWorldPositionOverride || WorldPositionOverride != InWorldPosition)
+		{
+			WorldPositionOverride = InWorldPosition;
+			bUseWorldPositionOverride = true;
+			MarkProjectionDirty();
+		}
+	}
+
+	/** Restores component/socket-relative projection when a pooled descriptor is reused. */
+	UFUNCTION(BlueprintCallable, Category = "Indicator|Projection")
+	void ClearWorldPositionOverride()
+	{
+		if (bUseWorldPositionOverride || !WorldPositionOverride.IsZero())
+		{
+			bUseWorldPositionOverride = false;
+			WorldPositionOverride = FVector::ZeroVector;
+			MarkProjectionDirty();
+		}
+	}
+
+	/** Compatibility spelling for callers that describe the override as an absolute world point. */
+	UFUNCTION(BlueprintPure, Category = "Indicator|Projection")
+	bool HasAbsoluteWorldPosition() const { return HasWorldPositionOverride(); }
+
+	/** Returns the absolute world point supplied through either override API. */
+	UFUNCTION(BlueprintPure, Category = "Indicator|Projection")
+	FVector GetAbsoluteWorldPosition() const { return GetWorldPositionOverride(); }
+
+	/** Sets the same projection override as SetWorldPositionOverride. */
+	UFUNCTION(BlueprintCallable, Category = "Indicator|Projection")
+	void SetAbsoluteWorldPosition(FVector InWorldPosition) { SetWorldPositionOverride(InWorldPosition); }
+
+	/** Clears the same projection override as ClearWorldPositionOverride. */
+	UFUNCTION(BlueprintCallable, Category = "Indicator|Projection")
+	void ClearAbsoluteWorldPosition() { ClearWorldPositionOverride(); }
 
 	// The position offset for the indicator in screen space.
 	UFUNCTION(BlueprintCallable)
@@ -155,7 +234,11 @@ public:
 	UFUNCTION(BlueprintCallable)
 	void SetScreenSpaceOffset(FVector2D Offset)
 	{
-		ScreenSpaceOffset = Offset;
+		if (ScreenSpaceOffset != Offset)
+		{
+			ScreenSpaceOffset = Offset;
+			MarkProjectionDirty();
+		}
 	}
 
 	UFUNCTION(BlueprintCallable)
@@ -163,8 +246,15 @@ public:
 	UFUNCTION(BlueprintCallable)
 	void SetBoundingBoxAnchor(FVector InBoundingBoxAnchor)
 	{
-		BoundingBoxAnchor = InBoundingBoxAnchor;
+		if (BoundingBoxAnchor != InBoundingBoxAnchor)
+		{
+			BoundingBoxAnchor = InBoundingBoxAnchor;
+			MarkProjectionDirty();
+		}
 	}
+
+	/** Monotonic local revision consumed by the actor canvas before painting a retargeted descriptor. */
+	uint32 GetProjectionRevision() const { return ProjectionRevision; }
 
 public:
 	// Sorting Properties
@@ -188,6 +278,15 @@ public:
 	void UnregisterIndicator();
 
 private:
+	void MarkProjectionDirty()
+	{
+		++ProjectionRevision;
+		if (ProjectionRevision == 0)
+		{
+			ProjectionRevision = 1;
+		}
+	}
+
 	UPROPERTY()
 	bool bVisible = true;
 	UPROPERTY()
@@ -196,6 +295,8 @@ private:
 	bool bShowClampToScreenArrow = false;
 	UPROPERTY()
 	bool bOverrideScreenPosition = false;
+	UPROPERTY()
+	bool bUseWorldPositionOverride = false;
 	UPROPERTY()
 	bool bAutoRemoveWhenIndicatorComponentIsNull = false;
 
@@ -215,6 +316,10 @@ private:
 	FVector2D ScreenSpaceOffset = FVector2D(0, 0);
 	UPROPERTY()
 	FVector WorldPositionOffset = FVector(0, 0, 0);
+	UPROPERTY()
+	FVector WorldPositionOverride = FVector::ZeroVector;
+
+	uint32 ProjectionRevision = 1;
 
 private:
 	friend class SActorCanvas;

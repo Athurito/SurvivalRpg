@@ -34,6 +34,7 @@ namespace RpgGameplayTags
 	UE_DECLARE_GAMEPLAY_TAG_EXTERN(InputTag_AutoRun);   
 	UE_DECLARE_GAMEPLAY_TAG_EXTERN(InputTag_Jump);   
 	UE_DECLARE_GAMEPLAY_TAG_EXTERN(InputTag_StopJump);   
+	extern SURVIVALRPG_API FNativeGameplayTag InputTag_Ability_Interact;
 	UE_DECLARE_GAMEPLAY_TAG_EXTERN(InputTag_UI_Inventory);
 	UE_DECLARE_GAMEPLAY_TAG_EXTERN(InputTag_UI_QuickAccessRadial_Hold);
 	UE_DECLARE_GAMEPLAY_TAG_EXTERN(InputTag_UI_QuickAccessRadial_Select);
@@ -65,6 +66,21 @@ namespace RpgGameplayTags
 	UE_DECLARE_GAMEPLAY_TAG_EXTERN(GameplayEvent_RequestReset);
 	UE_DECLARE_GAMEPLAY_TAG_EXTERN(GameplayEvent_Downed);
 	UE_DECLARE_GAMEPLAY_TAG_EXTERN(GameplayEvent_Revive);
+
+	extern SURVIVALRPG_API FNativeGameplayTag Ability_Interaction_Activate;
+	extern SURVIVALRPG_API FNativeGameplayTag Rpg_Interaction_Action;
+	extern SURVIVALRPG_API FNativeGameplayTag Rpg_Interaction_Action_Generic;
+	extern SURVIVALRPG_API FNativeGameplayTag Rpg_Interaction_Action_Collect;
+	extern SURVIVALRPG_API FNativeGameplayTag Rpg_Interaction_Action_OpenStorage;
+	extern SURVIVALRPG_API FNativeGameplayTag Rpg_Interaction_Action_OpenCrafting;
+	extern SURVIVALRPG_API FNativeGameplayTag Rpg_Interaction_Action_OpenBaseStorage;
+	extern SURVIVALRPG_API FNativeGameplayTag Rpg_Interaction_Action_Revive;
+	extern SURVIVALRPG_API FNativeGameplayTag Rpg_Interaction_Action_Door_Open;
+	extern SURVIVALRPG_API FNativeGameplayTag Rpg_Interaction_Action_Door_Close;
+	extern SURVIVALRPG_API FNativeGameplayTag Rpg_Interaction_Action_Door_Unlock;
+	extern SURVIVALRPG_API FNativeGameplayTag Rpg_Interaction_Message_Started;
+	extern SURVIVALRPG_API FNativeGameplayTag Rpg_Interaction_Message_Ended;
+	extern SURVIVALRPG_API FNativeGameplayTag Rpg_Interaction_Message_Rejected;
 
 	UE_DECLARE_GAMEPLAY_TAG_EXTERN(Status_Downed);
 	UE_DECLARE_GAMEPLAY_TAG_EXTERN(Status_Downed_BleedingOut);

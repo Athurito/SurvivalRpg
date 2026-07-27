@@ -9,7 +9,8 @@
 #include "InteractableComponent.generated.h"
 
 
-UCLASS(ClassGroup=(Custom), meta=(BlueprintSpawnableComponent))
+/** Lightweight configurable interaction provider for actors that own suitable interaction-query collision. */
+UCLASS(ClassGroup=(Interaction), meta=(BlueprintSpawnableComponent))
 class SURVIVALRPG_API UInteractableComponent : public UActorComponent, public IInteractableTarget
 {
 	GENERATED_BODY()
@@ -23,9 +24,11 @@ public:
 	//~End of IInteractableTarget contract
 	
 protected:
-	UPROPERTY(EditAnywhere)
+	/** Static designer-authored interaction emitted for every local or authoritative query. */
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Rpg|Interaction")
 	FInteractionOption Option;
 
-	UPROPERTY(EditAnywhere)
+	/** Optional static pickup payload retained for legacy component-authored collectables. */
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Rpg|Interaction")
 	FInventoryPickup StaticInventory;
 };

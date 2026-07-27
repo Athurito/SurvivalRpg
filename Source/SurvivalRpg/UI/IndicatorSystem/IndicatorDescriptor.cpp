@@ -5,6 +5,7 @@
 #include "RpgIndicatorManagerComponent.h"
 #include "Engine/LocalPlayer.h"
 #include "SceneView.h"
+#include "Widgets/SWidget.h"
 
 #include UE_INLINE_GENERATED_CPP_BY_NAME(IndicatorDescriptor)
 
@@ -13,7 +14,11 @@ bool FIndicatorProjection::Project(const UIndicatorDescriptor& IndicatorDescript
 	if (USceneComponent* Component = IndicatorDescriptor.GetSceneComponent())
 	{
 		TOptional<FVector> WorldLocation;
-		if (IndicatorDescriptor.GetComponentSocketName() != NAME_None)
+		if (IndicatorDescriptor.HasWorldPositionOverride())
+		{
+			WorldLocation = IndicatorDescriptor.GetWorldPositionOverride();
+		}
+		else if (IndicatorDescriptor.GetComponentSocketName() != NAME_None)
 		{
 			WorldLocation = Component->GetSocketTransform(IndicatorDescriptor.GetComponentSocketName()).GetLocation();
 		}
@@ -128,6 +133,23 @@ void UIndicatorDescriptor::SetIndicatorManagerComponent(URpgIndicatorManagerComp
 	if (ensure(ManagerPtr.IsExplicitlyNull()))
 	{
 		ManagerPtr = InManager;
+	}
+}
+
+void UIndicatorDescriptor::SetDesiredVisibility(const bool InVisible)
+{
+	if (bVisible == InVisible)
+	{
+		return;
+	}
+
+	bVisible = InVisible;
+	if (!bVisible)
+	{
+		if (const TSharedPtr<SWidget> Host = CanvasHost.Pin())
+		{
+			Host->SetVisibility(EVisibility::Collapsed);
+		}
 	}
 }
 

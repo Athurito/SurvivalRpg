@@ -4,6 +4,7 @@
 #include "Components/StaticMeshComponent.h"
 #include "Net/UnrealNetwork.h"
 #include "AbilitySystem/Abilities/RpgGameplayAbility_ExitPortal.h"
+#include "GameplayTags/RpgPortalGameplayTags.h"
 #include "Portals/RpgPortalActor.h"
 #include "Portals/RpgPortalEncounterDefinition.h"
 
@@ -46,9 +47,20 @@ void ARpgPortalExitActor::GatherInteractionOptions(const FInteractionQuery& Inte
 	}
 
 	FInteractionOption Option;
+	Option.InteractionTag = RpgPortalGameplayTags::Rpg_Interaction_Action_Portal_Exit;
 	Option.InteractionAbilityToGrant = ExitPortalAbilityClass;
-	Option.Text = OwningPortal->GetExitInteractionText();
-	Option.SubText = OwningPortal->GetExitInteractionSubText();
+	Option.Prompt.ActionText = OwningPortal->GetExitInteractionText();
+	Option.Prompt.TargetText = OwningPortal->GetExitInteractionSubText();
+	Option.Prompt.AwarenessRange = 1000.0f;
+	Option.Prompt.FocusRange = 650.0f;
+	Option.Prompt.InteractionRange = 300.0f;
+	Option.Prompt.InteractionPriority = 80;
+	Option.TargetRef.TargetActor = this;
+	if (!OwningPortal->IsExitOpen())
+	{
+		Option.Availability = ERpgInteractionAvailability::Blocked;
+		Option.Prompt.BlockedReason = NSLOCTEXT("RpgPortal", "PortalExitUnavailable", "The portal exit is not ready");
+	}
 
 	InteractionBuilder.AddInteractionOption(Option);
 }

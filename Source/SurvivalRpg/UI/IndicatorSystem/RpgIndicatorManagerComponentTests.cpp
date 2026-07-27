@@ -3,6 +3,7 @@
 #include "RpgIndicatorManagerComponent.h"
 
 #include "IndicatorDescriptor.h"
+#include "Components/SceneComponent.h"
 #include "Misc/AutomationTest.h"
 
 IMPLEMENT_SIMPLE_AUTOMATION_TEST(
@@ -85,6 +86,60 @@ bool FRpgIndicatorManagerRegistryTest::RunTest(
 		TEXT("Registry is empty after removal"),
 		Manager->GetIndicators().IsEmpty());
 
+	return true;
+}
+
+IMPLEMENT_SIMPLE_AUTOMATION_TEST(
+	FRpgIndicatorDescriptorProjectionRevisionTest,
+	"SurvivalRpg.UI.Indicator.ProjectionRevision",
+	EAutomationTestFlags::EditorContext |
+		EAutomationTestFlags::EngineFilter)
+
+bool FRpgIndicatorDescriptorProjectionRevisionTest::RunTest(
+	const FString& Parameters)
+{
+	(void)Parameters;
+	UIndicatorDescriptor* Descriptor = NewObject<UIndicatorDescriptor>();
+	USceneComponent* FirstComponent = NewObject<USceneComponent>();
+	USceneComponent* SecondComponent = NewObject<USceneComponent>();
+	if (!TestNotNull(TEXT("Indicator descriptor exists"), Descriptor) ||
+		!TestNotNull(TEXT("First projection component exists"), FirstComponent) ||
+		!TestNotNull(TEXT("Second projection component exists"), SecondComponent))
+	{
+		return false;
+	}
+
+	const uint32 InitialRevision = Descriptor->GetProjectionRevision();
+	Descriptor->SetSceneComponent(FirstComponent);
+	const uint32 FirstPlacementRevision = Descriptor->GetProjectionRevision();
+	TestTrue(
+		TEXT("Changing the projection component advances the revision"),
+		FirstPlacementRevision > InitialRevision);
+	Descriptor->SetSceneComponent(FirstComponent);
+	TestEqual(
+		TEXT("Reapplying identical placement does not dirty the descriptor"),
+		Descriptor->GetProjectionRevision(),
+		FirstPlacementRevision);
+
+	Descriptor->SetSceneComponent(SecondComponent);
+	TestTrue(
+		TEXT("Retargeting to another actor component advances the revision"),
+		Descriptor->GetProjectionRevision() > FirstPlacementRevision);
+	const uint32 SecondPlacementRevision = Descriptor->GetProjectionRevision();
+	Descriptor->SetWorldPositionOverride(FVector(10.0f, 20.0f, 30.0f));
+	TestTrue(
+		TEXT("Changing an absolute instance point advances the revision"),
+		Descriptor->GetProjectionRevision() > SecondPlacementRevision);
+	const uint32 OverrideRevision = Descriptor->GetProjectionRevision();
+	Descriptor->SetWorldPositionOverride(FVector(10.0f, 20.0f, 30.0f));
+	TestEqual(
+		TEXT("Reapplying an identical instance point is stable"),
+		Descriptor->GetProjectionRevision(),
+		OverrideRevision);
+	Descriptor->ClearWorldPositionOverride();
+	TestTrue(
+		TEXT("Returning to component projection advances the revision"),
+		Descriptor->GetProjectionRevision() > OverrideRevision);
 	return true;
 }
 
