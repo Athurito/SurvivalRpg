@@ -53,6 +53,9 @@ public:
 	UFUNCTION(BlueprintCallable, BlueprintPure, Category = "Inventory|Drop")
 	bool CanMergePickupTemplate(TSubclassOf<URpgInventoryItemDefinition> ItemDefinition) const;
 
+protected:
+	virtual FInteractionOption BuildCollectInteractionOption(const FInteractionQuery& InteractQuery) const override;
+
 private:
 	void EnsureDefaultPickupInteractionOption();
 	bool PopulateLootInventoryFromPickup(const FInventoryPickup& PickupInventory);

@@ -11,8 +11,8 @@ class URpgInventoryManagerComponent;
 /**
  * Opens the base terminal/resource-unit screen for an interacted base storage station.
  *
- * The ability is local-only because it creates UI only. Deposits, withdrawals, sorting, and
- * upgrade installation remain server-authoritative through URpgInventoryUiActionComponent.
+ * The ability validates the station on the server before opening local UI through a reliable
+ * owning-client RPC. Deposits, withdrawals, sorting, and upgrades remain server-authoritative.
  */
 UCLASS(Blueprintable)
 class SURVIVALRPG_API URpgGameplayAbility_OpenBaseStorageStation : public URpgGameplayAbility

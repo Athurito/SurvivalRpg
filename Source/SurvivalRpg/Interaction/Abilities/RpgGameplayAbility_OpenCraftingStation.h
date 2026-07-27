@@ -11,8 +11,8 @@ class URpgInventoryManagerComponent;
 /**
  * Opens the crafting station screen for an interacted crafting station.
  *
- * The ability is local-only because it creates UI context only. Crafting commands remain
- * server-authoritative through URpgInventoryUiActionComponent.
+ * The ability validates the station on the server before opening local UI through a
+ * reliable owning-client RPC. Crafting commands remain server-authoritative.
  */
 UCLASS(Blueprintable)
 class SURVIVALRPG_API URpgGameplayAbility_OpenCraftingStation : public URpgGameplayAbility

@@ -37,6 +37,12 @@ protected:
 
 	void UpdateInteractableOptions(const FInteractionQuery& InteractQuery, const TArray<TScriptInterface<IInteractableTarget>>& InteractableTargets);
 
+	/** Gathers normalized options without publishing them, allowing multi-hit tasks to aggregate candidates. */
+	void GatherInteractableOptions(const FInteractionQuery& InteractQuery, const TArray<TScriptInterface<IInteractableTarget>>& InteractableTargets, TArray<FInteractionOption>& OutOptions) const;
+
+	/** Sorts, compares, and publishes an option set only when its semantic contents changed. */
+	void CommitInteractableOptions(TArray<FInteractionOption> NewOptions);
+
 	FCollisionProfileName TraceProfile;
 
 	// Does the trace affect the aiming pitch

@@ -14,6 +14,7 @@ void SActorCanvas::Construct(const FArguments& InArgs, const FLocalPlayerContext
 {
 	LocalPlayerContext = InLocalPlayerContext;
 	IndicatorPool.SetWorld(LocalPlayerContext.GetWorld());
+	IndicatorPool.SetDefaultPlayerController(LocalPlayerContext.GetPlayerController());
 
 	SetCanTick(false);
 	SetVisibility(EVisibility::SelfHitTestInvisible);
@@ -38,6 +39,7 @@ EActiveTimerReturnType SActorCanvas::UpdateCanvas(double CurrentTime, float Delt
 
 		IndicatorManager = Manager;
 		IndicatorPool.SetWorld(LocalPlayerContext.GetWorld());
+		IndicatorPool.SetDefaultPlayerController(LocalPlayerContext.GetPlayerController());
 		Manager->OnIndicatorAdded.AddSP(this, &SActorCanvas::OnIndicatorAdded);
 		Manager->OnIndicatorRemoved.AddSP(this, &SActorCanvas::OnIndicatorRemoved);
 

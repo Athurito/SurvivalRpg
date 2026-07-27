@@ -13,7 +13,11 @@ bool FIndicatorProjection::Project(const UIndicatorDescriptor& IndicatorDescript
 	if (USceneComponent* Component = IndicatorDescriptor.GetSceneComponent())
 	{
 		TOptional<FVector> WorldLocation;
-		if (IndicatorDescriptor.GetComponentSocketName() != NAME_None)
+		if (IndicatorDescriptor.HasWorldPositionOverride())
+		{
+			WorldLocation = IndicatorDescriptor.GetWorldPositionOverride();
+		}
+		else if (IndicatorDescriptor.GetComponentSocketName() != NAME_None)
 		{
 			WorldLocation = Component->GetSocketTransform(IndicatorDescriptor.GetComponentSocketName()).GetLocation();
 		}

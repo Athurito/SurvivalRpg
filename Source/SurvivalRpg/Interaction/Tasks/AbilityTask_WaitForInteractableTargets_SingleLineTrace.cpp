@@ -30,8 +30,11 @@ void UAbilityTask_WaitForInteractableTargets_SingleLineTrace::Activate()
 {
 	SetWaitingOnAvatar();
 
-	UWorld* World = GetWorld();
-	World->GetTimerManager().SetTimer(TimerHandle, this, &ThisClass::PerformTrace, InteractionScanRate, true);
+	PerformTrace();
+	if (UWorld* World = GetWorld())
+	{
+		World->GetTimerManager().SetTimer(TimerHandle, this, &ThisClass::PerformTrace, InteractionScanRate, true);
+	}
 }
 
 void UAbilityTask_WaitForInteractableTargets_SingleLineTrace::OnDestroy(bool AbilityEnded)
@@ -65,22 +68,65 @@ void UAbilityTask_WaitForInteractableTargets_SingleLineTrace::PerformTrace()
 	FVector TraceEnd;
 	AimWithPlayerController(AvatarActor, Params, TraceStart, InteractionScanRange, OUT TraceEnd);
 
-	FHitResult OutHitResult;
-	LineTrace(OutHitResult, World, TraceStart, TraceEnd, TraceProfile.Name, Params);
+	TArray<FHitResult> HitResults;
+	World->SweepMultiByProfile(
+		HitResults,
+		TraceStart,
+		TraceEnd,
+		FQuat::Identity,
+		TraceProfile.Name,
+		FCollisionShape::MakeSphere(SweepRadius),
+		Params);
 
-	TArray<TScriptInterface<IInteractableTarget>> InteractableTargets;
-	UInteractionStatics::AppendInteractableTargetsFromHitResult(OutHitResult, InteractableTargets);
+	TOptional<FInteractionOption> BestOption;
+	const FVector ViewDirection = (TraceEnd - TraceStart).GetSafeNormal();
+	for (const FHitResult& HitResult : HitResults)
+	{
+		TArray<TScriptInterface<IInteractableTarget>> InteractableTargets;
+		UInteractionStatics::AppendInteractableTargetsFromHitResult(HitResult, InteractableTargets);
 
-	UpdateInteractableOptions(InteractionQuery, InteractableTargets);
+		FInteractionQuery Query = InteractionQuery;
+		Query.QueryMode = ERpgInteractionQueryMode::Focus;
+		Query.QueryOrigin = AvatarActor->GetActorLocation();
+		Query.QueryRadius = InteractionScanRange;
+		Query.CandidateHit = HitResult;
+		TArray<FInteractionOption> HitOptions;
+		GatherInteractableOptions(Query, InteractableTargets, HitOptions);
+		for (FInteractionOption& Option : HitOptions)
+		{
+			const float Distance = FVector::Distance(Query.QueryOrigin, Option.GetInteractionWorldLocation());
+			const bool bHasLineOfSight = UInteractionStatics::HasInteractionLineOfSight(AvatarActor, Option);
+			Option.PromptState = UInteractionStatics::DeterminePromptState(
+				Option,
+				Distance,
+				true,
+				Option.Availability == ERpgInteractionAvailability::Available,
+				bHasLineOfSight);
+			if (Distance <= Option.Prompt.FocusRange &&
+				(!BestOption.IsSet() || UInteractionStatics::IsBetterFocusCandidate(
+					Option, BestOption.GetValue(), TraceStart, ViewDirection)))
+			{
+				BestOption = MoveTemp(Option);
+			}
+		}
+	}
+
+	TArray<FInteractionOption> SelectedOptions;
+	if (BestOption.IsSet())
+	{
+		SelectedOptions.Add(MoveTemp(BestOption.GetValue()));
+	}
+	CommitInteractableOptions(MoveTemp(SelectedOptions));
 
 #if ENABLE_DRAW_DEBUG
 	if (bShowDebug)
 	{
-		FColor DebugColor = OutHitResult.bBlockingHit ? FColor::Red : FColor::Green;
-		if (OutHitResult.bBlockingHit)
+		const bool bHasHit = !HitResults.IsEmpty();
+		FColor DebugColor = bHasHit ? FColor::Red : FColor::Green;
+		if (bHasHit)
 		{
-			DrawDebugLine(World, TraceStart, OutHitResult.Location, DebugColor, false, InteractionScanRate);
-			DrawDebugSphere(World, OutHitResult.Location, 5, 16, DebugColor, false, InteractionScanRate);
+			DrawDebugLine(World, TraceStart, HitResults[0].Location, DebugColor, false, InteractionScanRate);
+			DrawDebugSphere(World, HitResults[0].Location, SweepRadius, 16, DebugColor, false, InteractionScanRate);
 		}
 		else
 		{

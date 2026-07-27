@@ -21,6 +21,7 @@
 #include "InputCoreTypes.h"
 #include "InputMappingContext.h"
 #include "Misc/AutomationTest.h"
+#include "PlayerMappableKeySettings.h"
 #include "MVVMBlueprintView.h"
 #include "MVVMBlueprintViewBinding.h"
 #include "MVVMBlueprintViewModelContext.h"
@@ -419,7 +420,7 @@ bool FRpgQuickAccessRadialInputAssetTest::RunTest(
 
 IMPLEMENT_SIMPLE_AUTOMATION_TEST(
 	FRpgInteractionInputAssetTest,
-	"SurvivalRpg.Interaction.InputAssets.ExclusiveMKey",
+	"SurvivalRpg.Interaction.InputAssets.ConfiguredBindings",
 	EAutomationTestFlags::EditorContext | EAutomationTestFlags::EngineFilter)
 
 bool FRpgInteractionInputAssetTest::RunTest(
@@ -431,10 +432,6 @@ bool FRpgInteractionInputAssetTest::RunTest(
 		LoadObject<UInputMappingContext>(
 			nullptr,
 			MovementMappingContextPath);
-	const UInputMappingContext* PlayerHudContext =
-		LoadObject<UInputMappingContext>(
-			nullptr,
-			PlayerHudMappingContextPath);
 	const UInputAction* InteractAction =
 		LoadObject<UInputAction>(nullptr, InteractActionPath);
 	const URpgInputConfig* PlayerInputConfig =
@@ -442,9 +439,6 @@ bool FRpgInteractionInputAssetTest::RunTest(
 	if (!TestNotNull(
 			TEXT("IMC_Movement loads"),
 			MovementContext) ||
-		!TestNotNull(
-			TEXT("IMC_UI_PlayerHUD loads"),
-			PlayerHudContext) ||
 		!TestNotNull(
 			TEXT("IA_Interact loads"),
 			InteractAction) ||
@@ -455,41 +449,66 @@ bool FRpgInteractionInputAssetTest::RunTest(
 		return false;
 	}
 
+	const UPlayerMappableKeySettings* PlayerMappableSettings =
+		InteractAction->GetPlayerMappableKeySettings();
+	if (!TestNotNull(
+			TEXT("IA_Interact has player-mappable settings"),
+			PlayerMappableSettings))
+	{
+		return false;
+	}
+	TestEqual(
+		TEXT("IA_Interact uses the stable mapping name"),
+		PlayerMappableSettings->GetMappingName(),
+		FName(TEXT("Interact")));
+	TestEqual(
+		TEXT("IA_Interact displays Interagieren"),
+		PlayerMappableSettings->DisplayName.ToString(),
+		FString(TEXT("Interagieren")));
+	TestEqual(
+		TEXT("IA_Interact is categorized as Gameplay"),
+		PlayerMappableSettings->DisplayCategory.ToString(),
+		FString(TEXT("Gameplay")));
+
 	int32 InteractionMappingCount = 0;
+	int32 KeyboardMappingCount = 0;
+	int32 GamepadMappingCount = 0;
 	for (const FEnhancedActionKeyMapping& Mapping :
 		MovementContext->GetMappings())
 	{
-		const bool bUsesInteractAction =
-			Mapping.Action == InteractAction;
-		const bool bUsesInteractionKey = Mapping.Key == EKeys::M;
-		if (!bUsesInteractAction && !bUsesInteractionKey)
+		if (Mapping.Action != InteractAction)
 		{
 			continue;
 		}
 
 		++InteractionMappingCount;
+		KeyboardMappingCount += Mapping.Key == EKeys::E ? 1 : 0;
+		GamepadMappingCount +=
+			Mapping.Key == EKeys::Gamepad_FaceButton_Left ? 1 : 0;
 		TestTrue(
-			TEXT("The interaction mapping uses IA_Interact"),
-			bUsesInteractAction);
+			TEXT("The interaction mapping is player mappable"),
+			Mapping.IsPlayerMappable());
+		TestEqual(
+			TEXT("The interaction mapping resolves the stable name"),
+			Mapping.GetMappingName(),
+			FName(TEXT("Interact")));
 		TestTrue(
-			TEXT("The interaction mapping uses M"),
-			bUsesInteractionKey);
+			TEXT("The interaction mapping uses an authored default"),
+			Mapping.Key == EKeys::E ||
+				Mapping.Key == EKeys::Gamepad_FaceButton_Left);
 	}
 	TestEqual(
-		TEXT("IMC_Movement owns one exclusive M interaction mapping"),
+		TEXT("IMC_Movement owns exactly two interaction defaults"),
 		InteractionMappingCount,
-		1);
-
-	int32 PlayerHudMMappingCount = 0;
-	for (const FEnhancedActionKeyMapping& Mapping :
-		PlayerHudContext->GetMappings())
-	{
-		PlayerHudMMappingCount += Mapping.Key == EKeys::M ? 1 : 0;
-	}
+		2);
 	TestEqual(
-		TEXT("IMC_UI_PlayerHUD does not consume the interaction key M"),
-		PlayerHudMMappingCount,
-		0);
+		TEXT("IA_Interact has one keyboard E default"),
+		KeyboardMappingCount,
+		1);
+	TestEqual(
+		TEXT("IA_Interact has one left face-button gamepad default"),
+		GamepadMappingCount,
+		1);
 
 	const FGameplayTag InteractionTag =
 		FGameplayTag::RequestGameplayTag(

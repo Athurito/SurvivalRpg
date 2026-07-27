@@ -11,8 +11,8 @@ class URpgInventoryManagerComponent;
 /**
  * Opens the shared-storage inventory screen for an interacted container.
  *
- * The ability is local-only because it only creates UI. Inventory transfers remain
- * server-authoritative through URpgInventoryUiActionComponent.
+ * The ability validates the target on the server, then asks the owning controller to
+ * create local UI. Inventory transfers remain server-authoritative.
  */
 UCLASS(Blueprintable)
 class SURVIVALRPG_API URpgGameplayAbility_OpenStorageContainer : public URpgGameplayAbility

@@ -149,6 +149,46 @@ public:
 		WorldPositionOffset = Offset;
 	}
 
+	/** Whether projection uses an explicit world point instead of the component or socket origin. */
+	UFUNCTION(BlueprintPure, Category = "Indicator|Projection")
+	bool HasWorldPositionOverride() const { return bUseWorldPositionOverride; }
+
+	/** Explicit world point used for ISM/HISM instances and other component sub-elements. */
+	UFUNCTION(BlueprintPure, Category = "Indicator|Projection")
+	FVector GetWorldPositionOverride() const { return WorldPositionOverride; }
+
+	/** Projects this descriptor from an explicit world point while retaining its component lifetime anchor. */
+	UFUNCTION(BlueprintCallable, Category = "Indicator|Projection")
+	void SetWorldPositionOverride(FVector InWorldPosition)
+	{
+		WorldPositionOverride = InWorldPosition;
+		bUseWorldPositionOverride = true;
+	}
+
+	/** Restores component/socket-relative projection when a pooled descriptor is reused. */
+	UFUNCTION(BlueprintCallable, Category = "Indicator|Projection")
+	void ClearWorldPositionOverride()
+	{
+		bUseWorldPositionOverride = false;
+		WorldPositionOverride = FVector::ZeroVector;
+	}
+
+	/** Compatibility spelling for callers that describe the override as an absolute world point. */
+	UFUNCTION(BlueprintPure, Category = "Indicator|Projection")
+	bool HasAbsoluteWorldPosition() const { return HasWorldPositionOverride(); }
+
+	/** Returns the absolute world point supplied through either override API. */
+	UFUNCTION(BlueprintPure, Category = "Indicator|Projection")
+	FVector GetAbsoluteWorldPosition() const { return GetWorldPositionOverride(); }
+
+	/** Sets the same projection override as SetWorldPositionOverride. */
+	UFUNCTION(BlueprintCallable, Category = "Indicator|Projection")
+	void SetAbsoluteWorldPosition(FVector InWorldPosition) { SetWorldPositionOverride(InWorldPosition); }
+
+	/** Clears the same projection override as ClearWorldPositionOverride. */
+	UFUNCTION(BlueprintCallable, Category = "Indicator|Projection")
+	void ClearAbsoluteWorldPosition() { ClearWorldPositionOverride(); }
+
 	// The position offset for the indicator in screen space.
 	UFUNCTION(BlueprintCallable)
 	FVector2D GetScreenSpaceOffset() const { return ScreenSpaceOffset; }
@@ -197,6 +237,8 @@ private:
 	UPROPERTY()
 	bool bOverrideScreenPosition = false;
 	UPROPERTY()
+	bool bUseWorldPositionOverride = false;
+	UPROPERTY()
 	bool bAutoRemoveWhenIndicatorComponentIsNull = false;
 
 	UPROPERTY()
@@ -215,6 +257,8 @@ private:
 	FVector2D ScreenSpaceOffset = FVector2D(0, 0);
 	UPROPERTY()
 	FVector WorldPositionOffset = FVector(0, 0, 0);
+	UPROPERTY()
+	FVector WorldPositionOverride = FVector::ZeroVector;
 
 private:
 	friend class SActorCanvas;

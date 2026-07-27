@@ -1,6 +1,10 @@
 #include "AbilitySystem/Abilities/RpgGameplayAbility_ClosePortal.h"
 
 #include "Portals/RpgPortalActor.h"
+#include "SurvivalRpg/GameplayTags/RpgGameplayTags.h"
+#include "SurvivalRpg/Interaction/InteractionOption.h"
+#include "SurvivalRpg/Interaction/InteractionQuery.h"
+#include "SurvivalRpg/Interaction/InteractionStatics.h"
 
 #include UE_INLINE_GENERATED_CPP_BY_NAME(RpgGameplayAbility_ClosePortal)
 
@@ -19,22 +23,37 @@ void URpgGameplayAbility_ClosePortal::ActivateAbility(
 {
 	Super::ActivateAbility(Handle, ActorInfo, ActivationInfo, TriggerEventData);
 
-	if (!ActorInfo || !ActorInfo->IsNetAuthority())
+	FInteractionOption ValidatedOption;
+	FInteractionQuery AuthoritativeQuery;
+	FText FailureReason;
+	if (!ActorInfo || !ActorInfo->IsNetAuthority() ||
+		!UInteractionStatics::ValidateInteractionEventData(
+			*ActorInfo,
+			TriggerEventData,
+			ValidatedOption,
+			AuthoritativeQuery,
+			FailureReason))
 	{
 		EndAbility(Handle, ActorInfo, ActivationInfo, true, true);
 		return;
 	}
 
-	if (!CommitAbility(Handle, ActorInfo, ActivationInfo))
+	AActor* ClosingActor = ActorInfo->AvatarActor.Get();
+	ARpgPortalActor* Portal = Cast<ARpgPortalActor>(ValidatedOption.TargetRef.TargetActor.Get());
+	if (!Portal || !CommitAbility(Handle, ActorInfo, ActivationInfo))
 	{
+		UInteractionStatics::BroadcastInteractionMessage(this, RpgGameplayTags::Rpg_Interaction_Message_Rejected, ValidatedOption, ClosingActor, false);
 		EndAbility(Handle, ActorInfo, ActivationInfo, true, true);
 		return;
 	}
-
-	ARpgPortalActor* Portal = ResolvePortalTarget(ActorInfo, TriggerEventData);
-	AActor* ClosingActor = TriggerEventData ? const_cast<AActor*>(ToRawPtr(TriggerEventData->Instigator)) : nullptr;
 
 	const bool bClosed = Portal && Portal->TryClosePortal(ClosingActor);
+	UInteractionStatics::BroadcastInteractionMessage(
+		this,
+		bClosed ? RpgGameplayTags::Rpg_Interaction_Message_Ended : RpgGameplayTags::Rpg_Interaction_Message_Rejected,
+		ValidatedOption,
+		ClosingActor,
+		bClosed);
 	EndAbility(Handle, ActorInfo, ActivationInfo, true, !bClosed);
 }
 

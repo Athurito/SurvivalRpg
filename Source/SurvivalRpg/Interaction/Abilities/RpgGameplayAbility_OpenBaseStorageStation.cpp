@@ -6,6 +6,9 @@
 #include "SurvivalRpg/Core/Player/RpgPlayerState.h"
 #include "SurvivalRpg/GameplayTags/RpgGameplayTags.h"
 #include "SurvivalRpg/Inventory/RpgInventoryManagerComponent.h"
+#include "SurvivalRpg/Interaction/InteractionOption.h"
+#include "SurvivalRpg/Interaction/InteractionQuery.h"
+#include "SurvivalRpg/Interaction/InteractionStatics.h"
 #include "SurvivalRpg/UI/RpgUIScreenBlueprintLibrary.h"
 #include "SurvivalRpg/UI/RpgUIScreenPayload.h"
 
@@ -15,7 +18,7 @@ URpgGameplayAbility_OpenBaseStorageStation::URpgGameplayAbility_OpenBaseStorageS
 	: Super(ObjectInitializer)
 {
 	InstancingPolicy = EGameplayAbilityInstancingPolicy::InstancedPerActor;
-	NetExecutionPolicy = EGameplayAbilityNetExecutionPolicy::LocalOnly;
+	NetExecutionPolicy = EGameplayAbilityNetExecutionPolicy::ServerOnly;
 }
 
 void URpgGameplayAbility_OpenBaseStorageStation::ActivateAbility(
@@ -26,54 +29,42 @@ void URpgGameplayAbility_OpenBaseStorageStation::ActivateAbility(
 {
 	Super::ActivateAbility(Handle, ActorInfo, ActivationInfo, TriggerEventData);
 
-	AActor* InteractingActor = TriggerEventData ? const_cast<AActor*>(ToRawPtr(TriggerEventData->Instigator)) : nullptr;
-	if (InteractingActor == nullptr && ActorInfo && ActorInfo->AvatarActor.IsValid())
+	FInteractionOption ValidatedOption;
+	FInteractionQuery AuthoritativeQuery;
+	FText FailureReason;
+	if (!ActorInfo || !UInteractionStatics::ValidateInteractionEventData(
+			*ActorInfo,
+			TriggerEventData,
+			ValidatedOption,
+			AuthoritativeQuery,
+			FailureReason))
 	{
-		InteractingActor = ActorInfo->AvatarActor.Get();
-	}
-
-	ARpgPlayerController* PlayerController = FindPlayerControllerForActor(InteractingActor);
-	if (PlayerController == nullptr)
-	{
-		PlayerController = Cast<ARpgPlayerController>(GetControllerFromActorInfo());
-	}
-
-	AActor* TargetActor = TriggerEventData ? const_cast<AActor*>(ToRawPtr(TriggerEventData->Target)) : nullptr;
-	URpgBaseStorageStationComponent* StationComponent = FindStorageStationComponent(TargetActor);
-	URpgInventoryManagerComponent* PlayerInventory = FindPlayerInventory(PlayerController);
-
-	const APawn* RequestingPawn = nullptr;
-	if (PlayerController)
-	{
-		RequestingPawn = PlayerController->GetPawn();
-	}
-	else
-	{
-		RequestingPawn = Cast<APawn>(InteractingActor);
-	}
-	const AActor* RequestingActor = RequestingPawn ? static_cast<const AActor*>(RequestingPawn) : InteractingActor;
-
-	if (!PlayerController || !StationComponent || !PlayerInventory || !StationComponent->CanActorAccess(RequestingActor))
-	{
-		EndAbility(Handle, ActorInfo, ActivationInfo, false, true);
+		EndAbility(Handle, ActorInfo, ActivationInfo, true, true);
 		return;
 	}
 
-	URpgBaseStorageScreenPayload* Payload = NewObject<URpgBaseStorageScreenPayload>(PlayerController);
-	Payload->ScreenTag = RpgGameplayTags::UI_Screen_BaseTerminal;
-	Payload->PrimaryInventory = PlayerInventory;
-	Payload->SecondaryInventory = StationComponent->GetArmoryInventory();
-	Payload->ContextActor = TargetActor;
-	Payload->ContextComponent = StationComponent;
-	Payload->PlayerInventory = PlayerInventory;
-	Payload->BaseStorage = StationComponent->GetBaseStorage();
-	Payload->ArmoryInventory = StationComponent->GetArmoryInventory();
-	Payload->StationComponent = StationComponent;
-	Payload->AllowedResources = StationComponent->GetAllowedResourceDefinitions();
+	AActor* InteractingActor = ActorInfo->AvatarActor.Get();
+	AActor* TargetActor = ValidatedOption.TargetRef.TargetActor.Get();
+	ARpgPlayerController* PlayerController = Cast<ARpgPlayerController>(ActorInfo->PlayerController.Get());
+	URpgBaseStorageStationComponent* StationComponent = FindStorageStationComponent(TargetActor);
+	const bool bCanOpen = PlayerController && StationComponent &&
+		FindPlayerInventory(PlayerController) && StationComponent->CanActorAccess(InteractingActor) &&
+		CommitAbility(Handle, ActorInfo, ActivationInfo);
+	if (!bCanOpen)
+	{
+		UInteractionStatics::BroadcastInteractionMessage(
+			this,
+			RpgGameplayTags::Rpg_Interaction_Message_Rejected,
+			ValidatedOption,
+			InteractingActor,
+			false);
+		EndAbility(Handle, ActorInfo, ActivationInfo, true, true);
+		return;
+	}
 
-	URpgUIScreenBlueprintLibrary::OpenUIScreen(PlayerController, RpgGameplayTags::UI_Screen_BaseTerminal, Payload);
-
-	EndAbility(Handle, ActorInfo, ActivationInfo, false, false);
+	PlayerController->ClientOpenBaseStorageInteraction(TargetActor);
+	UInteractionStatics::BroadcastInteractionMessage(this, RpgGameplayTags::Rpg_Interaction_Message_Ended, ValidatedOption, InteractingActor, true);
+	EndAbility(Handle, ActorInfo, ActivationInfo, true, false);
 }
 
 ARpgPlayerController* URpgGameplayAbility_OpenBaseStorageStation::FindPlayerControllerForActor(AActor* Actor)

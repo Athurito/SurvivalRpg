@@ -14,6 +14,7 @@ public class GF_Harvesting_Magic : ModuleRules
 			"GameplayAbilities",
 			"GameplayTags",
 			"GameplayTasks",
+			"NetCore",
 			"SurvivalRpg",
 		});
 

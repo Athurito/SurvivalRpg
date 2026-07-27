@@ -1,6 +1,10 @@
 #include "AbilitySystem/Abilities/RpgGameplayAbility_EnterPortal.h"
 
 #include "Portals/RpgPortalActor.h"
+#include "SurvivalRpg/GameplayTags/RpgGameplayTags.h"
+#include "SurvivalRpg/Interaction/InteractionOption.h"
+#include "SurvivalRpg/Interaction/InteractionQuery.h"
+#include "SurvivalRpg/Interaction/InteractionStatics.h"
 
 #include UE_INLINE_GENERATED_CPP_BY_NAME(RpgGameplayAbility_EnterPortal)
 
@@ -19,26 +23,37 @@ void URpgGameplayAbility_EnterPortal::ActivateAbility(
 {
 	Super::ActivateAbility(Handle, ActorInfo, ActivationInfo, TriggerEventData);
 
-	if (!ActorInfo || !ActorInfo->IsNetAuthority())
+	FInteractionOption ValidatedOption;
+	FInteractionQuery AuthoritativeQuery;
+	FText FailureReason;
+	if (!ActorInfo || !ActorInfo->IsNetAuthority() ||
+		!UInteractionStatics::ValidateInteractionEventData(
+			*ActorInfo,
+			TriggerEventData,
+			ValidatedOption,
+			AuthoritativeQuery,
+			FailureReason))
 	{
 		EndAbility(Handle, ActorInfo, ActivationInfo, true, true);
 		return;
 	}
 
-	if (!CommitAbility(Handle, ActorInfo, ActivationInfo))
+	AActor* EnteringActor = ActorInfo->AvatarActor.Get();
+	ARpgPortalActor* Portal = Cast<ARpgPortalActor>(ValidatedOption.TargetRef.TargetActor.Get());
+	if (!Portal || !CommitAbility(Handle, ActorInfo, ActivationInfo))
 	{
+		UInteractionStatics::BroadcastInteractionMessage(this, RpgGameplayTags::Rpg_Interaction_Message_Rejected, ValidatedOption, EnteringActor, false);
 		EndAbility(Handle, ActorInfo, ActivationInfo, true, true);
 		return;
-	}
-
-	ARpgPortalActor* Portal = ResolvePortalTarget(ActorInfo, TriggerEventData);
-	AActor* EnteringActor = TriggerEventData ? const_cast<AActor*>(ToRawPtr(TriggerEventData->Instigator)) : nullptr;
-	if (!EnteringActor && ActorInfo->AvatarActor.IsValid())
-	{
-		EnteringActor = ActorInfo->AvatarActor.Get();
 	}
 
 	const bool bEntered = Portal && Portal->TryEnterPortal(EnteringActor);
+	UInteractionStatics::BroadcastInteractionMessage(
+		this,
+		bEntered ? RpgGameplayTags::Rpg_Interaction_Message_Ended : RpgGameplayTags::Rpg_Interaction_Message_Rejected,
+		ValidatedOption,
+		EnteringActor,
+		bEntered);
 	EndAbility(Handle, ActorInfo, ActivationInfo, true, !bEntered);
 }
 

@@ -6,6 +6,9 @@
 #include "SurvivalRpg/GameplayTags/RpgGameplayTags.h"
 #include "SurvivalRpg/Inventory/RpgInventoryContainerComponent.h"
 #include "SurvivalRpg/Inventory/RpgInventoryManagerComponent.h"
+#include "SurvivalRpg/Interaction/InteractionOption.h"
+#include "SurvivalRpg/Interaction/InteractionQuery.h"
+#include "SurvivalRpg/Interaction/InteractionStatics.h"
 
 #include UE_INLINE_GENERATED_CPP_BY_NAME(RpgGameplayAbility_OpenStorageContainer)
 
@@ -13,7 +16,7 @@ URpgGameplayAbility_OpenStorageContainer::URpgGameplayAbility_OpenStorageContain
 	: Super(ObjectInitializer)
 {
 	InstancingPolicy = EGameplayAbilityInstancingPolicy::InstancedPerActor;
-	NetExecutionPolicy = EGameplayAbilityNetExecutionPolicy::LocalOnly;
+	NetExecutionPolicy = EGameplayAbilityNetExecutionPolicy::ServerOnly;
 }
 
 void URpgGameplayAbility_OpenStorageContainer::ActivateAbility(
@@ -24,43 +27,48 @@ void URpgGameplayAbility_OpenStorageContainer::ActivateAbility(
 {
 	Super::ActivateAbility(Handle, ActorInfo, ActivationInfo, TriggerEventData);
 
-	AActor* InteractingActor = TriggerEventData ? const_cast<AActor*>(ToRawPtr(TriggerEventData->Instigator)) : nullptr;
-	if (InteractingActor == nullptr && ActorInfo && ActorInfo->AvatarActor.IsValid())
+	FInteractionOption ValidatedOption;
+	FInteractionQuery AuthoritativeQuery;
+	FText FailureReason;
+	if (!ActorInfo || !UInteractionStatics::ValidateInteractionEventData(
+			*ActorInfo,
+			TriggerEventData,
+			ValidatedOption,
+			AuthoritativeQuery,
+			FailureReason))
 	{
-		InteractingActor = ActorInfo->AvatarActor.Get();
-	}
-
-	ARpgPlayerController* PlayerController = FindPlayerControllerForActor(InteractingActor);
-	if (PlayerController == nullptr)
-	{
-		PlayerController = Cast<ARpgPlayerController>(GetControllerFromActorInfo());
-	}
-
-	AActor* TargetActor = TriggerEventData ? const_cast<AActor*>(ToRawPtr(TriggerEventData->Target)) : nullptr;
-	URpgInventoryContainerComponent* ContainerComponent = FindContainerComponent(TargetActor);
-	URpgInventoryManagerComponent* ContainerInventory = ContainerComponent ? ContainerComponent->GetInventoryManager() : nullptr;
-	URpgInventoryManagerComponent* PlayerInventory = FindPlayerInventory(PlayerController);
-
-	const APawn* RequestingPawn = nullptr;
-	if (PlayerController)
-	{
-		RequestingPawn = PlayerController->GetPawn();
-	}
-	else
-	{
-		RequestingPawn = Cast<APawn>(InteractingActor);
-	}
-	const AActor* RequestingActor = RequestingPawn ? static_cast<const AActor*>(RequestingPawn) : InteractingActor;
-
-	if (!PlayerController || !ContainerComponent || !ContainerInventory || !PlayerInventory || !ContainerComponent->CanActorAccess(RequestingActor))
-	{
-		EndAbility(Handle, ActorInfo, ActivationInfo, false, true);
+		EndAbility(Handle, ActorInfo, ActivationInfo, true, true);
 		return;
 	}
 
-	PlayerController->OpenStorageInventory(PlayerInventory, ContainerInventory, TargetActor);
+	AActor* InteractingActor = ActorInfo->AvatarActor.Get();
+	AActor* TargetActor = ValidatedOption.TargetRef.TargetActor.Get();
+	ARpgPlayerController* PlayerController = Cast<ARpgPlayerController>(ActorInfo->PlayerController.Get());
+	URpgInventoryContainerComponent* ContainerComponent = FindContainerComponent(TargetActor);
+	const bool bCanOpen = PlayerController && ContainerComponent &&
+		ContainerComponent->GetInventoryManager() && FindPlayerInventory(PlayerController) &&
+		ContainerComponent->CanActorAccess(InteractingActor) &&
+		CommitAbility(Handle, ActorInfo, ActivationInfo);
+	if (!bCanOpen)
+	{
+		UInteractionStatics::BroadcastInteractionMessage(
+			this,
+			RpgGameplayTags::Rpg_Interaction_Message_Rejected,
+			ValidatedOption,
+			InteractingActor,
+			false);
+		EndAbility(Handle, ActorInfo, ActivationInfo, true, true);
+		return;
+	}
 
-	EndAbility(Handle, ActorInfo, ActivationInfo, false, false);
+	PlayerController->ClientOpenStorageInteraction(TargetActor);
+	UInteractionStatics::BroadcastInteractionMessage(
+		this,
+		RpgGameplayTags::Rpg_Interaction_Message_Ended,
+		ValidatedOption,
+		InteractingActor,
+		true);
+	EndAbility(Handle, ActorInfo, ActivationInfo, true, false);
 }
 
 ARpgPlayerController* URpgGameplayAbility_OpenStorageContainer::FindPlayerControllerForActor(AActor* Actor)

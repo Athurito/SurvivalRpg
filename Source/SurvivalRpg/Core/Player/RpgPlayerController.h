@@ -50,6 +50,18 @@ public:
 	UFUNCTION(Client, Reliable, Category = "Rpg|Inventory")
 	void ClientOpenLootInventory(URpgInventoryManagerComponent* PrimaryInventory, URpgInventoryManagerComponent* LootInventory, AActor* LootActor);
 
+	/** Opens a storage screen only after the server-side interaction ability validates the target. */
+	UFUNCTION(Client, Reliable, Category = "Rpg|Interaction")
+	void ClientOpenStorageInteraction(AActor* StorageActor);
+
+	/** Opens a crafting screen only after the server-side interaction ability validates the station. */
+	UFUNCTION(Client, Reliable, Category = "Rpg|Interaction")
+	void ClientOpenCraftingInteraction(AActor* CraftingActor);
+
+	/** Opens a base-storage screen only after the server-side interaction ability validates the station. */
+	UFUNCTION(Client, Reliable, Category = "Rpg|Interaction")
+	void ClientOpenBaseStorageInteraction(AActor* BaseStorageActor);
+
 	/** Opens and monitors an accessible world storage inventory on the owning client. */
 	UFUNCTION(BlueprintCallable, Category = "Rpg|Inventory")
 	void OpenStorageInventory(URpgInventoryManagerComponent* PrimaryInventory, URpgInventoryManagerComponent* StorageInventory, AActor* StorageActor);

@@ -152,23 +152,40 @@ void ARpgPortalActor::GatherInteractionOptions(const FInteractionQuery& Interact
 			|| PortalState == ERpgPortalState::ExitOpen))
 	{
 		FInteractionOption Option;
+		Option.InteractionTag = RpgPortalGameplayTags::Rpg_Interaction_Action_Portal_Enter;
 		Option.InteractionAbilityToGrant = EnterPortalAbilityClass;
-		Option.Text = EncounterDefinition ? EncounterDefinition->EnterInteractionText : NSLOCTEXT("RpgPortal", "EnterPortal", "Enter Portal");
-		Option.SubText = EncounterDefinition ? EncounterDefinition->EnterInteractionSubText : NSLOCTEXT("RpgPortal", "EnterPortalSubText", "Cross into the rift");
+		Option.Prompt.ActionText = EncounterDefinition ? EncounterDefinition->EnterInteractionText : NSLOCTEXT("RpgPortal", "EnterPortal", "Enter Portal");
+		Option.Prompt.TargetText = EncounterDefinition ? EncounterDefinition->EnterInteractionSubText : NSLOCTEXT("RpgPortal", "EnterPortalSubText", "Cross into the rift");
+		Option.Prompt.AwarenessRange = 1000.0f;
+		Option.Prompt.FocusRange = 650.0f;
+		Option.Prompt.InteractionRange = 300.0f;
+		Option.Prompt.InteractionPriority = 80;
+		Option.TargetRef.TargetActor = this;
 
 		InteractionBuilder.AddInteractionOption(Option);
 		return;
 	}
 
-	if (PortalState != ERpgPortalState::Sealable || !ClosePortalAbilityClass)
+	if (!ClosePortalAbilityClass || PortalState == ERpgPortalState::Dormant || PortalState == ERpgPortalState::Closed)
 	{
 		return;
 	}
 
 	FInteractionOption Option;
+	Option.InteractionTag = RpgPortalGameplayTags::Rpg_Interaction_Action_Portal_Close;
 	Option.InteractionAbilityToGrant = ClosePortalAbilityClass;
-	Option.Text = EncounterDefinition ? EncounterDefinition->CloseInteractionText : NSLOCTEXT("RpgPortal", "ClosePortal", "Close Portal");
-	Option.SubText = EncounterDefinition ? EncounterDefinition->CloseInteractionSubText : NSLOCTEXT("RpgPortal", "ClosePortalSubText", "Stabilize the rift");
+	Option.Prompt.ActionText = EncounterDefinition ? EncounterDefinition->CloseInteractionText : NSLOCTEXT("RpgPortal", "ClosePortal", "Close Portal");
+	Option.Prompt.TargetText = EncounterDefinition ? EncounterDefinition->CloseInteractionSubText : NSLOCTEXT("RpgPortal", "ClosePortalSubText", "Stabilize the rift");
+	Option.Prompt.AwarenessRange = 1000.0f;
+	Option.Prompt.FocusRange = 650.0f;
+	Option.Prompt.InteractionRange = 300.0f;
+	Option.Prompt.InteractionPriority = 80;
+	Option.TargetRef.TargetActor = this;
+	if (PortalState != ERpgPortalState::Sealable)
+	{
+		Option.Availability = ERpgInteractionAvailability::Blocked;
+		Option.Prompt.BlockedReason = NSLOCTEXT("RpgPortal", "PortalNotSealable", "The rift is not stable enough to close");
+	}
 
 	InteractionBuilder.AddInteractionOption(Option);
 }
