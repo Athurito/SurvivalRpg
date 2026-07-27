@@ -30,6 +30,10 @@ void URpgInventoryContainerComponent::GatherInteractionOptions(const FInteractio
 	{
 		return;
 	}
+	if (!bAccessible && bHideInteractionWhenInaccessible)
+	{
+		return;
+	}
 
 	FInteractionOption Option = OpenContainerOption;
 	Option.InteractionTag = RpgGameplayTags::Rpg_Interaction_Action_OpenStorage;
@@ -83,4 +87,10 @@ void URpgInventoryContainerComponent::SetContainerAccessible(bool bNewAccessible
 	{
 		bAccessible = bNewAccessible;
 	}
+}
+
+void URpgInventoryContainerComponent::ConfigureAsDeathLootContainer()
+{
+	bAccessible = false;
+	bHideInteractionWhenInaccessible = true;
 }

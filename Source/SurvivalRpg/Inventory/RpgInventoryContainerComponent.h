@@ -33,6 +33,12 @@ public:
 	UFUNCTION(BlueprintCallable, BlueprintAuthorityOnly, Category = "Inventory|Container")
 	void SetContainerAccessible(bool bNewAccessible);
 
+	/**
+	 * Configures this native default subobject as latent death loot.
+	 * Death loot starts inaccessible and emits no interaction option until the server unlocks it.
+	 */
+	void ConfigureAsDeathLootContainer();
+
 	UFUNCTION(BlueprintCallable, BlueprintPure, Category = "Inventory|Container")
 	bool IsContainerAccessible() const { return bAccessible; }
 
@@ -72,6 +78,13 @@ protected:
 	/** Whether this container currently accepts player interaction. Runtime mutable on the server and read by UI. */
 	UPROPERTY(EditAnywhere, Replicated, BlueprintReadOnly, Category = "Inventory|Container")
 	bool bAccessible = true;
+
+	/**
+	 * Whether an inaccessible container is completely absent from interaction scans instead of showing Blocked.
+	 * Enable for latent targets such as living enemies whose corpse loot becomes valid only after death.
+	 */
+	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Inventory|Container|Interaction")
+	bool bHideInteractionWhenInaccessible = false;
 
 	/** Whether crafting stations may pull resources from this container. Use this for shared base chests. */
 	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Inventory|Container")

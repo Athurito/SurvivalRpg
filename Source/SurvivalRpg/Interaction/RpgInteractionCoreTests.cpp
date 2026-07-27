@@ -13,6 +13,7 @@
 #include "Engine/GameInstance.h"
 #include "Engine/World.h"
 #include "GameFramework/Actor.h"
+#include "SurvivalRpg/Core/AI/RpgAICharacter.h"
 #include "SurvivalRpg/GameplayTags/RpgGameplayTags.h"
 #include "SurvivalRpg/Interaction/Components/RpgInteractableDoorComponent.h"
 #include "SurvivalRpg/Interaction/Components/RpgInteractionPromptAnchorComponent.h"
@@ -20,6 +21,7 @@
 #include "SurvivalRpg/Interaction/InteractionQuery.h"
 #include "SurvivalRpg/Interaction/InteractionStatics.h"
 #include "SurvivalRpg/Interaction/InteractableComponent.h"
+#include "SurvivalRpg/Inventory/RpgInventoryContainerComponent.h"
 #include "SurvivalRpg/Physics/RpgCollisionChannels.h"
 
 #if WITH_EDITOR
@@ -429,6 +431,102 @@ bool FRpgGenericInteractableComponentOptionTest::RunTest(
 			TEXT("Builder preserves the component provider"),
 			Options[0].InteractableTarget.GetObject(),
 			static_cast<UObject*>(Interactable));
+	}
+	return true;
+}
+
+IMPLEMENT_SIMPLE_AUTOMATION_TEST(
+	FRpgDeathLootInteractionVisibilityTest,
+	"SurvivalRpg.Interaction.Core.DeathLootVisibility",
+	EAutomationTestFlags::EditorContext | EAutomationTestFlags::EngineFilter)
+
+bool FRpgDeathLootInteractionVisibilityTest::RunTest(
+	const FString& Parameters)
+{
+	(void)Parameters;
+	using namespace RpgInteractionCoreTests;
+
+	const ARpgAICharacter* EnemyDefaults = GetDefault<ARpgAICharacter>();
+	const URpgInventoryContainerComponent* EnemyLootContainer = EnemyDefaults
+		? EnemyDefaults->FindComponentByClass<URpgInventoryContainerComponent>()
+		: nullptr;
+	if (!TestNotNull(
+		TEXT("AI characters own a death-loot container"),
+		EnemyLootContainer))
+	{
+		return false;
+	}
+	TestFalse(
+		TEXT("AI death loot starts inaccessible on every network role"),
+		EnemyLootContainer->IsContainerAccessible());
+
+	FScopedTestWorld TestWorld;
+	AActor* Requester = SpawnTestActor(TestWorld.GetWorld());
+	AActor* DeathLootActor = SpawnTestActor(TestWorld.GetWorld());
+	URpgInventoryContainerComponent* DeathLootContainer =
+		AddTestComponent<URpgInventoryContainerComponent>(
+			DeathLootActor,
+			TEXT("DeathLootContainer"));
+	if (!TestNotNull(TEXT("Death-loot test container exists"), DeathLootContainer) ||
+		!TestNotNull(TEXT("Interaction requester exists"), Requester))
+	{
+		return false;
+	}
+	DeathLootContainer->ConfigureAsDeathLootContainer();
+
+	FInteractionQuery Query;
+	Query.RequestingAvatar = Requester;
+	auto GatherOptions = [&Query](URpgInventoryContainerComponent* Container)
+	{
+		TScriptInterface<IInteractableTarget> Target;
+		Target.SetObject(Container);
+		Target.SetInterface(Container);
+		TArray<FInteractionOption> Options;
+		FInteractionOptionBuilder Builder(Target, Options);
+		Container->GatherInteractionOptions(Query, Builder);
+		return Options;
+	};
+
+	TestTrue(
+		TEXT("Living enemy death loot emits no circle or blocked prompt"),
+		GatherOptions(DeathLootContainer).IsEmpty());
+	DeathLootContainer->SetContainerAccessible(true);
+	const TArray<FInteractionOption> UnlockedOptions =
+		GatherOptions(DeathLootContainer);
+	TestEqual(
+		TEXT("Unlocked corpse loot emits one interaction"),
+		UnlockedOptions.Num(),
+		1);
+	if (!UnlockedOptions.IsEmpty())
+	{
+		TestEqual(
+			TEXT("Unlocked corpse loot is available"),
+			UnlockedOptions[0].Availability,
+			ERpgInteractionAvailability::Available);
+	}
+
+	AActor* StorageActor = SpawnTestActor(TestWorld.GetWorld());
+	URpgInventoryContainerComponent* StorageContainer =
+		AddTestComponent<URpgInventoryContainerComponent>(
+			StorageActor,
+			TEXT("StorageContainer"));
+	if (!TestNotNull(TEXT("Regular storage test container exists"), StorageContainer))
+	{
+		return false;
+	}
+	StorageContainer->SetContainerAccessible(false);
+	const TArray<FInteractionOption> StorageOptions =
+		GatherOptions(StorageContainer);
+	TestEqual(
+		TEXT("Regular inaccessible storage remains a visible blocked interaction"),
+		StorageOptions.Num(),
+		1);
+	if (!StorageOptions.IsEmpty())
+	{
+		TestEqual(
+			TEXT("Regular inaccessible storage keeps Blocked semantics"),
+			StorageOptions[0].Availability,
+			ERpgInteractionAvailability::Blocked);
 	}
 	return true;
 }
