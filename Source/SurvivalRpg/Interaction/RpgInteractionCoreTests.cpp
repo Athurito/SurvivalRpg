@@ -4,9 +4,125 @@
 
 #include "Misc/AutomationTest.h"
 
+#include "Components/BoxComponent.h"
+#include "Components/SceneComponent.h"
+#include "Components/SphereComponent.h"
+#include "Engine/Engine.h"
+#include "Engine/GameInstance.h"
+#include "Engine/World.h"
+#include "GameFramework/Actor.h"
 #include "SurvivalRpg/GameplayTags/RpgGameplayTags.h"
+#include "SurvivalRpg/Interaction/Components/RpgInteractableDoorComponent.h"
+#include "SurvivalRpg/Interaction/Components/RpgInteractionPromptAnchorComponent.h"
 #include "SurvivalRpg/Interaction/InteractionOption.h"
 #include "SurvivalRpg/Interaction/InteractionStatics.h"
+
+#if WITH_EDITOR
+#include "Misc/DataValidation.h"
+#endif
+
+namespace RpgInteractionCoreTests
+{
+	class FScopedTestWorld
+	{
+	public:
+		FScopedTestWorld()
+		{
+			GameInstance = NewObject<UGameInstance>(GEngine, NAME_None, RF_Transient);
+			if (!GameInstance)
+			{
+				return;
+			}
+
+			GameInstance->AddToRoot();
+			GameInstance->InitializeStandalone();
+			World = GameInstance->GetWorld();
+		}
+
+		~FScopedTestWorld()
+		{
+			UWorld* WorldToDestroy = World;
+			if (GameInstance)
+			{
+				GameInstance->Shutdown();
+			}
+			if (WorldToDestroy)
+			{
+				GEngine->DestroyWorldContext(WorldToDestroy);
+				WorldToDestroy->DestroyWorld(false);
+			}
+			if (GameInstance)
+			{
+				GameInstance->RemoveFromRoot();
+			}
+		}
+
+		UWorld* GetWorld() const { return World; }
+
+	private:
+		TObjectPtr<UGameInstance> GameInstance = nullptr;
+		TObjectPtr<UWorld> World = nullptr;
+	};
+
+	AActor* SpawnTestActor(UWorld* World)
+	{
+		if (!World)
+		{
+			return nullptr;
+		}
+
+		FActorSpawnParameters SpawnParameters;
+		SpawnParameters.Name = MakeUniqueObjectName(
+			World,
+			AActor::StaticClass(),
+			TEXT("InteractionCoreTestActor"));
+		SpawnParameters.ObjectFlags = RF_Transient;
+		AActor* Actor = World->SpawnActor<AActor>(SpawnParameters);
+		if (!Actor)
+		{
+			return nullptr;
+		}
+
+		USceneComponent* Root = NewObject<USceneComponent>(
+			Actor,
+			TEXT("Root"),
+			RF_Transient);
+		Actor->AddInstanceComponent(Root);
+		Actor->SetRootComponent(Root);
+		Root->RegisterComponent();
+		return Actor;
+	}
+
+	template <typename ComponentType>
+	ComponentType* AddTestComponent(AActor* Owner, const FName ComponentName)
+	{
+		if (!Owner)
+		{
+			return nullptr;
+		}
+
+		ComponentType* Component = NewObject<ComponentType>(
+			Owner,
+			ComponentName,
+			RF_Transient);
+		Owner->AddInstanceComponent(Component);
+		if constexpr (TIsDerivedFrom<ComponentType, USceneComponent>::IsDerived)
+		{
+			Component->SetupAttachment(Owner->GetRootComponent());
+		}
+		Component->RegisterComponent();
+		return Component;
+	}
+
+	TScriptInterface<IInteractableTarget> MakeTargetInterface(
+		URpgInteractableDoorComponent* Component)
+	{
+		TScriptInterface<IInteractableTarget> Target;
+		Target.SetObject(Component);
+		Target.SetInterface(Component);
+		return Target;
+	}
+}
 
 IMPLEMENT_SIMPLE_AUTOMATION_TEST(
 	FRpgInteractionPromptStateBoundaryTest,
@@ -126,6 +242,156 @@ bool FRpgInteractionSemanticEqualityTest::RunTest(const FString& Parameters)
 
 	Same.Prompt.ActionText = NSLOCTEXT("RpgInteractionTests", "Open", "Open");
 	TestTrue(TEXT("Prompt text is part of the semantic diff"), First != Same);
+
+	Same = First;
+	Same.Prompt.PromptAnchorId = TEXT("Alternate");
+	TestTrue(TEXT("Prompt anchor id is part of the semantic diff"), First != Same);
+
+	return true;
+}
+
+IMPLEMENT_SIMPLE_AUTOMATION_TEST(
+	FRpgInteractionPresentationIdentityTest,
+	"SurvivalRpg.Interaction.Core.PresentationIdentity",
+	EAutomationTestFlags::EditorContext | EAutomationTestFlags::EngineFilter)
+
+bool FRpgInteractionPresentationIdentityTest::RunTest(const FString& Parameters)
+{
+	(void)Parameters;
+	using namespace RpgInteractionCoreTests;
+
+	FScopedTestWorld TestWorld;
+	AActor* TargetActor = SpawnTestActor(TestWorld.GetWorld());
+	if (!TestNotNull(TEXT("Presentation identity target actor exists"), TargetActor))
+	{
+		return false;
+	}
+
+	URpgInteractableDoorComponent* ProviderA = AddTestComponent<URpgInteractableDoorComponent>(
+		TargetActor,
+		TEXT("ProviderA"));
+	URpgInteractableDoorComponent* ProviderB = AddTestComponent<URpgInteractableDoorComponent>(
+		TargetActor,
+		TEXT("ProviderB"));
+	USphereComponent* CollisionA = AddTestComponent<USphereComponent>(TargetActor, TEXT("CollisionA"));
+	UBoxComponent* CollisionB = AddTestComponent<UBoxComponent>(TargetActor, TEXT("CollisionB"));
+	if (!TestNotNull(TEXT("First provider exists"), ProviderA) ||
+		!TestNotNull(TEXT("Second provider exists"), ProviderB) ||
+		!TestNotNull(TEXT("First collision component exists"), CollisionA) ||
+		!TestNotNull(TEXT("Second collision component exists"), CollisionB))
+	{
+		return false;
+	}
+
+	FInteractionOption First;
+	First.InteractableTarget = MakeTargetInterface(ProviderA);
+	First.InteractionTag = RpgGameplayTags::Rpg_Interaction_Action_Generic;
+	First.TargetRef.TargetActor = TargetActor;
+	First.TargetRef.TargetComponent = CollisionA;
+
+	FInteractionOption SameProviderDifferentCollision = First;
+	SameProviderDifferentCollision.TargetRef.TargetComponent = CollisionB;
+	TestTrue(
+		TEXT("Gameplay identity preserves the concrete collision component"),
+		UInteractionStatics::MakeStableOptionKey(First) !=
+			UInteractionStatics::MakeStableOptionKey(SameProviderDifferentCollision));
+	TestEqual(
+		TEXT("Presentation identity ignores incidental collision components"),
+		UInteractionStatics::MakePresentationOptionKey(First),
+		UInteractionStatics::MakePresentationOptionKey(SameProviderDifferentCollision));
+
+	FInteractionOption DifferentProvider = First;
+	DifferentProvider.InteractableTarget = MakeTargetInterface(ProviderB);
+	TestTrue(
+		TEXT("Different component providers keep separate presentation identities"),
+		UInteractionStatics::MakePresentationOptionKey(First) !=
+			UInteractionStatics::MakePresentationOptionKey(DifferentProvider));
+
+	FInteractionOption DifferentInstance = First;
+	DifferentInstance.TargetRef.InstanceIndex = 7;
+	TestTrue(
+		TEXT("Instanced mesh items keep separate presentation identities"),
+		UInteractionStatics::MakePresentationOptionKey(First) !=
+			UInteractionStatics::MakePresentationOptionKey(DifferentInstance));
+
+	FInteractionOption DifferentAction = First;
+	DifferentAction.InteractionTag = RpgGameplayTags::Rpg_Interaction_Action_Collect;
+	TestTrue(
+		TEXT("Different interaction actions keep separate presentation identities"),
+		UInteractionStatics::MakePresentationOptionKey(First) !=
+			UInteractionStatics::MakePresentationOptionKey(DifferentAction));
+
+	return true;
+}
+
+IMPLEMENT_SIMPLE_AUTOMATION_TEST(
+	FRpgInteractionPromptAnchorResolutionTest,
+	"SurvivalRpg.Interaction.Core.PromptAnchorResolution",
+	EAutomationTestFlags::EditorContext | EAutomationTestFlags::EngineFilter)
+
+bool FRpgInteractionPromptAnchorResolutionTest::RunTest(const FString& Parameters)
+{
+	(void)Parameters;
+	using namespace RpgInteractionCoreTests;
+
+	FScopedTestWorld TestWorld;
+	AActor* TargetActor = SpawnTestActor(TestWorld.GetWorld());
+	if (!TestNotNull(TEXT("Prompt anchor target actor exists"), TargetActor))
+	{
+		return false;
+	}
+
+	URpgInteractionPromptAnchorComponent* LastDefault =
+		AddTestComponent<URpgInteractionPromptAnchorComponent>(TargetActor, TEXT("Z_DefaultAnchor"));
+	URpgInteractionPromptAnchorComponent* FirstDefault =
+		AddTestComponent<URpgInteractionPromptAnchorComponent>(TargetActor, TEXT("A_DefaultAnchor"));
+	URpgInteractionPromptAnchorComponent* Alternate =
+		AddTestComponent<URpgInteractionPromptAnchorComponent>(TargetActor, TEXT("B_AlternateAnchor"));
+	if (!TestNotNull(TEXT("Last default anchor exists"), LastDefault) ||
+		!TestNotNull(TEXT("First default anchor exists"), FirstDefault) ||
+		!TestNotNull(TEXT("Alternate anchor exists"), Alternate))
+	{
+		return false;
+	}
+	Alternate->AnchorId = TEXT("Alternate");
+
+	TestEqual(TEXT("Prompt anchors default to the Default id"), FirstDefault->AnchorId, FName(TEXT("Default")));
+	TestFalse(TEXT("Prompt anchors never tick"), FirstDefault->PrimaryComponentTick.bCanEverTick);
+	TestEqual(
+		TEXT("Prompt anchors have no collision"),
+		FirstDefault->GetCollisionEnabled(),
+		ECollisionEnabled::NoCollision);
+	TestFalse(TEXT("Prompt anchors are not replicated"), FirstDefault->GetIsReplicated());
+	TestTrue(TEXT("Prompt anchors are hidden during gameplay"), FirstDefault->bHiddenInGame);
+
+	FInteractionOption Option;
+	Option.TargetRef.TargetActor = TargetActor;
+	TestEqual(
+		TEXT("Duplicate ids resolve deterministically by component name"),
+		UInteractionStatics::FindPromptAnchorComponent(Option),
+		FirstDefault);
+
+	Option.Prompt.PromptAnchorId = TEXT("Alternate");
+	TestEqual(
+		TEXT("An explicit prompt anchor id resolves its matching component"),
+		UInteractionStatics::FindPromptAnchorComponent(Option),
+		Alternate);
+
+	Option.Prompt.PromptAnchorId = TEXT("Missing");
+	TestNull(
+		TEXT("A missing prompt anchor id leaves presentation fallback to the caller"),
+		UInteractionStatics::FindPromptAnchorComponent(Option));
+
+#if WITH_EDITOR
+	FDataValidationContext DuplicateContext;
+	TestEqual(
+		TEXT("Duplicate ids fail component data validation"),
+		FirstDefault->IsDataValid(DuplicateContext),
+		EDataValidationResult::Invalid);
+	TestTrue(
+		TEXT("Duplicate ids emit one focused validation error"),
+		DuplicateContext.GetNumErrors() > 0);
+#endif
 
 	return true;
 }

@@ -13,6 +13,7 @@ class UAbilityTask_WaitForInteractableTargets_FocusSweep;
 class UAbilityTask_WaitForInteractableTargets_Nearby;
 class UAbilityTask_WaitInputPress;
 class UIndicatorDescriptor;
+class URpgInteractionPromptAnchorComponent;
 class URpgInteractionPromptData;
 class URpgIndicatorManagerComponent;
 class UUserWidget;
@@ -111,6 +112,10 @@ protected:
 	void ReconcileInteractionIndicators(URpgIndicatorManagerComponent* IndicatorManager);
 
 private:
+#if WITH_DEV_AUTOMATION_TESTS
+	friend class URpgInteractionPromptAutomationAbility;
+#endif
+
 	UFUNCTION()
 	void HandleFocusedOptionsChanged(const TArray<FInteractionOption>& InteractiveOptions);
 
@@ -123,6 +128,11 @@ private:
 	void StartWaitingForInput();
 	void RefreshInteractionIndicators();
 	void ClearInteractionIndicators();
+	void ReconcilePromptAnchorBindings(
+		const TSet<URpgInteractionPromptAnchorComponent*>& DesiredAnchors);
+	void ClearPromptAnchorBindings();
+	void HandlePromptAnchorDestroyed(
+		URpgInteractionPromptAnchorComponent* DestroyedAnchor);
 	bool TriggerValidatedInteraction(const FInteractionOption& FocusedOption);
 	static FString MakeOptionKey(const FInteractionOption& Option);
 
@@ -152,6 +162,10 @@ private:
 
 	UPROPERTY()
 	TMap<FString, TObjectPtr<URpgInteractionPromptData>> NearbyPromptData;
+
+	TWeakObjectPtr<URpgIndicatorManagerComponent> LastIndicatorManager;
+	TMap<TWeakObjectPtr<URpgInteractionPromptAnchorComponent>, FDelegateHandle>
+		PromptAnchorDestroyedHandles;
 
 	ERpgInteractionPromptState LastPromptState = ERpgInteractionPromptState::Hidden;
 	float LastAuthorityTriggerTimeSeconds = -1.0f;

@@ -96,42 +96,63 @@ void URpgInteractionPromptWidget::RefreshPromptPresentation()
 	const ERpgInteractionPromptState PromptState = PromptData
 		? PromptData->State
 		: ERpgInteractionPromptState::Hidden;
+	const FPromptPresentationRules PresentationRules = ResolvePresentationRules(PromptState);
 
 	if (ActionTextBlock)
 	{
-		ActionTextBlock->SetText(PromptData ? PromptData->ActionText : FText::GetEmpty());
+		ActionTextBlock->SetText(
+			PresentationRules.bShowActionText && PromptData
+				? PromptData->ActionText
+				: FText::GetEmpty());
+		ActionTextBlock->SetVisibility(
+			PresentationRules.bShowActionText
+				? ESlateVisibility::HitTestInvisible
+				: ESlateVisibility::Collapsed);
 	}
 	if (TargetTextBlock)
 	{
-		TargetTextBlock->SetText(PromptData ? PromptData->TargetText : FText::GetEmpty());
-		TargetTextBlock->SetVisibility(
-			PromptState == ERpgInteractionPromptState::Nearby
-				? ESlateVisibility::Collapsed
-				: ESlateVisibility::HitTestInvisible);
+		// The default prompt is intentionally one line. Authored widgets may still read TargetText
+		// from PromptData in their presentation hook when a specialized layout needs it.
+		TargetTextBlock->SetText(FText::GetEmpty());
+		TargetTextBlock->SetVisibility(ESlateVisibility::Collapsed);
 	}
 	if (BlockedReasonTextBlock)
 	{
-		const bool bOutOfRange = PromptState == ERpgInteractionPromptState::FocusedOutOfRange;
-		const bool bShowBlockedReason = PromptState == ERpgInteractionPromptState::Blocked &&
-			PromptData && !PromptData->BlockedReason.IsEmpty();
-		BlockedReasonTextBlock->SetText(
-			bOutOfRange
-				? NSLOCTEXT("RpgInteraction", "PromptTooFarAway", "Too far away")
-				: (bShowBlockedReason ? PromptData->BlockedReason : FText::GetEmpty()));
+		BlockedReasonTextBlock->SetText(ResolveBlockedReasonText(PromptData, PromptState));
 		BlockedReasonTextBlock->SetVisibility(
-			(bOutOfRange || bShowBlockedReason)
+			PresentationRules.bShowBlockedReason
+				? ESlateVisibility::HitTestInvisible
+				: ESlateVisibility::Collapsed);
+	}
+	if (BlockedIcon)
+	{
+		BlockedIcon->SetVisibility(
+			PresentationRules.bShowBlockedReason
+				? ESlateVisibility::HitTestInvisible
+				: ESlateVisibility::Collapsed);
+	}
+	if (NearbyMarker)
+	{
+		NearbyMarker->SetVisibility(
+			PresentationRules.bShowNearbyMarker
 				? ESlateVisibility::HitTestInvisible
 				: ESlateVisibility::Collapsed);
 	}
 
 	if (InputActionWidget)
 	{
-		const bool bShowInputAction =
-			PromptState == ERpgInteractionPromptState::Ready ||
-			PromptState == ERpgInteractionPromptState::FocusedOutOfRange;
 		InputActionWidget->SetVisibility(
-			bShowInputAction ? ESlateVisibility::HitTestInvisible : ESlateVisibility::Collapsed);
-		InputActionWidget->SetIsEnabled(PromptState == ERpgInteractionPromptState::Ready);
+			PresentationRules.bShowInputAction
+				? ESlateVisibility::HitTestInvisible
+				: ESlateVisibility::Collapsed);
+		InputActionWidget->SetIsEnabled(PresentationRules.bShowInputAction);
+	}
+	if (InputActionContainer)
+	{
+		InputActionContainer->SetVisibility(
+			PresentationRules.bShowInputAction
+				? ESlateVisibility::HitTestInvisible
+				: ESlateVisibility::Collapsed);
 	}
 
 	const TSoftObjectPtr<UTexture2D> NewIcon = PromptData
@@ -152,14 +173,45 @@ void URpgInteractionPromptWidget::RefreshPromptPresentation()
 	if (PromptIcon)
 	{
 		PromptIcon->SetVisibility(
-			AppliedPromptIcon.IsNull() ? ESlateVisibility::Collapsed : ESlateVisibility::HitTestInvisible);
+			PresentationRules.bShowPromptIcon && !AppliedPromptIcon.IsNull()
+				? ESlateVisibility::HitTestInvisible
+				: ESlateVisibility::Collapsed);
 	}
 
 	SetVisibility(
-		PromptState == ERpgInteractionPromptState::Hidden
-			? ESlateVisibility::Collapsed
-			: ESlateVisibility::HitTestInvisible);
+		PresentationRules.bShowWidget
+			? ESlateVisibility::HitTestInvisible
+			: ESlateVisibility::Collapsed);
 	BP_OnPromptPresentationChanged(PromptState);
+}
+
+URpgInteractionPromptWidget::FPromptPresentationRules
+URpgInteractionPromptWidget::ResolvePresentationRules(ERpgInteractionPromptState PromptState)
+{
+	FPromptPresentationRules Rules;
+	Rules.bShowWidget = PromptState != ERpgInteractionPromptState::Hidden;
+	Rules.bShowActionText = PromptState == ERpgInteractionPromptState::Ready;
+	Rules.bShowInputAction = PromptState == ERpgInteractionPromptState::Ready;
+	Rules.bShowPromptIcon = PromptState == ERpgInteractionPromptState::Ready;
+	Rules.bShowBlockedReason = PromptState == ERpgInteractionPromptState::Blocked;
+	Rules.bShowNearbyMarker =
+		PromptState == ERpgInteractionPromptState::Nearby ||
+		PromptState == ERpgInteractionPromptState::FocusedOutOfRange;
+	return Rules;
+}
+
+FText URpgInteractionPromptWidget::ResolveBlockedReasonText(
+	const URpgInteractionPromptData* InPromptData,
+	ERpgInteractionPromptState PromptState)
+{
+	if (PromptState != ERpgInteractionPromptState::Blocked)
+	{
+		return FText::GetEmpty();
+	}
+
+	return InPromptData && !InPromptData->BlockedReason.IsEmpty()
+		? InPromptData->BlockedReason
+		: NSLOCTEXT("RpgInteraction", "PromptNotAvailable", "Not available");
 }
 
 void URpgInteractionPromptWidget::BuildFallbackWidgetTree()
@@ -190,17 +242,32 @@ void URpgInteractionPromptWidget::BuildFallbackWidgetTree()
 	BlockedReasonTextBlock = WidgetTree->ConstructWidget<UCommonTextBlock>(
 		UCommonTextBlock::StaticClass(),
 		GET_MEMBER_NAME_CHECKED(ThisClass, BlockedReasonTextBlock));
+	UCommonTextBlock* FallbackBlockedIcon = WidgetTree->ConstructWidget<UCommonTextBlock>(
+		UCommonTextBlock::StaticClass(),
+		GET_MEMBER_NAME_CHECKED(ThisClass, BlockedIcon));
+	BlockedIcon = FallbackBlockedIcon;
+	UCommonTextBlock* FallbackNearbyMarker = WidgetTree->ConstructWidget<UCommonTextBlock>(
+		UCommonTextBlock::StaticClass(),
+		GET_MEMBER_NAME_CHECKED(ThisClass, NearbyMarker));
+	NearbyMarker = FallbackNearbyMarker;
 
 	if (!Root || !PromptRow || !InputActionWidget || !PromptIcon || !ActionTextBlock ||
-		!TargetTextBlock || !BlockedReasonTextBlock)
+		!TargetTextBlock || !BlockedReasonTextBlock || !FallbackBlockedIcon ||
+		!FallbackNearbyMarker)
 	{
 		return;
 	}
+	FallbackBlockedIcon->SetText(FText::FromString(TEXT("!")));
+	FallbackNearbyMarker->SetText(FText::FromString(TEXT("\u25CB")));
 
 	WidgetTree->RootWidget = Root;
 	if (UVerticalBoxSlot* RowSlot = Root->AddChildToVerticalBox(PromptRow))
 	{
 		RowSlot->SetHorizontalAlignment(HAlign_Center);
+	}
+	if (UHorizontalBoxSlot* NearbyMarkerSlot = PromptRow->AddChildToHorizontalBox(NearbyMarker))
+	{
+		NearbyMarkerSlot->SetVerticalAlignment(VAlign_Center);
 	}
 	if (UHorizontalBoxSlot* InputSlot = PromptRow->AddChildToHorizontalBox(InputActionWidget))
 	{
@@ -212,17 +279,22 @@ void URpgInteractionPromptWidget::BuildFallbackWidgetTree()
 		IconSlot->SetPadding(FMargin(0.0f, 0.0f, 6.0f, 0.0f));
 		IconSlot->SetVerticalAlignment(VAlign_Center);
 	}
+	if (UHorizontalBoxSlot* BlockedIconSlot = PromptRow->AddChildToHorizontalBox(BlockedIcon))
+	{
+		BlockedIconSlot->SetPadding(FMargin(0.0f, 0.0f, 6.0f, 0.0f));
+		BlockedIconSlot->SetVerticalAlignment(VAlign_Center);
+	}
 	if (UHorizontalBoxSlot* ActionSlot = PromptRow->AddChildToHorizontalBox(ActionTextBlock))
 	{
 		ActionSlot->SetVerticalAlignment(VAlign_Center);
 	}
+	if (UHorizontalBoxSlot* ReasonSlot = PromptRow->AddChildToHorizontalBox(BlockedReasonTextBlock))
+	{
+		ReasonSlot->SetVerticalAlignment(VAlign_Center);
+	}
 	if (UVerticalBoxSlot* TargetSlot = Root->AddChildToVerticalBox(TargetTextBlock))
 	{
 		TargetSlot->SetHorizontalAlignment(HAlign_Center);
-	}
-	if (UVerticalBoxSlot* ReasonSlot = Root->AddChildToVerticalBox(BlockedReasonTextBlock))
-	{
-		ReasonSlot->SetHorizontalAlignment(HAlign_Center);
 	}
 }
 

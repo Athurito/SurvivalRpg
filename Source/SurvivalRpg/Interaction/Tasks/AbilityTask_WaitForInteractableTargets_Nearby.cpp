@@ -120,10 +120,23 @@ void UAbilityTask_WaitForInteractableTargets_Nearby::QueryNearby()
 			!Option.Prompt.bShowNearbyIndicator ||
 			FVector::Distance(AvatarActor->GetActorLocation(), Option.GetInteractionWorldLocation()) > Option.Prompt.AwarenessRange;
 	});
+	// Overlap order is not stable. Sort duplicate presentations by their complete gameplay
+	// identity first so repeated scans keep the same representative collision component.
+	NewOptions.StableSort([](const FInteractionOption& A, const FInteractionOption& B)
+	{
+		const FString APresentationKey = UInteractionStatics::MakePresentationOptionKey(A);
+		const FString BPresentationKey = UInteractionStatics::MakePresentationOptionKey(B);
+		if (APresentationKey != BPresentationKey)
+		{
+			return APresentationKey < BPresentationKey;
+		}
+		return UInteractionStatics::MakeStableOptionKey(A) <
+			UInteractionStatics::MakeStableOptionKey(B);
+	});
 	TSet<FString> SeenOptionKeys;
 	NewOptions.RemoveAll([&SeenOptionKeys](const FInteractionOption& Option)
 	{
-		const FString OptionKey = UInteractionStatics::MakeStableOptionKey(Option);
+		const FString OptionKey = UInteractionStatics::MakePresentationOptionKey(Option);
 		if (SeenOptionKeys.Contains(OptionKey))
 		{
 			return true;

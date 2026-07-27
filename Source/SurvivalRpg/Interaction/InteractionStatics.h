@@ -12,6 +12,7 @@ template <typename InterfaceType> class TScriptInterface;
 class AActor;
 class UAbilitySystemComponent;
 class UPrimitiveComponent;
+class URpgInteractionPromptAnchorComponent;
 class IInteractableTarget;
 class UObject;
 struct FGameplayAbilityActorInfo;
@@ -59,8 +60,20 @@ public:
 	/** Returns true when Candidate should replace Current under deterministic priority/view/distance scoring. */
 	static bool IsBetterFocusCandidate(const FInteractionOption& Candidate, const FInteractionOption& Current, const FVector& ViewOrigin, const FVector& ViewDirection);
 
-	/** Builds the stable semantic identity shared by option diffs and indicator reconciliation. */
+	/** Builds the complete stable identity used for gameplay target comparison and deterministic focus ties. */
 	static FString MakeStableOptionKey(const FInteractionOption& Option);
+
+	/**
+	 * Builds the cosmetic identity used to reconcile world prompts without depending on an incidental collision component.
+	 * Gameplay validation and payloads must continue to use MakeStableOptionKey and the complete target reference.
+	 */
+	static FString MakePresentationOptionKey(const FInteractionOption& Option);
+
+	/**
+	 * Resolves the option's designer-authored cosmetic anchor, choosing duplicate ids deterministically by component name.
+	 * Returns null when the target has no matching anchor; callers then apply their presentation-only fallback.
+	 */
+	static URpgInteractionPromptAnchorComponent* FindPromptAnchorComponent(const FInteractionOption& Option);
 
 	/** Performs the shared visibility check used by focus and authority validation. */
 	static bool HasInteractionLineOfSight(const AActor* RequestingActor, const FInteractionOption& Option);

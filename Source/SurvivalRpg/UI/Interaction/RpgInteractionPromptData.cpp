@@ -18,7 +18,6 @@ bool URpgInteractionPromptData::UpdateFromOption(
 		: Option.Prompt.TargetText;
 	const bool bSameTargetIdentity =
 		TargetRef.TargetActor == Option.TargetRef.TargetActor &&
-		TargetRef.TargetComponent == Option.TargetRef.TargetComponent &&
 		TargetRef.InstanceIndex == Option.TargetRef.InstanceIndex &&
 		TargetRef.Revision == Option.TargetRef.Revision;
 
@@ -32,8 +31,8 @@ bool URpgInteractionPromptData::UpdateFromOption(
 		Icon != Option.Prompt.Icon ||
 		Availability != Option.Availability;
 
-	// Moving actors and slightly different trace hit points still update the model, but do not
-	// invalidate widget presentation or restart soft-icon work.
+	// Moving actors, slightly different trace hit points, and alternate collision components on
+	// the same presentation target still update the model without invalidating pooled UI.
 	TargetRef = Option.TargetRef;
 	if (!bChanged)
 	{

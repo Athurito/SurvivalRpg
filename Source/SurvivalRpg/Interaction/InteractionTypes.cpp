@@ -35,6 +35,7 @@ bool FRpgInteractionPromptDefinition::IsSemanticallyEqual(const FRpgInteractionP
 		TargetText.IdenticalTo(Other.TargetText) &&
 		BlockedReason.IdenticalTo(Other.BlockedReason) &&
 		Icon == Other.Icon &&
+		PromptAnchorId == Other.PromptAnchorId &&
 		FMath::IsNearlyEqual(AwarenessRange, Other.AwarenessRange) &&
 		FMath::IsNearlyEqual(FocusRange, Other.FocusRange) &&
 		FMath::IsNearlyEqual(InteractionRange, Other.InteractionRange) &&

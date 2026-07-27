@@ -18,7 +18,9 @@ public class SurvivalRpgEditor : ModuleRules
 		PrivateDependencyModuleNames.AddRange(new string[]
 		{
 			"AssetRegistry",
+			"AssetTools",
 			"BlueprintGraph",
+			"BlueprintEditorLibrary",
 			"CommonGame",
 			"CommonUI",
 			"EnhancedInput",
@@ -31,6 +33,7 @@ public class SurvivalRpgEditor : ModuleRules
 			"ModelViewViewModelEditor",
 			"PropertyBindingUtils",
 			"Projects",
+			"SlateCore",
 			"StateTreeEditorModule",
 			"UIExtension",
 			"UMG",

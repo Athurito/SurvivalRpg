@@ -101,6 +101,13 @@ struct SURVIVALRPG_API FRpgInteractionPromptDefinition
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Interaction|Prompt")
 	TSoftObjectPtr<UTexture2D> Icon;
 
+	/**
+	 * Id of the optional prompt anchor component used for cosmetic world-space projection.
+	 * The value is static designer data and never affects range, line-of-sight, or authority validation.
+	 */
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Interaction|Prompt")
+	FName PromptAnchorId = TEXT("Default");
+
 	/** Maximum distance in centimeters at which a compact nearby marker may be shown. */
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Interaction|Ranges", meta = (ClampMin = "0.0", UIMin = "0.0", Units = "cm"))
 	float AwarenessRange = 800.0f;

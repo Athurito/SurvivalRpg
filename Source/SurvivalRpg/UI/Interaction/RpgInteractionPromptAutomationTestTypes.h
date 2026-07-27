@@ -15,11 +15,23 @@ class URpgInteractionPromptAutomationAbility final : public URpgGameplayAbility_
 	GENERATED_BODY()
 
 public:
+	void ReconcileForTesting(
+		URpgIndicatorManagerComponent* IndicatorManager,
+		const TArray<FInteractionOption>& FocusedOptions,
+		const TArray<FInteractionOption>& NearbyOptions)
+	{
+		CurrentOptions = FocusedOptions;
+		CurrentNearbyOptions = NearbyOptions;
+		ReconcileInteractionIndicators(IndicatorManager);
+	}
+
 	void ReconcileFocusForTesting(
 		URpgIndicatorManagerComponent* IndicatorManager,
 		const TArray<FInteractionOption>& FocusedOptions)
 	{
-		CurrentOptions = FocusedOptions;
-		ReconcileInteractionIndicators(IndicatorManager);
+		ReconcileForTesting(
+			IndicatorManager,
+			FocusedOptions,
+			TArray<FInteractionOption>());
 	}
 };

@@ -4,11 +4,10 @@
 
 #include "AbilitySystemComponent.h"
 #include "Abilities/Tasks/AbilityTask_WaitInputPress.h"
-#include "Components/SceneComponent.h"
-#include "GameFramework/Actor.h"
 #include "SurvivalRpg/Core/Player/RpgPlayerController.h"
 #include "SurvivalRpg/GameplayTags/RpgGameplayTags.h"
 #include "SurvivalRpg/Interaction/InteractionQuery.h"
+#include "SurvivalRpg/Interaction/Components/RpgInteractionPromptAnchorComponent.h"
 #include "SurvivalRpg/Interaction/InteractionStatics.h"
 #include "SurvivalRpg/Interaction/Tasks/AbilityTask_GrantNearbyInteraction.h"
 #include "SurvivalRpg/Interaction/Tasks/AbilityTask_WaitForInteractableTargets_FocusSweep.h"
@@ -16,6 +15,7 @@
 #include "SurvivalRpg/Physics/RpgCollisionChannels.h"
 #include "SurvivalRpg/UI/IndicatorSystem/IndicatorDescriptor.h"
 #include "SurvivalRpg/UI/IndicatorSystem/RpgIndicatorManagerComponent.h"
+#include "SurvivalRpg/UI/Interaction/RpgInteractionPresentation.h"
 #include "SurvivalRpg/UI/Interaction/RpgInteractionPromptData.h"
 #include "SurvivalRpg/UI/Interaction/RpgInteractionPromptWidget.h"
 
@@ -302,7 +302,7 @@ bool URpgGameplayAbility_Interact::TriggerValidatedInteraction(const FInteractio
 
 FString URpgGameplayAbility_Interact::MakeOptionKey(const FInteractionOption& Option)
 {
-	return UInteractionStatics::MakeStableOptionKey(Option);
+	return UInteractionStatics::MakePresentationOptionKey(Option);
 }
 
 void URpgGameplayAbility_Interact::RefreshInteractionIndicators()
@@ -321,18 +321,137 @@ void URpgGameplayAbility_Interact::RefreshInteractionIndicators()
 void URpgGameplayAbility_Interact::ReconcileInteractionIndicators(URpgIndicatorManagerComponent* IndicatorManager)
 {
 	check(IndicatorManager);
-	const bool bShowFocus = !CurrentOptions.IsEmpty() && CurrentOptions[0].PromptState != ERpgInteractionPromptState::Hidden;
-	if (bShowFocus)
+	LastIndicatorManager = IndicatorManager;
+	TSet<URpgInteractionPromptAnchorComponent*> DesiredPromptAnchors;
+	const bool bShowFullPrompt = !CurrentOptions.IsEmpty() &&
+		RpgInteractionPresentation::IsFullPromptState(
+			CurrentOptions[0].PromptState);
+	const FString FullPromptKey = bShowFullPrompt
+		? MakeOptionKey(CurrentOptions[0])
+		: FString();
+
+	// Hide the previous focus first. Nearby reconciliation below either restores its
+	// circle or keeps the matching circle hidden before the full prompt is shown.
+	if (FocusIndicator)
+	{
+		FocusIndicator->SetDesiredVisibility(false);
+	}
+
+	// Reserve one of the bounded nearby slots for the currently aimed option. The
+	// 4 Hz overlap can legitimately omit it because of its candidate limit (or may
+	// simply not have completed its first scan yet), but FocusedOutOfRange must
+	// still render as a circle. Keeping the focused option at the front also makes
+	// the twelve-marker limit deterministic when a dense HISM cluster is aimed at.
+	TArray<FInteractionOption> PresentedNearbyOptions = CurrentNearbyOptions;
+	if (!CurrentOptions.IsEmpty())
+	{
+		const FInteractionOption& FocusedOption = CurrentOptions[0];
+		if (FocusedOption.PromptState != ERpgInteractionPromptState::Hidden &&
+			FocusedOption.Prompt.bShowNearbyIndicator)
+		{
+			const FString FocusedKey = MakeOptionKey(FocusedOption);
+			const int32 ExistingIndex = PresentedNearbyOptions.IndexOfByPredicate(
+				[&FocusedKey](const FInteractionOption& Option)
+				{
+					return MakeOptionKey(Option) == FocusedKey;
+				});
+			if (ExistingIndex != INDEX_NONE)
+			{
+				PresentedNearbyOptions.RemoveAt(ExistingIndex, EAllowShrinking::No);
+				PresentedNearbyOptions.Insert(FocusedOption, 0);
+			}
+			else if (FocusedOption.PromptState ==
+				ERpgInteractionPromptState::FocusedOutOfRange)
+			{
+				PresentedNearbyOptions.Insert(FocusedOption, 0);
+			}
+		}
+	}
+	if (PresentedNearbyOptions.Num() > MaxNearbyIndicators)
+	{
+		PresentedNearbyOptions.SetNum(
+			FMath::Max(0, MaxNearbyIndicators),
+			EAllowShrinking::No);
+	}
+
+	TSet<FString> DesiredNearbyKeys;
+	for (const FInteractionOption& Option : PresentedNearbyOptions)
+	{
+		if (Option.PromptState == ERpgInteractionPromptState::Hidden)
+		{
+			continue;
+		}
+
+		const FString Key = MakeOptionKey(Option);
+		DesiredNearbyKeys.Add(Key);
+		URpgInteractionPromptData* Data = NearbyPromptData.FindRef(Key);
+		if (!Data)
+		{
+			Data = NewObject<URpgInteractionPromptData>(this);
+			NearbyPromptData.Add(Key, Data);
+		}
+		Data->UpdateFromOption(
+			Option,
+			ERpgInteractionPromptState::Nearby);
+
+		const TSoftClassPtr<UUserWidget> DesiredWidgetClass =
+			Option.Prompt.NearbyWidgetClass.IsNull()
+				? DefaultNearbyWidgetClass
+				: Option.Prompt.NearbyWidgetClass;
+		UIndicatorDescriptor* Descriptor = NearbyIndicators.FindRef(Key);
+		if (Descriptor &&
+			Descriptor->GetIndicatorClass() != DesiredWidgetClass)
+		{
+			IndicatorManager->RemoveIndicator(Descriptor);
+			NearbyIndicators.Remove(Key);
+			Descriptor = nullptr;
+		}
+
+		bool bRegisterIndicator = false;
+		if (!Descriptor)
+		{
+			Descriptor = NewObject<UIndicatorDescriptor>(this);
+			Descriptor->SetDataObject(Data);
+			Descriptor->SetAutoRemoveWhenIndicatorComponentIsNull(false);
+			NearbyIndicators.Add(Key, Descriptor);
+			bRegisterIndicator = true;
+		}
+
+		const bool bHasPlacement =
+			RpgInteractionPresentation::ConfigureDescriptorPlacement(
+				*Descriptor,
+				Option);
+		if (URpgInteractionPromptAnchorComponent* PromptAnchor =
+			Cast<URpgInteractionPromptAnchorComponent>(Descriptor->GetSceneComponent()))
+		{
+			DesiredPromptAnchors.Add(PromptAnchor);
+		}
+		Descriptor->SetIndicatorClass(DesiredWidgetClass);
+		Descriptor->SetPriority(Option.Prompt.InteractionPriority);
+		Descriptor->SetDesiredVisibility(
+			bHasPlacement && Key != FullPromptKey);
+		if (bRegisterIndicator)
+		{
+			IndicatorManager->AddIndicator(Descriptor);
+		}
+	}
+
+	for (auto It = NearbyIndicators.CreateIterator(); It; ++It)
+	{
+		if (!DesiredNearbyKeys.Contains(It.Key()))
+		{
+			IndicatorManager->RemoveIndicator(It.Value());
+			NearbyPromptData.Remove(It.Key());
+			It.RemoveCurrent();
+		}
+	}
+
+	if (bShowFullPrompt)
 	{
 		const FInteractionOption& Option = CurrentOptions[0];
 		const TSoftClassPtr<UUserWidget> DesiredWidgetClass = Option.Prompt.FocusWidgetClass.IsNull()
 			? DefaultInteractionWidgetClass
 			: Option.Prompt.FocusWidgetClass;
-		USceneComponent* Anchor = Option.TargetRef.TargetComponent.Get();
-		if (!Anchor && Option.TargetRef.TargetActor.IsValid())
-		{
-			Anchor = Option.TargetRef.TargetActor->GetRootComponent();
-		}
 
 		if (!FocusPromptData)
 		{
@@ -358,92 +477,90 @@ void URpgGameplayAbility_Interact::ReconcileInteractionIndicators(URpgIndicatorM
 			FocusIndicator->SetAutoRemoveWhenIndicatorComponentIsNull(false);
 			bRegisterIndicator = true;
 		}
-		FocusIndicator->SetSceneComponent(Anchor);
-		FocusIndicator->SetAbsoluteWorldPosition(Option.GetInteractionWorldLocation());
+		const bool bHasPlacement =
+			RpgInteractionPresentation::ConfigureDescriptorPlacement(
+				*FocusIndicator,
+				Option);
+		if (URpgInteractionPromptAnchorComponent* PromptAnchor =
+			Cast<URpgInteractionPromptAnchorComponent>(FocusIndicator->GetSceneComponent()))
+		{
+			DesiredPromptAnchors.Add(PromptAnchor);
+		}
 		FocusIndicator->SetIndicatorClass(DesiredWidgetClass);
 		FocusIndicator->SetPriority(Option.Prompt.InteractionPriority);
-		FocusIndicator->SetDesiredVisibility(true);
+		FocusIndicator->SetDesiredVisibility(bHasPlacement);
 		if (bRegisterIndicator)
 		{
 			IndicatorManager->AddIndicator(FocusIndicator);
 		}
 	}
-	else if (FocusIndicator)
+	else
 	{
-		FocusIndicator->SetDesiredVisibility(false);
 		if (FocusPromptData)
 		{
 			FocusPromptData->Clear();
 		}
 	}
 
-	const FString FocusKey = bShowFocus ? MakeOptionKey(CurrentOptions[0]) : FString();
-	TSet<FString> DesiredNearbyKeys;
-	for (const FInteractionOption& Option : CurrentNearbyOptions)
+	ReconcilePromptAnchorBindings(DesiredPromptAnchors);
+}
+
+void URpgGameplayAbility_Interact::ReconcilePromptAnchorBindings(
+	const TSet<URpgInteractionPromptAnchorComponent*>& DesiredAnchors)
+{
+	for (auto It = PromptAnchorDestroyedHandles.CreateIterator(); It; ++It)
 	{
-		const FString Key = MakeOptionKey(Option);
-		if (Key == FocusKey || Option.PromptState == ERpgInteractionPromptState::Hidden)
+		URpgInteractionPromptAnchorComponent* Anchor = It.Key().Get();
+		if (!Anchor || !DesiredAnchors.Contains(Anchor))
 		{
-			continue;
-		}
-		DesiredNearbyKeys.Add(Key);
-		URpgInteractionPromptData* Data = NearbyPromptData.FindRef(Key);
-		if (!Data)
-		{
-			Data = NewObject<URpgInteractionPromptData>(this);
-			NearbyPromptData.Add(Key, Data);
-		}
-		Data->UpdateFromOption(Option, ERpgInteractionPromptState::Nearby);
-
-		const TSoftClassPtr<UUserWidget> DesiredWidgetClass = Option.Prompt.NearbyWidgetClass.IsNull()
-			? DefaultNearbyWidgetClass
-			: Option.Prompt.NearbyWidgetClass;
-		UIndicatorDescriptor* Descriptor = NearbyIndicators.FindRef(Key);
-		if (Descriptor && Descriptor->GetIndicatorClass() != DesiredWidgetClass)
-		{
-			IndicatorManager->RemoveIndicator(Descriptor);
-			NearbyIndicators.Remove(Key);
-			Descriptor = nullptr;
-		}
-
-		bool bRegisterIndicator = false;
-		if (!Descriptor)
-		{
-			Descriptor = NewObject<UIndicatorDescriptor>(this);
-			Descriptor->SetDataObject(Data);
-			Descriptor->SetAutoRemoveWhenIndicatorComponentIsNull(false);
-			NearbyIndicators.Add(Key, Descriptor);
-			bRegisterIndicator = true;
-		}
-		USceneComponent* Anchor = Option.TargetRef.TargetComponent.Get();
-		if (!Anchor && Option.TargetRef.TargetActor.IsValid())
-		{
-			Anchor = Option.TargetRef.TargetActor->GetRootComponent();
-		}
-		Descriptor->SetSceneComponent(Anchor);
-		Descriptor->SetAbsoluteWorldPosition(Option.GetInteractionWorldLocation());
-		Descriptor->SetIndicatorClass(DesiredWidgetClass);
-		Descriptor->SetPriority(Option.Prompt.InteractionPriority);
-		Descriptor->SetDesiredVisibility(true);
-		if (bRegisterIndicator)
-		{
-			IndicatorManager->AddIndicator(Descriptor);
+			if (Anchor)
+			{
+				Anchor->OnPromptAnchorDestroyedNative().Remove(It.Value());
+			}
+			It.RemoveCurrent();
 		}
 	}
 
-	for (auto It = NearbyIndicators.CreateIterator(); It; ++It)
+	for (URpgInteractionPromptAnchorComponent* Anchor : DesiredAnchors)
 	{
-		if (!DesiredNearbyKeys.Contains(It.Key()))
+		if (!IsValid(Anchor) || PromptAnchorDestroyedHandles.Contains(Anchor))
 		{
-			IndicatorManager->RemoveIndicator(It.Value());
-			NearbyPromptData.Remove(It.Key());
-			It.RemoveCurrent();
+			continue;
 		}
+		const FDelegateHandle Handle =
+			Anchor->OnPromptAnchorDestroyedNative().AddUObject(
+				this,
+				&ThisClass::HandlePromptAnchorDestroyed);
+		PromptAnchorDestroyedHandles.Add(Anchor, Handle);
+	}
+}
+
+void URpgGameplayAbility_Interact::ClearPromptAnchorBindings()
+{
+	for (const TPair<TWeakObjectPtr<URpgInteractionPromptAnchorComponent>, FDelegateHandle>& Entry :
+		PromptAnchorDestroyedHandles)
+	{
+		if (URpgInteractionPromptAnchorComponent* Anchor = Entry.Key.Get())
+		{
+			Anchor->OnPromptAnchorDestroyedNative().Remove(Entry.Value);
+		}
+	}
+	PromptAnchorDestroyedHandles.Reset();
+}
+
+void URpgGameplayAbility_Interact::HandlePromptAnchorDestroyed(
+	URpgInteractionPromptAnchorComponent* DestroyedAnchor)
+{
+	PromptAnchorDestroyedHandles.Remove(DestroyedAnchor);
+	if (URpgIndicatorManagerComponent* IndicatorManager = LastIndicatorManager.Get())
+	{
+		ReconcileInteractionIndicators(IndicatorManager);
 	}
 }
 
 void URpgGameplayAbility_Interact::ClearInteractionIndicators()
 {
+	ClearPromptAnchorBindings();
 	ARpgPlayerController* PlayerController = GetRpgPlayerControllerFromActorInfo();
 	if (URpgIndicatorManagerComponent* IndicatorManager = PlayerController
 		? URpgIndicatorManagerComponent::GetComponent(PlayerController)
@@ -462,4 +579,5 @@ void URpgGameplayAbility_Interact::ClearInteractionIndicators()
 	FocusPromptData = nullptr;
 	NearbyIndicators.Reset();
 	NearbyPromptData.Reset();
+	LastIndicatorManager.Reset();
 }

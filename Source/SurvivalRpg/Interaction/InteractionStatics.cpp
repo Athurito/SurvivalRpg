@@ -17,6 +17,7 @@
 #include "GameFramework/GameplayMessageSubsystem.h"
 #include "HAL/IConsoleManager.h"
 #include "SurvivalRpg/GameplayTags/RpgGameplayTags.h"
+#include "SurvivalRpg/Interaction/Components/RpgInteractionPromptAnchorComponent.h"
 #include "UObject/ScriptInterface.h"
 
 #include UE_INLINE_GENERATED_CPP_BY_NAME(InteractionStatics)
@@ -472,6 +473,51 @@ FString UInteractionStatics::MakeStableOptionKey(const FInteractionOption& Optio
 		*GetPathNameSafe(Option.TargetRef.TargetComponent.Get()),
 		Option.TargetRef.InstanceIndex,
 		*Option.InteractionTag.ToString());
+}
+
+FString UInteractionStatics::MakePresentationOptionKey(const FInteractionOption& Option)
+{
+	const AActor* TargetActor = Option.TargetRef.TargetActor.Get();
+	if (!TargetActor)
+	{
+		TargetActor = GetActorFromInteractableTarget(Option.InteractableTarget);
+	}
+	return FString::Printf(
+		TEXT("%s|%s|%d|%s"),
+		*GetPathNameSafe(Option.InteractableTarget.GetObject()),
+		*GetPathNameSafe(TargetActor),
+		Option.TargetRef.InstanceIndex,
+		*Option.InteractionTag.ToString());
+}
+
+URpgInteractionPromptAnchorComponent* UInteractionStatics::FindPromptAnchorComponent(
+	const FInteractionOption& Option)
+{
+	AActor* TargetActor = Option.TargetRef.TargetActor.Get();
+	if (!TargetActor)
+	{
+		TargetActor = GetActorFromInteractableTarget(Option.InteractableTarget);
+	}
+	if (!TargetActor || Option.Prompt.PromptAnchorId.IsNone())
+	{
+		return nullptr;
+	}
+
+	TInlineComponentArray<URpgInteractionPromptAnchorComponent*> Anchors(TargetActor);
+	Anchors.RemoveAll([&Option](const URpgInteractionPromptAnchorComponent* Anchor)
+	{
+		return !IsValid(Anchor) ||
+			!Anchor->IsAvailableForPromptPlacement() ||
+			Anchor->GetAnchorId() != Option.Prompt.PromptAnchorId;
+	});
+	Anchors.Sort([](
+		const URpgInteractionPromptAnchorComponent& A,
+		const URpgInteractionPromptAnchorComponent& B)
+	{
+		return A.GetName() < B.GetName();
+	});
+
+	return Anchors.IsEmpty() ? nullptr : Anchors[0];
 }
 
 bool UInteractionStatics::HasInteractionLineOfSight(const AActor* RequestingActor, const FInteractionOption& Option)
