@@ -2,11 +2,43 @@
 
 #include "CoreMinimal.h"
 #include "Templates/SubclassOf.h"
+#include "UObject/SoftObjectPtr.h"
 #include "RpgEquipmentDefinition.generated.h"
 
 class AActor;
+class UAnimMontage;
 class URpgAbilitySet;
 class URpgEquipmentInstance;
+class FDataValidationContext;
+
+/** Server-authoritative equipment load tier used to select dodge presentation and root motion. */
+UENUM(BlueprintType)
+enum class ERpgEquipmentLoadTier : uint8
+{
+	/** Aggregate Gear and Carry weight is below the medium threshold. */
+	Light,
+
+	/** Aggregate Gear and Carry weight is at least the medium threshold but below the heavy threshold. */
+	Medium,
+
+	/** Aggregate Gear and Carry weight is at least the heavy threshold. */
+	Heavy
+};
+
+/** Designer-authored dodge assets selected by the current equipment load tier. */
+USTRUCT(BlueprintType)
+struct SURVIVALRPG_API FRpgEquipmentDodgeProfile
+{
+	GENERATED_BODY()
+
+	/** Optional dodge montage for this load tier. The dodge ability owns loading and playback. */
+	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Equipment|Dodge", meta = (AssetBundles = "Client,Server"))
+	TSoftObjectPtr<UAnimMontage> Montage;
+
+	/** Semantic root-motion profile consumed by the dodge ability or animation layer. None uses its normal default. */
+	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Equipment|Dodge")
+	FName RootMotionProfile = NAME_None;
+};
 
 UENUM(BlueprintType)
 enum class ERpgEquipmentSlot : uint8
@@ -122,27 +154,62 @@ class SURVIVALRPG_API URpgEquipmentDefinition : public UObject
 public:
 	URpgEquipmentDefinition(const FObjectInitializer& ObjectInitializer = FObjectInitializer::Get());
 
+	/** Returns whether Slot identifies a concrete equipment destination rather than None or an unknown enum value. */
+	static bool IsConcreteEquipmentSlot(ERpgEquipmentSlot Slot);
+
+	/**
+	 * Returns whether authored slot references are internally consistent.
+	 * An empty AllowedSlots array remains structurally valid and means non-equippable; semantic hand rules are separate.
+	 */
+	bool HasStructurallyValidSlotReferences() const;
+
+	/**
+	 * Returns whether the authored hand rule is compatible with AllowedSlots.
+	 * BothHands equipment cannot list OffHand; an empty AllowedSlots array remains valid and disabled.
+	 */
+	bool HasValidHandOccupancyContract() const;
+
+	/** Returns whether this definition may enter Slot, failing closed for malformed hand contracts. */
 	bool CanEquipInSlot(ERpgEquipmentSlot Slot) const;
+
+	/** Returns whether a valid equipped hand rule claims QuerySlot; unknown rules claim no runtime slot. */
 	bool OccupiesSlot(ERpgEquipmentSlot EquippedSlot, ERpgEquipmentSlot QuerySlot) const;
+
+	/** Returns the first usable authored destination, or None when the definition is disabled or malformed. */
 	ERpgEquipmentSlot GetDefaultEquipSlot() const;
 
-	// Runtime instance class created when this equipment is equipped. Use URpgWeaponInstance for weapons/shields.
+#if WITH_EDITOR
+	/** Reports malformed generic slot references without applying semantic equipment migration policy. */
+	virtual EDataValidationResult IsDataValid(FDataValidationContext& Context) const override;
+#endif
+
+	/** Runtime instance class created when this equipment is equipped. Use URpgWeaponInstance for weapons and shields. */
 	UPROPERTY(EditDefaultsOnly, Category = "Equipment")
 	TSubclassOf<URpgEquipmentInstance> InstanceType;
 
-	// Slots this equipment may be equipped into. Leave empty only for content that should never be equipped directly.
+	/**
+	 * Slots this static equipment definition may occupy. An empty array makes the definition non-equippable.
+	 * BothHands definitions cannot use OffHand even if stale authored data includes that value.
+	 */
 	UPROPERTY(EditDefaultsOnly, Category = "Equipment|Slots")
 	TArray<ERpgEquipmentSlot> AllowedSlots;
 
-	// Defines whether this item occupies only its selected slot or both hands.
+	/** Runtime hand-conflict rule; this does not reserve or remove physical Carry-grid items. */
 	UPROPERTY(EditDefaultsOnly, Category = "Equipment|Slots")
 	ERpgEquipmentHandOccupancy HandOccupancy = ERpgEquipmentHandOccupancy::SelectedSlotOnly;
+
+	/**
+	 * Load contributed while the physical item is in a Gear or Carry container, in kilograms.
+	 * Contents of equipped bags and pouches never contribute through this value.
+	 */
+	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Equipment|Load", meta = (ClampMin = "0.0", UIMin = "0.0", Units = "kg"))
+	float EquipLoadWeight = 0.0f;
 
 	// AbilitySets granted whenever this equipment is active. Prefer SlotAbilitySetsToGrant for hand/input actions.
 	UPROPERTY(EditDefaultsOnly, Category = "Equipment")
 	TArray<TObjectPtr<const URpgAbilitySet>> AbilitySetsToGrant;
 
-	// Slot-specific AbilitySets granted by the equipment manager after resolving hand role and block ownership.
+	/** Slot-specific AbilitySets granted after the equipment manager resolves hand role and block ownership. */
 	UPROPERTY(EditDefaultsOnly, Category = "Equipment|Slot Grants", meta = (TitleProperty = "AbilitySet"))
 	TArray<FRpgEquipmentSlotAbilitySet> SlotAbilitySetsToGrant;
 

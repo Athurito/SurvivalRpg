@@ -3,12 +3,14 @@
 #include "CoreMinimal.h"
 #include "GameplayTagContainer.h"
 #include "RpgInventoryItemTypes.h"
-#include "RpgInventorySpatialTypes.h"
+#include "RpgInventoryGraphTypes.h"
+#include "SurvivalRpg/Equipment/RpgEquipmentDefinition.h"
 #include "UObject/SoftObjectPtr.h"
 
 #include "RpgPlayerInventoryLayoutTypes.generated.h"
 
 class UTexture2D;
+class URpgActionBarComponent;
 class URpgInventoryItemDefinition;
 class URpgInventoryItemInstance;
 
@@ -23,23 +25,34 @@ struct SURVIVALRPG_API FRpgInventorySlotAddress
 {
 	GENERATED_BODY()
 
-	/** Logical grid container, for example WeaponSlot1, Belt, Backpack, or Pockets. */
-	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Inventory|Layout")
-	FName ContainerId = NAME_None;
+	/** Stable root or item-owned graph address. This is the only authoritative runtime identity. */
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, SaveGame, Category = "Inventory|Layout")
+	FRpgInventoryContainerHandle ContainerHandle;
 
-	/** Zero-based grid cell X coordinate inside ContainerId. */
-	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Inventory|Layout", meta = (ClampMin = "0", UIMin = "0"))
+	/** Zero-based grid cell X coordinate inside ContainerHandle. */
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, SaveGame, Category = "Inventory|Layout", meta = (ClampMin = "0", UIMin = "0"))
 	int32 X = INDEX_NONE;
 
-	/** Zero-based grid cell Y coordinate inside ContainerId. */
-	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Inventory|Layout", meta = (ClampMin = "0", UIMin = "0"))
+	/** Zero-based grid cell Y coordinate inside ContainerHandle. */
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, SaveGame, Category = "Inventory|Layout", meta = (ClampMin = "0", UIMin = "0"))
 	int32 Y = INDEX_NONE;
 
-	bool IsValid() const { return !ContainerId.IsNone() && X >= 0 && Y >= 0; }
+	FRpgInventoryContainerHandle GetContainerHandle() const
+	{
+		return ContainerHandle;
+	}
+
+	void SetContainerHandle(const FRpgInventoryContainerHandle& InHandle)
+	{
+		ContainerHandle = InHandle;
+		ContainerId_DEPRECATED = NAME_None;
+	}
+
+	bool IsValid() const { return GetContainerHandle().IsValid() && X >= 0 && Y >= 0; }
 
 	friend bool operator==(const FRpgInventorySlotAddress& A, const FRpgInventorySlotAddress& B)
 	{
-		return A.ContainerId == B.ContainerId && A.X == B.X && A.Y == B.Y;
+		return A.GetContainerHandle() == B.GetContainerHandle() && A.X == B.X && A.Y == B.Y;
 	}
 
 	friend bool operator!=(const FRpgInventorySlotAddress& A, const FRpgInventorySlotAddress& B)
@@ -49,7 +62,48 @@ struct SURVIVALRPG_API FRpgInventorySlotAddress
 
 	friend uint32 GetTypeHash(const FRpgInventorySlotAddress& Address)
 	{
-		return HashCombine(HashCombine(GetTypeHash(Address.ContainerId), GetTypeHash(Address.X)), GetTypeHash(Address.Y));
+		return HashCombine(HashCombine(GetTypeHash(Address.GetContainerHandle()), GetTypeHash(Address.X)), GetTypeHash(Address.Y));
+	}
+
+private:
+	friend class URpgActionBarComponent;
+
+	/** Historical root/local container id read only by the authoritative Quick Access save converter. */
+	UPROPERTY(SaveGame)
+	FName ContainerId_DEPRECATED = NAME_None;
+
+	/** Promotes a legacy-only root address or clears its matching dual-written shadow; conflicts fail closed. */
+	bool TryMigrateDeprecatedRootForSave()
+	{
+		if (ContainerId_DEPRECATED.IsNone())
+		{
+			return true;
+		}
+
+		const bool bCanonicalHandleIsUnset =
+			ContainerHandle.Root.IsNone() &&
+			!ContainerHandle.ItemOwnerId.IsValid() &&
+			ContainerHandle.ContainerId.IsNone() &&
+			ContainerHandle.Depth == 0;
+		if (bCanonicalHandleIsUnset)
+		{
+			const FRpgInventoryContainerHandle LegacyRoot =
+				FRpgInventoryContainerHandle::MakeRoot(ContainerId_DEPRECATED);
+			if (!LegacyRoot.IsValid())
+			{
+				return false;
+			}
+
+			ContainerHandle = LegacyRoot;
+		}
+		else if (!ContainerHandle.IsValid() ||
+			ContainerHandle.ContainerId != ContainerId_DEPRECATED)
+		{
+			return false;
+		}
+
+		ContainerId_DEPRECATED = NAME_None;
+		return true;
 	}
 };
 
@@ -94,10 +148,6 @@ struct SURVIVALRPG_API FRpgInventorySlotRule
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Inventory|Layout")
 	bool bActionbarBindable = false;
 
-	/** True when this slot group represents a weapon/tool/shield carry slot that can become active hands. */
-	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Inventory|Layout")
-	bool bCarrySlot = false;
-
 	/** Returns whether the item satisfies this slot rule. Null items are never accepted. */
 	bool AllowsItem(const URpgInventoryItemInstance* Item) const;
 
@@ -113,9 +163,16 @@ struct SURVIVALRPG_API FRpgInventorySlotGroupDefinition
 {
 	GENERATED_BODY()
 
-	/** Stable grid id used in FRpgInventorySlotAddress and replicated item placements. */
+	/** Definition-local grid id. Runtime addresses combine it with root or provider-item identity in ContainerHandle. */
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Inventory|Layout")
 	FName ContainerId = NAME_None;
+
+	/**
+	 * Stable semantic role used to find this static group without interpreting ContainerId.
+	 * Roles are exact, layout-local singleton keys. Leave empty for generic groups and item-provided content.
+	 */
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Inventory|Layout", meta = (Categories = "Rpg.Inventory.Layout.Role"))
+	FGameplayTag SemanticRole;
 
 	/** Player-facing label shown by inventory screens. */
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Inventory|Layout")
@@ -128,6 +185,14 @@ struct SURVIVALRPG_API FRpgInventorySlotGroupDefinition
 	/** Layout area this group belongs to. Content accepts auto-added inventory items; gear and carry require explicit moves. */
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Inventory|Layout")
 	ERpgInventorySlotGroupKind GroupKind = ERpgInventorySlotGroupKind::Content;
+
+	/**
+	 * Explicit gameplay equipment role for this static Gear or Carry group.
+	 * Gear uses a non-hand slot, Carry uses MainHand or OffHand, and Content must remain None.
+	 * This is immutable definition data; ContainerId and item categories never imply equipment behavior.
+	 */
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Inventory|Layout")
+	ERpgEquipmentSlot EquipmentSlotRole = ERpgEquipmentSlot::None;
 
 	/** Grid dimensions contributed by this container. Gear and carry containers should remain 1x1. */
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Inventory|Layout", meta = (ClampMin = "1", UIMin = "1"))
@@ -146,9 +211,17 @@ struct SURVIVALRPG_API FRpgInventorySlotGroupView
 {
 	GENERATED_BODY()
 
-	/** Stable grid id used in FRpgInventorySlotAddress and replicated item placements. */
+	/** Stable root or item-owned container address represented by this visible group. */
+	UPROPERTY(BlueprintReadOnly, Category = "Inventory|Layout")
+	FRpgInventoryContainerHandle ContainerHandle;
+
+	/** Definition-local id used for labels and designer-authored group semantics; never use it as graph identity. */
 	UPROPERTY(BlueprintReadOnly, Category = "Inventory|Layout")
 	FName ContainerId = NAME_None;
+
+	/** Exact designer-authored role used for stable static-group lookup; invalid for generic or item-owned groups. */
+	UPROPERTY(BlueprintReadOnly, Category = "Inventory|Layout")
+	FGameplayTag SemanticRole;
 
 	/** Player-facing label shown by inventory screens. */
 	UPROPERTY(BlueprintReadOnly, Category = "Inventory|Layout")
@@ -162,6 +235,10 @@ struct SURVIVALRPG_API FRpgInventorySlotGroupView
 	UPROPERTY(BlueprintReadOnly, Category = "Inventory|Layout")
 	ERpgInventorySlotGroupKind GroupKind = ERpgInventorySlotGroupKind::Content;
 
+	/** Explicit gameplay equipment role copied from static definition data, or None for content/item-owned groups. */
+	UPROPERTY(BlueprintReadOnly, Category = "Inventory|Layout")
+	ERpgEquipmentSlot EquipmentSlotRole = ERpgEquipmentSlot::None;
+
 	/** Grid dimensions for this visible container. */
 	UPROPERTY(BlueprintReadOnly, Category = "Inventory|Layout")
 	FRpgInventoryGridSize GridSize;
@@ -174,14 +251,14 @@ struct SURVIVALRPG_API FRpgInventorySlotGroupView
 	UPROPERTY(BlueprintReadOnly, Category = "Inventory|Layout")
 	bool bProvidedByEquipment = false;
 
-	/** Equipment slot name whose item provides this group, or None for built-in body slots. */
+	/** Typed equipment slot whose item provides this group, or None for static groups. */
 	UPROPERTY(BlueprintReadOnly, Category = "Inventory|Layout")
-	FName SourceEquipmentSlotName = NAME_None;
+	ERpgEquipmentSlot SourceEquipmentSlot = ERpgEquipmentSlot::None;
 
 	FRpgInventorySlotAddress MakeAddress(int32 X, int32 Y) const
 	{
 		FRpgInventorySlotAddress Address;
-		Address.ContainerId = ContainerId;
+		Address.SetContainerHandle(ContainerHandle);
 		Address.X = X;
 		Address.Y = Y;
 		return Address;

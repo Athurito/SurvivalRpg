@@ -5,6 +5,7 @@
 #include "GameplayTagContainer.h"
 #include "Kismet/BlueprintFunctionLibrary.h"
 #include "Subsystems/WorldSubsystem.h"
+#include "UObject/Interface.h"
 
 #include "UIExtensionSystem.generated.h"
 
@@ -37,6 +38,32 @@ enum class EUIExtensionAction : uint8
 {
 	Added,
 	Removed
+};
+
+/**
+ * Optional native lifecycle contract for widgets hosted by a UI extension point.
+ *
+ * UI extension widgets are pooled and therefore do not necessarily receive another
+ * Construct/Destruct pair when their registration is removed and later restored.
+ * Stateful presenters can implement this interface to release and reacquire transient
+ * bindings without changing the extension point's pooling policy.
+ */
+UINTERFACE(MinimalAPI)
+class UUIExtensionWidgetLifecycle : public UInterface
+{
+	GENERATED_BODY()
+};
+
+class UE_API IUIExtensionWidgetLifecycle
+{
+	GENERATED_BODY()
+
+public:
+	/** Called after the widget has entered an extension point, including pooled reuse. */
+	virtual void NativeOnExtensionAdded() {}
+
+	/** Called before the widget leaves an extension point or the point itself resets. */
+	virtual void NativeOnExtensionRemoved() {}
 };
 
 DECLARE_DELEGATE_TwoParams(FExtendExtensionPointDelegate, EUIExtensionAction Action, const FUIExtensionRequest& Request);

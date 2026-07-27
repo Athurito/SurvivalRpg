@@ -5,6 +5,7 @@
 #include "Net/UnrealNetwork.h"
 #include "SurvivalRpg/Inventory/RpgInventoryFragment_ItemTraits.h"
 #include "SurvivalRpg/Inventory/RpgInventoryItemDefinition.h"
+#include "SurvivalRpg/Inventory/RpgInventoryItemInstance.h"
 
 #include UE_INLINE_GENERATED_CPP_BY_NAME(RpgBaseStorageComponent)
 
@@ -436,7 +437,22 @@ bool URpgBaseStorageComponent::CanStoreResource(TSubclassOf<URpgInventoryItemDef
 	return ResourceList.CanStoreResource(ItemDefinition, Count);
 }
 
-bool URpgBaseStorageComponent::StoreResource(TSubclassOf<URpgInventoryItemDefinition> ItemDefinition, int32 Count)
+bool URpgBaseStorageComponent::CanStoreResourceInstance(
+	const URpgInventoryItemInstance* Item,
+	int32 Count) const
+{
+	const TSubclassOf<URpgInventoryItemDefinition> ItemDefinition =
+		Item ? Item->GetItemDef() : nullptr;
+	const URpgInventoryFragment_ItemTraits* Traits =
+		GetItemTraits(ItemDefinition);
+	return Item && Traits && Traits->IsMaterial() &&
+		Item->CanCollapseIntoDefinitionCount() &&
+		ResourceList.CanStoreResource(ItemDefinition, Count);
+}
+
+bool URpgBaseStorageComponent::StoreDefinitionResource(
+	TSubclassOf<URpgInventoryItemDefinition> ItemDefinition,
+	int32 Count)
 {
 	AActor* OwnerActor = GetOwner();
 	if (!OwnerActor || !OwnerActor->HasAuthority())
@@ -445,6 +461,20 @@ bool URpgBaseStorageComponent::StoreResource(TSubclassOf<URpgInventoryItemDefini
 	}
 
 	return ResourceList.StoreResource(ItemDefinition, Count);
+}
+
+bool URpgBaseStorageComponent::StoreResourceInstance(
+	const URpgInventoryItemInstance* Item,
+	int32 Count)
+{
+	AActor* OwnerActor = GetOwner();
+	if (!OwnerActor || !OwnerActor->HasAuthority() ||
+		!CanStoreResourceInstance(Item, Count))
+	{
+		return false;
+	}
+
+	return ResourceList.StoreResource(Item->GetItemDef(), Count);
 }
 
 bool URpgBaseStorageComponent::WithdrawResource(TSubclassOf<URpgInventoryItemDefinition> ItemDefinition, int32 Count)

@@ -84,7 +84,10 @@ public:
 	UFUNCTION(BlueprintPure)
 	static TScriptInterface<IPickupable> GetFirstPickupableFromActor(AActor* Actor);
 
-	/** Attempts to add every pickup entry as one server-authoritative operation; returns false if capacity blocks it. */
+	/**
+	 * Attempts to add every detached pickup entry as one server-authoritative operation.
+	 * Canonical dropped-inventory actors fail closed here and must use their source-owned transfer path.
+	 */
 	UFUNCTION(BlueprintCallable, BlueprintAuthorityOnly, meta = (WorldContext = "Ability"))
 	static bool AddPickupToInventory(URpgInventoryManagerComponent* InventoryComponent, TScriptInterface<IPickupable> Pickup);
 };

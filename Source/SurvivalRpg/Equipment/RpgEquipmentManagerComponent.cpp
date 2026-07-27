@@ -51,7 +51,10 @@ URpgAbilitySystemComponent* FRpgEquipmentList::GetAbilitySystemComponent() const
 	return Cast<URpgAbilitySystemComponent>(UAbilitySystemGlobals::GetAbilitySystemComponentFromActor(OwningActor));
 }
 
-URpgEquipmentInstance* FRpgEquipmentList::AddEntry(TSubclassOf<URpgEquipmentDefinition> EquipmentDefinition, ERpgEquipmentSlot EquippedSlot)
+URpgEquipmentInstance* FRpgEquipmentList::AddEntry(
+	TSubclassOf<URpgEquipmentDefinition> EquipmentDefinition,
+	ERpgEquipmentSlot EquippedSlot,
+	UObject* SourceItemInstigator)
 {
 	check(EquipmentDefinition != nullptr);
 	check(OwnerComponent);
@@ -70,6 +73,7 @@ URpgEquipmentInstance* FRpgEquipmentList::AddEntry(TSubclassOf<URpgEquipmentDefi
 	NewEntry.Instance = NewObject<URpgEquipmentInstance>(OwnerComponent->GetOwner(), InstanceType);
 
 	URpgEquipmentInstance* Result = NewEntry.Instance;
+	Result->SetInstigator(SourceItemInstigator);
 	Result->SetEquippedSlot(EquippedSlot);
 
 	Result->SpawnEquipmentActors(EquipmentCDO->ActorsToSpawn);
@@ -94,8 +98,12 @@ void FRpgEquipmentList::RemoveEntry(URpgEquipmentInstance* Instance)
 
 		if (URpgAbilitySystemComponent* AbilitySystemComponent = GetAbilitySystemComponent())
 		{
-			Entry.GrantedHandles.TakeFromAbilitySystem(AbilitySystemComponent);
+			for (TPair<int32, FRpgAppliedEquipmentAbilityGrant>& GrantPair : Entry.AbilitySetGrants)
+			{
+				GrantPair.Value.GrantedHandles.TakeFromAbilitySystem(AbilitySystemComponent);
+			}
 		}
+		Entry.AbilitySetGrants.Reset();
 
 		Instance->DestroyEquipmentActors();
 		EntryIt.RemoveCurrent();
@@ -121,18 +129,36 @@ void URpgEquipmentManagerComponent::GetLifetimeReplicatedProps(TArray<FLifetimeP
 
 URpgEquipmentInstance* URpgEquipmentManagerComponent::EquipItem(TSubclassOf<URpgEquipmentDefinition> EquipmentDefinition)
 {
+	if (!GetOwner() || !GetOwner()->HasAuthority())
+	{
+		return nullptr;
+	}
+
 	const URpgEquipmentDefinition* EquipmentCDO = EquipmentDefinition ? GetDefault<URpgEquipmentDefinition>(EquipmentDefinition) : nullptr;
 	return EquipItemInSlot(EquipmentDefinition, EquipmentCDO ? EquipmentCDO->GetDefaultEquipSlot() : ERpgEquipmentSlot::MainHand);
 }
 
 URpgEquipmentInstance* URpgEquipmentManagerComponent::EquipItemInSlot(TSubclassOf<URpgEquipmentDefinition> EquipmentDefinition, ERpgEquipmentSlot Slot)
 {
+	return EquipItemInSlotWithInstigator(EquipmentDefinition, Slot, nullptr);
+}
+
+URpgEquipmentInstance* URpgEquipmentManagerComponent::EquipItemInSlotWithInstigator(
+	TSubclassOf<URpgEquipmentDefinition> EquipmentDefinition,
+	ERpgEquipmentSlot Slot,
+	UObject* SourceItemInstigator)
+{
 	URpgEquipmentInstance* Result = nullptr;
+	if (!GetOwner() || !GetOwner()->HasAuthority())
+	{
+		return Result;
+	}
+
 	if (CanEquipItemInSlot(EquipmentDefinition, Slot))
 	{
 		UnequipConflictingItems(EquipmentDefinition, Slot);
 
-		Result = EquipmentList.AddEntry(EquipmentDefinition, Slot);
+		Result = EquipmentList.AddEntry(EquipmentDefinition, Slot, SourceItemInstigator);
 		if (Result != nullptr)
 		{
 			RebuildEquipmentAbilityGrants();
@@ -150,7 +176,7 @@ URpgEquipmentInstance* URpgEquipmentManagerComponent::EquipItemInSlot(TSubclassO
 
 void URpgEquipmentManagerComponent::UnequipItem(URpgEquipmentInstance* ItemInstance)
 {
-	if (ItemInstance == nullptr)
+	if (!GetOwner() || !GetOwner()->HasAuthority() || ItemInstance == nullptr)
 	{
 		return;
 	}
@@ -167,6 +193,11 @@ void URpgEquipmentManagerComponent::UnequipItem(URpgEquipmentInstance* ItemInsta
 
 void URpgEquipmentManagerComponent::UnequipItemInSlot(ERpgEquipmentSlot Slot)
 {
+	if (!GetOwner() || !GetOwner()->HasAuthority())
+	{
+		return;
+	}
+
 	TArray<URpgEquipmentInstance*> InstancesToUnequip;
 	for (const FRpgAppliedEquipmentEntry& Entry : EquipmentList.Entries)
 	{
@@ -425,34 +456,51 @@ void URpgEquipmentManagerComponent::RebuildEquipmentAbilityGrants()
 		return;
 	}
 
-	for (FRpgAppliedEquipmentEntry& Entry : EquipmentList.Entries)
-	{
-		Entry.GrantedHandles.TakeFromAbilitySystem(AbilitySystemComponent);
-	}
-
 	const URpgEquipmentInstance* ActiveBlockSource = GetActiveBlockSource();
 
 	for (FRpgAppliedEquipmentEntry& Entry : EquipmentList.Entries)
 	{
+		TMap<int32, const URpgAbilitySet*> DesiredAbilitySets;
 		const URpgEquipmentDefinition* EquipmentCDO = Entry.EquipmentDefinition ? GetDefault<URpgEquipmentDefinition>(Entry.EquipmentDefinition) : nullptr;
-		if (!EquipmentCDO || !Entry.Instance)
+		if (EquipmentCDO && Entry.Instance)
 		{
-			continue;
-		}
-
-		for (const TObjectPtr<const URpgAbilitySet>& AbilitySet : EquipmentCDO->AbilitySetsToGrant)
-		{
-			if (AbilitySet != nullptr)
+			for (int32 AbilitySetIndex = 0; AbilitySetIndex < EquipmentCDO->AbilitySetsToGrant.Num(); ++AbilitySetIndex)
 			{
-				AbilitySet->GiveToAbilitySystem(AbilitySystemComponent, &Entry.GrantedHandles, Entry.Instance);
+				if (const URpgAbilitySet* AbilitySet = EquipmentCDO->AbilitySetsToGrant[AbilitySetIndex])
+				{
+					// Even keys belong to unconditional grants from AbilitySetsToGrant.
+					DesiredAbilitySets.Add(AbilitySetIndex * 2, AbilitySet);
+				}
+			}
+
+			for (int32 SlotAbilitySetIndex = 0; SlotAbilitySetIndex < EquipmentCDO->SlotAbilitySetsToGrant.Num(); ++SlotAbilitySetIndex)
+			{
+				const FRpgEquipmentSlotAbilitySet& SlotAbilitySet = EquipmentCDO->SlotAbilitySetsToGrant[SlotAbilitySetIndex];
+				if (ShouldGrantSlotAbilitySet(Entry, SlotAbilitySet, ActiveBlockSource))
+				{
+					// Odd keys keep conditional slot grants separate from unconditional grants.
+					DesiredAbilitySets.Add(SlotAbilitySetIndex * 2 + 1, SlotAbilitySet.AbilitySet);
+				}
 			}
 		}
 
-		for (const FRpgEquipmentSlotAbilitySet& SlotAbilitySet : EquipmentCDO->SlotAbilitySetsToGrant)
+		for (auto GrantIt = Entry.AbilitySetGrants.CreateIterator(); GrantIt; ++GrantIt)
 		{
-			if (ShouldGrantSlotAbilitySet(Entry, SlotAbilitySet, ActiveBlockSource))
+			const URpgAbilitySet* const* DesiredAbilitySet = DesiredAbilitySets.Find(GrantIt.Key());
+			if (!DesiredAbilitySet || GrantIt.Value().AbilitySet != *DesiredAbilitySet)
 			{
-				SlotAbilitySet.AbilitySet->GiveToAbilitySystem(AbilitySystemComponent, &Entry.GrantedHandles, Entry.Instance);
+				GrantIt.Value().GrantedHandles.TakeFromAbilitySystem(AbilitySystemComponent);
+				GrantIt.RemoveCurrent();
+			}
+		}
+
+		for (const TPair<int32, const URpgAbilitySet*>& DesiredGrant : DesiredAbilitySets)
+		{
+			if (!Entry.AbilitySetGrants.Contains(DesiredGrant.Key))
+			{
+				FRpgAppliedEquipmentAbilityGrant& NewGrant = Entry.AbilitySetGrants.Add(DesiredGrant.Key);
+				NewGrant.AbilitySet = DesiredGrant.Value;
+				DesiredGrant.Value->GiveToAbilitySystem(AbilitySystemComponent, &NewGrant.GrantedHandles, Entry.Instance);
 			}
 		}
 	}

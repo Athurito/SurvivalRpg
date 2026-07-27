@@ -5,12 +5,24 @@
 #include "Input/Reply.h"
 #include "InputCoreTypes.h"
 #include "MVVMSubsystem.h"
-#include "SurvivalRpg/Inventory/RpgInventoryDragDrop.h"
+#include "SurvivalRpg/Inventory/RpgInventoryDragDropCoordinator.h"
+#include "SurvivalRpg/Inventory/RpgInventoryDragDropOperation.h"
+#include "SurvivalRpg/Inventory/RpgInventoryDragDropTypes.h"
+#include "SurvivalRpg/Inventory/RpgInventoryInteractionSession.h"
 #include "SurvivalRpg/Inventory/RpgInventoryItemInstance.h"
 #include "SurvivalRpg/Mvvm/Inventory/RpgLoadoutViewModels.h"
+#include "SurvivalRpg/UI/RpgInventoryDragVisualWidget.h"
+#include "SurvivalRpg/UI/RpgInventoryInteractionScreenWidget.h"
+#include "SurvivalRpg/UI/RpgInventoryPanelNavigationCoordinator.h"
 #include "View/MVVMView.h"
+#include "View/MVVMViewClass.h"
 
 #include UE_INLINE_GENERATED_CPP_BY_NAME(RpgLoadoutSlotWidgets)
+
+DEFINE_LOG_CATEGORY_STATIC(LogRpgLoadoutSlotWidgets, Log, All);
+
+const FName URpgEquipmentSlotWidget::EquipmentSlotViewModelSourceName(
+	TEXT("RpgEquipmentSlotViewModel"));
 
 URpgEquipmentSlotWidget::URpgEquipmentSlotWidget(const FObjectInitializer& ObjectInitializer)
 	: Super(ObjectInitializer)
@@ -19,8 +31,42 @@ URpgEquipmentSlotWidget::URpgEquipmentSlotWidget(const FObjectInitializer& Objec
 	SetIsInteractionEnabled(true);
 }
 
+void URpgEquipmentSlotWidget::BindInventoryPresentation(
+	URpgEquipmentSlotViewModel* InSlotViewModel,
+	const FRpgInventoryScreenPresentationContext& InContext)
+{
+	if (!InContext.IsComplete())
+	{
+		ReleaseInventoryPresentation();
+		return;
+	}
+
+	// Preserve the previous host until the represented VM has dismissed any source-owned modal.
+	SetEquipmentSlotViewModel(InSlotViewModel);
+	SetDragDropCoordinator(InContext.DragDropCoordinator);
+	SetPanelNavigationCoordinator(
+		InContext.PanelNavigationCoordinator);
+	SetInventoryPresentationHost(InContext.PresentationHost);
+}
+
+void URpgEquipmentSlotWidget::ReleaseInventoryPresentation()
+{
+	SetPanelNavigationCoordinator(nullptr);
+	ReleaseEquipmentSlotState();
+}
+
 void URpgEquipmentSlotWidget::SetEquipmentSlotViewModel(URpgEquipmentSlotViewModel* InSlotViewModel)
 {
+	if (InSlotViewModel)
+	{
+		bEquipmentSlotStateReleased = false;
+	}
+
+	if (SlotViewModel != InSlotViewModel && InventoryPresentationHost)
+	{
+		InventoryPresentationHost->DismissInventoryPresentationForSource(this);
+	}
+
 	if (SlotViewModel)
 	{
 		SlotViewModel->OnSlotChanged.RemoveDynamic(this, &ThisClass::HandleSlotViewModelChanged);
@@ -33,20 +79,17 @@ void URpgEquipmentSlotWidget::SetEquipmentSlotViewModel(URpgEquipmentSlotViewMod
 		SlotViewModel->OnSlotChanged.AddUniqueDynamic(this, &ThisClass::HandleSlotViewModelChanged);
 	}
 
-	if (SlotViewModel)
-	{
-		if (UMVVMView* View = UMVVMSubsystem::GetViewFromUserWidget(this))
-		{
-			View->SetViewModelByClass(SlotViewModel);
-		}
-	}
-
-	BP_OnEquipmentSlotUpdated(SlotViewModel, GetRepresentedItem(), GetRepresentedItem() != nullptr);
+	InjectEquipmentSlotViewModelIntoMvvm();
 	RefreshDragDropVisualState();
 }
 
 void URpgEquipmentSlotWidget::SetDragDropCoordinator(URpgInventoryDragDropCoordinator* InCoordinator)
 {
+	if (InCoordinator)
+	{
+		bEquipmentSlotStateReleased = false;
+	}
+
 	if (DragDropCoordinator)
 	{
 		DragDropCoordinator->OnHeldPayloadChanged.RemoveDynamic(this, &ThisClass::HandleHeldPayloadChanged);
@@ -59,6 +102,27 @@ void URpgEquipmentSlotWidget::SetDragDropCoordinator(URpgInventoryDragDropCoordi
 	}
 
 	RefreshDragDropVisualState();
+}
+
+void URpgEquipmentSlotWidget::SetPanelNavigationCoordinator(
+	URpgInventoryPanelNavigationCoordinator* InPanelNavigationCoordinator)
+{
+	PanelNavigationCoordinator = InPanelNavigationCoordinator;
+}
+
+void URpgEquipmentSlotWidget::SetInventoryPresentationHost(
+	URpgInventoryInteractionScreenWidget* InPresentationHost)
+{
+	if (InPresentationHost)
+	{
+		bEquipmentSlotStateReleased = false;
+	}
+	if (InventoryPresentationHost &&
+		InventoryPresentationHost != InPresentationHost)
+	{
+		InventoryPresentationHost->DismissInventoryPresentationForSource(this);
+	}
+	InventoryPresentationHost = InPresentationHost;
 }
 
 ERpgEquipmentSlot URpgEquipmentSlotWidget::GetResolvedEquipmentSlot() const
@@ -89,37 +153,34 @@ bool URpgEquipmentSlotWidget::HandleSlotAccept()
 
 bool URpgEquipmentSlotWidget::HandleClearAssignment()
 {
-	if (!DragDropCoordinator)
+	URpgInventoryItemInstance* ItemInstance = GetRepresentedItem();
+	if (!DragDropCoordinator || !ItemInstance)
 	{
 		return false;
 	}
 
-	const FRpgInventoryDragPayload Payload = MakeDragPayload();
-	if (!URpgInventoryDragDropCoordinator::IsPayloadValid(Payload))
-	{
-		return false;
-	}
-
-	return DragDropCoordinator->CommitPayloadToTarget(Payload, URpgInventoryDragDropCoordinator::MakeClearTarget());
+	return DragDropCoordinator->UnequipEquipmentItem(
+		GetResolvedEquipmentSlot(),
+		ItemInstance->GetItemId());
 }
 
 void URpgEquipmentSlotWidget::RefreshDragDropVisualState()
 {
-	ERpgInventorySlotDragVisualState NewState = ERpgInventorySlotDragVisualState::Normal;
+	CurrentDragDropVisualState = ERpgInventorySlotDragVisualState::Normal;
 	if (bHasExternalPreviewState)
 	{
-		NewState = ExternalPreviewState;
+		CurrentDragDropVisualState = ExternalPreviewState;
 	}
 	else if (DragDropCoordinator && DragDropCoordinator->HasHeldPayload())
 	{
-		NewState = IsHeldSource()
+		CurrentDragDropVisualState = IsHeldSource()
 			? ERpgInventorySlotDragVisualState::HeldSource
 			: (DragDropCoordinator->PreviewDrop(MakeDropTarget())
 				? ERpgInventorySlotDragVisualState::ValidTarget
 				: ERpgInventorySlotDragVisualState::InvalidTarget);
 	}
 
-	BP_OnEquipmentSlotDragDropStateChanged(NewState);
+	BP_OnEquipmentSlotDragDropStateChanged(CurrentDragDropVisualState);
 }
 
 bool URpgEquipmentSlotWidget::PreviewPayloadDrop(const FRpgInventoryDragPayload& Payload)
@@ -130,7 +191,7 @@ bool URpgEquipmentSlotWidget::PreviewPayloadDrop(const FRpgInventoryDragPayload&
 		return false;
 	}
 
-	const bool bCanDrop = DragDropCoordinator->PreviewPayloadDrop(Payload, MakeDropTarget());
+	const bool bCanDrop = DragDropCoordinator->UpdateInteractionPreview(Payload, MakeDropTarget());
 	bHasExternalPreviewState = true;
 	ExternalPreviewState = bCanDrop
 		? ERpgInventorySlotDragVisualState::ValidTarget
@@ -157,19 +218,158 @@ void URpgEquipmentSlotWidget::ClearExternalPreviewPayload()
 	RefreshDragDropVisualState();
 }
 
+bool URpgEquipmentSlotWidget::RequestEquipmentContextMenu(FVector2D ScreenPosition)
+{
+	return InventoryPresentationHost &&
+		InventoryPresentationHost->OpenInventoryContextMenu(
+			this,
+			ScreenPosition);
+}
+
+bool URpgEquipmentSlotWidget::QueryInventoryContextActions(
+	FRpgInventoryContextActionSnapshot& OutSnapshot) const
+{
+	OutSnapshot = FRpgInventoryContextActionSnapshot();
+	const URpgInventoryItemInstance* ItemInstance =
+		GetRepresentedItem();
+	if (!DragDropCoordinator || !ItemInstance ||
+		!ItemInstance->GetItemId().IsValid())
+	{
+		return false;
+	}
+
+	OutSnapshot.SourceKind =
+		ERpgInventoryContextActionSourceKind::Equipment;
+	OutSnapshot.ItemId = ItemInstance->GetItemId();
+	OutSnapshot.EquipmentSlot =
+		GetResolvedEquipmentSlot();
+	OutSnapshot.Actions =
+		DragDropCoordinator->GetAvailableContextActions(
+			OutSnapshot.EquipmentSlot,
+			OutSnapshot.ItemId);
+	return OutSnapshot.IsValid();
+}
+
+bool URpgEquipmentSlotWidget::ExecuteInventoryContextAction(
+	const FRpgInventoryContextActionSnapshot& ExpectedSnapshot,
+	ERpgInventoryContextAction Action,
+	int32 QuickAccessSlotIndex)
+{
+	(void)QuickAccessSlotIndex;
+	FRpgInventoryContextActionSnapshot CurrentSnapshot;
+	return QueryInventoryContextActions(CurrentSnapshot) &&
+		ExpectedSnapshot.MatchesStableSource(CurrentSnapshot) &&
+		CurrentSnapshot.Actions.Contains(Action) &&
+		ExecuteEquipmentContextAction(
+			Action,
+			ExpectedSnapshot.ItemId);
+}
+
+bool URpgEquipmentSlotWidget::ExecuteEquipmentContextAction(
+	ERpgInventoryContextAction Action,
+	const FRpgInventoryItemId& ExpectedItemId)
+{
+	URpgInventoryItemInstance* ItemInstance = GetRepresentedItem();
+	if (!DragDropCoordinator || !ItemInstance || !ExpectedItemId.IsValid() ||
+		ItemInstance->GetItemId() != ExpectedItemId ||
+		!DragDropCoordinator->CanExecuteContextAction(
+			GetResolvedEquipmentSlot(),
+			ExpectedItemId,
+			Action))
+	{
+		return false;
+	}
+
+	switch (Action)
+	{
+	case ERpgInventoryContextAction::Inspect:
+		BP_OnInspectEquipmentItemRequested(ItemInstance);
+		return true;
+
+	case ERpgInventoryContextAction::Unequip:
+		return DragDropCoordinator && DragDropCoordinator->UnequipEquipmentItem(GetResolvedEquipmentSlot(), ExpectedItemId);
+
+	case ERpgInventoryContextAction::Drop:
+		return InventoryPresentationHost
+			? InventoryPresentationHost->RequestInventoryDrop(
+				this,
+				ExpectedItemId)
+			: DragDropCoordinator &&
+				DragDropCoordinator->DropEquipmentItem(
+					GetResolvedEquipmentSlot(),
+					ExpectedItemId);
+
+	default:
+		return false;
+	}
+}
+
 void URpgEquipmentSlotWidget::NativeDestruct()
 {
-	if (SlotViewModel)
-	{
-		SlotViewModel->OnSlotChanged.RemoveDynamic(this, &ThisClass::HandleSlotViewModelChanged);
-	}
-
-	if (DragDropCoordinator)
-	{
-		DragDropCoordinator->OnHeldPayloadChanged.RemoveDynamic(this, &ThisClass::HandleHeldPayloadChanged);
-	}
-
+	ReleaseInventoryPresentation();
 	Super::NativeDestruct();
+}
+
+void URpgEquipmentSlotWidget::NativeOnAddedToFocusPath(const FFocusEvent& InFocusEvent)
+{
+	Super::NativeOnAddedToFocusPath(InFocusEvent);
+	if (PanelNavigationCoordinator)
+	{
+		PanelNavigationCoordinator->NotifyEquipmentSlotFocused(this);
+	}
+}
+
+void URpgEquipmentSlotWidget::ReleaseEquipmentSlotState()
+{
+	if (bEquipmentSlotStateReleased)
+	{
+		return;
+	}
+	bEquipmentSlotStateReleased = true;
+	StopAllAnimations();
+
+	URpgEquipmentSlotViewModel* ReleasedViewModel = SlotViewModel;
+	URpgInventoryDragDropCoordinator* ReleasedCoordinator = DragDropCoordinator;
+	const ERpgEquipmentSlot ReleasedEquipmentSlot = GetResolvedEquipmentSlot();
+	bool bOwnsCurrentPreviewTarget = false;
+	if (bHasExternalPreviewState && ReleasedCoordinator)
+	{
+		if (const URpgInventoryInteractionSession* Session = ReleasedCoordinator->GetInteractionSession())
+		{
+			const FRpgInventoryDropTarget& Target = Session->GetTarget();
+			bOwnsCurrentPreviewTarget =
+				Target.TargetType == ERpgInventoryDropTargetType::EquipmentSlot &&
+				Target.EquipmentSlot == ReleasedEquipmentSlot;
+		}
+	}
+
+	if (ReleasedViewModel)
+	{
+		ReleasedViewModel->OnSlotChanged.RemoveDynamic(this, &ThisClass::HandleSlotViewModelChanged);
+	}
+	if (ReleasedCoordinator)
+	{
+		ReleasedCoordinator->OnHeldPayloadChanged.RemoveDynamic(this, &ThisClass::HandleHeldPayloadChanged);
+	}
+
+	SlotViewModel = nullptr;
+	DragDropCoordinator = nullptr;
+	SetInventoryPresentationHost(nullptr);
+	InjectEquipmentSlotViewModelIntoMvvm();
+	bPendingLeftClickAccept = false;
+	PendingPointerDragAnchor = FRpgInventoryDragAnchor();
+	bHasPendingPointerDragAnchor = false;
+	bHasExternalPreviewState = false;
+	ExternalPreviewState = ERpgInventorySlotDragVisualState::Normal;
+	CurrentDragDropVisualState = ERpgInventorySlotDragVisualState::Normal;
+
+	// This presentation surface may release its own hover preview, but never cancels a server-pending request.
+	if (bOwnsCurrentPreviewTarget && ReleasedCoordinator)
+	{
+		ReleasedCoordinator->ClearInteractionPreview();
+	}
+
+	BP_OnEquipmentSlotDragDropStateChanged(ERpgInventorySlotDragVisualState::Normal);
 }
 
 void URpgEquipmentSlotWidget::NativeOnClicked()
@@ -202,13 +402,42 @@ FReply URpgEquipmentSlotWidget::NativeOnPreviewMouseButtonDown(const FGeometry& 
 
 FReply URpgEquipmentSlotWidget::HandlePointerButtonDown(const FGeometry& InGeometry, const FPointerEvent& InMouseEvent)
 {
-	if (InMouseEvent.GetEffectingButton() == EKeys::RightMouseButton && HandleClearAssignment())
+	if (InMouseEvent.GetEffectingButton() == EKeys::RightMouseButton)
 	{
-		return FReply::Handled();
+		if (PanelNavigationCoordinator)
+		{
+			PanelNavigationCoordinator->NotifyEquipmentSlotFocused(this);
+		}
+		if (RequestEquipmentContextMenu(InMouseEvent.GetScreenSpacePosition()))
+		{
+			return FReply::Handled();
+		}
 	}
 
 	if (InMouseEvent.GetEffectingButton() == EKeys::LeftMouseButton && GetRepresentedItem())
 	{
+		if (InMouseEvent.IsControlDown())
+		{
+			return DragDropCoordinator && DragDropCoordinator->QuickTransferPlayerItem(GetRepresentedItem())
+				? FReply::Handled()
+				: FReply::Unhandled();
+		}
+		FRpgInventoryDragPayload PointerPayload = MakeDragPayload();
+		URpgInventoryDragDropCoordinator::CapturePointerDragAnchor(
+			PointerPayload,
+			InGeometry.AbsoluteToLocal(InMouseEvent.GetScreenSpacePosition()),
+			InGeometry.GetLocalSize());
+		const FVector2D ScreenTopLeft = InGeometry.LocalToAbsolute(FVector2D::ZeroVector);
+		const FVector2D ScreenBottomRight = InGeometry.LocalToAbsolute(InGeometry.GetLocalSize());
+		URpgInventoryDragDropCoordinator::CapturePointerDragAnchorScreenGeometry(
+			PointerPayload,
+			ScreenTopLeft,
+			InMouseEvent.GetScreenSpacePosition(),
+			FVector2D(
+				FMath::Abs(ScreenBottomRight.X - ScreenTopLeft.X),
+				FMath::Abs(ScreenBottomRight.Y - ScreenTopLeft.Y)));
+		PendingPointerDragAnchor = PointerPayload.DragAnchor;
+		bHasPendingPointerDragAnchor = PendingPointerDragAnchor.bValid;
 		bPendingLeftClickAccept = true;
 		return UWidgetBlueprintLibrary::DetectDragIfPressed(InMouseEvent, this, EKeys::LeftMouseButton).NativeReply;
 	}
@@ -221,6 +450,7 @@ FReply URpgEquipmentSlotWidget::NativeOnMouseButtonUp(const FGeometry& InGeometr
 	if (InMouseEvent.GetEffectingButton() == EKeys::LeftMouseButton && bPendingLeftClickAccept)
 	{
 		bPendingLeftClickAccept = false;
+		bHasPendingPointerDragAnchor = false;
 		return HandleSlotAccept() ? FReply::Handled() : FReply::Unhandled();
 	}
 
@@ -231,70 +461,91 @@ void URpgEquipmentSlotWidget::NativeOnDragDetected(const FGeometry& InGeometry, 
 {
 	bPendingLeftClickAccept = false;
 
-	const FRpgInventoryDragPayload Payload = MakeDragPayload();
+	FRpgInventoryDragPayload Payload = MakeDragPayload();
 	if (!URpgInventoryDragDropCoordinator::IsPayloadValid(Payload))
 	{
 		return;
 	}
+	if (bHasPendingPointerDragAnchor)
+	{
+		URpgInventoryDragDropCoordinator::CapturePointerDragAnchor(
+			Payload,
+			PendingPointerDragAnchor.SourcePointerOffset,
+			PendingPointerDragAnchor.SourceVisualSize);
+		Payload.DragAnchor.SourceScreenPointerOffset = PendingPointerDragAnchor.SourceScreenPointerOffset;
+		Payload.DragAnchor.SourceScreenVisualSize = PendingPointerDragAnchor.SourceScreenVisualSize;
+	}
+	else
+	{
+		URpgInventoryDragDropCoordinator::CapturePointerDragAnchor(
+			Payload,
+			InGeometry.AbsoluteToLocal(InMouseEvent.GetScreenSpacePosition()),
+			InGeometry.GetLocalSize());
+		const FVector2D ScreenTopLeft = InGeometry.LocalToAbsolute(FVector2D::ZeroVector);
+		const FVector2D ScreenBottomRight = InGeometry.LocalToAbsolute(InGeometry.GetLocalSize());
+		URpgInventoryDragDropCoordinator::CapturePointerDragAnchorScreenGeometry(
+			Payload,
+			ScreenTopLeft,
+			InMouseEvent.GetScreenSpacePosition(),
+			FVector2D(
+				FMath::Abs(ScreenBottomRight.X - ScreenTopLeft.X),
+				FMath::Abs(ScreenBottomRight.Y - ScreenTopLeft.Y)));
+	}
+	bHasPendingPointerDragAnchor = false;
+	if (!DragDropCoordinator || !DragVisualClass)
+	{
+		return;
+	}
+	if (!DragDropCoordinator->BeginPointerDrag(Payload))
+	{
+		return;
+	}
+	Payload = DragDropCoordinator->ResolveInteractionPayload(Payload);
 
 	URpgInventoryDragDropOperation* InventoryOperation = NewObject<URpgInventoryDragDropOperation>(this);
 	if (!InventoryOperation)
 	{
+		DragDropCoordinator->CancelHold();
 		return;
 	}
 
-	InventoryOperation->Pivot = EDragPivot::MouseDown;
+	InventoryOperation->Pivot = EDragPivot::TopLeft;
+	if (Payload.DragAnchor.SourceVisualSize.X > KINDA_SMALL_NUMBER && Payload.DragAnchor.SourceVisualSize.Y > KINDA_SMALL_NUMBER)
+	{
+		InventoryOperation->Offset = FVector2D(
+			-Payload.DragAnchor.SourcePointerOffset.X / Payload.DragAnchor.SourceVisualSize.X,
+			-Payload.DragAnchor.SourcePointerOffset.Y / Payload.DragAnchor.SourceVisualSize.Y);
+	}
 	InventoryOperation->Payload = GetRepresentedItem();
 	InventoryOperation->InventoryPayload = Payload;
+	InventoryOperation->SetInteractionSession(DragDropCoordinator->GetInteractionSession());
 
-	TSubclassOf<UUserWidget> VisualClass = DragVisualClass;
-	if (!VisualClass)
+	URpgInventoryDragVisualWidget* DragVisual =
+		CreateWidget<URpgInventoryDragVisualWidget>(this, DragVisualClass);
+	if (!DragVisual)
 	{
-		VisualClass = GetClass();
+		DragDropCoordinator->CancelHold();
+		return;
 	}
 
-	if (VisualClass)
-	{
-		UUserWidget* DragVisual = CreateWidget<UUserWidget>(GetWorld(), VisualClass);
-		if (URpgEquipmentSlotWidget* EquipmentSlotDragVisual = Cast<URpgEquipmentSlotWidget>(DragVisual))
-		{
-			EquipmentSlotDragVisual->SetEquipmentSlotViewModel(SlotViewModel);
-			EquipmentSlotDragVisual->SetDragDropCoordinator(DragDropCoordinator);
-		}
-
-		InventoryOperation->DefaultDragVisual = DragVisual;
-	}
-
+	DragVisual->ConfigureFromPayload(Payload, 70.0f, 2.0f);
+	InventoryOperation->DefaultDragVisual = DragVisual;
 	OutOperation = InventoryOperation;
 }
 
 bool URpgEquipmentSlotWidget::NativeOnDragOver(const FGeometry& InGeometry, const FDragDropEvent& InDragDropEvent, UDragDropOperation* InOperation)
 {
-	const URpgInventoryDragDropOperation* InventoryOperation = Cast<URpgInventoryDragDropOperation>(InOperation);
-	if (!InventoryOperation)
-	{
-		return false;
-	}
-
-	PreviewPayloadDrop(InventoryOperation->InventoryPayload);
-	return true;
+	return false;
 }
 
 bool URpgEquipmentSlotWidget::NativeOnDrop(const FGeometry& InGeometry, const FDragDropEvent& InDragDropEvent, UDragDropOperation* InOperation)
 {
-	const URpgInventoryDragDropOperation* InventoryOperation = Cast<URpgInventoryDragDropOperation>(InOperation);
-	if (!InventoryOperation)
-	{
-		return false;
-	}
-
-	CommitPayloadDrop(InventoryOperation->InventoryPayload);
-	return true;
+	return false;
 }
 
 void URpgEquipmentSlotWidget::NativeOnDragLeave(const FDragDropEvent& InDragDropEvent, UDragDropOperation* InOperation)
 {
-	ClearExternalPreviewPayload();
+	// Child boundaries do not own preview lifetime; the screen resolver clears the previous target atomically.
 	Super::NativeOnDragLeave(InDragDropEvent, InOperation);
 }
 
@@ -302,7 +553,6 @@ void URpgEquipmentSlotWidget::HandleSlotViewModelChanged(URpgEquipmentSlotViewMo
 {
 	if (ChangedSlotViewModel == SlotViewModel)
 	{
-		BP_OnEquipmentSlotUpdated(SlotViewModel, GetRepresentedItem(), GetRepresentedItem() != nullptr);
 		RefreshDragDropVisualState();
 	}
 }
@@ -310,6 +560,70 @@ void URpgEquipmentSlotWidget::HandleSlotViewModelChanged(URpgEquipmentSlotViewMo
 void URpgEquipmentSlotWidget::HandleHeldPayloadChanged(bool bHasHeldPayload, const FRpgInventoryDragPayload& HeldPayload)
 {
 	RefreshDragDropVisualState();
+}
+
+bool URpgEquipmentSlotWidget::InjectEquipmentSlotViewModelIntoMvvm()
+{
+	UMVVMView* View = UMVVMSubsystem::GetViewFromUserWidget(this);
+	const UMVVMViewClass* ViewClass = View ? View->GetViewClass() : nullptr;
+	if (!View || !ViewClass)
+	{
+		if (GetClass() != StaticClass())
+		{
+			UE_LOG(
+				LogRpgLoadoutSlotWidgets,
+				Error,
+				TEXT("%s has no compiled MVVM view. Author one optional manual %s source for equipment-slot data."),
+				*GetNameSafe(this),
+				*EquipmentSlotViewModelSourceName.ToString());
+		}
+		return false;
+	}
+
+	const FMVVMViewClass_Source* CompiledSource = ViewClass->GetSources().FindByPredicate(
+		[](const FMVVMViewClass_Source& Candidate)
+		{
+			return Candidate.IsViewModel() &&
+				Candidate.GetName() == EquipmentSlotViewModelSourceName;
+		});
+	if (!CompiledSource ||
+		!CompiledSource->CanBeSet() ||
+		!CompiledSource->IsOptional() ||
+		CompiledSource->GetSourceClass() != URpgEquipmentSlotViewModel::StaticClass())
+	{
+		UE_LOG(
+			LogRpgLoadoutSlotWidgets,
+			Error,
+			TEXT("%s requires one settable optional manual MVVM source named %s with type RpgEquipmentSlotViewModel."),
+			*GetNameSafe(this),
+			*EquipmentSlotViewModelSourceName.ToString());
+		return false;
+	}
+
+	if (View->GetViewModel(EquipmentSlotViewModelSourceName).GetObject() == SlotViewModel)
+	{
+		return true;
+	}
+
+	TScriptInterface<INotifyFieldValueChanged> ViewModelInterface;
+	if (SlotViewModel)
+	{
+		ViewModelInterface.SetObject(SlotViewModel);
+		ViewModelInterface.SetInterface(SlotViewModel.Get());
+	}
+
+	if (!View->SetViewModel(EquipmentSlotViewModelSourceName, ViewModelInterface))
+	{
+		UE_LOG(
+			LogRpgLoadoutSlotWidgets,
+			Error,
+			TEXT("%s failed to inject its equipment-slot VM into MVVM source %s."),
+			*GetNameSafe(this),
+			*EquipmentSlotViewModelSourceName.ToString());
+		return false;
+	}
+
+	return View->GetViewModel(EquipmentSlotViewModelSourceName).GetObject() == SlotViewModel;
 }
 
 FRpgInventoryDragPayload URpgEquipmentSlotWidget::MakeDragPayload() const

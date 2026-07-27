@@ -12,6 +12,27 @@
 
 #define LOCTEXT_NAMESPACE "UIExtension"
 
+namespace
+{
+	void NotifyExtensionAdded(UUserWidget* Widget)
+	{
+		if (IUIExtensionWidgetLifecycle* Lifecycle =
+				Cast<IUIExtensionWidgetLifecycle>(Widget))
+		{
+			Lifecycle->NativeOnExtensionAdded();
+		}
+	}
+
+	void NotifyExtensionRemoved(UUserWidget* Widget)
+	{
+		if (IUIExtensionWidgetLifecycle* Lifecycle =
+				Cast<IUIExtensionWidgetLifecycle>(Widget))
+		{
+			Lifecycle->NativeOnExtensionRemoved();
+		}
+	}
+}
+
 /////////////////////////////////////////////////////
 // UUIExtensionPointWidget
 
@@ -69,14 +90,27 @@ TSharedRef<SWidget> UUIExtensionPointWidget::RebuildWidget()
 
 void UUIExtensionPointWidget::ResetExtensionPoint()
 {
-	ResetInternal();
-
+	TArray<TObjectPtr<UUserWidget>> ExtensionsToRemove;
+	ExtensionMapping.GenerateValueArray(ExtensionsToRemove);
 	ExtensionMapping.Reset();
+
 	for (FUIExtensionPointHandle& Handle : ExtensionPointHandles)
 	{
 		Handle.Unregister();
 	}
 	ExtensionPointHandles.Reset();
+
+	TSet<TObjectPtr<UUserWidget>> NotifiedWidgets;
+	for (UUserWidget* Extension : ExtensionsToRemove)
+	{
+		if (Extension && !NotifiedWidgets.Contains(Extension))
+		{
+			NotifiedWidgets.Add(Extension);
+			NotifyExtensionRemoved(Extension);
+		}
+	}
+
+	ResetInternal();
 }
 
 void UUIExtensionPointWidget::RegisterExtensionPoint()
@@ -125,6 +159,7 @@ void UUIExtensionPointWidget::OnAddOrRemoveExtension(EUIExtensionAction Action, 
 		{
 			UUserWidget* Widget = CreateEntryInternal(WidgetClass);
 			ExtensionMapping.Add(Request.ExtensionHandle, Widget);
+			NotifyExtensionAdded(Widget);
 		}
 		else if (DataClasses.Num() > 0)
 		{
@@ -139,6 +174,10 @@ void UUIExtensionPointWidget::OnAddOrRemoveExtension(EUIExtensionAction Action, 
 					{
 						ExtensionMapping.Add(Request.ExtensionHandle, Widget);
 						ConfigureWidgetForData.ExecuteIfBound(Widget, Data);
+						if (ExtensionMapping.FindRef(Request.ExtensionHandle) == Widget)
+						{
+							NotifyExtensionAdded(Widget);
+						}
 					}
 				}
 			}
@@ -146,10 +185,13 @@ void UUIExtensionPointWidget::OnAddOrRemoveExtension(EUIExtensionAction Action, 
 	}
 	else
 	{
-		if (UUserWidget* Extension = ExtensionMapping.FindRef(Request.ExtensionHandle))
+		TObjectPtr<UUserWidget> Extension;
+		if (ExtensionMapping.RemoveAndCopyValue(
+				Request.ExtensionHandle,
+				Extension))
 		{
+			NotifyExtensionRemoved(Extension);
 			RemoveEntryInternal(Extension);
-			ExtensionMapping.Remove(Request.ExtensionHandle);
 		}
 	}
 }

@@ -17,10 +17,25 @@ public class SurvivalRpgEditor : ModuleRules
 
 		PrivateDependencyModuleNames.AddRange(new string[]
 		{
+			"AssetRegistry",
+			"BlueprintGraph",
+			"CommonGame",
+			"CommonUI",
+			"EnhancedInput",
 			"GameplayStateTreeModule",
 			"GameplayTags",
+			"InputBlueprintNodes",
+			"InputCore",
+			"ModelViewViewModel",
+			"ModelViewViewModelBlueprint",
+			"ModelViewViewModelEditor",
 			"PropertyBindingUtils",
+			"Projects",
 			"StateTreeEditorModule",
+			"UIExtension",
+			"UMG",
+			"UMGEditor",
+			"UnrealEd",
 		});
 	}
 }

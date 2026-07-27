@@ -2,6 +2,7 @@
 
 #include "GameFramework/GameplayMessageSubsystem.h"
 #include "Net/UnrealNetwork.h"
+#include "RpgAbilityBindingResolver.h"
 #include "SurvivalRpg/AbilitySystem/RpgAbilitySystemComponent.h"
 #include "SurvivalRpg/Core/Player/RpgPlayerController.h"
 #include "SurvivalRpg/GameplayTags/RpgGameplayTags.h"
@@ -40,12 +41,6 @@ void URpgWeaponAbilityLoadoutComponent::RequestAssignAbilityToSlot_Implementatio
 		return;
 	}
 
-	URpgAbilitySystemComponent* RpgASC = GetRpgPlayerController() ? GetRpgPlayerController()->GetRpgAbilitySystemComponent() : nullptr;
-	if (!RpgASC || !RpgASC->HasAbilityWithAbilityId(AbilityIdTag))
-	{
-		return;
-	}
-
 	Slots[SlotIndex].AbilityIdTag = AbilityIdTag;
 	RefreshAbilityBindings();
 }
@@ -74,6 +69,17 @@ void URpgWeaponAbilityLoadoutComponent::RefreshAbilityBindings()
 	URpgAbilitySystemComponent* RpgASC = GetRpgPlayerController() ? GetRpgPlayerController()->GetRpgAbilitySystemComponent() : nullptr;
 	if (!RpgASC || !RpgASC->HasGrantAuthority())
 	{
+		if (GetOwner() && GetOwner()->HasAuthority())
+		{
+			for (FRpgWeaponAbilityLoadoutSlot& Slot : Slots)
+			{
+				Slot.bAvailable = false;
+				Slot.ResolveResult = Slot.AbilityIdTag.IsValid()
+					? ERpgAbilityBindingResolveResult::Missing
+					: ERpgAbilityBindingResolveResult::InvalidAbilityId;
+			}
+			OnRep_Slots();
+		}
 		return;
 	}
 
@@ -83,13 +89,17 @@ void URpgWeaponAbilityLoadoutComponent::RefreshAbilityBindings()
 		const FGameplayTag RuntimeInputTag = GetInputTagForSlotIndex(SlotIndex);
 		RpgASC->ClearRuntimeAbilityInputTag(RuntimeInputTag);
 
-		const bool bCanBind = Slot.AbilityIdTag.IsValid() && RpgASC->HasAbilityWithAbilityId(Slot.AbilityIdTag);
-		Slot.bAvailable = bCanBind;
+		const FRpgUniqueAbilityBindingResolution Resolution = FRpgAbilityBindingResolver::ResolveUniqueAbilityId(
+			RpgASC,
+			Slot.AbilityIdTag,
+			this);
+		Slot.ResolveResult = Resolution.Result;
+		Slot.bAvailable = Resolution.IsUnique();
 
-		// Keep the runtime slot tag mirrored for compatibility, but activation uses the stable AbilityIdTag.
-		if (bCanBind)
+		// The unique resolver guarantees BindInputTagToAbilityId cannot silently choose between duplicate ids.
+		if (Slot.bAvailable)
 		{
-			RpgASC->BindInputTagToAbilityId(Slot.AbilityIdTag, RuntimeInputTag);
+			Slot.bAvailable = RpgASC->BindInputTagToAbilityId(Slot.AbilityIdTag, RuntimeInputTag);
 		}
 	}
 
@@ -108,7 +118,8 @@ void URpgWeaponAbilityLoadoutComponent::HandleInputPressed(int32 SlotIndex)
 	{
 		if (URpgAbilitySystemComponent* RpgASC = RpgPC->GetRpgAbilitySystemComponent())
 		{
-			RpgASC->AbilityInputTagPressed(Slots[SlotIndex].AbilityIdTag);
+			// RuntimeInputTag is server-bound to exactly one spec after unique id validation.
+			RpgASC->AbilityInputTagPressed(GetInputTagForSlotIndex(SlotIndex));
 		}
 	}
 }
@@ -125,7 +136,7 @@ void URpgWeaponAbilityLoadoutComponent::HandleInputReleased(int32 SlotIndex)
 	{
 		if (URpgAbilitySystemComponent* RpgASC = RpgPC->GetRpgAbilitySystemComponent())
 		{
-			RpgASC->AbilityInputTagReleased(Slots[SlotIndex].AbilityIdTag);
+			RpgASC->AbilityInputTagReleased(GetInputTagForSlotIndex(SlotIndex));
 		}
 	}
 }

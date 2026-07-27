@@ -9,9 +9,12 @@
 class SActorCanvas;
 
 /**
- * Full-screen HUD layer that projects active indicator descriptors into Slate.
+ * Designer-placeable full-screen HUD layer for projected world indicators.
+ *
+ * Author this widget inside the CommonUI HUD layout. The controller component
+ * owns descriptor state only and never creates a separate viewport widget.
  */
-UCLASS()
+UCLASS(meta = (DisplayName = "RPG Indicator Layer"))
 class SURVIVALRPG_API URpgIndicatorLayer : public UWidget
 {
 	GENERATED_BODY()

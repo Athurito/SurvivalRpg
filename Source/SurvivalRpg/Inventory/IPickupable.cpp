@@ -2,117 +2,14 @@
 
 #include "IPickupable.h"
 
+#include "RpgDroppedInventoryActor.h"
 #include "RpgInventoryManagerComponent.h"
 #include "GameFramework/Actor.h"
-#include "RpgInventoryFragment_ItemTraits.h"
-#include "RpgInventoryItemDefinition.h"
-#include "RpgInventoryItemInstance.h"
 #include "UObject/ScriptInterface.h"
 
 #include UE_INLINE_GENERATED_CPP_BY_NAME(IPickupable)
 
-class URpgInventoryManagerComponent;
 class UActorComponent;
-
-namespace
-{
-	int32 GetPickupableMaxStackSizeForDefinition(TSubclassOf<URpgInventoryItemDefinition> ItemDef)
-	{
-		const URpgInventoryItemDefinition* ItemCDO = ItemDef ? GetDefault<URpgInventoryItemDefinition>(ItemDef) : nullptr;
-		const URpgInventoryFragment_ItemTraits* Traits = ItemCDO ? Cast<URpgInventoryFragment_ItemTraits>(ItemCDO->FindFragmentByClass(URpgInventoryFragment_ItemTraits::StaticClass())) : nullptr;
-		return Traits ? Traits->GetMaxStackSize() : 1;
-	}
-
-	bool CanPickupableInventoryAcceptPickup(URpgInventoryManagerComponent* InventoryComponent, const FInventoryPickup& PickupInventory)
-	{
-		if (!InventoryComponent || (PickupInventory.Templates.IsEmpty() && PickupInventory.Instances.IsEmpty()))
-		{
-			return false;
-		}
-
-		for (const FPickupTemplate& Template : PickupInventory.Templates)
-		{
-			if (!Template.ItemDef || Template.StackCount <= 0)
-			{
-				return false;
-			}
-		}
-
-		for (const FPickupInstance& Instance : PickupInventory.Instances)
-		{
-			if (!Instance.Item)
-			{
-				return false;
-			}
-		}
-
-		TMap<TSubclassOf<URpgInventoryItemDefinition>, int32> ExistingFreeStackSpaceByDefinition;
-		for (const FRpgInventoryEntryView& Entry : InventoryComponent->GetAllEntries())
-		{
-			const TSubclassOf<URpgInventoryItemDefinition> EntryDefinition = Entry.Instance ? Entry.Instance->GetItemDef() : nullptr;
-			const int32 MaxStackSize = GetPickupableMaxStackSizeForDefinition(EntryDefinition);
-			if (EntryDefinition && MaxStackSize > 1)
-			{
-				ExistingFreeStackSpaceByDefinition.FindOrAdd(EntryDefinition) += FMath::Max(0, MaxStackSize - Entry.StackCount);
-			}
-		}
-
-		TMap<TSubclassOf<URpgInventoryItemDefinition>, int32> RequestedTemplateCounts;
-		for (const FPickupTemplate& Template : PickupInventory.Templates)
-		{
-			RequestedTemplateCounts.FindOrAdd(Template.ItemDef) += Template.StackCount;
-		}
-
-		int32 RequiredNewEntries = 0;
-		for (const FPickupInstance& Instance : PickupInventory.Instances)
-		{
-			RequiredNewEntries += InventoryComponent->GetRequiredNewEntryCountForItemInstance(Instance.Item, 1);
-		}
-
-		for (const TPair<TSubclassOf<URpgInventoryItemDefinition>, int32>& RequestedTemplateCount : RequestedTemplateCounts)
-		{
-			const TSubclassOf<URpgInventoryItemDefinition> ItemDefinition = RequestedTemplateCount.Key;
-			const int32 MaxStackSize = GetPickupableMaxStackSizeForDefinition(ItemDefinition);
-			int32 RemainingCount = RequestedTemplateCount.Value;
-
-			if (MaxStackSize > 1)
-			{
-				int32& ExistingFreeStackSpace = ExistingFreeStackSpaceByDefinition.FindOrAdd(ItemDefinition);
-				const int32 FilledExistingStackCount = FMath::Min(ExistingFreeStackSpace, RemainingCount);
-				ExistingFreeStackSpace -= FilledExistingStackCount;
-				RemainingCount -= FilledExistingStackCount;
-			}
-
-			if (RemainingCount > 0)
-			{
-				RequiredNewEntries += FMath::DivideAndRoundUp(RemainingCount, MaxStackSize);
-			}
-		}
-
-		if (!InventoryComponent->IsCapacityUnlimited() && RequiredNewEntries > InventoryComponent->GetFreeEntryCount())
-		{
-			return false;
-		}
-
-		for (const FPickupTemplate& Template : PickupInventory.Templates)
-		{
-			if (!InventoryComponent->CanAddItemDefinition(Template.ItemDef, Template.StackCount))
-			{
-				return false;
-			}
-		}
-
-		for (const FPickupInstance& Instance : PickupInventory.Instances)
-		{
-			if (!InventoryComponent->CanAddItemInstance(Instance.Item, 1))
-			{
-				return false;
-			}
-		}
-
-		return true;
-	}
-}
 
 UPickupableStatics::UPickupableStatics()
 	: Super(FObjectInitializer::Get())
@@ -146,21 +43,18 @@ bool UPickupableStatics::AddPickupToInventory(URpgInventoryManagerComponent* Inv
 		return false;
 	}
 
-	const FInventoryPickup& PickupInventory = Pickup->GetPickupInventory();
-	if (!CanPickupableInventoryAcceptPickup(InventoryComponent, PickupInventory))
+	// Once a dropped actor has promoted its replicated loot manager to canonical state,
+	// its payload is only a presentation snapshot. Copying that snapshot would duplicate
+	// item instances instead of removing them through the source-owned transfer path.
+	if (const ARpgDroppedInventoryActor* DroppedInventoryActor =
+			Cast<ARpgDroppedInventoryActor>(Pickup.GetObject());
+		DroppedInventoryActor && DroppedInventoryActor->IsLootInventoryCanonical())
 	{
 		return false;
 	}
 
-	for (const FPickupTemplate& Template : PickupInventory.Templates)
-	{
-		InventoryComponent->AddItemDefinition(Template.ItemDef, Template.StackCount);
-	}
-
-	for (const FPickupInstance& Instance : PickupInventory.Instances)
-	{
-		InventoryComponent->AddItemInstance(Instance.Item);
-	}
-
-	return true;
+	TArray<FRpgInventoryItemId> AffectedItemIds;
+	return InventoryComponent->AddPickupBatch(
+		Pickup->GetPickupInventory(),
+		AffectedItemIds).IsSuccess();
 }

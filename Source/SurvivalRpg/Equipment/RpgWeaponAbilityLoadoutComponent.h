@@ -2,6 +2,7 @@
 
 #include "Components/ControllerComponent.h"
 #include "GameplayTagContainer.h"
+#include "RpgAbilityBindingResolver.h"
 
 #include "RpgWeaponAbilityLoadoutComponent.generated.h"
 
@@ -20,6 +21,10 @@ struct SURVIVALRPG_API FRpgWeaponAbilityLoadoutSlot
 	/** True when the selected ability id is currently granted and bound to this slot's runtime input tag. */
 	UPROPERTY(BlueprintReadOnly, Category = "Weapon Ability Loadout")
 	bool bAvailable = false;
+
+	/** Why this binding is available or blocked. Ambiguous ids are content errors and never activate a random spec. */
+	UPROPERTY(BlueprintReadOnly, Category = "Weapon Ability Loadout")
+	ERpgAbilityBindingResolveResult ResolveResult = ERpgAbilityBindingResolveResult::InvalidAbilityId;
 };
 
 /** Gameplay message sent to the owning client when Q/E/R weapon ability assignments or availability change. */
@@ -66,7 +71,10 @@ public:
 	UFUNCTION(BlueprintPure, Category = "Rpg|Weapon Abilities")
 	FRpgWeaponAbilityLoadoutSlot GetSlot(int32 SlotIndex) const;
 
-	/** Selects a granted ability id for one Q/E/R slot. */
+	/**
+	 * Selects an ability id for one Q/E/R slot.
+	 * Missing grants remain selected but blocked so progression or equipment can make them available later.
+	 */
 	UFUNCTION(Server, Reliable, BlueprintCallable, Category = "Rpg|Weapon Abilities")
 	void RequestAssignAbilityToSlot(int32 SlotIndex, FGameplayTag AbilityIdTag);
 

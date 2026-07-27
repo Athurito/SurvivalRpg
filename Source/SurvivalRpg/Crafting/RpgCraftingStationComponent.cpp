@@ -85,6 +85,43 @@ namespace
 		return Traits && Traits->IsMaterial();
 	}
 
+	bool TryBuildAggregatedResourceCosts(
+		const TArray<FRpgCraftingResourceCost>& RequiredItems,
+		TArray<FRpgCraftingResourceCost>& OutAggregatedCosts)
+	{
+		OutAggregatedCosts.Reset();
+		for (const FRpgCraftingResourceCost& RequiredItem : RequiredItems)
+		{
+			if (!RequiredItem.ItemDefinition || RequiredItem.Count <= 0)
+			{
+				OutAggregatedCosts.Reset();
+				return false;
+			}
+
+			FRpgCraftingResourceCost* ExistingCost = OutAggregatedCosts.FindByPredicate(
+				[ItemDefinition = RequiredItem.ItemDefinition](const FRpgCraftingResourceCost& Candidate)
+				{
+					return Candidate.ItemDefinition == ItemDefinition;
+				});
+			if (!ExistingCost)
+			{
+				OutAggregatedCosts.Add(RequiredItem);
+				continue;
+			}
+
+			const int64 AggregatedCount = static_cast<int64>(ExistingCost->Count) + static_cast<int64>(RequiredItem.Count);
+			if (AggregatedCount > MAX_int32)
+			{
+				OutAggregatedCosts.Reset();
+				return false;
+			}
+
+			ExistingCost->Count = static_cast<int32>(AggregatedCount);
+		}
+
+		return true;
+	}
+
 	void AddRefundCredit(
 		TArray<FRpgCraftingRefundEntry>& RefundEntries,
 		TSubclassOf<URpgInventoryItemDefinition> ItemDefinition,
@@ -223,6 +260,22 @@ bool URpgCraftingStationComponent::IsRecipeUnlocked(const URpgCraftingRecipeDefi
 	return RecipeUnlockComponent && RecipeUnlockComponent->IsRecipeUnlocked(RecipeDefinition);
 }
 
+bool URpgCraftingStationComponent::IsRecipeOfferedByStation(const URpgCraftingRecipeDefinition* RecipeDefinition) const
+{
+	if (!RecipeDefinition || !AvailableRecipeSet || !AvailableRecipeSet->Recipes.Contains(RecipeDefinition))
+	{
+		return false;
+	}
+
+	if (!RecipeDefinition->RequiredStationTags.IsEmpty() && !StationTags.HasAllExact(RecipeDefinition->RequiredStationTags))
+	{
+		return false;
+	}
+
+	const FGameplayTagContainer BaseUpgradeTags = LinkedBaseCamp ? LinkedBaseCamp->GetGrantedStorageUpgradeTags() : FGameplayTagContainer();
+	return RecipeDefinition->RequiredUnlockTags.IsEmpty() || BaseUpgradeTags.HasAllExact(RecipeDefinition->RequiredUnlockTags);
+}
+
 TArray<URpgCraftingRecipeDefinition*> URpgCraftingStationComponent::GetAvailableRecipes() const
 {
 	TArray<URpgCraftingRecipeDefinition*> Results;
@@ -231,20 +284,9 @@ TArray<URpgCraftingRecipeDefinition*> URpgCraftingStationComponent::GetAvailable
 		return Results;
 	}
 
-	const FGameplayTagContainer BaseUpgradeTags = LinkedBaseCamp ? LinkedBaseCamp->GetGrantedStorageUpgradeTags() : FGameplayTagContainer();
 	for (URpgCraftingRecipeDefinition* Recipe : AvailableRecipeSet->Recipes)
 	{
-		if (!Recipe)
-		{
-			continue;
-		}
-
-		if (!Recipe->RequiredStationTags.IsEmpty() && !StationTags.HasAllExact(Recipe->RequiredStationTags))
-		{
-			continue;
-		}
-
-		if (!Recipe->RequiredUnlockTags.IsEmpty() && !BaseUpgradeTags.HasAllExact(Recipe->RequiredUnlockTags))
+		if (!IsRecipeOfferedByStation(Recipe))
 		{
 			continue;
 		}
@@ -262,70 +304,35 @@ bool URpgCraftingStationComponent::CanCraftRecipe(AActor* RequestingActor, const
 
 bool URpgCraftingStationComponent::CanCraftRecipeQuantity(AActor* RequestingActor, const URpgCraftingRecipeDefinition* RecipeDefinition, int32 Quantity) const
 {
-	if (!RecipeDefinition || Quantity <= 0 || !CanActorAccess(RequestingActor) || !IsRecipeUnlocked(RecipeDefinition))
-	{
-		return false;
-	}
-
-	if (CraftingJobs.Num() >= FMath::Max(1, MaxQueuedJobs))
-	{
-		return false;
-	}
-
-	if (!RecipeDefinition->RequiredStationTags.IsEmpty() && !StationTags.HasAllExact(RecipeDefinition->RequiredStationTags))
-	{
-		return false;
-	}
-
-	const FGameplayTagContainer BaseUpgradeTags = LinkedBaseCamp ? LinkedBaseCamp->GetGrantedStorageUpgradeTags() : FGameplayTagContainer();
-	if (!RecipeDefinition->RequiredUnlockTags.IsEmpty() && !BaseUpgradeTags.HasAllExact(RecipeDefinition->RequiredUnlockTags))
-	{
-		return false;
-	}
-
-	for (const FRpgCraftingResourceCost& RequiredItem : RecipeDefinition->RequiredResources)
-	{
-		if (!RequiredItem.ItemDefinition || RequiredItem.Count <= 0)
-		{
-			return false;
-		}
-
-		const int64 RequiredCount = static_cast<int64>(RequiredItem.Count) * static_cast<int64>(Quantity);
-		if (RequiredCount > MAX_int32 || GetAvailableResourceCount(RequestingActor, RequiredItem.ItemDefinition) < RequiredCount)
-		{
-			return false;
-		}
-	}
-
-	return CanAcceptCraftingOutputs(RecipeDefinition->OutputItems);
+	return Quantity > 0 && Quantity <= GetMaxCraftableQuantity(RequestingActor, RecipeDefinition);
 }
 
 int32 URpgCraftingStationComponent::GetMaxCraftableQuantity(AActor* RequestingActor, const URpgCraftingRecipeDefinition* RecipeDefinition) const
 {
-	if (!RecipeDefinition || !CanActorAccess(RequestingActor) || !IsRecipeUnlocked(RecipeDefinition))
+	if (!RecipeDefinition ||
+		!CanActorAccess(RequestingActor) ||
+		!IsRecipeOfferedByStation(RecipeDefinition) ||
+		!IsRecipeUnlocked(RecipeDefinition) ||
+		CraftingJobs.Num() >= FMath::Max(1, MaxQueuedJobs) ||
+		!CanAcceptCraftingOutputs(RecipeDefinition->OutputItems))
 	{
 		return 0;
 	}
 
-	if (!RecipeDefinition->RequiredStationTags.IsEmpty() && !StationTags.HasAllExact(RecipeDefinition->RequiredStationTags))
+	TArray<FRpgCraftingResourceCost> AggregatedResourceCosts;
+	if (!TryBuildAggregatedResourceCosts(RecipeDefinition->RequiredResources, AggregatedResourceCosts))
 	{
 		return 0;
 	}
 
-	const FGameplayTagContainer BaseUpgradeTags = LinkedBaseCamp ? LinkedBaseCamp->GetGrantedStorageUpgradeTags() : FGameplayTagContainer();
-	if (!RecipeDefinition->RequiredUnlockTags.IsEmpty() && !BaseUpgradeTags.HasAllExact(RecipeDefinition->RequiredUnlockTags))
+	if (AggregatedResourceCosts.IsEmpty())
 	{
-		return 0;
+		return FMath::Max(1, MaxFreeRecipeCraftQuantity);
 	}
 
-	int32 MaxQuantity = MaxFreeRecipeCraftQuantity;
-	for (const FRpgCraftingResourceCost& RequiredItem : RecipeDefinition->RequiredResources)
+	int32 MaxQuantity = MAX_int32;
+	for (const FRpgCraftingResourceCost& RequiredItem : AggregatedResourceCosts)
 	{
-		if (!RequiredItem.ItemDefinition || RequiredItem.Count <= 0)
-		{
-			return 0;
-		}
-
 		MaxQuantity = FMath::Min(MaxQuantity, GetAvailableResourceCount(RequestingActor, RequiredItem.ItemDefinition) / RequiredItem.Count);
 	}
 
@@ -482,13 +489,14 @@ bool URpgCraftingStationComponent::ConsumeResources(AActor* RequestingActor, con
 		return false;
 	}
 
-	for (const FRpgCraftingResourceCost& RequiredItem : RequiredItems)
+	TArray<FRpgCraftingResourceCost> AggregatedRequiredItems;
+	if (!TryBuildAggregatedResourceCosts(RequiredItems, AggregatedRequiredItems))
 	{
-		if (!RequiredItem.ItemDefinition || RequiredItem.Count <= 0)
-		{
-			return false;
-		}
+		return false;
+	}
 
+	for (const FRpgCraftingResourceCost& RequiredItem : AggregatedRequiredItems)
+	{
 		if (GetAvailableResourceCount(RequestingActor, RequiredItem.ItemDefinition) < RequiredItem.Count)
 		{
 			return false;
@@ -496,7 +504,7 @@ bool URpgCraftingStationComponent::ConsumeResources(AActor* RequestingActor, con
 	}
 
 	TArray<URpgInventoryManagerComponent*> ResourceInventories = GetResourceInventories(RequestingActor);
-	for (const FRpgCraftingResourceCost& RequiredItem : RequiredItems)
+	for (const FRpgCraftingResourceCost& RequiredItem : AggregatedRequiredItems)
 	{
 		int32 RemainingCount = RequiredItem.Count;
 
@@ -610,13 +618,29 @@ void URpgCraftingStationComponent::SetOutputInventoryManager(URpgInventoryManage
 	OutputInventoryComponent = InOutputInventory;
 	if (OutputInventoryComponent)
 	{
-		OutputInventoryComponent->SetCapacityMode(ERpgInventoryCapacityMode::FixedEntries);
-		OutputInventoryComponent->SetFixedMaxEntries(OutputSlotCount);
+		if (bUseSpatialOutputCapacity)
+		{
+			// "Unlimited" disables only the legacy entry-count cap. Spatial placement still limits the tray to the
+			// authored root-grid dimensions and item footprints.
+			OutputInventoryComponent->SetCapacityMode(
+				ERpgInventoryCapacityMode::Unlimited);
+		}
+		else
+		{
+			OutputInventoryComponent->SetCapacityMode(
+				ERpgInventoryCapacityMode::FixedEntries);
+			OutputInventoryComponent->SetFixedMaxEntries(OutputSlotCount);
+		}
 	}
 }
 
 bool URpgCraftingStationComponent::CanAcceptCraftingOutputs(const TArray<FRpgCraftingOutputItem>& OutputItems) const
 {
+	if (OutputItems.IsEmpty())
+	{
+		return false;
+	}
+
 	for (const FRpgCraftingOutputItem& OutputItem : OutputItems)
 	{
 		if (!OutputItem.ItemDefinition || OutputItem.Count <= 0)
@@ -685,24 +709,170 @@ bool URpgCraftingStationComponent::FlushOutputToBaseStorage()
 		{
 			continue;
 		}
+		// Auto-deposit operates on physical roots. Moving a provider root transfers
+		// its complete subtree; visiting descendants independently would tear the
+		// authored graph apart when the provider itself must remain concrete.
+		if (OutputEntry.Placement.GetContainerHandle().IsItemOwned())
+		{
+			continue;
+		}
 
 		const TSubclassOf<URpgInventoryItemDefinition> ItemDefinition = OutputInstance->GetItemDef();
 		if (IsMaterialDefinition(ItemDefinition) && BaseStorage)
 		{
-			const int32 CountToStore = FMath::Min(OutputEntry.StackCount, BaseStorage->GetFreeResourceCapacity(ItemDefinition));
-			if (CountToStore > 0 && OutputInventoryComponent->RemoveItemInstanceStack(OutputInstance, CountToStore))
+			const int32 CountToStore = FMath::Min(
+				OutputEntry.StackCount,
+				BaseStorage->GetFreeResourceCapacity(ItemDefinition));
+			if (CountToStore <= 0)
 			{
-				BaseStorage->StoreResource(ItemDefinition, CountToStore);
-				bMovedAnyOutput = true;
+				continue;
 			}
+			if (!BaseStorage->CanStoreResourceInstance(
+					OutputInstance,
+					CountToStore))
+			{
+				UE_LOG(
+					LogRpgCraftingStation,
+					Verbose,
+					TEXT("Crafting-output auto-deposit kept non-collapsible item %s in the concrete output inventory."),
+					*OutputEntry.ItemId.ToString());
+				continue;
+			}
+
+			const int32 EntryCountBefore =
+				OutputInventoryComponent->GetAllEntries().Num();
+			const FRpgInventoryGraphSaveData OutputGraphBefore =
+				OutputInventoryComponent->ExportInventoryGraph();
+			const FRpgInventorySavedItem* SavedOutputBefore =
+				OutputGraphBefore.Items.FindByPredicate(
+					[&OutputEntry](const FRpgInventorySavedItem& Candidate)
+					{
+						return Candidate.ItemId == OutputEntry.ItemId;
+					});
+			if (OutputGraphBefore.Items.Num() != EntryCountBefore ||
+				!SavedOutputBefore)
+			{
+				UE_LOG(
+					LogRpgCraftingStation,
+					Error,
+					TEXT("Crafting-output auto-deposit skipped %s because the exact pre-consume graph could not be exported."),
+					*OutputEntry.ItemId.ToString());
+				continue;
+			}
+
+			auto RestoreExactOutputGraph = [&]() -> bool
+			{
+				FRpgInventoryMutationResult RollbackResult;
+				const bool bGraphRestored =
+					OutputInventoryComponent->RestoreRuntimeCheckpoint(
+						OutputGraphBefore,
+						RollbackResult) &&
+					RollbackResult.IsSuccess();
+				FRpgInventoryGridPlacement RestoredPlacement;
+				return bGraphRestored &&
+					OutputInventoryComponent->ContainsEntry(
+						OutputEntry.EntryId) &&
+					OutputInventoryComponent->FindItemById(
+						OutputEntry.ItemId) == OutputInstance &&
+					OutputInventoryComponent->GetItemStackCount(
+						OutputInstance) == OutputEntry.StackCount &&
+					OutputInventoryComponent->GetItemPlacement(
+						OutputInstance,
+						RestoredPlacement) &&
+					RestoredPlacement == OutputEntry.Placement;
+			};
+
+			// Keep one unit alive when the whole stack is deposited so a failed
+			// storage write can restore the same concrete instance and EntryId.
+			const int32 CountToConsumeBeforeStore =
+				CountToStore == OutputEntry.StackCount
+					? CountToStore - 1
+					: CountToStore;
+			if (CountToConsumeBeforeStore > 0)
+			{
+				const FRpgInventoryMutationResult ConsumeResult =
+					OutputInventoryComponent->ConsumeItemById(
+						OutputEntry.ItemId,
+						CountToConsumeBeforeStore);
+				if (!ConsumeResult.IsSuccess() ||
+					ConsumeResult.AppliedQuantity !=
+						CountToConsumeBeforeStore)
+				{
+					continue;
+				}
+			}
+
+			if (!BaseStorage->StoreResourceInstance(
+					OutputInstance,
+					CountToStore))
+			{
+				if (!RestoreExactOutputGraph())
+				{
+					UE_LOG(
+						LogRpgCraftingStation,
+						Error,
+						TEXT("Crafting-output auto-deposit rollback failed for %s after base storage rejected %d x %s."),
+						*GetNameSafe(GetOwner()),
+						CountToStore,
+						*GetNameSafe(ItemDefinition));
+				}
+				continue;
+			}
+
+			const int32 RemainingConsumeCount =
+				CountToStore - CountToConsumeBeforeStore;
+			if (RemainingConsumeCount > 0)
+			{
+				const FRpgInventoryMutationResult FinalConsumeResult =
+					OutputInventoryComponent->ConsumeItemById(
+						OutputEntry.ItemId,
+						RemainingConsumeCount);
+				if (!FinalConsumeResult.IsSuccess() ||
+					FinalConsumeResult.AppliedQuantity !=
+						RemainingConsumeCount)
+				{
+					const bool bStorageRestored =
+						BaseStorage->WithdrawResource(
+							ItemDefinition,
+							CountToStore);
+					const bool bInventoryRestored =
+						RestoreExactOutputGraph();
+					if (!bStorageRestored || !bInventoryRestored)
+					{
+						UE_LOG(
+							LogRpgCraftingStation,
+							Error,
+							TEXT("Crafting-output auto-deposit finalization rollback failed for %s (%d x %s, Storage=%s, Inventory=%s)."),
+							*GetNameSafe(GetOwner()),
+							CountToStore,
+							*GetNameSafe(ItemDefinition),
+							bStorageRestored ? TEXT("restored") : TEXT("failed"),
+							bInventoryRestored ? TEXT("restored") : TEXT("failed"));
+					}
+					continue;
+				}
+			}
+
+			bMovedAnyOutput = true;
 			continue;
 		}
 
-		if (bAutoDepositInstanceOutputsToArmory && ArmoryInventory && ArmoryInventory->CanAddItemInstance(OutputInstance, OutputEntry.StackCount))
+		if (bAutoDepositInstanceOutputsToArmory && ArmoryInventory)
 		{
-			OutputInventoryComponent->RemoveItemInstance(OutputInstance);
-			ArmoryInventory->AddItemInstanceWithStack(OutputInstance, OutputEntry.StackCount);
-			bMovedAnyOutput = true;
+			FRpgInventoryTransferIntent TransferIntent;
+			TransferIntent.ItemId = OutputEntry.ItemId;
+			TransferIntent.ExpectedEntryId = OutputEntry.EntryId;
+			TransferIntent.ExpectedSourcePlacement = OutputEntry.Placement;
+			TransferIntent.ExpectedSourceQuantity = OutputEntry.StackCount;
+			TransferIntent.TargetContainer =
+				FRpgInventoryContainerHandle::MakeRoot(ArmoryInventory->GetDefaultContainerId());
+			TransferIntent.Quantity = OutputEntry.StackCount;
+			TransferIntent.EnsureRequestId();
+
+			const FRpgInventoryMutationResult TransferResult =
+				OutputInventoryComponent->TransferItem(ArmoryInventory, TransferIntent);
+			bMovedAnyOutput |= TransferResult.IsSuccess() &&
+				TransferResult.AppliedQuantity == OutputEntry.StackCount;
 		}
 	}
 
@@ -848,14 +1018,22 @@ bool URpgCraftingStationComponent::ConsumeResourcesWithRefund(
 		return false;
 	}
 
-	for (const FRpgCraftingResourceCost& RequiredItem : RequiredItems)
+	TArray<FRpgCraftingResourceCost> AggregatedRequiredItems;
+	if (!TryBuildAggregatedResourceCosts(RequiredItems, AggregatedRequiredItems))
+	{
+		return false;
+	}
+
+	for (FRpgCraftingResourceCost& RequiredItem : AggregatedRequiredItems)
 	{
 		const int64 RequiredCount = static_cast<int64>(RequiredItem.Count) * static_cast<int64>(Quantity);
-		if (!RequiredItem.ItemDefinition || RequiredItem.Count <= 0 || RequiredCount > MAX_int32 ||
+		if (RequiredCount > MAX_int32 ||
 			GetAvailableResourceCount(RequestingActor, RequiredItem.ItemDefinition) < RequiredCount)
 		{
 			return false;
 		}
+
+		RequiredItem.Count = static_cast<int32>(RequiredCount);
 	}
 
 	TArray<URpgInventoryManagerComponent*> ResourceInventories = GetResourceInventories(RequestingActor);
@@ -869,9 +1047,9 @@ bool URpgCraftingStationComponent::ConsumeResourcesWithRefund(
 		return false;
 	};
 
-	for (const FRpgCraftingResourceCost& RequiredItem : RequiredItems)
+	for (const FRpgCraftingResourceCost& RequiredItem : AggregatedRequiredItems)
 	{
-		int32 RemainingCount = RequiredItem.Count * Quantity;
+		int32 RemainingCount = RequiredItem.Count;
 
 		auto ConsumeFromBase = [&]()
 		{
@@ -978,6 +1156,12 @@ void URpgCraftingStationComponent::SpendRefundCreditsForCompletedUnit(FRpgCrafti
 		return;
 	}
 
+	TArray<FRpgCraftingResourceCost> AggregatedRequiredItems;
+	if (!TryBuildAggregatedResourceCosts(Job.Recipe->RequiredResources, AggregatedRequiredItems))
+	{
+		return;
+	}
+
 	auto SpendFromCredits = [&Job](TSubclassOf<URpgInventoryItemDefinition> ItemDefinition, int32& RemainingCount, bool bPreferBase)
 	{
 		for (FRpgCraftingRefundEntry& RefundEntry : Job.RefundEntries)
@@ -998,7 +1182,7 @@ void URpgCraftingStationComponent::SpendRefundCreditsForCompletedUnit(FRpgCrafti
 		}
 	};
 
-	for (const FRpgCraftingResourceCost& RequiredItem : Job.Recipe->RequiredResources)
+	for (const FRpgCraftingResourceCost& RequiredItem : AggregatedRequiredItems)
 	{
 		int32 RemainingCount = RequiredItem.Count;
 		switch (ResourceConsumeOrder)
@@ -1051,7 +1235,9 @@ bool URpgCraftingStationComponent::RefundResourceCredit(const FRpgCraftingRefund
 		if (URpgBaseStorageComponent* BaseStorage = GetLinkedBaseStorage())
 		{
 			if (BaseStorage->CanStoreResource(RefundEntry.ItemDefinition, RefundEntry.Count) &&
-				BaseStorage->StoreResource(RefundEntry.ItemDefinition, RefundEntry.Count))
+				BaseStorage->StoreDefinitionResource(
+					RefundEntry.ItemDefinition,
+					RefundEntry.Count))
 			{
 				return true;
 			}
@@ -1063,7 +1249,7 @@ bool URpgCraftingStationComponent::RefundResourceCredit(const FRpgCraftingRefund
 	if (RefundEntry.Inventory &&
 		RefundEntry.Inventory->CanAddItemDefinition(RefundEntry.ItemDefinition, RefundEntry.Count))
 	{
-		RefundEntry.Inventory->AddItemDefinition(RefundEntry.ItemDefinition, RefundEntry.Count);
+		RefundEntry.Inventory->GrantItemDefinition(RefundEntry.ItemDefinition, RefundEntry.Count);
 		return true;
 	}
 
@@ -1248,7 +1434,10 @@ bool URpgCraftingStationComponent::AddOutputItemOrDrop(TSubclassOf<URpgInventory
 		if (URpgBaseStorageComponent* BaseStorage = GetLinkedBaseStorage())
 		{
 			const int32 CountToStore = FMath::Min(RemainingCount, BaseStorage->GetFreeResourceCapacity(ItemDefinition));
-			if (CountToStore > 0 && BaseStorage->StoreResource(ItemDefinition, CountToStore))
+			if (CountToStore > 0 &&
+				BaseStorage->StoreDefinitionResource(
+					ItemDefinition,
+					CountToStore))
 			{
 				RemainingCount -= CountToStore;
 			}
@@ -1260,7 +1449,7 @@ bool URpgCraftingStationComponent::AddOutputItemOrDrop(TSubclassOf<URpgInventory
 		{
 			if (ArmoryInventory->CanAddItemDefinition(ItemDefinition, RemainingCount))
 			{
-				ArmoryInventory->AddItemDefinition(ItemDefinition, RemainingCount);
+				ArmoryInventory->GrantItemDefinition(ItemDefinition, RemainingCount);
 				RemainingCount = 0;
 			}
 		}
@@ -1279,7 +1468,7 @@ bool URpgCraftingStationComponent::AddOutputItemOrDrop(TSubclassOf<URpgInventory
 			break;
 		}
 
-		OutputInventoryComponent->AddItemDefinition(ItemDefinition, CountToAdd);
+		OutputInventoryComponent->GrantItemDefinition(ItemDefinition, CountToAdd);
 		RemainingCount -= CountToAdd;
 	}
 

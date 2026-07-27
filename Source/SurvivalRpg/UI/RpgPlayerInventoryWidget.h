@@ -2,64 +2,46 @@
 
 #include "CoreMinimal.h"
 #include "SurvivalRpg/Equipment/RpgEquipmentDefinition.h"
-#include "SurvivalRpg/Inventory/RpgInventoryDragDrop.h"
-#include "SurvivalRpg/UI/RpgInventoryControllerActionsWidget.h"
+#include "SurvivalRpg/UI/RpgInventoryInteractionScreenWidget.h"
 
 #include "RpgPlayerInventoryWidget.generated.h"
 
 class URpgActionBarTileView;
 class URpgEquipmentSlotWidget;
+class URpgInventoryCarrySlotWidget;
 class URpgInventoryDragDropCoordinator;
 class URpgInventoryPanelNavigationCoordinator;
 class URpgInventorySpatialGridWidget;
-class URpgInventorySlotGroupPanelWidget;
+class URpgInventorySlotGroupWidget;
+class URpgInventorySlotGroupViewModel;
 class URpgPlayerInventoryViewModel;
-class UDragDropOperation;
+class UWidget;
+struct FRpgInventoryScreenPresentationContext;
 
 /**
  * Native base for the player inventory screen.
  *
- * It wires the player-inventory MVVM projection into named Blueprint widgets so the screen does not need manual
- * slot loops or per-entry coordinator setup. Gameplay state stays in inventory, layout, equipment, and actionbar
- * components; this widget only connects view models to CommonUI views.
+ * The native presenter owns exactly one screen-scoped player-inventory view model. The authored MVVM source reads
+ * that stable instance through GetPlayerInventoryViewModel and cannot replace it. The presenter then wires the
+ * read-only projection into named Blueprint widgets so the screen does not need manual slot loops or per-entry
+ * coordinator setup. Gameplay state stays in inventory, layout, equipment, and actionbar components; this widget
+ * only connects view models to CommonUI views.
  */
 UCLASS(Abstract, Blueprintable)
-class SURVIVALRPG_API URpgPlayerInventoryWidget : public URpgInventoryControllerActionsWidget
+class SURVIVALRPG_API URpgPlayerInventoryWidget : public URpgInventoryInteractionScreenWidget
 {
 	GENERATED_BODY()
 
 public:
 	explicit URpgPlayerInventoryWidget(const FObjectInitializer& ObjectInitializer = FObjectInitializer::Get());
 
-	/** Ensures the screen-local drag/drop coordinator exists and forwards it to all bound child widgets. */
-	UFUNCTION(BlueprintCallable, Category = "Inventory|Player")
-	void EnsurePlayerInventoryCoordinator();
+	/** Exact read-only PropertyPath MVVM source name authored in CUI_PlayerInventory. */
+	static const FName PlayerInventoryViewModelSourceName;
 
-	/** Ensures the screen-local panel navigator exists and is shared with controller action routing. */
-	UFUNCTION(BlueprintCallable, Category = "Inventory|Player")
-	void EnsurePlayerInventoryPanelNavigator();
-
-	/** Rebinds the aggregate player inventory VM to the owning player controller and refreshes all child views. */
-	UFUNCTION(BlueprintCallable, Category = "Inventory|Player")
-	void BindPlayerInventoryViewModel();
-
-	/** Pushes the latest slot-group VMs into CarryGroupsList and InventoryGroupsList. */
-	UFUNCTION(BlueprintCallable, Category = "Inventory|Player")
-	void RefreshSlotGroups();
-
-	/** Pushes the latest 1..8 actionbar slot VMs into ActionBarTileView. */
-	UFUNCTION(BlueprintCallable, Category = "Inventory|Player")
-	void RefreshActionBar();
-
-	/** Pushes the latest fixed armor and bag slot VMs into the optional gear widgets. */
-	UFUNCTION(BlueprintCallable, Category = "Inventory|Player")
-	void RefreshGearSlots();
-
-	/** Refreshes gear slots, slot groups, and actionbar preview from the aggregate VM. */
-	UFUNCTION(BlueprintCallable, Category = "Inventory|Player")
-	void RefreshPlayerInventoryViews();
-
-	/** Aggregate MVVM projection used by this screen. Created by the native base when missing. */
+	/**
+	 * Native-owned aggregate MVVM projection and the only valid source for CUI_PlayerInventory's PropertyPath.
+	 * Its UObject Outer is this widget, it exists before MVVM initializes, and it remains stable across pooling.
+	 */
 	UFUNCTION(BlueprintPure, Category = "Inventory|Player")
 	URpgPlayerInventoryViewModel* GetPlayerInventoryViewModel() const { return PlayerInventoryViewModel; }
 
@@ -69,55 +51,96 @@ public:
 
 protected:
 	virtual void NativeOnInitialized() override;
-	virtual void NativeOnActivated() override;
-	virtual void NativeOnDeactivated() override;
-	virtual bool NativeOnDragOver(const FGeometry& InGeometry, const FDragDropEvent& InDragDropEvent, UDragDropOperation* InOperation) override;
-	virtual bool NativeOnDrop(const FGeometry& InGeometry, const FDragDropEvent& InDragDropEvent, UDragDropOperation* InOperation) override;
-	virtual void NativeOnDragLeave(const FDragDropEvent& InDragDropEvent, UDragDropOperation* InOperation) override;
+	virtual void BindInventoryScreenPresentation() override;
+	virtual void UnbindInventoryScreenPresentation() override;
+	virtual void ForwardInventoryInteractionContextToChildren() override;
+	virtual void RegisterInventoryScreenNavigationPanels(
+		URpgInventoryPanelNavigationCoordinator* Navigator) override;
+	virtual void AppendInventoryScreenSpatialGrids(
+		TArray<URpgInventorySpatialGridWidget*>& OutGrids) const override;
+	virtual bool RouteInventoryPayloadToScreenSpecificTarget(
+		const FRpgInventoryDragPayload& Payload,
+		FVector2D GhostCenterScreenPosition,
+		bool bCommit,
+		bool& bOutTargetAddressed) override;
+	virtual void ClearInventoryScreenSpecificDragPreviews() override;
+	virtual bool UpdateInventoryScreenSpecificControllerDragVisual(
+		const FRpgInventoryDragPayload& Payload) override;
+	virtual void RefreshInventoryScreenSpecificInteractionPresentation(
+		ERpgInventoryInteractionPreviewState PreviewState,
+		bool bHasPayload,
+		bool bPendingRequest) override;
 
-	/** Blueprint hook after the native parent creates and assigns PlayerInventoryViewModel. */
-	UFUNCTION(BlueprintImplementableEvent, Category = "Inventory|Player", meta = (DisplayName = "On Player Inventory ViewModel Ready"))
-	void BP_OnPlayerInventoryViewModelReady(URpgPlayerInventoryViewModel* ViewModel);
+	/** Required freely placed Pockets spatial host; its projected group remains runtime read-only state. */
+	UPROPERTY(BlueprintReadOnly, meta = (BindWidget))
+	TObjectPtr<URpgInventorySlotGroupWidget> Content_Pockets = nullptr;
 
-	/** Optional spatial group panel for carry groups such as WeaponSlot1, ShieldSlot, and ToolSlot1. */
-	UPROPERTY(BlueprintReadOnly, meta = (BindWidgetOptional))
-	TObjectPtr<URpgInventorySlotGroupPanelWidget> CarryGroupsList = nullptr;
+	/** Required primary-weapon carry presenter. */
+	UPROPERTY(BlueprintReadOnly, meta = (BindWidget))
+	TObjectPtr<URpgInventoryCarrySlotWidget> Carry_Weapon1 = nullptr;
 
-	/** Optional spatial group panel for normal groups such as Pockets, Backpack, Belt, Pouch, and ResourceBag. */
-	UPROPERTY(BlueprintReadOnly, meta = (BindWidgetOptional))
-	TObjectPtr<URpgInventorySlotGroupPanelWidget> InventoryGroupsList = nullptr;
+	/** Required secondary-weapon carry presenter. */
+	UPROPERTY(BlueprintReadOnly, meta = (BindWidget))
+	TObjectPtr<URpgInventoryCarrySlotWidget> Carry_Weapon2 = nullptr;
 
-	/** Optional 1..8 actionbar preview/drop target inside the inventory screen. */
-	UPROPERTY(BlueprintReadOnly, meta = (BindWidgetOptional))
+	/** Required offhand carry presenter. */
+	UPROPERTY(BlueprintReadOnly, meta = (BindWidget))
+	TObjectPtr<URpgInventoryCarrySlotWidget> Carry_Offhand = nullptr;
+
+	/** Required static host for the currently equipped backpack's optional runtime container. */
+	UPROPERTY(BlueprintReadOnly, meta = (BindWidget))
+	TObjectPtr<URpgInventorySlotGroupWidget> Content_Backpack = nullptr;
+
+	/** Required static host for the currently equipped belt's optional runtime container. */
+	UPROPERTY(BlueprintReadOnly, meta = (BindWidget))
+	TObjectPtr<URpgInventorySlotGroupWidget> Content_Belt = nullptr;
+
+	/** Required static host for the currently equipped pouch's optional runtime container. */
+	UPROPERTY(BlueprintReadOnly, meta = (BindWidget))
+	TObjectPtr<URpgInventorySlotGroupWidget> Content_Pouch = nullptr;
+
+	/** Required static host for the currently equipped resource bag's optional runtime container. */
+	UPROPERTY(BlueprintReadOnly, meta = (BindWidget))
+	TObjectPtr<URpgInventorySlotGroupWidget> Content_ResourceBag = nullptr;
+
+	/** Required 1..8 actionbar preview/drop target inside the inventory screen. */
+	UPROPERTY(BlueprintReadOnly, meta = (BindWidget))
 	TObjectPtr<URpgActionBarTileView> ActionBarTileView = nullptr;
 
-	/** Optional fixed armor slot widgets. */
-	UPROPERTY(BlueprintReadOnly, meta = (BindWidgetOptional))
+	/** Required fixed head armor slot presenter. */
+	UPROPERTY(BlueprintReadOnly, meta = (BindWidget))
 	TObjectPtr<URpgEquipmentSlotWidget> Gear_Head = nullptr;
 
-	UPROPERTY(BlueprintReadOnly, meta = (BindWidgetOptional))
+	/** Required fixed chest armor slot presenter. */
+	UPROPERTY(BlueprintReadOnly, meta = (BindWidget))
 	TObjectPtr<URpgEquipmentSlotWidget> Gear_Chest = nullptr;
 
-	UPROPERTY(BlueprintReadOnly, meta = (BindWidgetOptional))
+	/** Required fixed hands armor slot presenter. */
+	UPROPERTY(BlueprintReadOnly, meta = (BindWidget))
 	TObjectPtr<URpgEquipmentSlotWidget> Gear_Hands = nullptr;
 
-	UPROPERTY(BlueprintReadOnly, meta = (BindWidgetOptional))
+	/** Required fixed legs armor slot presenter. */
+	UPROPERTY(BlueprintReadOnly, meta = (BindWidget))
 	TObjectPtr<URpgEquipmentSlotWidget> Gear_Legs = nullptr;
 
-	UPROPERTY(BlueprintReadOnly, meta = (BindWidgetOptional))
+	/** Required fixed feet armor slot presenter. */
+	UPROPERTY(BlueprintReadOnly, meta = (BindWidget))
 	TObjectPtr<URpgEquipmentSlotWidget> Gear_Feet = nullptr;
 
-	/** Optional bag/provider equipment slot widgets. */
-	UPROPERTY(BlueprintReadOnly, meta = (BindWidgetOptional))
+	/** Required backpack equipment slot presenter. */
+	UPROPERTY(BlueprintReadOnly, meta = (BindWidget))
 	TObjectPtr<URpgEquipmentSlotWidget> Gear_Backpack = nullptr;
 
-	UPROPERTY(BlueprintReadOnly, meta = (BindWidgetOptional))
+	/** Required belt equipment slot presenter. */
+	UPROPERTY(BlueprintReadOnly, meta = (BindWidget))
 	TObjectPtr<URpgEquipmentSlotWidget> Gear_Belt = nullptr;
 
-	UPROPERTY(BlueprintReadOnly, meta = (BindWidgetOptional))
+	/** Required pouch equipment slot presenter. */
+	UPROPERTY(BlueprintReadOnly, meta = (BindWidget))
 	TObjectPtr<URpgEquipmentSlotWidget> Gear_Pouch = nullptr;
 
-	UPROPERTY(BlueprintReadOnly, meta = (BindWidgetOptional))
+	/** Required resource-bag equipment slot presenter. */
+	UPROPERTY(BlueprintReadOnly, meta = (BindWidget))
 	TObjectPtr<URpgEquipmentSlotWidget> Gear_ResourceBag = nullptr;
 
 private:
@@ -130,29 +153,46 @@ private:
 	UFUNCTION()
 	void HandleActionBarSlotsChanged();
 
+	void RefreshCarrySlotPresentations();
 	void EnsurePlayerInventoryViewModel();
+	bool ValidatePlayerInventoryViewModelMvvmContract() const;
 	void BindViewModelDelegates();
-	void SetGearSlotViewModel(URpgEquipmentSlotWidget* GearSlotWidget, ERpgEquipmentSlot EquipmentSlot, bool bBagSlot) const;
-	void ForwardCoordinatorToChildren();
-	void RegisterPlayerInventoryNavigationPanels();
-	void QueueDeferredPlayerInventoryRefresh();
-	void ExecuteDeferredPlayerInventoryRefresh();
-	bool RouteInventoryPayloadAtScreenPosition(const FRpgInventoryDragPayload& Payload, FVector2D ScreenPosition, bool bCommit);
-	bool RoutePayloadToGearSlot(const FRpgInventoryDragPayload& Payload, FVector2D ScreenPosition, bool bCommit);
-	bool RoutePayloadToActionBar(const FRpgInventoryDragPayload& Payload, FVector2D ScreenPosition, bool bCommit);
-	bool RoutePayloadToSpatialGrid(const FRpgInventoryDragPayload& Payload, FVector2D ScreenPosition, bool bCommit);
-	void CollectSpatialGrids(TArray<URpgInventorySpatialGridWidget*>& OutGrids) const;
-	void ClearExternalDragPreviews();
+	void RefreshPlayerInventoryViews();
+	void RefreshSlotGroups();
+	void RefreshActionBar();
+	void RefreshGearSlots();
+	FRpgInventoryScreenPresentationContext MakeInventoryScreenPresentationContext();
+	void ReleasePlayerInventoryChildPresentations();
+	void SetGearSlotViewModel(
+		URpgEquipmentSlotWidget* GearSlotWidget,
+		ERpgEquipmentSlot EquipmentSlot,
+		bool bBagSlot);
+	bool RoutePayloadToGearSlot(
+		const FRpgInventoryDragPayload& Payload,
+		FVector2D GhostCenterScreenPosition,
+		bool bCommit,
+		bool& bOutTargetAddressed);
+	bool RoutePayloadToCarrySlot(
+		const FRpgInventoryDragPayload& Payload,
+		FVector2D GhostCenterScreenPosition,
+		bool bCommit,
+		bool& bOutTargetAddressed);
+	bool RoutePayloadToActionBar(
+		const FRpgInventoryDragPayload& Payload,
+		FVector2D GhostCenterScreenPosition,
+		bool bCommit,
+		bool& bOutTargetAddressed);
+	URpgInventorySlotGroupViewModel* FindEquipmentProvidedContentGroup(ERpgEquipmentSlot SourceEquipmentSlot) const;
+	void CollectStandaloneContentGroupWidgets(TArray<URpgInventorySlotGroupWidget*>& OutWidgets) const;
+	void CollectCarrySlotWidgets(TArray<URpgInventoryCarrySlotWidget*>& OutWidgets) const;
+	void CollectGearSlotWidgets(TArray<URpgEquipmentSlotWidget*>& OutWidgets) const;
+	void UpdateControllerCarryDragVisual(
+		const FRpgInventoryDragPayload& Payload,
+		URpgInventoryCarrySlotWidget* CarrySlotWidget);
+	URpgInventoryCarrySlotWidget* FindControllerPreviewCarrySlot() const;
 
 	UPROPERTY(Transient)
 	TObjectPtr<URpgPlayerInventoryViewModel> PlayerInventoryViewModel = nullptr;
 
-	UPROPERTY(Transient)
-	TObjectPtr<URpgInventoryDragDropCoordinator> PlayerDragDropCoordinator = nullptr;
-
-	UPROPERTY(Transient)
-	TObjectPtr<URpgInventoryPanelNavigationCoordinator> PlayerPanelNavigationCoordinator = nullptr;
-
-	bool bViewModelDelegatesBound = false;
-	bool bDeferredPlayerInventoryRefreshQueued = false;
+	mutable TSet<FName> ReportedInvalidPlayerBindings;
 };

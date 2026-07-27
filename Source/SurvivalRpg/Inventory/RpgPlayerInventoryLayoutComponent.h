@@ -9,6 +9,7 @@
 class URpgEquipmentLoadoutComponent;
 class URpgInventoryItemInstance;
 class URpgInventoryManagerComponent;
+class URpgPlayerInventoryLayoutDefinition;
 
 /** Gameplay message emitted when the player's inventory layout groups or capacity should be refreshed by UI. */
 USTRUCT(BlueprintType)
@@ -43,11 +44,27 @@ class SURVIVALRPG_API URpgPlayerInventoryLayoutComponent : public UControllerCom
 public:
 	explicit URpgPlayerInventoryLayoutComponent(const FObjectInitializer& ObjectInitializer = FObjectInitializer::Get());
 
-	virtual void BeginPlay() override;
+	/** Returns the immutable layout selected by the owning controller's replicated PlayerState PawnData. */
+	const URpgPlayerInventoryLayoutDefinition* GetLayoutDefinition() const;
+
+	/** Re-evaluates PawnData-backed layout state and notifies server gameplay or owning-client presentation. */
+	void RefreshLayoutFromPawnData();
 
 	/** Returns all active slot groups in stable visual/global order. */
 	UFUNCTION(BlueprintCallable, BlueprintPure = false, Category = "Inventory|Layout")
 	TArray<FRpgInventorySlotGroupView> GetSlotGroups() const;
+
+	/** Resolves exactly one static group by its explicit semantic role; missing or duplicate roles fail closed. */
+	UFUNCTION(BlueprintCallable, BlueprintPure = false, Category = "Inventory|Layout")
+	bool TryGetSlotGroupBySemanticRole(FGameplayTag SemanticRole, FRpgInventorySlotGroupView& OutGroup) const;
+
+	/** Returns the unique semantic role authored for an addressed static group. */
+	UFUNCTION(BlueprintCallable, BlueprintPure = false, Category = "Inventory|Layout")
+	bool TryGetSemanticRoleForAddress(const FRpgInventorySlotAddress& Address, FGameplayTag& OutSemanticRole) const;
+
+	/** Builds the first-cell address for exactly one static group with SemanticRole. */
+	UFUNCTION(BlueprintCallable, BlueprintPure = false, Category = "Inventory|Layout")
+	bool TryMakeSlotAddressForSemanticRole(FGameplayTag SemanticRole, FRpgInventorySlotAddress& OutAddress) const;
 
 	/** Returns the total number of grid cells currently exposed by this layout. */
 	UFUNCTION(BlueprintCallable, BlueprintPure = false, Category = "Inventory|Layout")
@@ -61,15 +78,15 @@ public:
 	UFUNCTION(BlueprintCallable, BlueprintPure = false, Category = "Inventory|Layout")
 	bool TryMakeSlotAddressFromPlacement(const FRpgInventoryGridPlacement& Placement, FRpgInventorySlotAddress& OutAddress) const;
 
-	/** Returns the dimensions of one active logical grid container. */
+	/** Returns dimensions for an unambiguous root or item-owned container handle. */
 	UFUNCTION(BlueprintCallable, BlueprintPure = false, Category = "Inventory|Layout")
-	bool GetGridSizeForContainer(FName ContainerId, FRpgInventoryGridSize& OutGridSize) const;
+	bool GetGridSizeForContainerHandle(FRpgInventoryContainerHandle ContainerHandle, FRpgInventoryGridSize& OutGridSize) const;
 
 	/** Returns the item currently stored at a logical player-inventory slot address. */
 	UFUNCTION(BlueprintCallable, BlueprintPure = false, Category = "Inventory|Layout")
 	URpgInventoryItemInstance* GetItemInSlotAddress(const FRpgInventorySlotAddress& Address) const;
 
-	/** Returns true when the addressed slot exists and the item satisfies the group's server-side rule. */
+	/** Returns true when the addressed slot exists and the item satisfies both its group rule and shared Equipment policy. */
 	UFUNCTION(BlueprintCallable, BlueprintPure = false, Category = "Inventory|Layout")
 	bool CanItemUseSlotAddress(URpgInventoryItemInstance* Item, const FRpgInventorySlotAddress& Address) const;
 
@@ -85,6 +102,10 @@ public:
 	UFUNCTION(BlueprintCallable, BlueprintPure = false, Category = "Inventory|Layout")
 	bool IsCarrySlotAddress(const FRpgInventorySlotAddress& Address) const;
 
+	/** Resolves the explicit typed role for a valid Gear or Carry address; malformed definition data fails closed. */
+	UFUNCTION(BlueprintCallable, BlueprintPure = false, Category = "Inventory|Layout")
+	bool TryGetEquipmentSlotRoleForAddress(const FRpgInventorySlotAddress& Address, ERpgEquipmentSlot& OutEquipmentSlot) const;
+
 	/** Returns true when the addressed group is a dedicated gear slot such as Gear.Head or Gear.Backpack. */
 	UFUNCTION(BlueprintCallable, BlueprintPure = false, Category = "Inventory|Layout")
 	bool IsGearSlotAddress(const FRpgInventorySlotAddress& Address) const;
@@ -93,7 +114,7 @@ public:
 	UFUNCTION(BlueprintCallable, BlueprintPure = false, Category = "Inventory|Layout")
 	bool IsContentSlotAddress(const FRpgInventorySlotAddress& Address) const;
 
-	/** Applies the current layout cell count to the player inventory as a fixed entry capacity on the server. */
+	/** Keeps the spatial player inventory grid-driven, then broadcasts that its active layout should be re-evaluated. */
 	UFUNCTION(BlueprintCallable, BlueprintAuthorityOnly, Category = "Inventory|Layout")
 	void ApplyLayoutCapacityToInventory();
 
@@ -101,32 +122,32 @@ public:
 	UFUNCTION(BlueprintCallable, BlueprintPure, Category = "Inventory|Layout")
 	static bool IsSlotContainerEquipmentSlot(ERpgEquipmentSlot EquipmentSlot);
 
-	/** Returns true when the provider item in EquipmentSlot can be removed without hiding occupied slots. */
+	/** Returns whether the provider item can leave EquipmentSlot; item-owned contents travel with their provider. */
 	UFUNCTION(BlueprintCallable, BlueprintPure = false, Category = "Inventory|Layout")
 	bool CanUnequipSlotContainer(ERpgEquipmentSlot EquipmentSlot) const;
 
-	/** Returns true when a logical container id is one of the built-in carry slot containers. */
-	UFUNCTION(BlueprintCallable, BlueprintPure, Category = "Inventory|Layout")
-	static bool IsBuiltInCarryGroupId(FName GroupId);
+	/** Returns true only when the complete graph address resolves to a valid, uniquely typed static Gear group. */
+	UFUNCTION(BlueprintCallable, BlueprintPure = false, Category = "Inventory|Layout")
+	bool IsGearContainer(FRpgInventoryContainerHandle ContainerHandle) const;
 
-	/** Returns true when a logical container id is one of the built-in dedicated gear slot containers. */
-	UFUNCTION(BlueprintCallable, BlueprintPure, Category = "Inventory|Layout")
-	static bool IsBuiltInGearGroupId(FName GroupId);
+	/**
+	 * Returns whether the PawnData layout passes the physical-root and typed-Gear subset of shared validation.
+	 * Semantic/actionbar diagnostics do not widen this destructive-operation preflight beyond classification safety.
+	 */
+	bool HasValidStaticEquipmentRoleContract() const;
 
-	/** Builds the logical gear-slot address for an equipment slot such as Head or Backpack. */
-	UFUNCTION(BlueprintCallable, BlueprintPure, Category = "Inventory|Layout")
-	static bool TryMakeGearSlotAddress(ERpgEquipmentSlot EquipmentSlot, FRpgInventorySlotAddress& OutAddress);
+	/** Builds the logical address for exactly one static Gear group with the requested typed role. */
+	UFUNCTION(BlueprintCallable, BlueprintPure = false, Category = "Inventory|Layout")
+	bool TryMakeGearSlotAddress(ERpgEquipmentSlot EquipmentSlot, FRpgInventorySlotAddress& OutAddress) const;
 
-	/** Resolves a Gear.* group id back to its equipment slot. */
-	UFUNCTION(BlueprintCallable, BlueprintPure, Category = "Inventory|Layout")
-	static bool TryGetEquipmentSlotForGearGroupId(FName GroupId, ERpgEquipmentSlot& OutEquipmentSlot);
+	/** Resolves a complete static Gear container to its explicit typed role; duplicates and item-owned handles fail closed. */
+	UFUNCTION(BlueprintCallable, BlueprintPure = false, Category = "Inventory|Layout")
+	bool TryGetEquipmentSlotForGearContainer(FRpgInventoryContainerHandle ContainerHandle, ERpgEquipmentSlot& OutEquipmentSlot) const;
 
-	/** Built-in group ids used by carry/actionbar UI. */
+	/** Default layout ids retained as physical address identity and automation-fixture defaults. */
 	static const FName WeaponSlot1GroupId;
 	static const FName WeaponSlot2GroupId;
 	static const FName ShieldSlotGroupId;
-	static const FName ToolSlot1GroupId;
-	static const FName ToolSlot2GroupId;
 	static const FName PocketsGroupId;
 	static const FName GearHeadGroupId;
 	static const FName GearChestGroupId;
@@ -142,12 +163,9 @@ private:
 	URpgInventoryManagerComponent* FindPlayerInventory() const;
 	URpgEquipmentLoadoutComponent* FindEquipmentLoadout() const;
 	TArray<FRpgInventorySlotGroupView> BuildSlotGroups() const;
-	void AppendGroupViews(const TArray<FRpgInventorySlotGroupDefinition>& GroupDefinitions, bool bProvidedByEquipment, ERpgEquipmentSlot SourceEquipmentSlot, TArray<FRpgInventorySlotGroupView>& OutGroups) const;
+	void AppendStaticGroupViews(
+		const URpgPlayerInventoryLayoutDefinition& LayoutDefinition,
+		TArray<FRpgInventorySlotGroupView>& OutGroups) const;
+	void AppendItemContainerViews(const URpgInventoryItemInstance* ProviderItem, ERpgEquipmentSlot SourceEquipmentSlot, TArray<FRpgInventorySlotGroupView>& OutGroups) const;
 	void BroadcastLayoutChanged() const;
-	static FName EquipmentSlotToSourceName(ERpgEquipmentSlot EquipmentSlot);
-	static FRpgInventorySlotGroupDefinition MakeStaticGroup(FName ContainerId, const FText& DisplayName, int32 GridWidth, int32 GridHeight, const TArray<ERpgInventoryItemCategory>& AllowedCategories, bool bActionbarBindable, bool bCarrySlot, ERpgInventorySlotGroupKind GroupKind);
-
-	/** Built-in body/carry/content containers. Runtime item-provider containers are appended after these. */
-	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Inventory|Layout", meta = (AllowPrivateAccess = "true", TitleProperty = "ContainerId"))
-	TArray<FRpgInventorySlotGroupDefinition> StaticSlotGroups;
 };

@@ -25,8 +25,5 @@ ARpgCraftingStationActor::ARpgCraftingStationActor(const FObjectInitializer& Obj
 	CraftingStationComponent = CreateDefaultSubobject<URpgCraftingStationComponent>(TEXT("CraftingStationComponent"));
 
 	OutputInventoryComponent = CreateDefaultSubobject<URpgInventoryManagerComponent>(TEXT("OutputInventoryComponent"));
-	OutputInventoryComponent->SetCapacityMode(ERpgInventoryCapacityMode::FixedEntries);
-	OutputInventoryComponent->SetFixedMaxEntries(4);
-
 	CraftingStationComponent->SetOutputInventoryManager(OutputInventoryComponent);
 }

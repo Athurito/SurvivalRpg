@@ -6,8 +6,6 @@
 #include "SurvivalRpg/GameplayTags/RpgGameplayTags.h"
 #include "SurvivalRpg/Inventory/RpgInventoryContainerComponent.h"
 #include "SurvivalRpg/Inventory/RpgInventoryManagerComponent.h"
-#include "SurvivalRpg/UI/RpgUIScreenBlueprintLibrary.h"
-#include "SurvivalRpg/UI/RpgUIScreenPayload.h"
 
 #include UE_INLINE_GENERATED_CPP_BY_NAME(RpgGameplayAbility_OpenStorageContainer)
 
@@ -60,14 +58,7 @@ void URpgGameplayAbility_OpenStorageContainer::ActivateAbility(
 		return;
 	}
 
-	URpgInventoryScreenPayload* Payload = NewObject<URpgInventoryScreenPayload>(PlayerController);
-	Payload->ScreenTag = RpgGameplayTags::UI_Screen_Storage;
-	Payload->PrimaryInventory = PlayerInventory;
-	Payload->SecondaryInventory = ContainerInventory;
-	Payload->ContextActor = TargetActor;
-	Payload->ContextComponent = ContainerComponent;
-
-	URpgUIScreenBlueprintLibrary::OpenUIScreen(PlayerController, RpgGameplayTags::UI_Screen_Storage, Payload);
+	PlayerController->OpenStorageInventory(PlayerInventory, ContainerInventory, TargetActor);
 
 	EndAbility(Handle, ActorInfo, ActivationInfo, false, false);
 }

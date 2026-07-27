@@ -11,8 +11,6 @@ class ARpgPlayerController;
 class URpgInventoryItemDefinition;
 class URpgInventoryItemInstance;
 class URpgInventoryManagerComponent;
-class URpgEquipmentLoadoutComponent;
-class URpgPlayerInventoryLayoutComponent;
 
 USTRUCT(BlueprintType)
 struct SURVIVALRPG_API FRpgStarterInventoryEntry
@@ -25,11 +23,11 @@ struct SURVIVALRPG_API FRpgStarterInventoryEntry
 	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Starter Inventory", meta = (ClampMin = "1", UIMin = "1"))
 	int32 StackCount = 1;
 
-	/** If true, the granted item is assigned to EquipmentSlot after being added to the player's inventory. */
+	/** If true, the granted item is moved through the authoritative Inventory action into EquipmentSlot. */
 	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Starter Inventory")
 	bool bAssignToEquipment = true;
 
-	/** Equipment slot used when bAssignToEquipment is true. MainHand, OffHand, and armor slots are supported. */
+	/** Exact Gear or hand role requested after grant; hand roles also require a compatible physical Carry slot. */
 	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Starter Inventory", meta = (EditCondition = "bAssignToEquipment"))
 	ERpgEquipmentSlot EquipmentSlot = ERpgEquipmentSlot::MainHand;
 };
@@ -73,9 +71,6 @@ private:
 	void TryGrantStarterInventory();
 	void ScheduleRetry();
 	bool ShouldWaitForPawn(const ARpgPlayerController* PlayerController) const;
-	static bool TryMoveItemToFirstCompatibleCarrySlot(URpgPlayerInventoryLayoutComponent* InventoryLayout, URpgInventoryManagerComponent* Inventory, URpgInventoryItemInstance* ItemInstance);
-	static bool TryMoveItemToEquipmentSlot(URpgPlayerInventoryLayoutComponent* InventoryLayout, URpgInventoryManagerComponent* Inventory, ERpgEquipmentSlot EquipmentSlot, URpgInventoryItemInstance* ItemInstance);
-	static bool EquipmentLoadoutContainsItem(const URpgEquipmentLoadoutComponent* EquipmentLoadout, const URpgInventoryItemInstance* ItemInstance);
 
 	UPROPERTY(Transient)
 	bool bHasTriedGrant = false;

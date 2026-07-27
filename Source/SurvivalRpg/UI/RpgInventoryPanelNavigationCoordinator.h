@@ -8,10 +8,10 @@
 class APlayerController;
 class URpgActionBarTileView;
 class URpgEquipmentSlotWidget;
+class URpgInventoryCarrySlotWidget;
 class URpgInventoryDragDropCoordinator;
 class URpgInventoryManagerComponent;
 class URpgInventorySpatialGridWidget;
-class URpgInventoryTileView;
 class UWidget;
 
 /** One focusable inventory panel registered for controller LB/RB navigation. */
@@ -23,10 +23,6 @@ struct SURVIVALRPG_API FRpgInventoryPanelNavigationEntry
 	/** Stable id used by screen widgets to identify this panel, for example PlayerInventory or Storage. */
 	UPROPERTY(BlueprintReadWrite, Category = "Inventory|Navigation")
 	FName PanelId;
-
-	/** TileView that receives controller focus while this panel is active. */
-	UPROPERTY(BlueprintReadWrite, Category = "Inventory|Navigation")
-	TObjectPtr<URpgInventoryTileView> TileView = nullptr;
 
 	/** Spatial grid that receives controller focus while this fixed-layout inventory panel is active. */
 	UPROPERTY(BlueprintReadWrite, Category = "Inventory|Navigation")
@@ -40,7 +36,11 @@ struct SURVIVALRPG_API FRpgInventoryPanelNavigationEntry
 	UPROPERTY(BlueprintReadWrite, Category = "Inventory|Navigation")
 	TObjectPtr<URpgEquipmentSlotWidget> EquipmentSlotWidget = nullptr;
 
-	/** Inventory represented by the TileView; used for shortcut routing. */
+	/** Gear-like single-address carry slot that receives focus without exposing a fake 1x1 spatial grid. */
+	UPROPERTY(BlueprintReadWrite, Category = "Inventory|Navigation")
+	TObjectPtr<URpgInventoryCarrySlotWidget> CarrySlotWidget = nullptr;
+
+	/** Inventory represented by this panel; used for shortcut routing. */
 	UPROPERTY(BlueprintReadWrite, Category = "Inventory|Navigation")
 	TObjectPtr<URpgInventoryManagerComponent> Inventory = nullptr;
 
@@ -57,7 +57,13 @@ struct SURVIVALRPG_API FRpgInventoryPanelNavigationEntry
 	int32 LastSelectedSlotIndex = INDEX_NONE;
 };
 
-DECLARE_DYNAMIC_MULTICAST_DELEGATE_FourParams(FRpgInventoryActivePanelChanged, FName, PanelId, int32, PanelIndex, URpgInventoryTileView*, TileView, URpgInventoryManagerComponent*, Inventory);
+DECLARE_DYNAMIC_MULTICAST_DELEGATE_TwoParams(
+	FRpgInventoryActivePanelChanged,
+	FName,
+	PanelId,
+	int32,
+	PanelIndex);
+DECLARE_DYNAMIC_MULTICAST_DELEGATE(FRpgInventoryActiveSelectionChanged);
 
 /**
  * UI-local controller navigation helper for inventory screens with multiple panels.
@@ -83,9 +89,13 @@ public:
 	UFUNCTION(BlueprintCallable, Category = "Inventory|Navigation")
 	void ClearPanels();
 
-	/** Registers one focusable inventory panel for LB/RB controller navigation. */
+	/** Begins an in-place panel registration pass while retaining active panel and per-panel selection memory. */
 	UFUNCTION(BlueprintCallable, Category = "Inventory|Navigation")
-	void RegisterInventoryPanel(FName PanelId, URpgInventoryTileView* TileView, URpgInventoryManagerComponent* Inventory);
+	void BeginPanelRefresh();
+
+	/** Finishes a registration pass and restores the previously active surviving panel and its focus target. */
+	UFUNCTION(BlueprintCallable, Category = "Inventory|Navigation")
+	void EndPanelRefresh();
 
 	/** Registers one focusable spatial inventory grid for LB/RB controller navigation. */
 	UFUNCTION(BlueprintCallable, Category = "Inventory|Navigation")
@@ -99,9 +109,9 @@ public:
 	UFUNCTION(BlueprintCallable, Category = "Inventory|Navigation")
 	void RegisterEquipmentPanel(FName PanelId, URpgEquipmentSlotWidget* EquipmentSlotWidget);
 
-	/** Called by registered TileViews when CommonUI selection moves into or within a panel. */
+	/** Registers one gear-like Weapon1, Weapon2, or Offhand carry address as a single controller panel. */
 	UFUNCTION(BlueprintCallable, Category = "Inventory|Navigation")
-	void NotifyPanelSelectionChanged(URpgInventoryTileView* TileView, UObject* SelectedItem);
+	void RegisterCarrySlotPanel(FName PanelId, URpgInventoryCarrySlotWidget* CarrySlotWidget);
 
 	/** Called by registered spatial grids when their logical cursor moves into or within a panel. */
 	UFUNCTION(BlueprintCallable, Category = "Inventory|Navigation")
@@ -110,6 +120,14 @@ public:
 	/** Called by registered actionbar TileViews when CommonUI selection moves into or within the actionbar panel. */
 	UFUNCTION(BlueprintCallable, Category = "Inventory|Navigation")
 	void NotifyActionBarPanelSelectionChanged(URpgActionBarTileView* TileView, UObject* SelectedItem);
+
+	/** Called when a registered single-address carry slot receives CommonUI or pointer focus. */
+	UFUNCTION(BlueprintCallable, Category = "Inventory|Navigation")
+	void NotifyCarrySlotFocused(URpgInventoryCarrySlotWidget* CarrySlotWidget);
+
+	/** Called when a registered equipment slot receives CommonUI or pointer focus. */
+	UFUNCTION(BlueprintCallable, Category = "Inventory|Navigation")
+	void NotifyEquipmentSlotFocused(URpgEquipmentSlotWidget* EquipmentSlotWidget);
 
 	/** Activates a registered panel by id and focuses a sensible entry. */
 	UFUNCTION(BlueprintCallable, Category = "Inventory|Navigation")
@@ -139,10 +157,6 @@ public:
 	UFUNCTION(BlueprintPure, Category = "Inventory|Navigation")
 	FName GetActivePanelId() const;
 
-	/** Active panel TileView, or null when no panel is active. */
-	UFUNCTION(BlueprintPure, Category = "Inventory|Navigation")
-	URpgInventoryTileView* GetActiveTileView() const;
-
 	/** Active spatial grid, or null when no spatial panel is active. */
 	UFUNCTION(BlueprintPure, Category = "Inventory|Navigation")
 	URpgInventorySpatialGridWidget* GetActiveSpatialGridWidget() const;
@@ -155,6 +169,10 @@ public:
 	UFUNCTION(BlueprintPure, Category = "Inventory|Navigation")
 	URpgEquipmentSlotWidget* GetActiveEquipmentSlotWidget() const;
 
+	/** Active gear-like carry slot, or null when another panel type is active. */
+	UFUNCTION(BlueprintPure, Category = "Inventory|Navigation")
+	URpgInventoryCarrySlotWidget* GetActiveCarrySlotWidget() const;
+
 	/** Active focus target widget for CommonUI, regardless of panel implementation. */
 	UFUNCTION(BlueprintPure, Category = "Inventory|Navigation")
 	UWidget* GetActiveFocusTarget() const;
@@ -162,6 +180,22 @@ public:
 	/** Active panel inventory, or null when no panel is active. */
 	UFUNCTION(BlueprintPure, Category = "Inventory|Navigation")
 	URpgInventoryManagerComponent* GetActiveInventory() const;
+
+	/** Whether the current selection can expose the full-stack transfer shortcut in the action bar. */
+	UFUNCTION(BlueprintPure, Category = "Inventory|Navigation|Availability")
+	bool CanQuickTransferActiveSelection() const;
+
+	/** Whether the current selection can split, or the held payload can use the shared rotate shortcut. */
+	UFUNCTION(BlueprintPure, Category = "Inventory|Navigation|Availability")
+	bool CanQuickSplitActiveSelection() const;
+
+	/** Whether the current selection has a usable, equippable, carry, or unequip action. */
+	UFUNCTION(BlueprintPure, Category = "Inventory|Navigation|Availability")
+	bool CanUseOrEquipActiveSelection() const;
+
+	/** Whether the current selection represents an item that may submit a drop request. */
+	UFUNCTION(BlueprintPure, Category = "Inventory|Navigation|Availability")
+	bool CanDropActiveSelection() const;
 
 	/** Runs quick transfer on the active panel selection when supported. */
 	UFUNCTION(BlueprintCallable, Category = "Inventory|Navigation")
@@ -179,9 +213,22 @@ public:
 	UFUNCTION(BlueprintCallable, Category = "Inventory|Navigation")
 	bool DropActiveSelection(int32 StackCount = 0, bool bConfirmed = false);
 
+	/**
+	 * Opens the context menu for the active spatial, gear, or carry selection.
+	 *
+	 * The source leaf resolves its absolute Slate anchor. Player-screen center is used only when that geometry is
+	 * not yet usable, so callers cannot accidentally pass viewport-local or sentinel coordinates.
+	 */
+	UFUNCTION(BlueprintCallable, Category = "Inventory|Navigation")
+	bool RequestContextMenuForActiveSelection();
+
 	/** Fired after active panel focus changes so Blueprints can update borders/headers. */
 	UPROPERTY(BlueprintAssignable, Category = "Inventory|Navigation")
 	FRpgInventoryActivePanelChanged OnActivePanelChanged;
+
+	/** Fired for selection changes inside the active panel so CommonUI hints can update without rebuilding bindings. */
+	UPROPERTY(BlueprintAssignable, Category = "Inventory|Navigation")
+	FRpgInventoryActiveSelectionChanged OnActiveSelectionChanged;
 
 private:
 	bool IsValidPanelIndex(int32 PanelIndex) const;
@@ -189,12 +236,13 @@ private:
 	void UpdatePanelSelectionMemory(FRpgInventoryPanelNavigationEntry& Panel) const;
 	bool RestorePanelSelection(FRpgInventoryPanelNavigationEntry& Panel) const;
 	void ApplyActivePanelState();
-	void UpdateShortcutRoutesForActivePanel(const FRpgInventoryPanelNavigationEntry& ActivePanel);
-	int32 FindPanelIndexForTileView(const URpgInventoryTileView* TileView) const;
+	void UpdateFocusedInventoryForActivePanel(const FRpgInventoryPanelNavigationEntry& ActivePanel);
 	int32 FindPanelIndexForSpatialGridWidget(const URpgInventorySpatialGridWidget* SpatialGridWidget) const;
 	int32 FindPanelIndexForActionBarTileView(const URpgActionBarTileView* TileView) const;
 	int32 FindPanelIndexForEquipmentSlotWidget(const URpgEquipmentSlotWidget* EquipmentSlotWidget) const;
+	int32 FindPanelIndexForCarrySlotWidget(const URpgInventoryCarrySlotWidget* CarrySlotWidget) const;
 	void BroadcastActivePanelChanged(const FRpgInventoryPanelNavigationEntry& ActivePanel);
+	void ApplyRetainedPanelMemory(FRpgInventoryPanelNavigationEntry& Panel) const;
 
 	UPROPERTY(Transient)
 	TObjectPtr<APlayerController> PlayerController = nullptr;
@@ -208,5 +256,12 @@ private:
 	UPROPERTY(Transient)
 	int32 ActivePanelIndex = INDEX_NONE;
 
+	UPROPERTY(Transient)
+	TMap<FName, FRpgInventoryPanelNavigationEntry> RetainedPanelMemories;
+
+	UPROPERTY(Transient)
+	FName RetainedActivePanelId = NAME_None;
+
 	bool bSuppressPanelSelectionNotifications = false;
+	bool bPanelRefreshInProgress = false;
 };

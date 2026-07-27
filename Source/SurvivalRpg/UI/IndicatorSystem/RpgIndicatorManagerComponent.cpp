@@ -3,9 +3,7 @@
 
 #include "RpgIndicatorManagerComponent.h"
 
-#include "GameFramework/PlayerController.h"
 #include "IndicatorDescriptor.h"
-#include "RpgIndicatorHostWidget.h"
 
 
 URpgIndicatorManagerComponent::URpgIndicatorManagerComponent(const FObjectInitializer& ObjectInitializer)
@@ -23,33 +21,6 @@ URpgIndicatorManagerComponent::URpgIndicatorManagerComponent(const FObjectInitia
 	}
 
 	return nullptr;
-}
-
-void URpgIndicatorManagerComponent::BeginPlay()
-{
-	Super::BeginPlay();
-
-	APlayerController* PlayerController = Cast<APlayerController>(GetOwner());
-	if (PlayerController && PlayerController->IsLocalController())
-	{
-		HostWidget = CreateWidget<URpgIndicatorHostWidget>(PlayerController, URpgIndicatorHostWidget::StaticClass());
-		if (HostWidget)
-		{
-			HostWidget->AddToPlayerScreen(-10);
-		}
-	}
-}
-
-void URpgIndicatorManagerComponent::EndPlay(const EEndPlayReason::Type EndPlayReason)
-{
-	if (HostWidget)
-	{
-		HostWidget->RemoveFromParent();
-		HostWidget = nullptr;
-	}
-
-	Indicators.Reset();
-	Super::EndPlay(EndPlayReason);
 }
 
 void URpgIndicatorManagerComponent::AddIndicator(UIndicatorDescriptor* IndicatorDescriptor)

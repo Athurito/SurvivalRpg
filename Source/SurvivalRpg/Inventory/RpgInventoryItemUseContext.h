@@ -1,11 +1,15 @@
 #pragma once
 
+#include "Delegates/Delegate.h"
 #include "UObject/Object.h"
 
 #include "RpgInventoryItemUseContext.generated.h"
 
 class URpgInventoryItemInstance;
 class URpgInventoryManagerComponent;
+
+/** Server-only validation invoked immediately before a configured item consume commits. */
+DECLARE_DELEGATE_RetVal(bool, FRpgInventoryUseConsumePreflight);
 
 /**
  * Transient server-side source object passed into one-shot item-use abilities.
@@ -21,6 +25,16 @@ class SURVIVALRPG_API URpgInventoryItemUseContext : public UObject
 public:
 	/** Initializes the context immediately before GAS activates the item-use ability. */
 	void Initialize(URpgInventoryManagerComponent* InInventory, URpgInventoryItemInstance* InItemInstance, int32 InRequestedUseCount, int32 InConsumeCount);
+
+	/**
+	 * Registers server-side cleanup that runs exactly when a non-zero consume commits.
+	 * This keeps delayed ability-sequence consumption aligned with loadout and UI mirrors.
+	 */
+	void SetConsumeSucceededCallback(FSimpleDelegate InCallback);
+
+	/** Registers a final server-side validation that runs immediately before non-zero consumption. */
+	void SetConsumePreflightCallback(
+		FRpgInventoryUseConsumePreflight InCallback);
 
 	/** Attempts to consume the configured stack count once. Returns true for zero-consume items. */
 	UFUNCTION(BlueprintCallable, BlueprintAuthorityOnly, Category = "Inventory|Use")
@@ -45,4 +59,11 @@ public:
 	/** True once TryConsume has succeeded or the context was configured with zero consumption. */
 	UPROPERTY(BlueprintReadOnly, Category = "Inventory|Use")
 	bool bConsumed = false;
+
+private:
+	/** Runtime-only final validator used for loadout-sensitive delayed consumption. */
+	FRpgInventoryUseConsumePreflight ConsumePreflightCallback;
+
+	/** Runtime-only completion hook owned by the authoritative request that created this context. */
+	FSimpleDelegate ConsumeSucceededCallback;
 };

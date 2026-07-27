@@ -214,7 +214,7 @@ public:
 	UFUNCTION(BlueprintCallable, BlueprintPure = false, Category = "Crafting|Recipes")
 	bool CanCraftRecipeQuantity(AActor* RequestingActor, const URpgCraftingRecipeDefinition* RecipeDefinition, int32 Quantity) const;
 
-	/** Returns the maximum quantity the requesting actor can currently enqueue from available resources. */
+	/** Returns the maximum quantity currently accepted by authority after access, queue, output, unlock, and aggregated resource checks. */
 	UFUNCTION(BlueprintCallable, BlueprintPure = false, Category = "Crafting|Recipes")
 	int32 GetMaxCraftableQuantity(AActor* RequestingActor, const URpgCraftingRecipeDefinition* RecipeDefinition) const;
 
@@ -270,15 +270,15 @@ public:
 	UFUNCTION(BlueprintCallable, Category = "Crafting|Output")
 	void SetOutputInventoryManager(URpgInventoryManagerComponent* InOutputInventory);
 
-	/** Returns true when every output can either auto-deposit or fit into the output inventory. */
+	/** Validates a non-empty output list. Storage fit is not required because valid overflow falls back to an authoritative world pickup. */
 	UFUNCTION(BlueprintCallable, BlueprintPure = false, Category = "Crafting|Output")
 	bool CanAcceptCraftingOutputs(const TArray<FRpgCraftingOutputItem>& OutputItems) const;
 
-	/** Adds already-crafted outputs to base storage/armory and the output inventory. Server-authoritative. */
+	/** Adds outputs to base storage/armory or station inventory, then world-drops any valid overflow. Server-authoritative. */
 	UFUNCTION(BlueprintCallable, BlueprintAuthorityOnly, Category = "Crafting|Output")
 	bool AddCraftingOutputs(const TArray<FRpgCraftingOutputItem>& OutputItems);
 
-	/** Convenience V1 craft path: verifies output room, consumes costs, then stores outputs. */
+	/** Convenience V1 craft path: validates outputs, consumes aggregated costs, then stores or world-drops outputs. */
 	UFUNCTION(BlueprintCallable, BlueprintAuthorityOnly, Category = "Crafting")
 	bool CraftItems(AActor* RequestingActor, const TArray<FRpgCraftingResourceCost>& RequiredItems, const TArray<FRpgCraftingOutputItem>& OutputItems);
 
@@ -367,12 +367,27 @@ protected:
 	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Crafting|Output")
 	bool bAutoDepositInstanceOutputsToArmory = true;
 
-	/** Output inventory used when auto-deposit is disabled or linked storage is full. Usually a fixed 4-slot component. */
+	/** Output inventory used when auto-deposit is disabled or linked storage is full. Its root grid is the authored output tray. */
 	UPROPERTY(EditInstanceOnly, BlueprintReadOnly, Category = "Crafting|Output")
 	TObjectPtr<URpgInventoryManagerComponent> OutputInventoryComponent;
 
-	/** Fixed slot count configured on output inventories assigned through SetOutputInventoryManager. */
-	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Crafting|Output", meta = (ClampMin = "0", UIMin = "0"))
+	/**
+	 * Uses the output inventory's authored spatial grid as its sole capacity contract.
+	 * Keep enabled for Tarkov-style output trays; disable only for a deliberate legacy entry-count cap.
+	 */
+	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Crafting|Output")
+	bool bUseSpatialOutputCapacity = true;
+
+	/** Legacy top-level entry cap used only when bUseSpatialOutputCapacity is disabled. */
+	UPROPERTY(
+		EditAnywhere,
+		BlueprintReadOnly,
+		Category = "Crafting|Output",
+		meta = (
+			EditCondition = "!bUseSpatialOutputCapacity",
+			EditConditionHides,
+			ClampMin = "0",
+			UIMin = "0"))
 	int32 OutputSlotCount = 4;
 
 	/** Maximum number of active plus queued jobs this station accepts. */
@@ -407,6 +422,7 @@ private:
 	UFUNCTION()
 	void OnRep_CraftingState();
 
+	bool IsRecipeOfferedByStation(const URpgCraftingRecipeDefinition* RecipeDefinition) const;
 	URpgBaseStorageComponent* GetLinkedBaseStorage() const;
 	URpgInventoryManagerComponent* GetLinkedArmoryInventory() const;
 	int32 GetAvailableInventoryResourceCount(TSubclassOf<URpgInventoryItemDefinition> ItemDefinition, const TArray<URpgInventoryManagerComponent*>& ResourceInventories) const;

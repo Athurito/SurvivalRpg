@@ -3,13 +3,13 @@
 #include "Engine/DataTable.h"
 #include "Input/UIActionBindingHandle.h"
 #include "RpgActivatableWidget.h"
+#include "SurvivalRpg/Inventory/RpgInventoryDragDropCoordinator.h"
+#include "SurvivalRpg/Inventory/RpgInventoryDragDropTypes.h"
 
 #include "RpgInventoryControllerActionsWidget.generated.h"
 
 class URpgInventoryDragDropCoordinator;
-class URpgInventoryManagerComponent;
 class URpgInventoryPanelNavigationCoordinator;
-class URpgInventoryTileView;
 
 /**
  * Activatable inventory screen base that binds stable CommonUI DataTable action rows.
@@ -29,6 +29,12 @@ public:
 	//~UCommonActivatableWidget interface
 	virtual TOptional<FUIInputConfig> GetDesiredInputConfig() const override;
 	//~End of UCommonActivatableWidget interface
+
+#if WITH_EDITOR
+	//~UWidget interface
+	virtual void ValidateCompiledDefaults(class IWidgetCompilerLog& CompileLog) const override;
+	//~End of UWidget interface
+#endif
 
 	/** Assigns the UI-local coordinators used by the controller action handlers. */
 	UFUNCTION(BlueprintCallable, Category = "Inventory|Controller")
@@ -57,8 +63,25 @@ public:
 protected:
 	virtual void NativeOnActivated() override;
 	virtual void NativeOnDeactivated() override;
+	virtual void NativeDestruct() override;
 	virtual bool NativeOnHandleBackAction() override;
+	virtual FReply NativeOnKeyDown(const FGeometry& InGeometry, const FKeyEvent& InKeyEvent) override;
 	virtual UWidget* NativeGetDesiredFocusTarget() const override;
+
+	/** True only when this handle resolves to a CommonUI action row suitable for runtime binding. */
+	static bool IsActionRowValid(const FDataTableRowHandle& ActionRow);
+
+#if WITH_EDITOR
+	/**
+	 * Emits an actionable Widget Blueprint compiler error for an unset or malformed CommonUI action row.
+	 * Optional rows may be completely empty, but partial or stale references still fail compilation.
+	 */
+	static void ValidateCommonInputActionRow(
+		class IWidgetCompilerLog& CompileLog,
+		const FDataTableRowHandle& ActionRow,
+		const FText& PropertyLabel,
+		bool bRequired);
+#endif
 
 	/** Action row for previous inventory panel, usually LB or Q. */
 	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Input|Inventory Controller", meta = (RowType = "/Script/CommonUI.CommonInputActionDataBase"))
@@ -94,7 +117,7 @@ protected:
 
 	/** Called after the active panel changes so Blueprint screens can update panel header/border visuals. */
 	UFUNCTION(BlueprintImplementableEvent, Category = "Inventory|Controller", meta = (DisplayName = "On Inventory Active Panel Changed"))
-	void BP_OnInventoryActivePanelChanged(FName PanelId, int32 PanelIndex, URpgInventoryTileView* TileView);
+	void BP_OnInventoryActivePanelChanged(FName PanelId, int32 PanelIndex);
 
 private:
 	void HandlePreviousPanelAction();
@@ -106,12 +129,17 @@ private:
 	void HandleBackAction();
 
 	UFUNCTION()
-	void HandleActivePanelChanged(FName PanelId, int32 PanelIndex, URpgInventoryTileView* TileView, URpgInventoryManagerComponent* Inventory);
+	void HandleActivePanelChanged(FName PanelId, int32 PanelIndex);
 
-	void EnsureDefaultInventoryControllerActionRows();
-	void RegisterActionRow(const FDataTableRowHandle& ActionRow, const FSimpleDelegate& Delegate);
+	UFUNCTION()
+	void HandleActiveSelectionChanged();
+
+	UFUNCTION()
+	void HandleHeldPayloadChanged(bool bHasPayload, const FRpgInventoryDragPayload& Payload);
+
+	FUIActionBindingHandle RegisterActionRow(const FDataTableRowHandle& ActionRow, const FSimpleDelegate& Delegate);
+	void RefreshInventoryActionBindingVisibility();
 	bool HandleInventoryBackAction();
-	static bool IsActionRowValid(const FDataTableRowHandle& ActionRow);
 
 	UPROPERTY(Transient)
 	TObjectPtr<URpgInventoryPanelNavigationCoordinator> PanelNavigator = nullptr;
@@ -121,4 +149,10 @@ private:
 
 	UPROPERTY(Transient)
 	TArray<FUIActionBindingHandle> InventoryActionBindings;
+
+	/** Tracks the CommonUI F binding so the native key fallback can never execute the same action twice. */
+	FUIActionBindingHandle UseOrEquipActionBinding;
+	FUIActionBindingHandle QuickTransferActionBinding;
+	FUIActionBindingHandle QuickSplitActionBinding;
+	FUIActionBindingHandle DropActionBinding;
 };

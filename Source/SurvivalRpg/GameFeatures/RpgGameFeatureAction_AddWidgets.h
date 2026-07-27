@@ -28,7 +28,7 @@ struct FRpgGameFeatureWidgetLayoutEntry
 	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "UI", meta = (AssetBundles = "Client"))
 	TSoftClassPtr<UCommonActivatableWidget> LayoutClass;
 
-	/** CommonGame UI layer that receives the layout, usually UI.Layer.Game for the persistent HUD. */
+	/** Exact layer registered by URpgPrimaryGameLayout that receives the layout, usually UI.Layer.Game for the HUD. */
 	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "UI", meta = (Categories = "UI.Layer"))
 	FGameplayTag LayerTag;
 };
@@ -107,7 +107,7 @@ private:
 	virtual void AddToWorld(const FWorldContext& WorldContext, const FGameFeatureStateChangeContext& ChangeContext) override;
 	//~ End URpgGameFeatureAction_WorldActionBase interface
 
-	UPrimaryGameLayout* GetOrCreatePrimaryGameLayout(ULocalPlayer* LocalPlayer) const;
+	UPrimaryGameLayout* GetPrimaryGameLayout(ULocalPlayer* LocalPlayer) const;
 	void Reset(FPerContextData& ActiveData);
 	void HandleActorExtension(AActor* Actor, FName EventName, FGameFeatureStateChangeContext ChangeContext);
 	void AddWidgets(AActor* Actor, FPerContextData& ActiveData);

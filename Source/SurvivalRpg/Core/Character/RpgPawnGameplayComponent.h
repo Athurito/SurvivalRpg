@@ -84,6 +84,11 @@ public:
 	void Input_StopJump(const FInputActionValue& InputActionValue);
 	void Input_GameplayHotkeyPressed(FGameplayTag InputTag);
 	void Input_GameplayHotkeyReleased(FGameplayTag InputTag);
+	void Input_QuickAccessRadialStarted(const FInputActionValue& InputActionValue);
+	void Input_QuickAccessRadialCompleted(const FInputActionValue& InputActionValue);
+	void Input_QuickAccessRadialCanceled(const FInputActionValue& InputActionValue);
+	void Input_QuickAccessRadialSelection(const FInputActionValue& InputActionValue);
+	void Input_QuickAccessRadialSelectionEnded(const FInputActionValue& InputActionValue);
 	
 	TSubclassOf<URpgCameraMode> DetermineCameraMode() const;
 
@@ -110,6 +115,7 @@ protected:
 private:
 	void HandleAbilitySystemUninitialized();
 	void BindRoutedGameplayHotkeys(const URpgInputConfig* InputConfig, class URpgInputComponent* RpgIC, TArray<uint32>* BindHandles = nullptr);
+	class URpgPlayerGameplayInputRouterComponent* GetGameplayInputRouter() const;
 	static bool IsRoutedGameplayHotkeyTag(FGameplayTag InputTag);
 
 	TMap<const URpgInputConfig*, TArray<uint32>> AdditionalInputConfigBindHandles;

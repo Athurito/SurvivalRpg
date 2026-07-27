@@ -5,10 +5,9 @@
 #include "RpgGameplayAbility_Collect.generated.h"
 
 class ARpgPlayerController;
-class URpgEquipmentLoadoutComponent;
+class URpgInventoryUiActionComponent;
 class URpgInventoryItemInstance;
 class URpgInventoryManagerComponent;
-struct FInventoryPickup;
 
 /**
  * Adds a pickupable interaction target to the instigating player's inventory.
@@ -34,14 +33,18 @@ protected:
 	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Collect")
 	bool bDestroyCollectedActor = true;
 
-	/** If true, collected equippable items are assigned to their default equipment slot after pickup succeeds. */
+	/**
+	 * If true, collected equippable items are moved into a compatible Gear/Carry location and then activated.
+	 * The authoritative inventory action may leave an item in normal content when no valid destination exists.
+	 */
 	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Collect|Equipment")
 	bool bAssignCollectedEquippableItemsToEquipment = false;
 
 private:
 	static URpgInventoryManagerComponent* FindInventoryManagerForActor(AActor* Actor);
 	static ARpgPlayerController* FindPlayerControllerForActor(AActor* Actor);
-	static bool CanAddPickupToInventory(URpgInventoryManagerComponent* InventoryComponent, const FInventoryPickup& PickupInventory);
-	static bool AddPickupToInventory(URpgInventoryManagerComponent* InventoryComponent, const FInventoryPickup& PickupInventory, TArray<URpgInventoryItemInstance*>& OutAddedItems);
-	static void AssignEquippableItemsToEquipment(URpgEquipmentLoadoutComponent* EquipmentLoadout, const TArray<URpgInventoryItemInstance*>& AddedItems);
+	static void AssignEquippableItemsToEquipment(
+		URpgInventoryManagerComponent* Inventory,
+		URpgInventoryUiActionComponent* InventoryActions,
+		const TArray<URpgInventoryItemInstance*>& AddedItems);
 };

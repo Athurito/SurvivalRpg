@@ -10,6 +10,7 @@ class URpgCameraMode;
 class URpgInputConfig;
 class URpgAbilitySet;
 class URpgAbilityTagRelationshipMapping;
+class URpgPlayerInventoryLayoutDefinition;
 /**
  * 
  */
@@ -42,4 +43,12 @@ public:
 	// Default camera mode used by player controlled pawns.
 	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Rpg|Camera")
 	TSubclassOf<URpgCameraMode> DefaultCameraMode;
+
+	/**
+	 * Static player-inventory layout selected by this PawnData.
+	 * This hard reference is designer-authored, cooked transitively with the PawnData, and read-only at runtime.
+	 * Non-player PawnData may leave it unset.
+	 */
+	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Rpg|Inventory")
+	TObjectPtr<const URpgPlayerInventoryLayoutDefinition> InventoryLayoutDefinition;
 };

@@ -11,6 +11,10 @@
 
 namespace
 {
+	constexpr ETextIdenticalModeFlags LoadoutTextIdentityFlags =
+		ETextIdenticalModeFlags::DeepCompare |
+		ETextIdenticalModeFlags::LexicalCompareInvariants;
+
 	struct FRpgLoadoutItemPresentation
 	{
 		TSoftObjectPtr<UTexture2D> Icon;
@@ -77,27 +81,91 @@ namespace
 			return FText::GetEmpty();
 		}
 	}
+
+	template <typename ViewModelType>
+	bool AreLoadoutViewModelArraysEqual(
+		const TArray<TObjectPtr<ViewModelType>>& A,
+		const TArray<TObjectPtr<ViewModelType>>& B)
+	{
+		if (A.Num() != B.Num())
+		{
+			return false;
+		}
+
+		for (int32 Index = 0; Index < A.Num(); ++Index)
+		{
+			if (A[Index].Get() != B[Index].Get())
+			{
+				return false;
+			}
+		}
+
+		return true;
+	}
 }
 
 void URpgEquipmentSlotViewModel::InitializeSlot(ERpgEquipmentSlot InEquipmentSlot, URpgInventoryItemInstance* InItem)
 {
-	const bool bWasChanged = EquipmentSlot != InEquipmentSlot || ItemInstance != InItem;
+	const ERpgEquipmentSlot NewEquipmentSlot = InEquipmentSlot;
+	const FText NewSlotLabel =
+		EquipmentSlotToDisplayText(NewEquipmentSlot);
+	const TObjectPtr<URpgInventoryItemInstance> NewItemInstance = InItem;
+	const bool bNewHasItem = NewItemInstance != nullptr;
+	const FRpgLoadoutItemPresentation Presentation =
+		BuildItemPresentation(NewItemInstance);
+	const TSoftObjectPtr<UTexture2D> NewIcon = Presentation.Icon;
+	const FText NewShortDisplayName = Presentation.ShortDisplayName;
 
-	EquipmentSlot = InEquipmentSlot;
-	SlotLabel = EquipmentSlotToDisplayText(InEquipmentSlot);
-	ItemInstance = InItem;
-	bHasItem = ItemInstance != nullptr;
+	const bool bEquipmentSlotChanged =
+		EquipmentSlot != NewEquipmentSlot;
+	const bool bSlotLabelChanged =
+		!SlotLabel.IdenticalTo(NewSlotLabel, LoadoutTextIdentityFlags);
+	const bool bItemInstanceChanged = ItemInstance != NewItemInstance;
+	const bool bHasItemChanged = bHasItem != bNewHasItem;
+	const bool bIconChanged = Icon != NewIcon;
+	const bool bShortDisplayNameChanged =
+		!ShortDisplayName.IdenticalTo(
+			NewShortDisplayName,
+			LoadoutTextIdentityFlags);
+	const bool bWasChanged =
+		bEquipmentSlotChanged ||
+		bSlotLabelChanged ||
+		bItemInstanceChanged ||
+		bHasItemChanged ||
+		bIconChanged ||
+		bShortDisplayNameChanged;
 
-	const FRpgLoadoutItemPresentation Presentation = BuildItemPresentation(ItemInstance);
-	Icon = Presentation.Icon;
-	ShortDisplayName = Presentation.ShortDisplayName;
+	EquipmentSlot = NewEquipmentSlot;
+	SlotLabel = NewSlotLabel;
+	ItemInstance = NewItemInstance;
+	bHasItem = bNewHasItem;
+	Icon = NewIcon;
+	ShortDisplayName = NewShortDisplayName;
 
-	UE_MVVM_BROADCAST_FIELD_VALUE_CHANGED(EquipmentSlot);
-	UE_MVVM_BROADCAST_FIELD_VALUE_CHANGED(SlotLabel);
-	UE_MVVM_BROADCAST_FIELD_VALUE_CHANGED(ItemInstance);
-	UE_MVVM_BROADCAST_FIELD_VALUE_CHANGED(bHasItem);
-	UE_MVVM_BROADCAST_FIELD_VALUE_CHANGED(Icon);
-	UE_MVVM_BROADCAST_FIELD_VALUE_CHANGED(ShortDisplayName);
+	if (bEquipmentSlotChanged)
+	{
+		UE_MVVM_BROADCAST_FIELD_VALUE_CHANGED(EquipmentSlot);
+	}
+	if (bSlotLabelChanged)
+	{
+		UE_MVVM_BROADCAST_FIELD_VALUE_CHANGED(SlotLabel);
+	}
+	if (bItemInstanceChanged)
+	{
+		UE_MVVM_BROADCAST_FIELD_VALUE_CHANGED(ItemInstance);
+	}
+	if (bHasItemChanged)
+	{
+		UE_MVVM_BROADCAST_FIELD_VALUE_CHANGED(bHasItem);
+	}
+	if (bIconChanged)
+	{
+		UE_MVVM_BROADCAST_FIELD_VALUE_CHANGED(Icon);
+	}
+	if (bShortDisplayNameChanged)
+	{
+		UE_MVVM_BROADCAST_FIELD_VALUE_CHANGED(ShortDisplayName);
+	}
 
 	if (bWasChanged)
 	{
@@ -155,7 +223,10 @@ void URpgEquipmentLoadoutViewModel::RefreshSlots()
 		++SlotViewModelIndex;
 	}
 
-	UE_MVVM_BROADCAST_FIELD_VALUE_CHANGED(Slots);
+	if (!AreLoadoutViewModelArraysEqual(PreviousSlots, Slots))
+	{
+		UE_MVVM_BROADCAST_FIELD_VALUE_CHANGED(Slots);
+	}
 	OnSlotsChanged.Broadcast();
 }
 

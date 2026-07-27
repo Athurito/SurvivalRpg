@@ -12,6 +12,7 @@
 #include "SurvivalRpg/AbilitySystem/RpgAbilitySystemComponent.h"
 #include "SurvivalRpg/ActionBar/RpgActionBarComponent.h"
 #include "SurvivalRpg/Core/Game/RpgGameModeBase.h"
+#include "SurvivalRpg/Core/Character/RpgPawnData.h"
 #include "SurvivalRpg/Core/Character/RpgPawnExtensionComponent.h"
 #include "SurvivalRpg/Core/Player/RpgBasePlayerState.h"
 #include "SurvivalRpg/Core/Player/RpgPlayerGameplayInputRouterComponent.h"
@@ -20,11 +21,13 @@
 #include "SurvivalRpg/Equipment/RpgWeaponAbilityLoadoutComponent.h"
 #include "SurvivalRpg/GameplayTags/RpgGameplayTags.h"
 #include "SurvivalRpg/Inventory/RpgPlayerInventoryLayoutComponent.h"
+#include "SurvivalRpg/Inventory/RpgInventoryContainerComponent.h"
 #include "SurvivalRpg/Inventory/RpgInventoryUiActionComponent.h"
 #include "SurvivalRpg/Progression/Player/RpgPlayerProgressionComponent.h"
 #include "SurvivalRpg/SurvivalRpg.h"
 #include "SurvivalRpg/UI/RpgUIScreenBlueprintLibrary.h"
 #include "SurvivalRpg/UI/RpgUIScreenPayload.h"
+#include "SurvivalRpg/UI/RpgUIScreenSubsystem.h"
 
 ARpgPlayerController::ARpgPlayerController(const FObjectInitializer& ObjectInitializer)
 	: Super(ObjectInitializer)
@@ -83,18 +86,39 @@ void ARpgPlayerController::ClientRestoreGameplayInputFocus_Implementation()
 
 void ARpgPlayerController::ClientOpenLootInventory_Implementation(URpgInventoryManagerComponent* PrimaryInventory, URpgInventoryManagerComponent* LootInventory, AActor* LootActor)
 {
-	if (!IsLocalController() || !PrimaryInventory || !LootInventory)
+	OpenInventoryContainerScreen(RpgGameplayTags::UI_Screen_Loot, PrimaryInventory, LootInventory, LootActor);
+}
+
+void ARpgPlayerController::OpenStorageInventory(
+	URpgInventoryManagerComponent* PrimaryInventory,
+	URpgInventoryManagerComponent* StorageInventory,
+	AActor* StorageActor)
+{
+	OpenInventoryContainerScreen(RpgGameplayTags::UI_Screen_Storage, PrimaryInventory, StorageInventory, StorageActor);
+}
+
+void ARpgPlayerController::OpenInventoryContainerScreen(
+	FGameplayTag ScreenTag,
+	URpgInventoryManagerComponent* PrimaryInventory,
+	URpgInventoryManagerComponent* SecondaryInventory,
+	AActor* ContextActor)
+{
+	if (!IsLocalController() || !ScreenTag.IsValid() || !PrimaryInventory || !SecondaryInventory || !ContextActor)
 	{
 		return;
 	}
 
 	URpgInventoryScreenPayload* Payload = NewObject<URpgInventoryScreenPayload>(this);
-	Payload->ScreenTag = RpgGameplayTags::UI_Screen_Loot;
+	Payload->ScreenTag = ScreenTag;
 	Payload->PrimaryInventory = PrimaryInventory;
-	Payload->SecondaryInventory = LootInventory;
-	Payload->ContextActor = LootActor;
+	Payload->SecondaryInventory = SecondaryInventory;
+	Payload->ContextActor = ContextActor;
+	Payload->ContextComponent = ContextActor->FindComponentByClass<URpgInventoryContainerComponent>();
+	ActiveLootContextActor = ContextActor;
+	ActiveInventoryContextScreenTag = ScreenTag;
+	bHasActiveLootContext = true;
 
-	URpgUIScreenBlueprintLibrary::OpenUIScreen(this, RpgGameplayTags::UI_Screen_Loot, Payload);
+	URpgUIScreenBlueprintLibrary::OpenUIScreen(this, ScreenTag, Payload);
 }
 
 void ARpgPlayerController::RpgPrintProgression() const
@@ -151,8 +175,19 @@ void ARpgPlayerController::SetupInputComponent()
 
 void ARpgPlayerController::EndPlay(const EEndPlayReason::Type EndPlayReason)
 {
+	if (GameplayInputRouterComponent)
+	{
+		GameplayInputRouterComponent->CancelQuickAccessRadial();
+	}
 	UnbindFromPawnExtensionForLoadout();
 	UnbindFromGameModeRespawnEvent();
+	UnbindFromPlayerState();
+	if (IsLocalController())
+	{
+		URpgUIScreenBlueprintLibrary::CloseUIScreen(
+			this,
+			RpgGameplayTags::UI_Screen_Respawn);
+	}
 	Super::EndPlay(EndPlayReason);
 }
 
@@ -167,6 +202,30 @@ void ARpgPlayerController::PlayerTick(float DeltaTime)
 			const FRotator MovementRotation(0.0f, GetControlRotation().Yaw, 0.0f);
 			const FVector MovementDirection = MovementRotation.RotateVector(FVector::ForwardVector);
 			CurrentPawn->AddMovementInput(MovementDirection, 1.0f);
+		}
+	}
+
+	if (IsLocalController() && bHasActiveLootContext)
+	{
+		AActor* LootActor = ActiveLootContextActor.Get();
+		const ULocalPlayer* LocalPlayer = GetLocalPlayer();
+		const URpgUIScreenSubsystem* ScreenSubsystem = LocalPlayer
+			? LocalPlayer->GetSubsystem<URpgUIScreenSubsystem>()
+			: nullptr;
+		const URpgInventoryContainerComponent* Container = LootActor
+			? LootActor->FindComponentByClass<URpgInventoryContainerComponent>()
+			: nullptr;
+		const bool bScreenStillOpen = ActiveInventoryContextScreenTag.IsValid() &&
+			ScreenSubsystem && ScreenSubsystem->IsScreenActiveOrPending(ActiveInventoryContextScreenTag);
+		if (!bScreenStillOpen || !LootActor || !Container || !Container->CanActorAccess(GetPawn()))
+		{
+			if (ActiveInventoryContextScreenTag.IsValid())
+			{
+				URpgUIScreenBlueprintLibrary::CloseUIScreen(this, ActiveInventoryContextScreenTag);
+			}
+			ActiveLootContextActor.Reset();
+			ActiveInventoryContextScreenTag = FGameplayTag();
+			bHasActiveLootContext = false;
 		}
 	}
 }
@@ -184,9 +243,14 @@ void ARpgPlayerController::OnPossess(APawn* InPawn)
 
 void ARpgPlayerController::OnUnPossess()
 {
+	if (GameplayInputRouterComponent)
+	{
+		GameplayInputRouterComponent->CancelQuickAccessRadial();
+	}
+
 	if (EquipmentLoadoutComponent)
 	{
-		EquipmentLoadoutComponent->UnequipLoadoutFromCurrentPawn();
+		EquipmentLoadoutComponent->DetachRuntimeEquipmentFromCurrentPawn();
 	}
 
 	UnbindFromPawnExtensionForLoadout();
@@ -276,12 +340,25 @@ void ARpgPlayerController::ServerSetDeathDropMode_Implementation(ERpgPlayerDeath
 
 void ARpgPlayerController::HandleRespawnStateChanged(bool bIsWaitingForRespawn, float RespawnAvailableServerTime)
 {
-	K2_OnRespawnStateChanged(bIsWaitingForRespawn, RespawnAvailableServerTime);
+	(void)RespawnAvailableServerTime;
 
-	if (!bIsWaitingForRespawn && IsLocalController() && GetPawn())
+	if (!IsLocalController())
 	{
-		RestoreGameplayInputFocus();
+		return;
 	}
+
+	if (bIsWaitingForRespawn)
+	{
+		URpgUIScreenBlueprintLibrary::OpenUIScreen(
+			this,
+			RpgGameplayTags::UI_Screen_Respawn,
+			nullptr);
+		return;
+	}
+
+	URpgUIScreenBlueprintLibrary::CloseUIScreen(
+		this,
+		RpgGameplayTags::UI_Screen_Respawn);
 }
 
 void ARpgPlayerController::HandleCheckpointChanged(bool bHasCheckpoint, FTransform CheckpointTransform)
@@ -311,6 +388,7 @@ void ARpgPlayerController::BindToPlayerState(ARpgPlayerState* NewPlayerState)
 	BoundPlayerState = NewPlayerState;
 	BoundPlayerState->OnRespawnStateChanged.AddDynamic(this, &ThisClass::HandleRespawnStateChanged);
 	BoundPlayerState->OnCheckpointChanged.AddDynamic(this, &ThisClass::HandleCheckpointChanged);
+	BoundPlayerState->OnPawnDataChanged().AddUObject(this, &ThisClass::HandlePawnDataChanged);
 
 	HandleRespawnStateChanged(
 		BoundPlayerState->IsWaitingForRespawn(),
@@ -320,10 +398,8 @@ void ARpgPlayerController::BindToPlayerState(ARpgPlayerState* NewPlayerState)
 		BoundPlayerState->HasCheckpoint(),
 		BoundPlayerState->GetCheckpointTransform());
 
-	if (HasAuthority() && PlayerInventoryLayoutComponent)
-	{
-		PlayerInventoryLayoutComponent->ApplyLayoutCapacityToInventory();
-	}
+	// Close the race where PawnData arrived before the controller established its PlayerState bindings.
+	HandlePawnDataChanged(BoundPlayerState->GetPawnData<URpgPawnData>());
 }
 
 void ARpgPlayerController::UnbindFromPlayerState()
@@ -335,7 +411,17 @@ void ARpgPlayerController::UnbindFromPlayerState()
 
 	BoundPlayerState->OnRespawnStateChanged.RemoveDynamic(this, &ThisClass::HandleRespawnStateChanged);
 	BoundPlayerState->OnCheckpointChanged.RemoveDynamic(this, &ThisClass::HandleCheckpointChanged);
+	BoundPlayerState->OnPawnDataChanged().RemoveAll(this);
 	BoundPlayerState = nullptr;
+}
+
+void ARpgPlayerController::HandlePawnDataChanged(const URpgPawnData* NewPawnData)
+{
+	(void)NewPawnData;
+	if (PlayerInventoryLayoutComponent)
+	{
+		PlayerInventoryLayoutComponent->RefreshLayoutFromPawnData();
+	}
 }
 
 void ARpgPlayerController::OnStartAutoRun()
@@ -361,6 +447,11 @@ void ARpgPlayerController::RestoreGameplayInputFocus()
 	if (!IsLocalController())
 	{
 		return;
+	}
+
+	if (GameplayInputRouterComponent)
+	{
+		GameplayInputRouterComponent->CancelQuickAccessRadial();
 	}
 
 	SetIgnoreMoveInput(false);
@@ -419,7 +510,7 @@ void ARpgPlayerController::HandlePossessedPawnAbilitySystemInitialized()
 {
 	if (HasAuthority() && EquipmentLoadoutComponent)
 	{
-		EquipmentLoadoutComponent->RefreshEquipmentLoadoutOnCurrentPawn();
+		EquipmentLoadoutComponent->ReconcileRuntimeEquipmentOnCurrentPawn();
 	}
 
 	if (HasAuthority() && PlayerInventoryLayoutComponent)
@@ -437,7 +528,7 @@ void ARpgPlayerController::HandlePossessedPawnAbilitySystemUninitialized()
 {
 	if (EquipmentLoadoutComponent)
 	{
-		EquipmentLoadoutComponent->UnequipLoadoutFromCurrentPawn();
+		EquipmentLoadoutComponent->DetachRuntimeEquipmentFromCurrentPawn();
 	}
 }
 
@@ -483,7 +574,7 @@ void ARpgPlayerController::HandleGameModePlayerRespawned(APlayerController* Resp
 
 	if (EquipmentLoadoutComponent)
 	{
-		EquipmentLoadoutComponent->RefreshEquipmentLoadoutOnCurrentPawn();
+		EquipmentLoadoutComponent->ReconcileRuntimeEquipmentOnCurrentPawn();
 	}
 
 	if (PlayerInventoryLayoutComponent)

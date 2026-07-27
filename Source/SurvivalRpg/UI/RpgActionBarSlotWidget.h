@@ -3,7 +3,8 @@
 #include "Blueprint/IUserObjectListEntry.h"
 #include "CommonButtonBase.h"
 #include "CoreMinimal.h"
-#include "SurvivalRpg/Inventory/RpgInventoryDragDrop.h"
+#include "SurvivalRpg/Inventory/RpgInventoryDragDropCoordinator.h"
+#include "SurvivalRpg/Inventory/RpgInventoryDragDropTypes.h"
 
 #include "RpgActionBarSlotWidget.generated.h"
 
@@ -24,6 +25,9 @@ class SURVIVALRPG_API URpgActionBarSlotWidget : public UCommonButtonBase, public
 public:
 	explicit URpgActionBarSlotWidget(const FObjectInitializer& ObjectInitializer = FObjectInitializer::Get());
 
+	/** Exact optional manual MVVM source owned by the canonical actionbar entry Blueprint. */
+	static const FName ActionBarSlotViewModelSourceName;
+
 	/** Assigns this widget's actionbar slot VM, useful for manually placed slots outside a ListView. */
 	UFUNCTION(BlueprintCallable, Category = "Action Bar|Slot")
 	void SetActionBarSlotViewModel(URpgActionBarSlotViewModel* InSlotViewModel);
@@ -39,6 +43,10 @@ public:
 	/** Current actionbar slot VM represented by this widget. */
 	UFUNCTION(BlueprintPure, Category = "Action Bar|Slot")
 	URpgActionBarSlotViewModel* GetActionBarSlotViewModel() const { return SlotViewModel.Get(); }
+
+	/** Current drag/drop presentation state for this actionbar entry. */
+	UFUNCTION(BlueprintPure, Category = "Action Bar|Slot")
+	ERpgInventorySlotDragVisualState GetCurrentDragDropVisualState() const { return CurrentDragDropVisualState; }
 
 	/** Controller/CommonUI Accept helper: binds the held SlotAddress payload to this actionbar slot. */
 	UFUNCTION(BlueprintCallable, Category = "Action Bar|Slot")
@@ -61,6 +69,7 @@ public:
 	void ClearExternalPreviewPayload();
 
 protected:
+	virtual void NativeDestruct() override;
 	virtual void NativeOnListItemObjectSet(UObject* ListItemObject) override;
 	virtual void NativeOnEntryReleased() override;
 	virtual void NativeOnItemSelectionChanged(bool bIsSelected) override;
@@ -68,10 +77,6 @@ protected:
 	virtual bool NativeOnDragOver(const FGeometry& InGeometry, const FDragDropEvent& InDragDropEvent, UDragDropOperation* InOperation) override;
 	virtual bool NativeOnDrop(const FGeometry& InGeometry, const FDragDropEvent& InDragDropEvent, UDragDropOperation* InOperation) override;
 	virtual void NativeOnDragLeave(const FDragDropEvent& InDragDropEvent, UDragDropOperation* InOperation) override;
-
-	/** Blueprint presentation hook called when this slot receives or refreshes its VM. */
-	UFUNCTION(BlueprintImplementableEvent, Category = "Action Bar|Slot", meta = (DisplayName = "On Action Bar Slot ViewModel Set"))
-	void BP_OnActionBarSlotViewModelSet(URpgActionBarSlotViewModel* NewSlotViewModel);
 
 	/** Blueprint presentation hook called when this entry is released for reuse. */
 	UFUNCTION(BlueprintImplementableEvent, Category = "Action Bar|Slot", meta = (DisplayName = "On Action Bar Slot Released"))
@@ -86,6 +91,10 @@ protected:
 	void BP_OnActionBarSlotDragDropStateChanged(ERpgInventorySlotDragVisualState NewState);
 
 private:
+#if WITH_DEV_AUTOMATION_TESTS
+	friend class FRpgActionBarSlotEntryPoolingTest;
+#endif
+
 	UFUNCTION()
 	void HandleSlotViewModelChanged(URpgActionBarSlotViewModel* ChangedSlotViewModel);
 
@@ -93,6 +102,8 @@ private:
 	void HandleHeldPayloadChanged(bool bHasHeldPayload, const FRpgInventoryDragPayload& HeldPayload);
 
 	FRpgInventoryDropTarget MakeDropTarget() const;
+	bool InjectActionBarSlotViewModelIntoMvvm();
+	void ReleaseActionBarSlotState();
 
 	UPROPERTY(Transient)
 	TObjectPtr<URpgActionBarSlotViewModel> SlotViewModel = nullptr;
@@ -107,4 +118,6 @@ private:
 	bool bActionBarPanelActive = true;
 	bool bHasExternalPreviewState = false;
 	ERpgInventorySlotDragVisualState ExternalPreviewState = ERpgInventorySlotDragVisualState::Normal;
+	int32 ExternalPreviewActionBarSlotIndex = INDEX_NONE;
+	bool bActionBarSlotStateReleased = false;
 };

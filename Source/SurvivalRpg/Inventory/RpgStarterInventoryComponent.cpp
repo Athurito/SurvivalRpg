@@ -2,13 +2,14 @@
 
 #include "Engine/World.h"
 #include "TimerManager.h"
+#include "SurvivalRpg/Core/Game/RpgGameModeBase.h"
 #include "SurvivalRpg/Core/Player/RpgPlayerController.h"
 #include "SurvivalRpg/Core/Player/RpgPlayerState.h"
-#include "SurvivalRpg/Equipment/RpgEquipmentLoadoutComponent.h"
 #include "SurvivalRpg/Equipment/RpgEquipmentManagerComponent.h"
 #include "SurvivalRpg/Inventory/RpgInventoryItemDefinition.h"
 #include "SurvivalRpg/Inventory/RpgInventoryItemInstance.h"
 #include "SurvivalRpg/Inventory/RpgInventoryManagerComponent.h"
+#include "SurvivalRpg/Inventory/RpgInventoryUiActionComponent.h"
 #include "SurvivalRpg/Inventory/RpgPlayerInventoryLayoutComponent.h"
 
 #include UE_INLINE_GENERATED_CPP_BY_NAME(RpgStarterInventoryComponent)
@@ -59,10 +60,31 @@ void URpgStarterInventoryComponent::TryGrantStarterInventory()
 	ARpgPlayerController* PlayerController = Cast<ARpgPlayerController>(Owner);
 	ARpgPlayerState* PlayerState = PlayerController ? PlayerController->GetRpgPlayerState() : nullptr;
 	URpgInventoryManagerComponent* InventoryComponent = PlayerState ? PlayerState->GetInventoryManagerComponent() : nullptr;
-	URpgEquipmentLoadoutComponent* EquipmentLoadout = PlayerController ? PlayerController->GetEquipmentLoadoutComponent() : nullptr;
+	URpgInventoryUiActionComponent* InventoryActions = PlayerController ? PlayerController->GetInventoryUiActionComponent() : nullptr;
 	URpgPlayerInventoryLayoutComponent* InventoryLayout = PlayerController ? PlayerController->GetPlayerInventoryLayoutComponent() : nullptr;
 
-	if (PlayerController == nullptr || PlayerState == nullptr || InventoryComponent == nullptr || ShouldWaitForPawn(PlayerController))
+	if (PlayerController == nullptr || PlayerState == nullptr || InventoryComponent == nullptr)
+	{
+		ScheduleRetry();
+		return;
+	}
+
+	// PostLogin restores the complete graph before feature-authored starter items may be considered.
+	if (ARpgGameModeBase* GameMode = GetWorld()->GetAuthGameMode<ARpgGameModeBase>())
+	{
+		if (!GameMode->IsPlayerProfileRestoreComplete(PlayerController))
+		{
+			ScheduleRetry();
+			return;
+		}
+		if (GameMode->HasRestoredPlayerProfile(PlayerController))
+		{
+			bHasTriedGrant = true;
+			return;
+		}
+	}
+
+	if (ShouldWaitForPawn(PlayerController))
 	{
 		ScheduleRetry();
 		return;
@@ -92,22 +114,43 @@ void URpgStarterInventoryComponent::TryGrantStarterInventory()
 
 		if (ItemInstance == nullptr)
 		{
-			ItemInstance = InventoryComponent->AddItemDefinition(ItemDefinition, Entry.StackCount);
+			ItemInstance = InventoryComponent->GrantItemDefinition(ItemDefinition, Entry.StackCount);
 		}
 
-		if (Entry.bAssignToEquipment && EquipmentLoadout != nullptr && ItemInstance != nullptr && !EquipmentLoadoutContainsItem(EquipmentLoadout, ItemInstance))
+		if (Entry.bAssignToEquipment &&
+			InventoryActions &&
+			ItemInstance)
 		{
-			if (Entry.EquipmentSlot == ERpgEquipmentSlot::MainHand || Entry.EquipmentSlot == ERpgEquipmentSlot::OffHand)
+			const TArray<FRpgInventoryEntryView> InventoryEntries =
+				InventoryComponent->GetAllEntries();
+			const FRpgInventoryEntryView* ItemEntry =
+				InventoryEntries.FindByPredicate(
+					[ItemInstance](
+						const FRpgInventoryEntryView& Candidate)
+					{
+						return Candidate.Instance == ItemInstance;
+					});
+			if (ItemEntry && ItemEntry->EntryId.IsValid() &&
+				ItemEntry->Placement.IsValid() &&
+				ItemEntry->StackCount > 0)
 			{
-				TryMoveItemToFirstCompatibleCarrySlot(InventoryLayout, InventoryComponent, ItemInstance);
-			}
-			else if (TryMoveItemToEquipmentSlot(InventoryLayout, InventoryComponent, Entry.EquipmentSlot, ItemInstance))
-			{
-				EquipmentLoadout->AssignItemToEquipmentSlot(Entry.EquipmentSlot, ItemInstance);
-			}
-			else
-			{
-				EquipmentLoadout->AssignItemToEquipmentSlot(Entry.EquipmentSlot, ItemInstance);
+				FRpgInventoryEquipmentIntent Intent;
+				Intent.EnsureRequestId();
+				Intent.ItemId = ItemEntry->ItemId;
+				Intent.ExpectedEntryId = ItemEntry->EntryId;
+				Intent.ExpectedSourcePlacement =
+					ItemEntry->Placement;
+				Intent.ExpectedQuantity =
+					ItemEntry->StackCount;
+				Intent.Operation =
+					ERpgInventoryEquipmentIntentOperation::
+						EquipToSlot;
+				Intent.TargetEquipmentSlot =
+					Entry.EquipmentSlot;
+				InventoryActions->
+					RequestApplyInventoryEquipmentIntent(
+						InventoryComponent,
+						Intent);
 			}
 		}
 	}
@@ -147,128 +190,6 @@ bool URpgStarterInventoryComponent::ShouldWaitForPawn(const ARpgPlayerController
 		{
 			const APawn* Pawn = PlayerController->GetPawn();
 			return Pawn == nullptr || Pawn->FindComponentByClass<URpgEquipmentManagerComponent>() == nullptr;
-		}
-	}
-
-	return false;
-}
-
-bool URpgStarterInventoryComponent::TryMoveItemToFirstCompatibleCarrySlot(URpgPlayerInventoryLayoutComponent* InventoryLayout, URpgInventoryManagerComponent* Inventory, URpgInventoryItemInstance* ItemInstance)
-{
-	if (!InventoryLayout || !Inventory || !ItemInstance || Inventory->GetItemStackCount(ItemInstance) <= 0)
-	{
-		return false;
-	}
-
-	FRpgInventorySlotAddress CurrentAddress;
-	FRpgInventoryGridPlacement CurrentPlacement;
-	if (Inventory->GetItemPlacement(ItemInstance, CurrentPlacement) &&
-		InventoryLayout->TryMakeSlotAddressFromPlacement(CurrentPlacement, CurrentAddress) &&
-		InventoryLayout->IsCarrySlotAddress(CurrentAddress) &&
-		InventoryLayout->CanItemUseSlotAddress(ItemInstance, CurrentAddress))
-	{
-		return true;
-	}
-
-	FGuid EntryId;
-	for (const FRpgInventoryEntryView& Entry : Inventory->GetAllEntries())
-	{
-		if (Entry.Instance == ItemInstance)
-		{
-			EntryId = Entry.EntryId;
-			break;
-		}
-	}
-
-	if (!EntryId.IsValid())
-	{
-		return false;
-	}
-
-	for (const FRpgInventorySlotGroupView& Group : InventoryLayout->GetSlotGroups())
-	{
-		if (!Group.Rule.bCarrySlot || !Group.Rule.AllowsItem(ItemInstance))
-		{
-			continue;
-		}
-
-		for (int32 Y = 0; Y < Group.GridSize.Height; ++Y)
-		{
-			for (int32 X = 0; X < Group.GridSize.Width; ++X)
-			{
-				FRpgInventoryGridPlacement TargetPlacement;
-				TargetPlacement.ContainerId = Group.ContainerId;
-				TargetPlacement.X = X;
-				TargetPlacement.Y = Y;
-				TargetPlacement.Width = 1;
-				TargetPlacement.Height = 1;
-				if (Inventory->CanMoveInventoryEntryToPlacement(EntryId, TargetPlacement))
-				{
-					return Inventory->MoveInventoryEntryToPlacement(EntryId, TargetPlacement);
-				}
-			}
-		}
-	}
-
-	return false;
-}
-
-bool URpgStarterInventoryComponent::TryMoveItemToEquipmentSlot(
-	URpgPlayerInventoryLayoutComponent* InventoryLayout,
-	URpgInventoryManagerComponent* Inventory,
-	ERpgEquipmentSlot EquipmentSlot,
-	URpgInventoryItemInstance* ItemInstance)
-{
-	if (!InventoryLayout || !Inventory || !ItemInstance || Inventory->GetItemStackCount(ItemInstance) <= 0)
-	{
-		return false;
-	}
-
-	FRpgInventorySlotAddress GearAddress;
-	FRpgInventoryGridPlacement GearPlacement;
-	if (!URpgPlayerInventoryLayoutComponent::TryMakeGearSlotAddress(EquipmentSlot, GearAddress) ||
-		!InventoryLayout->ResolveSlotAddress(GearAddress, GearPlacement) ||
-		!InventoryLayout->CanItemUseSlotAddress(ItemInstance, GearAddress))
-	{
-		return false;
-	}
-
-	FRpgInventoryGridPlacement CurrentPlacement;
-	if (Inventory->GetItemPlacement(ItemInstance, CurrentPlacement) &&
-		CurrentPlacement.ContainerId == GearPlacement.ContainerId &&
-		CurrentPlacement.X == GearPlacement.X &&
-		CurrentPlacement.Y == GearPlacement.Y)
-	{
-		return true;
-	}
-
-	FGuid EntryId;
-	for (const FRpgInventoryEntryView& Entry : Inventory->GetAllEntries())
-	{
-		if (Entry.Instance == ItemInstance)
-		{
-			EntryId = Entry.EntryId;
-			break;
-		}
-	}
-
-	return EntryId.IsValid() &&
-		Inventory->CanMoveInventoryEntryToPlacement(EntryId, GearPlacement) &&
-		Inventory->MoveInventoryEntryToPlacement(EntryId, GearPlacement);
-}
-
-bool URpgStarterInventoryComponent::EquipmentLoadoutContainsItem(const URpgEquipmentLoadoutComponent* EquipmentLoadout, const URpgInventoryItemInstance* ItemInstance)
-{
-	if (EquipmentLoadout == nullptr || ItemInstance == nullptr)
-	{
-		return false;
-	}
-
-	for (const FRpgEquipmentLoadoutSlot& LoadoutSlot : EquipmentLoadout->GetLoadoutSlots())
-	{
-		if (LoadoutSlot.Item == ItemInstance)
-		{
-			return true;
 		}
 	}
 

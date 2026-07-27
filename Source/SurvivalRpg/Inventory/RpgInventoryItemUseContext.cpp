@@ -18,6 +18,18 @@ void URpgInventoryItemUseContext::Initialize(
 	bConsumed = false;
 }
 
+void URpgInventoryItemUseContext::SetConsumeSucceededCallback(
+	FSimpleDelegate InCallback)
+{
+	ConsumeSucceededCallback = MoveTemp(InCallback);
+}
+
+void URpgInventoryItemUseContext::SetConsumePreflightCallback(
+	FRpgInventoryUseConsumePreflight InCallback)
+{
+	ConsumePreflightCallback = MoveTemp(InCallback);
+}
+
 bool URpgInventoryItemUseContext::TryConsume()
 {
 	if (bConsumed)
@@ -37,7 +49,24 @@ bool URpgInventoryItemUseContext::TryConsume()
 	{
 		return false;
 	}
+	if (ConsumePreflightCallback.IsBound() &&
+		!ConsumePreflightCallback.Execute())
+	{
+		return false;
+	}
 
-	bConsumed = OwningInventory->RemoveItemInstanceStack(UsedItem, ConsumeCount);
+	const FRpgInventoryMutationResult ConsumeResult =
+		OwningInventory->ConsumeItemById(
+			UsedItem->GetItemId(),
+			ConsumeCount);
+	bConsumed =
+		ConsumeResult.Code == ERpgInventoryMutationResultCode::Success &&
+		ConsumeResult.AppliedQuantity == ConsumeCount;
+	if (bConsumed)
+	{
+		ConsumePreflightCallback.Unbind();
+		ConsumeSucceededCallback.ExecuteIfBound();
+		ConsumeSucceededCallback.Unbind();
+	}
 	return bConsumed;
 }

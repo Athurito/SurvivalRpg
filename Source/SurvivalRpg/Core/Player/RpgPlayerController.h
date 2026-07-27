@@ -4,7 +4,8 @@
 
 #include "CoreMinimal.h"
 #include "GenericTeamAgentInterface.h"
-#include "ModularPlayerController.h"
+#include "GameplayTagContainer.h"
+#include "CommonPlayerController.h"
 #include "SurvivalRpg/Inventory/RpgInventoryItemTypes.h"
 #include "RpgPlayerController.generated.h"
 
@@ -17,12 +18,13 @@ class URpgPlayerInventoryLayoutComponent;
 class URpgPlayerGameplayInputRouterComponent;
 class URpgWeaponAbilityLoadoutComponent;
 class URpgPawnExtensionComponent;
+class URpgPawnData;
 class UInputMappingContext;
 class ARpgPlayerState;
 class ARpgGameModeBase;
 
 UCLASS(Abstract)
-class SURVIVALRPG_API ARpgPlayerController : public AModularPlayerController, public IGenericTeamAgentInterface
+class SURVIVALRPG_API ARpgPlayerController : public ACommonPlayerController, public IGenericTeamAgentInterface
 {
 	GENERATED_BODY()
 
@@ -48,6 +50,10 @@ public:
 	UFUNCTION(Client, Reliable, Category = "Rpg|Inventory")
 	void ClientOpenLootInventory(URpgInventoryManagerComponent* PrimaryInventory, URpgInventoryManagerComponent* LootInventory, AActor* LootActor);
 
+	/** Opens and monitors an accessible world storage inventory on the owning client. */
+	UFUNCTION(BlueprintCallable, Category = "Rpg|Inventory")
+	void OpenStorageInventory(URpgInventoryManagerComponent* PrimaryInventory, URpgInventoryManagerComponent* StorageInventory, AActor* StorageActor);
+
 	UFUNCTION(BlueprintCallable, Category = "Rpg|Action Bar")
 	URpgActionBarComponent* GetActionBarComponent() const { return ActionBarComponent; }
 
@@ -62,6 +68,10 @@ public:
 
 	UFUNCTION(BlueprintCallable, Category = "Rpg|Inventory")
 	URpgPlayerInventoryLayoutComponent* GetPlayerInventoryLayoutComponent() const { return PlayerInventoryLayoutComponent; }
+
+	/** Local systemic-input router observed by the gameplay quick-access radial. */
+	UFUNCTION(BlueprintPure, Category = "Rpg|Input")
+	URpgPlayerGameplayInputRouterComponent* GetGameplayInputRouterComponent() const { return GameplayInputRouterComponent; }
 
 	UFUNCTION(Exec)
 	void RpgPrintProgression() const;
@@ -99,9 +109,6 @@ protected:
 	UFUNCTION()
 	void HandleCheckpointChanged(bool bHasCheckpoint, FTransform CheckpointTransform);
 
-	UFUNCTION(BlueprintImplementableEvent, Category = "Rpg|Respawn", meta = (DisplayName = "On Respawn State Changed"))
-	void K2_OnRespawnStateChanged(bool bIsWaitingForRespawn, float RespawnAvailableServerTime);
-
 	UFUNCTION(BlueprintImplementableEvent, Category = "Rpg|Respawn", meta = (DisplayName = "On Checkpoint Changed"))
 	void K2_OnCheckpointChanged(bool bHasCheckpoint, FTransform CheckpointTransform);
 
@@ -132,6 +139,8 @@ private:
 	void RefreshPlayerStateBindings();
 	void BindToPlayerState(ARpgPlayerState* NewPlayerState);
 	void UnbindFromPlayerState();
+	void HandlePawnDataChanged(const URpgPawnData* NewPawnData);
+	void OpenInventoryContainerScreen(FGameplayTag ScreenTag, URpgInventoryManagerComponent* PrimaryInventory, URpgInventoryManagerComponent* SecondaryInventory, AActor* ContextActor);
 
 	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Input", meta = (AllowPrivateAccess = "true"))
 	TArray<UInputMappingContext*> DefaultMappingContexts;
@@ -162,4 +171,9 @@ private:
 
 	UPROPERTY(Transient)
 	TObjectPtr<ARpgGameModeBase> BoundRespawnGameMode;
+
+	/** Local loot/storage context monitored for access loss while its CommonUI screen is open. */
+	TWeakObjectPtr<AActor> ActiveLootContextActor;
+	FGameplayTag ActiveInventoryContextScreenTag;
+	bool bHasActiveLootContext = false;
 };

@@ -66,7 +66,7 @@ void URpgLootSourceComponent::PopulateLoot()
 	{
 		if (LootTemplate.ItemDef && LootTemplate.StackCount > 0)
 		{
-			InventoryManager->AddItemDefinition(LootTemplate.ItemDef, LootTemplate.StackCount);
+			InventoryManager->GrantItemDefinition(LootTemplate.ItemDef, LootTemplate.StackCount);
 		}
 	}
 
@@ -74,7 +74,7 @@ void URpgLootSourceComponent::PopulateLoot()
 	{
 		if (LootInstance.Item)
 		{
-			InventoryManager->AddItemInstance(LootInstance.Item);
+			InventoryManager->BootstrapItemInstance(LootInstance.Item);
 		}
 	}
 

@@ -3,100 +3,53 @@
 #include "GameFramework/Controller.h"
 #include "GameFramework/Pawn.h"
 #include "GameFramework/PlayerState.h"
-#include "SurvivalRpg/Equipment/RpgEquipmentDefinition.h"
 #include "SurvivalRpg/Core/Player/RpgPlayerController.h"
-#include "SurvivalRpg/Equipment/RpgEquipmentLoadoutComponent.h"
 #include "SurvivalRpg/Inventory/IPickupable.h"
 #include "SurvivalRpg/Inventory/RpgDroppedInventoryActor.h"
 #include "SurvivalRpg/Inventory/RpgInventoryFragment_EquippableItem.h"
-#include "SurvivalRpg/Inventory/RpgInventoryFragment_ItemTraits.h"
-#include "SurvivalRpg/Inventory/RpgInventoryItemDefinition.h"
 #include "SurvivalRpg/Inventory/RpgInventoryItemInstance.h"
 #include "SurvivalRpg/Inventory/RpgInventoryManagerComponent.h"
+#include "SurvivalRpg/Inventory/RpgInventoryUiActionComponent.h"
+#include "SurvivalRpg/Inventory/RpgPlayerInventoryLayoutComponent.h"
 
 #include UE_INLINE_GENERATED_CPP_BY_NAME(RpgGameplayAbility_Collect)
 
 namespace
 {
-	int32 GetCollectAbilityMaxStackSizeForDefinition(TSubclassOf<URpgInventoryItemDefinition> ItemDef)
+	bool TransferDroppedInventoryGraph(
+		URpgInventoryManagerComponent* LootInventory,
+		URpgInventoryManagerComponent* PlayerInventory,
+		ARpgPlayerController* PlayerController,
+		TArray<FRpgInventoryItemId>& OutAddedItemIds)
 	{
-		const URpgInventoryItemDefinition* ItemCDO = ItemDef ? GetDefault<URpgInventoryItemDefinition>(ItemDef) : nullptr;
-		const URpgInventoryFragment_ItemTraits* Traits = ItemCDO ? Cast<URpgInventoryFragment_ItemTraits>(ItemCDO->FindFragmentByClass(URpgInventoryFragment_ItemTraits::StaticClass())) : nullptr;
-		return Traits ? Traits->GetMaxStackSize() : 1;
-	}
-
-	bool CanCollectAbilityInventoryAcceptPickup(URpgInventoryManagerComponent* InventoryComponent, const FInventoryPickup& PickupInventory)
-	{
-		if (!InventoryComponent || (PickupInventory.Templates.IsEmpty() && PickupInventory.Instances.IsEmpty()))
+		if (!LootInventory || !PlayerInventory || !PlayerController)
 		{
 			return false;
 		}
 
-		for (const FPickupTemplate& Template : PickupInventory.Templates)
+		TArray<FRpgInventoryContainerHandle> TargetContainers;
+		if (const URpgPlayerInventoryLayoutComponent* Layout = PlayerController->GetPlayerInventoryLayoutComponent())
 		{
-			if (!Template.ItemDef || Template.StackCount <= 0)
+			for (const FRpgInventorySlotGroupView& Group : Layout->GetSlotGroups())
 			{
-				return false;
+				if (Group.GroupKind == ERpgInventorySlotGroupKind::Content && Group.ContainerHandle.IsValid())
+				{
+					TargetContainers.AddUnique(Group.ContainerHandle);
+				}
 			}
 		}
-
-		for (const FPickupInstance& Instance : PickupInventory.Instances)
+		if (TargetContainers.IsEmpty())
 		{
-			if (!Instance.Item)
-			{
-				return false;
-			}
+			return false;
 		}
 
-		if (InventoryComponent->IsCapacityUnlimited())
-		{
-			return true;
-		}
-
-		TMap<TSubclassOf<URpgInventoryItemDefinition>, int32> ExistingFreeStackSpaceByDefinition;
-		for (const FRpgInventoryEntryView& Entry : InventoryComponent->GetAllEntries())
-		{
-			const TSubclassOf<URpgInventoryItemDefinition> EntryDefinition = Entry.Instance ? Entry.Instance->GetItemDef() : nullptr;
-			const int32 MaxStackSize = GetCollectAbilityMaxStackSizeForDefinition(EntryDefinition);
-			if (EntryDefinition && MaxStackSize > 1)
-			{
-				ExistingFreeStackSpaceByDefinition.FindOrAdd(EntryDefinition) += FMath::Max(0, MaxStackSize - Entry.StackCount);
-			}
-		}
-
-		TMap<TSubclassOf<URpgInventoryItemDefinition>, int32> RequestedTemplateCounts;
-		for (const FPickupTemplate& Template : PickupInventory.Templates)
-		{
-			RequestedTemplateCounts.FindOrAdd(Template.ItemDef) += Template.StackCount;
-		}
-
-		int32 RequiredNewEntries = 0;
-		for (const FPickupInstance& Instance : PickupInventory.Instances)
-		{
-			RequiredNewEntries += InventoryComponent->GetRequiredNewEntryCountForItemInstance(Instance.Item, 1);
-		}
-
-		for (const TPair<TSubclassOf<URpgInventoryItemDefinition>, int32>& RequestedTemplateCount : RequestedTemplateCounts)
-		{
-			const TSubclassOf<URpgInventoryItemDefinition> ItemDefinition = RequestedTemplateCount.Key;
-			const int32 MaxStackSize = GetCollectAbilityMaxStackSizeForDefinition(ItemDefinition);
-			int32 RemainingCount = RequestedTemplateCount.Value;
-
-			if (MaxStackSize > 1)
-			{
-				int32& ExistingFreeStackSpace = ExistingFreeStackSpaceByDefinition.FindOrAdd(ItemDefinition);
-				const int32 FilledExistingStackCount = FMath::Min(ExistingFreeStackSpace, RemainingCount);
-				ExistingFreeStackSpace -= FilledExistingStackCount;
-				RemainingCount -= FilledExistingStackCount;
-			}
-
-			if (RemainingCount > 0)
-			{
-				RequiredNewEntries += FMath::DivideAndRoundUp(RemainingCount, MaxStackSize);
-			}
-		}
-
-		return RequiredNewEntries <= InventoryComponent->GetFreeEntryCount();
+		const FRpgInventoryMutationResult Result =
+			LootInventory->CollectRootItemsBatch(
+				PlayerInventory,
+				TargetContainers,
+				FGuid::NewGuid(),
+				OutAddedItemIds);
+		return Result.IsSuccess() && Result.AppliedQuantity > 0;
 	}
 }
 
@@ -142,20 +95,64 @@ void URpgGameplayAbility_Collect::ActivateAbility(
 		return;
 	}
 
-	const FInventoryPickup PickupInventory = Pickup->GetPickupInventory();
-	if (!CanAddPickupToInventory(InventoryComponent, PickupInventory))
+	if (ARpgDroppedInventoryActor* DroppedInventoryActor =
+			Cast<ARpgDroppedInventoryActor>(TargetActor);
+		DroppedInventoryActor &&
+		DroppedInventoryActor->IsLootInventoryCanonical())
 	{
-		if (ARpgDroppedInventoryActor* DroppedInventoryActor = Cast<ARpgDroppedInventoryActor>(TargetActor))
+		URpgInventoryManagerComponent* LootInventory = DroppedInventoryActor->GetLootInventoryManager();
+		ARpgPlayerController* PlayerController = FindPlayerControllerForActor(InteractingActor);
+		if (!LootInventory || !PlayerController || !CommitAbility(Handle, ActorInfo, ActivationInfo))
 		{
-			if (URpgInventoryManagerComponent* LootInventory = DroppedInventoryActor->GetLootInventoryManager())
+			EndAbility(Handle, ActorInfo, ActivationInfo, true, true);
+			return;
+		}
+
+		TArray<FRpgInventoryItemId> AddedItemIds;
+		const bool bTransferredAnything = TransferDroppedInventoryGraph(
+			LootInventory,
+			InventoryComponent,
+			PlayerController,
+			AddedItemIds);
+
+		if (PlayerController->GetEquipmentLoadoutComponent())
+		{
+			if (bAssignCollectedEquippableItemsToEquipment && bTransferredAnything)
 			{
-				if (ARpgPlayerController* PlayerController = FindPlayerControllerForActor(InteractingActor))
+				TArray<URpgInventoryItemInstance*> AddedItems;
+				for (const FRpgInventoryItemId& ItemId : AddedItemIds)
 				{
-					PlayerController->ClientOpenLootInventory(InventoryComponent, LootInventory, DroppedInventoryActor);
+					if (URpgInventoryItemInstance* AddedItem = InventoryComponent->FindItemById(ItemId))
+					{
+						AddedItems.Add(AddedItem);
+					}
 				}
+				AssignEquippableItemsToEquipment(
+					InventoryComponent,
+					PlayerController->GetInventoryUiActionComponent(),
+					AddedItems);
 			}
 		}
 
+		if (LootInventory->GetAllEntries().IsEmpty())
+		{
+			if (bDestroyCollectedActor && TargetActor->HasAuthority() && TargetActor != InteractingActor)
+			{
+				TargetActor->Destroy();
+			}
+		}
+		else
+		{
+			PlayerController->ClientOpenLootInventory(InventoryComponent, LootInventory, DroppedInventoryActor);
+		}
+
+		EndAbility(Handle, ActorInfo, ActivationInfo, true, false);
+		return;
+	}
+
+	const FInventoryPickup PickupInventory = Pickup->GetPickupInventory();
+	if (!InventoryComponent->CanAddPickupBatch(PickupInventory))
+	{
 		EndAbility(Handle, ActorInfo, ActivationInfo, true, true);
 		return;
 	}
@@ -166,18 +163,33 @@ void URpgGameplayAbility_Collect::ActivateAbility(
 		return;
 	}
 
-	TArray<URpgInventoryItemInstance*> AddedItems;
-	if (!AddPickupToInventory(InventoryComponent, PickupInventory, AddedItems))
+	TArray<FRpgInventoryItemId> AddedItemIds;
+	const FRpgInventoryMutationResult PickupResult =
+		InventoryComponent->AddPickupBatch(PickupInventory, AddedItemIds);
+	if (!PickupResult.IsSuccess())
 	{
 		EndAbility(Handle, ActorInfo, ActivationInfo, true, true);
 		return;
+	}
+
+	TArray<URpgInventoryItemInstance*> AddedItems;
+	for (const FRpgInventoryItemId& ItemId : AddedItemIds)
+	{
+		if (URpgInventoryItemInstance* AddedItem =
+				InventoryComponent->FindItemById(ItemId))
+		{
+			AddedItems.AddUnique(AddedItem);
+		}
 	}
 
 	if (bAssignCollectedEquippableItemsToEquipment)
 	{
 		if (ARpgPlayerController* PlayerController = FindPlayerControllerForActor(InteractingActor))
 		{
-			AssignEquippableItemsToEquipment(PlayerController->GetEquipmentLoadoutComponent(), AddedItems);
+			AssignEquippableItemsToEquipment(
+				InventoryComponent,
+				PlayerController->GetInventoryUiActionComponent(),
+				AddedItems);
 		}
 	}
 
@@ -253,59 +265,53 @@ ARpgPlayerController* URpgGameplayAbility_Collect::FindPlayerControllerForActor(
 	return nullptr;
 }
 
-bool URpgGameplayAbility_Collect::CanAddPickupToInventory(URpgInventoryManagerComponent* InventoryComponent, const FInventoryPickup& PickupInventory)
+void URpgGameplayAbility_Collect::AssignEquippableItemsToEquipment(
+	URpgInventoryManagerComponent* Inventory,
+	URpgInventoryUiActionComponent* InventoryActions,
+	const TArray<URpgInventoryItemInstance*>& AddedItems)
 {
-	return CanCollectAbilityInventoryAcceptPickup(InventoryComponent, PickupInventory);
-}
-
-bool URpgGameplayAbility_Collect::AddPickupToInventory(URpgInventoryManagerComponent* InventoryComponent, const FInventoryPickup& PickupInventory, TArray<URpgInventoryItemInstance*>& OutAddedItems)
-{
-	if (!CanAddPickupToInventory(InventoryComponent, PickupInventory))
-	{
-		return false;
-	}
-
-	for (const FPickupTemplate& Template : PickupInventory.Templates)
-	{
-		if (Template.ItemDef != nullptr && Template.StackCount > 0)
-		{
-			if (URpgInventoryItemInstance* AddedItem = InventoryComponent->AddItemDefinition(Template.ItemDef, Template.StackCount))
-			{
-				OutAddedItems.Add(AddedItem);
-			}
-		}
-	}
-
-	for (const FPickupInstance& Instance : PickupInventory.Instances)
-	{
-		if (Instance.Item != nullptr)
-		{
-			InventoryComponent->AddItemInstance(Instance.Item);
-			OutAddedItems.Add(Instance.Item);
-		}
-	}
-
-	return true;
-}
-
-void URpgGameplayAbility_Collect::AssignEquippableItemsToEquipment(URpgEquipmentLoadoutComponent* EquipmentLoadout, const TArray<URpgInventoryItemInstance*>& AddedItems)
-{
-	if (EquipmentLoadout == nullptr)
+	if (!Inventory || !InventoryActions)
 	{
 		return;
 	}
 
 	for (URpgInventoryItemInstance* AddedItem : AddedItems)
 	{
-		const URpgInventoryFragment_EquippableItem* EquippableFragment = AddedItem ? AddedItem->FindFragmentByClass<URpgInventoryFragment_EquippableItem>() : nullptr;
-		const TSubclassOf<URpgEquipmentDefinition> EquipmentDefinition = EquippableFragment ? EquippableFragment->GetEquipmentDefinition() : nullptr;
-		const URpgEquipmentDefinition* EquipmentCDO = EquipmentDefinition ? GetDefault<URpgEquipmentDefinition>(EquipmentDefinition) : nullptr;
-		if (EquipmentCDO == nullptr)
+		if (!AddedItem ||
+			!AddedItem->FindFragmentByClass<URpgInventoryFragment_EquippableItem>())
 		{
 			continue;
 		}
 
-		const ERpgEquipmentSlot EquipmentSlot = EquipmentCDO->GetDefaultEquipSlot();
-		EquipmentLoadout->AssignItemToEquipmentSlot(EquipmentSlot, AddedItem);
+		// A previous synchronous equip may have swapped this later item into another placement.
+		// Resolve each source snapshot immediately before submitting its own immutable command.
+		const TArray<FRpgInventoryEntryView> Entries =
+			Inventory->GetAllEntries();
+		const FRpgInventoryEntryView* Entry =
+			Entries.FindByPredicate(
+				[AddedItem](
+					const FRpgInventoryEntryView& Candidate)
+				{
+					return Candidate.Instance == AddedItem;
+				});
+		if (!Entry || !Entry->EntryId.IsValid() ||
+			!Entry->Placement.IsValid() ||
+			Entry->StackCount <= 0)
+		{
+			continue;
+		}
+
+		FRpgInventoryEquipmentIntent Intent;
+		Intent.EnsureRequestId();
+		Intent.ItemId = Entry->ItemId;
+		Intent.ExpectedEntryId = Entry->EntryId;
+		Intent.ExpectedSourcePlacement = Entry->Placement;
+		Intent.ExpectedQuantity = Entry->StackCount;
+		Intent.Operation =
+			ERpgInventoryEquipmentIntentOperation::
+				EquipDefaultAndActivate;
+		InventoryActions->RequestApplyInventoryEquipmentIntent(
+			Inventory,
+			Intent);
 	}
 }
