@@ -5,6 +5,7 @@
 #include "RpgIndicatorManagerComponent.h"
 #include "Engine/LocalPlayer.h"
 #include "SceneView.h"
+#include "Widgets/SWidget.h"
 
 #include UE_INLINE_GENERATED_CPP_BY_NAME(IndicatorDescriptor)
 
@@ -132,6 +133,23 @@ void UIndicatorDescriptor::SetIndicatorManagerComponent(URpgIndicatorManagerComp
 	if (ensure(ManagerPtr.IsExplicitlyNull()))
 	{
 		ManagerPtr = InManager;
+	}
+}
+
+void UIndicatorDescriptor::SetDesiredVisibility(const bool InVisible)
+{
+	if (bVisible == InVisible)
+	{
+		return;
+	}
+
+	bVisible = InVisible;
+	if (!bVisible)
+	{
+		if (const TSharedPtr<SWidget> Host = CanvasHost.Pin())
+		{
+			Host->SetVisibility(EVisibility::Collapsed);
+		}
 	}
 }
 

@@ -9,6 +9,7 @@
 #include "HAL/IConsoleManager.h"
 #include "TimerManager.h"
 #include "SurvivalRpg/Interaction/InteractionStatics.h"
+#include "SurvivalRpg/UI/Interaction/RpgInteractionPresentation.h"
 
 #include UE_INLINE_GENERATED_CPP_BY_NAME(AbilityTask_WaitForInteractableTargets_Nearby)
 
@@ -120,47 +121,13 @@ void UAbilityTask_WaitForInteractableTargets_Nearby::QueryNearby()
 			!Option.Prompt.bShowNearbyIndicator ||
 			FVector::Distance(AvatarActor->GetActorLocation(), Option.GetInteractionWorldLocation()) > Option.Prompt.AwarenessRange;
 	});
-	// Overlap order is not stable. Sort duplicate presentations by their complete gameplay
-	// identity first so repeated scans keep the same representative collision component.
-	NewOptions.StableSort([](const FInteractionOption& A, const FInteractionOption& B)
-	{
-		const FString APresentationKey = UInteractionStatics::MakePresentationOptionKey(A);
-		const FString BPresentationKey = UInteractionStatics::MakePresentationOptionKey(B);
-		if (APresentationKey != BPresentationKey)
-		{
-			return APresentationKey < BPresentationKey;
-		}
-		return UInteractionStatics::MakeStableOptionKey(A) <
-			UInteractionStatics::MakeStableOptionKey(B);
-	});
-	TSet<FString> SeenOptionKeys;
-	NewOptions.RemoveAll([&SeenOptionKeys](const FInteractionOption& Option)
-	{
-		const FString OptionKey = UInteractionStatics::MakePresentationOptionKey(Option);
-		if (SeenOptionKeys.Contains(OptionKey))
-		{
-			return true;
-		}
-		SeenOptionKeys.Add(OptionKey);
-		return false;
-	});
+	RpgInteractionPresentation::SelectNearbyOptionsForDisplay(
+		NewOptions,
+		AvatarActor->GetActorLocation(),
+		MaxVisibleOptions);
 	for (FInteractionOption& Option : NewOptions)
 	{
 		Option.PromptState = ERpgInteractionPromptState::Nearby;
-	}
-	NewOptions.StableSort([AvatarActor](const FInteractionOption& A, const FInteractionOption& B)
-	{
-		if (A.Prompt.InteractionPriority != B.Prompt.InteractionPriority)
-		{
-			return A.Prompt.InteractionPriority > B.Prompt.InteractionPriority;
-		}
-		const float ADistance = FVector::DistSquared(AvatarActor->GetActorLocation(), A.GetInteractionWorldLocation());
-		const float BDistance = FVector::DistSquared(AvatarActor->GetActorLocation(), B.GetInteractionWorldLocation());
-		return !FMath::IsNearlyEqual(ADistance, BDistance, 1.0f) ? ADistance < BDistance : A < B;
-	});
-	if (NewOptions.Num() > MaxVisibleOptions)
-	{
-		NewOptions.SetNum(MaxVisibleOptions, EAllowShrinking::No);
 	}
 	CommitInteractableOptions(MoveTemp(NewOptions));
 

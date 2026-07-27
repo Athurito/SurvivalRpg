@@ -11,6 +11,7 @@
 #include "GameFramework/Controller.h"
 #include "GameFramework/Pawn.h"
 #include "IInteractableTarget.h"
+#include "Components/InstancedStaticMeshComponent.h"
 #include "InteractionMessages.h"
 #include "InteractionOption.h"
 #include "InteractionQuery.h"
@@ -150,7 +151,8 @@ void UInteractionStatics::NormalizeInteractionOption(
 	{
 		InOutOption.TargetRef.TargetComponent = Query.CandidateHit.GetComponent();
 	}
-	if (InOutOption.TargetRef.InstanceIndex == INDEX_NONE)
+	if (InOutOption.TargetRef.InstanceIndex == INDEX_NONE &&
+		Cast<UInstancedStaticMeshComponent>(Query.CandidateHit.GetComponent()))
 	{
 		InOutOption.TargetRef.InstanceIndex = Query.CandidateHit.Item;
 	}
@@ -488,6 +490,37 @@ FString UInteractionStatics::MakePresentationOptionKey(const FInteractionOption&
 		*GetPathNameSafe(TargetActor),
 		Option.TargetRef.InstanceIndex,
 		*Option.InteractionTag.ToString());
+}
+
+FString UInteractionStatics::MakePresentationSlotKey(const FInteractionOption& Option)
+{
+	AActor* TargetActor = Option.TargetRef.TargetActor.Get();
+	if (!TargetActor)
+	{
+		TargetActor = GetActorFromInteractableTarget(Option.InteractableTarget);
+	}
+	const UObject* Provider = Option.InteractableTarget.GetObject();
+	if (!Provider)
+	{
+		Provider = TargetActor;
+	}
+	if (Option.TargetRef.InstanceIndex != INDEX_NONE &&
+		Cast<UInstancedStaticMeshComponent>(Option.TargetRef.TargetComponent.Get()))
+	{
+		return FString::Printf(
+			TEXT("Instance|%s|%s|%s|%d|%s"),
+			*GetPathNameSafe(Provider),
+			*GetPathNameSafe(TargetActor),
+			*GetPathNameSafe(Option.TargetRef.TargetComponent.Get()),
+			Option.TargetRef.InstanceIndex,
+			*Option.Prompt.PromptAnchorId.ToString());
+	}
+
+	return FString::Printf(
+		TEXT("Target|%s|%s|%s"),
+		*GetPathNameSafe(Provider),
+		*GetPathNameSafe(TargetActor),
+		*Option.Prompt.PromptAnchorId.ToString());
 }
 
 URpgInteractionPromptAnchorComponent* UInteractionStatics::FindPromptAnchorComponent(

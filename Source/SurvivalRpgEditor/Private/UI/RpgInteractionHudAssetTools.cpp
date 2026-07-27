@@ -1,6 +1,7 @@
 #include "UI/RpgInteractionHudAssetTools.h"
 
 #include "AssetToolsModule.h"
+#include "Animation/WidgetAnimation.h"
 #include "Blueprint/WidgetTree.h"
 #include "BlueprintEditorLibrary.h"
 #include "CommonActionWidget.h"
@@ -219,6 +220,29 @@ namespace RpgInteractionHudAuthoring
 		return bChanged;
 	}
 
+	bool RemoveWidgetAnimations(UWidgetBlueprint& Blueprint)
+	{
+		if (Blueprint.Animations.IsEmpty())
+		{
+			return false;
+		}
+
+		for (UWidgetAnimation* Animation : Blueprint.Animations)
+		{
+			if (!Animation)
+			{
+				continue;
+			}
+			Blueprint.OnVariableRemoved(Animation->GetFName());
+			Animation->Rename(
+				nullptr,
+				GetTransientPackage(),
+				REN_DontCreateRedirectors | REN_NonTransactional);
+		}
+		Blueprint.Animations.Reset();
+		return true;
+	}
+
 	void BuildFocusTree(UWidgetBlueprint& Blueprint)
 	{
 		UWidgetTree* Tree = ResetWidgetTree(Blueprint);
@@ -409,6 +433,7 @@ namespace RpgInteractionHudAuthoring
 			bChanged = true;
 		}
 		bChanged |= RemoveBlueprintGraphLogic(*Blueprint);
+		bChanged |= RemoveWidgetAnimations(*Blueprint);
 		if (!IsCanonical(*Blueprint))
 		{
 			BuildTree(*Blueprint);

@@ -139,6 +139,9 @@ bool FRpgInteractionHudPresentationAssetTest::RunTest(const FString& Parameters)
 	TestFalse(TEXT("Focus prompt owns no Blueprint graph logic"), HasBlueprintGraphLogic(*FocusBlueprint));
 	TestFalse(TEXT("Nearby marker owns no Blueprint graph logic"), HasBlueprintGraphLogic(*NearbyBlueprint));
 	TestFalse(TEXT("Reticle owns no Blueprint graph logic"), HasBlueprintGraphLogic(*ReticleBlueprint));
+	TestTrue(TEXT("Focus prompt owns no authored animation"), FocusBlueprint->Animations.IsEmpty());
+	TestTrue(TEXT("Nearby marker owns no authored animation"), NearbyBlueprint->Animations.IsEmpty());
+	TestTrue(TEXT("Reticle owns no authored animation"), ReticleBlueprint->Animations.IsEmpty());
 
 	const UWidgetBlueprintGeneratedClass* FocusClass =
 		Cast<UWidgetBlueprintGeneratedClass>(FocusBlueprint->GeneratedClass);

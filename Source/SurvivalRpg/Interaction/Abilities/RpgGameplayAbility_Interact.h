@@ -135,6 +135,7 @@ private:
 		URpgInteractionPromptAnchorComponent* DestroyedAnchor);
 	bool TriggerValidatedInteraction(const FInteractionOption& FocusedOption);
 	static FString MakeOptionKey(const FInteractionOption& Option);
+	static FString MakePresentationSlotKey(const FInteractionOption& Option);
 
 	UPROPERTY()
 	TObjectPtr<UAbilityTask_WaitForInteractableTargets_FocusSweep> FocusTask;
@@ -156,6 +157,9 @@ private:
 
 	UPROPERTY()
 	TObjectPtr<URpgInteractionPromptData> FocusPromptData;
+
+	/** UI-only slot currently owned by the reusable full-prompt descriptor. */
+	FString FocusIndicatorSlotKey;
 
 	UPROPERTY()
 	TMap<FString, TObjectPtr<UIndicatorDescriptor>> NearbyIndicators;

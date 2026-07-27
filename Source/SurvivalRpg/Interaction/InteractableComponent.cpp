@@ -10,6 +10,14 @@ UInteractableComponent::UInteractableComponent(const FObjectInitializer& ObjectI
 void UInteractableComponent::GatherInteractionOptions(const FInteractionQuery& InteractQuery,
 	FInteractionOptionBuilder& InteractionBuilder)
 {
+	(void)InteractQuery;
+	if (!GetOwner())
+	{
+		return;
+	}
 
+	FInteractionOption GatheredOption = Option;
+	GatheredOption.TargetRef.TargetActor = GetOwner();
+	InteractionBuilder.AddInteractionOption(GatheredOption);
 }
 

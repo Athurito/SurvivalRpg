@@ -79,13 +79,27 @@ EActiveTimerReturnType SActorCanvas::UpdateCanvas(double CurrentTime, float Delt
 		const bool bHasPosition = Indicator->GetIsVisible()
 			&& FIndicatorProjection().Project(*Indicator, ProjectionData, PaintGeometry->GetLocalSize(), ScreenPositionWithDepth);
 
-		Slot.bHasValidPosition = bHasPosition;
-		Slot.GetWidget()->SetVisibility(bHasPosition ? EVisibility::SelfHitTestInvisible : EVisibility::Collapsed);
+		const uint32 ProjectionRevision = Indicator->GetProjectionRevision();
+		const bool bNeedsLayoutRefresh =
+			!Slot.bHasValidPosition ||
+			Slot.ProjectedRevision != ProjectionRevision ||
+			Slot.GetWidget()->GetVisibility() == EVisibility::Collapsed;
 		if (bHasPosition)
 		{
 			Slot.ScreenPosition = FVector2D(ScreenPositionWithDepth);
 			Slot.Depth = ScreenPositionWithDepth.Z;
+			Slot.ProjectedRevision = ProjectionRevision;
+			Slot.GetWidget()->SetVisibility(EVisibility::SelfHitTestInvisible);
+			if (bNeedsLayoutRefresh)
+			{
+				Slot.GetWidget()->SlatePrepass();
+			}
 		}
+		else
+		{
+			Slot.GetWidget()->SetVisibility(EVisibility::Collapsed);
+		}
+		Slot.bHasValidPosition = bHasPosition;
 		bNeedsPaint = true;
 	}
 
@@ -120,7 +134,10 @@ void SActorCanvas::OnArrangeChildren(const FGeometry& AllottedGeometry, FArrange
 
 	for (const FSlot* Slot : SortedSlots)
 	{
-		if (!Slot || !Slot->Indicator || !Slot->bHasValidPosition || !ArrangedChildren.Accepts(Slot->GetWidget()->GetVisibility()))
+		if (!Slot || !Slot->Indicator || !Slot->Indicator->GetIsVisible() ||
+			!Slot->bHasValidPosition ||
+			Slot->ProjectedRevision != Slot->Indicator->GetProjectionRevision() ||
+			!ArrangedChildren.Accepts(Slot->GetWidget()->GetVisibility()))
 		{
 			continue;
 		}

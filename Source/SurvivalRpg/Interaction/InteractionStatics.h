@@ -70,6 +70,13 @@ public:
 	static FString MakePresentationOptionKey(const FInteractionOption& Option);
 
 	/**
+	 * Builds the stable cosmetic slot identity used to keep one marker per provider target and anchor id.
+	 * Dynamic action tags and incidental hit components intentionally share this UI-only key; resolved
+	 * anchor component lifetime never changes it, so destruction can fall back without widget churn.
+	 */
+	static FString MakePresentationSlotKey(const FInteractionOption& Option);
+
+	/**
 	 * Resolves the option's designer-authored cosmetic anchor, choosing duplicate ids deterministically by component name.
 	 * Returns null when the target has no matching anchor; callers then apply their presentation-only fallback.
 	 */

@@ -305,6 +305,12 @@ FString URpgGameplayAbility_Interact::MakeOptionKey(const FInteractionOption& Op
 	return UInteractionStatics::MakePresentationOptionKey(Option);
 }
 
+FString URpgGameplayAbility_Interact::MakePresentationSlotKey(
+	const FInteractionOption& Option)
+{
+	return UInteractionStatics::MakePresentationSlotKey(Option);
+}
+
 void URpgGameplayAbility_Interact::RefreshInteractionIndicators()
 {
 	ARpgPlayerController* PlayerController = GetRpgPlayerControllerFromActorInfo();
@@ -326,13 +332,14 @@ void URpgGameplayAbility_Interact::ReconcileInteractionIndicators(URpgIndicatorM
 	const bool bShowFullPrompt = !CurrentOptions.IsEmpty() &&
 		RpgInteractionPresentation::IsFullPromptState(
 			CurrentOptions[0].PromptState);
-	const FString FullPromptKey = bShowFullPrompt
-		? MakeOptionKey(CurrentOptions[0])
+	const FString FullPromptSlotKey = bShowFullPrompt
+		? MakePresentationSlotKey(CurrentOptions[0])
 		: FString();
 
-	// Hide the previous focus first. Nearby reconciliation below either restores its
-	// circle or keeps the matching circle hidden before the full prompt is shown.
-	if (FocusIndicator)
+	// Keep a continuing prompt stable, but synchronously hide it before its world slot
+	// changes or before nearby presentation takes ownership again.
+	if (FocusIndicator &&
+		(!bShowFullPrompt || FocusIndicatorSlotKey != FullPromptSlotKey))
 	{
 		FocusIndicator->SetDesiredVisibility(false);
 	}
@@ -349,11 +356,13 @@ void URpgGameplayAbility_Interact::ReconcileInteractionIndicators(URpgIndicatorM
 		if (FocusedOption.PromptState != ERpgInteractionPromptState::Hidden &&
 			FocusedOption.Prompt.bShowNearbyIndicator)
 		{
-			const FString FocusedKey = MakeOptionKey(FocusedOption);
+			const FString FocusedSlotKey =
+				MakePresentationSlotKey(FocusedOption);
 			const int32 ExistingIndex = PresentedNearbyOptions.IndexOfByPredicate(
-				[&FocusedKey](const FInteractionOption& Option)
+				[&FocusedSlotKey](const FInteractionOption& Option)
 				{
-					return MakeOptionKey(Option) == FocusedKey;
+					return MakePresentationSlotKey(Option) ==
+						FocusedSlotKey;
 				});
 			if (ExistingIndex != INDEX_NONE)
 			{
@@ -367,6 +376,18 @@ void URpgGameplayAbility_Interact::ReconcileInteractionIndicators(URpgIndicatorM
 			}
 		}
 	}
+	TSet<FString> SeenNearbySlotKeys;
+	PresentedNearbyOptions.RemoveAll(
+		[&SeenNearbySlotKeys](const FInteractionOption& Option)
+		{
+			const FString SlotKey = MakePresentationSlotKey(Option);
+			if (SeenNearbySlotKeys.Contains(SlotKey))
+			{
+				return true;
+			}
+			SeenNearbySlotKeys.Add(SlotKey);
+			return false;
+		});
 	if (PresentedNearbyOptions.Num() > MaxNearbyIndicators)
 	{
 		PresentedNearbyOptions.SetNum(
@@ -382,7 +403,7 @@ void URpgGameplayAbility_Interact::ReconcileInteractionIndicators(URpgIndicatorM
 			continue;
 		}
 
-		const FString Key = MakeOptionKey(Option);
+		const FString Key = MakePresentationSlotKey(Option);
 		DesiredNearbyKeys.Add(Key);
 		URpgInteractionPromptData* Data = NearbyPromptData.FindRef(Key);
 		if (!Data)
@@ -429,7 +450,7 @@ void URpgGameplayAbility_Interact::ReconcileInteractionIndicators(URpgIndicatorM
 		Descriptor->SetIndicatorClass(DesiredWidgetClass);
 		Descriptor->SetPriority(Option.Prompt.InteractionPriority);
 		Descriptor->SetDesiredVisibility(
-			bHasPlacement && Key != FullPromptKey);
+			bHasPlacement && Key != FullPromptSlotKey);
 		if (bRegisterIndicator)
 		{
 			IndicatorManager->AddIndicator(Descriptor);
@@ -465,6 +486,7 @@ void URpgGameplayAbility_Interact::ReconcileInteractionIndicators(URpgIndicatorM
 		{
 			IndicatorManager->RemoveIndicator(FocusIndicator);
 			FocusIndicator = nullptr;
+			FocusIndicatorSlotKey.Reset();
 		}
 
 		bool bRegisterIndicator = false;
@@ -488,6 +510,7 @@ void URpgGameplayAbility_Interact::ReconcileInteractionIndicators(URpgIndicatorM
 		}
 		FocusIndicator->SetIndicatorClass(DesiredWidgetClass);
 		FocusIndicator->SetPriority(Option.Prompt.InteractionPriority);
+		FocusIndicatorSlotKey = FullPromptSlotKey;
 		FocusIndicator->SetDesiredVisibility(bHasPlacement);
 		if (bRegisterIndicator)
 		{
@@ -577,6 +600,7 @@ void URpgGameplayAbility_Interact::ClearInteractionIndicators()
 	}
 	FocusIndicator = nullptr;
 	FocusPromptData = nullptr;
+	FocusIndicatorSlotKey.Reset();
 	NearbyIndicators.Reset();
 	NearbyPromptData.Reset();
 	LastIndicatorManager.Reset();

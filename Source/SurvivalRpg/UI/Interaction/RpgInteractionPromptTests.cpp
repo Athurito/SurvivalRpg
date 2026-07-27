@@ -289,6 +289,26 @@ bool FRpgInteractionPromptProgressiveDisclosureTest::RunTest(
 		RetainedNearbyDescriptor->GetIsVisible());
 	const int32 AddedAfterFirstFocus = AddedCount;
 
+	NearbyOption.InteractionTag =
+		RpgGameplayTags::Rpg_Interaction_Action_Door_Open;
+	FocusOption.InteractionTag =
+		RpgGameplayTags::Rpg_Interaction_Action_Door_Close;
+	Ability->ReconcileForTesting(
+		IndicatorManager,
+		{ FocusOption },
+		{ NearbyOption });
+	TestEqual(
+		TEXT("A stale nearby action tag cannot remain over the focused prompt"),
+		CountVisible(),
+		1);
+	TestFalse(
+		TEXT("Visual-slot matching hides the stale-tag circle"),
+		RetainedNearbyDescriptor->GetIsVisible());
+	TestEqual(
+		TEXT("A dynamic action-tag change does not add descriptors"),
+		AddedCount,
+		AddedAfterFirstFocus);
+
 	FocusOption.PromptState =
 		ERpgInteractionPromptState::FocusedOutOfRange;
 	Ability->ReconcileForTesting(

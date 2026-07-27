@@ -12,6 +12,7 @@
 #include "GameFramework/Actor.h"
 #include "Misc/AutomationTest.h"
 #include "SurvivalRpg/Interaction/Components/RpgInteractionPromptAnchorComponent.h"
+#include "SurvivalRpg/GameplayTags/RpgGameplayTags.h"
 #include "SurvivalRpg/Interaction/InteractionOption.h"
 #include "SurvivalRpg/UI/IndicatorSystem/IndicatorDescriptor.h"
 
@@ -141,6 +142,112 @@ bool FRpgInteractionExpandedPromptStateTest::RunTest(
 		TEXT("Hidden owns no expanded presentation"),
 		RpgInteractionPresentation::IsFullPromptState(
 			ERpgInteractionPromptState::Hidden));
+	return true;
+}
+
+IMPLEMENT_SIMPLE_AUTOMATION_TEST(
+	FRpgInteractionNearbySelectionTest,
+	"SurvivalRpg.Interaction.Presentation.NearbySelection",
+	EAutomationTestFlags::EditorContext |
+		EAutomationTestFlags::EngineFilter)
+
+bool FRpgInteractionNearbySelectionTest::RunTest(
+	const FString& Parameters)
+{
+	(void)Parameters;
+	using namespace RpgInteractionPresentationTests;
+
+	FScopedTestWorld TestWorld;
+	AActor* DynamicActionActor = SpawnTestActor(
+		TestWorld.GetWorld(),
+		TEXT("DynamicActionActor"));
+	AActor* ResourceActor = SpawnTestActor(
+		TestWorld.GetWorld(),
+		TEXT("DenseResourceActor"));
+	AActor* StorageActor = SpawnTestActor(
+		TestWorld.GetWorld(),
+		TEXT("StorageActor"));
+	UInstancedStaticMeshComponent* Instances =
+		AddSceneComponent<UInstancedStaticMeshComponent>(
+			ResourceActor,
+			TEXT("ResourceInstances"));
+	if (!TestNotNull(TEXT("Dynamic-action actor exists"), DynamicActionActor) ||
+		!TestNotNull(TEXT("Dense resource actor exists"), ResourceActor) ||
+		!TestNotNull(TEXT("Storage actor exists"), StorageActor) ||
+		!TestNotNull(TEXT("Resource instances component exists"), Instances))
+	{
+		return false;
+	}
+
+	TArray<FInteractionOption> DynamicOptions;
+	FInteractionOption OpenOption;
+	OpenOption.TargetRef.TargetActor = DynamicActionActor;
+	OpenOption.TargetRef.WorldLocation = FVector(100.0f, 0.0f, 0.0f);
+	OpenOption.InteractionTag =
+		RpgGameplayTags::Rpg_Interaction_Action_Door_Open;
+	OpenOption.Prompt.InteractionPriority = 60;
+	DynamicOptions.Add(OpenOption);
+	FInteractionOption CloseOption = OpenOption;
+	CloseOption.InteractionTag =
+		RpgGameplayTags::Rpg_Interaction_Action_Door_Close;
+	DynamicOptions.Add(CloseOption);
+
+	RpgInteractionPresentation::SelectNearbyOptionsForDisplay(
+		DynamicOptions,
+		FVector::ZeroVector,
+		12);
+	TestEqual(
+		TEXT("Dynamic tags at one actor projection produce one circle"),
+		DynamicOptions.Num(),
+		1);
+
+	TArray<FInteractionOption> DenseOptions;
+	for (int32 InstanceIndex = 0; InstanceIndex < 12; ++InstanceIndex)
+	{
+		FInteractionOption ResourceOption;
+		ResourceOption.TargetRef.TargetActor = ResourceActor;
+		ResourceOption.TargetRef.TargetComponent = Instances;
+		ResourceOption.TargetRef.InstanceIndex = InstanceIndex;
+		ResourceOption.TargetRef.WorldLocation = FVector(
+			100.0f + static_cast<float>(InstanceIndex),
+			0.0f,
+			0.0f);
+		ResourceOption.Prompt.InteractionPriority = 30;
+		DenseOptions.Add(ResourceOption);
+	}
+	FInteractionOption StorageOption;
+	StorageOption.TargetRef.TargetActor = StorageActor;
+	StorageOption.TargetRef.WorldLocation = FVector(500.0f, 0.0f, 0.0f);
+	StorageOption.Prompt.InteractionPriority = 20;
+	DenseOptions.Add(StorageOption);
+
+	RpgInteractionPresentation::SelectNearbyOptionsForDisplay(
+		DenseOptions,
+		FVector::ZeroVector,
+		3);
+	TestEqual(
+		TEXT("Nearby selection remains bounded"),
+		DenseOptions.Num(),
+		3);
+	TestTrue(
+		TEXT("Dense HISM instances cannot starve a separate interactable actor"),
+		DenseOptions.ContainsByPredicate(
+			[StorageActor](const FInteractionOption& Option)
+			{
+				return Option.TargetRef.TargetActor.Get() == StorageActor;
+			}));
+	int32 ResourceOptionCount = 0;
+	for (const FInteractionOption& Option : DenseOptions)
+	{
+		if (Option.TargetRef.TargetActor.Get() == ResourceActor)
+		{
+			++ResourceOptionCount;
+		}
+	}
+	TestEqual(
+		TEXT("The remaining bounded slots still retain distinct HISM instances"),
+		ResourceOptionCount,
+		2);
 	return true;
 }
 

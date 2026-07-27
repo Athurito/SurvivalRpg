@@ -18,6 +18,118 @@ bool RpgInteractionPresentation::IsFullPromptState(
 		State == ERpgInteractionPromptState::Blocked;
 }
 
+void RpgInteractionPresentation::SelectNearbyOptionsForDisplay(
+	TArray<FInteractionOption>& InOutOptions,
+	const FVector& ViewOrigin,
+	const int32 MaxVisibleOptions)
+{
+	if (MaxVisibleOptions <= 0)
+	{
+		InOutOptions.Reset();
+		return;
+	}
+
+	InOutOptions.StableSort([&ViewOrigin](
+		const FInteractionOption& A,
+		const FInteractionOption& B)
+	{
+		if (A.Prompt.InteractionPriority != B.Prompt.InteractionPriority)
+		{
+			return A.Prompt.InteractionPriority > B.Prompt.InteractionPriority;
+		}
+		const float ADistance = FVector::DistSquared(
+			ViewOrigin,
+			A.GetInteractionWorldLocation());
+		const float BDistance = FVector::DistSquared(
+			ViewOrigin,
+			B.GetInteractionWorldLocation());
+		if (!FMath::IsNearlyEqual(ADistance, BDistance, 1.0f))
+		{
+			return ADistance < BDistance;
+		}
+		const FString ASlotKey =
+			UInteractionStatics::MakePresentationSlotKey(A);
+		const FString BSlotKey =
+			UInteractionStatics::MakePresentationSlotKey(B);
+		if (ASlotKey != BSlotKey)
+		{
+			return ASlotKey < BSlotKey;
+		}
+		const FString APresentationKey =
+			UInteractionStatics::MakePresentationOptionKey(A);
+		const FString BPresentationKey =
+			UInteractionStatics::MakePresentationOptionKey(B);
+		return APresentationKey != BPresentationKey
+			? APresentationKey < BPresentationKey
+			: UInteractionStatics::MakeStableOptionKey(A) <
+				UInteractionStatics::MakeStableOptionKey(B);
+	});
+
+	TSet<FString> SeenSlotKeys;
+	InOutOptions.RemoveAll([&SeenSlotKeys](const FInteractionOption& Option)
+	{
+		const FString SlotKey =
+			UInteractionStatics::MakePresentationSlotKey(Option);
+		if (SeenSlotKeys.Contains(SlotKey))
+		{
+			return true;
+		}
+		SeenSlotKeys.Add(SlotKey);
+		return false;
+	});
+	if (InOutOptions.Num() <= MaxVisibleOptions)
+	{
+		return;
+	}
+
+	TArray<FInteractionOption> SelectedOptions;
+	SelectedOptions.Reserve(MaxVisibleOptions);
+	TSet<FString> SelectedOwnerKeys;
+	TSet<FString> SelectedSlotKeys;
+	for (const FInteractionOption& Option : InOutOptions)
+	{
+		const AActor* TargetActor = Option.TargetRef.TargetActor.Get();
+		if (!TargetActor)
+		{
+			TargetActor = UInteractionStatics::GetActorFromInteractableTarget(
+				Option.InteractableTarget);
+		}
+		const FString OwnerKey = GetPathNameSafe(
+			TargetActor ? static_cast<const UObject*>(TargetActor) :
+				Option.InteractableTarget.GetObject());
+		if (SelectedOwnerKeys.Contains(OwnerKey))
+		{
+			continue;
+		}
+
+		SelectedOwnerKeys.Add(OwnerKey);
+		SelectedSlotKeys.Add(
+			UInteractionStatics::MakePresentationSlotKey(Option));
+		SelectedOptions.Add(Option);
+		if (SelectedOptions.Num() >= MaxVisibleOptions)
+		{
+			break;
+		}
+	}
+
+	for (const FInteractionOption& Option : InOutOptions)
+	{
+		if (SelectedOptions.Num() >= MaxVisibleOptions)
+		{
+			break;
+		}
+		const FString SlotKey =
+			UInteractionStatics::MakePresentationSlotKey(Option);
+		if (!SelectedSlotKeys.Contains(SlotKey))
+		{
+			SelectedSlotKeys.Add(SlotKey);
+			SelectedOptions.Add(Option);
+		}
+	}
+
+	InOutOptions = MoveTemp(SelectedOptions);
+}
+
 bool RpgInteractionPresentation::ConfigureDescriptorPlacement(
 	UIndicatorDescriptor& Descriptor,
 	const FInteractionOption& Option)

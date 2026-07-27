@@ -5,8 +5,10 @@
 #include "Misc/AutomationTest.h"
 
 #include "Components/BoxComponent.h"
+#include "Components/InstancedStaticMeshComponent.h"
 #include "Components/SceneComponent.h"
 #include "Components/SphereComponent.h"
+#include "Engine/CollisionProfile.h"
 #include "Engine/Engine.h"
 #include "Engine/GameInstance.h"
 #include "Engine/World.h"
@@ -15,7 +17,10 @@
 #include "SurvivalRpg/Interaction/Components/RpgInteractableDoorComponent.h"
 #include "SurvivalRpg/Interaction/Components/RpgInteractionPromptAnchorComponent.h"
 #include "SurvivalRpg/Interaction/InteractionOption.h"
+#include "SurvivalRpg/Interaction/InteractionQuery.h"
 #include "SurvivalRpg/Interaction/InteractionStatics.h"
+#include "SurvivalRpg/Interaction/InteractableComponent.h"
+#include "SurvivalRpg/Physics/RpgCollisionChannels.h"
 
 #if WITH_EDITOR
 #include "Misc/DataValidation.h"
@@ -299,6 +304,10 @@ bool FRpgInteractionPresentationIdentityTest::RunTest(const FString& Parameters)
 		TEXT("Presentation identity ignores incidental collision components"),
 		UInteractionStatics::MakePresentationOptionKey(First),
 		UInteractionStatics::MakePresentationOptionKey(SameProviderDifferentCollision));
+	TestEqual(
+		TEXT("Incidental collision components share one projected slot"),
+		UInteractionStatics::MakePresentationSlotKey(First),
+		UInteractionStatics::MakePresentationSlotKey(SameProviderDifferentCollision));
 
 	FInteractionOption DifferentProvider = First;
 	DifferentProvider.InteractableTarget = MakeTargetInterface(ProviderB);
@@ -306,6 +315,10 @@ bool FRpgInteractionPresentationIdentityTest::RunTest(const FString& Parameters)
 		TEXT("Different component providers keep separate presentation identities"),
 		UInteractionStatics::MakePresentationOptionKey(First) !=
 			UInteractionStatics::MakePresentationOptionKey(DifferentProvider));
+	TestTrue(
+		TEXT("Different component providers retain separate visual slots"),
+		UInteractionStatics::MakePresentationSlotKey(First) !=
+			UInteractionStatics::MakePresentationSlotKey(DifferentProvider));
 
 	FInteractionOption DifferentInstance = First;
 	DifferentInstance.TargetRef.InstanceIndex = 7;
@@ -320,7 +333,129 @@ bool FRpgInteractionPresentationIdentityTest::RunTest(const FString& Parameters)
 		TEXT("Different interaction actions keep separate presentation identities"),
 		UInteractionStatics::MakePresentationOptionKey(First) !=
 			UInteractionStatics::MakePresentationOptionKey(DifferentAction));
+	TestEqual(
+		TEXT("Dynamic actions at the same projection point share one visual slot"),
+		UInteractionStatics::MakePresentationSlotKey(First),
+		UInteractionStatics::MakePresentationSlotKey(DifferentAction));
 
+	UInstancedStaticMeshComponent* Instances =
+		AddTestComponent<UInstancedStaticMeshComponent>(
+			TargetActor,
+			TEXT("Instances"));
+	if (!TestNotNull(TEXT("Instanced component exists"), Instances))
+	{
+		return false;
+	}
+	FInteractionOption FirstInstance = First;
+	FirstInstance.TargetRef.TargetComponent = Instances;
+	FirstInstance.TargetRef.InstanceIndex = 2;
+	FInteractionOption SecondInstance = FirstInstance;
+	SecondInstance.TargetRef.InstanceIndex = 3;
+	TestTrue(
+		TEXT("Different ISM indices retain distinct visual slots"),
+		UInteractionStatics::MakePresentationSlotKey(FirstInstance) !=
+			UInteractionStatics::MakePresentationSlotKey(SecondInstance));
+
+	FInteractionQuery NonInstancedQuery;
+	NonInstancedQuery.CandidateHit = FHitResult(
+		TargetActor,
+		CollisionA,
+		FVector::ZeroVector,
+		FVector::UpVector);
+	NonInstancedQuery.CandidateHit.Item = 17;
+	FInteractionOption NonInstancedOption;
+	UInteractionStatics::NormalizeInteractionOption(
+		NonInstancedQuery,
+		MakeTargetInterface(ProviderA),
+		NonInstancedOption);
+	TestEqual(
+		TEXT("Non-ISM hit items never become instance identities"),
+		NonInstancedOption.TargetRef.InstanceIndex,
+		INDEX_NONE);
+
+	FInteractionQuery InstancedQuery = NonInstancedQuery;
+	InstancedQuery.CandidateHit.Component = Instances;
+	InstancedQuery.CandidateHit.Item = 4;
+	FInteractionOption InstancedOption;
+	UInteractionStatics::NormalizeInteractionOption(
+		InstancedQuery,
+		MakeTargetInterface(ProviderA),
+		InstancedOption);
+	TestEqual(
+		TEXT("ISM hit items remain stable instance identities"),
+		InstancedOption.TargetRef.InstanceIndex,
+		4);
+
+	return true;
+}
+
+IMPLEMENT_SIMPLE_AUTOMATION_TEST(
+	FRpgGenericInteractableComponentOptionTest,
+	"SurvivalRpg.Interaction.Core.GenericComponentEmitsOption",
+	EAutomationTestFlags::EditorContext | EAutomationTestFlags::EngineFilter)
+
+bool FRpgGenericInteractableComponentOptionTest::RunTest(
+	const FString& Parameters)
+{
+	(void)Parameters;
+	using namespace RpgInteractionCoreTests;
+
+	FScopedTestWorld TestWorld;
+	AActor* TargetActor = SpawnTestActor(TestWorld.GetWorld());
+	UInteractableComponent* Interactable =
+		AddTestComponent<UInteractableComponent>(
+			TargetActor,
+			TEXT("GenericInteractable"));
+	if (!TestNotNull(TEXT("Generic interactable component exists"), Interactable))
+	{
+		return false;
+	}
+
+	TScriptInterface<IInteractableTarget> Target;
+	Target.SetObject(Interactable);
+	Target.SetInterface(Interactable);
+	TArray<FInteractionOption> Options;
+	FInteractionOptionBuilder Builder(Target, Options);
+	FInteractionQuery Query;
+	Interactable->GatherInteractionOptions(Query, Builder);
+	TestEqual(TEXT("Generic component emits its configured option"), Options.Num(), 1);
+	if (!Options.IsEmpty())
+	{
+		TestEqual(
+			TEXT("Generic component stamps its owning actor"),
+			Options[0].TargetRef.TargetActor.Get(),
+			TargetActor);
+		TestEqual(
+			TEXT("Builder preserves the component provider"),
+			Options[0].InteractableTarget.GetObject(),
+			static_cast<UObject*>(Interactable));
+	}
+	return true;
+}
+
+IMPLEMENT_SIMPLE_AUTOMATION_TEST(
+	FRpgReviveInteractionCollisionProfileTest,
+	"SurvivalRpg.Interaction.Core.ReviveDiscoveryCollision",
+	EAutomationTestFlags::EditorContext | EAutomationTestFlags::EngineFilter)
+
+bool FRpgReviveInteractionCollisionProfileTest::RunTest(
+	const FString& Parameters)
+{
+	(void)Parameters;
+	FCollisionResponseTemplate PawnCapsuleProfile;
+	if (!TestTrue(
+		TEXT("RpgPawnCapsule collision profile exists"),
+		UCollisionProfile::Get()->GetProfileTemplate(
+			TEXT("RpgPawnCapsule"),
+			PawnCapsuleProfile)))
+	{
+		return false;
+	}
+	TestEqual(
+		TEXT("Pawn capsules participate in revive interaction discovery"),
+		PawnCapsuleProfile.ResponseToChannels.GetResponse(
+			Rpg_TraceChannel_Interaction),
+		ECR_Overlap);
 	return true;
 }
 
