@@ -136,6 +136,10 @@
 		{
 			"Name": "GF_AI_Wildlife",
 			"Enabled": true
+		},
+		{
+			"Name": "GF_Dev_Sandbox",
+			"Enabled": true
 		}
 	]
 }
