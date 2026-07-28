@@ -1,51 +1,22 @@
 #include "Harvesting/RpgHarvestableInstancedMeshComponent.h"
 
+#include "Engine/World.h"
 #include "GameFramework/Actor.h"
-#include "GameFramework/Controller.h"
-#include "GameFramework/Pawn.h"
-#include "AbilitySystemGlobals.h"
 #include "GameplayTags/RpgHarvestingMagicGameplayTags.h"
 #include "Harvesting/RpgHarvestProfile.h"
+#include "Harvesting/RpgHarvestRewardService.h"
 #include "Misc/ScopeExit.h"
 #include "Net/UnrealNetwork.h"
-#include "SurvivalRpg/AbilitySystem/Attributes/RpgGatheringSet.h"
-#include "SurvivalRpg/Core/Player/RpgPlayerState.h"
 #include "SurvivalRpg/Interaction/Abilities/RpgGameplayAbility_ExecuteInteraction.h"
 #include "SurvivalRpg/Interaction/InteractionOption.h"
 #include "SurvivalRpg/Interaction/InteractionQuery.h"
 #include "SurvivalRpg/Physics/RpgCollisionChannels.h"
-#include "SurvivalRpg/Progression/Skills/RpgTradeSkillProgressionComponent.h"
-#include "SurvivalRpg/Inventory/Loot/RpgLootResolver.h"
-#include "SurvivalRpg/Inventory/RpgDroppedInventoryActor.h"
-#include "SurvivalRpg/Inventory/RpgInventoryManagerComponent.h"
 
 #include UE_INLINE_GENERATED_CPP_BY_NAME(RpgHarvestableInstancedMeshComponent)
 
 namespace
 {
 	constexpr int32 DefaultHarvestInteractionPriority = 30;
-
-	ARpgPlayerState* ResolveHarvesterPlayerState(AActor* Harvester)
-	{
-		if (ARpgPlayerState* PlayerState = Cast<ARpgPlayerState>(Harvester))
-		{
-			return PlayerState;
-		}
-		if (const APawn* Pawn = Cast<APawn>(Harvester))
-		{
-			return Pawn->GetPlayerState<ARpgPlayerState>();
-		}
-		if (const AController* Controller = Cast<AController>(Harvester))
-		{
-			return Controller->GetPlayerState<ARpgPlayerState>();
-		}
-		return nullptr;
-	}
-
-	bool HasPickupContents(const FInventoryPickup& Pickup)
-	{
-		return !Pickup.Templates.IsEmpty() || !Pickup.Instances.IsEmpty();
-	}
 }
 
 const FRpgHarvestedInstanceStateEntry* FRpgHarvestedInstanceStateList::Find(const int32 InstanceIndex) const
@@ -495,94 +466,15 @@ void URpgHarvestableInstancedMeshComponent::ApplyReplicatedInstanceState(
 
 bool URpgHarvestableInstancedMeshComponent::CanHarvesterMeetSkillGate(const FRpgHarvestRequest& Request) const
 {
-	if (!HarvestProfile || !HarvestProfile->SkillTag.IsValid())
-	{
-		return true;
-	}
-
-	const ARpgPlayerState* PlayerState = ResolveHarvesterPlayerState(Request.Harvester);
-	const URpgTradeSkillProgressionComponent* TradeSkills =
-		PlayerState ? PlayerState->GetTradeSkillProgressionComponent() : nullptr;
-	return TradeSkills &&
-		TradeSkills->GetSkillLevelByTag(HarvestProfile->SkillTag) >=
-			FMath::Clamp(HarvestProfile->MinimumSkillLevel, 1, 100);
+	return FRpgHarvestRewardService::MeetsSkillGate(HarvestProfile, Request.Harvester);
 }
 
 bool URpgHarvestableInstancedMeshComponent::TryDeliverHarvestReward(const FRpgHarvestRequest& Request)
 {
 	AActor* OwningActor = GetOwner();
-	UWorld* World = GetWorld();
-	if (!HarvestProfile || !HarvestProfile->LootTable || !OwningActor ||
-		!OwningActor->HasAuthority() || !World)
+	if (!HarvestProfile || !OwningActor || !OwningActor->HasAuthority())
 	{
 		return false;
-	}
-
-	ARpgPlayerState* PlayerState = ResolveHarvesterPlayerState(Request.Harvester);
-	URpgTradeSkillProgressionComponent* TradeSkills =
-		PlayerState ? PlayerState->GetTradeSkillProgressionComponent() : nullptr;
-	const int32 SkillLevel = HarvestProfile->SkillTag.IsValid() && TradeSkills
-		? TradeSkills->GetSkillLevelByTag(HarvestProfile->SkillTag)
-		: 0;
-
-	float YieldMultiplier = HarvestProfile->SkillTag.IsValid() && TradeSkills
-		? TradeSkills->GetSkillYieldMultiplier(HarvestProfile->SkillTag)
-		: 1.0f;
-	float RareFindMultiplier = HarvestProfile->SkillTag.IsValid() && TradeSkills
-		? TradeSkills->GetSkillRareFindMultiplier(HarvestProfile->SkillTag)
-		: 1.0f;
-	if (const UAbilitySystemComponent* AbilitySystem = PlayerState
-			? UAbilitySystemGlobals::GetAbilitySystemComponentFromActor(PlayerState)
-			: nullptr)
-	{
-		if (const URpgGatheringSet* GatheringSet = AbilitySystem->GetSet<URpgGatheringSet>())
-		{
-			YieldMultiplier *= FMath::Max(0.05f, 1.0f + GatheringSet->GetYieldBonus());
-			RareFindMultiplier *= FMath::Max(0.05f, 1.0f + GatheringSet->GetRareFindBonus());
-		}
-	}
-
-	FRpgLootRollContext LootContext;
-	LootContext.SourceActor = OwningActor;
-	LootContext.RecipientActor = Request.Harvester;
-	LootContext.SourceTags = HarvestProfile->SourceTags;
-	LootContext.SourceLevel = FMath::Max(1, SkillLevel);
-	LootContext.SkillId = HarvestProfile->SkillTag;
-	LootContext.SkillLevel = SkillLevel;
-	LootContext.HarvestPower = Request.HarvestPower;
-	LootContext.YieldMultiplier = YieldMultiplier;
-	LootContext.RareFindMultiplier = RareFindMultiplier;
-	const uint64 Entropy = FPlatformTime::Cycles64() ^
-		(static_cast<uint64>(GetTypeHash(OwningActor)) << 32) ^
-		static_cast<uint32>(Request.Hit.Item) ^
-		static_cast<uint32>(GetResourceInstanceRevision(Request.Hit.Item));
-	LootContext.Seed = static_cast<int32>(Entropy ^ (Entropy >> 32));
-
-	FInventoryPickup Reward;
-	if (!FRpgLootResolver::RollAndMaterialize(
-		HarvestProfile->LootTable,
-		LootContext,
-		OwningActor,
-		Reward))
-	{
-		return false;
-	}
-	if (!HasPickupContents(Reward))
-	{
-		return true;
-	}
-
-	URpgInventoryManagerComponent* PlayerInventory =
-		PlayerState ? PlayerState->GetInventoryManagerComponent() : nullptr;
-	if (PlayerInventory && PlayerInventory->CanAddPickupBatch(Reward))
-	{
-		TArray<FRpgInventoryItemId> AffectedItemIds;
-		const FRpgInventoryMutationResult GrantResult =
-			PlayerInventory->AddPickupBatch(Reward, AffectedItemIds);
-		if (GrantResult.IsSuccess())
-		{
-			return true;
-		}
 	}
 
 	FTransform DropTransform = FTransform::Identity;
@@ -590,48 +482,22 @@ bool URpgHarvestableInstancedMeshComponent::TryDeliverHarvestReward(const FRpgHa
 	{
 		DropTransform.SetLocation(Request.Hit.ImpactPoint);
 	}
-	DropTransform.AddToTranslation(FVector(0.0, 0.0, 40.0));
-	FActorSpawnParameters SpawnParameters;
-	SpawnParameters.Owner = Request.Harvester;
-	SpawnParameters.SpawnCollisionHandlingOverride =
-		ESpawnActorCollisionHandlingMethod::AdjustIfPossibleButAlwaysSpawn;
-	TSubclassOf<ARpgDroppedInventoryActor> DropClass = HarvestProfile->OverflowDropClass;
-	if (!DropClass)
-	{
-		DropClass = ARpgDroppedInventoryActor::StaticClass();
-	}
-	ARpgDroppedInventoryActor* Drop = World->SpawnActor<ARpgDroppedInventoryActor>(
-		DropClass,
-		DropTransform,
-		SpawnParameters);
-	if (!Drop)
-	{
-		return false;
-	}
 
-	Drop->SetPickupInventory(Reward);
-	URpgInventoryManagerComponent* DropInventory = Drop->GetLootInventoryManager();
-	if (!Drop->IsLootInventoryCanonical() || !DropInventory || DropInventory->GetUsedEntryCount() <= 0)
-	{
-		Drop->Destroy();
-		return false;
-	}
-	return true;
+	FRpgHarvestRewardRequest RewardRequest;
+	RewardRequest.SourceActor = OwningActor;
+	RewardRequest.Harvester = Request.Harvester;
+	RewardRequest.DeliveryTransform = DropTransform;
+	RewardRequest.HarvestPower = Request.HarvestPower;
+	RewardRequest.SeedSalt = HashCombine(
+		GetTypeHash(Request.Hit.Item),
+		GetTypeHash(GetResourceInstanceRevision(Request.Hit.Item)));
+	return FRpgHarvestRewardService::DeliverReward(HarvestProfile, RewardRequest) !=
+		ERpgHarvestRewardDeliveryResult::Failed;
 }
 
 void URpgHarvestableInstancedMeshComponent::AwardHarvestExperience(const FRpgHarvestRequest& Request) const
 {
-	if (!HarvestProfile || !HarvestProfile->SkillTag.IsValid() || HarvestProfile->SkillExperience <= 0)
-	{
-		return;
-	}
-
-	ARpgPlayerState* PlayerState = ResolveHarvesterPlayerState(Request.Harvester);
-	if (URpgTradeSkillProgressionComponent* TradeSkills =
-			PlayerState ? PlayerState->GetTradeSkillProgressionComponent() : nullptr)
-	{
-		TradeSkills->AddSkillXPByTag(HarvestProfile->SkillTag, HarvestProfile->SkillExperience);
-	}
+	FRpgHarvestRewardService::AwardExperience(HarvestProfile, Request.Harvester);
 }
 
 void URpgHarvestableInstancedMeshComponent::ScheduleResourceRespawn(const int32 InstanceIndex)

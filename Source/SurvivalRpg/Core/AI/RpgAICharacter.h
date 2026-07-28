@@ -12,6 +12,7 @@ class URpgEnemyCombatLoadoutComponent;
 class URpgInventoryContainerComponent;
 class URpgInventoryManagerComponent;
 class URpgLootSourceComponent;
+class URpgCorpseLifecycleComponent;
 
 UCLASS()
 class SURVIVALRPG_API ARpgAICharacter : public ARpgCharacter
@@ -23,7 +24,25 @@ public:
 
 	virtual void OnRep_PlayerState() override;
 
+	/** Replicated corpse anchor and lifecycle used by loot and harvesting features after death. */
+	UFUNCTION(BlueprintPure, Category = "Rpg|Corpse")
+	URpgCorpseLifecycleComponent* GetCorpseLifecycleComponent() const
+	{
+		return CorpseLifecycleComponent;
+	}
+
+protected:
+	virtual void BeginPlay() override;
+	virtual void EndPlay(const EEndPlayReason::Type EndPlayReason) override;
+	virtual void OnDeathStarted(AActor* OwningActor) override;
+	virtual void OnDeathFinished(AActor* OwningActor) override;
+
 private:
+	void HandleLootPopulationCompleted(URpgLootSourceComponent* Source, bool bHasLoot);
+	void HandleInventoryPostCommit(URpgInventoryManagerComponent* Inventory);
+	void HandleCorpseAvailabilityChanged(URpgCorpseLifecycleComponent* Corpse, bool bIsAvailable);
+	void RefreshCorpseContainerState();
+
 	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "Rpg|Combat", Meta = (AllowPrivateAccess = "true"))
 	TObjectPtr<URpgEnemyCombatArchetypeComponent> CombatArchetypeComponent;
 
@@ -44,4 +63,8 @@ private:
 	/** Populates and unlocks the enemy loot inventory when death finishes. */
 	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "Rpg|Inventory", Meta = (AllowPrivateAccess = "true"))
 	TObjectPtr<URpgLootSourceComponent> LootSourceComponent;
+
+	/** Server-owned corpse timers and locally simulated bone-following ragdoll presentation. */
+	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "Rpg|Corpse", Meta = (AllowPrivateAccess = "true"))
+	TObjectPtr<URpgCorpseLifecycleComponent> CorpseLifecycleComponent;
 };

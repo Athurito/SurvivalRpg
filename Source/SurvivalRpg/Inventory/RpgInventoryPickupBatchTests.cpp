@@ -1262,6 +1262,103 @@ bool FRpgInventoryCanonicalDropPickupHelperTest::RunTest(
 }
 
 IMPLEMENT_SIMPLE_AUTOMATION_TEST(
+	FRpgDroppedInventoryTrySetRollbackTest,
+	"SurvivalRpg.Inventory.PickupBatch.DropTrySetRollsBackPartialPopulation",
+	EAutomationTestFlags::EditorContext | EAutomationTestFlags::EngineFilter)
+
+bool FRpgDroppedInventoryTrySetRollbackTest::RunTest(
+	const FString& Parameters)
+{
+	(void)Parameters;
+	using namespace RpgInventoryPickupBatchTests;
+	FScopedInventoryWorld TestWorld;
+	if (!InitializeTest(*this, TestWorld))
+	{
+		return false;
+	}
+
+	FActorSpawnParameters SpawnParameters;
+	SpawnParameters.Name = MakeUniqueObjectName(
+		TestWorld.GetWorld(),
+		ARpgDroppedInventoryActor::StaticClass(),
+		TEXT("TrySetRollbackDrop"));
+	SpawnParameters.ObjectFlags = RF_Transient;
+	SpawnParameters.SpawnCollisionHandlingOverride =
+		ESpawnActorCollisionHandlingMethod::AlwaysSpawn;
+	ARpgDroppedInventoryActor* DropActor =
+		TestWorld.GetWorld()->SpawnActor<ARpgDroppedInventoryActor>(
+			SpawnParameters);
+	if (!TestNotNull(TEXT("The rollback drop exists"), DropActor) ||
+		!TestTrue(
+			TEXT("The initial complete pickup payload commits"),
+			DropActor->TrySetPickupInventory(MakeStackTemplatePickup(3))))
+	{
+		return false;
+	}
+
+	URpgInventoryManagerComponent* DropInventory =
+		DropActor->GetLootInventoryManager();
+	const TArray<FRpgInventoryEntryView> BeforeEntries =
+		DropInventory ? DropInventory->GetAllEntries()
+					  : TArray<FRpgInventoryEntryView>();
+	if (!TestNotNull(TEXT("The rollback drop owns an inventory"), DropInventory) ||
+		!TestEqual(TEXT("The fixture starts with one merged stack"), BeforeEntries.Num(), 1))
+	{
+		return false;
+	}
+
+	FInventoryPickup PartialFailurePayload;
+	FPickupTemplate& ValidFirstRow =
+		PartialFailurePayload.Templates.AddDefaulted_GetRef();
+	ValidFirstRow.ItemDef =
+		URpgInventoryAutomationTestUnitItemDefinition::StaticClass();
+	ValidFirstRow.StackCount = 1;
+	FPickupTemplate& InvalidSecondRow =
+		PartialFailurePayload.Templates.AddDefaulted_GetRef();
+	InvalidSecondRow.ItemDef = nullptr;
+	InvalidSecondRow.StackCount = 1;
+
+	AddExpectedError(
+		TEXT("Cannot replace pickup inventory"),
+		EAutomationExpectedErrorFlags::Contains,
+		1);
+	TestFalse(
+		TEXT("TrySet reports the incomplete replacement as failed"),
+		DropActor->TrySetPickupInventory(PartialFailurePayload));
+	TestTrue(
+		TEXT("A failed replacement keeps the restored runtime graph canonical"),
+		DropActor->IsLootInventoryCanonical());
+	TestEqual(
+		TEXT("Rollback removes the partially populated replacement row"),
+		DropInventory->GetTotalItemCountByDefinition(
+			URpgInventoryAutomationTestUnitItemDefinition::StaticClass()),
+		0);
+	TestEqual(
+		TEXT("Rollback restores every unit from the previous payload"),
+		DropInventory->GetTotalItemCountByDefinition(
+			URpgInventoryAutomationTestStackItemDefinition::StaticClass()),
+		3);
+
+	const TArray<FRpgInventoryEntryView> AfterEntries =
+		DropInventory->GetAllEntries();
+	if (!TestEqual(TEXT("Rollback restores one complete stack"), AfterEntries.Num(), 1))
+	{
+		return false;
+	}
+	TestTrue(
+		TEXT("Rollback preserves the concrete item identity"),
+		AfterEntries[0].ItemId == BeforeEntries[0].ItemId);
+	TestEqual(
+		TEXT("Rollback preserves the prior stack count"),
+		AfterEntries[0].StackCount,
+		BeforeEntries[0].StackCount);
+	TestTrue(
+		TEXT("Rollback preserves the prior placement"),
+		AfterEntries[0].Placement == BeforeEntries[0].Placement);
+	return true;
+}
+
+IMPLEMENT_SIMPLE_AUTOMATION_TEST(
 	FRpgInventoryCollectBatchMixedRootsTest,
 	"SurvivalRpg.Inventory.CollectBatch.MixedRootsUseSharedScratchAndSingleCommit",
 	EAutomationTestFlags::EditorContext | EAutomationTestFlags::EngineFilter)

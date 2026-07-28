@@ -13,6 +13,9 @@ namespace RpgTradeSkillGameplayTags
 	/** Use-based gathering skill for stone, ore, and mineral resources. */
 	SURVIVALRPG_API UE_DECLARE_GAMEPLAY_TAG_EXTERN(Skill_Gathering_Mining);
 
+	/** Use-based gathering skill for recovering meat, hide, bone, and essences from animal corpses. */
+	SURVIVALRPG_API UE_DECLARE_GAMEPLAY_TAG_EXTERN(Skill_Gathering_Skinning);
+
 	/** Processing skill for turning timber into crafted components and equipment. */
 	SURVIVALRPG_API UE_DECLARE_GAMEPLAY_TAG_EXTERN(Skill_Crafting_Woodworking);
 

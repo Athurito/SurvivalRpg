@@ -266,7 +266,10 @@ namespace RpgHarvestableInstancedMeshTests
 		int32 Count = 0;
 		for (TActorIterator<ARpgDroppedInventoryActor> It(World); It; ++It)
 		{
-			++Count;
+			if (IsValid(*It) && !It->IsActorBeingDestroyed())
+			{
+				++Count;
+			}
 		}
 		return Count;
 	}
@@ -642,6 +645,107 @@ bool FRpgHarvestOverflowWorldDropTest::RunTest(const FString& Parameters)
 		Harvester->GetTradeSkillProgressionComponent()->GetSkillXPByTag(
 			RpgTradeSkillGameplayTags::Skill_Gathering_Foraging),
 		10.0f);
+	return true;
+}
+
+IMPLEMENT_SIMPLE_AUTOMATION_TEST(
+	FRpgHarvestOverflowFailedMaterializationTest,
+	"SurvivalRpg.Interaction.Harvesting.HISM.FailedOverflowMaterializationDoesNotComplete",
+	EAutomationTestFlags::EditorContext | EAutomationTestFlags::EngineFilter)
+
+bool FRpgHarvestOverflowFailedMaterializationTest::RunTest(
+	const FString& Parameters)
+{
+	(void)Parameters;
+	using namespace RpgHarvestableInstancedMeshTests;
+
+	FScopedTestWorld TestWorld;
+	UWorld* World = TestWorld.GetWorld();
+	ARpgHarvestableInstancedMeshActor* ResourceActor =
+		SpawnThreeInstanceFixture(World);
+	URpgHarvestableInstancedMeshComponent* Component =
+		ResourceActor ? ResourceActor->HarvestableInstances : nullptr;
+	ARpgHarvestAutomationTestPlayerState* Harvester = SpawnHarvester(World);
+	if (!TestNotNull(TEXT("Failed-overflow resource exists"), Component) ||
+		!TestNotNull(TEXT("Failed-overflow harvester exists"), Harvester))
+	{
+		return false;
+	}
+
+	URpgInventoryManagerComponent* Inventory =
+		Harvester->GetInventoryManagerComponent();
+	URpgTradeSkillProgressionComponent* TradeSkills =
+		Harvester->GetTradeSkillProgressionComponent();
+	if (!TestNotNull(TEXT("Failed-overflow inventory exists"), Inventory) ||
+		!TestNotNull(TEXT("Failed-overflow trade skills exist"), TradeSkills))
+	{
+		return false;
+	}
+	Inventory->SetFixedMaxEntries(0);
+	Inventory->SetCapacityMode(ERpgInventoryCapacityMode::FixedEntries);
+
+	URpgHarvestProfile* Profile = MakeHarvestProfile(
+		ResourceActor,
+		{
+			TPair<TSubclassOf<URpgInventoryItemDefinition>, int32>(
+				URpgHarvestAutomationTestStackItemDefinition::StaticClass(),
+				3),
+			TPair<TSubclassOf<URpgInventoryItemDefinition>, int32>(
+				URpgHarvestAutomationTestSecondMaterialDefinition::StaticClass(),
+				2)
+		},
+		0.0f);
+	Profile->OverflowDropClass =
+		ARpgHarvestAutomationPartialFailureDropActor::StaticClass();
+	if (!TestTrue(
+		TEXT("Failed-overflow profile is attached"),
+		SetHarvestProfile(Component, Profile)))
+	{
+		return false;
+	}
+
+	FInteractionOption Option;
+	if (!TestTrue(
+		TEXT("Failed-overflow resource gathers an option"),
+		GatherInstanceOption(Component, Harvester, 2, Option)))
+	{
+		return false;
+	}
+	const int32 InitialRevision = Component->GetResourceInstanceRevision(2);
+	const FInteractionQuery AuthorityQuery =
+		MakeAuthorityQuery(Component, Harvester, Option);
+	TestFalse(
+		TEXT("A partially materialized overflow batch fails the harvest"),
+		Component->CommitInteraction(AuthorityQuery, Option));
+	TestEqual(
+		TEXT("Failed overflow leaves the player inventory untouched"),
+		Inventory->GetUsedEntryCount(),
+		0);
+	TestEqual(
+		TEXT("The failed partial drop is destroyed instead of published"),
+		CountWorldDrops(World),
+		0);
+	TestTrue(
+		TEXT("Failed delivery does not complete or deplete the resource"),
+		Component->IsResourceInstanceActive(2));
+	TestEqual(
+		TEXT("Failed delivery does not advance the resource revision"),
+		Component->GetResourceInstanceRevision(2),
+		InitialRevision);
+	TestEqual(
+		TEXT("Failed delivery awards no skill XP"),
+		TradeSkills->GetSkillXPByTag(
+			RpgTradeSkillGameplayTags::Skill_Gathering_Foraging),
+		0.0f);
+
+	FInteractionOption RetryOption;
+	TestTrue(
+		TEXT("The unchanged resource remains interaction-ready for a retry"),
+		GatherInstanceOption(Component, Harvester, 2, RetryOption));
+	TestEqual(
+		TEXT("Retry observes the same unspent revision"),
+		RetryOption.TargetRef.Revision,
+		InitialRevision);
 	return true;
 }
 

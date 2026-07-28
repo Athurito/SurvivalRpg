@@ -12,6 +12,13 @@ class URpgInventoryContainerComponent;
 class URpgInventoryManagerComponent;
 class URpgLootTable;
 class FDataValidationContext;
+class URpgLootSourceComponent;
+
+/** Fires exactly once after an authoritative loot payload, including an empty no-drop roll, is delivered successfully. */
+DECLARE_MULTICAST_DELEGATE_TwoParams(
+	FRpgLootPopulationCompletedNative,
+	URpgLootSourceComponent* /* LootSource */,
+	bool /* bHasLoot */);
 
 /**
  * Rolls an actor's loot once on the authoritative death path and atomically populates its inventory.
@@ -25,9 +32,27 @@ class SURVIVALRPG_API URpgLootSourceComponent : public UActorComponent
 public:
 	explicit URpgLootSourceComponent(const FObjectInitializer& ObjectInitializer = FObjectInitializer::Get());
 
+	/** Native server-side completion seam used by corpse lifecycle components. Failed attempts never broadcast. */
+	FRpgLootPopulationCompletedNative OnLootPopulationCompleted;
+
 	/** Resolves at most one authoritative roll and retries its unchanged atomic delivery until it succeeds. */
 	UFUNCTION(BlueprintCallable, BlueprintAuthorityOnly, Category = "Inventory|Loot")
 	void PopulateLoot();
+
+	/** Returns whether this source has completed one successful authoritative population, including a no-drop result. */
+	UFUNCTION(BlueprintCallable, BlueprintPure, Category = "Inventory|Loot")
+	bool IsLootPopulated() const { return bLootPopulated; }
+
+	/** Enables or disables automatic population from the owning health component's death-finished event. */
+	UFUNCTION(BlueprintCallable, BlueprintAuthorityOnly, Category = "Inventory|Loot")
+	void SetGenerateLootOnDeathEnabled(bool bEnabled);
+
+	/**
+	 * Selects whether successful population immediately unlocks the colocated container.
+	 * Disable when a corpse lifecycle must also wait for ragdoll settle or another completion gate.
+	 */
+	UFUNCTION(BlueprintCallable, BlueprintAuthorityOnly, Category = "Inventory|Loot")
+	void SetAutomaticContainerUnlockEnabled(bool bEnabled);
 
 #if WITH_EDITOR
 	virtual EDataValidationResult IsDataValid(FDataValidationContext& Context) const override;
@@ -63,6 +88,10 @@ protected:
 	/** Whether the owning container starts inaccessible and becomes lootable after death. */
 	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Inventory|Loot")
 	bool bUnlockContainerOnDeath = true;
+
+	/** Whether DeathFinished automatically resolves this source. Disable for harvest-only corpses with no inventory loot. */
+	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Inventory|Loot")
+	bool bGenerateLootOnDeath = true;
 
 private:
 	bool TryPopulateLoot();

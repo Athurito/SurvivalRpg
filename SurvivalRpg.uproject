@@ -132,6 +132,10 @@
 		{
 			"Name": "GF_Progression",
 			"Enabled": true
+		},
+		{
+			"Name": "GF_AI_Wildlife",
+			"Enabled": true
 		}
 	]
 }

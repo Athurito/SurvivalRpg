@@ -27,6 +27,13 @@ public:
 	UFUNCTION(BlueprintCallable, BlueprintAuthorityOnly, Category = "Inventory|Drop")
 	void SetPickupInventory(const FInventoryPickup& NewPickupInventory);
 
+	/**
+	 * Attempts to replace the authoritative pickup contents and reports whether the complete payload committed.
+	 * Failed population restores the prior graph when possible; callers must treat false as no delivered payload.
+	 */
+	UFUNCTION(BlueprintCallable, BlueprintAuthorityOnly, Category = "Inventory|Drop")
+	virtual bool TrySetPickupInventory(const FInventoryPickup& NewPickupInventory);
+
 	/** Inventory shown when the player cannot auto-take the whole drop. */
 	UFUNCTION(BlueprintCallable, BlueprintPure, Category = "Inventory|Drop")
 	URpgInventoryManagerComponent* GetLootInventoryManager() const { return LootInventoryComponent; }

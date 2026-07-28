@@ -41,7 +41,8 @@ public:
 	virtual EDataValidationResult IsDataValid(FDataValidationContext& Context) const override;
 #endif
 
-	UPROPERTY(EditAnywhere, Category = "Components", meta = (TitleProperty = "ActorClass", ShowOnlyInnerProperties))
+	/** Components granted to matching modular actors while this Game Feature is active. */
+	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Components", meta = (TitleProperty = "ActorClass", ShowOnlyInnerProperties))
 	TArray<FRpgGameFeatureComponentEntry> ComponentList;
 
 private:

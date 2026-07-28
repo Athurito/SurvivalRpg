@@ -194,6 +194,17 @@ bool FRpgLootSourceRetryAndExactlyOnceTest::RunTest(const FString& Parameters)
 	{
 		Owner->DispatchBeginPlay();
 	}
+	int32 CompletionBroadcastCount = 0;
+	bool bCompletionHadLoot = false;
+	LootSource->OnLootPopulationCompleted.AddLambda(
+		[&](URpgLootSourceComponent* CompletedSource, bool bHasLoot)
+		{
+			TestTrue(
+				TEXT("The completion callback identifies its loot source"),
+				CompletedSource == LootSource);
+			++CompletionBroadcastCount;
+			bCompletionHadLoot = bHasLoot;
+		});
 	TestFalse(
 		TEXT("A death-gated corpse container starts inaccessible"),
 		Container->IsContainerAccessible());
@@ -211,6 +222,13 @@ bool FRpgLootSourceRetryAndExactlyOnceTest::RunTest(const FString& Parameters)
 	TestFalse(
 		TEXT("A failed population does not expose an empty corpse"),
 		Container->IsContainerAccessible());
+	TestFalse(
+		TEXT("A failed population is not marked complete"),
+		LootSource->IsLootPopulated());
+	TestEqual(
+		TEXT("A failed population emits no completion callback"),
+		CompletionBroadcastCount,
+		0);
 
 	// Mutating the source asset after the failed delivery proves that the retry
 	// consumes the first cached roll instead of evaluating the table a second time.
@@ -232,6 +250,16 @@ bool FRpgLootSourceRetryAndExactlyOnceTest::RunTest(const FString& Parameters)
 	TestTrue(
 		TEXT("A successful retry unlocks the populated corpse container"),
 		Container->IsContainerAccessible());
+	TestTrue(
+		TEXT("A successful retry records population completion"),
+		LootSource->IsLootPopulated());
+	TestEqual(
+		TEXT("Successful population emits exactly one completion callback"),
+		CompletionBroadcastCount,
+		1);
+	TestTrue(
+		TEXT("The populated callback distinguishes a non-empty reward"),
+		bCompletionHadLoot);
 
 	LootSource->PopulateLoot();
 	TestEqual(
@@ -239,6 +267,121 @@ bool FRpgLootSourceRetryAndExactlyOnceTest::RunTest(const FString& Parameters)
 		Inventory->GetTotalItemCountByDefinition(
 			URpgInventoryAutomationTestStackItemDefinition::StaticClass()),
 		1);
+	TestEqual(
+		TEXT("A completed source never repeats its completion callback"),
+		CompletionBroadcastCount,
+		1);
+	return true;
+}
+
+IMPLEMENT_SIMPLE_AUTOMATION_TEST(
+	FRpgLootSourceNoDropAndExternalUnlockTest,
+	"SurvivalRpg.Loot.Source.NoDropCompletionAndExternalUnlock",
+	EAutomationTestFlags::EditorContext | EAutomationTestFlags::EngineFilter)
+
+bool FRpgLootSourceNoDropAndExternalUnlockTest::RunTest(
+	const FString& Parameters)
+{
+	(void)Parameters;
+	RpgLootSourceTests::FScopedLootWorld TestWorld;
+	UWorld* World = TestWorld.GetWorld();
+	if (!TestNotNull(TEXT("Standalone no-drop test world is available"), World))
+	{
+		return false;
+	}
+
+	AActor* Owner = World->SpawnActor<AActor>();
+	if (!TestNotNull(TEXT("No-drop fixture owner is spawned"), Owner))
+	{
+		return false;
+	}
+	URpgInventoryManagerComponent* Inventory =
+		NewObject<URpgInventoryManagerComponent>(
+			Owner,
+			TEXT("LootInventory"),
+			RF_Transient);
+	Owner->AddInstanceComponent(Inventory);
+	Inventory->RegisterComponent();
+	URpgInventoryContainerComponent* Container =
+		NewObject<URpgInventoryContainerComponent>(
+			Owner,
+			TEXT("LootContainer"),
+			RF_Transient);
+	Container->ConfigureAsDeathLootContainer();
+	Owner->AddInstanceComponent(Container);
+	Container->RegisterComponent();
+
+	URpgLootSourceAutomationTestComponent* LootSource =
+		NewObject<URpgLootSourceAutomationTestComponent>(
+			Owner,
+			TEXT("LootSource"),
+			RF_Transient);
+	URpgLootTable* NoDropTable =
+		RpgLootSourceTests::MakeGuaranteedTable(Owner);
+	NoDropTable->Groups[0].Entries[0].ChancePercent = 0.0f;
+	LootSource->ConfigureLootTable(NoDropTable, true);
+	LootSource->SetAutomaticContainerUnlockEnabled(false);
+	LootSource->SetGenerateLootOnDeathEnabled(false);
+	Owner->AddInstanceComponent(LootSource);
+	LootSource->RegisterComponent();
+	if (!Owner->HasActorBegunPlay())
+	{
+		Owner->DispatchBeginPlay();
+	}
+
+	int32 CompletionBroadcastCount = 0;
+	bool bCompletionHadLoot = true;
+	LootSource->OnLootPopulationCompleted.AddLambda(
+		[&](URpgLootSourceComponent* CompletedSource, bool bHasLoot)
+		{
+			TestTrue(
+				TEXT("The no-drop callback identifies its source"),
+				CompletedSource == LootSource);
+			++CompletionBroadcastCount;
+			bCompletionHadLoot = bHasLoot;
+		});
+
+	LootSource->PopulateLoot();
+	TestTrue(
+		TEXT("A valid no-drop roll still completes population"),
+		LootSource->IsLootPopulated());
+	TestEqual(
+		TEXT("A no-drop roll adds no inventory entries"),
+		Inventory->GetUsedEntryCount(),
+		0);
+	TestEqual(
+		TEXT("A no-drop roll emits one completion callback"),
+		CompletionBroadcastCount,
+		1);
+	TestFalse(
+		TEXT("The completion callback distinguishes an empty no-drop roll"),
+		bCompletionHadLoot);
+	TestFalse(
+		TEXT("External lifecycle ownership keeps the container locked"),
+		Container->IsContainerAccessible());
+	return true;
+}
+
+IMPLEMENT_SIMPLE_AUTOMATION_TEST(
+	FRpgLootSourceDisabledDeathGenerationValidationTest,
+	"SurvivalRpg.Loot.Source.DisabledDeathGenerationAllowsHarvestOnlySource",
+	EAutomationTestFlags::EditorContext | EAutomationTestFlags::EngineFilter)
+
+bool FRpgLootSourceDisabledDeathGenerationValidationTest::RunTest(
+	const FString& Parameters)
+{
+	(void)Parameters;
+#if WITH_EDITOR
+	URpgLootSourceAutomationTestComponent* LootSource =
+		NewObject<URpgLootSourceAutomationTestComponent>();
+	LootSource->ConfigureLootTable(nullptr, false);
+	LootSource->SetGenerateLootOnDeathEnabled(false);
+	FDataValidationContext ValidationContext;
+	TestEqual(
+		TEXT("A harvest-only source needs no inventory loot configuration"),
+		LootSource->IsDataValid(ValidationContext),
+		EDataValidationResult::Valid);
+#endif
 	return true;
 }
 

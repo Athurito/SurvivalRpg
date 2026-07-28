@@ -1333,8 +1333,6 @@ FRpgInventoryMutationResult URpgInventoryManagerComponent::AddPickupBatch(
 		InventoryList.SortEntriesByPlacement();
 		InventoryList.MarkArrayDirty();
 	}
-	MarkInventoryStateDirty();
-
 	if (IsUsingRegisteredSubObjectList() && IsReadyForReplication())
 	{
 		for (URpgInventoryItemInstance* AddedInstance : AddedInstances)
@@ -1369,6 +1367,8 @@ FRpgInventoryMutationResult URpgInventoryManagerComponent::AddPickupBatch(
 			Notification.OldCount,
 			Notification.Entry.StackCount);
 	}
+
+	MarkInventoryStateDirty();
 
 	return Result;
 }

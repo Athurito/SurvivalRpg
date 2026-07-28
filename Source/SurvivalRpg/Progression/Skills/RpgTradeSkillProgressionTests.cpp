@@ -57,7 +57,7 @@ bool FRpgTradeSkillAuthorityAndLevelUpTest::RunTest(const FString& Parameters)
 		NewObject<URpgTradeSkillProgressionComponent>(Owner);
 	Component->ResetSkillStatesToDefaults();
 
-	TestEqual(TEXT("All five core skills receive default states"), Component->SkillStates.Num(), 5);
+	TestEqual(TEXT("All six core skills receive default states"), Component->SkillStates.Num(), 6);
 	TestTrue(
 		TEXT("A server-owned skill accepts positive XP"),
 		Component->AddSkillXPByTag(RpgTradeSkillGameplayTags::Skill_Gathering_Foraging, 100.0f));
@@ -186,6 +186,16 @@ bool FRpgTradeSkillRestoreReconnectTest::RunTest(const FString& Parameters)
 			RpgTradeSkillGameplayTags::Skill_Gathering_Logging),
 		0.0f);
 	TestEqual(
+		TEXT("An older save gains Skinning at level one"),
+		FirstComponent->GetSkillLevelByTag(
+			RpgTradeSkillGameplayTags::Skill_Gathering_Skinning),
+		1);
+	TestEqual(
+		TEXT("An older save gains Skinning with zero XP"),
+		FirstComponent->GetSkillXPByTag(
+			RpgTradeSkillGameplayTags::Skill_Gathering_Skinning),
+		0.0f);
+	TestEqual(
 		TEXT("The deprecated enum adapter resolves the same migrated tag state"),
 		FirstComponent->GetSkillLevel(ETradeSkill::Mining),
 		12);
@@ -209,9 +219,9 @@ bool FRpgTradeSkillRestoreReconnectTest::RunTest(const FString& Parameters)
 			RpgTradeSkillGameplayTags::Skill_Gathering_Mining),
 		34.0f);
 	TestEqual(
-		TEXT("Reconnect retains exactly the five core skill identities"),
+		TEXT("Reconnect retains exactly the six core skill identities"),
 		ReconnectSnapshot.Num(),
-		5);
+		6);
 	return true;
 }
 

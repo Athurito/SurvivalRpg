@@ -56,6 +56,33 @@ void URpgLootSourceComponent::PopulateLoot()
 	TryPopulateLoot();
 }
 
+void URpgLootSourceComponent::SetGenerateLootOnDeathEnabled(bool bEnabled)
+{
+	AActor* OwnerActor = GetOwner();
+	if (!OwnerActor || OwnerActor->HasAuthority())
+	{
+		bGenerateLootOnDeath = bEnabled;
+	}
+}
+
+void URpgLootSourceComponent::SetAutomaticContainerUnlockEnabled(bool bEnabled)
+{
+	AActor* OwnerActor = GetOwner();
+	if (OwnerActor && !OwnerActor->HasAuthority())
+	{
+		return;
+	}
+
+	bUnlockContainerOnDeath = bEnabled;
+	if (bUnlockContainerOnDeath && bLootPopulated)
+	{
+		if (URpgInventoryContainerComponent* ContainerComponent = FindContainerComponent())
+		{
+			ContainerComponent->SetContainerAccessible(true);
+		}
+	}
+}
+
 bool URpgLootSourceComponent::TryPopulateLoot()
 {
 	if (bLootPopulated)
@@ -146,7 +173,10 @@ bool URpgLootSourceComponent::TryPopulateLoot()
 	}
 
 	// An empty successful roll is a valid no-drop result and needs no inventory mutation.
-	if (!CachedLootPickup.Templates.IsEmpty() || !CachedLootPickup.Instances.IsEmpty())
+	const bool bHasLoot =
+		!CachedLootPickup.Templates.IsEmpty() ||
+		!CachedLootPickup.Instances.IsEmpty();
+	if (bHasLoot)
 	{
 		TArray<FRpgInventoryItemId> AffectedItemIds;
 		const FRpgInventoryMutationResult Result = InventoryManager->AddPickupBatch(
@@ -174,6 +204,7 @@ bool URpgLootSourceComponent::TryPopulateLoot()
 			ContainerComponent->SetContainerAccessible(true);
 		}
 	}
+	OnLootPopulationCompleted.Broadcast(this, bHasLoot);
 	return true;
 }
 
@@ -184,7 +215,10 @@ void URpgLootSourceComponent::HandleDeathFinished(AActor* OwningActor)
 		return;
 	}
 
-	TryPopulateLoot();
+	if (bGenerateLootOnDeath)
+	{
+		TryPopulateLoot();
+	}
 }
 
 URpgInventoryManagerComponent* URpgLootSourceComponent::FindInventoryManager() const
@@ -213,7 +247,7 @@ EDataValidationResult URpgLootSourceComponent::IsDataValid(
 			"A loot source cannot configure both LootTable and deprecated fixed loot lists."));
 		Result = EDataValidationResult::Invalid;
 	}
-	else if (!LootTable && !bHasLegacyLoot)
+	else if (bGenerateLootOnDeath && !LootTable && !bHasLegacyLoot)
 	{
 		Context.AddError(NSLOCTEXT(
 			"RpgLootSource",
