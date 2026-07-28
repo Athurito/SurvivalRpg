@@ -142,9 +142,64 @@ EDataValidationResult URpgInventoryItemDefinition::IsDataValid(
 	const FText DefinitionPath = GetInventoryDefinitionValidationPath(this);
 
 	TArray<int32> SpatialFragmentIndices;
+	TMap<FName, int32> FirstRuntimeStateFragmentIndices;
 	for (int32 FragmentIndex = 0; FragmentIndex < Fragments.Num(); ++FragmentIndex)
 	{
 		const URpgInventoryItemFragment* Fragment = Fragments[FragmentIndex];
+		if (!Fragment)
+		{
+			continue;
+		}
+
+		// Validate every fragment rather than only the first fragment of a known type.
+		// This keeps runtime-state providers extensible and catches every itemization fragment.
+		Result = CombineDataValidationResults(
+			Result,
+			Fragment->IsDataValid(Context));
+
+		const FName RuntimeStateIdentifier = Fragment->GetRuntimeStateIdentifier();
+		if (!RuntimeStateIdentifier.IsNone())
+		{
+			const int32 RuntimeStateVersion = Fragment->GetRuntimeStateVersion();
+			if (RuntimeStateVersion <= 0)
+			{
+				Result = EDataValidationResult::Invalid;
+				Context.AddError(
+					FText::Format(
+						LOCTEXT(
+							"InvalidRuntimeStateFragmentVersion",
+							"Item definition '{0}' has runtime-state fragment '{1}' at Fragments[{2}] with schema version {3}. "
+							"Runtime-state fragments must publish a stable positive version."),
+						DefinitionPath,
+						FText::FromName(RuntimeStateIdentifier),
+						FText::AsNumber(FragmentIndex),
+						FText::AsNumber(RuntimeStateVersion)));
+			}
+
+			if (const int32* FirstFragmentIndex =
+				FirstRuntimeStateFragmentIndices.Find(RuntimeStateIdentifier))
+			{
+				Result = EDataValidationResult::Invalid;
+				Context.AddError(
+					FText::Format(
+						LOCTEXT(
+							"DuplicateRuntimeStateFragmentIdentifier",
+							"Item definition '{0}' repeats runtime-state identifier '{1}' at Fragments[{2}]; it was first "
+							"declared at Fragments[{3}]. Runtime-state identifiers must be unique because import/export "
+							"rejects ambiguous payload ownership."),
+						DefinitionPath,
+						FText::FromName(RuntimeStateIdentifier),
+						FText::AsNumber(FragmentIndex),
+						FText::AsNumber(*FirstFragmentIndex)));
+			}
+			else
+			{
+				FirstRuntimeStateFragmentIndices.Add(
+					RuntimeStateIdentifier,
+					FragmentIndex);
+			}
+		}
+
 		const URpgInventoryFragment_SpatialItem* SpatialFragment =
 			Cast<URpgInventoryFragment_SpatialItem>(Fragment);
 		if (SpatialFragment)

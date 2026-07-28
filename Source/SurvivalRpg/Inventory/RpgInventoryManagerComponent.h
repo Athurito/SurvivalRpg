@@ -490,7 +490,7 @@ struct TStructOpsTypeTraits<FRpgInventoryList> : public TStructOpsTypeTraitsBase
  * component but never own or commit inventory state.
  */
 UCLASS(BlueprintType)
-class URpgInventoryManagerComponent : public UActorComponent
+class SURVIVALRPG_API URpgInventoryManagerComponent : public UActorComponent
 {
 	GENERATED_BODY()
 

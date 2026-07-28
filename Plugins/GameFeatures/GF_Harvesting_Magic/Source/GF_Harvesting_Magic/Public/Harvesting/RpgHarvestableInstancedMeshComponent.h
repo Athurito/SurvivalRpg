@@ -2,12 +2,14 @@
 
 #include "Components/HierarchicalInstancedStaticMeshComponent.h"
 #include "Net/Serialization/FastArraySerializer.h"
+#include "TimerManager.h"
 #include "SurvivalRpg/Interaction/IInteractableTarget.h"
 #include "Harvesting/RpgHarvestableTarget.h"
 
 #include "RpgHarvestableInstancedMeshComponent.generated.h"
 
 class URpgHarvestableInstancedMeshComponent;
+class URpgHarvestProfile;
 class FLifetimeProperty;
 struct FInteractionQuery;
 struct FInteractionOption;
@@ -145,8 +147,10 @@ public:
 	bool SetResourceInstanceActive(int32 InstanceIndex, bool bNewActive);
 
 	/**
-	 * Server-only Blueprint event for feature-owned loot, progression, or authoritative orchestration.
-	 * It fires after the active/depleted state and revision have been committed.
+	 * Server-only post-commit telemetry notification.
+	 * For profile-backed nodes, native code has already delivered the complete reward and awarded XP before this fires;
+	 * listeners must treat the event as read-only and must not grant additional loot or progression.
+	 * Profile-less legacy nodes may continue to use it for migration-era feature orchestration.
 	 */
 	UPROPERTY(BlueprintAssignable, Category = "Rpg|Harvesting|Instances")
 	FRpgResourceInstanceHarvestedEvent OnResourceInstanceHarvested;
@@ -162,12 +166,20 @@ protected:
 	//~ UActorComponent interface
 	virtual void OnRegister() override;
 	virtual void BeginPlay() override;
+	virtual void EndPlay(const EEndPlayReason::Type EndPlayReason) override;
 	virtual void GetLifetimeReplicatedProps(TArray<FLifetimeProperty>& OutLifetimeProps) const override;
 	//~ End UActorComponent interface
 
 	/** Static prompt text, ranges, icon, widget overrides, and priority used by every instance in this component. */
 	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Rpg|Harvesting|Interaction")
 	FRpgInteractionPromptDefinition InteractionPrompt;
+
+	/**
+	 * Static rewards, progression gate, and respawn tuning for every instance in this component.
+	 * When unset, the component retains its legacy deplete-only behavior for existing reference content.
+	 */
+	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Rpg|Harvesting|Rewards")
+	TObjectPtr<URpgHarvestProfile> HarvestProfile;
 
 private:
 	friend struct FRpgHarvestedInstanceStateList;
@@ -178,6 +190,12 @@ private:
 	void CacheAuthoredInstanceTransforms();
 	void ApplyAllReplicatedInstanceStates();
 	void ApplyReplicatedInstanceState(int32 InstanceIndex, bool bInstanceActive, int32 Revision);
+	bool CanHarvesterMeetSkillGate(const FRpgHarvestRequest& Request) const;
+	bool TryDeliverHarvestReward(const FRpgHarvestRequest& Request);
+	void AwardHarvestExperience(const FRpgHarvestRequest& Request) const;
+	void ScheduleResourceRespawn(int32 InstanceIndex);
+	void ArmNextRespawnTimer();
+	void HandleRespawnTimer();
 
 	/** Sparse, server-authored changes from the active transforms stored in the authored HISM instance array. */
 	UPROPERTY(Replicated)
@@ -185,4 +203,13 @@ private:
 
 	/** Runtime-only local transforms used to restore an instance without changing its stable index. */
 	TArray<FTransform> AuthoredInstanceTransforms;
+
+	/** Server-only world-time deadlines; resource depletion remains session-scoped and is never saved. */
+	TMap<int32, double> RespawnDeadlines;
+
+	/** Prevents delegate-driven server re-entry from granting the same active revision twice. */
+	TSet<int32> HarvestsInProgress;
+
+	/** One component timer wakes only for the next due resource instance. */
+	FTimerHandle RespawnTimerHandle;
 };

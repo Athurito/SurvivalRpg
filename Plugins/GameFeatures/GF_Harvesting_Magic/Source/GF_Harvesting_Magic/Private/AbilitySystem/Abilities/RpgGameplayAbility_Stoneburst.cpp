@@ -8,6 +8,7 @@
 #include "GameFramework/Controller.h"
 #include "GameplayEffectTypes.h"
 #include "GameplayTags/RpgHarvestingMagicGameplayTags.h"
+#include "Harvesting/RpgHarvestableInstancedMeshComponent.h"
 #include "Harvesting/RpgHarvestableTarget.h"
 
 #include UE_INLINE_GENERATED_CPP_BY_NAME(RpgGameplayAbility_Stoneburst)
@@ -152,6 +153,12 @@ bool URpgGameplayAbility_Stoneburst::FindHarvestTarget(
 		CandidateRequest.TraceOrigin = ViewLocation;
 		CandidateRequest.Hit = Hit;
 		CandidateRequest.HarvestPower = FMath::Max(0.0f, HarvestPower);
+		if (const URpgHarvestableInstancedMeshComponent* ResourceInstances =
+			Cast<URpgHarvestableInstancedMeshComponent>(CandidateReceiver))
+		{
+			CandidateRequest.ExpectedRevision =
+				ResourceInstances->GetResourceInstanceRevision(Hit.Item);
+		}
 		if (!IRpgHarvestableTarget::Execute_CanAcceptHarvest(CandidateReceiver, CandidateRequest))
 		{
 			continue;

@@ -6,8 +6,11 @@
 #include "RpgEquipmentDefinition.h"
 #include "RpgEquipmentInstance.h"
 #include "RpgWeaponInstance.h"
+#include "SurvivalRpg/AbilitySystem/Effects/RpgItemizationEquipmentEffect.h"
 #include "SurvivalRpg/AbilitySystem/RpgAbilitySystemComponent.h"
 #include "SurvivalRpg/GameplayTags/RpgGameplayTags.h"
+#include "SurvivalRpg/Inventory/Itemization/RpgItemizationGameplayTags.h"
+#include "SurvivalRpg/Inventory/RpgInventoryItemInstance.h"
 
 #include UE_INLINE_GENERATED_CPP_BY_NAME(RpgEquipmentManagerComponent)
 
@@ -98,6 +101,11 @@ void FRpgEquipmentList::RemoveEntry(URpgEquipmentInstance* Instance)
 
 		if (URpgAbilitySystemComponent* AbilitySystemComponent = GetAbilitySystemComponent())
 		{
+			if (Entry.ItemizationEffectHandle.IsValid())
+			{
+				AbilitySystemComponent->RemoveActiveGameplayEffect(Entry.ItemizationEffectHandle);
+				Entry.ItemizationEffectHandle.Invalidate();
+			}
 			for (TPair<int32, FRpgAppliedEquipmentAbilityGrant>& GrantPair : Entry.AbilitySetGrants)
 			{
 				GrantPair.Value.GrantedHandles.TakeFromAbilitySystem(AbilitySystemComponent);
@@ -161,6 +169,12 @@ URpgEquipmentInstance* URpgEquipmentManagerComponent::EquipItemInSlotWithInstiga
 		Result = EquipmentList.AddEntry(EquipmentDefinition, Slot, SourceItemInstigator);
 		if (Result != nullptr)
 		{
+			if (URpgInventoryItemInstance* SourceItem = Cast<URpgInventoryItemInstance>(SourceItemInstigator))
+			{
+				SourceItem->OnItemizationStateChanged.AddUniqueDynamic(
+					this,
+					&ThisClass::HandleEquippedItemizationStateChanged);
+			}
 			RebuildEquipmentAbilityGrants();
 			Result->OnEquipped();
 
@@ -186,6 +200,12 @@ void URpgEquipmentManagerComponent::UnequipItem(URpgEquipmentInstance* ItemInsta
 		RemoveReplicatedSubObject(ItemInstance);
 	}
 
+	if (URpgInventoryItemInstance* SourceItem = Cast<URpgInventoryItemInstance>(ItemInstance->GetInstigator()))
+	{
+		SourceItem->OnItemizationStateChanged.RemoveDynamic(
+			this,
+			&ThisClass::HandleEquippedItemizationStateChanged);
+	}
 	ItemInstance->OnUnequipped();
 	EquipmentList.RemoveEntry(ItemInstance);
 	RebuildEquipmentAbilityGrants();
@@ -448,8 +468,102 @@ bool URpgEquipmentManagerComponent::ShouldGrantSlotAbilitySet(const FRpgAppliedE
 	return true;
 }
 
+void URpgEquipmentManagerComponent::RebuildEquipmentItemizationEffects()
+{
+	for (FRpgAppliedEquipmentEntry& Entry : EquipmentList.Entries)
+	{
+		RefreshEquipmentItemizationEffect(Entry);
+	}
+}
+
+void URpgEquipmentManagerComponent::RefreshEquipmentItemizationEffect(
+	FRpgAppliedEquipmentEntry& Entry)
+{
+	URpgAbilitySystemComponent* AbilitySystemComponent = EquipmentList.GetAbilitySystemComponent();
+	if (!AbilitySystemComponent || !GetOwner() || !GetOwner()->HasAuthority())
+	{
+		return;
+	}
+
+	using namespace RpgItemizationGameplayTags;
+	const TArray<FGameplayTag> GlobalStatTags = {
+		Item_Stat_Armor,
+		Item_Stat_Strength,
+		Item_Stat_Intelligence,
+		Item_Stat_Resilience,
+		Item_Stat_Vitality,
+		Item_Stat_ArmorPenetration,
+		Item_Stat_CriticalHitChance,
+		Item_Stat_CriticalHitDamage,
+		Item_Stat_CriticalHitResistance,
+		Item_Stat_MaxStamina,
+	};
+
+	const URpgInventoryItemInstance* SourceItem = Entry.Instance
+		? Cast<URpgInventoryItemInstance>(Entry.Instance->GetInstigator())
+		: nullptr;
+	const FRpgItemizationState EmptyState;
+	const FRpgItemizationState& Itemization = SourceItem
+		? SourceItem->GetItemizationStateRef()
+		: EmptyState;
+
+	bool bHasGlobalValue = false;
+	for (const FGameplayTag& StatTag : GlobalStatTags)
+	{
+		bHasGlobalValue |= !FMath::IsNearlyZero(Itemization.GetTotalValueForStat(StatTag));
+	}
+
+	const bool bStateUnchanged = Entry.bHasAppliedItemizationState &&
+		Entry.AppliedItemizationState == Itemization;
+	const bool bExistingEffectIsActive = Entry.ItemizationEffectHandle.IsValid() &&
+		AbilitySystemComponent->GetActiveGameplayEffect(Entry.ItemizationEffectHandle) != nullptr;
+	if (bStateUnchanged &&
+		((bHasGlobalValue && bExistingEffectIsActive) ||
+			(!bHasGlobalValue && !Entry.ItemizationEffectHandle.IsValid())))
+	{
+		return;
+	}
+
+	if (Entry.ItemizationEffectHandle.IsValid())
+	{
+		AbilitySystemComponent->RemoveActiveGameplayEffect(Entry.ItemizationEffectHandle);
+		Entry.ItemizationEffectHandle.Invalidate();
+	}
+	Entry.AppliedItemizationState = Itemization;
+	Entry.bHasAppliedItemizationState = true;
+
+	if (!Itemization.bGenerated || !bHasGlobalValue)
+	{
+		return;
+	}
+
+	FGameplayEffectContextHandle EffectContext = AbilitySystemComponent->MakeEffectContext();
+	EffectContext.AddSourceObject(Entry.Instance);
+	FGameplayEffectSpec EffectSpec(
+		GetDefault<URpgItemizationEquipmentEffect>(),
+		EffectContext,
+		1.0f);
+	for (const FGameplayTag& StatTag : GlobalStatTags)
+	{
+		EffectSpec.SetSetByCallerMagnitude(
+			StatTag,
+			Itemization.GetTotalValueForStat(StatTag));
+	}
+
+	Entry.ItemizationEffectHandle =
+		AbilitySystemComponent->ApplyGameplayEffectSpecToSelf(EffectSpec);
+}
+
+void URpgEquipmentManagerComponent::HandleEquippedItemizationStateChanged(
+	const FRpgItemizationState& NewState)
+{
+	(void)NewState;
+	RebuildEquipmentItemizationEffects();
+}
+
 void URpgEquipmentManagerComponent::RebuildEquipmentAbilityGrants()
 {
+	RebuildEquipmentItemizationEffects();
 	URpgAbilitySystemComponent* AbilitySystemComponent = EquipmentList.GetAbilitySystemComponent();
 	if (!AbilitySystemComponent)
 	{

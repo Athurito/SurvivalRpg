@@ -25,6 +25,7 @@ DECLARE_DYNAMIC_MULTICAST_DELEGATE_OneParam(
 	int32, UnspentPoints
 );
 
+/** Server-authoritative, owner-only replicated general character progression. */
 UCLASS(ClassGroup=(Custom), meta=(BlueprintSpawnableComponent))
 class SURVIVALRPG_API URpgPlayerProgressionComponent : public UActorComponent
 {
@@ -35,12 +36,12 @@ public:
 	URpgPlayerProgressionComponent();
 
 	virtual void BeginPlay() override;
-	/** Config */
+	/** Designer-authored level curve, point awards, and maximum character level. */
 	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category="Progression")
-	URpgPlayerProgressionData* ConfigData = nullptr;
+	TObjectPtr<URpgPlayerProgressionData> ConfigData = nullptr;
 
-	/** Runtime State (OwnerOnly Replicated) */
-	UPROPERTY(ReplicatedUsing=OnRep_State)
+	/** Server-authored state replicated only to the owning player and persisted by the host save. */
+	UPROPERTY(ReplicatedUsing=OnRep_State, VisibleInstanceOnly, BlueprintReadOnly, Category = "Rpg|Progression")
 	FPlayerProgressionState State;
 
 	/** UI Events */
@@ -73,6 +74,15 @@ public:
 	UFUNCTION(BlueprintCallable)
 	bool SpendSkillPoints(int32 Amount);
 
+	/** Pointer-free snapshot consumed by host persistence. */
+	FPlayerProgressionState ExportProgressionState() const { return State; }
+
+	/** Restores a prevalidated authoritative snapshot without granting level-up rewards again. */
+	bool RestoreProgressionState(const FPlayerProgressionState& InState);
+
+	/** Restores the default level 1, zero-XP state used by profiles from older save schemas. */
+	void ResetProgressionStateToDefaults();
+
 protected:
 	virtual void GetLifetimeReplicatedProps(TArray<FLifetimeProperty>& OutLifetimeProps) const override;
 
@@ -82,4 +92,6 @@ protected:
 	float GetXPToNextLevel(int32 Level) const;
 	void TryLevelUp();
 	void HandleLevelUp(int32 OldLevel, int32 NewLevel);
+	void BroadcastStateChanged();
+	void MarkOwnerSaveDirty() const;
 };

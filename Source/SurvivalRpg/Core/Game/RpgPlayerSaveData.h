@@ -1,9 +1,12 @@
 #pragma once
 
 #include "CoreMinimal.h"
+#include "GameplayTagContainer.h"
 #include "SurvivalRpg/ActionBar/RpgActionBarComponent.h"
 #include "SurvivalRpg/Equipment/RpgEquipmentLoadoutComponent.h"
 #include "SurvivalRpg/Inventory/RpgInventoryGraphTypes.h"
+#include "SurvivalRpg/Progression/Player/Data/RpgPlayerProgressionState.h"
+#include "SurvivalRpg/Progression/Skills/Data/RpgTradeSkillState.h"
 
 #include "RpgPlayerSaveData.generated.h"
 
@@ -24,8 +27,11 @@ struct SURVIVALRPG_API FRpgPlayerSaveData
 	/** First per-player schema whose Carry bindings must contain canonical semantic roles. */
 	static constexpr int32 SemanticCarryRoleSchemaVersion = 2;
 
-	/** Current per-player schema emitted by this build. Version 2 stores Carry bindings by semantic layout role. */
-	static constexpr int32 CurrentSchemaVersion = SemanticCarryRoleSchemaVersion;
+	/** First schema that persists general character and tag-keyed trade-skill progression. */
+	static constexpr int32 ProgressionSchemaVersion = 3;
+
+	/** Current per-player schema emitted by this build. */
+	static constexpr int32 CurrentSchemaVersion = ProgressionSchemaVersion;
 
 	/** Selects the migration/validation path before any runtime player state is changed. */
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, SaveGame, Category = "Rpg|Save", meta = (ClampMin = "1", UIMin = "1"))
@@ -55,12 +61,49 @@ struct SURVIVALRPG_API FRpgPlayerSaveData
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, SaveGame, Category = "Rpg|Save")
 	FRpgEquipmentSelectionSaveData EquipmentSelection;
 
+	/** True when PlayerProgression contains a captured authoritative character-progression snapshot. */
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, SaveGame, Category = "Rpg|Save|Progression")
+	bool bHasPlayerProgression = false;
+
+	/** General character level, XP, and unspent points reconstructed on the PlayerState after inventory restore. */
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, SaveGame, Category = "Rpg|Save|Progression")
+	FPlayerProgressionState PlayerProgression;
+
+	/** True when TradeSkillStates contains a captured authoritative tag-keyed skill snapshot. */
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, SaveGame, Category = "Rpg|Save|Progression")
+	bool bHasTradeSkillProgression = false;
+
+	/** Pointer-free use-based skill states keyed by their stable Skill.* gameplay tags. */
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, SaveGame, Category = "Rpg|Save|Progression")
+	TArray<FTradeSkillState> TradeSkillStates;
+
 	/** Lightweight envelope validation; the inventory manager performs the authoritative deep graph validation. */
 	bool IsSchemaSupported() const
 	{
+		if (SchemaVersion < MinimumSupportedSchemaVersion ||
+			SchemaVersion > CurrentSchemaVersion ||
+			(bHasInventoryGraph && InventoryGraph.SchemaVersion != FRpgInventoryGraphSaveData::CurrentSchemaVersion) ||
+			(!QuickAccessBindings.IsEmpty() && QuickAccessBindings.Num() != 8) ||
+			(bHasPlayerProgression && !PlayerProgression.IsValid()))
+		{
+			return false;
+		}
+
+		TSet<FGameplayTag> SeenSkillTags;
+		const FGameplayTag SkillRoot = FGameplayTag::RequestGameplayTag(TEXT("Skill"), false);
+		for (const FTradeSkillState& SkillState : TradeSkillStates)
+		{
+			if (!bHasTradeSkillProgression || !SkillRoot.IsValid() || !SkillState.IsValid() ||
+				!SkillState.SkillTag.MatchesTag(SkillRoot) || SeenSkillTags.Contains(SkillState.SkillTag))
+			{
+				return false;
+			}
+			SeenSkillTags.Add(SkillState.SkillTag);
+		}
+
 		return SchemaVersion >= MinimumSupportedSchemaVersion &&
 			SchemaVersion <= CurrentSchemaVersion &&
-			(!bHasInventoryGraph || InventoryGraph.SchemaVersion == FRpgInventoryGraphSaveData::CurrentSchemaVersion) &&
-			(QuickAccessBindings.IsEmpty() || QuickAccessBindings.Num() == 8);
+			(!bHasPlayerProgression || SchemaVersion >= ProgressionSchemaVersion) &&
+			(!bHasTradeSkillProgression || SchemaVersion >= ProgressionSchemaVersion);
 	}
 };

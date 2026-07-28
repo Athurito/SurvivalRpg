@@ -2,6 +2,7 @@
 
 #pragma once
 
+#include "Itemization/RpgItemizationTypes.h"
 #include "RpgInventoryGraphTypes.h"
 #include "SurvivalRpg/Systems/GameplayTagStack.h"
 #include "Templates/SubclassOf.h"
@@ -13,8 +14,14 @@ class FLifetimeProperty;
 class URpgInventoryManagerComponent;
 class URpgInventoryItemDefinition;
 class URpgInventoryItemFragment;
+class URpgInventoryFragment_Itemization;
 struct FFrame;
 struct FGameplayTag;
+
+DECLARE_DYNAMIC_MULTICAST_DELEGATE_OneParam(
+	FRpgInventoryItemizationStateChanged,
+	const FRpgItemizationState&,
+	NewState);
 
 /**
  * Canonical, non-persisted value used for every stack-compatibility decision.
@@ -49,7 +56,7 @@ private:
 
 /** Server-authored concrete item state with persistent identity independent of placement and replicated entry ids. */
 UCLASS(BlueprintType)
-class URpgInventoryItemInstance : public UObject
+class SURVIVALRPG_API URpgInventoryItemInstance : public UObject
 {
 	GENERATED_BODY()
 
@@ -76,6 +83,25 @@ public:
 	/** Returns whether this instance has at least one count of the stat tag. */
 	UFUNCTION(BlueprintCallable, Category=Inventory)
 	bool HasStatTag(FGameplayTag Tag) const;
+
+	/** Returns a copy of the replicated, save-backed generated item state for read-only UI/gameplay use. */
+	UFUNCTION(BlueprintPure, Category = "Inventory|Itemization")
+	FRpgItemizationState GetItemizationState() const { return ItemizationState; }
+
+	/** Returns the generated item state without a copy for native equipment and ability integration. */
+	const FRpgItemizationState& GetItemizationStateRef() const { return ItemizationState; }
+
+	/** Returns whether this concrete instance was explicitly generated from an itemization profile. */
+	UFUNCTION(BlueprintPure, Category = "Inventory|Itemization")
+	bool HasGeneratedItemization() const { return ItemizationState.bGenerated; }
+
+	/** Applies one complete server-authored state after validation by the definition's Itemization fragment. */
+	UFUNCTION(BlueprintCallable, BlueprintAuthorityOnly, Category = "Inventory|Itemization")
+	bool ApplyItemizationState(const FRpgItemizationState& NewState);
+
+	/** Fired locally on authority mutation and on clients after replicated itemization changes. */
+	UPROPERTY(BlueprintAssignable, Category = "Inventory|Itemization")
+	FRpgInventoryItemizationStateChanged OnItemizationStateChanged;
 
 	/** Returns the persistent item identity used by graph handles, transactions, saves, and quick-access bindings. */
 	UFUNCTION(BlueprintPure, Category = "Inventory|Identity")
@@ -130,11 +156,18 @@ public:
 	/** Register all replication fragments */
 	virtual void RegisterReplicationFragments(UE::Net::FFragmentRegistrationContext& Context, UE::Net::EFragmentRegistrationFlags RegistrationFlags) override;
 private:
+	UFUNCTION()
+	void OnRep_ItemizationState();
 
+	/** Restores an already validated historical roll without comparing it to rebalanced generation ranges. */
+	bool RestorePersistedItemizationState(const FRpgItemizationState& NewState);
+	bool CommitItemizationState(const FRpgItemizationState& NewState);
 	void SetItemDef(TSubclassOf<URpgInventoryItemDefinition> InDef);
 	bool HasAuthorityForMutation() const;
 
 	friend struct FRpgInventoryList;
+	friend struct FRpgLootResolver;
+	friend class URpgInventoryFragment_Itemization;
 	friend class URpgInventoryManagerComponent;
 
 private:
@@ -145,6 +178,10 @@ private:
 	/** Mutable instance tags used by affixes/stats; replicated and serialized through the core runtime-state payload. */
 	UPROPERTY(Replicated)
 	FGameplayTagStackContainer StatTags;
+
+	/** Server-generated numeric rolls, replicated directly and serialized by the Itemization definition fragment. */
+	UPROPERTY(ReplicatedUsing = OnRep_ItemizationState)
+	FRpgItemizationState ItemizationState;
 
 	/** Static fragment-composed definition shared by every instance of this item type. */
 	UPROPERTY(Replicated)

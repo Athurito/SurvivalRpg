@@ -19,7 +19,7 @@ class UObject;
 struct FFrame;
 
 USTRUCT(BlueprintType)
-struct FPickupTemplate
+struct SURVIVALRPG_API FPickupTemplate
 {
 	GENERATED_BODY()
 
@@ -32,7 +32,7 @@ public:
 };
 
 USTRUCT(BlueprintType)
-struct FPickupInstance
+struct SURVIVALRPG_API FPickupInstance
 {
 	GENERATED_BODY()
 
@@ -42,7 +42,7 @@ public:
 };
 
 USTRUCT(BlueprintType)
-struct FInventoryPickup
+struct SURVIVALRPG_API FInventoryPickup
 {
 	GENERATED_BODY()
 

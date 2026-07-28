@@ -13,6 +13,7 @@
 #include "SurvivalRpg/Mvvm/Inventory/RpgLoadoutViewModels.h"
 #include "SurvivalRpg/UI/RpgInventoryDragVisualWidget.h"
 #include "SurvivalRpg/UI/RpgInventoryInteractionScreenWidget.h"
+#include "SurvivalRpg/UI/RpgInventoryItemTooltipWidget.h"
 #include "SurvivalRpg/UI/RpgInventoryPanelNavigationCoordinator.h"
 #include "View/MVVMView.h"
 #include "View/MVVMViewClass.h"
@@ -29,6 +30,7 @@ URpgEquipmentSlotWidget::URpgEquipmentSlotWidget(const FObjectInitializer& Objec
 {
 	SetIsFocusable(true);
 	SetIsInteractionEnabled(true);
+	ItemTooltipWidgetClass = URpgInventoryItemTooltipWidget::StaticClass();
 }
 
 void URpgEquipmentSlotWidget::BindInventoryPresentation(
@@ -80,6 +82,7 @@ void URpgEquipmentSlotWidget::SetEquipmentSlotViewModel(URpgEquipmentSlotViewMod
 	}
 
 	InjectEquipmentSlotViewModelIntoMvvm();
+	RefreshItemTooltip();
 	RefreshDragDropVisualState();
 }
 
@@ -354,6 +357,7 @@ void URpgEquipmentSlotWidget::ReleaseEquipmentSlotState()
 
 	SlotViewModel = nullptr;
 	DragDropCoordinator = nullptr;
+	RefreshItemTooltip();
 	SetInventoryPresentationHost(nullptr);
 	InjectEquipmentSlotViewModelIntoMvvm();
 	bPendingLeftClickAccept = false;
@@ -553,8 +557,42 @@ void URpgEquipmentSlotWidget::HandleSlotViewModelChanged(URpgEquipmentSlotViewMo
 {
 	if (ChangedSlotViewModel == SlotViewModel)
 	{
+		RefreshItemTooltip();
 		RefreshDragDropVisualState();
 	}
+}
+
+void URpgEquipmentSlotWidget::RefreshItemTooltip()
+{
+	URpgInventoryItemInstance* ItemInstance = GetRepresentedItem();
+	if (!ItemInstance || !ItemTooltipWidgetClass)
+	{
+		if (ItemTooltipWidget)
+		{
+			ItemTooltipWidget->ClearItem();
+		}
+		SetToolTip(nullptr);
+		return;
+	}
+
+	if (!ItemTooltipWidget || !ItemTooltipWidget->IsA(ItemTooltipWidgetClass))
+	{
+		if (ItemTooltipWidget)
+		{
+			ItemTooltipWidget->ClearItem();
+		}
+		ItemTooltipWidget = URpgInventoryItemTooltipWidget::CreateForHost(
+			this,
+			ItemTooltipWidgetClass);
+	}
+	if (!ItemTooltipWidget)
+	{
+		SetToolTip(nullptr);
+		return;
+	}
+
+	ItemTooltipWidget->SetItemInstance(ItemInstance, 1);
+	SetToolTip(ItemTooltipWidget);
 }
 
 void URpgEquipmentSlotWidget::HandleHeldPayloadChanged(bool bHasHeldPayload, const FRpgInventoryDragPayload& HeldPayload)

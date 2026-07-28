@@ -1,8 +1,10 @@
 #include "RpgInventoryEntryViewModel.h"
 
 #include "SurvivalRpg/Inventory/RpgInventoryFragment_ItemTraits.h"
+#include "SurvivalRpg/Inventory/Itemization/RpgInventoryFragment_Itemization.h"
 #include "SurvivalRpg/Inventory/RpgInventoryItemDefinition.h"
 #include "SurvivalRpg/Inventory/RpgInventoryItemInstance.h"
+#include "SurvivalRpg/Mvvm/Inventory/RpgInventoryItemizationFragmentViewModel.h"
 #include "SurvivalRpg/Mvvm/Inventory/RpgInventoryStackFragmentViewModel.h"
 
 #include UE_INLINE_GENERATED_CPP_BY_NAME(RpgInventoryEntryViewModel)
@@ -110,10 +112,15 @@ void URpgInventoryEntryViewModel::InitializeFromEntry(
 	if (NewItemInstance)
 	{
 		AddFragmentViewModel(URpgInventoryStackFragmentViewModel::StaticClass());
+		if (NewItemInstance->FindFragmentByClass<URpgInventoryFragment_Itemization>())
+		{
+			AddFragmentViewModel(URpgInventoryItemizationFragmentViewModel::StaticClass());
+		}
 
 		for (const TPair<TSubclassOf<URpgInventoryItemFragment>, TSubclassOf<URpgInventoryFragmentViewModel>>& Mapping : FragmentViewModelClasses)
 		{
 			if (Mapping.Key && Mapping.Value &&
+				Mapping.Key != URpgInventoryFragment_Itemization::StaticClass() &&
 				NewItemInstance->FindFragmentByClass(Mapping.Key) != nullptr)
 			{
 				AddFragmentViewModel(Mapping.Value);
@@ -161,7 +168,8 @@ void URpgInventoryEntryViewModel::InitializeFromEntry(
 		bItemTagsChanged ||
 		bPresentationTagsChanged ||
 		bCanDragChanged ||
-		bIsEmptySlotChanged;
+		bIsEmptySlotChanged ||
+		bFragmentViewModelsChanged;
 
 	InventoryOwner = NewInventoryOwner;
 	ItemInstance = NewItemInstance;
@@ -259,4 +267,18 @@ void URpgInventoryEntryViewModel::InitializeEmptySlot(UActorComponent* InInvento
 
 	const TMap<TSubclassOf<URpgInventoryItemFragment>, TSubclassOf<URpgInventoryFragmentViewModel>> EmptyFragmentViewModelClasses;
 	InitializeFromEntry(EmptyEntry, EmptyFragmentViewModelClasses);
+}
+
+URpgInventoryItemizationFragmentViewModel* URpgInventoryEntryViewModel::GetItemizationViewModel() const
+{
+	for (URpgInventoryFragmentViewModel* FragmentViewModel : FragmentViewModels)
+	{
+		if (URpgInventoryItemizationFragmentViewModel* ItemizationViewModel =
+			Cast<URpgInventoryItemizationFragmentViewModel>(FragmentViewModel))
+		{
+			return ItemizationViewModel;
+		}
+	}
+
+	return nullptr;
 }

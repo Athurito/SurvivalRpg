@@ -10,6 +10,7 @@ class URpgInventoryAddressSlotViewModel;
 class URpgInventoryDragDropCoordinator;
 class URpgInventoryDragVisualWidget;
 class URpgInventoryEntryViewModel;
+class URpgInventoryItemTooltipWidget;
 class URpgInventorySpatialGridWidget;
 class UDragDropOperation;
 class UTexture2D;
@@ -112,6 +113,13 @@ protected:
 	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Inventory|Spatial Item")
 	bool bUseNativeFallbackPaint = true;
 
+	/**
+	 * Tooltip class used for replicated item details. Defaults to the complete native fallback and may be replaced by
+	 * a presentation-only Widget Blueprint subclass.
+	 */
+	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Inventory|Spatial Item|Tooltip")
+	TSubclassOf<URpgInventoryItemTooltipWidget> ItemTooltipWidgetClass;
+
 private:
 	friend class URpgInventorySpatialGridWidget;
 #if WITH_DEV_AUTOMATION_TESTS
@@ -133,6 +141,7 @@ private:
 	void ApplyDragDropVisualState();
 	void ReleaseSpatialItemState();
 	void RefreshPlacedItemVisual();
+	void RefreshItemTooltip();
 	bool IsPlacedItemRotated() const;
 	TSoftObjectPtr<UTexture2D> GetIcon() const;
 	int32 GetStackCount() const;
@@ -149,6 +158,10 @@ private:
 
 	UPROPERTY(Transient)
 	TObjectPtr<URpgInventoryEntryViewModel> EntryViewModel = nullptr;
+
+	/** Reused UI-only tooltip; cleared whenever this pooled overlay stops representing an item. */
+	UPROPERTY(Transient)
+	TObjectPtr<URpgInventoryItemTooltipWidget> ItemTooltipWidget = nullptr;
 
 	UPROPERTY(Transient)
 	ERpgInventorySlotDragVisualState CurrentDragDropVisualState = ERpgInventorySlotDragVisualState::Normal;

@@ -18,6 +18,10 @@ public class GF_Harvesting_Magic : ModuleRules
 			"SurvivalRpg",
 		});
 
-		PrivateDependencyModuleNames.Add("PhysicsCore");
+		PrivateDependencyModuleNames.AddRange(new string[]
+		{
+			"ModularGameplayActors",
+			"PhysicsCore",
+		});
 	}
 }

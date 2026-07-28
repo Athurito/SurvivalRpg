@@ -5,9 +5,11 @@
 
 #include "AbilitySystemInterface.h"
 #include "Data/RpgPlayerProgressionData.h"
+#include "GameFramework/PlayerController.h"
 #include "GameFramework/PlayerState.h"
 #include "Net/UnrealNetwork.h"
 #include "SurvivalRpg/SurvivalRpg.h"
+#include "SurvivalRpg/Core/Game/RpgGameModeBase.h"
 
 URpgPlayerProgressionComponent::URpgPlayerProgressionComponent()
 {
@@ -36,12 +38,18 @@ void URpgPlayerProgressionComponent::AddXP(float Amount)
 	if (!GetOwner() || !GetOwner()->HasAuthority())
 		return;
 
-	if (Amount <= 0.f || !ConfigData)
+	if (!FMath::IsFinite(Amount) || Amount <= 0.f || !ConfigData)
 	{
-		if (Amount > 0.f && !ConfigData)
+		if (FMath::IsFinite(Amount) && Amount > 0.f && !ConfigData)
 		{
 			UE_LOG(LogRpgProgression, Warning, TEXT("%s ignored %.2f XP because ConfigData is not set."), *GetNameSafe(this), Amount);
 		}
+		return;
+	}
+	if (State.Level >= ConfigData->MaxLevel)
+	{
+		State.Level = FMath::Max(1, ConfigData->MaxLevel);
+		State.XP = 0.0f;
 		return;
 	}
 
@@ -57,6 +65,8 @@ void URpgPlayerProgressionComponent::AddXP(float Amount)
 		XPToNext,
 		State.UnspentSkillPoints);
 	OnXPChanged.Broadcast(State.XP, XPToNext);
+	GetOwner()->ForceNetUpdate();
+	MarkOwnerSaveDirty();
 }
 
 bool URpgPlayerProgressionComponent::SpendSkillPoints(int32 Amount)
@@ -72,12 +82,60 @@ bool URpgPlayerProgressionComponent::SpendSkillPoints(int32 Amount)
 
 	State.UnspentSkillPoints -= Amount;
 	OnSkillPointsChanged.Broadcast(State.UnspentSkillPoints);
+	GetOwner()->ForceNetUpdate();
+	MarkOwnerSaveDirty();
 	return true;
+}
+
+bool URpgPlayerProgressionComponent::RestoreProgressionState(
+	const FPlayerProgressionState& InState)
+{
+	if ((GetOwner() && !GetOwner()->HasAuthority()) || !InState.IsValid())
+	{
+		return false;
+	}
+
+	State = InState;
+	if (ConfigData)
+	{
+		State.Level = FMath::Clamp(State.Level, 1, FMath::Max(1, ConfigData->MaxLevel));
+		if (State.Level >= ConfigData->MaxLevel)
+		{
+			State.XP = 0.0f;
+		}
+	}
+
+	BroadcastStateChanged();
+	if (GetOwner())
+	{
+		GetOwner()->ForceNetUpdate();
+	}
+	return true;
+}
+
+void URpgPlayerProgressionComponent::ResetProgressionStateToDefaults()
+{
+	if (GetOwner() && !GetOwner()->HasAuthority())
+	{
+		return;
+	}
+
+	State = FPlayerProgressionState();
+	BroadcastStateChanged();
+	if (GetOwner())
+	{
+		GetOwner()->ForceNetUpdate();
+	}
 }
 
 
 
 void URpgPlayerProgressionComponent::OnRep_State()
+{
+	BroadcastStateChanged();
+}
+
+void URpgPlayerProgressionComponent::BroadcastStateChanged()
 {
 	const float XPToNext = GetXPToNextLevel(State.Level);
 
@@ -120,6 +178,11 @@ void URpgPlayerProgressionComponent::TryLevelUp()
 		OnLevelChanged.Broadcast(State.Level);
 		OnSkillPointsChanged.Broadcast(State.UnspentSkillPoints);
 	}
+
+	if (State.Level >= ConfigData->MaxLevel)
+	{
+		State.XP = 0.0f;
+	}
 }
 
 void URpgPlayerProgressionComponent::HandleLevelUp(int32 OldLevel, int32 NewLevel)
@@ -145,6 +208,16 @@ void URpgPlayerProgressionComponent::HandleLevelUp(int32 OldLevel, int32 NewLeve
 	//     FGameplayTag::RequestGameplayTag("Player.Tier.2")
 	//   );
 	// }
+}
+
+void URpgPlayerProgressionComponent::MarkOwnerSaveDirty() const
+{
+	const AActor* Owner = GetOwner();
+	APlayerController* PlayerController = Owner ? Cast<APlayerController>(Owner->GetOwner()) : nullptr;
+	if (ARpgGameModeBase* GameMode = GetWorld() ? GetWorld()->GetAuthGameMode<ARpgGameModeBase>() : nullptr)
+	{
+		GameMode->MarkPlayerSaveDirty(PlayerController);
+	}
 }
 
 

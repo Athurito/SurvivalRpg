@@ -5,17 +5,26 @@
 #include "CoreMinimal.h"
 #include "RpgPlayerProgressionState.generated.h"
 
+/** Replicated and saved general character progression owned authoritatively by the PlayerState. */
 USTRUCT(BlueprintType)
-struct FPlayerProgressionState
+struct SURVIVALRPG_API FPlayerProgressionState
 {
 	GENERATED_BODY()
 
-	UPROPERTY(VisibleAnywhere, BlueprintReadOnly)
+	/** Current character level; server-authored and persisted across sessions. */
+	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, SaveGame, Category = "Rpg|Progression")
 	int32 Level = 1;
 
-	UPROPERTY(VisibleAnywhere, BlueprintReadOnly)
+	/** Unspent experience toward the next character level. */
+	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, SaveGame, Category = "Rpg|Progression")
 	float XP = 0.f;
 
-	UPROPERTY(VisibleAnywhere, BlueprintReadOnly)
+	/** Earned progression points not yet spent on player-selected unlocks. */
+	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, SaveGame, Category = "Rpg|Progression")
 	int32 UnspentSkillPoints = 0;
+
+	bool IsValid() const
+	{
+		return Level >= 1 && FMath::IsFinite(XP) && XP >= 0.0f && UnspentSkillPoints >= 0;
+	}
 };
