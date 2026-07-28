@@ -61,9 +61,13 @@ public:
 	bool CanMergePickupTemplate(TSubclassOf<URpgInventoryItemDefinition> ItemDefinition) const;
 
 protected:
+	virtual void EndPlay(const EEndPlayReason::Type EndPlayReason) override;
 	virtual FInteractionOption BuildCollectInteractionOption(const FInteractionQuery& InteractQuery) const override;
 
 private:
+	void EnsureLootInventoryPostCommitBinding();
+	void HandleLootInventoryPostCommit(URpgInventoryManagerComponent* Inventory);
+	void DestroyIfLootInventoryRemainsEmpty();
 	void EnsureDefaultPickupInteractionOption();
 	bool PopulateLootInventoryFromPickup(const FInventoryPickup& PickupInventory);
 	FInventoryPickup BuildPickupInventoryFromLootInventory() const;
@@ -103,6 +107,12 @@ private:
 	/** True after PostInitializeComponents makes the runtime manager canonical on this local role. */
 	UPROPERTY(Transient)
 	bool bLootInventoryInitialized = false;
+
+	/** Authority-only guard that distinguishes a consumed drop from a newly spawned empty transfer target. */
+	bool bHasContainedLoot = false;
+
+	/** Prevents repeated next-tick cleanup requests while the authoritative inventory remains empty. */
+	bool bEmptyDestroyScheduled = false;
 
 	/** Server-local replay cache for physical drop commands whose target placement is derived once. */
 	TMap<FGuid, FRecentDropTransferResult> RecentDropTransferResults;

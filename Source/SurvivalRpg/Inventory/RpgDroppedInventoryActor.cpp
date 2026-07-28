@@ -10,6 +10,8 @@
 #include "SurvivalRpg/Inventory/RpgInventoryItemDefinition.h"
 #include "SurvivalRpg/Inventory/RpgInventoryItemInstance.h"
 #include "SurvivalRpg/Inventory/RpgInventoryManagerComponent.h"
+#include "Engine/World.h"
+#include "TimerManager.h"
 
 #include UE_INLINE_GENERATED_CPP_BY_NAME(RpgDroppedInventoryActor)
 
@@ -32,6 +34,7 @@ void ARpgDroppedInventoryActor::PostInitializeComponents()
 
 	if (LootInventoryComponent)
 	{
+		EnsureLootInventoryPostCommitBinding();
 		bool bRuntimeInventoryIsCanonical = !HasAuthority();
 		if (HasAuthority())
 		{
@@ -66,6 +69,110 @@ void ARpgDroppedInventoryActor::PostInitializeComponents()
 		// static fallback whenever initial graph population was not committed, including
 		// the fail-closed case where an empty-graph rollback could not remove every entry.
 		bLootInventoryInitialized = bRuntimeInventoryIsCanonical;
+		if (HasAuthority())
+		{
+			bHasContainedLoot =
+				bLootInventoryInitialized &&
+				LootInventoryComponent->GetUsedEntryCount() > 0;
+		}
+	}
+}
+
+void ARpgDroppedInventoryActor::EndPlay(
+	const EEndPlayReason::Type EndPlayReason)
+{
+	if (LootInventoryComponent)
+	{
+		LootInventoryComponent->OnInventoryPostCommit.RemoveAll(this);
+	}
+	bEmptyDestroyScheduled = false;
+	Super::EndPlay(EndPlayReason);
+}
+
+void ARpgDroppedInventoryActor::EnsureLootInventoryPostCommitBinding()
+{
+	if (HasAuthority() && LootInventoryComponent &&
+		!LootInventoryComponent->OnInventoryPostCommit.IsBoundToObject(this))
+	{
+		LootInventoryComponent->OnInventoryPostCommit.AddUObject(
+			this,
+			&ThisClass::HandleLootInventoryPostCommit);
+	}
+}
+
+void ARpgDroppedInventoryActor::HandleLootInventoryPostCommit(
+	URpgInventoryManagerComponent* Inventory)
+{
+	if (!HasAuthority() || Inventory != LootInventoryComponent)
+	{
+		return;
+	}
+
+	// Population can commit before TrySetPickupInventory promotes the runtime graph
+	// to canonical. Remember that the actor has owned loot at that point, but never
+	// clean up an empty graph until the promotion itself has completed.
+	if (LootInventoryComponent->GetUsedEntryCount() > 0)
+	{
+		bHasContainedLoot = true;
+		bEmptyDestroyScheduled = false;
+		if (ContainerComponent)
+		{
+			ContainerComponent->SetContainerAccessible(true);
+		}
+		return;
+	}
+	if (!bLootInventoryInitialized)
+	{
+		return;
+	}
+
+	// A freshly spawned manual-drop target is intentionally empty before its first
+	// transfer. Only a pile that actually contained loot owns empty-pile cleanup.
+	if (!bHasContainedLoot)
+	{
+		return;
+	}
+
+	// Lock immediately so every open access monitor closes, but never destroy from
+	// inside the inventory callback. Replace/rollback paths may repopulate this graph
+	// before the deferred check and will restore accessibility from the non-empty path.
+	if (ContainerComponent)
+	{
+		ContainerComponent->SetContainerAccessible(false);
+	}
+	if (bEmptyDestroyScheduled)
+	{
+		return;
+	}
+
+	if (UWorld* World = GetWorld())
+	{
+		bEmptyDestroyScheduled = true;
+		World->GetTimerManager().SetTimerForNextTick(
+			FTimerDelegate::CreateUObject(
+				this,
+				&ThisClass::DestroyIfLootInventoryRemainsEmpty));
+	}
+}
+
+void ARpgDroppedInventoryActor::DestroyIfLootInventoryRemainsEmpty()
+{
+	bEmptyDestroyScheduled = false;
+	if (!HasAuthority() || !bLootInventoryInitialized ||
+		!bHasContainedLoot || !LootInventoryComponent)
+	{
+		return;
+	}
+
+	if (LootInventoryComponent->GetUsedEntryCount() == 0)
+	{
+		Destroy();
+		return;
+	}
+
+	if (ContainerComponent)
+	{
+		ContainerComponent->SetContainerAccessible(true);
 	}
 }
 
@@ -91,6 +198,7 @@ bool ARpgDroppedInventoryActor::TrySetPickupInventory(
 	{
 		return false;
 	}
+	EnsureLootInventoryPostCommitBinding();
 
 	EnsureDefaultPickupInteractionOption();
 	const TArray<FRpgInventoryEntryView> ExistingEntries =
@@ -209,6 +317,8 @@ bool ARpgDroppedInventoryActor::TrySetPickupInventory(
 
 	StaticInventory = FInventoryPickup();
 	bLootInventoryInitialized = true;
+	bHasContainedLoot = bHasContainedLoot ||
+		LootInventoryComponent->GetUsedEntryCount() > 0;
 	ForceNetUpdate();
 	return true;
 }
@@ -263,6 +373,7 @@ ARpgDroppedInventoryActor::TransferItemFromInventoryByIntent(
 		Result.Code = ERpgInventoryMutationResultCode::InvalidRequest;
 		return CacheResult(MoveTemp(Result));
 	}
+	EnsureLootInventoryPostCommitBinding();
 
 	URpgInventoryItemInstance* Item =
 		SourceInventory->FindItemById(Intent.ItemId);
@@ -410,6 +521,8 @@ ARpgDroppedInventoryActor::TransferItemFromInventoryByIntent(
 	{
 		EnsureDefaultPickupInteractionOption();
 		bLootInventoryInitialized = true;
+		bHasContainedLoot = bHasContainedLoot ||
+			LootInventoryComponent->GetUsedEntryCount() > 0;
 		ForceNetUpdate();
 	}
 	return CacheResult(MoveTemp(Result));
@@ -526,6 +639,7 @@ bool ARpgDroppedInventoryActor::MergePickupTemplate(TSubclassOf<URpgInventoryIte
 	{
 		return false;
 	}
+	EnsureLootInventoryPostCommitBinding();
 
 	EnsureDefaultPickupInteractionOption();
 	if (!LootInventoryComponent || !LootInventoryComponent->CanAddItemDefinition(ItemDefinition, StackCount))
@@ -538,6 +652,8 @@ bool ARpgDroppedInventoryActor::MergePickupTemplate(TSubclassOf<URpgInventoryIte
 		return false;
 	}
 	bLootInventoryInitialized = true;
+	bHasContainedLoot = bHasContainedLoot ||
+		LootInventoryComponent->GetUsedEntryCount() > 0;
 	ForceNetUpdate();
 	return true;
 }
