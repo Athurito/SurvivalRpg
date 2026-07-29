@@ -107,6 +107,10 @@ public:
 
 	UFUNCTION(BlueprintCallable, Category = "Rpg|Character")
 	bool GetIsAutoRunning() const;
+
+	/** Owning-client check that prevents menu input and a held Ctrl quick-transfer from leaking into gameplay crouch. */
+	bool ShouldSuppressCrouchInput() const;
+
 protected:
 	
 	UFUNCTION(Server, Reliable)
@@ -140,6 +144,7 @@ private:
 	void OnStartAutoRun();
 	void OnEndAutoRun();
 	void RestoreGameplayInputFocus();
+	bool IsControlModifierDown() const;
 	void BindToPawnExtensionForLoadout(APawn* InPawn);
 	void UnbindFromPawnExtensionForLoadout();
 	void HandlePossessedPawnAbilitySystemInitialized();
@@ -188,4 +193,7 @@ private:
 	TWeakObjectPtr<AActor> ActiveLootContextActor;
 	FGameplayTag ActiveInventoryContextScreenTag;
 	bool bHasActiveLootContext = false;
+
+	/** Owning-client gate held until a Ctrl-based inventory gesture is physically released. */
+	bool bSuppressCrouchInputUntilControlRelease = false;
 };
