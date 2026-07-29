@@ -27,6 +27,11 @@ struct FNetDeltaSerializeInfo;
 struct FReplicationFlags;
 class FCustomPropertyConditionState;
 
+/** Fires on authority after one complete inventory graph mutation has committed. */
+DECLARE_MULTICAST_DELEGATE_OneParam(
+	FRpgInventoryPostCommitNative,
+	URpgInventoryManagerComponent* /* Inventory */);
+
 /** Connection audience for the replicated inventory graph and item subobjects. */
 UENUM(BlueprintType)
 enum class ERpgInventoryReplicationPolicy : uint8
@@ -490,12 +495,18 @@ struct TStructOpsTypeTraits<FRpgInventoryList> : public TStructOpsTypeTraitsBase
  * component but never own or commit inventory state.
  */
 UCLASS(BlueprintType)
-class URpgInventoryManagerComponent : public UActorComponent
+class SURVIVALRPG_API URpgInventoryManagerComponent : public UActorComponent
 {
 	GENERATED_BODY()
 
 public:
 	URpgInventoryManagerComponent(const FObjectInitializer& ObjectInitializer = FObjectInitializer::Get());
+
+	/**
+	 * Authority-only native notification emitted once for each inventory whose complete graph changed.
+	 * Cached command replays and rejected/no-op requests do not broadcast.
+	 */
+	FRpgInventoryPostCommitNative OnInventoryPostCommit;
 
 	/** Sets the static replication audience. Configure during actor construction before replication begins. */
 	void SetReplicationPolicy(ERpgInventoryReplicationPolicy NewPolicy) { ReplicationPolicy = NewPolicy; }
@@ -889,7 +900,9 @@ private:
 		int32 Quantity,
 		TArray<FRpgInventoryMutationDelta>& OutDeltas,
 		ERpgInventoryMutationResultCode& OutCode) const;
-	bool CommitRemovalDeltas(const TArray<FRpgInventoryMutationDelta>& Deltas);
+	bool CommitRemovalDeltas(
+		const TArray<FRpgInventoryMutationDelta>& Deltas,
+		bool bBroadcastPostCommit = true);
 	FRpgInventoryMutationRequest BuildMoveMutationRequest(const FRpgInventoryMoveIntent& Intent) const;
 	FRpgInventoryMutationRequest BuildEquipmentMoveMutationRequest(
 		const FRpgInventoryMoveIntent& Intent) const;

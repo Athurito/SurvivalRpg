@@ -2,6 +2,7 @@
 
 #include "RpgInventoryManagerComponent.h"
 
+#include "RpgInventoryContainerComponent.h"
 #include "RpgInventoryFragment_ItemContainer.h"
 #include "RpgInventoryItemDefinition.h"
 #include "RpgInventoryItemInstance.h"
@@ -355,6 +356,15 @@ bool URpgInventoryManagerComponent::PrepareCollectRootItemsBatch(
 		TargetContainers.IsEmpty())
 	{
 		OutCode = ERpgInventoryMutationResultCode::InvalidRequest;
+		return false;
+	}
+	if (const URpgInventoryContainerComponent* TargetContainer =
+			TargetOwner->FindComponentByClass<URpgInventoryContainerComponent>();
+		TargetContainer &&
+		TargetContainer->GetInventoryManager() == TargetInventory &&
+		!TargetContainer->CanReceiveTransferFrom(this))
+	{
+		OutCode = ERpgInventoryMutationResultCode::ItemNotAllowed;
 		return false;
 	}
 
@@ -1857,8 +1867,6 @@ URpgInventoryManagerComponent::CommitCollectRootItemsBatch(
 		}
 	}
 
-	MarkInventoryStateDirty();
-	TargetInventory->MarkInventoryStateDirty();
 	OutAffectedTargetItemIds = Prepared.AffectedTargetItemIds;
 	Result = CacheRecentCollectRootBatchResult(
 		TargetInventory,
@@ -1907,6 +1915,9 @@ URpgInventoryManagerComponent::CommitCollectRootItemsBatch(
 			0,
 			Added.Entry.StackCount);
 	}
+
+	MarkInventoryStateDirty();
+	TargetInventory->MarkInventoryStateDirty();
 
 	return Result;
 }

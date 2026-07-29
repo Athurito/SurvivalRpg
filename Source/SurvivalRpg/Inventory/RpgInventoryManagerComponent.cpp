@@ -338,6 +338,7 @@ void URpgInventoryManagerComponent::MarkInventoryStateDirty()
 
 	++InventoryRevision;
 	OwningActor->ForceNetUpdate();
+	OnInventoryPostCommit.Broadcast(this);
 }
 
 void URpgInventoryManagerComponent::BroadcastInventoryStateChanged() const

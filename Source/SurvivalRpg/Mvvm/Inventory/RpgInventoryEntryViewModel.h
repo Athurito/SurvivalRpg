@@ -15,6 +15,7 @@ class UTexture2D;
 class URpgInventoryItemFragment;
 class URpgInventoryItemInstance;
 class URpgInventoryEntryViewModel;
+class URpgInventoryItemizationFragmentViewModel;
 
 /** Broadcast when one slot view model changed its represented item, stack, or empty state. */
 DECLARE_DYNAMIC_MULTICAST_DELEGATE_OneParam(FRpgInventoryEntryViewModelChanged, URpgInventoryEntryViewModel*, EntryViewModel);
@@ -71,6 +72,14 @@ public:
 	/** Optional item icon from UIData. Empty capacity slots return no icon. */
 	UFUNCTION(BlueprintPure, Category = "Inventory|ViewModel")
 	TSoftObjectPtr<UTexture2D> GetIcon() const { return Icon; }
+
+	/** Optional localized tooltip description from the static UIData fragment. */
+	UFUNCTION(BlueprintPure, Category = "Inventory|ViewModel")
+	FText GetDescription() const { return Description; }
+
+	/** Generated-item presenter for this concrete item, or null for ordinary materials and legacy items. */
+	UFUNCTION(BlueprintPure, Category = "Inventory|ViewModel")
+	URpgInventoryItemizationFragmentViewModel* GetItemizationViewModel() const;
 
 	/** Server-authored grid placement represented by this entry or empty capacity cell. */
 	UFUNCTION(BlueprintPure, Category = "Inventory|ViewModel")

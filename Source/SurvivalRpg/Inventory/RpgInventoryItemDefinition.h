@@ -66,7 +66,7 @@ public:
 
 /** Static fragment-composed definition shared by all concrete instances of one item type. */
 UCLASS(Blueprintable, Const, Abstract)
-class URpgInventoryItemDefinition : public UObject
+class SURVIVALRPG_API URpgInventoryItemDefinition : public UObject
 {
 	GENERATED_BODY()
 

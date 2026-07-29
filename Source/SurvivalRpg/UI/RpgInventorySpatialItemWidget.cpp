@@ -6,6 +6,7 @@
 #include "SurvivalRpg/Mvvm/Inventory/RpgInventoryEntryViewModel.h"
 #include "SurvivalRpg/Mvvm/Inventory/RpgInventoryAddressSlotViewModel.h"
 #include "SurvivalRpg/UI/RpgInventoryDragVisualWidget.h"
+#include "SurvivalRpg/UI/RpgInventoryItemTooltipWidget.h"
 
 #include "Blueprint/WidgetBlueprintLibrary.h"
 #include "Engine/Texture2D.h"
@@ -20,6 +21,7 @@ URpgInventorySpatialItemWidget::URpgInventorySpatialItemWidget(const FObjectInit
 	: Super(ObjectInitializer)
 {
 	SetIsFocusable(true);
+	ItemTooltipWidgetClass = URpgInventoryItemTooltipWidget::StaticClass();
 }
 
 void URpgInventorySpatialItemWidget::NativePreConstruct()
@@ -502,6 +504,8 @@ FRpgInventoryDragPayload URpgInventorySpatialItemWidget::MakeDragPayload() const
 
 void URpgInventorySpatialItemWidget::RefreshPlacedItemVisual()
 {
+	RefreshItemTooltip();
+
 	if (!ItemVisual)
 	{
 		return;
@@ -535,6 +539,48 @@ void URpgInventorySpatialItemWidget::RefreshPlacedItemVisual()
 
 	// The child is presentation-only; this outer spatial item remains the drag, context-menu, and focus target.
 	ItemVisual->SetVisibility(ESlateVisibility::HitTestInvisible);
+}
+
+void URpgInventorySpatialItemWidget::RefreshItemTooltip()
+{
+	URpgInventoryItemInstance* ItemInstance = AddressSlotViewModel
+		? AddressSlotViewModel->GetItemInstance()
+		: (EntryViewModel ? EntryViewModel->GetItemInstance() : nullptr);
+	if (!ItemInstance || !ItemTooltipWidgetClass)
+	{
+		if (ItemTooltipWidget)
+		{
+			ItemTooltipWidget->ClearItem();
+		}
+		SetToolTip(nullptr);
+		return;
+	}
+
+	if (!ItemTooltipWidget || !ItemTooltipWidget->IsA(ItemTooltipWidgetClass))
+	{
+		if (ItemTooltipWidget)
+		{
+			ItemTooltipWidget->ClearItem();
+		}
+		ItemTooltipWidget = URpgInventoryItemTooltipWidget::CreateForHost(
+			this,
+			ItemTooltipWidgetClass);
+	}
+	if (!ItemTooltipWidget)
+	{
+		SetToolTip(nullptr);
+		return;
+	}
+
+	if (EntryViewModel)
+	{
+		ItemTooltipWidget->SetEntryViewModel(EntryViewModel);
+	}
+	else
+	{
+		ItemTooltipWidget->SetItemInstance(ItemInstance, GetStackCount());
+	}
+	SetToolTip(ItemTooltipWidget);
 }
 
 bool URpgInventorySpatialItemWidget::IsPlacedItemRotated() const

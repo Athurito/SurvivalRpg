@@ -4,6 +4,7 @@
 
 #include "IPickupable.h"
 #include "RpgDroppedInventoryActor.h"
+#include "RpgInventoryContainerComponent.h"
 #include "RpgInventoryItemInstance.h"
 #include "RpgInventoryManagerComponent.h"
 #include "SurvivalRpg/GameplayTags/RpgGameplayTags.h"
@@ -1258,6 +1259,103 @@ bool FRpgInventoryCanonicalDropPickupHelperTest::RunTest(
 		TargetInventory->GetTotalItemCountByDefinition(
 			URpgInventoryAutomationTestStackItemDefinition::StaticClass()),
 		0);
+	return true;
+}
+
+IMPLEMENT_SIMPLE_AUTOMATION_TEST(
+	FRpgDroppedInventoryTrySetRollbackTest,
+	"SurvivalRpg.Inventory.PickupBatch.DropTrySetRollsBackPartialPopulation",
+	EAutomationTestFlags::EditorContext | EAutomationTestFlags::EngineFilter)
+
+bool FRpgDroppedInventoryTrySetRollbackTest::RunTest(
+	const FString& Parameters)
+{
+	(void)Parameters;
+	using namespace RpgInventoryPickupBatchTests;
+	FScopedInventoryWorld TestWorld;
+	if (!InitializeTest(*this, TestWorld))
+	{
+		return false;
+	}
+
+	FActorSpawnParameters SpawnParameters;
+	SpawnParameters.Name = MakeUniqueObjectName(
+		TestWorld.GetWorld(),
+		ARpgDroppedInventoryActor::StaticClass(),
+		TEXT("TrySetRollbackDrop"));
+	SpawnParameters.ObjectFlags = RF_Transient;
+	SpawnParameters.SpawnCollisionHandlingOverride =
+		ESpawnActorCollisionHandlingMethod::AlwaysSpawn;
+	ARpgDroppedInventoryActor* DropActor =
+		TestWorld.GetWorld()->SpawnActor<ARpgDroppedInventoryActor>(
+			SpawnParameters);
+	if (!TestNotNull(TEXT("The rollback drop exists"), DropActor) ||
+		!TestTrue(
+			TEXT("The initial complete pickup payload commits"),
+			DropActor->TrySetPickupInventory(MakeStackTemplatePickup(3))))
+	{
+		return false;
+	}
+
+	URpgInventoryManagerComponent* DropInventory =
+		DropActor->GetLootInventoryManager();
+	const TArray<FRpgInventoryEntryView> BeforeEntries =
+		DropInventory ? DropInventory->GetAllEntries()
+					  : TArray<FRpgInventoryEntryView>();
+	if (!TestNotNull(TEXT("The rollback drop owns an inventory"), DropInventory) ||
+		!TestEqual(TEXT("The fixture starts with one merged stack"), BeforeEntries.Num(), 1))
+	{
+		return false;
+	}
+
+	FInventoryPickup PartialFailurePayload;
+	FPickupTemplate& ValidFirstRow =
+		PartialFailurePayload.Templates.AddDefaulted_GetRef();
+	ValidFirstRow.ItemDef =
+		URpgInventoryAutomationTestUnitItemDefinition::StaticClass();
+	ValidFirstRow.StackCount = 1;
+	FPickupTemplate& InvalidSecondRow =
+		PartialFailurePayload.Templates.AddDefaulted_GetRef();
+	InvalidSecondRow.ItemDef = nullptr;
+	InvalidSecondRow.StackCount = 1;
+
+	AddExpectedError(
+		TEXT("Cannot replace pickup inventory"),
+		EAutomationExpectedErrorFlags::Contains,
+		1);
+	TestFalse(
+		TEXT("TrySet reports the incomplete replacement as failed"),
+		DropActor->TrySetPickupInventory(PartialFailurePayload));
+	TestTrue(
+		TEXT("A failed replacement keeps the restored runtime graph canonical"),
+		DropActor->IsLootInventoryCanonical());
+	TestEqual(
+		TEXT("Rollback removes the partially populated replacement row"),
+		DropInventory->GetTotalItemCountByDefinition(
+			URpgInventoryAutomationTestUnitItemDefinition::StaticClass()),
+		0);
+	TestEqual(
+		TEXT("Rollback restores every unit from the previous payload"),
+		DropInventory->GetTotalItemCountByDefinition(
+			URpgInventoryAutomationTestStackItemDefinition::StaticClass()),
+		3);
+
+	const TArray<FRpgInventoryEntryView> AfterEntries =
+		DropInventory->GetAllEntries();
+	if (!TestEqual(TEXT("Rollback restores one complete stack"), AfterEntries.Num(), 1))
+	{
+		return false;
+	}
+	TestTrue(
+		TEXT("Rollback preserves the concrete item identity"),
+		AfterEntries[0].ItemId == BeforeEntries[0].ItemId);
+	TestEqual(
+		TEXT("Rollback preserves the prior stack count"),
+		AfterEntries[0].StackCount,
+		BeforeEntries[0].StackCount);
+	TestTrue(
+		TEXT("Rollback preserves the prior placement"),
+		AfterEntries[0].Placement == BeforeEntries[0].Placement);
 	return true;
 }
 
@@ -2653,6 +2751,95 @@ bool FRpgInventoryCollectBatchPlannedRowMergeTest::RunTest(
 		TestEqual(TEXT("The later root reports its three-unit remainder"),
 			PartialSourceDelta->NewQuantity, 3);
 	}
+	return true;
+}
+
+IMPLEMENT_SIMPLE_AUTOMATION_TEST(
+	FRpgDroppedInventoryEmptyCleanupTest,
+	"SurvivalRpg.Inventory.PickupBatch.EmptyWorldDropLocksAndDestroysDeferred",
+	EAutomationTestFlags::EditorContext | EAutomationTestFlags::EngineFilter)
+
+bool FRpgDroppedInventoryEmptyCleanupTest::RunTest(
+	const FString& Parameters)
+{
+	(void)Parameters;
+	using namespace RpgInventoryPickupBatchTests;
+	FScopedInventoryWorld TestWorld;
+	if (!InitializeTest(*this, TestWorld))
+	{
+		return false;
+	}
+
+	FActorSpawnParameters SpawnParameters;
+	SpawnParameters.Name = MakeUniqueObjectName(
+		TestWorld.GetWorld(),
+		ARpgDroppedInventoryActor::StaticClass(),
+		TEXT("EmptyCleanupWorldDrop"));
+	SpawnParameters.ObjectFlags = RF_Transient;
+	SpawnParameters.SpawnCollisionHandlingOverride =
+		ESpawnActorCollisionHandlingMethod::AlwaysSpawn;
+	ARpgDroppedInventoryActor* DropActor =
+		TestWorld.GetWorld()->SpawnActor<ARpgDroppedInventoryActor>(
+			SpawnParameters);
+	URpgInventoryManagerComponent* DropInventory = DropActor
+		? DropActor->GetLootInventoryManager()
+		: nullptr;
+	URpgInventoryContainerComponent* DropContainer = DropActor
+		? DropActor->FindComponentByClass<URpgInventoryContainerComponent>()
+		: nullptr;
+	URpgInventoryManagerComponent* TargetInventory =
+		TestWorld.CreateInventory(TEXT("EmptyCleanupTarget"));
+	if (!TestNotNull(TEXT("The world drop exists"), DropActor) ||
+		!TestNotNull(TEXT("The world drop inventory exists"), DropInventory) ||
+		!TestNotNull(TEXT("The world drop access container exists"), DropContainer) ||
+		!TestNotNull(TEXT("The collection target exists"), TargetInventory))
+	{
+		return false;
+	}
+
+	TestTrue(
+		TEXT("A fresh empty transfer target is not scheduled for premature cleanup"),
+		IsValid(DropActor));
+	TestTrue(
+		TEXT("A fresh empty transfer target remains accessible for its first item"),
+		DropContainer->IsContainerAccessible());
+
+	DropActor->SetPickupInventory(MakeStackTemplatePickup(1));
+	if (!TestEqual(
+			TEXT("The drop starts with one loot entry"),
+			DropInventory->GetUsedEntryCount(),
+			1))
+	{
+		return false;
+	}
+
+	TArray<FRpgInventoryContainerHandle> TargetContainers;
+	TargetContainers.Add(FRpgInventoryContainerHandle::MakeRoot(
+		TargetInventory->GetDefaultContainerId()));
+	TArray<FRpgInventoryItemId> AddedItemIds;
+	const FRpgInventoryMutationResult Result =
+		DropInventory->CollectRootItemsBatch(
+			TargetInventory,
+			TargetContainers,
+			FGuid::NewGuid(),
+			AddedItemIds);
+
+	TestTrue(TEXT("The complete drop collection commits"), Result.IsSuccess());
+	TestEqual(
+		TEXT("The world drop is empty after the commit"),
+		DropInventory->GetUsedEntryCount(),
+		0);
+	TestFalse(
+		TEXT("The empty drop locks access in the post-commit callback"),
+		DropContainer->IsContainerAccessible());
+	TestFalse(
+		TEXT("The drop is not destroyed synchronously inside the inventory callback"),
+		DropActor->IsActorBeingDestroyed());
+
+	TestWorld.GetWorld()->Tick(LEVELTICK_All, 1.0f / 60.0f);
+	TestFalse(
+		TEXT("The deferred cleanup destroys the still-empty world drop"),
+		IsValid(DropActor));
 	return true;
 }
 

@@ -638,7 +638,6 @@ bool URpgInventoryManagerComponent::RestoreInventoryGraphInternal(
 		InventoryList.Entries;
 	OutResult.Code = ERpgInventoryMutationResultCode::Success;
 	OutResult.AppliedQuantity = Staged.Num();
-	MarkInventoryStateDirty();
 
 	// Both callback sets observe the complete committed graph. The restore guard remains active through notification
 	// delivery, so a synchronous listener may enqueue follow-up work but cannot reenter this authoritative commit.
@@ -658,5 +657,6 @@ bool URpgInventoryManagerComponent::RestoreInventoryGraphInternal(
 			CommittedEntry.StackCount,
 			true);
 	}
+	MarkInventoryStateDirty();
 	return true;
 }

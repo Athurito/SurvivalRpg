@@ -4,6 +4,7 @@
 
 #include "GameFramework/Actor.h"
 #include "Net/UnrealNetwork.h"
+#include "RpgInventoryContainerComponent.h"
 #include "RpgInventoryFragment_ItemContainer.h"
 #include "RpgInventoryItemDefinition.h"
 #include "RpgInventoryItemInstance.h"
@@ -285,7 +286,6 @@ URpgInventoryItemInstance* URpgInventoryManagerComponent::CommitAddPlacementPlan
 		InventoryList.SortEntriesByPlacement();
 		InventoryList.MarkArrayDirty();
 	}
-	MarkInventoryStateDirty();
 	if (IsUsingRegisteredSubObjectList() && IsReadyForReplication())
 	{
 		for (URpgInventoryItemInstance* NewInstance : AddedInstances)
@@ -322,6 +322,7 @@ URpgInventoryItemInstance* URpgInventoryManagerComponent::CommitAddPlacementPlan
 				AddedEntry->StackCount);
 		}
 	}
+	MarkInventoryStateDirty();
 	return ResultInstance;
 }
 
@@ -583,7 +584,8 @@ URpgInventoryItemInstance* URpgInventoryManagerComponent::AddItemDefinitionToPla
 }
 
 bool URpgInventoryManagerComponent::CommitRemovalDeltas(
-	const TArray<FRpgInventoryMutationDelta>& Deltas)
+	const TArray<FRpgInventoryMutationDelta>& Deltas,
+	bool bBroadcastPostCommit)
 {
 	AActor* OwningActor = GetOwner();
 	if (IsInventoryMutationLocked() || !OwningActor ||
@@ -713,7 +715,10 @@ bool URpgInventoryManagerComponent::CommitRemovalDeltas(
 			0);
 	}
 
-	MarkInventoryStateDirty();
+	if (bBroadcastPostCommit)
+	{
+		MarkInventoryStateDirty();
+	}
 	return true;
 }
 
@@ -1187,8 +1192,8 @@ FRpgInventoryMutationResult URpgInventoryManagerComponent::ExecuteInventoryMutat
 		break;
 
 	case ERpgInventoryMutationOperation::Consume:
-		bInventoryStateChanged = false;
-		bCommitted = CommitRemovalDeltas(Result.Deltas);
+		bInventoryStateChanged = true;
+		bCommitted = CommitRemovalDeltas(Result.Deltas, false);
 		break;
 
 	default:
@@ -1201,12 +1206,13 @@ FRpgInventoryMutationResult URpgInventoryManagerComponent::ExecuteInventoryMutat
 		Result.AppliedQuantity = 0;
 		Result.Deltas.Reset();
 	}
-	else if (bInventoryStateChanged)
+	const bool bBroadcastPostCommit = bCommitted && bInventoryStateChanged;
+	Result = CacheResult(MoveTemp(Result));
+	if (bBroadcastPostCommit)
 	{
 		MarkInventoryStateDirty();
 	}
-
-	return CacheResult(MoveTemp(Result));
+	return Result;
 }
 
 FRpgInventoryMutationResult URpgInventoryManagerComponent::ExecuteCrossInventoryTransfer(
@@ -1275,6 +1281,14 @@ FRpgInventoryMutationResult URpgInventoryManagerComponent::ExecuteCrossInventory
 		SourceOwner->GetWorld() != TargetOwner->GetWorld())
 	{
 		return Reject(ERpgInventoryMutationResultCode::InvalidRequest);
+	}
+	if (const URpgInventoryContainerComponent* TargetContainer =
+			TargetOwner->FindComponentByClass<URpgInventoryContainerComponent>();
+		TargetContainer &&
+		TargetContainer->GetInventoryManager() == TargetInventory &&
+		!TargetContainer->CanReceiveTransferFrom(this))
+	{
+		return Reject(ERpgInventoryMutationResultCode::ItemNotAllowed);
 	}
 	TGuardValue<bool> SourceTransferGuard(
 		bIsApplyingCrossInventoryTransfer,
@@ -2206,8 +2220,6 @@ FRpgInventoryMutationResult URpgInventoryManagerComponent::ExecuteCrossInventory
 		}
 	}
 
-	MarkInventoryStateDirty();
-	TargetInventory->MarkInventoryStateDirty();
 	Result.AppliedQuantity = AppliedQuantity;
 	Result.Code = AppliedQuantity == RequestedQuantity
 		? ERpgInventoryMutationResultCode::Success
@@ -2257,6 +2269,9 @@ FRpgInventoryMutationResult URpgInventoryManagerComponent::ExecuteCrossInventory
 			0,
 			Added.StackCount);
 	}
+
+	MarkInventoryStateDirty();
+	TargetInventory->MarkInventoryStateDirty();
 
 	return Result;
 }

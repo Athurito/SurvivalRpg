@@ -10,6 +10,8 @@
 #include "SurvivalRpg/Inventory/RpgInventoryItemDefinition.h"
 #include "SurvivalRpg/Inventory/RpgInventoryItemInstance.h"
 #include "SurvivalRpg/Inventory/RpgInventoryManagerComponent.h"
+#include "Engine/World.h"
+#include "TimerManager.h"
 
 #include UE_INLINE_GENERATED_CPP_BY_NAME(RpgDroppedInventoryActor)
 
@@ -32,6 +34,7 @@ void ARpgDroppedInventoryActor::PostInitializeComponents()
 
 	if (LootInventoryComponent)
 	{
+		EnsureLootInventoryPostCommitBinding();
 		bool bRuntimeInventoryIsCanonical = !HasAuthority();
 		if (HasAuthority())
 		{
@@ -66,6 +69,110 @@ void ARpgDroppedInventoryActor::PostInitializeComponents()
 		// static fallback whenever initial graph population was not committed, including
 		// the fail-closed case where an empty-graph rollback could not remove every entry.
 		bLootInventoryInitialized = bRuntimeInventoryIsCanonical;
+		if (HasAuthority())
+		{
+			bHasContainedLoot =
+				bLootInventoryInitialized &&
+				LootInventoryComponent->GetUsedEntryCount() > 0;
+		}
+	}
+}
+
+void ARpgDroppedInventoryActor::EndPlay(
+	const EEndPlayReason::Type EndPlayReason)
+{
+	if (LootInventoryComponent)
+	{
+		LootInventoryComponent->OnInventoryPostCommit.RemoveAll(this);
+	}
+	bEmptyDestroyScheduled = false;
+	Super::EndPlay(EndPlayReason);
+}
+
+void ARpgDroppedInventoryActor::EnsureLootInventoryPostCommitBinding()
+{
+	if (HasAuthority() && LootInventoryComponent &&
+		!LootInventoryComponent->OnInventoryPostCommit.IsBoundToObject(this))
+	{
+		LootInventoryComponent->OnInventoryPostCommit.AddUObject(
+			this,
+			&ThisClass::HandleLootInventoryPostCommit);
+	}
+}
+
+void ARpgDroppedInventoryActor::HandleLootInventoryPostCommit(
+	URpgInventoryManagerComponent* Inventory)
+{
+	if (!HasAuthority() || Inventory != LootInventoryComponent)
+	{
+		return;
+	}
+
+	// Population can commit before TrySetPickupInventory promotes the runtime graph
+	// to canonical. Remember that the actor has owned loot at that point, but never
+	// clean up an empty graph until the promotion itself has completed.
+	if (LootInventoryComponent->GetUsedEntryCount() > 0)
+	{
+		bHasContainedLoot = true;
+		bEmptyDestroyScheduled = false;
+		if (ContainerComponent)
+		{
+			ContainerComponent->SetContainerAccessible(true);
+		}
+		return;
+	}
+	if (!bLootInventoryInitialized)
+	{
+		return;
+	}
+
+	// A freshly spawned manual-drop target is intentionally empty before its first
+	// transfer. Only a pile that actually contained loot owns empty-pile cleanup.
+	if (!bHasContainedLoot)
+	{
+		return;
+	}
+
+	// Lock immediately so every open access monitor closes, but never destroy from
+	// inside the inventory callback. Replace/rollback paths may repopulate this graph
+	// before the deferred check and will restore accessibility from the non-empty path.
+	if (ContainerComponent)
+	{
+		ContainerComponent->SetContainerAccessible(false);
+	}
+	if (bEmptyDestroyScheduled)
+	{
+		return;
+	}
+
+	if (UWorld* World = GetWorld())
+	{
+		bEmptyDestroyScheduled = true;
+		World->GetTimerManager().SetTimerForNextTick(
+			FTimerDelegate::CreateUObject(
+				this,
+				&ThisClass::DestroyIfLootInventoryRemainsEmpty));
+	}
+}
+
+void ARpgDroppedInventoryActor::DestroyIfLootInventoryRemainsEmpty()
+{
+	bEmptyDestroyScheduled = false;
+	if (!HasAuthority() || !bLootInventoryInitialized ||
+		!bHasContainedLoot || !LootInventoryComponent)
+	{
+		return;
+	}
+
+	if (LootInventoryComponent->GetUsedEntryCount() == 0)
+	{
+		Destroy();
+		return;
+	}
+
+	if (ContainerComponent)
+	{
+		ContainerComponent->SetContainerAccessible(true);
 	}
 }
 
@@ -81,129 +188,139 @@ FInventoryPickup ARpgDroppedInventoryActor::GetPickupInventory() const
 
 void ARpgDroppedInventoryActor::SetPickupInventory(const FInventoryPickup& NewPickupInventory)
 {
-	if (HasAuthority())
+	TrySetPickupInventory(NewPickupInventory);
+}
+
+bool ARpgDroppedInventoryActor::TrySetPickupInventory(
+	const FInventoryPickup& NewPickupInventory)
+{
+	if (!HasAuthority() || !LootInventoryComponent)
 	{
-		EnsureDefaultPickupInteractionOption();
-		if (LootInventoryComponent)
-		{
-			const TArray<FRpgInventoryEntryView> ExistingEntries = LootInventoryComponent->GetAllEntries();
-			const FRpgInventoryGraphSaveData ExistingGraph =
-				LootInventoryComponent->ExportInventoryGraph();
-			if (ExistingGraph.Items.Num() != ExistingEntries.Num())
-			{
-				UE_LOG(
-					LogRpgDroppedInventoryActor,
-					Error,
-					TEXT("Cannot replace pickup inventory for %s because its existing graph could not be exported completely."),
-					*GetNameSafe(this));
-				return;
-			}
-
-			auto RestoreExistingGraph =
-				[this, &ExistingGraph](const TCHAR* FailureContext)
-				{
-					FRpgInventoryMutationResult RestoreResult;
-					if (!LootInventoryComponent->RestoreRuntimeCheckpoint(
-							ExistingGraph,
-							RestoreResult))
-					{
-						UE_LOG(
-							LogRpgDroppedInventoryActor,
-							Error,
-							TEXT("Pickup replacement rollback failed for %s after %s (Code=%d)."),
-							*GetNameSafe(this),
-							FailureContext,
-							static_cast<int32>(RestoreResult.Code));
-					}
-				};
-
-			TArray<FRpgInventoryEntryView> RootEntries;
-			for (const FRpgInventoryEntryView& Entry : ExistingEntries)
-			{
-				if (Entry.Placement.GetContainerHandle().IsRoot())
-				{
-					RootEntries.Add(Entry);
-				}
-			}
-
-			if (!ExistingEntries.IsEmpty() && RootEntries.IsEmpty())
-			{
-				UE_LOG(
-					LogRpgDroppedInventoryActor,
-					Error,
-					TEXT("Cannot replace pickup inventory for %s because its existing graph has no root entries."),
-					*GetNameSafe(this));
-				return;
-			}
-
-			for (const FRpgInventoryEntryView& RootEntry : RootEntries)
-			{
-				if (!RootEntry.ItemId.IsValid() || RootEntry.StackCount <= 0 ||
-					!LootInventoryComponent->CanConsumeItemById(
-						RootEntry.ItemId,
-						RootEntry.StackCount))
-				{
-					UE_LOG(
-						LogRpgDroppedInventoryActor,
-						Error,
-						TEXT("Cannot replace pickup inventory for %s because root item %s cannot be consumed safely."),
-						*GetNameSafe(this),
-						*RootEntry.ItemId.ToString());
-					return;
-				}
-			}
-
-			for (const FRpgInventoryEntryView& RootEntry : RootEntries)
-			{
-				const FRpgInventoryMutationResult RemovalResult =
-					LootInventoryComponent->ConsumeItemById(
-						RootEntry.ItemId,
-						RootEntry.StackCount);
-				if (RemovalResult.Code !=
-						ERpgInventoryMutationResultCode::Success ||
-					RemovalResult.AppliedQuantity != RootEntry.StackCount)
-				{
-					UE_LOG(
-						LogRpgDroppedInventoryActor,
-						Error,
-						TEXT("Replacing pickup inventory for %s failed while consuming root item %s (Code=%d Applied=%d Requested=%d)."),
-						*GetNameSafe(this),
-						*RootEntry.ItemId.ToString(),
-						static_cast<int32>(RemovalResult.Code),
-						RemovalResult.AppliedQuantity,
-						RootEntry.StackCount);
-					RestoreExistingGraph(TEXT("root consumption"));
-					return;
-				}
-			}
-
-			if (LootInventoryComponent->GetUsedEntryCount() != 0)
-			{
-				UE_LOG(
-					LogRpgDroppedInventoryActor,
-					Error,
-					TEXT("Cannot replace pickup inventory for %s because %d orphaned entries remain after consuming all roots."),
-					*GetNameSafe(this),
-					LootInventoryComponent->GetUsedEntryCount());
-				RestoreExistingGraph(TEXT("orphan detection"));
-				return;
-			}
-
-			if (!PopulateLootInventoryFromPickup(NewPickupInventory))
-			{
-				UE_LOG(
-					LogRpgDroppedInventoryActor,
-					Error,
-					TEXT("Cannot replace pickup inventory for %s because the new pickup payload could not be populated completely."),
-					*GetNameSafe(this));
-				RestoreExistingGraph(TEXT("new pickup population"));
-				return;
-			}
-		}
-		StaticInventory = FInventoryPickup();
-		bLootInventoryInitialized = true;
-		ForceNetUpdate();
+		return false;
 	}
+	EnsureLootInventoryPostCommitBinding();
+
+	EnsureDefaultPickupInteractionOption();
+	const TArray<FRpgInventoryEntryView> ExistingEntries =
+		LootInventoryComponent->GetAllEntries();
+	const FRpgInventoryGraphSaveData ExistingGraph =
+		LootInventoryComponent->ExportInventoryGraph();
+	if (ExistingGraph.Items.Num() != ExistingEntries.Num())
+	{
+		UE_LOG(
+			LogRpgDroppedInventoryActor,
+			Error,
+			TEXT("Cannot replace pickup inventory for %s because its existing graph could not be exported completely."),
+			*GetNameSafe(this));
+		return false;
+	}
+
+	auto RestoreExistingGraph =
+		[this, &ExistingGraph](const TCHAR* FailureContext)
+		{
+			FRpgInventoryMutationResult RestoreResult;
+			if (!LootInventoryComponent->RestoreRuntimeCheckpoint(
+					ExistingGraph,
+					RestoreResult))
+			{
+				UE_LOG(
+					LogRpgDroppedInventoryActor,
+					Error,
+					TEXT("Pickup replacement rollback failed for %s after %s (Code=%d)."),
+					*GetNameSafe(this),
+					FailureContext,
+					static_cast<int32>(RestoreResult.Code));
+			}
+		};
+
+	TArray<FRpgInventoryEntryView> RootEntries;
+	for (const FRpgInventoryEntryView& Entry : ExistingEntries)
+	{
+		if (Entry.Placement.GetContainerHandle().IsRoot())
+		{
+			RootEntries.Add(Entry);
+		}
+	}
+
+	if (!ExistingEntries.IsEmpty() && RootEntries.IsEmpty())
+	{
+		UE_LOG(
+			LogRpgDroppedInventoryActor,
+			Error,
+			TEXT("Cannot replace pickup inventory for %s because its existing graph has no root entries."),
+			*GetNameSafe(this));
+		return false;
+	}
+
+	for (const FRpgInventoryEntryView& RootEntry : RootEntries)
+	{
+		if (!RootEntry.ItemId.IsValid() || RootEntry.StackCount <= 0 ||
+			!LootInventoryComponent->CanConsumeItemById(
+				RootEntry.ItemId,
+				RootEntry.StackCount))
+		{
+			UE_LOG(
+				LogRpgDroppedInventoryActor,
+				Error,
+				TEXT("Cannot replace pickup inventory for %s because root item %s cannot be consumed safely."),
+				*GetNameSafe(this),
+				*RootEntry.ItemId.ToString());
+			return false;
+		}
+	}
+
+	for (const FRpgInventoryEntryView& RootEntry : RootEntries)
+	{
+		const FRpgInventoryMutationResult RemovalResult =
+			LootInventoryComponent->ConsumeItemById(
+				RootEntry.ItemId,
+				RootEntry.StackCount);
+		if (RemovalResult.Code != ERpgInventoryMutationResultCode::Success ||
+			RemovalResult.AppliedQuantity != RootEntry.StackCount)
+		{
+			UE_LOG(
+				LogRpgDroppedInventoryActor,
+				Error,
+				TEXT("Replacing pickup inventory for %s failed while consuming root item %s (Code=%d Applied=%d Requested=%d)."),
+				*GetNameSafe(this),
+				*RootEntry.ItemId.ToString(),
+				static_cast<int32>(RemovalResult.Code),
+				RemovalResult.AppliedQuantity,
+				RootEntry.StackCount);
+			RestoreExistingGraph(TEXT("root consumption"));
+			return false;
+		}
+	}
+
+	if (LootInventoryComponent->GetUsedEntryCount() != 0)
+	{
+		UE_LOG(
+			LogRpgDroppedInventoryActor,
+			Error,
+			TEXT("Cannot replace pickup inventory for %s because %d orphaned entries remain after consuming all roots."),
+			*GetNameSafe(this),
+			LootInventoryComponent->GetUsedEntryCount());
+		RestoreExistingGraph(TEXT("orphan detection"));
+		return false;
+	}
+
+	if (!PopulateLootInventoryFromPickup(NewPickupInventory))
+	{
+		UE_LOG(
+			LogRpgDroppedInventoryActor,
+			Error,
+			TEXT("Cannot replace pickup inventory for %s because the new pickup payload could not be populated completely."),
+			*GetNameSafe(this));
+		RestoreExistingGraph(TEXT("new pickup population"));
+		return false;
+	}
+
+	StaticInventory = FInventoryPickup();
+	bLootInventoryInitialized = true;
+	bHasContainedLoot = bHasContainedLoot ||
+		LootInventoryComponent->GetUsedEntryCount() > 0;
+	ForceNetUpdate();
+	return true;
 }
 
 FRpgInventoryMutationResult
@@ -256,6 +373,7 @@ ARpgDroppedInventoryActor::TransferItemFromInventoryByIntent(
 		Result.Code = ERpgInventoryMutationResultCode::InvalidRequest;
 		return CacheResult(MoveTemp(Result));
 	}
+	EnsureLootInventoryPostCommitBinding();
 
 	URpgInventoryItemInstance* Item =
 		SourceInventory->FindItemById(Intent.ItemId);
@@ -403,6 +521,8 @@ ARpgDroppedInventoryActor::TransferItemFromInventoryByIntent(
 	{
 		EnsureDefaultPickupInteractionOption();
 		bLootInventoryInitialized = true;
+		bHasContainedLoot = bHasContainedLoot ||
+			LootInventoryComponent->GetUsedEntryCount() > 0;
 		ForceNetUpdate();
 	}
 	return CacheResult(MoveTemp(Result));
@@ -519,6 +639,7 @@ bool ARpgDroppedInventoryActor::MergePickupTemplate(TSubclassOf<URpgInventoryIte
 	{
 		return false;
 	}
+	EnsureLootInventoryPostCommitBinding();
 
 	EnsureDefaultPickupInteractionOption();
 	if (!LootInventoryComponent || !LootInventoryComponent->CanAddItemDefinition(ItemDefinition, StackCount))
@@ -531,6 +652,8 @@ bool ARpgDroppedInventoryActor::MergePickupTemplate(TSubclassOf<URpgInventoryIte
 		return false;
 	}
 	bLootInventoryInitialized = true;
+	bHasContainedLoot = bHasContainedLoot ||
+		LootInventoryComponent->GetUsedEntryCount() > 0;
 	ForceNetUpdate();
 	return true;
 }

@@ -89,6 +89,10 @@ public:
 	UFUNCTION(BlueprintCallable, Category = "Rpg|Progression")
 	URpgPlayerProgressionComponent* GetPlayerProgressionComponent() const { return PlayerProgressionComponent; }
 
+	/** Returns the owner-only replicated, server-authoritative use-based trade-skill progression. */
+	UFUNCTION(BlueprintPure, Category = "Rpg|Progression")
+	URpgTradeSkillProgressionComponent* GetTradeSkillProgressionComponent() const { return TradeSkillProgressionComponent; }
+
 	void SetRespawnState(bool bInIsWaitingForRespawn, float InRespawnAvailableServerTime);
 	void SetCheckpointData(bool bInHasCheckpoint, const FTransform& InCheckpointTransform);
 

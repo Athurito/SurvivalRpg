@@ -3,8 +3,10 @@
 #include "CoreMinimal.h"
 #include "Components/PawnComponent.h"
 #include "GameplayTagContainer.h"
+#include "GameplayEffectTypes.h"
 #include "Net/Serialization/FastArraySerializer.h"
 #include "SurvivalRpg/AbilitySystem/RpgAbilitySet.h"
+#include "SurvivalRpg/Inventory/Itemization/RpgItemizationTypes.h"
 #include "RpgEquipmentDefinition.h"
 #include "RpgEquipmentManagerComponent.generated.h"
 
@@ -53,6 +55,17 @@ private:
 
 	UPROPERTY(NotReplicated)
 	TMap<int32, FRpgAppliedEquipmentAbilityGrant> AbilitySetGrants;
+
+	/** Server-only handle for the concrete inventory item's generated global-stat effect. */
+	FActiveGameplayEffectHandle ItemizationEffectHandle;
+
+	/** Last generated state represented by ItemizationEffectHandle; never replicated or saved. */
+	UPROPERTY(NotReplicated)
+	FRpgItemizationState AppliedItemizationState;
+
+	/** Distinguishes an intentionally cached legacy/empty state from an entry that has never been evaluated. */
+	UPROPERTY(NotReplicated)
+	bool bHasAppliedItemizationState = false;
 };
 
 USTRUCT(BlueprintType)
@@ -159,6 +172,12 @@ private:
 	bool CanEquipmentBlock(const URpgEquipmentInstance* EquipmentInstance) const;
 	URpgEquipmentInstance* GetActiveBlockSource() const;
 	bool ShouldGrantSlotAbilitySet(const FRpgAppliedEquipmentEntry& Entry, const FRpgEquipmentSlotAbilitySet& SlotAbilitySet, const URpgEquipmentInstance* ActiveBlockSource) const;
+
+	UFUNCTION()
+	void HandleEquippedItemizationStateChanged(const FRpgItemizationState& NewState);
+
+	void RefreshEquipmentItemizationEffect(FRpgAppliedEquipmentEntry& Entry);
+	void RebuildEquipmentItemizationEffects();
 	void RebuildEquipmentAbilityGrants();
 
 	UPROPERTY(Replicated)

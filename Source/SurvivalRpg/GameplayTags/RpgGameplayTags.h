@@ -95,7 +95,8 @@ namespace RpgGameplayTags
 	UE_DECLARE_GAMEPLAY_TAG_EXTERN(State_GuardBroken);
 	UE_DECLARE_GAMEPLAY_TAG_EXTERN(State_StaggerImmune);
 	UE_DECLARE_GAMEPLAY_TAG_EXTERN(Trait_Staggerable);
-	UE_DECLARE_GAMEPLAY_TAG_EXTERN(Status_Death);
+	// Exported because runtime GameFeature modules use the canonical death gate.
+	extern SURVIVALRPG_API FNativeGameplayTag Status_Death;
 	UE_DECLARE_GAMEPLAY_TAG_EXTERN(Status_Death_Dying);
 	UE_DECLARE_GAMEPLAY_TAG_EXTERN(Status_Death_Dead);
 	

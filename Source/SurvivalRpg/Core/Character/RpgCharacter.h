@@ -66,11 +66,11 @@ protected:
 	virtual void OnAbilitySystemInitialized();
 	virtual void OnAbilitySystemUninitialized();
 	
-	// Begins the death sequence for the character (disables collision, disables movement, etc...)
+	/** Begins death by disabling controller movement and capsule collision; mesh collision stays available for corpse physics. */
 	UFUNCTION()
 	virtual void OnDeathStarted(AActor* OwningActor);
 
-	// Ends the death sequence for the character (detaches controller, destroys pawn, etc...)
+	/** Ends death and detaches non-player pawns; specialized corpse components own their despawn lifetime. */
 	UFUNCTION()
 	virtual void OnDeathFinished(AActor* OwningActor);
 
@@ -84,6 +84,7 @@ protected:
 	void DisableMovementAndCollision() const;
 	void DisableMovementForDowned() const;
 	void RestoreMovementAndCollision() const;
+	/** Detaches the controller without disabling whole-actor collision needed by ragdoll meshes and corpse anchors. */
 	void EnterDeadState();
 	
 private:

@@ -494,6 +494,12 @@ void URpgPawnGameplayComponent::Input_Crouch(const FInputActionValue& InputActio
 {
 	if (ARpgCharacter* Character = GetPawn<ARpgCharacter>())
 	{
+		if (const ARpgPlayerController* PlayerController = Cast<ARpgPlayerController>(Character->GetController());
+			PlayerController && PlayerController->ShouldSuppressCrouchInput())
+		{
+			return;
+		}
+
 		Character->ToggleCrouch();
 	}
 }

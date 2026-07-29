@@ -146,6 +146,18 @@ bool FRpgInventoryUiActionDomainHandler::IsUiTransferDirectionAllowed(
 		return true;
 	}
 
+	if (const AActor* TargetOwner = TargetInventory->GetOwner())
+	{
+		if (const URpgInventoryContainerComponent* Container =
+				TargetOwner->FindComponentByClass<
+					URpgInventoryContainerComponent>();
+			Container && Container->GetInventoryManager() == TargetInventory &&
+			!Container->CanReceiveTransferFrom(SourceInventory))
+		{
+			return false;
+		}
+	}
+
 	// Crafting owns deposits into output buffers. UI actions may only
 	// reorder an output internally or withdraw from it.
 	TArray<const URpgCraftingStationComponent*> CraftingStations;

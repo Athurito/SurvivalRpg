@@ -15,6 +15,7 @@
 #include "SurvivalRpg/AbilitySystem/Attributes/RpgHealthSet.h"
 #include "SurvivalRpg/Camera/RpgCameraComponent.h"
 #include "SurvivalRpg/Core/Game/RpgGameModeBase.h"
+#include "SurvivalRpg/Core/Corpse/RpgCorpseLifecycleComponent.h"
 #include "SurvivalRpg/Equipment/RpgEquipmentManagerComponent.h"
 #include "SurvivalRpg/Core/Player/RpgPlayerController.h"
 #include "SurvivalRpg/Core/Player/RpgPlayerState.h"
@@ -210,7 +211,13 @@ void ARpgCharacter::OnDeathFinished(AActor* OwningActor)
 	}
 
 	EnterDeadState();
-	SetLifeSpan(8.0f);
+
+	// Preserve the pre-corpse behavior for legacy non-player pawn classes. All RPG AI characters
+	// own a corpse lifecycle component and therefore use its configurable hard lifetime instead.
+	if (!FindComponentByClass<URpgCorpseLifecycleComponent>())
+	{
+		SetLifeSpan(8.0f);
+	}
 }
 
 void ARpgCharacter::OnDownedStateChanged(ERpgDownedState NewState)
@@ -303,7 +310,6 @@ void ARpgCharacter::RestoreMovementAndCollision() const
 void ARpgCharacter::EnterDeadState()
 {
 	DetachFromControllerPendingDestroy();
-	SetActorEnableCollision(false);
 }
 
 // Called to bind functionality to input

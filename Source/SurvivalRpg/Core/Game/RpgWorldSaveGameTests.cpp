@@ -6,6 +6,7 @@
 #include "Misc/AutomationTest.h"
 #include "SurvivalRpg/GameplayTags/RpgGameplayTags.h"
 #include "SurvivalRpg/Inventory/RpgInventoryItemDefinition.h"
+#include "SurvivalRpg/Progression/Skills/RpgTradeSkillGameplayTags.h"
 
 IMPLEMENT_SIMPLE_AUTOMATION_TEST(
 	FRpgWorldSaveGameMemoryRoundTripTest,
@@ -22,6 +23,15 @@ bool FRpgWorldSaveGameMemoryRoundTripTest::RunTest(const FString& Parameters)
 	Player.CheckpointTransform = FTransform(FRotator::ZeroRotator, FVector(100.0, 200.0, 300.0));
 	Player.bHasInventoryGraph = true;
 	Player.QuickAccessBindings.SetNum(8);
+	Player.bHasPlayerProgression = true;
+	Player.PlayerProgression.Level = 7;
+	Player.PlayerProgression.XP = 321.0f;
+	Player.PlayerProgression.UnspentSkillPoints = 2;
+	Player.bHasTradeSkillProgression = true;
+	FTradeSkillState& SavedForaging = Player.TradeSkillStates.AddDefaulted_GetRef();
+	SavedForaging.SkillTag = RpgTradeSkillGameplayTags::Skill_Gathering_Foraging;
+	SavedForaging.Level = 14;
+	SavedForaging.XP = 55.0f;
 
 	const FRpgInventoryContainerHandle CarryContainer =
 		FRpgInventoryContainerHandle::MakeRoot(TEXT("Carry.Weapon1"));
@@ -68,6 +78,20 @@ bool FRpgWorldSaveGameMemoryRoundTripTest::RunTest(const FString& Parameters)
 		TestTrue(TEXT("Checkpoint flag survives serialization"), RestoredPlayer->bHasCheckpoint);
 		TestEqual(TEXT("Exactly eight quick-access bindings survive serialization"), RestoredPlayer->QuickAccessBindings.Num(), 8);
 		TestTrue(TEXT("Inventory graph presence survives serialization"), RestoredPlayer->bHasInventoryGraph);
+		TestTrue(TEXT("General progression presence survives serialization"), RestoredPlayer->bHasPlayerProgression);
+		TestEqual(TEXT("Character level survives serialization"), RestoredPlayer->PlayerProgression.Level, 7);
+		TestEqual(TEXT("Character XP survives serialization"), RestoredPlayer->PlayerProgression.XP, 321.0f);
+		TestTrue(TEXT("Trade-skill progression presence survives serialization"), RestoredPlayer->bHasTradeSkillProgression);
+		TestEqual(TEXT("Exactly one authored trade-skill state survives serialization"), RestoredPlayer->TradeSkillStates.Num(), 1);
+		if (RestoredPlayer->TradeSkillStates.Num() == 1)
+		{
+			TestEqual(
+				TEXT("Trade-skill tag survives serialization"),
+				RestoredPlayer->TradeSkillStates[0].SkillTag,
+				FGameplayTag(RpgTradeSkillGameplayTags::Skill_Gathering_Foraging));
+			TestEqual(TEXT("Trade-skill level survives serialization"), RestoredPlayer->TradeSkillStates[0].Level, 14);
+			TestEqual(TEXT("Trade-skill XP survives serialization"), RestoredPlayer->TradeSkillStates[0].XP, 55.0f);
+		}
 
 		const FRpgInventorySlotAddress& RestoredCarryAddress = RestoredPlayer->QuickAccessBindings[0].SlotAddress;
 		TestEqual(
@@ -129,6 +153,19 @@ bool FRpgWorldSaveGameValidationTest::RunTest(const FString& Parameters)
 	Save->SchemaVersion = URpgWorldSaveGame::CurrentSchemaVersion + 1;
 	TestFalse(TEXT("Unknown top-level schema is rejected"), Save->ValidateForLoad(ValidationError));
 	Save->SchemaVersion = URpgWorldSaveGame::CurrentSchemaVersion;
+
+	VersionedPlayer = FRpgPlayerSaveData();
+	VersionedPlayer.SchemaVersion = FRpgPlayerSaveData::SemanticCarryRoleSchemaVersion;
+	TestTrue(TEXT("Schema v2 profiles without progression migrate to default state"), VersionedPlayer.IsSchemaSupported());
+	VersionedPlayer.bHasPlayerProgression = true;
+	TestFalse(TEXT("Legacy schemas cannot claim a v3 player-progression payload"), VersionedPlayer.IsSchemaSupported());
+
+	VersionedPlayer = FRpgPlayerSaveData();
+	VersionedPlayer.bHasTradeSkillProgression = true;
+	FTradeSkillState FirstSavedSkill;
+	FirstSavedSkill.SkillTag = RpgTradeSkillGameplayTags::Skill_Gathering_Mining;
+	VersionedPlayer.TradeSkillStates = { FirstSavedSkill, FirstSavedSkill };
+	TestFalse(TEXT("Duplicate saved trade-skill tags are rejected"), VersionedPlayer.IsSchemaSupported());
 
 	FRpgPlayerSaveData Player;
 	Player.bHasInventoryGraph = true;

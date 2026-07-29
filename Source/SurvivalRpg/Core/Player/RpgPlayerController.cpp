@@ -3,12 +3,16 @@
 
 #include "RpgPlayerController.h"
 
+#include "CommonInputModeTypes.h"
+#include "Engine/LocalPlayer.h"
 #include "Engine/World.h"
 #include "Engine/Engine.h"
 #include "EnhancedInputSubsystems.h"
 #include "Framework/Application/SlateApplication.h"
 #include "GameFramework/Pawn.h"
 #include "GameFramework/PlayerInput.h"
+#include "Input/CommonUIActionRouterBase.h"
+#include "InputCoreTypes.h"
 #include "SurvivalRpg/AbilitySystem/RpgAbilitySystemComponent.h"
 #include "SurvivalRpg/ActionBar/RpgActionBarComponent.h"
 #include "SurvivalRpg/Base/RpgBaseStorageStationComponent.h"
@@ -267,6 +271,11 @@ void ARpgPlayerController::PlayerTick(float DeltaTime)
 {
 	Super::PlayerTick(DeltaTime);
 
+	if (bSuppressCrouchInputUntilControlRelease && !IsControlModifierDown())
+	{
+		bSuppressCrouchInputUntilControlRelease = false;
+	}
+
 	if (GetIsAutoRunning())
 	{
 		if (APawn* CurrentPawn = GetPawn())
@@ -291,6 +300,10 @@ void ARpgPlayerController::PlayerTick(float DeltaTime)
 			ScreenSubsystem && ScreenSubsystem->IsScreenActiveOrPending(ActiveInventoryContextScreenTag);
 		if (!bScreenStillOpen || !LootActor || !Container || !Container->CanActorAccess(GetPawn()))
 		{
+			// Ctrl+Click is the inventory quick-transfer gesture and Ctrl is also the default crouch key.
+			// If the last transfer closes the screen while Ctrl is still held, remember the physical
+			// hold before CommonUI restores gameplay input so it cannot become a fresh crouch press.
+			bSuppressCrouchInputUntilControlRelease |= IsControlModifierDown();
 			if (ActiveInventoryContextScreenTag.IsValid())
 			{
 				URpgUIScreenBlueprintLibrary::CloseUIScreen(this, ActiveInventoryContextScreenTag);
@@ -398,6 +411,24 @@ bool ARpgPlayerController::GetIsAutoRunning() const
 	}
 
 	return false;
+}
+
+bool ARpgPlayerController::ShouldSuppressCrouchInput() const
+{
+	if (IsLocalController())
+	{
+		const ULocalPlayer* LocalPlayer = GetLocalPlayer();
+		const UCommonUIActionRouterBase* CommonUiInputRouter = LocalPlayer
+			? LocalPlayer->GetSubsystem<UCommonUIActionRouterBase>()
+			: nullptr;
+		if (CommonUiInputRouter &&
+			CommonUiInputRouter->GetActiveInputMode(ECommonInputMode::Game) == ECommonInputMode::Menu)
+		{
+			return true;
+		}
+	}
+
+	return bSuppressCrouchInputUntilControlRelease && IsControlModifierDown();
 }
 
 void ARpgPlayerController::ServerRequestRespawn_Implementation()
@@ -542,6 +573,16 @@ void ARpgPlayerController::RestoreGameplayInputFocus()
 	{
 		FSlateApplication::Get().SetAllUserFocusToGameViewport();
 	}
+}
+
+bool ARpgPlayerController::IsControlModifierDown() const
+{
+	if (FSlateApplication::IsInitialized())
+	{
+		return FSlateApplication::Get().GetModifierKeys().IsControlDown();
+	}
+
+	return IsInputKeyDown(EKeys::LeftControl) || IsInputKeyDown(EKeys::RightControl);
 }
 
 void ARpgPlayerController::BindToPawnExtensionForLoadout(APawn* InPawn)

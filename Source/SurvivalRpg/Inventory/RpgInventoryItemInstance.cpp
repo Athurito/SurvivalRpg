@@ -1,6 +1,7 @@
 // Copyright Epic Games, Inc. All Rights Reserved.
 
 #include "RpgInventoryItemInstance.h"
+#include "Itemization/RpgInventoryFragment_Itemization.h"
 #include "RpgInventoryFragment_ItemContainer.h"
 #include "RpgInventoryItemDefinition.h"
 #include "RpgInventoryManagerComponent.h"
@@ -85,6 +86,7 @@ void URpgInventoryItemInstance::GetLifetimeReplicatedProps(TArray<FLifetimePrope
 
 	DOREPLIFETIME(ThisClass, ItemId);
 	DOREPLIFETIME(ThisClass, StatTags);
+	DOREPLIFETIME(ThisClass, ItemizationState);
 	DOREPLIFETIME(ThisClass, ItemDef);
 }
 
@@ -124,6 +126,51 @@ int32 URpgInventoryItemInstance::GetStatTagStackCount(FGameplayTag Tag) const
 bool URpgInventoryItemInstance::HasStatTag(FGameplayTag Tag) const
 {
 	return StatTags.ContainsTag(Tag);
+}
+
+bool URpgInventoryItemInstance::ApplyItemizationState(
+	const FRpgItemizationState& NewState)
+{
+	if (!HasAuthorityForMutation())
+	{
+		return false;
+	}
+
+	const URpgInventoryFragment_Itemization* Fragment =
+		FindFragmentByClass<URpgInventoryFragment_Itemization>();
+	if (!Fragment || !Fragment->IsItemizationStateCompatible(NewState))
+	{
+		return false;
+	}
+	return CommitItemizationState(NewState);
+}
+
+bool URpgInventoryItemInstance::RestorePersistedItemizationState(
+	const FRpgItemizationState& NewState)
+{
+	if (!HasAuthorityForMutation() || !NewState.IsStructurallyValid())
+	{
+		return false;
+	}
+	return CommitItemizationState(NewState);
+}
+
+bool URpgInventoryItemInstance::CommitItemizationState(
+	const FRpgItemizationState& NewState)
+{
+	if (ItemizationState == NewState)
+	{
+		return true;
+	}
+
+	ItemizationState = NewState;
+	OnItemizationStateChanged.Broadcast(ItemizationState);
+	return true;
+}
+
+void URpgInventoryItemInstance::OnRep_ItemizationState()
+{
+	OnItemizationStateChanged.Broadcast(ItemizationState);
 }
 
 bool URpgInventoryItemInstance::InitializePersistentId()

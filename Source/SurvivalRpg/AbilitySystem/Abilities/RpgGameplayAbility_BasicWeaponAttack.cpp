@@ -13,6 +13,8 @@
 #include "SurvivalRpg/Combat/RpgCombatDeveloperSettings.h"
 #include "SurvivalRpg/Core/Character/RpgHealthComponent.h"
 #include "SurvivalRpg/GameplayTags/RpgGameplayTags.h"
+#include "SurvivalRpg/Inventory/Itemization/RpgItemizationGameplayTags.h"
+#include "SurvivalRpg/Inventory/RpgInventoryItemInstance.h"
 #include "SurvivalRpg/Physics/RpgCollisionChannels.h"
 #include "SurvivalRpg/SurvivalRpg.h"
 #include "TimerManager.h"
@@ -170,13 +172,43 @@ void URpgGameplayAbility_BasicWeaponAttack::ActivateAbility(
 
 	ActiveWeaponInstance = Cast<URpgWeaponInstance>(GetSourceObject(Handle, ActorInfo));
 	const FRpgWeaponAttackDefinition* AttackDefinition = ActiveWeaponInstance ? ActiveWeaponInstance->FindAttackDefinition(ResolveAttackDefinitionTag(Handle, ActorInfo)) : nullptr;
-	if (!ActiveWeaponInstance || !AttackDefinition || !AttackDefinition->CanApplyDamage())
+	if (!ActiveWeaponInstance || !AttackDefinition)
 	{
 		EndAbility(Handle, ActorInfo, ActivationInfo, true, true);
 		return;
 	}
 
 	ActiveAttackDefinition = *AttackDefinition;
+	if (const URpgInventoryItemInstance* AssociatedItem = GetAssociatedItem();
+		AssociatedItem && AssociatedItem->HasGeneratedItemization())
+	{
+		const FRpgItemizationState& Itemization = AssociatedItem->GetItemizationStateRef();
+		auto HasRolledStat = [&Itemization](const FGameplayTag& StatTag)
+		{
+			return Itemization.BaseStats.ContainsByPredicate(
+				[&StatTag](const FRpgRolledItemStat& Stat) { return Stat.StatTag == StatTag; }) ||
+				Itemization.Affixes.ContainsByPredicate(
+					[&StatTag](const FRpgRolledItemAffix& Affix) { return Affix.StatTag == StatTag; });
+		};
+
+		if (HasRolledStat(RpgItemizationGameplayTags::Item_Stat_WeaponDamage))
+		{
+			ActiveAttackDefinition.Damage = FMath::Max(
+				0.0f,
+				Itemization.GetTotalValueForStat(RpgItemizationGameplayTags::Item_Stat_WeaponDamage));
+		}
+		if (HasRolledStat(RpgItemizationGameplayTags::Item_Stat_WeaponStagger))
+		{
+			ActiveAttackDefinition.StaggerDamage = FMath::Max(
+				0.0f,
+				Itemization.GetTotalValueForStat(RpgItemizationGameplayTags::Item_Stat_WeaponStagger));
+		}
+	}
+	if (!ActiveAttackDefinition.CanApplyDamage())
+	{
+		EndAbility(Handle, ActorInfo, ActivationInfo, true, true);
+		return;
+	}
 	bWaitingForMontage = false;
 	bFinishingAttack = false;
 	bAttackWindowOpen = false;

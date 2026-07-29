@@ -32,6 +32,8 @@
 #include "SurvivalRpg/Inventory/RpgInventoryContainerComponent.h"
 #include "SurvivalRpg/Inventory/RpgInventoryManagerComponent.h"
 #include "SurvivalRpg/Inventory/RpgPlayerInventoryLayoutComponent.h"
+#include "SurvivalRpg/Progression/Player/RpgPlayerProgressionComponent.h"
+#include "SurvivalRpg/Progression/Skills/RpgTradeSkillProgressionComponent.h"
 #include "SurvivalRpg/System/RpgAssetManager.h"
 #include "GameFramework/GameStateBase.h"
 #include "GameFramework/PlayerState.h"
@@ -647,7 +649,14 @@ bool ARpgGameModeBase::TryRestorePlayerSaveData(APlayerController* PC, const FRp
 	ARpgPlayerController* RpgPC = Cast<ARpgPlayerController>(PC);
 	ARpgPlayerState* PlayerState = RpgPC ? RpgPC->GetRpgPlayerState() : nullptr;
 	URpgInventoryManagerComponent* Inventory = PlayerState ? PlayerState->GetInventoryManagerComponent() : nullptr;
-	if (!RpgPC || !Inventory || !SaveData.IsSchemaSupported() || !SaveData.bHasInventoryGraph)
+	URpgPlayerProgressionComponent* PlayerProgression = PlayerState
+		? PlayerState->GetPlayerProgressionComponent()
+		: nullptr;
+	URpgTradeSkillProgressionComponent* TradeSkillProgression = PlayerState
+		? PlayerState->GetTradeSkillProgressionComponent()
+		: nullptr;
+	if (!RpgPC || !Inventory || !PlayerProgression || !TradeSkillProgression ||
+		!SaveData.IsSchemaSupported() || !SaveData.bHasInventoryGraph)
 	{
 		return false;
 	}
@@ -675,6 +684,30 @@ bool ARpgGameModeBase::TryRestorePlayerSaveData(APlayerController* PC, const FRp
 	if (URpgEquipmentLoadoutComponent* EquipmentLoadout = RpgPC->GetEquipmentLoadoutComponent())
 	{
 		EquipmentLoadout->RestoreEquipmentSelection(SaveData.EquipmentSelection);
+	}
+
+	if (SaveData.bHasPlayerProgression)
+	{
+		if (!PlayerProgression->RestoreProgressionState(SaveData.PlayerProgression))
+		{
+			return false;
+		}
+	}
+	else
+	{
+		PlayerProgression->ResetProgressionStateToDefaults();
+	}
+
+	if (SaveData.bHasTradeSkillProgression)
+	{
+		if (!TradeSkillProgression->RestoreSkillStates(SaveData.TradeSkillStates))
+		{
+			return false;
+		}
+	}
+	else
+	{
+		TradeSkillProgression->ResetSkillStatesToDefaults();
 	}
 
 	return true;
@@ -715,6 +748,16 @@ void ARpgGameModeBase::CapturePlayerSaveData(APlayerController* PC)
 	if (const URpgEquipmentLoadoutComponent* EquipmentLoadout = RpgPC->GetEquipmentLoadoutComponent())
 	{
 		SaveData.EquipmentSelection = EquipmentLoadout->ExportEquipmentSelection();
+	}
+	if (const URpgPlayerProgressionComponent* PlayerProgression = PlayerState->GetPlayerProgressionComponent())
+	{
+		SaveData.PlayerProgression = PlayerProgression->ExportProgressionState();
+		SaveData.bHasPlayerProgression = true;
+	}
+	if (const URpgTradeSkillProgressionComponent* TradeSkillProgression = PlayerState->GetTradeSkillProgressionComponent())
+	{
+		SaveData.TradeSkillStates = TradeSkillProgression->ExportSkillStates();
+		SaveData.bHasTradeSkillProgression = true;
 	}
 }
 

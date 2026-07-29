@@ -8,10 +8,15 @@
 #include "RpgEquipmentLoadoutComponent.h"
 #include "RpgEquipmentManagerComponent.h"
 #include "SurvivalRpg/AbilitySystem/Abilities/RpgGameplayAbility.h"
+#include "SurvivalRpg/AbilitySystem/Attributes/RpgCombatSet.h"
 #include "SurvivalRpg/AbilitySystem/Attributes/RpgHealthSet.h"
+#include "SurvivalRpg/AbilitySystem/Attributes/RpgStaminaSet.h"
 #include "SurvivalRpg/AbilitySystem/RpgAbilitySystemComponent.h"
 #include "SurvivalRpg/ActionBar/RpgActionBarComponent.h"
 #include "SurvivalRpg/GameplayTags/RpgGameplayTags.h"
+#include "SurvivalRpg/Inventory/Itemization/RpgItemizationGameplayTags.h"
+#include "SurvivalRpg/Inventory/Loot/RpgLootResolver.h"
+#include "SurvivalRpg/Inventory/RpgInventoryItemInstance.h"
 
 #include "Engine/Engine.h"
 #include "Engine/GameInstance.h"
@@ -66,6 +71,26 @@ namespace RpgEquipmentAutomationTests
 		TObjectPtr<UGameInstance> GameInstance = nullptr;
 		TObjectPtr<UWorld> World = nullptr;
 	};
+
+	URpgInventoryItemInstance* MaterializeItemizedWeapon(
+		UObject* Outer,
+		int32 Seed)
+	{
+		FRpgLootRollResult Roll;
+		Roll.Seed = Seed;
+		FRpgLootItemRoll& Item = Roll.Items.AddDefaulted_GetRef();
+		Item.ItemDefinition =
+			URpgEquipmentAutomationTestItemizedWeaponDefinition::StaticClass();
+		Item.Quantity = 1;
+		Item.SourceLevel = 1;
+		Item.ItemizationSeed = Seed;
+
+		FInventoryPickup Pickup;
+		return Roll.ToInventoryPickup(Outer, Pickup) &&
+			Pickup.Instances.Num() == 1
+			? Pickup.Instances[0].Item.Get()
+			: nullptr;
+	}
 }
 
 IMPLEMENT_SIMPLE_AUTOMATION_TEST(
@@ -465,6 +490,164 @@ bool FRpgEquipmentPersistentHealthGrantTest::RunTest(const FString& Parameters)
 	TestEqual(TEXT("Unrelated weapon equip keeps helmet MaxHealth active"), HealthSet->GetMaxHealth(), 600.0f);
 	TestEqual(TEXT("Unrelated weapon equip does not clamp current Health"), HealthSet->GetHealth(), 600.0f);
 
+	return true;
+}
+
+IMPLEMENT_SIMPLE_AUTOMATION_TEST(
+	FRpgEquipmentItemizationEffectLifecycleTest,
+	"SurvivalRpg.Equipment.Itemization.DynamicEffectCleanupAndUnchangedHandle",
+	EAutomationTestFlags::EditorContext | EAutomationTestFlags::EngineFilter)
+
+bool FRpgEquipmentItemizationEffectLifecycleTest::RunTest(
+	const FString& Parameters)
+{
+	(void)Parameters;
+	RpgEquipmentAutomationTests::FScopedEquipmentWorld TestWorld;
+	if (!TestNotNull(TEXT("Standalone itemization-equipment world is available"), TestWorld.GetWorld()))
+	{
+		return false;
+	}
+
+	ARpgEquipmentAutomationTestPawn* Pawn =
+		TestWorld.GetWorld()->SpawnActor<ARpgEquipmentAutomationTestPawn>();
+	if (!TestNotNull(TEXT("Authoritative itemization-equipment pawn is spawned"), Pawn))
+	{
+		return false;
+	}
+
+	URpgAbilitySystemComponent* AbilitySystem = Pawn->GetRpgAbilitySystemComponent();
+	URpgEquipmentManagerComponent* EquipmentManager = Pawn->GetEquipmentManagerComponent();
+	URpgStaminaSet* StaminaSet = Pawn->GetStaminaSet();
+	URpgInventoryItemInstance* Item =
+		RpgEquipmentAutomationTests::MaterializeItemizedWeapon(Pawn, 24680);
+	if (!TestNotNull(TEXT("Fixture owns an ability system"), AbilitySystem) ||
+		!TestNotNull(TEXT("Fixture owns an equipment manager"), EquipmentManager) ||
+		!TestNotNull(TEXT("Fixture owns stamina attributes"), StaminaSet) ||
+		!TestNotNull(TEXT("A concrete generated item was materialized"), Item))
+	{
+		return false;
+	}
+
+	// The standalone automation world does not run the complete pawn/PlayerState
+	// component lifecycle, so mirror the production ASC registration explicitly.
+	AbilitySystem->AddAttributeSetSubobject(StaminaSet);
+	AbilitySystem->InitAbilityActorInfo(Pawn, Pawn);
+	if (!TestNotNull(TEXT("Stamina set is registered with GAS"), AbilitySystem->GetSet<URpgStaminaSet>()))
+	{
+		return false;
+	}
+
+	TestEqual(TEXT("Fixture starts at 100 MaxStamina"), StaminaSet->GetMaxStamina(), 100.0f);
+	FRpgItemizationState UpdatedState = Item->GetItemizationStateRef();
+	FRpgRolledItemStat* MaxStaminaRoll = UpdatedState.BaseStats.FindByPredicate(
+		[](const FRpgRolledItemStat& Stat)
+		{
+			return Stat.StatTag ==
+				RpgItemizationGameplayTags::Item_Stat_MaxStamina;
+		});
+	if (!TestNotNull(TEXT("Generated item contains its MaxStamina roll"), MaxStaminaRoll))
+	{
+		return false;
+	}
+	MaxStaminaRoll->Value = 75.0f;
+	TestTrue(TEXT("A compatible server-authored itemization update is accepted"), Item->ApplyItemizationState(UpdatedState));
+
+	URpgEquipmentInstance* Helmet = EquipmentManager->EquipItemInSlotWithInstigator(
+		URpgEquipmentAutomationTestHelmetDefinition::StaticClass(),
+		ERpgEquipmentSlot::Head,
+		Item);
+	if (!TestNotNull(TEXT("Generated item equips through the real manager"), Helmet))
+	{
+		return false;
+	}
+	TestEqual(TEXT("The generated effect contributes exactly one +75 MaxStamina roll"), StaminaSet->GetMaxStamina(), 175.0f);
+
+	AbilitySystem->SetNumericAttributeBase(URpgStaminaSet::GetStaminaAttribute(), 170.0f);
+	TestEqual(TEXT("Current stamina can use the generated maximum"), StaminaSet->GetStamina(), 170.0f);
+
+	URpgEquipmentInstance* Sword = EquipmentManager->EquipItemInSlot(
+		URpgEquipmentAutomationTestSwordDefinition::StaticClass(),
+		ERpgEquipmentSlot::MainHand);
+	TestNotNull(TEXT("Unrelated static weapon equips"), Sword);
+	TestEqual(TEXT("Unrelated equip preserves the unchanged generated maximum"), StaminaSet->GetMaxStamina(), 175.0f);
+	TestEqual(
+		TEXT("Unrelated equip never transiently removes the unchanged effect and clamps current stamina"),
+		StaminaSet->GetStamina(),
+		170.0f);
+
+	EquipmentManager->UnequipItem(Helmet);
+	TestEqual(TEXT("Unequip removes every generated MaxStamina modifier"), StaminaSet->GetMaxStamina(), 100.0f);
+	TestEqual(TEXT("Current stamina clamps to the restored maximum after cleanup"), StaminaSet->GetStamina(), 100.0f);
+	return true;
+}
+
+IMPLEMENT_SIMPLE_AUTOMATION_TEST(
+	FRpgEquipmentWeaponDamageIsolationTest,
+	"SurvivalRpg.Equipment.Itemization.OffHandWeaponDamageIsNotGlobalBaseDamage",
+	EAutomationTestFlags::EditorContext | EAutomationTestFlags::EngineFilter)
+
+bool FRpgEquipmentWeaponDamageIsolationTest::RunTest(
+	const FString& Parameters)
+{
+	(void)Parameters;
+	RpgEquipmentAutomationTests::FScopedEquipmentWorld TestWorld;
+	ARpgEquipmentAutomationTestPawn* Pawn = TestWorld.GetWorld()
+		? TestWorld.GetWorld()->SpawnActor<ARpgEquipmentAutomationTestPawn>()
+		: nullptr;
+	if (!TestNotNull(TEXT("Weapon-damage isolation pawn is spawned"), Pawn))
+	{
+		return false;
+	}
+
+	URpgAbilitySystemComponent* AbilitySystem = Pawn->GetRpgAbilitySystemComponent();
+	URpgEquipmentManagerComponent* EquipmentManager = Pawn->GetEquipmentManagerComponent();
+	URpgCombatSet* CombatSet = Pawn->GetCombatSet();
+	URpgInventoryItemInstance* MainHandItem =
+		RpgEquipmentAutomationTests::MaterializeItemizedWeapon(Pawn, 1001);
+	URpgInventoryItemInstance* OffHandItem =
+		RpgEquipmentAutomationTests::MaterializeItemizedWeapon(Pawn, 1002);
+	if (!TestNotNull(TEXT("Fixture owns combat attributes"), CombatSet) ||
+		!TestNotNull(TEXT("Main-hand generated item exists"), MainHandItem) ||
+		!TestNotNull(TEXT("Off-hand generated item exists"), OffHandItem))
+	{
+		return false;
+	}
+
+	// The standalone automation world does not run the complete pawn/PlayerState
+	// component lifecycle, so mirror the production ASC registration explicitly.
+	AbilitySystem->AddAttributeSetSubobject(CombatSet);
+	AbilitySystem->InitAbilityActorInfo(Pawn, Pawn);
+	if (!TestNotNull(TEXT("Combat set is registered with GAS"), AbilitySystem->GetSet<URpgCombatSet>()))
+	{
+		return false;
+	}
+
+	const float MainHandRoll = MainHandItem->GetItemizationStateRef().GetTotalValueForStat(
+		RpgItemizationGameplayTags::Item_Stat_WeaponDamage);
+	const float OffHandRoll = OffHandItem->GetItemizationStateRef().GetTotalValueForStat(
+		RpgItemizationGameplayTags::Item_Stat_WeaponDamage);
+	TestTrue(TEXT("Main-hand fixture has a positive local damage roll"), MainHandRoll > 0.0f);
+	TestTrue(TEXT("Off-hand fixture has a positive local damage roll"), OffHandRoll > 0.0f);
+
+	AbilitySystem->SetNumericAttributeBase(URpgCombatSet::GetBaseDamageAttribute(), 7.0f);
+	TestNotNull(
+		TEXT("Generated main-hand item equips"),
+		EquipmentManager->EquipItemInSlotWithInstigator(
+			URpgEquipmentAutomationTestSwordDefinition::StaticClass(),
+			ERpgEquipmentSlot::MainHand,
+			MainHandItem));
+	TestEqual(TEXT("Main-hand local roll is not globalized"), CombatSet->GetBaseDamage(), 7.0f);
+
+	TestNotNull(
+		TEXT("Generated off-hand item equips independently"),
+		EquipmentManager->EquipItemInSlotWithInstigator(
+			URpgEquipmentAutomationTestOffHandDefinition::StaticClass(),
+			ERpgEquipmentSlot::OffHand,
+			OffHandItem));
+	TestEqual(
+		TEXT("Off-hand weapon damage cannot amplify the main-hand global damage channel"),
+		CombatSet->GetBaseDamage(),
+		7.0f);
 	return true;
 }
 

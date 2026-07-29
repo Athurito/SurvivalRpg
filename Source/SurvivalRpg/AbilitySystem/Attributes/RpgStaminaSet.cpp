@@ -3,6 +3,7 @@
 #include "RpgStaminaSet.h"
 
 #include "Net/UnrealNetwork.h"
+#include "SurvivalRpg/AbilitySystem/RpgAbilitySystemComponent.h"
 
 URpgStaminaSet::URpgStaminaSet()
 	: Stamina(100.0f)
@@ -21,6 +22,24 @@ void URpgStaminaSet::PreAttributeChange(const FGameplayAttribute& Attribute, flo
 {
 	Super::PreAttributeChange(Attribute, NewValue);
 	ClampStaminaAttribute(Attribute, NewValue);
+}
+
+void URpgStaminaSet::PostAttributeChange(
+	const FGameplayAttribute& Attribute,
+	const float OldValue,
+	const float NewValue)
+{
+	Super::PostAttributeChange(Attribute, OldValue, NewValue);
+	if (Attribute == GetMaxStaminaAttribute() && GetStamina() > NewValue)
+	{
+		if (URpgAbilitySystemComponent* AbilitySystemComponent = GetRpgAbilitySystemComponent())
+		{
+			AbilitySystemComponent->ApplyModToAttribute(
+				GetStaminaAttribute(),
+				EGameplayModOp::Override,
+				NewValue);
+		}
+	}
 }
 
 void URpgStaminaSet::GetLifetimeReplicatedProps(TArray<FLifetimeProperty>& OutLifetimeProps) const

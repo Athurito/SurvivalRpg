@@ -15,6 +15,7 @@ class URpgInventoryAddressSlotViewModel;
 class URpgInventoryDragDropCoordinator;
 class URpgInventoryDragVisualWidget;
 class URpgInventoryInteractionScreenWidget;
+class URpgInventoryItemTooltipWidget;
 
 /**
  * Native CommonUI slot entry for one logical player-inventory address such as Belt[0] or WeaponSlot1[0].
@@ -185,6 +186,13 @@ protected:
 	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Inventory|Address Slot|Drag")
 	TSubclassOf<URpgInventoryDragVisualWidget> DragVisualClass;
 
+	/**
+	 * Tooltip class used for replicated item details. Defaults to the native read-only tooltip and may be replaced by
+	 * a Widget Blueprint subclass without changing inventory authority.
+	 */
+	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Inventory|Address Slot|Tooltip")
+	TSubclassOf<URpgInventoryItemTooltipWidget> ItemTooltipWidgetClass;
+
 private:
 #if WITH_DEV_AUTOMATION_TESTS
 	friend class FRpgInventoryAddressSlotEntryPoolingTest;
@@ -202,6 +210,7 @@ private:
 	bool RequestAddressSplitDialog();
 	FRpgInventoryDragPayload MakeDragPayload(bool bAllowEmptyAddressPayload) const;
 	FRpgInventoryDropTarget MakeDropTarget() const;
+	void RefreshItemTooltip();
 
 	UPROPERTY(Transient)
 	TObjectPtr<URpgInventoryAddressSlotViewModel> SlotViewModel = nullptr;
@@ -215,6 +224,10 @@ private:
 	/** Screen-owned presentation host, cleared before this pooled entry can represent another address. */
 	UPROPERTY(Transient)
 	TObjectPtr<URpgInventoryInteractionScreenWidget> InventoryPresentationHost = nullptr;
+
+	/** Reused UI-only tooltip, cleared before this pooled slot can represent another address. */
+	UPROPERTY(Transient)
+	TObjectPtr<URpgInventoryItemTooltipWidget> ItemTooltipWidget = nullptr;
 
 	bool bSlotSelected = false;
 	bool bInventoryPanelActive = true;

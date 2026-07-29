@@ -30,6 +30,13 @@ struct GF_HARVESTING_MAGIC_API FRpgHarvestRequest
 	UPROPERTY(BlueprintReadOnly, Category = "Harvesting")
 	FHitResult Hit;
 
+	/**
+	 * Resource revision observed by the server before ability cost/commit.
+	 * Revisioned targets require an exact match; INDEX_NONE is reserved for targets without revision semantics.
+	 */
+	UPROPERTY(BlueprintReadOnly, Category = "Harvesting")
+	int32 ExpectedRevision = INDEX_NONE;
+
 	/** Relative spell power passed to yield/durability logic. One is the baseline Stoneburst cast. */
 	UPROPERTY(BlueprintReadOnly, Category = "Harvesting", meta = (ClampMin = "0.0", UIMin = "0.0"))
 	float HarvestPower = 1.0f;

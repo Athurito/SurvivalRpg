@@ -13,6 +13,7 @@
 #include "SurvivalRpg/Mvvm/Inventory/RpgInventoryAddressSlotViewModel.h"
 #include "SurvivalRpg/UI/RpgInventoryDragVisualWidget.h"
 #include "SurvivalRpg/UI/RpgInventoryInteractionScreenWidget.h"
+#include "SurvivalRpg/UI/RpgInventoryItemTooltipWidget.h"
 #include "View/MVVMView.h"
 #include "View/MVVMViewClass.h"
 
@@ -28,6 +29,7 @@ URpgInventoryAddressSlotWidget::URpgInventoryAddressSlotWidget(const FObjectInit
 {
 	SetIsFocusable(true);
 	SetIsInteractionEnabled(true);
+	ItemTooltipWidgetClass = URpgInventoryItemTooltipWidget::StaticClass();
 }
 
 void URpgInventoryAddressSlotWidget::BindInventoryPresentation(
@@ -162,6 +164,7 @@ void URpgInventoryAddressSlotWidget::RefreshDragDropVisualState()
 
 void URpgInventoryAddressSlotWidget::RefreshAddressSlotPresentation()
 {
+	RefreshItemTooltip();
 	RefreshDragDropVisualState();
 }
 
@@ -243,6 +246,7 @@ void URpgInventoryAddressSlotWidget::ReleaseAddressSlotState()
 
 	SlotViewModel = nullptr;
 	DragDropCoordinator = nullptr;
+	RefreshItemTooltip();
 	SetInventoryPresentationHost(nullptr);
 	InjectAddressSlotViewModelIntoMvvm();
 	bSlotSelected = false;
@@ -255,6 +259,43 @@ void URpgInventoryAddressSlotWidget::ReleaseAddressSlotState()
 	BP_OnAddressSlotSelectionChanged(false);
 	BP_OnAddressSlotDragDropStateChanged(ERpgInventorySlotDragVisualState::Normal);
 	BP_OnAddressSlotReleased();
+}
+
+void URpgInventoryAddressSlotWidget::RefreshItemTooltip()
+{
+	URpgInventoryItemInstance* ItemInstance = SlotViewModel
+		? SlotViewModel->GetItemInstance()
+		: nullptr;
+	if (!ItemInstance || !ItemTooltipWidgetClass)
+	{
+		if (ItemTooltipWidget)
+		{
+			ItemTooltipWidget->ClearItem();
+		}
+		SetToolTip(nullptr);
+		return;
+	}
+
+	if (!ItemTooltipWidget || !ItemTooltipWidget->IsA(ItemTooltipWidgetClass))
+	{
+		if (ItemTooltipWidget)
+		{
+			ItemTooltipWidget->ClearItem();
+		}
+		ItemTooltipWidget = URpgInventoryItemTooltipWidget::CreateForHost(
+			this,
+			ItemTooltipWidgetClass);
+	}
+	if (!ItemTooltipWidget)
+	{
+		SetToolTip(nullptr);
+		return;
+	}
+
+	ItemTooltipWidget->SetItemInstance(
+		ItemInstance,
+		SlotViewModel->GetStackCount());
+	SetToolTip(ItemTooltipWidget);
 }
 
 void URpgInventoryAddressSlotWidget::ClearOwnedAddressInteractionPreview()

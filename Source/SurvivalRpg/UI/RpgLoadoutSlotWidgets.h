@@ -15,6 +15,7 @@ class URpgInventoryDragDropCoordinator;
 class URpgInventoryDragVisualWidget;
 class URpgInventoryInteractionScreenWidget;
 class URpgInventoryItemInstance;
+class URpgInventoryItemTooltipWidget;
 class URpgInventoryPanelNavigationCoordinator;
 class UDragDropOperation;
 
@@ -174,10 +175,18 @@ private:
 	bool IsHeldSource() const;
 	void ReleaseEquipmentSlotState();
 	bool InjectEquipmentSlotViewModelIntoMvvm();
+	void RefreshItemTooltip();
 
 	/** Exact authored presentation-only drag decorator. Missing configuration fails closed before a drag starts. */
 	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Equipment|Slot|Drag", meta = (AllowPrivateAccess = "true"))
 	TSubclassOf<URpgInventoryDragVisualWidget> DragVisualClass;
+
+	/**
+	 * Tooltip class for the slot's concrete replicated item. Defaults to the native itemization tooltip and may be
+	 * replaced by a presentation-only Widget Blueprint subclass.
+	 */
+	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Equipment|Slot|Tooltip", meta = (AllowPrivateAccess = "true"))
+	TSubclassOf<URpgInventoryItemTooltipWidget> ItemTooltipWidgetClass;
 
 	UPROPERTY(Transient)
 	TObjectPtr<URpgEquipmentSlotViewModel> SlotViewModel = nullptr;
@@ -195,6 +204,10 @@ private:
 	/** Screen-owned presentation host, cleared whenever this pooled equipment leaf releases its binding. */
 	UPROPERTY(Transient)
 	TObjectPtr<URpgInventoryInteractionScreenWidget> InventoryPresentationHost = nullptr;
+
+	/** Reused UI-only tooltip, cleared whenever this equipment presenter releases its binding. */
+	UPROPERTY(Transient)
+	TObjectPtr<URpgInventoryItemTooltipWidget> ItemTooltipWidget = nullptr;
 
 	bool bPendingLeftClickAccept = false;
 	FRpgInventoryDragAnchor PendingPointerDragAnchor;
