@@ -166,8 +166,10 @@ void URpgInventorySpatialItemWidget::ReleaseSpatialItemState()
 	PendingPointerDragAnchor = FRpgInventoryDragAnchor();
 	bHasPendingPointerDragAnchor = false;
 	CurrentDragDropVisualState = ERpgInventorySlotDragVisualState::Normal;
+	EntryFilterOpacity = 1.0f;
 
 	RefreshPlacedItemVisual();
+	ApplyNativePresentationStyle();
 	BP_OnSpatialAddressItemSet(nullptr);
 	BP_OnSpatialEntryItemSet(nullptr);
 	BP_OnSpatialItemDragDropStateChanged(ERpgInventorySlotDragVisualState::Normal);
@@ -182,6 +184,12 @@ void URpgInventorySpatialItemWidget::SetInventoryPanelActive(bool bInInventoryPa
 
 	bInventoryPanelActive = bInInventoryPanelActive;
 	RefreshDragDropVisualState();
+}
+
+void URpgInventorySpatialItemWidget::SetEntryFilterOpacity(float InFilterOpacity)
+{
+	EntryFilterOpacity = FMath::Clamp(InFilterOpacity, 0.0f, 1.0f);
+	ApplyNativePresentationStyle();
 }
 
 void URpgInventorySpatialItemWidget::RefreshDragDropVisualState()
@@ -227,7 +235,22 @@ void URpgInventorySpatialItemWidget::ApplyDragDropVisualState()
 		CurrentDragDropVisualState = bIsFocused ? ERpgInventorySlotDragVisualState::Focused : ERpgInventorySlotDragVisualState::Normal;
 	}
 
+	ApplyNativePresentationStyle();
 	BP_OnSpatialItemDragDropStateChanged(CurrentDragDropVisualState);
+}
+
+void URpgInventorySpatialItemWidget::ApplyNativePresentationStyle()
+{
+	const float DragStateOpacity =
+		CurrentDragDropVisualState == ERpgInventorySlotDragVisualState::HeldSource
+			? FMath::Clamp(HeldSourceOpacity, 0.0f, 1.0f)
+			: 1.0f;
+	AppliedContentOpacity = FMath::Clamp(EntryFilterOpacity * DragStateOpacity, 0.0f, 1.0f);
+	if (ItemVisual)
+	{
+		ItemVisual->SetRenderOpacity(AppliedContentOpacity);
+	}
+	Invalidate(EInvalidateWidgetReason::Paint);
 }
 
 int32 URpgInventorySpatialItemWidget::NativePaint(
@@ -240,74 +263,132 @@ int32 URpgInventorySpatialItemWidget::NativePaint(
 	bool bParentEnabled) const
 {
 	const int32 PaintedLayer = Super::NativePaint(Args, AllottedGeometry, MyCullingRect, OutDrawElements, LayerId, InWidgetStyle, bParentEnabled);
-	if (ItemVisual || !bUseNativeFallbackPaint)
-	{
-		return PaintedLayer;
-	}
-
 	int32 NextLayer = PaintedLayer + 1;
-	if (UTexture2D* IconTexture = GetIcon().LoadSynchronous())
+	if (!ItemVisual && bUseNativeFallbackPaint)
 	{
-		FSlateBrush IconBrush;
-		IconBrush.SetResourceObject(IconTexture);
-		const bool bRotated = IsPlacedItemRotated();
-		FVector2D IconPosition;
-		FVector2D IconPaintSize;
-		URpgInventoryDragVisualWidget::CalculateIconPaintGeometry(
-			AllottedGeometry.GetLocalSize(),
-			bRotated,
-			0.0f,
-			IconPosition,
-			IconPaintSize);
-		IconBrush.ImageSize = IconPaintSize;
-		if (bRotated)
+		if (UTexture2D* IconTexture = GetIcon().LoadSynchronous())
 		{
-			FSlateDrawElement::MakeRotatedBox(
-				OutDrawElements,
-				NextLayer++,
-				AllottedGeometry.ToPaintGeometry(
-					FVector2f(IconPaintSize),
-					FSlateLayoutTransform(FVector2f(IconPosition))),
-				&IconBrush,
-				ESlateDrawEffect::None,
-				UE_HALF_PI,
-				FVector2f(IconPaintSize * 0.5f),
-				FSlateDrawElement::RelativeToElement,
-				InWidgetStyle.GetColorAndOpacityTint());
+			FSlateBrush IconBrush;
+			IconBrush.SetResourceObject(IconTexture);
+			const bool bRotated = IsPlacedItemRotated();
+			FVector2D IconPosition;
+			FVector2D IconPaintSize;
+			URpgInventoryDragVisualWidget::CalculateIconPaintGeometry(
+				AllottedGeometry.GetLocalSize(),
+				bRotated,
+				0.0f,
+				IconPosition,
+				IconPaintSize);
+			IconBrush.ImageSize = IconPaintSize;
+			FLinearColor IconTint = InWidgetStyle.GetColorAndOpacityTint();
+			IconTint.A *= AppliedContentOpacity;
+			if (bRotated)
+			{
+				FSlateDrawElement::MakeRotatedBox(
+					OutDrawElements,
+					NextLayer++,
+					AllottedGeometry.ToPaintGeometry(
+						FVector2f(IconPaintSize),
+						FSlateLayoutTransform(FVector2f(IconPosition))),
+					&IconBrush,
+					ESlateDrawEffect::None,
+					UE_HALF_PI,
+					FVector2f(IconPaintSize * 0.5f),
+					FSlateDrawElement::RelativeToElement,
+					IconTint);
+			}
+			else
+			{
+				FSlateDrawElement::MakeBox(
+					OutDrawElements,
+					NextLayer++,
+					AllottedGeometry.ToPaintGeometry(
+						FVector2f(IconPaintSize),
+						FSlateLayoutTransform(FVector2f(IconPosition))),
+					&IconBrush,
+					ESlateDrawEffect::None,
+					IconTint);
+			}
 		}
-		else
+
+		const int32 StackCount = GetStackCount();
+		if (StackCount > 0)
 		{
-			FSlateDrawElement::MakeBox(
+			const FString StackText = FString::Printf(TEXT("%dx"), StackCount);
+			const FSlateFontInfo FontInfo = FCoreStyle::GetDefaultFontStyle(TEXT("Regular"), 12);
+			const FVector2D TextPosition(
+				FMath::Max(0.0f, AllottedGeometry.GetLocalSize().X - 30.0f),
+				FMath::Max(0.0f, AllottedGeometry.GetLocalSize().Y - 18.0f));
+			FLinearColor TextColor = FLinearColor::White;
+			TextColor.A *= AppliedContentOpacity;
+			FSlateDrawElement::MakeText(
 				OutDrawElements,
 				NextLayer++,
-				AllottedGeometry.ToPaintGeometry(
-					FVector2f(IconPaintSize),
-					FSlateLayoutTransform(FVector2f(IconPosition))),
-				&IconBrush,
+				AllottedGeometry.ToPaintGeometry(FVector2f(30.0f, 18.0f), FSlateLayoutTransform(FVector2f(TextPosition))),
+				StackText,
+				FontInfo,
 				ESlateDrawEffect::None,
-				InWidgetStyle.GetColorAndOpacityTint());
+				TextColor);
 		}
 	}
 
-	const int32 StackCount = GetStackCount();
-	if (StackCount > 0)
+	const bool bDrawFocusedOutline =
+		CurrentDragDropVisualState == ERpgInventorySlotDragVisualState::Focused;
+	const bool bDrawHeldSourceOutline =
+		CurrentDragDropVisualState == ERpgInventorySlotDragVisualState::HeldSource;
+	if ((bDrawFocusedOutline || bDrawHeldSourceOutline) &&
+		AllottedGeometry.GetLocalSize().X > 0.0f && AllottedGeometry.GetLocalSize().Y > 0.0f)
 	{
-		const FString StackText = FString::Printf(TEXT("%dx"), StackCount);
-		const FSlateFontInfo FontInfo = FCoreStyle::GetDefaultFontStyle(TEXT("Regular"), 12);
-		const FVector2D TextPosition(
-			FMath::Max(0.0f, AllottedGeometry.GetLocalSize().X - 30.0f),
-			FMath::Max(0.0f, AllottedGeometry.GetLocalSize().Y - 18.0f));
-		FSlateDrawElement::MakeText(
+		const FVector2D LocalSize = AllottedGeometry.GetLocalSize();
+		const float Inset = FMath::Max(0.0f, NativeOutlineThickness * 0.5f);
+		TArray<FVector2f> OutlinePoints;
+		OutlinePoints.Reserve(5);
+		OutlinePoints.Add(FVector2f(Inset, Inset));
+		OutlinePoints.Add(FVector2f(FMath::Max(Inset, LocalSize.X - Inset), Inset));
+		OutlinePoints.Add(FVector2f(FMath::Max(Inset, LocalSize.X - Inset), FMath::Max(Inset, LocalSize.Y - Inset)));
+		OutlinePoints.Add(FVector2f(Inset, FMath::Max(Inset, LocalSize.Y - Inset)));
+		OutlinePoints.Add(FVector2f(Inset, Inset));
+		FSlateDrawElement::MakeLines(
 			OutDrawElements,
 			NextLayer++,
-			AllottedGeometry.ToPaintGeometry(FVector2f(30.0f, 18.0f), FSlateLayoutTransform(FVector2f(TextPosition))),
-			StackText,
-			FontInfo,
+			AllottedGeometry.ToPaintGeometry(),
+			OutlinePoints,
 			ESlateDrawEffect::None,
-			FLinearColor::White);
+			bDrawHeldSourceOutline ? HeldSourceOutlineColor : FocusedOutlineColor,
+			true,
+			FMath::Max(0.5f, NativeOutlineThickness));
 	}
 
 	return FMath::Max(PaintedLayer, NextLayer - 1);
+}
+
+void URpgInventorySpatialItemWidget::NativeOnMouseEnter(
+	const FGeometry& InGeometry,
+	const FPointerEvent& InMouseEvent)
+{
+	Super::NativeOnMouseEnter(InGeometry, InMouseEvent);
+	if (OwningGrid)
+	{
+		OwningGrid->SelectCellFromPointerHover(
+			InMouseEvent.GetScreenSpacePosition(),
+			InMouseEvent,
+			GetOwningPlayer());
+	}
+}
+
+FReply URpgInventorySpatialItemWidget::NativeOnMouseMove(
+	const FGeometry& InGeometry,
+	const FPointerEvent& InMouseEvent)
+{
+	FReply Reply = Super::NativeOnMouseMove(InGeometry, InMouseEvent);
+	if (OwningGrid)
+	{
+		OwningGrid->SelectCellFromPointerHover(
+			InMouseEvent.GetScreenSpacePosition(),
+			InMouseEvent,
+			GetOwningPlayer());
+	}
+	return Reply;
 }
 
 FReply URpgInventorySpatialItemWidget::NativeOnMouseButtonDown(const FGeometry& InGeometry, const FPointerEvent& InMouseEvent)
@@ -539,6 +620,7 @@ void URpgInventorySpatialItemWidget::RefreshPlacedItemVisual()
 
 	// The child is presentation-only; this outer spatial item remains the drag, context-menu, and focus target.
 	ItemVisual->SetVisibility(ESlateVisibility::HitTestInvisible);
+	ApplyNativePresentationStyle();
 }
 
 void URpgInventorySpatialItemWidget::RefreshItemTooltip()

@@ -28,6 +28,7 @@
 
 #include "Blueprint/WidgetTree.h"
 #include "CommonLocalPlayer.h"
+#include "Components/TextBlock.h"
 #include "CoreGlobals.h"
 #include "Engine/Engine.h"
 #include "Engine/GameInstance.h"
@@ -904,6 +905,10 @@ bool FRpgPlayerStorageInventoryLifecycleIntegrationTest::RunTest(
 		StorageContentPockets
 			? StorageContentPockets->GetSpatialGridWidget()
 			: nullptr;
+	UTextBlock* StoragePlayerTitle = Cast<UTextBlock>(
+		StorageWidget->GetWidgetFromName(TEXT("PlayerTitle")));
+	UTextBlock* StorageTitle = Cast<UTextBlock>(
+		StorageWidget->GetWidgetFromName(TEXT("StorageTitle")));
 	if (!TestNotNull(
 			TEXT("The real Player screen owns its root WidgetTree"),
 			PlayerRootWidgetTree) ||
@@ -951,7 +956,13 @@ bool FRpgPlayerStorageInventoryLifecycleIntegrationTest::RunTest(
 			ContentPocketsGrid) ||
 		!TestNotNull(
 			TEXT("The Storage Content_Pockets host owns its spatial grid"),
-			StorageContentPocketsGrid))
+			StorageContentPocketsGrid) ||
+		!TestNotNull(
+			TEXT("The Storage root binds its player-side title"),
+			StoragePlayerTitle) ||
+		!TestNotNull(
+			TEXT("The Storage root binds its storage-side title"),
+			StorageTitle))
 	{
 		return false;
 	}
@@ -1035,6 +1046,97 @@ bool FRpgPlayerStorageInventoryLifecycleIntegrationTest::RunTest(
 		!TestNotNull(
 			TEXT("Content Pockets provides at least one address"),
 			InitialContentPocketsAddress))
+	{
+		return false;
+	}
+
+	const FName StorageContentPocketsPanelId(
+		*FString::Printf(
+			TEXT("Player.Content.%s"),
+			*StorageContentPockets->GetSlotGroupHandle().ToString()));
+	const FString AuthoredStorageDestination =
+		StorageTitle->GetText().IsEmptyOrWhitespace()
+			? FString(TEXT("Storage"))
+			: StorageTitle->GetText().ToString();
+	const FString ExpectedStorageTransferLabel = FString::Printf(
+		TEXT("Transfer \u2192 %s"),
+		*AuthoredStorageDestination);
+	if (!TestEqual(
+			TEXT("Storage initially activates its secondary root panel"),
+			StorageScreenNavigator->GetActivePanelId(),
+			FName(TEXT("Secondary.Root"))) ||
+		!TestEqual(
+			TEXT("The initial Storage panel owns the secondary inventory"),
+			StorageScreenNavigator->GetActiveInventory(),
+			SecondaryInventory) ||
+		!TestTrue(
+			TEXT("Initial secondary source highlights StorageTitle"),
+			StorageTitle->GetColorAndOpacity().GetSpecifiedColor().Equals(
+				StorageWidget->ActiveInventoryTitleColor)) ||
+		!TestTrue(
+			TEXT("Initial secondary source leaves PlayerTitle neutral"),
+			StoragePlayerTitle->GetColorAndOpacity().GetSpecifiedColor().Equals(
+				StorageWidget->InactiveInventoryTitleColor)) ||
+		!TestEqual(
+			TEXT("Secondary Storage source advertises transfer toward Inventory"),
+			StorageWidget->ResolveQuickTransferDisplayName().ToString(),
+			FString(TEXT("Transfer \u2192 Inventory"))) ||
+		!TestTrue(
+			TEXT("Storage navigator activates its dynamically addressed Content_Pockets panel"),
+			StorageScreenNavigator->ActivatePanelById(
+				StorageContentPocketsPanelId)) ||
+		!TestEqual(
+			TEXT("Storage-side Content navigation resolves its authored Pockets grid"),
+			StorageScreenNavigator->GetActiveSpatialGridWidget(),
+			StorageContentPocketsGrid) ||
+		!TestEqual(
+			TEXT("Storage-side Player content retains canonical inventory authority"),
+			StorageScreenNavigator->GetActiveInventory(),
+			CanonicalInventory) ||
+		!TestTrue(
+			TEXT("Player source highlights PlayerTitle"),
+			StoragePlayerTitle->GetColorAndOpacity().GetSpecifiedColor().Equals(
+				StorageWidget->ActiveInventoryTitleColor)) ||
+		!TestTrue(
+			TEXT("Player source leaves StorageTitle neutral"),
+			StorageTitle->GetColorAndOpacity().GetSpecifiedColor().Equals(
+				StorageWidget->InactiveInventoryTitleColor)) ||
+		!TestEqual(
+			TEXT("Player source advertises transfer toward the authored Storage title"),
+			StorageWidget->ResolveQuickTransferDisplayName().ToString(),
+			ExpectedStorageTransferLabel) ||
+		!TestTrue(
+			TEXT("Storage navigator activates a player Gear panel"),
+			StorageScreenNavigator->ActivatePanelById(
+				FName(TEXT("Player.Gear.Head")))) ||
+		!TestEqual(
+			TEXT("Player Gear advertises its actual player-internal unequip destination"),
+			StorageWidget->ResolveQuickTransferDisplayName().ToString(),
+			FString(TEXT("Transfer \u2192 Inventory"))) ||
+		!TestTrue(
+			TEXT("Player Gear keeps the Player title highlighted"),
+			StoragePlayerTitle->GetColorAndOpacity().GetSpecifiedColor().Equals(
+				StorageWidget->ActiveInventoryTitleColor)) ||
+		!TestTrue(
+			TEXT("Player Gear keeps the Storage title neutral"),
+			StorageTitle->GetColorAndOpacity().GetSpecifiedColor().Equals(
+				StorageWidget->InactiveInventoryTitleColor)) ||
+		!TestTrue(
+			TEXT("Storage navigation restores the canonical secondary root panel"),
+			StorageScreenNavigator->ActivatePanelById(
+				FName(TEXT("Secondary.Root")))) ||
+		!TestEqual(
+			TEXT("Restored secondary panel owns the secondary inventory"),
+			StorageScreenNavigator->GetActiveInventory(),
+			SecondaryInventory) ||
+		!TestTrue(
+			TEXT("Restored secondary source restores PlayerTitle neutrality"),
+			StoragePlayerTitle->GetColorAndOpacity().GetSpecifiedColor().Equals(
+				StorageWidget->InactiveInventoryTitleColor)) ||
+		!TestTrue(
+			TEXT("Restored secondary source restores StorageTitle highlighting"),
+			StorageTitle->GetColorAndOpacity().GetSpecifiedColor().Equals(
+				StorageWidget->ActiveInventoryTitleColor)))
 	{
 		return false;
 	}

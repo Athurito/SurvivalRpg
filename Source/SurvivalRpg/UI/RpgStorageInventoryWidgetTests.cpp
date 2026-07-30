@@ -16,9 +16,11 @@
 #include "SurvivalRpg/UI/RpgUIScreenPayload.h"
 
 #include "Blueprint/UserWidget.h"
+#include "Blueprint/WidgetTree.h"
 #include "Components/CanvasPanel.h"
 #include "Components/HorizontalBox.h"
 #include "Components/Overlay.h"
+#include "Components/TextBlock.h"
 #include "Engine/Engine.h"
 #include "Engine/GameInstance.h"
 #include "Engine/World.h"
@@ -235,7 +237,22 @@ bool FRpgStorageSpatialCompositionTest::RunTest(const FString& Parameters)
 	UOverlay* RootOverlay = Cast<UOverlay>(Widget->GetWidgetFromName(TEXT("RootOverlay")));
 	UWidget* ContentRow = Widget->GetWidgetFromName(TEXT("ContentRow"));
 	UWidget* ActionBar = Widget->GetWidgetFromName(TEXT("ActionBar"));
+	UTextBlock* PlayerTitle = Cast<UTextBlock>(
+		Widget->GetWidgetFromName(TEXT("PlayerTitle")));
+	UTextBlock* StorageTitle = Cast<UTextBlock>(
+		Widget->GetWidgetFromName(TEXT("StorageTitle")));
 	TestNotNull(TEXT("RootOverlay is authored as the screen root"), RootOverlay);
+	TestEqual(
+		TEXT("RootOverlay is the Storage WidgetTree root"),
+		Widget->WidgetTree ? Widget->WidgetTree->RootWidget.Get() : nullptr,
+		static_cast<UWidget*>(RootOverlay));
+	if (RootOverlay)
+	{
+		TestEqual(
+			TEXT("RootOverlay receives pointer input across the Storage gutter"),
+			RootOverlay->GetVisibility(),
+			ESlateVisibility::Visible);
+	}
 	TestTrue(
 		TEXT("ContentRow is the authored two-column layout"),
 		ContentRow && ContentRow->IsA<UHorizontalBox>());
@@ -252,12 +269,24 @@ bool FRpgStorageSpatialCompositionTest::RunTest(const FString& Parameters)
 	TestTrue(
 		TEXT("SecondaryInventoryGrid has the exact spatial grid type"),
 		SecondaryGrid && SecondaryGrid->IsA<URpgInventorySpatialGridWidget>());
+	TestNotNull(
+		TEXT("PlayerTitle is authored with a TextBlock-compatible type"),
+		PlayerTitle);
+	TestNotNull(
+		TEXT("StorageTitle is authored with a TextBlock-compatible type"),
+		StorageTitle);
 	const FObjectPropertyBase* PlayerPaneProperty = FindFProperty<FObjectPropertyBase>(
 		URpgStorageInventoryWidget::StaticClass(),
 		TEXT("PlayerInventoryPane"));
 	const FObjectPropertyBase* SecondaryGridProperty = FindFProperty<FObjectPropertyBase>(
 		URpgStorageInventoryWidget::StaticClass(),
 		TEXT("SecondaryInventoryGrid"));
+	const FObjectPropertyBase* PlayerTitleProperty = FindFProperty<FObjectPropertyBase>(
+		URpgStorageInventoryWidget::StaticClass(),
+		TEXT("PlayerTitle"));
+	const FObjectPropertyBase* StorageTitleProperty = FindFProperty<FObjectPropertyBase>(
+		URpgStorageInventoryWidget::StaticClass(),
+		TEXT("StorageTitle"));
 	TestTrue(
 		TEXT("PlayerInventoryPane is bound into the native presenter property"),
 		PlayerPaneProperty &&
@@ -266,6 +295,14 @@ bool FRpgStorageSpatialCompositionTest::RunTest(const FString& Parameters)
 		TEXT("SecondaryInventoryGrid is bound into the native presenter property"),
 		SecondaryGridProperty &&
 			SecondaryGridProperty->GetObjectPropertyValue_InContainer(Widget) == SecondaryGrid);
+	TestTrue(
+		TEXT("PlayerTitle is bound into the exact native presenter property"),
+		PlayerTitleProperty &&
+			PlayerTitleProperty->GetObjectPropertyValue_InContainer(Widget) == PlayerTitle);
+	TestTrue(
+		TEXT("StorageTitle is bound into the exact native presenter property"),
+		StorageTitleProperty &&
+			StorageTitleProperty->GetObjectPropertyValue_InContainer(Widget) == StorageTitle);
 	TestTrue(
 		TEXT("DragVisualCanvas is the authored top-level drag host"),
 		DragVisualCanvas && DragVisualCanvas->IsA<UCanvasPanel>());
@@ -396,6 +433,28 @@ bool FRpgStorageInventoryWidgetContextLifecycleTest::RunTest(const FString& Para
 		TEXT("Storage initially selects the secondary root panel"),
 		PanelNavigator->GetActivePanelId(),
 		FName(TEXT("Secondary.Root")));
+
+	UTextBlock* PlayerTitle = Cast<UTextBlock>(
+		Widget->GetWidgetFromName(TEXT("PlayerTitle")));
+	UTextBlock* StorageTitle = Cast<UTextBlock>(
+		Widget->GetWidgetFromName(TEXT("StorageTitle")));
+	if (!TestNotNull(TEXT("Runtime Storage binds PlayerTitle"), PlayerTitle) ||
+		!TestNotNull(TEXT("Runtime Storage binds StorageTitle"), StorageTitle))
+	{
+		return false;
+	}
+	TestTrue(
+		TEXT("Initial secondary source highlights StorageTitle"),
+		StorageTitle->GetColorAndOpacity().GetSpecifiedColor().Equals(
+			Widget->ActiveInventoryTitleColor));
+	TestTrue(
+		TEXT("Initial secondary source leaves PlayerTitle neutral"),
+		PlayerTitle->GetColorAndOpacity().GetSpecifiedColor().Equals(
+			Widget->InactiveInventoryTitleColor));
+	TestEqual(
+		TEXT("Secondary source advertises transfer toward Inventory"),
+		Widget->ResolveQuickTransferDisplayName().ToString(),
+		FString(TEXT("Transfer \u2192 Inventory")));
 
 	URpgPlayerInventoryViewModel* StoragePlayerViewModel =
 		Widget->GetStoragePlayerInventoryViewModel();

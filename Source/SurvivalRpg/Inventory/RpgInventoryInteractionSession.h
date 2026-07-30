@@ -51,7 +51,7 @@ public:
 	/** Starts or replaces the transient payload used by both pointer and controller interaction. */
 	bool BeginInteraction(const FRpgInventoryDragPayload& InPayload, ERpgInventoryInteractionInputMode InInputMode);
 
-	/** Clears all transient interaction state without sending a gameplay mutation. */
+	/** Clears all transient interaction state without sending a gameplay mutation; repeated idle cancellation is a no-op. */
 	void CancelInteraction();
 
 	/** Updates the current target and its locally resolved semantic preview. */

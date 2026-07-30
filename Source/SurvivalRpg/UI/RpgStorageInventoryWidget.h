@@ -11,6 +11,7 @@ class URpgInventoryPanelViewModel;
 class URpgInventorySpatialGridWidget;
 class URpgPlayerInventoryPaneWidget;
 class URpgPlayerInventoryViewModel;
+class UTextBlock;
 
 /**
  * CommonUI storage/loot screen presenter shared by chests, corpses, and dropped-loot actors.
@@ -78,6 +79,10 @@ protected:
 		ERpgInventoryInteractionPreviewState PreviewState,
 		bool bHasPayload,
 		bool bPendingRequest) override;
+	virtual void NativeOnInventoryActivePanelChanged(
+		FName PanelId,
+		int32 PanelIndex) override;
+	virtual FText ResolveQuickTransferDisplayName() const override;
 
 	/**
 	 * Complete passive player-inventory pane authored in CUI_StorageSpatial.
@@ -93,7 +98,28 @@ protected:
 	UPROPERTY(BlueprintReadOnly, meta = (BindWidget))
 	TObjectPtr<URpgInventorySpatialGridWidget> SecondaryInventoryGrid = nullptr;
 
+	/** Required read-only title for the player side; native code only changes its cosmetic color. */
+	UPROPERTY(BlueprintReadOnly, meta = (BindWidget))
+	TObjectPtr<UTextBlock> PlayerTitle = nullptr;
+
+	/** Required authored storage title used as the destination name in the quick-transfer action. */
+	UPROPERTY(BlueprintReadOnly, meta = (BindWidget))
+	TObjectPtr<UTextBlock> StorageTitle = nullptr;
+
+	/** UI-only highlight applied to the title of the inventory that currently owns pointer/controller selection. */
+	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Inventory|Storage|Presentation")
+	FLinearColor ActiveInventoryTitleColor = FLinearColor(1.0f, 0.72f, 0.24f, 1.0f);
+
+	/** UI-only neutral color restored on the inactive title and whenever the screen presentation is released. */
+	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Inventory|Storage|Presentation")
+	FLinearColor InactiveInventoryTitleColor = FLinearColor(0.65f, 0.65f, 0.65f, 1.0f);
+
 private:
+#if WITH_DEV_AUTOMATION_TESTS
+	friend class FRpgStorageInventoryWidgetContextLifecycleTest;
+	friend class FRpgPlayerStorageInventoryLifecycleIntegrationTest;
+#endif
+
 	/** Validates and stages Payload; inactive CommonUI screens defer all coordinator and view-model binding. */
 	void ApplyInventoryScreenPayload(UObject* Payload);
 
@@ -105,6 +131,7 @@ private:
 	void EnsureSecondaryPanelViewModel();
 	void BindSecondarySpatialGrid();
 	void ResetStorageScreenContext();
+	void RefreshStorageTransferPresentation();
 	void HandlePlayerInventoryPaneNavigationPanelsChanged();
 
 	/** Validated payload staged during async screen initialization and retained only until deactivation or replacement. */

@@ -533,6 +533,17 @@ bool FRpgBaseTerminalSpatialCompositionTest::RunTest(
 	TestNotNull(
 		TEXT("RootOverlay is authored as the terminal root"),
 		AuthoredRootOverlay);
+	TestEqual(
+		TEXT("RootOverlay is the Base Terminal WidgetTree root"),
+		BaseTerminalTree->RootWidget.Get(),
+		static_cast<UWidget*>(AuthoredRootOverlay));
+	if (AuthoredRootOverlay)
+	{
+		TestEqual(
+			TEXT("RootOverlay receives pointer input across empty terminal regions"),
+			AuthoredRootOverlay->GetVisibility(),
+			ESlateVisibility::Visible);
+	}
 	TestTrue(
 		TEXT("ContentRow is the authored two-column composition"),
 		AuthoredContentRow &&

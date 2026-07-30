@@ -85,7 +85,7 @@ public:
 	UFUNCTION(BlueprintCallable, Category = "Inventory|Navigation")
 	void Initialize(APlayerController* InPlayerController, URpgInventoryDragDropCoordinator* InDragDropCoordinator);
 
-	/** Removes all registered panels and clears active focus state. */
+	/** Removes all registered panels, clears active focus state, and publishes an empty selection outside refresh transactions. */
 	UFUNCTION(BlueprintCallable, Category = "Inventory|Navigation")
 	void ClearPanels();
 

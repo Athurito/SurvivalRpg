@@ -1,6 +1,7 @@
 #pragma once
 
 #include "RpgDroppedInventoryActor.h"
+#include "RpgInventoryDragDropTypes.h"
 #include "RpgInventoryItemDefinition.h"
 #include "SurvivalRpg/ActionBar/RpgActionBarComponent.h"
 #include "SurvivalRpg/AbilitySystem/Abilities/RpgGameplayAbility.h"
@@ -57,6 +58,52 @@ public:
 
 private:
 	int32 InvocationCount = 0;
+};
+
+/** Test-only delegate target that counts interaction-state and payload lifecycle broadcasts independently. */
+UCLASS(NotBlueprintable, Transient)
+class URpgInventoryAutomationTestInteractionDelegateCounter final : public UObject
+{
+	GENERATED_BODY()
+
+public:
+	/** Records one interaction-state transition. */
+	UFUNCTION()
+	void RecordInteractionState(
+		ERpgInventoryInteractionPreviewState PreviewState,
+		bool bHasPayload,
+		bool bPendingRequest)
+	{
+		(void)PreviewState;
+		(void)bHasPayload;
+		(void)bPendingRequest;
+		++InteractionStateInvocationCount;
+	}
+
+	/** Records one payload lifecycle transition. */
+	UFUNCTION()
+	void RecordPayloadChanged(
+		bool bHasPayload,
+		const FRpgInventoryDragPayload& Payload)
+	{
+		(void)bHasPayload;
+		(void)Payload;
+		++PayloadInvocationCount;
+	}
+
+	int32 GetInteractionStateInvocationCount() const
+	{
+		return InteractionStateInvocationCount;
+	}
+
+	int32 GetPayloadInvocationCount() const
+	{
+		return PayloadInvocationCount;
+	}
+
+private:
+	int32 InteractionStateInvocationCount = 0;
+	int32 PayloadInvocationCount = 0;
 };
 
 /**

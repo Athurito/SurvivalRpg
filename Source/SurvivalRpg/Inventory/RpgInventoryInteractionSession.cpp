@@ -51,6 +51,20 @@ bool URpgInventoryInteractionSession::BeginInteraction(const FRpgInventoryDragPa
 
 void URpgInventoryInteractionSession::CancelInteraction()
 {
+	const bool bAlreadyIdle =
+		!bHasPayload &&
+		!bPendingRequest &&
+		InputMode == ERpgInventoryInteractionInputMode::None &&
+		Target.TargetType == ERpgInventoryDropTargetType::None &&
+		PreviewState == ERpgInventoryInteractionPreviewState::None &&
+		!SpatialPreviewDescriptor.bValid;
+	if (bAlreadyIdle)
+	{
+		// Screen teardown and Slate's later DragCancelled callback may address the same operation.
+		// Treat repeated cancellation as a no-op so observers see one payload/state transition.
+		return;
+	}
+
 	Payload = FRpgInventoryDragPayload();
 	Target = FRpgInventoryDropTarget();
 	SpatialPreviewDescriptor = FRpgInventorySpatialPreviewDescriptor();

@@ -25,6 +25,7 @@ class URpgInventorySpatialItemWidget;
 class UCanvasPanel;
 class UDragDropOperation;
 class USizeBox;
+struct FPointerEvent;
 
 /**
  * Native fixed-layout spatial inventory grid.
@@ -218,6 +219,11 @@ public:
 	float GetSpatialCellPadding() const { return CellPadding; }
 
 	bool SelectCellFromScreenPosition(FVector2D ScreenPosition, APlayerController* OwningPlayer = nullptr);
+	/** Selects the exact cell below a passive mouse hover without disturbing held, pending, or gamepad interaction. */
+	bool SelectCellFromPointerHover(
+		FVector2D ScreenPosition,
+		const FPointerEvent& PointerEvent,
+		APlayerController* OwningPlayer = nullptr);
 	bool CommitPayloadToCell(const FRpgInventoryDragPayload& Payload, int32 X, int32 Y);
 	bool PreviewPayloadOnCell(const FRpgInventoryDragPayload& Payload, int32 X, int32 Y);
 	bool CommitPayloadAtScreenPosition(const FRpgInventoryDragPayload& Payload, FVector2D ScreenPosition);

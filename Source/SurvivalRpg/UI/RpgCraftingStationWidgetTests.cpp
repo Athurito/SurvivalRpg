@@ -869,6 +869,17 @@ bool FRpgCraftingSpatialCompositionTest::RunTest(
 		TEXT("RootOverlay is the authored Crafting screen root"),
 		RootOverlay);
 	TestEqual(
+		TEXT("RootOverlay is the Crafting WidgetTree root"),
+		ScreenTree->RootWidget.Get(),
+		static_cast<UWidget*>(RootOverlay));
+	if (RootOverlay)
+	{
+		TestEqual(
+			TEXT("RootOverlay receives pointer input across empty Crafting regions"),
+			RootOverlay->GetVisibility(),
+			ESlateVisibility::Visible);
+	}
+	TestEqual(
 		TEXT("PlayerInventoryPane uses the exact canonical reusable Pane class"),
 		PlayerInventoryPane ? PlayerInventoryPane->GetClass() : nullptr,
 		PlayerInventoryPaneClass);
@@ -1498,6 +1509,28 @@ bool FRpgCraftingScreenPayloadLifecycleTest::RunTest(
 		TEXT("Crafting screen exposes no player-to-output shortcut"),
 		Coordinator->ResolveQuickTransferTarget(
 			TestWorld.GetPlayerInventory()));
+	const FName PreviousCraftingPanelId =
+		PanelNavigator->GetActivePanelId();
+	TestTrue(
+		TEXT("Crafting output panel can become the canonical active transfer source"),
+		PanelNavigator->ActivatePanelById(FName(TEXT("Crafting.Output"))));
+	TestEqual(
+		TEXT("Crafting output advertises only the existing Output-to-Player route"),
+		Widget->ResolveQuickTransferDisplayName().ToString(),
+		FString(TEXT("Transfer \u2192 Inventory")));
+	TestTrue(
+		TEXT("Crafting player Gear can become the active player-internal transfer source"),
+		PanelNavigator->ActivatePanelById(FName(TEXT("Player.Gear.Head"))));
+	TestEqual(
+		TEXT("Crafting player-internal quick transfer names its actual Inventory destination"),
+		Widget->ResolveQuickTransferDisplayName().ToString(),
+		FString(TEXT("Transfer \u2192 Inventory")));
+	if (!PreviousCraftingPanelId.IsNone())
+	{
+		TestTrue(
+			TEXT("Crafting test restores the previous canonical panel"),
+			PanelNavigator->ActivatePanelById(PreviousCraftingPanelId));
+	}
 
 	IRpgUIScreenPayloadReceiver::Execute_ReceiveScreenPayload(
 		Widget,

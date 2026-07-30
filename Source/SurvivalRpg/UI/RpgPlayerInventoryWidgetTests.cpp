@@ -636,6 +636,14 @@ bool FRpgPlayerInventoryAuthoredContentHostsTest::RunTest(const FString& Paramet
 		return false;
 	}
 	TestEqual(
+		TEXT("Standalone RootOverlay is the WidgetTree root"),
+		RootTree->RootWidget.Get(),
+		static_cast<UWidget*>(RootOverlay));
+	TestEqual(
+		TEXT("Standalone RootOverlay receives pointer input across empty screen regions"),
+		RootOverlay->GetVisibility(),
+		ESlateVisibility::Visible);
+	TestEqual(
 		TEXT("Standalone root embeds the exact canonical pane class"),
 		RootPane->GetClass(),
 		PlayerPaneClass);
@@ -728,6 +736,10 @@ bool FRpgPlayerInventoryAuthoredContentHostsTest::RunTest(const FString& Paramet
 		TEXT("DragVisualCanvas remains the final root child"),
 		RootOverlay->GetChildIndex(DragVisualCanvas),
 		RootOverlay->GetChildrenCount() - 1);
+	TestEqual(
+		TEXT("DragVisualCanvas never intercepts standalone inventory pointer input"),
+		DragVisualCanvas->GetVisibility(),
+		ESlateVisibility::HitTestInvisible);
 
 	FScopedWidgetWorld TestWorld;
 	if (!TestTrue(TEXT("Standalone widget world is valid"), TestWorld.IsValid()))

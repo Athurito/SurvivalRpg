@@ -350,6 +350,31 @@ void URpgCraftingStationWidget::RefreshInventoryScreenSpecificInteractionPresent
 	}
 }
 
+FText URpgCraftingStationWidget::ResolveQuickTransferDisplayName() const
+{
+	const URpgInventoryPanelNavigationCoordinator* Navigator =
+		GetInventoryPanelNavigator();
+	URpgInventoryManagerComponent* ActiveInventory = Navigator
+		? Navigator->GetActiveInventory()
+		: nullptr;
+	const bool bPlayerPanelActive = Navigator &&
+		Navigator->GetActivePanelId().ToString().StartsWith(TEXT("Player."));
+	if (bPlayerPanelActive ||
+		(ActiveInventory &&
+			((OutputInventory && ActiveInventory == OutputInventory) ||
+				(PlayerInventory && ActiveInventory == PlayerInventory))))
+	{
+		// The station exposes Output -> Player as its only cross-inventory route. Player-pane quick transfers remain
+		// player-internal (for example Gear -> Backpack), so every valid shortcut on this screen targets Inventory.
+		return NSLOCTEXT(
+			"RpgCraftingStationWidget",
+			"QuickTransferOutputToInventory",
+			"Transfer \u2192 Inventory");
+	}
+
+	return Super::ResolveQuickTransferDisplayName();
+}
+
 void URpgCraftingStationWidget::RequestCraftSelectedRecipe()
 {
 	if (!bCraftingContextBound || !CraftingViewModel ||

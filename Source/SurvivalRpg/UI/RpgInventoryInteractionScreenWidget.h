@@ -298,6 +298,10 @@ protected:
 		bool bPendingRequest);
 
 private:
+#if WITH_DEV_AUTOMATION_TESTS
+	friend class FRpgInventoryPointerDragLeaveLifecycleTest;
+#endif
+
 	void DismissActiveContextMenuPresentation();
 	void DismissActiveSplitDialogPresentation();
 	void DismissActiveDropConfirmationPresentation();

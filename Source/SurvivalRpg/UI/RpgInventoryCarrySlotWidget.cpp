@@ -1,5 +1,6 @@
 #include "RpgInventoryCarrySlotWidget.h"
 
+#include "CommonInputSubsystem.h"
 #include "CommonLazyImage.h"
 #include "Components/Border.h"
 #include "Components/PanelWidget.h"
@@ -325,6 +326,56 @@ void URpgInventoryCarrySlotWidget::NativeOnRemovedFromFocusPath(const FFocusEven
 	ClearFocusedControllerInteractionTarget();
 	UnbindFocusedControllerInteraction();
 	Super::NativeOnRemovedFromFocusPath(InFocusEvent);
+}
+
+void URpgInventoryCarrySlotWidget::NativeOnMouseEnter(
+	const FGeometry& InGeometry,
+	const FPointerEvent& InMouseEvent)
+{
+	Super::NativeOnMouseEnter(InGeometry, InMouseEvent);
+	RefreshPointerHoverSelection(InMouseEvent);
+}
+
+FReply URpgInventoryCarrySlotWidget::NativeOnMouseMove(
+	const FGeometry& InGeometry,
+	const FPointerEvent& InMouseEvent)
+{
+	FReply Reply = Super::NativeOnMouseMove(InGeometry, InMouseEvent);
+	RefreshPointerHoverSelection(InMouseEvent);
+	return Reply;
+}
+
+void URpgInventoryCarrySlotWidget::RefreshPointerHoverSelection(const FPointerEvent& InMouseEvent)
+{
+	URpgInventoryDragDropCoordinator* Coordinator = GetDragDropCoordinator();
+	const UCommonInputSubsystem* CommonInputSubsystem =
+		UCommonInputSubsystem::Get(GetOwningLocalPlayer());
+	const URpgInventoryInteractionSession* InteractionSession =
+		Coordinator ? Coordinator->GetInteractionSession() : nullptr;
+	if (!PanelNavigationCoordinator || !Coordinator ||
+		!CommonInputSubsystem || !CommonInputSubsystem->IsUsingPointerInput() ||
+		InMouseEvent.IsMouseButtonDown(EKeys::LeftMouseButton) ||
+		Coordinator->HasHeldPayload() ||
+		(InteractionSession &&
+			(InteractionSession->HasPayload() || InteractionSession->IsRequestPending())))
+	{
+		return;
+	}
+
+	if (APlayerController* OwningPlayer = GetOwningPlayer())
+	{
+		const bool bAlreadyFocused = HasUserFocus(OwningPlayer);
+		if (!bAlreadyFocused)
+		{
+			// The inherited focus path activates the registered Carry panel and updates focused inventory.
+			SetUserFocus(OwningPlayer);
+		}
+		else if (PanelNavigationCoordinator->GetActiveCarrySlotWidget() != this)
+		{
+			// Repair a stale panel selection without repeatedly writing focus on every pointer move.
+			PanelNavigationCoordinator->NotifyCarrySlotFocused(this);
+		}
+	}
 }
 
 FReply URpgInventoryCarrySlotWidget::NativeOnPreviewMouseButtonDown(

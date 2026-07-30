@@ -68,6 +68,21 @@ protected:
 	virtual FReply NativeOnKeyDown(const FGeometry& InGeometry, const FKeyEvent& InKeyEvent) override;
 	virtual UWidget* NativeGetDesiredFocusTarget() const override;
 
+	/**
+	 * Native presentation hook invoked whenever the shared navigator changes its active panel.
+	 * Derived screens may update cosmetic source indicators but must not mutate inventory state here.
+	 */
+	virtual void NativeOnInventoryActivePanelChanged(FName PanelId, int32 PanelIndex);
+
+	/**
+	 * Resolves the visible quick-transfer label for the current valid selection.
+	 * The default preserves the authored CommonUI action-row display name.
+	 */
+	virtual FText ResolveQuickTransferDisplayName() const;
+
+	/** Re-evaluates action visibility and the contextual transfer label after native interaction-state changes. */
+	void RefreshInventoryActionBindingVisibility();
+
 	/** True only when this handle resolves to a CommonUI action row suitable for runtime binding. */
 	static bool IsActionRowValid(const FDataTableRowHandle& ActionRow);
 
@@ -138,7 +153,7 @@ private:
 	void HandleHeldPayloadChanged(bool bHasPayload, const FRpgInventoryDragPayload& Payload);
 
 	FUIActionBindingHandle RegisterActionRow(const FDataTableRowHandle& ActionRow, const FSimpleDelegate& Delegate);
-	void RefreshInventoryActionBindingVisibility();
+	void RestoreQuickTransferActionDisplayName();
 	bool HandleInventoryBackAction();
 
 	UPROPERTY(Transient)
@@ -155,4 +170,9 @@ private:
 	FUIActionBindingHandle QuickTransferActionBinding;
 	FUIActionBindingHandle QuickSplitActionBinding;
 	FUIActionBindingHandle DropActionBinding;
+
+	/** Exact authored display name captured from the registered quick-transfer action row. */
+	FText CachedQuickTransferActionDisplayName;
+	FText AppliedQuickTransferActionDisplayName;
+	bool bHasCachedQuickTransferActionDisplayName = false;
 };

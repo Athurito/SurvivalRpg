@@ -134,6 +134,7 @@ protected:
 		ERpgInventoryInteractionPreviewState PreviewState,
 		bool bHasPayload,
 		bool bPendingRequest) override;
+	virtual FText ResolveQuickTransferDisplayName() const override;
 
 	/**
 	 * Complete passive player-inventory pane authored in CUI_CraftingStationSpatial.
@@ -235,6 +236,10 @@ protected:
 	float JobProgressRefreshInterval = 0.25f;
 
 private:
+#if WITH_DEV_AUTOMATION_TESTS
+	friend class FRpgCraftingScreenPayloadLifecycleTest;
+#endif
+
 	void ApplyCraftingScreenPayload(UObject* Payload);
 	bool IsPayloadCoherent(
 		const URpgCraftingStationScreenPayload* Payload) const;

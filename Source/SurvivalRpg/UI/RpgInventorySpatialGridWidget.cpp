@@ -19,6 +19,7 @@
 #include "Blueprint/DragDropOperation.h"
 #include "Blueprint/WidgetBlueprintLibrary.h"
 #include "Blueprint/WidgetTree.h"
+#include "CommonInputSubsystem.h"
 #include "Components/CanvasPanel.h"
 #include "Components/CanvasPanelSlot.h"
 #include "Components/SizeBox.h"
@@ -1116,6 +1117,53 @@ bool URpgInventorySpatialGridWidget::SelectCellFromScreenPosition(FVector2D Scre
 	if (!TryGetCellFromScreenPosition(ScreenPosition, CellX, CellY))
 	{
 		return false;
+	}
+
+	return SelectCell(CellX, CellY, OwningPlayer);
+}
+
+bool URpgInventorySpatialGridWidget::SelectCellFromPointerHover(
+	FVector2D ScreenPosition,
+	const FPointerEvent& PointerEvent,
+	APlayerController* OwningPlayer)
+{
+	const UCommonInputSubsystem* CommonInputSubsystem =
+		UCommonInputSubsystem::Get(GetOwningLocalPlayer());
+	if (!CommonInputSubsystem || !CommonInputSubsystem->IsUsingPointerInput() ||
+		PointerEvent.IsMouseButtonDown(EKeys::LeftMouseButton))
+	{
+		return false;
+	}
+
+	if (DragDropCoordinator)
+	{
+		if (DragDropCoordinator->HasHeldPayload())
+		{
+			return false;
+		}
+
+		const URpgInventoryInteractionSession* Session =
+			DragDropCoordinator->GetInteractionSession();
+		if (Session && Session->IsRequestPending())
+		{
+			return false;
+		}
+	}
+
+	int32 CellX = INDEX_NONE;
+	int32 CellY = INDEX_NONE;
+	if (!TryGetCellFromScreenPosition(ScreenPosition, CellX, CellY))
+	{
+		return false;
+	}
+
+	const bool bPanelAlreadyActive = PanelNavigationCoordinator
+		? PanelNavigationCoordinator->GetActiveSpatialGridWidget() == this
+		: bInventoryPanelActive;
+	const bool bGridAlreadyFocused = !OwningPlayer || HasUserFocus(OwningPlayer);
+	if (CursorX == CellX && CursorY == CellY && bPanelAlreadyActive && bGridAlreadyFocused)
+	{
+		return true;
 	}
 
 	return SelectCell(CellX, CellY, OwningPlayer);
@@ -2391,7 +2439,7 @@ void URpgInventorySpatialGridWidget::ApplyEntryDimming()
 			continue;
 		}
 
-		ItemWidget->SetRenderOpacity(
+		ItemWidget->SetEntryFilterOpacity(
 			IsEntryDimmed(ItemWidget->GetRepresentedEntryId())
 				? DimmedEntryOpacity
 				: 1.0f);

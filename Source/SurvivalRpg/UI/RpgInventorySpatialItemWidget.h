@@ -68,6 +68,9 @@ public:
 	UFUNCTION(BlueprintPure, Category = "Inventory|Spatial Item")
 	FGuid GetRepresentedEntryId() const;
 
+	/** Applies UI-only search/filter opacity; held-source dimming is composed with this value natively. */
+	void SetEntryFilterOpacity(float InFilterOpacity);
+
 protected:
 	virtual void NativePreConstruct() override;
 	virtual void NativeDestruct() override;
@@ -79,6 +82,8 @@ protected:
 		int32 LayerId,
 		const FWidgetStyle& InWidgetStyle,
 		bool bParentEnabled) const override;
+	virtual void NativeOnMouseEnter(const FGeometry& InGeometry, const FPointerEvent& InMouseEvent) override;
+	virtual FReply NativeOnMouseMove(const FGeometry& InGeometry, const FPointerEvent& InMouseEvent) override;
 	virtual FReply NativeOnMouseButtonDown(const FGeometry& InGeometry, const FPointerEvent& InMouseEvent) override;
 	virtual FReply NativeOnMouseButtonUp(const FGeometry& InGeometry, const FPointerEvent& InMouseEvent) override;
 	virtual void NativeOnDragDetected(const FGeometry& InGeometry, const FPointerEvent& InMouseEvent, UDragDropOperation*& OutOperation) override;
@@ -113,6 +118,22 @@ protected:
 	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Inventory|Spatial Item")
 	bool bUseNativeFallbackPaint = true;
 
+	/** UI-only opacity applied to the represented source while its payload is held; composed with filter dimming. */
+	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Inventory|Spatial Item|Style", meta = (ClampMin = "0.0", ClampMax = "1.0", UIMin = "0.0", UIMax = "1.0"))
+	float HeldSourceOpacity = 0.30f;
+
+	/** Native full-footprint outline used for the canonical focused item when no Blueprint hook is implemented. */
+	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Inventory|Spatial Item|Style")
+	FLinearColor FocusedOutlineColor = FLinearColor(0.95f, 0.78f, 0.25f, 1.0f);
+
+	/** Native full-footprint outline that keeps a dimmed held source visibly identifiable. */
+	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Inventory|Spatial Item|Style")
+	FLinearColor HeldSourceOutlineColor = FLinearColor(0.18f, 0.72f, 1.0f, 1.0f);
+
+	/** Width in Slate units of native focused and held-source outlines. */
+	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Inventory|Spatial Item|Style", meta = (ClampMin = "0.5", UIMin = "0.5", UIMax = "6.0"))
+	float NativeOutlineThickness = 2.0f;
+
 	/**
 	 * Tooltip class used for replicated item details. Defaults to the complete native fallback and may be replaced by
 	 * a presentation-only Widget Blueprint subclass.
@@ -124,6 +145,7 @@ private:
 	friend class URpgInventorySpatialGridWidget;
 #if WITH_DEV_AUTOMATION_TESTS
 	friend class FRpgSpatialItemPresentationLifecycleTest;
+	friend class FRpgInventoryPointerSpatialItemPresentationTest;
 #endif
 
 	UFUNCTION()
@@ -139,6 +161,7 @@ private:
 	void BeginDragDropVisualRefreshBatch();
 	void EndDragDropVisualRefreshBatch();
 	void ApplyDragDropVisualState();
+	void ApplyNativePresentationStyle();
 	void ReleaseSpatialItemState();
 	void RefreshPlacedItemVisual();
 	void RefreshItemTooltip();
@@ -173,4 +196,6 @@ private:
 	bool bSpatialItemStateReleased = false;
 	int32 DragDropVisualRefreshBatchDepth = 0;
 	bool bDragDropVisualRefreshPending = false;
+	float EntryFilterOpacity = 1.0f;
+	float AppliedContentOpacity = 1.0f;
 };

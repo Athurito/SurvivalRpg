@@ -2,6 +2,7 @@
 
 #include "Blueprint/DragDropOperation.h"
 #include "Blueprint/WidgetBlueprintLibrary.h"
+#include "CommonInputSubsystem.h"
 #include "Input/Reply.h"
 #include "InputCoreTypes.h"
 #include "MVVMSubsystem.h"
@@ -319,6 +320,57 @@ void URpgEquipmentSlotWidget::NativeOnAddedToFocusPath(const FFocusEvent& InFocu
 	if (PanelNavigationCoordinator)
 	{
 		PanelNavigationCoordinator->NotifyEquipmentSlotFocused(this);
+	}
+}
+
+void URpgEquipmentSlotWidget::NativeOnMouseEnter(
+	const FGeometry& InGeometry,
+	const FPointerEvent& InMouseEvent)
+{
+	Super::NativeOnMouseEnter(InGeometry, InMouseEvent);
+	RefreshPointerHoverSelection(InMouseEvent);
+}
+
+FReply URpgEquipmentSlotWidget::NativeOnMouseMove(
+	const FGeometry& InGeometry,
+	const FPointerEvent& InMouseEvent)
+{
+	FReply Reply = Super::NativeOnMouseMove(InGeometry, InMouseEvent);
+	RefreshPointerHoverSelection(InMouseEvent);
+	return Reply;
+}
+
+void URpgEquipmentSlotWidget::RefreshPointerHoverSelection(const FPointerEvent& InMouseEvent)
+{
+	const UCommonInputSubsystem* CommonInputSubsystem =
+		UCommonInputSubsystem::Get(GetOwningLocalPlayer());
+	const URpgInventoryInteractionSession* InteractionSession =
+		DragDropCoordinator
+			? DragDropCoordinator->GetInteractionSession()
+			: nullptr;
+	if (!PanelNavigationCoordinator || !DragDropCoordinator ||
+		!CommonInputSubsystem || !CommonInputSubsystem->IsUsingPointerInput() ||
+		InMouseEvent.IsMouseButtonDown(EKeys::LeftMouseButton) ||
+		DragDropCoordinator->HasHeldPayload() ||
+		(InteractionSession &&
+			(InteractionSession->HasPayload() || InteractionSession->IsRequestPending())))
+	{
+		return;
+	}
+
+	if (APlayerController* OwningPlayer = GetOwningPlayer())
+	{
+		const bool bAlreadyFocused = HasUserFocus(OwningPlayer);
+		if (!bAlreadyFocused)
+		{
+			// The existing focus-path notification is the single canonical panel-selection route.
+			SetUserFocus(OwningPlayer);
+		}
+		else if (PanelNavigationCoordinator->GetActiveEquipmentSlotWidget() != this)
+		{
+			// Repair a stale panel selection without repeatedly writing focus on every pointer move.
+			PanelNavigationCoordinator->NotifyEquipmentSlotFocused(this);
+		}
 	}
 }
 

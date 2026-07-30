@@ -1,5 +1,6 @@
 #include "RpgStorageInventoryWidget.h"
 
+#include "Components/TextBlock.h"
 #include "SurvivalRpg/Inventory/RpgInventoryDragDropCoordinator.h"
 #include "SurvivalRpg/Inventory/RpgInventoryManagerComponent.h"
 #include "SurvivalRpg/Mvvm/Inventory/RpgInventoryPanelViewModel.h"
@@ -23,6 +24,7 @@ URpgStorageInventoryWidget::GetStoragePlayerInventoryViewModel() const
 void URpgStorageInventoryWidget::NativeOnInitialized()
 {
 	Super::NativeOnInitialized();
+	RefreshStorageTransferPresentation();
 
 	if (PlayerInventoryPane)
 	{
@@ -33,6 +35,7 @@ void URpgStorageInventoryWidget::NativeOnInitialized()
 void URpgStorageInventoryWidget::NativeConstruct()
 {
 	Super::NativeConstruct();
+	RefreshStorageTransferPresentation();
 
 	if (PlayerInventoryPane)
 	{
@@ -199,6 +202,19 @@ bool URpgStorageInventoryWidget::BindStorageScreenContext()
 
 	// Set the guard before view-model callbacks can run so an incidental reentrant payload delivery cannot double-bind.
 	bStorageContextBound = true;
+
+	// Establish the storage root before binding the reusable player pane. Pane binding can synchronously register
+	// dynamic content panels; registering Secondary.Root first preserves the screen's canonical initial source.
+	EnsureSecondaryPanelViewModel();
+	BindSecondarySpatialGrid();
+	if (SecondaryInventoryGrid && SecondaryInventory)
+	{
+		Navigator->RegisterSpatialInventoryPanel(
+			TEXT("Secondary.Root"),
+			SecondaryInventoryGrid,
+			SecondaryInventory);
+	}
+
 	FRpgInventoryScreenPresentationContext PanePresentationContext;
 	PanePresentationContext.DragDropCoordinator = Coordinator;
 	PanePresentationContext.PanelNavigationCoordinator = Navigator;
@@ -207,9 +223,6 @@ bool URpgStorageInventoryWidget::BindStorageScreenContext()
 		GetOwningPlayer(),
 		PanePresentationContext,
 		TEXT("Player"));
-
-	EnsureSecondaryPanelViewModel();
-	BindSecondarySpatialGrid();
 
 	++StoragePresentationBindGeneration;
 	return true;
@@ -322,6 +335,62 @@ void URpgStorageInventoryWidget::RefreshInventoryScreenSpecificInteractionPresen
 	}
 }
 
+void URpgStorageInventoryWidget::NativeOnInventoryActivePanelChanged(
+	FName PanelId,
+	int32 PanelIndex)
+{
+	Super::NativeOnInventoryActivePanelChanged(PanelId, PanelIndex);
+	RefreshStorageTransferPresentation();
+}
+
+FText URpgStorageInventoryWidget::ResolveQuickTransferDisplayName() const
+{
+	const URpgInventoryPanelNavigationCoordinator* Navigator =
+		GetInventoryPanelNavigator();
+	URpgInventoryManagerComponent* ActiveInventory = Navigator
+		? Navigator->GetActiveInventory()
+		: nullptr;
+	const bool bPlayerPanelActive = Navigator &&
+		Navigator->GetActivePanelId().ToString().StartsWith(TEXT("Player."));
+	if (Navigator && Navigator->GetActiveEquipmentSlotWidget())
+	{
+		// Equipment quick-transfer is intentionally a player-internal unequip into Backpack/Pockets. It does not
+		// consume the screen's Player -> Storage route, so its destination must remain the player inventory.
+		return NSLOCTEXT(
+			"RpgStorageInventoryWidget",
+			"QuickTransferEquipmentToInventory",
+			"Transfer \u2192 Inventory");
+	}
+	if (bPlayerPanelActive ||
+		(ActiveInventory && ActiveInventory == PrimaryInventory))
+	{
+		const FText AuthoredStorageTitle = StorageTitle
+			? StorageTitle->GetText()
+			: FText::GetEmpty();
+		const FText DestinationName = !AuthoredStorageTitle.IsEmptyOrWhitespace()
+			? AuthoredStorageTitle
+			: NSLOCTEXT(
+				"RpgStorageInventoryWidget",
+				"DefaultStorageDestination",
+				"Storage");
+		return FText::Format(
+			NSLOCTEXT(
+				"RpgStorageInventoryWidget",
+				"QuickTransferToStorageFormat",
+				"Transfer \u2192 {0}"),
+			DestinationName);
+	}
+	if (ActiveInventory && ActiveInventory == SecondaryInventory)
+	{
+		return NSLOCTEXT(
+			"RpgStorageInventoryWidget",
+			"QuickTransferToInventory",
+			"Transfer \u2192 Inventory");
+	}
+
+	return Super::ResolveQuickTransferDisplayName();
+}
+
 void URpgStorageInventoryWidget::EnsureSecondaryPanelViewModel()
 {
 	if (!SecondaryPanelViewModel)
@@ -398,6 +467,38 @@ void URpgStorageInventoryWidget::ResetStorageScreenContext()
 	PrimaryInventory = nullptr;
 	SecondaryInventory = nullptr;
 	SecondaryRootHandle = FRpgInventoryContainerHandle();
+	RefreshStorageTransferPresentation();
+}
+
+void URpgStorageInventoryWidget::RefreshStorageTransferPresentation()
+{
+	const URpgInventoryPanelNavigationCoordinator* Navigator =
+		GetInventoryPanelNavigator();
+	URpgInventoryManagerComponent* ActiveInventory = Navigator
+		? Navigator->GetActiveInventory()
+		: nullptr;
+	const bool bPlayerSourceActive =
+		Navigator &&
+		(Navigator->GetActivePanelId().ToString().StartsWith(TEXT("Player.")) ||
+			(PrimaryInventory && ActiveInventory == PrimaryInventory));
+	const bool bStorageSourceActive =
+		SecondaryInventory &&
+		ActiveInventory == SecondaryInventory;
+
+	if (PlayerTitle)
+	{
+		PlayerTitle->SetColorAndOpacity(FSlateColor(
+			bPlayerSourceActive
+				? ActiveInventoryTitleColor
+				: InactiveInventoryTitleColor));
+	}
+	if (StorageTitle)
+	{
+		StorageTitle->SetColorAndOpacity(FSlateColor(
+			bStorageSourceActive
+				? ActiveInventoryTitleColor
+				: InactiveInventoryTitleColor));
+	}
 }
 
 void URpgStorageInventoryWidget::HandlePlayerInventoryPaneNavigationPanelsChanged()
