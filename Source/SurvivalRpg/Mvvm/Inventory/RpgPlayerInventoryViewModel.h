@@ -28,7 +28,7 @@ DECLARE_DYNAMIC_MULTICAST_DELEGATE(FRpgPlayerInventoryViewModelChanged);
 /**
  * Aggregate player-inventory VM for the Tarkov-like RPG layout.
  *
- * This is the one VM CUI_PlayerInventory should bind. It mirrors replicated gameplay state from inventory,
+ * This is the one VM CUI_PlayerInventoryPane should bind. It mirrors replicated gameplay state from inventory,
  * equipment loadout, layout, and actionbar components without owning any gameplay truth.
  */
 UCLASS(BlueprintType, meta = (MVVMAllowedContextCreationType = "PropertyPath"))

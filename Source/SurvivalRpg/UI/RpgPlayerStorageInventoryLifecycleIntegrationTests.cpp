@@ -20,6 +20,7 @@
 #include "SurvivalRpg/UI/RpgInventoryCarrySlotWidget.h"
 #include "SurvivalRpg/UI/RpgInventoryPanelNavigationCoordinator.h"
 #include "SurvivalRpg/UI/RpgLoadoutSlotWidgets.h"
+#include "SurvivalRpg/UI/RpgPlayerInventoryPaneWidget.h"
 #include "SurvivalRpg/UI/RpgInventorySlotGroupWidget.h"
 #include "SurvivalRpg/UI/RpgInventorySpatialGridWidget.h"
 #include "SurvivalRpg/UI/RpgUIScreenPayload.h"
@@ -614,10 +615,20 @@ bool FRpgPlayerStorageInventoryLifecycleIntegrationTest::RunTest(
 
 	PlayerWidget->ActivateWidget();
 	StorageWidget->ActivateWidget();
+	URpgPlayerInventoryPaneWidget* PlayerInventoryPane =
+		PlayerWidget->GetPlayerInventoryPane();
+	URpgPlayerInventoryPaneWidget* StorageInventoryPane =
+		Cast<URpgPlayerInventoryPaneWidget>(
+			StorageWidget->GetWidgetFromName(
+				TEXT("PlayerInventoryPane")));
 	URpgPlayerInventoryViewModel* PlayerViewModel =
-		PlayerWidget->GetPlayerInventoryViewModel();
+		PlayerInventoryPane
+			? PlayerInventoryPane->GetPlayerInventoryViewModel()
+			: nullptr;
 	URpgPlayerInventoryViewModel* StorageViewModel =
-		StorageWidget->GetStoragePlayerInventoryViewModel();
+		StorageInventoryPane
+			? StorageInventoryPane->GetPlayerInventoryViewModel()
+			: nullptr;
 	if (!TestTrue(
 			TEXT("The Player screen activates"),
 			PlayerWidget->IsActivated()) ||
@@ -625,15 +636,37 @@ bool FRpgPlayerStorageInventoryLifecycleIntegrationTest::RunTest(
 			TEXT("The Storage screen activates"),
 			StorageWidget->IsActivated()) ||
 		!TestNotNull(
-			TEXT("The Player screen owns its aggregate VM"),
+			TEXT("The Player screen embeds its reusable player pane"),
+			PlayerInventoryPane) ||
+		!TestNotNull(
+			TEXT("The Storage screen embeds its reusable player pane"),
+			StorageInventoryPane) ||
+		!TestNotNull(
+			TEXT("The Player pane owns its aggregate VM"),
 			PlayerViewModel) ||
 		!TestNotNull(
-			TEXT("The Storage screen owns its aggregate player-side VM"),
+			TEXT("The Storage pane owns its aggregate player-side VM"),
 			StorageViewModel) ||
 		!TestNotEqual(
-			TEXT("Player and Storage keep distinct screen-owned aggregate VMs"),
+			TEXT("Player and Storage keep distinct pane-owned aggregate VMs"),
 			PlayerViewModel,
 			StorageViewModel) ||
+		!TestEqual(
+			TEXT("The Player aggregate VM is owned directly by its passive pane"),
+			PlayerViewModel ? PlayerViewModel->GetOuter() : nullptr,
+			static_cast<UObject*>(PlayerInventoryPane)) ||
+		!TestEqual(
+			TEXT("The Storage aggregate VM is owned directly by its passive pane"),
+			StorageViewModel ? StorageViewModel->GetOuter() : nullptr,
+			static_cast<UObject*>(StorageInventoryPane)) ||
+		!TestNotEqual(
+			TEXT("The Player activatable root does not directly own the aggregate VM"),
+			PlayerViewModel ? PlayerViewModel->GetOuter() : nullptr,
+			static_cast<UObject*>(PlayerWidget)) ||
+		!TestNotEqual(
+			TEXT("The Storage activatable root does not directly own the aggregate VM"),
+			StorageViewModel ? StorageViewModel->GetOuter() : nullptr,
+			static_cast<UObject*>(StorageWidget)) ||
 		!TestEqual(
 			TEXT("Storage accepts the canonical PlayerState inventory as Primary"),
 			StorageWidget->GetInventoryScreenPayload(),
@@ -746,52 +779,179 @@ bool FRpgPlayerStorageInventoryLifecycleIntegrationTest::RunTest(
 						: static_cast<uint8>(MAX_uint8),
 					static_cast<uint8>(0));
 		};
+	auto VerifyPaneViewModelOwnership =
+		[this](
+			const TCHAR* Phase,
+			URpgPlayerInventoryPaneWidget* Pane,
+			const URpgPlayerInventoryViewModel* ViewModel,
+			const UObject* ActivatableRoot)
+		{
+			const FString Prefix(Phase);
+			return TestEqual(
+					*(Prefix + TEXT(": VM Outer remains the passive pane")),
+					ViewModel ? ViewModel->GetOuter() : nullptr,
+					static_cast<UObject*>(Pane)) &&
+				TestEqual(
+					*(Prefix + TEXT(": pane owns exactly one Gear listener")),
+					ViewModel
+						? CountDelegateBindingsTo(
+							ViewModel->OnGearSlotsChanged,
+							Pane)
+						: 0,
+					1) &&
+				TestEqual(
+					*(Prefix + TEXT(": pane owns exactly one groups listener")),
+					ViewModel
+						? CountDelegateBindingsTo(
+							ViewModel->OnSlotGroupsChanged,
+							Pane)
+						: 0,
+					1) &&
+				TestEqual(
+					*(Prefix + TEXT(": pane owns exactly one actionbar listener")),
+					ViewModel
+						? CountDelegateBindingsTo(
+							ViewModel->OnActionBarSlotsChanged,
+							Pane)
+						: 0,
+					1) &&
+				TestEqual(
+					*(Prefix + TEXT(": activatable root owns no Gear listener")),
+					ViewModel
+						? CountDelegateBindingsTo(
+							ViewModel->OnGearSlotsChanged,
+							ActivatableRoot)
+						: 0,
+					0) &&
+				TestEqual(
+					*(Prefix + TEXT(": activatable root owns no groups listener")),
+					ViewModel
+						? CountDelegateBindingsTo(
+							ViewModel->OnSlotGroupsChanged,
+							ActivatableRoot)
+						: 0,
+					0) &&
+				TestEqual(
+					*(Prefix + TEXT(": activatable root owns no actionbar listener")),
+					ViewModel
+						? CountDelegateBindingsTo(
+							ViewModel->OnActionBarSlotsChanged,
+							ActivatableRoot)
+						: 0,
+					0);
+		};
 
 	if (!VerifyBoundSources(
 			TEXT("Active Player screen"),
 			PlayerViewModel) ||
 		!VerifyBoundSources(
 			TEXT("Active Storage screen"),
-			StorageViewModel))
+			StorageViewModel) ||
+		!VerifyPaneViewModelOwnership(
+			TEXT("Active Player pane"),
+			PlayerInventoryPane,
+			PlayerViewModel,
+			PlayerWidget) ||
+		!VerifyPaneViewModelOwnership(
+			TEXT("Active Storage pane"),
+			StorageInventoryPane,
+			StorageViewModel,
+			StorageWidget))
 	{
 		return false;
 	}
 
-	UWidgetTree* PlayerWidgetTree = PlayerWidget->WidgetTree;
+	UWidgetTree* PlayerRootWidgetTree = PlayerWidget->WidgetTree;
+	UWidgetTree* PlayerPaneWidgetTree =
+		PlayerInventoryPane ? PlayerInventoryPane->WidgetTree : nullptr;
+	UWidgetTree* StoragePaneWidgetTree =
+		StorageInventoryPane ? StorageInventoryPane->WidgetTree : nullptr;
 	URpgEquipmentSlotWidget* GearHead =
-		PlayerWidgetTree
+		PlayerPaneWidgetTree
 			? Cast<URpgEquipmentSlotWidget>(
-				PlayerWidgetTree->FindWidget(TEXT("Gear_Head")))
+				PlayerPaneWidgetTree->FindWidget(TEXT("Gear_Head")))
 			: nullptr;
 	URpgInventoryCarrySlotWidget* CarryWeapon1 =
-		PlayerWidgetTree
+		PlayerPaneWidgetTree
 			? Cast<URpgInventoryCarrySlotWidget>(
-				PlayerWidgetTree->FindWidget(TEXT("Carry_Weapon1")))
+				PlayerPaneWidgetTree->FindWidget(TEXT("Carry_Weapon1")))
 			: nullptr;
 	URpgInventorySlotGroupWidget* ContentPockets =
-		PlayerWidgetTree
+		PlayerPaneWidgetTree
 			? Cast<URpgInventorySlotGroupWidget>(
-				PlayerWidgetTree->FindWidget(TEXT("Content_Pockets")))
+				PlayerPaneWidgetTree->FindWidget(TEXT("Content_Pockets")))
 			: nullptr;
 	URpgInventorySpatialGridWidget* ContentPocketsGrid =
 		ContentPockets
 			? ContentPockets->GetSpatialGridWidget()
 			: nullptr;
+	URpgEquipmentSlotWidget* StorageGearHead =
+		StoragePaneWidgetTree
+			? Cast<URpgEquipmentSlotWidget>(
+				StoragePaneWidgetTree->FindWidget(TEXT("Gear_Head")))
+			: nullptr;
+	URpgInventoryCarrySlotWidget* StorageCarryWeapon1 =
+		StoragePaneWidgetTree
+			? Cast<URpgInventoryCarrySlotWidget>(
+				StoragePaneWidgetTree->FindWidget(TEXT("Carry_Weapon1")))
+			: nullptr;
+	URpgInventorySlotGroupWidget* StorageContentPockets =
+		StoragePaneWidgetTree
+			? Cast<URpgInventorySlotGroupWidget>(
+				StoragePaneWidgetTree->FindWidget(TEXT("Content_Pockets")))
+			: nullptr;
+	URpgInventorySpatialGridWidget* StorageContentPocketsGrid =
+		StorageContentPockets
+			? StorageContentPockets->GetSpatialGridWidget()
+			: nullptr;
 	if (!TestNotNull(
-			TEXT("The real Player screen owns its runtime WidgetTree"),
-			PlayerWidgetTree) ||
+			TEXT("The real Player screen owns its root WidgetTree"),
+			PlayerRootWidgetTree) ||
 		!TestNotNull(
-			TEXT("The real Player WidgetTree contains Gear_Head"),
+			TEXT("The Player pane owns its runtime WidgetTree"),
+			PlayerPaneWidgetTree) ||
+		!TestNotNull(
+			TEXT("The Storage pane owns its independent runtime WidgetTree"),
+			StoragePaneWidgetTree) ||
+		!TestNull(
+			TEXT("The Player activatable root does not directly own Gear_Head"),
+			PlayerRootWidgetTree
+				? PlayerRootWidgetTree->FindWidget(TEXT("Gear_Head"))
+				: nullptr) ||
+		!TestNull(
+			TEXT("The Player activatable root does not directly own Carry_Weapon1"),
+			PlayerRootWidgetTree
+				? PlayerRootWidgetTree->FindWidget(TEXT("Carry_Weapon1"))
+				: nullptr) ||
+		!TestNull(
+			TEXT("The Player activatable root does not directly own Content_Pockets"),
+			PlayerRootWidgetTree
+				? PlayerRootWidgetTree->FindWidget(TEXT("Content_Pockets"))
+				: nullptr) ||
+		!TestNotNull(
+			TEXT("The Player pane WidgetTree contains Gear_Head"),
 			GearHead) ||
 		!TestNotNull(
-			TEXT("The real Player WidgetTree contains Carry_Weapon1"),
+			TEXT("The Player pane WidgetTree contains Carry_Weapon1"),
 			CarryWeapon1) ||
 		!TestNotNull(
-			TEXT("The real Player WidgetTree contains Content_Pockets"),
+			TEXT("The Player pane WidgetTree contains Content_Pockets"),
 			ContentPockets) ||
 		!TestNotNull(
+			TEXT("The Storage pane WidgetTree contains Gear_Head"),
+			StorageGearHead) ||
+		!TestNotNull(
+			TEXT("The Storage pane WidgetTree contains Carry_Weapon1"),
+			StorageCarryWeapon1) ||
+		!TestNotNull(
+			TEXT("The Storage pane WidgetTree contains Content_Pockets"),
+			StorageContentPockets) ||
+		!TestNotNull(
 			TEXT("The authored Content_Pockets host owns its spatial grid"),
-			ContentPocketsGrid))
+			ContentPocketsGrid) ||
+		!TestNotNull(
+			TEXT("The Storage Content_Pockets host owns its spatial grid"),
+			StorageContentPocketsGrid))
 	{
 		return false;
 	}
@@ -806,6 +966,10 @@ bool FRpgPlayerStorageInventoryLifecycleIntegrationTest::RunTest(
 		PlayerWidget->GetInventoryDragDropCoordinator();
 	URpgInventoryPanelNavigationCoordinator* PlayerScreenNavigator =
 		PlayerWidget->GetInventoryPanelNavigator();
+	URpgInventoryDragDropCoordinator* StorageScreenCoordinator =
+		StorageWidget->GetInventoryDragDropCoordinator();
+	URpgInventoryPanelNavigationCoordinator* StorageScreenNavigator =
+		StorageWidget->GetInventoryPanelNavigator();
 	URpgEquipmentSlotViewModel* InitialGearHeadViewModel =
 		PlayerViewModel->GetArmorSlot(ERpgEquipmentSlot::Head);
 	URpgInventorySlotGroupViewModel* InitialCarryWeapon1Group =
@@ -833,6 +997,20 @@ bool FRpgPlayerStorageInventoryLifecycleIntegrationTest::RunTest(
 		!TestNotNull(
 			TEXT("The active Player screen owns one panel navigator"),
 			PlayerScreenNavigator) ||
+		!TestNotNull(
+			TEXT("The active Storage screen owns one drag/drop coordinator"),
+			StorageScreenCoordinator) ||
+		!TestNotNull(
+			TEXT("The active Storage screen owns one panel navigator"),
+			StorageScreenNavigator) ||
+		!TestNotEqual(
+			TEXT("Player and Storage roots retain independent drag/drop coordinators"),
+			PlayerScreenCoordinator,
+			StorageScreenCoordinator) ||
+		!TestNotEqual(
+			TEXT("Player and Storage roots retain independent panel navigators"),
+			PlayerScreenNavigator,
+			StorageScreenNavigator) ||
 		!TestNotNull(
 			TEXT("Gear_Head owns its compiled MVVM view"),
 			GearHeadMvvmView) ||
@@ -918,7 +1096,7 @@ bool FRpgPlayerStorageInventoryLifecycleIntegrationTest::RunTest(
 	TestWorld.PrimeTimerManager();
 	const FName ContentPocketsPanelId(
 		*FString::Printf(
-			TEXT("Content.%s"),
+			TEXT("Player.Content.%s"),
 			*InitialContentPocketsGroup->
 				GetContainerHandle().ToString()));
 	if (!TestEqual(
@@ -1002,7 +1180,7 @@ bool FRpgPlayerStorageInventoryLifecycleIntegrationTest::RunTest(
 		!TestTrue(
 			TEXT("The shared navigator activates authored Gear_Head"),
 			PlayerScreenNavigator->ActivatePanelById(
-				TEXT("Gear.Head"))) ||
+				TEXT("Player.Gear.Head"))) ||
 		!TestEqual(
 			TEXT("Gear navigation resolves the authored Gear_Head leaf"),
 			PlayerScreenNavigator->
@@ -1011,7 +1189,7 @@ bool FRpgPlayerStorageInventoryLifecycleIntegrationTest::RunTest(
 		!TestTrue(
 			TEXT("The shared navigator activates authored Carry_Weapon1"),
 			PlayerScreenNavigator->ActivatePanelById(
-				TEXT("Carry.Weapon1"))) ||
+				TEXT("Player.Carry.Weapon1"))) ||
 		!TestEqual(
 			TEXT("Carry navigation resolves the authored Carry_Weapon1 leaf"),
 			PlayerScreenNavigator->GetActiveCarrySlotWidget(),
@@ -1287,10 +1465,20 @@ bool FRpgPlayerStorageInventoryLifecycleIntegrationTest::RunTest(
 		!VerifyUnboundSources(
 			TEXT("Deactivated Player screen"),
 			PlayerViewModel) ||
+		!VerifyPaneViewModelOwnership(
+			TEXT("Deactivated Player pane"),
+			PlayerInventoryPane,
+			PlayerViewModel,
+			PlayerWidget) ||
 		!TestEqual(
 			TEXT("Storage remains fully registered while its screen stays active"),
 			CountValidListenerHandles(StorageViewModel),
 			4) ||
+		!VerifyPaneViewModelOwnership(
+			TEXT("Still-active Storage pane"),
+			StorageInventoryPane,
+			StorageViewModel,
+			StorageWidget) ||
 		!TestEqual(
 			TEXT("Deactivation retains the screen-owned drag/drop coordinator"),
 			PlayerWidget->GetInventoryDragDropCoordinator(),
@@ -1429,7 +1617,20 @@ bool FRpgPlayerStorageInventoryLifecycleIntegrationTest::RunTest(
 			StorageWidget->IsActivated()) ||
 		!VerifyUnboundSources(
 			TEXT("Deactivated Storage screen"),
-			StorageViewModel))
+			StorageViewModel) ||
+		!VerifyPaneViewModelOwnership(
+			TEXT("Deactivated Storage pane"),
+			StorageInventoryPane,
+			StorageViewModel,
+			StorageWidget) ||
+		!TestEqual(
+			TEXT("Storage deactivation retains its screen-owned drag/drop coordinator"),
+			StorageWidget->GetInventoryDragDropCoordinator(),
+			StorageScreenCoordinator) ||
+		!TestEqual(
+			TEXT("Storage deactivation retains its screen-owned panel navigator"),
+			StorageWidget->GetInventoryPanelNavigator(),
+			StorageScreenNavigator))
 	{
 		return false;
 	}
@@ -1485,19 +1686,29 @@ bool FRpgPlayerStorageInventoryLifecycleIntegrationTest::RunTest(
 	PlayerWidget->ActivateWidget();
 	StorageWidget->ActivateWidget();
 	if (!TestEqual(
-			TEXT("Player pooling retains the same aggregate VM"),
-			PlayerWidget->GetPlayerInventoryViewModel(),
+			TEXT("Player pane pooling retains the same aggregate VM"),
+			PlayerInventoryPane->GetPlayerInventoryViewModel(),
 			PlayerViewModel) ||
 		!TestEqual(
-			TEXT("Storage pooling retains the same aggregate VM"),
-			StorageWidget->GetStoragePlayerInventoryViewModel(),
+			TEXT("Storage pane pooling retains the same aggregate VM"),
+			StorageInventoryPane->GetPlayerInventoryViewModel(),
 			StorageViewModel) ||
 		!VerifyBoundSources(
 			TEXT("Reactivated Player screen"),
 			PlayerViewModel) ||
 		!VerifyBoundSources(
 			TEXT("Reactivated Storage screen"),
-			StorageViewModel))
+			StorageViewModel) ||
+		!VerifyPaneViewModelOwnership(
+			TEXT("Reactivated Player pane"),
+			PlayerInventoryPane,
+			PlayerViewModel,
+			PlayerWidget) ||
+		!VerifyPaneViewModelOwnership(
+			TEXT("Reactivated Storage pane"),
+			StorageInventoryPane,
+			StorageViewModel,
+			StorageWidget))
 	{
 		return false;
 	}
@@ -1542,6 +1753,14 @@ bool FRpgPlayerStorageInventoryLifecycleIntegrationTest::RunTest(
 			TEXT("Reactivation retains the same screen-owned panel navigator"),
 			PlayerWidget->GetInventoryPanelNavigator(),
 			PlayerScreenNavigator) ||
+		!TestEqual(
+			TEXT("Storage reactivation retains its screen-owned drag/drop coordinator"),
+			StorageWidget->GetInventoryDragDropCoordinator(),
+			StorageScreenCoordinator) ||
+		!TestEqual(
+			TEXT("Storage reactivation retains its screen-owned panel navigator"),
+			StorageWidget->GetInventoryPanelNavigator(),
+			StorageScreenNavigator) ||
 		!TestEqual(
 			TEXT("Reactivated Gear_Head reuses its stable child VM"),
 			ReactivatedGearHeadViewModel,
@@ -1694,11 +1913,26 @@ bool FRpgPlayerStorageInventoryLifecycleIntegrationTest::RunTest(
 		VerifyUnboundSources(
 			TEXT("Final Storage cleanup"),
 			StorageViewModel);
+	const bool bFinalPlayerPaneOwnership =
+		VerifyPaneViewModelOwnership(
+			TEXT("Final Player pane pooling state"),
+			PlayerInventoryPane,
+			PlayerViewModel,
+			PlayerWidget);
+	const bool bFinalStoragePaneOwnership =
+		VerifyPaneViewModelOwnership(
+			TEXT("Final Storage pane pooling state"),
+			StorageInventoryPane,
+			StorageViewModel,
+			StorageWidget);
 	PlayerCounters.Unbind(PlayerViewModel);
 	StorageCounters.Unbind(StorageViewModel);
 	PlayerSlate.Reset();
 	StorageSlate.Reset();
-	return bFinalPlayerCleanup && bFinalStorageCleanup;
+	return bFinalPlayerCleanup &&
+		bFinalStorageCleanup &&
+		bFinalPlayerPaneOwnership &&
+		bFinalStoragePaneOwnership;
 }
 
 #endif

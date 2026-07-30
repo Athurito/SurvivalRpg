@@ -915,6 +915,11 @@ void URpgInventoryInteractionScreenWidget::RegisterInventoryScreenNavigationPane
 	(void)Navigator;
 }
 
+FName URpgInventoryInteractionScreenWidget::GetInitialInventoryNavigationPanelId() const
+{
+	return NAME_None;
+}
+
 void URpgInventoryInteractionScreenWidget::AppendInventoryScreenSpatialGrids(
 	TArray<URpgInventorySpatialGridWidget*>& OutGrids) const
 {
@@ -1001,7 +1006,8 @@ void URpgInventoryInteractionScreenWidget::RefreshInventoryScreenNavigationPanel
 
 	InventoryPanelNavigationCoordinator->BeginPanelRefresh();
 	RegisterInventoryScreenNavigationPanels(InventoryPanelNavigationCoordinator);
-	InventoryPanelNavigationCoordinator->EndPanelRefresh();
+	InventoryPanelNavigationCoordinator->EndPanelRefresh(
+		GetInitialInventoryNavigationPanelId());
 }
 
 void URpgInventoryInteractionScreenWidget::QueueDeferredInventoryScreenRefresh()

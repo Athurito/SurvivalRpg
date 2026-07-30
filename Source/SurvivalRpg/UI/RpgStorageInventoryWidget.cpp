@@ -3,15 +3,62 @@
 #include "SurvivalRpg/Inventory/RpgInventoryDragDropCoordinator.h"
 #include "SurvivalRpg/Inventory/RpgInventoryManagerComponent.h"
 #include "SurvivalRpg/Mvvm/Inventory/RpgInventoryPanelViewModel.h"
-#include "SurvivalRpg/Mvvm/Inventory/RpgInventorySlotGroupViewModel.h"
-#include "SurvivalRpg/Mvvm/Inventory/RpgPlayerInventoryViewModel.h"
 #include "SurvivalRpg/UI/RpgInventoryPanelNavigationCoordinator.h"
-#include "SurvivalRpg/UI/RpgInventorySlotGroupPanelWidget.h"
+#include "SurvivalRpg/UI/RpgInventoryScreenPresentationContext.h"
 #include "SurvivalRpg/UI/RpgInventorySpatialGridWidget.h"
+#include "SurvivalRpg/UI/RpgPlayerInventoryPaneWidget.h"
 
 #include UE_INLINE_GENERATED_CPP_BY_NAME(RpgStorageInventoryWidget)
 
 DEFINE_LOG_CATEGORY_STATIC(LogRpgStorageInventoryWidget, Log, All);
+
+URpgPlayerInventoryViewModel*
+URpgStorageInventoryWidget::GetStoragePlayerInventoryViewModel() const
+{
+	return PlayerInventoryPane
+		? PlayerInventoryPane->GetPlayerInventoryViewModel()
+		: nullptr;
+}
+
+void URpgStorageInventoryWidget::NativeOnInitialized()
+{
+	Super::NativeOnInitialized();
+
+	if (PlayerInventoryPane)
+	{
+		PlayerInventoryPane->ReleaseInventoryPresentation();
+	}
+}
+
+void URpgStorageInventoryWidget::NativeConstruct()
+{
+	Super::NativeConstruct();
+
+	if (PlayerInventoryPane)
+	{
+		PlayerInventoryPane->OnNavigationPanelsChanged.RemoveAll(this);
+		PlayerInventoryPane->OnNavigationPanelsChanged.AddUObject(
+			this,
+			&ThisClass::HandlePlayerInventoryPaneNavigationPanelsChanged);
+	}
+}
+
+void URpgStorageInventoryWidget::NativeDestruct()
+{
+	if (PlayerInventoryPane)
+	{
+		PlayerInventoryPane->OnNavigationPanelsChanged.RemoveAll(this);
+	}
+
+	Super::NativeDestruct();
+}
+
+UWidget* URpgStorageInventoryWidget::NativeGetDesiredFocusTarget() const
+{
+	return SecondaryInventoryGrid
+		? SecondaryInventoryGrid
+		: Super::NativeGetDesiredFocusTarget();
+}
 
 void URpgStorageInventoryWidget::ReceiveScreenPayload_Implementation(UObject* Payload)
 {
@@ -22,7 +69,10 @@ void URpgStorageInventoryWidget::BindInventoryScreenPresentation()
 {
 	// CommonGame normally delivers the payload during Initialize, before the activatable widget is pushed.
 	// The shared base has now created the screen-owned interaction objects; this hook performs the one actual bind.
-	BindStorageScreenContext();
+	if (!BindStorageScreenContext())
+	{
+		ResetStorageScreenContext();
+	}
 }
 
 void URpgStorageInventoryWidget::UnbindInventoryScreenPresentation()
@@ -32,22 +82,20 @@ void URpgStorageInventoryWidget::UnbindInventoryScreenPresentation()
 
 void URpgStorageInventoryWidget::ForwardInventoryInteractionContextToChildren()
 {
+	if (!bStorageContextBound)
+	{
+		return;
+	}
+
 	URpgInventoryDragDropCoordinator* Coordinator = GetScreenDragDropCoordinator();
 	URpgInventoryPanelNavigationCoordinator* Navigator = GetScreenPanelNavigationCoordinator();
-	if (PlayerGroupsPanel)
+	if (PlayerInventoryPane)
 	{
-		PlayerGroupsPanel->SetDragDropCoordinator(Coordinator);
-		PlayerGroupsPanel->SetPanelNavigationCoordinator(Navigator, TEXT("Player"));
-
-		TArray<URpgInventorySpatialGridWidget*> PlayerGrids;
-		PlayerGroupsPanel->GetSpatialGridWidgets(PlayerGrids);
-		for (URpgInventorySpatialGridWidget* PlayerGrid : PlayerGrids)
-		{
-			if (PlayerGrid)
-			{
-				PlayerGrid->SetInventoryPresentationHost(this);
-			}
-		}
+		FRpgInventoryScreenPresentationContext Context;
+		Context.DragDropCoordinator = Coordinator;
+		Context.PanelNavigationCoordinator = Navigator;
+		Context.PresentationHost = this;
+		PlayerInventoryPane->SetInteractionContext(Context, TEXT("Player"));
 	}
 
 	if (SecondaryInventoryGrid)
@@ -116,6 +164,18 @@ bool URpgStorageInventoryWidget::BindStorageScreenContext()
 
 	EnsureInventoryInteractionObjects();
 	URpgInventoryDragDropCoordinator* Coordinator = GetScreenDragDropCoordinator();
+	URpgInventoryPanelNavigationCoordinator* Navigator = GetScreenPanelNavigationCoordinator();
+	if (!PlayerInventoryPane || !Coordinator || !Navigator)
+	{
+		UE_LOG(
+			LogRpgStorageInventoryWidget,
+			Error,
+			TEXT("%s rejected Storage presentation because the required player pane or screen interaction context is missing."),
+			*GetNameSafe(this));
+		ResetStorageScreenContext();
+		return false;
+	}
+
 	if (GetOwningPlayer())
 	{
 		URpgInventoryManagerComponent* CanonicalPlayerInventory =
@@ -139,14 +199,16 @@ bool URpgStorageInventoryWidget::BindStorageScreenContext()
 
 	// Set the guard before view-model callbacks can run so an incidental reentrant payload delivery cannot double-bind.
 	bStorageContextBound = true;
+	FRpgInventoryScreenPresentationContext PanePresentationContext;
+	PanePresentationContext.DragDropCoordinator = Coordinator;
+	PanePresentationContext.PanelNavigationCoordinator = Navigator;
+	PanePresentationContext.PresentationHost = this;
+	PlayerInventoryPane->BindPlayerInventory(
+		GetOwningPlayer(),
+		PanePresentationContext,
+		TEXT("Player"));
 
-	EnsureStoragePlayerViewModel();
-	if (StoragePlayerInventoryViewModel)
-	{
-		StoragePlayerInventoryViewModel->BindPlayerController(GetOwningPlayer());
-	}
 	EnsureSecondaryPanelViewModel();
-	RefreshCombinedPlayerGroups();
 	BindSecondarySpatialGrid();
 
 	++StoragePresentationBindGeneration;
@@ -161,10 +223,9 @@ void URpgStorageInventoryWidget::RegisterInventoryScreenNavigationPanels(
 		return;
 	}
 
-	if (PlayerGroupsPanel)
+	if (PlayerInventoryPane)
 	{
-		PlayerGroupsPanel->SetDragDropCoordinator(GetScreenDragDropCoordinator());
-		PlayerGroupsPanel->SetPanelNavigationCoordinator(Navigator, TEXT("Player"));
+		PlayerInventoryPane->RegisterNavigationPanels(Navigator);
 	}
 
 	if (SecondaryInventoryGrid && SecondaryInventory)
@@ -175,12 +236,17 @@ void URpgStorageInventoryWidget::RegisterInventoryScreenNavigationPanels(
 	}
 }
 
+FName URpgStorageInventoryWidget::GetInitialInventoryNavigationPanelId() const
+{
+	return TEXT("Secondary.Root");
+}
+
 void URpgStorageInventoryWidget::AppendInventoryScreenSpatialGrids(
 	TArray<URpgInventorySpatialGridWidget*>& OutGrids) const
 {
-	if (PlayerGroupsPanel)
+	if (PlayerInventoryPane)
 	{
-		PlayerGroupsPanel->GetSpatialGridWidgets(OutGrids);
+		PlayerInventoryPane->AppendSpatialGrids(OutGrids);
 	}
 
 	if (SecondaryInventoryGrid)
@@ -189,25 +255,70 @@ void URpgStorageInventoryWidget::AppendInventoryScreenSpatialGrids(
 	}
 }
 
-void URpgStorageInventoryWidget::HandleStoragePlayerSlotGroupsChanged()
+bool URpgStorageInventoryWidget::RouteInventoryPayloadToScreenSpecificTarget(
+	const FRpgInventoryDragPayload& Payload,
+	FVector2D GhostCenterScreenPosition,
+	bool bCommit,
+	bool& bOutTargetAddressed)
 {
-	RefreshCombinedPlayerGroups();
-	QueueDeferredInventoryScreenRefresh();
-}
-
-void URpgStorageInventoryWidget::EnsureStoragePlayerViewModel()
-{
-	if (StoragePlayerInventoryViewModel)
+	bOutTargetAddressed = false;
+	UWidget* Target = nullptr;
+	if (!PlayerInventoryPane ||
+		!PlayerInventoryPane->ResolveNonSpatialDropTarget(
+			GhostCenterScreenPosition,
+			Target) ||
+		!Target)
 	{
-		return;
+		return false;
 	}
 
-	StoragePlayerInventoryViewModel = NewObject<URpgPlayerInventoryViewModel>(this);
-	if (StoragePlayerInventoryViewModel)
+	bOutTargetAddressed = true;
+	SwitchActivePointerDropTarget(Target);
+	return PlayerInventoryPane->ApplyPayloadToNonSpatialDropTarget(
+		Target,
+		Payload,
+		GhostCenterScreenPosition,
+		bCommit);
+}
+
+void URpgStorageInventoryWidget::ClearInventoryScreenSpecificDragPreviews()
+{
+	if (PlayerInventoryPane)
 	{
-		StoragePlayerInventoryViewModel->OnSlotGroupsChanged.AddUniqueDynamic(
-			this,
-			&ThisClass::HandleStoragePlayerSlotGroupsChanged);
+		PlayerInventoryPane->ClearExternalDragPreviews();
+	}
+}
+
+bool URpgStorageInventoryWidget::UpdateInventoryScreenSpecificControllerDragVisual(
+	const FRpgInventoryDragPayload& Payload)
+{
+	FVector2D AnchorScreenPosition = FVector2D::ZeroVector;
+	if (!PlayerInventoryPane ||
+		!PlayerInventoryPane->ResolveControllerDragVisualAnchor(
+			AnchorScreenPosition))
+	{
+		return false;
+	}
+
+	UpdateFreePointerDragVisual(
+		Payload,
+		AnchorScreenPosition,
+		nullptr,
+		true);
+	return true;
+}
+
+void URpgStorageInventoryWidget::RefreshInventoryScreenSpecificInteractionPresentation(
+	ERpgInventoryInteractionPreviewState PreviewState,
+	bool bHasPayload,
+	bool bPendingRequest)
+{
+	if (PlayerInventoryPane)
+	{
+		PlayerInventoryPane->RefreshInteractionPresentation(
+			PreviewState,
+			bHasPayload,
+			bPendingRequest);
 	}
 }
 
@@ -217,30 +328,6 @@ void URpgStorageInventoryWidget::EnsureSecondaryPanelViewModel()
 	{
 		SecondaryPanelViewModel = NewObject<URpgInventoryPanelViewModel>(this);
 	}
-}
-
-void URpgStorageInventoryWidget::RefreshCombinedPlayerGroups()
-{
-	if (!PlayerGroupsPanel)
-	{
-		return;
-	}
-
-	TArray<URpgInventorySlotGroupViewModel*> CombinedGroups;
-	if (InventoryScreenPayload && InventoryScreenPayload->PrimaryInventory)
-	{
-		if (StoragePlayerInventoryViewModel)
-		{
-			CombinedGroups = StoragePlayerInventoryViewModel->GetCarryGroups();
-			CombinedGroups.Append(StoragePlayerInventoryViewModel->GetInventoryGroups());
-		}
-	}
-
-	PlayerGroupsPanel->SetDragDropCoordinator(GetScreenDragDropCoordinator());
-	PlayerGroupsPanel->SetPanelNavigationCoordinator(
-		GetScreenPanelNavigationCoordinator(),
-		TEXT("Player"));
-	PlayerGroupsPanel->SetSlotGroupItems(CombinedGroups);
 }
 
 void URpgStorageInventoryWidget::BindSecondarySpatialGrid()
@@ -288,11 +375,9 @@ void URpgStorageInventoryWidget::ResetStorageScreenContext()
 		Navigator->ClearPanels();
 	}
 
-	if (PlayerGroupsPanel)
+	if (PlayerInventoryPane)
 	{
-		PlayerGroupsPanel->SetPanelNavigationCoordinator(nullptr, NAME_None);
-		PlayerGroupsPanel->SetDragDropCoordinator(nullptr);
-		PlayerGroupsPanel->SetSlotGroupItems({});
+		PlayerInventoryPane->ReleaseInventoryPresentation();
 	}
 
 	if (SecondaryInventoryGrid)
@@ -309,13 +394,16 @@ void URpgStorageInventoryWidget::ResetStorageScreenContext()
 	{
 		SecondaryPanelViewModel->UnbindInventory();
 	}
-	if (StoragePlayerInventoryViewModel)
-	{
-		StoragePlayerInventoryViewModel->UnbindPlayerInventory();
-	}
-
 	InventoryScreenPayload = nullptr;
 	PrimaryInventory = nullptr;
 	SecondaryInventory = nullptr;
 	SecondaryRootHandle = FRpgInventoryContainerHandle();
+}
+
+void URpgStorageInventoryWidget::HandlePlayerInventoryPaneNavigationPanelsChanged()
+{
+	if (bStorageContextBound)
+	{
+		QueueDeferredInventoryScreenRefresh();
+	}
 }

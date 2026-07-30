@@ -8,16 +8,16 @@
 
 class URpgInventoryManagerComponent;
 class URpgInventoryPanelViewModel;
-class URpgInventorySlotGroupPanelWidget;
 class URpgInventorySpatialGridWidget;
+class URpgPlayerInventoryPaneWidget;
 class URpgPlayerInventoryViewModel;
 
 /**
  * CommonUI storage/loot screen presenter shared by chests, corpses, and dropped-loot actors.
  *
  * The widget keeps gameplay truth in the two inventory manager components from the screen payload. It projects the
- * owning player's carry/content groups and one exact secondary root grid through one screen-owned drag session and
- * controller panel navigator. It deliberately does not inherit the Player screen's Gear, Carry, or Actionbar hosts.
+ * complete owning-player inventory pane and one exact secondary root grid through one screen-owned drag session and
+ * controller panel navigator. Gameplay mutation remains routed through the shared screen coordinator and UI actions.
  */
 UCLASS(Abstract, Blueprintable)
 class SURVIVALRPG_API URpgStorageInventoryWidget : public URpgInventoryInteractionScreenWidget, public IRpgUIScreenPayloadReceiver
@@ -39,16 +39,21 @@ public:
 	 */
 	uint32 GetStoragePresentationBindGeneration() const { return StoragePresentationBindGeneration; }
 
-	/**
-	 * Storage-owned aggregate projection for the player side.
-	 * The VM is presentation-only, has this screen as its Outer, and remains stable across CommonUI pooling.
-	 */
-	URpgPlayerInventoryViewModel* GetStoragePlayerInventoryViewModel() const
-	{
-		return StoragePlayerInventoryViewModel;
-	}
+	/** Deprecated compatibility accessor; the passive player pane now owns the stable aggregate projection. */
+	UFUNCTION(
+		BlueprintPure,
+		Category = "Inventory|Storage",
+		meta = (
+			DeprecatedFunction,
+			DeprecationMessage = "Use PlayerInventoryPane.GetPlayerInventoryViewModel instead."))
+	URpgPlayerInventoryViewModel* GetStoragePlayerInventoryViewModel() const;
 
 protected:
+	virtual void NativeOnInitialized() override;
+	virtual void NativeConstruct() override;
+	virtual void NativeDestruct() override;
+	virtual UWidget* NativeGetDesiredFocusTarget() const override;
+
 	//~IRpgUIScreenPayloadReceiver interface
 	virtual void ReceiveScreenPayload_Implementation(UObject* Payload) override;
 	//~End of IRpgUIScreenPayloadReceiver interface
@@ -58,16 +63,28 @@ protected:
 	virtual void ForwardInventoryInteractionContextToChildren() override;
 	virtual void RegisterInventoryScreenNavigationPanels(
 		URpgInventoryPanelNavigationCoordinator* Navigator) override;
+	virtual FName GetInitialInventoryNavigationPanelId() const override;
 	virtual void AppendInventoryScreenSpatialGrids(
 		TArray<URpgInventorySpatialGridWidget*>& OutGrids) const override;
+	virtual bool RouteInventoryPayloadToScreenSpecificTarget(
+		const FRpgInventoryDragPayload& Payload,
+		FVector2D GhostCenterScreenPosition,
+		bool bCommit,
+		bool& bOutTargetAddressed) override;
+	virtual void ClearInventoryScreenSpecificDragPreviews() override;
+	virtual bool UpdateInventoryScreenSpecificControllerDragVisual(
+		const FRpgInventoryDragPayload& Payload) override;
+	virtual void RefreshInventoryScreenSpecificInteractionPresentation(
+		ERpgInventoryInteractionPreviewState PreviewState,
+		bool bHasPayload,
+		bool bPendingRequest) override;
 
 	/**
-	 * Canonical combined player-side panel authored in CUI_StorageSpatial.
-	 * Carry roles are listed first, followed by Pockets and equipped item-owned grids.
-	 * This is required static screen composition; dynamic group children still reflect runtime equipment state.
+	 * Complete passive player-inventory pane authored in CUI_StorageSpatial.
+	 * The pane owns only read-only presentation state; this activatable screen retains interaction and input ownership.
 	 */
 	UPROPERTY(BlueprintReadOnly, meta = (BindWidget))
-	TObjectPtr<URpgInventorySlotGroupPanelWidget> PlayerGroupsPanel = nullptr;
+	TObjectPtr<URpgPlayerInventoryPaneWidget> PlayerInventoryPane = nullptr;
 
 	/**
 	 * Canonical authored spatial root grid for the payload's secondary inventory (10x6 by default).
@@ -85,14 +102,10 @@ private:
 	 * Returns true only when a complete context was bound during this call.
 	 */
 	bool BindStorageScreenContext();
-	void EnsureStoragePlayerViewModel();
 	void EnsureSecondaryPanelViewModel();
-	void RefreshCombinedPlayerGroups();
 	void BindSecondarySpatialGrid();
 	void ResetStorageScreenContext();
-
-	UFUNCTION()
-	void HandleStoragePlayerSlotGroupsChanged();
+	void HandlePlayerInventoryPaneNavigationPanelsChanged();
 
 	/** Validated payload staged during async screen initialization and retained only until deactivation or replacement. */
 	UPROPERTY(Transient)
@@ -105,10 +118,6 @@ private:
 	/** View model filtered to SecondaryRootHandle; it owns presentation state only. */
 	UPROPERTY(Transient)
 	TObjectPtr<URpgInventoryPanelViewModel> SecondaryPanelViewModel = nullptr;
-
-	/** Storage-owned read-only projection of the owning player's carry and content groups. */
-	UPROPERTY(Transient)
-	TObjectPtr<URpgPlayerInventoryViewModel> StoragePlayerInventoryViewModel = nullptr;
 
 	UPROPERTY(Transient)
 	TObjectPtr<URpgInventoryManagerComponent> SecondaryInventory = nullptr;

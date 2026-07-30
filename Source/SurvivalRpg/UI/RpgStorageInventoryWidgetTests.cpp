@@ -11,8 +11,8 @@
 #include "SurvivalRpg/UI/RpgInventoryInteractionScreenWidget.h"
 #include "SurvivalRpg/UI/RpgInventoryPanelNavigationCoordinator.h"
 #include "SurvivalRpg/UI/RpgPlayerInventoryWidget.h"
-#include "SurvivalRpg/UI/RpgInventorySlotGroupPanelWidget.h"
 #include "SurvivalRpg/UI/RpgInventorySpatialGridWidget.h"
+#include "SurvivalRpg/UI/RpgPlayerInventoryPaneWidget.h"
 #include "SurvivalRpg/UI/RpgUIScreenPayload.h"
 
 #include "Blueprint/UserWidget.h"
@@ -124,7 +124,17 @@ namespace RpgStorageInventoryWidgetTests
 			TEXT("/Game/SurvivalRpg/UI/CUI_StorageSpatial.CUI_StorageSpatial_C"));
 	}
 
-	int32 CountDirectPlayerInventoryViewModels(const UObject* Outer)
+	UClass* LoadPlayerInventoryPaneClass()
+	{
+		return LoadClass<URpgPlayerInventoryPaneWidget>(
+			nullptr,
+			TEXT(
+				"/Game/SurvivalRpg/Inventory/UI/"
+				"CUI_PlayerInventoryPane.CUI_PlayerInventoryPane_C"));
+	}
+
+	template <typename ObjectType>
+	int32 CountDirectObjectsOfClass(const UObject* Outer)
 	{
 		TArray<UObject*> DirectChildren;
 		GetObjectsWithOuter(Outer, DirectChildren, EGetObjectsFlags::None);
@@ -132,7 +142,7 @@ namespace RpgStorageInventoryWidgetTests
 		int32 Count = 0;
 		for (const UObject* Candidate : DirectChildren)
 		{
-			if (Candidate && Candidate->IsA<URpgPlayerInventoryViewModel>())
+			if (Candidate && Candidate->IsA<ObjectType>())
 			{
 				++Count;
 			}
@@ -172,7 +182,9 @@ bool FRpgStorageSpatialCompositionTest::RunTest(const FString& Parameters)
 	}
 
 	UClass* StorageWidgetClass = LoadStorageSpatialWidgetClass();
-	if (!TestNotNull(TEXT("Authored Storage Spatial class loads"), StorageWidgetClass))
+	UClass* PlayerPaneClass = LoadPlayerInventoryPaneClass();
+	if (!TestNotNull(TEXT("Authored Storage Spatial class loads"), StorageWidgetClass) ||
+		!TestNotNull(TEXT("Canonical Player Inventory Pane class loads"), PlayerPaneClass))
 	{
 		return false;
 	}
@@ -199,6 +211,14 @@ bool FRpgStorageSpatialCompositionTest::RunTest(const FString& Parameters)
 		TEXT("The authored Storage class does not reintroduce the Player screen contract"),
 		StorageWidgetClass->IsChildOf(
 			URpgPlayerInventoryWidget::StaticClass()));
+	TestFalse(
+		TEXT("The reusable Player Inventory Pane is not an activatable inventory screen"),
+		PlayerPaneClass->IsChildOf(
+			URpgInventoryInteractionScreenWidget::StaticClass()));
+	TestFalse(
+		TEXT("The reusable Player Inventory Pane never receives screen payloads"),
+		PlayerPaneClass->ImplementsInterface(
+			URpgUIScreenPayloadReceiver::StaticClass()));
 
 	URpgStorageInventoryWidget* Widget =
 		CreateWidget<URpgStorageInventoryWidget>(TestWorld.GetTestWorld(), StorageWidgetClass);
@@ -207,7 +227,9 @@ bool FRpgStorageSpatialCompositionTest::RunTest(const FString& Parameters)
 		return false;
 	}
 
-	UWidget* PlayerPanel = Widget->GetWidgetFromName(TEXT("PlayerGroupsPanel"));
+	URpgPlayerInventoryPaneWidget* PlayerPane =
+		Cast<URpgPlayerInventoryPaneWidget>(
+			Widget->GetWidgetFromName(TEXT("PlayerInventoryPane")));
 	UWidget* SecondaryGrid = Widget->GetWidgetFromName(TEXT("SecondaryInventoryGrid"));
 	UWidget* DragVisualCanvas = Widget->GetWidgetFromName(TEXT("DragVisualCanvas"));
 	UOverlay* RootOverlay = Cast<UOverlay>(Widget->GetWidgetFromName(TEXT("RootOverlay")));
@@ -220,22 +242,26 @@ bool FRpgStorageSpatialCompositionTest::RunTest(const FString& Parameters)
 	TestTrue(
 		TEXT("ActionBar uses CommonUI's bound action bar"),
 		ActionBar && ActionBar->IsA<UCommonBoundActionBar>());
-	TestTrue(
-		TEXT("PlayerGroupsPanel has the aggregate spatial panel type"),
-		PlayerPanel && PlayerPanel->IsA<URpgInventorySlotGroupPanelWidget>());
+	TestEqual(
+		TEXT("PlayerInventoryPane uses the exact canonical reusable Pane class"),
+		PlayerPane ? PlayerPane->GetClass() : nullptr,
+		PlayerPaneClass);
+	TestNull(
+		TEXT("Legacy reduced PlayerGroupsPanel is absent"),
+		Widget->GetWidgetFromName(TEXT("PlayerGroupsPanel")));
 	TestTrue(
 		TEXT("SecondaryInventoryGrid has the exact spatial grid type"),
 		SecondaryGrid && SecondaryGrid->IsA<URpgInventorySpatialGridWidget>());
-	const FObjectPropertyBase* PlayerPanelProperty = FindFProperty<FObjectPropertyBase>(
+	const FObjectPropertyBase* PlayerPaneProperty = FindFProperty<FObjectPropertyBase>(
 		URpgStorageInventoryWidget::StaticClass(),
-		TEXT("PlayerGroupsPanel"));
+		TEXT("PlayerInventoryPane"));
 	const FObjectPropertyBase* SecondaryGridProperty = FindFProperty<FObjectPropertyBase>(
 		URpgStorageInventoryWidget::StaticClass(),
 		TEXT("SecondaryInventoryGrid"));
 	TestTrue(
-		TEXT("PlayerGroupsPanel is bound into the native presenter property"),
-		PlayerPanelProperty &&
-			PlayerPanelProperty->GetObjectPropertyValue_InContainer(Widget) == PlayerPanel);
+		TEXT("PlayerInventoryPane is bound into the native presenter property"),
+		PlayerPaneProperty &&
+			PlayerPaneProperty->GetObjectPropertyValue_InContainer(Widget) == PlayerPane);
 	TestTrue(
 		TEXT("SecondaryInventoryGrid is bound into the native presenter property"),
 		SecondaryGridProperty &&
@@ -306,6 +332,13 @@ bool FRpgStorageInventoryWidgetContextLifecycleTest::RunTest(const FString& Para
 	{
 		return false;
 	}
+	URpgPlayerInventoryPaneWidget* PlayerPane =
+		Cast<URpgPlayerInventoryPaneWidget>(
+			Widget->GetWidgetFromName(TEXT("PlayerInventoryPane")));
+	if (!TestNotNull(TEXT("Storage authors the complete reusable player Pane"), PlayerPane))
+	{
+		return false;
+	}
 
 	URpgInventoryScreenPayload* PayloadA = MakePayload(Widget, PrimaryA, SecondaryA);
 	IRpgUIScreenPayloadReceiver::Execute_ReceiveScreenPayload(Widget, PayloadA);
@@ -343,41 +376,65 @@ bool FRpgStorageInventoryWidgetContextLifecycleTest::RunTest(const FString& Para
 		TEXT("The panel navigator is owned by the Storage screen"),
 		PanelNavigator->GetOuter(),
 		static_cast<UObject*>(Widget));
+	TestEqual(
+		TEXT("Storage owns exactly one direct drag/drop coordinator"),
+		CountDirectObjectsOfClass<URpgInventoryDragDropCoordinator>(Widget),
+		1);
+	TestEqual(
+		TEXT("Storage owns exactly one direct panel navigator"),
+		CountDirectObjectsOfClass<URpgInventoryPanelNavigationCoordinator>(Widget),
+		1);
+	TestEqual(
+		TEXT("The passive player Pane owns no drag/drop coordinator"),
+		CountDirectObjectsOfClass<URpgInventoryDragDropCoordinator>(PlayerPane),
+		0);
+	TestEqual(
+		TEXT("The passive player Pane owns no panel navigator"),
+		CountDirectObjectsOfClass<URpgInventoryPanelNavigationCoordinator>(PlayerPane),
+		0);
+	TestEqual(
+		TEXT("Storage initially selects the secondary root panel"),
+		PanelNavigator->GetActivePanelId(),
+		FName(TEXT("Secondary.Root")));
 
 	URpgPlayerInventoryViewModel* StoragePlayerViewModel =
 		Widget->GetStoragePlayerInventoryViewModel();
 	if (!TestNotNull(
-		TEXT("Storage screen owns an aggregate player-side view model"),
+		TEXT("Storage exposes the Pane-owned aggregate player view model"),
 		StoragePlayerViewModel))
 	{
 		return false;
 	}
 	TestEqual(
-		TEXT("Storage player-side VM is owned by the Storage screen"),
+		TEXT("Storage player-side VM is owned by the reusable Pane"),
 		StoragePlayerViewModel->GetOuter(),
-		static_cast<UObject*>(Widget));
+		static_cast<UObject*>(PlayerPane));
 	TestEqual(
-		TEXT("Storage screen owns exactly one direct aggregate player-side VM"),
-		CountDirectPlayerInventoryViewModels(Widget),
+		TEXT("Storage screen owns no duplicate direct aggregate player VM"),
+		CountDirectObjectsOfClass<URpgPlayerInventoryViewModel>(Widget),
+		0);
+	TestEqual(
+		TEXT("Storage player Pane owns exactly one stable aggregate player VM"),
+		CountDirectObjectsOfClass<URpgPlayerInventoryViewModel>(PlayerPane),
 		1);
 	TestEqual(
-		TEXT("Storage binds its slot-group presenter delegate exactly once"),
+		TEXT("Player Pane binds its slot-group presenter delegate exactly once"),
 		CountDelegateBindingsTo(
 			StoragePlayerViewModel->OnSlotGroupsChanged,
-			Widget),
+			PlayerPane),
 		1);
 	TestEqual(
-		TEXT("Storage never binds the Player screen's gear presenter delegate"),
+		TEXT("Player Pane binds its gear presenter delegate exactly once"),
 		CountDelegateBindingsTo(
 			StoragePlayerViewModel->OnGearSlotsChanged,
-			Widget),
-		0);
+			PlayerPane),
+		1);
 	TestEqual(
-		TEXT("Storage never binds the Player screen's actionbar presenter delegate"),
+		TEXT("Player Pane binds its actionbar presenter delegate exactly once"),
 		CountDelegateBindingsTo(
 			StoragePlayerViewModel->OnActionBarSlotsChanged,
-			Widget),
-		0);
+			PlayerPane),
+		1);
 
 	UClass* PlayerWidgetClass = LoadClass<URpgPlayerInventoryWidget>(
 		nullptr,
@@ -391,7 +448,7 @@ bool FRpgStorageInventoryWidgetContextLifecycleTest::RunTest(const FString& Para
 		TEXT("Authored Player screen initializes beside Storage"),
 		PlayerWidget) ||
 		!TestNotNull(
-			TEXT("Player screen owns its aggregate VM"),
+			TEXT("Player screen exposes its Pane-owned aggregate VM"),
 			PlayerWidget ? PlayerWidget->GetPlayerInventoryViewModel() : nullptr))
 	{
 		return false;
@@ -488,7 +545,7 @@ bool FRpgStorageInventoryWidgetContextLifecycleTest::RunTest(const FString& Para
 		Widget->GetInventoryPanelNavigator(),
 		PanelNavigator);
 	TestEqual(
-		TEXT("Deactivation retains the Storage-owned aggregate VM for CommonUI pooling"),
+		TEXT("Deactivation retains the Pane-owned aggregate VM for CommonUI pooling"),
 		Widget->GetStoragePlayerInventoryViewModel(),
 		StoragePlayerViewModel);
 	TestNull(TEXT("Deactivation releases the retained payload"), Widget->GetInventoryScreenPayload());
@@ -516,7 +573,7 @@ bool FRpgStorageInventoryWidgetContextLifecycleTest::RunTest(const FString& Para
 		Widget->GetInventoryPanelNavigator(),
 		PanelNavigator);
 	TestEqual(
-		TEXT("Pool reactivation reuses the single Storage-owned aggregate VM"),
+		TEXT("Pool reactivation reuses the single Pane-owned aggregate VM"),
 		Widget->GetStoragePlayerInventoryViewModel(),
 		StoragePlayerViewModel);
 	TestNull(TEXT("Reactivation does not resurrect a stale payload"), Widget->GetInventoryScreenPayload());
@@ -535,7 +592,7 @@ bool FRpgStorageInventoryWidgetContextLifecycleTest::RunTest(const FString& Para
 		Widget->GetInventoryPanelNavigator(),
 		PanelNavigator);
 	TestEqual(
-		TEXT("Fresh payload after pool reactivation preserves the Storage-owned aggregate VM"),
+		TEXT("Fresh payload after pool reactivation preserves the Pane-owned aggregate VM"),
 		Widget->GetStoragePlayerInventoryViewModel(),
 		StoragePlayerViewModel);
 	TestEqual(

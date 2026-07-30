@@ -20,18 +20,18 @@ class URpgCraftingRecipeDefinition;
 class URpgCraftingStationComponent;
 class URpgCraftingStationViewModel;
 class URpgInventoryManagerComponent;
-class URpgInventorySlotGroupPanelWidget;
 class URpgInventorySpatialGridWidget;
 class URpgInventorySpatialPaneWidget;
 class URpgInventoryUiActionComponent;
+class URpgPlayerInventoryPaneWidget;
 class URpgPlayerInventoryViewModel;
 
 /**
  * Native CommonUI presenter for one crafting-station interaction.
  *
- * This screen validates the explicit station payload, owns stable read-only crafting and player-layout view models,
- * and connects the authored recipe/details/player/output leaves. Every gameplay mutation is forwarded as a typed
- * intent through the owning controller's URpgInventoryUiActionComponent.
+ * This screen validates the explicit station payload, owns the stable read-only crafting view model, and connects the
+ * authored recipe/details/player-pane/output leaves. Every gameplay mutation is forwarded as a typed intent through
+ * the owning controller's URpgInventoryUiActionComponent.
  */
 UCLASS(Abstract, Blueprintable)
 class SURVIVALRPG_API URpgCraftingStationWidget
@@ -55,12 +55,14 @@ public:
 		return CraftingViewModel.Get();
 	}
 
-	/** Stable screen-owned player-layout projection used by the authored groups panel. */
-	UFUNCTION(BlueprintPure, Category = "Crafting|Screen")
-	URpgPlayerInventoryViewModel* GetCraftingPlayerInventoryViewModel() const
-	{
-		return PlayerInventoryViewModel.Get();
-	}
+	/** Deprecated compatibility accessor; the passive player pane now owns the stable aggregate projection. */
+	UFUNCTION(
+		BlueprintPure,
+		Category = "Crafting|Screen",
+		meta = (
+			DeprecatedFunction,
+			DeprecationMessage = "Use PlayerInventoryPane.GetPlayerInventoryViewModel instead."))
+	URpgPlayerInventoryViewModel* GetCraftingPlayerInventoryViewModel() const;
 
 	/** Exact station-output pane used by the canonical authored screen. */
 	UFUNCTION(BlueprintPure, Category = "Crafting|Screen")
@@ -120,13 +122,25 @@ protected:
 		URpgInventoryPanelNavigationCoordinator* Navigator) override;
 	virtual void AppendInventoryScreenSpatialGrids(
 		TArray<URpgInventorySpatialGridWidget*>& OutGrids) const override;
+	virtual bool RouteInventoryPayloadToScreenSpecificTarget(
+		const FRpgInventoryDragPayload& Payload,
+		FVector2D GhostCenterScreenPosition,
+		bool bCommit,
+		bool& bOutTargetAddressed) override;
+	virtual void ClearInventoryScreenSpecificDragPreviews() override;
+	virtual bool UpdateInventoryScreenSpecificControllerDragVisual(
+		const FRpgInventoryDragPayload& Payload) override;
+	virtual void RefreshInventoryScreenSpecificInteractionPresentation(
+		ERpgInventoryInteractionPreviewState PreviewState,
+		bool bHasPayload,
+		bool bPendingRequest) override;
 
 	/**
-	 * Authored player-side spatial groups. Dynamic group children reflect equipped containers, while this host and
-	 * its placement remain static and visible in CUI_CraftingStationSpatial.
+	 * Complete passive player-inventory pane authored in CUI_CraftingStationSpatial.
+	 * The pane owns only read-only presentation state; this activatable screen retains interaction and input ownership.
 	 */
 	UPROPERTY(BlueprintReadOnly, meta = (BindWidget))
-	TObjectPtr<URpgInventorySlotGroupPanelWidget> PlayerGroupsPanel = nullptr;
+	TObjectPtr<URpgPlayerInventoryPaneWidget> PlayerInventoryPane = nullptr;
 
 	/** Authored reusable pane bound to the station output root. */
 	UPROPERTY(BlueprintReadOnly, meta = (BindWidget))
@@ -231,7 +245,6 @@ private:
 	void UnbindViewModelDelegates();
 	void BindAuthoredControlEvents();
 	void UnbindAuthoredControlEvents();
-	void RefreshPlayerGroups();
 	void RefreshRecipeItems();
 	void RefreshSelectedRecipePresentation();
 	void RefreshJobItems();
@@ -254,6 +267,7 @@ private:
 	void HandleQuantityTenClicked();
 	void HandleQuantityMaxClicked();
 	void HandleJobProgressTimer();
+	void HandlePlayerInventoryPaneNavigationPanelsChanged();
 
 	UFUNCTION()
 	void HandleAutoDepositCheckStateChanged(bool bChecked);
@@ -266,9 +280,6 @@ private:
 
 	UFUNCTION()
 	void HandleJobsChanged();
-
-	UFUNCTION()
-	void HandlePlayerSlotGroupsChanged();
 
 	UPROPERTY(Transient)
 	TObjectPtr<URpgCraftingStationScreenPayload> CraftingScreenPayload = nullptr;
@@ -287,9 +298,6 @@ private:
 
 	UPROPERTY(Transient)
 	TObjectPtr<URpgCraftingStationViewModel> CraftingViewModel = nullptr;
-
-	UPROPERTY(Transient)
-	TObjectPtr<URpgPlayerInventoryViewModel> PlayerInventoryViewModel = nullptr;
 
 	UPROPERTY(Transient)
 	FRpgInventoryContainerHandle OutputPaneContainerHandle;

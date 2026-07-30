@@ -129,7 +129,8 @@ void URpgInventoryPanelNavigationCoordinator::BeginPanelRefresh()
 	ClearPanels();
 }
 
-void URpgInventoryPanelNavigationCoordinator::EndPanelRefresh()
+void URpgInventoryPanelNavigationCoordinator::EndPanelRefresh(
+	FName PreferredInitialPanelId)
 {
 	if (!bPanelRefreshInProgress)
 	{
@@ -141,6 +142,10 @@ void URpgInventoryPanelNavigationCoordinator::EndPanelRefresh()
 	RetainedActivePanelId = NAME_None;
 
 	bool bRestoredPanel = !DesiredPanelId.IsNone() && ActivatePanelById(DesiredPanelId);
+	if (!bRestoredPanel && !PreferredInitialPanelId.IsNone())
+	{
+		bRestoredPanel = ActivatePanelById(PreferredInitialPanelId);
+	}
 	if (!bRestoredPanel && Panels.Num() > 0)
 	{
 		bRestoredPanel = ActivatePanelByIndex(0);

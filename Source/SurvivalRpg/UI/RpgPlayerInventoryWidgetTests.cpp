@@ -23,6 +23,7 @@
 #include "SurvivalRpg/UI/RpgInventoryDragVisualWidget.h"
 #include "SurvivalRpg/UI/RpgInventoryInteractionScreenWidget.h"
 #include "SurvivalRpg/UI/RpgLoadoutSlotWidgets.h"
+#include "SurvivalRpg/UI/RpgPlayerInventoryPaneWidget.h"
 #include "SurvivalRpg/UI/RpgInventorySlotGroupWidget.h"
 #include "SurvivalRpg/UI/RpgInventorySpatialGridWidget.h"
 #include "SurvivalRpg/UI/RpgInventorySpatialItemWidget.h"
@@ -418,7 +419,11 @@ bool FRpgPlayerInventoryViewModelCompositionTest::RunTest(const FString& Paramet
 	UClass* PlayerWidgetClass = LoadClass<URpgPlayerInventoryWidget>(
 		nullptr,
 		TEXT("/Game/SurvivalRpg/Inventory/UI/CUI_PlayerInventory.CUI_PlayerInventory_C"));
-	if (!TestNotNull(TEXT("Authored Player Inventory class loads"), PlayerWidgetClass))
+	UClass* PlayerPaneClass = LoadClass<URpgPlayerInventoryPaneWidget>(
+		nullptr,
+		TEXT("/Game/SurvivalRpg/Inventory/UI/CUI_PlayerInventoryPane.CUI_PlayerInventoryPane_C"));
+	if (!TestNotNull(TEXT("Authored Player Inventory class loads"), PlayerWidgetClass) ||
+		!TestNotNull(TEXT("Authored reusable Player Inventory pane class loads"), PlayerPaneClass))
 	{
 		return false;
 	}
@@ -427,20 +432,28 @@ bool FRpgPlayerInventoryViewModelCompositionTest::RunTest(const FString& Paramet
 		PlayerWidgetClass->IsChildOf(URpgPlayerInventoryWidget::StaticClass()));
 	const UWidgetBlueprintGeneratedClass* PlayerWidgetGeneratedClass =
 		Cast<UWidgetBlueprintGeneratedClass>(PlayerWidgetClass);
+	const UWidgetBlueprintGeneratedClass* PlayerPaneGeneratedClass =
+		Cast<UWidgetBlueprintGeneratedClass>(PlayerPaneClass);
 	if (!TestNotNull(
 		TEXT("Authored Player Inventory uses a widget Blueprint generated class"),
-		PlayerWidgetGeneratedClass))
+		PlayerWidgetGeneratedClass) ||
+		!TestNotNull(
+			TEXT("Authored Player Inventory pane uses a widget Blueprint generated class"),
+			PlayerPaneGeneratedClass))
 	{
 		return false;
 	}
 	TestTrue(
-		TEXT("Screen-owned VM initializes before an owning player context is assigned"),
-		PlayerWidgetGeneratedClass->bCanCallInitializedWithoutPlayerContext);
+		TEXT("Authored pane derives from the passive native Player presenter"),
+		PlayerPaneClass->IsChildOf(URpgPlayerInventoryPaneWidget::StaticClass()));
+	TestTrue(
+		TEXT("Pane-owned VM initializes before an owning player context is assigned"),
+		PlayerPaneGeneratedClass->bCanCallInitializedWithoutPlayerContext);
 	TestNotNull(
-		TEXT("Native presenter exposes the canonical PropertyPath getter"),
-		PlayerWidgetClass->FindFunctionByName(
+		TEXT("Passive pane exposes the canonical PropertyPath getter"),
+		PlayerPaneClass->FindFunctionByName(
 			GET_FUNCTION_NAME_CHECKED(
-				URpgPlayerInventoryWidget,
+				URpgPlayerInventoryPaneWidget,
 				GetPlayerInventoryViewModel)));
 	TestNull(
 		TEXT("Compiled widget exposes no generated Player VM setter"),
@@ -455,6 +468,11 @@ bool FRpgPlayerInventoryViewModelCompositionTest::RunTest(const FString& Paramet
 	{
 		return false;
 	}
+	URpgPlayerInventoryPaneWidget* PlayerPane = Widget->GetPlayerInventoryPane();
+	if (!TestNotNull(TEXT("Standalone root embeds the reusable Player Inventory pane"), PlayerPane))
+	{
+		return false;
+	}
 
 	URpgPlayerInventoryViewModel* ViewModel = Widget->GetPlayerInventoryViewModel();
 	if (!TestNotNull(TEXT("Native presenter creates its aggregate view model"), ViewModel))
@@ -462,12 +480,16 @@ bool FRpgPlayerInventoryViewModelCompositionTest::RunTest(const FString& Paramet
 		return false;
 	}
 	TestEqual(
-		TEXT("Aggregate view model is owned by the Player screen"),
+		TEXT("Aggregate view model is owned by the reusable Player pane"),
 		ViewModel->GetOuter(),
-		static_cast<UObject*>(Widget));
+		static_cast<UObject*>(PlayerPane));
 	TestEqual(
-		TEXT("Player screen owns exactly one direct aggregate view model"),
+		TEXT("Thin Player root owns no direct aggregate view model"),
 		CountDirectPlayerInventoryViewModels(Widget),
+		0);
+	TestEqual(
+		TEXT("Reusable Player pane owns exactly one direct aggregate view model"),
+		CountDirectPlayerInventoryViewModels(PlayerPane),
 		1);
 	TestEqual(
 		TEXT("Aggregate VM only permits native PropertyPath composition"),
@@ -475,8 +497,8 @@ bool FRpgPlayerInventoryViewModelCompositionTest::RunTest(const FString& Paramet
 			TEXT("MVVMAllowedContextCreationType")),
 		FString(TEXT("PropertyPath")));
 
-	UMVVMView* View = UMVVMSubsystem::GetViewFromUserWidget(Widget);
-	if (!TestNotNull(TEXT("Authored Player Inventory has a compiled MVVM view"), View) ||
+	UMVVMView* View = UMVVMSubsystem::GetViewFromUserWidget(PlayerPane);
+	if (!TestNotNull(TEXT("Authored Player Inventory pane has a compiled MVVM view"), View) ||
 		!TestNotNull(TEXT("Authored MVVM view has a compiled view class"), View ? View->GetViewClass() : nullptr))
 	{
 		return false;
@@ -503,7 +525,7 @@ bool FRpgPlayerInventoryViewModelCompositionTest::RunTest(const FString& Paramet
 	{
 		const FMVVMViewClass_Source& Source = CompiledSources[SourceIndex];
 		if (Source.IsViewModel() &&
-			Source.GetName() == URpgPlayerInventoryWidget::PlayerInventoryViewModelSourceName)
+			Source.GetName() == URpgPlayerInventoryPaneWidget::PlayerInventoryViewModelSourceName)
 		{
 			MatchingSourceIndex = SourceIndex;
 			++MatchingSourceCount;
@@ -542,7 +564,7 @@ bool FRpgPlayerInventoryViewModelCompositionTest::RunTest(const FString& Paramet
 	TestEqual(
 		TEXT("Named MVVM lookup returns exactly the native-owned aggregate VM"),
 		View->GetViewModel(
-			URpgPlayerInventoryWidget::PlayerInventoryViewModelSourceName).GetObject(),
+			URpgPlayerInventoryPaneWidget::PlayerInventoryViewModelSourceName).GetObject(),
 		static_cast<UObject*>(ViewModel));
 
 	return true;
@@ -580,29 +602,52 @@ bool FRpgPlayerInventoryAuthoredContentHostsTest::RunTest(const FString& Paramet
 	UClass* PlayerWidgetClass = LoadClass<URpgPlayerInventoryWidget>(
 		nullptr,
 		TEXT("/Game/SurvivalRpg/Inventory/UI/CUI_PlayerInventory.CUI_PlayerInventory_C"));
-	const UWidgetBlueprintGeneratedClass* GeneratedClass =
+	UClass* PlayerPaneClass = LoadClass<URpgPlayerInventoryPaneWidget>(
+		nullptr,
+		TEXT("/Game/SurvivalRpg/Inventory/UI/CUI_PlayerInventoryPane.CUI_PlayerInventoryPane_C"));
+	const UWidgetBlueprintGeneratedClass* RootGeneratedClass =
 		Cast<UWidgetBlueprintGeneratedClass>(PlayerWidgetClass);
+	const UWidgetBlueprintGeneratedClass* PaneGeneratedClass =
+		Cast<UWidgetBlueprintGeneratedClass>(PlayerPaneClass);
+	const UWidgetTree* RootTree =
+		RootGeneratedClass ? RootGeneratedClass->GetWidgetTreeArchetype() : nullptr;
 	const UWidgetTree* AuthoredTree =
-		GeneratedClass ? GeneratedClass->GetWidgetTreeArchetype() : nullptr;
+		PaneGeneratedClass ? PaneGeneratedClass->GetWidgetTreeArchetype() : nullptr;
 	if (!TestNotNull(TEXT("Authored Player Inventory class loads"), PlayerWidgetClass) ||
-		!TestNotNull(TEXT("Player Inventory has a generated Widget Blueprint class"), GeneratedClass) ||
-		!TestNotNull(TEXT("Player Inventory has an authored compiled WidgetTree"), AuthoredTree))
+		!TestNotNull(TEXT("Authored reusable Player Inventory pane loads"), PlayerPaneClass) ||
+		!TestNotNull(TEXT("Player Inventory root has a generated Widget Blueprint class"), RootGeneratedClass) ||
+		!TestNotNull(TEXT("Player Inventory pane has a generated Widget Blueprint class"), PaneGeneratedClass) ||
+		!TestNotNull(TEXT("Player Inventory root has an authored compiled WidgetTree"), RootTree) ||
+		!TestNotNull(TEXT("Player Inventory pane has an authored compiled WidgetTree"), AuthoredTree))
 	{
 		return false;
 	}
 
 	UCanvasPanel* InventoryCanvas =
 		Cast<UCanvasPanel>(AuthoredTree->FindWidget(TEXT("InventoryCanvas")));
-	UOverlay* RootOverlay =
-		Cast<UOverlay>(AuthoredTree->FindWidget(TEXT("RootOverlay")));
-	UWidget* DragVisualCanvas =
-		AuthoredTree->FindWidget(TEXT("DragVisualCanvas"));
-	if (!TestNotNull(TEXT("InventoryCanvas is authored"), InventoryCanvas) ||
-		!TestNotNull(TEXT("RootOverlay is authored"), RootOverlay) ||
-		!TestNotNull(TEXT("DragVisualCanvas is authored"), DragVisualCanvas))
+	UOverlay* RootOverlay = Cast<UOverlay>(RootTree->FindWidget(TEXT("RootOverlay")));
+	UWidget* RootPane = RootTree->FindWidget(TEXT("PlayerInventoryPane"));
+	UWidget* DragVisualCanvas = RootTree->FindWidget(TEXT("DragVisualCanvas"));
+	if (!TestNotNull(TEXT("Pane authors InventoryCanvas"), InventoryCanvas) ||
+		!TestNotNull(TEXT("Standalone root authors RootOverlay"), RootOverlay) ||
+		!TestNotNull(TEXT("Standalone root embeds PlayerInventoryPane"), RootPane) ||
+		!TestNotNull(TEXT("Standalone root retains DragVisualCanvas"), DragVisualCanvas))
 	{
 		return false;
 	}
+	TestEqual(
+		TEXT("Standalone root embeds the exact canonical pane class"),
+		RootPane->GetClass(),
+		PlayerPaneClass);
+	TestNull(
+		TEXT("Passive pane owns no screen-wide DragVisualCanvas"),
+		AuthoredTree->FindWidget(TEXT("DragVisualCanvas")));
+	TestNull(
+		TEXT("Passive pane owns no screen-wide feedback toast"),
+		AuthoredTree->FindWidget(TEXT("InventoryFeedbackToast")));
+	TestNull(
+		TEXT("Passive pane owns no CommonUI action bar"),
+		AuthoredTree->FindWidget(TEXT("ActionBar")));
 
 	TSet<int32> AuthoredChildIndices;
 	UClass* CanonicalContentHostClass = nullptr;
@@ -697,13 +742,19 @@ bool FRpgPlayerInventoryAuthoredContentHostsTest::RunTest(const FString& Paramet
 	{
 		return false;
 	}
+	URpgPlayerInventoryPaneWidget* RuntimePane =
+		RuntimeWidget->GetPlayerInventoryPane();
+	if (!TestNotNull(TEXT("Runtime root binds the reusable Player Inventory pane"), RuntimePane))
+	{
+		return false;
+	}
 
 	for (const FExpectedContentHost& Expected : ExpectedHosts)
 	{
-		UWidget* RuntimeHost = RuntimeWidget->GetWidgetFromName(Expected.Name);
+		UWidget* RuntimeHost = RuntimePane->GetWidgetFromName(Expected.Name);
 		const FObjectPropertyBase* BindWidgetProperty =
 			FindFProperty<FObjectPropertyBase>(
-				URpgPlayerInventoryWidget::StaticClass(),
+				URpgPlayerInventoryPaneWidget::StaticClass(),
 				Expected.Name);
 		TestTrue(
 			*FString::Printf(
@@ -711,7 +762,7 @@ bool FRpgPlayerInventoryAuthoredContentHostsTest::RunTest(const FString& Paramet
 				*Expected.Name.ToString()),
 			RuntimeHost &&
 				BindWidgetProperty &&
-				BindWidgetProperty->GetObjectPropertyValue_InContainer(RuntimeWidget) ==
+				BindWidgetProperty->GetObjectPropertyValue_InContainer(RuntimePane) ==
 					RuntimeHost);
 	}
 
@@ -940,10 +991,15 @@ bool FRpgPlayerInventoryViewModelPoolingTest::RunTest(const FString& Parameters)
 		return false;
 	}
 
-	URpgPlayerInventoryViewModel* ViewModel = Widget->GetPlayerInventoryViewModel();
-	UMVVMView* View = UMVVMSubsystem::GetViewFromUserWidget(Widget);
-	if (!TestNotNull(TEXT("Native aggregate VM exists"), ViewModel) ||
-		!TestNotNull(TEXT("Authored MVVM view exists"), View))
+	URpgPlayerInventoryPaneWidget* PlayerPane = Widget->GetPlayerInventoryPane();
+	URpgPlayerInventoryViewModel* ViewModel =
+		PlayerPane ? PlayerPane->GetPlayerInventoryViewModel() : nullptr;
+	UMVVMView* View = PlayerPane
+		? UMVVMSubsystem::GetViewFromUserWidget(PlayerPane)
+		: nullptr;
+	if (!TestNotNull(TEXT("Reusable Player Inventory pane exists"), PlayerPane) ||
+		!TestNotNull(TEXT("Pane-owned native aggregate VM exists"), ViewModel) ||
+		!TestNotNull(TEXT("Authored pane MVVM view exists"), View))
 	{
 		return false;
 	}
@@ -981,7 +1037,7 @@ bool FRpgPlayerInventoryViewModelPoolingTest::RunTest(const FString& Parameters)
 		TEXT("Player screen initializes its native PropertyPath source during construction"),
 		View->AreSourcesInitialized());
 
-	auto VerifyStableComposition = [this, Widget, ViewModel, View](
+	auto VerifyStableComposition = [this, Widget, PlayerPane, ViewModel, View](
 		const TCHAR* Phase,
 		const bool bExpectSourceInitialized) -> bool
 	{
@@ -995,7 +1051,7 @@ bool FRpgPlayerInventoryViewModelPoolingTest::RunTest(const FString& Parameters)
 			View->AreSourcesInitialized(),
 			bExpectSourceInitialized);
 		const UObject* RuntimeSource = View->GetViewModel(
-			URpgPlayerInventoryWidget::PlayerInventoryViewModelSourceName).GetObject();
+			URpgPlayerInventoryPaneWidget::PlayerInventoryViewModelSourceName).GetObject();
 		const bool bSourceMatchesLifecycle = bExpectSourceInitialized
 			? TestEqual(
 				*(Prefix + TEXT(": initialized PropertyPath resolves the native VM")),
@@ -1005,30 +1061,35 @@ bool FRpgPlayerInventoryViewModelPoolingTest::RunTest(const FString& Parameters)
 				*(Prefix + TEXT(": released Slate deinitializes the runtime MVVM source")),
 				RuntimeSource);
 		const bool bOuterStable = TestEqual(
-			*(Prefix + TEXT(": VM remains screen-owned")),
+			*(Prefix + TEXT(": VM remains pane-owned")),
 			ViewModel->GetOuter(),
-			static_cast<UObject*>(Widget));
+			static_cast<UObject*>(PlayerPane));
 		const bool bSingleVm = TestEqual(
-			*(Prefix + TEXT(": screen still owns exactly one aggregate VM")),
-			CountDirectPlayerInventoryViewModels(Widget),
+			*(Prefix + TEXT(": pane still owns exactly one aggregate VM")),
+			CountDirectPlayerInventoryViewModels(PlayerPane),
 			1);
+		const bool bThinRootHasNoVm = TestEqual(
+			*(Prefix + TEXT(": thin root owns no aggregate VM")),
+			CountDirectPlayerInventoryViewModels(Widget),
+			0);
 		const bool bGearDelegateUnique = TestEqual(
 			*(Prefix + TEXT(": gear refresh delegate is bound exactly once")),
-			CountDelegateBindingsTo(ViewModel->OnGearSlotsChanged, Widget),
+			CountDelegateBindingsTo(ViewModel->OnGearSlotsChanged, PlayerPane),
 			1);
 		const bool bGroupsDelegateUnique = TestEqual(
 			*(Prefix + TEXT(": group refresh delegate is bound exactly once")),
-			CountDelegateBindingsTo(ViewModel->OnSlotGroupsChanged, Widget),
+			CountDelegateBindingsTo(ViewModel->OnSlotGroupsChanged, PlayerPane),
 			1);
 		const bool bActionBarDelegateUnique = TestEqual(
 			*(Prefix + TEXT(": actionbar refresh delegate is bound exactly once")),
-			CountDelegateBindingsTo(ViewModel->OnActionBarSlotsChanged, Widget),
+			CountDelegateBindingsTo(ViewModel->OnActionBarSlotsChanged, PlayerPane),
 			1);
 		return bVmStable &&
 			bSourceInitializationMatches &&
 			bSourceMatchesLifecycle &&
 			bOuterStable &&
 			bSingleVm &&
+			bThinRootHasNoVm &&
 			bGearDelegateUnique &&
 			bGroupsDelegateUnique &&
 			bActionBarDelegateUnique;
@@ -1053,12 +1114,12 @@ bool FRpgPlayerInventoryViewModelPoolingTest::RunTest(const FString& Parameters)
 	TestFalse(
 		TEXT("Runtime MVVM API rejects replacement of the native PropertyPath source"),
 		View->SetViewModel(
-			URpgPlayerInventoryWidget::PlayerInventoryViewModelSourceName,
+			URpgPlayerInventoryPaneWidget::PlayerInventoryViewModelSourceName,
 			ForeignViewModelInterface));
 	TestEqual(
 		TEXT("Rejected replacement leaves the native-owned VM in the MVVM source"),
 		View->GetViewModel(
-			URpgPlayerInventoryWidget::PlayerInventoryViewModelSourceName).GetObject(),
+			URpgPlayerInventoryPaneWidget::PlayerInventoryViewModelSourceName).GetObject(),
 		static_cast<UObject*>(ViewModel));
 
 	Widget->ActivateWidget();
