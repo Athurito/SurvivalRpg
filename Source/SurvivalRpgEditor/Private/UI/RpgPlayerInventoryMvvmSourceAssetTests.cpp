@@ -1,6 +1,7 @@
 #if WITH_DEV_AUTOMATION_TESTS
 
 #include "SurvivalRpg/Mvvm/Inventory/RpgPlayerInventoryViewModel.h"
+#include "SurvivalRpg/UI/RpgPlayerInventoryPaneWidget.h"
 #include "SurvivalRpg/UI/RpgPlayerInventoryWidget.h"
 
 #include "AssetRegistry/AssetData.h"
@@ -95,9 +96,9 @@ bool FRpgPlayerInventoryMvvmSourceAssetContractTest::RunTest(
 		nullptr,
 		TEXT(
 			"/Game/SurvivalRpg/Inventory/UI/"
-			"CUI_PlayerInventory.CUI_PlayerInventory"));
+			"CUI_PlayerInventoryPane.CUI_PlayerInventoryPane"));
 	if (!TestNotNull(
-			TEXT("Canonical Player Inventory Widget Blueprint loads"),
+			TEXT("Canonical Player Inventory Pane Widget Blueprint loads"),
 			Blueprint))
 	{
 		return false;
@@ -105,11 +106,11 @@ bool FRpgPlayerInventoryMvvmSourceAssetContractTest::RunTest(
 
 	bool bValid = true;
 	bValid &= TestEqual(
-		TEXT("Player Inventory uses its exact native presenter"),
+		TEXT("Player Inventory Pane uses its exact passive native presenter"),
 		Blueprint->ParentClass.Get(),
-		URpgPlayerInventoryWidget::StaticClass());
+		URpgPlayerInventoryPaneWidget::StaticClass());
 	bValid &= TestTrue(
-		TEXT("Player Inventory Blueprint is compiled"),
+		TEXT("Player Inventory Pane Blueprint is compiled"),
 		Blueprint->Status == BS_UpToDate ||
 			Blueprint->Status == BS_UpToDateWithWarnings);
 
@@ -127,7 +128,7 @@ bool FRpgPlayerInventoryMvvmSourceAssetContractTest::RunTest(
 	UMVVMBlueprintView* BlueprintView =
 		MvvmEditor->GetView(Blueprint);
 	if (!TestNotNull(
-			TEXT("Player Inventory owns an authored MVVM view"),
+			TEXT("Player Inventory Pane owns an authored MVVM view"),
 			BlueprintView))
 	{
 		return false;
@@ -136,7 +137,7 @@ bool FRpgPlayerInventoryMvvmSourceAssetContractTest::RunTest(
 	const TArrayView<const FMVVMBlueprintViewModelContext> Sources =
 		BlueprintView->GetViewModels();
 	bValid &= TestEqual(
-		TEXT("Player Inventory authors exactly one ViewModel source"),
+		TEXT("Player Inventory Pane authors exactly one ViewModel source"),
 		Sources.Num(),
 		1);
 	if (Sources.Num() != 1)
@@ -148,7 +149,7 @@ bool FRpgPlayerInventoryMvvmSourceAssetContractTest::RunTest(
 	bValid &= TestEqual(
 		TEXT("Authored source keeps its canonical name"),
 		Source.GetViewModelName(),
-		URpgPlayerInventoryWidget::PlayerInventoryViewModelSourceName);
+		URpgPlayerInventoryPaneWidget::PlayerInventoryViewModelSourceName);
 	bValid &= TestEqual(
 		TEXT("Authored source expects the aggregate Player ViewModel"),
 		Source.GetViewModelClass(),
@@ -171,28 +172,28 @@ bool FRpgPlayerInventoryMvvmSourceAssetContractTest::RunTest(
 		TEXT("Authored source is non-optional after native pre-initialization"),
 		Source.bOptional);
 	bValid &= TestEqual(
-		TEXT("Root Player Inventory owns no declarative leaf bindings"),
+		TEXT("Player Inventory Pane owns no declarative leaf bindings"),
 		BlueprintView->GetNumBindings(),
 		0);
 	bValid &= TestEqual(
-		TEXT("Root Player Inventory owns no MVVM events"),
+		TEXT("Player Inventory Pane owns no MVVM events"),
 		BlueprintView->GetEvents().Num(),
 		0);
 	bValid &= TestEqual(
-		TEXT("Root Player Inventory owns no MVVM conditions"),
+		TEXT("Player Inventory Pane owns no MVVM conditions"),
 		BlueprintView->GetConditions().Num(),
 		0);
 	const UMVVMBlueprintViewSettings* ViewSettings =
 		BlueprintView->GetSettings();
 	if (TestNotNull(
-			TEXT("Player Inventory MVVM view settings exist"),
+			TEXT("Player Inventory Pane MVVM view settings exist"),
 			ViewSettings))
 	{
 		bValid &= TestTrue(
 			TEXT("PropertyPath source initializes automatically during widget construction"),
 			ViewSettings->bInitializeSourcesOnConstruct);
 		bValid &= TestTrue(
-			TEXT("Root view is compiled even without declarative leaf bindings"),
+			TEXT("Pane view is compiled even without declarative leaf bindings"),
 			ViewSettings->bCreateViewWithoutBindings);
 	}
 	else
@@ -204,7 +205,7 @@ bool FRpgPlayerInventoryMvvmSourceAssetContractTest::RunTest(
 		Cast<UWidgetBlueprintGeneratedClass>(
 			Blueprint->GeneratedClass);
 	if (!TestNotNull(
-			TEXT("Player Inventory generated class is valid"),
+			TEXT("Player Inventory Pane generated class is valid"),
 			GeneratedClass))
 	{
 		return false;
@@ -213,13 +214,18 @@ bool FRpgPlayerInventoryMvvmSourceAssetContractTest::RunTest(
 	const UFunction* NativeGetter =
 		GeneratedClass->FindFunctionByName(
 			GET_FUNCTION_NAME_CHECKED(
-				URpgPlayerInventoryWidget,
+				URpgPlayerInventoryPaneWidget,
 				GetPlayerInventoryViewModel));
 	bValid &= TestNotNull(
 		TEXT("Generated class retains the native ownership getter"),
 		NativeGetter);
 	if (NativeGetter)
 	{
+		bValid &= TestEqual(
+			TEXT("Ownership getter is declared by the passive native pane"),
+			NativeGetter->GetOwnerClass(),
+			static_cast<UClass*>(
+				URpgPlayerInventoryPaneWidget::StaticClass()));
 		bValid &= TestTrue(
 			TEXT("Native ownership getter is a valid MVVM source path"),
 			UE::MVVM::BindingHelper::
@@ -242,6 +248,51 @@ bool FRpgPlayerInventoryMvvmSourceAssetContractTest::RunTest(
 			bValid = false;
 		}
 	}
+
+	int32 NativeAggregateViewModelPropertyCount = 0;
+	const FObjectPropertyBase* NativeAggregateViewModelProperty = nullptr;
+	for (TFieldIterator<FObjectPropertyBase> PropertyIt(
+			URpgPlayerInventoryPaneWidget::StaticClass(),
+			EFieldIteratorFlags::ExcludeSuper);
+		PropertyIt;
+		++PropertyIt)
+	{
+		const FObjectPropertyBase* Property = *PropertyIt;
+		if (Property &&
+			Property->PropertyClass ==
+				URpgPlayerInventoryViewModel::StaticClass())
+		{
+			++NativeAggregateViewModelPropertyCount;
+			NativeAggregateViewModelProperty = Property;
+		}
+	}
+	bValid &= TestEqual(
+		TEXT("Passive pane declares exactly one native aggregate VM property"),
+		NativeAggregateViewModelPropertyCount,
+		1);
+	if (TestNotNull(
+			TEXT("Passive pane native aggregate VM property exists"),
+			NativeAggregateViewModelProperty))
+	{
+		bValid &= TestEqual(
+			TEXT("Stable aggregate VM is owned directly by the native pane class"),
+			NativeAggregateViewModelProperty->GetOwnerClass(),
+			static_cast<UClass*>(
+				URpgPlayerInventoryPaneWidget::StaticClass()));
+		bValid &= TestTrue(
+			TEXT("Stable aggregate VM property is transient presentation state"),
+			NativeAggregateViewModelProperty->HasAnyPropertyFlags(
+				CPF_Transient));
+		bValid &= TestFalse(
+			TEXT("Stable aggregate VM property is not directly writable from Blueprint"),
+			NativeAggregateViewModelProperty->HasAnyPropertyFlags(
+				CPF_BlueprintVisible));
+	}
+	else
+	{
+		bValid = false;
+	}
+
 	bValid &= TestNull(
 		TEXT("Generated class exposes no MVVM source setter"),
 		GeneratedClass->FindFunctionByName(
@@ -255,14 +306,14 @@ bool FRpgPlayerInventoryMvvmSourceAssetContractTest::RunTest(
 	}
 	else
 	{
-		AddError(TEXT("Player Inventory Blueprint has no skeleton class."));
+		AddError(TEXT("Player Inventory Pane Blueprint has no skeleton class."));
 		bValid = false;
 	}
 
 	const FObjectPropertyBase* GeneratedSourceProperty =
 		FindFProperty<FObjectPropertyBase>(
 			GeneratedClass,
-			URpgPlayerInventoryWidget::
+			URpgPlayerInventoryPaneWidget::
 				PlayerInventoryViewModelSourceName);
 	if (TestNotNull(
 			TEXT("Compiled view owns its internal source property"),
@@ -303,7 +354,7 @@ bool FRpgPlayerInventoryMvvmSourceAssetContractTest::RunTest(
 			UMVVMViewClass::StaticClass(),
 			/*bIncludeSuper=*/ false);
 	bValid &= TestEqual(
-		TEXT("Player Inventory owns exactly one compiled MVVM view"),
+		TEXT("Player Inventory Pane owns exactly one compiled MVVM view"),
 		MvvmExtensions.Num(),
 		1);
 	const UMVVMViewClass* CompiledView =
@@ -311,7 +362,7 @@ bool FRpgPlayerInventoryMvvmSourceAssetContractTest::RunTest(
 			? Cast<UMVVMViewClass>(MvvmExtensions[0])
 			: nullptr;
 	if (!TestNotNull(
-			TEXT("Compiled Player Inventory MVVM view is valid"),
+			TEXT("Compiled Player Inventory Pane MVVM view is valid"),
 			CompiledView))
 	{
 		return false;
@@ -329,7 +380,7 @@ bool FRpgPlayerInventoryMvvmSourceAssetContractTest::RunTest(
 
 		++ViewModelSourceCount;
 		if (CompiledSource.GetName() ==
-				URpgPlayerInventoryWidget::
+				URpgPlayerInventoryPaneWidget::
 					PlayerInventoryViewModelSourceName &&
 			CompiledSource.GetSourceClass() ==
 				URpgPlayerInventoryViewModel::StaticClass())
@@ -357,7 +408,7 @@ bool FRpgPlayerInventoryMvvmSourceAssetContractTest::RunTest(
 			TEXT("Compiled source mirrors the resolved VM into its internal property"),
 			CanonicalSource->RequireSettingUserWidgetProperty());
 		bValid &= TestEqual(
-			TEXT("Root source owns no declarative bindings"),
+			TEXT("Pane source owns no declarative bindings"),
 			CanonicalSource->GetBindings().Num(),
 			0);
 	}
@@ -374,6 +425,84 @@ bool FRpgPlayerInventoryMvvmSourceAssetContractTest::RunTest(
 		URpgPlayerInventoryViewModel::StaticClass()->GetMetaData(
 			TEXT("MVVMAllowedContextCreationType")),
 		FString(TEXT("PropertyPath")));
+
+	UWidgetBlueprint* RootBlueprint = LoadObject<UWidgetBlueprint>(
+		nullptr,
+		TEXT(
+			"/Game/SurvivalRpg/Inventory/UI/"
+			"CUI_PlayerInventory.CUI_PlayerInventory"));
+	if (!TestNotNull(
+			TEXT("Canonical Player Inventory Root Widget Blueprint loads"),
+			RootBlueprint))
+	{
+		return false;
+	}
+
+	bValid &= TestEqual(
+		TEXT("Player Inventory Root keeps its exact activatable native shell"),
+		RootBlueprint->ParentClass.Get(),
+		URpgPlayerInventoryWidget::StaticClass());
+	bValid &= TestTrue(
+		TEXT("Player Inventory Root Blueprint is compiled"),
+		RootBlueprint->Status == BS_UpToDate ||
+			RootBlueprint->Status == BS_UpToDateWithWarnings);
+
+	if (const UMVVMBlueprintView* RootBlueprintView =
+			MvvmEditor->GetView(RootBlueprint))
+	{
+		bValid &= TestEqual(
+			TEXT("Player Inventory Root authors no ViewModel sources"),
+			RootBlueprintView->GetViewModels().Num(),
+			0);
+	}
+
+	UWidgetBlueprintGeneratedClass* RootGeneratedClass =
+		Cast<UWidgetBlueprintGeneratedClass>(
+			RootBlueprint->GeneratedClass);
+	if (!TestNotNull(
+			TEXT("Player Inventory Root generated class is valid"),
+			RootGeneratedClass))
+	{
+		return false;
+	}
+
+	bValid &= TestNull(
+		TEXT("Player Inventory Root owns no compiled Player VM source property"),
+		FindFProperty<FObjectPropertyBase>(
+			RootGeneratedClass,
+			URpgPlayerInventoryPaneWidget::
+				PlayerInventoryViewModelSourceName));
+	bValid &= TestNull(
+		TEXT("Player Inventory Root exposes no generated Player VM setter"),
+		RootGeneratedClass->FindFunctionByName(
+			TEXT("SetRpgPlayerInventoryViewModel")));
+
+	int32 RootCompiledViewModelSourceCount = 0;
+	const TArray<UWidgetBlueprintGeneratedClassExtension*>
+		RootMvvmExtensions = RootGeneratedClass->GetExtensions(
+			UMVVMViewClass::StaticClass(),
+			/*bIncludeSuper=*/ false);
+	for (const UWidgetBlueprintGeneratedClassExtension* Extension :
+		RootMvvmExtensions)
+	{
+		const UMVVMViewClass* RootCompiledView =
+			Cast<UMVVMViewClass>(Extension);
+		if (!RootCompiledView)
+		{
+			continue;
+		}
+
+		for (const FMVVMViewClass_Source& RootCompiledSource :
+			RootCompiledView->GetSources())
+		{
+			RootCompiledViewModelSourceCount +=
+				RootCompiledSource.IsViewModel() ? 1 : 0;
+		}
+	}
+	bValid &= TestEqual(
+		TEXT("Player Inventory Root compiles no ViewModel sources"),
+		RootCompiledViewModelSourceCount,
+		0);
 
 	return bValid;
 }

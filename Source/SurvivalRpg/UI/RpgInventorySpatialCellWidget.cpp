@@ -91,9 +91,31 @@ FReply URpgInventorySpatialCellWidget::NativeOnMouseButtonUp(const FGeometry& In
 	return Super::NativeOnMouseButtonUp(InGeometry, InMouseEvent);
 }
 
+FReply URpgInventorySpatialCellWidget::NativeOnMouseMove(
+	const FGeometry& InGeometry,
+	const FPointerEvent& InMouseEvent)
+{
+	FReply Reply = Super::NativeOnMouseMove(InGeometry, InMouseEvent);
+	if (OwningGrid)
+	{
+		OwningGrid->SelectCellFromPointerHover(
+			InMouseEvent.GetScreenSpacePosition(),
+			InMouseEvent,
+			GetOwningPlayer());
+	}
+	return Reply;
+}
+
 void URpgInventorySpatialCellWidget::NativeOnMouseEnter(const FGeometry& InGeometry, const FPointerEvent& InMouseEvent)
 {
 	Super::NativeOnMouseEnter(InGeometry, InMouseEvent);
+	if (OwningGrid)
+	{
+		OwningGrid->SelectCellFromPointerHover(
+			InMouseEvent.GetScreenSpacePosition(),
+			InMouseEvent,
+			GetOwningPlayer());
+	}
 	bHovered = true;
 	ApplyResolvedVisualState();
 }

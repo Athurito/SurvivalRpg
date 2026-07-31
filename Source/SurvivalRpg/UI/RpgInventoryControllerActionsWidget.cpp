@@ -232,6 +232,18 @@ void URpgInventoryControllerActionsWidget::RegisterInventoryControllerActionBind
 	RegisterActionRow(PreviousPanelInputAction, FSimpleDelegate::CreateUObject(this, &ThisClass::HandlePreviousPanelAction));
 	RegisterActionRow(NextPanelInputAction, FSimpleDelegate::CreateUObject(this, &ThisClass::HandleNextPanelAction));
 	QuickTransferActionBinding = RegisterActionRow(QuickTransferInputAction, FSimpleDelegate::CreateUObject(this, &ThisClass::HandleQuickTransferAction));
+	if (QuickTransferActionBinding.IsValid())
+	{
+		const FCommonInputActionDataBase* QuickTransferActionData =
+			QuickTransferInputAction.GetRow<FCommonInputActionDataBase>(
+				TEXT("InventoryQuickTransfer"));
+		CachedQuickTransferActionDisplayName = QuickTransferActionData
+			? QuickTransferActionData->DisplayName
+			: FText::GetEmpty();
+		AppliedQuickTransferActionDisplayName =
+			CachedQuickTransferActionDisplayName;
+		bHasCachedQuickTransferActionDisplayName = true;
+	}
 	QuickSplitActionBinding = RegisterActionRow(QuickSplitInputAction, FSimpleDelegate::CreateUObject(this, &ThisClass::HandleQuickSplitAction));
 	const FCommonInputActionDataBase* UseOrEquipActionData = UseOrEquipInputAction.GetRow<FCommonInputActionDataBase>(TEXT("InventoryUseOrEquip"));
 	if (UseOrEquipActionData && UseOrEquipActionData->IsKeyBoundToInputActionData(EKeys::F))
@@ -274,6 +286,8 @@ void URpgInventoryControllerActionsWidget::RegisterInventoryControllerActionBind
 
 void URpgInventoryControllerActionsWidget::UnregisterInventoryControllerActionBindings()
 {
+	RestoreQuickTransferActionDisplayName();
+
 	for (FUIActionBindingHandle& BindingHandle : InventoryActionBindings)
 	{
 		if (BindingHandle.IsValid())
@@ -287,6 +301,9 @@ void URpgInventoryControllerActionsWidget::UnregisterInventoryControllerActionBi
 	QuickTransferActionBinding = FUIActionBindingHandle();
 	QuickSplitActionBinding = FUIActionBindingHandle();
 	DropActionBinding = FUIActionBindingHandle();
+	CachedQuickTransferActionDisplayName = FText::GetEmpty();
+	AppliedQuickTransferActionDisplayName = FText::GetEmpty();
+	bHasCachedQuickTransferActionDisplayName = false;
 }
 
 bool URpgInventoryControllerActionsWidget::RefreshInventoryControllerFocus()
@@ -482,7 +499,21 @@ void URpgInventoryControllerActionsWidget::HandleBackAction()
 void URpgInventoryControllerActionsWidget::HandleActivePanelChanged(FName PanelId, int32 PanelIndex)
 {
 	RefreshInventoryActionBindingVisibility();
+	NativeOnInventoryActivePanelChanged(PanelId, PanelIndex);
 	BP_OnInventoryActivePanelChanged(PanelId, PanelIndex);
+}
+
+void URpgInventoryControllerActionsWidget::NativeOnInventoryActivePanelChanged(
+	FName,
+	int32)
+{
+}
+
+FText URpgInventoryControllerActionsWidget::ResolveQuickTransferDisplayName() const
+{
+	return bHasCachedQuickTransferActionDisplayName
+		? CachedQuickTransferActionDisplayName
+		: FText::GetEmpty();
 }
 
 void URpgInventoryControllerActionsWidget::HandleActiveSelectionChanged()
@@ -499,14 +530,40 @@ void URpgInventoryControllerActionsWidget::HandleHeldPayloadChanged(
 
 void URpgInventoryControllerActionsWidget::RefreshInventoryActionBindingVisibility()
 {
-	const bool bShowTransfer = bDisplayInventoryActionsInActionBar && PanelNavigator && PanelNavigator->CanQuickTransferActiveSelection();
+	const bool bCanQuickTransfer =
+		PanelNavigator &&
+		PanelNavigator->CanQuickTransferActiveSelection();
+	const bool bShowTransfer =
+		bDisplayInventoryActionsInActionBar &&
+		bCanQuickTransfer;
 	const bool bShowSplit = bDisplayInventoryActionsInActionBar && PanelNavigator && PanelNavigator->CanQuickSplitActiveSelection();
 	const bool bShowUseOrEquip = bDisplayInventoryActionsInActionBar && PanelNavigator && PanelNavigator->CanUseOrEquipActiveSelection();
 	const bool bShowDrop = bDisplayInventoryActionsInActionBar && PanelNavigator && PanelNavigator->CanDropActiveSelection();
 
 	if (QuickTransferActionBinding.IsValid())
 	{
-		QuickTransferActionBinding.SetDisplayInActionBar(bShowTransfer);
+		if (bShowTransfer)
+		{
+			const FText ResolvedDisplayName =
+				ResolveQuickTransferDisplayName();
+			const FText DisplayName = !ResolvedDisplayName.IsEmpty()
+				? ResolvedDisplayName
+				: CachedQuickTransferActionDisplayName;
+			if (!AppliedQuickTransferActionDisplayName.EqualTo(DisplayName))
+			{
+				QuickTransferActionBinding.SetDisplayName(DisplayName);
+				AppliedQuickTransferActionDisplayName = DisplayName;
+			}
+		}
+		else
+		{
+			RestoreQuickTransferActionDisplayName();
+		}
+
+		if (QuickTransferActionBinding.GetDisplayInActionBar() != bShowTransfer)
+		{
+			QuickTransferActionBinding.SetDisplayInActionBar(bShowTransfer);
+		}
 	}
 	if (QuickSplitActionBinding.IsValid())
 	{
@@ -519,6 +576,20 @@ void URpgInventoryControllerActionsWidget::RefreshInventoryActionBindingVisibili
 	if (DropActionBinding.IsValid())
 	{
 		DropActionBinding.SetDisplayInActionBar(bShowDrop);
+	}
+}
+
+void URpgInventoryControllerActionsWidget::RestoreQuickTransferActionDisplayName()
+{
+	if (QuickTransferActionBinding.IsValid() &&
+		bHasCachedQuickTransferActionDisplayName &&
+		!AppliedQuickTransferActionDisplayName.EqualTo(
+			CachedQuickTransferActionDisplayName))
+	{
+		QuickTransferActionBinding.SetDisplayName(
+			CachedQuickTransferActionDisplayName);
+		AppliedQuickTransferActionDisplayName =
+			CachedQuickTransferActionDisplayName;
 	}
 }
 

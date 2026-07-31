@@ -181,6 +181,9 @@ protected:
 	virtual void RegisterInventoryScreenNavigationPanels(
 		URpgInventoryPanelNavigationCoordinator* Navigator);
 
+	/** Preferred first panel when this activation has no surviving navigation selection. */
+	virtual FName GetInitialInventoryNavigationPanelId() const;
+
 	/** Appends every spatial grid that participates in pointer routing and external-preview cleanup. */
 	virtual void AppendInventoryScreenSpatialGrids(
 		TArray<URpgInventorySpatialGridWidget*>& OutGrids) const;
@@ -295,6 +298,10 @@ protected:
 		bool bPendingRequest);
 
 private:
+#if WITH_DEV_AUTOMATION_TESTS
+	friend class FRpgInventoryPointerDragLeaveLifecycleTest;
+#endif
+
 	void DismissActiveContextMenuPresentation();
 	void DismissActiveSplitDialogPresentation();
 	void DismissActiveDropConfirmationPresentation();

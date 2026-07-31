@@ -6,6 +6,7 @@
 #include "RpgCraftingStationWidget.h"
 #include "RpgInventoryCarrySlotWidget.h"
 #include "RpgInventorySpatialPaneWidget.h"
+#include "RpgPlayerInventoryPaneWidget.h"
 #include "RpgPlayerInventoryWidget.h"
 #include "RpgStorageInventoryWidget.h"
 
@@ -129,32 +130,33 @@ bool FRpgInventoryUIRequiredBindWidgetsTest::RunTest(
 	const FString& Parameters)
 {
 	const FRequiredWidgetProperty RequiredProperties[] = {
-		{ URpgPlayerInventoryWidget::StaticClass(), TEXT("Content_Pockets") },
-		{ URpgPlayerInventoryWidget::StaticClass(), TEXT("Carry_Weapon1") },
-		{ URpgPlayerInventoryWidget::StaticClass(), TEXT("Carry_Weapon2") },
-		{ URpgPlayerInventoryWidget::StaticClass(), TEXT("Carry_Offhand") },
-		{ URpgPlayerInventoryWidget::StaticClass(), TEXT("Content_Backpack") },
-		{ URpgPlayerInventoryWidget::StaticClass(), TEXT("Content_Belt") },
-		{ URpgPlayerInventoryWidget::StaticClass(), TEXT("Content_Pouch") },
-		{ URpgPlayerInventoryWidget::StaticClass(), TEXT("Content_ResourceBag") },
-		{ URpgPlayerInventoryWidget::StaticClass(), TEXT("ActionBarTileView") },
-		{ URpgPlayerInventoryWidget::StaticClass(), TEXT("Gear_Head") },
-		{ URpgPlayerInventoryWidget::StaticClass(), TEXT("Gear_Chest") },
-		{ URpgPlayerInventoryWidget::StaticClass(), TEXT("Gear_Hands") },
-		{ URpgPlayerInventoryWidget::StaticClass(), TEXT("Gear_Legs") },
-		{ URpgPlayerInventoryWidget::StaticClass(), TEXT("Gear_Feet") },
-		{ URpgPlayerInventoryWidget::StaticClass(), TEXT("Gear_Backpack") },
-		{ URpgPlayerInventoryWidget::StaticClass(), TEXT("Gear_Belt") },
-		{ URpgPlayerInventoryWidget::StaticClass(), TEXT("Gear_Pouch") },
-		{ URpgPlayerInventoryWidget::StaticClass(), TEXT("Gear_ResourceBag") },
-		{ URpgStorageInventoryWidget::StaticClass(), TEXT("PlayerGroupsPanel") },
+		{ URpgPlayerInventoryPaneWidget::StaticClass(), TEXT("Content_Pockets") },
+		{ URpgPlayerInventoryPaneWidget::StaticClass(), TEXT("Carry_Weapon1") },
+		{ URpgPlayerInventoryPaneWidget::StaticClass(), TEXT("Carry_Weapon2") },
+		{ URpgPlayerInventoryPaneWidget::StaticClass(), TEXT("Carry_Offhand") },
+		{ URpgPlayerInventoryPaneWidget::StaticClass(), TEXT("Content_Backpack") },
+		{ URpgPlayerInventoryPaneWidget::StaticClass(), TEXT("Content_Belt") },
+		{ URpgPlayerInventoryPaneWidget::StaticClass(), TEXT("Content_Pouch") },
+		{ URpgPlayerInventoryPaneWidget::StaticClass(), TEXT("Content_ResourceBag") },
+		{ URpgPlayerInventoryPaneWidget::StaticClass(), TEXT("ActionBarTileView") },
+		{ URpgPlayerInventoryPaneWidget::StaticClass(), TEXT("Gear_Head") },
+		{ URpgPlayerInventoryPaneWidget::StaticClass(), TEXT("Gear_Chest") },
+		{ URpgPlayerInventoryPaneWidget::StaticClass(), TEXT("Gear_Hands") },
+		{ URpgPlayerInventoryPaneWidget::StaticClass(), TEXT("Gear_Legs") },
+		{ URpgPlayerInventoryPaneWidget::StaticClass(), TEXT("Gear_Feet") },
+		{ URpgPlayerInventoryPaneWidget::StaticClass(), TEXT("Gear_Backpack") },
+		{ URpgPlayerInventoryPaneWidget::StaticClass(), TEXT("Gear_Belt") },
+		{ URpgPlayerInventoryPaneWidget::StaticClass(), TEXT("Gear_Pouch") },
+		{ URpgPlayerInventoryPaneWidget::StaticClass(), TEXT("Gear_ResourceBag") },
+		{ URpgPlayerInventoryWidget::StaticClass(), TEXT("PlayerInventoryPane") },
+		{ URpgStorageInventoryWidget::StaticClass(), TEXT("PlayerInventoryPane") },
 		{ URpgStorageInventoryWidget::StaticClass(), TEXT("SecondaryInventoryGrid") },
 		{ URpgBaseTerminalWidget::StaticClass(), TEXT("PlayerInventoryPane") },
 		{ URpgBaseTerminalWidget::StaticClass(), TEXT("BaseResourceList") },
 		{ URpgInventorySpatialPaneWidget::StaticClass(), TEXT("SpatialGrid") },
 		{ URpgBaseResourceListWidget::StaticClass(), TEXT("ResourceList") },
 		{ URpgCraftingActionButtonWidget::StaticClass(), TEXT("Text") },
-		{ URpgCraftingStationWidget::StaticClass(), TEXT("PlayerGroupsPanel") },
+		{ URpgCraftingStationWidget::StaticClass(), TEXT("PlayerInventoryPane") },
 		{ URpgCraftingStationWidget::StaticClass(), TEXT("OutputInventoryPane") },
 		{ URpgCraftingStationWidget::StaticClass(), TEXT("RecipeList") },
 		{ URpgCraftingStationWidget::StaticClass(), TEXT("IngredientList") },
@@ -215,7 +217,7 @@ bool FRpgInventoryUIRequiredBindWidgetsTest::RunTest(
 	{
 		const FObjectPropertyBase* CarryProperty =
 			FindFProperty<FObjectPropertyBase>(
-				URpgPlayerInventoryWidget::StaticClass(),
+				URpgPlayerInventoryPaneWidget::StaticClass(),
 				CarryPropertyName);
 		if (TestNotNull(
 			*FString::Printf(
@@ -231,6 +233,38 @@ bool FRpgInventoryUIRequiredBindWidgetsTest::RunTest(
 					URpgInventoryCarrySlotWidget::
 						StaticClass());
 		}
+	}
+
+	for (const UClass* RootClass :
+		{
+			URpgPlayerInventoryWidget::StaticClass(),
+			URpgStorageInventoryWidget::StaticClass(),
+			URpgCraftingStationWidget::StaticClass()
+		})
+	{
+		const FObjectPropertyBase* PaneProperty =
+			FindFProperty<FObjectPropertyBase>(
+				RootClass,
+				TEXT("PlayerInventoryPane"));
+		if (TestNotNull(
+				*FString::Printf(
+					TEXT("%s exposes the reusable PlayerInventoryPane"),
+					*RootClass->GetName()),
+				PaneProperty))
+		{
+			TestEqual(
+				*FString::Printf(
+					TEXT("%s.PlayerInventoryPane has the exact passive Pane type"),
+					*RootClass->GetName()),
+				PaneProperty->PropertyClass.Get(),
+				URpgPlayerInventoryPaneWidget::StaticClass());
+		}
+
+		TestNull(
+			*FString::Printf(
+				TEXT("%s exposes no legacy PlayerGroupsPanel property"),
+				*RootClass->GetName()),
+			FindFProperty<FProperty>(RootClass, TEXT("PlayerGroupsPanel")));
 	}
 
 	return true;

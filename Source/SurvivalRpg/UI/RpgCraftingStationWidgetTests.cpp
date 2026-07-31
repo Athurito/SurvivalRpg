@@ -4,6 +4,7 @@
 
 #include "SurvivalRpg/Crafting/RpgCraftingStationActor.h"
 #include "SurvivalRpg/Crafting/RpgCraftingStationComponent.h"
+#include "SurvivalRpg/Crafting/RpgCraftingRecipeDefinition.h"
 #include "SurvivalRpg/GameplayTags/RpgGameplayTags.h"
 #include "SurvivalRpg/Inventory/RpgInventoryAutomationTestTypes.h"
 #include "SurvivalRpg/Inventory/RpgInventoryDragDropCoordinator.h"
@@ -16,8 +17,9 @@
 #include "SurvivalRpg/UI/RpgCraftingJobEntryWidget.h"
 #include "SurvivalRpg/UI/RpgCraftingRecipeEntryWidget.h"
 #include "SurvivalRpg/UI/RpgInventoryInteractionScreenWidget.h"
+#include "SurvivalRpg/UI/RpgInventoryPanelNavigationCoordinator.h"
 #include "SurvivalRpg/UI/RpgInventorySpatialPaneWidget.h"
-#include "SurvivalRpg/UI/RpgInventorySlotGroupPanelWidget.h"
+#include "SurvivalRpg/UI/RpgPlayerInventoryPaneWidget.h"
 
 #include "AssetRegistry/AssetRegistryModule.h"
 #include "Blueprint/IUserListEntry.h"
@@ -75,6 +77,10 @@ namespace RpgCraftingStationWidgetTests
 		TEXT(
 			"/Game/SurvivalRpg/Inventory/UI/SpatialInventory/"
 			"CUI_SpatialInventoryPane.CUI_SpatialInventoryPane_C");
+	constexpr TCHAR PlayerInventoryPaneClassPath[] =
+		TEXT(
+			"/Game/SurvivalRpg/Inventory/UI/"
+			"CUI_PlayerInventoryPane.CUI_PlayerInventoryPane_C");
 	constexpr TCHAR CraftingActionTablePath[] =
 		TEXT(
 			"/Game/SurvivalRpg/UI/Input/"
@@ -106,6 +112,10 @@ namespace RpgCraftingStationWidgetTests
 		TEXT(
 			"/Game/SurvivalRpg/Inventory/UI/SpatialInventory/"
 			"CUI_SpatialInventoryPane");
+	constexpr TCHAR PlayerInventoryPanePackageName[] =
+		TEXT(
+			"/Game/SurvivalRpg/Inventory/UI/"
+			"CUI_PlayerInventoryPane");
 	constexpr TCHAR LegacyInventoryPackageName[] =
 		TEXT("/Game/SurvivalRpg/Inventory/UI/CUI_Inventory");
 	constexpr TCHAR LegacyCraftingScreenPackageName[] =
@@ -284,6 +294,61 @@ namespace RpgCraftingStationWidgetTests
 		TObjectPtr<APawn> Pawn = nullptr;
 		TObjectPtr<URpgInventoryManagerComponent> PlayerInventory = nullptr;
 	};
+
+	bool OfferSingleRecipe(
+		FAutomationTestBase& Test,
+		const FScopedCraftingWidgetWorld::FStationContext& Context)
+	{
+		if (!Context.Station)
+		{
+			return false;
+		}
+
+		URpgCraftingRecipeDefinition* Recipe =
+			NewObject<URpgCraftingRecipeDefinition>(
+				Context.Station,
+				NAME_None,
+				RF_Transient);
+		URpgCraftingRecipeSet* RecipeSet =
+			NewObject<URpgCraftingRecipeSet>(
+				Context.Station,
+				NAME_None,
+				RF_Transient);
+		if (!Test.TestNotNull(
+				TEXT("Crafting UI focus recipe exists"),
+				Recipe) ||
+			!Test.TestNotNull(
+				TEXT("Crafting UI focus recipe set exists"),
+				RecipeSet))
+		{
+			return false;
+		}
+
+		Recipe->DisplayName = FText::FromString(TEXT("Automation Recipe"));
+		Recipe->bUnlockedByDefault = true;
+		FRpgCraftingOutputItem& Output =
+			Recipe->OutputItems.AddDefaulted_GetRef();
+		Output.ItemDefinition =
+			URpgInventoryAutomationTestUnitItemDefinition::StaticClass();
+		Output.Count = 1;
+		RecipeSet->Recipes.Add(Recipe);
+
+		FObjectPropertyBase* AvailableRecipeSetProperty =
+			FindFProperty<FObjectPropertyBase>(
+				URpgCraftingStationComponent::StaticClass(),
+				TEXT("AvailableRecipeSet"));
+		if (!Test.TestNotNull(
+				TEXT("Crafting station exposes its recipe-set property"),
+				AvailableRecipeSetProperty))
+		{
+			return false;
+		}
+
+		AvailableRecipeSetProperty->SetObjectPropertyValue_InContainer(
+			Context.Station,
+			RecipeSet);
+		return true;
+	}
 
 	int32 CountFunctionsDeclaredByClass(const UClass* Class)
 	{
@@ -658,6 +723,10 @@ bool FRpgCraftingSpatialCompositionTest::RunTest(
 		LoadClass<URpgInventorySpatialPaneWidget>(
 			nullptr,
 			SpatialPaneClassPath);
+	UClass* PlayerInventoryPaneClass =
+		LoadClass<URpgPlayerInventoryPaneWidget>(
+			nullptr,
+			PlayerInventoryPaneClassPath);
 	if (!TestNotNull(
 			TEXT("Authored Crafting Spatial screen loads"),
 			ScreenClass) ||
@@ -675,7 +744,10 @@ bool FRpgCraftingSpatialCompositionTest::RunTest(
 			JobEntryClass) ||
 		!TestNotNull(
 			TEXT("Canonical authored Spatial Pane loads"),
-			SpatialPaneClass))
+			SpatialPaneClass) ||
+		!TestNotNull(
+			TEXT("Canonical authored Player Inventory Pane loads"),
+			PlayerInventoryPaneClass))
 	{
 		return false;
 	}
@@ -696,6 +768,14 @@ bool FRpgCraftingSpatialCompositionTest::RunTest(
 		TEXT("Crafting action-button asset derives from its graph-free native leaf"),
 		ActionButtonClass->IsChildOf(
 			URpgCraftingActionButtonWidget::StaticClass()));
+	TestFalse(
+		TEXT("Player Inventory Pane is passive and not an activatable inventory screen"),
+		PlayerInventoryPaneClass->IsChildOf(
+			URpgInventoryInteractionScreenWidget::StaticClass()));
+	TestFalse(
+		TEXT("Player Inventory Pane never receives screen payloads"),
+		PlayerInventoryPaneClass->ImplementsInterface(
+			URpgUIScreenPayloadReceiver::StaticClass()));
 
 	UWidgetBlueprintGeneratedClass* ScreenGeneratedClass =
 		Cast<UWidgetBlueprintGeneratedClass>(ScreenClass);
@@ -766,9 +846,9 @@ bool FRpgCraftingSpatialCompositionTest::RunTest(
 
 	UOverlay* RootOverlay =
 		Cast<UOverlay>(ScreenTree->FindWidget(TEXT("RootOverlay")));
-	URpgInventorySlotGroupPanelWidget* PlayerGroupsPanel =
-		Cast<URpgInventorySlotGroupPanelWidget>(
-			ScreenTree->FindWidget(TEXT("PlayerGroupsPanel")));
+	URpgPlayerInventoryPaneWidget* PlayerInventoryPane =
+		Cast<URpgPlayerInventoryPaneWidget>(
+			ScreenTree->FindWidget(TEXT("PlayerInventoryPane")));
 	URpgInventorySpatialPaneWidget* OutputInventoryPane =
 		Cast<URpgInventorySpatialPaneWidget>(
 			ScreenTree->FindWidget(TEXT("OutputInventoryPane")));
@@ -788,9 +868,24 @@ bool FRpgCraftingSpatialCompositionTest::RunTest(
 	TestNotNull(
 		TEXT("RootOverlay is the authored Crafting screen root"),
 		RootOverlay);
-	TestNotNull(
-		TEXT("PlayerGroupsPanel is the authored full player-layout host"),
-		PlayerGroupsPanel);
+	TestEqual(
+		TEXT("RootOverlay is the Crafting WidgetTree root"),
+		ScreenTree->RootWidget.Get(),
+		static_cast<UWidget*>(RootOverlay));
+	if (RootOverlay)
+	{
+		TestEqual(
+			TEXT("RootOverlay receives pointer input across empty Crafting regions"),
+			RootOverlay->GetVisibility(),
+			ESlateVisibility::Visible);
+	}
+	TestEqual(
+		TEXT("PlayerInventoryPane uses the exact canonical reusable Pane class"),
+		PlayerInventoryPane ? PlayerInventoryPane->GetClass() : nullptr,
+		PlayerInventoryPaneClass);
+	TestNull(
+		TEXT("Legacy reduced PlayerGroupsPanel is absent"),
+		ScreenTree->FindWidget(TEXT("PlayerGroupsPanel")));
 	TestEqual(
 		TEXT("OutputInventoryPane uses exactly the reusable Spatial Pane class"),
 		OutputInventoryPane ? OutputInventoryPane->GetClass() : nullptr,
@@ -890,16 +985,25 @@ bool FRpgCraftingSpatialCompositionTest::RunTest(
 	TArray<UWidget*> ScreenWidgets;
 	ScreenTree->GetAllWidgets(ScreenWidgets);
 	int32 SpatialPaneCount = 0;
+	int32 PlayerInventoryPaneCount = 0;
 	for (const UWidget* Widget : ScreenWidgets)
 	{
 		if (Widget && Widget->IsA<URpgInventorySpatialPaneWidget>())
 		{
 			++SpatialPaneCount;
 		}
+		if (Widget && Widget->IsA<URpgPlayerInventoryPaneWidget>())
+		{
+			++PlayerInventoryPaneCount;
+		}
 	}
 	TestEqual(
 		TEXT("Crafting screen authors exactly one Spatial Pane: station output"),
 		SpatialPaneCount,
+		1);
+	TestEqual(
+		TEXT("Crafting screen authors exactly one complete Player Inventory Pane"),
+		PlayerInventoryPaneCount,
 		1);
 
 	TestTrue(
@@ -930,7 +1034,7 @@ bool FRpgCraftingSpatialCompositionTest::RunTest(
 	}
 
 	const FName BoundWidgetNames[] = {
-		TEXT("PlayerGroupsPanel"),
+		TEXT("PlayerInventoryPane"),
 		TEXT("OutputInventoryPane"),
 		TEXT("RecipeList"),
 		TEXT("IngredientList"),
@@ -1071,6 +1175,9 @@ bool FRpgCraftingSpatialCompositionTest::RunTest(
 		TEXT("Crafting screen depends on the reusable Spatial Pane"),
 		ScreenDependencies.Contains(FName(SpatialPanePackageName)));
 	TestTrue(
+		TEXT("Crafting screen depends on the reusable Player Inventory Pane"),
+		ScreenDependencies.Contains(FName(PlayerInventoryPanePackageName)));
+	TestTrue(
 		TEXT("Crafting screen depends on its graph-free action-button leaf"),
 		ScreenDependencies.Contains(
 			FName(CraftingActionButtonPackageName)));
@@ -1173,6 +1280,10 @@ bool FRpgCraftingScreenPayloadLifecycleTest::RunTest(
 	{
 		return false;
 	}
+	if (!OfferSingleRecipe(*this, ContextA))
+	{
+		return false;
+	}
 
 	UClass* ScreenClass = LoadClass<URpgCraftingStationWidget>(
 		nullptr,
@@ -1189,6 +1300,15 @@ bool FRpgCraftingScreenPayloadLifecycleTest::RunTest(
 			TestWorld.GetTestWorld(),
 			ScreenClass);
 	if (!TestNotNull(TEXT("Crafting screen initializes"), Widget))
+	{
+		return false;
+	}
+	URpgPlayerInventoryPaneWidget* PlayerInventoryPane =
+		Cast<URpgPlayerInventoryPaneWidget>(
+			Widget->GetWidgetFromName(TEXT("PlayerInventoryPane")));
+	if (!TestNotNull(
+			TEXT("Crafting screen embeds the complete reusable player Pane"),
+			PlayerInventoryPane))
 	{
 		return false;
 	}
@@ -1216,7 +1336,7 @@ bool FRpgCraftingScreenPayloadLifecycleTest::RunTest(
 			TEXT("Crafting screen owns its stable crafting VM"),
 			CraftingViewModel) ||
 		!TestNotNull(
-			TEXT("Crafting screen owns its stable player-layout VM"),
+			TEXT("Crafting screen exposes its Pane-owned stable player VM"),
 			PlayerViewModel) ||
 		!TestNotNull(
 			TEXT("Crafting screen binds its authored output Pane"),
@@ -1233,9 +1353,18 @@ bool FRpgCraftingScreenPayloadLifecycleTest::RunTest(
 		CountDirectObjectsOfClass<URpgCraftingStationViewModel>(Widget),
 		1);
 	TestEqual(
-		TEXT("Crafting screen owns exactly one direct player-layout VM"),
+		TEXT("Crafting screen owns no duplicate direct player-layout VM"),
 		CountDirectObjectsOfClass<URpgPlayerInventoryViewModel>(Widget),
+		0);
+	TestEqual(
+		TEXT("Crafting player Pane owns exactly one stable player-layout VM"),
+		CountDirectObjectsOfClass<URpgPlayerInventoryViewModel>(
+			PlayerInventoryPane),
 		1);
+	TestEqual(
+		TEXT("Crafting player VM has the passive Pane as its Outer"),
+		PlayerViewModel->GetOuter(),
+		static_cast<UObject*>(PlayerInventoryPane));
 	TestEqual(
 		TEXT("Output Pane owns exactly one direct panel VM"),
 		CountDirectObjectsOfClass<URpgInventoryPanelViewModel>(OutputPane),
@@ -1253,6 +1382,10 @@ bool FRpgCraftingScreenPayloadLifecycleTest::RunTest(
 		TEXT("Pre-activation Crafting payload is staged"),
 		Widget->GetCraftingScreenPayload(),
 		PayloadA);
+	TestEqual(
+		TEXT("Crafting payload remains owned by the activatable root"),
+		PayloadA->GetOuter(),
+		static_cast<UObject*>(Widget));
 	TestEqual(
 		TEXT("Staging performs no Crafting presentation bind"),
 		Widget->GetCraftingPresentationBindGeneration(),
@@ -1297,6 +1430,21 @@ bool FRpgCraftingScreenPayloadLifecycleTest::RunTest(
 		TEXT("Output Pane VM observes station A"),
 		OutputPaneViewModel->GetObservedInventory(),
 		ContextA.OutputInventory.Get());
+	UCommonListView* RecipeList =
+		Cast<UCommonListView>(
+			Widget->GetWidgetFromName(TEXT("RecipeList")));
+	if (TestNotNull(
+			TEXT("Crafting screen exposes its authored recipe list"),
+			RecipeList))
+	{
+		TestTrue(
+			TEXT("Crafting focus fixture projects at least one recipe"),
+			RecipeList->GetNumItems() > 0);
+		TestEqual(
+			TEXT("Crafting initially prefers the recipe list for CommonUI focus"),
+			Widget->GetDesiredFocusTarget(),
+			static_cast<UWidget*>(RecipeList));
+	}
 
 	const FObjectPropertyBase* CoordinatorProperty =
 		FindFProperty<FObjectPropertyBase>(
@@ -1314,6 +1462,40 @@ bool FRpgCraftingScreenPayloadLifecycleTest::RunTest(
 	{
 		return false;
 	}
+	URpgInventoryPanelNavigationCoordinator* PanelNavigator =
+		Widget->GetInventoryPanelNavigator();
+	if (!TestNotNull(
+			TEXT("Crafting screen owns a shared panel navigator"),
+			PanelNavigator))
+	{
+		return false;
+	}
+	TestEqual(
+		TEXT("Crafting drag/drop coordinator is owned by the activatable root"),
+		Coordinator->GetOuter(),
+		static_cast<UObject*>(Widget));
+	TestEqual(
+		TEXT("Crafting panel navigator is owned by the activatable root"),
+		PanelNavigator->GetOuter(),
+		static_cast<UObject*>(Widget));
+	TestEqual(
+		TEXT("Crafting owns exactly one direct drag/drop coordinator"),
+		CountDirectObjectsOfClass<URpgInventoryDragDropCoordinator>(Widget),
+		1);
+	TestEqual(
+		TEXT("Crafting owns exactly one direct panel navigator"),
+		CountDirectObjectsOfClass<URpgInventoryPanelNavigationCoordinator>(Widget),
+		1);
+	TestEqual(
+		TEXT("Passive player Pane owns no drag/drop coordinator"),
+		CountDirectObjectsOfClass<URpgInventoryDragDropCoordinator>(
+			PlayerInventoryPane),
+		0);
+	TestEqual(
+		TEXT("Passive player Pane owns no panel navigator"),
+		CountDirectObjectsOfClass<URpgInventoryPanelNavigationCoordinator>(
+			PlayerInventoryPane),
+		0);
 	TestEqual(
 		TEXT("Quick transfer exposes station output to player inventory"),
 		Coordinator->ResolveQuickTransferTarget(
@@ -1327,6 +1509,28 @@ bool FRpgCraftingScreenPayloadLifecycleTest::RunTest(
 		TEXT("Crafting screen exposes no player-to-output shortcut"),
 		Coordinator->ResolveQuickTransferTarget(
 			TestWorld.GetPlayerInventory()));
+	const FName PreviousCraftingPanelId =
+		PanelNavigator->GetActivePanelId();
+	TestTrue(
+		TEXT("Crafting output panel can become the canonical active transfer source"),
+		PanelNavigator->ActivatePanelById(FName(TEXT("Crafting.Output"))));
+	TestEqual(
+		TEXT("Crafting output advertises only the existing Output-to-Player route"),
+		Widget->ResolveQuickTransferDisplayName().ToString(),
+		FString(TEXT("Transfer -> Inventory")));
+	TestTrue(
+		TEXT("Crafting player Gear can become the active player-internal transfer source"),
+		PanelNavigator->ActivatePanelById(FName(TEXT("Player.Gear.Head"))));
+	TestEqual(
+		TEXT("Crafting player-internal quick transfer names its actual Inventory destination"),
+		Widget->ResolveQuickTransferDisplayName().ToString(),
+		FString(TEXT("Transfer -> Inventory")));
+	if (!PreviousCraftingPanelId.IsNone())
+	{
+		TestTrue(
+			TEXT("Crafting test restores the previous canonical panel"),
+			PanelNavigator->ActivatePanelById(PreviousCraftingPanelId));
+	}
 
 	IRpgUIScreenPayloadReceiver::Execute_ReceiveScreenPayload(
 		Widget,
@@ -1340,7 +1544,7 @@ bool FRpgCraftingScreenPayloadLifecycleTest::RunTest(
 		Widget->GetCraftingViewModel(),
 		CraftingViewModel);
 	TestEqual(
-		TEXT("Same-payload delivery retains the stable player VM"),
+		TEXT("Same-payload delivery retains the stable Pane-owned player VM"),
 		Widget->GetCraftingPlayerInventoryViewModel(),
 		PlayerViewModel);
 	TestEqual(
@@ -1373,7 +1577,7 @@ bool FRpgCraftingScreenPayloadLifecycleTest::RunTest(
 		Widget->GetCraftingViewModel(),
 		CraftingViewModel);
 	TestEqual(
-		TEXT("Context switch retains the screen-owned player VM"),
+		TEXT("Context switch retains the Pane-owned player VM"),
 		Widget->GetCraftingPlayerInventoryViewModel(),
 		PlayerViewModel);
 	TestEqual(
@@ -1402,7 +1606,7 @@ bool FRpgCraftingScreenPayloadLifecycleTest::RunTest(
 		Widget->GetCraftingViewModel(),
 		CraftingViewModel);
 	TestEqual(
-		TEXT("Deactivation retains the stable player VM"),
+		TEXT("Deactivation retains the stable Pane-owned player VM"),
 		Widget->GetCraftingPlayerInventoryViewModel(),
 		PlayerViewModel);
 	TestEqual(
@@ -1437,6 +1641,10 @@ bool FRpgCraftingScreenPayloadLifecycleTest::RunTest(
 		TEXT("Fresh pooled bind reuses the stable Crafting VM"),
 		Widget->GetCraftingViewModel(),
 		CraftingViewModel);
+	TestEqual(
+		TEXT("Fresh pooled bind reuses the stable Pane-owned player VM"),
+		Widget->GetCraftingPlayerInventoryViewModel(),
+		PlayerViewModel);
 	TestEqual(
 		TEXT("Fresh pooled bind reuses the stable Pane VM"),
 		OutputPane->GetPanelViewModel(),

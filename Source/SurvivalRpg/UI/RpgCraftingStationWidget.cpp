@@ -16,14 +16,13 @@
 #include "SurvivalRpg/Inventory/RpgInventoryManagerComponent.h"
 #include "SurvivalRpg/Inventory/RpgInventoryUiActionComponent.h"
 #include "SurvivalRpg/Mvvm/Crafting/RpgCraftingViewModels.h"
-#include "SurvivalRpg/Mvvm/Inventory/RpgInventorySlotGroupViewModel.h"
-#include "SurvivalRpg/Mvvm/Inventory/RpgPlayerInventoryViewModel.h"
 #include "SurvivalRpg/UI/RpgCraftingActionButtonWidget.h"
 #include "SurvivalRpg/UI/RpgCraftingJobEntryWidget.h"
 #include "SurvivalRpg/UI/RpgInventoryPanelNavigationCoordinator.h"
-#include "SurvivalRpg/UI/RpgInventorySlotGroupPanelWidget.h"
+#include "SurvivalRpg/UI/RpgInventoryScreenPresentationContext.h"
 #include "SurvivalRpg/UI/RpgInventorySpatialPaneWidget.h"
 #include "SurvivalRpg/UI/RpgInventorySpatialGridWidget.h"
+#include "SurvivalRpg/UI/RpgPlayerInventoryPaneWidget.h"
 #include "TimerManager.h"
 
 #if WITH_EDITOR
@@ -35,6 +34,14 @@
 DEFINE_LOG_CATEGORY_STATIC(LogRpgCraftingStationWidget, Log, All);
 
 #define LOCTEXT_NAMESPACE "RpgCraftingStationWidget"
+
+URpgPlayerInventoryViewModel*
+URpgCraftingStationWidget::GetCraftingPlayerInventoryViewModel() const
+{
+	return PlayerInventoryPane
+		? PlayerInventoryPane->GetPlayerInventoryViewModel()
+		: nullptr;
+}
 
 namespace
 {
@@ -123,9 +130,9 @@ void URpgCraftingStationWidget::NativeOnInitialized()
 			NSLOCTEXT("RpgCrafting", "CraftMaxButton", "Max"));
 	}
 
-	if (PlayerGroupsPanel)
+	if (PlayerInventoryPane)
 	{
-		PlayerGroupsPanel->SetSlotGroupItems({});
+		PlayerInventoryPane->ReleaseInventoryPresentation();
 	}
 	if (OutputInventoryPane)
 	{
@@ -140,6 +147,13 @@ void URpgCraftingStationWidget::NativeConstruct()
 	Super::NativeConstruct();
 
 	EnsureCraftingViewModels();
+	if (PlayerInventoryPane)
+	{
+		PlayerInventoryPane->OnNavigationPanelsChanged.RemoveAll(this);
+		PlayerInventoryPane->OnNavigationPanelsChanged.AddUObject(
+			this,
+			&ThisClass::HandlePlayerInventoryPaneNavigationPanelsChanged);
+	}
 	BindViewModelDelegates();
 	BindAuthoredControlEvents();
 	RefreshSelectedRecipePresentation();
@@ -165,6 +179,10 @@ void URpgCraftingStationWidget::NativeDestruct()
 	StopJobProgressRefresh();
 	UnbindAuthoredControlEvents();
 	UnbindViewModelDelegates();
+	if (PlayerInventoryPane)
+	{
+		PlayerInventoryPane->OnNavigationPanelsChanged.RemoveAll(this);
+	}
 	ResetCraftingContext();
 	Super::NativeDestruct();
 }
@@ -213,22 +231,15 @@ void URpgCraftingStationWidget::ForwardInventoryInteractionContextToChildren()
 	URpgInventoryPanelNavigationCoordinator* Navigator =
 		GetScreenPanelNavigationCoordinator();
 
-	if (PlayerGroupsPanel)
+	if (PlayerInventoryPane)
 	{
-		PlayerGroupsPanel->SetDragDropCoordinator(Coordinator);
-		PlayerGroupsPanel->SetPanelNavigationCoordinator(
-			Navigator,
-			TEXT("Crafting.Player"));
-
-		TArray<URpgInventorySpatialGridWidget*> PlayerGrids;
-		PlayerGroupsPanel->GetSpatialGridWidgets(PlayerGrids);
-		for (URpgInventorySpatialGridWidget* Grid : PlayerGrids)
-		{
-			if (Grid)
-			{
-				Grid->SetInventoryPresentationHost(this);
-			}
-		}
+		FRpgInventoryScreenPresentationContext Context;
+		Context.DragDropCoordinator = Coordinator;
+		Context.PanelNavigationCoordinator = Navigator;
+		Context.PresentationHost = this;
+		PlayerInventoryPane->SetInteractionContext(
+			Context,
+			TEXT("Player"));
 	}
 
 	if (OutputInventoryPane)
@@ -249,13 +260,9 @@ void URpgCraftingStationWidget::RegisterInventoryScreenNavigationPanels(
 		return;
 	}
 
-	if (PlayerGroupsPanel)
+	if (PlayerInventoryPane)
 	{
-		PlayerGroupsPanel->SetDragDropCoordinator(
-			GetScreenDragDropCoordinator());
-		PlayerGroupsPanel->SetPanelNavigationCoordinator(
-			Navigator,
-			TEXT("Crafting.Player"));
+		PlayerInventoryPane->RegisterNavigationPanels(Navigator);
 	}
 	if (OutputInventoryPane)
 	{
@@ -266,14 +273,106 @@ void URpgCraftingStationWidget::RegisterInventoryScreenNavigationPanels(
 void URpgCraftingStationWidget::AppendInventoryScreenSpatialGrids(
 	TArray<URpgInventorySpatialGridWidget*>& OutGrids) const
 {
-	if (PlayerGroupsPanel)
+	if (PlayerInventoryPane)
 	{
-		PlayerGroupsPanel->GetSpatialGridWidgets(OutGrids);
+		PlayerInventoryPane->AppendSpatialGrids(OutGrids);
 	}
 	if (OutputInventoryPane && OutputInventoryPane->GetSpatialGrid())
 	{
 		OutGrids.AddUnique(OutputInventoryPane->GetSpatialGrid());
 	}
+}
+
+bool URpgCraftingStationWidget::RouteInventoryPayloadToScreenSpecificTarget(
+	const FRpgInventoryDragPayload& Payload,
+	FVector2D GhostCenterScreenPosition,
+	bool bCommit,
+	bool& bOutTargetAddressed)
+{
+	bOutTargetAddressed = false;
+	UWidget* Target = nullptr;
+	if (!PlayerInventoryPane ||
+		!PlayerInventoryPane->ResolveNonSpatialDropTarget(
+			GhostCenterScreenPosition,
+			Target) ||
+		!Target)
+	{
+		return false;
+	}
+
+	bOutTargetAddressed = true;
+	SwitchActivePointerDropTarget(Target);
+	return PlayerInventoryPane->ApplyPayloadToNonSpatialDropTarget(
+		Target,
+		Payload,
+		GhostCenterScreenPosition,
+		bCommit);
+}
+
+void URpgCraftingStationWidget::ClearInventoryScreenSpecificDragPreviews()
+{
+	if (PlayerInventoryPane)
+	{
+		PlayerInventoryPane->ClearExternalDragPreviews();
+	}
+}
+
+bool URpgCraftingStationWidget::UpdateInventoryScreenSpecificControllerDragVisual(
+	const FRpgInventoryDragPayload& Payload)
+{
+	FVector2D AnchorScreenPosition = FVector2D::ZeroVector;
+	if (!PlayerInventoryPane ||
+		!PlayerInventoryPane->ResolveControllerDragVisualAnchor(
+			AnchorScreenPosition))
+	{
+		return false;
+	}
+
+	UpdateFreePointerDragVisual(
+		Payload,
+		AnchorScreenPosition,
+		nullptr,
+		true);
+	return true;
+}
+
+void URpgCraftingStationWidget::RefreshInventoryScreenSpecificInteractionPresentation(
+	ERpgInventoryInteractionPreviewState PreviewState,
+	bool bHasPayload,
+	bool bPendingRequest)
+{
+	if (PlayerInventoryPane)
+	{
+		PlayerInventoryPane->RefreshInteractionPresentation(
+			PreviewState,
+			bHasPayload,
+			bPendingRequest);
+	}
+}
+
+FText URpgCraftingStationWidget::ResolveQuickTransferDisplayName() const
+{
+	const URpgInventoryPanelNavigationCoordinator* Navigator =
+		GetInventoryPanelNavigator();
+	URpgInventoryManagerComponent* ActiveInventory = Navigator
+		? Navigator->GetActiveInventory()
+		: nullptr;
+	const bool bPlayerPanelActive = Navigator &&
+		Navigator->GetActivePanelId().ToString().StartsWith(TEXT("Player."));
+	if (bPlayerPanelActive ||
+		(ActiveInventory &&
+			((OutputInventory && ActiveInventory == OutputInventory) ||
+				(PlayerInventory && ActiveInventory == PlayerInventory))))
+	{
+		// The station exposes Output -> Player as its only cross-inventory route. Player-pane quick transfers remain
+		// player-internal (for example Gear -> Backpack), so every valid shortcut on this screen targets Inventory.
+		return NSLOCTEXT(
+			"RpgCraftingStationWidget",
+			"QuickTransferOutputToInventory",
+			"Transfer -> Inventory");
+	}
+
+	return Super::ResolveQuickTransferDisplayName();
 }
 
 void URpgCraftingStationWidget::RequestCraftSelectedRecipe()
@@ -444,6 +543,19 @@ bool URpgCraftingStationWidget::BindCraftingContext()
 	EnsureInventoryInteractionObjects();
 	URpgInventoryDragDropCoordinator* Coordinator =
 		GetScreenDragDropCoordinator();
+	URpgInventoryPanelNavigationCoordinator* Navigator =
+		GetScreenPanelNavigationCoordinator();
+	if (!PlayerInventoryPane || !Coordinator || !Navigator)
+	{
+		UE_LOG(
+			LogRpgCraftingStationWidget,
+			Error,
+			TEXT("%s rejected Crafting presentation because the required player pane or screen interaction context is missing."),
+			*GetNameSafe(this));
+		ResetCraftingContext();
+		return false;
+	}
+
 	if (GetOwningPlayer())
 	{
 		URpgInventoryManagerComponent* CanonicalPlayerInventory =
@@ -495,16 +607,6 @@ bool URpgCraftingStationWidget::BindCraftingContext()
 	}
 
 	EnsureCraftingViewModels();
-	if (PlayerInventoryViewModel)
-	{
-		PlayerInventoryViewModel->BindPlayerController(GetOwningPlayer());
-	}
-	if (CraftingViewModel)
-	{
-		CraftingViewModel->BindCraftingStation(
-			CraftingStation,
-			RequestingActor);
-	}
 	if (OutputInventoryPane)
 	{
 		OutputInventoryPane->BindInventoryContainer(
@@ -524,8 +626,23 @@ bool URpgCraftingStationWidget::BindCraftingContext()
 		return false;
 	}
 
+	// Arm the lifecycle guard before either VM can synchronously notify the screen during its first projection build.
 	bCraftingContextBound = true;
-	RefreshPlayerGroups();
+	FRpgInventoryScreenPresentationContext PanePresentationContext;
+	PanePresentationContext.DragDropCoordinator = Coordinator;
+	PanePresentationContext.PanelNavigationCoordinator = Navigator;
+	PanePresentationContext.PresentationHost = this;
+	PlayerInventoryPane->BindPlayerInventory(
+		GetOwningPlayer(),
+		PanePresentationContext,
+		TEXT("Player"));
+	if (CraftingViewModel)
+	{
+		CraftingViewModel->BindCraftingStation(
+			CraftingStation,
+			RequestingActor);
+	}
+
 	RefreshRecipeItems();
 	RefreshSelectedRecipePresentation();
 	RefreshJobItems();
@@ -553,13 +670,9 @@ void URpgCraftingStationWidget::ResetCraftingContext()
 		Navigator->ClearPanels();
 	}
 
-	if (PlayerGroupsPanel)
+	if (PlayerInventoryPane)
 	{
-		PlayerGroupsPanel->SetPanelNavigationCoordinator(
-			nullptr,
-			NAME_None);
-		PlayerGroupsPanel->SetDragDropCoordinator(nullptr);
-		PlayerGroupsPanel->SetSlotGroupItems({});
+		PlayerInventoryPane->ReleaseInventoryPresentation();
 	}
 	if (OutputInventoryPane)
 	{
@@ -569,11 +682,6 @@ void URpgCraftingStationWidget::ResetCraftingContext()
 	{
 		CraftingViewModel->UnbindCraftingStation();
 	}
-	if (PlayerInventoryViewModel)
-	{
-		PlayerInventoryViewModel->UnbindPlayerInventory();
-	}
-
 	if (RecipeList)
 	{
 		RecipeList->ClearListItems();
@@ -604,11 +712,6 @@ void URpgCraftingStationWidget::EnsureCraftingViewModels()
 		CraftingViewModel =
 			NewObject<URpgCraftingStationViewModel>(this);
 	}
-	if (!PlayerInventoryViewModel)
-	{
-		PlayerInventoryViewModel =
-			NewObject<URpgPlayerInventoryViewModel>(this);
-	}
 }
 
 void URpgCraftingStationWidget::BindViewModelDelegates()
@@ -627,12 +730,6 @@ void URpgCraftingStationWidget::BindViewModelDelegates()
 			this,
 			&ThisClass::HandleJobsChanged);
 	}
-	if (PlayerInventoryViewModel)
-	{
-		PlayerInventoryViewModel->OnSlotGroupsChanged.AddUniqueDynamic(
-			this,
-			&ThisClass::HandlePlayerSlotGroupsChanged);
-	}
 }
 
 void URpgCraftingStationWidget::UnbindViewModelDelegates()
@@ -648,12 +745,6 @@ void URpgCraftingStationWidget::UnbindViewModelDelegates()
 		CraftingViewModel->OnJobsChanged.RemoveDynamic(
 			this,
 			&ThisClass::HandleJobsChanged);
-	}
-	if (PlayerInventoryViewModel)
-	{
-		PlayerInventoryViewModel->OnSlotGroupsChanged.RemoveDynamic(
-			this,
-			&ThisClass::HandlePlayerSlotGroupsChanged);
 	}
 }
 
@@ -760,28 +851,6 @@ void URpgCraftingStationWidget::UnbindAuthoredControlEvents()
 			this,
 			&ThisClass::HandleAutoDepositCheckStateChanged);
 	}
-}
-
-void URpgCraftingStationWidget::RefreshPlayerGroups()
-{
-	if (!PlayerGroupsPanel)
-	{
-		return;
-	}
-
-	TArray<URpgInventorySlotGroupViewModel*> Groups;
-	if (bCraftingContextBound && PlayerInventoryViewModel)
-	{
-		Groups = PlayerInventoryViewModel->GetCarryGroups();
-		Groups.Append(PlayerInventoryViewModel->GetInventoryGroups());
-	}
-
-	PlayerGroupsPanel->SetDragDropCoordinator(
-		GetScreenDragDropCoordinator());
-	PlayerGroupsPanel->SetPanelNavigationCoordinator(
-		GetScreenPanelNavigationCoordinator(),
-		TEXT("Crafting.Player"));
-	PlayerGroupsPanel->SetSlotGroupItems(Groups);
 }
 
 void URpgCraftingStationWidget::RefreshRecipeItems()
@@ -1178,13 +1247,11 @@ void URpgCraftingStationWidget::HandleJobsChanged()
 	RefreshJobItems();
 }
 
-void URpgCraftingStationWidget::HandlePlayerSlotGroupsChanged()
+void URpgCraftingStationWidget::HandlePlayerInventoryPaneNavigationPanelsChanged()
 {
-	RefreshPlayerGroups();
 	if (bCraftingContextBound)
 	{
-		ForwardInventoryInteractionContextToChildren();
-		RefreshInventoryScreenNavigationPanels();
+		QueueDeferredInventoryScreenRefresh();
 	}
 }
 

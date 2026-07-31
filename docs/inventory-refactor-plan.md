@@ -1,6 +1,6 @@
 # Inventory Refactor Plan
 
-Stand: 2026-07-26
+Stand: 2026-07-29
 
 Dieses Dokument hält die verbindliche Reihenfolge für die Bereinigung des
 Tarkov-artigen Spatial Inventory fest. Es dient als Fortschrittsliste über
@@ -24,6 +24,58 @@ mehrere Codex-Aufgaben hinweg.
 - UMG-Assets zeigen im Designer die statische Hierarchie, die auch zur
   Laufzeit verwendet wird. Statische Screen-Hälften werden nicht zur Laufzeit
   ersetzt.
+
+## Addendum 2026-07-29 – Wiederverwendbares Player-Inventory-Pane
+
+Dieses Addendum ersetzt die älteren Aussagen weiter unten, nach denen der
+Player-Root selbst die Aggregate-VM und alle Player-Leaves besitzt oder
+Storage/Crafting nur reduzierte Player-Gruppen darstellen.
+
+- `CUI_PlayerInventoryPane` ist ein passives `URpgPlayerInventoryPaneWidget`
+  und enthält vollständig Gear, Carry, Pockets, Backpack, Belt, Pouch,
+  ResourceBag und Quickbar. Es besitzt genau eine stabile, native
+  `URpgPlayerInventoryViewModel`-Projektion und keine Gameplay-Autorität.
+- `CUI_PlayerInventory`, `CUI_StorageSpatial` und
+  `CUI_CraftingStationSpatial` sind weiterhin eigenständige Activatable
+  Root-Screens. Jeder Root besitzt genau einen Drag-/Interaction-Coordinator,
+  einen Panel-Navigator, CommonUI-Actions, Back, Modals, Feedback und den
+  screen-weiten `DragVisualCanvas`.
+- Alle drei Roots betten dasselbe vollständige Pane ein. Player zeigt es
+  zentriert; Storage und Crafting verwenden links das Player-Pane und rechts
+  ihren unveränderten Storage- beziehungsweise Crafting-Kontext. Die alten
+  `PlayerGroupsPanel`-Teilansichten und doppelten Player-VMs entfallen.
+- Das Pane registriert ausschließlich stabile `Player.*`-Panel-IDs, meldet
+  räumliche Grids und Non-Spatial-Drop-Ziele an den Root und verwendet nur
+  lokale Layout-Koordinaten. Payload-Routing, Quick-Transfer-Policy und jede
+  Mutation bleiben im Root und in `URpgInventoryUiActionComponent`.
+- Storage behält seine bidirektionalen Access-Policy-geprüften
+  Quick-Transfer-Routen. Crafting behält ausschließlich Output→Player. Das
+  BaseTerminal und der Registry-Pfad von `CUI_PlayerInventory` bleiben
+  unverändert.
+- Das Pane ist auf maximal 920 Slate Units Breite begrenzt und wird über
+  einen Down-Only-ScaleBox-Vertrag sowohl standalone als auch in den beiden
+  gleich breiten Dual-Screen-Spalten verwendet.
+
+Abschlussverifikation dieses Schnitts mit Unreal Engine 5.8:
+
+- `SurvivalRpgEditor Win64 Development` wurde erfolgreich gebaut; UHT,
+  SurvivalRpg und SurvivalRpgEditor kompilierten und linkten ohne Fehler.
+- `CompileAllBlueprints -ProjectOnly` kompilierte `CUI_PlayerInventoryPane`,
+  `CUI_PlayerInventory`, `CUI_StorageSpatial` und
+  `CUI_CraftingStationSpatial` erfolgreich. Der globale Commandlet-Lauf endet
+  unabhängig von diesem Schnitt mit zwei Fehlern in den unveränderten Enemy-
+  Assets `BP_BaseEnemy` und `BP_Enemy_SwordShield`, denen eine LootTable fehlt.
+- Der isolierte geänderte Scope ist grün: `SurvivalRpg.Inventory.UI` plus
+  `SurvivalRpg.Inventory.UiActions` 31 von 31, `SurvivalRpg.UI.ScreenRegistry`
+  10 von 10 und `PlayerInventoryRegistryOnly` 1 von 1 Tests erfolgreich.
+- Die vollständigen Filter wurden ebenfalls ausgeführt. `SurvivalRpg.Inventory`
+  meldete 155 von 160; die fünf Fehler liegen ausschließlich in unveränderten
+  Pickup-/Collect-/TransferDelta-Callback-Tests. `SurvivalRpg.UI` meldete 33
+  von 34; der einzige Fehler ist der unveränderte Input-Asset-Vertrag, der für
+  `IA_UI_Inventory` zwei statt der aktuell authorierten drei Mappings erwartet.
+- Ein interaktiver Mouse-/Gamepad-PIE-Smoke bei 1920×1080 und 1280×720 sowie
+  Zwei-Client-PIE bleiben manuelle Abnahme und werden hier nicht als
+  automatisiert verifiziert behauptet.
 
 ## Phase 0 – Safety-Net und bestätigte Fehler
 

@@ -92,6 +92,8 @@ protected:
 	virtual void NativeDestruct() override;
 	virtual void NativeOnAddedToFocusPath(const FFocusEvent& InFocusEvent) override;
 	virtual void NativeOnRemovedFromFocusPath(const FFocusEvent& InFocusEvent) override;
+	virtual void NativeOnMouseEnter(const FGeometry& InGeometry, const FPointerEvent& InMouseEvent) override;
+	virtual FReply NativeOnMouseMove(const FGeometry& InGeometry, const FPointerEvent& InMouseEvent) override;
 	virtual FReply NativeOnPreviewMouseButtonDown(
 		const FGeometry& InGeometry,
 		const FPointerEvent& InMouseEvent) override;
@@ -128,6 +130,7 @@ private:
 	UFUNCTION()
 	void HandleFocusedControllerHeldPayloadChanged(bool bHasHeldPayload, const FRpgInventoryDragPayload& HeldPayload);
 
+	void RefreshPointerHoverSelection(const FPointerEvent& InMouseEvent);
 	URpgInventoryItemInstance* GetCarryItem() const;
 	bool IsCarryItemActive() const;
 	ERpgInventoryCarryPresentationState ResolveCarryPresentationState() const;

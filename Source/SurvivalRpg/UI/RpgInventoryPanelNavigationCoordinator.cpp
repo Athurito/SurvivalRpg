@@ -70,6 +70,8 @@ void URpgInventoryPanelNavigationCoordinator::Initialize(APlayerController* InPl
 
 void URpgInventoryPanelNavigationCoordinator::ClearPanels()
 {
+	const bool bHadActivePanel = IsValidPanelIndex(ActivePanelIndex);
+
 	for (FRpgInventoryPanelNavigationEntry& Panel : Panels)
 	{
 		if (Panel.SpatialGridWidget)
@@ -104,6 +106,13 @@ void URpgInventoryPanelNavigationCoordinator::ClearPanels()
 	{
 		RetainedPanelMemories.Reset();
 		RetainedActivePanelId = NAME_None;
+		if (bHadActivePanel)
+		{
+			// Direct context teardown removes both the active panel and its selection. Refresh transactions suppress
+			// this transient empty state and publish the restored panel from EndPanelRefresh instead.
+			OnActiveSelectionChanged.Broadcast();
+			OnActivePanelChanged.Broadcast(NAME_None, INDEX_NONE);
+		}
 	}
 }
 
@@ -129,7 +138,8 @@ void URpgInventoryPanelNavigationCoordinator::BeginPanelRefresh()
 	ClearPanels();
 }
 
-void URpgInventoryPanelNavigationCoordinator::EndPanelRefresh()
+void URpgInventoryPanelNavigationCoordinator::EndPanelRefresh(
+	FName PreferredInitialPanelId)
 {
 	if (!bPanelRefreshInProgress)
 	{
@@ -141,6 +151,10 @@ void URpgInventoryPanelNavigationCoordinator::EndPanelRefresh()
 	RetainedActivePanelId = NAME_None;
 
 	bool bRestoredPanel = !DesiredPanelId.IsNone() && ActivatePanelById(DesiredPanelId);
+	if (!bRestoredPanel && !PreferredInitialPanelId.IsNone())
+	{
+		bRestoredPanel = ActivatePanelById(PreferredInitialPanelId);
+	}
 	if (!bRestoredPanel && Panels.Num() > 0)
 	{
 		bRestoredPanel = ActivatePanelByIndex(0);

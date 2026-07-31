@@ -850,49 +850,13 @@ void URpgInventoryInteractionScreenWidget::NativeOnDragLeave(
 	const FDragDropEvent& InDragDropEvent,
 	UDragDropOperation* InOperation)
 {
-	URpgInventoryDragDropOperation* InventoryOperation =
-		Cast<URpgInventoryDragDropOperation>(InOperation);
-	bool bGhostStillAddressesTarget = false;
-	if (InventoryOperation &&
-		URpgInventoryDragDropCoordinator::IsPayloadValid(InventoryOperation->InventoryPayload))
 	{
+		// Crossing a non-hit-testable child or the screen edge is not a drag cancellation. Slate owns the
+		// operation lifetime and will cancel only when the pointer is actually released without a handled drop.
 		TGuardValue<bool> RoutingGuard(bRoutingPointerPreview, true);
-		bGhostStillAddressesTarget = RouteInventoryPayloadAtScreenPosition(
-			InventoryOperation->InventoryPayload,
-			InDragDropEvent.GetScreenSpacePosition(),
-			false,
-			InventoryOperation);
+		SwitchActivePointerDropTarget(nullptr);
 	}
-
-	if (bGhostStillAddressesTarget)
-	{
-		// The pointer may leave the screen root while the visible footprint still addresses an edge target.
-		ActivePointerDragOperation = InventoryOperation;
-		LastPointerDragScreenPosition = InDragDropEvent.GetScreenSpacePosition();
-		bHasLastPointerDragScreenPosition = true;
-		UpdateFreePointerDragVisual(
-			InventoryDragDropCoordinator
-				? InventoryDragDropCoordinator->ResolveInteractionPayload(
-					InventoryOperation->InventoryPayload)
-				: InventoryOperation->InventoryPayload,
-			LastPointerDragScreenPosition,
-			ActivePointerDragOperation);
-		Super::NativeOnDragLeave(InDragDropEvent, InOperation);
-		return;
-	}
-
-	ClearExternalDragPreviews();
-	if (InventoryDragDropCoordinator)
-	{
-		const URpgInventoryInteractionSession* Session =
-			InventoryDragDropCoordinator->GetInteractionSession();
-		if (Session &&
-			Session->GetInputMode() == ERpgInventoryInteractionInputMode::Mouse &&
-			!Session->IsRequestPending())
-		{
-			InventoryDragDropCoordinator->CancelHold();
-		}
-	}
+	ClearFreePointerDragVisual();
 
 	Super::NativeOnDragLeave(InDragDropEvent, InOperation);
 }
@@ -913,6 +877,11 @@ void URpgInventoryInteractionScreenWidget::RegisterInventoryScreenNavigationPane
 	URpgInventoryPanelNavigationCoordinator* Navigator)
 {
 	(void)Navigator;
+}
+
+FName URpgInventoryInteractionScreenWidget::GetInitialInventoryNavigationPanelId() const
+{
+	return NAME_None;
 }
 
 void URpgInventoryInteractionScreenWidget::AppendInventoryScreenSpatialGrids(
@@ -1001,7 +970,8 @@ void URpgInventoryInteractionScreenWidget::RefreshInventoryScreenNavigationPanel
 
 	InventoryPanelNavigationCoordinator->BeginPanelRefresh();
 	RegisterInventoryScreenNavigationPanels(InventoryPanelNavigationCoordinator);
-	InventoryPanelNavigationCoordinator->EndPanelRefresh();
+	InventoryPanelNavigationCoordinator->EndPanelRefresh(
+		GetInitialInventoryNavigationPanelId());
 }
 
 void URpgInventoryInteractionScreenWidget::QueueDeferredInventoryScreenRefresh()
@@ -1105,7 +1075,13 @@ bool URpgInventoryInteractionScreenWidget::RoutePayloadToSpatialGrid(
 void URpgInventoryInteractionScreenWidget::SwitchActivePointerDropTarget(
 	UWidget* NewTarget)
 {
-	if (ActivePointerDropTarget.Get() == NewTarget)
+	const bool bSameLiveTarget =
+		NewTarget && ActivePointerDropTarget.Get() == NewTarget;
+	const bool bNoTrackedTarget =
+		!NewTarget &&
+		!ActivePointerDropTarget.IsValid() &&
+		!ActivePointerDropTarget.IsStale();
+	if (bSameLiveTarget || bNoTrackedTarget)
 	{
 		return;
 	}
@@ -1200,6 +1176,8 @@ void URpgInventoryInteractionScreenWidget::HandleInventoryInteractionStateChange
 		PreviewState,
 		bHasPayload,
 		bPendingRequest);
+	// Pending requests and payload teardown can change action validity without moving focus or changing selection.
+	RefreshInventoryActionBindingVisibility();
 	BP_OnInventoryInteractionStateChanged(
 		PreviewState,
 		bHasPayload,

@@ -85,7 +85,7 @@ public:
 	UFUNCTION(BlueprintCallable, Category = "Inventory|Navigation")
 	void Initialize(APlayerController* InPlayerController, URpgInventoryDragDropCoordinator* InDragDropCoordinator);
 
-	/** Removes all registered panels and clears active focus state. */
+	/** Removes all registered panels, clears active focus state, and publishes an empty selection outside refresh transactions. */
 	UFUNCTION(BlueprintCallable, Category = "Inventory|Navigation")
 	void ClearPanels();
 
@@ -93,9 +93,12 @@ public:
 	UFUNCTION(BlueprintCallable, Category = "Inventory|Navigation")
 	void BeginPanelRefresh();
 
-	/** Finishes a registration pass and restores the previously active surviving panel and its focus target. */
+	/**
+	 * Finishes a registration pass, restoring the previous panel or using PreferredInitialPanelId before index zero.
+	 * The preference applies only when no previously active panel survives the refresh.
+	 */
 	UFUNCTION(BlueprintCallable, Category = "Inventory|Navigation")
-	void EndPanelRefresh();
+	void EndPanelRefresh(FName PreferredInitialPanelId = NAME_None);
 
 	/** Registers one focusable spatial inventory grid for LB/RB controller navigation. */
 	UFUNCTION(BlueprintCallable, Category = "Inventory|Navigation")
