@@ -369,7 +369,7 @@ FText URpgCraftingStationWidget::ResolveQuickTransferDisplayName() const
 		return NSLOCTEXT(
 			"RpgCraftingStationWidget",
 			"QuickTransferOutputToInventory",
-			"Transfer \u2192 Inventory");
+			"Transfer -> Inventory");
 	}
 
 	return Super::ResolveQuickTransferDisplayName();

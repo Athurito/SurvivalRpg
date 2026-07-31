@@ -1059,7 +1059,7 @@ bool FRpgPlayerStorageInventoryLifecycleIntegrationTest::RunTest(
 			? FString(TEXT("Storage"))
 			: StorageTitle->GetText().ToString();
 	const FString ExpectedStorageTransferLabel = FString::Printf(
-		TEXT("Transfer \u2192 %s"),
+		TEXT("Transfer -> %s"),
 		*AuthoredStorageDestination);
 	if (!TestEqual(
 			TEXT("Storage initially activates its secondary root panel"),
@@ -1080,7 +1080,7 @@ bool FRpgPlayerStorageInventoryLifecycleIntegrationTest::RunTest(
 		!TestEqual(
 			TEXT("Secondary Storage source advertises transfer toward Inventory"),
 			StorageWidget->ResolveQuickTransferDisplayName().ToString(),
-			FString(TEXT("Transfer \u2192 Inventory"))) ||
+			FString(TEXT("Transfer -> Inventory"))) ||
 		!TestTrue(
 			TEXT("Storage navigator activates its dynamically addressed Content_Pockets panel"),
 			StorageScreenNavigator->ActivatePanelById(
@@ -1112,7 +1112,7 @@ bool FRpgPlayerStorageInventoryLifecycleIntegrationTest::RunTest(
 		!TestEqual(
 			TEXT("Player Gear advertises its actual player-internal unequip destination"),
 			StorageWidget->ResolveQuickTransferDisplayName().ToString(),
-			FString(TEXT("Transfer \u2192 Inventory"))) ||
+			FString(TEXT("Transfer -> Inventory"))) ||
 		!TestTrue(
 			TEXT("Player Gear keeps the Player title highlighted"),
 			StoragePlayerTitle->GetColorAndOpacity().GetSpecifiedColor().Equals(

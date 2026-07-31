@@ -454,7 +454,7 @@ bool FRpgStorageInventoryWidgetContextLifecycleTest::RunTest(const FString& Para
 	TestEqual(
 		TEXT("Secondary source advertises transfer toward Inventory"),
 		Widget->ResolveQuickTransferDisplayName().ToString(),
-		FString(TEXT("Transfer \u2192 Inventory")));
+		FString(TEXT("Transfer -> Inventory")));
 
 	URpgPlayerInventoryViewModel* StoragePlayerViewModel =
 		Widget->GetStoragePlayerInventoryViewModel();

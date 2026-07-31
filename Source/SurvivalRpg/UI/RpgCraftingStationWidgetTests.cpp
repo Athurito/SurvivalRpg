@@ -1517,14 +1517,14 @@ bool FRpgCraftingScreenPayloadLifecycleTest::RunTest(
 	TestEqual(
 		TEXT("Crafting output advertises only the existing Output-to-Player route"),
 		Widget->ResolveQuickTransferDisplayName().ToString(),
-		FString(TEXT("Transfer \u2192 Inventory")));
+		FString(TEXT("Transfer -> Inventory")));
 	TestTrue(
 		TEXT("Crafting player Gear can become the active player-internal transfer source"),
 		PanelNavigator->ActivatePanelById(FName(TEXT("Player.Gear.Head"))));
 	TestEqual(
 		TEXT("Crafting player-internal quick transfer names its actual Inventory destination"),
 		Widget->ResolveQuickTransferDisplayName().ToString(),
-		FString(TEXT("Transfer \u2192 Inventory")));
+		FString(TEXT("Transfer -> Inventory")));
 	if (!PreviousCraftingPanelId.IsNone())
 	{
 		TestTrue(

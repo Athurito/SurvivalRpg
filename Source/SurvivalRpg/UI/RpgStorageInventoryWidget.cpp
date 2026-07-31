@@ -359,7 +359,7 @@ FText URpgStorageInventoryWidget::ResolveQuickTransferDisplayName() const
 		return NSLOCTEXT(
 			"RpgStorageInventoryWidget",
 			"QuickTransferEquipmentToInventory",
-			"Transfer \u2192 Inventory");
+			"Transfer -> Inventory");
 	}
 	if (bPlayerPanelActive ||
 		(ActiveInventory && ActiveInventory == PrimaryInventory))
@@ -377,7 +377,7 @@ FText URpgStorageInventoryWidget::ResolveQuickTransferDisplayName() const
 			NSLOCTEXT(
 				"RpgStorageInventoryWidget",
 				"QuickTransferToStorageFormat",
-				"Transfer \u2192 {0}"),
+				"Transfer -> {0}"),
 			DestinationName);
 	}
 	if (ActiveInventory && ActiveInventory == SecondaryInventory)
@@ -385,7 +385,7 @@ FText URpgStorageInventoryWidget::ResolveQuickTransferDisplayName() const
 		return NSLOCTEXT(
 			"RpgStorageInventoryWidget",
 			"QuickTransferToInventory",
-			"Transfer \u2192 Inventory");
+			"Transfer -> Inventory");
 	}
 
 	return Super::ResolveQuickTransferDisplayName();
