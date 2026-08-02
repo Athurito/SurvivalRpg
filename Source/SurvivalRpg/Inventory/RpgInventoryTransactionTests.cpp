@@ -20,7 +20,11 @@
 #include "SurvivalRpg/ActionBar/RpgActionBarComponent.h"
 #include "SurvivalRpg/AbilitySystem/Attributes/RpgHealthSet.h"
 #include "SurvivalRpg/AbilitySystem/RpgAbilitySystemComponent.h"
+#include "SurvivalRpg/Base/RpgBaseCampActor.h"
 #include "SurvivalRpg/Base/RpgBaseStorageComponent.h"
+#include "SurvivalRpg/Base/RpgBaseStorageStationComponent.h"
+#include "SurvivalRpg/Base/RpgBaseStorageUpgradeDefinition.h"
+#include "SurvivalRpg/Base/RpgPersonalStorageLockerActor.h"
 #include "SurvivalRpg/Crafting/RpgCraftingStationActor.h"
 #include "SurvivalRpg/Crafting/RpgCraftingStationComponent.h"
 #include "SurvivalRpg/Equipment/RpgEquipmentAutomationTestTypes.h"
@@ -7872,49 +7876,18 @@ bool FRpgInventoryLegacyOrderingSurfaceRemovedTest::RunTest(const FString& Param
 	TestNotNull(
 		TEXT("BaseStorage keeps the shared resource-sort mode enum"),
 		StaticEnum<ERpgInventorySortMode>());
-	static const FName PreservedBaseStorageRequests[] = {
+	static const FName RemovedBaseStorageOrderingRequests[] = {
 		TEXT("RequestApplyBaseResourceSort"),
 		TEXT("RequestMoveBaseResourceEntry"),
 	};
-	for (const FName FunctionName : PreservedBaseStorageRequests)
+	for (const FName FunctionName : RemovedBaseStorageOrderingRequests)
 	{
-		const UFunction* Function =
+		TestNull(
+			*FString::Printf(
+				TEXT("%s is absent because base-resource ordering is client-local"),
+				*FunctionName.ToString()),
 			URpgInventoryUiActionComponent::StaticClass()->FindFunctionByName(
-				FunctionName);
-		if (!TestNotNull(
-				*FString::Printf(
-					TEXT("BaseStorage keeps the reflected %s request"),
-					*FunctionName.ToString()),
-				Function))
-		{
-			continue;
-		}
-
-		TestTrue(
-			*FString::Printf(
-				TEXT("%s remains a server RPC"),
-				*FunctionName.ToString()),
-			Function->HasAnyFunctionFlags(FUNC_NetServer));
-		TestTrue(
-			*FString::Printf(
-				TEXT("%s remains reliable"),
-				*FunctionName.ToString()),
-			Function->HasAnyFunctionFlags(FUNC_NetReliable));
-		TestTrue(
-			*FString::Printf(
-				TEXT("%s remains BlueprintCallable"),
-				*FunctionName.ToString()),
-			Function->HasAnyFunctionFlags(FUNC_BlueprintCallable));
-		TestFalse(
-			*FString::Printf(
-				TEXT("%s is not a client RPC"),
-				*FunctionName.ToString()),
-			Function->HasAnyFunctionFlags(FUNC_NetClient));
-		TestFalse(
-			*FString::Printf(
-				TEXT("%s is not a multicast RPC"),
-				*FunctionName.ToString()),
-			Function->HasAnyFunctionFlags(FUNC_NetMulticast));
+				FunctionName));
 	}
 
 	using namespace RpgInventoryTransactionTests;
@@ -9883,6 +9856,44 @@ bool FRpgInventoryNestedGraphValidationTest::RunTest(const FString& Parameters)
 		DepthTarget->GetInventoryRevision();
 	const uint64 EpochBeforeRejectedImports =
 		DepthTarget->GetMutationEpoch();
+	FRpgInventoryMutationResult PreflightResult;
+	TestTrue(
+		TEXT("A valid save graph passes restore preflight"),
+		DepthTarget->ValidateInventoryGraphForRestore(
+			DepthFourGraph,
+			PreflightResult));
+	TestEqual(
+		TEXT("Restore preflight reports validation success"),
+		PreflightResult.Code,
+		ERpgInventoryMutationResultCode::Success);
+	TestEqual(
+		TEXT("Restore preflight commits no item rows"),
+		PreflightResult.AppliedQuantity,
+		0);
+	TestTrue(
+		TEXT("Restore preflight exposes no committed deltas"),
+		PreflightResult.Deltas.IsEmpty());
+	TestEqual(
+		TEXT("Restore preflight preserves the complete live graph"),
+		MakeStrictInventorySignature(DepthTarget),
+		BeforeRejectedImports);
+	TestEqual(
+		TEXT("Restore preflight preserves the inventory revision"),
+		DepthTarget->GetInventoryRevision(),
+		RevisionBeforeRejectedImports);
+	TestEqual(
+		TEXT("Restore preflight preserves the mutation epoch"),
+		DepthTarget->GetMutationEpoch(),
+		EpochBeforeRejectedImports);
+	TestEqual(
+		TEXT("Restore preflight preserves live item UObject identity"),
+		DepthTarget->FindItemById(RuntimeStateSentinelId),
+		RuntimeStateSentinel);
+	TestEqual(
+		TEXT("Restore preflight rolls staged runtime-state imports back"),
+		RuntimeStateSentinel->GetStatTagStackCount(
+			RpgGameplayTags::Ability_Attack_Basic),
+		3);
 	auto VerifyRejectedRestoreIsAtomic =
 		[this,
 		 DepthTarget,
@@ -13286,6 +13297,670 @@ bool FRpgInventoryMainHandCoordinatorParityTest::RunTest(
 	TestTrue(
 		TEXT("The accepted MainHand commit advances inventory revision"),
 		Inventory->GetInventoryRevision() > RevisionBeforeCommit);
+	return true;
+}
+
+IMPLEMENT_SIMPLE_AUTOMATION_TEST(
+	FRpgInventoryBaseConcreteDomainRevisionTest,
+	"SurvivalRpg.Inventory.Transfer.BaseConcreteDomainsAdvanceNetworkRevisionOnce",
+	EAutomationTestFlags::EditorContext |
+		EAutomationTestFlags::EngineFilter)
+
+bool FRpgInventoryBaseConcreteDomainRevisionTest::RunTest(
+	const FString& Parameters)
+{
+	using namespace RpgInventoryTransactionTests;
+	FScopedInventoryWorld TestWorld;
+	if (!InitializeTest(*this, TestWorld))
+	{
+		return false;
+	}
+
+	UWorld* World = TestWorld.GetTestWorld();
+	FActorSpawnParameters ControllerSpawnParameters;
+	ControllerSpawnParameters.Name = MakeUniqueObjectName(
+		World,
+		ARpgInventoryAutomationTestPlayerController::StaticClass(),
+		TEXT("BaseConcreteRevisionController"));
+	ControllerSpawnParameters.ObjectFlags = RF_Transient;
+	ARpgInventoryAutomationTestPlayerController* Controller =
+		World->SpawnActor<ARpgInventoryAutomationTestPlayerController>(
+			ControllerSpawnParameters);
+
+	FActorSpawnParameters PawnSpawnParameters;
+	PawnSpawnParameters.Name = MakeUniqueObjectName(
+		World,
+		APawn::StaticClass(),
+		TEXT("BaseConcreteRevisionPawn"));
+	PawnSpawnParameters.ObjectFlags = RF_Transient;
+	PawnSpawnParameters.SpawnCollisionHandlingOverride =
+		ESpawnActorCollisionHandlingMethod::AlwaysSpawn;
+	APawn* Pawn = World->SpawnActor<APawn>(PawnSpawnParameters);
+
+	FActorSpawnParameters PlayerStateSpawnParameters;
+	PlayerStateSpawnParameters.Name = MakeUniqueObjectName(
+		World,
+		ARpgInventoryAutomationTestPlayerState::StaticClass(),
+		TEXT("BaseConcreteRevisionPlayerState"));
+	PlayerStateSpawnParameters.ObjectFlags = RF_Transient;
+	ARpgInventoryAutomationTestPlayerState* PlayerState =
+		World->SpawnActor<ARpgInventoryAutomationTestPlayerState>(
+			PlayerStateSpawnParameters);
+	if (!TestNotNull(TEXT("The revision-test controller exists"), Controller) ||
+		!TestNotNull(TEXT("The revision-test pawn exists"), Pawn) ||
+		!TestNotNull(TEXT("The revision-test player state exists"), PlayerState))
+	{
+		return false;
+	}
+
+	Controller->SetPlayerState(PlayerState);
+	PlayerState->SetOwner(Controller);
+	Controller->Possess(Pawn);
+	Pawn->SetActorLocation(FVector::ZeroVector);
+	URpgInventoryManagerComponent* PlayerInventory =
+		PlayerState->GetInventoryManagerComponent();
+	URpgInventoryUiActionComponent* UiActions =
+		Controller->GetInventoryUiActionComponent();
+	if (!TestTrue(TEXT("The revision-test gateway runs on authority"), Controller->HasAuthority()) ||
+		!TestNotNull(TEXT("The revision-test player inventory exists"), PlayerInventory) ||
+		!TestNotNull(TEXT("The revision-test UI action gateway exists"), UiActions))
+	{
+		return false;
+	}
+
+	struct FBaseTransferContext
+	{
+		ARpgBaseCampActor* BaseCamp = nullptr;
+		AActor* StationOwner = nullptr;
+		URpgBaseStorageStationComponent* Station = nullptr;
+		URpgBaseStorageComponent* Storage = nullptr;
+		URpgInventoryManagerComponent* Armory = nullptr;
+		URpgInventoryManagerComponent* Containment = nullptr;
+
+		bool IsValid() const
+		{
+			return BaseCamp && StationOwner && Station && Storage && Armory &&
+				Containment;
+		}
+	};
+
+	const auto CreateBaseContext =
+		[World](const TCHAR* DebugName, const FVector& Location)
+		{
+			FBaseTransferContext Context;
+			FActorSpawnParameters BaseSpawnParameters;
+			BaseSpawnParameters.Name = MakeUniqueObjectName(
+				World,
+				ARpgBaseCampActor::StaticClass(),
+				FName(*FString::Printf(TEXT("%s_Base"), DebugName)));
+			BaseSpawnParameters.ObjectFlags = RF_Transient;
+			BaseSpawnParameters.SpawnCollisionHandlingOverride =
+				ESpawnActorCollisionHandlingMethod::AlwaysSpawn;
+			Context.BaseCamp = World->SpawnActor<ARpgBaseCampActor>(
+				BaseSpawnParameters);
+			if (!Context.BaseCamp)
+			{
+				return Context;
+			}
+			Context.BaseCamp->SetActorLocation(Location);
+			if (!Context.BaseCamp->HasActorBegunPlay())
+			{
+				Context.BaseCamp->DispatchBeginPlay();
+			}
+
+			FActorSpawnParameters StationSpawnParameters;
+			StationSpawnParameters.Name = MakeUniqueObjectName(
+				World,
+				AActor::StaticClass(),
+				FName(*FString::Printf(TEXT("%s_Station"), DebugName)));
+			StationSpawnParameters.ObjectFlags = RF_Transient;
+			StationSpawnParameters.SpawnCollisionHandlingOverride =
+				ESpawnActorCollisionHandlingMethod::AlwaysSpawn;
+			Context.StationOwner = World->SpawnActor<AActor>(
+				StationSpawnParameters);
+			if (!Context.StationOwner)
+			{
+				return Context;
+			}
+			Context.StationOwner->SetActorLocation(Location);
+			Context.Station = NewObject<URpgBaseStorageStationComponent>(
+				Context.StationOwner,
+				MakeUniqueObjectName(
+					Context.StationOwner,
+					URpgBaseStorageStationComponent::StaticClass(),
+					TEXT("StorageStation")),
+				RF_Transient);
+			Context.StationOwner->AddInstanceComponent(Context.Station);
+			Context.Station->RegisterComponent();
+			Context.Station->SetLinkedBaseCamp(Context.BaseCamp);
+			if (!Context.StationOwner->HasActorBegunPlay())
+			{
+				Context.StationOwner->DispatchBeginPlay();
+			}
+
+			Context.Storage = Context.BaseCamp->GetBaseStorageComponent();
+			Context.Armory = Context.BaseCamp->GetArmoryInventoryComponent();
+			Context.Containment =
+				Context.BaseCamp->GetContainmentInventoryComponent();
+			return Context;
+		};
+
+	const FBaseTransferContext BaseA =
+		CreateBaseContext(TEXT("BaseConcreteRevisionA"), FVector::ZeroVector);
+	const FBaseTransferContext BaseB =
+		CreateBaseContext(TEXT("BaseConcreteRevisionB"), FVector(100.0, 0.0, 0.0));
+	if (!TestTrue(TEXT("The first Base transfer context is complete"), BaseA.IsValid()) ||
+		!TestTrue(TEXT("The second Base transfer context is complete"), BaseB.IsValid()) ||
+		!TestTrue(TEXT("The player can access Base A Armory"), UiActions->CanAccessInventory(BaseA.Armory)) ||
+		!TestTrue(TEXT("The player can access Base B Armory"), UiActions->CanAccessInventory(BaseB.Armory)))
+	{
+		return false;
+	}
+
+	const FRpgInventoryContainerHandle Pockets =
+		FRpgInventoryContainerHandle::MakeRoot(
+			URpgPlayerInventoryLayoutComponent::PocketsGroupId);
+	const FRpgInventoryContainerHandle ArmoryRootA =
+		FRpgInventoryContainerHandle::MakeRoot(
+			BaseA.Armory->GetDefaultContainerId());
+	const FRpgInventoryContainerHandle ArmoryRootB =
+		FRpgInventoryContainerHandle::MakeRoot(
+			BaseB.Armory->GetDefaultContainerId());
+	URpgInventoryItemInstance* ArmoryItem =
+		PlayerInventory->AddItemDefinitionToPlacement(
+			URpgInventoryAutomationTestUnitItemDefinition::StaticClass(),
+			1,
+			MakePlacement(Pockets, 0, 0));
+	if (!TestNotNull(TEXT("The exact Armory source item exists"), ArmoryItem))
+	{
+		return false;
+	}
+	const FRpgInventoryItemId ArmoryItemId = ArmoryItem->GetItemId();
+	const int64 BaseARevisionBeforePlayerExact =
+		BaseA.Storage->GetNetworkRevision();
+	const int64 BaseBRevisionBeforePlayerExact =
+		BaseB.Storage->GetNetworkRevision();
+	UiActions->RequestTransferInventoryItem(
+		PlayerInventory,
+		BaseA.Armory,
+		MakeExactTransferIntent(
+			PlayerInventory,
+			ArmoryItemId,
+			1,
+			MakePlacement(ArmoryRootA, 0, 0)));
+	TestEqual(
+		TEXT("A successful player-to-Armory Exact transfer advances the affected Base exactly once"),
+		BaseA.Storage->GetNetworkRevision(),
+		BaseARevisionBeforePlayerExact + 1);
+	TestEqual(
+		TEXT("A successful player-to-Armory Exact transfer does not advance an unrelated Base"),
+		BaseB.Storage->GetNetworkRevision(),
+		BaseBRevisionBeforePlayerExact);
+	TestNotNull(
+		TEXT("The successful Exact transfer reaches Base A Armory"),
+		BaseA.Armory->FindItemById(ArmoryItemId));
+
+	const int64 BaseARevisionBeforeCrossExact =
+		BaseA.Storage->GetNetworkRevision();
+	const int64 BaseBRevisionBeforeCrossExact =
+		BaseB.Storage->GetNetworkRevision();
+	UiActions->RequestTransferInventoryItem(
+		BaseA.Armory,
+		BaseB.Armory,
+		MakeExactTransferIntent(
+			BaseA.Armory,
+			ArmoryItemId,
+			1,
+			MakePlacement(ArmoryRootB, 0, 0)));
+	TestEqual(
+		TEXT("A successful cross-Base Exact transfer advances its source Base exactly once"),
+		BaseA.Storage->GetNetworkRevision(),
+		BaseARevisionBeforeCrossExact + 1);
+	TestEqual(
+		TEXT("A successful cross-Base Exact transfer advances its target Base exactly once"),
+		BaseB.Storage->GetNetworkRevision(),
+		BaseBRevisionBeforeCrossExact + 1);
+	TestNotNull(
+		TEXT("The cross-Base Exact transfer reaches Base B Armory"),
+		BaseB.Armory->FindItemById(ArmoryItemId));
+
+	URpgInventoryItemInstance* BlockedExactItem =
+		PlayerInventory->AddItemDefinitionToPlacement(
+			URpgInventoryAutomationTestUnitItemDefinition::StaticClass(),
+			1,
+			MakePlacement(Pockets, 1, 0));
+	if (!TestNotNull(TEXT("The blocked Exact source item exists"), BlockedExactItem))
+	{
+		return false;
+	}
+	const int64 BaseARevisionBeforeBlockedExact =
+		BaseA.Storage->GetNetworkRevision();
+	const int64 BaseBRevisionBeforeBlockedExact =
+		BaseB.Storage->GetNetworkRevision();
+	UiActions->RequestTransferInventoryItem(
+		PlayerInventory,
+		BaseB.Armory,
+		MakeExactTransferIntent(
+			PlayerInventory,
+			BlockedExactItem->GetItemId(),
+			1,
+			MakePlacement(ArmoryRootB, 0, 0)));
+	TestEqual(
+		TEXT("An occupied-target Exact failure leaves the target Base revision unchanged"),
+		BaseB.Storage->GetNetworkRevision(),
+		BaseBRevisionBeforeBlockedExact);
+	TestEqual(
+		TEXT("An occupied-target Exact failure leaves every unrelated Base revision unchanged"),
+		BaseA.Storage->GetNetworkRevision(),
+		BaseARevisionBeforeBlockedExact);
+	TestNotNull(
+		TEXT("The failed Exact transfer preserves its source item"),
+		PlayerInventory->FindItemById(BlockedExactItem->GetItemId()));
+
+	const int64 BaseARevisionBeforeCrossQuick =
+		BaseA.Storage->GetNetworkRevision();
+	const int64 BaseBRevisionBeforeCrossQuick =
+		BaseB.Storage->GetNetworkRevision();
+	UiActions->RequestQuickTransferItem(
+		BaseB.Armory,
+		BaseA.Armory,
+		MakeQuickTransferRequest(BaseB.Armory, ArmoryItemId, 1));
+	TestEqual(
+		TEXT("A successful cross-Base Quick transfer advances its target Base exactly once"),
+		BaseA.Storage->GetNetworkRevision(),
+		BaseARevisionBeforeCrossQuick + 1);
+	TestEqual(
+		TEXT("A successful cross-Base Quick transfer advances its source Base exactly once"),
+		BaseB.Storage->GetNetworkRevision(),
+		BaseBRevisionBeforeCrossQuick + 1);
+	TestNotNull(
+		TEXT("The cross-Base Quick transfer returns the item to Base A Armory"),
+		BaseA.Armory->FindItemById(ArmoryItemId));
+
+	FRpgInventoryQuickTransferRequest StaleQuickRequest =
+		MakeQuickTransferRequest(BaseA.Armory, ArmoryItemId, 1);
+	++StaleQuickRequest.ExpectedSourceQuantity;
+	const int64 BaseARevisionBeforeStaleQuick =
+		BaseA.Storage->GetNetworkRevision();
+	const int64 BaseBRevisionBeforeStaleQuick =
+		BaseB.Storage->GetNetworkRevision();
+	UiActions->RequestQuickTransferItem(
+		BaseA.Armory,
+		BaseB.Armory,
+		StaleQuickRequest);
+	TestEqual(
+		TEXT("A stale Quick failure leaves its source Base revision unchanged"),
+		BaseA.Storage->GetNetworkRevision(),
+		BaseARevisionBeforeStaleQuick);
+	TestEqual(
+		TEXT("A stale Quick failure leaves its target Base revision unchanged"),
+		BaseB.Storage->GetNetworkRevision(),
+		BaseBRevisionBeforeStaleQuick);
+
+	URpgBaseStorageUpgradeDefinition* ContainmentUpgrade =
+		NewObject<URpgBaseStorageUpgradeDefinition>(
+			BaseA.Storage,
+			TEXT("AutomationContainmentUpgrade"),
+			RF_Transient);
+	if (!TestNotNull(TEXT("The containment upgrade fixture exists"), ContainmentUpgrade))
+	{
+		return false;
+	}
+	ContainmentUpgrade->TargetAnchorId = TEXT("RiftVault");
+	ContainmentUpgrade->TargetDomainTag =
+		RpgGameplayTags::Storage_Domain_RiftContainment;
+	ContainmentUpgrade->ContainmentEffect.AdditionalSealedSlots = 2;
+	ContainmentUpgrade->ContainmentEffect.ContainmentStrengthDelta = 25.0f;
+	ContainmentUpgrade->GrantedCapabilityTags.AddTag(
+		RpgGameplayTags::Storage_Capability_RiftContainment);
+	if (!TestTrue(
+			TEXT("The transient containment fixture installs on Base A"),
+			BaseA.Storage->InstallUpgrade(ContainmentUpgrade)) ||
+		!TestTrue(
+			TEXT("The player can access Base A Containment"),
+			UiActions->CanAccessInventory(BaseA.Containment)))
+	{
+		return false;
+	}
+
+	const TSubclassOf<URpgInventoryItemDefinition> RiftCoreDefinition =
+		LoadClass<URpgInventoryItemDefinition>(
+			nullptr,
+			TEXT("/GF_AI_RiftMonsters/Items/Containment/ID_UnstableRiftCore.ID_UnstableRiftCore_C"));
+	if (!TestNotNull(
+			TEXT("The authored unstable Rift Core definition loads"),
+			RiftCoreDefinition.Get()))
+	{
+		return false;
+	}
+
+	URpgInventoryItemInstance* ExactRiftCore =
+		PlayerInventory->AddItemDefinitionToPlacement(
+			RiftCoreDefinition,
+			1,
+			MakePlacement(Pockets, 2, 0));
+	URpgInventoryItemInstance* QuickRiftCore =
+		PlayerInventory->AddItemDefinitionToPlacement(
+			RiftCoreDefinition,
+			1,
+			MakePlacement(Pockets, 3, 0));
+	URpgInventoryItemInstance* BlockedRiftCore =
+		PlayerInventory->AddItemDefinitionToPlacement(
+			RiftCoreDefinition,
+			1,
+			MakePlacement(Pockets, 0, 1));
+	if (!TestNotNull(TEXT("The Exact Rift Core source exists"), ExactRiftCore) ||
+		!TestNotNull(TEXT("The Quick Rift Core source exists"), QuickRiftCore) ||
+		!TestNotNull(TEXT("The blocked Rift Core source exists"), BlockedRiftCore))
+	{
+		return false;
+	}
+	const FRpgInventoryItemId ExactRiftCoreId = ExactRiftCore->GetItemId();
+	const FRpgInventoryItemId QuickRiftCoreId = QuickRiftCore->GetItemId();
+	const FRpgInventoryContainerHandle ContainmentRoot =
+		FRpgInventoryContainerHandle::MakeRoot(
+			BaseA.Containment->GetDefaultContainerId());
+	const int64 BaseARevisionBeforeExactContainment =
+		BaseA.Storage->GetNetworkRevision();
+	const int64 BaseBRevisionBeforeExactContainment =
+		BaseB.Storage->GetNetworkRevision();
+	UiActions->RequestTransferInventoryItem(
+		PlayerInventory,
+		BaseA.Containment,
+		MakeExactTransferIntent(
+			PlayerInventory,
+			ExactRiftCoreId,
+			1,
+			MakePlacement(ContainmentRoot, 0, 0)));
+	TestEqual(
+		TEXT("A first Unstable Exact deposit advances the Containment Base exactly once"),
+		BaseA.Storage->GetNetworkRevision(),
+		BaseARevisionBeforeExactContainment + 1);
+	TestEqual(
+		TEXT("A first Unstable Exact deposit does not advance an unrelated Base"),
+		BaseB.Storage->GetNetworkRevision(),
+		BaseBRevisionBeforeExactContainment);
+	URpgInventoryItemInstance* ExactRiftCoreInVault =
+		BaseA.Containment->FindItemById(ExactRiftCoreId);
+	if (!TestNotNull(
+			TEXT("The first Exact Rift Core enters Containment"),
+			ExactRiftCoreInVault))
+	{
+		return false;
+	}
+	TestEqual(
+		TEXT("The first Exact Rift Core retains the instance-owned Unstable state"),
+		ExactRiftCoreInVault->GetContainmentState(),
+		ERpgInventoryContainmentState::Unstable);
+
+	const int64 BaseARevisionBeforeBlockedContainmentExact =
+		BaseA.Storage->GetNetworkRevision();
+	UiActions->RequestTransferInventoryItem(
+		PlayerInventory,
+		BaseA.Containment,
+		MakeExactTransferIntent(
+			PlayerInventory,
+			BlockedRiftCore->GetItemId(),
+			1,
+			MakePlacement(ContainmentRoot, 0, 0)));
+	TestEqual(
+		TEXT("An occupied Containment Exact failure leaves the Base revision unchanged"),
+		BaseA.Storage->GetNetworkRevision(),
+		BaseARevisionBeforeBlockedContainmentExact);
+	TestNotNull(
+		TEXT("The failed Containment Exact deposit preserves its source item"),
+		PlayerInventory->FindItemById(BlockedRiftCore->GetItemId()));
+
+	const int64 BaseARevisionBeforeQuickContainment =
+		BaseA.Storage->GetNetworkRevision();
+	UiActions->RequestQuickTransferItem(
+		PlayerInventory,
+		BaseA.Containment,
+		MakeQuickTransferRequest(PlayerInventory, QuickRiftCoreId, 1));
+	TestEqual(
+		TEXT("A first Unstable Quick deposit advances the Containment Base exactly once"),
+		BaseA.Storage->GetNetworkRevision(),
+		BaseARevisionBeforeQuickContainment + 1);
+	URpgInventoryItemInstance* QuickRiftCoreInVault =
+		BaseA.Containment->FindItemById(QuickRiftCoreId);
+	if (!TestNotNull(
+			TEXT("The first Quick Rift Core enters Containment"),
+			QuickRiftCoreInVault))
+	{
+		return false;
+	}
+	TestEqual(
+		TEXT("The first Quick Rift Core retains the instance-owned Unstable state"),
+		QuickRiftCoreInVault->GetContainmentState(),
+		ERpgInventoryContainmentState::Unstable);
+
+	const int64 BaseARevisionBeforeFullContainmentQuick =
+		BaseA.Storage->GetNetworkRevision();
+	UiActions->RequestQuickTransferItem(
+		PlayerInventory,
+		BaseA.Containment,
+		MakeQuickTransferRequest(
+			PlayerInventory,
+			BlockedRiftCore->GetItemId(),
+			1));
+	TestEqual(
+		TEXT("A full Containment Quick failure leaves the Base revision unchanged"),
+		BaseA.Storage->GetNetworkRevision(),
+		BaseARevisionBeforeFullContainmentQuick);
+	TestNotNull(
+		TEXT("The failed Containment Quick deposit preserves its source item"),
+		PlayerInventory->FindItemById(BlockedRiftCore->GetItemId()));
+
+	if (!TestTrue(
+			TEXT("Authority can mark the exact contained instance Stabilized"),
+			ExactRiftCoreInVault->SetContainmentState(
+				ERpgInventoryContainmentState::Stabilized)))
+	{
+		return false;
+	}
+	TestTrue(
+		TEXT("The exact contained instance owns the Stabilized lifecycle state"),
+		ExactRiftCoreInVault->IsContainmentStabilized());
+
+	const int64 BaseARevisionBeforeStabilizedArmoryTransfer =
+		BaseA.Storage->GetNetworkRevision();
+	UiActions->RequestTransferInventoryItem(
+		BaseA.Containment,
+		BaseA.Armory,
+		MakeExactTransferIntent(
+			BaseA.Containment,
+			ExactRiftCoreId,
+			1,
+			MakePlacement(ArmoryRootA, 1, 0)));
+	TestEqual(
+		TEXT("A Stabilized Vault-to-Armory transfer advances the Base exactly once"),
+		BaseA.Storage->GetNetworkRevision(),
+		BaseARevisionBeforeStabilizedArmoryTransfer + 1);
+	URpgInventoryItemInstance* StableArmoryCore =
+		BaseA.Armory->FindItemById(ExactRiftCoreId);
+	if (!TestNotNull(
+			TEXT("The Stabilized Rift Core reaches Armory with the same persistent id"),
+			StableArmoryCore))
+	{
+		return false;
+	}
+	TestEqual(
+		TEXT("Vault-to-Armory reconstruction preserves the persistent item id"),
+		StableArmoryCore->GetItemId(),
+		ExactRiftCoreId);
+	TestTrue(
+		TEXT("Vault-to-Armory reconstruction preserves Stabilized state"),
+		StableArmoryCore->IsContainmentStabilized());
+
+	const FRpgInventoryGraphSaveData StableArmoryGraph =
+		BaseA.Armory->ExportInventoryGraph();
+	const FRpgInventorySavedItem* SavedStableCore =
+		StableArmoryGraph.Items.FindByPredicate(
+			[ExactRiftCoreId](const FRpgInventorySavedItem& SavedItem)
+			{
+				return SavedItem.ItemId == ExactRiftCoreId;
+			});
+	if (!TestNotNull(
+			TEXT("Armory graph export contains the Stabilized Rift Core"),
+			SavedStableCore))
+	{
+		return false;
+	}
+	TestTrue(
+		TEXT("Armory graph export owns the versioned containment-state payload"),
+		SavedStableCore->RuntimeState.ContainsByPredicate(
+			[](const FRpgInventoryFragmentStatePayload& Payload)
+			{
+				return Payload.FragmentId ==
+					FName(TEXT("Inventory.Storage.ContainmentState")) &&
+					Payload.Version == 1 && !Payload.Payload.IsEmpty();
+			}));
+
+	const FRpgInventoryMutationResult RemoveStableCoreResult =
+		BaseA.Armory->ConsumeItemById(ExactRiftCoreId, 1);
+	if (!TestTrue(
+			TEXT("The graph fixture removes the live Stabilized Rift Core before restore"),
+			RemoveStableCoreResult.IsSuccess()) ||
+		!TestNull(
+			TEXT("The removed Rift Core is absent before graph restore"),
+			BaseA.Armory->FindItemById(ExactRiftCoreId)))
+	{
+		return false;
+	}
+	FRpgInventoryMutationResult RestoreStableGraphResult;
+	if (!TestTrue(
+			TEXT("Armory graph restores after the concrete Rift Core was removed"),
+			BaseA.Armory->RestoreInventoryGraph(
+				StableArmoryGraph,
+				RestoreStableGraphResult)) ||
+		!TestTrue(
+			TEXT("The Stabilized Armory graph restore reports success"),
+			RestoreStableGraphResult.IsSuccess()))
+	{
+		return false;
+	}
+	StableArmoryCore = BaseA.Armory->FindItemById(ExactRiftCoreId);
+	if (!TestNotNull(
+			TEXT("Graph restore reconstructs the same persistent Rift Core id"),
+			StableArmoryCore))
+	{
+		return false;
+	}
+	TestEqual(
+		TEXT("Graph restore preserves the concrete Rift Core identity"),
+		StableArmoryCore->GetItemId(),
+		ExactRiftCoreId);
+	TestTrue(
+		TEXT("Graph restore imports Stabilized state from its fragment payload"),
+		StableArmoryCore->IsContainmentStabilized());
+
+	const int64 BaseARevisionBeforeStableRedeposit =
+		BaseA.Storage->GetNetworkRevision();
+	UiActions->RequestTransferInventoryItem(
+		BaseA.Armory,
+		BaseA.Containment,
+		MakeExactTransferIntent(
+			BaseA.Armory,
+			ExactRiftCoreId,
+			1,
+			MakePlacement(ContainmentRoot, 0, 0)));
+	TestEqual(
+		TEXT("A Stabilized Armory-to-Vault redeposit advances the Base exactly once"),
+		BaseA.Storage->GetNetworkRevision(),
+		BaseARevisionBeforeStableRedeposit + 1);
+	URpgInventoryItemInstance* StableRedepositedCore =
+		BaseA.Containment->FindItemById(ExactRiftCoreId);
+	if (!TestNotNull(
+			TEXT("The graph-restored Rift Core redeposits into its original Vault slot"),
+			StableRedepositedCore))
+	{
+		return false;
+	}
+	TestEqual(
+		TEXT("Vault redeposit preserves the graph-restored item id"),
+		StableRedepositedCore->GetItemId(),
+		ExactRiftCoreId);
+	TestTrue(
+		TEXT("Vault redeposit does not reset Stabilized state"),
+		StableRedepositedCore->IsContainmentStabilized());
+
+	FActorSpawnParameters PersonalLockerSpawnParameters;
+	PersonalLockerSpawnParameters.Name = MakeUniqueObjectName(
+		World,
+		ARpgPersonalStorageLockerActor::StaticClass(),
+		TEXT("BaseConcreteRevisionPersonalLocker"));
+	PersonalLockerSpawnParameters.ObjectFlags = RF_Transient;
+	ARpgPersonalStorageLockerActor* PersonalLocker =
+		World->SpawnActor<ARpgPersonalStorageLockerActor>(
+			PersonalLockerSpawnParameters);
+	if (!TestNotNull(
+			TEXT("The owner-only Personal Locker fixture exists"),
+			PersonalLocker))
+	{
+		return false;
+	}
+	PersonalLocker->InitializeLocker(
+		BaseA.BaseCamp,
+		Controller,
+		TEXT("Automation.BaseConcreteRevision"));
+	URpgInventoryManagerComponent* PersonalInventory =
+		PersonalLocker->GetInventoryManager();
+	if (!TestTrue(
+			TEXT("The owning controller can access its Personal Locker inventory"),
+			UiActions->CanAccessInventory(PersonalInventory)))
+	{
+		return false;
+	}
+	const FRpgInventoryContainerHandle PersonalRoot =
+		FRpgInventoryContainerHandle::MakeRoot(
+			PersonalInventory->GetDefaultContainerId());
+	UiActions->RequestTransferInventoryItem(
+		BaseA.Containment,
+		PersonalInventory,
+		MakeExactTransferIntent(
+			BaseA.Containment,
+			ExactRiftCoreId,
+			1,
+			MakePlacement(PersonalRoot, 0, 0)));
+	URpgInventoryItemInstance* StablePersonalCore =
+		PersonalInventory->FindItemById(ExactRiftCoreId);
+	if (!TestNotNull(
+			TEXT("The Stabilized Rift Core reaches the owner's Personal Locker"),
+			StablePersonalCore))
+	{
+		return false;
+	}
+	TestEqual(
+		TEXT("Vault-to-Personal transfer preserves the persistent item id"),
+		StablePersonalCore->GetItemId(),
+		ExactRiftCoreId);
+	TestTrue(
+		TEXT("Vault-to-Personal transfer preserves Stabilized state"),
+		StablePersonalCore->IsContainmentStabilized());
+
+	UiActions->RequestTransferInventoryItem(
+		PersonalInventory,
+		BaseA.Containment,
+		MakeExactTransferIntent(
+			PersonalInventory,
+			ExactRiftCoreId,
+			1,
+			MakePlacement(ContainmentRoot, 0, 0)));
+	StableRedepositedCore =
+		BaseA.Containment->FindItemById(ExactRiftCoreId);
+	if (!TestNotNull(
+			TEXT("The Personal Rift Core can return to the Vault"),
+			StableRedepositedCore))
+	{
+		return false;
+	}
+	TestEqual(
+		TEXT("Personal-to-Vault redeposit preserves the persistent item id"),
+		StableRedepositedCore->GetItemId(),
+		ExactRiftCoreId);
+	TestTrue(
+		TEXT("Personal-to-Vault redeposit preserves Stabilized state"),
+		StableRedepositedCore->IsContainmentStabilized());
 	return true;
 }
 

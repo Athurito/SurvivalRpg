@@ -94,6 +94,14 @@ public:
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Base Storage")
 	TObjectPtr<URpgInventoryManagerComponent> ArmoryInventory = nullptr;
 
+	/** Owner-relevant private inventory for this player's locker at the selected base. Never used by shared crafting. */
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Base Storage")
+	TObjectPtr<URpgInventoryManagerComponent> PersonalInventory = nullptr;
+
+	/** Shared concrete inventory for unstable and stabilized Rift objects. Null while the selected access point has no linked base. */
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Base Storage")
+	TObjectPtr<URpgInventoryManagerComponent> RiftInventory = nullptr;
+
 	/** Station or terminal that opened the screen and is used for server-side access validation. */
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Base Storage")
 	TObjectPtr<URpgBaseStorageStationComponent> StationComponent = nullptr;

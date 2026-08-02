@@ -11,6 +11,7 @@ class UAbilitySystemComponent;
 class URpgAbilitySystemComponent;
 class URpgExperienceManagerComponent;
 class URpgRecipeUnlockComponent;
+class URpgWorldStorageKnowledgeComponent;
 
 /**
  * GameState used by the runtime gameplay map.
@@ -41,6 +42,13 @@ public:
 	UFUNCTION(BlueprintCallable, Category = "Rpg|GameState")
 	URpgRecipeUnlockComponent* GetRecipeUnlockComponent() const { return RecipeUnlockComponent; }
 
+	/** Gets the replicated world-storage knowledge shared by every player in this world. */
+	UFUNCTION(BlueprintCallable, Category = "Rpg|GameState")
+	URpgWorldStorageKnowledgeComponent* GetWorldStorageKnowledgeComponent() const
+	{
+		return WorldStorageKnowledgeComponent;
+	}
+
 private:
 	/** Handles loading and managing the current gameplay experience. */
 	UPROPERTY()
@@ -53,4 +61,8 @@ private:
 	/** Replicated session-global recipe unlocks used by crafting stations and crafting UI. */
 	UPROPERTY(VisibleAnywhere, Category = "Rpg|GameState")
 	TObjectPtr<URpgRecipeUnlockComponent> RecipeUnlockComponent;
+
+	/** Server-authored storage discoveries replicated world-wide and exported by the host save layer. */
+	UPROPERTY(VisibleAnywhere, Category = "Rpg|GameState")
+	TObjectPtr<URpgWorldStorageKnowledgeComponent> WorldStorageKnowledgeComponent;
 };

@@ -4,7 +4,9 @@
 #include "GameFramework/Pawn.h"
 #include "RpgInventoryContainerComponent.h"
 #include "RpgInventoryManagerComponent.h"
+#include "SurvivalRpg/Base/RpgBaseCampActor.h"
 #include "SurvivalRpg/Base/RpgBaseStorageStationComponent.h"
+#include "SurvivalRpg/Base/RpgPersonalStorageLockerActor.h"
 #include "SurvivalRpg/Crafting/RpgCraftingStationComponent.h"
 #include "UObject/UObjectIterator.h"
 
@@ -108,6 +110,55 @@ bool FRpgInventoryUiActionDomainHandler::EvaluateInventoryAccess(
 	}
 
 	const AActor* InventoryOwner = Inventory->GetOwner();
+	if (const ARpgPersonalStorageLockerActor* Locker =
+			Cast<ARpgPersonalStorageLockerActor>(InventoryOwner))
+	{
+		const AController* RequestingController = Cast<AController>(GetOwner());
+		if (!RequestingController || Locker->GetInventoryManager() != Inventory ||
+			Locker->GetOwner() != RequestingController)
+		{
+			return false;
+		}
+
+		const ARpgBaseCampActor* BaseCamp = Locker->GetBaseCamp();
+		if (!BaseCamp)
+		{
+			return false;
+		}
+		for (const URpgBaseStorageStationComponent* BaseStation :
+			BaseCamp->GetStorageStations())
+		{
+			if (BaseStation && BaseStation->CanActorAccess(RequestingActor))
+			{
+				return true;
+			}
+		}
+		return false;
+	}
+
+	if (const ARpgBaseCampActor* BaseCamp = Cast<ARpgBaseCampActor>(InventoryOwner))
+	{
+		if (BaseCamp->GetArmoryInventoryComponent() != Inventory &&
+			BaseCamp->GetContainmentInventoryComponent() != Inventory)
+		{
+			return false;
+		}
+
+		// The first playable treats every player in the active co-op session as a
+		// member, but still requires normal proximity/access through a linked
+		// terminal. Ownership is checked separately for destructive Rift actions
+		// and upgrade mutations.
+		for (const URpgBaseStorageStationComponent* BaseStation :
+			BaseCamp->GetStorageStations())
+		{
+			if (BaseStation && BaseStation->CanActorAccess(RequestingActor))
+			{
+				return true;
+			}
+		}
+		return false;
+	}
+
 	const URpgBaseStorageStationComponent* Station =
 		InventoryOwner
 			? InventoryOwner->FindComponentByClass<

@@ -1,7 +1,9 @@
 #include "RpgGameplayAbility_OpenBaseStorageStation.h"
 
 #include "GameFramework/Pawn.h"
+#include "SurvivalRpg/Base/RpgBaseCampActor.h"
 #include "SurvivalRpg/Base/RpgBaseStorageStationComponent.h"
+#include "SurvivalRpg/Base/RpgPersonalStorageLockerActor.h"
 #include "SurvivalRpg/Core/Player/RpgPlayerController.h"
 #include "SurvivalRpg/Core/Player/RpgPlayerState.h"
 #include "SurvivalRpg/GameplayTags/RpgGameplayTags.h"
@@ -62,7 +64,14 @@ void URpgGameplayAbility_OpenBaseStorageStation::ActivateAbility(
 		return;
 	}
 
-	PlayerController->ClientOpenBaseStorageInteraction(TargetActor);
+	ARpgBaseCampActor* BaseCamp = StationComponent->GetBaseCamp();
+	ARpgPersonalStorageLockerActor* PersonalLocker = BaseCamp
+		? BaseCamp->GetOrCreatePersonalLocker(PlayerController)
+		: nullptr;
+	PlayerController->ClientOpenBaseStorageInteraction(
+		TargetActor,
+		PersonalLocker ? PersonalLocker->GetInventoryManager() : nullptr,
+		BaseCamp ? BaseCamp->GetContainmentInventoryComponent() : nullptr);
 	UInteractionStatics::BroadcastInteractionMessage(this, RpgGameplayTags::Rpg_Interaction_Message_Ended, ValidatedOption, InteractingActor, true);
 	EndAbility(Handle, ActorInfo, ActivationInfo, true, false);
 }

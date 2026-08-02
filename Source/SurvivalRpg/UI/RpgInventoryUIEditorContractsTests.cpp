@@ -151,7 +151,6 @@ bool FRpgInventoryUIRequiredBindWidgetsTest::RunTest(
 		{ URpgPlayerInventoryWidget::StaticClass(), TEXT("PlayerInventoryPane") },
 		{ URpgStorageInventoryWidget::StaticClass(), TEXT("PlayerInventoryPane") },
 		{ URpgStorageInventoryWidget::StaticClass(), TEXT("SecondaryInventoryGrid") },
-		{ URpgBaseTerminalWidget::StaticClass(), TEXT("PlayerInventoryPane") },
 		{ URpgBaseTerminalWidget::StaticClass(), TEXT("BaseResourceList") },
 		{ URpgInventorySpatialPaneWidget::StaticClass(), TEXT("SpatialGrid") },
 		{ URpgBaseResourceListWidget::StaticClass(), TEXT("ResourceList") },
@@ -233,6 +232,23 @@ bool FRpgInventoryUIRequiredBindWidgetsTest::RunTest(
 					URpgInventoryCarrySlotWidget::
 						StaticClass());
 		}
+	}
+
+	const FObjectPropertyBase* TransitionalTerminalPane =
+		FindFProperty<FObjectPropertyBase>(
+			URpgBaseTerminalWidget::StaticClass(),
+			TEXT("PlayerInventoryPane"));
+	if (TestNotNull(
+			TEXT("Base Terminal exposes the transitional PlayerInventoryPane binding"),
+			TransitionalTerminalPane))
+	{
+		TestTrue(
+			TEXT("Base Terminal player pane is optional during the authored migration"),
+			TransitionalTerminalPane->HasMetaData(TEXT("BindWidgetOptional")));
+		TestEqual(
+			TEXT("Base Terminal compatibility binding accepts either supported pane class"),
+			TransitionalTerminalPane->PropertyClass.Get(),
+			UWidget::StaticClass());
 	}
 
 	for (const UClass* RootClass :

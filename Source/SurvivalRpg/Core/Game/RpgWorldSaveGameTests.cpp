@@ -4,9 +4,45 @@
 
 #include "Kismet/GameplayStatics.h"
 #include "Misc/AutomationTest.h"
+#include "Serialization/MemoryWriter.h"
 #include "SurvivalRpg/GameplayTags/RpgGameplayTags.h"
 #include "SurvivalRpg/Inventory/RpgInventoryItemDefinition.h"
+#include "SurvivalRpg/Inventory/RpgInventoryItemInstance.h"
 #include "SurvivalRpg/Progression/Skills/RpgTradeSkillGameplayTags.h"
+
+namespace RpgWorldSaveGameTests
+{
+	FRpgInventorySavedItem MakeValidSavedItem(FName RootContainerId)
+	{
+		FRpgInventorySavedItem Item;
+		Item.ItemId = FRpgInventoryItemId::NewId();
+		Item.ItemDefinition = URpgInventoryItemDefinition::StaticClass();
+		Item.StackCount = 1;
+		Item.Container = FRpgInventoryContainerHandle::MakeRoot(RootContainerId);
+		Item.Placement.SetContainerHandle(Item.Container);
+		Item.Placement.X = 0;
+		Item.Placement.Y = 0;
+		FRpgInventoryFragmentStatePayload& CoreState =
+			Item.RuntimeState.AddDefaulted_GetRef();
+		CoreState.FragmentId = TEXT("Inventory.Core.StatTags");
+		CoreState.Version = 2;
+		FMemoryWriter Writer(CoreState.Payload, true);
+		int32 EmptySemanticStackCount = 0;
+		Writer << EmptySemanticStackCount;
+		return Item;
+	}
+
+	FRpgBaseStorageSaveData MakeValidBaseStorage(FName BaseId)
+	{
+		FRpgBaseStorageSaveData Base;
+		Base.BaseId = BaseId;
+		Base.OwnerProfileKey = TEXT("Offline:BaseOwner");
+		Base.bHasArmoryGraph = true;
+		Base.ArmoryGraph.Items.Add(MakeValidSavedItem(TEXT("Armory")));
+		Base.bHasContainmentGraph = true;
+		return Base;
+	}
+}
 
 IMPLEMENT_SIMPLE_AUTOMATION_TEST(
 	FRpgWorldSaveGameMemoryRoundTripTest,
@@ -126,6 +162,168 @@ bool FRpgWorldSaveGameMemoryRoundTripTest::RunTest(const FString& Parameters)
 		TestEqual(TEXT("Nested item slot preserves Y"), RestoredNestedItemAddress.Y, 7);
 	}
 	TestTrue(TEXT("Persistent world-container id survives serialization"), Restored->WorldContainers.Contains(TEXT("AutomationChest")));
+	return true;
+}
+
+IMPLEMENT_SIMPLE_AUTOMATION_TEST(
+	FRpgWorldSaveGameLegacyV1EmptyMigrationTest,
+	"SurvivalRpg.Save.WorldSave.V2.LegacyV1MigratesWithEmptyStorageState",
+	EAutomationTestFlags::EditorContext | EAutomationTestFlags::EngineFilter)
+
+bool FRpgWorldSaveGameLegacyV1EmptyMigrationTest::RunTest(
+	const FString& Parameters)
+{
+	(void)Parameters;
+	URpgWorldSaveGame* Legacy = NewObject<URpgWorldSaveGame>();
+	Legacy->SchemaVersion = 1;
+
+	FString ValidationError;
+	TestTrue(
+		TEXT("Schema V1 remains loadable when its V2 storage fields are empty"),
+		Legacy->ValidateForLoad(ValidationError));
+
+	TArray<uint8> Bytes;
+	TestTrue(
+		TEXT("Legacy V1 snapshot serializes through the current SaveGame class"),
+		UGameplayStatics::SaveGameToMemory(Legacy, Bytes));
+	URpgWorldSaveGame* Restored =
+		Cast<URpgWorldSaveGame>(UGameplayStatics::LoadGameFromMemory(Bytes));
+	if (!TestNotNull(TEXT("Legacy V1 snapshot deserializes"), Restored))
+	{
+		return false;
+	}
+
+	TestTrue(
+		TEXT("Deserialized V1 snapshot validates before migration"),
+		Restored->ValidateForLoad(ValidationError));
+	TestTrue(
+		TEXT("V1 migration starts with no persisted base networks"),
+		Restored->BaseStorages.IsEmpty());
+	TestTrue(
+		TEXT("V1 migration starts with no storage knowledge"),
+		Restored->StorageKnowledgeTags.IsEmpty());
+
+	Restored->SchemaVersion = URpgWorldSaveGame::CurrentSchemaVersion;
+	TestTrue(
+		TEXT("The empty legacy payload is a valid V2 reconstruction boundary"),
+		Restored->ValidateForLoad(ValidationError));
+
+	Legacy->StorageKnowledgeTags.AddTag(
+		RpgGameplayTags::Storage_Knowledge_RiftContainment);
+	TestFalse(
+		TEXT("Schema V1 cannot falsely claim a V2 knowledge payload"),
+		Legacy->ValidateForLoad(ValidationError));
+	return true;
+}
+
+IMPLEMENT_SIMPLE_AUTOMATION_TEST(
+	FRpgWorldSaveGameStorageKnowledgeRoundTripTest,
+	"SurvivalRpg.Save.WorldSave.V2.StorageKnowledgeRoundTrip",
+	EAutomationTestFlags::EditorContext | EAutomationTestFlags::EngineFilter)
+
+bool FRpgWorldSaveGameStorageKnowledgeRoundTripTest::RunTest(
+	const FString& Parameters)
+{
+	(void)Parameters;
+	URpgWorldSaveGame* Source = NewObject<URpgWorldSaveGame>();
+	Source->StorageKnowledgeTags.AddTag(
+		RpgGameplayTags::Storage_Knowledge_RiftContainment);
+	Source->StorageKnowledgeTags.AddTag(
+		RpgGameplayTags::Storage_Knowledge_RiftAnalysis);
+
+	FString ValidationError;
+	TestTrue(
+		TEXT("V2 source accepts concrete Storage.Knowledge discoveries"),
+		Source->ValidateForLoad(ValidationError));
+
+	TArray<uint8> Bytes;
+	TestTrue(
+		TEXT("V2 storage knowledge serializes to memory"),
+		UGameplayStatics::SaveGameToMemory(Source, Bytes));
+	URpgWorldSaveGame* Restored =
+		Cast<URpgWorldSaveGame>(UGameplayStatics::LoadGameFromMemory(Bytes));
+	if (!TestNotNull(TEXT("V2 storage knowledge snapshot deserializes"), Restored))
+	{
+		return false;
+	}
+
+	TestTrue(
+		TEXT("Restored V2 knowledge snapshot validates"),
+		Restored->ValidateForLoad(ValidationError));
+	TestTrue(
+		TEXT("Rift-containment knowledge survives the SaveGame roundtrip"),
+		Restored->StorageKnowledgeTags.HasTagExact(
+			RpgGameplayTags::Storage_Knowledge_RiftContainment));
+	TestTrue(
+		TEXT("Rift-analysis knowledge survives the SaveGame roundtrip"),
+		Restored->StorageKnowledgeTags.HasTagExact(
+			RpgGameplayTags::Storage_Knowledge_RiftAnalysis));
+	TestEqual(
+		TEXT("Roundtrip does not synthesize additional knowledge"),
+		Restored->StorageKnowledgeTags.Num(),
+		2);
+	return true;
+}
+
+IMPLEMENT_SIMPLE_AUTOMATION_TEST(
+	FRpgWorldSaveGameBaseStorageValidationTest,
+	"SurvivalRpg.Save.WorldSave.V2.BaseStorageValidation",
+	EAutomationTestFlags::EditorContext | EAutomationTestFlags::EngineFilter)
+
+bool FRpgWorldSaveGameBaseStorageValidationTest::RunTest(
+	const FString& Parameters)
+{
+	(void)Parameters;
+	URpgWorldSaveGame* Save = NewObject<URpgWorldSaveGame>();
+	FString ValidationError;
+
+	const FName ValidBaseId(TEXT("AutomationBase"));
+	FRpgBaseStorageSaveData ValidBase =
+		RpgWorldSaveGameTests::MakeValidBaseStorage(ValidBaseId);
+	Save->BaseStorages.Add(ValidBaseId, ValidBase);
+	TestTrue(
+		TEXT("A matching BaseId and valid armory graph pass V2 validation"),
+		Save->ValidateForLoad(ValidationError));
+
+	FRpgBaseStorageSaveData MissingIdBase = ValidBase;
+	MissingIdBase.BaseId = NAME_None;
+	Save->BaseStorages.Reset();
+	Save->BaseStorages.Add(ValidBaseId, MissingIdBase);
+	TestFalse(
+		TEXT("A base payload without its stable BaseId is rejected"),
+		Save->ValidateForLoad(ValidationError));
+
+	FRpgBaseStorageSaveData MismatchedIdBase = ValidBase;
+	MismatchedIdBase.BaseId = TEXT("DifferentBase");
+	Save->BaseStorages.Reset();
+	Save->BaseStorages.Add(ValidBaseId, MismatchedIdBase);
+	TestFalse(
+		TEXT("A base payload whose BaseId disagrees with its map key is rejected"),
+		Save->ValidateForLoad(ValidationError));
+
+	FRpgBaseStorageSaveData InvalidGraphBase = ValidBase;
+	const FRpgInventorySavedItem DuplicateArmoryItem =
+		InvalidGraphBase.ArmoryGraph.Items[0];
+	InvalidGraphBase.ArmoryGraph.Items.Add(DuplicateArmoryItem);
+	Save->BaseStorages.Reset();
+	Save->BaseStorages.Add(ValidBaseId, InvalidGraphBase);
+	TestFalse(
+		TEXT("A base armory graph with duplicate persistent ItemIds is rejected"),
+		Save->ValidateForLoad(ValidationError));
+
+	FRpgBaseStorageSaveData InvalidLockerGraphBase = ValidBase;
+	FRpgInventoryGraphSaveData InvalidLockerGraph;
+	InvalidLockerGraph.Items.Add(
+		RpgWorldSaveGameTests::MakeValidSavedItem(TEXT("Personal")));
+	InvalidLockerGraph.Items[0].ItemId = FRpgInventoryItemId();
+	InvalidLockerGraphBase.PersonalLockerGraphs.Add(
+		TEXT("Offline:LockerOwner"),
+		InvalidLockerGraph);
+	Save->BaseStorages.Reset();
+	Save->BaseStorages.Add(ValidBaseId, InvalidLockerGraphBase);
+	TestFalse(
+		TEXT("A personal-locker graph with an invalid persistent ItemId is rejected"),
+		Save->ValidateForLoad(ValidationError));
 	return true;
 }
 

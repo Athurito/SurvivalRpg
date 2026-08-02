@@ -94,8 +94,20 @@ bool URpgInventoryManagerComponent::RestoreInventoryGraph(
 	const bool bRestored = RestoreInventoryGraphInternal(
 		SaveData,
 		OutResult,
+		true,
 		true);
 	return bRestored;
+}
+
+bool URpgInventoryManagerComponent::ValidateInventoryGraphForRestore(
+	const FRpgInventoryGraphSaveData& SaveData,
+	FRpgInventoryMutationResult& OutResult)
+{
+	return RestoreInventoryGraphInternal(
+		SaveData,
+		OutResult,
+		false,
+		false);
 }
 
 bool URpgInventoryManagerComponent::RestoreRuntimeCheckpoint(
@@ -105,13 +117,15 @@ bool URpgInventoryManagerComponent::RestoreRuntimeCheckpoint(
 	return RestoreInventoryGraphInternal(
 		SaveData,
 		OutResult,
-		false);
+		false,
+		true);
 }
 
 bool URpgInventoryManagerComponent::RestoreInventoryGraphInternal(
 	const FRpgInventoryGraphSaveData& SaveData,
 	FRpgInventoryMutationResult& OutResult,
-	bool bEstablishNewMutationEpoch)
+	bool bEstablishNewMutationEpoch,
+	bool bCommitValidatedGraph)
 {
 	OutResult = FRpgInventoryMutationResult();
 	OutResult.RequestId = FGuid::NewGuid();
@@ -568,6 +582,12 @@ bool URpgInventoryManagerComponent::RestoreInventoryGraphInternal(
 				ERpgInventoryMutationResultCode::DuplicateItemId;
 			return false;
 		}
+	}
+	if (!bCommitValidatedGraph)
+	{
+		OutResult.Code = ERpgInventoryMutationResultCode::Success;
+		OutResult.AppliedQuantity = 0;
+		return true;
 	}
 	RuntimeStateRollback.Dismiss();
 

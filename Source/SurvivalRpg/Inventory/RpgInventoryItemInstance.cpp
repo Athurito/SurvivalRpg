@@ -2,6 +2,7 @@
 
 #include "RpgInventoryItemInstance.h"
 #include "Itemization/RpgInventoryFragment_Itemization.h"
+#include "RpgInventoryFragment_ContainmentProfile.h"
 #include "RpgInventoryFragment_ItemContainer.h"
 #include "RpgInventoryItemDefinition.h"
 #include "RpgInventoryManagerComponent.h"
@@ -87,6 +88,7 @@ void URpgInventoryItemInstance::GetLifetimeReplicatedProps(TArray<FLifetimePrope
 	DOREPLIFETIME(ThisClass, ItemId);
 	DOREPLIFETIME(ThisClass, StatTags);
 	DOREPLIFETIME(ThisClass, ItemizationState);
+	DOREPLIFETIME(ThisClass, ContainmentState);
 	DOREPLIFETIME(ThisClass, ItemDef);
 }
 
@@ -171,6 +173,32 @@ bool URpgInventoryItemInstance::CommitItemizationState(
 void URpgInventoryItemInstance::OnRep_ItemizationState()
 {
 	OnItemizationStateChanged.Broadcast(ItemizationState);
+}
+
+bool URpgInventoryItemInstance::SetContainmentState(
+	ERpgInventoryContainmentState NewState)
+{
+	if (!HasAuthorityForMutation() ||
+		!FindFragmentByClass<URpgInventoryFragment_ContainmentProfile>() ||
+		(NewState != ERpgInventoryContainmentState::Unstable &&
+		 NewState != ERpgInventoryContainmentState::Stabilized))
+	{
+		return false;
+	}
+
+	if (ContainmentState == NewState)
+	{
+		return true;
+	}
+
+	ContainmentState = NewState;
+	OnContainmentStateChanged.Broadcast(ContainmentState);
+	return true;
+}
+
+void URpgInventoryItemInstance::OnRep_ContainmentState()
+{
+	OnContainmentStateChanged.Broadcast(ContainmentState);
 }
 
 bool URpgInventoryItemInstance::InitializePersistentId()
@@ -508,6 +536,26 @@ bool URpgInventoryItemInstance::ImportRuntimeState(
 	}
 
 	return true;
+}
+
+bool URpgInventoryItemInstance::ValidatePersistedRuntimeState(
+	TSubclassOf<URpgInventoryItemDefinition> ItemDefinition,
+	const TArray<FRpgInventoryFragmentStatePayload>& Payloads)
+{
+	if (!ItemDefinition || Payloads.IsEmpty())
+	{
+		return false;
+	}
+
+	URpgInventoryItemInstance* StagingInstance =
+		NewObject<URpgInventoryItemInstance>(GetTransientPackage());
+	if (!StagingInstance)
+	{
+		return false;
+	}
+	StagingInstance->SetItemDef(ItemDefinition);
+	return StagingInstance->GetItemDef() == ItemDefinition &&
+		StagingInstance->ImportRuntimeState(Payloads);
 }
 
 void URpgInventoryItemInstance::SetItemDef(TSubclassOf<URpgInventoryItemDefinition> InDef)

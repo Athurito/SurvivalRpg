@@ -13,6 +13,7 @@ class UTexture2D;
 class URpgCraftingRecipeDefinition;
 class URpgInventoryManagerComponent;
 class URpgInventoryItemDefinition;
+class URpgWorldStorageKnowledgeComponent;
 
 /** Local UI sort modes for crafting recipe lists. They never mutate server gameplay state. */
 UENUM(BlueprintType)
@@ -503,6 +504,8 @@ protected:
 private:
 	void RegisterMessageListeners();
 	void UnregisterMessageListeners();
+	void BindWorldKnowledgeListener();
+	void UnbindWorldKnowledgeListener();
 	void RequestRefresh(uint8 RefreshDomains);
 	void ExecuteQueuedRefresh();
 	void FlushPendingRefreshes();
@@ -518,10 +521,15 @@ private:
 	void HandleInventoryChanged(FGameplayTag Channel, const struct FRpgInventoryChangeMessage& Message);
 	void HandleBaseStorageChanged(FGameplayTag Channel, const struct FRpgBaseResourceChangeMessage& Message);
 
+	/** Coalesces replicated world-knowledge changes into one deferred recipe/details refresh. */
+	UFUNCTION()
+	void HandleWorldKnowledgeChanged(FGameplayTag KnowledgeTag, bool bIsKnown);
+
 	FGameplayMessageListenerHandle CraftingStationChangedHandle;
 	FGameplayMessageListenerHandle RecipeUnlockChangedHandle;
 	FGameplayMessageListenerHandle InventoryChangedHandle;
 	FGameplayMessageListenerHandle BaseStorageChangedHandle;
+	TWeakObjectPtr<URpgWorldStorageKnowledgeComponent> ObservedWorldKnowledge;
 	FRpgViewModelInvalidationQueue RefreshQueue;
 	uint8 PendingRefreshDomains = 0;
 };

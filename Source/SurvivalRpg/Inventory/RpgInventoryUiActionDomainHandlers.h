@@ -69,6 +69,18 @@ protected:
 		int32 StackCount,
 		const FGuid& RequestId = FGuid(),
 		FRpgInventoryItemId ItemId = FRpgInventoryItemId()) const;
+	void SendBaseStorageCommandFeedback(
+		FGameplayTag ActionTag,
+		const FRpgBaseStorageCommandResult& Result,
+		FRpgInventoryItemId ItemId = FRpgInventoryItemId(),
+		TSubclassOf<URpgInventoryItemDefinition> ItemDefinition = nullptr) const
+	{
+		GetMutableActionComponent().SendBaseStorageCommandFeedback(
+			ActionTag,
+			Result,
+			ItemId,
+			ItemDefinition);
+	}
 
 	bool TryReplayRecentExactTransferResult(
 		URpgInventoryManagerComponent* SourceInventory,
@@ -367,6 +379,14 @@ public:
 	}
 
 	void DepositAllMaterials(URpgBaseStorageStationComponent* Station);
+	void SmartDeposit(FRpgBaseStorageSmartDepositRequest Request);
+	void DepositExact(FRpgBaseStorageDepositRequest Request);
+	void WithdrawExact(FRpgBaseStorageWithdrawRequest Request);
+	void InstallUpgradeById(FRpgBaseStorageUpgradeRequest Request);
+	void DecommissionUpgrade(FRpgBaseStorageUpgradeRequest Request);
+	void StabilizeContainedItem(FRpgBaseStorageRiftItemRequest Request);
+	void ExtractContainedItem(FRpgBaseStorageRiftItemRequest Request);
+	void CleanseRiftStrain(FRpgBaseStorageCleanseRequest Request);
 	void DepositMaterialStack(
 		URpgBaseStorageStationComponent* Station,
 		URpgInventoryItemInstance* Item,
@@ -387,7 +407,16 @@ public:
 		int32 TargetIndex);
 
 private:
-	bool TryDepositMaterialStack(
+	/** Typed result keeps a safely rolled-back rejection distinct from an unrecoverable graph/ledger rollback failure. */
+	enum class EMaterialDepositResult : uint8
+	{
+		Success,
+		Rejected,
+		RolledBack,
+		RollbackFailed
+	};
+
+	EMaterialDepositResult TryDepositMaterialStack(
 		URpgInventoryManagerComponent* Inventory,
 		URpgBaseStorageComponent* BaseStorage,
 		FRpgInventoryItemId ItemId,

@@ -60,7 +60,10 @@ public:
 
 	/** Opens a base-storage screen only after the server-side interaction ability validates the station. */
 	UFUNCTION(Client, Reliable, Category = "Rpg|Interaction")
-	void ClientOpenBaseStorageInteraction(AActor* BaseStorageActor);
+	void ClientOpenBaseStorageInteraction(
+		AActor* BaseStorageActor,
+		URpgInventoryManagerComponent* PersonalInventory,
+		URpgInventoryManagerComponent* RiftInventory);
 
 	/** Opens and monitors an accessible world storage inventory on the owning client. */
 	UFUNCTION(BlueprintCallable, Category = "Rpg|Inventory")

@@ -2,7 +2,9 @@
 
 #include "CoreMinimal.h"
 #include "GameFramework/SaveGame.h"
+#include "GameplayTagContainer.h"
 #include "RpgPlayerSaveData.h"
+#include "SurvivalRpg/Base/RpgBaseStorageSaveTypes.h"
 
 #include "RpgWorldSaveGame.generated.h"
 
@@ -34,7 +36,10 @@ class SURVIVALRPG_API URpgWorldSaveGame : public USaveGame
 
 public:
 	/** Current top-level save schema emitted by this build. */
-	static constexpr int32 CurrentSchemaVersion = 1;
+	static constexpr int32 CurrentSchemaVersion = 2;
+
+	/** Oldest top-level schema with an explicit migration path. V1 predates persistent base storage. */
+	static constexpr int32 MinimumSupportedSchemaVersion = 1;
 
 	/** Selects the top-level migration/validation path before any profile is restored. */
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, SaveGame, Category = "Rpg|Save", meta = (ClampMin = "1", UIMin = "1"))
@@ -51,6 +56,14 @@ public:
 	/** Persistent physical world-container graphs keyed by their designer-authored stable id. */
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, SaveGame, Category = "Rpg|Save")
 	TMap<FName, FRpgWorldContainerSaveData> WorldContainers;
+
+	/** Persistent base-storage networks keyed by stable ARpgBaseCampActor::BaseId. Added in schema V2. */
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, SaveGame, Category = "Rpg|Save")
+	TMap<FName, FRpgBaseStorageSaveData> BaseStorages;
+
+	/** World-shared storage knowledge restored into the GameState knowledge component. Added in schema V2. */
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, SaveGame, Category = "Rpg|Save")
+	FGameplayTagContainer StorageKnowledgeTags;
 
 	/** Validates the schema and pointer-free DTO envelopes without mutating any runtime gameplay state. */
 	bool ValidateForLoad(FString& OutError) const;

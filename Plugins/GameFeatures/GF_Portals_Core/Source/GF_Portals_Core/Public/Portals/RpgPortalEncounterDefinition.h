@@ -9,7 +9,9 @@ class AActor;
 class ARpgPortalExitActor;
 class ARpgPortalRealmEventDirector;
 class UGameplayEffect;
+class URpgLootTable;
 class UWorld;
+class FDataValidationContext;
 
 UENUM(BlueprintType)
 enum class ERpgPortalEncounterMode : uint8
@@ -58,6 +60,10 @@ class GF_PORTALS_CORE_API URpgPortalEncounterDefinition : public UDataAsset
 
 public:
 	URpgPortalEncounterDefinition();
+
+#if WITH_EDITOR
+	virtual EDataValidationResult IsDataValid(FDataValidationContext& Context) const override;
+#endif
 
 	/** Selects whether this portal opens a realm or breaks open in the overworld. */
 	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Portal|Encounter")
@@ -142,4 +148,11 @@ public:
 	/** Keeps rewards gated until a boss-aware listener marks the completion eligible. */
 	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Portal|Reward")
 	bool bRewardsRequireBossDefeat = true;
+
+	/**
+	 * Soft reward table delivered once when this encounter first unlocks Rift-containment knowledge.
+	 * Use fixed-quantity Independent rows at 100 percent; invalid or lossy delivery keeps the knowledge locked.
+	 */
+	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Portal|Reward", meta = (AssetBundles = "Server"))
+	TSoftObjectPtr<URpgLootTable> FirstEligibleKnowledgeRewardTable;
 };

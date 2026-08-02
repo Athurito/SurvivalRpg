@@ -4,6 +4,7 @@
 #include "GameplayTagContainer.h"
 #include "RpgInventoryManagerComponent.h"
 #include "RpgPlayerInventoryLayoutTypes.h"
+#include "SurvivalRpg/Base/RpgBaseStorageTransactionTypes.h"
 #include "SurvivalRpg/Equipment/RpgEquipmentDefinition.h"
 
 #include "RpgInventoryUiActionComponent.generated.h"
@@ -592,29 +593,37 @@ public:
 		URpgInventoryManagerComponent* Inventory,
 		FRpgInventoryManualDropRequest Request);
 
-	/** Deposits all material stacks from the player inventory into the linked base storage station. */
-	UFUNCTION(Server, Reliable, BlueprintCallable, Category = "Inventory|Base Storage")
-	void RequestDepositAllMaterialsToBase(URpgBaseStorageStationComponent* Station);
+	/** Unloads every currently eligible auto-deposit BulkResource stack into the exact BaseId network, allowing partial completion. */
+	UFUNCTION(Server, Reliable, BlueprintCallable, Category = "Inventory|Base Storage|Transactions")
+	void RequestSmartDepositToBase(FRpgBaseStorageSmartDepositRequest Request);
 
-	/** Deposits one material stack from the player inventory into the linked base storage station. */
-	UFUNCTION(Server, Reliable, BlueprintCallable, Category = "Inventory|Base Storage")
-	void RequestDepositMaterialStackToBase(URpgBaseStorageStationComponent* Station, URpgInventoryItemInstance* Item, int32 StackCount);
+	/** Deposits one exact player-inventory entry snapshot after stable id, placement, inventory revision, and bulk-profile validation. */
+	UFUNCTION(Server, Reliable, BlueprintCallable, Category = "Inventory|Base Storage|Transactions")
+	void RequestDepositItemToBase(FRpgBaseStorageDepositRequest Request);
 
-	/** Withdraws resources from the linked base storage station into the player inventory. */
-	UFUNCTION(Server, Reliable, BlueprintCallable, Category = "Inventory|Base Storage")
-	void RequestWithdrawResourceFromBase(URpgBaseStorageStationComponent* Station, TSubclassOf<URpgInventoryItemDefinition> ItemDefinition, int32 StackCount);
+	/** Withdraws an exact fungible definition/count from one BaseId network into the owning player's inventory. */
+	UFUNCTION(Server, Reliable, BlueprintCallable, Category = "Inventory|Base Storage|Transactions")
+	void RequestWithdrawFromBase(FRpgBaseStorageWithdrawRequest Request);
 
-	/** Installs a data-driven upgrade on a base storage station after paying material costs. */
-	UFUNCTION(Server, Reliable, BlueprintCallable, Category = "Inventory|Base Storage")
-	void RequestInstallBaseStorageUpgrade(URpgBaseStorageStationComponent* Station, URpgBaseStorageUpgradeDefinition* UpgradeDefinition);
+	/** Resolves and installs one PrimaryAsset upgrade at its exact authored anchor after authoritative payment. */
+	UFUNCTION(Server, Reliable, BlueprintCallable, Category = "Inventory|Base Storage|Transactions")
+	void RequestInstallBaseStorageUpgradeById(FRpgBaseStorageUpgradeRequest Request);
 
-	/** Applies a shared server-side sort to the linked base resource rows. */
-	UFUNCTION(Server, Reliable, BlueprintCallable, Category = "Inventory|Base Storage")
-	void RequestApplyBaseResourceSort(URpgBaseStorageStationComponent* Station, ERpgInventorySortMode SortMode);
+	/** Safely removes one installed PrimaryAsset upgrade from its exact anchor and grants only authored refunds. */
+	UFUNCTION(Server, Reliable, BlueprintCallable, Category = "Inventory|Base Storage|Transactions")
+	void RequestDecommissionBaseStorageUpgrade(FRpgBaseStorageUpgradeRequest Request);
 
-	/** Moves one linked base resource row to a shared replicated index. */
-	UFUNCTION(Server, Reliable, BlueprintCallable, Category = "Inventory|Base Storage")
-	void RequestMoveBaseResourceEntry(URpgBaseStorageStationComponent* Station, TSubclassOf<URpgInventoryItemDefinition> ItemDefinition, int32 TargetIndex);
+	/** Pays the contained item's authored costs and marks that exact containment ItemId stabilized on the server. */
+	UFUNCTION(Server, Reliable, BlueprintCallable, Category = "Inventory|Base Storage|Rift")
+	void RequestStabilizeContainedItem(FRpgBaseStorageRiftItemRequest Request);
+
+	/** Owner-only destructive extraction of one confirmed, stabilized containment ItemId into its authored output. */
+	UFUNCTION(Server, Reliable, BlueprintCallable, Category = "Inventory|Base Storage|Rift")
+	void RequestExtractContainedItem(FRpgBaseStorageRiftItemRequest Request);
+
+	/** Pays the base-authored cleanse costs and reduces deterministic Rift strain in one atomic server command. */
+	UFUNCTION(Server, Reliable, BlueprintCallable, Category = "Inventory|Base Storage|Rift")
+	void RequestCleanseBaseStorageRiftStrain(FRpgBaseStorageCleanseRequest Request);
 
 	/** Places a replicated construction site for a buildable near a base camp. */
 	UFUNCTION(Server, Reliable, BlueprintCallable, Category = "Inventory|Base Building")
@@ -858,9 +867,18 @@ private:
 		int32 StackCount,
 		const FGuid& RequestId = FGuid(),
 		FRpgInventoryItemId ItemId = FRpgInventoryItemId()) const;
+	void SendBaseStorageCommandFeedback(
+		FGameplayTag ActionTag,
+		const FRpgBaseStorageCommandResult& Result,
+		FRpgInventoryItemId ItemId = FRpgInventoryItemId(),
+		TSubclassOf<URpgInventoryItemDefinition> ItemDefinition = nullptr) const;
 
 	UFUNCTION(Client, Reliable)
 	void ClientBroadcastInventoryActionFeedback(const FRpgInventoryActionFeedbackMessage& Message);
+
+	/** Reliably delivers one structured storage-command result only to this component's owning controller. */
+	UFUNCTION(Client, Reliable)
+	void ClientBroadcastBaseStorageCommandFeedback(const FRpgBaseStorageCommandFeedbackMessage& Message);
 
 private:
 	/** Pickup actor class used when players manually drop inventory items. Runtime spawn is server-authoritative. */

@@ -293,8 +293,8 @@ bool FRpgInventoryRestoreStatusPerControllerTest::RunTest(
 		return false;
 	}
 
-	TestEqual(
-		TEXT("Both offline fixtures deliberately resolve the same profile key"),
+	TestNotEqual(
+		TEXT("Two offline controllers without NetIds receive distinct private profile keys"),
 		GameMode->GetPlayerProfileKey(FirstController),
 		GameMode->GetPlayerProfileKey(SecondController));
 	TestFalse(
@@ -303,17 +303,21 @@ bool FRpgInventoryRestoreStatusPerControllerTest::RunTest(
 	TestFalse(
 		TEXT("The second connection has no restore result before PostLogin"),
 		GameMode->IsPlayerProfileRestoreComplete(SecondController));
-	FRpgPlayerSaveData& SharedSaveData =
+	FRpgPlayerSaveData& FirstSaveData =
 		GameMode->GetOrCreatePlayerSaveData(FirstController);
-	SharedSaveData.bHasInventoryGraph = true;
-	SharedSaveData.InventoryGraph = FRpgInventoryGraphSaveData();
+	FirstSaveData.bHasInventoryGraph = true;
+	FirstSaveData.InventoryGraph = FRpgInventoryGraphSaveData();
+	FRpgPlayerSaveData& SecondSaveData =
+		GameMode->GetOrCreatePlayerSaveData(SecondController);
+	SecondSaveData.bHasInventoryGraph = true;
+	SecondSaveData.InventoryGraph = FRpgInventoryGraphSaveData();
 
 	GameMode->PostLogin(FirstController);
 	TestFalse(
 		TEXT("PostLogin before PawnData does not cache a failed restore attempt"),
 		GameMode->IsPlayerProfileRestoreComplete(FirstController));
 	TestFalse(
-		TEXT("The same profile key does not affect another controller's restore state"),
+		TEXT("The first profile does not affect another controller's restore state"),
 		GameMode->IsPlayerProfileRestoreComplete(SecondController));
 	if (!TestTrue(
 			TEXT("The first PlayerState receives a transient PawnData-backed layout"),
@@ -350,7 +354,7 @@ bool FRpgInventoryRestoreStatusPerControllerTest::RunTest(
 		TEXT("The second connection receives its own completed restore attempt"),
 		GameMode->IsPlayerProfileRestoreComplete(SecondController));
 	TestTrue(
-		TEXT("The second connection restores the shared saved graph independently"),
+		TEXT("The second connection restores its private saved graph independently"),
 		GameMode->HasRestoredPlayerProfile(SecondController));
 
 	GameMode->Logout(FirstController);

@@ -23,6 +23,22 @@ DECLARE_DYNAMIC_MULTICAST_DELEGATE_OneParam(
 	const FRpgItemizationState&,
 	NewState);
 
+/** Persistent lifecycle state of one concrete Rift-containment item instance. */
+UENUM(BlueprintType)
+enum class ERpgInventoryContainmentState : uint8
+{
+	/** Item has not completed its authored stabilization transaction. */
+	Unstable,
+
+	/** Item completed stabilization and may move to its definition-authored destination domains. */
+	Stabilized
+};
+
+DECLARE_DYNAMIC_MULTICAST_DELEGATE_OneParam(
+	FRpgInventoryContainmentStateChanged,
+	ERpgInventoryContainmentState,
+	NewState);
+
 /**
  * Canonical, non-persisted value used for every stack-compatibility decision.
  *
@@ -103,6 +119,29 @@ public:
 	UPROPERTY(BlueprintAssignable, Category = "Inventory|Itemization")
 	FRpgInventoryItemizationStateChanged OnItemizationStateChanged;
 
+	/** Returns the replicated, graph-save-backed lifecycle state of this concrete contained item. */
+	UFUNCTION(BlueprintPure, Category = "Inventory|Containment")
+	ERpgInventoryContainmentState GetContainmentState() const
+	{
+		return ContainmentState;
+	}
+
+	/** True only after this exact item instance completed stabilization. */
+	UFUNCTION(BlueprintPure, Category = "Inventory|Containment")
+	bool IsContainmentStabilized() const
+	{
+		return ContainmentState ==
+			ERpgInventoryContainmentState::Stabilized;
+	}
+
+	/** Changes lifecycle state on authority; accepted only for definitions with one Containment Profile fragment. */
+	UFUNCTION(BlueprintCallable, BlueprintAuthorityOnly, Category = "Inventory|Containment")
+	bool SetContainmentState(ERpgInventoryContainmentState NewState);
+
+	/** Fired locally on authority mutation and on clients after replicated containment-state changes. */
+	UPROPERTY(BlueprintAssignable, Category = "Inventory|Containment")
+	FRpgInventoryContainmentStateChanged OnContainmentStateChanged;
+
 	/** Returns the persistent item identity used by graph handles, transactions, saves, and quick-access bindings. */
 	UFUNCTION(BlueprintPure, Category = "Inventory|Identity")
 	FRpgInventoryItemId GetItemId() const { return ItemId; }
@@ -138,6 +177,11 @@ public:
 	/** Validates all payloads first, then restores core and fragment-owned state on authority. */
 	bool ImportRuntimeState(const TArray<FRpgInventoryFragmentStatePayload>& Payloads);
 
+	/** Reconstructs a transient staging instance and validates/imports saved payloads without touching live inventory state. */
+	static bool ValidatePersistedRuntimeState(
+		TSubclassOf<URpgInventoryItemDefinition> ItemDefinition,
+		const TArray<FRpgInventoryFragmentStatePayload>& Payloads);
+
 	TSubclassOf<URpgInventoryItemDefinition> GetItemDef() const
 	{
 		return ItemDef;
@@ -158,6 +202,9 @@ public:
 private:
 	UFUNCTION()
 	void OnRep_ItemizationState();
+
+	UFUNCTION()
+	void OnRep_ContainmentState();
 
 	/** Restores an already validated historical roll without comparing it to rebalanced generation ranges. */
 	bool RestorePersistedItemizationState(const FRpgItemizationState& NewState);
@@ -182,6 +229,14 @@ private:
 	/** Server-generated numeric rolls, replicated directly and serialized by the Itemization definition fragment. */
 	UPROPERTY(ReplicatedUsing = OnRep_ItemizationState)
 	FRpgItemizationState ItemizationState;
+
+	/**
+	 * Concrete containment lifecycle state. Replicated with the item and serialized by Containment Profile runtime
+	 * payloads, so transfers, disconnects, and graph restores preserve stabilization without a vault-side shadow map.
+	 */
+	UPROPERTY(ReplicatedUsing = OnRep_ContainmentState)
+	ERpgInventoryContainmentState ContainmentState =
+		ERpgInventoryContainmentState::Unstable;
 
 	/** Static fragment-composed definition shared by every instance of this item type. */
 	UPROPERTY(Replicated)

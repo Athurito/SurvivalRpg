@@ -7,6 +7,7 @@
 #include "RpgCraftingRecipeDefinition.generated.h"
 
 class UTexture2D;
+class FDataValidationContext;
 
 /**
  * Data-driven crafting recipe consumed by a crafting station.
@@ -64,6 +65,13 @@ public:
 	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Crafting", meta = (Categories = "Base,Recipe,Crafting"))
 	FGameplayTagContainer RequiredUnlockTags;
 
+	/**
+	 * Shared world-storage knowledge required before this recipe is offered. This is replicated/saved knowledge owned
+	 * by the GameState, not a per-player unlock; use it for non-exclusive Material Competence conversion nodes.
+	 */
+	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Crafting|Knowledge", meta = (Categories = "Storage.Knowledge"))
+	FGameplayTagContainer RequiredWorldKnowledgeTags;
+
 	/** Resource costs consumed from player inventory and/or linked base storage. */
 	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Crafting")
 	TArray<FRpgCraftingResourceCost> RequiredResources;
@@ -75,6 +83,11 @@ public:
 	/** Time in seconds to produce one unit of this recipe. Values <= 0 are processed immediately. */
 	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Crafting", meta = (ClampMin = "0", UIMin = "0", Units = "s"))
 	float CraftTime = 0.0f;
+
+#if WITH_EDITOR
+	/** Validates world-knowledge tags and the recipe's deterministic definition/count contract. */
+	virtual EDataValidationResult IsDataValid(FDataValidationContext& Context) const override;
+#endif
 };
 
 /** Small recipe collection assigned to a station or terminal UI. */
@@ -87,4 +100,9 @@ public:
 	/** Recipes this station may offer, filtered again by station tags and unlock tags at runtime. */
 	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Crafting")
 	TArray<TObjectPtr<URpgCraftingRecipeDefinition>> Recipes;
+
+#if WITH_EDITOR
+	/** Rejects null or duplicate recipe references so station offer order stays deterministic. */
+	virtual EDataValidationResult IsDataValid(FDataValidationContext& Context) const override;
+#endif
 };

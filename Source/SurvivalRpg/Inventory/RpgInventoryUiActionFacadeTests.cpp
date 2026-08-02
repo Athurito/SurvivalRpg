@@ -107,12 +107,14 @@ bool FRpgInventoryUiActionFacadeRpcOwnershipContractTest::RunTest(
 		FName(TEXT("RequestMutateQuickAccessBinding")),
 		FName(TEXT("RequestSplitItemStackById")),
 		FName(TEXT("RequestDropInventoryItemById")),
-		FName(TEXT("RequestDepositAllMaterialsToBase")),
-		FName(TEXT("RequestDepositMaterialStackToBase")),
-		FName(TEXT("RequestWithdrawResourceFromBase")),
-		FName(TEXT("RequestInstallBaseStorageUpgrade")),
-		FName(TEXT("RequestApplyBaseResourceSort")),
-		FName(TEXT("RequestMoveBaseResourceEntry")),
+		FName(TEXT("RequestSmartDepositToBase")),
+		FName(TEXT("RequestDepositItemToBase")),
+		FName(TEXT("RequestWithdrawFromBase")),
+		FName(TEXT("RequestInstallBaseStorageUpgradeById")),
+		FName(TEXT("RequestDecommissionBaseStorageUpgrade")),
+		FName(TEXT("RequestStabilizeContainedItem")),
+		FName(TEXT("RequestExtractContainedItem")),
+		FName(TEXT("RequestCleanseBaseStorageRiftStrain")),
 		FName(TEXT("RequestPlaceBaseBuildable")),
 		FName(TEXT("RequestContributeAllToBaseConstructionSite")),
 		FName(TEXT("RequestContributeMaterialToBaseConstructionSite")),
@@ -141,6 +143,12 @@ bool FRpgInventoryUiActionFacadeRpcOwnershipContractTest::RunTest(
 		TEXT("RequestDropInventoryItem"),
 		TEXT("RequestStoreItemInstanceInBase"),
 		TEXT("RequestTakeItemInstanceFromBase"),
+		TEXT("RequestDepositAllMaterialsToBase"),
+		TEXT("RequestDepositMaterialStackToBase"),
+		TEXT("RequestWithdrawResourceFromBase"),
+		TEXT("RequestInstallBaseStorageUpgrade"),
+		TEXT("RequestApplyBaseResourceSort"),
+		TEXT("RequestMoveBaseResourceEntry"),
 	};
 	int32 RequestFunctionCount = 0;
 	for (TFieldIterator<UFunction> FunctionIt(
@@ -194,7 +202,7 @@ bool FRpgInventoryUiActionFacadeRpcOwnershipContractTest::RunTest(
 	TestEqual(
 		TEXT("The inventory UI action facade retains exactly its canonical and feature Request RPCs"),
 		RequestFunctionCount,
-		24);
+		26);
 	TestTrue(
 		TEXT("Every canonical or feature inventory action Request RPC remains reflected"),
 		RemainingExpectedRequestFunctions.IsEmpty());

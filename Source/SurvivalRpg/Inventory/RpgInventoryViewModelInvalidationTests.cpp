@@ -7,6 +7,9 @@
 #include "RpgPlayerInventoryLayoutComponent.h"
 #include "SurvivalRpg/ActionBar/RpgActionBarComponent.h"
 #include "SurvivalRpg/Base/RpgBaseStorageComponent.h"
+#include "SurvivalRpg/Base/RpgWorldStorageKnowledgeComponent.h"
+#include "SurvivalRpg/Core/Game/RpgGameStateBase.h"
+#include "SurvivalRpg/Crafting/RpgCraftingRecipeDefinition.h"
 #include "SurvivalRpg/Crafting/RpgCraftingStationComponent.h"
 #include "SurvivalRpg/Equipment/RpgEquipmentLoadoutComponent.h"
 #include "SurvivalRpg/GameplayTags/RpgGameplayTags.h"
@@ -24,6 +27,7 @@
 #include "GameFramework/GameplayMessageSubsystem.h"
 #include "Misc/AutomationTest.h"
 #include "TimerManager.h"
+#include "UObject/UnrealType.h"
 
 namespace RpgInventoryViewModelInvalidationTests
 {
@@ -1528,6 +1532,158 @@ bool FRpgCraftingViewModelInventoryInvalidationTest::RunTest(
 
 	DetailsCounter.Unbind();
 	ViewModel->UnbindCraftingStation();
+	return true;
+}
+
+IMPLEMENT_SIMPLE_AUTOMATION_TEST(
+	FRpgCraftingViewModelKnowledgeInvalidationTest,
+	"SurvivalRpg.Crafting.ViewModel.Invalidation.WorldKnowledgeBurstsCoalesce",
+	EAutomationTestFlags::EditorContext |
+		EAutomationTestFlags::EngineFilter)
+
+bool FRpgCraftingViewModelKnowledgeInvalidationTest::RunTest(
+	const FString& Parameters)
+{
+	(void)Parameters;
+	using namespace RpgInventoryViewModelInvalidationTests;
+
+	FScopedInvalidationWorld TestWorld;
+	if (!TestTrue(
+			TEXT("The crafting knowledge invalidation world exists"),
+			TestWorld.IsValid()))
+	{
+		return false;
+	}
+
+	ARpgGameStateBase* GameState =
+		TestWorld.SpawnActor<ARpgGameStateBase>(
+			TEXT("KnowledgeInvalidationGameState"));
+	AActor* StationOwner =
+		TestWorld.SpawnActor(TEXT("KnowledgeInvalidationStationOwner"));
+	AActor* RequestingActor =
+		TestWorld.SpawnActor(TEXT("KnowledgeInvalidationRequester"));
+	URpgCraftingStationComponent* Station =
+		TestWorld.CreateComponent<URpgCraftingStationComponent>(
+			StationOwner,
+			TEXT("CraftingStation"));
+	if (!TestNotNull(TEXT("The knowledge GameState exists"), GameState) ||
+		!TestNotNull(TEXT("The knowledge station exists"), Station) ||
+		!TestNotNull(TEXT("The knowledge requester exists"), RequestingActor))
+	{
+		return false;
+	}
+	TestWorld.GetWorld()->SetGameState(GameState);
+
+	URpgWorldStorageKnowledgeComponent* Knowledge =
+		GameState->GetWorldStorageKnowledgeComponent();
+	URpgCraftingRecipeDefinition* MaterialRecipe =
+		NewObject<URpgCraftingRecipeDefinition>(
+			Station,
+			NAME_None,
+			RF_Transient);
+	URpgCraftingRecipeDefinition* RiftRecipe =
+		NewObject<URpgCraftingRecipeDefinition>(
+			Station,
+			NAME_None,
+			RF_Transient);
+	URpgCraftingRecipeSet* RecipeSet =
+		NewObject<URpgCraftingRecipeSet>(
+			Station,
+			NAME_None,
+			RF_Transient);
+	if (!TestNotNull(TEXT("The shared knowledge component exists"), Knowledge) ||
+		!TestNotNull(TEXT("The material recipe exists"), MaterialRecipe) ||
+		!TestNotNull(TEXT("The Rift recipe exists"), RiftRecipe) ||
+		!TestNotNull(TEXT("The knowledge recipe set exists"), RecipeSet))
+	{
+		return false;
+	}
+
+	MaterialRecipe->RequiredWorldKnowledgeTags.AddTag(
+		RpgGameplayTags::Storage_Knowledge_MaterialStandardization_Basic);
+	RiftRecipe->RequiredWorldKnowledgeTags.AddTag(
+		RpgGameplayTags::Storage_Knowledge_RiftAnalysis);
+	RecipeSet->Recipes.Add(MaterialRecipe);
+	RecipeSet->Recipes.Add(RiftRecipe);
+
+	FObjectPropertyBase* RecipeSetProperty =
+		FindFProperty<FObjectPropertyBase>(
+			URpgCraftingStationComponent::StaticClass(),
+			TEXT("AvailableRecipeSet"));
+	if (!TestNotNull(
+			TEXT("The station recipe-set property exists"),
+			RecipeSetProperty))
+	{
+		return false;
+	}
+	RecipeSetProperty->SetObjectPropertyValue_InContainer(Station, RecipeSet);
+
+	URpgCraftingStationViewModel* ViewModel =
+		NewObject<URpgCraftingStationViewModel>(
+			Station,
+			NAME_None,
+			RF_Transient);
+	if (!TestNotNull(TEXT("The knowledge crafting VM exists"), ViewModel))
+	{
+		return false;
+	}
+	ViewModel->BindCraftingStation(Station, RequestingActor);
+	TestTrue(
+		TEXT("Knowledge-gated recipes start outside the projected list"),
+		ViewModel->GetFilteredRecipes().IsEmpty());
+
+	FScopedNoArgumentDelegateCounter RecipeCounter(
+		ViewModel->OnRecipesChanged,
+		ViewModel);
+	TestTrue(
+		TEXT("The knowledge recipe-list counter is bound"),
+		RecipeCounter.IsBound());
+	TestWorld.PrimeTimerManager();
+
+	TestTrue(
+		TEXT("The first knowledge node is granted"),
+		Knowledge->GrantKnowledgeTag(
+			RpgGameplayTags::Storage_Knowledge_MaterialStandardization_Basic));
+	TestTrue(
+		TEXT("The second knowledge node is granted in the same frame"),
+		Knowledge->GrantKnowledgeTag(
+			RpgGameplayTags::Storage_Knowledge_RiftAnalysis));
+	TestEqual(
+		TEXT("Knowledge changes do not rebuild recipes synchronously"),
+		RecipeCounter.GetCount(),
+		0);
+	TestTrue(
+		TEXT("The previous recipe projection survives until the queued refresh"),
+		ViewModel->GetFilteredRecipes().IsEmpty());
+
+	TestWorld.AdvanceTimerFrame();
+	TestEqual(
+		TEXT("The knowledge burst coalesces into one recipe-list refresh"),
+		RecipeCounter.GetCount(),
+		1);
+	TestEqual(
+		TEXT("Both newly known recipes appear in the refreshed projection"),
+		ViewModel->GetFilteredRecipes().Num(),
+		2);
+	TestWorld.AdvanceTimerFrame();
+	TestEqual(
+		TEXT("No knowledge refresh survives another frame"),
+		RecipeCounter.GetCount(),
+		1);
+
+	ViewModel->UnbindCraftingStation();
+	RecipeCounter.ResetCount();
+	TestTrue(
+		TEXT("A later knowledge mutation remains authoritative"),
+		Knowledge->GrantKnowledgeTag(
+			RpgGameplayTags::Storage_Knowledge_RiftContainment));
+	TestWorld.AdvanceTimerFrame();
+	TestEqual(
+		TEXT("An unbound crafting VM receives no knowledge refresh"),
+		RecipeCounter.GetCount(),
+		0);
+
+	RecipeCounter.Unbind();
 	return true;
 }
 
