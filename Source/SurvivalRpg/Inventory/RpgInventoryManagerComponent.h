@@ -795,6 +795,19 @@ public:
 		FRpgInventoryMutationResult& OutResult);
 
 	/**
+	 * Repairs caller-gated legacy root placements against the current player-layout contract.
+	 *
+	 * The authority-only operation deterministically relocates content overlaps and uniquely remappable Gear roots
+	 * that no longer satisfy their historical slot. Persistent identity, definition, quantity, runtime fragment state,
+	 * and all item-owned descendants remain intact. Output is emitted only after the normal full validator accepts it.
+	 */
+	bool TryMigrateLegacyRootPlacementsForRestore(
+		const FRpgInventoryGraphSaveData& SaveData,
+		int32 LegacyPlayerSchemaVersion,
+		FRpgInventoryGraphSaveData& OutMigratedSaveData,
+		FRpgInventoryMutationResult& OutResult);
+
+	/**
 	 * Returns the server-local command epoch used to scope idempotent inventory requests.
 	 * Only a successful profile/disk restore advances this value; runtime transaction imports stay in the current epoch.
 	 */
@@ -941,7 +954,10 @@ private:
 		const FRpgInventoryGraphSaveData& SaveData,
 		FRpgInventoryMutationResult& OutResult,
 		bool bEstablishNewMutationEpoch,
-		bool bCommitValidatedGraph);
+		bool bCommitValidatedGraph,
+		bool bAllowLegacyRootPlacementMigration,
+		int32 LegacyPlayerSchemaVersion,
+		FRpgInventoryGraphSaveData* OutMigratedSaveData);
 	struct FRecentMutationRecord
 	{
 		enum class EKind : uint8

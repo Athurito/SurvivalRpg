@@ -109,6 +109,9 @@ public:
 		const FString& CandidateToken,
 		FString& OutCanonicalToken);
 
+	/** True only when an online id is stable enough to own durable player/base save data. */
+	static bool IsDurableOnlineProfileId(const FUniqueNetIdRepl& NetId);
+
 	/** True once the authoritative host attempted disk restore for this controller connection, including when no save exists. */
 	UFUNCTION(BlueprintCallable, BlueprintPure = false, Category = "Rpg|Save")
 	bool IsPlayerProfileRestoreComplete(const APlayerController* PC) const;

@@ -45,6 +45,17 @@
 #include "GameFramework/PlayerState.h"
 #include "TimerManager.h"
 
+bool ARpgGameModeBase::IsDurableOnlineProfileId(
+	const FUniqueNetIdRepl& NetId)
+{
+	if (!NetId.IsValid())
+	{
+		return false;
+	}
+	return !NetId.IsV1() ||
+		NetId.GetType() != FName(TEXT("NULL"));
+}
+
 ARpgGameModeBase::ARpgGameModeBase(const FObjectInitializer& ObjectInitializer)
 	: Super(ObjectInitializer)
 {
@@ -79,11 +90,13 @@ FString ARpgGameModeBase::InitNewPlayer(
 {
 	const FString RequestedProfileToken =
 		UGameplayStatics::ParseOption(Options, TEXT("PlayerProfileId")).TrimStartAndEnd();
+	const bool bHasDurableOnlineProfileId =
+		IsDurableOnlineProfileId(UniqueId);
 	const bool bRemoteOfflineConnection = NewPlayerController &&
-		!UniqueId.IsValid() &&
+		!bHasDurableOnlineProfileId &&
 		!NewPlayerController->IsLocalController();
 	FString CanonicalProfileToken;
-	if (bRemoteOfflineConnection && !RequestedProfileToken.IsEmpty() &&
+	if (bRemoteOfflineConnection &&
 		!TryNormalizeRemoteOfflinePlayerProfileToken(
 			RequestedProfileToken,
 			CanonicalProfileToken))
@@ -96,7 +109,8 @@ FString ARpgGameModeBase::InitNewPlayer(
 		UniqueId,
 		Options,
 		Portal);
-	if (!ErrorMessage.IsEmpty() || !NewPlayerController || UniqueId.IsValid())
+	if (!ErrorMessage.IsEmpty() || !NewPlayerController ||
+		bHasDurableOnlineProfileId)
 	{
 		return ErrorMessage;
 	}
@@ -544,7 +558,7 @@ const FRpgPlayerSaveData* ARpgGameModeBase::FindPlayerSaveData(APlayerController
 FString ARpgGameModeBase::GetPlayerProfileKey(const APlayerController* PC) const
 {
 	const FUniqueNetIdRepl NetId = GetNetIdForPC(PC);
-	if (NetId.IsValid())
+	if (IsDurableOnlineProfileId(NetId))
 	{
 		const FString OnlineId = NetId.ToString();
 		if (!OnlineId.IsEmpty() && !OnlineId.Equals(TEXT("INVALID"), ESearchCase::IgnoreCase))
@@ -629,6 +643,15 @@ FString ARpgGameModeBase::ResolveOrAssignOfflinePlayerProfileKey(
 				TEXT("Offline:%s:Local%d"),
 				*StableLocalRoot,
 				ControllerId);
+	}
+	else if (PC->IsLocalController())
+	{
+		// Standalone/headless local controllers can legitimately have no
+		// ULocalPlayer. They still represent the host profile, never a transient
+		// remote session identity that may be reused after restart.
+		ProfileKey = FString::Printf(
+			TEXT("Offline:%s"),
+			*StableLocalRoot);
 	}
 	else if (!RequestedProfileToken.IsEmpty())
 	{
@@ -1346,10 +1369,21 @@ bool ARpgGameModeBase::RestoreLoadedWorldSaveCandidatesAtomically()
 			TEXT("RpgGameMode: Deferring whole-save selection until a PawnData-backed player inventory can deep-validate every saved player graph."));
 		return false;
 	}
-	auto PreflightPlayerGraphs = [
+	auto ResolvePlayerValidator = [
 		&PlayerValidatorsByProfile,
-		DefaultPlayerValidator](
-			const TMap<FString, FRpgPlayerSaveData>& Players)
+		DefaultPlayerValidator](const FString& ProfileKey)
+	{
+		if (URpgInventoryManagerComponent* ExactValidator =
+				PlayerValidatorsByProfile.FindRef(ProfileKey))
+		{
+			return ExactValidator;
+		}
+		return DefaultPlayerValidator;
+	};
+	auto PreflightPlayerGraphs = [
+		&ResolvePlayerValidator](
+			const TMap<FString, FRpgPlayerSaveData>& Players,
+			bool bLogFailure)
 	{
 		for (const TPair<FString, FRpgPlayerSaveData>& Pair : Players)
 		{
@@ -1358,24 +1392,93 @@ bool ARpgGameModeBase::RestoreLoadedWorldSaveCandidatesAtomically()
 				continue;
 			}
 			URpgInventoryManagerComponent* Validator =
-				PlayerValidatorsByProfile.FindRef(Pair.Key);
-			if (!Validator)
-			{
-				Validator = DefaultPlayerValidator;
-			}
+				ResolvePlayerValidator(Pair.Key);
 			FRpgInventoryMutationResult ValidationResult;
 			if (!Validator || !Validator->ValidateInventoryGraphForRestore(
 					Pair.Value.InventoryGraph,
 					ValidationResult))
 			{
-				UE_LOG(LogRpg, Warning,
-					TEXT("RpgGameMode: Player graph [%s] failed live layout preflight with result %d."),
-					*Pair.Key,
-					static_cast<int32>(ValidationResult.Code));
+				if (bLogFailure)
+				{
+					UE_LOG(LogRpg, Warning,
+						TEXT("RpgGameMode: Player graph [%s] failed live layout preflight with result %s (%d)."),
+						*Pair.Key,
+						*UEnum::GetValueAsString(ValidationResult.Code),
+						static_cast<int32>(ValidationResult.Code));
+				}
 				return false;
 			}
 		}
 		return true;
+	};
+	auto PreparePlayerGraphs = [
+		&ResolvePlayerValidator,
+		&PreflightPlayerGraphs](
+			const TMap<FString, FRpgPlayerSaveData>& SourcePlayers,
+			TMap<FString, FRpgPlayerSaveData>& OutPreparedPlayers,
+			bool& bOutMigratedLegacyLayout)
+	{
+		OutPreparedPlayers = SourcePlayers;
+		bOutMigratedLegacyLayout = false;
+		for (TPair<FString, FRpgPlayerSaveData>& Pair :
+			OutPreparedPlayers)
+		{
+			FRpgPlayerSaveData& PlayerSaveData = Pair.Value;
+			if (!PlayerSaveData.bHasInventoryGraph)
+			{
+				continue;
+			}
+
+			URpgInventoryManagerComponent* Validator =
+				ResolvePlayerValidator(Pair.Key);
+			FRpgInventoryMutationResult ValidationResult;
+			if (Validator && Validator->ValidateInventoryGraphForRestore(
+					PlayerSaveData.InventoryGraph,
+					ValidationResult))
+			{
+				continue;
+			}
+
+			const bool bEligibleLegacyPlacement = Validator &&
+				(ValidationResult.Code ==
+					 ERpgInventoryMutationResultCode::Occupied ||
+				 ValidationResult.Code ==
+					 ERpgInventoryMutationResultCode::ItemNotAllowed) &&
+				PlayerSaveData.SchemaVersion <
+					FRpgPlayerSaveData::CurrentSchemaVersion;
+			if (!bEligibleLegacyPlacement)
+			{
+				UE_LOG(LogRpg, Warning,
+					TEXT("RpgGameMode: Player graph [%s] failed live layout preflight with result %s (%d); no legacy placement migration applies."),
+					*Pair.Key,
+					*UEnum::GetValueAsString(ValidationResult.Code),
+					static_cast<int32>(ValidationResult.Code));
+				return false;
+			}
+
+			FRpgInventoryGraphSaveData MigratedGraph;
+			FRpgInventoryMutationResult MigrationResult;
+			if (!Validator->TryMigrateLegacyRootPlacementsForRestore(
+					PlayerSaveData.InventoryGraph,
+					PlayerSaveData.SchemaVersion,
+					MigratedGraph,
+					MigrationResult))
+			{
+				UE_LOG(LogRpg, Warning,
+					TEXT("RpgGameMode: Legacy root-placement migration failed for player graph [%s] with result %s (%d)."),
+					*Pair.Key,
+					*UEnum::GetValueAsString(MigrationResult.Code),
+					static_cast<int32>(MigrationResult.Code));
+				return false;
+			}
+
+			PlayerSaveData.InventoryGraph = MoveTemp(MigratedGraph);
+			bOutMigratedLegacyLayout = true;
+		}
+
+		// The migration helper is deliberately narrow; the normal full validator
+		// remains the final authority before any world entity is changed.
+		return PreflightPlayerGraphs(OutPreparedPlayers, true);
 	};
 
 	// Capture the pristine placed-world state once. A rejected disk sequence is
@@ -1471,7 +1574,7 @@ bool ARpgGameModeBase::RestoreLoadedWorldSaveCandidatesAtomically()
 		const TMap<FName, FRpgBaseStorageSaveData>& BaseStorages,
 		const FGameplayTagContainer& KnowledgeTags)
 	{
-		if (!PreflightPlayerGraphs(Players))
+		if (!PreflightPlayerGraphs(Players, true))
 		{
 			return false;
 		}
@@ -1501,6 +1604,7 @@ bool ARpgGameModeBase::RestoreLoadedWorldSaveCandidatesAtomically()
 
 	URpgWorldSaveGame* SelectedCandidate = nullptr;
 	int32 SelectedCandidateIndex = INDEX_NONE;
+	bool bSelectedCandidateMigratedLegacyLayout = false;
 	bool bRuntimeDiffersFromPristine = false;
 	{
 		TGuardValue<bool> RestoreGuard(bIsRestoringSaveState, true);
@@ -1531,15 +1635,38 @@ bool ARpgGameModeBase::RestoreLoadedWorldSaveCandidatesAtomically()
 			{
 				continue;
 			}
+
+			TMap<FString, FRpgPlayerSaveData> PreparedPlayers;
+			bool bCandidateMigratedLegacyLayout = false;
+			if (!PreparePlayerGraphs(
+					Candidate->Players,
+					PreparedPlayers,
+					bCandidateMigratedLegacyLayout))
+			{
+				UE_LOG(LogRpg, Warning,
+					TEXT("RpgGameMode: Rejected whole world-save sequence %lld; no entity from it will be retained."),
+					Candidate->SaveSequence);
+				continue;
+			}
+
 			bRuntimeDiffersFromPristine = true;
 			if (ApplyWholeState(
-					Candidate->Players,
+					PreparedPlayers,
 					Candidate->WorldContainers,
 					Candidate->BaseStorages,
 					Candidate->StorageKnowledgeTags))
 			{
 				SelectedCandidate = Candidate;
 				SelectedCandidateIndex = CandidateIndex;
+				bSelectedCandidateMigratedLegacyLayout =
+					bCandidateMigratedLegacyLayout;
+				if (bCandidateMigratedLegacyLayout)
+				{
+					// The loaded UObject is only updated after the complete world
+					// snapshot succeeds. Disk slots remain untouched until the
+					// normal dirty-save path writes a newer atomic sequence.
+					Candidate->Players = PreparedPlayers;
+				}
 				break;
 			}
 
@@ -1588,9 +1715,16 @@ bool ARpgGameModeBase::RestoreLoadedWorldSaveCandidatesAtomically()
 		LoadedPlayerProfileKeys.Add(Pair.Key);
 	}
 	bWorldSaveDirty = bWorldSaveDirty ||
+		bSelectedCandidateMigratedLegacyLayout ||
 		SelectedCandidateIndex > 0 ||
 		SelectedCandidate->SchemaVersion <
 			URpgWorldSaveGame::CurrentSchemaVersion;
+	if (bSelectedCandidateMigratedLegacyLayout)
+	{
+		UE_LOG(LogRpg, Warning,
+			TEXT("RpgGameMode: Selected sequence %lld after deterministic legacy root-placement migration; a newer repaired snapshot is queued."),
+			SelectedCandidate->SaveSequence);
+	}
 	UE_LOG(LogRpg, Log,
 		TEXT("RpgGameMode: Selected whole world-save sequence %lld with %d player profiles, %d world containers, and %d bases%s."),
 		SelectedCandidate->SaveSequence,

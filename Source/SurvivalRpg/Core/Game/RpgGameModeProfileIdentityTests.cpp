@@ -3,6 +3,7 @@
 #if WITH_DEV_AUTOMATION_TESTS
 
 #include "Misc/AutomationTest.h"
+#include "OnlineSubsystemTypes.h"
 #include "SurvivalRpg/Base/RpgBaseCampActor.h"
 #include "UObject/UnrealType.h"
 
@@ -38,6 +39,7 @@ bool FRpgRemoteOfflineProfileTokenContractTest::RunTest(
 
 	const TArray<FString> InvalidTokens =
 	{
+		FString(),
 		TEXT("friendly-profile-name"),
 		TEXT("0123456789ab4cde8f0123456789abcd"),
 		TEXT("01234567-89ab-3cde-8f01-23456789abcd"),
@@ -58,6 +60,27 @@ bool FRpgRemoteOfflineProfileTokenContractTest::RunTest(
 			TEXT("Rejected token never leaves reusable identity output"),
 			CanonicalToken.IsEmpty());
 	}
+
+	const FUniqueNetIdRef NullOssIdRef =
+		FUniqueNetIdString::Create(
+			TEXT("Athurito-0123456789ABCDEF"),
+			TEXT("NULL"));
+	const FUniqueNetIdRepl NullOssId(NullOssIdRef);
+	TestTrue(
+		TEXT("The synthetic NULL OSS id is structurally valid"),
+		NullOssId.IsValid());
+	TestFalse(
+		TEXT("A process-local NULL OSS id cannot own durable save state"),
+		ARpgGameModeBase::IsDurableOnlineProfileId(NullOssId));
+
+	const FUniqueNetIdRef DurableOssIdRef =
+		FUniqueNetIdString::Create(
+			TEXT("stable-account-id"),
+			TEXT("STEAM"));
+	const FUniqueNetIdRepl DurableOssId(DurableOssIdRef);
+	TestTrue(
+		TEXT("A non-NULL online account id remains durable"),
+		ARpgGameModeBase::IsDurableOnlineProfileId(DurableOssId));
 
 	const FProperty* OwnerProfileProperty = FindFProperty<FProperty>(
 		ARpgBaseCampActor::StaticClass(),

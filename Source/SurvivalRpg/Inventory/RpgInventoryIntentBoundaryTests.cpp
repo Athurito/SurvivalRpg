@@ -4,6 +4,7 @@
 
 #include "RpgInventoryDragDropCoordinator.h"
 #include "RpgInventoryDragDropTypes.h"
+#include "RpgInventoryItemDefinition.h"
 #include "RpgInventoryItemInstance.h"
 #include "RpgInventoryManagerComponent.h"
 #include "RpgPlayerInventoryLayoutComponent.h"
@@ -785,6 +786,19 @@ bool FRpgInventoryRestoreIntentBoundaryTest::RunTest(
 		TestWorld.CreateInventory(TEXT("RestoreIntentRotatedFootprintTarget"));
 	URpgInventoryManagerComponent* ReconstructedOverlapTarget =
 		TestWorld.CreateInventory(TEXT("RestoreIntentReconstructedOverlapTarget"));
+	URpgInventoryManagerComponent* LegacyNoSpaceTarget =
+		TestWorld.CreateInventory(TEXT("RestoreIntentLegacyNoSpaceTarget"));
+	URpgInventoryManagerComponent* LegacyGearSource =
+		TestWorld.CreateInventory(TEXT("RestoreIntentLegacyGearSource"));
+	ARpgInventoryAutomationTestPlayerController* LegacyGearController = nullptr;
+	ARpgInventoryAutomationTestPlayerState* LegacyGearPlayerState = nullptr;
+	URpgInventoryManagerComponent* LegacyGearTarget = nullptr;
+	const bool bCreatedLegacyGearTarget = CreatePlayerInventoryFixture(
+		TestWorld.GetWorld(),
+		TEXT("RestoreIntentLegacyGearTarget"),
+		LegacyGearController,
+		LegacyGearPlayerState,
+		LegacyGearTarget);
 	if (!TestNotNull(
 			TEXT("The restore source inventory exists"),
 			SourceInventory) ||
@@ -799,7 +813,19 @@ bool FRpgInventoryRestoreIntentBoundaryTest::RunTest(
 			RotatedFootprintTarget) ||
 		!TestNotNull(
 			TEXT("The reconstructed-overlap target exists"),
-			ReconstructedOverlapTarget))
+			ReconstructedOverlapTarget) ||
+		!TestNotNull(
+			TEXT("The legacy no-space target exists"),
+			LegacyNoSpaceTarget) ||
+		!TestNotNull(
+			TEXT("The legacy Gear source exists"),
+			LegacyGearSource) ||
+		!TestTrue(
+			TEXT("The legacy Gear player-layout target exists"),
+			bCreatedLegacyGearTarget) ||
+		!TestNotNull(
+			TEXT("The legacy Gear target inventory exists"),
+			LegacyGearTarget))
 	{
 		return false;
 	}
@@ -1039,6 +1065,384 @@ bool FRpgInventoryRestoreIntentBoundaryTest::RunTest(
 		TEXT("Rejected reconstructed overlap does not advance the revision"),
 		ReconstructedOverlapTarget->GetInventoryRevision(),
 		OverlapRevisionBeforeRestore);
+
+	const FRpgInventoryGraphSaveData LegacyInputSnapshot =
+		ReconstructedOverlapGraph;
+	FRpgInventoryGraphSaveData MigratedLegacyGraph;
+	FRpgInventoryMutationResult LegacyMigrationResult;
+	TestTrue(
+		TEXT("The explicit legacy root-content migration repairs the overlap without committing runtime state"),
+		ReconstructedOverlapTarget->
+			TryMigrateLegacyRootPlacementsForRestore(
+				ReconstructedOverlapGraph,
+				1,
+				MigratedLegacyGraph,
+				LegacyMigrationResult));
+	TestEqual(
+		TEXT("Legacy migration reports restore success"),
+		LegacyMigrationResult.Code,
+		ERpgInventoryMutationResultCode::Success);
+	TestEqual(
+		TEXT("Legacy migration preserves the source row count"),
+		MigratedLegacyGraph.Items.Num(),
+		LegacyInputSnapshot.Items.Num());
+	TestEqual(
+		TEXT("Legacy migration remains side-effect-free for the live target"),
+		ReconstructedOverlapTarget->GetUsedEntryCount(),
+		0);
+	TestEqual(
+		TEXT("Legacy migration does not advance the live target revision"),
+		ReconstructedOverlapTarget->GetInventoryRevision(),
+		OverlapRevisionBeforeRestore);
+
+	int32 MovedLegacyRows = 0;
+	for (int32 ItemIndex = 0;
+		 ItemIndex < LegacyInputSnapshot.Items.Num() &&
+		 MigratedLegacyGraph.Items.IsValidIndex(ItemIndex);
+		 ++ItemIndex)
+	{
+		const FRpgInventorySavedItem& Before =
+			LegacyInputSnapshot.Items[ItemIndex];
+		const FRpgInventorySavedItem& After =
+			MigratedLegacyGraph.Items[ItemIndex];
+		TestTrue(
+			TEXT("Legacy migration preserves persistent item identity"),
+			After.ItemId == Before.ItemId);
+		TestTrue(
+			TEXT("Legacy migration preserves the item definition"),
+			After.ItemDefinition.ToSoftObjectPath() ==
+				Before.ItemDefinition.ToSoftObjectPath());
+		TestEqual(
+			TEXT("Legacy migration preserves stack quantity"),
+			After.StackCount,
+			Before.StackCount);
+		TestTrue(
+			TEXT("Legacy migration preserves the exact container handle"),
+			After.Container == Before.Container &&
+				After.Placement.GetContainerHandle() == Before.Container);
+		TestEqual(
+			TEXT("Legacy migration preserves fragment-state row count"),
+			After.RuntimeState.Num(),
+			Before.RuntimeState.Num());
+		if (After.Placement.X != Before.Placement.X ||
+			After.Placement.Y != Before.Placement.Y ||
+			After.Placement.bRotated != Before.Placement.bRotated ||
+			After.Placement.GetContainerHandle() !=
+				Before.Placement.GetContainerHandle())
+		{
+			++MovedLegacyRows;
+		}
+	}
+	TestEqual(
+		TEXT("Only the colliding legacy row is relocated"),
+		MovedLegacyRows,
+		1);
+	if (MigratedLegacyGraph.Items.Num() == 2)
+	{
+		TestEqual(
+			TEXT("The first wide row retains its authored X cell"),
+			MigratedLegacyGraph.Items[0].Placement.X,
+			0);
+		TestEqual(
+			TEXT("The colliding wide row moves to deterministic row-major first fit"),
+			MigratedLegacyGraph.Items[1].Placement.X,
+			2);
+		TestEqual(
+			TEXT("The colliding wide row remains on its authored row"),
+			MigratedLegacyGraph.Items[1].Placement.Y,
+			0);
+	}
+	TestTrue(
+		TEXT("Legacy migration leaves its const input placement unchanged"),
+		ReconstructedOverlapGraph.Items[1].Placement ==
+			LegacyInputSnapshot.Items[1].Placement);
+
+	FRpgInventoryGraphSaveData RepeatedMigratedLegacyGraph;
+	FRpgInventoryMutationResult RepeatedLegacyMigrationResult;
+	TestTrue(
+		TEXT("Repeating legacy migration succeeds"),
+		ReconstructedOverlapTarget->
+			TryMigrateLegacyRootPlacementsForRestore(
+				ReconstructedOverlapGraph,
+				1,
+				RepeatedMigratedLegacyGraph,
+				RepeatedLegacyMigrationResult));
+	if (MigratedLegacyGraph.Items.Num() ==
+			RepeatedMigratedLegacyGraph.Items.Num())
+	{
+		for (int32 ItemIndex = 0;
+			 ItemIndex < MigratedLegacyGraph.Items.Num();
+			 ++ItemIndex)
+		{
+			TestTrue(
+				TEXT("Repeated legacy migration emits identical placements"),
+				MigratedLegacyGraph.Items[ItemIndex].Placement ==
+					RepeatedMigratedLegacyGraph.Items[ItemIndex].Placement);
+		}
+	}
+
+	FRpgInventoryMutationResult MigratedPreflightResult;
+	TestTrue(
+		TEXT("The normal complete restore validator accepts the migrated graph"),
+		ReconstructedOverlapTarget->ValidateInventoryGraphForRestore(
+			MigratedLegacyGraph,
+			MigratedPreflightResult));
+	FRpgInventoryMutationResult MigratedRestoreResult;
+	TestTrue(
+		TEXT("The migrated graph restores through the unchanged strict path"),
+		ReconstructedOverlapTarget->RestoreInventoryGraph(
+			MigratedLegacyGraph,
+			MigratedRestoreResult));
+	TestEqual(
+		TEXT("The strict restore retains both migrated items"),
+		ReconstructedOverlapTarget->GetUsedEntryCount(),
+		2);
+
+	FRpgInventoryGridSize NoSpaceGrid;
+	NoSpaceGrid.Width = 3;
+	NoSpaceGrid.Height = 1;
+	TestTrue(
+		TEXT("The no-space migration target accepts a three-cell root grid"),
+		LegacyNoSpaceTarget->SetDefaultGridSize(NoSpaceGrid));
+	const int32 NoSpaceRevisionBeforeMigration =
+		LegacyNoSpaceTarget->GetInventoryRevision();
+	FRpgInventoryGraphSaveData RejectedLegacyOutput;
+	FRpgInventoryMutationResult NoSpaceMigrationResult;
+	TestFalse(
+		TEXT("Legacy overlap migration rejects a root with no lossless first fit"),
+		LegacyNoSpaceTarget->TryMigrateLegacyRootPlacementsForRestore(
+			ReconstructedOverlapGraph,
+			1,
+			RejectedLegacyOutput,
+			NoSpaceMigrationResult));
+	TestEqual(
+		TEXT("A lossless legacy migration with no fit reports no space"),
+		NoSpaceMigrationResult.Code,
+		ERpgInventoryMutationResultCode::NoSpace);
+	TestEqual(
+		TEXT("Failed legacy migration emits no partial graph"),
+		RejectedLegacyOutput.Items.Num(),
+		0);
+	TestEqual(
+		TEXT("Failed legacy migration leaves runtime inventory empty"),
+		LegacyNoSpaceTarget->GetUsedEntryCount(),
+		0);
+	TestEqual(
+		TEXT("Failed legacy migration preserves the runtime revision"),
+		LegacyNoSpaceTarget->GetInventoryRevision(),
+		NoSpaceRevisionBeforeMigration);
+
+	const TSubclassOf<URpgInventoryItemDefinition>
+		LegacyBackpackDefinition = LoadClass<URpgInventoryItemDefinition>(
+			nullptr,
+			TEXT("/Game/SurvivalRpg/Inventory/Items/Test/ID_TestBackpack.ID_TestBackpack_C"));
+	if (!TestNotNull(
+			TEXT("The historical test Backpack definition loads"),
+			LegacyBackpackDefinition.Get()))
+	{
+		return false;
+	}
+	URpgInventoryItemInstance* LegacyBackpack =
+		LegacyGearSource->AddItemDefinitionToPlacement(
+			LegacyBackpackDefinition,
+			1,
+			MakeRootPlacement(TEXT("Storage"), 0, 0));
+	if (!TestNotNull(
+			TEXT("The historical test Backpack source item exists"),
+			LegacyBackpack))
+	{
+		return false;
+	}
+	FRpgInventoryGridPlacement LegacyBackpackChildPlacement;
+	LegacyBackpackChildPlacement.SetContainerHandle(
+		FRpgInventoryContainerHandle::MakeItemOwned(
+			LegacyBackpack->GetItemId(),
+			TEXT("Backpack"),
+			1));
+	LegacyBackpackChildPlacement.X = 0;
+	LegacyBackpackChildPlacement.Y = 0;
+	URpgInventoryItemInstance* LegacyBackpackChild =
+		LegacyGearSource->AddItemDefinitionToPlacement(
+			URpgInventoryAutomationTestUnitItemDefinition::StaticClass(),
+			1,
+			LegacyBackpackChildPlacement);
+	if (!TestNotNull(
+			TEXT("The historical Backpack keeps an item-owned child fixture"),
+			LegacyBackpackChild))
+	{
+		return false;
+	}
+
+	FRpgInventoryGraphSaveData LegacyGearGraph =
+		LegacyGearSource->ExportInventoryGraph();
+	const FRpgInventoryItemId LegacyBackpackId =
+		LegacyBackpack->GetItemId();
+	const FRpgInventoryItemId LegacyBackpackChildId =
+		LegacyBackpackChild->GetItemId();
+	const FRpgInventoryContainerHandle HistoricalResourceBagHandle =
+		FRpgInventoryContainerHandle::MakeRoot(
+			URpgPlayerInventoryLayoutComponent::GearResourceBagGroupId);
+	const FRpgInventoryContainerHandle CurrentBackpackHandle =
+		FRpgInventoryContainerHandle::MakeRoot(
+			URpgPlayerInventoryLayoutComponent::GearBackpackGroupId);
+	FRpgInventoryContainerHandle OriginalChildHandle;
+	for (FRpgInventorySavedItem& SavedItem : LegacyGearGraph.Items)
+	{
+		if (SavedItem.ItemId == LegacyBackpackId)
+		{
+			SavedItem.Container = HistoricalResourceBagHandle;
+			SavedItem.Placement.SetContainerHandle(
+				HistoricalResourceBagHandle);
+			SavedItem.Placement.X = 0;
+			SavedItem.Placement.Y = 0;
+		}
+		else if (SavedItem.ItemId == LegacyBackpackChildId)
+		{
+			OriginalChildHandle = SavedItem.Container;
+		}
+	}
+	if (!TestEqual(
+			TEXT("The historical Gear graph retains Backpack plus child"),
+			LegacyGearGraph.Items.Num(),
+			2) ||
+		!TestTrue(
+			TEXT("The historical child remains owned by the Backpack"),
+			OriginalChildHandle.IsItemOwned() &&
+				OriginalChildHandle.ItemOwnerId == LegacyBackpackId))
+	{
+		return false;
+	}
+
+	FRpgInventoryMutationResult LegacyGearStrictResult;
+	TestFalse(
+		TEXT("The strict path rejects a Backpack in the historical ResourceBag slot"),
+		LegacyGearTarget->ValidateInventoryGraphForRestore(
+			LegacyGearGraph,
+			LegacyGearStrictResult));
+	TestEqual(
+		TEXT("The obsolete Gear contract reports ItemNotAllowed"),
+		LegacyGearStrictResult.Code,
+		ERpgInventoryMutationResultCode::ItemNotAllowed);
+	const int32 LegacyGearRevisionBeforeMigration =
+		LegacyGearTarget->GetInventoryRevision();
+	FRpgInventoryGraphSaveData RejectedSchemaTwoGearGraph;
+	FRpgInventoryMutationResult RejectedSchemaTwoGearResult;
+	TestFalse(
+		TEXT("The known Gear repair is not inferred for later player schemas"),
+		LegacyGearTarget->TryMigrateLegacyRootPlacementsForRestore(
+			LegacyGearGraph,
+			2,
+			RejectedSchemaTwoGearGraph,
+			RejectedSchemaTwoGearResult));
+	TestEqual(
+		TEXT("A later-schema Gear mismatch remains ItemNotAllowed"),
+		RejectedSchemaTwoGearResult.Code,
+		ERpgInventoryMutationResultCode::ItemNotAllowed);
+	TestTrue(
+		TEXT("A rejected later-schema Gear repair emits no graph"),
+		RejectedSchemaTwoGearGraph.Items.IsEmpty());
+
+	FRpgInventoryGraphSaveData UnknownLegacyGearGraph = LegacyGearGraph;
+	const FRpgInventoryContainerHandle HistoricalPouchHandle =
+		FRpgInventoryContainerHandle::MakeRoot(
+			URpgPlayerInventoryLayoutComponent::GearPouchGroupId);
+	for (FRpgInventorySavedItem& SavedItem : UnknownLegacyGearGraph.Items)
+	{
+		if (SavedItem.ItemId == LegacyBackpackId)
+		{
+			SavedItem.Container = HistoricalPouchHandle;
+			SavedItem.Placement.SetContainerHandle(
+				HistoricalPouchHandle);
+		}
+	}
+	FRpgInventoryGraphSaveData RejectedUnknownGearOutput;
+	FRpgInventoryMutationResult RejectedUnknownGearResult;
+	TestFalse(
+		TEXT("Schema one does not authorize an unevidenced Gear remap"),
+		LegacyGearTarget->TryMigrateLegacyRootPlacementsForRestore(
+			UnknownLegacyGearGraph,
+			1,
+			RejectedUnknownGearOutput,
+			RejectedUnknownGearResult));
+	TestEqual(
+		TEXT("An unknown historical Gear source remains ItemNotAllowed"),
+		RejectedUnknownGearResult.Code,
+		ERpgInventoryMutationResultCode::ItemNotAllowed);
+	TestTrue(
+		TEXT("An unknown Gear source emits no repaired graph"),
+		RejectedUnknownGearOutput.Items.IsEmpty());
+	TestEqual(
+		TEXT("Rejected Gear mapping probes remain side-effect-free"),
+		LegacyGearTarget->GetInventoryRevision(),
+		LegacyGearRevisionBeforeMigration);
+
+	FRpgInventoryGraphSaveData MigratedLegacyGearGraph;
+	FRpgInventoryMutationResult LegacyGearMigrationResult;
+	TestTrue(
+		TEXT("Legacy Gear migration selects the Backpack's unique current slot"),
+		LegacyGearTarget->TryMigrateLegacyRootPlacementsForRestore(
+			LegacyGearGraph,
+			1,
+			MigratedLegacyGearGraph,
+			LegacyGearMigrationResult));
+	TestEqual(
+		TEXT("Legacy Gear migration remains side-effect-free"),
+		LegacyGearTarget->GetInventoryRevision(),
+		LegacyGearRevisionBeforeMigration);
+
+	bool bMigratedBackpackToUniqueGearSlot = false;
+	bool bPreservedBackpackChildHandle = false;
+	for (const FRpgInventorySavedItem& SavedItem :
+		MigratedLegacyGearGraph.Items)
+	{
+		if (SavedItem.ItemId == LegacyBackpackId)
+		{
+			bMigratedBackpackToUniqueGearSlot =
+				SavedItem.Container == CurrentBackpackHandle &&
+				SavedItem.Placement.GetContainerHandle() ==
+					CurrentBackpackHandle &&
+				SavedItem.Placement.X == 0 &&
+				SavedItem.Placement.Y == 0;
+		}
+		else if (SavedItem.ItemId == LegacyBackpackChildId)
+		{
+			bPreservedBackpackChildHandle =
+				SavedItem.Container == OriginalChildHandle &&
+				SavedItem.Placement.GetContainerHandle() ==
+					OriginalChildHandle;
+		}
+	}
+	TestTrue(
+		TEXT("The Backpack root moves from ResourceBag to Gear.Backpack"),
+		bMigratedBackpackToUniqueGearSlot);
+	TestTrue(
+		TEXT("The Backpack child keeps its exact item-owned handle"),
+		bPreservedBackpackChildHandle);
+	TestTrue(
+		TEXT("Legacy Gear migration does not rewrite its const source graph"),
+		LegacyGearGraph.Items.ContainsByPredicate(
+			[&LegacyBackpackId, &HistoricalResourceBagHandle](
+				const FRpgInventorySavedItem& SavedItem)
+			{
+				return SavedItem.ItemId == LegacyBackpackId &&
+					SavedItem.Container == HistoricalResourceBagHandle;
+			}));
+	FRpgInventoryMutationResult MigratedLegacyGearPreflightResult;
+	TestTrue(
+		TEXT("The normal full validator accepts the migrated Gear graph"),
+		LegacyGearTarget->ValidateInventoryGraphForRestore(
+			MigratedLegacyGearGraph,
+			MigratedLegacyGearPreflightResult));
+	FRpgInventoryMutationResult MigratedLegacyGearRestoreResult;
+	TestTrue(
+		TEXT("The unchanged strict restore imports the migrated Gear graph"),
+		LegacyGearTarget->RestoreInventoryGraph(
+			MigratedLegacyGearGraph,
+			MigratedLegacyGearRestoreResult));
+	TestEqual(
+		TEXT("The strict restore retains Backpack and child"),
+		LegacyGearTarget->GetUsedEntryCount(),
+		2);
 
 	URpgInventoryManagerComponent* RotationSource =
 		TestWorld.CreateInventory(TEXT("RestoreIntentRotationSource"));
