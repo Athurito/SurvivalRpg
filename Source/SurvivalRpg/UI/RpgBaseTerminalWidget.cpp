@@ -54,29 +54,6 @@ FText GetDefinitionDisplayName(
 		: FText::FromString(GetNameSafe(ItemDefinition.Get()));
 }
 
-FText GetOutcomeReason(ERpgBaseStorageResultCode Code)
-{
-	switch (Code)
-	{
-	case ERpgBaseStorageResultCode::Success:
-		return LOCTEXT("OutcomeSuccess", "stored");
-	case ERpgBaseStorageResultCode::Partial:
-		return LOCTEXT("OutcomePartial", "partially stored; capacity reached");
-	case ERpgBaseStorageResultCode::CapacityFull:
-		return LOCTEXT("OutcomeCapacityFull", "left behind; capacity full");
-	case ERpgBaseStorageResultCode::UnsupportedMode:
-		return LOCTEXT("OutcomeUnsupported", "left behind; individual or unsupported item");
-	case ERpgBaseStorageResultCode::NoAccess:
-		return LOCTEXT("OutcomeNoAccess", "left behind; access lost");
-	case ERpgBaseStorageResultCode::Stale:
-		return LOCTEXT("OutcomeStale", "left behind; inventory changed");
-	case ERpgBaseStorageResultCode::Conflict:
-		return LOCTEXT("OutcomeConflict", "left behind; concurrent change");
-	default:
-		return LOCTEXT("OutcomeRejected", "left behind; rejected");
-	}
-}
-
 FText GetCategoryLabel(ERpgInventoryItemCategory Category)
 {
 	switch (Category)
@@ -2187,29 +2164,6 @@ void URpgBaseTerminalWidget::RefreshAuthoritativeResultPresentation()
 				? ESlateVisibility::Collapsed
 				: ESlateVisibility::Visible);
 	}
-	if (!StorageSmartDepositResultText)
-	{
-		return;
-	}
-
-	TArray<FString> Lines;
-	Lines.Reserve(LastCommandResult.ResourceOutcomes.Num());
-	for (const FRpgBaseStorageResourceCommandOutcome& Outcome :
-		LastCommandResult.ResourceOutcomes)
-	{
-		Lines.Add(FText::Format(
-			LOCTEXT("ResourceOutcomeFormat", "{0}: {1}/{2} - {3}"),
-			RpgBaseTerminalWidget::GetDefinitionDisplayName(Outcome.ItemDefinition),
-			FText::AsNumber(Outcome.AppliedCount),
-			FText::AsNumber(Outcome.RequestedCount),
-			RpgBaseTerminalWidget::GetOutcomeReason(Outcome.Code)).ToString());
-	}
-	StorageSmartDepositResultText->SetText(
-		FText::FromString(FString::Join(Lines, TEXT("\n"))));
-	StorageSmartDepositResultText->SetVisibility(
-		Lines.IsEmpty()
-			? ESlateVisibility::Collapsed
-			: ESlateVisibility::Visible);
 }
 
 bool URpgBaseTerminalWidget::CycleActiveDomain(int32 Direction)

@@ -437,6 +437,15 @@ bool FRpgBaseTerminalSpatialCompositionTest::RunTest(
 		TEXT("Authored Base Terminal retains the local payload receiver contract"),
 		BaseTerminalClass->ImplementsInterface(
 			URpgUIScreenPayloadReceiver::StaticClass()));
+	const FBoolProperty* ShowBackActionProperty =
+		FindFProperty<FBoolProperty>(
+			BaseTerminalClass,
+			TEXT("bIsBackActionDisplayedInActionBar"));
+	TestTrue(
+		TEXT("Authored Base Terminal displays its Back action in the action bar"),
+		ShowBackActionProperty &&
+			ShowBackActionProperty->GetPropertyValue_InContainer(
+				BaseTerminalClass->GetDefaultObject()));
 	TestTrue(
 		TEXT("Authored Spatial Pane derives from the passive native pane"),
 		SpatialPaneClass->IsChildOf(
@@ -627,6 +636,9 @@ bool FRpgBaseTerminalSpatialCompositionTest::RunTest(
 	TestNull(
 		TEXT("Legacy imperative resource-list wrapper is absent"),
 		BaseTerminalTree->FindWidget(TEXT("CUI_BaseResourceList")));
+	TestNull(
+		TEXT("The terminal omits the persistent Smart Deposit detail log"),
+		BaseTerminalTree->FindWidget(TEXT("StorageSmartDepositResultText")));
 	for (const TCHAR* DomainPaneName :
 		{
 			TEXT("ArmoryInventoryPane"),
@@ -775,7 +787,6 @@ bool FRpgBaseTerminalSpatialCompositionTest::RunTest(
 			TEXT("StorageWithdrawTenButton"),
 			TEXT("StorageWithdrawMaxButton"),
 			TEXT("StorageWithdrawCustomInput"),
-			TEXT("StorageSmartDepositResultText"),
 			TEXT("StorageActionResultText"),
 			TEXT("RiftLockStateText"),
 			TEXT("RiftActionCostText"),

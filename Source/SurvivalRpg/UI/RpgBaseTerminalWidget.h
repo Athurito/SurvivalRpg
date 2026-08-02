@@ -492,10 +492,6 @@ protected:
 	UPROPERTY(BlueprintReadOnly, meta = (BindWidgetOptional))
 	TObjectPtr<UEditableTextBox> StorageWithdrawCustomInput = nullptr;
 
-	/** Optional per-resource Smart Deposit result list populated only from owning-client authoritative feedback. */
-	UPROPERTY(BlueprintReadOnly, meta = (BindWidgetOptional))
-	TObjectPtr<UTextBlock> StorageSmartDepositResultText = nullptr;
-
 	/** Optional localized terminal feedback text for submitted, partial, rejected, and successful commands. */
 	UPROPERTY(BlueprintReadOnly, meta = (BindWidgetOptional))
 	TObjectPtr<UTextBlock> StorageActionResultText = nullptr;
