@@ -112,6 +112,9 @@ public:
 	/** True only when an online id is stable enough to own durable player/base save data. */
 	static bool IsDurableOnlineProfileId(const FUniqueNetIdRepl& NetId);
 
+	/** True when a profile key may be emitted into a durable world snapshot rather than existing for one live connection only. */
+	static bool IsPersistentPlayerProfileKey(const FString& ProfileKey);
+
 	/** True once the authoritative host attempted disk restore for this controller connection, including when no save exists. */
 	UFUNCTION(BlueprintCallable, BlueprintPure = false, Category = "Rpg|Save")
 	bool IsPlayerProfileRestoreComplete(const APlayerController* PC) const;
@@ -281,7 +284,7 @@ private:
 	static void ClearRespawnGameplayState(URpgAbilitySystemComponent* ASC);
 	void DropInventoryForPlayerDeath(APlayerController* PC, const FTransform& DropTransform);
 
-	/** Host-authoritative persistent player data keyed by online id string or stable offline profile key. */
+	/** Host-authoritative player data keyed by online, stable offline, or connection-scoped transient profile key. */
 	UPROPERTY()
 	TMap<FString, FRpgPlayerSaveData> PlayerSaveDataMap;
 

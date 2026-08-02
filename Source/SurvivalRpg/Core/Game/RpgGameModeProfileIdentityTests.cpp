@@ -82,6 +82,19 @@ bool FRpgRemoteOfflineProfileTokenContractTest::RunTest(
 		TEXT("A non-NULL online account id remains durable"),
 		ARpgGameModeBase::IsDurableOnlineProfileId(DurableOssId));
 
+	TestFalse(
+		TEXT("Connection-scoped offline sessions can never enter a disk snapshot"),
+		ARpgGameModeBase::IsPersistentPlayerProfileKey(
+			TEXT("OfflineSession:LocalProfile:1")));
+	TestTrue(
+		TEXT("The stable local-host profile remains persistent"),
+		ARpgGameModeBase::IsPersistentPlayerProfileKey(
+			TEXT("Offline:LocalProfile")));
+	TestTrue(
+		TEXT("A UUID-backed remote offline profile remains persistent"),
+		ARpgGameModeBase::IsPersistentPlayerProfileKey(
+			TEXT("OfflinePlayer:01234567-89ab-4cde-8f01-23456789abcd")));
+
 	const FProperty* OwnerProfileProperty = FindFProperty<FProperty>(
 		ARpgBaseCampActor::StaticClass(),
 		TEXT("OwnerProfileKey"));

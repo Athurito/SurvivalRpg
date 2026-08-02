@@ -56,6 +56,15 @@ bool ARpgGameModeBase::IsDurableOnlineProfileId(
 		NetId.GetType() != FName(TEXT("NULL"));
 }
 
+bool ARpgGameModeBase::IsPersistentPlayerProfileKey(
+	const FString& ProfileKey)
+{
+	return !ProfileKey.IsEmpty() &&
+		!ProfileKey.StartsWith(
+			TEXT("OfflineSession:"),
+			ESearchCase::CaseSensitive);
+}
+
 ARpgGameModeBase::ARpgGameModeBase(const FObjectInitializer& ObjectInitializer)
 	: Super(ObjectInitializer)
 {
@@ -96,10 +105,19 @@ FString ARpgGameModeBase::InitNewPlayer(
 		!bHasDurableOnlineProfileId &&
 		!NewPlayerController->IsLocalController();
 	FString CanonicalProfileToken;
-	if (bRemoteOfflineConnection &&
-		!TryNormalizeRemoteOfflinePlayerProfileToken(
+	const bool bHasCanonicalProfileToken =
+		TryNormalizeRemoteOfflinePlayerProfileToken(
 			RequestedProfileToken,
-			CanonicalProfileToken))
+			CanonicalProfileToken);
+	bool bAllowTransientEditorProfile = false;
+#if WITH_EDITOR
+	bAllowTransientEditorProfile = bRemoteOfflineConnection &&
+		RequestedProfileToken.IsEmpty() &&
+		GetWorld() && GetWorld()->WorldType == EWorldType::PIE;
+#endif
+	if (bRemoteOfflineConnection &&
+		!bHasCanonicalProfileToken &&
+		!bAllowTransientEditorProfile)
 	{
 		return TEXT("Remote offline PlayerProfileId must be a canonical UUID-v4 bearer token (xxxxxxxx-xxxx-4xxx-[89ab]xxx-xxxxxxxxxxxx).");
 	}
@@ -117,7 +135,9 @@ FString ARpgGameModeBase::InitNewPlayer(
 
 	ResolveOrAssignOfflinePlayerProfileKey(
 		NewPlayerController,
-		bRemoteOfflineConnection ? CanonicalProfileToken : FString(),
+		bRemoteOfflineConnection && bHasCanonicalProfileToken
+			? CanonicalProfileToken
+			: FString(),
 		&ErrorMessage);
 	return ErrorMessage;
 }
@@ -1795,7 +1815,8 @@ URpgWorldSaveGame* ARpgGameModeBase::BuildWorldSaveSnapshot()
 	for (const TPair<FString, FRpgPlayerSaveData>& Pair :
 		PlayerSaveDataMap)
 	{
-		if (Pair.Value.bHasInventoryGraph)
+		if (Pair.Value.bHasInventoryGraph &&
+			IsPersistentPlayerProfileKey(Pair.Key))
 		{
 			Snapshot->Players.Add(Pair.Key, Pair.Value);
 		}
