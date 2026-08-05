@@ -25,17 +25,12 @@ URpgCharacterMovementComponent::URpgCharacterMovementComponent(const FObjectInit
 
 void URpgCharacterMovementComponent::SimulateMovement(float DeltaTime)
 {
-	if (bHasReplicatedAcceleration)
-	{
-		// Preserve our replicated acceleration
-		const FVector OriginalAcceleration = Acceleration;
-		Super::SimulateMovement(DeltaTime);
-		Acceleration = OriginalAcceleration;
-	}
-	else
-	{
-		Super::SimulateMovement(DeltaTime);
-	}
+	// Base proxy simulation derives acceleration from velocity when no engine-level
+	// acceleration payload is present. Preserve the project's own replicated value,
+	// including the valid zero default that may not trigger an initial OnRep.
+	const FVector ReplicatedAcceleration = Acceleration;
+	Super::SimulateMovement(DeltaTime);
+	Acceleration = ReplicatedAcceleration;
 }
 
 bool URpgCharacterMovementComponent::CanAttemptJump() const
@@ -94,7 +89,6 @@ const FRpgCharacterGroundInfo& URpgCharacterMovementComponent::GetGroundInfo()
 
 void URpgCharacterMovementComponent::SetReplicatedAcceleration(const FVector& InAcceleration)
 {
-	bHasReplicatedAcceleration = true;
 	Acceleration = InAcceleration;
 }
 
