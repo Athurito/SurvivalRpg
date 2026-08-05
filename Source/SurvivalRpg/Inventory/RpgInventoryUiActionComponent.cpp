@@ -228,47 +228,60 @@ void URpgInventoryUiActionComponent::RequestDropInventoryItemById_Implementation
 		MoveTemp(Request));
 }
 
-void URpgInventoryUiActionComponent::RequestDepositAllMaterialsToBase_Implementation(URpgBaseStorageStationComponent* Station)
+void URpgInventoryUiActionComponent::RequestSmartDepositToBase_Implementation(
+	FRpgBaseStorageSmartDepositRequest Request)
 {
-	FRpgBaseStorageActionHandler(*this).DepositAllMaterials(Station);
+	FRpgBaseStorageActionHandler(*this).SmartDeposit(MoveTemp(Request));
 }
 
-void URpgInventoryUiActionComponent::RequestDepositMaterialStackToBase_Implementation(URpgBaseStorageStationComponent* Station, URpgInventoryItemInstance* Item, int32 StackCount)
+void URpgInventoryUiActionComponent::RequestDepositItemToBase_Implementation(
+	FRpgBaseStorageDepositRequest Request)
 {
-	FRpgBaseStorageActionHandler(*this).DepositMaterialStack(
-		Station,
-		Item,
-		StackCount);
+	FRpgBaseStorageActionHandler(*this).DepositExact(MoveTemp(Request));
 }
 
-void URpgInventoryUiActionComponent::RequestWithdrawResourceFromBase_Implementation(URpgBaseStorageStationComponent* Station, TSubclassOf<URpgInventoryItemDefinition> ItemDefinition, int32 StackCount)
+void URpgInventoryUiActionComponent::RequestWithdrawFromBase_Implementation(
+	FRpgBaseStorageWithdrawRequest Request)
 {
-	FRpgBaseStorageActionHandler(*this).WithdrawResource(
-		Station,
-		ItemDefinition,
-		StackCount);
+	FRpgBaseStorageActionHandler(*this).WithdrawExact(MoveTemp(Request));
 }
 
-void URpgInventoryUiActionComponent::RequestInstallBaseStorageUpgrade_Implementation(URpgBaseStorageStationComponent* Station, URpgBaseStorageUpgradeDefinition* UpgradeDefinition)
+void URpgInventoryUiActionComponent::
+	RequestInstallBaseStorageUpgradeById_Implementation(
+		FRpgBaseStorageUpgradeRequest Request)
 {
-	FRpgBaseStorageActionHandler(*this).InstallUpgrade(
-		Station,
-		UpgradeDefinition);
+	FRpgBaseStorageActionHandler(*this).InstallUpgradeById(
+		MoveTemp(Request));
 }
 
-void URpgInventoryUiActionComponent::RequestApplyBaseResourceSort_Implementation(URpgBaseStorageStationComponent* Station, ERpgInventorySortMode SortMode)
+void URpgInventoryUiActionComponent::
+	RequestDecommissionBaseStorageUpgrade_Implementation(
+		FRpgBaseStorageUpgradeRequest Request)
 {
-	FRpgBaseStorageActionHandler(*this).ApplyResourceSort(
-		Station,
-		SortMode);
+	FRpgBaseStorageActionHandler(*this).DecommissionUpgrade(
+		MoveTemp(Request));
 }
 
-void URpgInventoryUiActionComponent::RequestMoveBaseResourceEntry_Implementation(URpgBaseStorageStationComponent* Station, TSubclassOf<URpgInventoryItemDefinition> ItemDefinition, int32 TargetIndex)
+void URpgInventoryUiActionComponent::RequestStabilizeContainedItem_Implementation(
+	FRpgBaseStorageRiftItemRequest Request)
 {
-	FRpgBaseStorageActionHandler(*this).MoveResourceEntry(
-		Station,
-		ItemDefinition,
-		TargetIndex);
+	FRpgBaseStorageActionHandler(*this).StabilizeContainedItem(
+		MoveTemp(Request));
+}
+
+void URpgInventoryUiActionComponent::RequestExtractContainedItem_Implementation(
+	FRpgBaseStorageRiftItemRequest Request)
+{
+	FRpgBaseStorageActionHandler(*this).ExtractContainedItem(
+		MoveTemp(Request));
+}
+
+void URpgInventoryUiActionComponent::
+	RequestCleanseBaseStorageRiftStrain_Implementation(
+		FRpgBaseStorageCleanseRequest Request)
+{
+	FRpgBaseStorageActionHandler(*this).CleanseRiftStrain(
+		MoveTemp(Request));
 }
 
 void URpgInventoryUiActionComponent::RequestPlaceBaseBuildable_Implementation(ARpgBaseCampActor* BaseCamp, URpgBaseBuildableDefinition* BuildableDefinition, FTransform BuildTransform, bool bAutoContributeFromBase)
@@ -1589,5 +1602,50 @@ void URpgInventoryUiActionComponent::ClientBroadcastInventoryActionFeedback_Impl
 	UGameplayMessageSubsystem& MessageSubsystem = UGameplayMessageSubsystem::Get(GetWorld());
 	MessageSubsystem.BroadcastMessage(
 		RpgGameplayTags::Rpg_Inventory_Message_ActionFeedback,
+		LocalMessage);
+}
+
+void URpgInventoryUiActionComponent::SendBaseStorageCommandFeedback(
+	FGameplayTag ActionTag,
+	const FRpgBaseStorageCommandResult& Result,
+	FRpgInventoryItemId ItemId,
+	TSubclassOf<URpgInventoryItemDefinition> ItemDefinition) const
+{
+	FRpgBaseStorageCommandFeedbackMessage Message;
+	Message.ActionTag = ActionTag;
+	Message.Result = Result;
+	Message.ItemId = ItemId;
+	Message.ItemDefinition =
+		Result.Code == ERpgBaseStorageResultCode::NoAccess
+			? nullptr
+			: ItemDefinition;
+	const_cast<URpgInventoryUiActionComponent*>(this)->
+		ClientBroadcastBaseStorageCommandFeedback(Message);
+}
+
+void URpgInventoryUiActionComponent::
+	ClientBroadcastBaseStorageCommandFeedback_Implementation(
+		const FRpgBaseStorageCommandFeedbackMessage& Message)
+{
+	if (!GetWorld())
+	{
+		return;
+	}
+
+	APlayerController* LocalRecipient = Cast<APlayerController>(GetOwner());
+	if (!ensureMsgf(
+			LocalRecipient,
+			TEXT("Base-storage feedback requires a PlayerController-owned action component: %s"),
+			*GetNameSafe(this)))
+	{
+		return;
+	}
+
+	FRpgBaseStorageCommandFeedbackMessage LocalMessage = Message;
+	LocalMessage.Recipient = LocalRecipient;
+	UGameplayMessageSubsystem& MessageSubsystem =
+		UGameplayMessageSubsystem::Get(GetWorld());
+	MessageSubsystem.BroadcastMessage(
+		RpgGameplayTags::Rpg_BaseStorage_Message_CommandFeedback,
 		LocalMessage);
 }

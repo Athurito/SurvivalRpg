@@ -137,7 +137,10 @@ void ARpgPlayerController::ClientOpenCraftingInteraction_Implementation(AActor* 
 	URpgUIScreenBlueprintLibrary::OpenUIScreen(this, RpgGameplayTags::UI_Screen_Crafting, Payload);
 }
 
-void ARpgPlayerController::ClientOpenBaseStorageInteraction_Implementation(AActor* BaseStorageActor)
+void ARpgPlayerController::ClientOpenBaseStorageInteraction_Implementation(
+	AActor* BaseStorageActor,
+	URpgInventoryManagerComponent* PersonalInventory,
+	URpgInventoryManagerComponent* RiftInventory)
 {
 	const ARpgPlayerState* RpgPlayerState = GetPlayerState<ARpgPlayerState>();
 	URpgInventoryManagerComponent* PlayerInventory = RpgPlayerState
@@ -160,6 +163,8 @@ void ARpgPlayerController::ClientOpenBaseStorageInteraction_Implementation(AActo
 	Payload->PlayerInventory = PlayerInventory;
 	Payload->BaseStorage = Station->GetBaseStorage();
 	Payload->ArmoryInventory = Station->GetArmoryInventory();
+	Payload->PersonalInventory = PersonalInventory;
+	Payload->RiftInventory = RiftInventory;
 	Payload->StationComponent = Station;
 	Payload->AllowedResources = Station->GetAllowedResourceDefinitions();
 	URpgUIScreenBlueprintLibrary::OpenUIScreen(this, RpgGameplayTags::UI_Screen_BaseTerminal, Payload);

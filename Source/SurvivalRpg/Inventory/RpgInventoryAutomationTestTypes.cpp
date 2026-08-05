@@ -2,8 +2,10 @@
 
 #include "RpgInventoryDragDropTypes.h"
 #include "RpgInventoryFragment_EquippableItem.h"
+#include "RpgInventoryFragment_ContainmentProfile.h"
 #include "RpgInventoryFragment_ItemContainer.h"
 #include "RpgInventoryFragment_ItemTraits.h"
+#include "RpgInventoryFragment_StorageProfile.h"
 #include "RpgInventoryItemInstance.h"
 #include "RpgInventoryManagerComponent.h"
 #include "RpgPlayerInventoryLayoutComponent.h"
@@ -311,6 +313,50 @@ URpgInventoryAutomationTestMaterialDefinition::
 	TraitsFragment->bCanStack = true;
 	TraitsFragment->MaxStackSize = 10;
 	Fragments.Add(TraitsFragment);
+
+	URpgInventoryFragment_StorageProfile* StorageProfile =
+		CreateDefaultSubobject<URpgInventoryFragment_StorageProfile>(
+			TEXT("StorageProfile"));
+	StorageProfile->StorageMode = ERpgInventoryStorageMode::BulkResource;
+	StorageProfile->StorageDomainTag =
+		RpgGameplayTags::Storage_Domain_Materials;
+	StorageProfile->BulkCapacityCost = 1;
+	StorageProfile->bCanAutoDeposit = true;
+	StorageProfile->bCanCraftFromNetwork = true;
+	Fragments.Add(StorageProfile);
+}
+
+URpgInventoryAutomationTestBulkConsumableDefinition::
+	URpgInventoryAutomationTestBulkConsumableDefinition(
+		const FObjectInitializer& ObjectInitializer)
+	: Super(ObjectInitializer)
+{
+	DisplayName = FText::FromString(TEXT("Automation Bulk Consumable"));
+
+	URpgInventoryFragment_SpatialItem* SpatialFragment =
+		CreateDefaultSubobject<URpgInventoryFragment_SpatialItem>(
+			TEXT("Spatial"));
+	ConfigureSpatialFragment(SpatialFragment, 1, 1, true);
+	Fragments.Add(SpatialFragment);
+
+	URpgInventoryFragment_ItemTraits* TraitsFragment =
+		CreateDefaultSubobject<URpgInventoryFragment_ItemTraits>(
+			TEXT("Traits"));
+	TraitsFragment->ItemCategory = ERpgInventoryItemCategory::Consumable;
+	TraitsFragment->bCanStack = true;
+	TraitsFragment->MaxStackSize = 10;
+	Fragments.Add(TraitsFragment);
+
+	URpgInventoryFragment_StorageProfile* StorageProfile =
+		CreateDefaultSubobject<URpgInventoryFragment_StorageProfile>(
+			TEXT("StorageProfile"));
+	StorageProfile->StorageMode = ERpgInventoryStorageMode::BulkResource;
+	StorageProfile->StorageDomainTag =
+		RpgGameplayTags::Storage_Domain_Materials;
+	StorageProfile->BulkCapacityCost = 1;
+	StorageProfile->bCanAutoDeposit = true;
+	StorageProfile->bCanCraftFromNetwork = true;
+	Fragments.Add(StorageProfile);
 }
 
 URpgInventoryAutomationTestMaterialContainerDefinition::
@@ -345,6 +391,53 @@ URpgInventoryAutomationTestMaterialContainerDefinition::
 	MainContainer.GridSize.Height = 2;
 	MainContainer.bAllowNestedContainers = false;
 	Fragments.Add(ContainerFragment);
+}
+
+URpgInventoryAutomationTestContainedContainerDefinition::
+	URpgInventoryAutomationTestContainedContainerDefinition(
+		const FObjectInitializer& ObjectInitializer)
+	: Super(ObjectInitializer)
+{
+	DisplayName = FText::FromString(
+		TEXT("Automation Invalid Contained Container"));
+
+	URpgInventoryFragment_SpatialItem* SpatialFragment =
+		CreateDefaultSubobject<URpgInventoryFragment_SpatialItem>(
+			TEXT("Spatial"));
+	ConfigureSpatialFragment(SpatialFragment, 1, 1, false);
+	Fragments.Add(SpatialFragment);
+
+	URpgInventoryFragment_ItemTraits* TraitsFragment =
+		CreateDefaultSubobject<URpgInventoryFragment_ItemTraits>(
+			TEXT("Traits"));
+	ConfigureNonStackingTraits(TraitsFragment);
+	Fragments.Add(TraitsFragment);
+
+	URpgInventoryFragment_ItemContainer* ContainerFragment =
+		CreateDefaultSubobject<URpgInventoryFragment_ItemContainer>(
+			TEXT("ItemContainer"));
+	FRpgInventoryItemContainerDefinition& MainContainer =
+		ContainerFragment->ProvidedContainers.AddDefaulted_GetRef();
+	MainContainer.ContainerId = TEXT("HiddenContents");
+	MainContainer.DisplayName = FText::FromString(TEXT("Hidden Contents"));
+	MainContainer.GridSize.Width = 1;
+	MainContainer.GridSize.Height = 1;
+	MainContainer.bAllowNestedContainers = false;
+	Fragments.Add(ContainerFragment);
+
+	URpgInventoryFragment_StorageProfile* StorageProfile =
+		CreateDefaultSubobject<URpgInventoryFragment_StorageProfile>(
+			TEXT("StorageProfile"));
+	StorageProfile->StorageMode =
+		ERpgInventoryStorageMode::SpecialContainedItem;
+	StorageProfile->StorageDomainTag =
+		RpgGameplayTags::Storage_Domain_RiftContainment;
+	Fragments.Add(StorageProfile);
+
+	URpgInventoryFragment_ContainmentProfile* ContainmentProfile =
+		CreateDefaultSubobject<URpgInventoryFragment_ContainmentProfile>(
+			TEXT("ContainmentProfile"));
+	Fragments.Add(ContainmentProfile);
 }
 
 URpgInventoryAutomationTestStatefulMaterialDefinition::

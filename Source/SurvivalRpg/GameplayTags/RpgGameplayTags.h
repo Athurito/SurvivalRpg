@@ -126,6 +126,7 @@ namespace RpgGameplayTags
 	UE_DECLARE_GAMEPLAY_TAG_EXTERN(Rpg_Inventory_Layout_Role_Carry_OffHand);
 	UE_DECLARE_GAMEPLAY_TAG_EXTERN(Rpg_Inventory_Layout_Role_Carry_Utility);
 	UE_DECLARE_GAMEPLAY_TAG_EXTERN(Rpg_Inventory_Message_ActionFeedback);
+	UE_DECLARE_GAMEPLAY_TAG_EXTERN(Rpg_BaseStorage_Message_CommandFeedback);
 	UE_DECLARE_GAMEPLAY_TAG_EXTERN(Rpg_Inventory_Action_Transfer);
 	UE_DECLARE_GAMEPLAY_TAG_EXTERN(Rpg_Inventory_Action_Split);
 	UE_DECLARE_GAMEPLAY_TAG_EXTERN(Rpg_Inventory_Action_Use);
@@ -178,4 +179,49 @@ namespace RpgGameplayTags
 	UE_DECLARE_GAMEPLAY_TAG_EXTERN(Base_Storage_Upgrade_AutoSort);
 	UE_DECLARE_GAMEPLAY_TAG_EXTERN(Base_Storage_Upgrade_RemoteAccess);
 	UE_DECLARE_GAMEPLAY_TAG_EXTERN(Base_Storage_Upgrade_CraftingOutputAutoDeposit);
+	extern SURVIVALRPG_API FNativeGameplayTag Base_Storage_Station;
+	extern SURVIVALRPG_API FNativeGameplayTag Base_Storage_Station_Terminal;
+	extern SURVIVALRPG_API FNativeGameplayTag Base_Storage_Station_ResourceUnit;
+
+	// Storage domains identify where a physical or abstracted item belongs inside one local base network.
+	extern SURVIVALRPG_API FNativeGameplayTag Storage_Domain;
+	extern SURVIVALRPG_API FNativeGameplayTag Storage_Domain_Materials;
+	/** Legacy singular spelling retained for authored-asset compatibility; prefer Storage_Domain_Materials. */
+	extern SURVIVALRPG_API FNativeGameplayTag Storage_Domain_Material;
+	extern SURVIVALRPG_API FNativeGameplayTag Storage_Domain_Armory;
+	extern SURVIVALRPG_API FNativeGameplayTag Storage_Domain_RuneArchive;
+	extern SURVIVALRPG_API FNativeGameplayTag Storage_Domain_RiftContainment;
+	extern SURVIVALRPG_API FNativeGameplayTag Storage_Domain_Personal;
+	/** Legacy explicit locker spelling retained for authored-asset compatibility; prefer Storage_Domain_Personal. */
+	extern SURVIVALRPG_API FNativeGameplayTag Storage_Domain_PersonalLocker;
+	extern SURVIVALRPG_API FNativeGameplayTag Storage_Domain_Expedition;
+
+	// Storage capabilities are functional unlocks. Baseline comfort can grant these from the first playable.
+	extern SURVIVALRPG_API FNativeGameplayTag Storage_Capability;
+	extern SURVIVALRPG_API FNativeGameplayTag Storage_Capability_AutoDepositBulk;
+	extern SURVIVALRPG_API FNativeGameplayTag Storage_Capability_CraftFromNetwork;
+	extern SURVIVALRPG_API FNativeGameplayTag Storage_Capability_PersonalLocker;
+	extern SURVIVALRPG_API FNativeGameplayTag Storage_Capability_Reservations;
+	extern SURVIVALRPG_API FNativeGameplayTag Storage_Capability_ExpeditionPreset;
+	extern SURVIVALRPG_API FNativeGameplayTag Storage_Capability_ProjectReservations;
+	extern SURVIVALRPG_API FNativeGameplayTag Storage_Capability_LoadoutTemplates;
+	extern SURVIVALRPG_API FNativeGameplayTag Storage_Capability_ReturnSorting;
+	extern SURVIVALRPG_API FNativeGameplayTag Storage_Capability_RuneArchive;
+	extern SURVIVALRPG_API FNativeGameplayTag Storage_Capability_RiftContainment;
+	extern SURVIVALRPG_API FNativeGameplayTag Storage_Capability_RiftStabilize;
+	extern SURVIVALRPG_API FNativeGameplayTag Storage_Capability_RiftAnalysis;
+	extern SURVIVALRPG_API FNativeGameplayTag Storage_Capability_RiftExtract;
+	/** Legacy noun spelling retained for authored-asset compatibility; prefer Storage_Capability_RiftExtract. */
+	extern SURVIVALRPG_API FNativeGameplayTag Storage_Capability_RiftExtraction;
+	extern SURVIVALRPG_API FNativeGameplayTag Storage_Capability_OutpostOverview;
+	extern SURVIVALRPG_API FNativeGameplayTag Storage_Capability_RemoteTransfer;
+
+	// Storage knowledge records world/progression discoveries that may satisfy upgrade prerequisites.
+	extern SURVIVALRPG_API FNativeGameplayTag Storage_Knowledge;
+	extern SURVIVALRPG_API FNativeGameplayTag Storage_Knowledge_MaterialStandardization_Basic;
+	extern SURVIVALRPG_API FNativeGameplayTag Storage_Knowledge_ExpeditionLogistics;
+	extern SURVIVALRPG_API FNativeGameplayTag Storage_Knowledge_RuneArchiving;
+	extern SURVIVALRPG_API FNativeGameplayTag Storage_Knowledge_RiftContainment;
+	extern SURVIVALRPG_API FNativeGameplayTag Storage_Knowledge_RiftAnalysis;
+	extern SURVIVALRPG_API FNativeGameplayTag Storage_Knowledge_RegionalLogistics;
 }

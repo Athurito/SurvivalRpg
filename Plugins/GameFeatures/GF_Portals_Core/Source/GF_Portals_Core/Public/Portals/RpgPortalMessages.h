@@ -6,14 +6,15 @@
 
 class AActor;
 class URpgPortalEncounterDefinition;
+class URpgLootTable;
 
 /**
  * GameplayMessage payload emitted when an overworld portal is closed.
  *
- * This is intentionally reward-hook data only in the current slice. Reward,
- * progression, quest, or world-state listeners can subscribe to the portal
- * completion channel and decide what to do based on the definition, tags and
- * reward eligibility flags.
+ * The portal progression hook resolves the one-time storage discovery before
+ * broadcast. Other reward, quest, or world-state listeners can subscribe to
+ * the completion channel and inspect the authoritative outcome.
+ * Consumers treat this payload as a read-only record of the committed result.
  */
 USTRUCT(BlueprintType)
 struct GF_PORTALS_CORE_API FRpgPortalCompletedMessage
@@ -48,7 +49,21 @@ struct GF_PORTALS_CORE_API FRpgPortalCompletedMessage
 	UPROPERTY(BlueprintReadOnly, Category = "Portal")
 	bool bBossDefeated = false;
 
-	/** False in hook-only slices until a later reward/boss system opts in. */
+	/** Server-computed eligibility after applying this encounter's boss-defeat policy. */
 	UPROPERTY(BlueprintReadOnly, Category = "Portal")
 	bool bRewardsEligible = false;
+
+	/**
+	 * World-storage discoveries created by this completion.
+	 * Empty on ineligible or repeated completions, allowing reward listeners to remain idempotent.
+	 */
+	UPROPERTY(BlueprintReadOnly, Category = "Portal|Progression")
+	FGameplayTagContainer NewlyGrantedWorldKnowledgeTags;
+
+	/**
+	 * Designer-authored reward table that was already delivered with a new knowledge grant.
+	 * This is diagnostic/UI context only; listeners must not grant it a second time.
+	 */
+	UPROPERTY(BlueprintReadOnly, Category = "Portal|Progression")
+	TSoftObjectPtr<URpgLootTable> FirstEligibleKnowledgeRewardTable;
 };

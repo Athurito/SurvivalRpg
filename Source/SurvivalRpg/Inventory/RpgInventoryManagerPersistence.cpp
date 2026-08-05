@@ -6,6 +6,8 @@
 #include "Net/UnrealNetwork.h"
 #include "RpgInventoryItemDefinition.h"
 #include "RpgInventoryItemInstance.h"
+#include "RpgPlayerInventoryLayoutComponent.h"
+#include "SurvivalRpg/Core/Game/RpgPlayerSaveData.h"
 #include "Templates/UnrealTemplate.h"
 #include "UObject/StrongObjectPtr.h"
 #include "UObject/UObjectGlobals.h"
@@ -94,8 +96,49 @@ bool URpgInventoryManagerComponent::RestoreInventoryGraph(
 	const bool bRestored = RestoreInventoryGraphInternal(
 		SaveData,
 		OutResult,
-		true);
+		true,
+		true,
+		false,
+		INDEX_NONE,
+		nullptr);
 	return bRestored;
+}
+
+bool URpgInventoryManagerComponent::ValidateInventoryGraphForRestore(
+	const FRpgInventoryGraphSaveData& SaveData,
+	FRpgInventoryMutationResult& OutResult)
+{
+	return RestoreInventoryGraphInternal(
+		SaveData,
+		OutResult,
+		false,
+		false,
+		false,
+		INDEX_NONE,
+		nullptr);
+}
+
+bool URpgInventoryManagerComponent::
+	TryMigrateLegacyRootPlacementsForRestore(
+		const FRpgInventoryGraphSaveData& SaveData,
+		int32 LegacyPlayerSchemaVersion,
+		FRpgInventoryGraphSaveData& OutMigratedSaveData,
+		FRpgInventoryMutationResult& OutResult)
+{
+	OutMigratedSaveData = FRpgInventoryGraphSaveData();
+	const bool bMigrated = RestoreInventoryGraphInternal(
+		SaveData,
+		OutResult,
+		false,
+		false,
+		true,
+		LegacyPlayerSchemaVersion,
+		&OutMigratedSaveData);
+	if (!bMigrated)
+	{
+		OutMigratedSaveData = FRpgInventoryGraphSaveData();
+	}
+	return bMigrated;
 }
 
 bool URpgInventoryManagerComponent::RestoreRuntimeCheckpoint(
@@ -105,13 +148,21 @@ bool URpgInventoryManagerComponent::RestoreRuntimeCheckpoint(
 	return RestoreInventoryGraphInternal(
 		SaveData,
 		OutResult,
-		false);
+		false,
+		true,
+		false,
+		INDEX_NONE,
+		nullptr);
 }
 
 bool URpgInventoryManagerComponent::RestoreInventoryGraphInternal(
 	const FRpgInventoryGraphSaveData& SaveData,
 	FRpgInventoryMutationResult& OutResult,
-	bool bEstablishNewMutationEpoch)
+	bool bEstablishNewMutationEpoch,
+	bool bCommitValidatedGraph,
+	bool bAllowLegacyRootPlacementMigration,
+	int32 LegacyPlayerSchemaVersion,
+	FRpgInventoryGraphSaveData* OutMigratedSaveData)
 {
 	OutResult = FRpgInventoryMutationResult();
 	OutResult.RequestId = FGuid::NewGuid();
@@ -396,14 +447,413 @@ bool URpgInventoryManagerComponent::RestoreInventoryGraphInternal(
 		Entry.Placement = Stage.Placement;
 	}
 	FValidatedInventoryGraph StagedGraph;
-	if (!ValidateInventoryGraph(
+	bool bStagedGraphValid = ValidateInventoryGraph(
+		StagedGraphEntries,
+		OwningActor,
+		true,
+		StagedGraph,
+		OutResult.Code);
+	const ERpgInventoryMutationResultCode InitialValidationCode =
+		OutResult.Code;
+	if (!bStagedGraphValid &&
+		bAllowLegacyRootPlacementMigration &&
+		(InitialValidationCode ==
+			 ERpgInventoryMutationResultCode::Occupied ||
+		 InitialValidationCode ==
+			 ERpgInventoryMutationResultCode::ItemNotAllowed))
+	{
+		const URpgPlayerInventoryLayoutComponent* Layout =
+			FindOwningPlayerInventoryLayout();
+		if (!Layout && InitialValidationCode !=
+			ERpgInventoryMutationResultCode::Occupied)
+		{
+			return false;
+		}
+		const TArray<FRpgInventorySlotGroupView> Groups =
+			Layout
+				? Layout->GetSlotGroups()
+				: TArray<FRpgInventorySlotGroupView>();
+
+		TArray<int32> RootEntryIndices;
+		RootEntryIndices.Reserve(StagedGraphEntries.Num());
+		for (int32 EntryIndex = 0;
+			 EntryIndex < StagedGraphEntries.Num();
+			 ++EntryIndex)
+		{
+			if (StagedGraphEntries[EntryIndex]
+					.Placement.GetContainerHandle().IsRoot())
+			{
+				RootEntryIndices.Add(EntryIndex);
+			}
+		}
+
+		// Preserve authored positions in deterministic container/cell order. When
+		// two legacy rows claim the same cells, the larger row wins an exact tie
+		// and only the later conflicting row is considered for relocation.
+		RootEntryIndices.Sort(
+			[&StagedGraphEntries](int32 A, int32 B)
+			{
+				const FRpgInventoryEntry& EntryA =
+					StagedGraphEntries[A];
+				const FRpgInventoryEntry& EntryB =
+					StagedGraphEntries[B];
+				const FString ContainerA = EntryA.Placement
+					.GetContainerHandle().ToString();
+				const FString ContainerB = EntryB.Placement
+					.GetContainerHandle().ToString();
+				if (ContainerA != ContainerB)
+				{
+					return ContainerA < ContainerB;
+				}
+				if (EntryA.Placement.Y != EntryB.Placement.Y)
+				{
+					return EntryA.Placement.Y < EntryB.Placement.Y;
+				}
+				if (EntryA.Placement.X != EntryB.Placement.X)
+				{
+					return EntryA.Placement.X < EntryB.Placement.X;
+				}
+				const FRpgInventoryGridSize SizeA =
+					EntryA.Placement.GetOccupiedSize();
+				const FRpgInventoryGridSize SizeB =
+					EntryB.Placement.GetOccupiedSize();
+				const int64 AreaA =
+					static_cast<int64>(SizeA.Width) * SizeA.Height;
+				const int64 AreaB =
+					static_cast<int64>(SizeB.Width) * SizeB.Height;
+				if (AreaA != AreaB)
+				{
+					return AreaA > AreaB;
+				}
+				return EntryA.Instance->GetItemId().ToString() <
+					EntryB.Instance->GetItemId().ToString();
+			});
+
+		TMap<FRpgInventoryContainerHandle,
+			TArray<FRpgInventoryGridPlacement>> RootOccupancy;
+		TArray<int32> RootEntriesToRelocate;
+		TSet<int32> RuleInvalidRootEntries;
+		auto FitsRootScratch =
+			[this, &RootOccupancy](
+				const FRpgInventoryGridPlacement& Placement)
+			{
+				FRpgInventoryGridSize GridSize;
+				if (!GetGridSizeForContainerHandle(
+						Placement.GetContainerHandle(),
+						GridSize))
+				{
+					return false;
+				}
+				const FRpgInventoryGridSize OccupiedSize =
+					Placement.GetOccupiedSize();
+				const TArray<FRpgInventoryGridPlacement>* Occupancy =
+					RootOccupancy.Find(
+						Placement.GetContainerHandle());
+				return Placement.IsValid() && GridSize.IsValid() &&
+					Placement.X >= 0 && Placement.Y >= 0 &&
+					static_cast<int64>(Placement.X) +
+						OccupiedSize.Width <= GridSize.Width &&
+					static_cast<int64>(Placement.Y) +
+						OccupiedSize.Height <= GridSize.Height &&
+					(!Occupancy ||
+					 !Occupancy->ContainsByPredicate(
+						 [&Placement](
+							 const FRpgInventoryGridPlacement& Existing)
+						 {
+							 return Existing.Overlaps(Placement);
+						 }));
+			};
+
+		// Reserve every still-valid authored root before placing legacy rows.
+		// This prevents a formerly invalid equipment row from displacing an item
+		// that already satisfies the current layout contract.
+		for (const int32 EntryIndex : RootEntryIndices)
+		{
+			FRpgInventoryEntry& Entry =
+				StagedGraphEntries[EntryIndex];
+			const FRpgInventoryContainerHandle ContainerHandle =
+				Entry.Placement.GetContainerHandle();
+			FRpgInventoryGridSize GridSize;
+			if (!GetGridSizeForContainerHandle(
+					ContainerHandle,
+					GridSize))
+			{
+				OutResult.Code =
+					ERpgInventoryMutationResultCode::InvalidContainer;
+				return false;
+			}
+
+			const FRpgInventoryGridSize OriginalOccupiedSize =
+				Entry.Placement.GetOccupiedSize();
+			if (Entry.Placement.X < 0 || Entry.Placement.Y < 0 ||
+				static_cast<int64>(Entry.Placement.X) +
+					OriginalOccupiedSize.Width > GridSize.Width ||
+				static_cast<int64>(Entry.Placement.Y) +
+					OriginalOccupiedSize.Height > GridSize.Height)
+			{
+				// This migration is intentionally not a general corruption repair.
+				OutResult.Code =
+					ERpgInventoryMutationResultCode::OutOfBounds;
+				return false;
+			}
+
+			const FRpgInventorySlotGroupView* SourceGroup = Layout
+				? Groups.FindByPredicate(
+					[&Entry](
+						const FRpgInventorySlotGroupView& Candidate)
+					{
+						return Candidate.ContainerHandle ==
+								Entry.Placement.GetContainerHandle() &&
+							Candidate.ContainsCell(
+								Entry.Placement.X,
+								Entry.Placement.Y);
+					})
+				: nullptr;
+			FRpgInventorySlotAddress SourceAddress;
+			SourceAddress.SetContainerHandle(ContainerHandle);
+			SourceAddress.X = Entry.Placement.X;
+			SourceAddress.Y = Entry.Placement.Y;
+			const bool bSatisfiesCurrentRule = !Layout ||
+				(SourceGroup && Layout->CanItemUseSlotAddress(
+					Entry.Instance,
+					SourceAddress));
+			if (bSatisfiesCurrentRule &&
+				FitsRootScratch(Entry.Placement))
+			{
+				RootOccupancy.FindOrAdd(ContainerHandle).Add(
+					Entry.Placement);
+				continue;
+			}
+
+			if (!bSatisfiesCurrentRule)
+			{
+				// Schema 1 briefly allowed the test Backpack in ResourceBag. This is
+				// the only evidenced semantic Gear drift; all other source contracts
+				// remain fail-closed instead of being inferred from current tuning.
+				if (!SourceGroup ||
+					SourceGroup->GroupKind !=
+						ERpgInventorySlotGroupKind::Gear ||
+					LegacyPlayerSchemaVersion !=
+						FRpgPlayerSaveData::MinimumSupportedSchemaVersion ||
+					ContainerHandle !=
+						FRpgInventoryContainerHandle::MakeRoot(
+							URpgPlayerInventoryLayoutComponent::
+								GearResourceBagGroupId))
+				{
+					OutResult.Code =
+						ERpgInventoryMutationResultCode::ItemNotAllowed;
+					return false;
+				}
+				RuleInvalidRootEntries.Add(EntryIndex);
+				RootEntriesToRelocate.Add(EntryIndex);
+				continue;
+			}
+
+			// A collision between two semantically valid Gear/Carry rows is not a
+			// packing migration: choosing which loadout entry wins would be gameplay.
+			if (Layout &&
+				(!SourceGroup || SourceGroup->GroupKind !=
+					ERpgInventorySlotGroupKind::Content))
+			{
+				OutResult.Code =
+					ERpgInventoryMutationResultCode::Occupied;
+				return false;
+			}
+			RootEntriesToRelocate.Add(EntryIndex);
+		}
+
+		auto TryFirstFitInGroup =
+			[this, Layout, &FitsRootScratch](
+				const FRpgInventoryEntry& Entry,
+				const FRpgInventorySlotGroupView& Group,
+				bool bPreferredRotation,
+				FRpgInventoryGridPlacement& OutPlacement)
+			{
+				OutPlacement = FRpgInventoryGridPlacement();
+				if (!Entry.Instance || !Group.GridSize.IsValid())
+				{
+					return false;
+				}
+				auto TryOrientation =
+					[this, Layout, &Entry, &Group, &FitsRootScratch,
+					 &OutPlacement](bool bRotated)
+				{
+					for (int32 Y = 0; Y < Group.GridSize.Height; ++Y)
+					{
+						for (int32 X = 0; X < Group.GridSize.Width; ++X)
+						{
+							FRpgInventoryGridPlacement Candidate;
+							if (!TryNormalizePlacementForDefinition(
+									Entry.Instance->GetItemDef(),
+									Group.ContainerHandle,
+									X,
+									Y,
+									bRotated,
+									Candidate) ||
+								!FitsRootScratch(Candidate))
+							{
+								continue;
+							}
+
+							FRpgInventorySlotAddress Address;
+							Address.SetContainerHandle(
+								Group.ContainerHandle);
+							Address.X = X;
+							Address.Y = Y;
+							if (!Layout ||
+								Layout->CanItemUseSlotAddress(
+									Entry.Instance,
+									Address))
+							{
+								OutPlacement = Candidate;
+								return true;
+							}
+						}
+					}
+					return false;
+				};
+
+				return TryOrientation(bPreferredRotation) ||
+					TryOrientation(!bPreferredRotation);
+			};
+
+		bool bMovedAnyRootEntry = false;
+		for (const int32 EntryIndex : RootEntriesToRelocate)
+		{
+			FRpgInventoryEntry& Entry =
+				StagedGraphEntries[EntryIndex];
+			const FRpgInventoryContainerHandle SourceHandle =
+				Entry.Placement.GetContainerHandle();
+			const FRpgInventorySlotGroupView* SourceGroup =
+				Groups.FindByPredicate(
+					[&SourceHandle](
+						const FRpgInventorySlotGroupView& Candidate)
+					{
+						return Candidate.ContainerHandle == SourceHandle;
+					});
+			const bool bRuleInvalid =
+				RuleInvalidRootEntries.Contains(EntryIndex);
+			FRpgInventoryGridPlacement MigratedPlacement;
+
+			if (!bRuleInvalid && SourceGroup)
+			{
+				TryFirstFitInGroup(
+					Entry,
+					*SourceGroup,
+					Entry.Placement.bRotated,
+					MigratedPlacement);
+			}
+			else if (!bRuleInvalid && !Layout)
+			{
+				FRpgInventoryGridSize SourceGridSize;
+				if (!GetGridSizeForContainerHandle(
+						SourceHandle,
+						SourceGridSize))
+				{
+					OutResult.Code =
+						ERpgInventoryMutationResultCode::InvalidContainer;
+					return false;
+				}
+				FRpgInventorySlotGroupView GenericRootGroup;
+				GenericRootGroup.ContainerHandle = SourceHandle;
+				GenericRootGroup.GridSize = SourceGridSize;
+				GenericRootGroup.GroupKind =
+					ERpgInventorySlotGroupKind::Content;
+				TryFirstFitInGroup(
+					Entry,
+					GenericRootGroup,
+					Entry.Placement.bRotated,
+					MigratedPlacement);
+			}
+			else if (bRuleInvalid && SourceGroup &&
+				SourceGroup->GroupKind ==
+					ERpgInventorySlotGroupKind::Gear)
+			{
+				const FRpgInventoryContainerHandle TargetHandle =
+					FRpgInventoryContainerHandle::MakeRoot(
+						URpgPlayerInventoryLayoutComponent::
+							GearBackpackGroupId);
+				const FRpgInventorySlotGroupView* TargetGroup =
+					Groups.FindByPredicate(
+						[&TargetHandle](
+							const FRpgInventorySlotGroupView& Group)
+						{
+							return Group.ContainerHandle == TargetHandle &&
+								Group.GroupKind ==
+									ERpgInventorySlotGroupKind::Gear;
+						});
+				FRpgInventorySlotAddress TargetAddress;
+				TargetAddress.SetContainerHandle(TargetHandle);
+				TargetAddress.X = 0;
+				TargetAddress.Y = 0;
+				if (!TargetGroup ||
+					!Layout->CanItemUseSlotAddress(
+						Entry.Instance,
+						TargetAddress))
+				{
+					OutResult.Code =
+						ERpgInventoryMutationResultCode::ItemNotAllowed;
+					return false;
+				}
+				TryFirstFitInGroup(
+					Entry,
+					*TargetGroup,
+					Entry.Placement.bRotated,
+					MigratedPlacement);
+			}
+
+			if (!MigratedPlacement.IsValid())
+			{
+				OutResult.Code =
+					ERpgInventoryMutationResultCode::NoSpace;
+				return false;
+			}
+
+			Entry.Placement = MigratedPlacement;
+			Staged[EntryIndex].Placement = MigratedPlacement;
+			RootOccupancy.FindOrAdd(
+				MigratedPlacement.GetContainerHandle()).Add(
+				MigratedPlacement);
+			bMovedAnyRootEntry = true;
+		}
+
+		if (!bMovedAnyRootEntry)
+		{
+			// A nested overlap/rule failure remains outside this root migration.
+			OutResult.Code = InitialValidationCode;
+			return false;
+		}
+		bStagedGraphValid = ValidateInventoryGraph(
 			StagedGraphEntries,
 			OwningActor,
 			true,
 			StagedGraph,
-			OutResult.Code))
+			OutResult.Code);
+	}
+	if (!bStagedGraphValid)
 	{
 		return false;
+	}
+
+	if (OutMigratedSaveData)
+	{
+		*OutMigratedSaveData = SaveData;
+		if (OutMigratedSaveData->Items.Num() != Staged.Num())
+		{
+			OutResult.Code =
+				ERpgInventoryMutationResultCode::InternalError;
+			return false;
+		}
+		for (int32 EntryIndex = 0;
+			 EntryIndex < Staged.Num();
+			 ++EntryIndex)
+		{
+			FRpgInventorySavedItem& MigratedItem =
+				OutMigratedSaveData->Items[EntryIndex];
+			MigratedItem.Container =
+				Staged[EntryIndex].Placement.GetContainerHandle();
+			MigratedItem.Placement = Staged[EntryIndex].Placement;
+		}
 	}
 
 	// A validated graph import may only change placement, stack count, or fragment state for an item
@@ -568,6 +1018,12 @@ bool URpgInventoryManagerComponent::RestoreInventoryGraphInternal(
 				ERpgInventoryMutationResultCode::DuplicateItemId;
 			return false;
 		}
+	}
+	if (!bCommitValidatedGraph)
+	{
+		OutResult.Code = ERpgInventoryMutationResultCode::Success;
+		OutResult.AppliedQuantity = 0;
+		return true;
 	}
 	RuntimeStateRollback.Dismiss();
 

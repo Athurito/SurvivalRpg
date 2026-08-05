@@ -10,6 +10,7 @@
 
 class AGameModeBase;
 class ARpgDroppedInventoryActor;
+class ARpgBaseCampActor;
 class URpgPawnData;
 class URpgAbilitySystemComponent;
 class URpgExperienceDefinition;
@@ -51,6 +52,11 @@ public:
 	explicit ARpgGameModeBase(const FObjectInitializer& ObjectInitializer = FObjectInitializer::Get());
 
 	virtual void InitGame(const FString& MapName, const FString& Options, FString& ErrorMessage) override;
+	virtual FString InitNewPlayer(
+		APlayerController* NewPlayerController,
+		const FUniqueNetIdRepl& UniqueId,
+		const FString& Options,
+		const FString& Portal = TEXT("")) override;
 	virtual void InitGameState() override;
 	virtual void StartPlay() override;
 	virtual void EndPlay(const EEndPlayReason::Type EndPlayReason) override;
@@ -87,13 +93,27 @@ public:
 	/** Returns save data for a player (read-only). Returns nullptr if not found. */
 	const FRpgPlayerSaveData* FindPlayerSaveData(APlayerController* PC) const;
 
-	/** Returns the host-owned profile map keyed by UniqueNetId string or the stable offline profile key. */
+	/** Returns the host-owned profile map keyed by UniqueNetId string or a connection-specific offline profile key. */
 	UFUNCTION(BlueprintCallable, Category = "Rpg|Save")
 	const TMap<FString, FRpgPlayerSaveData>& GetAllPlayerSaveData() const { return PlayerSaveDataMap; }
 
 	/** Resolves the stable disk profile key used for this controller on the authoritative host. */
 	UFUNCTION(BlueprintCallable, BlueprintPure = false, Category = "Rpg|Save")
 	FString GetPlayerProfileKey(const APlayerController* PC) const;
+
+	/**
+	 * Validates an externally supplied remote-offline reconnect bearer token and emits its canonical lowercase form.
+	 * Accepted tokens are RFC UUID-v4 values in the hyphenated 8-4-4-4-12 representation.
+	 */
+	static bool TryNormalizeRemoteOfflinePlayerProfileToken(
+		const FString& CandidateToken,
+		FString& OutCanonicalToken);
+
+	/** True only when an online id is stable enough to own durable player/base save data. */
+	static bool IsDurableOnlineProfileId(const FUniqueNetIdRepl& NetId);
+
+	/** True when a profile key may be emitted into a durable world snapshot rather than existing for one live connection only. */
+	static bool IsPersistentPlayerProfileKey(const FString& ProfileKey);
 
 	/** True once the authoritative host attempted disk restore for this controller connection, including when no save exists. */
 	UFUNCTION(BlueprintCallable, BlueprintPure = false, Category = "Rpg|Save")
@@ -117,7 +137,18 @@ public:
 	UFUNCTION(BlueprintCallable, BlueprintAuthorityOnly, Category = "Rpg|Save")
 	void MarkWorldContainerSaveDirty(FName PersistentContainerId, URpgInventoryManagerComponent* Inventory);
 
-	/** Atomically imports a saved world-container graph, trying valid backup snapshots if the newest graph fails. */
+	/** Captures one persistent base storage network and restarts the asynchronous save debounce. */
+	UFUNCTION(BlueprintCallable, BlueprintAuthorityOnly, Category = "Rpg|Save")
+	void MarkBaseStorageSaveDirty(ARpgBaseCampActor* BaseCamp);
+
+	/** Captures replicated world storage knowledge and restarts the asynchronous save debounce. */
+	UFUNCTION(BlueprintCallable, BlueprintAuthorityOnly, Category = "Rpg|Save")
+	void MarkStorageKnowledgeSaveDirty();
+
+	/** Permanently blocks disk writes for this authority session after an atomic storage rollback could not recover a known-good state. */
+	void BlockDiskWritesAfterStorageRollbackFailure(FName BaseId);
+
+	/** Atomically imports the selected world snapshot's graph for one stable world-container id. */
 	UFUNCTION(BlueprintCallable, BlueprintAuthorityOnly, Category = "Rpg|Save")
 	bool RestoreWorldContainer(FName PersistentContainerId, URpgInventoryManagerComponent* Inventory);
 
@@ -176,7 +207,7 @@ public:
 	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Rpg|Save|Disk", meta = (ClampMin = "0", UIMin = "0"))
 	int32 WorldSaveUserIndex = 0;
 
-	/** Stable fallback profile key used when no valid online UniqueNetId exists. May be overridden by ?ProfileKey=. */
+	/** Stable local-host profile key used when no valid online UniqueNetId exists. May be overridden by the map option ?ProfileKey=. */
 	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Rpg|Save|Disk")
 	FString OfflineProfileKey = TEXT("LocalProfile");
 
@@ -202,17 +233,29 @@ protected:
 private:
 	/** Runtime-only respawn key retained for the existing replicated session state. */
 	static FUniqueNetIdRepl GetNetIdForPC(const APlayerController* PC);
+	FString ResolveOrAssignOfflinePlayerProfileKey(
+		const APlayerController* PC,
+		const FString& RequestedProfileToken = FString(),
+		FString* OutError = nullptr) const;
+	void ReleaseOfflinePlayerProfileKey(const APlayerController* PC);
 
 	bool IsPlayerProfileRestoreReady(const APlayerController* PC) const;
+	bool HasPendingLoadedPlayerProfiles() const;
 	bool RestorePlayerProfile(APlayerController* PC);
 	bool TryRestorePlayerSaveData(APlayerController* PC, const FRpgPlayerSaveData& SaveData);
 	void CapturePlayerSaveData(APlayerController* PC);
 	void CaptureConnectedPlayers();
 	void CaptureWorldContainers();
-	void RestorePlacedWorldContainers();
+	bool RestorePlacedWorldContainers();
+	void CaptureBaseStorages();
+	bool RestorePlacedBaseStorages();
+	bool RestoreBaseStorage(FName BaseId, ARpgBaseCampActor* BaseCamp);
+	void CaptureStorageKnowledge();
+	bool RestoreStorageKnowledge();
 	void ApplyRestoredEquipmentSelection(APlayerController* PC);
 
 	void LoadWorldSaveFromDisk();
+	bool RestoreLoadedWorldSaveCandidatesAtomically();
 	URpgWorldSaveGame* BuildWorldSaveSnapshot();
 	void ScheduleAsyncWorldSave();
 	void SaveWorldStateAsync();
@@ -226,6 +269,7 @@ private:
 	void HandleInventoryChanged(FGameplayTag Channel, const FRpgInventoryChangeMessage& Message);
 	void HandleActionBarChanged(FGameplayTag Channel, const FRpgActionBarSlotsChangedMessage& Message);
 	void HandleEquipmentLoadoutChanged(FGameplayTag Channel, const FRpgEquipmentLoadoutSlotsChangedMessage& Message);
+	void HandleBaseStorageChanged(FGameplayTag Channel, const struct FRpgBaseResourceChangeMessage& Message);
 
 	FRpgPlayerRespawnState& GetOrCreatePlayerRespawnState(APlayerController* PC);
 	const FRpgPlayerRespawnState* FindPlayerRespawnState(APlayerController* PC) const;
@@ -240,7 +284,7 @@ private:
 	static void ClearRespawnGameplayState(URpgAbilitySystemComponent* ASC);
 	void DropInventoryForPlayerDeath(APlayerController* PC, const FTransform& DropTransform);
 
-	/** Host-authoritative persistent player data keyed by online id string or stable offline profile key. */
+	/** Host-authoritative player data keyed by online, stable offline, or connection-scoped transient profile key. */
 	UPROPERTY()
 	TMap<FString, FRpgPlayerSaveData> PlayerSaveDataMap;
 
@@ -248,13 +292,24 @@ private:
 	UPROPERTY()
 	TMap<FName, FRpgWorldContainerSaveData> WorldContainerSaveDataMap;
 
+	/** Host-authoritative persistent base networks keyed by stable BaseId. */
+	UPROPERTY()
+	TMap<FName, FRpgBaseStorageSaveData> BaseStorageSaveDataMap;
+
+	/** Host-authoritative world-shared storage discoveries mirrored from the GameState component. */
+	UPROPERTY()
+	FGameplayTagContainer StorageKnowledgeSaveTags;
+
 	/** Host-authoritative runtime respawn state. Keyed by Steam NetId. */
 	UPROPERTY()
 	TMap<FUniqueNetIdRepl, FRpgPlayerRespawnState> PlayerRespawnStateMap;
 
-	/** Structurally valid disk candidates sorted newest-first for atomic per-graph fallback restore. */
+	/** Structurally valid disk candidates sorted newest-first; fallback always selects one whole sequence. */
 	UPROPERTY(Transient)
 	TArray<TObjectPtr<URpgWorldSaveGame>> ValidLoadedSaveCandidates;
+
+	/** Profile keys owned by the selected disk sequence and protected until each connection completes delayed restore. */
+	TSet<FString> LoadedPlayerProfileKeys;
 
 	/** Most recent disk snapshot known to have completed successfully. */
 	UPROPERTY(Transient)
@@ -266,16 +321,30 @@ private:
 
 	/** Connection-scoped restore result: presence means the attempt completed; true means a saved graph was restored. */
 	TMap<TWeakObjectPtr<APlayerController>, bool> PlayerProfileRestoreStates;
+
+	/**
+	 * Authority-owned offline identity assigned once per live controller. Remote offline clients may provide a secret,
+	 * reconnect-stable UUID-v4 `PlayerProfileId` bearer token; local players derive a stable platform-user slot instead.
+	 */
+	mutable TMap<TWeakObjectPtr<APlayerController>, FString> OfflineProfileKeysByController;
+
+	/** Active collision guard preventing two live offline connections from claiming one private profile. */
+	mutable TMap<FString, TWeakObjectPtr<APlayerController>> ActiveOfflineProfileControllers;
+
 	FString ResolvedOfflineProfileKey;
+	mutable uint64 NextTransientOfflineProfileId = 1;
 	int64 NextSaveSequence = 1;
 	bool bWorldSaveDirty = false;
 	bool bAsyncSaveInFlight = false;
 	bool bSaveQueuedDuringAsync = false;
 	bool bIsRestoringSaveState = false;
+	/** True only after one complete disk sequence (or an intentional empty start) passed world and live player-layout validation. */
+	bool bWorldSaveCandidateSelectionComplete = false;
 	bool bDiskWritesBlockedByRestoreFailure = false;
 	FTimerHandle AutoSaveTimerHandle;
 
 	FGameplayMessageListenerHandle InventoryChangedSaveHandle;
 	FGameplayMessageListenerHandle ActionBarChangedSaveHandle;
 	FGameplayMessageListenerHandle EquipmentChangedSaveHandle;
+	FGameplayMessageListenerHandle BaseStorageChangedSaveHandle;
 };

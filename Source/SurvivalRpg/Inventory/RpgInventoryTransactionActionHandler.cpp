@@ -1,5 +1,10 @@
 #include "RpgInventoryUiActionDomainHandlers.h"
 
+#include "SurvivalRpg/Base/RpgBaseCampActor.h"
+#include "SurvivalRpg/Base/RpgBaseStorageComponent.h"
+#include "SurvivalRpg/Base/RpgPersonalStorageLockerActor.h"
+#include "RpgInventoryFragment_ContainmentProfile.h"
+#include "RpgInventoryFragment_StorageProfile.h"
 #include "RpgInventoryItemCapabilities.h"
 #include "RpgInventoryItemDefinition.h"
 #include "RpgInventoryItemInstance.h"
@@ -101,6 +106,255 @@ namespace
 		const URpgInventoryItemInstance* Item)
 	{
 		return FRpgInventoryItemCapabilities::ResolveSpatial(Item);
+	}
+
+	ARpgBaseCampActor* FindBaseCampForInventory(
+		const URpgInventoryManagerComponent* Inventory)
+	{
+		if (!Inventory)
+		{
+			return nullptr;
+		}
+
+		if (ARpgBaseCampActor* BaseCamp =
+			Cast<ARpgBaseCampActor>(Inventory->GetOwner()))
+		{
+			return BaseCamp;
+		}
+
+		if (const ARpgPersonalStorageLockerActor* Locker =
+			Cast<ARpgPersonalStorageLockerActor>(Inventory->GetOwner()))
+		{
+			return Locker->GetBaseCamp();
+		}
+
+		return nullptr;
+	}
+
+	FGameplayTag ResolveStorageDestinationDomain(
+		const URpgInventoryManagerComponent* Inventory,
+		const URpgInventoryManagerComponent* PlayerInventory)
+	{
+		if (!Inventory)
+		{
+			return FGameplayTag();
+		}
+
+		if (const ARpgBaseCampActor* BaseCamp =
+			Cast<ARpgBaseCampActor>(Inventory->GetOwner()))
+		{
+			if (Inventory == BaseCamp->GetArmoryInventoryComponent())
+			{
+				return RpgGameplayTags::Storage_Domain_Armory;
+			}
+			if (Inventory == BaseCamp->GetContainmentInventoryComponent())
+			{
+				return RpgGameplayTags::Storage_Domain_RiftContainment;
+			}
+		}
+
+		if (Cast<ARpgPersonalStorageLockerActor>(Inventory->GetOwner()) ||
+			Inventory == PlayerInventory)
+		{
+			return RpgGameplayTags::Storage_Domain_Personal;
+		}
+
+		return FGameplayTag();
+	}
+
+	bool IsBaseStorageDomainTransferAllowed(
+		const URpgInventoryManagerComponent* SourceInventory,
+		const URpgInventoryManagerComponent* TargetInventory,
+		const URpgInventoryItemInstance* Item,
+		const URpgInventoryManagerComponent* PlayerInventory,
+		int32 TransferQuantity,
+		int32 SourceQuantity)
+	{
+		if (!SourceInventory || !TargetInventory || !Item ||
+			TransferQuantity <= 0 || SourceQuantity <= 0)
+		{
+			return false;
+		}
+
+		const URpgInventoryFragment_StorageProfile* StorageProfile =
+			URpgInventoryFragment_StorageProfile::ResolveStorageProfile(
+				Item->GetItemDef());
+		const ERpgInventoryStorageMode StorageMode = StorageProfile
+			? StorageProfile->StorageMode
+			: ERpgInventoryStorageMode::GridItem;
+		const URpgInventoryFragment_ContainmentProfile* ContainmentProfile =
+			Item->FindFragmentByClass<
+				URpgInventoryFragment_ContainmentProfile>();
+
+		ARpgBaseCampActor* SourceBase =
+			FindBaseCampForInventory(SourceInventory);
+		ARpgBaseCampActor* TargetBase =
+			FindBaseCampForInventory(TargetInventory);
+		if ((SourceBase && SourceBase->GetBaseStorageComponent() &&
+				SourceBase->GetBaseStorageComponent()->IsMutationTainted()) ||
+			(TargetBase && TargetBase->GetBaseStorageComponent() &&
+				TargetBase->GetBaseStorageComponent()->IsMutationTainted()))
+		{
+			return false;
+		}
+		const bool bLeavesContainment =
+			SourceBase &&
+			SourceInventory ==
+				SourceBase->GetContainmentInventoryComponent() &&
+			TargetInventory != SourceInventory;
+		const bool bEntersArmory =
+			TargetBase &&
+			TargetInventory == TargetBase->GetArmoryInventoryComponent();
+		const bool bEntersContainment =
+			TargetBase &&
+			TargetInventory ==
+				TargetBase->GetContainmentInventoryComponent();
+		const bool bEntersPersonal =
+			Cast<ARpgPersonalStorageLockerActor>(
+				TargetInventory->GetOwner()) != nullptr;
+		const FGameplayTag TargetDomain =
+			ResolveStorageDestinationDomain(
+				TargetInventory,
+				PlayerInventory);
+
+		if (StorageProfile &&
+			(!StorageProfile->IsStructurallyValid() ||
+				(TargetBase &&
+					!TargetBase->GetBaseStorageComponent()->
+						GetInstalledCapabilities().HasAllExact(
+							StorageProfile->
+								RequiredStorageCapabilityTags))))
+		{
+			return false;
+		}
+
+		if (bEntersContainment)
+		{
+			const URpgBaseStorageComponent* BaseStorage =
+				TargetBase->GetBaseStorageComponent();
+			return StorageMode ==
+					ERpgInventoryStorageMode::SpecialContainedItem &&
+				StorageProfile &&
+				StorageProfile->StorageDomainTag ==
+					RpgGameplayTags::Storage_Domain_RiftContainment &&
+				ContainmentProfile &&
+				ContainmentProfile->IsStructurallyValid() &&
+				ContainmentProfile->RequiredSealedSlots == 1 &&
+				TransferQuantity == 1 && SourceQuantity == 1 &&
+				BaseStorage &&
+				!BaseStorage->IsContainmentDomainOverCapacity() &&
+				BaseStorage->HasInstalledCapability(
+					RpgGameplayTags::
+						Storage_Capability_RiftContainment) &&
+				BaseStorage->GetInstalledCapabilities().HasAllExact(
+					ContainmentProfile->
+						RequiredContainmentCapabilityTags) &&
+				BaseStorage->GetContainmentStrength() >=
+					ContainmentProfile->RequiredContainmentStrength &&
+				BaseStorage->GetCorruptionProtection() >=
+					ContainmentProfile->RequiredCorruptionProtection;
+		}
+
+		if (bEntersArmory || bEntersPersonal)
+		{
+			if (StorageMode == ERpgInventoryStorageMode::BulkResource)
+			{
+				return false;
+			}
+			if (bEntersArmory && TargetBase->GetBaseStorageComponent() &&
+				TargetBase->GetBaseStorageComponent()->
+					IsArmoryDomainOverCapacity())
+			{
+				return false;
+			}
+			if (StorageMode == ERpgInventoryStorageMode::GridItem &&
+				StorageProfile &&
+				StorageProfile->StorageDomainTag != TargetDomain)
+			{
+				return false;
+			}
+			if (StorageMode ==
+				ERpgInventoryStorageMode::SpecialContainedItem)
+			{
+				const FGameplayTag DestinationDomain =
+					bEntersArmory
+						? RpgGameplayTags::Storage_Domain_Armory
+						: RpgGameplayTags::Storage_Domain_Personal;
+				return ContainmentProfile &&
+					Item->IsContainmentStabilized() &&
+					ContainmentProfile->
+						AllowedStabilizedDestinationDomains.
+							HasTagExact(DestinationDomain);
+			}
+		}
+
+		if (bLeavesContainment)
+		{
+			const FGameplayTag DestinationDomain =
+				ResolveStorageDestinationDomain(
+					TargetInventory,
+					PlayerInventory);
+			return StorageMode ==
+					ERpgInventoryStorageMode::SpecialContainedItem &&
+				ContainmentProfile && DestinationDomain.IsValid() &&
+				Item->IsContainmentStabilized() &&
+				ContainmentProfile->
+					AllowedStabilizedDestinationDomains.
+						HasTagExact(DestinationDomain);
+		}
+
+		return true;
+	}
+
+	void ApplyCommittedBaseStorageTransferState(
+		URpgInventoryManagerComponent* SourceInventory,
+		URpgInventoryManagerComponent* TargetInventory,
+		FRpgInventoryItemId ItemId)
+	{
+		ARpgBaseCampActor* SourceBase =
+			FindBaseCampForInventory(SourceInventory);
+		ARpgBaseCampActor* TargetBase =
+			FindBaseCampForInventory(TargetInventory);
+		TMap<URpgBaseStorageComponent*, int64> RevisionsBeforeStateUpdate;
+		const auto CaptureConcreteDomainBase =
+			[&RevisionsBeforeStateUpdate](
+				ARpgBaseCampActor* Base,
+				const URpgInventoryManagerComponent* Inventory)
+			{
+				if (!Base || !Inventory ||
+					(Inventory != Base->GetArmoryInventoryComponent() &&
+					 Inventory != Base->GetContainmentInventoryComponent()))
+				{
+					return;
+				}
+				if (URpgBaseStorageComponent* Storage =
+					Base->GetBaseStorageComponent())
+				{
+					RevisionsBeforeStateUpdate.FindOrAdd(Storage) =
+						Storage->GetNetworkRevision();
+				}
+			};
+		CaptureConcreteDomainBase(SourceBase, SourceInventory);
+		CaptureConcreteDomainBase(TargetBase, TargetInventory);
+
+		// Entering containment never rewrites the concrete lifecycle state. New items are Unstable by default,
+		// while an already stabilized instance must remain stabilized after an intentional round trip.
+		if (SourceBase &&
+			SourceInventory ==
+				SourceBase->GetContainmentInventoryComponent() &&
+			!SourceInventory->FindItemById(ItemId))
+		{
+			SourceBase->ForgetContainmentItemState(ItemId);
+		}
+
+		for (const TPair<URpgBaseStorageComponent*, int64>& Pair :
+			RevisionsBeforeStateUpdate)
+		{
+			if (Pair.Key && Pair.Key->GetNetworkRevision() == Pair.Value)
+			{
+				Pair.Key->NotifyExternalStorageStateMutation();
+			}
+		}
 	}
 }
 
@@ -235,6 +489,23 @@ void FRpgInventoryTransactionActionHandler::TransferInventoryItem(
 			Intent.Quantity);
 		return;
 	}
+	if (!IsBaseStorageDomainTransferAllowed(
+			SourceInventory,
+			TargetInventory,
+			Item,
+			FindPlayerInventory(),
+			Intent.Quantity,
+			Intent.ExpectedSourceQuantity))
+	{
+		SendAndCacheExactTransferFeedback(
+			SourceInventory,
+			TargetInventory,
+			Intent,
+			ERpgInventoryActionFeedbackResult::ServerRejected,
+			Item,
+			Intent.Quantity);
+		return;
+	}
 
 	const FRpgInventoryMutationResult Result =
 		SourceInventory->TransferItem(
@@ -252,6 +523,10 @@ void FRpgInventoryTransactionActionHandler::TransferInventoryItem(
 			Intent.Quantity);
 		return;
 	}
+	ApplyCommittedBaseStorageTransferState(
+		SourceInventory,
+		TargetInventory,
+		Intent.ItemId);
 
 	URpgInventoryManagerComponent* PlayerInventory =
 		FindPlayerInventory();
@@ -365,6 +640,23 @@ void FRpgInventoryTransactionActionHandler::QuickTransferItem(
 			Request.StackCount);
 		return;
 	}
+	if (!IsBaseStorageDomainTransferAllowed(
+			SourceInventory,
+			TargetInventory,
+			Item,
+			FindPlayerInventory(),
+			Request.StackCount,
+			SourceEntry.StackCount))
+	{
+		SendAndCacheQuickTransferFeedback(
+			SourceInventory,
+			TargetInventory,
+			Request,
+			ERpgInventoryActionFeedbackResult::ServerRejected,
+			Item,
+			Request.StackCount);
+		return;
+	}
 
 	const int32 AvailableCount = SourceEntry.StackCount;
 	const int32 RequestedCount = Request.StackCount;
@@ -457,6 +749,13 @@ void FRpgInventoryTransactionActionHandler::QuickTransferItem(
 			Item,
 			RequestedCount);
 		return;
+	}
+	if (SourceInventory != TargetInventory)
+	{
+		ApplyCommittedBaseStorageTransferState(
+			SourceInventory,
+			TargetInventory,
+			Request.ItemId);
 	}
 
 	URpgInventoryManagerComponent* PlayerInventory =
@@ -703,6 +1002,18 @@ FRpgInventoryTransactionQueryHandler::PlanExactTransferPlacement(
 			ERpgInventoryMutationResultCode::SourceMismatch,
 			Intent.Quantity);
 	}
+	if (!IsBaseStorageDomainTransferAllowed(
+			SourceInventory,
+			TargetInventory,
+			Item,
+			FindPlayerInventory(),
+			Intent.Quantity,
+			SourceEntry.StackCount))
+	{
+		return MakeRejectedTransactionPlacementPlan(
+			ERpgInventoryMutationResultCode::ItemNotAllowed,
+			Intent.Quantity);
+	}
 
 	FRpgInventoryPlacementQuery Query;
 	Query.Purpose = ERpgInventoryPlacementPurpose::Transfer;
@@ -762,6 +1073,18 @@ FRpgInventoryTransactionQueryHandler::PlanQuickTransferDestination(
 	{
 		return MakeRejectedTransactionPlacementPlan(
 			ERpgInventoryMutationResultCode::SourceMismatch,
+			Request.StackCount);
+	}
+	if (!IsBaseStorageDomainTransferAllowed(
+			SourceInventory,
+			TargetInventory,
+			Item,
+			FindPlayerInventory(),
+			Request.StackCount,
+			SourceEntry.StackCount))
+	{
+		return MakeRejectedTransactionPlacementPlan(
+			ERpgInventoryMutationResultCode::ItemNotAllowed,
 			Request.StackCount);
 	}
 

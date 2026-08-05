@@ -11,6 +11,7 @@
 #include "SurvivalRpg/Base/RpgBaseCampActor.h"
 #include "SurvivalRpg/Base/RpgBaseStorageComponent.h"
 #include "SurvivalRpg/Base/RpgBaseStorageStationComponent.h"
+#include "SurvivalRpg/Base/RpgWorldStorageKnowledgeComponent.h"
 #include "SurvivalRpg/Core/Game/RpgGameStateBase.h"
 #include "SurvivalRpg/Crafting/RpgCraftingRecipeDefinition.h"
 #include "SurvivalRpg/Crafting/RpgRecipeUnlockComponent.h"
@@ -19,7 +20,7 @@
 #include "SurvivalRpg/Interaction/InteractionQuery.h"
 #include "SurvivalRpg/Inventory/RpgDroppedInventoryActor.h"
 #include "SurvivalRpg/Inventory/RpgInventoryContainerComponent.h"
-#include "SurvivalRpg/Inventory/RpgInventoryFragment_ItemTraits.h"
+#include "SurvivalRpg/Inventory/RpgInventoryFragment_StorageProfile.h"
 #include "SurvivalRpg/Inventory/RpgInventoryItemDefinition.h"
 #include "SurvivalRpg/Inventory/RpgInventoryItemInstance.h"
 #include "SurvivalRpg/Inventory/RpgInventoryManagerComponent.h"
@@ -94,16 +95,12 @@ void URpgCraftingStationComponent::GatherInteractionOptions(const FInteractionQu
 
 namespace
 {
-	const URpgInventoryFragment_ItemTraits* GetItemTraitsForDefinition(TSubclassOf<URpgInventoryItemDefinition> ItemDefinition)
-	{
-		const URpgInventoryItemDefinition* ItemCDO = ItemDefinition ? GetDefault<URpgInventoryItemDefinition>(ItemDefinition) : nullptr;
-		return ItemCDO ? Cast<URpgInventoryFragment_ItemTraits>(ItemCDO->FindFragmentByClass(URpgInventoryFragment_ItemTraits::StaticClass())) : nullptr;
-	}
-
 	bool IsMaterialDefinition(TSubclassOf<URpgInventoryItemDefinition> ItemDefinition)
 	{
-		const URpgInventoryFragment_ItemTraits* Traits = GetItemTraitsForDefinition(ItemDefinition);
-		return Traits && Traits->IsMaterial();
+		const URpgInventoryFragment_StorageProfile* Profile =
+			URpgInventoryFragment_StorageProfile::ResolveStorageProfile(
+				ItemDefinition);
+		return Profile && Profile->CanDepositAsBulk();
 	}
 
 	bool TryBuildAggregatedResourceCosts(
@@ -293,6 +290,21 @@ bool URpgCraftingStationComponent::IsRecipeOfferedByStation(const URpgCraftingRe
 		return false;
 	}
 
+	if (!RecipeDefinition->RequiredWorldKnowledgeTags.IsEmpty())
+	{
+		const ARpgGameStateBase* GameState = GetWorld()
+			? GetWorld()->GetGameState<ARpgGameStateBase>()
+			: nullptr;
+		const URpgWorldStorageKnowledgeComponent* Knowledge = GameState
+			? GameState->GetWorldStorageKnowledgeComponent()
+			: nullptr;
+		if (!Knowledge || !Knowledge->HasAllKnowledgeTags(
+			RecipeDefinition->RequiredWorldKnowledgeTags))
+		{
+			return false;
+		}
+	}
+
 	const FGameplayTagContainer BaseUpgradeTags = LinkedBaseCamp ? LinkedBaseCamp->GetGrantedStorageUpgradeTags() : FGameplayTagContainer();
 	return RecipeDefinition->RequiredUnlockTags.IsEmpty() || BaseUpgradeTags.HasAllExact(RecipeDefinition->RequiredUnlockTags);
 }
@@ -366,6 +378,46 @@ bool URpgCraftingStationComponent::QueueCraftRecipe(AActor* RequestingActor, URp
 	if (!OwnerActor || !OwnerActor->HasAuthority() || !CanCraftRecipeQuantity(RequestingActor, RecipeDefinition, Quantity))
 	{
 		return false;
+	}
+
+	// Timed base-backed jobs remain disabled until their queue and exact refund sources are persisted.
+	// Instant recipes and timed recipes that consume only concrete inventory sources remain supported.
+	if (RecipeDefinition->CraftTime > 0.0f &&
+		ResourceConsumeOrder != ERpgCraftingResourceConsumeOrder::PlayerOnly)
+	{
+		TArray<FRpgCraftingResourceCost> AggregatedCosts;
+		if (!TryBuildAggregatedResourceCosts(
+				RecipeDefinition->RequiredResources, AggregatedCosts))
+		{
+			return false;
+		}
+
+		const TArray<URpgInventoryManagerComponent*> ResourceInventories =
+			GetResourceInventories(RequestingActor);
+		const URpgBaseStorageComponent* BaseStorage = GetLinkedBaseStorage();
+		for (const FRpgCraftingResourceCost& Cost : AggregatedCosts)
+		{
+			const int64 Required64 = static_cast<int64>(Cost.Count) * Quantity;
+			if (Required64 > MAX_int32)
+			{
+				return false;
+			}
+			const int32 Required = static_cast<int32>(Required64);
+			const int32 InventoryAvailable =
+				GetAvailableInventoryResourceCount(
+					Cost.ItemDefinition, ResourceInventories);
+			const int32 BaseAvailable = BaseStorage &&
+				BaseStorage->CanCraftFromNetwork(Cost.ItemDefinition)
+				? BaseStorage->GetResourceCount(Cost.ItemDefinition) : 0;
+			const bool bWouldConsumeBase =
+				ResourceConsumeOrder == ERpgCraftingResourceConsumeOrder::BaseOnly ||
+				(ResourceConsumeOrder == ERpgCraftingResourceConsumeOrder::BaseThenPlayer && BaseAvailable > 0) ||
+				(ResourceConsumeOrder == ERpgCraftingResourceConsumeOrder::PlayerThenBase && InventoryAvailable < Required);
+			if (bWouldConsumeBase)
+			{
+				return false;
+			}
+		}
 	}
 
 	TArray<FRpgCraftingRefundEntry> RefundEntries;
@@ -495,7 +547,10 @@ int32 URpgCraftingStationComponent::GetAvailableResourceCount(AActor* Requesting
 	{
 		if (const URpgBaseStorageComponent* BaseStorage = GetLinkedBaseStorage())
 		{
-			TotalCount += BaseStorage->GetResourceCount(ItemDefinition);
+			if (BaseStorage->CanCraftFromNetwork(ItemDefinition))
+			{
+				TotalCount += BaseStorage->GetResourceCount(ItemDefinition);
+			}
 		}
 	}
 
@@ -977,9 +1032,19 @@ int32 URpgCraftingStationComponent::GetAvailableInventoryResourceCount(TSubclass
 	int32 TotalCount = 0;
 	for (URpgInventoryManagerComponent* Inventory : ResourceInventories)
 	{
-		if (Inventory)
+		if (!Inventory)
 		{
-			TotalCount += Inventory->GetTotalItemCountByDefinition(ItemDefinition);
+			continue;
+		}
+
+		for (const FRpgInventoryEntryView& Entry : Inventory->GetAllEntries())
+		{
+			if (Entry.Instance && Entry.Instance->GetItemDef() == ItemDefinition &&
+				Entry.StackCount > 0 &&
+				Entry.Instance->CanCollapseIntoDefinitionCount())
+			{
+				TotalCount += Entry.StackCount;
+			}
 		}
 	}
 	return TotalCount;
@@ -995,11 +1060,25 @@ bool URpgCraftingStationComponent::ConsumeInventoryResources(TSubclassOf<URpgInv
 			break;
 		}
 
-		const int32 AvailableInInventory = Inventory->GetTotalItemCountByDefinition(ItemDefinition);
-		const int32 CountToConsume = FMath::Min(AvailableInInventory, RemainingCount);
-		if (CountToConsume > 0)
+		const TArray<FRpgInventoryEntryView> Entries = Inventory->GetAllEntries();
+		for (const FRpgInventoryEntryView& Entry : Entries)
 		{
-			if (!Inventory->ConsumeItemsByDefinition(ItemDefinition, CountToConsume))
+			if (RemainingCount <= 0)
+			{
+				break;
+			}
+			if (!Entry.Instance || Entry.Instance->GetItemDef() != ItemDefinition ||
+				Entry.StackCount <= 0 ||
+				!Entry.Instance->CanCollapseIntoDefinitionCount())
+			{
+				continue;
+			}
+
+			const int32 CountToConsume =
+				FMath::Min(Entry.StackCount, RemainingCount);
+			const FRpgInventoryMutationResult Result =
+				Inventory->ConsumeItemById(Entry.ItemId, CountToConsume);
+			if (!Result.IsSuccess() || Result.AppliedQuantity != CountToConsume)
 			{
 				return false;
 			}
@@ -1018,7 +1097,8 @@ bool URpgCraftingStationComponent::ConsumeBaseResources(TSubclassOf<URpgInventor
 	}
 
 	URpgBaseStorageComponent* BaseStorage = GetLinkedBaseStorage();
-	return BaseStorage && BaseStorage->WithdrawResource(ItemDefinition, Count);
+	return BaseStorage && BaseStorage->CanCraftFromNetwork(ItemDefinition) &&
+		BaseStorage->WithdrawResource(ItemDefinition, Count);
 }
 
 void URpgCraftingStationComponent::OnRep_CraftingState()
@@ -1111,14 +1191,21 @@ bool URpgCraftingStationComponent::ConsumeResourcesWithRefund(
 					break;
 				}
 
-				const int32 AvailableInInventory = Inventory->GetTotalItemCountByDefinition(RequiredItem.ItemDefinition);
+				const TArray<URpgInventoryManagerComponent*> SingleInventory = { Inventory };
+				const int32 AvailableInInventory =
+					GetAvailableInventoryResourceCount(
+						RequiredItem.ItemDefinition,
+						SingleInventory);
 				const int32 CountToConsume = FMath::Min(AvailableInInventory, RemainingCount);
 				if (CountToConsume <= 0)
 				{
 					continue;
 				}
 
-				if (!Inventory->ConsumeItemsByDefinition(RequiredItem.ItemDefinition, CountToConsume))
+				if (!ConsumeInventoryResources(
+						RequiredItem.ItemDefinition,
+						CountToConsume,
+						SingleInventory))
 				{
 					return false;
 				}

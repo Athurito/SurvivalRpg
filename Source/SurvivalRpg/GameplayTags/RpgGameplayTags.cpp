@@ -126,6 +126,7 @@ namespace RpgGameplayTags
 	UE_DEFINE_GAMEPLAY_TAG_COMMENT(Rpg_Inventory_Layout_Role_Carry_OffHand, "Rpg.Inventory.Layout.Role.Carry.OffHand", "Unique off-hand authored Carry group shown by the player inventory UI.");
 	UE_DEFINE_GAMEPLAY_TAG_COMMENT(Rpg_Inventory_Layout_Role_Carry_Utility, "Rpg.Inventory.Layout.Role.Carry.Utility", "Automation and designer extension seam for an additional unique Carry group.");
 	UE_DEFINE_GAMEPLAY_TAG_COMMENT(Rpg_Inventory_Message_ActionFeedback, "Rpg.Inventory.Message.ActionFeedback", "Owning-client gameplay message for inventory shortcut or server validation feedback.");
+	UE_DEFINE_GAMEPLAY_TAG_COMMENT(Rpg_BaseStorage_Message_CommandFeedback, "Rpg.BaseStorage.Message.CommandFeedback", "Owning-client structured result for one authoritative base-storage network command.");
 	UE_DEFINE_GAMEPLAY_TAG_COMMENT(Rpg_Inventory_Action_Transfer, "Rpg.Inventory.Action.Transfer", "Inventory UI action tag for transfer requests.");
 	UE_DEFINE_GAMEPLAY_TAG_COMMENT(Rpg_Inventory_Action_Split, "Rpg.Inventory.Action.Split", "Inventory UI action tag for split-stack requests.");
 	UE_DEFINE_GAMEPLAY_TAG_COMMENT(Rpg_Inventory_Action_Use, "Rpg.Inventory.Action.Use", "Inventory UI action tag for item use requests.");
@@ -178,6 +179,45 @@ namespace RpgGameplayTags
 	UE_DEFINE_GAMEPLAY_TAG_COMMENT(Base_Storage_Upgrade_AutoSort, "Base.Storage.Upgrade.AutoSort", "Base storage upgrade tag that unlocks shared auto-sort convenience.");
 	UE_DEFINE_GAMEPLAY_TAG_COMMENT(Base_Storage_Upgrade_RemoteAccess, "Base.Storage.Upgrade.RemoteAccess", "Base storage upgrade tag that unlocks remote access convenience.");
 	UE_DEFINE_GAMEPLAY_TAG_COMMENT(Base_Storage_Upgrade_CraftingOutputAutoDeposit, "Base.Storage.Upgrade.CraftingOutputAutoDeposit", "Base storage upgrade tag that lets crafting outputs flow back into linked base storage.");
+	UE_DEFINE_GAMEPLAY_TAG_COMMENT(Base_Storage_Station, "Base.Storage.Station", "Root tag for semantic base-storage station kinds; authored station tags must use a strict child.");
+	UE_DEFINE_GAMEPLAY_TAG_COMMENT(Base_Storage_Station_Terminal, "Base.Storage.Station.Terminal", "Full base-storage terminal station with network-wide access surfaces.");
+	UE_DEFINE_GAMEPLAY_TAG_COMMENT(Base_Storage_Station_ResourceUnit, "Base.Storage.Station.ResourceUnit", "Filtered physical access point for one or more base-storage resources.");
+
+	UE_DEFINE_GAMEPLAY_TAG_COMMENT(Storage_Domain, "Storage.Domain", "Root tag for one logical domain inside a local base storage network.");
+	UE_DEFINE_GAMEPLAY_TAG_COMMENT(Storage_Domain_Materials, "Storage.Domain.Materials", "Canonical shared bulk-resource domain for ordinary fungible materials.");
+	UE_DEFINE_GAMEPLAY_TAG_COMMENT(Storage_Domain_Material, "Storage.Domain.Material", "Legacy singular material-domain tag retained for authored-asset compatibility; prefer Storage.Domain.Materials.");
+	UE_DEFINE_GAMEPLAY_TAG_COMMENT(Storage_Domain_Armory, "Storage.Domain.Armory", "Shared instance-preserving grid domain for equipment, tools, and packs.");
+	UE_DEFINE_GAMEPLAY_TAG_COMMENT(Storage_Domain_RuneArchive, "Storage.Domain.RuneArchive", "Instance-preserving archive domain for runes, talismans, and enchanting components.");
+	UE_DEFINE_GAMEPLAY_TAG_COMMENT(Storage_Domain_RiftContainment, "Storage.Domain.RiftContainment", "Special containment domain for unstable, corrupted, or portal-derived item instances.");
+	UE_DEFINE_GAMEPLAY_TAG_COMMENT(Storage_Domain_Personal, "Storage.Domain.Personal", "Canonical owner-scoped instance domain for protected personal equipment and expedition kits.");
+	UE_DEFINE_GAMEPLAY_TAG_COMMENT(Storage_Domain_PersonalLocker, "Storage.Domain.PersonalLocker", "Legacy explicit locker-domain tag retained for authored-asset compatibility; prefer Storage.Domain.Personal.");
+	UE_DEFINE_GAMEPLAY_TAG_COMMENT(Storage_Domain_Expedition, "Storage.Domain.Expedition", "Logical domain for loadout preparation, reservations, and expedition checklists.");
+
+	UE_DEFINE_GAMEPLAY_TAG_COMMENT(Storage_Capability, "Storage.Capability", "Root tag for functional base-storage network capabilities.");
+	UE_DEFINE_GAMEPLAY_TAG_COMMENT(Storage_Capability_AutoDepositBulk, "Storage.Capability.AutoDepositBulk", "Allows explicitly eligible fungible resources to auto-deposit into local bulk storage.");
+	UE_DEFINE_GAMEPLAY_TAG_COMMENT(Storage_Capability_CraftFromNetwork, "Storage.Capability.CraftFromNetwork", "Allows crafting stations to consume available local network resources.");
+	UE_DEFINE_GAMEPLAY_TAG_COMMENT(Storage_Capability_PersonalLocker, "Storage.Capability.PersonalLocker", "Enables an owner-scoped personal locker without creating a private parallel economy.");
+	UE_DEFINE_GAMEPLAY_TAG_COMMENT(Storage_Capability_Reservations, "Storage.Capability.Reservations", "Canonical capability for authoritative bulk-resource and item-instance reservations.");
+	UE_DEFINE_GAMEPLAY_TAG_COMMENT(Storage_Capability_ExpeditionPreset, "Storage.Capability.ExpeditionPreset", "Canonical capability for preparing one or more expedition loadout presets.");
+	UE_DEFINE_GAMEPLAY_TAG_COMMENT(Storage_Capability_ProjectReservations, "Storage.Capability.ProjectReservations", "Allows resources and concrete items to be reserved for shared projects.");
+	UE_DEFINE_GAMEPLAY_TAG_COMMENT(Storage_Capability_LoadoutTemplates, "Storage.Capability.LoadoutTemplates", "Allows expedition loadout templates and item-instance reservations.");
+	UE_DEFINE_GAMEPLAY_TAG_COMMENT(Storage_Capability_ReturnSorting, "Storage.Capability.ReturnSorting", "Allows rules-driven unloading after an expedition without creating extra item authority.");
+	UE_DEFINE_GAMEPLAY_TAG_COMMENT(Storage_Capability_RuneArchive, "Storage.Capability.RuneArchive", "Enables the rune archive domain and its archive-specific operations.");
+	UE_DEFINE_GAMEPLAY_TAG_COMMENT(Storage_Capability_RiftContainment, "Storage.Capability.RiftContainment", "Enables safe sealed storage for special contained item instances.");
+	UE_DEFINE_GAMEPLAY_TAG_COMMENT(Storage_Capability_RiftStabilize, "Storage.Capability.RiftStabilize", "Enables deterministic stabilization actions for compatible contained Rift items.");
+	UE_DEFINE_GAMEPLAY_TAG_COMMENT(Storage_Capability_RiftAnalysis, "Storage.Capability.RiftAnalysis", "Enables analysis of contained portal and Dungeonbreak items.");
+	UE_DEFINE_GAMEPLAY_TAG_COMMENT(Storage_Capability_RiftExtract, "Storage.Capability.RiftExtract", "Canonical capability for deterministic but strain-producing extraction from contained Rift items.");
+	UE_DEFINE_GAMEPLAY_TAG_COMMENT(Storage_Capability_RiftExtraction, "Storage.Capability.RiftExtraction", "Legacy extraction spelling retained for authored-asset compatibility; prefer Storage.Capability.RiftExtract.");
+	UE_DEFINE_GAMEPLAY_TAG_COMMENT(Storage_Capability_OutpostOverview, "Storage.Capability.OutpostOverview", "Allows separated remote base and outpost stocks to be inspected without teleporting them.");
+	UE_DEFINE_GAMEPLAY_TAG_COMMENT(Storage_Capability_RemoteTransfer, "Storage.Capability.RemoteTransfer", "Enables explicit time-, route-, or energy-gated transfers between separate storage networks.");
+
+	UE_DEFINE_GAMEPLAY_TAG_COMMENT(Storage_Knowledge, "Storage.Knowledge", "Root tag for progression knowledge used by storage upgrade prerequisites.");
+	UE_DEFINE_GAMEPLAY_TAG_COMMENT(Storage_Knowledge_MaterialStandardization_Basic, "Storage.Knowledge.MaterialStandardization.Basic", "Knowledge required to standardize the first ordinary materials as bulk resources.");
+	UE_DEFINE_GAMEPLAY_TAG_COMMENT(Storage_Knowledge_ExpeditionLogistics, "Storage.Knowledge.ExpeditionLogistics", "Quartermaster or world knowledge for expedition preparation and reservations.");
+	UE_DEFINE_GAMEPLAY_TAG_COMMENT(Storage_Knowledge_RuneArchiving, "Storage.Knowledge.RuneArchiving", "Rune-smith knowledge for safe rune archiving and comparison.");
+	UE_DEFINE_GAMEPLAY_TAG_COMMENT(Storage_Knowledge_RiftContainment, "Storage.Knowledge.RiftContainment", "Knowledge required to build and operate sealed Rift containment.");
+	UE_DEFINE_GAMEPLAY_TAG_COMMENT(Storage_Knowledge_RiftAnalysis, "Storage.Knowledge.RiftAnalysis", "Research knowledge required to analyze contained Rift objects.");
+	UE_DEFINE_GAMEPLAY_TAG_COMMENT(Storage_Knowledge_RegionalLogistics, "Storage.Knowledge.RegionalLogistics", "Late-game logistics knowledge for separated outposts and physical transfers.");
 
 }
 

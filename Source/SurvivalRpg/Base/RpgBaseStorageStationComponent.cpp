@@ -146,7 +146,8 @@ TArray<TSubclassOf<URpgInventoryItemDefinition>> URpgBaseStorageStationComponent
 			}
 		}
 
-		for (const URpgBaseStorageUpgradeDefinition* UpgradeDefinition : InstalledUpgrades)
+		for (const URpgBaseStorageUpgradeDefinition* UpgradeDefinition :
+			GetInstalledUpgrades())
 		{
 			if (!UpgradeDefinition)
 			{
@@ -184,7 +185,9 @@ bool URpgBaseStorageStationComponent::AllowsResourceDefinition(TSubclassOf<URpgI
 bool URpgBaseStorageStationComponent::CanActorAccess(const AActor* RequestingActor) const
 {
 	const AActor* OwnerActor = GetOwner();
-	if (!bAccessible || !LinkedBaseCamp || !OwnerActor || !RequestingActor)
+	const URpgBaseStorageComponent* NetworkStorage = GetBaseStorage();
+	if (!bAccessible || !LinkedBaseCamp || !OwnerActor || !RequestingActor ||
+		(NetworkStorage && NetworkStorage->IsMutationTainted()))
 	{
 		return false;
 	}
@@ -219,6 +222,11 @@ void URpgBaseStorageStationComponent::SetStationAccessible(bool bNewAccessible)
 
 TArray<URpgBaseStorageUpgradeDefinition*> URpgBaseStorageStationComponent::GetInstalledUpgrades() const
 {
+	if (const URpgBaseStorageComponent* NetworkStorage = GetBaseStorage())
+	{
+		return NetworkStorage->GetInstalledUpgrades();
+	}
+
 	TArray<URpgBaseStorageUpgradeDefinition*> Results;
 	Results.Reserve(InstalledUpgrades.Num());
 	for (URpgBaseStorageUpgradeDefinition* UpgradeDefinition : InstalledUpgrades)
@@ -233,6 +241,10 @@ TArray<URpgBaseStorageUpgradeDefinition*> URpgBaseStorageStationComponent::GetIn
 
 bool URpgBaseStorageStationComponent::HasInstalledUpgrade(const URpgBaseStorageUpgradeDefinition* UpgradeDefinition) const
 {
+	if (const URpgBaseStorageComponent* NetworkStorage = GetBaseStorage())
+	{
+		return NetworkStorage->HasInstalledUpgrade(UpgradeDefinition);
+	}
 	return UpgradeDefinition && InstalledUpgrades.Contains(UpgradeDefinition);
 }
 
@@ -244,7 +256,7 @@ bool URpgBaseStorageStationComponent::HasUpgradeTag(FGameplayTag UpgradeTag) con
 FGameplayTagContainer URpgBaseStorageStationComponent::GetGrantedUpgradeTags() const
 {
 	FGameplayTagContainer GrantedTags;
-	for (const URpgBaseStorageUpgradeDefinition* UpgradeDefinition : InstalledUpgrades)
+	for (const URpgBaseStorageUpgradeDefinition* UpgradeDefinition : GetInstalledUpgrades())
 	{
 		if (UpgradeDefinition)
 		{
@@ -266,7 +278,12 @@ bool URpgBaseStorageStationComponent::CanInstallUpgrade(const URpgBaseStorageUpg
 		return false;
 	}
 
-	return true;
+	if (const URpgBaseStorageComponent* NetworkStorage = GetBaseStorage())
+	{
+		FText FailureReason;
+		return NetworkStorage->CanInstallUpgrade(UpgradeDefinition, FailureReason);
+	}
+	return false;
 }
 
 bool URpgBaseStorageStationComponent::InstallUpgrade(URpgBaseStorageUpgradeDefinition* UpgradeDefinition)
@@ -277,10 +294,10 @@ bool URpgBaseStorageStationComponent::InstallUpgrade(URpgBaseStorageUpgradeDefin
 		return false;
 	}
 
-	InstalledUpgrades.Add(UpgradeDefinition);
-	if (bCapacityBonusesApplied)
+	URpgBaseStorageComponent* NetworkStorage = GetBaseStorage();
+	if (!NetworkStorage || !NetworkStorage->InstallUpgrade(UpgradeDefinition))
 	{
-		ApplyCapacityList(UpgradeDefinition->CapacityBonuses, 1);
+		return false;
 	}
 
 	OwnerActor->ForceNetUpdate();
@@ -354,6 +371,20 @@ void URpgBaseStorageStationComponent::RegisterWithLinkedBaseCamp()
 	{
 		CurrentBaseCamp->RegisterStorageStation(this);
 		RegisteredBaseCamp = CurrentBaseCamp;
+		if (AActor* OwnerActor = GetOwner(); OwnerActor && OwnerActor->HasAuthority())
+		{
+			// Migrate legacy station-authored installs into the base-owned network once linked.
+			if (URpgBaseStorageComponent* NetworkStorage = GetBaseStorage())
+			{
+				for (URpgBaseStorageUpgradeDefinition* LegacyUpgrade : InstalledUpgrades)
+				{
+					if (LegacyUpgrade && !NetworkStorage->HasInstalledUpgrade(LegacyUpgrade))
+					{
+						NetworkStorage->InstallUpgrade(LegacyUpgrade);
+					}
+				}
+			}
+		}
 	}
 }
 

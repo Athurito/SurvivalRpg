@@ -155,6 +155,67 @@ void URpgInventoryManagerComponent::SetCapacityAttribute(FGameplayAttribute NewC
 	}
 }
 
+bool URpgInventoryManagerComponent::CanSetDefaultGridSize(
+	FRpgInventoryGridSize NewGridSize) const
+{
+	if (!NewGridSize.IsValid() || FindOwningPlayerInventoryLayout())
+	{
+		return false;
+	}
+
+	const FRpgInventoryContainerHandle DefaultHandle =
+		FRpgInventoryContainerHandle::MakeRoot(DefaultContainerId);
+	for (const FRpgInventoryEntryView& Entry : GetAllEntries())
+	{
+		if (Entry.Placement.GetContainerHandle() != DefaultHandle)
+		{
+			continue;
+		}
+
+		const FRpgInventoryGridSize Occupied =
+			Entry.Placement.GetOccupiedSize();
+		const int64 Right = static_cast<int64>(Entry.Placement.X) + Occupied.Width;
+		const int64 Bottom = static_cast<int64>(Entry.Placement.Y) + Occupied.Height;
+		if (!Entry.Placement.IsValid() || Right > NewGridSize.Width ||
+			Bottom > NewGridSize.Height)
+		{
+			return false;
+		}
+	}
+	return true;
+}
+
+bool URpgInventoryManagerComponent::SetDefaultGridSize(
+	FRpgInventoryGridSize NewGridSize)
+{
+	if (IsInventoryMutationLocked() || !CanSetDefaultGridSize(NewGridSize))
+	{
+		return false;
+	}
+
+	AActor* OwningActor = GetOwner();
+	UWorld* World = OwningActor ? OwningActor->GetWorld() : nullptr;
+	const bool bIsRuntimeGameWorld =
+		World && World->IsGameWorld() && IsRegistered() &&
+		!HasAnyFlags(RF_ClassDefaultObject | RF_ArchetypeObject);
+	if (bIsRuntimeGameWorld && (!OwningActor || !OwningActor->HasAuthority()))
+	{
+		return false;
+	}
+	if (DefaultGridSize == NewGridSize)
+	{
+		return true;
+	}
+
+	DefaultGridSize = NewGridSize;
+	if (bIsRuntimeGameWorld)
+	{
+		BroadcastCapacityChanged();
+		OwningActor->ForceNetUpdate();
+	}
+	return true;
+}
+
 bool URpgInventoryManagerComponent::ExpandDefaultGridToMinimum(
 	FRpgInventoryGridSize MinimumSize)
 {

@@ -527,6 +527,10 @@ public:
 	UFUNCTION(BlueprintCallable, Category = "Inventory|Capacity", BlueprintPure)
 	int32 GetFreeEntryCount() const;
 
+	/** Returns the replicated fixed entry budget used when CapacityMode is FixedEntries. */
+	UFUNCTION(BlueprintCallable, Category = "Inventory|Capacity", BlueprintPure)
+	int32 GetFixedMaxEntries() const { return FixedMaxEntries; }
+
 	/**
 	 * Returns the authoritative stack limit used by inventory mutations and UI preflight.
 	 * ItemContainer providers always resolve to one concrete instance per entry, even when
@@ -560,6 +564,20 @@ public:
 	/** Sets the GAS attribute used when CapacityMode is AbilitySystemAttribute. */
 	UFUNCTION(BlueprintCallable, BlueprintAuthorityOnly, Category = "Inventory|Capacity")
 	void SetCapacityAttribute(FGameplayAttribute NewCapacityAttribute);
+
+	/**
+	 * Returns whether every current root placement fits inside an exact replacement grid size.
+	 * Item-owned child containers keep their own authored dimensions and are not resized by this check.
+	 */
+	UFUNCTION(BlueprintCallable, Category = "Inventory|Spatial", BlueprintPure)
+	bool CanSetDefaultGridSize(FRpgInventoryGridSize NewGridSize) const;
+
+	/**
+	 * Replaces the non-player root grid dimensions without moving items.
+	 * Runtime changes are server-authoritative and reject any shrink that would clip an occupied placement.
+	 */
+	UFUNCTION(BlueprintCallable, BlueprintAuthorityOnly, Category = "Inventory|Spatial")
+	bool SetDefaultGridSize(FRpgInventoryGridSize NewGridSize);
 
 	UFUNCTION(BlueprintCallable, BlueprintAuthorityOnly, Category=Inventory)
 	bool CanAddItemDefinition(TSubclassOf<URpgInventoryItemDefinition> ItemDef, int32 StackCount = 1) const;
@@ -771,6 +789,24 @@ public:
 	 */
 	bool RestoreInventoryGraph(const FRpgInventoryGraphSaveData& SaveData, FRpgInventoryMutationResult& OutResult);
 
+	/** Runs the complete authority-side staged restore validation against this inventory's current layout without committing entries, revisions, replay state, or notifications. */
+	bool ValidateInventoryGraphForRestore(
+		const FRpgInventoryGraphSaveData& SaveData,
+		FRpgInventoryMutationResult& OutResult);
+
+	/**
+	 * Repairs caller-gated legacy root placements against the current player-layout contract.
+	 *
+	 * The authority-only operation deterministically relocates content overlaps and uniquely remappable Gear roots
+	 * that no longer satisfy their historical slot. Persistent identity, definition, quantity, runtime fragment state,
+	 * and all item-owned descendants remain intact. Output is emitted only after the normal full validator accepts it.
+	 */
+	bool TryMigrateLegacyRootPlacementsForRestore(
+		const FRpgInventoryGraphSaveData& SaveData,
+		int32 LegacyPlayerSchemaVersion,
+		FRpgInventoryGraphSaveData& OutMigratedSaveData,
+		FRpgInventoryMutationResult& OutResult);
+
 	/**
 	 * Returns the server-local command epoch used to scope idempotent inventory requests.
 	 * Only a successful profile/disk restore advances this value; runtime transaction imports stay in the current epoch.
@@ -917,7 +953,11 @@ private:
 	bool RestoreInventoryGraphInternal(
 		const FRpgInventoryGraphSaveData& SaveData,
 		FRpgInventoryMutationResult& OutResult,
-		bool bEstablishNewMutationEpoch);
+		bool bEstablishNewMutationEpoch,
+		bool bCommitValidatedGraph,
+		bool bAllowLegacyRootPlacementMigration,
+		int32 LegacyPlayerSchemaVersion,
+		FRpgInventoryGraphSaveData* OutMigratedSaveData);
 	struct FRecentMutationRecord
 	{
 		enum class EKind : uint8

@@ -5,6 +5,7 @@
 #include "SurvivalRpg/Base/RpgBaseCampActor.h"
 #include "SurvivalRpg/Base/RpgBaseStorageComponent.h"
 #include "SurvivalRpg/Base/RpgBaseStorageStationComponent.h"
+#include "SurvivalRpg/Base/RpgPersonalStorageLockerActor.h"
 #include "SurvivalRpg/Inventory/RpgInventoryDragDropCoordinator.h"
 #include "SurvivalRpg/Inventory/RpgInventoryDragDropTypes.h"
 #include "SurvivalRpg/Inventory/RpgInventoryAutomationTestTypes.h"
@@ -14,11 +15,13 @@
 #include "SurvivalRpg/GameplayTags/RpgGameplayTags.h"
 #include "SurvivalRpg/Mvvm/Base/RpgBaseStorageViewModels.h"
 #include "SurvivalRpg/Mvvm/Inventory/RpgInventoryPanelViewModel.h"
+#include "SurvivalRpg/Mvvm/Inventory/RpgPlayerInventoryViewModel.h"
 #include "SurvivalRpg/UI/RpgBaseResourceListWidget.h"
 #include "SurvivalRpg/UI/RpgInventoryInteractionScreenWidget.h"
 #include "SurvivalRpg/UI/RpgInventoryPanelNavigationCoordinator.h"
 #include "SurvivalRpg/UI/RpgInventorySpatialPaneWidget.h"
 #include "SurvivalRpg/UI/RpgInventorySpatialGridWidget.h"
+#include "SurvivalRpg/UI/RpgPlayerInventoryPaneWidget.h"
 
 #include "AssetRegistry/AssetRegistryModule.h"
 #include "Blueprint/UserWidget.h"
@@ -49,6 +52,10 @@ namespace RpgBaseTerminalWidgetTests
 		TEXT(
 			"/Game/SurvivalRpg/Inventory/UI/SpatialInventory/"
 			"CUI_SpatialInventoryPane.CUI_SpatialInventoryPane_C");
+	constexpr TCHAR PlayerInventoryPaneClassPath[] =
+		TEXT(
+			"/Game/SurvivalRpg/Inventory/UI/"
+			"CUI_PlayerInventoryPane.CUI_PlayerInventoryPane_C");
 	constexpr TCHAR BaseResourceListSpatialClassPath[] =
 		TEXT(
 			"/Game/SurvivalRpg/UI/"
@@ -61,8 +68,8 @@ namespace RpgBaseTerminalWidgetTests
 			"DT_RpgUIActions_BaseTerminal.DT_RpgUIActions_BaseTerminal");
 	constexpr TCHAR FeaturedUpgradePath[] =
 		TEXT(
-			"/Game/SurvivalRpg/Storage/"
-			"DA_Upgrade_AutoDeposit.DA_Upgrade_AutoDeposit");
+			"/Game/SurvivalRpg/Storage/Upgrades/"
+			"DA_Upgrade_RiftContainmentI.DA_Upgrade_RiftContainmentI");
 
 	constexpr TCHAR BaseTerminalSpatialPackageName[] =
 		TEXT("/Game/SurvivalRpg/UI/CUI_BaseTerminalSpatial");
@@ -254,6 +261,12 @@ namespace RpgBaseTerminalWidgetTests
 			{
 				return Result;
 			}
+			if (!Result.BaseCamp->HasActorBegunPlay())
+			{
+				// Initialize derived baseline capabilities and domain capacities just
+				// like a gameplay world before binding terminal presentation.
+				Result.BaseCamp->DispatchBeginPlay();
+			}
 
 			FActorSpawnParameters StationSpawnParameters;
 			StationSpawnParameters.Name = MakeUniqueObjectName(
@@ -278,6 +291,10 @@ namespace RpgBaseTerminalWidgetTests
 			Result.StationOwner->AddInstanceComponent(Result.Station);
 			Result.Station->RegisterComponent();
 			Result.Station->SetLinkedBaseCamp(Result.BaseCamp);
+			if (!Result.StationOwner->HasActorBegunPlay())
+			{
+				Result.StationOwner->DispatchBeginPlay();
+			}
 
 			Result.BaseStorage =
 				Result.BaseCamp->GetBaseStorageComponent();
@@ -310,6 +327,9 @@ namespace RpgBaseTerminalWidgetTests
 		Payload->PlayerInventory = Context.PlayerInventory;
 		Payload->BaseStorage = Context.BaseStorage;
 		Payload->ArmoryInventory = Context.ArmoryInventory;
+		Payload->RiftInventory = Context.BaseCamp
+			? Context.BaseCamp->GetContainmentInventoryComponent()
+			: nullptr;
 		Payload->StationComponent = Context.Station;
 		return Payload;
 	}
@@ -381,6 +401,10 @@ bool FRpgBaseTerminalSpatialCompositionTest::RunTest(
 	UClass* SpatialPaneClass = LoadClass<URpgInventorySpatialPaneWidget>(
 		nullptr,
 		SpatialPaneClassPath);
+	UClass* PlayerInventoryPaneClass =
+		LoadClass<URpgPlayerInventoryPaneWidget>(
+			nullptr,
+			PlayerInventoryPaneClassPath);
 	UClass* BaseResourceListClass =
 		LoadClass<URpgBaseResourceListWidget>(
 			nullptr,
@@ -391,6 +415,9 @@ bool FRpgBaseTerminalSpatialCompositionTest::RunTest(
 		!TestNotNull(
 			TEXT("Canonical authored Spatial Pane class loads"),
 			SpatialPaneClass) ||
+		!TestNotNull(
+			TEXT("Canonical reusable Player Inventory Pane class loads"),
+			PlayerInventoryPaneClass) ||
 		!TestNotNull(
 			TEXT("Canonical authored Base Resource List class loads"),
 			BaseResourceListClass))
@@ -410,6 +437,15 @@ bool FRpgBaseTerminalSpatialCompositionTest::RunTest(
 		TEXT("Authored Base Terminal retains the local payload receiver contract"),
 		BaseTerminalClass->ImplementsInterface(
 			URpgUIScreenPayloadReceiver::StaticClass()));
+	const FBoolProperty* ShowBackActionProperty =
+		FindFProperty<FBoolProperty>(
+			BaseTerminalClass,
+			TEXT("bIsBackActionDisplayedInActionBar"));
+	TestTrue(
+		TEXT("Authored Base Terminal displays its Back action in the action bar"),
+		ShowBackActionProperty &&
+			ShowBackActionProperty->GetPropertyValue_InContainer(
+				BaseTerminalClass->GetDefaultObject()));
 	TestTrue(
 		TEXT("Authored Spatial Pane derives from the passive native pane"),
 		SpatialPaneClass->IsChildOf(
@@ -422,6 +458,10 @@ bool FRpgBaseTerminalSpatialCompositionTest::RunTest(
 		TEXT("The reusable Spatial Pane never accepts screen payloads"),
 		SpatialPaneClass->ImplementsInterface(
 			URpgUIScreenPayloadReceiver::StaticClass()));
+	TestTrue(
+		TEXT("Authored Player Inventory Pane derives from the complete reusable native pane"),
+		PlayerInventoryPaneClass->IsChildOf(
+			URpgPlayerInventoryPaneWidget::StaticClass()));
 	TestTrue(
 		TEXT("Authored Base Resource List derives from its typed native presenter"),
 		BaseResourceListClass->IsChildOf(
@@ -549,9 +589,9 @@ bool FRpgBaseTerminalSpatialCompositionTest::RunTest(
 		AuthoredContentRow &&
 			AuthoredContentRow->IsA<UHorizontalBox>());
 	TestEqual(
-		TEXT("PlayerInventoryPane uses the exact canonical Pane class"),
+		TEXT("The production terminal composes the complete reusable player pane"),
 		AuthoredPane ? AuthoredPane->GetClass() : nullptr,
-		SpatialPaneClass);
+		PlayerInventoryPaneClass);
 	TestEqual(
 		TEXT("BaseResourceList uses the exact typed resource-list class"),
 		AuthoredBaseResourceList
@@ -597,8 +637,21 @@ bool FRpgBaseTerminalSpatialCompositionTest::RunTest(
 		TEXT("Legacy imperative resource-list wrapper is absent"),
 		BaseTerminalTree->FindWidget(TEXT("CUI_BaseResourceList")));
 	TestNull(
-		TEXT("Armory is intentionally not exposed as an accidental second Pane in this slice"),
-		BaseTerminalTree->FindWidget(TEXT("ArmoryInventoryPane")));
+		TEXT("The terminal omits the persistent Smart Deposit detail log"),
+		BaseTerminalTree->FindWidget(TEXT("StorageSmartDepositResultText")));
+	for (const TCHAR* DomainPaneName :
+		{
+			TEXT("ArmoryInventoryPane"),
+			TEXT("PersonalInventoryPane"),
+			TEXT("RiftInventoryPane")
+		})
+	{
+		const UWidget* DomainPane = BaseTerminalTree->FindWidget(DomainPaneName);
+		TestEqual(
+			*FString::Printf(TEXT("%s uses the canonical spatial pane"), DomainPaneName),
+			DomainPane ? DomainPane->GetClass() : nullptr,
+			SpatialPaneClass);
+	}
 
 	FScopedWidgetWorld TestWorld;
 	if (!TestTrue(
@@ -619,8 +672,8 @@ bool FRpgBaseTerminalSpatialCompositionTest::RunTest(
 		return false;
 	}
 
-	URpgInventorySpatialPaneWidget* RuntimePane =
-		Cast<URpgInventorySpatialPaneWidget>(
+	URpgPlayerInventoryPaneWidget* RuntimePlayerPane =
+		Cast<URpgPlayerInventoryPaneWidget>(
 			Widget->GetWidgetFromName(TEXT("PlayerInventoryPane")));
 	URpgBaseResourceListWidget* RuntimeResourceList =
 		Cast<URpgBaseResourceListWidget>(
@@ -632,22 +685,26 @@ bool FRpgBaseTerminalSpatialCompositionTest::RunTest(
 	UCanvasPanel* RuntimeDragVisualCanvas = Cast<UCanvasPanel>(
 		Widget->GetWidgetFromName(TEXT("DragVisualCanvas")));
 
+	TestNull(
+		TEXT("Production terminal no longer uses the legacy single spatial player pane"),
+		Widget->GetPlayerInventoryPane());
 	TestEqual(
-		TEXT("PlayerInventoryPane binds into the native presenter property"),
-		Widget->GetPlayerInventoryPane(),
-		RuntimePane);
+		TEXT("PlayerInventoryPane binds as the complete reusable player pane"),
+		Widget->GetReusablePlayerInventoryPane(),
+		RuntimePlayerPane);
 	TestNotNull(
-		TEXT("Runtime Pane exposes its exact authored SpatialGrid"),
-		RuntimePane ? RuntimePane->GetSpatialGrid() : nullptr);
-	TestNotNull(
-		TEXT("Runtime Pane creates its stable native panel VM"),
-		RuntimePane ? RuntimePane->GetPanelViewModel() : nullptr);
+		TEXT("Runtime reusable player pane initializes"),
+		RuntimePlayerPane);
 	TestNotNull(
 		TEXT("Runtime resource presenter exposes its CommonListView"),
 		RuntimeResourceList
 			? RuntimeResourceList->GetResourceList()
 			: nullptr);
 
+	const FObjectPropertyBase* PlayerInventoryPaneProperty =
+		FindFProperty<FObjectPropertyBase>(
+			URpgBaseTerminalWidget::StaticClass(),
+			TEXT("PlayerInventoryPane"));
 	const FObjectPropertyBase* BaseResourceListProperty =
 		FindFProperty<FObjectPropertyBase>(
 			URpgBaseTerminalWidget::StaticClass(),
@@ -664,6 +721,11 @@ bool FRpgBaseTerminalSpatialCompositionTest::RunTest(
 		FindFProperty<FObjectPropertyBase>(
 			URpgInventoryInteractionScreenWidget::StaticClass(),
 			TEXT("DragVisualCanvas"));
+	TestTrue(
+		TEXT("PlayerInventoryPane is an optional UWidget migration binding"),
+		PlayerInventoryPaneProperty &&
+			PlayerInventoryPaneProperty->PropertyClass.Get() == UWidget::StaticClass() &&
+			PlayerInventoryPaneProperty->HasMetaData(TEXT("BindWidgetOptional")));
 	TestTrue(
 		TEXT("BaseResourceList binds into the typed native presenter property"),
 		BaseResourceListProperty &&
@@ -688,6 +750,72 @@ bool FRpgBaseTerminalSpatialCompositionTest::RunTest(
 			DragVisualCanvasProperty
 				->GetObjectPropertyValue_InContainer(Widget) ==
 				RuntimeDragVisualCanvas);
+
+	for (const TCHAR* OptionalDomainPropertyName :
+		{
+			TEXT("ArmoryInventoryPane"),
+			TEXT("PersonalInventoryPane"),
+			TEXT("RiftInventoryPane"),
+			TEXT("MaterialsDomainButton"),
+			TEXT("ArmoryDomainButton"),
+			TEXT("PersonalDomainButton"),
+			TEXT("RiftDomainButton")
+		})
+	{
+		const FProperty* OptionalProperty =
+			FindFProperty<FProperty>(
+				URpgBaseTerminalWidget::StaticClass(),
+				OptionalDomainPropertyName);
+		TestTrue(
+			*FString::Printf(
+				TEXT("%s is an optional Blueprint migration seam"),
+				OptionalDomainPropertyName),
+			OptionalProperty &&
+				OptionalProperty->HasMetaData(TEXT("BindWidgetOptional")));
+	}
+
+	for (const TCHAR* ProductionControlPropertyName :
+		{
+			TEXT("StorageSearchBox"),
+			TEXT("StorageCategoryFilterButton"),
+			TEXT("StorageCategoryFilterText"),
+			TEXT("StorageSortButton"),
+			TEXT("StorageSortText"),
+			TEXT("StorageCapacityText"),
+			TEXT("StorageStrainText"),
+			TEXT("StorageWithdrawOneButton"),
+			TEXT("StorageWithdrawTenButton"),
+			TEXT("StorageWithdrawMaxButton"),
+			TEXT("StorageWithdrawCustomInput"),
+			TEXT("StorageActionResultText"),
+			TEXT("RiftLockStateText"),
+			TEXT("RiftActionCostText"),
+			TEXT("RiftActionPreviewText"),
+			TEXT("StorageRiftPreviewRow"),
+			TEXT("StorageRiftActionRow"),
+			TEXT("StabilizeRiftButton"),
+			TEXT("ExtractRiftButton"),
+			TEXT("CleanseRiftButton")
+		})
+	{
+		const FObjectPropertyBase* ControlProperty =
+			FindFProperty<FObjectPropertyBase>(
+				URpgBaseTerminalWidget::StaticClass(),
+				ProductionControlPropertyName);
+		TestTrue(
+			*FString::Printf(
+				TEXT("Production control %s is an optional native binding"),
+				ProductionControlPropertyName),
+			ControlProperty &&
+				ControlProperty->HasMetaData(TEXT("BindWidgetOptional")));
+		TestNotNull(
+			*FString::Printf(
+				TEXT("Production control %s binds on an initialized instance"),
+				ProductionControlPropertyName),
+			ControlProperty
+				? ControlProperty->GetObjectPropertyValue_InContainer(Widget)
+				: nullptr);
+	}
 
 	const FStructProperty* DepositActionProperty =
 		FindFProperty<FStructProperty>(
@@ -935,6 +1063,99 @@ bool FRpgBaseTerminalContextLifecycleTest::RunTest(
 					WidgetPrimaryContentGroup)))
 	{
 		return false;
+	}
+
+	// The production terminal now composes the complete player pane. Keep the legacy spatial-pane assertions below as
+	// a compatibility branch for older authored fixtures, while validating pooling/rebinding through the new pane here.
+	if (URpgPlayerInventoryPaneWidget* ReusablePlayerPane =
+		Widget->GetReusablePlayerInventoryPane())
+	{
+		UObject* StablePlayerViewModel =
+			ReusablePlayerPane->GetPlayerInventoryViewModel();
+		if (!TestNotNull(
+				TEXT("Reusable player pane owns its stable aggregate VM before activation"),
+				StablePlayerViewModel))
+		{
+			return false;
+		}
+
+		URpgBaseStorageScreenPayload* PayloadA =
+			MakePayload(Widget, ContextA);
+		IRpgUIScreenPayloadReceiver::Execute_ReceiveScreenPayload(
+			Widget,
+			PayloadA);
+		TestEqual(
+			TEXT("Pre-activation production payload is staged"),
+			Widget->GetBaseStorageScreenPayload(),
+			PayloadA);
+		TestEqual(
+			TEXT("Staging does not bind production presentation"),
+			Widget->GetBaseTerminalPresentationBindGeneration(),
+			0u);
+
+		Widget->ActivateWidget();
+		TestTrue(
+			TEXT("Production terminal activates through CommonUI"),
+			Widget->IsActivated());
+		TestEqual(
+			TEXT("Production payload binds exactly once"),
+			Widget->GetBaseTerminalPresentationBindGeneration(),
+			1u);
+		TestEqual(
+			TEXT("Reusable player pane retains its aggregate VM across bind"),
+			static_cast<UObject*>(ReusablePlayerPane->GetPlayerInventoryViewModel()),
+			StablePlayerViewModel);
+		TestEqual(
+			TEXT("Terminal observes context A storage"),
+			Widget->GetBaseStorageViewModel()
+				? Widget->GetBaseStorageViewModel()->GetBaseStorage()
+				: nullptr,
+			ContextA.BaseStorage);
+		TestEqual(
+			TEXT("Armory domain resolves context A's exact inventory"),
+			Widget->GetDomainInventory(ERpgBaseTerminalDomain::Armory),
+			ContextA.ArmoryInventory);
+		TestTrue(
+			TEXT("Materials is the production terminal's initial domain"),
+			Widget->GetActiveDomain() == ERpgBaseTerminalDomain::Materials);
+
+		URpgBaseStorageScreenPayload* PayloadB =
+			MakePayload(Widget, ContextB);
+		IRpgUIScreenPayloadReceiver::Execute_ReceiveScreenPayload(
+			Widget,
+			PayloadB);
+		TestEqual(
+			TEXT("Active production payload rebinds once"),
+			Widget->GetBaseTerminalPresentationBindGeneration(),
+			2u);
+		TestEqual(
+			TEXT("Terminal switches to context B storage"),
+			Widget->GetBaseStorageViewModel()
+				? Widget->GetBaseStorageViewModel()->GetBaseStorage()
+				: nullptr,
+			ContextB.BaseStorage);
+		TestEqual(
+			TEXT("Reusable player VM remains stable across base rebinding"),
+			static_cast<UObject*>(ReusablePlayerPane->GetPlayerInventoryViewModel()),
+			StablePlayerViewModel);
+
+		Widget->DeactivateWidget();
+		TestFalse(
+			TEXT("Production terminal deactivates"),
+			Widget->IsActivated());
+		TestNull(
+			TEXT("Deactivation releases the staged terminal payload"),
+			Widget->GetBaseStorageScreenPayload());
+		TestNull(
+			TEXT("Deactivation releases the base-storage observation"),
+			Widget->GetBaseStorageViewModel()
+				? Widget->GetBaseStorageViewModel()->GetBaseStorage()
+				: nullptr);
+		TestEqual(
+			TEXT("Reusable player VM survives pooled deactivation"),
+			static_cast<UObject*>(ReusablePlayerPane->GetPlayerInventoryViewModel()),
+			StablePlayerViewModel);
+		return true;
 	}
 
 	URpgInventorySpatialPaneWidget* PlayerPane =
@@ -1531,13 +1752,80 @@ bool FRpgBaseTerminalContextLifecycleTest::RunTest(
 		TEXT("A payload that aliases PlayerInventory and ArmoryInventory"),
 		AliasedPlayerArmoryPayload);
 
+	FActorSpawnParameters ForeignControllerSpawnParameters;
+	ForeignControllerSpawnParameters.Name = MakeUniqueObjectName(
+		TestWorld.GetTestWorld(),
+		ARpgInventoryAutomationTestPlayerController::StaticClass(),
+		TEXT("ForeignLockerController"));
+	ForeignControllerSpawnParameters.ObjectFlags = RF_Transient;
+	ARpgInventoryAutomationTestPlayerController* ForeignController =
+		TestWorld.GetTestWorld()->SpawnActor<
+			ARpgInventoryAutomationTestPlayerController>(
+				ForeignControllerSpawnParameters);
+	FActorSpawnParameters ForeignLockerSpawnParameters;
+	ForeignLockerSpawnParameters.Name = MakeUniqueObjectName(
+		TestWorld.GetTestWorld(),
+		ARpgPersonalStorageLockerActor::StaticClass(),
+		TEXT("ForeignPersonalLocker"));
+	ForeignLockerSpawnParameters.ObjectFlags = RF_Transient;
+	ARpgPersonalStorageLockerActor* ForeignLocker =
+		TestWorld.GetTestWorld()->SpawnActor<
+			ARpgPersonalStorageLockerActor>(ForeignLockerSpawnParameters);
+	if (!TestNotNull(
+			TEXT("The foreign locker controller fixture exists"),
+			ForeignController) ||
+		!TestNotNull(
+			TEXT("The foreign personal locker fixture exists"),
+			ForeignLocker))
+	{
+		return false;
+	}
+	ForeignLocker->InitializeLocker(
+		ContextA.BaseCamp,
+		ForeignController,
+		TEXT("Automation.ForeignLocker"));
+	URpgBaseStorageScreenPayload* ForeignLockerPayload =
+		MakePayload(Widget, ContextA);
+	ForeignLockerPayload->PersonalInventory =
+		ForeignLocker->GetInventoryManager();
+	ExpectRejectedPayload(
+		TEXT("A payload whose personal locker belongs to another local player"),
+		ForeignLockerPayload);
+
+	FActorSpawnParameters OwnedLockerSpawnParameters;
+	OwnedLockerSpawnParameters.Name = MakeUniqueObjectName(
+		TestWorld.GetTestWorld(),
+		ARpgPersonalStorageLockerActor::StaticClass(),
+		TEXT("OwnedPersonalLocker"));
+	OwnedLockerSpawnParameters.ObjectFlags = RF_Transient;
+	ARpgPersonalStorageLockerActor* OwnedLocker =
+		TestWorld.GetTestWorld()->SpawnActor<
+			ARpgPersonalStorageLockerActor>(OwnedLockerSpawnParameters);
+	if (!TestNotNull(
+			TEXT("The owning player's personal locker fixture exists"),
+			OwnedLocker))
+	{
+		return false;
+	}
+	OwnedLocker->InitializeLocker(
+		ContextA.BaseCamp,
+		TestWorld.GetPlayerController(),
+		TEXT("Automation.OwnedLocker"));
+	URpgBaseStorageScreenPayload* OwnedLockerPayload =
+		MakePayload(Widget, ContextA);
+	OwnedLockerPayload->PersonalInventory =
+		OwnedLocker->GetInventoryManager();
 	IRpgUIScreenPayloadReceiver::Execute_ReceiveScreenPayload(
 		Widget,
-		PayloadA);
+		OwnedLockerPayload);
 	TestEqual(
-		TEXT("A valid payload still binds after rejected candidates"),
+		TEXT("A payload with the owning player's locker binds after rejected candidates"),
 		Widget->GetBaseTerminalPresentationBindGeneration(),
 		4u);
+	TestEqual(
+		TEXT("The accepted payload retains the exact owner-only locker inventory"),
+		Widget->GetDomainInventory(ERpgBaseTerminalDomain::Personal),
+		OwnedLocker->GetInventoryManager());
 	TestEqual(
 		TEXT("The recovered context reuses the Base Storage VM"),
 		Widget->GetBaseStorageViewModel(),
@@ -1568,6 +1856,333 @@ bool FRpgBaseTerminalContextLifecycleTest::RunTest(
 		4u);
 
 	Widget->DeactivateWidget();
+	return true;
+}
+
+IMPLEMENT_SIMPLE_AUTOMATION_TEST(
+	FRpgBaseStorageLocalProjectionTest,
+	"SurvivalRpg.Inventory.UI.BaseTerminal.LocalResourceProjection",
+	EAutomationTestFlags::EditorContext | EAutomationTestFlags::EngineFilter)
+
+bool FRpgBaseStorageLocalProjectionTest::RunTest(
+	const FString& Parameters)
+{
+	using namespace RpgBaseTerminalWidgetTests;
+
+	FScopedWidgetWorld TestWorld;
+	const FScopedWidgetWorld::FBaseTerminalContext Context =
+		TestWorld.CreateBaseTerminalContext(TEXT("LocalProjection"));
+	if (!TestTrue(TEXT("Local projection fixture is valid"), Context.IsValid()))
+	{
+		return false;
+	}
+
+	// This test isolates the VM's local projection from the shared-capacity migration being exercised by storage
+	// foundation tests. The legacy per-definition fixture gives both rows exact, deterministic capacities.
+	FBoolProperty* SharedCapacityProperty =
+		FindFProperty<FBoolProperty>(
+			URpgBaseStorageComponent::StaticClass(),
+			TEXT("bUseSharedMaterialCapacity"));
+	if (!TestNotNull(
+			TEXT("Base storage exposes its shared-capacity migration switch"),
+			SharedCapacityProperty))
+	{
+		return false;
+	}
+	SharedCapacityProperty->SetPropertyValue_InContainer(
+		Context.BaseStorage,
+		false);
+
+	const TSubclassOf<URpgInventoryItemDefinition> ConsumableDefinition =
+		URpgInventoryAutomationTestBulkConsumableDefinition::StaticClass();
+	const TSubclassOf<URpgInventoryItemDefinition> MaterialDefinition =
+		URpgInventoryAutomationTestMaterialDefinition::StaticClass();
+	Context.BaseStorage->AddResourceCapacity(ConsumableDefinition, 10);
+	TestTrue(
+		TEXT("Consumable fixture receives two stored units"),
+		Context.BaseStorage->StoreDefinitionResource(
+			ConsumableDefinition,
+			2));
+	Context.BaseStorage->AddResourceCapacity(MaterialDefinition, 10);
+	TestTrue(
+		TEXT("Material fixture reaches the warning threshold"),
+		Context.BaseStorage->StoreDefinitionResource(
+			MaterialDefinition,
+			8));
+
+	const TArray<FRpgBaseResourceEntryView> AuthoritativeBefore =
+		Context.BaseStorage->GetAllResources();
+	if (!TestEqual(
+			TEXT("Authoritative fixture contains two insertion-ordered rows"),
+			AuthoritativeBefore.Num(),
+			2))
+	{
+		return false;
+	}
+
+	URpgBaseStorageViewModel* ViewModel =
+		NewObject<URpgBaseStorageViewModel>(TestWorld.GetTestWorld());
+	ViewModel->BindBaseStorage(
+		Context.BaseStorage,
+		TArray<TSubclassOf<URpgInventoryItemDefinition>>());
+	TArray<URpgBaseResourceEntryViewModel*> Rows = ViewModel->GetResources();
+	if (!TestEqual(
+			TEXT("Unfiltered VM projects both authoritative rows"),
+			Rows.Num(),
+			2))
+	{
+		return false;
+	}
+
+	URpgBaseResourceEntryViewModel* MaterialRow = nullptr;
+	for (URpgBaseResourceEntryViewModel* Row : Rows)
+	{
+		if (Row && Row->GetItemDefinition() == MaterialDefinition)
+		{
+			MaterialRow = Row;
+			break;
+		}
+	}
+	TestNotNull(TEXT("Material row is projected"), MaterialRow);
+	TestTrue(
+		TEXT("A resource at exactly 80 percent emits the capacity warning"),
+		MaterialRow && MaterialRow->HasCapacityWarning());
+	TestEqual(
+		TEXT("Material category comes from static item traits"),
+		MaterialRow ? MaterialRow->GetItemCategory() : ERpgInventoryItemCategory::None,
+		ERpgInventoryItemCategory::Material);
+
+	FRpgBaseStorageLocalSummary Summary = ViewModel->GetSummary();
+	TestEqual(TEXT("Summary counts both eligible rows"), Summary.TotalResourceCount, 2);
+	TestEqual(TEXT("Summary counts both visible rows"), Summary.VisibleResourceCount, 2);
+	TestEqual(TEXT("Summary totals stored units"), Summary.TotalStoredUnits, int64(10));
+	TestEqual(TEXT("Summary totals per-definition capacity"), Summary.TotalCapacity, int64(20));
+	TestEqual(TEXT("Summary counts one warning row"), Summary.CapacityWarningCount, 1);
+	TestTrue(TEXT("Summary exposes the aggregate warning"), Summary.bHasCapacityWarning);
+
+	ViewModel->SetSearchText(FText::FromString(TEXT("mAtErIaL")));
+	Rows = ViewModel->GetResources();
+	TestEqual(TEXT("Search is case-insensitive"), Rows.Num(), 1);
+	TestTrue(
+		TEXT("Search selects the matching display name"),
+		Rows.Num() == 1 && Rows[0]->GetItemDefinition() == MaterialDefinition);
+	TestEqual(
+		TEXT("Summary retains domain health while reporting one visible row"),
+		ViewModel->GetSummary().VisibleResourceCount,
+		1);
+	TestEqual(
+		TEXT("Search does not shrink the summary's eligible domain"),
+		ViewModel->GetSummary().TotalResourceCount,
+		2);
+
+	ViewModel->SetSearchText(FText::GetEmpty());
+	ViewModel->SetCategoryFilter(ERpgInventoryItemCategory::Consumable);
+	Rows = ViewModel->GetResources();
+	TestTrue(
+		TEXT("Category filtering uses static item traits"),
+		Rows.Num() == 1 && Rows[0]->GetItemDefinition() == ConsumableDefinition);
+
+	ViewModel->SetCategoryFilter(ERpgInventoryItemCategory::None);
+	ViewModel->SetLocalSort(
+		ERpgBaseResourceLocalSortMode::StoredCount,
+		true);
+	Rows = ViewModel->GetResources();
+	TestTrue(
+		TEXT("Local count sort presents the fuller row first"),
+		Rows.Num() == 2 && Rows[0]->GetItemDefinition() == MaterialDefinition);
+
+	const TArray<FRpgBaseResourceEntryView> AuthoritativeAfter =
+		Context.BaseStorage->GetAllResources();
+	if (TestEqual(
+			TEXT("Local sorting leaves the authoritative row count unchanged"),
+			AuthoritativeAfter.Num(),
+			AuthoritativeBefore.Num()) &&
+		AuthoritativeAfter.Num() == AuthoritativeBefore.Num())
+	{
+		for (int32 Index = 0; Index < AuthoritativeAfter.Num(); ++Index)
+		{
+			TestEqual(
+				*FString::Printf(
+					TEXT("Authoritative definition %d keeps its position"),
+					Index),
+				AuthoritativeAfter[Index].ItemDefinition,
+				AuthoritativeBefore[Index].ItemDefinition);
+			TestEqual(
+				*FString::Printf(
+					TEXT("Authoritative SortIndex %d remains unchanged"),
+					Index),
+				AuthoritativeAfter[Index].SortIndex,
+				AuthoritativeBefore[Index].SortIndex);
+		}
+	}
+
+	ViewModel->SetLocalSort(
+		ERpgBaseResourceLocalSortMode::ReplicatedOrder,
+		false);
+	Rows = ViewModel->GetResources();
+	TestTrue(
+		TEXT("ReplicatedOrder restores the server-provided insertion order"),
+		Rows.Num() == 2 && Rows[0]->GetItemDefinition() == ConsumableDefinition);
+	ViewModel->UnbindBaseStorage();
+	TestEqual(
+		TEXT("Unbinding clears local summary presentation"),
+		ViewModel->GetSummary().TotalResourceCount,
+		0);
+	return true;
+}
+
+IMPLEMENT_SIMPLE_AUTOMATION_TEST(
+	FRpgBaseTerminalDomainAndQuantityApiTest,
+	"SurvivalRpg.Inventory.UI.BaseTerminal.DomainAndQuantityApi",
+	EAutomationTestFlags::EditorContext | EAutomationTestFlags::EngineFilter)
+
+bool FRpgBaseTerminalDomainAndQuantityApiTest::RunTest(
+	const FString& Parameters)
+{
+	using namespace RpgBaseTerminalWidgetTests;
+
+	FScopedWidgetWorld TestWorld;
+	const FScopedWidgetWorld::FBaseTerminalContext Context =
+		TestWorld.CreateBaseTerminalContext(TEXT("DomainQuantity"));
+	if (!TestTrue(TEXT("Domain/quantity fixture is valid"), Context.IsValid()))
+	{
+		return false;
+	}
+
+	FBoolProperty* SharedCapacityProperty =
+		FindFProperty<FBoolProperty>(
+			URpgBaseStorageComponent::StaticClass(),
+			TEXT("bUseSharedMaterialCapacity"));
+	FEnumProperty* StationModeProperty =
+		FindFProperty<FEnumProperty>(
+			URpgBaseStorageStationComponent::StaticClass(),
+			TEXT("StationMode"));
+	if (!TestNotNull(TEXT("Shared-capacity fixture switch exists"), SharedCapacityProperty) ||
+		!TestNotNull(TEXT("Station mode fixture property exists"), StationModeProperty))
+	{
+		return false;
+	}
+	SharedCapacityProperty->SetPropertyValue_InContainer(
+		Context.BaseStorage,
+		false);
+	void* StationModeValue =
+		StationModeProperty->ContainerPtrToValuePtr<void>(Context.Station);
+	StationModeProperty->GetUnderlyingProperty()->SetIntPropertyValue(
+		StationModeValue,
+		static_cast<int64>(ERpgBaseStorageStationMode::Terminal));
+
+	const TSubclassOf<URpgInventoryItemDefinition> MaterialDefinition =
+		URpgInventoryAutomationTestMaterialDefinition::StaticClass();
+	Context.BaseStorage->AddResourceCapacity(MaterialDefinition, 25);
+	TestTrue(
+		TEXT("Quantity fixture stores seventeen units"),
+		Context.BaseStorage->StoreDefinitionResource(MaterialDefinition, 17));
+
+	UClass* BaseTerminalClass = LoadClass<URpgBaseTerminalWidget>(
+		nullptr,
+		BaseTerminalSpatialClassPath);
+	URpgBaseTerminalWidget* Widget = BaseTerminalClass
+		? CreateWidget<URpgBaseTerminalWidget>(
+			TestWorld.GetPlayerController(),
+			BaseTerminalClass)
+		: nullptr;
+	if (!TestNotNull(TEXT("Domain/quantity terminal widget exists"), Widget))
+	{
+		return false;
+	}
+
+	IRpgUIScreenPayloadReceiver::Execute_ReceiveScreenPayload(
+		Widget,
+		MakePayload(Widget, Context));
+	Widget->ActivateWidget();
+	TestEqual(
+		TEXT("Terminal defaults to the Materials domain"),
+		Widget->GetActiveDomain(),
+		ERpgBaseTerminalDomain::Materials);
+	TestTrue(
+		TEXT("Payload exposes Armory as a gameplay domain"),
+		Widget->IsDomainAvailable(ERpgBaseTerminalDomain::Armory));
+	TestTrue(
+		TEXT("Production Blueprint presents Armory through its authored spatial pane"),
+		Widget->CanPresentDomain(ERpgBaseTerminalDomain::Armory));
+	TestTrue(
+		TEXT("Authored Armory tab switches presentation without mutating gameplay"),
+		Widget->SetActiveDomain(ERpgBaseTerminalDomain::Armory));
+	TestEqual(
+		TEXT("Successful domain switch clears stale local feedback"),
+		Widget->GetLocalFeedback().Code,
+		ERpgBaseTerminalFeedbackCode::None);
+	TestTrue(
+		TEXT("Materials tab remains reachable after Armory presentation"),
+		Widget->SetActiveDomain(ERpgBaseTerminalDomain::Materials));
+
+	const TArray<ERpgBaseTerminalDomain> AvailableDomains =
+		Widget->GetAvailableDomains();
+	TestTrue(
+		TEXT("Available-domain API includes Materials"),
+		AvailableDomains.Contains(ERpgBaseTerminalDomain::Materials));
+	TestTrue(
+		TEXT("Available-domain API includes payload Armory"),
+		AvailableDomains.Contains(ERpgBaseTerminalDomain::Armory));
+
+	TestEqual(
+		TEXT("One preset resolves to one"),
+		Widget->ResolveWithdrawQuantity(
+			MaterialDefinition,
+			ERpgBaseTerminalQuantityPreset::One),
+		1);
+	TestEqual(
+		TEXT("Ten preset resolves to ten"),
+		Widget->ResolveWithdrawQuantity(
+			MaterialDefinition,
+			ERpgBaseTerminalQuantityPreset::Ten),
+		10);
+	TestEqual(
+		TEXT("Max preset resolves to current replicated stock"),
+		Widget->ResolveWithdrawQuantity(
+			MaterialDefinition,
+			ERpgBaseTerminalQuantityPreset::Max),
+		17);
+	TestEqual(
+		TEXT("Oversized custom quantity clamps to current stock"),
+		Widget->ResolveWithdrawQuantity(
+			MaterialDefinition,
+			ERpgBaseTerminalQuantityPreset::Custom,
+			99),
+		17);
+	TestEqual(
+		TEXT("Non-positive custom quantity fails local preflight"),
+		Widget->ResolveWithdrawQuantity(
+			MaterialDefinition,
+			ERpgBaseTerminalQuantityPreset::Custom,
+			0),
+		0);
+
+	URpgInventoryManagerComponent* PersonalInventory =
+		TestWorld.CreateInventory(TEXT("OptionalPersonalInventory"));
+	TestTrue(
+		TEXT("Host can supply an optional Personal inventory without manager creation"),
+		Widget->SetOptionalDomainInventory(
+			ERpgBaseTerminalDomain::Personal,
+			PersonalInventory));
+	TestEqual(
+		TEXT("Personal domain retains the supplied authoritative manager"),
+		Widget->GetDomainInventory(ERpgBaseTerminalDomain::Personal),
+		PersonalInventory);
+	TestTrue(
+		TEXT("Supplied Personal domain becomes available"),
+		Widget->IsDomainAvailable(ERpgBaseTerminalDomain::Personal));
+	TestTrue(
+		TEXT("Personal domain uses the authored owner-locker pane"),
+		Widget->CanPresentDomain(ERpgBaseTerminalDomain::Personal));
+	TestTrue(
+		TEXT("Personal tab accepts the supplied owner-authoritative inventory"),
+		Widget->SetActiveDomain(ERpgBaseTerminalDomain::Personal));
+
+	Widget->DeactivateWidget();
+	TestNull(
+		TEXT("Pooling clears optional domain inventory references"),
+		Widget->GetDomainInventory(ERpgBaseTerminalDomain::Personal));
 	return true;
 }
 

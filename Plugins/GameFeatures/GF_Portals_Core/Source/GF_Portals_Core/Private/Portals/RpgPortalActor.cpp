@@ -27,6 +27,7 @@
 #include "Portals/RpgPortalEncounterDefinition.h"
 #include "Portals/RpgPortalExitActor.h"
 #include "Portals/RpgPortalMessages.h"
+#include "Portals/RpgPortalStorageProgressionHook.h"
 #include "Portals/RpgPortalRealmEventDirector.h"
 #include "Portals/RpgPortalTravelComponent.h"
 #include "TimerManager.h"
@@ -313,6 +314,7 @@ bool ARpgPortalActor::TryClosePortal(AActor* ClosingActor)
 
 	if (UWorld* World = GetWorld())
 	{
+		FRpgPortalStorageProgressionHook::ApplyFirstEligibleCompletion(World, Message);
 		UGameplayMessageSubsystem& MessageSubsystem = UGameplayMessageSubsystem::Get(World);
 		MessageSubsystem.BroadcastMessage(RpgPortalGameplayTags::Rpg_Portal_Message_Completed, Message);
 	}

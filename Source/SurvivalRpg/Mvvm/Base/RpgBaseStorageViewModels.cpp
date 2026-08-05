@@ -9,6 +9,8 @@
 
 namespace
 {
+	constexpr float BaseStorageCapacityWarningThreshold = 0.8f;
+
 	constexpr ETextIdenticalModeFlags BaseStorageTextIdentityFlags =
 		ETextIdenticalModeFlags::DeepCompare |
 		ETextIdenticalModeFlags::LexicalCompareInvariants;
@@ -29,6 +31,16 @@ namespace
 		const URpgInventoryItemDefinition* ItemCDO = GetBaseStorageItemDefinitionCDO(ItemDefinition);
 		const URpgInventoryFragment_UIData* UIData = ItemCDO ? Cast<URpgInventoryFragment_UIData>(ItemCDO->FindFragmentByClass(URpgInventoryFragment_UIData::StaticClass())) : nullptr;
 		return UIData ? UIData->Icon : TSoftObjectPtr<UTexture2D>();
+	}
+
+	ERpgInventoryItemCategory GetBaseStorageItemCategory(TSubclassOf<URpgInventoryItemDefinition> ItemDefinition)
+	{
+		const URpgInventoryItemDefinition* ItemCDO = GetBaseStorageItemDefinitionCDO(ItemDefinition);
+		const URpgInventoryFragment_ItemTraits* Traits = ItemCDO
+			? Cast<URpgInventoryFragment_ItemTraits>(
+				ItemCDO->FindFragmentByClass(URpgInventoryFragment_ItemTraits::StaticClass()))
+			: nullptr;
+		return Traits ? Traits->ItemCategory : ERpgInventoryItemCategory::None;
 	}
 
 	bool AreDefinitionArraysEqual(
@@ -62,13 +74,17 @@ void URpgBaseResourceEntryViewModel::InitializeFromResourceEntry(const FRpgBaseR
 		? FMath::Clamp(static_cast<float>(NewCount) / static_cast<float>(NewCapacity), 0.0f, 1.0f)
 		: 0.0f;
 	const FText NewDisplayName = GetBaseStorageItemDisplayName(NewItemDefinition);
+	const ERpgInventoryItemCategory NewItemCategory = GetBaseStorageItemCategory(NewItemDefinition);
 	const TSoftObjectPtr<UTexture2D> NewIcon = GetBaseStorageItemIcon(NewItemDefinition);
 	const bool bNewIsEmpty = NewCount <= 0;
 	const bool bNewIsFull = NewCapacity > 0 && NewCount >= NewCapacity;
+	const bool bNewHasCapacityWarning =
+		NewCapacity > 0 && NewFillRatio >= BaseStorageCapacityWarningThreshold;
 
 	const bool bItemDefinitionChanged = ItemDefinition != NewItemDefinition;
 	const bool bDisplayNameChanged =
 		!DisplayName.IdenticalTo(NewDisplayName, BaseStorageTextIdentityFlags);
+	const bool bItemCategoryChanged = ItemCategory != NewItemCategory;
 	const bool bIconChanged = Icon != NewIcon;
 	const bool bCountChanged = Count != NewCount;
 	const bool bCapacityChanged = Capacity != NewCapacity;
@@ -77,9 +93,12 @@ void URpgBaseResourceEntryViewModel::InitializeFromResourceEntry(const FRpgBaseR
 	const bool bSortIndexChanged = SortIndex != Entry.SortIndex;
 	const bool bIsEmptyChanged = bIsEmpty != bNewIsEmpty;
 	const bool bIsFullChanged = bIsFull != bNewIsFull;
+	const bool bHasCapacityWarningChanged =
+		bHasCapacityWarning != bNewHasCapacityWarning;
 
 	ItemDefinition = NewItemDefinition;
 	DisplayName = NewDisplayName;
+	ItemCategory = NewItemCategory;
 	Icon = NewIcon;
 	Count = NewCount;
 	Capacity = NewCapacity;
@@ -88,6 +107,7 @@ void URpgBaseResourceEntryViewModel::InitializeFromResourceEntry(const FRpgBaseR
 	SortIndex = Entry.SortIndex;
 	bIsEmpty = bNewIsEmpty;
 	bIsFull = bNewIsFull;
+	bHasCapacityWarning = bNewHasCapacityWarning;
 
 	if (bItemDefinitionChanged)
 	{
@@ -96,6 +116,10 @@ void URpgBaseResourceEntryViewModel::InitializeFromResourceEntry(const FRpgBaseR
 	if (bDisplayNameChanged)
 	{
 		UE_MVVM_BROADCAST_FIELD_VALUE_CHANGED(DisplayName);
+	}
+	if (bItemCategoryChanged)
+	{
+		UE_MVVM_BROADCAST_FIELD_VALUE_CHANGED(ItemCategory);
 	}
 	if (bIconChanged)
 	{
@@ -128,6 +152,10 @@ void URpgBaseResourceEntryViewModel::InitializeFromResourceEntry(const FRpgBaseR
 	if (bIsFullChanged)
 	{
 		UE_MVVM_BROADCAST_FIELD_VALUE_CHANGED(bIsFull);
+	}
+	if (bHasCapacityWarningChanged)
+	{
+		UE_MVVM_BROADCAST_FIELD_VALUE_CHANGED(bHasCapacityWarning);
 	}
 }
 
@@ -177,10 +205,13 @@ void URpgBaseStorageViewModel::UnbindBaseStorage()
 	const bool bAllowedResourcesChanged = !AllowedResources.IsEmpty();
 	const bool bResourcesChanged = !Resources.IsEmpty();
 	const bool bResourceCountChanged = ResourceCount != 0;
+	const bool bSummaryChanged = Summary != FRpgBaseStorageLocalSummary();
 	ObservedBaseStorage = nullptr;
 	AllowedResources = EmptyAllowedResources;
 	Resources = EmptyResources;
+	AllResourceRows = EmptyResources;
 	ResourceCount = 0;
+	Summary = FRpgBaseStorageLocalSummary();
 
 	if (bObservedBaseStorageChanged)
 	{
@@ -197,6 +228,10 @@ void URpgBaseStorageViewModel::UnbindBaseStorage()
 	if (bResourceCountChanged)
 	{
 		UE_MVVM_BROADCAST_FIELD_VALUE_CHANGED(ResourceCount);
+	}
+	if (bSummaryChanged)
+	{
+		UE_MVVM_BROADCAST_FIELD_VALUE_CHANGED(Summary);
 	}
 	OnResourcesChanged.Broadcast();
 }
@@ -217,6 +252,54 @@ void URpgBaseStorageViewModel::SetAllowedResources(const TArray<TSubclassOf<URpg
 	AllowedResources = InAllowedResources;
 	RefreshResources();
 	UE_MVVM_BROADCAST_FIELD_VALUE_CHANGED(AllowedResources);
+}
+
+void URpgBaseStorageViewModel::SetSearchText(FText InSearchText)
+{
+	if (SearchText.IdenticalTo(InSearchText, BaseStorageTextIdentityFlags))
+	{
+		return;
+	}
+
+	SearchText = MoveTemp(InSearchText);
+	RefreshResources();
+	UE_MVVM_BROADCAST_FIELD_VALUE_CHANGED(SearchText);
+}
+
+void URpgBaseStorageViewModel::SetCategoryFilter(ERpgInventoryItemCategory InCategoryFilter)
+{
+	if (CategoryFilter == InCategoryFilter)
+	{
+		return;
+	}
+
+	CategoryFilter = InCategoryFilter;
+	RefreshResources();
+	UE_MVVM_BROADCAST_FIELD_VALUE_CHANGED(CategoryFilter);
+}
+
+void URpgBaseStorageViewModel::SetLocalSort(
+	ERpgBaseResourceLocalSortMode InSortMode,
+	bool bInSortDescending)
+{
+	if (LocalSortMode == InSortMode && bSortDescending == bInSortDescending)
+	{
+		return;
+	}
+
+	const bool bSortModeChanged = LocalSortMode != InSortMode;
+	const bool bDirectionChanged = bSortDescending != bInSortDescending;
+	LocalSortMode = InSortMode;
+	bSortDescending = bInSortDescending;
+	RefreshResources();
+	if (bSortModeChanged)
+	{
+		UE_MVVM_BROADCAST_FIELD_VALUE_CHANGED(LocalSortMode);
+	}
+	if (bDirectionChanged)
+	{
+		UE_MVVM_BROADCAST_FIELD_VALUE_CHANGED(bSortDescending);
+	}
 }
 
 TArray<URpgBaseResourceEntryViewModel*> URpgBaseStorageViewModel::GetResources() const
@@ -288,7 +371,7 @@ void URpgBaseStorageViewModel::CancelQueuedRefreshResources()
 void URpgBaseStorageViewModel::RebuildResources()
 {
 	TMap<TSubclassOf<URpgInventoryItemDefinition>, URpgBaseResourceEntryViewModel*> PreviousViewModelsByDefinition;
-	for (URpgBaseResourceEntryViewModel* ExistingViewModel : Resources)
+	for (URpgBaseResourceEntryViewModel* ExistingViewModel : AllResourceRows)
 	{
 		const TSubclassOf<URpgInventoryItemDefinition> ExistingDefinition = ExistingViewModel ? ExistingViewModel->GetItemDefinition() : nullptr;
 		if (ExistingDefinition && ExistingViewModel)
@@ -311,7 +394,7 @@ void URpgBaseStorageViewModel::RebuildResources()
 		return AllowedSet.Num() <= 0 || AllowedSet.Contains(ItemDefinition);
 	};
 
-	TArray<TObjectPtr<URpgBaseResourceEntryViewModel>> NewResources;
+	TArray<TObjectPtr<URpgBaseResourceEntryViewModel>> NewAllResourceRows;
 	TSet<TSubclassOf<URpgInventoryItemDefinition>> AddedDefinitions;
 	if (ObservedBaseStorage)
 	{
@@ -334,7 +417,7 @@ void URpgBaseStorageViewModel::RebuildResources()
 			}
 
 			ResourceViewModel->InitializeFromResourceEntry(Entry);
-			NewResources.Add(ResourceViewModel);
+			NewAllResourceRows.Add(ResourceViewModel);
 			AddedDefinitions.Add(Entry.ItemDefinition);
 		}
 
@@ -356,7 +439,7 @@ void URpgBaseStorageViewModel::RebuildResources()
 			Entry.ItemDefinition = AllowedDefinition;
 			Entry.Count = Count;
 			Entry.Capacity = Capacity;
-			Entry.SortIndex = NewResources.Num();
+			Entry.SortIndex = NewAllResourceRows.Num();
 
 			URpgBaseResourceEntryViewModel* ResourceViewModel = nullptr;
 			if (URpgBaseResourceEntryViewModel** ExistingViewModel = PreviousViewModelsByDefinition.Find(AllowedDefinition))
@@ -370,15 +453,138 @@ void URpgBaseStorageViewModel::RebuildResources()
 			}
 
 			ResourceViewModel->InitializeFromResourceEntry(Entry);
-			NewResources.Add(ResourceViewModel);
+			NewAllResourceRows.Add(ResourceViewModel);
 		}
 	}
 
+	FRpgBaseStorageLocalSummary NewSummary;
+	NewSummary.TotalResourceCount = NewAllResourceRows.Num();
+	if (ObservedBaseStorage)
+	{
+		NewSummary.UsedCapacityPoints =
+			ObservedBaseStorage->GetUsedMaterialCapacityPoints();
+		NewSummary.MaterialCapacityPoints =
+			ObservedBaseStorage->GetMaterialCapacityPoints();
+	}
+	for (const URpgBaseResourceEntryViewModel* Resource : NewAllResourceRows)
+	{
+		if (!Resource)
+		{
+			continue;
+		}
+
+		NewSummary.TotalStoredUnits += Resource->GetCount();
+		NewSummary.TotalCapacity += Resource->GetCapacity();
+		NewSummary.CapacityWarningCount += Resource->HasCapacityWarning() ? 1 : 0;
+		NewSummary.FullResourceCount +=
+			Resource->GetCapacity() > 0 && Resource->GetCount() >= Resource->GetCapacity()
+				? 1
+				: 0;
+	}
+	if (NewSummary.MaterialCapacityPoints > 0)
+	{
+		NewSummary.AggregateFillRatio = FMath::Clamp(
+			static_cast<float>(NewSummary.UsedCapacityPoints) /
+				static_cast<float>(NewSummary.MaterialCapacityPoints),
+			0.0f,
+			1.0f);
+	}
+	else if (NewSummary.TotalCapacity > 0)
+	{
+		NewSummary.AggregateFillRatio = FMath::Clamp(
+			static_cast<float>(NewSummary.TotalStoredUnits) /
+				static_cast<float>(NewSummary.TotalCapacity),
+			0.0f,
+			1.0f);
+	}
+	NewSummary.bHasCapacityWarning =
+		NewSummary.AggregateFillRatio >= BaseStorageCapacityWarningThreshold ||
+		NewSummary.CapacityWarningCount > 0;
+
+	const FString SearchQuery = SearchText.ToString().TrimStartAndEnd();
+	TArray<TObjectPtr<URpgBaseResourceEntryViewModel>> NewResources;
+	NewResources.Reserve(NewAllResourceRows.Num());
+	for (URpgBaseResourceEntryViewModel* Resource : NewAllResourceRows)
+	{
+		if (!Resource)
+		{
+			continue;
+		}
+
+		if (CategoryFilter != ERpgInventoryItemCategory::None &&
+			Resource->GetItemCategory() != CategoryFilter)
+		{
+			continue;
+		}
+		if (!SearchQuery.IsEmpty() &&
+			!Resource->GetDisplayName().ToString().Contains(
+				SearchQuery,
+				ESearchCase::IgnoreCase))
+		{
+			continue;
+		}
+
+		NewResources.Add(Resource);
+	}
+
+	if (LocalSortMode != ERpgBaseResourceLocalSortMode::ReplicatedOrder)
+	{
+		NewResources.StableSort(
+			[this](const URpgBaseResourceEntryViewModel& Left,
+				const URpgBaseResourceEntryViewModel& Right)
+			{
+				int32 Comparison = 0;
+				switch (LocalSortMode)
+				{
+				case ERpgBaseResourceLocalSortMode::Name:
+					Comparison = Left.GetDisplayName().ToString().Compare(
+						Right.GetDisplayName().ToString(),
+						ESearchCase::IgnoreCase);
+					break;
+				case ERpgBaseResourceLocalSortMode::Category:
+					Comparison = FMath::Sign(
+						static_cast<int32>(Left.GetItemCategory()) -
+						static_cast<int32>(Right.GetItemCategory()));
+					break;
+				case ERpgBaseResourceLocalSortMode::StoredCount:
+					Comparison = FMath::Sign(Left.GetCount() - Right.GetCount());
+					break;
+				case ERpgBaseResourceLocalSortMode::FreeCapacity:
+					Comparison = FMath::Sign(
+						Left.GetFreeCapacity() - Right.GetFreeCapacity());
+					break;
+				case ERpgBaseResourceLocalSortMode::FillRatio:
+					Comparison = Left.GetFillRatio() < Right.GetFillRatio()
+						? -1
+						: (Left.GetFillRatio() > Right.GetFillRatio() ? 1 : 0);
+					break;
+				case ERpgBaseResourceLocalSortMode::ReplicatedOrder:
+				default:
+					break;
+				}
+
+				if (Comparison != 0)
+				{
+					return bSortDescending ? Comparison > 0 : Comparison < 0;
+				}
+				if (Left.GetSortIndex() != Right.GetSortIndex())
+				{
+					return Left.GetSortIndex() < Right.GetSortIndex();
+				}
+				return Left.GetItemDefinition()->GetPathName() <
+					Right.GetItemDefinition()->GetPathName();
+			});
+	}
+
 	const int32 NewResourceCount = NewResources.Num();
+	NewSummary.VisibleResourceCount = NewResourceCount;
 	const bool bResourcesChanged = Resources != NewResources;
 	const bool bResourceCountChanged = ResourceCount != NewResourceCount;
+	const bool bSummaryChanged = Summary != NewSummary;
+	AllResourceRows = MoveTemp(NewAllResourceRows);
 	Resources = MoveTemp(NewResources);
 	ResourceCount = NewResourceCount;
+	Summary = NewSummary;
 	if (bResourcesChanged)
 	{
 		UE_MVVM_BROADCAST_FIELD_VALUE_CHANGED(Resources);
@@ -386,6 +592,10 @@ void URpgBaseStorageViewModel::RebuildResources()
 	if (bResourceCountChanged)
 	{
 		UE_MVVM_BROADCAST_FIELD_VALUE_CHANGED(ResourceCount);
+	}
+	if (bSummaryChanged)
+	{
+		UE_MVVM_BROADCAST_FIELD_VALUE_CHANGED(Summary);
 	}
 
 	OnResourcesChanged.Broadcast();

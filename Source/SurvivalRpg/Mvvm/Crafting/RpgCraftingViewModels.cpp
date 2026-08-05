@@ -3,6 +3,8 @@
 #include "GameFramework/GameStateBase.h"
 #include "GameFramework/GameplayMessageSubsystem.h"
 #include "SurvivalRpg/Base/RpgBaseStorageComponent.h"
+#include "SurvivalRpg/Base/RpgWorldStorageKnowledgeComponent.h"
+#include "SurvivalRpg/Core/Game/RpgGameStateBase.h"
 #include "SurvivalRpg/Crafting/RpgCraftingRecipeDefinition.h"
 #include "SurvivalRpg/Crafting/RpgRecipeUnlockComponent.h"
 #include "SurvivalRpg/Inventory/RpgInventoryFragment_ItemTraits.h"
@@ -531,6 +533,7 @@ void URpgCraftingStationViewModel::BindCraftingStation(URpgCraftingStationCompon
 {
 	if (ObservedStation == InStation && RequestingActor == InRequestingActor)
 	{
+		BindWorldKnowledgeListener();
 		Refresh();
 		return;
 	}
@@ -541,9 +544,11 @@ void URpgCraftingStationViewModel::BindCraftingStation(URpgCraftingStationCompon
 	const bool bRequestingActorChanged = RequestingActor != NewRequestingActor;
 
 	UnregisterMessageListeners();
+	UnbindWorldKnowledgeListener();
 	ObservedStation = NewObservedStation;
 	RequestingActor = NewRequestingActor;
 	RegisterMessageListeners();
+	BindWorldKnowledgeListener();
 	Refresh();
 
 	if (bObservedStationChanged)
@@ -559,6 +564,7 @@ void URpgCraftingStationViewModel::BindCraftingStation(URpgCraftingStationCompon
 void URpgCraftingStationViewModel::UnbindCraftingStation()
 {
 	UnregisterMessageListeners();
+	UnbindWorldKnowledgeListener();
 	CancelQueuedRefresh();
 
 	const FText NewPauseResumeButtonText = MakePauseResumeButtonText(false);
@@ -919,6 +925,40 @@ void URpgCraftingStationViewModel::UnregisterMessageListeners()
 	{
 		BaseStorageChangedHandle.Unregister();
 	}
+}
+
+void URpgCraftingStationViewModel::BindWorldKnowledgeListener()
+{
+	UnbindWorldKnowledgeListener();
+
+	UWorld* World = ObservedStation ? ObservedStation->GetWorld() : nullptr;
+	ARpgGameStateBase* GameState = World
+		? World->GetGameState<ARpgGameStateBase>()
+		: nullptr;
+	URpgWorldStorageKnowledgeComponent* Knowledge = GameState
+		? GameState->GetWorldStorageKnowledgeComponent()
+		: nullptr;
+	if (!Knowledge)
+	{
+		return;
+	}
+
+	ObservedWorldKnowledge = Knowledge;
+	Knowledge->OnKnowledgeChanged.AddUniqueDynamic(
+		this,
+		&ThisClass::HandleWorldKnowledgeChanged);
+}
+
+void URpgCraftingStationViewModel::UnbindWorldKnowledgeListener()
+{
+	if (URpgWorldStorageKnowledgeComponent* Knowledge =
+			ObservedWorldKnowledge.Get())
+	{
+		Knowledge->OnKnowledgeChanged.RemoveDynamic(
+			this,
+			&ThisClass::HandleWorldKnowledgeChanged);
+	}
+	ObservedWorldKnowledge.Reset();
 }
 
 void URpgCraftingStationViewModel::RequestRefresh(uint8 RefreshDomains)
@@ -1577,5 +1617,14 @@ void URpgCraftingStationViewModel::HandleInventoryChanged(FGameplayTag Channel, 
 
 void URpgCraftingStationViewModel::HandleBaseStorageChanged(FGameplayTag Channel, const FRpgBaseResourceChangeMessage& Message)
 {
+	RequestRefresh(CraftingRefreshDomains::RecipesAndDetails);
+}
+
+void URpgCraftingStationViewModel::HandleWorldKnowledgeChanged(
+	FGameplayTag KnowledgeTag,
+	bool bIsKnown)
+{
+	(void)KnowledgeTag;
+	(void)bIsKnown;
 	RequestRefresh(CraftingRefreshDomains::RecipesAndDetails);
 }

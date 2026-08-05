@@ -394,7 +394,7 @@ void URpgInventoryControllerActionsWidget::HandlePreviousPanelAction()
 		*GetNameSafe(this),
 		*GetNameSafe(PanelNavigator));
 
-	if (PanelNavigator && PanelNavigator->ActivatePreviousPanel())
+	if (NativeHandlePreviousPanelAction())
 	{
 		RequestRefreshFocus();
 	}
@@ -406,10 +406,20 @@ void URpgInventoryControllerActionsWidget::HandleNextPanelAction()
 		*GetNameSafe(this),
 		*GetNameSafe(PanelNavigator));
 
-	if (PanelNavigator && PanelNavigator->ActivateNextPanel())
+	if (NativeHandleNextPanelAction())
 	{
 		RequestRefreshFocus();
 	}
+}
+
+bool URpgInventoryControllerActionsWidget::NativeHandlePreviousPanelAction()
+{
+	return PanelNavigator && PanelNavigator->ActivatePreviousPanel();
+}
+
+bool URpgInventoryControllerActionsWidget::NativeHandleNextPanelAction()
+{
+	return PanelNavigator && PanelNavigator->ActivateNextPanel();
 }
 
 void URpgInventoryControllerActionsWidget::HandleQuickTransferAction()

@@ -75,6 +75,18 @@ protected:
 	virtual void NativeOnInventoryActivePanelChanged(FName PanelId, int32 PanelIndex);
 
 	/**
+	 * Handles the authored previous-panel action. Derived inventory screens may reinterpret the shoulder action as a
+	 * higher-level tab change; returning true means the action was consumed and focus was already refreshed as needed.
+	 */
+	virtual bool NativeHandlePreviousPanelAction();
+
+	/**
+	 * Handles the authored next-panel action. The default advances the screen-local panel navigator without mutating
+	 * gameplay state; derived screens may consume it for presentation-only domain tabs.
+	 */
+	virtual bool NativeHandleNextPanelAction();
+
+	/**
 	 * Resolves the visible quick-transfer label for the current valid selection.
 	 * The default preserves the authored CommonUI action-row display name.
 	 */

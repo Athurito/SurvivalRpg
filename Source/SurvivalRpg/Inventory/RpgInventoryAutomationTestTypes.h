@@ -213,6 +213,21 @@ public:
 	virtual bool IsEditorOnly() const override { return true; }
 };
 
+/** Editor-only stateless BulkResource with Consumable presentation for local storage-filter tests. */
+UCLASS(NotBlueprintable, Transient)
+class URpgInventoryAutomationTestBulkConsumableDefinition final
+	: public URpgInventoryItemDefinition
+{
+	GENERATED_BODY()
+
+public:
+	explicit URpgInventoryAutomationTestBulkConsumableDefinition(
+		const FObjectInitializer& ObjectInitializer =
+			FObjectInitializer::Get());
+
+	virtual bool IsEditorOnly() const override { return true; }
+};
+
 /** Editor-only non-stackable material that owns a nested container, used to prevent BaseStorage subtree loss. */
 UCLASS(NotBlueprintable, Transient)
 class URpgInventoryAutomationTestMaterialContainerDefinition final
@@ -222,6 +237,21 @@ class URpgInventoryAutomationTestMaterialContainerDefinition final
 
 public:
 	explicit URpgInventoryAutomationTestMaterialContainerDefinition(
+		const FObjectInitializer& ObjectInitializer =
+			FObjectInitializer::Get());
+
+	virtual bool IsEditorOnly() const override { return true; }
+};
+
+/** Editor-only invalid Rift item that owns a nested container, used to prove containment fails closed. */
+UCLASS(NotBlueprintable, Transient)
+class URpgInventoryAutomationTestContainedContainerDefinition final
+	: public URpgInventoryItemDefinition
+{
+	GENERATED_BODY()
+
+public:
+	explicit URpgInventoryAutomationTestContainedContainerDefinition(
 		const FObjectInitializer& ObjectInitializer =
 			FObjectInitializer::Get());
 
