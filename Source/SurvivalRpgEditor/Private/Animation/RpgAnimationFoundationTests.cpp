@@ -3,6 +3,7 @@
 #if WITH_DEV_AUTOMATION_TESTS
 
 #include "Animation/AnimBlueprint.h"
+#include "Components/SkeletalMeshComponent.h"
 #include "SurvivalRpg/Animation/RpgAnimInstance.h"
 #include "Engine/Blueprint.h"
 #include "Misc/AutomationTest.h"
@@ -49,6 +50,23 @@ bool FRpgReplicatedAccelerationRoundTripTest::RunTest(const FString& Parameters)
 	FRpgReplicatedAcceleration InvalidMaximum;
 	InvalidMaximum.SetFromAcceleration(FVector(100.0, 200.0, 300.0), 0.0);
 	TestEqual(TEXT("A non-positive maximum decodes to zero"), InvalidMaximum.ToAcceleration(0.0), FVector::ZeroVector);
+	return true;
+}
+
+IMPLEMENT_SIMPLE_AUTOMATION_TEST(
+	FRpgRegularAnimationRemainsParallelTest,
+	"SurvivalRpg.Animation.Threading.RegularAnimationRemainsParallel",
+	EAutomationTestFlags::EditorContext |
+		EAutomationTestFlags::EngineFilter)
+
+bool FRpgRegularAnimationRemainsParallelTest::RunTest(const FString& Parameters)
+{
+	USkeletalMeshComponent* MeshComponent = NewObject<USkeletalMeshComponent>();
+	URpgAnimInstance* AnimInstance = NewObject<URpgAnimInstance>(MeshComponent);
+
+	TestTrue(
+		TEXT("Animation outside a listen-server autonomous move tick remains parallel"),
+		AnimInstance->CanRunParallelWork());
 	return true;
 }
 

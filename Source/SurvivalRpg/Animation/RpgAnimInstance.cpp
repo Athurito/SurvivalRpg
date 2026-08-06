@@ -2,6 +2,8 @@
 
 #include "RpgAnimInstance.h"
 #include "AbilitySystemGlobals.h"
+#include "Components/SkeletalMeshComponent.h"
+#include "Engine/World.h"
 #include "GameFramework/CharacterMovementComponent.h"
 
 #if WITH_EDITOR
@@ -17,6 +19,32 @@
 URpgAnimInstance::URpgAnimInstance(const FObjectInitializer& ObjectInitializer)
 	: Super(ObjectInitializer)
 {
+}
+
+bool URpgAnimInstance::CanRunParallelWork() const
+{
+	if (!Super::CanRunParallelWork())
+	{
+		return false;
+	}
+
+	const ARpgCharacter* Character = Cast<ARpgCharacter>(TryGetPawnOwner());
+	const USkeletalMeshComponent* MeshComponent = GetSkelMeshComponent();
+	const UWorld* World = GetWorld();
+
+	const bool bIsRemoteAutonomousMoveOnListenServer =
+		World &&
+		World->GetNetMode() == NM_ListenServer &&
+		Character &&
+		Character->GetLocalRole() == ROLE_Authority &&
+		Character->GetRemoteRole() == ROLE_AutonomousProxy &&
+		MeshComponent &&
+		MeshComponent->bOnlyAllowAutonomousTickPose &&
+		MeshComponent->bIsAutonomousTickPose;
+
+	// Parallel updates collapse several autonomous move pose ticks into the last move delta.
+	// Updating this narrow path immediately preserves the full animation time and notify order.
+	return !bIsRemoteAutonomousMoveOnListenServer;
 }
 
 void FRpgAnimInstanceProxy::PreUpdate(UAnimInstance* InAnimInstance, float DeltaSeconds)
