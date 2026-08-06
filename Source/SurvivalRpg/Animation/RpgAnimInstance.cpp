@@ -2,6 +2,9 @@
 
 #include "RpgAnimInstance.h"
 #include "AbilitySystemGlobals.h"
+#include "Components/SkeletalMeshComponent.h"
+#include "Engine/World.h"
+#include "GameFramework/CharacterMovementComponent.h"
 
 #if WITH_EDITOR
 #include "Misc/DataValidation.h"
@@ -16,6 +19,82 @@
 URpgAnimInstance::URpgAnimInstance(const FObjectInitializer& ObjectInitializer)
 	: Super(ObjectInitializer)
 {
+}
+
+bool URpgAnimInstance::CanRunParallelWork() const
+{
+	if (!Super::CanRunParallelWork())
+	{
+		return false;
+	}
+
+	const ARpgCharacter* Character = Cast<ARpgCharacter>(TryGetPawnOwner());
+	const USkeletalMeshComponent* MeshComponent = GetSkelMeshComponent();
+	const UWorld* World = GetWorld();
+
+	const bool bIsRemoteAutonomousMoveOnListenServer =
+		World &&
+		World->GetNetMode() == NM_ListenServer &&
+		Character &&
+		Character->GetLocalRole() == ROLE_Authority &&
+		Character->GetRemoteRole() == ROLE_AutonomousProxy &&
+		MeshComponent &&
+		MeshComponent->bOnlyAllowAutonomousTickPose &&
+		MeshComponent->bIsAutonomousTickPose;
+
+	// Parallel updates collapse several autonomous move pose ticks into the last move delta.
+	// Updating this narrow path immediately preserves the full animation time and notify order.
+	return !bIsRemoteAutonomousMoveOnListenServer;
+}
+
+void FRpgAnimInstanceProxy::PreUpdate(UAnimInstance* InAnimInstance, float DeltaSeconds)
+{
+	Super::PreUpdate(InAnimInstance, DeltaSeconds);
+
+	WorldVelocity = FVector::ZeroVector;
+	LocalVelocity = FVector::ZeroVector;
+	WorldAcceleration = FVector::ZeroVector;
+	LocalAcceleration = FVector::ZeroVector;
+	GroundSpeed = 0.0f;
+	VerticalVelocity = 0.0f;
+	GroundDistance = -1.0f;
+	AimYaw = 0.0f;
+	AimPitch = 0.0f;
+	bHasVelocity = false;
+	bHasAcceleration = false;
+	bIsFalling = false;
+	bIsMovingOnGround = false;
+	bIsCrouching = false;
+
+	const ARpgCharacter* Character = InAnimInstance ? Cast<ARpgCharacter>(InAnimInstance->TryGetPawnOwner()) : nullptr;
+	if (!Character)
+	{
+		return;
+	}
+
+	URpgCharacterMovementComponent* MovementComponent = Cast<URpgCharacterMovementComponent>(Character->GetCharacterMovement());
+	if (!MovementComponent)
+	{
+		return;
+	}
+
+	const FQuat ActorRotation = Character->GetActorQuat();
+	WorldVelocity = MovementComponent->Velocity;
+	LocalVelocity = ActorRotation.UnrotateVector(WorldVelocity);
+	WorldAcceleration = MovementComponent->GetCurrentAcceleration();
+	LocalAcceleration = ActorRotation.UnrotateVector(WorldAcceleration);
+	GroundSpeed = WorldVelocity.Size2D();
+	VerticalVelocity = WorldVelocity.Z;
+	GroundDistance = MovementComponent->GetGroundInfo().GroundDistance;
+	bHasVelocity = !WorldVelocity.IsNearlyZero();
+	bHasAcceleration = !WorldAcceleration.IsNearlyZero();
+	bIsFalling = MovementComponent->IsFalling();
+	bIsMovingOnGround = MovementComponent->IsMovingOnGround();
+	bIsCrouching = Character->bIsCrouched;
+
+	const FRotator AimDelta = (Character->GetBaseAimRotation() - Character->GetActorRotation()).GetNormalized();
+	AimYaw = AimDelta.Yaw;
+	AimPitch = AimDelta.Pitch;
 }
 
 void URpgAnimInstance::InitializeWithAbilitySystem(UAbilitySystemComponent* ASC)
@@ -49,18 +128,34 @@ void URpgAnimInstance::NativeInitializeAnimation()
 	}
 }
 
-void URpgAnimInstance::NativeUpdateAnimation(float DeltaSeconds)
+void URpgAnimInstance::NativeThreadSafeUpdateAnimation(float DeltaSeconds)
 {
-	Super::NativeUpdateAnimation(DeltaSeconds);
+	Super::NativeThreadSafeUpdateAnimation(DeltaSeconds);
 
-	const ARpgCharacter* Character = Cast<ARpgCharacter>(GetOwningActor());
-	if (!Character)
-	{
-		return;
-	}
+	const FRpgAnimInstanceProxy& Proxy = GetProxyOnAnyThread<FRpgAnimInstanceProxy>();
+	WorldVelocity = Proxy.WorldVelocity;
+	LocalVelocity = Proxy.LocalVelocity;
+	WorldAcceleration = Proxy.WorldAcceleration;
+	LocalAcceleration = Proxy.LocalAcceleration;
+	LocomotionGroundSpeed = Proxy.GroundSpeed;
+	VerticalVelocity = Proxy.VerticalVelocity;
+	GroundDistance = Proxy.GroundDistance;
+	AimYaw = Proxy.AimYaw;
+	AimPitch = Proxy.AimPitch;
+	bHasVelocity = Proxy.bHasVelocity;
+	bHasAcceleration = Proxy.bHasAcceleration;
+	bLocomotionIsFalling = Proxy.bIsFalling;
+	bIsMovingOnGround = Proxy.bIsMovingOnGround;
+	bIsCrouching = Proxy.bIsCrouching;
+}
 
-	URpgCharacterMovementComponent* CharMoveComp = CastChecked<URpgCharacterMovementComponent>(Character->GetCharacterMovement());
-	const FRpgCharacterGroundInfo& GroundInfo = CharMoveComp->GetGroundInfo();
-	GroundDistance = GroundInfo.GroundDistance;
+FAnimInstanceProxy* URpgAnimInstance::CreateAnimInstanceProxy()
+{
+	return new FRpgAnimInstanceProxy(this);
+}
+
+void URpgAnimInstance::DestroyAnimInstanceProxy(FAnimInstanceProxy* InProxy)
+{
+	delete static_cast<FRpgAnimInstanceProxy*>(InProxy);
 }
 

@@ -43,10 +43,11 @@ public:
 	
 	virtual bool CanAttemptJump() const override;
 
-	// Returns the current ground info.  Calling this will update the ground info if it's out of date.
+	/** Returns cached ground data, updating its game-thread trace at most once per frame. */
 	UFUNCTION(BlueprintCallable, Category = "Rpg|CharacterMovement")
 	const FRpgCharacterGroundInfo& GetGroundInfo();
 
+	/** Supplies server acceleration to a simulated proxy so remote locomotion preserves starts, stops, and pivots. */
 	void SetReplicatedAcceleration(const FVector& InAcceleration);
 
 	//~UMovementComponent interface
@@ -58,7 +59,4 @@ protected:
 protected:
 	// Cached ground info for the character.  Do not access this directly!  It's only updated when accessed via GetGroundInfo().
 	FRpgCharacterGroundInfo CachedGroundInfo;
-
-	UPROPERTY(Transient)
-	bool bHasReplicatedAcceleration = false;
 };
