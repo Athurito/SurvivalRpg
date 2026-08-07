@@ -110,6 +110,14 @@
 			"Enabled": true
 		},
 		{
+			"Name": "BlendStack",
+			"Enabled": true
+		},
+		{
+			"Name": "AnimationWarping",
+			"Enabled": true
+		},
+		{
 			"Name": "RpgGaspLocomotion",
 			"Enabled": true
 		},

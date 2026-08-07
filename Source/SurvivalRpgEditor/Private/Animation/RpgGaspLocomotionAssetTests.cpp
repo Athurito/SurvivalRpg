@@ -11,7 +11,10 @@
 #include "Engine/DataTable.h"
 #include "Interfaces/IPluginManager.h"
 #include "Misc/AutomationTest.h"
+#include "Misc/PackageName.h"
 #include "Modules/ModuleManager.h"
+#include "PoseSearch/PoseSearchDatabase.h"
+#include "PoseSearch/PoseSearchNormalizationSet.h"
 #include "UObject/UObjectGlobals.h"
 
 namespace RpgGaspLocomotionAssetTests
@@ -22,6 +25,34 @@ namespace RpgGaspLocomotionAssetTests
 	constexpr TCHAR TargetSkeletonPackage[] = TEXT("/Game/SurvivalRpg/Characters/Mannequins/Meshes/SK_Mannequin");
 	constexpr TCHAR TargetMeshPackage[] = TEXT("/Game/SurvivalRpg/Characters/Mannequins/Meshes/SKM_Manny_Simple");
 	constexpr TCHAR NormalizationPackage[] = TEXT("/RpgGaspLocomotion/MotionMatching/NormalizationSets/PSN_Rpg_Locomotion");
+	constexpr TCHAR CrouchIdleRoot[] = TEXT("/RpgGaspLocomotion/Animations/Crouch/Idle/");
+	constexpr TCHAR CrouchTransitionRoot[] = TEXT("/RpgGaspLocomotion/Animations/Crouch/Transitions/");
+	constexpr TCHAR CrouchWalkRoot[] = TEXT("/RpgGaspLocomotion/Animations/Crouch/Walk/");
+	constexpr TCHAR StandIdleRoot[] = TEXT("/RpgGaspLocomotion/Animations/Stand/Idle/");
+	constexpr TCHAR StandRunRoot[] = TEXT("/RpgGaspLocomotion/Animations/Stand/Run/");
+	constexpr TCHAR StandIdlePackage[] = TEXT("/RpgGaspLocomotion/Animations/Stand/Idle/M_Neutral_Stand_Idle_Loop");
+	constexpr TCHAR StandToCrouchPackage[] = TEXT("/RpgGaspLocomotion/Animations/Crouch/Transitions/M_Neutral_Transition_Stand_to_Crouch");
+	constexpr TCHAR CrouchToStandPackage[] = TEXT("/RpgGaspLocomotion/Animations/Crouch/Transitions/M_Neutral_Transition_Crouch_to_Stand");
+	constexpr TCHAR TurnInPlaceDatabasePackage[] = TEXT("/RpgGaspLocomotion/MotionMatching/Databases/PSD_Rpg_Stand_TurnInPlace");
+
+	static const TCHAR* const TurnInPlaceAnimationPackages[] = {
+		TEXT("/RpgGaspLocomotion/Animations/Stand/Idle/M_Neutral_Stand_Turn_045_L"),
+		TEXT("/RpgGaspLocomotion/Animations/Stand/Idle/M_Neutral_Stand_Turn_045_R"),
+		TEXT("/RpgGaspLocomotion/Animations/Stand/Idle/M_Neutral_Stand_Turn_090_L"),
+		TEXT("/RpgGaspLocomotion/Animations/Stand/Idle/M_Neutral_Stand_Turn_090_R"),
+		TEXT("/RpgGaspLocomotion/Animations/Stand/Idle/M_Neutral_Stand_Turn_135_L"),
+		TEXT("/RpgGaspLocomotion/Animations/Stand/Idle/M_Neutral_Stand_Turn_135_R"),
+		TEXT("/RpgGaspLocomotion/Animations/Stand/Idle/M_Neutral_Stand_Turn_180_L"),
+		TEXT("/RpgGaspLocomotion/Animations/Stand/Idle/M_Neutral_Stand_Turn_180_R"),
+	};
+
+	static const TCHAR* const AddedDirectionalRunPackages[] = {
+		TEXT("/RpgGaspLocomotion/Animations/Stand/Run/M_Neutral_Run_Loop_BL"),
+		TEXT("/RpgGaspLocomotion/Animations/Stand/Run/M_Neutral_Run_Loop_BR"),
+		TEXT("/RpgGaspLocomotion/Animations/Stand/Run/M_Neutral_Run_Loop_FL"),
+		TEXT("/RpgGaspLocomotion/Animations/Stand/Run/M_Neutral_Run_Loop_FR"),
+		TEXT("/RpgGaspLocomotion/Animations/Stand/Run/M_Neutral_Run_Loop_LL"),
+	};
 
 	bool IsForbiddenDependency(const FString& PackageName)
 	{
@@ -58,7 +89,8 @@ namespace RpgGaspLocomotionAssetTests
 		const TCHAR* PackageName;
 		const TCHAR* AnimationPrefix;
 		const TCHAR* SchemaPackage;
-		int32 ExpectedAnimationCount;
+		int32 ExpectedAnimationDependencyCount;
+		int32 ExpectedDatabaseEntryCount;
 	};
 }
 
@@ -92,10 +124,16 @@ bool FRpgGaspLocomotionContentContractTest::RunTest(const FString& Parameters)
 		Assets,
 		true,
 		true);
-	TestEqual(TEXT("The curated plugin contains exactly 85 assets"), Assets.Num(), 85);
+	TestEqual(TEXT("The curated plugin contains exactly 107 assets"), Assets.Num(), 107);
 
 	TMap<FString, int32> ClassCounts;
 	int32 AnimationCount = 0;
+	int32 CrouchIdleCount = 0;
+	int32 CrouchTransitionCount = 0;
+	int32 CrouchWalkCount = 0;
+	int32 StandIdleCount = 0;
+	int32 StandRunCount = 0;
+	int32 TurnInPlaceSequenceCount = 0;
 	for (const FAssetData& AssetData : Assets)
 	{
 		const FString ClassName = AssetData.AssetClassPath.GetAssetName().ToString();
@@ -127,6 +165,14 @@ bool FRpgGaspLocomotionContentContractTest::RunTest(const FString& Parameters)
 		}
 
 		++AnimationCount;
+		const FString AnimationPackageName = AssetData.PackageName.ToString();
+		CrouchIdleCount += AnimationPackageName.StartsWith(CrouchIdleRoot);
+		CrouchTransitionCount += AnimationPackageName.StartsWith(CrouchTransitionRoot);
+		CrouchWalkCount += AnimationPackageName.StartsWith(CrouchWalkRoot);
+		StandIdleCount += AnimationPackageName.StartsWith(StandIdleRoot);
+		StandRunCount += AnimationPackageName.StartsWith(StandRunRoot);
+		TurnInPlaceSequenceCount += AnimationPackageName.StartsWith(StandIdleRoot) &&
+			AnimationPackageName.Contains(TEXT("_Stand_Turn_"));
 		UAnimSequence* Animation = Cast<UAnimSequence>(AssetData.GetAsset());
 		if (!TestNotNull(
 			*FString::Printf(TEXT("%s loads as an AnimSequence"), *AssetData.PackageName.ToString()),
@@ -174,19 +220,27 @@ bool FRpgGaspLocomotionContentContractTest::RunTest(const FString& Parameters)
 		}
 	}
 
-	TestEqual(TEXT("Exactly 75 curated AnimSequences are present"), AnimationCount, 75);
+	TestEqual(TEXT("Exactly 95 curated AnimSequences are present"), AnimationCount, 95);
+	TestEqual(TEXT("Exactly one crouch idle sequence is present"), CrouchIdleCount, 1);
+	TestEqual(TEXT("Exactly two crouch transition sequences are present"), CrouchTransitionCount, 2);
+	TestEqual(TEXT("Exactly eight crouch walk sequences are present"), CrouchWalkCount, 8);
+	TestEqual(TEXT("Exactly nine stand-idle-folder sequences are present"), StandIdleCount, 9);
+	TestEqual(TEXT("Exactly eight turn-in-place sequences are present"), TurnInPlaceSequenceCount, 8);
+	TestEqual(TEXT("Exactly 25 stand-run sequences are present"), StandRunCount, 25);
 	TestEqual(TEXT("Exactly one ChooserTable is present"), ClassCounts.FindRef(TEXT("ChooserTable")), 1);
 	TestEqual(TEXT("Exactly one MirrorDataTable is present"), ClassCounts.FindRef(TEXT("MirrorDataTable")), 1);
-	TestEqual(TEXT("Exactly five PoseSearchDatabases are present"), ClassCounts.FindRef(TEXT("PoseSearchDatabase")), 5);
+	TestEqual(TEXT("Exactly seven PoseSearchDatabases are present"), ClassCounts.FindRef(TEXT("PoseSearchDatabase")), 7);
 	TestEqual(TEXT("Exactly one PoseSearchNormalizationSet is present"), ClassCounts.FindRef(TEXT("PoseSearchNormalizationSet")), 1);
 	TestEqual(TEXT("Exactly two PoseSearchSchemas are present"), ClassCounts.FindRef(TEXT("PoseSearchSchema")), 2);
 
 	static const FDatabaseContract DatabaseContracts[] = {
-		{ TEXT("/RpgGaspLocomotion/MotionMatching/Databases/PSD_Rpg_Stand_Idle"), TEXT("/RpgGaspLocomotion/Animations/Stand/Idle/"), TEXT("/RpgGaspLocomotion/MotionMatching/Schemas/PSS_Rpg_Locomotion"), 5 },
-		{ TEXT("/RpgGaspLocomotion/MotionMatching/Databases/PSD_Rpg_Stand_Walk"), TEXT("/RpgGaspLocomotion/Animations/Stand/Walk/"), TEXT("/RpgGaspLocomotion/MotionMatching/Schemas/PSS_Rpg_Locomotion"), 29 },
-		{ TEXT("/RpgGaspLocomotion/MotionMatching/Databases/PSD_Rpg_Stand_Run"), TEXT("/RpgGaspLocomotion/Animations/Stand/Run/"), TEXT("/RpgGaspLocomotion/MotionMatching/Schemas/PSS_Rpg_Locomotion"), 20 },
-		{ TEXT("/RpgGaspLocomotion/MotionMatching/Databases/PSD_Rpg_Stand_Sprint"), TEXT("/RpgGaspLocomotion/Animations/Stand/Sprint/"), TEXT("/RpgGaspLocomotion/MotionMatching/Schemas/PSS_Rpg_Locomotion"), 10 },
-		{ TEXT("/RpgGaspLocomotion/MotionMatching/Databases/PSD_Rpg_Jump"), TEXT("/RpgGaspLocomotion/Animations/Jump/"), TEXT("/RpgGaspLocomotion/MotionMatching/Schemas/PSS_Rpg_Jump"), 11 },
+		{ TEXT("/RpgGaspLocomotion/MotionMatching/Databases/PSD_Rpg_Stand_Idle"), TEXT("/RpgGaspLocomotion/Animations/Stand/Idle/"), TEXT("/RpgGaspLocomotion/MotionMatching/Schemas/PSS_Rpg_Locomotion"), 1, 2 },
+		{ TEXT("/RpgGaspLocomotion/MotionMatching/Databases/PSD_Rpg_Stand_TurnInPlace"), TEXT("/RpgGaspLocomotion/Animations/Stand/Idle/"), TEXT("/RpgGaspLocomotion/MotionMatching/Schemas/PSS_Rpg_Locomotion"), 8, 8 },
+		{ TEXT("/RpgGaspLocomotion/MotionMatching/Databases/PSD_Rpg_Crouch"), TEXT("/RpgGaspLocomotion/Animations/Crouch/"), TEXT("/RpgGaspLocomotion/MotionMatching/Schemas/PSS_Rpg_Locomotion"), 10, 10 },
+		{ TEXT("/RpgGaspLocomotion/MotionMatching/Databases/PSD_Rpg_Stand_Walk"), TEXT("/RpgGaspLocomotion/Animations/Stand/Walk/"), TEXT("/RpgGaspLocomotion/MotionMatching/Schemas/PSS_Rpg_Locomotion"), 29, 29 },
+		{ TEXT("/RpgGaspLocomotion/MotionMatching/Databases/PSD_Rpg_Stand_Run"), TEXT("/RpgGaspLocomotion/Animations/Stand/Run/"), TEXT("/RpgGaspLocomotion/MotionMatching/Schemas/PSS_Rpg_Locomotion"), 25, 25 },
+		{ TEXT("/RpgGaspLocomotion/MotionMatching/Databases/PSD_Rpg_Stand_Sprint"), TEXT("/RpgGaspLocomotion/Animations/Stand/Sprint/"), TEXT("/RpgGaspLocomotion/MotionMatching/Schemas/PSS_Rpg_Locomotion"), 10, 10 },
+		{ TEXT("/RpgGaspLocomotion/MotionMatching/Databases/PSD_Rpg_Jump"), TEXT("/RpgGaspLocomotion/Animations/Jump/"), TEXT("/RpgGaspLocomotion/MotionMatching/Schemas/PSS_Rpg_Jump"), 11, 11 },
 	};
 
 	for (const FDatabaseContract& Contract : DatabaseContracts)
@@ -207,24 +261,160 @@ bool FRpgGaspLocomotionContentContractTest::RunTest(const FString& Parameters)
 		TestEqual(
 			*FString::Printf(TEXT("%s owns the expected animation group"), Contract.PackageName),
 			AnimationDependencyCount,
-			Contract.ExpectedAnimationCount);
+			Contract.ExpectedAnimationDependencyCount);
 		TestTrue(
 			*FString::Printf(TEXT("%s references its local schema"), Contract.PackageName),
 			Dependencies.Contains(FName(Contract.SchemaPackage)));
 		TestTrue(
 			*FString::Printf(TEXT("%s references the shared normalization set"), Contract.PackageName),
 			Dependencies.Contains(FName(NormalizationPackage)));
+
+		const FString DatabaseObjectPath = FString::Printf(
+			TEXT("%s.%s"),
+			Contract.PackageName,
+			*FPackageName::GetLongPackageAssetName(Contract.PackageName));
+		UPoseSearchDatabase* Database = LoadObject<UPoseSearchDatabase>(nullptr, *DatabaseObjectPath);
+		if (TestNotNull(
+			*FString::Printf(TEXT("%s loads as a Pose Search database"), Contract.PackageName),
+			Database))
+		{
+			TestEqual(
+				*FString::Printf(TEXT("%s contains the exact entry count"), Contract.PackageName),
+				Database->GetNumAnimationAssets(),
+				Contract.ExpectedDatabaseEntryCount);
+		}
+	}
+
+	UPoseSearchDatabase* StandIdleDatabase = LoadObject<UPoseSearchDatabase>(
+		nullptr,
+		TEXT("/RpgGaspLocomotion/MotionMatching/Databases/PSD_Rpg_Stand_Idle.PSD_Rpg_Stand_Idle"));
+	if (TestNotNull(TEXT("The stand-idle database loads for transition validation"), StandIdleDatabase))
+	{
+		bool bContainsStandIdle = false;
+		bool bContainsCrouchToStand = false;
+		bool bContainsTurnInPlace = false;
+		for (int32 Index = 0; Index < StandIdleDatabase->GetNumAnimationAssets(); ++Index)
+		{
+			const UObject* AnimationAsset = StandIdleDatabase->GetAnimationAsset(Index);
+			bContainsStandIdle |= AnimationAsset &&
+				AnimationAsset->GetOutermost()->GetName() == StandIdlePackage;
+			bContainsCrouchToStand |= AnimationAsset &&
+				AnimationAsset->GetOutermost()->GetName() == CrouchToStandPackage;
+			bContainsTurnInPlace |= AnimationAsset &&
+				AnimationAsset->GetOutermost()->GetName().Contains(TEXT("_Stand_Turn_"));
+		}
+		TestTrue(TEXT("The stand-idle database contains the neutral idle"), bContainsStandIdle);
+		TestTrue(TEXT("The stand-idle database contains Crouch-to-Stand"), bContainsCrouchToStand);
+		TestFalse(TEXT("The stand-idle database contains no turn-in-place clips"), bContainsTurnInPlace);
+	}
+
+	UPoseSearchDatabase* TurnInPlaceDatabase = LoadObject<UPoseSearchDatabase>(
+		nullptr,
+		TEXT("/RpgGaspLocomotion/MotionMatching/Databases/PSD_Rpg_Stand_TurnInPlace.PSD_Rpg_Stand_TurnInPlace"));
+	if (TestNotNull(TEXT("The turn-in-place database loads for exclusivity validation"), TurnInPlaceDatabase))
+	{
+		TSet<FString> ActualTurnPackages;
+		for (int32 Index = 0; Index < TurnInPlaceDatabase->GetNumAnimationAssets(); ++Index)
+		{
+			const UObject* AnimationAsset = TurnInPlaceDatabase->GetAnimationAsset(Index);
+			if (TestNotNull(TEXT("Every turn-in-place entry resolves"), AnimationAsset))
+			{
+				ActualTurnPackages.Add(AnimationAsset->GetOutermost()->GetName());
+			}
+		}
+
+		TestEqual(TEXT("The turn-in-place database has no duplicate entries"), ActualTurnPackages.Num(), 8);
+		for (const TCHAR* ExpectedPackage : TurnInPlaceAnimationPackages)
+		{
+			TestTrue(
+				*FString::Printf(TEXT("The turn-in-place database contains %s"), ExpectedPackage),
+				ActualTurnPackages.Contains(FString(ExpectedPackage)));
+		}
+	}
+
+	UPoseSearchDatabase* StandRunDatabase = LoadObject<UPoseSearchDatabase>(
+		nullptr,
+		TEXT("/RpgGaspLocomotion/MotionMatching/Databases/PSD_Rpg_Stand_Run.PSD_Rpg_Stand_Run"));
+	if (TestNotNull(TEXT("The stand-run database loads for directional-core validation"), StandRunDatabase))
+	{
+		TSet<FString> RunPackages;
+		for (int32 Index = 0; Index < StandRunDatabase->GetNumAnimationAssets(); ++Index)
+		{
+			if (const UObject* AnimationAsset = StandRunDatabase->GetAnimationAsset(Index))
+			{
+				RunPackages.Add(AnimationAsset->GetOutermost()->GetName());
+			}
+		}
+		TestEqual(TEXT("The stand-run database has no duplicate entries"), RunPackages.Num(), 25);
+		for (const TCHAR* ExpectedPackage : AddedDirectionalRunPackages)
+		{
+			TestTrue(
+				*FString::Printf(TEXT("The stand-run database contains %s"), ExpectedPackage),
+				RunPackages.Contains(FString(ExpectedPackage)));
+		}
+	}
+
+	UPoseSearchDatabase* CrouchDatabase = LoadObject<UPoseSearchDatabase>(
+		nullptr,
+		TEXT("/RpgGaspLocomotion/MotionMatching/Databases/PSD_Rpg_Crouch.PSD_Rpg_Crouch"));
+	if (TestNotNull(TEXT("The crouch database loads for category validation"), CrouchDatabase))
+	{
+		int32 DatabaseIdleCount = 0;
+		int32 DatabaseTransitionCount = 0;
+		int32 DatabaseWalkCount = 0;
+		bool bContainsStandToCrouch = false;
+		bool bContainsCrouchToStand = false;
+		for (int32 Index = 0; Index < CrouchDatabase->GetNumAnimationAssets(); ++Index)
+		{
+			const UObject* AnimationAsset = CrouchDatabase->GetAnimationAsset(Index);
+			if (!AnimationAsset)
+			{
+				continue;
+			}
+
+			const FString PackageName = AnimationAsset->GetOutermost()->GetName();
+			DatabaseIdleCount += PackageName.StartsWith(CrouchIdleRoot);
+			DatabaseTransitionCount += PackageName.StartsWith(CrouchTransitionRoot);
+			DatabaseWalkCount += PackageName.StartsWith(CrouchWalkRoot);
+			bContainsStandToCrouch |= PackageName == StandToCrouchPackage;
+			bContainsCrouchToStand |= PackageName == CrouchToStandPackage;
+		}
+		TestEqual(TEXT("The crouch database contains one idle entry"), DatabaseIdleCount, 1);
+		TestEqual(TEXT("The crouch database contains one enter-crouch transition"), DatabaseTransitionCount, 1);
+		TestEqual(TEXT("The crouch database contains eight walk entries"), DatabaseWalkCount, 8);
+		TestTrue(TEXT("The crouch database contains Stand-to-Crouch"), bContainsStandToCrouch);
+		TestFalse(TEXT("The crouch database leaves Crouch-to-Stand to stand idle"), bContainsCrouchToStand);
 	}
 
 	static const TCHAR* const DatabasePackages[] = {
+		TEXT("/RpgGaspLocomotion/MotionMatching/Databases/PSD_Rpg_Stand_Idle"),
+		TurnInPlaceDatabasePackage,
+		TEXT("/RpgGaspLocomotion/MotionMatching/Databases/PSD_Rpg_Crouch"),
+		TEXT("/RpgGaspLocomotion/MotionMatching/Databases/PSD_Rpg_Stand_Walk"),
+		TEXT("/RpgGaspLocomotion/MotionMatching/Databases/PSD_Rpg_Stand_Run"),
+		TEXT("/RpgGaspLocomotion/MotionMatching/Databases/PSD_Rpg_Stand_Sprint"),
+		TEXT("/RpgGaspLocomotion/MotionMatching/Databases/PSD_Rpg_Jump"),
+	};
+	static const TCHAR* const ChooserDatabasePackages[] = {
 		TEXT("/RpgGaspLocomotion/MotionMatching/Databases/PSD_Rpg_Stand_Idle"),
 		TEXT("/RpgGaspLocomotion/MotionMatching/Databases/PSD_Rpg_Stand_Walk"),
 		TEXT("/RpgGaspLocomotion/MotionMatching/Databases/PSD_Rpg_Stand_Run"),
 		TEXT("/RpgGaspLocomotion/MotionMatching/Databases/PSD_Rpg_Stand_Sprint"),
 		TEXT("/RpgGaspLocomotion/MotionMatching/Databases/PSD_Rpg_Jump"),
 	};
+	UPoseSearchNormalizationSet* NormalizationSet = LoadObject<UPoseSearchNormalizationSet>(
+		nullptr,
+		TEXT("/RpgGaspLocomotion/MotionMatching/NormalizationSets/PSN_Rpg_Locomotion.PSN_Rpg_Locomotion"));
+	if (TestNotNull(TEXT("The shared normalization set loads"), NormalizationSet))
+	{
+		TestEqual(
+			TEXT("The shared normalization set contains exactly seven databases"),
+			NormalizationSet->Databases.Num(),
+			static_cast<int32>(UE_ARRAY_COUNT(DatabasePackages)));
+	}
+
 	constexpr TCHAR ChooserPackage[] = TEXT("/RpgGaspLocomotion/MotionMatching/Choosers/CHT_Rpg_LocomotionDatabases");
-	for (const TCHAR* DatabasePackage : DatabasePackages)
+	for (const TCHAR* DatabasePackage : ChooserDatabasePackages)
 	{
 		TestTrue(
 			*FString::Printf(TEXT("The chooser references %s"), DatabasePackage),
@@ -232,6 +422,9 @@ bool FRpgGaspLocomotionContentContractTest::RunTest(const FString& Parameters)
 				FName(ChooserPackage),
 				FName(DatabasePackage),
 				UE::AssetRegistry::EDependencyCategory::Package));
+	}
+	for (const TCHAR* DatabasePackage : DatabasePackages)
+	{
 		TestTrue(
 			*FString::Printf(TEXT("The normalization set references %s"), DatabasePackage),
 			AssetRegistry.ContainsDependency(

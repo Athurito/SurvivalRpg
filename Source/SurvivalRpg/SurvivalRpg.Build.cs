@@ -11,6 +11,7 @@ public class SurvivalRpg : ModuleRules
 		PublicDependencyModuleNames.AddRange(new string[]
 		{
 			"AIModule",
+			"AnimationWarpingRuntime",
 			"AssetRegistry",
 			"Core",
 			"CoreUObject",
@@ -35,6 +36,7 @@ public class SurvivalRpg : ModuleRules
 		PrivateDependencyModuleNames.AddRange(
 			new string[]
 			{
+				"BlendStack",
 				"CommonInput",
 				"DeveloperSettings",
 				"EnhancedInput",

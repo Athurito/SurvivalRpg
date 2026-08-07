@@ -2,6 +2,9 @@
 
 #include "RpgAnimInstance.h"
 #include "AbilitySystemGlobals.h"
+#include "Animation/AnimSequenceBase.h"
+#include "AnimationWarpingLibrary.h"
+#include "BlendStack/BlendStackAnimNodeLibrary.h"
 #include "Components/SkeletalMeshComponent.h"
 #include "Engine/World.h"
 #include "GameFramework/CharacterMovementComponent.h"
@@ -17,10 +20,98 @@
 
 #include UE_INLINE_GENERATED_CPP_BY_NAME(RpgAnimInstance)
 
+namespace
+{
+constexpr float TurnInPlaceIdleSpeedThreshold = 3.0f;
+constexpr float TurnInPlaceCollectThreshold = 20.0f;
+constexpr float TurnInPlaceActivationThreshold = 30.0f;
+constexpr float TurnInPlaceCancelThreshold = 10.0f;
+constexpr float TurnInPlaceInactiveYawRateThreshold = 6.0f;
+constexpr float TurnInPlaceStableYawRateThreshold = 60.0f;
+constexpr float TurnInPlaceStabilityDuration = 0.08f;
+constexpr float TurnInPlaceCollectionTimeout = 0.2f;
+constexpr float TurnInPlaceRecoveryDuration = 0.15f;
+constexpr float TurnInPlaceSelectionTimeout = 0.25f;
+constexpr float TurnInPlaceActiveTimeout = 1.75f;
+constexpr float TurnInPlaceInactiveAccumulatorTimeout = 0.2f;
+constexpr float TurnInPlaceFinishedTimeTolerance = 0.05f;
+constexpr float TurnInPlaceLargePositionDelta = 200.0f;
+}
+
 
 URpgAnimInstance::URpgAnimInstance(const FObjectInitializer& ObjectInitializer)
 	: Super(ObjectInitializer)
 {
+}
+
+float URpgAnimInstance::QuantizeTurnInPlaceAngle(float SignedAngle)
+{
+	const float AbsoluteAngle = FMath::Min(FMath::Abs(SignedAngle), 180.0f);
+	if (AbsoluteAngle < TurnInPlaceActivationThreshold)
+	{
+		return 0.0f;
+	}
+
+	float QuantizedMagnitude = 180.0f;
+	if (AbsoluteAngle < 67.5f)
+	{
+		QuantizedMagnitude = 45.0f;
+	}
+	else if (AbsoluteAngle < 112.5f)
+	{
+		QuantizedMagnitude = 90.0f;
+	}
+	else if (AbsoluteAngle < 157.5f)
+	{
+		QuantizedMagnitude = 135.0f;
+	}
+
+	return SignedAngle < 0.0f ? -QuantizedMagnitude : QuantizedMagnitude;
+}
+
+float URpgAnimInstance::GetTurnInPlaceFacingDuration(float QuantizedAngle)
+{
+	const float AbsoluteAngle = FMath::Abs(QuantizedAngle);
+	if (AbsoluteAngle <= 45.0f)
+	{
+		return 0.45f;
+	}
+	if (AbsoluteAngle <= 90.0f)
+	{
+		return 0.65f;
+	}
+	if (AbsoluteAngle <= 135.0f)
+	{
+		return 0.85f;
+	}
+	return 1.0f;
+}
+
+float URpgAnimInstance::CalculateTurnInPlaceYawDelta(float PreviousActorYaw, float CurrentActorYaw)
+{
+	return FMath::FindDeltaAngleDegrees(PreviousActorYaw, CurrentActorYaw);
+}
+
+FTransformTrajectory URpgAnimInstance::MakeTurnInPlaceSyntheticTrajectory(
+	const FTransformTrajectory& SourceTrajectory,
+	float CurrentActorYaw,
+	float AccumulatedYaw,
+	float QuantizedAngle)
+{
+	FTransformTrajectory Result;
+	const float FacingDuration = GetTurnInPlaceFacingDuration(QuantizedAngle);
+	const float StartYaw = CurrentActorYaw - AccumulatedYaw;
+
+	Result.Samples.Reserve(SourceTrajectory.Samples.Num());
+	for (const FTransformTrajectorySample& SourceSample : SourceTrajectory.Samples)
+	{
+		FTransformTrajectorySample& Sample = Result.Samples.Add_GetRef(SourceSample);
+		const float FacingAlpha = Sample.TimeInSeconds <= 0.0f
+			? 0.0f
+			: FMath::Clamp(Sample.TimeInSeconds / FacingDuration, 0.0f, 1.0f);
+		Sample.Facing = FRotator(0.0f, StartYaw + QuantizedAngle * FacingAlpha, 0.0f).Quaternion();
+	}
+	return Result;
 }
 
 bool URpgAnimInstance::CanRunParallelWork() const
@@ -70,35 +161,86 @@ void FRpgAnimInstanceProxy::PreUpdate(UAnimInstance* InAnimInstance, float Delta
 	MovementState = ERpgLocomotionMovementState::None;
 	bHasVelocity = false;
 	bHasAcceleration = false;
+	bHasGroundedMoveIntent = false;
 	bIsFalling = false;
 	bIsMovingOnGround = false;
 	bIsCrouching = false;
 	bIsAnyMontagePlaying = false;
+	bHasTurnInPlaceBlockingGameplayTag = false;
+	bTurnInPlaceHardReset = false;
+	ActorYaw = 0.0f;
+	ActorYawDelta = 0.0f;
+	ActorLocation = FVector::ZeroVector;
 
 	const URpgAnimInstance* RpgAnimInstance = Cast<URpgAnimInstance>(InAnimInstance);
+	bHasTurnInPlaceBlockingGameplayTag =
+		RpgAnimInstance &&
+		(RpgAnimInstance->bGameplayMovementStopped ||
+		 RpgAnimInstance->bStateBlocking ||
+		 RpgAnimInstance->bStateDead ||
+		 RpgAnimInstance->bStateStaggered ||
+		 RpgAnimInstance->bStateGuardBroken);
 	const ARpgCharacter* Character = RpgAnimInstance ? Cast<ARpgCharacter>(RpgAnimInstance->TryGetPawnOwner()) : nullptr;
 	if (!Character)
 	{
+		LastNonZeroWorldVelocity = FVector::ZeroVector;
 		TransformTrajectory.Samples.Reset();
 		DesiredControllerYawLastUpdate = 0.0f;
+		bTurnInPlaceHardReset = true;
+		PreviousOwnerUniqueId = 0;
+		bHasPreviousOwnerSnapshot = false;
 		return;
 	}
 
 	URpgCharacterMovementComponent* MovementComponent = Cast<URpgCharacterMovementComponent>(Character->GetCharacterMovement());
 	if (!MovementComponent)
 	{
+		LastNonZeroWorldVelocity = FVector::ZeroVector;
 		TransformTrajectory.Samples.Reset();
 		DesiredControllerYawLastUpdate = 0.0f;
+		bTurnInPlaceHardReset = true;
+		PreviousOwnerUniqueId = 0;
+		bHasPreviousOwnerSnapshot = false;
 		return;
 	}
 
 	const FQuat ActorRotation = Character->GetActorQuat();
+	ActorYaw = Character->GetActorRotation().Yaw;
+	ActorLocation = Character->GetActorLocation();
+	const uint32 OwnerUniqueId = Character->GetUniqueID();
+	const uint8 LocalRole = static_cast<uint8>(Character->GetLocalRole());
+	const uint8 RemoteRole = static_cast<uint8>(Character->GetRemoteRole());
+	const bool bOwnerOrRoleChanged =
+		!bHasPreviousOwnerSnapshot ||
+		PreviousOwnerUniqueId != OwnerUniqueId ||
+		PreviousLocalRole != LocalRole ||
+		PreviousRemoteRole != RemoteRole;
+	const bool bLargePositionJump =
+		bHasPreviousOwnerSnapshot &&
+		FVector::DistSquared(PreviousActorLocation, ActorLocation) > FMath::Square(TurnInPlaceLargePositionDelta);
+	bTurnInPlaceHardReset = bOwnerOrRoleChanged || bLargePositionJump || MovementComponent->bJustTeleported;
+	ActorYawDelta = bTurnInPlaceHardReset
+		? 0.0f
+		: URpgAnimInstance::CalculateTurnInPlaceYawDelta(PreviousActorYaw, ActorYaw);
+
+	PreviousOwnerUniqueId = OwnerUniqueId;
+	PreviousLocalRole = LocalRole;
+	PreviousRemoteRole = RemoteRole;
+	PreviousActorYaw = ActorYaw;
+	PreviousActorLocation = ActorLocation;
+	bHasPreviousOwnerSnapshot = true;
+
 	WorldVelocity = MovementComponent->Velocity;
+	const FVector HorizontalWorldVelocity(WorldVelocity.X, WorldVelocity.Y, 0.0f);
+	constexpr float LastNonZeroVelocityThreshold = 5.0f;
+	if (HorizontalWorldVelocity.SizeSquared() >= FMath::Square(LastNonZeroVelocityThreshold))
+	{
+		LastNonZeroWorldVelocity = HorizontalWorldVelocity;
+	}
 	LocalVelocity = ActorRotation.UnrotateVector(WorldVelocity);
 	WorldAcceleration = MovementComponent->GetCurrentAcceleration();
 	LocalAcceleration = ActorRotation.UnrotateVector(WorldAcceleration);
 	GroundSpeed = WorldVelocity.Size2D();
-	constexpr float MovingTrajectorySpeedThreshold = 5.0f;
 	VerticalVelocity = WorldVelocity.Z;
 	GroundDistance = MovementComponent->GetGroundInfo().GroundDistance;
 	bHasVelocity = !WorldVelocity.IsNearlyZero();
@@ -135,7 +277,7 @@ void FRpgAnimInstanceProxy::PreUpdate(UAnimInstance* InAnimInstance, float Delta
 	constexpr float IdleSpeedThreshold = 3.0f;
 	const float MaxAcceleration = FMath::Max(MovementComponent->GetMaxAcceleration(), 1.0f);
 	const float InputMagnitude = WorldAcceleration.Size2D() / MaxAcceleration;
-	const bool bHasGroundedMoveIntent = bIsMovingOnGround && InputMagnitude > 0.1f;
+	bHasGroundedMoveIntent = bIsMovingOnGround && InputMagnitude > 0.1f;
 	if (!bIsMovingOnGround || (GroundSpeed < IdleSpeedThreshold && !bHasGroundedMoveIntent))
 	{
 		Gait = ERpgLocomotionGait::Idle;
@@ -167,15 +309,12 @@ void FRpgAnimInstanceProxy::PreUpdate(UAnimInstance* InAnimInstance, float Delta
 
 	if (RpgAnimInstance->ShouldGeneratePoseSearchTrajectory())
 	{
-		// Match the controller-facing GASP trajectory profiles. During movement, current mesh facing is
-		// already authoritative; extrapolating a mouse or replicated yaw delta selects false turn poses.
+		// This controller-facing character turns its component directly. Extrapolating a one-frame mouse
+		// or replicated yaw delta across the prediction horizon exaggerates small turns and selects false
+		// 90/180-degree poses. Current mesh facing and trajectory history already carry the real rotation.
 		TrajectoryGenerationData.RotateTowardsMovementSpeed = 0.0f;
 		TrajectoryGenerationData.BendVelocityTowardsAcceleration = 0.0f;
-		const bool bCanPredictIdleControllerYaw =
-			Character->GetLocalRole() != ROLE_SimulatedProxy &&
-			GroundSpeed < MovingTrajectorySpeedThreshold &&
-			!bHasAcceleration;
-		TrajectoryGenerationData.MaxControllerYawRate = bCanPredictIdleControllerYaw ? 100.0f : 0.0f;
+		TrajectoryGenerationData.MaxControllerYawRate = 0.0f;
 
 		// Avoid interpreting the initial world yaw as a one-frame controller turn.
 		if (TransformTrajectory.Samples.IsEmpty())
@@ -234,6 +373,16 @@ EDataValidationResult URpgAnimInstance::IsDataValid(FDataValidationContext& Cont
 			Context.AddError(FText::FromString(
 				TEXT("Motion Matching is enabled, but no airborne Pose Search database is configured.")));
 		}
+		if (!CrouchingMotionMatchingDatabase)
+		{
+			Context.AddError(FText::FromString(
+				TEXT("Motion Matching is enabled, but no crouching Pose Search database is configured.")));
+		}
+		if (!TurnInPlaceMotionMatchingDatabase)
+		{
+			Context.AddError(FText::FromString(
+				TEXT("Motion Matching is enabled, but no turn-in-place Pose Search database is configured.")));
+		}
 
 		const auto ValidateDatabases = [&Context](
 			const TArray<TObjectPtr<UPoseSearchDatabase>>& Databases,
@@ -261,6 +410,12 @@ EDataValidationResult URpgAnimInstance::IsDataValid(FDataValidationContext& Cont
 void URpgAnimInstance::NativeInitializeAnimation()
 {
 	Super::NativeInitializeAnimation();
+	TurnInPlaceRequestSerial = 0;
+	TurnInPlaceInterruptedRequestSerial = 0;
+	bTurnInPlaceHardResetConditionLastFrame = false;
+	bResetOffsetRootEveryFrame = false;
+	bTurnInPlaceInitializationResetPending = true;
+	ResetTurnInPlaceRuntime(false);
 
 	if (AActor* OwningActor = GetOwningActor())
 	{
@@ -271,12 +426,288 @@ void URpgAnimInstance::NativeInitializeAnimation()
 	}
 }
 
+bool URpgAnimInstance::IsTurnInPlaceEligible(const FRpgAnimInstanceProxy& Proxy) const
+{
+	return
+		TurnInPlaceMotionMatchingDatabase != nullptr &&
+		Proxy.MovementState == ERpgLocomotionMovementState::Grounded &&
+		Proxy.bIsMovingOnGround &&
+		!Proxy.bIsCrouching &&
+		!Proxy.bIsAnyMontagePlaying &&
+		!Proxy.bHasTurnInPlaceBlockingGameplayTag &&
+		Proxy.GroundSpeed <= TurnInPlaceIdleSpeedThreshold &&
+		!Proxy.bHasGroundedMoveIntent &&
+		!Proxy.TransformTrajectory.Samples.IsEmpty();
+}
+
+void URpgAnimInstance::ResetTurnInPlaceRuntime(bool bHardResetOffset)
+{
+	TurnInPlaceState = ERpgTurnInPlaceState::Inactive;
+	TurnInPlaceQueryAngle = 0.0f;
+	TurnInPlaceAccumulatedYaw = 0.0f;
+	TurnInPlaceStateElapsed = 0.0f;
+	TurnInPlaceStableElapsed = 0.0f;
+	TurnInPlaceSelectionElapsed = 0.0f;
+	TurnInPlaceSelectedAssetRemainingTime = MAX_flt;
+	TurnInPlaceRequestAccumulatedYaw = 0.0f;
+	bTurnInPlacePoseSelected = false;
+	bTurnInPlaceHadSelection = false;
+	bTurnInPlaceSelectedAssetLooping = false;
+	TurnInPlaceSyntheticTrajectory.Samples.Reset();
+	OffsetRootRotationMode = EOffsetRootBoneMode::Interpolate;
+	bResetOffsetRootEveryFrame |= bHardResetOffset;
+}
+
+void URpgAnimInstance::BeginTurnInPlaceRecovery(bool bHardResetOffset)
+{
+	TurnInPlaceState = ERpgTurnInPlaceState::Recovering;
+	TurnInPlaceStateElapsed = 0.0f;
+	TurnInPlaceStableElapsed = 0.0f;
+	TurnInPlaceSelectionElapsed = 0.0f;
+	TurnInPlaceSelectedAssetRemainingTime = MAX_flt;
+	bTurnInPlacePoseSelected = false;
+	bTurnInPlaceHadSelection = false;
+	bTurnInPlaceSelectedAssetLooping = false;
+	TurnInPlaceSyntheticTrajectory.Samples.Reset();
+	OffsetRootRotationMode = EOffsetRootBoneMode::Interpolate;
+	bResetOffsetRootEveryFrame |= bHardResetOffset;
+}
+
+void URpgAnimInstance::BeginTurnInPlaceRequest(float QuantizedAngle)
+{
+	TurnInPlaceState = ERpgTurnInPlaceState::Active;
+	TurnInPlaceQueryAngle = QuantizedAngle;
+	TurnInPlaceStateElapsed = 0.0f;
+	TurnInPlaceStableElapsed = 0.0f;
+	TurnInPlaceSelectionElapsed = 0.0f;
+	TurnInPlaceSelectedAssetRemainingTime = MAX_flt;
+	TurnInPlaceRequestAccumulatedYaw = TurnInPlaceAccumulatedYaw;
+	bTurnInPlacePoseSelected = false;
+	bTurnInPlaceHadSelection = false;
+	bTurnInPlaceSelectedAssetLooping = false;
+	++TurnInPlaceRequestSerial;
+	if (TurnInPlaceRequestSerial == 0)
+	{
+		++TurnInPlaceRequestSerial;
+	}
+	OffsetRootRotationMode = EOffsetRootBoneMode::Accumulate;
+}
+
+void URpgAnimInstance::UpdateTurnInPlaceRuntime(float DeltaSeconds, const FRpgAnimInstanceProxy& Proxy)
+{
+	const float SafeDeltaSeconds = FMath::Max(DeltaSeconds, 0.0f);
+	bResetOffsetRootEveryFrame = bTurnInPlaceInitializationResetPending;
+	bTurnInPlaceInitializationResetPending = false;
+	const float AbsoluteActorYawRate = SafeDeltaSeconds > UE_SMALL_NUMBER
+		? FMath::Abs(Proxy.ActorYawDelta) / SafeDeltaSeconds
+		: (FMath::IsNearlyZero(Proxy.ActorYawDelta) ? 0.0f : MAX_flt);
+
+	const bool bHardResetCondition =
+		Proxy.bTurnInPlaceHardReset ||
+		Proxy.bHasTurnInPlaceBlockingGameplayTag ||
+		Proxy.bIsAnyMontagePlaying ||
+		Proxy.bIsCrouching ||
+		Proxy.MovementState != ERpgLocomotionMovementState::Grounded;
+	if (bHardResetCondition)
+	{
+		const bool bHasTurnStateToClear =
+			TurnInPlaceState != ERpgTurnInPlaceState::Inactive ||
+			FMath::Abs(TurnInPlaceAccumulatedYaw) > UE_KINDA_SMALL_NUMBER;
+		const bool bPulseHardReset = !bTurnInPlaceHardResetConditionLastFrame || bHasTurnStateToClear;
+		ResetTurnInPlaceRuntime(bPulseHardReset);
+		bTurnInPlaceHardResetConditionLastFrame = true;
+		LocomotionTrajectory = Proxy.TransformTrajectory;
+		return;
+	}
+	bTurnInPlaceHardResetConditionLastFrame = false;
+
+	const bool bEligible = IsTurnInPlaceEligible(Proxy);
+	if (!bEligible)
+	{
+		if (TurnInPlaceState == ERpgTurnInPlaceState::Collecting ||
+			TurnInPlaceState == ERpgTurnInPlaceState::Active)
+		{
+			BeginTurnInPlaceRecovery(false);
+		}
+		else if (TurnInPlaceState == ERpgTurnInPlaceState::Recovering)
+		{
+			TurnInPlaceStateElapsed += SafeDeltaSeconds;
+			if (TurnInPlaceStateElapsed >= TurnInPlaceRecoveryDuration)
+			{
+				ResetTurnInPlaceRuntime(false);
+			}
+		}
+		else
+		{
+			ResetTurnInPlaceRuntime(false);
+		}
+
+		LocomotionTrajectory = Proxy.TransformTrajectory;
+		return;
+	}
+
+	TurnInPlaceStateElapsed += SafeDeltaSeconds;
+	if (TurnInPlaceState != ERpgTurnInPlaceState::Recovering)
+	{
+		TurnInPlaceAccumulatedYaw = FMath::Clamp(
+			TurnInPlaceAccumulatedYaw + Proxy.ActorYawDelta,
+			-180.0f,
+			180.0f);
+	}
+
+	switch (TurnInPlaceState)
+	{
+	case ERpgTurnInPlaceState::Inactive:
+		OffsetRootRotationMode = EOffsetRootBoneMode::Interpolate;
+		if (AbsoluteActorYawRate <= TurnInPlaceInactiveYawRateThreshold)
+		{
+			TurnInPlaceStableElapsed += SafeDeltaSeconds;
+			if (TurnInPlaceStableElapsed >= TurnInPlaceInactiveAccumulatorTimeout)
+			{
+				TurnInPlaceAccumulatedYaw = 0.0f;
+			}
+		}
+		else
+		{
+			TurnInPlaceStableElapsed = 0.0f;
+		}
+
+		if (FMath::Abs(TurnInPlaceAccumulatedYaw) >= TurnInPlaceCollectThreshold)
+		{
+			TurnInPlaceState = ERpgTurnInPlaceState::Collecting;
+			TurnInPlaceStateElapsed = 0.0f;
+			TurnInPlaceStableElapsed = 0.0f;
+			OffsetRootRotationMode = EOffsetRootBoneMode::Accumulate;
+		}
+		break;
+
+	case ERpgTurnInPlaceState::Collecting:
+		OffsetRootRotationMode = EOffsetRootBoneMode::Accumulate;
+		if (FMath::Abs(TurnInPlaceAccumulatedYaw) < TurnInPlaceCancelThreshold)
+		{
+			BeginTurnInPlaceRecovery(false);
+			break;
+		}
+
+		TurnInPlaceStableElapsed = AbsoluteActorYawRate <= TurnInPlaceStableYawRateThreshold
+			? TurnInPlaceStableElapsed + SafeDeltaSeconds
+			: 0.0f;
+		if (FMath::Abs(TurnInPlaceAccumulatedYaw) >= TurnInPlaceActivationThreshold &&
+			(TurnInPlaceStableElapsed >= TurnInPlaceStabilityDuration ||
+			 TurnInPlaceStateElapsed >= TurnInPlaceCollectionTimeout))
+		{
+			BeginTurnInPlaceRequest(QuantizeTurnInPlaceAngle(TurnInPlaceAccumulatedYaw));
+		}
+		else if (TurnInPlaceStateElapsed >= TurnInPlaceCollectionTimeout)
+		{
+			BeginTurnInPlaceRecovery(false);
+		}
+		break;
+
+	case ERpgTurnInPlaceState::Active:
+	{
+		OffsetRootRotationMode = bTurnInPlacePoseSelected
+			? EOffsetRootBoneMode::LockOffsetIncreaseAndConsumeAnimation
+			: EOffsetRootBoneMode::Accumulate;
+		if (FMath::Abs(TurnInPlaceAccumulatedYaw) < TurnInPlaceCancelThreshold)
+		{
+			BeginTurnInPlaceRecovery(false);
+			break;
+		}
+
+		const float UpdatedQueryAngle = QuantizeTurnInPlaceAngle(TurnInPlaceAccumulatedYaw);
+		const float AdditionalYaw = TurnInPlaceAccumulatedYaw - TurnInPlaceRequestAccumulatedYaw;
+		const bool bDirectionChanged =
+			!FMath::IsNearlyZero(UpdatedQueryAngle) &&
+			FMath::Sign(UpdatedQueryAngle) != FMath::Sign(TurnInPlaceQueryAngle);
+		const bool bQuantizedBucketChanged =
+			!FMath::IsNearlyZero(UpdatedQueryAngle) &&
+			!FMath::IsNearlyEqual(UpdatedQueryAngle, TurnInPlaceQueryAngle);
+		if (FMath::Abs(AdditionalYaw) >= TurnInPlaceActivationThreshold &&
+			(bDirectionChanged || bQuantizedBucketChanged))
+		{
+			BeginTurnInPlaceRequest(UpdatedQueryAngle);
+			break;
+		}
+
+		if (bTurnInPlacePoseSelected)
+		{
+			bTurnInPlaceHadSelection = true;
+		}
+
+		if (!bTurnInPlaceHadSelection)
+		{
+			TurnInPlaceSelectionElapsed += SafeDeltaSeconds;
+			if (TurnInPlaceSelectionElapsed >= TurnInPlaceSelectionTimeout)
+			{
+				BeginTurnInPlaceRecovery(true);
+				break;
+			}
+		}
+		else if (!bTurnInPlacePoseSelected)
+		{
+			BeginTurnInPlaceRecovery(true);
+			break;
+		}
+		else if (!bTurnInPlaceSelectedAssetLooping &&
+			TurnInPlaceSelectedAssetRemainingTime <= TurnInPlaceFinishedTimeTolerance)
+		{
+			BeginTurnInPlaceRecovery(false);
+			break;
+		}
+
+		if (TurnInPlaceStateElapsed >= TurnInPlaceActiveTimeout)
+		{
+			BeginTurnInPlaceRecovery(true);
+		}
+		break;
+	}
+
+	case ERpgTurnInPlaceState::Recovering:
+		OffsetRootRotationMode = EOffsetRootBoneMode::Interpolate;
+		if (TurnInPlaceStateElapsed >= TurnInPlaceRecoveryDuration)
+		{
+			ResetTurnInPlaceRuntime(false);
+		}
+		break;
+	}
+
+	if (TurnInPlaceState == ERpgTurnInPlaceState::Active)
+	{
+		TurnInPlaceSyntheticTrajectory = MakeTurnInPlaceSyntheticTrajectory(
+			Proxy.TransformTrajectory,
+			Proxy.ActorYaw,
+			TurnInPlaceAccumulatedYaw,
+			TurnInPlaceQueryAngle);
+		LocomotionTrajectory = TurnInPlaceSyntheticTrajectory;
+	}
+	else
+	{
+		TurnInPlaceSyntheticTrajectory.Samples.Reset();
+		LocomotionTrajectory = Proxy.TransformTrajectory;
+	}
+}
+
+bool URpgAnimInstance::ConsumeTurnInPlaceForceInterruptRequest()
+{
+	if (TurnInPlaceState != ERpgTurnInPlaceState::Active ||
+		!TurnInPlaceMotionMatchingDatabase ||
+		TurnInPlaceInterruptedRequestSerial == TurnInPlaceRequestSerial)
+	{
+		return false;
+	}
+
+	TurnInPlaceInterruptedRequestSerial = TurnInPlaceRequestSerial;
+	return true;
+}
+
 void URpgAnimInstance::NativeThreadSafeUpdateAnimation(float DeltaSeconds)
 {
 	Super::NativeThreadSafeUpdateAnimation(DeltaSeconds);
 
 	const FRpgAnimInstanceProxy& Proxy = GetProxyOnAnyThread<FRpgAnimInstanceProxy>();
 	WorldVelocity = Proxy.WorldVelocity;
+	LastNonZeroWorldVelocity = Proxy.LastNonZeroWorldVelocity;
 	LocalVelocity = Proxy.LocalVelocity;
 	WorldAcceleration = Proxy.WorldAcceleration;
 	LocalAcceleration = Proxy.LocalAcceleration;
@@ -297,6 +728,7 @@ void URpgAnimInstance::NativeThreadSafeUpdateAnimation(float DeltaSeconds)
 	LocomotionTrajectory = Proxy.TransformTrajectory;
 	ProceduralLocomotionAlpha = Proxy.ProceduralLocomotionAlpha;
 	bIsAnyMontagePlaying = Proxy.bIsAnyMontagePlaying;
+	UpdateTurnInPlaceRuntime(DeltaSeconds, Proxy);
 }
 
 void URpgAnimInstance::UpdateGaspMotionMatching(
@@ -311,8 +743,30 @@ void URpgAnimInstance::UpdateGaspMotionMatching(
 		return;
 	}
 
+	bTurnInPlacePoseSelected = false;
+	bTurnInPlaceSelectedAssetLooping = false;
+	TurnInPlaceSelectedAssetRemainingTime = MAX_flt;
+	if (TurnInPlaceState == ERpgTurnInPlaceState::Active && TurnInPlaceMotionMatchingDatabase)
+	{
+		const FPoseSearchBlueprintResult& SearchResult =
+			MotionMatchingNode->GetMotionMatchingState().SearchResult;
+		bTurnInPlacePoseSelected =
+			SearchResult.SelectedDatabase.Get() == TurnInPlaceMotionMatchingDatabase.Get();
+		if (bTurnInPlacePoseSelected && MotionMatchingNode->GetAnimAsset())
+		{
+			bTurnInPlaceSelectedAssetLooping = MotionMatchingNode->IsLooping();
+			TurnInPlaceSelectedAssetRemainingTime = FMath::Max(
+				MotionMatchingNode->GetCurrentAssetLength() - MotionMatchingNode->GetCurrentAssetTime(),
+				0.0f);
+		}
+	}
+
 	TArray<UPoseSearchDatabase*, TInlineAllocator<5>> DatabasesToSearch;
-	if (bLocomotionIsFalling)
+	if (TurnInPlaceState == ERpgTurnInPlaceState::Active && TurnInPlaceMotionMatchingDatabase)
+	{
+		DatabasesToSearch.Add(TurnInPlaceMotionMatchingDatabase);
+	}
+	else if (bLocomotionIsFalling)
 	{
 		DatabasesToSearch.Reserve(AirborneMotionMatchingDatabases.Num());
 		for (UPoseSearchDatabase* Database : AirborneMotionMatchingDatabases)
@@ -321,6 +775,13 @@ void URpgAnimInstance::UpdateGaspMotionMatching(
 			{
 				DatabasesToSearch.Add(Database);
 			}
+		}
+	}
+	else if (LocomotionStance == ERpgLocomotionStance::Crouching)
+	{
+		if (CrouchingMotionMatchingDatabase)
+		{
+			DatabasesToSearch.Add(CrouchingMotionMatchingDatabase);
 		}
 	}
 	else
@@ -335,9 +796,75 @@ void URpgAnimInstance::UpdateGaspMotionMatching(
 		}
 	}
 
+	EPoseSearchInterruptMode InterruptMode = EPoseSearchInterruptMode::InterruptOnDatabaseChange;
+	if (ConsumeTurnInPlaceForceInterruptRequest())
+	{
+		InterruptMode = EPoseSearchInterruptMode::ForceInterrupt;
+		bTurnInPlacePoseSelected = false;
+		bTurnInPlaceSelectedAssetLooping = false;
+		TurnInPlaceSelectedAssetRemainingTime = MAX_flt;
+	}
+
 	MotionMatchingNode->SetDatabasesToSearch(
 		MakeArrayView(DatabasesToSearch),
-		EPoseSearchInterruptMode::InterruptOnDatabaseChange);
+		InterruptMode);
+}
+
+void URpgAnimInstance::GetGaspBlendStackInputs(
+	const FAnimNodeReference& Node,
+	UAnimationAsset*& CurrentAnimAsset,
+	float& CurrentAnimAssetTime,
+	float& MovingAlpha,
+	float& OrientationWarpingAlpha,
+	FQuat& DesiredFacing,
+	FVector& LocomotionDirection,
+	bool& bEnableSteering) const
+{
+	CurrentAnimAsset = UBlendStackAnimNodeLibrary::GetCurrentBlendStackAnimAsset(Node);
+	CurrentAnimAssetTime = UBlendStackAnimNodeLibrary::GetCurrentBlendStackAnimAssetTime(Node);
+
+	const bool bIsBoundedMovingPose =
+		bIsMovingOnGround &&
+		!bLocomotionIsFalling &&
+		!bIsCrouching &&
+		!bIsAnyMontagePlaying &&
+		TurnInPlaceState == ERpgTurnInPlaceState::Inactive &&
+		LocomotionGait != ERpgLocomotionGait::Idle;
+	MovingAlpha = bIsBoundedMovingPose
+		? FMath::Clamp(ProceduralLocomotionAlpha, 0.0f, 1.0f)
+		: 0.0f;
+
+	OrientationWarpingAlpha = 0.0f;
+	if (MovingAlpha > UE_KINDA_SMALL_NUMBER)
+	{
+		if (const UAnimSequenceBase* CurrentSequence = Cast<UAnimSequenceBase>(CurrentAnimAsset))
+		{
+			static const FName EnableWarpingCurveName(TEXT("Enable_Warping"));
+			float EnableWarpingCurveValue = 0.0f;
+			if (UAnimationWarpingLibrary::GetCurveValueFromAnimation(
+				CurrentSequence,
+				EnableWarpingCurveName,
+				CurrentAnimAssetTime,
+				EnableWarpingCurveValue))
+			{
+				OrientationWarpingAlpha =
+					MovingAlpha * FMath::Clamp(EnableWarpingCurveValue, 0.0f, 1.0f);
+			}
+		}
+	}
+
+	LocomotionDirection = LastNonZeroWorldVelocity;
+	const bool bHasTrajectory = !LocomotionTrajectory.Samples.IsEmpty();
+	const bool bHasActiveBlendStackAsset =
+		CurrentAnimAsset != nullptr &&
+		UBlendStackAnimNodeLibrary::GetCurrentBlendStackAnimIsActive(Node);
+	DesiredFacing = bHasTrajectory
+		? LocomotionTrajectory.GetSampleAtTime(0.0f).Facing
+		: FQuat::Identity;
+	bEnableSteering =
+		MovingAlpha > UE_KINDA_SMALL_NUMBER &&
+		bHasActiveBlendStackAsset &&
+		bHasTrajectory;
 }
 
 FAnimInstanceProxy* URpgAnimInstance::CreateAnimInstanceProxy()

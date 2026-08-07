@@ -2,20 +2,40 @@
 
 #if WITH_DEV_AUTOMATION_TESTS
 
+#include "AlphaBlend.h"
+#include "AnimGraph/AnimGraphNode_OrientationWarping.h"
+#include "AnimGraph/AnimGraphNode_Steering.h"
+#include "AnimGraphNode_BlendStackInput.h"
+#include "AnimGraphNode_BlendStackResult.h"
+#include "AnimGraphNode_ComponentToLocalSpace.h"
+#include "AnimGraphNode_LocalToComponentSpace.h"
 #include "Animation/AnimBlueprint.h"
+#include "Animation/BlendProfile.h"
+#include "Animation/InputScaleBias.h"
+#include "Animation/Skeleton.h"
+#include "AnimationBlendStackGraph.h"
 #include "AnimGraphNode_MotionMatching.h"
 #include "AnimGraphNode_PoseSearchHistoryCollector.h"
+#include "AnimGraphNode_ResetRoot.h"
 #include "AnimGraphNode_Root.h"
 #include "AnimGraphNode_Slot.h"
 #include "AssetRegistry/AssetRegistryModule.h"
 #include "AssetRegistry/IAssetRegistry.h"
+#include "BoneControllers/AnimNode_OrientationWarping.h"
+#include "BoneControllers/AnimNode_OffsetRootBone.h"
+#include "BoneControllers/AnimNode_ResetRoot.h"
+#include "BoneControllers/AnimNode_Steering.h"
 #include "Components/SkeletalMeshComponent.h"
 #include "EdGraph/EdGraph.h"
 #include "EdGraph/EdGraphNode.h"
 #include "EdGraph/EdGraphPin.h"
+#include "EdGraphSchema_K2.h"
 #include "Engine/Blueprint.h"
 #include "GameFeatureAction.h"
 #include "GameFramework/Character.h"
+#include "GameplayTagContainer.h"
+#include "K2Node_AnimNodeReference.h"
+#include "K2Node_CallFunction.h"
 #include "K2Node_VariableGet.h"
 #include "Misc/AutomationTest.h"
 #include "Misc/DataValidation.h"
@@ -197,6 +217,79 @@ namespace RpgGaspPilotAssetTests
 		return bLinkedExclusively;
 	}
 
+	struct FExpectedInputPin
+	{
+		const UEdGraphNode* Node = nullptr;
+		FName PinName;
+	};
+
+	bool TestExactOutputLinks(
+		FAutomationTestBase& Test,
+		const TCHAR* Description,
+		const UEdGraphNode* SourceNode,
+		FName SourcePinName,
+		const TArray<FExpectedInputPin>& ExpectedTargets)
+	{
+		if (!SourceNode)
+		{
+			Test.AddError(FString::Printf(TEXT("%s cannot be checked because the source node is missing"), Description));
+			return false;
+		}
+
+		const UEdGraphPin* SourcePin = SourceNode->FindPin(SourcePinName, EGPD_Output);
+		if (!Test.TestNotNull(
+				*FString::Printf(TEXT("%s source pin %s exists"), Description, *SourcePinName.ToString()),
+				SourcePin))
+		{
+			return false;
+		}
+
+		bool bMatches = SourcePin->LinkedTo.Num() == ExpectedTargets.Num();
+		for (const FExpectedInputPin& ExpectedTarget : ExpectedTargets)
+		{
+			if (!ExpectedTarget.Node)
+			{
+				Test.AddError(FString::Printf(TEXT("%s has a missing expected target node"), Description));
+				bMatches = false;
+				continue;
+			}
+
+			const UEdGraphPin* TargetPin =
+				ExpectedTarget.Node->FindPin(ExpectedTarget.PinName, EGPD_Input);
+			if (!Test.TestNotNull(
+					*FString::Printf(
+						TEXT("%s target pin %s exists"),
+						Description,
+						*ExpectedTarget.PinName.ToString()),
+					TargetPin))
+			{
+				bMatches = false;
+				continue;
+			}
+
+			bMatches = bMatches &&
+				SourcePin->LinkedTo.Contains(TargetPin) &&
+				TargetPin->LinkedTo.Num() == 1 &&
+				TargetPin->LinkedTo[0] == SourcePin;
+		}
+
+		Test.TestTrue(Description, bMatches);
+		return bMatches;
+	}
+
+	template <typename TRuntimeNode>
+	const TRuntimeNode* ReadRuntimeNode(const UEdGraphNode* EditorNode)
+	{
+		const FStructProperty* NodeProperty =
+			EditorNode ? FindFProperty<FStructProperty>(EditorNode->GetClass(), TEXT("Node")) : nullptr;
+		if (!NodeProperty || NodeProperty->Struct != TRuntimeNode::StaticStruct())
+		{
+			return nullptr;
+		}
+
+		return NodeProperty->ContainerPtrToValuePtr<TRuntimeNode>(EditorNode);
+	}
+
 	bool ReadBoolProperty(const UObject* Object, FName PropertyName, bool& OutValue)
 	{
 		const FBoolProperty* Property =
@@ -207,6 +300,24 @@ namespace RpgGaspPilotAssetTests
 		}
 
 		OutValue = Property->GetPropertyValue_InContainer(Object);
+		return true;
+	}
+
+	bool ReadPropertyText(
+		const UObject* Object,
+		FName PropertyName,
+		FString& OutValue)
+	{
+		const FProperty* Property =
+			Object ? FindFProperty<FProperty>(Object->GetClass(), PropertyName) : nullptr;
+		if (!Property)
+		{
+			return false;
+		}
+
+		const void* ValueAddress = Property->ContainerPtrToValuePtr<void>(Object);
+		OutValue.Reset();
+		Property->ExportTextItem_Direct(OutValue, ValueAddress, nullptr, nullptr, PPF_None);
 		return true;
 	}
 
@@ -227,6 +338,68 @@ namespace RpgGaspPilotAssetTests
 
 		const void* StructAddress = StructProperty->ContainerPtrToValuePtr<void>(Object);
 		OutValue = ValueProperty->GetPropertyValue_InContainer(StructAddress);
+		return true;
+	}
+
+	bool ReadStructBoolProperty(
+		const UObject* Object,
+		FName StructPropertyName,
+		FName ValuePropertyName,
+		bool& OutValue)
+	{
+		const FStructProperty* StructProperty =
+			Object ? FindFProperty<FStructProperty>(Object->GetClass(), StructPropertyName) : nullptr;
+		const FBoolProperty* ValueProperty =
+			StructProperty ? FindFProperty<FBoolProperty>(StructProperty->Struct, ValuePropertyName) : nullptr;
+		if (!StructProperty || !ValueProperty)
+		{
+			return false;
+		}
+
+		const void* StructAddress = StructProperty->ContainerPtrToValuePtr<void>(Object);
+		OutValue = ValueProperty->GetPropertyValue_InContainer(StructAddress);
+		return true;
+	}
+
+	bool ReadStructPropertyText(
+		const UObject* Object,
+		FName StructPropertyName,
+		FName ValuePropertyName,
+		FString& OutValue)
+	{
+		const FStructProperty* StructProperty =
+			Object ? FindFProperty<FStructProperty>(Object->GetClass(), StructPropertyName) : nullptr;
+		const FProperty* ValueProperty =
+			StructProperty ? FindFProperty<FProperty>(StructProperty->Struct, ValuePropertyName) : nullptr;
+		if (!StructProperty || !ValueProperty)
+		{
+			return false;
+		}
+
+		const void* StructAddress = StructProperty->ContainerPtrToValuePtr<void>(Object);
+		const void* ValueAddress = ValueProperty->ContainerPtrToValuePtr<void>(StructAddress);
+		OutValue.Reset();
+		ValueProperty->ExportTextItem_Direct(OutValue, ValueAddress, nullptr, nullptr, PPF_None);
+		return true;
+	}
+
+	bool ReadStructObjectProperty(
+		const UObject* Object,
+		FName StructPropertyName,
+		FName ValuePropertyName,
+		UObject*& OutValue)
+	{
+		const FStructProperty* StructProperty =
+			Object ? FindFProperty<FStructProperty>(Object->GetClass(), StructPropertyName) : nullptr;
+		const FObjectPropertyBase* ValueProperty =
+			StructProperty ? FindFProperty<FObjectPropertyBase>(StructProperty->Struct, ValuePropertyName) : nullptr;
+		if (!StructProperty || !ValueProperty)
+		{
+			return false;
+		}
+
+		const void* StructAddress = StructProperty->ContainerPtrToValuePtr<void>(Object);
+		OutValue = ValueProperty->GetObjectPropertyValue_InContainer(StructAddress);
 		return true;
 	}
 
@@ -252,6 +425,69 @@ namespace RpgGaspPilotAssetTests
 		{
 			const UObject* Value = ObjectProperty->GetObjectPropertyValue(ArrayHelper.GetRawPtr(Index));
 			OutObjectPaths.Add(GetPathNameSafe(Value));
+		}
+
+		return true;
+	}
+
+	bool ReadObjectProperty(
+		const UObject* Object,
+		FName PropertyName,
+		FString& OutObjectPath)
+	{
+		const FObjectPropertyBase* ObjectProperty =
+			Object ? FindFProperty<FObjectPropertyBase>(Object->GetClass(), PropertyName) : nullptr;
+		if (!ObjectProperty)
+		{
+			return false;
+		}
+
+		OutObjectPath = GetPathNameSafe(ObjectProperty->GetObjectPropertyValue_InContainer(Object));
+		return true;
+	}
+
+	bool ReadGameplayTagPropertyMappings(
+		const UObject* Object,
+		TMap<FName, FString>& OutMappings)
+	{
+		OutMappings.Reset();
+		const FStructProperty* MapProperty =
+			Object ? FindFProperty<FStructProperty>(Object->GetClass(), TEXT("GameplayTagPropertyMap")) : nullptr;
+		const FArrayProperty* MappingsProperty =
+			MapProperty ? FindFProperty<FArrayProperty>(MapProperty->Struct, TEXT("PropertyMappings")) : nullptr;
+		const FStructProperty* MappingProperty =
+			MappingsProperty ? CastField<FStructProperty>(MappingsProperty->Inner) : nullptr;
+		const FStructProperty* TagProperty =
+			MappingProperty ? FindFProperty<FStructProperty>(MappingProperty->Struct, TEXT("TagToMap")) : nullptr;
+		const FNameProperty* PropertyNameProperty =
+			MappingProperty ? FindFProperty<FNameProperty>(MappingProperty->Struct, TEXT("PropertyName")) : nullptr;
+		if (!MapProperty ||
+			!MappingsProperty ||
+			!MappingProperty ||
+			!TagProperty ||
+			TagProperty->Struct != FGameplayTag::StaticStruct() ||
+			!PropertyNameProperty)
+		{
+			return false;
+		}
+
+		const void* MapAddress = MapProperty->ContainerPtrToValuePtr<void>(Object);
+		const void* MappingsAddress = MappingsProperty->ContainerPtrToValuePtr<void>(MapAddress);
+		FScriptArrayHelper MappingsHelper(
+			MappingsProperty,
+			const_cast<void*>(MappingsAddress));
+		for (int32 Index = 0; Index < MappingsHelper.Num(); ++Index)
+		{
+			const void* MappingAddress = MappingsHelper.GetRawPtr(Index);
+			const FGameplayTag* Tag = TagProperty->ContainerPtrToValuePtr<FGameplayTag>(MappingAddress);
+			const FName PropertyName =
+				PropertyNameProperty->GetPropertyValue_InContainer(MappingAddress);
+			if (!Tag || PropertyName.IsNone() || OutMappings.Contains(PropertyName))
+			{
+				return false;
+			}
+
+			OutMappings.Add(PropertyName, Tag->ToString());
 		}
 
 		return true;
@@ -390,7 +626,229 @@ namespace RpgGaspPilotAssetTests
 			}
 		}
 	}
+
+	void TestPerSampleBlendStackContract(
+		FAutomationTestBase& Test,
+		UAnimGraphNode_MotionMatching* MotionMatchingNode)
+	{
+		if (!MotionMatchingNode)
+		{
+			return;
+		}
+
+		const TArray<UEdGraph*> SubGraphs = MotionMatchingNode->GetSubGraphs();
+		Test.TestEqual(
+			TEXT("Motion Matching owns exactly one nested graph"),
+			SubGraphs.Num(),
+			1);
+
+		int32 BlendStackGraphCount = 0;
+		UAnimationBlendStackGraph* BlendStackGraph = nullptr;
+		for (UEdGraph* SubGraph : SubGraphs)
+		{
+			if (UAnimationBlendStackGraph* Candidate = Cast<UAnimationBlendStackGraph>(SubGraph))
+			{
+				++BlendStackGraphCount;
+				BlendStackGraph = Candidate;
+			}
+		}
+		Test.TestEqual(
+			TEXT("Motion Matching owns exactly one AnimationBlendStackGraph"),
+			BlendStackGraphCount,
+			1);
+		if (!Test.TestNotNull(TEXT("The Motion Matching BlendStack graph loads"), BlendStackGraph))
+		{
+			return;
+		}
+
+		Test.TestEqual(
+			TEXT("The per-sample BlendStack graph contains exactly nine nodes"),
+			BlendStackGraph->Nodes.Num(),
+			9);
+
+		UAnimGraphNode_BlendStackInput* InputNode =
+			FindUniqueNode<UAnimGraphNode_BlendStackInput>(Test, BlendStackGraph, TEXT("BlendStack Input"));
+		UAnimGraphNode_LocalToComponentSpace* LocalToComponentNode =
+			FindUniqueNode<UAnimGraphNode_LocalToComponentSpace>(Test, BlendStackGraph, TEXT("Local To Component"));
+		UAnimGraphNode_OrientationWarping* OrientationWarpingNode =
+			FindUniqueNode<UAnimGraphNode_OrientationWarping>(Test, BlendStackGraph, TEXT("Per-sample Orientation Warping"));
+		UAnimGraphNode_ResetRoot* ResetRootNode =
+			FindUniqueNode<UAnimGraphNode_ResetRoot>(Test, BlendStackGraph, TEXT("Reset Root"));
+		UAnimGraphNode_Steering* SteeringNode =
+			FindUniqueNode<UAnimGraphNode_Steering>(Test, BlendStackGraph, TEXT("Steering"));
+		UAnimGraphNode_ComponentToLocalSpace* ComponentToLocalNode =
+			FindUniqueNode<UAnimGraphNode_ComponentToLocalSpace>(Test, BlendStackGraph, TEXT("Component To Local"));
+		UK2Node_AnimNodeReference* InputReferenceNode =
+			FindUniqueNode<UK2Node_AnimNodeReference>(Test, BlendStackGraph, TEXT("BlendStack Input Reference"));
+		UK2Node_CallFunction* BlendStackInputsNode =
+			FindUniqueNode<UK2Node_CallFunction>(Test, BlendStackGraph, TEXT("GetGaspBlendStackInputs call"));
+		UAnimGraphNode_BlendStackResult* ResultNode =
+			FindUniqueNode<UAnimGraphNode_BlendStackResult>(Test, BlendStackGraph, TEXT("BlendStack Result"));
+
+		const auto TestExactNodeClass = [&Test](
+			const TCHAR* Description,
+			const UEdGraphNode* Node,
+			UClass* ExpectedClass)
+		{
+			if (Node)
+			{
+				Test.TestEqual(Description, Node->GetClass(), ExpectedClass);
+			}
+		};
+		TestExactNodeClass(TEXT("The input uses the exact BlendStack Input class"), InputNode, UAnimGraphNode_BlendStackInput::StaticClass());
+		TestExactNodeClass(TEXT("The L2C node uses the exact conversion class"), LocalToComponentNode, UAnimGraphNode_LocalToComponentSpace::StaticClass());
+		TestExactNodeClass(TEXT("The OW node uses the exact Orientation Warping class"), OrientationWarpingNode, UAnimGraphNode_OrientationWarping::StaticClass());
+		TestExactNodeClass(TEXT("The reset node uses the exact Reset Root class"), ResetRootNode, UAnimGraphNode_ResetRoot::StaticClass());
+		TestExactNodeClass(TEXT("The steering node uses the exact Steering class"), SteeringNode, UAnimGraphNode_Steering::StaticClass());
+		TestExactNodeClass(TEXT("The C2L node uses the exact conversion class"), ComponentToLocalNode, UAnimGraphNode_ComponentToLocalSpace::StaticClass());
+		TestExactNodeClass(TEXT("The reference uses the exact Anim Node Reference class"), InputReferenceNode, UK2Node_AnimNodeReference::StaticClass());
+		TestExactNodeClass(TEXT("The helper uses the exact Call Function class"), BlendStackInputsNode, UK2Node_CallFunction::StaticClass());
+		TestExactNodeClass(TEXT("The result uses the exact BlendStack Result class"), ResultNode, UAnimGraphNode_BlendStackResult::StaticClass());
+
+		const FName ExpectedInputTag(TEXT("RpgGaspPilotBlendStackInput"));
+		if (InputNode)
+		{
+			Test.TestEqual(
+				TEXT("The BlendStack input has the stable pilot tag"),
+				InputNode->GetTag(),
+				ExpectedInputTag);
+		}
+		if (InputReferenceNode)
+		{
+			Test.TestEqual(
+				TEXT("The Anim Node Reference targets the pilot input tag"),
+				InputReferenceNode->GetTag(),
+				ExpectedInputTag);
+		}
+
+		UFunction* HelperFunction = URpgAnimInstance::StaticClass()->FindFunctionByName(
+			GET_FUNCTION_NAME_CHECKED(URpgAnimInstance, GetGaspBlendStackInputs));
+		if (Test.TestNotNull(TEXT("GetGaspBlendStackInputs is reflected"), HelperFunction))
+		{
+			Test.TestTrue(
+				TEXT("GetGaspBlendStackInputs is BlueprintCallable, pure, and const"),
+				HelperFunction->HasAllFunctionFlags(
+					FUNC_BlueprintCallable | FUNC_BlueprintPure | FUNC_Const));
+			Test.TestTrue(
+				TEXT("GetGaspBlendStackInputs is explicitly BlueprintThreadSafe"),
+				HelperFunction->HasMetaData(TEXT("BlueprintThreadSafe")));
+		}
+		if (BlendStackInputsNode)
+		{
+			Test.TestTrue(
+				TEXT("The nested helper call is a pure K2 node"),
+				BlendStackInputsNode->IsNodePure());
+			Test.TestEqual(
+				TEXT("The nested helper call has the expected function name"),
+				BlendStackInputsNode->GetFunctionName(),
+				GET_FUNCTION_NAME_CHECKED(URpgAnimInstance, GetGaspBlendStackInputs));
+			Test.TestEqual(
+				TEXT("The nested helper call resolves to URpgAnimInstance"),
+				BlendStackInputsNode->GetTargetFunction(),
+				HelperFunction);
+		}
+
+		const FAnimNode_OrientationWarping* OrientationWarping =
+			ReadRuntimeNode<FAnimNode_OrientationWarping>(OrientationWarpingNode);
+		if (Test.TestNotNull(TEXT("The per-sample Orientation Warping runtime node is readable"), OrientationWarping))
+		{
+			Test.TestEqual(TEXT("OW evaluates from graph inputs"), OrientationWarping->Mode, EWarpingEvaluationMode::Graph);
+			Test.TestEqual(TEXT("OW samples 0.8 seconds ahead"), OrientationWarping->TargetTime, 0.8f);
+			Test.TestEqual(TEXT("OW ignores root motion below 10 cm/s"), OrientationWarping->MinRootMotionSpeedThreshold, 10.0f);
+			Test.TestEqual(TEXT("OW uses the audited 135 degree inversion threshold"), OrientationWarping->LocomotionAngleDeltaThreshold, 135.0f);
+
+			static const FName ExpectedSpineBones[] = {
+				TEXT("spine_01"),
+				TEXT("spine_02"),
+				TEXT("spine_03"),
+				TEXT("spine_04"),
+				TEXT("spine_05"),
+			};
+			constexpr int32 ExpectedSpineBoneCount = static_cast<int32>(UE_ARRAY_COUNT(ExpectedSpineBones));
+			Test.TestEqual(TEXT("OW distributes rotation over exactly five spine bones"), OrientationWarping->SpineBones.Num(), ExpectedSpineBoneCount);
+			for (int32 Index = 0; Index < ExpectedSpineBoneCount && Index < OrientationWarping->SpineBones.Num(); ++Index)
+			{
+				Test.TestEqual(
+					*FString::Printf(TEXT("OW spine bone %d is stable"), Index),
+					OrientationWarping->SpineBones[Index].BoneName,
+					ExpectedSpineBones[Index]);
+			}
+			Test.TestEqual(TEXT("OW uses the mannequin IK foot root"), OrientationWarping->IKFootRootBone.BoneName, FName(TEXT("ik_foot_root")));
+			Test.TestEqual(TEXT("OW has exactly two IK foot bones"), OrientationWarping->IKFootBones.Num(), 2);
+			if (OrientationWarping->IKFootBones.Num() == 2)
+			{
+				Test.TestEqual(TEXT("OW left IK foot is stable"), OrientationWarping->IKFootBones[0].BoneName, FName(TEXT("ik_foot_l")));
+				Test.TestEqual(TEXT("OW right IK foot is stable"), OrientationWarping->IKFootBones[1].BoneName, FName(TEXT("ik_foot_r")));
+			}
+
+			Test.TestEqual(TEXT("OW rotates around Z"), OrientationWarping->RotationAxis.GetValue(), EAxis::Z);
+			Test.TestEqual(TEXT("OW distributes half of the orientation"), OrientationWarping->DistributedBoneOrientationAlpha, 0.5f);
+			Test.TestEqual(TEXT("OW interpolation speed is audited"), OrientationWarping->RotationInterpSpeed, 8.0f);
+			Test.TestEqual(TEXT("OW counter-compensation speed is audited"), OrientationWarping->CounterCompensateInterpSpeed, 45.0f);
+			Test.TestEqual(TEXT("OW permits full correction"), OrientationWarping->MaxCorrectionDegrees, 180.0f);
+			Test.TestEqual(TEXT("OW preserves pivot root-motion deltas"), OrientationWarping->MaxRootMotionDeltaToCompensateDegrees, 45.0f);
+			Test.TestTrue(TEXT("OW counter-compensates animated root motion"), OrientationWarping->bCounterCompenstateInterpolationByRootMotion);
+			Test.TestFalse(TEXT("OW does not scale by global blend weight"), OrientationWarping->bScaleByGlobalBlendWeight);
+			Test.TestFalse(TEXT("OW does not use manual root-motion velocity"), OrientationWarping->bUseManualRootMotionVelocity);
+			Test.TestEqual(TEXT("OW evaluates in OffsetRoot-compatible root-bone space"), OrientationWarping->WarpingSpace, EOrientationWarpingSpace::RootBoneTransform);
+			Test.TestEqual(TEXT("OW uses a float alpha"), OrientationWarping->AlphaInputType, EAnimAlphaInputType::Float);
+			Test.TestEqual(TEXT("OW has no LOD cutoff"), OrientationWarping->LODThreshold, INDEX_NONE);
+		}
+
+		const FAnimNode_ResetRoot* ResetRoot = ReadRuntimeNode<FAnimNode_ResetRoot>(ResetRootNode);
+		if (Test.TestNotNull(TEXT("The Reset Root runtime node is readable"), ResetRoot))
+		{
+			Test.TestEqual(TEXT("Reset Root uses a float moving gate"), ResetRoot->AlphaInputType, EAnimAlphaInputType::Float);
+			Test.TestEqual(TEXT("Reset Root default alpha remains one"), ResetRoot->Alpha, 1.0f);
+			Test.TestEqual(TEXT("Reset Root has no LOD cutoff"), ResetRoot->LODThreshold, INDEX_NONE);
+		}
+
+		const FAnimNode_Steering* Steering = ReadRuntimeNode<FAnimNode_Steering>(SteeringNode);
+		if (Test.TestNotNull(TEXT("The Steering runtime node is readable"), Steering))
+		{
+			Test.TestEqual(TEXT("Steering matches the GASP 0.2-second correction target"), Steering->ProceduralTargetTime, 0.2f);
+			Test.TestEqual(TEXT("Steering samples animation two seconds ahead"), Steering->AnimatedTargetTime, 2.0f);
+			Test.TestEqual(TEXT("Steering root-motion threshold is audited"), Steering->RootMotionThreshold, 1.0f);
+			Test.TestEqual(TEXT("Steering disables below 10 cm/s"), Steering->DisableSteeringBelowSpeed, 10.0f);
+			Test.TestEqual(TEXT("Steering additive correction remains enabled"), Steering->DisableAdditiveBelowSpeed, -1.0f);
+			Test.TestEqual(TEXT("Steering minimum root-motion scale is audited"), Steering->MinScaleRatio, 0.5f);
+			Test.TestEqual(TEXT("Steering maximum root-motion scale is audited"), Steering->MaxScaleRatio, 1.5f);
+			Test.TestEqual(TEXT("Steering uses a bool gate"), Steering->AlphaInputType, EAnimAlphaInputType::Bool);
+			Test.TestTrue(TEXT("Steering's unbound bool default remains enabled"), Steering->bAlphaBoolEnabled);
+			Test.TestEqual(TEXT("Steering bool blend-in is audited"), Steering->AlphaBoolBlend.BlendInTime, 0.1f);
+			Test.TestEqual(TEXT("Steering bool blend-out is audited"), Steering->AlphaBoolBlend.BlendOutTime, 0.1f);
+			Test.TestEqual(TEXT("Steering bool blend is linear"), Steering->AlphaBoolBlend.BlendOption, EAlphaBlendOption::Linear);
+			Test.TestEqual(TEXT("Steering has no LOD cutoff"), Steering->LODThreshold, INDEX_NONE);
+		}
+
+		TestExactOutputLinks(Test, TEXT("BlendStack Input feeds L2C"), InputNode, TEXT("Pose"), {{LocalToComponentNode, TEXT("LocalPose")}});
+		TestExactOutputLinks(Test, TEXT("L2C feeds per-sample OW"), LocalToComponentNode, TEXT("ComponentPose"), {{OrientationWarpingNode, TEXT("ComponentPose")}});
+		TestExactOutputLinks(Test, TEXT("Per-sample OW feeds Reset Root"), OrientationWarpingNode, TEXT("Pose"), {{ResetRootNode, TEXT("ComponentPose")}});
+		TestExactOutputLinks(Test, TEXT("Reset Root feeds Steering"), ResetRootNode, TEXT("Pose"), {{SteeringNode, TEXT("ComponentPose")}});
+		TestExactOutputLinks(Test, TEXT("Steering feeds C2L"), SteeringNode, TEXT("Pose"), {{ComponentToLocalNode, TEXT("ComponentPose")}});
+		TestExactOutputLinks(Test, TEXT("C2L feeds BlendStack Result"), ComponentToLocalNode, TEXT("Pose"), {{ResultNode, TEXT("Result")}});
+		TestExactOutputLinks(Test, TEXT("The tagged reference feeds the helper"), InputReferenceNode, TEXT("Value"), {{BlendStackInputsNode, TEXT("Node")}});
+		TestExactOutputLinks(
+			Test,
+			TEXT("The helper asset feeds both procedural nodes"),
+			BlendStackInputsNode,
+			TEXT("CurrentAnimAsset"),
+			{{OrientationWarpingNode, TEXT("CurrentAnimAsset")}, {SteeringNode, TEXT("CurrentAnimAsset")}});
+		TestExactOutputLinks(
+			Test,
+			TEXT("The helper asset time feeds both procedural nodes"),
+			BlendStackInputsNode,
+			TEXT("CurrentAnimAssetTime"),
+			{{OrientationWarpingNode, TEXT("CurrentAnimAssetTime")}, {SteeringNode, TEXT("CurrentAnimAssetTime")}});
+		TestExactOutputLinks(Test, TEXT("Moving alpha gates Reset Root"), BlendStackInputsNode, TEXT("MovingAlpha"), {{ResetRootNode, TEXT("Alpha")}});
+		TestExactOutputLinks(Test, TEXT("Curve-gated alpha drives OW"), BlendStackInputsNode, TEXT("OrientationWarpingAlpha"), {{OrientationWarpingNode, TEXT("Alpha")}});
+		TestExactOutputLinks(Test, TEXT("Desired facing drives Steering"), BlendStackInputsNode, TEXT("DesiredFacing"), {{SteeringNode, TEXT("TargetOrientation")}});
+		TestExactOutputLinks(Test, TEXT("Last movement direction drives OW"), BlendStackInputsNode, TEXT("LocomotionDirection"), {{OrientationWarpingNode, TEXT("LocomotionDirection")}});
+		TestExactOutputLinks(Test, TEXT("The active-sample gate drives Steering"), BlendStackInputsNode, TEXT("bEnableSteering"), {{SteeringNode, TEXT("bAlphaBoolEnabled")}});
+	}
+
 }
+
 
 IMPLEMENT_SIMPLE_AUTOMATION_TEST(
 	FRpgGaspPilotAssetContractTest,
@@ -493,6 +951,29 @@ bool FRpgGaspPilotAssetContractTest::RunTest(const FString& Parameters)
 			TestTrue(TEXT("The GASP AnimBlueprint generates its thread-safe trajectory snapshot"), bGeneratesTrajectory);
 		}
 
+		FString OffsetRootRotationMode;
+		if (TestTrue(
+			TEXT("The runtime Offset Root rotation mode is readable"),
+			ReadPropertyText(PilotAnimDefaults, TEXT("OffsetRootRotationMode"), OffsetRootRotationMode)))
+		{
+			TestEqual(
+				TEXT("The runtime Offset Root rotation mode defaults to interpolation"),
+				OffsetRootRotationMode,
+				FString(TEXT("Interpolate")));
+		}
+		bool bResetOffsetRootEveryFrame = true;
+		if (TestTrue(
+			TEXT("The runtime Offset Root reset pulse is readable"),
+			ReadBoolProperty(
+				PilotAnimDefaults,
+				TEXT("bResetOffsetRootEveryFrame"),
+				bResetOffsetRootEveryFrame)))
+		{
+			TestFalse(
+				TEXT("The runtime Offset Root reset pulse is disabled by default"),
+				bResetOffsetRootEveryFrame);
+		}
+
 		TArray<FString> GroundDatabasePaths;
 		if (TestTrue(
 				TEXT("The grounded database property is readable"),
@@ -514,6 +995,65 @@ bool FRpgGaspPilotAssetContractTest::RunTest(const FString& Parameters)
 					*FString::Printf(TEXT("Ground database %d remains project-local"), Index),
 					GroundDatabasePaths[Index],
 					FString(ExpectedGroundDatabases[Index]));
+			}
+		}
+
+		FString CrouchingDatabasePath;
+		if (TestTrue(
+			TEXT("The crouching database property is readable"),
+			ReadObjectProperty(
+				PilotAnimDefaults,
+				TEXT("CrouchingMotionMatchingDatabase"),
+				CrouchingDatabasePath)))
+		{
+			TestEqual(
+				TEXT("Crouching uses the project-local crouch database"),
+				CrouchingDatabasePath,
+				FString(TEXT("/RpgGaspLocomotion/MotionMatching/Databases/PSD_Rpg_Crouch.PSD_Rpg_Crouch")));
+		}
+
+		FString TurnInPlaceDatabasePath;
+		if (TestTrue(
+			TEXT("The turn-in-place database property is readable"),
+			ReadObjectProperty(
+				PilotAnimDefaults,
+				TEXT("TurnInPlaceMotionMatchingDatabase"),
+				TurnInPlaceDatabasePath)))
+		{
+			TestEqual(
+				TEXT("Turn-in-place uses the exclusive project-local database"),
+				TurnInPlaceDatabasePath,
+				FString(TEXT("/RpgGaspLocomotion/MotionMatching/Databases/PSD_Rpg_Stand_TurnInPlace.PSD_Rpg_Stand_TurnInPlace")));
+		}
+
+		TMap<FName, FString> GameplayTagMappings;
+		if (TestTrue(
+			TEXT("The gameplay-tag property map is readable"),
+			ReadGameplayTagPropertyMappings(PilotAnimDefaults, GameplayTagMappings)))
+		{
+			static const TPair<FName, FString> ExpectedMappings[] = {
+				{TEXT("bGameplayMovementStopped"), TEXT("Gameplay.MovementStopped")},
+				{TEXT("bStateBlocking"), TEXT("State.Blocking")},
+				{TEXT("bStateDead"), TEXT("State.Dead")},
+				{TEXT("bStateStaggered"), TEXT("State.Staggered")},
+				{TEXT("bStateGuardBroken"), TEXT("State.GuardBroken")},
+			};
+			TestEqual(
+				TEXT("Exactly five gameplay tags gate cosmetic turn-in-place"),
+				GameplayTagMappings.Num(),
+				static_cast<int32>(UE_ARRAY_COUNT(ExpectedMappings)));
+			for (const TPair<FName, FString>& ExpectedMapping : ExpectedMappings)
+			{
+				const FString* ActualTag = GameplayTagMappings.Find(ExpectedMapping.Key);
+				if (TestNotNull(
+					*FString::Printf(TEXT("%s has a gameplay-tag mapping"), *ExpectedMapping.Key.ToString()),
+					ActualTag))
+				{
+					TestEqual(
+						*FString::Printf(TEXT("%s mirrors the intended gameplay tag"), *ExpectedMapping.Key.ToString()),
+						*ActualTag,
+						ExpectedMapping.Value);
+				}
 			}
 		}
 
@@ -554,6 +1094,14 @@ bool FRpgGaspPilotAssetContractTest::RunTest(const FString& Parameters)
 			FindUniqueNode<UAnimGraphNode_Root>(*this, AnimGraph, TEXT("AnimGraph Root"));
 		UK2Node_VariableGet* TrajectoryGetter =
 			FindUniqueVariableGetter(*this, AnimGraph, TEXT("LocomotionTrajectory"));
+		UK2Node_VariableGet* OffsetRootRotationModeGetter =
+			FindUniqueVariableGetter(*this, AnimGraph, TEXT("OffsetRootRotationMode"));
+		UK2Node_VariableGet* ResetOffsetRootGetter =
+			FindUniqueVariableGetter(*this, AnimGraph, TEXT("bResetOffsetRootEveryFrame"));
+		TestEqual(
+			TEXT("The top-level pilot graph contains only the five pose nodes and three property getters"),
+			AnimGraph->Nodes.Num(),
+			8);
 		int32 FootPlacementNodeCount = 0;
 		int32 LegIkNodeCount = 0;
 		int32 OrientationWarpingNodeCount = 0;
@@ -607,6 +1155,125 @@ bool FRpgGaspPilotAssetContractTest::RunTest(const FString& Parameters)
 					MotionMatchingBlendTime,
 					0.2f);
 			}
+
+			UObject* BlendProfileObject = nullptr;
+			if (TestTrue(
+				TEXT("The Motion Matching blend profile is readable"),
+				ReadStructObjectProperty(
+					MotionMatchingNode,
+					TEXT("Node"),
+					TEXT("BlendProfile"),
+					BlendProfileObject)))
+			{
+				UBlendProfile* BlendProfile = Cast<UBlendProfile>(BlendProfileObject);
+				if (TestNotNull(TEXT("Motion Matching uses a skeleton blend profile"), BlendProfile))
+				{
+					TestEqual(
+						TEXT("Motion Matching uses the project-local FastFeet profile"),
+						BlendProfile->GetFName(),
+						FName(TEXT("FastFeet")));
+					TestEqual(
+						TEXT("FastFeet belongs to the authoritative player skeleton"),
+						BlendProfile->GetTypedOuter<USkeleton>(),
+						PilotAnimBlueprint->TargetSkeleton.Get());
+					TestEqual(
+						TEXT("FastFeet uses time factors instead of Epic's incompatible weight-factor profile"),
+						BlendProfile->GetMode(),
+						EBlendProfileMode::TimeFactor);
+					TestEqual(
+						TEXT("FastFeet retains the complete project-local IK, leg, and corrective-bone set"),
+						BlendProfile->GetNumBlendEntries(),
+						49);
+					for (int32 EntryIndex = 0; EntryIndex < BlendProfile->GetNumBlendEntries(); ++EntryIndex)
+					{
+						TestEqual(
+							FString::Printf(TEXT("FastFeet entry %d halves the 0.2-second transition"), EntryIndex),
+							BlendProfile->GetEntryBlendScale(EntryIndex),
+							0.5f);
+					}
+					TestEqual(
+						TEXT("FastFeet makes the configured bones blend in 0.1 seconds"),
+						MotionMatchingBlendTime * BlendProfile->GetBoneBlendScale(TEXT("ik_foot_l")),
+						0.1f);
+					TestEqual(
+						TEXT("FastFeet leaves the root on the full 0.2-second transition"),
+						BlendProfile->GetBoneBlendScale(TEXT("root")),
+						1.0f);
+				}
+			}
+
+			TestPerSampleBlendStackContract(*this, MotionMatchingNode);
+		}
+
+		if (OffsetRootBoneNode)
+		{
+			bool bResetEveryFrame = true;
+			if (TestTrue(
+				TEXT("The Offset Root Bone reset default is readable"),
+				ReadStructBoolProperty(
+					OffsetRootBoneNode,
+					TEXT("Node"),
+					TEXT("bResetEveryFrame"),
+					bResetEveryFrame)))
+			{
+				TestFalse(TEXT("Offset Root Bone keeps reset disabled unless the runtime requests one frame"), bResetEveryFrame);
+			}
+
+			FString RotationMode;
+			if (TestTrue(
+				TEXT("The Offset Root Bone rotation mode is readable"),
+				ReadStructPropertyText(
+					OffsetRootBoneNode,
+					TEXT("Node"),
+					TEXT("RotationMode"),
+					RotationMode)))
+			{
+				TestEqual(
+					TEXT("Controller-facing locomotion interpolates visual root rotation"),
+					RotationMode,
+					FString(TEXT("Interpolate")));
+			}
+
+			float RotationHalfLife = 0.0f;
+			if (TestTrue(
+				TEXT("The Offset Root Bone rotation half-life is readable"),
+				ReadStructFloatProperty(
+					OffsetRootBoneNode,
+					TEXT("Node"),
+					TEXT("RotationHalfLife"),
+					RotationHalfLife)))
+			{
+				TestEqual(
+					TEXT("Visual root rotation catches controller-facing movement promptly"),
+					RotationHalfLife,
+					0.1f);
+			}
+
+			const UEdGraphPin* RotationModePin =
+				OffsetRootBoneNode->FindPin(TEXT("RotationMode"), EGPD_Input);
+			if (TestNotNull(TEXT("Offset Root Bone exposes its RotationMode input"), RotationModePin))
+			{
+				TestFalse(TEXT("The dynamic RotationMode input is visible"), RotationModePin->bHidden);
+				TestEqual(
+					TEXT("RotationMode uses an enum pin"),
+					RotationModePin->PinType.PinCategory,
+					UEdGraphSchema_K2::PC_Byte);
+				TestEqual(
+					TEXT("RotationMode uses EOffsetRootBoneMode"),
+					RotationModePin->PinType.PinSubCategoryObject.Get(),
+					static_cast<UObject*>(StaticEnum<EOffsetRootBoneMode>()));
+			}
+
+			const UEdGraphPin* ResetEveryFramePin =
+				OffsetRootBoneNode->FindPin(TEXT("bResetEveryFrame"), EGPD_Input);
+			if (TestNotNull(TEXT("Offset Root Bone exposes its bResetEveryFrame input"), ResetEveryFramePin))
+			{
+				TestFalse(TEXT("The dynamic reset input is visible"), ResetEveryFramePin->bHidden);
+				TestEqual(
+					TEXT("bResetEveryFrame uses a boolean pin"),
+					ResetEveryFramePin->PinType.PinCategory,
+					UEdGraphSchema_K2::PC_Boolean);
+			}
 		}
 
 		if (SlotNode)
@@ -615,6 +1282,35 @@ bool FRpgGaspPilotAssetContractTest::RunTest(const FString& Parameters)
 				TEXT("Combat and harvesting montages keep the authoritative DefaultSlot"),
 				SlotNode->Node.SlotName,
 				FName(TEXT("DefaultSlot")));
+		}
+
+		if (OffsetRootRotationModeGetter)
+		{
+			const UEdGraphPin* RotationModeOutput =
+				OffsetRootRotationModeGetter->FindPin(TEXT("OffsetRootRotationMode"), EGPD_Output);
+			if (TestNotNull(TEXT("OffsetRootRotationMode getter exposes its value"), RotationModeOutput))
+			{
+				TestEqual(
+					TEXT("The runtime rotation-mode output uses an enum pin"),
+					RotationModeOutput->PinType.PinCategory,
+					UEdGraphSchema_K2::PC_Byte);
+				TestEqual(
+					TEXT("The runtime rotation-mode output uses EOffsetRootBoneMode"),
+					RotationModeOutput->PinType.PinSubCategoryObject.Get(),
+					static_cast<UObject*>(StaticEnum<EOffsetRootBoneMode>()));
+			}
+		}
+		if (ResetOffsetRootGetter)
+		{
+			const UEdGraphPin* ResetOutput =
+				ResetOffsetRootGetter->FindPin(TEXT("bResetOffsetRootEveryFrame"), EGPD_Output);
+			if (TestNotNull(TEXT("bResetOffsetRootEveryFrame getter exposes its value"), ResetOutput))
+			{
+				TestEqual(
+					TEXT("The runtime reset output uses a boolean pin"),
+					ResetOutput->PinType.PinCategory,
+					UEdGraphSchema_K2::PC_Boolean);
+			}
 		}
 
 		TestExclusiveLink(
@@ -652,6 +1348,20 @@ bool FRpgGaspPilotAssetContractTest::RunTest(const FString& Parameters)
 			TEXT("LocomotionTrajectory"),
 			PoseHistoryNode,
 			TEXT("TransformTrajectory"));
+		TestExclusiveLink(
+			*this,
+			TEXT("The runtime turn state drives Offset Root Bone rotation mode"),
+			OffsetRootRotationModeGetter,
+			TEXT("OffsetRootRotationMode"),
+			OffsetRootBoneNode,
+			TEXT("RotationMode"));
+		TestExclusiveLink(
+			*this,
+			TEXT("The one-frame hard-reset request drives Offset Root Bone"),
+			ResetOffsetRootGetter,
+			TEXT("bResetOffsetRootEveryFrame"),
+			OffsetRootBoneNode,
+			TEXT("bResetEveryFrame"));
 	}
 
 	TestEqual(
