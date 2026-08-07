@@ -3,8 +3,6 @@
 #if WITH_DEV_AUTOMATION_TESTS
 
 #include "Animation/AnimBlueprint.h"
-#include "AnimGraphNode_ComponentToLocalSpace.h"
-#include "AnimGraphNode_LocalToComponentSpace.h"
 #include "AnimGraphNode_MotionMatching.h"
 #include "AnimGraphNode_PoseSearchHistoryCollector.h"
 #include "AnimGraphNode_Root.h"
@@ -209,6 +207,26 @@ namespace RpgGaspPilotAssetTests
 		}
 
 		OutValue = Property->GetPropertyValue_InContainer(Object);
+		return true;
+	}
+
+	bool ReadStructFloatProperty(
+		const UObject* Object,
+		FName StructPropertyName,
+		FName ValuePropertyName,
+		float& OutValue)
+	{
+		const FStructProperty* StructProperty =
+			Object ? FindFProperty<FStructProperty>(Object->GetClass(), StructPropertyName) : nullptr;
+		const FFloatProperty* ValueProperty =
+			StructProperty ? FindFProperty<FFloatProperty>(StructProperty->Struct, ValuePropertyName) : nullptr;
+		if (!StructProperty || !ValueProperty)
+		{
+			return false;
+		}
+
+		const void* StructAddress = StructProperty->ContainerPtrToValuePtr<void>(Object);
+		OutValue = ValueProperty->GetPropertyValue_InContainer(StructAddress);
 		return true;
 	}
 
@@ -528,29 +546,17 @@ bool FRpgGaspPilotAssetContractTest::RunTest(const FString& Parameters)
 			AnimGraph,
 			TEXT("AnimGraphNode_OffsetRootBone"),
 			TEXT("Offset Root Bone"));
-		UAnimGraphNode_LocalToComponentSpace* LocalToComponentNode =
-			FindUniqueNode<UAnimGraphNode_LocalToComponentSpace>(*this, AnimGraph, TEXT("Local To Component"));
-		UEdGraphNode* OrientationWarpingNode = FindUniqueNodeByClassName(
-			*this,
-			AnimGraph,
-			TEXT("AnimGraphNode_OrientationWarping"),
-			TEXT("Orientation Warping"));
-		UAnimGraphNode_ComponentToLocalSpace* ComponentToLocalNode =
-			FindUniqueNode<UAnimGraphNode_ComponentToLocalSpace>(*this, AnimGraph, TEXT("Component To Local"));
 		UAnimGraphNode_Slot* SlotNode =
 			FindUniqueNode<UAnimGraphNode_Slot>(*this, AnimGraph, TEXT("Montage Slot"));
 		UAnimGraphNode_PoseSearchHistoryCollector* PoseHistoryNode =
 			FindUniqueNode<UAnimGraphNode_PoseSearchHistoryCollector>(*this, AnimGraph, TEXT("Pose History"));
 		UAnimGraphNode_Root* RootNode =
 			FindUniqueNode<UAnimGraphNode_Root>(*this, AnimGraph, TEXT("AnimGraph Root"));
-		UK2Node_VariableGet* LocomotionAngleGetter =
-			FindUniqueVariableGetter(*this, AnimGraph, TEXT("LocomotionAngle"));
-		UK2Node_VariableGet* ProceduralAlphaGetter =
-			FindUniqueVariableGetter(*this, AnimGraph, TEXT("ProceduralLocomotionAlpha"));
 		UK2Node_VariableGet* TrajectoryGetter =
 			FindUniqueVariableGetter(*this, AnimGraph, TEXT("LocomotionTrajectory"));
 		int32 FootPlacementNodeCount = 0;
 		int32 LegIkNodeCount = 0;
+		int32 OrientationWarpingNodeCount = 0;
 		for (const UEdGraphNode* GraphNode : AnimGraph->Nodes)
 		{
 			if (!GraphNode)
@@ -560,6 +566,7 @@ bool FRpgGaspPilotAssetContractTest::RunTest(const FString& Parameters)
 
 			FootPlacementNodeCount += GraphNode->GetClass()->GetFName() == TEXT("AnimGraphNode_FootPlacement");
 			LegIkNodeCount += GraphNode->GetClass()->GetFName() == TEXT("AnimGraphNode_LegIK");
+			OrientationWarpingNodeCount += GraphNode->GetClass()->GetFName() == TEXT("AnimGraphNode_OrientationWarping");
 		}
 		TestEqual(
 			TEXT("The pilot does not silently use Epic's worker-thread-unsafe Foot Placement node"),
@@ -568,6 +575,10 @@ bool FRpgGaspPilotAssetContractTest::RunTest(const FString& Parameters)
 		TestEqual(
 			TEXT("Leg IK remains part of the thread-safe Foot Placement follow-up"),
 			LegIkNodeCount,
+			0);
+		TestEqual(
+			TEXT("The pilot does not apply incomplete top-level Orientation Warping"),
+			OrientationWarpingNodeCount,
 			0);
 
 		if (MotionMatchingNode)
@@ -582,6 +593,20 @@ bool FRpgGaspPilotAssetContractTest::RunTest(const FString& Parameters)
 			TestNotNull(
 				TEXT("The Motion Matching update binding resolves on the generated AnimInstance class"),
 				MotionMatchingNode->UpdateFunction.ResolveMember<UFunction>(PilotAnimBlueprint->GeneratedClass));
+			float MotionMatchingBlendTime = 0.0f;
+			if (TestTrue(
+				TEXT("The Motion Matching blend time is readable"),
+				ReadStructFloatProperty(
+					MotionMatchingNode,
+					TEXT("Node"),
+					TEXT("BlendTime"),
+					MotionMatchingBlendTime)))
+			{
+				TestEqual(
+					TEXT("Motion Matching uses the responsive pilot blend time"),
+					MotionMatchingBlendTime,
+					0.2f);
+			}
 		}
 
 		if (SlotNode)
@@ -601,29 +626,8 @@ bool FRpgGaspPilotAssetContractTest::RunTest(const FString& Parameters)
 			TEXT("Source"));
 		TestExclusiveLink(
 			*this,
-			TEXT("Offset Root Bone feeds Local To Component"),
+			TEXT("Offset Root Bone feeds DefaultSlot"),
 			OffsetRootBoneNode,
-			TEXT("Pose"),
-			LocalToComponentNode,
-			TEXT("LocalPose"));
-		TestExclusiveLink(
-			*this,
-			TEXT("Local To Component feeds Orientation Warping"),
-			LocalToComponentNode,
-			TEXT("ComponentPose"),
-			OrientationWarpingNode,
-			TEXT("ComponentPose"));
-		TestExclusiveLink(
-			*this,
-			TEXT("Orientation Warping feeds Component To Local"),
-			OrientationWarpingNode,
-			TEXT("Pose"),
-			ComponentToLocalNode,
-			TEXT("ComponentPose"));
-		TestExclusiveLink(
-			*this,
-			TEXT("Component To Local feeds DefaultSlot"),
-			ComponentToLocalNode,
 			TEXT("Pose"),
 			SlotNode,
 			TEXT("Source"));
@@ -641,20 +645,6 @@ bool FRpgGaspPilotAssetContractTest::RunTest(const FString& Parameters)
 			TEXT("Pose"),
 			RootNode,
 			TEXT("Result"));
-		TestExclusiveLink(
-			*this,
-			TEXT("The proxy-derived angle drives Orientation Warping"),
-			LocomotionAngleGetter,
-			TEXT("LocomotionAngle"),
-			OrientationWarpingNode,
-			TEXT("LocomotionAngle"));
-		TestExclusiveLink(
-			*this,
-			TEXT("The montage-safe procedural alpha gates Orientation Warping"),
-			ProceduralAlphaGetter,
-			TEXT("ProceduralLocomotionAlpha"),
-			OrientationWarpingNode,
-			TEXT("Alpha"));
 		TestExclusiveLink(
 			*this,
 			TEXT("The game-thread trajectory snapshot feeds Pose History"),

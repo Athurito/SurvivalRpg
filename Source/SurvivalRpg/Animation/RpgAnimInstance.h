@@ -144,7 +144,7 @@ protected:
 	bool bGeneratePoseSearchTrajectory = false;
 
 	/**
-	 * Pose Search databases used while grounded by Motion Matching AnimBPs.
+	 * Pose Search databases used while grounded, ordered as Idle, Walk, Run, and Sprint.
 	 * Static designer-authored defaults; never mutate this array while an AnimInstance is evaluating.
 	 */
 	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Rpg|Animation|Motion Matching")
@@ -220,7 +220,7 @@ protected:
 	UPROPERTY(BlueprintReadOnly, Transient, Category = "Rpg|Animation|Locomotion")
 	bool bIsCrouching = false;
 
-	/** Cosmetic gait band derived from current speed relative to CharacterMovement's authoritative max speed. */
+	/** Cosmetic gait selected from grounded movement intent; Sprint is reserved until gameplay exposes an explicit sprint state. */
 	UPROPERTY(BlueprintReadOnly, Transient, Category = "Rpg|Animation|Locomotion")
 	ERpgLocomotionGait LocomotionGait = ERpgLocomotionGait::Idle;
 

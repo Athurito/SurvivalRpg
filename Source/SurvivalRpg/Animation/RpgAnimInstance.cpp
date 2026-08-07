@@ -53,6 +53,7 @@ void FRpgAnimInstanceProxy::PreUpdate(UAnimInstance* InAnimInstance, float Delta
 {
 	Super::PreUpdate(InAnimInstance, DeltaSeconds);
 
+	const ERpgLocomotionGait PreviousGait = Gait;
 	WorldVelocity = FVector::ZeroVector;
 	LocalVelocity = FVector::ZeroVector;
 	WorldAcceleration = FVector::ZeroVector;
@@ -97,6 +98,7 @@ void FRpgAnimInstanceProxy::PreUpdate(UAnimInstance* InAnimInstance, float Delta
 	WorldAcceleration = MovementComponent->GetCurrentAcceleration();
 	LocalAcceleration = ActorRotation.UnrotateVector(WorldAcceleration);
 	GroundSpeed = WorldVelocity.Size2D();
+	constexpr float MovingTrajectorySpeedThreshold = 5.0f;
 	VerticalVelocity = WorldVelocity.Z;
 	GroundDistance = MovementComponent->GetGroundInfo().GroundDistance;
 	bHasVelocity = !WorldVelocity.IsNearlyZero();
@@ -130,23 +132,27 @@ void FRpgAnimInstanceProxy::PreUpdate(UAnimInstance* InAnimInstance, float Delta
 		break;
 	}
 
-	const float MaxGroundSpeed = FMath::Max(MovementComponent->GetMaxSpeed(), 1.0f);
-	const float SpeedRatio = GroundSpeed / MaxGroundSpeed;
-	if (!bIsMovingOnGround || GroundSpeed < 3.0f)
+	constexpr float IdleSpeedThreshold = 3.0f;
+	const float MaxAcceleration = FMath::Max(MovementComponent->GetMaxAcceleration(), 1.0f);
+	const float InputMagnitude = WorldAcceleration.Size2D() / MaxAcceleration;
+	const bool bHasGroundedMoveIntent = bIsMovingOnGround && InputMagnitude > 0.1f;
+	if (!bIsMovingOnGround || (GroundSpeed < IdleSpeedThreshold && !bHasGroundedMoveIntent))
 	{
 		Gait = ERpgLocomotionGait::Idle;
 	}
-	else if (SpeedRatio < 0.4f)
+	else if (bHasGroundedMoveIntent)
 	{
-		Gait = ERpgLocomotionGait::Walk;
-	}
-	else if (SpeedRatio < 0.85f)
-	{
-		Gait = ERpgLocomotionGait::Run;
+		Gait = InputMagnitude < 0.65f
+			? ERpgLocomotionGait::Walk
+			: ERpgLocomotionGait::Run;
 	}
 	else
 	{
-		Gait = ERpgLocomotionGait::Sprint;
+		// Keep the last moving database through deceleration so a stop pose is not interrupted
+		// just because input acceleration reached zero before capsule velocity did.
+		Gait = PreviousGait == ERpgLocomotionGait::Walk
+			? ERpgLocomotionGait::Walk
+			: ERpgLocomotionGait::Run;
 	}
 
 	ProceduralLocomotionAlpha =
@@ -161,6 +167,22 @@ void FRpgAnimInstanceProxy::PreUpdate(UAnimInstance* InAnimInstance, float Delta
 
 	if (RpgAnimInstance->ShouldGeneratePoseSearchTrajectory())
 	{
+		// Match the controller-facing GASP trajectory profiles. During movement, current mesh facing is
+		// already authoritative; extrapolating a mouse or replicated yaw delta selects false turn poses.
+		TrajectoryGenerationData.RotateTowardsMovementSpeed = 0.0f;
+		TrajectoryGenerationData.BendVelocityTowardsAcceleration = 0.0f;
+		const bool bCanPredictIdleControllerYaw =
+			Character->GetLocalRole() != ROLE_SimulatedProxy &&
+			GroundSpeed < MovingTrajectorySpeedThreshold &&
+			!bHasAcceleration;
+		TrajectoryGenerationData.MaxControllerYawRate = bCanPredictIdleControllerYaw ? 100.0f : 0.0f;
+
+		// Avoid interpreting the initial world yaw as a one-frame controller turn.
+		if (TransformTrajectory.Samples.IsEmpty())
+		{
+			DesiredControllerYawLastUpdate = Character->GetViewRotation().Yaw;
+		}
+
 		FTransformTrajectory GeneratedTrajectory;
 		UPoseSearchTrajectoryLibrary::PoseSearchGenerateTransformTrajectory(
 			RpgAnimInstance,
@@ -201,6 +223,11 @@ EDataValidationResult URpgAnimInstance::IsDataValid(FDataValidationContext& Cont
 		{
 			Context.AddError(FText::FromString(
 				TEXT("Motion Matching is enabled, but no grounded Pose Search database is configured.")));
+		}
+		else if (GroundMotionMatchingDatabases.Num() != 4)
+		{
+			Context.AddError(FText::FromString(
+				TEXT("Ground Motion Matching databases must be ordered as exactly Idle, Walk, Run, and Sprint.")));
 		}
 		if (AirborneMotionMatchingDatabases.IsEmpty())
 		{
@@ -284,15 +311,27 @@ void URpgAnimInstance::UpdateGaspMotionMatching(
 		return;
 	}
 
-	const TArray<TObjectPtr<UPoseSearchDatabase>>& SelectedDatabases =
-		bLocomotionIsFalling ? AirborneMotionMatchingDatabases : GroundMotionMatchingDatabases;
 	TArray<UPoseSearchDatabase*, TInlineAllocator<5>> DatabasesToSearch;
-	DatabasesToSearch.Reserve(SelectedDatabases.Num());
-	for (UPoseSearchDatabase* Database : SelectedDatabases)
+	if (bLocomotionIsFalling)
 	{
-		if (Database)
+		DatabasesToSearch.Reserve(AirborneMotionMatchingDatabases.Num());
+		for (UPoseSearchDatabase* Database : AirborneMotionMatchingDatabases)
 		{
-			DatabasesToSearch.Add(Database);
+			if (Database)
+			{
+				DatabasesToSearch.Add(Database);
+			}
+		}
+	}
+	else
+	{
+		const int32 GaitDatabaseIndex = static_cast<int32>(LocomotionGait);
+		if (GroundMotionMatchingDatabases.IsValidIndex(GaitDatabaseIndex))
+		{
+			if (UPoseSearchDatabase* Database = GroundMotionMatchingDatabases[GaitDatabaseIndex])
+			{
+				DatabasesToSearch.Add(Database);
+			}
 		}
 	}
 
