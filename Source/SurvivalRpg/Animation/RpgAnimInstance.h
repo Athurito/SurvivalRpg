@@ -4,10 +4,45 @@
 
 #include "Animation/AnimInstance.h"
 #include "Animation/AnimInstanceProxy.h"
+#include "Animation/AnimExecutionContext.h"
+#include "Animation/AnimNodeReference.h"
+#include "Animation/TrajectoryTypes.h"
 #include "GameplayEffectTypes.h"
+#include "PoseSearch/PoseSearchTrajectoryLibrary.h"
 #include "RpgAnimInstance.generated.h"
 
 class UAbilitySystemComponent;
+class UPoseSearchDatabase;
+
+/** Cosmetic locomotion speed band derived from the authoritative movement-component snapshot. */
+UENUM(BlueprintType)
+enum class ERpgLocomotionGait : uint8
+{
+	Idle,
+	Walk,
+	Run,
+	Sprint,
+};
+
+/** Cosmetic stance mirrored from the replicated character crouch state. */
+UENUM(BlueprintType)
+enum class ERpgLocomotionStance : uint8
+{
+	Standing,
+	Crouching,
+};
+
+/** Animation-facing movement state derived from CharacterMovement without exposing the component to worker threads. */
+UENUM(BlueprintType)
+enum class ERpgLocomotionMovementState : uint8
+{
+	None,
+	Grounded,
+	Airborne,
+	Swimming,
+	Flying,
+	Custom,
+};
 
 /**
  * Game-thread snapshot consumed by URpgAnimInstance during parallel animation updates.
@@ -37,11 +72,20 @@ struct SURVIVALRPG_API FRpgAnimInstanceProxy : public FAnimInstanceProxy
 	float GroundDistance = -1.0f;
 	float AimYaw = 0.0f;
 	float AimPitch = 0.0f;
+	float LocomotionAngle = 0.0f;
+	float ProceduralLocomotionAlpha = 0.0f;
+	float DesiredControllerYawLastUpdate = 0.0f;
+	ERpgLocomotionGait Gait = ERpgLocomotionGait::Idle;
+	ERpgLocomotionStance Stance = ERpgLocomotionStance::Standing;
+	ERpgLocomotionMovementState MovementState = ERpgLocomotionMovementState::None;
+	FPoseSearchTrajectoryData TrajectoryGenerationData;
+	FTransformTrajectory TransformTrajectory;
 	bool bHasVelocity = false;
 	bool bHasAcceleration = false;
 	bool bIsFalling = false;
 	bool bIsMovingOnGround = false;
 	bool bIsCrouching = false;
+	bool bIsAnyMontagePlaying = false;
 };
 
 
@@ -60,6 +104,16 @@ public:
 	explicit URpgAnimInstance(const FObjectInitializer& ObjectInitializer);
 
 	virtual void InitializeWithAbilitySystem(UAbilitySystemComponent* ASC);
+
+	/** Returns whether this AnimBP opts into game-thread trajectory generation for Motion Matching. */
+	bool ShouldGeneratePoseSearchTrajectory() const { return bGeneratePoseSearchTrajectory; }
+
+	/**
+	 * Supplies the active project-local Pose Search databases to a Motion Matching node.
+	 * Bound as the node's thread-safe On Update function; it reads only immutable defaults and proxy snapshots.
+	 */
+	UFUNCTION(BlueprintCallable, Category = "Rpg|Animation|Motion Matching", meta = (BlueprintThreadSafe))
+	void UpdateGaspMotionMatching(const FAnimUpdateContext& Context, const FAnimNodeReference& Node);
 
 	/**
 	 * Keeps listen-server copies of remote autonomous characters time-correct when several
@@ -81,6 +135,27 @@ protected:
 	/** Gameplay tags mirrored from the owning ASC into AnimBP variables; do not query the ASC from worker-thread graph logic. */
 	UPROPERTY(EditDefaultsOnly, Category = "GameplayTags")
 	FGameplayTagBlueprintPropertyMap GameplayTagPropertyMap;
+
+	/**
+	 * Enables Pose Search trajectory generation in the game-thread proxy snapshot.
+	 * This is static AnimBP configuration: keep it disabled for non-Motion-Matching graphs.
+	 */
+	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Rpg|Animation|Motion Matching")
+	bool bGeneratePoseSearchTrajectory = false;
+
+	/**
+	 * Pose Search databases used while grounded by Motion Matching AnimBPs.
+	 * Static designer-authored defaults; never mutate this array while an AnimInstance is evaluating.
+	 */
+	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Rpg|Animation|Motion Matching")
+	TArray<TObjectPtr<UPoseSearchDatabase>> GroundMotionMatchingDatabases;
+
+	/**
+	 * Pose Search databases used while airborne by Motion Matching AnimBPs.
+	 * Static designer-authored defaults; never mutate this array while an AnimInstance is evaluating.
+	 */
+	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Rpg|Animation|Motion Matching")
+	TArray<TObjectPtr<UPoseSearchDatabase>> AirborneMotionMatchingDatabases;
 
 	/** Character velocity in world space, snapshotted on the game thread and read-only to AnimBPs. */
 	UPROPERTY(BlueprintReadOnly, Transient, Category = "Rpg|Animation|Locomotion")
@@ -118,6 +193,13 @@ protected:
 	UPROPERTY(BlueprintReadOnly, Transient, Category = "Rpg|Animation|Aim", Meta = (Units = "deg"))
 	float AimPitch = 0.0f;
 
+	/**
+	 * Signed movement angle relative to the owning actor's forward axis.
+	 * The graph-driven Orientation Warping node compares it with animation root motion; cosmetic-only, in degrees.
+	 */
+	UPROPERTY(BlueprintReadOnly, Transient, Category = "Rpg|Animation|Motion Matching", Meta = (Units = "deg"))
+	float LocomotionAngle = 0.0f;
+
 	/** True when the velocity snapshot is non-zero. */
 	UPROPERTY(BlueprintReadOnly, Transient, Category = "Rpg|Animation|Locomotion")
 	bool bHasVelocity = false;
@@ -137,4 +219,34 @@ protected:
 	/** Replicated crouch state owned by the character. */
 	UPROPERTY(BlueprintReadOnly, Transient, Category = "Rpg|Animation|Locomotion")
 	bool bIsCrouching = false;
+
+	/** Cosmetic gait band derived from current speed relative to CharacterMovement's authoritative max speed. */
+	UPROPERTY(BlueprintReadOnly, Transient, Category = "Rpg|Animation|Locomotion")
+	ERpgLocomotionGait LocomotionGait = ERpgLocomotionGait::Idle;
+
+	/** Replicated standing/crouching state translated into an animation-facing enum. */
+	UPROPERTY(BlueprintReadOnly, Transient, Category = "Rpg|Animation|Locomotion")
+	ERpgLocomotionStance LocomotionStance = ERpgLocomotionStance::Standing;
+
+	/** CharacterMovement mode translated into a worker-thread-safe animation state. */
+	UPROPERTY(BlueprintReadOnly, Transient, Category = "Rpg|Animation|Locomotion")
+	ERpgLocomotionMovementState LocomotionMovementState = ERpgLocomotionMovementState::None;
+
+	/**
+	 * Game-thread-generated world-space trajectory consumed read-only by the Motion Matching history collector.
+	 * The value is transient and never authoritative gameplay state.
+	 */
+	UPROPERTY(BlueprintReadOnly, Transient, Category = "Rpg|Animation|Motion Matching")
+	FTransformTrajectory LocomotionTrajectory;
+
+	/**
+	 * Alpha for procedural locomotion nodes; zero while airborne, crouched, or a gameplay montage is active.
+	 * This prevents Orientation Warping from influencing combat, harvesting, hit, or death transitions.
+	 */
+	UPROPERTY(BlueprintReadOnly, Transient, Category = "Rpg|Animation|Motion Matching")
+	float ProceduralLocomotionAlpha = 0.0f;
+
+	/** True when any montage is active in this AnimInstance; cosmetic-only and snapshotted on the game thread. */
+	UPROPERTY(BlueprintReadOnly, Transient, Category = "Rpg|Animation|Montage")
+	bool bIsAnyMontagePlaying = false;
 };

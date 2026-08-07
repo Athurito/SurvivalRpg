@@ -23,6 +23,7 @@ public class SurvivalRpg : ModuleRules
 			"ModularGameplay",
 			"ModularGameplayActors",
 			"NetCore",
+			"PoseSearch",
 			"StateTreeModule",
 			"UMG",
 			"CommonGame",

@@ -106,6 +106,10 @@
 			"Enabled": true
 		},
 		{
+			"Name": "PoseSearch",
+			"Enabled": true
+		},
+		{
 			"Name": "RpgGaspLocomotion",
 			"Enabled": true
 		},

@@ -17,6 +17,7 @@ public class SurvivalRpgEditor : ModuleRules
 
 		PrivateDependencyModuleNames.AddRange(new string[]
 		{
+			"AnimGraph",
 			"AssetRegistry",
 			"AssetTools",
 			"BlueprintGraph",
@@ -40,6 +41,7 @@ public class SurvivalRpgEditor : ModuleRules
 			"ModularGameplay",
 			"ModularGameplayActors",
 			"PropertyBindingUtils",
+			"PoseSearchEditor",
 			"Projects",
 			"SlateCore",
 			"StateTreeEditorModule",
