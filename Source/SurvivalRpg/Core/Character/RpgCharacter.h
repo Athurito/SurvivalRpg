@@ -7,6 +7,7 @@
 #include "ModularCharacter.h"
 #include "GameFramework/Character.h"
 #include "RpgDownedComponent.h"
+#include "RpgCharacterRotationMode.h"
 #include "RpgCharacter.generated.h"
 
 class URpgCameraComponent;
@@ -21,6 +22,7 @@ class URpgPawnGameplayComponent;
 class URpgPawnExtensionComponent;
 class URpgCharacterMovementComponent;
 class URpgEquipmentManagerComponent;
+struct FGameplayTag;
 
 /**
  * Compact server-owned acceleration state replicated to simulated proxies for locomotion animation.
@@ -75,6 +77,39 @@ public:
 	UFUNCTION(BlueprintCallable, Category = "Rpg|Character")
 	void ToggleCrouch();
 
+	/**
+	 * Returns the rotation mode used for local presentation.
+	 * Autonomous proxies may resolve predicted activation-owned tags; simulated proxies return the replicated server value.
+	 */
+	UFUNCTION(BlueprintCallable, BlueprintPure, Category = "Rpg|Character|Rotation")
+	ERpgCharacterRotationMode GetRotationMode() const;
+
+	/** Pure Aim > CombatStrafe > Free priority resolver shared by runtime code and automation tests. */
+	static ERpgCharacterRotationMode ResolveRotationMode(
+		bool bAimRequested,
+		bool bCombatStrafeRequested,
+		ERpgCharacterRotationMode DefaultMode);
+
+	/** Returns the movement-component policy for the supplied rotation mode without mutating an actor. */
+	static FRpgCharacterRotationPolicy GetRotationPolicy(ERpgCharacterRotationMode InRotationMode);
+
+	/**
+	 * Pure server-request gate used by runtime validation and automation tests.
+	 * Disable requests are always allowed; enable requires a weapon, an unblocked grounded stance, and no montage.
+	 */
+	static bool CanApplyExplicitCombatStanceRequest(
+		bool bEnable,
+		bool bHasWeapon,
+		bool bHasBlockingState,
+		bool bIsMovingOnGround,
+		bool bIsCrouched,
+		bool bWantsToCrouch,
+		bool bIsAnyMontagePlaying);
+
+	/** Toggles the explicit combat-facing stance through the server-authoritative character request seam. */
+	UFUNCTION(BlueprintCallable, Category = "Rpg|Character|Rotation")
+	void ToggleCombatStance();
+
 	UFUNCTION(BlueprintCallable, Category = "Rpg|Equipment")
 	URpgEquipmentManagerComponent* GetEquipmentManagerComponent() const { return EquipmentManagerComponent; }
 	
@@ -118,6 +153,51 @@ protected:
 	void EnterDeadState();
 	
 private:
+	/** Reconciles the authoritative or locally predicted tag request into a presentation policy. */
+	void RefreshRotationMode();
+
+	/** Resolves request tags against the current PawnData fallback without mutating state. */
+	ERpgCharacterRotationMode ResolveRequestedRotationMode() const;
+
+	/** Returns the PawnData fallback, preserving CombatStrafe for legacy pawns without data. */
+	ERpgCharacterRotationMode GetDefaultRotationMode() const;
+
+	/** Applies one resolved controller/movement rotation contract. */
+	void ApplyRotationPolicy(ERpgCharacterRotationMode InRotationMode);
+
+	/** Binds request-tag changes on the ASC currently using this pawn as its avatar. */
+	void BindRotationModeAbilitySystem(URpgAbilitySystemComponent* AbilitySystemComponent);
+
+	/** Removes request-tag delegates from the previous avatar ASC. */
+	void UnbindRotationModeAbilitySystem();
+
+	void HandleRotationRequestTagChanged(const FGameplayTag Tag, int32 NewCount);
+	void HandleEquipmentChanged();
+	bool CanEnterExplicitCombatStance() const;
+	void SetExplicitCombatStance(bool bEnabled);
+
+	/** Reliable owning-client request; enable is validated against weapon equipment and blocking state on the server. */
+	UFUNCTION(Server, Reliable)
+	void ServerToggleCombatStance();
+
+	/** Server-owned rotation truth replicated to owners and simulated proxies for reconciliation and late join. */
+	UPROPERTY(Transient, ReplicatedUsing = OnRep_RotationMode)
+	ERpgCharacterRotationMode RotationMode = ERpgCharacterRotationMode::CombatStrafe;
+
+	/** Applies newly replicated server truth; autonomous proxies may still overlay predicted ability tags cosmetically. */
+	UFUNCTION()
+	void OnRep_RotationMode();
+
+	/** ASC whose rotation request-tag delegates are currently registered. */
+	TWeakObjectPtr<URpgAbilitySystemComponent> RotationModeAbilitySystem;
+
+	/** Server-only ownership bit for the single additive explicit-stance loose-tag count. */
+	bool bExplicitCombatStanceRequested = false;
+
+	/** Last policy applied to CharacterMovement, used to detect Free-to-controller-facing transitions. */
+	ERpgCharacterRotationMode LastAppliedRotationMode = ERpgCharacterRotationMode::CombatStrafe;
+	bool bHasAppliedRotationPolicy = false;
+
 	/** Latest server acceleration, replicated only to simulated proxies and consumed by CharacterMovement. */
 	UPROPERTY(Transient, ReplicatedUsing = OnRep_ReplicatedAcceleration)
 	FRpgReplicatedAcceleration ReplicatedAcceleration;

@@ -135,6 +135,33 @@ void URpgEquipmentManagerComponent::GetLifetimeReplicatedProps(TArray<FLifetimeP
 	DOREPLIFETIME(ThisClass, EquipmentList);
 }
 
+void URpgEquipmentManagerComponent::BeginEquipmentChangeBatch()
+{
+	++EquipmentChangeBatchDepth;
+}
+
+void URpgEquipmentManagerComponent::EndEquipmentChangeBatch()
+{
+	check(EquipmentChangeBatchDepth > 0);
+	--EquipmentChangeBatchDepth;
+	if (EquipmentChangeBatchDepth == 0 && bEquipmentChangePending)
+	{
+		bEquipmentChangePending = false;
+		OnEquipmentChanged.Broadcast();
+	}
+}
+
+void URpgEquipmentManagerComponent::NotifyEquipmentChanged()
+{
+	if (EquipmentChangeBatchDepth > 0)
+	{
+		bEquipmentChangePending = true;
+		return;
+	}
+
+	OnEquipmentChanged.Broadcast();
+}
+
 URpgEquipmentInstance* URpgEquipmentManagerComponent::EquipItem(TSubclassOf<URpgEquipmentDefinition> EquipmentDefinition)
 {
 	if (!GetOwner() || !GetOwner()->HasAuthority())
@@ -162,6 +189,7 @@ URpgEquipmentInstance* URpgEquipmentManagerComponent::EquipItemInSlotWithInstiga
 		return Result;
 	}
 
+	BeginEquipmentChangeBatch();
 	if (CanEquipItemInSlot(EquipmentDefinition, Slot))
 	{
 		UnequipConflictingItems(EquipmentDefinition, Slot);
@@ -182,8 +210,11 @@ URpgEquipmentInstance* URpgEquipmentManagerComponent::EquipItemInSlotWithInstiga
 			{
 				AddReplicatedSubObject(Result);
 			}
+
+			NotifyEquipmentChanged();
 		}
 	}
+	EndEquipmentChangeBatch();
 
 	return Result;
 }
@@ -209,6 +240,7 @@ void URpgEquipmentManagerComponent::UnequipItem(URpgEquipmentInstance* ItemInsta
 	ItemInstance->OnUnequipped();
 	EquipmentList.RemoveEntry(ItemInstance);
 	RebuildEquipmentAbilityGrants();
+	NotifyEquipmentChanged();
 }
 
 void URpgEquipmentManagerComponent::UnequipItemInSlot(ERpgEquipmentSlot Slot)
@@ -227,10 +259,12 @@ void URpgEquipmentManagerComponent::UnequipItemInSlot(ERpgEquipmentSlot Slot)
 		}
 	}
 
+	BeginEquipmentChangeBatch();
 	for (URpgEquipmentInstance* Instance : InstancesToUnequip)
 	{
 		UnequipItem(Instance);
 	}
+	EndEquipmentChangeBatch();
 }
 
 URpgEquipmentInstance* URpgEquipmentManagerComponent::GetFirstInstanceOfType(TSubclassOf<URpgEquipmentInstance> InstanceType) const

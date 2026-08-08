@@ -10,6 +10,7 @@
 #include "AnimationWarpingTypes.h"
 #include "GameplayEffectTypes.h"
 #include "PoseSearch/PoseSearchTrajectoryLibrary.h"
+#include "SurvivalRpg/Core/Character/RpgCharacterRotationMode.h"
 #include "RpgAnimInstance.generated.h"
 
 class UAbilitySystemComponent;
@@ -97,6 +98,7 @@ struct SURVIVALRPG_API FRpgAnimInstanceProxy : public FAnimInstanceProxy
 	ERpgLocomotionGait Gait = ERpgLocomotionGait::Idle;
 	ERpgLocomotionStance Stance = ERpgLocomotionStance::Standing;
 	ERpgLocomotionMovementState MovementState = ERpgLocomotionMovementState::None;
+	ERpgCharacterRotationMode RotationMode = ERpgCharacterRotationMode::Free;
 	FPoseSearchTrajectoryData TrajectoryGenerationData;
 	FTransformTrajectory TransformTrajectory;
 	bool bHasVelocity = false;
@@ -348,6 +350,13 @@ protected:
 	/** CharacterMovement mode translated into a worker-thread-safe animation state. */
 	UPROPERTY(BlueprintReadOnly, Transient, Category = "Rpg|Animation|Locomotion")
 	ERpgLocomotionMovementState LocomotionMovementState = ERpgLocomotionMovementState::None;
+
+	/**
+	 * Replicated character rotation policy copied from the game-thread proxy for AnimBP debugging.
+	 * This transient cosmetic snapshot is read-only and never owns authoritative rotation state.
+	 */
+	UPROPERTY(BlueprintReadOnly, Transient, Category = "Rpg|Animation|Locomotion")
+	ERpgCharacterRotationMode CharacterRotationMode = ERpgCharacterRotationMode::Free;
 
 	/**
 	 * Game-thread-generated world-space trajectory consumed read-only by the Motion Matching history collector.

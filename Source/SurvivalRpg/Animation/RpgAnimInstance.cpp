@@ -38,6 +38,12 @@ constexpr float TurnInPlaceInactiveAccumulatorTimeout = 0.2f;
 constexpr float TurnInPlaceFinishedTimeTolerance = 0.05f;
 constexpr float TurnInPlaceLargePositionDelta = 200.0f;
 
+constexpr bool SupportsTurnInPlace(ERpgCharacterRotationMode RotationMode)
+{
+	return RotationMode == ERpgCharacterRotationMode::CombatStrafe ||
+		RotationMode == ERpgCharacterRotationMode::Aim;
+}
+
 float CalculateTurnInPlacePlaybackWatchdogDuration(
 	float RemainingAnimationTime,
 	float PlayRate,
@@ -176,6 +182,7 @@ void FRpgAnimInstanceProxy::PreUpdate(UAnimInstance* InAnimInstance, float Delta
 	Gait = ERpgLocomotionGait::Idle;
 	Stance = ERpgLocomotionStance::Standing;
 	MovementState = ERpgLocomotionMovementState::None;
+	RotationMode = ERpgCharacterRotationMode::Free;
 	bHasVelocity = false;
 	bHasAcceleration = false;
 	bHasGroundedMoveIntent = false;
@@ -208,6 +215,7 @@ void FRpgAnimInstanceProxy::PreUpdate(UAnimInstance* InAnimInstance, float Delta
 		bHasPreviousOwnerSnapshot = false;
 		return;
 	}
+	RotationMode = Character->GetRotationMode();
 
 	URpgCharacterMovementComponent* MovementComponent = Cast<URpgCharacterMovementComponent>(Character->GetCharacterMovement());
 	if (!MovementComponent)
@@ -447,6 +455,7 @@ bool URpgAnimInstance::IsTurnInPlaceEligible(const FRpgAnimInstanceProxy& Proxy)
 {
 	return
 		TurnInPlaceMotionMatchingDatabase != nullptr &&
+		SupportsTurnInPlace(Proxy.RotationMode) &&
 		Proxy.MovementState == ERpgLocomotionMovementState::Grounded &&
 		Proxy.bIsMovingOnGround &&
 		!Proxy.bIsCrouching &&
@@ -526,6 +535,7 @@ void URpgAnimInstance::UpdateTurnInPlaceRuntime(float DeltaSeconds, const FRpgAn
 
 	const bool bHardResetCondition =
 		Proxy.bTurnInPlaceHardReset ||
+		!SupportsTurnInPlace(Proxy.RotationMode) ||
 		Proxy.bHasTurnInPlaceBlockingGameplayTag ||
 		Proxy.bIsAnyMontagePlaying ||
 		Proxy.bIsCrouching ||
@@ -876,6 +886,7 @@ void URpgAnimInstance::NativeThreadSafeUpdateAnimation(float DeltaSeconds)
 	LocomotionGait = Proxy.Gait;
 	LocomotionStance = Proxy.Stance;
 	LocomotionMovementState = Proxy.MovementState;
+	CharacterRotationMode = Proxy.RotationMode;
 	LocomotionTrajectory = Proxy.TransformTrajectory;
 	ProceduralLocomotionAlpha = Proxy.ProceduralLocomotionAlpha;
 	bIsAnyMontagePlaying = Proxy.bIsAnyMontagePlaying;

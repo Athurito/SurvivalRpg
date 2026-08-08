@@ -79,6 +79,7 @@ public:
 	void Input_LookMouse(const FInputActionValue& InputActionValue);
 	void Input_LookStick(const FInputActionValue& InputActionValue);
 	void Input_Crouch(const FInputActionValue& InputActionValue);
+	void Input_ToggleCombatStance(const FInputActionValue& InputActionValue);
 	void Input_AutoRun(const FInputActionValue& InputActionValue);
 	void Input_Jump(const FInputActionValue& InputActionValue);
 	void Input_StopJump(const FInputActionValue& InputActionValue);

@@ -156,6 +156,7 @@ bool FRpgTurnInPlaceStateMachineTest::RunTest(const FString& Parameters)
 	FRpgAnimInstanceProxy Proxy;
 	Proxy.MovementState = ERpgLocomotionMovementState::Grounded;
 	Proxy.Gait = ERpgLocomotionGait::Idle;
+	Proxy.RotationMode = ERpgCharacterRotationMode::CombatStrafe;
 	Proxy.bIsMovingOnGround = true;
 	Proxy.GroundSpeed = 0.0f;
 	Proxy.bHasAcceleration = false;
@@ -167,6 +168,14 @@ bool FRpgTurnInPlaceStateMachineTest::RunTest(const FString& Parameters)
 	CurrentTrajectorySample.TimeInSeconds = 0.0f;
 	CurrentTrajectorySample.Position = FVector::ZeroVector;
 	CurrentTrajectorySample.Facing = FQuat::Identity;
+
+	Proxy.RotationMode = ERpgCharacterRotationMode::Free;
+	TestFalse(TEXT("Free rotation mode disables turn-in-place eligibility"), AnimInstance->IsTurnInPlaceEligible(Proxy));
+	Proxy.RotationMode = ERpgCharacterRotationMode::CombatStrafe;
+	TestTrue(TEXT("Combat strafe rotation mode allows turn-in-place eligibility"), AnimInstance->IsTurnInPlaceEligible(Proxy));
+	Proxy.RotationMode = ERpgCharacterRotationMode::Aim;
+	TestTrue(TEXT("Aim rotation mode allows turn-in-place eligibility"), AnimInstance->IsTurnInPlaceEligible(Proxy));
+	Proxy.RotationMode = ERpgCharacterRotationMode::CombatStrafe;
 
 	AnimInstance->ResetTurnInPlaceRuntime(false);
 	Proxy.ActorYawDelta = 20.0f;
@@ -506,7 +515,16 @@ bool FRpgTurnInPlaceStateMachineTest::RunTest(const FString& Parameters)
 		Proxy.bIsAnyMontagePlaying = false;
 		Proxy.bIsCrouching = false;
 		Proxy.MovementState = ERpgLocomotionMovementState::Grounded;
+		Proxy.RotationMode = ERpgCharacterRotationMode::CombatStrafe;
 	};
+
+	ActivateTurnForReset();
+	Proxy.RotationMode = ERpgCharacterRotationMode::Free;
+	AnimInstance->UpdateTurnInPlaceRuntime(0.01f, Proxy);
+	TestEqual(TEXT("Switching an active turn to Free hard-resets turn-in-place"), AnimInstance->TurnInPlaceState, ERpgTurnInPlaceState::Inactive);
+	TestTrue(TEXT("The first Active-to-Free frame emits an Offset Root reset pulse"), AnimInstance->bResetOffsetRootEveryFrame);
+	AnimInstance->UpdateTurnInPlaceRuntime(0.01f, Proxy);
+	TestFalse(TEXT("Persistent Free mode does not repeat the Offset Root reset pulse"), AnimInstance->bResetOffsetRootEveryFrame);
 
 	ActivateTurnForReset();
 	Proxy.bIsCrouching = true;
@@ -557,6 +575,7 @@ bool FRpgTurnInPlaceStateMachineTest::RunTest(const FString& Parameters)
 		FRpgAnimInstanceProxy FrameRateProxy;
 		FrameRateProxy.MovementState = ERpgLocomotionMovementState::Grounded;
 		FrameRateProxy.Gait = ERpgLocomotionGait::Idle;
+		FrameRateProxy.RotationMode = ERpgCharacterRotationMode::CombatStrafe;
 		FrameRateProxy.bIsMovingOnGround = true;
 		FrameRateProxy.GroundSpeed = 0.0f;
 		FrameRateProxy.bTurnInPlaceHardReset = false;
