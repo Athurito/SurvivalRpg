@@ -115,6 +115,25 @@ float URpgAnimInstance::CalculateTurnInPlaceYawDelta(float PreviousActorYaw, flo
 	return FMath::FindDeltaAngleDegrees(PreviousActorYaw, CurrentActorYaw);
 }
 
+bool URpgAnimInstance::DidTurnInPlaceSupportChange(
+	bool bHasPreviousSnapshot,
+	ERpgCharacterRotationMode PreviousMode,
+	ERpgCharacterRotationMode CurrentMode)
+{
+	return bHasPreviousSnapshot && SupportsTurnInPlace(PreviousMode) != SupportsTurnInPlace(CurrentMode);
+}
+
+float URpgAnimInstance::CalculateTurnInPlaceSnapshotYawDelta(
+	float PreviousActorYaw,
+	float CurrentActorYaw,
+	bool bHardReset,
+	bool bSupportChanged)
+{
+	return bHardReset || bSupportChanged
+		? 0.0f
+		: CalculateTurnInPlaceYawDelta(PreviousActorYaw, CurrentActorYaw);
+}
+
 FTransformTrajectory URpgAnimInstance::MakeTurnInPlaceSyntheticTrajectory(
 	const FTransformTrajectory& SourceTrajectory,
 	float CurrentActorYaw,
@@ -192,6 +211,7 @@ void FRpgAnimInstanceProxy::PreUpdate(UAnimInstance* InAnimInstance, float Delta
 	bIsAnyMontagePlaying = false;
 	bHasTurnInPlaceBlockingGameplayTag = false;
 	bTurnInPlaceHardReset = false;
+	bTurnInPlaceSupportChanged = false;
 	ActorYaw = 0.0f;
 	ActorYawDelta = 0.0f;
 	ActorLocation = FVector::ZeroVector;
@@ -240,19 +260,26 @@ void FRpgAnimInstanceProxy::PreUpdate(UAnimInstance* InAnimInstance, float Delta
 		PreviousOwnerUniqueId != OwnerUniqueId ||
 		PreviousLocalRole != LocalRole ||
 		PreviousRemoteRole != RemoteRole;
+	bTurnInPlaceSupportChanged = URpgAnimInstance::DidTurnInPlaceSupportChange(
+		bHasPreviousOwnerSnapshot,
+		PreviousRotationMode,
+		RotationMode);
 	const bool bLargePositionJump =
 		bHasPreviousOwnerSnapshot &&
 		FVector::DistSquared(PreviousActorLocation, ActorLocation) > FMath::Square(TurnInPlaceLargePositionDelta);
 	bTurnInPlaceHardReset = bOwnerOrRoleChanged || bLargePositionJump || MovementComponent->bJustTeleported;
-	ActorYawDelta = bTurnInPlaceHardReset
-		? 0.0f
-		: URpgAnimInstance::CalculateTurnInPlaceYawDelta(PreviousActorYaw, ActorYaw);
+	ActorYawDelta = URpgAnimInstance::CalculateTurnInPlaceSnapshotYawDelta(
+		PreviousActorYaw,
+		ActorYaw,
+		bTurnInPlaceHardReset,
+		bTurnInPlaceSupportChanged);
 
 	PreviousOwnerUniqueId = OwnerUniqueId;
 	PreviousLocalRole = LocalRole;
 	PreviousRemoteRole = RemoteRole;
 	PreviousActorYaw = ActorYaw;
 	PreviousActorLocation = ActorLocation;
+	PreviousRotationMode = RotationMode;
 	bHasPreviousOwnerSnapshot = true;
 
 	WorldVelocity = MovementComponent->Velocity;
@@ -552,6 +579,16 @@ void URpgAnimInstance::UpdateTurnInPlaceRuntime(float DeltaSeconds, const FRpgAn
 		return;
 	}
 	bTurnInPlaceHardResetConditionLastFrame = false;
+
+	if (Proxy.bTurnInPlaceSupportChanged)
+	{
+		// Entering a controller-facing mode can rotate the capsule from an arbitrary free-camera
+		// heading in one frame. Treat that policy transition as a reset, not authored turn intent.
+		// Recovery also absorbs the short network-smoothing tail on simulated proxies.
+		BeginTurnInPlaceRecovery(true);
+		LocomotionTrajectory = Proxy.TransformTrajectory;
+		return;
+	}
 
 	const bool bEligible = IsTurnInPlaceEligible(Proxy);
 	if (!bEligible)

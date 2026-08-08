@@ -110,6 +110,8 @@ struct SURVIVALRPG_API FRpgAnimInstanceProxy : public FAnimInstanceProxy
 	bool bIsAnyMontagePlaying = false;
 	bool bHasTurnInPlaceBlockingGameplayTag = false;
 	bool bTurnInPlaceHardReset = true;
+	/** True when the game-thread snapshot crosses between free-facing and turn-in-place-capable rotation. */
+	bool bTurnInPlaceSupportChanged = false;
 
 	// Previous-owner data is maintained and consumed only by game-thread PreUpdate.
 	uint32 PreviousOwnerUniqueId = 0;
@@ -117,6 +119,7 @@ struct SURVIVALRPG_API FRpgAnimInstanceProxy : public FAnimInstanceProxy
 	uint8 PreviousRemoteRole = 0;
 	float PreviousActorYaw = 0.0f;
 	FVector PreviousActorLocation = FVector::ZeroVector;
+	ERpgCharacterRotationMode PreviousRotationMode = ERpgCharacterRotationMode::Free;
 	bool bHasPreviousOwnerSnapshot = false;
 };
 
@@ -413,6 +416,17 @@ private:
 		ContinueSelectedTurn,
 	};
 
+	/** Detects a transition across the Free versus controller-facing turn-in-place policy boundary. */
+	static bool DidTurnInPlaceSupportChange(
+		bool bHasPreviousSnapshot,
+		ERpgCharacterRotationMode PreviousMode,
+		ERpgCharacterRotationMode CurrentMode);
+	/** Rebases actor yaw when the owner snapshot is invalidated or the facing policy changes. */
+	static float CalculateTurnInPlaceSnapshotYawDelta(
+		float PreviousActorYaw,
+		float CurrentActorYaw,
+		bool bHardReset,
+		bool bSupportChanged);
 	void UpdateTurnInPlaceRuntime(float DeltaSeconds, const FRpgAnimInstanceProxy& Proxy);
 	void BeginTurnInPlaceRequest(float QuantizedAngle);
 	void BeginTurnInPlaceRecovery(bool bHardResetOffset);
