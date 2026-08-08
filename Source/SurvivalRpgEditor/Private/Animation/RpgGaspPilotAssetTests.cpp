@@ -4,11 +4,13 @@
 
 #include "AlphaBlend.h"
 #include "Abilities/GameplayAbility.h"
+#include "Animation/AnimGraphNode_RpgFootPlacement.h"
 #include "AnimGraph/AnimGraphNode_OrientationWarping.h"
 #include "AnimGraph/AnimGraphNode_Steering.h"
 #include "AnimGraphNode_BlendStackInput.h"
 #include "AnimGraphNode_BlendStackResult.h"
 #include "AnimGraphNode_ComponentToLocalSpace.h"
+#include "AnimGraphNode_LegIK.h"
 #include "AnimGraphNode_LocalToComponentSpace.h"
 #include "Animation/AnimBlueprint.h"
 #include "Animation/AnimSequence.h"
@@ -310,6 +312,19 @@ namespace RpgGaspPilotAssetTests
 		}
 
 		return NodeProperty->ContainerPtrToValuePtr<TRuntimeNode>(EditorNode);
+	}
+
+	template <typename TStruct>
+	const TStruct* ReadStructPropertyValue(const UObject* Object, FName PropertyName)
+	{
+		const FStructProperty* Property =
+			Object ? FindFProperty<FStructProperty>(Object->GetClass(), PropertyName) : nullptr;
+		if (!Property || Property->Struct != TStruct::StaticStruct())
+		{
+			return nullptr;
+		}
+
+		return Property->ContainerPtrToValuePtr<TStruct>(Object);
 	}
 
 	bool ReadBoolProperty(const UObject* Object, FName PropertyName, bool& OutValue)
@@ -1109,6 +1124,45 @@ bool FRpgGaspPilotAssetContractTest::RunTest(const FString& Parameters)
 			TestTrue(TEXT("The GASP AnimBlueprint generates its thread-safe trajectory snapshot"), bGeneratesTrajectory);
 		}
 
+		const FRpgFootPlacementSettings* FootPlacementSettings =
+			ReadStructPropertyValue<FRpgFootPlacementSettings>(
+				PilotAnimDefaults,
+				TEXT("FootPlacementSettings"));
+		if (TestNotNull(
+				TEXT("The GASP AnimBlueprint exposes project-local Foot Placement settings"),
+				FootPlacementSettings))
+		{
+			TestTrue(
+				TEXT("The GASP AnimBlueprint enables game-thread Foot Placement sampling"),
+				FootPlacementSettings->bEnabled);
+			TestFalse(
+				TEXT("The bounded #60 solver preserves the already-validated authored crouch pose"),
+				FootPlacementSettings->bApplyWhileCrouching);
+			TestEqual(TEXT("Foot Placement traces start 75 cm above each ball"), FootPlacementSettings->TraceStartHeight, 75.0f);
+			TestEqual(TEXT("Foot Placement traces end 100 cm below each ball"), FootPlacementSettings->TraceEndDepth, 100.0f);
+			TestEqual(TEXT("Foot Placement uses a five-centimeter sphere sweep"), FootPlacementSettings->SweepRadius, 5.0f);
+			TestEqual(TEXT("Foot Placement plants below 60 cm/s"), FootPlacementSettings->PlantSpeedThreshold, 60.0f);
+			TestEqual(TEXT("Foot Placement bounds the contact-weighted roll phase at 200 cm/s"), FootPlacementSettings->UnalignmentSpeedThreshold, 200.0f);
+			TestEqual(TEXT("Foot Placement plants within ten centimeters"), FootPlacementSettings->PlantDistanceThreshold, 10.0f);
+			TestEqual(TEXT("Foot Placement releases outside GASP's 35-centimeter radius"), FootPlacementSettings->UnplantRadius, 35.0f);
+			TestEqual(TEXT("Foot Placement replants inside 35 percent of the release radius"), FootPlacementSettings->ReplantRadiusRatio, 0.35f);
+			TestEqual(TEXT("Foot Placement releases after GASP's 45-degree normal change"), FootPlacementSettings->UnplantAngle, 45.0f);
+			TestEqual(TEXT("Foot Placement replants inside half the release angle"), FootPlacementSettings->ReplantAngleRatio, 0.5f);
+			TestEqual(TEXT("Foot Placement bounds locked-foot slope alignment to 60 degrees"), FootPlacementSettings->MaxFootAlignmentAngle, 60.0f);
+			TestEqual(TEXT("Foot Placement bounds locked-foot translation to 50 centimeters"), FootPlacementSettings->MaxFootTranslation, 50.0f);
+			TestEqual(TEXT("Foot Placement keeps a 0.1-second trace-miss grace period"), FootPlacementSettings->TraceMissGracePeriod, 0.10f);
+			TestEqual(TEXT("Foot Placement blends weights with a 0.08-second half-life"), FootPlacementSettings->WeightBlendHalfLife, 0.08f);
+
+			TestEqual(TEXT("Foot Placement samples the left FK ankle"), FootPlacementSettings->LeftLeg.FKFootBone, FName(TEXT("foot_l")));
+			TestEqual(TEXT("Foot Placement drives the left IK target"), FootPlacementSettings->LeftLeg.IKFootBone, FName(TEXT("ik_foot_l")));
+			TestEqual(TEXT("Foot Placement traces from the left ball"), FootPlacementSettings->LeftLeg.BallBone, FName(TEXT("ball_l")));
+			TestEqual(TEXT("Foot Placement reads the left contact curve"), FootPlacementSettings->LeftLeg.SpeedCurveName, FName(TEXT("contact_l")));
+			TestEqual(TEXT("Foot Placement samples the right FK ankle"), FootPlacementSettings->RightLeg.FKFootBone, FName(TEXT("foot_r")));
+			TestEqual(TEXT("Foot Placement drives the right IK target"), FootPlacementSettings->RightLeg.IKFootBone, FName(TEXT("ik_foot_r")));
+			TestEqual(TEXT("Foot Placement traces from the right ball"), FootPlacementSettings->RightLeg.BallBone, FName(TEXT("ball_r")));
+			TestEqual(TEXT("Foot Placement reads the right contact curve"), FootPlacementSettings->RightLeg.SpeedCurveName, FName(TEXT("contact_r")));
+		}
+
 		FString OffsetRootRotationMode;
 		if (TestTrue(
 			TEXT("The runtime Offset Root rotation mode is readable"),
@@ -1246,6 +1300,23 @@ bool FRpgGaspPilotAssetContractTest::RunTest(const FString& Parameters)
 			TEXT("Offset Root Bone"));
 		UAnimGraphNode_Slot* SlotNode =
 			FindUniqueNode<UAnimGraphNode_Slot>(*this, AnimGraph, TEXT("Montage Slot"));
+		UAnimGraphNode_LocalToComponentSpace* FootPlacementLocalToComponentNode =
+			FindUniqueNode<UAnimGraphNode_LocalToComponentSpace>(
+				*this,
+				AnimGraph,
+				TEXT("Foot Placement Local To Component"));
+		UAnimGraphNode_RpgFootPlacement* RpgFootPlacementNode =
+			FindUniqueNode<UAnimGraphNode_RpgFootPlacement>(
+				*this,
+				AnimGraph,
+				TEXT("Project-local Foot Placement"));
+		UAnimGraphNode_LegIK* LegIkNode =
+			FindUniqueNode<UAnimGraphNode_LegIK>(*this, AnimGraph, TEXT("Leg IK"));
+		UAnimGraphNode_ComponentToLocalSpace* FootPlacementComponentToLocalNode =
+			FindUniqueNode<UAnimGraphNode_ComponentToLocalSpace>(
+				*this,
+				AnimGraph,
+				TEXT("Foot Placement Component To Local"));
 		UAnimGraphNode_PoseSearchHistoryCollector* PoseHistoryNode =
 			FindUniqueNode<UAnimGraphNode_PoseSearchHistoryCollector>(*this, AnimGraph, TEXT("Pose History"));
 		UAnimGraphNode_Root* RootNode =
@@ -1256,11 +1327,16 @@ bool FRpgGaspPilotAssetContractTest::RunTest(const FString& Parameters)
 			FindUniqueVariableGetter(*this, AnimGraph, TEXT("OffsetRootRotationMode"));
 		UK2Node_VariableGet* ResetOffsetRootGetter =
 			FindUniqueVariableGetter(*this, AnimGraph, TEXT("bResetOffsetRootEveryFrame"));
+		UK2Node_VariableGet* FootPlacementSnapshotGetter =
+			FindUniqueVariableGetter(*this, AnimGraph, TEXT("FootPlacementSnapshot"));
+		UK2Node_VariableGet* FootPlacementAlphaGetter =
+			FindUniqueVariableGetter(*this, AnimGraph, TEXT("FootPlacementAlpha"));
 		TestEqual(
-			TEXT("The top-level pilot graph contains only the five pose nodes and three property getters"),
+			TEXT("The top-level pilot graph contains exactly nine pose nodes and five property getters"),
 			AnimGraph->Nodes.Num(),
-			8);
-		int32 FootPlacementNodeCount = 0;
+			14);
+		int32 StockFootPlacementNodeCount = 0;
+		int32 RpgFootPlacementNodeCount = 0;
 		int32 LegIkNodeCount = 0;
 		int32 OrientationWarpingNodeCount = 0;
 		for (const UEdGraphNode* GraphNode : AnimGraph->Nodes)
@@ -1270,22 +1346,55 @@ bool FRpgGaspPilotAssetContractTest::RunTest(const FString& Parameters)
 				continue;
 			}
 
-			FootPlacementNodeCount += GraphNode->GetClass()->GetFName() == TEXT("AnimGraphNode_FootPlacement");
-			LegIkNodeCount += GraphNode->GetClass()->GetFName() == TEXT("AnimGraphNode_LegIK");
+			StockFootPlacementNodeCount += GraphNode->GetClass()->GetFName() == TEXT("AnimGraphNode_FootPlacement");
+			RpgFootPlacementNodeCount += GraphNode->GetClass() == UAnimGraphNode_RpgFootPlacement::StaticClass();
+			LegIkNodeCount += GraphNode->GetClass() == UAnimGraphNode_LegIK::StaticClass();
 			OrientationWarpingNodeCount += GraphNode->GetClass()->GetFName() == TEXT("AnimGraphNode_OrientationWarping");
 		}
 		TestEqual(
 			TEXT("The pilot does not silently use Epic's worker-thread-unsafe Foot Placement node"),
-			FootPlacementNodeCount,
+			StockFootPlacementNodeCount,
 			0);
 		TestEqual(
-			TEXT("Leg IK remains part of the thread-safe Foot Placement follow-up"),
+			TEXT("The pilot uses exactly one project-local thread-safe Foot Placement node"),
+			RpgFootPlacementNodeCount,
+			1);
+		TestEqual(
+			TEXT("The project-local Foot Placement target is resolved by exactly one stock Leg IK node"),
 			LegIkNodeCount,
-			0);
+			1);
 		TestEqual(
 			TEXT("The pilot does not apply incomplete top-level Orientation Warping"),
 			OrientationWarpingNodeCount,
 			0);
+		if (FootPlacementLocalToComponentNode)
+		{
+			TestEqual(
+				TEXT("Foot Placement uses the exact Local To Component conversion class"),
+				FootPlacementLocalToComponentNode->GetClass(),
+				UAnimGraphNode_LocalToComponentSpace::StaticClass());
+		}
+		if (RpgFootPlacementNode)
+		{
+			TestEqual(
+				TEXT("Foot Placement uses the exact project-local editor node class"),
+				RpgFootPlacementNode->GetClass(),
+				UAnimGraphNode_RpgFootPlacement::StaticClass());
+		}
+		if (LegIkNode)
+		{
+			TestEqual(
+				TEXT("Leg IK uses Epic's exact stock editor node class"),
+				LegIkNode->GetClass(),
+				UAnimGraphNode_LegIK::StaticClass());
+		}
+		if (FootPlacementComponentToLocalNode)
+		{
+			TestEqual(
+				TEXT("Foot Placement uses the exact Component To Local conversion class"),
+				FootPlacementComponentToLocalNode->GetClass(),
+				UAnimGraphNode_ComponentToLocalSpace::StaticClass());
+		}
 
 		if (MotionMatchingNode)
 		{
@@ -1418,6 +1527,99 @@ bool FRpgGaspPilotAssetContractTest::RunTest(const FString& Parameters)
 			}
 		}
 
+		const FAnimNode_RpgFootPlacement* RpgFootPlacement =
+			ReadRuntimeNode<FAnimNode_RpgFootPlacement>(RpgFootPlacementNode);
+		if (TestNotNull(
+				TEXT("The project-local Foot Placement runtime node is readable"),
+				RpgFootPlacement))
+		{
+			TestEqual(
+				TEXT("Foot Placement lowers the mannequin pelvis"),
+				RpgFootPlacement->PelvisBone.BoneName,
+				FName(TEXT("pelvis")));
+			TestEqual(
+				TEXT("Foot Placement has exactly two leg definitions"),
+				RpgFootPlacement->LegsDefinition.Num(),
+				2);
+			if (RpgFootPlacement->LegsDefinition.Num() == 2)
+			{
+				TestEqual(
+					TEXT("Foot Placement drives the left IK foot first"),
+					RpgFootPlacement->LegsDefinition[0].IKFootBone.BoneName,
+					FName(TEXT("ik_foot_l")));
+				TestEqual(
+					TEXT("Foot Placement pivots the left target around ball_l"),
+					RpgFootPlacement->LegsDefinition[0].BallBone.BoneName,
+					FName(TEXT("ball_l")));
+				TestEqual(
+					TEXT("Foot Placement drives the right IK foot second"),
+					RpgFootPlacement->LegsDefinition[1].IKFootBone.BoneName,
+					FName(TEXT("ik_foot_r")));
+				TestEqual(
+					TEXT("Foot Placement pivots the right target around ball_r"),
+					RpgFootPlacement->LegsDefinition[1].BallBone.BoneName,
+					FName(TEXT("ball_r")));
+			}
+			TestEqual(TEXT("Foot Placement clamps translation to 50 cm"), RpgFootPlacement->MaxFootTranslation, 50.0f);
+			TestEqual(TEXT("Foot Placement clamps alignment to 60 degrees"), RpgFootPlacement->MaxFootRotation, 60.0f);
+			TestEqual(TEXT("Foot Placement clamps pelvis lowering to 50 cm"), RpgFootPlacement->MaxPelvisOffset, 50.0f);
+			TestEqual(TEXT("Foot Placement uses a float graph alpha"), RpgFootPlacement->AlphaInputType, EAnimAlphaInputType::Float);
+			TestEqual(TEXT("Foot Placement keeps its graph-driven alpha default at one"), RpgFootPlacement->Alpha, 1.0f);
+			TestEqual(TEXT("Foot Placement has no hidden LOD cutoff"), RpgFootPlacement->LODThreshold, INDEX_NONE);
+		}
+
+		const FAnimNode_LegIK* LegIk = ReadRuntimeNode<FAnimNode_LegIK>(LegIkNode);
+		if (TestNotNull(TEXT("The stock Leg IK runtime node is readable"), LegIk))
+		{
+			TestEqual(TEXT("Leg IK reaches within 0.01 cm"), LegIk->ReachPrecision, 0.01f);
+			TestEqual(TEXT("Leg IK uses twelve solver iterations"), LegIk->MaxIterations, 12);
+			TestEqual(TEXT("Leg IK softens at 99 percent extension"), LegIk->SoftPercentLength, 0.99f);
+			TestEqual(TEXT("Leg IK applies full soft-extension correction"), LegIk->SoftAlpha, 1.0f);
+			TestEqual(TEXT("Leg IK has exactly two leg definitions"), LegIk->LegsDefinition.Num(), 2);
+			static const FName ExpectedIkFeet[] = {TEXT("ik_foot_l"), TEXT("ik_foot_r")};
+			static const FName ExpectedFkFeet[] = {TEXT("foot_l"), TEXT("foot_r")};
+			for (int32 Index = 0; Index < UE_ARRAY_COUNT(ExpectedIkFeet) && Index < LegIk->LegsDefinition.Num(); ++Index)
+			{
+				const FAnimLegIKDefinition& LegDefinition = LegIk->LegsDefinition[Index];
+				TestEqual(
+					*FString::Printf(TEXT("Leg IK target %d is stable"), Index),
+					LegDefinition.IKFootBone.BoneName,
+					ExpectedIkFeet[Index]);
+				TestEqual(
+					*FString::Printf(TEXT("Leg IK FK ankle %d is stable"), Index),
+					LegDefinition.FKFootBone.BoneName,
+					ExpectedFkFeet[Index]);
+				TestEqual(
+					*FString::Printf(TEXT("Leg IK limb %d resolves two bones"), Index),
+					LegDefinition.NumBonesInLimb,
+					2);
+				TestEqual(
+					*FString::Printf(TEXT("Leg IK limb %d keeps a 15-degree compression limit"), Index),
+					LegDefinition.MinRotationAngle,
+					15.0f);
+				TestEqual(
+					*FString::Printf(TEXT("Leg IK foot %d faces along Y"), Index),
+					LegDefinition.FootBoneForwardAxis.GetValue(),
+					EAxis::Y);
+				TestEqual(
+					*FString::Printf(TEXT("Leg IK knee %d hinges around Z"), Index),
+					LegDefinition.HingeRotationAxis.GetValue(),
+					EAxis::Z);
+				TestTrue(
+					*FString::Printf(TEXT("Leg IK limb %d prevents backward folding"), Index),
+					LegDefinition.bEnableRotationLimit);
+				TestTrue(
+					*FString::Printf(TEXT("Leg IK limb %d keeps knee twist correction"), Index),
+					LegDefinition.bEnableKneeTwistCorrection);
+				TestTrue(
+					*FString::Printf(TEXT("Leg IK limb %d has no authored twist override curve"), Index),
+					LegDefinition.TwistOffsetCurveName.IsNone());
+			}
+			TestEqual(TEXT("Leg IK uses the shared float graph alpha"), LegIk->AlphaInputType, EAnimAlphaInputType::Float);
+			TestEqual(TEXT("Leg IK keeps its graph-driven alpha default at one"), LegIk->Alpha, 1.0f);
+			TestEqual(TEXT("Leg IK has no hidden LOD cutoff"), LegIk->LODThreshold, INDEX_NONE);
+		}
+
 		if (SlotNode)
 		{
 			TestEqual(
@@ -1455,6 +1657,89 @@ bool FRpgGaspPilotAssetContractTest::RunTest(const FString& Parameters)
 			}
 		}
 
+		if (RpgFootPlacementNode)
+		{
+			const UEdGraphPin* SnapshotInput =
+				RpgFootPlacementNode->FindPin(TEXT("Snapshot"), EGPD_Input);
+			if (TestNotNull(TEXT("Foot Placement exposes its immutable snapshot input"), SnapshotInput))
+			{
+				TestFalse(TEXT("The Foot Placement snapshot input is visible"), SnapshotInput->bHidden);
+				TestEqual(
+					TEXT("The Foot Placement snapshot uses a struct pin"),
+					SnapshotInput->PinType.PinCategory,
+					UEdGraphSchema_K2::PC_Struct);
+				TestEqual(
+					TEXT("The Foot Placement snapshot pin uses FRpgFootPlacementSnapshot"),
+					SnapshotInput->PinType.PinSubCategoryObject.Get(),
+					static_cast<UObject*>(FRpgFootPlacementSnapshot::StaticStruct()));
+			}
+
+			const UEdGraphPin* AlphaInput = RpgFootPlacementNode->FindPin(TEXT("Alpha"), EGPD_Input);
+			if (TestNotNull(TEXT("Foot Placement exposes its shared alpha input"), AlphaInput))
+			{
+				TestFalse(TEXT("The Foot Placement alpha input is visible"), AlphaInput->bHidden);
+				TestEqual(
+					TEXT("The Foot Placement alpha uses a real-number pin"),
+					AlphaInput->PinType.PinCategory,
+					UEdGraphSchema_K2::PC_Real);
+				TestEqual(
+					TEXT("The Foot Placement alpha is single precision"),
+					AlphaInput->PinType.PinSubCategory,
+					UEdGraphSchema_K2::PC_Float);
+			}
+		}
+
+		if (LegIkNode)
+		{
+			const UEdGraphPin* AlphaInput = LegIkNode->FindPin(TEXT("Alpha"), EGPD_Input);
+			if (TestNotNull(TEXT("Leg IK exposes its shared alpha input"), AlphaInput))
+			{
+				TestFalse(TEXT("The Leg IK alpha input is visible"), AlphaInput->bHidden);
+				TestEqual(
+					TEXT("The Leg IK alpha uses a real-number pin"),
+					AlphaInput->PinType.PinCategory,
+					UEdGraphSchema_K2::PC_Real);
+				TestEqual(
+					TEXT("The Leg IK alpha is single precision"),
+					AlphaInput->PinType.PinSubCategory,
+					UEdGraphSchema_K2::PC_Float);
+			}
+		}
+
+		if (FootPlacementSnapshotGetter)
+		{
+			const UEdGraphPin* SnapshotOutput =
+				FootPlacementSnapshotGetter->FindPin(TEXT("FootPlacementSnapshot"), EGPD_Output);
+			if (TestNotNull(TEXT("FootPlacementSnapshot getter exposes its value"), SnapshotOutput))
+			{
+				TestEqual(
+					TEXT("The snapshot getter uses a struct pin"),
+					SnapshotOutput->PinType.PinCategory,
+					UEdGraphSchema_K2::PC_Struct);
+				TestEqual(
+					TEXT("The snapshot getter exposes FRpgFootPlacementSnapshot"),
+					SnapshotOutput->PinType.PinSubCategoryObject.Get(),
+					static_cast<UObject*>(FRpgFootPlacementSnapshot::StaticStruct()));
+			}
+		}
+
+		if (FootPlacementAlphaGetter)
+		{
+			const UEdGraphPin* AlphaOutput =
+				FootPlacementAlphaGetter->FindPin(TEXT("FootPlacementAlpha"), EGPD_Output);
+			if (TestNotNull(TEXT("FootPlacementAlpha getter exposes its value"), AlphaOutput))
+			{
+				TestEqual(
+					TEXT("The Foot Placement alpha getter uses a real-number pin"),
+					AlphaOutput->PinType.PinCategory,
+					UEdGraphSchema_K2::PC_Real);
+				TestEqual(
+					TEXT("The Foot Placement alpha getter is single precision"),
+					AlphaOutput->PinType.PinSubCategory,
+					UEdGraphSchema_K2::PC_Float);
+			}
+		}
+
 		TestExclusiveLink(
 			*this,
 			TEXT("Motion Matching feeds Offset Root Bone"),
@@ -1471,8 +1756,36 @@ bool FRpgGaspPilotAssetContractTest::RunTest(const FString& Parameters)
 			TEXT("Source"));
 		TestExclusiveLink(
 			*this,
-			TEXT("DefaultSlot feeds Pose History"),
+			TEXT("DefaultSlot feeds the Foot Placement component-space conversion"),
 			SlotNode,
+			TEXT("Pose"),
+			FootPlacementLocalToComponentNode,
+			TEXT("LocalPose"));
+		TestExclusiveLink(
+			*this,
+			TEXT("The component-space conversion feeds project-local Foot Placement"),
+			FootPlacementLocalToComponentNode,
+			TEXT("ComponentPose"),
+			RpgFootPlacementNode,
+			TEXT("ComponentPose"));
+		TestExclusiveLink(
+			*this,
+			TEXT("Project-local Foot Placement feeds stock Leg IK"),
+			RpgFootPlacementNode,
+			TEXT("Pose"),
+			LegIkNode,
+			TEXT("ComponentPose"));
+		TestExclusiveLink(
+			*this,
+			TEXT("Stock Leg IK feeds the local-space conversion"),
+			LegIkNode,
+			TEXT("Pose"),
+			FootPlacementComponentToLocalNode,
+			TEXT("ComponentPose"));
+		TestExclusiveLink(
+			*this,
+			TEXT("The Foot Placement local-space result feeds Pose History"),
+			FootPlacementComponentToLocalNode,
 			TEXT("Pose"),
 			PoseHistoryNode,
 			TEXT("Source"));
@@ -1504,6 +1817,18 @@ bool FRpgGaspPilotAssetContractTest::RunTest(const FString& Parameters)
 			TEXT("bResetOffsetRootEveryFrame"),
 			OffsetRootBoneNode,
 			TEXT("bResetEveryFrame"));
+		TestExactOutputLinks(
+			*this,
+			TEXT("The immutable game-thread snapshot drives only project-local Foot Placement"),
+			FootPlacementSnapshotGetter,
+			TEXT("FootPlacementSnapshot"),
+			{{RpgFootPlacementNode, TEXT("Snapshot")}});
+		TestExactOutputLinks(
+			*this,
+			TEXT("The montage-safe Foot Placement alpha gates both skeletal controls"),
+			FootPlacementAlphaGetter,
+			TEXT("FootPlacementAlpha"),
+			{{RpgFootPlacementNode, TEXT("Alpha")}, {LegIkNode, TEXT("Alpha")}});
 	}
 
 	TestEqual(

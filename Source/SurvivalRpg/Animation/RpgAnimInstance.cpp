@@ -5,9 +5,12 @@
 #include "Animation/AnimSequenceBase.h"
 #include "AnimationWarpingLibrary.h"
 #include "BlendStack/BlendStackAnimNodeLibrary.h"
+#include "Components/PrimitiveComponent.h"
 #include "Components/SkeletalMeshComponent.h"
 #include "Engine/World.h"
+#include "GameFramework/Character.h"
 #include "GameFramework/CharacterMovementComponent.h"
+#include "Interfaces/MovementBaseInterface.h"
 #include "PoseSearch/AnimNode_MotionMatching.h"
 #include "PoseSearch/PoseSearchTrajectoryLibrary.h"
 
@@ -58,6 +61,457 @@ float CalculateTurnInPlacePlaybackWatchdogDuration(
 		TurnInPlaceActiveTimeout,
 		FMath::Max(RemainingAnimationTime, 0.0f) / FMath::Abs(PlayRate) +
 			TurnInPlacePlaybackWatchdogSafetyMargin);
+}
+
+struct FRpgFootPlacementTraceResult
+{
+	FVector GroundPointWorld = FVector::ZeroVector;
+	FVector GroundNormalWorld = FVector::UpVector;
+	FTransform HitComponentTransform = FTransform::Identity;
+	uint32 HitComponentId = 0;
+	float DistanceToGround = 0.0f;
+	bool bWalkable = false;
+};
+
+void ResetFootPlacementLegState(FRpgAnimInstanceProxy::FFootPlacementLegState& State)
+{
+	State = FRpgAnimInstanceProxy::FFootPlacementLegState();
+}
+
+void ResetFootPlacementState(FRpgAnimInstanceProxy& Proxy)
+{
+	ResetFootPlacementLegState(Proxy.FootPlacementLegStates[0]);
+	ResetFootPlacementLegState(Proxy.FootPlacementLegStates[1]);
+	Proxy.FootPlacementAlpha = 0.0f;
+}
+
+void ResetFootPlacementInitializationState(FRpgAnimInstanceProxy& Proxy)
+{
+	ResetFootPlacementState(Proxy);
+	Proxy.FootPlacementSnapshot = FRpgFootPlacementSnapshot();
+	Proxy.PreviousFootPlacementComponentTransform = FTransform::Identity;
+	Proxy.PreviousMovementBaseTransform = FTransform::Identity;
+	Proxy.PreviousMovementBaseId = 0;
+	Proxy.bHasPreviousFootPlacementComponentTransform = false;
+	Proxy.bHasPreviousMovementBaseTransform = false;
+	Proxy.bPreviousFootPlacementSourceEligible = false;
+}
+
+FRpgFootPlacementTraceResult TraceFootGround(
+	const ARpgCharacter& Character,
+	const URpgCharacterMovementComponent& MovementComponent,
+	const FRpgFootPlacementSettings& Settings,
+	const FVector& BallLocationWorld)
+{
+	check(IsInGameThread());
+	FRpgFootPlacementTraceResult Result;
+	UWorld* World = Character.GetWorld();
+	if (!World)
+	{
+		return Result;
+	}
+
+	const FVector TraceStart = BallLocationWorld + FVector::UpVector * Settings.TraceStartHeight;
+	const FVector TraceEnd = BallLocationWorld - FVector::UpVector * Settings.TraceEndDepth;
+	FCollisionQueryParams QueryParams(SCENE_QUERY_STAT(RpgFootPlacement), true, &Character);
+	QueryParams.AddIgnoredActor(&Character);
+	FHitResult HitResult;
+	const bool bHit = World->SweepSingleByChannel(
+		HitResult,
+		TraceStart,
+		TraceEnd,
+		FQuat::Identity,
+		ECC_Visibility,
+		FCollisionShape::MakeSphere(FMath::Max(Settings.SweepRadius, 0.0f)),
+		QueryParams);
+	if (!bHit || !HitResult.bBlockingHit || !MovementComponent.IsWalkable(HitResult))
+	{
+		return Result;
+	}
+
+	Result.GroundPointWorld = HitResult.ImpactPoint;
+	Result.GroundNormalWorld = HitResult.ImpactNormal.GetSafeNormal(UE_SMALL_NUMBER, FVector::UpVector);
+	Result.DistanceToGround = FVector::DotProduct(
+		BallLocationWorld - Result.GroundPointWorld,
+		Result.GroundNormalWorld);
+	if (const UPrimitiveComponent* HitComponent = HitResult.GetComponent())
+	{
+		Result.HitComponentId = HitComponent->GetUniqueID();
+		Result.HitComponentTransform = HitComponent->GetComponentTransform();
+	}
+	Result.bWalkable = true;
+	return Result;
+}
+
+bool TryGetMovementBaseSnapshot(
+	const ARpgCharacter& Character,
+	uint32& OutBaseId,
+	FTransform& OutBaseTransform)
+{
+	check(IsInGameThread());
+	OutBaseId = 0;
+	OutBaseTransform = FTransform::Identity;
+	const FMovementBaseInterfaceData* BaseData = Character.GetMovementBaseInterfaceData();
+	if (!BaseData || !BaseData->IsValid())
+	{
+		return false;
+	}
+
+	UObject* BaseObject = BaseData->GetMovementBaseObject();
+	FVector BaseLocation = FVector::ZeroVector;
+	FQuat BaseRotation = FQuat::Identity;
+	if (!BaseObject || !MovementBaseUtility::GetMovementBaseTransform(
+		BaseData,
+		Character.GetBasedMovement().BoneName,
+		BaseLocation,
+		BaseRotation))
+	{
+		return false;
+	}
+
+	OutBaseId = BaseObject->GetUniqueID();
+	OutBaseTransform = FTransform(BaseRotation, BaseLocation);
+	return true;
+}
+
+void UpdateFootPlacementLeg(
+	FRpgAnimInstanceProxy::FFootPlacementLegState& State,
+	FRpgFootPlacementLegSnapshot& Snapshot,
+	const FRpgFootPlacementLegDefinition& Definition,
+	const FRpgFootPlacementSettings& Settings,
+	const URpgAnimInstance& AnimInstance,
+	const ARpgCharacter& Character,
+	const URpgCharacterMovementComponent& MovementComponent,
+	const USkeletalMeshComponent& MeshComponent,
+	const FTransform& ComponentToWorld,
+	uint32 MovementBaseId,
+	const FTransform& PreviousBaseTransform,
+	const FTransform& CurrentBaseTransform,
+	bool bHasBaseDelta,
+	float DeltaSeconds)
+{
+	check(IsInGameThread());
+	if (Definition.IKFootBone.IsNone() || Definition.BallBone.IsNone() ||
+		!MeshComponent.DoesSocketExist(Definition.IKFootBone) ||
+		!MeshComponent.DoesSocketExist(Definition.BallBone))
+	{
+		ResetFootPlacementLegState(State);
+		return;
+	}
+
+	const FTransform IKFootTransformWorld = MeshComponent.GetSocketTransform(
+		Definition.IKFootBone,
+		RTS_World);
+	const FTransform BallTransformWorld = MeshComponent.GetSocketTransform(
+		Definition.BallBone,
+		RTS_World);
+	float ContactCurveValue = 0.0f;
+	const bool bHasSpeedCurve =
+		!Definition.SpeedCurveName.IsNone() &&
+		AnimInstance.GetCurveValue(Definition.SpeedCurveName, ContactCurveValue);
+	const float FootSpeed = bHasSpeedCurve
+		? RpgFootPlacement::ConvertContactCurveToSpeed(ContactCurveValue)
+		: MAX_flt;
+	// Contact is the primary authored plant/release signal. Socket transforms are the previous
+	// completed pose (including this cosmetic tail), so geometric bounds are defensive limits,
+	// not a replacement for the curated contact curves.
+	const FRpgFootPlacementTraceResult TraceResult = TraceFootGround(
+		Character,
+		MovementComponent,
+		Settings,
+		BallTransformWorld.GetLocation());
+	const bool bWantsToPlantNow = bHasSpeedCurve && RpgFootPlacement::ShouldPlantFoot(
+		TraceResult.bWalkable,
+		FootSpeed,
+		TraceResult.DistanceToGround,
+		Settings);
+	bool bReleasedThisFrame = false;
+	float AnchorDistance = MAX_flt;
+	float GroundNormalDelta = 180.0f;
+	FTransform CurrentAlignedFoot = IKFootTransformWorld;
+
+	if (TraceResult.bWalkable)
+	{
+		if (State.bLocked && State.HitComponentId != 0 &&
+			State.HitComponentId == TraceResult.HitComponentId &&
+			State.bHasPreviousHitComponentTransform)
+		{
+			State.LockedFootTransformWorld = RpgFootPlacement::RebaseTransformThroughSurface(
+				State.LockedFootTransformWorld,
+				State.PreviousHitComponentTransform,
+				TraceResult.HitComponentTransform);
+			State.LockedGroundPointWorld = RpgFootPlacement::RebasePointThroughSurface(
+				State.LockedGroundPointWorld,
+				State.PreviousHitComponentTransform,
+				TraceResult.HitComponentTransform);
+			State.LockedGroundNormalWorld = RpgFootPlacement::RebaseNormalThroughSurface(
+				State.LockedGroundNormalWorld,
+				State.PreviousHitComponentTransform,
+				TraceResult.HitComponentTransform);
+		}
+
+		CurrentAlignedFoot = RpgFootPlacement::AlignFootToGroundPlane(
+			IKFootTransformWorld,
+			BallTransformWorld,
+			TraceResult.GroundPointWorld,
+			TraceResult.GroundNormalWorld,
+			ComponentToWorld.GetUnitAxis(EAxis::Z),
+			Settings.MaxFootTranslation,
+			Settings.MaxFootAlignmentAngle);
+		AnchorDistance = (
+			CurrentAlignedFoot.GetLocation() - State.LockedFootTransformWorld.GetLocation()).Size2D();
+		GroundNormalDelta = FMath::RadiansToDegrees(FMath::Acos(FMath::Clamp(
+			FVector::DotProduct(
+				State.LockedGroundNormalWorld.GetSafeNormal(),
+				TraceResult.GroundNormalWorld.GetSafeNormal()),
+			-1.0f,
+			1.0f)));
+		if (State.bLocked && (State.HitComponentId != TraceResult.HitComponentId ||
+			RpgFootPlacement::ShouldUnplantFoot(
+				FootSpeed,
+				AnchorDistance,
+				GroundNormalDelta,
+				Settings)))
+		{
+			State.bLocked = false;
+			bReleasedThisFrame = true;
+		}
+		State.TraceMissElapsed = 0.0f;
+	}
+	else if (State.bLocked)
+	{
+		State.TraceMissElapsed += FMath::Max(DeltaSeconds, 0.0f);
+		if (bHasBaseDelta && State.HitComponentId == MovementBaseId)
+		{
+			State.LockedFootTransformWorld = RpgFootPlacement::RebaseTransformThroughSurface(
+				State.LockedFootTransformWorld,
+				PreviousBaseTransform,
+				CurrentBaseTransform);
+			State.LockedGroundPointWorld = RpgFootPlacement::RebasePointThroughSurface(
+				State.LockedGroundPointWorld,
+				PreviousBaseTransform,
+				CurrentBaseTransform);
+			State.LockedGroundNormalWorld = RpgFootPlacement::RebaseNormalThroughSurface(
+				State.LockedGroundNormalWorld,
+				PreviousBaseTransform,
+				CurrentBaseTransform);
+			if (State.bHasRetainedGroundTarget)
+			{
+				State.RetainedGroundPointWorld = RpgFootPlacement::RebasePointThroughSurface(
+					State.RetainedGroundPointWorld,
+					PreviousBaseTransform,
+					CurrentBaseTransform);
+				State.RetainedGroundNormalWorld = RpgFootPlacement::RebaseNormalThroughSurface(
+					State.RetainedGroundNormalWorld,
+					PreviousBaseTransform,
+					CurrentBaseTransform);
+			}
+		}
+		if (State.TraceMissElapsed > Settings.TraceMissGracePeriod)
+		{
+			State.bLocked = false;
+			bReleasedThisFrame = true;
+		}
+	}
+
+	const bool bMayPlantFresh = !State.bWantedToPlantLastFrame;
+	const bool bMayReplant =
+		!bReleasedThisFrame &&
+		RpgFootPlacement::ShouldReplantFoot(AnchorDistance, GroundNormalDelta, Settings);
+	if (!State.bLocked && bWantsToPlantNow && (bMayPlantFresh || bMayReplant))
+	{
+		State.bLocked = true;
+		State.LockedGroundPointWorld = TraceResult.GroundPointWorld;
+		State.LockedGroundNormalWorld = TraceResult.GroundNormalWorld;
+		State.LockedFootTransformWorld = CurrentAlignedFoot;
+		State.HitComponentId = TraceResult.HitComponentId;
+		State.TraceMissElapsed = 0.0f;
+	}
+	State.bWantedToPlantLastFrame = bWantsToPlantNow;
+
+	if (TraceResult.bWalkable)
+	{
+		State.RetainedGroundPointWorld = TraceResult.GroundPointWorld;
+		State.RetainedGroundNormalWorld = TraceResult.GroundNormalWorld;
+		State.bHasRetainedGroundTarget = true;
+		State.HitComponentId = TraceResult.HitComponentId;
+		State.PreviousHitComponentTransform = TraceResult.HitComponentTransform;
+		State.bHasPreviousHitComponentTransform = TraceResult.HitComponentId != 0;
+	}
+	else if (!State.bLocked)
+	{
+		State.HitComponentId = 0;
+		State.bHasPreviousHitComponentTransform = false;
+	}
+
+	const bool bHasGround = TraceResult.bWalkable || State.bLocked;
+	const float TargetWeight = bHasGround && bHasSpeedCurve
+		? FMath::Clamp(ContactCurveValue, 0.0f, 1.0f) *
+			RpgFootPlacement::CalculateAlignmentAlpha(FootSpeed, Settings)
+		: 0.0f;
+	const float WeightAlpha = RpgFootPlacement::CalculateHalfLifeAlpha(
+		DeltaSeconds,
+		Settings.WeightBlendHalfLife);
+	State.Weight = FMath::Lerp(State.Weight, TargetWeight, WeightAlpha);
+	if (!TraceResult.bWalkable && !State.bLocked && State.Weight <= UE_KINDA_SMALL_NUMBER)
+	{
+		State.bHasRetainedGroundTarget = false;
+	}
+
+	Snapshot.GroundPointWorld = State.bLocked
+		? State.LockedGroundPointWorld
+		: (TraceResult.bWalkable
+			? TraceResult.GroundPointWorld
+			: State.RetainedGroundPointWorld);
+	Snapshot.GroundNormalWorld = State.bLocked
+		? State.LockedGroundNormalWorld
+		: (TraceResult.bWalkable
+			? TraceResult.GroundNormalWorld
+			: State.RetainedGroundNormalWorld);
+	Snapshot.LockedFootTransformWorld = State.LockedFootTransformWorld;
+	Snapshot.Weight = State.Weight;
+	Snapshot.DistanceToGround = TraceResult.DistanceToGround;
+	Snapshot.HitComponentId = State.HitComponentId;
+	Snapshot.bHasWalkableGround = bHasGround ||
+		(State.bHasRetainedGroundTarget && State.Weight > UE_KINDA_SMALL_NUMBER);
+	Snapshot.bLocked = State.bLocked;
+	Snapshot.bHasSpeedCurve = bHasSpeedCurve;
+}
+
+void UpdateFootPlacementSnapshot(
+	FRpgAnimInstanceProxy& Proxy,
+	const FRpgFootPlacementSettings& Settings,
+	const URpgAnimInstance& AnimInstance,
+	const ARpgCharacter& Character,
+	const URpgCharacterMovementComponent& MovementComponent,
+	float DeltaSeconds)
+{
+	check(IsInGameThread());
+	Proxy.FootPlacementSnapshot = FRpgFootPlacementSnapshot();
+	FRpgFootPlacementSnapshot& Snapshot = Proxy.FootPlacementSnapshot;
+	Snapshot.OwnerId = Character.GetUniqueID();
+	Snapshot.LocalRole = static_cast<uint8>(Character.GetLocalRole());
+	Snapshot.RemoteRole = static_cast<uint8>(Character.GetRemoteRole());
+	Snapshot.VelocityWorld = MovementComponent.Velocity;
+	Snapshot.bGrounded = Proxy.MovementState == ERpgLocomotionMovementState::Grounded &&
+		Proxy.bIsMovingOnGround;
+
+	const USkeletalMeshComponent* MeshComponent = AnimInstance.GetSkelMeshComponent();
+	if (!MeshComponent)
+	{
+		Snapshot.bReset = true;
+		ResetFootPlacementState(Proxy);
+		Proxy.bPreviousFootPlacementSourceEligible = false;
+		return;
+	}
+
+	const FTransform ComponentToWorld = MeshComponent->GetComponentTransform();
+	const bool bHadPreviousComponentTransform = Proxy.bHasPreviousFootPlacementComponentTransform;
+	const bool bHadPreviousBaseTransform = Proxy.bHasPreviousMovementBaseTransform;
+	const uint32 PreviousMovementBaseId = Proxy.PreviousMovementBaseId;
+	const FTransform PreviousMovementBaseTransform = Proxy.PreviousMovementBaseTransform;
+	Snapshot.ComponentToWorld = ComponentToWorld;
+	if (bHadPreviousComponentTransform)
+	{
+		Snapshot.ComponentDeltaWorld =
+			ComponentToWorld.GetLocation() - Proxy.PreviousFootPlacementComponentTransform.GetLocation();
+	}
+
+	uint32 MovementBaseId = 0;
+	FTransform CurrentBaseTransform = FTransform::Identity;
+	const bool bHasCurrentBase = TryGetMovementBaseSnapshot(
+		Character,
+		MovementBaseId,
+		CurrentBaseTransform);
+	Snapshot.MovementBaseId = MovementBaseId;
+	const bool bHasBaseDelta =
+		bHasCurrentBase &&
+		bHadPreviousBaseTransform &&
+		MovementBaseId != 0 &&
+		MovementBaseId == PreviousMovementBaseId;
+	if (bHasBaseDelta)
+	{
+		Snapshot.BaseDeltaTranslationWorld =
+			CurrentBaseTransform.GetLocation() - PreviousMovementBaseTransform.GetLocation();
+		Snapshot.BaseDeltaRotationWorld = (
+			CurrentBaseTransform.GetRotation() *
+			PreviousMovementBaseTransform.GetRotation().Inverse()).GetNormalized();
+	}
+
+	if (MovementComponent.CurrentFloor.bBlockingHit)
+	{
+		Snapshot.FloorPointWorld = MovementComponent.CurrentFloor.HitResult.ImpactPoint;
+		Snapshot.FloorNormalWorld = MovementComponent.CurrentFloor.HitResult.ImpactNormal.GetSafeNormal(
+			UE_SMALL_NUMBER,
+			FVector::UpVector);
+	}
+
+	const bool bLargeComponentJump =
+		bHadPreviousComponentTransform &&
+		Snapshot.ComponentDeltaWorld.SizeSquared() > FMath::Square(TurnInPlaceLargePositionDelta);
+	const bool bBaseIdentityChanged =
+		bHadPreviousComponentTransform &&
+		PreviousMovementBaseId != MovementBaseId;
+	const bool bSourceEligible =
+		Settings.bEnabled &&
+		Snapshot.bGrounded &&
+		(!Proxy.bIsCrouching || Settings.bApplyWhileCrouching) &&
+		!Proxy.bIsAnyMontagePlaying &&
+		!Proxy.bHasTurnInPlaceBlockingGameplayTag;
+	const bool bSourceBecameEligible =
+		bSourceEligible && !Proxy.bPreviousFootPlacementSourceEligible;
+	Snapshot.bReset =
+		Proxy.bTurnInPlaceHardReset ||
+		bLargeComponentJump ||
+		bBaseIdentityChanged ||
+		bSourceBecameEligible ||
+		!bSourceEligible;
+
+	Proxy.PreviousFootPlacementComponentTransform = ComponentToWorld;
+	Proxy.bHasPreviousFootPlacementComponentTransform = true;
+	Proxy.PreviousMovementBaseId = MovementBaseId;
+	Proxy.PreviousMovementBaseTransform = CurrentBaseTransform;
+	Proxy.bHasPreviousMovementBaseTransform = bHasCurrentBase;
+	Proxy.bPreviousFootPlacementSourceEligible = bSourceEligible;
+
+	if (Snapshot.bReset)
+	{
+		ResetFootPlacementState(Proxy);
+		return;
+	}
+
+	UpdateFootPlacementLeg(
+		Proxy.FootPlacementLegStates[0],
+		Snapshot.LeftFoot,
+		Settings.LeftLeg,
+		Settings,
+		AnimInstance,
+		Character,
+		MovementComponent,
+		*MeshComponent,
+		ComponentToWorld,
+		MovementBaseId,
+		PreviousMovementBaseTransform,
+		CurrentBaseTransform,
+		bHasBaseDelta,
+		DeltaSeconds);
+	UpdateFootPlacementLeg(
+		Proxy.FootPlacementLegStates[1],
+		Snapshot.RightFoot,
+		Settings.RightLeg,
+		Settings,
+		AnimInstance,
+		Character,
+		MovementComponent,
+		*MeshComponent,
+		ComponentToWorld,
+		MovementBaseId,
+		PreviousMovementBaseTransform,
+		CurrentBaseTransform,
+		bHasBaseDelta,
+		DeltaSeconds);
+	Snapshot.bValid = true;
+	Proxy.FootPlacementAlpha = 1.0f;
 }
 }
 
@@ -215,6 +669,8 @@ void FRpgAnimInstanceProxy::PreUpdate(UAnimInstance* InAnimInstance, float Delta
 	ActorYaw = 0.0f;
 	ActorYawDelta = 0.0f;
 	ActorLocation = FVector::ZeroVector;
+	FootPlacementSnapshot = FRpgFootPlacementSnapshot();
+	FootPlacementAlpha = 0.0f;
 
 	const URpgAnimInstance* RpgAnimInstance = Cast<URpgAnimInstance>(InAnimInstance);
 	bHasTurnInPlaceBlockingGameplayTag =
@@ -352,6 +808,14 @@ void FRpgAnimInstanceProxy::PreUpdate(UAnimInstance* InAnimInstance, float Delta
 	ProceduralLocomotionAlpha =
 		bIsMovingOnGround && !bIsCrouching && !bIsAnyMontagePlaying ? 1.0f : 0.0f;
 
+	UpdateFootPlacementSnapshot(
+		*this,
+		RpgAnimInstance->FootPlacementSettings,
+		*RpgAnimInstance,
+		*Character,
+		*MovementComponent,
+		DeltaSeconds);
+
 	const FRotator AimDelta = (Character->GetBaseAimRotation() - Character->GetActorRotation()).GetNormalized();
 	AimYaw = AimDelta.Yaw;
 	AimPitch = AimDelta.Pitch;
@@ -435,6 +899,24 @@ EDataValidationResult URpgAnimInstance::IsDataValid(FDataValidationContext& Cont
 			Context.AddError(FText::FromString(
 				TEXT("Motion Matching is enabled, but no turn-in-place Pose Search database is configured.")));
 		}
+		if (FootPlacementSettings.bEnabled)
+		{
+			const FRpgFootPlacementLegDefinition* LegDefinitions[] = {
+				&FootPlacementSettings.LeftLeg,
+				&FootPlacementSettings.RightLeg,
+			};
+			for (int32 LegIndex = 0; LegIndex < UE_ARRAY_COUNT(LegDefinitions); ++LegIndex)
+			{
+				const FRpgFootPlacementLegDefinition& Leg = *LegDefinitions[LegIndex];
+				if (Leg.FKFootBone.IsNone() || Leg.IKFootBone.IsNone() ||
+					Leg.BallBone.IsNone() || Leg.SpeedCurveName.IsNone())
+				{
+					Context.AddError(FText::FromString(FString::Printf(
+						TEXT("Foot Placement leg %d requires FK foot, IK foot, ball, and speed-curve names."),
+						LegIndex)));
+				}
+			}
+		}
 
 		const auto ValidateDatabases = [&Context](
 			const TArray<TObjectPtr<UPoseSearchDatabase>>& Databases,
@@ -462,11 +944,14 @@ EDataValidationResult URpgAnimInstance::IsDataValid(FDataValidationContext& Cont
 void URpgAnimInstance::NativeInitializeAnimation()
 {
 	Super::NativeInitializeAnimation();
+	ResetFootPlacementInitializationState(GetProxyOnGameThread<FRpgAnimInstanceProxy>());
 	TurnInPlaceRequestSerial = 0;
 	TurnInPlaceInterruptedRequestSerial = 0;
 	bTurnInPlaceHardResetConditionLastFrame = false;
 	bResetOffsetRootEveryFrame = false;
 	bTurnInPlaceInitializationResetPending = true;
+	FootPlacementSnapshot = FRpgFootPlacementSnapshot();
+	FootPlacementAlpha = 0.0f;
 	ResetTurnInPlaceRuntime(false);
 
 	if (AActor* OwningActor = GetOwningActor())
@@ -912,6 +1397,8 @@ void URpgAnimInstance::NativeThreadSafeUpdateAnimation(float DeltaSeconds)
 	LocomotionGroundSpeed = Proxy.GroundSpeed;
 	VerticalVelocity = Proxy.VerticalVelocity;
 	GroundDistance = Proxy.GroundDistance;
+	FootPlacementSnapshot = Proxy.FootPlacementSnapshot;
+	FootPlacementAlpha = Proxy.FootPlacementAlpha;
 	AimYaw = Proxy.AimYaw;
 	AimPitch = Proxy.AimPitch;
 	LocomotionAngle = Proxy.LocomotionAngle;
