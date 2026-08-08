@@ -9,14 +9,20 @@
 #include "RpgHealthComponent.h"
 #include "RpgPawnExtensionComponent.h"
 #include "RpgPawnGameplayComponent.h"
+#include "RpgPawnData.h"
+#include "AbilitySystemComponent.h"
+#include "Animation/AnimInstance.h"
 #include "Components/CapsuleComponent.h"
 #include "Components/SkeletalMeshComponent.h"
+#include "GameFramework/Controller.h"
+#include "GameplayTagContainer.h"
 #include "SurvivalRpg/AbilitySystem/RpgAbilitySystemComponent.h"
 #include "SurvivalRpg/AbilitySystem/Attributes/RpgHealthSet.h"
 #include "SurvivalRpg/Camera/RpgCameraComponent.h"
 #include "SurvivalRpg/Core/Game/RpgGameModeBase.h"
 #include "SurvivalRpg/Core/Corpse/RpgCorpseLifecycleComponent.h"
 #include "SurvivalRpg/Equipment/RpgEquipmentManagerComponent.h"
+#include "SurvivalRpg/Equipment/RpgWeaponInstance.h"
 #include "SurvivalRpg/Core/Player/RpgPlayerController.h"
 #include "SurvivalRpg/Core/Player/RpgPlayerState.h"
 #include "SurvivalRpg/GameplayTags/RpgGameplayTags.h"
@@ -96,6 +102,7 @@ ARpgCharacter::ARpgCharacter(const FObjectInitializer& ObjectInitializer) :
 	PawnExtensionComponent->OnAbilitySystemUninitialized_Register(FSimpleMulticastDelegate::FDelegate::CreateUObject(this, &ThisClass::OnAbilitySystemUninitialized));
 	
 	EquipmentManagerComponent = CreateDefaultSubobject<URpgEquipmentManagerComponent>(TEXT("EquipmentManagerComponent"));
+	EquipmentManagerComponent->OnEquipmentChanged.AddUObject(this, &ThisClass::HandleEquipmentChanged);
 	
 	HealthComponent = CreateDefaultSubobject<URpgHealthComponent>(TEXT("HealthComponent"));
 	HealthComponent->OnDeathStarted.AddDynamic(this, &ThisClass::OnDeathStarted);
@@ -153,11 +160,310 @@ void ARpgCharacter::ToggleCrouch()
 	}
 }
 
+ERpgCharacterRotationMode ARpgCharacter::GetRotationMode() const
+{
+	// Predicted activation-owned tags may upgrade the owning client's presentation before the
+	// replicated server mode arrives. In their absence the server value remains the reconciliation baseline.
+	if (GetLocalRole() == ROLE_AutonomousProxy && IsLocallyControlled())
+	{
+		if (RotationMode == ERpgCharacterRotationMode::Aim)
+		{
+			return ERpgCharacterRotationMode::Aim;
+		}
+
+		if (const URpgAbilitySystemComponent* Asc = RotationModeAbilitySystem.Get())
+		{
+			if (Asc->HasMatchingGameplayTag(RpgGameplayTags::State_Rotation_Aim))
+			{
+				return ERpgCharacterRotationMode::Aim;
+			}
+
+			if (Asc->HasMatchingGameplayTag(RpgGameplayTags::State_Rotation_CombatStrafe))
+			{
+				return ERpgCharacterRotationMode::CombatStrafe;
+			}
+		}
+	}
+
+	return RotationMode;
+}
+
+ERpgCharacterRotationMode ARpgCharacter::ResolveRotationMode(
+	bool bAimRequested,
+	bool bCombatStrafeRequested,
+	ERpgCharacterRotationMode DefaultMode)
+{
+	if (bAimRequested || DefaultMode == ERpgCharacterRotationMode::Aim)
+	{
+		return ERpgCharacterRotationMode::Aim;
+	}
+
+	if (bCombatStrafeRequested || DefaultMode == ERpgCharacterRotationMode::CombatStrafe)
+	{
+		return ERpgCharacterRotationMode::CombatStrafe;
+	}
+
+	return ERpgCharacterRotationMode::Free;
+}
+
+FRpgCharacterRotationPolicy ARpgCharacter::GetRotationPolicy(ERpgCharacterRotationMode InRotationMode)
+{
+	FRpgCharacterRotationPolicy Policy;
+	if (InRotationMode == ERpgCharacterRotationMode::Free)
+	{
+		Policy.bUseControllerRotationYaw = false;
+		Policy.bOrientRotationToMovement = true;
+		Policy.bUseControllerDesiredRotation = false;
+		Policy.RotationRateYaw = -1.0f;
+	}
+	else
+	{
+		Policy.bUseControllerRotationYaw = true;
+		Policy.bOrientRotationToMovement = false;
+		Policy.bUseControllerDesiredRotation = false;
+		Policy.RotationRateYaw = 720.0f;
+	}
+
+	return Policy;
+}
+
+bool ARpgCharacter::CanApplyExplicitCombatStanceRequest(
+	bool bEnable,
+	bool bHasWeapon,
+	bool bHasBlockingState,
+	bool bIsMovingOnGround,
+	bool bIsCrouched,
+	bool bWantsToCrouch,
+	bool bIsAnyMontagePlaying)
+{
+	return !bEnable ||
+		(bHasWeapon &&
+			!bHasBlockingState &&
+			bIsMovingOnGround &&
+			!bIsCrouched &&
+			!bWantsToCrouch &&
+			!bIsAnyMontagePlaying);
+}
+
+void ARpgCharacter::ToggleCombatStance()
+{
+	if (HasAuthority())
+	{
+		SetExplicitCombatStance(!bExplicitCombatStanceRequested);
+		return;
+	}
+
+	if (GetLocalRole() == ROLE_AutonomousProxy && IsLocallyControlled())
+	{
+		ServerToggleCombatStance();
+	}
+}
+
+void ARpgCharacter::ServerToggleCombatStance_Implementation()
+{
+	SetExplicitCombatStance(!bExplicitCombatStanceRequested);
+}
+
+ERpgCharacterRotationMode ARpgCharacter::ResolveRequestedRotationMode() const
+{
+	const URpgAbilitySystemComponent* Asc = RotationModeAbilitySystem.Get();
+	return ResolveRotationMode(
+		Asc && Asc->HasMatchingGameplayTag(RpgGameplayTags::State_Rotation_Aim),
+		Asc && Asc->HasMatchingGameplayTag(RpgGameplayTags::State_Rotation_CombatStrafe),
+		GetDefaultRotationMode());
+}
+
+ERpgCharacterRotationMode ARpgCharacter::GetDefaultRotationMode() const
+{
+	if (PawnExtensionComponent)
+	{
+		if (const URpgPawnData* PawnData = PawnExtensionComponent->GetPawnData<URpgPawnData>())
+		{
+			return PawnData->DefaultRotationMode;
+		}
+	}
+
+	return ERpgCharacterRotationMode::CombatStrafe;
+}
+
+void ARpgCharacter::RefreshRotationMode()
+{
+	if (HasAuthority())
+	{
+		const ERpgCharacterRotationMode ResolvedMode = ResolveRequestedRotationMode();
+		if (RotationMode != ResolvedMode)
+		{
+			RotationMode = ResolvedMode;
+			ForceNetUpdate();
+		}
+	}
+
+	ApplyRotationPolicy(GetRotationMode());
+}
+
+void ARpgCharacter::ApplyRotationPolicy(ERpgCharacterRotationMode InRotationMode)
+{
+	const FRpgCharacterRotationPolicy Policy = GetRotationPolicy(InRotationMode);
+	const bool bEnteringControllerFacingMode =
+		bHasAppliedRotationPolicy &&
+		LastAppliedRotationMode == ERpgCharacterRotationMode::Free &&
+		InRotationMode != ERpgCharacterRotationMode::Free;
+
+	bUseControllerRotationYaw = Policy.bUseControllerRotationYaw;
+	if (UCharacterMovementComponent* MovementComponent = GetCharacterMovement())
+	{
+		MovementComponent->bOrientRotationToMovement = Policy.bOrientRotationToMovement;
+		MovementComponent->bUseControllerDesiredRotation = Policy.bUseControllerDesiredRotation;
+		MovementComponent->RotationRate.Yaw = Policy.RotationRateYaw;
+	}
+
+	if (bEnteringControllerFacingMode &&
+		(HasAuthority() || GetLocalRole() == ROLE_AutonomousProxy) &&
+		GetController())
+	{
+		FaceRotation(GetController()->GetControlRotation(), 0.0f);
+	}
+
+	LastAppliedRotationMode = InRotationMode;
+	bHasAppliedRotationPolicy = true;
+}
+
+void ARpgCharacter::BindRotationModeAbilitySystem(URpgAbilitySystemComponent* AbilitySystemComponent)
+{
+	if (RotationModeAbilitySystem.Get() == AbilitySystemComponent)
+	{
+		RefreshRotationMode();
+		return;
+	}
+
+	UnbindRotationModeAbilitySystem();
+	RotationModeAbilitySystem = AbilitySystemComponent;
+	if (AbilitySystemComponent)
+	{
+		AbilitySystemComponent->RegisterGameplayTagEvent(
+			RpgGameplayTags::State_Rotation_CombatStrafe,
+			EGameplayTagEventType::NewOrRemoved).AddUObject(
+				this,
+				&ThisClass::HandleRotationRequestTagChanged);
+		AbilitySystemComponent->RegisterGameplayTagEvent(
+			RpgGameplayTags::State_Rotation_Aim,
+			EGameplayTagEventType::NewOrRemoved).AddUObject(
+				this,
+				&ThisClass::HandleRotationRequestTagChanged);
+	}
+
+	RefreshRotationMode();
+}
+
+void ARpgCharacter::UnbindRotationModeAbilitySystem()
+{
+	if (URpgAbilitySystemComponent* AbilitySystemComponent = RotationModeAbilitySystem.Get())
+	{
+		AbilitySystemComponent->RegisterGameplayTagEvent(
+			RpgGameplayTags::State_Rotation_CombatStrafe,
+			EGameplayTagEventType::NewOrRemoved).RemoveAll(this);
+		AbilitySystemComponent->RegisterGameplayTagEvent(
+			RpgGameplayTags::State_Rotation_Aim,
+			EGameplayTagEventType::NewOrRemoved).RemoveAll(this);
+	}
+
+	RotationModeAbilitySystem.Reset();
+}
+
+void ARpgCharacter::HandleRotationRequestTagChanged(const FGameplayTag Tag, int32 NewCount)
+{
+	(void)Tag;
+	(void)NewCount;
+	RefreshRotationMode();
+}
+
+bool ARpgCharacter::CanEnterExplicitCombatStance() const
+{
+	if (!HasAuthority())
+	{
+		return false;
+	}
+
+	const URpgAbilitySystemComponent* Asc = RotationModeAbilitySystem.Get();
+	static const FGameplayTag MovementStoppedTag =
+		FGameplayTag::RequestGameplayTag(FName(TEXT("Gameplay.MovementStopped")), false);
+	const bool bHasBlockingState = !Asc ||
+		Asc->HasMatchingGameplayTag(RpgGameplayTags::State_Dead) ||
+		Asc->HasMatchingGameplayTag(RpgGameplayTags::State_Staggered) ||
+		Asc->HasMatchingGameplayTag(RpgGameplayTags::State_GuardBroken) ||
+		Asc->HasMatchingGameplayTag(RpgGameplayTags::Status_Downed) ||
+		(MovementStoppedTag.IsValid() && Asc->HasMatchingGameplayTag(MovementStoppedTag));
+	const UCharacterMovementComponent* MovementComponent = GetCharacterMovement();
+	const UAnimInstance* AnimInstance = GetMesh() ? GetMesh()->GetAnimInstance() : nullptr;
+
+	return CanApplyExplicitCombatStanceRequest(
+		/*bEnable=*/ true,
+		EquipmentManagerComponent &&
+			EquipmentManagerComponent->GetFirstInstanceOfType(URpgWeaponInstance::StaticClass()) != nullptr,
+		bHasBlockingState,
+		MovementComponent && MovementComponent->IsMovingOnGround(),
+		IsCrouched(),
+		MovementComponent && MovementComponent->bWantsToCrouch,
+		AnimInstance && AnimInstance->IsAnyMontagePlaying());
+}
+
+void ARpgCharacter::SetExplicitCombatStance(bool bEnabled)
+{
+	if (!HasAuthority() || bExplicitCombatStanceRequested == bEnabled)
+	{
+		return;
+	}
+
+	URpgAbilitySystemComponent* Asc = RotationModeAbilitySystem.Get();
+	if (bEnabled)
+	{
+		if (!Asc || !CanEnterExplicitCombatStance())
+		{
+			return;
+		}
+
+		bExplicitCombatStanceRequested = true;
+		Asc->AddLooseGameplayTag(
+			RpgGameplayTags::State_Rotation_CombatStrafe,
+			1,
+			EGameplayTagReplicationState::None);
+	}
+	else
+	{
+		bExplicitCombatStanceRequested = false;
+		if (Asc)
+		{
+			Asc->RemoveLooseGameplayTag(
+				RpgGameplayTags::State_Rotation_CombatStrafe,
+				1,
+				EGameplayTagReplicationState::None);
+		}
+	}
+
+	RefreshRotationMode();
+}
+
+void ARpgCharacter::HandleEquipmentChanged()
+{
+	if (HasAuthority() &&
+		bExplicitCombatStanceRequested &&
+		(!EquipmentManagerComponent ||
+			!EquipmentManagerComponent->GetFirstInstanceOfType(URpgWeaponInstance::StaticClass())))
+	{
+		SetExplicitCombatStance(false);
+	}
+}
+
+void ARpgCharacter::OnRep_RotationMode()
+{
+	ApplyRotationPolicy(GetRotationMode());
+}
+
 // Called when the game starts or when spawned
 void ARpgCharacter::BeginPlay()
 {
 	Super::BeginPlay();
-	
+	RefreshRotationMode();
 }
 
 void ARpgCharacter::GetLifetimeReplicatedProps(TArray<FLifetimeProperty>& OutLifetimeProps) const
@@ -165,6 +471,7 @@ void ARpgCharacter::GetLifetimeReplicatedProps(TArray<FLifetimeProperty>& OutLif
 	Super::GetLifetimeReplicatedProps(OutLifetimeProps);
 
 	DOREPLIFETIME_CONDITION(ThisClass, ReplicatedAcceleration, COND_SimulatedOnly);
+	DOREPLIFETIME_CONDITION_NOTIFY(ThisClass, RotationMode, COND_None, REPNOTIFY_Always);
 }
 
 void ARpgCharacter::PreReplication(IRepChangedPropertyTracker& ChangedPropertyTracker)
@@ -198,6 +505,7 @@ void ARpgCharacter::OnAbilitySystemInitialized()
 {
 	URpgAbilitySystemComponent* Asc = GetRpgAbilitySystemComponent();
 	check(Asc);
+	BindRotationModeAbilitySystem(Asc);
 
 	HealthComponent->InitializeWithAbilitySystem(Asc);
 	DeathComponent->InitializeWithAbilitySystem(Asc);
@@ -216,6 +524,12 @@ void ARpgCharacter::OnAbilitySystemInitialized()
 
 void ARpgCharacter::OnAbilitySystemUninitialized()
 {
+	if (HasAuthority())
+	{
+		SetExplicitCombatStance(false);
+	}
+	UnbindRotationModeAbilitySystem();
+
 	HealthComponent->UninitializeFromAbilitySystem();
 	DeathComponent->UninitializeFromAbilitySystem();
 	DownedComponent->UninitializeFromAbilitySystem();
@@ -230,6 +544,7 @@ void ARpgCharacter::PossessedBy(AController* NewController)
 {
 	Super::PossessedBy(NewController);
 	PawnExtensionComponent->HandleControllerChanged();
+	RefreshRotationMode();
 }
 
 void ARpgCharacter::UnPossessed()
@@ -242,6 +557,7 @@ void ARpgCharacter::OnRep_Controller()
 {
 	Super::OnRep_Controller();
 	PawnExtensionComponent->HandleControllerChanged();
+	RefreshRotationMode();
 }
 
 void ARpgCharacter::OnRep_PlayerState()
@@ -253,6 +569,8 @@ void ARpgCharacter::OnRep_PlayerState()
 	{
 		PawnGameplayComponent->CheckDefaultInitialization();
 	}
+
+	RefreshRotationMode();
 }
 
 void ARpgCharacter::FellOutOfWorld(const class UDamageType& dmgType)
@@ -262,6 +580,10 @@ void ARpgCharacter::FellOutOfWorld(const class UDamageType& dmgType)
 
 void ARpgCharacter::OnDeathStarted(AActor* OwningActor)
 {
+	if (HasAuthority())
+	{
+		SetExplicitCombatStance(false);
+	}
 	DisableMovementAndCollision();
 }
 
@@ -296,6 +618,10 @@ void ARpgCharacter::OnDownedStateChanged(ERpgDownedState NewState)
 {
 	if (NewState == ERpgDownedState::Downed)
 	{
+		if (HasAuthority())
+		{
+			SetExplicitCombatStance(false);
+		}
 		DisableMovementForDowned();
 		return;
 	}

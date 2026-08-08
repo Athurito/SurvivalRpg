@@ -48,6 +48,7 @@ namespace RpgGameplayTags
 	UE_DEFINE_GAMEPLAY_TAG_COMMENT(InputTag_Weapon_Primary, "InputTag.Weapon.Primary", "Primary weapon attack input.");
 	UE_DEFINE_GAMEPLAY_TAG_COMMENT(InputTag_Weapon_Secondary, "InputTag.Weapon.Secondary", "Secondary weapon attack input.");
 	UE_DEFINE_GAMEPLAY_TAG_COMMENT(InputTag_Weapon_Block, "InputTag.Weapon.Block", "Hold block input for the equipped weapon.");
+	UE_DEFINE_GAMEPLAY_TAG_COMMENT(InputTag_RotationMode_ToggleCombat, "InputTag.RotationMode.ToggleCombat", "Toggle the explicit weapon-gated combat-facing stance.");
 	
 	
 	UE_DEFINE_GAMEPLAY_TAG_COMMENT(GameplayEvent_Death, "GameplayEvent.Death", "Event that fires on death. This event only fires on the server.");
@@ -87,6 +88,8 @@ namespace RpgGameplayTags
 	UE_DEFINE_GAMEPLAY_TAG_COMMENT(State_Staggered, "State.Staggered", "Target is staggered.");
 	UE_DEFINE_GAMEPLAY_TAG_COMMENT(State_GuardBroken, "State.GuardBroken", "Target's guard is broken.");
 	UE_DEFINE_GAMEPLAY_TAG_COMMENT(State_StaggerImmune, "State.StaggerImmune", "Target is temporarily immune to new stagger buildup.");
+	UE_DEFINE_GAMEPLAY_TAG_COMMENT(State_Rotation_CombatStrafe, "State.Rotation.CombatStrafe", "Target requests controller-facing combat locomotion.");
+	UE_DEFINE_GAMEPLAY_TAG_COMMENT(State_Rotation_Aim, "State.Rotation.Aim", "Target requests controller-facing aim locomotion.");
 	UE_DEFINE_GAMEPLAY_TAG_COMMENT(Trait_Staggerable, "Trait.Staggerable", "Target can build stagger and enter stagger reactions.");
 	UE_DEFINE_GAMEPLAY_TAG_COMMENT(Status_Death, "Status.Death", "Target has the death status.");
 	UE_DEFINE_GAMEPLAY_TAG_COMMENT(Status_Death_Dying, "Status.Death.Dying", "Target has begun the death process.");

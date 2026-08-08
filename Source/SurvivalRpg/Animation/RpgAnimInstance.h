@@ -10,6 +10,7 @@
 #include "AnimationWarpingTypes.h"
 #include "GameplayEffectTypes.h"
 #include "PoseSearch/PoseSearchTrajectoryLibrary.h"
+#include "SurvivalRpg/Core/Character/RpgCharacterRotationMode.h"
 #include "RpgAnimInstance.generated.h"
 
 class UAbilitySystemComponent;
@@ -97,6 +98,7 @@ struct SURVIVALRPG_API FRpgAnimInstanceProxy : public FAnimInstanceProxy
 	ERpgLocomotionGait Gait = ERpgLocomotionGait::Idle;
 	ERpgLocomotionStance Stance = ERpgLocomotionStance::Standing;
 	ERpgLocomotionMovementState MovementState = ERpgLocomotionMovementState::None;
+	ERpgCharacterRotationMode RotationMode = ERpgCharacterRotationMode::Free;
 	FPoseSearchTrajectoryData TrajectoryGenerationData;
 	FTransformTrajectory TransformTrajectory;
 	bool bHasVelocity = false;
@@ -108,6 +110,8 @@ struct SURVIVALRPG_API FRpgAnimInstanceProxy : public FAnimInstanceProxy
 	bool bIsAnyMontagePlaying = false;
 	bool bHasTurnInPlaceBlockingGameplayTag = false;
 	bool bTurnInPlaceHardReset = true;
+	/** True when the game-thread snapshot crosses between free-facing and turn-in-place-capable rotation. */
+	bool bTurnInPlaceSupportChanged = false;
 
 	// Previous-owner data is maintained and consumed only by game-thread PreUpdate.
 	uint32 PreviousOwnerUniqueId = 0;
@@ -115,6 +119,7 @@ struct SURVIVALRPG_API FRpgAnimInstanceProxy : public FAnimInstanceProxy
 	uint8 PreviousRemoteRole = 0;
 	float PreviousActorYaw = 0.0f;
 	FVector PreviousActorLocation = FVector::ZeroVector;
+	ERpgCharacterRotationMode PreviousRotationMode = ERpgCharacterRotationMode::Free;
 	bool bHasPreviousOwnerSnapshot = false;
 };
 
@@ -350,6 +355,13 @@ protected:
 	ERpgLocomotionMovementState LocomotionMovementState = ERpgLocomotionMovementState::None;
 
 	/**
+	 * Replicated character rotation policy copied from the game-thread proxy for AnimBP debugging.
+	 * This transient cosmetic snapshot is read-only and never owns authoritative rotation state.
+	 */
+	UPROPERTY(BlueprintReadOnly, Transient, Category = "Rpg|Animation|Locomotion")
+	ERpgCharacterRotationMode CharacterRotationMode = ERpgCharacterRotationMode::Free;
+
+	/**
 	 * Game-thread-generated world-space trajectory consumed read-only by the Motion Matching history collector.
 	 * The value is transient and never authoritative gameplay state.
 	 */
@@ -404,6 +416,17 @@ private:
 		ContinueSelectedTurn,
 	};
 
+	/** Detects a transition across the Free versus controller-facing turn-in-place policy boundary. */
+	static bool DidTurnInPlaceSupportChange(
+		bool bHasPreviousSnapshot,
+		ERpgCharacterRotationMode PreviousMode,
+		ERpgCharacterRotationMode CurrentMode);
+	/** Rebases actor yaw when the owner snapshot is invalidated or the facing policy changes. */
+	static float CalculateTurnInPlaceSnapshotYawDelta(
+		float PreviousActorYaw,
+		float CurrentActorYaw,
+		bool bHardReset,
+		bool bSupportChanged);
 	void UpdateTurnInPlaceRuntime(float DeltaSeconds, const FRpgAnimInstanceProxy& Proxy);
 	void BeginTurnInPlaceRequest(float QuantizedAngle);
 	void BeginTurnInPlaceRecovery(bool bHardResetOffset);

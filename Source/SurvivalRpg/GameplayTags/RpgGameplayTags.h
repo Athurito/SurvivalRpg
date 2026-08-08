@@ -53,6 +53,8 @@ namespace RpgGameplayTags
 	UE_DECLARE_GAMEPLAY_TAG_EXTERN(InputTag_Weapon_Primary);
 	UE_DECLARE_GAMEPLAY_TAG_EXTERN(InputTag_Weapon_Secondary);
 	UE_DECLARE_GAMEPLAY_TAG_EXTERN(InputTag_Weapon_Block);
+	// Exported because the combat GameFeature input config and editor contracts consume this native action tag.
+	extern SURVIVALRPG_API FNativeGameplayTag InputTag_RotationMode_ToggleCombat;
 	
 	UE_DECLARE_GAMEPLAY_TAG_EXTERN(GameplayEvent_Death);
 	UE_DECLARE_GAMEPLAY_TAG_EXTERN(GameplayEvent_HitReaction);
@@ -94,6 +96,9 @@ namespace RpgGameplayTags
 	UE_DECLARE_GAMEPLAY_TAG_EXTERN(State_Staggered);
 	UE_DECLARE_GAMEPLAY_TAG_EXTERN(State_GuardBroken);
 	UE_DECLARE_GAMEPLAY_TAG_EXTERN(State_StaggerImmune);
+	// Exported because editor contracts and runtime GameFeature content consume rotation intent.
+	extern SURVIVALRPG_API FNativeGameplayTag State_Rotation_CombatStrafe;
+	extern SURVIVALRPG_API FNativeGameplayTag State_Rotation_Aim;
 	UE_DECLARE_GAMEPLAY_TAG_EXTERN(Trait_Staggerable);
 	// Exported because runtime GameFeature modules use the canonical death gate.
 	extern SURVIVALRPG_API FNativeGameplayTag Status_Death;

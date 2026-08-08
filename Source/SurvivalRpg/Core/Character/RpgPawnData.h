@@ -4,6 +4,7 @@
 
 #include "CoreMinimal.h"
 #include "Engine/DataAsset.h"
+#include "RpgCharacterRotationMode.h"
 #include "RpgPawnData.generated.h"
 
 class URpgCameraMode;
@@ -43,6 +44,13 @@ public:
 	// Default camera mode used by player controlled pawns.
 	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Rpg|Camera")
 	TSubclassOf<URpgCameraMode> DefaultCameraMode;
+
+	/**
+	 * Fallback rotation mode used when no transient GAS aim or combat-strafe request is active.
+	 * Static designer-authored PawnData; runtime authority remains on ARpgCharacter.
+	 */
+	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Rpg|Character|Rotation")
+	ERpgCharacterRotationMode DefaultRotationMode = ERpgCharacterRotationMode::CombatStrafe;
 
 	/**
 	 * Static player-inventory layout selected by this PawnData.

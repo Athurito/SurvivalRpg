@@ -3,6 +3,7 @@
 #if WITH_DEV_AUTOMATION_TESTS
 
 #include "AlphaBlend.h"
+#include "Abilities/GameplayAbility.h"
 #include "AnimGraph/AnimGraphNode_OrientationWarping.h"
 #include "AnimGraph/AnimGraphNode_Steering.h"
 #include "AnimGraphNode_BlendStackInput.h"
@@ -34,6 +35,9 @@
 #include "GameFeatureAction.h"
 #include "GameFramework/Character.h"
 #include "GameplayTagContainer.h"
+#include "InputAction.h"
+#include "InputCoreTypes.h"
+#include "InputMappingContext.h"
 #include "K2Node_AnimNodeReference.h"
 #include "K2Node_CallFunction.h"
 #include "K2Node_VariableGet.h"
@@ -48,6 +52,7 @@
 #include "SurvivalRpg/Core/Character/RpgCharacter.h"
 #include "SurvivalRpg/Core/Character/RpgPawnData.h"
 #include "SurvivalRpg/Core/Game/Experience/RpgExperienceDefinition.h"
+#include "SurvivalRpg/Input/RpgInputConfig.h"
 #include "UObject/PropertyPortFlags.h"
 #include "UObject/UnrealType.h"
 
@@ -71,6 +76,18 @@ namespace RpgGaspPilotAssetTests
 		TEXT("/Game/SurvivalRpg/Characters/Mannequins/Meshes/SK_Mannequin.SK_Mannequin");
 	constexpr TCHAR TurnInPlaceDatabaseObject[] =
 		TEXT("/RpgGaspLocomotion/MotionMatching/Databases/PSD_Rpg_Stand_TurnInPlace.PSD_Rpg_Stand_TurnInPlace");
+	constexpr TCHAR CombatStanceInputActionObject[] =
+		TEXT("/GF_Combat_Core/Input/IA_ToggleCombatStance.IA_ToggleCombatStance");
+	constexpr TCHAR CombatInputMappingContextObject[] =
+		TEXT("/GF_Combat_Core/Input/IMC_Combat.IMC_Combat");
+	constexpr TCHAR CombatInputConfigObject[] =
+		TEXT("/GF_Combat_Core/Input/DA_InputConfig_Combat.DA_InputConfig_Combat");
+	constexpr TCHAR BasicWeaponAttackAbilityObject[] =
+		TEXT("/GF_Combat_Core/GAS/Abilities/GA_BasicWeaponAttack.GA_BasicWeaponAttack");
+	constexpr TCHAR CombatBlockAbilityObject[] =
+		TEXT("/GF_Combat_Core/GAS/Abilities/GA_Combat_Block.GA_Combat_Block");
+	constexpr TCHAR CombatStrafeTagName[] = TEXT("State.Rotation.CombatStrafe");
+	constexpr TCHAR ToggleCombatInputTagName[] = TEXT("InputTag.RotationMode.ToggleCombat");
 
 	constexpr TCHAR PilotAnimBlueprintPackage[] =
 		TEXT("/Game/SurvivalRpg/Characters/Mannequins/Anims/GASP/ABP_RpgCharacter_GASP");
@@ -306,6 +323,20 @@ namespace RpgGaspPilotAssetTests
 
 		OutValue = Property->GetPropertyValue_InContainer(Object);
 		return true;
+	}
+
+	const FGameplayTagContainer* ReadGameplayTagContainerProperty(
+		const UObject* Object,
+		FName PropertyName)
+	{
+		const FStructProperty* Property =
+			Object ? FindFProperty<FStructProperty>(Object->GetClass(), PropertyName) : nullptr;
+		if (!Property || Property->Struct != FGameplayTagContainer::StaticStruct())
+		{
+			return nullptr;
+		}
+
+		return Property->ContainerPtrToValuePtr<FGameplayTagContainer>(Object);
 	}
 
 	bool ReadMemberReferenceProperty(
@@ -1486,6 +1517,13 @@ bool FRpgGaspPilotAssetContractTest::RunTest(const FString& Parameters)
 		TEXT("The pilot PawnData selects the isolated character"),
 		PilotPawnData->PawnClass.Get(),
 		PilotCharacterBlueprint->GeneratedClass.Get());
+	TestTrue(
+		TEXT("The default PawnData keeps legacy-safe CombatStrafe rotation"),
+		BasePawnData->DefaultRotationMode ==
+			ERpgCharacterRotationMode::CombatStrafe);
+	TestTrue(
+		TEXT("Only the GASP pilot PawnData opts into Free rotation"),
+		PilotPawnData->DefaultRotationMode == ERpgCharacterRotationMode::Free);
 	TestEqual(TEXT("PawnData TeamId is unchanged"), PilotPawnData->TeamId, BasePawnData->TeamId);
 	TestEqual(
 		TEXT("PawnData TagRelationshipMapping is unchanged"),
@@ -1608,6 +1646,197 @@ bool FRpgGaspPilotAssetContractTest::RunTest(const FString& Parameters)
 				*PackageName.ToString()),
 			IsForbiddenPilotDependency(PackageName.ToString()));
 	}
+
+	return !HasAnyErrors();
+}
+
+IMPLEMENT_SIMPLE_AUTOMATION_TEST(
+	FRpgGaspRotationModeAssetContractTest,
+	"SurvivalRpg.Animation.Gasp.RotationModeAssetContract",
+	EAutomationTestFlags::EditorContext |
+		EAutomationTestFlags::EngineFilter)
+
+bool FRpgGaspRotationModeAssetContractTest::RunTest(const FString& Parameters)
+{
+	using namespace RpgGaspPilotAssetTests;
+
+	const UInputAction* CombatStanceAction = LoadRequiredAsset<UInputAction>(
+		*this,
+		CombatStanceInputActionObject,
+		TEXT("The project-local combat-stance InputAction loads"));
+	const UInputMappingContext* CombatInputMappingContext =
+		LoadRequiredAsset<UInputMappingContext>(
+			*this,
+			CombatInputMappingContextObject,
+			TEXT("The combat InputMappingContext loads"));
+	const URpgInputConfig* CombatInputConfig = LoadRequiredAsset<URpgInputConfig>(
+		*this,
+		CombatInputConfigObject,
+		TEXT("The combat InputConfig loads"));
+	const UBlueprint* BasicWeaponAttackAbility = LoadRequiredAsset<UBlueprint>(
+		*this,
+		BasicWeaponAttackAbilityObject,
+		TEXT("The basic weapon attack ability Blueprint loads"));
+	const UBlueprint* CombatBlockAbility = LoadRequiredAsset<UBlueprint>(
+		*this,
+		CombatBlockAbilityObject,
+		TEXT("The combat block ability Blueprint loads"));
+
+	const UGameplayAbility* BasicWeaponAttackDefaults =
+		BasicWeaponAttackAbility && BasicWeaponAttackAbility->GeneratedClass
+			? Cast<UGameplayAbility>(
+				BasicWeaponAttackAbility->GeneratedClass->GetDefaultObject())
+			: nullptr;
+	const UGameplayAbility* CombatBlockDefaults =
+		CombatBlockAbility && CombatBlockAbility->GeneratedClass
+			? Cast<UGameplayAbility>(
+				CombatBlockAbility->GeneratedClass->GetDefaultObject())
+			: nullptr;
+	TestNotNull(
+		TEXT("The basic weapon attack ability defaults load"),
+		BasicWeaponAttackDefaults);
+	TestNotNull(
+		TEXT("The combat block ability defaults load"),
+		CombatBlockDefaults);
+
+	if (!CombatStanceAction ||
+		!CombatInputMappingContext ||
+		!CombatInputConfig ||
+		!BasicWeaponAttackDefaults ||
+		!CombatBlockDefaults)
+	{
+		return false;
+	}
+
+	TestTrue(
+		TEXT("The combat-stance InputAction is a Boolean action"),
+		CombatStanceAction->ValueType == EInputActionValueType::Boolean);
+
+	int32 RelatedEnhancedInputMappings = 0;
+	for (const FEnhancedActionKeyMapping& Mapping :
+		CombatInputMappingContext->GetMappings())
+	{
+		const bool bUsesCombatStanceAction =
+			Mapping.Action.Get() == CombatStanceAction;
+		const bool bUsesMiddleMouseButton =
+			Mapping.Key == EKeys::MiddleMouseButton;
+		if (!bUsesCombatStanceAction && !bUsesMiddleMouseButton)
+		{
+			continue;
+		}
+
+		++RelatedEnhancedInputMappings;
+		TestTrue(
+			TEXT("The combat-stance mapping uses IA_ToggleCombatStance"),
+			bUsesCombatStanceAction);
+		TestTrue(
+			TEXT("The combat-stance mapping uses exactly MiddleMouseButton"),
+			bUsesMiddleMouseButton);
+	}
+	TestEqual(
+		TEXT("IMC_Combat owns one exclusive combat-stance Action-Key mapping"),
+		RelatedEnhancedInputMappings,
+		1);
+
+	const FGameplayTag ToggleCombatInputTag =
+		FGameplayTag::RequestGameplayTag(
+			FName(ToggleCombatInputTagName),
+			/*ErrorIfNotFound=*/ false);
+	if (!TestTrue(
+			TEXT("The native combat-stance input tag is registered"),
+			ToggleCombatInputTag.IsValid()))
+	{
+		return false;
+	}
+	TestEqual(
+		TEXT("The native combat-stance input tag keeps its exact name"),
+		ToggleCombatInputTag.ToString(),
+		FString(ToggleCombatInputTagName));
+
+	int32 RelatedNativeMappings = 0;
+	for (const FRpgInputAction& Mapping : CombatInputConfig->NativeInputActions)
+	{
+		const bool bUsesCombatStanceAction =
+			Mapping.InputAction.Get() == CombatStanceAction;
+		const bool bUsesToggleCombatTag =
+			Mapping.InputTag == ToggleCombatInputTag;
+		if (!bUsesCombatStanceAction && !bUsesToggleCombatTag)
+		{
+			continue;
+		}
+
+		++RelatedNativeMappings;
+		TestTrue(
+			TEXT("The native combat-stance mapping uses its exact InputAction"),
+			bUsesCombatStanceAction);
+		TestTrue(
+			TEXT("The native combat-stance mapping uses its exact input tag"),
+			bUsesToggleCombatTag);
+	}
+	TestEqual(
+		TEXT("DA_InputConfig_Combat owns one combat-stance native mapping"),
+		RelatedNativeMappings,
+		1);
+	TestEqual(
+		TEXT("The combat-stance native tag resolves to its exact InputAction"),
+		CombatInputConfig->FindNativeInputActionForTag(
+			ToggleCombatInputTag,
+			/*bLogNotFound=*/ false),
+		CombatStanceAction);
+
+	int32 RelatedAbilityInputMappings = 0;
+	for (const FRpgInputAction& Mapping : CombatInputConfig->AbilityInputActions)
+	{
+		RelatedAbilityInputMappings +=
+			Mapping.InputAction.Get() == CombatStanceAction ||
+				Mapping.InputTag == ToggleCombatInputTag
+				? 1
+				: 0;
+	}
+	TestEqual(
+		TEXT("The combat-stance toggle is not routed through GAS ability input"),
+		RelatedAbilityInputMappings,
+		0);
+
+	const FGameplayTag CombatStrafeTag =
+		FGameplayTag::RequestGameplayTag(
+			FName(CombatStrafeTagName),
+			/*ErrorIfNotFound=*/ false);
+	if (!TestTrue(
+			TEXT("The CombatStrafe state tag is registered"),
+			CombatStrafeTag.IsValid()))
+	{
+		return false;
+	}
+
+	const auto TestCombatStrafeActivationTag =
+		[this, CombatStrafeTag](
+			const TCHAR* AbilityLabel,
+			const UGameplayAbility* AbilityDefaults)
+		{
+			const FGameplayTagContainer* ActivationOwnedTags =
+				ReadGameplayTagContainerProperty(
+					AbilityDefaults,
+					TEXT("ActivationOwnedTags"));
+			if (TestNotNull(
+					*FString::Printf(
+						TEXT("%s exposes ActivationOwnedTags"),
+						AbilityLabel),
+					ActivationOwnedTags))
+			{
+				TestTrue(
+					*FString::Printf(
+						TEXT("%s owns CombatStrafe while active"),
+						AbilityLabel),
+					ActivationOwnedTags->HasTagExact(CombatStrafeTag));
+			}
+		};
+	TestCombatStrafeActivationTag(
+		TEXT("GA_BasicWeaponAttack"),
+		BasicWeaponAttackDefaults);
+	TestCombatStrafeActivationTag(
+		TEXT("GA_Combat_Block"),
+		CombatBlockDefaults);
 
 	return !HasAnyErrors();
 }

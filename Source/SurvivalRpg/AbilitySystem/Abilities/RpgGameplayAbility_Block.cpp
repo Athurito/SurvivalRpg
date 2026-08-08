@@ -26,6 +26,7 @@ URpgGameplayAbility_Block::URpgGameplayAbility_Block(const FObjectInitializer& O
 	NetExecutionPolicy = EGameplayAbilityNetExecutionPolicy::LocalPredicted;
 	ActivationPolicy = ERpgAbilityActivationPolicy::WhileInputActive;
 	ActivationGroup = ERpgAbilityActivationGroup::Exclusive_Blocking;
+	ActivationOwnedTags.AddTag(RpgGameplayTags::State_Rotation_CombatStrafe);
 
 	DefaultBlockDefinition.bCanBlock = false;
 	DefaultBlockDefinition.bAllowPerfectBlock = false;

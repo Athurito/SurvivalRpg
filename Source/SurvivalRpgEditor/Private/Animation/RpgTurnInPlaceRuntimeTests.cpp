@@ -139,6 +139,43 @@ IMPLEMENT_SIMPLE_AUTOMATION_TEST(
 
 bool FRpgTurnInPlaceStateMachineTest::RunTest(const FString& Parameters)
 {
+	TestFalse(
+		TEXT("The first owner snapshot cannot report a turn-in-place policy transition"),
+		URpgAnimInstance::DidTurnInPlaceSupportChange(
+			false,
+			ERpgCharacterRotationMode::Free,
+			ERpgCharacterRotationMode::CombatStrafe));
+	TestTrue(
+		TEXT("Free to CombatStrafe crosses the turn-in-place policy boundary"),
+		URpgAnimInstance::DidTurnInPlaceSupportChange(
+			true,
+			ERpgCharacterRotationMode::Free,
+			ERpgCharacterRotationMode::CombatStrafe));
+	TestTrue(
+		TEXT("Aim to Free crosses the turn-in-place policy boundary"),
+		URpgAnimInstance::DidTurnInPlaceSupportChange(
+			true,
+			ERpgCharacterRotationMode::Aim,
+			ERpgCharacterRotationMode::Free));
+	TestFalse(
+		TEXT("CombatStrafe to Aim preserves the shared controller-facing policy"),
+		URpgAnimInstance::DidTurnInPlaceSupportChange(
+			true,
+			ERpgCharacterRotationMode::CombatStrafe,
+			ERpgCharacterRotationMode::Aim));
+	TestTrue(
+		TEXT("A policy-boundary snapshot discards even a 180-degree actor-yaw jump"),
+		FMath::IsNearlyZero(URpgAnimInstance::CalculateTurnInPlaceSnapshotYawDelta(
+			0.0f,
+			180.0f,
+			false,
+			true)));
+	TestTrue(
+		TEXT("An established controller-facing snapshot retains normal authored turn intent"),
+		FMath::IsNearlyEqual(
+			URpgAnimInstance::CalculateTurnInPlaceSnapshotYawDelta(0.0f, 90.0f, false, false),
+			90.0f));
+
 	USkeletalMeshComponent* AnimInstanceOuter = NewObject<USkeletalMeshComponent>();
 	URpgAnimInstance* AnimInstance = NewObject<URpgAnimInstance>(AnimInstanceOuter);
 	UPoseSearchDatabase* TurnDatabase = NewObject<UPoseSearchDatabase>();
@@ -156,6 +193,7 @@ bool FRpgTurnInPlaceStateMachineTest::RunTest(const FString& Parameters)
 	FRpgAnimInstanceProxy Proxy;
 	Proxy.MovementState = ERpgLocomotionMovementState::Grounded;
 	Proxy.Gait = ERpgLocomotionGait::Idle;
+	Proxy.RotationMode = ERpgCharacterRotationMode::CombatStrafe;
 	Proxy.bIsMovingOnGround = true;
 	Proxy.GroundSpeed = 0.0f;
 	Proxy.bHasAcceleration = false;
@@ -167,6 +205,14 @@ bool FRpgTurnInPlaceStateMachineTest::RunTest(const FString& Parameters)
 	CurrentTrajectorySample.TimeInSeconds = 0.0f;
 	CurrentTrajectorySample.Position = FVector::ZeroVector;
 	CurrentTrajectorySample.Facing = FQuat::Identity;
+
+	Proxy.RotationMode = ERpgCharacterRotationMode::Free;
+	TestFalse(TEXT("Free rotation mode disables turn-in-place eligibility"), AnimInstance->IsTurnInPlaceEligible(Proxy));
+	Proxy.RotationMode = ERpgCharacterRotationMode::CombatStrafe;
+	TestTrue(TEXT("Combat strafe rotation mode allows turn-in-place eligibility"), AnimInstance->IsTurnInPlaceEligible(Proxy));
+	Proxy.RotationMode = ERpgCharacterRotationMode::Aim;
+	TestTrue(TEXT("Aim rotation mode allows turn-in-place eligibility"), AnimInstance->IsTurnInPlaceEligible(Proxy));
+	Proxy.RotationMode = ERpgCharacterRotationMode::CombatStrafe;
 
 	AnimInstance->ResetTurnInPlaceRuntime(false);
 	Proxy.ActorYawDelta = 20.0f;
@@ -506,7 +552,53 @@ bool FRpgTurnInPlaceStateMachineTest::RunTest(const FString& Parameters)
 		Proxy.bIsAnyMontagePlaying = false;
 		Proxy.bIsCrouching = false;
 		Proxy.MovementState = ERpgLocomotionMovementState::Grounded;
+		Proxy.RotationMode = ERpgCharacterRotationMode::CombatStrafe;
 	};
+
+	ActivateTurnForReset();
+	Proxy.RotationMode = ERpgCharacterRotationMode::Free;
+	AnimInstance->UpdateTurnInPlaceRuntime(0.01f, Proxy);
+	TestEqual(TEXT("Switching an active turn to Free hard-resets turn-in-place"), AnimInstance->TurnInPlaceState, ERpgTurnInPlaceState::Inactive);
+	TestTrue(TEXT("The first Active-to-Free frame emits an Offset Root reset pulse"), AnimInstance->bResetOffsetRootEveryFrame);
+	AnimInstance->UpdateTurnInPlaceRuntime(0.01f, Proxy);
+	TestFalse(TEXT("Persistent Free mode does not repeat the Offset Root reset pulse"), AnimInstance->bResetOffsetRootEveryFrame);
+
+	Proxy.RotationMode = ERpgCharacterRotationMode::CombatStrafe;
+	Proxy.bTurnInPlaceSupportChanged = true;
+	Proxy.ActorYawDelta = 180.0f;
+	AnimInstance->UpdateTurnInPlaceRuntime(0.01f, Proxy);
+	TestEqual(
+		TEXT("Free-to-combat policy entry recovers instead of selecting a turn clip"),
+		AnimInstance->TurnInPlaceState,
+		ERpgTurnInPlaceState::Recovering);
+	TestTrue(TEXT("Rotation-mode entry hard-resets stale Offset Root state"), AnimInstance->bResetOffsetRootEveryFrame);
+	const float ModeEntryAccumulatedYaw = AnimInstance->TurnInPlaceAccumulatedYaw;
+	Proxy.bTurnInPlaceSupportChanged = false;
+	Proxy.ActorYawDelta = 90.0f;
+	AnimInstance->UpdateTurnInPlaceRuntime(0.05f, Proxy);
+	TestFalse(TEXT("The Offset Root reset pulse clears on the first recovery update"), AnimInstance->bResetOffsetRootEveryFrame);
+	AnimInstance->UpdateTurnInPlaceRuntime(0.05f, Proxy);
+	TestEqual(
+		TEXT("Mode-entry recovery remains active after two 20-FPS updates"),
+		AnimInstance->TurnInPlaceState,
+		ERpgTurnInPlaceState::Recovering);
+	TestTrue(
+		TEXT("Mode-entry recovery never accumulates network-smoothed yaw"),
+		FMath::IsNearlyEqual(AnimInstance->TurnInPlaceAccumulatedYaw, ModeEntryAccumulatedYaw));
+	AnimInstance->UpdateTurnInPlaceRuntime(0.05f, Proxy);
+	TestEqual(
+		TEXT("Mode-entry recovery returns to normal combat idle on the third 20-FPS update"),
+		AnimInstance->TurnInPlaceState,
+		ERpgTurnInPlaceState::Inactive);
+	TestTrue(
+		TEXT("Mode-entry recovery clears discarded yaw before normal TIR resumes"),
+		FMath::IsNearlyZero(AnimInstance->TurnInPlaceAccumulatedYaw));
+	Proxy.ActorYawDelta = 20.0f;
+	AnimInstance->UpdateTurnInPlaceRuntime(0.01f, Proxy);
+	TestEqual(
+		TEXT("Normal combat turn-in-place collection resumes after the bounded mode-entry recovery"),
+		AnimInstance->TurnInPlaceState,
+		ERpgTurnInPlaceState::Collecting);
 
 	ActivateTurnForReset();
 	Proxy.bIsCrouching = true;
@@ -557,6 +649,7 @@ bool FRpgTurnInPlaceStateMachineTest::RunTest(const FString& Parameters)
 		FRpgAnimInstanceProxy FrameRateProxy;
 		FrameRateProxy.MovementState = ERpgLocomotionMovementState::Grounded;
 		FrameRateProxy.Gait = ERpgLocomotionGait::Idle;
+		FrameRateProxy.RotationMode = ERpgCharacterRotationMode::CombatStrafe;
 		FrameRateProxy.bIsMovingOnGround = true;
 		FrameRateProxy.GroundSpeed = 0.0f;
 		FrameRateProxy.bTurnInPlaceHardReset = false;

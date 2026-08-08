@@ -504,6 +504,14 @@ void URpgPawnGameplayComponent::Input_Crouch(const FInputActionValue& InputActio
 	}
 }
 
+void URpgPawnGameplayComponent::Input_ToggleCombatStance(const FInputActionValue& InputActionValue)
+{
+	if (ARpgCharacter* Character = GetPawn<ARpgCharacter>())
+	{
+		Character->ToggleCombatStance();
+	}
+}
+
 void URpgPawnGameplayComponent::Input_AutoRun(const FInputActionValue& InputActionValue)
 {
 	if (APawn* Pawn = GetPawn<APawn>())
@@ -614,6 +622,7 @@ void URpgPawnGameplayComponent::BindRoutedGameplayHotkeys(const URpgInputConfig*
 
 	if (BindHandles)
 	{
+		RpgIC->BindNativeAction(InputConfig, RpgGameplayTags::InputTag_RotationMode_ToggleCombat, ETriggerEvent::Started, this, &ThisClass::Input_ToggleCombatStance, *BindHandles, /*bLogIfNotFound=*/ false);
 		RpgIC->BindNativeAction(InputConfig, RpgGameplayTags::InputTag_UI_QuickAccessRadial_Hold, ETriggerEvent::Started, this, &ThisClass::Input_QuickAccessRadialStarted, *BindHandles, /*bLogIfNotFound=*/ false);
 		RpgIC->BindNativeAction(InputConfig, RpgGameplayTags::InputTag_UI_QuickAccessRadial_Hold, ETriggerEvent::Completed, this, &ThisClass::Input_QuickAccessRadialCompleted, *BindHandles, /*bLogIfNotFound=*/ false);
 		RpgIC->BindNativeAction(InputConfig, RpgGameplayTags::InputTag_UI_QuickAccessRadial_Hold, ETriggerEvent::Canceled, this, &ThisClass::Input_QuickAccessRadialCanceled, *BindHandles, /*bLogIfNotFound=*/ false);
@@ -624,6 +633,7 @@ void URpgPawnGameplayComponent::BindRoutedGameplayHotkeys(const URpgInputConfig*
 	}
 	else
 	{
+		RpgIC->BindNativeAction(InputConfig, RpgGameplayTags::InputTag_RotationMode_ToggleCombat, ETriggerEvent::Started, this, &ThisClass::Input_ToggleCombatStance, /*bLogIfNotFound=*/ false);
 		RpgIC->BindNativeAction(InputConfig, RpgGameplayTags::InputTag_UI_QuickAccessRadial_Hold, ETriggerEvent::Started, this, &ThisClass::Input_QuickAccessRadialStarted, /*bLogIfNotFound=*/ false);
 		RpgIC->BindNativeAction(InputConfig, RpgGameplayTags::InputTag_UI_QuickAccessRadial_Hold, ETriggerEvent::Completed, this, &ThisClass::Input_QuickAccessRadialCompleted, /*bLogIfNotFound=*/ false);
 		RpgIC->BindNativeAction(InputConfig, RpgGameplayTags::InputTag_UI_QuickAccessRadial_Hold, ETriggerEvent::Canceled, this, &ThisClass::Input_QuickAccessRadialCanceled, /*bLogIfNotFound=*/ false);
