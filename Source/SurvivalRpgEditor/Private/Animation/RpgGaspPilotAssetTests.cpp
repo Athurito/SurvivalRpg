@@ -10,9 +10,8 @@
 #include "AnimGraphNode_ComponentToLocalSpace.h"
 #include "AnimGraphNode_LocalToComponentSpace.h"
 #include "Animation/AnimBlueprint.h"
-#include "Animation/BlendProfile.h"
+#include "Animation/AnimSequence.h"
 #include "Animation/InputScaleBias.h"
-#include "Animation/Skeleton.h"
 #include "AnimationBlendStackGraph.h"
 #include "AnimGraphNode_MotionMatching.h"
 #include "AnimGraphNode_PoseSearchHistoryCollector.h"
@@ -31,6 +30,7 @@
 #include "EdGraph/EdGraphPin.h"
 #include "EdGraphSchema_K2.h"
 #include "Engine/Blueprint.h"
+#include "Engine/MemberReference.h"
 #include "GameFeatureAction.h"
 #include "GameFramework/Character.h"
 #include "GameplayTagContainer.h"
@@ -40,6 +40,9 @@
 #include "Misc/AutomationTest.h"
 #include "Misc/DataValidation.h"
 #include "Modules/ModuleManager.h"
+#include "PoseSearch/PoseSearchDatabase.h"
+#include "PoseSearch/PoseSearchDerivedData.h"
+#include "PoseSearch/PoseSearchIndex.h"
 #include "SurvivalRpg/Animation/RpgAnimInstance.h"
 #include "SurvivalRpg/Camera/RpgCameraMode.h"
 #include "SurvivalRpg/Core/Character/RpgCharacter.h"
@@ -66,6 +69,8 @@ namespace RpgGaspPilotAssetTests
 		TEXT("/Game/SurvivalRpg/System/Experiences/RpgGaspPilotExperience.RpgGaspPilotExperience");
 	constexpr TCHAR TargetSkeletonObject[] =
 		TEXT("/Game/SurvivalRpg/Characters/Mannequins/Meshes/SK_Mannequin.SK_Mannequin");
+	constexpr TCHAR TurnInPlaceDatabaseObject[] =
+		TEXT("/RpgGaspLocomotion/MotionMatching/Databases/PSD_Rpg_Stand_TurnInPlace.PSD_Rpg_Stand_TurnInPlace");
 
 	constexpr TCHAR PilotAnimBlueprintPackage[] =
 		TEXT("/Game/SurvivalRpg/Characters/Mannequins/Anims/GASP/ABP_RpgCharacter_GASP");
@@ -301,6 +306,23 @@ namespace RpgGaspPilotAssetTests
 
 		OutValue = Property->GetPropertyValue_InContainer(Object);
 		return true;
+	}
+
+	bool ReadMemberReferenceProperty(
+		const UObject* Object,
+		FName PropertyName,
+		const FMemberReference*& OutValue)
+	{
+		const FStructProperty* Property =
+			Object ? FindFProperty<FStructProperty>(Object->GetClass(), PropertyName) : nullptr;
+		if (!Property || Property->Struct != FMemberReference::StaticStruct())
+		{
+			OutValue = nullptr;
+			return false;
+		}
+
+		OutValue = Property->ContainerPtrToValuePtr<FMemberReference>(Object);
+		return OutValue != nullptr;
 	}
 
 	bool ReadPropertyText(
@@ -888,6 +910,10 @@ bool FRpgGaspPilotAssetContractTest::RunTest(const FString& Parameters)
 		*this,
 		PilotExperienceObject,
 		TEXT("The isolated GASP Experience Blueprint loads"));
+	UPoseSearchDatabase* TurnInPlaceDatabase = LoadRequiredAsset<UPoseSearchDatabase>(
+		*this,
+		TurnInPlaceDatabaseObject,
+		TEXT("The project-local turn-in-place database loads"));
 	URpgExperienceDefinition* BaseExperience =
 		BaseExperienceBlueprint && BaseExperienceBlueprint->GeneratedClass
 			? Cast<URpgExperienceDefinition>(BaseExperienceBlueprint->GeneratedClass->GetDefaultObject())
@@ -906,6 +932,7 @@ bool FRpgGaspPilotAssetContractTest::RunTest(const FString& Parameters)
 		!PilotPawnData ||
 		!BaseExperienceBlueprint ||
 		!PilotExperienceBlueprint ||
+		!TurnInPlaceDatabase ||
 		!BaseExperience ||
 		!PilotExperience)
 	{
@@ -926,6 +953,106 @@ bool FRpgGaspPilotAssetContractTest::RunTest(const FString& Parameters)
 	TestTrue(
 		TEXT("The GASP AnimBlueprint has no compile error"),
 		PilotAnimBlueprint->Status != BS_Error);
+
+	static const struct
+	{
+		const TCHAR* ObjectPath;
+		float ExpectedLength;
+	} ExpectedTurnSequences[] = {
+		{TEXT("/RpgGaspLocomotion/Animations/Stand/Idle/M_Neutral_Stand_Turn_045_L.M_Neutral_Stand_Turn_045_L"), 1.6666667f},
+		{TEXT("/RpgGaspLocomotion/Animations/Stand/Idle/M_Neutral_Stand_Turn_045_R.M_Neutral_Stand_Turn_045_R"), 1.6666667f},
+		{TEXT("/RpgGaspLocomotion/Animations/Stand/Idle/M_Neutral_Stand_Turn_090_L.M_Neutral_Stand_Turn_090_L"), 2.0f},
+		{TEXT("/RpgGaspLocomotion/Animations/Stand/Idle/M_Neutral_Stand_Turn_090_R.M_Neutral_Stand_Turn_090_R"), 2.0f},
+		{TEXT("/RpgGaspLocomotion/Animations/Stand/Idle/M_Neutral_Stand_Turn_135_L.M_Neutral_Stand_Turn_135_L"), 2.0f},
+		{TEXT("/RpgGaspLocomotion/Animations/Stand/Idle/M_Neutral_Stand_Turn_135_R.M_Neutral_Stand_Turn_135_R"), 2.0f},
+		{TEXT("/RpgGaspLocomotion/Animations/Stand/Idle/M_Neutral_Stand_Turn_180_L.M_Neutral_Stand_Turn_180_L"), 2.1666667f},
+		{TEXT("/RpgGaspLocomotion/Animations/Stand/Idle/M_Neutral_Stand_Turn_180_R.M_Neutral_Stand_Turn_180_R"), 2.1666667f},
+	};
+	TestEqual(
+		TEXT("The exclusive turn-in-place database contains exactly eight clips"),
+		TurnInPlaceDatabase->GetNumAnimationAssets(),
+		static_cast<int32>(UE_ARRAY_COUNT(ExpectedTurnSequences)));
+	for (int32 Index = 0;
+		Index < UE_ARRAY_COUNT(ExpectedTurnSequences) && Index < TurnInPlaceDatabase->GetNumAnimationAssets();
+		++Index)
+	{
+		const FPoseSearchDatabaseAnimationAsset* DatabaseEntry =
+			TurnInPlaceDatabase->GetDatabaseAnimationAsset(Index);
+		if (!TestNotNull(
+			*FString::Printf(TEXT("Turn-in-place database entry %d is readable"), Index),
+			DatabaseEntry))
+		{
+			continue;
+		}
+
+		UAnimSequence* Sequence = Cast<UAnimSequence>(DatabaseEntry->GetAnimationAsset());
+		if (!TestNotNull(
+			*FString::Printf(TEXT("Turn-in-place database entry %d references an AnimSequence"), Index),
+			Sequence))
+		{
+			continue;
+		}
+
+		TestEqual(
+			*FString::Printf(TEXT("Turn-in-place database entry %d keeps the deterministic clip order"), Index),
+			GetPathNameSafe(Sequence),
+			FString(ExpectedTurnSequences[Index].ObjectPath));
+		TestFalse(
+			*FString::Printf(TEXT("Turn-in-place clip %d is non-looping"), Index),
+			Sequence->bLoop);
+		TestTrue(
+			*FString::Printf(TEXT("Turn-in-place clip %d keeps its authored duration"), Index),
+			FMath::IsNearlyEqual(
+				static_cast<float>(Sequence->GetPlayLength()),
+				ExpectedTurnSequences[Index].ExpectedLength,
+				0.001f));
+		TestTrue(
+			*FString::Printf(TEXT("Turn-in-place clip %d plays at authored speed"), Index),
+			FMath::IsNearlyEqual(Sequence->RateScale, 1.0f));
+		TestTrue(
+			*FString::Printf(TEXT("Turn-in-place database entry %d remains enabled"), Index),
+			DatabaseEntry->IsEnabled());
+		TestFalse(
+			*FString::Printf(TEXT("Turn-in-place database entry %d remains non-looping"), Index),
+			DatabaseEntry->IsLooping());
+		TestFalse(
+			*FString::Printf(TEXT("Turn-in-place database entry %d keeps Epic's reselection default"), Index),
+			DatabaseEntry->IsDisableReselection());
+		const FFloatInterval SamplingRange = DatabaseEntry->GetSamplingRange();
+		TestTrue(
+			*FString::Printf(TEXT("Turn-in-place database entry %d searches only the authored start pose"), Index),
+			FMath::IsNearlyZero(SamplingRange.Min) && FMath::IsNearlyEqual(SamplingRange.Max, 0.01f));
+		TestTrue(
+			*FString::Printf(TEXT("Turn-in-place database entry %d remains unmirrored-only"), Index),
+			DatabaseEntry->GetMirrorOption() == EPoseSearchMirrorOption::UnmirroredOnly);
+	}
+
+	const UE::PoseSearch::EAsyncBuildIndexResult TurnInPlaceBuildResult =
+		UE::PoseSearch::FAsyncPoseSearchDatabasesManagement::RequestAsyncBuildIndex(
+			TurnInPlaceDatabase,
+			UE::PoseSearch::ERequestAsyncBuildFlag::NewRequest |
+				UE::PoseSearch::ERequestAsyncBuildFlag::WaitForCompletion);
+	if (TestTrue(
+		TEXT("The exclusive turn-in-place search index finishes building"),
+		TurnInPlaceBuildResult == UE::PoseSearch::EAsyncBuildIndexResult::Success))
+	{
+		const UE::PoseSearch::FSearchIndex& TurnInPlaceSearchIndex = TurnInPlaceDatabase->GetSearchIndex();
+		TestEqual(
+			TEXT("The exclusive turn-in-place database indexes exactly eight poses"),
+			TurnInPlaceSearchIndex.GetNumPoses(),
+			8);
+		TestEqual(
+			TEXT("The exclusive turn-in-place database creates exactly eight search-index assets"),
+			TurnInPlaceSearchIndex.Assets.Num(),
+			8);
+		for (int32 Index = 0; Index < TurnInPlaceSearchIndex.Assets.Num(); ++Index)
+		{
+			TestEqual(
+				*FString::Printf(TEXT("Turn-in-place search-index asset %d contains only t=0"), Index),
+				TurnInPlaceSearchIndex.Assets[Index].GetNumPoses(),
+				1);
+		}
+	}
 
 	URpgAnimInstance* PilotAnimDefaults =
 		PilotAnimBlueprint->GeneratedClass
@@ -1141,6 +1268,22 @@ bool FRpgGaspPilotAssetContractTest::RunTest(const FString& Parameters)
 			TestNotNull(
 				TEXT("The Motion Matching update binding resolves on the generated AnimInstance class"),
 				MotionMatchingNode->UpdateFunction.ResolveMember<UFunction>(PilotAnimBlueprint->GeneratedClass));
+			const FMemberReference* MotionMatchingStateUpdatedFunction = nullptr;
+			if (TestTrue(
+				TEXT("The specialized post-search Motion Matching callback binding is readable"),
+				ReadMemberReferenceProperty(
+					MotionMatchingNode,
+					TEXT("OnMotionMatchingStateUpdatedFunction"),
+					MotionMatchingStateUpdatedFunction)))
+			{
+				TestTrue(
+					TEXT("The specialized post-search Motion Matching callback remains deliberately unbound"),
+					MotionMatchingStateUpdatedFunction->GetMemberName().IsNone());
+				TestNull(
+					TEXT("No specialized post-search Motion Matching callback resolves on the generated class"),
+					MotionMatchingStateUpdatedFunction->ResolveMember<UFunction>(
+						PilotAnimBlueprint->GeneratedClass));
+			}
 			float MotionMatchingBlendTime = 0.0f;
 			if (TestTrue(
 				TEXT("The Motion Matching blend time is readable"),
@@ -1165,41 +1308,9 @@ bool FRpgGaspPilotAssetContractTest::RunTest(const FString& Parameters)
 					TEXT("BlendProfile"),
 					BlendProfileObject)))
 			{
-				UBlendProfile* BlendProfile = Cast<UBlendProfile>(BlendProfileObject);
-				if (TestNotNull(TEXT("Motion Matching uses a skeleton blend profile"), BlendProfile))
-				{
-					TestEqual(
-						TEXT("Motion Matching uses the project-local FastFeet profile"),
-						BlendProfile->GetFName(),
-						FName(TEXT("FastFeet")));
-					TestEqual(
-						TEXT("FastFeet belongs to the authoritative player skeleton"),
-						BlendProfile->GetTypedOuter<USkeleton>(),
-						PilotAnimBlueprint->TargetSkeleton.Get());
-					TestEqual(
-						TEXT("FastFeet uses time factors instead of Epic's incompatible weight-factor profile"),
-						BlendProfile->GetMode(),
-						EBlendProfileMode::TimeFactor);
-					TestEqual(
-						TEXT("FastFeet retains the complete project-local IK, leg, and corrective-bone set"),
-						BlendProfile->GetNumBlendEntries(),
-						49);
-					for (int32 EntryIndex = 0; EntryIndex < BlendProfile->GetNumBlendEntries(); ++EntryIndex)
-					{
-						TestEqual(
-							FString::Printf(TEXT("FastFeet entry %d halves the 0.2-second transition"), EntryIndex),
-							BlendProfile->GetEntryBlendScale(EntryIndex),
-							0.5f);
-					}
-					TestEqual(
-						TEXT("FastFeet makes the configured bones blend in 0.1 seconds"),
-						MotionMatchingBlendTime * BlendProfile->GetBoneBlendScale(TEXT("ik_foot_l")),
-						0.1f);
-					TestEqual(
-						TEXT("FastFeet leaves the root on the full 0.2-second transition"),
-						BlendProfile->GetBoneBlendScale(TEXT("root")),
-						1.0f);
-				}
+				TestNull(
+					TEXT("Motion Matching uses uniform 0.2-second blending after the FastFeet TIR regression"),
+					BlendProfileObject);
 			}
 
 			TestPerSampleBlendStackContract(*this, MotionMatchingNode);

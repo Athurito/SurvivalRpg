@@ -33,9 +33,26 @@ constexpr float TurnInPlaceCollectionTimeout = 0.2f;
 constexpr float TurnInPlaceRecoveryDuration = 0.15f;
 constexpr float TurnInPlaceSelectionTimeout = 0.25f;
 constexpr float TurnInPlaceActiveTimeout = 1.75f;
+constexpr float TurnInPlacePlaybackWatchdogSafetyMargin = 0.1f;
 constexpr float TurnInPlaceInactiveAccumulatorTimeout = 0.2f;
 constexpr float TurnInPlaceFinishedTimeTolerance = 0.05f;
 constexpr float TurnInPlaceLargePositionDelta = 200.0f;
+
+float CalculateTurnInPlacePlaybackWatchdogDuration(
+	float RemainingAnimationTime,
+	float PlayRate,
+	bool bLooping)
+{
+	if (bLooping || !FMath::IsFinite(PlayRate) || FMath::Abs(PlayRate) <= UE_SMALL_NUMBER)
+	{
+		return TurnInPlaceActiveTimeout;
+	}
+
+	return FMath::Max(
+		TurnInPlaceActiveTimeout,
+		FMath::Max(RemainingAnimationTime, 0.0f) / FMath::Abs(PlayRate) +
+			TurnInPlacePlaybackWatchdogSafetyMargin);
+}
 }
 
 
@@ -440,6 +457,20 @@ bool URpgAnimInstance::IsTurnInPlaceEligible(const FRpgAnimInstanceProxy& Proxy)
 		!Proxy.TransformTrajectory.Samples.IsEmpty();
 }
 
+void URpgAnimInstance::ClearTurnInPlaceSelection()
+{
+	TurnInPlaceSelectedAsset = nullptr;
+	TurnInPlaceSelectedAssetStartTime = 0.0f;
+	TurnInPlaceSelectedAssetRemainingTime = MAX_flt;
+	TurnInPlaceSelectedRequestSerial = 0;
+	TurnInPlacePlaybackWatchdogDuration = TurnInPlaceActiveTimeout;
+	bTurnInPlacePoseSelected = false;
+	bTurnInPlaceSelectedAssetLooping = false;
+	bTurnInPlaceSelectionLatched = false;
+	bTurnInPlacePlaybackObserved = false;
+	bTurnInPlaceCompletionArmed = false;
+}
+
 void URpgAnimInstance::ResetTurnInPlaceRuntime(bool bHardResetOffset)
 {
 	TurnInPlaceState = ERpgTurnInPlaceState::Inactive;
@@ -448,11 +479,8 @@ void URpgAnimInstance::ResetTurnInPlaceRuntime(bool bHardResetOffset)
 	TurnInPlaceStateElapsed = 0.0f;
 	TurnInPlaceStableElapsed = 0.0f;
 	TurnInPlaceSelectionElapsed = 0.0f;
-	TurnInPlaceSelectedAssetRemainingTime = MAX_flt;
 	TurnInPlaceRequestAccumulatedYaw = 0.0f;
-	bTurnInPlacePoseSelected = false;
-	bTurnInPlaceHadSelection = false;
-	bTurnInPlaceSelectedAssetLooping = false;
+	ClearTurnInPlaceSelection();
 	TurnInPlaceSyntheticTrajectory.Samples.Reset();
 	OffsetRootRotationMode = EOffsetRootBoneMode::Interpolate;
 	bResetOffsetRootEveryFrame |= bHardResetOffset;
@@ -464,10 +492,7 @@ void URpgAnimInstance::BeginTurnInPlaceRecovery(bool bHardResetOffset)
 	TurnInPlaceStateElapsed = 0.0f;
 	TurnInPlaceStableElapsed = 0.0f;
 	TurnInPlaceSelectionElapsed = 0.0f;
-	TurnInPlaceSelectedAssetRemainingTime = MAX_flt;
-	bTurnInPlacePoseSelected = false;
-	bTurnInPlaceHadSelection = false;
-	bTurnInPlaceSelectedAssetLooping = false;
+	ClearTurnInPlaceSelection();
 	TurnInPlaceSyntheticTrajectory.Samples.Reset();
 	OffsetRootRotationMode = EOffsetRootBoneMode::Interpolate;
 	bResetOffsetRootEveryFrame |= bHardResetOffset;
@@ -480,11 +505,8 @@ void URpgAnimInstance::BeginTurnInPlaceRequest(float QuantizedAngle)
 	TurnInPlaceStateElapsed = 0.0f;
 	TurnInPlaceStableElapsed = 0.0f;
 	TurnInPlaceSelectionElapsed = 0.0f;
-	TurnInPlaceSelectedAssetRemainingTime = MAX_flt;
 	TurnInPlaceRequestAccumulatedYaw = TurnInPlaceAccumulatedYaw;
-	bTurnInPlacePoseSelected = false;
-	bTurnInPlaceHadSelection = false;
-	bTurnInPlaceSelectedAssetLooping = false;
+	ClearTurnInPlaceSelection();
 	++TurnInPlaceRequestSerial;
 	if (TurnInPlaceRequestSerial == 0)
 	{
@@ -606,7 +628,7 @@ void URpgAnimInstance::UpdateTurnInPlaceRuntime(float DeltaSeconds, const FRpgAn
 
 	case ERpgTurnInPlaceState::Active:
 	{
-		OffsetRootRotationMode = bTurnInPlacePoseSelected
+		OffsetRootRotationMode = bTurnInPlaceSelectionLatched
 			? EOffsetRootBoneMode::LockOffsetIncreaseAndConsumeAnimation
 			: EOffsetRootBoneMode::Accumulate;
 		if (FMath::Abs(TurnInPlaceAccumulatedYaw) < TurnInPlaceCancelThreshold)
@@ -615,27 +637,25 @@ void URpgAnimInstance::UpdateTurnInPlaceRuntime(float DeltaSeconds, const FRpgAn
 			break;
 		}
 
-		const float UpdatedQueryAngle = QuantizeTurnInPlaceAngle(TurnInPlaceAccumulatedYaw);
-		const float AdditionalYaw = TurnInPlaceAccumulatedYaw - TurnInPlaceRequestAccumulatedYaw;
-		const bool bDirectionChanged =
-			!FMath::IsNearlyZero(UpdatedQueryAngle) &&
-			FMath::Sign(UpdatedQueryAngle) != FMath::Sign(TurnInPlaceQueryAngle);
-		const bool bQuantizedBucketChanged =
-			!FMath::IsNearlyZero(UpdatedQueryAngle) &&
-			!FMath::IsNearlyEqual(UpdatedQueryAngle, TurnInPlaceQueryAngle);
-		if (FMath::Abs(AdditionalYaw) >= TurnInPlaceActivationThreshold &&
-			(bDirectionChanged || bQuantizedBucketChanged))
+		if (CanRetargetTurnInPlaceRequest())
 		{
-			BeginTurnInPlaceRequest(UpdatedQueryAngle);
-			break;
+			const float UpdatedQueryAngle = QuantizeTurnInPlaceAngle(TurnInPlaceAccumulatedYaw);
+			const float AdditionalYaw = TurnInPlaceAccumulatedYaw - TurnInPlaceRequestAccumulatedYaw;
+			const bool bDirectionChanged =
+				!FMath::IsNearlyZero(UpdatedQueryAngle) &&
+				FMath::Sign(UpdatedQueryAngle) != FMath::Sign(TurnInPlaceQueryAngle);
+			const bool bQuantizedBucketChanged =
+				!FMath::IsNearlyZero(UpdatedQueryAngle) &&
+				!FMath::IsNearlyEqual(UpdatedQueryAngle, TurnInPlaceQueryAngle);
+			if (FMath::Abs(AdditionalYaw) >= TurnInPlaceActivationThreshold &&
+				(bDirectionChanged || bQuantizedBucketChanged))
+			{
+				BeginTurnInPlaceRequest(UpdatedQueryAngle);
+				break;
+			}
 		}
 
-		if (bTurnInPlacePoseSelected)
-		{
-			bTurnInPlaceHadSelection = true;
-		}
-
-		if (!bTurnInPlaceHadSelection)
+		if (!bTurnInPlaceSelectionLatched)
 		{
 			TurnInPlaceSelectionElapsed += SafeDeltaSeconds;
 			if (TurnInPlaceSelectionElapsed >= TurnInPlaceSelectionTimeout)
@@ -644,19 +664,18 @@ void URpgAnimInstance::UpdateTurnInPlaceRuntime(float DeltaSeconds, const FRpgAn
 				break;
 			}
 		}
-		else if (!bTurnInPlacePoseSelected)
-		{
-			BeginTurnInPlaceRecovery(true);
-			break;
-		}
-		else if (!bTurnInPlaceSelectedAssetLooping &&
-			TurnInPlaceSelectedAssetRemainingTime <= TurnInPlaceFinishedTimeTolerance)
+		else if (bTurnInPlaceCompletionArmed)
 		{
 			BeginTurnInPlaceRecovery(false);
 			break;
 		}
+		else if (bTurnInPlacePlaybackObserved && !bTurnInPlacePoseSelected)
+		{
+			BeginTurnInPlaceRecovery(true);
+			break;
+		}
 
-		if (TurnInPlaceStateElapsed >= TurnInPlaceActiveTimeout)
+		if (TurnInPlaceStateElapsed >= TurnInPlacePlaybackWatchdogDuration)
 		{
 			BeginTurnInPlaceRecovery(true);
 		}
@@ -701,6 +720,138 @@ bool URpgAnimInstance::ConsumeTurnInPlaceForceInterruptRequest()
 	return true;
 }
 
+bool URpgAnimInstance::CanRetargetTurnInPlaceRequest() const
+{
+	return TurnInPlaceState == ERpgTurnInPlaceState::Active &&
+		!bTurnInPlaceSelectionLatched &&
+		TurnInPlaceInterruptedRequestSerial != TurnInPlaceRequestSerial;
+}
+
+bool URpgAnimInstance::TryLatchTurnInPlaceSelection(
+	UAnimationAsset* SelectedAsset,
+	const UPoseSearchDatabase* SelectedDatabase,
+	float SelectedTime,
+	bool bSelectedAssetLooping,
+	uint32 SelectionRequestSerial)
+{
+	if (TurnInPlaceState != ERpgTurnInPlaceState::Active ||
+		bTurnInPlaceSelectionLatched ||
+		!SelectedAsset ||
+		SelectedDatabase != TurnInPlaceMotionMatchingDatabase.Get() ||
+		SelectionRequestSerial == 0 ||
+		SelectionRequestSerial != TurnInPlaceRequestSerial)
+	{
+		return false;
+	}
+
+	TurnInPlaceSelectedAsset = SelectedAsset;
+	TurnInPlaceSelectedAssetStartTime = FMath::Max(SelectedTime, 0.0f);
+	TurnInPlaceSelectedAssetRemainingTime = FMath::Max(
+		SelectedAsset->GetPlayLength() - TurnInPlaceSelectedAssetStartTime,
+		0.0f);
+	TurnInPlaceSelectedRequestSerial = SelectionRequestSerial;
+	TurnInPlacePlaybackWatchdogDuration = CalculateTurnInPlacePlaybackWatchdogDuration(
+		TurnInPlaceSelectedAssetRemainingTime,
+		1.0f,
+		bSelectedAssetLooping);
+	TurnInPlaceStateElapsed = 0.0f;
+	bTurnInPlacePoseSelected = true;
+	bTurnInPlaceSelectedAssetLooping = bSelectedAssetLooping;
+	bTurnInPlaceSelectionLatched = true;
+	bTurnInPlacePlaybackObserved = false;
+	bTurnInPlaceCompletionArmed = false;
+	return true;
+}
+
+void URpgAnimInstance::UpdateTurnInPlaceLatchedPlayback(
+	UAnimationAsset* CurrentAsset,
+	float CurrentAssetTime,
+	float CurrentAssetLength,
+	float CurrentAssetPlayRate,
+	float DeltaSeconds)
+{
+	if (TurnInPlaceState != ERpgTurnInPlaceState::Active ||
+		!bTurnInPlaceSelectionLatched ||
+		TurnInPlaceSelectedRequestSerial != TurnInPlaceRequestSerial ||
+		!TurnInPlaceSelectedAsset)
+	{
+		return;
+	}
+
+	const float SafeDeltaSeconds = FMath::Max(DeltaSeconds, 0.0f);
+	const float CompletionLeadTime = TurnInPlaceFinishedTimeTolerance + SafeDeltaSeconds;
+	if (CurrentAsset == TurnInPlaceSelectedAsset.Get())
+	{
+		const bool bFirstPlaybackObservation = !bTurnInPlacePlaybackObserved;
+		bTurnInPlacePlaybackObserved = true;
+		bTurnInPlacePoseSelected = true;
+		const float EffectiveAssetLength = CurrentAssetLength > UE_SMALL_NUMBER
+			? CurrentAssetLength
+			: TurnInPlaceSelectedAsset->GetPlayLength();
+		TurnInPlaceSelectedAssetRemainingTime = FMath::Max(
+			EffectiveAssetLength - FMath::Max(CurrentAssetTime, 0.0f),
+			0.0f);
+		if (bFirstPlaybackObservation)
+		{
+			TurnInPlacePlaybackWatchdogDuration = CalculateTurnInPlacePlaybackWatchdogDuration(
+				TurnInPlaceSelectedAssetRemainingTime,
+				CurrentAssetPlayRate,
+				bTurnInPlaceSelectedAssetLooping);
+			TurnInPlaceStateElapsed = 0.0f;
+		}
+		if (!bTurnInPlaceSelectedAssetLooping &&
+			TurnInPlaceSelectedAssetRemainingTime <= CompletionLeadTime)
+		{
+			bTurnInPlaceCompletionArmed = true;
+		}
+		return;
+	}
+
+	if (!bTurnInPlacePlaybackObserved)
+	{
+		// The generic pre-update callback reads the previous completed SearchResult. Keep that latch
+		// authoritative through a transient Blend Stack mismatch until the exact asset is observed.
+		bTurnInPlacePoseSelected = true;
+		return;
+	}
+
+	if (!bTurnInPlaceSelectedAssetLooping &&
+		TurnInPlaceSelectedAssetRemainingTime <= CompletionLeadTime)
+	{
+		bTurnInPlacePoseSelected = true;
+		bTurnInPlaceCompletionArmed = true;
+		return;
+	}
+
+	bTurnInPlacePoseSelected = false;
+}
+
+URpgAnimInstance::ETurnInPlaceSearchMode URpgAnimInstance::ResolveTurnInPlaceSearchMode(
+	bool bForceNewRequest) const
+{
+	if (bForceNewRequest &&
+		TurnInPlaceState == ERpgTurnInPlaceState::Active &&
+		TurnInPlaceMotionMatchingDatabase)
+	{
+		return ETurnInPlaceSearchMode::SearchRequestedTurn;
+	}
+
+	if (TurnInPlaceState == ERpgTurnInPlaceState::Active &&
+		bTurnInPlaceSelectionLatched &&
+		!bTurnInPlaceCompletionArmed)
+	{
+		return ETurnInPlaceSearchMode::ContinueSelectedTurn;
+	}
+
+	return ETurnInPlaceSearchMode::NormalLocomotion;
+}
+
+bool URpgAnimInstance::AllowsMovingProceduralNodes() const
+{
+	return TurnInPlaceState == ERpgTurnInPlaceState::Inactive ||
+		TurnInPlaceState == ERpgTurnInPlaceState::Recovering;
+}
+
 void URpgAnimInstance::NativeThreadSafeUpdateAnimation(float DeltaSeconds)
 {
 	Super::NativeThreadSafeUpdateAnimation(DeltaSeconds);
@@ -735,36 +886,60 @@ void URpgAnimInstance::UpdateGaspMotionMatching(
 	const FAnimUpdateContext& Context,
 	const FAnimNodeReference& Node)
 {
-	(void)Context;
-
 	FAnimNode_MotionMatching* MotionMatchingNode = Node.GetAnimNodePtr<FAnimNode_MotionMatching>();
 	if (!MotionMatchingNode)
 	{
 		return;
 	}
 
-	bTurnInPlacePoseSelected = false;
-	bTurnInPlaceSelectedAssetLooping = false;
-	TurnInPlaceSelectedAssetRemainingTime = MAX_flt;
-	if (TurnInPlaceState == ERpgTurnInPlaceState::Active && TurnInPlaceMotionMatchingDatabase)
+	const bool bForceNewTurnRequest = ConsumeTurnInPlaceForceInterruptRequest();
+	if (!bForceNewTurnRequest &&
+		TurnInPlaceState == ERpgTurnInPlaceState::Active &&
+		!bTurnInPlaceSelectionLatched &&
+		TurnInPlaceMotionMatchingDatabase)
 	{
+		// The pilot binds this function to the generic node UpdateFunction, which runs before the
+		// current search. SearchResult therefore belongs to the previous completed node update.
 		const FPoseSearchBlueprintResult& SearchResult =
 			MotionMatchingNode->GetMotionMatchingState().SearchResult;
-		bTurnInPlacePoseSelected =
-			SearchResult.SelectedDatabase.Get() == TurnInPlaceMotionMatchingDatabase.Get();
-		if (bTurnInPlacePoseSelected && MotionMatchingNode->GetAnimAsset())
+		if (SearchResult.SelectedDatabase.Get() == TurnInPlaceMotionMatchingDatabase.Get())
 		{
-			bTurnInPlaceSelectedAssetLooping = MotionMatchingNode->IsLooping();
-			TurnInPlaceSelectedAssetRemainingTime = FMath::Max(
-				MotionMatchingNode->GetCurrentAssetLength() - MotionMatchingNode->GetCurrentAssetTime(),
-				0.0f);
+			TryLatchTurnInPlaceSelection(
+				Cast<UAnimationAsset>(SearchResult.SelectedAnim.Get()),
+				SearchResult.SelectedDatabase.Get(),
+				SearchResult.SelectedTime,
+				SearchResult.bLoop,
+				TurnInPlaceRequestSerial);
 		}
 	}
 
+	if (TurnInPlaceState == ERpgTurnInPlaceState::Active && bTurnInPlaceSelectionLatched)
+	{
+		const FAnimationUpdateContext* AnimationContext = Context.GetContext();
+		UpdateTurnInPlaceLatchedPlayback(
+			MotionMatchingNode->GetAnimAsset(),
+			MotionMatchingNode->GetCurrentAssetTime(),
+			MotionMatchingNode->GetCurrentAssetLength(),
+			MotionMatchingNode->AnimPlayers.IsEmpty()
+				? 1.0f
+				: MotionMatchingNode->AnimPlayers[0].GetPlayRate(),
+			AnimationContext ? AnimationContext->GetDeltaTime() : 0.0f);
+	}
+
+	const ETurnInPlaceSearchMode SearchMode =
+		ResolveTurnInPlaceSearchMode(bForceNewTurnRequest);
 	TArray<UPoseSearchDatabase*, TInlineAllocator<5>> DatabasesToSearch;
-	if (TurnInPlaceState == ERpgTurnInPlaceState::Active && TurnInPlaceMotionMatchingDatabase)
+	EPoseSearchInterruptMode InterruptMode = EPoseSearchInterruptMode::InterruptOnDatabaseChange;
+	if (SearchMode == ETurnInPlaceSearchMode::SearchRequestedTurn)
 	{
 		DatabasesToSearch.Add(TurnInPlaceMotionMatchingDatabase);
+		InterruptMode = EPoseSearchInterruptMode::ForceInterrupt;
+	}
+	else if (SearchMode == ETurnInPlaceSearchMode::ContinueSelectedTurn)
+	{
+		// An empty searchable set with DoNotInterrupt keeps only the current database's Continuing Pose.
+		// It prevents a full TIR-database search from selecting another clip when the indexed range ends.
+		InterruptMode = EPoseSearchInterruptMode::DoNotInterrupt;
 	}
 	else if (bLocomotionIsFalling)
 	{
@@ -796,15 +971,6 @@ void URpgAnimInstance::UpdateGaspMotionMatching(
 		}
 	}
 
-	EPoseSearchInterruptMode InterruptMode = EPoseSearchInterruptMode::InterruptOnDatabaseChange;
-	if (ConsumeTurnInPlaceForceInterruptRequest())
-	{
-		InterruptMode = EPoseSearchInterruptMode::ForceInterrupt;
-		bTurnInPlacePoseSelected = false;
-		bTurnInPlaceSelectedAssetLooping = false;
-		TurnInPlaceSelectedAssetRemainingTime = MAX_flt;
-	}
-
 	MotionMatchingNode->SetDatabasesToSearch(
 		MakeArrayView(DatabasesToSearch),
 		InterruptMode);
@@ -828,7 +994,7 @@ void URpgAnimInstance::GetGaspBlendStackInputs(
 		!bLocomotionIsFalling &&
 		!bIsCrouching &&
 		!bIsAnyMontagePlaying &&
-		TurnInPlaceState == ERpgTurnInPlaceState::Inactive &&
+		AllowsMovingProceduralNodes() &&
 		LocomotionGait != ERpgLocomotionGait::Idle;
 	MovingAlpha = bIsBoundedMovingPose
 		? FMath::Clamp(ProceduralLocomotionAlpha, 0.0f, 1.0f)

@@ -1,6 +1,6 @@
 # RPG GASP Locomotion
 
-This content-only plugin owns the curated Game Animation Sample Project (GASP) locomotion substrate for SurvivalRpg. It does not select a PawnData, Experience, or Animation Blueprint; that isolated runtime pilot belongs to issue #54.
+This content-only plugin owns the curated Game Animation Sample Project (GASP) locomotion substrate for SurvivalRpg. It does not select a PawnData, Experience, or Animation Blueprint; the isolated runtime pilot was delivered by issue #54.
 
 ## Curated slice
 
@@ -20,10 +20,11 @@ Unreal recompresses retargeted sequences with the project/engine defaults, so on
 - Source curve names and case are preserved, including `Phase`/`phase` and `MoveData_Speed`/`movedata_speed` variants.
 - Native Pose Search sampling, exclusion, transition, and cost notifies are preserved.
 - Sample Foley, EarlyTransition, BranchIn database references, and experimental state-machine asset user data are removed.
+- `PSD_Rpg_Stand_TurnInPlace` carries only the `TurnInPlace` tag, uses `BaseCostBias=-0.2` and `ContinuingPoseCostBias=-0.05`, and keeps all eight entries unmirrored and non-looping. Every entry uses `SamplingRange=[0.0,0.01]`, which deliberately indexes exactly the authored `t=0` pose at the 30 Hz schema rate so controller-facing turns cannot enter after their root-yaw section.
 - The final plugin contains no GASP source skeleton, mesh, IK rig, retargeter, Sample Character, Traversal, Camera, Mover, Locomotor, NetworkPrediction, Foley, Audio, or MetaSound content.
 
 The complete source-to-target mapping and cleanup policy is recorded in `CuratedAssetManifest.csv`.
 
 ## Runtime boundary
 
-`CHT_Rpg_LocomotionDatabases` keeps the five standing/airborne gait databases as unfiltered rows. It is an authoring substrate, not the final gameplay-state selector. The runtime selects `PSD_Rpg_Crouch` and `PSD_Rpg_Stand_TurnInPlace` directly through their dedicated AnimInstance properties, with selector priority Airborne > Crouch > Turn-in-place > Gait. Issue #54 owns the isolated Animation Blueprint, PawnData, and Experience integration; issue #55 owns multiplayer verification and cutover.
+`CHT_Rpg_LocomotionDatabases` keeps the five standing/airborne gait databases as unfiltered rows. It is an authoring substrate, not the final gameplay-state selector. The runtime selects `PSD_Rpg_Crouch` and `PSD_Rpg_Stand_TurnInPlace` directly through their dedicated AnimInstance properties, with selector priority Airborne > Crouch > Turn-in-place > Gait. Issue #54 delivered the isolated Animation Blueprint, PawnData, and Experience integration; issue #63 separates exploration, combat-strafe, and aim rotation before issue #55 performs multiplayer verification and cutover.

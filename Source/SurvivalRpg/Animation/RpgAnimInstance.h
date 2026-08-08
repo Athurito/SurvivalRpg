@@ -396,22 +396,69 @@ protected:
 	bool bIsAnyMontagePlaying = false;
 
 private:
+	/** Database policy applied by the generic pre-update callback to the upcoming Motion Matching search. */
+	enum class ETurnInPlaceSearchMode : uint8
+	{
+		NormalLocomotion,
+		SearchRequestedTurn,
+		ContinueSelectedTurn,
+	};
+
 	void UpdateTurnInPlaceRuntime(float DeltaSeconds, const FRpgAnimInstanceProxy& Proxy);
 	void BeginTurnInPlaceRequest(float QuantizedAngle);
 	void BeginTurnInPlaceRecovery(bool bHardResetOffset);
 	void ResetTurnInPlaceRuntime(bool bHardResetOffset);
+	/** Clears only the cosmetic selection/playback latch; request serials remain monotonic. */
+	void ClearTurnInPlaceSelection();
 	bool IsTurnInPlaceEligible(const FRpgAnimInstanceProxy& Proxy) const;
 	bool ConsumeTurnInPlaceForceInterruptRequest();
+	/** Allows request retargeting only until the generic pre-update callback dispatches its first TIR search. */
+	bool CanRetargetTurnInPlaceRequest() const;
+	/** Latches the first valid TIR SearchResult from the previous completed node update for the request serial. */
+	bool TryLatchTurnInPlaceSelection(
+		UAnimationAsset* SelectedAsset,
+		const UPoseSearchDatabase* SelectedDatabase,
+		float SelectedTime,
+		bool bSelectedAssetLooping,
+		uint32 SelectionRequestSerial);
+	/** Tracks the latched asset and its actual Blend Stack play rate independently of later PoseSearch-result validity. */
+	void UpdateTurnInPlaceLatchedPlayback(
+		UAnimationAsset* CurrentAsset,
+		float CurrentAssetTime,
+		float CurrentAssetLength,
+		float CurrentAssetPlayRate,
+		float DeltaSeconds);
+	/** Resolves the upcoming search policy without issuing more than one full TIR search per request. */
+	ETurnInPlaceSearchMode ResolveTurnInPlaceSearchMode(bool bForceNewRequest) const;
+	/** Allows moving procedural nodes during a movement-driven recovery, but never during collection or playback. */
+	bool AllowsMovingProceduralNodes() const;
 
 	float TurnInPlaceStableElapsed = 0.0f;
 	float TurnInPlaceSelectionElapsed = 0.0f;
+	/** Remaining full-sequence playback time for the latched cosmetic turn, in seconds. */
 	float TurnInPlaceSelectedAssetRemainingTime = 0.0f;
+	/** PoseSearch-selected start time copied from the previous completed search result, in seconds. */
+	float TurnInPlaceSelectedAssetStartTime = 0.0f;
+	/** Wall-clock watchdog budget, restarted on playback observation and scaled by the actual non-looping play rate. */
+	float TurnInPlacePlaybackWatchdogDuration = 0.0f;
 	float TurnInPlaceRequestAccumulatedYaw = 0.0f;
 	uint32 TurnInPlaceRequestSerial = 0;
 	uint32 TurnInPlaceInterruptedRequestSerial = 0;
+	/** Request serial owning TurnInPlaceSelectedAsset; zero means no selection is latched. */
+	uint32 TurnInPlaceSelectedRequestSerial = 0;
+
+	/** Exact non-authoritative animation chosen for the active request; the database and Blend Stack retain ownership. */
+	UPROPERTY(Transient)
+	TObjectPtr<UAnimationAsset> TurnInPlaceSelectedAsset;
+
 	bool bTurnInPlacePoseSelected = false;
-	bool bTurnInPlaceHadSelection = false;
 	bool bTurnInPlaceSelectedAssetLooping = false;
+	/** True after the first valid SearchResult has been bound to the active request. */
+	bool bTurnInPlaceSelectionLatched = false;
+	/** True after the latched asset has become the Blend Stack's actual current asset. */
+	bool bTurnInPlacePlaybackObserved = false;
+	/** True when pre-update selects normal locomotion for the upcoming search at natural completion. */
+	bool bTurnInPlaceCompletionArmed = false;
 	bool bTurnInPlaceHardResetConditionLastFrame = false;
 	bool bTurnInPlaceInitializationResetPending = false;
 

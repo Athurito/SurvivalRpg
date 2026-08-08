@@ -14,6 +14,8 @@
 #include "Misc/PackageName.h"
 #include "Modules/ModuleManager.h"
 #include "PoseSearch/PoseSearchDatabase.h"
+#include "PoseSearch/PoseSearchDerivedData.h"
+#include "PoseSearch/PoseSearchIndex.h"
 #include "PoseSearch/PoseSearchNormalizationSet.h"
 #include "UObject/UObjectGlobals.h"
 
@@ -313,13 +315,58 @@ bool FRpgGaspLocomotionContentContractTest::RunTest(const FString& Parameters)
 		TEXT("/RpgGaspLocomotion/MotionMatching/Databases/PSD_Rpg_Stand_TurnInPlace.PSD_Rpg_Stand_TurnInPlace"));
 	if (TestNotNull(TEXT("The turn-in-place database loads for exclusivity validation"), TurnInPlaceDatabase))
 	{
+		TestEqual(
+			TEXT("The turn-in-place database exposes exactly one selection tag"),
+			TurnInPlaceDatabase->Tags.Num(),
+			1);
+		if (TurnInPlaceDatabase->Tags.Num() == 1)
+		{
+			TestEqual(
+				TEXT("The turn-in-place database uses the GASP TurnInPlace selection tag"),
+				TurnInPlaceDatabase->Tags[0],
+				FName(TEXT("TurnInPlace")));
+		}
+		TestTrue(
+			TEXT("The turn-in-place database keeps the GASP base-cost bias"),
+			FMath::IsNearlyEqual(TurnInPlaceDatabase->BaseCostBias, -0.2f));
+		TestTrue(
+			TEXT("The turn-in-place database keeps the GASP continuing-pose bias"),
+			FMath::IsNearlyEqual(TurnInPlaceDatabase->ContinuingPoseCostBias, -0.05f));
+
 		TSet<FString> ActualTurnPackages;
 		for (int32 Index = 0; Index < TurnInPlaceDatabase->GetNumAnimationAssets(); ++Index)
 		{
-			const UObject* AnimationAsset = TurnInPlaceDatabase->GetAnimationAsset(Index);
+			const FPoseSearchDatabaseAnimationAsset* DatabaseEntry =
+				TurnInPlaceDatabase->GetDatabaseAnimationAsset(Index);
+			if (!TestNotNull(
+				*FString::Printf(TEXT("Turn-in-place database entry %d resolves"), Index),
+				DatabaseEntry))
+			{
+				continue;
+			}
+
+			TestEqual(
+				*FString::Printf(TEXT("Turn-in-place database entry %d is unmirrored-only"), Index),
+				DatabaseEntry->GetMirrorOption(),
+				EPoseSearchMirrorOption::UnmirroredOnly);
+			const FFloatInterval SamplingRange = DatabaseEntry->GetSamplingRange();
+			TestTrue(
+				*FString::Printf(TEXT("Turn-in-place database entry %d samples only the authored start pose"), Index),
+				FMath::IsNearlyZero(SamplingRange.Min) && FMath::IsNearlyEqual(SamplingRange.Max, 0.01f));
+			TestFalse(
+				*FString::Printf(TEXT("Turn-in-place database entry %d is non-looping"), Index),
+				DatabaseEntry->IsLooping());
+
+			const UObject* AnimationAsset = DatabaseEntry->GetAnimationAsset();
 			if (TestNotNull(TEXT("Every turn-in-place entry resolves"), AnimationAsset))
 			{
 				ActualTurnPackages.Add(AnimationAsset->GetOutermost()->GetName());
+				if (const UAnimSequence* TurnSequence = Cast<UAnimSequence>(AnimationAsset))
+				{
+					TestFalse(
+						*FString::Printf(TEXT("%s remains a non-looping authored turn"), *TurnSequence->GetName()),
+						TurnSequence->bLoop);
+				}
 			}
 		}
 
@@ -329,6 +376,27 @@ bool FRpgGaspLocomotionContentContractTest::RunTest(const FString& Parameters)
 			TestTrue(
 				*FString::Printf(TEXT("The turn-in-place database contains %s"), ExpectedPackage),
 				ActualTurnPackages.Contains(FString(ExpectedPackage)));
+		}
+
+		const UE::PoseSearch::EAsyncBuildIndexResult BuildResult =
+			UE::PoseSearch::FAsyncPoseSearchDatabasesManagement::RequestAsyncBuildIndex(
+				TurnInPlaceDatabase,
+				UE::PoseSearch::ERequestAsyncBuildFlag::NewRequest |
+					UE::PoseSearch::ERequestAsyncBuildFlag::WaitForCompletion);
+		if (TestTrue(
+			TEXT("The turn-in-place search index finishes building"),
+			BuildResult == UE::PoseSearch::EAsyncBuildIndexResult::Success))
+		{
+			const UE::PoseSearch::FSearchIndex& SearchIndex = TurnInPlaceDatabase->GetSearchIndex();
+			TestEqual(TEXT("The turn-in-place database indexes exactly eight poses"), SearchIndex.GetNumPoses(), 8);
+			TestEqual(TEXT("The turn-in-place database creates exactly eight search-index assets"), SearchIndex.Assets.Num(), 8);
+			for (int32 Index = 0; Index < SearchIndex.Assets.Num(); ++Index)
+			{
+				TestEqual(
+					*FString::Printf(TEXT("Turn-in-place search-index asset %d contains only t=0"), Index),
+					SearchIndex.Assets[Index].GetNumPoses(),
+					1);
+			}
 		}
 	}
 
