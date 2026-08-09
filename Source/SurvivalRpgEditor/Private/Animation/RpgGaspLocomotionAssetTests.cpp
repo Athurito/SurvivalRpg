@@ -509,6 +509,14 @@ bool FRpgGaspLocomotionContentContractTest::RunTest(const FString& Parameters)
 			return;
 		}
 
+		TestTrue(
+			bLandingDatabase
+				? TEXT("The light-landing database keeps GASP's continuing-pose bias")
+				: TEXT("The airborne-jump database keeps GASP's continuing-pose bias"),
+			FMath::IsNearlyEqual(
+				Database->ContinuingPoseCostBias,
+				bLandingDatabase ? -0.15f : -0.5f));
+
 		TSet<FString> ExpectedPackageSet;
 		for (const TCHAR* ExpectedPackage : ExpectedPackages)
 		{
@@ -536,6 +544,12 @@ bool FRpgGaspLocomotionContentContractTest::RunTest(const FString& Parameters)
 				*FString::Printf(TEXT("Jump database entry %d is unmirrored-only"), Index),
 				Entry->GetMirrorOption(),
 				EPoseSearchMirrorOption::UnmirroredOnly);
+			TestEqual(
+				*FString::Printf(
+					TEXT("Jump database entry %d keeps the GASP reselection contract"),
+					Index),
+				Entry->IsDisableReselection(),
+				bLandingDatabase);
 			const FFloatInterval SamplingRange = Entry->GetSamplingRange();
 			TestTrue(
 				*FString::Printf(TEXT("Jump database entry %d deliberately keeps source-style full-range sampling"), Index),

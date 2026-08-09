@@ -1467,6 +1467,74 @@ bool FRpgGaspPilotAssetContractTest::RunTest(const FString& Parameters)
 			TEXT("The top-level pilot graph contains exactly nine pose nodes and five property getters"),
 			AnimGraph->Nodes.Num(),
 			14);
+		const FAnimNode_PoseSearchHistoryCollector* PoseHistoryRuntimeNode =
+			ReadRuntimeNode<FAnimNode_PoseSearchHistoryCollector>(PoseHistoryNode);
+		if (TestNotNull(
+			TEXT("The Pose History editor node stores the expected runtime node"),
+			PoseHistoryRuntimeNode))
+		{
+			TestEqual(
+				TEXT("Pose History retains two samples"),
+				PoseHistoryRuntimeNode->PoseCount,
+				2);
+			TestTrue(
+				TEXT("Pose History samples every animation update"),
+				FMath::IsNearlyZero(PoseHistoryRuntimeNode->SamplingInterval));
+			TestEqual(
+				TEXT("Pose History collects exactly the bones required by the local schemas"),
+				PoseHistoryRuntimeNode->CollectedBones.Num(),
+				3);
+			TSet<FName> CollectedPoseHistoryBones;
+			for (const FBoneReference& BoneReference : PoseHistoryRuntimeNode->CollectedBones)
+			{
+				CollectedPoseHistoryBones.Add(BoneReference.BoneName);
+			}
+			TestEqual(
+				TEXT("Pose History does not contain duplicate collected bones"),
+				CollectedPoseHistoryBones.Num(),
+				PoseHistoryRuntimeNode->CollectedBones.Num());
+			for (const FName RequiredBone :
+				{FName(TEXT("foot_l")), FName(TEXT("foot_r")), FName(TEXT("pelvis"))})
+			{
+				TestTrue(
+					*FString::Printf(
+						TEXT("Pose History collects schema-required bone %s"),
+						*RequiredBone.ToString()),
+					CollectedPoseHistoryBones.Contains(RequiredBone));
+			}
+			TestEqual(
+				TEXT("The curated local schemas require no Pose History curves"),
+				PoseHistoryRuntimeNode->CollectedCurves.Num(),
+				0);
+			TestTrue(
+				TEXT("Pose History resets when it becomes relevant again"),
+				PoseHistoryRuntimeNode->bResetOnBecomingRelevant);
+			TestFalse(
+				TEXT("Pose History does not retain animation scales"),
+				PoseHistoryRuntimeNode->bStoreScales);
+			TestTrue(
+				TEXT("Pose History keeps the GASP root recovery time"),
+				FMath::IsNearlyEqual(PoseHistoryRuntimeNode->RootBoneRecoveryTime, 0.3f));
+			TestFalse(
+				TEXT("Pose History consumes the project trajectory instead of generating one"),
+				PoseHistoryRuntimeNode->bGenerateTrajectory);
+			TestTrue(
+				TEXT("The external trajectory is not speed-scaled inside Pose History"),
+				FMath::IsNearlyEqual(PoseHistoryRuntimeNode->TrajectorySpeedMultiplier, 1.0f));
+			TestEqual(
+				TEXT("Pose History retains the UE/GASP history default"),
+				PoseHistoryRuntimeNode->TrajectoryHistoryCount,
+				10);
+			TestEqual(
+				TEXT("Pose History retains the UE/GASP prediction default"),
+				PoseHistoryRuntimeNode->TrajectoryPredictionCount,
+				8);
+			TestTrue(
+				TEXT("Pose History retains the UE/GASP prediction interval"),
+				FMath::IsNearlyEqual(
+					PoseHistoryRuntimeNode->PredictionSamplingInterval,
+					0.4f));
+		}
 		int32 StockFootPlacementNodeCount = 0;
 		int32 RpgFootPlacementNodeCount = 0;
 		int32 LegIkNodeCount = 0;
