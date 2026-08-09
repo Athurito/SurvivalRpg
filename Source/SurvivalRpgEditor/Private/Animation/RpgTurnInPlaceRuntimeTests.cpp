@@ -542,7 +542,7 @@ bool FRpgTurnInPlaceStateMachineTest::RunTest(const FString& Parameters)
 
 	auto ActivateTurnForReset = [&]()
 	{
-		AnimInstance->bTurnInPlaceHardResetConditionLastFrame = false;
+		AnimInstance->TurnInPlaceHardResetReasonsLastFrame = 0;
 		AnimInstance->ResetTurnInPlaceRuntime(false);
 		AnimInstance->BeginTurnInPlaceRequest(45.0f);
 		AnimInstance->TurnInPlaceAccumulatedYaw = 45.0f;
@@ -553,6 +553,7 @@ bool FRpgTurnInPlaceStateMachineTest::RunTest(const FString& Parameters)
 		Proxy.bIsCrouching = false;
 		Proxy.MovementState = ERpgLocomotionMovementState::Grounded;
 		Proxy.RotationMode = ERpgCharacterRotationMode::CombatStrafe;
+		Proxy.bTurnInPlaceSupportChanged = false;
 	};
 
 	ActivateTurnForReset();
@@ -562,6 +563,26 @@ bool FRpgTurnInPlaceStateMachineTest::RunTest(const FString& Parameters)
 	TestTrue(TEXT("The first Active-to-Free frame emits an Offset Root reset pulse"), AnimInstance->bResetOffsetRootEveryFrame);
 	AnimInstance->UpdateTurnInPlaceRuntime(0.01f, Proxy);
 	TestFalse(TEXT("Persistent Free mode does not repeat the Offset Root reset pulse"), AnimInstance->bResetOffsetRootEveryFrame);
+	Proxy.bTurnInPlaceHardReset = true;
+	AnimInstance->UpdateTurnInPlaceRuntime(0.01f, Proxy);
+	TestTrue(
+		TEXT("A teleport snapshot still resets Offset Root while Free mode remains active"),
+		AnimInstance->bResetOffsetRootEveryFrame);
+	AnimInstance->UpdateTurnInPlaceRuntime(0.01f, Proxy);
+	TestFalse(
+		TEXT("A persistent teleport snapshot emits only one Offset Root reset"),
+		AnimInstance->bResetOffsetRootEveryFrame);
+	Proxy.bTurnInPlaceHardReset = false;
+	Proxy.bIsAnyMontagePlaying = true;
+	AnimInstance->UpdateTurnInPlaceRuntime(0.01f, Proxy);
+	TestTrue(
+		TEXT("A montage still resets Offset Root while Free mode remains active"),
+		AnimInstance->bResetOffsetRootEveryFrame);
+	AnimInstance->UpdateTurnInPlaceRuntime(0.01f, Proxy);
+	TestFalse(
+		TEXT("A persistent Free-mode montage emits only one Offset Root reset"),
+		AnimInstance->bResetOffsetRootEveryFrame);
+	Proxy.bIsAnyMontagePlaying = false;
 
 	Proxy.RotationMode = ERpgCharacterRotationMode::CombatStrafe;
 	Proxy.bTurnInPlaceSupportChanged = true;
@@ -605,6 +626,75 @@ bool FRpgTurnInPlaceStateMachineTest::RunTest(const FString& Parameters)
 	AnimInstance->UpdateTurnInPlaceRuntime(0.01f, Proxy);
 	TestEqual(TEXT("Crouching hard-resets an active turn"), AnimInstance->TurnInPlaceState, ERpgTurnInPlaceState::Inactive);
 	TestTrue(TEXT("Crouching emits an Offset Root reset pulse"), AnimInstance->bResetOffsetRootEveryFrame);
+
+	AnimInstance->TurnInPlaceHardResetReasonsLastFrame = 0;
+	AnimInstance->ResetTurnInPlaceRuntime(false);
+	Proxy.bIsCrouching = false;
+	Proxy.bIsAnyMontagePlaying = false;
+	Proxy.bHasTurnInPlaceBlockingGameplayTag = false;
+	Proxy.bTurnInPlaceHardReset = false;
+	Proxy.RotationMode = ERpgCharacterRotationMode::CombatStrafe;
+	Proxy.MovementState = ERpgLocomotionMovementState::Airborne;
+	Proxy.ActorYawDelta = 0.0f;
+	AnimInstance->UpdateTurnInPlaceRuntime(0.01f, Proxy);
+	TestEqual(
+		TEXT("A regular moving jump keeps inactive TIR cleared"),
+		AnimInstance->TurnInPlaceState,
+		ERpgTurnInPlaceState::Inactive);
+	TestFalse(
+		TEXT("A regular moving jump preserves Offset Root interpolation"),
+		AnimInstance->bResetOffsetRootEveryFrame);
+	AnimInstance->UpdateTurnInPlaceRuntime(0.01f, Proxy);
+	TestFalse(
+		TEXT("A persistent regular jump never emits an Offset Root reset"),
+		AnimInstance->bResetOffsetRootEveryFrame);
+	Proxy.bTurnInPlaceSupportChanged = true;
+	AnimInstance->UpdateTurnInPlaceRuntime(0.01f, Proxy);
+	TestTrue(
+		TEXT("Free-to-combat policy entry while airborne still resets Offset Root"),
+		AnimInstance->bResetOffsetRootEveryFrame);
+	Proxy.bTurnInPlaceSupportChanged = false;
+	AnimInstance->UpdateTurnInPlaceRuntime(0.01f, Proxy);
+	TestFalse(
+		TEXT("An airborne rotation-policy event emits only one Offset Root reset"),
+		AnimInstance->bResetOffsetRootEveryFrame);
+
+	Proxy.bIsAnyMontagePlaying = true;
+	AnimInstance->UpdateTurnInPlaceRuntime(0.01f, Proxy);
+	TestTrue(
+		TEXT("A montage beginning after an airborne-only cancel still resets Offset Root"),
+		AnimInstance->bResetOffsetRootEveryFrame);
+	AnimInstance->UpdateTurnInPlaceRuntime(0.01f, Proxy);
+	TestFalse(
+		TEXT("A persistent airborne montage still emits only one Offset Root reset"),
+		AnimInstance->bResetOffsetRootEveryFrame);
+
+	AnimInstance->TurnInPlaceHardResetReasonsLastFrame = 0;
+	AnimInstance->ResetTurnInPlaceRuntime(false);
+	Proxy.bIsAnyMontagePlaying = false;
+	Proxy.MovementState = ERpgLocomotionMovementState::Swimming;
+	AnimInstance->UpdateTurnInPlaceRuntime(0.01f, Proxy);
+	TestTrue(
+		TEXT("A non-airborne unsupported movement state retains its Offset Root hard reset"),
+		AnimInstance->bResetOffsetRootEveryFrame);
+	AnimInstance->UpdateTurnInPlaceRuntime(0.01f, Proxy);
+	TestFalse(
+		TEXT("A persistent unsupported movement state emits only one Offset Root reset"),
+		AnimInstance->bResetOffsetRootEveryFrame);
+
+	AnimInstance->TurnInPlaceHardResetReasonsLastFrame = 0;
+	AnimInstance->ResetTurnInPlaceRuntime(false);
+	Proxy.bIsAnyMontagePlaying = false;
+	Proxy.MovementState = ERpgLocomotionMovementState::Airborne;
+	AnimInstance->TurnInPlaceAccumulatedYaw = 5.0f;
+	AnimInstance->UpdateTurnInPlaceRuntime(0.01f, Proxy);
+	TestTrue(
+		TEXT("Airborne entry resets Offset Root when real TIR yaw remains"),
+		AnimInstance->bResetOffsetRootEveryFrame);
+	AnimInstance->UpdateTurnInPlaceRuntime(0.01f, Proxy);
+	TestFalse(
+		TEXT("Airborne TIR yaw cleanup emits its Offset Root reset only once"),
+		AnimInstance->bResetOffsetRootEveryFrame);
 
 	ActivateTurnForReset();
 	Proxy.MovementState = ERpgLocomotionMovementState::Airborne;

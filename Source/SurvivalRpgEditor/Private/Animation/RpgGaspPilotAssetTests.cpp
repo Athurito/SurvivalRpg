@@ -340,6 +340,19 @@ namespace RpgGaspPilotAssetTests
 		return true;
 	}
 
+	bool ReadFloatProperty(const UObject* Object, FName PropertyName, float& OutValue)
+	{
+		const FFloatProperty* Property =
+			Object ? FindFProperty<FFloatProperty>(Object->GetClass(), PropertyName) : nullptr;
+		if (!Property)
+		{
+			return false;
+		}
+
+		OutValue = Property->GetPropertyValue_InContainer(Object);
+		return true;
+	}
+
 	const FGameplayTagContainer* ReadGameplayTagContainerProperty(
 		const UObject* Object,
 		FName PropertyName)
@@ -800,6 +813,42 @@ namespace RpgGaspPilotAssetTests
 			Test.TestTrue(
 				TEXT("GetGaspBlendStackInputs is explicitly BlueprintThreadSafe"),
 				HelperFunction->HasMetaData(TEXT("BlueprintThreadSafe")));
+
+			const FFloatProperty* ResetRootAlphaProperty =
+				FindFProperty<FFloatProperty>(HelperFunction, TEXT("ResetRootAlpha"));
+			if (Test.TestNotNull(
+				TEXT("GetGaspBlendStackInputs exposes the phase-safe ResetRootAlpha output"),
+				ResetRootAlphaProperty))
+			{
+				Test.TestTrue(
+					TEXT("ResetRootAlpha is an output parameter"),
+					ResetRootAlphaProperty->HasAllPropertyFlags(CPF_Parm | CPF_OutParm));
+			}
+			Test.TestNull(
+				TEXT("The obsolete grounded-only MovingAlpha output is removed"),
+				FindFProperty<FProperty>(HelperFunction, TEXT("MovingAlpha")));
+
+			const FFloatProperty* OrientationWarpingAlphaProperty =
+				FindFProperty<FFloatProperty>(HelperFunction, TEXT("OrientationWarpingAlpha"));
+			if (Test.TestNotNull(
+				TEXT("GetGaspBlendStackInputs keeps OrientationWarpingAlpha separate from ResetRoot"),
+				OrientationWarpingAlphaProperty))
+			{
+				Test.TestTrue(
+					TEXT("OrientationWarpingAlpha is an output parameter"),
+					OrientationWarpingAlphaProperty->HasAllPropertyFlags(CPF_Parm | CPF_OutParm));
+			}
+
+			const FBoolProperty* EnableSteeringProperty =
+				FindFProperty<FBoolProperty>(HelperFunction, TEXT("bEnableSteering"));
+			if (Test.TestNotNull(
+				TEXT("GetGaspBlendStackInputs keeps Steering as a separate sample gate"),
+				EnableSteeringProperty))
+			{
+				Test.TestTrue(
+					TEXT("bEnableSteering is an output parameter"),
+					EnableSteeringProperty->HasAllPropertyFlags(CPF_Parm | CPF_OutParm));
+			}
 		}
 		if (BlendStackInputsNode)
 		{
@@ -908,7 +957,7 @@ namespace RpgGaspPilotAssetTests
 			BlendStackInputsNode,
 			TEXT("CurrentAnimAssetTime"),
 			{{OrientationWarpingNode, TEXT("CurrentAnimAssetTime")}, {SteeringNode, TEXT("CurrentAnimAssetTime")}});
-		TestExactOutputLinks(Test, TEXT("Moving alpha gates Reset Root"), BlendStackInputsNode, TEXT("MovingAlpha"), {{ResetRootNode, TEXT("Alpha")}});
+		TestExactOutputLinks(Test, TEXT("The phase-safe alpha gates Reset Root"), BlendStackInputsNode, TEXT("ResetRootAlpha"), {{ResetRootNode, TEXT("Alpha")}});
 		TestExactOutputLinks(Test, TEXT("Curve-gated alpha drives OW"), BlendStackInputsNode, TEXT("OrientationWarpingAlpha"), {{OrientationWarpingNode, TEXT("Alpha")}});
 		TestExactOutputLinks(Test, TEXT("Desired facing drives Steering"), BlendStackInputsNode, TEXT("DesiredFacing"), {{SteeringNode, TEXT("TargetOrientation")}});
 		TestExactOutputLinks(Test, TEXT("Last movement direction drives OW"), BlendStackInputsNode, TEXT("LocomotionDirection"), {{OrientationWarpingNode, TEXT("LocomotionDirection")}});
@@ -1124,6 +1173,75 @@ bool FRpgGaspPilotAssetContractTest::RunTest(const FString& Parameters)
 			TestTrue(TEXT("The GASP AnimBlueprint generates its thread-safe trajectory snapshot"), bGeneratesTrajectory);
 		}
 
+		const FEnumProperty* JumpPhaseProperty =
+			FindFProperty<FEnumProperty>(PilotAnimDefaults->GetClass(), TEXT("JumpPhase"));
+		if (TestNotNull(TEXT("The cosmetic jump phase is reflected"), JumpPhaseProperty))
+		{
+			TestEqual(
+				TEXT("JumpPhase uses the explicit ERpgJumpPhase contract"),
+				JumpPhaseProperty->GetEnum(),
+				StaticEnum<ERpgJumpPhase>());
+			TestTrue(
+				TEXT("JumpPhase is transient Blueprint-readable debug state"),
+				JumpPhaseProperty->HasAllPropertyFlags(
+					CPF_Transient | CPF_BlueprintVisible | CPF_BlueprintReadOnly));
+		}
+		FString JumpPhaseText;
+		if (TestTrue(
+			TEXT("The cosmetic jump phase default is readable"),
+			ReadPropertyText(PilotAnimDefaults, TEXT("JumpPhase"), JumpPhaseText)))
+		{
+			TestEqual(TEXT("The GASP pilot starts grounded"), JumpPhaseText, FString(TEXT("Grounded")));
+		}
+
+		float LandingStateElapsed = -1.0f;
+		if (TestTrue(
+			TEXT("The landing elapsed debug value is readable"),
+			ReadFloatProperty(PilotAnimDefaults, TEXT("LandingStateElapsed"), LandingStateElapsed)))
+		{
+			TestEqual(TEXT("Landing elapsed time starts at zero"), LandingStateElapsed, 0.0f);
+			const FFloatProperty* Property =
+				FindFProperty<FFloatProperty>(PilotAnimDefaults->GetClass(), TEXT("LandingStateElapsed"));
+			TestTrue(
+				TEXT("LandingStateElapsed is transient Blueprint-readable debug state"),
+				Property && Property->HasAllPropertyFlags(
+					CPF_Transient | CPF_BlueprintVisible | CPF_BlueprintReadOnly));
+		}
+
+		bool bLandingSelectionLatched = true;
+		if (TestTrue(
+			TEXT("The landing-selection latch debug value is readable"),
+			ReadBoolProperty(
+				PilotAnimDefaults,
+				TEXT("bLandingSelectionLatched"),
+				bLandingSelectionLatched)))
+		{
+			TestFalse(TEXT("No landing selection is latched on the class default"), bLandingSelectionLatched);
+			const FBoolProperty* Property =
+				FindFProperty<FBoolProperty>(PilotAnimDefaults->GetClass(), TEXT("bLandingSelectionLatched"));
+			TestTrue(
+				TEXT("bLandingSelectionLatched is transient Blueprint-readable debug state"),
+				Property && Property->HasAllPropertyFlags(
+					CPF_Transient | CPF_BlueprintVisible | CPF_BlueprintReadOnly));
+		}
+
+		float AirborneProceduralAlpha = -1.0f;
+		if (TestTrue(
+			TEXT("The airborne procedural debug alpha is readable"),
+			ReadFloatProperty(
+				PilotAnimDefaults,
+				TEXT("AirborneProceduralAlpha"),
+				AirborneProceduralAlpha)))
+		{
+			TestEqual(TEXT("Airborne procedural work starts disabled"), AirborneProceduralAlpha, 0.0f);
+			const FFloatProperty* Property =
+				FindFProperty<FFloatProperty>(PilotAnimDefaults->GetClass(), TEXT("AirborneProceduralAlpha"));
+			TestTrue(
+				TEXT("AirborneProceduralAlpha is transient Blueprint-readable debug state"),
+				Property && Property->HasAllPropertyFlags(
+					CPF_Transient | CPF_BlueprintVisible | CPF_BlueprintReadOnly));
+		}
+
 		const FRpgFootPlacementSettings* FootPlacementSettings =
 			ReadStructPropertyValue<FRpgFootPlacementSettings>(
 				PilotAnimDefaults,
@@ -1281,10 +1399,24 @@ bool FRpgGaspPilotAssetContractTest::RunTest(const FString& Parameters)
 			if (AirborneDatabasePaths.Num() == 1)
 			{
 				TestEqual(
-					TEXT("The airborne database is the project-local jump database"),
+					TEXT("The airborne database contains only project-local jump starts and the fall loop"),
 					AirborneDatabasePaths[0],
 					FString(TEXT("/RpgGaspLocomotion/MotionMatching/Databases/PSD_Rpg_Jump.PSD_Rpg_Jump")));
 			}
+		}
+
+		FString LandingDatabasePath;
+		if (TestTrue(
+			TEXT("The dedicated landing database property is readable"),
+			ReadObjectProperty(
+				PilotAnimDefaults,
+				TEXT("LandingMotionMatchingDatabase"),
+				LandingDatabasePath)))
+		{
+			TestEqual(
+				TEXT("Grounded light lands use the dedicated project-local database"),
+				LandingDatabasePath,
+				FString(TEXT("/RpgGaspLocomotion/MotionMatching/Databases/PSD_Rpg_Stand_Idle_Lands_Light.PSD_Rpg_Stand_Idle_Lands_Light")));
 		}
 	}
 
@@ -1335,6 +1467,74 @@ bool FRpgGaspPilotAssetContractTest::RunTest(const FString& Parameters)
 			TEXT("The top-level pilot graph contains exactly nine pose nodes and five property getters"),
 			AnimGraph->Nodes.Num(),
 			14);
+		const FAnimNode_PoseSearchHistoryCollector* PoseHistoryRuntimeNode =
+			ReadRuntimeNode<FAnimNode_PoseSearchHistoryCollector>(PoseHistoryNode);
+		if (TestNotNull(
+			TEXT("The Pose History editor node stores the expected runtime node"),
+			PoseHistoryRuntimeNode))
+		{
+			TestEqual(
+				TEXT("Pose History retains two samples"),
+				PoseHistoryRuntimeNode->PoseCount,
+				2);
+			TestTrue(
+				TEXT("Pose History samples every animation update"),
+				FMath::IsNearlyZero(PoseHistoryRuntimeNode->SamplingInterval));
+			TestEqual(
+				TEXT("Pose History collects exactly the bones required by the local schemas"),
+				PoseHistoryRuntimeNode->CollectedBones.Num(),
+				3);
+			TSet<FName> CollectedPoseHistoryBones;
+			for (const FBoneReference& BoneReference : PoseHistoryRuntimeNode->CollectedBones)
+			{
+				CollectedPoseHistoryBones.Add(BoneReference.BoneName);
+			}
+			TestEqual(
+				TEXT("Pose History does not contain duplicate collected bones"),
+				CollectedPoseHistoryBones.Num(),
+				PoseHistoryRuntimeNode->CollectedBones.Num());
+			for (const FName RequiredBone :
+				{FName(TEXT("foot_l")), FName(TEXT("foot_r")), FName(TEXT("pelvis"))})
+			{
+				TestTrue(
+					*FString::Printf(
+						TEXT("Pose History collects schema-required bone %s"),
+						*RequiredBone.ToString()),
+					CollectedPoseHistoryBones.Contains(RequiredBone));
+			}
+			TestEqual(
+				TEXT("The curated local schemas require no Pose History curves"),
+				PoseHistoryRuntimeNode->CollectedCurves.Num(),
+				0);
+			TestTrue(
+				TEXT("Pose History resets when it becomes relevant again"),
+				PoseHistoryRuntimeNode->bResetOnBecomingRelevant);
+			TestFalse(
+				TEXT("Pose History does not retain animation scales"),
+				PoseHistoryRuntimeNode->bStoreScales);
+			TestTrue(
+				TEXT("Pose History keeps the GASP root recovery time"),
+				FMath::IsNearlyEqual(PoseHistoryRuntimeNode->RootBoneRecoveryTime, 0.3f));
+			TestFalse(
+				TEXT("Pose History consumes the project trajectory instead of generating one"),
+				PoseHistoryRuntimeNode->bGenerateTrajectory);
+			TestTrue(
+				TEXT("The external trajectory is not speed-scaled inside Pose History"),
+				FMath::IsNearlyEqual(PoseHistoryRuntimeNode->TrajectorySpeedMultiplier, 1.0f));
+			TestEqual(
+				TEXT("Pose History retains the UE/GASP history default"),
+				PoseHistoryRuntimeNode->TrajectoryHistoryCount,
+				10);
+			TestEqual(
+				TEXT("Pose History retains the UE/GASP prediction default"),
+				PoseHistoryRuntimeNode->TrajectoryPredictionCount,
+				8);
+			TestTrue(
+				TEXT("Pose History retains the UE/GASP prediction interval"),
+				FMath::IsNearlyEqual(
+					PoseHistoryRuntimeNode->PredictionSamplingInterval,
+					0.4f));
+		}
 		int32 StockFootPlacementNodeCount = 0;
 		int32 RpgFootPlacementNodeCount = 0;
 		int32 LegIkNodeCount = 0;
