@@ -47,6 +47,21 @@ constexpr float LandingPlaybackWatchdogSafetyMargin = 0.1f;
 constexpr float LandingFinishedTimeTolerance = 0.05f;
 constexpr float LightLandingIdleSpeedThreshold = 3.0f;
 
+enum class ETurnInPlaceHardResetReason : uint8
+{
+	ProxySnapshot = 1 << 0,
+	UnsupportedRotationMode = 1 << 1,
+	BlockingGameplayTag = 1 << 2,
+	Montage = 1 << 3,
+	Crouch = 1 << 4,
+	UnsupportedMovementState = 1 << 5,
+};
+
+constexpr uint8 ToReasonMask(ETurnInPlaceHardResetReason Reason)
+{
+	return static_cast<uint8>(Reason);
+}
+
 constexpr bool SupportsTurnInPlace(ERpgCharacterRotationMode RotationMode)
 {
 	return RotationMode == ERpgCharacterRotationMode::CombatStrafe ||
@@ -979,7 +994,7 @@ void URpgAnimInstance::NativeInitializeAnimation()
 	ResetFootPlacementInitializationState(GetProxyOnGameThread<FRpgAnimInstanceProxy>());
 	TurnInPlaceRequestSerial = 0;
 	TurnInPlaceInterruptedRequestSerial = 0;
-	bTurnInPlaceHardResetConditionLastFrame = false;
+	TurnInPlaceHardResetReasonsLastFrame = 0;
 	bResetOffsetRootEveryFrame = false;
 	bTurnInPlaceInitializationResetPending = true;
 	FootPlacementSnapshot = FRpgFootPlacementSnapshot();
@@ -1082,25 +1097,50 @@ void URpgAnimInstance::UpdateTurnInPlaceRuntime(float DeltaSeconds, const FRpgAn
 		? FMath::Abs(Proxy.ActorYawDelta) / SafeDeltaSeconds
 		: (FMath::IsNearlyZero(Proxy.ActorYawDelta) ? 0.0f : MAX_flt);
 
-	const bool bHardResetCondition =
-		Proxy.bTurnInPlaceHardReset ||
-		!SupportsTurnInPlace(Proxy.RotationMode) ||
-		Proxy.bHasTurnInPlaceBlockingGameplayTag ||
-		Proxy.bIsAnyMontagePlaying ||
-		Proxy.bIsCrouching ||
-		Proxy.MovementState != ERpgLocomotionMovementState::Grounded;
-	if (bHardResetCondition)
+	const bool bAirborneCancelsTurnInPlace =
+		Proxy.MovementState == ERpgLocomotionMovementState::Airborne;
+	uint8 HardResetReasons = 0;
+	const auto AddHardResetReason = [&HardResetReasons](
+		bool bCondition,
+		ETurnInPlaceHardResetReason Reason)
+	{
+		if (bCondition)
+		{
+			HardResetReasons |= ToReasonMask(Reason);
+		}
+	};
+	AddHardResetReason(Proxy.bTurnInPlaceHardReset, ETurnInPlaceHardResetReason::ProxySnapshot);
+	AddHardResetReason(!SupportsTurnInPlace(Proxy.RotationMode), ETurnInPlaceHardResetReason::UnsupportedRotationMode);
+	AddHardResetReason(Proxy.bHasTurnInPlaceBlockingGameplayTag, ETurnInPlaceHardResetReason::BlockingGameplayTag);
+	AddHardResetReason(Proxy.bIsAnyMontagePlaying, ETurnInPlaceHardResetReason::Montage);
+	AddHardResetReason(Proxy.bIsCrouching, ETurnInPlaceHardResetReason::Crouch);
+	AddHardResetReason(
+		!bAirborneCancelsTurnInPlace &&
+			Proxy.MovementState != ERpgLocomotionMovementState::Grounded,
+		ETurnInPlaceHardResetReason::UnsupportedMovementState);
+	if (HardResetReasons != 0 || bAirborneCancelsTurnInPlace)
 	{
 		const bool bHasTurnStateToClear =
 			TurnInPlaceState != ERpgTurnInPlaceState::Inactive ||
 			FMath::Abs(TurnInPlaceAccumulatedYaw) > UE_KINDA_SMALL_NUMBER;
-		const bool bPulseHardReset = !bTurnInPlaceHardResetConditionLastFrame || bHasTurnStateToClear;
+		const bool bHasNewHardResetReason =
+			(HardResetReasons & ~TurnInPlaceHardResetReasonsLastFrame) != 0;
+		// Entering the air always cancels TIR ownership, but a regular moving jump must retain
+		// Offset Root's interpolated locomotion offset. Only real TIR state/yaw needs a pulse;
+		// every newly added teleport, montage, stance, tag, or unsupported-policy reason gets
+		// its own one-shot edge even while another reason remains active. A rotation-policy
+		// transition is also an event so an early airborne/override return cannot consume it.
+		const bool bPulseHardReset =
+			bHasTurnStateToClear ||
+			bHasNewHardResetReason ||
+			Proxy.bTurnInPlaceSupportChanged;
 		ResetTurnInPlaceRuntime(bPulseHardReset);
-		bTurnInPlaceHardResetConditionLastFrame = true;
+		// Do not let a clean airborne-only cancel mask a later montage/tag/policy reset in the air.
+		TurnInPlaceHardResetReasonsLastFrame = HardResetReasons;
 		LocomotionTrajectory = Proxy.TransformTrajectory;
 		return;
 	}
-	bTurnInPlaceHardResetConditionLastFrame = false;
+	TurnInPlaceHardResetReasonsLastFrame = 0;
 
 	if (Proxy.bTurnInPlaceSupportChanged)
 	{
@@ -1655,30 +1695,74 @@ bool URpgAnimInstance::IsAirborneJumpStartAsset(const UAnimationAsset* Asset)
 	return Sequence->GetOutermost()->GetName().StartsWith(JumpStartsPackagePrefix);
 }
 
+bool URpgAnimInstance::IsGroundMovingAsset(const UAnimationAsset* Asset)
+{
+	const UAnimSequenceBase* Sequence = Cast<UAnimSequenceBase>(Asset);
+	if (!Sequence)
+	{
+		return false;
+	}
+
+	static const FString GroundMovingPackagePrefixes[] = {
+		TEXT("/RpgGaspLocomotion/Animations/Stand/Walk/"),
+		TEXT("/RpgGaspLocomotion/Animations/Stand/Run/"),
+		TEXT("/RpgGaspLocomotion/Animations/Stand/Sprint/"),
+	};
+	const FString PackageName = Sequence->GetOutermost()->GetName();
+	for (const FString& PackagePrefix : GroundMovingPackagePrefixes)
+	{
+		if (PackageName.StartsWith(PackagePrefix))
+		{
+			return true;
+		}
+	}
+	return false;
+}
+
+bool URpgAnimInstance::IsAirborneJumpAsset(const UAnimationAsset* Asset)
+{
+	const UAnimSequenceBase* Sequence = Cast<UAnimSequenceBase>(Asset);
+	if (!Sequence)
+	{
+		return false;
+	}
+
+	static const FString JumpStartsPackagePrefix(TEXT("/RpgGaspLocomotion/Animations/Jump/Starts/"));
+	static const FString JumpAirbornePackagePrefix(TEXT("/RpgGaspLocomotion/Animations/Jump/Airborne/"));
+	const FString PackageName = Sequence->GetOutermost()->GetName();
+	return PackageName.StartsWith(JumpStartsPackagePrefix) ||
+		PackageName.StartsWith(JumpAirbornePackagePrefix);
+}
+
 URpgAnimInstance::FGaspProceduralGates URpgAnimInstance::ResolveGaspProceduralGates(
-	bool bGroundedMovingPose,
-	float GroundedAlpha,
+	bool bGroundMovingPose,
+	float SupportedLocomotionAlpha,
+	bool bAirborneJumpPose,
 	bool bAirborneJumpStartPose,
-	float InAirborneProceduralAlpha,
 	bool bLandingPose,
 	float EnableWarpingCurveValue,
 	bool bHasActiveBlendStackAsset,
 	bool bHasTrajectory)
 {
-	const float SafeGroundedAlpha = bGroundedMovingPose
-		? FMath::Clamp(GroundedAlpha, 0.0f, 1.0f)
+	const float SafeSupportedAlpha = FMath::Clamp(SupportedLocomotionAlpha, 0.0f, 1.0f);
+	const float SafeGroundAlpha = bGroundMovingPose
+		? SafeSupportedAlpha
 		: 0.0f;
-	const float SafeAirborneAlpha = bAirborneJumpStartPose
-		? FMath::Clamp(InAirborneProceduralAlpha, 0.0f, 1.0f)
+	const float SafeAirborneResetAlpha = bAirborneJumpPose
+		? SafeSupportedAlpha
+		: 0.0f;
+	const float SafeAirborneMovingAlpha = bAirborneJumpStartPose
+		? SafeSupportedAlpha
 		: 0.0f;
 	const float LandingAlpha = bLandingPose ? 1.0f : 0.0f;
+	const float MovingCorrectionAlpha = FMath::Max(SafeGroundAlpha, SafeAirborneMovingAlpha);
 
 	FGaspProceduralGates Result;
-	Result.ResetRootAlpha = FMath::Max3(SafeGroundedAlpha, SafeAirborneAlpha, LandingAlpha);
+	Result.ResetRootAlpha = FMath::Max3(SafeGroundAlpha, SafeAirborneResetAlpha, LandingAlpha);
 	Result.OrientationWarpingAlpha =
-		Result.ResetRootAlpha * FMath::Clamp(EnableWarpingCurveValue, 0.0f, 1.0f);
+		MovingCorrectionAlpha * FMath::Clamp(EnableWarpingCurveValue, 0.0f, 1.0f);
 	Result.bEnableSteering =
-		(SafeGroundedAlpha > UE_KINDA_SMALL_NUMBER || SafeAirborneAlpha > UE_KINDA_SMALL_NUMBER) &&
+		MovingCorrectionAlpha > UE_KINDA_SMALL_NUMBER &&
 		bHasActiveBlendStackAsset &&
 		bHasTrajectory;
 	return Result;
@@ -1876,14 +1960,15 @@ void URpgAnimInstance::GetGaspBlendStackInputs(
 	CurrentAnimAsset = UBlendStackAnimNodeLibrary::GetCurrentBlendStackAnimAsset(Node);
 	CurrentAnimAssetTime = UBlendStackAnimNodeLibrary::GetCurrentBlendStackAnimAssetTime(Node);
 
-	const bool bIsBoundedMovingPose =
-		JumpPhase == ERpgJumpPhase::Grounded &&
-		bIsMovingOnGround &&
-		!bLocomotionIsFalling &&
+	// Each proxy budget is binary for its supported CMC state (ground includes idle). Taking the
+	// maximum keeps outgoing ground/fall samples corrected across both sides of the transition.
+	const float SupportedLocomotionAlpha = FMath::Max(
+		ProceduralLocomotionAlpha,
+		AirborneProceduralAlpha);
+	const bool bAllowsSampleProceduralNodes =
 		!bIsCrouching &&
 		!bIsAnyMontagePlaying &&
-		AllowsMovingProceduralNodes() &&
-		LocomotionGait != ERpgLocomotionGait::Idle;
+		AllowsMovingProceduralNodes();
 
 	float EnableWarpingCurveValue = 0.0f;
 	if (const UAnimSequenceBase* CurrentSequence = Cast<UAnimSequenceBase>(CurrentAnimAsset))
@@ -1909,16 +1994,20 @@ void URpgAnimInstance::GetGaspBlendStackInputs(
 		? LocomotionTrajectory.GetSampleAtTime(0.0f).Facing
 		: FQuat::Identity;
 
+	const bool bIsGroundMovingPose =
+		bAllowsSampleProceduralNodes &&
+		IsGroundMovingAsset(CurrentAnimAsset);
+	const bool bIsAirborneJumpPose =
+		bAllowsSampleProceduralNodes &&
+		IsAirborneJumpAsset(CurrentAnimAsset);
 	const bool bIsAirborneJumpStartPose =
-		JumpPhase == ERpgJumpPhase::Airborne &&
-		!bIsCrouching &&
-		!bIsAnyMontagePlaying &&
+		bIsAirborneJumpPose &&
 		IsAirborneJumpStartAsset(CurrentAnimAsset);
 	const FGaspProceduralGates Gates = ResolveGaspProceduralGates(
-		bIsBoundedMovingPose,
-		ProceduralLocomotionAlpha,
+		bIsGroundMovingPose,
+		SupportedLocomotionAlpha,
+		bIsAirborneJumpPose,
 		bIsAirborneJumpStartPose,
-		AirborneProceduralAlpha,
 		IsActiveLandingAsset(CurrentAnimAsset),
 		EnableWarpingCurveValue,
 		bHasActiveBlendStackAsset,

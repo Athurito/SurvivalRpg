@@ -214,15 +214,16 @@ public:
 	 * Resolves the current Blend Stack playback state and the bounded moving-locomotion inputs used by GASP nodes.
 	 *
 	 * The helper is safe for parallel AnimGraph evaluation: it reads only the Blend Stack node and immutable animation
-	 * assets plus values copied from the game-thread proxy. Ground locomotion, non-looping Jump/Starts assets, and the
-	 * exactly latched landing sample each receive independent, bounded procedural gates. The looping fall pose remains
-	 * unmodified, and Orientation Warping is additionally gated by the authored Enable_Warping curve.
+	 * assets plus values copied from the game-thread proxy. Each Blend Stack sample keeps gates based on its immutable
+	 * asset category while it blends across a grounded/airborne boundary: moving ground and Jump/Starts samples receive
+	 * authored moving corrections, the airborne fall receives Reset Root only, and the exactly latched landing sample
+	 * receives Reset Root only. Orientation Warping is additionally gated by the authored Enable_Warping curve.
 	 *
 	 * @param Node Blend Stack Input node reference whose current asset and playback time should be queried.
 	 * @param CurrentAnimAsset Currently playing Blend Stack asset, or null when the node has no active asset.
 	 * @param CurrentAnimAssetTime Current playback time in seconds for CurrentAnimAsset.
-	 * @param ResetRootAlpha Alpha for Reset Root on grounded movement, airborne starts, or the latched landing sample.
-	 * @param OrientationWarpingAlpha ResetRootAlpha multiplied by the current animation's Enable_Warping curve.
+	 * @param ResetRootAlpha Alpha for Reset Root on moving ground, airborne jump, or the latched landing sample.
+	 * @param OrientationWarpingAlpha Moving-sample alpha multiplied by the current animation's Enable_Warping curve.
 	 * @param DesiredFacing World-space facing sampled from the current trajectory point.
 	 * @param LocomotionDirection Last meaningful horizontal world-space velocity used by Orientation Warping.
 	 * @param bEnableSteering True only for valid grounded movement or a contracted Jump/Starts asset with trajectory data.
@@ -568,13 +569,17 @@ private:
 		float CurrentAssetPlayRate,
 		float DeltaSeconds);
 	bool IsActiveLandingAsset(const UAnimationAsset* Asset) const;
-	/** Excludes the looping fall and outgoing ground blends using the curated plugin-folder plus non-looping contract. */
+	/** Identifies curated Walk/Run/Sprint samples whose per-sample corrections must survive phase-boundary blending. */
+	static bool IsGroundMovingAsset(const UAnimationAsset* Asset);
+	/** Identifies every asset in the exclusive airborne database, including Jump/Starts and the looping fall. */
+	static bool IsAirborneJumpAsset(const UAnimationAsset* Asset);
+	/** Identifies the non-looping Jump/Starts subset that additionally receives authored OW and Steering. */
 	static bool IsAirborneJumpStartAsset(const UAnimationAsset* Asset);
 	static FGaspProceduralGates ResolveGaspProceduralGates(
-		bool bGroundedMovingPose,
-		float GroundedAlpha,
+		bool bGroundMovingPose,
+		float SupportedLocomotionAlpha,
+		bool bAirborneJumpPose,
 		bool bAirborneJumpStartPose,
-		float InAirborneProceduralAlpha,
 		bool bLandingPose,
 		float EnableWarpingCurveValue,
 		bool bHasActiveBlendStackAsset,
@@ -606,7 +611,8 @@ private:
 	bool bTurnInPlacePlaybackObserved = false;
 	/** True when pre-update selects normal locomotion for the upcoming search at natural completion. */
 	bool bTurnInPlaceCompletionArmed = false;
-	bool bTurnInPlaceHardResetConditionLastFrame = false;
+	/** Per-reason mask used to emit one reset for each newly active hard condition without airborne masking. */
+	uint8 TurnInPlaceHardResetReasonsLastFrame = 0;
 	bool bTurnInPlaceInitializationResetPending = false;
 
 	/** Exact cosmetic landing chosen for the active request; Pose Search and Blend Stack retain ownership. */
