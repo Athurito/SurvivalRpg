@@ -18,6 +18,7 @@ class UAbilitySystemComponent;
 class UAnimationAsset;
 class UPoseSearchDatabase;
 #if WITH_DEV_AUTOMATION_TESTS
+class FRpgJumpPhaseRuntimeTest;
 class FRpgTurnInPlaceStateMachineTest;
 #endif
 
@@ -49,6 +50,15 @@ enum class ERpgLocomotionMovementState : uint8
 	Swimming,
 	Flying,
 	Custom,
+};
+
+/** Cosmetic jump lifecycle used to select airborne starts and hold one bounded idle light-landing pose. */
+UENUM(BlueprintType)
+enum class ERpgJumpPhase : uint8
+{
+	Grounded,
+	Airborne,
+	Landing,
 };
 
 /** Cosmetic controller-facing turn-in-place lifecycle; it never changes authoritative actor rotation. */
@@ -110,6 +120,7 @@ struct SURVIVALRPG_API FRpgAnimInstanceProxy : public FAnimInstanceProxy
 	float AimPitch = 0.0f;
 	float LocomotionAngle = 0.0f;
 	float ProceduralLocomotionAlpha = 0.0f;
+	float AirborneProceduralAlpha = 0.0f;
 	float DesiredControllerYawLastUpdate = 0.0f;
 	float ActorYaw = 0.0f;
 	float ActorYawDelta = 0.0f;
@@ -203,24 +214,25 @@ public:
 	 * Resolves the current Blend Stack playback state and the bounded moving-locomotion inputs used by GASP nodes.
 	 *
 	 * The helper is safe for parallel AnimGraph evaluation: it reads only the Blend Stack node and immutable animation
-	 * assets plus values copied from the game-thread proxy. Moving and procedural-warping alphas are forced to zero for
-	 * idle, crouched, airborne, and montage-driven poses.
+	 * assets plus values copied from the game-thread proxy. Ground locomotion, non-looping Jump/Starts assets, and the
+	 * exactly latched landing sample each receive independent, bounded procedural gates. The looping fall pose remains
+	 * unmodified, and Orientation Warping is additionally gated by the authored Enable_Warping curve.
 	 *
 	 * @param Node Blend Stack Input node reference whose current asset and playback time should be queried.
 	 * @param CurrentAnimAsset Currently playing Blend Stack asset, or null when the node has no active asset.
 	 * @param CurrentAnimAssetTime Current playback time in seconds for CurrentAnimAsset.
-	 * @param MovingAlpha Alpha for moving-only procedural nodes in the range [0, 1].
-	 * @param OrientationWarpingAlpha MovingAlpha multiplied by the current animation's Enable_Warping curve.
+	 * @param ResetRootAlpha Alpha for Reset Root on grounded movement, airborne starts, or the latched landing sample.
+	 * @param OrientationWarpingAlpha ResetRootAlpha multiplied by the current animation's Enable_Warping curve.
 	 * @param DesiredFacing World-space facing sampled from the current trajectory point.
 	 * @param LocomotionDirection Last meaningful horizontal world-space velocity used by Orientation Warping.
-	 * @param bEnableSteering True only when the bounded moving slice has a valid asset and trajectory.
+	 * @param bEnableSteering True only for valid grounded movement or a contracted Jump/Starts asset with trajectory data.
 	 */
 	UFUNCTION(BlueprintPure, Category = "Rpg|Animation|Motion Matching", meta = (BlueprintThreadSafe))
 	void GetGaspBlendStackInputs(
 		const FAnimNodeReference& Node,
 		UAnimationAsset*& CurrentAnimAsset,
 		float& CurrentAnimAssetTime,
-		float& MovingAlpha,
+		float& ResetRootAlpha,
 		float& OrientationWarpingAlpha,
 		FQuat& DesiredFacing,
 		FVector& LocomotionDirection,
@@ -308,6 +320,13 @@ protected:
 	 */
 	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Rpg|Animation|Motion Matching")
 	TArray<TObjectPtr<UPoseSearchDatabase>> AirborneMotionMatchingDatabases;
+
+	/**
+	 * Exclusive stand-idle light-landing database searched once after touchdown at no more than 3 cm/s without move intent.
+	 * Moving touchdowns return directly to gait locomotion until a later moving/heavy-land resolver is implemented.
+	 */
+	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Rpg|Animation|Motion Matching")
+	TObjectPtr<UPoseSearchDatabase> LandingMotionMatchingDatabase;
 
 	/** Character velocity in world space, snapshotted on the game thread and read-only to AnimBPs. */
 	UPROPERTY(BlueprintReadOnly, Transient, Category = "Rpg|Animation|Locomotion")
@@ -399,6 +418,18 @@ protected:
 	UPROPERTY(BlueprintReadOnly, Transient, Category = "Rpg|Animation|Locomotion")
 	ERpgLocomotionMovementState LocomotionMovementState = ERpgLocomotionMovementState::None;
 
+	/** Current cosmetic jump phase; it never changes CharacterMovement or authoritative movement state. */
+	UPROPERTY(BlueprintReadOnly, Transient, Category = "Rpg|Animation|Jump")
+	ERpgJumpPhase JumpPhase = ERpgJumpPhase::Grounded;
+
+	/** Elapsed time in the current bounded landing request, in seconds. */
+	UPROPERTY(BlueprintReadOnly, Transient, Category = "Rpg|Animation|Jump", Meta = (Units = "s"))
+	float LandingStateElapsed = 0.0f;
+
+	/** True after the first valid result from the exclusive landing database has been bound to the current request. */
+	UPROPERTY(BlueprintReadOnly, Transient, Category = "Rpg|Animation|Jump")
+	bool bLandingSelectionLatched = false;
+
 	/**
 	 * Replicated character rotation policy copied from the game-thread proxy for AnimBP debugging.
 	 * This transient cosmetic snapshot is read-only and never owns authoritative rotation state.
@@ -448,11 +479,26 @@ protected:
 	UPROPERTY(BlueprintReadOnly, Transient, Category = "Rpg|Animation|Motion Matching")
 	float ProceduralLocomotionAlpha = 0.0f;
 
+	/**
+	 * Airborne procedural budget snapshotted independently from grounded locomotion.
+	 * It is cosmetic-only and becomes zero for crouch or montage overrides; the active asset still decides each node gate.
+	 */
+	UPROPERTY(BlueprintReadOnly, Transient, Category = "Rpg|Animation|Motion Matching")
+	float AirborneProceduralAlpha = 0.0f;
+
 	/** True when any montage is active in this AnimInstance; cosmetic-only and snapshotted on the game thread. */
 	UPROPERTY(BlueprintReadOnly, Transient, Category = "Rpg|Animation|Montage")
 	bool bIsAnyMontagePlaying = false;
 
 private:
+	/** Value-only result used to keep Reset Root, Orientation Warping, and Steering gates independent. */
+	struct FGaspProceduralGates
+	{
+		float ResetRootAlpha = 0.0f;
+		float OrientationWarpingAlpha = 0.0f;
+		bool bEnableSteering = false;
+	};
+
 	/** Database policy applied by the generic pre-update callback to the upcoming Motion Matching search. */
 	enum class ETurnInPlaceSearchMode : uint8
 	{
@@ -501,6 +547,39 @@ private:
 	/** Allows moving procedural nodes during a movement-driven recovery, but never during collection or playback. */
 	bool AllowsMovingProceduralNodes() const;
 
+	/** Advances the pointer-free airborne/landing phase and creates at most one landing request per touchdown. */
+	void UpdateJumpPhaseRuntime(float DeltaSeconds, const FRpgAnimInstanceProxy& Proxy);
+	void BeginAirbornePhase();
+	void BeginLandingRequest();
+	void ResetJumpPhaseRuntime();
+	void ClearLandingSelection();
+	bool IsLandingEligible(const FRpgAnimInstanceProxy& Proxy) const;
+	bool ConsumeLandingForceInterruptRequest();
+	bool TryLatchLandingSelection(
+		UAnimationAsset* SelectedAsset,
+		const UPoseSearchDatabase* SelectedDatabase,
+		float SelectedTime,
+		bool bSelectedAssetLooping,
+		uint32 SelectionRequestSerial);
+	void UpdateLandingLatchedPlayback(
+		UAnimationAsset* CurrentAsset,
+		float CurrentAssetTime,
+		float CurrentAssetLength,
+		float CurrentAssetPlayRate,
+		float DeltaSeconds);
+	bool IsActiveLandingAsset(const UAnimationAsset* Asset) const;
+	/** Excludes the looping fall and outgoing ground blends using the curated plugin-folder plus non-looping contract. */
+	static bool IsAirborneJumpStartAsset(const UAnimationAsset* Asset);
+	static FGaspProceduralGates ResolveGaspProceduralGates(
+		bool bGroundedMovingPose,
+		float GroundedAlpha,
+		bool bAirborneJumpStartPose,
+		float InAirborneProceduralAlpha,
+		bool bLandingPose,
+		float EnableWarpingCurveValue,
+		bool bHasActiveBlendStackAsset,
+		bool bHasTrajectory);
+
 	float TurnInPlaceStableElapsed = 0.0f;
 	float TurnInPlaceSelectionElapsed = 0.0f;
 	/** Remaining full-sequence playback time for the latched cosmetic turn, in seconds. */
@@ -530,8 +609,23 @@ private:
 	bool bTurnInPlaceHardResetConditionLastFrame = false;
 	bool bTurnInPlaceInitializationResetPending = false;
 
+	/** Exact cosmetic landing chosen for the active request; Pose Search and Blend Stack retain ownership. */
+	UPROPERTY(Transient)
+	TObjectPtr<UAnimationAsset> LandingSelectedAsset;
+
+	float LandingSelectedAssetStartTime = 0.0f;
+	float LandingSelectedAssetRemainingTime = 0.0f;
+	float LandingPlaybackWatchdogDuration = 0.0f;
+	uint32 LandingRequestSerial = 0;
+	uint32 LandingInterruptedRequestSerial = 0;
+	uint32 LandingSelectedRequestSerial = 0;
+	bool bLandingSelectedAssetLooping = false;
+	bool bLandingPlaybackObserved = false;
+	bool bLandingCompletionArmed = false;
+
 	friend struct FRpgAnimInstanceProxy;
 #if WITH_DEV_AUTOMATION_TESTS
+	friend class FRpgJumpPhaseRuntimeTest;
 	friend class FRpgTurnInPlaceStateMachineTest;
 #endif
 };

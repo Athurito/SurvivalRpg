@@ -13,6 +13,7 @@
 #include "Interfaces/MovementBaseInterface.h"
 #include "PoseSearch/AnimNode_MotionMatching.h"
 #include "PoseSearch/PoseSearchTrajectoryLibrary.h"
+#include "UObject/Package.h"
 
 #if WITH_EDITOR
 #include "Misc/DataValidation.h"
@@ -40,6 +41,11 @@ constexpr float TurnInPlacePlaybackWatchdogSafetyMargin = 0.1f;
 constexpr float TurnInPlaceInactiveAccumulatorTimeout = 0.2f;
 constexpr float TurnInPlaceFinishedTimeTolerance = 0.05f;
 constexpr float TurnInPlaceLargePositionDelta = 200.0f;
+constexpr float LandingSelectionTimeout = 0.25f;
+constexpr float LandingActiveTimeout = 1.25f;
+constexpr float LandingPlaybackWatchdogSafetyMargin = 0.1f;
+constexpr float LandingFinishedTimeTolerance = 0.05f;
+constexpr float LightLandingIdleSpeedThreshold = 3.0f;
 
 constexpr bool SupportsTurnInPlace(ERpgCharacterRotationMode RotationMode)
 {
@@ -61,6 +67,23 @@ float CalculateTurnInPlacePlaybackWatchdogDuration(
 		TurnInPlaceActiveTimeout,
 		FMath::Max(RemainingAnimationTime, 0.0f) / FMath::Abs(PlayRate) +
 			TurnInPlacePlaybackWatchdogSafetyMargin);
+}
+
+float CalculateLandingPlaybackWatchdogDuration(
+	float RemainingAnimationTime,
+	float PlayRate,
+	bool bLooping)
+{
+	if (bLooping || !FMath::IsFinite(PlayRate) || FMath::Abs(PlayRate) <= UE_SMALL_NUMBER)
+	{
+		return LandingActiveTimeout;
+	}
+
+	return FMath::Clamp(
+		FMath::Max(RemainingAnimationTime, 0.0f) / FMath::Abs(PlayRate) +
+			LandingPlaybackWatchdogSafetyMargin,
+		LandingPlaybackWatchdogSafetyMargin,
+		LandingActiveTimeout);
 }
 
 struct FRpgFootPlacementTraceResult
@@ -653,6 +676,7 @@ void FRpgAnimInstanceProxy::PreUpdate(UAnimInstance* InAnimInstance, float Delta
 	AimPitch = 0.0f;
 	LocomotionAngle = 0.0f;
 	ProceduralLocomotionAlpha = 0.0f;
+	AirborneProceduralAlpha = 0.0f;
 	Gait = ERpgLocomotionGait::Idle;
 	Stance = ERpgLocomotionStance::Standing;
 	MovementState = ERpgLocomotionMovementState::None;
@@ -808,6 +832,8 @@ void FRpgAnimInstanceProxy::PreUpdate(UAnimInstance* InAnimInstance, float Delta
 
 	ProceduralLocomotionAlpha =
 		bIsMovingOnGround && !bIsCrouching && !bIsAnyMontagePlaying ? 1.0f : 0.0f;
+	AirborneProceduralAlpha =
+		bIsFalling && !bIsCrouching && !bIsAnyMontagePlaying ? 1.0f : 0.0f;
 
 	UpdateFootPlacementSnapshot(
 		*this,
@@ -890,6 +916,11 @@ EDataValidationResult URpgAnimInstance::IsDataValid(FDataValidationContext& Cont
 			Context.AddError(FText::FromString(
 				TEXT("Motion Matching is enabled, but no airborne Pose Search database is configured.")));
 		}
+		if (!LandingMotionMatchingDatabase)
+		{
+			Context.AddError(FText::FromString(
+				TEXT("Motion Matching is enabled, but no exclusive landing Pose Search database is configured.")));
+		}
 		if (!CrouchingMotionMatchingDatabase)
 		{
 			Context.AddError(FText::FromString(
@@ -953,6 +984,10 @@ void URpgAnimInstance::NativeInitializeAnimation()
 	bTurnInPlaceInitializationResetPending = true;
 	FootPlacementSnapshot = FRpgFootPlacementSnapshot();
 	FootPlacementAlpha = 0.0f;
+	AirborneProceduralAlpha = 0.0f;
+	LandingRequestSerial = 0;
+	LandingInterruptedRequestSerial = 0;
+	ResetJumpPhaseRuntime();
 	ResetTurnInPlaceRuntime(false);
 
 	if (AActor* OwningActor = GetOwningActor())
@@ -968,6 +1003,7 @@ bool URpgAnimInstance::IsTurnInPlaceEligible(const FRpgAnimInstanceProxy& Proxy)
 {
 	return
 		TurnInPlaceMotionMatchingDatabase != nullptr &&
+		JumpPhase == ERpgJumpPhase::Grounded &&
 		SupportsTurnInPlace(Proxy.RotationMode) &&
 		Proxy.MovementState == ERpgLocomotionMovementState::Grounded &&
 		Proxy.bIsMovingOnGround &&
@@ -1385,6 +1421,269 @@ bool URpgAnimInstance::AllowsMovingProceduralNodes() const
 		TurnInPlaceState == ERpgTurnInPlaceState::Recovering;
 }
 
+void URpgAnimInstance::ClearLandingSelection()
+{
+	LandingSelectedAsset = nullptr;
+	LandingSelectedAssetStartTime = 0.0f;
+	LandingSelectedAssetRemainingTime = MAX_flt;
+	LandingPlaybackWatchdogDuration = LandingActiveTimeout;
+	LandingSelectedRequestSerial = 0;
+	bLandingSelectedAssetLooping = false;
+	bLandingSelectionLatched = false;
+	bLandingPlaybackObserved = false;
+	bLandingCompletionArmed = false;
+}
+
+void URpgAnimInstance::ResetJumpPhaseRuntime()
+{
+	JumpPhase = ERpgJumpPhase::Grounded;
+	LandingStateElapsed = 0.0f;
+	ClearLandingSelection();
+}
+
+void URpgAnimInstance::BeginAirbornePhase()
+{
+	JumpPhase = ERpgJumpPhase::Airborne;
+	LandingStateElapsed = 0.0f;
+	ClearLandingSelection();
+}
+
+void URpgAnimInstance::BeginLandingRequest()
+{
+	JumpPhase = ERpgJumpPhase::Landing;
+	LandingStateElapsed = 0.0f;
+	ClearLandingSelection();
+	++LandingRequestSerial;
+	if (LandingRequestSerial == 0)
+	{
+		++LandingRequestSerial;
+	}
+}
+
+bool URpgAnimInstance::IsLandingEligible(const FRpgAnimInstanceProxy& Proxy) const
+{
+	return LandingMotionMatchingDatabase != nullptr &&
+		Proxy.MovementState == ERpgLocomotionMovementState::Grounded &&
+		Proxy.bIsMovingOnGround &&
+		Proxy.GroundSpeed <= LightLandingIdleSpeedThreshold &&
+		!Proxy.bHasGroundedMoveIntent &&
+		!Proxy.bIsCrouching &&
+		!Proxy.bIsAnyMontagePlaying &&
+		!Proxy.bHasTurnInPlaceBlockingGameplayTag;
+}
+
+void URpgAnimInstance::UpdateJumpPhaseRuntime(float DeltaSeconds, const FRpgAnimInstanceProxy& Proxy)
+{
+	const float SafeDeltaSeconds = FMath::Max(DeltaSeconds, 0.0f);
+	const bool bAirborneSnapshot =
+		Proxy.bIsFalling || Proxy.MovementState == ERpgLocomotionMovementState::Airborne;
+
+	if (Proxy.bTurnInPlaceHardReset)
+	{
+		if (bAirborneSnapshot)
+		{
+			BeginAirbornePhase();
+		}
+		else
+		{
+			ResetJumpPhaseRuntime();
+		}
+		return;
+	}
+
+	if (bAirborneSnapshot)
+	{
+		if (JumpPhase != ERpgJumpPhase::Airborne)
+		{
+			BeginAirbornePhase();
+		}
+		return;
+	}
+
+	if (JumpPhase == ERpgJumpPhase::Airborne)
+	{
+		if (IsLandingEligible(Proxy))
+		{
+			BeginLandingRequest();
+		}
+		else
+		{
+			ResetJumpPhaseRuntime();
+		}
+		return;
+	}
+
+	if (JumpPhase != ERpgJumpPhase::Landing)
+	{
+		ResetJumpPhaseRuntime();
+		return;
+	}
+
+	if (!IsLandingEligible(Proxy))
+	{
+		ResetJumpPhaseRuntime();
+		return;
+	}
+
+	LandingStateElapsed += SafeDeltaSeconds;
+	const bool bSelectionTimedOut =
+		!bLandingSelectionLatched && LandingStateElapsed >= LandingSelectionTimeout;
+	const bool bPlaybackTimedOut =
+		bLandingSelectionLatched && LandingStateElapsed >= LandingPlaybackWatchdogDuration;
+	if (bLandingCompletionArmed || bSelectionTimedOut || bPlaybackTimedOut)
+	{
+		ResetJumpPhaseRuntime();
+	}
+}
+
+bool URpgAnimInstance::ConsumeLandingForceInterruptRequest()
+{
+	if (JumpPhase != ERpgJumpPhase::Landing ||
+		!LandingMotionMatchingDatabase ||
+		LandingInterruptedRequestSerial == LandingRequestSerial)
+	{
+		return false;
+	}
+
+	LandingInterruptedRequestSerial = LandingRequestSerial;
+	return true;
+}
+
+bool URpgAnimInstance::TryLatchLandingSelection(
+	UAnimationAsset* SelectedAsset,
+	const UPoseSearchDatabase* SelectedDatabase,
+	float SelectedTime,
+	bool bSelectedAssetLooping,
+	uint32 SelectionRequestSerial)
+{
+	if (JumpPhase != ERpgJumpPhase::Landing ||
+		bLandingSelectionLatched ||
+		!SelectedAsset ||
+		SelectedDatabase != LandingMotionMatchingDatabase.Get() ||
+		SelectionRequestSerial == 0 ||
+		SelectionRequestSerial != LandingRequestSerial)
+	{
+		return false;
+	}
+
+	LandingSelectedAsset = SelectedAsset;
+	LandingSelectedAssetStartTime = FMath::Max(SelectedTime, 0.0f);
+	LandingSelectedAssetRemainingTime = FMath::Max(
+		SelectedAsset->GetPlayLength() - LandingSelectedAssetStartTime,
+		0.0f);
+	LandingSelectedRequestSerial = SelectionRequestSerial;
+	bLandingSelectedAssetLooping = bSelectedAssetLooping;
+	LandingPlaybackWatchdogDuration = CalculateLandingPlaybackWatchdogDuration(
+		LandingSelectedAssetRemainingTime,
+		1.0f,
+		bLandingSelectedAssetLooping);
+	LandingStateElapsed = 0.0f;
+	bLandingSelectionLatched = true;
+	bLandingPlaybackObserved = false;
+	bLandingCompletionArmed = false;
+	return true;
+}
+
+void URpgAnimInstance::UpdateLandingLatchedPlayback(
+	UAnimationAsset* CurrentAsset,
+	float CurrentAssetTime,
+	float CurrentAssetLength,
+	float CurrentAssetPlayRate,
+	float DeltaSeconds)
+{
+	if (JumpPhase != ERpgJumpPhase::Landing ||
+		!bLandingSelectionLatched ||
+		LandingSelectedRequestSerial != LandingRequestSerial ||
+		!LandingSelectedAsset)
+	{
+		return;
+	}
+
+	const float SafeDeltaSeconds = FMath::Max(DeltaSeconds, 0.0f);
+	const float CompletionLeadTime = LandingFinishedTimeTolerance + SafeDeltaSeconds;
+	if (CurrentAsset == LandingSelectedAsset.Get())
+	{
+		const bool bFirstPlaybackObservation = !bLandingPlaybackObserved;
+		bLandingPlaybackObserved = true;
+		const float EffectiveAssetLength = CurrentAssetLength > UE_SMALL_NUMBER
+			? CurrentAssetLength
+			: LandingSelectedAsset->GetPlayLength();
+		LandingSelectedAssetRemainingTime = FMath::Max(
+			EffectiveAssetLength - FMath::Max(CurrentAssetTime, 0.0f),
+			0.0f);
+		if (bFirstPlaybackObservation)
+		{
+			LandingPlaybackWatchdogDuration = CalculateLandingPlaybackWatchdogDuration(
+				LandingSelectedAssetRemainingTime,
+				CurrentAssetPlayRate,
+				bLandingSelectedAssetLooping);
+			LandingStateElapsed = 0.0f;
+		}
+		if (!bLandingSelectedAssetLooping &&
+			LandingSelectedAssetRemainingTime <= CompletionLeadTime)
+		{
+			bLandingCompletionArmed = true;
+		}
+		return;
+	}
+
+	if (bLandingPlaybackObserved)
+	{
+		// Once the exact latched clip has played, an unexpected Blend Stack replacement ends the cosmetic hold.
+		bLandingCompletionArmed = true;
+	}
+}
+
+bool URpgAnimInstance::IsActiveLandingAsset(const UAnimationAsset* Asset) const
+{
+	return JumpPhase == ERpgJumpPhase::Landing &&
+		bLandingSelectionLatched &&
+		!bLandingCompletionArmed &&
+		Asset &&
+		Asset == LandingSelectedAsset.Get();
+}
+
+bool URpgAnimInstance::IsAirborneJumpStartAsset(const UAnimationAsset* Asset)
+{
+	const UAnimSequenceBase* Sequence = Cast<UAnimSequenceBase>(Asset);
+	if (!Sequence || Sequence->bLoop)
+	{
+		return false;
+	}
+
+	static const FString JumpStartsPackagePrefix(TEXT("/RpgGaspLocomotion/Animations/Jump/Starts/"));
+	return Sequence->GetOutermost()->GetName().StartsWith(JumpStartsPackagePrefix);
+}
+
+URpgAnimInstance::FGaspProceduralGates URpgAnimInstance::ResolveGaspProceduralGates(
+	bool bGroundedMovingPose,
+	float GroundedAlpha,
+	bool bAirborneJumpStartPose,
+	float InAirborneProceduralAlpha,
+	bool bLandingPose,
+	float EnableWarpingCurveValue,
+	bool bHasActiveBlendStackAsset,
+	bool bHasTrajectory)
+{
+	const float SafeGroundedAlpha = bGroundedMovingPose
+		? FMath::Clamp(GroundedAlpha, 0.0f, 1.0f)
+		: 0.0f;
+	const float SafeAirborneAlpha = bAirborneJumpStartPose
+		? FMath::Clamp(InAirborneProceduralAlpha, 0.0f, 1.0f)
+		: 0.0f;
+	const float LandingAlpha = bLandingPose ? 1.0f : 0.0f;
+
+	FGaspProceduralGates Result;
+	Result.ResetRootAlpha = FMath::Max3(SafeGroundedAlpha, SafeAirborneAlpha, LandingAlpha);
+	Result.OrientationWarpingAlpha =
+		Result.ResetRootAlpha * FMath::Clamp(EnableWarpingCurveValue, 0.0f, 1.0f);
+	Result.bEnableSteering =
+		(SafeGroundedAlpha > UE_KINDA_SMALL_NUMBER || SafeAirborneAlpha > UE_KINDA_SMALL_NUMBER) &&
+		bHasActiveBlendStackAsset &&
+		bHasTrajectory;
+	return Result;
+}
+
 void URpgAnimInstance::NativeThreadSafeUpdateAnimation(float DeltaSeconds)
 {
 	Super::NativeThreadSafeUpdateAnimation(DeltaSeconds);
@@ -1414,7 +1713,9 @@ void URpgAnimInstance::NativeThreadSafeUpdateAnimation(float DeltaSeconds)
 	CharacterRotationMode = Proxy.RotationMode;
 	LocomotionTrajectory = Proxy.TransformTrajectory;
 	ProceduralLocomotionAlpha = Proxy.ProceduralLocomotionAlpha;
+	AirborneProceduralAlpha = Proxy.AirborneProceduralAlpha;
 	bIsAnyMontagePlaying = Proxy.bIsAnyMontagePlaying;
+	UpdateJumpPhaseRuntime(DeltaSeconds, Proxy);
 	UpdateTurnInPlaceRuntime(DeltaSeconds, Proxy);
 }
 
@@ -1449,9 +1750,9 @@ void URpgAnimInstance::UpdateGaspMotionMatching(
 		}
 	}
 
+	const FAnimationUpdateContext* AnimationContext = Context.GetContext();
 	if (TurnInPlaceState == ERpgTurnInPlaceState::Active && bTurnInPlaceSelectionLatched)
 	{
-		const FAnimationUpdateContext* AnimationContext = Context.GetContext();
 		UpdateTurnInPlaceLatchedPlayback(
 			MotionMatchingNode->GetAnimAsset(),
 			MotionMatchingNode->GetCurrentAssetTime(),
@@ -1464,6 +1765,41 @@ void URpgAnimInstance::UpdateGaspMotionMatching(
 
 	const ETurnInPlaceSearchMode SearchMode =
 		ResolveTurnInPlaceSearchMode(bForceNewTurnRequest);
+	const bool bForceNewLandingRequest =
+		SearchMode == ETurnInPlaceSearchMode::NormalLocomotion &&
+		ConsumeLandingForceInterruptRequest();
+	if (SearchMode == ETurnInPlaceSearchMode::NormalLocomotion &&
+		!bForceNewLandingRequest &&
+		JumpPhase == ERpgJumpPhase::Landing &&
+		!bLandingSelectionLatched &&
+		LandingMotionMatchingDatabase)
+	{
+		// As with TIR, SearchResult belongs to the previous completed Motion Matching update.
+		const FPoseSearchBlueprintResult& SearchResult =
+			MotionMatchingNode->GetMotionMatchingState().SearchResult;
+		if (SearchResult.SelectedDatabase.Get() == LandingMotionMatchingDatabase.Get())
+		{
+			TryLatchLandingSelection(
+				Cast<UAnimationAsset>(SearchResult.SelectedAnim.Get()),
+				SearchResult.SelectedDatabase.Get(),
+				SearchResult.SelectedTime,
+				SearchResult.bLoop,
+				LandingRequestSerial);
+		}
+	}
+
+	if (JumpPhase == ERpgJumpPhase::Landing && bLandingSelectionLatched)
+	{
+		UpdateLandingLatchedPlayback(
+			MotionMatchingNode->GetAnimAsset(),
+			MotionMatchingNode->GetCurrentAssetTime(),
+			MotionMatchingNode->GetCurrentAssetLength(),
+			MotionMatchingNode->AnimPlayers.IsEmpty()
+				? 1.0f
+				: MotionMatchingNode->AnimPlayers[0].GetPlayRate(),
+			AnimationContext ? AnimationContext->GetDeltaTime() : 0.0f);
+	}
+
 	TArray<UPoseSearchDatabase*, TInlineAllocator<5>> DatabasesToSearch;
 	EPoseSearchInterruptMode InterruptMode = EPoseSearchInterruptMode::InterruptOnDatabaseChange;
 	if (SearchMode == ETurnInPlaceSearchMode::SearchRequestedTurn)
@@ -1477,7 +1813,22 @@ void URpgAnimInstance::UpdateGaspMotionMatching(
 		// It prevents a full TIR-database search from selecting another clip when the indexed range ends.
 		InterruptMode = EPoseSearchInterruptMode::DoNotInterrupt;
 	}
-	else if (bLocomotionIsFalling)
+	else if (JumpPhase == ERpgJumpPhase::Landing && !bLandingCompletionArmed)
+	{
+		if (bLandingSelectionLatched)
+		{
+			// Preserve only the continuing pose; a full landing-database search must happen once per touchdown.
+			InterruptMode = EPoseSearchInterruptMode::DoNotInterrupt;
+		}
+		else if (LandingMotionMatchingDatabase)
+		{
+			DatabasesToSearch.Add(LandingMotionMatchingDatabase);
+			InterruptMode = bForceNewLandingRequest
+				? EPoseSearchInterruptMode::ForceInterrupt
+				: EPoseSearchInterruptMode::InterruptOnDatabaseChange;
+		}
+	}
+	else if (JumpPhase == ERpgJumpPhase::Airborne || bLocomotionIsFalling)
 	{
 		DatabasesToSearch.Reserve(AirborneMotionMatchingDatabases.Num());
 		for (UPoseSearchDatabase* Database : AirborneMotionMatchingDatabases)
@@ -1516,7 +1867,7 @@ void URpgAnimInstance::GetGaspBlendStackInputs(
 	const FAnimNodeReference& Node,
 	UAnimationAsset*& CurrentAnimAsset,
 	float& CurrentAnimAssetTime,
-	float& MovingAlpha,
+	float& ResetRootAlpha,
 	float& OrientationWarpingAlpha,
 	FQuat& DesiredFacing,
 	FVector& LocomotionDirection,
@@ -1526,32 +1877,26 @@ void URpgAnimInstance::GetGaspBlendStackInputs(
 	CurrentAnimAssetTime = UBlendStackAnimNodeLibrary::GetCurrentBlendStackAnimAssetTime(Node);
 
 	const bool bIsBoundedMovingPose =
+		JumpPhase == ERpgJumpPhase::Grounded &&
 		bIsMovingOnGround &&
 		!bLocomotionIsFalling &&
 		!bIsCrouching &&
 		!bIsAnyMontagePlaying &&
 		AllowsMovingProceduralNodes() &&
 		LocomotionGait != ERpgLocomotionGait::Idle;
-	MovingAlpha = bIsBoundedMovingPose
-		? FMath::Clamp(ProceduralLocomotionAlpha, 0.0f, 1.0f)
-		: 0.0f;
 
-	OrientationWarpingAlpha = 0.0f;
-	if (MovingAlpha > UE_KINDA_SMALL_NUMBER)
+	float EnableWarpingCurveValue = 0.0f;
+	if (const UAnimSequenceBase* CurrentSequence = Cast<UAnimSequenceBase>(CurrentAnimAsset))
 	{
-		if (const UAnimSequenceBase* CurrentSequence = Cast<UAnimSequenceBase>(CurrentAnimAsset))
+		static const FName EnableWarpingCurveName(TEXT("Enable_Warping"));
+		float AuthoredCurveValue = 0.0f;
+		if (UAnimationWarpingLibrary::GetCurveValueFromAnimation(
+			CurrentSequence,
+			EnableWarpingCurveName,
+			CurrentAnimAssetTime,
+			AuthoredCurveValue))
 		{
-			static const FName EnableWarpingCurveName(TEXT("Enable_Warping"));
-			float EnableWarpingCurveValue = 0.0f;
-			if (UAnimationWarpingLibrary::GetCurveValueFromAnimation(
-				CurrentSequence,
-				EnableWarpingCurveName,
-				CurrentAnimAssetTime,
-				EnableWarpingCurveValue))
-			{
-				OrientationWarpingAlpha =
-					MovingAlpha * FMath::Clamp(EnableWarpingCurveValue, 0.0f, 1.0f);
-			}
+			EnableWarpingCurveValue = FMath::Clamp(AuthoredCurveValue, 0.0f, 1.0f);
 		}
 	}
 
@@ -1563,10 +1908,24 @@ void URpgAnimInstance::GetGaspBlendStackInputs(
 	DesiredFacing = bHasTrajectory
 		? LocomotionTrajectory.GetSampleAtTime(0.0f).Facing
 		: FQuat::Identity;
-	bEnableSteering =
-		MovingAlpha > UE_KINDA_SMALL_NUMBER &&
-		bHasActiveBlendStackAsset &&
-		bHasTrajectory;
+
+	const bool bIsAirborneJumpStartPose =
+		JumpPhase == ERpgJumpPhase::Airborne &&
+		!bIsCrouching &&
+		!bIsAnyMontagePlaying &&
+		IsAirborneJumpStartAsset(CurrentAnimAsset);
+	const FGaspProceduralGates Gates = ResolveGaspProceduralGates(
+		bIsBoundedMovingPose,
+		ProceduralLocomotionAlpha,
+		bIsAirborneJumpStartPose,
+		AirborneProceduralAlpha,
+		IsActiveLandingAsset(CurrentAnimAsset),
+		EnableWarpingCurveValue,
+		bHasActiveBlendStackAsset,
+		bHasTrajectory);
+	ResetRootAlpha = Gates.ResetRootAlpha;
+	OrientationWarpingAlpha = Gates.OrientationWarpingAlpha;
+	bEnableSteering = Gates.bEnableSteering;
 }
 
 FAnimInstanceProxy* URpgAnimInstance::CreateAnimInstanceProxy()
