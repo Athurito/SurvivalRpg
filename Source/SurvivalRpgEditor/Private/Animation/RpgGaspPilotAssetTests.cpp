@@ -13,6 +13,7 @@
 #include "AnimGraphNode_LegIK.h"
 #include "AnimGraphNode_LocalToComponentSpace.h"
 #include "Animation/AnimBlueprint.h"
+#include "Animation/AnimBlueprintGeneratedClass.h"
 #include "Animation/AnimSequence.h"
 #include "Animation/InputScaleBias.h"
 #include "AnimationBlendStackGraph.h"
@@ -511,6 +512,38 @@ namespace RpgGaspPilotAssetTests
 		return true;
 	}
 
+	bool ReadStructObjectArrayProperty(
+		UObject* Object,
+		FName StructPropertyName,
+		FName ArrayPropertyName,
+		TArray<FString>& OutObjectPaths)
+	{
+		OutObjectPaths.Reset();
+		const FStructProperty* StructProperty =
+			Object ? FindFProperty<FStructProperty>(Object->GetClass(), StructPropertyName) : nullptr;
+		const FArrayProperty* ArrayProperty = StructProperty
+			? FindFProperty<FArrayProperty>(StructProperty->Struct, ArrayPropertyName)
+			: nullptr;
+		const FObjectPropertyBase* ObjectProperty =
+			ArrayProperty ? CastField<FObjectPropertyBase>(ArrayProperty->Inner) : nullptr;
+		if (!StructProperty || !ArrayProperty || !ObjectProperty)
+		{
+			return false;
+		}
+
+		void* StructAddress = StructProperty->ContainerPtrToValuePtr<void>(Object);
+		void* ArrayAddress = ArrayProperty->ContainerPtrToValuePtr<void>(StructAddress);
+		FScriptArrayHelper ArrayHelper(ArrayProperty, ArrayAddress);
+		OutObjectPaths.Reserve(ArrayHelper.Num());
+		for (int32 Index = 0; Index < ArrayHelper.Num(); ++Index)
+		{
+			const UObject* Value = ObjectProperty->GetObjectPropertyValue(ArrayHelper.GetRawPtr(Index));
+			OutObjectPaths.Add(GetPathNameSafe(Value));
+		}
+
+		return true;
+	}
+
 	bool ReadObjectProperty(
 		const UObject* Object,
 		FName PropertyName,
@@ -650,6 +683,7 @@ namespace RpgGaspPilotAssetTests
 			TEXT("/script/networkprediction"),
 			TEXT("/script/metasound"),
 			TEXT("/script/smartobjects"),
+			TEXT("/script/survivalrpgeditor"),
 			TEXT("foley"),
 		};
 
@@ -710,6 +744,7 @@ namespace RpgGaspPilotAssetTests
 
 	void TestPerSampleBlendStackContract(
 		FAutomationTestBase& Test,
+		UAnimBlueprint* AnimBlueprint,
 		UAnimGraphNode_MotionMatching* MotionMatchingNode)
 	{
 		if (!MotionMatchingNode)
@@ -921,9 +956,9 @@ namespace RpgGaspPilotAssetTests
 		}
 
 		const FAnimNode_Steering* Steering = ReadRuntimeNode<FAnimNode_Steering>(SteeringNode);
-		if (Test.TestNotNull(TEXT("The Steering runtime node is readable"), Steering))
+		if (Test.TestNotNull(TEXT("The authored Editor Steering runtime struct is readable"), Steering))
 		{
-			Test.TestEqual(TEXT("Steering matches the GASP 0.2-second correction target"), Steering->ProceduralTargetTime, 0.2f);
+			Test.TestEqual(TEXT("Steering matches the compiled GASP 0.4-second correction target"), Steering->ProceduralTargetTime, 0.4f);
 			Test.TestEqual(TEXT("Steering samples animation two seconds ahead"), Steering->AnimatedTargetTime, 2.0f);
 			Test.TestEqual(TEXT("Steering root-motion threshold is audited"), Steering->RootMotionThreshold, 1.0f);
 			Test.TestEqual(TEXT("Steering disables below 10 cm/s"), Steering->DisableSteeringBelowSpeed, 10.0f);
@@ -936,6 +971,38 @@ namespace RpgGaspPilotAssetTests
 			Test.TestEqual(TEXT("Steering bool blend-out is audited"), Steering->AlphaBoolBlend.BlendOutTime, 0.1f);
 			Test.TestEqual(TEXT("Steering bool blend is linear"), Steering->AlphaBoolBlend.BlendOption, EAlphaBlendOption::Linear);
 			Test.TestEqual(TEXT("Steering has no LOD cutoff"), Steering->LODThreshold, INDEX_NONE);
+		}
+
+		UAnimBlueprintGeneratedClass* GeneratedClass =
+			AnimBlueprint ? AnimBlueprint->GetAnimBlueprintGeneratedClass() : nullptr;
+		if (Test.TestNotNull(TEXT("The pilot AnimBlueprint has a generated runtime class"), GeneratedClass))
+		{
+			UObject* GeneratedClassDefaultObject = GeneratedClass->GetDefaultObject();
+			if (Test.TestNotNull(TEXT("The pilot generated runtime class has a CDO"), GeneratedClassDefaultObject))
+			{
+				const FAnimNode_Steering* CompiledSteering = SteeringNode
+					? GeneratedClass->GetPropertyInstance<FAnimNode_Steering>(
+						GeneratedClassDefaultObject,
+						SteeringNode->NodeGuid)
+					: nullptr;
+				if (Test.TestNotNull(
+						TEXT("The generated CDO exposes the exact per-sample Steering runtime node by source GUID"),
+						CompiledSteering))
+				{
+					Test.TestEqual(
+						TEXT("The compiled Steering runtime node uses GASP's 0.4-second correction target"),
+						CompiledSteering->ProceduralTargetTime,
+						0.4f);
+					Test.TestEqual(
+						TEXT("The compiled Steering runtime node samples animation two seconds ahead"),
+						CompiledSteering->AnimatedTargetTime,
+						2.0f);
+					Test.TestEqual(
+						TEXT("The compiled Steering runtime node keeps the 10 cm/s disable threshold"),
+						CompiledSteering->DisableSteeringBelowSpeed,
+						10.0f);
+				}
+			}
 		}
 
 		TestExactOutputLinks(Test, TEXT("BlendStack Input feeds L2C"), InputNode, TEXT("Pose"), {{LocalToComponentNode, TEXT("LocalPose")}});
@@ -1048,6 +1115,14 @@ bool FRpgGaspPilotAssetContractTest::RunTest(const FString& Parameters)
 	TestTrue(
 		TEXT("The GASP AnimBlueprint has no compile error"),
 		PilotAnimBlueprint->Status != BS_Error);
+	TestEqual(
+		TEXT("The project Foot Placement graph wrapper lives in the dedicated uncooked module"),
+		UAnimGraphNode_RpgFootPlacement::StaticClass()->GetOutermost()->GetName(),
+		FString(TEXT("/Script/SurvivalRpgAnimGraph")));
+	TestTrue(
+		TEXT("The project AnimGraph wrapper package is explicitly uncooked-only"),
+		UAnimGraphNode_RpgFootPlacement::StaticClass()->GetOutermost()->HasAnyPackageFlags(
+			PKG_UncookedOnly));
 
 	static const struct
 	{
@@ -1304,29 +1379,65 @@ bool FRpgGaspPilotAssetContractTest::RunTest(const FString& Parameters)
 				bResetOffsetRootEveryFrame);
 		}
 
-		TArray<FString> GroundDatabasePaths;
-		if (TestTrue(
-				TEXT("The grounded database property is readable"),
-				ReadObjectArrayProperty(
-					PilotAnimDefaults,
-					TEXT("GroundMotionMatchingDatabases"),
-					GroundDatabasePaths)))
+		const auto TestGroundDatabaseGroup = [this, PilotAnimDefaults](
+			FName GroupPropertyName,
+			const TCHAR* GroupLabel,
+			const TArray<FString>& ExpectedDatabasePaths)
 		{
-			static const TCHAR* const ExpectedGroundDatabases[] = {
-				TEXT("/RpgGaspLocomotion/MotionMatching/Databases/PSD_Rpg_Stand_Idle.PSD_Rpg_Stand_Idle"),
-				TEXT("/RpgGaspLocomotion/MotionMatching/Databases/PSD_Rpg_Stand_Walk.PSD_Rpg_Stand_Walk"),
-				TEXT("/RpgGaspLocomotion/MotionMatching/Databases/PSD_Rpg_Stand_Run.PSD_Rpg_Stand_Run"),
-				TEXT("/RpgGaspLocomotion/MotionMatching/Databases/PSD_Rpg_Stand_Sprint.PSD_Rpg_Stand_Sprint"),
-			};
-			TestEqual(TEXT("Exactly four grounded databases are configured"), GroundDatabasePaths.Num(), 4);
-			for (int32 Index = 0; Index < UE_ARRAY_COUNT(ExpectedGroundDatabases) && Index < GroundDatabasePaths.Num(); ++Index)
+			TArray<FString> ActualDatabasePaths;
+			if (!TestTrue(
+					*FString::Printf(TEXT("The %s ground database group is readable"), GroupLabel),
+					ReadStructObjectArrayProperty(
+						PilotAnimDefaults,
+						TEXT("GroundMotionMatchingDatabaseSets"),
+						GroupPropertyName,
+						ActualDatabasePaths)))
+			{
+				return;
+			}
+
+			TestEqual(
+				*FString::Printf(TEXT("The %s ground database group has the exact fixed size"), GroupLabel),
+				ActualDatabasePaths.Num(),
+				ExpectedDatabasePaths.Num());
+			for (int32 Index = 0;
+				Index < ExpectedDatabasePaths.Num() && Index < ActualDatabasePaths.Num();
+				++Index)
 			{
 				TestEqual(
-					*FString::Printf(TEXT("Ground database %d remains project-local"), Index),
-					GroundDatabasePaths[Index],
-					FString(ExpectedGroundDatabases[Index]));
+					*FString::Printf(TEXT("%s ground database %d is ordered and project-local"), GroupLabel, Index),
+					ActualDatabasePaths[Index],
+					ExpectedDatabasePaths[Index]);
 			}
-		}
+		};
+
+		TestGroundDatabaseGroup(
+			TEXT("Idle"),
+			TEXT("Idle"),
+			{
+				TEXT("/RpgGaspLocomotion/MotionMatching/Databases/PSD_Rpg_Stand_Idle.PSD_Rpg_Stand_Idle"),
+			});
+		TestGroundDatabaseGroup(
+			TEXT("Walk"),
+			TEXT("Walk"),
+			{
+				TEXT("/RpgGaspLocomotion/MotionMatching/Databases/PSD_Rpg_Stand_Walk.PSD_Rpg_Stand_Walk"),
+			});
+		TestGroundDatabaseGroup(
+			TEXT("Run"),
+			TEXT("Run"),
+			{
+				TEXT("/RpgGaspLocomotion/MotionMatching/Databases/PSD_Rpg_Stand_Run_Loops.PSD_Rpg_Stand_Run_Loops"),
+				TEXT("/RpgGaspLocomotion/MotionMatching/Databases/PSD_Rpg_Stand_Run_Pivots.PSD_Rpg_Stand_Run_Pivots"),
+				TEXT("/RpgGaspLocomotion/MotionMatching/Databases/PSD_Rpg_Stand_Run_Starts.PSD_Rpg_Stand_Run_Starts"),
+				TEXT("/RpgGaspLocomotion/MotionMatching/Databases/PSD_Rpg_Stand_Run_Stops.PSD_Rpg_Stand_Run_Stops"),
+			});
+		TestGroundDatabaseGroup(
+			TEXT("Sprint"),
+			TEXT("Sprint"),
+			{
+				TEXT("/RpgGaspLocomotion/MotionMatching/Databases/PSD_Rpg_Stand_Sprint.PSD_Rpg_Stand_Sprint"),
+			});
 
 		FString CrouchingDatabasePath;
 		if (TestTrue(
@@ -1653,7 +1764,7 @@ bool FRpgGaspPilotAssetContractTest::RunTest(const FString& Parameters)
 					BlendProfileObject);
 			}
 
-			TestPerSampleBlendStackContract(*this, MotionMatchingNode);
+			TestPerSampleBlendStackContract(*this, PilotAnimBlueprint, MotionMatchingNode);
 		}
 
 		if (OffsetRootBoneNode)
@@ -2173,6 +2284,17 @@ bool FRpgGaspPilotAssetContractTest::RunTest(const FString& Parameters)
 		FName(PilotPawnDataPackage),
 		FName(PilotExperiencePackage),
 	};
+	TArray<FName> PilotAnimBlueprintDependencies;
+	AssetRegistry.GetDependencies(
+		FName(PilotAnimBlueprintPackage),
+		PilotAnimBlueprintDependencies,
+		UE::AssetRegistry::EDependencyCategory::Package);
+	TestTrue(
+		TEXT("The pilot AnimBlueprint directly records the loadable uncooked AnimGraph module"),
+		PilotAnimBlueprintDependencies.Contains(FName(TEXT("/Script/SurvivalRpgAnimGraph"))));
+	TestFalse(
+		TEXT("The pilot AnimBlueprint never directly depends on the full editor-only module"),
+		PilotAnimBlueprintDependencies.Contains(FName(TEXT("/Script/SurvivalRpgEditor"))));
 	TSet<FName> DependencyClosure;
 	GatherPilotDependencyClosure(AssetRegistry, PilotRootPackages, DependencyClosure);
 	for (const FName PackageName : DependencyClosure)

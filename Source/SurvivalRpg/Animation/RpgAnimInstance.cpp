@@ -46,6 +46,8 @@ constexpr float LandingActiveTimeout = 1.25f;
 constexpr float LandingPlaybackWatchdogSafetyMargin = 0.1f;
 constexpr float LandingFinishedTimeTolerance = 0.05f;
 constexpr float LightLandingIdleSpeedThreshold = 3.0f;
+constexpr float BackwardJumpStartHoldTimeout = 1.25f;
+constexpr float BackwardJumpStartReleaseLeadTime = 0.2f;
 
 enum class ETurnInPlaceHardResetReason : uint8
 {
@@ -888,10 +890,10 @@ void FRpgAnimInstanceProxy::PreUpdate(UAnimInstance* InAnimInstance, float Delta
 			TransformTrajectory,
 			DesiredControllerYawLastUpdate,
 			GeneratedTrajectory,
-			0.04f,
-			10,
-			0.2f,
-			8);
+			URpgAnimInstance::TrajectoryHistorySamplingInterval,
+			URpgAnimInstance::TrajectoryHistorySampleCount,
+			URpgAnimInstance::TrajectoryPredictionSamplingInterval,
+			URpgAnimInstance::TrajectoryPredictionSampleCount);
 		TransformTrajectory = MoveTemp(GeneratedTrajectory);
 	}
 	else
@@ -908,6 +910,190 @@ void URpgAnimInstance::InitializeWithAbilitySystem(UAbilitySystemComponent* ASC)
 	GameplayTagPropertyMap.Initialize(this, ASC);
 }
 
+bool URpgAnimInstance::IsGroundMotionMatchingChooserMoving(
+	const FGroundMotionMatchingSelectionSnapshot& Snapshot)
+{
+	return Snapshot.bIsMovingOnGround &&
+		!Snapshot.WorldVelocity.ContainsNaN() &&
+		!Snapshot.WorldAcceleration.ContainsNaN() &&
+		Snapshot.WorldVelocity.SizeSquared() > FMath::Square(ChooserVelocityTolerance) &&
+		Snapshot.WorldAcceleration.SizeSquared() > FMath::Square(ChooserAccelerationTolerance);
+}
+
+float URpgAnimInstance::GetRunPivotMinimumAngle(ERpgCharacterRotationMode RotationMode)
+{
+	switch (RotationMode)
+	{
+	case ERpgCharacterRotationMode::Free:
+		return FreeRunPivotMinimumAngle;
+	case ERpgCharacterRotationMode::CombatStrafe:
+		return CombatStrafeRunPivotMinimumAngle;
+	case ERpgCharacterRotationMode::Aim:
+		return AimRunPivotMinimumAngle;
+	default:
+		return FreeRunPivotMinimumAngle;
+	}
+}
+
+bool URpgAnimInstance::ShouldInterruptGroundMotionMatching(
+	bool bHasPreviousState,
+	const FGroundMotionMatchingDomainState& PreviousState,
+	const FGroundMotionMatchingDomainState& CurrentState)
+{
+	if (!bHasPreviousState ||
+		PreviousState.PhysicalMovementState != CurrentState.PhysicalMovementState)
+	{
+		return true;
+	}
+
+	if (CurrentState.PhysicalMovementState != ERpgLocomotionMovementState::Grounded)
+	{
+		return false;
+	}
+
+	return PreviousState.bChooserMoving != CurrentState.bChooserMoving ||
+		PreviousState.Stance != CurrentState.Stance ||
+		(CurrentState.bChooserMoving && PreviousState.Gait != CurrentState.Gait);
+}
+
+URpgAnimInstance::FResolvedGroundMotionMatchingDatabases
+URpgAnimInstance::ResolveGroundMotionMatchingDatabases(
+	const FGroundMotionMatchingSelectionSnapshot& Snapshot,
+	const FRpgGroundMotionMatchingDatabaseSets& DatabaseSets)
+{
+	FResolvedGroundMotionMatchingDatabases ResolvedDatabases;
+	if (!Snapshot.bIsMovingOnGround)
+	{
+		return ResolvedDatabases;
+	}
+
+	auto AddDatabase = [&ResolvedDatabases](UPoseSearchDatabase* Database)
+	{
+		if (Database && !ResolvedDatabases.Contains(Database))
+		{
+			ResolvedDatabases.Add(Database);
+		}
+	};
+	auto AddDatabaseAtIndex = [&AddDatabase](
+		const TArray<TObjectPtr<UPoseSearchDatabase>>& Databases,
+		int32 Index)
+	{
+		if (Databases.IsValidIndex(Index))
+		{
+			AddDatabase(Databases[Index].Get());
+		}
+	};
+
+	const float SafeGroundSpeed = FMath::IsFinite(Snapshot.GroundSpeed)
+		? FMath::Max(Snapshot.GroundSpeed, 0.0f)
+		: 0.0f;
+	const bool bChooserMoving = IsGroundMotionMatchingChooserMoving(Snapshot);
+	if (!bChooserMoving)
+	{
+		// GASP selects stops from its logical Idle domain. This pilot has no split Walk Stops DB,
+		// so the existing Walk aggregate is the bounded 20-100 cm/s fallback.
+		if (SafeGroundSpeed >= RunStopMinimumSpeed)
+		{
+			AddDatabaseAtIndex(DatabaseSets.Run, 3);
+		}
+		else if (SafeGroundSpeed >= WalkStopMinimumSpeed)
+		{
+			AddDatabaseAtIndex(DatabaseSets.Walk, 0);
+		}
+		else
+		{
+			AddDatabaseAtIndex(DatabaseSets.Idle, 0);
+		}
+		return ResolvedDatabases;
+	}
+
+	switch (Snapshot.Gait)
+	{
+	case ERpgLocomotionGait::Idle:
+		AddDatabaseAtIndex(DatabaseSets.Idle, 0);
+		break;
+	case ERpgLocomotionGait::Walk:
+		AddDatabaseAtIndex(DatabaseSets.Walk, 0);
+		break;
+	case ERpgLocomotionGait::Run:
+	{
+		const float SafeFutureGroundSpeed = FMath::IsFinite(Snapshot.FutureGroundSpeed)
+			? FMath::Max(Snapshot.FutureGroundSpeed, 0.0f)
+			: 0.0f;
+		const bool bSearchStarts =
+			!Snapshot.bCurrentDatabaseIsRunPivot &&
+			SafeFutureGroundSpeed >= SafeGroundSpeed + RunStartMinimumFutureSpeedGain;
+
+		const FVector HorizontalVelocity(Snapshot.WorldVelocity.X, Snapshot.WorldVelocity.Y, 0.0f);
+		const FVector HorizontalAcceleration(Snapshot.WorldAcceleration.X, Snapshot.WorldAcceleration.Y, 0.0f);
+		const float TurnAngle = FMath::Abs(FMath::FindDeltaAngleDegrees(
+			HorizontalVelocity.Rotation().Yaw,
+			HorizontalAcceleration.Rotation().Yaw));
+		const bool bSearchPivots = TurnAngle >= GetRunPivotMinimumAngle(Snapshot.RotationMode);
+
+		ResolvedDatabases.Reserve(3);
+		// Preserve the source Sparse chooser result order: Starts, Loops, then Pivots.
+		if (bSearchStarts)
+		{
+			AddDatabaseAtIndex(DatabaseSets.Run, 2);
+		}
+		AddDatabaseAtIndex(DatabaseSets.Run, 0);
+		if (bSearchPivots)
+		{
+			AddDatabaseAtIndex(DatabaseSets.Run, 1);
+		}
+		break;
+	}
+	case ERpgLocomotionGait::Sprint:
+		AddDatabaseAtIndex(DatabaseSets.Sprint, 0);
+		break;
+	default:
+		break;
+	}
+	return ResolvedDatabases;
+}
+
+URpgAnimInstance::FGroundMotionMatchingDatabaseSetValidation
+URpgAnimInstance::ValidateGroundMotionMatchingDatabaseSets(
+	const FRpgGroundMotionMatchingDatabaseSets& DatabaseSets)
+{
+	struct FDatabaseSetContract
+	{
+		const TArray<TObjectPtr<UPoseSearchDatabase>>* Databases = nullptr;
+		int32 ExpectedNum = 0;
+	};
+	const FDatabaseSetContract Contracts[] = {
+		{ &DatabaseSets.Idle, 1 },
+		{ &DatabaseSets.Walk, 1 },
+		{ &DatabaseSets.Run, 4 },
+		{ &DatabaseSets.Sprint, 1 },
+	};
+
+	FGroundMotionMatchingDatabaseSetValidation Validation;
+	TArray<UPoseSearchDatabase*, TInlineAllocator<7>> SeenDatabases;
+	for (const FDatabaseSetContract& Contract : Contracts)
+	{
+		check(Contract.Databases);
+		Validation.bHasInvalidShape |= Contract.Databases->Num() != Contract.ExpectedNum;
+		for (UPoseSearchDatabase* Database : *Contract.Databases)
+		{
+			if (!Database)
+			{
+				Validation.bHasNullDatabase = true;
+			}
+			else if (SeenDatabases.Contains(Database))
+			{
+				Validation.bHasDuplicateDatabase = true;
+			}
+			else
+			{
+				SeenDatabases.Add(Database);
+			}
+		}
+	}
+	return Validation;
+}
+
 #if WITH_EDITOR
 EDataValidationResult URpgAnimInstance::IsDataValid(FDataValidationContext& Context) const
 {
@@ -916,15 +1102,22 @@ EDataValidationResult URpgAnimInstance::IsDataValid(FDataValidationContext& Cont
 	GameplayTagPropertyMap.IsDataValid(this, Context);
 	if (bGeneratePoseSearchTrajectory)
 	{
-		if (GroundMotionMatchingDatabases.IsEmpty())
+		const FGroundMotionMatchingDatabaseSetValidation GroundDatabaseValidation =
+			ValidateGroundMotionMatchingDatabaseSets(GroundMotionMatchingDatabaseSets);
+		if (GroundDatabaseValidation.bHasInvalidShape)
 		{
 			Context.AddError(FText::FromString(
-				TEXT("Motion Matching is enabled, but no grounded Pose Search database is configured.")));
+				TEXT("Ground Motion Matching database sets must contain Idle 1, Walk 1, Run 4, and Sprint 1 entries; Run is ordered Loops, Pivots, Starts, Stops.")));
 		}
-		else if (GroundMotionMatchingDatabases.Num() != 4)
+		if (GroundDatabaseValidation.bHasNullDatabase)
 		{
 			Context.AddError(FText::FromString(
-				TEXT("Ground Motion Matching databases must be ordered as exactly Idle, Walk, Run, and Sprint.")));
+				TEXT("Ground Motion Matching database sets contain at least one null entry.")));
+		}
+		if (GroundDatabaseValidation.bHasDuplicateDatabase)
+		{
+			Context.AddError(FText::FromString(
+				TEXT("Ground Motion Matching database sets must not reuse a database within or across gait groups.")));
 		}
 		if (AirborneMotionMatchingDatabases.IsEmpty())
 		{
@@ -980,7 +1173,6 @@ EDataValidationResult URpgAnimInstance::IsDataValid(FDataValidationContext& Cont
 				}
 			}
 		};
-		ValidateDatabases(GroundMotionMatchingDatabases, TEXT("Grounded"));
 		ValidateDatabases(AirborneMotionMatchingDatabases, TEXT("Airborne"));
 	}
 
@@ -1002,6 +1194,8 @@ void URpgAnimInstance::NativeInitializeAnimation()
 	AirborneProceduralAlpha = 0.0f;
 	LandingRequestSerial = 0;
 	LandingInterruptedRequestSerial = 0;
+	PreviousGroundMotionMatchingDomainState = FGroundMotionMatchingDomainState();
+	bHasPreviousGroundMotionMatchingDomainState = false;
 	ResetJumpPhaseRuntime();
 	ResetTurnInPlaceRuntime(false);
 
@@ -1474,18 +1668,30 @@ void URpgAnimInstance::ClearLandingSelection()
 	bLandingCompletionArmed = false;
 }
 
+void URpgAnimInstance::ClearBackwardJumpStartHold()
+{
+	BackwardJumpStartHeldAsset = nullptr;
+	BackwardJumpStartHoldElapsed = 0.0f;
+	bBackwardJumpStartHoldOpportunityConsumed = false;
+	bBackwardJumpStartHoldEligible = false;
+	bBackwardJumpStartHoldWasArmed = false;
+}
+
 void URpgAnimInstance::ResetJumpPhaseRuntime()
 {
 	JumpPhase = ERpgJumpPhase::Grounded;
 	LandingStateElapsed = 0.0f;
 	ClearLandingSelection();
+	ClearBackwardJumpStartHold();
 }
 
-void URpgAnimInstance::BeginAirbornePhase()
+void URpgAnimInstance::BeginAirbornePhase(bool bAscendingTakeoff)
 {
 	JumpPhase = ERpgJumpPhase::Airborne;
 	LandingStateElapsed = 0.0f;
 	ClearLandingSelection();
+	ClearBackwardJumpStartHold();
+	bBackwardJumpStartHoldEligible = bAscendingTakeoff;
 }
 
 void URpgAnimInstance::BeginLandingRequest()
@@ -1493,6 +1699,7 @@ void URpgAnimInstance::BeginLandingRequest()
 	JumpPhase = ERpgJumpPhase::Landing;
 	LandingStateElapsed = 0.0f;
 	ClearLandingSelection();
+	ClearBackwardJumpStartHold();
 	++LandingRequestSerial;
 	if (LandingRequestSerial == 0)
 	{
@@ -1522,7 +1729,7 @@ void URpgAnimInstance::UpdateJumpPhaseRuntime(float DeltaSeconds, const FRpgAnim
 	{
 		if (bAirborneSnapshot)
 		{
-			BeginAirbornePhase();
+			BeginAirbornePhase(Proxy.VerticalVelocity > UE_KINDA_SMALL_NUMBER);
 		}
 		else
 		{
@@ -1535,7 +1742,7 @@ void URpgAnimInstance::UpdateJumpPhaseRuntime(float DeltaSeconds, const FRpgAnim
 	{
 		if (JumpPhase != ERpgJumpPhase::Airborne)
 		{
-			BeginAirbornePhase();
+			BeginAirbornePhase(Proxy.VerticalVelocity > UE_KINDA_SMALL_NUMBER);
 		}
 		return;
 	}
@@ -1691,8 +1898,10 @@ bool URpgAnimInstance::IsAirborneJumpStartAsset(const UAnimationAsset* Asset)
 		return false;
 	}
 
-	static const FString JumpStartsPackagePrefix(TEXT("/RpgGaspLocomotion/Animations/Jump/Starts/"));
-	return Sequence->GetOutermost()->GetName().StartsWith(JumpStartsPackagePrefix);
+	TStringBuilder<256> PackageName;
+	Sequence->GetOutermost()->GetPathName(nullptr, PackageName);
+	return PackageName.ToView().StartsWith(
+		TEXTVIEW("/RpgGaspLocomotion/Animations/Jump/Starts/"));
 }
 
 bool URpgAnimInstance::IsGroundMovingAsset(const UAnimationAsset* Asset)
@@ -1703,15 +1912,16 @@ bool URpgAnimInstance::IsGroundMovingAsset(const UAnimationAsset* Asset)
 		return false;
 	}
 
-	static const FString GroundMovingPackagePrefixes[] = {
-		TEXT("/RpgGaspLocomotion/Animations/Stand/Walk/"),
-		TEXT("/RpgGaspLocomotion/Animations/Stand/Run/"),
-		TEXT("/RpgGaspLocomotion/Animations/Stand/Sprint/"),
+	static constexpr FStringView GroundMovingPackagePrefixes[] = {
+		TEXTVIEW("/RpgGaspLocomotion/Animations/Stand/Walk/"),
+		TEXTVIEW("/RpgGaspLocomotion/Animations/Stand/Run/"),
+		TEXTVIEW("/RpgGaspLocomotion/Animations/Stand/Sprint/"),
 	};
-	const FString PackageName = Sequence->GetOutermost()->GetName();
-	for (const FString& PackagePrefix : GroundMovingPackagePrefixes)
+	TStringBuilder<256> PackageName;
+	Sequence->GetOutermost()->GetPathName(nullptr, PackageName);
+	for (const FStringView PackagePrefix : GroundMovingPackagePrefixes)
 	{
-		if (PackageName.StartsWith(PackagePrefix))
+		if (PackageName.ToView().StartsWith(PackagePrefix))
 		{
 			return true;
 		}
@@ -1727,11 +1937,138 @@ bool URpgAnimInstance::IsAirborneJumpAsset(const UAnimationAsset* Asset)
 		return false;
 	}
 
-	static const FString JumpStartsPackagePrefix(TEXT("/RpgGaspLocomotion/Animations/Jump/Starts/"));
-	static const FString JumpAirbornePackagePrefix(TEXT("/RpgGaspLocomotion/Animations/Jump/Airborne/"));
-	const FString PackageName = Sequence->GetOutermost()->GetName();
-	return PackageName.StartsWith(JumpStartsPackagePrefix) ||
-		PackageName.StartsWith(JumpAirbornePackagePrefix);
+	TStringBuilder<256> PackageName;
+	Sequence->GetOutermost()->GetPathName(nullptr, PackageName);
+	return PackageName.ToView().StartsWith(
+			TEXTVIEW("/RpgGaspLocomotion/Animations/Jump/Starts/")) ||
+		PackageName.ToView().StartsWith(
+			TEXTVIEW("/RpgGaspLocomotion/Animations/Jump/Airborne/"));
+}
+
+bool URpgAnimInstance::IsBackwardJumpStartAsset(const UAnimationAsset* Asset)
+{
+	if (!IsAirborneJumpStartAsset(Asset))
+	{
+		return false;
+	}
+
+	TStringBuilder<256> PackageName;
+	Asset->GetOutermost()->GetPathName(nullptr, PackageName);
+	return PackageName.ToView().StartsWith(
+		TEXTVIEW("/RpgGaspLocomotion/Animations/Jump/Starts/M_Neutral_Jump_B_"));
+}
+
+bool URpgAnimInstance::IsLoopingAirborneFallAsset(const UAnimationAsset* Asset)
+{
+	const UAnimSequenceBase* Sequence = Cast<UAnimSequenceBase>(Asset);
+	if (!Sequence || !Sequence->bLoop)
+	{
+		return false;
+	}
+
+	TStringBuilder<256> PackageName;
+	Sequence->GetOutermost()->GetPathName(nullptr, PackageName);
+	return PackageName.ToView().StartsWith(
+		TEXTVIEW("/RpgGaspLocomotion/Animations/Jump/Airborne/"));
+}
+
+bool URpgAnimInstance::ShouldHoldLoopingAirborneFallPlayback(
+	ERpgJumpPhase CurrentJumpPhase,
+	bool bBackwardHoldWasArmed,
+	float CurrentVerticalVelocity,
+	bool bCurrentAssetIsLoopingFall)
+{
+	return CurrentJumpPhase == ERpgJumpPhase::Airborne &&
+		bBackwardHoldWasArmed &&
+		CurrentVerticalVelocity <= UE_KINDA_SMALL_NUMBER &&
+		bCurrentAssetIsLoopingFall;
+}
+
+bool URpgAnimInstance::ShouldHoldBackwardJumpStartPlayback(
+	ERpgJumpPhase CurrentJumpPhase,
+	bool bCurrentAssetMatchesHeldSelection,
+	float CurrentAssetTime,
+	float CurrentAssetLength,
+	float CurrentAssetPlayRate,
+	float HoldElapsed)
+{
+	if (CurrentJumpPhase != ERpgJumpPhase::Airborne ||
+		!bCurrentAssetMatchesHeldSelection ||
+		!FMath::IsFinite(CurrentAssetTime) ||
+		!FMath::IsFinite(CurrentAssetLength) ||
+		!FMath::IsFinite(CurrentAssetPlayRate) ||
+		!FMath::IsFinite(HoldElapsed) ||
+		CurrentAssetTime < 0.0f ||
+		CurrentAssetLength <= 0.0f ||
+		CurrentAssetTime >= CurrentAssetLength ||
+		HoldElapsed < 0.0f ||
+		HoldElapsed >= BackwardJumpStartHoldTimeout)
+	{
+		return false;
+	}
+
+	const float AbsolutePlayRate = FMath::Abs(CurrentAssetPlayRate);
+	if (AbsolutePlayRate <= UE_KINDA_SMALL_NUMBER)
+	{
+		// A paused cosmetic player remains bounded by HoldElapsed rather than forcing a new search immediately.
+		return true;
+	}
+
+	const float RemainingPlaybackTime =
+		(CurrentAssetLength - CurrentAssetTime) / AbsolutePlayRate;
+	return RemainingPlaybackTime > BackwardJumpStartReleaseLeadTime;
+}
+
+bool URpgAnimInstance::UpdateBackwardJumpStartHold(
+	UAnimationAsset* CurrentAsset,
+	float CurrentAssetTime,
+	float CurrentAssetLength,
+	float CurrentAssetPlayRate,
+	float DeltaSeconds)
+{
+	if (JumpPhase != ERpgJumpPhase::Airborne)
+	{
+		ClearBackwardJumpStartHold();
+		return false;
+	}
+
+	if (!bBackwardJumpStartHoldOpportunityConsumed)
+	{
+		if (!IsAirborneJumpAsset(CurrentAsset))
+		{
+			// The outgoing grounded sample may remain current during the initial Ground-to-Air blend.
+			return false;
+		}
+
+		bBackwardJumpStartHoldOpportunityConsumed = true;
+		if (bBackwardJumpStartHoldEligible && IsBackwardJumpStartAsset(CurrentAsset))
+		{
+			BackwardJumpStartHeldAsset = CurrentAsset;
+			BackwardJumpStartHoldElapsed = 0.0f;
+			bBackwardJumpStartHoldWasArmed = true;
+		}
+	}
+
+	if (!BackwardJumpStartHeldAsset)
+	{
+		return false;
+	}
+
+	BackwardJumpStartHoldElapsed += FMath::Max(DeltaSeconds, 0.0f);
+	const bool bShouldHold = ShouldHoldBackwardJumpStartPlayback(
+		JumpPhase,
+		CurrentAsset == BackwardJumpStartHeldAsset.Get(),
+		CurrentAssetTime,
+		CurrentAssetLength,
+		CurrentAssetPlayRate,
+		BackwardJumpStartHoldElapsed);
+	if (!bShouldHold)
+	{
+		// Keep the opportunity consumed so a later search cannot re-arm the same start in this jump.
+		BackwardJumpStartHeldAsset = nullptr;
+		BackwardJumpStartHoldElapsed = 0.0f;
+	}
+	return bShouldHold;
 }
 
 URpgAnimInstance::FGaspProceduralGates URpgAnimInstance::ResolveGaspProceduralGates(
@@ -1813,6 +2150,26 @@ void URpgAnimInstance::UpdateGaspMotionMatching(
 		return;
 	}
 
+	const FRpgAnimInstanceProxy& Proxy = GetProxyOnAnyThread<FRpgAnimInstanceProxy>();
+	FGroundMotionMatchingSelectionSnapshot DomainSnapshot;
+	DomainSnapshot.Gait = Proxy.Gait;
+	DomainSnapshot.RotationMode = Proxy.RotationMode;
+	DomainSnapshot.WorldVelocity = Proxy.WorldVelocity;
+	DomainSnapshot.WorldAcceleration = Proxy.WorldAcceleration;
+	DomainSnapshot.GroundSpeed = Proxy.GroundSpeed;
+	DomainSnapshot.bIsMovingOnGround = Proxy.bIsMovingOnGround;
+
+	FGroundMotionMatchingDomainState CurrentGroundDomainState;
+	CurrentGroundDomainState.PhysicalMovementState = Proxy.MovementState;
+	CurrentGroundDomainState.Gait = Proxy.Gait;
+	CurrentGroundDomainState.Stance = Proxy.Stance;
+	CurrentGroundDomainState.bChooserMoving =
+		IsGroundMotionMatchingChooserMoving(DomainSnapshot);
+	const bool bInterruptGroundDomain = ShouldInterruptGroundMotionMatching(
+		bHasPreviousGroundMotionMatchingDomainState,
+		PreviousGroundMotionMatchingDomainState,
+		CurrentGroundDomainState);
+
 	const bool bForceNewTurnRequest = ConsumeTurnInPlaceForceInterruptRequest();
 	if (!bForceNewTurnRequest &&
 		TurnInPlaceState == ERpgTurnInPlaceState::Active &&
@@ -1884,6 +2241,22 @@ void URpgAnimInstance::UpdateGaspMotionMatching(
 			AnimationContext ? AnimationContext->GetDeltaTime() : 0.0f);
 	}
 
+	const UAnimationAsset* CurrentMotionMatchingAsset = MotionMatchingNode->GetAnimAsset();
+	const float CurrentMotionMatchingPlayRate = MotionMatchingNode->AnimPlayers.IsEmpty()
+		? 1.0f
+		: MotionMatchingNode->AnimPlayers[0].GetPlayRate();
+	const bool bHoldBackwardJumpStart = UpdateBackwardJumpStartHold(
+		MotionMatchingNode->GetAnimAsset(),
+		MotionMatchingNode->GetCurrentAssetTime(),
+		MotionMatchingNode->GetCurrentAssetLength(),
+		CurrentMotionMatchingPlayRate,
+		AnimationContext ? AnimationContext->GetDeltaTime() : 0.0f);
+	const bool bContinueLoopingAirborneFall = ShouldHoldLoopingAirborneFallPlayback(
+		JumpPhase,
+		bBackwardJumpStartHoldWasArmed,
+		VerticalVelocity,
+		IsLoopingAirborneFallAsset(CurrentMotionMatchingAsset));
+
 	TArray<UPoseSearchDatabase*, TInlineAllocator<5>> DatabasesToSearch;
 	EPoseSearchInterruptMode InterruptMode = EPoseSearchInterruptMode::InterruptOnDatabaseChange;
 	if (SearchMode == ETurnInPlaceSearchMode::SearchRequestedTurn)
@@ -1912,6 +2285,12 @@ void URpgAnimInstance::UpdateGaspMotionMatching(
 				: EPoseSearchInterruptMode::InterruptOnDatabaseChange;
 		}
 	}
+	else if (bHoldBackwardJumpStart || bContinueLoopingAirborneFall)
+	{
+		// Continuing-pose-only playback prevents the full Jump DB from restarting a leg phase mid-air.
+		// The start fails open near clip end or at its watchdog; the fall releases on landing or upward relaunch.
+		InterruptMode = EPoseSearchInterruptMode::DoNotInterrupt;
+	}
 	else if (JumpPhase == ERpgJumpPhase::Airborne || bLocomotionIsFalling)
 	{
 		DatabasesToSearch.Reserve(AirborneMotionMatchingDatabases.Num());
@@ -1932,15 +2311,38 @@ void URpgAnimInstance::UpdateGaspMotionMatching(
 	}
 	else
 	{
-		const int32 GaitDatabaseIndex = static_cast<int32>(LocomotionGait);
-		if (GroundMotionMatchingDatabases.IsValidIndex(GaitDatabaseIndex))
+		FVector FutureTrajectoryVelocity = FVector::ZeroVector;
+		if (!Proxy.TransformTrajectory.Samples.IsEmpty())
 		{
-			if (UPoseSearchDatabase* Database = GroundMotionMatchingDatabases[GaitDatabaseIndex])
-			{
-				DatabasesToSearch.Add(Database);
-			}
+			// This is the exact future-speed window used by GASP's IsStarting function.
+			UPoseSearchTrajectoryLibrary::GetTransformTrajectoryVelocity(
+				Proxy.TransformTrajectory,
+				RunStartFutureVelocityBeginTime,
+				RunStartFutureVelocityEndTime,
+				FutureTrajectoryVelocity);
 		}
+
+		FGroundMotionMatchingSelectionSnapshot SelectionSnapshot = DomainSnapshot;
+		SelectionSnapshot.FutureGroundSpeed = FutureTrajectoryVelocity.Size2D();
+		SelectionSnapshot.bCurrentDatabaseIsRunPivot =
+			GroundMotionMatchingDatabaseSets.Run.IsValidIndex(1) &&
+			MotionMatchingNode->GetMotionMatchingState().SearchResult.SelectedDatabase.Get() ==
+				GroundMotionMatchingDatabaseSets.Run[1].Get();
+		const FResolvedGroundMotionMatchingDatabases GroundDatabases =
+			ResolveGroundMotionMatchingDatabases(
+				SelectionSnapshot,
+				GroundMotionMatchingDatabaseSets);
+		for (UPoseSearchDatabase* Database : GroundDatabases)
+		{
+			DatabasesToSearch.Add(Database);
+		}
+		InterruptMode = bInterruptGroundDomain
+			? EPoseSearchInterruptMode::InterruptOnDatabaseChange
+			: EPoseSearchInterruptMode::DoNotInterrupt;
 	}
+
+	PreviousGroundMotionMatchingDomainState = CurrentGroundDomainState;
+	bHasPreviousGroundMotionMatchingDomainState = true;
 
 	MotionMatchingNode->SetDatabasesToSearch(
 		MakeArrayView(DatabasesToSearch),

@@ -19,6 +19,7 @@ class UAnimationAsset;
 class UPoseSearchDatabase;
 #if WITH_DEV_AUTOMATION_TESTS
 class FRpgJumpPhaseRuntimeTest;
+class FRpgMotionMatchingDatabaseResolverTest;
 class FRpgTurnInPlaceStateMachineTest;
 #endif
 
@@ -30,6 +31,45 @@ enum class ERpgLocomotionGait : uint8
 	Walk,
 	Run,
 	Sprint,
+};
+
+/**
+ * Static grounded Pose Search database groups consumed by the project-local locomotion selector.
+ *
+ * The fixed array shapes are part of the runtime contract: Idle, Walk, and Sprint each search one
+ * database, while Run stores four specialized roles in Loops, Pivots, Starts, Stops order. Runtime
+ * selection mirrors the relevant GASP chooser domains: moving Run can offer Starts, Loops, and
+ * Pivots together, while deceleration removes Loops and routes to a bounded stop database.
+ * The values are designer-authored AnimBP defaults and must never be mutated during evaluation.
+ */
+USTRUCT(BlueprintType)
+struct SURVIVALRPG_API FRpgGroundMotionMatchingDatabaseSets
+{
+	GENERATED_BODY()
+
+	FRpgGroundMotionMatchingDatabaseSets()
+	{
+		Idle.SetNum(1);
+		Walk.SetNum(1);
+		Run.SetNum(4);
+		Sprint.SetNum(1);
+	}
+
+	/** Single database searched for standing idle locomotion. */
+	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, EditFixedSize, Category = "Rpg|Animation|Motion Matching")
+	TArray<TObjectPtr<UPoseSearchDatabase>> Idle;
+
+	/** Single database searched for standing walk locomotion. */
+	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, EditFixedSize, Category = "Rpg|Animation|Motion Matching")
+	TArray<TObjectPtr<UPoseSearchDatabase>> Walk;
+
+	/** Four Run role databases ordered exactly as Loops, Pivots, Starts, and Stops. */
+	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, EditFixedSize, Category = "Rpg|Animation|Motion Matching")
+	TArray<TObjectPtr<UPoseSearchDatabase>> Run;
+
+	/** Single database searched for standing sprint locomotion once gameplay exposes Sprint. */
+	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, EditFixedSize, Category = "Rpg|Animation|Motion Matching")
+	TArray<TObjectPtr<UPoseSearchDatabase>> Sprint;
 };
 
 /** Cosmetic stance mirrored from the replicated character crouch state. */
@@ -186,7 +226,8 @@ public:
 
 	/**
 	 * Supplies the active project-local Pose Search databases to a Motion Matching node.
-	 * Bound as the node's thread-safe On Update function; it reads only immutable defaults and proxy snapshots.
+	 * Bound as the node's thread-safe On Update function; it consumes proxy-owned snapshots and mutates only
+	 * cosmetic update-thread selection state plus the referenced Motion Matching node.
 	 */
 	UFUNCTION(BlueprintCallable, Category = "Rpg|Animation|Motion Matching", meta = (BlueprintThreadSafe))
 	void UpdateGaspMotionMatching(const FAnimUpdateContext& Context, const FAnimNodeReference& Node);
@@ -295,11 +336,11 @@ protected:
 	bool bGeneratePoseSearchTrajectory = false;
 
 	/**
-	 * Pose Search databases used while grounded, ordered as Idle, Walk, Run, and Sprint.
-	 * Static designer-authored defaults; never mutate this array while an AnimInstance is evaluating.
+	 * Project-local grounded database groups resolved from the cosmetic gait snapshot.
+	 * Static designer-authored defaults; runtime evaluation reads but never mutates these references.
 	 */
 	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Rpg|Animation|Motion Matching")
-	TArray<TObjectPtr<UPoseSearchDatabase>> GroundMotionMatchingDatabases;
+	FRpgGroundMotionMatchingDatabaseSets GroundMotionMatchingDatabaseSets;
 
 	/**
 	 * Pose Search database used for grounded crouching locomotion.
@@ -492,6 +533,89 @@ protected:
 	bool bIsAnyMontagePlaying = false;
 
 private:
+	/** Value-only integrity summary shared by editor validation and focused automation coverage. */
+	struct FGroundMotionMatchingDatabaseSetValidation
+	{
+		bool bHasInvalidShape = false;
+		bool bHasNullDatabase = false;
+		bool bHasDuplicateDatabase = false;
+
+		bool IsValid() const
+		{
+			return !bHasInvalidShape && !bHasNullDatabase && !bHasDuplicateDatabase;
+		}
+	};
+
+	using FResolvedGroundMotionMatchingDatabases =
+		TArray<UPoseSearchDatabase*, TInlineAllocator<4>>;
+
+	/**
+	 * Pointer-free locomotion snapshot used to classify one bounded grounded database search.
+	 * It deliberately contains no actor, controller, authority, or network-role state so identical
+	 * movement snapshots resolve identically for local and simulated characters.
+	 */
+	struct FGroundMotionMatchingSelectionSnapshot
+	{
+		ERpgLocomotionGait Gait = ERpgLocomotionGait::Idle;
+		ERpgCharacterRotationMode RotationMode = ERpgCharacterRotationMode::Free;
+		FVector WorldVelocity = FVector::ZeroVector;
+		FVector WorldAcceleration = FVector::ZeroVector;
+		float GroundSpeed = 0.0f;
+		float FutureGroundSpeed = 0.0f;
+		/** True when the previous completed Pose Search result came from the Run Pivots database. */
+		bool bCurrentDatabaseIsRunPivot = false;
+		bool bIsMovingOnGround = false;
+	};
+
+	/** High-level selector state used to preserve current poses across transient candidate-list changes. */
+	struct FGroundMotionMatchingDomainState
+	{
+		ERpgLocomotionMovementState PhysicalMovementState = ERpgLocomotionMovementState::None;
+		ERpgLocomotionGait Gait = ERpgLocomotionGait::Idle;
+		ERpgLocomotionStance Stance = ERpgLocomotionStance::Standing;
+		bool bChooserMoving = false;
+	};
+
+	// Source-aligned GASP Sparse chooser gates, expressed in project-native value-only state.
+	static constexpr float ChooserVelocityTolerance = 0.1f;
+	static constexpr float ChooserAccelerationTolerance = 0.0001f;
+	static constexpr float WalkStopMinimumSpeed = 20.0f;
+	static constexpr float RunStopMinimumSpeed = 100.0f;
+	static constexpr float FreeRunPivotMinimumAngle = 45.0f;
+	static constexpr float CombatStrafeRunPivotMinimumAngle = 30.0f;
+	static constexpr float AimRunPivotMinimumAngle = 0.0f;
+	static constexpr float RunStartMinimumFutureSpeedGain = 100.0f;
+	static constexpr float RunStartFutureVelocityBeginTime = 0.4f;
+	static constexpr float RunStartFutureVelocityEndTime = 0.5f;
+	// Exact sampling arguments authored by GASP's Update_Trajectory function.
+	static constexpr float TrajectoryHistorySamplingInterval = -1.0f;
+	static constexpr int32 TrajectoryHistorySampleCount = 30;
+	static constexpr float TrajectoryPredictionSamplingInterval = 0.1f;
+	static constexpr int32 TrajectoryPredictionSampleCount = 15;
+
+	/** Mirrors GASP's logical Moving state from finite horizontal velocity and acceleration. */
+	static bool IsGroundMotionMatchingChooserMoving(
+		const FGroundMotionMatchingSelectionSnapshot& Snapshot);
+	/** Resolves the source GASP pivot threshold for the active facing policy, in degrees. */
+	static float GetRunPivotMinimumAngle(ERpgCharacterRotationMode RotationMode);
+	/** Returns true only for source-level state changes that may interrupt the current continuing pose. */
+	static bool ShouldInterruptGroundMotionMatching(
+		bool bHasPreviousState,
+		const FGroundMotionMatchingDomainState& PreviousState,
+		const FGroundMotionMatchingDomainState& CurrentState);
+
+	/**
+	 * Selects one immutable GASP-like domain while invalid null or duplicate entries are safely omitted.
+	 * Moving Run preserves source result order Starts, Loops, Pivots; idle deceleration routes by speed.
+	 */
+	static FResolvedGroundMotionMatchingDatabases ResolveGroundMotionMatchingDatabases(
+		const FGroundMotionMatchingSelectionSnapshot& Snapshot,
+		const FRpgGroundMotionMatchingDatabaseSets& DatabaseSets);
+
+	/** Checks the fixed 1/1/4/1 shape plus null and cross-set duplicate references without loading assets. */
+	static FGroundMotionMatchingDatabaseSetValidation ValidateGroundMotionMatchingDatabaseSets(
+		const FRpgGroundMotionMatchingDatabaseSets& DatabaseSets);
+
 	/** Value-only result used to keep Reset Root, Orientation Warping, and Steering gates independent. */
 	struct FGaspProceduralGates
 	{
@@ -550,10 +674,11 @@ private:
 
 	/** Advances the pointer-free airborne/landing phase and creates at most one landing request per touchdown. */
 	void UpdateJumpPhaseRuntime(float DeltaSeconds, const FRpgAnimInstanceProxy& Proxy);
-	void BeginAirbornePhase();
+	void BeginAirbornePhase(bool bAscendingTakeoff);
 	void BeginLandingRequest();
 	void ResetJumpPhaseRuntime();
 	void ClearLandingSelection();
+	void ClearBackwardJumpStartHold();
 	bool IsLandingEligible(const FRpgAnimInstanceProxy& Proxy) const;
 	bool ConsumeLandingForceInterruptRequest();
 	bool TryLatchLandingSelection(
@@ -569,12 +694,36 @@ private:
 		float CurrentAssetPlayRate,
 		float DeltaSeconds);
 	bool IsActiveLandingAsset(const UAnimationAsset* Asset) const;
+	bool UpdateBackwardJumpStartHold(
+		UAnimationAsset* CurrentAsset,
+		float CurrentAssetTime,
+		float CurrentAssetLength,
+		float CurrentAssetPlayRate,
+		float DeltaSeconds);
 	/** Identifies curated Walk/Run/Sprint samples whose per-sample corrections must survive phase-boundary blending. */
 	static bool IsGroundMovingAsset(const UAnimationAsset* Asset);
 	/** Identifies every asset in the exclusive airborne database, including Jump/Starts and the looping fall. */
 	static bool IsAirborneJumpAsset(const UAnimationAsset* Asset);
 	/** Identifies the non-looping Jump/Starts subset that additionally receives authored OW and Steering. */
 	static bool IsAirborneJumpStartAsset(const UAnimationAsset* Asset);
+	/** Identifies the two backward Jump/Starts clips whose short transition block otherwise restarts mid-air. */
+	static bool IsBackwardJumpStartAsset(const UAnimationAsset* Asset);
+	/** Identifies the looping fall continuation, which must never search back into a directional start. */
+	static bool IsLoopingAirborneFallAsset(const UAnimationAsset* Asset);
+	/** Retains a fall loop only after this airborne phase actually used the bounded backward-start path. */
+	static bool ShouldHoldLoopingAirborneFallPlayback(
+		ERpgJumpPhase CurrentJumpPhase,
+		bool bBackwardHoldWasArmed,
+		float CurrentVerticalVelocity,
+		bool bCurrentAssetIsLoopingFall);
+	/** Bounds a continuing-pose-only backward start while retaining a fail-open path for genuine long falls. */
+	static bool ShouldHoldBackwardJumpStartPlayback(
+		ERpgJumpPhase CurrentJumpPhase,
+		bool bCurrentAssetMatchesHeldSelection,
+		float CurrentAssetTime,
+		float CurrentAssetLength,
+		float CurrentAssetPlayRate,
+		float HoldElapsed);
 	static FGaspProceduralGates ResolveGaspProceduralGates(
 		bool bGroundMovingPose,
 		float SupportedLocomotionAlpha,
@@ -629,9 +778,27 @@ private:
 	bool bLandingPlaybackObserved = false;
 	bool bLandingCompletionArmed = false;
 
+	/** Exact initial backward Jump/Starts asset retained as a Continuing Pose for an ordinary short jump. */
+	UPROPERTY(Transient)
+	TObjectPtr<UAnimationAsset> BackwardJumpStartHeldAsset;
+
+	/** Wall-clock duration of the bounded backward-start hold, in seconds. */
+	float BackwardJumpStartHoldElapsed = 0.0f;
+	/** Prevents a released backward start from being latched again during the same airborne phase. */
+	bool bBackwardJumpStartHoldOpportunityConsumed = false;
+	/** Takeoff provenance captured on the movement-mode edge, before a delayed MM result is observed. */
+	bool bBackwardJumpStartHoldEligible = false;
+	/** Scopes fall-loop continuation to an airborne phase that actually held a backward start. */
+	bool bBackwardJumpStartHoldWasArmed = false;
+
+	/** Previous source-level selector domain, owned and mutated only by the animation update thread. */
+	FGroundMotionMatchingDomainState PreviousGroundMotionMatchingDomainState;
+	bool bHasPreviousGroundMotionMatchingDomainState = false;
+
 	friend struct FRpgAnimInstanceProxy;
 #if WITH_DEV_AUTOMATION_TESTS
 	friend class FRpgJumpPhaseRuntimeTest;
+	friend class FRpgMotionMatchingDatabaseResolverTest;
 	friend class FRpgTurnInPlaceStateMachineTest;
 #endif
 };

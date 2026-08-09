@@ -4,15 +4,16 @@ This content-only plugin owns the curated Game Animation Sample Project (GASP) l
 
 ## Curated slice
 
-- 107 retargeted `UAnimSequence` assets using `/Game/SurvivalRpg/Characters/Mannequins/Meshes/SK_Mannequin`
-- Database membership: 2 stand idle/transition, 8 turn-in-place, 10 crouch, 29 walk, 25 run, 10 sprint, 19 airborne jump, and 4 stand-light landing entries
+- 159 retargeted `UAnimSequence` assets using `/Game/SurvivalRpg/Characters/Mannequins/Meshes/SK_Mannequin`
+- Database membership: 2 stand idle/transition, 8 turn-in-place, 10 crouch, 29 walk, 71 source-exact Sparse run entries split as 11 loops, 34 pivots, 14 starts, and 12 stops, 10 sprint, 19 airborne jump, and 4 stand-light landing entries. The prior 41-entry run aggregate remains only as a migration fallback and is excluded from shared normalization/runtime selection.
 - Crouch slice: 1 idle, 2 transitions, and 8 directional walk loops. `PSD_Rpg_Crouch` owns the idle, Stand-to-Crouch transition, and 8 walk loops (10 entries); Crouch-to-Stand is the second `PSD_Rpg_Stand_Idle` entry.
 - Turn-in-place slice: authored 45, 90, 135, and 180 degree turns in both directions live exclusively in `PSD_Rpg_Stand_TurnInPlace`; `PSD_Rpg_Stand_Idle` retains only neutral idle and Crouch-to-Stand.
-- Run slice: the five added BL, BR, FL, FR, and LL loops complete the curated eight-way directional core without importing the dense GASP movement library.
+- Run slice: four source-exact Sparse databases preserve their physical GASP memberships. The pivot database contains 18 directly referenced neutral pivots, 8 Box pivots, and 8 authored 90/180-degree turns; its source mirror settings provide the omitted counterparts. The plugin still retains all 20 previously imported neutral pivot clips, including the two counterparts not directly referenced by the Sparse database. Dense Diamond, Hourglass, Prism, Spin, and 45/135-degree transition families remain out of scope.
 - Jump slice: `PSD_Rpg_Jump` owns exactly 18 bounded directional/core start/off clips plus the single looping fall hold. `PSD_Rpg_Stand_Idle_Lands_Light` owns four non-looping B/F/LL/RL stand-light landings. Moving and heavy landing libraries remain out of scope.
 - `PSS_Rpg_Jump` is a specialized GASP-close local schema with the four-sample jump trajectory, foot-relative pose features, paired `FeetVelZ` channels, and pelvis heading. Both jump-phase databases use full-range `[0.0,0.0]` sampling so the post-touchdown landing query can select an authored contact pose.
-- 1 project-local mirror table, 2 Pose Search schemas, 8 Pose Search databases, 1 normalization set, and 1 database chooser
-- 120 assets after UE 5.8 retargeting and compression
+- `PSS_Rpg_Locomotion` copies GASP `PSS_Default`'s 30 Hz Trajectory + Group channel graph, uses the local Skeleton/mirror table, finalizes to cardinality 30, and uses `NormalizeWithCommonSchema`. The schema requires root, foot_l, foot_r, and pelvis but no curves, so Pose History does not need a Phase curve collector.
+- 1 project-local mirror table, 2 Pose Search schemas, 12 Pose Search databases, 1 normalization set, and 1 database chooser
+- 176 assets after UE 5.8 retargeting and compression
 
 Unreal recompresses retargeted sequences with the project/engine defaults, so on-disk size is not part of the content contract. No padding or unrelated sample content is retained to meet an estimated size range.
 
@@ -22,6 +23,8 @@ Unreal recompresses retargeted sequences with the project/engine defaults, so on
 - Source curve names and case are preserved, including `Phase`/`phase` and `MoveData_Speed`/`movedata_speed` variants.
 - Native Pose Search sampling, exclusion, transition, and cost notifies are preserved.
 - Sample Foley, EarlyTransition, BranchIn database references, and experimental state-machine asset user data are removed.
+- Sparse database entry metadata is copied from GASP except `BranchInId`, which is reset because the corresponding notify states are removed. Ordinary full-range database search is the explicit local replacement; no dangling source synchronization dependency is retained.
+- The historical flat chooser remains an archival content reference to the legacy aggregate Run database; runtime ground selection is owned by `URpgAnimInstance` and searches the four split Run databases directly.
 - `PSD_Rpg_Stand_TurnInPlace` carries only the `TurnInPlace` tag, uses `BaseCostBias=-0.2` and `ContinuingPoseCostBias=-0.05`, and keeps all eight entries unmirrored and non-looping. Every entry uses `SamplingRange=[0.0,0.01]`, which deliberately indexes exactly the authored `t=0` pose at the 30 Hz schema rate so controller-facing turns cannot enter after their root-yaw section.
 - The final plugin contains no GASP source skeleton, mesh, IK rig, retargeter, Sample Character, Traversal, Camera, Mover, Locomotor, NetworkPrediction, Foley, Audio, or MetaSound content.
 

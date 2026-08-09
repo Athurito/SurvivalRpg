@@ -51,6 +51,7 @@ public class SurvivalRpgEditor : ModuleRules
 			"Projects",
 			"SlateCore",
 			"StateTreeEditorModule",
+			"SurvivalRpgAnimGraph",
 			"UIExtension",
 			"UMG",
 			"UMGEditor",

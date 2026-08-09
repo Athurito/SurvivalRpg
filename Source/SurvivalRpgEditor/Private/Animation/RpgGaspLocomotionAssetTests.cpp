@@ -64,12 +64,154 @@ namespace RpgGaspLocomotionAssetTests
 		TEXT("/RpgGaspLocomotion/Animations/Stand/Idle/M_Neutral_Stand_Turn_180_R"),
 	};
 
-	static const TCHAR* const AddedDirectionalRunPackages[] = {
+	static const TCHAR* const RunAnimationPackages[] = {
+		TEXT("/RpgGaspLocomotion/Animations/Stand/Run/M_Neutral_Run_Arc_Small_L"),
+		TEXT("/RpgGaspLocomotion/Animations/Stand/Run/M_Neutral_Run_Arc_Small_R"),
+		TEXT("/RpgGaspLocomotion/Animations/Stand/Run/M_Neutral_Run_Loop_B"),
 		TEXT("/RpgGaspLocomotion/Animations/Stand/Run/M_Neutral_Run_Loop_BL"),
 		TEXT("/RpgGaspLocomotion/Animations/Stand/Run/M_Neutral_Run_Loop_BR"),
+		TEXT("/RpgGaspLocomotion/Animations/Stand/Run/M_Neutral_Run_Loop_F"),
 		TEXT("/RpgGaspLocomotion/Animations/Stand/Run/M_Neutral_Run_Loop_FL"),
 		TEXT("/RpgGaspLocomotion/Animations/Stand/Run/M_Neutral_Run_Loop_FR"),
 		TEXT("/RpgGaspLocomotion/Animations/Stand/Run/M_Neutral_Run_Loop_LL"),
+		TEXT("/RpgGaspLocomotion/Animations/Stand/Run/M_Neutral_Run_Loop_LR"),
+		TEXT("/RpgGaspLocomotion/Animations/Stand/Run/M_Neutral_Run_Loop_RL"),
+		TEXT("/RpgGaspLocomotion/Animations/Stand/Run/M_Neutral_Run_Pivot_B_F_Lfoot"),
+		TEXT("/RpgGaspLocomotion/Animations/Stand/Run/M_Neutral_Run_Pivot_B_F_Rfoot"),
+		TEXT("/RpgGaspLocomotion/Animations/Stand/Run/M_Neutral_Run_Pivot_BL_FR_Lfoot"),
+		TEXT("/RpgGaspLocomotion/Animations/Stand/Run/M_Neutral_Run_Pivot_BL_FR_Rfoot"),
+		TEXT("/RpgGaspLocomotion/Animations/Stand/Run/M_Neutral_Run_Pivot_BR_FL_Lfoot"),
+		TEXT("/RpgGaspLocomotion/Animations/Stand/Run/M_Neutral_Run_Pivot_BR_FL_Rfoot"),
+		TEXT("/RpgGaspLocomotion/Animations/Stand/Run/M_Neutral_Run_Pivot_F_B_Lfoot"),
+		TEXT("/RpgGaspLocomotion/Animations/Stand/Run/M_Neutral_Run_Pivot_F_B_Rfoot"),
+		TEXT("/RpgGaspLocomotion/Animations/Stand/Run/M_Neutral_Run_Pivot_FL_BR_Lfoot"),
+		TEXT("/RpgGaspLocomotion/Animations/Stand/Run/M_Neutral_Run_Pivot_FL_BR_Rfoot"),
+		TEXT("/RpgGaspLocomotion/Animations/Stand/Run/M_Neutral_Run_Pivot_FR_BL_Lfoot"),
+		TEXT("/RpgGaspLocomotion/Animations/Stand/Run/M_Neutral_Run_Pivot_FR_BL_Rfoot"),
+		TEXT("/RpgGaspLocomotion/Animations/Stand/Run/M_Neutral_Run_Pivot_LL_RL_Lfoot"),
+		TEXT("/RpgGaspLocomotion/Animations/Stand/Run/M_Neutral_Run_Pivot_LL_RL_Rfoot"),
+		TEXT("/RpgGaspLocomotion/Animations/Stand/Run/M_Neutral_Run_Pivot_LR_RR_Lfoot"),
+		TEXT("/RpgGaspLocomotion/Animations/Stand/Run/M_Neutral_Run_Pivot_LR_RR_Rfoot"),
+		TEXT("/RpgGaspLocomotion/Animations/Stand/Run/M_Neutral_Run_Pivot_RL_LL_Lfoot"),
+		TEXT("/RpgGaspLocomotion/Animations/Stand/Run/M_Neutral_Run_Pivot_RL_LL_Rfoot"),
+		TEXT("/RpgGaspLocomotion/Animations/Stand/Run/M_Neutral_Run_Pivot_RR_LR_Lfoot"),
+		TEXT("/RpgGaspLocomotion/Animations/Stand/Run/M_Neutral_Run_Pivot_RR_LR_Rfoot"),
+		TEXT("/RpgGaspLocomotion/Animations/Stand/Run/M_Neutral_Run_Start_B_Lfoot"),
+		TEXT("/RpgGaspLocomotion/Animations/Stand/Run/M_Neutral_Run_Start_B_Rfoot"),
+		TEXT("/RpgGaspLocomotion/Animations/Stand/Run/M_Neutral_Run_Start_F_Lfoot"),
+		TEXT("/RpgGaspLocomotion/Animations/Stand/Run/M_Neutral_Run_Start_F_Rfoot"),
+		TEXT("/RpgGaspLocomotion/Animations/Stand/Run/M_Neutral_Run_Start_LL_Lfoot"),
+		TEXT("/RpgGaspLocomotion/Animations/Stand/Run/M_Neutral_Run_Start_RR_Rfoot"),
+		TEXT("/RpgGaspLocomotion/Animations/Stand/Run/M_Neutral_Run_Stop_B_Lfoot"),
+		TEXT("/RpgGaspLocomotion/Animations/Stand/Run/M_Neutral_Run_Stop_B_Rfoot"),
+		TEXT("/RpgGaspLocomotion/Animations/Stand/Run/M_Neutral_Run_Stop_F_Lfoot"),
+		TEXT("/RpgGaspLocomotion/Animations/Stand/Run/M_Neutral_Run_Stop_F_Rfoot"),
+	};
+
+	static const TCHAR* const RunPivotAnimationPackages[] = {
+		TEXT("/RpgGaspLocomotion/Animations/Stand/Run/M_Neutral_Run_Pivot_B_F_Lfoot"),
+		TEXT("/RpgGaspLocomotion/Animations/Stand/Run/M_Neutral_Run_Pivot_B_F_Rfoot"),
+		TEXT("/RpgGaspLocomotion/Animations/Stand/Run/M_Neutral_Run_Pivot_BL_FR_Lfoot"),
+		TEXT("/RpgGaspLocomotion/Animations/Stand/Run/M_Neutral_Run_Pivot_BL_FR_Rfoot"),
+		TEXT("/RpgGaspLocomotion/Animations/Stand/Run/M_Neutral_Run_Pivot_BR_FL_Lfoot"),
+		TEXT("/RpgGaspLocomotion/Animations/Stand/Run/M_Neutral_Run_Pivot_BR_FL_Rfoot"),
+		TEXT("/RpgGaspLocomotion/Animations/Stand/Run/M_Neutral_Run_Pivot_F_B_Lfoot"),
+		TEXT("/RpgGaspLocomotion/Animations/Stand/Run/M_Neutral_Run_Pivot_F_B_Rfoot"),
+		TEXT("/RpgGaspLocomotion/Animations/Stand/Run/M_Neutral_Run_Pivot_FL_BR_Lfoot"),
+		TEXT("/RpgGaspLocomotion/Animations/Stand/Run/M_Neutral_Run_Pivot_FL_BR_Rfoot"),
+		TEXT("/RpgGaspLocomotion/Animations/Stand/Run/M_Neutral_Run_Pivot_FR_BL_Lfoot"),
+		TEXT("/RpgGaspLocomotion/Animations/Stand/Run/M_Neutral_Run_Pivot_FR_BL_Rfoot"),
+		TEXT("/RpgGaspLocomotion/Animations/Stand/Run/M_Neutral_Run_Pivot_LL_RL_Lfoot"),
+		TEXT("/RpgGaspLocomotion/Animations/Stand/Run/M_Neutral_Run_Pivot_LL_RL_Rfoot"),
+		TEXT("/RpgGaspLocomotion/Animations/Stand/Run/M_Neutral_Run_Pivot_LR_RR_Lfoot"),
+		TEXT("/RpgGaspLocomotion/Animations/Stand/Run/M_Neutral_Run_Pivot_LR_RR_Rfoot"),
+		TEXT("/RpgGaspLocomotion/Animations/Stand/Run/M_Neutral_Run_Pivot_RL_LL_Lfoot"),
+		TEXT("/RpgGaspLocomotion/Animations/Stand/Run/M_Neutral_Run_Pivot_RL_LL_Rfoot"),
+		TEXT("/RpgGaspLocomotion/Animations/Stand/Run/M_Neutral_Run_Pivot_RR_LR_Lfoot"),
+		TEXT("/RpgGaspLocomotion/Animations/Stand/Run/M_Neutral_Run_Pivot_RR_LR_Rfoot"),
+	};
+
+	static const TCHAR* const SparseRunLoopPackages[] = {
+		TEXT("/RpgGaspLocomotion/Animations/Stand/Run/M_Neutral_Run_Loop_B"),
+		TEXT("/RpgGaspLocomotion/Animations/Stand/Run/M_Neutral_Run_Loop_BL"),
+		TEXT("/RpgGaspLocomotion/Animations/Stand/Run/M_Neutral_Run_Loop_BR"),
+		TEXT("/RpgGaspLocomotion/Animations/Stand/Run/M_Neutral_Run_Loop_F"),
+		TEXT("/RpgGaspLocomotion/Animations/Stand/Run/M_Neutral_Run_Loop_FL"),
+		TEXT("/RpgGaspLocomotion/Animations/Stand/Run/M_Neutral_Run_Loop_FR"),
+		TEXT("/RpgGaspLocomotion/Animations/Stand/Run/M_Neutral_Run_Loop_LL"),
+		TEXT("/RpgGaspLocomotion/Animations/Stand/Run/M_Neutral_Run_Loop_RL"),
+		TEXT("/RpgGaspLocomotion/Animations/Stand/Run/M_Neutral_Run_Shuffle_LR_to_LL_Lfoot"),
+		TEXT("/RpgGaspLocomotion/Animations/Stand/Run/M_Neutral_Run_Shuffle_RR_to_RL_Lfoot"),
+		TEXT("/RpgGaspLocomotion/Animations/Stand/Run/M_Neutral_Transition_Walk_to_Run_Lfoot"),
+	};
+
+	static const TCHAR* const SparseRunPivotPackages[] = {
+		TEXT("/RpgGaspLocomotion/Animations/Stand/Run/M_Neutral_Run_Box_B_LL_Rfoot"),
+		TEXT("/RpgGaspLocomotion/Animations/Stand/Run/M_Neutral_Run_Box_B_RL_Lfoot"),
+		TEXT("/RpgGaspLocomotion/Animations/Stand/Run/M_Neutral_Run_Box_F_LL_Rfoot"),
+		TEXT("/RpgGaspLocomotion/Animations/Stand/Run/M_Neutral_Run_Box_F_RL_Lfoot"),
+		TEXT("/RpgGaspLocomotion/Animations/Stand/Run/M_Neutral_Run_Box_LL_B_Lfoot"),
+		TEXT("/RpgGaspLocomotion/Animations/Stand/Run/M_Neutral_Run_Box_LL_F_Lfoot"),
+		TEXT("/RpgGaspLocomotion/Animations/Stand/Run/M_Neutral_Run_Box_RL_B_Rfoot"),
+		TEXT("/RpgGaspLocomotion/Animations/Stand/Run/M_Neutral_Run_Box_RL_F_Rfoot"),
+		TEXT("/RpgGaspLocomotion/Animations/Stand/Run/M_Neutral_Run_Pivot_B_F_Lfoot"),
+		TEXT("/RpgGaspLocomotion/Animations/Stand/Run/M_Neutral_Run_Pivot_B_F_Rfoot"),
+		TEXT("/RpgGaspLocomotion/Animations/Stand/Run/M_Neutral_Run_Pivot_BL_FR_Lfoot"),
+		TEXT("/RpgGaspLocomotion/Animations/Stand/Run/M_Neutral_Run_Pivot_BL_FR_Rfoot"),
+		TEXT("/RpgGaspLocomotion/Animations/Stand/Run/M_Neutral_Run_Pivot_BR_FL_Lfoot"),
+		TEXT("/RpgGaspLocomotion/Animations/Stand/Run/M_Neutral_Run_Pivot_BR_FL_Rfoot"),
+		TEXT("/RpgGaspLocomotion/Animations/Stand/Run/M_Neutral_Run_Pivot_F_B_Lfoot"),
+		TEXT("/RpgGaspLocomotion/Animations/Stand/Run/M_Neutral_Run_Pivot_F_B_Rfoot"),
+		TEXT("/RpgGaspLocomotion/Animations/Stand/Run/M_Neutral_Run_Pivot_FL_BR_Lfoot"),
+		TEXT("/RpgGaspLocomotion/Animations/Stand/Run/M_Neutral_Run_Pivot_FL_BR_Rfoot"),
+		TEXT("/RpgGaspLocomotion/Animations/Stand/Run/M_Neutral_Run_Pivot_FR_BL_Lfoot"),
+		TEXT("/RpgGaspLocomotion/Animations/Stand/Run/M_Neutral_Run_Pivot_FR_BL_Rfoot"),
+		TEXT("/RpgGaspLocomotion/Animations/Stand/Run/M_Neutral_Run_Pivot_LL_RL_Lfoot"),
+		TEXT("/RpgGaspLocomotion/Animations/Stand/Run/M_Neutral_Run_Pivot_LR_RR_Lfoot"),
+		TEXT("/RpgGaspLocomotion/Animations/Stand/Run/M_Neutral_Run_Pivot_LR_RR_Rfoot"),
+		TEXT("/RpgGaspLocomotion/Animations/Stand/Run/M_Neutral_Run_Pivot_RL_LL_Lfoot"),
+		TEXT("/RpgGaspLocomotion/Animations/Stand/Run/M_Neutral_Run_Pivot_RL_LL_Rfoot"),
+		TEXT("/RpgGaspLocomotion/Animations/Stand/Run/M_Neutral_Run_Pivot_RR_LR_Rfoot"),
+		TEXT("/RpgGaspLocomotion/Animations/Stand/Run/M_Neutral_Run_Turn_L_090_Lfoot"),
+		TEXT("/RpgGaspLocomotion/Animations/Stand/Run/M_Neutral_Run_Turn_L_090_Rfoot"),
+		TEXT("/RpgGaspLocomotion/Animations/Stand/Run/M_Neutral_Run_Turn_L_180_Lfoot"),
+		TEXT("/RpgGaspLocomotion/Animations/Stand/Run/M_Neutral_Run_Turn_L_180_Rfoot"),
+		TEXT("/RpgGaspLocomotion/Animations/Stand/Run/M_Neutral_Run_Turn_R_090_Lfoot"),
+		TEXT("/RpgGaspLocomotion/Animations/Stand/Run/M_Neutral_Run_Turn_R_090_Rfoot"),
+		TEXT("/RpgGaspLocomotion/Animations/Stand/Run/M_Neutral_Run_Turn_R_180_Lfoot"),
+		TEXT("/RpgGaspLocomotion/Animations/Stand/Run/M_Neutral_Run_Turn_R_180_Rfoot"),
+	};
+
+	static const TCHAR* const SparseRunStartPackages[] = {
+		TEXT("/RpgGaspLocomotion/Animations/Stand/Run/M_Neutral_Run_Reface_Start_B_L_090"),
+		TEXT("/RpgGaspLocomotion/Animations/Stand/Run/M_Neutral_Run_Reface_Start_B_L_180"),
+		TEXT("/RpgGaspLocomotion/Animations/Stand/Run/M_Neutral_Run_Reface_Start_B_R_090"),
+		TEXT("/RpgGaspLocomotion/Animations/Stand/Run/M_Neutral_Run_Reface_Start_B_R_180"),
+		TEXT("/RpgGaspLocomotion/Animations/Stand/Run/M_Neutral_Run_Reface_Start_F_L_090"),
+		TEXT("/RpgGaspLocomotion/Animations/Stand/Run/M_Neutral_Run_Reface_Start_F_L_180"),
+		TEXT("/RpgGaspLocomotion/Animations/Stand/Run/M_Neutral_Run_Reface_Start_F_R_090"),
+		TEXT("/RpgGaspLocomotion/Animations/Stand/Run/M_Neutral_Run_Reface_Start_F_R_180"),
+		TEXT("/RpgGaspLocomotion/Animations/Stand/Run/M_Neutral_Run_Start_B_Lfoot"),
+		TEXT("/RpgGaspLocomotion/Animations/Stand/Run/M_Neutral_Run_Start_B_Rfoot"),
+		TEXT("/RpgGaspLocomotion/Animations/Stand/Run/M_Neutral_Run_Start_F_Lfoot"),
+		TEXT("/RpgGaspLocomotion/Animations/Stand/Run/M_Neutral_Run_Start_F_Rfoot"),
+		TEXT("/RpgGaspLocomotion/Animations/Stand/Run/M_Neutral_Run_Start_LL_Lfoot"),
+		TEXT("/RpgGaspLocomotion/Animations/Stand/Run/M_Neutral_Run_Start_RL_Rfoot"),
+	};
+
+	static const TCHAR* const SparseRunStopPackages[] = {
+		TEXT("/RpgGaspLocomotion/Animations/Stand/Run/M_Neutral_Run_Stop_B_Lfoot"),
+		TEXT("/RpgGaspLocomotion/Animations/Stand/Run/M_Neutral_Run_Stop_B_Rfoot"),
+		TEXT("/RpgGaspLocomotion/Animations/Stand/Run/M_Neutral_Run_Stop_F_Lfoot"),
+		TEXT("/RpgGaspLocomotion/Animations/Stand/Run/M_Neutral_Run_Stop_F_Rfoot"),
+		TEXT("/RpgGaspLocomotion/Animations/Stand/Run/M_Neutral_Run_Stop_LL_Lfoot"),
+		TEXT("/RpgGaspLocomotion/Animations/Stand/Run/M_Neutral_Run_Stop_LL_Rfoot"),
+		TEXT("/RpgGaspLocomotion/Animations/Stand/Run/M_Neutral_Run_Stop_LR_Lfoot"),
+		TEXT("/RpgGaspLocomotion/Animations/Stand/Run/M_Neutral_Run_Stop_LR_Rfoot"),
+		TEXT("/RpgGaspLocomotion/Animations/Stand/Run/M_Neutral_Run_Stop_RL_Lfoot"),
+		TEXT("/RpgGaspLocomotion/Animations/Stand/Run/M_Neutral_Run_Stop_RL_Rfoot"),
+		TEXT("/RpgGaspLocomotion/Animations/Stand/Run/M_Neutral_Run_Stop_RR_Lfoot"),
+		TEXT("/RpgGaspLocomotion/Animations/Stand/Run/M_Neutral_Run_Stop_RR_Rfoot"),
 	};
 
 	static const TCHAR* const AirborneJumpAnimationPackages[] = {
@@ -171,7 +313,7 @@ bool FRpgGaspLocomotionContentContractTest::RunTest(const FString& Parameters)
 		Assets,
 		true,
 		true);
-	TestEqual(TEXT("The curated plugin contains exactly 120 assets"), Assets.Num(), 120);
+	TestEqual(TEXT("The curated plugin contains exactly 176 assets"), Assets.Num(), 176);
 
 	TMap<FString, int32> ClassCounts;
 	int32 AnimationCount = 0;
@@ -290,19 +432,19 @@ bool FRpgGaspLocomotionContentContractTest::RunTest(const FString& Parameters)
 		}
 	}
 
-	TestEqual(TEXT("Exactly 107 curated AnimSequences are present"), AnimationCount, 107);
+	TestEqual(TEXT("Exactly 159 curated AnimSequences are present"), AnimationCount, 159);
 	TestEqual(TEXT("Exactly one crouch idle sequence is present"), CrouchIdleCount, 1);
 	TestEqual(TEXT("Exactly two crouch transition sequences are present"), CrouchTransitionCount, 2);
 	TestEqual(TEXT("Exactly eight crouch walk sequences are present"), CrouchWalkCount, 8);
 	TestEqual(TEXT("Exactly nine stand-idle-folder sequences are present"), StandIdleCount, 9);
 	TestEqual(TEXT("Exactly eight turn-in-place sequences are present"), TurnInPlaceSequenceCount, 8);
-	TestEqual(TEXT("Exactly 25 stand-run sequences are present"), StandRunCount, 25);
+	TestEqual(TEXT("Exactly 77 stand-run sequences are present"), StandRunCount, 77);
 	TestEqual(TEXT("Exactly 18 jump start/off sequences are present"), JumpStartCount, 18);
 	TestEqual(TEXT("Exactly one neutral airborne fall loop is present"), JumpAirborneCount, 1);
 	TestEqual(TEXT("Exactly four bounded stand-light landing sequences are present"), JumpLandCount, 4);
 	TestEqual(TEXT("Exactly one ChooserTable is present"), ClassCounts.FindRef(TEXT("ChooserTable")), 1);
 	TestEqual(TEXT("Exactly one MirrorDataTable is present"), ClassCounts.FindRef(TEXT("MirrorDataTable")), 1);
-	TestEqual(TEXT("Exactly eight PoseSearchDatabases are present"), ClassCounts.FindRef(TEXT("PoseSearchDatabase")), 8);
+	TestEqual(TEXT("Exactly twelve PoseSearchDatabases are present"), ClassCounts.FindRef(TEXT("PoseSearchDatabase")), 12);
 	TestEqual(TEXT("Exactly one PoseSearchNormalizationSet is present"), ClassCounts.FindRef(TEXT("PoseSearchNormalizationSet")), 1);
 	TestEqual(TEXT("Exactly two PoseSearchSchemas are present"), ClassCounts.FindRef(TEXT("PoseSearchSchema")), 2);
 
@@ -311,7 +453,10 @@ bool FRpgGaspLocomotionContentContractTest::RunTest(const FString& Parameters)
 		{ TEXT("/RpgGaspLocomotion/MotionMatching/Databases/PSD_Rpg_Stand_TurnInPlace"), TEXT("/RpgGaspLocomotion/Animations/Stand/Idle/"), TEXT("/RpgGaspLocomotion/MotionMatching/Schemas/PSS_Rpg_Locomotion"), 8, 8 },
 		{ TEXT("/RpgGaspLocomotion/MotionMatching/Databases/PSD_Rpg_Crouch"), TEXT("/RpgGaspLocomotion/Animations/Crouch/"), TEXT("/RpgGaspLocomotion/MotionMatching/Schemas/PSS_Rpg_Locomotion"), 10, 10 },
 		{ TEXT("/RpgGaspLocomotion/MotionMatching/Databases/PSD_Rpg_Stand_Walk"), TEXT("/RpgGaspLocomotion/Animations/Stand/Walk/"), TEXT("/RpgGaspLocomotion/MotionMatching/Schemas/PSS_Rpg_Locomotion"), 29, 29 },
-		{ TEXT("/RpgGaspLocomotion/MotionMatching/Databases/PSD_Rpg_Stand_Run"), TEXT("/RpgGaspLocomotion/Animations/Stand/Run/"), TEXT("/RpgGaspLocomotion/MotionMatching/Schemas/PSS_Rpg_Locomotion"), 25, 25 },
+		{ TEXT("/RpgGaspLocomotion/MotionMatching/Databases/PSD_Rpg_Stand_Run_Loops"), TEXT("/RpgGaspLocomotion/Animations/Stand/Run/"), TEXT("/RpgGaspLocomotion/MotionMatching/Schemas/PSS_Rpg_Locomotion"), 11, 11 },
+		{ TEXT("/RpgGaspLocomotion/MotionMatching/Databases/PSD_Rpg_Stand_Run_Pivots"), TEXT("/RpgGaspLocomotion/Animations/Stand/Run/"), TEXT("/RpgGaspLocomotion/MotionMatching/Schemas/PSS_Rpg_Locomotion"), 34, 34 },
+		{ TEXT("/RpgGaspLocomotion/MotionMatching/Databases/PSD_Rpg_Stand_Run_Starts"), TEXT("/RpgGaspLocomotion/Animations/Stand/Run/"), TEXT("/RpgGaspLocomotion/MotionMatching/Schemas/PSS_Rpg_Locomotion"), 14, 14 },
+		{ TEXT("/RpgGaspLocomotion/MotionMatching/Databases/PSD_Rpg_Stand_Run_Stops"), TEXT("/RpgGaspLocomotion/Animations/Stand/Run/"), TEXT("/RpgGaspLocomotion/MotionMatching/Schemas/PSS_Rpg_Locomotion"), 12, 12 },
 		{ TEXT("/RpgGaspLocomotion/MotionMatching/Databases/PSD_Rpg_Stand_Sprint"), TEXT("/RpgGaspLocomotion/Animations/Stand/Sprint/"), TEXT("/RpgGaspLocomotion/MotionMatching/Schemas/PSS_Rpg_Locomotion"), 10, 10 },
 		{ JumpDatabasePackage, TEXT("/RpgGaspLocomotion/Animations/Jump/"), JumpSchemaPackage, 19, 19 },
 		{ LandingDatabasePackage, JumpLandRoot, JumpSchemaPackage, 4, 4 },
@@ -478,21 +623,170 @@ bool FRpgGaspLocomotionContentContractTest::RunTest(const FString& Parameters)
 	if (TestNotNull(TEXT("The stand-run database loads for directional-core validation"), StandRunDatabase))
 	{
 		TSet<FString> RunPackages;
+		int32 RunPivotCount = 0;
 		for (int32 Index = 0; Index < StandRunDatabase->GetNumAnimationAssets(); ++Index)
 		{
-			if (const UObject* AnimationAsset = StandRunDatabase->GetAnimationAsset(Index))
+			const FPoseSearchDatabaseAnimationAsset* DatabaseEntry =
+				StandRunDatabase->GetDatabaseAnimationAsset(Index);
+			if (!TestNotNull(
+				*FString::Printf(TEXT("Stand-run database entry %d resolves"), Index),
+				DatabaseEntry))
 			{
-				RunPackages.Add(AnimationAsset->GetOutermost()->GetName());
+				continue;
+			}
+
+			if (const UObject* AnimationAsset = DatabaseEntry->GetAnimationAsset())
+			{
+				const FString PackageName = AnimationAsset->GetOutermost()->GetName();
+				RunPackages.Add(PackageName);
+				if (PackageName.Contains(TEXT("_Run_Pivot_")))
+				{
+					++RunPivotCount;
+					TestTrue(
+						*FString::Printf(TEXT("%s remains enabled"), *PackageName),
+						DatabaseEntry->IsEnabled());
+					TestEqual(
+						*FString::Printf(TEXT("%s remains unmirrored-only"), *PackageName),
+						DatabaseEntry->GetMirrorOption(),
+						EPoseSearchMirrorOption::UnmirroredOnly);
+					TestFalse(
+						*FString::Printf(TEXT("%s remains reselectable"), *PackageName),
+						DatabaseEntry->IsDisableReselection());
+					const FFloatInterval SamplingRange = DatabaseEntry->GetSamplingRange();
+					TestTrue(
+						*FString::Printf(TEXT("%s keeps full-range sampling"), *PackageName),
+						FMath::IsNearlyZero(SamplingRange.Min) && FMath::IsNearlyZero(SamplingRange.Max));
+					TestFalse(
+						*FString::Printf(TEXT("%s has no external BranchIn synchronization"), *PackageName),
+						DatabaseEntry->IsSynchronizedWithExternalDependency());
+					TestFalse(
+						*FString::Printf(TEXT("%s remains a non-looping pivot"), *PackageName),
+						DatabaseEntry->IsLooping());
+				}
 			}
 		}
-		TestEqual(TEXT("The stand-run database has no duplicate entries"), RunPackages.Num(), 25);
-		for (const TCHAR* ExpectedPackage : AddedDirectionalRunPackages)
+		TestEqual(TEXT("The stand-run database has no duplicate entries"), RunPackages.Num(), 41);
+		TestEqual(TEXT("The stand-run database contains the complete neutral pivot set"), RunPivotCount, 20);
+		for (const TCHAR* ExpectedPackage : RunAnimationPackages)
 		{
 			TestTrue(
 				*FString::Printf(TEXT("The stand-run database contains %s"), ExpectedPackage),
 				RunPackages.Contains(FString(ExpectedPackage)));
 		}
+		for (const TCHAR* ExpectedPackage : RunPivotAnimationPackages)
+		{
+			TestTrue(
+				*FString::Printf(TEXT("The stand-run database contains %s"), ExpectedPackage),
+				RunPackages.Contains(FString(ExpectedPackage)));
+		}
+
+		const UE::PoseSearch::EAsyncBuildIndexResult RunBuildResult =
+			UE::PoseSearch::FAsyncPoseSearchDatabasesManagement::RequestAsyncBuildIndex(
+				StandRunDatabase,
+				UE::PoseSearch::ERequestAsyncBuildFlag::NewRequest |
+					UE::PoseSearch::ERequestAsyncBuildFlag::WaitForCompletion);
+		if (TestTrue(
+			TEXT("The expanded stand-run search index finishes building"),
+			RunBuildResult == UE::PoseSearch::EAsyncBuildIndexResult::Success))
+		{
+			const UE::PoseSearch::FSearchIndex& SearchIndex = StandRunDatabase->GetSearchIndex();
+			TestEqual(TEXT("The stand-run index contains all 41 animation entries"), SearchIndex.Assets.Num(), 41);
+			TestTrue(TEXT("The expanded stand-run database produces searchable poses"), SearchIndex.GetNumPoses() > 0);
+		}
 	}
+
+	const auto ValidateSparseRunDatabase = [this](
+		const TCHAR* ObjectPath,
+		TConstArrayView<const TCHAR*> ExpectedPackages)
+	{
+		UPoseSearchDatabase* Database = LoadObject<UPoseSearchDatabase>(nullptr, ObjectPath);
+		if (!TestNotNull(
+				*FString::Printf(TEXT("The source-exact Sparse run database %s loads"), ObjectPath),
+				Database))
+		{
+			return;
+		}
+
+		TSet<FString> ExpectedPackageSet;
+		for (const TCHAR* ExpectedPackage : ExpectedPackages)
+		{
+			ExpectedPackageSet.Add(ExpectedPackage);
+		}
+		TestEqual(
+			*FString::Printf(TEXT("%s has no duplicate expected packages"), ObjectPath),
+			ExpectedPackageSet.Num(),
+			ExpectedPackages.Num());
+
+		TSet<FString> ActualPackages;
+		for (int32 Index = 0; Index < Database->GetNumAnimationAssets(); ++Index)
+		{
+			const FPoseSearchDatabaseAnimationAsset* Entry =
+				Database->GetDatabaseAnimationAsset(Index);
+			if (!TestNotNull(
+					*FString::Printf(TEXT("%s entry %d resolves"), ObjectPath, Index),
+					Entry))
+			{
+				continue;
+			}
+
+			TestFalse(
+				*FString::Printf(TEXT("%s entry %d has no stale BranchIn dependency"), ObjectPath, Index),
+				Entry->IsSynchronizedWithExternalDependency());
+			const UObject* AnimationAsset = Entry->GetAnimationAsset();
+			if (TestNotNull(
+					*FString::Printf(TEXT("%s entry %d resolves its target animation"), ObjectPath, Index),
+					AnimationAsset))
+			{
+				const FString PackageName = AnimationAsset->GetOutermost()->GetName();
+				TestTrue(
+					*FString::Printf(TEXT("%s is an exact physical Sparse member"), *PackageName),
+					ExpectedPackageSet.Contains(PackageName));
+				ActualPackages.Add(PackageName);
+			}
+		}
+
+		TestEqual(
+			*FString::Printf(TEXT("%s has the exact source membership without duplicates"), ObjectPath),
+			ActualPackages.Num(),
+			ExpectedPackageSet.Num());
+		for (const FString& ExpectedPackage : ExpectedPackageSet)
+		{
+			TestTrue(
+				*FString::Printf(TEXT("%s contains %s"), ObjectPath, *ExpectedPackage),
+				ActualPackages.Contains(ExpectedPackage));
+		}
+
+		const UE::PoseSearch::EAsyncBuildIndexResult BuildResult =
+			UE::PoseSearch::FAsyncPoseSearchDatabasesManagement::RequestAsyncBuildIndex(
+				Database,
+				UE::PoseSearch::ERequestAsyncBuildFlag::NewRequest |
+					UE::PoseSearch::ERequestAsyncBuildFlag::WaitForCompletion);
+		if (TestTrue(
+				*FString::Printf(TEXT("%s builds a searchable index"), ObjectPath),
+				BuildResult == UE::PoseSearch::EAsyncBuildIndexResult::Success))
+		{
+			TestEqual(
+				*FString::Printf(TEXT("%s indexes every authored entry"), ObjectPath),
+				Database->GetSearchIndex().Assets.Num(),
+				Database->GetNumAnimationAssets());
+			TestTrue(
+				*FString::Printf(TEXT("%s contains searchable poses"), ObjectPath),
+				Database->GetSearchIndex().GetNumPoses() > 0);
+		}
+	};
+
+	ValidateSparseRunDatabase(
+		TEXT("/RpgGaspLocomotion/MotionMatching/Databases/PSD_Rpg_Stand_Run_Loops.PSD_Rpg_Stand_Run_Loops"),
+		MakeArrayView(SparseRunLoopPackages));
+	ValidateSparseRunDatabase(
+		TEXT("/RpgGaspLocomotion/MotionMatching/Databases/PSD_Rpg_Stand_Run_Pivots.PSD_Rpg_Stand_Run_Pivots"),
+		MakeArrayView(SparseRunPivotPackages));
+	ValidateSparseRunDatabase(
+		TEXT("/RpgGaspLocomotion/MotionMatching/Databases/PSD_Rpg_Stand_Run_Starts.PSD_Rpg_Stand_Run_Starts"),
+		MakeArrayView(SparseRunStartPackages));
+	ValidateSparseRunDatabase(
+		TEXT("/RpgGaspLocomotion/MotionMatching/Databases/PSD_Rpg_Stand_Run_Stops.PSD_Rpg_Stand_Run_Stops"),
+		MakeArrayView(SparseRunStopPackages));
 
 	auto ValidateJumpDatabase = [this](
 		const TCHAR* ObjectPath,
@@ -650,6 +944,58 @@ bool FRpgGaspLocomotionContentContractTest::RunTest(const FString& Parameters)
 		MakeArrayView(LandingAnimationPackages),
 		true);
 
+	UPoseSearchSchema* GroundSchema = LoadObject<UPoseSearchSchema>(
+		nullptr,
+		TEXT("/RpgGaspLocomotion/MotionMatching/Schemas/PSS_Rpg_Locomotion.PSS_Rpg_Locomotion"));
+	if (TestNotNull(TEXT("The source-close local ground schema loads"), GroundSchema))
+	{
+		TestEqual(TEXT("The ground schema samples at 30 Hz"), GroundSchema->SampleRate, 30);
+		TestEqual(
+			TEXT("The ground schema uses GASP common-schema normalization"),
+			GroundSchema->DataPreprocessor,
+			EPoseSearchDataPreprocessor::NormalizeWithCommonSchema);
+		TestEqual(TEXT("The ground schema finalizes to GASP cardinality 30"), GroundSchema->SchemaCardinality, 30);
+		TestEqual(TEXT("The ground schema owns one roled skeleton"), GroundSchema->GetRoledSkeletons().Num(), 1);
+		if (GroundSchema->GetRoledSkeletons().Num() == 1)
+		{
+			const FPoseSearchRoledSkeleton& RoledSkeleton = GroundSchema->GetRoledSkeletons()[0];
+			TestEqual(TEXT("The ground schema uses the authoritative skeleton"), GetPathNameSafe(RoledSkeleton.Skeleton), FString(TargetSkeletonPath));
+			TestEqual(TEXT("The ground schema uses the local mirror table"), GetPathNameSafe(RoledSkeleton.MirrorDataTable.Get()), FString(MirrorTablePath));
+			TestTrue(TEXT("PSS_Default requires no PoseHistory curves"), RoledSkeleton.RequiredCurves.IsEmpty());
+			TestEqual(TEXT("PSS_Default resolves root, feet, and pelvis"), RoledSkeleton.BoneReferences.Num(), 4);
+			if (RoledSkeleton.BoneReferences.Num() == 4)
+			{
+				TestEqual(TEXT("Ground bone 0 is root"), RoledSkeleton.BoneReferences[0].BoneName, FName(TEXT("root")));
+				TestEqual(TEXT("Ground bone 1 is foot_l"), RoledSkeleton.BoneReferences[1].BoneName, FName(TEXT("foot_l")));
+				TestEqual(TEXT("Ground bone 2 is foot_r"), RoledSkeleton.BoneReferences[2].BoneName, FName(TEXT("foot_r")));
+				TestEqual(TEXT("Ground bone 3 is pelvis"), RoledSkeleton.BoneReferences[3].BoneName, FName(TEXT("pelvis")));
+			}
+		}
+
+		const TConstArrayView<TObjectPtr<UPoseSearchFeatureChannel>> Channels = GroundSchema->GetChannels();
+		TestEqual(TEXT("PSS_Default has exactly Trajectory + Group"), Channels.Num(), 2);
+		const UPoseSearchFeatureChannel_Trajectory* Trajectory =
+			Channels.IsValidIndex(0) ? Cast<UPoseSearchFeatureChannel_Trajectory>(Channels[0]) : nullptr;
+		const UPoseSearchFeatureChannel_Group* Group =
+			Channels.IsValidIndex(1) ? Cast<UPoseSearchFeatureChannel_Group>(Channels[1]) : nullptr;
+		TestNotNull(TEXT("The first ground channel is Trajectory"), Trajectory);
+		if (TestNotNull(TEXT("The second ground channel is Group"), Group))
+		{
+			bool bHasPosition = false;
+			bool bHasVelocity = false;
+			bool bHasHeading = false;
+			for (const UPoseSearchFeatureChannel* SubChannel : Group->SubChannels)
+			{
+				bHasPosition |= Cast<UPoseSearchFeatureChannel_Position>(SubChannel) != nullptr;
+				bHasVelocity |= Cast<UPoseSearchFeatureChannel_Velocity>(SubChannel) != nullptr;
+				bHasHeading |= Cast<UPoseSearchFeatureChannel_Heading>(SubChannel) != nullptr;
+			}
+			TestTrue(TEXT("The ground group retains its Position subchannel"), bHasPosition);
+			TestTrue(TEXT("The ground group retains its Velocity subchannel"), bHasVelocity);
+			TestTrue(TEXT("The ground group retains its Heading subchannel"), bHasHeading);
+		}
+	}
+
 	UPoseSearchSchema* JumpSchema = LoadObject<UPoseSearchSchema>(
 		nullptr,
 		TEXT("/RpgGaspLocomotion/MotionMatching/Schemas/PSS_Rpg_Jump.PSS_Rpg_Jump"));
@@ -797,7 +1143,10 @@ bool FRpgGaspLocomotionContentContractTest::RunTest(const FString& Parameters)
 		TurnInPlaceDatabasePackage,
 		TEXT("/RpgGaspLocomotion/MotionMatching/Databases/PSD_Rpg_Crouch"),
 		TEXT("/RpgGaspLocomotion/MotionMatching/Databases/PSD_Rpg_Stand_Walk"),
-		TEXT("/RpgGaspLocomotion/MotionMatching/Databases/PSD_Rpg_Stand_Run"),
+		TEXT("/RpgGaspLocomotion/MotionMatching/Databases/PSD_Rpg_Stand_Run_Loops"),
+		TEXT("/RpgGaspLocomotion/MotionMatching/Databases/PSD_Rpg_Stand_Run_Pivots"),
+		TEXT("/RpgGaspLocomotion/MotionMatching/Databases/PSD_Rpg_Stand_Run_Starts"),
+		TEXT("/RpgGaspLocomotion/MotionMatching/Databases/PSD_Rpg_Stand_Run_Stops"),
 		TEXT("/RpgGaspLocomotion/MotionMatching/Databases/PSD_Rpg_Stand_Sprint"),
 		JumpDatabasePackage,
 		LandingDatabasePackage,
@@ -809,13 +1158,19 @@ bool FRpgGaspLocomotionContentContractTest::RunTest(const FString& Parameters)
 		TEXT("/RpgGaspLocomotion/MotionMatching/Databases/PSD_Rpg_Stand_Sprint"),
 		JumpDatabasePackage,
 	};
+	static const TCHAR* const RuntimeSplitRunDatabasePackages[] = {
+		TEXT("/RpgGaspLocomotion/MotionMatching/Databases/PSD_Rpg_Stand_Run_Loops"),
+		TEXT("/RpgGaspLocomotion/MotionMatching/Databases/PSD_Rpg_Stand_Run_Pivots"),
+		TEXT("/RpgGaspLocomotion/MotionMatching/Databases/PSD_Rpg_Stand_Run_Starts"),
+		TEXT("/RpgGaspLocomotion/MotionMatching/Databases/PSD_Rpg_Stand_Run_Stops"),
+	};
 	UPoseSearchNormalizationSet* NormalizationSet = LoadObject<UPoseSearchNormalizationSet>(
 		nullptr,
 		TEXT("/RpgGaspLocomotion/MotionMatching/NormalizationSets/PSN_Rpg_Locomotion.PSN_Rpg_Locomotion"));
 	if (TestNotNull(TEXT("The shared normalization set loads"), NormalizationSet))
 	{
 		TestEqual(
-			TEXT("The shared normalization set contains exactly eight databases"),
+			TEXT("The shared normalization set contains exactly eleven databases"),
 			NormalizationSet->Databases.Num(),
 			static_cast<int32>(UE_ARRAY_COUNT(DatabasePackages)));
 	}
@@ -825,6 +1180,15 @@ bool FRpgGaspLocomotionContentContractTest::RunTest(const FString& Parameters)
 	{
 		TestTrue(
 			*FString::Printf(TEXT("The chooser references %s"), DatabasePackage),
+			AssetRegistry.ContainsDependency(
+				FName(ChooserPackage),
+				FName(DatabasePackage),
+				UE::AssetRegistry::EDependencyCategory::Package));
+	}
+	for (const TCHAR* DatabasePackage : RuntimeSplitRunDatabasePackages)
+	{
+		TestFalse(
+			*FString::Printf(TEXT("The archival chooser does not pretend to own runtime split database %s"), DatabasePackage),
 			AssetRegistry.ContainsDependency(
 				FName(ChooserPackage),
 				FName(DatabasePackage),
@@ -845,6 +1209,12 @@ bool FRpgGaspLocomotionContentContractTest::RunTest(const FString& Parameters)
 				FName(DatabasePackage),
 				UE::AssetRegistry::EDependencyCategory::Package));
 	}
+	TestFalse(
+		TEXT("The shared normalization set excludes the legacy aggregate Run database"),
+		AssetRegistry.ContainsDependency(
+			FName(NormalizationPackage),
+			FName(TEXT("/RpgGaspLocomotion/MotionMatching/Databases/PSD_Rpg_Stand_Run")),
+			UE::AssetRegistry::EDependencyCategory::Package));
 
 	UDataTable* MirrorTable = LoadObject<UDataTable>(
 		nullptr,

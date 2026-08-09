@@ -8,7 +8,7 @@
 
 /** Editor representation of the project-local, snapshot-only RPG Foot Placement node. */
 UCLASS(meta = (Keywords = "RPG Foot Placement IK Thread Safe"))
-class SURVIVALRPGEDITOR_API UAnimGraphNode_RpgFootPlacement : public UAnimGraphNode_SkeletalControlBase
+class SURVIVALRPGANIMGRAPH_API UAnimGraphNode_RpgFootPlacement : public UAnimGraphNode_SkeletalControlBase
 {
 	GENERATED_BODY()
 
