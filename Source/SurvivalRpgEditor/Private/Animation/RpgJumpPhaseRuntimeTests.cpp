@@ -273,6 +273,90 @@ bool FRpgJumpPhaseRuntimeTest::RunTest(const FString& Parameters)
 		MakeUniqueObjectName(LandPackage, UAnimSequence::StaticClass(), TEXT("RpgJumpRuntimeTest_Land")));
 	TestFalse(TEXT("An unlatched landing is not an airborne database sample"), AnimInstance->IsAirborneJumpAsset(UnlatchedLandClip));
 
+	UPackage* BackwardStartPackage = CreatePackage(
+		TEXT("/RpgGaspLocomotion/Animations/Jump/Starts/M_Neutral_Jump_B_Start_Rfoot"));
+	UAnimSequence* BackwardStart = NewObject<UAnimSequence>(
+		BackwardStartPackage,
+		MakeUniqueObjectName(BackwardStartPackage, UAnimSequence::StaticClass(), TEXT("M_Neutral_Jump_B_Start_Rfoot")));
+	BackwardStart->bLoop = false;
+	TestTrue(TEXT("Only a B Jump Start enters the bounded backward hold"), AnimInstance->IsBackwardJumpStartAsset(BackwardStart));
+	TestFalse(TEXT("A lateral Jump Start never enters the backward hold"), AnimInstance->IsBackwardJumpStartAsset(JumpStart));
+	TestTrue(TEXT("The looping Airborne clip is a continuing fall"), AnimInstance->IsLoopingAirborneFallAsset(FallClip));
+	TestFalse(TEXT("A non-looping Jump Start is not a continuing fall"), AnimInstance->IsLoopingAirborneFallAsset(BackwardStart));
+	TestTrue(
+		TEXT("A descending fall continues after the bounded backward-start path"),
+		AnimInstance->ShouldHoldLoopingAirborneFallPlayback(
+			ERpgJumpPhase::Airborne, true, -100.0f, true));
+	TestFalse(
+		TEXT("A side or forward fall remains searchable when no backward hold was armed"),
+		AnimInstance->ShouldHoldLoopingAirborneFallPlayback(
+			ERpgJumpPhase::Airborne, false, -100.0f, true));
+	TestFalse(
+		TEXT("An upward relaunch releases a previously held fall loop"),
+		AnimInstance->ShouldHoldLoopingAirborneFallPlayback(
+			ERpgJumpPhase::Airborne, true, 100.0f, true));
+
+	TestTrue(
+		TEXT("A backward start remains continuing playback after its 0.565 second transition block"),
+		AnimInstance->ShouldHoldBackwardJumpStartPlayback(
+			ERpgJumpPhase::Airborne, true, 0.67f, 1.97f, 1.0f, 0.67f));
+	TestFalse(
+		TEXT("The hold releases one authored blend interval before clip end"),
+		AnimInstance->ShouldHoldBackwardJumpStartPlayback(
+			ERpgJumpPhase::Airborne, true, 1.78f, 1.97f, 1.0f, 1.0f));
+	TestFalse(
+		TEXT("The hold watchdog releases a genuine long fall"),
+		AnimInstance->ShouldHoldBackwardJumpStartPlayback(
+			ERpgJumpPhase::Airborne, true, 1.0f, 1.97f, 1.0f, 1.25f));
+	TestTrue(
+		TEXT("The near-end release threshold is play-rate aware"),
+		AnimInstance->ShouldHoldBackwardJumpStartPlayback(
+			ERpgJumpPhase::Airborne, true, 1.75f, 1.97f, 0.5f, 1.0f));
+	TestFalse(
+		TEXT("Grounded playback cannot retain an airborne start"),
+		AnimInstance->ShouldHoldBackwardJumpStartPlayback(
+			ERpgJumpPhase::Grounded, true, 0.67f, 1.97f, 1.0f, 0.67f));
+	TestFalse(
+		TEXT("An unexpected active asset fails open"),
+		AnimInstance->ShouldHoldBackwardJumpStartPlayback(
+			ERpgJumpPhase::Airborne, false, 0.67f, 1.97f, 1.0f, 0.67f));
+	TestFalse(
+		TEXT("Invalid playback timing fails open"),
+		AnimInstance->ShouldHoldBackwardJumpStartPlayback(
+			ERpgJumpPhase::Airborne, true, 0.0f, 0.0f, 1.0f, 0.0f));
+
+	AnimInstance->BeginAirbornePhase(true);
+	TestFalse(
+		TEXT("The outgoing grounded sample does not consume the initial airborne selection"),
+		AnimInstance->UpdateBackwardJumpStartHold(GroundStart, 0.1f, 1.0f, 1.0f, 0.01f));
+	TestFalse(
+		TEXT("The outgoing sample leaves the first airborne result unresolved"),
+		AnimInstance->bBackwardJumpStartHoldOpportunityConsumed);
+	TestTrue(
+		TEXT("The first backward result is held before its database can reselect"),
+		AnimInstance->UpdateBackwardJumpStartHold(BackwardStart, 0.02f, 1.97f, 1.0f, 0.01f));
+	TestEqual(
+		TEXT("The exact backward result owns the hold"),
+		AnimInstance->BackwardJumpStartHeldAsset.Get(),
+		static_cast<UAnimationAsset*>(BackwardStart));
+	AnimInstance->BackwardJumpStartHoldElapsed = 1.24f;
+	TestFalse(
+		TEXT("The bounded watchdog releases the held start"),
+		AnimInstance->UpdateBackwardJumpStartHold(BackwardStart, 1.0f, 1.97f, 1.0f, 0.02f));
+	TestNull(TEXT("A released hold clears its asset"), AnimInstance->BackwardJumpStartHeldAsset.Get());
+	TestFalse(
+		TEXT("A later backward result cannot re-arm within the same jump"),
+		AnimInstance->UpdateBackwardJumpStartHold(BackwardStart, 0.02f, 1.97f, 1.0f, 0.01f));
+	AnimInstance->BeginAirbornePhase(true);
+	TestTrue(
+		TEXT("A new airborne phase may hold a new backward result"),
+		AnimInstance->UpdateBackwardJumpStartHold(BackwardStart, 0.02f, 1.97f, 1.0f, 0.01f));
+	AnimInstance->BeginAirbornePhase(false);
+	TestFalse(
+		TEXT("A descending ledge fall never arms the backward takeoff hold"),
+		AnimInstance->UpdateBackwardJumpStartHold(BackwardStart, 0.02f, 1.97f, 1.0f, 0.01f));
+	AnimInstance->ResetJumpPhaseRuntime();
+
 	const URpgAnimInstance::FGaspProceduralGates GroundGates =
 		AnimInstance->ResolveGaspProceduralGates(true, 1.0f, false, false, false, 0.5f, true, true);
 	TestEqual(TEXT("Ground movement enables Reset Root"), GroundGates.ResetRootAlpha, 1.0f);

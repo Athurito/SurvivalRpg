@@ -13,6 +13,11 @@
 			]
 		},
 		{
+			"Name": "SurvivalRpgAnimGraph",
+			"Type": "UncookedOnly",
+			"LoadingPhase": "PreDefault"
+		},
+		{
 			"Name": "SurvivalRpgEditor",
 			"Type": "Editor",
 			"LoadingPhase": "Default"
