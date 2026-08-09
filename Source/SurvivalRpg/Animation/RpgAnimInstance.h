@@ -10,6 +10,7 @@
 #include "AnimationWarpingTypes.h"
 #include "GameplayEffectTypes.h"
 #include "PoseSearch/PoseSearchTrajectoryLibrary.h"
+#include "RpgFootPlacementTypes.h"
 #include "SurvivalRpg/Core/Character/RpgCharacterRotationMode.h"
 #include "RpgAnimInstance.generated.h"
 
@@ -71,6 +72,24 @@ struct SURVIVALRPG_API FRpgAnimInstanceProxy : public FAnimInstanceProxy
 {
 	GENERATED_BODY()
 
+	/** Persistent value-only state owned and touched exclusively by game-thread PreUpdate. */
+	struct FFootPlacementLegState
+	{
+		FTransform LockedFootTransformWorld = FTransform::Identity;
+		FVector LockedGroundPointWorld = FVector::ZeroVector;
+		FVector LockedGroundNormalWorld = FVector::UpVector;
+		FVector RetainedGroundPointWorld = FVector::ZeroVector;
+		FVector RetainedGroundNormalWorld = FVector::UpVector;
+		FTransform PreviousHitComponentTransform = FTransform::Identity;
+		uint32 HitComponentId = 0;
+		float TraceMissElapsed = 0.0f;
+		float Weight = 0.0f;
+		bool bLocked = false;
+		bool bWantedToPlantLastFrame = false;
+		bool bHasRetainedGroundTarget = false;
+		bool bHasPreviousHitComponentTransform = false;
+	};
+
 	FRpgAnimInstanceProxy() = default;
 	explicit FRpgAnimInstanceProxy(UAnimInstance* InAnimInstance)
 		: FAnimInstanceProxy(InAnimInstance)
@@ -101,6 +120,8 @@ struct SURVIVALRPG_API FRpgAnimInstanceProxy : public FAnimInstanceProxy
 	ERpgCharacterRotationMode RotationMode = ERpgCharacterRotationMode::Free;
 	FPoseSearchTrajectoryData TrajectoryGenerationData;
 	FTransformTrajectory TransformTrajectory;
+	FRpgFootPlacementSnapshot FootPlacementSnapshot;
+	float FootPlacementAlpha = 0.0f;
 	bool bHasVelocity = false;
 	bool bHasAcceleration = false;
 	bool bHasGroundedMoveIntent = false;
@@ -121,6 +142,15 @@ struct SURVIVALRPG_API FRpgAnimInstanceProxy : public FAnimInstanceProxy
 	FVector PreviousActorLocation = FVector::ZeroVector;
 	ERpgCharacterRotationMode PreviousRotationMode = ERpgCharacterRotationMode::Free;
 	bool bHasPreviousOwnerSnapshot = false;
+
+	// Previous foot-placement data is maintained and consumed only by game-thread PreUpdate.
+	FFootPlacementLegState FootPlacementLegStates[2];
+	FTransform PreviousFootPlacementComponentTransform = FTransform::Identity;
+	FTransform PreviousMovementBaseTransform = FTransform::Identity;
+	uint32 PreviousMovementBaseId = 0;
+	bool bHasPreviousFootPlacementComponentTransform = false;
+	bool bHasPreviousMovementBaseTransform = false;
+	bool bPreviousFootPlacementSourceEligible = false;
 };
 
 
@@ -217,6 +247,13 @@ protected:
 	UPROPERTY(EditDefaultsOnly, Category = "GameplayTags")
 	FGameplayTagBlueprintPropertyMap GameplayTagPropertyMap;
 
+	/**
+	 * Static game-thread trace and plant-lock policy for the project-local Foot Placement node.
+	 * Disabled defaults keep non-GASP AnimBPs free of trace cost; runtime results are cosmetic only.
+	 */
+	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Rpg|Animation|Foot Placement")
+	FRpgFootPlacementSettings FootPlacementSettings;
+
 	/** Mirrored `Gameplay.MovementStopped` state; game-thread authored and snapshotted before parallel evaluation. */
 	UPROPERTY(BlueprintReadOnly, Transient, Category = "Rpg|Animation|Gameplay Tags")
 	bool bGameplayMovementStopped = false;
@@ -306,6 +343,14 @@ protected:
 	/** Distance from the capsule bottom to the ground in centimeters; -1 means no valid owner snapshot. */
 	UPROPERTY(BlueprintReadOnly, Transient, Category = "Rpg|Animation|Locomotion", Meta = (Units = "cm"))
 	float GroundDistance = -1.0f;
+
+	/** Pointer-free game-thread trace/lock snapshot consumed by the parallel Foot Placement node. */
+	UPROPERTY(BlueprintReadOnly, Transient, Category = "Rpg|Animation|Foot Placement")
+	FRpgFootPlacementSnapshot FootPlacementSnapshot;
+
+	/** Global cosmetic alpha shared by project-local Foot Placement and downstream Leg IK. */
+	UPROPERTY(BlueprintReadOnly, Transient, Category = "Rpg|Animation|Foot Placement", meta = (ClampMin = "0.0", ClampMax = "1.0"))
+	float FootPlacementAlpha = 0.0f;
 
 	/** Controller aim yaw relative to the character in degrees, normalized to [-180, 180]. */
 	UPROPERTY(BlueprintReadOnly, Transient, Category = "Rpg|Animation|Aim", Meta = (Units = "deg"))

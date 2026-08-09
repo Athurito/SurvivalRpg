@@ -11,6 +11,7 @@ public class SurvivalRpg : ModuleRules
 		PublicDependencyModuleNames.AddRange(new string[]
 		{
 			"AIModule",
+			"AnimGraphRuntime",
 			"AnimationWarpingRuntime",
 			"AssetRegistry",
 			"Core",

@@ -196,6 +196,12 @@ bool FRpgGaspLocomotionContentContractTest::RunTest(const FString& Parameters)
 		TestTrue(
 			*FString::Printf(TEXT("%s keeps normalized root-motion scale"), *Animation->GetName()),
 			Animation->bUseNormalizedRootMotionScale);
+		TestTrue(
+			*FString::Printf(TEXT("%s supplies the left Foot Placement contact curve"), *Animation->GetName()),
+			Animation->HasCurveData(TEXT("contact_l"), false));
+		TestTrue(
+			*FString::Printf(TEXT("%s supplies the right Foot Placement contact curve"), *Animation->GetName()),
+			Animation->HasCurveData(TEXT("contact_r"), false));
 
 		const TArray<UAssetUserData*>* AssetUserData = Animation->GetAssetUserDataArray();
 		TestTrue(
