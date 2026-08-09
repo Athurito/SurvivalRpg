@@ -152,9 +152,135 @@ namespace RpgFootPlacement
 		return Result;
 	}
 
+	FTransform DeriveIKBallTransform(
+		const FTransform& FKFootTransform,
+		const FTransform& BallTransform,
+		const FTransform& IKFootTransform)
+	{
+		const FTransform FootToBall = BallTransform.GetRelativeTransform(FKFootTransform);
+		return FootToBall * IKFootTransform;
+	}
+
+	FTransform PivotFootAroundBall(
+		const FTransform& IKFootTransform,
+		const FTransform& IKBallTransform,
+		const FTransform& LockedFootTransform)
+	{
+		const FTransform FootToBall = IKBallTransform.GetRelativeTransform(IKFootTransform);
+		const FTransform BallToFoot = IKFootTransform.GetRelativeTransform(IKBallTransform);
+		const FTransform LockedBallTransform = FootToBall * LockedFootTransform;
+		const FTransform PinnedBallTransform(
+			IKBallTransform.GetRotation(),
+			LockedBallTransform.GetLocation(),
+			IKBallTransform.GetScale3D());
+		return BallToFoot * PinnedBallTransform;
+	}
+
+	float CalculateGeometryWeight(
+		float BallDistanceToPlane,
+		float PlanarLockDrift,
+		bool bLocked,
+		float PlantDistanceThreshold,
+		float UnplantRadius)
+	{
+		auto CalculateBoundWeight = [](float Value, float Bound)
+		{
+			const float SafeBound = FMath::Max(Bound, 0.0f);
+			const float AbsoluteValue = FMath::Abs(Value);
+			if (SafeBound <= UE_SMALL_NUMBER)
+			{
+				return AbsoluteValue <= UE_SMALL_NUMBER ? 1.0f : 0.0f;
+			}
+			if (AbsoluteValue >= SafeBound)
+			{
+				return 0.0f;
+			}
+
+			const float FadeAlpha = FMath::Clamp(
+				(AbsoluteValue - SafeBound * 0.5f) / (SafeBound * 0.5f),
+				0.0f,
+				1.0f);
+			const float SmoothFadeAlpha = FadeAlpha * FadeAlpha * (3.0f - 2.0f * FadeAlpha);
+			return 1.0f - SmoothFadeAlpha;
+		};
+
+		const float PlaneWeight = CalculateBoundWeight(BallDistanceToPlane, PlantDistanceThreshold);
+		const float LockWeight = bLocked
+			? CalculateBoundWeight(PlanarLockDrift, UnplantRadius)
+			: 1.0f;
+		return PlaneWeight * LockWeight;
+	}
+
+	float CalculateEffectivePlacementWeight(
+		bool bHasWalkableGround,
+		float SnapshotWeight,
+		float GeometryWeight)
+	{
+		if (!bHasWalkableGround)
+		{
+			return 0.0f;
+		}
+
+		return FMath::Clamp(SnapshotWeight, 0.0f, 1.0f) *
+			FMath::Clamp(GeometryWeight, 0.0f, 1.0f);
+	}
+
+	FTransform ResolveIKFootTarget(
+		const FTransform& FKFootTransform,
+		const FTransform& ProceduralTargetTransform,
+		float EffectivePlacementWeight)
+	{
+		const float SafeWeight = FMath::Clamp(EffectivePlacementWeight, 0.0f, 1.0f);
+		if (SafeWeight <= UE_KINDA_SMALL_NUMBER)
+		{
+			return FKFootTransform;
+		}
+		if (SafeWeight >= 1.0f - UE_KINDA_SMALL_NUMBER)
+		{
+			return ProceduralTargetTransform;
+		}
+
+		FTransform Result = FKFootTransform;
+		Result.SetLocation(FMath::Lerp(
+			FKFootTransform.GetLocation(),
+			ProceduralTargetTransform.GetLocation(),
+			SafeWeight));
+		Result.SetRotation(FQuat::Slerp(
+			FKFootTransform.GetRotation(),
+			ProceduralTargetTransform.GetRotation(),
+			SafeWeight).GetNormalized());
+		Result.SetScale3D(FMath::Lerp(
+			FKFootTransform.GetScale3D(),
+			ProceduralTargetTransform.GetScale3D(),
+			SafeWeight));
+		return Result;
+	}
+
 	float CalculatePelvisOffset(float LeftOffset, float RightOffset, float MaxDownwardOffset)
 	{
 		const float RequestedOffset = FMath::Min3(LeftOffset, RightOffset, 0.0f);
 		return FMath::Clamp(RequestedOffset, -FMath::Max(MaxDownwardOffset, 0.0f), 0.0f);
+	}
+
+	float SmoothPelvisOffset(
+		float CurrentOffset,
+		float TargetOffset,
+		float DeltaSeconds,
+		float HalfLifeSeconds,
+		float MaxSpeed)
+	{
+		const float SafeDeltaSeconds = FMath::Max(DeltaSeconds, 0.0f);
+		if (SafeDeltaSeconds <= 0.0f)
+		{
+			return CurrentOffset;
+		}
+
+		const float InterpolationAlpha = CalculateHalfLifeAlpha(SafeDeltaSeconds, HalfLifeSeconds);
+		const float InterpolatedOffset = FMath::Lerp(CurrentOffset, TargetOffset, InterpolationAlpha);
+		const float MaxStep = FMath::Max(MaxSpeed, 0.0f) * SafeDeltaSeconds;
+		return CurrentOffset + FMath::Clamp(
+			InterpolatedOffset - CurrentOffset,
+			-MaxStep,
+			MaxStep);
 	}
 }

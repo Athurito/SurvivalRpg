@@ -13,6 +13,10 @@ struct SURVIVALRPG_API FRpgFootPlacementNodeLegDefinition
 {
 	GENERATED_BODY()
 
+	/** Same-frame FK ankle used as the neutral Leg IK target and with BallBone for foot geometry. */
+	UPROPERTY(EditAnywhere, Category = "Settings")
+	FBoneReference FKFootBone;
+
 	/** IK target bone adjusted before the downstream Leg IK solve. */
 	UPROPERTY(EditAnywhere, Category = "Settings")
 	FBoneReference IKFootBone;
@@ -56,11 +60,28 @@ struct SURVIVALRPG_API FAnimNode_RpgFootPlacement : public FAnimNode_SkeletalCon
 	UPROPERTY(EditAnywhere, Category = "Settings", meta = (ClampMin = "0.0", ClampMax = "90.0", Units = "deg"))
 	float MaxFootRotation = 60.0f;
 
+	/** Same-frame authored FK-ball distance at which raw-pose placement reaches zero weight, in centimeters. */
+	UPROPERTY(EditAnywhere, Category = "Settings", meta = (ClampMin = "0.0", Units = "cm"))
+	float PlantDistanceThreshold = 10.0f;
+
+	/** Same-frame planar live-to-locked target drift at which a plant reaches zero weight, in centimeters. */
+	UPROPERTY(EditAnywhere, Category = "Settings", meta = (ClampMin = "0.0", Units = "cm"))
+	float UnplantRadius = 20.0f;
+
 	/** Maximum downward pelvis correction, in centimeters. */
 	UPROPERTY(EditAnywhere, Category = "Settings", meta = (ClampMin = "0.0", Units = "cm"))
 	float MaxPelvisOffset = 50.0f;
 
+	/** Frame-rate-independent half-life used to smooth cosmetic pelvis correction, in seconds. */
+	UPROPERTY(EditAnywhere, Category = "Settings", meta = (ClampMin = "0.001", Units = "s"))
+	float PelvisBlendHalfLife = 0.08f;
+
+	/** Hard speed limit for cosmetic pelvis correction, in centimeters per second. */
+	UPROPERTY(EditAnywhere, Category = "Settings", meta = (ClampMin = "0.0", Units = "cm/s"))
+	float MaxPelvisSpeed = 120.0f;
+
 	virtual void GatherDebugData(FNodeDebugData& DebugData) override;
+	virtual void UpdateInternal(const FAnimationUpdateContext& Context) override;
 	virtual void EvaluateSkeletalControl_AnyThread(
 		FComponentSpacePoseContext& Output,
 		TArray<FBoneTransform>& OutBoneTransforms) override;
@@ -68,4 +89,13 @@ struct SURVIVALRPG_API FAnimNode_RpgFootPlacement : public FAnimNode_SkeletalCon
 
 private:
 	virtual void InitializeBoneReferences(const FBoneContainer& RequiredBones) override;
+
+	/** Update time accumulated until the next evaluation, matching stateful skeletal-control semantics. */
+	float CachedDeltaTime = 0.0f;
+
+	/** Persistent value-only pelvis state owned by this proxy's worker-thread node instance. */
+	float SmoothedPelvisOffset = 0.0f;
+
+	/** Detects updates skipped while the graph alpha is zero so persistent state can reset safely. */
+	FGraphTraversalCounter UpdateCounter;
 };

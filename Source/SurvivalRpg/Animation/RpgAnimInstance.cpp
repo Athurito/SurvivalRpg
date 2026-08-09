@@ -191,7 +191,8 @@ void UpdateFootPlacementLeg(
 	float DeltaSeconds)
 {
 	check(IsInGameThread());
-	if (Definition.IKFootBone.IsNone() || Definition.BallBone.IsNone() ||
+	if (Definition.FKFootBone.IsNone() || Definition.IKFootBone.IsNone() || Definition.BallBone.IsNone() ||
+		!MeshComponent.DoesSocketExist(Definition.FKFootBone) ||
 		!MeshComponent.DoesSocketExist(Definition.IKFootBone) ||
 		!MeshComponent.DoesSocketExist(Definition.BallBone))
 	{
@@ -199,10 +200,10 @@ void UpdateFootPlacementLeg(
 		return;
 	}
 
-	const FTransform IKFootTransformWorld = MeshComponent.GetSocketTransform(
-		Definition.IKFootBone,
+	const FTransform FKFootTransformWorld = MeshComponent.GetSocketTransform(
+		Definition.FKFootBone,
 		RTS_World);
-	const FTransform BallTransformWorld = MeshComponent.GetSocketTransform(
+	const FTransform AuthoredBallTransformWorld = MeshComponent.GetSocketTransform(
 		Definition.BallBone,
 		RTS_World);
 	float ContactCurveValue = 0.0f;
@@ -219,7 +220,7 @@ void UpdateFootPlacementLeg(
 		Character,
 		MovementComponent,
 		Settings,
-		BallTransformWorld.GetLocation());
+		AuthoredBallTransformWorld.GetLocation());
 	const bool bWantsToPlantNow = bHasSpeedCurve && RpgFootPlacement::ShouldPlantFoot(
 		TraceResult.bWalkable,
 		FootSpeed,
@@ -228,7 +229,7 @@ void UpdateFootPlacementLeg(
 	bool bReleasedThisFrame = false;
 	float AnchorDistance = MAX_flt;
 	float GroundNormalDelta = 180.0f;
-	FTransform CurrentAlignedFoot = IKFootTransformWorld;
+	FTransform CurrentAlignedFoot = FKFootTransformWorld;
 
 	if (TraceResult.bWalkable)
 	{
@@ -251,8 +252,8 @@ void UpdateFootPlacementLeg(
 		}
 
 		CurrentAlignedFoot = RpgFootPlacement::AlignFootToGroundPlane(
-			IKFootTransformWorld,
-			BallTransformWorld,
+			FKFootTransformWorld,
+			AuthoredBallTransformWorld,
 			TraceResult.GroundPointWorld,
 			TraceResult.GroundNormalWorld,
 			ComponentToWorld.GetUnitAxis(EAxis::Z),

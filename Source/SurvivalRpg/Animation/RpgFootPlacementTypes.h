@@ -83,19 +83,19 @@ struct SURVIVALRPG_API FRpgFootPlacementSettings
 
 	/** Maximum distance between a planted target and the animated foot before the lock releases, in centimeters. */
 	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Rpg|Animation|Foot Placement", meta = (ClampMin = "0.0", Units = "cm"))
-	float UnplantRadius = 35.0f;
+	float UnplantRadius = 20.0f;
 
 	/** Fraction of UnplantRadius below which an already-requested contact may replant. */
 	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Rpg|Animation|Foot Placement", meta = (ClampMin = "0.0", ClampMax = "1.0"))
-	float ReplantRadiusRatio = 0.35f;
+	float ReplantRadiusRatio = 0.2f;
 
 	/** Maximum ground-normal change retained by a plant lock, in degrees. */
 	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Rpg|Animation|Foot Placement", meta = (ClampMin = "0.0", ClampMax = "90.0", Units = "deg"))
-	float UnplantAngle = 45.0f;
+	float UnplantAngle = 60.0f;
 
 	/** Fraction of UnplantAngle below which an already-requested contact may replant. */
 	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Rpg|Animation|Foot Placement", meta = (ClampMin = "0.0", ClampMax = "1.0"))
-	float ReplantAngleRatio = 0.5f;
+	float ReplantAngleRatio = 0.2f;
 
 	/** Maximum slope-alignment rotation authored into a locked IK target, in degrees. */
 	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Rpg|Animation|Foot Placement", meta = (ClampMin = "0.0", ClampMax = "90.0", Units = "deg"))
@@ -294,6 +294,62 @@ namespace RpgFootPlacement
 		float MaxTranslationOffset,
 		float MaxRotationDegrees);
 
+	/**
+	 * Reconstructs the ball transform that belongs to an IK-foot target.
+	 *
+	 * The authored FK-foot-to-ball relationship is transferred onto the IK foot, matching
+	 * Epic's Foot Placement input contract without assuming that FK and IK bones overlap.
+	 */
+	SURVIVALRPG_API FTransform DeriveIKBallTransform(
+		const FTransform& FKFootTransform,
+		const FTransform& BallTransform,
+		const FTransform& IKFootTransform);
+
+	/** Rebuilds a planted IK foot while retaining the authored pivot around its current ball. */
+	SURVIVALRPG_API FTransform PivotFootAroundBall(
+		const FTransform& IKFootTransform,
+		const FTransform& IKBallTransform,
+		const FTransform& LockedFootTransform);
+
+	/**
+	 * Returns the stateless raw-pose gate shared by IK output and pelvis contribution.
+	 *
+	 * Ball distance is always enforced. Planar drift is additionally enforced for a lock.
+	 * Each bound stays fully weighted through its inner half and smoothly reaches zero at
+	 * the configured GASP limit; values at or beyond that limit are guaranteed to return zero.
+	 */
+	SURVIVALRPG_API float CalculateGeometryWeight(
+		float BallDistanceToPlane,
+		float PlanarLockDrift,
+		bool bLocked,
+		float PlantDistanceThreshold,
+		float UnplantRadius);
+
+	/** Combines per-leg availability, snapshot weight, and raw-pose geometry into a safe [0, 1] weight. */
+	SURVIVALRPG_API float CalculateEffectivePlacementWeight(
+		bool bHasWalkableGround,
+		float SnapshotWeight,
+		float GeometryWeight);
+
+	/**
+	 * Resolves the IK target consumed by stock Leg IK from the same-frame FK ankle baseline.
+	 *
+	 * A zero placement weight returns the FK ankle exactly, so a downstream global-alpha Leg IK
+	 * can never pin a swing leg to an unrelated or static authored IK track.
+	 */
+	SURVIVALRPG_API FTransform ResolveIKFootTarget(
+		const FTransform& FKFootTransform,
+		const FTransform& ProceduralTargetTransform,
+		float EffectivePlacementWeight);
+
 	/** Chooses the bounded downward pelvis correction required by the sampled feet. */
 	SURVIVALRPG_API float CalculatePelvisOffset(float LeftOffset, float RightOffset, float MaxDownwardOffset);
+
+	/** Smooths a pelvis target with a frame-rate-independent half-life and a hard speed bound. */
+	SURVIVALRPG_API float SmoothPelvisOffset(
+		float CurrentOffset,
+		float TargetOffset,
+		float DeltaSeconds,
+		float HalfLifeSeconds,
+		float MaxSpeed);
 }

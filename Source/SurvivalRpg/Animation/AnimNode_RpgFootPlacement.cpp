@@ -15,12 +15,32 @@ void FAnimNode_RpgFootPlacement::GatherDebugData(FNodeDebugData& DebugData)
 {
 	FString DebugLine = DebugData.GetNodeName(this);
 	DebugLine += FString::Printf(
-		TEXT("(Valid=%s, Left=%.2f, Right=%.2f)"),
+		TEXT("(Valid=%s, Left=%.2f, Right=%.2f, Pelvis=%.2f)"),
 		Snapshot.bValid ? TEXT("true") : TEXT("false"),
 		Snapshot.LeftFoot.Weight,
-		Snapshot.RightFoot.Weight);
+		Snapshot.RightFoot.Weight,
+		SmoothedPelvisOffset);
 	DebugData.AddDebugItem(DebugLine);
 	ComponentPose.GatherDebugData(DebugData);
+}
+
+void FAnimNode_RpgFootPlacement::UpdateInternal(const FAnimationUpdateContext& Context)
+{
+	FAnimNode_SkeletalControlBase::UpdateInternal(Context);
+	const FGraphTraversalCounter& ProxyUpdateCounter = Context.AnimInstanceProxy->GetUpdateCounter();
+	const bool bSkippedRelevantUpdate =
+		UpdateCounter.HasEverBeenUpdated() &&
+		!UpdateCounter.WasSynchronizedCounter(ProxyUpdateCounter);
+	UpdateCounter.SynchronizeWith(ProxyUpdateCounter);
+
+	if (bSkippedRelevantUpdate || !Snapshot.bValid || !Snapshot.bGrounded || Snapshot.bReset)
+	{
+		CachedDeltaTime = 0.0f;
+		SmoothedPelvisOffset = 0.0f;
+		return;
+	}
+
+	CachedDeltaTime += FMath::Max(Context.GetDeltaTime(), 0.0f);
 }
 
 void FAnimNode_RpgFootPlacement::EvaluateSkeletalControl_AnyThread(
@@ -33,6 +53,8 @@ void FAnimNode_RpgFootPlacement::EvaluateSkeletalControl_AnyThread(
 
 	if (!Snapshot.bValid || !Snapshot.bGrounded || Snapshot.bReset || LegsDefinition.Num() != 2)
 	{
+		CachedDeltaTime = 0.0f;
+		SmoothedPelvisOffset = 0.0f;
 		return;
 	}
 
@@ -48,79 +70,130 @@ void FAnimNode_RpgFootPlacement::EvaluateSkeletalControl_AnyThread(
 	{
 		const FRpgFootPlacementNodeLegDefinition& LegDefinition = LegsDefinition[LegIndex];
 		const FRpgFootPlacementLegSnapshot& LegSnapshot = *LegSnapshots[LegIndex];
-		const float LegWeight = FMath::Clamp(LegSnapshot.Weight, 0.0f, 1.0f);
-		if (!LegSnapshot.bHasWalkableGround || LegWeight <= UE_KINDA_SMALL_NUMBER)
-		{
-			continue;
-		}
-
 		const FCompactPoseBoneIndex IKFootIndex = LegDefinition.IKFootBone.GetCompactPoseIndex(BoneContainer);
+		const FCompactPoseBoneIndex FKFootIndex = LegDefinition.FKFootBone.GetCompactPoseIndex(BoneContainer);
 		const FCompactPoseBoneIndex BallIndex = LegDefinition.BallBone.GetCompactPoseIndex(BoneContainer);
-		if (!IKFootIndex.IsValid() || !BallIndex.IsValid())
+		if (!IKFootIndex.IsValid() || !FKFootIndex.IsValid() || !BallIndex.IsValid())
 		{
 			continue;
 		}
 
-		const FTransform CurrentIKTransformCS = Output.Pose.GetComponentSpaceTransform(IKFootIndex);
-		const FTransform BallTransformCS = Output.Pose.GetComponentSpaceTransform(BallIndex);
-		const FTransform CurrentIKTransformWorld = CurrentIKTransformCS * Snapshot.ComponentToWorld;
-		const FTransform BallTransformWorld = BallTransformCS * Snapshot.ComponentToWorld;
-		FTransform TargetTransformWorld = LegSnapshot.bLocked
-			? LegSnapshot.LockedFootTransformWorld
-			: RpgFootPlacement::AlignFootToGroundPlane(
-				CurrentIKTransformWorld,
-				BallTransformWorld,
+		const FTransform FKFootTransformCS = Output.Pose.GetComponentSpaceTransform(FKFootIndex);
+		const FTransform AuthoredBallTransformCS = Output.Pose.GetComponentSpaceTransform(BallIndex);
+		const FTransform FKFootTransformWorld = FKFootTransformCS * Snapshot.ComponentToWorld;
+		const FTransform AuthoredBallTransformWorld =
+			AuthoredBallTransformCS * Snapshot.ComponentToWorld;
+		FTransform ProceduralTargetWorld = FKFootTransformWorld;
+		float GeometryWeight = 0.0f;
+
+		const float LegWeight = FMath::Clamp(LegSnapshot.Weight, 0.0f, 1.0f);
+		if (LegSnapshot.bHasWalkableGround && LegWeight > UE_KINDA_SMALL_NUMBER)
+		{
+			const FTransform LiveAlignedTargetWorld = RpgFootPlacement::AlignFootToGroundPlane(
+				FKFootTransformWorld,
+				AuthoredBallTransformWorld,
 				LegSnapshot.GroundPointWorld,
 				LegSnapshot.GroundNormalWorld,
 				ComponentUpWorld,
 				MaxFootTranslation,
 				MaxFootRotation);
-		const FVector ClampedTargetOffset = (
-			TargetTransformWorld.GetLocation() - CurrentIKTransformWorld.GetLocation())
-			.GetClampedToMaxSize(FMath::Max(MaxFootTranslation, 0.0f));
-		TargetTransformWorld.SetLocation(CurrentIKTransformWorld.GetLocation() + ClampedTargetOffset);
-		const float TargetRotationDegrees = FMath::RadiansToDegrees(
-			CurrentIKTransformWorld.GetRotation().AngularDistance(TargetTransformWorld.GetRotation()));
-		if (TargetRotationDegrees > MaxFootRotation && TargetRotationDegrees > UE_SMALL_NUMBER)
-		{
-			TargetTransformWorld.SetRotation(FQuat::Slerp(
-				CurrentIKTransformWorld.GetRotation(),
-				TargetTransformWorld.GetRotation(),
-				MaxFootRotation / TargetRotationDegrees).GetNormalized());
+			const FTransform UnalignedTargetWorld = LegSnapshot.bLocked
+				? RpgFootPlacement::PivotFootAroundBall(
+					FKFootTransformWorld,
+					AuthoredBallTransformWorld,
+					LegSnapshot.LockedFootTransformWorld)
+				: FKFootTransformWorld;
+			const FTransform TargetBallTransformWorld = RpgFootPlacement::DeriveIKBallTransform(
+				FKFootTransformWorld,
+				AuthoredBallTransformWorld,
+				UnalignedTargetWorld);
+			ProceduralTargetWorld = RpgFootPlacement::AlignFootToGroundPlane(
+				UnalignedTargetWorld,
+				TargetBallTransformWorld,
+				LegSnapshot.GroundPointWorld,
+				LegSnapshot.GroundNormalWorld,
+				ComponentUpWorld,
+				MaxFootTranslation,
+				MaxFootRotation);
+			const FVector SafeGroundNormal = LegSnapshot.GroundNormalWorld.GetSafeNormal(
+				UE_SMALL_NUMBER,
+				FVector::UpVector);
+			const float BallDistanceToPlane = FVector::DotProduct(
+				AuthoredBallTransformWorld.GetLocation() - LegSnapshot.GroundPointWorld,
+				SafeGroundNormal);
+			const float PlanarLockDrift = (
+				LiveAlignedTargetWorld.GetLocation() - ProceduralTargetWorld.GetLocation()).Size2D();
+			GeometryWeight = RpgFootPlacement::CalculateGeometryWeight(
+				BallDistanceToPlane,
+				PlanarLockDrift,
+				LegSnapshot.bLocked,
+				PlantDistanceThreshold,
+				UnplantRadius);
 		}
 
-		const FTransform TargetTransformCS = TargetTransformWorld.GetRelativeTransform(Snapshot.ComponentToWorld);
-		FTransform BlendedTransformCS = CurrentIKTransformCS;
-		BlendedTransformCS.SetLocation(FMath::Lerp(
-			CurrentIKTransformCS.GetLocation(),
-			TargetTransformCS.GetLocation(),
-			LegWeight));
-		BlendedTransformCS.SetRotation(FQuat::Slerp(
-			CurrentIKTransformCS.GetRotation(),
-			TargetTransformCS.GetRotation(),
-			LegWeight).GetNormalized());
+		const float EffectiveLegWeight = RpgFootPlacement::CalculateEffectivePlacementWeight(
+			LegSnapshot.bHasWalkableGround,
+			LegWeight,
+			GeometryWeight);
+		if (EffectiveLegWeight > UE_KINDA_SMALL_NUMBER)
+		{
+			const FVector ClampedTargetOffset = (
+				ProceduralTargetWorld.GetLocation() - FKFootTransformWorld.GetLocation())
+				.GetClampedToMaxSize(FMath::Max(MaxFootTranslation, 0.0f));
+			ProceduralTargetWorld.SetLocation(FKFootTransformWorld.GetLocation() + ClampedTargetOffset);
+			const float TargetRotationDegrees = FMath::RadiansToDegrees(
+				FKFootTransformWorld.GetRotation().AngularDistance(ProceduralTargetWorld.GetRotation()));
+			if (TargetRotationDegrees > MaxFootRotation && TargetRotationDegrees > UE_SMALL_NUMBER)
+			{
+				ProceduralTargetWorld.SetRotation(FQuat::Slerp(
+					FKFootTransformWorld.GetRotation(),
+					ProceduralTargetWorld.GetRotation(),
+					MaxFootRotation / TargetRotationDegrees).GetNormalized());
+			}
 
-		FootOffsets[LegIndex] = FVector::DotProduct(
-			TargetTransformWorld.GetLocation() - CurrentIKTransformWorld.GetLocation(),
-			ComponentUpWorld) * LegWeight;
-		OutBoneTransforms.Emplace(IKFootIndex, BlendedTransformCS);
+			FootOffsets[LegIndex] = FVector::DotProduct(
+				ProceduralTargetWorld.GetLocation() - FKFootTransformWorld.GetLocation(),
+				ComponentUpWorld) * EffectiveLegWeight;
+		}
+
+		const FTransform ProceduralTargetCS =
+			ProceduralTargetWorld.GetRelativeTransform(Snapshot.ComponentToWorld);
+		// Stock Leg IK has one global alpha and always solves both legs. Writing the current
+		// FK ankle here prevents a static or unsuitable authored IK track from pinning a swing leg.
+		OutBoneTransforms.Emplace(
+			IKFootIndex,
+			RpgFootPlacement::ResolveIKFootTarget(
+				FKFootTransformCS,
+				ProceduralTargetCS,
+				EffectiveLegWeight));
 	}
 
 	const FCompactPoseBoneIndex PelvisIndex = PelvisBone.GetCompactPoseIndex(BoneContainer);
 	if (PelvisIndex.IsValid())
 	{
-		const float PelvisOffset = RpgFootPlacement::CalculatePelvisOffset(
+		const float TargetPelvisOffset = RpgFootPlacement::CalculatePelvisOffset(
 			FootOffsets[0],
 			FootOffsets[1],
 			MaxPelvisOffset);
-		if (!FMath::IsNearlyZero(PelvisOffset))
+		SmoothedPelvisOffset = RpgFootPlacement::SmoothPelvisOffset(
+			SmoothedPelvisOffset,
+			TargetPelvisOffset,
+			CachedDeltaTime,
+			PelvisBlendHalfLife,
+			MaxPelvisSpeed);
+		if (!FMath::IsNearlyZero(SmoothedPelvisOffset))
 		{
 			FTransform PelvisTransformCS = Output.Pose.GetComponentSpaceTransform(PelvisIndex);
 			const FVector ComponentUpCS = Snapshot.ComponentToWorld.InverseTransformVectorNoScale(ComponentUpWorld);
-			PelvisTransformCS.AddToTranslation(ComponentUpCS * PelvisOffset);
+			PelvisTransformCS.AddToTranslation(ComponentUpCS * SmoothedPelvisOffset);
 			OutBoneTransforms.Emplace(PelvisIndex, PelvisTransformCS);
 		}
 	}
+	else
+	{
+		SmoothedPelvisOffset = 0.0f;
+	}
+	CachedDeltaTime = 0.0f;
 
 	OutBoneTransforms.Sort(FCompareBoneTransformIndex());
 }
@@ -135,7 +208,8 @@ bool FAnimNode_RpgFootPlacement::IsValidToEvaluate(
 	}
 	for (const FRpgFootPlacementNodeLegDefinition& LegDefinition : LegsDefinition)
 	{
-		if (!LegDefinition.IKFootBone.IsValidToEvaluate(RequiredBones) ||
+		if (!LegDefinition.FKFootBone.IsValidToEvaluate(RequiredBones) ||
+			!LegDefinition.IKFootBone.IsValidToEvaluate(RequiredBones) ||
 			!LegDefinition.BallBone.IsValidToEvaluate(RequiredBones))
 		{
 			return false;
@@ -149,6 +223,7 @@ void FAnimNode_RpgFootPlacement::InitializeBoneReferences(const FBoneContainer& 
 	PelvisBone.Initialize(RequiredBones);
 	for (FRpgFootPlacementNodeLegDefinition& LegDefinition : LegsDefinition)
 	{
+		LegDefinition.FKFootBone.Initialize(RequiredBones);
 		LegDefinition.IKFootBone.Initialize(RequiredBones);
 		LegDefinition.BallBone.Initialize(RequiredBones);
 	}

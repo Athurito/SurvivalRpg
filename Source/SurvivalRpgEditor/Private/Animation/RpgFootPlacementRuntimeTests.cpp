@@ -7,6 +7,7 @@
 #include "Misc/AutomationTest.h"
 #include "Misc/FileHelper.h"
 #include "Misc/Paths.h"
+#include "SurvivalRpg/Animation/AnimNode_RpgFootPlacement.h"
 #include "SurvivalRpg/Animation/RpgFootPlacementTypes.h"
 #include "UObject/UnrealType.h"
 
@@ -51,12 +52,10 @@ IMPLEMENT_SIMPLE_AUTOMATION_TEST(
 bool FRpgFootPlacementPlantPolicyTest::RunTest(const FString& Parameters)
 {
 	FRpgFootPlacementSettings Settings;
-	Settings.PlantSpeedThreshold = 60.0f;
-	Settings.PlantDistanceThreshold = 10.0f;
-	Settings.UnplantRadius = 35.0f;
-	Settings.ReplantRadiusRatio = 0.35f;
-	Settings.UnplantAngle = 45.0f;
-	Settings.ReplantAngleRatio = 0.5f;
+	TestEqual(TEXT("The GASP lock releases outside 20 cm"), Settings.UnplantRadius, 20.0f);
+	TestEqual(TEXT("The GASP lock replants inside 20 percent of its radius"), Settings.ReplantRadiusRatio, 0.2f);
+	TestEqual(TEXT("The GASP lock tolerates a 60-degree angular deviation"), Settings.UnplantAngle, 60.0f);
+	TestEqual(TEXT("The GASP angular replant bound is 20 percent"), Settings.ReplantAngleRatio, 0.2f);
 
 	TestEqual(
 		TEXT("Full GASP contact maps to zero pseudo-speed"),
@@ -97,25 +96,25 @@ bool FRpgFootPlacementPlantPolicyTest::RunTest(const FString& Parameters)
 
 	TestFalse(
 		TEXT("An existing lock remains planted at all three inclusive boundaries"),
-		RpgFootPlacement::ShouldUnplantFoot(60.0f, 35.0f, 45.0f, Settings));
+		RpgFootPlacement::ShouldUnplantFoot(60.0f, 20.0f, 60.0f, Settings));
 	TestTrue(
 		TEXT("Foot speed independently releases an existing lock"),
 		RpgFootPlacement::ShouldUnplantFoot(60.01f, 0.0f, 0.0f, Settings));
 	TestTrue(
 		TEXT("Anchor drift independently releases an existing lock"),
-		RpgFootPlacement::ShouldUnplantFoot(0.0f, 35.01f, 0.0f, Settings));
+		RpgFootPlacement::ShouldUnplantFoot(0.0f, 20.01f, 0.0f, Settings));
 	TestTrue(
 		TEXT("Ground-normal change independently releases an existing lock"),
-		RpgFootPlacement::ShouldUnplantFoot(0.0f, 0.0f, 45.01f, Settings));
+		RpgFootPlacement::ShouldUnplantFoot(0.0f, 0.0f, 60.01f, Settings));
 	TestTrue(
 		TEXT("A released lock replants inside the tighter radius and angle bounds"),
-		RpgFootPlacement::ShouldReplantFoot(12.25f, 22.5f, Settings));
+		RpgFootPlacement::ShouldReplantFoot(4.0f, 12.0f, Settings));
 	TestFalse(
 		TEXT("A released lock remains unplanted outside the replant radius"),
-		RpgFootPlacement::ShouldReplantFoot(12.26f, 0.0f, Settings));
+		RpgFootPlacement::ShouldReplantFoot(4.01f, 0.0f, Settings));
 	TestFalse(
 		TEXT("A released lock remains unplanted outside the replant angle"),
-		RpgFootPlacement::ShouldReplantFoot(0.0f, 22.51f, Settings));
+		RpgFootPlacement::ShouldReplantFoot(0.0f, 12.01f, Settings));
 	return true;
 }
 
@@ -169,6 +168,107 @@ IMPLEMENT_SIMPLE_AUTOMATION_TEST(
 
 bool FRpgFootPlacementGroundAlignmentTest::RunTest(const FString& Parameters)
 {
+	const FTransform FKFootTransform(
+		FQuat(FVector::UpVector, FMath::DegreesToRadians(20.0f)),
+		FVector(100.0f, 50.0f, 20.0f));
+	const FTransform AuthoredFootToBall(
+		FQuat(FVector::RightVector, FMath::DegreesToRadians(15.0f)),
+		FVector(12.0f, 3.0f, -8.0f));
+	const FTransform AuthoredBallTransform = AuthoredFootToBall * FKFootTransform;
+	const FTransform IKFootTransform(
+		FQuat(FVector::UpVector, FMath::DegreesToRadians(-35.0f)),
+		FVector(-25.0f, 80.0f, 30.0f));
+	const FTransform DerivedIKBall = RpgFootPlacement::DeriveIKBallTransform(
+		FKFootTransform,
+		AuthoredBallTransform,
+		IKFootTransform);
+	TestTrue(
+		TEXT("The IK ball uses Stock FootPlacement's FootToBall-times-IKFoot order"),
+		DerivedIKBall.Equals(AuthoredFootToBall * IKFootTransform, 0.001f));
+	TestTrue(
+		TEXT("The IK ball preserves the authored FK-foot-to-ball relationship"),
+		DerivedIKBall.GetRelativeTransform(IKFootTransform).Equals(AuthoredFootToBall, 0.001f));
+	TestFalse(
+		TEXT("The derived IK ball does not reuse the unrelated FK ball world transform"),
+		DerivedIKBall.Equals(AuthoredBallTransform, 0.001f));
+	const FTransform LockedFootTransform(
+		FQuat(FVector::UpVector, FMath::DegreesToRadians(60.0f)),
+		FVector(40.0f, -30.0f, 15.0f));
+	const FTransform PivotedFoot = RpgFootPlacement::PivotFootAroundBall(
+		IKFootTransform,
+		DerivedIKBall,
+		LockedFootTransform);
+	const FTransform CurrentFootToBall = DerivedIKBall.GetRelativeTransform(IKFootTransform);
+	const FTransform CurrentBallToFoot = IKFootTransform.GetRelativeTransform(DerivedIKBall);
+	const FTransform LockedBallTransform = CurrentFootToBall * LockedFootTransform;
+	const FTransform ExpectedPinnedBallTransform(
+		DerivedIKBall.GetRotation(),
+		LockedBallTransform.GetLocation(),
+		DerivedIKBall.GetScale3D());
+	TestTrue(
+		TEXT("Pivot locking uses Stock FootPlacement's BallToFoot-times-PinnedBall order"),
+		PivotedFoot.Equals(CurrentBallToFoot * ExpectedPinnedBallTransform, 0.001f));
+	TestTrue(
+		TEXT("Pivot locking retains the ball location represented by the planted foot"),
+		(CurrentFootToBall * PivotedFoot).GetLocation().Equals(
+			(CurrentFootToBall * LockedFootTransform).GetLocation(),
+			0.001f));
+	TestFalse(
+		TEXT("Pivot locking does not freeze the complete planted ankle transform"),
+		PivotedFoot.GetRotation().Equals(LockedFootTransform.GetRotation(), 0.001f));
+
+	FAnimNode_RpgFootPlacement RuntimeNode;
+	TestEqual(TEXT("The worker raw-pose ball gate uses GASP's ten-centimeter bound"), RuntimeNode.PlantDistanceThreshold, 10.0f);
+	TestEqual(TEXT("The worker raw-pose lock gate uses GASP's twenty-centimeter bound"), RuntimeNode.UnplantRadius, 20.0f);
+	TestEqual(
+		TEXT("Raw geometry is fully weighted inside both inner bounds"),
+		RpgFootPlacement::CalculateGeometryWeight(5.0f, 10.0f, true, 10.0f, 20.0f),
+		1.0f);
+	TestTrue(
+		TEXT("Raw geometry fades smoothly through both outer halves"),
+		FMath::IsNearlyEqual(
+			RpgFootPlacement::CalculateGeometryWeight(7.5f, 15.0f, true, 10.0f, 20.0f),
+			0.25f,
+			0.001f));
+	TestEqual(
+		TEXT("The exact ball-distance limit suppresses placement"),
+		RpgFootPlacement::CalculateGeometryWeight(10.0f, 0.0f, false, 10.0f, 20.0f),
+		0.0f);
+	TestEqual(
+		TEXT("Ball distance outside the limit suppresses placement even without a lock"),
+		RpgFootPlacement::CalculateGeometryWeight(-10.01f, 0.0f, false, 10.0f, 20.0f),
+		0.0f);
+	TestEqual(
+		TEXT("The exact planar lock-drift limit suppresses a lock"),
+		RpgFootPlacement::CalculateGeometryWeight(0.0f, 20.0f, true, 10.0f, 20.0f),
+		0.0f);
+	TestEqual(
+		TEXT("Planar drift is deliberately ignored for an unlocked foot"),
+		RpgFootPlacement::CalculateGeometryWeight(0.0f, 200.0f, false, 10.0f, 20.0f),
+		1.0f);
+
+	float MaximumFlatGroundCorrection = 0.0f;
+	for (int32 SampleIndex = 0; SampleIndex <= 100; ++SampleIndex)
+	{
+		const float BallHeight = static_cast<float>(SampleIndex) * 0.1f;
+		const float GeometryWeight = RpgFootPlacement::CalculateGeometryWeight(
+			BallHeight,
+			0.0f,
+			false,
+			10.0f,
+			20.0f);
+		MaximumFlatGroundCorrection = FMath::Max(
+			MaximumFlatGroundCorrection,
+			BallHeight * GeometryWeight);
+	}
+	TestTrue(
+		TEXT("The same-frame gate bounds the flat-ground pelvis contribution below 5.5 cm"),
+		MaximumFlatGroundCorrection <= 5.5f);
+	TestEqual(
+		TEXT("A lifted raw foot outside the ten-centimeter bound cannot affect IK or pelvis"),
+		RpgFootPlacement::CalculateGeometryWeight(15.0f, 0.0f, false, 10.0f, 20.0f),
+		0.0f);
+
 	const FTransform FlatIKTransform(FQuat::Identity, FVector(0.0f, 0.0f, 20.0f));
 	const FTransform FlatBallTransform(FQuat::Identity, FVector(10.0f, 0.0f, 10.0f));
 	const FTransform FlatResult = RpgFootPlacement::AlignFootToGroundPlane(
@@ -251,6 +351,108 @@ bool FRpgFootPlacementGroundAlignmentTest::RunTest(const FString& Parameters)
 }
 
 IMPLEMENT_SIMPLE_AUTOMATION_TEST(
+	FRpgFootPlacementNeutralIKTargetTest,
+	"SurvivalRpg.Animation.FootPlacement.Runtime.NeutralIKTarget",
+	EAutomationTestFlags::EditorContext |
+		EAutomationTestFlags::EngineFilter)
+
+bool FRpgFootPlacementNeutralIKTargetTest::RunTest(const FString& Parameters)
+{
+	const FTransform LeftFKTransform(
+		FQuat(FVector::UpVector, FMath::DegreesToRadians(10.0f)),
+		FVector(-20.0f, -12.0f, 18.0f));
+	const FTransform LeftProceduralTarget(
+		FQuat(FVector::UpVector, FMath::DegreesToRadians(35.0f)),
+		FVector(-5.0f, -12.0f, 8.0f));
+	const FTransform RightFKTransform(
+		FQuat(FVector::UpVector, FMath::DegreesToRadians(-15.0f)),
+		FVector(30.0f, 12.0f, 20.0f));
+	const FTransform RightProceduralTarget(
+		FQuat(FVector::UpVector, FMath::DegreesToRadians(-40.0f)),
+		FVector(45.0f, 12.0f, 10.0f));
+
+	const float NoGroundWeight = RpgFootPlacement::CalculateEffectivePlacementWeight(
+		false,
+		1.0f,
+		1.0f);
+	const float ZeroSnapshotWeight = RpgFootPlacement::CalculateEffectivePlacementWeight(
+		true,
+		0.0f,
+		1.0f);
+	const float ZeroGeometryWeight = RpgFootPlacement::CalculateEffectivePlacementWeight(
+		true,
+		1.0f,
+		0.0f);
+	TestEqual(TEXT("No ground disables only the procedural correction"), NoGroundWeight, 0.0f);
+	TestEqual(TEXT("A zero snapshot weight disables only the procedural correction"), ZeroSnapshotWeight, 0.0f);
+	TestEqual(TEXT("A zero raw-pose gate disables only the procedural correction"), ZeroGeometryWeight, 0.0f);
+	TestTrue(
+		TEXT("No ground writes the same-frame FK ankle instead of retaining raw IK"),
+		RpgFootPlacement::ResolveIKFootTarget(
+			LeftFKTransform,
+			LeftProceduralTarget,
+			NoGroundWeight).Equals(LeftFKTransform, 0.001f));
+	TestTrue(
+		TEXT("A zero snapshot weight writes the same-frame FK ankle"),
+		RpgFootPlacement::ResolveIKFootTarget(
+			LeftFKTransform,
+			LeftProceduralTarget,
+			ZeroSnapshotWeight).Equals(LeftFKTransform, 0.001f));
+	TestTrue(
+		TEXT("A zero geometry weight writes the same-frame FK ankle"),
+		RpgFootPlacement::ResolveIKFootTarget(
+			LeftFKTransform,
+			LeftProceduralTarget,
+			ZeroGeometryWeight).Equals(LeftFKTransform, 0.001f));
+
+	const float LeftWeight = RpgFootPlacement::CalculateEffectivePlacementWeight(true, 0.0f, 1.0f);
+	const float RightWeight = RpgFootPlacement::CalculateEffectivePlacementWeight(true, 1.0f, 1.0f);
+	const FTransform LeftResult = RpgFootPlacement::ResolveIKFootTarget(
+		LeftFKTransform,
+		LeftProceduralTarget,
+		LeftWeight);
+	const FTransform RightResult = RpgFootPlacement::ResolveIKFootTarget(
+		RightFKTransform,
+		RightProceduralTarget,
+		RightWeight);
+	TestTrue(
+		TEXT("The left swing leg independently follows its FK ankle"),
+		LeftResult.Equals(LeftFKTransform, 0.001f));
+	TestTrue(
+		TEXT("The right planted leg independently reaches its procedural target"),
+		RightResult.Equals(RightProceduralTarget, 0.001f));
+
+	const FTransform StaticInputIK(FQuat::Identity, FVector(0.0f, 0.0f, 10.0f));
+	const FTransform LiftedFKFoot(FQuat::Identity, FVector(40.0f, 0.0f, 25.0f));
+	const FTransform LiftedAuthoredBall(FQuat::Identity, FVector(50.0f, 0.0f, 15.0f));
+	const float LiftedBallGeometryWeight = RpgFootPlacement::CalculateGeometryWeight(
+		LiftedAuthoredBall.GetLocation().Z,
+		0.0f,
+		true,
+		10.0f,
+		20.0f);
+	const float LiftedBallEffectiveWeight = RpgFootPlacement::CalculateEffectivePlacementWeight(
+		true,
+		1.0f,
+		LiftedBallGeometryWeight);
+	const FTransform LiftedResult = RpgFootPlacement::ResolveIKFootTarget(
+		LiftedFKFoot,
+		StaticInputIK,
+		LiftedBallEffectiveWeight);
+	TestEqual(
+		TEXT("A lifted authored FK ball outside the ten-centimeter gate has zero procedural weight"),
+		LiftedBallGeometryWeight,
+		0.0f);
+	TestTrue(
+		TEXT("A static input IK track cannot pin an FK swing foot after the geometry gate releases"),
+		LiftedResult.Equals(LiftedFKFoot, 0.001f));
+	TestFalse(
+		TEXT("The released swing foot does not retain the unrelated static input IK target"),
+		LiftedResult.Equals(StaticInputIK, 0.001f));
+	return true;
+}
+
+IMPLEMENT_SIMPLE_AUTOMATION_TEST(
 	FRpgFootPlacementPelvisAndSnapshotPodTest,
 	"SurvivalRpg.Animation.FootPlacement.Runtime.PelvisAndSnapshotPod",
 	EAutomationTestFlags::EditorContext |
@@ -258,6 +460,16 @@ IMPLEMENT_SIMPLE_AUTOMATION_TEST(
 
 bool FRpgFootPlacementPelvisAndSnapshotPodTest::RunTest(const FString& Parameters)
 {
+	const FStructProperty* FKFootBoneProperty = FindFProperty<FStructProperty>(
+		FRpgFootPlacementNodeLegDefinition::StaticStruct(),
+		GET_MEMBER_NAME_CHECKED(FRpgFootPlacementNodeLegDefinition, FKFootBone));
+	if (TestNotNull(TEXT("The AnyThread leg definition exposes its authored FK foot"), FKFootBoneProperty))
+	{
+		TestTrue(
+			TEXT("The FK foot contract uses Unreal's bone-reference value type"),
+			FKFootBoneProperty->Struct == FBoneReference::StaticStruct());
+	}
+
 	TestTrue(
 		TEXT("The lower requested foot drives the pelvis downward"),
 		FMath::IsNearlyEqual(RpgFootPlacement::CalculatePelvisOffset(-12.0f, -4.0f, 50.0f), -12.0f));
@@ -270,6 +482,30 @@ bool FRpgFootPlacementPelvisAndSnapshotPodTest::RunTest(const FString& Parameter
 	TestTrue(
 		TEXT("A negative maximum is treated as zero correction"),
 		FMath::IsNearlyZero(RpgFootPlacement::CalculatePelvisOffset(-10.0f, -20.0f, -1.0f)));
+	TestTrue(
+		TEXT("Pelvis smoothing does not advance without elapsed update time"),
+		FMath::IsNearlyZero(RpgFootPlacement::SmoothPelvisOffset(0.0f, -50.0f, 0.0f, 0.08f, 120.0f)));
+	TestTrue(
+		TEXT("Pelvis smoothing obeys its hard speed bound on a large target step"),
+		FMath::IsNearlyEqual(
+			RpgFootPlacement::SmoothPelvisOffset(0.0f, -50.0f, 1.0f / 20.0f, 0.08f, 120.0f),
+			-6.0f,
+			0.001f));
+	TestTrue(
+		TEXT("Pelvis smoothing is monotonic toward a reachable target"),
+		RpgFootPlacement::SmoothPelvisOffset(-10.0f, -20.0f, 1.0f / 60.0f, 0.08f, 120.0f) < -10.0f);
+	const float RecoveredPelvisOffset = RpgFootPlacement::SmoothPelvisOffset(
+		-12.0f,
+		0.0f,
+		1.0f / 60.0f,
+		0.08f,
+		120.0f);
+	TestTrue(
+		TEXT("Pelvis recovery toward zero is gradual instead of an upward pop"),
+		RecoveredPelvisOffset > -12.0f && RecoveredPelvisOffset < 0.0f);
+	TestTrue(
+		TEXT("Pelvis recovery obeys the configured 120 cm/s speed bound"),
+		RecoveredPelvisOffset + 12.0f <= 120.0f / 60.0f + UE_SMALL_NUMBER);
 
 	auto ValidateValueOnlyStruct = [this](UScriptStruct* ScriptStruct, bool bAllowLegSnapshot)
 	{
@@ -345,6 +581,7 @@ bool FRpgFootPlacementAnyThreadSourceContractTest::RunTest(const FString& Parame
 		TEXT("GetSocketTransform"),
 		TEXT("GetBoneTransform"),
 		TEXT("GetBoneLocation"),
+		TEXT("GetComponentSpaceTransform(IKFootIndex)"),
 		TEXT("CurrentFloor"),
 		TEXT("SweepSingle"),
 		TEXT("LineTrace"),

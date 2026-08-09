@@ -1144,10 +1144,10 @@ bool FRpgGaspPilotAssetContractTest::RunTest(const FString& Parameters)
 			TestEqual(TEXT("Foot Placement plants below 60 cm/s"), FootPlacementSettings->PlantSpeedThreshold, 60.0f);
 			TestEqual(TEXT("Foot Placement bounds the contact-weighted roll phase at 200 cm/s"), FootPlacementSettings->UnalignmentSpeedThreshold, 200.0f);
 			TestEqual(TEXT("Foot Placement plants within ten centimeters"), FootPlacementSettings->PlantDistanceThreshold, 10.0f);
-			TestEqual(TEXT("Foot Placement releases outside GASP's 35-centimeter radius"), FootPlacementSettings->UnplantRadius, 35.0f);
-			TestEqual(TEXT("Foot Placement replants inside 35 percent of the release radius"), FootPlacementSettings->ReplantRadiusRatio, 0.35f);
-			TestEqual(TEXT("Foot Placement releases after GASP's 45-degree normal change"), FootPlacementSettings->UnplantAngle, 45.0f);
-			TestEqual(TEXT("Foot Placement replants inside half the release angle"), FootPlacementSettings->ReplantAngleRatio, 0.5f);
+			TestEqual(TEXT("Foot Placement releases outside GASP's 20-centimeter radius"), FootPlacementSettings->UnplantRadius, 20.0f);
+			TestEqual(TEXT("Foot Placement replants inside 20 percent of the release radius"), FootPlacementSettings->ReplantRadiusRatio, 0.2f);
+			TestEqual(TEXT("Foot Placement releases after GASP's 60-degree normal change"), FootPlacementSettings->UnplantAngle, 60.0f);
+			TestEqual(TEXT("Foot Placement replants inside 20 percent of the release angle"), FootPlacementSettings->ReplantAngleRatio, 0.2f);
 			TestEqual(TEXT("Foot Placement bounds locked-foot slope alignment to 60 degrees"), FootPlacementSettings->MaxFootAlignmentAngle, 60.0f);
 			TestEqual(TEXT("Foot Placement bounds locked-foot translation to 50 centimeters"), FootPlacementSettings->MaxFootTranslation, 50.0f);
 			TestEqual(TEXT("Foot Placement keeps a 0.1-second trace-miss grace period"), FootPlacementSettings->TraceMissGracePeriod, 0.10f);
@@ -1544,6 +1544,10 @@ bool FRpgGaspPilotAssetContractTest::RunTest(const FString& Parameters)
 			if (RpgFootPlacement->LegsDefinition.Num() == 2)
 			{
 				TestEqual(
+					TEXT("Foot Placement reads the authored left FK ankle first"),
+					RpgFootPlacement->LegsDefinition[0].FKFootBone.BoneName,
+					FName(TEXT("foot_l")));
+				TestEqual(
 					TEXT("Foot Placement drives the left IK foot first"),
 					RpgFootPlacement->LegsDefinition[0].IKFootBone.BoneName,
 					FName(TEXT("ik_foot_l")));
@@ -1551,6 +1555,10 @@ bool FRpgGaspPilotAssetContractTest::RunTest(const FString& Parameters)
 					TEXT("Foot Placement pivots the left target around ball_l"),
 					RpgFootPlacement->LegsDefinition[0].BallBone.BoneName,
 					FName(TEXT("ball_l")));
+				TestEqual(
+					TEXT("Foot Placement reads the authored right FK ankle second"),
+					RpgFootPlacement->LegsDefinition[1].FKFootBone.BoneName,
+					FName(TEXT("foot_r")));
 				TestEqual(
 					TEXT("Foot Placement drives the right IK foot second"),
 					RpgFootPlacement->LegsDefinition[1].IKFootBone.BoneName,
@@ -1563,6 +1571,10 @@ bool FRpgGaspPilotAssetContractTest::RunTest(const FString& Parameters)
 			TestEqual(TEXT("Foot Placement clamps translation to 50 cm"), RpgFootPlacement->MaxFootTranslation, 50.0f);
 			TestEqual(TEXT("Foot Placement clamps alignment to 60 degrees"), RpgFootPlacement->MaxFootRotation, 60.0f);
 			TestEqual(TEXT("Foot Placement clamps pelvis lowering to 50 cm"), RpgFootPlacement->MaxPelvisOffset, 50.0f);
+			TestEqual(TEXT("Foot Placement raw-gates plants within 10 cm"), RpgFootPlacement->PlantDistanceThreshold, 10.0f);
+			TestEqual(TEXT("Foot Placement raw-gates locks outside a 20 cm radius"), RpgFootPlacement->UnplantRadius, 20.0f);
+			TestEqual(TEXT("Foot Placement smooths pelvis correction with a 0.08-second half-life"), RpgFootPlacement->PelvisBlendHalfLife, 0.08f);
+			TestEqual(TEXT("Foot Placement limits pelvis correction to 120 cm/s"), RpgFootPlacement->MaxPelvisSpeed, 120.0f);
 			TestEqual(TEXT("Foot Placement uses a float graph alpha"), RpgFootPlacement->AlphaInputType, EAnimAlphaInputType::Float);
 			TestEqual(TEXT("Foot Placement keeps its graph-driven alpha default at one"), RpgFootPlacement->Alpha, 1.0f);
 			TestEqual(TEXT("Foot Placement has no hidden LOD cutoff"), RpgFootPlacement->LODThreshold, INDEX_NONE);
