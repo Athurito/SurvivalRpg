@@ -40,7 +40,9 @@ namespace RpgGaspLocomotionAssetTests
 	constexpr TCHAR CrouchTransitionRoot[] = TEXT("/RpgGaspLocomotion/Animations/Crouch/Transitions/");
 	constexpr TCHAR CrouchWalkRoot[] = TEXT("/RpgGaspLocomotion/Animations/Crouch/Walk/");
 	constexpr TCHAR StandIdleRoot[] = TEXT("/RpgGaspLocomotion/Animations/Stand/Idle/");
+	constexpr TCHAR StandWalkRoot[] = TEXT("/RpgGaspLocomotion/Animations/Stand/Walk/");
 	constexpr TCHAR StandRunRoot[] = TEXT("/RpgGaspLocomotion/Animations/Stand/Run/");
+	constexpr TCHAR StandSprintRoot[] = TEXT("/RpgGaspLocomotion/Animations/Stand/Sprint/");
 	constexpr TCHAR JumpStartRoot[] = TEXT("/RpgGaspLocomotion/Animations/Jump/Starts/");
 	constexpr TCHAR JumpAirborneRoot[] = TEXT("/RpgGaspLocomotion/Animations/Jump/Airborne/");
 	constexpr TCHAR JumpLandRoot[] = TEXT("/RpgGaspLocomotion/Animations/Jump/Lands/");
@@ -51,6 +53,11 @@ namespace RpgGaspLocomotionAssetTests
 	constexpr TCHAR JumpDatabasePackage[] = TEXT("/RpgGaspLocomotion/MotionMatching/Databases/PSD_Rpg_Jump");
 	constexpr TCHAR LandingDatabasePackage[] = TEXT("/RpgGaspLocomotion/MotionMatching/Databases/PSD_Rpg_Stand_Idle_Lands_Light");
 	constexpr TCHAR JumpSchemaPackage[] = TEXT("/RpgGaspLocomotion/MotionMatching/Schemas/PSS_Rpg_Jump");
+	constexpr TCHAR StopSchemaPackage[] = TEXT("/RpgGaspLocomotion/MotionMatching/Schemas/PSS_Rpg_Stop");
+	constexpr TCHAR WalkMovingDatabasePackage[] = TEXT("/RpgGaspLocomotion/MotionMatching/Databases/PSD_Rpg_Stand_Walk");
+	constexpr TCHAR WalkStopDatabasePackage[] = TEXT("/RpgGaspLocomotion/MotionMatching/Databases/PSD_Rpg_Stand_Walk_Stops");
+	constexpr TCHAR SprintMovingDatabasePackage[] = TEXT("/RpgGaspLocomotion/MotionMatching/Databases/PSD_Rpg_Stand_Sprint");
+	constexpr TCHAR SprintStopDatabasePackage[] = TEXT("/RpgGaspLocomotion/MotionMatching/Databases/PSD_Rpg_Stand_Sprint_Stops");
 	constexpr TCHAR MirrorTablePath[] = TEXT("/RpgGaspLocomotion/MotionMatching/MirrorTables/MDT_Rpg_Mannequin.MDT_Rpg_Mannequin");
 
 	static const TCHAR* const TurnInPlaceAnimationPackages[] = {
@@ -62,6 +69,65 @@ namespace RpgGaspLocomotionAssetTests
 		TEXT("/RpgGaspLocomotion/Animations/Stand/Idle/M_Neutral_Stand_Turn_135_R"),
 		TEXT("/RpgGaspLocomotion/Animations/Stand/Idle/M_Neutral_Stand_Turn_180_L"),
 		TEXT("/RpgGaspLocomotion/Animations/Stand/Idle/M_Neutral_Stand_Turn_180_R"),
+	};
+
+	static const TCHAR* const WalkMovingAnimationPackages[] = {
+		TEXT("/RpgGaspLocomotion/Animations/Stand/Walk/M_Neutral_Transition_Run_to_Walk_Lfoot"),
+		TEXT("/RpgGaspLocomotion/Animations/Stand/Walk/M_Neutral_Transition_Run_to_Walk_Rfoot"),
+		TEXT("/RpgGaspLocomotion/Animations/Stand/Walk/M_Neutral_Walk_Loop_B"),
+		TEXT("/RpgGaspLocomotion/Animations/Stand/Walk/M_Neutral_Walk_Loop_BL"),
+		TEXT("/RpgGaspLocomotion/Animations/Stand/Walk/M_Neutral_Walk_Loop_BR"),
+		TEXT("/RpgGaspLocomotion/Animations/Stand/Walk/M_Neutral_Walk_Loop_F"),
+		TEXT("/RpgGaspLocomotion/Animations/Stand/Walk/M_Neutral_Walk_Loop_F_L_20"),
+		TEXT("/RpgGaspLocomotion/Animations/Stand/Walk/M_Neutral_Walk_Loop_F_R_20"),
+		TEXT("/RpgGaspLocomotion/Animations/Stand/Walk/M_Neutral_Walk_Loop_FL"),
+		TEXT("/RpgGaspLocomotion/Animations/Stand/Walk/M_Neutral_Walk_Loop_FR"),
+		TEXT("/RpgGaspLocomotion/Animations/Stand/Walk/M_Neutral_Walk_Loop_LL"),
+		TEXT("/RpgGaspLocomotion/Animations/Stand/Walk/M_Neutral_Walk_Loop_LR_offset"),
+		TEXT("/RpgGaspLocomotion/Animations/Stand/Walk/M_Neutral_Walk_Loop_RL"),
+		TEXT("/RpgGaspLocomotion/Animations/Stand/Walk/M_Neutral_Walk_Loop_RR_offset"),
+		TEXT("/RpgGaspLocomotion/Animations/Stand/Walk/M_Neutral_Walk_Pivot_B_F_Lfoot"),
+		TEXT("/RpgGaspLocomotion/Animations/Stand/Walk/M_Neutral_Walk_Pivot_B_F_Rfoot"),
+		TEXT("/RpgGaspLocomotion/Animations/Stand/Walk/M_Neutral_Walk_Pivot_F_B_Lfoot"),
+		TEXT("/RpgGaspLocomotion/Animations/Stand/Walk/M_Neutral_Walk_Pivot_F_B_Rfoot"),
+		TEXT("/RpgGaspLocomotion/Animations/Stand/Walk/M_Neutral_Walk_Reface_Start_F_R_180"),
+		TEXT("/RpgGaspLocomotion/Animations/Stand/Walk/M_Neutral_Walk_Shuffle_LR_to_LL_Lfoot"),
+		TEXT("/RpgGaspLocomotion/Animations/Stand/Walk/M_Neutral_Walk_Shuffle_LR_to_LL_Rfoot"),
+		TEXT("/RpgGaspLocomotion/Animations/Stand/Walk/M_Neutral_Walk_Shuffle_RR_to_RL_Lfoot"),
+		TEXT("/RpgGaspLocomotion/Animations/Stand/Walk/M_Neutral_Walk_Shuffle_RR_to_RL_Rfoot"),
+		TEXT("/RpgGaspLocomotion/Animations/Stand/Walk/M_Neutral_Walk_Start_B_Rfoot"),
+		TEXT("/RpgGaspLocomotion/Animations/Stand/Walk/M_Neutral_Walk_Start_F_Rfoot"),
+	};
+
+	static const TCHAR* const WalkStopAnimationPackages[] = {
+		TEXT("/RpgGaspLocomotion/Animations/Stand/Walk/M_Neutral_Walk_Stop_RR_Rfoot"),
+		TEXT("/RpgGaspLocomotion/Animations/Stand/Walk/M_Neutral_Walk_Stop_RR_Lfoot"),
+		TEXT("/RpgGaspLocomotion/Animations/Stand/Walk/M_Neutral_Walk_Stop_RL_Rfoot"),
+		TEXT("/RpgGaspLocomotion/Animations/Stand/Walk/M_Neutral_Walk_Stop_RL_Lfoot"),
+		TEXT("/RpgGaspLocomotion/Animations/Stand/Walk/M_Neutral_Walk_Stop_LR_Rfoot"),
+		TEXT("/RpgGaspLocomotion/Animations/Stand/Walk/M_Neutral_Walk_Stop_LR_Lfoot"),
+		TEXT("/RpgGaspLocomotion/Animations/Stand/Walk/M_Neutral_Walk_Stop_LL_Rfoot"),
+		TEXT("/RpgGaspLocomotion/Animations/Stand/Walk/M_Neutral_Walk_Stop_LL_Lfoot"),
+		TEXT("/RpgGaspLocomotion/Animations/Stand/Walk/M_Neutral_Walk_Stop_F_Rfoot"),
+		TEXT("/RpgGaspLocomotion/Animations/Stand/Walk/M_Neutral_Walk_Stop_F_Lfoot"),
+		TEXT("/RpgGaspLocomotion/Animations/Stand/Walk/M_Neutral_Walk_Stop_B_Rfoot"),
+		TEXT("/RpgGaspLocomotion/Animations/Stand/Walk/M_Neutral_Walk_Stop_B_Lfoot"),
+	};
+
+	static const TCHAR* const SprintMovingAnimationPackages[] = {
+		TEXT("/RpgGaspLocomotion/Animations/Stand/Sprint/M_Neutral_Sprint_Loop_F"),
+		TEXT("/RpgGaspLocomotion/Animations/Stand/Sprint/M_Neutral_Sprint_Reface_Start_F_R_180"),
+		TEXT("/RpgGaspLocomotion/Animations/Stand/Sprint/M_Neutral_Sprint_Start_F_Rfoot"),
+		TEXT("/RpgGaspLocomotion/Animations/Stand/Sprint/M_Neutral_Sprint_Turn_L_180_Lfoot"),
+		TEXT("/RpgGaspLocomotion/Animations/Stand/Sprint/M_Neutral_Sprint_Turn_L_180_Rfoot"),
+		TEXT("/RpgGaspLocomotion/Animations/Stand/Sprint/M_Neutral_Sprint_Turn_R_180_Lfoot"),
+		TEXT("/RpgGaspLocomotion/Animations/Stand/Sprint/M_Neutral_Sprint_Turn_R_180_Rfoot"),
+		TEXT("/RpgGaspLocomotion/Animations/Stand/Sprint/M_Neutral_Transition_Run_to_Sprint_Rfoot"),
+	};
+
+	static const TCHAR* const SprintStopAnimationPackages[] = {
+		TEXT("/RpgGaspLocomotion/Animations/Stand/Sprint/M_Neutral_Sprint_Stop_F_Lfoot"),
+		TEXT("/RpgGaspLocomotion/Animations/Stand/Sprint/M_Neutral_Sprint_Stop_F_Rfoot"),
 	};
 
 	static const TCHAR* const RunAnimationPackages[] = {
@@ -313,7 +379,7 @@ bool FRpgGaspLocomotionContentContractTest::RunTest(const FString& Parameters)
 		Assets,
 		true,
 		true);
-	TestEqual(TEXT("The curated plugin contains exactly 176 assets"), Assets.Num(), 176);
+	TestEqual(TEXT("The curated plugin contains exactly 187 assets"), Assets.Num(), 187);
 
 	TMap<FString, int32> ClassCounts;
 	int32 AnimationCount = 0;
@@ -321,7 +387,9 @@ bool FRpgGaspLocomotionContentContractTest::RunTest(const FString& Parameters)
 	int32 CrouchTransitionCount = 0;
 	int32 CrouchWalkCount = 0;
 	int32 StandIdleCount = 0;
+	int32 StandWalkCount = 0;
 	int32 StandRunCount = 0;
+	int32 StandSprintCount = 0;
 	int32 TurnInPlaceSequenceCount = 0;
 	int32 JumpStartCount = 0;
 	int32 JumpAirborneCount = 0;
@@ -362,7 +430,9 @@ bool FRpgGaspLocomotionContentContractTest::RunTest(const FString& Parameters)
 		CrouchTransitionCount += AnimationPackageName.StartsWith(CrouchTransitionRoot);
 		CrouchWalkCount += AnimationPackageName.StartsWith(CrouchWalkRoot);
 		StandIdleCount += AnimationPackageName.StartsWith(StandIdleRoot);
+		StandWalkCount += AnimationPackageName.StartsWith(StandWalkRoot);
 		StandRunCount += AnimationPackageName.StartsWith(StandRunRoot);
+		StandSprintCount += AnimationPackageName.StartsWith(StandSprintRoot);
 		JumpStartCount += AnimationPackageName.StartsWith(JumpStartRoot);
 		JumpAirborneCount += AnimationPackageName.StartsWith(JumpAirborneRoot);
 		JumpLandCount += AnimationPackageName.StartsWith(JumpLandRoot);
@@ -432,32 +502,36 @@ bool FRpgGaspLocomotionContentContractTest::RunTest(const FString& Parameters)
 		}
 	}
 
-	TestEqual(TEXT("Exactly 159 curated AnimSequences are present"), AnimationCount, 159);
+	TestEqual(TEXT("Exactly 167 curated AnimSequences are present"), AnimationCount, 167);
 	TestEqual(TEXT("Exactly one crouch idle sequence is present"), CrouchIdleCount, 1);
 	TestEqual(TEXT("Exactly two crouch transition sequences are present"), CrouchTransitionCount, 2);
 	TestEqual(TEXT("Exactly eight crouch walk sequences are present"), CrouchWalkCount, 8);
 	TestEqual(TEXT("Exactly nine stand-idle-folder sequences are present"), StandIdleCount, 9);
 	TestEqual(TEXT("Exactly eight turn-in-place sequences are present"), TurnInPlaceSequenceCount, 8);
+	TestEqual(TEXT("Exactly 37 stand-walk sequences are present"), StandWalkCount, 37);
 	TestEqual(TEXT("Exactly 77 stand-run sequences are present"), StandRunCount, 77);
+	TestEqual(TEXT("Exactly ten stand-sprint sequences are present"), StandSprintCount, 10);
 	TestEqual(TEXT("Exactly 18 jump start/off sequences are present"), JumpStartCount, 18);
 	TestEqual(TEXT("Exactly one neutral airborne fall loop is present"), JumpAirborneCount, 1);
 	TestEqual(TEXT("Exactly four bounded stand-light landing sequences are present"), JumpLandCount, 4);
 	TestEqual(TEXT("Exactly one ChooserTable is present"), ClassCounts.FindRef(TEXT("ChooserTable")), 1);
 	TestEqual(TEXT("Exactly one MirrorDataTable is present"), ClassCounts.FindRef(TEXT("MirrorDataTable")), 1);
-	TestEqual(TEXT("Exactly twelve PoseSearchDatabases are present"), ClassCounts.FindRef(TEXT("PoseSearchDatabase")), 12);
+	TestEqual(TEXT("Exactly fourteen PoseSearchDatabases are present"), ClassCounts.FindRef(TEXT("PoseSearchDatabase")), 14);
 	TestEqual(TEXT("Exactly one PoseSearchNormalizationSet is present"), ClassCounts.FindRef(TEXT("PoseSearchNormalizationSet")), 1);
-	TestEqual(TEXT("Exactly two PoseSearchSchemas are present"), ClassCounts.FindRef(TEXT("PoseSearchSchema")), 2);
+	TestEqual(TEXT("Exactly three PoseSearchSchemas are present"), ClassCounts.FindRef(TEXT("PoseSearchSchema")), 3);
 
 	static const FDatabaseContract DatabaseContracts[] = {
 		{ TEXT("/RpgGaspLocomotion/MotionMatching/Databases/PSD_Rpg_Stand_Idle"), TEXT("/RpgGaspLocomotion/Animations/Stand/Idle/"), TEXT("/RpgGaspLocomotion/MotionMatching/Schemas/PSS_Rpg_Locomotion"), 1, 2 },
 		{ TEXT("/RpgGaspLocomotion/MotionMatching/Databases/PSD_Rpg_Stand_TurnInPlace"), TEXT("/RpgGaspLocomotion/Animations/Stand/Idle/"), TEXT("/RpgGaspLocomotion/MotionMatching/Schemas/PSS_Rpg_Locomotion"), 8, 8 },
 		{ TEXT("/RpgGaspLocomotion/MotionMatching/Databases/PSD_Rpg_Crouch"), TEXT("/RpgGaspLocomotion/Animations/Crouch/"), TEXT("/RpgGaspLocomotion/MotionMatching/Schemas/PSS_Rpg_Locomotion"), 10, 10 },
-		{ TEXT("/RpgGaspLocomotion/MotionMatching/Databases/PSD_Rpg_Stand_Walk"), TEXT("/RpgGaspLocomotion/Animations/Stand/Walk/"), TEXT("/RpgGaspLocomotion/MotionMatching/Schemas/PSS_Rpg_Locomotion"), 29, 29 },
+		{ WalkMovingDatabasePackage, TEXT("/RpgGaspLocomotion/Animations/Stand/Walk/"), TEXT("/RpgGaspLocomotion/MotionMatching/Schemas/PSS_Rpg_Locomotion"), 25, 25 },
+		{ WalkStopDatabasePackage, TEXT("/RpgGaspLocomotion/Animations/Stand/Walk/"), TEXT("/RpgGaspLocomotion/MotionMatching/Schemas/PSS_Rpg_Locomotion"), 12, 12 },
 		{ TEXT("/RpgGaspLocomotion/MotionMatching/Databases/PSD_Rpg_Stand_Run_Loops"), TEXT("/RpgGaspLocomotion/Animations/Stand/Run/"), TEXT("/RpgGaspLocomotion/MotionMatching/Schemas/PSS_Rpg_Locomotion"), 11, 11 },
 		{ TEXT("/RpgGaspLocomotion/MotionMatching/Databases/PSD_Rpg_Stand_Run_Pivots"), TEXT("/RpgGaspLocomotion/Animations/Stand/Run/"), TEXT("/RpgGaspLocomotion/MotionMatching/Schemas/PSS_Rpg_Locomotion"), 34, 34 },
 		{ TEXT("/RpgGaspLocomotion/MotionMatching/Databases/PSD_Rpg_Stand_Run_Starts"), TEXT("/RpgGaspLocomotion/Animations/Stand/Run/"), TEXT("/RpgGaspLocomotion/MotionMatching/Schemas/PSS_Rpg_Locomotion"), 14, 14 },
 		{ TEXT("/RpgGaspLocomotion/MotionMatching/Databases/PSD_Rpg_Stand_Run_Stops"), TEXT("/RpgGaspLocomotion/Animations/Stand/Run/"), TEXT("/RpgGaspLocomotion/MotionMatching/Schemas/PSS_Rpg_Locomotion"), 12, 12 },
-		{ TEXT("/RpgGaspLocomotion/MotionMatching/Databases/PSD_Rpg_Stand_Sprint"), TEXT("/RpgGaspLocomotion/Animations/Stand/Sprint/"), TEXT("/RpgGaspLocomotion/MotionMatching/Schemas/PSS_Rpg_Locomotion"), 10, 10 },
+		{ SprintMovingDatabasePackage, TEXT("/RpgGaspLocomotion/Animations/Stand/Sprint/"), TEXT("/RpgGaspLocomotion/MotionMatching/Schemas/PSS_Rpg_Locomotion"), 8, 8 },
+		{ SprintStopDatabasePackage, TEXT("/RpgGaspLocomotion/Animations/Stand/Sprint/"), StopSchemaPackage, 2, 2 },
 		{ JumpDatabasePackage, TEXT("/RpgGaspLocomotion/Animations/Jump/"), JumpSchemaPackage, 19, 19 },
 		{ LandingDatabasePackage, JumpLandRoot, JumpSchemaPackage, 4, 4 },
 	};
@@ -788,6 +862,194 @@ bool FRpgGaspLocomotionContentContractTest::RunTest(const FString& Parameters)
 		TEXT("/RpgGaspLocomotion/MotionMatching/Databases/PSD_Rpg_Stand_Run_Stops.PSD_Rpg_Stand_Run_Stops"),
 		MakeArrayView(SparseRunStopPackages));
 
+	const auto ValidateOrderedDatabaseMembers = [this](
+		const TCHAR* PackageName,
+		TConstArrayView<const TCHAR*> ExpectedPackages) -> UPoseSearchDatabase*
+	{
+		const FString ObjectPath = FString::Printf(
+			TEXT("%s.%s"),
+			PackageName,
+			*FPackageName::GetLongPackageAssetName(PackageName));
+		UPoseSearchDatabase* Database = LoadObject<UPoseSearchDatabase>(nullptr, *ObjectPath);
+		if (!TestNotNull(
+				*FString::Printf(TEXT("The ordered database %s loads"), PackageName),
+				Database))
+		{
+			return nullptr;
+		}
+
+		TestEqual(
+			*FString::Printf(TEXT("%s has the exact member count"), PackageName),
+			Database->GetNumAnimationAssets(),
+			ExpectedPackages.Num());
+		TSet<FString> UniquePackages;
+		for (int32 Index = 0;
+			Index < ExpectedPackages.Num() && Index < Database->GetNumAnimationAssets();
+			++Index)
+		{
+			const FPoseSearchDatabaseAnimationAsset* Entry = Database->GetDatabaseAnimationAsset(Index);
+			const UObject* AnimationAsset = Entry ? Entry->GetAnimationAsset() : nullptr;
+			if (TestNotNull(
+					*FString::Printf(TEXT("%s entry %d resolves"), PackageName, Index),
+					AnimationAsset))
+			{
+				const FString ActualPackage = AnimationAsset->GetOutermost()->GetName();
+				TestEqual(
+					*FString::Printf(TEXT("%s entry %d keeps source order"), PackageName, Index),
+					ActualPackage,
+					FString(ExpectedPackages[Index]));
+				UniquePackages.Add(ActualPackage);
+			}
+		}
+		TestEqual(
+			*FString::Printf(TEXT("%s contains no duplicate animations"), PackageName),
+			UniquePackages.Num(),
+			ExpectedPackages.Num());
+		return Database;
+	};
+
+	UPoseSearchDatabase* WalkMovingDatabase = ValidateOrderedDatabaseMembers(
+		WalkMovingDatabasePackage,
+		MakeArrayView(WalkMovingAnimationPackages));
+	UPoseSearchDatabase* SprintMovingDatabase = ValidateOrderedDatabaseMembers(
+		SprintMovingDatabasePackage,
+		MakeArrayView(SprintMovingAnimationPackages));
+
+	const auto ValidateStopDatabase = [this, &ValidateOrderedDatabaseMembers](
+		const TCHAR* PackageName,
+		TConstArrayView<const TCHAR*> ExpectedPackages,
+		const TCHAR* ExpectedSchemaPackage,
+		const float ExpectedContinuingPoseBias,
+		const bool bExpectStopsTag) -> UPoseSearchDatabase*
+	{
+		UPoseSearchDatabase* Database = ValidateOrderedDatabaseMembers(PackageName, ExpectedPackages);
+		if (!Database)
+		{
+			return nullptr;
+		}
+
+		const FString ExpectedSchemaObject = FString::Printf(
+			TEXT("%s.%s"),
+			ExpectedSchemaPackage,
+			*FPackageName::GetLongPackageAssetName(ExpectedSchemaPackage));
+		TestEqual(
+			*FString::Printf(TEXT("%s uses its exact local schema"), PackageName),
+			GetPathNameSafe(Database->Schema),
+			ExpectedSchemaObject);
+		TestEqual(
+			*FString::Printf(TEXT("%s uses shared normalization"), PackageName),
+			GetPathNameSafe(Database->NormalizationSet.Get()),
+			FString(TEXT("/RpgGaspLocomotion/MotionMatching/NormalizationSets/PSN_Rpg_Locomotion.PSN_Rpg_Locomotion")));
+		TestEqual(
+			*FString::Printf(TEXT("%s uses the local preview mesh"), PackageName),
+			GetPathNameSafe(Database->PreviewMesh),
+			FString(TargetMeshPath));
+
+		TestTrue(
+			*FString::Printf(TEXT("%s keeps its source continuing-pose bias"), PackageName),
+			FMath::IsNearlyEqual(Database->ContinuingPoseCostBias, ExpectedContinuingPoseBias));
+		TestTrue(TEXT("Stop database base bias remains zero"), FMath::IsNearlyZero(Database->BaseCostBias));
+		TestTrue(TEXT("Stop database looping bias remains -0.005"), FMath::IsNearlyEqual(Database->LoopingCostBias, -0.005f));
+		TestTrue(TEXT("Stop database continuing-interaction bias remains zero"), FMath::IsNearlyZero(Database->ContinuingInteractionCostBias));
+		TestTrue(TEXT("Stop database context-interaction bias remains zero"), FMath::IsNearlyZero(Database->ContinuingContextInteractionCostBias));
+		TestTrue(
+			TEXT("Stop database keeps the source exclusion interval"),
+			FMath::IsNearlyZero(Database->ExcludeFromDatabaseParameters.Min) &&
+				FMath::IsNearlyEqual(Database->ExcludeFromDatabaseParameters.Max, -0.3f));
+		TestTrue(
+			TEXT("Stop database keeps source extrapolation bounds"),
+			FMath::IsNearlyEqual(Database->AdditionalExtrapolationTime.Min, -100.0f) &&
+				FMath::IsNearlyEqual(Database->AdditionalExtrapolationTime.Max, 100.0f));
+		TestEqual(TEXT("Stop database uses PCA KD-tree search"), Database->PoseSearchMode, EPoseSearchMode::PCAKDTree);
+		TestEqual(TEXT("Stop database keeps four principal components"), Database->NumberOfPrincipalComponents, 4);
+		TestEqual(TEXT("Stop database keeps leaf size 16"), Database->KDTreeMaxLeafSize, 16);
+		TestEqual(TEXT("Stop database keeps 200 query neighbors"), Database->KDTreeQueryNumNeighbors, 200);
+		TestTrue(TEXT("Stop database pose pruning stays disabled"), FMath::IsNearlyZero(Database->PosePruningSimilarityThreshold));
+		TestTrue(TEXT("Stop database PCA pruning stays disabled"), FMath::IsNearlyZero(Database->PCAValuesPruningSimilarityThreshold));
+		TestEqual(TEXT("Stop database duplicate-neighbor cap stays disabled"), Database->KDTreeQueryNumNeighborsWithDuplicates, 0);
+
+		TestEqual(
+			*FString::Printf(TEXT("%s has the exact selection-tag count"), PackageName),
+			Database->Tags.Num(),
+			bExpectStopsTag ? 1 : 0);
+		if (bExpectStopsTag && Database->Tags.Num() == 1)
+		{
+			TestEqual(TEXT("Sprint Stop database keeps the source Stops tag"), Database->Tags[0], FName(TEXT("Stops")));
+		}
+
+		for (int32 Index = 0; Index < Database->GetNumAnimationAssets(); ++Index)
+		{
+			const FPoseSearchDatabaseAnimationAsset* Entry = Database->GetDatabaseAnimationAsset(Index);
+			if (!TestNotNull(TEXT("Every Stop entry resolves for metadata validation"), Entry))
+			{
+				continue;
+			}
+			TestTrue(TEXT("Every Stop entry remains enabled"), Entry->IsEnabled());
+			TestTrue(TEXT("Every Stop entry disables reselection"), Entry->IsDisableReselection());
+			TestEqual(TEXT("Every Stop entry remains unmirrored-only"), Entry->GetMirrorOption(), EPoseSearchMirrorOption::UnmirroredOnly);
+			TestEqual(TEXT("Every Stop entry has no external BranchIn id"), Entry->BranchInId, 0);
+			TestFalse(TEXT("Every Stop entry has no external synchronization"), Entry->IsSynchronizedWithExternalDependency());
+			TestFalse(TEXT("Every Stop entry uses ordinary sequence sampling"), Entry->bUseSingleSample);
+			TestFalse(TEXT("Every Stop entry disables blend-space grid sampling"), Entry->bUseGridForSampling);
+			TestEqual(TEXT("Every Stop entry keeps nine horizontal samples"), Entry->NumberOfHorizontalSamples, 9);
+			TestEqual(TEXT("Every Stop entry keeps two vertical samples"), Entry->NumberOfVerticalSamples, 2);
+			TestTrue(TEXT("Every Stop entry keeps zero blend parameters"), FMath::IsNearlyZero(Entry->BlendParamX) && FMath::IsNearlyZero(Entry->BlendParamY));
+			const FFloatInterval SamplingRange = Entry->GetSamplingRange();
+			TestTrue(TEXT("Every Stop entry uses full-range [0,0] sampling"), FMath::IsNearlyZero(SamplingRange.Min) && FMath::IsNearlyZero(SamplingRange.Max));
+			TestFalse(TEXT("Every Stop entry is non-looping"), Entry->IsLooping());
+		}
+		return Database;
+	};
+
+	UPoseSearchDatabase* WalkStopDatabase = ValidateStopDatabase(
+		WalkStopDatabasePackage,
+		MakeArrayView(WalkStopAnimationPackages),
+		TEXT("/RpgGaspLocomotion/MotionMatching/Schemas/PSS_Rpg_Locomotion"),
+		-0.01f,
+		false);
+	UPoseSearchDatabase* SprintStopDatabase = ValidateStopDatabase(
+		SprintStopDatabasePackage,
+		MakeArrayView(SprintStopAnimationPackages),
+		StopSchemaPackage,
+		-0.2f,
+		true);
+
+	const auto ReadDatabasePackageSet = [](const UPoseSearchDatabase* Database)
+	{
+		TSet<FString> Packages;
+		if (Database)
+		{
+			for (int32 Index = 0; Index < Database->GetNumAnimationAssets(); ++Index)
+			{
+				const UObject* Asset = Database->GetAnimationAsset(Index);
+				if (Asset)
+				{
+					Packages.Add(Asset->GetOutermost()->GetName());
+				}
+			}
+		}
+		return Packages;
+	};
+	const auto TestNoPoolOverlap = [this, &ReadDatabasePackageSet](
+		const TCHAR* Label,
+		const UPoseSearchDatabase* MovingDatabase,
+		const UPoseSearchDatabase* StopDatabase,
+		const int32 ExpectedUnionCount)
+	{
+		TSet<FString> MovingPackages = ReadDatabasePackageSet(MovingDatabase);
+		const TSet<FString> StopPackages = ReadDatabasePackageSet(StopDatabase);
+		int32 OverlapCount = 0;
+		for (const FString& StopPackage : StopPackages)
+		{
+			OverlapCount += MovingPackages.Contains(StopPackage);
+			MovingPackages.Add(StopPackage);
+		}
+		TestEqual(*FString::Printf(TEXT("%s moving and Stop pools do not overlap"), Label), OverlapCount, 0);
+		TestEqual(*FString::Printf(TEXT("%s pools retain the exact unique union"), Label), MovingPackages.Num(), ExpectedUnionCount);
+	};
+	TestNoPoolOverlap(TEXT("Walk"), WalkMovingDatabase, WalkStopDatabase, 37);
+	TestNoPoolOverlap(TEXT("Sprint"), SprintMovingDatabase, SprintStopDatabase, 10);
+
 	auto ValidateJumpDatabase = [this](
 		const TCHAR* ObjectPath,
 		TConstArrayView<const TCHAR*> ExpectedPackages,
@@ -996,6 +1258,222 @@ bool FRpgGaspLocomotionContentContractTest::RunTest(const FString& Parameters)
 		}
 	}
 
+	UPoseSearchSchema* StopSchema = LoadObject<UPoseSearchSchema>(
+		nullptr,
+		TEXT("/RpgGaspLocomotion/MotionMatching/Schemas/PSS_Rpg_Stop.PSS_Rpg_Stop"));
+	if (TestNotNull(TEXT("The source-exact local Stop schema loads"), StopSchema))
+	{
+		TestEqual(TEXT("The Stop schema samples at 30 Hz"), StopSchema->SampleRate, 30);
+		TestEqual(
+			TEXT("The Stop schema uses common-schema normalization"),
+			StopSchema->DataPreprocessor,
+			EPoseSearchDataPreprocessor::NormalizeWithCommonSchema);
+		TestEqual(TEXT("The Stop schema finalizes to cardinality 30"), StopSchema->SchemaCardinality, 30);
+		TestEqual(TEXT("The Stop schema indexes one permutation"), StopSchema->NumberOfPermutations, 1);
+		TestEqual(TEXT("The Stop schema permutation rate stays at 30 Hz"), StopSchema->PermutationsSampleRate, 30);
+		TestTrue(TEXT("The Stop schema has no permutation offset"), FMath::IsNearlyZero(StopSchema->PermutationsTimeOffset));
+		TestFalse(TEXT("The Stop schema adds no data padding"), StopSchema->bAddDataPadding);
+		TestFalse(TEXT("The Stop schema injects no debug channels"), StopSchema->bInjectAdditionalDebugChannels);
+		TestFalse(TEXT("The Stop schema draws no injected debug channels"), StopSchema->bDrawInjectAdditionalDebugChannels);
+
+		TestEqual(TEXT("The Stop schema owns one roled skeleton"), StopSchema->GetRoledSkeletons().Num(), 1);
+		if (StopSchema->GetRoledSkeletons().Num() == 1)
+		{
+			const FPoseSearchRoledSkeleton& RoledSkeleton = StopSchema->GetRoledSkeletons()[0];
+			TestEqual(TEXT("The Stop schema uses the authoritative skeleton"), GetPathNameSafe(RoledSkeleton.Skeleton), FString(TargetSkeletonPath));
+			TestEqual(TEXT("The Stop schema uses the local mirror table"), GetPathNameSafe(RoledSkeleton.MirrorDataTable.Get()), FString(MirrorTablePath));
+			TestTrue(TEXT("The Stop schema default role stays unnamed"), RoledSkeleton.Role.IsNone());
+			TestTrue(TEXT("The Stop schema requires no PoseHistory curves"), RoledSkeleton.RequiredCurves.IsEmpty());
+			TestEqual(TEXT("The Stop schema resolves exactly four bones"), RoledSkeleton.BoneReferences.Num(), 4);
+			static const FName ExpectedStopBones[] = {
+				FName(TEXT("root")),
+				FName(TEXT("foot_l")),
+				FName(TEXT("foot_r")),
+				FName(TEXT("pelvis")),
+			};
+			for (int32 Index = 0;
+				Index < UE_ARRAY_COUNT(ExpectedStopBones) && Index < RoledSkeleton.BoneReferences.Num();
+				++Index)
+			{
+				TestEqual(
+					*FString::Printf(TEXT("Stop schema bone %d keeps source order"), Index),
+					RoledSkeleton.BoneReferences[Index].BoneName,
+					ExpectedStopBones[Index]);
+			}
+		}
+
+		const auto TestChannelSpan = [this](
+			const TCHAR* Label,
+			const UPoseSearchFeatureChannel* Channel,
+			const int32 ExpectedOffset,
+			const int32 ExpectedCardinality)
+		{
+			if (TestNotNull(Label, Channel))
+			{
+				TestEqual(*FString::Printf(TEXT("%s data offset"), Label), Channel->GetChannelDataOffset(), ExpectedOffset);
+				TestEqual(*FString::Printf(TEXT("%s cardinality"), Label), Channel->GetChannelCardinality(), ExpectedCardinality);
+			}
+		};
+		const auto TestPositionChannel = [this, &TestChannelSpan](
+			const TCHAR* Label,
+			const UPoseSearchFeatureChannel* Channel,
+			const int32 ExpectedOffset,
+			const int32 ExpectedCardinality,
+			const FName ExpectedBone,
+			const FName ExpectedOriginBone,
+			const float ExpectedTime,
+			const float ExpectedWeight,
+			const EInputQueryPose ExpectedQuery,
+			const EComponentStrippingVector ExpectedStripping)
+		{
+			const UPoseSearchFeatureChannel_Position* Position = Cast<UPoseSearchFeatureChannel_Position>(Channel);
+			TestChannelSpan(Label, Position, ExpectedOffset, ExpectedCardinality);
+			if (!Position)
+			{
+				return;
+			}
+			TestTrue(*FString::Printf(TEXT("%s defaults empty bones to root"), Label), Position->bDefaultWithRootBone);
+			TestEqual(*FString::Printf(TEXT("%s bone"), Label), Position->Bone.BoneName, ExpectedBone);
+			TestEqual(*FString::Printf(TEXT("%s origin bone"), Label), Position->OriginBone.BoneName, ExpectedOriginBone);
+			TestTrue(*FString::Printf(TEXT("%s sample role"), Label), Position->SampleRole.IsNone());
+			TestTrue(*FString::Printf(TEXT("%s origin role"), Label), Position->OriginRole.IsNone());
+			TestTrue(*FString::Printf(TEXT("%s weight"), Label), FMath::IsNearlyEqual(Position->Weight, ExpectedWeight));
+			TestEqual(*FString::Printf(TEXT("%s sampling attribute"), Label), Position->SamplingAttributeId, INDEX_NONE);
+			TestTrue(*FString::Printf(TEXT("%s sample time"), Label), FMath::IsNearlyEqual(Position->SampleTimeOffset, ExpectedTime));
+			TestTrue(*FString::Printf(TEXT("%s origin time"), Label), FMath::IsNearlyZero(Position->OriginTimeOffset));
+			TestEqual(*FString::Printf(TEXT("%s query pose"), Label), Position->InputQueryPose, ExpectedQuery);
+			TestEqual(*FString::Printf(TEXT("%s component stripping"), Label), Position->ComponentStripping, ExpectedStripping);
+			TestEqual(*FString::Printf(TEXT("%s permutation mode"), Label), Position->PermutationTimeType, EPermutationTimeType::UseSampleTime);
+			TestFalse(*FString::Printf(TEXT("%s does not normalize displacement"), Label), Position->bNormalizeDisplacement);
+			TestTrue(*FString::Printf(TEXT("%s has no normalization group"), Label), Position->NormalizationGroup.IsNone());
+		};
+		const auto TestVelocityChannel = [this, &TestChannelSpan](
+			const TCHAR* Label,
+			const UPoseSearchFeatureChannel* Channel,
+			const int32 ExpectedOffset,
+			const int32 ExpectedCardinality,
+			const FName ExpectedBone,
+			const FName ExpectedOriginBone,
+			const float ExpectedTime,
+			const float ExpectedWeight,
+			const EInputQueryPose ExpectedQuery,
+			const EComponentStrippingVector ExpectedStripping,
+			const bool bExpectedCharacterSpace,
+			const bool bExpectedNormalized,
+			const FName ExpectedNormalizationGroup)
+		{
+			const UPoseSearchFeatureChannel_Velocity* Velocity = Cast<UPoseSearchFeatureChannel_Velocity>(Channel);
+			TestChannelSpan(Label, Velocity, ExpectedOffset, ExpectedCardinality);
+			if (!Velocity)
+			{
+				return;
+			}
+			TestTrue(*FString::Printf(TEXT("%s defaults empty bones to root"), Label), Velocity->bDefaultWithRootBone);
+			TestEqual(*FString::Printf(TEXT("%s bone"), Label), Velocity->Bone.BoneName, ExpectedBone);
+			TestEqual(*FString::Printf(TEXT("%s origin bone"), Label), Velocity->OriginBone.BoneName, ExpectedOriginBone);
+			TestTrue(*FString::Printf(TEXT("%s sample role"), Label), Velocity->SampleRole.IsNone());
+			TestTrue(*FString::Printf(TEXT("%s origin role"), Label), Velocity->OriginRole.IsNone());
+			TestTrue(*FString::Printf(TEXT("%s weight"), Label), FMath::IsNearlyEqual(Velocity->Weight, ExpectedWeight));
+			TestEqual(*FString::Printf(TEXT("%s sampling attribute"), Label), Velocity->SamplingAttributeId, INDEX_NONE);
+			TestTrue(*FString::Printf(TEXT("%s sample time"), Label), FMath::IsNearlyEqual(Velocity->SampleTimeOffset, ExpectedTime));
+			TestTrue(*FString::Printf(TEXT("%s origin time"), Label), FMath::IsNearlyZero(Velocity->OriginTimeOffset));
+			TestEqual(*FString::Printf(TEXT("%s query pose"), Label), Velocity->InputQueryPose, ExpectedQuery);
+			TestEqual(*FString::Printf(TEXT("%s component stripping"), Label), Velocity->ComponentStripping, ExpectedStripping);
+			TestEqual(*FString::Printf(TEXT("%s permutation mode"), Label), Velocity->PermutationTimeType, EPermutationTimeType::UseSampleTime);
+			TestEqual(*FString::Printf(TEXT("%s character-space velocity"), Label), Velocity->bUseCharacterSpaceVelocities, bExpectedCharacterSpace);
+			TestEqual(*FString::Printf(TEXT("%s normalized velocity"), Label), Velocity->bNormalize, bExpectedNormalized);
+			TestEqual(*FString::Printf(TEXT("%s normalization group"), Label), Velocity->NormalizationGroup, ExpectedNormalizationGroup);
+		};
+		const auto TestHeadingChannel = [this, &TestChannelSpan](
+			const TCHAR* Label,
+			const UPoseSearchFeatureChannel* Channel,
+			const int32 ExpectedOffset,
+			const int32 ExpectedCardinality,
+			const FName ExpectedBone,
+			const FName ExpectedOriginBone,
+			const float ExpectedTime,
+			const float ExpectedWeight,
+			const EInputQueryPose ExpectedQuery,
+			const EHeadingAxis ExpectedAxis,
+			const EComponentStrippingVector ExpectedStripping)
+		{
+			const UPoseSearchFeatureChannel_Heading* Heading = Cast<UPoseSearchFeatureChannel_Heading>(Channel);
+			TestChannelSpan(Label, Heading, ExpectedOffset, ExpectedCardinality);
+			if (!Heading)
+			{
+				return;
+			}
+			TestTrue(*FString::Printf(TEXT("%s defaults empty bones to root"), Label), Heading->bDefaultWithRootBone);
+			TestEqual(*FString::Printf(TEXT("%s bone"), Label), Heading->Bone.BoneName, ExpectedBone);
+			TestEqual(*FString::Printf(TEXT("%s origin bone"), Label), Heading->OriginBone.BoneName, ExpectedOriginBone);
+			TestTrue(*FString::Printf(TEXT("%s sample role"), Label), Heading->SampleRole.IsNone());
+			TestTrue(*FString::Printf(TEXT("%s origin role"), Label), Heading->OriginRole.IsNone());
+			TestTrue(*FString::Printf(TEXT("%s weight"), Label), FMath::IsNearlyEqual(Heading->Weight, ExpectedWeight));
+			TestEqual(*FString::Printf(TEXT("%s sampling attribute"), Label), Heading->SamplingAttributeId, INDEX_NONE);
+			TestTrue(*FString::Printf(TEXT("%s sample time"), Label), FMath::IsNearlyEqual(Heading->SampleTimeOffset, ExpectedTime));
+			TestTrue(*FString::Printf(TEXT("%s origin time"), Label), FMath::IsNearlyZero(Heading->OriginTimeOffset));
+			TestEqual(*FString::Printf(TEXT("%s heading axis"), Label), Heading->HeadingAxis, ExpectedAxis);
+			TestEqual(*FString::Printf(TEXT("%s query pose"), Label), Heading->InputQueryPose, ExpectedQuery);
+			TestEqual(*FString::Printf(TEXT("%s component stripping"), Label), Heading->ComponentStripping, ExpectedStripping);
+			TestEqual(*FString::Printf(TEXT("%s permutation mode"), Label), Heading->PermutationTimeType, EPermutationTimeType::UseSampleTime);
+			TestTrue(*FString::Printf(TEXT("%s has no normalization group"), Label), Heading->NormalizationGroup.IsNone());
+		};
+
+		const TConstArrayView<TObjectPtr<UPoseSearchFeatureChannel>> Channels = StopSchema->GetChannels();
+		TestEqual(TEXT("The Stop schema has exactly Trajectory + Group"), Channels.Num(), 2);
+		const UPoseSearchFeatureChannel_Trajectory* Trajectory =
+			Channels.IsValidIndex(0) ? Cast<UPoseSearchFeatureChannel_Trajectory>(Channels[0]) : nullptr;
+		const UPoseSearchFeatureChannel_Group* Group =
+			Channels.IsValidIndex(1) ? Cast<UPoseSearchFeatureChannel_Group>(Channels[1]) : nullptr;
+		TestChannelSpan(TEXT("Stop Trajectory"), Trajectory, 0, 19);
+		TestChannelSpan(TEXT("Stop Group"), Group, 19, 11);
+		if (Trajectory)
+		{
+			TestTrue(TEXT("Stop Trajectory keeps global weight 5"), FMath::IsNearlyEqual(Trajectory->Weight, 5.0f));
+			TestTrue(TEXT("Stop Trajectory uses the default role"), Trajectory->SampleRole.IsNone());
+			TestEqual(TEXT("Stop Trajectory has no debug weight group"), Trajectory->DebugWeightGroupID, INDEX_NONE);
+			TestEqual(TEXT("Stop Trajectory owns four source samples"), Trajectory->Samples.Num(), 4);
+			static const float ExpectedOffsets[] = { -0.05f, 0.0f, 0.35f, 0.7f };
+			static const int32 ExpectedFlags[] = { 32, 148, 160, 176 };
+			static const float ExpectedWeights[] = { 0.3f, 2.0f, 1.0f, 1.0f };
+			for (int32 Index = 0; Index < 4 && Index < Trajectory->Samples.Num(); ++Index)
+			{
+				const FPoseSearchTrajectorySample& Sample = Trajectory->Samples[Index];
+				TestTrue(*FString::Printf(TEXT("Stop sample %d keeps its time"), Index), FMath::IsNearlyEqual(Sample.Offset, ExpectedOffsets[Index]));
+				TestEqual(*FString::Printf(TEXT("Stop sample %d keeps its feature flags"), Index), Sample.Flags, ExpectedFlags[Index]);
+				TestTrue(*FString::Printf(TEXT("Stop sample %d keeps its weight"), Index), FMath::IsNearlyEqual(Sample.Weight, ExpectedWeights[Index]));
+				TestTrue(*FString::Printf(TEXT("Stop sample %d has no normalization group"), Index), Sample.NormalizationGroup.IsNone());
+			}
+
+			TestEqual(TEXT("Stop Trajectory finalizes nine leaves"), Trajectory->SubChannels.Num(), 9);
+			if (Trajectory->SubChannels.Num() == 9)
+			{
+				TestPositionChannel(TEXT("Stop history PositionXY"), Trajectory->SubChannels[0], 0, 2, NAME_None, NAME_None, -0.05f, 1.5f, EInputQueryPose::UseCharacterPose, EComponentStrippingVector::StripZ);
+				TestVelocityChannel(TEXT("Stop current VelocityXY"), Trajectory->SubChannels[1], 2, 2, NAME_None, NAME_None, 0.0f, 10.0f, EInputQueryPose::UseCharacterPose, EComponentStrippingVector::StripZ, false, false, NAME_None);
+				TestVelocityChannel(TEXT("Stop current normalized VelocityDirection"), Trajectory->SubChannels[2], 4, 3, NAME_None, NAME_None, 0.0f, 10.0f, EInputQueryPose::UseCharacterPose, EComponentStrippingVector::None, false, true, NAME_None);
+				TestHeadingChannel(TEXT("Stop current HeadingXY"), Trajectory->SubChannels[3], 7, 2, NAME_None, NAME_None, 0.0f, 10.0f, EInputQueryPose::UseCharacterPose, EHeadingAxis::X, EComponentStrippingVector::StripZ);
+				TestPositionChannel(TEXT("Stop future PositionXY 0.35"), Trajectory->SubChannels[4], 9, 2, NAME_None, NAME_None, 0.35f, 5.0f, EInputQueryPose::UseCharacterPose, EComponentStrippingVector::StripZ);
+				TestHeadingChannel(TEXT("Stop future HeadingXY 0.35"), Trajectory->SubChannels[5], 11, 2, NAME_None, NAME_None, 0.35f, 5.0f, EInputQueryPose::UseCharacterPose, EHeadingAxis::X, EComponentStrippingVector::StripZ);
+				TestPositionChannel(TEXT("Stop future PositionXY 0.7"), Trajectory->SubChannels[6], 13, 2, NAME_None, NAME_None, 0.7f, 5.0f, EInputQueryPose::UseCharacterPose, EComponentStrippingVector::StripZ);
+				TestVelocityChannel(TEXT("Stop future VelocityXY 0.7"), Trajectory->SubChannels[7], 15, 2, NAME_None, NAME_None, 0.7f, 5.0f, EInputQueryPose::UseCharacterPose, EComponentStrippingVector::StripZ, false, false, NAME_None);
+				TestHeadingChannel(TEXT("Stop future HeadingXY 0.7"), Trajectory->SubChannels[8], 17, 2, NAME_None, NAME_None, 0.7f, 5.0f, EInputQueryPose::UseCharacterPose, EHeadingAxis::X, EComponentStrippingVector::StripZ);
+			}
+		}
+		if (Group)
+		{
+			TestTrue(TEXT("Stop Group uses the default role"), Group->SampleRole.IsNone());
+			TestEqual(TEXT("Stop Group has no debug weight group"), Group->DebugWeightGroupID, INDEX_NONE);
+			TestEqual(TEXT("Stop Group owns four source leaves"), Group->SubChannels.Num(), 4);
+			if (Group->SubChannels.Num() == 4)
+			{
+				TestPositionChannel(TEXT("Stop foot-relative position"), Group->SubChannels[0], 19, 3, FName(TEXT("foot_l")), FName(TEXT("foot_r")), 0.0f, 1.0f, EInputQueryPose::UseContinuingPose, EComponentStrippingVector::None);
+				TestVelocityChannel(TEXT("Stop left-foot velocity"), Group->SubChannels[1], 22, 3, FName(TEXT("foot_l")), NAME_None, 0.0f, 0.3f, EInputQueryPose::UseContinuingPose, EComponentStrippingVector::None, true, false, FName(TEXT("FeetVelZ")));
+				TestVelocityChannel(TEXT("Stop right-foot velocity"), Group->SubChannels[2], 25, 3, FName(TEXT("foot_r")), NAME_None, 0.0f, 0.3f, EInputQueryPose::UseContinuingPose, EComponentStrippingVector::None, true, false, FName(TEXT("FeetVelZ")));
+				TestHeadingChannel(TEXT("Stop pelvis heading"), Group->SubChannels[3], 28, 2, FName(TEXT("pelvis")), NAME_None, 0.0f, 0.3f, EInputQueryPose::UseContinuingPose, EHeadingAxis::Y, EComponentStrippingVector::StripZ);
+			}
+		}
+	}
+
 	UPoseSearchSchema* JumpSchema = LoadObject<UPoseSearchSchema>(
 		nullptr,
 		TEXT("/RpgGaspLocomotion/MotionMatching/Schemas/PSS_Rpg_Jump.PSS_Rpg_Jump"));
@@ -1142,12 +1620,14 @@ bool FRpgGaspLocomotionContentContractTest::RunTest(const FString& Parameters)
 		TEXT("/RpgGaspLocomotion/MotionMatching/Databases/PSD_Rpg_Stand_Idle"),
 		TurnInPlaceDatabasePackage,
 		TEXT("/RpgGaspLocomotion/MotionMatching/Databases/PSD_Rpg_Crouch"),
-		TEXT("/RpgGaspLocomotion/MotionMatching/Databases/PSD_Rpg_Stand_Walk"),
+		WalkMovingDatabasePackage,
+		WalkStopDatabasePackage,
 		TEXT("/RpgGaspLocomotion/MotionMatching/Databases/PSD_Rpg_Stand_Run_Loops"),
 		TEXT("/RpgGaspLocomotion/MotionMatching/Databases/PSD_Rpg_Stand_Run_Pivots"),
 		TEXT("/RpgGaspLocomotion/MotionMatching/Databases/PSD_Rpg_Stand_Run_Starts"),
 		TEXT("/RpgGaspLocomotion/MotionMatching/Databases/PSD_Rpg_Stand_Run_Stops"),
-		TEXT("/RpgGaspLocomotion/MotionMatching/Databases/PSD_Rpg_Stand_Sprint"),
+		SprintMovingDatabasePackage,
+		SprintStopDatabasePackage,
 		JumpDatabasePackage,
 		LandingDatabasePackage,
 	};
@@ -1158,11 +1638,13 @@ bool FRpgGaspLocomotionContentContractTest::RunTest(const FString& Parameters)
 		TEXT("/RpgGaspLocomotion/MotionMatching/Databases/PSD_Rpg_Stand_Sprint"),
 		JumpDatabasePackage,
 	};
-	static const TCHAR* const RuntimeSplitRunDatabasePackages[] = {
+	static const TCHAR* const RuntimeSplitDatabasePackages[] = {
+		WalkStopDatabasePackage,
 		TEXT("/RpgGaspLocomotion/MotionMatching/Databases/PSD_Rpg_Stand_Run_Loops"),
 		TEXT("/RpgGaspLocomotion/MotionMatching/Databases/PSD_Rpg_Stand_Run_Pivots"),
 		TEXT("/RpgGaspLocomotion/MotionMatching/Databases/PSD_Rpg_Stand_Run_Starts"),
 		TEXT("/RpgGaspLocomotion/MotionMatching/Databases/PSD_Rpg_Stand_Run_Stops"),
+		SprintStopDatabasePackage,
 	};
 	UPoseSearchNormalizationSet* NormalizationSet = LoadObject<UPoseSearchNormalizationSet>(
 		nullptr,
@@ -1170,8 +1652,28 @@ bool FRpgGaspLocomotionContentContractTest::RunTest(const FString& Parameters)
 	if (TestNotNull(TEXT("The shared normalization set loads"), NormalizationSet))
 	{
 		TestEqual(
-			TEXT("The shared normalization set contains exactly eleven databases"),
+			TEXT("The shared normalization set contains exactly thirteen databases"),
 			NormalizationSet->Databases.Num(),
+			static_cast<int32>(UE_ARRAY_COUNT(DatabasePackages)));
+		TSet<FString> UniqueNormalizationPackages;
+		for (int32 Index = 0;
+			Index < UE_ARRAY_COUNT(DatabasePackages) && Index < NormalizationSet->Databases.Num();
+			++Index)
+		{
+			const UPoseSearchDatabase* Database = NormalizationSet->Databases[Index];
+			const FString ActualPackage = Database ? Database->GetOutermost()->GetName() : FString();
+			TestEqual(
+				*FString::Printf(TEXT("Normalization member %d keeps exact runtime order"), Index),
+				ActualPackage,
+				FString(DatabasePackages[Index]));
+			if (!ActualPackage.IsEmpty())
+			{
+				UniqueNormalizationPackages.Add(ActualPackage);
+			}
+		}
+		TestEqual(
+			TEXT("The normalization set contains no duplicate databases"),
+			UniqueNormalizationPackages.Num(),
 			static_cast<int32>(UE_ARRAY_COUNT(DatabasePackages)));
 	}
 
@@ -1185,7 +1687,7 @@ bool FRpgGaspLocomotionContentContractTest::RunTest(const FString& Parameters)
 				FName(DatabasePackage),
 				UE::AssetRegistry::EDependencyCategory::Package));
 	}
-	for (const TCHAR* DatabasePackage : RuntimeSplitRunDatabasePackages)
+	for (const TCHAR* DatabasePackage : RuntimeSplitDatabasePackages)
 	{
 		TestFalse(
 			*FString::Printf(TEXT("The archival chooser does not pretend to own runtime split database %s"), DatabasePackage),

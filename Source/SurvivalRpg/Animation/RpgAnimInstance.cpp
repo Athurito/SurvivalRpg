@@ -990,19 +990,27 @@ URpgAnimInstance::ResolveGroundMotionMatchingDatabases(
 	const bool bChooserMoving = IsGroundMotionMatchingChooserMoving(Snapshot);
 	if (!bChooserMoving)
 	{
-		// GASP selects stops from its logical Idle domain. This pilot has no split Walk Stops DB,
-		// so the existing Walk aggregate is the bounded 20-100 cm/s fallback.
+		// GASP's logical Idle rows are inclusive and intentionally overlap. Preserve their source
+		// order so exact boundaries expose both adjacent rows to the Pose Search cost comparison.
+		if (SafeGroundSpeed <= WalkStopMinimumSpeed)
+		{
+			AddDatabaseAtIndex(DatabaseSets.Idle, 0);
+		}
+		if (SafeGroundSpeed >= WalkStopMinimumSpeed)
+		{
+			AddDatabaseAtIndex(DatabaseSets.Walk, 1);
+		}
 		if (SafeGroundSpeed >= RunStopMinimumSpeed)
 		{
 			AddDatabaseAtIndex(DatabaseSets.Run, 3);
 		}
-		else if (SafeGroundSpeed >= WalkStopMinimumSpeed)
+		// GASP's speed-only 550 cm/s row assumes its Run speed remains below that boundary.
+		// This project tunes normal Run to 600 cm/s, so require the preserved gait as well;
+		// otherwise its forward-only Sprint clips can abruptly replace an ordinary Run Stop.
+		if (Snapshot.Gait == ERpgLocomotionGait::Sprint &&
+			SafeGroundSpeed >= SprintStopMinimumSpeed)
 		{
-			AddDatabaseAtIndex(DatabaseSets.Walk, 0);
-		}
-		else
-		{
-			AddDatabaseAtIndex(DatabaseSets.Idle, 0);
+			AddDatabaseAtIndex(DatabaseSets.Sprint, 1);
 		}
 		return ResolvedDatabases;
 	}
@@ -1064,13 +1072,13 @@ URpgAnimInstance::ValidateGroundMotionMatchingDatabaseSets(
 	};
 	const FDatabaseSetContract Contracts[] = {
 		{ &DatabaseSets.Idle, 1 },
-		{ &DatabaseSets.Walk, 1 },
+		{ &DatabaseSets.Walk, 2 },
 		{ &DatabaseSets.Run, 4 },
-		{ &DatabaseSets.Sprint, 1 },
+		{ &DatabaseSets.Sprint, 2 },
 	};
 
 	FGroundMotionMatchingDatabaseSetValidation Validation;
-	TArray<UPoseSearchDatabase*, TInlineAllocator<7>> SeenDatabases;
+	TArray<UPoseSearchDatabase*, TInlineAllocator<9>> SeenDatabases;
 	for (const FDatabaseSetContract& Contract : Contracts)
 	{
 		check(Contract.Databases);
@@ -1107,7 +1115,7 @@ EDataValidationResult URpgAnimInstance::IsDataValid(FDataValidationContext& Cont
 		if (GroundDatabaseValidation.bHasInvalidShape)
 		{
 			Context.AddError(FText::FromString(
-				TEXT("Ground Motion Matching database sets must contain Idle 1, Walk 1, Run 4, and Sprint 1 entries; Run is ordered Loops, Pivots, Starts, Stops.")));
+				TEXT("Ground Motion Matching database sets must contain Idle 1, Walk 2, Run 4, and Sprint 2 entries; Walk and Sprint are ordered Moving Aggregate, Stops, while Run is ordered Loops, Pivots, Starts, Stops.")));
 		}
 		if (GroundDatabaseValidation.bHasNullDatabase)
 		{
