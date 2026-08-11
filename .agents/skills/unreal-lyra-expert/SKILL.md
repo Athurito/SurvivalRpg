@@ -1,6 +1,6 @@
 ---
 name: unreal-lyra-expert
-description: Use for Unreal Engine 5 C++/Blueprint review, design, debugging, refactoring, networking, GAS, Enhanced Input, CommonUI, CommonGame, ModularGameplay, Game Features, Lyra Experiences, Lyra Interaction, and Lyra-rooted RPG inventory/equipment architecture. Inspect the project first; treat Lyra systems that exist in the project as canonical, but adapt inventory/equipment to the project's RPG model.
+description: Use for Unreal Engine 5 C++/Blueprint review, design, debugging, refactoring, networking, GAS, Enhanced Input, CommonUI, CommonGame, ModularGameplay, Game Features, Lyra Experiences, Lyra Interaction, and Lyra-rooted RPG inventory/equipment architecture. Inspect the project first; treat Lyra systems that exist in the project as canonical, adapt inventory/equipment to the project's RPG model, and pair with $unreal-gasp-expert when GASP locomotion or animation crosses PawnData, Experiences, GAS montages, movement replication, equipment, death, or ragdoll.
 ---
 
 # Unreal Lyra Expert
@@ -41,6 +41,15 @@ For this project, treat the following as established architecture, not optional 
 - Game Feature plugins are an intended feature and content activation boundary.
 - Lyra-style Interaction is intentionally adopted approximately 1:1 and should be reused instead of rebuilding one-off interaction traces or widget-driven interaction logic.
 - Equipment and Inventory use Lyra as the root architecture, but the implementation is adapted for this project's RPG systems.
+- Project-owned GASP CMC locomotion is composed through Lyra PawnData and Experiences; the Epic sample character is not the gameplay composition root.
+
+Coordinate with `$unreal-gasp-expert` instead of duplicating GASP guidance here.
+
+- Let `$unreal-gasp-expert` lead Motion Matching, Pose Search, trajectory, Blend Stack, Steering, Offset Root Bone, Foot Placement/IK, retargeting, animation threading, and locomotion parity work.
+- Use both skills when animation changes affect PawnData, Experiences, Game Features, character class or lifecycle, movement replication, GAS montage execution, equipment sockets, death, or ragdoll.
+- Keep Lyra-derived gameplay and composition systems authoritative while GASP owns locomotion presentation and animation-specific selection.
+- Preserve the project-owned curated CMC path; do not replace it with GASP's sample character, Mover, Traversal, camera, Foley, or experimental state-machine stack without explicit evaluation.
+- Let the GASP skill load its [GASP-Lyra integration contract](../unreal-gasp-expert/references/gasp-lyra-integration.md) when both domains are active.
 
 Inventory/equipment guidance:
 
@@ -165,6 +174,7 @@ Use stronger decision heuristics when choosing a pattern.
 - If a feature needs contextual world use, pickups, containers, crafting stations, harvest nodes, doors, NPC vendors, loot objects, or RPG interaction gating, check the adopted Lyra Interaction path first.
 - If a feature needs cooldowns, costs, state gating, combat-state ownership, or gameplay-triggered status handling, bias toward GAS when GAS already owns that domain.
 - If a feature modifies equipment, item ownership, item stats, ability grants from equipment, or replicated item state, extend the Lyra-rooted RPG inventory/equipment architecture.
+- If a feature modifies GASP locomotion or animation presentation and also touches Lyra composition, movement replication, GAS montages, equipment, death, or ragdoll, use `$unreal-gasp-expert` with this skill.
 - If behavior repeats across many actors, prefer a component, subsystem-appropriate abstraction, or reusable gameplay pattern over copy-paste logic.
 - If content is optional, delayed, or large, prefer soft references and scalable asset-loading patterns over hard reference chains.
 - If a problem is only a local bug, solve it locally before proposing architectural expansion.

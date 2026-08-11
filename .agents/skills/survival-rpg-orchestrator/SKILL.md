@@ -1,6 +1,6 @@
 ---
 name: survival-rpg-orchestrator
-description: Use for large or ambiguous SurvivalRpg requests that need routing across project vision, Unreal/Lyra architecture, combat/equipment, planning, review, or implementation. Select only the needed specialist skills and break work into the smallest useful slice.
+description: Use for large or ambiguous SurvivalRpg requests that need routing across project vision, Unreal/Lyra architecture, GASP animation/locomotion, combat/equipment, planning, review, or implementation. Select only the needed specialist skills and break work into the smallest useful slice.
 ---
 
 # SurvivalRpg Orchestrator
@@ -20,7 +20,8 @@ Route to the minimum skill set that covers the task.
 - Use `$survival-rpg-project` for any decision that affects game identity, feature scope, progression priorities, portal fantasy, survival friction, or long-term resource relevance.
 - Use `$survival-rpg-combat-foundation` for combat foundation, weapon equip/unequip, loadout, hotbar or hotwheel, weapon action routing, or early GAS weapon architecture in this repository.
 - Use `$unreal-lyra-expert` for Unreal Engine, GAS, Lyra-style architecture, modular gameplay, replication, C++ versus Blueprint boundaries, or engine-facing reviews.
-- Use both skills together when implementing gameplay systems in this repository.
+- Use `$unreal-gasp-expert` for GASP CMC locomotion, Motion Matching, Pose Search, trajectory, procedural animation nodes, retargeting, animation threading, or multiplayer locomotion parity.
+- Combine only the specialists whose ownership boundaries the request crosses.
 - Do not duplicate specialist guidance inside this skill. Delegate to the specialist skill instead.
 
 Preserve repository-wide documentation defaults.
@@ -34,6 +35,10 @@ Apply these default routing rules.
 - New gameplay feature: use `$survival-rpg-project`, then add `$unreal-lyra-expert` if the feature touches runtime implementation.
 - Combat foundation, weapon equip/unequip, hotbar or hotwheel loadout, or early weapon GAS work: use `$survival-rpg-combat-foundation` first, then add `$unreal-lyra-expert` for engine-facing work and `$survival-rpg-project` when feature scope or progression tradeoffs matter.
 - Combat, progression, gathering, crafting, portals, bosses, runes, or world events: use both core skills unless the user is only discussing design direction; keep `$survival-rpg-combat-foundation` active whenever the task touches the Phase 1 weapon backbone.
+- GASP source audits, curated asset work, Pose Search tuning, or purely cosmetic AnimGraph work: use `$unreal-gasp-expert` alone unless the task crosses a gameplay boundary.
+- GASP work that touches PawnData, Experiences, Game Features, character lifecycle, movement replication, GAS montages, equipment, death, or ragdoll: use `$unreal-gasp-expert` together with `$unreal-lyra-expert`.
+- GASP work that touches attacks, dodge, block, hit reactions, combat montage notifies, combat tags, or equipment-granted abilities: also use `$survival-rpg-combat-foundation`.
+- Requests to adopt GASP Mover, Traversal, Locomotor, camera, Foley, or experimental systems: route through `$unreal-gasp-expert` for an isolated dependency evaluation and add `$survival-rpg-project` when the change affects gameplay scope or movement fantasy.
 - Refactor, bug fix, review, replication, GAS ability work, or subsystem placement: use `$unreal-lyra-expert` and keep `$survival-rpg-project` active if the change could shift the game's identity or scope.
 - Documentation, prioritization, feature triage, or MVP planning: use `$survival-rpg-project` first and only add `$unreal-lyra-expert` when technical constraints matter.
 

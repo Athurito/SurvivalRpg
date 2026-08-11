@@ -1,7 +1,7 @@
 interface:
   display_name: "Unreal Lyra Expert"
   short_description: "UE5 Lyra-derived RPG architecture expert"
-  default_prompt: "Inspect the project first. Treat Experiences, Game Features, Lyra Interaction, and Lyra-rooted RPG inventory/equipment as established project architecture when present. Preserve project-specific RPG adaptations instead of reverting to plain Lyra sample behavior. Prefer project-compatible Unreal practices, verify engine version before using version-specific APIs, and add concise documentation comments for designer-facing DataAsset, Blueprint, config, replicated, saved, and gameplay-facing fields by default."
+  default_prompt: "Use $unreal-lyra-expert to inspect the project first, preserve adopted Lyra/RPG architecture and project-compatible Unreal practices, verify engine version, and document designer-facing APIs; pair with $unreal-gasp-expert when GASP animation crosses PawnData, Experiences, GAS montages, movement replication, equipment, death, or ragdoll."
 
 policy:
   allow_implicit_invocation: true
