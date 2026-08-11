@@ -1422,6 +1422,7 @@ bool FRpgGaspPilotAssetContractTest::RunTest(const FString& Parameters)
 			TEXT("Walk"),
 			{
 				TEXT("/RpgGaspLocomotion/MotionMatching/Databases/PSD_Rpg_Stand_Walk.PSD_Rpg_Stand_Walk"),
+				TEXT("/RpgGaspLocomotion/MotionMatching/Databases/PSD_Rpg_Stand_Walk_Stops.PSD_Rpg_Stand_Walk_Stops"),
 			});
 		TestGroundDatabaseGroup(
 			TEXT("Run"),
@@ -1437,6 +1438,7 @@ bool FRpgGaspPilotAssetContractTest::RunTest(const FString& Parameters)
 			TEXT("Sprint"),
 			{
 				TEXT("/RpgGaspLocomotion/MotionMatching/Databases/PSD_Rpg_Stand_Sprint.PSD_Rpg_Stand_Sprint"),
+				TEXT("/RpgGaspLocomotion/MotionMatching/Databases/PSD_Rpg_Stand_Sprint_Stops.PSD_Rpg_Stand_Sprint_Stops"),
 			});
 
 		FString CrouchingDatabasePath;

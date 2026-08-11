@@ -36,11 +36,14 @@ enum class ERpgLocomotionGait : uint8
 /**
  * Static grounded Pose Search database groups consumed by the project-local locomotion selector.
  *
- * The fixed array shapes are part of the runtime contract: Idle, Walk, and Sprint each search one
- * database, while Run stores four specialized roles in Loops, Pivots, Starts, Stops order. Runtime
- * selection mirrors the relevant GASP chooser domains: moving Run can offer Starts, Loops, and
- * Pivots together, while deceleration removes Loops and routes to a bounded stop database.
- * The values are designer-authored AnimBP defaults and must never be mutated during evaluation.
+ * The fixed array shapes are part of the runtime contract: Idle stores one database, Walk and
+ * Sprint each store Moving Aggregate and Stops, while Run stores Loops, Pivots, Starts, and Stops.
+ * Runtime selection mirrors the relevant GASP chooser domains: moving Run can offer Starts, Loops,
+ * and Pivots together, while logical Idle exposes overlapping stop rows from current ground speed.
+ * Sprint Stops additionally require a real Sprint gait so a project-tuned 600 cm/s Run cannot
+ * select GASP's forward-only Sprint Stops. The current input mapping intentionally produces only
+ * Walk/Run, leaving this content dormant until gameplay supplies an explicit Sprint gait. The
+ * values are designer-authored AnimBP defaults and must never be mutated during evaluation.
  */
 USTRUCT(BlueprintType)
 struct SURVIVALRPG_API FRpgGroundMotionMatchingDatabaseSets
@@ -50,16 +53,16 @@ struct SURVIVALRPG_API FRpgGroundMotionMatchingDatabaseSets
 	FRpgGroundMotionMatchingDatabaseSets()
 	{
 		Idle.SetNum(1);
-		Walk.SetNum(1);
+		Walk.SetNum(2);
 		Run.SetNum(4);
-		Sprint.SetNum(1);
+		Sprint.SetNum(2);
 	}
 
 	/** Single database searched for standing idle locomotion. */
 	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, EditFixedSize, Category = "Rpg|Animation|Motion Matching")
 	TArray<TObjectPtr<UPoseSearchDatabase>> Idle;
 
-	/** Single database searched for standing walk locomotion. */
+	/** Two Walk roles: [0] is the Moving Aggregate and [1] is Stops. */
 	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, EditFixedSize, Category = "Rpg|Animation|Motion Matching")
 	TArray<TObjectPtr<UPoseSearchDatabase>> Walk;
 
@@ -67,7 +70,7 @@ struct SURVIVALRPG_API FRpgGroundMotionMatchingDatabaseSets
 	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, EditFixedSize, Category = "Rpg|Animation|Motion Matching")
 	TArray<TObjectPtr<UPoseSearchDatabase>> Run;
 
-	/** Single database searched for standing sprint locomotion once gameplay exposes Sprint. */
+	/** Two Sprint roles: [0] is the Moving Aggregate and [1] is Stops. */
 	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, EditFixedSize, Category = "Rpg|Animation|Motion Matching")
 	TArray<TObjectPtr<UPoseSearchDatabase>> Sprint;
 };
@@ -581,6 +584,7 @@ private:
 	static constexpr float ChooserAccelerationTolerance = 0.0001f;
 	static constexpr float WalkStopMinimumSpeed = 20.0f;
 	static constexpr float RunStopMinimumSpeed = 100.0f;
+	static constexpr float SprintStopMinimumSpeed = 550.0f;
 	static constexpr float FreeRunPivotMinimumAngle = 45.0f;
 	static constexpr float CombatStrafeRunPivotMinimumAngle = 30.0f;
 	static constexpr float AimRunPivotMinimumAngle = 0.0f;
@@ -606,13 +610,14 @@ private:
 
 	/**
 	 * Selects one immutable GASP-like domain while invalid null or duplicate entries are safely omitted.
-	 * Moving Run preserves source result order Starts, Loops, Pivots; idle deceleration routes by speed.
+	 * Moving Run preserves source result order Starts, Loops, Pivots; logical Idle preserves the
+	 * source's inclusive and overlapping Idle, Walk Stops, Run Stops, Sprint Stops row order.
 	 */
 	static FResolvedGroundMotionMatchingDatabases ResolveGroundMotionMatchingDatabases(
 		const FGroundMotionMatchingSelectionSnapshot& Snapshot,
 		const FRpgGroundMotionMatchingDatabaseSets& DatabaseSets);
 
-	/** Checks the fixed 1/1/4/1 shape plus null and cross-set duplicate references without loading assets. */
+	/** Checks the fixed 1/2/4/2 shape plus null and cross-set duplicate references without loading assets. */
 	static FGroundMotionMatchingDatabaseSetValidation ValidateGroundMotionMatchingDatabaseSets(
 		const FRpgGroundMotionMatchingDatabaseSets& DatabaseSets);
 
