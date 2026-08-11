@@ -1,7 +1,7 @@
 interface:
   display_name: "SurvivalRpg Orchestrator"
   short_description: "Routes broad SurvivalRpg tasks"
-  default_prompt: "Use $survival-rpg-orchestrator for broad, ambiguous, or multi-system SurvivalRpg tasks. Select the minimum specialist skills, inspect repo truth, choose the smallest useful slice, then implement or plan. Preserve the repository default that designer-facing DataAsset, Blueprint, config, replicated, saved, and gameplay-facing fields should receive concise documentation comments."
+  default_prompt: "Use $survival-rpg-orchestrator to route broad SurvivalRpg tasks to the minimum project, Lyra, GASP, and combat specialists, inspect repository truth, choose the smallest verifiable slice, and preserve repository designer-facing documentation defaults."
 
 policy:
   allow_implicit_invocation: true

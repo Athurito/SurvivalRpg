@@ -1,6 +1,6 @@
 ---
 name: survival-rpg-combat-foundation
-description: Use for SurvivalRpg combat, equipment, inventory-facing item instances, loadouts, GAS ability grants, mastery/progression, runes, portal combat, Dungeonbreak, and modular GameFeature combat content. Prefer current repo truth, preserve Lyra-rooted RPG equipment/inventory architecture, and pair with $unreal-lyra-expert for engine-facing implementation.
+description: Use for SurvivalRpg combat, equipment, inventory-facing item instances, loadouts, GAS ability grants, mastery/progression, runes, portal combat, Dungeonbreak, and modular GameFeature combat content. Prefer current repo truth, preserve Lyra-rooted RPG equipment/inventory architecture, pair with $unreal-lyra-expert for engine-facing implementation, and add $unreal-gasp-expert for combat animation, montage/locomotion overlap, dodge, block, hit reactions, or GASP-driven presentation.
 ---
 
 # SurvivalRpg Combat Foundation
@@ -10,6 +10,8 @@ description: Use for SurvivalRpg combat, equipment, inventory-facing item instan
 This skill owns SurvivalRpg combat, equipment, inventory-facing item instances, weapon action routing, runes, mastery/progression, portal combat, Dungeonbreak combat escalation, and combat GameFeature guidance.
 
 Use it together with `$unreal-lyra-expert` when implementation details touch Unreal Engine, GAS internals, replication, Experiences, Game Features, Lyra Interaction, or Lyra-rooted inventory/equipment.
+
+Use it together with `$unreal-gasp-expert` when combat work changes the GASP AnimBP, Motion Matching layers, montage slots, root-motion interaction, dodge or block presentation, hit reactions, equipment sockets, death, ragdoll, or locomotion-driven combat tags. Keep combat outcomes authoritative in GAS and equipment while animation remains presentation.
 
 Use it together with `$survival-rpg-project` when a combat, equipment, rune, portal, or progression decision changes product scope, progression identity, survival friction, first-playable priorities, or long-term resource relevance.
 
@@ -311,6 +313,8 @@ Check these when montage abilities fail:
 - ability is actually granted to the ASC
 - activation tags are not blocked
 
+When the active character uses the GASP AnimBP, also check the `$unreal-gasp-expert` contract for `DefaultSlot`, root-motion extraction, `GetMesh()`, worker-thread tag snapshots, locomotion interruption, and simulated-proxy presentation.
+
 Core should not reference feature-only montages. A feature can reference core/shared character assets.
 
 ---
@@ -431,3 +435,5 @@ Flag proposals that:
 - implement skill trees that make weapon switching feel like starting from zero
 - put special fire/rift/rune logic into generic core assets
 - require main maps to hard-reference feature-only actors without clear reason
+- make authoritative combat results depend on GASP pose selection or AnimBP-local state
+- remove montage slots, notifies, root-motion behavior, equipment sockets, death, or ragdoll seams while simplifying the GASP locomotion graph

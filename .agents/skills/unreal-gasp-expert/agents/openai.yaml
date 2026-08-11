@@ -1,0 +1,7 @@
+interface:
+  display_name: "Unreal GASP Expert"
+  short_description: "GASP CMC, RPG movement, and Lyra integration"
+  default_prompt: "Use $unreal-gasp-expert to inspect and solve SurvivalRpg GASP CMC, load-aware RPG locomotion, curated traversal, Motion Matching, Pose Search, or Lyra/GAS animation integration while preserving project-owned content and multiplayer/thread-safety contracts."
+
+policy:
+  allow_implicit_invocation: true
