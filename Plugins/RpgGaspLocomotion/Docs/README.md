@@ -26,13 +26,27 @@ Unreal recompresses retargeted sequences with the project/engine defaults, so on
 - Native Pose Search sampling, exclusion, transition, and cost notifies are preserved.
 - Sample Foley, EarlyTransition, BranchIn database references, and experimental state-machine asset user data are removed.
 - Sparse database entry metadata is copied from GASP except `BranchInId`, which is reset because the corresponding notify states are removed. Ordinary full-range database search is the explicit local replacement; no dangling source synchronization dependency is retained.
-- Walk Stops retain GASP's `ContinuingPoseCostBias=-0.01` and no selection tag; Sprint Stops retain `ContinuingPoseCostBias=-0.2` and the exact `Stops` tag. All 14 Stop entries are enabled, disable reselection, remain unmirrored-only/non-looping, and use full-range `[0.0,0.0]` sampling.
-- The historical flat chooser remains an archival content reference to the moving Walk/Sprint pools and legacy aggregate Run database; it deliberately does not reference the runtime Walk, Run, or Sprint Stop databases. Runtime ground selection is owned by `URpgAnimInstance`, using fixed Idle/Walk/Run/Sprint database shapes of 1/2/4/2.
-- `PSD_Rpg_Stand_TurnInPlace` carries only the `TurnInPlace` tag, uses `BaseCostBias=-0.2` and `ContinuingPoseCostBias=-0.05`, and keeps all eight entries unmirrored and non-looping. Every entry uses `SamplingRange=[0.0,0.01]`, which deliberately indexes exactly the authored `t=0` pose at the 30 Hz schema rate so controller-facing turns cannot enter after their root-yaw section.
+- Walk Stops retain GASP's `ContinuingPoseCostBias=-0.01` without the source `Stops` tag; Sprint Stops retain `ContinuingPoseCostBias=-0.2` and the exact source `Stops` tag. Both also carry their project-owned role/state tags. All 14 Stop entries are enabled, disable reselection, remain unmirrored-only/non-looping, and use full-range `[0.0,0.0]` sampling.
+- The historical flat chooser remains an archival comparison source for the moving Walk/Sprint pools and legacy aggregate Run database; it deliberately does not reference the runtime Walk, Run, or Sprint Stop databases and never owns runtime selection. `URpgAnimInstance` owns the native selector with fixed Idle/Walk/Run/Sprint database shapes of 1/2/4/2.
+- `PSD_Rpg_Stand_TurnInPlace` retains the source `TurnInPlace` tag alongside its project-owned role/state tags, uses `BaseCostBias=-0.2` and `ContinuingPoseCostBias=-0.05`, and keeps all eight entries unmirrored and non-looping. Every entry uses `SamplingRange=[0.0,0.01]`, which deliberately indexes exactly the authored `t=0` pose at the 30 Hz schema rate so controller-facing turns cannot enter after their root-yaw section.
 - The final plugin contains no GASP source skeleton, mesh, IK rig, retargeter, Sample Character, Traversal, Camera, Mover, Locomotor, NetworkPrediction, Foley, Audio, or MetaSound content.
 
 The complete source-to-target mapping and cleanup policy is recorded in `CuratedAssetManifest.csv`.
 
 ## Runtime boundary
 
-`CHT_Rpg_LocomotionDatabases` keeps the five historical standing/airborne rows as unfiltered archival references; the dedicated Walk/Sprint/Run Stop pools and light-landing database are deliberately excluded. It is an authoring substrate, not the final gameplay-state selector. Runtime selects moving/stop pools, crouch, turn-in-place, and the bounded post-touchdown landing database through dedicated AnimInstance properties. Issue #54 delivered the isolated Animation Blueprint, PawnData, and Experience integration; issue #66 adds directional jump/landing phase ownership without importing GASP Chooser, State Controller, Traversal, Foley, or dense landing content.
+`CHT_Rpg_LocomotionDatabases` keeps the five historical standing/airborne rows as unfiltered archival references; the dedicated Walk/Sprint/Run Stop pools and light-landing database are deliberately excluded. It remains a comparison and authoring source, not a gameplay-state selector or runtime dependency.
+
+The production chooser is the pointer-free native role resolver in `URpgAnimInstance`. It consumes value-only movement snapshots and first resolves stable `ERpgMotionMatchingDatabaseRole` values; only afterward does the AnimInstance map those roles to its configured database pointers. Ground roles preserve the fixed Idle/Walk/Run/Sprint shapes of 1/2/4/2, overlapping stop boundaries, the explicit Sprint-stop gait requirement, start/loop/pivot ordering, and domain-level interrupt behavior without making asset pointers part of chooser decisions.
+
+Exactly 13 runtime databases participate in this role contract. Each carries exactly one matching `Rpg.MotionMatching.Role.*` tag and one state tag:
+
+- Grounded: `StandIdle`, `StandWalk`, `StandWalkStops`, `StandRunLoops`, `StandRunPivots`, `StandRunStarts`, `StandRunStops`, `StandSprint`, and `StandSprintStops` use `Rpg.MotionMatching.State.Grounded`.
+- Crouch: `Crouch` uses `Rpg.MotionMatching.State.Crouching`.
+- Turn in place: `StandTurnInPlace` uses `Rpg.MotionMatching.State.TurnInPlace`.
+- Airborne: `Jump` uses `Rpg.MotionMatching.State.Airborne`.
+- Landing: `StandLightLanding` uses `Rpg.MotionMatching.State.Landing`.
+
+Source behavior tags remain additive rather than becoming role identifiers: the Run Pivot database retains `Pivots`, Sprint Stops retain `Stops`, and Turn in Place retains `TurnInPlace`. The legacy aggregate `PSD_Rpg_Stand_Run` is excluded from the 13-role runtime contract and from shared normalization.
+
+The Motion Matching node binds `UpdateGaspMotionMatchingPostSelection` through `OnMotionMatchingStateUpdatedFunction`. This same-search PostSelection hook resolves the selected database role, records whether Pose Search continued the existing pose, preserves the pending interrupt mode in the value-only result, and latches turn-in-place or landing only for a newly selected matching role. Issue #54 delivered the isolated Animation Blueprint, PawnData, and Experience integration; issue #66 added directional jump/landing phase ownership without importing the GASP Chooser, State Controller, Traversal, Foley, or dense landing content.

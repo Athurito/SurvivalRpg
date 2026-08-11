@@ -9,6 +9,7 @@
 #include "Animation/TrajectoryTypes.h"
 #include "AnimationWarpingTypes.h"
 #include "GameplayEffectTypes.h"
+#include "PoseSearch/PoseSearchLibrary.h"
 #include "PoseSearch/PoseSearchTrajectoryLibrary.h"
 #include "RpgFootPlacementTypes.h"
 #include "SurvivalRpg/Core/Character/RpgCharacterRotationMode.h"
@@ -31,6 +32,27 @@ enum class ERpgLocomotionGait : uint8
 	Walk,
 	Run,
 	Sprint,
+};
+
+/** Stable project roles for every Pose Search database used by the curated GASP CMC runtime. */
+UENUM(BlueprintType)
+enum class ERpgMotionMatchingDatabaseRole : uint8
+{
+	None,
+	StandIdle,
+	StandWalk,
+	StandWalkStops,
+	StandRunLoops,
+	StandRunPivots,
+	StandRunStarts,
+	StandRunStops,
+	StandSprint,
+	StandSprintStops,
+	Crouch,
+	StandTurnInPlace,
+	Jump,
+	StandLightLanding,
+	Count UMETA(Hidden),
 };
 
 /**
@@ -235,6 +257,22 @@ public:
 	UFUNCTION(BlueprintCallable, Category = "Rpg|Animation|Motion Matching", meta = (BlueprintThreadSafe))
 	void UpdateGaspMotionMatching(const FAnimUpdateContext& Context, const FAnimNodeReference& Node);
 
+	/**
+	 * Captures the completed Pose Search result before the Motion Matching node blends to it.
+	 * Bound as the node's thread-safe On Motion Matching State Updated function; it records only
+	 * immutable database metadata and cosmetic selection latches.
+	 */
+	UFUNCTION(BlueprintCallable, Category = "Rpg|Animation|Motion Matching", meta = (BlueprintThreadSafe))
+	void UpdateGaspMotionMatchingPostSelection(
+		const FAnimUpdateContext& Context,
+		const FAnimNodeReference& Node);
+
+	/** Returns the one project-owned role tag required on a runtime Pose Search database. */
+	static FName GetMotionMatchingDatabaseRoleTag(ERpgMotionMatchingDatabaseRole Role);
+
+	/** Returns the one project-owned locomotion-state tag required for a database role. */
+	static FName GetMotionMatchingDatabaseStateTag(ERpgMotionMatchingDatabaseRole Role);
+
 	/** Returns the signed authored turn angle nearest to a request, or zero below the 30-degree activation threshold. */
 	static float QuantizeTurnInPlaceAngle(float SignedAngle);
 
@@ -372,6 +410,20 @@ protected:
 	 */
 	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Rpg|Animation|Motion Matching")
 	TObjectPtr<UPoseSearchDatabase> LandingMotionMatchingDatabase;
+
+	/** Role of the most recently completed Pose Search result; cosmetic and worker-thread owned. */
+	UPROPERTY(BlueprintReadOnly, Transient, Category = "Rpg|Animation|Motion Matching")
+	ERpgMotionMatchingDatabaseRole CurrentMotionMatchingDatabaseRole =
+		ERpgMotionMatchingDatabaseRole::None;
+
+	/** True when the most recently completed search retained its Continuing Pose. */
+	UPROPERTY(BlueprintReadOnly, Transient, Category = "Rpg|Animation|Motion Matching")
+	bool bCurrentMotionMatchingResultIsContinuingPose = false;
+
+	/** Interrupt mode paired with the most recently completed search; cosmetic diagnostics only. */
+	UPROPERTY(BlueprintReadOnly, Transient, Category = "Rpg|Animation|Motion Matching")
+	EPoseSearchInterruptMode CurrentMotionMatchingInterruptMode =
+		EPoseSearchInterruptMode::DoNotInterrupt;
 
 	/** Character velocity in world space, snapshotted on the game thread and read-only to AnimBPs. */
 	UPROPERTY(BlueprintReadOnly, Transient, Category = "Rpg|Animation|Locomotion")
@@ -549,25 +601,71 @@ private:
 		}
 	};
 
+	/** One expected project role and its designer-authored database reference. */
+	struct FMotionMatchingDatabaseRoleContract
+	{
+		ERpgMotionMatchingDatabaseRole Role = ERpgMotionMatchingDatabaseRole::None;
+		UPoseSearchDatabase* Database = nullptr;
+	};
+
+	/** Integrity summary for project role/state tags and role-to-database ownership. */
+	struct FMotionMatchingDatabaseRoleValidation
+	{
+		bool bHasNullDatabase = false;
+		bool bHasDuplicateDatabase = false;
+		bool bHasMissingRole = false;
+		bool bHasDuplicateRole = false;
+		bool bHasMissingRoleTag = false;
+		bool bHasDuplicateRoleTag = false;
+		bool bHasWrongRoleTag = false;
+		bool bHasMissingStateTag = false;
+		bool bHasDuplicateStateTag = false;
+		bool bHasWrongStateTag = false;
+
+		bool IsValid() const
+		{
+			return !bHasNullDatabase && !bHasDuplicateDatabase &&
+				!bHasMissingRole && !bHasDuplicateRole &&
+				!bHasMissingRoleTag && !bHasDuplicateRoleTag && !bHasWrongRoleTag &&
+				!bHasMissingStateTag && !bHasDuplicateStateTag && !bHasWrongStateTag;
+		}
+	};
+
 	using FResolvedGroundMotionMatchingDatabases =
 		TArray<UPoseSearchDatabase*, TInlineAllocator<4>>;
+	using FResolvedMotionMatchingDatabaseRoles =
+		TArray<ERpgMotionMatchingDatabaseRole, TInlineAllocator<4>>;
+	using FMotionMatchingDatabaseRoleContracts =
+		TArray<FMotionMatchingDatabaseRoleContract, TInlineAllocator<13>>;
 
 	/**
-	 * Pointer-free locomotion snapshot used to classify one bounded grounded database search.
+	 * Pointer-free locomotion snapshot used to classify one bounded project database search.
 	 * It deliberately contains no actor, controller, authority, or network-role state so identical
 	 * movement snapshots resolve identically for local and simulated characters.
 	 */
 	struct FGroundMotionMatchingSelectionSnapshot
 	{
 		ERpgLocomotionGait Gait = ERpgLocomotionGait::Idle;
+		ERpgLocomotionStance Stance = ERpgLocomotionStance::Standing;
+		ERpgLocomotionMovementState MovementState = ERpgLocomotionMovementState::None;
 		ERpgCharacterRotationMode RotationMode = ERpgCharacterRotationMode::Free;
 		FVector WorldVelocity = FVector::ZeroVector;
 		FVector WorldAcceleration = FVector::ZeroVector;
+		FVector FutureVelocity = FVector::ZeroVector;
 		float GroundSpeed = 0.0f;
-		float FutureGroundSpeed = 0.0f;
-		/** True when the previous completed Pose Search result came from the Run Pivots database. */
-		bool bCurrentDatabaseIsRunPivot = false;
+		/** Role captured by the completed-search callback from the latest Motion Matching result. */
+		ERpgMotionMatchingDatabaseRole CurrentDatabaseRole = ERpgMotionMatchingDatabaseRole::None;
 		bool bIsMovingOnGround = false;
+	};
+
+	/** Value-only PostSelection result shared by the worker-thread callback and focused tests. */
+	struct FMotionMatchingPostSelectionState
+	{
+		ERpgMotionMatchingDatabaseRole CurrentDatabaseRole = ERpgMotionMatchingDatabaseRole::None;
+		EPoseSearchInterruptMode InterruptMode = EPoseSearchInterruptMode::DoNotInterrupt;
+		bool bIsContinuingPose = false;
+		bool bShouldLatchTurnInPlace = false;
+		bool bShouldLatchLanding = false;
 	};
 
 	/** High-level selector state used to preserve current poses across transient candidate-list changes. */
@@ -607,6 +705,17 @@ private:
 		bool bHasPreviousState,
 		const FGroundMotionMatchingDomainState& PreviousState,
 		const FGroundMotionMatchingDomainState& CurrentState);
+	/** Mirrors the engine node's update-counter test and returns true after one or more missed updates. */
+	static bool SynchronizeMotionMatchingNodeUpdateCounter(
+		FGraphTraversalCounter& NodeUpdateCounter,
+		const FGraphTraversalCounter& AnimInstanceUpdateCounter);
+
+	/**
+	 * Evaluates the pointer-free project chooser contract and returns ordered database roles.
+	 * Airborne and crouching domains are resolved before the grounded Idle/Walk/Run/Sprint rows.
+	 */
+	static FResolvedMotionMatchingDatabaseRoles ResolveMotionMatchingDatabaseRoles(
+		const FGroundMotionMatchingSelectionSnapshot& Snapshot);
 
 	/**
 	 * Selects one immutable GASP-like domain while invalid null or duplicate entries are safely omitted.
@@ -620,6 +729,29 @@ private:
 	/** Checks the fixed 1/2/4/2 shape plus null and cross-set duplicate references without loading assets. */
 	static FGroundMotionMatchingDatabaseSetValidation ValidateGroundMotionMatchingDatabaseSets(
 		const FRpgGroundMotionMatchingDatabaseSets& DatabaseSets);
+
+	/** Validates one unique configured database plus one expected project role/state tag per role. */
+	static FMotionMatchingDatabaseRoleValidation ValidateMotionMatchingDatabaseRoleContracts(
+		TConstArrayView<FMotionMatchingDatabaseRoleContract> Contracts);
+
+	/** Resolves a runtime role only from the database's immutable project tag contract. */
+	static ERpgMotionMatchingDatabaseRole ResolveMotionMatchingDatabaseRole(
+		const UPoseSearchDatabase* Database);
+
+	/** Central completed-search policy for role, Continuing Pose, interrupt, and exclusive latches. */
+	static FMotionMatchingPostSelectionState ResolveMotionMatchingPostSelection(
+		ERpgMotionMatchingDatabaseRole SelectedRole,
+		bool bIsContinuingPose,
+		EPoseSearchInterruptMode InterruptMode,
+		bool bCanLatchTurnInPlace,
+		bool bCanLatchLanding);
+
+	/** Builds the complete static role contract from the AnimBP defaults without loading assets. */
+	FMotionMatchingDatabaseRoleContracts BuildMotionMatchingDatabaseRoleContracts() const;
+
+	/** Returns the configured database for one role, or null when its fixed slot is invalid. */
+	UPoseSearchDatabase* GetMotionMatchingDatabaseForRole(
+		ERpgMotionMatchingDatabaseRole Role) const;
 
 	/** Value-only result used to keep Reset Root, Orientation Warping, and Steering gates independent. */
 	struct FGaspProceduralGates
@@ -658,7 +790,7 @@ private:
 	bool ConsumeTurnInPlaceForceInterruptRequest();
 	/** Allows request retargeting only until the generic pre-update callback dispatches its first TIR search. */
 	bool CanRetargetTurnInPlaceRequest() const;
-	/** Latches the first valid TIR SearchResult from the previous completed node update for the request serial. */
+	/** Latches the first valid TIR SearchResult from the completed node search for the request serial. */
 	bool TryLatchTurnInPlaceSelection(
 		UAnimationAsset* SelectedAsset,
 		const UPoseSearchDatabase* SelectedDatabase,
@@ -743,7 +875,7 @@ private:
 	float TurnInPlaceSelectionElapsed = 0.0f;
 	/** Remaining full-sequence playback time for the latched cosmetic turn, in seconds. */
 	float TurnInPlaceSelectedAssetRemainingTime = 0.0f;
-	/** PoseSearch-selected start time copied from the previous completed search result, in seconds. */
+	/** PoseSearch-selected start time copied from the completed PostSelection result, in seconds. */
 	float TurnInPlaceSelectedAssetStartTime = 0.0f;
 	/** Wall-clock watchdog budget, restarted on playback observation and scaled by the actual non-looping play rate. */
 	float TurnInPlacePlaybackWatchdogDuration = 0.0f;
@@ -799,6 +931,11 @@ private:
 	/** Previous source-level selector domain, owned and mutated only by the animation update thread. */
 	FGroundMotionMatchingDomainState PreviousGroundMotionMatchingDomainState;
 	bool bHasPreviousGroundMotionMatchingDomainState = false;
+	/** Interrupt mode supplied during pre-selection and captured with the completed result. */
+	EPoseSearchInterruptMode PendingMotionMatchingInterruptMode =
+		EPoseSearchInterruptMode::DoNotInterrupt;
+	/** Last AnimInstance update seen by the Motion Matching callback, used to mirror node relevancy resets. */
+	FGraphTraversalCounter MotionMatchingNodeUpdateCounter;
 
 	friend struct FRpgAnimInstanceProxy;
 #if WITH_DEV_AUTOMATION_TESTS

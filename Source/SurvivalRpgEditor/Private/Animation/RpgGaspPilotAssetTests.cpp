@@ -100,6 +100,8 @@ namespace RpgGaspPilotAssetTests
 		TEXT("/Game/SurvivalRpg/Core/Character/GASP/DA_PawnData_GASP");
 	constexpr TCHAR PilotExperiencePackage[] =
 		TEXT("/Game/SurvivalRpg/System/Experiences/RpgGaspPilotExperience");
+	constexpr TCHAR ArchivalChooserPackage[] =
+		TEXT("/RpgGaspLocomotion/MotionMatching/Choosers/CHT_Rpg_LocomotionDatabases");
 
 	template <typename TObjectType>
 	TObjectType* LoadRequiredAsset(
@@ -1729,11 +1731,15 @@ bool FRpgGaspPilotAssetContractTest::RunTest(const FString& Parameters)
 					TEXT("OnMotionMatchingStateUpdatedFunction"),
 					MotionMatchingStateUpdatedFunction)))
 			{
+				TestEqual(
+					TEXT("Motion Matching runs the RPG post-selection callback after search"),
+					MotionMatchingStateUpdatedFunction->GetMemberName(),
+					GET_FUNCTION_NAME_CHECKED(URpgAnimInstance, UpdateGaspMotionMatchingPostSelection));
 				TestTrue(
-					TEXT("The specialized post-search Motion Matching callback remains deliberately unbound"),
-					MotionMatchingStateUpdatedFunction->GetMemberName().IsNone());
-				TestNull(
-					TEXT("No specialized post-search Motion Matching callback resolves on the generated class"),
+					TEXT("The Motion Matching post-selection binding uses the AnimInstance self context"),
+					MotionMatchingStateUpdatedFunction->IsSelfContext());
+				TestNotNull(
+					TEXT("The Motion Matching post-selection binding resolves on the generated AnimInstance class"),
 					MotionMatchingStateUpdatedFunction->ResolveMember<UFunction>(
 						PilotAnimBlueprint->GeneratedClass));
 			}
@@ -2299,6 +2305,9 @@ bool FRpgGaspPilotAssetContractTest::RunTest(const FString& Parameters)
 		PilotAnimBlueprintDependencies.Contains(FName(TEXT("/Script/SurvivalRpgEditor"))));
 	TSet<FName> DependencyClosure;
 	GatherPilotDependencyClosure(AssetRegistry, PilotRootPackages, DependencyClosure);
+	TestFalse(
+		TEXT("The pilot composition dependency closure excludes the archival locomotion chooser"),
+		DependencyClosure.Contains(FName(ArchivalChooserPackage)));
 	for (const FName PackageName : DependencyClosure)
 	{
 		TestFalse(
