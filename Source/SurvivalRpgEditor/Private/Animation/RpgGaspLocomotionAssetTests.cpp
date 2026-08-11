@@ -347,6 +347,13 @@ namespace RpgGaspLocomotionAssetTests
 		int32 ExpectedAnimationDependencyCount;
 		int32 ExpectedDatabaseEntryCount;
 	};
+
+	struct FRuntimeDatabaseTagContract
+	{
+		const TCHAR* PackageName;
+		const TCHAR* ExpectedRoleTag;
+		const TCHAR* ExpectedStateTag;
+	};
 }
 
 IMPLEMENT_SIMPLE_AUTOMATION_TEST(
@@ -578,6 +585,81 @@ bool FRpgGaspLocomotionContentContractTest::RunTest(const FString& Parameters)
 		}
 	}
 
+	static const FRuntimeDatabaseTagContract RuntimeDatabaseTagContracts[] = {
+		{ TEXT("/RpgGaspLocomotion/MotionMatching/Databases/PSD_Rpg_Stand_Idle"), TEXT("Rpg.MotionMatching.Role.StandIdle"), TEXT("Rpg.MotionMatching.State.Grounded") },
+		{ WalkMovingDatabasePackage, TEXT("Rpg.MotionMatching.Role.StandWalk"), TEXT("Rpg.MotionMatching.State.Grounded") },
+		{ WalkStopDatabasePackage, TEXT("Rpg.MotionMatching.Role.StandWalkStops"), TEXT("Rpg.MotionMatching.State.Grounded") },
+		{ TEXT("/RpgGaspLocomotion/MotionMatching/Databases/PSD_Rpg_Stand_Run_Loops"), TEXT("Rpg.MotionMatching.Role.StandRunLoops"), TEXT("Rpg.MotionMatching.State.Grounded") },
+		{ TEXT("/RpgGaspLocomotion/MotionMatching/Databases/PSD_Rpg_Stand_Run_Pivots"), TEXT("Rpg.MotionMatching.Role.StandRunPivots"), TEXT("Rpg.MotionMatching.State.Grounded") },
+		{ TEXT("/RpgGaspLocomotion/MotionMatching/Databases/PSD_Rpg_Stand_Run_Starts"), TEXT("Rpg.MotionMatching.Role.StandRunStarts"), TEXT("Rpg.MotionMatching.State.Grounded") },
+		{ TEXT("/RpgGaspLocomotion/MotionMatching/Databases/PSD_Rpg_Stand_Run_Stops"), TEXT("Rpg.MotionMatching.Role.StandRunStops"), TEXT("Rpg.MotionMatching.State.Grounded") },
+		{ SprintMovingDatabasePackage, TEXT("Rpg.MotionMatching.Role.StandSprint"), TEXT("Rpg.MotionMatching.State.Grounded") },
+		{ SprintStopDatabasePackage, TEXT("Rpg.MotionMatching.Role.StandSprintStops"), TEXT("Rpg.MotionMatching.State.Grounded") },
+		{ TEXT("/RpgGaspLocomotion/MotionMatching/Databases/PSD_Rpg_Crouch"), TEXT("Rpg.MotionMatching.Role.Crouch"), TEXT("Rpg.MotionMatching.State.Crouching") },
+		{ TurnInPlaceDatabasePackage, TEXT("Rpg.MotionMatching.Role.StandTurnInPlace"), TEXT("Rpg.MotionMatching.State.TurnInPlace") },
+		{ JumpDatabasePackage, TEXT("Rpg.MotionMatching.Role.Jump"), TEXT("Rpg.MotionMatching.State.Airborne") },
+		{ LandingDatabasePackage, TEXT("Rpg.MotionMatching.Role.StandLightLanding"), TEXT("Rpg.MotionMatching.State.Landing") },
+	};
+	TestEqual(
+		TEXT("Exactly thirteen project runtime database tag contracts are declared"),
+		static_cast<int32>(UE_ARRAY_COUNT(RuntimeDatabaseTagContracts)),
+		13);
+	const auto IsProjectRoleTag = [](FName Tag)
+	{
+		return Tag.ToString().StartsWith(
+			TEXT("Rpg.MotionMatching.Role."),
+			ESearchCase::CaseSensitive);
+	};
+	const auto IsProjectStateTag = [](FName Tag)
+	{
+		return Tag.ToString().StartsWith(
+			TEXT("Rpg.MotionMatching.State."),
+			ESearchCase::CaseSensitive);
+	};
+	for (const FRuntimeDatabaseTagContract& Contract : RuntimeDatabaseTagContracts)
+	{
+		const FString ObjectPath = FString::Printf(
+			TEXT("%s.%s"),
+			Contract.PackageName,
+			*FPackageName::GetLongPackageAssetName(Contract.PackageName));
+		UPoseSearchDatabase* Database = LoadObject<UPoseSearchDatabase>(nullptr, *ObjectPath);
+		if (!TestNotNull(
+				*FString::Printf(TEXT("Runtime database %s loads for tag validation"), Contract.PackageName),
+				Database))
+		{
+			continue;
+		}
+
+		int32 ProjectRoleTagCount = 0;
+		int32 ProjectStateTagCount = 0;
+		int32 ExpectedRoleTagCount = 0;
+		int32 ExpectedStateTagCount = 0;
+		for (const FName Tag : Database->Tags)
+		{
+			ProjectRoleTagCount += IsProjectRoleTag(Tag);
+			ProjectStateTagCount += IsProjectStateTag(Tag);
+			ExpectedRoleTagCount += Tag == FName(Contract.ExpectedRoleTag);
+			ExpectedStateTagCount += Tag == FName(Contract.ExpectedStateTag);
+		}
+
+		TestEqual(
+			*FString::Printf(TEXT("%s carries exactly one project role tag"), Contract.PackageName),
+			ProjectRoleTagCount,
+			1);
+		TestEqual(
+			*FString::Printf(TEXT("%s carries its exact project role tag"), Contract.PackageName),
+			ExpectedRoleTagCount,
+			1);
+		TestEqual(
+			*FString::Printf(TEXT("%s carries exactly one project state tag"), Contract.PackageName),
+			ProjectStateTagCount,
+			1);
+		TestEqual(
+			*FString::Printf(TEXT("%s carries its exact project state tag"), Contract.PackageName),
+			ExpectedStateTagCount,
+			1);
+	}
+
 	UPoseSearchDatabase* StandIdleDatabase = LoadObject<UPoseSearchDatabase>(
 		nullptr,
 		TEXT("/RpgGaspLocomotion/MotionMatching/Databases/PSD_Rpg_Stand_Idle.PSD_Rpg_Stand_Idle"));
@@ -606,17 +688,9 @@ bool FRpgGaspLocomotionContentContractTest::RunTest(const FString& Parameters)
 		TEXT("/RpgGaspLocomotion/MotionMatching/Databases/PSD_Rpg_Stand_TurnInPlace.PSD_Rpg_Stand_TurnInPlace"));
 	if (TestNotNull(TEXT("The turn-in-place database loads for exclusivity validation"), TurnInPlaceDatabase))
 	{
-		TestEqual(
-			TEXT("The turn-in-place database exposes exactly one selection tag"),
-			TurnInPlaceDatabase->Tags.Num(),
-			1);
-		if (TurnInPlaceDatabase->Tags.Num() == 1)
-		{
-			TestEqual(
-				TEXT("The turn-in-place database uses the GASP TurnInPlace selection tag"),
-				TurnInPlaceDatabase->Tags[0],
-				FName(TEXT("TurnInPlace")));
-		}
+		TestTrue(
+			TEXT("The turn-in-place database keeps the GASP TurnInPlace selection tag"),
+			TurnInPlaceDatabase->Tags.Contains(FName(TEXT("TurnInPlace"))));
 		TestTrue(
 			TEXT("The turn-in-place database keeps the GASP base-cost bias"),
 			FMath::IsNearlyEqual(TurnInPlaceDatabase->BaseCostBias, -0.2f));
@@ -696,6 +770,22 @@ bool FRpgGaspLocomotionContentContractTest::RunTest(const FString& Parameters)
 		TEXT("/RpgGaspLocomotion/MotionMatching/Databases/PSD_Rpg_Stand_Run.PSD_Rpg_Stand_Run"));
 	if (TestNotNull(TEXT("The stand-run database loads for directional-core validation"), StandRunDatabase))
 	{
+		int32 LegacyProjectRoleTagCount = 0;
+		int32 LegacyProjectStateTagCount = 0;
+		for (const FName Tag : StandRunDatabase->Tags)
+		{
+			LegacyProjectRoleTagCount += IsProjectRoleTag(Tag);
+			LegacyProjectStateTagCount += IsProjectStateTag(Tag);
+		}
+		TestEqual(
+			TEXT("The archival aggregate Run database owns no project runtime role tag"),
+			LegacyProjectRoleTagCount,
+			0);
+		TestEqual(
+			TEXT("The archival aggregate Run database owns no project runtime state tag"),
+			LegacyProjectStateTagCount,
+			0);
+
 		TSet<FString> RunPackages;
 		int32 RunPivotCount = 0;
 		for (int32 Index = 0; Index < StandRunDatabase->GetNumAnimationAssets(); ++Index)
@@ -861,6 +951,15 @@ bool FRpgGaspLocomotionContentContractTest::RunTest(const FString& Parameters)
 	ValidateSparseRunDatabase(
 		TEXT("/RpgGaspLocomotion/MotionMatching/Databases/PSD_Rpg_Stand_Run_Stops.PSD_Rpg_Stand_Run_Stops"),
 		MakeArrayView(SparseRunStopPackages));
+	UPoseSearchDatabase* RunPivotDatabase = LoadObject<UPoseSearchDatabase>(
+		nullptr,
+		TEXT("/RpgGaspLocomotion/MotionMatching/Databases/PSD_Rpg_Stand_Run_Pivots.PSD_Rpg_Stand_Run_Pivots"));
+	if (TestNotNull(TEXT("The Sparse run-pivot database loads for source-tag validation"), RunPivotDatabase))
+	{
+		TestTrue(
+			TEXT("The Sparse run-pivot database keeps the source Pivots tag"),
+			RunPivotDatabase->Tags.Contains(FName(TEXT("Pivots"))));
+	}
 
 	const auto ValidateOrderedDatabaseMembers = [this](
 		const TCHAR* PackageName,
@@ -919,8 +1018,7 @@ bool FRpgGaspLocomotionContentContractTest::RunTest(const FString& Parameters)
 		const TCHAR* PackageName,
 		TConstArrayView<const TCHAR*> ExpectedPackages,
 		const TCHAR* ExpectedSchemaPackage,
-		const float ExpectedContinuingPoseBias,
-		const bool bExpectStopsTag) -> UPoseSearchDatabase*
+		const float ExpectedContinuingPoseBias) -> UPoseSearchDatabase*
 	{
 		UPoseSearchDatabase* Database = ValidateOrderedDatabaseMembers(PackageName, ExpectedPackages);
 		if (!Database)
@@ -968,15 +1066,6 @@ bool FRpgGaspLocomotionContentContractTest::RunTest(const FString& Parameters)
 		TestTrue(TEXT("Stop database PCA pruning stays disabled"), FMath::IsNearlyZero(Database->PCAValuesPruningSimilarityThreshold));
 		TestEqual(TEXT("Stop database duplicate-neighbor cap stays disabled"), Database->KDTreeQueryNumNeighborsWithDuplicates, 0);
 
-		TestEqual(
-			*FString::Printf(TEXT("%s has the exact selection-tag count"), PackageName),
-			Database->Tags.Num(),
-			bExpectStopsTag ? 1 : 0);
-		if (bExpectStopsTag && Database->Tags.Num() == 1)
-		{
-			TestEqual(TEXT("Sprint Stop database keeps the source Stops tag"), Database->Tags[0], FName(TEXT("Stops")));
-		}
-
 		for (int32 Index = 0; Index < Database->GetNumAnimationAssets(); ++Index)
 		{
 			const FPoseSearchDatabaseAnimationAsset* Entry = Database->GetDatabaseAnimationAsset(Index);
@@ -1005,14 +1094,18 @@ bool FRpgGaspLocomotionContentContractTest::RunTest(const FString& Parameters)
 		WalkStopDatabasePackage,
 		MakeArrayView(WalkStopAnimationPackages),
 		TEXT("/RpgGaspLocomotion/MotionMatching/Schemas/PSS_Rpg_Locomotion"),
-		-0.01f,
-		false);
+		-0.01f);
 	UPoseSearchDatabase* SprintStopDatabase = ValidateStopDatabase(
 		SprintStopDatabasePackage,
 		MakeArrayView(SprintStopAnimationPackages),
 		StopSchemaPackage,
-		-0.2f,
-		true);
+		-0.2f);
+	if (SprintStopDatabase)
+	{
+		TestTrue(
+			TEXT("Sprint Stop database keeps the source Stops tag"),
+			SprintStopDatabase->Tags.Contains(FName(TEXT("Stops"))));
+	}
 
 	const auto ReadDatabasePackageSet = [](const UPoseSearchDatabase* Database)
 	{
@@ -1638,13 +1731,16 @@ bool FRpgGaspLocomotionContentContractTest::RunTest(const FString& Parameters)
 		TEXT("/RpgGaspLocomotion/MotionMatching/Databases/PSD_Rpg_Stand_Sprint"),
 		JumpDatabasePackage,
 	};
-	static const TCHAR* const RuntimeSplitDatabasePackages[] = {
+	static const TCHAR* const ChooserExcludedRuntimeDatabasePackages[] = {
+		TurnInPlaceDatabasePackage,
+		TEXT("/RpgGaspLocomotion/MotionMatching/Databases/PSD_Rpg_Crouch"),
 		WalkStopDatabasePackage,
 		TEXT("/RpgGaspLocomotion/MotionMatching/Databases/PSD_Rpg_Stand_Run_Loops"),
 		TEXT("/RpgGaspLocomotion/MotionMatching/Databases/PSD_Rpg_Stand_Run_Pivots"),
 		TEXT("/RpgGaspLocomotion/MotionMatching/Databases/PSD_Rpg_Stand_Run_Starts"),
 		TEXT("/RpgGaspLocomotion/MotionMatching/Databases/PSD_Rpg_Stand_Run_Stops"),
 		SprintStopDatabasePackage,
+		LandingDatabasePackage,
 	};
 	UPoseSearchNormalizationSet* NormalizationSet = LoadObject<UPoseSearchNormalizationSet>(
 		nullptr,
@@ -1687,21 +1783,15 @@ bool FRpgGaspLocomotionContentContractTest::RunTest(const FString& Parameters)
 				FName(DatabasePackage),
 				UE::AssetRegistry::EDependencyCategory::Package));
 	}
-	for (const TCHAR* DatabasePackage : RuntimeSplitDatabasePackages)
+	for (const TCHAR* DatabasePackage : ChooserExcludedRuntimeDatabasePackages)
 	{
 		TestFalse(
-			*FString::Printf(TEXT("The archival chooser does not pretend to own runtime split database %s"), DatabasePackage),
+			*FString::Printf(TEXT("The archival chooser excludes runtime-only database %s"), DatabasePackage),
 			AssetRegistry.ContainsDependency(
 				FName(ChooserPackage),
 				FName(DatabasePackage),
 				UE::AssetRegistry::EDependencyCategory::Package));
 	}
-	TestFalse(
-		TEXT("The gait chooser does not own the runtime-latched light-landing database"),
-		AssetRegistry.ContainsDependency(
-			FName(ChooserPackage),
-			FName(LandingDatabasePackage),
-			UE::AssetRegistry::EDependencyCategory::Package));
 	for (const TCHAR* DatabasePackage : DatabasePackages)
 	{
 		TestTrue(
