@@ -8,6 +8,7 @@
 #include "Animation/AnimNodeReference.h"
 #include "Animation/TrajectoryTypes.h"
 #include "AnimationWarpingTypes.h"
+#include "Engine/EngineTypes.h"
 #include "GameplayEffectTypes.h"
 #include "PoseSearch/PoseSearchLibrary.h"
 #include "PoseSearch/PoseSearchTrajectoryLibrary.h"
@@ -21,6 +22,7 @@ class UPoseSearchDatabase;
 #if WITH_DEV_AUTOMATION_TESTS
 class FRpgJumpPhaseRuntimeTest;
 class FRpgMotionMatchingDatabaseResolverTest;
+class FRpgTrajectoryCollisionRuntimeTest;
 class FRpgTurnInPlaceStateMachineTest;
 #endif
 
@@ -137,6 +139,69 @@ enum class ERpgTurnInPlaceState : uint8
 };
 
 /**
+ * Game-thread collision policy for the cosmetic Pose Search trajectory.
+ *
+ * The project resolves at most the configured number of future samples per update. None of
+ * these bounded sweeps changes CharacterMovement, collision, replication, or touchdown state.
+ */
+USTRUCT(BlueprintType)
+struct SURVIVALRPG_API FRpgTrajectoryCollisionSettings
+{
+	GENERATED_BODY()
+
+	/** Enables game-thread gravity and world-collision correction for generated Pose Search trajectories. */
+	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Rpg|Animation|Trajectory Collision")
+	bool bEnabled = true;
+
+	/** Height in centimeters retained between a corrected trajectory sample and the hit floor. */
+	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Rpg|Animation|Trajectory Collision", meta = (ClampMin = "0.001", ClampMax = "10.0", UIMin = "0.001", UIMax = "2.0", Units = "cm"))
+	float FloorOffset = 0.01f;
+
+	/** Maximum vertical obstacle/floor search range per future sample, in centimeters. */
+	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Rpg|Animation|Trajectory Collision", meta = (ClampMin = "1.0", ClampMax = "1000.0", UIMin = "50.0", UIMax = "300.0", Units = "cm"))
+	float MaxObstacleHeight = 150.0f;
+
+	/** Radius of each bounded walkability sweep, in centimeters. */
+	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Rpg|Animation|Trajectory Collision", meta = (ClampMin = "0.1", ClampMax = "20.0", UIMin = "0.5", UIMax = "10.0", Units = "cm"))
+	float SweepRadius = 2.0f;
+
+	/** Maximum future samples swept per update; clamped to the generated 15-sample GASP horizon. */
+	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Rpg|Animation|Trajectory Collision", meta = (ClampMin = "1", ClampMax = "15", UIMin = "1", UIMax = "15"))
+	int32 MaxPredictionSamples = 15;
+
+	/** Collision channel used by cosmetic prediction sweeps; defaults to Visibility like GASP. */
+	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Rpg|Animation|Trajectory Collision")
+	TEnumAsByte<ECollisionChannel> TraceChannel = ECC_Visibility;
+
+	/** Uses complex geometry for cosmetic prediction traces; disabled by default to keep the hot path bounded. */
+	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Rpg|Animation|Trajectory Collision")
+	bool bTraceComplex = false;
+};
+
+/** Pointer-free, cosmetic prediction of the next walkable landing within the trajectory horizon. */
+USTRUCT(BlueprintType)
+struct SURVIVALRPG_API FRpgTrajectoryLandingPrediction
+{
+	GENERATED_BODY()
+
+	/** Predicted world-space contact point from the first validated walkable trajectory collision. */
+	UPROPERTY(BlueprintReadOnly, Category = "Rpg|Animation|Trajectory Collision")
+	FVector LandingLocation = FVector::ZeroVector;
+
+	/** Unit world-space normal at the predicted walkable contact. */
+	UPROPERTY(BlueprintReadOnly, Category = "Rpg|Animation|Trajectory Collision")
+	FVector LandingNormal = FVector::UpVector;
+
+	/** Seconds until predicted contact; -1 means there is no valid airborne prediction. */
+	UPROPERTY(BlueprintReadOnly, Category = "Rpg|Animation|Trajectory Collision", meta = (Units = "s"))
+	float TimeToLand = -1.0f;
+
+	/** True only for a finite, walkable airborne hit inside the current prediction horizon. */
+	UPROPERTY(BlueprintReadOnly, Category = "Rpg|Animation|Trajectory Collision")
+	bool bIsValid = false;
+};
+
+/**
  * Game-thread snapshot consumed by URpgAnimInstance during parallel animation updates.
  *
  * UObject and movement-component access is deliberately confined to PreUpdate; the animation
@@ -195,7 +260,11 @@ struct SURVIVALRPG_API FRpgAnimInstanceProxy : public FAnimInstanceProxy
 	ERpgLocomotionMovementState MovementState = ERpgLocomotionMovementState::None;
 	ERpgCharacterRotationMode RotationMode = ERpgCharacterRotationMode::Free;
 	FPoseSearchTrajectoryData TrajectoryGenerationData;
+	/** Persistent raw trajectory history used only as the next game-thread generation input. */
+	FTransformTrajectory RawTransformTrajectory;
+	/** Gravity/collision-corrected trajectory published to the worker thread. */
 	FTransformTrajectory TransformTrajectory;
+	FRpgTrajectoryLandingPrediction TrajectoryLandingPrediction;
 	FRpgFootPlacementSnapshot FootPlacementSnapshot;
 	float FootPlacementAlpha = 0.0f;
 	bool bHasVelocity = false;
@@ -248,6 +317,12 @@ public:
 
 	/** Returns whether this AnimBP opts into game-thread trajectory generation for Motion Matching. */
 	bool ShouldGeneratePoseSearchTrajectory() const { return bGeneratePoseSearchTrajectory; }
+
+	/** Returns the immutable game-thread collision policy paired with generated trajectories. */
+	const FRpgTrajectoryCollisionSettings& GetTrajectoryCollisionSettings() const
+	{
+		return TrajectoryCollisionSettings;
+	}
 
 	/**
 	 * Supplies the active project-local Pose Search databases to a Motion Matching node.
@@ -375,6 +450,13 @@ protected:
 	 */
 	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Rpg|Animation|Motion Matching")
 	bool bGeneratePoseSearchTrajectory = false;
+
+	/**
+	 * Designer-authored game-thread collision policy for generated Pose Search trajectories.
+	 * Runtime results are cosmetic and are never replicated or used as CharacterMovement truth.
+	 */
+	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Rpg|Animation|Motion Matching")
+	FRpgTrajectoryCollisionSettings TrajectoryCollisionSettings;
 
 	/**
 	 * Project-local grounded database groups resolved from the cosmetic gait snapshot.
@@ -541,6 +623,13 @@ protected:
 	UPROPERTY(BlueprintReadOnly, Transient, Category = "Rpg|Animation|Motion Matching")
 	FTransformTrajectory LocomotionTrajectory;
 
+	/**
+	 * Pointer-free landing prediction copied from the game-thread proxy.
+	 * Consumers must honor bIsValid; authoritative touchdown still belongs to CharacterMovement.
+	 */
+	UPROPERTY(BlueprintReadOnly, Transient, Category = "Rpg|Animation|Jump")
+	FRpgTrajectoryLandingPrediction TrajectoryLandingPrediction;
+
 	/** Current cosmetic turn-in-place lifecycle, derived entirely from game-thread proxy snapshots. */
 	UPROPERTY(BlueprintReadOnly, Transient, Category = "Rpg|Animation|Turn In Place")
 	ERpgTurnInPlaceState TurnInPlaceState = ERpgTurnInPlaceState::Inactive;
@@ -694,6 +783,40 @@ private:
 	static constexpr int32 TrajectoryHistorySampleCount = 30;
 	static constexpr float TrajectoryPredictionSamplingInterval = 0.1f;
 	static constexpr int32 TrajectoryPredictionSampleCount = 15;
+
+	/** Returns false for an empty trajectory or any non-finite time, position, or facing sample. */
+	static bool IsTransformTrajectoryFinite(const FTransformTrajectory& Trajectory);
+	/** Interpolates a bounded first-contact time between two ballistic samples and a floor plane. */
+	static float CalculateTrajectoryLandingTime(
+		float PreviousTime,
+		float CurrentTime,
+		const FVector& PreviousPosition,
+		const FVector& CurrentPosition,
+		const FVector& LandingLocation,
+		const FVector& UpDirection);
+	/** Sanitizes a walkable game-thread hit into the pointer-free airborne prediction contract. */
+	static FRpgTrajectoryLandingPrediction MakeTrajectoryLandingPrediction(
+		bool bCanPublishPrediction,
+		bool bHasWalkableHit,
+		bool bHardReset,
+		float TimeToLand,
+		float PredictionHorizon,
+		const FVector& LandingLocation,
+		const FVector& LandingNormal);
+#if WITH_DEV_AUTOMATION_TESTS
+	/** Runs the production collision resolver against deterministic query results for bounded automation coverage. */
+	static FRpgTrajectoryLandingPrediction ResolveTrajectoryCollisionForTest(
+		const FRpgTrajectoryCollisionSettings& Settings,
+		const FVector& GravityAcceleration,
+		bool bIsFalling,
+		const FTransformTrajectory& RawTrajectory,
+		const TArray<FHitResult>& QueryHits,
+		const TArray<bool>& QueryWalkability,
+		FTransformTrajectory& OutTrajectory,
+		int32& OutWorldQueryCount,
+		TArray<FVector>* OutTraceStarts = nullptr,
+		TArray<FVector>* OutTraceEnds = nullptr);
+#endif
 
 	/** Mirrors GASP's logical Moving state from finite horizontal velocity and acceleration. */
 	static bool IsGroundMotionMatchingChooserMoving(
@@ -941,6 +1064,7 @@ private:
 #if WITH_DEV_AUTOMATION_TESTS
 	friend class FRpgJumpPhaseRuntimeTest;
 	friend class FRpgMotionMatchingDatabaseResolverTest;
+	friend class FRpgTrajectoryCollisionRuntimeTest;
 	friend class FRpgTurnInPlaceStateMachineTest;
 #endif
 };
