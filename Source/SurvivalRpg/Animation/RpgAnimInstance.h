@@ -702,7 +702,7 @@ protected:
 	UPROPERTY(BlueprintReadOnly, Transient, Category = "Rpg|Animation|Jump")
 	bool bLandingSelectionLatched = false;
 
-	/** Immutable database role chosen for the active touchdown request; None outside Landing. */
+	/** Current landing role; a stationary role may hand off once to same-severity Walk/Run presentation. */
 	UPROPERTY(BlueprintReadOnly, Transient, Category = "Rpg|Animation|Jump")
 	ERpgMotionMatchingDatabaseRole ActiveLandingDatabaseRole =
 		ERpgMotionMatchingDatabaseRole::None;
@@ -974,11 +974,16 @@ private:
 	/** Returns true for one of the six curated Idle/Walk/Run Light/Heavy landing roles. */
 	static bool IsLandingDatabaseRole(ERpgMotionMatchingDatabaseRole Role);
 
-	/** Releases a stationary landing when live grounded intent or speed no longer matches its frozen role. */
+	/** Releases a stationary landing only after horizontal movement begins or the Idle speed band is left. */
 	static bool ShouldReleaseStationaryLanding(
 		ERpgMotionMatchingDatabaseRole LandingRole,
-		bool bHasGroundedMoveIntent,
+		bool bChooserMoving,
 		float GroundSpeed);
+
+	/** Preserves Light/Heavy severity while mapping a stationary landing to the live Walk/Run gait. */
+	static ERpgMotionMatchingDatabaseRole ResolveStationaryLandingMovementRole(
+		ERpgMotionMatchingDatabaseRole LandingRole,
+		ERpgLocomotionGait LiveGait);
 
 	/** Prevents a completed or cancelled landing database from surviving as an uninterruptible pose. */
 	static bool ShouldInterruptLandingDatabaseExit(
@@ -1001,7 +1006,11 @@ private:
 		float InputMagnitude,
 		const FVector& GravityAcceleration);
 
-	/** Applies Heavy-to-Light database fallback and returns None to resume normal gait locomotion. */
+	/** Applies Heavy-to-Light database fallback to an already resolved landing role. */
+	ERpgMotionMatchingDatabaseRole ResolveAvailableLandingDatabaseRole(
+		ERpgMotionMatchingDatabaseRole RequestedRole) const;
+
+	/** Resolves a snapshot, applies Heavy-to-Light fallback, or returns None for normal locomotion. */
 	ERpgMotionMatchingDatabaseRole ResolveAvailableLandingDatabaseRole(
 		const FRpgLandingSelectionSnapshot& Snapshot) const;
 
@@ -1068,10 +1077,12 @@ private:
 	/** Allows moving procedural nodes during a movement-driven recovery, but never during collection or playback. */
 	bool AllowsMovingProceduralNodes() const;
 
-	/** Advances the pointer-free airborne/landing phase and creates at most one landing request per touchdown. */
+	/** Advances landing state and permits only the initial request plus one bounded stationary-to-moving handoff. */
 	void UpdateJumpPhaseRuntime(float DeltaSeconds, const FRpgAnimInstanceProxy& Proxy);
 	void BeginAirbornePhase(bool bAscendingTakeoff);
-	void BeginLandingRequest(ERpgMotionMatchingDatabaseRole LandingRole);
+	void BeginLandingRequest(
+		ERpgMotionMatchingDatabaseRole LandingRole,
+		bool bForceInterrupt = true);
 	void ResetJumpPhaseRuntime();
 	void ClearLandingSelection();
 	void ClearBackwardJumpStartHold();
@@ -1091,6 +1102,8 @@ private:
 		float CurrentAssetPlayRate,
 		float DeltaSeconds);
 	bool IsActiveLandingAsset(const UAnimationAsset* Asset) const;
+	/** Identifies curated Landing samples independently of request lifetime so outgoing blends keep Reset Root. */
+	static bool IsLandingAsset(const UAnimationAsset* Asset);
 	bool UpdateBackwardJumpStartHold(
 		UAnimationAsset* CurrentAsset,
 		float CurrentAssetTime,
@@ -1168,6 +1181,8 @@ private:
 	float LandingSelectedAssetStartTime = 0.0f;
 	float LandingSelectedAssetRemainingTime = 0.0f;
 	float LandingPlaybackWatchdogDuration = 0.0f;
+	/** Wall-clock age of the physical touchdown, preserved across one Stand-to-moving landing handoff. */
+	float LandingTouchdownElapsed = 0.0f;
 	uint32 LandingRequestSerial = 0;
 	uint32 LandingInterruptedRequestSerial = 0;
 	uint32 LandingSelectedRequestSerial = 0;

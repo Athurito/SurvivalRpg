@@ -47,6 +47,7 @@ constexpr float LandingActiveTimeout = 1.25f;
 constexpr float LandingPlaybackWatchdogSafetyMargin = 0.1f;
 constexpr float LandingFinishedTimeTolerance = 0.05f;
 constexpr float LightLandingIdleSpeedThreshold = 3.0f;
+constexpr float LandingMovementHandoffWindow = 0.3f;
 constexpr float BackwardJumpStartHoldTimeout = 1.25f;
 constexpr float BackwardJumpStartReleaseLeadTime = 0.2f;
 constexpr float TrajectoryFloorOffsetMin = 0.001f;
@@ -1530,16 +1531,43 @@ bool URpgAnimInstance::IsLandingDatabaseRole(ERpgMotionMatchingDatabaseRole Role
 
 bool URpgAnimInstance::ShouldReleaseStationaryLanding(
 	ERpgMotionMatchingDatabaseRole LandingRole,
-	bool bHasGroundedMoveIntent,
+	bool bChooserMoving,
 	float GroundSpeed)
 {
 	const bool bStationaryLanding =
 		LandingRole == ERpgMotionMatchingDatabaseRole::StandLightLanding ||
 		LandingRole == ERpgMotionMatchingDatabaseRole::StandHeavyLanding;
 	return bStationaryLanding &&
-		(bHasGroundedMoveIntent ||
+		(bChooserMoving ||
 		 !FMath::IsFinite(GroundSpeed) ||
 		 GroundSpeed > LightLandingIdleSpeedThreshold);
+}
+
+ERpgMotionMatchingDatabaseRole URpgAnimInstance::ResolveStationaryLandingMovementRole(
+	ERpgMotionMatchingDatabaseRole LandingRole,
+	ERpgLocomotionGait LiveGait)
+{
+	const bool bLight = LandingRole == ERpgMotionMatchingDatabaseRole::StandLightLanding;
+	const bool bHeavy = LandingRole == ERpgMotionMatchingDatabaseRole::StandHeavyLanding;
+	if (!bLight && !bHeavy)
+	{
+		return ERpgMotionMatchingDatabaseRole::None;
+	}
+
+	switch (LiveGait)
+	{
+	case ERpgLocomotionGait::Walk:
+		return bHeavy
+			? ERpgMotionMatchingDatabaseRole::WalkHeavyLanding
+			: ERpgMotionMatchingDatabaseRole::WalkLightLanding;
+	case ERpgLocomotionGait::Run:
+	case ERpgLocomotionGait::Sprint:
+		return bHeavy
+			? ERpgMotionMatchingDatabaseRole::RunHeavyLanding
+			: ERpgMotionMatchingDatabaseRole::RunLightLanding;
+	default:
+		return ERpgMotionMatchingDatabaseRole::None;
+	}
 }
 
 bool URpgAnimInstance::ShouldInterruptLandingDatabaseExit(
@@ -1734,11 +1762,9 @@ void URpgAnimInstance::UpdateLandingSelectionSnapshot(
 }
 
 ERpgMotionMatchingDatabaseRole URpgAnimInstance::ResolveAvailableLandingDatabaseRole(
-	const FRpgLandingSelectionSnapshot& Snapshot) const
+	ERpgMotionMatchingDatabaseRole RequestedRole) const
 {
-	ERpgMotionMatchingDatabaseRole Role = ResolveLandingDatabaseRole(
-		Snapshot,
-		HeavyLandingSpeedThreshold);
+	ERpgMotionMatchingDatabaseRole Role = RequestedRole;
 	if (GetMotionMatchingDatabaseForRole(Role))
 	{
 		return Role;
@@ -1763,14 +1789,21 @@ ERpgMotionMatchingDatabaseRole URpgAnimInstance::ResolveAvailableLandingDatabase
 		: ERpgMotionMatchingDatabaseRole::None;
 }
 
+ERpgMotionMatchingDatabaseRole URpgAnimInstance::ResolveAvailableLandingDatabaseRole(
+	const FRpgLandingSelectionSnapshot& Snapshot) const
+{
+	return ResolveAvailableLandingDatabaseRole(
+		ResolveLandingDatabaseRole(Snapshot, HeavyLandingSpeedThreshold));
+}
+
 bool URpgAnimInstance::IsGroundMotionMatchingChooserMoving(
 	const FGroundMotionMatchingSelectionSnapshot& Snapshot)
 {
 	return Snapshot.bIsMovingOnGround &&
 		!Snapshot.WorldVelocity.ContainsNaN() &&
 		!Snapshot.WorldAcceleration.ContainsNaN() &&
-		Snapshot.WorldVelocity.SizeSquared() > FMath::Square(ChooserVelocityTolerance) &&
-		Snapshot.WorldAcceleration.SizeSquared() > FMath::Square(ChooserAccelerationTolerance);
+		Snapshot.WorldVelocity.SizeSquared2D() > FMath::Square(ChooserVelocityTolerance) &&
+		Snapshot.WorldAcceleration.SizeSquared2D() > FMath::Square(ChooserAccelerationTolerance);
 }
 
 float URpgAnimInstance::GetRunPivotMinimumAngle(ERpgCharacterRotationMode RotationMode)
@@ -2913,6 +2946,7 @@ void URpgAnimInstance::ResetJumpPhaseRuntime()
 {
 	JumpPhase = ERpgJumpPhase::Grounded;
 	LandingStateElapsed = 0.0f;
+	LandingTouchdownElapsed = 0.0f;
 	ActiveLandingDatabaseRole = ERpgMotionMatchingDatabaseRole::None;
 	ClearLandingSelection();
 	ClearBackwardJumpStartHold();
@@ -2922,13 +2956,16 @@ void URpgAnimInstance::BeginAirbornePhase(bool bAscendingTakeoff)
 {
 	JumpPhase = ERpgJumpPhase::Airborne;
 	LandingStateElapsed = 0.0f;
+	LandingTouchdownElapsed = 0.0f;
 	ActiveLandingDatabaseRole = ERpgMotionMatchingDatabaseRole::None;
 	ClearLandingSelection();
 	ClearBackwardJumpStartHold();
 	bBackwardJumpStartHoldEligible = bAscendingTakeoff;
 }
 
-void URpgAnimInstance::BeginLandingRequest(ERpgMotionMatchingDatabaseRole LandingRole)
+void URpgAnimInstance::BeginLandingRequest(
+	ERpgMotionMatchingDatabaseRole LandingRole,
+	bool bForceInterrupt)
 {
 	check(IsLandingDatabaseRole(LandingRole));
 	check(GetMotionMatchingDatabaseForRole(LandingRole));
@@ -2941,6 +2978,16 @@ void URpgAnimInstance::BeginLandingRequest(ERpgMotionMatchingDatabaseRole Landin
 	if (LandingRequestSerial == 0)
 	{
 		++LandingRequestSerial;
+	}
+	if (!bForceInterrupt)
+	{
+		// The outgoing stationary landing database is absent from the new moving landing set,
+		// so GASP's database-change interrupt is sufficient and preserves the current pose as query context.
+		LandingInterruptedRequestSerial = LandingRequestSerial;
+	}
+	else
+	{
+		LandingTouchdownElapsed = 0.0f;
 	}
 }
 
@@ -2981,17 +3028,31 @@ void URpgAnimInstance::UpdateJumpPhaseRuntime(float DeltaSeconds, const FRpgAnim
 		return;
 	}
 
+	FGroundMotionMatchingSelectionSnapshot LiveGroundSnapshot;
+	LiveGroundSnapshot.Gait = Proxy.Gait;
+	LiveGroundSnapshot.Stance = Proxy.Stance;
+	LiveGroundSnapshot.MovementState = Proxy.MovementState;
+	LiveGroundSnapshot.RotationMode = Proxy.RotationMode;
+	LiveGroundSnapshot.WorldVelocity = Proxy.WorldVelocity;
+	LiveGroundSnapshot.WorldAcceleration = Proxy.WorldAcceleration;
+	LiveGroundSnapshot.GroundSpeed = Proxy.GroundSpeed;
+	LiveGroundSnapshot.bIsMovingOnGround = Proxy.bIsMovingOnGround;
+	const bool bChooserMoving = IsGroundMotionMatchingChooserMoving(LiveGroundSnapshot);
+
 	if (JumpPhase == ERpgJumpPhase::Airborne)
 	{
-		const ERpgMotionMatchingDatabaseRole LandingRole =
+		ERpgMotionMatchingDatabaseRole LandingRole =
 			IsLandingRuntimeEligible(Proxy)
 				? ResolveAvailableLandingDatabaseRole(Proxy.LandingSelectionSnapshot)
 				: ERpgMotionMatchingDatabaseRole::None;
-		if (LandingRole != ERpgMotionMatchingDatabaseRole::None &&
-			!ShouldReleaseStationaryLanding(
-				LandingRole,
-				Proxy.bHasGroundedMoveIntent,
-				Proxy.GroundSpeed))
+		if (ShouldReleaseStationaryLanding(LandingRole, bChooserMoving, Proxy.GroundSpeed))
+		{
+			LandingRole = bChooserMoving
+				? ResolveAvailableLandingDatabaseRole(
+					ResolveStationaryLandingMovementRole(LandingRole, Proxy.Gait))
+				: ERpgMotionMatchingDatabaseRole::None;
+		}
+		if (LandingRole != ERpgMotionMatchingDatabaseRole::None)
 		{
 			BeginLandingRequest(LandingRole);
 		}
@@ -3015,14 +3076,28 @@ void URpgAnimInstance::UpdateJumpPhaseRuntime(float DeltaSeconds, const FRpgAnim
 		ResetJumpPhaseRuntime();
 		return;
 	}
+	LandingTouchdownElapsed += SafeDeltaSeconds;
 
 	if (ShouldReleaseStationaryLanding(
 			ActiveLandingDatabaseRole,
-			Proxy.bHasGroundedMoveIntent,
+			bChooserMoving,
 			Proxy.GroundSpeed))
 	{
-		// The frozen snapshot selects the clip once; live grounded motion may only release it to gait.
-		ResetJumpPhaseRuntime();
+		const ERpgMotionMatchingDatabaseRole HandoffRole =
+			bChooserMoving && LandingTouchdownElapsed <= LandingMovementHandoffWindow
+				? ResolveAvailableLandingDatabaseRole(
+					ResolveStationaryLandingMovementRole(ActiveLandingDatabaseRole, Proxy.Gait))
+				: ERpgMotionMatchingDatabaseRole::None;
+		if (HandoffRole != ERpgMotionMatchingDatabaseRole::None)
+		{
+			// GASP re-evaluates the gait while JustLanded is active. Preserve severity and perform
+			// one database-change handoff rather than exposing a normal Run loop at touchdown speed.
+			BeginLandingRequest(HandoffRole, false);
+		}
+		else
+		{
+			ResetJumpPhaseRuntime();
+		}
 		return;
 	}
 
@@ -3142,6 +3217,20 @@ bool URpgAnimInstance::IsActiveLandingAsset(const UAnimationAsset* Asset) const
 		!bLandingCompletionArmed &&
 		Asset &&
 		Asset == LandingSelectedAsset.Get();
+}
+
+bool URpgAnimInstance::IsLandingAsset(const UAnimationAsset* Asset)
+{
+	const UAnimSequenceBase* Sequence = Cast<UAnimSequenceBase>(Asset);
+	if (!Sequence)
+	{
+		return false;
+	}
+
+	TStringBuilder<256> PackageName;
+	Sequence->GetOutermost()->GetPathName(nullptr, PackageName);
+	return PackageName.ToView().StartsWith(
+		TEXTVIEW("/RpgGaspLocomotion/Animations/Jump/Lands/"));
 }
 
 bool URpgAnimInstance::IsAirborneJumpStartAsset(const UAnimationAsset* Asset)
@@ -3692,12 +3781,13 @@ void URpgAnimInstance::GetGaspBlendStackInputs(
 	const bool bIsAirborneJumpStartPose =
 		bIsAirborneJumpPose &&
 		IsAirborneJumpStartAsset(CurrentAnimAsset);
+	const bool bIsLandingPose = IsLandingAsset(CurrentAnimAsset);
 	const FGaspProceduralGates Gates = ResolveGaspProceduralGates(
 		bIsGroundMovingPose,
 		SupportedLocomotionAlpha,
 		bIsAirborneJumpPose,
 		bIsAirborneJumpStartPose,
-		IsActiveLandingAsset(CurrentAnimAsset),
+		bIsLandingPose,
 		EnableWarpingCurveValue,
 		bHasActiveBlendStackAsset,
 		bHasTrajectory);

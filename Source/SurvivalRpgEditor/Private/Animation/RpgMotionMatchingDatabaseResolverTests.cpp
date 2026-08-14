@@ -8,6 +8,7 @@
 #include "Misc/AutomationTest.h"
 #include "PoseSearch/PoseSearchDatabase.h"
 #include "SurvivalRpg/Animation/RpgAnimInstance.h"
+#include "SurvivalRpg/Core/Character/RpgCharacter.h"
 #include "UObject/UObjectGlobals.h"
 
 IMPLEMENT_SIMPLE_AUTOMATION_TEST(
@@ -234,6 +235,113 @@ bool FRpgMotionMatchingDatabaseResolverTest::RunTest(const FString& Parameters)
 		TEXT("GASP's 1e-4 acceleration tolerance keeps a finite 0.05 cm/s2 input in Moving"),
 		TinyAccelerationResult[0],
 		RunLoops);
+
+	// A stationary landing can release on the first grounded input frame while CharacterMovement still
+	// carries a small floor-projected Z remainder. Only horizontal velocity may open the moving Run domain.
+	constexpr double MaxAcceleration = 2400.0;
+	const FVector FullForwardAcceleration(MaxAcceleration, 0.0, 0.0);
+	FRpgReplicatedAcceleration PackedForwardAcceleration;
+	PackedForwardAcceleration.SetFromAcceleration(FullForwardAcceleration, MaxAcceleration);
+	const FVector ReplicatedForwardAcceleration =
+		PackedForwardAcceleration.ToAcceleration(MaxAcceleration);
+	const FVector NetworkAccelerations[] =
+	{
+		FullForwardAcceleration,
+		FullForwardAcceleration,
+		ReplicatedForwardAcceleration,
+		ReplicatedForwardAcceleration,
+	};
+	static const TCHAR* const LandingHandoffNetworkViews[] =
+	{
+		TEXT("Authority"),
+		TEXT("Autonomous Proxy"),
+		TEXT("Simulated Proxy"),
+		TEXT("Late Join Simulated Proxy"),
+	};
+
+	for (int32 NetworkViewIndex = 0;
+		 NetworkViewIndex < UE_ARRAY_COUNT(LandingHandoffNetworkViews);
+		 ++NetworkViewIndex)
+	{
+		const TCHAR* NetworkView = LandingHandoffNetworkViews[NetworkViewIndex];
+		URpgAnimInstance::FGroundMotionMatchingSelectionSnapshot VerticalOnlySnapshot;
+		VerticalOnlySnapshot.Gait = ERpgLocomotionGait::Run;
+		VerticalOnlySnapshot.Stance = ERpgLocomotionStance::Standing;
+		VerticalOnlySnapshot.MovementState = ERpgLocomotionMovementState::Grounded;
+		VerticalOnlySnapshot.WorldVelocity = FVector(
+			0.0f,
+			0.0f,
+			URpgAnimInstance::ChooserVelocityTolerance + 0.01f);
+		VerticalOnlySnapshot.WorldAcceleration = NetworkAccelerations[NetworkViewIndex];
+		VerticalOnlySnapshot.GroundSpeed = VerticalOnlySnapshot.WorldVelocity.Size2D();
+		VerticalOnlySnapshot.FutureVelocity = FVector(
+			URpgAnimInstance::RunStartMinimumFutureSpeedGain,
+			0.0f,
+			0.0f);
+		VerticalOnlySnapshot.CurrentDatabaseRole = ERpgMotionMatchingDatabaseRole::None;
+		VerticalOnlySnapshot.bIsMovingOnGround = true;
+
+		TestFalse(
+			*FString::Printf(TEXT("%s ignores vertical-only grounded velocity for logical Moving"), NetworkView),
+			URpgAnimInstance::IsGroundMotionMatchingChooserMoving(VerticalOnlySnapshot));
+		TestRoleSequence(
+			*FString::Printf(TEXT("%s vertical-only landing handoff"), NetworkView),
+			URpgAnimInstance::ResolveMotionMatchingDatabaseRoles(VerticalOnlySnapshot),
+			{ERpgMotionMatchingDatabaseRole::StandIdle});
+		const URpgAnimInstance::FResolvedGroundMotionMatchingDatabases VerticalOnlyResult =
+			URpgAnimInstance::ResolveGroundMotionMatchingDatabases(VerticalOnlySnapshot, DatabaseSets);
+		TestEqual(
+			*FString::Printf(TEXT("%s vertical-only landing handoff resolves one database"), NetworkView),
+			VerticalOnlyResult.Num(),
+			1);
+		if (VerticalOnlyResult.Num() == 1)
+		{
+			TestEqual(
+				*FString::Printf(TEXT("%s vertical-only landing handoff remains Idle"), NetworkView),
+				VerticalOnlyResult[0],
+				Idle);
+		}
+
+		URpgAnimInstance::FGroundMotionMatchingSelectionSnapshot HorizontalMovingSnapshot =
+			VerticalOnlySnapshot;
+		HorizontalMovingSnapshot.WorldVelocity = FVector(
+			URpgAnimInstance::ChooserVelocityTolerance + 0.01f,
+			0.0f,
+			0.0f);
+		HorizontalMovingSnapshot.GroundSpeed = HorizontalMovingSnapshot.WorldVelocity.Size2D();
+		HorizontalMovingSnapshot.FutureVelocity = FVector(
+			HorizontalMovingSnapshot.GroundSpeed + URpgAnimInstance::RunStartMinimumFutureSpeedGain,
+			0.0f,
+			0.0f);
+
+		TestTrue(
+			*FString::Printf(TEXT("%s opens logical Moving above the horizontal velocity tolerance"), NetworkView),
+			URpgAnimInstance::IsGroundMotionMatchingChooserMoving(HorizontalMovingSnapshot));
+		TestRoleSequence(
+			*FString::Printf(TEXT("%s first horizontal Run frame"), NetworkView),
+			URpgAnimInstance::ResolveMotionMatchingDatabaseRoles(HorizontalMovingSnapshot),
+			{
+				ERpgMotionMatchingDatabaseRole::StandRunStarts,
+				ERpgMotionMatchingDatabaseRole::StandRunLoops,
+			});
+		const URpgAnimInstance::FResolvedGroundMotionMatchingDatabases HorizontalMovingResult =
+			URpgAnimInstance::ResolveGroundMotionMatchingDatabases(HorizontalMovingSnapshot, DatabaseSets);
+		TestEqual(
+			*FString::Printf(TEXT("%s first horizontal Run frame resolves Starts and Loops"), NetworkView),
+			HorizontalMovingResult.Num(),
+			2);
+		if (HorizontalMovingResult.Num() == 2)
+		{
+			TestEqual(
+				*FString::Printf(TEXT("%s first horizontal Run frame keeps Starts first"), NetworkView),
+				HorizontalMovingResult[0],
+				RunStarts);
+			TestEqual(
+				*FString::Printf(TEXT("%s first horizontal Run frame keeps Loops second"), NetworkView),
+				HorizontalMovingResult[1],
+				RunLoops);
+		}
+	}
 
 	URpgAnimInstance::FGroundMotionMatchingSelectionSnapshot StartAndPivotSnapshot = FreePivotSnapshot;
 	StartAndPivotSnapshot.FutureVelocity = FVector(

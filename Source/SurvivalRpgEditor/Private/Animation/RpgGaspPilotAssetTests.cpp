@@ -1332,7 +1332,7 @@ bool FRpgGaspPilotAssetContractTest::RunTest(const FString& Parameters)
 
 		const FEnumProperty* ActiveLandingRoleProperty =
 			FindFProperty<FEnumProperty>(PilotAnimDefaults->GetClass(), TEXT("ActiveLandingDatabaseRole"));
-		if (TestNotNull(TEXT("The immutable active landing role is reflected"), ActiveLandingRoleProperty))
+		if (TestNotNull(TEXT("The active landing role is reflected"), ActiveLandingRoleProperty))
 		{
 			TestEqual(
 				TEXT("ActiveLandingDatabaseRole uses the explicit database-role contract"),
