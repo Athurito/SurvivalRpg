@@ -19,6 +19,8 @@ Never let either sample project override a deliberate SurvivalRpg adaptation wit
 | --- | --- | --- | --- |
 | Locomotion pose selection and presentation | GASP adaptation | Lyra for lifecycle/network inputs | Keep cosmetic state outside gameplay authority. |
 | AnimGraph, Pose Search, trajectory, procedural nodes | GASP adaptation | Combat when montage layers overlap | Preserve thread-safe snapshots and montage slots. |
+| Native animation integration | `URpgAnimInstance`/proxy and focused native helpers | AnimBP/DataAssets for presentation | Keep C++ narrow: snapshots, engine-facing hooks, world-query handoff, and justified pure resolvers rather than one growing state owner. |
+| Presentation composition and tuning | AnimBP, Choosers, profiles, and DataAssets | Native integration for safe inputs | Keep blend feel, database membership/references, masks, and cosmetic thresholds visible and data-driven by default. |
 | Pawn class and pawn configuration | Lyra/PawnData | GASP for AnimBP requirements | Compose through PawnData and Experience rather than a sample-owned character path. |
 | Mode and feature composition | Lyra Experiences/Game Features | GASP for required assets/plugins | Keep activation data-driven and dependencies narrow. |
 | Abilities, costs, cooldowns, blockers, combat tags | GAS/Combat | GASP for read-only animation gates | Snapshot tags for animation; never infer authoritative gameplay from a selected pose. |
@@ -35,19 +37,20 @@ Never let either sample project override a deliberate SurvivalRpg adaptation wit
 
 Preserve these seams unless an inspected project change proves that they moved:
 
-- `URpgAnimInstance` is the native base for the GASP player AnimBP.
+- `URpgAnimInstance` is the native base and integration coordinator for the GASP player AnimBP; it is not automatically the owner of every presentation rule.
 - The AnimInstance proxy captures gameplay and movement inputs on the game thread.
 - The active GASP character is selected through PawnData and an Experience.
 - `GetMesh()` remains the montage, notify, equipment socket, corpse, and ragdoll mesh.
 - `DefaultSlot` remains available to GAS combat montages.
 - Curated sequences preserve their authored root-motion import settings while the AnimInstance extraction policy remains root motion from montages only.
-- Runtime database selection remains project-native even when its logic mirrors selected GASP chooser domains.
+- Runtime database selection remains project-owned even when its logic mirrors selected GASP chooser domains. Project-owned may combine focused native resolvers with asset-driven configuration; it does not require monolithic native ownership.
 - The content-only plugin owns curated locomotion assets but does not choose PawnData, Experience, or AnimBP.
 - Equipment/GAS and CharacterMovement own load and traversal state; the AnimInstance receives only animation-safe snapshots.
 
 ## Cross-system decision rules
 
 - If a change affects only source parity, retargeted content, Pose Search metadata, or cosmetic graph tuning, let `$unreal-gasp-expert` lead.
+- If a change is presentation-only, prefer AnimBP, Chooser, profile, or DataAsset ownership unless measured performance, engine integration, thread safety, or durable deterministic testing justifies a focused native resolver.
 - If it affects PawnData, Experience activation, character class, movement replication, ASC access, montage lifecycle, death, or ragdoll, use `$unreal-gasp-expert` with `$unreal-lyra-expert`.
 - If it affects attacks, dodge, block, hit reactions, combat tags, montage notifies, equipment grants, or damage windows, add `$survival-rpg-combat-foundation`.
 - If it affects load-aware movement, sprint, stamina, traversal abilities, or equipment-driven gait, use `$unreal-gasp-expert` with `$unreal-lyra-expert` and `$survival-rpg-combat-foundation`.
@@ -62,6 +65,9 @@ Preserve these seams unless an inspected project change proves that they moved:
 - Do not remove montage slots, gameplay notifies, or root-motion behavior while simplifying locomotion graphs.
 - Do not hard-reference the sample project or import its broad dependency closure.
 - Do not add Mover, Traversal, Locomotor, NetworkPrediction, sample camera, or Foley as incidental dependencies.
+- Do not add another presentation state machine, watchdog, database switch, or package-path classifier to `URpgAnimInstance` before evaluating a focused helper/runtime split and an AnimBP/Chooser/DataAsset alternative.
+- Do not move complex native behavior one-to-one into Blueprint; simplify and separate the responsibility first.
+- Do not claim multiplayer completion from value-only unit tests. Verify authority, autonomous proxy, simulated proxy, correction, notify delivery, and late join in an actual network session when the change crosses those seams.
 
 ## Verification matrix
 
@@ -76,3 +82,4 @@ Preserve these seams unless an inspected project change proves that they moved:
 | GAS montage or combat layer | Slot/root-motion/notifies, cancel/block behavior, attack windows, hit reactions |
 | Equipment, death, or ragdoll | Socket attachment, mesh ownership, death transition, corpse physics, late join where relevant |
 | New sample subsystem | Dependency closure, ownership/lifecycle design, isolated pilot, rollback path, multiplayer acceptance |
+| C++/Blueprint/DataAsset boundary or native refactor | Responsibility map, behavior-preserving focused tests, AnimBP/data validation, build after native changes, and real network checks when replicated seams are touched |
