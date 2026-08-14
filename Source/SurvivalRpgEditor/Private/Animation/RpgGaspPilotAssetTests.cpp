@@ -1277,6 +1277,38 @@ bool FRpgGaspPilotAssetContractTest::RunTest(const FString& Parameters)
 					CPF_Transient | CPF_BlueprintVisible | CPF_BlueprintReadOnly));
 		}
 
+		const FStructProperty* LandingSnapshotProperty =
+			FindFProperty<FStructProperty>(PilotAnimDefaults->GetClass(), TEXT("PreTouchdownLandingSnapshot"));
+		if (TestNotNull(TEXT("The frozen pre-touchdown landing snapshot is reflected"), LandingSnapshotProperty))
+		{
+			TestTrue(
+				TEXT("The pre-touchdown value uses the project landing snapshot contract"),
+				LandingSnapshotProperty->Struct == FRpgLandingSelectionSnapshot::StaticStruct());
+			TestTrue(
+				TEXT("The pre-touchdown snapshot is transient Blueprint-readable cosmetic state"),
+				LandingSnapshotProperty->HasAllPropertyFlags(
+					CPF_Transient | CPF_BlueprintVisible | CPF_BlueprintReadOnly));
+		}
+		const FRpgLandingSelectionSnapshot* LandingSnapshot =
+			ReadStructPropertyValue<FRpgLandingSelectionSnapshot>(
+				PilotAnimDefaults,
+				TEXT("PreTouchdownLandingSnapshot"));
+		if (TestNotNull(TEXT("The pre-touchdown landing snapshot default is readable"), LandingSnapshot))
+		{
+			TestFalse(TEXT("No landing snapshot is valid on the class default"), LandingSnapshot->bIsValid);
+			TestFalse(TEXT("The class default has no frozen landing move intent"), LandingSnapshot->bHasMoveIntent);
+			TestTrue(TEXT("The class default landing horizontal velocity is zero"), LandingSnapshot->HorizontalVelocity.IsZero());
+			TestEqual(TEXT("The class default landing horizontal speed is zero"), LandingSnapshot->HorizontalSpeed, 0.0f);
+			TestEqual(TEXT("The class default landing vertical velocity is zero"), LandingSnapshot->VerticalVelocity, 0.0f);
+			TestEqual(TEXT("The class default maximum downward speed is zero"), LandingSnapshot->MaximumDownwardSpeed, 0.0f);
+			TestEqual(TEXT("The class default predicted impact speed is zero"), LandingSnapshot->PredictedImpactDownwardSpeed, 0.0f);
+			TestEqual(
+				TEXT("The class default landing snapshot starts in the explicit Idle gait"),
+				static_cast<uint8>(LandingSnapshot->Gait),
+				static_cast<uint8>(ERpgLocomotionGait::Idle));
+			TestEqual(TEXT("The class default landing epoch is zero"), LandingSnapshot->AirborneEpoch, 0);
+		}
+
 		const FEnumProperty* JumpPhaseProperty =
 			FindFProperty<FEnumProperty>(PilotAnimDefaults->GetClass(), TEXT("JumpPhase"));
 		if (TestNotNull(TEXT("The cosmetic jump phase is reflected"), JumpPhaseProperty))
@@ -1296,6 +1328,30 @@ bool FRpgGaspPilotAssetContractTest::RunTest(const FString& Parameters)
 			ReadPropertyText(PilotAnimDefaults, TEXT("JumpPhase"), JumpPhaseText)))
 		{
 			TestEqual(TEXT("The GASP pilot starts grounded"), JumpPhaseText, FString(TEXT("Grounded")));
+		}
+
+		const FEnumProperty* ActiveLandingRoleProperty =
+			FindFProperty<FEnumProperty>(PilotAnimDefaults->GetClass(), TEXT("ActiveLandingDatabaseRole"));
+		if (TestNotNull(TEXT("The immutable active landing role is reflected"), ActiveLandingRoleProperty))
+		{
+			TestEqual(
+				TEXT("ActiveLandingDatabaseRole uses the explicit database-role contract"),
+				ActiveLandingRoleProperty->GetEnum(),
+				StaticEnum<ERpgMotionMatchingDatabaseRole>());
+			TestTrue(
+				TEXT("ActiveLandingDatabaseRole is transient Blueprint-readable debug state"),
+				ActiveLandingRoleProperty->HasAllPropertyFlags(
+					CPF_Transient | CPF_BlueprintVisible | CPF_BlueprintReadOnly));
+		}
+		FString ActiveLandingRoleText;
+		if (TestTrue(
+			TEXT("The active landing database-role default is readable"),
+			ReadPropertyText(PilotAnimDefaults, TEXT("ActiveLandingDatabaseRole"), ActiveLandingRoleText)))
+		{
+			TestEqual(
+				TEXT("No landing database role is active on the class default"),
+				ActiveLandingRoleText,
+				FString(TEXT("None")));
 		}
 
 		float LandingStateElapsed = -1.0f;
@@ -1547,18 +1603,85 @@ bool FRpgGaspPilotAssetContractTest::RunTest(const FString& Parameters)
 			}
 		}
 
-		FString LandingDatabasePath;
-		if (TestTrue(
-			TEXT("The dedicated landing database property is readable"),
-			ReadObjectProperty(
-				PilotAnimDefaults,
+		static const struct
+		{
+			const TCHAR* PropertyName;
+			const TCHAR* Label;
+			const TCHAR* ExpectedObjectPath;
+		} ExpectedLandingDatabases[] = {
+			{
 				TEXT("LandingMotionMatchingDatabase"),
-				LandingDatabasePath)))
+				TEXT("Idle Light"),
+				TEXT("/RpgGaspLocomotion/MotionMatching/Databases/PSD_Rpg_Stand_Idle_Lands_Light.PSD_Rpg_Stand_Idle_Lands_Light"),
+			},
+			{
+				TEXT("StandHeavyLandingMotionMatchingDatabase"),
+				TEXT("Idle Heavy"),
+				TEXT("/RpgGaspLocomotion/MotionMatching/Databases/PSD_Rpg_Stand_Idle_Lands_Heavy.PSD_Rpg_Stand_Idle_Lands_Heavy"),
+			},
+			{
+				TEXT("WalkLightLandingMotionMatchingDatabase"),
+				TEXT("Walk Light"),
+				TEXT("/RpgGaspLocomotion/MotionMatching/Databases/PSD_Rpg_Stand_Walk_Lands_Light.PSD_Rpg_Stand_Walk_Lands_Light"),
+			},
+			{
+				TEXT("WalkHeavyLandingMotionMatchingDatabase"),
+				TEXT("Walk Heavy"),
+				TEXT("/RpgGaspLocomotion/MotionMatching/Databases/PSD_Rpg_Stand_Walk_Lands_Heavy.PSD_Rpg_Stand_Walk_Lands_Heavy"),
+			},
+			{
+				TEXT("RunLightLandingMotionMatchingDatabase"),
+				TEXT("Run Light"),
+				TEXT("/RpgGaspLocomotion/MotionMatching/Databases/PSD_Rpg_Stand_Run_Lands_Light.PSD_Rpg_Stand_Run_Lands_Light"),
+			},
+			{
+				TEXT("RunHeavyLandingMotionMatchingDatabase"),
+				TEXT("Run Heavy"),
+				TEXT("/RpgGaspLocomotion/MotionMatching/Databases/PSD_Rpg_Stand_Run_Lands_Heavy.PSD_Rpg_Stand_Run_Lands_Heavy"),
+			},
+		};
+		for (const auto& ExpectedLandingDatabase : ExpectedLandingDatabases)
+		{
+			FString LandingDatabasePath;
+			if (TestTrue(
+					*FString::Printf(
+						TEXT("The dedicated %s landing database property is readable"),
+						ExpectedLandingDatabase.Label),
+					ReadObjectProperty(
+						PilotAnimDefaults,
+						ExpectedLandingDatabase.PropertyName,
+						LandingDatabasePath)))
+			{
+				TestEqual(
+					*FString::Printf(
+						TEXT("%s lands use the dedicated project-local database"),
+						ExpectedLandingDatabase.Label),
+					LandingDatabasePath,
+					FString(ExpectedLandingDatabase.ExpectedObjectPath));
+			}
+		}
+
+		float HeavyLandingSpeedThreshold = 0.0f;
+		if (TestTrue(
+			TEXT("The cosmetic Heavy landing threshold is readable"),
+			ReadFloatProperty(
+				PilotAnimDefaults,
+				TEXT("HeavyLandingSpeedThreshold"),
+				HeavyLandingSpeedThreshold)))
 		{
 			TestEqual(
-				TEXT("Grounded light lands use the dedicated project-local database"),
-				LandingDatabasePath,
-				FString(TEXT("/RpgGaspLocomotion/MotionMatching/Databases/PSD_Rpg_Stand_Idle_Lands_Light.PSD_Rpg_Stand_Idle_Lands_Light")));
+				TEXT("The GASP pilot uses the inclusive authored 700 cm/s Heavy landing boundary"),
+				HeavyLandingSpeedThreshold,
+				700.0f);
+			const FFloatProperty* Property =
+				FindFProperty<FFloatProperty>(PilotAnimDefaults->GetClass(), TEXT("HeavyLandingSpeedThreshold"));
+			TestTrue(
+				TEXT("HeavyLandingSpeedThreshold is designer-authored Blueprint-readable configuration"),
+				Property && Property->HasAllPropertyFlags(
+					CPF_Edit | CPF_BlueprintVisible | CPF_BlueprintReadOnly));
+			TestFalse(
+				TEXT("HeavyLandingSpeedThreshold is not transient runtime state"),
+				Property && Property->HasAnyPropertyFlags(CPF_Transient));
 		}
 	}
 

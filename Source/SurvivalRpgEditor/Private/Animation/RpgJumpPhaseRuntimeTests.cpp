@@ -22,22 +22,60 @@ bool FRpgJumpPhaseRuntimeTest::RunTest(const FString& Parameters)
 {
 	USkeletalMeshComponent* AnimInstanceOuter = NewObject<USkeletalMeshComponent>();
 	URpgAnimInstance* AnimInstance = NewObject<URpgAnimInstance>(AnimInstanceOuter);
-	UPoseSearchDatabase* LandingDatabase = NewObject<UPoseSearchDatabase>();
-	UPoseSearchDatabase* OtherDatabase = NewObject<UPoseSearchDatabase>();
+	UPoseSearchDatabase* StandLightLandingDatabase = NewObject<UPoseSearchDatabase>();
+	UPoseSearchDatabase* StandHeavyLandingDatabase = NewObject<UPoseSearchDatabase>();
+	UPoseSearchDatabase* WalkLightLandingDatabase = NewObject<UPoseSearchDatabase>();
+	UPoseSearchDatabase* WalkHeavyLandingDatabase = NewObject<UPoseSearchDatabase>();
+	UPoseSearchDatabase* RunLightLandingDatabase = NewObject<UPoseSearchDatabase>();
+	UPoseSearchDatabase* RunHeavyLandingDatabase = NewObject<UPoseSearchDatabase>();
 	UAnimSequence* LandingClip = NewObject<UAnimSequence>();
 	UAnimSequence* PreviousAirborneClip = NewObject<UAnimSequence>();
 	if (!TestNotNull(TEXT("Transient RPG AnimInstance can be created"), AnimInstance) ||
-		!TestNotNull(TEXT("Transient landing database can be created"), LandingDatabase) ||
+		!TestNotNull(TEXT("Transient Stand Light landing database can be created"), StandLightLandingDatabase) ||
+		!TestNotNull(TEXT("Transient Stand Heavy landing database can be created"), StandHeavyLandingDatabase) ||
+		!TestNotNull(TEXT("Transient Walk Light landing database can be created"), WalkLightLandingDatabase) ||
+		!TestNotNull(TEXT("Transient Walk Heavy landing database can be created"), WalkHeavyLandingDatabase) ||
+		!TestNotNull(TEXT("Transient Run Light landing database can be created"), RunLightLandingDatabase) ||
+		!TestNotNull(TEXT("Transient Run Heavy landing database can be created"), RunHeavyLandingDatabase) ||
 		!TestNotNull(TEXT("Transient landing clip can be created"), LandingClip))
 	{
 		return false;
 	}
-	AnimInstance->LandingMotionMatchingDatabase = LandingDatabase;
+	AnimInstance->LandingMotionMatchingDatabase = StandLightLandingDatabase;
+	AnimInstance->StandHeavyLandingMotionMatchingDatabase = StandHeavyLandingDatabase;
+	AnimInstance->WalkLightLandingMotionMatchingDatabase = WalkLightLandingDatabase;
+	AnimInstance->WalkHeavyLandingMotionMatchingDatabase = WalkHeavyLandingDatabase;
+	AnimInstance->RunLightLandingMotionMatchingDatabase = RunLightLandingDatabase;
+	AnimInstance->RunHeavyLandingMotionMatchingDatabase = RunHeavyLandingDatabase;
 
 	FRpgAnimInstanceProxy Proxy;
 	Proxy.bTurnInPlaceHardReset = false;
 	Proxy.MovementState = ERpgLocomotionMovementState::Grounded;
 	Proxy.bIsMovingOnGround = true;
+	int32 LandingAirborneEpoch = 0;
+	auto SetValidLandingSelectionSnapshot =
+		[&Proxy, &LandingAirborneEpoch](
+			ERpgLocomotionGait Gait,
+			float HorizontalSpeed,
+			float DownwardSpeed,
+			bool bHasMoveIntent)
+	{
+		FRpgLandingSelectionSnapshot& Snapshot = Proxy.LandingSelectionSnapshot;
+		Snapshot = FRpgLandingSelectionSnapshot();
+		Snapshot.HorizontalVelocity = FVector(HorizontalSpeed, 0.0f, 0.0f);
+		Snapshot.HorizontalSpeed = HorizontalSpeed;
+		Snapshot.VerticalVelocity = -DownwardSpeed;
+		Snapshot.MaximumDownwardSpeed = DownwardSpeed;
+		Snapshot.PredictedImpactDownwardSpeed = DownwardSpeed;
+		Snapshot.Gait = Gait;
+		Snapshot.PredictedLanding.LandingLocation = FVector(HorizontalSpeed * 0.1f, 0.0f, 0.0f);
+		Snapshot.PredictedLanding.LandingNormal = FVector::UpVector;
+		Snapshot.PredictedLanding.TimeToLand = 0.1f;
+		Snapshot.PredictedLanding.bIsValid = true;
+		Snapshot.AirborneEpoch = ++LandingAirborneEpoch;
+		Snapshot.bHasMoveIntent = bHasMoveIntent;
+		Snapshot.bIsValid = true;
+	};
 	AnimInstance->ResetJumpPhaseRuntime();
 	AnimInstance->UpdateJumpPhaseRuntime(0.01f, Proxy);
 	TestEqual(TEXT("A regular grounded snapshot stays grounded"), AnimInstance->JumpPhase, ERpgJumpPhase::Grounded);
@@ -53,23 +91,55 @@ bool FRpgJumpPhaseRuntimeTest::RunTest(const FString& Parameters)
 	Proxy.bIsMovingOnGround = true;
 	Proxy.bIsFalling = false;
 	Proxy.GroundSpeed = 300.0f;
-	Proxy.bHasGroundedMoveIntent = false;
-	AnimInstance->UpdateJumpPhaseRuntime(0.01f, Proxy);
-	TestEqual(TEXT("A high-speed touchdown returns directly to gait locomotion"), AnimInstance->JumpPhase, ERpgJumpPhase::Grounded);
-	TestEqual(TEXT("A high-speed touchdown creates no stand-idle landing request"), AnimInstance->LandingRequestSerial, 0u);
-
-	Proxy.MovementState = ERpgLocomotionMovementState::Airborne;
-	Proxy.bIsMovingOnGround = false;
-	Proxy.bIsFalling = true;
-	AnimInstance->UpdateJumpPhaseRuntime(0.01f, Proxy);
-	Proxy.MovementState = ERpgLocomotionMovementState::Grounded;
-	Proxy.bIsMovingOnGround = true;
-	Proxy.bIsFalling = false;
-	Proxy.GroundSpeed = 0.0f;
+	Proxy.Gait = ERpgLocomotionGait::Run;
 	Proxy.bHasGroundedMoveIntent = true;
+	SetValidLandingSelectionSnapshot(ERpgLocomotionGait::Run, 300.0f, 500.0f, true);
 	AnimInstance->UpdateJumpPhaseRuntime(0.01f, Proxy);
-	TestEqual(TEXT("Grounded move intent bypasses the stand-idle landing latch"), AnimInstance->JumpPhase, ERpgJumpPhase::Grounded);
-	TestEqual(TEXT("Grounded move intent creates no landing request"), AnimInstance->LandingRequestSerial, 0u);
+	TestEqual(TEXT("A moving touchdown enters the landing lifecycle"), AnimInstance->JumpPhase, ERpgJumpPhase::Landing);
+	TestEqual(
+		TEXT("A moving light touchdown freezes the Run Light database role"),
+		AnimInstance->ActiveLandingDatabaseRole,
+		ERpgMotionMatchingDatabaseRole::RunLightLanding);
+	const uint32 RunLandingRequest = AnimInstance->LandingRequestSerial;
+	TestTrue(TEXT("A moving touchdown creates a serialized landing request"), RunLandingRequest != 0u);
+	TestFalse(
+		TEXT("A moving landing cannot latch a result from another requested role"),
+		AnimInstance->TryLatchLandingSelection(
+			LandingClip,
+			WalkLightLandingDatabase,
+			0.2f,
+			false,
+			RunLandingRequest));
+	TestTrue(
+		TEXT("A moving landing latches only its exact requested Run Light role"),
+		AnimInstance->TryLatchLandingSelection(
+			LandingClip,
+			RunLightLandingDatabase,
+			0.2f,
+			false,
+			RunLandingRequest));
+
+	// The final airborne snapshot is consumed only at touchdown. Later grounded input and gait
+	// changes must not reclassify an already running cosmetic landing request.
+	Proxy.GroundSpeed = 0.0f;
+	Proxy.Gait = ERpgLocomotionGait::Idle;
+	Proxy.bHasGroundedMoveIntent = false;
+	Proxy.LandingSelectionSnapshot = FRpgLandingSelectionSnapshot();
+	AnimInstance->UpdateJumpPhaseRuntime(0.01f, Proxy);
+	TestEqual(TEXT("A running landing survives the grounded-input freeze"), AnimInstance->JumpPhase, ERpgJumpPhase::Landing);
+	TestEqual(
+		TEXT("Grounded speed, input, and gait changes cannot reclassify the active landing"),
+		AnimInstance->ActiveLandingDatabaseRole,
+		ERpgMotionMatchingDatabaseRole::RunLightLanding);
+	TestTrue(
+		TEXT("The exact moving landing asset remains active after grounded input is released"),
+		AnimInstance->IsActiveLandingAsset(LandingClip));
+	TestEqual(TEXT("Grounded-input changes do not create another request"), AnimInstance->LandingRequestSerial, RunLandingRequest);
+	AnimInstance->ResetJumpPhaseRuntime();
+	TestEqual(
+		TEXT("Resetting the landing lifecycle clears its frozen database role"),
+		AnimInstance->ActiveLandingDatabaseRole,
+		ERpgMotionMatchingDatabaseRole::None);
 
 	Proxy.MovementState = ERpgLocomotionMovementState::Airborne;
 	Proxy.bIsMovingOnGround = false;
@@ -80,9 +150,15 @@ bool FRpgJumpPhaseRuntimeTest::RunTest(const FString& Parameters)
 	Proxy.bIsMovingOnGround = true;
 	Proxy.bIsFalling = false;
 	Proxy.GroundSpeed = 3.0f;
+	Proxy.Gait = ERpgLocomotionGait::Idle;
+	SetValidLandingSelectionSnapshot(ERpgLocomotionGait::Idle, 3.0f, 500.0f, false);
 	AnimInstance->UpdateJumpPhaseRuntime(0.01f, Proxy);
 	TestEqual(TEXT("An idle touchdown enters Landing at the inclusive 3 cm/s boundary"), AnimInstance->JumpPhase, ERpgJumpPhase::Landing);
-	TestEqual(TEXT("The first idle touchdown creates one landing request"), AnimInstance->LandingRequestSerial, 1u);
+	TestEqual(
+		TEXT("The idle touchdown selects the preserved Stand Light role"),
+		AnimInstance->ActiveLandingDatabaseRole,
+		ERpgMotionMatchingDatabaseRole::StandLightLanding);
+	TestEqual(TEXT("The idle touchdown creates exactly one new request"), AnimInstance->LandingRequestSerial, RunLandingRequest + 1u);
 	TestTrue(TEXT("A touchdown requests ForceInterrupt exactly once"), AnimInstance->ConsumeLandingForceInterruptRequest());
 	TestFalse(TEXT("The same touchdown cannot request ForceInterrupt twice"), AnimInstance->ConsumeLandingForceInterruptRequest());
 
@@ -90,7 +166,7 @@ bool FRpgJumpPhaseRuntimeTest::RunTest(const FString& Parameters)
 		TEXT("A result from another database cannot latch"),
 		AnimInstance->TryLatchLandingSelection(
 			LandingClip,
-			OtherDatabase,
+			RunLightLandingDatabase,
 			0.2f,
 			false,
 			AnimInstance->LandingRequestSerial));
@@ -98,7 +174,7 @@ bool FRpgJumpPhaseRuntimeTest::RunTest(const FString& Parameters)
 		TEXT("A stale request serial cannot latch"),
 		AnimInstance->TryLatchLandingSelection(
 			LandingClip,
-			LandingDatabase,
+			StandLightLandingDatabase,
 			0.2f,
 			false,
 			AnimInstance->LandingRequestSerial - 1));
@@ -106,7 +182,7 @@ bool FRpgJumpPhaseRuntimeTest::RunTest(const FString& Parameters)
 		TEXT("The first valid exclusive landing result latches"),
 		AnimInstance->TryLatchLandingSelection(
 			LandingClip,
-			LandingDatabase,
+			StandLightLandingDatabase,
 			0.2f,
 			false,
 			AnimInstance->LandingRequestSerial));
@@ -115,7 +191,7 @@ bool FRpgJumpPhaseRuntimeTest::RunTest(const FString& Parameters)
 		TEXT("A second result cannot replace the latched landing"),
 		AnimInstance->TryLatchLandingSelection(
 			PreviousAirborneClip,
-			LandingDatabase,
+			StandLightLandingDatabase,
 			0.0f,
 			false,
 			AnimInstance->LandingRequestSerial));
@@ -150,6 +226,7 @@ bool FRpgJumpPhaseRuntimeTest::RunTest(const FString& Parameters)
 	Proxy.bIsMovingOnGround = false;
 	Proxy.bIsFalling = true;
 	AnimInstance->UpdateJumpPhaseRuntime(0.01f, Proxy);
+	SetValidLandingSelectionSnapshot(ERpgLocomotionGait::Idle, 0.0f, 500.0f, false);
 	Proxy.MovementState = ERpgLocomotionMovementState::Grounded;
 	Proxy.bIsMovingOnGround = true;
 	Proxy.bIsFalling = false;
@@ -165,6 +242,7 @@ bool FRpgJumpPhaseRuntimeTest::RunTest(const FString& Parameters)
 	Proxy.bIsMovingOnGround = false;
 	Proxy.bIsFalling = true;
 	AnimInstance->UpdateJumpPhaseRuntime(0.01f, Proxy);
+	SetValidLandingSelectionSnapshot(ERpgLocomotionGait::Idle, 0.0f, 500.0f, false);
 	Proxy.MovementState = ERpgLocomotionMovementState::Grounded;
 	Proxy.bIsMovingOnGround = true;
 	Proxy.bIsFalling = false;
@@ -178,7 +256,7 @@ bool FRpgJumpPhaseRuntimeTest::RunTest(const FString& Parameters)
 		TEXT("A looping safety fixture can latch"),
 		AnimInstance->TryLatchLandingSelection(
 			LandingClip,
-			LandingDatabase,
+			StandLightLandingDatabase,
 			0.0f,
 			true,
 			AnimInstance->LandingRequestSerial));
@@ -198,9 +276,13 @@ bool FRpgJumpPhaseRuntimeTest::RunTest(const FString& Parameters)
 		Proxy.bIsMovingOnGround = false;
 		Proxy.bIsFalling = true;
 		AnimInstance->UpdateJumpPhaseRuntime(0.01f, Proxy);
+		SetValidLandingSelectionSnapshot(ERpgLocomotionGait::Idle, 0.0f, 500.0f, false);
 		Proxy.MovementState = ERpgLocomotionMovementState::Grounded;
 		Proxy.bIsMovingOnGround = true;
 		Proxy.bIsFalling = false;
+		Proxy.GroundSpeed = 0.0f;
+		Proxy.Gait = ERpgLocomotionGait::Idle;
+		Proxy.bHasGroundedMoveIntent = false;
 		AnimInstance->UpdateJumpPhaseRuntime(0.01f, Proxy);
 	};
 
@@ -384,11 +466,25 @@ bool FRpgJumpPhaseRuntimeTest::RunTest(const FString& Parameters)
 	TestEqual(TEXT("The looped fall cannot receive blanket OW"), FallGates.OrientationWarpingAlpha, 0.0f);
 	TestFalse(TEXT("The looped fall cannot receive Steering"), FallGates.bEnableSteering);
 
-	const URpgAnimInstance::FGaspProceduralGates LandingGates =
+	const URpgAnimInstance::FGaspProceduralGates IdleLandingGates =
 		AnimInstance->ResolveGaspProceduralGates(false, 0.0f, false, false, true, 1.0f, true, true);
-	TestEqual(TEXT("The exactly latched landing enables Reset Root"), LandingGates.ResetRootAlpha, 1.0f);
-	TestEqual(TEXT("A landing cannot inherit OW even if a curve is present"), LandingGates.OrientationWarpingAlpha, 0.0f);
-	TestFalse(TEXT("The light landing never receives moving Steering"), LandingGates.bEnableSteering);
+	TestEqual(TEXT("The exactly latched Idle landing enables Reset Root"), IdleLandingGates.ResetRootAlpha, 1.0f);
+	TestEqual(TEXT("An Idle landing cannot inherit OW even if a curve is present"), IdleLandingGates.OrientationWarpingAlpha, 0.0f);
+	TestFalse(TEXT("An Idle landing remains Reset Root-only without moving Steering"), IdleLandingGates.bEnableSteering);
+
+	// The moving-pose input represents the frozen Walk/Run landing role, not current
+	// post-touchdown speed, gait, or move intent. Its authored corrections remain active
+	// for the exact latched request even after those live grounded values change.
+	const URpgAnimInstance::FGaspProceduralGates MovingLandingGates =
+		AnimInstance->ResolveGaspProceduralGates(true, 1.0f, false, false, true, 0.65f, true, true);
+	TestEqual(TEXT("A latched Walk or Run landing keeps Reset Root"), MovingLandingGates.ResetRootAlpha, 1.0f);
+	TestEqual(
+		TEXT("A latched Walk or Run landing keeps its authored Enable_Warping curve"),
+		MovingLandingGates.OrientationWarpingAlpha,
+		0.65f);
+	TestTrue(
+		TEXT("A latched Walk or Run landing keeps Steering with an active asset and trajectory"),
+		MovingLandingGates.bEnableSteering);
 
 	const URpgAnimInstance::FGaspProceduralGates MissingTrajectoryGates =
 		AnimInstance->ResolveGaspProceduralGates(false, 1.0f, true, true, false, 1.0f, true, false);

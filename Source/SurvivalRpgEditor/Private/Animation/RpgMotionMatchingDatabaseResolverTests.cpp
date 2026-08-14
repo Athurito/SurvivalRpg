@@ -4,6 +4,7 @@
 
 #if WITH_DEV_AUTOMATION_TESTS
 
+#include "Components/SkeletalMeshComponent.h"
 #include "Misc/AutomationTest.h"
 #include "PoseSearch/PoseSearchDatabase.h"
 #include "SurvivalRpg/Animation/RpgAnimInstance.h"
@@ -583,19 +584,106 @@ bool FRpgMotionMatchingDatabaseResolverTest::RunTest(const FString& Parameters)
 		Database->Tags.Add(URpgAnimInstance::GetMotionMatchingDatabaseStateTag(Role));
 		return Database;
 	};
+	static const struct
+	{
+		ERpgMotionMatchingDatabaseRole Role;
+		const TCHAR* RoleTag;
+		const TCHAR* StateTag;
+	} ExpectedRoleContracts[] = {
+		{ERpgMotionMatchingDatabaseRole::StandIdle, TEXT("Rpg.MotionMatching.Role.StandIdle"), TEXT("Rpg.MotionMatching.State.Grounded")},
+		{ERpgMotionMatchingDatabaseRole::StandWalk, TEXT("Rpg.MotionMatching.Role.StandWalk"), TEXT("Rpg.MotionMatching.State.Grounded")},
+		{ERpgMotionMatchingDatabaseRole::StandWalkStops, TEXT("Rpg.MotionMatching.Role.StandWalkStops"), TEXT("Rpg.MotionMatching.State.Grounded")},
+		{ERpgMotionMatchingDatabaseRole::StandRunLoops, TEXT("Rpg.MotionMatching.Role.StandRunLoops"), TEXT("Rpg.MotionMatching.State.Grounded")},
+		{ERpgMotionMatchingDatabaseRole::StandRunPivots, TEXT("Rpg.MotionMatching.Role.StandRunPivots"), TEXT("Rpg.MotionMatching.State.Grounded")},
+		{ERpgMotionMatchingDatabaseRole::StandRunStarts, TEXT("Rpg.MotionMatching.Role.StandRunStarts"), TEXT("Rpg.MotionMatching.State.Grounded")},
+		{ERpgMotionMatchingDatabaseRole::StandRunStops, TEXT("Rpg.MotionMatching.Role.StandRunStops"), TEXT("Rpg.MotionMatching.State.Grounded")},
+		{ERpgMotionMatchingDatabaseRole::StandSprint, TEXT("Rpg.MotionMatching.Role.StandSprint"), TEXT("Rpg.MotionMatching.State.Grounded")},
+		{ERpgMotionMatchingDatabaseRole::StandSprintStops, TEXT("Rpg.MotionMatching.Role.StandSprintStops"), TEXT("Rpg.MotionMatching.State.Grounded")},
+		{ERpgMotionMatchingDatabaseRole::Crouch, TEXT("Rpg.MotionMatching.Role.Crouch"), TEXT("Rpg.MotionMatching.State.Crouching")},
+		{ERpgMotionMatchingDatabaseRole::StandTurnInPlace, TEXT("Rpg.MotionMatching.Role.StandTurnInPlace"), TEXT("Rpg.MotionMatching.State.TurnInPlace")},
+		{ERpgMotionMatchingDatabaseRole::Jump, TEXT("Rpg.MotionMatching.Role.Jump"), TEXT("Rpg.MotionMatching.State.Airborne")},
+		{ERpgMotionMatchingDatabaseRole::StandLightLanding, TEXT("Rpg.MotionMatching.Role.StandLightLanding"), TEXT("Rpg.MotionMatching.State.Landing")},
+		{ERpgMotionMatchingDatabaseRole::StandHeavyLanding, TEXT("Rpg.MotionMatching.Role.StandHeavyLanding"), TEXT("Rpg.MotionMatching.State.Landing")},
+		{ERpgMotionMatchingDatabaseRole::WalkLightLanding, TEXT("Rpg.MotionMatching.Role.WalkLightLanding"), TEXT("Rpg.MotionMatching.State.Landing")},
+		{ERpgMotionMatchingDatabaseRole::WalkHeavyLanding, TEXT("Rpg.MotionMatching.Role.WalkHeavyLanding"), TEXT("Rpg.MotionMatching.State.Landing")},
+		{ERpgMotionMatchingDatabaseRole::RunLightLanding, TEXT("Rpg.MotionMatching.Role.RunLightLanding"), TEXT("Rpg.MotionMatching.State.Landing")},
+		{ERpgMotionMatchingDatabaseRole::RunHeavyLanding, TEXT("Rpg.MotionMatching.Role.RunHeavyLanding"), TEXT("Rpg.MotionMatching.State.Landing")},
+	};
+	TestEqual(
+		TEXT("The curated runtime has exactly eighteen non-None database roles"),
+		static_cast<int32>(ERpgMotionMatchingDatabaseRole::Count) - 1,
+		static_cast<int32>(UE_ARRAY_COUNT(ExpectedRoleContracts)));
 
 	URpgAnimInstance::FMotionMatchingDatabaseRoleContracts ValidRoleContracts;
-	for (uint8 RoleValue = static_cast<uint8>(ERpgMotionMatchingDatabaseRole::None) + 1;
-		RoleValue < static_cast<uint8>(ERpgMotionMatchingDatabaseRole::Count);
-		++RoleValue)
+	for (const auto& ExpectedContract : ExpectedRoleContracts)
 	{
-		const ERpgMotionMatchingDatabaseRole Role =
-			static_cast<ERpgMotionMatchingDatabaseRole>(RoleValue);
-		ValidRoleContracts.Add({Role, MakeTaggedDatabase(Role)});
+		TestEqual(
+			*FString::Printf(TEXT("%s keeps its exact immutable role tag"), ExpectedContract.RoleTag),
+			URpgAnimInstance::GetMotionMatchingDatabaseRoleTag(ExpectedContract.Role),
+			FName(ExpectedContract.RoleTag));
+		TestEqual(
+			*FString::Printf(TEXT("%s keeps its exact immutable state tag"), ExpectedContract.RoleTag),
+			URpgAnimInstance::GetMotionMatchingDatabaseStateTag(ExpectedContract.Role),
+			FName(ExpectedContract.StateTag));
+		UPoseSearchDatabase* Database = MakeTaggedDatabase(ExpectedContract.Role);
+		ValidRoleContracts.Add({ExpectedContract.Role, Database});
+		TestEqual(
+			*FString::Printf(TEXT("%s resolves from its completed tagged database"), ExpectedContract.RoleTag),
+			static_cast<uint8>(URpgAnimInstance::ResolveMotionMatchingDatabaseRole(Database)),
+			static_cast<uint8>(ExpectedContract.Role));
 	}
 	const URpgAnimInstance::FMotionMatchingDatabaseRoleValidation ValidRoleValidation =
 		URpgAnimInstance::ValidateMotionMatchingDatabaseRoleContracts(ValidRoleContracts);
 	TestTrue(TEXT("Every runtime role has one unique database plus exact role/state tags"), ValidRoleValidation.IsValid());
+
+	auto FindRoleDatabase = [&ValidRoleContracts](ERpgMotionMatchingDatabaseRole Role)
+	{
+		for (const URpgAnimInstance::FMotionMatchingDatabaseRoleContract& Contract : ValidRoleContracts)
+		{
+			if (Contract.Role == Role)
+			{
+				return Contract.Database;
+			}
+		}
+		return static_cast<UPoseSearchDatabase*>(nullptr);
+	};
+	USkeletalMeshComponent* RoleDatabaseOwnerOuter = NewObject<USkeletalMeshComponent>();
+	URpgAnimInstance* RoleDatabaseOwner =
+		NewObject<URpgAnimInstance>(RoleDatabaseOwnerOuter);
+	RoleDatabaseOwner->GroundMotionMatchingDatabaseSets.Idle[0] = FindRoleDatabase(ERpgMotionMatchingDatabaseRole::StandIdle);
+	RoleDatabaseOwner->GroundMotionMatchingDatabaseSets.Walk[0] = FindRoleDatabase(ERpgMotionMatchingDatabaseRole::StandWalk);
+	RoleDatabaseOwner->GroundMotionMatchingDatabaseSets.Walk[1] = FindRoleDatabase(ERpgMotionMatchingDatabaseRole::StandWalkStops);
+	RoleDatabaseOwner->GroundMotionMatchingDatabaseSets.Run[0] = FindRoleDatabase(ERpgMotionMatchingDatabaseRole::StandRunLoops);
+	RoleDatabaseOwner->GroundMotionMatchingDatabaseSets.Run[1] = FindRoleDatabase(ERpgMotionMatchingDatabaseRole::StandRunPivots);
+	RoleDatabaseOwner->GroundMotionMatchingDatabaseSets.Run[2] = FindRoleDatabase(ERpgMotionMatchingDatabaseRole::StandRunStarts);
+	RoleDatabaseOwner->GroundMotionMatchingDatabaseSets.Run[3] = FindRoleDatabase(ERpgMotionMatchingDatabaseRole::StandRunStops);
+	RoleDatabaseOwner->GroundMotionMatchingDatabaseSets.Sprint[0] = FindRoleDatabase(ERpgMotionMatchingDatabaseRole::StandSprint);
+	RoleDatabaseOwner->GroundMotionMatchingDatabaseSets.Sprint[1] = FindRoleDatabase(ERpgMotionMatchingDatabaseRole::StandSprintStops);
+	RoleDatabaseOwner->CrouchingMotionMatchingDatabase = FindRoleDatabase(ERpgMotionMatchingDatabaseRole::Crouch);
+	RoleDatabaseOwner->TurnInPlaceMotionMatchingDatabase = FindRoleDatabase(ERpgMotionMatchingDatabaseRole::StandTurnInPlace);
+	RoleDatabaseOwner->AirborneMotionMatchingDatabases.Add(FindRoleDatabase(ERpgMotionMatchingDatabaseRole::Jump));
+	RoleDatabaseOwner->LandingMotionMatchingDatabase = FindRoleDatabase(ERpgMotionMatchingDatabaseRole::StandLightLanding);
+	RoleDatabaseOwner->StandHeavyLandingMotionMatchingDatabase = FindRoleDatabase(ERpgMotionMatchingDatabaseRole::StandHeavyLanding);
+	RoleDatabaseOwner->WalkLightLandingMotionMatchingDatabase = FindRoleDatabase(ERpgMotionMatchingDatabaseRole::WalkLightLanding);
+	RoleDatabaseOwner->WalkHeavyLandingMotionMatchingDatabase = FindRoleDatabase(ERpgMotionMatchingDatabaseRole::WalkHeavyLanding);
+	RoleDatabaseOwner->RunLightLandingMotionMatchingDatabase = FindRoleDatabase(ERpgMotionMatchingDatabaseRole::RunLightLanding);
+	RoleDatabaseOwner->RunHeavyLandingMotionMatchingDatabase = FindRoleDatabase(ERpgMotionMatchingDatabaseRole::RunHeavyLanding);
+	for (const auto& ExpectedContract : ExpectedRoleContracts)
+	{
+		TestEqual(
+			*FString::Printf(TEXT("%s maps to its configured current database"), ExpectedContract.RoleTag),
+			RoleDatabaseOwner->GetMotionMatchingDatabaseForRole(ExpectedContract.Role),
+			FindRoleDatabase(ExpectedContract.Role));
+	}
+	const URpgAnimInstance::FMotionMatchingDatabaseRoleContracts BuiltRoleContracts =
+		RoleDatabaseOwner->BuildMotionMatchingDatabaseRoleContracts();
+	TestEqual(
+		TEXT("The live AnimInstance contract builder covers all eighteen database roles"),
+		BuiltRoleContracts.Num(),
+		static_cast<int32>(UE_ARRAY_COUNT(ExpectedRoleContracts)));
+	TestTrue(
+		TEXT("The live AnimInstance role mapping passes exact database/tag validation"),
+		URpgAnimInstance::ValidateMotionMatchingDatabaseRoleContracts(BuiltRoleContracts).IsValid());
 
 	UPoseSearchDatabase* StandIdleRoleDatabase = ValidRoleContracts[0].Database;
 	const FName StandIdleRoleTag = URpgAnimInstance::GetMotionMatchingDatabaseRoleTag(
@@ -783,6 +871,49 @@ bool FRpgMotionMatchingDatabaseResolverTest::RunTest(const FString& Parameters)
 			false,
 			false);
 	TestFalse(TEXT("A Landing role cannot latch outside the landing window"), UnrequestedLandingPostSelection.bShouldLatchLanding);
+
+	static const ERpgMotionMatchingDatabaseRole LandingRoles[] = {
+		ERpgMotionMatchingDatabaseRole::StandLightLanding,
+		ERpgMotionMatchingDatabaseRole::StandHeavyLanding,
+		ERpgMotionMatchingDatabaseRole::WalkLightLanding,
+		ERpgMotionMatchingDatabaseRole::WalkHeavyLanding,
+		ERpgMotionMatchingDatabaseRole::RunLightLanding,
+		ERpgMotionMatchingDatabaseRole::RunHeavyLanding,
+	};
+	for (const ERpgMotionMatchingDatabaseRole LandingRole : LandingRoles)
+	{
+		const FName RoleTag = URpgAnimInstance::GetMotionMatchingDatabaseRoleTag(LandingRole);
+		TestTrue(
+			*FString::Printf(TEXT("%s is recognized as one of the six landing roles"), *RoleTag.ToString()),
+			URpgAnimInstance::IsLandingDatabaseRole(LandingRole));
+		const URpgAnimInstance::FMotionMatchingPostSelectionState FreshRolePostSelection =
+			URpgAnimInstance::ResolveMotionMatchingPostSelection(
+				LandingRole,
+				false,
+				EPoseSearchInterruptMode::InterruptOnDatabaseChange,
+				true,
+				true);
+		TestEqual(
+			*FString::Printf(TEXT("PostSelection preserves completed %s"), *RoleTag.ToString()),
+			static_cast<uint8>(FreshRolePostSelection.CurrentDatabaseRole),
+			static_cast<uint8>(LandingRole));
+		TestTrue(
+			*FString::Printf(TEXT("A fresh %s result latches its bounded landing playback"), *RoleTag.ToString()),
+			FreshRolePostSelection.bShouldLatchLanding);
+		TestFalse(
+			*FString::Printf(TEXT("A %s result cannot latch turn-in-place"), *RoleTag.ToString()),
+			FreshRolePostSelection.bShouldLatchTurnInPlace);
+		const URpgAnimInstance::FMotionMatchingPostSelectionState ContinuingRolePostSelection =
+			URpgAnimInstance::ResolveMotionMatchingPostSelection(
+				LandingRole,
+				true,
+				EPoseSearchInterruptMode::DoNotInterrupt,
+				false,
+				true);
+		TestFalse(
+			*FString::Printf(TEXT("A continuing %s result is not restarted"), *RoleTag.ToString()),
+			ContinuingRolePostSelection.bShouldLatchLanding);
+	}
 
 	const URpgAnimInstance::FMotionMatchingPostSelectionState InvalidRolePostSelection =
 		URpgAnimInstance::ResolveMotionMatchingPostSelection(
