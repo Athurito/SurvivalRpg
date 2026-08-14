@@ -1528,6 +1528,29 @@ bool URpgAnimInstance::IsLandingDatabaseRole(ERpgMotionMatchingDatabaseRole Role
 	}
 }
 
+bool URpgAnimInstance::ShouldReleaseStationaryLanding(
+	ERpgMotionMatchingDatabaseRole LandingRole,
+	bool bHasGroundedMoveIntent,
+	float GroundSpeed)
+{
+	const bool bStationaryLanding =
+		LandingRole == ERpgMotionMatchingDatabaseRole::StandLightLanding ||
+		LandingRole == ERpgMotionMatchingDatabaseRole::StandHeavyLanding;
+	return bStationaryLanding &&
+		(bHasGroundedMoveIntent ||
+		 !FMath::IsFinite(GroundSpeed) ||
+		 GroundSpeed > LightLandingIdleSpeedThreshold);
+}
+
+bool URpgAnimInstance::ShouldInterruptLandingDatabaseExit(
+	ERpgJumpPhase CurrentJumpPhase,
+	bool bCompletionArmed,
+	ERpgMotionMatchingDatabaseRole CurrentDatabaseRole)
+{
+	return IsLandingDatabaseRole(CurrentDatabaseRole) &&
+		(CurrentJumpPhase != ERpgJumpPhase::Landing || bCompletionArmed);
+}
+
 ERpgMotionMatchingDatabaseRole URpgAnimInstance::ResolveLandingDatabaseRole(
 	const FRpgLandingSelectionSnapshot& Snapshot,
 	float HeavySpeedThreshold)
@@ -2964,7 +2987,11 @@ void URpgAnimInstance::UpdateJumpPhaseRuntime(float DeltaSeconds, const FRpgAnim
 			IsLandingRuntimeEligible(Proxy)
 				? ResolveAvailableLandingDatabaseRole(Proxy.LandingSelectionSnapshot)
 				: ERpgMotionMatchingDatabaseRole::None;
-		if (LandingRole != ERpgMotionMatchingDatabaseRole::None)
+		if (LandingRole != ERpgMotionMatchingDatabaseRole::None &&
+			!ShouldReleaseStationaryLanding(
+				LandingRole,
+				Proxy.bHasGroundedMoveIntent,
+				Proxy.GroundSpeed))
 		{
 			BeginLandingRequest(LandingRole);
 		}
@@ -2985,6 +3012,16 @@ void URpgAnimInstance::UpdateJumpPhaseRuntime(float DeltaSeconds, const FRpgAnim
 		!IsLandingDatabaseRole(ActiveLandingDatabaseRole) ||
 		!GetMotionMatchingDatabaseForRole(ActiveLandingDatabaseRole))
 	{
+		ResetJumpPhaseRuntime();
+		return;
+	}
+
+	if (ShouldReleaseStationaryLanding(
+			ActiveLandingDatabaseRole,
+			Proxy.bHasGroundedMoveIntent,
+			Proxy.GroundSpeed))
+	{
+		// The frozen snapshot selects the clip once; live grounded motion may only release it to gait.
 		ResetJumpPhaseRuntime();
 		return;
 	}
@@ -3458,6 +3495,10 @@ void URpgAnimInstance::UpdateGaspMotionMatching(
 		bBackwardJumpStartHoldWasArmed,
 		VerticalVelocity,
 		IsLoopingAirborneFallAsset(CurrentMotionMatchingAsset));
+	const bool bInterruptLandingDatabaseExit = ShouldInterruptLandingDatabaseExit(
+		JumpPhase,
+		bLandingCompletionArmed,
+		CurrentMotionMatchingDatabaseRole);
 
 	TArray<UPoseSearchDatabase*, TInlineAllocator<5>> DatabasesToSearch;
 	EPoseSearchInterruptMode InterruptMode = EPoseSearchInterruptMode::InterruptOnDatabaseChange;
@@ -3526,7 +3567,7 @@ void URpgAnimInstance::UpdateGaspMotionMatching(
 		if (SelectionSnapshot.MovementState == ERpgLocomotionMovementState::Grounded &&
 			SelectionSnapshot.Stance == ERpgLocomotionStance::Standing)
 		{
-			InterruptMode = bInterruptGroundDomain
+			InterruptMode = bInterruptGroundDomain || bInterruptLandingDatabaseExit
 				? EPoseSearchInterruptMode::InterruptOnDatabaseChange
 				: EPoseSearchInterruptMode::DoNotInterrupt;
 		}

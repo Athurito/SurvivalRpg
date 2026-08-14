@@ -974,6 +974,18 @@ private:
 	/** Returns true for one of the six curated Idle/Walk/Run Light/Heavy landing roles. */
 	static bool IsLandingDatabaseRole(ERpgMotionMatchingDatabaseRole Role);
 
+	/** Releases a stationary landing when live grounded intent or speed no longer matches its frozen role. */
+	static bool ShouldReleaseStationaryLanding(
+		ERpgMotionMatchingDatabaseRole LandingRole,
+		bool bHasGroundedMoveIntent,
+		float GroundSpeed);
+
+	/** Prevents a completed or cancelled landing database from surviving as an uninterruptible pose. */
+	static bool ShouldInterruptLandingDatabaseExit(
+		ERpgJumpPhase CurrentJumpPhase,
+		bool bCompletionArmed,
+		ERpgMotionMatchingDatabaseRole CurrentDatabaseRole);
+
 	/**
 	 * Resolves one requested landing role from a finite, pointer-free pre-touchdown snapshot.
 	 * The 3 cm/s Idle boundary and Heavy threshold are inclusive; Sprint falls back to Run content

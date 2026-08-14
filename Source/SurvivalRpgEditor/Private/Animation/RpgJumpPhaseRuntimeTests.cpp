@@ -4,6 +4,8 @@
 
 #if WITH_DEV_AUTOMATION_TESTS
 
+#include <limits>
+
 #include "Animation/AnimSequence.h"
 #include "Components/SkeletalMeshComponent.h"
 #include "Misc/AutomationTest.h"
@@ -47,6 +49,86 @@ bool FRpgJumpPhaseRuntimeTest::RunTest(const FString& Parameters)
 	AnimInstance->WalkHeavyLandingMotionMatchingDatabase = WalkHeavyLandingDatabase;
 	AnimInstance->RunLightLandingMotionMatchingDatabase = RunLightLandingDatabase;
 	AnimInstance->RunHeavyLandingMotionMatchingDatabase = RunHeavyLandingDatabase;
+
+	static const ERpgMotionMatchingDatabaseRole StationaryLandingRoles[] =
+	{
+		ERpgMotionMatchingDatabaseRole::StandLightLanding,
+		ERpgMotionMatchingDatabaseRole::StandHeavyLanding,
+	};
+	const float QuietNaN = std::numeric_limits<float>::quiet_NaN();
+	const float Infinity = std::numeric_limits<float>::infinity();
+	for (const ERpgMotionMatchingDatabaseRole LandingRole : StationaryLandingRoles)
+	{
+		const FName RoleTag = URpgAnimInstance::GetMotionMatchingDatabaseRoleTag(LandingRole);
+		TestFalse(
+			*FString::Printf(TEXT("%s stays active at the inclusive 3 cm/s Idle boundary"), *RoleTag.ToString()),
+			URpgAnimInstance::ShouldReleaseStationaryLanding(LandingRole, false, 3.0f));
+		TestTrue(
+			*FString::Printf(TEXT("%s releases above the Idle boundary"), *RoleTag.ToString()),
+			URpgAnimInstance::ShouldReleaseStationaryLanding(LandingRole, false, 3.01f));
+		TestTrue(
+			*FString::Printf(TEXT("%s releases for zero-speed grounded intent"), *RoleTag.ToString()),
+			URpgAnimInstance::ShouldReleaseStationaryLanding(LandingRole, true, 0.0f));
+		TestTrue(
+			*FString::Printf(TEXT("%s releases for a non-finite NaN speed"), *RoleTag.ToString()),
+			URpgAnimInstance::ShouldReleaseStationaryLanding(LandingRole, false, QuietNaN));
+		TestTrue(
+			*FString::Printf(TEXT("%s releases for a non-finite infinite speed"), *RoleTag.ToString()),
+			URpgAnimInstance::ShouldReleaseStationaryLanding(LandingRole, false, Infinity));
+	}
+
+	static const ERpgMotionMatchingDatabaseRole MovingLandingRoles[] =
+	{
+		ERpgMotionMatchingDatabaseRole::WalkLightLanding,
+		ERpgMotionMatchingDatabaseRole::WalkHeavyLanding,
+		ERpgMotionMatchingDatabaseRole::RunLightLanding,
+		ERpgMotionMatchingDatabaseRole::RunHeavyLanding,
+	};
+	for (const ERpgMotionMatchingDatabaseRole LandingRole : MovingLandingRoles)
+	{
+		const FName RoleTag = URpgAnimInstance::GetMotionMatchingDatabaseRoleTag(LandingRole);
+		TestFalse(
+			*FString::Printf(TEXT("%s preserves its authored moving landing under live input"), *RoleTag.ToString()),
+			URpgAnimInstance::ShouldReleaseStationaryLanding(LandingRole, true, 450.0f));
+	}
+
+	static const ERpgMotionMatchingDatabaseRole LandingExitRoles[] =
+	{
+		ERpgMotionMatchingDatabaseRole::StandLightLanding,
+		ERpgMotionMatchingDatabaseRole::StandHeavyLanding,
+		ERpgMotionMatchingDatabaseRole::WalkLightLanding,
+		ERpgMotionMatchingDatabaseRole::WalkHeavyLanding,
+		ERpgMotionMatchingDatabaseRole::RunLightLanding,
+		ERpgMotionMatchingDatabaseRole::RunHeavyLanding,
+	};
+	for (const ERpgMotionMatchingDatabaseRole LandingRole : LandingExitRoles)
+	{
+		const FName RoleTag = URpgAnimInstance::GetMotionMatchingDatabaseRoleTag(LandingRole);
+		TestFalse(
+			*FString::Printf(TEXT("An active unarmed %s remains a Continuing Pose"), *RoleTag.ToString()),
+			URpgAnimInstance::ShouldInterruptLandingDatabaseExit(
+				ERpgJumpPhase::Landing,
+				false,
+				LandingRole));
+		TestTrue(
+			*FString::Printf(TEXT("A completed %s interrupts its database exit"), *RoleTag.ToString()),
+			URpgAnimInstance::ShouldInterruptLandingDatabaseExit(
+				ERpgJumpPhase::Landing,
+				true,
+				LandingRole));
+		TestTrue(
+			*FString::Printf(TEXT("A reset %s interrupts its handoff to gait locomotion"), *RoleTag.ToString()),
+			URpgAnimInstance::ShouldInterruptLandingDatabaseExit(
+				ERpgJumpPhase::Grounded,
+				false,
+				LandingRole));
+	}
+	TestFalse(
+		TEXT("A normal grounded database never manufactures a landing-exit interrupt"),
+		URpgAnimInstance::ShouldInterruptLandingDatabaseExit(
+			ERpgJumpPhase::Grounded,
+			false,
+			ERpgMotionMatchingDatabaseRole::StandRunLoops));
 
 	FRpgAnimInstanceProxy Proxy;
 	Proxy.bTurnInPlaceHardReset = false;
@@ -118,6 +200,18 @@ bool FRpgJumpPhaseRuntimeTest::RunTest(const FString& Parameters)
 			0.2f,
 			false,
 			RunLandingRequest));
+	AnimInstance->UpdateJumpPhaseRuntime(0.01f, Proxy);
+	TestEqual(
+		TEXT("A Run landing remains active under its normal grounded intent and speed"),
+		AnimInstance->JumpPhase,
+		ERpgJumpPhase::Landing);
+	TestTrue(
+		TEXT("Live moving input does not clear the Run landing latch"),
+		AnimInstance->bLandingSelectionLatched);
+	TestEqual(
+		TEXT("Live moving input does not create a second Run landing request"),
+		AnimInstance->LandingRequestSerial,
+		RunLandingRequest);
 
 	// The final airborne snapshot is consumed only at touchdown. Later grounded input and gait
 	// changes must not reclassify an already running cosmetic landing request.
@@ -141,6 +235,209 @@ bool FRpgJumpPhaseRuntimeTest::RunTest(const FString& Parameters)
 		AnimInstance->ActiveLandingDatabaseRole,
 		ERpgMotionMatchingDatabaseRole::None);
 
+	struct FStationaryLandingCase
+	{
+		const TCHAR* Name;
+		ERpgMotionMatchingDatabaseRole Role;
+		UPoseSearchDatabase* Database;
+		float DownwardSpeed;
+	};
+	const FStationaryLandingCase StationaryLandingCases[] =
+	{
+		{
+			TEXT("Stand Light"),
+			ERpgMotionMatchingDatabaseRole::StandLightLanding,
+			StandLightLandingDatabase,
+			500.0f,
+		},
+		{
+			TEXT("Stand Heavy"),
+			ERpgMotionMatchingDatabaseRole::StandHeavyLanding,
+			StandHeavyLandingDatabase,
+			700.0f,
+		},
+	};
+	auto BeginStationaryAirbornePhase = [&]()
+	{
+		AnimInstance->ResetJumpPhaseRuntime();
+		Proxy.bIsAnyMontagePlaying = false;
+		Proxy.bIsCrouching = false;
+		Proxy.bHasTurnInPlaceBlockingGameplayTag = false;
+		Proxy.MovementState = ERpgLocomotionMovementState::Airborne;
+		Proxy.bIsMovingOnGround = false;
+		Proxy.bIsFalling = true;
+		Proxy.GroundSpeed = 0.0f;
+		Proxy.Gait = ERpgLocomotionGait::Idle;
+		Proxy.bHasGroundedMoveIntent = false;
+		Proxy.LandingSelectionSnapshot = FRpgLandingSelectionSnapshot();
+		AnimInstance->UpdateJumpPhaseRuntime(0.01f, Proxy);
+		TestEqual(
+			TEXT("The stationary regression fixture enters Airborne"),
+			AnimInstance->JumpPhase,
+			ERpgJumpPhase::Airborne);
+	};
+	auto TouchDownStationary = [&](const FStationaryLandingCase& LandingCase)
+	{
+		SetValidLandingSelectionSnapshot(
+			ERpgLocomotionGait::Idle,
+			0.0f,
+			LandingCase.DownwardSpeed,
+			false);
+		Proxy.MovementState = ERpgLocomotionMovementState::Grounded;
+		Proxy.bIsMovingOnGround = true;
+		Proxy.bIsFalling = false;
+		Proxy.GroundSpeed = 0.0f;
+		Proxy.Gait = ERpgLocomotionGait::Idle;
+		Proxy.bHasGroundedMoveIntent = false;
+	};
+	auto EnterLatchedStationaryLanding = [&](const FStationaryLandingCase& LandingCase)
+	{
+		BeginStationaryAirbornePhase();
+		TouchDownStationary(LandingCase);
+		AnimInstance->UpdateJumpPhaseRuntime(0.01f, Proxy);
+		TestEqual(
+			*FString::Printf(TEXT("%s touchdown enters Landing"), LandingCase.Name),
+			AnimInstance->JumpPhase,
+			ERpgJumpPhase::Landing);
+		TestEqual(
+			*FString::Printf(TEXT("%s touchdown selects its exact role"), LandingCase.Name),
+			AnimInstance->ActiveLandingDatabaseRole,
+			LandingCase.Role);
+		const uint32 RequestSerial = AnimInstance->LandingRequestSerial;
+		TestTrue(
+			*FString::Printf(TEXT("%s touchdown creates a non-zero request serial"), LandingCase.Name),
+			RequestSerial != 0u);
+		TestTrue(
+			*FString::Printf(TEXT("%s touchdown latches its exact database"), LandingCase.Name),
+			AnimInstance->TryLatchLandingSelection(
+				LandingClip,
+				LandingCase.Database,
+				0.2f,
+				false,
+				RequestSerial));
+		AnimInstance->CurrentMotionMatchingDatabaseRole = LandingCase.Role;
+		return RequestSerial;
+	};
+
+	// Input arriving on the physical touchdown frame must skip both stationary landing families.
+	for (const FStationaryLandingCase& LandingCase : StationaryLandingCases)
+	{
+		BeginStationaryAirbornePhase();
+		TouchDownStationary(LandingCase);
+		Proxy.bHasGroundedMoveIntent = true;
+		const uint32 RequestSerialBeforeTouchdown = AnimInstance->LandingRequestSerial;
+		AnimInstance->UpdateJumpPhaseRuntime(0.01f, Proxy);
+		TestEqual(
+			*FString::Printf(TEXT("%s is skipped when grounded intent arrives on touchdown"), LandingCase.Name),
+			AnimInstance->JumpPhase,
+			ERpgJumpPhase::Grounded);
+		TestEqual(
+			*FString::Printf(TEXT("Skipped %s creates no landing request"), LandingCase.Name),
+			AnimInstance->LandingRequestSerial,
+			RequestSerialBeforeTouchdown);
+		TestFalse(
+			*FString::Printf(TEXT("Skipped %s owns no landing latch"), LandingCase.Name),
+			AnimInstance->bLandingSelectionLatched);
+		TestEqual(
+			*FString::Printf(TEXT("Skipped %s owns no selected request serial"), LandingCase.Name),
+			AnimInstance->LandingSelectedRequestSerial,
+			0u);
+		TestFalse(
+			*FString::Printf(TEXT("Skipped %s emits no landing ForceInterrupt"), LandingCase.Name),
+			AnimInstance->ConsumeLandingForceInterruptRequest());
+	}
+
+	// An already playing stationary landing releases immediately for live grounded intent.
+	for (const FStationaryLandingCase& LandingCase : StationaryLandingCases)
+	{
+		const uint32 RequestSerial = EnterLatchedStationaryLanding(LandingCase);
+		Proxy.bHasGroundedMoveIntent = true;
+		Proxy.GroundSpeed = 0.0f;
+		AnimInstance->UpdateJumpPhaseRuntime(0.01f, Proxy);
+		TestEqual(
+			*FString::Printf(TEXT("Active %s releases for zero-speed grounded intent"), LandingCase.Name),
+			AnimInstance->JumpPhase,
+			ERpgJumpPhase::Grounded);
+		TestFalse(
+			*FString::Printf(TEXT("Released %s clears its landing latch"), LandingCase.Name),
+			AnimInstance->bLandingSelectionLatched);
+		TestEqual(
+			*FString::Printf(TEXT("Released %s clears its frozen role"), LandingCase.Name),
+			AnimInstance->ActiveLandingDatabaseRole,
+			ERpgMotionMatchingDatabaseRole::None);
+		TestEqual(
+			*FString::Printf(TEXT("Released %s preserves the completed request serial"), LandingCase.Name),
+			AnimInstance->LandingRequestSerial,
+			RequestSerial);
+		TestEqual(
+			*FString::Printf(TEXT("Released %s clears its selected request serial"), LandingCase.Name),
+			AnimInstance->LandingSelectedRequestSerial,
+			0u);
+		TestFalse(
+			*FString::Printf(TEXT("Released %s rejects its stale completed-search result"), LandingCase.Name),
+			AnimInstance->TryLatchLandingSelection(
+				LandingClip,
+				LandingCase.Database,
+				0.2f,
+				false,
+				RequestSerial));
+		TestTrue(
+			*FString::Printf(TEXT("Released %s interrupts its landing-database handoff"), LandingCase.Name),
+			URpgAnimInstance::ShouldInterruptLandingDatabaseExit(
+				AnimInstance->JumpPhase,
+				AnimInstance->bLandingCompletionArmed,
+				AnimInstance->CurrentMotionMatchingDatabaseRole));
+	}
+
+	// The live speed gate preserves the inclusive Idle boundary and releases immediately above it.
+	for (const FStationaryLandingCase& LandingCase : StationaryLandingCases)
+	{
+		const uint32 RequestSerial = EnterLatchedStationaryLanding(LandingCase);
+		Proxy.bHasGroundedMoveIntent = false;
+		Proxy.GroundSpeed = 3.0f;
+		AnimInstance->UpdateJumpPhaseRuntime(0.01f, Proxy);
+		TestEqual(
+			*FString::Printf(TEXT("Active %s remains at exactly 3 cm/s"), LandingCase.Name),
+			AnimInstance->JumpPhase,
+			ERpgJumpPhase::Landing);
+		TestTrue(
+			*FString::Printf(TEXT("Active %s keeps its latch at exactly 3 cm/s"), LandingCase.Name),
+			AnimInstance->bLandingSelectionLatched);
+		TestEqual(
+			*FString::Printf(TEXT("Active %s keeps its selected serial at exactly 3 cm/s"), LandingCase.Name),
+			AnimInstance->LandingSelectedRequestSerial,
+			RequestSerial);
+
+		Proxy.GroundSpeed = 3.01f;
+		AnimInstance->UpdateJumpPhaseRuntime(0.01f, Proxy);
+		TestEqual(
+			*FString::Printf(TEXT("Active %s releases above 3 cm/s"), LandingCase.Name),
+			AnimInstance->JumpPhase,
+			ERpgJumpPhase::Grounded);
+		TestFalse(
+			*FString::Printf(TEXT("Speed-released %s clears its latch"), LandingCase.Name),
+			AnimInstance->bLandingSelectionLatched);
+		TestEqual(
+			*FString::Printf(TEXT("Speed-released %s preserves its request serial"), LandingCase.Name),
+			AnimInstance->LandingRequestSerial,
+			RequestSerial);
+		TestEqual(
+			*FString::Printf(TEXT("Speed-released %s clears its selected serial"), LandingCase.Name),
+			AnimInstance->LandingSelectedRequestSerial,
+			0u);
+		TestTrue(
+			*FString::Printf(TEXT("Speed-released %s interrupts its landing-database handoff"), LandingCase.Name),
+			URpgAnimInstance::ShouldInterruptLandingDatabaseExit(
+				AnimInstance->JumpPhase,
+				AnimInstance->bLandingCompletionArmed,
+				AnimInstance->CurrentMotionMatchingDatabaseRole));
+	}
+	AnimInstance->CurrentMotionMatchingDatabaseRole = ERpgMotionMatchingDatabaseRole::None;
+	AnimInstance->ResetJumpPhaseRuntime();
+	Proxy.bHasGroundedMoveIntent = false;
+	Proxy.GroundSpeed = 0.0f;
+
+	const uint32 IdleLandingRequestBeforeTouchdown = AnimInstance->LandingRequestSerial;
 	Proxy.MovementState = ERpgLocomotionMovementState::Airborne;
 	Proxy.bIsMovingOnGround = false;
 	Proxy.bIsFalling = true;
@@ -158,7 +455,10 @@ bool FRpgJumpPhaseRuntimeTest::RunTest(const FString& Parameters)
 		TEXT("The idle touchdown selects the preserved Stand Light role"),
 		AnimInstance->ActiveLandingDatabaseRole,
 		ERpgMotionMatchingDatabaseRole::StandLightLanding);
-	TestEqual(TEXT("The idle touchdown creates exactly one new request"), AnimInstance->LandingRequestSerial, RunLandingRequest + 1u);
+	TestEqual(
+		TEXT("The idle touchdown creates exactly one new request"),
+		AnimInstance->LandingRequestSerial,
+		IdleLandingRequestBeforeTouchdown + 1u);
 	TestTrue(TEXT("A touchdown requests ForceInterrupt exactly once"), AnimInstance->ConsumeLandingForceInterruptRequest());
 	TestFalse(TEXT("The same touchdown cannot request ForceInterrupt twice"), AnimInstance->ConsumeLandingForceInterruptRequest());
 
