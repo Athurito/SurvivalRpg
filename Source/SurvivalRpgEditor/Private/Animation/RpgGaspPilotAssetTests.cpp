@@ -1250,6 +1250,33 @@ bool FRpgGaspPilotAssetContractTest::RunTest(const FString& Parameters)
 			TestTrue(TEXT("The GASP AnimBlueprint generates its thread-safe trajectory snapshot"), bGeneratesTrajectory);
 		}
 
+		const FRpgTrajectoryCollisionSettings& TrajectoryCollisionSettings =
+			PilotAnimDefaults->GetTrajectoryCollisionSettings();
+		TestTrue(TEXT("The GASP pilot enables project-owned game-thread trajectory collision"), TrajectoryCollisionSettings.bEnabled);
+		TestTrue(
+			TEXT("The GASP pilot preserves the 0.01 cm source floor offset"),
+			FMath::IsNearlyEqual(TrajectoryCollisionSettings.FloorOffset, 0.01f));
+		TestTrue(
+			TEXT("The GASP pilot preserves the source 150 cm bounded floor search"),
+			FMath::IsNearlyEqual(TrajectoryCollisionSettings.MaxObstacleHeight, 150.0f));
+		TestEqual(
+			TEXT("The GASP pilot never traces beyond its 15 generated future samples"),
+			TrajectoryCollisionSettings.MaxPredictionSamples,
+			15);
+
+		const FStructProperty* TrajectoryPredictionProperty =
+			FindFProperty<FStructProperty>(PilotAnimDefaults->GetClass(), TEXT("TrajectoryLandingPrediction"));
+		if (TestNotNull(TEXT("The pointer-free landing prediction is reflected"), TrajectoryPredictionProperty))
+		{
+			TestTrue(
+				TEXT("The landing prediction uses the project snapshot contract"),
+				TrajectoryPredictionProperty->Struct == FRpgTrajectoryLandingPrediction::StaticStruct());
+			TestTrue(
+				TEXT("Landing prediction is transient Blueprint-readable cosmetic state"),
+				TrajectoryPredictionProperty->HasAllPropertyFlags(
+					CPF_Transient | CPF_BlueprintVisible | CPF_BlueprintReadOnly));
+		}
+
 		const FEnumProperty* JumpPhaseProperty =
 			FindFProperty<FEnumProperty>(PilotAnimDefaults->GetClass(), TEXT("JumpPhase"));
 		if (TestNotNull(TEXT("The cosmetic jump phase is reflected"), JumpPhaseProperty))
