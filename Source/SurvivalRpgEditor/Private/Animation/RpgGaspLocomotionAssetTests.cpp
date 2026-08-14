@@ -51,7 +51,12 @@ namespace RpgGaspLocomotionAssetTests
 	constexpr TCHAR CrouchToStandPackage[] = TEXT("/RpgGaspLocomotion/Animations/Crouch/Transitions/M_Neutral_Transition_Crouch_to_Stand");
 	constexpr TCHAR TurnInPlaceDatabasePackage[] = TEXT("/RpgGaspLocomotion/MotionMatching/Databases/PSD_Rpg_Stand_TurnInPlace");
 	constexpr TCHAR JumpDatabasePackage[] = TEXT("/RpgGaspLocomotion/MotionMatching/Databases/PSD_Rpg_Jump");
-	constexpr TCHAR LandingDatabasePackage[] = TEXT("/RpgGaspLocomotion/MotionMatching/Databases/PSD_Rpg_Stand_Idle_Lands_Light");
+	constexpr TCHAR IdleLightLandingDatabasePackage[] = TEXT("/RpgGaspLocomotion/MotionMatching/Databases/PSD_Rpg_Stand_Idle_Lands_Light");
+	constexpr TCHAR IdleHeavyLandingDatabasePackage[] = TEXT("/RpgGaspLocomotion/MotionMatching/Databases/PSD_Rpg_Stand_Idle_Lands_Heavy");
+	constexpr TCHAR WalkLightLandingDatabasePackage[] = TEXT("/RpgGaspLocomotion/MotionMatching/Databases/PSD_Rpg_Stand_Walk_Lands_Light");
+	constexpr TCHAR WalkHeavyLandingDatabasePackage[] = TEXT("/RpgGaspLocomotion/MotionMatching/Databases/PSD_Rpg_Stand_Walk_Lands_Heavy");
+	constexpr TCHAR RunLightLandingDatabasePackage[] = TEXT("/RpgGaspLocomotion/MotionMatching/Databases/PSD_Rpg_Stand_Run_Lands_Light");
+	constexpr TCHAR RunHeavyLandingDatabasePackage[] = TEXT("/RpgGaspLocomotion/MotionMatching/Databases/PSD_Rpg_Stand_Run_Lands_Heavy");
 	constexpr TCHAR JumpSchemaPackage[] = TEXT("/RpgGaspLocomotion/MotionMatching/Schemas/PSS_Rpg_Jump");
 	constexpr TCHAR StopSchemaPackage[] = TEXT("/RpgGaspLocomotion/MotionMatching/Schemas/PSS_Rpg_Stop");
 	constexpr TCHAR WalkMovingDatabasePackage[] = TEXT("/RpgGaspLocomotion/MotionMatching/Databases/PSD_Rpg_Stand_Walk");
@@ -302,11 +307,49 @@ namespace RpgGaspLocomotionAssetTests
 		TEXT("/RpgGaspLocomotion/Animations/Jump/Airborne/M_Neutral_Jump_Loop_Fall"),
 	};
 
-	static const TCHAR* const LandingAnimationPackages[] = {
+	static const TCHAR* const IdleLightLandingAnimationPackages[] = {
 		TEXT("/RpgGaspLocomotion/Animations/Jump/Lands/M_Neutral_Jump_B_Land_Stand_Light_Lfoot"),
 		TEXT("/RpgGaspLocomotion/Animations/Jump/Lands/M_Neutral_Jump_F_Land_Stand_Light_Lfoot"),
 		TEXT("/RpgGaspLocomotion/Animations/Jump/Lands/M_Neutral_Jump_LL_Land_Stand_Light_Lfoot"),
 		TEXT("/RpgGaspLocomotion/Animations/Jump/Lands/M_Neutral_Jump_RL_Land_Stand_Light_Rfoot"),
+	};
+
+	static const TCHAR* const IdleHeavyLandingAnimationPackages[] = {
+		TEXT("/RpgGaspLocomotion/Animations/Jump/Lands/M_Neutral_Jump_B_Land_Stand_Heavy_Lfoot"),
+		TEXT("/RpgGaspLocomotion/Animations/Jump/Lands/M_Neutral_Jump_F_Land_Stand_Heavy_Lfoot"),
+		TEXT("/RpgGaspLocomotion/Animations/Jump/Lands/M_Neutral_Jump_LL_Land_Stand_Heavy_Lfoot"),
+		TEXT("/RpgGaspLocomotion/Animations/Jump/Lands/M_Neutral_Jump_RL_Land_Stand_Heavy_Rfoot"),
+	};
+
+	static const TCHAR* const WalkLightLandingAnimationPackages[] = {
+		TEXT("/RpgGaspLocomotion/Animations/Jump/Lands/M_Neutral_Jump_B_Land_Walk_Light"),
+		TEXT("/RpgGaspLocomotion/Animations/Jump/Lands/M_Neutral_Jump_F_Land_Walk_Light_Lfoot"),
+		TEXT("/RpgGaspLocomotion/Animations/Jump/Lands/M_Neutral_Jump_F_Land_Walk_Light_Rfoot"),
+		TEXT("/RpgGaspLocomotion/Animations/Jump/Lands/M_Neutral_Jump_LL_Land_Walk_Light"),
+		TEXT("/RpgGaspLocomotion/Animations/Jump/Lands/M_Neutral_Jump_RL_Land_Walk_Light"),
+	};
+
+	static const TCHAR* const WalkHeavyLandingAnimationPackages[] = {
+		TEXT("/RpgGaspLocomotion/Animations/Jump/Lands/M_Neutral_Jump_B_Land_Walk_Heavy"),
+		TEXT("/RpgGaspLocomotion/Animations/Jump/Lands/M_Neutral_Jump_F_Land_Walk_Heavy_Lfoot"),
+		TEXT("/RpgGaspLocomotion/Animations/Jump/Lands/M_Neutral_Jump_LL_Land_Walk_Heavy"),
+		TEXT("/RpgGaspLocomotion/Animations/Jump/Lands/M_Neutral_Jump_RL_Land_Walk_Heavy"),
+	};
+
+	static const TCHAR* const RunLightLandingAnimationPackages[] = {
+		TEXT("/RpgGaspLocomotion/Animations/Jump/Lands/M_Neutral_Jump_B_Land_Run_Light"),
+		TEXT("/RpgGaspLocomotion/Animations/Jump/Lands/M_Neutral_Jump_F_Land_Run_Light_Lfoot"),
+		TEXT("/RpgGaspLocomotion/Animations/Jump/Lands/M_Neutral_Jump_F_Land_Run_Light_Rfoot"),
+		TEXT("/RpgGaspLocomotion/Animations/Jump/Lands/M_Neutral_Jump_LL_Land_Run_Light"),
+		TEXT("/RpgGaspLocomotion/Animations/Jump/Lands/M_Neutral_Jump_RL_Land_Run_Light"),
+	};
+
+	static const TCHAR* const RunHeavyLandingAnimationPackages[] = {
+		TEXT("/RpgGaspLocomotion/Animations/Jump/Lands/M_Neutral_Jump_B_Land_Run_Heavy"),
+		TEXT("/RpgGaspLocomotion/Animations/Jump/Lands/M_Neutral_Jump_F_Land_Run_Heavy_Lfoot"),
+		TEXT("/RpgGaspLocomotion/Animations/Jump/Lands/M_Neutral_Jump_F_Land_Run_Heavy_Rfoot"),
+		TEXT("/RpgGaspLocomotion/Animations/Jump/Lands/M_Neutral_Jump_LL_Land_Run_Heavy"),
+		TEXT("/RpgGaspLocomotion/Animations/Jump/Lands/M_Neutral_Jump_RL_Land_Run_Heavy"),
 	};
 
 	bool IsForbiddenDependency(const FString& PackageName)
@@ -323,6 +366,7 @@ namespace RpgGaspLocomotionAssetTests
 			TEXT("/locomotor/"),
 			TEXT("/mover/"),
 			TEXT("networkprediction"),
+			TEXT("ragdoll"),
 			TEXT("metasound"),
 		};
 
@@ -353,6 +397,24 @@ namespace RpgGaspLocomotionAssetTests
 		const TCHAR* PackageName;
 		const TCHAR* ExpectedRoleTag;
 		const TCHAR* ExpectedStateTag;
+	};
+
+	struct FLandingDatabaseContract
+	{
+		const TCHAR* PackageName;
+		const TCHAR* ExpectedRoleTag;
+		const TCHAR* const* ExpectedAnimationPackages;
+		int32 ExpectedAnimationCount;
+		float ExpectedContinuingPoseCostBias;
+	};
+
+	static const FLandingDatabaseContract LandingDatabaseContracts[] = {
+		{ IdleLightLandingDatabasePackage, TEXT("Rpg.MotionMatching.Role.StandLightLanding"), IdleLightLandingAnimationPackages, UE_ARRAY_COUNT(IdleLightLandingAnimationPackages), -0.15f },
+		{ IdleHeavyLandingDatabasePackage, TEXT("Rpg.MotionMatching.Role.StandHeavyLanding"), IdleHeavyLandingAnimationPackages, UE_ARRAY_COUNT(IdleHeavyLandingAnimationPackages), -0.15f },
+		{ WalkLightLandingDatabasePackage, TEXT("Rpg.MotionMatching.Role.WalkLightLanding"), WalkLightLandingAnimationPackages, UE_ARRAY_COUNT(WalkLightLandingAnimationPackages), -0.01f },
+		{ WalkHeavyLandingDatabasePackage, TEXT("Rpg.MotionMatching.Role.WalkHeavyLanding"), WalkHeavyLandingAnimationPackages, UE_ARRAY_COUNT(WalkHeavyLandingAnimationPackages), -0.01f },
+		{ RunLightLandingDatabasePackage, TEXT("Rpg.MotionMatching.Role.RunLightLanding"), RunLightLandingAnimationPackages, UE_ARRAY_COUNT(RunLightLandingAnimationPackages), -0.10f },
+		{ RunHeavyLandingDatabasePackage, TEXT("Rpg.MotionMatching.Role.RunHeavyLanding"), RunHeavyLandingAnimationPackages, UE_ARRAY_COUNT(RunHeavyLandingAnimationPackages), -0.01f },
 	};
 }
 
@@ -386,7 +448,7 @@ bool FRpgGaspLocomotionContentContractTest::RunTest(const FString& Parameters)
 		Assets,
 		true,
 		true);
-	TestEqual(TEXT("The curated plugin contains exactly 187 assets"), Assets.Num(), 187);
+	TestEqual(TEXT("The curated plugin contains exactly 215 assets"), Assets.Num(), 215);
 
 	TMap<FString, int32> ClassCounts;
 	int32 AnimationCount = 0;
@@ -509,7 +571,7 @@ bool FRpgGaspLocomotionContentContractTest::RunTest(const FString& Parameters)
 		}
 	}
 
-	TestEqual(TEXT("Exactly 167 curated AnimSequences are present"), AnimationCount, 167);
+	TestEqual(TEXT("Exactly 190 curated AnimSequences are present"), AnimationCount, 190);
 	TestEqual(TEXT("Exactly one crouch idle sequence is present"), CrouchIdleCount, 1);
 	TestEqual(TEXT("Exactly two crouch transition sequences are present"), CrouchTransitionCount, 2);
 	TestEqual(TEXT("Exactly eight crouch walk sequences are present"), CrouchWalkCount, 8);
@@ -520,10 +582,10 @@ bool FRpgGaspLocomotionContentContractTest::RunTest(const FString& Parameters)
 	TestEqual(TEXT("Exactly ten stand-sprint sequences are present"), StandSprintCount, 10);
 	TestEqual(TEXT("Exactly 18 jump start/off sequences are present"), JumpStartCount, 18);
 	TestEqual(TEXT("Exactly one neutral airborne fall loop is present"), JumpAirborneCount, 1);
-	TestEqual(TEXT("Exactly four bounded stand-light landing sequences are present"), JumpLandCount, 4);
+	TestEqual(TEXT("Exactly 27 curated Idle/Walk/Run landing sequences are present"), JumpLandCount, 27);
 	TestEqual(TEXT("Exactly one ChooserTable is present"), ClassCounts.FindRef(TEXT("ChooserTable")), 1);
 	TestEqual(TEXT("Exactly one MirrorDataTable is present"), ClassCounts.FindRef(TEXT("MirrorDataTable")), 1);
-	TestEqual(TEXT("Exactly fourteen PoseSearchDatabases are present"), ClassCounts.FindRef(TEXT("PoseSearchDatabase")), 14);
+	TestEqual(TEXT("Exactly nineteen PoseSearchDatabases are present"), ClassCounts.FindRef(TEXT("PoseSearchDatabase")), 19);
 	TestEqual(TEXT("Exactly one PoseSearchNormalizationSet is present"), ClassCounts.FindRef(TEXT("PoseSearchNormalizationSet")), 1);
 	TestEqual(TEXT("Exactly three PoseSearchSchemas are present"), ClassCounts.FindRef(TEXT("PoseSearchSchema")), 3);
 
@@ -540,7 +602,12 @@ bool FRpgGaspLocomotionContentContractTest::RunTest(const FString& Parameters)
 		{ SprintMovingDatabasePackage, TEXT("/RpgGaspLocomotion/Animations/Stand/Sprint/"), TEXT("/RpgGaspLocomotion/MotionMatching/Schemas/PSS_Rpg_Locomotion"), 8, 8 },
 		{ SprintStopDatabasePackage, TEXT("/RpgGaspLocomotion/Animations/Stand/Sprint/"), StopSchemaPackage, 2, 2 },
 		{ JumpDatabasePackage, TEXT("/RpgGaspLocomotion/Animations/Jump/"), JumpSchemaPackage, 19, 19 },
-		{ LandingDatabasePackage, JumpLandRoot, JumpSchemaPackage, 4, 4 },
+		{ IdleLightLandingDatabasePackage, JumpLandRoot, JumpSchemaPackage, 4, 4 },
+		{ IdleHeavyLandingDatabasePackage, JumpLandRoot, JumpSchemaPackage, 4, 4 },
+		{ WalkLightLandingDatabasePackage, JumpLandRoot, JumpSchemaPackage, 5, 5 },
+		{ WalkHeavyLandingDatabasePackage, JumpLandRoot, JumpSchemaPackage, 4, 4 },
+		{ RunLightLandingDatabasePackage, JumpLandRoot, JumpSchemaPackage, 5, 5 },
+		{ RunHeavyLandingDatabasePackage, JumpLandRoot, JumpSchemaPackage, 5, 5 },
 	};
 
 	for (const FDatabaseContract& Contract : DatabaseContracts)
@@ -598,12 +665,17 @@ bool FRpgGaspLocomotionContentContractTest::RunTest(const FString& Parameters)
 		{ TEXT("/RpgGaspLocomotion/MotionMatching/Databases/PSD_Rpg_Crouch"), TEXT("Rpg.MotionMatching.Role.Crouch"), TEXT("Rpg.MotionMatching.State.Crouching") },
 		{ TurnInPlaceDatabasePackage, TEXT("Rpg.MotionMatching.Role.StandTurnInPlace"), TEXT("Rpg.MotionMatching.State.TurnInPlace") },
 		{ JumpDatabasePackage, TEXT("Rpg.MotionMatching.Role.Jump"), TEXT("Rpg.MotionMatching.State.Airborne") },
-		{ LandingDatabasePackage, TEXT("Rpg.MotionMatching.Role.StandLightLanding"), TEXT("Rpg.MotionMatching.State.Landing") },
+		{ IdleLightLandingDatabasePackage, TEXT("Rpg.MotionMatching.Role.StandLightLanding"), TEXT("Rpg.MotionMatching.State.Landing") },
+		{ IdleHeavyLandingDatabasePackage, TEXT("Rpg.MotionMatching.Role.StandHeavyLanding"), TEXT("Rpg.MotionMatching.State.Landing") },
+		{ WalkLightLandingDatabasePackage, TEXT("Rpg.MotionMatching.Role.WalkLightLanding"), TEXT("Rpg.MotionMatching.State.Landing") },
+		{ WalkHeavyLandingDatabasePackage, TEXT("Rpg.MotionMatching.Role.WalkHeavyLanding"), TEXT("Rpg.MotionMatching.State.Landing") },
+		{ RunLightLandingDatabasePackage, TEXT("Rpg.MotionMatching.Role.RunLightLanding"), TEXT("Rpg.MotionMatching.State.Landing") },
+		{ RunHeavyLandingDatabasePackage, TEXT("Rpg.MotionMatching.Role.RunHeavyLanding"), TEXT("Rpg.MotionMatching.State.Landing") },
 	};
 	TestEqual(
-		TEXT("Exactly thirteen project runtime database tag contracts are declared"),
+		TEXT("Exactly eighteen project runtime database tag contracts are declared"),
 		static_cast<int32>(UE_ARRAY_COUNT(RuntimeDatabaseTagContracts)),
-		13);
+		18);
 	const auto IsProjectRoleTag = [](FName Tag)
 	{
 		return Tag.ToString().StartsWith(
@@ -1294,10 +1366,196 @@ bool FRpgGaspLocomotionContentContractTest::RunTest(const FString& Parameters)
 		TEXT("/RpgGaspLocomotion/MotionMatching/Databases/PSD_Rpg_Jump.PSD_Rpg_Jump"),
 		MakeArrayView(AirborneJumpAnimationPackages),
 		false);
-	ValidateJumpDatabase(
-		TEXT("/RpgGaspLocomotion/MotionMatching/Databases/PSD_Rpg_Stand_Idle_Lands_Light.PSD_Rpg_Stand_Idle_Lands_Light"),
-		MakeArrayView(LandingAnimationPackages),
-		true);
+
+	const FString ExpectedJumpSchemaObject = FString::Printf(
+		TEXT("%s.%s"),
+		JumpSchemaPackage,
+		*FPackageName::GetLongPackageAssetName(JumpSchemaPackage));
+	const FString ExpectedNormalizationObject = FString::Printf(
+		TEXT("%s.%s"),
+		NormalizationPackage,
+		*FPackageName::GetLongPackageAssetName(NormalizationPackage));
+	for (const FLandingDatabaseContract& Contract : LandingDatabaseContracts)
+	{
+		const TConstArrayView<const TCHAR*> ExpectedPackages(
+			Contract.ExpectedAnimationPackages,
+			Contract.ExpectedAnimationCount);
+		UPoseSearchDatabase* LandingDatabase = ValidateOrderedDatabaseMembers(
+			Contract.PackageName,
+			ExpectedPackages);
+		if (!LandingDatabase)
+		{
+			continue;
+		}
+
+		TestEqual(
+			*FString::Printf(TEXT("%s uses PSS_Rpg_Jump"), Contract.PackageName),
+			GetPathNameSafe(LandingDatabase->Schema),
+			ExpectedJumpSchemaObject);
+		TestEqual(
+			*FString::Printf(TEXT("%s uses PSN_Rpg_Locomotion"), Contract.PackageName),
+			GetPathNameSafe(LandingDatabase->NormalizationSet.Get()),
+			ExpectedNormalizationObject);
+		const bool bLegacyIdleLightDatabase =
+			FCString::Strcmp(Contract.PackageName, IdleLightLandingDatabasePackage) == 0;
+		TestEqual(
+			*FString::Printf(TEXT("%s keeps its curated preview-mesh contract"), Contract.PackageName),
+			GetPathNameSafe(LandingDatabase->PreviewMesh),
+			bLegacyIdleLightDatabase ? FString(TEXT("None")) : FString(TargetMeshPath));
+
+		TestTrue(
+			*FString::Printf(TEXT("%s keeps its source continuing-pose bias"), Contract.PackageName),
+			FMath::IsNearlyEqual(
+				LandingDatabase->ContinuingPoseCostBias,
+				Contract.ExpectedContinuingPoseCostBias));
+		TestTrue(
+			*FString::Printf(TEXT("%s keeps zero base bias"), Contract.PackageName),
+			FMath::IsNearlyZero(LandingDatabase->BaseCostBias));
+		TestTrue(
+			*FString::Printf(TEXT("%s keeps looping bias -0.005"), Contract.PackageName),
+			FMath::IsNearlyEqual(LandingDatabase->LoopingCostBias, -0.005f));
+		TestTrue(
+			*FString::Printf(TEXT("%s keeps zero continuing-interaction bias"), Contract.PackageName),
+			FMath::IsNearlyZero(LandingDatabase->ContinuingInteractionCostBias));
+		TestTrue(
+			*FString::Printf(TEXT("%s keeps zero context-interaction bias"), Contract.PackageName),
+			FMath::IsNearlyZero(LandingDatabase->ContinuingContextInteractionCostBias));
+		TestTrue(
+			*FString::Printf(TEXT("%s keeps the source exclusion interval"), Contract.PackageName),
+			FMath::IsNearlyZero(LandingDatabase->ExcludeFromDatabaseParameters.Min) &&
+				FMath::IsNearlyEqual(LandingDatabase->ExcludeFromDatabaseParameters.Max, -0.3f));
+		TestTrue(
+			*FString::Printf(TEXT("%s keeps source extrapolation bounds"), Contract.PackageName),
+			FMath::IsNearlyEqual(LandingDatabase->AdditionalExtrapolationTime.Min, -100.0f) &&
+				FMath::IsNearlyEqual(LandingDatabase->AdditionalExtrapolationTime.Max, 100.0f));
+
+		int32 ProjectRoleTagCount = 0;
+		int32 ProjectStateTagCount = 0;
+		int32 ExpectedRoleTagCount = 0;
+		int32 LandingStateTagCount = 0;
+		for (const FName Tag : LandingDatabase->Tags)
+		{
+			ProjectRoleTagCount += IsProjectRoleTag(Tag);
+			ProjectStateTagCount += IsProjectStateTag(Tag);
+			ExpectedRoleTagCount += Tag == FName(Contract.ExpectedRoleTag);
+			LandingStateTagCount += Tag == FName(TEXT("Rpg.MotionMatching.State.Landing"));
+		}
+		TestEqual(
+			*FString::Printf(TEXT("%s carries exactly one project role tag"), Contract.PackageName),
+			ProjectRoleTagCount,
+			1);
+		TestEqual(
+			*FString::Printf(TEXT("%s carries its exact landing role"), Contract.PackageName),
+			ExpectedRoleTagCount,
+			1);
+		TestEqual(
+			*FString::Printf(TEXT("%s carries exactly one project state tag"), Contract.PackageName),
+			ProjectStateTagCount,
+			1);
+		TestEqual(
+			*FString::Printf(TEXT("%s carries State.Landing"), Contract.PackageName),
+			LandingStateTagCount,
+			1);
+
+		for (int32 Index = 0; Index < LandingDatabase->GetNumAnimationAssets(); ++Index)
+		{
+			const FPoseSearchDatabaseAnimationAsset* Entry = LandingDatabase->GetDatabaseAnimationAsset(Index);
+			if (!TestNotNull(
+					*FString::Printf(TEXT("%s entry %d resolves for landing metadata"), Contract.PackageName, Index),
+					Entry))
+			{
+				continue;
+			}
+
+			TestTrue(
+				*FString::Printf(TEXT("%s entry %d remains enabled"), Contract.PackageName, Index),
+				Entry->IsEnabled());
+			TestTrue(
+				*FString::Printf(TEXT("%s entry %d disables reselection"), Contract.PackageName, Index),
+				Entry->IsDisableReselection());
+			TestEqual(
+				*FString::Printf(TEXT("%s entry %d remains unmirrored-only"), Contract.PackageName, Index),
+				Entry->GetMirrorOption(),
+				EPoseSearchMirrorOption::UnmirroredOnly);
+			TestEqual(
+				*FString::Printf(TEXT("%s entry %d has no external BranchIn id"), Contract.PackageName, Index),
+				Entry->BranchInId,
+				0);
+			TestFalse(
+				*FString::Printf(TEXT("%s entry %d has no external synchronization"), Contract.PackageName, Index),
+				Entry->IsSynchronizedWithExternalDependency());
+			TestFalse(
+				*FString::Printf(TEXT("%s entry %d uses ordinary sequence sampling"), Contract.PackageName, Index),
+				Entry->bUseSingleSample);
+			TestFalse(
+				*FString::Printf(TEXT("%s entry %d disables blend-space grid sampling"), Contract.PackageName, Index),
+				Entry->bUseGridForSampling);
+			TestEqual(
+				*FString::Printf(TEXT("%s entry %d keeps nine horizontal samples"), Contract.PackageName, Index),
+				Entry->NumberOfHorizontalSamples,
+				9);
+			TestEqual(
+				*FString::Printf(TEXT("%s entry %d keeps two vertical samples"), Contract.PackageName, Index),
+				Entry->NumberOfVerticalSamples,
+				2);
+			TestTrue(
+				*FString::Printf(TEXT("%s entry %d keeps zero blend parameters"), Contract.PackageName, Index),
+				FMath::IsNearlyZero(Entry->BlendParamX) && FMath::IsNearlyZero(Entry->BlendParamY));
+			const FFloatInterval SamplingRange = Entry->GetSamplingRange();
+			TestTrue(
+				*FString::Printf(TEXT("%s entry %d uses full-range sampling"), Contract.PackageName, Index),
+				FMath::IsNearlyZero(SamplingRange.Min) && FMath::IsNearlyZero(SamplingRange.Max));
+			TestFalse(
+				*FString::Printf(TEXT("%s entry %d remains non-looping"), Contract.PackageName, Index),
+				Entry->IsLooping());
+
+			UAnimSequence* LandingAnimation = Cast<UAnimSequence>(Entry->GetAnimationAsset());
+			if (TestNotNull(
+					*FString::Printf(TEXT("%s entry %d resolves as an AnimSequence"), Contract.PackageName, Index),
+					LandingAnimation))
+			{
+				TestTrue(
+					*FString::Printf(TEXT("%s keeps root motion enabled"), *LandingAnimation->GetName()),
+					LandingAnimation->bEnableRootMotion);
+				TestTrue(
+					*FString::Printf(TEXT("%s keeps contact_l"), *LandingAnimation->GetName()),
+					LandingAnimation->HasCurveData(TEXT("contact_l"), false));
+				TestTrue(
+					*FString::Printf(TEXT("%s keeps contact_r"), *LandingAnimation->GetName()),
+					LandingAnimation->HasCurveData(TEXT("contact_r"), false));
+			}
+
+			if (ExpectedPackages.IsValidIndex(Index))
+			{
+				TArray<FName> Dependencies;
+				AssetRegistry.GetDependencies(
+					FName(ExpectedPackages[Index]),
+					Dependencies,
+					UE::AssetRegistry::EDependencyCategory::Package);
+				for (const FName Dependency : Dependencies)
+				{
+					TestFalse(
+						*FString::Printf(TEXT("%s has no excluded landing dependency on %s"), ExpectedPackages[Index], *Dependency.ToString()),
+						IsForbiddenDependency(Dependency.ToString()));
+				}
+			}
+		}
+
+		const UE::PoseSearch::EAsyncBuildIndexResult BuildResult =
+			UE::PoseSearch::FAsyncPoseSearchDatabasesManagement::RequestAsyncBuildIndex(
+				LandingDatabase,
+				UE::PoseSearch::ERequestAsyncBuildFlag::NewRequest |
+					UE::PoseSearch::ERequestAsyncBuildFlag::WaitForCompletion);
+		if (TestTrue(
+				*FString::Printf(TEXT("%s search index builds"), Contract.PackageName),
+				BuildResult == UE::PoseSearch::EAsyncBuildIndexResult::Success))
+		{
+			TestEqual(
+				*FString::Printf(TEXT("%s indexes every authored landing entry"), Contract.PackageName),
+				LandingDatabase->GetSearchIndex().Assets.Num(),
+				Contract.ExpectedAnimationCount);
+		}
+	}
 
 	UPoseSearchSchema* GroundSchema = LoadObject<UPoseSearchSchema>(
 		nullptr,
@@ -1711,8 +1969,6 @@ bool FRpgGaspLocomotionContentContractTest::RunTest(const FString& Parameters)
 
 	static const TCHAR* const DatabasePackages[] = {
 		TEXT("/RpgGaspLocomotion/MotionMatching/Databases/PSD_Rpg_Stand_Idle"),
-		TurnInPlaceDatabasePackage,
-		TEXT("/RpgGaspLocomotion/MotionMatching/Databases/PSD_Rpg_Crouch"),
 		WalkMovingDatabasePackage,
 		WalkStopDatabasePackage,
 		TEXT("/RpgGaspLocomotion/MotionMatching/Databases/PSD_Rpg_Stand_Run_Loops"),
@@ -1721,8 +1977,15 @@ bool FRpgGaspLocomotionContentContractTest::RunTest(const FString& Parameters)
 		TEXT("/RpgGaspLocomotion/MotionMatching/Databases/PSD_Rpg_Stand_Run_Stops"),
 		SprintMovingDatabasePackage,
 		SprintStopDatabasePackage,
+		TEXT("/RpgGaspLocomotion/MotionMatching/Databases/PSD_Rpg_Crouch"),
+		TurnInPlaceDatabasePackage,
 		JumpDatabasePackage,
-		LandingDatabasePackage,
+		IdleLightLandingDatabasePackage,
+		IdleHeavyLandingDatabasePackage,
+		WalkLightLandingDatabasePackage,
+		WalkHeavyLandingDatabasePackage,
+		RunLightLandingDatabasePackage,
+		RunHeavyLandingDatabasePackage,
 	};
 	static const TCHAR* const ChooserDatabasePackages[] = {
 		TEXT("/RpgGaspLocomotion/MotionMatching/Databases/PSD_Rpg_Stand_Idle"),
@@ -1740,7 +2003,12 @@ bool FRpgGaspLocomotionContentContractTest::RunTest(const FString& Parameters)
 		TEXT("/RpgGaspLocomotion/MotionMatching/Databases/PSD_Rpg_Stand_Run_Starts"),
 		TEXT("/RpgGaspLocomotion/MotionMatching/Databases/PSD_Rpg_Stand_Run_Stops"),
 		SprintStopDatabasePackage,
-		LandingDatabasePackage,
+		IdleLightLandingDatabasePackage,
+		IdleHeavyLandingDatabasePackage,
+		WalkLightLandingDatabasePackage,
+		WalkHeavyLandingDatabasePackage,
+		RunLightLandingDatabasePackage,
+		RunHeavyLandingDatabasePackage,
 	};
 	UPoseSearchNormalizationSet* NormalizationSet = LoadObject<UPoseSearchNormalizationSet>(
 		nullptr,
@@ -1748,7 +2016,7 @@ bool FRpgGaspLocomotionContentContractTest::RunTest(const FString& Parameters)
 	if (TestNotNull(TEXT("The shared normalization set loads"), NormalizationSet))
 	{
 		TestEqual(
-			TEXT("The shared normalization set contains exactly thirteen databases"),
+			TEXT("The shared normalization set contains exactly eighteen databases"),
 			NormalizationSet->Databases.Num(),
 			static_cast<int32>(UE_ARRAY_COUNT(DatabasePackages)));
 		TSet<FString> UniqueNormalizationPackages;

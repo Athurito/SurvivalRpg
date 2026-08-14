@@ -21,6 +21,7 @@ class UAnimationAsset;
 class UPoseSearchDatabase;
 #if WITH_DEV_AUTOMATION_TESTS
 class FRpgJumpPhaseRuntimeTest;
+class FRpgLandingSelectionRuntimeTest;
 class FRpgMotionMatchingDatabaseResolverTest;
 class FRpgTrajectoryCollisionRuntimeTest;
 class FRpgTurnInPlaceStateMachineTest;
@@ -54,6 +55,11 @@ enum class ERpgMotionMatchingDatabaseRole : uint8
 	StandTurnInPlace,
 	Jump,
 	StandLightLanding,
+	StandHeavyLanding,
+	WalkLightLanding,
+	WalkHeavyLanding,
+	RunLightLanding,
+	RunHeavyLanding,
 	Count UMETA(Hidden),
 };
 
@@ -119,7 +125,7 @@ enum class ERpgLocomotionMovementState : uint8
 	Custom,
 };
 
-/** Cosmetic jump lifecycle used to select airborne starts and hold one bounded idle light-landing pose. */
+/** Cosmetic jump lifecycle used to select airborne starts and one bounded curated landing pose. */
 UENUM(BlueprintType)
 enum class ERpgJumpPhase : uint8
 {
@@ -202,6 +208,59 @@ struct SURVIVALRPG_API FRpgTrajectoryLandingPrediction
 };
 
 /**
+ * Pointer-free movement context frozen on the final airborne update before physical touchdown.
+ *
+ * CharacterMovement remains authoritative for the actual Falling-to-Grounded transition. This
+ * snapshot is cosmetic-only and lets owner and simulated-proxy animation select the same bounded
+ * Idle/Walk/Run and Light/Heavy landing domain after the grounded frame has cleared fall velocity.
+ */
+USTRUCT(BlueprintType)
+struct SURVIVALRPG_API FRpgLandingSelectionSnapshot
+{
+	GENERATED_BODY()
+
+	/** Horizontal pre-touchdown velocity in world space, in centimeters per second. */
+	UPROPERTY(BlueprintReadOnly, Category = "Rpg|Animation|Landing", meta = (Units = "cm/s"))
+	FVector HorizontalVelocity = FVector::ZeroVector;
+
+	/** Magnitude of HorizontalVelocity, in centimeters per second. */
+	UPROPERTY(BlueprintReadOnly, Category = "Rpg|Animation|Landing", meta = (Units = "cm/s"))
+	float HorizontalSpeed = 0.0f;
+
+	/** Latest signed world-Z velocity before touchdown; positive values move upward. */
+	UPROPERTY(BlueprintReadOnly, Category = "Rpg|Animation|Landing", meta = (Units = "cm/s"))
+	float VerticalVelocity = 0.0f;
+
+	/** Strongest measured speed along gravity during this airborne epoch. */
+	UPROPERTY(BlueprintReadOnly, Category = "Rpg|Animation|Landing", meta = (Units = "cm/s"))
+	float MaximumDownwardSpeed = 0.0f;
+
+	/** Downward speed projected to the current valid trajectory contact, or zero without one. */
+	UPROPERTY(BlueprintReadOnly, Category = "Rpg|Animation|Landing", meta = (Units = "cm/s"))
+	float PredictedImpactDownwardSpeed = 0.0f;
+
+	/** Last explicit or safely reconstructed locomotion gait; Sprint is never inferred from speed. */
+	UPROPERTY(BlueprintReadOnly, Category = "Rpg|Animation|Landing")
+	ERpgLocomotionGait Gait = ERpgLocomotionGait::Idle;
+
+	/** Final airborne collision prediction retained through the physical touchdown update. */
+	UPROPERTY(BlueprintReadOnly, Category = "Rpg|Animation|Landing")
+	FRpgTrajectoryLandingPrediction PredictedLanding;
+
+	/** Monotonic cosmetic epoch used to distinguish a relaunch from an earlier fall. */
+	UPROPERTY(BlueprintReadOnly, Category = "Rpg|Animation|Landing")
+	int32 AirborneEpoch = 0;
+
+	/** Raw pre-touchdown intent used to capture desired gait; physical horizontal speed still owns the landing domain. */
+	UPROPERTY(BlueprintReadOnly, Category = "Rpg|Animation|Landing")
+	bool bHasMoveIntent = false;
+
+	/** True only for finite movement data captured during the current airborne epoch. */
+	UPROPERTY(BlueprintReadOnly, Category = "Rpg|Animation|Landing")
+	bool bIsValid = false;
+};
+
+/**
  * Game-thread snapshot consumed by URpgAnimInstance during parallel animation updates.
  *
  * UObject and movement-component access is deliberately confined to PreUpdate; the animation
@@ -265,6 +324,7 @@ struct SURVIVALRPG_API FRpgAnimInstanceProxy : public FAnimInstanceProxy
 	/** Gravity/collision-corrected trajectory published to the worker thread. */
 	FTransformTrajectory TransformTrajectory;
 	FRpgTrajectoryLandingPrediction TrajectoryLandingPrediction;
+	FRpgLandingSelectionSnapshot LandingSelectionSnapshot;
 	FRpgFootPlacementSnapshot FootPlacementSnapshot;
 	float FootPlacementAlpha = 0.0f;
 	bool bHasVelocity = false;
@@ -278,6 +338,11 @@ struct SURVIVALRPG_API FRpgAnimInstanceProxy : public FAnimInstanceProxy
 	bool bTurnInPlaceHardReset = true;
 	/** True when the game-thread snapshot crosses between free-facing and turn-in-place-capable rotation. */
 	bool bTurnInPlaceSupportChanged = false;
+
+	// Persistent pre-touchdown state is authored only by game-thread PreUpdate.
+	ERpgLocomotionGait LastGroundedGait = ERpgLocomotionGait::Idle;
+	int32 LandingAirborneEpoch = 0;
+	bool bWasAirborneForLanding = false;
 
 	// Previous-owner data is maintained and consumed only by game-thread PreUpdate.
 	uint32 PreviousOwnerUniqueId = 0;
@@ -373,8 +438,9 @@ public:
 	 * The helper is safe for parallel AnimGraph evaluation: it reads only the Blend Stack node and immutable animation
 	 * assets plus values copied from the game-thread proxy. Each Blend Stack sample keeps gates based on its immutable
 	 * asset category while it blends across a grounded/airborne boundary: moving ground and Jump/Starts samples receive
-	 * authored moving corrections, the airborne fall receives Reset Root only, and the exactly latched landing sample
-	 * receives Reset Root only. Orientation Warping is additionally gated by the authored Enable_Warping curve.
+	 * authored moving corrections, while the airborne fall and Idle landing samples receive Reset Root only. A latched
+	 * Walk/Run landing keeps moving corrections for its full request. Orientation Warping is additionally gated by the
+	 * authored Enable_Warping curve.
 	 *
 	 * @param Node Blend Stack Input node reference whose current asset and playback time should be queried.
 	 * @param CurrentAnimAsset Currently playing Blend Stack asset, or null when the node has no active asset.
@@ -487,11 +553,38 @@ protected:
 	TArray<TObjectPtr<UPoseSearchDatabase>> AirborneMotionMatchingDatabases;
 
 	/**
-	 * Exclusive stand-idle light-landing database searched once after touchdown at no more than 3 cm/s without move intent.
-	 * Moving touchdowns return directly to gait locomotion until a later moving/heavy-land resolver is implemented.
+	 * Exclusive stand-idle light-landing database searched once per matching physical touchdown.
+	 * This preserves the #66 serialized property and exact four-clip Idle-Light contract.
 	 */
 	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Rpg|Animation|Motion Matching")
 	TObjectPtr<UPoseSearchDatabase> LandingMotionMatchingDatabase;
+
+	/** Exclusive stand-idle heavy-landing database selected at or above HeavyLandingSpeedThreshold. */
+	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Rpg|Animation|Motion Matching")
+	TObjectPtr<UPoseSearchDatabase> StandHeavyLandingMotionMatchingDatabase;
+
+	/** Exclusive Walk light-landing database selected from frozen pre-touchdown movement context. */
+	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Rpg|Animation|Motion Matching")
+	TObjectPtr<UPoseSearchDatabase> WalkLightLandingMotionMatchingDatabase;
+
+	/** Exclusive Walk heavy-landing database selected at or above HeavyLandingSpeedThreshold. */
+	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Rpg|Animation|Motion Matching")
+	TObjectPtr<UPoseSearchDatabase> WalkHeavyLandingMotionMatchingDatabase;
+
+	/** Exclusive Run light-landing database selected from frozen pre-touchdown movement context. */
+	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Rpg|Animation|Motion Matching")
+	TObjectPtr<UPoseSearchDatabase> RunLightLandingMotionMatchingDatabase;
+
+	/** Exclusive Run heavy-landing database selected at or above HeavyLandingSpeedThreshold. */
+	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Rpg|Animation|Motion Matching")
+	TObjectPtr<UPoseSearchDatabase> RunHeavyLandingMotionMatchingDatabase;
+
+	/**
+	 * Cosmetic impact-speed boundary between Light and Heavy landing presentation, in cm/s.
+	 * GASP authors 700 cm/s; the comparison is inclusive and never affects fall damage or gameplay.
+	 */
+	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Rpg|Animation|Motion Matching", meta = (ClampMin = "1.0", UIMin = "300.0", UIMax = "1200.0", Units = "cm/s"))
+	float HeavyLandingSpeedThreshold = 700.0f;
 
 	/** Role of the most recently completed Pose Search result; cosmetic and worker-thread owned. */
 	UPROPERTY(BlueprintReadOnly, Transient, Category = "Rpg|Animation|Motion Matching")
@@ -609,6 +702,11 @@ protected:
 	UPROPERTY(BlueprintReadOnly, Transient, Category = "Rpg|Animation|Jump")
 	bool bLandingSelectionLatched = false;
 
+	/** Current landing role; a stationary role may hand off once to same-severity Walk/Run presentation. */
+	UPROPERTY(BlueprintReadOnly, Transient, Category = "Rpg|Animation|Jump")
+	ERpgMotionMatchingDatabaseRole ActiveLandingDatabaseRole =
+		ERpgMotionMatchingDatabaseRole::None;
+
 	/**
 	 * Replicated character rotation policy copied from the game-thread proxy for AnimBP debugging.
 	 * This transient cosmetic snapshot is read-only and never owns authoritative rotation state.
@@ -629,6 +727,10 @@ protected:
 	 */
 	UPROPERTY(BlueprintReadOnly, Transient, Category = "Rpg|Animation|Jump")
 	FRpgTrajectoryLandingPrediction TrajectoryLandingPrediction;
+
+	/** Frozen final-airborne context used only for cosmetic landing selection and diagnostics. */
+	UPROPERTY(BlueprintReadOnly, Transient, Category = "Rpg|Animation|Jump")
+	FRpgLandingSelectionSnapshot PreTouchdownLandingSnapshot;
 
 	/** Current cosmetic turn-in-place lifecycle, derived entirely from game-thread proxy snapshots. */
 	UPROPERTY(BlueprintReadOnly, Transient, Category = "Rpg|Animation|Turn In Place")
@@ -725,7 +827,7 @@ private:
 	using FResolvedMotionMatchingDatabaseRoles =
 		TArray<ERpgMotionMatchingDatabaseRole, TInlineAllocator<4>>;
 	using FMotionMatchingDatabaseRoleContracts =
-		TArray<FMotionMatchingDatabaseRoleContract, TInlineAllocator<13>>;
+		TArray<FMotionMatchingDatabaseRoleContract, TInlineAllocator<18>>;
 
 	/**
 	 * Pointer-free locomotion snapshot used to classify one bounded project database search.
@@ -869,6 +971,54 @@ private:
 		bool bCanLatchTurnInPlace,
 		bool bCanLatchLanding);
 
+	/** Returns true for one of the six curated Idle/Walk/Run Light/Heavy landing roles. */
+	static bool IsLandingDatabaseRole(ERpgMotionMatchingDatabaseRole Role);
+
+	/** Preserves Light/Heavy severity while rebasing any landing role into the stationary domain. */
+	static ERpgMotionMatchingDatabaseRole ResolveStationaryLandingRole(
+		ERpgMotionMatchingDatabaseRole LandingRole);
+
+	/** Releases a stationary landing only after horizontal movement begins or the Idle speed band is left. */
+	static bool ShouldReleaseStationaryLanding(
+		ERpgMotionMatchingDatabaseRole LandingRole,
+		bool bChooserMoving,
+		float GroundSpeed);
+
+	/** Preserves Light/Heavy severity while mapping a stationary landing to the live Walk/Run gait. */
+	static ERpgMotionMatchingDatabaseRole ResolveStationaryLandingMovementRole(
+		ERpgMotionMatchingDatabaseRole LandingRole,
+		ERpgLocomotionGait LiveGait);
+
+	/** Prevents a completed or cancelled landing database from surviving as an uninterruptible pose. */
+	static bool ShouldInterruptLandingDatabaseExit(
+		ERpgJumpPhase CurrentJumpPhase,
+		bool bCompletionArmed,
+		ERpgMotionMatchingDatabaseRole CurrentDatabaseRole);
+
+	/**
+	 * Resolves one requested landing role from a finite, pointer-free pre-touchdown snapshot.
+	 * The physical 3 cm/s Idle boundary and Heavy threshold are inclusive; raw input alone cannot
+	 * select a moving landing. Sprint falls back to Run content
+	 * until gameplay issue #62 supplies an authoritative Sprint state and dedicated landing assets.
+	 */
+	static ERpgMotionMatchingDatabaseRole ResolveLandingDatabaseRole(
+		const FRpgLandingSelectionSnapshot& Snapshot,
+		float HeavySpeedThreshold);
+
+	/** Updates or resets the final-airborne snapshot from current value-only proxy inputs. */
+	static void UpdateLandingSelectionSnapshot(
+		FRpgAnimInstanceProxy& Proxy,
+		float InputMagnitude,
+		const FVector& GravityAcceleration);
+
+	/** Applies Heavy-to-Light database fallback to an already resolved landing role. */
+	ERpgMotionMatchingDatabaseRole ResolveAvailableLandingDatabaseRole(
+		ERpgMotionMatchingDatabaseRole RequestedRole) const;
+
+	/** Resolves a snapshot, applies Heavy-to-Light fallback, or returns None for normal locomotion. */
+	ERpgMotionMatchingDatabaseRole ResolveAvailableLandingDatabaseRole(
+		const FRpgLandingSelectionSnapshot& Snapshot) const;
+
 	/** Builds the complete static role contract from the AnimBP defaults without loading assets. */
 	FMotionMatchingDatabaseRoleContracts BuildMotionMatchingDatabaseRoleContracts() const;
 
@@ -932,14 +1082,17 @@ private:
 	/** Allows moving procedural nodes during a movement-driven recovery, but never during collection or playback. */
 	bool AllowsMovingProceduralNodes() const;
 
-	/** Advances the pointer-free airborne/landing phase and creates at most one landing request per touchdown. */
+	/** Advances landing state and permits only the initial request plus one bounded stationary-to-moving handoff. */
 	void UpdateJumpPhaseRuntime(float DeltaSeconds, const FRpgAnimInstanceProxy& Proxy);
 	void BeginAirbornePhase(bool bAscendingTakeoff);
-	void BeginLandingRequest();
+	void BeginLandingRequest(
+		ERpgMotionMatchingDatabaseRole LandingRole,
+		bool bForceInterrupt = true);
 	void ResetJumpPhaseRuntime();
 	void ClearLandingSelection();
 	void ClearBackwardJumpStartHold();
-	bool IsLandingEligible(const FRpgAnimInstanceProxy& Proxy) const;
+	/** Checks stable override/movement gates shared by request start and continuation. */
+	bool IsLandingRuntimeEligible(const FRpgAnimInstanceProxy& Proxy) const;
 	bool ConsumeLandingForceInterruptRequest();
 	bool TryLatchLandingSelection(
 		UAnimationAsset* SelectedAsset,
@@ -954,6 +1107,8 @@ private:
 		float CurrentAssetPlayRate,
 		float DeltaSeconds);
 	bool IsActiveLandingAsset(const UAnimationAsset* Asset) const;
+	/** Identifies curated Landing samples independently of request lifetime so outgoing blends keep Reset Root. */
+	static bool IsLandingAsset(const UAnimationAsset* Asset);
 	bool UpdateBackwardJumpStartHold(
 		UAnimationAsset* CurrentAsset,
 		float CurrentAssetTime,
@@ -1031,6 +1186,8 @@ private:
 	float LandingSelectedAssetStartTime = 0.0f;
 	float LandingSelectedAssetRemainingTime = 0.0f;
 	float LandingPlaybackWatchdogDuration = 0.0f;
+	/** Wall-clock age of the physical touchdown, preserved across one Stand-to-moving landing handoff. */
+	float LandingTouchdownElapsed = 0.0f;
 	uint32 LandingRequestSerial = 0;
 	uint32 LandingInterruptedRequestSerial = 0;
 	uint32 LandingSelectedRequestSerial = 0;
@@ -1063,6 +1220,7 @@ private:
 	friend struct FRpgAnimInstanceProxy;
 #if WITH_DEV_AUTOMATION_TESTS
 	friend class FRpgJumpPhaseRuntimeTest;
+	friend class FRpgLandingSelectionRuntimeTest;
 	friend class FRpgMotionMatchingDatabaseResolverTest;
 	friend class FRpgTrajectoryCollisionRuntimeTest;
 	friend class FRpgTurnInPlaceStateMachineTest;

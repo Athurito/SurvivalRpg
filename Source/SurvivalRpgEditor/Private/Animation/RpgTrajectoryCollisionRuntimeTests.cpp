@@ -504,16 +504,29 @@ bool FRpgTrajectoryCollisionRuntimeTest::RunTest(const FString& Parameters)
 	USkeletalMeshComponent* AnimInstanceOuter = NewObject<USkeletalMeshComponent>();
 	URpgAnimInstance* AnimInstance = NewObject<URpgAnimInstance>(AnimInstanceOuter);
 	AnimInstance->LandingMotionMatchingDatabase = NewObject<UPoseSearchDatabase>();
+	AnimInstance->RunLightLandingMotionMatchingDatabase = NewObject<UPoseSearchDatabase>();
+	AnimInstance->RunHeavyLandingMotionMatchingDatabase = NewObject<UPoseSearchDatabase>();
+	AnimInstance->HeavyLandingSpeedThreshold = 700.0f;
 	FRpgAnimInstanceProxy Proxy;
 	Proxy.MovementState = ERpgLocomotionMovementState::Airborne;
 	Proxy.bIsFalling = true;
 	Proxy.bIsMovingOnGround = false;
 	Proxy.bTurnInPlaceHardReset = false;
+	Proxy.WorldVelocity = FVector(300.0, 0.0, -400.0);
+	Proxy.VerticalVelocity = -400.0f;
 	Proxy.TrajectoryLandingPrediction = ValidPrediction;
+	URpgAnimInstance::UpdateLandingSelectionSnapshot(Proxy, 0.8f, GravityAcceleration);
 	AnimInstance->ResetJumpPhaseRuntime();
 	AnimInstance->UpdateJumpPhaseRuntime(0.01f, Proxy);
 	TestEqual(TEXT("A predictive hit leaves the physical jump phase Airborne"), AnimInstance->JumpPhase, ERpgJumpPhase::Airborne);
-	TestEqual(TEXT("Prediction never creates an early landing request"), AnimInstance->LandingRequestSerial, 0u);
+	TestTrue(
+		TEXT("Prediction can classify a sub-threshold measured fall as Heavy"),
+		Proxy.LandingSelectionSnapshot.MaximumDownwardSpeed < AnimInstance->HeavyLandingSpeedThreshold &&
+		Proxy.LandingSelectionSnapshot.PredictedImpactDownwardSpeed >= AnimInstance->HeavyLandingSpeedThreshold);
+	TestEqual(
+		TEXT("Even a predicted Heavy impact never creates an early landing request"),
+		AnimInstance->LandingRequestSerial,
+		0u);
 
 	for (int32 DirectionIndex = 0; DirectionIndex < 4; ++DirectionIndex)
 	{
@@ -521,20 +534,37 @@ bool FRpgTrajectoryCollisionRuntimeTest::RunTest(const FString& Parameters)
 			DirectionIndex == 0 ? 300.0 : DirectionIndex == 1 ? -300.0 : 0.0,
 			DirectionIndex == 2 ? 300.0 : DirectionIndex == 3 ? -300.0 : 0.0,
 			-400.0);
+		Proxy.VerticalVelocity = -400.0f;
 		Proxy.TrajectoryLandingPrediction.TimeToLand = 0.3f - 0.05f * DirectionIndex;
+		URpgAnimInstance::UpdateLandingSelectionSnapshot(Proxy, 0.8f, GravityAcceleration);
 		AnimInstance->UpdateJumpPhaseRuntime(0.05f, Proxy);
 	}
 	TestEqual(TEXT("Directional airborne predictions cannot restart or double-request landing"), AnimInstance->LandingRequestSerial, 0u);
 
+	// Restore a predicted Heavy final-airborne frame. Prediction may stabilize the
+	// cosmetic severity selection, but the request still waits for physical CMC touchdown.
+	Proxy.WorldVelocity = FVector(300.0, 0.0, -400.0);
+	Proxy.VerticalVelocity = -400.0f;
+	Proxy.TrajectoryLandingPrediction = ValidPrediction;
+	URpgAnimInstance::UpdateLandingSelectionSnapshot(Proxy, 0.8f, GravityAcceleration);
+	AnimInstance->UpdateJumpPhaseRuntime(0.01f, Proxy);
+	TestEqual(TEXT("The final predicted Heavy airborne frame still creates no request"), AnimInstance->LandingRequestSerial, 0u);
+
 	Proxy.MovementState = ERpgLocomotionMovementState::Grounded;
 	Proxy.bIsFalling = false;
 	Proxy.bIsMovingOnGround = true;
-	Proxy.GroundSpeed = 0.0f;
-	Proxy.bHasGroundedMoveIntent = false;
+	Proxy.GroundSpeed = 300.0f;
+	Proxy.bHasGroundedMoveIntent = true;
 	Proxy.TrajectoryLandingPrediction = FRpgTrajectoryLandingPrediction();
+	URpgAnimInstance::UpdateLandingSelectionSnapshot(Proxy, 0.8f, GravityAcceleration);
 	AnimInstance->UpdateJumpPhaseRuntime(0.01f, Proxy);
 	TestEqual(TEXT("Only physical CharacterMovement touchdown enters Landing"), AnimInstance->JumpPhase, ERpgJumpPhase::Landing);
+	TestEqual(
+		TEXT("Physical touchdown consumes predicted impact only as Run Heavy severity"),
+		AnimInstance->ActiveLandingDatabaseRole,
+		ERpgMotionMatchingDatabaseRole::RunHeavyLanding);
 	TestEqual(TEXT("Physical touchdown creates exactly one request"), AnimInstance->LandingRequestSerial, 1u);
+	URpgAnimInstance::UpdateLandingSelectionSnapshot(Proxy, 0.8f, GravityAcceleration);
 	AnimInstance->UpdateJumpPhaseRuntime(0.01f, Proxy);
 	TestEqual(TEXT("A repeated grounded snapshot cannot duplicate the request"), AnimInstance->LandingRequestSerial, 1u);
 	return true;
