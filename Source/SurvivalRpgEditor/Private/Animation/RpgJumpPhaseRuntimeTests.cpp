@@ -11,6 +11,7 @@
 #include "Misc/AutomationTest.h"
 #include "PoseSearch/PoseSearchDatabase.h"
 #include "SurvivalRpg/Animation/RpgAnimInstance.h"
+#include "SurvivalRpg/Core/Character/RpgCharacter.h"
 #include "UObject/Package.h"
 #include "UObject/UObjectGlobals.h"
 
@@ -55,6 +56,57 @@ bool FRpgJumpPhaseRuntimeTest::RunTest(const FString& Parameters)
 		ERpgMotionMatchingDatabaseRole::StandLightLanding,
 		ERpgMotionMatchingDatabaseRole::StandHeavyLanding,
 	};
+	struct FStationaryLandingRoleCase
+	{
+		const TCHAR* Name;
+		ERpgMotionMatchingDatabaseRole LandingRole;
+		ERpgMotionMatchingDatabaseRole ExpectedRole;
+	};
+	const FStationaryLandingRoleCase StationaryLandingRoleCases[] =
+	{
+		{
+			TEXT("Stand Light remains Stand Light"),
+			ERpgMotionMatchingDatabaseRole::StandLightLanding,
+			ERpgMotionMatchingDatabaseRole::StandLightLanding,
+		},
+		{
+			TEXT("Walk Light rebases to Stand Light"),
+			ERpgMotionMatchingDatabaseRole::WalkLightLanding,
+			ERpgMotionMatchingDatabaseRole::StandLightLanding,
+		},
+		{
+			TEXT("Run Light rebases to Stand Light"),
+			ERpgMotionMatchingDatabaseRole::RunLightLanding,
+			ERpgMotionMatchingDatabaseRole::StandLightLanding,
+		},
+		{
+			TEXT("Stand Heavy remains Stand Heavy"),
+			ERpgMotionMatchingDatabaseRole::StandHeavyLanding,
+			ERpgMotionMatchingDatabaseRole::StandHeavyLanding,
+		},
+		{
+			TEXT("Walk Heavy rebases to Stand Heavy"),
+			ERpgMotionMatchingDatabaseRole::WalkHeavyLanding,
+			ERpgMotionMatchingDatabaseRole::StandHeavyLanding,
+		},
+		{
+			TEXT("Run Heavy rebases to Stand Heavy"),
+			ERpgMotionMatchingDatabaseRole::RunHeavyLanding,
+			ERpgMotionMatchingDatabaseRole::StandHeavyLanding,
+		},
+		{
+			TEXT("None cannot manufacture a stationary landing"),
+			ERpgMotionMatchingDatabaseRole::None,
+			ERpgMotionMatchingDatabaseRole::None,
+		},
+	};
+	for (const FStationaryLandingRoleCase& RoleCase : StationaryLandingRoleCases)
+	{
+		TestEqual(
+			RoleCase.Name,
+			URpgAnimInstance::ResolveStationaryLandingRole(RoleCase.LandingRole),
+			RoleCase.ExpectedRole);
+	}
 	const float QuietNaN = std::numeric_limits<float>::quiet_NaN();
 	const float Infinity = std::numeric_limits<float>::infinity();
 	for (const ERpgMotionMatchingDatabaseRole LandingRole : StationaryLandingRoles)
@@ -546,6 +598,219 @@ bool FRpgJumpPhaseRuntimeTest::RunTest(const FString& Parameters)
 				HandoffRequestSerial);
 		}
 	}
+
+	// Reproduce the spawn/late-join sequence where W is already held in air, the frozen snapshot
+	// still has momentum just outside the Idle band, but physical touchdown has zero horizontal
+	// speed. Live CMC state rebases the initial role before motion begins on a later frame.
+	constexpr double HeldAirborneMaximumAcceleration = 2400.0;
+	constexpr float HeldAirborneFrozenHorizontalSpeed = 4.0f;
+	const FVector AuthorityHeldAcceleration(HeldAirborneMaximumAcceleration, 0.0, 0.0);
+	FRpgReplicatedAcceleration PackedHeldAcceleration;
+	PackedHeldAcceleration.SetFromAcceleration(
+		AuthorityHeldAcceleration,
+		HeldAirborneMaximumAcceleration);
+	const FVector SimulatedHeldAcceleration = PackedHeldAcceleration.ToAcceleration(
+		HeldAirborneMaximumAcceleration);
+	struct FHeldAirborneNetworkView
+	{
+		const TCHAR* Name;
+		FVector Acceleration;
+	};
+	const FHeldAirborneNetworkView HeldAirborneNetworkViews[] =
+	{
+		{TEXT("Authority"), AuthorityHeldAcceleration},
+		{TEXT("Simulated Proxy"), SimulatedHeldAcceleration},
+		{TEXT("Late Join Simulated Proxy"), SimulatedHeldAcceleration},
+	};
+	const FVector GravityAcceleration(0.0, 0.0, -1000.0);
+
+	for (const FStationaryLandingCase& LandingCase : StationaryLandingCases)
+	{
+		for (const FHeldAirborneNetworkView& NetworkView : HeldAirborneNetworkViews)
+		{
+			BeginStationaryAirbornePhase();
+			Proxy.LastGroundedGait = ERpgLocomotionGait::Idle;
+			Proxy.LandingAirborneEpoch = 0;
+			Proxy.bWasAirborneForLanding = false;
+			Proxy.WorldVelocity = FVector(
+				HeldAirborneFrozenHorizontalSpeed,
+				0.0f,
+				-LandingCase.DownwardSpeed);
+			Proxy.WorldAcceleration = NetworkView.Acceleration;
+			Proxy.VerticalVelocity = -LandingCase.DownwardSpeed;
+			Proxy.GroundSpeed = HeldAirborneFrozenHorizontalSpeed;
+			Proxy.Gait = ERpgLocomotionGait::Idle;
+			Proxy.bHasGroundedMoveIntent = false;
+			Proxy.TrajectoryLandingPrediction = FRpgTrajectoryLandingPrediction();
+			const float HeldInputMagnitude = static_cast<float>(
+				NetworkView.Acceleration.Size2D() / HeldAirborneMaximumAcceleration);
+			URpgAnimInstance::UpdateLandingSelectionSnapshot(
+				Proxy,
+				HeldInputMagnitude,
+				GravityAcceleration);
+			AnimInstance->UpdateJumpPhaseRuntime(0.01f, Proxy);
+			TestTrue(
+				*FString::Printf(TEXT("%s %s airborne W capture retains raw intent"), NetworkView.Name, LandingCase.Name),
+				Proxy.LandingSelectionSnapshot.bHasMoveIntent);
+			TestEqual(
+				*FString::Printf(TEXT("%s %s airborne W capture retains Run context"), NetworkView.Name, LandingCase.Name),
+				Proxy.LandingSelectionSnapshot.Gait,
+				ERpgLocomotionGait::Run);
+			TestTrue(
+				*FString::Printf(TEXT("%s %s airborne W capture retains frozen XY momentum"), NetworkView.Name, LandingCase.Name),
+				FMath::IsNearlyEqual(
+					Proxy.LandingSelectionSnapshot.HorizontalSpeed,
+					HeldAirborneFrozenHorizontalSpeed));
+			TestEqual(
+				*FString::Printf(TEXT("%s %s frozen airborne role is Run before live touchdown normalization"), NetworkView.Name, LandingCase.Name),
+				URpgAnimInstance::ResolveLandingDatabaseRole(
+					Proxy.LandingSelectionSnapshot,
+					AnimInstance->HeavyLandingSpeedThreshold),
+				LandingCase.RunRole);
+
+			const uint32 RequestSerialBeforeTouchdown = AnimInstance->LandingRequestSerial;
+			Proxy.MovementState = ERpgLocomotionMovementState::Grounded;
+			Proxy.bIsMovingOnGround = true;
+			Proxy.bIsFalling = false;
+			Proxy.WorldVelocity = FVector(0.0f, 0.0f, -50.0f);
+			Proxy.WorldAcceleration = NetworkView.Acceleration;
+			Proxy.VerticalVelocity = -50.0f;
+			Proxy.GroundSpeed = 0.0f;
+			Proxy.Gait = ERpgLocomotionGait::Run;
+			Proxy.bHasGroundedMoveIntent = true;
+			URpgAnimInstance::UpdateLandingSelectionSnapshot(
+				Proxy,
+				HeldInputMagnitude,
+				GravityAcceleration);
+			TestTrue(
+				*FString::Printf(TEXT("%s %s touchdown still owns the frozen airborne speed"), NetworkView.Name, LandingCase.Name),
+				FMath::IsNearlyEqual(
+					Proxy.LandingSelectionSnapshot.HorizontalSpeed,
+					HeldAirborneFrozenHorizontalSpeed));
+			AnimInstance->UpdateJumpPhaseRuntime(0.01f, Proxy);
+			const uint32 StandRequestSerial = AnimInstance->LandingRequestSerial;
+			TestEqual(
+				*FString::Printf(TEXT("%s %s zero-XY touchdown enters Landing"), NetworkView.Name, LandingCase.Name),
+				AnimInstance->JumpPhase,
+				ERpgJumpPhase::Landing);
+			TestEqual(
+				*FString::Printf(TEXT("%s %s zero-XY touchdown selects Stand"), NetworkView.Name, LandingCase.Name),
+				AnimInstance->ActiveLandingDatabaseRole,
+				LandingCase.Role);
+			TestEqual(
+				*FString::Printf(TEXT("%s %s zero-XY touchdown creates one Stand request"), NetworkView.Name, LandingCase.Name),
+				StandRequestSerial,
+				RequestSerialBeforeTouchdown + 1u);
+			TestTrue(
+				*FString::Printf(TEXT("%s %s zero-XY touchdown owns one ForceInterrupt"), NetworkView.Name, LandingCase.Name),
+				AnimInstance->ConsumeLandingForceInterruptRequest());
+			TestFalse(
+				*FString::Printf(TEXT("%s %s zero-XY touchdown ForceInterrupt is one-shot"), NetworkView.Name, LandingCase.Name),
+				AnimInstance->ConsumeLandingForceInterruptRequest());
+			TestTrue(
+				*FString::Printf(TEXT("%s %s zero-XY touchdown latches Stand"), NetworkView.Name, LandingCase.Name),
+				AnimInstance->TryLatchLandingSelection(
+					LandingClip,
+					LandingCase.Database,
+					0.2f,
+					false,
+					StandRequestSerial));
+
+			URpgAnimInstance::UpdateLandingSelectionSnapshot(
+				Proxy,
+				HeldInputMagnitude,
+				GravityAcceleration);
+			AnimInstance->UpdateJumpPhaseRuntime(0.01f, Proxy);
+			TestEqual(
+				*FString::Printf(TEXT("%s %s vertical touchdown remainder keeps Stand"), NetworkView.Name, LandingCase.Name),
+				AnimInstance->ActiveLandingDatabaseRole,
+				LandingCase.Role);
+			TestEqual(
+				*FString::Printf(TEXT("%s %s vertical touchdown remainder creates no request"), NetworkView.Name, LandingCase.Name),
+				AnimInstance->LandingRequestSerial,
+				StandRequestSerial);
+
+			Proxy.WorldVelocity = FVector(
+				URpgAnimInstance::ChooserVelocityTolerance + 0.01f,
+				0.0f,
+				0.0f);
+			Proxy.VerticalVelocity = 0.0f;
+			Proxy.GroundSpeed = Proxy.WorldVelocity.Size2D();
+			URpgAnimInstance::UpdateLandingSelectionSnapshot(
+				Proxy,
+				HeldInputMagnitude,
+				GravityAcceleration);
+			AnimInstance->UpdateJumpPhaseRuntime(0.1f, Proxy);
+			const uint32 RunRequestSerial = AnimInstance->LandingRequestSerial;
+			TestEqual(
+				*FString::Printf(TEXT("%s %s first XY frame stays in Landing"), NetworkView.Name, LandingCase.Name),
+				AnimInstance->JumpPhase,
+				ERpgJumpPhase::Landing);
+			TestEqual(
+				*FString::Printf(TEXT("%s %s first XY frame preserves severity in Run"), NetworkView.Name, LandingCase.Name),
+				AnimInstance->ActiveLandingDatabaseRole,
+				LandingCase.RunRole);
+			TestEqual(
+				*FString::Printf(TEXT("%s %s first XY frame creates exactly one Run handoff"), NetworkView.Name, LandingCase.Name),
+				RunRequestSerial,
+				StandRequestSerial + 1u);
+			TestFalse(
+				*FString::Printf(TEXT("%s %s Run handoff uses database-change interruption"), NetworkView.Name, LandingCase.Name),
+				AnimInstance->ConsumeLandingForceInterruptRequest());
+			TestTrue(
+				*FString::Printf(TEXT("%s %s Run handoff latches its exact database"), NetworkView.Name, LandingCase.Name),
+				AnimInstance->TryLatchLandingSelection(
+					LandingClip,
+					LandingCase.RunDatabase,
+					0.2f,
+					false,
+					RunRequestSerial));
+
+			AnimInstance->UpdateJumpPhaseRuntime(0.01f, Proxy);
+			TestEqual(
+				*FString::Printf(TEXT("%s %s repeated XY frame creates no third request"), NetworkView.Name, LandingCase.Name),
+				AnimInstance->LandingRequestSerial,
+				RunRequestSerial);
+		}
+	}
+
+	// Normalize severity before database fallback: unavailable Stand Heavy must use Stand Light,
+	// never an available moving Heavy database retained from the frozen airborne snapshot.
+	BeginStationaryAirbornePhase();
+	SetValidLandingSelectionSnapshot(
+		ERpgLocomotionGait::Run,
+		HeldAirborneFrozenHorizontalSpeed,
+		700.0f,
+		true);
+	TestEqual(
+		TEXT("Missing-heavy fallback fixture starts from frozen Run Heavy"),
+		URpgAnimInstance::ResolveLandingDatabaseRole(
+			Proxy.LandingSelectionSnapshot,
+			AnimInstance->HeavyLandingSpeedThreshold),
+		ERpgMotionMatchingDatabaseRole::RunHeavyLanding);
+	Proxy.MovementState = ERpgLocomotionMovementState::Grounded;
+	Proxy.bIsMovingOnGround = true;
+	Proxy.bIsFalling = false;
+	Proxy.WorldVelocity = FVector(0.0f, 0.0f, -50.0f);
+	Proxy.WorldAcceleration = AuthorityHeldAcceleration;
+	Proxy.VerticalVelocity = -50.0f;
+	Proxy.GroundSpeed = 0.0f;
+	Proxy.Gait = ERpgLocomotionGait::Run;
+	Proxy.bHasGroundedMoveIntent = true;
+	UPoseSearchDatabase* SavedStandHeavyLandingDatabase =
+		AnimInstance->StandHeavyLandingMotionMatchingDatabase;
+	AnimInstance->StandHeavyLandingMotionMatchingDatabase = nullptr;
+	const uint32 MissingHeavyRequestSerialBeforeTouchdown = AnimInstance->LandingRequestSerial;
+	AnimInstance->UpdateJumpPhaseRuntime(0.01f, Proxy);
+	TestEqual(
+		TEXT("Stationary normalization precedes missing Heavy fallback"),
+		AnimInstance->ActiveLandingDatabaseRole,
+		ERpgMotionMatchingDatabaseRole::StandLightLanding);
+	TestEqual(
+		TEXT("Missing stationary Heavy creates exactly one Light fallback request"),
+		AnimInstance->LandingRequestSerial,
+		MissingHeavyRequestSerialBeforeTouchdown + 1u);
+	AnimInstance->StandHeavyLandingMotionMatchingDatabase = SavedStandHeavyLandingDatabase;
 
 	// Horizontal movement after the source 0.3 second window exits to normal gait locomotion.
 	for (const FStationaryLandingCase& LandingCase : StationaryLandingCases)

@@ -114,7 +114,8 @@ bool FRpgLandingSelectionRuntimeTest::RunTest(const FString& Parameters)
 				Expected.PredictedLanding.TimeToLand));
 	};
 
-	// The inclusive 3 cm/s idle boundary is ignored as soon as either speed or intent is moving.
+	// The inclusive 3 cm/s idle boundary is physical: airborne input remains useful frozen
+	// context, but cannot select moving landing content before speed leaves that Idle band.
 	TestResolvedRole(
 		TEXT("Zero speed without intent selects stand-idle light landing"),
 		MakeSnapshot(ERpgLocomotionGait::Idle, 0.0f, false, 100.0f, 0.0f),
@@ -128,9 +129,13 @@ bool FRpgLandingSelectionRuntimeTest::RunTest(const FString& Parameters)
 		MakeSnapshot(ERpgLocomotionGait::Walk, 3.01f, false, 100.0f, 0.0f),
 		ERpgMotionMatchingDatabaseRole::WalkLightLanding);
 	TestResolvedRole(
-		TEXT("Move intent leaves the idle domain even at zero horizontal speed"),
+		TEXT("Move intent alone keeps a zero-speed Light landing in the stand-idle domain"),
 		MakeSnapshot(ERpgLocomotionGait::Run, 0.0f, true, 100.0f, 0.0f),
-		ERpgMotionMatchingDatabaseRole::RunLightLanding);
+		ERpgMotionMatchingDatabaseRole::StandLightLanding);
+	TestResolvedRole(
+		TEXT("Move intent alone keeps a zero-speed Heavy landing in the stand-idle domain"),
+		MakeSnapshot(ERpgLocomotionGait::Run, 0.0f, true, 700.0f, 0.0f),
+		ERpgMotionMatchingDatabaseRole::StandHeavyLanding);
 
 	TestResolvedRole(
 		TEXT("Walk below the heavy boundary selects Walk Light"),
@@ -254,6 +259,53 @@ bool FRpgLandingSelectionRuntimeTest::RunTest(const FString& Parameters)
 			*FString::Printf(TEXT("%s horizontal speed is direction independent"), HorizontalDirectionNames[DirectionIndex]),
 			FMath::IsNearlyEqual(DirectionProxy.LandingSelectionSnapshot.HorizontalSpeed, 300.0f));
 	}
+
+	// Holding movement input before touchdown preserves raw intent and its inferred gait without
+	// manufacturing horizontal speed. The physical zero-speed landing therefore remains Stand.
+	FRpgAnimInstanceProxy AirborneIntentProxy;
+	AirborneIntentProxy.bTurnInPlaceHardReset = false;
+	AirborneIntentProxy.MovementState = ERpgLocomotionMovementState::Airborne;
+	AirborneIntentProxy.bIsFalling = true;
+	AirborneIntentProxy.WorldVelocity = FVector(0.0, 0.0, -500.0);
+	AirborneIntentProxy.VerticalVelocity = -500.0f;
+	URpgAnimInstance::UpdateLandingSelectionSnapshot(
+		AirborneIntentProxy,
+		1.0f,
+		GravityAcceleration);
+	TestTrue(
+		TEXT("Airborne W input is retained as raw landing intent"),
+		AirborneIntentProxy.LandingSelectionSnapshot.bHasMoveIntent);
+	TestEqual(
+		TEXT("Airborne W input retains its inferred Run gait context"),
+		AirborneIntentProxy.LandingSelectionSnapshot.Gait,
+		ERpgLocomotionGait::Run);
+	TestTrue(
+		TEXT("Airborne W input does not manufacture horizontal landing speed"),
+		FMath::IsNearlyZero(AirborneIntentProxy.LandingSelectionSnapshot.HorizontalSpeed));
+	TestResolvedRole(
+		TEXT("Captured airborne W at zero horizontal speed resolves Stand Light"),
+		AirborneIntentProxy.LandingSelectionSnapshot,
+		ERpgMotionMatchingDatabaseRole::StandLightLanding);
+
+	AirborneIntentProxy.TrajectoryLandingPrediction.LandingLocation = FVector::ZeroVector;
+	AirborneIntentProxy.TrajectoryLandingPrediction.LandingNormal = FVector::UpVector;
+	AirborneIntentProxy.TrajectoryLandingPrediction.TimeToLand = 0.2f;
+	AirborneIntentProxy.TrajectoryLandingPrediction.bIsValid = true;
+	URpgAnimInstance::UpdateLandingSelectionSnapshot(
+		AirborneIntentProxy,
+		1.0f,
+		GravityAcceleration);
+	TestTrue(
+		TEXT("Heavy airborne W capture still retains raw landing intent"),
+		AirborneIntentProxy.LandingSelectionSnapshot.bHasMoveIntent);
+	TestEqual(
+		TEXT("Heavy airborne W capture still retains Run gait context"),
+		AirborneIntentProxy.LandingSelectionSnapshot.Gait,
+		ERpgLocomotionGait::Run);
+	TestResolvedRole(
+		TEXT("Captured airborne W at zero horizontal speed resolves Stand Heavy"),
+		AirborneIntentProxy.LandingSelectionSnapshot,
+		ERpgMotionMatchingDatabaseRole::StandHeavyLanding);
 
 	FRpgAnimInstanceProxy UpwardProxy;
 	UpwardProxy.bTurnInPlaceHardReset = false;

@@ -1529,6 +1529,24 @@ bool URpgAnimInstance::IsLandingDatabaseRole(ERpgMotionMatchingDatabaseRole Role
 	}
 }
 
+ERpgMotionMatchingDatabaseRole URpgAnimInstance::ResolveStationaryLandingRole(
+	ERpgMotionMatchingDatabaseRole LandingRole)
+{
+	switch (LandingRole)
+	{
+	case ERpgMotionMatchingDatabaseRole::StandLightLanding:
+	case ERpgMotionMatchingDatabaseRole::WalkLightLanding:
+	case ERpgMotionMatchingDatabaseRole::RunLightLanding:
+		return ERpgMotionMatchingDatabaseRole::StandLightLanding;
+	case ERpgMotionMatchingDatabaseRole::StandHeavyLanding:
+	case ERpgMotionMatchingDatabaseRole::WalkHeavyLanding:
+	case ERpgMotionMatchingDatabaseRole::RunHeavyLanding:
+		return ERpgMotionMatchingDatabaseRole::StandHeavyLanding;
+	default:
+		return ERpgMotionMatchingDatabaseRole::None;
+	}
+}
+
 bool URpgAnimInstance::ShouldReleaseStationaryLanding(
 	ERpgMotionMatchingDatabaseRole LandingRole,
 	bool bChooserMoving,
@@ -1612,9 +1630,9 @@ ERpgMotionMatchingDatabaseRole URpgAnimInstance::ResolveLandingDatabaseRole(
 		FMath::Max(
 			Snapshot.MaximumDownwardSpeed,
 			Snapshot.PredictedImpactDownwardSpeed) >= HeavySpeedThreshold;
-	const bool bIdle =
-		Snapshot.HorizontalSpeed <= LightLandingIdleSpeedThreshold &&
-		!Snapshot.bHasMoveIntent;
+	// Match GASP's physical MovementState boundary: airborne input may capture the desired
+	// gait, but it cannot select a moving landing before speed leaves the inclusive Idle band.
+	const bool bIdle = Snapshot.HorizontalSpeed <= LightLandingIdleSpeedThreshold;
 	if (bIdle)
 	{
 		return bHeavy
@@ -3041,10 +3059,21 @@ void URpgAnimInstance::UpdateJumpPhaseRuntime(float DeltaSeconds, const FRpgAnim
 
 	if (JumpPhase == ERpgJumpPhase::Airborne)
 	{
-		ERpgMotionMatchingDatabaseRole LandingRole =
-			IsLandingRuntimeEligible(Proxy)
-				? ResolveAvailableLandingDatabaseRole(Proxy.LandingSelectionSnapshot)
-				: ERpgMotionMatchingDatabaseRole::None;
+		ERpgMotionMatchingDatabaseRole LandingRole = ERpgMotionMatchingDatabaseRole::None;
+		if (IsLandingRuntimeEligible(Proxy))
+		{
+			LandingRole = ResolveLandingDatabaseRole(
+				Proxy.LandingSelectionSnapshot,
+				HeavyLandingSpeedThreshold);
+			if (FMath::IsFinite(Proxy.GroundSpeed) &&
+				Proxy.GroundSpeed <= LightLandingIdleSpeedThreshold)
+			{
+				// CMC owns the physical touchdown. Rebase stale airborne momentum into the
+				// live stationary domain before database fallback, while preserving severity.
+				LandingRole = ResolveStationaryLandingRole(LandingRole);
+			}
+			LandingRole = ResolveAvailableLandingDatabaseRole(LandingRole);
+		}
 		if (ShouldReleaseStationaryLanding(LandingRole, bChooserMoving, Proxy.GroundSpeed))
 		{
 			LandingRole = bChooserMoving

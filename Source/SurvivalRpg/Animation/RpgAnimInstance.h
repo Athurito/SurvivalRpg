@@ -251,7 +251,7 @@ struct SURVIVALRPG_API FRpgLandingSelectionSnapshot
 	UPROPERTY(BlueprintReadOnly, Category = "Rpg|Animation|Landing")
 	int32 AirborneEpoch = 0;
 
-	/** True when raw movement acceleration expressed intent before touchdown. */
+	/** Raw pre-touchdown intent used to capture desired gait; physical horizontal speed still owns the landing domain. */
 	UPROPERTY(BlueprintReadOnly, Category = "Rpg|Animation|Landing")
 	bool bHasMoveIntent = false;
 
@@ -974,6 +974,10 @@ private:
 	/** Returns true for one of the six curated Idle/Walk/Run Light/Heavy landing roles. */
 	static bool IsLandingDatabaseRole(ERpgMotionMatchingDatabaseRole Role);
 
+	/** Preserves Light/Heavy severity while rebasing any landing role into the stationary domain. */
+	static ERpgMotionMatchingDatabaseRole ResolveStationaryLandingRole(
+		ERpgMotionMatchingDatabaseRole LandingRole);
+
 	/** Releases a stationary landing only after horizontal movement begins or the Idle speed band is left. */
 	static bool ShouldReleaseStationaryLanding(
 		ERpgMotionMatchingDatabaseRole LandingRole,
@@ -993,7 +997,8 @@ private:
 
 	/**
 	 * Resolves one requested landing role from a finite, pointer-free pre-touchdown snapshot.
-	 * The 3 cm/s Idle boundary and Heavy threshold are inclusive; Sprint falls back to Run content
+	 * The physical 3 cm/s Idle boundary and Heavy threshold are inclusive; raw input alone cannot
+	 * select a moving landing. Sprint falls back to Run content
 	 * until gameplay issue #62 supplies an authoritative Sprint state and dedicated landing assets.
 	 */
 	static ERpgMotionMatchingDatabaseRole ResolveLandingDatabaseRole(
