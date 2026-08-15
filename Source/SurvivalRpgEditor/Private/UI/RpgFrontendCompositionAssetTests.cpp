@@ -10,21 +10,28 @@
 #include "AssetRegistry/AssetData.h"
 #include "AssetRegistry/AssetRegistryModule.h"
 #include "AssetRegistry/IAssetRegistry.h"
+#include "Blueprint/UserWidget.h"
 #include "Blueprint/WidgetBlueprintGeneratedClass.h"
 #include "Blueprint/WidgetTree.h"
-#include "CommonPlayerController.h"
+#include "Components/Widget.h"
 #include "Components/WidgetSwitcher.h"
+#include "CommonPlayerController.h"
 #include "EdGraph/EdGraph.h"
+#include "EdGraphSchema_K2.h"
 #include "Engine/Blueprint.h"
 #include "Engine/World.h"
 #include "GameFramework/WorldSettings.h"
 #include "Input/UIActionBindingHandle.h"
+#include "Internationalization/Text.h"
 #include "K2Node_CallFunction.h"
+#include "K2Node_FunctionEntry.h"
 #include "Misc/AutomationTest.h"
+#include "Misc/ConfigCacheIni.h"
 #include "Misc/PackageName.h"
 #include "Modules/ModuleManager.h"
-#include "UObject/UnrealType.h"
 #include "UObject/CoreRedirects.h"
+#include "UObject/TextProperty.h"
+#include "UObject/UnrealType.h"
 #include "WidgetBlueprint.h"
 #include "Widgets/CommonActivatableWidgetContainer.h"
 
@@ -74,6 +81,729 @@ namespace RpgFrontendCompositionAssetTests
 		TEXT(
 			"/Game/SurvivalRpg/Maps/Menu/"
 			"MainMenu.MainMenu");
+	constexpr TCHAR PlayMenuClassPath[] =
+		TEXT(
+			"/Game/SurvivalRpg/UI/PlayMenu/"
+			"CUI_PlayMenu.CUI_PlayMenu_C");
+	constexpr TCHAR LoadingMenuClassPath[] =
+		TEXT(
+			"/Game/SurvivalRpg/UI/Menus/LoadingMenu/"
+			"CUI_LoadingMenu.CUI_LoadingMenu_C");
+	constexpr TCHAR LoadingListClassPath[] =
+		TEXT(
+			"/Game/SurvivalRpg/UI/Menus/LoadingMenu/"
+			"CUI_LoadingList.CUI_LoadingList_C");
+	constexpr TCHAR PauseMenuClassPath[] =
+		TEXT(
+			"/Game/SurvivalRpg/UI/Menus/GameMenu/PauseMenu/"
+			"CUI_PauseMenu.CUI_PauseMenu_C");
+	constexpr TCHAR ExitDesktopPopupClassPath[] =
+		TEXT(
+			"/Game/SurvivalRpg/UI/Popup/"
+			"CUI_ExitDesktop.CUI_ExitDesktop_C");
+	constexpr TCHAR BackToMainMenuPopupClassPath[] =
+		TEXT(
+			"/Game/SurvivalRpg/UI/Popup/"
+			"CUI_BackToMainMenu.CUI_BackToMainMenu_C");
+	constexpr TCHAR SettingsMenuBlueprintPath[] =
+		TEXT(
+			"/Game/SurvivalRpg/UI/SettingsMenu/"
+			"CUI_SettingsMenu.CUI_SettingsMenu");
+	constexpr TCHAR AudioSettingsClassPath[] =
+		TEXT(
+			"/Game/SurvivalRpg/UI/SettingsMenu/ChildSettings/"
+			"CUI_AudioSettings.CUI_AudioSettings_C");
+	constexpr TCHAR GraphicSettingsClassPath[] =
+		TEXT(
+			"/Game/SurvivalRpg/UI/SettingsMenu/ChildSettings/"
+			"CUI_GraphicSettings.CUI_GraphicSettings_C");
+	constexpr TCHAR ApplyGraphicSettingsClassPath[] =
+		TEXT(
+			"/Game/SurvivalRpg/UI/SettingsMenu/Modular/"
+			"ApplyButton/CUI_ApplyOption.CUI_ApplyOption_C");
+
+	constexpr TCHAR MainMenuTableId[] =
+		TEXT(
+			"/Game/SurvivalRpg/Localization/Language/"
+			"ST_MainMenu.ST_MainMenu");
+	constexpr TCHAR PlayMenuTableId[] =
+		TEXT(
+			"/Game/SurvivalRpg/Localization/Language/"
+			"ST_PlayMenu.ST_PlayMenu");
+	constexpr TCHAR PauseMenuTableId[] =
+		TEXT(
+			"/Game/SurvivalRpg/Localization/Language/"
+			"ST_PauseMenu.ST_PauseMenu");
+	constexpr TCHAR PopupWindowTableId[] =
+		TEXT(
+			"/Game/SurvivalRpg/Localization/Language/"
+			"ST_PopupWindow.ST_PopupWindow");
+	constexpr TCHAR SettingsTabListTableId[] =
+		TEXT(
+			"/Game/SurvivalRpg/Localization/Language/"
+			"ST_SettingsTabListButtons."
+			"ST_SettingsTabListButtons");
+	constexpr TCHAR LegacySettingsTabListTableId[] =
+		TEXT(
+			"/Game/Localization/Language/"
+			"ST_SettingsTabListButtons."
+			"ST_SettingsTabListButtons");
+	constexpr TCHAR AudioSettingsTableId[] =
+		TEXT(
+			"/Game/SurvivalRpg/Localization/Language/"
+			"ST_AudioSettings.ST_AudioSettings");
+	constexpr TCHAR GraphicSettingsTableId[] =
+		TEXT(
+			"/Game/SurvivalRpg/Localization/Language/"
+			"ST_GraphicSettings.ST_GraphicSettings");
+
+	struct FLocalizedWidgetTextExpectation
+	{
+		const TCHAR* WidgetClassPath;
+		const TCHAR* WidgetName;
+		const TCHAR* PropertyName;
+		const TCHAR* TableId;
+		const TCHAR* Key;
+	};
+
+	const FLocalizedWidgetTextExpectation LocalizedTextBindings[] = {
+		{
+			MainScreenClassPath,
+			TEXT("Button_Play"),
+			TEXT("ButtonText"),
+			MainMenuTableId,
+			TEXT("Btn_MainMenu_Play")
+		},
+		{
+			MainScreenClassPath,
+			TEXT("Button_Load"),
+			TEXT("ButtonText"),
+			MainMenuTableId,
+			TEXT("Btn_MainMenu_Load")
+		},
+		{
+			MainScreenClassPath,
+			TEXT("Button_Settings"),
+			TEXT("ButtonText"),
+			MainMenuTableId,
+			TEXT("Btn_MainMenu_Settings")
+		},
+		{
+			MainScreenClassPath,
+			TEXT("Button_Credits"),
+			TEXT("ButtonText"),
+			MainMenuTableId,
+			TEXT("Btn_MainMenu_Credits")
+		},
+		{
+			MainScreenClassPath,
+			TEXT("Button_Quit"),
+			TEXT("ButtonText"),
+			MainMenuTableId,
+			TEXT("Btn_MainMenu_Quit")
+		},
+		{
+			PlayMenuClassPath,
+			TEXT("Button_PlaySolo"),
+			TEXT("HeaderText"),
+			PlayMenuTableId,
+			TEXT("Btn_PlayMenu_PlaySolo")
+		},
+		{
+			PlayMenuClassPath,
+			TEXT("Button_PlaySolo"),
+			TEXT("DescriptionText"),
+			PlayMenuTableId,
+			TEXT("Txt_PlaySolo")
+		},
+		{
+			PlayMenuClassPath,
+			TEXT("Button_Host"),
+			TEXT("HeaderText"),
+			PlayMenuTableId,
+			TEXT("Btn_PlayMenu_Host")
+		},
+		{
+			PlayMenuClassPath,
+			TEXT("Button_Host"),
+			TEXT("DescriptionText"),
+			PlayMenuTableId,
+			TEXT("Txt_Host")
+		},
+		{
+			PlayMenuClassPath,
+			TEXT("Button_Join"),
+			TEXT("HeaderText"),
+			PlayMenuTableId,
+			TEXT("Btn_PlayMenu_Join")
+		},
+		{
+			PlayMenuClassPath,
+			TEXT("Button_Join"),
+			TEXT("DescriptionText"),
+			PlayMenuTableId,
+			TEXT("Txt_Join")
+		},
+		{
+			LoadingMenuClassPath,
+			TEXT("Button_PlaySolo"),
+			TEXT("HeaderText"),
+			PlayMenuTableId,
+			TEXT("Btn_PlayMenu_PlaySolo")
+		},
+		{
+			LoadingMenuClassPath,
+			TEXT("Button_PlaySolo"),
+			TEXT("DescriptionText"),
+			PlayMenuTableId,
+			TEXT("Txt_PlaySolo")
+		},
+		{
+			LoadingMenuClassPath,
+			TEXT("Button_Host"),
+			TEXT("HeaderText"),
+			PlayMenuTableId,
+			TEXT("Btn_PlayMenu_Host")
+		},
+		{
+			LoadingMenuClassPath,
+			TEXT("Button_Host"),
+			TEXT("DescriptionText"),
+			PlayMenuTableId,
+			TEXT("Txt_Host")
+		},
+		{
+			LoadingListClassPath,
+			TEXT("---DisplayCategory---"),
+			TEXT("CategoryText"),
+			PlayMenuTableId,
+			TEXT("Category_Loading_SavedGames")
+		},
+		{
+			PauseMenuClassPath,
+			TEXT("Button_Continue"),
+			TEXT("ButtonText"),
+			PauseMenuTableId,
+			TEXT("Btn_PauseMenu_Continue")
+		},
+		{
+			PauseMenuClassPath,
+			TEXT("Button_Save"),
+			TEXT("ButtonText"),
+			PauseMenuTableId,
+			TEXT("Btn_PauseMenu_Save")
+		},
+		{
+			PauseMenuClassPath,
+			TEXT("Button_Settings"),
+			TEXT("ButtonText"),
+			PauseMenuTableId,
+			TEXT("Btn_PauseMenu_Settings")
+		},
+		{
+			PauseMenuClassPath,
+			TEXT("Button_ExitMenu"),
+			TEXT("ButtonText"),
+			PauseMenuTableId,
+			TEXT("Btn_PauseMenu_ExitMenu")
+		},
+		{
+			PauseMenuClassPath,
+			TEXT("Button_ExitDesktop"),
+			TEXT("ButtonText"),
+			PauseMenuTableId,
+			TEXT("Btn_PauseMenu_ExitDesktop")
+		},
+		{
+			ExitDesktopPopupClassPath,
+			TEXT("Txt_Confirmation"),
+			TEXT("Text"),
+			PopupWindowTableId,
+			TEXT("Txt_ExitGame")
+		},
+		{
+			ExitDesktopPopupClassPath,
+			TEXT("Button_Accept"),
+			TEXT("ButtonText"),
+			PopupWindowTableId,
+			TEXT("Btn_Popup_Accept")
+		},
+		{
+			ExitDesktopPopupClassPath,
+			TEXT("Button_Cancel"),
+			TEXT("ButtonText"),
+			PopupWindowTableId,
+			TEXT("Btn_Popup_Cancel")
+		},
+		{
+			BackToMainMenuPopupClassPath,
+			TEXT("Txt_Confirmation"),
+			TEXT("Text"),
+			PopupWindowTableId,
+			TEXT("Txt_BackToMenu")
+		},
+		{
+			BackToMainMenuPopupClassPath,
+			TEXT("Button_Accept"),
+			TEXT("ButtonText"),
+			PopupWindowTableId,
+			TEXT("Btn_Popup_Accept")
+		},
+		{
+			BackToMainMenuPopupClassPath,
+			TEXT("Button_Cancel"),
+			TEXT("ButtonText"),
+			PopupWindowTableId,
+			TEXT("Btn_Popup_Cancel")
+		},
+		{
+			AudioSettingsClassPath,
+			TEXT("VolumeCategory"),
+			TEXT("CategoryText"),
+			AudioSettingsTableId,
+			TEXT("Category_Volume")
+		},
+		{
+			AudioSettingsClassPath,
+			TEXT("MasterVolume"),
+			TEXT("OptionText"),
+			AudioSettingsTableId,
+			TEXT("Setting_Audio_Master")
+		},
+		{
+			AudioSettingsClassPath,
+			TEXT("MusicVolume"),
+			TEXT("OptionText"),
+			AudioSettingsTableId,
+			TEXT("Setting_Audio_Music")
+		},
+		{
+			AudioSettingsClassPath,
+			TEXT("EffectsVolume"),
+			TEXT("OptionText"),
+			AudioSettingsTableId,
+			TEXT("Setting_Audio_Effects")
+		},
+		{
+			AudioSettingsClassPath,
+			TEXT("UserInterfaceVolume"),
+			TEXT("OptionText"),
+			AudioSettingsTableId,
+			TEXT("Setting_Audio_UI")
+		},
+		{
+			AudioSettingsClassPath,
+			TEXT("AmbienceVolume"),
+			TEXT("OptionText"),
+			AudioSettingsTableId,
+			TEXT("Setting_Audio_Ambience")
+		},
+		{
+			GraphicSettingsClassPath,
+			TEXT("---DisplayCategory---"),
+			TEXT("CategoryText"),
+			GraphicSettingsTableId,
+			TEXT("Category_Display")
+		},
+		{
+			GraphicSettingsClassPath,
+			TEXT("---GraphicsCategory---"),
+			TEXT("CategoryText"),
+			GraphicSettingsTableId,
+			TEXT("Category_Graphic")
+		},
+		{
+			GraphicSettingsClassPath,
+			TEXT("---AdvancedGraphicsCategory---"),
+			TEXT("CategoryText"),
+			GraphicSettingsTableId,
+			TEXT("Category_AdvancedGraphics")
+		},
+		{
+			GraphicSettingsClassPath,
+			TEXT("Option_WindowMode"),
+			TEXT("OptionText"),
+			GraphicSettingsTableId,
+			TEXT("Setting_Display_Windowmode")
+		},
+		{
+			GraphicSettingsClassPath,
+			TEXT("Option_Resolution"),
+			TEXT("OptionText"),
+			GraphicSettingsTableId,
+			TEXT("Setting_Display_Resolution")
+		},
+		{
+			GraphicSettingsClassPath,
+			TEXT("Option_GraphicPresets"),
+			TEXT("OptionText"),
+			GraphicSettingsTableId,
+			TEXT("Setting_Graphic_Preset")
+		},
+		{
+			GraphicSettingsClassPath,
+			TEXT("ResolutionScaling"),
+			TEXT("OptionText"),
+			GraphicSettingsTableId,
+			TEXT("Setting_Graphic_ResolutionScaling")
+		},
+		{
+			GraphicSettingsClassPath,
+			TEXT("Option_AntiAliasing"),
+			TEXT("OptionText"),
+			GraphicSettingsTableId,
+			TEXT("Setting_Graphic_AntiAliasing")
+		},
+		{
+			GraphicSettingsClassPath,
+			TEXT("Option_ViewDistance"),
+			TEXT("OptionText"),
+			GraphicSettingsTableId,
+			TEXT("Setting_Graphic_ViewDistance")
+		},
+		{
+			GraphicSettingsClassPath,
+			TEXT("Option_Textures"),
+			TEXT("OptionText"),
+			GraphicSettingsTableId,
+			TEXT("Setting_Graphic_Textures")
+		},
+		{
+			GraphicSettingsClassPath,
+			TEXT("Option_Lighting"),
+			TEXT("OptionText"),
+			GraphicSettingsTableId,
+			TEXT("Setting_Graphic_Lighting")
+		},
+		{
+			GraphicSettingsClassPath,
+			TEXT("Option_Shadows"),
+			TEXT("OptionText"),
+			GraphicSettingsTableId,
+			TEXT("Setting_Graphic_Shadow")
+		},
+		{
+			GraphicSettingsClassPath,
+			TEXT("Option_Reflections"),
+			TEXT("OptionText"),
+			GraphicSettingsTableId,
+			TEXT("Setting_Graphic_Reflection")
+		},
+		{
+			GraphicSettingsClassPath,
+			TEXT("Option_PostProcessing"),
+			TEXT("OptionText"),
+			GraphicSettingsTableId,
+			TEXT("Setting_Graphic_PostProcessing")
+		},
+		{
+			GraphicSettingsClassPath,
+			TEXT("Option_Effects"),
+			TEXT("OptionText"),
+			GraphicSettingsTableId,
+			TEXT("Setting_Graphic_Effects")
+		},
+		{
+			GraphicSettingsClassPath,
+			TEXT("Option_Foliage"),
+			TEXT("OptionText"),
+			GraphicSettingsTableId,
+			TEXT("Setting_Graphic_Foliage")
+		},
+		{
+			GraphicSettingsClassPath,
+			TEXT("Option_Shading"),
+			TEXT("OptionText"),
+			GraphicSettingsTableId,
+			TEXT("Setting_Graphic_Shading")
+		},
+		{
+			GraphicSettingsClassPath,
+			TEXT("Option_FrameRateLimit"),
+			TEXT("OptionText"),
+			GraphicSettingsTableId,
+			TEXT("Setting_Advanced_FrameRateLimit")
+		},
+		{
+			GraphicSettingsClassPath,
+			TEXT("Option_VSync"),
+			TEXT("OptionText"),
+			GraphicSettingsTableId,
+			TEXT("Setting_Advanced_VSync")
+		},
+		{
+			GraphicSettingsClassPath,
+			TEXT("Option_AutoSetGraphics"),
+			TEXT("OptionText"),
+			GraphicSettingsTableId,
+			TEXT("Setting_Graphic_AutoSetQuality")
+		},
+		{
+			ApplyGraphicSettingsClassPath,
+			TEXT("CUI_ApplyButtonBase"),
+			TEXT("ButtonText"),
+			GraphicSettingsTableId,
+			TEXT("Setting_Graphic_AutoSetQuality")
+		}
+	};
+
+	constexpr const TCHAR* SettingsTabKeys[] = {
+		TEXT("Settings_Tablist_AudioButton"),
+		TEXT("Settings_Tablist_ControlButton"),
+		TEXT("Settings_Tablist_GameButton"),
+		TEXT("Settings_Tablist_GraphicButton")
+	};
+
+	const UWidgetTree* LoadAuthoredWidgetTree(
+		FAutomationTestBase& Test,
+		const TCHAR* WidgetClassPath)
+	{
+		UClass* WidgetClass =
+			LoadClass<UUserWidget>(nullptr, WidgetClassPath);
+		if (!Test.TestNotNull(
+				*FString::Printf(
+					TEXT("Localized widget class loads: %s"),
+					WidgetClassPath),
+				WidgetClass))
+		{
+			return nullptr;
+		}
+
+		const UWidgetBlueprintGeneratedClass* GeneratedClass =
+			Cast<UWidgetBlueprintGeneratedClass>(WidgetClass);
+		if (!Test.TestNotNull(
+				*FString::Printf(
+					TEXT(
+						"Localized widget owns a generated "
+						"Widget Blueprint class: %s"),
+					WidgetClassPath),
+				GeneratedClass))
+		{
+			return nullptr;
+		}
+
+		const UWidgetTree* WidgetTree =
+			GeneratedClass->GetWidgetTreeArchetype();
+		Test.TestNotNull(
+			*FString::Printf(
+				TEXT("Localized widget owns an authored tree: %s"),
+				WidgetClassPath),
+			WidgetTree);
+		return WidgetTree;
+	}
+
+	void TestStringTableText(
+		FAutomationTestBase& Test,
+		const FString& BindingLabel,
+		const FText& TextValue,
+		const TCHAR* ExpectedTableId,
+		const TCHAR* ExpectedKey)
+	{
+		Test.TestFalse(
+			*FString::Printf(
+				TEXT("%s resolves to non-empty text"),
+				*BindingLabel),
+			TextValue.IsEmpty());
+
+		FName ActualTableId;
+		FString ActualKey;
+		const bool bIsStringTableText =
+			FTextInspector::GetTableIdAndKey(
+				TextValue,
+				ActualTableId,
+				ActualKey);
+		if (!Test.TestTrue(
+				*FString::Printf(
+					TEXT("%s is backed by a String Table"),
+					*BindingLabel),
+				bIsStringTableText))
+		{
+			return;
+		}
+
+		Test.TestEqual(
+			*FString::Printf(
+				TEXT("%s uses the moved String Table"),
+				*BindingLabel),
+			ActualTableId,
+			FName(ExpectedTableId));
+		Test.TestEqual(
+			*FString::Printf(
+				TEXT("%s uses the intended localization key"),
+				*BindingLabel),
+			ActualKey,
+			FString(ExpectedKey));
+	}
+
+	void TestLocalizedWidgetText(
+		FAutomationTestBase& Test,
+		const UWidgetTree& WidgetTree,
+		const FLocalizedWidgetTextExpectation& Expected)
+	{
+		const FString BindingLabel = FString::Printf(
+			TEXT("%s.%s.%s"),
+			Expected.WidgetClassPath,
+			Expected.WidgetName,
+			Expected.PropertyName);
+		const UWidget* Widget = WidgetTree.FindWidget(
+			FName(Expected.WidgetName));
+		if (!Test.TestNotNull(
+				*FString::Printf(
+					TEXT("%s widget is authored"),
+					*BindingLabel),
+				Widget))
+		{
+			return;
+		}
+
+		const FTextProperty* TextProperty =
+			FindFProperty<FTextProperty>(
+				Widget->GetClass(),
+				FName(Expected.PropertyName));
+		if (!Test.TestNotNull(
+				*FString::Printf(
+					TEXT("%s is an FText property"),
+					*BindingLabel),
+				TextProperty))
+		{
+			return;
+		}
+
+		TestStringTableText(
+			Test,
+			BindingLabel,
+			TextProperty->GetPropertyValue_InContainer(Widget),
+			Expected.TableId,
+			Expected.Key);
+	}
+
+	void TestSettingsTabLocalDefaults(
+		FAutomationTestBase& Test)
+	{
+		const UBlueprint* SettingsBlueprint =
+			LoadObject<UBlueprint>(
+				nullptr,
+				SettingsMenuBlueprintPath);
+		if (!Test.TestNotNull(
+				TEXT("Settings Blueprint loads for tab labels"),
+				SettingsBlueprint))
+		{
+			return;
+		}
+
+		const UEdGraph* CreateTabsGraph = nullptr;
+		for (const UEdGraph* FunctionGraph :
+			SettingsBlueprint->FunctionGraphs)
+		{
+			if (FunctionGraph &&
+				FunctionGraph->GetFName() == TEXT("F_CreateTabs"))
+			{
+				CreateTabsGraph = FunctionGraph;
+				break;
+			}
+		}
+		if (!Test.TestNotNull(
+				TEXT("Settings owns the F_CreateTabs graph"),
+				CreateTabsGraph))
+		{
+			return;
+		}
+
+		const UK2Node_FunctionEntry* FunctionEntry = nullptr;
+		for (const UEdGraphNode* Node : CreateTabsGraph->Nodes)
+		{
+			if (const UK2Node_FunctionEntry* Candidate =
+				Cast<UK2Node_FunctionEntry>(Node))
+			{
+				FunctionEntry = Candidate;
+				break;
+			}
+		}
+		if (!Test.TestNotNull(
+				TEXT("F_CreateTabs owns a function entry"),
+				FunctionEntry))
+		{
+			return;
+		}
+
+		const FBPVariableDescription* TabNames =
+			FunctionEntry->LocalVariables.FindByPredicate(
+				[](const FBPVariableDescription& Variable)
+				{
+					return Variable.VarName ==
+						TEXT("TabButtonNames");
+				});
+		if (!Test.TestNotNull(
+				TEXT(
+					"F_CreateTabs owns the TabButtonNames "
+					"local variable"),
+				TabNames))
+		{
+			return;
+		}
+
+		Test.TestEqual(
+			TEXT("TabButtonNames stores FText values"),
+			TabNames->VarType.PinCategory,
+			UEdGraphSchema_K2::PC_Text);
+		Test.TestEqual(
+			TEXT("TabButtonNames is an array"),
+			TabNames->VarType.ContainerType,
+			EPinContainerType::Array);
+		Test.TestFalse(
+			TEXT("TabButtonNames has authored defaults"),
+			TabNames->DefaultValue.IsEmpty());
+
+		const bool bUsesCurrentTable =
+			TabNames->DefaultValue.Contains(
+				SettingsTabListTableId);
+		const bool bUsesLegacyTable =
+			TabNames->DefaultValue.Contains(
+				LegacySettingsTabListTableId);
+		Test.TestTrue(
+			TEXT(
+				"Settings tab defaults use the current table or "
+				"its redirected legacy ID"),
+			bUsesCurrentTable || bUsesLegacyTable);
+
+		for (const TCHAR* ExpectedKey : SettingsTabKeys)
+		{
+			Test.TestTrue(
+				*FString::Printf(
+					TEXT(
+						"Settings tab defaults contain key: %s"),
+					ExpectedKey),
+				TabNames->DefaultValue.Contains(ExpectedKey));
+		}
+
+		Test.TestTrue(
+			TEXT("The Input tab retains a non-empty label"),
+			TabNames->DefaultValue.Contains(TEXT("\"Input\"")));
+
+		if (bUsesLegacyTable)
+		{
+			TArray<FString> Redirects;
+			GConfig->GetArray(
+				TEXT("Core.StringTable"),
+				TEXT("StringTableRedirects"),
+				Redirects,
+				GEngineIni);
+			const bool bHasExpectedRedirect =
+				Redirects.ContainsByPredicate(
+					[](const FString& Redirect)
+					{
+						return Redirect.Contains(
+							LegacySettingsTabListTableId) &&
+							Redirect.Contains(
+								SettingsTabListTableId);
+					});
+			Test.TestTrue(
+				TEXT(
+					"The legacy Settings table ID redirects to "
+					"the moved table"),
+				bHasExpectedRedirect);
+		}
+	}
 
 	constexpr const TCHAR* NavigationFunctionNames[] = {
 		TEXT("MainMenu_PushToMainStack"),
@@ -655,6 +1385,47 @@ bool FRpgFrontendCommonUICompositionAssetTest::RunTest(
 			Assets.Num(),
 			0);
 	}
+
+	return true;
+}
+
+IMPLEMENT_SIMPLE_AUTOMATION_TEST(
+	FRpgFrontendLocalizedTextBindingsAssetTest,
+	"SurvivalRpg.UI.Frontend.LocalizedTextBindings",
+	EAutomationTestFlags::EditorContext |
+		EAutomationTestFlags::EngineFilter)
+
+bool FRpgFrontendLocalizedTextBindingsAssetTest::RunTest(
+	const FString& Parameters)
+{
+	using namespace RpgFrontendCompositionAssetTests;
+
+	TMap<FString, const UWidgetTree*> WidgetTrees;
+	for (const FLocalizedWidgetTextExpectation& Expected :
+		LocalizedTextBindings)
+	{
+		const FString WidgetClassPath(Expected.WidgetClassPath);
+		if (!WidgetTrees.Contains(WidgetClassPath))
+		{
+			WidgetTrees.Add(
+				WidgetClassPath,
+				LoadAuthoredWidgetTree(
+					*this,
+					Expected.WidgetClassPath));
+		}
+
+		const UWidgetTree* WidgetTree =
+			WidgetTrees.FindRef(WidgetClassPath);
+		if (WidgetTree)
+		{
+			TestLocalizedWidgetText(
+				*this,
+				*WidgetTree,
+				Expected);
+		}
+	}
+
+	TestSettingsTabLocalDefaults(*this);
 
 	return true;
 }
