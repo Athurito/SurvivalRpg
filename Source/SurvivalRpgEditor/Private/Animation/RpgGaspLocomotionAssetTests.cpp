@@ -13,6 +13,7 @@
 #include "Engine/DataTable.h"
 #include "Interfaces/IPluginManager.h"
 #include "Misc/AutomationTest.h"
+#include "Misc/DataValidation.h"
 #include "Misc/PackageName.h"
 #include "Modules/ModuleManager.h"
 #include "PoseSearch/PoseSearchDatabase.h"
@@ -25,6 +26,7 @@
 #include "PoseSearch/PoseSearchIndex.h"
 #include "PoseSearch/PoseSearchNormalizationSet.h"
 #include "PoseSearch/PoseSearchSchema.h"
+#include "SurvivalRpg/Animation/RpgGaspPresentationProfile.h"
 #include "UObject/UObjectGlobals.h"
 
 namespace RpgGaspLocomotionAssetTests
@@ -64,6 +66,7 @@ namespace RpgGaspLocomotionAssetTests
 	constexpr TCHAR SprintMovingDatabasePackage[] = TEXT("/RpgGaspLocomotion/MotionMatching/Databases/PSD_Rpg_Stand_Sprint");
 	constexpr TCHAR SprintStopDatabasePackage[] = TEXT("/RpgGaspLocomotion/MotionMatching/Databases/PSD_Rpg_Stand_Sprint_Stops");
 	constexpr TCHAR MirrorTablePath[] = TEXT("/RpgGaspLocomotion/MotionMatching/MirrorTables/MDT_Rpg_Mannequin.MDT_Rpg_Mannequin");
+	constexpr TCHAR PresentationProfilePath[] = TEXT("/RpgGaspLocomotion/Profiles/DA_RpgGaspPresentationProfile.DA_RpgGaspPresentationProfile");
 
 	static const TCHAR* const TurnInPlaceAnimationPackages[] = {
 		TEXT("/RpgGaspLocomotion/Animations/Stand/Idle/M_Neutral_Stand_Turn_045_L"),
@@ -448,7 +451,7 @@ bool FRpgGaspLocomotionContentContractTest::RunTest(const FString& Parameters)
 		Assets,
 		true,
 		true);
-	TestEqual(TEXT("The curated plugin contains exactly 215 assets"), Assets.Num(), 215);
+	TestEqual(TEXT("The curated plugin contains exactly 216 assets"), Assets.Num(), 216);
 
 	TMap<FString, int32> ClassCounts;
 	int32 AnimationCount = 0;
@@ -463,6 +466,7 @@ bool FRpgGaspLocomotionContentContractTest::RunTest(const FString& Parameters)
 	int32 JumpStartCount = 0;
 	int32 JumpAirborneCount = 0;
 	int32 JumpLandCount = 0;
+	TMap<FString, ERpgGaspPresentationAssetCategory> ExpectedPresentationMembership;
 	for (const FAssetData& AssetData : Assets)
 	{
 		const FString ClassName = AssetData.AssetClassPath.GetAssetName().ToString();
@@ -505,6 +509,34 @@ bool FRpgGaspLocomotionContentContractTest::RunTest(const FString& Parameters)
 		JumpStartCount += AnimationPackageName.StartsWith(JumpStartRoot);
 		JumpAirborneCount += AnimationPackageName.StartsWith(JumpAirborneRoot);
 		JumpLandCount += AnimationPackageName.StartsWith(JumpLandRoot);
+		if (AnimationPackageName.StartsWith(StandWalkRoot) ||
+			AnimationPackageName.StartsWith(StandRunRoot) ||
+			AnimationPackageName.StartsWith(StandSprintRoot))
+		{
+			ExpectedPresentationMembership.Add(
+				AnimationPackageName,
+				ERpgGaspPresentationAssetCategory::GroundMoving);
+		}
+		else if (AnimationPackageName.StartsWith(JumpStartRoot))
+		{
+			ExpectedPresentationMembership.Add(
+				AnimationPackageName,
+				AnimationPackageName.Contains(TEXT("/M_Neutral_Jump_B_Start_"))
+					? ERpgGaspPresentationAssetCategory::BackwardJumpStart
+					: ERpgGaspPresentationAssetCategory::JumpStart);
+		}
+		else if (AnimationPackageName.StartsWith(JumpAirborneRoot))
+		{
+			ExpectedPresentationMembership.Add(
+				AnimationPackageName,
+				ERpgGaspPresentationAssetCategory::AirborneFall);
+		}
+		else if (AnimationPackageName.StartsWith(JumpLandRoot))
+		{
+			ExpectedPresentationMembership.Add(
+				AnimationPackageName,
+				ERpgGaspPresentationAssetCategory::Landing);
+		}
 		TurnInPlaceSequenceCount += AnimationPackageName.StartsWith(StandIdleRoot) &&
 			AnimationPackageName.Contains(TEXT("_Stand_Turn_"));
 		UAnimSequence* Animation = Cast<UAnimSequence>(AssetData.GetAsset());
@@ -588,6 +620,75 @@ bool FRpgGaspLocomotionContentContractTest::RunTest(const FString& Parameters)
 	TestEqual(TEXT("Exactly nineteen PoseSearchDatabases are present"), ClassCounts.FindRef(TEXT("PoseSearchDatabase")), 19);
 	TestEqual(TEXT("Exactly one PoseSearchNormalizationSet is present"), ClassCounts.FindRef(TEXT("PoseSearchNormalizationSet")), 1);
 	TestEqual(TEXT("Exactly three PoseSearchSchemas are present"), ClassCounts.FindRef(TEXT("PoseSearchSchema")), 3);
+	TestEqual(TEXT("Exactly one GASP presentation profile is present"), ClassCounts.FindRef(TEXT("RpgGaspPresentationProfile")), 1);
+
+	URpgGaspPresentationProfile* PresentationProfile =
+		LoadObject<URpgGaspPresentationProfile>(nullptr, PresentationProfilePath);
+	if (TestNotNull(TEXT("The project-owned GASP presentation profile loads"), PresentationProfile))
+	{
+		FDataValidationContext PresentationValidationContext;
+		TestEqual(
+			TEXT("The presentation profile passes Unreal asset data validation"),
+			PresentationProfile->IsDataValid(PresentationValidationContext),
+			EDataValidationResult::Valid);
+		TestTrue(
+			TEXT("The presentation profile passes reusable native validation"),
+			PresentationProfile->ValidateProfile().IsValid());
+		TestEqual(
+			TEXT("The old package classifier's complete curated domain has 170 assets"),
+			ExpectedPresentationMembership.Num(),
+			170);
+		TestEqual(
+			TEXT("The presentation profile preserves all 170 old classifier memberships"),
+			PresentationProfile->AssetMemberships.Num(),
+			170);
+
+		TSet<FString> ActualPresentationPackages;
+		TMap<ERpgGaspPresentationAssetCategory, int32> CategoryCounts;
+		for (int32 Index = 0; Index < PresentationProfile->AssetMemberships.Num(); ++Index)
+		{
+			const FRpgGaspPresentationAssetMembership& Membership =
+				PresentationProfile->AssetMemberships[Index];
+			const UAnimSequenceBase* Sequence = Membership.Asset.Get();
+			if (!TestNotNull(
+					*FString::Printf(TEXT("Presentation membership %d resolves its sequence"), Index),
+					Sequence))
+			{
+				continue;
+			}
+
+			const FString PackageName = Sequence->GetOutermost()->GetName();
+			TestFalse(
+				*FString::Printf(TEXT("%s appears only once in the presentation profile"), *PackageName),
+				ActualPresentationPackages.Contains(PackageName));
+			ActualPresentationPackages.Add(PackageName);
+			++CategoryCounts.FindOrAdd(Membership.Category);
+
+			const ERpgGaspPresentationAssetCategory* ExpectedCategory =
+				ExpectedPresentationMembership.Find(PackageName);
+			if (TestNotNull(
+					*FString::Printf(TEXT("%s belonged to the old classifier domain"), *PackageName),
+					ExpectedCategory))
+			{
+				TestEqual(
+					*FString::Printf(TEXT("%s preserves its explicit presentation category"), *PackageName),
+					static_cast<uint8>(Membership.Category),
+					static_cast<uint8>(*ExpectedCategory));
+			}
+		}
+
+		TestEqual(TEXT("GroundMoving membership preserves all Walk/Run/Sprint clips"), CategoryCounts.FindRef(ERpgGaspPresentationAssetCategory::GroundMoving), 124);
+		TestEqual(TEXT("Ordinary JumpStart membership contains exactly sixteen clips"), CategoryCounts.FindRef(ERpgGaspPresentationAssetCategory::JumpStart), 16);
+		TestEqual(TEXT("BackwardJumpStart membership contains exactly two clips"), CategoryCounts.FindRef(ERpgGaspPresentationAssetCategory::BackwardJumpStart), 2);
+		TestEqual(TEXT("AirborneFall membership contains exactly one clip"), CategoryCounts.FindRef(ERpgGaspPresentationAssetCategory::AirborneFall), 1);
+		TestEqual(TEXT("Landing membership contains all twenty-seven clips"), CategoryCounts.FindRef(ERpgGaspPresentationAssetCategory::Landing), 27);
+		for (const TPair<FString, ERpgGaspPresentationAssetCategory>& Expected : ExpectedPresentationMembership)
+		{
+			TestTrue(
+				*FString::Printf(TEXT("%s is explicitly represented in the profile"), *Expected.Key),
+				ActualPresentationPackages.Contains(Expected.Key));
+		}
+	}
 
 	static const FDatabaseContract DatabaseContracts[] = {
 		{ TEXT("/RpgGaspLocomotion/MotionMatching/Databases/PSD_Rpg_Stand_Idle"), TEXT("/RpgGaspLocomotion/Animations/Stand/Idle/"), TEXT("/RpgGaspLocomotion/MotionMatching/Schemas/PSS_Rpg_Locomotion"), 1, 2 },

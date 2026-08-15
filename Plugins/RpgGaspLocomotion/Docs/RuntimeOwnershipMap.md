@@ -31,7 +31,7 @@ the sample project a runtime dependency.
 | `ShouldTurnInPlace`, `Get_TrajectoryTurnAngle` | `URpgAnimInstance` turn-in-place resolver, synthetic trajectory, latch, and watchdog | Focused turn-in-place runtime; feel thresholds in designer configuration | Turns remain controller-facing and cosmetic; they never rotate the authoritative actor. Extraction is pending in #81. |
 | `JustLanded_Light`, `JustLanded_Heavy`, `Get_LandVelocity`, `PlayLand`, `PlayMovingLand` | Proxy pre-touchdown snapshot plus `URpgAnimInstance` landing resolver/latch/watchdog | Focused landing runtime; database membership and feel in assets | Landing begins only on the physical CMC touchdown edge. Idle/Walk/Run Light/Heavy are curated; Sprint landing remains deferred until authoritative Sprint issue #62. |
 | `AllowFootPinning`, foot-placement settings helpers | Proxy game-thread traces, `RpgFootPlacement` value helpers, `FAnimNode_RpgFootPlacement` | Existing focused native types/node plus AnimBP tuning | Project-local snapshots make the node worker-safe and preserve moving-base handling; crouch stays opted out by default. |
-| `Get_DesiredFacing`, `EnableSteering`, Orientation Warping gates | `URpgAnimInstance::GetGaspBlendStackInputs` and authored curves | AnimBP/presentation profile, with only value inputs supplied natively | Current behavior is preserved, but package-path asset classification must be replaced by explicit validated profile membership in a later #81 slice. |
+| `Get_DesiredFacing`, `EnableSteering`, Orientation Warping gates | `URpgAnimInstance::GetGaspBlendStackInputs`, authored curves, and the immutable `FRpgGaspPresentationAssetLookup` | Existing AnimBP/presentation profile seam, with only value inputs supplied natively | `DA_RpgGaspPresentationProfile` explicitly preserves the old 170-sequence presentation domain without package/name reads on workers. Local fall, idle/crouch/TIP, and moving-landing adaptations remain unchanged. |
 | Sparse database and state selection | Fixed native role enum/mapping plus project-local Pose Search assets | Validated designer-owned profile/Chooser with stable native schema only where required | Curated databases remain project-owned; fixed mappings are compatibility state during #81, not the intended final presentation owner. |
 | Slide and other optional locomotion families | Not adopted; no runtime owner | No #81 owner; Adopt/Defer/Reject decision belongs to audit issue #74 | #81 does not pre-approve content families or grow the AnimInstance role architecture. |
 | `Debug_ExperimentalStateMachine`, full GASP Mover/Traversal stack, sample camera, Foley | Not adopted; no runtime owner | No runtime owner without a dedicated isolated feature evaluation | These sample subsystems are outside the CMC pilot contract and are never incidental dependencies. Curated traversal assets may only enter later through project-owned CMC/GAS/Motion-Warping seams. |
@@ -65,7 +65,9 @@ the sample project a runtime dependency.
    `PoseSearchGenerateTransformTrajectory` orchestration and snapshot lifetime remain in proxy
    `PreUpdate`.
 2. Replace package-name presentation classification with explicit, validated designer-owned
-   membership that is safe to consume during worker updates.
+   membership that is safe to consume during worker updates. This slice is implemented by
+   `URpgGaspPresentationProfile` plus its immutable game-thread-built lookup; six legacy-only Run
+   sequences remain explicit members to preserve the previous classifier exactly.
 3. Split Motion Matching role resolution, turn-in-place, and jump/landing into focused value-only
    runtimes without changing serialized AnimBP names or behavior.
 4. Externalize database-to-role mapping and feel tuning into an asset/profile seam; keep the
@@ -73,3 +75,25 @@ the sample project a runtime dependency.
 
 Each step must build independently and keep the pilot Experience reversible. New locomotion
 families, Sprint authority, combat polish, and default PawnData cutover are separate issues.
+
+## Slice 2 boundary and verification contract
+
+- **Authority and lifecycle:** the presentation profile is static cosmetic configuration. Each
+  AnimInstance resolves sequence metadata and builds its asset-to-trait lookup only in
+  `NativeInitializeAnimation`; worker callbacks perform pointer lookups only. CharacterMovement,
+  GAS, montage suppression, touchdown, and movement authority are unchanged.
+- **Native type count:** one `UDataAsset` schema is added because the complete membership is
+  designer-owned content that must remain editable without recompiling C++. The supporting entry,
+  validation result, and lookup are value types; no manager or replicated runtime class is added.
+- **Replication and persistence:** none added or changed. The hard profile reference and its
+  sequence references provide deterministic load/cook ownership; the derived cache is local,
+  transient, immutable after initialization, and never saved or replicated.
+- **Designer/editor work:** one `DA_RpgGaspPresentationProfile` asset contains exactly 170 unique
+  mappings: 124 GroundMoving, 16 JumpStart, 2 BackwardJumpStart, 1 AirborneFall, and 27 Landing.
+  The existing pilot AnimBP holds the only new binding. Existing 18 database bindings, serialized
+  property names, graph composition, thresholds, PawnData, and Experience remain untouched.
+- **Stable tests:** `SurvivalRpg.Animation.Gasp.PresentationProfileValidation` protects structural
+  validation and derived traits; `SurvivalRpg.Animation.Jump.Runtime.PhaseAndProceduralGates`
+  proves package/name independence and immutable lookup behavior; the GASP content and pilot
+  contracts protect the exact 170-member set, profile binding, native DataValidation, and direct
+  cook dependency.

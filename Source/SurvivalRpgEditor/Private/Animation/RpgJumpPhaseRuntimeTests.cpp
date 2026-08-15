@@ -21,6 +21,70 @@ IMPLEMENT_SIMPLE_AUTOMATION_TEST(
 	EAutomationTestFlags::EditorContext |
 		EAutomationTestFlags::EngineFilter)
 
+IMPLEMENT_SIMPLE_AUTOMATION_TEST(
+	FRpgGaspPresentationProfileValidationTest,
+	"SurvivalRpg.Animation.Gasp.PresentationProfileValidation",
+	EAutomationTestFlags::EditorContext |
+		EAutomationTestFlags::EngineFilter)
+
+bool FRpgGaspPresentationProfileValidationTest::RunTest(const FString& Parameters)
+{
+	URpgGaspPresentationProfile* Profile = NewObject<URpgGaspPresentationProfile>();
+	TestTrue(TEXT("An empty presentation profile is invalid"), Profile->ValidateProfile().bIsEmpty);
+
+	UAnimSequence* Ground = NewObject<UAnimSequence>();
+	UAnimSequence* Jump = NewObject<UAnimSequence>();
+	UAnimSequence* Backward = NewObject<UAnimSequence>();
+	UAnimSequence* Fall = NewObject<UAnimSequence>();
+	UAnimSequence* Landing = NewObject<UAnimSequence>();
+	Fall->bLoop = true;
+
+	const auto AddMembership = [Profile](
+		UAnimSequenceBase* Asset,
+		ERpgGaspPresentationAssetCategory Category)
+	{
+		FRpgGaspPresentationAssetMembership& Membership =
+			Profile->AssetMemberships.AddDefaulted_GetRef();
+		Membership.Asset = Asset;
+		Membership.Category = Category;
+	};
+	AddMembership(Ground, ERpgGaspPresentationAssetCategory::GroundMoving);
+	AddMembership(Jump, ERpgGaspPresentationAssetCategory::JumpStart);
+	AddMembership(Backward, ERpgGaspPresentationAssetCategory::BackwardJumpStart);
+	AddMembership(Fall, ERpgGaspPresentationAssetCategory::AirborneFall);
+	AddMembership(Landing, ERpgGaspPresentationAssetCategory::Landing);
+	TestTrue(TEXT("A structurally valid presentation profile passes"), Profile->ValidateProfile().IsValid());
+
+	FRpgGaspPresentationAssetLookup Lookup;
+	TestTrue(TEXT("A valid profile builds a worker-safe lookup"), Lookup.Build(Profile));
+	TestTrue(TEXT("Backward membership implies JumpStart"), Lookup.HasTrait(Backward, ERpgGaspPresentationAssetTrait::JumpStart));
+	TestTrue(TEXT("Backward membership implies Airborne"), Lookup.HasTrait(Backward, ERpgGaspPresentationAssetTrait::Airborne));
+	TestTrue(TEXT("Backward membership keeps its specialized trait"), Lookup.HasTrait(Backward, ERpgGaspPresentationAssetTrait::BackwardJumpStart));
+	TestTrue(TEXT("AirborneFall membership implies Airborne"), Lookup.HasTrait(Fall, ERpgGaspPresentationAssetTrait::Airborne));
+	TestFalse(TEXT("The None trait never matches a mapped asset"), Lookup.HasTrait(Ground, ERpgGaspPresentationAssetTrait::None));
+
+	AddMembership(Ground, ERpgGaspPresentationAssetCategory::Landing);
+	TestTrue(TEXT("Duplicate assets are rejected"), Profile->ValidateProfile().bHasDuplicateAsset);
+	TestFalse(TEXT("A duplicate profile fails closed"), Lookup.Build(Profile));
+	TestFalse(TEXT("A failed build retains no previous traits"), Lookup.HasTrait(Backward, ERpgGaspPresentationAssetTrait::Airborne));
+	Profile->AssetMemberships.Pop();
+
+	Profile->AssetMemberships[0].Category = ERpgGaspPresentationAssetCategory::None;
+	TestTrue(TEXT("Unassigned categories are rejected"), Profile->ValidateProfile().bHasUnassignedCategory);
+	Profile->AssetMemberships[0].Category = ERpgGaspPresentationAssetCategory::GroundMoving;
+
+	Jump->bLoop = true;
+	TestTrue(TEXT("Looping JumpStart entries are rejected"), Profile->ValidateProfile().bHasLoopingJumpStart);
+	Jump->bLoop = false;
+	Fall->bLoop = false;
+	TestTrue(TEXT("Non-looping AirborneFall entries are rejected"), Profile->ValidateProfile().bHasNonLoopingAirborneFall);
+	Fall->bLoop = true;
+	Landing->bLoop = true;
+	TestTrue(TEXT("Looping Landing entries are rejected"), Profile->ValidateProfile().bHasLoopingLanding);
+
+	return true;
+}
+
 bool FRpgJumpPhaseRuntimeTest::RunTest(const FString& Parameters)
 {
 	USkeletalMeshComponent* AnimInstanceOuter = NewObject<USkeletalMeshComponent>();
@@ -1094,65 +1158,99 @@ bool FRpgJumpPhaseRuntimeTest::RunTest(const FString& Parameters)
 	TestEqual(TEXT("A second jump immediately re-enters Airborne"), AnimInstance->JumpPhase, ERpgJumpPhase::Airborne);
 	TestFalse(TEXT("A second jump clears the old landing selection"), AnimInstance->bLandingSelectionLatched);
 
-	// Immutable asset categories keep each Blend Stack sample stable while global movement phases change.
+	// Explicit immutable asset categories keep each Blend Stack sample stable while global movement phases change.
 	UPackage* JumpStartPackage = CreatePackage(
-		TEXT("/RpgGaspLocomotion/Animations/Jump/Starts/RpgJumpRuntimeTest_Start"));
+		TEXT("/Game/RpgJumpRuntimeTest/OutsideLegacyFolders/JumpStart"));
 	UAnimSequence* JumpStart = NewObject<UAnimSequence>(
 		JumpStartPackage,
 		MakeUniqueObjectName(JumpStartPackage, UAnimSequence::StaticClass(), TEXT("RpgJumpRuntimeTest_Start")));
 	JumpStart->bLoop = false;
-	TestTrue(TEXT("A non-looping sequence in the Jump Starts contract is a jump start"), AnimInstance->IsAirborneJumpStartAsset(JumpStart));
-	TestTrue(TEXT("A Jump Starts sequence belongs to the exclusive airborne reset contract"), AnimInstance->IsAirborneJumpAsset(JumpStart));
-	JumpStart->bLoop = true;
-	TestFalse(TEXT("A looping sequence is never treated as a jump start"), AnimInstance->IsAirborneJumpStartAsset(JumpStart));
-	JumpStart->bLoop = false;
 
 	UPackage* GroundPackage = CreatePackage(
-		TEXT("/RpgGaspLocomotion/Animations/Stand/Run/RpgJumpRuntimeTest_Ground"));
+		TEXT("/RpgGaspLocomotion/Animations/Jump/Starts/RpgJumpRuntimeTest_ExplicitGround"));
 	UAnimSequence* GroundStart = NewObject<UAnimSequence>(
 		GroundPackage,
 		MakeUniqueObjectName(GroundPackage, UAnimSequence::StaticClass(), TEXT("RpgJumpRuntimeTest_Ground")));
 	GroundStart->bLoop = false;
-	TestFalse(TEXT("An outgoing non-looping grounded pose is not a jump start"), AnimInstance->IsAirborneJumpStartAsset(GroundStart));
-	TestTrue(TEXT("A Stand/Run sample keeps the moving per-sample contract"), AnimInstance->IsGroundMovingAsset(GroundStart));
-	TestFalse(TEXT("A Stand/Run sample is not an airborne jump asset"), AnimInstance->IsAirborneJumpAsset(GroundStart));
 
 	UPackage* GroundIdlePackage = CreatePackage(
-		TEXT("/RpgGaspLocomotion/Animations/Stand/Idle/RpgJumpRuntimeTest_Idle"));
+		TEXT("/RpgGaspLocomotion/Animations/Stand/Run/RpgJumpRuntimeTest_Unmapped"));
 	UAnimSequence* GroundIdle = NewObject<UAnimSequence>(
 		GroundIdlePackage,
 		MakeUniqueObjectName(GroundIdlePackage, UAnimSequence::StaticClass(), TEXT("RpgJumpRuntimeTest_Idle")));
-	TestFalse(TEXT("Stand/Idle and TIR assets remain outside moving procedural gates"), AnimInstance->IsGroundMovingAsset(GroundIdle));
 
 	UPackage* FallPackage = CreatePackage(
-		TEXT("/RpgGaspLocomotion/Animations/Jump/Airborne/RpgJumpRuntimeTest_Fall"));
+		TEXT("/Game/RpgJumpRuntimeTest/OutsideLegacyFolders/Fall"));
 	UAnimSequence* FallClip = NewObject<UAnimSequence>(
 		FallPackage,
 		MakeUniqueObjectName(FallPackage, UAnimSequence::StaticClass(), TEXT("RpgJumpRuntimeTest_Fall")));
 	FallClip->bLoop = true;
-	TestTrue(TEXT("The looping fall belongs to the exclusive airborne reset contract"), AnimInstance->IsAirborneJumpAsset(FallClip));
-	TestFalse(TEXT("The looping fall never receives Jump Start moving corrections"), AnimInstance->IsAirborneJumpStartAsset(FallClip));
 
 	UPackage* LandPackage = CreatePackage(
-		TEXT("/RpgGaspLocomotion/Animations/Jump/Lands/RpgJumpRuntimeTest_Land"));
+		TEXT("/Game/RpgJumpRuntimeTest/OutsideLegacyFolders/Land"));
 	UAnimSequence* UnlatchedLandClip = NewObject<UAnimSequence>(
 		LandPackage,
 		MakeUniqueObjectName(LandPackage, UAnimSequence::StaticClass(), TEXT("RpgJumpRuntimeTest_Land")));
+
+	UPackage* BackwardStartPackage = CreatePackage(
+		TEXT("/Game/RpgJumpRuntimeTest/OutsideLegacyFolders/ExplicitBackward"));
+	UAnimSequence* BackwardStart = NewObject<UAnimSequence>(
+		BackwardStartPackage,
+		MakeUniqueObjectName(BackwardStartPackage, UAnimSequence::StaticClass(), TEXT("NotNamedLikeABackwardStart")));
+	BackwardStart->bLoop = false;
+
+	URpgGaspPresentationProfile* PresentationProfile = NewObject<URpgGaspPresentationProfile>();
+	const auto AddMembership = [PresentationProfile](
+		UAnimSequenceBase* Asset,
+		ERpgGaspPresentationAssetCategory Category)
+	{
+		FRpgGaspPresentationAssetMembership& Membership =
+			PresentationProfile->AssetMemberships.AddDefaulted_GetRef();
+		Membership.Asset = Asset;
+		Membership.Category = Category;
+	};
+	AddMembership(JumpStart, ERpgGaspPresentationAssetCategory::JumpStart);
+	AddMembership(GroundStart, ERpgGaspPresentationAssetCategory::GroundMoving);
+	AddMembership(FallClip, ERpgGaspPresentationAssetCategory::AirborneFall);
+	AddMembership(UnlatchedLandClip, ERpgGaspPresentationAssetCategory::Landing);
+	AddMembership(BackwardStart, ERpgGaspPresentationAssetCategory::BackwardJumpStart);
+	TestTrue(
+		TEXT("Explicit presentation membership passes structural validation"),
+		PresentationProfile->ValidateProfile().IsValid());
+	TestTrue(
+		TEXT("A valid presentation profile builds the immutable runtime lookup"),
+		AnimInstance->GaspPresentationAssetLookup.Build(PresentationProfile));
+
+	TestTrue(TEXT("An explicitly categorized non-looping sequence is a jump start"), AnimInstance->IsAirborneJumpStartAsset(JumpStart));
+	TestTrue(TEXT("A categorized Jump Start belongs to the exclusive airborne reset contract"), AnimInstance->IsAirborneJumpAsset(JumpStart));
+	TestFalse(TEXT("An explicitly grounded pose is not a jump start despite its misleading package"), AnimInstance->IsAirborneJumpStartAsset(GroundStart));
+	TestTrue(TEXT("Explicit GroundMoving membership keeps the moving per-sample contract"), AnimInstance->IsGroundMovingAsset(GroundStart));
+	TestFalse(TEXT("Explicit GroundMoving membership never implies an airborne jump"), AnimInstance->IsAirborneJumpAsset(GroundStart));
+	TestFalse(TEXT("An unmapped old Stand/Run package cannot enable moving procedural gates"), AnimInstance->IsGroundMovingAsset(GroundIdle));
+	TestTrue(TEXT("An explicitly categorized looping fall belongs to the airborne reset contract"), AnimInstance->IsAirborneJumpAsset(FallClip));
+	TestFalse(TEXT("The looping fall never receives Jump Start moving corrections"), AnimInstance->IsAirborneJumpStartAsset(FallClip));
 	TestFalse(TEXT("An unlatched landing is not an airborne database sample"), AnimInstance->IsAirborneJumpAsset(UnlatchedLandClip));
 	TestTrue(
 		TEXT("An unlatched or outgoing landing keeps its immutable Landing asset contract"),
 		AnimInstance->IsLandingAsset(UnlatchedLandClip));
-
-	UPackage* BackwardStartPackage = CreatePackage(
-		TEXT("/RpgGaspLocomotion/Animations/Jump/Starts/M_Neutral_Jump_B_Start_Rfoot"));
-	UAnimSequence* BackwardStart = NewObject<UAnimSequence>(
-		BackwardStartPackage,
-		MakeUniqueObjectName(BackwardStartPackage, UAnimSequence::StaticClass(), TEXT("M_Neutral_Jump_B_Start_Rfoot")));
-	BackwardStart->bLoop = false;
-	TestTrue(TEXT("Only a B Jump Start enters the bounded backward hold"), AnimInstance->IsBackwardJumpStartAsset(BackwardStart));
-	TestFalse(TEXT("A lateral Jump Start never enters the backward hold"), AnimInstance->IsBackwardJumpStartAsset(JumpStart));
+	TestTrue(TEXT("Explicit BackwardJumpStart membership enters the bounded backward hold"), AnimInstance->IsBackwardJumpStartAsset(BackwardStart));
+	TestFalse(TEXT("An ordinary JumpStart never enters the backward hold"), AnimInstance->IsBackwardJumpStartAsset(JumpStart));
 	TestTrue(TEXT("The looping Airborne clip is a continuing fall"), AnimInstance->IsLoopingAirborneFallAsset(FallClip));
 	TestFalse(TEXT("A non-looping Jump Start is not a continuing fall"), AnimInstance->IsLoopingAirborneFallAsset(BackwardStart));
+
+	JumpStart->bLoop = true;
+	TestTrue(
+		TEXT("The worker lookup does not reread sequence loop metadata after game-thread initialization"),
+		AnimInstance->IsAirborneJumpStartAsset(JumpStart));
+	TestTrue(
+		TEXT("Profile validation catches a looping JumpStart before the next initialization"),
+		PresentationProfile->ValidateProfile().bHasLoopingJumpStart);
+	FRpgGaspPresentationAssetLookup InvalidLookup;
+	TestFalse(TEXT("An invalid profile fails closed while rebuilding"), InvalidLookup.Build(PresentationProfile));
+	TestFalse(
+		TEXT("A failed lookup build exposes no partial presentation traits"),
+		InvalidLookup.HasTrait(JumpStart, ERpgGaspPresentationAssetTrait::JumpStart));
+	JumpStart->bLoop = false;
 	TestTrue(
 		TEXT("A descending fall continues after the bounded backward-start path"),
 		AnimInstance->ShouldHoldLoopingAirborneFallPlayback(

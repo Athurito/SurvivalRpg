@@ -79,6 +79,8 @@ namespace RpgGaspPilotAssetTests
 		TEXT("/Game/SurvivalRpg/Characters/Mannequins/Meshes/SK_Mannequin.SK_Mannequin");
 	constexpr TCHAR TurnInPlaceDatabaseObject[] =
 		TEXT("/RpgGaspLocomotion/MotionMatching/Databases/PSD_Rpg_Stand_TurnInPlace.PSD_Rpg_Stand_TurnInPlace");
+	constexpr TCHAR PresentationProfileObject[] =
+		TEXT("/RpgGaspLocomotion/Profiles/DA_RpgGaspPresentationProfile.DA_RpgGaspPresentationProfile");
 	constexpr TCHAR CombatStanceInputActionObject[] =
 		TEXT("/GF_Combat_Core/Input/IA_ToggleCombatStance.IA_ToggleCombatStance");
 	constexpr TCHAR CombatInputMappingContextObject[] =
@@ -102,6 +104,8 @@ namespace RpgGaspPilotAssetTests
 		TEXT("/Game/SurvivalRpg/System/Experiences/RpgGaspPilotExperience");
 	constexpr TCHAR ArchivalChooserPackage[] =
 		TEXT("/RpgGaspLocomotion/MotionMatching/Choosers/CHT_Rpg_LocomotionDatabases");
+	constexpr TCHAR PresentationProfilePackage[] =
+		TEXT("/RpgGaspLocomotion/Profiles/DA_RpgGaspPresentationProfile");
 
 	template <typename TObjectType>
 	TObjectType* LoadRequiredAsset(
@@ -1078,6 +1082,11 @@ bool FRpgGaspPilotAssetContractTest::RunTest(const FString& Parameters)
 		*this,
 		TurnInPlaceDatabaseObject,
 		TEXT("The project-local turn-in-place database loads"));
+	URpgGaspPresentationProfile* PresentationProfile =
+		LoadRequiredAsset<URpgGaspPresentationProfile>(
+			*this,
+			PresentationProfileObject,
+			TEXT("The project-owned GASP presentation profile loads"));
 	URpgExperienceDefinition* BaseExperience =
 		BaseExperienceBlueprint && BaseExperienceBlueprint->GeneratedClass
 			? Cast<URpgExperienceDefinition>(BaseExperienceBlueprint->GeneratedClass->GetDefaultObject())
@@ -1097,6 +1106,7 @@ bool FRpgGaspPilotAssetContractTest::RunTest(const FString& Parameters)
 		!BaseExperienceBlueprint ||
 		!PilotExperienceBlueprint ||
 		!TurnInPlaceDatabase ||
+		!PresentationProfile ||
 		!BaseExperience ||
 		!PilotExperience)
 	{
@@ -1232,6 +1242,20 @@ bool FRpgGaspPilotAssetContractTest::RunTest(const FString& Parameters)
 			: nullptr;
 	if (TestNotNull(TEXT("The GASP AnimBlueprint generated-class defaults load"), PilotAnimDefaults))
 	{
+		FString ConfiguredPresentationProfilePath;
+		if (TestTrue(
+			TEXT("The pilot exposes a hard GASP presentation-profile binding"),
+			ReadObjectProperty(
+				PilotAnimDefaults,
+				TEXT("GaspPresentationProfile"),
+				ConfiguredPresentationProfilePath)))
+		{
+			TestEqual(
+				TEXT("The pilot binds the exact project-owned presentation profile"),
+				ConfiguredPresentationProfilePath,
+				FString(PresentationProfileObject));
+		}
+
 		FDataValidationContext ValidationContext;
 		TestEqual(
 			TEXT("The GASP AnimBlueprint defaults pass native data validation"),
@@ -2453,6 +2477,9 @@ bool FRpgGaspPilotAssetContractTest::RunTest(const FString& Parameters)
 	TestFalse(
 		TEXT("The pilot AnimBlueprint never directly depends on the full editor-only module"),
 		PilotAnimBlueprintDependencies.Contains(FName(TEXT("/Script/SurvivalRpgEditor"))));
+	TestTrue(
+		TEXT("The pilot AnimBlueprint directly records its hard presentation-profile dependency"),
+		PilotAnimBlueprintDependencies.Contains(FName(PresentationProfilePackage)));
 	TSet<FName> DependencyClosure;
 	GatherPilotDependencyClosure(AssetRegistry, PilotRootPackages, DependencyClosure);
 	TestFalse(
