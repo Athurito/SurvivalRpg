@@ -57,6 +57,8 @@ Inventory/equipment guidance:
 - Prefer extending the project's RPG adaptation layer over reverting to unmodified Lyra sample behavior.
 - Do not introduce a parallel inventory manager, pawn-owned item arrays, or widget-owned equipment truth when the existing Lyra-rooted path can be extended.
 - Treat RPG concepts such as stats, rarity, affixes, sockets, durability, item level, class restrictions, loot generation, crafting, persistence, and save/load as project-specific extensions layered on top of the Lyra-rooted item/equipment architecture.
+- Treat `URpgInventoryItemFragment` and every semantic fragment subclass as native C++ schema and runtime behavior. Do not create Blueprint subclasses of inventory fragments.
+- Add a native fragment subclass only for new item semantics or runtime behavior. Configure instances of existing native fragment types in ItemDefinition assets for item-specific values and combinations; do not add fragment subclasses for data variants.
 
 Preserve the existing architecture unless there is a strong reason to change it.
 
@@ -70,13 +72,27 @@ Preserve the existing architecture unless there is a strong reason to change it.
   - a near-term extensibility problem likely to compound quickly
 
 
-Choose the right implementation boundary.
+Choose the native schema/mechanic versus design-asset boundary deliberately.
 
-- Put durable gameplay rules, authority checks, replication logic, persistence, and performance-sensitive systems in C++.
-- Put tuning, composition, asset references, and presentation-facing glue in Blueprints or Data Assets.
-- Expose clear extension points instead of burying core game rules inside Widgets or large Blueprint graphs.
-- Keep UI reflective of gameplay state rather than authoritative over gameplay state.
-- For inventory/equipment, keep UI as a view/controller of replicated gameplay state, not the owner of item truth.
+- Put native-only engine integration, durable authority/replication/prediction/lifecycle invariants, persistence, reusable runtime schemas, and known or measured hot paths in C++.
+- Do not treat task size, speculative performance, or inconvenient `.uasset` tooling as a reason to create a runtime C++ leaf class.
+- Keep concrete content identity, tuning, composition, asset references, tags, costs, cooldowns, montages, cues, text, icons, and presentation in Blueprint or DataAsset assets.
+- For Gameplay Abilities, default concrete `GA_*` assets to inheriting directly from `URpgGameplayAbility` or from a shared Blueprint family base such as `GA_MeleeBase`.
+- Add an intermediate native ability class such as an abstract `URpgGameplayAbility_MeleeBase` only when it encapsulates Blueprint-inaccessible APIs, authority/prediction/lifecycle invariants, or a known or measured hot path. Keep concrete abilities and design variation in `GA_*` assets below it.
+- Expect pure content and design tasks to add zero native classes. Native fragment schemas and technically justified reusable mechanics are explicit exceptions.
+- Keep UI WBP/MVVM-first: use native subsystems, ViewModels, Slate primitives, lifecycle integration, geometry algorithms, and real hot paths where appropriate; keep screens, entries, toasts, tooltips, layout, styling, and animation in Widget Blueprints.
+- Expose narrow extension points instead of burying authoritative rules in Widgets or creating a native class per presentation leaf.
+- Keep UI reflective of gameplay state rather than authoritative over gameplay state. For inventory/equipment, keep UI as a view/controller of replicated gameplay state, not the owner of item truth.
+
+For work that creates or changes Blueprint, Widget Blueprint, Gameplay Ability, or DataAsset assets, read and follow the required [Unreal MCP asset-authoring workflow](references/unreal-mcp-asset-authoring.md).
+
+Test stable native seams and asset contracts instead of concrete presentation implementation.
+
+- Test native algorithms, authority/lifecycle behavior, ViewModel invalidation, routing, focus/input contracts, pooling, and cleanup once at their reusable seam.
+- For Blueprint and Widget Blueprint assets, validate compilation, intended parent class or interface, required MVVM source, registry/cook reachability, and genuinely stable references.
+- Do not add a dedicated C++ automation suite for every screen, entry, tooltip, toast, or other Blueprint specialization.
+- Do not assert exact widget-tree structure, cosmetic widget names, binding counts, colors, display text, animation details, or the absence of Blueprint graph functions.
+- Do not create a native widget or GameplayAbility leaf merely to make concrete content easier to unit test.
 
 Document designer-facing Unreal APIs by default.
 

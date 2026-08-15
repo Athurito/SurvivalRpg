@@ -20,8 +20,16 @@ Use the closest matching skill:
 - Use `$survival-rpg-orchestrator` for broad or ambiguous multi-system tasks that need routing before implementation.
 
 Architecture guardrails:
+- Apply the native-foundation versus designer-owned-content boundary to every new or materially extended system, not only to Lyra-derived systems. This includes crafting, progression, portals, AI, save/load, world events, interaction, building, economy, UI, and editor workflows.
+- Before implementing a system, identify its authoritative runtime truth, reusable native schema/mechanism, designer-owned assets and tuning, presentation/read model, editor tooling, and stable test contracts. Use `$survival-rpg-orchestrator` for this ownership map when the boundary is not already obvious.
 - Prefer extending existing Lyra-derived systems over creating parallel managers.
 - Keep UI reflective of gameplay state, not authoritative.
+- Keep stable native schemas, engine-facing mechanisms, authority, replication, prediction, persistence, lifecycle safety, and proven hot paths in C++; keep concrete content, tuning, composition, and presentation in Blueprint, Widget Blueprint, or DataAssets.
+- Keep `URpgInventoryItemFragment` semantic subclasses native C++ types; do not create Blueprint fragment subclasses. Configure native fragment instances on concrete ItemDefinition assets instead.
+- Make concrete GameplayAbilities `GA_*` Blueprint assets by default, directly from `URpgGameplayAbility` or a Blueprint family base. Add an abstract native intermediate ability only for Blueprint-inaccessible APIs, authority/prediction/lifecycle invariants, or known/measured hot paths.
+- Build concrete screens, entries, tooltips, toasts, layout, styling, and animation in CommonUI Widget Blueprints backed by reusable native foundations and MVVM.
+- Use the configured Unreal MCP workflow to inspect, author, compile, save, and validate Blueprint/DataAsset work. Tooling inconvenience is not a reason to replace designer-owned content with a native leaf class.
+- Test reusable native seams and stable asset contracts, not each visual leaf. Do not freeze exact widget-tree names, binding counts, colors, text, animations, or the absence of Blueprint graphs in C++ automation tests.
 - Preserve RPG inventory/equipment adaptations.
 - Do not revert RPG systems to plain Lyra sample behavior unless explicitly requested.
 - Do not introduce unrelated Lyra subsystems only because Lyra has them.

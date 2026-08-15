@@ -18,10 +18,22 @@ Use this reference for implementation and review work in Unreal Engine projects.
 
 ## C++ and Blueprint Boundary
 
-- Implement authoritative rules, replication, persistence, and high-frequency logic in C++.
-- Use Blueprints for asset wiring, moment-to-moment tuning, animation glue, UI composition, and designer-facing hooks.
+- Implement native-only engine integration, authoritative rules, replication, prediction/lifecycle invariants, persistence, reusable schemas, and known or measured hot paths in C++.
+- Use Blueprints and DataAssets for concrete content identity, asset wiring, moment-to-moment tuning, animation glue, UI composition, and designer-facing hooks.
+- Do not use task size, speculative performance, or inconvenient asset tooling to justify a runtime C++ leaf class.
 - Expose focused `BlueprintCallable`, `BlueprintPure`, or `BlueprintImplementableEvent` APIs instead of broad utility surfaces.
 - Avoid giant all-purpose Blueprint base classes.
+
+Apply these project-specific ownership rules:
+
+- Keep `URpgInventoryItemFragment` and every semantic fragment subclass native C++; do not create Blueprint fragment subclasses.
+- Add a native fragment type only for new schema semantics or runtime behavior. Configure native fragment instances and item-specific values in ItemDefinition assets.
+- Default concrete Gameplay Abilities to `GA_*` Blueprint assets derived directly from `URpgGameplayAbility` or a Blueprint family base such as `GA_MeleeBase`.
+- Introduce an abstract native ability intermediate only for Blueprint-inaccessible APIs, authority/prediction/lifecycle invariants, or a known or measured hot path; keep its concrete content children in assets.
+- Keep UI WBP/MVVM-first. Reserve C++ for subsystems, ViewModels, Slate, lifecycle seams, reusable geometry/algorithms, and real hot paths; keep screens and visual leaves in Widget Blueprints.
+- Expect pure content/design work to add no native classes. Native schema types and technically justified reusable mechanics are exceptions.
+- Test reusable native mechanisms once and keep asset tests to stable compilation, parent/interface, MVVM-source, registry/cook, and required-reference contracts.
+- Do not freeze widget-tree names, exact binding counts, colors, display text, animations, or the absence of Blueprint graphs in C++ automation tests, and do not create native leaves solely for testability.
 
 ## Documentation and Designer-Facing APIs
 
@@ -118,6 +130,7 @@ Keep comments short, practical, and accurate.
 ## Performance and Maintainability
 
 - Minimize work in hot paths such as tick, animation update, and replicated callbacks.
+- Require an established engine constraint or profiling evidence before using performance as the reason for a new native intermediate or leaf class.
 - Cache only when profiling or repeated traversal justifies it.
 - Keep APIs narrow and intention-revealing.
 - Favor predictable naming and folder/module placement that match Unreal conventions.
