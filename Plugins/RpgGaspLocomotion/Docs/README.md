@@ -2,6 +2,9 @@
 
 This content-only plugin owns the curated Game Animation Sample Project (GASP) locomotion substrate for SurvivalRpg. It does not select a PawnData, Experience, or Animation Blueprint; the isolated runtime pilot was delivered by issue #54.
 
+The behavior-preserving source-to-project responsibility map and the staged issue #81 extraction
+order are recorded in [RuntimeOwnershipMap.md](RuntimeOwnershipMap.md).
+
 ## Curated slice
 
 - 190 retargeted `UAnimSequence` assets using `/Game/SurvivalRpg/Characters/Mannequins/Meshes/SK_Mannequin`

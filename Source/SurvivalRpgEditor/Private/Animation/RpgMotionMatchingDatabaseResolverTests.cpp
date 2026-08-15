@@ -8,6 +8,7 @@
 #include "Misc/AutomationTest.h"
 #include "PoseSearch/PoseSearchDatabase.h"
 #include "SurvivalRpg/Animation/RpgAnimInstance.h"
+#include "SurvivalRpg/Animation/RpgPoseSearchTrajectory.h"
 #include "SurvivalRpg/Core/Character/RpgCharacter.h"
 #include "UObject/UObjectGlobals.h"
 
@@ -21,17 +22,17 @@ bool FRpgMotionMatchingDatabaseResolverTest::RunTest(const FString& Parameters)
 {
 	TestTrue(
 		TEXT("Trajectory history uses GASP's adaptive sampling interval"),
-		FMath::IsNearlyEqual(URpgAnimInstance::TrajectoryHistorySamplingInterval, -1.0f));
+		FMath::IsNearlyEqual(RpgPoseSearchTrajectory::HistorySamplingInterval, -1.0f));
 	TestEqual(
 		TEXT("Trajectory history keeps GASP's 30 samples"),
-		URpgAnimInstance::TrajectoryHistorySampleCount,
+		RpgPoseSearchTrajectory::HistorySampleCount,
 		30);
 	TestTrue(
 		TEXT("Trajectory prediction samples at GASP's 0.1 second interval"),
-		FMath::IsNearlyEqual(URpgAnimInstance::TrajectoryPredictionSamplingInterval, 0.1f));
+		FMath::IsNearlyEqual(RpgPoseSearchTrajectory::PredictionSamplingInterval, 0.1f));
 	TestEqual(
 		TEXT("Trajectory prediction keeps GASP's 15 samples"),
-		URpgAnimInstance::TrajectoryPredictionSampleCount,
+		RpgPoseSearchTrajectory::PredictionSampleCount,
 		15);
 	TestEqual(
 		TEXT("Sprint Stops begin at GASP's inclusive 550 cm/s boundary"),

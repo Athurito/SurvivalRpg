@@ -10,6 +10,7 @@
 #include "Misc/AutomationTest.h"
 #include "PoseSearch/PoseSearchDatabase.h"
 #include "SurvivalRpg/Animation/RpgAnimInstance.h"
+#include "SurvivalRpg/Animation/RpgPoseSearchTrajectory.h"
 #include "UObject/UnrealType.h"
 
 IMPLEMENT_SIMPLE_AUTOMATION_TEST(
@@ -77,18 +78,18 @@ bool FRpgTrajectoryCollisionRuntimeTest::RunTest(const FString& Parameters)
 		Sample.Position = FVector(static_cast<double>(Index) * 10.0, 0.0, 100.0);
 		Sample.Facing = FQuat::Identity;
 	}
-	TestTrue(TEXT("A finite ordered trajectory passes the worker-snapshot contract"), URpgAnimInstance::IsTransformTrajectoryFinite(FiniteTrajectory));
-	TestFalse(TEXT("An empty trajectory fails closed"), URpgAnimInstance::IsTransformTrajectoryFinite(FTransformTrajectory()));
+	TestTrue(TEXT("A finite ordered trajectory passes the worker-snapshot contract"), RpgPoseSearchTrajectory::IsTransformTrajectoryFinite(FiniteTrajectory));
+	TestFalse(TEXT("An empty trajectory fails closed"), RpgPoseSearchTrajectory::IsTransformTrajectoryFinite(FTransformTrajectory()));
 
 	FTransformTrajectory UnsortedTrajectory = FiniteTrajectory;
 	UnsortedTrajectory.Samples[2].TimeInSeconds = -1.0f;
-	TestFalse(TEXT("A non-monotonic sample timeline fails closed"), URpgAnimInstance::IsTransformTrajectoryFinite(UnsortedTrajectory));
+	TestFalse(TEXT("A non-monotonic sample timeline fails closed"), RpgPoseSearchTrajectory::IsTransformTrajectoryFinite(UnsortedTrajectory));
 
 	FTransformTrajectory NanTrajectory = FiniteTrajectory;
 	NanTrajectory.Samples[1].Position.X = std::numeric_limits<double>::quiet_NaN();
-	TestFalse(TEXT("A non-finite sample position fails closed"), URpgAnimInstance::IsTransformTrajectoryFinite(NanTrajectory));
+	TestFalse(TEXT("A non-finite sample position fails closed"), RpgPoseSearchTrajectory::IsTransformTrajectoryFinite(NanTrajectory));
 
-	const float MidpointLandingTime = URpgAnimInstance::CalculateTrajectoryLandingTime(
+	const float MidpointLandingTime = RpgPoseSearchTrajectory::CalculateLandingTime(
 		0.0f,
 		0.2f,
 		FVector(0.0, 0.0, 100.0),
@@ -98,7 +99,7 @@ bool FRpgTrajectoryCollisionRuntimeTest::RunTest(const FString& Parameters)
 	TestTrue(TEXT("First contact is interpolated between bounding ballistic samples"), FMath::IsNearlyEqual(MidpointLandingTime, 0.1f));
 	TestEqual(
 		TEXT("Invalid ballistic input cannot manufacture a landing time"),
-		URpgAnimInstance::CalculateTrajectoryLandingTime(
+		RpgPoseSearchTrajectory::CalculateLandingTime(
 			0.2f,
 			0.1f,
 			FVector::ZeroVector,
@@ -108,7 +109,7 @@ bool FRpgTrajectoryCollisionRuntimeTest::RunTest(const FString& Parameters)
 		-1.0f);
 
 	const FRpgTrajectoryLandingPrediction ValidPrediction =
-		URpgAnimInstance::MakeTrajectoryLandingPrediction(
+		RpgPoseSearchTrajectory::MakeLandingPrediction(
 			true,
 			true,
 			false,
@@ -121,7 +122,7 @@ bool FRpgTrajectoryCollisionRuntimeTest::RunTest(const FString& Parameters)
 	TestTrue(TEXT("Published TimeToLand remains finite"), FMath::IsFinite(ValidPrediction.TimeToLand));
 
 	const FRpgTrajectoryLandingPrediction NoHitPrediction =
-		URpgAnimInstance::MakeTrajectoryLandingPrediction(
+		RpgPoseSearchTrajectory::MakeLandingPrediction(
 			true,
 			false,
 			false,
@@ -134,7 +135,7 @@ bool FRpgTrajectoryCollisionRuntimeTest::RunTest(const FString& Parameters)
 
 	TestFalse(
 		TEXT("A teleport/owner-role hard reset rejects even a fresh-looking hit"),
-		URpgAnimInstance::MakeTrajectoryLandingPrediction(
+		RpgPoseSearchTrajectory::MakeLandingPrediction(
 			true,
 			true,
 			true,
@@ -144,7 +145,7 @@ bool FRpgTrajectoryCollisionRuntimeTest::RunTest(const FString& Parameters)
 			FVector::UpVector).bIsValid);
 	TestFalse(
 		TEXT("Grounded state cannot publish predictive landing data"),
-		URpgAnimInstance::MakeTrajectoryLandingPrediction(
+		RpgPoseSearchTrajectory::MakeLandingPrediction(
 			false,
 			true,
 			false,
@@ -154,7 +155,7 @@ bool FRpgTrajectoryCollisionRuntimeTest::RunTest(const FString& Parameters)
 			FVector::UpVector).bIsValid);
 	TestFalse(
 		TEXT("A hit beyond the inspected horizon fails closed"),
-		URpgAnimInstance::MakeTrajectoryLandingPrediction(
+		RpgPoseSearchTrajectory::MakeLandingPrediction(
 			true,
 			true,
 			false,
@@ -173,7 +174,7 @@ bool FRpgTrajectoryCollisionRuntimeTest::RunTest(const FString& Parameters)
 	FTransformTrajectory FlatStepCorrectedTrajectory;
 	int32 FlatStepQueryCount = 0;
 	const FRpgTrajectoryLandingPrediction FlatStepPrediction =
-		URpgAnimInstance::ResolveTrajectoryCollisionForTest(
+		RpgPoseSearchTrajectory::ResolveCollisionForTest(
 			DefaultSettings,
 			GravityAcceleration,
 			true,
@@ -212,7 +213,7 @@ bool FRpgTrajectoryCollisionRuntimeTest::RunTest(const FString& Parameters)
 	FTransformTrajectory RampCorrectedTrajectory;
 	int32 RampQueryCount = 0;
 	const FRpgTrajectoryLandingPrediction RampPrediction =
-		URpgAnimInstance::ResolveTrajectoryCollisionForTest(
+		RpgPoseSearchTrajectory::ResolveCollisionForTest(
 			DefaultSettings,
 			GravityAcceleration,
 			true,
@@ -250,7 +251,7 @@ bool FRpgTrajectoryCollisionRuntimeTest::RunTest(const FString& Parameters)
 	TArray<FVector> GroundedTraceStarts;
 	TArray<FVector> GroundedTraceEnds;
 	const FRpgTrajectoryLandingPrediction GroundedSurfacePrediction =
-		URpgAnimInstance::ResolveTrajectoryCollisionForTest(
+		RpgPoseSearchTrajectory::ResolveCollisionForTest(
 			DefaultSettings,
 			GravityAcceleration,
 			false,
@@ -316,7 +317,7 @@ bool FRpgTrajectoryCollisionRuntimeTest::RunTest(const FString& Parameters)
 	TArray<FVector> FastFloorTraceStarts;
 	TArray<FVector> FastFloorTraceEnds;
 	const FRpgTrajectoryLandingPrediction FastFloorPrediction =
-		URpgAnimInstance::ResolveTrajectoryCollisionForTest(
+		RpgPoseSearchTrajectory::ResolveCollisionForTest(
 			DefaultSettings,
 			GravityAcceleration,
 			true,
@@ -357,7 +358,7 @@ bool FRpgTrajectoryCollisionRuntimeTest::RunTest(const FString& Parameters)
 	TArray<FVector> EdgeTraceStarts;
 	TArray<FVector> EdgeTraceEnds;
 	const FRpgTrajectoryLandingPrediction EdgePrediction =
-		URpgAnimInstance::ResolveTrajectoryCollisionForTest(
+		RpgPoseSearchTrajectory::ResolveCollisionForTest(
 			DefaultSettings,
 			GravityAcceleration,
 			true,
@@ -395,7 +396,7 @@ bool FRpgTrajectoryCollisionRuntimeTest::RunTest(const FString& Parameters)
 	FTransformTrajectory WalkabilityCorrectedTrajectory;
 	int32 WalkabilityQueryCount = 0;
 	const FRpgTrajectoryLandingPrediction WalkabilityPrediction =
-		URpgAnimInstance::ResolveTrajectoryCollisionForTest(
+		RpgPoseSearchTrajectory::ResolveCollisionForTest(
 			DefaultSettings,
 			GravityAcceleration,
 			true,
@@ -417,7 +418,7 @@ bool FRpgTrajectoryCollisionRuntimeTest::RunTest(const FString& Parameters)
 	int32 FarContactQueryCount = 0;
 	int32 NearContactQueryCount = 0;
 	const FRpgTrajectoryLandingPrediction FarContactPrediction =
-		URpgAnimInstance::ResolveTrajectoryCollisionForTest(
+		RpgPoseSearchTrajectory::ResolveCollisionForTest(
 			DefaultSettings,
 			GravityAcceleration,
 			true,
@@ -427,7 +428,7 @@ bool FRpgTrajectoryCollisionRuntimeTest::RunTest(const FString& Parameters)
 			FarContactTrajectory,
 			FarContactQueryCount);
 	const FRpgTrajectoryLandingPrediction NearContactPrediction =
-		URpgAnimInstance::ResolveTrajectoryCollisionForTest(
+		RpgPoseSearchTrajectory::ResolveCollisionForTest(
 			DefaultSettings,
 			GravityAcceleration,
 			true,
@@ -444,7 +445,7 @@ bool FRpgTrajectoryCollisionRuntimeTest::RunTest(const FString& Parameters)
 	FTransformTrajectory BudgetCorrectedTrajectory;
 	int32 BudgetQueryCount = 0;
 	const FRpgTrajectoryLandingPrediction BudgetPrediction =
-		URpgAnimInstance::ResolveTrajectoryCollisionForTest(
+		RpgPoseSearchTrajectory::ResolveCollisionForTest(
 			DefaultSettings,
 			GravityAcceleration,
 			true,
@@ -465,7 +466,7 @@ bool FRpgTrajectoryCollisionRuntimeTest::RunTest(const FString& Parameters)
 	FTransformTrajectory InvalidBoundsTrajectory;
 	int32 InvalidBoundsQueryCount = -1;
 	const FRpgTrajectoryLandingPrediction InvalidBoundsPrediction =
-		URpgAnimInstance::ResolveTrajectoryCollisionForTest(
+		RpgPoseSearchTrajectory::ResolveCollisionForTest(
 			InvalidBoundsSettings,
 			GravityAcceleration,
 			true,
@@ -482,7 +483,7 @@ bool FRpgTrajectoryCollisionRuntimeTest::RunTest(const FString& Parameters)
 	FTransformTrajectory InvalidChannelTrajectory;
 	int32 InvalidChannelQueryCount = -1;
 	const FRpgTrajectoryLandingPrediction InvalidChannelPrediction =
-		URpgAnimInstance::ResolveTrajectoryCollisionForTest(
+		RpgPoseSearchTrajectory::ResolveCollisionForTest(
 			InvalidChannelSettings,
 			GravityAcceleration,
 			true,
