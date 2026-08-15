@@ -100,6 +100,58 @@ Characters and UI should mirror equipment state for presentation only. They shou
 
 Avoid duplicate managers that overlap with equipment authority. A future weapon manager is only acceptable if it has a narrow role that does not conflict with equipped-state ownership.
 
+## Native schema, mechanism, and designer content
+
+Classify combat and inventory work before adding a native type:
+
+- **Native schema** defines a reusable runtime concept that assets must be able to configure.
+- **Native mechanism** enforces engine-facing behavior, authority, prediction, replication, lifecycle invariants, or a known or measured performance hotpath.
+- **Designer content** selects, composes, and tunes those schemas and mechanisms for a concrete item, ability, weapon, rune, portal, or encounter.
+
+Pure designer-content work should add no native classes. A large task is not automatically a native task, and tooling inconvenience is not a reason to create a C++ content leaf.
+
+### Inventory fragments are native schema types
+
+- Keep `URpgInventoryItemFragment` and every semantic inventory-fragment subclass in C++.
+- Do not create Blueprint subclasses of inventory fragments. Blueprint exposure exists so assets can configure native fragment instances, not so content can extend the fragment type hierarchy.
+- Add a new native fragment subclass only when the project needs new item semantics or reusable runtime behavior that existing fragment types cannot express.
+- Do not add a fragment subclass for a single item, a balance variant, different presentation data, or another combination of existing properties.
+- Build concrete items by adding and configuring inline instances of the existing native fragment types in `URpgInventoryItemDefinition` or the current equivalent ItemDefinition asset.
+
+For example, sword, axe, and armor definitions may configure different values on native equippable, itemization, trait, or presentation fragments. They should not introduce `BP_*Fragment` classes or one native fragment class per item.
+
+### Gameplay Abilities are asset-first
+
+Use `URpgGameplayAbility` as the default native foundation and implement concrete `GA_*` abilities as Blueprint assets. Shared designer flow may also live in a Blueprint parent such as `GA_MeleeBase`:
+
+```text
+URpgGameplayAbility (C++)
+  GA_MeleeBase (Blueprint, optional shared design flow)
+    GA_SwordLight (Blueprint)
+    GA_AxeHeavy (Blueprint)
+```
+
+Add an abstract native intermediate such as `URpgGameplayAbility_MeleeBase` only when the shared mechanism requires at least one of:
+
+- engine APIs that are unavailable or unsuitable in Blueprint
+- authority, prediction, or lifecycle invariants that must be enforced natively
+- a known or measured hotpath whose work belongs in C++
+
+Task size, shared designer sequencing, graph neatness, or `.uasset` authoring convenience do not justify a native ability intermediate. If a native intermediate is necessary, keep it generic and expose focused extension points for Blueprint descendants instead of embedding one concrete attack's identity or tuning.
+
+Keep concrete ability identity and content in assets, AbilitySets, equipment or item definitions, GameplayEffects, and GameplayCues as appropriate. This includes:
+
+- ability and input tags
+- costs and cooldowns
+- montage and cue selection
+- names, text, and icons
+- range, radius, damage, duration, and other balance values
+- weapon-, rune-, element-, portal-, or encounter-specific composition
+
+For Blueprint, Widget Blueprint, GameplayAbility, GameplayEffect, GameplayCue, AbilitySet, and ItemDefinition authoring, pair this skill with `$unreal-lyra-expert` and follow its Unreal MCP asset-authoring workflow. Inspect the current parents and assets, use the available MCP tools to create or edit the asset, compile it where applicable, save it, and validate its contracts. Only a confirmed MCP capability gap may justify a small reusable editor-only tooling seam; it does not justify a runtime C++ content class.
+
+Test the reusable native mechanism once, then validate concrete ability content through stable asset contracts such as Blueprint compilation, intended parentage, required tags/references, and AbilitySet or equipment grants. Do not require a content ability to exist as a `/Script/...` native class, and do not create a native ability leaf only to make it directly unit-testable.
+
 ## Documentation defaults for combat assets
 
 When creating or modifying combat, item, equipment, rune, portal, mastery, DamageArea, GameplayAbility, GameplayEffect, or GameFeature configuration, add concise documentation comments for designer-facing fields.
@@ -426,6 +478,12 @@ The first combat milestone should support later:
 Flag proposals that:
 
 - reference stale docs as required truth
+- create Blueprint subclasses of `URpgInventoryItemFragment` or its semantic fragment subclasses
+- add a fragment type for per-item values or composition that belongs in an ItemDefinition asset
+- add a concrete native GameplayAbility leaf when the behavior can be expressed as a `GA_*` Blueprint asset
+- add a native ability intermediate only to share designer flow, keep Blueprint graphs small, or avoid MCP asset authoring
+- bake concrete ability tags, costs, cooldowns, montages, cues, text, icons, range, or damage tuning into a generic native ability base
+- require a concrete content ability to exist as a native `/Script/...` class or create a native leaf solely for unit-test convenience
 - bypass equipment authority for equip state
 - make loadouts runtime truth
 - put combat truth into UI or character visuals

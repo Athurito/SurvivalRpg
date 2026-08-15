@@ -1,6 +1,6 @@
 ---
 name: survival-rpg-orchestrator
-description: Use for large or ambiguous SurvivalRpg requests that need routing across project vision, Unreal/Lyra architecture, GASP animation/locomotion, combat/equipment, planning, review, or implementation. Select only the needed specialist skills and break work into the smallest useful slice.
+description: Use for large or ambiguous SurvivalRpg requests and for new or materially extended gameplay, UI, editor, persistence, or content-pipeline systems that need repository-wide ownership boundaries. Route across project vision, Unreal/Lyra architecture, GASP animation/locomotion, combat/equipment, planning, review, or implementation; select only the needed specialists and smallest useful slice.
 ---
 
 # SurvivalRpg Orchestrator
@@ -14,6 +14,8 @@ Classify the request before doing work.
 - Identify whether the task is primarily about game vision, gameplay design, Unreal implementation, architecture, review, debugging, planning, or production execution.
 - Identify whether the task changes code, project docs, content structure, or only needs advice.
 - Identify whether the request is narrow enough for one pass or should be split into bounded subtasks.
+- Treat every new or materially extended gameplay, UI, editor, persistence, or content-pipeline system as a system-ownership decision, even when it does not use a Lyra-specific subsystem.
+- Read [the repository-wide system ownership boundaries](references/system-ownership-boundaries.md) for new systems, cross-cutting refactors, or unclear C++/asset/UI/tooling placement.
 
 Route to the minimum skill set that covers the task.
 
@@ -23,6 +25,28 @@ Route to the minimum skill set that covers the task.
 - Use `$unreal-gasp-expert` for GASP CMC locomotion, Motion Matching, Pose Search, trajectory, procedural animation nodes, retargeting, animation threading, or multiplayer locomotion parity.
 - Combine only the specialists whose ownership boundaries the request crosses.
 - Do not duplicate specialist guidance inside this skill. Delegate to the specialist skill instead.
+
+Make a system-ownership decision for every new or materially extended system, then record its C++ boundary before implementation. Lyra is a useful reference implementation, not the scope of this rule.
+
+State this concise decision before creating code or assets:
+
+```text
+C++ boundary decision
+- Classification: schema, reusable mechanism, or designer-owned content
+- Runtime truth: authoritative owner and lifecycle
+- Existing seam: inspected project/framework base, asset, component, subsystem, or ViewModel
+- Ownership: C++ versus Blueprint, Widget Blueprint, and DataAsset
+- New native classes: count and technical justification
+- Asset work: Unreal MCP authoring and validation steps
+```
+
+- Expect zero new native classes for pure content, tuning, composition, or presentation work.
+- Keep native schema types such as semantic inventory-fragment subclasses in C++; configure their instances in ItemDefinition assets instead of creating Blueprint fragment subclasses.
+- Keep reusable mechanisms native only when Blueprint-inaccessible APIs, authority, prediction, lifecycle invariants, or known/measured hot paths require it. Do not require separate user approval when that technical gate is satisfied.
+- Route inventory-fragment and GameplayAbility ownership decisions through `$survival-rpg-combat-foundation` and `$unreal-lyra-expert`.
+- Route CommonUI, Widget Blueprint, MVVM, and Unreal MCP asset-authoring decisions through `$unreal-lyra-expert`.
+- Never substitute a native content leaf because `.uasset` authoring is less convenient. Use Unreal MCP first; after a confirmed capability gap, propose only the smallest reusable editor-only tooling seam.
+- Apply the same decision to crafting, progression, portals, AI, saving, world events, interaction, building, economy, UI, and future systems; route only the domain-specific details to Lyra or another specialist.
 
 Preserve repository-wide documentation defaults.
 
@@ -47,9 +71,10 @@ Turn large requests into a stable execution sequence.
 - Step 1: restate the concrete deliverable internally.
 - Step 2: load the relevant project and technical skills.
 - Step 3: inspect the local repository before proposing structure changes.
-- Step 4: choose the smallest slice that proves fun, clarity, or architectural soundness.
-- Step 5: implement or document that slice.
-- Step 6: verify the result and call out remaining risks.
+- Step 4: record the repository-wide system-ownership and C++ boundary decision.
+- Step 5: choose the smallest slice that proves fun, clarity, or architectural soundness.
+- Step 6: implement or document that slice.
+- Step 7: verify the result and call out remaining risks.
 
 Use sub-agents only when the task is explicitly large enough to benefit from delegation.
 

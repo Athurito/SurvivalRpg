@@ -1,7 +1,7 @@
 interface:
   display_name: "SurvivalRpg Orchestrator"
-  short_description: "Routes broad SurvivalRpg tasks"
-  default_prompt: "Use $survival-rpg-orchestrator to route broad SurvivalRpg tasks to the minimum project, Lyra, GASP, and combat specialists, inspect repository truth, choose the smallest verifiable slice, and preserve repository designer-facing documentation defaults."
+  short_description: "Routes systems and architecture"
+  default_prompt: "Use $survival-rpg-orchestrator to route broad SurvivalRpg work, apply the repository-wide native-foundation versus designer-owned-content boundary to every new or extended system, and choose the smallest verifiable slice with the minimum specialist set."
 
 policy:
   allow_implicit_invocation: true

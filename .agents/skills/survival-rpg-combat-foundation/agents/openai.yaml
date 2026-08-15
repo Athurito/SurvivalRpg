@@ -1,7 +1,7 @@
 interface:
   display_name: "SurvivalRpg Combat Foundation"
   short_description: "Combat, equipment, GAS and RPG item seams"
-  default_prompt: "Use $survival-rpg-combat-foundation for SurvivalRpg combat, equipment, GAS, and progression work while preserving Lyra-rooted RPG architecture and designer-facing documentation; pair with $unreal-lyra-expert for engine implementation and add $unreal-gasp-expert when combat overlaps GASP animation, montages, locomotion, hit reactions, death, or ragdoll."
+  default_prompt: "Use $survival-rpg-combat-foundation for SurvivalRpg combat, equipment, GAS, and progression work while keeping inventory fragment schemas native C++ and concrete abilities asset-first, pairing with $unreal-lyra-expert for Unreal MCP asset authoring and engine implementation, and adding $unreal-gasp-expert when combat overlaps GASP animation, montages, locomotion, hit reactions, death, or ragdoll."
 
 policy:
   allow_implicit_invocation: true
