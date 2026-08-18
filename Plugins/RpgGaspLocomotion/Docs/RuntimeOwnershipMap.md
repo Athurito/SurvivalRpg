@@ -27,9 +27,10 @@ the sample project a runtime dependency.
 | `IsMoving`, `IsStarting`, `IsPivoting`, `Get_TrajectoryTurnAngle` | `RpgMotionMatchingRuntime::IsChooserMoving`, `GetRunPivotMinimumAngle`, and `ResolveDatabaseRoles`; the resolver consumes the GASP-authored future-velocity window and project gait/stance snapshot | Focused value-only Motion Matching selection runtime plus validated designer-owned database/profile membership | Project gameplay gait and rotation mode constrain the authored source predicates. The trajectory turn angle is the acceleration-versus-velocity pivot angle, not a turn-in-place rule. Selection remains cosmetic and pointer-free. |
 | `Get_MMInterruptMode` | `RpgMotionMatchingRuntime::ShouldInterruptGroundMotionMatching` plus explicit turn/landing request and playback latches in `URpgAnimInstance::UpdateGaspMotionMatching` | Focused value-only Motion Matching runtime coordinated by the native AnimNode callback | Interrupts also protect physical movement-domain changes and one-shot project turn/landing requests; they never become replicated gameplay state. |
 | `Update_MotionMatching_PostSelection` | `URpgAnimInstance::UpdateGaspMotionMatchingPostSelection` bridges selected database metadata; `RpgMotionMatchingRuntime::ResolvePostSelection` owns the pointer-free result and exclusive latch policy | Same callback/value-runtime split | Completed-search metadata is cosmetic only. Unlike source GASP, the project does not apply `Override Motion Matching Blend Settings`; the authored node retains uniform `0.2 s` blending after the FastFeet turn regression. |
-| `Update_States`, `Update_Logic` | Proxy movement snapshot plus native turn/jump/landing presentation lifecycles | Gameplay state in CharacterMovement/GAS; focused presentation runtimes and AnimBP/profile tuning | The sample's broad and experimental state controller is not copied. Physical airborne/grounded state always comes from CharacterMovement. |
+| `Update_States`, `Update_Logic` | Proxy movement snapshot plus `RpgTurnInPlaceRuntime`, `RpgJumpRuntime`, and `RpgLandingRuntime`; `URpgAnimInstance` coordinates their reflected and UObject bridges | Gameplay state in CharacterMovement/GAS; focused presentation runtimes and AnimBP/profile tuning | The sample's broad and experimental state controller is not copied. Physical airborne/grounded state always comes from CharacterMovement. |
 | `ShouldTurnInPlace` | `RpgTurnInPlaceRuntime` owns pointer-free eligibility, hysteresis, reset edges, request/search policy, timeouts, and synthetic facing; `URpgAnimInstance` retains the reflected facade plus GC-safe asset/Blend Stack bridge | Same split; feel thresholds move to designer configuration in #81 step 4 | Turns remain controller-facing and cosmetic; they never rotate the authoritative actor. GASP's inclusive 50-degree OrientationIntent/root predicate and Chooser 20 cm/s cap are intentionally adapted to project actor-yaw accumulation, 20/30/10-degree hysteresis, and the stricter 3 cm/s stationary gate. |
-| `JustLanded_Light`, `JustLanded_Heavy`, `Get_LandVelocity`, `PlayLand`, `PlayMovingLand` | Proxy pre-touchdown snapshot plus `URpgAnimInstance` landing resolver/latch/watchdog | Focused landing runtime; database membership and feel in assets | Landing begins only on the physical CMC touchdown edge. Idle/Walk/Run Light/Heavy are curated; Sprint landing remains deferred until authoritative Sprint issue #62. |
+| Jump movement-mode edges and bounded backward Jump Start/Fall continuation | `RpgJumpRuntime` owns pointer-free physical edge interpretation and Continuing-Pose policy; `URpgAnimInstance` retains the reflected phase plus GC-tracked held asset and trait bridge | Same value-runtime/facade split | An upward velocity change while already airborne is not a new phase. The bounded backward hold is a project adaptation for curated non-looping starts and never changes movement authority. |
+| `JustLanded_Light`, `JustLanded_Heavy`, `Get_LandVelocity`, `PlayLand`, `PlayMovingLand` | `RpgLandingRuntime` owns pointer-free final-airborne capture, role/fallback, request serials, handoff, and timeout policy; `URpgAnimInstance` retains database pointers, the reflected facade, exact asset latch, and Blend Stack observation | Same split; database membership and feel move to assets in #81 step 4 | Landing begins only on the physical CMC touchdown edge. Prediction may strengthen severity but never starts landing. Idle/Walk/Run Light/Heavy are curated; Sprint landing remains deferred until authoritative Sprint issue #62. |
 | `AllowFootPinning`, foot-placement settings helpers | Proxy game-thread traces, `RpgFootPlacement` value helpers, `FAnimNode_RpgFootPlacement` | Existing focused native types/node plus AnimBP tuning | Project-local snapshots make the node worker-safe and preserve moving-base handling; crouch stays opted out by default. |
 | `Get_DesiredFacing`, `EnableSteering`, Orientation Warping gates | `URpgAnimInstance::GetGaspBlendStackInputs`, authored curves, and the immutable `FRpgGaspPresentationAssetLookup` | Existing AnimBP/presentation profile seam, with only value inputs supplied natively | `DA_RpgGaspPresentationProfile` explicitly preserves the old 170-sequence presentation domain without package/name reads on workers. Local fall, idle/crouch/TIP, and moving-landing adaptations remain unchanged. |
 | Sparse database and state selection | Fixed native role enum/mapping plus project-local Pose Search assets | Validated designer-owned profile/Chooser with stable native schema only where required | Curated databases remain project-owned; fixed mappings are compatibility state during #81, not the intended final presentation owner. |
@@ -72,7 +73,9 @@ the sample project a runtime dependency.
    runtimes without changing serialized AnimBP names or behavior. Slice 3a now owns pointer-free
    role selection, ground-domain interruption, landing-role classification, and PostSelection
    policy in `RpgMotionMatchingRuntime`. Slice 3b moves the pointer-free turn-in-place lifecycle and
-   synthetic facing policy to `RpgTurnInPlaceRuntime`; jump/landing extraction remains pending.
+   synthetic facing policy to `RpgTurnInPlaceRuntime`. Slice 3c moves physical jump edges and the
+   bounded backward-start/fall continuation policy to `RpgJumpRuntime`; slice 3d moves final-airborne
+   capture, landing role/fallback, handoff, serial, and timeout policy to `RpgLandingRuntime`.
 4. Externalize database-to-role mapping and feel tuning into an asset/profile seam; keep the
    AnimInstance as the stable AnimBP facade and engine callback coordinator.
 
@@ -149,3 +152,32 @@ families, Sprint authority, combat polish, and default PawnData cutover are sepa
   for eligibility, hysteresis, serials, search priority, GC-safe selection, playback observation,
   reset edges, timeouts, and 20/60/120-FPS stability. The pilot asset contract and complete
   `SurvivalRpg.Animation` filter remain the serialization and regression gates.
+
+## Slices 3c and 3d boundary and verification contract
+
+- **Authority and lifecycle:** CharacterMovement remains the sole physical airborne/grounded truth.
+  `RpgJumpRuntime` interprets those immutable edges and owns only the bounded backward-start/fall
+  Continuing-Pose policy. `RpgLandingRuntime` captures final-airborne values on game-thread
+  `PreUpdate` and resolves cosmetic landing roles, fallback, one bounded handoff, request serials,
+  and timeouts on the animation update thread. Prediction never emits a touchdown transition.
+  `URpgAnimInstance` alone coordinates phase intents and preserves the callback priority TIR,
+  Landing, backward/fall continuation, then normal locomotion.
+- **Native type count:** zero new `UObject` classes. The two focused headers contain only
+  non-reflected enums, snapshots, state/results, constants, and namespace functions. The existing
+  flat reflected `JumpPhase`, landing snapshot/debug fields, database properties, and callback
+  signatures keep their names, types, flags, and defaults.
+- **Replication and persistence:** none added or changed. Capture and lifecycle state remain local,
+  transient, pointer-free cosmetic values derived from each role's existing CharacterMovement
+  snapshot. No replicated property, save data, RPC, authority path, or parallel gameplay state
+  machine is introduced.
+- **Designer/editor work:** no Blueprint, DataAsset, Pose Search database, presentation profile,
+  manifest, PawnData, Experience, or content asset changes. The six landing database pointers,
+  Heavy threshold, immutable presentation lookup, GC-tracked selected/held assets, PostSelection
+  latch, and Blend Stack playback observation remain in `URpgAnimInstance`. No MCP/editor authoring
+  is required; database/tuning externalization remains issue #81 step 4.
+- **Stable tests:** `SurvivalRpg.Animation.Jump.Runtime.LandingSelection` directly owns finite
+  capture, epoch/prediction, inclusive 3/700 boundaries, role/fallback, handoff, serial, and watchdog
+  policy. `SurvivalRpg.Animation.Jump.Runtime.PhaseAndProceduralGates` owns physical phase edges,
+  backward-start/fall continuation, callback facade, exact asset latches, GC cleanup, and procedural
+  presentation gates. Trajectory, pilot asset/reflection, and the complete `SurvivalRpg.Animation`
+  filter remain adjacent regression gates.

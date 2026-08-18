@@ -11,6 +11,8 @@
 #include "Misc/AutomationTest.h"
 #include "PoseSearch/PoseSearchDatabase.h"
 #include "SurvivalRpg/Animation/RpgAnimInstance.h"
+#include "SurvivalRpg/Animation/RpgJumpRuntime.h"
+#include "SurvivalRpg/Animation/RpgLandingRuntime.h"
 #include "SurvivalRpg/Animation/RpgMotionMatchingRuntime.h"
 #include "SurvivalRpg/Core/Character/RpgCharacter.h"
 #include "UObject/Package.h"
@@ -88,6 +90,108 @@ bool FRpgGaspPresentationProfileValidationTest::RunTest(const FString& Parameter
 
 bool FRpgJumpPhaseRuntimeTest::RunTest(const FString& Parameters)
 {
+	auto ResolvePhysicalTransition = [](
+		ERpgJumpPhase CurrentPhase,
+		ERpgLocomotionMovementState MovementState,
+		bool bIsFalling,
+		float VerticalVelocity,
+		bool bHardReset = false)
+	{
+		FRpgJumpPhysicalSnapshot Snapshot;
+		Snapshot.MovementState = MovementState;
+		Snapshot.VerticalVelocity = VerticalVelocity;
+		Snapshot.bIsFalling = bIsFalling;
+		Snapshot.bHardReset = bHardReset;
+		return RpgJumpRuntime::ResolvePhysicalTransition(CurrentPhase, Snapshot);
+	};
+	const FRpgJumpPhysicalTransitionResult AscendingTakeoff = ResolvePhysicalTransition(
+		ERpgJumpPhase::Grounded,
+		ERpgLocomotionMovementState::Airborne,
+		false,
+		100.0f);
+	TestEqual(
+		TEXT("Physical airborne state enters the cosmetic airborne phase"),
+		AscendingTakeoff.Transition,
+		ERpgJumpPhysicalTransition::EnterAirborne);
+	TestTrue(TEXT("Strictly positive takeoff velocity arms the backward-start opportunity"), AscendingTakeoff.bAscendingTakeoff);
+	TestEqual(
+		TEXT("Either falling signal enters the cosmetic airborne phase"),
+		ResolvePhysicalTransition(
+			ERpgJumpPhase::Grounded,
+			ERpgLocomotionMovementState::Grounded,
+			true,
+			-10.0f).Transition,
+		ERpgJumpPhysicalTransition::EnterAirborne);
+	TestEqual(
+		TEXT("A physical touchdown is exposed before landing selection changes the phase"),
+		ResolvePhysicalTransition(
+			ERpgJumpPhase::Airborne,
+			ERpgLocomotionMovementState::Grounded,
+			false,
+			0.0f).Transition,
+		ERpgJumpPhysicalTransition::Touchdown);
+	TestEqual(
+		TEXT("An active landing remains under the landing lifecycle while grounded"),
+		ResolvePhysicalTransition(
+			ERpgJumpPhase::Landing,
+			ERpgLocomotionMovementState::Grounded,
+			false,
+			0.0f).Transition,
+		ERpgJumpPhysicalTransition::None);
+	TestEqual(
+		TEXT("A stable physical airborne phase does not manufacture a new epoch"),
+		ResolvePhysicalTransition(
+			ERpgJumpPhase::Airborne,
+			ERpgLocomotionMovementState::Airborne,
+			true,
+			300.0f).Transition,
+		ERpgJumpPhysicalTransition::None);
+	TestEqual(
+		TEXT("A second jump during landing opens a fresh airborne phase"),
+		ResolvePhysicalTransition(
+			ERpgJumpPhase::Landing,
+			ERpgLocomotionMovementState::Airborne,
+			true,
+			300.0f).Transition,
+		ERpgJumpPhysicalTransition::EnterAirborne);
+	TestEqual(
+		TEXT("A hard reset restarts even an established airborne phase"),
+		ResolvePhysicalTransition(
+			ERpgJumpPhase::Airborne,
+			ERpgLocomotionMovementState::Airborne,
+			false,
+			50.0f,
+			true).Transition,
+		ERpgJumpPhysicalTransition::EnterAirborne);
+	TestEqual(
+		TEXT("A grounded hard reset clears cosmetic jump presentation"),
+		ResolvePhysicalTransition(
+			ERpgJumpPhase::Landing,
+			ERpgLocomotionMovementState::Grounded,
+			false,
+			0.0f,
+			true).Transition,
+		ERpgJumpPhysicalTransition::ResetGrounded);
+
+	FRpgBackwardJumpStartHoldState ImmediateReleaseState;
+	ImmediateReleaseState.bHoldEligible = true;
+	FRpgBackwardJumpStartPlaybackSnapshot ImmediateReleaseSnapshot;
+	ImmediateReleaseSnapshot.JumpPhase = ERpgJumpPhase::Airborne;
+	ImmediateReleaseSnapshot.CurrentAssetTime = 1.8f;
+	ImmediateReleaseSnapshot.CurrentAssetLength = 1.9f;
+	ImmediateReleaseSnapshot.CurrentAssetPlayRate = 1.0f;
+	ImmediateReleaseSnapshot.bCurrentAssetIsAirborne = true;
+	ImmediateReleaseSnapshot.bCurrentAssetIsBackwardStart = true;
+	const FRpgBackwardJumpStartHoldResult ImmediateRelease =
+		RpgJumpRuntime::UpdateBackwardJumpStartHold(
+			ImmediateReleaseState,
+			ImmediateReleaseSnapshot);
+	TestTrue(TEXT("A first backward result may be captured before its near-end release"), ImmediateRelease.bCaptureCurrentAsset);
+	TestTrue(TEXT("The same near-end update explicitly clears the transient held asset"), ImmediateRelease.bClearHeldAsset);
+	TestFalse(TEXT("A near-end backward result never requests Continuing Pose"), ImmediateRelease.bHoldContinuingPose);
+	TestTrue(TEXT("Immediate release still consumes the one opportunity"), ImmediateRelease.State.bOpportunityConsumed);
+	TestTrue(TEXT("Immediate release records that the backward path was armed"), ImmediateRelease.State.bHoldWasArmed);
+
 	USkeletalMeshComponent* AnimInstanceOuter = NewObject<USkeletalMeshComponent>();
 	URpgAnimInstance* AnimInstance = NewObject<URpgAnimInstance>(AnimInstanceOuter);
 	UPoseSearchDatabase* StandLightLandingDatabase = NewObject<UPoseSearchDatabase>();
@@ -169,7 +273,7 @@ bool FRpgJumpPhaseRuntimeTest::RunTest(const FString& Parameters)
 	{
 		TestEqual(
 			RoleCase.Name,
-			URpgAnimInstance::ResolveStationaryLandingRole(RoleCase.LandingRole),
+			RpgLandingRuntime::ResolveStationaryRole(RoleCase.LandingRole),
 			RoleCase.ExpectedRole);
 	}
 	const float QuietNaN = std::numeric_limits<float>::quiet_NaN();
@@ -179,22 +283,22 @@ bool FRpgJumpPhaseRuntimeTest::RunTest(const FString& Parameters)
 		const FName RoleTag = URpgAnimInstance::GetMotionMatchingDatabaseRoleTag(LandingRole);
 		TestFalse(
 			*FString::Printf(TEXT("%s stays active at the inclusive 3 cm/s Idle boundary"), *RoleTag.ToString()),
-			URpgAnimInstance::ShouldReleaseStationaryLanding(LandingRole, false, 3.0f));
+			RpgLandingRuntime::ShouldReleaseStationary(LandingRole, false, 3.0f));
 		TestTrue(
 			*FString::Printf(TEXT("%s releases above the Idle boundary"), *RoleTag.ToString()),
-			URpgAnimInstance::ShouldReleaseStationaryLanding(LandingRole, false, 3.01f));
+			RpgLandingRuntime::ShouldReleaseStationary(LandingRole, false, 3.01f));
 		TestFalse(
 			*FString::Printf(TEXT("%s ignores raw intent until horizontal chooser movement begins"), *RoleTag.ToString()),
-			URpgAnimInstance::ShouldReleaseStationaryLanding(LandingRole, false, 0.0f));
+			RpgLandingRuntime::ShouldReleaseStationary(LandingRole, false, 0.0f));
 		TestTrue(
 			*FString::Printf(TEXT("%s releases once the horizontal chooser is Moving"), *RoleTag.ToString()),
-			URpgAnimInstance::ShouldReleaseStationaryLanding(LandingRole, true, 0.0f));
+			RpgLandingRuntime::ShouldReleaseStationary(LandingRole, true, 0.0f));
 		TestTrue(
 			*FString::Printf(TEXT("%s releases for a non-finite NaN speed"), *RoleTag.ToString()),
-			URpgAnimInstance::ShouldReleaseStationaryLanding(LandingRole, false, QuietNaN));
+			RpgLandingRuntime::ShouldReleaseStationary(LandingRole, false, QuietNaN));
 		TestTrue(
 			*FString::Printf(TEXT("%s releases for a non-finite infinite speed"), *RoleTag.ToString()),
-			URpgAnimInstance::ShouldReleaseStationaryLanding(LandingRole, false, Infinity));
+			RpgLandingRuntime::ShouldReleaseStationary(LandingRole, false, Infinity));
 	}
 
 	static const ERpgMotionMatchingDatabaseRole MovingLandingRoles[] =
@@ -209,10 +313,10 @@ bool FRpgJumpPhaseRuntimeTest::RunTest(const FString& Parameters)
 		const FName RoleTag = URpgAnimInstance::GetMotionMatchingDatabaseRoleTag(LandingRole);
 		TestFalse(
 			*FString::Printf(TEXT("%s preserves its authored moving landing under live input"), *RoleTag.ToString()),
-			URpgAnimInstance::ShouldReleaseStationaryLanding(LandingRole, true, 450.0f));
+			RpgLandingRuntime::ShouldReleaseStationary(LandingRole, true, 450.0f));
 		TestEqual(
 			*FString::Printf(TEXT("%s cannot manufacture another moving landing handoff"), *RoleTag.ToString()),
-			URpgAnimInstance::ResolveStationaryLandingMovementRole(
+			RpgLandingRuntime::ResolveStationaryMovementRole(
 				LandingRole,
 				ERpgLocomotionGait::Run),
 			ERpgMotionMatchingDatabaseRole::None);
@@ -280,7 +384,7 @@ bool FRpgJumpPhaseRuntimeTest::RunTest(const FString& Parameters)
 	{
 		TestEqual(
 			RoleCase.Name,
-			URpgAnimInstance::ResolveStationaryLandingMovementRole(
+			RpgLandingRuntime::ResolveStationaryMovementRole(
 				RoleCase.LandingRole,
 				RoleCase.LiveGait),
 			RoleCase.ExpectedRole);
@@ -300,26 +404,26 @@ bool FRpgJumpPhaseRuntimeTest::RunTest(const FString& Parameters)
 		const FName RoleTag = URpgAnimInstance::GetMotionMatchingDatabaseRoleTag(LandingRole);
 		TestFalse(
 			*FString::Printf(TEXT("An active unarmed %s remains a Continuing Pose"), *RoleTag.ToString()),
-			URpgAnimInstance::ShouldInterruptLandingDatabaseExit(
+			RpgLandingRuntime::ShouldInterruptDatabaseExit(
 				ERpgJumpPhase::Landing,
 				false,
 				LandingRole));
 		TestTrue(
 			*FString::Printf(TEXT("A completed %s interrupts its database exit"), *RoleTag.ToString()),
-			URpgAnimInstance::ShouldInterruptLandingDatabaseExit(
+			RpgLandingRuntime::ShouldInterruptDatabaseExit(
 				ERpgJumpPhase::Landing,
 				true,
 				LandingRole));
 		TestTrue(
 			*FString::Printf(TEXT("A reset %s interrupts its handoff to gait locomotion"), *RoleTag.ToString()),
-			URpgAnimInstance::ShouldInterruptLandingDatabaseExit(
+			RpgLandingRuntime::ShouldInterruptDatabaseExit(
 				ERpgJumpPhase::Grounded,
 				false,
 				LandingRole));
 	}
 	TestFalse(
 		TEXT("A normal grounded database never manufactures a landing-exit interrupt"),
-		URpgAnimInstance::ShouldInterruptLandingDatabaseExit(
+		RpgLandingRuntime::ShouldInterruptDatabaseExit(
 			ERpgJumpPhase::Grounded,
 			false,
 			ERpgMotionMatchingDatabaseRole::StandRunLoops));
@@ -728,7 +832,7 @@ bool FRpgJumpPhaseRuntimeTest::RunTest(const FString& Parameters)
 					HeldAirborneFrozenHorizontalSpeed));
 			TestEqual(
 				*FString::Printf(TEXT("%s %s frozen airborne role is Run before live touchdown normalization"), NetworkView.Name, LandingCase.Name),
-				URpgAnimInstance::ResolveLandingDatabaseRole(
+				RpgLandingRuntime::ResolveDatabaseRole(
 					Proxy.LandingSelectionSnapshot,
 					AnimInstance->HeavyLandingSpeedThreshold),
 				LandingCase.RunRole);
@@ -849,7 +953,7 @@ bool FRpgJumpPhaseRuntimeTest::RunTest(const FString& Parameters)
 		true);
 	TestEqual(
 		TEXT("Missing-heavy fallback fixture starts from frozen Run Heavy"),
-		URpgAnimInstance::ResolveLandingDatabaseRole(
+		RpgLandingRuntime::ResolveDatabaseRole(
 			Proxy.LandingSelectionSnapshot,
 			AnimInstance->HeavyLandingSpeedThreshold),
 		ERpgMotionMatchingDatabaseRole::RunHeavyLanding);
@@ -975,7 +1079,7 @@ bool FRpgJumpPhaseRuntimeTest::RunTest(const FString& Parameters)
 			0u);
 		TestTrue(
 			*FString::Printf(TEXT("Speed-released %s interrupts its landing-database handoff"), LandingCase.Name),
-			URpgAnimInstance::ShouldInterruptLandingDatabaseExit(
+			RpgLandingRuntime::ShouldInterruptDatabaseExit(
 				AnimInstance->JumpPhase,
 				AnimInstance->bLandingCompletionArmed,
 				AnimInstance->CurrentMotionMatchingDatabaseRole));
@@ -1254,45 +1358,100 @@ bool FRpgJumpPhaseRuntimeTest::RunTest(const FString& Parameters)
 	JumpStart->bLoop = false;
 	TestTrue(
 		TEXT("A descending fall continues after the bounded backward-start path"),
-		AnimInstance->ShouldHoldLoopingAirborneFallPlayback(
+		RpgJumpRuntime::ShouldHoldLoopingAirborneFallPlayback(
 			ERpgJumpPhase::Airborne, true, -100.0f, true));
 	TestFalse(
 		TEXT("A side or forward fall remains searchable when no backward hold was armed"),
-		AnimInstance->ShouldHoldLoopingAirborneFallPlayback(
+		RpgJumpRuntime::ShouldHoldLoopingAirborneFallPlayback(
 			ERpgJumpPhase::Airborne, false, -100.0f, true));
 	TestFalse(
 		TEXT("An upward relaunch releases a previously held fall loop"),
-		AnimInstance->ShouldHoldLoopingAirborneFallPlayback(
+		RpgJumpRuntime::ShouldHoldLoopingAirborneFallPlayback(
 			ERpgJumpPhase::Airborne, true, 100.0f, true));
+	TestTrue(
+		TEXT("The fall loop accepts the inclusive descending epsilon boundary"),
+		RpgJumpRuntime::ShouldHoldLoopingAirborneFallPlayback(
+			ERpgJumpPhase::Airborne, true, UE_KINDA_SMALL_NUMBER, true));
 
 	TestTrue(
 		TEXT("A backward start remains continuing playback after its 0.565 second transition block"),
-		AnimInstance->ShouldHoldBackwardJumpStartPlayback(
+		RpgJumpRuntime::ShouldHoldBackwardJumpStartPlayback(
 			ERpgJumpPhase::Airborne, true, 0.67f, 1.97f, 1.0f, 0.67f));
 	TestFalse(
 		TEXT("The hold releases one authored blend interval before clip end"),
-		AnimInstance->ShouldHoldBackwardJumpStartPlayback(
+		RpgJumpRuntime::ShouldHoldBackwardJumpStartPlayback(
 			ERpgJumpPhase::Airborne, true, 1.78f, 1.97f, 1.0f, 1.0f));
 	TestFalse(
+		TEXT("The authored release lead boundary is strict"),
+		RpgJumpRuntime::ShouldHoldBackwardJumpStartPlayback(
+			ERpgJumpPhase::Airborne, true, 0.8f, 1.0f, 1.0f, 0.5f));
+	TestTrue(
+		TEXT("Paused playback remains bounded by the independent hold watchdog"),
+		RpgJumpRuntime::ShouldHoldBackwardJumpStartPlayback(
+			ERpgJumpPhase::Airborne, true, 0.8f, 1.0f, 0.0f, 0.5f));
+	TestFalse(
+		TEXT("Non-finite playback rate fails open"),
+		RpgJumpRuntime::ShouldHoldBackwardJumpStartPlayback(
+			ERpgJumpPhase::Airborne, true, 0.8f, 1.0f, QuietNaN, 0.5f));
+	TestFalse(
 		TEXT("The hold watchdog releases a genuine long fall"),
-		AnimInstance->ShouldHoldBackwardJumpStartPlayback(
+		RpgJumpRuntime::ShouldHoldBackwardJumpStartPlayback(
 			ERpgJumpPhase::Airborne, true, 1.0f, 1.97f, 1.0f, 1.25f));
 	TestTrue(
 		TEXT("The near-end release threshold is play-rate aware"),
-		AnimInstance->ShouldHoldBackwardJumpStartPlayback(
+		RpgJumpRuntime::ShouldHoldBackwardJumpStartPlayback(
 			ERpgJumpPhase::Airborne, true, 1.75f, 1.97f, 0.5f, 1.0f));
 	TestFalse(
 		TEXT("Grounded playback cannot retain an airborne start"),
-		AnimInstance->ShouldHoldBackwardJumpStartPlayback(
+		RpgJumpRuntime::ShouldHoldBackwardJumpStartPlayback(
 			ERpgJumpPhase::Grounded, true, 0.67f, 1.97f, 1.0f, 0.67f));
 	TestFalse(
 		TEXT("An unexpected active asset fails open"),
-		AnimInstance->ShouldHoldBackwardJumpStartPlayback(
+		RpgJumpRuntime::ShouldHoldBackwardJumpStartPlayback(
 			ERpgJumpPhase::Airborne, false, 0.67f, 1.97f, 1.0f, 0.67f));
 	TestFalse(
 		TEXT("Invalid playback timing fails open"),
-		AnimInstance->ShouldHoldBackwardJumpStartPlayback(
+		RpgJumpRuntime::ShouldHoldBackwardJumpStartPlayback(
 			ERpgJumpPhase::Airborne, true, 0.0f, 0.0f, 1.0f, 0.0f));
+
+	FRpgBackwardJumpStartHoldState OrdinaryAirborneState;
+	OrdinaryAirborneState.bHoldEligible = true;
+	FRpgBackwardJumpStartPlaybackSnapshot OrdinaryAirborneSnapshot;
+	OrdinaryAirborneSnapshot.JumpPhase = ERpgJumpPhase::Airborne;
+	OrdinaryAirborneSnapshot.CurrentAssetTime = 0.1f;
+	OrdinaryAirborneSnapshot.CurrentAssetLength = 1.0f;
+	OrdinaryAirborneSnapshot.CurrentAssetPlayRate = 1.0f;
+	OrdinaryAirborneSnapshot.bCurrentAssetIsAirborne = true;
+	const FRpgBackwardJumpStartHoldResult OrdinaryAirborneResult =
+		RpgJumpRuntime::UpdateBackwardJumpStartHold(
+			OrdinaryAirborneState,
+			OrdinaryAirborneSnapshot);
+	TestTrue(
+		TEXT("The first ordinary Airborne result consumes the one hold opportunity"),
+		OrdinaryAirborneResult.State.bOpportunityConsumed);
+	FRpgBackwardJumpStartPlaybackSnapshot LaterBackwardSnapshot = OrdinaryAirborneSnapshot;
+	LaterBackwardSnapshot.bCurrentAssetIsBackwardStart = true;
+	const FRpgBackwardJumpStartHoldResult LaterBackwardResult =
+		RpgJumpRuntime::UpdateBackwardJumpStartHold(
+			OrdinaryAirborneResult.State,
+			LaterBackwardSnapshot);
+	TestFalse(
+		TEXT("A later backward result cannot arm after an ordinary Airborne result"),
+		LaterBackwardResult.bCaptureCurrentAsset);
+
+	AnimInstance->BeginAirbornePhase(true);
+	TestFalse(
+		TEXT("A first backward result already inside the release lead never holds"),
+		AnimInstance->UpdateBackwardJumpStartHold(BackwardStart, 1.8f, 1.9f, 1.0f, 0.0f));
+	TestNull(
+		TEXT("Immediate capture-and-release leaves no stale GC-tracked held asset"),
+		AnimInstance->BackwardJumpStartHeldAsset.Get());
+	TestTrue(
+		TEXT("Immediate release still consumes the airborne opportunity"),
+		AnimInstance->bBackwardJumpStartHoldOpportunityConsumed);
+	TestTrue(
+		TEXT("Immediate release still scopes fall continuation to the armed path"),
+		AnimInstance->bBackwardJumpStartHoldWasArmed);
 
 	AnimInstance->BeginAirbornePhase(true);
 	TestFalse(

@@ -10,6 +10,7 @@
 #include "Misc/AutomationTest.h"
 #include "PoseSearch/PoseSearchDatabase.h"
 #include "SurvivalRpg/Animation/RpgAnimInstance.h"
+#include "SurvivalRpg/Animation/RpgLandingRuntime.h"
 #include "UObject/UObjectGlobals.h"
 
 IMPLEMENT_SIMPLE_AUTOMATION_TEST(
@@ -57,7 +58,7 @@ bool FRpgLandingSelectionRuntimeTest::RunTest(const FString& Parameters)
 	{
 		TestEqual(
 			Context,
-			URpgAnimInstance::ResolveLandingDatabaseRole(Snapshot, HeavySpeedThreshold),
+			RpgLandingRuntime::ResolveDatabaseRole(Snapshot, HeavySpeedThreshold),
 			ExpectedRole);
 	};
 	auto TestSnapshotParity = [this](
@@ -216,13 +217,13 @@ bool FRpgLandingSelectionRuntimeTest::RunTest(const FString& Parameters)
 	TestResolvedRole(TEXT("Infinite predicted contact time fails closed"), InvalidSnapshot, ERpgMotionMatchingDatabaseRole::None);
 	TestEqual(
 		TEXT("A NaN Heavy threshold fails closed"),
-		URpgAnimInstance::ResolveLandingDatabaseRole(
+		RpgLandingRuntime::ResolveDatabaseRole(
 			MakeSnapshot(ERpgLocomotionGait::Run, 450.0f, true, 700.0f, 0.0f),
 			QuietNaN),
 		ERpgMotionMatchingDatabaseRole::None);
 	TestEqual(
 		TEXT("An infinite Heavy threshold fails closed"),
-		URpgAnimInstance::ResolveLandingDatabaseRole(
+		RpgLandingRuntime::ResolveDatabaseRole(
 			MakeSnapshot(ERpgLocomotionGait::Run, 450.0f, true, 700.0f, 0.0f),
 			Infinity),
 		ERpgMotionMatchingDatabaseRole::None);
@@ -320,7 +321,7 @@ bool FRpgLandingSelectionRuntimeTest::RunTest(const FString& Parameters)
 		FMath::IsNearlyZero(UpwardProxy.LandingSelectionSnapshot.MaximumDownwardSpeed));
 	TestEqual(
 		TEXT("An upward capture resolves Light rather than Heavy"),
-		URpgAnimInstance::ResolveLandingDatabaseRole(
+		RpgLandingRuntime::ResolveDatabaseRole(
 			UpwardProxy.LandingSelectionSnapshot,
 			HeavySpeedThreshold),
 		ERpgMotionMatchingDatabaseRole::RunLightLanding);
@@ -442,11 +443,215 @@ bool FRpgLandingSelectionRuntimeTest::RunTest(const FString& Parameters)
 			NetworkSnapshots[0]);
 		TestEqual(
 			*FString::Printf(TEXT("%s resolves the same Run Heavy role"), NetworkRoleNames[RoleIndex]),
-			URpgAnimInstance::ResolveLandingDatabaseRole(
+			RpgLandingRuntime::ResolveDatabaseRole(
 				NetworkSnapshots[RoleIndex],
 				HeavySpeedThreshold),
 			ERpgMotionMatchingDatabaseRole::RunHeavyLanding);
 	}
+
+	// The extracted value runtime owns epoch wrap, current-frame prediction, request serials,
+	// bounded stationary handoff, and timeout math independently of UObject/AnimNode state.
+	FRpgLandingCaptureState WrappedCaptureState;
+	WrappedCaptureState.LastGroundedGait = ERpgLocomotionGait::Walk;
+	WrappedCaptureState.AirborneEpoch = MAX_int32;
+	FRpgLandingCaptureSnapshot WrappedCaptureInput;
+	WrappedCaptureInput.MovementState = ERpgLocomotionMovementState::Airborne;
+	WrappedCaptureInput.Gait = ERpgLocomotionGait::Walk;
+	WrappedCaptureInput.WorldVelocity = FVector(120.0, 0.0, -300.0);
+	WrappedCaptureInput.VerticalVelocity = -300.0f;
+	WrappedCaptureInput.GravityAcceleration = GravityAcceleration;
+	WrappedCaptureInput.bIsFalling = true;
+	FRpgLandingSelectionSnapshot WrappedSelectionSnapshot;
+	RpgLandingRuntime::UpdateSelectionSnapshot(
+		WrappedSelectionSnapshot,
+		WrappedCaptureState,
+		WrappedCaptureInput);
+	TestEqual(
+		TEXT("Airborne epoch skips zero after int32 wrap"),
+		WrappedCaptureState.AirborneEpoch,
+		1);
+	TestEqual(
+		TEXT("Wrapped epoch is published to the frozen snapshot"),
+		WrappedSelectionSnapshot.AirborneEpoch,
+		1);
+
+	WrappedCaptureInput.TrajectoryPrediction.LandingLocation = FVector(50.0, 0.0, 0.0);
+	WrappedCaptureInput.TrajectoryPrediction.LandingNormal = FVector::UpVector;
+	WrappedCaptureInput.TrajectoryPrediction.TimeToLand = 0.2f;
+	WrappedCaptureInput.TrajectoryPrediction.bIsValid = true;
+	RpgLandingRuntime::UpdateSelectionSnapshot(
+		WrappedSelectionSnapshot,
+		WrappedCaptureState,
+		WrappedCaptureInput);
+	TestTrue(
+		TEXT("A current valid trajectory prediction is captured"),
+		WrappedSelectionSnapshot.PredictedLanding.bIsValid);
+	WrappedCaptureInput.TrajectoryPrediction = FRpgTrajectoryLandingPrediction();
+	RpgLandingRuntime::UpdateSelectionSnapshot(
+		WrappedSelectionSnapshot,
+		WrappedCaptureState,
+		WrappedCaptureInput);
+	TestFalse(
+		TEXT("A later all-miss frame clears stale trajectory prediction"),
+		WrappedSelectionSnapshot.PredictedLanding.bIsValid);
+	TestTrue(
+		TEXT("A later all-miss frame clears stale predicted impact speed"),
+		FMath::IsNearlyZero(WrappedSelectionSnapshot.PredictedImpactDownwardSpeed));
+	TestTrue(
+		TEXT("Measured downward speed remains accumulated across prediction misses"),
+		FMath::IsNearlyEqual(WrappedSelectionSnapshot.MaximumDownwardSpeed, 300.0f));
+
+	const FRpgLandingSelectionSnapshot ContradictoryFinalAirborne = WrappedSelectionSnapshot;
+	WrappedCaptureInput.MovementState = ERpgLocomotionMovementState::Grounded;
+	WrappedCaptureInput.bIsMovingOnGround = true;
+	WrappedCaptureInput.bIsFalling = true;
+	RpgLandingRuntime::UpdateSelectionSnapshot(
+		WrappedSelectionSnapshot,
+		WrappedCaptureState,
+		WrappedCaptureInput);
+	TestSnapshotParity(
+		TEXT("Supported grounded capture wins contradictory falling flags"),
+		WrappedSelectionSnapshot,
+		ContradictoryFinalAirborne);
+	TestFalse(
+		TEXT("Contradictory grounded capture still closes the airborne edge"),
+		WrappedCaptureState.bWasAirborne);
+
+	FRpgLandingDatabaseAvailability AllLandingDatabases;
+	AllLandingDatabases.bStandLight = true;
+	AllLandingDatabases.bStandHeavy = true;
+	AllLandingDatabases.bWalkLight = true;
+	AllLandingDatabases.bWalkHeavy = true;
+	AllLandingDatabases.bRunLight = true;
+	AllLandingDatabases.bRunHeavy = true;
+
+	FRpgLandingRuntimeState WrappedRequestState;
+	WrappedRequestState.RequestSerial = MAX_uint32;
+	WrappedRequestState.TouchdownElapsed = 0.2f;
+	FRpgLandingRuntimeResult WrappedRequest = RpgLandingRuntime::BeginRequest(
+		WrappedRequestState,
+		ERpgMotionMatchingDatabaseRole::StandHeavyLanding,
+		true);
+	TestEqual(TEXT("Landing request serial skips zero after uint32 wrap"), WrappedRequest.State.RequestSerial, 1u);
+	TestTrue(TEXT("An initial request resets touchdown age"), FMath::IsNearlyZero(WrappedRequest.State.TouchdownElapsed));
+	TestEqual(
+		TEXT("An initial request emits the reflected phase intent"),
+		WrappedRequest.Transition,
+		ERpgLandingRuntimeTransition::BeginLanding);
+	TestTrue(
+		TEXT("The initial landing ForceInterrupt is consumed exactly once"),
+		RpgLandingRuntime::ConsumeForceInterrupt(true, true, WrappedRequest.State));
+	TestFalse(
+		TEXT("The same landing request cannot consume ForceInterrupt twice"),
+		RpgLandingRuntime::ConsumeForceInterrupt(true, true, WrappedRequest.State));
+
+	FRpgLandingRuntimeState HandoffState;
+	HandoffState.ActiveRole = ERpgMotionMatchingDatabaseRole::StandHeavyLanding;
+	HandoffState.TouchdownElapsed = 0.29f;
+	HandoffState.StateElapsed = 0.2f;
+	HandoffState.RequestSerial = 41u;
+	FRpgLandingActiveSnapshot HandoffSnapshot;
+	HandoffSnapshot.Eligibility.MovementState = ERpgLocomotionMovementState::Grounded;
+	HandoffSnapshot.Eligibility.bIsMovingOnGround = true;
+	HandoffSnapshot.Availability = AllLandingDatabases;
+	HandoffSnapshot.LiveGait = ERpgLocomotionGait::Run;
+	HandoffSnapshot.GroundSpeed = 450.0f;
+	HandoffSnapshot.bChooserMoving = true;
+	const FRpgLandingRuntimeResult HandoffResult = RpgLandingRuntime::UpdateActive(
+		HandoffState,
+		HandoffSnapshot,
+		0.01f);
+	TestEqual(
+		TEXT("The inclusive handoff window preserves Heavy severity in the Run domain"),
+		HandoffResult.State.ActiveRole,
+		ERpgMotionMatchingDatabaseRole::RunHeavyLanding);
+	TestEqual(TEXT("A stationary-to-moving handoff advances the request serial"), HandoffResult.State.RequestSerial, 42u);
+	TestEqual(
+		TEXT("A database-change handoff pre-consumes ForceInterrupt"),
+		HandoffResult.State.InterruptedRequestSerial,
+		HandoffResult.State.RequestSerial);
+	TestTrue(
+		TEXT("A handoff preserves physical touchdown age"),
+		FMath::IsNearlyEqual(HandoffResult.State.TouchdownElapsed, 0.3f, 0.0001f));
+
+	FRpgLandingRuntimeState LateHandoffState = HandoffState;
+	LateHandoffState.TouchdownElapsed = RpgLandingRuntime::MovementHandoffWindow;
+	const FRpgLandingRuntimeResult LateHandoffResult = RpgLandingRuntime::UpdateActive(
+		LateHandoffState,
+		HandoffSnapshot,
+		0.01f);
+	TestEqual(
+		TEXT("Movement after the handoff window exits to Grounded"),
+		LateHandoffResult.Transition,
+		ERpgLandingRuntimeTransition::ResetGrounded);
+
+	FRpgLandingRuntimeState FrozenMovingState;
+	FrozenMovingState.ActiveRole = ERpgMotionMatchingDatabaseRole::RunHeavyLanding;
+	FrozenMovingState.PlaybackWatchdogDuration = RpgLandingRuntime::ActiveTimeout;
+	FRpgLandingActiveSnapshot FrozenMovingSnapshot = HandoffSnapshot;
+	FrozenMovingSnapshot.LiveGait = ERpgLocomotionGait::Walk;
+	FrozenMovingSnapshot.GroundSpeed = 100.0f;
+	const FRpgLandingRuntimeResult FrozenMovingResult = RpgLandingRuntime::UpdateActive(
+		FrozenMovingState,
+		FrozenMovingSnapshot,
+		0.1f);
+	TestEqual(
+		TEXT("An active moving landing role remains frozen across live gait changes"),
+		FrozenMovingResult.State.ActiveRole,
+		ERpgMotionMatchingDatabaseRole::RunHeavyLanding);
+
+	FRpgLandingRuntimeState SelectionTimeoutState = FrozenMovingState;
+	SelectionTimeoutState.StateElapsed = RpgLandingRuntime::SelectionTimeout;
+	SelectionTimeoutState.bSelectionLatched = false;
+	TestEqual(
+		TEXT("Selection timeout is inclusive"),
+		RpgLandingRuntime::UpdateActive(
+			SelectionTimeoutState,
+			FrozenMovingSnapshot,
+			0.0f).Transition,
+		ERpgLandingRuntimeTransition::ResetGrounded);
+	FRpgLandingRuntimeState PlaybackTimeoutState = FrozenMovingState;
+	PlaybackTimeoutState.StateElapsed = RpgLandingRuntime::ActiveTimeout;
+	PlaybackTimeoutState.PlaybackWatchdogDuration = RpgLandingRuntime::ActiveTimeout;
+	PlaybackTimeoutState.bSelectionLatched = true;
+	TestEqual(
+		TEXT("Playback watchdog timeout is inclusive"),
+		RpgLandingRuntime::UpdateActive(
+			PlaybackTimeoutState,
+			FrozenMovingSnapshot,
+			0.0f).Transition,
+		ERpgLandingRuntimeTransition::ResetGrounded);
+
+	TestTrue(
+		TEXT("Looping landing playback uses the bounded active timeout"),
+		FMath::IsNearlyEqual(
+			RpgLandingRuntime::CalculatePlaybackWatchdogDuration(0.2f, 1.0f, true),
+			RpgLandingRuntime::ActiveTimeout));
+	TestTrue(
+		TEXT("Paused landing playback uses the bounded active timeout"),
+		FMath::IsNearlyEqual(
+			RpgLandingRuntime::CalculatePlaybackWatchdogDuration(0.2f, 0.0f, false),
+			RpgLandingRuntime::ActiveTimeout));
+	TestTrue(
+		TEXT("Negative play rate uses its absolute playback duration"),
+		FMath::IsNearlyEqual(
+			RpgLandingRuntime::CalculatePlaybackWatchdogDuration(0.4f, -2.0f, false),
+			0.3f));
+	TestTrue(
+		TEXT("Landing watchdog clamps short playback to its safety margin"),
+		FMath::IsNearlyEqual(
+			RpgLandingRuntime::CalculatePlaybackWatchdogDuration(0.0f, 1.0f, false),
+			RpgLandingRuntime::PlaybackWatchdogSafetyMargin));
+	TestTrue(
+		TEXT("Landing watchdog clamps long playback to its active timeout"),
+		FMath::IsNearlyEqual(
+			RpgLandingRuntime::CalculatePlaybackWatchdogDuration(10.0f, 1.0f, false),
+			RpgLandingRuntime::ActiveTimeout));
+	TestTrue(
+		TEXT("Non-finite play rate fails over to the bounded active timeout"),
+		FMath::IsNearlyEqual(
+			RpgLandingRuntime::CalculatePlaybackWatchdogDuration(0.2f, QuietNaN, false),
+			RpgLandingRuntime::ActiveTimeout));
 
 	// Missing Heavy content falls back only to the same gait's Light slot, then to None.
 	USkeletalMeshComponent* AnimInstanceOuter = NewObject<USkeletalMeshComponent>();

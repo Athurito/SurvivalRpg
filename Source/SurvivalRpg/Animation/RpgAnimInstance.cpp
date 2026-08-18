@@ -26,37 +26,12 @@
 
 namespace
 {
-constexpr float LandingSelectionTimeout = 0.25f;
-constexpr float LandingActiveTimeout = 1.25f;
-constexpr float LandingPlaybackWatchdogSafetyMargin = 0.1f;
-constexpr float LandingFinishedTimeTolerance = 0.05f;
-constexpr float LightLandingIdleSpeedThreshold = 3.0f;
-constexpr float LandingMovementHandoffWindow = 0.3f;
-constexpr float BackwardJumpStartHoldTimeout = 1.25f;
-constexpr float BackwardJumpStartReleaseLeadTime = 0.2f;
 void ResetPoseSearchTrajectoryState(FRpgAnimInstanceProxy& Proxy)
 {
 	Proxy.RawTransformTrajectory.Samples.Reset();
 	Proxy.TransformTrajectory.Samples.Reset();
 	Proxy.TrajectoryLandingPrediction = FRpgTrajectoryLandingPrediction();
 	Proxy.DesiredControllerYawLastUpdate = 0.0f;
-}
-
-float CalculateLandingPlaybackWatchdogDuration(
-	float RemainingAnimationTime,
-	float PlayRate,
-	bool bLooping)
-{
-	if (bLooping || !FMath::IsFinite(PlayRate) || FMath::Abs(PlayRate) <= UE_SMALL_NUMBER)
-	{
-		return LandingActiveTimeout;
-	}
-
-	return FMath::Clamp(
-		FMath::Max(RemainingAnimationTime, 0.0f) / FMath::Abs(PlayRate) +
-			LandingPlaybackWatchdogSafetyMargin,
-		LandingPlaybackWatchdogSafetyMargin,
-		LandingActiveTimeout);
 }
 
 struct FRpgFootPlacementTraceResult
@@ -906,289 +881,50 @@ FName URpgAnimInstance::GetMotionMatchingDatabaseStateTag(
 	}
 }
 
-ERpgMotionMatchingDatabaseRole URpgAnimInstance::ResolveStationaryLandingRole(
-	ERpgMotionMatchingDatabaseRole LandingRole)
-{
-	switch (LandingRole)
-	{
-	case ERpgMotionMatchingDatabaseRole::StandLightLanding:
-	case ERpgMotionMatchingDatabaseRole::WalkLightLanding:
-	case ERpgMotionMatchingDatabaseRole::RunLightLanding:
-		return ERpgMotionMatchingDatabaseRole::StandLightLanding;
-	case ERpgMotionMatchingDatabaseRole::StandHeavyLanding:
-	case ERpgMotionMatchingDatabaseRole::WalkHeavyLanding:
-	case ERpgMotionMatchingDatabaseRole::RunHeavyLanding:
-		return ERpgMotionMatchingDatabaseRole::StandHeavyLanding;
-	default:
-		return ERpgMotionMatchingDatabaseRole::None;
-	}
-}
-
-bool URpgAnimInstance::ShouldReleaseStationaryLanding(
-	ERpgMotionMatchingDatabaseRole LandingRole,
-	bool bChooserMoving,
-	float GroundSpeed)
-{
-	const bool bStationaryLanding =
-		LandingRole == ERpgMotionMatchingDatabaseRole::StandLightLanding ||
-		LandingRole == ERpgMotionMatchingDatabaseRole::StandHeavyLanding;
-	return bStationaryLanding &&
-		(bChooserMoving ||
-		 !FMath::IsFinite(GroundSpeed) ||
-		 GroundSpeed > LightLandingIdleSpeedThreshold);
-}
-
-ERpgMotionMatchingDatabaseRole URpgAnimInstance::ResolveStationaryLandingMovementRole(
-	ERpgMotionMatchingDatabaseRole LandingRole,
-	ERpgLocomotionGait LiveGait)
-{
-	const bool bLight = LandingRole == ERpgMotionMatchingDatabaseRole::StandLightLanding;
-	const bool bHeavy = LandingRole == ERpgMotionMatchingDatabaseRole::StandHeavyLanding;
-	if (!bLight && !bHeavy)
-	{
-		return ERpgMotionMatchingDatabaseRole::None;
-	}
-
-	switch (LiveGait)
-	{
-	case ERpgLocomotionGait::Walk:
-		return bHeavy
-			? ERpgMotionMatchingDatabaseRole::WalkHeavyLanding
-			: ERpgMotionMatchingDatabaseRole::WalkLightLanding;
-	case ERpgLocomotionGait::Run:
-	case ERpgLocomotionGait::Sprint:
-		return bHeavy
-			? ERpgMotionMatchingDatabaseRole::RunHeavyLanding
-			: ERpgMotionMatchingDatabaseRole::RunLightLanding;
-	default:
-		return ERpgMotionMatchingDatabaseRole::None;
-	}
-}
-
-bool URpgAnimInstance::ShouldInterruptLandingDatabaseExit(
-	ERpgJumpPhase CurrentJumpPhase,
-	bool bCompletionArmed,
-	ERpgMotionMatchingDatabaseRole CurrentDatabaseRole)
-{
-	return RpgMotionMatchingRuntime::IsLandingDatabaseRole(CurrentDatabaseRole) &&
-		(CurrentJumpPhase != ERpgJumpPhase::Landing || bCompletionArmed);
-}
-
-ERpgMotionMatchingDatabaseRole URpgAnimInstance::ResolveLandingDatabaseRole(
-	const FRpgLandingSelectionSnapshot& Snapshot,
-	float HeavySpeedThreshold)
-{
-	const bool bFiniteSnapshot =
-		Snapshot.bIsValid &&
-		Snapshot.AirborneEpoch != 0 &&
-		!Snapshot.HorizontalVelocity.ContainsNaN() &&
-		FMath::IsFinite(Snapshot.HorizontalSpeed) && Snapshot.HorizontalSpeed >= 0.0f &&
-		FMath::IsFinite(Snapshot.VerticalVelocity) &&
-		FMath::IsFinite(Snapshot.MaximumDownwardSpeed) &&
-		Snapshot.MaximumDownwardSpeed >= 0.0f &&
-		FMath::IsFinite(Snapshot.PredictedImpactDownwardSpeed) &&
-		Snapshot.PredictedImpactDownwardSpeed >= 0.0f &&
-		FMath::IsFinite(HeavySpeedThreshold) && HeavySpeedThreshold > 0.0f;
-	if (!bFiniteSnapshot)
-	{
-		return ERpgMotionMatchingDatabaseRole::None;
-	}
-
-	if (Snapshot.PredictedLanding.bIsValid &&
-		(!FMath::IsFinite(Snapshot.PredictedLanding.TimeToLand) ||
-		 Snapshot.PredictedLanding.TimeToLand < 0.0f ||
-		 Snapshot.PredictedLanding.LandingLocation.ContainsNaN() ||
-		 Snapshot.PredictedLanding.LandingNormal.ContainsNaN()))
-	{
-		return ERpgMotionMatchingDatabaseRole::None;
-	}
-
-	const bool bHeavy =
-		FMath::Max(
-			Snapshot.MaximumDownwardSpeed,
-			Snapshot.PredictedImpactDownwardSpeed) >= HeavySpeedThreshold;
-	// Match GASP's physical MovementState boundary: airborne input may capture the desired
-	// gait, but it cannot select a moving landing before speed leaves the inclusive Idle band.
-	const bool bIdle = Snapshot.HorizontalSpeed <= LightLandingIdleSpeedThreshold;
-	if (bIdle)
-	{
-		return bHeavy
-			? ERpgMotionMatchingDatabaseRole::StandHeavyLanding
-			: ERpgMotionMatchingDatabaseRole::StandLightLanding;
-	}
-
-	switch (Snapshot.Gait)
-	{
-	case ERpgLocomotionGait::Walk:
-		return bHeavy
-			? ERpgMotionMatchingDatabaseRole::WalkHeavyLanding
-			: ERpgMotionMatchingDatabaseRole::WalkLightLanding;
-	case ERpgLocomotionGait::Run:
-	case ERpgLocomotionGait::Sprint:
-		// Sprint is never inferred. Until #62 owns that gameplay state and its dedicated
-		// landing content, an explicit Sprint snapshot uses the closest curated Run domain.
-		return bHeavy
-			? ERpgMotionMatchingDatabaseRole::RunHeavyLanding
-			: ERpgMotionMatchingDatabaseRole::RunLightLanding;
-	default:
-		return ERpgMotionMatchingDatabaseRole::None;
-	}
-}
-
 void URpgAnimInstance::UpdateLandingSelectionSnapshot(
 	FRpgAnimInstanceProxy& Proxy,
 	float InputMagnitude,
 	const FVector& GravityAcceleration)
 {
-	const bool bAirborne =
-		Proxy.bIsFalling ||
-		Proxy.MovementState == ERpgLocomotionMovementState::Airborne;
-	const bool bGrounded =
-		Proxy.MovementState == ERpgLocomotionMovementState::Grounded &&
-		Proxy.bIsMovingOnGround;
-	if (Proxy.bTurnInPlaceHardReset || (!bAirborne && !bGrounded))
-	{
-		Proxy.LandingSelectionSnapshot = FRpgLandingSelectionSnapshot();
-		Proxy.LastGroundedGait = ERpgLocomotionGait::Idle;
-		Proxy.LandingAirborneEpoch = 0;
-		Proxy.bWasAirborneForLanding = false;
-		return;
-	}
+	FRpgLandingCaptureState State;
+	State.LastGroundedGait = Proxy.LastGroundedGait;
+	State.AirborneEpoch = Proxy.LandingAirborneEpoch;
+	State.bWasAirborne = Proxy.bWasAirborneForLanding;
 
-	if (bGrounded)
-	{
-		// Keep the final airborne values for exactly this physical touchdown update. A
-		// second grounded update clears them so floor transitions cannot create requests.
-		if (!Proxy.bWasAirborneForLanding)
-		{
-			Proxy.LandingSelectionSnapshot = FRpgLandingSelectionSnapshot();
-		}
-		Proxy.LastGroundedGait = Proxy.Gait;
-		Proxy.bWasAirborneForLanding = false;
-		return;
-	}
-
-	const bool bUpwardRelaunch =
-		Proxy.bWasAirborneForLanding &&
-		Proxy.LandingSelectionSnapshot.bIsValid &&
-		Proxy.LandingSelectionSnapshot.VerticalVelocity <= UE_KINDA_SMALL_NUMBER &&
-		Proxy.VerticalVelocity > UE_KINDA_SMALL_NUMBER;
-	if (!Proxy.bWasAirborneForLanding || bUpwardRelaunch)
-	{
-		Proxy.LandingAirborneEpoch =
-			Proxy.LandingAirborneEpoch >= MAX_int32
-				? 1
-				: Proxy.LandingAirborneEpoch + 1;
-		Proxy.LandingSelectionSnapshot = FRpgLandingSelectionSnapshot();
-		Proxy.LandingSelectionSnapshot.AirborneEpoch = Proxy.LandingAirborneEpoch;
-	}
-	Proxy.bWasAirborneForLanding = true;
-
-	FVector GravityDirection = FVector::ZeroVector;
-	float GravityMagnitude = 0.0f;
-	GravityAcceleration.ToDirectionAndLength(GravityDirection, GravityMagnitude);
-	const FVector HorizontalVelocity(
-		Proxy.WorldVelocity.X,
-		Proxy.WorldVelocity.Y,
-		0.0f);
-	const float HorizontalSpeed = HorizontalVelocity.Size();
-	const bool bFiniteInputs =
-		!Proxy.WorldVelocity.ContainsNaN() &&
-		!HorizontalVelocity.ContainsNaN() &&
-		FMath::IsFinite(HorizontalSpeed) &&
-		FMath::IsFinite(Proxy.VerticalVelocity) &&
-		FMath::IsFinite(InputMagnitude) && InputMagnitude >= 0.0f &&
-		!GravityAcceleration.ContainsNaN() &&
-		!GravityDirection.ContainsNaN() &&
-		FMath::IsFinite(GravityMagnitude) && GravityMagnitude > UE_SMALL_NUMBER;
-	if (!bFiniteInputs)
-	{
-		const int32 AirborneEpoch = Proxy.LandingAirborneEpoch;
-		Proxy.LandingSelectionSnapshot = FRpgLandingSelectionSnapshot();
-		Proxy.LandingSelectionSnapshot.AirborneEpoch = AirborneEpoch;
-		return;
-	}
-
-	const bool bHasMoveIntent = InputMagnitude > 0.1f;
-	ERpgLocomotionGait CapturedGait = Proxy.LastGroundedGait;
-	if (CapturedGait != ERpgLocomotionGait::Sprint && bHasMoveIntent)
-	{
-		CapturedGait = InputMagnitude < 0.65f
-			? ERpgLocomotionGait::Walk
-			: ERpgLocomotionGait::Run;
-	}
-	else if (CapturedGait == ERpgLocomotionGait::Idle &&
-		HorizontalSpeed > LightLandingIdleSpeedThreshold)
-	{
-		// A late-joining proxy may have no grounded history. Preserve the existing project
-		// deceleration policy by choosing Run rather than inventing Sprint from velocity.
-		CapturedGait = ERpgLocomotionGait::Run;
-	}
-
-	const float CurrentDownwardSpeed = FMath::Max(
-		FVector::DotProduct(Proxy.WorldVelocity, GravityDirection),
-		0.0f);
-	FRpgLandingSelectionSnapshot& Snapshot = Proxy.LandingSelectionSnapshot;
-	Snapshot.HorizontalVelocity = HorizontalVelocity;
-	Snapshot.HorizontalSpeed = HorizontalSpeed;
+	FRpgLandingCaptureSnapshot Snapshot;
+	Snapshot.WorldVelocity = Proxy.WorldVelocity;
+	Snapshot.GravityAcceleration = GravityAcceleration;
+	Snapshot.TrajectoryPrediction = Proxy.TrajectoryLandingPrediction;
+	Snapshot.Gait = Proxy.Gait;
+	Snapshot.MovementState = Proxy.MovementState;
 	Snapshot.VerticalVelocity = Proxy.VerticalVelocity;
-	Snapshot.MaximumDownwardSpeed = FMath::Max(
-		Snapshot.MaximumDownwardSpeed,
-		CurrentDownwardSpeed);
-	Snapshot.Gait = CapturedGait;
-	Snapshot.bHasMoveIntent = bHasMoveIntent;
-	Snapshot.PredictedLanding = FRpgTrajectoryLandingPrediction();
-	Snapshot.PredictedImpactDownwardSpeed = 0.0f;
-	if (Proxy.TrajectoryLandingPrediction.bIsValid &&
-		FMath::IsFinite(Proxy.TrajectoryLandingPrediction.TimeToLand) &&
-		Proxy.TrajectoryLandingPrediction.TimeToLand >= 0.0f &&
-		!Proxy.TrajectoryLandingPrediction.LandingLocation.ContainsNaN() &&
-		!Proxy.TrajectoryLandingPrediction.LandingNormal.ContainsNaN())
-	{
-		Snapshot.PredictedLanding = Proxy.TrajectoryLandingPrediction;
-		Snapshot.PredictedImpactDownwardSpeed = FMath::Max(
-			FVector::DotProduct(Proxy.WorldVelocity, GravityDirection) +
-				GravityMagnitude * Proxy.TrajectoryLandingPrediction.TimeToLand,
-			0.0f);
-	}
-	Snapshot.bIsValid =
-		FMath::IsFinite(Snapshot.MaximumDownwardSpeed) &&
-		FMath::IsFinite(Snapshot.PredictedImpactDownwardSpeed);
+	Snapshot.InputMagnitude = InputMagnitude;
+	Snapshot.bIsFalling = Proxy.bIsFalling;
+	Snapshot.bIsMovingOnGround = Proxy.bIsMovingOnGround;
+	Snapshot.bHardReset = Proxy.bTurnInPlaceHardReset;
+	RpgLandingRuntime::UpdateSelectionSnapshot(
+		Proxy.LandingSelectionSnapshot,
+		State,
+		Snapshot);
+
+	Proxy.LastGroundedGait = State.LastGroundedGait;
+	Proxy.LandingAirborneEpoch = State.AirborneEpoch;
+	Proxy.bWasAirborneForLanding = State.bWasAirborne;
 }
 
 ERpgMotionMatchingDatabaseRole URpgAnimInstance::ResolveAvailableLandingDatabaseRole(
 	ERpgMotionMatchingDatabaseRole RequestedRole) const
 {
-	ERpgMotionMatchingDatabaseRole Role = RequestedRole;
-	if (GetMotionMatchingDatabaseForRole(Role))
-	{
-		return Role;
-	}
-
-	switch (Role)
-	{
-	case ERpgMotionMatchingDatabaseRole::StandHeavyLanding:
-		Role = ERpgMotionMatchingDatabaseRole::StandLightLanding;
-		break;
-	case ERpgMotionMatchingDatabaseRole::WalkHeavyLanding:
-		Role = ERpgMotionMatchingDatabaseRole::WalkLightLanding;
-		break;
-	case ERpgMotionMatchingDatabaseRole::RunHeavyLanding:
-		Role = ERpgMotionMatchingDatabaseRole::RunLightLanding;
-		break;
-	default:
-		return ERpgMotionMatchingDatabaseRole::None;
-	}
-	return GetMotionMatchingDatabaseForRole(Role)
-		? Role
-		: ERpgMotionMatchingDatabaseRole::None;
+	return RpgLandingRuntime::ResolveAvailableRole(
+		RequestedRole,
+		BuildLandingDatabaseAvailability());
 }
 
 ERpgMotionMatchingDatabaseRole URpgAnimInstance::ResolveAvailableLandingDatabaseRole(
 	const FRpgLandingSelectionSnapshot& Snapshot) const
 {
 	return ResolveAvailableLandingDatabaseRole(
-		ResolveLandingDatabaseRole(Snapshot, HeavyLandingSpeedThreshold));
+		RpgLandingRuntime::ResolveDatabaseRole(Snapshot, HeavyLandingSpeedThreshold));
 }
 
 bool URpgAnimInstance::SynchronizeMotionMatchingNodeUpdateCounter(
@@ -2038,7 +1774,7 @@ void URpgAnimInstance::ClearLandingSelection()
 	LandingSelectedAsset = nullptr;
 	LandingSelectedAssetStartTime = 0.0f;
 	LandingSelectedAssetRemainingTime = MAX_flt;
-	LandingPlaybackWatchdogDuration = LandingActiveTimeout;
+	LandingPlaybackWatchdogDuration = RpgLandingRuntime::ActiveTimeout;
 	LandingSelectedRequestSerial = 0;
 	bLandingSelectedAssetLooping = false;
 	bLandingSelectionLatched = false;
@@ -2048,31 +1784,126 @@ void URpgAnimInstance::ClearLandingSelection()
 
 void URpgAnimInstance::ClearBackwardJumpStartHold()
 {
-	BackwardJumpStartHeldAsset = nullptr;
-	BackwardJumpStartHoldElapsed = 0.0f;
-	bBackwardJumpStartHoldOpportunityConsumed = false;
-	bBackwardJumpStartHoldEligible = false;
-	bBackwardJumpStartHoldWasArmed = false;
+	ApplyBackwardJumpStartHoldResult(
+		RpgJumpRuntime::ResetBackwardJumpStartHold(),
+		nullptr);
+}
+
+FRpgBackwardJumpStartHoldState URpgAnimInstance::CaptureBackwardJumpStartHoldState() const
+{
+	FRpgBackwardJumpStartHoldState State;
+	State.HoldElapsed = BackwardJumpStartHoldElapsed;
+	State.bOpportunityConsumed = bBackwardJumpStartHoldOpportunityConsumed;
+	State.bHoldEligible = bBackwardJumpStartHoldEligible;
+	State.bHoldWasArmed = bBackwardJumpStartHoldWasArmed;
+	return State;
+}
+
+void URpgAnimInstance::ApplyBackwardJumpStartHoldResult(
+	const FRpgBackwardJumpStartHoldResult& Result,
+	UAnimationAsset* CurrentAsset)
+{
+	BackwardJumpStartHoldElapsed = Result.State.HoldElapsed;
+	bBackwardJumpStartHoldOpportunityConsumed = Result.State.bOpportunityConsumed;
+	bBackwardJumpStartHoldEligible = Result.State.bHoldEligible;
+	bBackwardJumpStartHoldWasArmed = Result.State.bHoldWasArmed;
+	if (Result.bCaptureCurrentAsset)
+	{
+		BackwardJumpStartHeldAsset = CurrentAsset;
+	}
+	if (Result.bClearHeldAsset)
+	{
+		// A first observed backward start may already be past the bounded hold window.
+		// Match the previous capture-then-release order so no stale GC pointer survives.
+		BackwardJumpStartHeldAsset = nullptr;
+	}
+}
+
+FRpgLandingRuntimeState URpgAnimInstance::CaptureLandingRuntimeState() const
+{
+	FRpgLandingRuntimeState State;
+	State.ActiveRole = ActiveLandingDatabaseRole;
+	State.StateElapsed = LandingStateElapsed;
+	State.TouchdownElapsed = LandingTouchdownElapsed;
+	State.PlaybackWatchdogDuration = LandingPlaybackWatchdogDuration;
+	State.RequestSerial = LandingRequestSerial;
+	State.InterruptedRequestSerial = LandingInterruptedRequestSerial;
+	State.bSelectionLatched = bLandingSelectionLatched;
+	State.bCompletionArmed = bLandingCompletionArmed;
+	return State;
+}
+
+void URpgAnimInstance::ApplyLandingRuntimeResult(const FRpgLandingRuntimeResult& Result)
+{
+	ActiveLandingDatabaseRole = Result.State.ActiveRole;
+	LandingStateElapsed = Result.State.StateElapsed;
+	LandingTouchdownElapsed = Result.State.TouchdownElapsed;
+	LandingPlaybackWatchdogDuration = Result.State.PlaybackWatchdogDuration;
+	LandingRequestSerial = Result.State.RequestSerial;
+	LandingInterruptedRequestSerial = Result.State.InterruptedRequestSerial;
+	bLandingSelectionLatched = Result.State.bSelectionLatched;
+	bLandingCompletionArmed = Result.State.bCompletionArmed;
+
+	switch (Result.Transition)
+	{
+	case ERpgLandingRuntimeTransition::BeginLanding:
+		JumpPhase = ERpgJumpPhase::Landing;
+		break;
+	case ERpgLandingRuntimeTransition::ResetGrounded:
+		JumpPhase = ERpgJumpPhase::Grounded;
+		break;
+	case ERpgLandingRuntimeTransition::None:
+		break;
+	}
+	if (Result.bClearSelection)
+	{
+		ClearLandingSelection();
+	}
+	if (Result.bClearBackwardHold)
+	{
+		ClearBackwardJumpStartHold();
+	}
+}
+
+FRpgLandingDatabaseAvailability URpgAnimInstance::BuildLandingDatabaseAvailability() const
+{
+	FRpgLandingDatabaseAvailability Availability;
+	Availability.bStandLight = GetMotionMatchingDatabaseForRole(
+		ERpgMotionMatchingDatabaseRole::StandLightLanding) != nullptr;
+	Availability.bStandHeavy = GetMotionMatchingDatabaseForRole(
+		ERpgMotionMatchingDatabaseRole::StandHeavyLanding) != nullptr;
+	Availability.bWalkLight = GetMotionMatchingDatabaseForRole(
+		ERpgMotionMatchingDatabaseRole::WalkLightLanding) != nullptr;
+	Availability.bWalkHeavy = GetMotionMatchingDatabaseForRole(
+		ERpgMotionMatchingDatabaseRole::WalkHeavyLanding) != nullptr;
+	Availability.bRunLight = GetMotionMatchingDatabaseForRole(
+		ERpgMotionMatchingDatabaseRole::RunLightLanding) != nullptr;
+	Availability.bRunHeavy = GetMotionMatchingDatabaseForRole(
+		ERpgMotionMatchingDatabaseRole::RunHeavyLanding) != nullptr;
+	return Availability;
+}
+
+FRpgLandingEligibilitySnapshot URpgAnimInstance::BuildLandingEligibilitySnapshot(
+	const FRpgAnimInstanceProxy& Proxy)
+{
+	FRpgLandingEligibilitySnapshot Snapshot;
+	Snapshot.MovementState = Proxy.MovementState;
+	Snapshot.bIsMovingOnGround = Proxy.bIsMovingOnGround;
+	Snapshot.bIsCrouching = Proxy.bIsCrouching;
+	Snapshot.bIsAnyMontagePlaying = Proxy.bIsAnyMontagePlaying;
+	Snapshot.bHasBlockingGameplayTag = Proxy.bHasTurnInPlaceBlockingGameplayTag;
+	return Snapshot;
 }
 
 void URpgAnimInstance::ResetJumpPhaseRuntime()
 {
-	JumpPhase = ERpgJumpPhase::Grounded;
-	LandingStateElapsed = 0.0f;
-	LandingTouchdownElapsed = 0.0f;
-	ActiveLandingDatabaseRole = ERpgMotionMatchingDatabaseRole::None;
-	ClearLandingSelection();
-	ClearBackwardJumpStartHold();
+	ApplyLandingRuntimeResult(RpgLandingRuntime::Reset(CaptureLandingRuntimeState()));
 }
 
 void URpgAnimInstance::BeginAirbornePhase(bool bAscendingTakeoff)
 {
+	ApplyLandingRuntimeResult(RpgLandingRuntime::Reset(CaptureLandingRuntimeState()));
 	JumpPhase = ERpgJumpPhase::Airborne;
-	LandingStateElapsed = 0.0f;
-	LandingTouchdownElapsed = 0.0f;
-	ActiveLandingDatabaseRole = ERpgMotionMatchingDatabaseRole::None;
-	ClearLandingSelection();
-	ClearBackwardJumpStartHold();
 	bBackwardJumpStartHoldEligible = bAscendingTakeoff;
 }
 
@@ -2082,63 +1913,38 @@ void URpgAnimInstance::BeginLandingRequest(
 {
 	check(RpgMotionMatchingRuntime::IsLandingDatabaseRole(LandingRole));
 	check(GetMotionMatchingDatabaseForRole(LandingRole));
-	JumpPhase = ERpgJumpPhase::Landing;
-	LandingStateElapsed = 0.0f;
-	ActiveLandingDatabaseRole = LandingRole;
-	ClearLandingSelection();
-	ClearBackwardJumpStartHold();
-	++LandingRequestSerial;
-	if (LandingRequestSerial == 0)
-	{
-		++LandingRequestSerial;
-	}
-	if (!bForceInterrupt)
-	{
-		// The outgoing stationary landing database is absent from the new moving landing set,
-		// so GASP's database-change interrupt is sufficient and preserves the current pose as query context.
-		LandingInterruptedRequestSerial = LandingRequestSerial;
-	}
-	else
-	{
-		LandingTouchdownElapsed = 0.0f;
-	}
-}
-
-bool URpgAnimInstance::IsLandingRuntimeEligible(const FRpgAnimInstanceProxy& Proxy) const
-{
-	return Proxy.MovementState == ERpgLocomotionMovementState::Grounded &&
-		Proxy.bIsMovingOnGround &&
-		!Proxy.bIsCrouching &&
-		!Proxy.bIsAnyMontagePlaying &&
-		!Proxy.bHasTurnInPlaceBlockingGameplayTag;
+	ApplyLandingRuntimeResult(RpgLandingRuntime::BeginRequest(
+		CaptureLandingRuntimeState(),
+		LandingRole,
+		bForceInterrupt));
 }
 
 void URpgAnimInstance::UpdateJumpPhaseRuntime(float DeltaSeconds, const FRpgAnimInstanceProxy& Proxy)
 {
 	const float SafeDeltaSeconds = FMath::Max(DeltaSeconds, 0.0f);
-	const bool bAirborneSnapshot =
-		Proxy.bIsFalling || Proxy.MovementState == ERpgLocomotionMovementState::Airborne;
-
-	if (Proxy.bTurnInPlaceHardReset)
+	FRpgJumpPhysicalSnapshot PhysicalSnapshot;
+	PhysicalSnapshot.MovementState = Proxy.MovementState;
+	PhysicalSnapshot.VerticalVelocity = Proxy.VerticalVelocity;
+	PhysicalSnapshot.bIsFalling = Proxy.bIsFalling;
+	PhysicalSnapshot.bHardReset = Proxy.bTurnInPlaceHardReset;
+	const FRpgJumpPhysicalTransitionResult PhysicalTransition =
+		RpgJumpRuntime::ResolvePhysicalTransition(JumpPhase, PhysicalSnapshot);
+	switch (PhysicalTransition.Transition)
 	{
-		if (bAirborneSnapshot)
-		{
-			BeginAirbornePhase(Proxy.VerticalVelocity > UE_KINDA_SMALL_NUMBER);
-		}
-		else
-		{
-			ResetJumpPhaseRuntime();
-		}
+	case ERpgJumpPhysicalTransition::EnterAirborne:
+		BeginAirbornePhase(PhysicalTransition.bAscendingTakeoff);
 		return;
-	}
-
-	if (bAirborneSnapshot)
-	{
-		if (JumpPhase != ERpgJumpPhase::Airborne)
-		{
-			BeginAirbornePhase(Proxy.VerticalVelocity > UE_KINDA_SMALL_NUMBER);
-		}
+	case ERpgJumpPhysicalTransition::ResetGrounded:
+		ResetJumpPhaseRuntime();
 		return;
+	case ERpgJumpPhysicalTransition::None:
+		if (JumpPhase == ERpgJumpPhase::Airborne)
+		{
+			return;
+		}
+		break;
+	case ERpgJumpPhysicalTransition::Touchdown:
+		break;
 	}
 
 	FRpgGroundMotionMatchingSelectionSnapshot LiveGroundSnapshot;
@@ -2152,30 +1958,17 @@ void URpgAnimInstance::UpdateJumpPhaseRuntime(float DeltaSeconds, const FRpgAnim
 	LiveGroundSnapshot.bIsMovingOnGround = Proxy.bIsMovingOnGround;
 	const bool bChooserMoving = RpgMotionMatchingRuntime::IsChooserMoving(LiveGroundSnapshot);
 
-	if (JumpPhase == ERpgJumpPhase::Airborne)
+	if (PhysicalTransition.Transition == ERpgJumpPhysicalTransition::Touchdown)
 	{
-		ERpgMotionMatchingDatabaseRole LandingRole = ERpgMotionMatchingDatabaseRole::None;
-		if (IsLandingRuntimeEligible(Proxy))
-		{
-			LandingRole = ResolveLandingDatabaseRole(
+		const ERpgMotionMatchingDatabaseRole LandingRole =
+			RpgLandingRuntime::ResolveTouchdownRole(
 				Proxy.LandingSelectionSnapshot,
+				BuildLandingEligibilitySnapshot(Proxy),
+				BuildLandingDatabaseAvailability(),
+				Proxy.Gait,
+				Proxy.GroundSpeed,
+				bChooserMoving,
 				HeavyLandingSpeedThreshold);
-			if (FMath::IsFinite(Proxy.GroundSpeed) &&
-				Proxy.GroundSpeed <= LightLandingIdleSpeedThreshold)
-			{
-				// CMC owns the physical touchdown. Rebase stale airborne momentum into the
-				// live stationary domain before database fallback, while preserving severity.
-				LandingRole = ResolveStationaryLandingRole(LandingRole);
-			}
-			LandingRole = ResolveAvailableLandingDatabaseRole(LandingRole);
-		}
-		if (ShouldReleaseStationaryLanding(LandingRole, bChooserMoving, Proxy.GroundSpeed))
-		{
-			LandingRole = bChooserMoving
-				? ResolveAvailableLandingDatabaseRole(
-					ResolveStationaryLandingMovementRole(LandingRole, Proxy.Gait))
-				: ERpgMotionMatchingDatabaseRole::None;
-		}
 		if (LandingRole != ERpgMotionMatchingDatabaseRole::None)
 		{
 			BeginLandingRequest(LandingRole);
@@ -2193,60 +1986,27 @@ void URpgAnimInstance::UpdateJumpPhaseRuntime(float DeltaSeconds, const FRpgAnim
 		return;
 	}
 
-	if (!IsLandingRuntimeEligible(Proxy) ||
-		!RpgMotionMatchingRuntime::IsLandingDatabaseRole(ActiveLandingDatabaseRole) ||
-		!GetMotionMatchingDatabaseForRole(ActiveLandingDatabaseRole))
-	{
-		ResetJumpPhaseRuntime();
-		return;
-	}
-	LandingTouchdownElapsed += SafeDeltaSeconds;
-
-	if (ShouldReleaseStationaryLanding(
-			ActiveLandingDatabaseRole,
-			bChooserMoving,
-			Proxy.GroundSpeed))
-	{
-		const ERpgMotionMatchingDatabaseRole HandoffRole =
-			bChooserMoving && LandingTouchdownElapsed <= LandingMovementHandoffWindow
-				? ResolveAvailableLandingDatabaseRole(
-					ResolveStationaryLandingMovementRole(ActiveLandingDatabaseRole, Proxy.Gait))
-				: ERpgMotionMatchingDatabaseRole::None;
-		if (HandoffRole != ERpgMotionMatchingDatabaseRole::None)
-		{
-			// GASP re-evaluates the gait while JustLanded is active. Preserve severity and perform
-			// one database-change handoff rather than exposing a normal Run loop at touchdown speed.
-			BeginLandingRequest(HandoffRole, false);
-		}
-		else
-		{
-			ResetJumpPhaseRuntime();
-		}
-		return;
-	}
-
-	LandingStateElapsed += SafeDeltaSeconds;
-	const bool bSelectionTimedOut =
-		!bLandingSelectionLatched && LandingStateElapsed >= LandingSelectionTimeout;
-	const bool bPlaybackTimedOut =
-		bLandingSelectionLatched && LandingStateElapsed >= LandingPlaybackWatchdogDuration;
-	if (bLandingCompletionArmed || bSelectionTimedOut || bPlaybackTimedOut)
-	{
-		ResetJumpPhaseRuntime();
-	}
+	FRpgLandingActiveSnapshot ActiveSnapshot;
+	ActiveSnapshot.Eligibility = BuildLandingEligibilitySnapshot(Proxy);
+	ActiveSnapshot.Availability = BuildLandingDatabaseAvailability();
+	ActiveSnapshot.LiveGait = Proxy.Gait;
+	ActiveSnapshot.GroundSpeed = Proxy.GroundSpeed;
+	ActiveSnapshot.bChooserMoving = bChooserMoving;
+	ApplyLandingRuntimeResult(RpgLandingRuntime::UpdateActive(
+		CaptureLandingRuntimeState(),
+		ActiveSnapshot,
+		SafeDeltaSeconds));
 }
 
 bool URpgAnimInstance::ConsumeLandingForceInterruptRequest()
 {
-	if (JumpPhase != ERpgJumpPhase::Landing ||
-		!GetMotionMatchingDatabaseForRole(ActiveLandingDatabaseRole) ||
-		LandingInterruptedRequestSerial == LandingRequestSerial)
-	{
-		return false;
-	}
-
-	LandingInterruptedRequestSerial = LandingRequestSerial;
-	return true;
+	FRpgLandingRuntimeState State = CaptureLandingRuntimeState();
+	const bool bConsumed = RpgLandingRuntime::ConsumeForceInterrupt(
+		JumpPhase == ERpgJumpPhase::Landing,
+		GetMotionMatchingDatabaseForRole(ActiveLandingDatabaseRole) != nullptr,
+		State);
+	LandingInterruptedRequestSerial = State.InterruptedRequestSerial;
+	return bConsumed;
 }
 
 bool URpgAnimInstance::TryLatchLandingSelection(
@@ -2273,7 +2033,7 @@ bool URpgAnimInstance::TryLatchLandingSelection(
 		0.0f);
 	LandingSelectedRequestSerial = SelectionRequestSerial;
 	bLandingSelectedAssetLooping = bSelectedAssetLooping;
-	LandingPlaybackWatchdogDuration = CalculateLandingPlaybackWatchdogDuration(
+	LandingPlaybackWatchdogDuration = RpgLandingRuntime::CalculatePlaybackWatchdogDuration(
 		LandingSelectedAssetRemainingTime,
 		1.0f,
 		bLandingSelectedAssetLooping);
@@ -2300,7 +2060,8 @@ void URpgAnimInstance::UpdateLandingLatchedPlayback(
 	}
 
 	const float SafeDeltaSeconds = FMath::Max(DeltaSeconds, 0.0f);
-	const float CompletionLeadTime = LandingFinishedTimeTolerance + SafeDeltaSeconds;
+	const float CompletionLeadTime =
+		RpgLandingRuntime::FinishedTimeTolerance + SafeDeltaSeconds;
 	if (CurrentAsset == LandingSelectedAsset.Get())
 	{
 		const bool bFirstPlaybackObservation = !bLandingPlaybackObserved;
@@ -2313,7 +2074,8 @@ void URpgAnimInstance::UpdateLandingLatchedPlayback(
 			0.0f);
 		if (bFirstPlaybackObservation)
 		{
-			LandingPlaybackWatchdogDuration = CalculateLandingPlaybackWatchdogDuration(
+			LandingPlaybackWatchdogDuration =
+				RpgLandingRuntime::CalculatePlaybackWatchdogDuration(
 				LandingSelectedAssetRemainingTime,
 				CurrentAssetPlayRate,
 				bLandingSelectedAssetLooping);
@@ -2385,53 +2147,6 @@ bool URpgAnimInstance::IsLoopingAirborneFallAsset(const UAnimationAsset* Asset) 
 		ERpgGaspPresentationAssetTrait::AirborneFall);
 }
 
-bool URpgAnimInstance::ShouldHoldLoopingAirborneFallPlayback(
-	ERpgJumpPhase CurrentJumpPhase,
-	bool bBackwardHoldWasArmed,
-	float CurrentVerticalVelocity,
-	bool bCurrentAssetIsLoopingFall)
-{
-	return CurrentJumpPhase == ERpgJumpPhase::Airborne &&
-		bBackwardHoldWasArmed &&
-		CurrentVerticalVelocity <= UE_KINDA_SMALL_NUMBER &&
-		bCurrentAssetIsLoopingFall;
-}
-
-bool URpgAnimInstance::ShouldHoldBackwardJumpStartPlayback(
-	ERpgJumpPhase CurrentJumpPhase,
-	bool bCurrentAssetMatchesHeldSelection,
-	float CurrentAssetTime,
-	float CurrentAssetLength,
-	float CurrentAssetPlayRate,
-	float HoldElapsed)
-{
-	if (CurrentJumpPhase != ERpgJumpPhase::Airborne ||
-		!bCurrentAssetMatchesHeldSelection ||
-		!FMath::IsFinite(CurrentAssetTime) ||
-		!FMath::IsFinite(CurrentAssetLength) ||
-		!FMath::IsFinite(CurrentAssetPlayRate) ||
-		!FMath::IsFinite(HoldElapsed) ||
-		CurrentAssetTime < 0.0f ||
-		CurrentAssetLength <= 0.0f ||
-		CurrentAssetTime >= CurrentAssetLength ||
-		HoldElapsed < 0.0f ||
-		HoldElapsed >= BackwardJumpStartHoldTimeout)
-	{
-		return false;
-	}
-
-	const float AbsolutePlayRate = FMath::Abs(CurrentAssetPlayRate);
-	if (AbsolutePlayRate <= UE_KINDA_SMALL_NUMBER)
-	{
-		// A paused cosmetic player remains bounded by HoldElapsed rather than forcing a new search immediately.
-		return true;
-	}
-
-	const float RemainingPlaybackTime =
-		(CurrentAssetLength - CurrentAssetTime) / AbsolutePlayRate;
-	return RemainingPlaybackTime > BackwardJumpStartReleaseLeadTime;
-}
-
 bool URpgAnimInstance::UpdateBackwardJumpStartHold(
 	UAnimationAsset* CurrentAsset,
 	float CurrentAssetTime,
@@ -2439,49 +2154,30 @@ bool URpgAnimInstance::UpdateBackwardJumpStartHold(
 	float CurrentAssetPlayRate,
 	float DeltaSeconds)
 {
-	if (JumpPhase != ERpgJumpPhase::Airborne)
+	const FRpgBackwardJumpStartHoldState State = CaptureBackwardJumpStartHoldState();
+	FRpgBackwardJumpStartPlaybackSnapshot Snapshot;
+	Snapshot.JumpPhase = JumpPhase;
+	Snapshot.CurrentAssetTime = CurrentAssetTime;
+	Snapshot.CurrentAssetLength = CurrentAssetLength;
+	Snapshot.CurrentAssetPlayRate = CurrentAssetPlayRate;
+	Snapshot.DeltaSeconds = DeltaSeconds;
+	if (JumpPhase == ERpgJumpPhase::Airborne && !State.bOpportunityConsumed)
 	{
-		ClearBackwardJumpStartHold();
-		return false;
+		Snapshot.bCurrentAssetIsAirborne = IsAirborneJumpAsset(CurrentAsset);
+		Snapshot.bCurrentAssetIsBackwardStart =
+			State.bHoldEligible &&
+			Snapshot.bCurrentAssetIsAirborne &&
+			IsBackwardJumpStartAsset(CurrentAsset);
 	}
-
-	if (!bBackwardJumpStartHoldOpportunityConsumed)
-	{
-		if (!IsAirborneJumpAsset(CurrentAsset))
-		{
-			// The outgoing grounded sample may remain current during the initial Ground-to-Air blend.
-			return false;
-		}
-
-		bBackwardJumpStartHoldOpportunityConsumed = true;
-		if (bBackwardJumpStartHoldEligible && IsBackwardJumpStartAsset(CurrentAsset))
-		{
-			BackwardJumpStartHeldAsset = CurrentAsset;
-			BackwardJumpStartHoldElapsed = 0.0f;
-			bBackwardJumpStartHoldWasArmed = true;
-		}
-	}
-
-	if (!BackwardJumpStartHeldAsset)
-	{
-		return false;
-	}
-
-	BackwardJumpStartHoldElapsed += FMath::Max(DeltaSeconds, 0.0f);
-	const bool bShouldHold = ShouldHoldBackwardJumpStartPlayback(
-		JumpPhase,
-		CurrentAsset == BackwardJumpStartHeldAsset.Get(),
-		CurrentAssetTime,
-		CurrentAssetLength,
-		CurrentAssetPlayRate,
-		BackwardJumpStartHoldElapsed);
-	if (!bShouldHold)
-	{
-		// Keep the opportunity consumed so a later search cannot re-arm the same start in this jump.
-		BackwardJumpStartHeldAsset = nullptr;
-		BackwardJumpStartHoldElapsed = 0.0f;
-	}
-	return bShouldHold;
+	Snapshot.bHasHeldAsset = BackwardJumpStartHeldAsset != nullptr;
+	Snapshot.bCurrentAssetMatchesHeld =
+		CurrentAsset && CurrentAsset == BackwardJumpStartHeldAsset.Get();
+	const FRpgBackwardJumpStartHoldResult Result =
+		RpgJumpRuntime::UpdateBackwardJumpStartHold(
+			State,
+			Snapshot);
+	ApplyBackwardJumpStartHoldResult(Result, CurrentAsset);
+	return Result.bHoldContinuingPose;
 }
 
 URpgAnimInstance::FGaspProceduralGates URpgAnimInstance::ResolveGaspProceduralGates(
@@ -2654,12 +2350,12 @@ void URpgAnimInstance::UpdateGaspMotionMatching(
 		MotionMatchingNode->GetCurrentAssetLength(),
 		CurrentMotionMatchingPlayRate,
 		AnimationContext ? AnimationContext->GetDeltaTime() : 0.0f);
-	const bool bContinueLoopingAirborneFall = ShouldHoldLoopingAirborneFallPlayback(
+	const bool bContinueLoopingAirborneFall = RpgJumpRuntime::ShouldHoldLoopingAirborneFallPlayback(
 		JumpPhase,
 		bBackwardJumpStartHoldWasArmed,
 		VerticalVelocity,
 		IsLoopingAirborneFallAsset(CurrentMotionMatchingAsset));
-	const bool bInterruptLandingDatabaseExit = ShouldInterruptLandingDatabaseExit(
+	const bool bInterruptLandingDatabaseExit = RpgLandingRuntime::ShouldInterruptDatabaseExit(
 		JumpPhase,
 		bLandingCompletionArmed,
 		CurrentMotionMatchingDatabaseRole);

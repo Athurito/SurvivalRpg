@@ -14,6 +14,8 @@
 #include "PoseSearch/PoseSearchTrajectoryLibrary.h"
 #include "RpgFootPlacementTypes.h"
 #include "RpgGaspPresentationProfile.h"
+#include "RpgJumpRuntime.h"
+#include "RpgLandingRuntime.h"
 #include "RpgMotionMatchingRuntime.h"
 #include "RpgPoseSearchTrajectory.h"
 #include "RpgTurnInPlaceRuntime.h"
@@ -783,37 +785,6 @@ private:
 	static ERpgMotionMatchingDatabaseRole ResolveMotionMatchingDatabaseRole(
 		const UPoseSearchDatabase* Database);
 
-	/** Preserves Light/Heavy severity while rebasing any landing role into the stationary domain. */
-	static ERpgMotionMatchingDatabaseRole ResolveStationaryLandingRole(
-		ERpgMotionMatchingDatabaseRole LandingRole);
-
-	/** Releases a stationary landing only after horizontal movement begins or the Idle speed band is left. */
-	static bool ShouldReleaseStationaryLanding(
-		ERpgMotionMatchingDatabaseRole LandingRole,
-		bool bChooserMoving,
-		float GroundSpeed);
-
-	/** Preserves Light/Heavy severity while mapping a stationary landing to the live Walk/Run gait. */
-	static ERpgMotionMatchingDatabaseRole ResolveStationaryLandingMovementRole(
-		ERpgMotionMatchingDatabaseRole LandingRole,
-		ERpgLocomotionGait LiveGait);
-
-	/** Prevents a completed or cancelled landing database from surviving as an uninterruptible pose. */
-	static bool ShouldInterruptLandingDatabaseExit(
-		ERpgJumpPhase CurrentJumpPhase,
-		bool bCompletionArmed,
-		ERpgMotionMatchingDatabaseRole CurrentDatabaseRole);
-
-	/**
-	 * Resolves one requested landing role from a finite, pointer-free pre-touchdown snapshot.
-	 * The physical 3 cm/s Idle boundary and Heavy threshold are inclusive; raw input alone cannot
-	 * select a moving landing. Sprint falls back to Run content
-	 * until gameplay issue #62 supplies an authoritative Sprint state and dedicated landing assets.
-	 */
-	static ERpgMotionMatchingDatabaseRole ResolveLandingDatabaseRole(
-		const FRpgLandingSelectionSnapshot& Snapshot,
-		float HeavySpeedThreshold);
-
 	/** Updates or resets the final-airborne snapshot from current value-only proxy inputs. */
 	static void UpdateLandingSelectionSnapshot(
 		FRpgAnimInstanceProxy& Proxy,
@@ -877,8 +848,21 @@ private:
 	void ResetJumpPhaseRuntime();
 	void ClearLandingSelection();
 	void ClearBackwardJumpStartHold();
-	/** Checks stable override/movement gates shared by request start and continuation. */
-	bool IsLandingRuntimeEligible(const FRpgAnimInstanceProxy& Proxy) const;
+	/** Captures the flat compatible landing facade for one pointer-free lifecycle decision. */
+	FRpgLandingRuntimeState CaptureLandingRuntimeState() const;
+	/** Applies value state and explicit phase/GC cleanup actions returned by the landing runtime. */
+	void ApplyLandingRuntimeResult(const FRpgLandingRuntimeResult& Result);
+	/** Snapshots the six fixed database pointers as pointer-free availability flags. */
+	FRpgLandingDatabaseAvailability BuildLandingDatabaseAvailability() const;
+	/** Copies stable grounded presentation gates without exposing proxy or UObject state. */
+	static FRpgLandingEligibilitySnapshot BuildLandingEligibilitySnapshot(
+		const FRpgAnimInstanceProxy& Proxy);
+	/** Captures the pointer-free backward-start state while the held asset remains GC-owned here. */
+	FRpgBackwardJumpStartHoldState CaptureBackwardJumpStartHoldState() const;
+	/** Applies value state and explicit capture/release actions around the held-asset pointer. */
+	void ApplyBackwardJumpStartHoldResult(
+		const FRpgBackwardJumpStartHoldResult& Result,
+		UAnimationAsset* CurrentAsset);
 	bool ConsumeLandingForceInterruptRequest();
 	bool TryLatchLandingSelection(
 		UAnimationAsset* SelectedAsset,
@@ -911,20 +895,6 @@ private:
 	bool IsBackwardJumpStartAsset(const UAnimationAsset* Asset) const;
 	/** Identifies the looping fall continuation, which must never search back into a directional start. */
 	bool IsLoopingAirborneFallAsset(const UAnimationAsset* Asset) const;
-	/** Retains a fall loop only after this airborne phase actually used the bounded backward-start path. */
-	static bool ShouldHoldLoopingAirborneFallPlayback(
-		ERpgJumpPhase CurrentJumpPhase,
-		bool bBackwardHoldWasArmed,
-		float CurrentVerticalVelocity,
-		bool bCurrentAssetIsLoopingFall);
-	/** Bounds a continuing-pose-only backward start while retaining a fail-open path for genuine long falls. */
-	static bool ShouldHoldBackwardJumpStartPlayback(
-		ERpgJumpPhase CurrentJumpPhase,
-		bool bCurrentAssetMatchesHeldSelection,
-		float CurrentAssetTime,
-		float CurrentAssetLength,
-		float CurrentAssetPlayRate,
-		float HoldElapsed);
 	static FGaspProceduralGates ResolveGaspProceduralGates(
 		bool bGroundMovingPose,
 		float SupportedLocomotionAlpha,
