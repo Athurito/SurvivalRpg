@@ -16,6 +16,7 @@
 #include "RpgGaspPresentationProfile.h"
 #include "RpgMotionMatchingRuntime.h"
 #include "RpgPoseSearchTrajectory.h"
+#include "RpgTurnInPlaceRuntime.h"
 #include "SurvivalRpg/Core/Character/RpgCharacterRotationMode.h"
 #include "RpgAnimInstance.generated.h"
 
@@ -352,25 +353,6 @@ public:
 
 	/** Returns the one project-owned locomotion-state tag required for a database role. */
 	static FName GetMotionMatchingDatabaseStateTag(ERpgMotionMatchingDatabaseRole Role);
-
-	/** Returns the signed authored turn angle nearest to a request, or zero below the 30-degree activation threshold. */
-	static float QuantizeTurnInPlaceAngle(float SignedAngle);
-
-	/** Returns the synthetic facing horizon in seconds for an authored 45/90/135/180-degree turn. */
-	static float GetTurnInPlaceFacingDuration(float QuantizedAngle);
-
-	/** Calculates a wrap-safe signed actor-yaw delta in degrees for the cosmetic turn accumulator. */
-	static float CalculateTurnInPlaceYawDelta(float PreviousActorYaw, float CurrentActorYaw);
-
-	/**
-	 * Builds a facing-only world-space trajectory whose facing advances monotonically through the requested authored turn.
-	 * Source sample count, times, and positions are preserved exactly.
-	 */
-	static FTransformTrajectory MakeTurnInPlaceSyntheticTrajectory(
-		const FTransformTrajectory& SourceTrajectory,
-		float CurrentActorYaw,
-		float AccumulatedYaw,
-		float QuantizedAngle);
 
 	/**
 	 * Resolves the current Blend Stack playback state and the bounded moving-locomotion inputs used by GASP nodes.
@@ -861,35 +843,17 @@ private:
 		bool bEnableSteering = false;
 	};
 
-	/** Database policy applied by the generic pre-update callback to the upcoming Motion Matching search. */
-	enum class ETurnInPlaceSearchMode : uint8
-	{
-		NormalLocomotion,
-		SearchRequestedTurn,
-		ContinueSelectedTurn,
-	};
-
-	/** Detects a transition across the Free versus controller-facing turn-in-place policy boundary. */
-	static bool DidTurnInPlaceSupportChange(
-		bool bHasPreviousSnapshot,
-		ERpgCharacterRotationMode PreviousMode,
-		ERpgCharacterRotationMode CurrentMode);
-	/** Rebases actor yaw when the owner snapshot is invalidated or the facing policy changes. */
-	static float CalculateTurnInPlaceSnapshotYawDelta(
-		float PreviousActorYaw,
-		float CurrentActorYaw,
-		bool bHardReset,
-		bool bSupportChanged);
+	/** Captures the flat compatibility fields for one pointer-free turn-in-place decision. */
+	FRpgTurnInPlaceRuntimeState CaptureTurnInPlaceRuntimeState() const;
+	/** Applies one value result without moving the GC-tracked selection out of this facade. */
+	void ApplyTurnInPlaceRuntimeResult(const FRpgTurnInPlaceUpdateResult& Result);
 	void UpdateTurnInPlaceRuntime(float DeltaSeconds, const FRpgAnimInstanceProxy& Proxy);
 	void BeginTurnInPlaceRequest(float QuantizedAngle);
 	void BeginTurnInPlaceRecovery(bool bHardResetOffset);
 	void ResetTurnInPlaceRuntime(bool bHardResetOffset);
 	/** Clears only the cosmetic selection/playback latch; request serials remain monotonic. */
 	void ClearTurnInPlaceSelection();
-	bool IsTurnInPlaceEligible(const FRpgAnimInstanceProxy& Proxy) const;
 	bool ConsumeTurnInPlaceForceInterruptRequest();
-	/** Allows request retargeting only until the generic pre-update callback dispatches its first TIR search. */
-	bool CanRetargetTurnInPlaceRequest() const;
 	/** Latches the first valid TIR SearchResult from the completed node search for the request serial. */
 	bool TryLatchTurnInPlaceSelection(
 		UAnimationAsset* SelectedAsset,
@@ -904,11 +868,6 @@ private:
 		float CurrentAssetLength,
 		float CurrentAssetPlayRate,
 		float DeltaSeconds);
-	/** Resolves the upcoming search policy without issuing more than one full TIR search per request. */
-	ETurnInPlaceSearchMode ResolveTurnInPlaceSearchMode(bool bForceNewRequest) const;
-	/** Allows moving procedural nodes during a movement-driven recovery, but never during collection or playback. */
-	bool AllowsMovingProceduralNodes() const;
-
 	/** Advances landing state and permits only the initial request plus one bounded stationary-to-moving handoff. */
 	void UpdateJumpPhaseRuntime(float DeltaSeconds, const FRpgAnimInstanceProxy& Proxy);
 	void BeginAirbornePhase(bool bAscendingTakeoff);

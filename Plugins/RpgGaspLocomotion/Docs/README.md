@@ -46,6 +46,8 @@ The complete source-to-target mapping and cleanup policy is recorded in `Curated
 
 The production chooser is the focused pointer-free `RpgMotionMatchingRuntime`. It consumes value-only movement snapshots and first resolves stable `ERpgMotionMatchingDatabaseRole` values; only afterward does the `URpgAnimInstance` callback facade map those roles to its configured database pointers. Ground roles preserve the fixed Idle/Walk/Run/Sprint shapes of 1/2/4/2, overlapping stop boundaries, the explicit Sprint-stop gait requirement, start/loop/pivot ordering, and domain-level interrupt behavior without making asset pointers part of chooser decisions.
 
+Controller-facing turn presentation is similarly split. `RpgTurnInPlaceRuntime` owns the pointer-free actor-yaw accumulator, 20/30/10-degree collection hysteresis, stability and recovery windows, one-shot request/search policy, reset edges, watchdog decisions, and the facing-only synthetic trajectory. `URpgAnimInstance` remains the stable Blueprint-property and AnimNode callback facade and alone owns the turn database, GC-tracked selected asset, and Blend Stack playback observation. This deliberately adapts GASP's simpler inclusive 50-degree OrientationIntent-versus-root predicate and 20 cm/s Chooser cap to the project's replicated capsule-facing policy and stricter 3 cm/s stationary gate; it never rotates authoritative gameplay state.
+
 Exactly 18 runtime databases participate in this role contract. Each carries exactly one matching `Rpg.MotionMatching.Role.*` tag and one state tag:
 
 - Grounded: `StandIdle`, `StandWalk`, `StandWalkStops`, `StandRunLoops`, `StandRunPivots`, `StandRunStarts`, `StandRunStops`, `StandSprint`, and `StandSprintStops` use `Rpg.MotionMatching.State.Grounded`.

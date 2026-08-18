@@ -26,21 +26,6 @@
 
 namespace
 {
-constexpr float TurnInPlaceIdleSpeedThreshold = 3.0f;
-constexpr float TurnInPlaceCollectThreshold = 20.0f;
-constexpr float TurnInPlaceActivationThreshold = 30.0f;
-constexpr float TurnInPlaceCancelThreshold = 10.0f;
-constexpr float TurnInPlaceInactiveYawRateThreshold = 6.0f;
-constexpr float TurnInPlaceStableYawRateThreshold = 60.0f;
-constexpr float TurnInPlaceStabilityDuration = 0.08f;
-constexpr float TurnInPlaceCollectionTimeout = 0.2f;
-constexpr float TurnInPlaceRecoveryDuration = 0.15f;
-constexpr float TurnInPlaceSelectionTimeout = 0.25f;
-constexpr float TurnInPlaceActiveTimeout = 1.75f;
-constexpr float TurnInPlacePlaybackWatchdogSafetyMargin = 0.1f;
-constexpr float TurnInPlaceInactiveAccumulatorTimeout = 0.2f;
-constexpr float TurnInPlaceFinishedTimeTolerance = 0.05f;
-constexpr float TurnInPlaceLargePositionDelta = 200.0f;
 constexpr float LandingSelectionTimeout = 0.25f;
 constexpr float LandingActiveTimeout = 1.25f;
 constexpr float LandingPlaybackWatchdogSafetyMargin = 0.1f;
@@ -55,43 +40,6 @@ void ResetPoseSearchTrajectoryState(FRpgAnimInstanceProxy& Proxy)
 	Proxy.TransformTrajectory.Samples.Reset();
 	Proxy.TrajectoryLandingPrediction = FRpgTrajectoryLandingPrediction();
 	Proxy.DesiredControllerYawLastUpdate = 0.0f;
-}
-
-enum class ETurnInPlaceHardResetReason : uint8
-{
-	ProxySnapshot = 1 << 0,
-	UnsupportedRotationMode = 1 << 1,
-	BlockingGameplayTag = 1 << 2,
-	Montage = 1 << 3,
-	Crouch = 1 << 4,
-	UnsupportedMovementState = 1 << 5,
-};
-
-constexpr uint8 ToReasonMask(ETurnInPlaceHardResetReason Reason)
-{
-	return static_cast<uint8>(Reason);
-}
-
-constexpr bool SupportsTurnInPlace(ERpgCharacterRotationMode RotationMode)
-{
-	return RotationMode == ERpgCharacterRotationMode::CombatStrafe ||
-		RotationMode == ERpgCharacterRotationMode::Aim;
-}
-
-float CalculateTurnInPlacePlaybackWatchdogDuration(
-	float RemainingAnimationTime,
-	float PlayRate,
-	bool bLooping)
-{
-	if (bLooping || !FMath::IsFinite(PlayRate) || FMath::Abs(PlayRate) <= UE_SMALL_NUMBER)
-	{
-		return TurnInPlaceActiveTimeout;
-	}
-
-	return FMath::Max(
-		TurnInPlaceActiveTimeout,
-		FMath::Max(RemainingAnimationTime, 0.0f) / FMath::Abs(PlayRate) +
-			TurnInPlacePlaybackWatchdogSafetyMargin);
 }
 
 float CalculateLandingPlaybackWatchdogDuration(
@@ -497,7 +445,8 @@ void UpdateFootPlacementSnapshot(
 
 	const bool bLargeComponentJump =
 		bHadPreviousComponentTransform &&
-		Snapshot.ComponentDeltaWorld.SizeSquared() > FMath::Square(TurnInPlaceLargePositionDelta);
+		Snapshot.ComponentDeltaWorld.SizeSquared() >
+			FMath::Square(RpgTurnInPlaceRuntime::LargePositionDelta);
 	const bool bBaseIdentityChanged =
 		bHadPreviousComponentTransform &&
 		PreviousMovementBaseId != MovementBaseId;
@@ -568,95 +517,6 @@ void UpdateFootPlacementSnapshot(
 URpgAnimInstance::URpgAnimInstance(const FObjectInitializer& ObjectInitializer)
 	: Super(ObjectInitializer)
 {
-}
-
-float URpgAnimInstance::QuantizeTurnInPlaceAngle(float SignedAngle)
-{
-	const float AbsoluteAngle = FMath::Min(FMath::Abs(SignedAngle), 180.0f);
-	if (AbsoluteAngle < TurnInPlaceActivationThreshold)
-	{
-		return 0.0f;
-	}
-
-	float QuantizedMagnitude = 180.0f;
-	if (AbsoluteAngle < 67.5f)
-	{
-		QuantizedMagnitude = 45.0f;
-	}
-	else if (AbsoluteAngle < 112.5f)
-	{
-		QuantizedMagnitude = 90.0f;
-	}
-	else if (AbsoluteAngle < 157.5f)
-	{
-		QuantizedMagnitude = 135.0f;
-	}
-
-	return SignedAngle < 0.0f ? -QuantizedMagnitude : QuantizedMagnitude;
-}
-
-float URpgAnimInstance::GetTurnInPlaceFacingDuration(float QuantizedAngle)
-{
-	const float AbsoluteAngle = FMath::Abs(QuantizedAngle);
-	if (AbsoluteAngle <= 45.0f)
-	{
-		return 0.45f;
-	}
-	if (AbsoluteAngle <= 90.0f)
-	{
-		return 0.65f;
-	}
-	if (AbsoluteAngle <= 135.0f)
-	{
-		return 0.85f;
-	}
-	return 1.0f;
-}
-
-float URpgAnimInstance::CalculateTurnInPlaceYawDelta(float PreviousActorYaw, float CurrentActorYaw)
-{
-	return FMath::FindDeltaAngleDegrees(PreviousActorYaw, CurrentActorYaw);
-}
-
-bool URpgAnimInstance::DidTurnInPlaceSupportChange(
-	bool bHasPreviousSnapshot,
-	ERpgCharacterRotationMode PreviousMode,
-	ERpgCharacterRotationMode CurrentMode)
-{
-	return bHasPreviousSnapshot && SupportsTurnInPlace(PreviousMode) != SupportsTurnInPlace(CurrentMode);
-}
-
-float URpgAnimInstance::CalculateTurnInPlaceSnapshotYawDelta(
-	float PreviousActorYaw,
-	float CurrentActorYaw,
-	bool bHardReset,
-	bool bSupportChanged)
-{
-	return bHardReset || bSupportChanged
-		? 0.0f
-		: CalculateTurnInPlaceYawDelta(PreviousActorYaw, CurrentActorYaw);
-}
-
-FTransformTrajectory URpgAnimInstance::MakeTurnInPlaceSyntheticTrajectory(
-	const FTransformTrajectory& SourceTrajectory,
-	float CurrentActorYaw,
-	float AccumulatedYaw,
-	float QuantizedAngle)
-{
-	FTransformTrajectory Result;
-	const float FacingDuration = GetTurnInPlaceFacingDuration(QuantizedAngle);
-	const float StartYaw = CurrentActorYaw - AccumulatedYaw;
-
-	Result.Samples.Reserve(SourceTrajectory.Samples.Num());
-	for (const FTransformTrajectorySample& SourceSample : SourceTrajectory.Samples)
-	{
-		FTransformTrajectorySample& Sample = Result.Samples.Add_GetRef(SourceSample);
-		const float FacingAlpha = Sample.TimeInSeconds <= 0.0f
-			? 0.0f
-			: FMath::Clamp(Sample.TimeInSeconds / FacingDuration, 0.0f, 1.0f);
-		Sample.Facing = FRotator(0.0f, StartYaw + QuantizedAngle * FacingAlpha, 0.0f).Quaternion();
-	}
-	return Result;
 }
 
 bool URpgAnimInstance::CanRunParallelWork() const
@@ -773,13 +633,14 @@ void FRpgAnimInstanceProxy::PreUpdate(UAnimInstance* InAnimInstance, float Delta
 		PreviousOwnerUniqueId != OwnerUniqueId ||
 		PreviousLocalRole != LocalRole ||
 		PreviousRemoteRole != RemoteRole;
-	bTurnInPlaceSupportChanged = URpgAnimInstance::DidTurnInPlaceSupportChange(
+	bTurnInPlaceSupportChanged = RpgTurnInPlaceRuntime::DidSupportChange(
 		bHasPreviousOwnerSnapshot,
 		PreviousRotationMode,
 		RotationMode);
 	const bool bLargePositionJump =
 		bHasPreviousOwnerSnapshot &&
-		FVector::DistSquared(PreviousActorLocation, ActorLocation) > FMath::Square(TurnInPlaceLargePositionDelta);
+		FVector::DistSquared(PreviousActorLocation, ActorLocation) >
+			FMath::Square(RpgTurnInPlaceRuntime::LargePositionDelta);
 	bTurnInPlaceHardReset = bOwnerOrRoleChanged || bLargePositionJump || MovementComponent->bJustTeleported;
 	if (bTurnInPlaceHardReset)
 	{
@@ -788,7 +649,7 @@ void FRpgAnimInstanceProxy::PreUpdate(UAnimInstance* InAnimInstance, float Delta
 		TrajectoryLandingPrediction = FRpgTrajectoryLandingPrediction();
 		DesiredControllerYawLastUpdate = 0.0f;
 	}
-	ActorYawDelta = URpgAnimInstance::CalculateTurnInPlaceSnapshotYawDelta(
+	ActorYawDelta = RpgTurnInPlaceRuntime::CalculateSnapshotYawDelta(
 		PreviousActorYaw,
 		ActorYaw,
 		bTurnInPlaceHardReset,
@@ -1930,20 +1791,43 @@ void URpgAnimInstance::NativeInitializeAnimation()
 	}
 }
 
-bool URpgAnimInstance::IsTurnInPlaceEligible(const FRpgAnimInstanceProxy& Proxy) const
+FRpgTurnInPlaceRuntimeState URpgAnimInstance::CaptureTurnInPlaceRuntimeState() const
 {
-	return
-		TurnInPlaceMotionMatchingDatabase != nullptr &&
-		JumpPhase == ERpgJumpPhase::Grounded &&
-		SupportsTurnInPlace(Proxy.RotationMode) &&
-		Proxy.MovementState == ERpgLocomotionMovementState::Grounded &&
-		Proxy.bIsMovingOnGround &&
-		!Proxy.bIsCrouching &&
-		!Proxy.bIsAnyMontagePlaying &&
-		!Proxy.bHasTurnInPlaceBlockingGameplayTag &&
-		Proxy.GroundSpeed <= TurnInPlaceIdleSpeedThreshold &&
-		!Proxy.bHasGroundedMoveIntent &&
-		!Proxy.TransformTrajectory.Samples.IsEmpty();
+	FRpgTurnInPlaceRuntimeState State;
+	State.State = TurnInPlaceState;
+	State.QueryAngle = TurnInPlaceQueryAngle;
+	State.AccumulatedYaw = TurnInPlaceAccumulatedYaw;
+	State.StateElapsed = TurnInPlaceStateElapsed;
+	State.StableElapsed = TurnInPlaceStableElapsed;
+	State.SelectionElapsed = TurnInPlaceSelectionElapsed;
+	State.PlaybackWatchdogDuration = TurnInPlacePlaybackWatchdogDuration;
+	State.RequestAccumulatedYaw = TurnInPlaceRequestAccumulatedYaw;
+	State.RequestSerial = TurnInPlaceRequestSerial;
+	State.InterruptedRequestSerial = TurnInPlaceInterruptedRequestSerial;
+	State.HardResetReasonsLastFrame = TurnInPlaceHardResetReasonsLastFrame;
+	return State;
+}
+
+void URpgAnimInstance::ApplyTurnInPlaceRuntimeResult(
+	const FRpgTurnInPlaceUpdateResult& Result)
+{
+	TurnInPlaceState = Result.State.State;
+	TurnInPlaceQueryAngle = Result.State.QueryAngle;
+	TurnInPlaceAccumulatedYaw = Result.State.AccumulatedYaw;
+	TurnInPlaceStateElapsed = Result.State.StateElapsed;
+	TurnInPlaceStableElapsed = Result.State.StableElapsed;
+	TurnInPlaceSelectionElapsed = Result.State.SelectionElapsed;
+	TurnInPlacePlaybackWatchdogDuration = Result.State.PlaybackWatchdogDuration;
+	TurnInPlaceRequestAccumulatedYaw = Result.State.RequestAccumulatedYaw;
+	TurnInPlaceRequestSerial = Result.State.RequestSerial;
+	TurnInPlaceInterruptedRequestSerial = Result.State.InterruptedRequestSerial;
+	TurnInPlaceHardResetReasonsLastFrame = Result.State.HardResetReasonsLastFrame;
+	OffsetRootRotationMode = Result.OffsetRootRotationMode;
+	bResetOffsetRootEveryFrame |= Result.bResetOffsetRootEveryFrame;
+	if (Result.bClearSelection)
+	{
+		ClearTurnInPlaceSelection();
+	}
 }
 
 void URpgAnimInstance::ClearTurnInPlaceSelection()
@@ -1952,7 +1836,7 @@ void URpgAnimInstance::ClearTurnInPlaceSelection()
 	TurnInPlaceSelectedAssetStartTime = 0.0f;
 	TurnInPlaceSelectedAssetRemainingTime = MAX_flt;
 	TurnInPlaceSelectedRequestSerial = 0;
-	TurnInPlacePlaybackWatchdogDuration = TurnInPlaceActiveTimeout;
+	TurnInPlacePlaybackWatchdogDuration = RpgTurnInPlaceRuntime::ActiveTimeout;
 	bTurnInPlacePoseSelected = false;
 	bTurnInPlaceSelectedAssetLooping = false;
 	bTurnInPlaceSelectionLatched = false;
@@ -1962,263 +1846,69 @@ void URpgAnimInstance::ClearTurnInPlaceSelection()
 
 void URpgAnimInstance::ResetTurnInPlaceRuntime(bool bHardResetOffset)
 {
-	TurnInPlaceState = ERpgTurnInPlaceState::Inactive;
-	TurnInPlaceQueryAngle = 0.0f;
-	TurnInPlaceAccumulatedYaw = 0.0f;
-	TurnInPlaceStateElapsed = 0.0f;
-	TurnInPlaceStableElapsed = 0.0f;
-	TurnInPlaceSelectionElapsed = 0.0f;
-	TurnInPlaceRequestAccumulatedYaw = 0.0f;
-	ClearTurnInPlaceSelection();
+	ApplyTurnInPlaceRuntimeResult(RpgTurnInPlaceRuntime::Reset(
+		CaptureTurnInPlaceRuntimeState(),
+		bHardResetOffset));
 	TurnInPlaceSyntheticTrajectory.Samples.Reset();
-	OffsetRootRotationMode = EOffsetRootBoneMode::Interpolate;
-	bResetOffsetRootEveryFrame |= bHardResetOffset;
 }
 
 void URpgAnimInstance::BeginTurnInPlaceRecovery(bool bHardResetOffset)
 {
-	TurnInPlaceState = ERpgTurnInPlaceState::Recovering;
-	TurnInPlaceStateElapsed = 0.0f;
-	TurnInPlaceStableElapsed = 0.0f;
-	TurnInPlaceSelectionElapsed = 0.0f;
-	ClearTurnInPlaceSelection();
+	ApplyTurnInPlaceRuntimeResult(RpgTurnInPlaceRuntime::BeginRecovery(
+		CaptureTurnInPlaceRuntimeState(),
+		bHardResetOffset));
 	TurnInPlaceSyntheticTrajectory.Samples.Reset();
-	OffsetRootRotationMode = EOffsetRootBoneMode::Interpolate;
-	bResetOffsetRootEveryFrame |= bHardResetOffset;
 }
 
 void URpgAnimInstance::BeginTurnInPlaceRequest(float QuantizedAngle)
 {
-	TurnInPlaceState = ERpgTurnInPlaceState::Active;
-	TurnInPlaceQueryAngle = QuantizedAngle;
-	TurnInPlaceStateElapsed = 0.0f;
-	TurnInPlaceStableElapsed = 0.0f;
-	TurnInPlaceSelectionElapsed = 0.0f;
-	TurnInPlaceRequestAccumulatedYaw = TurnInPlaceAccumulatedYaw;
-	ClearTurnInPlaceSelection();
-	++TurnInPlaceRequestSerial;
-	if (TurnInPlaceRequestSerial == 0)
-	{
-		++TurnInPlaceRequestSerial;
-	}
-	OffsetRootRotationMode = EOffsetRootBoneMode::Accumulate;
+	ApplyTurnInPlaceRuntimeResult(RpgTurnInPlaceRuntime::BeginRequest(
+		CaptureTurnInPlaceRuntimeState(),
+		QuantizedAngle));
 }
 
 void URpgAnimInstance::UpdateTurnInPlaceRuntime(float DeltaSeconds, const FRpgAnimInstanceProxy& Proxy)
 {
-	const float SafeDeltaSeconds = FMath::Max(DeltaSeconds, 0.0f);
 	bResetOffsetRootEveryFrame = bTurnInPlaceInitializationResetPending;
 	bTurnInPlaceInitializationResetPending = false;
-	const float AbsoluteActorYawRate = SafeDeltaSeconds > UE_SMALL_NUMBER
-		? FMath::Abs(Proxy.ActorYawDelta) / SafeDeltaSeconds
-		: (FMath::IsNearlyZero(Proxy.ActorYawDelta) ? 0.0f : MAX_flt);
 
-	const bool bAirborneCancelsTurnInPlace =
-		Proxy.MovementState == ERpgLocomotionMovementState::Airborne;
-	uint8 HardResetReasons = 0;
-	const auto AddHardResetReason = [&HardResetReasons](
-		bool bCondition,
-		ETurnInPlaceHardResetReason Reason)
+	FRpgTurnInPlaceEligibilitySnapshot Eligibility;
+	Eligibility.RotationMode = Proxy.RotationMode;
+	Eligibility.MovementState = Proxy.MovementState;
+	Eligibility.GroundSpeed = Proxy.GroundSpeed;
+	Eligibility.bHasTurnDatabase = TurnInPlaceMotionMatchingDatabase != nullptr;
+	Eligibility.bJumpPhaseGrounded = JumpPhase == ERpgJumpPhase::Grounded;
+	Eligibility.bIsMovingOnGround = Proxy.bIsMovingOnGround;
+	Eligibility.bIsCrouching = Proxy.bIsCrouching;
+	Eligibility.bIsAnyMontagePlaying = Proxy.bIsAnyMontagePlaying;
+	Eligibility.bHasBlockingGameplayTag = Proxy.bHasTurnInPlaceBlockingGameplayTag;
+	Eligibility.bHasGroundedMoveIntent = Proxy.bHasGroundedMoveIntent;
+	Eligibility.bHasTrajectory = !Proxy.TransformTrajectory.Samples.IsEmpty();
+
+	FRpgTurnInPlaceUpdateSnapshot Snapshot;
+	Snapshot.RotationMode = Proxy.RotationMode;
+	Snapshot.MovementState = Proxy.MovementState;
+	Snapshot.ActorYawDelta = Proxy.ActorYawDelta;
+	Snapshot.bEligible = RpgTurnInPlaceRuntime::IsEligible(Eligibility);
+	Snapshot.bProxyHardReset = Proxy.bTurnInPlaceHardReset;
+	Snapshot.bSupportChanged = Proxy.bTurnInPlaceSupportChanged;
+	Snapshot.bHasBlockingGameplayTag = Proxy.bHasTurnInPlaceBlockingGameplayTag;
+	Snapshot.bIsAnyMontagePlaying = Proxy.bIsAnyMontagePlaying;
+	Snapshot.bIsCrouching = Proxy.bIsCrouching;
+	Snapshot.bSelectionLatched = bTurnInPlaceSelectionLatched;
+	Snapshot.bPlaybackObserved = bTurnInPlacePlaybackObserved;
+	Snapshot.bPoseSelected = bTurnInPlacePoseSelected;
+	Snapshot.bCompletionArmed = bTurnInPlaceCompletionArmed;
+
+	const FRpgTurnInPlaceUpdateResult Result = RpgTurnInPlaceRuntime::Update(
+		CaptureTurnInPlaceRuntimeState(),
+		Snapshot,
+		DeltaSeconds);
+	ApplyTurnInPlaceRuntimeResult(Result);
+
+	if (Result.bUseSyntheticTrajectory)
 	{
-		if (bCondition)
-		{
-			HardResetReasons |= ToReasonMask(Reason);
-		}
-	};
-	AddHardResetReason(Proxy.bTurnInPlaceHardReset, ETurnInPlaceHardResetReason::ProxySnapshot);
-	AddHardResetReason(!SupportsTurnInPlace(Proxy.RotationMode), ETurnInPlaceHardResetReason::UnsupportedRotationMode);
-	AddHardResetReason(Proxy.bHasTurnInPlaceBlockingGameplayTag, ETurnInPlaceHardResetReason::BlockingGameplayTag);
-	AddHardResetReason(Proxy.bIsAnyMontagePlaying, ETurnInPlaceHardResetReason::Montage);
-	AddHardResetReason(Proxy.bIsCrouching, ETurnInPlaceHardResetReason::Crouch);
-	AddHardResetReason(
-		!bAirborneCancelsTurnInPlace &&
-			Proxy.MovementState != ERpgLocomotionMovementState::Grounded,
-		ETurnInPlaceHardResetReason::UnsupportedMovementState);
-	if (HardResetReasons != 0 || bAirborneCancelsTurnInPlace)
-	{
-		const bool bHasTurnStateToClear =
-			TurnInPlaceState != ERpgTurnInPlaceState::Inactive ||
-			FMath::Abs(TurnInPlaceAccumulatedYaw) > UE_KINDA_SMALL_NUMBER;
-		const bool bHasNewHardResetReason =
-			(HardResetReasons & ~TurnInPlaceHardResetReasonsLastFrame) != 0;
-		// Entering the air always cancels TIR ownership, but a regular moving jump must retain
-		// Offset Root's interpolated locomotion offset. Only real TIR state/yaw needs a pulse;
-		// every newly added teleport, montage, stance, tag, or unsupported-policy reason gets
-		// its own one-shot edge even while another reason remains active. A rotation-policy
-		// transition is also an event so an early airborne/override return cannot consume it.
-		const bool bPulseHardReset =
-			bHasTurnStateToClear ||
-			bHasNewHardResetReason ||
-			Proxy.bTurnInPlaceSupportChanged;
-		ResetTurnInPlaceRuntime(bPulseHardReset);
-		// Do not let a clean airborne-only cancel mask a later montage/tag/policy reset in the air.
-		TurnInPlaceHardResetReasonsLastFrame = HardResetReasons;
-		LocomotionTrajectory = Proxy.TransformTrajectory;
-		return;
-	}
-	TurnInPlaceHardResetReasonsLastFrame = 0;
-
-	if (Proxy.bTurnInPlaceSupportChanged)
-	{
-		// Entering a controller-facing mode can rotate the capsule from an arbitrary free-camera
-		// heading in one frame. Treat that policy transition as a reset, not authored turn intent.
-		// Recovery also absorbs the short network-smoothing tail on simulated proxies.
-		BeginTurnInPlaceRecovery(true);
-		LocomotionTrajectory = Proxy.TransformTrajectory;
-		return;
-	}
-
-	const bool bEligible = IsTurnInPlaceEligible(Proxy);
-	if (!bEligible)
-	{
-		if (TurnInPlaceState == ERpgTurnInPlaceState::Collecting ||
-			TurnInPlaceState == ERpgTurnInPlaceState::Active)
-		{
-			BeginTurnInPlaceRecovery(false);
-		}
-		else if (TurnInPlaceState == ERpgTurnInPlaceState::Recovering)
-		{
-			TurnInPlaceStateElapsed += SafeDeltaSeconds;
-			if (TurnInPlaceStateElapsed >= TurnInPlaceRecoveryDuration)
-			{
-				ResetTurnInPlaceRuntime(false);
-			}
-		}
-		else
-		{
-			ResetTurnInPlaceRuntime(false);
-		}
-
-		LocomotionTrajectory = Proxy.TransformTrajectory;
-		return;
-	}
-
-	TurnInPlaceStateElapsed += SafeDeltaSeconds;
-	if (TurnInPlaceState != ERpgTurnInPlaceState::Recovering)
-	{
-		TurnInPlaceAccumulatedYaw = FMath::Clamp(
-			TurnInPlaceAccumulatedYaw + Proxy.ActorYawDelta,
-			-180.0f,
-			180.0f);
-	}
-
-	switch (TurnInPlaceState)
-	{
-	case ERpgTurnInPlaceState::Inactive:
-		OffsetRootRotationMode = EOffsetRootBoneMode::Interpolate;
-		if (AbsoluteActorYawRate <= TurnInPlaceInactiveYawRateThreshold)
-		{
-			TurnInPlaceStableElapsed += SafeDeltaSeconds;
-			if (TurnInPlaceStableElapsed >= TurnInPlaceInactiveAccumulatorTimeout)
-			{
-				TurnInPlaceAccumulatedYaw = 0.0f;
-			}
-		}
-		else
-		{
-			TurnInPlaceStableElapsed = 0.0f;
-		}
-
-		if (FMath::Abs(TurnInPlaceAccumulatedYaw) >= TurnInPlaceCollectThreshold)
-		{
-			TurnInPlaceState = ERpgTurnInPlaceState::Collecting;
-			TurnInPlaceStateElapsed = 0.0f;
-			TurnInPlaceStableElapsed = 0.0f;
-			OffsetRootRotationMode = EOffsetRootBoneMode::Accumulate;
-		}
-		break;
-
-	case ERpgTurnInPlaceState::Collecting:
-		OffsetRootRotationMode = EOffsetRootBoneMode::Accumulate;
-		if (FMath::Abs(TurnInPlaceAccumulatedYaw) < TurnInPlaceCancelThreshold)
-		{
-			BeginTurnInPlaceRecovery(false);
-			break;
-		}
-
-		TurnInPlaceStableElapsed = AbsoluteActorYawRate <= TurnInPlaceStableYawRateThreshold
-			? TurnInPlaceStableElapsed + SafeDeltaSeconds
-			: 0.0f;
-		if (FMath::Abs(TurnInPlaceAccumulatedYaw) >= TurnInPlaceActivationThreshold &&
-			(TurnInPlaceStableElapsed >= TurnInPlaceStabilityDuration ||
-			 TurnInPlaceStateElapsed >= TurnInPlaceCollectionTimeout))
-		{
-			BeginTurnInPlaceRequest(QuantizeTurnInPlaceAngle(TurnInPlaceAccumulatedYaw));
-		}
-		else if (TurnInPlaceStateElapsed >= TurnInPlaceCollectionTimeout)
-		{
-			BeginTurnInPlaceRecovery(false);
-		}
-		break;
-
-	case ERpgTurnInPlaceState::Active:
-	{
-		OffsetRootRotationMode = bTurnInPlaceSelectionLatched
-			? EOffsetRootBoneMode::LockOffsetIncreaseAndConsumeAnimation
-			: EOffsetRootBoneMode::Accumulate;
-		if (FMath::Abs(TurnInPlaceAccumulatedYaw) < TurnInPlaceCancelThreshold)
-		{
-			BeginTurnInPlaceRecovery(false);
-			break;
-		}
-
-		if (CanRetargetTurnInPlaceRequest())
-		{
-			const float UpdatedQueryAngle = QuantizeTurnInPlaceAngle(TurnInPlaceAccumulatedYaw);
-			const float AdditionalYaw = TurnInPlaceAccumulatedYaw - TurnInPlaceRequestAccumulatedYaw;
-			const bool bDirectionChanged =
-				!FMath::IsNearlyZero(UpdatedQueryAngle) &&
-				FMath::Sign(UpdatedQueryAngle) != FMath::Sign(TurnInPlaceQueryAngle);
-			const bool bQuantizedBucketChanged =
-				!FMath::IsNearlyZero(UpdatedQueryAngle) &&
-				!FMath::IsNearlyEqual(UpdatedQueryAngle, TurnInPlaceQueryAngle);
-			if (FMath::Abs(AdditionalYaw) >= TurnInPlaceActivationThreshold &&
-				(bDirectionChanged || bQuantizedBucketChanged))
-			{
-				BeginTurnInPlaceRequest(UpdatedQueryAngle);
-				break;
-			}
-		}
-
-		if (!bTurnInPlaceSelectionLatched)
-		{
-			TurnInPlaceSelectionElapsed += SafeDeltaSeconds;
-			if (TurnInPlaceSelectionElapsed >= TurnInPlaceSelectionTimeout)
-			{
-				BeginTurnInPlaceRecovery(true);
-				break;
-			}
-		}
-		else if (bTurnInPlaceCompletionArmed)
-		{
-			BeginTurnInPlaceRecovery(false);
-			break;
-		}
-		else if (bTurnInPlacePlaybackObserved && !bTurnInPlacePoseSelected)
-		{
-			BeginTurnInPlaceRecovery(true);
-			break;
-		}
-
-		if (TurnInPlaceStateElapsed >= TurnInPlacePlaybackWatchdogDuration)
-		{
-			BeginTurnInPlaceRecovery(true);
-		}
-		break;
-	}
-
-	case ERpgTurnInPlaceState::Recovering:
-		OffsetRootRotationMode = EOffsetRootBoneMode::Interpolate;
-		if (TurnInPlaceStateElapsed >= TurnInPlaceRecoveryDuration)
-		{
-			ResetTurnInPlaceRuntime(false);
-		}
-		break;
-	}
-
-	if (TurnInPlaceState == ERpgTurnInPlaceState::Active)
-	{
-		TurnInPlaceSyntheticTrajectory = MakeTurnInPlaceSyntheticTrajectory(
+		TurnInPlaceSyntheticTrajectory = RpgTurnInPlaceRuntime::MakeSyntheticTrajectory(
 			Proxy.TransformTrajectory,
 			Proxy.ActorYaw,
 			TurnInPlaceAccumulatedYaw,
@@ -2234,22 +1924,12 @@ void URpgAnimInstance::UpdateTurnInPlaceRuntime(float DeltaSeconds, const FRpgAn
 
 bool URpgAnimInstance::ConsumeTurnInPlaceForceInterruptRequest()
 {
-	if (TurnInPlaceState != ERpgTurnInPlaceState::Active ||
-		!TurnInPlaceMotionMatchingDatabase ||
-		TurnInPlaceInterruptedRequestSerial == TurnInPlaceRequestSerial)
-	{
-		return false;
-	}
-
-	TurnInPlaceInterruptedRequestSerial = TurnInPlaceRequestSerial;
-	return true;
-}
-
-bool URpgAnimInstance::CanRetargetTurnInPlaceRequest() const
-{
-	return TurnInPlaceState == ERpgTurnInPlaceState::Active &&
-		!bTurnInPlaceSelectionLatched &&
-		TurnInPlaceInterruptedRequestSerial != TurnInPlaceRequestSerial;
+	FRpgTurnInPlaceRuntimeState State = CaptureTurnInPlaceRuntimeState();
+	const bool bConsumed = RpgTurnInPlaceRuntime::ConsumeForceInterrupt(
+		TurnInPlaceMotionMatchingDatabase != nullptr,
+		State);
+	TurnInPlaceInterruptedRequestSerial = State.InterruptedRequestSerial;
+	return bConsumed;
 }
 
 bool URpgAnimInstance::TryLatchTurnInPlaceSelection(
@@ -2275,7 +1955,7 @@ bool URpgAnimInstance::TryLatchTurnInPlaceSelection(
 		SelectedAsset->GetPlayLength() - TurnInPlaceSelectedAssetStartTime,
 		0.0f);
 	TurnInPlaceSelectedRequestSerial = SelectionRequestSerial;
-	TurnInPlacePlaybackWatchdogDuration = CalculateTurnInPlacePlaybackWatchdogDuration(
+	TurnInPlacePlaybackWatchdogDuration = RpgTurnInPlaceRuntime::CalculatePlaybackWatchdogDuration(
 		TurnInPlaceSelectedAssetRemainingTime,
 		1.0f,
 		bSelectedAssetLooping);
@@ -2304,7 +1984,8 @@ void URpgAnimInstance::UpdateTurnInPlaceLatchedPlayback(
 	}
 
 	const float SafeDeltaSeconds = FMath::Max(DeltaSeconds, 0.0f);
-	const float CompletionLeadTime = TurnInPlaceFinishedTimeTolerance + SafeDeltaSeconds;
+	const float CompletionLeadTime =
+		RpgTurnInPlaceRuntime::FinishedTimeTolerance + SafeDeltaSeconds;
 	if (CurrentAsset == TurnInPlaceSelectedAsset.Get())
 	{
 		const bool bFirstPlaybackObservation = !bTurnInPlacePlaybackObserved;
@@ -2318,7 +1999,8 @@ void URpgAnimInstance::UpdateTurnInPlaceLatchedPlayback(
 			0.0f);
 		if (bFirstPlaybackObservation)
 		{
-			TurnInPlacePlaybackWatchdogDuration = CalculateTurnInPlacePlaybackWatchdogDuration(
+			TurnInPlacePlaybackWatchdogDuration =
+				RpgTurnInPlaceRuntime::CalculatePlaybackWatchdogDuration(
 				TurnInPlaceSelectedAssetRemainingTime,
 				CurrentAssetPlayRate,
 				bTurnInPlaceSelectedAssetLooping);
@@ -2349,32 +2031,6 @@ void URpgAnimInstance::UpdateTurnInPlaceLatchedPlayback(
 	}
 
 	bTurnInPlacePoseSelected = false;
-}
-
-URpgAnimInstance::ETurnInPlaceSearchMode URpgAnimInstance::ResolveTurnInPlaceSearchMode(
-	bool bForceNewRequest) const
-{
-	if (bForceNewRequest &&
-		TurnInPlaceState == ERpgTurnInPlaceState::Active &&
-		TurnInPlaceMotionMatchingDatabase)
-	{
-		return ETurnInPlaceSearchMode::SearchRequestedTurn;
-	}
-
-	if (TurnInPlaceState == ERpgTurnInPlaceState::Active &&
-		bTurnInPlaceSelectionLatched &&
-		!bTurnInPlaceCompletionArmed)
-	{
-		return ETurnInPlaceSearchMode::ContinueSelectedTurn;
-	}
-
-	return ETurnInPlaceSearchMode::NormalLocomotion;
-}
-
-bool URpgAnimInstance::AllowsMovingProceduralNodes() const
-{
-	return TurnInPlaceState == ERpgTurnInPlaceState::Inactive ||
-		TurnInPlaceState == ERpgTurnInPlaceState::Recovering;
 }
 
 void URpgAnimInstance::ClearLandingSelection()
@@ -2965,10 +2621,15 @@ void URpgAnimInstance::UpdateGaspMotionMatching(
 			AnimationContext ? AnimationContext->GetDeltaTime() : 0.0f);
 	}
 
-	const ETurnInPlaceSearchMode SearchMode =
-		ResolveTurnInPlaceSearchMode(bForceNewTurnRequest);
+	const ERpgTurnInPlaceSearchMode SearchMode =
+		RpgTurnInPlaceRuntime::ResolveSearchMode(
+			CaptureTurnInPlaceRuntimeState(),
+			bForceNewTurnRequest,
+			TurnInPlaceMotionMatchingDatabase != nullptr,
+			bTurnInPlaceSelectionLatched,
+			bTurnInPlaceCompletionArmed);
 	const bool bForceNewLandingRequest =
-		SearchMode == ETurnInPlaceSearchMode::NormalLocomotion &&
+		SearchMode == ERpgTurnInPlaceSearchMode::NormalLocomotion &&
 		ConsumeLandingForceInterruptRequest();
 
 	if (JumpPhase == ERpgJumpPhase::Landing && bLandingSelectionLatched)
@@ -3005,12 +2666,12 @@ void URpgAnimInstance::UpdateGaspMotionMatching(
 
 	TArray<UPoseSearchDatabase*, TInlineAllocator<5>> DatabasesToSearch;
 	EPoseSearchInterruptMode InterruptMode = EPoseSearchInterruptMode::InterruptOnDatabaseChange;
-	if (SearchMode == ETurnInPlaceSearchMode::SearchRequestedTurn)
+	if (SearchMode == ERpgTurnInPlaceSearchMode::SearchRequestedTurn)
 	{
 		DatabasesToSearch.Add(TurnInPlaceMotionMatchingDatabase);
 		InterruptMode = EPoseSearchInterruptMode::ForceInterrupt;
 	}
-	else if (SearchMode == ETurnInPlaceSearchMode::ContinueSelectedTurn)
+	else if (SearchMode == ERpgTurnInPlaceSearchMode::ContinueSelectedTurn)
 	{
 		// An empty searchable set with DoNotInterrupt keeps only the current database's Continuing Pose.
 		// It prevents a full TIR-database search from selecting another clip when the indexed range ends.
@@ -3155,7 +2816,7 @@ void URpgAnimInstance::GetGaspBlendStackInputs(
 	const bool bAllowsSampleProceduralNodes =
 		!bIsCrouching &&
 		!bIsAnyMontagePlaying &&
-		AllowsMovingProceduralNodes();
+		RpgTurnInPlaceRuntime::AllowsMovingProceduralNodes(TurnInPlaceState);
 
 	float EnableWarpingCurveValue = 0.0f;
 	if (const UAnimSequenceBase* CurrentSequence = Cast<UAnimSequenceBase>(CurrentAnimAsset))
