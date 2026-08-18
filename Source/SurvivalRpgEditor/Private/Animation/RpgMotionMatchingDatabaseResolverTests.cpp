@@ -4,10 +4,15 @@
 
 #if WITH_DEV_AUTOMATION_TESTS
 
+#include "Algo/Reverse.h"
+#include "Animation/AnimSequence.h"
 #include "Components/SkeletalMeshComponent.h"
 #include "Misc/AutomationTest.h"
+#include "Misc/DataValidation.h"
 #include "PoseSearch/PoseSearchDatabase.h"
 #include "SurvivalRpg/Animation/RpgAnimInstance.h"
+#include "SurvivalRpg/Animation/RpgGaspLocomotionConfig.h"
+#include "SurvivalRpg/Animation/RpgGaspPresentationProfile.h"
 #include "SurvivalRpg/Animation/RpgMotionMatchingRuntime.h"
 #include "SurvivalRpg/Animation/RpgPoseSearchTrajectory.h"
 #include "SurvivalRpg/Core/Character/RpgCharacter.h"
@@ -21,6 +26,8 @@ IMPLEMENT_SIMPLE_AUTOMATION_TEST(
 
 bool FRpgMotionMatchingDatabaseResolverTest::RunTest(const FString& Parameters)
 {
+	const FRpgGaspLocomotionTuning DefaultTuning;
+
 	TestTrue(
 		TEXT("Trajectory history uses GASP's adaptive sampling interval"),
 		FMath::IsNearlyEqual(RpgPoseSearchTrajectory::HistorySamplingInterval, -1.0f));
@@ -37,7 +44,7 @@ bool FRpgMotionMatchingDatabaseResolverTest::RunTest(const FString& Parameters)
 		15);
 	TestEqual(
 		TEXT("Sprint Stops begin at GASP's inclusive 550 cm/s boundary"),
-		RpgMotionMatchingRuntime::SprintStopMinimumSpeed,
+		DefaultTuning.SprintStopMinimumSpeed,
 		550.0f);
 
 	FRpgGroundMotionMatchingDatabaseSets DatabaseSets;
@@ -164,7 +171,7 @@ bool FRpgMotionMatchingDatabaseResolverTest::RunTest(const FString& Parameters)
 	FastStartSnapshot.GroundSpeed = 350.0f;
 	FastStartSnapshot.WorldVelocity = FVector(350.0f, 0.0f, 0.0f);
 	FastStartSnapshot.FutureVelocity = FVector(
-		FastStartSnapshot.GroundSpeed + RpgMotionMatchingRuntime::RunStartMinimumFutureSpeedGain,
+		FastStartSnapshot.GroundSpeed + DefaultTuning.RunStartMinimumFutureSpeedGain,
 		0.0f,
 		0.0f);
 	const URpgAnimInstance::FResolvedGroundMotionMatchingDatabases FastStartResult =
@@ -188,13 +195,13 @@ bool FRpgMotionMatchingDatabaseResolverTest::RunTest(const FString& Parameters)
 
 	FRpgGroundMotionMatchingSelectionSnapshot FreeBelowPivotSnapshot = SteadyRunSnapshot;
 	FreeBelowPivotSnapshot.WorldAcceleration = DirectionAtDegrees(
-		RpgMotionMatchingRuntime::FreeRunPivotMinimumAngle - 0.01f);
+		DefaultTuning.FreeRunPivotMinimumAngle - 0.01f);
 	const URpgAnimInstance::FResolvedGroundMotionMatchingDatabases FreeBelowPivotResult =
 		URpgAnimInstance::ResolveGroundMotionMatchingDatabases(FreeBelowPivotSnapshot, DatabaseSets);
 	TestFalse(TEXT("Free mode excludes a turn just below 45 degrees"), FreeBelowPivotResult.Contains(RunPivots));
 
 	FRpgGroundMotionMatchingSelectionSnapshot FreePivotSnapshot = SteadyRunSnapshot;
-	FreePivotSnapshot.WorldAcceleration = DirectionAtDegrees(RpgMotionMatchingRuntime::FreeRunPivotMinimumAngle);
+	FreePivotSnapshot.WorldAcceleration = DirectionAtDegrees(DefaultTuning.FreeRunPivotMinimumAngle);
 	const URpgAnimInstance::FResolvedGroundMotionMatchingDatabases FreePivotResult =
 		URpgAnimInstance::ResolveGroundMotionMatchingDatabases(FreePivotSnapshot, DatabaseSets);
 	TestEqual(TEXT("Free mode exposes Pivots at exactly 45 degrees"), FreePivotResult.Num(), 2);
@@ -204,7 +211,7 @@ bool FRpgMotionMatchingDatabaseResolverTest::RunTest(const FString& Parameters)
 	FRpgGroundMotionMatchingSelectionSnapshot StrafeBelowPivotSnapshot = SteadyRunSnapshot;
 	StrafeBelowPivotSnapshot.RotationMode = ERpgCharacterRotationMode::CombatStrafe;
 	StrafeBelowPivotSnapshot.WorldAcceleration = DirectionAtDegrees(
-		RpgMotionMatchingRuntime::CombatStrafeRunPivotMinimumAngle - 0.01f);
+		DefaultTuning.CombatStrafeRunPivotMinimumAngle - 0.01f);
 	const URpgAnimInstance::FResolvedGroundMotionMatchingDatabases StrafeBelowPivotResult =
 		URpgAnimInstance::ResolveGroundMotionMatchingDatabases(StrafeBelowPivotSnapshot, DatabaseSets);
 	TestFalse(TEXT("Combat Strafe excludes a turn just below 30 degrees"), StrafeBelowPivotResult.Contains(RunPivots));
@@ -212,7 +219,7 @@ bool FRpgMotionMatchingDatabaseResolverTest::RunTest(const FString& Parameters)
 	FRpgGroundMotionMatchingSelectionSnapshot StrafePivotSnapshot = SteadyRunSnapshot;
 	StrafePivotSnapshot.RotationMode = ERpgCharacterRotationMode::CombatStrafe;
 	StrafePivotSnapshot.WorldAcceleration = DirectionAtDegrees(
-		RpgMotionMatchingRuntime::CombatStrafeRunPivotMinimumAngle);
+		DefaultTuning.CombatStrafeRunPivotMinimumAngle);
 	const URpgAnimInstance::FResolvedGroundMotionMatchingDatabases StrafePivotResult =
 		URpgAnimInstance::ResolveGroundMotionMatchingDatabases(StrafePivotSnapshot, DatabaseSets);
 	TestTrue(TEXT("Combat Strafe exposes Pivots at exactly 30 degrees"), StrafePivotResult.Contains(RunPivots));
@@ -222,6 +229,31 @@ bool FRpgMotionMatchingDatabaseResolverTest::RunTest(const FString& Parameters)
 	const URpgAnimInstance::FResolvedGroundMotionMatchingDatabases AimPivotResult =
 		URpgAnimInstance::ResolveGroundMotionMatchingDatabases(AimPivotSnapshot, DatabaseSets);
 	TestTrue(TEXT("Aim exposes Pivots at its exact zero-degree threshold"), AimPivotResult.Contains(RunPivots));
+
+	FRpgGaspLocomotionTuning CustomMotionMatchingTuning = DefaultTuning;
+	CustomMotionMatchingTuning.RunStartMinimumFutureSpeedGain = 150.0f;
+	CustomMotionMatchingTuning.FreeRunPivotMinimumAngle = 90.0f;
+	const FRpgResolvedMotionMatchingDatabaseRoles CustomRunRoles =
+		RpgMotionMatchingRuntime::ResolveDatabaseRoles(
+			FastStartSnapshot,
+			CustomMotionMatchingTuning);
+	TestRoleSequence(
+		TEXT("Profile tuning can suppress the compatibility Run Start and Pivot rows"),
+		CustomRunRoles,
+		{ERpgMotionMatchingDatabaseRole::StandRunLoops});
+
+	FRpgGroundMotionMatchingSelectionSnapshot CustomStopSnapshot = SteadyRunSnapshot;
+	CustomStopSnapshot.WorldAcceleration = FVector::ZeroVector;
+	CustomStopSnapshot.GroundSpeed = 30.0f;
+	CustomMotionMatchingTuning.WalkStopMinimumSpeed = 40.0f;
+	CustomMotionMatchingTuning.RunStopMinimumSpeed = 120.0f;
+	CustomMotionMatchingTuning.SprintStopMinimumSpeed = 600.0f;
+	TestRoleSequence(
+		TEXT("Profile tuning moves the inclusive Walk Stop boundary without changing native role order"),
+		RpgMotionMatchingRuntime::ResolveDatabaseRoles(
+			CustomStopSnapshot,
+			CustomMotionMatchingTuning),
+		{ERpgMotionMatchingDatabaseRole::StandIdle});
 
 	FRpgGroundMotionMatchingSelectionSnapshot AimWithoutAccelerationSnapshot = AimPivotSnapshot;
 	AimWithoutAccelerationSnapshot.WorldAcceleration = FVector::ZeroVector;
@@ -273,11 +305,11 @@ bool FRpgMotionMatchingDatabaseResolverTest::RunTest(const FString& Parameters)
 		VerticalOnlySnapshot.WorldVelocity = FVector(
 			0.0f,
 			0.0f,
-			RpgMotionMatchingRuntime::ChooserVelocityTolerance + 0.01f);
+			DefaultTuning.ChooserVelocityTolerance + 0.01f);
 		VerticalOnlySnapshot.WorldAcceleration = NetworkAccelerations[NetworkViewIndex];
 		VerticalOnlySnapshot.GroundSpeed = VerticalOnlySnapshot.WorldVelocity.Size2D();
 		VerticalOnlySnapshot.FutureVelocity = FVector(
-			RpgMotionMatchingRuntime::RunStartMinimumFutureSpeedGain,
+			DefaultTuning.RunStartMinimumFutureSpeedGain,
 			0.0f,
 			0.0f);
 		VerticalOnlySnapshot.CurrentDatabaseRole = ERpgMotionMatchingDatabaseRole::None;
@@ -307,12 +339,12 @@ bool FRpgMotionMatchingDatabaseResolverTest::RunTest(const FString& Parameters)
 		FRpgGroundMotionMatchingSelectionSnapshot HorizontalMovingSnapshot =
 			VerticalOnlySnapshot;
 		HorizontalMovingSnapshot.WorldVelocity = FVector(
-			RpgMotionMatchingRuntime::ChooserVelocityTolerance + 0.01f,
+			DefaultTuning.ChooserVelocityTolerance + 0.01f,
 			0.0f,
 			0.0f);
 		HorizontalMovingSnapshot.GroundSpeed = HorizontalMovingSnapshot.WorldVelocity.Size2D();
 		HorizontalMovingSnapshot.FutureVelocity = FVector(
-			HorizontalMovingSnapshot.GroundSpeed + RpgMotionMatchingRuntime::RunStartMinimumFutureSpeedGain,
+			HorizontalMovingSnapshot.GroundSpeed + DefaultTuning.RunStartMinimumFutureSpeedGain,
 			0.0f,
 			0.0f);
 
@@ -347,7 +379,7 @@ bool FRpgMotionMatchingDatabaseResolverTest::RunTest(const FString& Parameters)
 
 	FRpgGroundMotionMatchingSelectionSnapshot StartAndPivotSnapshot = FreePivotSnapshot;
 	StartAndPivotSnapshot.FutureVelocity = FVector(
-		StartAndPivotSnapshot.GroundSpeed + RpgMotionMatchingRuntime::RunStartMinimumFutureSpeedGain,
+		StartAndPivotSnapshot.GroundSpeed + DefaultTuning.RunStartMinimumFutureSpeedGain,
 		0.0f,
 		0.0f);
 	const URpgAnimInstance::FResolvedGroundMotionMatchingDatabases StartAndPivotResult =
@@ -442,7 +474,7 @@ bool FRpgMotionMatchingDatabaseResolverTest::RunTest(const FString& Parameters)
 
 	FRpgGroundMotionMatchingSelectionSnapshot RunStopSnapshot = SteadyRunSnapshot;
 	RunStopSnapshot.WorldAcceleration = FVector::ZeroVector;
-	RunStopSnapshot.GroundSpeed = RpgMotionMatchingRuntime::RunStopMinimumSpeed;
+	RunStopSnapshot.GroundSpeed = DefaultTuning.RunStopMinimumSpeed;
 	const URpgAnimInstance::FResolvedGroundMotionMatchingDatabases RunStopResult =
 		URpgAnimInstance::ResolveGroundMotionMatchingDatabases(RunStopSnapshot, DatabaseSets);
 	TestEqual(TEXT("At 100 cm/s logical Idle exposes both overlapping Stop rows"), RunStopResult.Num(), 2);
@@ -459,13 +491,13 @@ bool FRpgMotionMatchingDatabaseResolverTest::RunTest(const FString& Parameters)
 		});
 
 	FRpgGroundMotionMatchingSelectionSnapshot WalkStopSnapshot = RunStopSnapshot;
-	WalkStopSnapshot.GroundSpeed = RpgMotionMatchingRuntime::RunStopMinimumSpeed - 0.01f;
+	WalkStopSnapshot.GroundSpeed = DefaultTuning.RunStopMinimumSpeed - 0.01f;
 	const URpgAnimInstance::FResolvedGroundMotionMatchingDatabases WalkStopResult =
 		URpgAnimInstance::ResolveGroundMotionMatchingDatabases(WalkStopSnapshot, DatabaseSets);
 	TestEqual(TEXT("Below 100 cm/s logical Idle exposes only Walk Stops"), WalkStopResult.Num(), 1);
 	TestEqual(TEXT("Walk deceleration uses the dedicated Walk Stops database"), WalkStopResult[0], WalkStops);
 
-	WalkStopSnapshot.GroundSpeed = RpgMotionMatchingRuntime::WalkStopMinimumSpeed;
+	WalkStopSnapshot.GroundSpeed = DefaultTuning.WalkStopMinimumSpeed;
 	const URpgAnimInstance::FResolvedGroundMotionMatchingDatabases WalkStopBoundaryResult =
 		URpgAnimInstance::ResolveGroundMotionMatchingDatabases(WalkStopSnapshot, DatabaseSets);
 	TestEqual(TEXT("The exact 20 cm/s boundary exposes both overlapping rows"), WalkStopBoundaryResult.Num(), 2);
@@ -473,7 +505,7 @@ bool FRpgMotionMatchingDatabaseResolverTest::RunTest(const FString& Parameters)
 	TestEqual(TEXT("The exact 20 cm/s boundary appends Walk Stops"), WalkStopBoundaryResult[1], WalkStops);
 
 	FRpgGroundMotionMatchingSelectionSnapshot AboveWalkStopBoundarySnapshot = WalkStopSnapshot;
-	AboveWalkStopBoundarySnapshot.GroundSpeed = RpgMotionMatchingRuntime::WalkStopMinimumSpeed + 0.01f;
+	AboveWalkStopBoundarySnapshot.GroundSpeed = DefaultTuning.WalkStopMinimumSpeed + 0.01f;
 	const URpgAnimInstance::FResolvedGroundMotionMatchingDatabases AboveWalkStopBoundaryResult =
 		URpgAnimInstance::ResolveGroundMotionMatchingDatabases(
 			AboveWalkStopBoundarySnapshot,
@@ -482,14 +514,14 @@ bool FRpgMotionMatchingDatabaseResolverTest::RunTest(const FString& Parameters)
 	TestEqual(TEXT("Above 20 cm/s Walk Stops remain eligible"), AboveWalkStopBoundaryResult[0], WalkStops);
 
 	FRpgGroundMotionMatchingSelectionSnapshot IdleDecelerationSnapshot = WalkStopSnapshot;
-	IdleDecelerationSnapshot.GroundSpeed = RpgMotionMatchingRuntime::WalkStopMinimumSpeed - 0.01f;
+	IdleDecelerationSnapshot.GroundSpeed = DefaultTuning.WalkStopMinimumSpeed - 0.01f;
 	const URpgAnimInstance::FResolvedGroundMotionMatchingDatabases IdleDecelerationResult =
 		URpgAnimInstance::ResolveGroundMotionMatchingDatabases(IdleDecelerationSnapshot, DatabaseSets);
 	TestEqual(TEXT("Below 20 cm/s logical Idle resolves the Idle database"), IdleDecelerationResult.Num(), 1);
 	TestEqual(TEXT("Low-speed deceleration uses Idle"), IdleDecelerationResult[0], Idle);
 
 	FRpgGroundMotionMatchingSelectionSnapshot BelowSprintStopSnapshot = RunStopSnapshot;
-	BelowSprintStopSnapshot.GroundSpeed = RpgMotionMatchingRuntime::SprintStopMinimumSpeed - 0.01f;
+	BelowSprintStopSnapshot.GroundSpeed = DefaultTuning.SprintStopMinimumSpeed - 0.01f;
 	const URpgAnimInstance::FResolvedGroundMotionMatchingDatabases BelowSprintStopResult =
 		URpgAnimInstance::ResolveGroundMotionMatchingDatabases(BelowSprintStopSnapshot, DatabaseSets);
 	TestEqual(TEXT("Below 550 cm/s logical Idle exposes Walk and Run Stops"), BelowSprintStopResult.Num(), 2);
@@ -498,7 +530,7 @@ bool FRpgMotionMatchingDatabaseResolverTest::RunTest(const FString& Parameters)
 
 	FRpgGroundMotionMatchingSelectionSnapshot SprintStopSnapshot = RunStopSnapshot;
 	SprintStopSnapshot.Gait = ERpgLocomotionGait::Sprint;
-	SprintStopSnapshot.GroundSpeed = RpgMotionMatchingRuntime::SprintStopMinimumSpeed;
+	SprintStopSnapshot.GroundSpeed = DefaultTuning.SprintStopMinimumSpeed;
 	const URpgAnimInstance::FResolvedGroundMotionMatchingDatabases SprintStopResult =
 		URpgAnimInstance::ResolveGroundMotionMatchingDatabases(SprintStopSnapshot, DatabaseSets);
 	TestEqual(TEXT("A future explicit Sprint exposes all three Stop rows at 550 cm/s"), SprintStopResult.Num(), 3);
@@ -528,7 +560,7 @@ bool FRpgMotionMatchingDatabaseResolverTest::RunTest(const FString& Parameters)
 	TestFalse(TEXT("Fast Run excludes the forward-only Sprint Stops"), FastRunStopResult.Contains(SprintStops));
 
 	FRpgGroundMotionMatchingSelectionSnapshot AboveSprintStopSnapshot = SprintStopSnapshot;
-	AboveSprintStopSnapshot.GroundSpeed = RpgMotionMatchingRuntime::SprintStopMinimumSpeed + 100.0f;
+	AboveSprintStopSnapshot.GroundSpeed = DefaultTuning.SprintStopMinimumSpeed + 100.0f;
 	const URpgAnimInstance::FResolvedGroundMotionMatchingDatabases AboveSprintStopResult =
 		URpgAnimInstance::ResolveGroundMotionMatchingDatabases(AboveSprintStopSnapshot, DatabaseSets);
 	TestEqual(TEXT("Sprint Stops have no upper speed bound"), AboveSprintStopResult.Num(), 3);
@@ -687,11 +719,53 @@ bool FRpgMotionMatchingDatabaseResolverTest::RunTest(const FString& Parameters)
 	TestEqual(TEXT("Runtime remains bounded to Starts, Loops, and Pivots"), BoundedRunResult.Num(), 3);
 	TestFalse(TEXT("An invalid fifth Run entry is ignored"), BoundedRunResult.Contains(UnexpectedFifthRunDatabase));
 
-	auto MakeTaggedDatabase = [](ERpgMotionMatchingDatabaseRole Role)
+	URpgGaspPresentationProfile* RuntimeProfile = NewObject<URpgGaspPresentationProfile>();
+	UAnimSequence* ProfileGroundAsset = NewObject<UAnimSequence>();
+	UAnimSequence* ProfileJumpAsset = NewObject<UAnimSequence>();
+	UAnimSequence* ProfileLandingAsset = NewObject<UAnimSequence>();
+	auto AddProfileMembership = [RuntimeProfile](
+		UAnimSequenceBase* Asset,
+		ERpgGaspPresentationAssetCategory Category)
+	{
+		FRpgGaspPresentationAssetMembership& Membership =
+			RuntimeProfile->AssetMemberships.AddDefaulted_GetRef();
+		Membership.Asset = Asset;
+		Membership.Category = Category;
+	};
+	AddProfileMembership(
+		ProfileGroundAsset,
+		ERpgGaspPresentationAssetCategory::GroundMoving);
+	AddProfileMembership(
+		ProfileJumpAsset,
+		ERpgGaspPresentationAssetCategory::JumpStart);
+	AddProfileMembership(
+		ProfileLandingAsset,
+		ERpgGaspPresentationAssetCategory::Landing);
+	auto MakeTaggedDatabase = [ProfileGroundAsset, ProfileJumpAsset, ProfileLandingAsset](
+		ERpgMotionMatchingDatabaseRole Role)
 	{
 		UPoseSearchDatabase* Database = NewObject<UPoseSearchDatabase>();
 		Database->Tags.Add(URpgAnimInstance::GetMotionMatchingDatabaseRoleTag(Role));
 		Database->Tags.Add(URpgAnimInstance::GetMotionMatchingDatabaseStateTag(Role));
+		FPoseSearchDatabaseAnimationAsset DatabaseEntry;
+		switch (Role)
+		{
+		case ERpgMotionMatchingDatabaseRole::Jump:
+			DatabaseEntry.AnimAsset = ProfileJumpAsset;
+			break;
+		case ERpgMotionMatchingDatabaseRole::StandLightLanding:
+		case ERpgMotionMatchingDatabaseRole::StandHeavyLanding:
+		case ERpgMotionMatchingDatabaseRole::WalkLightLanding:
+		case ERpgMotionMatchingDatabaseRole::WalkHeavyLanding:
+		case ERpgMotionMatchingDatabaseRole::RunLightLanding:
+		case ERpgMotionMatchingDatabaseRole::RunHeavyLanding:
+			DatabaseEntry.AnimAsset = ProfileLandingAsset;
+			break;
+		default:
+			DatabaseEntry.AnimAsset = ProfileGroundAsset;
+			break;
+		}
+		Database->AddAnimationAsset(DatabaseEntry);
 		return Database;
 	};
 	static const struct
@@ -746,6 +820,50 @@ bool FRpgMotionMatchingDatabaseResolverTest::RunTest(const FString& Parameters)
 		URpgAnimInstance::ValidateMotionMatchingDatabaseRoleContracts(ValidRoleContracts);
 	TestTrue(TEXT("Every runtime role has one unique database plus exact role/state tags"), ValidRoleValidation.IsValid());
 
+	for (const URpgAnimInstance::FMotionMatchingDatabaseRoleContract& Contract : ValidRoleContracts)
+	{
+		RuntimeProfile->RuntimeMotionMatchingDatabases.Add(Contract.Database);
+	}
+	TestTrue(
+		TEXT("The profile accepts one uniquely tagged database for every non-None role"),
+		RuntimeProfile->ValidateProfile().IsRuntimeDatabaseConfigValid());
+
+	FRpgGaspMotionMatchingDatabaseLookup ProfileDatabaseLookup;
+	TestTrue(
+		TEXT("A complete unordered profile database set builds the immutable lookup"),
+		ProfileDatabaseLookup.Build(RuntimeProfile));
+	for (const URpgAnimInstance::FMotionMatchingDatabaseRoleContract& Contract : ValidRoleContracts)
+	{
+		TestEqual(
+			TEXT("The profile lookup maps each role to its tagged database"),
+			ProfileDatabaseLookup.FindDatabase(Contract.Role),
+			Contract.Database);
+		TestEqual(
+			TEXT("The profile lookup maps each configured database back to its role"),
+			static_cast<uint8>(ProfileDatabaseLookup.FindRole(Contract.Database)),
+			static_cast<uint8>(Contract.Role));
+	}
+	TestNull(
+		TEXT("The profile lookup never maps the sentinel None role"),
+		ProfileDatabaseLookup.FindDatabase(ERpgMotionMatchingDatabaseRole::None));
+	TestNull(
+		TEXT("The profile lookup never maps the hidden Count role"),
+		ProfileDatabaseLookup.FindDatabase(ERpgMotionMatchingDatabaseRole::Count));
+	TestEqual(
+		TEXT("An unknown database pointer resolves no profile role"),
+		static_cast<uint8>(ProfileDatabaseLookup.FindRole(NewObject<UPoseSearchDatabase>())),
+		static_cast<uint8>(ERpgMotionMatchingDatabaseRole::None));
+
+	Algo::Reverse(RuntimeProfile->RuntimeMotionMatchingDatabases);
+	TestTrue(
+		TEXT("Profile database array order does not affect lookup construction"),
+		ProfileDatabaseLookup.Build(RuntimeProfile));
+	TestEqual(
+		TEXT("The reversed profile still resolves Stand Idle from its role tag"),
+		ProfileDatabaseLookup.FindDatabase(ERpgMotionMatchingDatabaseRole::StandIdle),
+		ValidRoleContracts[0].Database);
+	Algo::Reverse(RuntimeProfile->RuntimeMotionMatchingDatabases);
+
 	auto FindRoleDatabase = [&ValidRoleContracts](ERpgMotionMatchingDatabaseRole Role)
 	{
 		for (const URpgAnimInstance::FMotionMatchingDatabaseRoleContract& Contract : ValidRoleContracts)
@@ -778,12 +896,18 @@ bool FRpgMotionMatchingDatabaseResolverTest::RunTest(const FString& Parameters)
 	RoleDatabaseOwner->WalkHeavyLandingMotionMatchingDatabase = FindRoleDatabase(ERpgMotionMatchingDatabaseRole::WalkHeavyLanding);
 	RoleDatabaseOwner->RunLightLandingMotionMatchingDatabase = FindRoleDatabase(ERpgMotionMatchingDatabaseRole::RunLightLanding);
 	RoleDatabaseOwner->RunHeavyLandingMotionMatchingDatabase = FindRoleDatabase(ERpgMotionMatchingDatabaseRole::RunHeavyLanding);
+	RoleDatabaseOwner->InitializeGaspRuntimeConfiguration();
 	for (const auto& ExpectedContract : ExpectedRoleContracts)
 	{
 		TestEqual(
-			*FString::Printf(TEXT("%s maps to its configured current database"), ExpectedContract.RoleTag),
+			*FString::Printf(TEXT("%s maps through the initialized legacy cache"), ExpectedContract.RoleTag),
 			RoleDatabaseOwner->GetMotionMatchingDatabaseForRole(ExpectedContract.Role),
 			FindRoleDatabase(ExpectedContract.Role));
+		TestEqual(
+			*FString::Printf(TEXT("%s reverse-maps through the initialized legacy cache"), ExpectedContract.RoleTag),
+			static_cast<uint8>(RoleDatabaseOwner->ResolveConfiguredMotionMatchingDatabaseRole(
+				FindRoleDatabase(ExpectedContract.Role))),
+			static_cast<uint8>(ExpectedContract.Role));
 	}
 	const URpgAnimInstance::FMotionMatchingDatabaseRoleContracts BuiltRoleContracts =
 		RoleDatabaseOwner->BuildMotionMatchingDatabaseRoleContracts();
@@ -794,6 +918,184 @@ bool FRpgMotionMatchingDatabaseResolverTest::RunTest(const FString& Parameters)
 	TestTrue(
 		TEXT("The live AnimInstance role mapping passes exact database/tag validation"),
 		URpgAnimInstance::ValidateMotionMatchingDatabaseRoleContracts(BuiltRoleContracts).IsValid());
+	UPoseSearchDatabase* SavedLegacyRunHeavyDatabase =
+		RoleDatabaseOwner->RunHeavyLandingMotionMatchingDatabase;
+	RoleDatabaseOwner->RunHeavyLandingMotionMatchingDatabase = nullptr;
+	RoleDatabaseOwner->InitializeGaspRuntimeConfiguration();
+	TestNull(
+		TEXT("An already invalid partial legacy facade fails closed as one cache"),
+		RoleDatabaseOwner->GetMotionMatchingDatabaseForRole(
+			ERpgMotionMatchingDatabaseRole::StandIdle));
+	TestEqual(
+		TEXT("A failed partial legacy build exposes no stale reverse mapping"),
+		static_cast<uint8>(RoleDatabaseOwner->ResolveConfiguredMotionMatchingDatabaseRole(
+			FindRoleDatabase(ERpgMotionMatchingDatabaseRole::StandIdle))),
+		static_cast<uint8>(ERpgMotionMatchingDatabaseRole::None));
+	RoleDatabaseOwner->RunHeavyLandingMotionMatchingDatabase = SavedLegacyRunHeavyDatabase;
+	RoleDatabaseOwner->InitializeGaspRuntimeConfiguration();
+	TestEqual(
+		TEXT("A corrected complete legacy facade rebuilds its cache"),
+		RoleDatabaseOwner->GetMotionMatchingDatabaseForRole(
+			ERpgMotionMatchingDatabaseRole::RunHeavyLanding),
+		SavedLegacyRunHeavyDatabase);
+	RoleDatabaseOwner->RunHeavyLandingMotionMatchingDatabase =
+		FindRoleDatabase(ERpgMotionMatchingDatabaseRole::StandIdle);
+	RoleDatabaseOwner->InitializeGaspRuntimeConfiguration();
+	TestNull(
+		TEXT("A duplicate legacy database pointer atomically invalidates the cache"),
+		RoleDatabaseOwner->GetMotionMatchingDatabaseForRole(
+			ERpgMotionMatchingDatabaseRole::StandIdle));
+	TestEqual(
+		TEXT("A duplicate legacy pointer exposes no partial reverse mapping"),
+		static_cast<uint8>(RoleDatabaseOwner->ResolveConfiguredMotionMatchingDatabaseRole(
+			FindRoleDatabase(ERpgMotionMatchingDatabaseRole::StandIdle))),
+		static_cast<uint8>(ERpgMotionMatchingDatabaseRole::None));
+	RoleDatabaseOwner->RunHeavyLandingMotionMatchingDatabase = SavedLegacyRunHeavyDatabase;
+	RoleDatabaseOwner->InitializeGaspRuntimeConfiguration();
+	TestEqual(
+		TEXT("Correcting the duplicate legacy pointer restores the complete cache"),
+		RoleDatabaseOwner->GetMotionMatchingDatabaseForRole(
+			ERpgMotionMatchingDatabaseRole::RunHeavyLanding),
+		SavedLegacyRunHeavyDatabase);
+
+	UPoseSearchDatabase* LegacyStandIdleConflict = NewObject<UPoseSearchDatabase>();
+	LegacyStandIdleConflict->Tags.Add(URpgAnimInstance::GetMotionMatchingDatabaseRoleTag(
+		ERpgMotionMatchingDatabaseRole::StandIdle));
+	LegacyStandIdleConflict->Tags.Add(URpgAnimInstance::GetMotionMatchingDatabaseStateTag(
+		ERpgMotionMatchingDatabaseRole::StandIdle));
+	RoleDatabaseOwner->GroundMotionMatchingDatabaseSets.Idle[0] = LegacyStandIdleConflict;
+	URpgGaspPresentationProfile* EmptyRuntimeProfile =
+		NewObject<URpgGaspPresentationProfile>();
+	EmptyRuntimeProfile->AssetMemberships = RuntimeProfile->AssetMemberships;
+	RoleDatabaseOwner->GaspPresentationProfile = EmptyRuntimeProfile;
+	RoleDatabaseOwner->HeavyLandingSpeedThreshold = 825.0f;
+	RoleDatabaseOwner->InitializeGaspRuntimeConfiguration();
+	TestFalse(
+		TEXT("An empty profile database array explicitly selects whole-legacy mode"),
+		RoleDatabaseOwner->UsesProfileRuntimeConfiguration());
+	TestEqual(
+		TEXT("An empty profile database array resolves the serialized Stand Idle slot"),
+		RoleDatabaseOwner->GetMotionMatchingDatabaseForRole(
+			ERpgMotionMatchingDatabaseRole::StandIdle),
+		LegacyStandIdleConflict);
+	TestEqual(
+		TEXT("Whole-legacy reverse lookup resolves the serialized Stand Idle slot"),
+		static_cast<uint8>(RoleDatabaseOwner->ResolveConfiguredMotionMatchingDatabaseRole(
+			LegacyStandIdleConflict)),
+		static_cast<uint8>(ERpgMotionMatchingDatabaseRole::StandIdle));
+	const FName LegacyStandIdleRoleTag = URpgAnimInstance::GetMotionMatchingDatabaseRoleTag(
+		ERpgMotionMatchingDatabaseRole::StandIdle);
+	LegacyStandIdleConflict->Tags.Remove(LegacyStandIdleRoleTag);
+	TestEqual(
+		TEXT("Whole-legacy reverse lookup remains immutable after database tags change"),
+		static_cast<uint8>(RoleDatabaseOwner->ResolveConfiguredMotionMatchingDatabaseRole(
+			LegacyStandIdleConflict)),
+		static_cast<uint8>(ERpgMotionMatchingDatabaseRole::StandIdle));
+	LegacyStandIdleConflict->Tags.Add(LegacyStandIdleRoleTag);
+	TestTrue(
+		TEXT("Whole-legacy initialization preserves the serialized Heavy landing threshold"),
+		FMath::IsNearlyEqual(
+			RoleDatabaseOwner->RuntimeGaspLocomotionTuning.HeavyLandingSpeedThreshold,
+			825.0f));
+	RoleDatabaseOwner->bGeneratePoseSearchTrajectory = true;
+	FDataValidationContext LegacyDataValidationContext;
+	TestEqual(
+		TEXT("A membership-valid profile with an empty runtime database array validates the complete legacy facade"),
+		RoleDatabaseOwner->IsDataValid(LegacyDataValidationContext),
+		EDataValidationResult::Valid);
+	const auto TestInvalidLegacyCoverage = [this, RoleDatabaseOwner, EmptyRuntimeProfile](
+		int32 MembershipIndex,
+		ERpgGaspPresentationAssetCategory InvalidCategory,
+		const TCHAR* ContractDescription)
+	{
+		const ERpgGaspPresentationAssetCategory SavedCategory =
+			EmptyRuntimeProfile->AssetMemberships[MembershipIndex].Category;
+		EmptyRuntimeProfile->AssetMemberships[MembershipIndex].Category = InvalidCategory;
+		TestTrue(
+			TEXT("The legacy coverage fixture remains structurally membership-valid"),
+			EmptyRuntimeProfile->ValidateProfile().IsMembershipValid());
+		FDataValidationContext InvalidLegacyCoverageContext;
+		TestEqual(
+			ContractDescription,
+			RoleDatabaseOwner->IsDataValid(InvalidLegacyCoverageContext),
+			EDataValidationResult::Invalid);
+		EmptyRuntimeProfile->AssetMemberships[MembershipIndex].Category = SavedCategory;
+	};
+	TestInvalidLegacyCoverage(
+		0,
+		ERpgGaspPresentationAssetCategory::Landing,
+		TEXT("Whole-legacy validation rejects a moving database asset without GroundMoving membership"));
+	TestInvalidLegacyCoverage(
+		1,
+		ERpgGaspPresentationAssetCategory::GroundMoving,
+		TEXT("Whole-legacy validation rejects a Jump database asset without Airborne membership"));
+	TestInvalidLegacyCoverage(
+		2,
+		ERpgGaspPresentationAssetCategory::GroundMoving,
+		TEXT("Whole-legacy validation rejects a landing database asset without Landing membership"));
+
+	RoleDatabaseOwner->GaspPresentationProfile = RuntimeProfile;
+	RuntimeProfile->LocomotionTuning.HeavyLandingSpeedThreshold = 900.0f;
+	RoleDatabaseOwner->InitializeGaspRuntimeConfiguration();
+	TestTrue(
+		TEXT("A complete non-empty profile selects whole-profile mode"),
+		RoleDatabaseOwner->UsesProfileRuntimeConfiguration());
+	TestEqual(
+		TEXT("A complete profile wins as one unit over a conflicting legacy Stand Idle slot"),
+		RoleDatabaseOwner->GetMotionMatchingDatabaseForRole(
+			ERpgMotionMatchingDatabaseRole::StandIdle),
+		ValidRoleContracts[0].Database);
+	TestEqual(
+		TEXT("Profile reverse lookup recognizes only the active configured database"),
+		static_cast<uint8>(RoleDatabaseOwner->ResolveConfiguredMotionMatchingDatabaseRole(
+			ValidRoleContracts[0].Database)),
+		static_cast<uint8>(ERpgMotionMatchingDatabaseRole::StandIdle));
+	TestEqual(
+		TEXT("A conflicting legacy database cannot leak into profile reverse lookup"),
+		static_cast<uint8>(RoleDatabaseOwner->ResolveConfiguredMotionMatchingDatabaseRole(
+			LegacyStandIdleConflict)),
+		static_cast<uint8>(ERpgMotionMatchingDatabaseRole::None));
+	TestTrue(
+		TEXT("Whole-profile initialization copies profile tuning instead of the legacy threshold"),
+		FMath::IsNearlyEqual(
+			RoleDatabaseOwner->RuntimeGaspLocomotionTuning.HeavyLandingSpeedThreshold,
+			900.0f));
+
+	UPoseSearchDatabase* SavedLastProfileDatabase =
+		RuntimeProfile->RuntimeMotionMatchingDatabases.Last();
+	RuntimeProfile->RuntimeMotionMatchingDatabases.Last() =
+		RuntimeProfile->RuntimeMotionMatchingDatabases[0];
+	const FRpgGaspPresentationProfileValidation DuplicateProfileRoleValidation =
+		RuntimeProfile->ValidateProfile();
+	TestTrue(
+		TEXT("A profile with one repeated database is rejected"),
+		DuplicateProfileRoleValidation.bHasDuplicateRuntimeDatabase);
+	TestTrue(
+		TEXT("Replacing the final profile database leaves a required role missing"),
+		DuplicateProfileRoleValidation.bHasMissingRuntimeDatabaseRole);
+	TestTrue(
+		TEXT("A non-empty invalid database array remains in whole-profile mode"),
+		(RuntimeProfile->RuntimeMotionMatchingDatabases.Num() > 0));
+	RoleDatabaseOwner->InitializeGaspRuntimeConfiguration();
+	TestTrue(
+		TEXT("Initialization keeps a non-empty invalid database array in whole-profile mode"),
+		RoleDatabaseOwner->UsesProfileRuntimeConfiguration());
+	TestNull(
+		TEXT("Profile mode never merges a missing role from the legacy facade"),
+		RoleDatabaseOwner->GetMotionMatchingDatabaseForRole(
+			ERpgMotionMatchingDatabaseRole::StandIdle));
+	TestTrue(
+		TEXT("Failed profile initialization does not retain prior profile tuning"),
+		FMath::IsNearlyEqual(
+			RoleDatabaseOwner->RuntimeGaspLocomotionTuning.HeavyLandingSpeedThreshold,
+			FRpgGaspLocomotionTuning().HeavyLandingSpeedThreshold));
+	RuntimeProfile->RuntimeMotionMatchingDatabases.Last() = SavedLastProfileDatabase;
+	RoleDatabaseOwner->InitializeGaspRuntimeConfiguration();
+	TestEqual(
+		TEXT("A corrected profile rebuilds without retaining the failed cache"),
+		RoleDatabaseOwner->GetMotionMatchingDatabaseForRole(
+			ERpgMotionMatchingDatabaseRole::StandIdle),
+		ValidRoleContracts[0].Database);
 
 	UPoseSearchDatabase* StandIdleRoleDatabase = ValidRoleContracts[0].Database;
 	const FName StandIdleRoleTag = URpgAnimInstance::GetMotionMatchingDatabaseRoleTag(

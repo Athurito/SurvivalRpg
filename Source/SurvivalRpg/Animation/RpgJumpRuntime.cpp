@@ -62,7 +62,8 @@ bool RpgJumpRuntime::ShouldHoldBackwardJumpStartPlayback(
 	float CurrentAssetTime,
 	float CurrentAssetLength,
 	float CurrentAssetPlayRate,
-	float HoldElapsed)
+	float HoldElapsed,
+	const FRpgGaspLocomotionTuning& Tuning)
 {
 	if (CurrentPhase != ERpgJumpPhase::Airborne ||
 		!bCurrentAssetMatchesHeldSelection ||
@@ -74,7 +75,7 @@ bool RpgJumpRuntime::ShouldHoldBackwardJumpStartPlayback(
 		CurrentAssetLength <= 0.0f ||
 		CurrentAssetTime >= CurrentAssetLength ||
 		HoldElapsed < 0.0f ||
-		HoldElapsed >= BackwardStartHoldTimeout)
+		HoldElapsed >= Tuning.BackwardJumpStartHoldTimeout)
 	{
 		return false;
 	}
@@ -88,7 +89,7 @@ bool RpgJumpRuntime::ShouldHoldBackwardJumpStartPlayback(
 
 	const float RemainingPlaybackTime =
 		(CurrentAssetLength - CurrentAssetTime) / AbsolutePlayRate;
-	return RemainingPlaybackTime > BackwardStartReleaseLeadTime;
+	return RemainingPlaybackTime > Tuning.BackwardJumpStartReleaseLeadTime;
 }
 
 FRpgBackwardJumpStartHoldResult RpgJumpRuntime::ResetBackwardJumpStartHold()
@@ -100,7 +101,8 @@ FRpgBackwardJumpStartHoldResult RpgJumpRuntime::ResetBackwardJumpStartHold()
 
 FRpgBackwardJumpStartHoldResult RpgJumpRuntime::UpdateBackwardJumpStartHold(
 	const FRpgBackwardJumpStartHoldState& State,
-	const FRpgBackwardJumpStartPlaybackSnapshot& Snapshot)
+	const FRpgBackwardJumpStartPlaybackSnapshot& Snapshot,
+	const FRpgGaspLocomotionTuning& Tuning)
 {
 	if (Snapshot.JumpPhase != ERpgJumpPhase::Airborne)
 	{
@@ -142,7 +144,8 @@ FRpgBackwardJumpStartHoldResult RpgJumpRuntime::UpdateBackwardJumpStartHold(
 		Snapshot.CurrentAssetTime,
 		Snapshot.CurrentAssetLength,
 		Snapshot.CurrentAssetPlayRate,
-		Result.State.HoldElapsed);
+		Result.State.HoldElapsed,
+		Tuning);
 	if (!Result.bHoldContinuingPose)
 	{
 		// Keep the opportunity consumed so a later search cannot re-arm the same start in this jump.

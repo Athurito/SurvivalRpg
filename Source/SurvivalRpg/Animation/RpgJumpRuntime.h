@@ -3,6 +3,7 @@
 #pragma once
 
 #include "CoreMinimal.h"
+#include "RpgGaspLocomotionConfig.h"
 
 enum class ERpgJumpPhase : uint8;
 enum class ERpgLocomotionMovementState : uint8;
@@ -67,9 +68,6 @@ struct SURVIVALRPG_API FRpgBackwardJumpStartHoldResult
 /** Deterministic jump-edge and airborne Continuing-Pose policy adapted from the project GASP pilot. */
 namespace RpgJumpRuntime
 {
-	inline constexpr float BackwardStartHoldTimeout = 1.25f;
-	inline constexpr float BackwardStartReleaseLeadTime = 0.2f;
-
 	/** Interprets CharacterMovement truth without starting or selecting a landing presentation. */
 	SURVIVALRPG_API FRpgJumpPhysicalTransitionResult ResolvePhysicalTransition(
 		ERpgJumpPhase CurrentPhase,
@@ -89,7 +87,8 @@ namespace RpgJumpRuntime
 		float CurrentAssetTime,
 		float CurrentAssetLength,
 		float CurrentAssetPlayRate,
-		float HoldElapsed);
+		float HoldElapsed,
+		const FRpgGaspLocomotionTuning& Tuning = FRpgGaspLocomotionTuning());
 
 	/** Resets the value hold and tells the facade to release any GC-tracked held asset. */
 	SURVIVALRPG_API FRpgBackwardJumpStartHoldResult ResetBackwardJumpStartHold();
@@ -97,5 +96,6 @@ namespace RpgJumpRuntime
 	/** Advances the one-opportunity backward-start latch from pointer-free trait and playback observations. */
 	SURVIVALRPG_API FRpgBackwardJumpStartHoldResult UpdateBackwardJumpStartHold(
 		const FRpgBackwardJumpStartHoldState& State,
-		const FRpgBackwardJumpStartPlaybackSnapshot& Snapshot);
+		const FRpgBackwardJumpStartPlaybackSnapshot& Snapshot,
+		const FRpgGaspLocomotionTuning& Tuning = FRpgGaspLocomotionTuning());
 }

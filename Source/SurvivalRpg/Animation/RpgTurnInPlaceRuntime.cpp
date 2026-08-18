@@ -40,10 +40,12 @@ bool RpgTurnInPlaceRuntime::SupportsTurnInPlace(
 		RotationMode == ERpgCharacterRotationMode::Aim;
 }
 
-float RpgTurnInPlaceRuntime::QuantizeAngle(float SignedAngle)
+float RpgTurnInPlaceRuntime::QuantizeAngle(
+	float SignedAngle,
+	const FRpgGaspLocomotionTuning& Tuning)
 {
 	const float AbsoluteAngle = FMath::Min(FMath::Abs(SignedAngle), 180.0f);
-	if (AbsoluteAngle < ActivationThreshold)
+	if (AbsoluteAngle < Tuning.TurnActivationThreshold)
 	{
 		return 0.0f;
 	}
@@ -65,22 +67,24 @@ float RpgTurnInPlaceRuntime::QuantizeAngle(float SignedAngle)
 	return SignedAngle < 0.0f ? -QuantizedMagnitude : QuantizedMagnitude;
 }
 
-float RpgTurnInPlaceRuntime::GetFacingDuration(float QuantizedAngle)
+float RpgTurnInPlaceRuntime::GetFacingDuration(
+	float QuantizedAngle,
+	const FRpgGaspLocomotionTuning& Tuning)
 {
 	const float AbsoluteAngle = FMath::Abs(QuantizedAngle);
 	if (AbsoluteAngle <= 45.0f)
 	{
-		return 0.45f;
+		return Tuning.TurnFacingDuration45;
 	}
 	if (AbsoluteAngle <= 90.0f)
 	{
-		return 0.65f;
+		return Tuning.TurnFacingDuration90;
 	}
 	if (AbsoluteAngle <= 135.0f)
 	{
-		return 0.85f;
+		return Tuning.TurnFacingDuration135;
 	}
-	return 1.0f;
+	return Tuning.TurnFacingDuration180;
 }
 
 float RpgTurnInPlaceRuntime::CalculateYawDelta(
@@ -114,10 +118,11 @@ FTransformTrajectory RpgTurnInPlaceRuntime::MakeSyntheticTrajectory(
 	const FTransformTrajectory& SourceTrajectory,
 	float CurrentActorYaw,
 	float AccumulatedYaw,
-	float QuantizedAngle)
+	float QuantizedAngle,
+	const FRpgGaspLocomotionTuning& Tuning)
 {
 	FTransformTrajectory Result;
-	const float FacingDuration = GetFacingDuration(QuantizedAngle);
+	const float FacingDuration = GetFacingDuration(QuantizedAngle, Tuning);
 	const float StartYaw = CurrentActorYaw - AccumulatedYaw;
 
 	Result.Samples.Reserve(SourceTrajectory.Samples.Num());
@@ -138,21 +143,23 @@ FTransformTrajectory RpgTurnInPlaceRuntime::MakeSyntheticTrajectory(
 float RpgTurnInPlaceRuntime::CalculatePlaybackWatchdogDuration(
 	float RemainingAnimationTime,
 	float PlayRate,
-	bool bLooping)
+	bool bLooping,
+	const FRpgGaspLocomotionTuning& Tuning)
 {
 	if (bLooping || !FMath::IsFinite(PlayRate) || FMath::Abs(PlayRate) <= UE_SMALL_NUMBER)
 	{
-		return ActiveTimeout;
+		return Tuning.TurnActiveTimeout;
 	}
 
 	return FMath::Max(
-		ActiveTimeout,
+		Tuning.TurnActiveTimeout,
 		FMath::Max(RemainingAnimationTime, 0.0f) / FMath::Abs(PlayRate) +
 			PlaybackWatchdogSafetyMargin);
 }
 
 bool RpgTurnInPlaceRuntime::IsEligible(
-	const FRpgTurnInPlaceEligibilitySnapshot& Snapshot)
+	const FRpgTurnInPlaceEligibilitySnapshot& Snapshot,
+	const FRpgGaspLocomotionTuning& Tuning)
 {
 	return Snapshot.bHasTurnDatabase &&
 		Snapshot.bJumpPhaseGrounded &&
@@ -162,14 +169,15 @@ bool RpgTurnInPlaceRuntime::IsEligible(
 		!Snapshot.bIsCrouching &&
 		!Snapshot.bIsAnyMontagePlaying &&
 		!Snapshot.bHasBlockingGameplayTag &&
-		Snapshot.GroundSpeed <= IdleSpeedThreshold &&
+		Snapshot.GroundSpeed <= Tuning.StationarySpeedThreshold &&
 		!Snapshot.bHasGroundedMoveIntent &&
 		Snapshot.bHasTrajectory;
 }
 
 FRpgTurnInPlaceUpdateResult RpgTurnInPlaceRuntime::Reset(
 	const FRpgTurnInPlaceRuntimeState& State,
-	bool bHardResetOffset)
+	bool bHardResetOffset,
+	const FRpgGaspLocomotionTuning& Tuning)
 {
 	FRpgTurnInPlaceUpdateResult Result;
 	Result.State = State;
@@ -179,7 +187,7 @@ FRpgTurnInPlaceUpdateResult RpgTurnInPlaceRuntime::Reset(
 	Result.State.StateElapsed = 0.0f;
 	Result.State.StableElapsed = 0.0f;
 	Result.State.SelectionElapsed = 0.0f;
-	Result.State.PlaybackWatchdogDuration = ActiveTimeout;
+	Result.State.PlaybackWatchdogDuration = Tuning.TurnActiveTimeout;
 	Result.State.RequestAccumulatedYaw = 0.0f;
 	Result.OffsetRootRotationMode = EOffsetRootBoneMode::Interpolate;
 	Result.bResetOffsetRootEveryFrame = bHardResetOffset;
@@ -189,7 +197,8 @@ FRpgTurnInPlaceUpdateResult RpgTurnInPlaceRuntime::Reset(
 
 FRpgTurnInPlaceUpdateResult RpgTurnInPlaceRuntime::BeginRecovery(
 	const FRpgTurnInPlaceRuntimeState& State,
-	bool bHardResetOffset)
+	bool bHardResetOffset,
+	const FRpgGaspLocomotionTuning& Tuning)
 {
 	FRpgTurnInPlaceUpdateResult Result;
 	Result.State = State;
@@ -197,7 +206,7 @@ FRpgTurnInPlaceUpdateResult RpgTurnInPlaceRuntime::BeginRecovery(
 	Result.State.StateElapsed = 0.0f;
 	Result.State.StableElapsed = 0.0f;
 	Result.State.SelectionElapsed = 0.0f;
-	Result.State.PlaybackWatchdogDuration = ActiveTimeout;
+	Result.State.PlaybackWatchdogDuration = Tuning.TurnActiveTimeout;
 	Result.OffsetRootRotationMode = EOffsetRootBoneMode::Interpolate;
 	Result.bResetOffsetRootEveryFrame = bHardResetOffset;
 	Result.bClearSelection = true;
@@ -206,7 +215,8 @@ FRpgTurnInPlaceUpdateResult RpgTurnInPlaceRuntime::BeginRecovery(
 
 FRpgTurnInPlaceUpdateResult RpgTurnInPlaceRuntime::BeginRequest(
 	const FRpgTurnInPlaceRuntimeState& State,
-	float QuantizedAngle)
+	float QuantizedAngle,
+	const FRpgGaspLocomotionTuning& Tuning)
 {
 	FRpgTurnInPlaceUpdateResult Result;
 	Result.State = State;
@@ -215,7 +225,7 @@ FRpgTurnInPlaceUpdateResult RpgTurnInPlaceRuntime::BeginRequest(
 	Result.State.StateElapsed = 0.0f;
 	Result.State.StableElapsed = 0.0f;
 	Result.State.SelectionElapsed = 0.0f;
-	Result.State.PlaybackWatchdogDuration = ActiveTimeout;
+	Result.State.PlaybackWatchdogDuration = Tuning.TurnActiveTimeout;
 	Result.State.RequestAccumulatedYaw = Result.State.AccumulatedYaw;
 	++Result.State.RequestSerial;
 	if (Result.State.RequestSerial == 0)
@@ -231,7 +241,8 @@ FRpgTurnInPlaceUpdateResult RpgTurnInPlaceRuntime::BeginRequest(
 FRpgTurnInPlaceUpdateResult RpgTurnInPlaceRuntime::Update(
 	const FRpgTurnInPlaceRuntimeState& State,
 	const FRpgTurnInPlaceUpdateSnapshot& Snapshot,
-	float DeltaSeconds)
+	float DeltaSeconds,
+	const FRpgGaspLocomotionTuning& Tuning)
 {
 	FRpgTurnInPlaceUpdateResult Result;
 	Result.State = State;
@@ -282,7 +293,7 @@ FRpgTurnInPlaceUpdateResult RpgTurnInPlaceRuntime::Update(
 			bHasTurnStateToClear ||
 			bHasNewHardResetReason ||
 			Snapshot.bSupportChanged;
-		Result = Reset(Result.State, bPulseHardReset);
+		Result = Reset(Result.State, bPulseHardReset, Tuning);
 		Result.State.HardResetReasonsLastFrame = HardResetReasons;
 		return Result;
 	}
@@ -290,7 +301,7 @@ FRpgTurnInPlaceUpdateResult RpgTurnInPlaceRuntime::Update(
 
 	if (Snapshot.bSupportChanged)
 	{
-		return BeginRecovery(Result.State, true);
+		return BeginRecovery(Result.State, true, Tuning);
 	}
 
 	if (!Snapshot.bEligible)
@@ -298,19 +309,19 @@ FRpgTurnInPlaceUpdateResult RpgTurnInPlaceRuntime::Update(
 		if (Result.State.State == ERpgTurnInPlaceState::Collecting ||
 			Result.State.State == ERpgTurnInPlaceState::Active)
 		{
-			return BeginRecovery(Result.State, false);
+			return BeginRecovery(Result.State, false, Tuning);
 		}
 		if (Result.State.State == ERpgTurnInPlaceState::Recovering)
 		{
 			Result.State.StateElapsed += SafeDeltaSeconds;
-			if (Result.State.StateElapsed >= RecoveryDuration)
+			if (Result.State.StateElapsed >= Tuning.TurnRecoveryDuration)
 			{
-				return Reset(Result.State, false);
+				return Reset(Result.State, false, Tuning);
 			}
 			Result.OffsetRootRotationMode = EOffsetRootBoneMode::Interpolate;
 			return Result;
 		}
-		return Reset(Result.State, false);
+		return Reset(Result.State, false, Tuning);
 	}
 
 	Result.State.StateElapsed += SafeDeltaSeconds;
@@ -326,10 +337,10 @@ FRpgTurnInPlaceUpdateResult RpgTurnInPlaceRuntime::Update(
 	{
 	case ERpgTurnInPlaceState::Inactive:
 		Result.OffsetRootRotationMode = EOffsetRootBoneMode::Interpolate;
-		if (AbsoluteActorYawRate <= InactiveYawRateThreshold)
+		if (AbsoluteActorYawRate <= Tuning.TurnInactiveYawRateThreshold)
 		{
 			Result.State.StableElapsed += SafeDeltaSeconds;
-			if (Result.State.StableElapsed >= InactiveAccumulatorTimeout)
+			if (Result.State.StableElapsed >= Tuning.TurnInactiveAccumulatorTimeout)
 			{
 				Result.State.AccumulatedYaw = 0.0f;
 			}
@@ -339,7 +350,7 @@ FRpgTurnInPlaceUpdateResult RpgTurnInPlaceRuntime::Update(
 			Result.State.StableElapsed = 0.0f;
 		}
 
-		if (FMath::Abs(Result.State.AccumulatedYaw) >= CollectThreshold)
+		if (FMath::Abs(Result.State.AccumulatedYaw) >= Tuning.TurnCollectThreshold)
 		{
 			Result.State.State = ERpgTurnInPlaceState::Collecting;
 			Result.State.StateElapsed = 0.0f;
@@ -350,25 +361,26 @@ FRpgTurnInPlaceUpdateResult RpgTurnInPlaceRuntime::Update(
 
 	case ERpgTurnInPlaceState::Collecting:
 		Result.OffsetRootRotationMode = EOffsetRootBoneMode::Accumulate;
-		if (FMath::Abs(Result.State.AccumulatedYaw) < CancelThreshold)
+		if (FMath::Abs(Result.State.AccumulatedYaw) < Tuning.TurnCancelThreshold)
 		{
-			return BeginRecovery(Result.State, false);
+			return BeginRecovery(Result.State, false, Tuning);
 		}
 
-		Result.State.StableElapsed = AbsoluteActorYawRate <= StableYawRateThreshold
+		Result.State.StableElapsed = AbsoluteActorYawRate <= Tuning.TurnStableYawRateThreshold
 			? Result.State.StableElapsed + SafeDeltaSeconds
 			: 0.0f;
-		if (FMath::Abs(Result.State.AccumulatedYaw) >= ActivationThreshold &&
-			(Result.State.StableElapsed >= StabilityDuration ||
-			 Result.State.StateElapsed >= CollectionTimeout))
+		if (FMath::Abs(Result.State.AccumulatedYaw) >= Tuning.TurnActivationThreshold &&
+			(Result.State.StableElapsed >= Tuning.TurnStabilityDuration ||
+			 Result.State.StateElapsed >= Tuning.TurnCollectionTimeout))
 		{
 			return BeginRequest(
 				Result.State,
-				QuantizeAngle(Result.State.AccumulatedYaw));
+				QuantizeAngle(Result.State.AccumulatedYaw, Tuning),
+				Tuning);
 		}
-		if (Result.State.StateElapsed >= CollectionTimeout)
+		if (Result.State.StateElapsed >= Tuning.TurnCollectionTimeout)
 		{
-			return BeginRecovery(Result.State, false);
+			return BeginRecovery(Result.State, false, Tuning);
 		}
 		break;
 
@@ -376,14 +388,14 @@ FRpgTurnInPlaceUpdateResult RpgTurnInPlaceRuntime::Update(
 		Result.OffsetRootRotationMode = Snapshot.bSelectionLatched
 			? EOffsetRootBoneMode::LockOffsetIncreaseAndConsumeAnimation
 			: EOffsetRootBoneMode::Accumulate;
-		if (FMath::Abs(Result.State.AccumulatedYaw) < CancelThreshold)
+		if (FMath::Abs(Result.State.AccumulatedYaw) < Tuning.TurnCancelThreshold)
 		{
-			return BeginRecovery(Result.State, false);
+			return BeginRecovery(Result.State, false, Tuning);
 		}
 
 		if (CanRetarget(Result.State, Snapshot.bSelectionLatched))
 		{
-			const float UpdatedQueryAngle = QuantizeAngle(Result.State.AccumulatedYaw);
+			const float UpdatedQueryAngle = QuantizeAngle(Result.State.AccumulatedYaw, Tuning);
 			const float AdditionalYaw =
 				Result.State.AccumulatedYaw - Result.State.RequestAccumulatedYaw;
 			const bool bDirectionChanged =
@@ -392,41 +404,41 @@ FRpgTurnInPlaceUpdateResult RpgTurnInPlaceRuntime::Update(
 			const bool bQuantizedBucketChanged =
 				!FMath::IsNearlyZero(UpdatedQueryAngle) &&
 				!FMath::IsNearlyEqual(UpdatedQueryAngle, Result.State.QueryAngle);
-			if (FMath::Abs(AdditionalYaw) >= ActivationThreshold &&
+			if (FMath::Abs(AdditionalYaw) >= Tuning.TurnActivationThreshold &&
 				(bDirectionChanged || bQuantizedBucketChanged))
 			{
-				return BeginRequest(Result.State, UpdatedQueryAngle);
+				return BeginRequest(Result.State, UpdatedQueryAngle, Tuning);
 			}
 		}
 
 		if (!Snapshot.bSelectionLatched)
 		{
 			Result.State.SelectionElapsed += SafeDeltaSeconds;
-			if (Result.State.SelectionElapsed >= SelectionTimeout)
+			if (Result.State.SelectionElapsed >= Tuning.TurnSelectionTimeout)
 			{
-				return BeginRecovery(Result.State, true);
+				return BeginRecovery(Result.State, true, Tuning);
 			}
 		}
 		else if (Snapshot.bCompletionArmed)
 		{
-			return BeginRecovery(Result.State, false);
+			return BeginRecovery(Result.State, false, Tuning);
 		}
 		else if (Snapshot.bPlaybackObserved && !Snapshot.bPoseSelected)
 		{
-			return BeginRecovery(Result.State, true);
+			return BeginRecovery(Result.State, true, Tuning);
 		}
 
 		if (Result.State.StateElapsed >= Result.State.PlaybackWatchdogDuration)
 		{
-			return BeginRecovery(Result.State, true);
+			return BeginRecovery(Result.State, true, Tuning);
 		}
 		break;
 
 	case ERpgTurnInPlaceState::Recovering:
 		Result.OffsetRootRotationMode = EOffsetRootBoneMode::Interpolate;
-		if (Result.State.StateElapsed >= RecoveryDuration)
+		if (Result.State.StateElapsed >= Tuning.TurnRecoveryDuration)
 		{
-			return Reset(Result.State, false);
+			return Reset(Result.State, false, Tuning);
 		}
 		break;
 	}

@@ -640,8 +640,10 @@ void FRpgAnimInstanceProxy::PreUpdate(UAnimInstance* InAnimInstance, float Delta
 
 	WorldVelocity = MovementComponent->Velocity;
 	const FVector HorizontalWorldVelocity(WorldVelocity.X, WorldVelocity.Y, 0.0f);
-	constexpr float LastNonZeroVelocityThreshold = 5.0f;
-	if (HorizontalWorldVelocity.SizeSquared() >= FMath::Square(LastNonZeroVelocityThreshold))
+	const FRpgGaspLocomotionTuning& LocomotionTuning =
+		RpgAnimInstance->RuntimeGaspLocomotionTuning;
+	if (HorizontalWorldVelocity.SizeSquared() >=
+		FMath::Square(LocomotionTuning.LastMeaningfulVelocityThreshold))
 	{
 		LastNonZeroWorldVelocity = HorizontalWorldVelocity;
 	}
@@ -682,17 +684,19 @@ void FRpgAnimInstanceProxy::PreUpdate(UAnimInstance* InAnimInstance, float Delta
 		break;
 	}
 
-	constexpr float IdleSpeedThreshold = 3.0f;
 	const float MaxAcceleration = FMath::Max(MovementComponent->GetMaxAcceleration(), 1.0f);
 	const float InputMagnitude = WorldAcceleration.Size2D() / MaxAcceleration;
-	bHasGroundedMoveIntent = bIsMovingOnGround && InputMagnitude > 0.1f;
-	if (!bIsMovingOnGround || (GroundSpeed < IdleSpeedThreshold && !bHasGroundedMoveIntent))
+	bHasGroundedMoveIntent = bIsMovingOnGround &&
+		InputMagnitude > LocomotionTuning.MoveIntentThreshold;
+	if (!bIsMovingOnGround ||
+		(GroundSpeed < LocomotionTuning.StationarySpeedThreshold &&
+		 !bHasGroundedMoveIntent))
 	{
 		Gait = ERpgLocomotionGait::Idle;
 	}
 	else if (bHasGroundedMoveIntent)
 	{
-		Gait = InputMagnitude < 0.65f
+		Gait = InputMagnitude < LocomotionTuning.RunInputThreshold
 			? ERpgLocomotionGait::Walk
 			: ERpgLocomotionGait::Run;
 	}
@@ -792,7 +796,8 @@ void FRpgAnimInstanceProxy::PreUpdate(UAnimInstance* InAnimInstance, float Delta
 	URpgAnimInstance::UpdateLandingSelectionSnapshot(
 		*this,
 		InputMagnitude,
-		GravityAcceleration);
+		GravityAcceleration,
+		RpgAnimInstance->RuntimeGaspLocomotionTuning);
 }
 
 void URpgAnimInstance::InitializeWithAbilitySystem(UAbilitySystemComponent* ASC)
@@ -805,47 +810,7 @@ void URpgAnimInstance::InitializeWithAbilitySystem(UAbilitySystemComponent* ASC)
 FName URpgAnimInstance::GetMotionMatchingDatabaseRoleTag(
 	ERpgMotionMatchingDatabaseRole Role)
 {
-	switch (Role)
-	{
-	case ERpgMotionMatchingDatabaseRole::StandIdle:
-		return TEXT("Rpg.MotionMatching.Role.StandIdle");
-	case ERpgMotionMatchingDatabaseRole::StandWalk:
-		return TEXT("Rpg.MotionMatching.Role.StandWalk");
-	case ERpgMotionMatchingDatabaseRole::StandWalkStops:
-		return TEXT("Rpg.MotionMatching.Role.StandWalkStops");
-	case ERpgMotionMatchingDatabaseRole::StandRunLoops:
-		return TEXT("Rpg.MotionMatching.Role.StandRunLoops");
-	case ERpgMotionMatchingDatabaseRole::StandRunPivots:
-		return TEXT("Rpg.MotionMatching.Role.StandRunPivots");
-	case ERpgMotionMatchingDatabaseRole::StandRunStarts:
-		return TEXT("Rpg.MotionMatching.Role.StandRunStarts");
-	case ERpgMotionMatchingDatabaseRole::StandRunStops:
-		return TEXT("Rpg.MotionMatching.Role.StandRunStops");
-	case ERpgMotionMatchingDatabaseRole::StandSprint:
-		return TEXT("Rpg.MotionMatching.Role.StandSprint");
-	case ERpgMotionMatchingDatabaseRole::StandSprintStops:
-		return TEXT("Rpg.MotionMatching.Role.StandSprintStops");
-	case ERpgMotionMatchingDatabaseRole::Crouch:
-		return TEXT("Rpg.MotionMatching.Role.Crouch");
-	case ERpgMotionMatchingDatabaseRole::StandTurnInPlace:
-		return TEXT("Rpg.MotionMatching.Role.StandTurnInPlace");
-	case ERpgMotionMatchingDatabaseRole::Jump:
-		return TEXT("Rpg.MotionMatching.Role.Jump");
-	case ERpgMotionMatchingDatabaseRole::StandLightLanding:
-		return TEXT("Rpg.MotionMatching.Role.StandLightLanding");
-	case ERpgMotionMatchingDatabaseRole::StandHeavyLanding:
-		return TEXT("Rpg.MotionMatching.Role.StandHeavyLanding");
-	case ERpgMotionMatchingDatabaseRole::WalkLightLanding:
-		return TEXT("Rpg.MotionMatching.Role.WalkLightLanding");
-	case ERpgMotionMatchingDatabaseRole::WalkHeavyLanding:
-		return TEXT("Rpg.MotionMatching.Role.WalkHeavyLanding");
-	case ERpgMotionMatchingDatabaseRole::RunLightLanding:
-		return TEXT("Rpg.MotionMatching.Role.RunLightLanding");
-	case ERpgMotionMatchingDatabaseRole::RunHeavyLanding:
-		return TEXT("Rpg.MotionMatching.Role.RunHeavyLanding");
-	default:
-		return NAME_None;
-	}
+	return RpgGaspLocomotionConfig::GetDatabaseRoleTag(Role);
 }
 
 FName URpgAnimInstance::GetMotionMatchingDatabaseStateTag(
@@ -884,7 +849,8 @@ FName URpgAnimInstance::GetMotionMatchingDatabaseStateTag(
 void URpgAnimInstance::UpdateLandingSelectionSnapshot(
 	FRpgAnimInstanceProxy& Proxy,
 	float InputMagnitude,
-	const FVector& GravityAcceleration)
+	const FVector& GravityAcceleration,
+	const FRpgGaspLocomotionTuning& Tuning)
 {
 	FRpgLandingCaptureState State;
 	State.LastGroundedGait = Proxy.LastGroundedGait;
@@ -905,7 +871,8 @@ void URpgAnimInstance::UpdateLandingSelectionSnapshot(
 	RpgLandingRuntime::UpdateSelectionSnapshot(
 		Proxy.LandingSelectionSnapshot,
 		State,
-		Snapshot);
+		Snapshot,
+		Tuning);
 
 	Proxy.LastGroundedGait = State.LastGroundedGait;
 	Proxy.LandingAirborneEpoch = State.AirborneEpoch;
@@ -924,7 +891,7 @@ ERpgMotionMatchingDatabaseRole URpgAnimInstance::ResolveAvailableLandingDatabase
 	const FRpgLandingSelectionSnapshot& Snapshot) const
 {
 	return ResolveAvailableLandingDatabaseRole(
-		RpgLandingRuntime::ResolveDatabaseRole(Snapshot, HeavyLandingSpeedThreshold));
+		RpgLandingRuntime::ResolveDatabaseRole(Snapshot, RuntimeGaspLocomotionTuning));
 }
 
 bool URpgAnimInstance::SynchronizeMotionMatchingNodeUpdateCounter(
@@ -1040,33 +1007,8 @@ URpgAnimInstance::ValidateGroundMotionMatchingDatabaseSets(
 ERpgMotionMatchingDatabaseRole URpgAnimInstance::ResolveMotionMatchingDatabaseRole(
 	const UPoseSearchDatabase* Database)
 {
-	if (!Database)
-	{
-		return ERpgMotionMatchingDatabaseRole::None;
-	}
-
-	ERpgMotionMatchingDatabaseRole ResolvedRole = ERpgMotionMatchingDatabaseRole::None;
-	int32 MatchedTagCount = 0;
-	for (uint8 RoleValue = static_cast<uint8>(ERpgMotionMatchingDatabaseRole::None) + 1;
-		RoleValue < static_cast<uint8>(ERpgMotionMatchingDatabaseRole::Count);
-		++RoleValue)
-	{
-		const ERpgMotionMatchingDatabaseRole Role =
-			static_cast<ERpgMotionMatchingDatabaseRole>(RoleValue);
-		const FName RoleTag = GetMotionMatchingDatabaseRoleTag(Role);
-		int32 RoleTagCount = 0;
-		for (const FName DatabaseTag : Database->Tags)
-		{
-			RoleTagCount += DatabaseTag == RoleTag;
-		}
-		if (RoleTagCount > 0)
-		{
-			ResolvedRole = Role;
-			MatchedTagCount += RoleTagCount;
-		}
-	}
-	return MatchedTagCount == 1
-		? ResolvedRole
+	return Database
+		? RpgGaspLocomotionConfig::ResolveDatabaseRoleTag(Database->Tags)
 		: ERpgMotionMatchingDatabaseRole::None;
 }
 
@@ -1157,7 +1099,7 @@ URpgAnimInstance::ValidateMotionMatchingDatabaseRoleContracts(
 	return Validation;
 }
 
-UPoseSearchDatabase* URpgAnimInstance::GetMotionMatchingDatabaseForRole(
+UPoseSearchDatabase* URpgAnimInstance::GetLegacyMotionMatchingDatabaseForRole(
 	ERpgMotionMatchingDatabaseRole Role) const
 {
 	auto GetDatabaseAtIndex = [](
@@ -1212,13 +1154,19 @@ UPoseSearchDatabase* URpgAnimInstance::GetMotionMatchingDatabaseForRole(
 	}
 }
 
+UPoseSearchDatabase* URpgAnimInstance::GetMotionMatchingDatabaseForRole(
+	ERpgMotionMatchingDatabaseRole Role) const
+{
+	return GaspMotionMatchingDatabaseLookup.FindDatabase(Role);
+}
+
 URpgAnimInstance::FMotionMatchingDatabaseRoleContracts
 URpgAnimInstance::BuildMotionMatchingDatabaseRoleContracts() const
 {
 	FMotionMatchingDatabaseRoleContracts Contracts;
 	auto AddContract = [&Contracts, this](ERpgMotionMatchingDatabaseRole Role)
 	{
-		Contracts.Add({Role, GetMotionMatchingDatabaseForRole(Role)});
+		Contracts.Add({Role, GetLegacyMotionMatchingDatabaseForRole(Role)});
 	};
 
 	AddContract(ERpgMotionMatchingDatabaseRole::StandIdle);
@@ -1268,179 +1216,195 @@ EDataValidationResult URpgAnimInstance::IsDataValid(FDataValidationContext& Cont
 				TEXT("Trajectory collision requires FloorOffset 0.001-10 cm, MaxObstacleHeight 1-1000 cm, SweepRadius 0.1-20 cm, 1-15 samples, and a serialized collision channel below ECC_OverlapAll_Deprecated.")));
 		}
 
-		const FGroundMotionMatchingDatabaseSetValidation GroundDatabaseValidation =
-			ValidateGroundMotionMatchingDatabaseSets(GroundMotionMatchingDatabaseSets);
-		if (GroundDatabaseValidation.bHasInvalidShape)
+		const bool bHasProfileRuntimeConfiguration =
+			GaspPresentationProfile &&
+			!GaspPresentationProfile->RuntimeMotionMatchingDatabases.IsEmpty();
+		if (!bHasProfileRuntimeConfiguration)
 		{
-			Context.AddError(FText::FromString(
-				TEXT("Ground Motion Matching database sets must contain Idle 1, Walk 2, Run 4, and Sprint 2 entries; Walk and Sprint are ordered Moving Aggregate, Stops, while Run is ordered Loops, Pivots, Starts, Stops.")));
-		}
-		if (GroundDatabaseValidation.bHasNullDatabase)
-		{
-			Context.AddError(FText::FromString(
-				TEXT("Ground Motion Matching database sets contain at least one null entry.")));
-		}
-		if (GroundDatabaseValidation.bHasDuplicateDatabase)
-		{
-			Context.AddError(FText::FromString(
-				TEXT("Ground Motion Matching database sets must not reuse a database within or across gait groups.")));
-		}
+			const FGroundMotionMatchingDatabaseSetValidation GroundDatabaseValidation =
+				ValidateGroundMotionMatchingDatabaseSets(GroundMotionMatchingDatabaseSets);
+			if (GroundDatabaseValidation.bHasInvalidShape)
+			{
+				Context.AddError(FText::FromString(
+					TEXT("Ground Motion Matching database sets must contain Idle 1, Walk 2, Run 4, and Sprint 2 entries; Walk and Sprint are ordered Moving Aggregate, Stops, while Run is ordered Loops, Pivots, Starts, Stops.")));
+			}
+			if (GroundDatabaseValidation.bHasNullDatabase)
+			{
+				Context.AddError(FText::FromString(
+					TEXT("Ground Motion Matching database sets contain at least one null entry.")));
+			}
+			if (GroundDatabaseValidation.bHasDuplicateDatabase)
+			{
+				Context.AddError(FText::FromString(
+					TEXT("Ground Motion Matching database sets must not reuse a database within or across gait groups.")));
+			}
 
-		const FMotionMatchingDatabaseRoleValidation RoleValidation =
-			ValidateMotionMatchingDatabaseRoleContracts(
-				BuildMotionMatchingDatabaseRoleContracts());
-		if (RoleValidation.bHasMissingRole || RoleValidation.bHasDuplicateRole)
-		{
-			Context.AddError(FText::FromString(
-				TEXT("Motion Matching must configure exactly one database for every project runtime role.")));
-		}
-		if (RoleValidation.bHasNullDatabase)
-		{
-			Context.AddError(FText::FromString(
-				TEXT("At least one project Motion Matching database role resolves to a null database.")));
-		}
-		if (RoleValidation.bHasDuplicateDatabase)
-		{
-			Context.AddError(FText::FromString(
-				TEXT("A Pose Search database must not own more than one project Motion Matching role.")));
-		}
-		if (RoleValidation.bHasMissingRoleTag || RoleValidation.bHasDuplicateRoleTag ||
-			RoleValidation.bHasWrongRoleTag)
-		{
-			Context.AddError(FText::FromString(
-				TEXT("Every runtime Pose Search database must contain exactly its expected Rpg.MotionMatching.Role tag and no other project role tag.")));
-		}
-		if (RoleValidation.bHasMissingStateTag || RoleValidation.bHasDuplicateStateTag ||
-			RoleValidation.bHasWrongStateTag)
-		{
-			Context.AddError(FText::FromString(
-				TEXT("Every runtime Pose Search database must contain exactly its expected Rpg.MotionMatching.State tag and no other project state tag.")));
-		}
-		if (AirborneMotionMatchingDatabases.IsEmpty())
-		{
-			Context.AddError(FText::FromString(
-				TEXT("Motion Matching is enabled, but no airborne Pose Search database is configured.")));
-		}
-		if (!FMath::IsFinite(HeavyLandingSpeedThreshold) ||
-			HeavyLandingSpeedThreshold <= 0.0f)
-		{
-			Context.AddError(FText::FromString(
-				TEXT("Heavy Landing Speed Threshold must be a finite positive speed in cm/s.")));
-		}
-		if (!LandingMotionMatchingDatabase ||
-			!StandHeavyLandingMotionMatchingDatabase ||
-			!WalkLightLandingMotionMatchingDatabase ||
-			!WalkHeavyLandingMotionMatchingDatabase ||
-			!RunLightLandingMotionMatchingDatabase ||
-			!RunHeavyLandingMotionMatchingDatabase)
-		{
-			Context.AddError(FText::FromString(
-				TEXT("Motion Matching requires all six curated Idle/Walk/Run Light/Heavy landing Pose Search databases.")));
-		}
-		if (!CrouchingMotionMatchingDatabase)
-		{
-			Context.AddError(FText::FromString(
-				TEXT("Motion Matching is enabled, but no crouching Pose Search database is configured.")));
-		}
-		if (!TurnInPlaceMotionMatchingDatabase)
-		{
-			Context.AddError(FText::FromString(
-				TEXT("Motion Matching is enabled, but no turn-in-place Pose Search database is configured.")));
+			const FMotionMatchingDatabaseRoleValidation RoleValidation =
+				ValidateMotionMatchingDatabaseRoleContracts(
+					BuildMotionMatchingDatabaseRoleContracts());
+			if (RoleValidation.bHasMissingRole || RoleValidation.bHasDuplicateRole)
+			{
+				Context.AddError(FText::FromString(
+					TEXT("Motion Matching must configure exactly one database for every project runtime role.")));
+			}
+			if (RoleValidation.bHasNullDatabase)
+			{
+				Context.AddError(FText::FromString(
+					TEXT("At least one project Motion Matching database role resolves to a null database.")));
+			}
+			if (RoleValidation.bHasDuplicateDatabase)
+			{
+				Context.AddError(FText::FromString(
+					TEXT("A Pose Search database must not own more than one project Motion Matching role.")));
+			}
+			if (RoleValidation.bHasMissingRoleTag || RoleValidation.bHasDuplicateRoleTag ||
+				RoleValidation.bHasWrongRoleTag)
+			{
+				Context.AddError(FText::FromString(
+					TEXT("Every runtime Pose Search database must contain exactly its expected Rpg.MotionMatching.Role tag and no other project role tag.")));
+			}
+			if (RoleValidation.bHasMissingStateTag || RoleValidation.bHasDuplicateStateTag ||
+				RoleValidation.bHasWrongStateTag)
+			{
+				Context.AddError(FText::FromString(
+					TEXT("Every runtime Pose Search database must contain exactly its expected Rpg.MotionMatching.State tag and no other project state tag.")));
+			}
+			if (AirborneMotionMatchingDatabases.IsEmpty())
+			{
+				Context.AddError(FText::FromString(
+					TEXT("Motion Matching is enabled, but no airborne Pose Search database is configured.")));
+			}
+			if (!FMath::IsFinite(HeavyLandingSpeedThreshold) ||
+				HeavyLandingSpeedThreshold <= 0.0f)
+			{
+				Context.AddError(FText::FromString(
+					TEXT("Heavy Landing Speed Threshold must be a finite positive speed in cm/s.")));
+			}
+			if (!LandingMotionMatchingDatabase ||
+				!StandHeavyLandingMotionMatchingDatabase ||
+				!WalkLightLandingMotionMatchingDatabase ||
+				!WalkHeavyLandingMotionMatchingDatabase ||
+				!RunLightLandingMotionMatchingDatabase ||
+				!RunHeavyLandingMotionMatchingDatabase)
+			{
+				Context.AddError(FText::FromString(
+					TEXT("Motion Matching requires all six curated Idle/Walk/Run Light/Heavy landing Pose Search databases.")));
+			}
+			if (!CrouchingMotionMatchingDatabase)
+			{
+				Context.AddError(FText::FromString(
+					TEXT("Motion Matching is enabled, but no crouching Pose Search database is configured.")));
+			}
+			if (!TurnInPlaceMotionMatchingDatabase)
+			{
+				Context.AddError(FText::FromString(
+					TEXT("Motion Matching is enabled, but no turn-in-place Pose Search database is configured.")));
+			}
 		}
 		if (!GaspPresentationProfile)
 		{
 			Context.AddError(FText::FromString(
 				TEXT("Motion Matching is enabled, but no GASP presentation profile is configured.")));
 		}
-		else if (!GaspPresentationProfile->ValidateProfile().IsValid())
-		{
-			Context.AddError(FText::FromString(
-				TEXT("The configured GASP presentation profile has invalid membership or loop invariants.")));
-		}
 		else
 		{
-			FRpgGaspPresentationAssetLookup PresentationLookup;
-			const bool bBuiltPresentationLookup = PresentationLookup.Build(GaspPresentationProfile);
-			check(bBuiltPresentationLookup);
-
-			const auto DatabaseHasTrait = [&PresentationLookup](
-				const UPoseSearchDatabase* Database,
-				ERpgGaspPresentationAssetTrait RequiredTrait)
+			const FRpgGaspPresentationProfileValidation ProfileValidation =
+				GaspPresentationProfile->ValidateProfile();
+			const bool bProfileValid = bHasProfileRuntimeConfiguration
+				? ProfileValidation.IsValid()
+				: ProfileValidation.IsMembershipValid();
+			if (!bProfileValid)
 			{
-				if (!Database)
-				{
-					return true;
-				}
+				Context.AddError(FText::FromString(bHasProfileRuntimeConfiguration
+					? TEXT("The configured GASP presentation profile has invalid membership, runtime databases, coverage, or tuning.")
+					: TEXT("The configured GASP presentation profile has invalid presentation membership.")));
+			}
+			else if (!bHasProfileRuntimeConfiguration)
+			{
+				FRpgGaspPresentationAssetLookup PresentationLookup;
+				const bool bBuiltPresentationLookup =
+					PresentationLookup.Build(GaspPresentationProfile);
+				check(bBuiltPresentationLookup);
 
-				for (int32 AssetIndex = 0;
-					AssetIndex < Database->GetNumAnimationAssets();
-					++AssetIndex)
+				const auto DatabaseHasTrait = [&PresentationLookup](
+					const UPoseSearchDatabase* Database,
+					ERpgGaspPresentationAssetTrait RequiredTrait)
 				{
-					const UAnimationAsset* Asset =
-						Cast<UAnimationAsset>(Database->GetAnimationAsset(AssetIndex));
-					if (!Asset || !PresentationLookup.HasTrait(Asset, RequiredTrait))
+					if (!Database)
 					{
-						return false;
+						return true;
 					}
+
+					for (int32 AssetIndex = 0;
+						AssetIndex < Database->GetNumAnimationAssets();
+						++AssetIndex)
+					{
+						const UAnimationAsset* Asset =
+							Cast<UAnimationAsset>(Database->GetAnimationAsset(AssetIndex));
+						if (!Asset || !PresentationLookup.HasTrait(Asset, RequiredTrait))
+						{
+							return false;
+						}
+					}
+					return true;
+				};
+
+				static constexpr ERpgMotionMatchingDatabaseRole GroundMovingRoles[] = {
+					ERpgMotionMatchingDatabaseRole::StandWalk,
+					ERpgMotionMatchingDatabaseRole::StandWalkStops,
+					ERpgMotionMatchingDatabaseRole::StandRunLoops,
+					ERpgMotionMatchingDatabaseRole::StandRunPivots,
+					ERpgMotionMatchingDatabaseRole::StandRunStarts,
+					ERpgMotionMatchingDatabaseRole::StandRunStops,
+					ERpgMotionMatchingDatabaseRole::StandSprint,
+					ERpgMotionMatchingDatabaseRole::StandSprintStops,
+				};
+				bool bGroundMovingCoverageValid = true;
+				for (const ERpgMotionMatchingDatabaseRole Role : GroundMovingRoles)
+				{
+					bGroundMovingCoverageValid &= DatabaseHasTrait(
+						GetLegacyMotionMatchingDatabaseForRole(Role),
+						ERpgGaspPresentationAssetTrait::GroundMoving);
 				}
-				return true;
-			};
+				if (!bGroundMovingCoverageValid)
+				{
+					Context.AddError(FText::FromString(
+						TEXT("Every Walk, Run, and Sprint legacy runtime database asset must have GroundMoving presentation membership.")));
+				}
 
-			static constexpr ERpgMotionMatchingDatabaseRole GroundMovingRoles[] = {
-				ERpgMotionMatchingDatabaseRole::StandWalk,
-				ERpgMotionMatchingDatabaseRole::StandWalkStops,
-				ERpgMotionMatchingDatabaseRole::StandRunLoops,
-				ERpgMotionMatchingDatabaseRole::StandRunPivots,
-				ERpgMotionMatchingDatabaseRole::StandRunStarts,
-				ERpgMotionMatchingDatabaseRole::StandRunStops,
-				ERpgMotionMatchingDatabaseRole::StandSprint,
-				ERpgMotionMatchingDatabaseRole::StandSprintStops,
-			};
-			bool bGroundMovingCoverageValid = true;
-			for (const ERpgMotionMatchingDatabaseRole Role : GroundMovingRoles)
-			{
-				bGroundMovingCoverageValid &= DatabaseHasTrait(
-					GetMotionMatchingDatabaseForRole(Role),
-					ERpgGaspPresentationAssetTrait::GroundMoving);
-			}
-			if (!bGroundMovingCoverageValid)
-			{
-				Context.AddError(FText::FromString(
-					TEXT("Every Walk, Run, and Sprint runtime database asset must have GroundMoving presentation membership.")));
-			}
+				bool bAirborneCoverageValid = !AirborneMotionMatchingDatabases.IsEmpty();
+				for (const UPoseSearchDatabase* Database : AirborneMotionMatchingDatabases)
+				{
+					bAirborneCoverageValid &= DatabaseHasTrait(
+						Database,
+						ERpgGaspPresentationAssetTrait::Airborne);
+				}
+				if (!bAirborneCoverageValid)
+				{
+					Context.AddError(FText::FromString(
+						TEXT("Every legacy Airborne runtime database asset must have JumpStart, BackwardJumpStart, or AirborneFall presentation membership.")));
+				}
 
-			bool bAirborneCoverageValid = !AirborneMotionMatchingDatabases.IsEmpty();
-			for (const UPoseSearchDatabase* Database : AirborneMotionMatchingDatabases)
-			{
-				bAirborneCoverageValid &= DatabaseHasTrait(
-					Database,
-					ERpgGaspPresentationAssetTrait::Airborne);
-			}
-			if (!bAirborneCoverageValid)
-			{
-				Context.AddError(FText::FromString(
-					TEXT("Every Airborne runtime database asset must have JumpStart, BackwardJumpStart, or AirborneFall presentation membership.")));
-			}
-
-			static constexpr ERpgMotionMatchingDatabaseRole LandingRoles[] = {
-				ERpgMotionMatchingDatabaseRole::StandLightLanding,
-				ERpgMotionMatchingDatabaseRole::StandHeavyLanding,
-				ERpgMotionMatchingDatabaseRole::WalkLightLanding,
-				ERpgMotionMatchingDatabaseRole::WalkHeavyLanding,
-				ERpgMotionMatchingDatabaseRole::RunLightLanding,
-				ERpgMotionMatchingDatabaseRole::RunHeavyLanding,
-			};
-			bool bLandingCoverageValid = true;
-			for (const ERpgMotionMatchingDatabaseRole Role : LandingRoles)
-			{
-				bLandingCoverageValid &= DatabaseHasTrait(
-					GetMotionMatchingDatabaseForRole(Role),
-					ERpgGaspPresentationAssetTrait::Landing);
-			}
-			if (!bLandingCoverageValid)
-			{
-				Context.AddError(FText::FromString(
-					TEXT("Every curated runtime landing database asset must have Landing presentation membership.")));
+				static constexpr ERpgMotionMatchingDatabaseRole LandingRoles[] = {
+					ERpgMotionMatchingDatabaseRole::StandLightLanding,
+					ERpgMotionMatchingDatabaseRole::StandHeavyLanding,
+					ERpgMotionMatchingDatabaseRole::WalkLightLanding,
+					ERpgMotionMatchingDatabaseRole::WalkHeavyLanding,
+					ERpgMotionMatchingDatabaseRole::RunLightLanding,
+					ERpgMotionMatchingDatabaseRole::RunHeavyLanding,
+				};
+				bool bLandingCoverageValid = true;
+				for (const ERpgMotionMatchingDatabaseRole Role : LandingRoles)
+				{
+					bLandingCoverageValid &= DatabaseHasTrait(
+						GetLegacyMotionMatchingDatabaseForRole(Role),
+						ERpgGaspPresentationAssetTrait::Landing);
+				}
+				if (!bLandingCoverageValid)
+				{
+					Context.AddError(FText::FromString(
+						TEXT("Every curated legacy runtime landing database asset must have Landing presentation membership.")));
+				}
 			}
 		}
 		if (FootPlacementSettings.bEnabled)
@@ -1462,22 +1426,25 @@ EDataValidationResult URpgAnimInstance::IsDataValid(FDataValidationContext& Cont
 			}
 		}
 
-		const auto ValidateDatabases = [&Context](
-			const TArray<TObjectPtr<UPoseSearchDatabase>>& Databases,
-			const TCHAR* GroupName)
+		if (!bHasProfileRuntimeConfiguration)
 		{
-			for (int32 Index = 0; Index < Databases.Num(); ++Index)
+			const auto ValidateDatabases = [&Context](
+				const TArray<TObjectPtr<UPoseSearchDatabase>>& Databases,
+				const TCHAR* GroupName)
 			{
-				if (!Databases[Index])
+				for (int32 Index = 0; Index < Databases.Num(); ++Index)
 				{
-					Context.AddError(FText::FromString(FString::Printf(
-						TEXT("%s Pose Search database entry %d is null."),
-						GroupName,
-						Index)));
+					if (!Databases[Index])
+					{
+						Context.AddError(FText::FromString(FString::Printf(
+							TEXT("%s Pose Search database entry %d is null."),
+							GroupName,
+							Index)));
+					}
 				}
-			}
-		};
-		ValidateDatabases(AirborneMotionMatchingDatabases, TEXT("Airborne"));
+			};
+			ValidateDatabases(AirborneMotionMatchingDatabases, TEXT("Airborne"));
+		}
 	}
 
 	return ((Context.GetNumErrors() > 0) ? EDataValidationResult::Invalid : EDataValidationResult::Valid);
@@ -1487,7 +1454,7 @@ EDataValidationResult URpgAnimInstance::IsDataValid(FDataValidationContext& Cont
 void URpgAnimInstance::NativeInitializeAnimation()
 {
 	Super::NativeInitializeAnimation();
-	GaspPresentationAssetLookup.Build(GaspPresentationProfile);
+	InitializeGaspRuntimeConfiguration();
 	FRpgAnimInstanceProxy& Proxy = GetProxyOnGameThread<FRpgAnimInstanceProxy>();
 	ResetFootPlacementInitializationState(Proxy);
 	ResetPoseSearchTrajectoryState(Proxy);
@@ -1566,13 +1533,74 @@ void URpgAnimInstance::ApplyTurnInPlaceRuntimeResult(
 	}
 }
 
+bool URpgAnimInstance::UsesProfileRuntimeConfiguration() const
+{
+	return bUseProfileRuntimeConfiguration;
+}
+
+void URpgAnimInstance::InitializeGaspRuntimeConfiguration()
+{
+	const FRpgGaspPresentationProfileValidation Validation = GaspPresentationProfile
+		? GaspPresentationProfile->ValidateProfile()
+		: FRpgGaspPresentationProfileValidation();
+	GaspPresentationAssetLookup.BuildValidated(GaspPresentationProfile, Validation);
+	GaspMotionMatchingDatabaseLookup.Reset();
+	RuntimeGaspLocomotionTuning = FRpgGaspLocomotionTuning();
+	bUseProfileRuntimeConfiguration = GaspPresentationProfile &&
+		!GaspPresentationProfile->RuntimeMotionMatchingDatabases.IsEmpty();
+
+	if (bUseProfileRuntimeConfiguration)
+	{
+		if (Validation.IsValid() &&
+			GaspMotionMatchingDatabaseLookup.BuildValidated(
+				GaspPresentationProfile,
+				Validation))
+		{
+			RuntimeGaspLocomotionTuning = GaspPresentationProfile->LocomotionTuning;
+		}
+		return;
+	}
+
+	// Legacy serialization remains reversible, but workers receive no partial configuration from an
+	// already invalid CDO: all 18 unique non-null slots enter the cache together or the cache stays empty.
+	const FMotionMatchingDatabaseRoleContracts LegacyContracts =
+		BuildMotionMatchingDatabaseRoleContracts();
+	bool bBuiltCompleteLegacyLookup =
+		LegacyContracts.Num() ==
+			static_cast<int32>(ERpgMotionMatchingDatabaseRole::Count) - 1;
+	for (const FMotionMatchingDatabaseRoleContract& Contract : LegacyContracts)
+	{
+		if (!bBuiltCompleteLegacyLookup ||
+			!GaspMotionMatchingDatabaseLookup.AddResolvedBinding(
+				Contract.Role,
+				Contract.Database))
+		{
+			bBuiltCompleteLegacyLookup = false;
+			break;
+		}
+	}
+	if (!bBuiltCompleteLegacyLookup)
+	{
+		GaspMotionMatchingDatabaseLookup.Reset();
+	}
+
+	// Whole-legacy compatibility mode retains the one historical AnimBP-authored feel value.
+	RuntimeGaspLocomotionTuning.HeavyLandingSpeedThreshold = HeavyLandingSpeedThreshold;
+}
+
+ERpgMotionMatchingDatabaseRole URpgAnimInstance::ResolveConfiguredMotionMatchingDatabaseRole(
+	const UPoseSearchDatabase* Database) const
+{
+	return GaspMotionMatchingDatabaseLookup.FindRole(Database);
+}
+
 void URpgAnimInstance::ClearTurnInPlaceSelection()
 {
 	TurnInPlaceSelectedAsset = nullptr;
 	TurnInPlaceSelectedAssetStartTime = 0.0f;
 	TurnInPlaceSelectedAssetRemainingTime = MAX_flt;
 	TurnInPlaceSelectedRequestSerial = 0;
-	TurnInPlacePlaybackWatchdogDuration = RpgTurnInPlaceRuntime::ActiveTimeout;
+	TurnInPlacePlaybackWatchdogDuration = RuntimeGaspLocomotionTuning.TurnActiveTimeout;
 	bTurnInPlacePoseSelected = false;
 	bTurnInPlaceSelectedAssetLooping = false;
 	bTurnInPlaceSelectionLatched = false;
@@ -1584,7 +1612,8 @@ void URpgAnimInstance::ResetTurnInPlaceRuntime(bool bHardResetOffset)
 {
 	ApplyTurnInPlaceRuntimeResult(RpgTurnInPlaceRuntime::Reset(
 		CaptureTurnInPlaceRuntimeState(),
-		bHardResetOffset));
+		bHardResetOffset,
+		RuntimeGaspLocomotionTuning));
 	TurnInPlaceSyntheticTrajectory.Samples.Reset();
 }
 
@@ -1592,7 +1621,8 @@ void URpgAnimInstance::BeginTurnInPlaceRecovery(bool bHardResetOffset)
 {
 	ApplyTurnInPlaceRuntimeResult(RpgTurnInPlaceRuntime::BeginRecovery(
 		CaptureTurnInPlaceRuntimeState(),
-		bHardResetOffset));
+		bHardResetOffset,
+		RuntimeGaspLocomotionTuning));
 	TurnInPlaceSyntheticTrajectory.Samples.Reset();
 }
 
@@ -1600,7 +1630,8 @@ void URpgAnimInstance::BeginTurnInPlaceRequest(float QuantizedAngle)
 {
 	ApplyTurnInPlaceRuntimeResult(RpgTurnInPlaceRuntime::BeginRequest(
 		CaptureTurnInPlaceRuntimeState(),
-		QuantizedAngle));
+		QuantizedAngle,
+		RuntimeGaspLocomotionTuning));
 }
 
 void URpgAnimInstance::UpdateTurnInPlaceRuntime(float DeltaSeconds, const FRpgAnimInstanceProxy& Proxy)
@@ -1612,7 +1643,8 @@ void URpgAnimInstance::UpdateTurnInPlaceRuntime(float DeltaSeconds, const FRpgAn
 	Eligibility.RotationMode = Proxy.RotationMode;
 	Eligibility.MovementState = Proxy.MovementState;
 	Eligibility.GroundSpeed = Proxy.GroundSpeed;
-	Eligibility.bHasTurnDatabase = TurnInPlaceMotionMatchingDatabase != nullptr;
+	Eligibility.bHasTurnDatabase = GetMotionMatchingDatabaseForRole(
+		ERpgMotionMatchingDatabaseRole::StandTurnInPlace) != nullptr;
 	Eligibility.bJumpPhaseGrounded = JumpPhase == ERpgJumpPhase::Grounded;
 	Eligibility.bIsMovingOnGround = Proxy.bIsMovingOnGround;
 	Eligibility.bIsCrouching = Proxy.bIsCrouching;
@@ -1625,7 +1657,9 @@ void URpgAnimInstance::UpdateTurnInPlaceRuntime(float DeltaSeconds, const FRpgAn
 	Snapshot.RotationMode = Proxy.RotationMode;
 	Snapshot.MovementState = Proxy.MovementState;
 	Snapshot.ActorYawDelta = Proxy.ActorYawDelta;
-	Snapshot.bEligible = RpgTurnInPlaceRuntime::IsEligible(Eligibility);
+	Snapshot.bEligible = RpgTurnInPlaceRuntime::IsEligible(
+		Eligibility,
+		RuntimeGaspLocomotionTuning);
 	Snapshot.bProxyHardReset = Proxy.bTurnInPlaceHardReset;
 	Snapshot.bSupportChanged = Proxy.bTurnInPlaceSupportChanged;
 	Snapshot.bHasBlockingGameplayTag = Proxy.bHasTurnInPlaceBlockingGameplayTag;
@@ -1639,7 +1673,8 @@ void URpgAnimInstance::UpdateTurnInPlaceRuntime(float DeltaSeconds, const FRpgAn
 	const FRpgTurnInPlaceUpdateResult Result = RpgTurnInPlaceRuntime::Update(
 		CaptureTurnInPlaceRuntimeState(),
 		Snapshot,
-		DeltaSeconds);
+		DeltaSeconds,
+		RuntimeGaspLocomotionTuning);
 	ApplyTurnInPlaceRuntimeResult(Result);
 
 	if (Result.bUseSyntheticTrajectory)
@@ -1648,7 +1683,8 @@ void URpgAnimInstance::UpdateTurnInPlaceRuntime(float DeltaSeconds, const FRpgAn
 			Proxy.TransformTrajectory,
 			Proxy.ActorYaw,
 			TurnInPlaceAccumulatedYaw,
-			TurnInPlaceQueryAngle);
+			TurnInPlaceQueryAngle,
+			RuntimeGaspLocomotionTuning);
 		LocomotionTrajectory = TurnInPlaceSyntheticTrajectory;
 	}
 	else
@@ -1662,7 +1698,8 @@ bool URpgAnimInstance::ConsumeTurnInPlaceForceInterruptRequest()
 {
 	FRpgTurnInPlaceRuntimeState State = CaptureTurnInPlaceRuntimeState();
 	const bool bConsumed = RpgTurnInPlaceRuntime::ConsumeForceInterrupt(
-		TurnInPlaceMotionMatchingDatabase != nullptr,
+		GetMotionMatchingDatabaseForRole(
+			ERpgMotionMatchingDatabaseRole::StandTurnInPlace) != nullptr,
 		State);
 	TurnInPlaceInterruptedRequestSerial = State.InterruptedRequestSerial;
 	return bConsumed;
@@ -1678,7 +1715,8 @@ bool URpgAnimInstance::TryLatchTurnInPlaceSelection(
 	if (TurnInPlaceState != ERpgTurnInPlaceState::Active ||
 		bTurnInPlaceSelectionLatched ||
 		!SelectedAsset ||
-		SelectedDatabase != TurnInPlaceMotionMatchingDatabase.Get() ||
+		SelectedDatabase != GetMotionMatchingDatabaseForRole(
+			ERpgMotionMatchingDatabaseRole::StandTurnInPlace) ||
 		SelectionRequestSerial == 0 ||
 		SelectionRequestSerial != TurnInPlaceRequestSerial)
 	{
@@ -1694,7 +1732,8 @@ bool URpgAnimInstance::TryLatchTurnInPlaceSelection(
 	TurnInPlacePlaybackWatchdogDuration = RpgTurnInPlaceRuntime::CalculatePlaybackWatchdogDuration(
 		TurnInPlaceSelectedAssetRemainingTime,
 		1.0f,
-		bSelectedAssetLooping);
+		bSelectedAssetLooping,
+		RuntimeGaspLocomotionTuning);
 	TurnInPlaceStateElapsed = 0.0f;
 	bTurnInPlacePoseSelected = true;
 	bTurnInPlaceSelectedAssetLooping = bSelectedAssetLooping;
@@ -1739,7 +1778,8 @@ void URpgAnimInstance::UpdateTurnInPlaceLatchedPlayback(
 				RpgTurnInPlaceRuntime::CalculatePlaybackWatchdogDuration(
 				TurnInPlaceSelectedAssetRemainingTime,
 				CurrentAssetPlayRate,
-				bTurnInPlaceSelectedAssetLooping);
+				bTurnInPlaceSelectedAssetLooping,
+				RuntimeGaspLocomotionTuning);
 			TurnInPlaceStateElapsed = 0.0f;
 		}
 		if (!bTurnInPlaceSelectedAssetLooping &&
@@ -1774,7 +1814,7 @@ void URpgAnimInstance::ClearLandingSelection()
 	LandingSelectedAsset = nullptr;
 	LandingSelectedAssetStartTime = 0.0f;
 	LandingSelectedAssetRemainingTime = MAX_flt;
-	LandingPlaybackWatchdogDuration = RpgLandingRuntime::ActiveTimeout;
+	LandingPlaybackWatchdogDuration = RuntimeGaspLocomotionTuning.LandingActiveTimeout;
 	LandingSelectedRequestSerial = 0;
 	bLandingSelectedAssetLooping = false;
 	bLandingSelectionLatched = false;
@@ -1897,12 +1937,16 @@ FRpgLandingEligibilitySnapshot URpgAnimInstance::BuildLandingEligibilitySnapshot
 
 void URpgAnimInstance::ResetJumpPhaseRuntime()
 {
-	ApplyLandingRuntimeResult(RpgLandingRuntime::Reset(CaptureLandingRuntimeState()));
+	ApplyLandingRuntimeResult(RpgLandingRuntime::Reset(
+		CaptureLandingRuntimeState(),
+		RuntimeGaspLocomotionTuning));
 }
 
 void URpgAnimInstance::BeginAirbornePhase(bool bAscendingTakeoff)
 {
-	ApplyLandingRuntimeResult(RpgLandingRuntime::Reset(CaptureLandingRuntimeState()));
+	ApplyLandingRuntimeResult(RpgLandingRuntime::Reset(
+		CaptureLandingRuntimeState(),
+		RuntimeGaspLocomotionTuning));
 	JumpPhase = ERpgJumpPhase::Airborne;
 	bBackwardJumpStartHoldEligible = bAscendingTakeoff;
 }
@@ -1916,7 +1960,8 @@ void URpgAnimInstance::BeginLandingRequest(
 	ApplyLandingRuntimeResult(RpgLandingRuntime::BeginRequest(
 		CaptureLandingRuntimeState(),
 		LandingRole,
-		bForceInterrupt));
+		bForceInterrupt,
+		RuntimeGaspLocomotionTuning));
 }
 
 void URpgAnimInstance::UpdateJumpPhaseRuntime(float DeltaSeconds, const FRpgAnimInstanceProxy& Proxy)
@@ -1956,7 +2001,9 @@ void URpgAnimInstance::UpdateJumpPhaseRuntime(float DeltaSeconds, const FRpgAnim
 	LiveGroundSnapshot.WorldAcceleration = Proxy.WorldAcceleration;
 	LiveGroundSnapshot.GroundSpeed = Proxy.GroundSpeed;
 	LiveGroundSnapshot.bIsMovingOnGround = Proxy.bIsMovingOnGround;
-	const bool bChooserMoving = RpgMotionMatchingRuntime::IsChooserMoving(LiveGroundSnapshot);
+	const bool bChooserMoving = RpgMotionMatchingRuntime::IsChooserMoving(
+		LiveGroundSnapshot,
+		RuntimeGaspLocomotionTuning);
 
 	if (PhysicalTransition.Transition == ERpgJumpPhysicalTransition::Touchdown)
 	{
@@ -1968,7 +2015,7 @@ void URpgAnimInstance::UpdateJumpPhaseRuntime(float DeltaSeconds, const FRpgAnim
 				Proxy.Gait,
 				Proxy.GroundSpeed,
 				bChooserMoving,
-				HeavyLandingSpeedThreshold);
+				RuntimeGaspLocomotionTuning);
 		if (LandingRole != ERpgMotionMatchingDatabaseRole::None)
 		{
 			BeginLandingRequest(LandingRole);
@@ -1995,7 +2042,8 @@ void URpgAnimInstance::UpdateJumpPhaseRuntime(float DeltaSeconds, const FRpgAnim
 	ApplyLandingRuntimeResult(RpgLandingRuntime::UpdateActive(
 		CaptureLandingRuntimeState(),
 		ActiveSnapshot,
-		SafeDeltaSeconds));
+		SafeDeltaSeconds,
+		RuntimeGaspLocomotionTuning));
 }
 
 bool URpgAnimInstance::ConsumeLandingForceInterruptRequest()
@@ -2036,7 +2084,8 @@ bool URpgAnimInstance::TryLatchLandingSelection(
 	LandingPlaybackWatchdogDuration = RpgLandingRuntime::CalculatePlaybackWatchdogDuration(
 		LandingSelectedAssetRemainingTime,
 		1.0f,
-		bLandingSelectedAssetLooping);
+		bLandingSelectedAssetLooping,
+		RuntimeGaspLocomotionTuning);
 	LandingStateElapsed = 0.0f;
 	bLandingSelectionLatched = true;
 	bLandingPlaybackObserved = false;
@@ -2078,7 +2127,8 @@ void URpgAnimInstance::UpdateLandingLatchedPlayback(
 				RpgLandingRuntime::CalculatePlaybackWatchdogDuration(
 				LandingSelectedAssetRemainingTime,
 				CurrentAssetPlayRate,
-				bLandingSelectedAssetLooping);
+				bLandingSelectedAssetLooping,
+				RuntimeGaspLocomotionTuning);
 			LandingStateElapsed = 0.0f;
 		}
 		if (!bLandingSelectedAssetLooping &&
@@ -2175,7 +2225,8 @@ bool URpgAnimInstance::UpdateBackwardJumpStartHold(
 	const FRpgBackwardJumpStartHoldResult Result =
 		RpgJumpRuntime::UpdateBackwardJumpStartHold(
 			State,
-			Snapshot);
+			Snapshot,
+			RuntimeGaspLocomotionTuning);
 	ApplyBackwardJumpStartHoldResult(Result, CurrentAsset);
 	return Result.bHoldContinuingPose;
 }
@@ -2272,7 +2323,7 @@ void URpgAnimInstance::UpdateGaspMotionMatching(
 	// traversal-counter gate so a stale Pivot result cannot suppress the first Run Start after re-entry.
 	CurrentMotionMatchingDatabaseRole = bNodeBecameRelevant
 		? ERpgMotionMatchingDatabaseRole::None
-		: ResolveMotionMatchingDatabaseRole(
+		: ResolveConfiguredMotionMatchingDatabaseRole(
 			MotionMatchingNode->GetMotionMatchingState().SearchResult.SelectedDatabase.Get());
 	if (CurrentMotionMatchingDatabaseRole == ERpgMotionMatchingDatabaseRole::None)
 	{
@@ -2297,7 +2348,9 @@ void URpgAnimInstance::UpdateGaspMotionMatching(
 	CurrentGroundDomainState.Gait = Proxy.Gait;
 	CurrentGroundDomainState.Stance = Proxy.Stance;
 	CurrentGroundDomainState.bChooserMoving =
-		RpgMotionMatchingRuntime::IsChooserMoving(DomainSnapshot);
+		RpgMotionMatchingRuntime::IsChooserMoving(
+			DomainSnapshot,
+			RuntimeGaspLocomotionTuning);
 	const bool bInterruptGroundDomain = RpgMotionMatchingRuntime::ShouldInterruptGroundMotionMatching(
 		bHasPreviousGroundMotionMatchingDomainState,
 		PreviousGroundMotionMatchingDomainState,
@@ -2321,7 +2374,8 @@ void URpgAnimInstance::UpdateGaspMotionMatching(
 		RpgTurnInPlaceRuntime::ResolveSearchMode(
 			CaptureTurnInPlaceRuntimeState(),
 			bForceNewTurnRequest,
-			TurnInPlaceMotionMatchingDatabase != nullptr,
+			GetMotionMatchingDatabaseForRole(
+				ERpgMotionMatchingDatabaseRole::StandTurnInPlace) != nullptr,
 			bTurnInPlaceSelectionLatched,
 			bTurnInPlaceCompletionArmed);
 	const bool bForceNewLandingRequest =
@@ -2364,7 +2418,8 @@ void URpgAnimInstance::UpdateGaspMotionMatching(
 	EPoseSearchInterruptMode InterruptMode = EPoseSearchInterruptMode::InterruptOnDatabaseChange;
 	if (SearchMode == ERpgTurnInPlaceSearchMode::SearchRequestedTurn)
 	{
-		DatabasesToSearch.Add(TurnInPlaceMotionMatchingDatabase);
+		DatabasesToSearch.Add(GetMotionMatchingDatabaseForRole(
+			ERpgMotionMatchingDatabaseRole::StandTurnInPlace));
 		InterruptMode = EPoseSearchInterruptMode::ForceInterrupt;
 	}
 	else if (SearchMode == ERpgTurnInPlaceSearchMode::ContinueSelectedTurn)
@@ -2403,8 +2458,8 @@ void URpgAnimInstance::UpdateGaspMotionMatching(
 			// This is the exact future-speed window used by GASP's IsStarting function.
 			UPoseSearchTrajectoryLibrary::GetTransformTrajectoryVelocity(
 				Proxy.TransformTrajectory,
-				RpgMotionMatchingRuntime::RunStartFutureVelocityBeginTime,
-				RpgMotionMatchingRuntime::RunStartFutureVelocityEndTime,
+				RuntimeGaspLocomotionTuning.RunStartFutureVelocityBeginTime,
+				RuntimeGaspLocomotionTuning.RunStartFutureVelocityEndTime,
 				FutureTrajectoryVelocity);
 		}
 
@@ -2416,7 +2471,9 @@ void URpgAnimInstance::UpdateGaspMotionMatching(
 		}
 
 		for (const ERpgMotionMatchingDatabaseRole Role :
-			RpgMotionMatchingRuntime::ResolveDatabaseRoles(SelectionSnapshot))
+			RpgMotionMatchingRuntime::ResolveDatabaseRoles(
+				SelectionSnapshot,
+				RuntimeGaspLocomotionTuning))
 		{
 			if (UPoseSearchDatabase* Database = GetMotionMatchingDatabaseForRole(Role))
 			{
@@ -2456,7 +2513,7 @@ void URpgAnimInstance::UpdateGaspMotionMatchingPostSelection(
 	const FPoseSearchBlueprintResult& SearchResult =
 		MotionMatchingNode->GetMotionMatchingState().SearchResult;
 	const ERpgMotionMatchingDatabaseRole SelectedRole =
-		ResolveMotionMatchingDatabaseRole(SearchResult.SelectedDatabase.Get());
+		ResolveConfiguredMotionMatchingDatabaseRole(SearchResult.SelectedDatabase.Get());
 	const FRpgMotionMatchingPostSelectionState PostSelection =
 		RpgMotionMatchingRuntime::ResolvePostSelection(
 			SelectedRole,

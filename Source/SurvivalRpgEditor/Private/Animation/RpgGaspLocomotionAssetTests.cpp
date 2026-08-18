@@ -27,6 +27,7 @@
 #include "PoseSearch/PoseSearchNormalizationSet.h"
 #include "PoseSearch/PoseSearchSchema.h"
 #include "SurvivalRpg/Animation/RpgGaspPresentationProfile.h"
+#include "UObject/UnrealType.h"
 #include "UObject/UObjectGlobals.h"
 
 namespace RpgGaspLocomotionAssetTests
@@ -67,6 +68,9 @@ namespace RpgGaspLocomotionAssetTests
 	constexpr TCHAR SprintStopDatabasePackage[] = TEXT("/RpgGaspLocomotion/MotionMatching/Databases/PSD_Rpg_Stand_Sprint_Stops");
 	constexpr TCHAR MirrorTablePath[] = TEXT("/RpgGaspLocomotion/MotionMatching/MirrorTables/MDT_Rpg_Mannequin.MDT_Rpg_Mannequin");
 	constexpr TCHAR PresentationProfilePath[] = TEXT("/RpgGaspLocomotion/Profiles/DA_RpgGaspPresentationProfile.DA_RpgGaspPresentationProfile");
+	constexpr TCHAR PresentationProfilePackage[] = TEXT("/RpgGaspLocomotion/Profiles/DA_RpgGaspPresentationProfile");
+	constexpr TCHAR RuntimeDatabaseRoot[] = TEXT("/RpgGaspLocomotion/MotionMatching/Databases/");
+	constexpr TCHAR LegacyAggregateRunDatabasePackage[] = TEXT("/RpgGaspLocomotion/MotionMatching/Databases/PSD_Rpg_Stand_Run");
 
 	static const TCHAR* const TurnInPlaceAnimationPackages[] = {
 		TEXT("/RpgGaspLocomotion/Animations/Stand/Idle/M_Neutral_Stand_Turn_045_L"),
@@ -397,9 +401,77 @@ namespace RpgGaspLocomotionAssetTests
 
 	struct FRuntimeDatabaseTagContract
 	{
+		ERpgMotionMatchingDatabaseRole Role;
 		const TCHAR* PackageName;
 		const TCHAR* ExpectedRoleTag;
 		const TCHAR* ExpectedStateTag;
+	};
+
+	static const FRuntimeDatabaseTagContract RuntimeDatabaseTagContracts[] = {
+		{ ERpgMotionMatchingDatabaseRole::StandIdle, TEXT("/RpgGaspLocomotion/MotionMatching/Databases/PSD_Rpg_Stand_Idle"), TEXT("Rpg.MotionMatching.Role.StandIdle"), TEXT("Rpg.MotionMatching.State.Grounded") },
+		{ ERpgMotionMatchingDatabaseRole::StandWalk, WalkMovingDatabasePackage, TEXT("Rpg.MotionMatching.Role.StandWalk"), TEXT("Rpg.MotionMatching.State.Grounded") },
+		{ ERpgMotionMatchingDatabaseRole::StandWalkStops, WalkStopDatabasePackage, TEXT("Rpg.MotionMatching.Role.StandWalkStops"), TEXT("Rpg.MotionMatching.State.Grounded") },
+		{ ERpgMotionMatchingDatabaseRole::StandRunLoops, TEXT("/RpgGaspLocomotion/MotionMatching/Databases/PSD_Rpg_Stand_Run_Loops"), TEXT("Rpg.MotionMatching.Role.StandRunLoops"), TEXT("Rpg.MotionMatching.State.Grounded") },
+		{ ERpgMotionMatchingDatabaseRole::StandRunPivots, TEXT("/RpgGaspLocomotion/MotionMatching/Databases/PSD_Rpg_Stand_Run_Pivots"), TEXT("Rpg.MotionMatching.Role.StandRunPivots"), TEXT("Rpg.MotionMatching.State.Grounded") },
+		{ ERpgMotionMatchingDatabaseRole::StandRunStarts, TEXT("/RpgGaspLocomotion/MotionMatching/Databases/PSD_Rpg_Stand_Run_Starts"), TEXT("Rpg.MotionMatching.Role.StandRunStarts"), TEXT("Rpg.MotionMatching.State.Grounded") },
+		{ ERpgMotionMatchingDatabaseRole::StandRunStops, TEXT("/RpgGaspLocomotion/MotionMatching/Databases/PSD_Rpg_Stand_Run_Stops"), TEXT("Rpg.MotionMatching.Role.StandRunStops"), TEXT("Rpg.MotionMatching.State.Grounded") },
+		{ ERpgMotionMatchingDatabaseRole::StandSprint, SprintMovingDatabasePackage, TEXT("Rpg.MotionMatching.Role.StandSprint"), TEXT("Rpg.MotionMatching.State.Grounded") },
+		{ ERpgMotionMatchingDatabaseRole::StandSprintStops, SprintStopDatabasePackage, TEXT("Rpg.MotionMatching.Role.StandSprintStops"), TEXT("Rpg.MotionMatching.State.Grounded") },
+		{ ERpgMotionMatchingDatabaseRole::Crouch, TEXT("/RpgGaspLocomotion/MotionMatching/Databases/PSD_Rpg_Crouch"), TEXT("Rpg.MotionMatching.Role.Crouch"), TEXT("Rpg.MotionMatching.State.Crouching") },
+		{ ERpgMotionMatchingDatabaseRole::StandTurnInPlace, TurnInPlaceDatabasePackage, TEXT("Rpg.MotionMatching.Role.StandTurnInPlace"), TEXT("Rpg.MotionMatching.State.TurnInPlace") },
+		{ ERpgMotionMatchingDatabaseRole::Jump, JumpDatabasePackage, TEXT("Rpg.MotionMatching.Role.Jump"), TEXT("Rpg.MotionMatching.State.Airborne") },
+		{ ERpgMotionMatchingDatabaseRole::StandLightLanding, IdleLightLandingDatabasePackage, TEXT("Rpg.MotionMatching.Role.StandLightLanding"), TEXT("Rpg.MotionMatching.State.Landing") },
+		{ ERpgMotionMatchingDatabaseRole::StandHeavyLanding, IdleHeavyLandingDatabasePackage, TEXT("Rpg.MotionMatching.Role.StandHeavyLanding"), TEXT("Rpg.MotionMatching.State.Landing") },
+		{ ERpgMotionMatchingDatabaseRole::WalkLightLanding, WalkLightLandingDatabasePackage, TEXT("Rpg.MotionMatching.Role.WalkLightLanding"), TEXT("Rpg.MotionMatching.State.Landing") },
+		{ ERpgMotionMatchingDatabaseRole::WalkHeavyLanding, WalkHeavyLandingDatabasePackage, TEXT("Rpg.MotionMatching.Role.WalkHeavyLanding"), TEXT("Rpg.MotionMatching.State.Landing") },
+		{ ERpgMotionMatchingDatabaseRole::RunLightLanding, RunLightLandingDatabasePackage, TEXT("Rpg.MotionMatching.Role.RunLightLanding"), TEXT("Rpg.MotionMatching.State.Landing") },
+		{ ERpgMotionMatchingDatabaseRole::RunHeavyLanding, RunHeavyLandingDatabasePackage, TEXT("Rpg.MotionMatching.Role.RunHeavyLanding"), TEXT("Rpg.MotionMatching.State.Landing") },
+	};
+
+	struct FTuningFloatDefaultContract
+	{
+		const TCHAR* FieldName;
+		float FRpgGaspLocomotionTuning::* Member;
+		float ExpectedValue;
+	};
+
+	static const FTuningFloatDefaultContract TuningFloatDefaultContracts[] = {
+		{ TEXT("LastMeaningfulVelocityThreshold"), &FRpgGaspLocomotionTuning::LastMeaningfulVelocityThreshold, 5.0f },
+		{ TEXT("StationarySpeedThreshold"), &FRpgGaspLocomotionTuning::StationarySpeedThreshold, 3.0f },
+		{ TEXT("MoveIntentThreshold"), &FRpgGaspLocomotionTuning::MoveIntentThreshold, 0.1f },
+		{ TEXT("RunInputThreshold"), &FRpgGaspLocomotionTuning::RunInputThreshold, 0.65f },
+		{ TEXT("ChooserVelocityTolerance"), &FRpgGaspLocomotionTuning::ChooserVelocityTolerance, 0.1f },
+		{ TEXT("ChooserAccelerationTolerance"), &FRpgGaspLocomotionTuning::ChooserAccelerationTolerance, 0.0001f },
+		{ TEXT("WalkStopMinimumSpeed"), &FRpgGaspLocomotionTuning::WalkStopMinimumSpeed, 20.0f },
+		{ TEXT("RunStopMinimumSpeed"), &FRpgGaspLocomotionTuning::RunStopMinimumSpeed, 100.0f },
+		{ TEXT("SprintStopMinimumSpeed"), &FRpgGaspLocomotionTuning::SprintStopMinimumSpeed, 550.0f },
+		{ TEXT("FreeRunPivotMinimumAngle"), &FRpgGaspLocomotionTuning::FreeRunPivotMinimumAngle, 45.0f },
+		{ TEXT("CombatStrafeRunPivotMinimumAngle"), &FRpgGaspLocomotionTuning::CombatStrafeRunPivotMinimumAngle, 30.0f },
+		{ TEXT("AimRunPivotMinimumAngle"), &FRpgGaspLocomotionTuning::AimRunPivotMinimumAngle, 0.0f },
+		{ TEXT("RunStartMinimumFutureSpeedGain"), &FRpgGaspLocomotionTuning::RunStartMinimumFutureSpeedGain, 100.0f },
+		{ TEXT("RunStartFutureVelocityBeginTime"), &FRpgGaspLocomotionTuning::RunStartFutureVelocityBeginTime, 0.4f },
+		{ TEXT("RunStartFutureVelocityEndTime"), &FRpgGaspLocomotionTuning::RunStartFutureVelocityEndTime, 0.5f },
+		{ TEXT("TurnCollectThreshold"), &FRpgGaspLocomotionTuning::TurnCollectThreshold, 20.0f },
+		{ TEXT("TurnActivationThreshold"), &FRpgGaspLocomotionTuning::TurnActivationThreshold, 30.0f },
+		{ TEXT("TurnCancelThreshold"), &FRpgGaspLocomotionTuning::TurnCancelThreshold, 10.0f },
+		{ TEXT("TurnInactiveYawRateThreshold"), &FRpgGaspLocomotionTuning::TurnInactiveYawRateThreshold, 6.0f },
+		{ TEXT("TurnStableYawRateThreshold"), &FRpgGaspLocomotionTuning::TurnStableYawRateThreshold, 60.0f },
+		{ TEXT("TurnStabilityDuration"), &FRpgGaspLocomotionTuning::TurnStabilityDuration, 0.08f },
+		{ TEXT("TurnCollectionTimeout"), &FRpgGaspLocomotionTuning::TurnCollectionTimeout, 0.2f },
+		{ TEXT("TurnRecoveryDuration"), &FRpgGaspLocomotionTuning::TurnRecoveryDuration, 0.15f },
+		{ TEXT("TurnSelectionTimeout"), &FRpgGaspLocomotionTuning::TurnSelectionTimeout, 0.25f },
+		{ TEXT("TurnActiveTimeout"), &FRpgGaspLocomotionTuning::TurnActiveTimeout, 1.75f },
+		{ TEXT("TurnInactiveAccumulatorTimeout"), &FRpgGaspLocomotionTuning::TurnInactiveAccumulatorTimeout, 0.2f },
+		{ TEXT("TurnFacingDuration45"), &FRpgGaspLocomotionTuning::TurnFacingDuration45, 0.45f },
+		{ TEXT("TurnFacingDuration90"), &FRpgGaspLocomotionTuning::TurnFacingDuration90, 0.65f },
+		{ TEXT("TurnFacingDuration135"), &FRpgGaspLocomotionTuning::TurnFacingDuration135, 0.85f },
+		{ TEXT("TurnFacingDuration180"), &FRpgGaspLocomotionTuning::TurnFacingDuration180, 1.0f },
+		{ TEXT("BackwardJumpStartHoldTimeout"), &FRpgGaspLocomotionTuning::BackwardJumpStartHoldTimeout, 1.25f },
+		{ TEXT("BackwardJumpStartReleaseLeadTime"), &FRpgGaspLocomotionTuning::BackwardJumpStartReleaseLeadTime, 0.2f },
+		{ TEXT("HeavyLandingSpeedThreshold"), &FRpgGaspLocomotionTuning::HeavyLandingSpeedThreshold, 700.0f },
+		{ TEXT("LandingSelectionTimeout"), &FRpgGaspLocomotionTuning::LandingSelectionTimeout, 0.25f },
+		{ TEXT("LandingActiveTimeout"), &FRpgGaspLocomotionTuning::LandingActiveTimeout, 1.25f },
+		{ TEXT("LandingMovementHandoffWindow"), &FRpgGaspLocomotionTuning::LandingMovementHandoffWindow, 0.3f },
 	};
 
 	struct FLandingDatabaseContract
@@ -688,6 +760,162 @@ bool FRpgGaspLocomotionContentContractTest::RunTest(const FString& Parameters)
 				*FString::Printf(TEXT("%s is explicitly represented in the profile"), *Expected.Key),
 				ActualPresentationPackages.Contains(Expected.Key));
 		}
+
+		TestEqual(
+			TEXT("The presentation profile hard-references exactly eighteen runtime databases"),
+			PresentationProfile->RuntimeMotionMatchingDatabases.Num(),
+			static_cast<int32>(UE_ARRAY_COUNT(RuntimeDatabaseTagContracts)));
+		TSet<const UPoseSearchDatabase*> UniqueProfileDatabases;
+		TSet<ERpgMotionMatchingDatabaseRole> UniqueProfileRoles;
+		TSet<FString> ProfileDatabaseObjectPaths;
+		for (int32 Index = 0;
+			Index < PresentationProfile->RuntimeMotionMatchingDatabases.Num();
+			++Index)
+		{
+			const UPoseSearchDatabase* Database =
+				PresentationProfile->RuntimeMotionMatchingDatabases[Index].Get();
+			if (!TestNotNull(
+					*FString::Printf(TEXT("Profile runtime database %d resolves"), Index),
+					Database))
+			{
+				continue;
+			}
+
+			TestFalse(
+				*FString::Printf(TEXT("Profile runtime database %s appears only once"), *Database->GetName()),
+				UniqueProfileDatabases.Contains(Database));
+			UniqueProfileDatabases.Add(Database);
+			ProfileDatabaseObjectPaths.Add(Database->GetPathName());
+
+			const ERpgMotionMatchingDatabaseRole Role =
+				RpgGaspLocomotionConfig::ResolveDatabaseRoleTag(MakeArrayView(Database->Tags));
+			TestTrue(
+				*FString::Printf(TEXT("Profile runtime database %s resolves one project role tag"), *Database->GetName()),
+				Role != ERpgMotionMatchingDatabaseRole::None &&
+					Role != ERpgMotionMatchingDatabaseRole::Count);
+			TestFalse(
+				*FString::Printf(TEXT("Profile role %d is assigned only once"), static_cast<int32>(Role)),
+				UniqueProfileRoles.Contains(Role));
+			UniqueProfileRoles.Add(Role);
+
+			const FRuntimeDatabaseTagContract* ExpectedContract = nullptr;
+			for (const FRuntimeDatabaseTagContract& Contract : RuntimeDatabaseTagContracts)
+			{
+				if (Contract.Role == Role)
+				{
+					ExpectedContract = &Contract;
+					break;
+				}
+			}
+			if (TestNotNull(
+					*FString::Printf(TEXT("Profile role %d has an exact asset contract"), static_cast<int32>(Role)),
+					ExpectedContract))
+			{
+				const FString ExpectedObjectPath = FString::Printf(
+					TEXT("%s.%s"),
+					ExpectedContract->PackageName,
+					*FPackageName::GetLongPackageAssetName(ExpectedContract->PackageName));
+				TestEqual(
+					*FString::Printf(TEXT("Profile role %s resolves the exact project database"), ExpectedContract->ExpectedRoleTag),
+					Database->GetPathName(),
+					ExpectedObjectPath);
+				TestEqual(
+					*FString::Printf(TEXT("Native role %s retains its exact authored tag"), ExpectedContract->ExpectedRoleTag),
+					RpgGaspLocomotionConfig::GetDatabaseRoleTag(Role),
+					FName(ExpectedContract->ExpectedRoleTag));
+			}
+		}
+		TestEqual(
+			TEXT("The presentation profile runtime database references are unique"),
+			UniqueProfileDatabases.Num(),
+			static_cast<int32>(UE_ARRAY_COUNT(RuntimeDatabaseTagContracts)));
+		TestEqual(
+			TEXT("The presentation profile assigns every runtime database role exactly once"),
+			UniqueProfileRoles.Num(),
+			static_cast<int32>(UE_ARRAY_COUNT(RuntimeDatabaseTagContracts)));
+		for (const FRuntimeDatabaseTagContract& Contract : RuntimeDatabaseTagContracts)
+		{
+			TestTrue(
+				*FString::Printf(TEXT("The presentation profile contains role %s"), Contract.ExpectedRoleTag),
+				UniqueProfileRoles.Contains(Contract.Role));
+		}
+		TestFalse(
+			TEXT("The presentation profile excludes the archival aggregate Run database"),
+			ProfileDatabaseObjectPaths.Contains(
+				FString::Printf(
+					TEXT("%s.%s"),
+					LegacyAggregateRunDatabasePackage,
+					*FPackageName::GetLongPackageAssetName(LegacyAggregateRunDatabasePackage))));
+
+		const FRpgGaspLocomotionTuning DefaultLocomotionTuning;
+		TestTrue(
+			TEXT("The profile locomotion tuning remains runtime-valid"),
+			RpgGaspLocomotionConfig::IsTuningRuntimeValid(PresentationProfile->LocomotionTuning));
+		TestEqual(
+			TEXT("The Step-4 tuning contract covers all thirty-six compatibility defaults"),
+			static_cast<int32>(UE_ARRAY_COUNT(TuningFloatDefaultContracts)),
+			36);
+		int32 ReflectedTuningFloatCount = 0;
+		for (TFieldIterator<FFloatProperty> PropertyIt(FRpgGaspLocomotionTuning::StaticStruct());
+			PropertyIt;
+			++PropertyIt)
+		{
+			++ReflectedTuningFloatCount;
+		}
+		TestEqual(
+			TEXT("Every reflected tuning float has an explicit compatibility default contract"),
+			ReflectedTuningFloatCount,
+			static_cast<int32>(UE_ARRAY_COUNT(TuningFloatDefaultContracts)));
+		for (const FTuningFloatDefaultContract& Contract : TuningFloatDefaultContracts)
+		{
+			TestNotNull(
+				*FString::Printf(TEXT("Profile tuning field %s remains a reflected float"), Contract.FieldName),
+				FindFProperty<FFloatProperty>(
+					FRpgGaspLocomotionTuning::StaticStruct(),
+					Contract.FieldName));
+			TestEqual(
+				*FString::Printf(TEXT("Profile tuning %s preserves its compatibility default"), Contract.FieldName),
+				PresentationProfile->LocomotionTuning.*Contract.Member,
+				Contract.ExpectedValue);
+		}
+		TestTrue(
+			TEXT("The profile preserves every Step-4 locomotion tuning compatibility default"),
+			FRpgGaspLocomotionTuning::StaticStruct()->CompareScriptStruct(
+				&PresentationProfile->LocomotionTuning,
+				&DefaultLocomotionTuning,
+				0));
+
+		UE::AssetRegistry::FDependencyQuery RuntimeCookDependencyQuery;
+		RuntimeCookDependencyQuery.Required =
+			UE::AssetRegistry::EDependencyProperty::Hard |
+			UE::AssetRegistry::EDependencyProperty::Game;
+		TArray<FName> DirectProfileCookDependencies;
+		AssetRegistry.GetDependencies(
+			FName(PresentationProfilePackage),
+			DirectProfileCookDependencies,
+			UE::AssetRegistry::EDependencyCategory::Package,
+			RuntimeCookDependencyQuery);
+		TSet<FName> DirectRuntimeDatabaseCookDependencies;
+		for (const FName Dependency : DirectProfileCookDependencies)
+		{
+			if (Dependency.ToString().StartsWith(RuntimeDatabaseRoot))
+			{
+				DirectRuntimeDatabaseCookDependencies.Add(Dependency);
+			}
+		}
+		TestEqual(
+			TEXT("The profile records exactly eighteen direct hard game/cook database dependencies"),
+			DirectRuntimeDatabaseCookDependencies.Num(),
+			static_cast<int32>(UE_ARRAY_COUNT(RuntimeDatabaseTagContracts)));
+		for (const FRuntimeDatabaseTagContract& Contract : RuntimeDatabaseTagContracts)
+		{
+			TestTrue(
+				*FString::Printf(TEXT("The profile directly hard-references cook database %s"), Contract.PackageName),
+				DirectRuntimeDatabaseCookDependencies.Contains(FName(Contract.PackageName)));
+		}
+		TestFalse(
+			TEXT("The profile cook dependencies exclude the archival aggregate Run database"),
+			DirectRuntimeDatabaseCookDependencies.Contains(FName(LegacyAggregateRunDatabasePackage)));
 	}
 
 	static const FDatabaseContract DatabaseContracts[] = {
@@ -753,26 +981,6 @@ bool FRpgGaspLocomotionContentContractTest::RunTest(const FString& Parameters)
 		}
 	}
 
-	static const FRuntimeDatabaseTagContract RuntimeDatabaseTagContracts[] = {
-		{ TEXT("/RpgGaspLocomotion/MotionMatching/Databases/PSD_Rpg_Stand_Idle"), TEXT("Rpg.MotionMatching.Role.StandIdle"), TEXT("Rpg.MotionMatching.State.Grounded") },
-		{ WalkMovingDatabasePackage, TEXT("Rpg.MotionMatching.Role.StandWalk"), TEXT("Rpg.MotionMatching.State.Grounded") },
-		{ WalkStopDatabasePackage, TEXT("Rpg.MotionMatching.Role.StandWalkStops"), TEXT("Rpg.MotionMatching.State.Grounded") },
-		{ TEXT("/RpgGaspLocomotion/MotionMatching/Databases/PSD_Rpg_Stand_Run_Loops"), TEXT("Rpg.MotionMatching.Role.StandRunLoops"), TEXT("Rpg.MotionMatching.State.Grounded") },
-		{ TEXT("/RpgGaspLocomotion/MotionMatching/Databases/PSD_Rpg_Stand_Run_Pivots"), TEXT("Rpg.MotionMatching.Role.StandRunPivots"), TEXT("Rpg.MotionMatching.State.Grounded") },
-		{ TEXT("/RpgGaspLocomotion/MotionMatching/Databases/PSD_Rpg_Stand_Run_Starts"), TEXT("Rpg.MotionMatching.Role.StandRunStarts"), TEXT("Rpg.MotionMatching.State.Grounded") },
-		{ TEXT("/RpgGaspLocomotion/MotionMatching/Databases/PSD_Rpg_Stand_Run_Stops"), TEXT("Rpg.MotionMatching.Role.StandRunStops"), TEXT("Rpg.MotionMatching.State.Grounded") },
-		{ SprintMovingDatabasePackage, TEXT("Rpg.MotionMatching.Role.StandSprint"), TEXT("Rpg.MotionMatching.State.Grounded") },
-		{ SprintStopDatabasePackage, TEXT("Rpg.MotionMatching.Role.StandSprintStops"), TEXT("Rpg.MotionMatching.State.Grounded") },
-		{ TEXT("/RpgGaspLocomotion/MotionMatching/Databases/PSD_Rpg_Crouch"), TEXT("Rpg.MotionMatching.Role.Crouch"), TEXT("Rpg.MotionMatching.State.Crouching") },
-		{ TurnInPlaceDatabasePackage, TEXT("Rpg.MotionMatching.Role.StandTurnInPlace"), TEXT("Rpg.MotionMatching.State.TurnInPlace") },
-		{ JumpDatabasePackage, TEXT("Rpg.MotionMatching.Role.Jump"), TEXT("Rpg.MotionMatching.State.Airborne") },
-		{ IdleLightLandingDatabasePackage, TEXT("Rpg.MotionMatching.Role.StandLightLanding"), TEXT("Rpg.MotionMatching.State.Landing") },
-		{ IdleHeavyLandingDatabasePackage, TEXT("Rpg.MotionMatching.Role.StandHeavyLanding"), TEXT("Rpg.MotionMatching.State.Landing") },
-		{ WalkLightLandingDatabasePackage, TEXT("Rpg.MotionMatching.Role.WalkLightLanding"), TEXT("Rpg.MotionMatching.State.Landing") },
-		{ WalkHeavyLandingDatabasePackage, TEXT("Rpg.MotionMatching.Role.WalkHeavyLanding"), TEXT("Rpg.MotionMatching.State.Landing") },
-		{ RunLightLandingDatabasePackage, TEXT("Rpg.MotionMatching.Role.RunLightLanding"), TEXT("Rpg.MotionMatching.State.Landing") },
-		{ RunHeavyLandingDatabasePackage, TEXT("Rpg.MotionMatching.Role.RunHeavyLanding"), TEXT("Rpg.MotionMatching.State.Landing") },
-	};
 	TestEqual(
 		TEXT("Exactly eighteen project runtime database tag contracts are declared"),
 		static_cast<int32>(UE_ARRAY_COUNT(RuntimeDatabaseTagContracts)),

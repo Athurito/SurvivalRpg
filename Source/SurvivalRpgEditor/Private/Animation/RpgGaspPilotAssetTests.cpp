@@ -1242,6 +1242,30 @@ bool FRpgGaspPilotAssetContractTest::RunTest(const FString& Parameters)
 			: nullptr;
 	if (TestNotNull(TEXT("The GASP AnimBlueprint generated-class defaults load"), PilotAnimDefaults))
 	{
+		const FObjectPropertyBase* PresentationProfileProperty =
+			FindFProperty<FObjectPropertyBase>(
+				PilotAnimDefaults->GetClass(),
+				TEXT("GaspPresentationProfile"));
+		TestTrue(
+			TEXT("GaspPresentationProfile remains a hard object property of the project profile type"),
+			PresentationProfileProperty &&
+				PresentationProfileProperty->PropertyClass == URpgGaspPresentationProfile::StaticClass());
+		TestTrue(
+			TEXT("GaspPresentationProfile remains designer-authored Blueprint-readable class-default configuration"),
+			PresentationProfileProperty && PresentationProfileProperty->HasAllPropertyFlags(
+				CPF_Edit | CPF_DisableEditOnInstance | CPF_BlueprintVisible | CPF_BlueprintReadOnly));
+		TestFalse(
+			TEXT("GaspPresentationProfile is not transient runtime state"),
+			PresentationProfileProperty &&
+				PresentationProfileProperty->HasAnyPropertyFlags(CPF_Transient));
+		if (PresentationProfileProperty)
+		{
+			TestEqual(
+				TEXT("The pilot hard property resolves the loaded project-owned presentation profile"),
+				PresentationProfileProperty->GetObjectPropertyValue_InContainer(PilotAnimDefaults),
+				static_cast<UObject*>(PresentationProfile));
+		}
+
 		FString ConfiguredPresentationProfilePath;
 		if (TestTrue(
 			TEXT("The pilot exposes a hard GASP presentation-profile binding"),
@@ -1550,11 +1574,44 @@ bool FRpgGaspPilotAssetContractTest::RunTest(const FString& Parameters)
 				bResetOffsetRootEveryFrame);
 		}
 
+		const FStructProperty* GroundDatabaseSetsProperty =
+			FindFProperty<FStructProperty>(
+				PilotAnimDefaults->GetClass(),
+				TEXT("GroundMotionMatchingDatabaseSets"));
+		TestTrue(
+			TEXT("GroundMotionMatchingDatabaseSets keeps its exact legacy reflected struct type"),
+			GroundDatabaseSetsProperty &&
+				GroundDatabaseSetsProperty->Struct == FRpgGroundMotionMatchingDatabaseSets::StaticStruct());
+		TestTrue(
+			TEXT("GroundMotionMatchingDatabaseSets remains designer-authored Blueprint-readable class-default configuration"),
+			GroundDatabaseSetsProperty && GroundDatabaseSetsProperty->HasAllPropertyFlags(
+				CPF_Edit | CPF_DisableEditOnInstance | CPF_BlueprintVisible | CPF_BlueprintReadOnly));
+		TestFalse(
+			TEXT("GroundMotionMatchingDatabaseSets is not transient runtime state"),
+			GroundDatabaseSetsProperty &&
+				GroundDatabaseSetsProperty->HasAnyPropertyFlags(CPF_Transient));
+
 		const auto TestGroundDatabaseGroup = [this, PilotAnimDefaults](
 			FName GroupPropertyName,
 			const TCHAR* GroupLabel,
 			const TArray<FString>& ExpectedDatabasePaths)
 		{
+			const FArrayProperty* GroupProperty =
+				FindFProperty<FArrayProperty>(
+					FRpgGroundMotionMatchingDatabaseSets::StaticStruct(),
+					GroupPropertyName);
+			const FObjectPropertyBase* GroupDatabaseInner =
+				GroupProperty ? CastField<FObjectPropertyBase>(GroupProperty->Inner) : nullptr;
+			TestTrue(
+				*FString::Printf(TEXT("The legacy %s ground group keeps its Pose Search database array type"), GroupLabel),
+				GroupDatabaseInner &&
+					GroupDatabaseInner->PropertyClass == UPoseSearchDatabase::StaticClass());
+			TestTrue(
+				*FString::Printf(TEXT("The legacy %s ground group remains fixed-size Blueprint-readable defaults"), GroupLabel),
+				GroupProperty && GroupProperty->HasAllPropertyFlags(
+					CPF_Edit | CPF_DisableEditOnInstance | CPF_EditFixedSize |
+						CPF_BlueprintVisible | CPF_BlueprintReadOnly));
+
 			TArray<FString> ActualDatabasePaths;
 			if (!TestTrue(
 					*FString::Printf(TEXT("The %s ground database group is readable"), GroupLabel),
@@ -1613,6 +1670,22 @@ bool FRpgGaspPilotAssetContractTest::RunTest(const FString& Parameters)
 			});
 
 		FString CrouchingDatabasePath;
+		const FObjectPropertyBase* CrouchingDatabaseProperty =
+			FindFProperty<FObjectPropertyBase>(
+				PilotAnimDefaults->GetClass(),
+				TEXT("CrouchingMotionMatchingDatabase"));
+		TestTrue(
+			TEXT("CrouchingMotionMatchingDatabase keeps its exact legacy Pose Search object type"),
+			CrouchingDatabaseProperty &&
+				CrouchingDatabaseProperty->PropertyClass == UPoseSearchDatabase::StaticClass());
+		TestTrue(
+			TEXT("CrouchingMotionMatchingDatabase remains designer-authored Blueprint-readable class-default configuration"),
+			CrouchingDatabaseProperty && CrouchingDatabaseProperty->HasAllPropertyFlags(
+				CPF_Edit | CPF_DisableEditOnInstance | CPF_BlueprintVisible | CPF_BlueprintReadOnly));
+		TestFalse(
+			TEXT("CrouchingMotionMatchingDatabase is not transient runtime state"),
+			CrouchingDatabaseProperty &&
+				CrouchingDatabaseProperty->HasAnyPropertyFlags(CPF_Transient));
 		if (TestTrue(
 			TEXT("The crouching database property is readable"),
 			ReadObjectProperty(
@@ -1627,6 +1700,22 @@ bool FRpgGaspPilotAssetContractTest::RunTest(const FString& Parameters)
 		}
 
 		FString TurnInPlaceDatabasePath;
+		const FObjectPropertyBase* TurnInPlaceDatabaseProperty =
+			FindFProperty<FObjectPropertyBase>(
+				PilotAnimDefaults->GetClass(),
+				TEXT("TurnInPlaceMotionMatchingDatabase"));
+		TestTrue(
+			TEXT("TurnInPlaceMotionMatchingDatabase keeps its exact legacy Pose Search object type"),
+			TurnInPlaceDatabaseProperty &&
+				TurnInPlaceDatabaseProperty->PropertyClass == UPoseSearchDatabase::StaticClass());
+		TestTrue(
+			TEXT("TurnInPlaceMotionMatchingDatabase remains designer-authored Blueprint-readable class-default configuration"),
+			TurnInPlaceDatabaseProperty && TurnInPlaceDatabaseProperty->HasAllPropertyFlags(
+				CPF_Edit | CPF_DisableEditOnInstance | CPF_BlueprintVisible | CPF_BlueprintReadOnly));
+		TestFalse(
+			TEXT("TurnInPlaceMotionMatchingDatabase is not transient runtime state"),
+			TurnInPlaceDatabaseProperty &&
+				TurnInPlaceDatabaseProperty->HasAnyPropertyFlags(CPF_Transient));
 		if (TestTrue(
 			TEXT("The turn-in-place database property is readable"),
 			ReadObjectProperty(
@@ -1825,7 +1914,7 @@ bool FRpgGaspPilotAssetContractTest::RunTest(const FString& Parameters)
 			TestTrue(
 				TEXT("HeavyLandingSpeedThreshold is designer-authored Blueprint-readable configuration"),
 				Property && Property->HasAllPropertyFlags(
-					CPF_Edit | CPF_BlueprintVisible | CPF_BlueprintReadOnly));
+					CPF_Edit | CPF_DisableEditOnInstance | CPF_BlueprintVisible | CPF_BlueprintReadOnly));
 			TestFalse(
 				TEXT("HeavyLandingSpeedThreshold is not transient runtime state"),
 				Property && Property->HasAnyPropertyFlags(CPF_Transient));
@@ -2640,9 +2729,17 @@ bool FRpgGaspPilotAssetContractTest::RunTest(const FString& Parameters)
 	TestFalse(
 		TEXT("The pilot AnimBlueprint never directly depends on the full editor-only module"),
 		PilotAnimBlueprintDependencies.Contains(FName(TEXT("/Script/SurvivalRpgEditor"))));
+	UE::AssetRegistry::FDependencyQuery HardGamePackageQuery;
+	HardGamePackageQuery.Required =
+		UE::AssetRegistry::EDependencyProperty::Hard |
+		UE::AssetRegistry::EDependencyProperty::Game;
 	TestTrue(
-		TEXT("The pilot AnimBlueprint directly records its hard presentation-profile dependency"),
-		PilotAnimBlueprintDependencies.Contains(FName(PresentationProfilePackage)));
+		TEXT("The pilot AnimBlueprint directly records its hard game/cook presentation-profile dependency"),
+		AssetRegistry.ContainsDependency(
+			FName(PilotAnimBlueprintPackage),
+			FName(PresentationProfilePackage),
+			UE::AssetRegistry::EDependencyCategory::Package,
+			HardGamePackageQuery));
 	TSet<FName> DependencyClosure;
 	GatherPilotDependencyClosure(AssetRegistry, PilotRootPackages, DependencyClosure);
 	TestFalse(

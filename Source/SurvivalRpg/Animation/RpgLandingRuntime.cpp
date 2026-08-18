@@ -8,7 +8,8 @@
 void RpgLandingRuntime::UpdateSelectionSnapshot(
 	FRpgLandingSelectionSnapshot& SelectionSnapshot,
 	FRpgLandingCaptureState& State,
-	const FRpgLandingCaptureSnapshot& Snapshot)
+	const FRpgLandingCaptureSnapshot& Snapshot,
+	const FRpgGaspLocomotionTuning& Tuning)
 {
 	const bool bAirborne =
 		Snapshot.bIsFalling ||
@@ -74,16 +75,16 @@ void RpgLandingRuntime::UpdateSelectionSnapshot(
 		return;
 	}
 
-	const bool bHasMoveIntent = Snapshot.InputMagnitude > 0.1f;
+	const bool bHasMoveIntent = Snapshot.InputMagnitude > Tuning.MoveIntentThreshold;
 	ERpgLocomotionGait CapturedGait = State.LastGroundedGait;
 	if (CapturedGait != ERpgLocomotionGait::Sprint && bHasMoveIntent)
 	{
-		CapturedGait = Snapshot.InputMagnitude < 0.65f
+		CapturedGait = Snapshot.InputMagnitude < Tuning.RunInputThreshold
 			? ERpgLocomotionGait::Walk
 			: ERpgLocomotionGait::Run;
 	}
 	else if (CapturedGait == ERpgLocomotionGait::Idle &&
-		HorizontalSpeed > IdleSpeedThreshold)
+		HorizontalSpeed > Tuning.StationarySpeedThreshold)
 	{
 		CapturedGait = ERpgLocomotionGait::Run;
 	}
@@ -121,7 +122,7 @@ void RpgLandingRuntime::UpdateSelectionSnapshot(
 
 ERpgMotionMatchingDatabaseRole RpgLandingRuntime::ResolveDatabaseRole(
 	const FRpgLandingSelectionSnapshot& Snapshot,
-	float HeavySpeedThreshold)
+	const FRpgGaspLocomotionTuning& Tuning)
 {
 	const bool bFiniteSnapshot =
 		Snapshot.bIsValid &&
@@ -133,7 +134,8 @@ ERpgMotionMatchingDatabaseRole RpgLandingRuntime::ResolveDatabaseRole(
 		Snapshot.MaximumDownwardSpeed >= 0.0f &&
 		FMath::IsFinite(Snapshot.PredictedImpactDownwardSpeed) &&
 		Snapshot.PredictedImpactDownwardSpeed >= 0.0f &&
-		FMath::IsFinite(HeavySpeedThreshold) && HeavySpeedThreshold > 0.0f;
+		FMath::IsFinite(Tuning.HeavyLandingSpeedThreshold) &&
+		Tuning.HeavyLandingSpeedThreshold > 0.0f;
 	if (!bFiniteSnapshot)
 	{
 		return ERpgMotionMatchingDatabaseRole::None;
@@ -150,8 +152,8 @@ ERpgMotionMatchingDatabaseRole RpgLandingRuntime::ResolveDatabaseRole(
 
 	const bool bHeavy = FMath::Max(
 		Snapshot.MaximumDownwardSpeed,
-		Snapshot.PredictedImpactDownwardSpeed) >= HeavySpeedThreshold;
-	if (Snapshot.HorizontalSpeed <= IdleSpeedThreshold)
+		Snapshot.PredictedImpactDownwardSpeed) >= Tuning.HeavyLandingSpeedThreshold;
+	if (Snapshot.HorizontalSpeed <= Tuning.StationarySpeedThreshold)
 	{
 		return bHeavy
 			? ERpgMotionMatchingDatabaseRole::StandHeavyLanding
@@ -195,7 +197,8 @@ ERpgMotionMatchingDatabaseRole RpgLandingRuntime::ResolveStationaryRole(
 bool RpgLandingRuntime::ShouldReleaseStationary(
 	ERpgMotionMatchingDatabaseRole LandingRole,
 	bool bChooserMoving,
-	float GroundSpeed)
+	float GroundSpeed,
+	const FRpgGaspLocomotionTuning& Tuning)
 {
 	const bool bStationaryLanding =
 		LandingRole == ERpgMotionMatchingDatabaseRole::StandLightLanding ||
@@ -203,7 +206,7 @@ bool RpgLandingRuntime::ShouldReleaseStationary(
 	return bStationaryLanding &&
 		(bChooserMoving ||
 		 !FMath::IsFinite(GroundSpeed) ||
-		 GroundSpeed > IdleSpeedThreshold);
+		 GroundSpeed > Tuning.StationarySpeedThreshold);
 }
 
 ERpgMotionMatchingDatabaseRole RpgLandingRuntime::ResolveStationaryMovementRole(
@@ -300,7 +303,7 @@ ERpgMotionMatchingDatabaseRole RpgLandingRuntime::ResolveTouchdownRole(
 	ERpgLocomotionGait LiveGait,
 	float GroundSpeed,
 	bool bChooserMoving,
-	float HeavySpeedThreshold)
+	const FRpgGaspLocomotionTuning& Tuning)
 {
 	if (!IsEligible(Eligibility))
 	{
@@ -309,13 +312,13 @@ ERpgMotionMatchingDatabaseRole RpgLandingRuntime::ResolveTouchdownRole(
 
 	ERpgMotionMatchingDatabaseRole LandingRole = ResolveDatabaseRole(
 		SelectionSnapshot,
-		HeavySpeedThreshold);
-	if (FMath::IsFinite(GroundSpeed) && GroundSpeed <= IdleSpeedThreshold)
+		Tuning);
+	if (FMath::IsFinite(GroundSpeed) && GroundSpeed <= Tuning.StationarySpeedThreshold)
 	{
 		LandingRole = ResolveStationaryRole(LandingRole);
 	}
 	LandingRole = ResolveAvailableRole(LandingRole, Availability);
-	if (ShouldReleaseStationary(LandingRole, bChooserMoving, GroundSpeed))
+	if (ShouldReleaseStationary(LandingRole, bChooserMoving, GroundSpeed, Tuning))
 	{
 		LandingRole = bChooserMoving
 			? ResolveAvailableRole(
@@ -326,14 +329,16 @@ ERpgMotionMatchingDatabaseRole RpgLandingRuntime::ResolveTouchdownRole(
 	return LandingRole;
 }
 
-FRpgLandingRuntimeResult RpgLandingRuntime::Reset(const FRpgLandingRuntimeState& State)
+FRpgLandingRuntimeResult RpgLandingRuntime::Reset(
+	const FRpgLandingRuntimeState& State,
+	const FRpgGaspLocomotionTuning& Tuning)
 {
 	FRpgLandingRuntimeResult Result;
 	Result.State = State;
 	Result.State.ActiveRole = ERpgMotionMatchingDatabaseRole::None;
 	Result.State.StateElapsed = 0.0f;
 	Result.State.TouchdownElapsed = 0.0f;
-	Result.State.PlaybackWatchdogDuration = ActiveTimeout;
+	Result.State.PlaybackWatchdogDuration = Tuning.LandingActiveTimeout;
 	Result.State.bSelectionLatched = false;
 	Result.State.bCompletionArmed = false;
 	Result.Transition = ERpgLandingRuntimeTransition::ResetGrounded;
@@ -345,14 +350,15 @@ FRpgLandingRuntimeResult RpgLandingRuntime::Reset(const FRpgLandingRuntimeState&
 FRpgLandingRuntimeResult RpgLandingRuntime::BeginRequest(
 	const FRpgLandingRuntimeState& State,
 	ERpgMotionMatchingDatabaseRole LandingRole,
-	bool bForceInterrupt)
+	bool bForceInterrupt,
+	const FRpgGaspLocomotionTuning& Tuning)
 {
 	check(RpgMotionMatchingRuntime::IsLandingDatabaseRole(LandingRole));
 	FRpgLandingRuntimeResult Result;
 	Result.State = State;
 	Result.State.ActiveRole = LandingRole;
 	Result.State.StateElapsed = 0.0f;
-	Result.State.PlaybackWatchdogDuration = ActiveTimeout;
+	Result.State.PlaybackWatchdogDuration = Tuning.LandingActiveTimeout;
 	Result.State.bSelectionLatched = false;
 	Result.State.bCompletionArmed = false;
 	++Result.State.RequestSerial;
@@ -377,7 +383,8 @@ FRpgLandingRuntimeResult RpgLandingRuntime::BeginRequest(
 FRpgLandingRuntimeResult RpgLandingRuntime::UpdateActive(
 	const FRpgLandingRuntimeState& State,
 	const FRpgLandingActiveSnapshot& Snapshot,
-	float DeltaSeconds)
+	float DeltaSeconds,
+	const FRpgGaspLocomotionTuning& Tuning)
 {
 	FRpgLandingRuntimeResult Result;
 	Result.State = State;
@@ -385,7 +392,7 @@ FRpgLandingRuntimeResult RpgLandingRuntime::UpdateActive(
 		!RpgMotionMatchingRuntime::IsLandingDatabaseRole(Result.State.ActiveRole) ||
 		!IsRoleAvailable(Result.State.ActiveRole, Snapshot.Availability))
 	{
-		return Reset(Result.State);
+		return Reset(Result.State, Tuning);
 	}
 
 	const float SafeDeltaSeconds = FMath::Max(DeltaSeconds, 0.0f);
@@ -393,28 +400,31 @@ FRpgLandingRuntimeResult RpgLandingRuntime::UpdateActive(
 	if (ShouldReleaseStationary(
 		Result.State.ActiveRole,
 		Snapshot.bChooserMoving,
-		Snapshot.GroundSpeed))
+		Snapshot.GroundSpeed,
+		Tuning))
 	{
 		const ERpgMotionMatchingDatabaseRole HandoffRole =
-			Snapshot.bChooserMoving && Result.State.TouchdownElapsed <= MovementHandoffWindow
+			Snapshot.bChooserMoving &&
+			Result.State.TouchdownElapsed <= Tuning.LandingMovementHandoffWindow
 				? ResolveAvailableRole(
 					ResolveStationaryMovementRole(Result.State.ActiveRole, Snapshot.LiveGait),
 					Snapshot.Availability)
 				: ERpgMotionMatchingDatabaseRole::None;
 		return HandoffRole != ERpgMotionMatchingDatabaseRole::None
-			? BeginRequest(Result.State, HandoffRole, false)
-			: Reset(Result.State);
+			? BeginRequest(Result.State, HandoffRole, false, Tuning)
+			: Reset(Result.State, Tuning);
 	}
 
 	Result.State.StateElapsed += SafeDeltaSeconds;
 	const bool bSelectionTimedOut =
-		!Result.State.bSelectionLatched && Result.State.StateElapsed >= SelectionTimeout;
+		!Result.State.bSelectionLatched &&
+		Result.State.StateElapsed >= Tuning.LandingSelectionTimeout;
 	const bool bPlaybackTimedOut =
 		Result.State.bSelectionLatched &&
 		Result.State.StateElapsed >= Result.State.PlaybackWatchdogDuration;
 	if (Result.State.bCompletionArmed || bSelectionTimedOut || bPlaybackTimedOut)
 	{
-		return Reset(Result.State);
+		return Reset(Result.State, Tuning);
 	}
 	return Result;
 }
@@ -447,16 +457,17 @@ bool RpgLandingRuntime::ShouldInterruptDatabaseExit(
 float RpgLandingRuntime::CalculatePlaybackWatchdogDuration(
 	float RemainingAnimationTime,
 	float PlayRate,
-	bool bLooping)
+	bool bLooping,
+	const FRpgGaspLocomotionTuning& Tuning)
 {
 	if (bLooping || !FMath::IsFinite(PlayRate) || FMath::Abs(PlayRate) <= UE_SMALL_NUMBER)
 	{
-		return ActiveTimeout;
+		return Tuning.LandingActiveTimeout;
 	}
 
 	return FMath::Clamp(
 		FMath::Max(RemainingAnimationTime, 0.0f) / FMath::Abs(PlayRate) +
 			PlaybackWatchdogSafetyMargin,
 		PlaybackWatchdogSafetyMargin,
-		ActiveTimeout);
+		Tuning.LandingActiveTimeout);
 }

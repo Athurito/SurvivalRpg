@@ -3,12 +3,12 @@
 #pragma once
 
 #include "CoreMinimal.h"
+#include "RpgGaspLocomotionConfig.h"
 #include "RpgPoseSearchTrajectory.h"
 
 enum class ERpgJumpPhase : uint8;
 enum class ERpgLocomotionGait : uint8;
 enum class ERpgLocomotionMovementState : uint8;
-enum class ERpgMotionMatchingDatabaseRole : uint8;
 struct FRpgLandingSelectionSnapshot;
 
 /** Pointer-free game-thread state retained across landing-capture updates. */
@@ -98,23 +98,20 @@ struct SURVIVALRPG_API FRpgLandingRuntimeResult
 /** Deterministic landing capture, role, fallback, serial, and timeout policy adapted from GASP. */
 namespace RpgLandingRuntime
 {
-	inline constexpr float IdleSpeedThreshold = 3.0f;
-	inline constexpr float SelectionTimeout = 0.25f;
-	inline constexpr float ActiveTimeout = 1.25f;
 	inline constexpr float PlaybackWatchdogSafetyMargin = 0.1f;
 	inline constexpr float FinishedTimeTolerance = 0.05f;
-	inline constexpr float MovementHandoffWindow = 0.3f;
 
 	/** Updates the final-airborne snapshot while preserving one physical touchdown frame. */
 	SURVIVALRPG_API void UpdateSelectionSnapshot(
 		FRpgLandingSelectionSnapshot& SelectionSnapshot,
 		FRpgLandingCaptureState& State,
-		const FRpgLandingCaptureSnapshot& Snapshot);
+		const FRpgLandingCaptureSnapshot& Snapshot,
+		const FRpgGaspLocomotionTuning& Tuning = FRpgGaspLocomotionTuning());
 
 	/** Resolves the authored Light/Heavy and Stand/Walk/Run role from frozen finite values. */
 	SURVIVALRPG_API ERpgMotionMatchingDatabaseRole ResolveDatabaseRole(
 		const FRpgLandingSelectionSnapshot& Snapshot,
-		float HeavySpeedThreshold);
+		const FRpgGaspLocomotionTuning& Tuning = FRpgGaspLocomotionTuning());
 
 	/** Preserves severity while rebasing a Walk/Run landing into the stationary domain. */
 	SURVIVALRPG_API ERpgMotionMatchingDatabaseRole ResolveStationaryRole(
@@ -124,7 +121,8 @@ namespace RpgLandingRuntime
 	SURVIVALRPG_API bool ShouldReleaseStationary(
 		ERpgMotionMatchingDatabaseRole LandingRole,
 		bool bChooserMoving,
-		float GroundSpeed);
+		float GroundSpeed,
+		const FRpgGaspLocomotionTuning& Tuning = FRpgGaspLocomotionTuning());
 
 	/** Preserves severity while mapping stationary presentation to the live Walk/Run gait. */
 	SURVIVALRPG_API ERpgMotionMatchingDatabaseRole ResolveStationaryMovementRole(
@@ -152,22 +150,26 @@ namespace RpgLandingRuntime
 		ERpgLocomotionGait LiveGait,
 		float GroundSpeed,
 		bool bChooserMoving,
-		float HeavySpeedThreshold);
+		const FRpgGaspLocomotionTuning& Tuning = FRpgGaspLocomotionTuning());
 
 	/** Clears landing values while retaining the monotonic request and interrupt serials. */
-	SURVIVALRPG_API FRpgLandingRuntimeResult Reset(const FRpgLandingRuntimeState& State);
+	SURVIVALRPG_API FRpgLandingRuntimeResult Reset(
+		const FRpgLandingRuntimeState& State,
+		const FRpgGaspLocomotionTuning& Tuning = FRpgGaspLocomotionTuning());
 
 	/** Starts the initial request or one database-change handoff while skipping serial zero. */
 	SURVIVALRPG_API FRpgLandingRuntimeResult BeginRequest(
 		const FRpgLandingRuntimeState& State,
 		ERpgMotionMatchingDatabaseRole LandingRole,
-		bool bForceInterrupt);
+		bool bForceInterrupt,
+		const FRpgGaspLocomotionTuning& Tuning = FRpgGaspLocomotionTuning());
 
 	/** Advances stationary handoff, selection timeout, playback watchdog, and completion. */
 	SURVIVALRPG_API FRpgLandingRuntimeResult UpdateActive(
 		const FRpgLandingRuntimeState& State,
 		const FRpgLandingActiveSnapshot& Snapshot,
-		float DeltaSeconds);
+		float DeltaSeconds,
+		const FRpgGaspLocomotionTuning& Tuning = FRpgGaspLocomotionTuning());
 
 	/** Consumes at most one ForceInterrupt for the active request serial. */
 	SURVIVALRPG_API bool ConsumeForceInterrupt(
@@ -185,5 +187,6 @@ namespace RpgLandingRuntime
 	SURVIVALRPG_API float CalculatePlaybackWatchdogDuration(
 		float RemainingAnimationTime,
 		float PlayRate,
-		bool bLooping);
+		bool bLooping,
+		const FRpgGaspLocomotionTuning& Tuning = FRpgGaspLocomotionTuning());
 }

@@ -10,9 +10,12 @@ the sample project a runtime dependency.
 - `URpgAnimInstance::InitializeWithAbilitySystem` owns the game-thread ASC/tag-map lifecycle.
   `FRpgAnimInstanceProxy::PreUpdate` collects actor, movement-component, and world data and copies
   the already mirrored gameplay-tag booleans into the immutable proxy snapshot.
-- Worker-thread animation consumes only immutable values and already loaded animation assets.
-- AnimBP, Choosers, Pose Search databases, and future presentation profiles own concrete asset
-  membership, graph composition, blending, warping, IK feel, and presentation tuning.
+- Worker-thread animation consumes only immutable values, already loaded animation assets, the
+  game-thread-built presentation/database caches, and the copied locomotion-tuning snapshot. It
+  never reads the profile arrays or Pose Search database tags.
+- `DA_RpgGaspPresentationProfile` owns the concrete sequence membership, the exact 18-database
+  hard-reference set, and locomotion feel. AnimBP, Choosers, and Pose Search assets retain graph
+  composition, blending, warping, IK feel, and authored content membership.
 - Focused C++ helpers are retained only for engine callbacks, game-thread world queries, immutable
   snapshots, custom AnimNodes, and small deterministic resolvers.
 
@@ -23,17 +26,17 @@ the sample project a runtime dependency.
 | `Update_PropertiesFromCharacter`, `Update_EssentialValues` | `InitializeWithAbilitySystem` for the ASC/tag map; `FRpgAnimInstanceProxy::PreUpdate` for the value snapshot | Existing ASC lifecycle plus proxy snapshot boundary | ASC delegates are initialized on the game thread. `PreUpdate` copies mirrored tag booleans and reads CharacterMovement/world state; no sample character hierarchy is imported. |
 | `Update_Trajectory` | Proxy `PreUpdate` orchestrates `PoseSearchGenerateTransformTrajectory`; `RpgPoseSearchTrajectory` owns its sampling constants and validation/correction helpers | Same split: proxy owns generation and snapshot lifetime; focused native helper owns the sampling/correction mechanism | Controller-yaw extrapolation is disabled for the controller-facing project character; raw history stays separate from worker-facing corrected output. |
 | `HandleTransformTrajectoryWorldCollisions` | `RpgPoseSearchTrajectory::ResolveWorldCollision` | Focused game-thread trajectory helper | Uses bounded sphere sweeps, CharacterMovement walkability, explicit validity, floor projection, and a pointer-free landing prediction. It never changes movement or touchdown authority. |
-| `Update_MotionMatching` | `URpgAnimInstance::UpdateGaspMotionMatching` bridges the AnimNode callback and database pointers; `RpgMotionMatchingRuntime` owns pointer-free role selection | Same split plus designer-owned database/profile configuration | The project keeps a curated role contract and excludes GASP BranchIn, experimental state-machine, Foley, and broad Chooser dependencies. Database externalization remains a later #81 slice. |
-| `IsMoving`, `IsStarting`, `IsPivoting`, `Get_TrajectoryTurnAngle` | `RpgMotionMatchingRuntime::IsChooserMoving`, `GetRunPivotMinimumAngle`, and `ResolveDatabaseRoles`; the resolver consumes the GASP-authored future-velocity window and project gait/stance snapshot | Focused value-only Motion Matching selection runtime plus validated designer-owned database/profile membership | Project gameplay gait and rotation mode constrain the authored source predicates. The trajectory turn angle is the acceleration-versus-velocity pivot angle, not a turn-in-place rule. Selection remains cosmetic and pointer-free. |
+| `Update_MotionMatching` | `URpgAnimInstance::UpdateGaspMotionMatching` bridges the AnimNode callback and the immutable database-role cache; `RpgMotionMatchingRuntime` owns pointer-free role selection; `DA_RpgGaspPresentationProfile` owns the exact 18-database hard-reference set | Same callback/runtime/profile split | Profile Role tags are read once while the AnimInstance builds the bidirectional cache on the game thread; whole-legacy mode derives the same cache from reflected slot roles. Worker callbacks use only role values and cached pointers. The project excludes GASP BranchIn, experimental state-machine, Foley, and broad Chooser dependencies. |
+| `IsMoving`, `IsStarting`, `IsPivoting`, `Get_TrajectoryTurnAngle` | `RpgMotionMatchingRuntime::IsChooserMoving`, `GetRunPivotMinimumAngle`, and `ResolveDatabaseRoles`; the resolver consumes the GASP-authored future-velocity window, project gait/stance snapshot, and copied profile tuning | Focused value-only Motion Matching selection runtime plus validated designer-owned profile membership and tuning | Project gameplay gait and rotation mode constrain the authored source predicates. The trajectory turn angle is the acceleration-versus-velocity pivot angle, not a turn-in-place rule. Selection remains cosmetic and pointer-free. |
 | `Get_MMInterruptMode` | `RpgMotionMatchingRuntime::ShouldInterruptGroundMotionMatching` plus explicit turn/landing request and playback latches in `URpgAnimInstance::UpdateGaspMotionMatching` | Focused value-only Motion Matching runtime coordinated by the native AnimNode callback | Interrupts also protect physical movement-domain changes and one-shot project turn/landing requests; they never become replicated gameplay state. |
 | `Update_MotionMatching_PostSelection` | `URpgAnimInstance::UpdateGaspMotionMatchingPostSelection` bridges selected database metadata; `RpgMotionMatchingRuntime::ResolvePostSelection` owns the pointer-free result and exclusive latch policy | Same callback/value-runtime split | Completed-search metadata is cosmetic only. Unlike source GASP, the project does not apply `Override Motion Matching Blend Settings`; the authored node retains uniform `0.2 s` blending after the FastFeet turn regression. |
 | `Update_States`, `Update_Logic` | Proxy movement snapshot plus `RpgTurnInPlaceRuntime`, `RpgJumpRuntime`, and `RpgLandingRuntime`; `URpgAnimInstance` coordinates their reflected and UObject bridges | Gameplay state in CharacterMovement/GAS; focused presentation runtimes and AnimBP/profile tuning | The sample's broad and experimental state controller is not copied. Physical airborne/grounded state always comes from CharacterMovement. |
-| `ShouldTurnInPlace` | `RpgTurnInPlaceRuntime` owns pointer-free eligibility, hysteresis, reset edges, request/search policy, timeouts, and synthetic facing; `URpgAnimInstance` retains the reflected facade plus GC-safe asset/Blend Stack bridge | Same split; feel thresholds move to designer configuration in #81 step 4 | Turns remain controller-facing and cosmetic; they never rotate the authoritative actor. GASP's inclusive 50-degree OrientationIntent/root predicate and Chooser 20 cm/s cap are intentionally adapted to project actor-yaw accumulation, 20/30/10-degree hysteresis, and the stricter 3 cm/s stationary gate. |
+| `ShouldTurnInPlace` | `RpgTurnInPlaceRuntime` owns pointer-free eligibility, hysteresis, reset edges, request/search policy, watchdog decisions, and synthetic facing; `URpgAnimInstance` retains the reflected facade plus GC-safe asset/Blend Stack bridge; the profile owns feel values | Same native mechanism plus designer-owned profile tuning | Turns remain controller-facing and cosmetic; they never rotate the authoritative actor. GASP's inclusive 50-degree OrientationIntent/root predicate and Chooser 20 cm/s cap are intentionally adapted to project actor-yaw accumulation; the profile defaults preserve the 20/30/10-degree hysteresis and stricter 3 cm/s stationary gate. |
 | Jump movement-mode edges and bounded backward Jump Start/Fall continuation | `RpgJumpRuntime` owns pointer-free physical edge interpretation and Continuing-Pose policy; `URpgAnimInstance` retains the reflected phase plus GC-tracked held asset and trait bridge | Same value-runtime/facade split | An upward velocity change while already airborne is not a new phase. The bounded backward hold is a project adaptation for curated non-looping starts and never changes movement authority. |
-| `JustLanded_Light`, `JustLanded_Heavy`, `Get_LandVelocity`, `PlayLand`, `PlayMovingLand` | `RpgLandingRuntime` owns pointer-free final-airborne capture, role/fallback, request serials, handoff, and timeout policy; `URpgAnimInstance` retains database pointers, the reflected facade, exact asset latch, and Blend Stack observation | Same split; database membership and feel move to assets in #81 step 4 | Landing begins only on the physical CMC touchdown edge. Prediction may strengthen severity but never starts landing. Idle/Walk/Run Light/Heavy are curated; Sprint landing remains deferred until authoritative Sprint issue #62. |
+| `JustLanded_Light`, `JustLanded_Heavy`, `Get_LandVelocity`, `PlayLand`, `PlayMovingLand` | `RpgLandingRuntime` owns pointer-free final-airborne capture, role/fallback, request serials, handoff, and timeout policy; `URpgAnimInstance` retains the reflected facade, exact asset latch, and Blend Stack observation; the profile owns landing database membership and feel | Same native mechanism plus designer-owned profile configuration | Landing begins only on the physical CMC touchdown edge. Prediction may strengthen severity but never starts landing. Idle/Walk/Run Light/Heavy are curated; Sprint landing remains deferred until authoritative Sprint issue #62. |
 | `AllowFootPinning`, foot-placement settings helpers | Proxy game-thread traces, `RpgFootPlacement` value helpers, `FAnimNode_RpgFootPlacement` | Existing focused native types/node plus AnimBP tuning | Project-local snapshots make the node worker-safe and preserve moving-base handling; crouch stays opted out by default. |
 | `Get_DesiredFacing`, `EnableSteering`, Orientation Warping gates | `URpgAnimInstance::GetGaspBlendStackInputs`, authored curves, and the immutable `FRpgGaspPresentationAssetLookup` | Existing AnimBP/presentation profile seam, with only value inputs supplied natively | `DA_RpgGaspPresentationProfile` explicitly preserves the old 170-sequence presentation domain without package/name reads on workers. Local fall, idle/crouch/TIP, and moving-landing adaptations remain unchanged. |
-| Sparse database and state selection | Fixed native role enum/mapping plus project-local Pose Search assets | Validated designer-owned profile/Chooser with stable native schema only where required | Curated databases remain project-owned; fixed mappings are compatibility state during #81, not the intended final presentation owner. |
+| Sparse database and state selection | Stable native role enum plus the profile's unordered 18-database hard-reference set and immutable bidirectional cache | Same validated profile/cache seam | Each database has exactly one known `Rpg.MotionMatching.Role.*` identity tag. State tags may remain additive source/provenance metadata, but the profile validator and runtime cache do not require or consult them. Legacy flat bindings remain only as a whole-mode compatibility path. |
 | Slide and other optional locomotion families | Not adopted; no runtime owner | No #81 owner; Adopt/Defer/Reject decision belongs to audit issue #74 | #81 does not pre-approve content families or grow the AnimInstance role architecture. |
 | `Debug_ExperimentalStateMachine`, full GASP Mover/Traversal stack, sample camera, Foley | Not adopted; no runtime owner | No runtime owner without a dedicated isolated feature evaluation | These sample subsystems are outside the CMC pilot contract and are never incidental dependencies. Curated traversal assets may only enter later through project-owned CMC/GAS/Motion-Warping seams. |
 | Sample character/mode composition | Existing `BP_Rpg_Character_GASP`, `DA_PawnData_GASP`, and pilot Experience | Existing Lyra-derived pilot composition remains unchanged | Only the GASP sample character hierarchy is not adopted. #81 does not change PawnData, Experience selection, or the default pawn cutover. |
@@ -76,8 +79,10 @@ the sample project a runtime dependency.
    synthetic facing policy to `RpgTurnInPlaceRuntime`. Slice 3c moves physical jump edges and the
    bounded backward-start/fall continuation policy to `RpgJumpRuntime`; slice 3d moves final-airborne
    capture, landing role/fallback, handoff, serial, and timeout policy to `RpgLandingRuntime`.
-4. Externalize database-to-role mapping and feel tuning into an asset/profile seam; keep the
-   AnimInstance as the stable AnimBP facade and engine callback coordinator.
+4. Externalize database-to-role mapping and feel tuning into the existing presentation profile;
+   keep the AnimInstance as the stable AnimBP facade and engine callback coordinator. This step is
+   implemented by the exact 18-database hard-reference set, role-tag-built immutable cache, and
+   copied `FRpgGaspLocomotionTuning` snapshot.
 
 Each step must build independently and keep the pilot Experience reversible. New locomotion
 families, Sprint authority, combat polish, and default PawnData cutover are separate issues.
@@ -107,10 +112,10 @@ families, Sprint authority, combat polish, and default PawnData cutover are sepa
 ## Slice 3a boundary and verification contract
 
 - **Authority and lifecycle:** CharacterMovement remains authoritative. The AnimInstance callback
-  builds a pointer-free movement snapshot, `RpgMotionMatchingRuntime` deterministically resolves
-  ordered roles and completed-search policy, and the callback facade alone maps those roles to
-  configured database pointers. The runtime performs no actor, component, world, ASC, or asset
-  access and creates no parallel gameplay or locomotion state machine.
+  built a pointer-free movement snapshot, `RpgMotionMatchingRuntime` deterministically resolved
+  ordered roles and completed-search policy, and the callback facade alone mapped those roles to
+  configured database pointers in this slice. The runtime performs no actor, component, world,
+  ASC, or asset access and creates no parallel gameplay or locomotion state machine.
 - **Native type count:** zero new `UObject` classes. Three non-reflected value structs plus one
   bounded role-list alias and focused namespace functions move the existing selector,
   ground-domain interrupt, landing-role classification, and PostSelection policy out of
@@ -118,13 +123,13 @@ families, Sprint authority, combat polish, and default PawnData cutover are sepa
 - **Replication and persistence:** none added or changed. Selection and latch results remain local,
   derived cosmetic presentation state; no network role, authority input, replicated property, or
   saved state is introduced.
-- **Designer/editor work:** no Blueprint, DataAsset, Pose Search database, manifest, or content
-  asset changes. Every reflected database property name, default, graph callback, and authored
-  tuning value remains compatible. Database-to-role mapping and feel externalization stay in
-  issue #81 step 4, so no MCP/editor authoring is required for this slice.
+- **Designer/editor work:** this slice changed no Blueprint, DataAsset, Pose Search database,
+  manifest, or content asset. Every reflected database property name, default, graph callback, and
+  authored tuning value remained compatible; the later step 4 now owns database-to-role mapping
+  and feel through `DA_RpgGaspPresentationProfile`.
 - **Stable tests:** `SurvivalRpg.Animation.MotionMatching.GroundDatabaseResolver` directly owns the
   extracted role ordering, boundaries, pivot, interrupt, landing-role, and PostSelection value
-  contracts while retaining coverage of the AnimInstance database-pointer bridge. The jump,
+  contracts while retaining coverage of the AnimInstance role-to-database bridge. The jump,
   landing, turn-in-place, and pilot asset contracts guard adjacent lifecycle and serialization
   behavior; the complete `SurvivalRpg.Animation` filter is the regression gate.
 
@@ -142,10 +147,10 @@ families, Sprint authority, combat polish, and default PawnData cutover are sepa
 - **Replication and persistence:** none added or changed. The existing flat transient Blueprint
   properties keep their names, types, and defaults as the stable read facade. The request state is
   locally derived and cosmetic; it is neither replicated nor saved.
-- **Designer/editor work:** no Blueprint, DataAsset, Pose Search database, manifest, PawnData, or
-  Experience changes. The database pointer, GC-tracked selected asset, completed-search callback,
-  and Blend Stack playback observation remain in `URpgAnimInstance`; threshold externalization is
-  still issue #81 step 4, so no MCP/editor authoring is required.
+- **Designer/editor work:** this slice changed no Blueprint, DataAsset, Pose Search database,
+  manifest, PawnData, or Experience. The database pointer, GC-tracked selected asset,
+  completed-search callback, and Blend Stack playback observation remained in `URpgAnimInstance`;
+  the later step 4 now supplies its thresholds from the copied profile tuning.
 - **Stable tests:** `SurvivalRpg.Animation.TurnInPlace.AngleAndTrajectory` directly owns the pure
   quantization, wrap-safe yaw, authored durations, and synthetic-sample contract.
   `SurvivalRpg.Animation.TurnInPlace.StateMachine` retains the complete facade integration contract
@@ -170,14 +175,50 @@ families, Sprint authority, combat polish, and default PawnData cutover are sepa
   transient, pointer-free cosmetic values derived from each role's existing CharacterMovement
   snapshot. No replicated property, save data, RPC, authority path, or parallel gameplay state
   machine is introduced.
-- **Designer/editor work:** no Blueprint, DataAsset, Pose Search database, presentation profile,
-  manifest, PawnData, Experience, or content asset changes. The six landing database pointers,
-  Heavy threshold, immutable presentation lookup, GC-tracked selected/held assets, PostSelection
-  latch, and Blend Stack playback observation remain in `URpgAnimInstance`. No MCP/editor authoring
-  is required; database/tuning externalization remains issue #81 step 4.
+- **Designer/editor work:** these slices changed no Blueprint, DataAsset, Pose Search database,
+  presentation profile, manifest, PawnData, Experience, or content asset. The six landing database
+  pointers, Heavy threshold, immutable presentation lookup, GC-tracked selected/held assets,
+  PostSelection latch, and Blend Stack playback observation remained in `URpgAnimInstance`; the
+  later step 4 now supplies database membership and feel through the profile seam.
 - **Stable tests:** `SurvivalRpg.Animation.Jump.Runtime.LandingSelection` directly owns finite
   capture, epoch/prediction, inclusive 3/700 boundaries, role/fallback, handoff, serial, and watchdog
   policy. `SurvivalRpg.Animation.Jump.Runtime.PhaseAndProceduralGates` owns physical phase edges,
   backward-start/fall continuation, callback facade, exact asset latches, GC cleanup, and procedural
   presentation gates. Trajectory, pilot asset/reflection, and the complete `SurvivalRpg.Animation`
   filter remain adjacent regression gates.
+
+## Slice 4 boundary and verification contract
+
+- **Authority and lifecycle:** `DA_RpgGaspPresentationProfile` is static cosmetic configuration.
+  During `NativeInitializeAnimation`, the AnimInstance validates it, resolves each database's Role
+  tag, builds immutable role-to-pointer and pointer-to-role caches, and copies the tuning struct.
+  Parallel animation updates read only those caches and value snapshots. CharacterMovement, GAS,
+  montage suppression, touchdown authority, request serials, latch/reset policy, and native
+  fail-safe mechanisms are unchanged.
+- **Configuration mode:** a non-empty profile database array selects the whole-profile path. All 18
+  non-`None` roles, presentation coverage, and tuning must validate together; invalid or partial
+  profile configuration fails closed and never mixes individual legacy bindings into the cache.
+  An absent or empty profile database array selects the whole-legacy path, retaining all historical
+  database bindings and the legacy Heavy-landing threshold with native tuning defaults. The legacy
+  bindings are cached only when all 18 are non-null and unique; an already validation-invalid partial
+  legacy CDO fails closed rather than exposing a partial worker-thread cache.
+- **Native type count:** zero new `UObject` classes. The existing profile gains the hard-reference
+  array and one reflected value-only tuning struct; non-reflected lookup/config helpers build and
+  serve the immutable cache. The stable native role enum remains the runtime schema.
+- **Replication and persistence:** none added or changed. Profile data is immutable static content;
+  derived caches and tuning snapshots are local, transient, unsaved, and unreplicated. No profile
+  value becomes authoritative gameplay state.
+- **Designer/editor work:** the only Step 4 content delta is the existing
+  `DA_RpgGaspPresentationProfile`, which now hard-references exactly 18 unique runtime databases and
+  therefore serves as their deterministic load/cook root while retaining its 170 sequence
+  memberships. No AnimBP, PawnData, Experience, Pose Search database, animation, chooser, schema,
+  normalization, manifest, or plugin-asset-count change is part of this step.
+- **Tag contract:** exactly one known `Rpg.MotionMatching.Role.*` tag identifies every database and
+  is consumed only during the game-thread cache build. `Rpg.MotionMatching.State.*` tags are no
+  longer part of profile validation or runtime selection; existing tags may remain as additive
+  metadata and legacy asset-validation compatibility.
+- **Stable tests:** the presentation-profile validation contract protects exact role coverage,
+  hard references, presentation coverage, tuning validity, and fail-closed cache construction.
+  Motion Matching, turn, jump, landing, pilot asset, and complete `SurvivalRpg.Animation` contracts
+  continue to protect defaults, boundary behavior, serialization compatibility, and the unchanged
+  authority/safety mechanisms.

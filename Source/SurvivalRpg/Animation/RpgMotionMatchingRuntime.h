@@ -3,12 +3,12 @@
 #pragma once
 
 #include "CoreMinimal.h"
+#include "RpgGaspLocomotionConfig.h"
 
 enum class ERpgCharacterRotationMode : uint8;
 enum class ERpgLocomotionGait : uint8;
 enum class ERpgLocomotionMovementState : uint8;
 enum class ERpgLocomotionStance : uint8;
-enum class ERpgMotionMatchingDatabaseRole : uint8;
 enum class EPoseSearchInterruptMode : uint8;
 
 /**
@@ -60,24 +60,15 @@ using FRpgResolvedMotionMatchingDatabaseRoles =
 /** Deterministic value-only rules adapted from the relevant GASP Sparse chooser domains. */
 namespace RpgMotionMatchingRuntime
 {
-	inline constexpr float ChooserVelocityTolerance = 0.1f;
-	inline constexpr float ChooserAccelerationTolerance = 0.0001f;
-	inline constexpr float WalkStopMinimumSpeed = 20.0f;
-	inline constexpr float RunStopMinimumSpeed = 100.0f;
-	inline constexpr float SprintStopMinimumSpeed = 550.0f;
-	inline constexpr float FreeRunPivotMinimumAngle = 45.0f;
-	inline constexpr float CombatStrafeRunPivotMinimumAngle = 30.0f;
-	inline constexpr float AimRunPivotMinimumAngle = 0.0f;
-	inline constexpr float RunStartMinimumFutureSpeedGain = 100.0f;
-	inline constexpr float RunStartFutureVelocityBeginTime = 0.4f;
-	inline constexpr float RunStartFutureVelocityEndTime = 0.5f;
-
 	/** Mirrors GASP's logical Moving state from finite horizontal velocity and acceleration. */
 	SURVIVALRPG_API bool IsChooserMoving(
-		const FRpgGroundMotionMatchingSelectionSnapshot& Snapshot);
+		const FRpgGroundMotionMatchingSelectionSnapshot& Snapshot,
+		const FRpgGaspLocomotionTuning& Tuning = FRpgGaspLocomotionTuning());
 
 	/** Resolves the source GASP pivot threshold for the active facing policy, in degrees. */
-	SURVIVALRPG_API float GetRunPivotMinimumAngle(ERpgCharacterRotationMode RotationMode);
+	SURVIVALRPG_API float GetRunPivotMinimumAngle(
+		ERpgCharacterRotationMode RotationMode,
+		const FRpgGaspLocomotionTuning& Tuning = FRpgGaspLocomotionTuning());
 
 	/** Returns true only for source-level domain changes that may interrupt a continuing pose. */
 	SURVIVALRPG_API bool ShouldInterruptGroundMotionMatching(
@@ -90,7 +81,8 @@ namespace RpgMotionMatchingRuntime
 	 * Airborne and crouching domains are resolved before grounded Idle/Walk/Run/Sprint rows.
 	 */
 	SURVIVALRPG_API FRpgResolvedMotionMatchingDatabaseRoles ResolveDatabaseRoles(
-		const FRpgGroundMotionMatchingSelectionSnapshot& Snapshot);
+		const FRpgGroundMotionMatchingSelectionSnapshot& Snapshot,
+		const FRpgGaspLocomotionTuning& Tuning = FRpgGaspLocomotionTuning());
 
 	/** Returns true for one of the six curated Idle/Walk/Run Light/Heavy landing roles. */
 	SURVIVALRPG_API bool IsLandingDatabaseRole(ERpgMotionMatchingDatabaseRole Role);

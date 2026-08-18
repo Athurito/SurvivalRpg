@@ -43,32 +43,6 @@ enum class ERpgLocomotionGait : uint8
 	Sprint,
 };
 
-/** Stable project roles for every Pose Search database used by the curated GASP CMC runtime. */
-UENUM(BlueprintType)
-enum class ERpgMotionMatchingDatabaseRole : uint8
-{
-	None,
-	StandIdle,
-	StandWalk,
-	StandWalkStops,
-	StandRunLoops,
-	StandRunPivots,
-	StandRunStarts,
-	StandRunStops,
-	StandSprint,
-	StandSprintStops,
-	Crouch,
-	StandTurnInPlace,
-	Jump,
-	StandLightLanding,
-	StandHeavyLanding,
-	WalkLightLanding,
-	WalkHeavyLanding,
-	RunLightLanding,
-	RunHeavyLanding,
-	Count UMETA(Hidden),
-};
-
 /**
  * Static grounded Pose Search database groups consumed by the project-local locomotion selector.
  *
@@ -350,10 +324,10 @@ public:
 		const FAnimUpdateContext& Context,
 		const FAnimNodeReference& Node);
 
-	/** Returns the one project-owned role tag required on a runtime Pose Search database. */
+	/** Returns the project-owned role tag resolved once while building a profile database cache. */
 	static FName GetMotionMatchingDatabaseRoleTag(ERpgMotionMatchingDatabaseRole Role);
 
-	/** Returns the one project-owned locomotion-state tag required for a database role. */
+	/** Returns legacy state metadata retained for compatibility diagnostics, not runtime selection. */
 	static FName GetMotionMatchingDatabaseStateTag(ERpgMotionMatchingDatabaseRole Role);
 
 	/**
@@ -449,71 +423,67 @@ protected:
 	FRpgTrajectoryCollisionSettings TrajectoryCollisionSettings;
 
 	/**
-	 * Project-local grounded database groups resolved from the cosmetic gait snapshot.
-	 * Static designer-authored defaults; runtime evaluation reads but never mutates these references.
+	 * Legacy serialized grounded database fallback used only when the bound profile has no database set.
+	 * Profile-bound runtimes never merge or read these references during parallel evaluation.
 	 */
 	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Rpg|Animation|Motion Matching")
 	FRpgGroundMotionMatchingDatabaseSets GroundMotionMatchingDatabaseSets;
 
 	/**
-	 * Pose Search database used for grounded crouching locomotion.
-	 * This is static designer-authored configuration and must not be mutated while an AnimInstance is evaluating.
+	 * Legacy serialized crouching database fallback used only when profile database mapping is absent.
 	 */
 	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Rpg|Animation|Motion Matching")
 	TObjectPtr<UPoseSearchDatabase> CrouchingMotionMatchingDatabase;
 
 	/**
-	 * Exclusive Pose Search database for authored standing turn-in-place clips.
-	 * Static designer configuration; runtime selection remains cosmetic and never rotates the owning actor.
+	 * Legacy serialized turn-in-place database fallback used only when profile mapping is absent.
 	 */
 	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Rpg|Animation|Motion Matching")
 	TObjectPtr<UPoseSearchDatabase> TurnInPlaceMotionMatchingDatabase;
 
 	/**
-	 * Pose Search databases used while airborne by Motion Matching AnimBPs.
-	 * Static designer-authored defaults; never mutate this array while an AnimInstance is evaluating.
+	 * Legacy serialized airborne database fallback used only when profile mapping is absent.
 	 */
 	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Rpg|Animation|Motion Matching")
 	TArray<TObjectPtr<UPoseSearchDatabase>> AirborneMotionMatchingDatabases;
 
 	/**
-	 * Explicit designer-owned membership for GASP procedural presentation categories.
-	 * The profile is snapshotted into a worker-safe lookup during animation initialization and is
-	 * never read or mutated by parallel animation callbacks.
+	 * Designer-owned GASP presentation membership, complete runtime database set, and cosmetic feel.
+	 * Static profile data is snapshotted into worker-safe lookups and values during initialization.
 	 */
 	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Rpg|Animation|Presentation")
 	TObjectPtr<URpgGaspPresentationProfile> GaspPresentationProfile;
 
 	/**
-	 * Exclusive stand-idle light-landing database searched once per matching physical touchdown.
-	 * This preserves the #66 serialized property and exact four-clip Idle-Light contract.
+	 * Legacy serialized stand-idle Light landing fallback. This preserves the #66 property name and
+	 * exact four-clip contract while a valid profile is the active runtime source.
 	 */
 	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Rpg|Animation|Motion Matching")
 	TObjectPtr<UPoseSearchDatabase> LandingMotionMatchingDatabase;
 
-	/** Exclusive stand-idle heavy-landing database selected at or above HeavyLandingSpeedThreshold. */
+	/** Legacy serialized stand-idle Heavy landing fallback retained for AnimBP compatibility. */
 	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Rpg|Animation|Motion Matching")
 	TObjectPtr<UPoseSearchDatabase> StandHeavyLandingMotionMatchingDatabase;
 
-	/** Exclusive Walk light-landing database selected from frozen pre-touchdown movement context. */
+	/** Legacy serialized Walk Light landing fallback retained for AnimBP compatibility. */
 	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Rpg|Animation|Motion Matching")
 	TObjectPtr<UPoseSearchDatabase> WalkLightLandingMotionMatchingDatabase;
 
-	/** Exclusive Walk heavy-landing database selected at or above HeavyLandingSpeedThreshold. */
+	/** Legacy serialized Walk Heavy landing fallback retained for AnimBP compatibility. */
 	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Rpg|Animation|Motion Matching")
 	TObjectPtr<UPoseSearchDatabase> WalkHeavyLandingMotionMatchingDatabase;
 
-	/** Exclusive Run light-landing database selected from frozen pre-touchdown movement context. */
+	/** Legacy serialized Run Light landing fallback retained for AnimBP compatibility. */
 	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Rpg|Animation|Motion Matching")
 	TObjectPtr<UPoseSearchDatabase> RunLightLandingMotionMatchingDatabase;
 
-	/** Exclusive Run heavy-landing database selected at or above HeavyLandingSpeedThreshold. */
+	/** Legacy serialized Run Heavy landing fallback retained for AnimBP compatibility. */
 	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Rpg|Animation|Motion Matching")
 	TObjectPtr<UPoseSearchDatabase> RunHeavyLandingMotionMatchingDatabase;
 
 	/**
-	 * Cosmetic impact-speed boundary between Light and Heavy landing presentation, in cm/s.
-	 * GASP authors 700 cm/s; the comparison is inclusive and never affects fall damage or gameplay.
+	 * Legacy serialized Heavy-landing boundary used only by the whole-legacy fallback.
+	 * GASP authors 700 cm/s; the comparison remains inclusive and cosmetic.
 	 */
 	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Rpg|Animation|Motion Matching", meta = (ClampMin = "1.0", UIMin = "300.0", UIMax = "1200.0", Units = "cm/s"))
 	float HeavyLandingSpeedThreshold = 700.0f;
@@ -731,7 +701,7 @@ private:
 		UPoseSearchDatabase* Database = nullptr;
 	};
 
-	/** Integrity summary for project role/state tags and role-to-database ownership. */
+	/** Integrity summary for the whole-legacy role/state-tag compatibility configuration. */
 	struct FMotionMatchingDatabaseRoleValidation
 	{
 		bool bHasNullDatabase = false;
@@ -777,19 +747,24 @@ private:
 	static FGroundMotionMatchingDatabaseSetValidation ValidateGroundMotionMatchingDatabaseSets(
 		const FRpgGroundMotionMatchingDatabaseSets& DatabaseSets);
 
-	/** Validates one unique configured database plus one expected project role/state tag per role. */
+	/** Validates the legacy fixed slots plus their historical role/state metadata. */
 	static FMotionMatchingDatabaseRoleValidation ValidateMotionMatchingDatabaseRoleContracts(
 		TConstArrayView<FMotionMatchingDatabaseRoleContract> Contracts);
 
-	/** Resolves a runtime role only from the database's immutable project tag contract. */
+	/** Resolves one role tag for whole-legacy validation and focused compatibility diagnostics. */
 	static ERpgMotionMatchingDatabaseRole ResolveMotionMatchingDatabaseRole(
 		const UPoseSearchDatabase* Database);
+
+	/** Resolves only databases active in the selected whole-profile or whole-legacy configuration. */
+	ERpgMotionMatchingDatabaseRole ResolveConfiguredMotionMatchingDatabaseRole(
+		const UPoseSearchDatabase* Database) const;
 
 	/** Updates or resets the final-airborne snapshot from current value-only proxy inputs. */
 	static void UpdateLandingSelectionSnapshot(
 		FRpgAnimInstanceProxy& Proxy,
 		float InputMagnitude,
-		const FVector& GravityAcceleration);
+		const FVector& GravityAcceleration,
+		const FRpgGaspLocomotionTuning& Tuning = FRpgGaspLocomotionTuning());
 
 	/** Applies Heavy-to-Light database fallback to an already resolved landing role. */
 	ERpgMotionMatchingDatabaseRole ResolveAvailableLandingDatabaseRole(
@@ -802,9 +777,19 @@ private:
 	/** Builds the complete static role contract from the AnimBP defaults without loading assets. */
 	FMotionMatchingDatabaseRoleContracts BuildMotionMatchingDatabaseRoleContracts() const;
 
-	/** Returns the configured database for one role, or null when its fixed slot is invalid. */
+	/** Returns one reflected whole-legacy database slot without consulting runtime cache state. */
+	UPoseSearchDatabase* GetLegacyMotionMatchingDatabaseForRole(
+		ERpgMotionMatchingDatabaseRole Role) const;
+
+	/** Returns the configured database for one role from the immutable runtime cache. */
 	UPoseSearchDatabase* GetMotionMatchingDatabaseForRole(
 		ERpgMotionMatchingDatabaseRole Role) const;
+
+	/** True when a non-empty profile database set selects the all-profile configuration mode. */
+	bool UsesProfileRuntimeConfiguration() const;
+
+	/** Builds immutable presentation/database caches and selects the atomic profile or legacy mode. */
+	void InitializeGaspRuntimeConfiguration();
 
 	/** Value-only result used to keep Reset Root, Orientation Warping, and Steering gates independent. */
 	struct FGaspProceduralGates
@@ -975,6 +960,12 @@ private:
 
 	/** Immutable presentation traits built on the game thread from GaspPresentationProfile. */
 	FRpgGaspPresentationAssetLookup GaspPresentationAssetLookup;
+	/** Immutable bidirectional database mapping built from the selected profile or legacy facade. */
+	FRpgGaspMotionMatchingDatabaseLookup GaspMotionMatchingDatabaseLookup;
+	/** Pointer-free cosmetic feel copied once for game-thread proxy and worker-thread runtime use. */
+	FRpgGaspLocomotionTuning RuntimeGaspLocomotionTuning;
+	/** Whole-profile versus whole-legacy mode selected once before parallel animation updates. */
+	bool bUseProfileRuntimeConfiguration = false;
 
 	friend struct FRpgAnimInstanceProxy;
 #if WITH_DEV_AUTOMATION_TESTS

@@ -7,6 +7,7 @@
 #include "PoseSearch/PoseSearchDatabase.h"
 #include "Components/SkeletalMeshComponent.h"
 #include "SurvivalRpg/Animation/RpgAnimInstance.h"
+#include "SurvivalRpg/Animation/RpgGaspLocomotionConfig.h"
 #include "SurvivalRpg/Animation/RpgTurnInPlaceRuntime.h"
 #include "UObject/UObjectGlobals.h"
 
@@ -18,6 +19,8 @@ IMPLEMENT_SIMPLE_AUTOMATION_TEST(
 
 bool FRpgTurnInPlaceAngleAndTrajectoryTest::RunTest(const FString& Parameters)
 {
+	const FRpgGaspLocomotionTuning DefaultTuning;
+
 	struct FQuantizationCase
 	{
 		float Input;
@@ -40,7 +43,7 @@ bool FRpgTurnInPlaceAngleAndTrajectoryTest::RunTest(const FString& Parameters)
 		TestTrue(
 			FString::Printf(TEXT("%.2f degrees quantizes to %.0f"), TestCase.Input, TestCase.Expected),
 			FMath::IsNearlyEqual(
-				RpgTurnInPlaceRuntime::QuantizeAngle(TestCase.Input),
+				RpgTurnInPlaceRuntime::QuantizeAngle(TestCase.Input, DefaultTuning),
 				TestCase.Expected));
 	}
 
@@ -50,31 +53,63 @@ bool FRpgTurnInPlaceAngleAndTrajectoryTest::RunTest(const FString& Parameters)
 	TestTrue(
 		TEXT("Negative yaw wrap is minus two degrees"),
 		FMath::IsNearlyEqual(RpgTurnInPlaceRuntime::CalculateYawDelta(-179.0f, 179.0f), -2.0f));
-	TestTrue(TEXT("45-degree duration is 0.45 seconds"), FMath::IsNearlyEqual(RpgTurnInPlaceRuntime::GetFacingDuration(45.0f), 0.45f));
-	TestTrue(TEXT("90-degree duration is 0.65 seconds"), FMath::IsNearlyEqual(RpgTurnInPlaceRuntime::GetFacingDuration(90.0f), 0.65f));
-	TestTrue(TEXT("135-degree duration is 0.85 seconds"), FMath::IsNearlyEqual(RpgTurnInPlaceRuntime::GetFacingDuration(135.0f), 0.85f));
-	TestTrue(TEXT("180-degree duration is 1.0 second"), FMath::IsNearlyEqual(RpgTurnInPlaceRuntime::GetFacingDuration(180.0f), 1.0f));
+	TestTrue(TEXT("45-degree duration is 0.45 seconds"), FMath::IsNearlyEqual(RpgTurnInPlaceRuntime::GetFacingDuration(45.0f, DefaultTuning), 0.45f));
+	TestTrue(TEXT("90-degree duration is 0.65 seconds"), FMath::IsNearlyEqual(RpgTurnInPlaceRuntime::GetFacingDuration(90.0f, DefaultTuning), 0.65f));
+	TestTrue(TEXT("135-degree duration is 0.85 seconds"), FMath::IsNearlyEqual(RpgTurnInPlaceRuntime::GetFacingDuration(135.0f, DefaultTuning), 0.85f));
+	TestTrue(TEXT("180-degree duration is 1.0 second"), FMath::IsNearlyEqual(RpgTurnInPlaceRuntime::GetFacingDuration(180.0f, DefaultTuning), 1.0f));
 	TestTrue(
 		TEXT("Looping playback uses the fixed stuck-playback watchdog"),
 		FMath::IsNearlyEqual(
-			RpgTurnInPlaceRuntime::CalculatePlaybackWatchdogDuration(4.0f, 0.5f, true),
-			RpgTurnInPlaceRuntime::ActiveTimeout));
+			RpgTurnInPlaceRuntime::CalculatePlaybackWatchdogDuration(
+				4.0f,
+				0.5f,
+				true,
+				DefaultTuning),
+			DefaultTuning.TurnActiveTimeout));
 	TestTrue(
 		TEXT("A slow non-looping clip converts its remaining duration to wall-clock time"),
-		RpgTurnInPlaceRuntime::CalculatePlaybackWatchdogDuration(2.0f, 0.5f, false) > 4.0f);
+		RpgTurnInPlaceRuntime::CalculatePlaybackWatchdogDuration(
+			2.0f,
+			0.5f,
+			false,
+			DefaultTuning) > 4.0f);
+
+	FRpgGaspLocomotionTuning CustomTurnTuning = DefaultTuning;
+	CustomTurnTuning.TurnActivationThreshold = 50.0f;
+	CustomTurnTuning.TurnFacingDuration90 = 1.3f;
+	CustomTurnTuning.TurnFacingDuration135 = 1.3f;
+	CustomTurnTuning.TurnFacingDuration180 = 1.3f;
+	CustomTurnTuning.TurnActiveTimeout = 2.5f;
+	TestTrue(
+		TEXT("A custom activation threshold suppresses the compatibility 45-degree request"),
+		FMath::IsNearlyZero(RpgTurnInPlaceRuntime::QuantizeAngle(40.0f, CustomTurnTuning)));
+	TestTrue(
+		TEXT("A custom profile controls the 90-degree synthetic-facing horizon"),
+		FMath::IsNearlyEqual(
+			RpgTurnInPlaceRuntime::GetFacingDuration(90.0f, CustomTurnTuning),
+			1.3f));
+	TestTrue(
+		TEXT("A custom profile controls the looping turn watchdog"),
+		FMath::IsNearlyEqual(
+			RpgTurnInPlaceRuntime::CalculatePlaybackWatchdogDuration(
+				4.0f,
+				0.5f,
+				true,
+				CustomTurnTuning),
+			2.5f));
 
 	FRpgTurnInPlaceRuntimeState WrappedRequestState;
 	WrappedRequestState.AccumulatedYaw = 90.0f;
 	WrappedRequestState.RequestSerial = MAX_uint32;
 	const FRpgTurnInPlaceUpdateResult WrappedRequest =
-		RpgTurnInPlaceRuntime::BeginRequest(WrappedRequestState, 90.0f);
+		RpgTurnInPlaceRuntime::BeginRequest(WrappedRequestState, 90.0f, DefaultTuning);
 	TestEqual(TEXT("Turn request serial wrap skips reserved zero"), WrappedRequest.State.RequestSerial, 1u);
 	TestTrue(TEXT("A new request clears the previous selection bridge"), WrappedRequest.bClearSelection);
 	TestTrue(
 		TEXT("A new request restores the bounded selection watchdog"),
 		FMath::IsNearlyEqual(
 			WrappedRequest.State.PlaybackWatchdogDuration,
-			RpgTurnInPlaceRuntime::ActiveTimeout));
+			DefaultTuning.TurnActiveTimeout));
 
 	FTransformTrajectory SourceTrajectory;
 	const FVector CurrentPosition(100.0f, 200.0f, 25.0f);
@@ -91,7 +126,8 @@ bool FRpgTurnInPlaceAngleAndTrajectoryTest::RunTest(const FString& Parameters)
 		SourceTrajectory,
 		100.0f,
 		90.0f,
-		90.0f);
+		90.0f,
+		DefaultTuning);
 	TestEqual(TEXT("Synthetic trajectory preserves the exact sample count"), SyntheticTrajectory.Samples.Num(), SourceTrajectory.Samples.Num());
 
 	float PreviousTime = -MAX_flt;
@@ -116,7 +152,8 @@ bool FRpgTurnInPlaceAngleAndTrajectoryTest::RunTest(const FString& Parameters)
 		SourceTrajectory,
 		-90.0f,
 		-90.0f,
-		-90.0f);
+		-90.0f,
+		DefaultTuning);
 	float PreviousNegativeProgress = MAX_flt;
 	for (const FTransformTrajectorySample& Sample : NegativeSyntheticTrajectory.Samples)
 	{
@@ -137,7 +174,8 @@ bool FRpgTurnInPlaceAngleAndTrajectoryTest::RunTest(const FString& Parameters)
 		SourceTrajectory,
 		180.0f,
 		180.0f,
-		180.0f);
+		180.0f,
+		DefaultTuning);
 	const float DirectHalfTurnProgressAtEightTenths = FMath::FindDeltaAngleDegrees(
 		0.0f,
 		DirectHalfTurnTrajectory.Samples[4].Facing.Rotator().Yaw);
@@ -161,6 +199,37 @@ IMPLEMENT_SIMPLE_AUTOMATION_TEST(
 
 bool FRpgTurnInPlaceStateMachineTest::RunTest(const FString& Parameters)
 {
+	const FRpgGaspLocomotionTuning DefaultTuning;
+	const auto InitializeCompleteLegacyDatabaseFacade = [](URpgAnimInstance& AnimInstance)
+	{
+		const auto MakeDatabase = []()
+		{
+			return NewObject<UPoseSearchDatabase>();
+		};
+
+		AnimInstance.GroundMotionMatchingDatabaseSets.Idle[0] = MakeDatabase();
+		AnimInstance.GroundMotionMatchingDatabaseSets.Walk[0] = MakeDatabase();
+		AnimInstance.GroundMotionMatchingDatabaseSets.Walk[1] = MakeDatabase();
+		AnimInstance.GroundMotionMatchingDatabaseSets.Run[0] = MakeDatabase();
+		AnimInstance.GroundMotionMatchingDatabaseSets.Run[1] = MakeDatabase();
+		AnimInstance.GroundMotionMatchingDatabaseSets.Run[2] = MakeDatabase();
+		AnimInstance.GroundMotionMatchingDatabaseSets.Run[3] = MakeDatabase();
+		AnimInstance.GroundMotionMatchingDatabaseSets.Sprint[0] = MakeDatabase();
+		AnimInstance.GroundMotionMatchingDatabaseSets.Sprint[1] = MakeDatabase();
+		AnimInstance.CrouchingMotionMatchingDatabase = MakeDatabase();
+		AnimInstance.TurnInPlaceMotionMatchingDatabase = MakeDatabase();
+		AnimInstance.AirborneMotionMatchingDatabases.Add(MakeDatabase());
+		AnimInstance.LandingMotionMatchingDatabase = MakeDatabase();
+		AnimInstance.StandHeavyLandingMotionMatchingDatabase = MakeDatabase();
+		AnimInstance.WalkLightLandingMotionMatchingDatabase = MakeDatabase();
+		AnimInstance.WalkHeavyLandingMotionMatchingDatabase = MakeDatabase();
+		AnimInstance.RunLightLandingMotionMatchingDatabase = MakeDatabase();
+		AnimInstance.RunHeavyLandingMotionMatchingDatabase = MakeDatabase();
+
+		AnimInstance.InitializeGaspRuntimeConfiguration();
+		return AnimInstance.TurnInPlaceMotionMatchingDatabase.Get();
+	};
+
 	TestFalse(
 		TEXT("The first owner snapshot cannot report a turn-in-place policy transition"),
 		RpgTurnInPlaceRuntime::DidSupportChange(
@@ -200,17 +269,19 @@ bool FRpgTurnInPlaceStateMachineTest::RunTest(const FString& Parameters)
 
 	USkeletalMeshComponent* AnimInstanceOuter = NewObject<USkeletalMeshComponent>();
 	URpgAnimInstance* AnimInstance = NewObject<URpgAnimInstance>(AnimInstanceOuter);
-	UPoseSearchDatabase* TurnDatabase = NewObject<UPoseSearchDatabase>();
 	UAnimSequence* SelectedTurn = NewObject<UAnimSequence>();
 	UAnimSequence* PreviousIdle = NewObject<UAnimSequence>();
 	if (!TestNotNull(TEXT("Transient RPG AnimInstance can be created"), AnimInstance) ||
-		!TestNotNull(TEXT("Transient turn database can be created"), TurnDatabase) ||
 		!TestNotNull(TEXT("Transient selected turn can be created"), SelectedTurn) ||
 		!TestNotNull(TEXT("Transient previous idle can be created"), PreviousIdle))
 	{
 		return false;
 	}
-	AnimInstance->TurnInPlaceMotionMatchingDatabase = TurnDatabase;
+	UPoseSearchDatabase* TurnDatabase = InitializeCompleteLegacyDatabaseFacade(*AnimInstance);
+	if (!TestNotNull(TEXT("Transient turn database can be created"), TurnDatabase))
+	{
+		return false;
+	}
 
 	FRpgAnimInstanceProxy Proxy;
 	Proxy.MovementState = ERpgLocomotionMovementState::Grounded;
@@ -260,9 +331,9 @@ bool FRpgTurnInPlaceStateMachineTest::RunTest(const FString& Parameters)
 	Proxy.RotationMode = ERpgCharacterRotationMode::Aim;
 	TestTrue(TEXT("Aim rotation mode allows turn-in-place eligibility"), IsTurnInPlaceEligible());
 	Proxy.RotationMode = ERpgCharacterRotationMode::CombatStrafe;
-	Proxy.GroundSpeed = RpgTurnInPlaceRuntime::IdleSpeedThreshold;
+	Proxy.GroundSpeed = DefaultTuning.StationarySpeedThreshold;
 	TestTrue(TEXT("The project stationary gate includes exactly three centimeters per second"), IsTurnInPlaceEligible());
-	Proxy.GroundSpeed = RpgTurnInPlaceRuntime::IdleSpeedThreshold + KINDA_SMALL_NUMBER;
+	Proxy.GroundSpeed = DefaultTuning.StationarySpeedThreshold + KINDA_SMALL_NUMBER;
 	TestFalse(TEXT("Turn-in-place eligibility rejects speeds just above three centimeters per second"), IsTurnInPlaceEligible());
 	Proxy.GroundSpeed = 0.0f;
 
@@ -793,7 +864,7 @@ bool FRpgTurnInPlaceStateMachineTest::RunTest(const FString& Parameters)
 	{
 		USkeletalMeshComponent* FrameRateAnimInstanceOuter = NewObject<USkeletalMeshComponent>();
 		URpgAnimInstance* FrameRateAnimInstance = NewObject<URpgAnimInstance>(FrameRateAnimInstanceOuter);
-		FrameRateAnimInstance->TurnInPlaceMotionMatchingDatabase = TurnDatabase;
+		InitializeCompleteLegacyDatabaseFacade(*FrameRateAnimInstance);
 		FRpgAnimInstanceProxy FrameRateProxy;
 		FrameRateProxy.MovementState = ERpgLocomotionMovementState::Grounded;
 		FrameRateProxy.Gait = ERpgLocomotionGait::Idle;
