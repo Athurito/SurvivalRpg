@@ -7,6 +7,7 @@
 #include "PoseSearch/PoseSearchDatabase.h"
 #include "Components/SkeletalMeshComponent.h"
 #include "SurvivalRpg/Animation/RpgAnimInstance.h"
+#include "SurvivalRpg/Animation/RpgTurnInPlaceRuntime.h"
 #include "UObject/UObjectGlobals.h"
 
 IMPLEMENT_SIMPLE_AUTOMATION_TEST(
@@ -39,20 +40,41 @@ bool FRpgTurnInPlaceAngleAndTrajectoryTest::RunTest(const FString& Parameters)
 		TestTrue(
 			FString::Printf(TEXT("%.2f degrees quantizes to %.0f"), TestCase.Input, TestCase.Expected),
 			FMath::IsNearlyEqual(
-				URpgAnimInstance::QuantizeTurnInPlaceAngle(TestCase.Input),
+				RpgTurnInPlaceRuntime::QuantizeAngle(TestCase.Input),
 				TestCase.Expected));
 	}
 
 	TestTrue(
 		TEXT("Positive yaw wrap is two degrees"),
-		FMath::IsNearlyEqual(URpgAnimInstance::CalculateTurnInPlaceYawDelta(179.0f, -179.0f), 2.0f));
+		FMath::IsNearlyEqual(RpgTurnInPlaceRuntime::CalculateYawDelta(179.0f, -179.0f), 2.0f));
 	TestTrue(
 		TEXT("Negative yaw wrap is minus two degrees"),
-		FMath::IsNearlyEqual(URpgAnimInstance::CalculateTurnInPlaceYawDelta(-179.0f, 179.0f), -2.0f));
-	TestTrue(TEXT("45-degree duration is 0.45 seconds"), FMath::IsNearlyEqual(URpgAnimInstance::GetTurnInPlaceFacingDuration(45.0f), 0.45f));
-	TestTrue(TEXT("90-degree duration is 0.65 seconds"), FMath::IsNearlyEqual(URpgAnimInstance::GetTurnInPlaceFacingDuration(90.0f), 0.65f));
-	TestTrue(TEXT("135-degree duration is 0.85 seconds"), FMath::IsNearlyEqual(URpgAnimInstance::GetTurnInPlaceFacingDuration(135.0f), 0.85f));
-	TestTrue(TEXT("180-degree duration is 1.0 second"), FMath::IsNearlyEqual(URpgAnimInstance::GetTurnInPlaceFacingDuration(180.0f), 1.0f));
+		FMath::IsNearlyEqual(RpgTurnInPlaceRuntime::CalculateYawDelta(-179.0f, 179.0f), -2.0f));
+	TestTrue(TEXT("45-degree duration is 0.45 seconds"), FMath::IsNearlyEqual(RpgTurnInPlaceRuntime::GetFacingDuration(45.0f), 0.45f));
+	TestTrue(TEXT("90-degree duration is 0.65 seconds"), FMath::IsNearlyEqual(RpgTurnInPlaceRuntime::GetFacingDuration(90.0f), 0.65f));
+	TestTrue(TEXT("135-degree duration is 0.85 seconds"), FMath::IsNearlyEqual(RpgTurnInPlaceRuntime::GetFacingDuration(135.0f), 0.85f));
+	TestTrue(TEXT("180-degree duration is 1.0 second"), FMath::IsNearlyEqual(RpgTurnInPlaceRuntime::GetFacingDuration(180.0f), 1.0f));
+	TestTrue(
+		TEXT("Looping playback uses the fixed stuck-playback watchdog"),
+		FMath::IsNearlyEqual(
+			RpgTurnInPlaceRuntime::CalculatePlaybackWatchdogDuration(4.0f, 0.5f, true),
+			RpgTurnInPlaceRuntime::ActiveTimeout));
+	TestTrue(
+		TEXT("A slow non-looping clip converts its remaining duration to wall-clock time"),
+		RpgTurnInPlaceRuntime::CalculatePlaybackWatchdogDuration(2.0f, 0.5f, false) > 4.0f);
+
+	FRpgTurnInPlaceRuntimeState WrappedRequestState;
+	WrappedRequestState.AccumulatedYaw = 90.0f;
+	WrappedRequestState.RequestSerial = MAX_uint32;
+	const FRpgTurnInPlaceUpdateResult WrappedRequest =
+		RpgTurnInPlaceRuntime::BeginRequest(WrappedRequestState, 90.0f);
+	TestEqual(TEXT("Turn request serial wrap skips reserved zero"), WrappedRequest.State.RequestSerial, 1u);
+	TestTrue(TEXT("A new request clears the previous selection bridge"), WrappedRequest.bClearSelection);
+	TestTrue(
+		TEXT("A new request restores the bounded selection watchdog"),
+		FMath::IsNearlyEqual(
+			WrappedRequest.State.PlaybackWatchdogDuration,
+			RpgTurnInPlaceRuntime::ActiveTimeout));
 
 	FTransformTrajectory SourceTrajectory;
 	const FVector CurrentPosition(100.0f, 200.0f, 25.0f);
@@ -65,7 +87,7 @@ bool FRpgTurnInPlaceAngleAndTrajectoryTest::RunTest(const FString& Parameters)
 		Sample.Facing = FRotator(0.0f, 100.0f, 0.0f).Quaternion();
 	}
 
-	const FTransformTrajectory SyntheticTrajectory = URpgAnimInstance::MakeTurnInPlaceSyntheticTrajectory(
+	const FTransformTrajectory SyntheticTrajectory = RpgTurnInPlaceRuntime::MakeSyntheticTrajectory(
 		SourceTrajectory,
 		100.0f,
 		90.0f,
@@ -90,7 +112,7 @@ bool FRpgTurnInPlaceAngleAndTrajectoryTest::RunTest(const FString& Parameters)
 	}
 	TestTrue(TEXT("Synthetic trajectory reaches the authored target facing"), FMath::IsNearlyEqual(PreviousProgress, 90.0f));
 
-	const FTransformTrajectory NegativeSyntheticTrajectory = URpgAnimInstance::MakeTurnInPlaceSyntheticTrajectory(
+	const FTransformTrajectory NegativeSyntheticTrajectory = RpgTurnInPlaceRuntime::MakeSyntheticTrajectory(
 		SourceTrajectory,
 		-90.0f,
 		-90.0f,
@@ -111,7 +133,7 @@ bool FRpgTurnInPlaceAngleAndTrajectoryTest::RunTest(const FString& Parameters)
 		TEXT("Negative synthetic trajectory reaches the authored target facing"),
 		FMath::IsNearlyEqual(PreviousNegativeProgress, -90.0f));
 
-	const FTransformTrajectory DirectHalfTurnTrajectory = URpgAnimInstance::MakeTurnInPlaceSyntheticTrajectory(
+	const FTransformTrajectory DirectHalfTurnTrajectory = RpgTurnInPlaceRuntime::MakeSyntheticTrajectory(
 		SourceTrajectory,
 		180.0f,
 		180.0f,
@@ -141,31 +163,31 @@ bool FRpgTurnInPlaceStateMachineTest::RunTest(const FString& Parameters)
 {
 	TestFalse(
 		TEXT("The first owner snapshot cannot report a turn-in-place policy transition"),
-		URpgAnimInstance::DidTurnInPlaceSupportChange(
+		RpgTurnInPlaceRuntime::DidSupportChange(
 			false,
 			ERpgCharacterRotationMode::Free,
 			ERpgCharacterRotationMode::CombatStrafe));
 	TestTrue(
 		TEXT("Free to CombatStrafe crosses the turn-in-place policy boundary"),
-		URpgAnimInstance::DidTurnInPlaceSupportChange(
+		RpgTurnInPlaceRuntime::DidSupportChange(
 			true,
 			ERpgCharacterRotationMode::Free,
 			ERpgCharacterRotationMode::CombatStrafe));
 	TestTrue(
 		TEXT("Aim to Free crosses the turn-in-place policy boundary"),
-		URpgAnimInstance::DidTurnInPlaceSupportChange(
+		RpgTurnInPlaceRuntime::DidSupportChange(
 			true,
 			ERpgCharacterRotationMode::Aim,
 			ERpgCharacterRotationMode::Free));
 	TestFalse(
 		TEXT("CombatStrafe to Aim preserves the shared controller-facing policy"),
-		URpgAnimInstance::DidTurnInPlaceSupportChange(
+		RpgTurnInPlaceRuntime::DidSupportChange(
 			true,
 			ERpgCharacterRotationMode::CombatStrafe,
 			ERpgCharacterRotationMode::Aim));
 	TestTrue(
 		TEXT("A policy-boundary snapshot discards even a 180-degree actor-yaw jump"),
-		FMath::IsNearlyZero(URpgAnimInstance::CalculateTurnInPlaceSnapshotYawDelta(
+		FMath::IsNearlyZero(RpgTurnInPlaceRuntime::CalculateSnapshotYawDelta(
 			0.0f,
 			180.0f,
 			false,
@@ -173,7 +195,7 @@ bool FRpgTurnInPlaceStateMachineTest::RunTest(const FString& Parameters)
 	TestTrue(
 		TEXT("An established controller-facing snapshot retains normal authored turn intent"),
 		FMath::IsNearlyEqual(
-			URpgAnimInstance::CalculateTurnInPlaceSnapshotYawDelta(0.0f, 90.0f, false, false),
+			RpgTurnInPlaceRuntime::CalculateSnapshotYawDelta(0.0f, 90.0f, false, false),
 			90.0f));
 
 	USkeletalMeshComponent* AnimInstanceOuter = NewObject<USkeletalMeshComponent>();
@@ -205,14 +227,44 @@ bool FRpgTurnInPlaceStateMachineTest::RunTest(const FString& Parameters)
 	CurrentTrajectorySample.TimeInSeconds = 0.0f;
 	CurrentTrajectorySample.Position = FVector::ZeroVector;
 	CurrentTrajectorySample.Facing = FQuat::Identity;
+	const auto IsTurnInPlaceEligible = [&]()
+	{
+		FRpgTurnInPlaceEligibilitySnapshot Eligibility;
+		Eligibility.RotationMode = Proxy.RotationMode;
+		Eligibility.MovementState = Proxy.MovementState;
+		Eligibility.GroundSpeed = Proxy.GroundSpeed;
+		Eligibility.bHasTurnDatabase = AnimInstance->TurnInPlaceMotionMatchingDatabase != nullptr;
+		Eligibility.bJumpPhaseGrounded = AnimInstance->JumpPhase == ERpgJumpPhase::Grounded;
+		Eligibility.bIsMovingOnGround = Proxy.bIsMovingOnGround;
+		Eligibility.bIsCrouching = Proxy.bIsCrouching;
+		Eligibility.bIsAnyMontagePlaying = Proxy.bIsAnyMontagePlaying;
+		Eligibility.bHasBlockingGameplayTag = Proxy.bHasTurnInPlaceBlockingGameplayTag;
+		Eligibility.bHasGroundedMoveIntent = Proxy.bHasGroundedMoveIntent;
+		Eligibility.bHasTrajectory = !Proxy.TransformTrajectory.Samples.IsEmpty();
+		return RpgTurnInPlaceRuntime::IsEligible(Eligibility);
+	};
+	const auto ResolveTurnInPlaceSearchMode = [&](bool bForceNewRequest)
+	{
+		return RpgTurnInPlaceRuntime::ResolveSearchMode(
+			AnimInstance->CaptureTurnInPlaceRuntimeState(),
+			bForceNewRequest,
+			AnimInstance->TurnInPlaceMotionMatchingDatabase != nullptr,
+			AnimInstance->bTurnInPlaceSelectionLatched,
+			AnimInstance->bTurnInPlaceCompletionArmed);
+	};
 
 	Proxy.RotationMode = ERpgCharacterRotationMode::Free;
-	TestFalse(TEXT("Free rotation mode disables turn-in-place eligibility"), AnimInstance->IsTurnInPlaceEligible(Proxy));
+	TestFalse(TEXT("Free rotation mode disables turn-in-place eligibility"), IsTurnInPlaceEligible());
 	Proxy.RotationMode = ERpgCharacterRotationMode::CombatStrafe;
-	TestTrue(TEXT("Combat strafe rotation mode allows turn-in-place eligibility"), AnimInstance->IsTurnInPlaceEligible(Proxy));
+	TestTrue(TEXT("Combat strafe rotation mode allows turn-in-place eligibility"), IsTurnInPlaceEligible());
 	Proxy.RotationMode = ERpgCharacterRotationMode::Aim;
-	TestTrue(TEXT("Aim rotation mode allows turn-in-place eligibility"), AnimInstance->IsTurnInPlaceEligible(Proxy));
+	TestTrue(TEXT("Aim rotation mode allows turn-in-place eligibility"), IsTurnInPlaceEligible());
 	Proxy.RotationMode = ERpgCharacterRotationMode::CombatStrafe;
+	Proxy.GroundSpeed = RpgTurnInPlaceRuntime::IdleSpeedThreshold;
+	TestTrue(TEXT("The project stationary gate includes exactly three centimeters per second"), IsTurnInPlaceEligible());
+	Proxy.GroundSpeed = RpgTurnInPlaceRuntime::IdleSpeedThreshold + KINDA_SMALL_NUMBER;
+	TestFalse(TEXT("Turn-in-place eligibility rejects speeds just above three centimeters per second"), IsTurnInPlaceEligible());
+	Proxy.GroundSpeed = 0.0f;
 
 	AnimInstance->ResetTurnInPlaceRuntime(false);
 	Proxy.ActorYawDelta = 20.0f;
@@ -257,8 +309,8 @@ bool FRpgTurnInPlaceStateMachineTest::RunTest(const FString& Parameters)
 	TestTrue(TEXT("A request issues its TIR ForceInterrupt exactly once"), bForceSelectedRequest);
 	TestTrue(
 		TEXT("The one forced update searches the exclusive TIR database"),
-		AnimInstance->ResolveTurnInPlaceSearchMode(bForceSelectedRequest) ==
-			URpgAnimInstance::ETurnInPlaceSearchMode::SearchRequestedTurn);
+		ResolveTurnInPlaceSearchMode(bForceSelectedRequest) ==
+			ERpgTurnInPlaceSearchMode::SearchRequestedTurn);
 	TestFalse(
 		TEXT("The same request cannot issue a second TIR ForceInterrupt"),
 		AnimInstance->ConsumeTurnInPlaceForceInterruptRequest());
@@ -273,12 +325,14 @@ bool FRpgTurnInPlaceStateMachineTest::RunTest(const FString& Parameters)
 		FMath::IsNearlyEqual(AnimInstance->TurnInPlaceQueryAngle, 90.0f));
 	TestFalse(
 		TEXT("The dispatched request is no longer eligible for pre-search retargeting"),
-		AnimInstance->CanRetargetTurnInPlaceRequest());
+		RpgTurnInPlaceRuntime::CanRetarget(
+			AnimInstance->CaptureTurnInPlaceRuntimeState(),
+			AnimInstance->bTurnInPlaceSelectionLatched));
 	Proxy.ActorYawDelta = 0.0f;
 	TestTrue(
 		TEXT("An unsuccessful one-shot request does not reopen the TIR database"),
-		AnimInstance->ResolveTurnInPlaceSearchMode(false) ==
-			URpgAnimInstance::ETurnInPlaceSearchMode::NormalLocomotion);
+		ResolveTurnInPlaceSearchMode(false) ==
+			ERpgTurnInPlaceSearchMode::NormalLocomotion);
 	TestFalse(
 		TEXT("A stale request serial cannot latch the current SearchResult"),
 		AnimInstance->TryLatchTurnInPlaceSelection(
@@ -313,8 +367,8 @@ bool FRpgTurnInPlaceStateMachineTest::RunTest(const FString& Parameters)
 	TestTrue(TEXT("The previous completed SearchResult remains latched through a transient mismatch"), AnimInstance->bTurnInPlacePoseSelected);
 	TestTrue(
 		TEXT("A latched selection closes full TIR search and keeps only its Continuing Pose"),
-		AnimInstance->ResolveTurnInPlaceSearchMode(false) ==
-			URpgAnimInstance::ETurnInPlaceSearchMode::ContinueSelectedTurn);
+		ResolveTurnInPlaceSearchMode(false) ==
+			ERpgTurnInPlaceSearchMode::ContinueSelectedTurn);
 	AnimInstance->UpdateTurnInPlaceLatchedPlayback(SelectedTurn, 0.25f, 1.25f, 1.0f, 0.01f);
 	TestTrue(TEXT("The Blend Stack eventually observes the exact latched asset"), AnimInstance->bTurnInPlacePlaybackObserved);
 	AnimInstance->UpdateTurnInPlaceRuntime(0.01f, Proxy);
@@ -330,8 +384,8 @@ bool FRpgTurnInPlaceStateMachineTest::RunTest(const FString& Parameters)
 	TestFalse(TEXT("The full asset remains unfinished when the database's default indexed range has ended"), AnimInstance->bTurnInPlaceCompletionArmed);
 	TestTrue(
 		TEXT("An invalid SearchResult at the indexed-range end cannot reopen the TIR database"),
-		AnimInstance->ResolveTurnInPlaceSearchMode(false) ==
-			URpgAnimInstance::ETurnInPlaceSearchMode::ContinueSelectedTurn);
+		ResolveTurnInPlaceSearchMode(false) ==
+			ERpgTurnInPlaceSearchMode::ContinueSelectedTurn);
 	AnimInstance->UpdateTurnInPlaceRuntime(0.01f, Proxy);
 	TestEqual(TEXT("Indexed-range exhaustion does not end the latched Blend Stack playback"), AnimInstance->TurnInPlaceState, ERpgTurnInPlaceState::Active);
 	TestFalse(TEXT("Indexed-range exhaustion does not hard-reset Offset Root"), AnimInstance->bResetOffsetRootEveryFrame);
@@ -340,8 +394,8 @@ bool FRpgTurnInPlaceStateMachineTest::RunTest(const FString& Parameters)
 	TestTrue(TEXT("Natural full-asset completion is armed one update ahead"), AnimInstance->bTurnInPlaceCompletionArmed);
 	TestTrue(
 		TEXT("Natural completion selects normal locomotion for the upcoming pre-update search"),
-		AnimInstance->ResolveTurnInPlaceSearchMode(false) ==
-			URpgAnimInstance::ETurnInPlaceSearchMode::NormalLocomotion);
+		ResolveTurnInPlaceSearchMode(false) ==
+			ERpgTurnInPlaceSearchMode::NormalLocomotion);
 	AnimInstance->UpdateTurnInPlaceRuntime(0.01f, Proxy);
 	TestEqual(TEXT("Natural completion enters recovery"), AnimInstance->TurnInPlaceState, ERpgTurnInPlaceState::Recovering);
 	TestFalse(TEXT("Natural completion never hard-resets Offset Root"), AnimInstance->bResetOffsetRootEveryFrame);
@@ -396,9 +450,11 @@ bool FRpgTurnInPlaceStateMachineTest::RunTest(const FString& Parameters)
 	TestEqual(TEXT("Movement before TIR selection exits immediately to recovery"), AnimInstance->TurnInPlaceState, ERpgTurnInPlaceState::Recovering);
 	TestTrue(
 		TEXT("Preselection movement exit chooses the normal gait database policy"),
-		AnimInstance->ResolveTurnInPlaceSearchMode(false) ==
-			URpgAnimInstance::ETurnInPlaceSearchMode::NormalLocomotion);
-	TestTrue(TEXT("Moving procedural nodes are allowed during movement recovery"), AnimInstance->AllowsMovingProceduralNodes());
+		ResolveTurnInPlaceSearchMode(false) ==
+			ERpgTurnInPlaceSearchMode::NormalLocomotion);
+	TestTrue(
+		TEXT("Moving procedural nodes are allowed during movement recovery"),
+		RpgTurnInPlaceRuntime::AllowsMovingProceduralNodes(AnimInstance->TurnInPlaceState));
 	TestFalse(TEXT("Preselection movement exit does not hard-reset Offset Root"), AnimInstance->bResetOffsetRootEveryFrame);
 
 	AnimInstance->ResetTurnInPlaceRuntime(false);
@@ -418,9 +474,11 @@ bool FRpgTurnInPlaceStateMachineTest::RunTest(const FString& Parameters)
 	TestEqual(TEXT("Mid-clip movement exits immediately to recovery"), AnimInstance->TurnInPlaceState, ERpgTurnInPlaceState::Recovering);
 	TestTrue(
 		TEXT("Mid-clip movement exit releases the selection lock to the gait database"),
-		AnimInstance->ResolveTurnInPlaceSearchMode(false) ==
-			URpgAnimInstance::ETurnInPlaceSearchMode::NormalLocomotion);
-	TestTrue(TEXT("Mid-clip movement recovery keeps moving procedural nodes enabled"), AnimInstance->AllowsMovingProceduralNodes());
+		ResolveTurnInPlaceSearchMode(false) ==
+			ERpgTurnInPlaceSearchMode::NormalLocomotion);
+	TestTrue(
+		TEXT("Mid-clip movement recovery keeps moving procedural nodes enabled"),
+		RpgTurnInPlaceRuntime::AllowsMovingProceduralNodes(AnimInstance->TurnInPlaceState));
 	TestFalse(TEXT("Mid-clip movement exit does not hard-reset Offset Root"), AnimInstance->bResetOffsetRootEveryFrame);
 
 	Proxy.bHasGroundedMoveIntent = false;

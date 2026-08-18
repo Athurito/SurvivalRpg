@@ -1378,6 +1378,68 @@ bool FRpgGaspPilotAssetContractTest::RunTest(const FString& Parameters)
 				FString(TEXT("None")));
 		}
 
+		const FEnumProperty* TurnInPlaceStateProperty =
+			FindFProperty<FEnumProperty>(PilotAnimDefaults->GetClass(), TEXT("TurnInPlaceState"));
+		if (TestNotNull(TEXT("The cosmetic turn-in-place state is reflected"), TurnInPlaceStateProperty))
+		{
+			TestEqual(
+				TEXT("TurnInPlaceState keeps the explicit reflected enum contract"),
+				TurnInPlaceStateProperty->GetEnum(),
+				StaticEnum<ERpgTurnInPlaceState>());
+			TestTrue(
+				TEXT("TurnInPlaceState remains transient Blueprint-readable facade state"),
+				TurnInPlaceStateProperty->HasAllPropertyFlags(
+					CPF_Transient | CPF_BlueprintVisible | CPF_BlueprintReadOnly));
+		}
+		FString TurnInPlaceStateText;
+		if (TestTrue(
+			TEXT("The turn-in-place state default is readable"),
+			ReadPropertyText(PilotAnimDefaults, TEXT("TurnInPlaceState"), TurnInPlaceStateText)))
+		{
+			TestEqual(
+				TEXT("The turn-in-place facade starts inactive"),
+				TurnInPlaceStateText,
+				FString(TEXT("Inactive")));
+		}
+
+		for (const FName PropertyName : {
+			FName(TEXT("TurnInPlaceQueryAngle")),
+			FName(TEXT("TurnInPlaceAccumulatedYaw")),
+			FName(TEXT("TurnInPlaceStateElapsed")) })
+		{
+			float Value = -1.0f;
+			if (TestTrue(
+				*FString::Printf(TEXT("%s remains readable on the flat turn facade"), *PropertyName.ToString()),
+				ReadFloatProperty(PilotAnimDefaults, PropertyName, Value)))
+			{
+				TestEqual(
+					*FString::Printf(TEXT("%s retains its zero default"), *PropertyName.ToString()),
+					Value,
+					0.0f);
+				const FFloatProperty* Property =
+					FindFProperty<FFloatProperty>(PilotAnimDefaults->GetClass(), PropertyName);
+				TestTrue(
+					*FString::Printf(TEXT("%s remains transient Blueprint-readable facade state"), *PropertyName.ToString()),
+					Property && Property->HasAllPropertyFlags(
+						CPF_Transient | CPF_BlueprintVisible | CPF_BlueprintReadOnly));
+			}
+		}
+
+		const FStructProperty* TurnInPlaceTrajectoryProperty =
+			FindFProperty<FStructProperty>(PilotAnimDefaults->GetClass(), TEXT("TurnInPlaceSyntheticTrajectory"));
+		if (TestNotNull(
+			TEXT("The turn-in-place synthetic trajectory remains reflected"),
+			TurnInPlaceTrajectoryProperty))
+		{
+			TestTrue(
+				TEXT("The synthetic trajectory keeps the engine transform-trajectory type"),
+				TurnInPlaceTrajectoryProperty->Struct == FTransformTrajectory::StaticStruct());
+			TestTrue(
+				TEXT("The synthetic trajectory remains transient Blueprint-readable facade state"),
+				TurnInPlaceTrajectoryProperty->HasAllPropertyFlags(
+					CPF_Transient | CPF_BlueprintVisible | CPF_BlueprintReadOnly));
+		}
+
 		float LandingStateElapsed = -1.0f;
 		if (TestTrue(
 			TEXT("The landing elapsed debug value is readable"),
