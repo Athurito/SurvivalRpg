@@ -13,6 +13,7 @@
 #include "PoseSearch/PoseSearchLibrary.h"
 #include "PoseSearch/PoseSearchTrajectoryLibrary.h"
 #include "RpgFootPlacementTypes.h"
+#include "RpgGaspPresentationProfile.h"
 #include "RpgPoseSearchTrajectory.h"
 #include "SurvivalRpg/Core/Character/RpgCharacterRotationMode.h"
 #include "RpgAnimInstance.generated.h"
@@ -489,6 +490,14 @@ protected:
 	 */
 	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Rpg|Animation|Motion Matching")
 	TArray<TObjectPtr<UPoseSearchDatabase>> AirborneMotionMatchingDatabases;
+
+	/**
+	 * Explicit designer-owned membership for GASP procedural presentation categories.
+	 * The profile is snapshotted into a worker-safe lookup during animation initialization and is
+	 * never read or mutated by parallel animation callbacks.
+	 */
+	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Rpg|Animation|Presentation")
+	TObjectPtr<URpgGaspPresentationProfile> GaspPresentationProfile;
 
 	/**
 	 * Exclusive stand-idle light-landing database searched once per matching physical touchdown.
@@ -1006,7 +1015,7 @@ private:
 		float DeltaSeconds);
 	bool IsActiveLandingAsset(const UAnimationAsset* Asset) const;
 	/** Identifies curated Landing samples independently of request lifetime so outgoing blends keep Reset Root. */
-	static bool IsLandingAsset(const UAnimationAsset* Asset);
+	bool IsLandingAsset(const UAnimationAsset* Asset) const;
 	bool UpdateBackwardJumpStartHold(
 		UAnimationAsset* CurrentAsset,
 		float CurrentAssetTime,
@@ -1014,15 +1023,15 @@ private:
 		float CurrentAssetPlayRate,
 		float DeltaSeconds);
 	/** Identifies curated Walk/Run/Sprint samples whose per-sample corrections must survive phase-boundary blending. */
-	static bool IsGroundMovingAsset(const UAnimationAsset* Asset);
+	bool IsGroundMovingAsset(const UAnimationAsset* Asset) const;
 	/** Identifies every asset in the exclusive airborne database, including Jump/Starts and the looping fall. */
-	static bool IsAirborneJumpAsset(const UAnimationAsset* Asset);
+	bool IsAirborneJumpAsset(const UAnimationAsset* Asset) const;
 	/** Identifies the non-looping Jump/Starts subset that additionally receives authored OW and Steering. */
-	static bool IsAirborneJumpStartAsset(const UAnimationAsset* Asset);
+	bool IsAirborneJumpStartAsset(const UAnimationAsset* Asset) const;
 	/** Identifies the two backward Jump/Starts clips whose short transition block otherwise restarts mid-air. */
-	static bool IsBackwardJumpStartAsset(const UAnimationAsset* Asset);
+	bool IsBackwardJumpStartAsset(const UAnimationAsset* Asset) const;
 	/** Identifies the looping fall continuation, which must never search back into a directional start. */
-	static bool IsLoopingAirborneFallAsset(const UAnimationAsset* Asset);
+	bool IsLoopingAirborneFallAsset(const UAnimationAsset* Asset) const;
 	/** Retains a fall loop only after this airborne phase actually used the bounded backward-start path. */
 	static bool ShouldHoldLoopingAirborneFallPlayback(
 		ERpgJumpPhase CurrentJumpPhase,
@@ -1114,6 +1123,9 @@ private:
 		EPoseSearchInterruptMode::DoNotInterrupt;
 	/** Last AnimInstance update seen by the Motion Matching callback, used to mirror node relevancy resets. */
 	FGraphTraversalCounter MotionMatchingNodeUpdateCounter;
+
+	/** Immutable presentation traits built on the game thread from GaspPresentationProfile. */
+	FRpgGaspPresentationAssetLookup GaspPresentationAssetLookup;
 
 	friend struct FRpgAnimInstanceProxy;
 #if WITH_DEV_AUTOMATION_TESTS

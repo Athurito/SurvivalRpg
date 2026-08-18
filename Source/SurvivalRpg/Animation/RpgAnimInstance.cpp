@@ -14,7 +14,6 @@
 #include "PoseSearch/AnimNode_MotionMatching.h"
 #include "PoseSearch/PoseSearchDatabase.h"
 #include "PoseSearch/PoseSearchTrajectoryLibrary.h"
-#include "UObject/Package.h"
 
 #if WITH_EDITOR
 #include "Misc/DataValidation.h"
@@ -1940,6 +1939,102 @@ EDataValidationResult URpgAnimInstance::IsDataValid(FDataValidationContext& Cont
 			Context.AddError(FText::FromString(
 				TEXT("Motion Matching is enabled, but no turn-in-place Pose Search database is configured.")));
 		}
+		if (!GaspPresentationProfile)
+		{
+			Context.AddError(FText::FromString(
+				TEXT("Motion Matching is enabled, but no GASP presentation profile is configured.")));
+		}
+		else if (!GaspPresentationProfile->ValidateProfile().IsValid())
+		{
+			Context.AddError(FText::FromString(
+				TEXT("The configured GASP presentation profile has invalid membership or loop invariants.")));
+		}
+		else
+		{
+			FRpgGaspPresentationAssetLookup PresentationLookup;
+			const bool bBuiltPresentationLookup = PresentationLookup.Build(GaspPresentationProfile);
+			check(bBuiltPresentationLookup);
+
+			const auto DatabaseHasTrait = [&PresentationLookup](
+				const UPoseSearchDatabase* Database,
+				ERpgGaspPresentationAssetTrait RequiredTrait)
+			{
+				if (!Database)
+				{
+					return true;
+				}
+
+				for (int32 AssetIndex = 0;
+					AssetIndex < Database->GetNumAnimationAssets();
+					++AssetIndex)
+				{
+					const UAnimationAsset* Asset =
+						Cast<UAnimationAsset>(Database->GetAnimationAsset(AssetIndex));
+					if (!Asset || !PresentationLookup.HasTrait(Asset, RequiredTrait))
+					{
+						return false;
+					}
+				}
+				return true;
+			};
+
+			static constexpr ERpgMotionMatchingDatabaseRole GroundMovingRoles[] = {
+				ERpgMotionMatchingDatabaseRole::StandWalk,
+				ERpgMotionMatchingDatabaseRole::StandWalkStops,
+				ERpgMotionMatchingDatabaseRole::StandRunLoops,
+				ERpgMotionMatchingDatabaseRole::StandRunPivots,
+				ERpgMotionMatchingDatabaseRole::StandRunStarts,
+				ERpgMotionMatchingDatabaseRole::StandRunStops,
+				ERpgMotionMatchingDatabaseRole::StandSprint,
+				ERpgMotionMatchingDatabaseRole::StandSprintStops,
+			};
+			bool bGroundMovingCoverageValid = true;
+			for (const ERpgMotionMatchingDatabaseRole Role : GroundMovingRoles)
+			{
+				bGroundMovingCoverageValid &= DatabaseHasTrait(
+					GetMotionMatchingDatabaseForRole(Role),
+					ERpgGaspPresentationAssetTrait::GroundMoving);
+			}
+			if (!bGroundMovingCoverageValid)
+			{
+				Context.AddError(FText::FromString(
+					TEXT("Every Walk, Run, and Sprint runtime database asset must have GroundMoving presentation membership.")));
+			}
+
+			bool bAirborneCoverageValid = !AirborneMotionMatchingDatabases.IsEmpty();
+			for (const UPoseSearchDatabase* Database : AirborneMotionMatchingDatabases)
+			{
+				bAirborneCoverageValid &= DatabaseHasTrait(
+					Database,
+					ERpgGaspPresentationAssetTrait::Airborne);
+			}
+			if (!bAirborneCoverageValid)
+			{
+				Context.AddError(FText::FromString(
+					TEXT("Every Airborne runtime database asset must have JumpStart, BackwardJumpStart, or AirborneFall presentation membership.")));
+			}
+
+			static constexpr ERpgMotionMatchingDatabaseRole LandingRoles[] = {
+				ERpgMotionMatchingDatabaseRole::StandLightLanding,
+				ERpgMotionMatchingDatabaseRole::StandHeavyLanding,
+				ERpgMotionMatchingDatabaseRole::WalkLightLanding,
+				ERpgMotionMatchingDatabaseRole::WalkHeavyLanding,
+				ERpgMotionMatchingDatabaseRole::RunLightLanding,
+				ERpgMotionMatchingDatabaseRole::RunHeavyLanding,
+			};
+			bool bLandingCoverageValid = true;
+			for (const ERpgMotionMatchingDatabaseRole Role : LandingRoles)
+			{
+				bLandingCoverageValid &= DatabaseHasTrait(
+					GetMotionMatchingDatabaseForRole(Role),
+					ERpgGaspPresentationAssetTrait::Landing);
+			}
+			if (!bLandingCoverageValid)
+			{
+				Context.AddError(FText::FromString(
+					TEXT("Every curated runtime landing database asset must have Landing presentation membership.")));
+			}
+		}
 		if (FootPlacementSettings.bEnabled)
 		{
 			const FRpgFootPlacementLegDefinition* LegDefinitions[] = {
@@ -1984,6 +2079,7 @@ EDataValidationResult URpgAnimInstance::IsDataValid(FDataValidationContext& Cont
 void URpgAnimInstance::NativeInitializeAnimation()
 {
 	Super::NativeInitializeAnimation();
+	GaspPresentationAssetLookup.Build(GaspPresentationProfile);
 	FRpgAnimInstanceProxy& Proxy = GetProxyOnGameThread<FRpgAnimInstanceProxy>();
 	ResetFootPlacementInitializationState(Proxy);
 	ResetPoseSearchTrajectoryState(Proxy);
@@ -2780,100 +2876,46 @@ bool URpgAnimInstance::IsActiveLandingAsset(const UAnimationAsset* Asset) const
 		Asset == LandingSelectedAsset.Get();
 }
 
-bool URpgAnimInstance::IsLandingAsset(const UAnimationAsset* Asset)
+bool URpgAnimInstance::IsLandingAsset(const UAnimationAsset* Asset) const
 {
-	const UAnimSequenceBase* Sequence = Cast<UAnimSequenceBase>(Asset);
-	if (!Sequence)
-	{
-		return false;
-	}
-
-	TStringBuilder<256> PackageName;
-	Sequence->GetOutermost()->GetPathName(nullptr, PackageName);
-	return PackageName.ToView().StartsWith(
-		TEXTVIEW("/RpgGaspLocomotion/Animations/Jump/Lands/"));
+	return GaspPresentationAssetLookup.HasTrait(
+		Asset,
+		ERpgGaspPresentationAssetTrait::Landing);
 }
 
-bool URpgAnimInstance::IsAirborneJumpStartAsset(const UAnimationAsset* Asset)
+bool URpgAnimInstance::IsAirborneJumpStartAsset(const UAnimationAsset* Asset) const
 {
-	const UAnimSequenceBase* Sequence = Cast<UAnimSequenceBase>(Asset);
-	if (!Sequence || Sequence->bLoop)
-	{
-		return false;
-	}
-
-	TStringBuilder<256> PackageName;
-	Sequence->GetOutermost()->GetPathName(nullptr, PackageName);
-	return PackageName.ToView().StartsWith(
-		TEXTVIEW("/RpgGaspLocomotion/Animations/Jump/Starts/"));
+	return GaspPresentationAssetLookup.HasTrait(
+		Asset,
+		ERpgGaspPresentationAssetTrait::JumpStart);
 }
 
-bool URpgAnimInstance::IsGroundMovingAsset(const UAnimationAsset* Asset)
+bool URpgAnimInstance::IsGroundMovingAsset(const UAnimationAsset* Asset) const
 {
-	const UAnimSequenceBase* Sequence = Cast<UAnimSequenceBase>(Asset);
-	if (!Sequence)
-	{
-		return false;
-	}
-
-	static constexpr FStringView GroundMovingPackagePrefixes[] = {
-		TEXTVIEW("/RpgGaspLocomotion/Animations/Stand/Walk/"),
-		TEXTVIEW("/RpgGaspLocomotion/Animations/Stand/Run/"),
-		TEXTVIEW("/RpgGaspLocomotion/Animations/Stand/Sprint/"),
-	};
-	TStringBuilder<256> PackageName;
-	Sequence->GetOutermost()->GetPathName(nullptr, PackageName);
-	for (const FStringView PackagePrefix : GroundMovingPackagePrefixes)
-	{
-		if (PackageName.ToView().StartsWith(PackagePrefix))
-		{
-			return true;
-		}
-	}
-	return false;
+	return GaspPresentationAssetLookup.HasTrait(
+		Asset,
+		ERpgGaspPresentationAssetTrait::GroundMoving);
 }
 
-bool URpgAnimInstance::IsAirborneJumpAsset(const UAnimationAsset* Asset)
+bool URpgAnimInstance::IsAirborneJumpAsset(const UAnimationAsset* Asset) const
 {
-	const UAnimSequenceBase* Sequence = Cast<UAnimSequenceBase>(Asset);
-	if (!Sequence)
-	{
-		return false;
-	}
-
-	TStringBuilder<256> PackageName;
-	Sequence->GetOutermost()->GetPathName(nullptr, PackageName);
-	return PackageName.ToView().StartsWith(
-			TEXTVIEW("/RpgGaspLocomotion/Animations/Jump/Starts/")) ||
-		PackageName.ToView().StartsWith(
-			TEXTVIEW("/RpgGaspLocomotion/Animations/Jump/Airborne/"));
+	return GaspPresentationAssetLookup.HasTrait(
+		Asset,
+		ERpgGaspPresentationAssetTrait::Airborne);
 }
 
-bool URpgAnimInstance::IsBackwardJumpStartAsset(const UAnimationAsset* Asset)
+bool URpgAnimInstance::IsBackwardJumpStartAsset(const UAnimationAsset* Asset) const
 {
-	if (!IsAirborneJumpStartAsset(Asset))
-	{
-		return false;
-	}
-
-	TStringBuilder<256> PackageName;
-	Asset->GetOutermost()->GetPathName(nullptr, PackageName);
-	return PackageName.ToView().StartsWith(
-		TEXTVIEW("/RpgGaspLocomotion/Animations/Jump/Starts/M_Neutral_Jump_B_"));
+	return GaspPresentationAssetLookup.HasTrait(
+		Asset,
+		ERpgGaspPresentationAssetTrait::BackwardJumpStart);
 }
 
-bool URpgAnimInstance::IsLoopingAirborneFallAsset(const UAnimationAsset* Asset)
+bool URpgAnimInstance::IsLoopingAirborneFallAsset(const UAnimationAsset* Asset) const
 {
-	const UAnimSequenceBase* Sequence = Cast<UAnimSequenceBase>(Asset);
-	if (!Sequence || !Sequence->bLoop)
-	{
-		return false;
-	}
-
-	TStringBuilder<256> PackageName;
-	Sequence->GetOutermost()->GetPathName(nullptr, PackageName);
-	return PackageName.ToView().StartsWith(
-		TEXTVIEW("/RpgGaspLocomotion/Animations/Jump/Airborne/"));
+	return GaspPresentationAssetLookup.HasTrait(
+		Asset,
+		ERpgGaspPresentationAssetTrait::AirborneFall);
 }
 
 bool URpgAnimInstance::ShouldHoldLoopingAirborneFallPlayback(
