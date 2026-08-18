@@ -8,6 +8,7 @@
 #include "Misc/AutomationTest.h"
 #include "PoseSearch/PoseSearchDatabase.h"
 #include "SurvivalRpg/Animation/RpgAnimInstance.h"
+#include "SurvivalRpg/Animation/RpgMotionMatchingRuntime.h"
 #include "SurvivalRpg/Animation/RpgPoseSearchTrajectory.h"
 #include "SurvivalRpg/Core/Character/RpgCharacter.h"
 #include "UObject/UObjectGlobals.h"
@@ -36,7 +37,7 @@ bool FRpgMotionMatchingDatabaseResolverTest::RunTest(const FString& Parameters)
 		15);
 	TestEqual(
 		TEXT("Sprint Stops begin at GASP's inclusive 550 cm/s boundary"),
-		URpgAnimInstance::SprintStopMinimumSpeed,
+		RpgMotionMatchingRuntime::SprintStopMinimumSpeed,
 		550.0f);
 
 	FRpgGroundMotionMatchingDatabaseSets DatabaseSets;
@@ -83,7 +84,7 @@ bool FRpgMotionMatchingDatabaseResolverTest::RunTest(const FString& Parameters)
 
 	auto MakeMovingSnapshot = [](ERpgLocomotionGait Gait)
 	{
-		URpgAnimInstance::FGroundMotionMatchingSelectionSnapshot Snapshot;
+		FRpgGroundMotionMatchingSelectionSnapshot Snapshot;
 		Snapshot.Gait = Gait;
 		Snapshot.Stance = ERpgLocomotionStance::Standing;
 		Snapshot.MovementState = ERpgLocomotionMovementState::Grounded;
@@ -104,7 +105,7 @@ bool FRpgMotionMatchingDatabaseResolverTest::RunTest(const FString& Parameters)
 	};
 	auto TestRoleSequence = [this](
 		const TCHAR* Context,
-		const URpgAnimInstance::FResolvedMotionMatchingDatabaseRoles& ActualRoles,
+		const FRpgResolvedMotionMatchingDatabaseRoles& ActualRoles,
 		std::initializer_list<ERpgMotionMatchingDatabaseRole> ExpectedRoles)
 	{
 		TestEqual(
@@ -126,7 +127,7 @@ bool FRpgMotionMatchingDatabaseResolverTest::RunTest(const FString& Parameters)
 		}
 	};
 
-	const URpgAnimInstance::FGroundMotionMatchingSelectionSnapshot IdleSnapshot =
+	const FRpgGroundMotionMatchingSelectionSnapshot IdleSnapshot =
 		MakeMovingSnapshot(ERpgLocomotionGait::Idle);
 	const URpgAnimInstance::FResolvedGroundMotionMatchingDatabases IdleResult =
 		URpgAnimInstance::ResolveGroundMotionMatchingDatabases(IdleSnapshot, DatabaseSets);
@@ -134,10 +135,10 @@ bool FRpgMotionMatchingDatabaseResolverTest::RunTest(const FString& Parameters)
 	TestEqual(TEXT("Idle preserves its authored database"), IdleResult[0], Idle);
 	TestRoleSequence(
 		TEXT("Moving Idle"),
-		URpgAnimInstance::ResolveMotionMatchingDatabaseRoles(IdleSnapshot),
+		RpgMotionMatchingRuntime::ResolveDatabaseRoles(IdleSnapshot),
 		{ERpgMotionMatchingDatabaseRole::StandIdle});
 
-	const URpgAnimInstance::FGroundMotionMatchingSelectionSnapshot WalkSnapshot =
+	const FRpgGroundMotionMatchingSelectionSnapshot WalkSnapshot =
 		MakeMovingSnapshot(ERpgLocomotionGait::Walk);
 	const URpgAnimInstance::FResolvedGroundMotionMatchingDatabases WalkResult =
 		URpgAnimInstance::ResolveGroundMotionMatchingDatabases(WalkSnapshot, DatabaseSets);
@@ -145,10 +146,10 @@ bool FRpgMotionMatchingDatabaseResolverTest::RunTest(const FString& Parameters)
 	TestEqual(TEXT("Moving Walk preserves its aggregate database"), WalkResult[0], WalkMoving);
 	TestRoleSequence(
 		TEXT("Moving Walk"),
-		URpgAnimInstance::ResolveMotionMatchingDatabaseRoles(WalkSnapshot),
+		RpgMotionMatchingRuntime::ResolveDatabaseRoles(WalkSnapshot),
 		{ERpgMotionMatchingDatabaseRole::StandWalk});
 
-	URpgAnimInstance::FGroundMotionMatchingSelectionSnapshot SteadyRunSnapshot =
+	FRpgGroundMotionMatchingSelectionSnapshot SteadyRunSnapshot =
 		MakeMovingSnapshot(ERpgLocomotionGait::Run);
 	const URpgAnimInstance::FResolvedGroundMotionMatchingDatabases SteadyRunResult =
 		URpgAnimInstance::ResolveGroundMotionMatchingDatabases(SteadyRunSnapshot, DatabaseSets);
@@ -156,14 +157,14 @@ bool FRpgMotionMatchingDatabaseResolverTest::RunTest(const FString& Parameters)
 	TestEqual(TEXT("Steady Run preserves Loops"), SteadyRunResult[0], RunLoops);
 	TestRoleSequence(
 		TEXT("Steady Run"),
-		URpgAnimInstance::ResolveMotionMatchingDatabaseRoles(SteadyRunSnapshot),
+		RpgMotionMatchingRuntime::ResolveDatabaseRoles(SteadyRunSnapshot),
 		{ERpgMotionMatchingDatabaseRole::StandRunLoops});
 
-	URpgAnimInstance::FGroundMotionMatchingSelectionSnapshot FastStartSnapshot = SteadyRunSnapshot;
+	FRpgGroundMotionMatchingSelectionSnapshot FastStartSnapshot = SteadyRunSnapshot;
 	FastStartSnapshot.GroundSpeed = 350.0f;
 	FastStartSnapshot.WorldVelocity = FVector(350.0f, 0.0f, 0.0f);
 	FastStartSnapshot.FutureVelocity = FVector(
-		FastStartSnapshot.GroundSpeed + URpgAnimInstance::RunStartMinimumFutureSpeedGain,
+		FastStartSnapshot.GroundSpeed + RpgMotionMatchingRuntime::RunStartMinimumFutureSpeedGain,
 		0.0f,
 		0.0f);
 	const URpgAnimInstance::FResolvedGroundMotionMatchingDatabases FastStartResult =
@@ -173,62 +174,62 @@ bool FRpgMotionMatchingDatabaseResolverTest::RunTest(const FString& Parameters)
 	TestEqual(TEXT("Starts preserve Loops as the continuing fallback"), FastStartResult[1], RunLoops);
 	TestRoleSequence(
 		TEXT("Starting Run"),
-		URpgAnimInstance::ResolveMotionMatchingDatabaseRoles(FastStartSnapshot),
+		RpgMotionMatchingRuntime::ResolveDatabaseRoles(FastStartSnapshot),
 		{
 			ERpgMotionMatchingDatabaseRole::StandRunStarts,
 			ERpgMotionMatchingDatabaseRole::StandRunLoops,
 		});
 
-	URpgAnimInstance::FGroundMotionMatchingSelectionSnapshot BelowStartGainSnapshot = FastStartSnapshot;
+	FRpgGroundMotionMatchingSelectionSnapshot BelowStartGainSnapshot = FastStartSnapshot;
 	BelowStartGainSnapshot.FutureVelocity.X -= 0.01f;
 	const URpgAnimInstance::FResolvedGroundMotionMatchingDatabases BelowStartGainResult =
 		URpgAnimInstance::ResolveGroundMotionMatchingDatabases(BelowStartGainSnapshot, DatabaseSets);
 	TestEqual(TEXT("Below the exact +100 cm/s Start gate Run remains Loops-only"), BelowStartGainResult.Num(), 1);
 
-	URpgAnimInstance::FGroundMotionMatchingSelectionSnapshot FreeBelowPivotSnapshot = SteadyRunSnapshot;
+	FRpgGroundMotionMatchingSelectionSnapshot FreeBelowPivotSnapshot = SteadyRunSnapshot;
 	FreeBelowPivotSnapshot.WorldAcceleration = DirectionAtDegrees(
-		URpgAnimInstance::FreeRunPivotMinimumAngle - 0.01f);
+		RpgMotionMatchingRuntime::FreeRunPivotMinimumAngle - 0.01f);
 	const URpgAnimInstance::FResolvedGroundMotionMatchingDatabases FreeBelowPivotResult =
 		URpgAnimInstance::ResolveGroundMotionMatchingDatabases(FreeBelowPivotSnapshot, DatabaseSets);
 	TestFalse(TEXT("Free mode excludes a turn just below 45 degrees"), FreeBelowPivotResult.Contains(RunPivots));
 
-	URpgAnimInstance::FGroundMotionMatchingSelectionSnapshot FreePivotSnapshot = SteadyRunSnapshot;
-	FreePivotSnapshot.WorldAcceleration = DirectionAtDegrees(URpgAnimInstance::FreeRunPivotMinimumAngle);
+	FRpgGroundMotionMatchingSelectionSnapshot FreePivotSnapshot = SteadyRunSnapshot;
+	FreePivotSnapshot.WorldAcceleration = DirectionAtDegrees(RpgMotionMatchingRuntime::FreeRunPivotMinimumAngle);
 	const URpgAnimInstance::FResolvedGroundMotionMatchingDatabases FreePivotResult =
 		URpgAnimInstance::ResolveGroundMotionMatchingDatabases(FreePivotSnapshot, DatabaseSets);
 	TestEqual(TEXT("Free mode exposes Pivots at exactly 45 degrees"), FreePivotResult.Num(), 2);
 	TestEqual(TEXT("Free Pivot keeps Loops first when no Start is eligible"), FreePivotResult[0], RunLoops);
 	TestEqual(TEXT("Free Pivot appends Pivots"), FreePivotResult[1], RunPivots);
 
-	URpgAnimInstance::FGroundMotionMatchingSelectionSnapshot StrafeBelowPivotSnapshot = SteadyRunSnapshot;
+	FRpgGroundMotionMatchingSelectionSnapshot StrafeBelowPivotSnapshot = SteadyRunSnapshot;
 	StrafeBelowPivotSnapshot.RotationMode = ERpgCharacterRotationMode::CombatStrafe;
 	StrafeBelowPivotSnapshot.WorldAcceleration = DirectionAtDegrees(
-		URpgAnimInstance::CombatStrafeRunPivotMinimumAngle - 0.01f);
+		RpgMotionMatchingRuntime::CombatStrafeRunPivotMinimumAngle - 0.01f);
 	const URpgAnimInstance::FResolvedGroundMotionMatchingDatabases StrafeBelowPivotResult =
 		URpgAnimInstance::ResolveGroundMotionMatchingDatabases(StrafeBelowPivotSnapshot, DatabaseSets);
 	TestFalse(TEXT("Combat Strafe excludes a turn just below 30 degrees"), StrafeBelowPivotResult.Contains(RunPivots));
 
-	URpgAnimInstance::FGroundMotionMatchingSelectionSnapshot StrafePivotSnapshot = SteadyRunSnapshot;
+	FRpgGroundMotionMatchingSelectionSnapshot StrafePivotSnapshot = SteadyRunSnapshot;
 	StrafePivotSnapshot.RotationMode = ERpgCharacterRotationMode::CombatStrafe;
 	StrafePivotSnapshot.WorldAcceleration = DirectionAtDegrees(
-		URpgAnimInstance::CombatStrafeRunPivotMinimumAngle);
+		RpgMotionMatchingRuntime::CombatStrafeRunPivotMinimumAngle);
 	const URpgAnimInstance::FResolvedGroundMotionMatchingDatabases StrafePivotResult =
 		URpgAnimInstance::ResolveGroundMotionMatchingDatabases(StrafePivotSnapshot, DatabaseSets);
 	TestTrue(TEXT("Combat Strafe exposes Pivots at exactly 30 degrees"), StrafePivotResult.Contains(RunPivots));
 
-	URpgAnimInstance::FGroundMotionMatchingSelectionSnapshot AimPivotSnapshot = SteadyRunSnapshot;
+	FRpgGroundMotionMatchingSelectionSnapshot AimPivotSnapshot = SteadyRunSnapshot;
 	AimPivotSnapshot.RotationMode = ERpgCharacterRotationMode::Aim;
 	const URpgAnimInstance::FResolvedGroundMotionMatchingDatabases AimPivotResult =
 		URpgAnimInstance::ResolveGroundMotionMatchingDatabases(AimPivotSnapshot, DatabaseSets);
 	TestTrue(TEXT("Aim exposes Pivots at its exact zero-degree threshold"), AimPivotResult.Contains(RunPivots));
 
-	URpgAnimInstance::FGroundMotionMatchingSelectionSnapshot AimWithoutAccelerationSnapshot = AimPivotSnapshot;
+	FRpgGroundMotionMatchingSelectionSnapshot AimWithoutAccelerationSnapshot = AimPivotSnapshot;
 	AimWithoutAccelerationSnapshot.WorldAcceleration = FVector::ZeroVector;
 	const URpgAnimInstance::FResolvedGroundMotionMatchingDatabases AimWithoutAccelerationResult =
 		URpgAnimInstance::ResolveGroundMotionMatchingDatabases(AimWithoutAccelerationSnapshot, DatabaseSets);
 	TestFalse(TEXT("Aim still requires GASP logical Moving before exposing Pivots"), AimWithoutAccelerationResult.Contains(RunPivots));
 
-	URpgAnimInstance::FGroundMotionMatchingSelectionSnapshot TinyAccelerationSnapshot = SteadyRunSnapshot;
+	FRpgGroundMotionMatchingSelectionSnapshot TinyAccelerationSnapshot = SteadyRunSnapshot;
 	TinyAccelerationSnapshot.WorldAcceleration = FVector(0.05f, 0.0f, 0.0f);
 	const URpgAnimInstance::FResolvedGroundMotionMatchingDatabases TinyAccelerationResult =
 		URpgAnimInstance::ResolveGroundMotionMatchingDatabases(TinyAccelerationSnapshot, DatabaseSets);
@@ -265,18 +266,18 @@ bool FRpgMotionMatchingDatabaseResolverTest::RunTest(const FString& Parameters)
 		 ++NetworkViewIndex)
 	{
 		const TCHAR* NetworkView = LandingHandoffNetworkViews[NetworkViewIndex];
-		URpgAnimInstance::FGroundMotionMatchingSelectionSnapshot VerticalOnlySnapshot;
+		FRpgGroundMotionMatchingSelectionSnapshot VerticalOnlySnapshot;
 		VerticalOnlySnapshot.Gait = ERpgLocomotionGait::Run;
 		VerticalOnlySnapshot.Stance = ERpgLocomotionStance::Standing;
 		VerticalOnlySnapshot.MovementState = ERpgLocomotionMovementState::Grounded;
 		VerticalOnlySnapshot.WorldVelocity = FVector(
 			0.0f,
 			0.0f,
-			URpgAnimInstance::ChooserVelocityTolerance + 0.01f);
+			RpgMotionMatchingRuntime::ChooserVelocityTolerance + 0.01f);
 		VerticalOnlySnapshot.WorldAcceleration = NetworkAccelerations[NetworkViewIndex];
 		VerticalOnlySnapshot.GroundSpeed = VerticalOnlySnapshot.WorldVelocity.Size2D();
 		VerticalOnlySnapshot.FutureVelocity = FVector(
-			URpgAnimInstance::RunStartMinimumFutureSpeedGain,
+			RpgMotionMatchingRuntime::RunStartMinimumFutureSpeedGain,
 			0.0f,
 			0.0f);
 		VerticalOnlySnapshot.CurrentDatabaseRole = ERpgMotionMatchingDatabaseRole::None;
@@ -284,10 +285,10 @@ bool FRpgMotionMatchingDatabaseResolverTest::RunTest(const FString& Parameters)
 
 		TestFalse(
 			*FString::Printf(TEXT("%s ignores vertical-only grounded velocity for logical Moving"), NetworkView),
-			URpgAnimInstance::IsGroundMotionMatchingChooserMoving(VerticalOnlySnapshot));
+			RpgMotionMatchingRuntime::IsChooserMoving(VerticalOnlySnapshot));
 		TestRoleSequence(
 			*FString::Printf(TEXT("%s vertical-only landing handoff"), NetworkView),
-			URpgAnimInstance::ResolveMotionMatchingDatabaseRoles(VerticalOnlySnapshot),
+			RpgMotionMatchingRuntime::ResolveDatabaseRoles(VerticalOnlySnapshot),
 			{ERpgMotionMatchingDatabaseRole::StandIdle});
 		const URpgAnimInstance::FResolvedGroundMotionMatchingDatabases VerticalOnlyResult =
 			URpgAnimInstance::ResolveGroundMotionMatchingDatabases(VerticalOnlySnapshot, DatabaseSets);
@@ -303,24 +304,24 @@ bool FRpgMotionMatchingDatabaseResolverTest::RunTest(const FString& Parameters)
 				Idle);
 		}
 
-		URpgAnimInstance::FGroundMotionMatchingSelectionSnapshot HorizontalMovingSnapshot =
+		FRpgGroundMotionMatchingSelectionSnapshot HorizontalMovingSnapshot =
 			VerticalOnlySnapshot;
 		HorizontalMovingSnapshot.WorldVelocity = FVector(
-			URpgAnimInstance::ChooserVelocityTolerance + 0.01f,
+			RpgMotionMatchingRuntime::ChooserVelocityTolerance + 0.01f,
 			0.0f,
 			0.0f);
 		HorizontalMovingSnapshot.GroundSpeed = HorizontalMovingSnapshot.WorldVelocity.Size2D();
 		HorizontalMovingSnapshot.FutureVelocity = FVector(
-			HorizontalMovingSnapshot.GroundSpeed + URpgAnimInstance::RunStartMinimumFutureSpeedGain,
+			HorizontalMovingSnapshot.GroundSpeed + RpgMotionMatchingRuntime::RunStartMinimumFutureSpeedGain,
 			0.0f,
 			0.0f);
 
 		TestTrue(
 			*FString::Printf(TEXT("%s opens logical Moving above the horizontal velocity tolerance"), NetworkView),
-			URpgAnimInstance::IsGroundMotionMatchingChooserMoving(HorizontalMovingSnapshot));
+			RpgMotionMatchingRuntime::IsChooserMoving(HorizontalMovingSnapshot));
 		TestRoleSequence(
 			*FString::Printf(TEXT("%s first horizontal Run frame"), NetworkView),
-			URpgAnimInstance::ResolveMotionMatchingDatabaseRoles(HorizontalMovingSnapshot),
+			RpgMotionMatchingRuntime::ResolveDatabaseRoles(HorizontalMovingSnapshot),
 			{
 				ERpgMotionMatchingDatabaseRole::StandRunStarts,
 				ERpgMotionMatchingDatabaseRole::StandRunLoops,
@@ -344,9 +345,9 @@ bool FRpgMotionMatchingDatabaseResolverTest::RunTest(const FString& Parameters)
 		}
 	}
 
-	URpgAnimInstance::FGroundMotionMatchingSelectionSnapshot StartAndPivotSnapshot = FreePivotSnapshot;
+	FRpgGroundMotionMatchingSelectionSnapshot StartAndPivotSnapshot = FreePivotSnapshot;
 	StartAndPivotSnapshot.FutureVelocity = FVector(
-		StartAndPivotSnapshot.GroundSpeed + URpgAnimInstance::RunStartMinimumFutureSpeedGain,
+		StartAndPivotSnapshot.GroundSpeed + RpgMotionMatchingRuntime::RunStartMinimumFutureSpeedGain,
 		0.0f,
 		0.0f);
 	const URpgAnimInstance::FResolvedGroundMotionMatchingDatabases StartAndPivotResult =
@@ -357,7 +358,7 @@ bool FRpgMotionMatchingDatabaseResolverTest::RunTest(const FString& Parameters)
 	TestEqual(TEXT("Combined source order ends with Pivots"), StartAndPivotResult[2], RunPivots);
 	TestRoleSequence(
 		TEXT("Starting and pivoting Run"),
-		URpgAnimInstance::ResolveMotionMatchingDatabaseRoles(StartAndPivotSnapshot),
+		RpgMotionMatchingRuntime::ResolveDatabaseRoles(StartAndPivotSnapshot),
 		{
 			ERpgMotionMatchingDatabaseRole::StandRunStarts,
 			ERpgMotionMatchingDatabaseRole::StandRunLoops,
@@ -372,11 +373,11 @@ bool FRpgMotionMatchingDatabaseResolverTest::RunTest(const FString& Parameters)
 	};
 	for (const TCHAR* NetworkView : SyntheticNetworkViews)
 	{
-		const URpgAnimInstance::FGroundMotionMatchingSelectionSnapshot IdenticalSnapshot =
+		const FRpgGroundMotionMatchingSelectionSnapshot IdenticalSnapshot =
 			StartAndPivotSnapshot;
 		TestRoleSequence(
 			*FString::Printf(TEXT("%s identical snapshot parity"), NetworkView),
-			URpgAnimInstance::ResolveMotionMatchingDatabaseRoles(IdenticalSnapshot),
+			RpgMotionMatchingRuntime::ResolveDatabaseRoles(IdenticalSnapshot),
 			{
 				ERpgMotionMatchingDatabaseRole::StandRunStarts,
 				ERpgMotionMatchingDatabaseRole::StandRunLoops,
@@ -384,7 +385,7 @@ bool FRpgMotionMatchingDatabaseResolverTest::RunTest(const FString& Parameters)
 			});
 	}
 
-	URpgAnimInstance::FGroundMotionMatchingSelectionSnapshot CurrentPivotSnapshot = StartAndPivotSnapshot;
+	FRpgGroundMotionMatchingSelectionSnapshot CurrentPivotSnapshot = StartAndPivotSnapshot;
 	CurrentPivotSnapshot.CurrentDatabaseRole = ERpgMotionMatchingDatabaseRole::StandRunPivots;
 	const URpgAnimInstance::FResolvedGroundMotionMatchingDatabases CurrentPivotResult =
 		URpgAnimInstance::ResolveGroundMotionMatchingDatabases(CurrentPivotSnapshot, DatabaseSets);
@@ -392,7 +393,7 @@ bool FRpgMotionMatchingDatabaseResolverTest::RunTest(const FString& Parameters)
 	TestTrue(TEXT("The selected Pivot remains searchable while its angle gate is active"), CurrentPivotResult.Contains(RunPivots));
 	TestRoleSequence(
 		TEXT("Continuing Run Pivot"),
-		URpgAnimInstance::ResolveMotionMatchingDatabaseRoles(CurrentPivotSnapshot),
+		RpgMotionMatchingRuntime::ResolveDatabaseRoles(CurrentPivotSnapshot),
 		{
 			ERpgMotionMatchingDatabaseRole::StandRunLoops,
 			ERpgMotionMatchingDatabaseRole::StandRunPivots,
@@ -420,7 +421,7 @@ bool FRpgMotionMatchingDatabaseResolverTest::RunTest(const FString& Parameters)
 			AnimInstanceUpdateCounter);
 	TestTrue(TEXT("A missed node update detects Motion Matching re-entry"), bBecameRelevant);
 
-	URpgAnimInstance::FGroundMotionMatchingSelectionSnapshot RelevancyResetSnapshot =
+	FRpgGroundMotionMatchingSelectionSnapshot RelevancyResetSnapshot =
 		CurrentPivotSnapshot;
 	RelevancyResetSnapshot.CurrentDatabaseRole = bBecameRelevant
 		? ERpgMotionMatchingDatabaseRole::None
@@ -432,16 +433,16 @@ bool FRpgMotionMatchingDatabaseResolverTest::RunTest(const FString& Parameters)
 		RelevancyResetResult.Contains(RunStarts));
 	TestRoleSequence(
 		TEXT("Run after relevancy reset"),
-		URpgAnimInstance::ResolveMotionMatchingDatabaseRoles(RelevancyResetSnapshot),
+		RpgMotionMatchingRuntime::ResolveDatabaseRoles(RelevancyResetSnapshot),
 		{
 			ERpgMotionMatchingDatabaseRole::StandRunStarts,
 			ERpgMotionMatchingDatabaseRole::StandRunLoops,
 			ERpgMotionMatchingDatabaseRole::StandRunPivots,
 		});
 
-	URpgAnimInstance::FGroundMotionMatchingSelectionSnapshot RunStopSnapshot = SteadyRunSnapshot;
+	FRpgGroundMotionMatchingSelectionSnapshot RunStopSnapshot = SteadyRunSnapshot;
 	RunStopSnapshot.WorldAcceleration = FVector::ZeroVector;
-	RunStopSnapshot.GroundSpeed = URpgAnimInstance::RunStopMinimumSpeed;
+	RunStopSnapshot.GroundSpeed = RpgMotionMatchingRuntime::RunStopMinimumSpeed;
 	const URpgAnimInstance::FResolvedGroundMotionMatchingDatabases RunStopResult =
 		URpgAnimInstance::ResolveGroundMotionMatchingDatabases(RunStopSnapshot, DatabaseSets);
 	TestEqual(TEXT("At 100 cm/s logical Idle exposes both overlapping Stop rows"), RunStopResult.Num(), 2);
@@ -451,28 +452,28 @@ bool FRpgMotionMatchingDatabaseResolverTest::RunTest(const FString& Parameters)
 	TestFalse(TEXT("Logical Idle never exposes the moving Walk aggregate"), RunStopResult.Contains(WalkMoving));
 	TestRoleSequence(
 		TEXT("Overlapping Walk and Run Stops"),
-		URpgAnimInstance::ResolveMotionMatchingDatabaseRoles(RunStopSnapshot),
+		RpgMotionMatchingRuntime::ResolveDatabaseRoles(RunStopSnapshot),
 		{
 			ERpgMotionMatchingDatabaseRole::StandWalkStops,
 			ERpgMotionMatchingDatabaseRole::StandRunStops,
 		});
 
-	URpgAnimInstance::FGroundMotionMatchingSelectionSnapshot WalkStopSnapshot = RunStopSnapshot;
-	WalkStopSnapshot.GroundSpeed = URpgAnimInstance::RunStopMinimumSpeed - 0.01f;
+	FRpgGroundMotionMatchingSelectionSnapshot WalkStopSnapshot = RunStopSnapshot;
+	WalkStopSnapshot.GroundSpeed = RpgMotionMatchingRuntime::RunStopMinimumSpeed - 0.01f;
 	const URpgAnimInstance::FResolvedGroundMotionMatchingDatabases WalkStopResult =
 		URpgAnimInstance::ResolveGroundMotionMatchingDatabases(WalkStopSnapshot, DatabaseSets);
 	TestEqual(TEXT("Below 100 cm/s logical Idle exposes only Walk Stops"), WalkStopResult.Num(), 1);
 	TestEqual(TEXT("Walk deceleration uses the dedicated Walk Stops database"), WalkStopResult[0], WalkStops);
 
-	WalkStopSnapshot.GroundSpeed = URpgAnimInstance::WalkStopMinimumSpeed;
+	WalkStopSnapshot.GroundSpeed = RpgMotionMatchingRuntime::WalkStopMinimumSpeed;
 	const URpgAnimInstance::FResolvedGroundMotionMatchingDatabases WalkStopBoundaryResult =
 		URpgAnimInstance::ResolveGroundMotionMatchingDatabases(WalkStopSnapshot, DatabaseSets);
 	TestEqual(TEXT("The exact 20 cm/s boundary exposes both overlapping rows"), WalkStopBoundaryResult.Num(), 2);
 	TestEqual(TEXT("The exact 20 cm/s boundary preserves Idle first"), WalkStopBoundaryResult[0], Idle);
 	TestEqual(TEXT("The exact 20 cm/s boundary appends Walk Stops"), WalkStopBoundaryResult[1], WalkStops);
 
-	URpgAnimInstance::FGroundMotionMatchingSelectionSnapshot AboveWalkStopBoundarySnapshot = WalkStopSnapshot;
-	AboveWalkStopBoundarySnapshot.GroundSpeed = URpgAnimInstance::WalkStopMinimumSpeed + 0.01f;
+	FRpgGroundMotionMatchingSelectionSnapshot AboveWalkStopBoundarySnapshot = WalkStopSnapshot;
+	AboveWalkStopBoundarySnapshot.GroundSpeed = RpgMotionMatchingRuntime::WalkStopMinimumSpeed + 0.01f;
 	const URpgAnimInstance::FResolvedGroundMotionMatchingDatabases AboveWalkStopBoundaryResult =
 		URpgAnimInstance::ResolveGroundMotionMatchingDatabases(
 			AboveWalkStopBoundarySnapshot,
@@ -480,24 +481,24 @@ bool FRpgMotionMatchingDatabaseResolverTest::RunTest(const FString& Parameters)
 	TestEqual(TEXT("Above 20 cm/s Idle is no longer eligible"), AboveWalkStopBoundaryResult.Num(), 1);
 	TestEqual(TEXT("Above 20 cm/s Walk Stops remain eligible"), AboveWalkStopBoundaryResult[0], WalkStops);
 
-	URpgAnimInstance::FGroundMotionMatchingSelectionSnapshot IdleDecelerationSnapshot = WalkStopSnapshot;
-	IdleDecelerationSnapshot.GroundSpeed = URpgAnimInstance::WalkStopMinimumSpeed - 0.01f;
+	FRpgGroundMotionMatchingSelectionSnapshot IdleDecelerationSnapshot = WalkStopSnapshot;
+	IdleDecelerationSnapshot.GroundSpeed = RpgMotionMatchingRuntime::WalkStopMinimumSpeed - 0.01f;
 	const URpgAnimInstance::FResolvedGroundMotionMatchingDatabases IdleDecelerationResult =
 		URpgAnimInstance::ResolveGroundMotionMatchingDatabases(IdleDecelerationSnapshot, DatabaseSets);
 	TestEqual(TEXT("Below 20 cm/s logical Idle resolves the Idle database"), IdleDecelerationResult.Num(), 1);
 	TestEqual(TEXT("Low-speed deceleration uses Idle"), IdleDecelerationResult[0], Idle);
 
-	URpgAnimInstance::FGroundMotionMatchingSelectionSnapshot BelowSprintStopSnapshot = RunStopSnapshot;
-	BelowSprintStopSnapshot.GroundSpeed = URpgAnimInstance::SprintStopMinimumSpeed - 0.01f;
+	FRpgGroundMotionMatchingSelectionSnapshot BelowSprintStopSnapshot = RunStopSnapshot;
+	BelowSprintStopSnapshot.GroundSpeed = RpgMotionMatchingRuntime::SprintStopMinimumSpeed - 0.01f;
 	const URpgAnimInstance::FResolvedGroundMotionMatchingDatabases BelowSprintStopResult =
 		URpgAnimInstance::ResolveGroundMotionMatchingDatabases(BelowSprintStopSnapshot, DatabaseSets);
 	TestEqual(TEXT("Below 550 cm/s logical Idle exposes Walk and Run Stops"), BelowSprintStopResult.Num(), 2);
 	TestEqual(TEXT("Below Sprint speed Walk Stops remain first"), BelowSprintStopResult[0], WalkStops);
 	TestEqual(TEXT("Below Sprint speed Run Stops remain second"), BelowSprintStopResult[1], RunStops);
 
-	URpgAnimInstance::FGroundMotionMatchingSelectionSnapshot SprintStopSnapshot = RunStopSnapshot;
+	FRpgGroundMotionMatchingSelectionSnapshot SprintStopSnapshot = RunStopSnapshot;
 	SprintStopSnapshot.Gait = ERpgLocomotionGait::Sprint;
-	SprintStopSnapshot.GroundSpeed = URpgAnimInstance::SprintStopMinimumSpeed;
+	SprintStopSnapshot.GroundSpeed = RpgMotionMatchingRuntime::SprintStopMinimumSpeed;
 	const URpgAnimInstance::FResolvedGroundMotionMatchingDatabases SprintStopResult =
 		URpgAnimInstance::ResolveGroundMotionMatchingDatabases(SprintStopSnapshot, DatabaseSets);
 	TestEqual(TEXT("A future explicit Sprint exposes all three Stop rows at 550 cm/s"), SprintStopResult.Num(), 3);
@@ -507,14 +508,14 @@ bool FRpgMotionMatchingDatabaseResolverTest::RunTest(const FString& Parameters)
 	TestFalse(TEXT("Sprint stopping never exposes the moving Sprint aggregate"), SprintStopResult.Contains(SprintMoving));
 	TestRoleSequence(
 		TEXT("Overlapping Sprint Stops"),
-		URpgAnimInstance::ResolveMotionMatchingDatabaseRoles(SprintStopSnapshot),
+		RpgMotionMatchingRuntime::ResolveDatabaseRoles(SprintStopSnapshot),
 		{
 			ERpgMotionMatchingDatabaseRole::StandWalkStops,
 			ERpgMotionMatchingDatabaseRole::StandRunStops,
 			ERpgMotionMatchingDatabaseRole::StandSprintStops,
 		});
 
-	URpgAnimInstance::FGroundMotionMatchingSelectionSnapshot FastRunStopSnapshot = RunStopSnapshot;
+	FRpgGroundMotionMatchingSelectionSnapshot FastRunStopSnapshot = RunStopSnapshot;
 	FastRunStopSnapshot.GroundSpeed = 600.0f;
 	const URpgAnimInstance::FResolvedGroundMotionMatchingDatabases FastRunStopResult =
 		URpgAnimInstance::ResolveGroundMotionMatchingDatabases(FastRunStopSnapshot, DatabaseSets);
@@ -526,40 +527,40 @@ bool FRpgMotionMatchingDatabaseResolverTest::RunTest(const FString& Parameters)
 	TestEqual(TEXT("Fast Run keeps Run Stops second"), FastRunStopResult[1], RunStops);
 	TestFalse(TEXT("Fast Run excludes the forward-only Sprint Stops"), FastRunStopResult.Contains(SprintStops));
 
-	URpgAnimInstance::FGroundMotionMatchingSelectionSnapshot AboveSprintStopSnapshot = SprintStopSnapshot;
-	AboveSprintStopSnapshot.GroundSpeed = URpgAnimInstance::SprintStopMinimumSpeed + 100.0f;
+	FRpgGroundMotionMatchingSelectionSnapshot AboveSprintStopSnapshot = SprintStopSnapshot;
+	AboveSprintStopSnapshot.GroundSpeed = RpgMotionMatchingRuntime::SprintStopMinimumSpeed + 100.0f;
 	const URpgAnimInstance::FResolvedGroundMotionMatchingDatabases AboveSprintStopResult =
 		URpgAnimInstance::ResolveGroundMotionMatchingDatabases(AboveSprintStopSnapshot, DatabaseSets);
 	TestEqual(TEXT("Sprint Stops have no upper speed bound"), AboveSprintStopResult.Num(), 3);
 	TestEqual(TEXT("Above 550 cm/s Sprint Stops remain last in source order"), AboveSprintStopResult[2], SprintStops);
 
-	URpgAnimInstance::FGroundMotionMatchingSelectionSnapshot StaleNonGroundSnapshot = SteadyRunSnapshot;
+	FRpgGroundMotionMatchingSelectionSnapshot StaleNonGroundSnapshot = SteadyRunSnapshot;
 	StaleNonGroundSnapshot.bIsMovingOnGround = false;
 	const URpgAnimInstance::FResolvedGroundMotionMatchingDatabases StaleNonGroundResult =
 		URpgAnimInstance::ResolveGroundMotionMatchingDatabases(StaleNonGroundSnapshot, DatabaseSets);
 	TestTrue(TEXT("A stale non-grounded pointer snapshot fails closed"), StaleNonGroundResult.IsEmpty());
 
-	URpgAnimInstance::FGroundMotionMatchingSelectionSnapshot AirborneRunSnapshot = StaleNonGroundSnapshot;
+	FRpgGroundMotionMatchingSelectionSnapshot AirborneRunSnapshot = StaleNonGroundSnapshot;
 	AirborneRunSnapshot.MovementState = ERpgLocomotionMovementState::Airborne;
 	const URpgAnimInstance::FResolvedGroundMotionMatchingDatabases AirborneRunResult =
 		URpgAnimInstance::ResolveGroundMotionMatchingDatabases(AirborneRunSnapshot, DatabaseSets);
 	TestTrue(TEXT("The grounded pointer resolver ignores the Airborne role"), AirborneRunResult.IsEmpty());
 	TestRoleSequence(
 		TEXT("Airborne"),
-		URpgAnimInstance::ResolveMotionMatchingDatabaseRoles(AirborneRunSnapshot),
+		RpgMotionMatchingRuntime::ResolveDatabaseRoles(AirborneRunSnapshot),
 		{ERpgMotionMatchingDatabaseRole::Jump});
 
-	URpgAnimInstance::FGroundMotionMatchingSelectionSnapshot CrouchingSnapshot = WalkSnapshot;
+	FRpgGroundMotionMatchingSelectionSnapshot CrouchingSnapshot = WalkSnapshot;
 	CrouchingSnapshot.Stance = ERpgLocomotionStance::Crouching;
 	TestRoleSequence(
 		TEXT("Grounded Crouch"),
-		URpgAnimInstance::ResolveMotionMatchingDatabaseRoles(CrouchingSnapshot),
+		RpgMotionMatchingRuntime::ResolveDatabaseRoles(CrouchingSnapshot),
 		{ERpgMotionMatchingDatabaseRole::Crouch});
 	const URpgAnimInstance::FResolvedGroundMotionMatchingDatabases CrouchingGroundResult =
 		URpgAnimInstance::ResolveGroundMotionMatchingDatabases(CrouchingSnapshot, DatabaseSets);
 	TestTrue(TEXT("The grounded pointer resolver ignores the dedicated Crouch role"), CrouchingGroundResult.IsEmpty());
 
-	const URpgAnimInstance::FGroundMotionMatchingSelectionSnapshot SprintSnapshot =
+	const FRpgGroundMotionMatchingSelectionSnapshot SprintSnapshot =
 		MakeMovingSnapshot(ERpgLocomotionGait::Sprint);
 	const URpgAnimInstance::FResolvedGroundMotionMatchingDatabases SprintResult =
 		URpgAnimInstance::ResolveGroundMotionMatchingDatabases(SprintSnapshot, DatabaseSets);
@@ -567,51 +568,51 @@ bool FRpgMotionMatchingDatabaseResolverTest::RunTest(const FString& Parameters)
 	TestEqual(TEXT("Moving Sprint preserves its aggregate database"), SprintResult[0], SprintMoving);
 	TestRoleSequence(
 		TEXT("Moving Sprint"),
-		URpgAnimInstance::ResolveMotionMatchingDatabaseRoles(SprintSnapshot),
+		RpgMotionMatchingRuntime::ResolveDatabaseRoles(SprintSnapshot),
 		{ERpgMotionMatchingDatabaseRole::StandSprint});
 
-	URpgAnimInstance::FGroundMotionMatchingDomainState MovingRunDomain;
+	FRpgGroundMotionMatchingDomainState MovingRunDomain;
 	MovingRunDomain.PhysicalMovementState = ERpgLocomotionMovementState::Grounded;
 	MovingRunDomain.Gait = ERpgLocomotionGait::Run;
 	MovingRunDomain.Stance = ERpgLocomotionStance::Standing;
 	MovingRunDomain.bChooserMoving = true;
 	TestTrue(
 		TEXT("The first selector domain requests a database-change interrupt"),
-		URpgAnimInstance::ShouldInterruptGroundMotionMatching(false, MovingRunDomain, MovingRunDomain));
+		RpgMotionMatchingRuntime::ShouldInterruptGroundMotionMatching(false, MovingRunDomain, MovingRunDomain));
 	TestFalse(
 		TEXT("Transient Start or Pivot candidate changes do not interrupt a stable Moving Run domain"),
-		URpgAnimInstance::ShouldInterruptGroundMotionMatching(true, MovingRunDomain, MovingRunDomain));
+		RpgMotionMatchingRuntime::ShouldInterruptGroundMotionMatching(true, MovingRunDomain, MovingRunDomain));
 
-	URpgAnimInstance::FGroundMotionMatchingDomainState IdleRunDomain = MovingRunDomain;
+	FRpgGroundMotionMatchingDomainState IdleRunDomain = MovingRunDomain;
 	IdleRunDomain.bChooserMoving = false;
 	TestTrue(
 		TEXT("Moving to logical Idle interrupts exactly at input release"),
-		URpgAnimInstance::ShouldInterruptGroundMotionMatching(true, MovingRunDomain, IdleRunDomain));
+		RpgMotionMatchingRuntime::ShouldInterruptGroundMotionMatching(true, MovingRunDomain, IdleRunDomain));
 	TestFalse(
 		TEXT("Crossing Stop speed bands does not interrupt the continuing Idle-domain pose"),
-		URpgAnimInstance::ShouldInterruptGroundMotionMatching(true, IdleRunDomain, IdleRunDomain));
+		RpgMotionMatchingRuntime::ShouldInterruptGroundMotionMatching(true, IdleRunDomain, IdleRunDomain));
 
-	URpgAnimInstance::FGroundMotionMatchingDomainState MovingWalkDomain = MovingRunDomain;
+	FRpgGroundMotionMatchingDomainState MovingWalkDomain = MovingRunDomain;
 	MovingWalkDomain.Gait = ERpgLocomotionGait::Walk;
 	TestTrue(
 		TEXT("A gait change while Moving interrupts on database change"),
-		URpgAnimInstance::ShouldInterruptGroundMotionMatching(true, MovingRunDomain, MovingWalkDomain));
-	URpgAnimInstance::FGroundMotionMatchingDomainState IdleWalkDomain = IdleRunDomain;
+		RpgMotionMatchingRuntime::ShouldInterruptGroundMotionMatching(true, MovingRunDomain, MovingWalkDomain));
+	FRpgGroundMotionMatchingDomainState IdleWalkDomain = IdleRunDomain;
 	IdleWalkDomain.Gait = ERpgLocomotionGait::Walk;
 	TestFalse(
 		TEXT("A gait label change inside logical Idle does not interrupt the stop continuation"),
-		URpgAnimInstance::ShouldInterruptGroundMotionMatching(true, IdleRunDomain, IdleWalkDomain));
+		RpgMotionMatchingRuntime::ShouldInterruptGroundMotionMatching(true, IdleRunDomain, IdleWalkDomain));
 
-	URpgAnimInstance::FGroundMotionMatchingDomainState CrouchingRunDomain = MovingRunDomain;
+	FRpgGroundMotionMatchingDomainState CrouchingRunDomain = MovingRunDomain;
 	CrouchingRunDomain.Stance = ERpgLocomotionStance::Crouching;
 	TestTrue(
 		TEXT("A grounded stance change interrupts on database change"),
-		URpgAnimInstance::ShouldInterruptGroundMotionMatching(true, MovingRunDomain, CrouchingRunDomain));
-	URpgAnimInstance::FGroundMotionMatchingDomainState AirborneDomain = MovingRunDomain;
+		RpgMotionMatchingRuntime::ShouldInterruptGroundMotionMatching(true, MovingRunDomain, CrouchingRunDomain));
+	FRpgGroundMotionMatchingDomainState AirborneDomain = MovingRunDomain;
 	AirborneDomain.PhysicalMovementState = ERpgLocomotionMovementState::Airborne;
 	TestTrue(
 		TEXT("A physical movement-mode change interrupts on database change"),
-		URpgAnimInstance::ShouldInterruptGroundMotionMatching(true, MovingRunDomain, AirborneDomain));
+		RpgMotionMatchingRuntime::ShouldInterruptGroundMotionMatching(true, MovingRunDomain, AirborneDomain));
 
 	FRpgGroundMotionMatchingDatabaseSets NullEntrySets = DatabaseSets;
 	NullEntrySets.Run[1] = nullptr;
@@ -899,8 +900,8 @@ bool FRpgMotionMatchingDatabaseResolverTest::RunTest(const FString& Parameters)
 		URpgAnimInstance::ValidateMotionMatchingDatabaseRoleContracts(NullRoleDatabaseContracts);
 	TestTrue(TEXT("A null runtime role database fails validation"), NullRoleDatabaseValidation.bHasNullDatabase);
 
-	const URpgAnimInstance::FMotionMatchingPostSelectionState ContinuingRunPostSelection =
-		URpgAnimInstance::ResolveMotionMatchingPostSelection(
+	const FRpgMotionMatchingPostSelectionState ContinuingRunPostSelection =
+		RpgMotionMatchingRuntime::ResolvePostSelection(
 			ERpgMotionMatchingDatabaseRole::StandRunLoops,
 			true,
 			EPoseSearchInterruptMode::DoNotInterrupt,
@@ -918,8 +919,8 @@ bool FRpgMotionMatchingDatabaseResolverTest::RunTest(const FString& Parameters)
 	TestFalse(TEXT("A Continuing Pose never relatches turn-in-place"), ContinuingRunPostSelection.bShouldLatchTurnInPlace);
 	TestFalse(TEXT("A Continuing Pose never relatches landing"), ContinuingRunPostSelection.bShouldLatchLanding);
 
-	const URpgAnimInstance::FMotionMatchingPostSelectionState FreshTurnPostSelection =
-		URpgAnimInstance::ResolveMotionMatchingPostSelection(
+	const FRpgMotionMatchingPostSelectionState FreshTurnPostSelection =
+		RpgMotionMatchingRuntime::ResolvePostSelection(
 			ERpgMotionMatchingDatabaseRole::StandTurnInPlace,
 			false,
 			EPoseSearchInterruptMode::ForceInterrupt,
@@ -932,16 +933,16 @@ bool FRpgMotionMatchingDatabaseResolverTest::RunTest(const FString& Parameters)
 	TestTrue(TEXT("A fresh selected TurnInPlace role latches its playback"), FreshTurnPostSelection.bShouldLatchTurnInPlace);
 	TestFalse(TEXT("A TurnInPlace role cannot also latch landing"), FreshTurnPostSelection.bShouldLatchLanding);
 
-	const URpgAnimInstance::FMotionMatchingPostSelectionState ContinuingTurnPostSelection =
-		URpgAnimInstance::ResolveMotionMatchingPostSelection(
+	const FRpgMotionMatchingPostSelectionState ContinuingTurnPostSelection =
+		RpgMotionMatchingRuntime::ResolvePostSelection(
 			ERpgMotionMatchingDatabaseRole::StandTurnInPlace,
 			true,
 			EPoseSearchInterruptMode::DoNotInterrupt,
 			true,
 			false);
 	TestFalse(TEXT("A continuing TurnInPlace result is not restarted"), ContinuingTurnPostSelection.bShouldLatchTurnInPlace);
-	const URpgAnimInstance::FMotionMatchingPostSelectionState UnrequestedTurnPostSelection =
-		URpgAnimInstance::ResolveMotionMatchingPostSelection(
+	const FRpgMotionMatchingPostSelectionState UnrequestedTurnPostSelection =
+		RpgMotionMatchingRuntime::ResolvePostSelection(
 			ERpgMotionMatchingDatabaseRole::StandTurnInPlace,
 			false,
 			EPoseSearchInterruptMode::DoNotInterrupt,
@@ -949,8 +950,8 @@ bool FRpgMotionMatchingDatabaseResolverTest::RunTest(const FString& Parameters)
 			false);
 	TestFalse(TEXT("A TurnInPlace role cannot latch without an active request"), UnrequestedTurnPostSelection.bShouldLatchTurnInPlace);
 
-	const URpgAnimInstance::FMotionMatchingPostSelectionState FreshLandingPostSelection =
-		URpgAnimInstance::ResolveMotionMatchingPostSelection(
+	const FRpgMotionMatchingPostSelectionState FreshLandingPostSelection =
+		RpgMotionMatchingRuntime::ResolvePostSelection(
 			ERpgMotionMatchingDatabaseRole::StandLightLanding,
 			false,
 			EPoseSearchInterruptMode::InterruptOnDatabaseChange,
@@ -962,8 +963,8 @@ bool FRpgMotionMatchingDatabaseResolverTest::RunTest(const FString& Parameters)
 		static_cast<uint8>(EPoseSearchInterruptMode::InterruptOnDatabaseChange));
 	TestTrue(TEXT("A fresh selected Landing role latches its bounded playback"), FreshLandingPostSelection.bShouldLatchLanding);
 	TestFalse(TEXT("A Landing role cannot also latch turn-in-place"), FreshLandingPostSelection.bShouldLatchTurnInPlace);
-	const URpgAnimInstance::FMotionMatchingPostSelectionState ContinuingLandingPostSelection =
-		URpgAnimInstance::ResolveMotionMatchingPostSelection(
+	const FRpgMotionMatchingPostSelectionState ContinuingLandingPostSelection =
+		RpgMotionMatchingRuntime::ResolvePostSelection(
 			ERpgMotionMatchingDatabaseRole::StandLightLanding,
 			true,
 			EPoseSearchInterruptMode::DoNotInterrupt,
@@ -972,8 +973,8 @@ bool FRpgMotionMatchingDatabaseResolverTest::RunTest(const FString& Parameters)
 	TestFalse(
 		TEXT("A continuing Landing result is not restarted"),
 		ContinuingLandingPostSelection.bShouldLatchLanding);
-	const URpgAnimInstance::FMotionMatchingPostSelectionState UnrequestedLandingPostSelection =
-		URpgAnimInstance::ResolveMotionMatchingPostSelection(
+	const FRpgMotionMatchingPostSelectionState UnrequestedLandingPostSelection =
+		RpgMotionMatchingRuntime::ResolvePostSelection(
 			ERpgMotionMatchingDatabaseRole::StandLightLanding,
 			false,
 			EPoseSearchInterruptMode::DoNotInterrupt,
@@ -994,9 +995,9 @@ bool FRpgMotionMatchingDatabaseResolverTest::RunTest(const FString& Parameters)
 		const FName RoleTag = URpgAnimInstance::GetMotionMatchingDatabaseRoleTag(LandingRole);
 		TestTrue(
 			*FString::Printf(TEXT("%s is recognized as one of the six landing roles"), *RoleTag.ToString()),
-			URpgAnimInstance::IsLandingDatabaseRole(LandingRole));
-		const URpgAnimInstance::FMotionMatchingPostSelectionState FreshRolePostSelection =
-			URpgAnimInstance::ResolveMotionMatchingPostSelection(
+			RpgMotionMatchingRuntime::IsLandingDatabaseRole(LandingRole));
+		const FRpgMotionMatchingPostSelectionState FreshRolePostSelection =
+			RpgMotionMatchingRuntime::ResolvePostSelection(
 				LandingRole,
 				false,
 				EPoseSearchInterruptMode::InterruptOnDatabaseChange,
@@ -1012,8 +1013,8 @@ bool FRpgMotionMatchingDatabaseResolverTest::RunTest(const FString& Parameters)
 		TestFalse(
 			*FString::Printf(TEXT("A %s result cannot latch turn-in-place"), *RoleTag.ToString()),
 			FreshRolePostSelection.bShouldLatchTurnInPlace);
-		const URpgAnimInstance::FMotionMatchingPostSelectionState ContinuingRolePostSelection =
-			URpgAnimInstance::ResolveMotionMatchingPostSelection(
+		const FRpgMotionMatchingPostSelectionState ContinuingRolePostSelection =
+			RpgMotionMatchingRuntime::ResolvePostSelection(
 				LandingRole,
 				true,
 				EPoseSearchInterruptMode::DoNotInterrupt,
@@ -1024,8 +1025,8 @@ bool FRpgMotionMatchingDatabaseResolverTest::RunTest(const FString& Parameters)
 			ContinuingRolePostSelection.bShouldLatchLanding);
 	}
 
-	const URpgAnimInstance::FMotionMatchingPostSelectionState InvalidRolePostSelection =
-		URpgAnimInstance::ResolveMotionMatchingPostSelection(
+	const FRpgMotionMatchingPostSelectionState InvalidRolePostSelection =
+		RpgMotionMatchingRuntime::ResolvePostSelection(
 			ERpgMotionMatchingDatabaseRole::None,
 			false,
 			EPoseSearchInterruptMode::InterruptOnDatabaseChange,
@@ -1038,7 +1039,7 @@ bool FRpgMotionMatchingDatabaseResolverTest::RunTest(const FString& Parameters)
 	TestFalse(TEXT("An invalid completed role cannot latch turn-in-place"), InvalidRolePostSelection.bShouldLatchTurnInPlace);
 	TestFalse(TEXT("An invalid completed role cannot latch landing"), InvalidRolePostSelection.bShouldLatchLanding);
 
-	URpgAnimInstance::FGroundMotionMatchingSelectionSnapshot UnknownGaitSnapshot = SteadyRunSnapshot;
+	FRpgGroundMotionMatchingSelectionSnapshot UnknownGaitSnapshot = SteadyRunSnapshot;
 	UnknownGaitSnapshot.Gait = static_cast<ERpgLocomotionGait>(MAX_uint8);
 	const URpgAnimInstance::FResolvedGroundMotionMatchingDatabases UnknownGaitResult =
 		URpgAnimInstance::ResolveGroundMotionMatchingDatabases(UnknownGaitSnapshot, DatabaseSets);
