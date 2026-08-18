@@ -1688,6 +1688,24 @@ bool FRpgGaspPilotAssetContractTest::RunTest(const FString& Parameters)
 					FString(TEXT("/RpgGaspLocomotion/MotionMatching/Databases/PSD_Rpg_Jump.PSD_Rpg_Jump")));
 			}
 		}
+		const FArrayProperty* AirborneDatabasesProperty =
+			FindFProperty<FArrayProperty>(
+				PilotAnimDefaults->GetClass(),
+				TEXT("AirborneMotionMatchingDatabases"));
+		const FObjectPropertyBase* AirborneDatabaseInner = AirborneDatabasesProperty
+			? CastField<FObjectPropertyBase>(AirborneDatabasesProperty->Inner)
+			: nullptr;
+		TestTrue(
+			TEXT("AirborneMotionMatchingDatabases keeps its Pose Search database array type"),
+			AirborneDatabaseInner &&
+				AirborneDatabaseInner->PropertyClass == UPoseSearchDatabase::StaticClass());
+		TestTrue(
+			TEXT("AirborneMotionMatchingDatabases remains designer-authored Blueprint-readable configuration"),
+			AirborneDatabasesProperty && AirborneDatabasesProperty->HasAllPropertyFlags(
+				CPF_Edit | CPF_DisableEditOnInstance | CPF_BlueprintVisible | CPF_BlueprintReadOnly));
+		TestFalse(
+			TEXT("AirborneMotionMatchingDatabases is not transient runtime state"),
+			AirborneDatabasesProperty && AirborneDatabasesProperty->HasAnyPropertyFlags(CPF_Transient));
 
 		static const struct
 		{
@@ -1728,6 +1746,27 @@ bool FRpgGaspPilotAssetContractTest::RunTest(const FString& Parameters)
 		};
 		for (const auto& ExpectedLandingDatabase : ExpectedLandingDatabases)
 		{
+			const FObjectPropertyBase* LandingDatabaseProperty =
+				FindFProperty<FObjectPropertyBase>(
+					PilotAnimDefaults->GetClass(),
+					ExpectedLandingDatabase.PropertyName);
+			TestTrue(
+				*FString::Printf(
+					TEXT("%s keeps its Pose Search database object type"),
+					ExpectedLandingDatabase.PropertyName),
+				LandingDatabaseProperty &&
+					LandingDatabaseProperty->PropertyClass == UPoseSearchDatabase::StaticClass());
+			TestTrue(
+				*FString::Printf(
+					TEXT("%s remains designer-authored Blueprint-readable configuration"),
+					ExpectedLandingDatabase.PropertyName),
+				LandingDatabaseProperty && LandingDatabaseProperty->HasAllPropertyFlags(
+					CPF_Edit | CPF_DisableEditOnInstance | CPF_BlueprintVisible | CPF_BlueprintReadOnly));
+			TestFalse(
+				*FString::Printf(
+					TEXT("%s is not transient runtime state"),
+					ExpectedLandingDatabase.PropertyName),
+				LandingDatabaseProperty && LandingDatabaseProperty->HasAnyPropertyFlags(CPF_Transient));
 			FString LandingDatabasePath;
 			if (TestTrue(
 					*FString::Printf(
@@ -1745,6 +1784,28 @@ bool FRpgGaspPilotAssetContractTest::RunTest(const FString& Parameters)
 					LandingDatabasePath,
 					FString(ExpectedLandingDatabase.ExpectedObjectPath));
 			}
+		}
+
+		for (const FName TransientAssetPropertyName : {
+			FName(TEXT("LandingSelectedAsset")),
+			FName(TEXT("BackwardJumpStartHeldAsset")) })
+		{
+			const FObjectPropertyBase* TransientAssetProperty =
+				FindFProperty<FObjectPropertyBase>(
+					PilotAnimDefaults->GetClass(),
+					TransientAssetPropertyName);
+			TestTrue(
+				*FString::Printf(
+					TEXT("%s remains a GC-tracked animation-asset property"),
+					*TransientAssetPropertyName.ToString()),
+				TransientAssetProperty &&
+					TransientAssetProperty->PropertyClass == UAnimationAsset::StaticClass());
+			TestTrue(
+				*FString::Printf(
+					TEXT("%s remains transient cosmetic state"),
+					*TransientAssetPropertyName.ToString()),
+				TransientAssetProperty &&
+					TransientAssetProperty->HasAllPropertyFlags(CPF_Transient));
 		}
 
 		float HeavyLandingSpeedThreshold = 0.0f;
@@ -1768,6 +1829,46 @@ bool FRpgGaspPilotAssetContractTest::RunTest(const FString& Parameters)
 			TestFalse(
 				TEXT("HeavyLandingSpeedThreshold is not transient runtime state"),
 				Property && Property->HasAnyPropertyFlags(CPF_Transient));
+		}
+	}
+
+	for (const FName CallbackName : {
+		GET_FUNCTION_NAME_CHECKED(URpgAnimInstance, UpdateGaspMotionMatching),
+		GET_FUNCTION_NAME_CHECKED(URpgAnimInstance, UpdateGaspMotionMatchingPostSelection) })
+	{
+		UFunction* CallbackFunction = URpgAnimInstance::StaticClass()->FindFunctionByName(CallbackName);
+		if (TestNotNull(
+			*FString::Printf(TEXT("%s remains reflected"), *CallbackName.ToString()),
+			CallbackFunction))
+		{
+			TestTrue(
+				*FString::Printf(TEXT("%s remains BlueprintCallable"), *CallbackName.ToString()),
+				CallbackFunction->HasAllFunctionFlags(FUNC_BlueprintCallable));
+			TestTrue(
+				*FString::Printf(TEXT("%s remains BlueprintThreadSafe"), *CallbackName.ToString()),
+				CallbackFunction->HasMetaData(TEXT("BlueprintThreadSafe")));
+			TestEqual(
+				*FString::Printf(TEXT("%s keeps exactly two parameters"), *CallbackName.ToString()),
+				static_cast<int32>(CallbackFunction->NumParms),
+				2);
+			TestNull(
+				*FString::Printf(TEXT("%s remains a void callback"), *CallbackName.ToString()),
+				CallbackFunction->GetReturnProperty());
+
+			const FStructProperty* ContextProperty =
+				FindFProperty<FStructProperty>(CallbackFunction, TEXT("Context"));
+			const FStructProperty* NodeProperty =
+				FindFProperty<FStructProperty>(CallbackFunction, TEXT("Node"));
+			TestTrue(
+				*FString::Printf(TEXT("%s keeps const-ref FAnimUpdateContext"), *CallbackName.ToString()),
+				ContextProperty && ContextProperty->Struct == FAnimUpdateContext::StaticStruct() &&
+					ContextProperty->HasAllPropertyFlags(
+						CPF_Parm | CPF_ConstParm | CPF_ReferenceParm));
+			TestTrue(
+				*FString::Printf(TEXT("%s keeps const-ref FAnimNodeReference"), *CallbackName.ToString()),
+				NodeProperty && NodeProperty->Struct == FAnimNodeReference::StaticStruct() &&
+					NodeProperty->HasAllPropertyFlags(
+						CPF_Parm | CPF_ConstParm | CPF_ReferenceParm));
 		}
 	}
 
