@@ -11,6 +11,7 @@
 #include "Misc/AutomationTest.h"
 #include "PoseSearch/PoseSearchDatabase.h"
 #include "SurvivalRpg/Animation/RpgAnimInstance.h"
+#include "SurvivalRpg/Animation/RpgMotionMatchingRuntime.h"
 #include "SurvivalRpg/Core/Character/RpgCharacter.h"
 #include "UObject/Package.h"
 #include "UObject/UObjectGlobals.h"
@@ -589,7 +590,7 @@ bool FRpgJumpPhaseRuntimeTest::RunTest(const FString& Parameters)
 					? LandingCase.WalkDatabase
 					: LandingCase.RunDatabase;
 			Proxy.WorldVelocity = FVector(
-				URpgAnimInstance::ChooserVelocityTolerance + 0.01f,
+				RpgMotionMatchingRuntime::ChooserVelocityTolerance + 0.01f,
 				0.0f,
 				0.0f);
 			Proxy.GroundSpeed = Proxy.WorldVelocity.Size2D();
@@ -795,7 +796,7 @@ bool FRpgJumpPhaseRuntimeTest::RunTest(const FString& Parameters)
 				StandRequestSerial);
 
 			Proxy.WorldVelocity = FVector(
-				URpgAnimInstance::ChooserVelocityTolerance + 0.01f,
+				RpgMotionMatchingRuntime::ChooserVelocityTolerance + 0.01f,
 				0.0f,
 				0.0f);
 			Proxy.VerticalVelocity = 0.0f;
@@ -902,7 +903,7 @@ bool FRpgJumpPhaseRuntimeTest::RunTest(const FString& Parameters)
 			AnimInstance->LandingTouchdownElapsed > 0.3f);
 
 		Proxy.WorldVelocity = FVector(
-			URpgAnimInstance::ChooserVelocityTolerance + 0.01f,
+			RpgMotionMatchingRuntime::ChooserVelocityTolerance + 0.01f,
 			0.0f,
 			0.0f);
 		Proxy.GroundSpeed = Proxy.WorldVelocity.Size2D();

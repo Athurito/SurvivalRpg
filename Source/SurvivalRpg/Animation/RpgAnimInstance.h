@@ -14,6 +14,7 @@
 #include "PoseSearch/PoseSearchTrajectoryLibrary.h"
 #include "RpgFootPlacementTypes.h"
 #include "RpgGaspPresentationProfile.h"
+#include "RpgMotionMatchingRuntime.h"
 #include "RpgPoseSearchTrajectory.h"
 #include "SurvivalRpg/Core/Character/RpgCharacterRotationMode.h"
 #include "RpgAnimInstance.generated.h"
@@ -771,83 +772,13 @@ private:
 
 	using FResolvedGroundMotionMatchingDatabases =
 		TArray<UPoseSearchDatabase*, TInlineAllocator<4>>;
-	using FResolvedMotionMatchingDatabaseRoles =
-		TArray<ERpgMotionMatchingDatabaseRole, TInlineAllocator<4>>;
 	using FMotionMatchingDatabaseRoleContracts =
 		TArray<FMotionMatchingDatabaseRoleContract, TInlineAllocator<18>>;
 
-	/**
-	 * Pointer-free locomotion snapshot used to classify one bounded project database search.
-	 * It deliberately contains no actor, controller, authority, or network-role state so identical
-	 * movement snapshots resolve identically for local and simulated characters.
-	 */
-	struct FGroundMotionMatchingSelectionSnapshot
-	{
-		ERpgLocomotionGait Gait = ERpgLocomotionGait::Idle;
-		ERpgLocomotionStance Stance = ERpgLocomotionStance::Standing;
-		ERpgLocomotionMovementState MovementState = ERpgLocomotionMovementState::None;
-		ERpgCharacterRotationMode RotationMode = ERpgCharacterRotationMode::Free;
-		FVector WorldVelocity = FVector::ZeroVector;
-		FVector WorldAcceleration = FVector::ZeroVector;
-		FVector FutureVelocity = FVector::ZeroVector;
-		float GroundSpeed = 0.0f;
-		/** Role captured by the completed-search callback from the latest Motion Matching result. */
-		ERpgMotionMatchingDatabaseRole CurrentDatabaseRole = ERpgMotionMatchingDatabaseRole::None;
-		bool bIsMovingOnGround = false;
-	};
-
-	/** Value-only PostSelection result shared by the worker-thread callback and focused tests. */
-	struct FMotionMatchingPostSelectionState
-	{
-		ERpgMotionMatchingDatabaseRole CurrentDatabaseRole = ERpgMotionMatchingDatabaseRole::None;
-		EPoseSearchInterruptMode InterruptMode = EPoseSearchInterruptMode::DoNotInterrupt;
-		bool bIsContinuingPose = false;
-		bool bShouldLatchTurnInPlace = false;
-		bool bShouldLatchLanding = false;
-	};
-
-	/** High-level selector state used to preserve current poses across transient candidate-list changes. */
-	struct FGroundMotionMatchingDomainState
-	{
-		ERpgLocomotionMovementState PhysicalMovementState = ERpgLocomotionMovementState::None;
-		ERpgLocomotionGait Gait = ERpgLocomotionGait::Idle;
-		ERpgLocomotionStance Stance = ERpgLocomotionStance::Standing;
-		bool bChooserMoving = false;
-	};
-
-	// Source-aligned GASP Sparse chooser gates, expressed in project-native value-only state.
-	static constexpr float ChooserVelocityTolerance = 0.1f;
-	static constexpr float ChooserAccelerationTolerance = 0.0001f;
-	static constexpr float WalkStopMinimumSpeed = 20.0f;
-	static constexpr float RunStopMinimumSpeed = 100.0f;
-	static constexpr float SprintStopMinimumSpeed = 550.0f;
-	static constexpr float FreeRunPivotMinimumAngle = 45.0f;
-	static constexpr float CombatStrafeRunPivotMinimumAngle = 30.0f;
-	static constexpr float AimRunPivotMinimumAngle = 0.0f;
-	static constexpr float RunStartMinimumFutureSpeedGain = 100.0f;
-	static constexpr float RunStartFutureVelocityBeginTime = 0.4f;
-	static constexpr float RunStartFutureVelocityEndTime = 0.5f;
-	/** Mirrors GASP's logical Moving state from finite horizontal velocity and acceleration. */
-	static bool IsGroundMotionMatchingChooserMoving(
-		const FGroundMotionMatchingSelectionSnapshot& Snapshot);
-	/** Resolves the source GASP pivot threshold for the active facing policy, in degrees. */
-	static float GetRunPivotMinimumAngle(ERpgCharacterRotationMode RotationMode);
-	/** Returns true only for source-level state changes that may interrupt the current continuing pose. */
-	static bool ShouldInterruptGroundMotionMatching(
-		bool bHasPreviousState,
-		const FGroundMotionMatchingDomainState& PreviousState,
-		const FGroundMotionMatchingDomainState& CurrentState);
 	/** Mirrors the engine node's update-counter test and returns true after one or more missed updates. */
 	static bool SynchronizeMotionMatchingNodeUpdateCounter(
 		FGraphTraversalCounter& NodeUpdateCounter,
 		const FGraphTraversalCounter& AnimInstanceUpdateCounter);
-
-	/**
-	 * Evaluates the pointer-free project chooser contract and returns ordered database roles.
-	 * Airborne and crouching domains are resolved before the grounded Idle/Walk/Run/Sprint rows.
-	 */
-	static FResolvedMotionMatchingDatabaseRoles ResolveMotionMatchingDatabaseRoles(
-		const FGroundMotionMatchingSelectionSnapshot& Snapshot);
 
 	/**
 	 * Selects one immutable GASP-like domain while invalid null or duplicate entries are safely omitted.
@@ -855,7 +786,7 @@ private:
 	 * source's inclusive and overlapping Idle, Walk Stops, Run Stops, Sprint Stops row order.
 	 */
 	static FResolvedGroundMotionMatchingDatabases ResolveGroundMotionMatchingDatabases(
-		const FGroundMotionMatchingSelectionSnapshot& Snapshot,
+		const FRpgGroundMotionMatchingSelectionSnapshot& Snapshot,
 		const FRpgGroundMotionMatchingDatabaseSets& DatabaseSets);
 
 	/** Checks the fixed 1/2/4/2 shape plus null and cross-set duplicate references without loading assets. */
@@ -869,17 +800,6 @@ private:
 	/** Resolves a runtime role only from the database's immutable project tag contract. */
 	static ERpgMotionMatchingDatabaseRole ResolveMotionMatchingDatabaseRole(
 		const UPoseSearchDatabase* Database);
-
-	/** Central completed-search policy for role, Continuing Pose, interrupt, and exclusive latches. */
-	static FMotionMatchingPostSelectionState ResolveMotionMatchingPostSelection(
-		ERpgMotionMatchingDatabaseRole SelectedRole,
-		bool bIsContinuingPose,
-		EPoseSearchInterruptMode InterruptMode,
-		bool bCanLatchTurnInPlace,
-		bool bCanLatchLanding);
-
-	/** Returns true for one of the six curated Idle/Walk/Run Light/Heavy landing roles. */
-	static bool IsLandingDatabaseRole(ERpgMotionMatchingDatabaseRole Role);
 
 	/** Preserves Light/Heavy severity while rebasing any landing role into the stationary domain. */
 	static ERpgMotionMatchingDatabaseRole ResolveStationaryLandingRole(
@@ -1116,7 +1036,7 @@ private:
 	bool bBackwardJumpStartHoldWasArmed = false;
 
 	/** Previous source-level selector domain, owned and mutated only by the animation update thread. */
-	FGroundMotionMatchingDomainState PreviousGroundMotionMatchingDomainState;
+	FRpgGroundMotionMatchingDomainState PreviousGroundMotionMatchingDomainState;
 	bool bHasPreviousGroundMotionMatchingDomainState = false;
 	/** Interrupt mode supplied during pre-selection and captured with the completed result. */
 	EPoseSearchInterruptMode PendingMotionMatchingInterruptMode =
