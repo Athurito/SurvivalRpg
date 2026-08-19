@@ -836,7 +836,7 @@ NETWORK_TEST_CLASS(GaspPilotPIE, "SurvivalRpg.Network")
 				NetworkTimeout())
 			.ThenServer(
 				TEXT("Arm the authority turn-in-place observation"),
-				[](FNetworkState& State)
+				[this](FNetworkState& State)
 				{
 					ARpgCharacter* Character = FindCharacterByPlayerId(
 						State.World,
@@ -850,7 +850,7 @@ NETWORK_TEST_CLASS(GaspPilotPIE, "SurvivalRpg.Network")
 				})
 			.ThenClients(
 				TEXT("Arm the client turn-in-place observations"),
-				[](FNetworkState& State)
+				[this](FNetworkState& State)
 				{
 					ARpgCharacter* Character = FindCharacterByPlayerId(
 						State.World,
