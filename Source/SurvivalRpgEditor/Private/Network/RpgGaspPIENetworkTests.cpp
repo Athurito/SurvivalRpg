@@ -21,6 +21,7 @@
 #include "SurvivalRpg/AbilitySystem/RpgAbilitySystemComponent.h"
 #include "SurvivalRpg/Animation/RpgAnimInstance.h"
 #include "SurvivalRpg/Core/Character/RpgCharacter.h"
+#include "SurvivalRpg/Core/Character/RpgCharacterMovementComponent.h"
 #include "SurvivalRpg/Core/Game/Experience/RpgExperienceDefinition.h"
 #include "SurvivalRpg/Core/Game/Experience/RpgExperienceManagerComponent.h"
 #include "SurvivalRpg/Core/Game/RpgGameModeBase.h"
@@ -47,6 +48,13 @@ namespace RpgGaspPIENetworkTests
 		FTimerHandle MovementInputTimer;
 		FTimerHandle ObservationTimer;
 		FVector MovementInputDirection = FVector::ZeroVector;
+		float MovementInputScale = 0.0f;
+		float StableInputScale = -1.0f;
+		double StableInputStartTime = 0.0;
+		int32 AnimationResetBaseline = 0;
+		int32 LastObservedAnimationResetDelta = MIN_int32;
+		double AnimationResetStableStartTime = -1.0;
+		uint64 AnimationResetStableStartFrame = 0;
 		FVector MontageStartLocation = FVector::ZeroVector;
 		double MontageConvergenceStartTime = 0.0;
 		float MaximumMontageDisplacement = 0.0f;
@@ -248,6 +256,12 @@ namespace RpgGaspPIENetworkTests
 		FVector WorldAcceleration = FVector::ZeroVector;
 		float GroundSpeed = 0.0f;
 		bool bHasAcceleration = true;
+		const UCharacterMovementComponent* MovementComponent =
+			Character->GetCharacterMovement();
+		const bool bHasNativeZeroSnapshot =
+			Character->GetLocalRole() != ROLE_SimulatedProxy ||
+			(Character->GetReplicatedMovement().bRepAcceleration &&
+			 Character->GetReplicatedMovement().Acceleration.Size2D() <= 5.0f);
 		return ReadAnimProperty(
 				AnimInstance,
 				TEXT("WorldAcceleration"),
@@ -261,8 +275,170 @@ namespace RpgGaspPIENetworkTests
 				TEXT("bHasAcceleration"),
 				bHasAcceleration) &&
 			!bHasAcceleration && WorldAcceleration.Size2D() <= 5.0f &&
-			Character->GetCharacterMovement()->GetCurrentAcceleration().Size2D() <= 5.0f &&
+			MovementComponent->GetCurrentAcceleration().Size2D() <= 5.0f &&
+			MovementComponent->GetAnalogInputModifier() <= 0.01f &&
+			bHasNativeZeroSnapshot &&
 			GroundSpeed <= 8.0f && Character->GetVelocity().Size2D() <= 8.0f;
+	}
+
+	bool HasExpectedMovementInput(
+		FNetworkState& State,
+		const ENetRole ExpectedLocalRole,
+		const FVector& ExpectedDirection,
+		const float ExpectedScale)
+	{
+		ARpgCharacter* Character = FindCharacterByPlayerId(
+			State.World,
+			State.SubjectPlayerId);
+		URpgCharacterMovementComponent* MovementComponent = Character
+			? Cast<URpgCharacterMovementComponent>(Character->GetCharacterMovement())
+			: nullptr;
+		URpgAnimInstance* AnimInstance = GetPilotAnimInstance(Character);
+		FVector AnimAcceleration = FVector::ZeroVector;
+		const FVector Direction2D = ExpectedDirection.GetSafeNormal2D();
+		const float ClampedScale = FMath::Clamp(ExpectedScale, 0.0f, 1.0f);
+		const float MaxAcceleration = MovementComponent
+			? MovementComponent->GetMaxAcceleration()
+			: 0.0f;
+		const float ExpectedMagnitude = MaxAcceleration * ClampedScale;
+		const float AccelerationTolerance = FMath::Max(2.0f, MaxAcceleration * 0.02f);
+		const FVector CurrentAcceleration = MovementComponent
+			? MovementComponent->GetCurrentAcceleration()
+			: FVector::ZeroVector;
+		const FRepMovement* ReplicatedMovement = Character
+			? &Character->GetReplicatedMovement()
+			: nullptr;
+		const bool bHasNativeProxySnapshot =
+			ExpectedLocalRole != ROLE_SimulatedProxy ||
+			(ReplicatedMovement &&
+			 ReplicatedMovement->bRepAcceleration &&
+			 ReplicatedMovement->Acceleration.Equals(
+				 CurrentAcceleration,
+				 AccelerationTolerance));
+		const bool bMatches =
+			Character &&
+			MovementComponent &&
+			AnimInstance &&
+			Character->GetLocalRole() == ExpectedLocalRole &&
+			MovementComponent->IsMovingOnGround() &&
+			!CurrentAcceleration.ContainsNaN() &&
+			FMath::IsNearlyEqual(
+				CurrentAcceleration.Size2D(),
+				ExpectedMagnitude,
+				AccelerationTolerance) &&
+			FVector::DotProduct(
+				CurrentAcceleration.GetSafeNormal2D(),
+				Direction2D) > 0.98f &&
+			FMath::IsNearlyEqual(
+				MovementComponent->GetAnalogInputModifier(),
+				ClampedScale,
+				0.025f) &&
+			ReadAnimProperty(
+				AnimInstance,
+				TEXT("WorldAcceleration"),
+				AnimAcceleration) &&
+			!AnimAcceleration.ContainsNaN() &&
+			FMath::IsNearlyEqual(
+				AnimAcceleration.Size2D(),
+				ExpectedMagnitude,
+				AccelerationTolerance) &&
+			FVector::DotProduct(
+				AnimAcceleration.GetSafeNormal2D(),
+				Direction2D) > 0.98f &&
+			bHasNativeProxySnapshot;
+
+		if (!bMatches ||
+			!FMath::IsNearlyEqual(State.StableInputScale, ClampedScale, 0.001f))
+		{
+			State.StableInputScale = bMatches ? ClampedScale : -1.0f;
+			State.StableInputStartTime = bMatches ? FPlatformTime::Seconds() : 0.0;
+			return false;
+		}
+
+		return FPlatformTime::Seconds() - State.StableInputStartTime >= 0.2;
+	}
+
+	bool ReadAnimationHistoryResetCount(
+		FNetworkState& State,
+		int32& OutResetCount)
+	{
+		ARpgCharacter* Character = FindCharacterByPlayerId(
+			State.World,
+			State.SubjectPlayerId);
+		return ReadAnimProperty(
+			GetPilotAnimInstance(Character),
+			TEXT("AnimationHistoryResetCount"),
+			OutResetCount);
+	}
+
+	bool ReadAnimationHistoryResetDelta(
+		FNetworkState& State,
+		int32& OutResetDelta)
+	{
+		int32 ResetCount = 0;
+		if (!ReadAnimationHistoryResetCount(State, ResetCount))
+		{
+			return false;
+		}
+
+		OutResetDelta = ResetCount - State.AnimationResetBaseline;
+		if (OutResetDelta != State.LastObservedAnimationResetDelta)
+		{
+			State.LastObservedAnimationResetDelta = OutResetDelta;
+			UE_LOG(
+				LogTemp,
+				Display,
+				TEXT("GASP history-reset observation: ClientIndex=%d Baseline=%d Current=%d Delta=%d"),
+				State.ClientIndex,
+				State.AnimationResetBaseline,
+				ResetCount,
+				OutResetDelta);
+		}
+		return true;
+	}
+
+	bool HasAnimationResetDeltaAtLeast(
+		FNetworkState& State,
+		const int32 MinimumDelta)
+	{
+		int32 ResetDelta = 0;
+		return ReadAnimationHistoryResetDelta(State, ResetDelta) &&
+			ResetDelta >= MinimumDelta;
+	}
+
+	bool HasStableAnimationResetDelta(
+		FNetworkState& State,
+		const int32 ExpectedDelta)
+	{
+		int32 ActualDelta = 0;
+		if (!ReadAnimationHistoryResetDelta(State, ActualDelta))
+		{
+			State.AnimationResetStableStartTime = -1.0;
+			State.AnimationResetStableStartFrame = 0;
+			return false;
+		}
+
+		if (ActualDelta != ExpectedDelta)
+		{
+			State.AnimationResetStableStartTime = -1.0;
+			State.AnimationResetStableStartFrame = 0;
+			return false;
+		}
+
+		const double Now = IsValid(State.World)
+			? State.World->GetTimeSeconds()
+			: -1.0;
+		if (Now < 0.0)
+		{
+			return false;
+		}
+		if (State.AnimationResetStableStartTime < 0.0)
+		{
+			State.AnimationResetStableStartTime = Now;
+			State.AnimationResetStableStartFrame = GFrameCounter;
+		}
+		return Now - State.AnimationResetStableStartTime >= 0.35 &&
+			GFrameCounter - State.AnimationResetStableStartFrame >= 10;
 	}
 
 	bool HasRotationMode(FNetworkState& State, const ERpgCharacterRotationMode ExpectedMode)
@@ -407,12 +583,18 @@ namespace RpgGaspPIENetworkTests
 			{
 				ObserveState(State);
 			}),
-			0.01f,
-			true);
+			0.001f,
+			FTimerManagerTimerParameters{
+				.bLoop = true,
+				.bMaxOncePerFrame = true,
+				.FirstDelay = 0.0f });
 		ActiveTimerStates.AddUnique(&State);
 	}
 
-	void StartMovementInput(FNetworkState& State, const FVector& Direction)
+	void StartMovementInput(
+		FNetworkState& State,
+		const FVector& Direction,
+		const float Scale = 1.0f)
 	{
 		if (!IsValid(State.World))
 		{
@@ -420,6 +602,7 @@ namespace RpgGaspPIENetworkTests
 		}
 
 		State.MovementInputDirection = Direction.GetSafeNormal2D();
+		State.MovementInputScale = FMath::Clamp(Scale, 0.0f, 1.0f);
 		if (State.World->GetTimerManager().IsTimerActive(State.MovementInputTimer))
 		{
 			return;
@@ -434,11 +617,17 @@ namespace RpgGaspPIENetworkTests
 					State.SubjectPlayerId);
 				if (Character && Character->IsLocallyControlled())
 				{
-					Character->AddMovementInput(State.MovementInputDirection, 1.0f);
+					Character->ConsumeMovementInputVector();
+					Character->AddMovementInput(
+						State.MovementInputDirection,
+						State.MovementInputScale);
 				}
 			}),
-			0.01f,
-			true);
+			0.001f,
+			FTimerManagerTimerParameters{
+				.bLoop = true,
+				.bMaxOncePerFrame = true,
+				.FirstDelay = 0.0f });
 		ActiveTimerStates.AddUnique(&State);
 	}
 
@@ -449,6 +638,13 @@ namespace RpgGaspPIENetworkTests
 			State.World->GetTimerManager().ClearTimer(State.MovementInputTimer);
 		}
 		State.MovementInputDirection = FVector::ZeroVector;
+		State.MovementInputScale = 0.0f;
+		if (ARpgCharacter* Character = FindCharacterByPlayerId(
+			State.World,
+			State.SubjectPlayerId))
+		{
+			Character->ConsumeMovementInputVector();
+		}
 	}
 
 	void ClearActiveTimers()
@@ -476,8 +672,8 @@ NETWORK_TEST_CLASS(GaspPilotPIE, "SurvivalRpg.Network")
 	FPacketSimulationSettings PacketSettings;
 	FPrimaryAssetId OriginalExperienceOverride;
 	FVector AuthorityCorrectionBaseline = FVector::ZeroVector;
+	FVector AuthorityTeleportTarget = FVector::ZeroVector;
 	FVector AuthorityMontageEnd = FVector::ZeroVector;
-	double CorrectionStartTime = 0.0;
 	int32 SubjectPlayerId = INDEX_NONE;
 	bool bOriginalDiskPersistence = true;
 	UClass* PilotGameModeClass = nullptr;
@@ -609,7 +805,7 @@ NETWORK_TEST_CLASS(GaspPilotPIE, "SurvivalRpg.Network")
 				[](FNetworkState& State)
 				{
 					StartObservation(State);
-					StartMovementInput(State, FVector::YAxisVector);
+					StartMovementInput(State, FVector::YAxisVector, 0.5f);
 				})
 			.UntilClient(
 				TEXT("Autonomous AnimInstance consumes local acceleration"),
@@ -705,6 +901,103 @@ NETWORK_TEST_CLASS(GaspPilotPIE, "SurvivalRpg.Network")
 						State,
 						ROLE_SimulatedProxy,
 						ROLE_Authority);
+				},
+				NetworkTimeout())
+			.UntilServer(
+				TEXT("Authority preserves the owner's fifty-percent input magnitude"),
+				[](FNetworkState& State)
+				{
+					return HasExpectedMovementInput(
+						State,
+						ROLE_Authority,
+						FVector::YAxisVector,
+						0.5f);
+				},
+				NetworkTimeout())
+			.UntilClient(
+				TEXT("Owner preserves fifty-percent input magnitude"),
+				0,
+				[](FNetworkState& State)
+				{
+					return HasExpectedMovementInput(
+						State,
+						ROLE_AutonomousProxy,
+						FVector::YAxisVector,
+						0.5f);
+				},
+				NetworkTimeout())
+			.UntilClient(
+				TEXT("Moving late join reconstructs fifty-percent proxy input"),
+				1,
+				[](FNetworkState& State)
+				{
+					return HasExpectedMovementInput(
+						State,
+						ROLE_SimulatedProxy,
+						FVector::YAxisVector,
+						0.5f);
+				},
+				NetworkTimeout())
+			.ThenClient(
+				TEXT("Reduce owner input to twenty-five percent"),
+				0,
+				[](FNetworkState& State)
+				{
+					StartMovementInput(State, FVector::YAxisVector, 0.25f);
+				})
+			.UntilServer(
+				TEXT("Authority preserves twenty-five-percent input magnitude"),
+				[](FNetworkState& State)
+				{
+					return HasExpectedMovementInput(
+						State,
+						ROLE_Authority,
+						FVector::YAxisVector,
+						0.25f);
+				},
+				NetworkTimeout())
+			.UntilClients(
+				TEXT("Owner and simulated proxy preserve twenty-five-percent input"),
+				[](FNetworkState& State)
+				{
+					return HasExpectedMovementInput(
+						State,
+						State.ClientIndex == 0
+							? ROLE_AutonomousProxy
+							: ROLE_SimulatedProxy,
+						FVector::YAxisVector,
+						0.25f);
+				},
+				NetworkTimeout())
+			.ThenClient(
+				TEXT("Restore full owner input before the pivot"),
+				0,
+				[](FNetworkState& State)
+				{
+					StartMovementInput(State, FVector::YAxisVector, 1.0f);
+				})
+			.UntilServer(
+				TEXT("Authority restores full input magnitude"),
+				[](FNetworkState& State)
+				{
+					return HasExpectedMovementInput(
+						State,
+						ROLE_Authority,
+						FVector::YAxisVector,
+						1.0f);
+				},
+				NetworkTimeout())
+			.UntilClients(
+				TEXT("Owner and simulated proxy restore full input magnitude"),
+				[](FNetworkState& State)
+				{
+					return HasExpectedMovementInput(
+						State,
+						State.ClientIndex == 0
+							? ROLE_AutonomousProxy
+							: ROLE_SimulatedProxy,
+						FVector::YAxisVector,
+						1.0f);
 				},
 				NetworkTimeout())
 			.ThenClient(
@@ -1027,6 +1320,27 @@ NETWORK_TEST_CLASS(GaspPilotPIE, "SurvivalRpg.Network")
 					{
 						AuthorityCorrectionBaseline = Character->GetActorLocation();
 					}
+					int32 ResetCount = 0;
+					ASSERT_THAT(IsTrue(ReadAnimationHistoryResetCount(
+						State,
+						ResetCount)));
+					State.AnimationResetBaseline = ResetCount;
+					State.LastObservedAnimationResetDelta = MIN_int32;
+					State.AnimationResetStableStartTime = -1.0;
+					State.AnimationResetStableStartFrame = 0;
+				})
+			.ThenClients(
+				TEXT("Capture client animation-history baselines for correction"),
+				[this](FNetworkState& State)
+				{
+					int32 ResetCount = 0;
+					ASSERT_THAT(IsTrue(ReadAnimationHistoryResetCount(
+						State,
+						ResetCount)));
+					State.AnimationResetBaseline = ResetCount;
+					State.LastObservedAnimationResetDelta = MIN_int32;
+					State.AnimationResetStableStartTime = -1.0;
+					State.AnimationResetStableStartFrame = 0;
 				})
 			.ThenClient(
 				TEXT("Create an owner-only lateral prediction divergence"),
@@ -1038,33 +1352,60 @@ NETWORK_TEST_CLASS(GaspPilotPIE, "SurvivalRpg.Network")
 						State.SubjectPlayerId);
 					ASSERT_THAT(IsNotNull(Character));
 					const FVector DivergentLocation =
-						Character->GetActorLocation() + FVector(250.0, 0.0, 0.0);
+						Character->GetActorLocation() + FVector(100.0, 0.0, 0.0);
 					Character->SetActorLocation(
 						DivergentLocation,
 						false,
 						nullptr,
-						ETeleportType::TeleportPhysics);
+						ETeleportType::None);
 					ASSERT_THAT(IsTrue(FMath::Abs(
 						Character->GetActorLocation().X -
-						AuthorityCorrectionBaseline.X) > 150.0));
+							AuthorityCorrectionBaseline.X) > 60.0));
 					StartMovementInput(State, FVector::YAxisVector);
-					CorrectionStartTime = FPlatformTime::Seconds();
+				})
+			.UntilClient(
+				TEXT("Autonomous presentation observes the server correction"),
+				0,
+				[](FNetworkState& State)
+				{
+					return HasAnimationResetDeltaAtLeast(State, 1);
+				},
+				NetworkTimeout())
+			.ThenClient(
+				TEXT("Stop movement immediately after the owner correction"),
+				0,
+				[](FNetworkState& State)
+				{
+					StopMovementInput(State);
 				})
 			.UntilServer(
-				TEXT("Authority rejects the owner-only lateral displacement"),
+				TEXT("Authority settles after the owner correction"),
+				[](FNetworkState& State)
+				{
+					return HasStoppedAnimation(State);
+				},
+				NetworkTimeout())
+			.UntilClients(
+				TEXT("Client views settle after the owner correction"),
+				[](FNetworkState& State)
+				{
+					return HasStoppedAnimation(State);
+				},
+				NetworkTimeout())
+			.UntilServer(
+				TEXT("Authority remains on the server lane after correction"),
 				[this](FNetworkState& State)
 				{
 					ARpgCharacter* Character = FindCharacterByPlayerId(
 						State.World,
 						State.SubjectPlayerId);
-					return FPlatformTime::Seconds() - CorrectionStartTime >= 0.5 &&
-						Character && FMath::Abs(
-							Character->GetActorLocation().X -
-							AuthorityCorrectionBaseline.X) <= 50.0;
+					return Character && FMath::Abs(
+						Character->GetActorLocation().X -
+							AuthorityCorrectionBaseline.X) <= 10.0;
 				},
 				NetworkTimeout())
 			.UntilClient(
-				TEXT("Autonomous pawn reconverges to the server lane"),
+				TEXT("Autonomous pawn converges tightly to the server lane"),
 				0,
 				[this](FNetworkState& State)
 				{
@@ -1073,11 +1414,11 @@ NETWORK_TEST_CLASS(GaspPilotPIE, "SurvivalRpg.Network")
 						State.SubjectPlayerId);
 					return Character && FMath::Abs(
 						Character->GetActorLocation().X -
-						AuthorityCorrectionBaseline.X) <= 50.0;
+							AuthorityCorrectionBaseline.X) <= 10.0;
 				},
 				NetworkTimeout())
 			.UntilClient(
-				TEXT("Simulated proxy remains converged to authority"),
+				TEXT("Simulated proxy remains tightly converged to authority"),
 				1,
 				[this](FNetworkState& State)
 				{
@@ -1086,28 +1427,125 @@ NETWORK_TEST_CLASS(GaspPilotPIE, "SurvivalRpg.Network")
 						State.SubjectPlayerId);
 					return Character && FMath::Abs(
 						Character->GetActorLocation().X -
-						AuthorityCorrectionBaseline.X) <= 75.0;
+							AuthorityCorrectionBaseline.X) <= 10.0;
 				},
 				NetworkTimeout())
-			.ThenClient(
-				TEXT("Stop movement after correction"),
+			.UntilServer(
+				TEXT("Owner correction leaves authority history stable"),
+				[](FNetworkState& State)
+				{
+					return HasStableAnimationResetDelta(State, 0);
+				},
+				NetworkTimeout())
+			.UntilClient(
+				TEXT("Owner correction resets autonomous history exactly once"),
 				0,
 				[](FNetworkState& State)
 				{
-					StopMovementInput(State);
-				})
-			.UntilServer(
-				TEXT("Authority settles before the montage"),
+					return HasStableAnimationResetDelta(State, 1);
+				},
+				NetworkTimeout())
+			.UntilClient(
+				TEXT("Owner correction leaves simulated-proxy history stable"),
+				1,
 				[](FNetworkState& State)
 				{
-					return HasStoppedAnimation(State);
+					return HasStableAnimationResetDelta(State, 0);
+				},
+				NetworkTimeout())
+			.ThenServer(
+				TEXT("Assert the final authority correction reset count"),
+				[this](FNetworkState& State)
+				{
+					int32 ResetDelta = INDEX_NONE;
+					ASSERT_THAT(IsTrue(ReadAnimationHistoryResetDelta(
+						State,
+						ResetDelta)));
+					ASSERT_THAT(IsTrue(ResetDelta == 0));
+				})
+			.ThenClients(
+				TEXT("Assert the final client correction reset counts"),
+				[this](FNetworkState& State)
+				{
+					int32 ResetDelta = INDEX_NONE;
+					ASSERT_THAT(IsTrue(ReadAnimationHistoryResetDelta(
+						State,
+						ResetDelta)));
+					ASSERT_THAT(IsTrue(
+						ResetDelta == (State.ClientIndex == 0 ? 1 : 0)));
+				})
+			.ThenServer(
+				TEXT("Capture authority history before a semantic teleport"),
+				[this](FNetworkState& State)
+				{
+					int32 ResetCount = 0;
+					ASSERT_THAT(IsTrue(ReadAnimationHistoryResetCount(
+						State,
+						ResetCount)));
+					State.AnimationResetBaseline = ResetCount;
+					State.LastObservedAnimationResetDelta = MIN_int32;
+					State.AnimationResetStableStartTime = -1.0;
+					State.AnimationResetStableStartFrame = 0;
+				})
+			.ThenClients(
+				TEXT("Capture client histories before a semantic teleport"),
+				[this](FNetworkState& State)
+				{
+					int32 ResetCount = 0;
+					ASSERT_THAT(IsTrue(ReadAnimationHistoryResetCount(
+						State,
+						ResetCount)));
+					State.AnimationResetBaseline = ResetCount;
+					State.LastObservedAnimationResetDelta = MIN_int32;
+					State.AnimationResetStableStartTime = -1.0;
+					State.AnimationResetStableStartFrame = 0;
+				})
+			.ThenServer(
+				TEXT("Teleport the authoritative subject beyond the no-smoothing range"),
+				[this](FNetworkState& State)
+				{
+					ARpgCharacter* Character = FindCharacterByPlayerId(
+						State.World,
+						State.SubjectPlayerId);
+					ASSERT_THAT(IsNotNull(Character));
+					if (!Character)
+					{
+						return;
+					}
+					AuthorityTeleportTarget =
+						Character->GetActorLocation() + FVector(500.0, 0.0, 0.0);
+					ASSERT_THAT(IsTrue(Character->TeleportTo(
+						AuthorityTeleportTarget,
+						Character->GetActorRotation())));
+					Character->GetCharacterMovement()->StopMovementImmediately();
+					Character->ForceNetUpdate();
+				})
+			.UntilServer(
+				TEXT("Authority consumes the semantic teleport exactly once"),
+				[this](FNetworkState& State)
+				{
+					ARpgCharacter* Character = FindCharacterByPlayerId(
+						State.World,
+						State.SubjectPlayerId);
+					return Character &&
+						FVector::Dist2D(
+							Character->GetActorLocation(),
+							AuthorityTeleportTarget) <= 5.0 &&
+						HasStableAnimationResetDelta(State, 1);
 				},
 				NetworkTimeout())
 			.UntilClients(
-				TEXT("All client views settle before the montage"),
-				[](FNetworkState& State)
+				TEXT("Owner and simulated proxy consume the semantic teleport once"),
+				[this](FNetworkState& State)
 				{
-					return HasStoppedAnimation(State);
+					ARpgCharacter* Character = FindCharacterByPlayerId(
+						State.World,
+						State.SubjectPlayerId);
+					return Character &&
+						FVector::Dist2D(
+							Character->GetActorLocation(),
+							AuthorityTeleportTarget) <= 100.0 &&
+						HasStableAnimationResetDelta(State, 1);
 				},
 				NetworkTimeout())
 			.ThenServer(
@@ -1261,6 +1699,57 @@ NETWORK_TEST_CLASS(GaspPilotPIE, "SurvivalRpg.Network")
 						State.MontageConvergenceStartTime = Now;
 					}
 					return Now - State.MontageConvergenceStartTime >= 0.25;
+				},
+				NetworkTimeout())
+			.UntilServer(
+				TEXT("Authority settles before the stationary late join"),
+				[](FNetworkState& State)
+				{
+					return HasStoppedAnimation(State);
+				},
+				NetworkTimeout())
+			.UntilClients(
+				TEXT("Existing clients settle before the stationary late join"),
+				[](FNetworkState& State)
+				{
+					return HasStoppedAnimation(State);
+				},
+				NetworkTimeout())
+			.ThenClientJoins(NetworkTimeout())
+			.UntilServer(
+				TEXT("Stationary late join establishes the third server connection"),
+				[](FNetworkState& State)
+				{
+					return IsPilotExperienceReady(State, 3);
+				},
+				NetworkTimeout())
+			.UntilClient(
+				TEXT("Stationary late client loads the Pilot Experience and pawn"),
+				2,
+				[](FNetworkState& State)
+				{
+					return IsPilotExperienceReady(State, 3) &&
+						IsPilotCharacterReady(FindLocalCharacter(State.World));
+				},
+				NetworkTimeout())
+			.ThenClient(
+				TEXT("Bind the stationary subject in the final late-client world"),
+				2,
+				[this](FNetworkState& State)
+				{
+					State.SubjectPlayerId = SubjectPlayerId;
+				})
+			.UntilClient(
+				TEXT("Stationary late join reconstructs native zero input"),
+				2,
+				[](FNetworkState& State)
+				{
+					ARpgCharacter* Character = FindCharacterByPlayerId(
+						State.World,
+						State.SubjectPlayerId);
+					return Character &&
+						Character->GetLocalRole() == ROLE_SimulatedProxy &&
+						HasStoppedAnimation(State);
 				},
 				NetworkTimeout())
 			.ThenServer(

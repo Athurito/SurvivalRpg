@@ -224,7 +224,7 @@ struct SURVIVALRPG_API FRpgFootPlacementSnapshot
 	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "Rpg|Animation|Foot Placement")
 	bool bGrounded = false;
 
-	/** True when teleport, owner/role, base, or large-transform changes require lock state to be discarded. */
+	/** True when a semantic discontinuity, owner/role change, or movement-base change discards lock state. */
 	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "Rpg|Animation|Foot Placement")
 	bool bReset = true;
 

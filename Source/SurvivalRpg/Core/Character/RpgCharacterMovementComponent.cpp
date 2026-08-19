@@ -23,14 +23,117 @@ URpgCharacterMovementComponent::URpgCharacterMovementComponent(const FObjectInit
 	
 }
 
-void URpgCharacterMovementComponent::SimulateMovement(float DeltaTime)
+void URpgCharacterMovementComponent::OnTeleported()
 {
-	// Base proxy simulation derives acceleration from velocity when no engine-level
-	// acceleration payload is present. Preserve the project's own replicated value,
-	// including the valid zero default that may not trigger an initial OnRep.
-	const FVector ReplicatedAcceleration = Acceleration;
-	Super::SimulateMovement(DeltaTime);
-	Acceleration = ReplicatedAcceleration;
+	Super::OnTeleported();
+	MarkAnimationDiscontinuity();
+}
+
+void URpgCharacterMovementComponent::NotifyReplicatedAnimationTeleport()
+{
+	MarkAnimationDiscontinuity();
+}
+
+void URpgCharacterMovementComponent::OnClientCorrectionReceived(
+	FNetworkPredictionData_Client_Character& ClientData,
+	float TimeStamp,
+	FVector NewLocation,
+	FVector NewVelocity,
+	FMovementBaseInterfaceData* NewMovementBaseInterfaceData,
+	FName NewBaseBoneName,
+	bool bHasBase,
+	bool bBaseRelativePosition,
+	uint8 ServerMovementMode,
+	FVector ServerGravityDirection)
+{
+	// NewLocation is already converted to world space by ClientAdjustPosition. Compare
+	// it with the acknowledged move from the same timestamp, not the client's current
+	// location which may be many unacknowledged moves ahead under latency. Classify the
+	// adjustment before replay, then fold historical responses into one tick batch.
+	if (UpdatedComponent)
+	{
+		const FVector ClientLocationAtCorrectedMove =
+			ClientData.LastAckedMove.IsValid()
+				? ClientData.LastAckedMove->SavedLocation
+				: UpdatedComponent->GetComponentLocation();
+		bHasPendingAnimationCorrection = true;
+		bPendingAnimationCorrectionDiscontinuity |= FVector::DistSquared(
+			ClientLocationAtCorrectedMove,
+			NewLocation) > FMath::Square(NetworkLargeClientCorrectionDistance);
+	}
+
+	Super::OnClientCorrectionReceived(
+		ClientData,
+		TimeStamp,
+		NewLocation,
+		NewVelocity,
+		NewMovementBaseInterfaceData,
+		NewBaseBoneName,
+		bHasBase,
+		bBaseRelativePosition,
+		ServerMovementMode,
+		ServerGravityDirection);
+}
+
+bool URpgCharacterMovementComponent::ClientUpdatePositionAfterServerUpdate()
+{
+	const bool bHadPendingAnimationCorrection = bHasPendingAnimationCorrection;
+	const bool bShouldMarkAnimationDiscontinuity =
+		bPendingAnimationCorrectionDiscontinuity;
+	const bool bReplayedMoves = Super::ClientUpdatePositionAfterServerUpdate();
+
+	if (bHadPendingAnimationCorrection)
+	{
+		bHasPendingAnimationCorrection = false;
+		bPendingAnimationCorrectionDiscontinuity = false;
+		if (bShouldMarkAnimationDiscontinuity)
+		{
+			MarkAnimationDiscontinuity();
+		}
+	}
+
+	return bReplayedMoves;
+}
+
+void URpgCharacterMovementComponent::SmoothCorrection(
+	const FVector& OldLocation,
+	const FQuat& OldRotation,
+	const FVector& NewLocation,
+	const FQuat& NewRotation)
+{
+	// Ordinary simulated-proxy updates are intentionally left to network smoothing.
+	// Only an untagged correction beyond UE's actual no-smoothing distance is a hard fallback.
+	const FNetworkPredictionData_Client_Character* ClientData =
+		GetPredictionData_Client_Character();
+	const float NoSmoothDistance = ClientData
+		? ClientData->NoSmoothNetUpdateDist
+		: NetworkNoSmoothUpdateDistance;
+	const bool bHardSimulatedProxyCorrection =
+		CharacterOwner &&
+		CharacterOwner->GetLocalRole() == ROLE_SimulatedProxy &&
+		FVector::DistSquared(OldLocation, NewLocation) >
+			FMath::Square(FMath::Max(NoSmoothDistance, 0.0f));
+
+	Super::SmoothCorrection(OldLocation, OldRotation, NewLocation, NewRotation);
+	if (bHardSimulatedProxyCorrection)
+	{
+		MarkAnimationDiscontinuity();
+	}
+}
+
+void URpgCharacterMovementComponent::MarkAnimationDiscontinuity()
+{
+	if (LastAnimationDiscontinuityFrame == GFrameCounter)
+	{
+		return;
+	}
+
+	LastAnimationDiscontinuityFrame = GFrameCounter;
+	++AnimationDiscontinuitySerial;
+	if (AnimationDiscontinuitySerial == 0)
+	{
+		++AnimationDiscontinuitySerial;
+	}
 }
 
 bool URpgCharacterMovementComponent::CanAttemptJump() const
@@ -85,11 +188,6 @@ const FRpgCharacterGroundInfo& URpgCharacterMovementComponent::GetGroundInfo()
 	CachedGroundInfo.LastUpdateFrame = GFrameCounter;
 
 	return CachedGroundInfo;
-}
-
-void URpgCharacterMovementComponent::SetReplicatedAcceleration(const FVector& InAcceleration)
-{
-	Acceleration = InAcceleration;
 }
 
 FRotator URpgCharacterMovementComponent::GetDeltaRotation(float DeltaTime) const

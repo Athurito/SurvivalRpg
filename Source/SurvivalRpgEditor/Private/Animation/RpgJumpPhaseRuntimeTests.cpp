@@ -16,7 +16,6 @@
 #include "SurvivalRpg/Animation/RpgJumpRuntime.h"
 #include "SurvivalRpg/Animation/RpgLandingRuntime.h"
 #include "SurvivalRpg/Animation/RpgMotionMatchingRuntime.h"
-#include "SurvivalRpg/Core/Character/RpgCharacter.h"
 #include "UObject/Package.h"
 #include "UObject/UObjectGlobals.h"
 
@@ -944,12 +943,6 @@ bool FRpgJumpPhaseRuntimeTest::RunTest(const FString& Parameters)
 	constexpr double HeldAirborneMaximumAcceleration = 2400.0;
 	constexpr float HeldAirborneFrozenHorizontalSpeed = 4.0f;
 	const FVector AuthorityHeldAcceleration(HeldAirborneMaximumAcceleration, 0.0, 0.0);
-	FRpgReplicatedAcceleration PackedHeldAcceleration;
-	PackedHeldAcceleration.SetFromAcceleration(
-		AuthorityHeldAcceleration,
-		HeldAirborneMaximumAcceleration);
-	const FVector SimulatedHeldAcceleration = PackedHeldAcceleration.ToAcceleration(
-		HeldAirborneMaximumAcceleration);
 	struct FHeldAirborneNetworkView
 	{
 		const TCHAR* Name;
@@ -958,8 +951,8 @@ bool FRpgJumpPhaseRuntimeTest::RunTest(const FString& Parameters)
 	const FHeldAirborneNetworkView HeldAirborneNetworkViews[] =
 	{
 		{TEXT("Authority"), AuthorityHeldAcceleration},
-		{TEXT("Simulated Proxy"), SimulatedHeldAcceleration},
-		{TEXT("Late Join Simulated Proxy"), SimulatedHeldAcceleration},
+		{TEXT("Simulated Proxy"), AuthorityHeldAcceleration},
+		{TEXT("Late Join Simulated Proxy"), AuthorityHeldAcceleration},
 	};
 	const FVector GravityAcceleration(0.0, 0.0, -1000.0);
 

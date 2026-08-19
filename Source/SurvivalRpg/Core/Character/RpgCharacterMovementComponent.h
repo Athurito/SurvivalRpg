@@ -47,16 +47,57 @@ public:
 	UFUNCTION(BlueprintCallable, Category = "Rpg|CharacterMovement")
 	const FRpgCharacterGroundInfo& GetGroundInfo();
 
-	/** Supplies server acceleration to a simulated proxy so remote locomotion preserves starts, stops, and pivots. */
-	void SetReplicatedAcceleration(const FVector& InAcceleration);
+	/**
+	 * Returns the local monotonic signal for presentation-history discontinuities.
+	 * It is not replicated; each network role advances it from the correction or teleport it actually applies.
+	 */
+	uint32 GetAnimationDiscontinuitySerial() const { return AnimationDiscontinuitySerial; }
+
+	/** Applies the server's semantic teleport edge on a simulated proxy. */
+	void NotifyReplicatedAnimationTeleport();
+
+	//~UMovementComponent interface
+	virtual void OnTeleported() override;
+	//~End of UMovementComponent interface
 
 	//~UMovementComponent interface
 	virtual FRotator GetDeltaRotation(float DeltaTime) const override;
 	virtual float GetMaxSpeed() const override;
 	//~End of UMovementComponent interface
 protected:
-	virtual void SimulateMovement(float DeltaTime) override;
-protected:
+	virtual bool ClientUpdatePositionAfterServerUpdate() override;
+	virtual void OnClientCorrectionReceived(
+		FNetworkPredictionData_Client_Character& ClientData,
+		float TimeStamp,
+		FVector NewLocation,
+		FVector NewVelocity,
+		FMovementBaseInterfaceData* NewMovementBaseInterfaceData,
+		FName NewBaseBoneName,
+		bool bHasBase,
+		bool bBaseRelativePosition,
+		uint8 ServerMovementMode,
+		FVector ServerGravityDirection) override;
+	virtual void SmoothCorrection(
+		const FVector& OldLocation,
+		const FQuat& OldRotation,
+		const FVector& NewLocation,
+		const FQuat& NewRotation) override;
+
+	/** Advances the local history-reset edge without adding another replicated movement contract. */
+	void MarkAnimationDiscontinuity();
+
 	// Cached ground info for the character.  Do not access this directly!  It's only updated when accessed via GetGroundInfo().
 	FRpgCharacterGroundInfo CachedGroundInfo;
+
+	/** Local-only edge consumed once by the animation game-thread snapshot. */
+	uint32 AnimationDiscontinuitySerial = 0;
+
+	/** Frame used to coalesce a replicated teleport and its accompanying hard movement correction. */
+	uint64 LastAnimationDiscontinuityFrame = MAX_uint64;
+
+	/** True until the pending server correction and its saved moves have been evaluated together. */
+	bool bHasPendingAnimationCorrection = false;
+
+	/** True when any correction in the pending batch exceeds UE's large-correction threshold. */
+	bool bPendingAnimationCorrectionDiscontinuity = false;
 };

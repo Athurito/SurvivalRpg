@@ -15,7 +15,6 @@
 #include "SurvivalRpg/Animation/RpgGaspPresentationProfile.h"
 #include "SurvivalRpg/Animation/RpgMotionMatchingRuntime.h"
 #include "SurvivalRpg/Animation/RpgPoseSearchTrajectory.h"
-#include "SurvivalRpg/Core/Character/RpgCharacter.h"
 #include "UObject/UObjectGlobals.h"
 
 IMPLEMENT_SIMPLE_AUTOMATION_TEST(
@@ -274,16 +273,12 @@ bool FRpgMotionMatchingDatabaseResolverTest::RunTest(const FString& Parameters)
 	// carries a small floor-projected Z remainder. Only horizontal velocity may open the moving Run domain.
 	constexpr double MaxAcceleration = 2400.0;
 	const FVector FullForwardAcceleration(MaxAcceleration, 0.0, 0.0);
-	FRpgReplicatedAcceleration PackedForwardAcceleration;
-	PackedForwardAcceleration.SetFromAcceleration(FullForwardAcceleration, MaxAcceleration);
-	const FVector ReplicatedForwardAcceleration =
-		PackedForwardAcceleration.ToAcceleration(MaxAcceleration);
 	const FVector NetworkAccelerations[] =
 	{
 		FullForwardAcceleration,
 		FullForwardAcceleration,
-		ReplicatedForwardAcceleration,
-		ReplicatedForwardAcceleration,
+		FullForwardAcceleration,
+		FullForwardAcceleration,
 	};
 	static const TCHAR* const LandingHandoffNetworkViews[] =
 	{

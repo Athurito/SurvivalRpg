@@ -5,10 +5,11 @@ This content-only plugin owns the curated Game Animation Sample Project (GASP) l
 The behavior-preserving source-to-project responsibility map and the staged issue #81 extraction
 order are recorded in [RuntimeOwnershipMap.md](RuntimeOwnershipMap.md).
 
-Issue #81's real listen-server/two-client acceptance procedure is recorded in
+Issues #81 and #97's real listen-server acceptance procedure is recorded in
 [the GASP real-network smoke runbook](../../../docs/gasp-network-smoke.md). It uses an actual PIE
-network session; rendered pose-selection, warping, Foot Placement, and correction quality remain a
-separate visual inspection boundary.
+network session with one initial client plus moving and stationary late joins; rendered
+pose-selection, warping, Foot Placement, and correction quality remain a separate visual
+inspection boundary.
 
 ## Curated slice
 
