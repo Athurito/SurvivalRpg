@@ -222,3 +222,27 @@ families, Sprint authority, combat polish, and default PawnData cutover are sepa
   Motion Matching, turn, jump, landing, pilot asset, and complete `SurvivalRpg.Animation` contracts
   continue to protect defaults, boundary behavior, serialization compatibility, and the unchanged
   authority/safety mechanisms.
+
+## Issue #81 real-network acceptance boundary
+
+- **Authority and lifecycle:** the editor-only acceptance test drives the existing Experience,
+  PawnData, CharacterMovement, ASC, and AnimInstance paths. It adds no gameplay authority,
+  replicated production state, persistence, or alternate runtime owner.
+- **Topology:** the CQTest starts a listen host and one external client, then late-joins a second
+  external client while the original subject is moving. That subject is observed as Authority,
+  AutonomousProxy, and SimulatedProxy.
+- **Network profile:** the test uses `PktLag=60` and `PktLagVariance=10`; configured packet loss,
+  reordering, and duplication remain zero.
+- **Stable test:**
+  `SurvivalRpg.Network.GaspPilotPIE.ReplicationLateJoinCorrectionAndDefaultSlotMontage` protects
+  replicated acceleration, late-join reconstruction, start/stop/reversal, a 90-degree facing
+  change activating and completing the TIR lifecycle, stance, jump and
+  landing state, grounded Foot Placement snapshots, owner correction, ASC `DefaultSlot` montage
+  plumbing, authoritative root motion, and stable post-montage convergence.
+- **Runtime/content delta:** zero production runtime classes and zero content assets. The test and
+  its replicated movement-base fixture are confined to `SurvivalRpgEditor` and reuse the existing
+  CQTest PIE seam.
+- **Evidence boundary:** reflected state and authoritative movement are automated. Rendered pose
+  selection, warping, IK quality, gameplay-notify behavior, packaged multi-process networking,
+  combat/death/ragdoll behavior, performance, and default cutover remain separate gates. See
+  [the network smoke runbook](../../../docs/gasp-network-smoke.md).

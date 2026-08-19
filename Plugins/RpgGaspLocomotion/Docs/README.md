@@ -5,6 +5,11 @@ This content-only plugin owns the curated Game Animation Sample Project (GASP) l
 The behavior-preserving source-to-project responsibility map and the staged issue #81 extraction
 order are recorded in [RuntimeOwnershipMap.md](RuntimeOwnershipMap.md).
 
+Issue #81's real listen-server/two-client acceptance procedure is recorded in
+[the GASP real-network smoke runbook](../../../docs/gasp-network-smoke.md). It uses an actual PIE
+network session; rendered pose-selection, warping, Foot Placement, and correction quality remain a
+separate visual inspection boundary.
+
 ## Curated slice
 
 - 190 retargeted `UAnimSequence` assets using `/Game/SurvivalRpg/Characters/Mannequins/Meshes/SK_Mannequin`
