@@ -5,28 +5,30 @@
 #include "RpgAnimInstance.h"
 
 bool RpgMotionMatchingRuntime::IsChooserMoving(
-	const FRpgGroundMotionMatchingSelectionSnapshot& Snapshot)
+	const FRpgGroundMotionMatchingSelectionSnapshot& Snapshot,
+	const FRpgGaspLocomotionTuning& Tuning)
 {
 	return Snapshot.bIsMovingOnGround &&
 		!Snapshot.WorldVelocity.ContainsNaN() &&
 		!Snapshot.WorldAcceleration.ContainsNaN() &&
-		Snapshot.WorldVelocity.SizeSquared2D() > FMath::Square(ChooserVelocityTolerance) &&
-		Snapshot.WorldAcceleration.SizeSquared2D() > FMath::Square(ChooserAccelerationTolerance);
+		Snapshot.WorldVelocity.SizeSquared2D() > FMath::Square(Tuning.ChooserVelocityTolerance) &&
+		Snapshot.WorldAcceleration.SizeSquared2D() > FMath::Square(Tuning.ChooserAccelerationTolerance);
 }
 
 float RpgMotionMatchingRuntime::GetRunPivotMinimumAngle(
-	ERpgCharacterRotationMode RotationMode)
+	ERpgCharacterRotationMode RotationMode,
+	const FRpgGaspLocomotionTuning& Tuning)
 {
 	switch (RotationMode)
 	{
 	case ERpgCharacterRotationMode::Free:
-		return FreeRunPivotMinimumAngle;
+		return Tuning.FreeRunPivotMinimumAngle;
 	case ERpgCharacterRotationMode::CombatStrafe:
-		return CombatStrafeRunPivotMinimumAngle;
+		return Tuning.CombatStrafeRunPivotMinimumAngle;
 	case ERpgCharacterRotationMode::Aim:
-		return AimRunPivotMinimumAngle;
+		return Tuning.AimRunPivotMinimumAngle;
 	default:
-		return FreeRunPivotMinimumAngle;
+		return Tuning.FreeRunPivotMinimumAngle;
 	}
 }
 
@@ -52,7 +54,8 @@ bool RpgMotionMatchingRuntime::ShouldInterruptGroundMotionMatching(
 }
 
 FRpgResolvedMotionMatchingDatabaseRoles RpgMotionMatchingRuntime::ResolveDatabaseRoles(
-	const FRpgGroundMotionMatchingSelectionSnapshot& Snapshot)
+	const FRpgGroundMotionMatchingSelectionSnapshot& Snapshot,
+	const FRpgGaspLocomotionTuning& Tuning)
 {
 	FRpgResolvedMotionMatchingDatabaseRoles ResolvedRoles;
 	if (Snapshot.MovementState == ERpgLocomotionMovementState::Airborne)
@@ -81,27 +84,27 @@ FRpgResolvedMotionMatchingDatabaseRoles RpgMotionMatchingRuntime::ResolveDatabas
 	const float SafeGroundSpeed = FMath::IsFinite(Snapshot.GroundSpeed)
 		? FMath::Max(Snapshot.GroundSpeed, 0.0f)
 		: 0.0f;
-	const bool bChooserMoving = IsChooserMoving(Snapshot);
+	const bool bChooserMoving = IsChooserMoving(Snapshot, Tuning);
 	if (!bChooserMoving)
 	{
 		// GASP's logical Idle rows are inclusive and intentionally overlap. Preserve their source
 		// order so exact boundaries expose both adjacent roles to the Pose Search cost comparison.
-		if (SafeGroundSpeed <= WalkStopMinimumSpeed)
+		if (SafeGroundSpeed <= Tuning.WalkStopMinimumSpeed)
 		{
 			ResolvedRoles.Add(ERpgMotionMatchingDatabaseRole::StandIdle);
 		}
-		if (SafeGroundSpeed >= WalkStopMinimumSpeed)
+		if (SafeGroundSpeed >= Tuning.WalkStopMinimumSpeed)
 		{
 			ResolvedRoles.Add(ERpgMotionMatchingDatabaseRole::StandWalkStops);
 		}
-		if (SafeGroundSpeed >= RunStopMinimumSpeed)
+		if (SafeGroundSpeed >= Tuning.RunStopMinimumSpeed)
 		{
 			ResolvedRoles.Add(ERpgMotionMatchingDatabaseRole::StandRunStops);
 		}
 		// Project Run reaches 600 cm/s, so source's speed-only Sprint Stop row also requires the
 		// explicit cosmetic Sprint gait. This keeps ordinary Run Stops out of forward-only clips.
 		if (Snapshot.Gait == ERpgLocomotionGait::Sprint &&
-			SafeGroundSpeed >= SprintStopMinimumSpeed)
+			SafeGroundSpeed >= Tuning.SprintStopMinimumSpeed)
 		{
 			ResolvedRoles.Add(ERpgMotionMatchingDatabaseRole::StandSprintStops);
 		}
@@ -125,7 +128,7 @@ FRpgResolvedMotionMatchingDatabaseRoles RpgMotionMatchingRuntime::ResolveDatabas
 		}
 		const bool bSearchStarts =
 			Snapshot.CurrentDatabaseRole != ERpgMotionMatchingDatabaseRole::StandRunPivots &&
-			SafeFutureGroundSpeed >= SafeGroundSpeed + RunStartMinimumFutureSpeedGain;
+			SafeFutureGroundSpeed >= SafeGroundSpeed + Tuning.RunStartMinimumFutureSpeedGain;
 
 		const FVector HorizontalVelocity(Snapshot.WorldVelocity.X, Snapshot.WorldVelocity.Y, 0.0f);
 		const FVector HorizontalAcceleration(
@@ -136,7 +139,7 @@ FRpgResolvedMotionMatchingDatabaseRoles RpgMotionMatchingRuntime::ResolveDatabas
 			HorizontalVelocity.Rotation().Yaw,
 			HorizontalAcceleration.Rotation().Yaw));
 		const bool bSearchPivots =
-			TurnAngle >= GetRunPivotMinimumAngle(Snapshot.RotationMode);
+			TurnAngle >= GetRunPivotMinimumAngle(Snapshot.RotationMode, Tuning);
 
 		ResolvedRoles.Reserve(3);
 		if (bSearchStarts)

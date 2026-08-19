@@ -5,6 +5,7 @@
 #include "CoreMinimal.h"
 #include "Animation/TrajectoryTypes.h"
 #include "AnimationWarpingTypes.h"
+#include "RpgGaspLocomotionConfig.h"
 
 enum class ERpgCharacterRotationMode : uint8;
 enum class ERpgLocomotionMovementState : uint8;
@@ -81,19 +82,7 @@ struct SURVIVALRPG_API FRpgTurnInPlaceUpdateResult
 /** Deterministic cosmetic turn-in-place policy adapted from GASP's ShouldTurnInPlace domain. */
 namespace RpgTurnInPlaceRuntime
 {
-	inline constexpr float IdleSpeedThreshold = 3.0f;
-	inline constexpr float CollectThreshold = 20.0f;
-	inline constexpr float ActivationThreshold = 30.0f;
-	inline constexpr float CancelThreshold = 10.0f;
-	inline constexpr float InactiveYawRateThreshold = 6.0f;
-	inline constexpr float StableYawRateThreshold = 60.0f;
-	inline constexpr float StabilityDuration = 0.08f;
-	inline constexpr float CollectionTimeout = 0.2f;
-	inline constexpr float RecoveryDuration = 0.15f;
-	inline constexpr float SelectionTimeout = 0.25f;
-	inline constexpr float ActiveTimeout = 1.75f;
 	inline constexpr float PlaybackWatchdogSafetyMargin = 0.1f;
-	inline constexpr float InactiveAccumulatorTimeout = 0.2f;
 	inline constexpr float FinishedTimeTolerance = 0.05f;
 	inline constexpr float LargePositionDelta = 200.0f;
 
@@ -101,10 +90,14 @@ namespace RpgTurnInPlaceRuntime
 	SURVIVALRPG_API bool SupportsTurnInPlace(ERpgCharacterRotationMode RotationMode);
 
 	/** Returns the signed authored turn angle nearest to the request, or zero below activation. */
-	SURVIVALRPG_API float QuantizeAngle(float SignedAngle);
+	SURVIVALRPG_API float QuantizeAngle(
+		float SignedAngle,
+		const FRpgGaspLocomotionTuning& Tuning = FRpgGaspLocomotionTuning());
 
 	/** Returns the synthetic facing horizon for an authored 45/90/135/180-degree turn. */
-	SURVIVALRPG_API float GetFacingDuration(float QuantizedAngle);
+	SURVIVALRPG_API float GetFacingDuration(
+		float QuantizedAngle,
+		const FRpgGaspLocomotionTuning& Tuning = FRpgGaspLocomotionTuning());
 
 	/** Calculates a wrap-safe signed actor-yaw delta in degrees. */
 	SURVIVALRPG_API float CalculateYawDelta(float PreviousActorYaw, float CurrentActorYaw);
@@ -127,37 +120,45 @@ namespace RpgTurnInPlaceRuntime
 		const FTransformTrajectory& SourceTrajectory,
 		float CurrentActorYaw,
 		float AccumulatedYaw,
-		float QuantizedAngle);
+		float QuantizedAngle,
+		const FRpgGaspLocomotionTuning& Tuning = FRpgGaspLocomotionTuning());
 
-	/** Resolves a bounded wall-clock watchdog for the selected non-looping animation. */
+	/** Resolves a finite watchdog at least as long as the configured fallback or selected clip. */
 	SURVIVALRPG_API float CalculatePlaybackWatchdogDuration(
 		float RemainingAnimationTime,
 		float PlayRate,
-		bool bLooping);
+		bool bLooping,
+		const FRpgGaspLocomotionTuning& Tuning = FRpgGaspLocomotionTuning());
 
 	/** Evaluates the pointer-free stationary controller-facing eligibility contract. */
-	SURVIVALRPG_API bool IsEligible(const FRpgTurnInPlaceEligibilitySnapshot& Snapshot);
+	SURVIVALRPG_API bool IsEligible(
+		const FRpgTurnInPlaceEligibilitySnapshot& Snapshot,
+		const FRpgGaspLocomotionTuning& Tuning = FRpgGaspLocomotionTuning());
 
 	/** Clears the value lifecycle while leaving monotonic request serials intact. */
 	SURVIVALRPG_API FRpgTurnInPlaceUpdateResult Reset(
 		const FRpgTurnInPlaceRuntimeState& State,
-		bool bHardResetOffset);
+		bool bHardResetOffset,
+		const FRpgGaspLocomotionTuning& Tuning = FRpgGaspLocomotionTuning());
 
 	/** Starts bounded interpolation recovery and releases any selected presentation asset. */
 	SURVIVALRPG_API FRpgTurnInPlaceUpdateResult BeginRecovery(
 		const FRpgTurnInPlaceRuntimeState& State,
-		bool bHardResetOffset);
+		bool bHardResetOffset,
+		const FRpgGaspLocomotionTuning& Tuning = FRpgGaspLocomotionTuning());
 
 	/** Starts or retargets one authored request while skipping serial zero. */
 	SURVIVALRPG_API FRpgTurnInPlaceUpdateResult BeginRequest(
 		const FRpgTurnInPlaceRuntimeState& State,
-		float QuantizedAngle);
+		float QuantizedAngle,
+		const FRpgGaspLocomotionTuning& Tuning = FRpgGaspLocomotionTuning());
 
 	/** Advances accumulation, hysteresis, reset edges, timeouts, and recovery from value inputs only. */
 	SURVIVALRPG_API FRpgTurnInPlaceUpdateResult Update(
 		const FRpgTurnInPlaceRuntimeState& State,
 		const FRpgTurnInPlaceUpdateSnapshot& Snapshot,
-		float DeltaSeconds);
+		float DeltaSeconds,
+		const FRpgGaspLocomotionTuning& Tuning = FRpgGaspLocomotionTuning());
 
 	/** Consumes at most one ForceInterrupt for the active request serial. */
 	SURVIVALRPG_API bool ConsumeForceInterrupt(

@@ -11,6 +11,8 @@
 #include "Misc/AutomationTest.h"
 #include "PoseSearch/PoseSearchDatabase.h"
 #include "SurvivalRpg/Animation/RpgAnimInstance.h"
+#include "SurvivalRpg/Animation/RpgGaspLocomotionConfig.h"
+#include "SurvivalRpg/Animation/RpgGaspPresentationProfile.h"
 #include "SurvivalRpg/Animation/RpgJumpRuntime.h"
 #include "SurvivalRpg/Animation/RpgLandingRuntime.h"
 #include "SurvivalRpg/Animation/RpgMotionMatchingRuntime.h"
@@ -56,7 +58,153 @@ bool FRpgGaspPresentationProfileValidationTest::RunTest(const FString& Parameter
 	AddMembership(Backward, ERpgGaspPresentationAssetCategory::BackwardJumpStart);
 	AddMembership(Fall, ERpgGaspPresentationAssetCategory::AirborneFall);
 	AddMembership(Landing, ERpgGaspPresentationAssetCategory::Landing);
-	TestTrue(TEXT("A structurally valid presentation profile passes"), Profile->ValidateProfile().IsValid());
+
+	for (uint8 RoleValue = static_cast<uint8>(ERpgMotionMatchingDatabaseRole::None) + 1;
+		RoleValue < static_cast<uint8>(ERpgMotionMatchingDatabaseRole::Count);
+		++RoleValue)
+	{
+		const ERpgMotionMatchingDatabaseRole Role =
+			static_cast<ERpgMotionMatchingDatabaseRole>(RoleValue);
+		UPoseSearchDatabase* Database = NewObject<UPoseSearchDatabase>();
+		Database->Tags.Add(RpgGaspLocomotionConfig::GetDatabaseRoleTag(Role));
+		FPoseSearchDatabaseAnimationAsset DatabaseEntry;
+		switch (Role)
+		{
+		case ERpgMotionMatchingDatabaseRole::Jump:
+			DatabaseEntry.AnimAsset = Jump;
+			break;
+		case ERpgMotionMatchingDatabaseRole::StandLightLanding:
+		case ERpgMotionMatchingDatabaseRole::StandHeavyLanding:
+		case ERpgMotionMatchingDatabaseRole::WalkLightLanding:
+		case ERpgMotionMatchingDatabaseRole::WalkHeavyLanding:
+		case ERpgMotionMatchingDatabaseRole::RunLightLanding:
+		case ERpgMotionMatchingDatabaseRole::RunHeavyLanding:
+			DatabaseEntry.AnimAsset = Landing;
+			break;
+		default:
+			DatabaseEntry.AnimAsset = Ground;
+			break;
+		}
+		Database->AddAnimationAsset(DatabaseEntry);
+		Profile->RuntimeMotionMatchingDatabases.Add(Database);
+	}
+	TestTrue(
+		TEXT("A complete presentation, database, and compatibility-tuning profile passes"),
+		Profile->ValidateProfile().IsValid());
+	const auto TestCoverageMismatch = [this, Profile](
+		ERpgMotionMatchingDatabaseRole Role,
+		UAnimationAsset* InvalidAsset,
+		bool FRpgGaspPresentationProfileValidation::* MismatchFlag,
+		const TCHAR* ContractDescription)
+	{
+		const int32 DatabaseIndex = static_cast<int32>(Role) - 1;
+		UPoseSearchDatabase* SavedDatabase =
+			Profile->RuntimeMotionMatchingDatabases[DatabaseIndex];
+		UPoseSearchDatabase* InvalidDatabase = NewObject<UPoseSearchDatabase>();
+		InvalidDatabase->Tags.Add(RpgGaspLocomotionConfig::GetDatabaseRoleTag(Role));
+		FPoseSearchDatabaseAnimationAsset InvalidEntry;
+		InvalidEntry.AnimAsset = InvalidAsset;
+		InvalidDatabase->AddAnimationAsset(InvalidEntry);
+		Profile->RuntimeMotionMatchingDatabases[DatabaseIndex] = InvalidDatabase;
+
+		const FRpgGaspPresentationProfileValidation Validation =
+			Profile->ValidateProfile();
+		TestTrue(ContractDescription, Validation.*MismatchFlag);
+		TestFalse(
+			TEXT("A presentation coverage mismatch invalidates the runtime database set"),
+			Validation.IsRuntimeDatabaseConfigValid());
+		Profile->RuntimeMotionMatchingDatabases[DatabaseIndex] = SavedDatabase;
+	};
+	TestCoverageMismatch(
+		ERpgMotionMatchingDatabaseRole::StandWalk,
+		Landing,
+		&FRpgGaspPresentationProfileValidation::bHasGroundMovingCoverageMismatch,
+		TEXT("A moving Ground role rejects an asset without GroundMoving membership"));
+	TestCoverageMismatch(
+		ERpgMotionMatchingDatabaseRole::Jump,
+		Ground,
+		&FRpgGaspPresentationProfileValidation::bHasAirborneCoverageMismatch,
+		TEXT("The Jump role rejects an asset without Airborne membership"));
+	TestCoverageMismatch(
+		ERpgMotionMatchingDatabaseRole::StandLightLanding,
+		Ground,
+		&FRpgGaspPresentationProfileValidation::bHasLandingCoverageMismatch,
+		TEXT("A Landing role rejects an asset without Landing membership"));
+	TestTrue(
+		TEXT("Restoring all three presentation domains restores profile validity"),
+		Profile->ValidateProfile().IsValid());
+
+	FRpgGaspMotionMatchingDatabaseLookup DatabaseLookup;
+	TestTrue(TEXT("A valid profile builds a database-role lookup"), DatabaseLookup.Build(Profile));
+	TestEqual(
+		TEXT("The database lookup resolves a tagged Jump database in both directions"),
+		static_cast<uint8>(DatabaseLookup.FindRole(
+			DatabaseLookup.FindDatabase(ERpgMotionMatchingDatabaseRole::Jump))),
+		static_cast<uint8>(ERpgMotionMatchingDatabaseRole::Jump));
+
+	UPoseSearchDatabase* SavedFirstDatabase =
+		Profile->RuntimeMotionMatchingDatabases[0];
+	UPoseSearchDatabase* EmptyTaggedDatabase = NewObject<UPoseSearchDatabase>();
+	EmptyTaggedDatabase->Tags.Add(RpgGaspLocomotionConfig::GetDatabaseRoleTag(
+		ERpgMotionMatchingDatabaseRole::StandIdle));
+	Profile->RuntimeMotionMatchingDatabases[0] = EmptyTaggedDatabase;
+	TestTrue(
+		TEXT("A correctly tagged runtime database without animation assets is rejected"),
+		Profile->ValidateProfile().bHasRuntimeDatabaseWithoutAssets);
+	TestFalse(
+		TEXT("An empty tagged runtime database fails lookup construction"),
+		DatabaseLookup.Build(Profile));
+	Profile->RuntimeMotionMatchingDatabases[0] = SavedFirstDatabase;
+	TestTrue(
+		TEXT("Restoring the covered Stand Idle database rebuilds the complete lookup"),
+		DatabaseLookup.Build(Profile));
+
+	UPoseSearchDatabase* SavedLastDatabase = Profile->RuntimeMotionMatchingDatabases.Last();
+	Profile->RuntimeMotionMatchingDatabases.Last() = nullptr;
+	TestTrue(
+		TEXT("A null profile runtime database is rejected"),
+		Profile->ValidateProfile().bHasNullRuntimeDatabase);
+	TestFalse(TEXT("A null runtime database fails lookup construction"), DatabaseLookup.Build(Profile));
+	TestNull(
+		TEXT("A failed database rebuild clears the previous lookup"),
+		DatabaseLookup.FindDatabase(ERpgMotionMatchingDatabaseRole::Jump));
+	Profile->RuntimeMotionMatchingDatabases.Last() = SavedLastDatabase;
+
+	Profile->RuntimeMotionMatchingDatabases.Last() =
+		Profile->RuntimeMotionMatchingDatabases[0];
+	const FRpgGaspPresentationProfileValidation DuplicateDatabaseValidation =
+		Profile->ValidateProfile();
+	TestTrue(
+		TEXT("A duplicate profile database pointer is rejected"),
+		DuplicateDatabaseValidation.bHasDuplicateRuntimeDatabase);
+	TestTrue(
+		TEXT("A duplicate profile database also exposes the missing role"),
+		DuplicateDatabaseValidation.bHasMissingRuntimeDatabaseRole);
+	Profile->RuntimeMotionMatchingDatabases.Last() = SavedLastDatabase;
+
+	const FName SavedLastRoleTag = SavedLastDatabase->Tags[0];
+	SavedLastDatabase->Tags[0] = FName(TEXT("Rpg.MotionMatching.Role.RunHeavyLandng"));
+	TestTrue(
+		TEXT("An unknown project role tag is rejected"),
+		Profile->ValidateProfile().bHasInvalidRuntimeDatabaseRoleTag);
+	SavedLastDatabase->Tags[0] = SavedLastRoleTag;
+
+	FRpgGaspLocomotionTuning InvalidTuning = Profile->LocomotionTuning;
+	InvalidTuning.WalkStopMinimumSpeed = InvalidTuning.RunStopMinimumSpeed + 1.0f;
+	Profile->LocomotionTuning = InvalidTuning;
+	TestTrue(
+		TEXT("An unordered designer stop threshold is rejected"),
+		Profile->ValidateProfile().bHasInvalidTuning);
+	Profile->LocomotionTuning = FRpgGaspLocomotionTuning();
+	Profile->LocomotionTuning.TurnActivationThreshold =
+		std::numeric_limits<float>::quiet_NaN();
+	TestTrue(
+		TEXT("Non-finite designer tuning is rejected"),
+		Profile->ValidateProfile().bHasInvalidTuning);
+	Profile->LocomotionTuning = FRpgGaspLocomotionTuning();
+	TestTrue(
+		TEXT("Restoring compatibility tuning restores the complete profile"),
+		Profile->ValidateProfile().IsValid());
 
 	FRpgGaspPresentationAssetLookup Lookup;
 	TestTrue(TEXT("A valid profile builds a worker-safe lookup"), Lookup.Build(Profile));
@@ -90,6 +238,8 @@ bool FRpgGaspPresentationProfileValidationTest::RunTest(const FString& Parameter
 
 bool FRpgJumpPhaseRuntimeTest::RunTest(const FString& Parameters)
 {
+	const FRpgGaspLocomotionTuning DefaultTuning;
+
 	auto ResolvePhysicalTransition = [](
 		ERpgJumpPhase CurrentPhase,
 		ERpgLocomotionMovementState MovementState,
@@ -219,6 +369,26 @@ bool FRpgJumpPhaseRuntimeTest::RunTest(const FString& Parameters)
 	AnimInstance->WalkHeavyLandingMotionMatchingDatabase = WalkHeavyLandingDatabase;
 	AnimInstance->RunLightLandingMotionMatchingDatabase = RunLightLandingDatabase;
 	AnimInstance->RunHeavyLandingMotionMatchingDatabase = RunHeavyLandingDatabase;
+	AnimInstance->GroundMotionMatchingDatabaseSets.Idle[0] = NewObject<UPoseSearchDatabase>();
+	AnimInstance->GroundMotionMatchingDatabaseSets.Walk[0] = NewObject<UPoseSearchDatabase>();
+	AnimInstance->GroundMotionMatchingDatabaseSets.Walk[1] = NewObject<UPoseSearchDatabase>();
+	AnimInstance->GroundMotionMatchingDatabaseSets.Run[0] = NewObject<UPoseSearchDatabase>();
+	AnimInstance->GroundMotionMatchingDatabaseSets.Run[1] = NewObject<UPoseSearchDatabase>();
+	AnimInstance->GroundMotionMatchingDatabaseSets.Run[2] = NewObject<UPoseSearchDatabase>();
+	AnimInstance->GroundMotionMatchingDatabaseSets.Run[3] = NewObject<UPoseSearchDatabase>();
+	AnimInstance->GroundMotionMatchingDatabaseSets.Sprint[0] = NewObject<UPoseSearchDatabase>();
+	AnimInstance->GroundMotionMatchingDatabaseSets.Sprint[1] = NewObject<UPoseSearchDatabase>();
+	AnimInstance->CrouchingMotionMatchingDatabase = NewObject<UPoseSearchDatabase>();
+	AnimInstance->TurnInPlaceMotionMatchingDatabase = NewObject<UPoseSearchDatabase>();
+	AnimInstance->AirborneMotionMatchingDatabases.Add(NewObject<UPoseSearchDatabase>());
+	AnimInstance->InitializeGaspRuntimeConfiguration();
+	if (!TestNotNull(
+		TEXT("The complete unique legacy facade initializes its atomic runtime cache"),
+		AnimInstance->GetMotionMatchingDatabaseForRole(
+			ERpgMotionMatchingDatabaseRole::StandIdle)))
+	{
+		return false;
+	}
 
 	static const ERpgMotionMatchingDatabaseRole StationaryLandingRoles[] =
 	{
@@ -694,7 +864,7 @@ bool FRpgJumpPhaseRuntimeTest::RunTest(const FString& Parameters)
 					? LandingCase.WalkDatabase
 					: LandingCase.RunDatabase;
 			Proxy.WorldVelocity = FVector(
-				RpgMotionMatchingRuntime::ChooserVelocityTolerance + 0.01f,
+				DefaultTuning.ChooserVelocityTolerance + 0.01f,
 				0.0f,
 				0.0f);
 			Proxy.GroundSpeed = Proxy.WorldVelocity.Size2D();
@@ -834,7 +1004,7 @@ bool FRpgJumpPhaseRuntimeTest::RunTest(const FString& Parameters)
 				*FString::Printf(TEXT("%s %s frozen airborne role is Run before live touchdown normalization"), NetworkView.Name, LandingCase.Name),
 				RpgLandingRuntime::ResolveDatabaseRole(
 					Proxy.LandingSelectionSnapshot,
-					AnimInstance->HeavyLandingSpeedThreshold),
+					DefaultTuning),
 				LandingCase.RunRole);
 
 			const uint32 RequestSerialBeforeTouchdown = AnimInstance->LandingRequestSerial;
@@ -900,7 +1070,7 @@ bool FRpgJumpPhaseRuntimeTest::RunTest(const FString& Parameters)
 				StandRequestSerial);
 
 			Proxy.WorldVelocity = FVector(
-				RpgMotionMatchingRuntime::ChooserVelocityTolerance + 0.01f,
+				DefaultTuning.ChooserVelocityTolerance + 0.01f,
 				0.0f,
 				0.0f);
 			Proxy.VerticalVelocity = 0.0f;
@@ -955,31 +1125,41 @@ bool FRpgJumpPhaseRuntimeTest::RunTest(const FString& Parameters)
 		TEXT("Missing-heavy fallback fixture starts from frozen Run Heavy"),
 		RpgLandingRuntime::ResolveDatabaseRole(
 			Proxy.LandingSelectionSnapshot,
-			AnimInstance->HeavyLandingSpeedThreshold),
+			DefaultTuning),
 		ERpgMotionMatchingDatabaseRole::RunHeavyLanding);
-	Proxy.MovementState = ERpgLocomotionMovementState::Grounded;
-	Proxy.bIsMovingOnGround = true;
-	Proxy.bIsFalling = false;
-	Proxy.WorldVelocity = FVector(0.0f, 0.0f, -50.0f);
-	Proxy.WorldAcceleration = AuthorityHeldAcceleration;
-	Proxy.VerticalVelocity = -50.0f;
-	Proxy.GroundSpeed = 0.0f;
-	Proxy.Gait = ERpgLocomotionGait::Run;
-	Proxy.bHasGroundedMoveIntent = true;
-	UPoseSearchDatabase* SavedStandHeavyLandingDatabase =
-		AnimInstance->StandHeavyLandingMotionMatchingDatabase;
-	AnimInstance->StandHeavyLandingMotionMatchingDatabase = nullptr;
-	const uint32 MissingHeavyRequestSerialBeforeTouchdown = AnimInstance->LandingRequestSerial;
-	AnimInstance->UpdateJumpPhaseRuntime(0.01f, Proxy);
+	FRpgLandingEligibilitySnapshot MissingHeavyEligibility;
+	MissingHeavyEligibility.MovementState = ERpgLocomotionMovementState::Grounded;
+	MissingHeavyEligibility.bIsMovingOnGround = true;
+	FRpgLandingDatabaseAvailability MissingHeavyAvailability;
+	MissingHeavyAvailability.bStandLight = true;
+	MissingHeavyAvailability.bStandHeavy = false;
+	MissingHeavyAvailability.bWalkLight = true;
+	MissingHeavyAvailability.bWalkHeavy = true;
+	MissingHeavyAvailability.bRunLight = true;
+	MissingHeavyAvailability.bRunHeavy = true;
+	const ERpgMotionMatchingDatabaseRole MissingHeavyRole =
+		RpgLandingRuntime::ResolveTouchdownRole(
+			Proxy.LandingSelectionSnapshot,
+			MissingHeavyEligibility,
+			MissingHeavyAvailability,
+			ERpgLocomotionGait::Run,
+			0.0f,
+			false,
+			DefaultTuning);
 	TestEqual(
 		TEXT("Stationary normalization precedes missing Heavy fallback"),
-		AnimInstance->ActiveLandingDatabaseRole,
+		MissingHeavyRole,
 		ERpgMotionMatchingDatabaseRole::StandLightLanding);
+	const FRpgLandingRuntimeState MissingHeavyState = AnimInstance->CaptureLandingRuntimeState();
+	const FRpgLandingRuntimeResult MissingHeavyResult = RpgLandingRuntime::BeginRequest(
+		MissingHeavyState,
+		MissingHeavyRole,
+		true,
+		DefaultTuning);
 	TestEqual(
 		TEXT("Missing stationary Heavy creates exactly one Light fallback request"),
-		AnimInstance->LandingRequestSerial,
-		MissingHeavyRequestSerialBeforeTouchdown + 1u);
-	AnimInstance->StandHeavyLandingMotionMatchingDatabase = SavedStandHeavyLandingDatabase;
+		MissingHeavyResult.State.RequestSerial,
+		MissingHeavyState.RequestSerial + 1u);
 
 	// Horizontal movement after the source 0.3 second window exits to normal gait locomotion.
 	for (const FStationaryLandingCase& LandingCase : StationaryLandingCases)
@@ -1007,7 +1187,7 @@ bool FRpgJumpPhaseRuntimeTest::RunTest(const FString& Parameters)
 			AnimInstance->LandingTouchdownElapsed > 0.3f);
 
 		Proxy.WorldVelocity = FVector(
-			RpgMotionMatchingRuntime::ChooserVelocityTolerance + 0.01f,
+			DefaultTuning.ChooserVelocityTolerance + 0.01f,
 			0.0f,
 			0.0f);
 		Proxy.GroundSpeed = Proxy.WorldVelocity.Size2D();
@@ -1320,8 +1500,8 @@ bool FRpgJumpPhaseRuntimeTest::RunTest(const FString& Parameters)
 	AddMembership(UnlatchedLandClip, ERpgGaspPresentationAssetCategory::Landing);
 	AddMembership(BackwardStart, ERpgGaspPresentationAssetCategory::BackwardJumpStart);
 	TestTrue(
-		TEXT("Explicit presentation membership passes structural validation"),
-		PresentationProfile->ValidateProfile().IsValid());
+		TEXT("Explicit presentation membership passes its focused validation contract"),
+		PresentationProfile->ValidateProfile().IsMembershipValid());
 	TestTrue(
 		TEXT("A valid presentation profile builds the immutable runtime lookup"),
 		AnimInstance->GaspPresentationAssetLookup.Build(PresentationProfile));
@@ -1413,6 +1593,39 @@ bool FRpgJumpPhaseRuntimeTest::RunTest(const FString& Parameters)
 		TEXT("Invalid playback timing fails open"),
 		RpgJumpRuntime::ShouldHoldBackwardJumpStartPlayback(
 			ERpgJumpPhase::Airborne, true, 0.0f, 0.0f, 1.0f, 0.0f));
+
+	FRpgGaspLocomotionTuning CustomJumpTuning;
+	CustomJumpTuning.BackwardJumpStartHoldTimeout = 0.5f;
+	TestTrue(
+		TEXT("Compatibility tuning still holds before its original watchdog"),
+		RpgJumpRuntime::ShouldHoldBackwardJumpStartPlayback(
+			ERpgJumpPhase::Airborne, true, 0.1f, 2.0f, 1.0f, 0.5f));
+	TestFalse(
+		TEXT("A shorter profile watchdog releases at its customized inclusive boundary"),
+		RpgJumpRuntime::ShouldHoldBackwardJumpStartPlayback(
+			ERpgJumpPhase::Airborne,
+			true,
+			0.1f,
+			2.0f,
+			1.0f,
+			0.5f,
+			CustomJumpTuning));
+	CustomJumpTuning.BackwardJumpStartHoldTimeout = 1.25f;
+	CustomJumpTuning.BackwardJumpStartReleaseLeadTime = 0.6f;
+	TestTrue(
+		TEXT("Compatibility release lead retains a half-second playback remainder"),
+		RpgJumpRuntime::ShouldHoldBackwardJumpStartPlayback(
+			ERpgJumpPhase::Airborne, true, 1.5f, 2.0f, 1.0f, 0.1f));
+	TestFalse(
+		TEXT("A larger profile release lead fails open at the same playback remainder"),
+		RpgJumpRuntime::ShouldHoldBackwardJumpStartPlayback(
+			ERpgJumpPhase::Airborne,
+			true,
+			1.5f,
+			2.0f,
+			1.0f,
+			0.1f,
+			CustomJumpTuning));
 
 	FRpgBackwardJumpStartHoldState OrdinaryAirborneState;
 	OrdinaryAirborneState.bHoldEligible = true;

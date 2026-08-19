@@ -3,10 +3,12 @@
 #pragma once
 
 #include "Engine/DataAsset.h"
+#include "RpgGaspLocomotionConfig.h"
 #include "RpgGaspPresentationProfile.generated.h"
 
 class UAnimationAsset;
 class UAnimSequenceBase;
+class UPoseSearchDatabase;
 
 /**
  * Presentation category assigned to one curated GASP animation sequence.
@@ -50,12 +52,38 @@ struct SURVIVALRPG_API FRpgGaspPresentationProfileValidation
 	bool bHasLoopingJumpStart = false;
 	bool bHasNonLoopingAirborneFall = false;
 	bool bHasLoopingLanding = false;
+	bool bHasEmptyRuntimeDatabases = false;
+	bool bHasNullRuntimeDatabase = false;
+	bool bHasDuplicateRuntimeDatabase = false;
+	bool bHasRuntimeDatabaseWithoutAssets = false;
+	bool bHasInvalidRuntimeDatabaseRoleTag = false;
+	bool bHasDuplicateRuntimeDatabaseRole = false;
+	bool bHasMissingRuntimeDatabaseRole = false;
+	bool bHasGroundMovingCoverageMismatch = false;
+	bool bHasAirborneCoverageMismatch = false;
+	bool bHasLandingCoverageMismatch = false;
+	bool bHasInvalidTuning = false;
 
-	bool IsValid() const
+	bool IsMembershipValid() const
 	{
 		return !bIsEmpty && !bHasNullAsset && !bHasDuplicateAsset &&
 			!bHasUnassignedCategory && !bHasLoopingJumpStart &&
 			!bHasNonLoopingAirborneFall && !bHasLoopingLanding;
+	}
+
+	bool IsRuntimeDatabaseConfigValid() const
+	{
+		return !bHasEmptyRuntimeDatabases && !bHasNullRuntimeDatabase &&
+			!bHasDuplicateRuntimeDatabase && !bHasRuntimeDatabaseWithoutAssets &&
+			!bHasInvalidRuntimeDatabaseRoleTag &&
+			!bHasDuplicateRuntimeDatabaseRole && !bHasMissingRuntimeDatabaseRole &&
+			!bHasGroundMovingCoverageMismatch && !bHasAirborneCoverageMismatch &&
+			!bHasLandingCoverageMismatch;
+	}
+
+	bool IsValid() const
+	{
+		return IsMembershipValid() && IsRuntimeDatabaseConfigValid() && !bHasInvalidTuning;
 	}
 };
 
@@ -79,7 +107,19 @@ public:
 	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Rpg|Animation|Presentation")
 	TArray<FRpgGaspPresentationAssetMembership> AssetMemberships;
 
-	/** Checks empty data, nulls, duplicates, unassigned categories, and loop invariants. */
+	/**
+	 * Complete unordered runtime Pose Search database set for this profile.
+	 * Each database must carry exactly one unique `Rpg.MotionMatching.Role.*` tag; hard references
+	 * make the profile the deterministic load/cook root for the worker-safe runtime cache.
+	 */
+	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Rpg|Animation|Motion Matching")
+	TArray<TObjectPtr<UPoseSearchDatabase>> RuntimeMotionMatchingDatabases;
+
+	/** Cosmetic gait, Motion Matching, turn, jump, and landing feel copied at initialization. */
+	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Rpg|Animation|Motion Matching")
+	FRpgGaspLocomotionTuning LocomotionTuning;
+
+	/** Checks presentation membership, all 18 database roles/coverage, and finite ordered tuning. */
 	FRpgGaspPresentationProfileValidation ValidateProfile() const;
 
 #if WITH_EDITOR
@@ -119,5 +159,49 @@ struct SURVIVALRPG_API FRpgGaspPresentationAssetLookup
 		ERpgGaspPresentationAssetTrait Trait) const;
 
 private:
+	/** Populates from a validation result computed for the same immutable profile. */
+	bool BuildValidated(
+		const URpgGaspPresentationProfile* Profile,
+		const FRpgGaspPresentationProfileValidation& Validation);
+
 	TMap<const UAnimationAsset*, ERpgGaspPresentationAssetTrait> AssetTraits;
+
+	friend class URpgAnimInstance;
+};
+
+/**
+ * Immutable-after-initialization bidirectional database-role cache.
+ * The active profile or reflected legacy facade owns hard references to every database while
+ * worker callbacks read raw pointer keys and the fixed native role enum only; no profile array,
+ * legacy slot, or database tag is touched after game-thread initialization.
+ */
+struct SURVIVALRPG_API FRpgGaspMotionMatchingDatabaseLookup
+{
+	/** Builds the complete 18-role cache; invalid or partial non-empty mappings fail closed. */
+	bool Build(const URpgGaspPresentationProfile* Profile);
+
+	/** Clears both lookup directions before profile rebinding or a failed rebuild. */
+	void Reset();
+
+	/** Returns the configured database for one role, or null for None, Count, or an invalid cache. */
+	UPoseSearchDatabase* FindDatabase(ERpgMotionMatchingDatabaseRole Role) const;
+
+	/** Returns the configured role for one exact database pointer, or None when it is not active. */
+	ERpgMotionMatchingDatabaseRole FindRole(const UPoseSearchDatabase* Database) const;
+
+private:
+	/** Adds one already resolved role binding while rejecting null, sentinel, or duplicate entries. */
+	bool AddResolvedBinding(
+		ERpgMotionMatchingDatabaseRole Role,
+		UPoseSearchDatabase* Database);
+
+	/** Populates from a validation result computed for the same immutable profile. */
+	bool BuildValidated(
+		const URpgGaspPresentationProfile* Profile,
+		const FRpgGaspPresentationProfileValidation& Validation);
+
+	TMap<ERpgMotionMatchingDatabaseRole, UPoseSearchDatabase*> DatabaseByRole;
+	TMap<const UPoseSearchDatabase*, ERpgMotionMatchingDatabaseRole> RoleByDatabase;
+
+	friend class URpgAnimInstance;
 };

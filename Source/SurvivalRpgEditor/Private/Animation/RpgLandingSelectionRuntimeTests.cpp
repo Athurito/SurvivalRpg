@@ -10,6 +10,7 @@
 #include "Misc/AutomationTest.h"
 #include "PoseSearch/PoseSearchDatabase.h"
 #include "SurvivalRpg/Animation/RpgAnimInstance.h"
+#include "SurvivalRpg/Animation/RpgGaspLocomotionConfig.h"
 #include "SurvivalRpg/Animation/RpgLandingRuntime.h"
 #include "UObject/UObjectGlobals.h"
 
@@ -21,7 +22,7 @@ IMPLEMENT_SIMPLE_AUTOMATION_TEST(
 
 bool FRpgLandingSelectionRuntimeTest::RunTest(const FString& Parameters)
 {
-	constexpr float HeavySpeedThreshold = 700.0f;
+	const FRpgGaspLocomotionTuning DefaultTuning;
 	const FVector GravityAcceleration(0.0, 0.0, -1000.0);
 
 	auto MakeSnapshot = [](
@@ -51,14 +52,14 @@ bool FRpgLandingSelectionRuntimeTest::RunTest(const FString& Parameters)
 		}
 		return Snapshot;
 	};
-	auto TestResolvedRole = [this, HeavySpeedThreshold](
+	auto TestResolvedRole = [this, &DefaultTuning](
 		const TCHAR* Context,
 		const FRpgLandingSelectionSnapshot& Snapshot,
 		ERpgMotionMatchingDatabaseRole ExpectedRole)
 	{
 		TestEqual(
 			Context,
-			RpgLandingRuntime::ResolveDatabaseRole(Snapshot, HeavySpeedThreshold),
+			RpgLandingRuntime::ResolveDatabaseRole(Snapshot, DefaultTuning),
 			ExpectedRole);
 	};
 	auto TestSnapshotParity = [this](
@@ -188,6 +189,20 @@ bool FRpgLandingSelectionRuntimeTest::RunTest(const FString& Parameters)
 		MakeSnapshot(ERpgLocomotionGait::Run, 450.0f, true, 0.0f, 0.0f, 900.0f),
 		ERpgMotionMatchingDatabaseRole::RunLightLanding);
 
+	FRpgGaspLocomotionTuning CustomRoleTuning = DefaultTuning;
+	CustomRoleTuning.StationarySpeedThreshold = 10.0f;
+	CustomRoleTuning.HeavyLandingSpeedThreshold = 900.0f;
+	const FRpgLandingSelectionSnapshot CustomRoleSnapshot =
+		MakeSnapshot(ERpgLocomotionGait::Run, 5.0f, true, 700.0f, 0.0f);
+	TestEqual(
+		TEXT("Custom stationary and Heavy thresholds change landing role selection together"),
+		RpgLandingRuntime::ResolveDatabaseRole(CustomRoleSnapshot, CustomRoleTuning),
+		ERpgMotionMatchingDatabaseRole::StandLightLanding);
+	TestEqual(
+		TEXT("Default tuning remains unchanged after a custom landing role query"),
+		RpgLandingRuntime::ResolveDatabaseRole(CustomRoleSnapshot, DefaultTuning),
+		ERpgMotionMatchingDatabaseRole::RunHeavyLanding);
+
 	const float QuietNaN = std::numeric_limits<float>::quiet_NaN();
 	const float Infinity = std::numeric_limits<float>::infinity();
 	FRpgLandingSelectionSnapshot InvalidSnapshot =
@@ -215,17 +230,20 @@ bool FRpgLandingSelectionRuntimeTest::RunTest(const FString& Parameters)
 	InvalidSnapshot = MakeSnapshot(ERpgLocomotionGait::Run, 450.0f, true, 500.0f, 200.0f);
 	InvalidSnapshot.PredictedLanding.TimeToLand = Infinity;
 	TestResolvedRole(TEXT("Infinite predicted contact time fails closed"), InvalidSnapshot, ERpgMotionMatchingDatabaseRole::None);
+	FRpgGaspLocomotionTuning InvalidHeavyTuning = DefaultTuning;
+	InvalidHeavyTuning.HeavyLandingSpeedThreshold = QuietNaN;
 	TestEqual(
 		TEXT("A NaN Heavy threshold fails closed"),
 		RpgLandingRuntime::ResolveDatabaseRole(
 			MakeSnapshot(ERpgLocomotionGait::Run, 450.0f, true, 700.0f, 0.0f),
-			QuietNaN),
+			InvalidHeavyTuning),
 		ERpgMotionMatchingDatabaseRole::None);
+	InvalidHeavyTuning.HeavyLandingSpeedThreshold = Infinity;
 	TestEqual(
 		TEXT("An infinite Heavy threshold fails closed"),
 		RpgLandingRuntime::ResolveDatabaseRole(
 			MakeSnapshot(ERpgLocomotionGait::Run, 450.0f, true, 700.0f, 0.0f),
-			Infinity),
+			InvalidHeavyTuning),
 		ERpgMotionMatchingDatabaseRole::None);
 
 	// Capture retains horizontal direction and strips vertical velocity for every cardinal input.
@@ -323,7 +341,7 @@ bool FRpgLandingSelectionRuntimeTest::RunTest(const FString& Parameters)
 		TEXT("An upward capture resolves Light rather than Heavy"),
 		RpgLandingRuntime::ResolveDatabaseRole(
 			UpwardProxy.LandingSelectionSnapshot,
-			HeavySpeedThreshold),
+			DefaultTuning),
 		ERpgMotionMatchingDatabaseRole::RunLightLanding);
 
 	FRpgAnimInstanceProxy InvalidInputProxy;
@@ -445,7 +463,7 @@ bool FRpgLandingSelectionRuntimeTest::RunTest(const FString& Parameters)
 			*FString::Printf(TEXT("%s resolves the same Run Heavy role"), NetworkRoleNames[RoleIndex]),
 			RpgLandingRuntime::ResolveDatabaseRole(
 				NetworkSnapshots[RoleIndex],
-				HeavySpeedThreshold),
+				DefaultTuning),
 			ERpgMotionMatchingDatabaseRole::RunHeavyLanding);
 	}
 
@@ -560,7 +578,8 @@ bool FRpgLandingSelectionRuntimeTest::RunTest(const FString& Parameters)
 	const FRpgLandingRuntimeResult HandoffResult = RpgLandingRuntime::UpdateActive(
 		HandoffState,
 		HandoffSnapshot,
-		0.01f);
+		0.01f,
+		DefaultTuning);
 	TestEqual(
 		TEXT("The inclusive handoff window preserves Heavy severity in the Run domain"),
 		HandoffResult.State.ActiveRole,
@@ -575,83 +594,100 @@ bool FRpgLandingSelectionRuntimeTest::RunTest(const FString& Parameters)
 		FMath::IsNearlyEqual(HandoffResult.State.TouchdownElapsed, 0.3f, 0.0001f));
 
 	FRpgLandingRuntimeState LateHandoffState = HandoffState;
-	LateHandoffState.TouchdownElapsed = RpgLandingRuntime::MovementHandoffWindow;
+	LateHandoffState.TouchdownElapsed = DefaultTuning.LandingMovementHandoffWindow;
 	const FRpgLandingRuntimeResult LateHandoffResult = RpgLandingRuntime::UpdateActive(
 		LateHandoffState,
 		HandoffSnapshot,
-		0.01f);
+		0.01f,
+		DefaultTuning);
 	TestEqual(
 		TEXT("Movement after the handoff window exits to Grounded"),
 		LateHandoffResult.Transition,
 		ERpgLandingRuntimeTransition::ResetGrounded);
 
+	FRpgGaspLocomotionTuning ShortHandoffTuning = DefaultTuning;
+	ShortHandoffTuning.LandingMovementHandoffWindow = 0.1f;
+	FRpgLandingRuntimeState CustomHandoffState = HandoffState;
+	CustomHandoffState.TouchdownElapsed = 0.1f;
+	TestEqual(
+		TEXT("A custom landing handoff window is inclusive"),
+		RpgLandingRuntime::UpdateActive(
+			CustomHandoffState,
+			HandoffSnapshot,
+			0.0f,
+			ShortHandoffTuning).Transition,
+		ERpgLandingRuntimeTransition::BeginLanding);
+
 	FRpgLandingRuntimeState FrozenMovingState;
 	FrozenMovingState.ActiveRole = ERpgMotionMatchingDatabaseRole::RunHeavyLanding;
-	FrozenMovingState.PlaybackWatchdogDuration = RpgLandingRuntime::ActiveTimeout;
+	FrozenMovingState.PlaybackWatchdogDuration = DefaultTuning.LandingActiveTimeout;
 	FRpgLandingActiveSnapshot FrozenMovingSnapshot = HandoffSnapshot;
 	FrozenMovingSnapshot.LiveGait = ERpgLocomotionGait::Walk;
 	FrozenMovingSnapshot.GroundSpeed = 100.0f;
 	const FRpgLandingRuntimeResult FrozenMovingResult = RpgLandingRuntime::UpdateActive(
 		FrozenMovingState,
 		FrozenMovingSnapshot,
-		0.1f);
+		0.1f,
+		DefaultTuning);
 	TestEqual(
 		TEXT("An active moving landing role remains frozen across live gait changes"),
 		FrozenMovingResult.State.ActiveRole,
 		ERpgMotionMatchingDatabaseRole::RunHeavyLanding);
 
 	FRpgLandingRuntimeState SelectionTimeoutState = FrozenMovingState;
-	SelectionTimeoutState.StateElapsed = RpgLandingRuntime::SelectionTimeout;
+	SelectionTimeoutState.StateElapsed = DefaultTuning.LandingSelectionTimeout;
 	SelectionTimeoutState.bSelectionLatched = false;
 	TestEqual(
 		TEXT("Selection timeout is inclusive"),
 		RpgLandingRuntime::UpdateActive(
 			SelectionTimeoutState,
 			FrozenMovingSnapshot,
-			0.0f).Transition,
+			0.0f,
+			DefaultTuning).Transition,
 		ERpgLandingRuntimeTransition::ResetGrounded);
 	FRpgLandingRuntimeState PlaybackTimeoutState = FrozenMovingState;
-	PlaybackTimeoutState.StateElapsed = RpgLandingRuntime::ActiveTimeout;
-	PlaybackTimeoutState.PlaybackWatchdogDuration = RpgLandingRuntime::ActiveTimeout;
+	PlaybackTimeoutState.StateElapsed = DefaultTuning.LandingActiveTimeout;
+	PlaybackTimeoutState.PlaybackWatchdogDuration = DefaultTuning.LandingActiveTimeout;
 	PlaybackTimeoutState.bSelectionLatched = true;
 	TestEqual(
 		TEXT("Playback watchdog timeout is inclusive"),
 		RpgLandingRuntime::UpdateActive(
 			PlaybackTimeoutState,
 			FrozenMovingSnapshot,
-			0.0f).Transition,
+			0.0f,
+			DefaultTuning).Transition,
 		ERpgLandingRuntimeTransition::ResetGrounded);
 
 	TestTrue(
 		TEXT("Looping landing playback uses the bounded active timeout"),
 		FMath::IsNearlyEqual(
-			RpgLandingRuntime::CalculatePlaybackWatchdogDuration(0.2f, 1.0f, true),
-			RpgLandingRuntime::ActiveTimeout));
+			RpgLandingRuntime::CalculatePlaybackWatchdogDuration(0.2f, 1.0f, true, DefaultTuning),
+			DefaultTuning.LandingActiveTimeout));
 	TestTrue(
 		TEXT("Paused landing playback uses the bounded active timeout"),
 		FMath::IsNearlyEqual(
-			RpgLandingRuntime::CalculatePlaybackWatchdogDuration(0.2f, 0.0f, false),
-			RpgLandingRuntime::ActiveTimeout));
+			RpgLandingRuntime::CalculatePlaybackWatchdogDuration(0.2f, 0.0f, false, DefaultTuning),
+			DefaultTuning.LandingActiveTimeout));
 	TestTrue(
 		TEXT("Negative play rate uses its absolute playback duration"),
 		FMath::IsNearlyEqual(
-			RpgLandingRuntime::CalculatePlaybackWatchdogDuration(0.4f, -2.0f, false),
+			RpgLandingRuntime::CalculatePlaybackWatchdogDuration(0.4f, -2.0f, false, DefaultTuning),
 			0.3f));
 	TestTrue(
 		TEXT("Landing watchdog clamps short playback to its safety margin"),
 		FMath::IsNearlyEqual(
-			RpgLandingRuntime::CalculatePlaybackWatchdogDuration(0.0f, 1.0f, false),
+			RpgLandingRuntime::CalculatePlaybackWatchdogDuration(0.0f, 1.0f, false, DefaultTuning),
 			RpgLandingRuntime::PlaybackWatchdogSafetyMargin));
 	TestTrue(
 		TEXT("Landing watchdog clamps long playback to its active timeout"),
 		FMath::IsNearlyEqual(
-			RpgLandingRuntime::CalculatePlaybackWatchdogDuration(10.0f, 1.0f, false),
-			RpgLandingRuntime::ActiveTimeout));
+			RpgLandingRuntime::CalculatePlaybackWatchdogDuration(10.0f, 1.0f, false, DefaultTuning),
+			DefaultTuning.LandingActiveTimeout));
 	TestTrue(
 		TEXT("Non-finite play rate fails over to the bounded active timeout"),
 		FMath::IsNearlyEqual(
-			RpgLandingRuntime::CalculatePlaybackWatchdogDuration(0.2f, QuietNaN, false),
-			RpgLandingRuntime::ActiveTimeout));
+			RpgLandingRuntime::CalculatePlaybackWatchdogDuration(0.2f, QuietNaN, false, DefaultTuning),
+			DefaultTuning.LandingActiveTimeout));
 
 	// Missing Heavy content falls back only to the same gait's Light slot, then to None.
 	USkeletalMeshComponent* AnimInstanceOuter = NewObject<USkeletalMeshComponent>();
@@ -672,13 +708,41 @@ bool FRpgLandingSelectionRuntimeTest::RunTest(const FString& Parameters)
 	{
 		return false;
 	}
-	AnimInstance->HeavyLandingSpeedThreshold = HeavySpeedThreshold;
+	AnimInstance->HeavyLandingSpeedThreshold = DefaultTuning.HeavyLandingSpeedThreshold;
 	AnimInstance->LandingMotionMatchingDatabase = StandLightDatabase;
 	AnimInstance->StandHeavyLandingMotionMatchingDatabase = StandHeavyDatabase;
 	AnimInstance->WalkLightLandingMotionMatchingDatabase = WalkLightDatabase;
 	AnimInstance->WalkHeavyLandingMotionMatchingDatabase = WalkHeavyDatabase;
 	AnimInstance->RunLightLandingMotionMatchingDatabase = RunLightDatabase;
 	AnimInstance->RunHeavyLandingMotionMatchingDatabase = RunHeavyDatabase;
+	AnimInstance->GroundMotionMatchingDatabaseSets.Idle[0] = NewObject<UPoseSearchDatabase>();
+	AnimInstance->GroundMotionMatchingDatabaseSets.Walk[0] = NewObject<UPoseSearchDatabase>();
+	AnimInstance->GroundMotionMatchingDatabaseSets.Walk[1] = NewObject<UPoseSearchDatabase>();
+	AnimInstance->GroundMotionMatchingDatabaseSets.Run[0] = NewObject<UPoseSearchDatabase>();
+	AnimInstance->GroundMotionMatchingDatabaseSets.Run[1] = NewObject<UPoseSearchDatabase>();
+	AnimInstance->GroundMotionMatchingDatabaseSets.Run[2] = NewObject<UPoseSearchDatabase>();
+	AnimInstance->GroundMotionMatchingDatabaseSets.Run[3] = NewObject<UPoseSearchDatabase>();
+	AnimInstance->GroundMotionMatchingDatabaseSets.Sprint[0] = NewObject<UPoseSearchDatabase>();
+	AnimInstance->GroundMotionMatchingDatabaseSets.Sprint[1] = NewObject<UPoseSearchDatabase>();
+	AnimInstance->CrouchingMotionMatchingDatabase = NewObject<UPoseSearchDatabase>();
+	AnimInstance->TurnInPlaceMotionMatchingDatabase = NewObject<UPoseSearchDatabase>();
+	AnimInstance->AirborneMotionMatchingDatabases.Add(NewObject<UPoseSearchDatabase>());
+	AnimInstance->InitializeGaspRuntimeConfiguration();
+	if (!TestNotNull(
+		TEXT("The complete unique legacy facade initializes its atomic runtime cache"),
+		AnimInstance->GetMotionMatchingDatabaseForRole(
+			ERpgMotionMatchingDatabaseRole::StandIdle)))
+	{
+		return false;
+	}
+
+	FRpgLandingDatabaseAvailability CompleteAvailability;
+	CompleteAvailability.bStandLight = true;
+	CompleteAvailability.bStandHeavy = true;
+	CompleteAvailability.bWalkLight = true;
+	CompleteAvailability.bWalkHeavy = true;
+	CompleteAvailability.bRunLight = true;
+	CompleteAvailability.bRunHeavy = true;
 
 	const FRpgLandingSelectionSnapshot StandHeavySnapshot =
 		MakeSnapshot(ERpgLocomotionGait::Idle, 0.0f, false, 700.0f, 0.0f);
@@ -686,18 +750,21 @@ bool FRpgLandingSelectionRuntimeTest::RunTest(const FString& Parameters)
 		TEXT("Configured Stand Heavy content is selected directly"),
 		AnimInstance->ResolveAvailableLandingDatabaseRole(StandHeavySnapshot),
 		ERpgMotionMatchingDatabaseRole::StandHeavyLanding);
-	AnimInstance->StandHeavyLandingMotionMatchingDatabase = nullptr;
+	FRpgLandingDatabaseAvailability StandFallbackAvailability = CompleteAvailability;
+	StandFallbackAvailability.bStandHeavy = false;
 	TestEqual(
 		TEXT("Missing Stand Heavy falls back to Stand Light"),
-		AnimInstance->ResolveAvailableLandingDatabaseRole(StandHeavySnapshot),
+		RpgLandingRuntime::ResolveAvailableRole(
+			ERpgMotionMatchingDatabaseRole::StandHeavyLanding,
+			StandFallbackAvailability),
 		ERpgMotionMatchingDatabaseRole::StandLightLanding);
-	AnimInstance->LandingMotionMatchingDatabase = nullptr;
+	StandFallbackAvailability.bStandLight = false;
 	TestEqual(
 		TEXT("Missing Stand Heavy and Stand Light falls back to None"),
-		AnimInstance->ResolveAvailableLandingDatabaseRole(StandHeavySnapshot),
+		RpgLandingRuntime::ResolveAvailableRole(
+			ERpgMotionMatchingDatabaseRole::StandHeavyLanding,
+			StandFallbackAvailability),
 		ERpgMotionMatchingDatabaseRole::None);
-	AnimInstance->LandingMotionMatchingDatabase = StandLightDatabase;
-	AnimInstance->StandHeavyLandingMotionMatchingDatabase = StandHeavyDatabase;
 
 	const FRpgLandingSelectionSnapshot WalkHeavySnapshot =
 		MakeSnapshot(ERpgLocomotionGait::Walk, 200.0f, true, 700.0f, 0.0f);
@@ -705,18 +772,21 @@ bool FRpgLandingSelectionRuntimeTest::RunTest(const FString& Parameters)
 		TEXT("Configured Walk Heavy content is selected directly"),
 		AnimInstance->ResolveAvailableLandingDatabaseRole(WalkHeavySnapshot),
 		ERpgMotionMatchingDatabaseRole::WalkHeavyLanding);
-	AnimInstance->WalkHeavyLandingMotionMatchingDatabase = nullptr;
+	FRpgLandingDatabaseAvailability WalkFallbackAvailability = CompleteAvailability;
+	WalkFallbackAvailability.bWalkHeavy = false;
 	TestEqual(
 		TEXT("Missing Walk Heavy falls back to Walk Light"),
-		AnimInstance->ResolveAvailableLandingDatabaseRole(WalkHeavySnapshot),
+		RpgLandingRuntime::ResolveAvailableRole(
+			ERpgMotionMatchingDatabaseRole::WalkHeavyLanding,
+			WalkFallbackAvailability),
 		ERpgMotionMatchingDatabaseRole::WalkLightLanding);
-	AnimInstance->WalkLightLandingMotionMatchingDatabase = nullptr;
+	WalkFallbackAvailability.bWalkLight = false;
 	TestEqual(
 		TEXT("Missing Walk Heavy and Walk Light falls back to None"),
-		AnimInstance->ResolveAvailableLandingDatabaseRole(WalkHeavySnapshot),
+		RpgLandingRuntime::ResolveAvailableRole(
+			ERpgMotionMatchingDatabaseRole::WalkHeavyLanding,
+			WalkFallbackAvailability),
 		ERpgMotionMatchingDatabaseRole::None);
-	AnimInstance->WalkLightLandingMotionMatchingDatabase = WalkLightDatabase;
-	AnimInstance->WalkHeavyLandingMotionMatchingDatabase = WalkHeavyDatabase;
 
 	const FRpgLandingSelectionSnapshot RunHeavySnapshot =
 		MakeSnapshot(ERpgLocomotionGait::Run, 450.0f, true, 700.0f, 0.0f);
@@ -724,15 +794,20 @@ bool FRpgLandingSelectionRuntimeTest::RunTest(const FString& Parameters)
 		TEXT("Configured Run Heavy content is selected directly"),
 		AnimInstance->ResolveAvailableLandingDatabaseRole(RunHeavySnapshot),
 		ERpgMotionMatchingDatabaseRole::RunHeavyLanding);
-	AnimInstance->RunHeavyLandingMotionMatchingDatabase = nullptr;
+	FRpgLandingDatabaseAvailability RunFallbackAvailability = CompleteAvailability;
+	RunFallbackAvailability.bRunHeavy = false;
 	TestEqual(
 		TEXT("Missing Run Heavy falls back to Run Light"),
-		AnimInstance->ResolveAvailableLandingDatabaseRole(RunHeavySnapshot),
+		RpgLandingRuntime::ResolveAvailableRole(
+			ERpgMotionMatchingDatabaseRole::RunHeavyLanding,
+			RunFallbackAvailability),
 		ERpgMotionMatchingDatabaseRole::RunLightLanding);
-	AnimInstance->RunLightLandingMotionMatchingDatabase = nullptr;
+	RunFallbackAvailability.bRunLight = false;
 	TestEqual(
 		TEXT("Missing Run Heavy and Run Light falls back to None"),
-		AnimInstance->ResolveAvailableLandingDatabaseRole(RunHeavySnapshot),
+		RpgLandingRuntime::ResolveAvailableRole(
+			ERpgMotionMatchingDatabaseRole::RunHeavyLanding,
+			RunFallbackAvailability),
 		ERpgMotionMatchingDatabaseRole::None);
 
 	return true;

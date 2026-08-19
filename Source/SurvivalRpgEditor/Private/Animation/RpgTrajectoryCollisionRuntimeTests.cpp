@@ -504,10 +504,37 @@ bool FRpgTrajectoryCollisionRuntimeTest::RunTest(const FString& Parameters)
 
 	USkeletalMeshComponent* AnimInstanceOuter = NewObject<USkeletalMeshComponent>();
 	URpgAnimInstance* AnimInstance = NewObject<URpgAnimInstance>(AnimInstanceOuter);
-	AnimInstance->LandingMotionMatchingDatabase = NewObject<UPoseSearchDatabase>();
-	AnimInstance->RunLightLandingMotionMatchingDatabase = NewObject<UPoseSearchDatabase>();
-	AnimInstance->RunHeavyLandingMotionMatchingDatabase = NewObject<UPoseSearchDatabase>();
+	const auto MakeUniqueLegacyDatabase = []()
+	{
+		return NewObject<UPoseSearchDatabase>();
+	};
+	for (TObjectPtr<UPoseSearchDatabase>& Database : AnimInstance->GroundMotionMatchingDatabaseSets.Idle)
+	{
+		Database = MakeUniqueLegacyDatabase();
+	}
+	for (TObjectPtr<UPoseSearchDatabase>& Database : AnimInstance->GroundMotionMatchingDatabaseSets.Walk)
+	{
+		Database = MakeUniqueLegacyDatabase();
+	}
+	for (TObjectPtr<UPoseSearchDatabase>& Database : AnimInstance->GroundMotionMatchingDatabaseSets.Run)
+	{
+		Database = MakeUniqueLegacyDatabase();
+	}
+	for (TObjectPtr<UPoseSearchDatabase>& Database : AnimInstance->GroundMotionMatchingDatabaseSets.Sprint)
+	{
+		Database = MakeUniqueLegacyDatabase();
+	}
+	AnimInstance->CrouchingMotionMatchingDatabase = MakeUniqueLegacyDatabase();
+	AnimInstance->TurnInPlaceMotionMatchingDatabase = MakeUniqueLegacyDatabase();
+	AnimInstance->AirborneMotionMatchingDatabases.Add(MakeUniqueLegacyDatabase());
+	AnimInstance->LandingMotionMatchingDatabase = MakeUniqueLegacyDatabase();
+	AnimInstance->StandHeavyLandingMotionMatchingDatabase = MakeUniqueLegacyDatabase();
+	AnimInstance->WalkLightLandingMotionMatchingDatabase = MakeUniqueLegacyDatabase();
+	AnimInstance->WalkHeavyLandingMotionMatchingDatabase = MakeUniqueLegacyDatabase();
+	AnimInstance->RunLightLandingMotionMatchingDatabase = MakeUniqueLegacyDatabase();
+	AnimInstance->RunHeavyLandingMotionMatchingDatabase = MakeUniqueLegacyDatabase();
 	AnimInstance->HeavyLandingSpeedThreshold = 700.0f;
+	AnimInstance->InitializeGaspRuntimeConfiguration();
 	FRpgAnimInstanceProxy Proxy;
 	Proxy.MovementState = ERpgLocomotionMovementState::Airborne;
 	Proxy.bIsFalling = true;
