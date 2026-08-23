@@ -34,6 +34,29 @@ void ResetPoseSearchTrajectoryState(FRpgAnimInstanceProxy& Proxy)
 	Proxy.DesiredControllerYawLastUpdate = 0.0f;
 }
 
+FTransform GetPresentationActorTransform(const ARpgCharacter& Character)
+{
+	const bool bUsesNetworkSmoothedPresentation =
+		Character.GetLocalRole() == ROLE_SimulatedProxy ||
+		Character.GetRemoteRole() == ROLE_AutonomousProxy;
+	const USkeletalMeshComponent* Mesh = Character.GetMesh();
+	if (!bUsesNetworkSmoothedPresentation || !IsValid(Mesh))
+	{
+		return Character.GetActorTransform();
+	}
+
+	// Network smoothing lives on the mesh relative to the capsule. Remove only the
+	// authored mesh offset so trajectory, local motion, and turn-in-place all observe
+	// the same smoothed presentation frame without feeding skeletal pose into the result.
+	FQuat PresentationRotation =
+		Mesh->GetComponentQuat() * Character.GetBaseRotationOffset().Inverse();
+	PresentationRotation.Normalize();
+	const FVector PresentationLocation =
+		Mesh->GetComponentLocation() -
+		PresentationRotation.RotateVector(Character.GetBaseTranslationOffset());
+	return FTransform(PresentationRotation, PresentationLocation);
+}
+
 struct FRpgFootPlacementTraceResult
 {
 	FVector GroundPointWorld = FVector::ZeroVector;
@@ -418,10 +441,6 @@ void UpdateFootPlacementSnapshot(
 			FVector::UpVector);
 	}
 
-	const bool bLargeComponentJump =
-		bHadPreviousComponentTransform &&
-		Snapshot.ComponentDeltaWorld.SizeSquared() >
-			FMath::Square(RpgTurnInPlaceRuntime::LargePositionDelta);
 	const bool bBaseIdentityChanged =
 		bHadPreviousComponentTransform &&
 		PreviousMovementBaseId != MovementBaseId;
@@ -435,7 +454,6 @@ void UpdateFootPlacementSnapshot(
 		bSourceEligible && !Proxy.bPreviousFootPlacementSourceEligible;
 	Snapshot.bReset =
 		Proxy.bTurnInPlaceHardReset ||
-		bLargeComponentJump ||
 		bBaseIdentityChanged ||
 		bSourceBecameEligible ||
 		!bSourceEligible;
@@ -577,6 +595,7 @@ void FRpgAnimInstanceProxy::PreUpdate(UAnimInstance* InAnimInstance, float Delta
 		bWasAirborneForLanding = false;
 		bTurnInPlaceHardReset = true;
 		PreviousOwnerUniqueId = 0;
+		PreviousAnimationDiscontinuitySerial = 0;
 		bHasPreviousOwnerSnapshot = false;
 		return;
 	}
@@ -593,13 +612,15 @@ void FRpgAnimInstanceProxy::PreUpdate(UAnimInstance* InAnimInstance, float Delta
 		bWasAirborneForLanding = false;
 		bTurnInPlaceHardReset = true;
 		PreviousOwnerUniqueId = 0;
+		PreviousAnimationDiscontinuitySerial = 0;
 		bHasPreviousOwnerSnapshot = false;
 		return;
 	}
 
-	const FQuat ActorRotation = Character->GetActorQuat();
-	ActorYaw = Character->GetActorRotation().Yaw;
-	ActorLocation = Character->GetActorLocation();
+	const FTransform PresentationActorTransform = GetPresentationActorTransform(*Character);
+	const FQuat ActorRotation = PresentationActorTransform.GetRotation();
+	ActorYaw = ActorRotation.Rotator().Yaw;
+	ActorLocation = PresentationActorTransform.GetLocation();
 	const uint32 OwnerUniqueId = Character->GetUniqueID();
 	const uint8 LocalRole = static_cast<uint8>(Character->GetLocalRole());
 	const uint8 RemoteRole = static_cast<uint8>(Character->GetRemoteRole());
@@ -612,17 +633,17 @@ void FRpgAnimInstanceProxy::PreUpdate(UAnimInstance* InAnimInstance, float Delta
 		bHasPreviousOwnerSnapshot,
 		PreviousRotationMode,
 		RotationMode);
-	const bool bLargePositionJump =
+	const uint32 AnimationDiscontinuitySerial =
+		MovementComponent->GetAnimationDiscontinuitySerial();
+	const bool bAnimationDiscontinuity =
 		bHasPreviousOwnerSnapshot &&
-		FVector::DistSquared(PreviousActorLocation, ActorLocation) >
-			FMath::Square(RpgTurnInPlaceRuntime::LargePositionDelta);
-	bTurnInPlaceHardReset = bOwnerOrRoleChanged || bLargePositionJump || MovementComponent->bJustTeleported;
+		AnimationDiscontinuitySerial != PreviousAnimationDiscontinuitySerial;
+	bTurnInPlaceHardReset =
+		bOwnerOrRoleChanged || bAnimationDiscontinuity;
 	if (bTurnInPlaceHardReset)
 	{
-		RawTransformTrajectory.Samples.Reset();
-		TransformTrajectory.Samples.Reset();
-		TrajectoryLandingPrediction = FRpgTrajectoryLandingPrediction();
-		DesiredControllerYawLastUpdate = 0.0f;
+		ResetPoseSearchTrajectoryState(*this);
+		++AnimationHistoryResetCount;
 	}
 	ActorYawDelta = RpgTurnInPlaceRuntime::CalculateSnapshotYawDelta(
 		PreviousActorYaw,
@@ -635,6 +656,7 @@ void FRpgAnimInstanceProxy::PreUpdate(UAnimInstance* InAnimInstance, float Delta
 	PreviousRemoteRole = RemoteRole;
 	PreviousActorYaw = ActorYaw;
 	PreviousActorLocation = ActorLocation;
+	PreviousAnimationDiscontinuitySerial = AnimationDiscontinuitySerial;
 	PreviousRotationMode = RotationMode;
 	bHasPreviousOwnerSnapshot = true;
 
@@ -722,7 +744,8 @@ void FRpgAnimInstanceProxy::PreUpdate(UAnimInstance* InAnimInstance, float Delta
 		*MovementComponent,
 		DeltaSeconds);
 
-	const FRotator AimDelta = (Character->GetBaseAimRotation() - Character->GetActorRotation()).GetNormalized();
+	const FRotator AimDelta =
+		(Character->GetBaseAimRotation() - ActorRotation.Rotator()).GetNormalized();
 	AimYaw = AimDelta.Yaw;
 	AimPitch = AimDelta.Pitch;
 	LocomotionAngle = bHasVelocity
@@ -2275,6 +2298,7 @@ void URpgAnimInstance::NativeThreadSafeUpdateAnimation(float DeltaSeconds)
 	LocalVelocity = Proxy.LocalVelocity;
 	WorldAcceleration = Proxy.WorldAcceleration;
 	LocalAcceleration = Proxy.LocalAcceleration;
+	AnimationHistoryResetCount = Proxy.AnimationHistoryResetCount;
 	LocomotionGroundSpeed = Proxy.GroundSpeed;
 	VerticalVelocity = Proxy.VerticalVelocity;
 	GroundDistance = Proxy.GroundDistance;
@@ -2488,6 +2512,15 @@ void URpgAnimInstance::UpdateGaspMotionMatching(
 				? EPoseSearchInterruptMode::InterruptOnDatabaseChange
 				: EPoseSearchInterruptMode::DoNotInterrupt;
 		}
+	}
+
+	if (Proxy.bTurnInPlaceHardReset)
+	{
+		// A discontinuity invalidates the current Continuing Pose even when the resolved
+		// database set happens to remain unchanged across the correction or teleport.
+		InterruptMode = EPoseSearchInterruptMode::ForceInterruptAndInvalidateContinuingPose;
+		CurrentMotionMatchingDatabaseRole = ERpgMotionMatchingDatabaseRole::None;
+		bCurrentMotionMatchingResultIsContinuingPose = false;
 	}
 
 	PreviousGroundMotionMatchingDomainState = CurrentGroundDomainState;

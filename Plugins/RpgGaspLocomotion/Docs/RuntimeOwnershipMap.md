@@ -24,6 +24,8 @@ the sample project a runtime dependency.
 | GASP CMC source responsibility | Current SurvivalRpg owner | Target owner | Intentional adaptation |
 | --- | --- | --- | --- |
 | `Update_PropertiesFromCharacter`, `Update_EssentialValues` | `InitializeWithAbilitySystem` for the ASC/tag map; `FRpgAnimInstanceProxy::PreUpdate` for the value snapshot | Existing ASC lifecycle plus proxy snapshot boundary | ASC delegates are initialized on the game thread. `PreUpdate` copies mirrored tag booleans and reads CharacterMovement/world state; no sample character hierarchy is imported. |
+| Character acceleration replication and analog trajectory intent | `ARpgCharacter::ShouldReplicateAcceleration`, UE 5.8 `FRepMovement`, and base `UCharacterMovementComponent::UpdateProxyAcceleration` | The same character-scoped engine path | The project opts only RPG characters into UE 5.8's native acceleration payload. Simulated proxies reconstruct both acceleration and `AnalogInputModifier`; there is no parallel custom acceleration property and no project-wide CVar override. |
+| Network correction and semantic-teleport presentation resets | `URpgCharacterMovementComponent` local discontinuity serial, `ARpgCharacter` teleport epoch, and proxy `PreUpdate` | Existing Character/CharacterMovement authority plus one local presentation edge | Autonomous corrections compare the server location with the saved client location at the same acknowledged timestamp. Ordinary simulated-proxy smoothing never resets history; only semantic teleports or corrections beyond UE's no-smoothing range do. The AnimInstance no longer treats transient `bJustTeleported` as a durable network event. |
 | `Update_Trajectory` | Proxy `PreUpdate` orchestrates `PoseSearchGenerateTransformTrajectory`; `RpgPoseSearchTrajectory` owns its sampling constants and validation/correction helpers | Same split: proxy owns generation and snapshot lifetime; focused native helper owns the sampling/correction mechanism | Controller-yaw extrapolation is disabled for the controller-facing project character; raw history stays separate from worker-facing corrected output. |
 | `HandleTransformTrajectoryWorldCollisions` | `RpgPoseSearchTrajectory::ResolveWorldCollision` | Focused game-thread trajectory helper | Uses bounded sphere sweeps, CharacterMovement walkability, explicit validity, floor projection, and a pointer-free landing prediction. It never changes movement or touchdown authority. |
 | `Update_MotionMatching` | `URpgAnimInstance::UpdateGaspMotionMatching` bridges the AnimNode callback and the immutable database-role cache; `RpgMotionMatchingRuntime` owns pointer-free role selection; `DA_RpgGaspPresentationProfile` owns the exact 18-database hard-reference set | Same callback/runtime/profile split | Profile Role tags are read once while the AnimInstance builds the bidirectional cache on the game thread; whole-legacy mode derives the same cache from reflected slot roles. Worker callbacks use only role values and cached pointers. The project excludes GASP BranchIn, experimental state-machine, Foley, and broad Chooser dependencies. |
@@ -40,6 +42,15 @@ the sample project a runtime dependency.
 | Slide and other optional locomotion families | Not adopted; no runtime owner | No #81 owner; Adopt/Defer/Reject decision belongs to audit issue #74 | #81 does not pre-approve content families or grow the AnimInstance role architecture. |
 | `Debug_ExperimentalStateMachine`, full GASP Mover/Traversal stack, sample camera, Foley | Not adopted; no runtime owner | No runtime owner without a dedicated isolated feature evaluation | These sample subsystems are outside the CMC pilot contract and are never incidental dependencies. Curated traversal assets may only enter later through project-owned CMC/GAS/Motion-Warping seams. |
 | Sample character/mode composition | Existing `BP_Rpg_Character_GASP`, `DA_PawnData_GASP`, and pilot Experience | Existing Lyra-derived pilot composition remains unchanged | Only the GASP sample character hierarchy is not adopted. #81 does not change PawnData, Experience selection, or the default pawn cutover. |
+
+## Network transform-space contract
+
+| Data or consumer | Authoritative or presentation frame | Contract |
+| --- | --- | --- |
+| Velocity, acceleration, `AnalogInputModifier`, MovementMode, floor/base state, and correction distance | CharacterMovement and the collision capsule | These values remain gameplay/network truth. Owner corrections compare the server position with the saved client move at the same acknowledged timestamp; smoothed mesh state never feeds movement authority. |
+| Local owner, standalone, and ordinary authority presentation | Actor/capsule transform | Their presentation snapshot uses the actor transform because it is not a network-smoothed remote view. |
+| SimulatedProxy and listen-server remote AutonomousProxy presentation | Skeletal-mesh component transform with the authored base translation and rotation offsets removed | One reconstructed presentation frame supplies snapshot location/yaw, local velocity/acceleration, Aim and locomotion angles, Pose Search trajectory history, and turn-in-place facing. This prevents capsule correction and mesh smoothing from being applied as two independent visual turns. |
+| Foot Placement | Smoothed mesh component plus game-thread floor/base traces | Foot locks and trace snapshots stay in the same visual frame as the rendered mesh. A shared semantic-discontinuity pulse resets their history; ordinary network smoothing does not. |
 
 ## Slice 1 boundary and verification contract
 
@@ -223,24 +234,27 @@ families, Sprint authority, combat polish, and default PawnData cutover are sepa
   continue to protect defaults, boundary behavior, serialization compatibility, and the unchanged
   authority/safety mechanisms.
 
-## Issue #81 real-network acceptance boundary
+## Issues #81 and #97 real-network acceptance boundary
 
 - **Authority and lifecycle:** the editor-only acceptance test drives the existing Experience,
-  PawnData, CharacterMovement, ASC, and AnimInstance paths. It adds no gameplay authority,
-  replicated production state, persistence, or alternate runtime owner.
-- **Topology:** the CQTest starts a listen host and one external client, then late-joins a second
-  external client while the original subject is moving. That subject is observed as Authority,
-  AutonomousProxy, and SimulatedProxy.
+  PawnData, CharacterMovement, ASC, and AnimInstance paths. Issue #97 keeps gameplay authority in
+  CharacterMovement, replaces the project-specific acceleration payload with UE 5.8
+  `FRepMovement`, and adds only a semantic teleport epoch plus local presentation-reset serial.
+- **Topology:** the CQTest starts a listen host and one external client, late-joins a second client
+  while the original subject is moving, then late-joins a third client while that subject is
+  stationary. The subject is observed as Authority, AutonomousProxy, and SimulatedProxy.
 - **Network profile:** the test uses `PktLag=60` and `PktLagVariance=10`; configured packet loss,
   reordering, and duplication remain zero.
 - **Stable test:**
   `SurvivalRpg.Network.GaspPilotPIE.ReplicationLateJoinCorrectionAndDefaultSlotMontage` protects
-  replicated acceleration, late-join reconstruction, start/stop/reversal, a 90-degree facing
-  change activating and completing the TIR lifecycle, stance, jump and
-  landing state, grounded Foot Placement snapshots, owner correction, ASC `DefaultSlot` montage
-  plumbing, authoritative root motion, and stable post-montage convergence.
-- **Runtime/content delta:** zero production runtime classes and zero content assets. The test and
-  its replicated movement-base fixture are confined to `SurvivalRpgEditor` and reuse the existing
+  native acceleration and analog-input reconstruction at 25/50/100%, moving/stationary late join,
+  start/stop/reversal, a 90-degree facing change activating and completing the TIR lifecycle,
+  stance, jump and landing state, grounded Foot Placement snapshots, role-correct owner correction
+  and semantic-teleport resets, ASC `DefaultSlot` montage plumbing, authoritative root motion, and
+  stable post-montage convergence.
+- **Runtime/content delta:** zero new production runtime classes and zero content assets. Existing
+  Character, CharacterMovement, and AnimInstance seams own the #97 behavior. The test and its
+  replicated movement-base fixture remain confined to `SurvivalRpgEditor` and reuse the existing
   CQTest PIE seam.
 - **Evidence boundary:** reflected state and authoritative movement are automated. Rendered pose
   selection, warping, IK quality, gameplay-notify behavior, packaged multi-process networking,

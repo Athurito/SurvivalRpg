@@ -84,7 +84,6 @@ namespace RpgTurnInPlaceRuntime
 {
 	inline constexpr float PlaybackWatchdogSafetyMargin = 0.1f;
 	inline constexpr float FinishedTimeTolerance = 0.05f;
-	inline constexpr float LargePositionDelta = 200.0f;
 
 	/** Returns whether the replicated rotation policy permits controller-facing turn presentation. */
 	SURVIVALRPG_API bool SupportsTurnInPlace(ERpgCharacterRotationMode RotationMode);

@@ -28,44 +28,6 @@
 #include "SurvivalRpg/GameplayTags/RpgGameplayTags.h"
 #include "Net/UnrealNetwork.h"
 
-void FRpgReplicatedAcceleration::SetFromAcceleration(const FVector& InAcceleration, double MaxAcceleration)
-{
-	if (MaxAcceleration <= UE_SMALL_NUMBER)
-	{
-		*this = FRpgReplicatedAcceleration();
-		return;
-	}
-
-	const FVector ClampedAcceleration = InAcceleration.GetClampedToMaxSize(MaxAcceleration);
-	const double XYMagnitude = FMath::Min(ClampedAcceleration.Size2D(), MaxAcceleration);
-	double XYRadians = FMath::Atan2(ClampedAcceleration.Y, ClampedAcceleration.X);
-	if (XYRadians < 0.0)
-	{
-		XYRadians += UE_TWO_PI;
-	}
-
-	XYRadians = FMath::Clamp(XYRadians, 0.0, static_cast<double>(UE_TWO_PI));
-	AccelXYRadians = static_cast<uint8>(FMath::RoundToInt((XYRadians / UE_TWO_PI) * 255.0));
-	AccelXYMagnitude = static_cast<uint8>(FMath::RoundToInt((XYMagnitude / MaxAcceleration) * 255.0));
-	AccelZ = static_cast<int8>(FMath::RoundToInt(FMath::Clamp(ClampedAcceleration.Z / MaxAcceleration, -1.0, 1.0) * 127.0));
-}
-
-FVector FRpgReplicatedAcceleration::ToAcceleration(double MaxAcceleration) const
-{
-	if (MaxAcceleration <= UE_SMALL_NUMBER)
-	{
-		return FVector::ZeroVector;
-	}
-
-	const double UnpackedXYMagnitude = static_cast<double>(AccelXYMagnitude) * MaxAcceleration / 255.0;
-	const double UnpackedXYRadians = static_cast<double>(AccelXYRadians) * UE_TWO_PI / 255.0;
-	FVector Result = FVector::ZeroVector;
-	FMath::PolarToCartesian(UnpackedXYMagnitude, UnpackedXYRadians, Result.X, Result.Y);
-	Result.Z = static_cast<double>(AccelZ) * MaxAcceleration / 127.0;
-	return Result;
-}
-
-
 ARpgCharacter::ARpgCharacter(const FObjectInitializer& ObjectInitializer) : 
 	Super(ObjectInitializer.SetDefaultSubobjectClass<URpgCharacterMovementComponent>(CharacterMovementComponentName))
 {
@@ -466,39 +428,42 @@ void ARpgCharacter::BeginPlay()
 	RefreshRotationMode();
 }
 
+void ARpgCharacter::TeleportSucceeded(bool bIsATest)
+{
+	Super::TeleportSucceeded(bIsATest);
+	if (bIsATest || !HasAuthority())
+	{
+		return;
+	}
+
+	++AnimationTeleportEpoch;
+	if (AnimationTeleportEpoch == 0)
+	{
+		++AnimationTeleportEpoch;
+	}
+	ForceNetUpdate();
+}
+
 void ARpgCharacter::GetLifetimeReplicatedProps(TArray<FLifetimeProperty>& OutLifetimeProps) const
 {
 	Super::GetLifetimeReplicatedProps(OutLifetimeProps);
 
-	DOREPLIFETIME_CONDITION(ThisClass, ReplicatedAcceleration, COND_SimulatedOnly);
+	DOREPLIFETIME_CONDITION(ThisClass, AnimationTeleportEpoch, COND_SimulatedOnly);
 	DOREPLIFETIME_CONDITION_NOTIFY(ThisClass, RotationMode, COND_None, REPNOTIFY_Always);
 }
 
-void ARpgCharacter::PreReplication(IRepChangedPropertyTracker& ChangedPropertyTracker)
+bool ARpgCharacter::ShouldReplicateAcceleration() const
 {
-	Super::PreReplication(ChangedPropertyTracker);
-
-	const UCharacterMovementComponent* MovementComponent = GetCharacterMovement();
-	const double MaxAcceleration = MovementComponent ? MovementComponent->GetMaxAcceleration() : 0.0;
-	if (!MovementComponent || MaxAcceleration <= UE_SMALL_NUMBER)
-	{
-		ReplicatedAcceleration = FRpgReplicatedAcceleration();
-		return;
-	}
-
-	ReplicatedAcceleration.SetFromAcceleration(MovementComponent->GetCurrentAcceleration(), MaxAcceleration);
+	return true;
 }
 
-void ARpgCharacter::OnRep_ReplicatedAcceleration()
+void ARpgCharacter::OnRep_AnimationTeleportEpoch()
 {
-	URpgCharacterMovementComponent* MovementComponent = Cast<URpgCharacterMovementComponent>(GetCharacterMovement());
-	if (!MovementComponent)
+	if (URpgCharacterMovementComponent* MovementComponent =
+		Cast<URpgCharacterMovementComponent>(GetCharacterMovement()))
 	{
-		return;
+		MovementComponent->NotifyReplicatedAnimationTeleport();
 	}
-
-	MovementComponent->SetReplicatedAcceleration(
-		ReplicatedAcceleration.ToAcceleration(MovementComponent->GetMaxAcceleration()));
 }
 
 void ARpgCharacter::OnAbilitySystemInitialized()

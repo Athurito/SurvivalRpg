@@ -3,7 +3,7 @@
 This runbook owns the reproducible PIE network acceptance for the isolated
 `RpgGaspPilotExperience`. It exercises the real Experience, PawnData, GASP character, AnimBP,
 CharacterMovement, Ability System Component, and replicated montage path without changing the
-default PawnData or adding production runtime behavior.
+default PawnData or introducing an alternate gameplay/runtime owner.
 
 ## Automated acceptance
 
@@ -14,20 +14,28 @@ Test:
 Topology and network profile:
 
 - one-process PIE listen server
-- one initial external client plus one external client joining during movement
-- the original subject is observed as Authority, AutonomousProxy, and late-join SimulatedProxy
+- one initial external client, one external client joining during movement, and one final external
+  client joining while the original subject is stationary
+- the original subject is observed as Authority, AutonomousProxy, and SimulatedProxy on both
+  late-join clients
 - `PktLag=60`, `PktLagVariance=10`, and no configured packet loss
 - one server-spawned editor-only floor fixture provides a shared network-addressable movement base
 
 The test verifies:
 
 - the pilot Experience and GASP pawn composition on every world
-- start, reversal/pivot, stop, and replicated acceleration reconstruction after late join
+- UE 5.8 `FRepMovement` acceleration plus `AnalogInputModifier` parity at 25%, 50%, and 100%
+  input, including the nonzero-to-zero stop edge
+- start, reversal/pivot, stop, and native acceleration reconstruction after moving and stationary
+  late join
 - grounded Foot Placement snapshot validity and the expected network roles
 - replicated Aim and CombatStrafe presentation modes
 - a deliberate 90-degree facing change activates and completes the turn-in-place lifecycle on all three views
 - crouch, physical jump, landing, and return to grounded presentation
-- owner-only movement divergence followed by server-authoritative correction and convergence
+- owner-only movement divergence followed by server-authoritative correction, tight convergence,
+  and exactly one autonomous presentation-history reset without authority/simulated-proxy resets
+- a semantic server teleport produces exactly one presentation-history reset on Authority,
+  AutonomousProxy, and SimulatedProxy
 - local-owner and authoritative ASC montage starts through `DefaultSlot`
 - replicated simulated-proxy montage playback, AnimInstance montage gating, authoritative root
   motion, montage completion, and stable client convergence
@@ -59,10 +67,11 @@ confirmation test.
 
 ## Visual smoke boundary
 
-The automation proves real replication, lifecycle state, movement correction, and montage/root
-motion plumbing. It cannot judge rendered pose choice or presentation quality. A rendered manual
-pass should still inspect start/stop/pivot/TIR, crouch, jump/landing, Foot Placement on uneven
-ground, Aim/CombatStrafe facing, and correction for persistent mesh/capsule separation.
+The automation proves real replication, analog movement intent, lifecycle state, movement-history
+reset plumbing, correction/teleport convergence, and montage/root-motion plumbing. It cannot judge
+rendered pose choice or presentation quality. A rendered manual pass should still inspect
+start/stop/pivot/TIR, crouch, jump/landing, Foot Placement on uneven ground, Aim/CombatStrafe facing,
+and correction for persistent mesh/capsule separation.
 
 This runbook does not claim gameplay-notify or attack-window reliability, ability costs/cooldowns,
 combos, equipment sockets, death/ragdoll presentation, packaged multi-process or Steam behavior,

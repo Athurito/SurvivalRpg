@@ -24,34 +24,6 @@ class URpgCharacterMovementComponent;
 class URpgEquipmentManagerComponent;
 struct FGameplayTag;
 
-/**
- * Compact server-owned acceleration state replicated to simulated proxies for locomotion animation.
- * XY direction and magnitude are quantized independently; Z preserves signed acceleration.
- */
-USTRUCT()
-struct SURVIVALRPG_API FRpgReplicatedAcceleration
-{
-	GENERATED_BODY()
-
-	/** Quantizes a movement acceleration vector against the owning movement component's maximum. */
-	void SetFromAcceleration(const FVector& InAcceleration, double MaxAcceleration);
-
-	/** Reconstructs the acceleration vector for remote movement simulation. */
-	FVector ToAcceleration(double MaxAcceleration) const;
-
-	/** XY acceleration direction mapped from [0, 2 PI] to [0, 255]. */
-	UPROPERTY()
-	uint8 AccelXYRadians = 0;
-
-	/** XY acceleration magnitude mapped from [0, MaxAcceleration] to [0, 255]. */
-	UPROPERTY()
-	uint8 AccelXYMagnitude = 0;
-
-	/** Signed Z acceleration mapped from [-MaxAcceleration, MaxAcceleration] to [-127, 127]. */
-	UPROPERTY()
-	int8 AccelZ = 0;
-};
-
 UCLASS()
 class SURVIVALRPG_API ARpgCharacter : public AModularCharacter, public IAbilitySystemInterface
 {
@@ -62,7 +34,6 @@ public:
 	explicit ARpgCharacter(const FObjectInitializer& ObjectInitializer = FObjectInitializer::Get());
 	virtual void BeginPlay() override;
 	virtual void GetLifetimeReplicatedProps(TArray<FLifetimeProperty>& OutLifetimeProps) const override;
-	virtual void PreReplication(IRepChangedPropertyTracker& ChangedPropertyTracker) override;
 	
 	UFUNCTION(BlueprintCallable, Category = "Rpg|Character")
 	ARpgPlayerController* GetRpgPlayerController() const;
@@ -124,8 +95,15 @@ public:
 	virtual void OnRep_PlayerState() override;
 	
 	virtual void FellOutOfWorld(const class UDamageType& dmgType) override;
+	virtual void TeleportSucceeded(bool bIsATest) override;
 
 protected:
+	/**
+	 * Includes acceleration in UE 5.8's replicated movement payload for simulated proxies.
+	 * The engine reconstructs both acceleration and analog input magnitude from this single snapshot.
+	 */
+	virtual bool ShouldReplicateAcceleration() const override;
+
 	// Called when the game starts or when spawned
 	
 	virtual void OnAbilitySystemInitialized();
@@ -188,6 +166,17 @@ private:
 	UFUNCTION()
 	void OnRep_RotationMode();
 
+	/**
+	 * Server-owned semantic teleport epoch sent only to simulated proxies.
+	 * Ordinary replicated movement corrections never mutate it.
+	 */
+	UPROPERTY(Transient, ReplicatedUsing = OnRep_AnimationTeleportEpoch)
+	uint16 AnimationTeleportEpoch = 0;
+
+	/** Converts a replicated gameplay teleport into one local presentation-history edge. */
+	UFUNCTION()
+	void OnRep_AnimationTeleportEpoch();
+
 	/** ASC whose rotation request-tag delegates are currently registered. */
 	TWeakObjectPtr<URpgAbilitySystemComponent> RotationModeAbilitySystem;
 
@@ -198,14 +187,6 @@ private:
 	ERpgCharacterRotationMode LastAppliedRotationMode = ERpgCharacterRotationMode::CombatStrafe;
 	bool bHasAppliedRotationPolicy = false;
 
-	/** Latest server acceleration, replicated only to simulated proxies and consumed by CharacterMovement. */
-	UPROPERTY(Transient, ReplicatedUsing = OnRep_ReplicatedAcceleration)
-	FRpgReplicatedAcceleration ReplicatedAcceleration;
-
-	/** Reconstructs acceleration for remote CharacterMovement simulation after replication. */
-	UFUNCTION()
-	void OnRep_ReplicatedAcceleration();
-	
 	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "Rpg|Character", Meta = (AllowPrivateAccess = "true"))
 	TObjectPtr<URpgPawnExtensionComponent> PawnExtensionComponent;
 

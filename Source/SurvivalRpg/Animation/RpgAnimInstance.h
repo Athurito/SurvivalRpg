@@ -253,6 +253,8 @@ struct SURVIVALRPG_API FRpgAnimInstanceProxy : public FAnimInstanceProxy
 	bool bIsAnyMontagePlaying = false;
 	bool bHasTurnInPlaceBlockingGameplayTag = false;
 	bool bTurnInPlaceHardReset = true;
+	/** Number of unified presentation-history resets emitted by game-thread snapshots. */
+	int32 AnimationHistoryResetCount = 0;
 	/** True when the game-thread snapshot crosses between free-facing and turn-in-place-capable rotation. */
 	bool bTurnInPlaceSupportChanged = false;
 
@@ -267,6 +269,7 @@ struct SURVIVALRPG_API FRpgAnimInstanceProxy : public FAnimInstanceProxy
 	uint8 PreviousRemoteRole = 0;
 	float PreviousActorYaw = 0.0f;
 	FVector PreviousActorLocation = FVector::ZeroVector;
+	uint32 PreviousAnimationDiscontinuitySerial = 0;
 	ERpgCharacterRotationMode PreviousRotationMode = ERpgCharacterRotationMode::Free;
 	bool bHasPreviousOwnerSnapshot = false;
 
@@ -525,6 +528,13 @@ protected:
 	UPROPERTY(BlueprintReadOnly, Transient, Category = "Rpg|Animation|Locomotion")
 	FVector LocalAcceleration = FVector::ZeroVector;
 
+	/**
+	 * Monotonic local diagnostic count for unified trajectory, landing, foot-placement, and turn-in-place history resets.
+	 * It is presentation-only and is not authoritative or replicated.
+	 */
+	UPROPERTY(BlueprintReadOnly, Transient, Category = "Rpg|Animation|Diagnostics")
+	int32 AnimationHistoryResetCount = 0;
+
 	/** Horizontal speed in centimeters per second. */
 	UPROPERTY(BlueprintReadOnly, Transient, Category = "Rpg|Animation|Locomotion", Meta = (Units = "cm/s"))
 	float LocomotionGroundSpeed = 0.0f;
@@ -554,7 +564,7 @@ protected:
 	float AimPitch = 0.0f;
 
 	/**
-	 * Signed movement angle relative to the owning actor's forward axis.
+	 * Signed movement angle relative to the network-smoothed presentation forward axis.
 	 * The graph-driven Orientation Warping node compares it with animation root motion; cosmetic-only, in degrees.
 	 */
 	UPROPERTY(BlueprintReadOnly, Transient, Category = "Rpg|Animation|Motion Matching", Meta = (Units = "deg"))
