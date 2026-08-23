@@ -27,7 +27,10 @@ void RpgLandingRuntime::UpdateSelectionSnapshot(
 	// Capture gives supported grounded truth precedence if source flags are contradictory.
 	if (bGrounded)
 	{
-		if (!State.bWasAirborne)
+		// PreUpdate can run more than once before the worker-thread animation update consumes
+		// touchdown. Keep the final airborne values until that presentation edge is acknowledged;
+		// otherwise a repeated grounded snapshot can erase landing selection nondeterministically.
+		if (!State.bWasAirborne && !Snapshot.bAwaitingTouchdownConsumption)
 		{
 			SelectionSnapshot = FRpgLandingSelectionSnapshot();
 		}
@@ -64,7 +67,6 @@ void RpgLandingRuntime::UpdateSelectionSnapshot(
 		!HorizontalVelocity.ContainsNaN() &&
 		FMath::IsFinite(HorizontalSpeed) &&
 		FMath::IsFinite(Snapshot.VerticalVelocity) &&
-		FMath::IsFinite(Snapshot.InputMagnitude) && Snapshot.InputMagnitude >= 0.0f &&
 		!Snapshot.GravityAcceleration.ContainsNaN() &&
 		!GravityDirection.ContainsNaN() &&
 		FMath::IsFinite(GravityMagnitude) && GravityMagnitude > UE_SMALL_NUMBER;
@@ -75,13 +77,14 @@ void RpgLandingRuntime::UpdateSelectionSnapshot(
 		return;
 	}
 
-	const bool bHasMoveIntent = Snapshot.InputMagnitude > Tuning.MoveIntentThreshold;
+	const bool bHasMoveIntent = Snapshot.bHasMoveIntent;
 	ERpgLocomotionGait CapturedGait = State.LastGroundedGait;
-	if (CapturedGait != ERpgLocomotionGait::Sprint && bHasMoveIntent)
+	if (CapturedGait != ERpgLocomotionGait::Sprint &&
+		bHasMoveIntent &&
+		(Snapshot.DesiredGait == ERpgLocomotionGait::Walk ||
+		 Snapshot.DesiredGait == ERpgLocomotionGait::Run))
 	{
-		CapturedGait = Snapshot.InputMagnitude < Tuning.RunInputThreshold
-			? ERpgLocomotionGait::Walk
-			: ERpgLocomotionGait::Run;
+		CapturedGait = Snapshot.DesiredGait;
 	}
 	else if (CapturedGait == ERpgLocomotionGait::Idle &&
 		HorizontalSpeed > Tuning.StationarySpeedThreshold)

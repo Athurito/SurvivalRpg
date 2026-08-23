@@ -26,6 +26,7 @@ The CMC AnimBP closure still pulls in experimental state-machine databases, larg
 - Snapshot character and movement state on the game thread through an AnimInstance proxy.
 - Consume only snapshot values during the worker-thread animation update.
 - Replicate compressed acceleration to simulated proxies so remote starts, stops, and pivots have the same inputs as the owning client.
+- Let a PawnData-selected movement profile own GASP-pilot Walk/Run caps, response values, and the CMC gait consumed by animation; legacy PawnData remains opt-out.
 - Reparent the current `ABP_Unarmed` to the RPG base without changing its pose graph.
 
 ### 2. Curated locomotion asset set
@@ -40,7 +41,7 @@ The CMC AnimBP closure still pulls in experimental state-machine databases, larg
 
 - Add `BP_Rpg_Character_GASP`, `DA_PawnData_GASP`, and `RpgGaspPilotExperience`.
 - Derive the pilot AnimBP from `URpgAnimInstance`.
-- Preserve controller-facing strafe rotation, `DefaultSlot`, and root motion from montages only.
+- Preserve PawnData-selected Free/Combat/Aim rotation, combat-tag overrides, `DefaultSlot`, and root motion from montages only.
 - Keep `GetMesh()` authoritative for GAS montages, notifies, equipment sockets, corpse physics, and ragdoll.
 - Select the pilot through the Experience override until acceptance checks pass.
 
@@ -49,8 +50,9 @@ The CMC AnimBP closure still pulls in experimental state-machine databases, larg
 - Verify locomotion transitions, foot placement, LOD cost, and database memory.
 - Verify attack combos, block, dodge, hit reactions, death, equipment sockets, and harvesting montage rewards.
 - Test listen server plus two clients, simulated proxies, and late join.
-- Replace the default PawnData character only after the old and pilot paths pass the same checks.
-- Remove the old AnimBP only after the cutover is proven and reversible in version control.
+- Keep the prototype and GASP PawnData/AnimBP paths cooked, separate, and directly selectable through their Experiences in the same build.
+- A later cutover may change only which Experience is selected by default; it must not repoint the prototype Experience or delete its PawnData/AnimBP.
+- Switch Experiences only at a supported world/session boundary (World Settings, URL, PIE, or command line), never by hot-swapping an already-running pawn.
 
 ## Acceptance criteria
 
@@ -58,5 +60,7 @@ The CMC AnimBP closure still pulls in experimental state-machine databases, larg
 - The AnimBP update path performs no character, component, ASC, or world queries on worker threads.
 - Simulated proxies receive acceleration needed for start, stop, and pivot selection, including after late join.
 - Existing GAS montages continue to use `DefaultSlot` and retain their gameplay notifies and root-motion behavior.
-- The pilot is selected through PawnData and an Experience; the default experience is not overwritten during development.
+- Walk/Run speed caps, response values, controlled Free yaw, and stable gait are selected by GASP PawnData and applied by CharacterMovement before animation consumes them.
+- The pilot keeps raw analog input as a documented variable-speed Walk/Run adaptation; fixed-speed Gamepad normalization and directional strafe caps require their own SavedMove contract.
+- `RpgPrototypeExperience` and `RpgGaspPilotExperience` remain independently selectable in the same build; neither path overwrites the other's PawnData or AnimBP.
 - The asset diff and Git LFS payload are reviewed before the curated animation slice is committed.

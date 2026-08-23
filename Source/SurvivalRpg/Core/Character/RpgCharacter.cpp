@@ -60,6 +60,7 @@ ARpgCharacter::ARpgCharacter(const FObjectInitializer& ObjectInitializer) :
 
 	
 	PawnExtensionComponent = CreateDefaultSubobject<URpgPawnExtensionComponent>(TEXT("PawnExtensionComponent"));
+	PawnExtensionComponent->OnPawnDataReady_RegisterAndCall(FSimpleMulticastDelegate::FDelegate::CreateUObject(this, &ThisClass::HandlePawnDataReady));
 	PawnExtensionComponent->OnAbilitySystemInitialized_RegisterAndCall(FSimpleMulticastDelegate::FDelegate::CreateUObject(this, &ThisClass::OnAbilitySystemInitialized));
 	PawnExtensionComponent->OnAbilitySystemUninitialized_Register(FSimpleMulticastDelegate::FDelegate::CreateUObject(this, &ThisClass::OnAbilitySystemUninitialized));
 	
@@ -168,7 +169,9 @@ ERpgCharacterRotationMode ARpgCharacter::ResolveRotationMode(
 	return ERpgCharacterRotationMode::Free;
 }
 
-FRpgCharacterRotationPolicy ARpgCharacter::GetRotationPolicy(ERpgCharacterRotationMode InRotationMode)
+FRpgCharacterRotationPolicy ARpgCharacter::GetRotationPolicy(
+	ERpgCharacterRotationMode InRotationMode,
+	float FreeRotationRateYaw)
 {
 	FRpgCharacterRotationPolicy Policy;
 	if (InRotationMode == ERpgCharacterRotationMode::Free)
@@ -176,7 +179,10 @@ FRpgCharacterRotationPolicy ARpgCharacter::GetRotationPolicy(ERpgCharacterRotati
 		Policy.bUseControllerRotationYaw = false;
 		Policy.bOrientRotationToMovement = true;
 		Policy.bUseControllerDesiredRotation = false;
-		Policy.RotationRateYaw = -1.0f;
+		Policy.RotationRateYaw = FMath::IsFinite(FreeRotationRateYaw) &&
+			(FreeRotationRateYaw == -1.0f || FreeRotationRateYaw > 0.0f)
+			? FreeRotationRateYaw
+			: -1.0f;
 	}
 	else
 	{
@@ -265,14 +271,28 @@ void ARpgCharacter::RefreshRotationMode()
 
 void ARpgCharacter::ApplyRotationPolicy(ERpgCharacterRotationMode InRotationMode)
 {
-	const FRpgCharacterRotationPolicy Policy = GetRotationPolicy(InRotationMode);
+	URpgCharacterMovementComponent* MovementComponent =
+		Cast<URpgCharacterMovementComponent>(GetCharacterMovement());
+	float FreeRotationRateYaw = -1.0f;
+	if (MovementComponent)
+	{
+		const FRpgCharacterMovementProfile& MovementProfile =
+			MovementComponent->GetMovementProfile();
+		if (MovementProfile.bOverrideCharacterMovement)
+		{
+			FreeRotationRateYaw = MovementProfile.FreeRotationRateYaw;
+		}
+	}
+	const FRpgCharacterRotationPolicy Policy = GetRotationPolicy(
+		InRotationMode,
+		FreeRotationRateYaw);
 	const bool bEnteringControllerFacingMode =
 		bHasAppliedRotationPolicy &&
 		LastAppliedRotationMode == ERpgCharacterRotationMode::Free &&
 		InRotationMode != ERpgCharacterRotationMode::Free;
 
 	bUseControllerRotationYaw = Policy.bUseControllerRotationYaw;
-	if (UCharacterMovementComponent* MovementComponent = GetCharacterMovement())
+	if (MovementComponent)
 	{
 		MovementComponent->bOrientRotationToMovement = Policy.bOrientRotationToMovement;
 		MovementComponent->bUseControllerDesiredRotation = Policy.bUseControllerDesiredRotation;
@@ -288,6 +308,34 @@ void ARpgCharacter::ApplyRotationPolicy(ERpgCharacterRotationMode InRotationMode
 
 	LastAppliedRotationMode = InRotationMode;
 	bHasAppliedRotationPolicy = true;
+}
+
+void ARpgCharacter::HandlePawnDataReady()
+{
+	if (!PawnExtensionComponent)
+	{
+		return;
+	}
+
+	const URpgPawnData* PawnData = PawnExtensionComponent->GetPawnData<URpgPawnData>();
+	URpgCharacterMovementComponent* MovementComponent =
+		Cast<URpgCharacterMovementComponent>(GetCharacterMovement());
+	if (!PawnData)
+	{
+		return;
+	}
+
+	const bool bMovementProfileApplied = MovementComponent &&
+		MovementComponent->ApplyMovementProfile(PawnData->MovementProfile);
+	ensureMsgf(
+		bMovementProfileApplied,
+		TEXT("PawnData '%s' supplied an invalid movement profile or an incompatible movement component for '%s'."),
+		*GetNameSafe(PawnData),
+		*GetNameSafe(this));
+
+	// Rotation composition is independent of movement-profile validity. A malformed physical
+	// field must not suppress the PawnData-selected Free/CombatStrafe/Aim policy.
+	RefreshRotationMode();
 }
 
 void ARpgCharacter::BindRotationModeAbilitySystem(URpgAbilitySystemComponent* AbilitySystemComponent)

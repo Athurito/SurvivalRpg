@@ -269,7 +269,7 @@ bool FRpgLandingSelectionRuntimeTest::RunTest(const FString& Parameters)
 		DirectionProxy.bIsFalling = true;
 		DirectionProxy.WorldVelocity = HorizontalDirectionCases[DirectionIndex] + FVector(0.0, 0.0, -400.0);
 		DirectionProxy.VerticalVelocity = -400.0f;
-		URpgAnimInstance::UpdateLandingSelectionSnapshot(DirectionProxy, 0.8f, GravityAcceleration);
+		URpgAnimInstance::UpdateLandingSelectionSnapshot(DirectionProxy, ERpgLocomotionGait::Run, GravityAcceleration);
 		TestTrue(
 			*FString::Printf(TEXT("%s horizontal vector is preserved"), HorizontalDirectionNames[DirectionIndex]),
 			DirectionProxy.LandingSelectionSnapshot.HorizontalVelocity.Equals(
@@ -279,7 +279,7 @@ bool FRpgLandingSelectionRuntimeTest::RunTest(const FString& Parameters)
 			FMath::IsNearlyEqual(DirectionProxy.LandingSelectionSnapshot.HorizontalSpeed, 300.0f));
 	}
 
-	// Holding movement input before touchdown preserves raw intent and its inferred gait without
+	// Holding movement input before touchdown preserves raw intent and the CMC desired gait without
 	// manufacturing horizontal speed. The physical zero-speed landing therefore remains Stand.
 	FRpgAnimInstanceProxy AirborneIntentProxy;
 	AirborneIntentProxy.bTurnInPlaceHardReset = false;
@@ -289,13 +289,13 @@ bool FRpgLandingSelectionRuntimeTest::RunTest(const FString& Parameters)
 	AirborneIntentProxy.VerticalVelocity = -500.0f;
 	URpgAnimInstance::UpdateLandingSelectionSnapshot(
 		AirborneIntentProxy,
-		1.0f,
+		ERpgLocomotionGait::Run,
 		GravityAcceleration);
 	TestTrue(
 		TEXT("Airborne W input is retained as raw landing intent"),
 		AirborneIntentProxy.LandingSelectionSnapshot.bHasMoveIntent);
 	TestEqual(
-		TEXT("Airborne W input retains its inferred Run gait context"),
+		TEXT("Airborne W input retains the CMC desired Run gait context"),
 		AirborneIntentProxy.LandingSelectionSnapshot.Gait,
 		ERpgLocomotionGait::Run);
 	TestTrue(
@@ -312,13 +312,13 @@ bool FRpgLandingSelectionRuntimeTest::RunTest(const FString& Parameters)
 	AirborneIntentProxy.TrajectoryLandingPrediction.bIsValid = true;
 	URpgAnimInstance::UpdateLandingSelectionSnapshot(
 		AirborneIntentProxy,
-		1.0f,
+		ERpgLocomotionGait::Run,
 		GravityAcceleration);
 	TestTrue(
 		TEXT("Heavy airborne W capture still retains raw landing intent"),
 		AirborneIntentProxy.LandingSelectionSnapshot.bHasMoveIntent);
 	TestEqual(
-		TEXT("Heavy airborne W capture still retains Run gait context"),
+		TEXT("Heavy airborne W capture still retains CMC Run intent"),
 		AirborneIntentProxy.LandingSelectionSnapshot.Gait,
 		ERpgLocomotionGait::Run);
 	TestResolvedRole(
@@ -332,7 +332,7 @@ bool FRpgLandingSelectionRuntimeTest::RunTest(const FString& Parameters)
 	UpwardProxy.bIsFalling = true;
 	UpwardProxy.WorldVelocity = FVector(300.0, 0.0, 900.0);
 	UpwardProxy.VerticalVelocity = 900.0f;
-	URpgAnimInstance::UpdateLandingSelectionSnapshot(UpwardProxy, 0.8f, GravityAcceleration);
+	URpgAnimInstance::UpdateLandingSelectionSnapshot(UpwardProxy, ERpgLocomotionGait::Run, GravityAcceleration);
 	TestTrue(TEXT("An upward capture is valid"), UpwardProxy.LandingSelectionSnapshot.bIsValid);
 	TestTrue(
 		TEXT("Upward velocity captures zero measured downward speed"),
@@ -350,17 +350,17 @@ bool FRpgLandingSelectionRuntimeTest::RunTest(const FString& Parameters)
 	InvalidInputProxy.bIsFalling = true;
 	InvalidInputProxy.WorldVelocity = FVector(Infinity, 0.0, -400.0);
 	InvalidInputProxy.VerticalVelocity = -400.0f;
-	URpgAnimInstance::UpdateLandingSelectionSnapshot(InvalidInputProxy, 0.8f, GravityAcceleration);
+	URpgAnimInstance::UpdateLandingSelectionSnapshot(InvalidInputProxy, ERpgLocomotionGait::Run, GravityAcceleration);
 	TestFalse(TEXT("Infinite capture inputs invalidate the snapshot"), InvalidInputProxy.LandingSelectionSnapshot.bIsValid);
 	TestEqual(TEXT("Invalid capture retains the current airborne epoch"), InvalidInputProxy.LandingSelectionSnapshot.AirborneEpoch, 1);
 
-	// One airborne epoch accumulates descent, relaunch resets it, and touchdown freezes one frame.
+	// One airborne epoch accumulates descent, relaunch resets it, and touchdown freezes until acknowledged.
 	FRpgAnimInstanceProxy LifecycleProxy;
 	LifecycleProxy.bTurnInPlaceHardReset = false;
 	LifecycleProxy.MovementState = ERpgLocomotionMovementState::Grounded;
 	LifecycleProxy.bIsMovingOnGround = true;
 	LifecycleProxy.Gait = ERpgLocomotionGait::Walk;
-	URpgAnimInstance::UpdateLandingSelectionSnapshot(LifecycleProxy, 0.0f, GravityAcceleration);
+	URpgAnimInstance::UpdateLandingSelectionSnapshot(LifecycleProxy, ERpgLocomotionGait::Idle, GravityAcceleration);
 	TestFalse(TEXT("Grounded movement without prior air has no landing snapshot"), LifecycleProxy.LandingSelectionSnapshot.bIsValid);
 
 	LifecycleProxy.MovementState = ERpgLocomotionMovementState::Airborne;
@@ -368,14 +368,14 @@ bool FRpgLandingSelectionRuntimeTest::RunTest(const FString& Parameters)
 	LifecycleProxy.bIsFalling = true;
 	LifecycleProxy.WorldVelocity = FVector(150.0, 0.0, 450.0);
 	LifecycleProxy.VerticalVelocity = 450.0f;
-	URpgAnimInstance::UpdateLandingSelectionSnapshot(LifecycleProxy, 0.0f, GravityAcceleration);
+	URpgAnimInstance::UpdateLandingSelectionSnapshot(LifecycleProxy, ERpgLocomotionGait::Idle, GravityAcceleration);
 	const int32 FirstAirborneEpoch = LifecycleProxy.LandingSelectionSnapshot.AirborneEpoch;
 	TestEqual(TEXT("The first launch opens airborne epoch one"), FirstAirborneEpoch, 1);
 	TestEqual(TEXT("Grounded Walk gait survives launch"), LifecycleProxy.LandingSelectionSnapshot.Gait, ERpgLocomotionGait::Walk);
 
 	LifecycleProxy.WorldVelocity.Z = -600.0;
 	LifecycleProxy.VerticalVelocity = -600.0f;
-	URpgAnimInstance::UpdateLandingSelectionSnapshot(LifecycleProxy, 0.0f, GravityAcceleration);
+	URpgAnimInstance::UpdateLandingSelectionSnapshot(LifecycleProxy, ERpgLocomotionGait::Idle, GravityAcceleration);
 	TestEqual(TEXT("Descent remains in the same airborne epoch"), LifecycleProxy.LandingSelectionSnapshot.AirborneEpoch, FirstAirborneEpoch);
 	TestTrue(
 		TEXT("The current epoch accumulates measured descent"),
@@ -383,7 +383,7 @@ bool FRpgLandingSelectionRuntimeTest::RunTest(const FString& Parameters)
 
 	LifecycleProxy.WorldVelocity.Z = 350.0;
 	LifecycleProxy.VerticalVelocity = 350.0f;
-	URpgAnimInstance::UpdateLandingSelectionSnapshot(LifecycleProxy, 0.0f, GravityAcceleration);
+	URpgAnimInstance::UpdateLandingSelectionSnapshot(LifecycleProxy, ERpgLocomotionGait::Idle, GravityAcceleration);
 	const int32 RelaunchEpoch = LifecycleProxy.LandingSelectionSnapshot.AirborneEpoch;
 	TestEqual(TEXT("An upward relaunch opens a fresh airborne epoch"), RelaunchEpoch, FirstAirborneEpoch + 1);
 	TestTrue(
@@ -392,7 +392,7 @@ bool FRpgLandingSelectionRuntimeTest::RunTest(const FString& Parameters)
 
 	LifecycleProxy.WorldVelocity.Z = -800.0;
 	LifecycleProxy.VerticalVelocity = -800.0f;
-	URpgAnimInstance::UpdateLandingSelectionSnapshot(LifecycleProxy, 0.0f, GravityAcceleration);
+	URpgAnimInstance::UpdateLandingSelectionSnapshot(LifecycleProxy, ERpgLocomotionGait::Idle, GravityAcceleration);
 	TestEqual(TEXT("Post-relaunch descent stays in the new epoch"), LifecycleProxy.LandingSelectionSnapshot.AirborneEpoch, RelaunchEpoch);
 	TestEqual(
 		TEXT("The new epoch owns only its own measured descent"),
@@ -405,14 +405,21 @@ bool FRpgLandingSelectionRuntimeTest::RunTest(const FString& Parameters)
 	LifecycleProxy.bIsFalling = false;
 	LifecycleProxy.WorldVelocity = FVector::ZeroVector;
 	LifecycleProxy.VerticalVelocity = 0.0f;
-	URpgAnimInstance::UpdateLandingSelectionSnapshot(LifecycleProxy, 0.0f, GravityAcceleration);
+	URpgAnimInstance::UpdateLandingSelectionSnapshot(LifecycleProxy, ERpgLocomotionGait::Idle, GravityAcceleration);
 	TestSnapshotParity(
 		TEXT("The first physical touchdown freezes the final airborne snapshot"),
 		LifecycleProxy.LandingSelectionSnapshot,
 		FinalAirborneSnapshot);
-	URpgAnimInstance::UpdateLandingSelectionSnapshot(LifecycleProxy, 0.0f, GravityAcceleration);
-	TestFalse(TEXT("The second grounded frame clears landing validity"), LifecycleProxy.LandingSelectionSnapshot.bIsValid);
-	TestEqual(TEXT("The second grounded frame clears the frozen epoch"), LifecycleProxy.LandingSelectionSnapshot.AirborneEpoch, 0);
+	LifecycleProxy.bLandingTouchdownPendingConsumption = true;
+	URpgAnimInstance::UpdateLandingSelectionSnapshot(LifecycleProxy, ERpgLocomotionGait::Idle, GravityAcceleration);
+	TestSnapshotParity(
+		TEXT("Repeated PreUpdate preserves touchdown until the animation lifecycle consumes it"),
+		LifecycleProxy.LandingSelectionSnapshot,
+		FinalAirborneSnapshot);
+	LifecycleProxy.bLandingTouchdownPendingConsumption = false;
+	URpgAnimInstance::UpdateLandingSelectionSnapshot(LifecycleProxy, ERpgLocomotionGait::Idle, GravityAcceleration);
+	TestFalse(TEXT("The acknowledged grounded frame clears landing validity"), LifecycleProxy.LandingSelectionSnapshot.bIsValid);
+	TestEqual(TEXT("The acknowledged grounded frame clears the frozen epoch"), LifecycleProxy.LandingSelectionSnapshot.AirborneEpoch, 0);
 
 	// Identical movement data resolves identically for authority, owner, simulated proxy, and late join.
 	auto CaptureNetworkSnapshot = [&](bool bHasGroundedHistory)
@@ -424,7 +431,7 @@ bool FRpgLandingSelectionRuntimeTest::RunTest(const FString& Parameters)
 			Proxy.MovementState = ERpgLocomotionMovementState::Grounded;
 			Proxy.bIsMovingOnGround = true;
 			Proxy.Gait = ERpgLocomotionGait::Run;
-			URpgAnimInstance::UpdateLandingSelectionSnapshot(Proxy, 0.0f, GravityAcceleration);
+			URpgAnimInstance::UpdateLandingSelectionSnapshot(Proxy, ERpgLocomotionGait::Idle, GravityAcceleration);
 		}
 
 		Proxy.MovementState = ERpgLocomotionMovementState::Airborne;
@@ -436,7 +443,7 @@ bool FRpgLandingSelectionRuntimeTest::RunTest(const FString& Parameters)
 		Proxy.TrajectoryLandingPrediction.LandingNormal = FVector::UpVector;
 		Proxy.TrajectoryLandingPrediction.TimeToLand = 0.1f;
 		Proxy.TrajectoryLandingPrediction.bIsValid = true;
-		URpgAnimInstance::UpdateLandingSelectionSnapshot(Proxy, 0.0f, GravityAcceleration);
+		URpgAnimInstance::UpdateLandingSelectionSnapshot(Proxy, ERpgLocomotionGait::Idle, GravityAcceleration);
 		return Proxy.LandingSelectionSnapshot;
 	};
 	const FRpgLandingSelectionSnapshot NetworkSnapshots[] =

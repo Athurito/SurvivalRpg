@@ -2606,6 +2606,55 @@ bool FRpgGaspPilotAssetContractTest::RunTest(const FString& Parameters)
 	TestTrue(
 		TEXT("Only the GASP pilot PawnData opts into Free rotation"),
 		PilotPawnData->DefaultRotationMode == ERpgCharacterRotationMode::Free);
+	TestFalse(
+		TEXT("The prototype PawnData does not overwrite its Blueprint-authored CMC values"),
+		BasePawnData->MovementProfile.bOverrideCharacterMovement);
+	const FRpgCharacterMovementProfile& PilotMovementProfile =
+		PilotPawnData->MovementProfile;
+	TestTrue(
+		TEXT("Only the GASP pilot opts into the PawnData CMC profile"),
+		PilotMovementProfile.bOverrideCharacterMovement);
+	TestTrue(
+		TEXT("The pilot CMC profile is runtime-valid"),
+		RpgCharacterMovementRuntime::IsProfileRuntimeValid(PilotMovementProfile));
+	FDataValidationContext PilotPawnDataValidationContext;
+	TestEqual(
+		TEXT("The GASP pilot PawnData passes native data validation"),
+		PilotPawnData->IsDataValid(PilotPawnDataValidationContext),
+		EDataValidationResult::Valid);
+	TestTrue(
+		TEXT("The pilot Walk caps match the curated GASP contract"),
+		FMath::IsNearlyEqual(PilotMovementProfile.WalkSpeeds.Forward, 200.0f) &&
+		FMath::IsNearlyEqual(PilotMovementProfile.WalkSpeeds.Sideways, 180.0f) &&
+		FMath::IsNearlyEqual(PilotMovementProfile.WalkSpeeds.Backward, 150.0f));
+	TestTrue(
+		TEXT("The pilot Run caps match the curated GASP contract"),
+		FMath::IsNearlyEqual(PilotMovementProfile.RunSpeeds.Forward, 500.0f) &&
+		FMath::IsNearlyEqual(PilotMovementProfile.RunSpeeds.Sideways, 350.0f) &&
+		FMath::IsNearlyEqual(PilotMovementProfile.RunSpeeds.Backward, 300.0f));
+	TestTrue(
+		TEXT("The pilot minimum analog speed matches GASP"),
+		FMath::IsNearlyEqual(PilotMovementProfile.MinAnalogGroundSpeed, 150.0f));
+	TestTrue(
+		TEXT("The pilot acceleration and ground friction match GASP Pre-CMC"),
+		FMath::IsNearlyEqual(PilotMovementProfile.MaxAcceleration, 800.0f) &&
+		FMath::IsNearlyEqual(PilotMovementProfile.GroundFriction, 5.0f));
+	TestTrue(
+		TEXT("The pilot braking-friction contract matches GASP"),
+		!PilotMovementProfile.bUseSeparateBrakingFriction &&
+		FMath::IsNearlyZero(PilotMovementProfile.BrakingFrictionFactor) &&
+		FMath::IsNearlyZero(PilotMovementProfile.BrakingFriction));
+	TestTrue(
+		TEXT("The pilot uses GASP input/release deceleration"),
+		FMath::IsNearlyEqual(PilotMovementProfile.BrakingDecelerationWithInput, 500.0f) &&
+		FMath::IsNearlyEqual(PilotMovementProfile.BrakingDecelerationWithoutInput, 2000.0f));
+	TestTrue(
+		TEXT("The pilot replaces instant Free rotation with controlled yaw"),
+		FMath::IsNearlyEqual(PilotMovementProfile.FreeRotationRateYaw, 360.0f));
+	TestTrue(
+		TEXT("The pilot uses the curated analog Walk/Run thresholds"),
+		FMath::IsNearlyEqual(PilotMovementProfile.MoveIntentThreshold, 0.1f) &&
+		FMath::IsNearlyEqual(PilotMovementProfile.RunInputThreshold, 0.7f));
 	TestEqual(TEXT("PawnData TeamId is unchanged"), PilotPawnData->TeamId, BasePawnData->TeamId);
 	TestEqual(
 		TEXT("PawnData TagRelationshipMapping is unchanged"),

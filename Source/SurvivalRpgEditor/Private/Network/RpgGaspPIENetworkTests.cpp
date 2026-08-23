@@ -51,6 +51,10 @@ namespace RpgGaspPIENetworkTests
 		float MovementInputScale = 0.0f;
 		float StableInputScale = -1.0f;
 		double StableInputStartTime = 0.0;
+		double LastMovementInputDiagnosticTime = -1.0;
+		double LastLandingDiagnosticTime = -1.0;
+		FVector MovementStoppedAnchorLocation = FVector::ZeroVector;
+		double MovementStoppedStableStartTime = -1.0;
 		int32 AnimationResetBaseline = 0;
 		int32 LastObservedAnimationResetDelta = MIN_int32;
 		double AnimationResetStableStartTime = -1.0;
@@ -108,6 +112,58 @@ namespace RpgGaspPIENetworkTests
 	{
 		USkeletalMeshComponent* Mesh = IsValid(Character) ? Character->GetMesh() : nullptr;
 		return Mesh ? Cast<URpgAnimInstance>(Mesh->GetAnimInstance()) : nullptr;
+	}
+
+	const FGameplayTag& GetMovementStoppedTag()
+	{
+		static const FGameplayTag Tag =
+			FGameplayTag::RequestGameplayTag(TEXT("Gameplay.MovementStopped"));
+		return Tag;
+	}
+
+	bool HasStableMovementStoppedContract(
+		FNetworkState& State,
+		const ENetRole ExpectedLocalRole)
+	{
+		ARpgCharacter* Character = FindCharacterByPlayerId(
+			State.World,
+			State.SubjectPlayerId);
+		URpgAbilitySystemComponent* AbilitySystem = Character
+			? Character->GetRpgAbilitySystemComponent()
+			: nullptr;
+		URpgCharacterMovementComponent* MovementComponent = Character
+			? Cast<URpgCharacterMovementComponent>(Character->GetCharacterMovement())
+			: nullptr;
+		const bool bHasStopContract = Character && AbilitySystem && MovementComponent &&
+			Character->GetLocalRole() == ExpectedLocalRole &&
+			AbilitySystem->HasMatchingGameplayTag(GetMovementStoppedTag()) &&
+			FMath::IsNearlyZero(MovementComponent->GetMaxSpeed()) &&
+			FMath::IsNearlyZero(MovementComponent->GetMinAnalogSpeed()) &&
+			Character->GetVelocity().Size2D() <= 5.0f;
+		if (!bHasStopContract)
+		{
+			State.MovementStoppedStableStartTime = -1.0;
+			return false;
+		}
+
+		const double Now = State.World->GetTimeSeconds();
+		if (State.MovementStoppedStableStartTime < 0.0)
+		{
+			State.MovementStoppedStableStartTime = Now;
+			State.MovementStoppedAnchorLocation = Character->GetActorLocation();
+			return false;
+		}
+
+		if (FVector::Dist2D(
+				State.MovementStoppedAnchorLocation,
+				Character->GetActorLocation()) > 5.0f)
+		{
+			State.MovementStoppedStableStartTime = Now;
+			State.MovementStoppedAnchorLocation = Character->GetActorLocation();
+			return false;
+		}
+
+		return Now - State.MovementStoppedStableStartTime >= 0.5;
 	}
 
 	template <typename TValue>
@@ -248,7 +304,10 @@ namespace RpgGaspPIENetworkTests
 			State.World,
 			State.SubjectPlayerId);
 		URpgAnimInstance* AnimInstance = GetPilotAnimInstance(Character);
-		if (!Character || !AnimInstance || !Character->GetCharacterMovement())
+		URpgCharacterMovementComponent* MovementComponent = Character
+			? Cast<URpgCharacterMovementComponent>(Character->GetCharacterMovement())
+			: nullptr;
+		if (!Character || !AnimInstance || !MovementComponent)
 		{
 			return false;
 		}
@@ -256,8 +315,7 @@ namespace RpgGaspPIENetworkTests
 		FVector WorldAcceleration = FVector::ZeroVector;
 		float GroundSpeed = 0.0f;
 		bool bHasAcceleration = true;
-		const UCharacterMovementComponent* MovementComponent =
-			Character->GetCharacterMovement();
+		ERpgLocomotionGait AnimGait = ERpgLocomotionGait::Run;
 		const bool bHasNativeZeroSnapshot =
 			Character->GetLocalRole() != ROLE_SimulatedProxy ||
 			(Character->GetReplicatedMovement().bRepAcceleration &&
@@ -274,11 +332,84 @@ namespace RpgGaspPIENetworkTests
 				AnimInstance,
 				TEXT("bHasAcceleration"),
 				bHasAcceleration) &&
+			ReadAnimProperty(
+				AnimInstance,
+				TEXT("LocomotionGait"),
+				AnimGait) &&
+			AnimGait == ERpgLocomotionGait::Idle &&
 			!bHasAcceleration && WorldAcceleration.Size2D() <= 5.0f &&
 			MovementComponent->GetCurrentAcceleration().Size2D() <= 5.0f &&
 			MovementComponent->GetAnalogInputModifier() <= 0.01f &&
+			MovementComponent->GetDesiredGait() == ERpgLocomotionGait::Idle &&
+			MovementComponent->GetGroundGait() == ERpgLocomotionGait::Idle &&
+			!MovementComponent->HasMoveIntent() &&
+			FMath::IsNearlyEqual(
+				MovementComponent->GetMaxBrakingDeceleration(),
+				2000.0f) &&
 			bHasNativeZeroSnapshot &&
 			GroundSpeed <= 8.0f && Character->GetVelocity().Size2D() <= 8.0f;
+	}
+
+	bool HasCompletedLanding(FNetworkState& State)
+	{
+		if (State.bSawLanding && State.bSawGroundedAfterAirborne)
+		{
+			return true;
+		}
+
+		const double Now = FPlatformTime::Seconds();
+		if (Now - State.LastLandingDiagnosticTime < 1.0)
+		{
+			return false;
+		}
+		State.LastLandingDiagnosticTime = Now;
+
+		ARpgCharacter* Character = FindCharacterByPlayerId(
+			State.World,
+			State.SubjectPlayerId);
+		URpgAnimInstance* AnimInstance = GetPilotAnimInstance(Character);
+		const UCharacterMovementComponent* MovementComponent = Character
+			? Character->GetCharacterMovement()
+			: nullptr;
+		ERpgJumpPhase JumpPhase = ERpgJumpPhase::Grounded;
+		ERpgMotionMatchingDatabaseRole ActiveLandingRole =
+			ERpgMotionMatchingDatabaseRole::None;
+		FRpgLandingSelectionSnapshot LandingSnapshot;
+		const bool bReadJumpPhase = ReadAnimProperty(
+			AnimInstance,
+			TEXT("JumpPhase"),
+			JumpPhase);
+		const bool bReadLandingRole = ReadAnimProperty(
+			AnimInstance,
+			TEXT("ActiveLandingDatabaseRole"),
+			ActiveLandingRole);
+		const bool bReadLandingSnapshot = ReadAnimProperty(
+			AnimInstance,
+			TEXT("PreTouchdownLandingSnapshot"),
+			LandingSnapshot);
+		UE_LOG(
+			LogTemp,
+			Display,
+			TEXT("GASP landing mismatch: sawAir=%d sawLanding=%d sawGround=%d character=%d role=%d movement=%d mode=%d ground=%d falling=%d velocity=%s phaseRead=%d phase=%d roleRead=%d landingRole=%d snapshotRead=%d valid=%d epoch=%d maxDown=%.1f"),
+			static_cast<int32>(State.bSawAirborne),
+			static_cast<int32>(State.bSawLanding),
+			static_cast<int32>(State.bSawGroundedAfterAirborne),
+			static_cast<int32>(Character != nullptr),
+			Character ? static_cast<int32>(Character->GetLocalRole()) : -1,
+			static_cast<int32>(MovementComponent != nullptr),
+			MovementComponent ? static_cast<int32>(MovementComponent->MovementMode) : -1,
+			static_cast<int32>(MovementComponent ? MovementComponent->IsMovingOnGround() : false),
+			static_cast<int32>(MovementComponent ? MovementComponent->IsFalling() : false),
+			MovementComponent ? *MovementComponent->Velocity.ToCompactString() : TEXT("none"),
+			static_cast<int32>(bReadJumpPhase),
+			static_cast<int32>(JumpPhase),
+			static_cast<int32>(bReadLandingRole),
+			static_cast<int32>(ActiveLandingRole),
+			static_cast<int32>(bReadLandingSnapshot),
+			static_cast<int32>(LandingSnapshot.bIsValid),
+			LandingSnapshot.AirborneEpoch,
+			static_cast<double>(LandingSnapshot.MaximumDownwardSpeed));
+		return false;
 	}
 
 	bool HasExpectedMovementInput(
@@ -295,6 +426,7 @@ namespace RpgGaspPIENetworkTests
 			: nullptr;
 		URpgAnimInstance* AnimInstance = GetPilotAnimInstance(Character);
 		FVector AnimAcceleration = FVector::ZeroVector;
+		ERpgLocomotionGait AnimGait = ERpgLocomotionGait::Idle;
 		const FVector Direction2D = ExpectedDirection.GetSafeNormal2D();
 		const float ClampedScale = FMath::Clamp(ExpectedScale, 0.0f, 1.0f);
 		const float MaxAcceleration = MovementComponent
@@ -305,6 +437,15 @@ namespace RpgGaspPIENetworkTests
 		const FVector CurrentAcceleration = MovementComponent
 			? MovementComponent->GetCurrentAcceleration()
 			: FVector::ZeroVector;
+		const ERpgLocomotionGait ExpectedGait = ClampedScale >= 0.7f
+			? ERpgLocomotionGait::Run
+			: ERpgLocomotionGait::Walk;
+		const float ExpectedSpeedCap = ExpectedGait == ERpgLocomotionGait::Run
+			? 500.0f
+			: 200.0f;
+		const float ExpectedGroundSpeed = FMath::Max(
+			ExpectedSpeedCap * ClampedScale,
+			150.0f);
 		const FRepMovement* ReplicatedMovement = Character
 			? &Character->GetReplicatedMovement()
 			: nullptr;
@@ -315,12 +456,34 @@ namespace RpgGaspPIENetworkTests
 			 ReplicatedMovement->Acceleration.Equals(
 				 CurrentAcceleration,
 				 AccelerationTolerance));
+		const bool bReadAnimAcceleration = ReadAnimProperty(
+			AnimInstance,
+			TEXT("WorldAcceleration"),
+			AnimAcceleration);
+		const bool bReadAnimGait = ReadAnimProperty(
+			AnimInstance,
+			TEXT("LocomotionGait"),
+			AnimGait);
 		const bool bMatches =
 			Character &&
 			MovementComponent &&
 			AnimInstance &&
 			Character->GetLocalRole() == ExpectedLocalRole &&
 			MovementComponent->IsMovingOnGround() &&
+			MovementComponent->GetMovementProfile().bOverrideCharacterMovement &&
+			MovementComponent->GetDesiredGait() == ExpectedGait &&
+			MovementComponent->GetGroundGait() == ExpectedGait &&
+			MovementComponent->HasMoveIntent() &&
+			FMath::IsNearlyEqual(MovementComponent->GetMaxAcceleration(), 800.0f) &&
+			FMath::IsNearlyEqual(MovementComponent->GetMinAnalogSpeed(), 150.0f) &&
+			FMath::IsNearlyEqual(MovementComponent->GetMaxSpeed(), ExpectedSpeedCap) &&
+			FMath::IsNearlyEqual(
+				Character->GetVelocity().Size2D(),
+				ExpectedGroundSpeed,
+				15.0f) &&
+			FMath::IsNearlyEqual(
+				MovementComponent->GetMaxBrakingDeceleration(),
+				500.0f) &&
 			!CurrentAcceleration.ContainsNaN() &&
 			FMath::IsNearlyEqual(
 				CurrentAcceleration.Size2D(),
@@ -333,10 +496,9 @@ namespace RpgGaspPIENetworkTests
 				MovementComponent->GetAnalogInputModifier(),
 				ClampedScale,
 				0.025f) &&
-			ReadAnimProperty(
-				AnimInstance,
-				TEXT("WorldAcceleration"),
-				AnimAcceleration) &&
+			bReadAnimAcceleration &&
+			bReadAnimGait &&
+			AnimGait == ExpectedGait &&
 			!AnimAcceleration.ContainsNaN() &&
 			FMath::IsNearlyEqual(
 				AnimAcceleration.Size2D(),
@@ -347,6 +509,52 @@ namespace RpgGaspPIENetworkTests
 				Direction2D) > 0.98f &&
 			bHasNativeProxySnapshot;
 
+		const double Now = FPlatformTime::Seconds();
+		if (!bMatches &&
+			Now - State.LastMovementInputDiagnosticTime >= 1.0)
+		{
+			State.LastMovementInputDiagnosticTime = Now;
+			const FRepMovement* SafeReplicatedMovement = Character
+				? &Character->GetReplicatedMovement()
+				: nullptr;
+			UE_LOG(
+				LogTemp,
+				Display,
+				TEXT("GASP input mismatch: expected role=%d scale=%.3f gait=%d cap=%.1f | character=%d role=%d move=%d anim=%d ground=%d profile=%d"),
+				static_cast<int32>(ExpectedLocalRole),
+				static_cast<double>(ClampedScale),
+				static_cast<int32>(ExpectedGait),
+				static_cast<double>(ExpectedSpeedCap),
+				static_cast<int32>(Character != nullptr),
+				Character ? static_cast<int32>(Character->GetLocalRole()) : -1,
+				static_cast<int32>(MovementComponent != nullptr),
+				static_cast<int32>(AnimInstance != nullptr),
+				static_cast<int32>(MovementComponent ? MovementComponent->IsMovingOnGround() : false),
+				static_cast<int32>(MovementComponent ? MovementComponent->GetMovementProfile().bOverrideCharacterMovement : false));
+			UE_LOG(
+				LogTemp,
+				Display,
+				TEXT("GASP input values: desired=%d groundGait=%d intent=%d analog=%.3f accel=%s speed=%.1f/%.1f cap=%.1f brake=%.1f animRead=%d/%d animGait=%d animAccel=%s nativeProxy=%d repAccel=%d repValue=%s"),
+				MovementComponent ? static_cast<int32>(MovementComponent->GetDesiredGait()) : -1,
+				MovementComponent ? static_cast<int32>(MovementComponent->GetGroundGait()) : -1,
+				static_cast<int32>(MovementComponent ? MovementComponent->HasMoveIntent() : false),
+				static_cast<double>(MovementComponent ? MovementComponent->GetAnalogInputModifier() : -1.0f),
+				*CurrentAcceleration.ToCompactString(),
+				static_cast<double>(Character ? Character->GetVelocity().Size2D() : -1.0f),
+				static_cast<double>(ExpectedGroundSpeed),
+				static_cast<double>(MovementComponent ? MovementComponent->GetMaxSpeed() : -1.0f),
+				static_cast<double>(MovementComponent ? MovementComponent->GetMaxBrakingDeceleration() : -1.0f),
+				static_cast<int32>(bReadAnimAcceleration),
+				static_cast<int32>(bReadAnimGait),
+				static_cast<int32>(AnimGait),
+				*AnimAcceleration.ToCompactString(),
+				static_cast<int32>(bHasNativeProxySnapshot),
+				static_cast<int32>(SafeReplicatedMovement ? SafeReplicatedMovement->bRepAcceleration : false),
+				SafeReplicatedMovement
+					? *SafeReplicatedMovement->Acceleration.ToCompactString()
+					: TEXT("none"));
+		}
+
 		if (!bMatches ||
 			!FMath::IsNearlyEqual(State.StableInputScale, ClampedScale, 0.001f))
 		{
@@ -355,7 +563,7 @@ namespace RpgGaspPIENetworkTests
 			return false;
 		}
 
-		return FPlatformTime::Seconds() - State.StableInputStartTime >= 0.2;
+		return Now - State.StableInputStartTime >= 0.2;
 	}
 
 	bool ReadAnimationHistoryResetCount(
@@ -462,13 +670,79 @@ namespace RpgGaspPIENetworkTests
 			State.World,
 			State.SubjectPlayerId);
 		URpgAnimInstance* AnimInstance = GetPilotAnimInstance(Character);
+		URpgCharacterMovementComponent* MovementComponent = Character
+			? Cast<URpgCharacterMovementComponent>(Character->GetCharacterMovement())
+			: nullptr;
 		ERpgLocomotionStance Stance = ERpgLocomotionStance::Standing;
 		const ERpgLocomotionStance ExpectedStance = bExpectedCrouched
 			? ERpgLocomotionStance::Crouching
 			: ERpgLocomotionStance::Standing;
-		return Character && Character->IsCrouched() == bExpectedCrouched &&
+		const bool bCrouchPreservesLegacyPhysics = !bExpectedCrouched ||
+			(MovementComponent &&
+			 FMath::IsNearlyEqual(
+				 MovementComponent->GetMaxSpeed(),
+				 MovementComponent->MaxWalkSpeedCrouched) &&
+			 FMath::IsNearlyEqual(
+				 MovementComponent->GetMinAnalogSpeed(),
+				 MovementComponent->MinAnalogWalkSpeed) &&
+			 FMath::IsNearlyEqual(
+				 MovementComponent->GetMaxAcceleration(),
+				 MovementComponent->MaxAcceleration) &&
+			 FMath::IsNearlyEqual(
+				 MovementComponent->GetMaxBrakingDeceleration(),
+				 MovementComponent->BrakingDecelerationWalking));
+		return Character && MovementComponent &&
+			Character->IsCrouched() == bExpectedCrouched &&
 			ReadAnimProperty(AnimInstance, TEXT("LocomotionStance"), Stance) &&
-			Stance == ExpectedStance;
+			Stance == ExpectedStance &&
+			bCrouchPreservesLegacyPhysics;
+	}
+
+	bool HasFreeRotationPolicy(FNetworkState& State, const ENetRole ExpectedLocalRole)
+	{
+		ARpgCharacter* Character = FindCharacterByPlayerId(
+			State.World,
+			State.SubjectPlayerId);
+		URpgCharacterMovementComponent* MovementComponent = Character
+			? Cast<URpgCharacterMovementComponent>(Character->GetCharacterMovement())
+			: nullptr;
+		URpgAnimInstance* AnimInstance = GetPilotAnimInstance(Character);
+		ERpgCharacterRotationMode AnimRotationMode = ERpgCharacterRotationMode::Aim;
+		return Character && MovementComponent && AnimInstance &&
+			Character->GetLocalRole() == ExpectedLocalRole &&
+			Character->GetRotationMode() == ERpgCharacterRotationMode::Free &&
+			!Character->bUseControllerRotationYaw &&
+			MovementComponent->bOrientRotationToMovement &&
+			!MovementComponent->bUseControllerDesiredRotation &&
+			FMath::IsNearlyEqual(MovementComponent->RotationRate.Yaw, 360.0f) &&
+			ReadAnimProperty(
+				AnimInstance,
+				TEXT("CharacterRotationMode"),
+				AnimRotationMode) &&
+			AnimRotationMode == ERpgCharacterRotationMode::Free;
+	}
+
+	bool HasLegacyAirborneMovementPolicy(FNetworkState& State)
+	{
+		ARpgCharacter* Character = FindCharacterByPlayerId(
+			State.World,
+			State.SubjectPlayerId);
+		URpgCharacterMovementComponent* MovementComponent = Character
+			? Cast<URpgCharacterMovementComponent>(Character->GetCharacterMovement())
+			: nullptr;
+		return Character && MovementComponent && MovementComponent->IsFalling() &&
+			FMath::IsNearlyEqual(
+				MovementComponent->GetMaxSpeed(),
+				MovementComponent->MaxWalkSpeed) &&
+			FMath::IsNearlyEqual(
+				MovementComponent->GetMinAnalogSpeed(),
+				MovementComponent->MinAnalogWalkSpeed) &&
+			FMath::IsNearlyEqual(
+				MovementComponent->GetMaxAcceleration(),
+				MovementComponent->MaxAcceleration) &&
+			FMath::IsNearlyEqual(
+				MovementComponent->GetMaxBrakingDeceleration(),
+				MovementComponent->BrakingDecelerationFalling);
 	}
 
 	bool IsTurnInPlaceInactive(FNetworkState& State)
@@ -872,6 +1146,29 @@ NETWORK_TEST_CLASS(GaspPilotPIE, "SurvivalRpg.Network")
 				},
 				NetworkTimeout())
 			.UntilServer(
+				TEXT("Authority applies the GASP Free rotation policy"),
+				[](FNetworkState& State)
+				{
+					return HasFreeRotationPolicy(State, ROLE_Authority);
+				},
+				NetworkTimeout())
+			.UntilClient(
+				TEXT("Owner applies the GASP Free rotation policy"),
+				0,
+				[](FNetworkState& State)
+				{
+					return HasFreeRotationPolicy(State, ROLE_AutonomousProxy);
+				},
+				NetworkTimeout())
+			.UntilClient(
+				TEXT("Moving late join applies the GASP Free rotation policy"),
+				1,
+				[](FNetworkState& State)
+				{
+					return HasFreeRotationPolicy(State, ROLE_SimulatedProxy);
+				},
+				NetworkTimeout())
+			.UntilServer(
 				TEXT("Authority Foot Placement snapshot records remote ownership"),
 				[](FNetworkState& State)
 				{
@@ -1048,6 +1345,113 @@ NETWORK_TEST_CLASS(GaspPilotPIE, "SurvivalRpg.Network")
 				[](FNetworkState& State)
 				{
 					return HasStoppedAnimation(State);
+				},
+				NetworkTimeout())
+			.ThenServer(
+				TEXT("Apply the server-authoritative movement-stop contract"),
+				[this](FNetworkState& State)
+				{
+					ARpgCharacter* Character = FindCharacterByPlayerId(
+						State.World,
+						State.SubjectPlayerId);
+					ASSERT_THAT(IsNotNull(Character));
+					ASSERT_THAT(IsNotNull(Character->GetRpgAbilitySystemComponent()));
+					Character->GetRpgAbilitySystemComponent()->AddLooseGameplayTag(
+						GetMovementStoppedTag(),
+						1,
+						EGameplayTagReplicationState::TagAndCountToAll);
+				})
+			.UntilClients(
+				TEXT("MovementStopped reaches owner and simulated proxy before input"),
+				[](FNetworkState& State)
+				{
+					ARpgCharacter* Character = FindCharacterByPlayerId(
+						State.World,
+						State.SubjectPlayerId);
+					const URpgAbilitySystemComponent* AbilitySystem = Character
+						? Character->GetRpgAbilitySystemComponent()
+						: nullptr;
+					const URpgCharacterMovementComponent* MovementComponent = Character
+						? Cast<URpgCharacterMovementComponent>(Character->GetCharacterMovement())
+						: nullptr;
+					return AbilitySystem && MovementComponent &&
+						AbilitySystem->HasMatchingGameplayTag(GetMovementStoppedTag()) &&
+						FMath::IsNearlyZero(MovementComponent->GetMaxSpeed()) &&
+						FMath::IsNearlyZero(MovementComponent->GetMinAnalogSpeed());
+				},
+				NetworkTimeout())
+			.ThenClient(
+				TEXT("Hold full movement input while MovementStopped is active"),
+				0,
+				[](FNetworkState& State)
+				{
+					StartMovementInput(State, FVector::YAxisVector, 1.0f);
+				})
+			.UntilServer(
+				TEXT("Authority remains physically stopped with the GASP analog floor suppressed"),
+				[](FNetworkState& State)
+				{
+					return HasStableMovementStoppedContract(State, ROLE_Authority);
+				},
+				NetworkTimeout())
+			.UntilClients(
+				TEXT("Owner and simulated proxy remain physically stopped under held input"),
+				[](FNetworkState& State)
+				{
+					return HasStableMovementStoppedContract(
+						State,
+						State.ClientIndex == 0
+							? ROLE_AutonomousProxy
+							: ROLE_SimulatedProxy);
+				},
+				NetworkTimeout())
+			.ThenClient(
+				TEXT("Release movement input before clearing MovementStopped"),
+				0,
+				[](FNetworkState& State)
+				{
+					StopMovementInput(State);
+				})
+			.ThenServer(
+				TEXT("Clear the server-authoritative movement-stop contract"),
+				[this](FNetworkState& State)
+				{
+					ARpgCharacter* Character = FindCharacterByPlayerId(
+						State.World,
+						State.SubjectPlayerId);
+					ASSERT_THAT(IsNotNull(Character));
+					ASSERT_THAT(IsNotNull(Character->GetRpgAbilitySystemComponent()));
+					Character->GetRpgAbilitySystemComponent()->RemoveLooseGameplayTag(
+						GetMovementStoppedTag(),
+						1,
+						EGameplayTagReplicationState::TagAndCountToAll);
+				})
+			.UntilServer(
+				TEXT("Authority restores the standing GASP analog floor"),
+				[](FNetworkState& State)
+				{
+					ARpgCharacter* Character = FindCharacterByPlayerId(
+						State.World,
+						State.SubjectPlayerId);
+					const URpgCharacterMovementComponent* MovementComponent = Character
+						? Cast<URpgCharacterMovementComponent>(Character->GetCharacterMovement())
+						: nullptr;
+					return MovementComponent &&
+						FMath::IsNearlyEqual(MovementComponent->GetMinAnalogSpeed(), 150.0f);
+				},
+				NetworkTimeout())
+			.UntilClients(
+				TEXT("Owner and simulated proxy restore the standing GASP analog floor"),
+				[](FNetworkState& State)
+				{
+					ARpgCharacter* Character = FindCharacterByPlayerId(
+						State.World,
+						State.SubjectPlayerId);
+					const URpgCharacterMovementComponent* MovementComponent = Character
+						? Cast<URpgCharacterMovementComponent>(Character->GetCharacterMovement())
+						: nullptr;
+					return MovementComponent &&
+						FMath::IsNearlyEqual(MovementComponent->GetMinAnalogSpeed(), 150.0f);
 				},
 				NetworkTimeout())
 			.ThenServer(
@@ -1270,14 +1674,16 @@ NETWORK_TEST_CLASS(GaspPilotPIE, "SurvivalRpg.Network")
 				TEXT("Authority observes the airborne animation phase"),
 				[](FNetworkState& State)
 				{
-					return State.bSawAirborne;
+					return State.bSawAirborne &&
+						HasLegacyAirborneMovementPolicy(State);
 				},
 				NetworkTimeout())
 			.UntilClients(
 				TEXT("Owner and simulated proxy observe the airborne phase"),
 				[](FNetworkState& State)
 				{
-					return State.bSawAirborne;
+					return State.bSawAirborne &&
+						HasLegacyAirborneMovementPolicy(State);
 				},
 				NetworkTimeout())
 			.ThenClient(
@@ -1298,14 +1704,14 @@ NETWORK_TEST_CLASS(GaspPilotPIE, "SurvivalRpg.Network")
 				TEXT("Authority completes physical landing"),
 				[](FNetworkState& State)
 				{
-					return State.bSawLanding && State.bSawGroundedAfterAirborne;
+					return HasCompletedLanding(State);
 				},
 				NetworkTimeout())
 			.UntilClients(
 				TEXT("Owner and simulated proxy complete landing"),
 				[](FNetworkState& State)
 				{
-					return State.bSawLanding && State.bSawGroundedAfterAirborne;
+					return HasCompletedLanding(State);
 				},
 				NetworkTimeout())
 			.ThenServer(
@@ -1362,6 +1768,44 @@ NETWORK_TEST_CLASS(GaspPilotPIE, "SurvivalRpg.Network")
 						Character->GetActorLocation().X -
 							AuthorityCorrectionBaseline.X) > 60.0));
 					StartMovementInput(State, FVector::YAxisVector);
+				})
+			.ThenServer(
+				TEXT("Force the authoritative adjustment for the deliberate divergence"),
+				[this](FNetworkState& State)
+				{
+					ARpgCharacter* Character = FindCharacterByPlayerId(
+						State.World,
+						State.SubjectPlayerId);
+					URpgCharacterMovementComponent* MovementComponent = Character
+						? Cast<URpgCharacterMovementComponent>(Character->GetCharacterMovement())
+						: nullptr;
+					ASSERT_THAT(IsNotNull(MovementComponent));
+					if (MovementComponent)
+					{
+						FVector AuthoritativeLocation = Character->GetActorLocation();
+						AuthoritativeLocation.X = AuthorityCorrectionBaseline.X;
+						Character->SetActorLocation(
+							AuthoritativeLocation,
+							false,
+							nullptr,
+							ETeleportType::None);
+						ASSERT_THAT(IsTrue(FMath::Abs(
+							Character->GetActorLocation().X -
+								AuthorityCorrectionBaseline.X) <= 1.0));
+
+						FNetworkPredictionData_Server_Character* ServerPrediction =
+							MovementComponent->GetPredictionData_Server_Character();
+						ASSERT_THAT(IsNotNull(ServerPrediction));
+						if (ServerPrediction)
+						{
+							// Force the next genuine ServerMove through UE's correction path. The
+							// replication and adjustment calls bypass its update and send throttles;
+							// neither one queues a correction without bForceClientUpdate.
+							ServerPrediction->bForceClientUpdate = true;
+						}
+						MovementComponent->ForceReplicationUpdate();
+						MovementComponent->ForceClientAdjustment();
+					}
 				})
 			.UntilClient(
 				TEXT("Autonomous presentation observes the server correction"),

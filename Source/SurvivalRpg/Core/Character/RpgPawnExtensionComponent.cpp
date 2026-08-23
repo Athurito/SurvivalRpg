@@ -33,6 +33,10 @@ void URpgPawnExtensionComponent::GetLifetimeReplicatedProps(TArray<FLifetimeProp
 void URpgPawnExtensionComponent::BeginPlay()
 {
 	Super::BeginPlay();
+	if (PawnData)
+	{
+		OnPawnDataReady.Broadcast();
+	}
 	
 	// Listen for changes to all features
 	BindOnActorInitStateChanged(NAME_None, FGameplayTag(), false);
@@ -86,6 +90,7 @@ void URpgPawnExtensionComponent::SetPawnData(const URpgPawnData* InPawnData)
 	{
 		AbilitySystemComponent->SetTagRelationshipMapping(PawnData->TagRelationshipMapping);
 	}
+	OnPawnDataReady.Broadcast();
 	
 	Pawn->ForceNetUpdate();
 
@@ -97,6 +102,10 @@ void URpgPawnExtensionComponent::OnRep_PawnData()
 	if (AbilitySystemComponent && PawnData)
 	{
 		AbilitySystemComponent->SetTagRelationshipMapping(PawnData->TagRelationshipMapping);
+	}
+	if (PawnData)
+	{
+		OnPawnDataReady.Broadcast();
 	}
 
 	CheckDefaultInitialization();
@@ -161,6 +170,7 @@ void URpgPawnExtensionComponent::InitializeAbilitySystemComponent(URpgAbilitySys
 		if (ResolvedPawnData && Pawn->HasAuthority())
 		{
 			PawnData = ResolvedPawnData;
+			OnPawnDataReady.Broadcast();
 			Pawn->ForceNetUpdate();
 			CheckDefaultInitialization();
 		}
@@ -315,6 +325,20 @@ void URpgPawnExtensionComponent::OnAbilitySystemInitialized_RegisterAndCall(FSim
 	}
 
 	if (AbilitySystemComponent)
+	{
+		Delegate.Execute();
+	}
+}
+
+void URpgPawnExtensionComponent::OnPawnDataReady_RegisterAndCall(
+	FSimpleMulticastDelegate::FDelegate Delegate)
+{
+	if (!OnPawnDataReady.IsBoundToObject(Delegate.GetUObject()))
+	{
+		OnPawnDataReady.Add(Delegate);
+	}
+
+	if (PawnData)
 	{
 		Delegate.Execute();
 	}

@@ -543,7 +543,7 @@ bool FRpgTrajectoryCollisionRuntimeTest::RunTest(const FString& Parameters)
 	Proxy.WorldVelocity = FVector(300.0, 0.0, -400.0);
 	Proxy.VerticalVelocity = -400.0f;
 	Proxy.TrajectoryLandingPrediction = ValidPrediction;
-	URpgAnimInstance::UpdateLandingSelectionSnapshot(Proxy, 0.8f, GravityAcceleration);
+	URpgAnimInstance::UpdateLandingSelectionSnapshot(Proxy, ERpgLocomotionGait::Run, GravityAcceleration);
 	AnimInstance->ResetJumpPhaseRuntime();
 	AnimInstance->UpdateJumpPhaseRuntime(0.01f, Proxy);
 	TestEqual(TEXT("A predictive hit leaves the physical jump phase Airborne"), AnimInstance->JumpPhase, ERpgJumpPhase::Airborne);
@@ -564,7 +564,7 @@ bool FRpgTrajectoryCollisionRuntimeTest::RunTest(const FString& Parameters)
 			-400.0);
 		Proxy.VerticalVelocity = -400.0f;
 		Proxy.TrajectoryLandingPrediction.TimeToLand = 0.3f - 0.05f * DirectionIndex;
-		URpgAnimInstance::UpdateLandingSelectionSnapshot(Proxy, 0.8f, GravityAcceleration);
+		URpgAnimInstance::UpdateLandingSelectionSnapshot(Proxy, ERpgLocomotionGait::Run, GravityAcceleration);
 		AnimInstance->UpdateJumpPhaseRuntime(0.05f, Proxy);
 	}
 	TestEqual(TEXT("Directional airborne predictions cannot restart or double-request landing"), AnimInstance->LandingRequestSerial, 0u);
@@ -574,7 +574,7 @@ bool FRpgTrajectoryCollisionRuntimeTest::RunTest(const FString& Parameters)
 	Proxy.WorldVelocity = FVector(300.0, 0.0, -400.0);
 	Proxy.VerticalVelocity = -400.0f;
 	Proxy.TrajectoryLandingPrediction = ValidPrediction;
-	URpgAnimInstance::UpdateLandingSelectionSnapshot(Proxy, 0.8f, GravityAcceleration);
+	URpgAnimInstance::UpdateLandingSelectionSnapshot(Proxy, ERpgLocomotionGait::Run, GravityAcceleration);
 	AnimInstance->UpdateJumpPhaseRuntime(0.01f, Proxy);
 	TestEqual(TEXT("The final predicted Heavy airborne frame still creates no request"), AnimInstance->LandingRequestSerial, 0u);
 
@@ -584,7 +584,7 @@ bool FRpgTrajectoryCollisionRuntimeTest::RunTest(const FString& Parameters)
 	Proxy.GroundSpeed = 300.0f;
 	Proxy.bHasGroundedMoveIntent = true;
 	Proxy.TrajectoryLandingPrediction = FRpgTrajectoryLandingPrediction();
-	URpgAnimInstance::UpdateLandingSelectionSnapshot(Proxy, 0.8f, GravityAcceleration);
+	URpgAnimInstance::UpdateLandingSelectionSnapshot(Proxy, ERpgLocomotionGait::Run, GravityAcceleration);
 	AnimInstance->UpdateJumpPhaseRuntime(0.01f, Proxy);
 	TestEqual(TEXT("Only physical CharacterMovement touchdown enters Landing"), AnimInstance->JumpPhase, ERpgJumpPhase::Landing);
 	TestEqual(
@@ -592,7 +592,7 @@ bool FRpgTrajectoryCollisionRuntimeTest::RunTest(const FString& Parameters)
 		AnimInstance->ActiveLandingDatabaseRole,
 		ERpgMotionMatchingDatabaseRole::RunHeavyLanding);
 	TestEqual(TEXT("Physical touchdown creates exactly one request"), AnimInstance->LandingRequestSerial, 1u);
-	URpgAnimInstance::UpdateLandingSelectionSnapshot(Proxy, 0.8f, GravityAcceleration);
+	URpgAnimInstance::UpdateLandingSelectionSnapshot(Proxy, ERpgLocomotionGait::Run, GravityAcceleration);
 	AnimInstance->UpdateJumpPhaseRuntime(0.01f, Proxy);
 	TestEqual(TEXT("A repeated grounded snapshot cannot duplicate the request"), AnimInstance->LandingRequestSerial, 1u);
 	return true;

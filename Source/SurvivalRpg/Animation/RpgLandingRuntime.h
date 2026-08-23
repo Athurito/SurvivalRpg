@@ -26,11 +26,14 @@ struct SURVIVALRPG_API FRpgLandingCaptureSnapshot
 	FVector GravityAcceleration = FVector::ZeroVector;
 	FRpgTrajectoryLandingPrediction TrajectoryPrediction;
 	ERpgLocomotionGait Gait{};
+	ERpgLocomotionGait DesiredGait{};
 	ERpgLocomotionMovementState MovementState{};
 	float VerticalVelocity = 0.0f;
-	float InputMagnitude = 0.0f;
+	bool bHasMoveIntent = false;
 	bool bIsFalling = false;
 	bool bIsMovingOnGround = false;
+	/** True while the animation lifecycle has not consumed the physical touchdown edge yet. */
+	bool bAwaitingTouchdownConsumption = false;
 	bool bHardReset = false;
 };
 
@@ -101,7 +104,7 @@ namespace RpgLandingRuntime
 	inline constexpr float PlaybackWatchdogSafetyMargin = 0.1f;
 	inline constexpr float FinishedTimeTolerance = 0.05f;
 
-	/** Updates the final-airborne snapshot while preserving one physical touchdown frame. */
+	/** Updates the final-airborne snapshot and preserves touchdown until animation acknowledges the edge. */
 	SURVIVALRPG_API void UpdateSelectionSnapshot(
 		FRpgLandingSelectionSnapshot& SelectionSnapshot,
 		FRpgLandingCaptureState& State,

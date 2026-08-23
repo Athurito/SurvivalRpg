@@ -23,6 +23,110 @@ URpgCharacterMovementComponent::URpgCharacterMovementComponent(const FObjectInit
 	
 }
 
+bool URpgCharacterMovementComponent::ApplyMovementProfile(
+	const FRpgCharacterMovementProfile& Profile)
+{
+	if (!RpgCharacterMovementRuntime::IsProfileRuntimeValid(Profile))
+	{
+		return false;
+	}
+
+	MovementProfile = Profile;
+	GroundGait = ERpgLocomotionGait::Idle;
+	DesiredGait = ERpgLocomotionGait::Idle;
+	bHasMoveIntent = false;
+	bHasMovementInput = false;
+	return true;
+}
+
+bool URpgCharacterMovementComponent::UsesStandingGroundMovementProfile() const
+{
+	return MovementProfile.bOverrideCharacterMovement &&
+		IsMovingOnGround() &&
+		!IsCrouching();
+}
+
+bool URpgCharacterMovementComponent::HasMovementStoppedTag() const
+{
+	const UAbilitySystemComponent* ASC =
+		UAbilitySystemGlobals::GetAbilitySystemComponentFromActor(GetOwner());
+	return ASC && ASC->HasMatchingGameplayTag(TAG_Gameplay_MovementStopped);
+}
+
+void URpgCharacterMovementComponent::CalcVelocity(
+	float DeltaTime,
+	float Friction,
+	bool bFluid,
+	float BrakingDeceleration)
+{
+	if (!UsesStandingGroundMovementProfile())
+	{
+		Super::CalcVelocity(DeltaTime, Friction, bFluid, BrakingDeceleration);
+		return;
+	}
+
+	// These engine properties are global across movement modes. Scope the profile values to
+	// this synchronous standing-ground solve so crouch, falling, swimming, and custom modes
+	// keep their Blueprint-authored response instead of inheriting GASP walking physics.
+	// ControlledCharacterMove scales Acceleration before PerformMovement. A landing or
+	// uncrouch may enter this standing solve later in that same movement tick, so rescale the
+	// preserved raw analog magnitude against the standing profile instead of applying one
+	// frame of the previous movement mode's acceleration.
+	const float SafeAnalogInput = FMath::IsFinite(AnalogInputModifier)
+		? FMath::Clamp(AnalogInputModifier, 0.0f, 1.0f)
+		: 0.0f;
+	Acceleration = Acceleration.GetSafeNormal() *
+		(MovementProfile.MaxAcceleration * SafeAnalogInput);
+	const bool bSavedUseSeparateBrakingFriction = bUseSeparateBrakingFriction;
+	const float SavedBrakingFrictionFactor = BrakingFrictionFactor;
+	const float SavedBrakingFriction = BrakingFriction;
+	bUseSeparateBrakingFriction = MovementProfile.bUseSeparateBrakingFriction;
+	BrakingFrictionFactor = MovementProfile.BrakingFrictionFactor;
+	BrakingFriction = MovementProfile.BrakingFriction;
+	Super::CalcVelocity(
+		DeltaTime,
+		MovementProfile.GroundFriction,
+		bFluid,
+		BrakingDeceleration);
+	bUseSeparateBrakingFriction = bSavedUseSeparateBrakingFriction;
+	BrakingFrictionFactor = SavedBrakingFrictionFactor;
+	BrakingFriction = SavedBrakingFriction;
+}
+
+void URpgCharacterMovementComponent::UpdateCharacterStateBeforeMovement(float DeltaSeconds)
+{
+	Super::UpdateCharacterStateBeforeMovement(DeltaSeconds);
+	RefreshLocomotionSnapshot();
+}
+
+void URpgCharacterMovementComponent::OnMovementUpdated(
+	float DeltaSeconds,
+	const FVector& OldLocation,
+	const FVector& OldVelocity)
+{
+	Super::OnMovementUpdated(DeltaSeconds, OldLocation, OldVelocity);
+	RefreshLocomotionSnapshot();
+}
+
+void URpgCharacterMovementComponent::RefreshLocomotionSnapshot()
+{
+	const float InputMagnitude = GetAnalogInputModifier();
+	bHasMovementInput = FMath::IsFinite(InputMagnitude) &&
+		InputMagnitude > UE_KINDA_SMALL_NUMBER;
+	DesiredGait = RpgCharacterMovementRuntime::ResolveDesiredGait(
+		InputMagnitude,
+		MovementProfile);
+	bHasMoveIntent = RpgCharacterMovementRuntime::HasMoveIntent(
+		InputMagnitude,
+		MovementProfile);
+	GroundGait = RpgCharacterMovementRuntime::ResolveGroundGait(
+		IsMovingOnGround(),
+		Velocity.Size2D(),
+		InputMagnitude,
+		GroundGait,
+		MovementProfile);
+}
+
 void URpgCharacterMovementComponent::OnTeleported()
 {
 	Super::OnTeleported();
@@ -48,10 +152,16 @@ void URpgCharacterMovementComponent::OnClientCorrectionReceived(
 {
 	// NewLocation is already converted to world space by ClientAdjustPosition. Compare
 	// it with the acknowledged move from the same timestamp, not the client's current
-	// location which may be many unacknowledged moves ahead under latency. Classify the
-	// adjustment before replay, then fold historical responses into one tick batch.
+	// location which may be many unacknowledged moves ahead under latency. Also retain
+	// the live pre-correction location so replay can detect a real presentation jump when
+	// an earlier correction prunes the saved move that originally contained the error.
 	if (UpdatedComponent)
 	{
+		if (!bHasPendingAnimationCorrection)
+		{
+			PendingAnimationCorrectionStartLocation =
+				UpdatedComponent->GetComponentLocation();
+		}
 		const FVector ClientLocationAtCorrectedMove =
 			ClientData.LastAckedMove.IsValid()
 				? ClientData.LastAckedMove->SavedLocation
@@ -78,13 +188,20 @@ void URpgCharacterMovementComponent::OnClientCorrectionReceived(
 bool URpgCharacterMovementComponent::ClientUpdatePositionAfterServerUpdate()
 {
 	const bool bHadPendingAnimationCorrection = bHasPendingAnimationCorrection;
-	const bool bShouldMarkAnimationDiscontinuity =
-		bPendingAnimationCorrectionDiscontinuity;
 	const bool bReplayedMoves = Super::ClientUpdatePositionAfterServerUpdate();
 
 	if (bHadPendingAnimationCorrection)
 	{
+		const bool bLivePresentationDiscontinuity = UpdatedComponent &&
+			FVector::DistSquared(
+				PendingAnimationCorrectionStartLocation,
+				UpdatedComponent->GetComponentLocation()) >
+				FMath::Square(NetworkLargeClientCorrectionDistance);
+		const bool bShouldMarkAnimationDiscontinuity =
+			bPendingAnimationCorrectionDiscontinuity ||
+			bLivePresentationDiscontinuity;
 		bHasPendingAnimationCorrection = false;
+		PendingAnimationCorrectionStartLocation = FVector::ZeroVector;
 		bPendingAnimationCorrectionDiscontinuity = false;
 		if (bShouldMarkAnimationDiscontinuity)
 		{
@@ -192,12 +309,9 @@ const FRpgCharacterGroundInfo& URpgCharacterMovementComponent::GetGroundInfo()
 
 FRotator URpgCharacterMovementComponent::GetDeltaRotation(float DeltaTime) const
 {
-	if (UAbilitySystemComponent* ASC = UAbilitySystemGlobals::GetAbilitySystemComponentFromActor(GetOwner()))
+	if (HasMovementStoppedTag())
 	{
-		if (ASC->HasMatchingGameplayTag(TAG_Gameplay_MovementStopped))
-		{
-			return FRotator(0,0,0);
-		}
+		return FRotator::ZeroRotator;
 	}
 
 	return Super::GetDeltaRotation(DeltaTime);
@@ -205,13 +319,62 @@ FRotator URpgCharacterMovementComponent::GetDeltaRotation(float DeltaTime) const
 
 float URpgCharacterMovementComponent::GetMaxSpeed() const
 {
-	if (UAbilitySystemComponent* ASC = UAbilitySystemGlobals::GetAbilitySystemComponentFromActor(GetOwner()))
+	if (HasMovementStoppedTag())
 	{
-		if (ASC->HasMatchingGameplayTag(TAG_Gameplay_MovementStopped))
-		{
-			return 0;
-		}
+		return 0.0f;
+	}
+
+	if (UsesStandingGroundMovementProfile())
+	{
+		// FSavedMove captures MaxSpeed before PerformMovement refreshes the presentation
+		// snapshot. Resolve the physical cap from CharacterMovement's current analog value
+		// so Walk/Run boundary moves are not combined with a one-frame-old gait cap.
+		const ERpgLocomotionGait PhysicalGait =
+			RpgCharacterMovementRuntime::ResolveDesiredGait(
+				GetAnalogInputModifier(),
+				MovementProfile);
+		return RpgCharacterMovementRuntime::ResolveGroundSpeedCap(
+			PhysicalGait == ERpgLocomotionGait::Run
+				? ERpgLocomotionGait::Run
+				: ERpgLocomotionGait::Walk,
+			false,
+			0.0f,
+			MovementProfile);
 	}
 
 	return Super::GetMaxSpeed();
+}
+
+float URpgCharacterMovementComponent::GetMinAnalogSpeed() const
+{
+	// CharacterMovement clamps any non-zero input up to this floor. It must therefore
+	// participate in the same GAS stop contract as MaxSpeed or held input can still
+	// drive the GASP profile at MinAnalogGroundSpeed while movement is disabled.
+	if (HasMovementStoppedTag())
+	{
+		return 0.0f;
+	}
+
+	return UsesStandingGroundMovementProfile()
+		? MovementProfile.MinAnalogGroundSpeed
+		: Super::GetMinAnalogSpeed();
+}
+
+float URpgCharacterMovementComponent::GetMaxAcceleration() const
+{
+	return UsesStandingGroundMovementProfile()
+		? MovementProfile.MaxAcceleration
+		: Super::GetMaxAcceleration();
+}
+
+float URpgCharacterMovementComponent::GetMaxBrakingDeceleration() const
+{
+	if (UsesStandingGroundMovementProfile())
+	{
+		return RpgCharacterMovementRuntime::ResolveGroundBrakingDeceleration(
+			bHasMovementInput,
+			MovementProfile);
+	}
+
+	return Super::GetMaxBrakingDeceleration();
 }
