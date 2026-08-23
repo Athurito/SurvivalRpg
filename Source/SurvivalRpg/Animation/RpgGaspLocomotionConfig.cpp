@@ -96,8 +96,6 @@ bool RpgGaspLocomotionConfig::IsTuningRuntimeValid(
 	const float Values[] = {
 		Tuning.LastMeaningfulVelocityThreshold,
 		Tuning.StationarySpeedThreshold,
-		Tuning.MoveIntentThreshold,
-		Tuning.RunInputThreshold,
 		Tuning.ChooserVelocityTolerance,
 		Tuning.ChooserAccelerationTolerance,
 		Tuning.WalkStopMinimumSpeed,
@@ -141,9 +139,6 @@ bool RpgGaspLocomotionConfig::IsTuningRuntimeValid(
 
 	return Tuning.LastMeaningfulVelocityThreshold > 0.0f &&
 		Tuning.StationarySpeedThreshold > 0.0f &&
-		Tuning.MoveIntentThreshold >= 0.0f &&
-		Tuning.MoveIntentThreshold < Tuning.RunInputThreshold &&
-		Tuning.RunInputThreshold <= 1.0f &&
 		Tuning.ChooserVelocityTolerance >= 0.0f &&
 		Tuning.ChooserAccelerationTolerance >= 0.0f &&
 		Tuning.WalkStopMinimumSpeed > 0.0f &&

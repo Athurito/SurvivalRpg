@@ -974,11 +974,9 @@ bool FRpgJumpPhaseRuntimeTest::RunTest(const FString& Parameters)
 			Proxy.Gait = ERpgLocomotionGait::Idle;
 			Proxy.bHasGroundedMoveIntent = false;
 			Proxy.TrajectoryLandingPrediction = FRpgTrajectoryLandingPrediction();
-			const float HeldInputMagnitude = static_cast<float>(
-				NetworkView.Acceleration.Size2D() / HeldAirborneMaximumAcceleration);
 			URpgAnimInstance::UpdateLandingSelectionSnapshot(
 				Proxy,
-				HeldInputMagnitude,
+				ERpgLocomotionGait::Run,
 				GravityAcceleration);
 			AnimInstance->UpdateJumpPhaseRuntime(0.01f, Proxy);
 			TestTrue(
@@ -1012,7 +1010,7 @@ bool FRpgJumpPhaseRuntimeTest::RunTest(const FString& Parameters)
 			Proxy.bHasGroundedMoveIntent = true;
 			URpgAnimInstance::UpdateLandingSelectionSnapshot(
 				Proxy,
-				HeldInputMagnitude,
+				ERpgLocomotionGait::Run,
 				GravityAcceleration);
 			TestTrue(
 				*FString::Printf(TEXT("%s %s touchdown still owns the frozen airborne speed"), NetworkView.Name, LandingCase.Name),
@@ -1050,7 +1048,7 @@ bool FRpgJumpPhaseRuntimeTest::RunTest(const FString& Parameters)
 
 			URpgAnimInstance::UpdateLandingSelectionSnapshot(
 				Proxy,
-				HeldInputMagnitude,
+				ERpgLocomotionGait::Run,
 				GravityAcceleration);
 			AnimInstance->UpdateJumpPhaseRuntime(0.01f, Proxy);
 			TestEqual(
@@ -1070,7 +1068,7 @@ bool FRpgJumpPhaseRuntimeTest::RunTest(const FString& Parameters)
 			Proxy.GroundSpeed = Proxy.WorldVelocity.Size2D();
 			URpgAnimInstance::UpdateLandingSelectionSnapshot(
 				Proxy,
-				HeldInputMagnitude,
+				ERpgLocomotionGait::Run,
 				GravityAcceleration);
 			AnimInstance->UpdateJumpPhaseRuntime(0.1f, Proxy);
 			const uint32 RunRequestSerial = AnimInstance->LandingRequestSerial;

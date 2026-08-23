@@ -2,6 +2,8 @@
 
 #if WITH_DEV_AUTOMATION_TESTS
 
+#include <limits>
+
 #include "GameplayAbilitiesDeveloperSettings.h"
 #include "Misc/AutomationTest.h"
 #include "SurvivalRpg/Core/Character/RpgCharacter.h"
@@ -44,6 +46,19 @@ bool FRpgCharacterRotationModeResolverTest::RunTest(const FString& Parameters)
 	TestTrue(TEXT("Free mode orients to movement"), FreePolicy.bOrientRotationToMovement);
 	TestFalse(TEXT("Free mode does not use controller-desired movement rotation"), FreePolicy.bUseControllerDesiredRotation);
 	TestTrue(TEXT("Free mode uses immediate movement-facing yaw"), FMath::IsNearlyEqual(FreePolicy.RotationRateYaw, -1.0f));
+
+	const FRpgCharacterRotationPolicy CuratedFreePolicy =
+		ARpgCharacter::GetRotationPolicy(ERpgCharacterRotationMode::Free, 360.0f);
+	TestTrue(
+		TEXT("PawnData may opt Free mode into controlled yaw"),
+		FMath::IsNearlyEqual(CuratedFreePolicy.RotationRateYaw, 360.0f));
+	const FRpgCharacterRotationPolicy InvalidFreePolicy =
+		ARpgCharacter::GetRotationPolicy(
+			ERpgCharacterRotationMode::Free,
+			std::numeric_limits<float>::quiet_NaN());
+	TestTrue(
+		TEXT("Invalid PawnData yaw falls back to the legacy immediate policy"),
+		FMath::IsNearlyEqual(InvalidFreePolicy.RotationRateYaw, -1.0f));
 
 	for (const ERpgCharacterRotationMode ControllerFacingMode : {
 		ERpgCharacterRotationMode::CombatStrafe,

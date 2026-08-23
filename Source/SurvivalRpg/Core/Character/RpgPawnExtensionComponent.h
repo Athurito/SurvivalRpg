@@ -47,6 +47,9 @@ public:
 	
 	/** Sets the current pawn data. Authority-only and expected to happen once per pawn. */
 	void SetPawnData(const URpgPawnData* InPawnData);
+
+	/** Registers for PawnData-ready notifications and executes immediately when data already exists. */
+	void OnPawnDataReady_RegisterAndCall(FSimpleMulticastDelegate::FDelegate Delegate);
 	
 	/** Gets the current ability system component, which may be owned by a different actor */
 	UFUNCTION(BlueprintPure, Category = "Lyra|Pawn")
@@ -78,6 +81,9 @@ public:
 
 	/** Delegate fired when our pawn is removed as the ability system's avatar actor */
 	FSimpleMulticastDelegate OnAbilitySystemUninitialized;
+
+	/** Delegate fired whenever replicated or authority-assigned PawnData becomes locally available. */
+	FSimpleMulticastDelegate OnPawnDataReady;
 
 protected:
 	virtual void OnRegister() override;

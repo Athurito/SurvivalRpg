@@ -62,7 +62,9 @@ public:
 		ERpgCharacterRotationMode DefaultMode);
 
 	/** Returns the movement-component policy for the supplied rotation mode without mutating an actor. */
-	static FRpgCharacterRotationPolicy GetRotationPolicy(ERpgCharacterRotationMode InRotationMode);
+	static FRpgCharacterRotationPolicy GetRotationPolicy(
+		ERpgCharacterRotationMode InRotationMode,
+		float FreeRotationRateYaw = -1.0f);
 
 	/**
 	 * Pure server-request gate used by runtime validation and automation tests.
@@ -150,6 +152,8 @@ private:
 	void UnbindRotationModeAbilitySystem();
 
 	void HandleRotationRequestTagChanged(const FGameplayTag Tag, int32 NewCount);
+	/** Applies locally available PawnData movement tuning before input or animation consumes it. */
+	void HandlePawnDataReady();
 	void HandleEquipmentChanged();
 	bool CanEnterExplicitCombatStance() const;
 	void SetExplicitCombatStance(bool bEnabled);

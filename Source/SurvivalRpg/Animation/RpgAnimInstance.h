@@ -19,6 +19,7 @@
 #include "RpgMotionMatchingRuntime.h"
 #include "RpgPoseSearchTrajectory.h"
 #include "RpgTurnInPlaceRuntime.h"
+#include "SurvivalRpg/Core/Character/RpgCharacterMovementProfile.h"
 #include "SurvivalRpg/Core/Character/RpgCharacterRotationMode.h"
 #include "RpgAnimInstance.generated.h"
 
@@ -32,16 +33,6 @@ class FRpgMotionMatchingDatabaseResolverTest;
 class FRpgTrajectoryCollisionRuntimeTest;
 class FRpgTurnInPlaceStateMachineTest;
 #endif
-
-/** Cosmetic locomotion speed band derived from the authoritative movement-component snapshot. */
-UENUM(BlueprintType)
-enum class ERpgLocomotionGait : uint8
-{
-	Idle,
-	Walk,
-	Run,
-	Sprint,
-};
 
 /**
  * Static grounded Pose Search database groups consumed by the project-local locomotion selector.
@@ -262,6 +253,8 @@ struct SURVIVALRPG_API FRpgAnimInstanceProxy : public FAnimInstanceProxy
 	ERpgLocomotionGait LastGroundedGait = ERpgLocomotionGait::Idle;
 	int32 LandingAirborneEpoch = 0;
 	bool bWasAirborneForLanding = false;
+	/** Game-thread acknowledgement gate that prevents repeated PreUpdate calls from erasing touchdown context. */
+	bool bLandingTouchdownPendingConsumption = false;
 
 	// Previous-owner data is maintained and consumed only by game-thread PreUpdate.
 	uint32 PreviousOwnerUniqueId = 0;
@@ -772,7 +765,7 @@ private:
 	/** Updates or resets the final-airborne snapshot from current value-only proxy inputs. */
 	static void UpdateLandingSelectionSnapshot(
 		FRpgAnimInstanceProxy& Proxy,
-		float InputMagnitude,
+		ERpgLocomotionGait DesiredGait,
 		const FVector& GravityAcceleration,
 		const FRpgGaspLocomotionTuning& Tuning = FRpgGaspLocomotionTuning());
 

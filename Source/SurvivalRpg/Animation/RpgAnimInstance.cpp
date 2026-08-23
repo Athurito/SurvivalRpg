@@ -542,7 +542,6 @@ void FRpgAnimInstanceProxy::PreUpdate(UAnimInstance* InAnimInstance, float Delta
 {
 	Super::PreUpdate(InAnimInstance, DeltaSeconds);
 
-	const ERpgLocomotionGait PreviousGait = Gait;
 	WorldVelocity = FVector::ZeroVector;
 	LocalVelocity = FVector::ZeroVector;
 	WorldAcceleration = FVector::ZeroVector;
@@ -569,6 +568,7 @@ void FRpgAnimInstanceProxy::PreUpdate(UAnimInstance* InAnimInstance, float Delta
 	bHasTurnInPlaceBlockingGameplayTag = false;
 	bTurnInPlaceHardReset = false;
 	bTurnInPlaceSupportChanged = false;
+	bLandingTouchdownPendingConsumption = false;
 	ActorYaw = 0.0f;
 	ActorYawDelta = 0.0f;
 	ActorLocation = FVector::ZeroVector;
@@ -706,30 +706,8 @@ void FRpgAnimInstanceProxy::PreUpdate(UAnimInstance* InAnimInstance, float Delta
 		break;
 	}
 
-	const float MaxAcceleration = FMath::Max(MovementComponent->GetMaxAcceleration(), 1.0f);
-	const float InputMagnitude = WorldAcceleration.Size2D() / MaxAcceleration;
-	bHasGroundedMoveIntent = bIsMovingOnGround &&
-		InputMagnitude > LocomotionTuning.MoveIntentThreshold;
-	if (!bIsMovingOnGround ||
-		(GroundSpeed < LocomotionTuning.StationarySpeedThreshold &&
-		 !bHasGroundedMoveIntent))
-	{
-		Gait = ERpgLocomotionGait::Idle;
-	}
-	else if (bHasGroundedMoveIntent)
-	{
-		Gait = InputMagnitude < LocomotionTuning.RunInputThreshold
-			? ERpgLocomotionGait::Walk
-			: ERpgLocomotionGait::Run;
-	}
-	else
-	{
-		// Keep the last moving database through deceleration so a stop pose is not interrupted
-		// just because input acceleration reached zero before capsule velocity did.
-		Gait = PreviousGait == ERpgLocomotionGait::Walk
-			? ERpgLocomotionGait::Walk
-			: ERpgLocomotionGait::Run;
-	}
+	bHasGroundedMoveIntent = bIsMovingOnGround && MovementComponent->HasMoveIntent();
+	Gait = MovementComponent->GetGroundGait();
 
 	ProceduralLocomotionAlpha =
 		bIsMovingOnGround && !bIsCrouching && !bIsAnyMontagePlaying ? 1.0f : 0.0f;
@@ -816,9 +794,11 @@ void FRpgAnimInstanceProxy::PreUpdate(UAnimInstance* InAnimInstance, float Delta
 
 	const FVector GravityAcceleration =
 		MovementComponent->GetGravityDirection() * -MovementComponent->GetGravityZ();
+	bLandingTouchdownPendingConsumption =
+		RpgAnimInstance->JumpPhase == ERpgJumpPhase::Airborne;
 	URpgAnimInstance::UpdateLandingSelectionSnapshot(
 		*this,
-		InputMagnitude,
+		MovementComponent->GetDesiredGait(),
 		GravityAcceleration,
 		RpgAnimInstance->RuntimeGaspLocomotionTuning);
 }
@@ -871,7 +851,7 @@ FName URpgAnimInstance::GetMotionMatchingDatabaseStateTag(
 
 void URpgAnimInstance::UpdateLandingSelectionSnapshot(
 	FRpgAnimInstanceProxy& Proxy,
-	float InputMagnitude,
+	ERpgLocomotionGait DesiredGait,
 	const FVector& GravityAcceleration,
 	const FRpgGaspLocomotionTuning& Tuning)
 {
@@ -885,11 +865,16 @@ void URpgAnimInstance::UpdateLandingSelectionSnapshot(
 	Snapshot.GravityAcceleration = GravityAcceleration;
 	Snapshot.TrajectoryPrediction = Proxy.TrajectoryLandingPrediction;
 	Snapshot.Gait = Proxy.Gait;
+	Snapshot.DesiredGait = DesiredGait;
 	Snapshot.MovementState = Proxy.MovementState;
 	Snapshot.VerticalVelocity = Proxy.VerticalVelocity;
-	Snapshot.InputMagnitude = InputMagnitude;
+	Snapshot.bHasMoveIntent =
+		DesiredGait == ERpgLocomotionGait::Walk ||
+		DesiredGait == ERpgLocomotionGait::Run;
 	Snapshot.bIsFalling = Proxy.bIsFalling;
 	Snapshot.bIsMovingOnGround = Proxy.bIsMovingOnGround;
+	Snapshot.bAwaitingTouchdownConsumption =
+		Proxy.bLandingTouchdownPendingConsumption;
 	Snapshot.bHardReset = Proxy.bTurnInPlaceHardReset;
 	RpgLandingRuntime::UpdateSelectionSnapshot(
 		Proxy.LandingSelectionSnapshot,

@@ -50,14 +50,6 @@ struct SURVIVALRPG_API FRpgGaspLocomotionTuning
 	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Shared", meta = (ClampMin = "0.001", Units = "cm/s"))
 	float StationarySpeedThreshold = 3.0f;
 
-	/** Normalized acceleration-input magnitude above which grounded movement intent is present. */
-	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Shared", meta = (ClampMin = "0.0", ClampMax = "1.0"))
-	float MoveIntentThreshold = 0.1f;
-
-	/** Normalized acceleration-input boundary selecting Run rather than Walk. */
-	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Shared", meta = (ClampMin = "0.0", ClampMax = "1.0"))
-	float RunInputThreshold = 0.65f;
-
 	/** Horizontal velocity tolerance used by the logical Motion Matching moving predicate, in cm/s. */
 	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Motion Matching", meta = (ClampMin = "0.0", Units = "cm/s"))
 	float ChooserVelocityTolerance = 0.1f;

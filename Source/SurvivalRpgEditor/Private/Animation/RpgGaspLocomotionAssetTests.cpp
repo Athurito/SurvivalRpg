@@ -438,8 +438,6 @@ namespace RpgGaspLocomotionAssetTests
 	static const FTuningFloatDefaultContract TuningFloatDefaultContracts[] = {
 		{ TEXT("LastMeaningfulVelocityThreshold"), &FRpgGaspLocomotionTuning::LastMeaningfulVelocityThreshold, 5.0f },
 		{ TEXT("StationarySpeedThreshold"), &FRpgGaspLocomotionTuning::StationarySpeedThreshold, 3.0f },
-		{ TEXT("MoveIntentThreshold"), &FRpgGaspLocomotionTuning::MoveIntentThreshold, 0.1f },
-		{ TEXT("RunInputThreshold"), &FRpgGaspLocomotionTuning::RunInputThreshold, 0.65f },
 		{ TEXT("ChooserVelocityTolerance"), &FRpgGaspLocomotionTuning::ChooserVelocityTolerance, 0.1f },
 		{ TEXT("ChooserAccelerationTolerance"), &FRpgGaspLocomotionTuning::ChooserAccelerationTolerance, 0.0001f },
 		{ TEXT("WalkStopMinimumSpeed"), &FRpgGaspLocomotionTuning::WalkStopMinimumSpeed, 20.0f },
@@ -852,9 +850,9 @@ bool FRpgGaspLocomotionContentContractTest::RunTest(const FString& Parameters)
 			TEXT("The profile locomotion tuning remains runtime-valid"),
 			RpgGaspLocomotionConfig::IsTuningRuntimeValid(PresentationProfile->LocomotionTuning));
 		TestEqual(
-			TEXT("The Step-4 tuning contract covers all thirty-six compatibility defaults"),
+			TEXT("The Step-4 tuning contract covers all thirty-four compatibility defaults"),
 			static_cast<int32>(UE_ARRAY_COUNT(TuningFloatDefaultContracts)),
-			36);
+			34);
 		int32 ReflectedTuningFloatCount = 0;
 		for (TFieldIterator<FFloatProperty> PropertyIt(FRpgGaspLocomotionTuning::StaticStruct());
 			PropertyIt;
