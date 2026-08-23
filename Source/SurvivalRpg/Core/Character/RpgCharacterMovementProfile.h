@@ -8,8 +8,8 @@
 /**
  * CMC-owned locomotion gait shared with the animation presentation layer.
  *
- * Walk and Run are reconstructed from CharacterMovement input on every network role. Sprint is
- * reserved for the explicit gameplay-owned sprint slice and is never inferred by this profile.
+ * Walk and Run are reconstructed from CharacterMovement input and the predicted SavedMove gait.
+ * Sprint is reserved for the explicit gameplay-owned sprint slice and is never inferred here.
  */
 UENUM(BlueprintType)
 enum class ERpgLocomotionGait : uint8
@@ -74,7 +74,7 @@ struct SURVIVALRPG_API FRpgCharacterMovementProfile
 	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Speed")
 	FRpgDirectionalGroundSpeeds RunSpeeds = {500.0f, 350.0f, 300.0f};
 
-	/** Minimum ground speed produced by non-zero analog input, in cm/s. */
+	/** Minimum ground speed produced by input above the physical deadzone, in cm/s. */
 	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Speed", meta = (ClampMin = "0.0", Units = "cm/s"))
 	float MinAnalogGroundSpeed = 0.0f;
 
@@ -114,13 +114,23 @@ struct SURVIVALRPG_API FRpgCharacterMovementProfile
 	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Gait", meta = (ClampMin = "0.001", Units = "cm/s"))
 	float StationarySpeedThreshold = 3.0f;
 
-	/** Normalized CMC analog-input magnitude above which movement intent is present. */
+	/**
+	 * Inclusive standing-ground CMC deadzone in normalized input units.
+	 * Input at or below this value is zeroed before ground physics and SavedMove recording.
+	 */
 	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Gait", meta = (ClampMin = "0.0", ClampMax = "1.0"))
 	float MoveIntentThreshold = 0.1f;
 
-	/** Prediction-safe normalized input boundary selecting Run rather than Walk. */
+	/** Normalized input at or above which Walk enters the predicted Run gait. */
 	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Gait", meta = (ClampMin = "0.0", ClampMax = "1.0"))
 	float RunInputThreshold = 0.65f;
+
+	/**
+	 * Normalized input below which the predicted Run gait exits to Walk.
+	 * Must not exceed RunInputThreshold; equal values preserve stateless legacy behavior.
+	 */
+	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Gait", meta = (ClampMin = "0.0", ClampMax = "1.0"))
+	float RunInputExitThreshold = 0.65f;
 };
 
 /** Value-only validation and gait resolution used by CMC runtime code and automation tests. */
@@ -129,14 +139,20 @@ namespace RpgCharacterMovementRuntime
 	/** Checks finite physical values, ordered directional speed bounds, and normalized gait thresholds. */
 	SURVIVALRPG_API bool IsProfileRuntimeValid(const FRpgCharacterMovementProfile& Profile);
 
-	/** Returns movement intent from the CMC analog-input snapshot using the active PawnData profile. */
+	/** Resolves normalized input after the profile's inclusive physical deadzone. */
+	SURVIVALRPG_API float ResolvePhysicalInputMagnitude(
+		float InputMagnitude,
+		const FRpgCharacterMovementProfile& Profile);
+
+	/** Returns movement intent from the deadzone-resolved CMC analog-input snapshot. */
 	SURVIVALRPG_API bool HasMoveIntent(
 		float InputMagnitude,
 		const FRpgCharacterMovementProfile& Profile);
 
-	/** Resolves stateless Idle/Walk/Run input intent on ground or in air; never infers Sprint. */
+	/** Resolves predicted Idle/Walk/Run input gait with opt-in Run hysteresis; never infers Sprint. */
 	SURVIVALRPG_API ERpgLocomotionGait ResolveDesiredGait(
 		float InputMagnitude,
+		ERpgLocomotionGait PreviousGait,
 		const FRpgCharacterMovementProfile& Profile);
 
 	/** Reproduces GASP's forward/side/back mapping from an absolute local movement angle. */
@@ -161,6 +177,7 @@ namespace RpgCharacterMovementRuntime
 		bool bIsMovingOnGround,
 		float GroundSpeed,
 		float InputMagnitude,
+		ERpgLocomotionGait DesiredGait,
 		ERpgLocomotionGait PreviousGait,
 		const FRpgCharacterMovementProfile& Profile);
 }

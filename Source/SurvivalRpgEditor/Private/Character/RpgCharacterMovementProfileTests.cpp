@@ -8,6 +8,8 @@
 
 #include "Components/SceneComponent.h"
 #include "Misc/AutomationTest.h"
+#include "Tests/AutomationCommon.h"
+#include "SurvivalRpg/Core/Character/RpgCharacter.h"
 #include "SurvivalRpg/Core/Character/RpgCharacterMovementComponent.h"
 #include "SurvivalRpg/Core/Character/RpgCharacterMovementProfile.h"
 
@@ -41,6 +43,7 @@ bool FRpgCharacterMovementProfileTest::RunTest(const FString& Parameters)
 	Profile.FreeRotationRateYaw = 360.0f;
 	Profile.MoveIntentThreshold = 0.1f;
 	Profile.RunInputThreshold = 0.7f;
+	Profile.RunInputExitThreshold = 0.65f;
 	TestTrue(
 		TEXT("The curated GASP-style profile is runtime-valid"),
 		RpgCharacterMovementRuntime::IsProfileRuntimeValid(Profile));
@@ -51,21 +54,24 @@ bool FRpgCharacterMovementProfileTest::RunTest(const FString& Parameters)
 		bool bMovingOnGround;
 		float GroundSpeed;
 		float InputMagnitude;
+		ERpgLocomotionGait DesiredGait;
 		ERpgLocomotionGait PreviousGait;
 		ERpgLocomotionGait ExpectedGait;
 	};
 	const FGaitCase GaitCases[] = {
-		{TEXT("Airborne movement has no grounded gait"), false, 300.0f, 1.0f, ERpgLocomotionGait::Run, ERpgLocomotionGait::Idle},
-		{TEXT("Stationary without intent is Idle"), true, 0.0f, 0.0f, ERpgLocomotionGait::Idle, ERpgLocomotionGait::Idle},
-		{TEXT("Low analog intent enters Walk"), true, 0.0f, 0.5f, ERpgLocomotionGait::Idle, ERpgLocomotionGait::Walk},
-		{TEXT("Walk remains below the Run-enter threshold"), true, 200.0f, 0.69f, ERpgLocomotionGait::Walk, ERpgLocomotionGait::Walk},
-		{TEXT("Walk enters Run at the inclusive upper threshold"), true, 200.0f, 0.7f, ERpgLocomotionGait::Walk, ERpgLocomotionGait::Run},
-		{TEXT("Run exits below the stateless GASP threshold"), true, 400.0f, 0.69f, ERpgLocomotionGait::Run, ERpgLocomotionGait::Walk},
-		{TEXT("Walk coast retains the stop database"), true, 100.0f, 0.0f, ERpgLocomotionGait::Walk, ERpgLocomotionGait::Walk},
-		{TEXT("Run coast retains the stop database"), true, 300.0f, 0.0f, ERpgLocomotionGait::Run, ERpgLocomotionGait::Run},
-		{TEXT("GASP late-join Walk coast seeds from replicated speed"), true, 150.0f, 0.0f, ERpgLocomotionGait::Idle, ERpgLocomotionGait::Walk},
-		{TEXT("Late-join moving state without gait history fails toward Run"), true, 300.0f, 0.0f, ERpgLocomotionGait::Idle, ERpgLocomotionGait::Run},
-		{TEXT("Physical stop clears the previous Run gait"), true, 2.0f, 0.0f, ERpgLocomotionGait::Run, ERpgLocomotionGait::Idle},
+		{TEXT("Airborne movement has no grounded gait"), false, 300.0f, 1.0f, ERpgLocomotionGait::Run, ERpgLocomotionGait::Run, ERpgLocomotionGait::Idle},
+		{TEXT("Stationary without intent is Idle"), true, 0.0f, 0.0f, ERpgLocomotionGait::Idle, ERpgLocomotionGait::Idle, ERpgLocomotionGait::Idle},
+		{TEXT("Low analog intent enters Walk"), true, 0.0f, 0.5f, ERpgLocomotionGait::Walk, ERpgLocomotionGait::Idle, ERpgLocomotionGait::Walk},
+		{TEXT("Walk remains below the Run-enter threshold"), true, 200.0f, 0.69f, ERpgLocomotionGait::Walk, ERpgLocomotionGait::Walk, ERpgLocomotionGait::Walk},
+		{TEXT("Walk enters Run at the inclusive upper threshold"), true, 200.0f, 0.7f, ERpgLocomotionGait::Run, ERpgLocomotionGait::Walk, ERpgLocomotionGait::Run},
+		{TEXT("Run remains inside the hysteresis band"), true, 400.0f, 0.69f, ERpgLocomotionGait::Run, ERpgLocomotionGait::Run, ERpgLocomotionGait::Run},
+		{TEXT("Run remains on the lower threshold"), true, 400.0f, 0.65f, ERpgLocomotionGait::Run, ERpgLocomotionGait::Run, ERpgLocomotionGait::Run},
+		{TEXT("Run exits below the lower threshold"), true, 400.0f, 0.64f, ERpgLocomotionGait::Walk, ERpgLocomotionGait::Run, ERpgLocomotionGait::Walk},
+		{TEXT("Walk coast retains the stop database"), true, 100.0f, 0.0f, ERpgLocomotionGait::Idle, ERpgLocomotionGait::Walk, ERpgLocomotionGait::Walk},
+		{TEXT("Run coast retains the stop database"), true, 300.0f, 0.0f, ERpgLocomotionGait::Idle, ERpgLocomotionGait::Run, ERpgLocomotionGait::Run},
+		{TEXT("GASP late-join Walk coast seeds from replicated speed"), true, 150.0f, 0.0f, ERpgLocomotionGait::Idle, ERpgLocomotionGait::Idle, ERpgLocomotionGait::Walk},
+		{TEXT("Late-join moving state without gait history fails toward Run"), true, 300.0f, 0.0f, ERpgLocomotionGait::Idle, ERpgLocomotionGait::Idle, ERpgLocomotionGait::Run},
+		{TEXT("Physical stop clears the previous Run gait"), true, 2.0f, 0.0f, ERpgLocomotionGait::Idle, ERpgLocomotionGait::Run, ERpgLocomotionGait::Idle},
 	};
 	for (const FGaitCase& GaitCase : GaitCases)
 	{
@@ -75,6 +81,7 @@ bool FRpgCharacterMovementProfileTest::RunTest(const FString& Parameters)
 				GaitCase.bMovingOnGround,
 				GaitCase.GroundSpeed,
 				GaitCase.InputMagnitude,
+				GaitCase.DesiredGait,
 				GaitCase.PreviousGait,
 				Profile),
 			GaitCase.ExpectedGait);
@@ -86,18 +93,76 @@ bool FRpgCharacterMovementProfileTest::RunTest(const FString& Parameters)
 	TestTrue(
 		TEXT("Input above the intent threshold has move intent"),
 		RpgCharacterMovementRuntime::HasMoveIntent(Profile.MoveIntentThreshold + 0.01f, Profile));
+	const float PhysicalInputCases[][2] = {
+		{0.0f, 0.0f},
+		{0.05f, 0.0f},
+		{0.1f, 0.0f},
+		{0.11f, 0.11f},
+		{0.25f, 0.25f},
+		{0.5f, 0.5f},
+	};
+	for (const auto& PhysicalInputCase : PhysicalInputCases)
+	{
+		TestTrue(
+			*FString::Printf(
+				TEXT("Physical input %.2f resolves to %.2f"),
+				PhysicalInputCase[0],
+				PhysicalInputCase[1]),
+			FMath::IsNearlyEqual(
+				RpgCharacterMovementRuntime::ResolvePhysicalInputMagnitude(
+					PhysicalInputCase[0],
+					Profile),
+				PhysicalInputCase[1]));
+	}
 
 	TestEqual(
-		TEXT("Sub-threshold input has a stateless Walk desired gait"),
-		RpgCharacterMovementRuntime::ResolveDesiredGait(0.69f, Profile),
+		TEXT("Walk remains below the Run-enter threshold"),
+		RpgCharacterMovementRuntime::ResolveDesiredGait(
+			0.69f,
+			ERpgLocomotionGait::Walk,
+			Profile),
 		ERpgLocomotionGait::Walk);
 	TestEqual(
-		TEXT("The inclusive threshold has a stateless Run desired gait"),
-		RpgCharacterMovementRuntime::ResolveDesiredGait(0.7f, Profile),
+		TEXT("The inclusive enter threshold selects Run"),
+		RpgCharacterMovementRuntime::ResolveDesiredGait(
+			0.7f,
+			ERpgLocomotionGait::Walk,
+			Profile),
 		ERpgLocomotionGait::Run);
+	TestEqual(
+		TEXT("Run remains latched just below its enter threshold"),
+		RpgCharacterMovementRuntime::ResolveDesiredGait(
+			0.69f,
+			ERpgLocomotionGait::Run,
+			Profile),
+		ERpgLocomotionGait::Run);
+	TestEqual(
+		TEXT("Run remains latched on its exit threshold"),
+		RpgCharacterMovementRuntime::ResolveDesiredGait(
+			0.65f,
+			ERpgLocomotionGait::Run,
+			Profile),
+		ERpgLocomotionGait::Run);
+	TestEqual(
+		TEXT("Run exits below its lower threshold"),
+		RpgCharacterMovementRuntime::ResolveDesiredGait(
+			0.64f,
+			ERpgLocomotionGait::Run,
+			Profile),
+		ERpgLocomotionGait::Walk);
+	TestEqual(
+		TEXT("Walk does not enter Run from inside the hysteresis band"),
+		RpgCharacterMovementRuntime::ResolveDesiredGait(
+			0.69f,
+			ERpgLocomotionGait::Walk,
+			Profile),
+		ERpgLocomotionGait::Walk);
 	TestTrue(
 		TEXT("The movement profile never infers Sprint"),
-		RpgCharacterMovementRuntime::ResolveDesiredGait(1.0f, Profile) !=
+		RpgCharacterMovementRuntime::ResolveDesiredGait(
+			1.0f,
+			ERpgLocomotionGait::Run,
+			Profile) !=
 			ERpgLocomotionGait::Sprint);
 	TestTrue(
 		TEXT("Any movement input selects GASP moving-input braking"),
@@ -176,6 +241,16 @@ bool FRpgCharacterMovementProfileTest::RunTest(const FString& Parameters)
 		TEXT("A Run threshold below the move-intent threshold is rejected"),
 		RpgCharacterMovementRuntime::IsProfileRuntimeValid(InvalidProfile));
 	InvalidProfile = Profile;
+	InvalidProfile.RunInputExitThreshold = Profile.MoveIntentThreshold;
+	TestFalse(
+		TEXT("The Run-exit threshold must remain above the physical deadzone"),
+		RpgCharacterMovementRuntime::IsProfileRuntimeValid(InvalidProfile));
+	InvalidProfile = Profile;
+	InvalidProfile.RunInputExitThreshold = Profile.RunInputThreshold + 0.01f;
+	TestFalse(
+		TEXT("The Run-exit threshold cannot exceed the Run-enter threshold"),
+		RpgCharacterMovementRuntime::IsProfileRuntimeValid(InvalidProfile));
+	InvalidProfile = Profile;
 	InvalidProfile.MinAnalogGroundSpeed = Profile.WalkSpeeds.Backward + 1.0f;
 	TestFalse(
 		TEXT("Minimum analog speed cannot exceed the ground-speed cap"),
@@ -249,7 +324,11 @@ bool FRpgCharacterMovementProfileTest::RunTest(const FString& Parameters)
 	MovementComponent->DesiredGait = ERpgLocomotionGait::Run;
 	MovementComponent->AnalogInputModifier = 0.69f;
 	TestTrue(
-		TEXT("Current analog input, not stale Run presentation state, owns the Walk cap"),
+		TEXT("The prediction-owned Run latch preserves the Run cap inside the hysteresis band"),
+		FMath::IsNearlyEqual(MovementComponent->GetMaxSpeed(), 500.0f));
+	MovementComponent->DesiredGait = ERpgLocomotionGait::Walk;
+	TestTrue(
+		TEXT("Walk does not enter Run from inside the hysteresis band"),
 		FMath::IsNearlyEqual(MovementComponent->GetMaxSpeed(), 200.0f));
 	TestTrue(
 		TEXT("Standing ground resolves the profile minimum analog speed"),
@@ -257,6 +336,32 @@ bool FRpgCharacterMovementProfileTest::RunTest(const FString& Parameters)
 	TestTrue(
 		TEXT("Standing ground resolves the profile acceleration"),
 		FMath::IsNearlyEqual(MovementComponent->GetMaxAcceleration(), 800.0f));
+	const float ScaledInputCases[][2] = {
+		{0.0f, 0.0f},
+		{0.05f, 0.0f},
+		{0.1f, 0.0f},
+		{0.10001f, 0.0f},
+		{0.1001f, 80.1f},
+		{0.11f, 88.0f},
+		{0.25f, 200.0f},
+		{0.5f, 400.0f},
+		{0.69999f, 560.0f},
+	};
+	for (const auto& ScaledInputCase : ScaledInputCases)
+	{
+		const FVector ScaledAcceleration =
+			MovementComponent->ScaleInputAcceleration(
+				FVector(ScaledInputCase[0], 0.0f, 0.0f));
+		TestTrue(
+			*FString::Printf(
+				TEXT("Standing input %.2f produces %.1f cm/s^2"),
+				ScaledInputCase[0],
+				ScaledInputCase[1]),
+			FMath::IsNearlyEqual(
+				ScaledAcceleration.Size(),
+				ScaledInputCase[1],
+				0.01f));
+	}
 	MovementComponent->Acceleration = FVector(1024.0f, 0.0f, 0.0f);
 	MovementComponent->AnalogInputModifier = 0.5f;
 	MovementComponent->CalcVelocity(
@@ -267,8 +372,51 @@ bool FRpgCharacterMovementProfileTest::RunTest(const FString& Parameters)
 	TestTrue(
 		TEXT("Same-tick landing or uncrouch rescales prior-mode acceleration from raw analog input"),
 		FMath::IsNearlyEqual(MovementComponent->Acceleration.Size(), 400.0f));
+	const float TransitionInputCases[][4] = {
+		{0.05f, 0.0f, 0.0f, 2000.0f},
+		{0.1f, 0.0f, 0.0f, 2000.0f},
+		{0.10001f, 0.0f, 0.0f, 2000.0f},
+		{0.1001f, 80.1f, 0.100125f, 500.0f},
+		{0.11f, 88.0f, 0.11f, 500.0f},
+		{0.69999f, 560.0f, 0.70f, 500.0f},
+	};
+	for (const auto& TransitionInputCase : TransitionInputCases)
+	{
+		MovementComponent->Velocity = FVector::ZeroVector;
+		MovementComponent->Acceleration = FVector(1024.0f, 0.0f, 0.0f);
+		MovementComponent->AnalogInputModifier = TransitionInputCase[0];
+		MovementComponent->CalcVelocity(
+			1.0f / 60.0f,
+			MovementComponent->GroundFriction,
+			false,
+			MovementComponent->BrakingDecelerationWalking);
+		TestTrue(
+			*FString::Printf(
+				TEXT("Same-tick standing transition canonicalizes %.2f input acceleration"),
+				TransitionInputCase[0]),
+			FMath::IsNearlyEqual(
+				MovementComponent->Acceleration.Size(),
+				TransitionInputCase[1],
+				0.01f));
+		TestTrue(
+			*FString::Printf(
+				TEXT("Same-tick standing transition canonicalizes %.2f analog input"),
+				TransitionInputCase[0]),
+			FMath::IsNearlyEqual(
+				MovementComponent->AnalogInputModifier,
+				TransitionInputCase[2],
+				0.0001f));
+		TestTrue(
+			*FString::Printf(
+				TEXT("Same-tick standing transition selects %.0f braking"),
+				TransitionInputCase[3]),
+			FMath::IsNearlyEqual(
+				MovementComponent->GetMaxBrakingDeceleration(),
+				TransitionInputCase[3]));
+	}
 	MovementComponent->DesiredGait = ERpgLocomotionGait::Walk;
 	MovementComponent->AnalogInputModifier = 0.70f;
+	MovementComponent->UpdatePredictedGaitFromInput(0.70f);
 	TestTrue(
 		TEXT("The inclusive threshold uses the Run cap on its first physical query"),
 		FMath::IsNearlyEqual(MovementComponent->GetMaxSpeed(), 500.0f));
@@ -287,6 +435,295 @@ bool FRpgCharacterMovementProfileTest::RunTest(const FString& Parameters)
 		TEXT("Falling preserves its movement-mode braking"),
 		FMath::IsNearlyEqual(MovementComponent->GetMaxBrakingDeceleration(), 321.0f));
 
+	return !HasAnyErrors();
+}
+
+IMPLEMENT_SIMPLE_AUTOMATION_TEST(
+	FRpgCharacterMovementSavedMoveTest,
+	"SurvivalRpg.Character.Movement.SavedMovePrediction",
+	EAutomationTestFlags::EditorContext |
+		EAutomationTestFlags::EngineFilter)
+
+bool FRpgCharacterMovementSavedMoveTest::RunTest(const FString& Parameters)
+{
+	FTestWorldWrapper WorldWrapper;
+	if (!TestTrue(
+		TEXT("A transient gameplay world can be created"),
+		WorldWrapper.CreateTestWorld(EWorldType::Game)))
+	{
+		WorldWrapper.ForwardErrorMessages(this);
+		return false;
+	}
+	if (!TestTrue(
+		TEXT("The transient gameplay world can begin play"),
+		WorldWrapper.BeginPlayInTestWorld()))
+	{
+		WorldWrapper.ForwardErrorMessages(this);
+		return false;
+	}
+
+	UWorld* World = WorldWrapper.GetTestWorld();
+	ARpgCharacter* Character = World
+		? World->SpawnActor<ARpgCharacter>()
+		: nullptr;
+	if (!TestNotNull(TEXT("An RPG character can be spawned"), Character))
+	{
+		return false;
+	}
+
+	URpgCharacterMovementComponent* MovementComponent =
+		Cast<URpgCharacterMovementComponent>(Character->GetCharacterMovement());
+	if (!TestNotNull(
+		TEXT("The RPG character owns the custom movement component"),
+		MovementComponent))
+	{
+		return false;
+	}
+
+	FRpgCharacterMovementProfile Profile;
+	Profile.bOverrideCharacterMovement = true;
+	Profile.WalkSpeeds = FRpgDirectionalGroundSpeeds(200.0f, 180.0f, 150.0f);
+	Profile.RunSpeeds = FRpgDirectionalGroundSpeeds(500.0f, 350.0f, 300.0f);
+	Profile.MinAnalogGroundSpeed = 150.0f;
+	Profile.MaxAcceleration = 800.0f;
+	Profile.GroundFriction = 0.0f;
+	Profile.BrakingFrictionFactor = 0.0f;
+	Profile.BrakingDecelerationWithInput = 500.0f;
+	Profile.BrakingDecelerationWithoutInput = 2000.0f;
+	Profile.MoveIntentThreshold = 0.1f;
+	Profile.RunInputThreshold = 0.7f;
+	Profile.RunInputExitThreshold = 0.65f;
+	if (!TestTrue(
+		TEXT("The saved-move fixture applies the active profile"),
+		MovementComponent->ApplyMovementProfile(Profile)))
+	{
+		return false;
+	}
+	MovementComponent->SetMovementMode(MOVE_Walking);
+	MovementComponent->DesiredGait = ERpgLocomotionGait::Run;
+	MovementComponent->Acceleration = FVector(560.0f, 0.0f, 0.0f);
+	MovementComponent->AnalogInputModifier = 0.70f;
+	Character->SetIsCrouched(true);
+	MovementComponent->RefreshLocomotionSnapshot();
+	TestEqual(
+		TEXT("Entering crouch preserves the gait magnitude scaled by the prior standing cap"),
+		MovementComponent->GetDesiredGait(),
+		ERpgLocomotionGait::Run);
+	const float CrouchedMaxAcceleration = MovementComponent->GetMaxAcceleration();
+	MovementComponent->DesiredGait = ERpgLocomotionGait::Walk;
+	MovementComponent->Acceleration = FVector(
+		0.40f * CrouchedMaxAcceleration,
+		0.0f,
+		0.0f);
+	MovementComponent->AnalogInputModifier = 0.40f;
+	Character->SetIsCrouched(false);
+	MovementComponent->RefreshLocomotionSnapshot();
+	TestEqual(
+		TEXT("Leaving crouch preserves the gait magnitude scaled by the prior crouch cap"),
+		MovementComponent->GetDesiredGait(),
+		ERpgLocomotionGait::Walk);
+	MovementComponent->Velocity = FVector(1000.0f, 0.0f, 0.0f);
+	MovementComponent->Acceleration = FVector(1024.0f, 0.0f, 0.0f);
+	MovementComponent->AnalogInputModifier = 0.10001f;
+	MovementComponent->CalcVelocity(
+		0.1f,
+		0.0f,
+		false,
+		Profile.BrakingDecelerationWithInput);
+	TestTrue(
+		TEXT("Same-tick deadzone uses release braking instead of the stale caller value"),
+		FMath::IsNearlyEqual(MovementComponent->Velocity.Size(), 800.0f, 0.1f));
+	MovementComponent->Velocity = FVector::ZeroVector;
+
+	FNetworkPredictionData_Client_RpgCharacter ClientData(*MovementComponent);
+	ClientData.CurrentTimeStamp = 1.0f;
+
+	auto RecordMove = [MovementComponent, Character, &ClientData](
+		FSavedMove_RpgCharacter& Move,
+		float InputMagnitude)
+	{
+		Move.Clear();
+		ClientData.CurrentTimeStamp += 1.0f / 60.0f;
+		const FVector Acceleration(
+			InputMagnitude * MovementComponent->GetMaxAcceleration(),
+			0.0f,
+			0.0f);
+		MovementComponent->AnalogInputModifier = InputMagnitude;
+		Move.SetMoveFor(
+			Character,
+			1.0f / 60.0f,
+			Acceleration,
+			ClientData);
+	};
+
+	MovementComponent->DesiredGait = ERpgLocomotionGait::Walk;
+	FSavedMove_RpgCharacter QuantizedEnterMove;
+	RecordMove(QuantizedEnterMove, 0.69999f);
+	TestTrue(
+		TEXT("Net-quantized input at the enter edge records Run"),
+		QuantizedEnterMove.bSavedRunGait);
+	TestTrue(
+		TEXT("The first quantized Run move captures the 500 cm/s cap"),
+		FMath::IsNearlyEqual(QuantizedEnterMove.MaxSpeed, 500.0f));
+	TestTrue(
+		TEXT("The Run move exports its custom compressed flag"),
+		(QuantizedEnterMove.GetCompressedFlags() &
+			FSavedMove_Character::FLAG_Custom_0) != 0);
+
+	FSavedMove_RpgCharacter HoldMove;
+	RecordMove(HoldMove, 0.69f);
+	TestTrue(
+		TEXT("Input inside the hysteresis band records the retained Run gait"),
+		HoldMove.bSavedRunGait);
+	TestTrue(
+		TEXT("The retained Run move captures the Run cap"),
+		FMath::IsNearlyEqual(HoldMove.MaxSpeed, 500.0f));
+
+	FSavedMove_RpgCharacter ExitMove;
+	RecordMove(ExitMove, 0.64f);
+	TestFalse(
+		TEXT("Input below the exit edge records Walk"),
+		ExitMove.bSavedRunGait);
+	TestTrue(
+		TEXT("The first Walk move after Run captures the 200 cm/s cap"),
+		FMath::IsNearlyEqual(ExitMove.MaxSpeed, 200.0f));
+
+	MovementComponent->DesiredGait = ERpgLocomotionGait::Idle;
+	FSavedMove_RpgCharacter QuantizedDeadzoneMove;
+	RecordMove(QuantizedDeadzoneMove, 0.10001f);
+	TestTrue(
+		TEXT("Input quantized onto the inclusive deadzone is zero before SavedMove storage"),
+		QuantizedDeadzoneMove.Acceleration.IsZero());
+	TestFalse(
+		TEXT("A deadzone move never records Run"),
+		QuantizedDeadzoneMove.bSavedRunGait);
+
+	FSavedMove_RpgCharacter AboveDeadzoneMove;
+	RecordMove(AboveDeadzoneMove, 0.1001f);
+	TestFalse(
+		TEXT("Input quantized just above the deadzone remains physically represented"),
+		AboveDeadzoneMove.Acceleration.IsZero());
+	TestTrue(
+		TEXT("Input just above the deadzone captures the Walk cap"),
+		FMath::IsNearlyEqual(AboveDeadzoneMove.MaxSpeed, 200.0f));
+
+	MovementComponent->DesiredGait = ERpgLocomotionGait::Walk;
+	HoldMove.PrepMoveFor(Character);
+	TestEqual(
+		TEXT("SavedMove replay restores the retained Run gait"),
+		MovementComponent->GetDesiredGait(),
+		ERpgLocomotionGait::Run);
+	MovementComponent->UpdateFromCompressedFlags(
+		FSavedMove_Character::FLAG_Custom_0);
+	TestEqual(
+		TEXT("Server compressed flags restore Run before movement"),
+		MovementComponent->GetDesiredGait(),
+		ERpgLocomotionGait::Run);
+	MovementComponent->UpdateFromCompressedFlags(0);
+	TestEqual(
+		TEXT("A move without the custom flag restores the non-Run state"),
+		MovementComponent->GetDesiredGait(),
+		ERpgLocomotionGait::Walk);
+
+	FSavedMovePtr RunCombineMove(new FSavedMove_RpgCharacter());
+	FSavedMovePtr WalkCombineMove(new FSavedMove_RpgCharacter());
+	auto* RunMove = static_cast<FSavedMove_RpgCharacter*>(RunCombineMove.Get());
+	auto* WalkMove = static_cast<FSavedMove_RpgCharacter*>(WalkCombineMove.Get());
+	RunMove->Clear();
+	WalkMove->Clear();
+	RunMove->bSavedRunGait = true;
+	WalkMove->bSavedRunGait = false;
+	RunMove->MaxSpeed = 300.0f;
+	WalkMove->MaxSpeed = 300.0f;
+	TestFalse(
+		TEXT("Move combining rejects different predicted gaits even with equal synthetic caps"),
+		RunMove->CanCombineWith(WalkCombineMove, Character, 1.0f));
+	WalkMove->bSavedRunGait = true;
+	TestTrue(
+		TEXT("Matching predicted gait does not independently block move combining"),
+		RunMove->CanCombineWith(WalkCombineMove, Character, 1.0f));
+
+	MovementComponent->ApplyMovementProfile(Profile);
+	MovementComponent->SetMovementMode(MOVE_Falling);
+	MovementComponent->DesiredGait = ERpgLocomotionGait::Walk;
+	const FVector RawFallingAcceleration(
+		0.69999f * MovementComponent->GetMaxAcceleration(),
+		0.0f,
+		0.0f);
+	FSavedMove_RpgCharacter FallingMove;
+	FallingMove.Clear();
+	ClientData.CurrentTimeStamp += 1.0f / 60.0f;
+	FallingMove.SetMoveFor(
+		Character,
+		1.0f / 60.0f,
+		RawFallingAcceleration,
+		ClientData);
+	TestTrue(
+		TEXT("Falling SavedMoves preserve UE's raw client-only combine magnitude"),
+		FMath::IsNearlyEqual(
+			FallingMove.AccelMag,
+			RawFallingAcceleration.Size(),
+			0.001f));
+	TestTrue(
+		TEXT("Falling gait still resolves from the network-canonical acceleration"),
+		FallingMove.bSavedRunGait);
+
+	FRpgCharacterMovementProfile PassiveProfile = Profile;
+	PassiveProfile.bOverrideCharacterMovement = false;
+	MovementComponent->ApplyMovementProfile(PassiveProfile);
+	MovementComponent->SetMovementMode(MOVE_Walking);
+	const FVector RawPrototypeAcceleration(123.456f, -78.901f, 0.0f);
+	FSavedMove_RpgCharacter PrototypeMove;
+	PrototypeMove.Clear();
+	ClientData.CurrentTimeStamp += 1.0f / 60.0f;
+	PrototypeMove.SetMoveFor(
+		Character,
+		1.0f / 60.0f,
+		RawPrototypeAcceleration,
+		ClientData);
+	TestTrue(
+		TEXT("Prototype SavedMoves preserve UE's raw client-only combine magnitude"),
+		FMath::IsNearlyEqual(
+			PrototypeMove.AccelMag,
+			RawPrototypeAcceleration.Size(),
+			0.001f));
+	TestTrue(
+		TEXT("Prototype SavedMoves preserve UE's raw client-only combine direction"),
+		PrototypeMove.AccelNormal.Equals(
+			RawPrototypeAcceleration.GetSafeNormal(),
+			0.0001f));
+	TestTrue(
+		TEXT("Prototype SavedMoves retain the engine's native transmitted quantization"),
+		PrototypeMove.Acceleration.Equals(
+			MovementComponent->RoundAcceleration(RawPrototypeAcceleration),
+			0.001f));
+	TestFalse(
+		TEXT("Prototype SavedMoves do not export the pilot Run flag"),
+		(PrototypeMove.GetCompressedFlags() &
+			FSavedMove_Character::FLAG_Custom_0) != 0);
+
+	FNetworkPredictionData_Client* PredictionData =
+		MovementComponent->GetPredictionData_Client();
+	auto* RpgPredictionData =
+		static_cast<FNetworkPredictionData_Client_RpgCharacter*>(PredictionData);
+	FSavedMovePtr AllocatedMove = RpgPredictionData
+		? RpgPredictionData->AllocateNewMove()
+		: nullptr;
+	TestTrue(
+		TEXT("The movement component allocates project SavedMoves"),
+		AllocatedMove.IsValid());
+	if (AllocatedMove.IsValid())
+	{
+		auto* AllocatedRpgMove =
+			static_cast<FSavedMove_RpgCharacter*>(AllocatedMove.Get());
+		AllocatedRpgMove->bSavedRunGait = true;
+		TestTrue(
+			TEXT("Allocated project moves expose the Run compressed flag"),
+			(AllocatedMove->GetCompressedFlags() &
+				FSavedMove_Character::FLAG_Custom_0) != 0);
+	}
+
+	WorldWrapper.ForwardErrorMessages(this);
 	return !HasAnyErrors();
 }
 

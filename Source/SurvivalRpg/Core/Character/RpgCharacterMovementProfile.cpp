@@ -25,6 +25,7 @@ bool RpgCharacterMovementRuntime::IsProfileRuntimeValid(
 		Profile.StationarySpeedThreshold,
 		Profile.MoveIntentThreshold,
 		Profile.RunInputThreshold,
+		Profile.RunInputExitThreshold,
 	};
 	for (const float Value : Values)
 	{
@@ -58,7 +59,8 @@ bool RpgCharacterMovementRuntime::IsProfileRuntimeValid(
 		(Profile.FreeRotationRateYaw == -1.0f || Profile.FreeRotationRateYaw > 0.0f) &&
 		Profile.StationarySpeedThreshold > 0.0f &&
 		Profile.MoveIntentThreshold >= 0.0f &&
-		Profile.MoveIntentThreshold < Profile.RunInputThreshold &&
+		Profile.MoveIntentThreshold < Profile.RunInputExitThreshold &&
+		Profile.RunInputExitThreshold <= Profile.RunInputThreshold &&
 		Profile.RunInputThreshold <= 1.0f;
 }
 
@@ -124,25 +126,49 @@ float RpgCharacterMovementRuntime::ResolveGroundBrakingDeceleration(
 		: Profile.BrakingDecelerationWithoutInput;
 }
 
+float RpgCharacterMovementRuntime::ResolvePhysicalInputMagnitude(
+	float InputMagnitude,
+	const FRpgCharacterMovementProfile& Profile)
+{
+	if (!IsProfileRuntimeValid(Profile) || !FMath::IsFinite(InputMagnitude))
+	{
+		return 0.0f;
+	}
+
+	const float SafeInputMagnitude = FMath::Clamp(InputMagnitude, 0.0f, 1.0f);
+	return SafeInputMagnitude > Profile.MoveIntentThreshold
+		? SafeInputMagnitude
+		: 0.0f;
+}
+
 bool RpgCharacterMovementRuntime::HasMoveIntent(
 	float InputMagnitude,
 	const FRpgCharacterMovementProfile& Profile)
 {
-	return IsProfileRuntimeValid(Profile) &&
-		FMath::IsFinite(InputMagnitude) &&
-		FMath::Clamp(InputMagnitude, 0.0f, 1.0f) > Profile.MoveIntentThreshold;
+	return ResolvePhysicalInputMagnitude(InputMagnitude, Profile) > 0.0f;
 }
 
 ERpgLocomotionGait RpgCharacterMovementRuntime::ResolveDesiredGait(
 	float InputMagnitude,
+	ERpgLocomotionGait PreviousGait,
 	const FRpgCharacterMovementProfile& Profile)
 {
-	if (!HasMoveIntent(InputMagnitude, Profile))
+	const float SafeInputMagnitude = ResolvePhysicalInputMagnitude(
+		InputMagnitude,
+		Profile);
+	if (SafeInputMagnitude <= 0.0f)
 	{
 		return ERpgLocomotionGait::Idle;
 	}
 
-	return FMath::Clamp(InputMagnitude, 0.0f, 1.0f) >= Profile.RunInputThreshold
+	if (Profile.bOverrideCharacterMovement &&
+		PreviousGait == ERpgLocomotionGait::Run &&
+		SafeInputMagnitude >= Profile.RunInputExitThreshold)
+	{
+		return ERpgLocomotionGait::Run;
+	}
+
+	return SafeInputMagnitude >= Profile.RunInputThreshold
 		? ERpgLocomotionGait::Run
 		: ERpgLocomotionGait::Walk;
 }
@@ -151,6 +177,7 @@ ERpgLocomotionGait RpgCharacterMovementRuntime::ResolveGroundGait(
 	bool bIsMovingOnGround,
 	float GroundSpeed,
 	float InputMagnitude,
+	ERpgLocomotionGait DesiredGait,
 	ERpgLocomotionGait PreviousGait,
 	const FRpgCharacterMovementProfile& Profile)
 {
@@ -172,7 +199,7 @@ ERpgLocomotionGait RpgCharacterMovementRuntime::ResolveGroundGait(
 
 	if (bHasMoveIntent)
 	{
-		return SafeInputMagnitude >= Profile.RunInputThreshold
+		return DesiredGait == ERpgLocomotionGait::Run
 			? ERpgLocomotionGait::Run
 			: ERpgLocomotionGait::Walk;
 	}

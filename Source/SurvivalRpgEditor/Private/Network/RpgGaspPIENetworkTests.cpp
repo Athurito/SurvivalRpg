@@ -50,7 +50,11 @@ namespace RpgGaspPIENetworkTests
 		FVector MovementInputDirection = FVector::ZeroVector;
 		float MovementInputScale = 0.0f;
 		float StableInputScale = -1.0f;
+		ERpgLocomotionGait StableInputGait = ERpgLocomotionGait::Idle;
 		double StableInputStartTime = 0.0;
+		float StableDeadzoneInputScale = -1.0f;
+		double PhysicalDeadzoneStableStartTime = -1.0;
+		FVector PhysicalDeadzoneAnchorLocation = FVector::ZeroVector;
 		double LastMovementInputDiagnosticTime = -1.0;
 		double LastLandingDiagnosticTime = -1.0;
 		FVector MovementStoppedAnchorLocation = FVector::ZeroVector;
@@ -416,7 +420,8 @@ namespace RpgGaspPIENetworkTests
 		FNetworkState& State,
 		const ENetRole ExpectedLocalRole,
 		const FVector& ExpectedDirection,
-		const float ExpectedScale)
+		const float ExpectedScale,
+		const ERpgLocomotionGait ExpectedGait)
 	{
 		ARpgCharacter* Character = FindCharacterByPlayerId(
 			State.World,
@@ -437,9 +442,6 @@ namespace RpgGaspPIENetworkTests
 		const FVector CurrentAcceleration = MovementComponent
 			? MovementComponent->GetCurrentAcceleration()
 			: FVector::ZeroVector;
-		const ERpgLocomotionGait ExpectedGait = ClampedScale >= 0.7f
-			? ERpgLocomotionGait::Run
-			: ERpgLocomotionGait::Walk;
 		const float ExpectedSpeedCap = ExpectedGait == ERpgLocomotionGait::Run
 			? 500.0f
 			: 200.0f;
@@ -556,14 +558,76 @@ namespace RpgGaspPIENetworkTests
 		}
 
 		if (!bMatches ||
-			!FMath::IsNearlyEqual(State.StableInputScale, ClampedScale, 0.001f))
+			!FMath::IsNearlyEqual(State.StableInputScale, ClampedScale, 0.001f) ||
+			State.StableInputGait != ExpectedGait)
 		{
 			State.StableInputScale = bMatches ? ClampedScale : -1.0f;
+			State.StableInputGait = bMatches
+				? ExpectedGait
+				: ERpgLocomotionGait::Idle;
 			State.StableInputStartTime = bMatches ? FPlatformTime::Seconds() : 0.0;
 			return false;
 		}
 
 		return Now - State.StableInputStartTime >= 0.2;
+	}
+
+	bool HasExpectedMovementInput(
+		FNetworkState& State,
+		const ENetRole ExpectedLocalRole,
+		const FVector& ExpectedDirection,
+		const float ExpectedScale)
+	{
+		const ERpgLocomotionGait ExpectedGait = ExpectedScale >= 0.7f
+			? ERpgLocomotionGait::Run
+			: ERpgLocomotionGait::Walk;
+		return HasExpectedMovementInput(
+			State,
+			ExpectedLocalRole,
+			ExpectedDirection,
+			ExpectedScale,
+			ExpectedGait);
+	}
+
+	bool HasStablePhysicalDeadzone(
+		FNetworkState& State,
+		const ENetRole ExpectedLocalRole,
+		const float ExpectedInputScale)
+	{
+		ARpgCharacter* Character = FindCharacterByPlayerId(
+			State.World,
+			State.SubjectPlayerId);
+		const float ClampedScale = FMath::Clamp(ExpectedInputScale, 0.0f, 1.0f);
+		const bool bMatches = Character &&
+			Character->GetLocalRole() == ExpectedLocalRole &&
+			HasStoppedAnimation(State);
+		const bool bSameInput = FMath::IsNearlyEqual(
+			State.StableDeadzoneInputScale,
+			ClampedScale,
+			0.001f);
+		if (!bMatches || !bSameInput)
+		{
+			State.StableDeadzoneInputScale = bMatches ? ClampedScale : -1.0f;
+			State.PhysicalDeadzoneStableStartTime = bMatches
+				? State.World->GetTimeSeconds()
+				: -1.0;
+			State.PhysicalDeadzoneAnchorLocation = bMatches
+				? Character->GetActorLocation()
+				: FVector::ZeroVector;
+			return false;
+		}
+
+		const double Now = State.World->GetTimeSeconds();
+		if (FVector::Dist2D(
+				State.PhysicalDeadzoneAnchorLocation,
+				Character->GetActorLocation()) > 2.0f)
+		{
+			State.PhysicalDeadzoneStableStartTime = Now;
+			State.PhysicalDeadzoneAnchorLocation = Character->GetActorLocation();
+			return false;
+		}
+
+		return Now - State.PhysicalDeadzoneStableStartTime >= 0.25;
 	}
 
 	bool ReadAnimationHistoryResetCount(
@@ -2204,6 +2268,767 @@ NETWORK_TEST_CLASS(GaspPilotPIE, "SurvivalRpg.Network")
 				})
 			.ThenClients(
 				TEXT("Cleanup client observers"),
+				[](FNetworkState& State)
+				{
+					StopMovementInput(State);
+					State.World->GetTimerManager().ClearTimer(State.ObservationTimer);
+				});
+	}
+
+	TEST_METHOD(AnalogGaitPredictionAndCorrection)
+	{
+		using namespace RpgGaspPIENetworkTests;
+
+		Network
+			.SpawnAndReplicate<
+				ARpgGaspNetworkFloorFixture,
+				&FNetworkState::Floor>(
+				NetworkTimeout())
+			.UntilServer(
+				TEXT("Pilot Experience loads on the listen server"),
+				[](FNetworkState& State)
+				{
+					return IsPilotExperienceReady(State, 1);
+				},
+				NetworkTimeout())
+			.UntilClients(
+				TEXT("Pilot Experience and GASP pawn load on the initial client"),
+				[](FNetworkState& State)
+				{
+					return IsPilotExperienceReady(State, 1) &&
+						IsPilotCharacterReady(FindLocalCharacter(State.World));
+				},
+				NetworkTimeout())
+			.ThenServer(
+				TEXT("Place the prediction-test pawns on separate floor lanes"),
+				[](FNetworkState& State)
+				{
+					int32 LaneIndex = 0;
+					for (TActorIterator<ARpgCharacter> It(State.World); It; ++It)
+					{
+						ARpgCharacter* Character = *It;
+						const FVector Location(
+							-800.0 + static_cast<double>(LaneIndex++) * 800.0,
+							0.0,
+							100.0);
+						Character->TeleportTo(Location, FRotator::ZeroRotator);
+						Character->GetCharacterMovement()->StopMovementImmediately();
+						Character->GetCharacterMovement()->SetMovementMode(MOVE_Walking);
+						Character->ForceNetUpdate();
+					}
+				})
+			.UntilClient(
+				TEXT("Initial client owns a grounded GASP pawn"),
+				0,
+				[](FNetworkState& State)
+				{
+					ARpgCharacter* Character = FindLocalCharacter(State.World);
+					return IsPilotCharacterReady(Character) &&
+						Character->GetLocalRole() == ROLE_AutonomousProxy &&
+						Character->GetCharacterMovement()->IsMovingOnGround();
+				},
+				NetworkTimeout())
+			.ThenClient(
+				TEXT("Capture the prediction-test subject identity"),
+				0,
+				[this](FNetworkState& State)
+				{
+					ARpgCharacter* Character = FindLocalCharacter(State.World);
+					ASSERT_THAT(IsNotNull(Character));
+					ASSERT_THAT(IsNotNull(Character->GetPlayerState()));
+					SubjectPlayerId = Character->GetPlayerState()->GetPlayerId();
+					ASSERT_THAT(IsTrue(SubjectPlayerId != INDEX_NONE));
+					State.SubjectPlayerId = SubjectPlayerId;
+				})
+			.ThenServer(
+				TEXT("Bind the prediction-test subject on authority"),
+				[this](FNetworkState& State)
+				{
+					State.SubjectPlayerId = SubjectPlayerId;
+				})
+			.ThenClientJoins(NetworkTimeout())
+			.UntilClient(
+				TEXT("Neutral late client receives the replicated collision floor"),
+				1,
+				[](FNetworkState& State)
+				{
+					return IsValid(State.Floor);
+				},
+				NetworkTimeout())
+			.UntilServer(
+				TEXT("Neutral late join establishes the second listen-server connection"),
+				[](FNetworkState& State)
+				{
+					return IsPilotExperienceReady(State, 2);
+				},
+				NetworkTimeout())
+			.UntilClient(
+				TEXT("Neutral late client loads the Pilot Experience and pawn"),
+				1,
+				[](FNetworkState& State)
+				{
+					return IsPilotExperienceReady(State, 2) &&
+						IsPilotCharacterReady(FindLocalCharacter(State.World));
+				},
+				NetworkTimeout())
+			.ThenClients(
+				TEXT("Bind the neutral subject in both client worlds"),
+				[this](FNetworkState& State)
+				{
+					State.SubjectPlayerId = SubjectPlayerId;
+				})
+			.UntilServer(
+				TEXT("Authority observes a physically stable neutral subject"),
+				[](FNetworkState& State)
+				{
+					return HasStablePhysicalDeadzone(State, ROLE_Authority, 0.0f);
+				},
+				NetworkTimeout())
+			.UntilClients(
+				TEXT("Owner and simulated proxy observe a stable neutral subject"),
+				[](FNetworkState& State)
+				{
+					return HasStablePhysicalDeadzone(
+						State,
+						State.ClientIndex == 0
+							? ROLE_AutonomousProxy
+							: ROLE_SimulatedProxy,
+						0.0f);
+				},
+				NetworkTimeout())
+			.ThenClient(
+				TEXT("Apply five-percent owner input inside the physical deadzone"),
+				0,
+				[](FNetworkState& State)
+				{
+					StartMovementInput(State, FVector::YAxisVector, 0.05f);
+				})
+			.UntilServer(
+				TEXT("Authority discards five-percent physical input"),
+				[](FNetworkState& State)
+				{
+					return HasStablePhysicalDeadzone(State, ROLE_Authority, 0.05f);
+				},
+				NetworkTimeout())
+			.UntilClients(
+				TEXT("Owner and simulated proxy remain still at five-percent input"),
+				[](FNetworkState& State)
+				{
+					return HasStablePhysicalDeadzone(
+						State,
+						State.ClientIndex == 0
+							? ROLE_AutonomousProxy
+							: ROLE_SimulatedProxy,
+						0.05f);
+				},
+				NetworkTimeout())
+			.ThenClient(
+				TEXT("Apply the inclusive ten-percent physical deadzone edge"),
+				0,
+				[](FNetworkState& State)
+				{
+					StartMovementInput(State, FVector::YAxisVector, 0.10f);
+				})
+			.UntilServer(
+				TEXT("Authority discards the inclusive deadzone edge"),
+				[](FNetworkState& State)
+				{
+					return HasStablePhysicalDeadzone(State, ROLE_Authority, 0.10f);
+				},
+				NetworkTimeout())
+			.UntilClients(
+				TEXT("Owner and simulated proxy remain still at the deadzone edge"),
+				[](FNetworkState& State)
+				{
+					return HasStablePhysicalDeadzone(
+						State,
+						State.ClientIndex == 0
+							? ROLE_AutonomousProxy
+							: ROLE_SimulatedProxy,
+						0.10f);
+				},
+				NetworkTimeout())
+			.ThenClient(
+				TEXT("Apply eleven-percent owner input above the physical deadzone"),
+				0,
+				[](FNetworkState& State)
+				{
+					StartMovementInput(State, FVector::YAxisVector, 0.11f);
+				})
+			.UntilServer(
+				TEXT("Authority preserves eleven-percent analog Walk input"),
+				[](FNetworkState& State)
+				{
+					return HasExpectedMovementInput(
+						State,
+						ROLE_Authority,
+						FVector::YAxisVector,
+						0.11f,
+						ERpgLocomotionGait::Walk);
+				},
+				NetworkTimeout())
+			.UntilClients(
+				TEXT("Owner and simulated proxy preserve eleven-percent Walk input"),
+				[](FNetworkState& State)
+				{
+					return HasExpectedMovementInput(
+						State,
+						State.ClientIndex == 0
+							? ROLE_AutonomousProxy
+							: ROLE_SimulatedProxy,
+						FVector::YAxisVector,
+						0.11f,
+						ERpgLocomotionGait::Walk);
+				},
+				NetworkTimeout())
+			.ThenClient(
+				TEXT("Raise owner input to twenty-five percent"),
+				0,
+				[](FNetworkState& State)
+				{
+					StartMovementInput(State, FVector::YAxisVector, 0.25f);
+				})
+			.UntilServer(
+				TEXT("Authority preserves twenty-five-percent analog Walk input"),
+				[](FNetworkState& State)
+				{
+					return HasExpectedMovementInput(
+						State,
+						ROLE_Authority,
+						FVector::YAxisVector,
+						0.25f,
+						ERpgLocomotionGait::Walk);
+				},
+				NetworkTimeout())
+			.UntilClients(
+				TEXT("Owner and simulated proxy preserve twenty-five-percent Walk input"),
+				[](FNetworkState& State)
+				{
+					return HasExpectedMovementInput(
+						State,
+						State.ClientIndex == 0
+							? ROLE_AutonomousProxy
+							: ROLE_SimulatedProxy,
+						FVector::YAxisVector,
+						0.25f,
+						ERpgLocomotionGait::Walk);
+				},
+				NetworkTimeout())
+			.ThenClient(
+				TEXT("Raise owner input to fifty percent"),
+				0,
+				[](FNetworkState& State)
+				{
+					StartMovementInput(State, FVector::YAxisVector, 0.50f);
+				})
+			.UntilServer(
+				TEXT("Authority preserves fifty-percent analog Walk input"),
+				[](FNetworkState& State)
+				{
+					return HasExpectedMovementInput(
+						State,
+						ROLE_Authority,
+						FVector::YAxisVector,
+						0.50f,
+						ERpgLocomotionGait::Walk);
+				},
+				NetworkTimeout())
+			.UntilClients(
+				TEXT("Owner and simulated proxy preserve fifty-percent Walk input"),
+				[](FNetworkState& State)
+				{
+					return HasExpectedMovementInput(
+						State,
+						State.ClientIndex == 0
+							? ROLE_AutonomousProxy
+							: ROLE_SimulatedProxy,
+						FVector::YAxisVector,
+						0.50f,
+						ERpgLocomotionGait::Walk);
+				},
+				NetworkTimeout())
+			.ThenClient(
+				TEXT("Stop before entering the Run hysteresis sequence"),
+				0,
+				[](FNetworkState& State)
+				{
+					StopMovementInput(State);
+				})
+			.UntilServer(
+				TEXT("Authority settles before Run hysteresis"),
+				[](FNetworkState& State)
+				{
+					return HasStoppedAnimation(State);
+				},
+				NetworkTimeout())
+			.UntilClients(
+				TEXT("Client views settle before Run hysteresis"),
+				[](FNetworkState& State)
+				{
+					return HasStoppedAnimation(State);
+				},
+				NetworkTimeout())
+			.ThenClient(
+				TEXT("Apply sixty-nine-percent input from Idle"),
+				0,
+				[](FNetworkState& State)
+				{
+					StartMovementInput(State, FVector::YAxisVector, 0.69f);
+				})
+			.UntilServer(
+				TEXT("Authority remains Walk below the Run-enter edge"),
+				[](FNetworkState& State)
+				{
+					return HasExpectedMovementInput(
+						State,
+						ROLE_Authority,
+						FVector::YAxisVector,
+						0.69f,
+						ERpgLocomotionGait::Walk);
+				},
+				NetworkTimeout())
+			.UntilClients(
+				TEXT("Owner and simulated proxy remain Walk below the enter edge"),
+				[](FNetworkState& State)
+				{
+					return HasExpectedMovementInput(
+						State,
+						State.ClientIndex == 0
+							? ROLE_AutonomousProxy
+							: ROLE_SimulatedProxy,
+						FVector::YAxisVector,
+						0.69f,
+						ERpgLocomotionGait::Walk);
+				},
+				NetworkTimeout())
+			.ThenClient(
+				TEXT("Meet the inclusive Run-enter edge"),
+				0,
+				[](FNetworkState& State)
+				{
+					StartMovementInput(State, FVector::YAxisVector, 0.70f);
+				})
+			.UntilServer(
+				TEXT("Authority enters Run at the inclusive upper edge"),
+				[](FNetworkState& State)
+				{
+					return HasExpectedMovementInput(
+						State,
+						ROLE_Authority,
+						FVector::YAxisVector,
+						0.70f,
+						ERpgLocomotionGait::Run);
+				},
+				NetworkTimeout())
+			.UntilClients(
+				TEXT("Owner and simulated proxy enter Run at the inclusive upper edge"),
+				[](FNetworkState& State)
+				{
+					return HasExpectedMovementInput(
+						State,
+						State.ClientIndex == 0
+							? ROLE_AutonomousProxy
+							: ROLE_SimulatedProxy,
+						FVector::YAxisVector,
+						0.70f,
+						ERpgLocomotionGait::Run);
+				},
+				NetworkTimeout())
+			.ThenClient(
+				TEXT("Return just below the Run-enter edge"),
+				0,
+				[](FNetworkState& State)
+				{
+					StartMovementInput(State, FVector::YAxisVector, 0.69f);
+				})
+			.UntilServer(
+				TEXT("Authority retains Run inside the hysteresis band"),
+				[](FNetworkState& State)
+				{
+					return HasExpectedMovementInput(
+						State,
+						ROLE_Authority,
+						FVector::YAxisVector,
+						0.69f,
+						ERpgLocomotionGait::Run);
+				},
+				NetworkTimeout())
+			.UntilClients(
+				TEXT("Owner and simulated proxy retain Run inside the band"),
+				[](FNetworkState& State)
+				{
+					return HasExpectedMovementInput(
+						State,
+						State.ClientIndex == 0
+							? ROLE_AutonomousProxy
+							: ROLE_SimulatedProxy,
+						FVector::YAxisVector,
+						0.69f,
+						ERpgLocomotionGait::Run);
+				},
+				NetworkTimeout())
+			.ThenClient(
+				TEXT("Cross the Run-enter edge a second time"),
+				0,
+				[](FNetworkState& State)
+				{
+					StartMovementInput(State, FVector::YAxisVector, 0.71f);
+				})
+			.UntilClients(
+				TEXT("Repeated upper-edge input remains Run on both clients"),
+				[](FNetworkState& State)
+				{
+					return HasExpectedMovementInput(
+						State,
+						State.ClientIndex == 0
+							? ROLE_AutonomousProxy
+							: ROLE_SimulatedProxy,
+						FVector::YAxisVector,
+						0.71f,
+						ERpgLocomotionGait::Run);
+				},
+				NetworkTimeout())
+			.UntilServer(
+				TEXT("Repeated upper-edge input remains Run on authority"),
+				[](FNetworkState& State)
+				{
+					return HasExpectedMovementInput(
+						State,
+						ROLE_Authority,
+						FVector::YAxisVector,
+						0.71f,
+						ERpgLocomotionGait::Run);
+				},
+				NetworkTimeout())
+			.ThenClient(
+				TEXT("Meet the inclusive Run-exit edge while Run is latched"),
+				0,
+				[](FNetworkState& State)
+				{
+					StartMovementInput(State, FVector::YAxisVector, 0.65f);
+				})
+			.UntilServer(
+				TEXT("Authority retains Run at the inclusive lower edge"),
+				[](FNetworkState& State)
+				{
+					return HasExpectedMovementInput(
+						State,
+						ROLE_Authority,
+						FVector::YAxisVector,
+						0.65f,
+						ERpgLocomotionGait::Run);
+				},
+				NetworkTimeout())
+			.UntilClients(
+				TEXT("Client views retain Run at the inclusive lower edge"),
+				[](FNetworkState& State)
+				{
+					return HasExpectedMovementInput(
+						State,
+						State.ClientIndex == 0
+							? ROLE_AutonomousProxy
+							: ROLE_SimulatedProxy,
+						FVector::YAxisVector,
+						0.65f,
+						ERpgLocomotionGait::Run);
+				},
+				NetworkTimeout())
+			.ThenClient(
+				TEXT("Drop below the Run-exit edge"),
+				0,
+				[](FNetworkState& State)
+				{
+					StartMovementInput(State, FVector::YAxisVector, 0.64f);
+				})
+			.UntilServer(
+				TEXT("Authority exits Run only below the lower edge"),
+				[](FNetworkState& State)
+				{
+					return HasExpectedMovementInput(
+						State,
+						ROLE_Authority,
+						FVector::YAxisVector,
+						0.64f,
+						ERpgLocomotionGait::Walk);
+				},
+				NetworkTimeout())
+			.UntilClients(
+				TEXT("Owner and simulated proxy exit Run below the lower edge"),
+				[](FNetworkState& State)
+				{
+					return HasExpectedMovementInput(
+						State,
+						State.ClientIndex == 0
+							? ROLE_AutonomousProxy
+							: ROLE_SimulatedProxy,
+						FVector::YAxisVector,
+						0.64f,
+						ERpgLocomotionGait::Walk);
+				},
+				NetworkTimeout())
+			.ThenClient(
+				TEXT("Return inside the band from Walk"),
+				0,
+				[](FNetworkState& State)
+				{
+					StartMovementInput(State, FVector::YAxisVector, 0.69f);
+				})
+			.UntilServer(
+				TEXT("Authority cannot re-enter Run from inside the band"),
+				[](FNetworkState& State)
+				{
+					return HasExpectedMovementInput(
+						State,
+						ROLE_Authority,
+						FVector::YAxisVector,
+						0.69f,
+						ERpgLocomotionGait::Walk);
+				},
+				NetworkTimeout())
+			.UntilClients(
+				TEXT("Client views cannot re-enter Run from inside the band"),
+				[](FNetworkState& State)
+				{
+					return HasExpectedMovementInput(
+						State,
+						State.ClientIndex == 0
+							? ROLE_AutonomousProxy
+							: ROLE_SimulatedProxy,
+						FVector::YAxisVector,
+						0.69f,
+						ERpgLocomotionGait::Walk);
+				},
+				NetworkTimeout())
+			.ThenClient(
+				TEXT("Re-enter Run before the correction replay"),
+				0,
+				[](FNetworkState& State)
+				{
+					StartMovementInput(State, FVector::YAxisVector, 0.71f);
+				})
+			.UntilServer(
+				TEXT("Authority re-enters Run before correction"),
+				[](FNetworkState& State)
+				{
+					return HasExpectedMovementInput(
+						State,
+						ROLE_Authority,
+						FVector::YAxisVector,
+						0.71f,
+						ERpgLocomotionGait::Run);
+				},
+				NetworkTimeout())
+			.UntilClients(
+				TEXT("Client views re-enter Run before correction"),
+				[](FNetworkState& State)
+				{
+					return HasExpectedMovementInput(
+						State,
+						State.ClientIndex == 0
+							? ROLE_AutonomousProxy
+							: ROLE_SimulatedProxy,
+						FVector::YAxisVector,
+						0.71f,
+						ERpgLocomotionGait::Run);
+				},
+				NetworkTimeout())
+			.ThenClient(
+				TEXT("Hold Run inside the band before correction"),
+				0,
+				[](FNetworkState& State)
+				{
+					StartMovementInput(State, FVector::YAxisVector, 0.69f);
+				})
+			.UntilServer(
+				TEXT("Authority holds the Run latch before correction"),
+				[](FNetworkState& State)
+				{
+					return HasExpectedMovementInput(
+						State,
+						ROLE_Authority,
+						FVector::YAxisVector,
+						0.69f,
+						ERpgLocomotionGait::Run);
+				},
+				NetworkTimeout())
+			.UntilClients(
+				TEXT("Client views hold the Run latch before correction"),
+				[](FNetworkState& State)
+				{
+					return HasExpectedMovementInput(
+						State,
+						State.ClientIndex == 0
+							? ROLE_AutonomousProxy
+							: ROLE_SimulatedProxy,
+						FVector::YAxisVector,
+						0.69f,
+						ERpgLocomotionGait::Run);
+				},
+				NetworkTimeout())
+			.ThenServer(
+				TEXT("Capture the authoritative lane and reset correction observations"),
+				[this](FNetworkState& State)
+				{
+					ARpgCharacter* Character = FindCharacterByPlayerId(
+						State.World,
+						State.SubjectPlayerId);
+					ASSERT_THAT(IsNotNull(Character));
+					if (Character)
+					{
+						AuthorityCorrectionBaseline = Character->GetActorLocation();
+					}
+					State.StableInputScale = -1.0f;
+					State.StableInputGait = ERpgLocomotionGait::Idle;
+					State.StableInputStartTime = 0.0;
+				})
+			.ThenClients(
+				TEXT("Reset client gait observations before correction replay"),
+				[](FNetworkState& State)
+				{
+					State.StableInputScale = -1.0f;
+					State.StableInputGait = ERpgLocomotionGait::Idle;
+					State.StableInputStartTime = 0.0;
+				})
+			.ThenClient(
+				TEXT("Create an owner-only divergence while Run is latched at sixty-nine percent"),
+				0,
+				[this](FNetworkState& State)
+				{
+					ARpgCharacter* Character = FindCharacterByPlayerId(
+						State.World,
+						State.SubjectPlayerId);
+					ASSERT_THAT(IsNotNull(Character));
+					if (Character)
+					{
+						Character->SetActorLocation(
+							Character->GetActorLocation() + FVector(100.0, 0.0, 0.0),
+							false,
+							nullptr,
+							ETeleportType::None);
+						ASSERT_THAT(IsTrue(FMath::Abs(
+							Character->GetActorLocation().X -
+								AuthorityCorrectionBaseline.X) > 60.0));
+					}
+				})
+			.ThenServer(
+				TEXT("Force an authoritative correction during the retained Run move"),
+				[this](FNetworkState& State)
+				{
+					ARpgCharacter* Character = FindCharacterByPlayerId(
+						State.World,
+						State.SubjectPlayerId);
+					URpgCharacterMovementComponent* MovementComponent = Character
+						? Cast<URpgCharacterMovementComponent>(Character->GetCharacterMovement())
+						: nullptr;
+					ASSERT_THAT(IsNotNull(MovementComponent));
+					if (MovementComponent)
+					{
+						FVector AuthoritativeLocation = Character->GetActorLocation();
+						AuthoritativeLocation.X = AuthorityCorrectionBaseline.X;
+						Character->SetActorLocation(
+							AuthoritativeLocation,
+							false,
+							nullptr,
+							ETeleportType::None);
+						FNetworkPredictionData_Server_Character* ServerPrediction =
+							MovementComponent->GetPredictionData_Server_Character();
+						ASSERT_THAT(IsNotNull(ServerPrediction));
+						if (ServerPrediction)
+						{
+							ServerPrediction->bForceClientUpdate = true;
+						}
+						MovementComponent->ForceReplicationUpdate();
+						MovementComponent->ForceClientAdjustment();
+					}
+				})
+			.UntilServer(
+				TEXT("Authority preserves retained Run gait through correction"),
+				[this](FNetworkState& State)
+				{
+					ARpgCharacter* Character = FindCharacterByPlayerId(
+						State.World,
+						State.SubjectPlayerId);
+					return Character &&
+						FMath::Abs(
+							Character->GetActorLocation().X -
+								AuthorityCorrectionBaseline.X) <= 10.0 &&
+						HasExpectedMovementInput(
+							State,
+							ROLE_Authority,
+							FVector::YAxisVector,
+							0.69f,
+							ERpgLocomotionGait::Run);
+				},
+				NetworkTimeout())
+			.UntilClient(
+				TEXT("Owner replay restores retained Run gait and authoritative lane"),
+				0,
+				[this](FNetworkState& State)
+				{
+					ARpgCharacter* Character = FindCharacterByPlayerId(
+						State.World,
+						State.SubjectPlayerId);
+					return Character &&
+						FMath::Abs(
+							Character->GetActorLocation().X -
+								AuthorityCorrectionBaseline.X) <= 10.0 &&
+						HasExpectedMovementInput(
+							State,
+							ROLE_AutonomousProxy,
+							FVector::YAxisVector,
+							0.69f,
+							ERpgLocomotionGait::Run);
+				},
+				NetworkTimeout())
+			.UntilClient(
+				TEXT("Simulated proxy remains converged with the retained Run gait"),
+				1,
+				[this](FNetworkState& State)
+				{
+					ARpgCharacter* Character = FindCharacterByPlayerId(
+						State.World,
+						State.SubjectPlayerId);
+					return Character &&
+						FMath::Abs(
+							Character->GetActorLocation().X -
+								AuthorityCorrectionBaseline.X) <= 10.0 &&
+						HasExpectedMovementInput(
+							State,
+							ROLE_SimulatedProxy,
+							FVector::YAxisVector,
+							0.69f,
+							ERpgLocomotionGait::Run);
+				},
+				NetworkTimeout())
+			.ThenClient(
+				TEXT("Stop prediction input after correction"),
+				0,
+				[](FNetworkState& State)
+				{
+					StopMovementInput(State);
+				})
+			.UntilServer(
+				TEXT("Authority settles after the analog prediction test"),
+				[](FNetworkState& State)
+				{
+					return HasStoppedAnimation(State);
+				},
+				NetworkTimeout())
+			.UntilClients(
+				TEXT("Client views settle after the analog prediction test"),
+				[](FNetworkState& State)
+				{
+					return HasStoppedAnimation(State);
+				},
+				NetworkTimeout())
+			.ThenServer(
+				TEXT("Cleanup prediction-test server timers"),
+				[](FNetworkState& State)
+				{
+					State.World->GetTimerManager().ClearTimer(State.ObservationTimer);
+				})
+			.ThenClients(
+				TEXT("Cleanup prediction-test client timers"),
 				[](FNetworkState& State)
 				{
 					StopMovementInput(State);

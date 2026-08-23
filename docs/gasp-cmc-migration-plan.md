@@ -26,6 +26,10 @@ The CMC AnimBP closure still pulls in experimental state-machine databases, larg
 - Snapshot character and movement state on the game thread through an AnimInstance proxy.
 - Consume only snapshot values during the worker-thread animation update.
 - Replicate compressed acceleration to simulated proxies so remote starts, stops, and pivots have the same inputs as the owning client.
+- For standing, uncrouched ground movement, resolve a physical deadzone of `<= 0.10` before physics and SavedMove capture; preserve every magnitude above it, including `0.11`, `0.25`, and `0.50`, without renormalization beyond CharacterMovement's native `NetQuantize10` precision.
+- Keep desired gait prediction-owned: enter Run at `>= 0.70`, retain it at `>= 0.65`, and exit only below `0.65`. Store that state in one SavedMove `Custom0` flag and restore it for authoritative server movement and client replay.
+- Let simulated proxies reconstruct the continuous gait state from replicated acceleration. Direct late join inside the `0.65`-to-`0.70` hysteresis band remains deferred to issue #101.
+- Preserve the legacy input response for crouching, falling, and custom movement modes.
 - Let a PawnData-selected movement profile own GASP-pilot Walk/Run caps, response values, and the CMC gait consumed by animation; legacy PawnData remains opt-out.
 - Reparent the current `ABP_Unarmed` to the RPG base without changing its pose graph.
 
@@ -58,9 +62,11 @@ The CMC AnimBP closure still pulls in experimental state-machine databases, larg
 
 - No runtime dependency on GASP's character Blueprint, Mover graph, traversal graph, generic retarget collection, or sample camera stack.
 - The AnimBP update path performs no character, component, ASC, or world queries on worker threads.
-- Simulated proxies receive acceleration needed for start, stop, and pivot selection, including after late join.
+- Simulated proxies reconstruct the continuous gait state from acceleration needed for start, stop, and pivot selection, including after a neutral late join; a proxy first observed directly inside the hysteresis band remains issue #101.
 - Existing GAS montages continue to use `DefaultSlot` and retain their gameplay notifies and root-motion behavior.
 - Walk/Run speed caps, response values, controlled Free yaw, and stable gait are selected by GASP PawnData and applied by CharacterMovement before animation consumes them.
-- The pilot keeps raw analog input as a documented variable-speed Walk/Run adaptation; fixed-speed Gamepad normalization and directional strafe caps require their own SavedMove contract.
+- Standing-ground input at or below `0.10` produces no physical movement; `0.11`, `0.25`, and `0.50` remain analog-scaled without renormalization beyond native movement-network precision, while crouching, falling, and custom movement retain their legacy response.
+- Run enters at input `>= 0.70`, remains selected at `>= 0.65`, and exits only below `0.65`; one SavedMove `Custom0` flag restores the prediction-owned gait on the server and during replay.
+- Fixed-speed gamepad normalization and directional strafe caps remain separate gameplay contracts.
 - `RpgPrototypeExperience` and `RpgGaspPilotExperience` remain independently selectable in the same build; neither path overwrites the other's PawnData or AnimBP.
 - The asset diff and Git LFS payload are reviewed before the curated animation slice is committed.
