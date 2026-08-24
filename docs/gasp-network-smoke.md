@@ -7,9 +7,17 @@ default PawnData or introducing an alternate gameplay/runtime owner.
 
 ## Automated acceptance
 
-Test:
+Primary test:
 
 `SurvivalRpg.Network.GaspPilotPIE.ReplicationLateJoinCorrectionAndDefaultSlotMontage`
+
+Focused issue #101 coast-gait test:
+
+`SurvivalRpg.Network.GaspPilotPIE.GroundCoastLateJoinAndRelevancyReturn`
+
+Focused issue #100 analog-gait regression:
+
+`SurvivalRpg.Network.GaspPilotPIE.AnalogGaitPredictionAndCorrection`
 
 Topology and network profile:
 
@@ -39,6 +47,11 @@ The test verifies:
 - local-owner and authoritative ASC montage starts through `DefaultSlot`
 - replicated simulated-proxy montage playback, AnimInstance montage gating, authoritative root
   motion, montage completion, and stable client convergence
+- Walk coast on Authority, AutonomousProxy, and a newly joined SimulatedProxy
+- Run coast below the 200 cm/s Walk cap on existing and newly joined proxies
+- an actual simulated-proxy relevancy loss, actor/channel teardown, recreated proxy on return, and
+  preservation of the authoritative Run coast classification
+- deterministic coast-gait clearing to Idle at physical stop on every role
 
 Run from PowerShell with a rendered RHI; `NullRHI` is intentionally not used for this PIE test:
 
@@ -60,20 +73,32 @@ Run from PowerShell with a rendered RHI; `NullRHI` is intentionally not used for
 Record the tested commit, UE version, test result, topology, network profile, report path, and log
 path in the PR or issue. `Saved` reports are local evidence and are not committed.
 
+Run the focused coast-gait contract with the same rendered-RHI options by substituting the test
+name above and using dedicated `Issue101Network` report/log paths. The test uses one initial client,
+late-joins two more clients during real CharacterMovement coast, and moves the first observer out
+of and back into network relevancy while another client remains near the subject.
+
 The test temporarily selects the pilot Experience and disables disk persistence on the concrete
 GameMode CDO. Both values are restored during teardown. The owner and authority start the same
 dynamic montage through their ASCs, but this is not a GameplayAbility activation or prediction
 confirmation test.
 
+The coast test applies a deterministic low release-deceleration value only to in-memory copies of
+the authority and owner movement profiles, then drives real CharacterMovement velocity. Teardown
+restores the exact captured movement profiles and actor cull distance; no PawnData, Experience, or
+other content asset is mutated or saved.
+
 ## Visual smoke boundary
 
 The automation proves real replication, analog movement intent, lifecycle state, movement-history
-reset plumbing, correction/teleport convergence, and montage/root-motion plumbing. It cannot judge
-rendered pose choice or presentation quality. A rendered manual pass should still inspect
+reset plumbing, correction/teleport convergence, montage/root-motion plumbing, Walk/Run coast
+initial replication, and the tested actor-channel relevancy-return path. It cannot judge rendered
+pose choice or presentation quality. A rendered manual pass should still inspect
 start/stop/pivot/TIR, crouch, jump/landing, Foot Placement on uneven ground, Aim/CombatStrafe facing,
 and correction for persistent mesh/capsule separation.
 
 This runbook does not claim gameplay-notify or attack-window reliability, ability costs/cooldowns,
 combos, equipment sockets, death/ragdoll presentation, packaged multi-process or Steam behavior,
-relevancy return, packet-loss handling, performance, memory, or the default PawnData cutover. Those
-remain in their dedicated multiplayer/combat/cutover issues.
+relevancy-return behavior outside the focused coast-gait contract, packet-loss handling,
+performance, memory, or the default PawnData cutover. Those remain in their dedicated
+multiplayer/combat/cutover issues.

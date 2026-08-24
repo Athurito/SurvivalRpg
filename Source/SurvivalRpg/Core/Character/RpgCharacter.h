@@ -7,6 +7,7 @@
 #include "ModularCharacter.h"
 #include "GameFramework/Character.h"
 #include "RpgDownedComponent.h"
+#include "RpgCharacterMovementProfile.h"
 #include "RpgCharacterRotationMode.h"
 #include "RpgCharacter.generated.h"
 
@@ -181,6 +182,20 @@ private:
 	UFUNCTION()
 	void OnRep_AnimationTeleportEpoch();
 
+	/**
+	 * Current authority-owned Walk/Run coast classification for simulated proxies.
+	 * Idle means no coast; this is semantic movement state, not replicated pose or AnimBP history.
+	 */
+	UPROPERTY(Transient, ReplicatedUsing = OnRep_GroundCoastGait)
+	ERpgLocomotionGait GroundCoastGait = ERpgLocomotionGait::Idle;
+
+	/** Applies the current coast classification to the local CharacterMovement resolver. */
+	UFUNCTION()
+	void OnRep_GroundCoastGait();
+
+	/** Updates the simulated-proxy coast contract on authority and forces its transition onto the actor channel. */
+	void SetAuthoritativeGroundCoastGait(ERpgLocomotionGait NewCoastGait);
+
 	/** ASC whose rotation request-tag delegates are currently registered. */
 	TWeakObjectPtr<URpgAbilitySystemComponent> RotationModeAbilitySystem;
 
@@ -190,6 +205,8 @@ private:
 	/** Last policy applied to CharacterMovement, used to detect Free-to-controller-facing transitions. */
 	ERpgCharacterRotationMode LastAppliedRotationMode = ERpgCharacterRotationMode::CombatStrafe;
 	bool bHasAppliedRotationPolicy = false;
+
+	friend class URpgCharacterMovementComponent;
 
 	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "Rpg|Character", Meta = (AllowPrivateAccess = "true"))
 	TObjectPtr<URpgPawnExtensionComponent> PawnExtensionComponent;

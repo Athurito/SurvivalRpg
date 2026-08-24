@@ -52,6 +52,16 @@ namespace RpgGaspPIENetworkTests
 		float StableInputScale = -1.0f;
 		ERpgLocomotionGait StableInputGait = ERpgLocomotionGait::Idle;
 		double StableInputStartTime = 0.0;
+		ERpgLocomotionGait StableCoastGait = ERpgLocomotionGait::Idle;
+		ENetRole StableCoastRole = ROLE_None;
+		bool bStableCoastBelowWalkCap = false;
+		double StableCoastStartTime = 0.0;
+		TWeakObjectPtr<ARpgCharacter> StableCoastSubject;
+		double LastCoastDiagnosticTime = -1.0;
+		FRpgCharacterMovementProfile BaselineCoastProfile;
+		bool bHasBaselineCoastProfile = false;
+		float BaselineSubjectNetCullDistanceSquared = 0.0f;
+		bool bHasBaselineSubjectNetCullDistanceSquared = false;
 		float StableDeadzoneInputScale = -1.0f;
 		double PhysicalDeadzoneStableStartTime = -1.0;
 		FVector PhysicalDeadzoneAnchorLocation = FVector::ZeroVector;
@@ -77,6 +87,7 @@ namespace RpgGaspPIENetworkTests
 		double TurnObservationBaselineYaw = 0.0;
 		bool bSawDefaultSlotMontage = false;
 		bool bSawMontageAnimGate = false;
+		TWeakObjectPtr<ARpgCharacter> SubjectBeforeRelevancyLoss;
 	};
 
 	TArray<FNetworkState*> ActiveTimerStates;
@@ -201,6 +212,28 @@ namespace RpgGaspPIENetworkTests
 		return true;
 	}
 
+	template <typename TValue>
+	bool ReadObjectProperty(
+		const UObject* Object,
+		const FName PropertyName,
+		TValue& OutValue)
+	{
+		if (!IsValid(Object))
+		{
+			return false;
+		}
+
+		FProperty* Property = FindFProperty<FProperty>(Object->GetClass(), PropertyName);
+		if (!Property || Property->GetSize() != sizeof(TValue))
+		{
+			return false;
+		}
+
+		const void* Source = Property->ContainerPtrToValuePtr<void>(Object);
+		Property->CopyCompleteValue(&OutValue, Source);
+		return true;
+	}
+
 	bool IsPilotExperienceReady(FNetworkState& State, const int32 ExpectedClients)
 	{
 		if (!IsValid(State.World))
@@ -320,6 +353,7 @@ namespace RpgGaspPIENetworkTests
 		float GroundSpeed = 0.0f;
 		bool bHasAcceleration = true;
 		ERpgLocomotionGait AnimGait = ERpgLocomotionGait::Run;
+		ERpgLocomotionGait CharacterCoastGait = ERpgLocomotionGait::Run;
 		const bool bHasNativeZeroSnapshot =
 			Character->GetLocalRole() != ROLE_SimulatedProxy ||
 			(Character->GetReplicatedMovement().bRepAcceleration &&
@@ -340,12 +374,19 @@ namespace RpgGaspPIENetworkTests
 				AnimInstance,
 				TEXT("LocomotionGait"),
 				AnimGait) &&
+			ReadObjectProperty(
+				Character,
+				TEXT("GroundCoastGait"),
+				CharacterCoastGait) &&
 			AnimGait == ERpgLocomotionGait::Idle &&
+			CharacterCoastGait == ERpgLocomotionGait::Idle &&
 			!bHasAcceleration && WorldAcceleration.Size2D() <= 5.0f &&
 			MovementComponent->GetCurrentAcceleration().Size2D() <= 5.0f &&
 			MovementComponent->GetAnalogInputModifier() <= 0.01f &&
 			MovementComponent->GetDesiredGait() == ERpgLocomotionGait::Idle &&
 			MovementComponent->GetGroundGait() == ERpgLocomotionGait::Idle &&
+			MovementComponent->GetReplicatedGroundCoastGait() ==
+				ERpgLocomotionGait::Idle &&
 			!MovementComponent->HasMoveIntent() &&
 			FMath::IsNearlyEqual(
 				MovementComponent->GetMaxBrakingDeceleration(),
@@ -587,6 +628,231 @@ namespace RpgGaspPIENetworkTests
 			ExpectedDirection,
 			ExpectedScale,
 			ExpectedGait);
+	}
+
+	bool ApplyDeterministicCoastProfile(
+		FNetworkState& State,
+		const float BrakingDecelerationWithoutInput)
+	{
+		ARpgCharacter* Character = FindCharacterByPlayerId(
+			State.World,
+			State.SubjectPlayerId);
+		URpgCharacterMovementComponent* MovementComponent = Character
+			? Cast<URpgCharacterMovementComponent>(Character->GetCharacterMovement())
+			: nullptr;
+		if (!MovementComponent ||
+			!FMath::IsFinite(BrakingDecelerationWithoutInput) ||
+			BrakingDecelerationWithoutInput < 1.0f)
+		{
+			return false;
+		}
+
+		FRpgCharacterMovementProfile TestProfile =
+			MovementComponent->GetMovementProfile();
+		if (!TestProfile.bOverrideCharacterMovement)
+		{
+			return false;
+		}
+
+		const bool bCapturedBaseline = !State.bHasBaselineCoastProfile;
+		if (bCapturedBaseline)
+		{
+			State.BaselineCoastProfile = TestProfile;
+			State.bHasBaselineCoastProfile = true;
+		}
+
+		TestProfile.bUseSeparateBrakingFriction = false;
+		TestProfile.BrakingFrictionFactor = 0.0f;
+		TestProfile.BrakingDecelerationWithoutInput =
+			BrakingDecelerationWithoutInput;
+		if (!MovementComponent->ApplyMovementProfile(TestProfile))
+		{
+			if (bCapturedBaseline)
+			{
+				State.bHasBaselineCoastProfile = false;
+			}
+			return false;
+		}
+		return true;
+	}
+
+	bool SetDeterministicCoastVelocity(
+		FNetworkState& State,
+		const float GroundSpeed,
+		const FVector& Direction = FVector::YAxisVector)
+	{
+		ARpgCharacter* Character = FindCharacterByPlayerId(
+			State.World,
+			State.SubjectPlayerId);
+		URpgCharacterMovementComponent* MovementComponent = Character
+			? Cast<URpgCharacterMovementComponent>(Character->GetCharacterMovement())
+			: nullptr;
+		if (!MovementComponent || !MovementComponent->IsMovingOnGround() ||
+			!FMath::IsFinite(GroundSpeed) || GroundSpeed <= 0.0f ||
+			Direction.IsNearlyZero())
+		{
+			return false;
+		}
+
+		MovementComponent->Velocity = Direction.GetSafeNormal2D() * GroundSpeed;
+		MovementComponent->UpdateComponentVelocity();
+		if (Character->HasAuthority())
+		{
+			MovementComponent->ForceReplicationUpdate();
+			Character->ForceNetUpdate();
+		}
+		return true;
+	}
+
+	bool RestorePilotProfileAndStop(FNetworkState& State)
+	{
+		ARpgCharacter* Character = FindCharacterByPlayerId(
+			State.World,
+			State.SubjectPlayerId);
+		URpgCharacterMovementComponent* MovementComponent = Character
+			? Cast<URpgCharacterMovementComponent>(Character->GetCharacterMovement())
+			: nullptr;
+		if (!MovementComponent || !State.bHasBaselineCoastProfile ||
+			!MovementComponent->ApplyMovementProfile(State.BaselineCoastProfile))
+		{
+			return false;
+		}
+		State.bHasBaselineCoastProfile = false;
+
+		MovementComponent->StopMovementImmediately();
+		MovementComponent->UpdateComponentVelocity();
+		if (Character->HasAuthority())
+		{
+			MovementComponent->ForceReplicationUpdate();
+			Character->ForceNetUpdate();
+		}
+		return true;
+	}
+
+	bool HasExpectedCoastGait(
+		FNetworkState& State,
+		const ENetRole ExpectedLocalRole,
+		const ERpgLocomotionGait ExpectedGait,
+		const bool bRequireBelowWalkCap)
+	{
+		ARpgCharacter* Character = FindCharacterByPlayerId(
+			State.World,
+			State.SubjectPlayerId);
+		URpgCharacterMovementComponent* MovementComponent = Character
+			? Cast<URpgCharacterMovementComponent>(Character->GetCharacterMovement())
+			: nullptr;
+		URpgAnimInstance* AnimInstance = GetPilotAnimInstance(Character);
+		ERpgLocomotionGait AnimGait = ERpgLocomotionGait::Idle;
+		ERpgLocomotionGait CharacterCoastGait = ERpgLocomotionGait::Idle;
+		const float GroundSpeed = Character
+			? Character->GetVelocity().Size2D()
+			: 0.0f;
+		const float WalkCap = MovementComponent
+			? MovementComponent->GetMovementProfile().WalkSpeeds.Forward
+			: 0.0f;
+		const ERpgLocomotionGait ExpectedCharacterCoastGait =
+			ExpectedLocalRole == ROLE_AutonomousProxy
+				? ERpgLocomotionGait::Idle
+				: ExpectedGait;
+		const ERpgLocomotionGait ExpectedMovementHint =
+			ExpectedLocalRole == ROLE_SimulatedProxy
+				? ExpectedGait
+				: ERpgLocomotionGait::Idle;
+		const FRepMovement* ReplicatedMovement = Character
+			? &Character->GetReplicatedMovement()
+			: nullptr;
+		const bool bHasNativeZeroSnapshot =
+			ExpectedLocalRole != ROLE_SimulatedProxy ||
+			(ReplicatedMovement &&
+			 ReplicatedMovement->bRepAcceleration &&
+			 ReplicatedMovement->Acceleration.Size2D() <= 5.0f);
+		const bool bReadAnimGait = ReadAnimProperty(
+			AnimInstance,
+			TEXT("LocomotionGait"),
+			AnimGait);
+		const bool bReadCharacterCoastGait = ReadObjectProperty(
+			Character,
+			TEXT("GroundCoastGait"),
+			CharacterCoastGait);
+		const bool bMatches = Character && MovementComponent && AnimInstance &&
+			Character->GetLocalRole() == ExpectedLocalRole &&
+			MovementComponent->IsMovingOnGround() &&
+			MovementComponent->GetMovementProfile().bOverrideCharacterMovement &&
+			GroundSpeed >= MovementComponent->GetMovementProfile().StationarySpeedThreshold &&
+			(!bRequireBelowWalkCap || GroundSpeed < WalkCap - 5.0f) &&
+			MovementComponent->GetCurrentAcceleration().Size2D() <= 5.0f &&
+			MovementComponent->GetAnalogInputModifier() <= 0.01f &&
+			MovementComponent->GetDesiredGait() == ERpgLocomotionGait::Idle &&
+			MovementComponent->GetGroundGait() == ExpectedGait &&
+			MovementComponent->GetReplicatedGroundCoastGait() ==
+				ExpectedMovementHint &&
+			!MovementComponent->HasMoveIntent() &&
+			bReadAnimGait && AnimGait == ExpectedGait &&
+			bReadCharacterCoastGait &&
+			CharacterCoastGait == ExpectedCharacterCoastGait &&
+			bHasNativeZeroSnapshot;
+
+		const double Now = FPlatformTime::Seconds();
+		if (!bMatches && Now - State.LastCoastDiagnosticTime >= 1.0)
+		{
+			State.LastCoastDiagnosticTime = Now;
+			UE_LOG(
+				LogTemp,
+				Display,
+				TEXT("GASP coast mismatch: expected role=%d gait=%d belowWalk=%d | character=%d role=%d speed=%.1f walkCap=%.1f move=%d ground=%d desired=%d intent=%d accel=%.1f analog=%.3f hint=%d transportRead=%d transport=%d animRead=%d anim=%d nativeZero=%d"),
+				static_cast<int32>(ExpectedLocalRole),
+				static_cast<int32>(ExpectedGait),
+				static_cast<int32>(bRequireBelowWalkCap),
+				static_cast<int32>(Character != nullptr),
+				Character ? static_cast<int32>(Character->GetLocalRole()) : -1,
+				static_cast<double>(GroundSpeed),
+				static_cast<double>(WalkCap),
+				static_cast<int32>(MovementComponent != nullptr),
+				MovementComponent ? static_cast<int32>(MovementComponent->GetGroundGait()) : -1,
+				MovementComponent ? static_cast<int32>(MovementComponent->GetDesiredGait()) : -1,
+				static_cast<int32>(MovementComponent ? MovementComponent->HasMoveIntent() : false),
+				static_cast<double>(MovementComponent ? MovementComponent->GetCurrentAcceleration().Size2D() : -1.0f),
+				static_cast<double>(MovementComponent ? MovementComponent->GetAnalogInputModifier() : -1.0f),
+				MovementComponent ? static_cast<int32>(MovementComponent->GetReplicatedGroundCoastGait()) : -1,
+				static_cast<int32>(bReadCharacterCoastGait),
+				static_cast<int32>(CharacterCoastGait),
+				static_cast<int32>(bReadAnimGait),
+				static_cast<int32>(AnimGait),
+				static_cast<int32>(bHasNativeZeroSnapshot));
+		}
+
+		if (!bMatches || State.StableCoastSubject.Get() != Character ||
+			State.StableCoastRole != ExpectedLocalRole ||
+			State.StableCoastGait != ExpectedGait ||
+			State.bStableCoastBelowWalkCap != bRequireBelowWalkCap)
+		{
+			State.StableCoastSubject = bMatches ? Character : nullptr;
+			State.StableCoastRole = bMatches ? ExpectedLocalRole : ROLE_None;
+			State.StableCoastGait = bMatches
+				? ExpectedGait
+				: ERpgLocomotionGait::Idle;
+			State.bStableCoastBelowWalkCap = bMatches && bRequireBelowWalkCap;
+			State.StableCoastStartTime = bMatches ? Now : 0.0;
+			return false;
+		}
+
+		return Now - State.StableCoastStartTime >= 0.2;
+	}
+
+	bool HasSubjectActorChannel(
+		FNetworkState& State,
+		const int32 ClientIndex,
+		const bool bExpectedOpen)
+	{
+		ARpgCharacter* Subject = FindCharacterByPlayerId(
+			State.World,
+			State.SubjectPlayerId);
+		UNetConnection* Connection = State.ClientConnections.IsValidIndex(ClientIndex)
+			? State.ClientConnections[ClientIndex]
+			: nullptr;
+		return Subject && IsValid(Connection) &&
+			Connection->ContainsActorChannel(TWeakObjectPtr<AActor>(Subject)) ==
+				bExpectedOpen;
 	}
 
 	bool HasStablePhysicalDeadzone(
@@ -2268,6 +2534,764 @@ NETWORK_TEST_CLASS(GaspPilotPIE, "SurvivalRpg.Network")
 				})
 			.ThenClients(
 				TEXT("Cleanup client observers"),
+				[](FNetworkState& State)
+				{
+					StopMovementInput(State);
+					State.World->GetTimerManager().ClearTimer(State.ObservationTimer);
+				});
+	}
+
+	TEST_METHOD(GroundCoastLateJoinAndRelevancyReturn)
+	{
+		using namespace RpgGaspPIENetworkTests;
+
+		Network
+			.SpawnAndReplicate<
+				ARpgGaspNetworkFloorFixture,
+				&FNetworkState::Floor>(
+				NetworkTimeout())
+			.UntilServer(
+				TEXT("Pilot Experience loads for the coast test on the listen server"),
+				[](FNetworkState& State)
+				{
+					return IsPilotExperienceReady(State, 1);
+				},
+				NetworkTimeout())
+			.UntilClients(
+				TEXT("Initial coast-test client loads the Pilot pawn"),
+				[](FNetworkState& State)
+				{
+					return IsPilotExperienceReady(State, 1) &&
+						IsPilotCharacterReady(FindLocalCharacter(State.World));
+				},
+				NetworkTimeout())
+			.ThenServer(
+				TEXT("Place the coast-test pawns on separate floor lanes"),
+				[](FNetworkState& State)
+				{
+					int32 LaneIndex = 0;
+					for (TActorIterator<ARpgCharacter> It(State.World); It; ++It)
+					{
+						ARpgCharacter* Character = *It;
+						const FVector Location(
+							-800.0 + static_cast<double>(LaneIndex++) * 800.0,
+							0.0,
+							100.0);
+						Character->TeleportTo(Location, FRotator::ZeroRotator);
+						Character->GetCharacterMovement()->StopMovementImmediately();
+						Character->GetCharacterMovement()->SetMovementMode(MOVE_Walking);
+						Character->ForceNetUpdate();
+					}
+				})
+			.UntilClient(
+				TEXT("Initial coast-test client owns a grounded GASP pawn"),
+				0,
+				[](FNetworkState& State)
+				{
+					ARpgCharacter* Character = FindLocalCharacter(State.World);
+					return IsPilotCharacterReady(Character) &&
+						Character->GetLocalRole() == ROLE_AutonomousProxy &&
+						Character->GetCharacterMovement()->IsMovingOnGround();
+				},
+				NetworkTimeout())
+			.ThenClient(
+				TEXT("Capture the coast-test subject identity"),
+				0,
+				[this](FNetworkState& State)
+				{
+					ARpgCharacter* Character = FindLocalCharacter(State.World);
+					ASSERT_THAT(IsNotNull(Character));
+					ASSERT_THAT(IsNotNull(Character->GetPlayerState()));
+					SubjectPlayerId = Character->GetPlayerState()->GetPlayerId();
+					ASSERT_THAT(IsTrue(SubjectPlayerId != INDEX_NONE));
+					State.SubjectPlayerId = SubjectPlayerId;
+				})
+			.ThenServer(
+				TEXT("Bind the coast-test subject on authority"),
+				[this](FNetworkState& State)
+				{
+					State.SubjectPlayerId = SubjectPlayerId;
+				})
+			.UntilServer(
+				TEXT("Authority starts the coast test from a stable stop"),
+				[](FNetworkState& State)
+				{
+					return HasStoppedAnimation(State);
+				},
+				NetworkTimeout())
+			.UntilClient(
+				TEXT("Owner starts the coast test from a stable stop"),
+				0,
+				[](FNetworkState& State)
+				{
+					return HasStoppedAnimation(State);
+				},
+				NetworkTimeout())
+			.ThenClient(
+				TEXT("Establish Walk before the first late join"),
+				0,
+				[](FNetworkState& State)
+				{
+					StartMovementInput(State, FVector::YAxisVector, 0.50f);
+				})
+			.UntilServer(
+				TEXT("Authority establishes Walk before the first late join"),
+				[](FNetworkState& State)
+				{
+					return HasExpectedMovementInput(
+						State,
+						ROLE_Authority,
+						FVector::YAxisVector,
+						0.50f,
+						ERpgLocomotionGait::Walk);
+				},
+				NetworkTimeout())
+			.UntilClient(
+				TEXT("Owner establishes Walk before the first late join"),
+				0,
+				[](FNetworkState& State)
+				{
+					return HasExpectedMovementInput(
+						State,
+						ROLE_AutonomousProxy,
+						FVector::YAxisVector,
+						0.50f,
+						ERpgLocomotionGait::Walk);
+				},
+				NetworkTimeout())
+			.ThenServer(
+				TEXT("Apply the deterministic Walk-coast window on authority"),
+				[this](FNetworkState& State)
+				{
+					ASSERT_THAT(IsTrue(ApplyDeterministicCoastProfile(State, 1.0f)));
+				})
+			.ThenClient(
+				TEXT("Apply the deterministic Walk-coast window on the owner"),
+				0,
+				[this](FNetworkState& State)
+				{
+					ASSERT_THAT(IsTrue(ApplyDeterministicCoastProfile(State, 1.0f)));
+				})
+			.UntilServer(
+				TEXT("Authority re-establishes Walk after the test-profile copy"),
+				[](FNetworkState& State)
+				{
+					return HasExpectedMovementInput(
+						State,
+						ROLE_Authority,
+						FVector::YAxisVector,
+						0.50f,
+						ERpgLocomotionGait::Walk);
+				},
+				NetworkTimeout())
+			.UntilClient(
+				TEXT("Owner re-establishes Walk after the test-profile copy"),
+				0,
+				[](FNetworkState& State)
+				{
+					return HasExpectedMovementInput(
+						State,
+						ROLE_AutonomousProxy,
+						FVector::YAxisVector,
+						0.50f,
+						ERpgLocomotionGait::Walk);
+				},
+				NetworkTimeout())
+			.ThenClient(
+				TEXT("Release Walk input for the late-join coast"),
+				0,
+				[](FNetworkState& State)
+				{
+					StopMovementInput(State);
+				})
+			.UntilServer(
+				TEXT("Authority enters a real no-input Walk coast"),
+				[](FNetworkState& State)
+				{
+					return HasExpectedCoastGait(
+						State,
+						ROLE_Authority,
+						ERpgLocomotionGait::Walk,
+						false);
+				},
+				NetworkTimeout())
+			.UntilClient(
+				TEXT("Owner enters the same no-input Walk coast"),
+				0,
+				[](FNetworkState& State)
+				{
+					return HasExpectedCoastGait(
+						State,
+						ROLE_AutonomousProxy,
+						ERpgLocomotionGait::Walk,
+						false);
+				},
+				NetworkTimeout())
+			.ThenServer(
+				TEXT("Set a deterministic physical Walk-coast speed on authority"),
+				[this](FNetworkState& State)
+				{
+					ASSERT_THAT(IsTrue(SetDeterministicCoastVelocity(State, 140.0f)));
+				})
+			.ThenClient(
+				TEXT("Set the matching physical Walk-coast speed on the owner"),
+				0,
+				[this](FNetworkState& State)
+				{
+					ASSERT_THAT(IsTrue(SetDeterministicCoastVelocity(State, 140.0f)));
+				})
+			.UntilServer(
+				TEXT("Authority holds Walk coast below its forward cap"),
+				[](FNetworkState& State)
+				{
+					return HasExpectedCoastGait(
+						State,
+						ROLE_Authority,
+						ERpgLocomotionGait::Walk,
+						true);
+				},
+				NetworkTimeout())
+			.UntilClient(
+				TEXT("Owner holds Walk coast below its forward cap"),
+				0,
+				[](FNetworkState& State)
+				{
+					return HasExpectedCoastGait(
+						State,
+						ROLE_AutonomousProxy,
+						ERpgLocomotionGait::Walk,
+						true);
+				},
+				NetworkTimeout())
+			.ThenClientJoins(NetworkTimeout())
+			.UntilServer(
+				TEXT("Walk-coast late join establishes the second connection"),
+				[](FNetworkState& State)
+				{
+					return IsPilotExperienceReady(State, 2);
+				},
+				NetworkTimeout())
+			.UntilClient(
+				TEXT("Walk-coast late client loads the Pilot Experience"),
+				1,
+				[](FNetworkState& State)
+				{
+					if (!IsValid(State.Floor))
+					{
+						for (TActorIterator<ARpgGaspNetworkFloorFixture> It(State.World);
+							It; ++It)
+						{
+							State.Floor = *It;
+							break;
+						}
+					}
+					ARpgCharacter* LocalCharacter = FindLocalCharacter(State.World);
+					return IsPilotExperienceReady(State, 2) &&
+						IsValid(State.Floor) &&
+						IsPilotCharacterReady(LocalCharacter) &&
+						LocalCharacter->GetCharacterMovement()->IsMovingOnGround();
+				},
+				NetworkTimeout())
+			.ThenClients(
+				TEXT("Bind the Walk-coast subject in both client worlds"),
+				[this](FNetworkState& State)
+				{
+					State.SubjectPlayerId = SubjectPlayerId;
+				})
+			.UntilServer(
+				TEXT("Authority remains in Walk coast during late join"),
+				[](FNetworkState& State)
+				{
+					return HasExpectedCoastGait(
+						State,
+						ROLE_Authority,
+						ERpgLocomotionGait::Walk,
+						true);
+				},
+				NetworkTimeout())
+			.UntilClient(
+				TEXT("Owner remains in Walk coast during late join"),
+				0,
+				[](FNetworkState& State)
+				{
+					return HasExpectedCoastGait(
+						State,
+						ROLE_AutonomousProxy,
+						ERpgLocomotionGait::Walk,
+						true);
+				},
+				NetworkTimeout())
+			.UntilClient(
+				TEXT("New simulated proxy reconstructs Walk from its initial coast snapshot"),
+				1,
+				[](FNetworkState& State)
+				{
+					return HasExpectedCoastGait(
+						State,
+						ROLE_SimulatedProxy,
+						ERpgLocomotionGait::Walk,
+						true);
+				},
+				NetworkTimeout())
+			.ThenServer(
+				TEXT("Restore normal braking and stop after the Walk late join"),
+				[this](FNetworkState& State)
+				{
+					ASSERT_THAT(IsTrue(RestorePilotProfileAndStop(State)));
+				})
+			.ThenClient(
+				TEXT("Restore normal owner braking after the Walk late join"),
+				0,
+				[this](FNetworkState& State)
+				{
+					ASSERT_THAT(IsTrue(RestorePilotProfileAndStop(State)));
+				})
+			.UntilServer(
+				TEXT("Authority clears Walk coast at physical stop"),
+				[](FNetworkState& State)
+				{
+					return HasStoppedAnimation(State);
+				},
+				NetworkTimeout())
+			.UntilClients(
+				TEXT("Owner and late proxy clear Walk coast at physical stop"),
+				[](FNetworkState& State)
+				{
+					return HasStoppedAnimation(State);
+				},
+				NetworkTimeout())
+			.ThenClient(
+				TEXT("Establish Run before the second late join"),
+				0,
+				[](FNetworkState& State)
+				{
+					StartMovementInput(State, FVector::YAxisVector, 1.0f);
+				})
+			.UntilServer(
+				TEXT("Authority establishes Run before the second late join"),
+				[](FNetworkState& State)
+				{
+					return HasExpectedMovementInput(
+						State,
+						ROLE_Authority,
+						FVector::YAxisVector,
+						1.0f,
+						ERpgLocomotionGait::Run);
+				},
+				NetworkTimeout())
+			.UntilClients(
+				TEXT("Owner and existing simulated proxy establish Run"),
+				[](FNetworkState& State)
+				{
+					return HasExpectedMovementInput(
+						State,
+						State.ClientIndex == 0
+							? ROLE_AutonomousProxy
+							: ROLE_SimulatedProxy,
+						FVector::YAxisVector,
+						1.0f,
+						ERpgLocomotionGait::Run);
+				},
+				NetworkTimeout())
+			.ThenServer(
+				TEXT("Apply the deterministic Run-coast window on authority"),
+				[this](FNetworkState& State)
+				{
+					ASSERT_THAT(IsTrue(ApplyDeterministicCoastProfile(State, 1.0f)));
+				})
+			.ThenClient(
+				TEXT("Apply the deterministic Run-coast window on the owner"),
+				0,
+				[this](FNetworkState& State)
+				{
+					ASSERT_THAT(IsTrue(ApplyDeterministicCoastProfile(State, 1.0f)));
+				})
+			.UntilServer(
+				TEXT("Authority re-establishes Run after the test-profile copy"),
+				[](FNetworkState& State)
+				{
+					return HasExpectedMovementInput(
+						State,
+						ROLE_Authority,
+						FVector::YAxisVector,
+						1.0f,
+						ERpgLocomotionGait::Run);
+				},
+				NetworkTimeout())
+			.UntilClients(
+				TEXT("Owner and simulated proxy re-establish Run"),
+				[](FNetworkState& State)
+				{
+					return HasExpectedMovementInput(
+						State,
+						State.ClientIndex == 0
+							? ROLE_AutonomousProxy
+							: ROLE_SimulatedProxy,
+						FVector::YAxisVector,
+						1.0f,
+						ERpgLocomotionGait::Run);
+				},
+				NetworkTimeout())
+			.ThenClient(
+				TEXT("Release Run input for the late-join coast"),
+				0,
+				[](FNetworkState& State)
+				{
+					StopMovementInput(State);
+				})
+			.UntilServer(
+				TEXT("Authority enters a real no-input Run coast"),
+				[](FNetworkState& State)
+				{
+					return HasExpectedCoastGait(
+						State,
+						ROLE_Authority,
+						ERpgLocomotionGait::Run,
+						false);
+				},
+				NetworkTimeout())
+			.UntilClient(
+				TEXT("Owner enters the same no-input Run coast"),
+				0,
+				[](FNetworkState& State)
+				{
+					return HasExpectedCoastGait(
+						State,
+						ROLE_AutonomousProxy,
+						ERpgLocomotionGait::Run,
+						false);
+				},
+				NetworkTimeout())
+			.ThenServer(
+				TEXT("Set Run coast below the Walk cap on authority"),
+				[this](FNetworkState& State)
+				{
+					ASSERT_THAT(IsTrue(SetDeterministicCoastVelocity(State, 180.0f)));
+				})
+			.ThenClient(
+				TEXT("Set matching Run coast below the Walk cap on the owner"),
+				0,
+				[this](FNetworkState& State)
+				{
+					ASSERT_THAT(IsTrue(SetDeterministicCoastVelocity(State, 180.0f)));
+				})
+			.UntilServer(
+				TEXT("Authority retains Run below the Walk cap"),
+				[](FNetworkState& State)
+				{
+					return HasExpectedCoastGait(
+						State,
+						ROLE_Authority,
+						ERpgLocomotionGait::Run,
+						true);
+				},
+				NetworkTimeout())
+			.UntilClients(
+				TEXT("Owner and existing proxy retain Run below the Walk cap"),
+				[](FNetworkState& State)
+				{
+					return HasExpectedCoastGait(
+						State,
+						State.ClientIndex == 0
+							? ROLE_AutonomousProxy
+							: ROLE_SimulatedProxy,
+						ERpgLocomotionGait::Run,
+						true);
+				},
+				NetworkTimeout())
+			.ThenClientJoins(NetworkTimeout())
+			.UntilServer(
+				TEXT("Run-coast late join establishes the third connection"),
+				[](FNetworkState& State)
+				{
+					return IsPilotExperienceReady(State, 3);
+				},
+				NetworkTimeout())
+			.UntilClient(
+				TEXT("Run-coast late client loads the Pilot Experience"),
+				2,
+				[](FNetworkState& State)
+				{
+					if (!IsValid(State.Floor))
+					{
+						for (TActorIterator<ARpgGaspNetworkFloorFixture> It(State.World);
+							It; ++It)
+						{
+							State.Floor = *It;
+							break;
+						}
+					}
+					ARpgCharacter* LocalCharacter = FindLocalCharacter(State.World);
+					return IsPilotExperienceReady(State, 3) &&
+						IsValid(State.Floor) &&
+						IsPilotCharacterReady(LocalCharacter) &&
+						LocalCharacter->GetCharacterMovement()->IsMovingOnGround();
+				},
+				NetworkTimeout())
+			.ThenClients(
+				TEXT("Bind the Run-coast subject in every client world"),
+				[this](FNetworkState& State)
+				{
+					State.SubjectPlayerId = SubjectPlayerId;
+				})
+			.UntilServer(
+				TEXT("Authority remains in sub-Walk-cap Run coast"),
+				[](FNetworkState& State)
+				{
+					return HasExpectedCoastGait(
+						State,
+						ROLE_Authority,
+						ERpgLocomotionGait::Run,
+						true);
+				},
+				NetworkTimeout())
+			.UntilClient(
+				TEXT("Owner remains in sub-Walk-cap Run coast"),
+				0,
+				[](FNetworkState& State)
+				{
+					return HasExpectedCoastGait(
+						State,
+						ROLE_AutonomousProxy,
+						ERpgLocomotionGait::Run,
+						true);
+				},
+				NetworkTimeout())
+			.UntilClient(
+				TEXT("Existing proxy retains Run through the second late join"),
+				1,
+				[](FNetworkState& State)
+				{
+					return HasExpectedCoastGait(
+						State,
+						ROLE_SimulatedProxy,
+						ERpgLocomotionGait::Run,
+						true);
+				},
+				NetworkTimeout())
+			.UntilClient(
+				TEXT("New proxy reconstructs Run below the Walk cap from its initial snapshot"),
+				2,
+				[](FNetworkState& State)
+				{
+					return HasExpectedCoastGait(
+						State,
+						ROLE_SimulatedProxy,
+						ERpgLocomotionGait::Run,
+						true);
+				},
+				NetworkTimeout())
+			.ThenClient(
+				TEXT("Remember the existing proxy before relevancy loss"),
+				1,
+				[this](FNetworkState& State)
+				{
+					State.SubjectBeforeRelevancyLoss = FindCharacterByPlayerId(
+						State.World,
+						State.SubjectPlayerId);
+					ASSERT_THAT(IsTrue(State.SubjectBeforeRelevancyLoss.IsValid()));
+				})
+			.ThenServer(
+				TEXT("Move one observer outside the subject relevancy radius"),
+				[this](FNetworkState& State)
+				{
+					ARpgCharacter* Subject = FindCharacterByPlayerId(
+						State.World,
+						State.SubjectPlayerId);
+					ASSERT_THAT(IsNotNull(Subject));
+					ASSERT_THAT(IsTrue(State.ClientConnections.IsValidIndex(2)));
+					ASSERT_THAT(IsTrue(State.ClientConnections.IsValidIndex(1)));
+					APlayerController* ControlController =
+						State.ClientConnections[2]->PlayerController;
+					APlayerController* RelevancyController =
+						State.ClientConnections[1]->PlayerController;
+					APawn* ControlPawn = ControlController
+						? ControlController->GetPawn()
+						: nullptr;
+					APawn* RelevancyPawn = RelevancyController
+						? RelevancyController->GetPawn()
+						: nullptr;
+					ASSERT_THAT(IsNotNull(ControlPawn));
+					ASSERT_THAT(IsNotNull(RelevancyPawn));
+					if (Subject && ControlPawn && RelevancyPawn)
+					{
+						State.BaselineSubjectNetCullDistanceSquared =
+							Subject->GetNetCullDistanceSquared();
+						State.bHasBaselineSubjectNetCullDistanceSquared = true;
+						Subject->SetNetCullDistanceSquared(FMath::Square(25000.0f));
+						ASSERT_THAT(IsTrue(ControlPawn->TeleportTo(
+							Subject->GetActorLocation() + FVector(1000.0, 0.0, 0.0),
+							FRotator::ZeroRotator)));
+						ASSERT_THAT(IsTrue(RelevancyPawn->TeleportTo(
+							Subject->GetActorLocation() + FVector(60000.0, 0.0, 0.0),
+							FRotator::ZeroRotator)));
+						ControlPawn->GetMovementComponent()->StopMovementImmediately();
+						RelevancyPawn->GetMovementComponent()->StopMovementImmediately();
+						Subject->ForceNetUpdate();
+					}
+				})
+			.UntilServer(
+				TEXT("Observer actor channel closes outside relevancy"),
+				[](FNetworkState& State)
+				{
+					return HasSubjectActorChannel(State, 1, false) &&
+						HasSubjectActorChannel(State, 2, true);
+				},
+				NetworkTimeout())
+			.UntilClient(
+				TEXT("Observer destroys the old subject proxy outside relevancy"),
+				1,
+				[](FNetworkState& State)
+				{
+					return !State.SubjectBeforeRelevancyLoss.IsValid() &&
+						FindCharacterByPlayerId(
+							State.World,
+							State.SubjectPlayerId) == nullptr;
+				},
+				NetworkTimeout())
+			.UntilClient(
+				TEXT("Control proxy remains in Run coast while the observer is irrelevant"),
+				2,
+				[](FNetworkState& State)
+				{
+					return HasExpectedCoastGait(
+						State,
+						ROLE_SimulatedProxy,
+						ERpgLocomotionGait::Run,
+						true);
+				},
+				NetworkTimeout())
+			.ThenServer(
+				TEXT("Return the observer inside subject relevancy"),
+				[this](FNetworkState& State)
+				{
+					ARpgCharacter* Subject = FindCharacterByPlayerId(
+						State.World,
+						State.SubjectPlayerId);
+					APlayerController* RelevancyController =
+						State.ClientConnections.IsValidIndex(1)
+							? State.ClientConnections[1]->PlayerController
+							: nullptr;
+					APawn* RelevancyPawn = RelevancyController
+						? RelevancyController->GetPawn()
+						: nullptr;
+					ASSERT_THAT(IsNotNull(Subject));
+					ASSERT_THAT(IsNotNull(RelevancyPawn));
+					if (Subject && RelevancyPawn)
+					{
+						ASSERT_THAT(IsTrue(RelevancyPawn->TeleportTo(
+							Subject->GetActorLocation() + FVector(500.0, 0.0, 0.0),
+							FRotator::ZeroRotator)));
+						RelevancyPawn->GetMovementComponent()->StopMovementImmediately();
+						Subject->ForceNetUpdate();
+					}
+				})
+			.UntilServer(
+				TEXT("Observer actor channel reopens after relevancy return"),
+				[](FNetworkState& State)
+				{
+					return HasSubjectActorChannel(State, 1, true);
+				},
+				NetworkTimeout())
+			.UntilClient(
+				TEXT("Recreated proxy reconstructs Run coast after relevancy return"),
+				1,
+				[](FNetworkState& State)
+				{
+					ARpgCharacter* RecreatedSubject = FindCharacterByPlayerId(
+						State.World,
+						State.SubjectPlayerId);
+					return RecreatedSubject &&
+						RecreatedSubject != State.SubjectBeforeRelevancyLoss.Get() &&
+						HasExpectedCoastGait(
+							State,
+							ROLE_SimulatedProxy,
+							ERpgLocomotionGait::Run,
+							true);
+				},
+				NetworkTimeout())
+			.UntilServer(
+				TEXT("Authority stays in Run coast through relevancy return"),
+				[](FNetworkState& State)
+				{
+					return HasExpectedCoastGait(
+						State,
+						ROLE_Authority,
+						ERpgLocomotionGait::Run,
+						true);
+				},
+				NetworkTimeout())
+			.UntilClient(
+				TEXT("Owner stays in Run coast through relevancy return"),
+				0,
+				[](FNetworkState& State)
+				{
+					return HasExpectedCoastGait(
+						State,
+						ROLE_AutonomousProxy,
+						ERpgLocomotionGait::Run,
+						true);
+				},
+				NetworkTimeout())
+			.UntilClient(
+				TEXT("Control proxy stays in Run coast through relevancy return"),
+				2,
+				[](FNetworkState& State)
+				{
+					return HasExpectedCoastGait(
+						State,
+						ROLE_SimulatedProxy,
+						ERpgLocomotionGait::Run,
+						true);
+				},
+				NetworkTimeout())
+			.ThenServer(
+				TEXT("Restore normal relevancy and braking after Run coast"),
+				[this](FNetworkState& State)
+				{
+					ARpgCharacter* Subject = FindCharacterByPlayerId(
+						State.World,
+						State.SubjectPlayerId);
+					ASSERT_THAT(IsNotNull(Subject));
+					ASSERT_THAT(IsTrue(
+						State.bHasBaselineSubjectNetCullDistanceSquared));
+					if (Subject)
+					{
+						Subject->SetNetCullDistanceSquared(
+							State.BaselineSubjectNetCullDistanceSquared);
+						State.bHasBaselineSubjectNetCullDistanceSquared = false;
+					}
+					ASSERT_THAT(IsTrue(RestorePilotProfileAndStop(State)));
+				})
+			.ThenClient(
+				TEXT("Restore normal owner braking after Run coast"),
+				0,
+				[this](FNetworkState& State)
+				{
+					ASSERT_THAT(IsTrue(RestorePilotProfileAndStop(State)));
+				})
+			.UntilServer(
+				TEXT("Authority clears Run coast at physical stop"),
+				[](FNetworkState& State)
+				{
+					return HasStoppedAnimation(State);
+				},
+				NetworkTimeout())
+			.UntilClients(
+				TEXT("Every client clears Run coast and replicated hints at stop"),
+				[](FNetworkState& State)
+				{
+					return HasStoppedAnimation(State);
+				},
+				NetworkTimeout())
+			.ThenServer(
+				TEXT("Cleanup coast-test server timers"),
+				[](FNetworkState& State)
+				{
+					State.World->GetTimerManager().ClearTimer(State.ObservationTimer);
+				})
+			.ThenClients(
+				TEXT("Cleanup coast-test client timers"),
 				[](FNetworkState& State)
 				{
 					StopMovementInput(State);

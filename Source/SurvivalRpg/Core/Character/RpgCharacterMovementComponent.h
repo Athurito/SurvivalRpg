@@ -74,7 +74,14 @@ public:
 	/** Applies the server's semantic teleport edge on a simulated proxy. */
 	void NotifyReplicatedAnimationTeleport();
 
+	/** Stores the authority's current Walk/Run coast classification for late join and relevancy return. */
+	void NotifyReplicatedGroundCoastGait(ERpgLocomotionGait NewCoastGait);
+
+	/** Returns the local simulated-proxy coast hint; Idle means no authority coast is active. */
+	ERpgLocomotionGait GetReplicatedGroundCoastGait() const { return ReplicatedGroundCoastGait; }
+
 	//~UMovementComponent interface
+	virtual void StopMovementImmediately() override;
 	virtual void OnTeleported() override;
 	//~End of UMovementComponent interface
 
@@ -98,6 +105,9 @@ protected:
 		float Friction,
 		bool bFluid,
 		float BrakingDeceleration) override;
+	virtual void OnMovementModeChanged(
+		EMovementMode PreviousMovementMode,
+		uint8 PreviousCustomMode) override;
 	virtual void UpdateCharacterStateBeforeMovement(float DeltaSeconds) override;
 	virtual void OnMovementUpdated(
 		float DeltaSeconds,
@@ -127,6 +137,9 @@ protected:
 	/** Rebuilds the value-only move-intent and gait snapshot after CharacterMovement updates. */
 	void RefreshLocomotionSnapshot();
 
+	/** Clears local ground presentation and the authority transport without discarding a received proxy hint. */
+	void ClearGroundCoastState();
+
 	/** Restores the physical Run latch encoded by a server move or client replay. */
 	void RestorePredictedGaitFromSavedMove(bool bSavedRunGait);
 
@@ -153,6 +166,9 @@ protected:
 
 	/** Current deadzone-resolved physical CMC input used by the GASP braking contract. */
 	bool bHasMovementInput = false;
+
+	/** Simulated-proxy-only semantic coast hint received from the authoritative character. */
+	ERpgLocomotionGait ReplicatedGroundCoastGait = ERpgLocomotionGait::Idle;
 
 	// Cached ground info for the character.  Do not access this directly!  It's only updated when accessed via GetGroundInfo().
 	FRpgCharacterGroundInfo CachedGroundInfo;

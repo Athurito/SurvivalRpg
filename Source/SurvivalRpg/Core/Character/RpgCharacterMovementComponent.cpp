@@ -8,6 +8,7 @@
 #include "Components/CapsuleComponent.h"
 #include "NativeGameplayTags.h"
 #include "GameFramework/Character.h"
+#include "RpgCharacter.h"
 
 
 UE_DEFINE_GAMEPLAY_TAG(TAG_Gameplay_MovementStopped, "Gameplay.MovementStopped");
@@ -313,6 +314,17 @@ void URpgCharacterMovementComponent::UpdateCharacterStateBeforeMovement(float De
 	RefreshLocomotionSnapshot();
 }
 
+void URpgCharacterMovementComponent::OnMovementModeChanged(
+	EMovementMode PreviousMovementMode,
+	uint8 PreviousCustomMode)
+{
+	Super::OnMovementModeChanged(PreviousMovementMode, PreviousCustomMode);
+	if (!UsesStandingGroundMovementProfile())
+	{
+		ClearGroundCoastState();
+	}
+}
+
 void URpgCharacterMovementComponent::OnMovementUpdated(
 	float DeltaSeconds,
 	const FVector& OldLocation,
@@ -375,7 +387,24 @@ void URpgCharacterMovementComponent::RefreshLocomotionSnapshot()
 		PhysicalInputMagnitude,
 		DesiredGait,
 		GroundGait,
+		CharacterOwner && CharacterOwner->GetLocalRole() == ROLE_SimulatedProxy
+			? ReplicatedGroundCoastGait
+			: ERpgLocomotionGait::Idle,
 		MovementProfile);
+
+	if (ARpgCharacter* RpgCharacter = Cast<ARpgCharacter>(CharacterOwner);
+		RpgCharacter && RpgCharacter->HasAuthority())
+	{
+		const ERpgLocomotionGait AuthoritativeCoastGait =
+			MovementProfile.bOverrideCharacterMovement &&
+			UsesStandingGroundMovementProfile() &&
+			!bHasMoveIntent &&
+			(GroundGait == ERpgLocomotionGait::Walk ||
+			 GroundGait == ERpgLocomotionGait::Run)
+				? GroundGait
+				: ERpgLocomotionGait::Idle;
+		RpgCharacter->SetAuthoritativeGroundCoastGait(AuthoritativeCoastGait);
+	}
 }
 
 void URpgCharacterMovementComponent::OnTeleported()
@@ -384,9 +413,36 @@ void URpgCharacterMovementComponent::OnTeleported()
 	MarkAnimationDiscontinuity();
 }
 
+void URpgCharacterMovementComponent::StopMovementImmediately()
+{
+	Super::StopMovementImmediately();
+	ClearGroundCoastState();
+}
+
+void URpgCharacterMovementComponent::ClearGroundCoastState()
+{
+	GroundGait = ERpgLocomotionGait::Idle;
+	if (ARpgCharacter* RpgCharacter = Cast<ARpgCharacter>(CharacterOwner);
+		RpgCharacter && RpgCharacter->HasAuthority())
+	{
+		RpgCharacter->SetAuthoritativeGroundCoastGait(
+			ERpgLocomotionGait::Idle);
+	}
+}
+
 void URpgCharacterMovementComponent::NotifyReplicatedAnimationTeleport()
 {
 	MarkAnimationDiscontinuity();
+}
+
+void URpgCharacterMovementComponent::NotifyReplicatedGroundCoastGait(
+	ERpgLocomotionGait NewCoastGait)
+{
+	ReplicatedGroundCoastGait =
+		NewCoastGait == ERpgLocomotionGait::Walk ||
+		NewCoastGait == ERpgLocomotionGait::Run
+			? NewCoastGait
+			: ERpgLocomotionGait::Idle;
 }
 
 void URpgCharacterMovementComponent::OnClientCorrectionReceived(

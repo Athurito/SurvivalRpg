@@ -25,6 +25,7 @@ the sample project a runtime dependency.
 | --- | --- | --- | --- |
 | `Update_PropertiesFromCharacter`, `Update_EssentialValues` | `InitializeWithAbilitySystem` for the ASC/tag map; `FRpgAnimInstanceProxy::PreUpdate` for the value snapshot | Existing ASC lifecycle plus proxy snapshot boundary | ASC delegates are initialized on the game thread. `PreUpdate` copies mirrored tag booleans and reads CharacterMovement/world state; no sample character hierarchy is imported. |
 | Character acceleration replication and analog trajectory intent | `ARpgCharacter::ShouldReplicateAcceleration`, UE 5.8 `FRepMovement`, and base `UCharacterMovementComponent::UpdateProxyAcceleration` | The same character-scoped engine path | The project opts only RPG characters into UE 5.8's native acceleration payload. Simulated proxies reconstruct both acceleration and `AnalogInputModifier`; there is no parallel custom acceleration property and no project-wide CVar override. |
+| Walk/Run prediction and inputless coast reconstruction | `URpgCharacterMovementComponent` `DesiredGait`/`GroundGait`, SavedMove `Custom0`, and `ARpgCharacter::GroundCoastGait` | CharacterMovement truth plus a narrow character replication bridge | Authority/autonomous prediction remains SavedMove-owned. Simulated proxies use replicated acceleration while input is active and the simulated-only semantic coast enum only while input is zero. Idle clears at physical stop; no pose, Pose History, Motion Matching, or AnimBP state replicates. |
 | Network correction and semantic-teleport presentation resets | `URpgCharacterMovementComponent` local discontinuity serial, `ARpgCharacter` teleport epoch, and proxy `PreUpdate` | Existing Character/CharacterMovement authority plus one local presentation edge | Autonomous corrections compare the server location with the saved client location at the same acknowledged timestamp. Ordinary simulated-proxy smoothing never resets history; only semantic teleports or corrections beyond UE's no-smoothing range do. The AnimInstance no longer treats transient `bJustTeleported` as a durable network event. |
 | `Update_Trajectory` | Proxy `PreUpdate` orchestrates `PoseSearchGenerateTransformTrajectory`; `RpgPoseSearchTrajectory` owns its sampling constants and validation/correction helpers | Same split: proxy owns generation and snapshot lifetime; focused native helper owns the sampling/correction mechanism | Controller-yaw extrapolation is disabled for the controller-facing project character; raw history stays separate from worker-facing corrected output. |
 | `HandleTransformTrajectoryWorldCollisions` | `RpgPoseSearchTrajectory::ResolveWorldCollision` | Focused game-thread trajectory helper | Uses bounded sphere sweeps, CharacterMovement walkability, explicit validity, floor projection, and a pointer-free landing prediction. It never changes movement or touchdown authority. |
@@ -260,3 +261,25 @@ families, Sprint authority, combat polish, and default PawnData cutover are sepa
   selection, warping, IK quality, gameplay-notify behavior, packaged multi-process networking,
   combat/death/ragdoll behavior, performance, and default cutover remain separate gates. See
   [the network smoke runbook](../../../docs/gasp-network-smoke.md).
+
+## Issue #101 coast-gait replication boundary
+
+- **Authoritative truth:** CharacterMovement resolves Walk/Run from prediction-owned intent while
+  input is active. During inputless physical coast, `ARpgCharacter` stores only the authority's
+  current `Idle/Walk/Run` coast classification.
+- **Replication:** `GroundCoastGait` uses `COND_SimulatedOnly` plus RepNotify. The movement component
+  consumes Walk/Run only for an active standing-ground GASP profile with zero move intent; stop,
+  non-ground movement, and profile opt-out resolve and replicate Idle.
+- **Lifecycle:** a newly created or newly relevant proxy consumes the current coast classification
+  before local history or residual-speed fallback, so Run remains Run below the Walk cap. The hint
+  survives PawnData/profile application ordering and clears deterministically at physical stop.
+- **Presentation boundary:** no AnimBP, Pose Search, Motion Matching, SavedMove, montage, or movement
+  history is replicated. `URpgAnimInstance` continues to consume the prepared CMC gait through its
+  existing worker-thread-safe snapshot.
+- **Experience boundary:** no content asset changes are required. `DA_PawnData_GASP` opts into the
+  mechanism; the prototype PawnData remains opt-out and both Experiences remain independently
+  selectable.
+- **Stable test:**
+  `SurvivalRpg.Network.GaspPilotPIE.GroundCoastLateJoinAndRelevancyReturn` protects Walk and Run
+  late join, Run coast below the Walk cap, real relevancy loss/recreation/return, role parity, and
+  deterministic stop clearing in a rendered listen-server PIE session.
