@@ -2652,9 +2652,10 @@ bool FRpgGaspPilotAssetContractTest::RunTest(const FString& Parameters)
 		TEXT("The pilot replaces instant Free rotation with controlled yaw"),
 		FMath::IsNearlyEqual(PilotMovementProfile.FreeRotationRateYaw, 360.0f));
 	TestTrue(
-		TEXT("The pilot uses the curated analog Walk/Run thresholds"),
+		TEXT("The pilot uses the curated physical deadzone and Run hysteresis"),
 		FMath::IsNearlyEqual(PilotMovementProfile.MoveIntentThreshold, 0.1f) &&
-		FMath::IsNearlyEqual(PilotMovementProfile.RunInputThreshold, 0.7f));
+		FMath::IsNearlyEqual(PilotMovementProfile.RunInputThreshold, 0.7f) &&
+		FMath::IsNearlyEqual(PilotMovementProfile.RunInputExitThreshold, 0.65f));
 	TestEqual(TEXT("PawnData TeamId is unchanged"), PilotPawnData->TeamId, BasePawnData->TeamId);
 	TestEqual(
 		TEXT("PawnData TagRelationshipMapping is unchanged"),

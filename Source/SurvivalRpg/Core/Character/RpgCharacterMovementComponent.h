@@ -7,6 +7,8 @@
 #include "RpgCharacterMovementProfile.h"
 #include "RpgCharacterMovementComponent.generated.h"
 
+class FSavedMove_RpgCharacter;
+class FNetworkPredictionData_Client_RpgCharacter;
 
 /**
  * FRpgCharacterGroundInfo
@@ -51,7 +53,7 @@ public:
 	/** Returns the stable CMC-owned grounded gait consumed by animation presentation. */
 	ERpgLocomotionGait GetGroundGait() const { return GroundGait; }
 
-	/** Returns the latest stateless input gait snapshot used by presentation and landing intent. */
+	/** Returns the predicted input gait restored by SavedMove replay and consumed by presentation. */
 	ERpgLocomotionGait GetDesiredGait() const { return DesiredGait; }
 
 	/** Returns current normalized move intent reconstructed by CharacterMovement on this role. */
@@ -84,6 +86,13 @@ public:
 	virtual float GetMaxBrakingDeceleration() const override;
 	//~End of UMovementComponent interface
 protected:
+	virtual void ControlledCharacterMove(
+		const FVector& InputVector,
+		float DeltaSeconds) override;
+	virtual FVector ScaleInputAcceleration(
+		const FVector& InputAcceleration) const override;
+	virtual void UpdateFromCompressedFlags(uint8 Flags) override;
+	virtual FNetworkPredictionData_Client* GetPredictionData_Client() const override;
 	virtual void CalcVelocity(
 		float DeltaTime,
 		float Friction,
@@ -118,6 +127,12 @@ protected:
 	/** Rebuilds the value-only move-intent and gait snapshot after CharacterMovement updates. */
 	void RefreshLocomotionSnapshot();
 
+	/** Restores the physical Run latch encoded by a server move or client replay. */
+	void RestorePredictedGaitFromSavedMove(bool bSavedRunGait);
+
+	/** Resolves this exact input move's deadzone and prediction-owned gait before it is saved. */
+	void UpdatePredictedGaitFromInput(float InputMagnitude);
+
 	/** Returns whether this frame may consume the standing-only GASP physical response profile. */
 	bool UsesStandingGroundMovementProfile() const;
 
@@ -130,13 +145,13 @@ protected:
 	/** Stable grounded gait reconstructed from CMC input, speed, and profile hysteresis. */
 	ERpgLocomotionGait GroundGait = ERpgLocomotionGait::Idle;
 
-	/** Latest stateless input gait snapshot used by presentation and airborne landing capture. */
+	/** Prediction-owned input gait encoded in SavedMoves for Run hysteresis. */
 	ERpgLocomotionGait DesiredGait = ERpgLocomotionGait::Idle;
 
 	/** Current profile-thresholded input intent, including while airborne. */
 	bool bHasMoveIntent = false;
 
-	/** Current non-zero CMC input used by the GASP braking contract independently of gait deadzones. */
+	/** Current deadzone-resolved physical CMC input used by the GASP braking contract. */
 	bool bHasMovementInput = false;
 
 	// Cached ground info for the character.  Do not access this directly!  It's only updated when accessed via GetGroundInfo().
@@ -159,5 +174,43 @@ protected:
 
 #if WITH_DEV_AUTOMATION_TESTS
 	friend class FRpgCharacterMovementProfileTest;
+	friend class FRpgCharacterMovementSavedMoveTest;
 #endif
+	friend class FSavedMove_RpgCharacter;
+};
+
+/** Client move that records the GASP pilot's prediction-owned Run latch. */
+class SURVIVALRPG_API FSavedMove_RpgCharacter : public FSavedMove_Character
+{
+public:
+	using Super = FSavedMove_Character;
+
+	virtual void Clear() override;
+	virtual void SetMoveFor(
+		ACharacter* Character,
+		float InDeltaTime,
+		const FVector& NewAcceleration,
+		FNetworkPredictionData_Client_Character& ClientData) override;
+	virtual void PrepMoveFor(ACharacter* Character) override;
+	virtual bool CanCombineWith(
+		const FSavedMovePtr& NewMove,
+		ACharacter* Character,
+		float MaxDelta) const override;
+	virtual uint8 GetCompressedFlags() const override;
+
+	/** Predicted physical Run state for this exact move; false represents Idle or Walk. */
+	bool bSavedRunGait = false;
+};
+
+/** Allocates project SavedMoves for the RPG CharacterMovement prediction path. */
+class SURVIVALRPG_API FNetworkPredictionData_Client_RpgCharacter
+	: public FNetworkPredictionData_Client_Character
+{
+public:
+	using Super = FNetworkPredictionData_Client_Character;
+
+	explicit FNetworkPredictionData_Client_RpgCharacter(
+		const UCharacterMovementComponent& ClientMovement);
+
+	virtual FSavedMovePtr AllocateNewMove() override;
 };
