@@ -172,12 +172,16 @@ namespace RpgCharacterMovementRuntime
 		bool bHasMovementInput,
 		const FRpgCharacterMovementProfile& Profile);
 
-	/** Resolves a stable grounded Idle/Walk/Run gait; deceleration retains the previous moving gait. */
+	/**
+	 * Resolves a stable grounded Idle/Walk/Run gait.
+	 * Deceleration retains local history, while a server coast hint reconstructs newly relevant simulated proxies.
+	 */
 	SURVIVALRPG_API ERpgLocomotionGait ResolveGroundGait(
 		bool bIsMovingOnGround,
 		float GroundSpeed,
 		float InputMagnitude,
 		ERpgLocomotionGait DesiredGait,
 		ERpgLocomotionGait PreviousGait,
+		ERpgLocomotionGait CoastGaitHint,
 		const FRpgCharacterMovementProfile& Profile);
 }

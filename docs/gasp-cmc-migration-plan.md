@@ -28,7 +28,7 @@ The CMC AnimBP closure still pulls in experimental state-machine databases, larg
 - Replicate compressed acceleration to simulated proxies so remote starts, stops, and pivots have the same inputs as the owning client.
 - For standing, uncrouched ground movement, resolve a physical deadzone of `<= 0.10` before physics and SavedMove capture; preserve every magnitude above it, including `0.11`, `0.25`, and `0.50`, without renormalization beyond CharacterMovement's native `NetQuantize10` precision.
 - Keep desired gait prediction-owned: enter Run at `>= 0.70`, retain it at `>= 0.65`, and exit only below `0.65`. Store that state in one SavedMove `Custom0` flag and restore it for authoritative server movement and client replay.
-- Let simulated proxies reconstruct the continuous gait state from replicated acceleration. Direct late join inside the `0.65`-to-`0.70` hysteresis band remains deferred to issue #101.
+- Let simulated proxies reconstruct active-input gait from replicated acceleration. During inputless Walk/Run coast, replicate only the authority's current coast classification to simulated proxies so initial replication and relevancy return preserve the selected gait below the Walk cap; clear it deterministically at physical stop without replicating AnimBP, pose, or movement history. A proxy first observed with active input directly inside the `0.65`-to-`0.70` retention band remains a separate ambiguity outside issue #101.
 - Preserve the legacy input response for crouching, falling, and custom movement modes.
 - Let a PawnData-selected movement profile own GASP-pilot Walk/Run caps, response values, and the CMC gait consumed by animation; legacy PawnData remains opt-out.
 - Reparent the current `ABP_Unarmed` to the RPG base without changing its pose graph.
@@ -53,7 +53,7 @@ The CMC AnimBP closure still pulls in experimental state-machine databases, larg
 
 - Verify locomotion transitions, foot placement, LOD cost, and database memory.
 - Verify attack combos, block, dodge, hit reactions, death, equipment sockets, and harvesting montage rewards.
-- Test listen server plus two clients, simulated proxies, and late join.
+- Test a listen server with an autonomous owner and at least two observing clients, including simulated proxies, correction, Walk/Run coast late join, physical-stop cleanup, and actor-channel relevancy loss/return.
 - Keep the prototype and GASP PawnData/AnimBP paths cooked, separate, and directly selectable through their Experiences in the same build.
 - A later cutover may change only which Experience is selected by default; it must not repoint the prototype Experience or delete its PawnData/AnimBP.
 - Switch Experiences only at a supported world/session boundary (World Settings, URL, PIE, or command line), never by hot-swapping an already-running pawn.
@@ -62,7 +62,7 @@ The CMC AnimBP closure still pulls in experimental state-machine databases, larg
 
 - No runtime dependency on GASP's character Blueprint, Mover graph, traversal graph, generic retarget collection, or sample camera stack.
 - The AnimBP update path performs no character, component, ASC, or world queries on worker threads.
-- Simulated proxies reconstruct the continuous gait state from acceleration needed for start, stop, and pivot selection, including after a neutral late join; a proxy first observed directly inside the hysteresis band remains issue #101.
+- Simulated proxies reconstruct active-input gait from acceleration needed for start, stop, and pivot selection. A server-owned Walk/Run coast classification seeds only inputless simulated-proxy coast after late join or relevancy return, remains stable below the Walk cap, and clears to Idle at physical stop without replicating presentation history.
 - Existing GAS montages continue to use `DefaultSlot` and retain their gameplay notifies and root-motion behavior.
 - Walk/Run speed caps, response values, controlled Free yaw, and stable gait are selected by GASP PawnData and applied by CharacterMovement before animation consumes them.
 - Standing-ground input at or below `0.10` produces no physical movement; `0.11`, `0.25`, and `0.50` remain analog-scaled without renormalization beyond native movement-network precision, while crouching, falling, and custom movement retain their legacy response.

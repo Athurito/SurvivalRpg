@@ -497,6 +497,11 @@ void ARpgCharacter::GetLifetimeReplicatedProps(TArray<FLifetimeProperty>& OutLif
 	Super::GetLifetimeReplicatedProps(OutLifetimeProps);
 
 	DOREPLIFETIME_CONDITION(ThisClass, AnimationTeleportEpoch, COND_SimulatedOnly);
+	DOREPLIFETIME_CONDITION_NOTIFY(
+		ThisClass,
+		GroundCoastGait,
+		COND_SimulatedOnly,
+		REPNOTIFY_Always);
 	DOREPLIFETIME_CONDITION_NOTIFY(ThisClass, RotationMode, COND_None, REPNOTIFY_Always);
 }
 
@@ -511,6 +516,36 @@ void ARpgCharacter::OnRep_AnimationTeleportEpoch()
 		Cast<URpgCharacterMovementComponent>(GetCharacterMovement()))
 	{
 		MovementComponent->NotifyReplicatedAnimationTeleport();
+	}
+}
+
+void ARpgCharacter::OnRep_GroundCoastGait()
+{
+	if (URpgCharacterMovementComponent* MovementComponent =
+		Cast<URpgCharacterMovementComponent>(GetCharacterMovement()))
+	{
+		MovementComponent->NotifyReplicatedGroundCoastGait(GroundCoastGait);
+	}
+}
+
+void ARpgCharacter::SetAuthoritativeGroundCoastGait(
+	ERpgLocomotionGait NewCoastGait)
+{
+	if (!HasAuthority())
+	{
+		return;
+	}
+
+	if (NewCoastGait != ERpgLocomotionGait::Walk &&
+		NewCoastGait != ERpgLocomotionGait::Run)
+	{
+		NewCoastGait = ERpgLocomotionGait::Idle;
+	}
+
+	if (GroundCoastGait != NewCoastGait)
+	{
+		GroundCoastGait = NewCoastGait;
+		ForceNetUpdate();
 	}
 }
 

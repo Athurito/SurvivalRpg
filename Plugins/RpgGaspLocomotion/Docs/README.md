@@ -5,11 +5,11 @@ This content-only plugin owns the curated Game Animation Sample Project (GASP) l
 The behavior-preserving source-to-project responsibility map and the staged issue #81 extraction
 order are recorded in [RuntimeOwnershipMap.md](RuntimeOwnershipMap.md).
 
-Issues #81 and #97's real listen-server acceptance procedure is recorded in
+Issues #81, #97, #100, and #101's real listen-server acceptance procedure is recorded in
 [the GASP real-network smoke runbook](../../../docs/gasp-network-smoke.md). It uses an actual PIE
-network session with one initial client plus moving and stationary late joins; rendered
-pose-selection, warping, Foot Placement, and correction quality remain a separate visual
-inspection boundary.
+network session with native acceleration, analog gait prediction/correction, moving and stationary
+late joins, Walk/Run coast late joins, and actor-channel relevancy return; rendered pose-selection,
+warping, Foot Placement, and correction quality remain a separate visual inspection boundary.
 
 ## Curated slice
 
@@ -52,7 +52,7 @@ The complete source-to-target mapping and cleanup policy is recorded in `Curated
 
 `DA_PawnData_GASP` opts into the project-local `FRpgCharacterMovementProfile`; the prototype PawnData explicitly remains opt-out, so its Blueprint-authored CharacterMovement values and the independently selectable Prototype Experience are unchanged. For standing, uncrouched ground movement, `URpgCharacterMovementComponent` resolves the physical input before both ground physics and SavedMove capture: magnitudes at or below `0.10` become zero, while `0.11`, `0.25`, `0.50`, and every other value above the deadzone keep their original analog magnitude without renormalization, apart from CharacterMovement's native `NetQuantize10` precision. Crouching, falling, and custom movement modes retain their legacy input response.
 
-The prediction-owned desired gait enters Run at input `>= 0.70`, retains Run at `>= 0.65`, and exits to Walk only below `0.65`. One CharacterMovement SavedMove `Custom0` flag stores that gait and restores it before authoritative server movement and client replay, so the selected 200/500 forward cap follows the same state through prediction, correction, and move combining. Simulated proxies do not receive the owner's SavedMove flag; they reconstruct the continuous hysteresis state from replicated acceleration. A proxy that is first observed directly inside the `0.65`-to-`0.70` hysteresis band remains an intentionally ambiguous late-join case deferred to issue #101.
+The prediction-owned desired gait enters Run at input `>= 0.70`, retains Run at `>= 0.65`, and exits to Walk only below `0.65`. One CharacterMovement SavedMove `Custom0` flag stores that gait and restores it before authoritative server movement and client replay, so the selected 200/500 forward cap follows the same state through prediction, correction, and move combining. Simulated proxies do not receive the owner's SavedMove flag; they reconstruct active-input gait from replicated acceleration. During inputless Walk/Run coast, the authority publishes one current gait classification with `COND_SimulatedOnly`; a new or newly relevant proxy consumes it before local gait history and therefore preserves Run even below the Walk cap. The value clears to Idle at physical stop and never carries AnimBP, pose, Motion Matching, or movement history. A proxy first observed with active input directly inside the `0.65`-to-`0.70` retention band remains a separate ambiguity outside issue #101.
 
 The profile retains GASP's forward/side/back source values and pure direction mapping as a validated contract, but #99 deliberately activates only the 200/500 forward caps: predicted rotation-request tags are not yet part of CharacterMovement saved moves, so making physical speed depend on controller-facing mode would create correction risk. `URpgAnimInstance` consumes the prepared CMC gait and never reclassifies Walk/Run from a cosmetic presentation threshold. Sprint and prediction-safe directional strafe caps remain separate gameplay slices.
 

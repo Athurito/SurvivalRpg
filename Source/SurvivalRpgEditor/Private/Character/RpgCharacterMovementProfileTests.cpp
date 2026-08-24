@@ -9,6 +9,7 @@
 #include "Components/SceneComponent.h"
 #include "Misc/AutomationTest.h"
 #include "Tests/AutomationCommon.h"
+#include "UObject/UnrealType.h"
 #include "SurvivalRpg/Core/Character/RpgCharacter.h"
 #include "SurvivalRpg/Core/Character/RpgCharacterMovementComponent.h"
 #include "SurvivalRpg/Core/Character/RpgCharacterMovementProfile.h"
@@ -83,9 +84,73 @@ bool FRpgCharacterMovementProfileTest::RunTest(const FString& Parameters)
 				GaitCase.InputMagnitude,
 				GaitCase.DesiredGait,
 				GaitCase.PreviousGait,
+				ERpgLocomotionGait::Idle,
 				Profile),
 			GaitCase.ExpectedGait);
 	}
+
+	struct FCoastHintCase
+	{
+		const TCHAR* Label;
+		float GroundSpeed;
+		ERpgLocomotionGait PreviousGait;
+		ERpgLocomotionGait CoastGaitHint;
+		ERpgLocomotionGait ExpectedGait;
+	};
+	const FCoastHintCase CoastHintCases[] = {
+		{TEXT("Late Run coast remains Run above the Walk cap"), 300.0f, ERpgLocomotionGait::Idle, ERpgLocomotionGait::Run, ERpgLocomotionGait::Run},
+		{TEXT("Late Run coast remains Run on the Walk cap"), 200.0f, ERpgLocomotionGait::Idle, ERpgLocomotionGait::Run, ERpgLocomotionGait::Run},
+		{TEXT("Late Run coast remains Run below the Walk cap"), 150.0f, ERpgLocomotionGait::Idle, ERpgLocomotionGait::Run, ERpgLocomotionGait::Run},
+		{TEXT("Late Walk coast remains Walk"), 150.0f, ERpgLocomotionGait::Idle, ERpgLocomotionGait::Walk, ERpgLocomotionGait::Walk},
+		{TEXT("Relevancy return replaces stale local gait history"), 150.0f, ERpgLocomotionGait::Walk, ERpgLocomotionGait::Run, ERpgLocomotionGait::Run},
+		{TEXT("Physical stop wins over a stale Run coast hint"), 2.0f, ERpgLocomotionGait::Run, ERpgLocomotionGait::Run, ERpgLocomotionGait::Idle},
+	};
+	for (const FCoastHintCase& CoastHintCase : CoastHintCases)
+	{
+		TestEqual(
+			CoastHintCase.Label,
+			RpgCharacterMovementRuntime::ResolveGroundGait(
+				true,
+				CoastHintCase.GroundSpeed,
+				0.0f,
+				ERpgLocomotionGait::Idle,
+				CoastHintCase.PreviousGait,
+				CoastHintCase.CoastGaitHint,
+				Profile),
+			CoastHintCase.ExpectedGait);
+	}
+
+	TestEqual(
+		TEXT("Physical input ignores a stale Run coast hint"),
+		RpgCharacterMovementRuntime::ResolveGroundGait(
+			true,
+			150.0f,
+			0.5f,
+			ERpgLocomotionGait::Walk,
+			ERpgLocomotionGait::Run,
+			ERpgLocomotionGait::Run,
+			Profile),
+		ERpgLocomotionGait::Walk);
+	FRpgCharacterMovementProfile PassiveCoastProfile = Profile;
+	PassiveCoastProfile.bOverrideCharacterMovement = false;
+	TestEqual(
+		TEXT("A passive movement profile ignores the coast hint"),
+		RpgCharacterMovementRuntime::ResolveGroundGait(
+			true,
+			150.0f,
+			0.0f,
+			ERpgLocomotionGait::Idle,
+			ERpgLocomotionGait::Idle,
+			ERpgLocomotionGait::Walk,
+			PassiveCoastProfile),
+		RpgCharacterMovementRuntime::ResolveGroundGait(
+			true,
+			150.0f,
+			0.0f,
+			ERpgLocomotionGait::Idle,
+			ERpgLocomotionGait::Idle,
+			ERpgLocomotionGait::Idle,
+			PassiveCoastProfile));
 
 	TestFalse(
 		TEXT("Input at the exclusive intent threshold has no move intent"),
@@ -439,6 +504,69 @@ bool FRpgCharacterMovementProfileTest::RunTest(const FString& Parameters)
 }
 
 IMPLEMENT_SIMPLE_AUTOMATION_TEST(
+	FRpgCharacterGroundCoastReplicationContractTest,
+	"SurvivalRpg.Character.Movement.GroundCoastReplicationContract",
+	EAutomationTestFlags::EditorContext |
+		EAutomationTestFlags::EngineFilter)
+
+bool FRpgCharacterGroundCoastReplicationContractTest::RunTest(
+	const FString& Parameters)
+{
+	const FProperty* CoastGaitProperty =
+		ARpgCharacter::StaticClass()->FindPropertyByName(TEXT("GroundCoastGait"));
+	TestNotNull(
+		TEXT("Character exposes reflected ground-coast state"),
+		CoastGaitProperty);
+	if (CoastGaitProperty)
+	{
+		TestTrue(
+			TEXT("Ground-coast state participates in actor replication"),
+			CoastGaitProperty->HasAnyPropertyFlags(CPF_Net));
+		TestEqual(
+			TEXT("Ground-coast state reconciles through its RepNotify"),
+			CoastGaitProperty->RepNotifyFunc,
+			FName(TEXT("OnRep_GroundCoastGait")));
+	}
+
+	URpgCharacterMovementComponent* MovementComponent =
+		NewObject<URpgCharacterMovementComponent>();
+	TestNotNull(TEXT("Movement component can store a coast hint"), MovementComponent);
+	if (MovementComponent)
+	{
+		MovementComponent->NotifyReplicatedGroundCoastGait(
+			ERpgLocomotionGait::Run);
+		TestEqual(
+			TEXT("Run is retained as a valid replicated coast hint"),
+			MovementComponent->GetReplicatedGroundCoastGait(),
+			ERpgLocomotionGait::Run);
+
+		FRpgCharacterMovementProfile ActiveProfile;
+		ActiveProfile.bOverrideCharacterMovement = true;
+		TestTrue(
+			TEXT("Applying PawnData movement tuning does not discard an earlier RepNotify"),
+			MovementComponent->ApplyMovementProfile(ActiveProfile));
+		TestEqual(
+			TEXT("A pre-PawnData coast hint survives movement-profile initialization"),
+			MovementComponent->GetReplicatedGroundCoastGait(),
+			ERpgLocomotionGait::Run);
+		MovementComponent->StopMovementImmediately();
+		TestEqual(
+			TEXT("A local stop never discards the authority hint cached by a simulated proxy"),
+			MovementComponent->GetReplicatedGroundCoastGait(),
+			ERpgLocomotionGait::Run);
+
+		MovementComponent->NotifyReplicatedGroundCoastGait(
+			ERpgLocomotionGait::Sprint);
+		TestEqual(
+			TEXT("Unsupported Sprint never enters the replicated coast contract"),
+			MovementComponent->GetReplicatedGroundCoastGait(),
+			ERpgLocomotionGait::Idle);
+	}
+
+	return !HasAnyErrors();
+}
+
+IMPLEMENT_SIMPLE_AUTOMATION_TEST(
 	FRpgCharacterMovementSavedMoveTest,
 	"SurvivalRpg.Character.Movement.SavedMovePrediction",
 	EAutomationTestFlags::EditorContext |
@@ -499,6 +627,56 @@ bool FRpgCharacterMovementSavedMoveTest::RunTest(const FString& Parameters)
 	{
 		return false;
 	}
+	MovementComponent->SetMovementMode(MOVE_Walking);
+	const FEnumProperty* CoastGaitProperty =
+		FindFProperty<FEnumProperty>(
+			ARpgCharacter::StaticClass(),
+			TEXT("GroundCoastGait"));
+	if (!TestNotNull(
+		TEXT("The authority coast transport is available for lifecycle checks"),
+		CoastGaitProperty))
+	{
+		return false;
+	}
+	auto ReadAuthorityCoastGait = [Character, CoastGaitProperty]()
+	{
+		const void* ValueAddress =
+			CoastGaitProperty->ContainerPtrToValuePtr<void>(Character);
+		return static_cast<ERpgLocomotionGait>(
+			CoastGaitProperty->GetUnderlyingProperty()
+				->GetSignedIntPropertyValue(ValueAddress));
+	};
+	auto SeedAuthorityRunCoast = [MovementComponent]()
+	{
+		MovementComponent->Velocity = FVector(150.0f, 0.0f, 0.0f);
+		MovementComponent->Acceleration = FVector::ZeroVector;
+		MovementComponent->AnalogInputModifier = 0.0f;
+		MovementComponent->DesiredGait = ERpgLocomotionGait::Idle;
+		MovementComponent->GroundGait = ERpgLocomotionGait::Run;
+		MovementComponent->RefreshLocomotionSnapshot();
+	};
+
+	SeedAuthorityRunCoast();
+	TestEqual(
+		TEXT("Authority publishes Run while a physical Run coast is active"),
+		ReadAuthorityCoastGait(),
+		ERpgLocomotionGait::Run);
+	MovementComponent->StopMovementImmediately();
+	TestEqual(
+		TEXT("Synchronous stop clears local grounded presentation"),
+		MovementComponent->GetGroundGait(),
+		ERpgLocomotionGait::Idle);
+	TestEqual(
+		TEXT("Synchronous stop clears the authority coast transport"),
+		ReadAuthorityCoastGait(),
+		ERpgLocomotionGait::Idle);
+
+	SeedAuthorityRunCoast();
+	MovementComponent->DisableMovement();
+	TestEqual(
+		TEXT("Leaving standing-ground movement clears the authority coast transport"),
+		ReadAuthorityCoastGait(),
+		ERpgLocomotionGait::Idle);
 	MovementComponent->SetMovementMode(MOVE_Walking);
 	MovementComponent->DesiredGait = ERpgLocomotionGait::Run;
 	MovementComponent->Acceleration = FVector(560.0f, 0.0f, 0.0f);

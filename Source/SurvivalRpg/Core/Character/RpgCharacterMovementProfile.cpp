@@ -179,6 +179,7 @@ ERpgLocomotionGait RpgCharacterMovementRuntime::ResolveGroundGait(
 	float InputMagnitude,
 	ERpgLocomotionGait DesiredGait,
 	ERpgLocomotionGait PreviousGait,
+	ERpgLocomotionGait CoastGaitHint,
 	const FRpgCharacterMovementProfile& Profile)
 {
 	if (!bIsMovingOnGround ||
@@ -204,6 +205,15 @@ ERpgLocomotionGait RpgCharacterMovementRuntime::ResolveGroundGait(
 			: ERpgLocomotionGait::Walk;
 	}
 
+	// The authority publishes only the current Walk/Run coast classification. Prefer it
+	// over local history so a newly relevant proxy and an existing proxy converge alike.
+	if (Profile.bOverrideCharacterMovement &&
+		(CoastGaitHint == ERpgLocomotionGait::Walk ||
+		 CoastGaitHint == ERpgLocomotionGait::Run))
+	{
+		return CoastGaitHint;
+	}
+
 	// Preserve the moving database while physical deceleration finishes after input release.
 	if (PreviousGait == ERpgLocomotionGait::Walk)
 	{
@@ -214,7 +224,8 @@ ERpgLocomotionGait RpgCharacterMovementRuntime::ResolveGroundGait(
 		return ERpgLocomotionGait::Run;
 	}
 
-	// Active GASP profiles seed late-join stop presentation from replicated physical speed.
+	// A speed fallback keeps malformed or delayed initial snapshots deterministic. The
+	// authoritative coast hint replaces this ambiguity as soon as it arrives.
 	return GroundSpeed <= Profile.WalkSpeeds.Forward
 		? ERpgLocomotionGait::Walk
 		: ERpgLocomotionGait::Run;
