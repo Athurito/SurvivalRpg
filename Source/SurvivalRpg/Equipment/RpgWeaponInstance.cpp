@@ -101,6 +101,29 @@ bool URpgWeaponInstance::HasAttackDefinitionByTagName(FName AttackDefinitionTagN
 	return FindAttackDefinition(AttackDefinitionTag) != nullptr;
 }
 
+#if WITH_DEV_AUTOMATION_TESTS
+bool URpgWeaponInstance::SetAttackMontagePlayRateForTests(
+	const FGameplayTag AttackDefinitionTag,
+	const float NewPlayRate,
+	float& OutPreviousPlayRate)
+{
+	if (!FMath::IsFinite(NewPlayRate) || NewPlayRate <= UE_SMALL_NUMBER)
+	{
+		return false;
+	}
+
+	FRpgWeaponAttackDefinition* AttackDefinition = AttackDefinitions.Find(AttackDefinitionTag);
+	if (!AttackDefinition)
+	{
+		return false;
+	}
+
+	OutPreviousPlayRate = AttackDefinition->MontagePlayRate;
+	AttackDefinition->MontagePlayRate = NewPlayRate;
+	return true;
+}
+#endif
+
 void URpgWeaponInstance::SetWeaponTagsByName(FName WeaponTypeTagName, FName WeaponFamilyTagName)
 {
 	WeaponTypeTag = WeaponTypeTagName.IsNone() ? FGameplayTag() : FGameplayTag::RequestGameplayTag(WeaponTypeTagName);

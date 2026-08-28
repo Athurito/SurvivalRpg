@@ -54,12 +54,17 @@ struct FRpgWeaponAttackDefinition
 {
 	GENERATED_BODY()
 
-	// Montage that drives the attack. Damage tracing only runs between AttackWindowStart and AttackWindowEnd notifies.
+	/**
+	 * Designer-authored attack montage. It must contain exactly one section starting at zero with no section link or
+	 * jump, plus one ordered
+	 * project AttackWindowStart/AttackWindowEnd notify pair. The pair must finish before normal auto blend-out;
+	 * authority derives its fail-safe trace schedule from those same authored times. Time-stretch curves are unsupported.
+	 */
 	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Attack")
 	TObjectPtr<UAnimMontage> Montage = nullptr;
 
-	// Playback rate for the attack montage.
-	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Attack")
+	/** Positive constant playback-rate multiplier used by both montage playback and the authority attack-window schedule. */
+	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Attack", meta = (ClampMin = "0.001", UIMin = "0.1"))
 	float MontagePlayRate = 1.0f;
 
 	// GameplayEffect applied by the attack. It should consume SetByCaller.Damage and SetByCaller.StaggerDamage.
@@ -228,6 +233,14 @@ public:
 
 	UFUNCTION(BlueprintCallable, BlueprintPure, Category = "Weapon")
 	bool HasAttackDefinitionByTagName(FName AttackDefinitionTagName) const;
+
+#if WITH_DEV_AUTOMATION_TESTS
+	/** Overrides one transient weapon instance for a runtime timing test without mutating its asset CDO. */
+	bool SetAttackMontagePlayRateForTests(
+		FGameplayTag AttackDefinitionTag,
+		float NewPlayRate,
+		float& OutPreviousPlayRate);
+#endif
 
 	UFUNCTION(BlueprintCallable, BlueprintPure, Category = "Weapon")
 	FGameplayTag GetWeaponTypeTag() const { return WeaponTypeTag; }
