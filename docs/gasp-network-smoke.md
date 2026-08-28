@@ -19,6 +19,10 @@ Focused issue #100 analog-gait regression:
 
 `SurvivalRpg.Network.GaspPilotPIE.AnalogGaitPredictionAndCorrection`
 
+Focused issue #103 moving-base correction regression:
+
+`SurvivalRpg.Network.GaspPilotPIE.MovingBaseCorrectionPreservesAnimationHistory`
+
 Topology and network profile:
 
 - one-process PIE listen server
@@ -28,6 +32,8 @@ Topology and network profile:
   late-join clients
 - `PktLag=60`, `PktLagVariance=10`, and no configured packet loss
 - one server-spawned editor-only floor fixture provides a shared network-addressable movement base
+- the #103 focus uses a replicated platform with deterministic fast translation and rotation, one
+  AutonomousProxy owner, and a late-joined SimulatedProxy observer
 
 The test verifies:
 
@@ -52,6 +58,12 @@ The test verifies:
 - an actual simulated-proxy relevancy loss, actor/channel teardown, recreated proxy on return, and
   preservation of the authoritative Run coast classification
 - deterministic coast-gait clearing to Idle at physical stop on every role
+- same-base/bone owner correction while the platform moves more than the reset threshold without a
+  false history reset on either client role
+- a real relative owner divergence above the threshold producing exactly one AutonomousProxy reset
+  while the moving SimulatedProxy remains stable
+- explicit unit coverage for base/bone switches and unusable-base world-space fallbacks; UE's
+  unresolved relative-base RPC is rejected before the project correction callback
 
 Run from PowerShell with a rendered RHI; `NullRHI` is intentionally not used for this PIE test:
 
@@ -64,7 +76,7 @@ Run from PowerShell with a rendered RHI; `NullRHI` is intentionally not used for
   -ddc=InstalledNoZenLocalFallback `
   '-LocalDataCachePath=D:\Repos\SurvivalRpg\Intermediate\GaspNetworkDDC' `
   '-ini:Engine:[ConsoleVariables]:TestFramework.CQTest.CommandTimeout.Network=90' `
-  '-ExecCmds=Automation RunTests SurvivalRpg.Network.GaspPilotPIE.ReplicationLateJoinCorrectionAndDefaultSlotMontage; Quit' `
+  '-ExecCmds=Automation RunTests SurvivalRpg.Network.GaspPilotPIE; Quit' `
   '-TestExit=Automation Test Queue Empty' `
   '-ReportExportPath=D:\Repos\SurvivalRpg\Saved\Automation\GaspNetworkSmoke' `
   '-abslog=D:\Repos\SurvivalRpg\Saved\Logs\GaspNetworkSmoke.log'
@@ -77,6 +89,10 @@ Run the focused coast-gait contract with the same rendered-RHI options by substi
 name above and using dedicated `Issue101Network` report/log paths. The test uses one initial client,
 late-joins two more clients during real CharacterMovement coast, and moves the first observer out
 of and back into network relevancy while another client remains near the subject.
+
+Run the focused moving-base contract the same way with the #103 test name and dedicated
+`Issue103MovingBase` report/log paths. It late-joins one observer, keeps both views based while the
+platform translates and rotates, then validates small and above-threshold relative corrections.
 
 The test temporarily selects the pilot Experience and disables disk persistence on the concrete
 GameMode CDO. Both values are restored during teardown. The owner and authority start the same
@@ -91,9 +107,10 @@ other content asset is mutated or saved.
 ## Visual smoke boundary
 
 The automation proves real replication, analog movement intent, lifecycle state, movement-history
-reset plumbing, correction/teleport convergence, montage/root-motion plumbing, Walk/Run coast
-initial replication, and the tested actor-channel relevancy-return path. It cannot judge rendered
-pose choice or presentation quality. A rendered manual pass should still inspect
+reset plumbing, base-relative owner correction, correction/teleport convergence,
+montage/root-motion plumbing, Walk/Run coast initial replication, and the tested actor-channel
+relevancy-return path. It cannot judge rendered pose choice or presentation quality. A rendered
+manual pass should still inspect
 start/stop/pivot/TIR, crouch, jump/landing, Foot Placement on uneven ground, Aim/CombatStrafe facing,
 and correction for persistent mesh/capsule separation.
 

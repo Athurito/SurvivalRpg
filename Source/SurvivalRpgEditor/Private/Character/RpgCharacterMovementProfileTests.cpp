@@ -6,6 +6,7 @@
 
 #include <limits>
 
+#include "Components/BoxComponent.h"
 #include "Components/SceneComponent.h"
 #include "Misc/AutomationTest.h"
 #include "Tests/AutomationCommon.h"
@@ -900,6 +901,258 @@ bool FRpgCharacterMovementSavedMoveTest::RunTest(const FString& Parameters)
 			(AllocatedMove->GetCompressedFlags() &
 				FSavedMove_Character::FLAG_Custom_0) != 0);
 	}
+
+	AActor* MovingBaseActor = World->SpawnActor<AActor>();
+	UBoxComponent* MovingBaseComponent = MovingBaseActor
+		? NewObject<UBoxComponent>(MovingBaseActor, TEXT("CorrectionMovingBase"))
+		: nullptr;
+	if (!TestNotNull(
+		TEXT("A movable base actor can be created for correction-space tests"),
+		MovingBaseActor) ||
+		!TestNotNull(
+			TEXT("The correction-space fixture owns a primitive movement base"),
+			MovingBaseComponent))
+	{
+		return false;
+	}
+	MovingBaseComponent->SetMobility(EComponentMobility::Movable);
+	MovingBaseComponent->InitBoxExtent(FVector(200.0f, 200.0f, 20.0f));
+	MovingBaseActor->SetRootComponent(MovingBaseComponent);
+	MovingBaseActor->AddInstanceComponent(MovingBaseComponent);
+	MovingBaseComponent->RegisterComponent();
+	FMovementBaseInterfaceData MovingBaseData(MovingBaseComponent);
+	if (!TestTrue(
+		TEXT("The movable primitive resolves as dynamic movement-base data"),
+		MovementBaseUtility::IsMovementBaseDataValid(&MovingBaseData) &&
+			MovementBaseUtility::UseRelativeLocation(&MovingBaseData)))
+	{
+		return false;
+	}
+
+	const FVector SharedRelativeLocation(25.0f, -40.0f, 96.0f);
+	MovingBaseActor->SetActorTransform(FTransform(
+		FRotator::ZeroRotator,
+		FVector(100.0f, 200.0f, 0.0f)));
+	FVector SavedWorldLocation = FVector::ZeroVector;
+	if (!TestTrue(
+		TEXT("The initial base-relative move resolves to world space"),
+		MovementBaseUtility::TransformLocationToWorld(
+			&MovingBaseData,
+			NAME_None,
+			SharedRelativeLocation,
+			SavedWorldLocation)))
+	{
+		return false;
+	}
+
+	FSavedMovePtr BaseRelativeMove(new FSavedMove_RpgCharacter());
+	BaseRelativeMove->Clear();
+	BaseRelativeMove->SavedLocation = SavedWorldLocation;
+	BaseRelativeMove->SavedRelativeLocation = SharedRelativeLocation;
+	BaseRelativeMove->EndMovementBaseInterfaceData = MovingBaseData;
+	BaseRelativeMove->EndBoneName = NAME_None;
+	BaseRelativeMove->TimeStamp = ClientData.CurrentTimeStamp;
+	ClientData.LastAckedMove = BaseRelativeMove;
+	MovementComponent->NetworkLargeClientCorrectionDistance = 50.0f;
+
+	MovingBaseActor->SetActorTransform(FTransform(
+		FRotator(0.0f, 65.0f, 0.0f),
+		FVector(450.0f, -120.0f, 40.0f)));
+	FVector SameRelativeServerWorldLocation = FVector::ZeroVector;
+	TestTrue(
+		TEXT("The moved and rotated base resolves the unchanged server-relative position"),
+		MovementBaseUtility::TransformLocationToWorld(
+			&MovingBaseData,
+			NAME_None,
+			SharedRelativeLocation,
+			SameRelativeServerWorldLocation));
+	TestTrue(
+		TEXT("The fixture's world-space base motion exceeds the reset threshold"),
+		FVector::DistSquared(
+			SavedWorldLocation,
+			SameRelativeServerWorldLocation) >
+			FMath::Square(MovementComponent->NetworkLargeClientCorrectionDistance));
+	MovementComponent->ResetPendingAnimationCorrectionState();
+	MovementComponent->OnClientCorrectionReceived(
+		ClientData,
+		BaseRelativeMove->TimeStamp,
+		SameRelativeServerWorldLocation,
+		FVector::ZeroVector,
+		&MovingBaseData,
+		NAME_None,
+		true,
+		true,
+		static_cast<uint8>(MOVE_Walking),
+		FVector::DownVector);
+	TestFalse(
+		TEXT("Legitimate translation and rotation of the same base do not reset animation history"),
+		MovementComponent->bPendingAnimationCorrectionDiscontinuity);
+
+	// Keep the exact threshold check on an unrotated transform so floating-point
+	// inverse-rotation noise cannot turn the strict greater-than boundary flaky.
+	MovingBaseActor->SetActorTransform(FTransform(
+		FRotator::ZeroRotator,
+		FVector(450.0f, -120.0f, 40.0f)));
+	FVector ThresholdRelativeServerWorldLocation = FVector::ZeroVector;
+	TestTrue(
+		TEXT("A correction exactly on the reset threshold resolves on the moved base"),
+		MovementBaseUtility::TransformLocationToWorld(
+			&MovingBaseData,
+			NAME_None,
+			SharedRelativeLocation + FVector(50.0f, 0.0f, 0.0f),
+			ThresholdRelativeServerWorldLocation));
+	MovementComponent->ResetPendingAnimationCorrectionState();
+	MovementComponent->OnClientCorrectionReceived(
+		ClientData,
+		BaseRelativeMove->TimeStamp,
+		ThresholdRelativeServerWorldLocation,
+		FVector::ZeroVector,
+		&MovingBaseData,
+		NAME_None,
+		true,
+		true,
+		static_cast<uint8>(MOVE_Walking),
+		FVector::DownVector);
+	TestFalse(
+		TEXT("The inclusive threshold preserves UE's strict greater-than reset contract"),
+		MovementComponent->bPendingAnimationCorrectionDiscontinuity);
+
+	FVector DivergentRelativeServerWorldLocation = FVector::ZeroVector;
+	TestTrue(
+		TEXT("A material player-relative correction resolves on the moved base"),
+		MovementBaseUtility::TransformLocationToWorld(
+			&MovingBaseData,
+			NAME_None,
+			SharedRelativeLocation + FVector(100.0f, 0.0f, 0.0f),
+			DivergentRelativeServerWorldLocation));
+	MovementComponent->ResetPendingAnimationCorrectionState();
+	MovementComponent->OnClientCorrectionReceived(
+		ClientData,
+		BaseRelativeMove->TimeStamp,
+		DivergentRelativeServerWorldLocation,
+		FVector::ZeroVector,
+		&MovingBaseData,
+		NAME_None,
+		true,
+		true,
+		static_cast<uint8>(MOVE_Walking),
+		FVector::DownVector);
+	TestTrue(
+		TEXT("A large correction inside the shared base frame still resets animation history"),
+		MovementComponent->bPendingAnimationCorrectionDiscontinuity);
+
+	AActor* OtherBaseActor = World->SpawnActor<AActor>();
+	UBoxComponent* OtherBaseComponent = OtherBaseActor
+		? NewObject<UBoxComponent>(OtherBaseActor, TEXT("CorrectionOtherBase"))
+		: nullptr;
+	if (!TestNotNull(
+		TEXT("A second base actor can be created for base-switch fallback"),
+		OtherBaseActor) ||
+		!TestNotNull(
+			TEXT("The second base owns a primitive component"),
+			OtherBaseComponent))
+	{
+		return false;
+	}
+	OtherBaseComponent->SetMobility(EComponentMobility::Movable);
+	OtherBaseActor->SetRootComponent(OtherBaseComponent);
+	OtherBaseActor->AddInstanceComponent(OtherBaseComponent);
+	OtherBaseComponent->RegisterComponent();
+	OtherBaseActor->SetActorLocation(SavedWorldLocation + FVector(300.0f, 0.0f, 0.0f));
+	FMovementBaseInterfaceData OtherBaseData(OtherBaseComponent);
+	FVector OtherBaseServerWorldLocation = FVector::ZeroVector;
+	TestTrue(
+		TEXT("The switched base resolves a valid server world location"),
+		MovementBaseUtility::TransformLocationToWorld(
+			&OtherBaseData,
+			NAME_None,
+			SharedRelativeLocation,
+			OtherBaseServerWorldLocation));
+	MovementComponent->ResetPendingAnimationCorrectionState();
+	MovementComponent->OnClientCorrectionReceived(
+		ClientData,
+		BaseRelativeMove->TimeStamp,
+		OtherBaseServerWorldLocation,
+		FVector::ZeroVector,
+		&OtherBaseData,
+		NAME_None,
+		true,
+		true,
+		static_cast<uint8>(MOVE_Walking),
+		FVector::DownVector);
+	TestTrue(
+		TEXT("A movement-base switch deliberately falls back to the large world-space correction"),
+		MovementComponent->bPendingAnimationCorrectionDiscontinuity);
+
+	FMovementBaseInterfaceData UnresolvedBaseData;
+	MovementComponent->ResetPendingAnimationCorrectionState();
+	MovementComponent->OnClientCorrectionReceived(
+		ClientData,
+		BaseRelativeMove->TimeStamp,
+		SavedWorldLocation + FVector(100.0f, 0.0f, 0.0f),
+		FVector::ZeroVector,
+		&UnresolvedBaseData,
+		NAME_None,
+		true,
+		false,
+		static_cast<uint8>(MOVE_Walking),
+		FVector::DownVector);
+	TestTrue(
+		TEXT("An unresolved absolute-base correction retains the world-space fallback"),
+		MovementComponent->bPendingAnimationCorrectionDiscontinuity);
+	MovementComponent->ResetPendingAnimationCorrectionState();
+	TestTrue(
+		TEXT("An unresolved relative-base classification explicitly falls back to world space"),
+		MovementComponent->IsLargeAcknowledgedAnimationCorrection(
+			BaseRelativeMove.Get(),
+			SavedWorldLocation + FVector(100.0f, 0.0f, 0.0f),
+			&UnresolvedBaseData,
+			NAME_None,
+			true,
+			true));
+
+	MovingBaseActor->SetActorTransform(FTransform(
+		FRotator(0.0f, 65.0f, 0.0f),
+		FVector(450.0f, -120.0f, 40.0f)));
+	MovementComponent->SetBase(&MovingBaseData, NAME_None);
+	Character->SetActorLocation(SameRelativeServerWorldLocation);
+	MovementComponent->SaveBaseLocation();
+	MovementComponent->ResetPendingAnimationCorrectionState();
+	MovementComponent->CapturePendingAnimationCorrectionStart();
+	TestTrue(
+		TEXT("The pre-replay snapshot captures a dynamic-base-relative position"),
+		MovementComponent->bHasPendingAnimationCorrectionStartRelativeLocation);
+	MovingBaseActor->SetActorTransform(FTransform(
+		FRotator(0.0f, 110.0f, 0.0f),
+		FVector(900.0f, 75.0f, 80.0f)));
+	FVector ReplayedSameRelativeWorldLocation = FVector::ZeroVector;
+	TestTrue(
+		TEXT("The post-replay fixture resolves the unchanged local position"),
+		MovementBaseUtility::TransformLocationToWorld(
+			&MovingBaseData,
+			NAME_None,
+			SharedRelativeLocation,
+			ReplayedSameRelativeWorldLocation));
+	Character->SetActorLocation(ReplayedSameRelativeWorldLocation);
+	MovementComponent->SaveBaseLocation();
+	TestFalse(
+		TEXT("Base motion between correction receipt and replay does not look like a live jump"),
+		MovementComponent->IsLargePendingAnimationCorrection());
+
+	FVector ReplayedDivergentWorldLocation = FVector::ZeroVector;
+	TestTrue(
+		TEXT("The post-replay fixture resolves a material relative divergence"),
+		MovementBaseUtility::TransformLocationToWorld(
+			&MovingBaseData,
+			NAME_None,
+			SharedRelativeLocation + FVector(100.0f, 0.0f, 0.0f),
+			ReplayedDivergentWorldLocation));
+	Character->SetActorLocation(ReplayedDivergentWorldLocation);
+	MovementComponent->SaveBaseLocation();
+	TestTrue(
+		TEXT("A material live replay jump inside the shared base frame remains detectable"),
+		MovementComponent->IsLargePendingAnimationCorrection());
+	MovementComponent->ResetPendingAnimationCorrectionState();
 
 	WorldWrapper.ForwardErrorMessages(this);
 	return !HasAnyErrors();

@@ -457,26 +457,40 @@ void URpgCharacterMovementComponent::OnClientCorrectionReceived(
 	uint8 ServerMovementMode,
 	FVector ServerGravityDirection)
 {
+#if WITH_DEV_AUTOMATION_TESTS
+	++ClientCorrectionReceivedCountForTests;
+	LastClientCorrectionMovementBaseForTests.Clear();
+	if (MovementBaseUtility::IsMovementBaseDataValid(
+		NewMovementBaseInterfaceData))
+	{
+		LastClientCorrectionMovementBaseForTests =
+			*NewMovementBaseInterfaceData;
+	}
+	LastClientCorrectionBaseBoneNameForTests = NewBaseBoneName;
+	bLastClientCorrectionHadBaseForTests = bHasBase;
+	bLastClientCorrectionWasBaseRelativeForTests = bBaseRelativePosition;
+#endif
+
 	// NewLocation is already converted to world space by ClientAdjustPosition. Compare
 	// it with the acknowledged move from the same timestamp, not the client's current
-	// location which may be many unacknowledged moves ahead under latency. Also retain
-	// the live pre-correction location so replay can detect a real presentation jump when
-	// an earlier correction prunes the saved move that originally contained the error.
+	// location which may be many unacknowledged moves ahead under latency. Dynamic-base
+	// corrections must compare the move and server location in their shared base frame;
+	// historical world locations also contain legitimate base translation and rotation.
 	if (UpdatedComponent)
 	{
 		if (!bHasPendingAnimationCorrection)
 		{
-			PendingAnimationCorrectionStartLocation =
-				UpdatedComponent->GetComponentLocation();
+			CapturePendingAnimationCorrectionStart();
 		}
-		const FVector ClientLocationAtCorrectedMove =
-			ClientData.LastAckedMove.IsValid()
-				? ClientData.LastAckedMove->SavedLocation
-				: UpdatedComponent->GetComponentLocation();
 		bHasPendingAnimationCorrection = true;
-		bPendingAnimationCorrectionDiscontinuity |= FVector::DistSquared(
-			ClientLocationAtCorrectedMove,
-			NewLocation) > FMath::Square(NetworkLargeClientCorrectionDistance);
+		bPendingAnimationCorrectionDiscontinuity |=
+			IsLargeAcknowledgedAnimationCorrection(
+				ClientData.LastAckedMove.Get(),
+				NewLocation,
+				NewMovementBaseInterfaceData,
+				NewBaseBoneName,
+				bHasBase,
+				bBaseRelativePosition);
 	}
 
 	Super::OnClientCorrectionReceived(
@@ -499,17 +513,12 @@ bool URpgCharacterMovementComponent::ClientUpdatePositionAfterServerUpdate()
 
 	if (bHadPendingAnimationCorrection)
 	{
-		const bool bLivePresentationDiscontinuity = UpdatedComponent &&
-			FVector::DistSquared(
-				PendingAnimationCorrectionStartLocation,
-				UpdatedComponent->GetComponentLocation()) >
-				FMath::Square(NetworkLargeClientCorrectionDistance);
+		const bool bLivePresentationDiscontinuity =
+			IsLargePendingAnimationCorrection();
 		const bool bShouldMarkAnimationDiscontinuity =
 			bPendingAnimationCorrectionDiscontinuity ||
 			bLivePresentationDiscontinuity;
-		bHasPendingAnimationCorrection = false;
-		PendingAnimationCorrectionStartLocation = FVector::ZeroVector;
-		bPendingAnimationCorrectionDiscontinuity = false;
+		ResetPendingAnimationCorrectionState();
 		if (bShouldMarkAnimationDiscontinuity)
 		{
 			MarkAnimationDiscontinuity();
@@ -517,6 +526,144 @@ bool URpgCharacterMovementComponent::ClientUpdatePositionAfterServerUpdate()
 	}
 
 	return bReplayedMoves;
+}
+
+#if WITH_DEV_AUTOMATION_TESTS
+bool URpgCharacterMovementComponent::WasLastClientCorrectionBaseRelativeForTests(
+	const FMovementBaseInterfaceData* ExpectedMovementBaseInterfaceData,
+	FName ExpectedBaseBoneName) const
+{
+	return bLastClientCorrectionHadBaseForTests &&
+		bLastClientCorrectionWasBaseRelativeForTests &&
+		MovementBaseUtility::IsMovementBaseDataValid(
+			ExpectedMovementBaseInterfaceData) &&
+		MovementBaseUtility::IsMovementBaseDataValid(
+			&LastClientCorrectionMovementBaseForTests) &&
+		MovementBaseUtility::DoesMovementBaseDataMatch(
+			ExpectedMovementBaseInterfaceData,
+			&LastClientCorrectionMovementBaseForTests) &&
+		LastClientCorrectionBaseBoneNameForTests == ExpectedBaseBoneName;
+}
+#endif
+
+void URpgCharacterMovementComponent::CapturePendingAnimationCorrectionStart()
+{
+	PendingAnimationCorrectionStartLocation = UpdatedComponent
+		? UpdatedComponent->GetComponentLocation()
+		: FVector::ZeroVector;
+	PendingAnimationCorrectionStartRelativeLocation = FVector::ZeroVector;
+	PendingAnimationCorrectionStartMovementBase.Clear();
+	PendingAnimationCorrectionStartBaseBoneName = NAME_None;
+	bHasPendingAnimationCorrectionStartRelativeLocation = false;
+
+	if (CharacterOwner)
+	{
+		const FBasedMovementInfo& BasedMovement =
+			CharacterOwner->GetBasedMovement();
+		if (BasedMovement.HasRelativeLocation() &&
+			MovementBaseUtility::IsMovementBaseDataValid(
+				&BasedMovement.MovementBaseInterfaceData))
+		{
+			// Use UE's cached relative location. A correction RPC may arrive before
+			// the capsule has followed a base that already ticked this frame.
+			PendingAnimationCorrectionStartRelativeLocation = BasedMovement.Location;
+			PendingAnimationCorrectionStartMovementBase =
+				BasedMovement.MovementBaseInterfaceData;
+			PendingAnimationCorrectionStartBaseBoneName = BasedMovement.BoneName;
+			bHasPendingAnimationCorrectionStartRelativeLocation = true;
+		}
+	}
+}
+
+bool URpgCharacterMovementComponent::IsLargeAcknowledgedAnimationCorrection(
+	const FSavedMove_Character* AcknowledgedMove,
+	const FVector& NewLocation,
+	const FMovementBaseInterfaceData* NewMovementBaseInterfaceData,
+	FName NewBaseBoneName,
+	bool bHasBase,
+	bool bBaseRelativePosition) const
+{
+	FVector ClientLocation = AcknowledgedMove
+		? AcknowledgedMove->SavedLocation
+		: UpdatedComponent
+			? UpdatedComponent->GetComponentLocation()
+			: NewLocation;
+	FVector ServerLocation = NewLocation;
+
+	const bool bCanCompareRelative =
+		AcknowledgedMove &&
+		bHasBase &&
+		bBaseRelativePosition &&
+		MovementBaseUtility::IsMovementBaseDataValid(
+			NewMovementBaseInterfaceData) &&
+		MovementBaseUtility::UseRelativeLocation(
+			NewMovementBaseInterfaceData) &&
+		MovementBaseUtility::UseRelativeLocation(
+			&AcknowledgedMove->EndMovementBaseInterfaceData) &&
+		MovementBaseUtility::DoesMovementBaseDataMatch(
+			&AcknowledgedMove->EndMovementBaseInterfaceData,
+			NewMovementBaseInterfaceData) &&
+		AcknowledgedMove->EndBoneName == NewBaseBoneName;
+	if (bCanCompareRelative)
+	{
+		FVector ServerRelativeLocation = FVector::ZeroVector;
+		if (MovementBaseUtility::TransformLocationToLocal(
+			NewMovementBaseInterfaceData,
+			NewBaseBoneName,
+			NewLocation,
+			ServerRelativeLocation))
+		{
+			ClientLocation = AcknowledgedMove->SavedRelativeLocation;
+			ServerLocation = ServerRelativeLocation;
+		}
+	}
+
+	return FVector::DistSquared(ClientLocation, ServerLocation) >
+		FMath::Square(NetworkLargeClientCorrectionDistance);
+}
+
+bool URpgCharacterMovementComponent::IsLargePendingAnimationCorrection() const
+{
+	if (!UpdatedComponent)
+	{
+		return false;
+	}
+
+	FVector StartLocation = PendingAnimationCorrectionStartLocation;
+	FVector EndLocation = UpdatedComponent->GetComponentLocation();
+	const FBasedMovementInfo* CurrentBasedMovement = CharacterOwner
+		? &CharacterOwner->GetBasedMovement()
+		: nullptr;
+	const bool bCanCompareRelative =
+		bHasPendingAnimationCorrectionStartRelativeLocation &&
+		CurrentBasedMovement &&
+		CurrentBasedMovement->HasRelativeLocation() &&
+		MovementBaseUtility::IsMovementBaseDataValid(
+			&CurrentBasedMovement->MovementBaseInterfaceData) &&
+		MovementBaseUtility::DoesMovementBaseDataMatch(
+			&PendingAnimationCorrectionStartMovementBase,
+			&CurrentBasedMovement->MovementBaseInterfaceData) &&
+		PendingAnimationCorrectionStartBaseBoneName ==
+			CurrentBasedMovement->BoneName;
+	if (bCanCompareRelative)
+	{
+		StartLocation = PendingAnimationCorrectionStartRelativeLocation;
+		EndLocation = CurrentBasedMovement->Location;
+	}
+
+	return FVector::DistSquared(StartLocation, EndLocation) >
+		FMath::Square(NetworkLargeClientCorrectionDistance);
+}
+
+void URpgCharacterMovementComponent::ResetPendingAnimationCorrectionState()
+{
+	bHasPendingAnimationCorrection = false;
+	PendingAnimationCorrectionStartLocation = FVector::ZeroVector;
+	PendingAnimationCorrectionStartRelativeLocation = FVector::ZeroVector;
+	PendingAnimationCorrectionStartMovementBase.Clear();
+	PendingAnimationCorrectionStartBaseBoneName = NAME_None;
+	bHasPendingAnimationCorrectionStartRelativeLocation = false;
+	bPendingAnimationCorrectionDiscontinuity = false;
 }
 
 void URpgCharacterMovementComponent::SmoothCorrection(
