@@ -110,7 +110,7 @@ bool FRpgRespawnScreenCommonUIAssetTest::RunTest(
 	UBlueprint* PlayerControllerBlueprint =
 		LoadObject<UBlueprint>(
 			nullptr,
-			PlayerControllerBlueprintPath);
+			RpgRespawnScreenAssetTests::PlayerControllerBlueprintPath);
 	const FGameplayTag RespawnScreenTag =
 		FGameplayTag::RequestGameplayTag(
 			TEXT("UI.Screen.Respawn"));

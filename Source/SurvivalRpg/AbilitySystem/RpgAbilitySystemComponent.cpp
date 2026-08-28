@@ -6,6 +6,8 @@
 #include "GameplayEffect.h"
 #include "RpgAbilityTagRelationshipMapping.h"
 #include "RpgGlobalAbilitySystem.h"
+#include "SurvivalRpg/AbilitySystem/Abilities/RpgGameplayAbility_BasicWeaponAttack.h"
+#include "SurvivalRpg/Combat/RpgCombatDeveloperSettings.h"
 #include "SurvivalRpg/SurvivalRpg.h"
 #include "SurvivalRpg/Animation/RpgAnimInstance.h"
 #include "SurvivalRpg/Core/Player/RpgBasePlayerState.h"
@@ -204,16 +206,56 @@ PRAGMA_ENABLE_DEPRECATION_WARNINGS
 
 void URpgAbilitySystemComponent::AbilityInputTagPressed(const FGameplayTag& InputTag)
 {
+	AActor* AbilityAvatarActor = nullptr;
+	bool bLogClientWeaponRequest = false;
+	if (InputTag == RpgGameplayTags::InputTag_Weapon_Primary)
+	{
+		AbilityAvatarActor = GetAvatarActor();
+		const URpgCombatDeveloperSettings* CombatSettings =
+			GetDefault<URpgCombatDeveloperSettings>();
+		bLogClientWeaponRequest = CombatSettings &&
+			CombatSettings->bLogWeaponAttackLifecycle &&
+			AbilityAvatarActor && !AbilityAvatarActor->HasAuthority();
+	}
+
+	int32 MatchingSpecCount = 0;
+	FString MatchingSpecHandles;
 	if (InputTag.IsValid())
 	{
 		for (const FGameplayAbilitySpec& AbilitySpec : ActivatableAbilities.Items)
 		{
 			if (AbilitySpec.Ability && (AbilitySpec.GetDynamicSpecSourceTags().HasTagExact(InputTag)))
 			{
+				if (bLogClientWeaponRequest)
+				{
+					++MatchingSpecCount;
+					if (!MatchingSpecHandles.IsEmpty())
+					{
+						MatchingSpecHandles += TEXT(",");
+					}
+					MatchingSpecHandles += AbilitySpec.Handle.ToString();
+				}
 				InputPressedSpecHandles.AddUnique(AbilitySpec.Handle);
 				InputHeldSpecHandles.AddUnique(AbilitySpec.Handle);
 			}
 		}
+	}
+
+	if (bLogClientWeaponRequest)
+	{
+		const UWorld* World = AbilityAvatarActor->GetWorld();
+		UE_LOG(
+			LogRpgWeapons,
+			Log,
+			TEXT("WeaponAttackLifecycle Stage=ActivationRequest.Client Ability=None Spec=%s Avatar=%s NetMode=%d LocalRole=%d RemoteRole=%d WorldTime=%.3f Montage=None Section=None Position=-1.000 PredictionKey=Pending Detail=InputTag=%s MatchingSpecs=%d"),
+			MatchingSpecHandles.IsEmpty() ? TEXT("None") : *MatchingSpecHandles,
+			*GetNameSafe(AbilityAvatarActor),
+			World ? static_cast<int32>(World->GetNetMode()) : INDEX_NONE,
+			static_cast<int32>(AbilityAvatarActor->GetLocalRole()),
+			static_cast<int32>(AbilityAvatarActor->GetRemoteRole()),
+			World ? World->GetTimeSeconds() : -1.0,
+			*InputTag.ToString(),
+			MatchingSpecCount);
 	}
 }
 
@@ -350,6 +392,21 @@ void URpgAbilitySystemComponent::NotifyAbilityFailed(const FGameplayAbilitySpecH
 	const FGameplayTagContainer& FailureReason)
 {
 	Super::NotifyAbilityFailed(Handle, Ability, FailureReason);
+
+	AActor* AbilityAvatarActor = GetAvatarActor();
+	if (AbilityAvatarActor && AbilityAvatarActor->HasAuthority())
+	{
+		if (const URpgGameplayAbility_BasicWeaponAttack* WeaponAttack =
+			Cast<URpgGameplayAbility_BasicWeaponAttack>(Ability))
+		{
+			const FString PredictionKey = GetPredictionKeyForNewAction().ToString();
+			WeaponAttack->LogAbilitySystemActivationFailure(
+				Handle,
+				AbilityAvatarActor,
+				FailureReason,
+				PredictionKey);
+		}
+	}
 	
 	if (APawn* Avatar = Cast<APawn>(GetAvatarActor()))
 	{

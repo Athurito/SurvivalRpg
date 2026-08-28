@@ -17,6 +17,7 @@ public class SurvivalRpgEditor : ModuleRules
 
 		PrivateDependencyModuleNames.AddRange(new string[]
 		{
+			"AIModule",
 			"AnimGraph",
 			"AnimGraphRuntime",
 			"AnimationWarpingEditor",

@@ -204,13 +204,15 @@ bool FRpgQuickAccessRadialInputAssetTest::RunTest(
 	const UInputMappingContext* PlayerHudContext =
 		LoadObject<UInputMappingContext>(
 			nullptr,
-			PlayerHudMappingContextPath);
+			RpgQuickAccessRadialAssetTests::PlayerHudMappingContextPath);
 	const UInputMappingContext* RadialContext =
 		LoadObject<UInputMappingContext>(
 			nullptr,
 			RadialMappingContextPath);
 	const URpgInputConfig* PlayerInputConfig =
-		LoadObject<URpgInputConfig>(nullptr, PlayerInputConfigPath);
+		LoadObject<URpgInputConfig>(
+			nullptr,
+			RpgQuickAccessRadialAssetTests::PlayerInputConfigPath);
 	if (!TestNotNull(
 			TEXT("IMC_UI_PlayerHUD loads"),
 			PlayerHudContext) ||
@@ -435,7 +437,9 @@ bool FRpgInteractionInputAssetTest::RunTest(
 	const UInputAction* InteractAction =
 		LoadObject<UInputAction>(nullptr, InteractActionPath);
 	const URpgInputConfig* PlayerInputConfig =
-		LoadObject<URpgInputConfig>(nullptr, PlayerInputConfigPath);
+		LoadObject<URpgInputConfig>(
+			nullptr,
+			RpgQuickAccessRadialAssetTests::PlayerInputConfigPath);
 	if (!TestNotNull(
 			TEXT("IMC_Movement loads"),
 			MovementContext) ||
@@ -584,7 +588,9 @@ bool FRpgQuickAccessRadialCompositionAssetTest::RunTest(
 			nullptr,
 			RadialSlotBlueprintPath);
 	const UBlueprint* PrototypeExperienceBlueprint =
-		LoadObject<UBlueprint>(nullptr, PrototypeExperiencePath);
+		LoadObject<UBlueprint>(
+			nullptr,
+			RpgQuickAccessRadialAssetTests::PrototypeExperiencePath);
 	if (!TestNotNull(
 			TEXT("CUI_RpgHudLayout class loads"),
 			HudLayoutClass) ||
