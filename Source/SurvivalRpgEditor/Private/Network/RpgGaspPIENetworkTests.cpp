@@ -7,6 +7,7 @@
 #include "AbilitySystemComponent.h"
 #include "Animation/AnimMontage.h"
 #include "Animation/AnimSequence.h"
+#include "Components/BoxComponent.h"
 #include "Components/SkeletalMeshComponent.h"
 #include "Engine/NetConnection.h"
 #include "Engine/NetDriver.h"
@@ -44,6 +45,7 @@ namespace RpgGaspPIENetworkTests
 	struct FNetworkState : public FBasePIENetworkComponentState
 	{
 		ARpgGaspNetworkFloorFixture* Floor = nullptr;
+		ARpgGaspNetworkMovingBaseFixture* MovingBase = nullptr;
 		int32 SubjectPlayerId = INDEX_NONE;
 		FTimerHandle MovementInputTimer;
 		FTimerHandle ObservationTimer;
@@ -73,6 +75,8 @@ namespace RpgGaspPIENetworkTests
 		int32 LastObservedAnimationResetDelta = MIN_int32;
 		double AnimationResetStableStartTime = -1.0;
 		uint64 AnimationResetStableStartFrame = 0;
+		FVector MovingBaseObservationStartLocation = FVector::ZeroVector;
+		uint32 ClientCorrectionCountBaseline = 0;
 		FVector MontageStartLocation = FVector::ZeroVector;
 		double MontageConvergenceStartTime = 0.0;
 		float MaximumMontageDisplacement = 0.0f;
@@ -977,6 +981,42 @@ namespace RpgGaspPIENetworkTests
 		}
 		return Now - State.AnimationResetStableStartTime >= 0.35 &&
 			GFrameCounter - State.AnimationResetStableStartFrame >= 10;
+	}
+
+	bool IsSubjectOnMovingBase(
+		FNetworkState& State,
+		const ENetRole ExpectedLocalRole)
+	{
+		ARpgCharacter* Character = FindCharacterByPlayerId(
+			State.World,
+			State.SubjectPlayerId);
+		return Character &&
+			IsValid(State.MovingBase) &&
+			Character->GetLocalRole() == ExpectedLocalRole &&
+			Character->GetCharacterMovement()->IsMovingOnGround() &&
+			Character->GetMovementBaseObject() ==
+				State.MovingBase->GetMovementSurface();
+	}
+
+	bool HasObservedMovingBaseCorrection(FNetworkState& State)
+	{
+		ARpgCharacter* Character = FindCharacterByPlayerId(
+			State.World,
+			State.SubjectPlayerId);
+		URpgCharacterMovementComponent* MovementComponent = Character
+			? Cast<URpgCharacterMovementComponent>(
+				Character->GetCharacterMovement())
+			: nullptr;
+		const FMovementBaseInterfaceData ExpectedMovementBase(
+			IsValid(State.MovingBase)
+				? State.MovingBase->GetMovementSurface()
+				: nullptr);
+		return MovementComponent &&
+			MovementComponent->GetClientCorrectionReceivedCountForTests() >
+				State.ClientCorrectionCountBaseline &&
+			MovementComponent->WasLastClientCorrectionBaseRelativeForTests(
+				&ExpectedMovementBase,
+				NAME_None);
 	}
 
 	bool HasRotationMode(FNetworkState& State, const ERpgCharacterRotationMode ExpectedMode)
@@ -2538,6 +2578,348 @@ NETWORK_TEST_CLASS(GaspPilotPIE, "SurvivalRpg.Network")
 				{
 					StopMovementInput(State);
 					State.World->GetTimerManager().ClearTimer(State.ObservationTimer);
+				});
+	}
+
+	TEST_METHOD(MovingBaseCorrectionPreservesAnimationHistory)
+	{
+		using namespace RpgGaspPIENetworkTests;
+
+		Network
+			.SpawnAndReplicate<
+				ARpgGaspNetworkMovingBaseFixture,
+				&FNetworkState::MovingBase>(
+				NetworkTimeout())
+			.UntilServer(
+				TEXT("Pilot Experience loads for the moving-base correction test"),
+				[](FNetworkState& State)
+				{
+					return IsPilotExperienceReady(State, 1);
+				},
+				NetworkTimeout())
+			.UntilClients(
+				TEXT("Moving-base client loads the Pilot pawn"),
+				[](FNetworkState& State)
+				{
+					return IsPilotExperienceReady(State, 1) &&
+						IsPilotCharacterReady(FindLocalCharacter(State.World)) &&
+						IsValid(State.MovingBase);
+				},
+				NetworkTimeout())
+			.ThenClient(
+				TEXT("Capture the moving-base autonomous subject"),
+				0,
+				[this](FNetworkState& State)
+				{
+					ARpgCharacter* Character = FindLocalCharacter(State.World);
+					ASSERT_THAT(IsNotNull(Character));
+					ASSERT_THAT(IsNotNull(Character->GetPlayerState()));
+					SubjectPlayerId = Character->GetPlayerState()->GetPlayerId();
+					ASSERT_THAT(IsTrue(SubjectPlayerId != INDEX_NONE));
+					State.SubjectPlayerId = SubjectPlayerId;
+				})
+			.ThenServer(
+				TEXT("Place the autonomous subject on the replicated moving base"),
+				[this](FNetworkState& State)
+				{
+					State.SubjectPlayerId = SubjectPlayerId;
+					ASSERT_THAT(IsNotNull(State.MovingBase));
+					ARpgCharacter* Character = FindCharacterByPlayerId(
+						State.World,
+						State.SubjectPlayerId);
+					ASSERT_THAT(IsNotNull(Character));
+					if (State.MovingBase && Character)
+					{
+						State.MovingBase->SetActorLocation(FVector(-1500.0f, 0.0f, 200.0f));
+						State.MovingBase->ForceNetUpdate();
+						const FVector RelativeCharacterLocation(
+							200.0f,
+							0.0f,
+							25.0f + Character->GetSimpleCollisionHalfHeight() + 2.0f);
+						const FVector CharacterLocation =
+							State.MovingBase->GetActorTransform().TransformPosition(
+								RelativeCharacterLocation);
+						Character->TeleportTo(CharacterLocation, FRotator::ZeroRotator);
+						Character->GetCharacterMovement()->StopMovementImmediately();
+						Character->GetCharacterMovement()->SetMovementMode(MOVE_Walking);
+						Character->ForceNetUpdate();
+					}
+				})
+			.UntilServer(
+				TEXT("Authority recognizes the moving platform as the subject base"),
+				[](FNetworkState& State)
+				{
+					return IsSubjectOnMovingBase(State, ROLE_Authority);
+				},
+				NetworkTimeout())
+			.UntilClient(
+				TEXT("Owner recognizes the replicated moving platform as its base"),
+				0,
+				[this](FNetworkState& State)
+				{
+					State.SubjectPlayerId = SubjectPlayerId;
+					return IsSubjectOnMovingBase(State, ROLE_AutonomousProxy);
+				},
+				NetworkTimeout())
+			.ThenClientJoins(NetworkTimeout())
+			.UntilClient(
+				TEXT("Late moving-base observer receives the replicated fixture"),
+				1,
+				[](FNetworkState& State)
+				{
+					return IsValid(State.MovingBase);
+				},
+				NetworkTimeout())
+			.UntilServer(
+				TEXT("Moving-base test establishes the second listen-server connection"),
+				[](FNetworkState& State)
+				{
+					return IsPilotExperienceReady(State, 2);
+				},
+				NetworkTimeout())
+			.UntilClient(
+				TEXT("Late moving-base observer loads the Pilot pawn"),
+				1,
+				[](FNetworkState& State)
+				{
+					return IsPilotExperienceReady(State, 2) &&
+						IsPilotCharacterReady(FindLocalCharacter(State.World));
+				},
+				NetworkTimeout())
+			.ThenClients(
+				TEXT("Bind the moving-base subject in both client worlds"),
+				[this](FNetworkState& State)
+				{
+					State.SubjectPlayerId = SubjectPlayerId;
+				})
+			.UntilClient(
+				TEXT("Late observer recognizes the subject as a based simulated proxy"),
+				1,
+				[](FNetworkState& State)
+				{
+					return IsSubjectOnMovingBase(State, ROLE_SimulatedProxy);
+				},
+				NetworkTimeout())
+			.ThenClients(
+				TEXT("Capture moving-base animation-history baselines on both client roles"),
+				[this](FNetworkState& State)
+				{
+					State.SubjectPlayerId = SubjectPlayerId;
+					int32 ResetCount = 0;
+					ASSERT_THAT(IsTrue(ReadAnimationHistoryResetCount(
+						State,
+						ResetCount)));
+					State.AnimationResetBaseline = ResetCount;
+					State.LastObservedAnimationResetDelta = MIN_int32;
+					State.AnimationResetStableStartTime = -1.0;
+					State.AnimationResetStableStartFrame = 0;
+					State.MovingBaseObservationStartLocation =
+						State.MovingBase->GetActorLocation();
+				})
+			.ThenClient(
+				TEXT("Start low owner input so corrections include real SavedMove replay"),
+				0,
+				[](FNetworkState& State)
+				{
+					StartMovementInput(State, FVector::YAxisVector, 0.11f);
+				})
+			.ThenServer(
+				TEXT("Start fast authoritative platform translation and rotation"),
+				[this](FNetworkState& State)
+				{
+					ASSERT_THAT(IsNotNull(State.MovingBase));
+					if (State.MovingBase)
+					{
+						State.MovingBase->StartMotion();
+					}
+				})
+			.UntilClients(
+				TEXT("Both client roles receive more than one reset threshold of platform motion"),
+				[](FNetworkState& State)
+				{
+					const ENetRole ExpectedRole = State.ClientIndex == 0
+						? ROLE_AutonomousProxy
+						: ROLE_SimulatedProxy;
+					return IsSubjectOnMovingBase(State, ExpectedRole) &&
+						FVector::Dist(
+							State.MovingBaseObservationStartLocation,
+							State.MovingBase->GetActorLocation()) > 100.0f;
+				},
+				NetworkTimeout())
+			.ThenClient(
+				TEXT("Create a small owner-only error below the animation reset threshold"),
+				0,
+				[this](FNetworkState& State)
+				{
+					ARpgCharacter* Character = FindCharacterByPlayerId(
+						State.World,
+						State.SubjectPlayerId);
+					ASSERT_THAT(IsNotNull(Character));
+					if (Character)
+					{
+						Character->SetActorLocation(
+							Character->GetActorLocation() + FVector(10.0f, 0.0f, 0.0f),
+							false,
+							nullptr,
+							ETeleportType::None);
+						URpgCharacterMovementComponent* MovementComponent =
+							Cast<URpgCharacterMovementComponent>(
+								Character->GetCharacterMovement());
+						ASSERT_THAT(IsNotNull(MovementComponent));
+						if (MovementComponent)
+						{
+							MovementComponent->SaveBaseLocation();
+							State.ClientCorrectionCountBaseline =
+								MovementComponent->GetClientCorrectionReceivedCountForTests();
+						}
+					}
+				})
+			.ThenServer(
+				TEXT("Force a genuine base-relative client adjustment during platform motion"),
+				[this](FNetworkState& State)
+				{
+					ARpgCharacter* Character = FindCharacterByPlayerId(
+						State.World,
+						State.SubjectPlayerId);
+					URpgCharacterMovementComponent* MovementComponent = Character
+						? Cast<URpgCharacterMovementComponent>(
+							Character->GetCharacterMovement())
+						: nullptr;
+					ASSERT_THAT(IsNotNull(MovementComponent));
+					if (MovementComponent)
+					{
+						FNetworkPredictionData_Server_Character* ServerPrediction =
+							MovementComponent->GetPredictionData_Server_Character();
+						ASSERT_THAT(IsNotNull(ServerPrediction));
+						if (ServerPrediction)
+						{
+							ServerPrediction->bForceClientUpdate = true;
+						}
+						MovementComponent->ForceReplicationUpdate();
+						MovementComponent->ForceClientAdjustment();
+					}
+				})
+			.UntilClient(
+				TEXT("Owner receives the forced moving-base correction"),
+				0,
+				[](FNetworkState& State)
+				{
+					return HasObservedMovingBaseCorrection(State);
+				},
+				NetworkTimeout())
+			.UntilClients(
+				TEXT("Small moving-base correction leaves both client histories stable"),
+				[](FNetworkState& State)
+				{
+					const ENetRole ExpectedRole = State.ClientIndex == 0
+						? ROLE_AutonomousProxy
+						: ROLE_SimulatedProxy;
+					return IsSubjectOnMovingBase(State, ExpectedRole) &&
+						HasStableAnimationResetDelta(State, 0);
+				},
+				NetworkTimeout())
+			.ThenClients(
+				TEXT("Re-arm history observations before the large relative correction"),
+				[](FNetworkState& State)
+				{
+					State.AnimationResetStableStartTime = -1.0;
+					State.AnimationResetStableStartFrame = 0;
+				})
+			.ThenClient(
+				TEXT("Create an owner-only relative error above the animation reset threshold"),
+				0,
+				[this](FNetworkState& State)
+				{
+					ARpgCharacter* Character = FindCharacterByPlayerId(
+						State.World,
+						State.SubjectPlayerId);
+					URpgCharacterMovementComponent* MovementComponent = Character
+						? Cast<URpgCharacterMovementComponent>(
+							Character->GetCharacterMovement())
+						: nullptr;
+					ASSERT_THAT(IsNotNull(Character));
+					ASSERT_THAT(IsNotNull(MovementComponent));
+					if (Character && MovementComponent)
+					{
+						const float RelativeError = FMath::Max(
+							MovementComponent->NetworkLargeClientCorrectionDistance + 25.0f,
+							100.0f);
+						Character->SetActorLocation(
+							Character->GetActorLocation() + FVector(RelativeError, 0.0f, 0.0f),
+							false,
+							nullptr,
+							ETeleportType::None);
+						MovementComponent->SaveBaseLocation();
+						State.ClientCorrectionCountBaseline =
+							MovementComponent->GetClientCorrectionReceivedCountForTests();
+					}
+				})
+			.ThenServer(
+				TEXT("Force the large base-relative client adjustment during platform motion"),
+				[this](FNetworkState& State)
+				{
+					ARpgCharacter* Character = FindCharacterByPlayerId(
+						State.World,
+						State.SubjectPlayerId);
+					URpgCharacterMovementComponent* MovementComponent = Character
+						? Cast<URpgCharacterMovementComponent>(
+							Character->GetCharacterMovement())
+						: nullptr;
+					ASSERT_THAT(IsNotNull(MovementComponent));
+					if (MovementComponent)
+					{
+						FNetworkPredictionData_Server_Character* ServerPrediction =
+							MovementComponent->GetPredictionData_Server_Character();
+						ASSERT_THAT(IsNotNull(ServerPrediction));
+						if (ServerPrediction)
+						{
+							ServerPrediction->bForceClientUpdate = true;
+						}
+						MovementComponent->ForceReplicationUpdate();
+						MovementComponent->ForceClientAdjustment();
+					}
+				})
+			.UntilClient(
+				TEXT("Owner receives the large moving-base correction"),
+				0,
+				[](FNetworkState& State)
+				{
+					return HasObservedMovingBaseCorrection(State);
+				},
+				NetworkTimeout())
+			.UntilClient(
+				TEXT("Large relative correction resets owner animation history exactly once"),
+				0,
+				[](FNetworkState& State)
+				{
+					return IsSubjectOnMovingBase(State, ROLE_AutonomousProxy) &&
+						HasStableAnimationResetDelta(State, 1);
+				},
+				NetworkTimeout())
+			.UntilClient(
+				TEXT("Owner correction leaves the moving simulated proxy history stable"),
+				1,
+				[](FNetworkState& State)
+				{
+					return IsSubjectOnMovingBase(State, ROLE_SimulatedProxy) &&
+						HasStableAnimationResetDelta(State, 0);
+				},
+				NetworkTimeout())
+			.ThenServer(
+				TEXT("Stop the moving-base fixture after correction validation"),
+				[](FNetworkState& State)
+				{
+					if (State.MovingBase)
+					{
+						State.MovingBase->StopMotion();
+					}
+				})
+			.ThenClient(
+				TEXT("Stop owner input after moving-base validation"),
+				0,
+				[](FNetworkState& State)
+				{
+					StopMovementInput(State);
 				});
 	}
 

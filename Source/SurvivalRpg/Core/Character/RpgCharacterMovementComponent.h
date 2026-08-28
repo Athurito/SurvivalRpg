@@ -71,6 +71,19 @@ public:
 	 */
 	uint32 GetAnimationDiscontinuitySerial() const { return AnimationDiscontinuitySerial; }
 
+#if WITH_DEV_AUTOMATION_TESTS
+	/** Returns how many server corrections reached this local component during the current test lifetime. */
+	uint32 GetClientCorrectionReceivedCountForTests() const
+	{
+		return ClientCorrectionReceivedCountForTests;
+	}
+
+	/** Returns whether the latest observed correction used the expected resolved relative base frame. */
+	bool WasLastClientCorrectionBaseRelativeForTests(
+		const FMovementBaseInterfaceData* ExpectedMovementBaseInterfaceData,
+		FName ExpectedBaseBoneName) const;
+#endif
+
 	/** Applies the server's semantic teleport edge on a simulated proxy. */
 	void NotifyReplicatedAnimationTeleport();
 
@@ -134,6 +147,24 @@ protected:
 	/** Advances the local history-reset edge without adding another replicated movement contract. */
 	void MarkAnimationDiscontinuity();
 
+	/** Captures the live pre-correction position in world and, when possible, movement-base space. */
+	void CapturePendingAnimationCorrectionStart();
+
+	/** Returns whether the acknowledged move differs materially from the server in a comparable space. */
+	bool IsLargeAcknowledgedAnimationCorrection(
+		const FSavedMove_Character* AcknowledgedMove,
+		const FVector& NewLocation,
+		const FMovementBaseInterfaceData* NewMovementBaseInterfaceData,
+		FName NewBaseBoneName,
+		bool bHasBase,
+		bool bBaseRelativePosition) const;
+
+	/** Returns whether correction replay caused a material presentation jump beyond movement-base motion. */
+	bool IsLargePendingAnimationCorrection() const;
+
+	/** Clears every transient value owned by the pending correction batch. */
+	void ResetPendingAnimationCorrectionState();
+
 	/** Rebuilds the value-only move-intent and gait snapshot after CharacterMovement updates. */
 	void RefreshLocomotionSnapshot();
 
@@ -179,11 +210,40 @@ protected:
 	/** Frame used to coalesce a replicated teleport and its accompanying hard movement correction. */
 	uint64 LastAnimationDiscontinuityFrame = MAX_uint64;
 
+#if WITH_DEV_AUTOMATION_TESTS
+	/** Editor-test observation only; it is neither replicated nor consumed by gameplay. */
+	uint32 ClientCorrectionReceivedCountForTests = 0;
+
+	/** Last correction's base identity, retained only so PIE tests can prove the RPC contract. */
+	FMovementBaseInterfaceData LastClientCorrectionMovementBaseForTests;
+
+	/** Last correction's base bone, paired with the editor-only base identity. */
+	FName LastClientCorrectionBaseBoneNameForTests = NAME_None;
+
+	/** True when the latest editor-observed correction declared a movement base. */
+	bool bLastClientCorrectionHadBaseForTests = false;
+
+	/** True when the latest editor-observed correction declared its position base-relative. */
+	bool bLastClientCorrectionWasBaseRelativeForTests = false;
+#endif
+
 	/** True until the pending server correction and its saved moves have been evaluated together. */
 	bool bHasPendingAnimationCorrection = false;
 
 	/** Live autonomous-pawn location before the pending correction batch and saved-move replay. */
 	FVector PendingAnimationCorrectionStartLocation = FVector::ZeroVector;
+
+	/** Base-relative live location captured before replay when the client stands on a dynamic base. */
+	FVector PendingAnimationCorrectionStartRelativeLocation = FVector::ZeroVector;
+
+	/** Weak movement-base identity paired with the pre-replay relative location. */
+	FMovementBaseInterfaceData PendingAnimationCorrectionStartMovementBase;
+
+	/** Bone/socket frame paired with the pre-replay movement-base identity. */
+	FName PendingAnimationCorrectionStartBaseBoneName = NAME_None;
+
+	/** True when the pending live comparison can use the captured movement-base frame. */
+	bool bHasPendingAnimationCorrectionStartRelativeLocation = false;
 
 	/** True when any correction in the pending batch exceeds UE's large-correction threshold. */
 	bool bPendingAnimationCorrectionDiscontinuity = false;
