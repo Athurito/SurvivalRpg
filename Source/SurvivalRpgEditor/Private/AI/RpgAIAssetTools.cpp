@@ -9,7 +9,6 @@
 #include "StateTreeEditorData.h"
 #include "StateTreeEditorSchema.h"
 #include "StateTreeState.h"
-#include "SurvivalRpg/AbilitySystem/RpgAbilitySet.h"
 #include "SurvivalRpg/Combat/RpgEnemyCombatLoadout.h"
 #include "SurvivalRpg/Core/AI/RpgAIController.h"
 #include "SurvivalRpg/Core/AI/RpgAIPawnData.h"
@@ -94,7 +93,6 @@ bool URpgAIAssetTools::ConfigureRiftGruntPawnDataAndController(
 	URpgAIPawnData* PawnData,
 	TSubclassOf<APawn> PawnClass,
 	UStateTree* StateTree,
-	const URpgAbilitySet* CoreAbilitySet,
 	TSubclassOf<ARpgAIController> ControllerClass,
 	const URpgEnemyCombatLoadoutDefinition* BasicSwordLoadout)
 {
@@ -119,12 +117,6 @@ bool URpgAIAssetTools::ConfigureRiftGruntPawnDataAndController(
 	if (const FGameplayTag FactionTag = FGameplayTag::RequestGameplayTag(TEXT("Faction.Enemy"), false); FactionTag.IsValid())
 	{
 		PawnData->FactionTags.AddTag(FactionTag);
-	}
-
-	PawnData->AbilitySets.Reset();
-	if (CoreAbilitySet)
-	{
-		PawnData->AbilitySets.Add(CoreAbilitySet);
 	}
 
 	PawnData->MarkPackageDirty();
