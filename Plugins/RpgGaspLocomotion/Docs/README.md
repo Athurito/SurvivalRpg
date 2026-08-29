@@ -5,6 +5,10 @@ This content-only plugin owns the curated Game Animation Sample Project (GASP) l
 The behavior-preserving source-to-project responsibility map and the staged issue #81 extraction
 order are recorded in [RuntimeOwnershipMap.md](RuntimeOwnershipMap.md).
 
+The evidence-based Adopt/Defer/Reject decisions for remaining Crouch, Walk, Run, Sprint, Slide,
+Avoidance, and FromTraversal families are recorded in
+[LocomotionFamilyAudit.md](LocomotionFamilyAudit.md).
+
 The real listen-server acceptance procedure for issues #81, #97, #100, #101, and #103 is recorded
 in [the GASP real-network smoke runbook](../../../docs/gasp-network-smoke.md). It uses an actual PIE
 network session with native acceleration, analog gait prediction/correction, moving and stationary
