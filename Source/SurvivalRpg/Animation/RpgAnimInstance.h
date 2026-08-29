@@ -28,7 +28,9 @@ class UAbilitySystemComponent;
 class UAnimationAsset;
 class UAnimSequence;
 class UPoseSearchDatabase;
+class URpgCombatAnimationProfileProviderComponent;
 #if WITH_DEV_AUTOMATION_TESTS
+class FRpgCombatAnimationProfileProviderLifecycleTest;
 class FRpgJumpPhaseRuntimeTest;
 class FRpgLandingSelectionRuntimeTest;
 class FRpgMotionMatchingDatabaseResolverTest;
@@ -388,6 +390,7 @@ public:
 #endif // WITH_EDITOR
 
 	virtual void NativeInitializeAnimation() override;
+	virtual void NativeUninitializeAnimation() override;
 	virtual void NativeThreadSafeUpdateAnimation(float DeltaSeconds) override;
 
 protected:
@@ -470,13 +473,6 @@ protected:
 	 */
 	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Rpg|Animation|Presentation")
 	TObjectPtr<URpgGaspPresentationProfile> GaspPresentationProfile;
-
-	/**
-	 * Designer-owned combat upper-body profile resolved from replicated MainHand/OffHand traits.
-	 * The profile is cosmetic only; Equipment, GAS, and Character rotation remain authoritative.
-	 */
-	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Rpg|Animation|Combat")
-	TObjectPtr<URpgCombatAnimationProfile> CombatAnimationProfile;
 
 	/**
 	 * Legacy serialized stand-idle Light landing fallback. This preserves the #66 property name and
@@ -850,6 +846,24 @@ private:
 	/** Builds immutable presentation/database caches and selects the atomic profile or legacy mode. */
 	void InitializeGaspRuntimeConfiguration();
 
+	/**
+	 * Refreshes the feature-owned combat profile on the game thread and clears every stale proxy and
+	 * GC reference before a removed feature may unload its content.
+	 */
+	void SynchronizeCombatAnimationProfileProvider(
+		const AActor* OwningActor,
+		FRpgAnimInstanceProxy& Proxy);
+
+	/** Clears this exact provider synchronously before its GameFeature content can unload. */
+	void HandleCombatAnimationProfileProviderUnregistering(
+		const URpgCombatAnimationProfileProviderComponent* Provider);
+
+	/** Clears lookup, proxy, public, weak, and GC-strong state while the old profile is still alive. */
+	void ClearCombatAnimationProfileProvider(FRpgAnimInstanceProxy& Proxy);
+
+	/** Restores the public Blueprint facade to its feature-absent neutral state. */
+	void ResetPublishedCombatAnimationState();
+
 	/** Value-only result used to keep Reset Root, Orientation Warping, and Steering gates independent. */
 	struct FGaspProceduralGates
 	{
@@ -1019,8 +1033,17 @@ private:
 
 	/** Immutable presentation traits built on the game thread from GaspPresentationProfile. */
 	FRpgGaspPresentationAssetLookup GaspPresentationAssetLookup;
-	/** Immutable combat overlay selection copied from CombatAnimationProfile on initialization. */
+	/** Immutable combat overlay lookup rebuilt on the game thread when the feature provider changes. */
 	FRpgCombatAnimationProfileLookup CombatAnimationProfileLookup;
+	/** Feature-owned provider observed during the latest game-thread PreUpdate. */
+	UPROPERTY(Transient)
+	TWeakObjectPtr<URpgCombatAnimationProfileProviderComponent> CombatAnimationProfileProvider;
+	/**
+	 * GC-strong source retained only while its GameFeature provider is active. It owns every raw
+	 * animation pointer cached by CombatAnimationProfileLookup and the proxy.
+	 */
+	UPROPERTY(Transient)
+	TObjectPtr<URpgCombatAnimationProfile> ActiveCombatAnimationProfileSource;
 	/** Immutable bidirectional database mapping built from the selected profile or legacy facade. */
 	FRpgGaspMotionMatchingDatabaseLookup GaspMotionMatchingDatabaseLookup;
 	/** Pointer-free cosmetic feel copied once for game-thread proxy and worker-thread runtime use. */
@@ -1029,7 +1052,9 @@ private:
 	bool bUseProfileRuntimeConfiguration = false;
 
 	friend struct FRpgAnimInstanceProxy;
+	friend class URpgCombatAnimationProfileProviderComponent;
 #if WITH_DEV_AUTOMATION_TESTS
+	friend class FRpgCombatAnimationProfileProviderLifecycleTest;
 	friend class FRpgJumpPhaseRuntimeTest;
 	friend class FRpgLandingSelectionRuntimeTest;
 	friend class FRpgMotionMatchingDatabaseResolverTest;

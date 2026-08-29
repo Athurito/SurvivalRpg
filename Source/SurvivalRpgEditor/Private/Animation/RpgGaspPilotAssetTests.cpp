@@ -57,6 +57,7 @@
 #include "PoseSearch/PoseSearchIndex.h"
 #include "SurvivalRpg/Animation/RpgAnimInstance.h"
 #include "SurvivalRpg/Animation/RpgCombatAnimationProfile.h"
+#include "SurvivalRpg/Animation/RpgCombatAnimationProfileProviderComponent.h"
 #include "SurvivalRpg/Camera/RpgCameraMode.h"
 #include "SurvivalRpg/Core/Character/RpgCharacter.h"
 #include "SurvivalRpg/Core/Character/RpgPawnData.h"
@@ -834,7 +835,6 @@ namespace RpgGaspPilotAssetTests
 	{
 		return
 			PackageName.StartsWith(TEXT("/RpgGaspLocomotion/")) ||
-			PackageName.StartsWith(TEXT("/GF_Combat_Core/Animations/")) ||
 			PackageName.StartsWith(TEXT("/Game/SurvivalRpg/Characters/Mannequins/Anims/GASP/")) ||
 			PackageName.StartsWith(TEXT("/Game/SurvivalRpg/Core/Character/GASP/")) ||
 			PackageName == PilotExperiencePackage;
@@ -1618,27 +1618,35 @@ bool FRpgGaspPilotAssetContractTest::RunTest(const FString& Parameters)
 			FindFProperty<FObjectPropertyBase>(
 				PilotAnimDefaults->GetClass(),
 				TEXT("CombatAnimationProfile"));
+		TestNull(
+			TEXT("The base AnimInstance no longer exposes an AnimBP-owned combat profile"),
+			CombatAnimationProfileProperty);
+
+		const FObjectPropertyBase* ActiveCombatProfileSourceProperty =
+			FindFProperty<FObjectPropertyBase>(
+				PilotAnimDefaults->GetClass(),
+				TEXT("ActiveCombatAnimationProfileSource"));
 		TestTrue(
-			TEXT("CombatAnimationProfile remains a hard object property of the project profile type"),
-			CombatAnimationProfileProperty &&
-				CombatAnimationProfileProperty->PropertyClass ==
-					URpgCombatAnimationProfile::StaticClass());
+			TEXT("The active feature profile is retained through a GC-strong transient runtime property"),
+			ActiveCombatProfileSourceProperty &&
+				ActiveCombatProfileSourceProperty->PropertyClass ==
+					URpgCombatAnimationProfile::StaticClass() &&
+				ActiveCombatProfileSourceProperty->HasAnyPropertyFlags(CPF_Transient) &&
+				!ActiveCombatProfileSourceProperty->HasAnyPropertyFlags(
+					CPF_Edit | CPF_BlueprintVisible));
+
+		const FWeakObjectProperty* CombatProfileProviderProperty =
+			FindFProperty<FWeakObjectProperty>(
+				PilotAnimDefaults->GetClass(),
+				TEXT("CombatAnimationProfileProvider"));
 		TestTrue(
-			TEXT("CombatAnimationProfile remains designer-authored Blueprint-readable defaults"),
-			CombatAnimationProfileProperty &&
-				CombatAnimationProfileProperty->HasAllPropertyFlags(
-					CPF_Edit | CPF_DisableEditOnInstance | CPF_BlueprintVisible | CPF_BlueprintReadOnly));
-		TestFalse(
-			TEXT("CombatAnimationProfile is not transient runtime state"),
-			CombatAnimationProfileProperty &&
-				CombatAnimationProfileProperty->HasAnyPropertyFlags(CPF_Transient));
-		if (CombatAnimationProfileProperty)
-		{
-			TestEqual(
-				TEXT("The active GASP AnimBlueprint binds the Combat GameFeature profile"),
-				CombatAnimationProfileProperty->GetObjectPropertyValue_InContainer(PilotAnimDefaults),
-				static_cast<UObject*>(CombatAnimationProfile));
-		}
+			TEXT("The feature provider is tracked only as transient weak lifecycle state"),
+			CombatProfileProviderProperty &&
+				CombatProfileProviderProperty->PropertyClass ==
+					URpgCombatAnimationProfileProviderComponent::StaticClass() &&
+				CombatProfileProviderProperty->HasAnyPropertyFlags(CPF_Transient) &&
+				!CombatProfileProviderProperty->HasAnyPropertyFlags(
+					CPF_Edit | CPF_BlueprintVisible));
 
 		for (const FName AnimationPropertyName : {
 			FName(TEXT("CombatEquippedUpperBodyAnimation")),
@@ -3331,6 +3339,14 @@ bool FRpgGaspPilotAssetContractTest::RunTest(const FString& Parameters)
 	TestFalse(
 		TEXT("The pilot AnimBlueprint never directly depends on the full editor-only module"),
 		PilotAnimBlueprintDependencies.Contains(FName(TEXT("/Script/SurvivalRpgEditor"))));
+	for (const FName Dependency : PilotAnimBlueprintDependencies)
+	{
+		TestFalse(
+			*FString::Printf(
+				TEXT("The core GASP AnimBlueprint has no direct Combat GameFeature dependency on %s"),
+				*Dependency.ToString()),
+			Dependency.ToString().StartsWith(TEXT("/GF_Combat_Core/")));
+	}
 	UE::AssetRegistry::FDependencyQuery HardGamePackageQuery;
 	HardGamePackageQuery.Required =
 		UE::AssetRegistry::EDependencyProperty::Hard |
@@ -3342,13 +3358,12 @@ bool FRpgGaspPilotAssetContractTest::RunTest(const FString& Parameters)
 			FName(PresentationProfilePackage),
 			UE::AssetRegistry::EDependencyCategory::Package,
 			HardGamePackageQuery));
-	TestTrue(
-		TEXT("The pilot AnimBlueprint directly records its hard game/cook combat-profile dependency"),
+	TestFalse(
+		TEXT("The pilot AnimBlueprint no longer records a direct combat-profile dependency"),
 		AssetRegistry.ContainsDependency(
 			FName(PilotAnimBlueprintPackage),
 			FName(CombatAnimationProfilePackage),
-			UE::AssetRegistry::EDependencyCategory::Package,
-			HardGamePackageQuery));
+			UE::AssetRegistry::EDependencyCategory::Package));
 	for (const FRpgCombatAnimationPoseProfile& WeaponProfile :
 		CombatAnimationProfile->WeaponProfiles)
 	{

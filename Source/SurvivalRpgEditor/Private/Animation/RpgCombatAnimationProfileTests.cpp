@@ -5,7 +5,9 @@
 #if WITH_DEV_AUTOMATION_TESTS
 
 #include "Animation/AnimSequence.h"
+#include "Components/SkeletalMeshComponent.h"
 #include "Misc/AutomationTest.h"
+#include "SurvivalRpg/Animation/RpgAnimInstance.h"
 #include "SurvivalRpg/Animation/RpgCombatAnimationProfile.h"
 #include "UObject/UObjectGlobals.h"
 
@@ -138,6 +140,122 @@ bool FRpgCombatAnimationProfileResolverTest::RunTest(const FString& Parameters)
 		AmbiguousProfile->ValidateProfile().bHasAmbiguousProfiles);
 
 	return true;
+}
+
+IMPLEMENT_SIMPLE_AUTOMATION_TEST(
+	FRpgCombatAnimationProfileProviderLifecycleTest,
+	"SurvivalRpg.Animation.Combat.FeatureProviderLifecycle",
+	EAutomationTestFlags::EditorContext |
+		EAutomationTestFlags::EngineFilter)
+
+bool FRpgCombatAnimationProfileProviderLifecycleTest::RunTest(
+	const FString& Parameters)
+{
+	URpgCombatAnimationProfile* Profile = LoadObject<URpgCombatAnimationProfile>(
+		nullptr,
+		TEXT("/GF_Combat_Core/Animations/Profiles/DA_RpgCombatAnimationProfile.DA_RpgCombatAnimationProfile"));
+	USkeletalMeshComponent* SkeletalMeshComponent =
+		NewObject<USkeletalMeshComponent>();
+	URpgAnimInstance* AnimInstance =
+		NewObject<URpgAnimInstance>(SkeletalMeshComponent);
+	if (!TestNotNull(TEXT("The feature-owned combat profile loads"), Profile) ||
+		!TestNotNull(TEXT("The skeletal-mesh lifecycle fixture exists"), SkeletalMeshComponent) ||
+		!TestNotNull(TEXT("The AnimInstance lifecycle fixture exists"), AnimInstance))
+	{
+		return false;
+	}
+
+	FRpgAnimInstanceProxy Proxy(AnimInstance);
+	TestTrue(
+		TEXT("The valid feature profile builds a worker-safe lookup"),
+		AnimInstance->CombatAnimationProfileLookup.Build(Profile));
+	AnimInstance->ActiveCombatAnimationProfileSource = Profile;
+
+	FGameplayTagContainer SwordShieldTraits;
+	SwordShieldTraits.AddTag(RequireTag(
+		TEXT("Equipment.AnimationProfile.OneHandSword")));
+	SwordShieldTraits.AddTag(RequireTag(
+		TEXT("Equipment.AnimationProfile.Shield")));
+	const FRpgResolvedCombatAnimationProfile SwordShieldProfile =
+		AnimInstance->CombatAnimationProfileLookup.Resolve(SwordShieldTraits);
+	if (!TestTrue(
+		TEXT("The active provider resolves a complete SwordShield overlay"),
+		!SwordShieldProfile.bIsFallback && SwordShieldProfile.HasOverlay()))
+	{
+		return false;
+	}
+
+	Proxy.ActiveCombatAnimationProfile = SwordShieldProfile;
+	Proxy.PendingCombatAnimationProfile = SwordShieldProfile;
+	Proxy.bHasPendingCombatAnimationProfile = true;
+	Proxy.CombatEquippedUpperBodyAnimation =
+		SwordShieldProfile.EquippedUpperBodyAnimation;
+	Proxy.CombatReadyUpperBodyAnimation =
+		SwordShieldProfile.CombatReadyUpperBodyAnimation;
+	Proxy.CombatAnimationProfileName = SwordShieldProfile.ProfileName;
+	Proxy.CombatAnimationOverlayAlpha = 1.0f;
+	Proxy.bCombatAnimationReady = true;
+	Proxy.bCombatAnimationProfileFallback = false;
+	AnimInstance->CombatEquippedUpperBodyAnimation =
+		SwordShieldProfile.EquippedUpperBodyAnimation;
+	AnimInstance->CombatReadyUpperBodyAnimation =
+		SwordShieldProfile.CombatReadyUpperBodyAnimation;
+	AnimInstance->CombatAnimationProfileName = SwordShieldProfile.ProfileName;
+	AnimInstance->CombatAnimationOverlayAlpha = 1.0f;
+	AnimInstance->bCombatAnimationReady = true;
+	AnimInstance->bCombatAnimationProfileFallback = false;
+
+	AnimInstance->SynchronizeCombatAnimationProfileProvider(nullptr, Proxy);
+	TestNull(
+		TEXT("Feature removal releases the GC-strong source profile"),
+		AnimInstance->ActiveCombatAnimationProfileSource.Get());
+	TestFalse(
+		TEXT("Feature removal disables the cached profile lookup"),
+		AnimInstance->CombatAnimationProfileLookup.IsEnabled());
+	TestEqual(
+		TEXT("Feature removal restores the proxy's Unarmed identity"),
+		Proxy.CombatAnimationProfileName,
+		FName(TEXT("Unarmed")));
+	TestNull(
+		TEXT("Feature removal clears the proxy's equipped animation pointer"),
+		Proxy.CombatEquippedUpperBodyAnimation);
+	TestNull(
+		TEXT("Feature removal clears the proxy's combat-ready animation pointer"),
+		Proxy.CombatReadyUpperBodyAnimation);
+	TestEqual(
+		TEXT("Feature removal clears the proxy overlay immediately before unload"),
+		Proxy.CombatAnimationOverlayAlpha,
+		0.0f);
+	TestFalse(
+		TEXT("Feature removal clears any pending profile transition"),
+		Proxy.bHasPendingCombatAnimationProfile);
+	TestEqual(
+		TEXT("Feature removal restores the public Unarmed identity"),
+		AnimInstance->CombatAnimationProfileName,
+		FName(TEXT("Unarmed")));
+	TestNull(
+		TEXT("Feature removal clears the public equipped animation GC reference"),
+		AnimInstance->CombatEquippedUpperBodyAnimation.Get());
+	TestNull(
+		TEXT("Feature removal clears the public ready animation GC reference"),
+		AnimInstance->CombatReadyUpperBodyAnimation.Get());
+	TestEqual(
+		TEXT("Feature removal clears the public overlay alpha"),
+		AnimInstance->CombatAnimationOverlayAlpha,
+		0.0f);
+	TestFalse(
+		TEXT("Feature removal clears combat-ready presentation"),
+		AnimInstance->bCombatAnimationReady);
+	TestTrue(
+		TEXT("Feature removal publishes the deterministic fallback flag"),
+		AnimInstance->bCombatAnimationProfileFallback);
+
+	AnimInstance->SynchronizeCombatAnimationProfileProvider(nullptr, Proxy);
+	TestFalse(
+		TEXT("Repeated feature-absent synchronization remains idempotently neutral"),
+		AnimInstance->CombatAnimationProfileLookup.IsEnabled());
+
+	return !HasAnyErrors();
 }
 
 #endif // WITH_DEV_AUTOMATION_TESTS

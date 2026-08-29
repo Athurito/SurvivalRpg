@@ -21,6 +21,7 @@
 
 #include "SurvivalRpg/Core/Character/RpgCharacter.h"
 #include "SurvivalRpg/Core/Character/RpgCharacterMovementComponent.h"
+#include "SurvivalRpg/Animation/RpgCombatAnimationProfileProviderComponent.h"
 #include "SurvivalRpg/Equipment/RpgEquipmentManagerComponent.h"
 #include "SurvivalRpg/Equipment/RpgWeaponInstance.h"
 
@@ -695,7 +696,7 @@ void FRpgAnimInstanceProxy::PreUpdate(UAnimInstance* InAnimInstance, float Delta
 	FootPlacementSnapshot = FRpgFootPlacementSnapshot();
 	FootPlacementAlpha = 0.0f;
 
-	const URpgAnimInstance* RpgAnimInstance = Cast<URpgAnimInstance>(InAnimInstance);
+	URpgAnimInstance* RpgAnimInstance = Cast<URpgAnimInstance>(InAnimInstance);
 	bHasTurnInPlaceBlockingGameplayTag =
 		RpgAnimInstance &&
 		(RpgAnimInstance->bGameplayMovementStopped ||
@@ -704,21 +705,27 @@ void FRpgAnimInstanceProxy::PreUpdate(UAnimInstance* InAnimInstance, float Delta
 		 RpgAnimInstance->bStateStaggered ||
 		 RpgAnimInstance->bStateGuardBroken);
 	const ARpgCharacter* Character = RpgAnimInstance ? Cast<ARpgCharacter>(RpgAnimInstance->TryGetPawnOwner()) : nullptr;
+	if (RpgAnimInstance)
+	{
+		RpgAnimInstance->SynchronizeCombatAnimationProfileProvider(Character, *this);
+	}
 	if (Character)
 	{
 		RotationMode = Character->GetRotationMode();
 	}
-	if (RpgAnimInstance &&
-		RpgAnimInstance->CombatAnimationProfileLookup.IsEnabled())
+	if (RpgAnimInstance)
 	{
 		const FGameplayTagContainer CombatEquipmentTraits = Character
 			? GatherCombatAnimationEquipmentTraits(*Character)
 			: FGameplayTagContainer();
+		const bool bHasCombatAnimationProvider =
+			RpgAnimInstance->CombatAnimationProfileLookup.IsEnabled();
 		AdvanceCombatAnimationSnapshot(
 			*this,
 			RpgAnimInstance->CombatAnimationProfileLookup.Resolve(
 				CombatEquipmentTraits),
-			Character && RotationMode != ERpgCharacterRotationMode::Free,
+			bHasCombatAnimationProvider && Character &&
+				RotationMode != ERpgCharacterRotationMode::Free,
 			DeltaSeconds);
 	}
 	if (!Character)
@@ -1348,12 +1355,6 @@ EDataValidationResult URpgAnimInstance::IsDataValid(FDataValidationContext& Cont
 	Super::IsDataValid(Context);
 
 	GameplayTagPropertyMap.IsDataValid(this, Context);
-	if (CombatAnimationProfile &&
-		!CombatAnimationProfile->ValidateProfile().IsValid())
-	{
-		Context.AddError(FText::FromString(
-			TEXT("The configured combat animation profile has an invalid fallback, trait map, skeleton, mask, animation, or blend contract.")));
-	}
 	if (bGeneratePoseSearchTrajectory)
 	{
 		if (TrajectoryCollisionSettings.bEnabled &&
@@ -1599,14 +1600,78 @@ EDataValidationResult URpgAnimInstance::IsDataValid(FDataValidationContext& Cont
 }
 #endif // WITH_EDITOR
 
+void URpgAnimInstance::ResetPublishedCombatAnimationState()
+{
+	CombatEquippedUpperBodyAnimation = nullptr;
+	CombatReadyUpperBodyAnimation = nullptr;
+	CombatAnimationProfileName = TEXT("Unarmed");
+	CombatAnimationOverlayAlpha = 0.0f;
+	CombatModeBlendTime = 0.0f;
+	bCombatAnimationReady = false;
+	bCombatAnimationProfileFallback = true;
+}
+
+void URpgAnimInstance::SynchronizeCombatAnimationProfileProvider(
+	const AActor* OwningActor,
+	FRpgAnimInstanceProxy& Proxy)
+{
+	check(IsInGameThread());
+	const URpgCombatAnimationProfileProviderComponent* DesiredProvider =
+		URpgCombatAnimationProfileProviderComponent::FindForActor(OwningActor);
+	URpgCombatAnimationProfile* DesiredProfile = DesiredProvider
+		? DesiredProvider->GetCombatAnimationProfile()
+		: nullptr;
+	if (CombatAnimationProfileProvider.Get() == DesiredProvider &&
+		ActiveCombatAnimationProfileSource == DesiredProfile)
+	{
+		return;
+	}
+
+	ClearCombatAnimationProfileProvider(Proxy);
+	if (DesiredProvider && CombatAnimationProfileLookup.Build(DesiredProfile))
+	{
+		CombatAnimationProfileProvider =
+			const_cast<URpgCombatAnimationProfileProviderComponent*>(DesiredProvider);
+		ActiveCombatAnimationProfileSource = DesiredProfile;
+	}
+}
+
+void URpgAnimInstance::HandleCombatAnimationProfileProviderUnregistering(
+	const URpgCombatAnimationProfileProviderComponent* Provider)
+{
+	check(IsInGameThread());
+	if (!Provider || CombatAnimationProfileProvider.Get() != Provider)
+	{
+		return;
+	}
+
+	FRpgAnimInstanceProxy& Proxy = GetProxyOnGameThread<FRpgAnimInstanceProxy>();
+	ClearCombatAnimationProfileProvider(Proxy);
+}
+
+void URpgAnimInstance::ClearCombatAnimationProfileProvider(
+	FRpgAnimInstanceProxy& Proxy)
+{
+	// The profile keeps the raw lookup and proxy animation pointers alive. Clear every consumer
+	// first, then release the weak provider and GC-strong profile references last.
+	ResetCombatAnimationSnapshot(Proxy);
+	ResetPublishedCombatAnimationState();
+	CombatAnimationProfileLookup.Reset();
+	CombatAnimationProfileProvider.Reset();
+	ActiveCombatAnimationProfileSource = nullptr;
+}
+
 void URpgAnimInstance::NativeInitializeAnimation()
 {
 	Super::NativeInitializeAnimation();
 	InitializeGaspRuntimeConfiguration();
-	CombatAnimationProfileLookup.Build(CombatAnimationProfile);
+	CombatAnimationProfileLookup.Reset();
+	CombatAnimationProfileProvider.Reset();
+	ActiveCombatAnimationProfileSource = nullptr;
 	FRpgAnimInstanceProxy& Proxy = GetProxyOnGameThread<FRpgAnimInstanceProxy>();
 	ResetFootPlacementInitializationState(Proxy);
 	ResetCombatAnimationSnapshot(Proxy);
+	SynchronizeCombatAnimationProfileProvider(TryGetPawnOwner(), Proxy);
 	ResetPoseSearchTrajectoryState(Proxy);
 	Proxy.LandingSelectionSnapshot = FRpgLandingSelectionSnapshot();
 	Proxy.LastGroundedGait = ERpgLocomotionGait::Idle;
@@ -1623,13 +1688,7 @@ void URpgAnimInstance::NativeInitializeAnimation()
 	TrajectoryLandingPrediction = FRpgTrajectoryLandingPrediction();
 	PreTouchdownLandingSnapshot = FRpgLandingSelectionSnapshot();
 	AirborneProceduralAlpha = 0.0f;
-	CombatEquippedUpperBodyAnimation = nullptr;
-	CombatReadyUpperBodyAnimation = nullptr;
-	CombatAnimationProfileName = TEXT("Unarmed");
-	CombatAnimationOverlayAlpha = 0.0f;
-	CombatModeBlendTime = 0.0f;
-	bCombatAnimationReady = false;
-	bCombatAnimationProfileFallback = true;
+	ResetPublishedCombatAnimationState();
 	LandingRequestSerial = 0;
 	LandingInterruptedRequestSerial = 0;
 	PreviousGroundMotionMatchingDomainState = FRpgGroundMotionMatchingDomainState();
@@ -1649,6 +1708,13 @@ void URpgAnimInstance::NativeInitializeAnimation()
 			InitializeWithAbilitySystem(ASC);
 		}
 	}
+}
+
+void URpgAnimInstance::NativeUninitializeAnimation()
+{
+	FRpgAnimInstanceProxy& Proxy = GetProxyOnGameThread<FRpgAnimInstanceProxy>();
+	ClearCombatAnimationProfileProvider(Proxy);
+	Super::NativeUninitializeAnimation();
 }
 
 FRpgTurnInPlaceRuntimeState URpgAnimInstance::CaptureTurnInPlaceRuntimeState() const

@@ -31,6 +31,7 @@ public class SurvivalRpgEditor : ModuleRules
 			"CQTest",
 			"CommonGame",
 			"CommonUI",
+			"DataValidation",
 			"EngineSettings",
 			"EnhancedInput",
 			"GF_Harvesting_Magic",
