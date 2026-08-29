@@ -2806,6 +2806,8 @@ bool FRpgGaspPilotAssetContractTest::RunTest(const FString& Parameters)
 			TestEqual(TEXT("Foot Placement raw-gates locks outside a 20 cm radius"), RpgFootPlacement->UnplantRadius, 20.0f);
 			TestEqual(TEXT("Foot Placement smooths pelvis correction with a 0.08-second half-life"), RpgFootPlacement->PelvisBlendHalfLife, 0.08f);
 			TestEqual(TEXT("Foot Placement limits pelvis correction to 120 cm/s"), RpgFootPlacement->MaxPelvisSpeed, 120.0f);
+			TestEqual(TEXT("Foot Placement decays released plant translation with a 0.10-second half-life"), RpgFootPlacement->ReleaseTranslationBlendHalfLife, 0.10f);
+			TestEqual(TEXT("Foot Placement decays released plant rotation with a 0.08-second half-life"), RpgFootPlacement->ReleaseRotationBlendHalfLife, 0.08f);
 			TestEqual(TEXT("Foot Placement uses a float graph alpha"), RpgFootPlacement->AlphaInputType, EAnimAlphaInputType::Float);
 			TestEqual(TEXT("Foot Placement keeps its graph-driven alpha default at one"), RpgFootPlacement->Alpha, 1.0f);
 			TestEqual(TEXT("Foot Placement has no hidden LOD cutoff"), RpgFootPlacement->LODThreshold, INDEX_NONE);

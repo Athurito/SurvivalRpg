@@ -80,6 +80,15 @@ struct SURVIVALRPG_API FAnimNode_RpgFootPlacement : public FAnimNode_SkeletalCon
 	UPROPERTY(EditAnywhere, Category = "Settings", meta = (ClampMin = "0.0", Units = "cm/s"))
 	float MaxPelvisSpeed = 120.0f;
 
+	/** Half-life for the released plant-correction translation to decay toward the live pose, in seconds. */
+	UPROPERTY(EditAnywhere, Category = "Settings", meta = (ClampMin = "0.001", Units = "s"))
+	float ReleaseTranslationBlendHalfLife = 0.10f;
+
+	/** Half-life for the released plant-correction rotation to decay toward the live pose, in seconds. */
+	UPROPERTY(EditAnywhere, Category = "Settings", meta = (ClampMin = "0.001", Units = "s"))
+	float ReleaseRotationBlendHalfLife = 0.08f;
+
+	virtual void Initialize_AnyThread(const FAnimationInitializeContext& Context) override;
 	virtual void GatherDebugData(FNodeDebugData& DebugData) override;
 	virtual void UpdateInternal(const FAnimationUpdateContext& Context) override;
 	virtual void EvaluateSkeletalControl_AnyThread(
@@ -89,12 +98,44 @@ struct SURVIVALRPG_API FAnimNode_RpgFootPlacement : public FAnimNode_SkeletalCon
 
 private:
 	virtual void InitializeBoneReferences(const FBoneContainer& RequiredBones) override;
+	void ResetInterpolationState();
+	FTransform ResolveLegCorrectionTargetCS(
+		int32 LegIndex,
+		bool bLocked,
+		const FTransform& FKFootTransformCS,
+		const FTransform& DesiredResolvedTargetCS,
+		const FTransform& ComponentToWorld);
+	void CommitLegCorrectionTarget(
+		int32 LegIndex,
+		bool bLocked,
+		const FTransform& FKFootTransformCS,
+		const FTransform& FinalOutputTargetCS,
+		const FTransform& ComponentToWorld);
+
+#if WITH_DEV_AUTOMATION_TESTS
+	friend class FRpgFootPlacementInterpolationStateTest;
+#endif
 
 	/** Update time accumulated until the next evaluation, matching stateful skeletal-control semantics. */
 	float CachedDeltaTime = 0.0f;
 
 	/** Persistent value-only pelvis state owned by this proxy's worker-thread node instance. */
 	float SmoothedPelvisOffset = 0.0f;
+
+	/** Component-space corrections applied after the current FK foot, never absolute smoothed targets. */
+	FTransform SmoothedCorrectionOffsetsCS[2];
+
+	/** Last actual world outputs preserve continuity across weight changes on the release edge. */
+	FTransform PreviousOutputTargetsWorld[2];
+
+	/** Per-leg initialization flags for the pointer-free correction state above. */
+	bool bHasSmoothedCorrection[2] = {false, false};
+
+	/** Guards the retained world target used only on an evaluated locked-to-unlocked edge. */
+	bool bHasPreviousOutputTarget[2] = {false, false};
+
+	/** Per-leg previous lock flags used to seed the release correction in current component space. */
+	bool bWasLocked[2] = {false, false};
 
 	/** Detects updates skipped while the graph alpha is zero so persistent state can reset safely. */
 	FGraphTraversalCounter UpdateCounter;

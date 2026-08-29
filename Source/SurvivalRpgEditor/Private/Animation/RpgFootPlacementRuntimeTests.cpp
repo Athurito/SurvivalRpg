@@ -4,6 +4,7 @@
 
 #if WITH_DEV_AUTOMATION_TESTS
 
+#include "Animation/AnimInstanceProxy.h"
 #include "Misc/AutomationTest.h"
 #include "Misc/FileHelper.h"
 #include "Misc/Paths.h"
@@ -157,6 +158,491 @@ bool FRpgFootPlacementHalfLifeTest::RunTest(const FString& Parameters)
 			FString::Printf(TEXT("One elapsed half-life reaches 0.5 at %.0f FPS"), FrameRate),
 			FMath::IsNearlyEqual(Value, 0.5f, 0.0001f));
 	}
+	return true;
+}
+
+IMPLEMENT_SIMPLE_AUTOMATION_TEST(
+	FRpgFootPlacementTemporalReleaseStabilityTest,
+	"SurvivalRpg.Animation.FootPlacement.Runtime.TemporalReleaseStability",
+	EAutomationTestFlags::EditorContext |
+		EAutomationTestFlags::EngineFilter)
+
+bool FRpgFootPlacementTemporalReleaseStabilityTest::RunTest(const FString& Parameters)
+{
+	constexpr float TranslationHalfLife = 0.10f;
+	constexpr float RotationHalfLife = 0.08f;
+	const FAnimNode_RpgFootPlacement DefaultNode;
+	TestEqual(
+		TEXT("Released plant translation defaults to a 0.10-second half-life"),
+		DefaultNode.ReleaseTranslationBlendHalfLife,
+		TranslationHalfLife);
+	TestEqual(
+		TEXT("Released plant rotation defaults to a 0.08-second half-life"),
+		DefaultNode.ReleaseRotationBlendHalfLife,
+		RotationHalfLife);
+
+	const FTransform FKTarget(
+		FQuat(FVector::UpVector, FMath::DegreesToRadians(25.0f)),
+		FVector(10.0f, -5.0f, 2.0f),
+		FVector(1.0f));
+	const FTransform RetainedOutputTarget(
+		FQuat(FVector::UpVector, FMath::DegreesToRadians(10.0f)),
+		FVector(-20.0f, 15.0f, 4.0f),
+		FVector(1.0f));
+	const FTransform LiveTarget(
+		FQuat(FVector::UpVector, FMath::DegreesToRadians(100.0f)),
+		FVector(80.0f, -25.0f, 24.0f),
+		FVector(1.0f));
+	const auto RotationDistanceDegrees = [](const FQuat& First, const FQuat& Second)
+	{
+		return FMath::RadiansToDegrees(First.AngularDistance(Second));
+	};
+
+	const FTransform InitialReleaseOffset = RpgFootPlacement::CalculateFootCorrectionOffset(
+		FKTarget,
+		RetainedOutputTarget);
+	const FTransform DesiredCorrectionOffset = RpgFootPlacement::CalculateFootCorrectionOffset(
+		FKTarget,
+		LiveTarget);
+	const FTransform ReconstructedRetainedTarget = RpgFootPlacement::ApplyFootCorrectionOffset(
+		FKTarget,
+		InitialReleaseOffset);
+	TestTrue(
+		TEXT("The release correction exactly reconstructs the previously rendered translation"),
+		ReconstructedRetainedTarget.GetLocation().Equals(
+			RetainedOutputTarget.GetLocation(),
+			UE_KINDA_SMALL_NUMBER));
+	TestTrue(
+		TEXT("The release correction exactly reconstructs the previously rendered rotation"),
+		RotationDistanceDegrees(
+			ReconstructedRetainedTarget.GetRotation(),
+			RetainedOutputTarget.GetRotation()) < 0.001f);
+
+	const FTransform ZeroDeltaOffset = RpgFootPlacement::SmoothFootCorrectionOffset(
+		InitialReleaseOffset,
+		DesiredCorrectionOffset,
+		0.0f,
+		TranslationHalfLife,
+		RotationHalfLife);
+	const FTransform ZeroDeltaTarget = RpgFootPlacement::ApplyFootCorrectionOffset(
+		FKTarget,
+		ZeroDeltaOffset);
+	TestTrue(
+		TEXT("A zero delta preserves the previously rendered foot translation"),
+		ZeroDeltaTarget.GetLocation().Equals(
+			RetainedOutputTarget.GetLocation(),
+			UE_KINDA_SMALL_NUMBER));
+	TestTrue(
+		TEXT("A zero delta preserves the previously rendered foot rotation"),
+		RotationDistanceDegrees(
+			ZeroDeltaTarget.GetRotation(),
+			RetainedOutputTarget.GetRotation()) < 0.001f);
+	const FTransform ScaledFKTarget(
+		FKTarget.GetRotation(),
+		FKTarget.GetLocation(),
+		FVector(1.2f, 0.8f, 1.1f));
+	TestTrue(
+		TEXT("Release correction keeps scale on the current FK animation target"),
+		RpgFootPlacement::ApplyFootCorrectionOffset(ScaledFKTarget, InitialReleaseOffset)
+			.GetScale3D().Equals(ScaledFKTarget.GetScale3D(), UE_KINDA_SMALL_NUMBER));
+
+	const FTransform FirstReleaseOffset = RpgFootPlacement::SmoothFootCorrectionOffset(
+		InitialReleaseOffset,
+		DesiredCorrectionOffset,
+		1.0f / 60.0f,
+		TranslationHalfLife,
+		RotationHalfLife);
+	const FTransform FirstReleaseTarget = RpgFootPlacement::ApplyFootCorrectionOffset(
+		FKTarget,
+		FirstReleaseOffset);
+	const float FullTranslationDistance = FVector::Distance(
+		RetainedOutputTarget.GetLocation(),
+		LiveTarget.GetLocation());
+	const float FirstTranslationStep = FVector::Distance(
+		RetainedOutputTarget.GetLocation(),
+		FirstReleaseTarget.GetLocation());
+	const float FullRotationDistance = RotationDistanceDegrees(
+		RetainedOutputTarget.GetRotation(),
+		LiveTarget.GetRotation());
+	const float FirstRotationStep = RotationDistanceDegrees(
+		RetainedOutputTarget.GetRotation(),
+		FirstReleaseTarget.GetRotation());
+	TestTrue(
+		TEXT("The first released translation advances from the rendered target without snapping"),
+		FirstTranslationStep > 0.0f && FirstTranslationStep < FullTranslationDistance);
+	TestTrue(
+		TEXT("The first released rotation advances from the rendered target without snapping"),
+		FirstRotationStep > 0.0f && FirstRotationStep < FullRotationDistance);
+
+	FTransform MonotoneOffset = InitialReleaseOffset;
+	float PreviousTranslationRemaining = FullTranslationDistance;
+	float PreviousRotationRemaining = FullRotationDistance;
+	bool bTranslationIsMonotone = true;
+	bool bRotationIsMonotone = true;
+	for (int32 Frame = 0; Frame < 12; ++Frame)
+	{
+		MonotoneOffset = RpgFootPlacement::SmoothFootCorrectionOffset(
+			MonotoneOffset,
+			DesiredCorrectionOffset,
+			1.0f / 60.0f,
+			TranslationHalfLife,
+			RotationHalfLife);
+		const FTransform MonotoneTarget = RpgFootPlacement::ApplyFootCorrectionOffset(
+			FKTarget,
+			MonotoneOffset);
+		const float TranslationRemaining = FVector::Distance(
+			MonotoneTarget.GetLocation(),
+			LiveTarget.GetLocation());
+		const float RotationRemaining = RotationDistanceDegrees(
+			MonotoneTarget.GetRotation(),
+			LiveTarget.GetRotation());
+		bTranslationIsMonotone &= TranslationRemaining <= PreviousTranslationRemaining;
+		bRotationIsMonotone &= RotationRemaining <= PreviousRotationRemaining;
+		PreviousTranslationRemaining = TranslationRemaining;
+		PreviousRotationRemaining = RotationRemaining;
+	}
+	TestTrue(
+		TEXT("Released target translation converges monotonically"),
+		bTranslationIsMonotone && PreviousTranslationRemaining < FullTranslationDistance);
+	TestTrue(
+		TEXT("Released target rotation converges monotonically"),
+		bRotationIsMonotone && PreviousRotationRemaining < FullRotationDistance);
+
+	const auto SimulateForElapsedTime = [&](float FrameRate)
+	{
+		constexpr float ElapsedSeconds = 0.2f;
+		const float DeltaSeconds = 1.0f / FrameRate;
+		FTransform SmoothedOffset = InitialReleaseOffset;
+		for (int32 Frame = 0; Frame < FMath::RoundToInt(ElapsedSeconds * FrameRate); ++Frame)
+		{
+			SmoothedOffset = RpgFootPlacement::SmoothFootCorrectionOffset(
+				SmoothedOffset,
+				DesiredCorrectionOffset,
+				DeltaSeconds,
+				TranslationHalfLife,
+				RotationHalfLife);
+		}
+		return RpgFootPlacement::ApplyFootCorrectionOffset(FKTarget, SmoothedOffset);
+	};
+	const FTransform TargetAt20Fps = SimulateForElapsedTime(20.0f);
+	const FTransform TargetAt60Fps = SimulateForElapsedTime(60.0f);
+	const FTransform TargetAt120Fps = SimulateForElapsedTime(120.0f);
+	TestTrue(
+		TEXT("Translation reaches the same target after equal time at 20, 60, and 120 FPS"),
+		TargetAt20Fps.GetLocation().Equals(TargetAt60Fps.GetLocation(), 0.01f) &&
+			TargetAt60Fps.GetLocation().Equals(TargetAt120Fps.GetLocation(), 0.01f));
+	TestTrue(
+		TEXT("Rotation reaches the same target after equal time at 20, 60, and 120 FPS"),
+		RotationDistanceDegrees(TargetAt20Fps.GetRotation(), TargetAt60Fps.GetRotation()) < 0.01f &&
+			RotationDistanceDegrees(TargetAt60Fps.GetRotation(), TargetAt120Fps.GetRotation()) < 0.01f);
+
+	const FTransform MovedFKTarget(
+		FQuat(FVector::UpVector, FMath::DegreesToRadians(135.0f)),
+		FVector(125.0f, 35.0f, 30.0f),
+		FVector(1.0f));
+	const FTransform MovedOutputTarget = RpgFootPlacement::ApplyFootCorrectionOffset(
+		MovedFKTarget,
+		FirstReleaseOffset);
+	const FTransform RecoveredMovedOffset = RpgFootPlacement::CalculateFootCorrectionOffset(
+		MovedFKTarget,
+		MovedOutputTarget);
+	TestTrue(
+		TEXT("A moving FK pose keeps the same decaying correction instead of filtering its absolute target"),
+		RecoveredMovedOffset.GetLocation().Equals(
+			FirstReleaseOffset.GetLocation(),
+			UE_KINDA_SMALL_NUMBER) &&
+			RotationDistanceDegrees(
+				RecoveredMovedOffset.GetRotation(),
+				FirstReleaseOffset.GetRotation()) < 0.001f);
+	const FTransform MovedDesiredTarget = RpgFootPlacement::ApplyFootCorrectionOffset(
+		MovedFKTarget,
+		DesiredCorrectionOffset);
+	const FTransform MovedDesiredOffset = RpgFootPlacement::CalculateFootCorrectionOffset(
+		MovedFKTarget,
+		MovedDesiredTarget);
+	const FTransform SecondMovedOffset = RpgFootPlacement::SmoothFootCorrectionOffset(
+		FirstReleaseOffset,
+		MovedDesiredOffset,
+		1.0f / 60.0f,
+		TranslationHalfLife,
+		RotationHalfLife);
+	const FTransform SecondMovedOutput = RpgFootPlacement::ApplyFootCorrectionOffset(
+		MovedFKTarget,
+		SecondMovedOffset);
+	const FTransform RecoveredSecondMovedOffset = RpgFootPlacement::CalculateFootCorrectionOffset(
+		MovedFKTarget,
+		SecondMovedOutput);
+	TestTrue(
+		TEXT("A second moving-FK frame follows the new FK immediately while its correction converges"),
+		RecoveredSecondMovedOffset.GetLocation().Equals(
+			SecondMovedOffset.GetLocation(),
+			UE_KINDA_SMALL_NUMBER) &&
+			FVector::Distance(
+				SecondMovedOffset.GetLocation(),
+				MovedDesiredOffset.GetLocation()) <
+			FVector::Distance(
+				FirstReleaseOffset.GetLocation(),
+				MovedDesiredOffset.GetLocation()));
+	TestTrue(
+		TEXT("An identity correction reproduces the current FK target without temporal lag"),
+		RpgFootPlacement::ApplyFootCorrectionOffset(MovedFKTarget, FTransform::Identity)
+			.Equals(MovedFKTarget, UE_KINDA_SMALL_NUMBER));
+
+	const FTransform PreviousComponentToWorld(
+		FQuat(FVector::UpVector, FMath::DegreesToRadians(20.0f)),
+		FVector(100.0f, -40.0f, 10.0f));
+	const FTransform CurrentComponentToWorld(
+		FQuat(FVector::UpVector, FMath::DegreesToRadians(65.0f)),
+		FVector(135.0f, 25.0f, 12.0f));
+	const FTransform PreviousOutputWorld = RetainedOutputTarget * PreviousComponentToWorld;
+	const FTransform PreviousOutputInCurrentCS =
+		PreviousOutputWorld.GetRelativeTransform(CurrentComponentToWorld);
+	TestFalse(
+		TEXT("The component-motion fixture changes the retained target's component-space value"),
+		PreviousOutputInCurrentCS.Equals(RetainedOutputTarget, 0.001f));
+	const FTransform CurrentFKTarget(
+		FQuat(FVector::UpVector, FMath::DegreesToRadians(-15.0f)),
+		FVector(5.0f, 12.0f, 1.0f));
+	const FTransform ComponentMoveSeed = RpgFootPlacement::CalculateFootCorrectionOffset(
+		CurrentFKTarget,
+		PreviousOutputInCurrentCS);
+	const FTransform ReconstructedPreviousWorld = RpgFootPlacement::ApplyFootCorrectionOffset(
+		CurrentFKTarget,
+		ComponentMoveSeed) * CurrentComponentToWorld;
+	TestTrue(
+		TEXT("A release seed survives component translation and rotation without mixing transform spaces"),
+		ReconstructedPreviousWorld.GetLocation().Equals(
+			PreviousOutputWorld.GetLocation(),
+			0.001f) &&
+			RotationDistanceDegrees(
+				ReconstructedPreviousWorld.GetRotation(),
+				PreviousOutputWorld.GetRotation()) < 0.001f);
+
+	const FTransform GeometryFKTarget = FTransform::Identity;
+	const FTransform RawLockedTarget(FQuat::Identity, FVector(19.9f, 0.0f, 0.0f));
+	const float PreviousGeometryWeight = RpgFootPlacement::CalculateGeometryWeight(
+		0.0f,
+		19.9f,
+		true,
+		10.0f,
+		20.0f);
+	const FTransform PreviousWeightedOutput = RpgFootPlacement::ResolveIKFootTarget(
+		GeometryFKTarget,
+		RawLockedTarget,
+		PreviousGeometryWeight);
+	const FTransform UnlockedLiveOutput(FQuat::Identity, FVector(0.0f, 0.0f, 3.0f));
+	const FTransform WeightJumpOffset = RpgFootPlacement::CalculateFootCorrectionOffset(
+		GeometryFKTarget,
+		PreviousWeightedOutput);
+	const FTransform WeightJumpDesiredOffset = RpgFootPlacement::CalculateFootCorrectionOffset(
+		GeometryFKTarget,
+		UnlockedLiveOutput);
+	const FTransform WeightJumpFirstTarget = RpgFootPlacement::ApplyFootCorrectionOffset(
+		GeometryFKTarget,
+		RpgFootPlacement::SmoothFootCorrectionOffset(
+			WeightJumpOffset,
+			WeightJumpDesiredOffset,
+			1.0f / 60.0f,
+			TranslationHalfLife,
+			RotationHalfLife));
+	TestTrue(
+		TEXT("A locked geometry-weight drop releases from the actual weighted output, not the raw lock target"),
+		FVector::Distance(WeightJumpFirstTarget.GetLocation(), PreviousWeightedOutput.GetLocation()) <
+			FVector::Distance(UnlockedLiveOutput.GetLocation(), PreviousWeightedOutput.GetLocation()));
+	TestTrue(
+		TEXT("The first sixty-FPS release step remains sub-centimeter at the twenty-centimeter drift edge"),
+		FVector::Distance(WeightJumpFirstTarget.GetLocation(), PreviousWeightedOutput.GetLocation()) < 1.0f);
+	return true;
+}
+
+IMPLEMENT_SIMPLE_AUTOMATION_TEST(
+	FRpgFootPlacementInterpolationStateTest,
+	"SurvivalRpg.Animation.FootPlacement.Runtime.InterpolationStateLifecycle",
+	EAutomationTestFlags::EditorContext |
+		EAutomationTestFlags::EngineFilter)
+
+bool FRpgFootPlacementInterpolationStateTest::RunTest(const FString& Parameters)
+{
+	const auto RotationDistanceDegrees = [](const FQuat& First, const FQuat& Second)
+	{
+		return FMath::RadiansToDegrees(First.AngularDistance(Second));
+	};
+	const auto TargetsMatch = [&RotationDistanceDegrees](
+		const FTransform& First,
+		const FTransform& Second,
+		float TranslationTolerance = 0.001f)
+	{
+		return First.GetLocation().Equals(Second.GetLocation(), TranslationTolerance) &&
+			RotationDistanceDegrees(First.GetRotation(), Second.GetRotation()) < 0.001f;
+	};
+
+	FAnimNode_RpgFootPlacement Node;
+	Node.LegsDefinition.SetNum(2);
+	const FTransform PreviousComponentToWorld(
+		FQuat(FVector::UpVector, FMath::DegreesToRadians(15.0f)),
+		FVector(100.0f, -30.0f, 8.0f));
+	const FTransform CurrentComponentToWorld(
+		FQuat(FVector::UpVector, FMath::DegreesToRadians(70.0f)),
+		FVector(145.0f, 20.0f, 11.0f));
+	const FTransform PreviousFKTargetCS(
+		FQuat(FVector::UpVector, FMath::DegreesToRadians(-5.0f)),
+		FVector(4.0f, 2.0f, 1.0f));
+	const FTransform RawLockedTargetCS(
+		FQuat(FVector::UpVector, FMath::DegreesToRadians(25.0f)),
+		FVector(23.9f, 2.0f, 1.0f));
+	const float PreviousGeometryWeight = RpgFootPlacement::CalculateGeometryWeight(
+		0.0f,
+		19.9f,
+		true,
+		10.0f,
+		20.0f);
+	TestTrue(
+		TEXT("The integration fixture exercises a nonzero partially faded lock"),
+		PreviousGeometryWeight > 0.0f && PreviousGeometryWeight < 1.0f);
+	const FTransform PreviousWeightedOutputCS = RpgFootPlacement::ResolveIKFootTarget(
+		PreviousFKTargetCS,
+		RawLockedTargetCS,
+		PreviousGeometryWeight);
+	TestTrue(
+		TEXT("The integration fixture's rendered lock output lies between FK and the raw target"),
+		FVector::Distance(
+			PreviousWeightedOutputCS.GetLocation(),
+			PreviousFKTargetCS.GetLocation()) > 0.0f &&
+			FVector::Distance(
+				PreviousWeightedOutputCS.GetLocation(),
+				RawLockedTargetCS.GetLocation()) > 0.0f);
+
+	const FTransform LockedOutputCS = Node.ResolveLegCorrectionTargetCS(
+		0,
+		true,
+		PreviousFKTargetCS,
+		PreviousWeightedOutputCS,
+		PreviousComponentToWorld);
+	Node.CommitLegCorrectionTarget(
+		0,
+		true,
+		PreviousFKTargetCS,
+		LockedOutputCS,
+		PreviousComponentToWorld);
+	const FTransform PreviousRenderedWorld =
+		PreviousWeightedOutputCS * PreviousComponentToWorld;
+	TestTrue(
+		TEXT("The locked state commits the actual post-weight world output"),
+		TargetsMatch(Node.PreviousOutputTargetsWorld[0], PreviousRenderedWorld));
+
+	const FTransform CurrentFKTargetCS(
+		FQuat(FVector::UpVector, FMath::DegreesToRadians(35.0f)),
+		FVector(-8.0f, 12.0f, 2.0f));
+	const FTransform UnlockedDesiredOutputCS(
+		FQuat(FVector::UpVector, FMath::DegreesToRadians(42.0f)),
+		FVector(-6.0f, 12.0f, 4.0f));
+	Node.CachedDeltaTime = 0.0f;
+	const FTransform FirstUnlockedOutputCS = Node.ResolveLegCorrectionTargetCS(
+		0,
+		false,
+		CurrentFKTargetCS,
+		UnlockedDesiredOutputCS,
+		CurrentComponentToWorld);
+	const FTransform FirstUnlockedOutputWorld =
+		FirstUnlockedOutputCS * CurrentComponentToWorld;
+	TestTrue(
+		TEXT("The node's locked-to-unlocked branch seeds from the prior rendered world target"),
+		TargetsMatch(FirstUnlockedOutputWorld, PreviousRenderedWorld));
+
+	const FTransform ClampedOutputCS(
+		FQuat(FVector::UpVector, FMath::DegreesToRadians(38.0f)),
+		FVector(-7.0f, 12.0f, 3.0f));
+	Node.CommitLegCorrectionTarget(
+		0,
+		false,
+		CurrentFKTargetCS,
+		ClampedOutputCS,
+		CurrentComponentToWorld);
+	Node.CachedDeltaTime = 0.0f;
+	const FTransform OutputAfterClampCommit = Node.ResolveLegCorrectionTargetCS(
+		0,
+		false,
+		CurrentFKTargetCS,
+		UnlockedDesiredOutputCS,
+		CurrentComponentToWorld);
+	TestTrue(
+		TEXT("The next frame starts from the committed post-clamp correction"),
+		TargetsMatch(OutputAfterClampCommit, ClampedOutputCS));
+
+	const auto PrimeDirtyState = [&Node]()
+	{
+		Node.CachedDeltaTime = 0.5f;
+		Node.SmoothedPelvisOffset = -12.0f;
+		for (int32 LegIndex = 0; LegIndex < 2; ++LegIndex)
+		{
+			Node.SmoothedCorrectionOffsetsCS[LegIndex] = FTransform(
+				FQuat(FVector::UpVector, 0.5f),
+				FVector(5.0f, 4.0f, 3.0f));
+			Node.PreviousOutputTargetsWorld[LegIndex] = FTransform(
+				FQuat(FVector::RightVector, 0.25f),
+				FVector(30.0f, 20.0f, 10.0f));
+			Node.bHasSmoothedCorrection[LegIndex] = true;
+			Node.bHasPreviousOutputTarget[LegIndex] = true;
+			Node.bWasLocked[LegIndex] = true;
+		}
+	};
+	const auto StateIsReset = [&Node]()
+	{
+		bool bLegsReset = true;
+		for (int32 LegIndex = 0; LegIndex < 2; ++LegIndex)
+		{
+			bLegsReset &= Node.SmoothedCorrectionOffsetsCS[LegIndex].Equals(FTransform::Identity);
+			bLegsReset &= Node.PreviousOutputTargetsWorld[LegIndex].Equals(FTransform::Identity);
+			bLegsReset &= !Node.bHasSmoothedCorrection[LegIndex];
+			bLegsReset &= !Node.bHasPreviousOutputTarget[LegIndex];
+			bLegsReset &= !Node.bWasLocked[LegIndex];
+		}
+		return FMath::IsNearlyZero(Node.CachedDeltaTime) &&
+			FMath::IsNearlyZero(Node.SmoothedPelvisOffset) &&
+			!Node.UpdateCounter.HasEverBeenUpdated() &&
+			bLegsReset;
+	};
+
+	FAnimInstanceProxy Proxy;
+	PrimeDirtyState();
+	Node.Initialize_AnyThread(FAnimationInitializeContext(&Proxy));
+	TestTrue(TEXT("Initialize_AnyThread clears every interpolation-history field"), StateIsReset());
+
+	const auto PrimeValidSnapshot = [&Node, &PrimeDirtyState]()
+	{
+		PrimeDirtyState();
+		Node.LegsDefinition.SetNum(2);
+		Node.Snapshot.bValid = true;
+		Node.Snapshot.bGrounded = true;
+		Node.Snapshot.bReset = false;
+	};
+	const FAnimationUpdateContext UpdateContext(&Proxy, 1.0f / 60.0f);
+	PrimeValidSnapshot();
+	Node.Snapshot.bReset = true;
+	Node.UpdateInternal(UpdateContext);
+	TestTrue(TEXT("A semantic snapshot reset clears interpolation history"), StateIsReset());
+
+	PrimeValidSnapshot();
+	Node.Snapshot.bValid = false;
+	Node.UpdateInternal(UpdateContext);
+	TestTrue(TEXT("An invalid snapshot clears interpolation history"), StateIsReset());
+
+	PrimeValidSnapshot();
+	Node.Snapshot.bGrounded = false;
+	Node.UpdateInternal(UpdateContext);
+	TestTrue(TEXT("Leaving the ground clears interpolation history"), StateIsReset());
+
+	PrimeValidSnapshot();
+	Node.LegsDefinition.Reset();
+	Node.UpdateInternal(UpdateContext);
+	TestTrue(TEXT("An invalid leg contract clears interpolation history"), StateIsReset());
+
+	PrimeValidSnapshot();
+	FGraphTraversalCounter ForeignUpdateCounter = Proxy.GetUpdateCounter();
+	ForeignUpdateCounter.Increment();
+	Node.UpdateCounter.SynchronizeWith(ForeignUpdateCounter);
+	Node.UpdateInternal(UpdateContext);
+	TestTrue(TEXT("Skipped graph relevance clears interpolation history"), StateIsReset());
 	return true;
 }
 
