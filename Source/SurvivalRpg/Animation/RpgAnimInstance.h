@@ -12,6 +12,7 @@
 #include "GameplayEffectTypes.h"
 #include "PoseSearch/PoseSearchLibrary.h"
 #include "PoseSearch/PoseSearchTrajectoryLibrary.h"
+#include "RpgCombatAnimationProfile.h"
 #include "RpgFootPlacementTypes.h"
 #include "RpgGaspPresentationProfile.h"
 #include "RpgJumpRuntime.h"
@@ -25,6 +26,7 @@
 
 class UAbilitySystemComponent;
 class UAnimationAsset;
+class UAnimSequence;
 class UPoseSearchDatabase;
 #if WITH_DEV_AUTOMATION_TESTS
 class FRpgJumpPhaseRuntimeTest;
@@ -242,6 +244,20 @@ struct SURVIVALRPG_API FRpgAnimInstanceProxy : public FAnimInstanceProxy
 	bool bIsMovingOnGround = false;
 	bool bIsCrouching = false;
 	bool bIsAnyMontagePlaying = false;
+	/** Active immutable upper-body asset selected from replicated equipment traits on the game thread. */
+	UAnimSequence* CombatEquippedUpperBodyAnimation = nullptr;
+	/** Combat-ready counterpart selected from the same immutable profile. */
+	UAnimSequence* CombatReadyUpperBodyAnimation = nullptr;
+	/** Stable profile identity exposed only for cosmetic diagnostics and network tests. */
+	FName CombatAnimationProfileName = NAME_None;
+	/** Current equip/profile blend weight advanced exclusively by game-thread PreUpdate. */
+	float CombatAnimationOverlayAlpha = 0.0f;
+	/** Designer-authored Free-to-combat-ready crossfade duration. */
+	float CombatModeBlendTime = 0.0f;
+	/** Replicated rotation-mode projection; true for CombatStrafe and Aim. */
+	bool bCombatAnimationReady = false;
+	/** True when unknown, ambiguous, or empty equipment resolved to the Unarmed fallback. */
+	bool bCombatAnimationProfileFallback = true;
 	bool bHasTurnInPlaceBlockingGameplayTag = false;
 	bool bTurnInPlaceHardReset = true;
 	/** Number of unified presentation-history resets emitted by game-thread snapshots. */
@@ -274,6 +290,11 @@ struct SURVIVALRPG_API FRpgAnimInstanceProxy : public FAnimInstanceProxy
 	bool bHasPreviousFootPlacementComponentTransform = false;
 	bool bHasPreviousMovementBaseTransform = false;
 	bool bPreviousFootPlacementSourceEligible = false;
+
+	// Persistent combat-presentation transition state is authored only by game-thread PreUpdate.
+	FRpgResolvedCombatAnimationProfile ActiveCombatAnimationProfile;
+	FRpgResolvedCombatAnimationProfile PendingCombatAnimationProfile;
+	bool bHasPendingCombatAnimationProfile = false;
 };
 
 
@@ -449,6 +470,13 @@ protected:
 	 */
 	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Rpg|Animation|Presentation")
 	TObjectPtr<URpgGaspPresentationProfile> GaspPresentationProfile;
+
+	/**
+	 * Designer-owned combat upper-body profile resolved from replicated MainHand/OffHand traits.
+	 * The profile is cosmetic only; Equipment, GAS, and Character rotation remain authoritative.
+	 */
+	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Rpg|Animation|Combat")
+	TObjectPtr<URpgCombatAnimationProfile> CombatAnimationProfile;
 
 	/**
 	 * Legacy serialized stand-idle Light landing fallback. This preserves the #66 property name and
@@ -682,6 +710,34 @@ protected:
 	/** True when any montage is active in this AnimInstance; cosmetic-only and snapshotted on the game thread. */
 	UPROPERTY(BlueprintReadOnly, Transient, Category = "Rpg|Animation|Montage")
 	bool bIsAnyMontagePlaying = false;
+
+	/** Equipped/relaxed upper-body loop selected on the game thread from immutable profile data. */
+	UPROPERTY(BlueprintReadOnly, Transient, Category = "Rpg|Animation|Combat")
+	TObjectPtr<UAnimSequence> CombatEquippedUpperBodyAnimation;
+
+	/** CombatStrafe/Aim upper-body loop paired with CombatEquippedUpperBodyAnimation. */
+	UPROPERTY(BlueprintReadOnly, Transient, Category = "Rpg|Animation|Combat")
+	TObjectPtr<UAnimSequence> CombatReadyUpperBodyAnimation;
+
+	/** Stable name of the selected cosmetic profile; useful for authority/proxy/late-join diagnostics. */
+	UPROPERTY(BlueprintReadOnly, Transient, Category = "Rpg|Animation|Combat")
+	FName CombatAnimationProfileName = NAME_None;
+
+	/** Smoothed weight applied to the masked upper-body overlay. */
+	UPROPERTY(BlueprintReadOnly, Transient, Category = "Rpg|Animation|Combat", meta = (ClampMin = "0.0", ClampMax = "1.0"))
+	float CombatAnimationOverlayAlpha = 0.0f;
+
+	/** Current designer-authored Free-to-combat-ready pose crossfade duration, in seconds. */
+	UPROPERTY(BlueprintReadOnly, Transient, Category = "Rpg|Animation|Combat", meta = (ClampMin = "0.0", Units = "s"))
+	float CombatModeBlendTime = 0.0f;
+
+	/** True when replicated rotation policy is CombatStrafe or Aim. */
+	UPROPERTY(BlueprintReadOnly, Transient, Category = "Rpg|Animation|Combat")
+	bool bCombatAnimationReady = false;
+
+	/** True when the deterministic Unarmed fallback owns the current presentation. */
+	UPROPERTY(BlueprintReadOnly, Transient, Category = "Rpg|Animation|Combat")
+	bool bCombatAnimationProfileFallback = true;
 
 private:
 	/** Value-only integrity summary shared by editor validation and focused automation coverage. */
@@ -963,6 +1019,8 @@ private:
 
 	/** Immutable presentation traits built on the game thread from GaspPresentationProfile. */
 	FRpgGaspPresentationAssetLookup GaspPresentationAssetLookup;
+	/** Immutable combat overlay selection copied from CombatAnimationProfile on initialization. */
+	FRpgCombatAnimationProfileLookup CombatAnimationProfileLookup;
 	/** Immutable bidirectional database mapping built from the selected profile or legacy facade. */
 	FRpgGaspMotionMatchingDatabaseLookup GaspMotionMatchingDatabaseLookup;
 	/** Pointer-free cosmetic feel copied once for game-thread proxy and worker-thread runtime use. */
