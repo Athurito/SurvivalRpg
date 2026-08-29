@@ -404,7 +404,14 @@ void URpgPlayerCombatDefenseProfileComponent::ClearAppliedProfile()
 		return;
 	}
 
-	AppliedAbilitySystemComponent->SetNumericAttributeBase(URpgDefenseSet::GetStaggerAttribute(), 0.0f);
+	// GameFeature actions do not guarantee that this cosmetic profile component is removed
+	// before the feature-owned DefenseSet. Avoid asking GAS to write an attribute whose set has
+	// already been withdrawn during deactivation.
+	const FGameplayAttribute StaggerAttribute = URpgDefenseSet::GetStaggerAttribute();
+	if (AppliedAbilitySystemComponent->HasAttributeSetForAttribute(StaggerAttribute))
+	{
+		AppliedAbilitySystemComponent->SetNumericAttributeBase(StaggerAttribute, 0.0f);
+	}
 	AppliedAbilitySystemComponent->SetLooseGameplayTagCount(
 		RpgGameplayTags::Trait_Staggerable,
 		0,

@@ -12,6 +12,8 @@
 #include "Engine/NetConnection.h"
 #include "Engine/NetDriver.h"
 #include "EngineUtils.h"
+#include "GameFeatureTypes.h"
+#include "GameFeaturesSubsystem.h"
 #include "GameFramework/CharacterMovementComponent.h"
 #include "GameFramework/GameStateBase.h"
 #include "GameFramework/PlayerController.h"
@@ -21,6 +23,7 @@
 
 #include "SurvivalRpg/AbilitySystem/RpgAbilitySystemComponent.h"
 #include "SurvivalRpg/Animation/RpgAnimInstance.h"
+#include "SurvivalRpg/Animation/RpgCombatAnimationProfileProviderComponent.h"
 #include "SurvivalRpg/Core/Character/RpgCharacter.h"
 #include "SurvivalRpg/Core/Character/RpgCharacterMovementComponent.h"
 #include "SurvivalRpg/Core/Game/Experience/RpgExperienceDefinition.h"
@@ -47,6 +50,7 @@ namespace RpgGaspPIENetworkTests
 	const FName DefaultSlotName(TEXT("DefaultSlot"));
 	const FName OneHandSwordProfileName(TEXT("OneHandSword"));
 	const FName SwordShieldProfileName(TEXT("SwordShield"));
+	const FName UnarmedProfileName(TEXT("Unarmed"));
 
 	struct FNetworkState : public FBasePIENetworkComponentState
 	{
@@ -99,6 +103,8 @@ namespace RpgGaspPIENetworkTests
 		bool bSawDefaultSlotMontage = false;
 		bool bSawMontageAnimGate = false;
 		TWeakObjectPtr<ARpgCharacter> SubjectBeforeRelevancyLoss;
+		TWeakObjectPtr<ARpgCharacter> CombatFeatureLifecycleSubject;
+		TWeakObjectPtr<URpgAnimInstance> CombatFeatureLifecycleAnimInstance;
 	};
 
 	TArray<FNetworkState*> ActiveTimerStates;
@@ -1159,6 +1165,130 @@ namespace RpgGaspPIENetworkTests
 		return bMatches;
 	}
 
+	int32 CountRegisteredCombatAnimationProfileProviders(
+		const ARpgCharacter* Character)
+	{
+		if (!IsValid(Character))
+		{
+			return 0;
+		}
+
+		TInlineComponentArray<URpgCombatAnimationProfileProviderComponent*> Providers(
+			Character);
+		int32 RegisteredProviderCount = 0;
+		for (const URpgCombatAnimationProfileProviderComponent* Provider : Providers)
+		{
+			if (IsValid(Provider) && Provider->IsRegistered())
+			{
+				++RegisteredProviderCount;
+			}
+		}
+		return RegisteredProviderCount;
+	}
+
+	bool HasBoundCombatAnimationFeatureProfile(
+		FNetworkState& State,
+		const ENetRole ExpectedLocalRole)
+	{
+		ARpgCharacter* Character = FindCharacterByPlayerId(
+			State.World,
+			State.SubjectPlayerId);
+		URpgAnimInstance* AnimInstance = GetPilotAnimInstance(Character);
+		const URpgCombatAnimationProfileProviderComponent* Provider =
+			URpgCombatAnimationProfileProviderComponent::FindForActor(Character);
+		TObjectPtr<URpgCombatAnimationProfile> ActiveProfile = nullptr;
+		return Character && AnimInstance && Provider &&
+			Character == State.CombatFeatureLifecycleSubject.Get() &&
+			AnimInstance == State.CombatFeatureLifecycleAnimInstance.Get() &&
+			Character->GetLocalRole() == ExpectedLocalRole &&
+			CountRegisteredCombatAnimationProfileProviders(Character) == 1 &&
+			ReadObjectProperty(
+				AnimInstance,
+				TEXT("ActiveCombatAnimationProfileSource"),
+				ActiveProfile) &&
+			ActiveProfile == Provider->GetCombatAnimationProfile() &&
+			HasCombatAnimationPresentation(
+				State,
+				ExpectedLocalRole,
+				SwordShieldProfileName,
+				false);
+	}
+
+	bool HasNeutralCombatAnimationFeatureProfile(
+		FNetworkState& State,
+		const ENetRole ExpectedLocalRole)
+	{
+		ARpgCharacter* Character = FindCharacterByPlayerId(
+			State.World,
+			State.SubjectPlayerId);
+		URpgAnimInstance* AnimInstance = GetPilotAnimInstance(Character);
+		TObjectPtr<URpgCombatAnimationProfile> ActiveProfile = nullptr;
+		TObjectPtr<UAnimSequence> EquippedAnimation = nullptr;
+		TObjectPtr<UAnimSequence> CombatReadyAnimation = nullptr;
+		FName ProfileName = NAME_None;
+		float OverlayAlpha = 1.0f;
+		bool bCombatReady = true;
+		bool bFallback = false;
+		return Character && AnimInstance &&
+			Character == State.CombatFeatureLifecycleSubject.Get() &&
+			AnimInstance == State.CombatFeatureLifecycleAnimInstance.Get() &&
+			Character->GetLocalRole() == ExpectedLocalRole &&
+			CountRegisteredCombatAnimationProfileProviders(Character) == 0 &&
+			!URpgCombatAnimationProfileProviderComponent::FindForActor(Character) &&
+			ReadObjectProperty(
+				AnimInstance,
+				TEXT("ActiveCombatAnimationProfileSource"),
+				ActiveProfile) &&
+			!ActiveProfile &&
+			ReadAnimProperty(
+				AnimInstance,
+				TEXT("CombatAnimationProfileName"),
+				ProfileName) &&
+			ProfileName == UnarmedProfileName &&
+			ReadAnimProperty(
+				AnimInstance,
+				TEXT("CombatAnimationOverlayAlpha"),
+				OverlayAlpha) &&
+			FMath::IsNearlyZero(OverlayAlpha) &&
+			ReadAnimProperty(
+				AnimInstance,
+				TEXT("bCombatAnimationReady"),
+				bCombatReady) &&
+			!bCombatReady &&
+			ReadAnimProperty(
+				AnimInstance,
+				TEXT("bCombatAnimationProfileFallback"),
+				bFallback) &&
+			bFallback &&
+			ReadAnimProperty(
+				AnimInstance,
+				TEXT("CombatEquippedUpperBodyAnimation"),
+				EquippedAnimation) &&
+			!EquippedAnimation &&
+			ReadAnimProperty(
+				AnimInstance,
+				TEXT("CombatReadyUpperBodyAnimation"),
+				CombatReadyAnimation) &&
+			!CombatReadyAnimation;
+	}
+
+	bool SetCombatFeatureLifecycleMeshTickEnabled(
+		FNetworkState& State,
+		const bool bEnabled)
+	{
+		ARpgCharacter* Character = FindCharacterByPlayerId(
+			State.World,
+			State.SubjectPlayerId);
+		USkeletalMeshComponent* Mesh = Character ? Character->GetMesh() : nullptr;
+		if (!Mesh)
+		{
+			return false;
+		}
+
+		Mesh->SetComponentTickEnabled(bEnabled);
+		return Mesh->IsComponentTickEnabled() == bEnabled;
+	}
+
 	bool HasCrouchState(FNetworkState& State, const bool bExpectedCrouched)
 	{
 		ARpgCharacter* Character = FindCharacterByPlayerId(
@@ -1446,15 +1576,34 @@ NETWORK_TEST_CLASS(GaspPilotPIE, "SurvivalRpg.Network")
 	int32 SubjectPlayerId = INDEX_NONE;
 	bool bOriginalDiskPersistence = true;
 	UClass* PilotGameModeClass = nullptr;
+	FString CombatCorePluginURL;
+	bool bPluginTransitionComplete = false;
+	bool bPluginTransitionSucceeded = false;
 
 	BEFORE_EACH()
 	{
 		using namespace RpgGaspPIENetworkTests;
+		CombatCorePluginURL.Reset();
+		bPluginTransitionComplete = false;
+		bPluginTransitionSucceeded = false;
 		TestCommandBuilder.OnTearDown(
 			TEXT("Stop GASP network test timers"),
 			[]()
 			{
 				ClearActiveTimers();
+			});
+		TestCommandBuilder.OnTearDown(
+			TEXT("Restore GF_Combat_Core after the profile lifecycle test"),
+			[this]()
+			{
+				if (!CombatCorePluginURL.IsEmpty() &&
+					UGameFeaturesSubsystem::Get().GetPluginState(CombatCorePluginURL) !=
+						EGameFeaturePluginState::Active)
+				{
+					UGameFeaturesSubsystem::Get().LoadAndActivateGameFeaturePlugin(
+						CombatCorePluginURL,
+						FGameFeaturePluginLoadComplete());
+				}
 			});
 
 		URpgDeveloperSettings* DeveloperSettings =
@@ -1494,6 +1643,229 @@ NETWORK_TEST_CLASS(GaspPilotPIE, "SurvivalRpg.Network")
 			CastChecked<ARpgGameModeBase>(PilotGameModeClass->GetDefaultObject())
 				->bEnableDiskPersistence = bOriginalDiskPersistence;
 		}
+	}
+
+	TEST_METHOD(CombatProfileGameFeatureDeactivationReactivation)
+	{
+		using namespace RpgGaspPIENetworkTests;
+
+		Network
+			.UntilServer(
+				TEXT("Pilot Experience loads before the combat-profile feature lifecycle"),
+				[](FNetworkState& State)
+				{
+					return IsPilotExperienceReady(State, 1);
+				},
+				NetworkTimeout())
+			.UntilClients(
+				TEXT("Initial client loads the Pilot Experience before the feature lifecycle"),
+				[](FNetworkState& State)
+				{
+					return IsPilotExperienceReady(State, 1) &&
+						IsPilotCharacterReady(FindLocalCharacter(State.World));
+				},
+				NetworkTimeout())
+			.ThenServer(
+				TEXT("Bind the listen-server host pawn and resolve GF_Combat_Core"),
+				[this](FNetworkState& State)
+				{
+					ARpgCharacter* Character = FindLocalCharacter(State.World);
+					ASSERT_THAT(IsNotNull(Character));
+					ASSERT_THAT(IsNotNull(Character->GetPlayerState()));
+					SubjectPlayerId = Character->GetPlayerState()->GetPlayerId();
+					ASSERT_THAT(IsTrue(SubjectPlayerId != INDEX_NONE));
+					State.SubjectPlayerId = SubjectPlayerId;
+					State.CombatFeatureLifecycleSubject = Character;
+					State.CombatFeatureLifecycleAnimInstance =
+						GetPilotAnimInstance(Character);
+					if (!UGameFeaturesSubsystem::Get().GetPluginURLByName(
+							TEXT("GF_Combat_Core"),
+							CombatCorePluginURL))
+					{
+						TestRunner->AddError(
+							TEXT("Could not resolve GF_Combat_Core plugin URL."));
+					}
+				})
+			.ThenClients(
+				TEXT("Bind the same host pawn in every client world"),
+				[this](FNetworkState& State)
+				{
+					State.SubjectPlayerId = SubjectPlayerId;
+					ARpgCharacter* Character = FindCharacterByPlayerId(
+						State.World,
+						State.SubjectPlayerId);
+					State.CombatFeatureLifecycleSubject = Character;
+					State.CombatFeatureLifecycleAnimInstance =
+						GetPilotAnimInstance(Character);
+				})
+			.UntilServer(
+				TEXT("Authority starts with exactly one bound combat profile provider"),
+				[](FNetworkState& State)
+				{
+					return HasBoundCombatAnimationFeatureProfile(
+						State,
+						ROLE_Authority);
+				},
+				NetworkTimeout())
+			.UntilClients(
+				TEXT("Simulated proxy starts with the same feature-owned presentation"),
+				[](FNetworkState& State)
+				{
+					return HasBoundCombatAnimationFeatureProfile(
+						State,
+						ROLE_SimulatedProxy);
+				},
+				NetworkTimeout())
+			.ThenServer(
+				TEXT("Disable the authority mesh tick before feature removal"),
+				[this](FNetworkState& State)
+				{
+					ASSERT_THAT(IsTrue(
+						SetCombatFeatureLifecycleMeshTickEnabled(State, false)));
+				})
+			.ThenClients(
+				TEXT("Disable the simulated-proxy mesh tick before feature removal"),
+				[this](FNetworkState& State)
+				{
+					ASSERT_THAT(IsTrue(
+						SetCombatFeatureLifecycleMeshTickEnabled(State, false)));
+				})
+			.ThenServer(
+				TEXT("Deactivate GF_Combat_Core with both subject meshes unable to poll"),
+				[this](FNetworkState& State)
+				{
+					bPluginTransitionComplete = false;
+					bPluginTransitionSucceeded = false;
+					UGameFeaturesSubsystem::Get().DeactivateGameFeaturePlugin(
+						CombatCorePluginURL,
+						FGameFeaturePluginDeactivateComplete::CreateLambda(
+							[this](const UE::GameFeatures::FResult& Result)
+							{
+								bPluginTransitionSucceeded = !Result.HasError();
+								bPluginTransitionComplete = true;
+							}));
+				})
+			.UntilServer(
+				TEXT("GF_Combat_Core deactivation completes"),
+				[this](FNetworkState& State)
+				{
+					return bPluginTransitionComplete;
+				},
+				NetworkTimeout())
+			.ThenServer(
+				TEXT("Record the feature-deactivation result without skipping cleanup"),
+				[this](FNetworkState& State)
+				{
+					if (!bPluginTransitionSucceeded)
+					{
+						TestRunner->AddError(
+							TEXT("GF_Combat_Core deactivation failed."));
+					}
+				})
+			.UntilServer(
+				TEXT("Authority releases the profile synchronously without a mesh tick"),
+				[this](FNetworkState& State)
+				{
+					return !bPluginTransitionSucceeded ||
+						HasNeutralCombatAnimationFeatureProfile(
+							State,
+							ROLE_Authority);
+				},
+				NetworkTimeout())
+			.UntilClients(
+				TEXT("Simulated proxy releases the profile synchronously without a mesh tick"),
+				[this](FNetworkState& State)
+				{
+					return !bPluginTransitionSucceeded ||
+						HasNeutralCombatAnimationFeatureProfile(
+							State,
+							ROLE_SimulatedProxy);
+				},
+				NetworkTimeout())
+			.ThenServer(
+				TEXT("Reactivate GF_Combat_Core"),
+				[this](FNetworkState& State)
+				{
+					bPluginTransitionComplete = false;
+					bPluginTransitionSucceeded = false;
+					UGameFeaturesSubsystem::Get().LoadAndActivateGameFeaturePlugin(
+						CombatCorePluginURL,
+						FGameFeaturePluginLoadComplete::CreateLambda(
+							[this](const UE::GameFeatures::FResult& Result)
+							{
+								bPluginTransitionSucceeded = !Result.HasError();
+								bPluginTransitionComplete = true;
+							}));
+				})
+			.UntilServer(
+				TEXT("GF_Combat_Core reactivation completes"),
+				[this](FNetworkState& State)
+				{
+					return bPluginTransitionComplete;
+				},
+				NetworkTimeout())
+			.ThenServer(
+				TEXT("Record the feature-reactivation result without skipping tick restoration"),
+				[this](FNetworkState& State)
+				{
+					if (!bPluginTransitionSucceeded)
+					{
+						TestRunner->AddError(
+							TEXT("GF_Combat_Core reactivation failed."));
+					}
+				})
+			.UntilServer(
+				TEXT("Reactivation registers one authority provider while the mesh stays frozen"),
+				[this](FNetworkState& State)
+				{
+					return !bPluginTransitionSucceeded ||
+						CountRegisteredCombatAnimationProfileProviders(
+							State.CombatFeatureLifecycleSubject.Get()) == 1;
+				},
+				NetworkTimeout())
+			.UntilClients(
+				TEXT("Reactivation registers one simulated-proxy provider while the mesh stays frozen"),
+				[this](FNetworkState& State)
+				{
+					return !bPluginTransitionSucceeded ||
+						CountRegisteredCombatAnimationProfileProviders(
+							State.CombatFeatureLifecycleSubject.Get()) == 1;
+				},
+				NetworkTimeout())
+			.ThenServer(
+				TEXT("Restore the authority mesh tick"),
+				[this](FNetworkState& State)
+				{
+					ASSERT_THAT(IsTrue(
+						SetCombatFeatureLifecycleMeshTickEnabled(State, true)));
+				})
+			.ThenClients(
+				TEXT("Restore the simulated-proxy mesh tick"),
+				[this](FNetworkState& State)
+				{
+					ASSERT_THAT(IsTrue(
+						SetCombatFeatureLifecycleMeshTickEnabled(State, true)));
+				})
+			.UntilServer(
+				TEXT("Authority reacquires the feature profile on the same pawn and AnimInstance"),
+				[this](FNetworkState& State)
+				{
+					return !bPluginTransitionSucceeded ||
+						HasBoundCombatAnimationFeatureProfile(
+							State,
+							ROLE_Authority);
+				},
+				NetworkTimeout())
+			.UntilClients(
+				TEXT("Simulated proxy reacquires the feature profile without duplicates"),
+				[this](FNetworkState& State)
+				{
+					return !bPluginTransitionSucceeded ||
+						HasBoundCombatAnimationFeatureProfile(
+							State,
+							ROLE_SimulatedProxy);
+				},
+				NetworkTimeout());
 	}
 
 	TEST_METHOD(ReplicationLateJoinCorrectionAndDefaultSlotMontage)

@@ -1,6 +1,7 @@
 # GASP combat upper-body presentation contract
 
-This document defines the issue #75 boundary for combining project-owned GASP CMC locomotion with
+This document defines the issue #75 presentation boundary and the issue #113 feature-lifecycle
+boundary for combining project-owned GASP CMC locomotion with
 weapon-specific upper-body presentation. The layer is cosmetic. It must not become a second owner
 for equipment, combat state, rotation policy, montage execution, movement, or replication.
 
@@ -12,7 +13,7 @@ for equipment, combat state, rotation policy, montage execution, movement, or re
 | Attack, block, dodge, hit reaction, death, combat gates, montage windows, notifies, damage, and root motion | GAS and the existing combat abilities | The AnimBP only displays the resulting mapped tags and `DefaultSlot` montages. It does not activate, cancel, or advance gameplay. |
 | `Free`, `CombatStrafe`, and `Aim` rotation policy | `ARpgCharacter` and its replicated rotation-mode contract | `Free` selects the equipped/relaxed pose; `CombatStrafe` and `Aim` select the combat-ready pose. |
 | Capsule motion, gait, stance, airborne state, floor, and movement correction | CharacterMovement and the existing character lifecycle | GASP Motion Matching and procedural nodes consume the established proxy snapshot. |
-| Upper-body sequences, mask, blend timings, and loadout-to-profile mapping | Designer-owned `URpgCombatAnimationProfile` asset | `URpgAnimInstance` resolves and snapshots presentation values; the AnimGraph blends them. |
+| Upper-body sequences, mask, blend timings, and loadout-to-profile mapping | Designer-owned `URpgCombatAnimationProfile` asset inside `GF_Combat_Core` | A feature-owned provider component supplies the active profile; `URpgAnimInstance` resolves and snapshots presentation values; the AnimGraph blends them. |
 
 The AnimBP is never gameplay truth. It must not infer a weapon from a montage name, set rotation
 mode, grant abilities, mutate equipment, or replicate a cosmetic profile. UI may read this state for
@@ -69,7 +70,9 @@ pose.
 
 ## Designer data and deterministic resolution
 
-`URpgCombatAnimationProfile` is the project-local, hard-referenced presentation DataAsset. It owns:
+`URpgCombatAnimationProfile` is the project-local presentation DataAsset. A concrete
+`URpgCombatAnimationProfileProviderComponent` Blueprint in `GF_Combat_Core` hard-references it;
+the core GASP AnimBP does not. The asset owns:
 
 - `TargetSkeleton` and `UpperBodyBlendMaskName`;
 - one `UnarmedFallback`;
@@ -99,7 +102,8 @@ Resolution is deterministic:
 Data Validation rejects missing or mismatched skeletons, a missing/non-mask `UpperBodyMask`, a
 missing `DefaultSlot`, incomplete animation pairs, non-looping/additive/root-motion sequences,
 invalid blend times, ambiguous profile definitions, and forbidden dependencies on excluded GASP
-sample stacks. Runtime lookup uses hard references and must fail closed to Unarmed.
+sample stacks. Runtime lookup uses the active provider's hard reference and must fail closed to
+Unarmed.
 
 ### First-playable profile
 
@@ -141,17 +145,47 @@ GameMode, Experience selection, PawnData schema, or character authority:
 - The GASP PawnData continues to differ only through its isolated character/AnimBP and established
   locomotion defaults. Input config, ability sets, camera, inventory layout, TeamId, Experience
   actions, and GameFeature order remain unchanged.
-- The combat presentation profile is bound by the GASP AnimBP path. It is not a global singleton
-  and does not force the prototype Experience onto GASP presentation.
+- `GF_Combat_Core` injects `BP_RpgCombatAnimationProfileProvider` only into
+  `BP_Rpg_Character_GASP` through the existing GameFeature Add Components action. The provider is
+  client-world presentation content, not a global singleton, and does not force the prototype
+  Experience or AI characters onto GASP presentation.
 
 Changing Experience/PawnData must therefore remain a reversible content choice. No issue #75
 class or asset may make Epic's GASP sample project a runtime dependency.
+
+## GameFeature lifecycle
+
+The core `URpgAnimInstance` knows only the native provider contract. It has no asset path, soft
+reference, or hard reference into `/GF_Combat_Core`. On each game-thread proxy `PreUpdate`, it
+observes the provider attached to the current pawn and rebuilds the immutable lookup only when the
+provider or profile identity changes. This covers an already existing pawn when the feature is
+activated, a newly spawned or swapped pawn, AnimInstance reinitialization, and late join.
+
+The active AnimInstance retains one transient GC-strong reference to the provider's profile because
+the lookup and proxy intentionally contain raw `UAnimSequence` pointers. On feature removal or an
+invalid/missing provider, cleanup is immediate and ordered: proxy and public animation pointers are
+reset to empty `Unarmed`, the lookup is cleared, then the strong profile reference is released.
+Immediate neutralization is deliberate; a delayed visual fade would retain feature-owned assets
+past deactivation and require a separate two-phase unload protocol.
+
+Feature removal does not rely on a future animation tick. The provider's `OnUnregister` first
+finishes any in-flight parallel mesh evaluation, then synchronously asks every owning
+`URpgAnimInstance` to perform the ordered cleanup before the component and feature content are
+released. Hidden, culled, or explicitly non-ticking meshes therefore cannot retain stale profile or
+sequence references across deactivation.
+
+The provider component never ticks or replicates. It is added in graphical worlds (including a
+listen server) and omitted from dedicated servers. Equipment and rotation replication remain the
+only multiplayer inputs; the provider carries static local presentation content and never becomes
+gameplay truth.
 
 ## Multiplayer and late-join contract
 
 No new gameplay replication, RPC, saved state, or animation-authoritative state is added.
 
 - The server remains authoritative for equipment, GAS state, montage execution, and rotation mode.
+- Every graphical world receives the same feature-owned provider for the GASP pawn through the
+  GameFeature component manager; no provider RPC or replicated profile pointer is introduced.
 - Existing replicated equipment reconstructs the active hand instances and their static
   presentation traits. Existing rotation-mode replication reconstructs relaxed versus combat-ready
   intent.
@@ -189,6 +223,7 @@ mode. Record host, owning-client, simulated-proxy, and late-join views.
 | Block | Enter block, hold loop, receive block hit, release | Start/loop/hit/end montages retain current GAS ownership and return smoothly to the correct relaxed/ready profile. |
 | Other montage gates | Dodge, hit reaction, guard break, death where available | Montage/root-motion result wins; procedural controls do not fight it; recovery returns to the correct profile. |
 | Equip lifecycle | Unequip, re-equip, and holster/draw through the existing equipment flow | Overlay follows the replicated active hand loadout, blends out before replacement, and never invents a sheath or hidden equipment owner. |
+| Feature lifecycle | Deactivate and reactivate `GF_Combat_Core` with an existing GASP pawn; repeat after respawn | Deactivation immediately produces `Unarmed`, alpha `0`, and no overlay sequences; reactivation restores the equipped profile once, with no stale or duplicate component. |
 | Late join | Join while Sword/Shield is equipped and CombatStrafe/Aim is active; repeat during movement | Late joiner converges to `SwordShield` and ready pose without a reference pose, permanent fallback, or different facing mode. |
 | Relevancy/correction | Leave and regain relevancy; exercise normal simulated smoothing and one deliberate correction | Reconstructed profile remains correct; no extra animation-history reset, mask pop, or divergent montage authority. |
 
@@ -200,14 +235,14 @@ warning, or disagreement in final profile identity after replicated state conver
 
 ## Verification boundary
 
-Issue #75 acceptance requires all of the following:
+Issue #75/#113 acceptance requires all of the following:
 
 - editor build and Data Validation;
-- focused profile resolver and asset-contract tests;
+- focused profile resolver, provider-lifecycle, feature-composition, and asset-contract tests;
 - GASP graph-contract coverage for mask mode, mask name, mesh-space rotation blending, and ordering
   before `DefaultSlot` and Foot Placement/Leg IK;
 - real-network coverage for equip/unequip, rotation-mode toggle, simulated proxies, relevancy return,
-  and equipped late join;
+  equipped late join, and real GameFeature deactivate/reactivate with the subject mesh tick disabled;
 - the rendered manual matrix above.
 
 Value-only automation proves ownership and deterministic reconstruction. It cannot prove that a
