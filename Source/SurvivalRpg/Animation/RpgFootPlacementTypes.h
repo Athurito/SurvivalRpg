@@ -342,6 +342,27 @@ namespace RpgFootPlacement
 		const FTransform& ProceduralTargetTransform,
 		float EffectivePlacementWeight);
 
+	/** Builds the scale-free component-space correction from the current FK foot to a resolved target. */
+	SURVIVALRPG_API FTransform CalculateFootCorrectionOffset(
+		const FTransform& FKFootTransform,
+		const FTransform& ResolvedTargetTransform);
+
+	/**
+	 * Smooths a released plant correction toward the current desired correction with
+	 * frame-rate-independent half-lives. Scale belongs to the live animation target.
+	 */
+	SURVIVALRPG_API FTransform SmoothFootCorrectionOffset(
+		const FTransform& CurrentOffset,
+		const FTransform& DesiredOffset,
+		float DeltaSeconds,
+		float TranslationHalfLifeSeconds,
+		float RotationHalfLifeSeconds);
+
+	/** Applies a scale-free component-space correction after the current FK foot transform. */
+	SURVIVALRPG_API FTransform ApplyFootCorrectionOffset(
+		const FTransform& FKFootTransform,
+		const FTransform& CorrectionOffset);
+
 	/** Chooses the bounded downward pelvis correction required by the sampled feet. */
 	SURVIVALRPG_API float CalculatePelvisOffset(float LeftOffset, float RightOffset, float MaxDownwardOffset);
 

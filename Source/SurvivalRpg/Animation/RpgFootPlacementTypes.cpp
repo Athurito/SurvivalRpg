@@ -256,6 +256,51 @@ namespace RpgFootPlacement
 		return Result;
 	}
 
+	FTransform CalculateFootCorrectionOffset(
+		const FTransform& FKFootTransform,
+		const FTransform& ResolvedTargetTransform)
+	{
+		FTransform Result = FKFootTransform.GetRelativeTransformReverse(ResolvedTargetTransform);
+		Result.SetScale3D(FVector::OneVector);
+		return Result;
+	}
+
+	FTransform SmoothFootCorrectionOffset(
+		const FTransform& CurrentOffset,
+		const FTransform& DesiredOffset,
+		float DeltaSeconds,
+		float TranslationHalfLifeSeconds,
+		float RotationHalfLifeSeconds)
+	{
+		const float TranslationAlpha = CalculateHalfLifeAlpha(
+			DeltaSeconds,
+			TranslationHalfLifeSeconds);
+		const float RotationAlpha = CalculateHalfLifeAlpha(
+			DeltaSeconds,
+			RotationHalfLifeSeconds);
+		FTransform Result = DesiredOffset;
+		Result.SetLocation(FMath::Lerp(
+			CurrentOffset.GetLocation(),
+			DesiredOffset.GetLocation(),
+			TranslationAlpha));
+		Result.SetRotation(FQuat::Slerp(
+			CurrentOffset.GetRotation(),
+			DesiredOffset.GetRotation(),
+			RotationAlpha).GetNormalized());
+		return Result;
+	}
+
+	FTransform ApplyFootCorrectionOffset(
+		const FTransform& FKFootTransform,
+		const FTransform& CorrectionOffset)
+	{
+		FTransform ScaleFreeOffset = CorrectionOffset;
+		ScaleFreeOffset.SetScale3D(FVector::OneVector);
+		FTransform Result = FKFootTransform * ScaleFreeOffset;
+		Result.SetScale3D(FKFootTransform.GetScale3D());
+		return Result;
+	}
+
 	float CalculatePelvisOffset(float LeftOffset, float RightOffset, float MaxDownwardOffset)
 	{
 		const float RequestedOffset = FMath::Min3(LeftOffset, RightOffset, 0.0f);

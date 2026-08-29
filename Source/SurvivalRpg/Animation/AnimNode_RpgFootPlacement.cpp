@@ -9,6 +9,91 @@
 FAnimNode_RpgFootPlacement::FAnimNode_RpgFootPlacement()
 {
 	AlphaInputType = EAnimAlphaInputType::Float;
+	ResetInterpolationState();
+}
+
+void FAnimNode_RpgFootPlacement::ResetInterpolationState()
+{
+	CachedDeltaTime = 0.0f;
+	SmoothedPelvisOffset = 0.0f;
+	UpdateCounter.Reset();
+	for (int32 LegIndex = 0; LegIndex < 2; ++LegIndex)
+	{
+		SmoothedCorrectionOffsetsCS[LegIndex] = FTransform::Identity;
+		PreviousOutputTargetsWorld[LegIndex] = FTransform::Identity;
+		bHasSmoothedCorrection[LegIndex] = false;
+		bHasPreviousOutputTarget[LegIndex] = false;
+		bWasLocked[LegIndex] = false;
+	}
+}
+
+void FAnimNode_RpgFootPlacement::Initialize_AnyThread(const FAnimationInitializeContext& Context)
+{
+	FAnimNode_SkeletalControlBase::Initialize_AnyThread(Context);
+	ResetInterpolationState();
+}
+
+FTransform FAnimNode_RpgFootPlacement::ResolveLegCorrectionTargetCS(
+	int32 LegIndex,
+	bool bLocked,
+	const FTransform& FKFootTransformCS,
+	const FTransform& DesiredResolvedTargetCS,
+	const FTransform& ComponentToWorld)
+{
+	check(LegIndex >= 0 && LegIndex < 2);
+	const FTransform DesiredCorrectionOffsetCS = RpgFootPlacement::CalculateFootCorrectionOffset(
+		FKFootTransformCS,
+		DesiredResolvedTargetCS);
+	if (bLocked)
+	{
+		SmoothedCorrectionOffsetsCS[LegIndex] = DesiredCorrectionOffsetCS;
+		bHasSmoothedCorrection[LegIndex] = true;
+		return DesiredResolvedTargetCS;
+	}
+
+	if (bWasLocked[LegIndex] && bHasPreviousOutputTarget[LegIndex])
+	{
+		const FTransform PreviousOutputTargetCS =
+			PreviousOutputTargetsWorld[LegIndex].GetRelativeTransform(ComponentToWorld);
+		SmoothedCorrectionOffsetsCS[LegIndex] = RpgFootPlacement::CalculateFootCorrectionOffset(
+			FKFootTransformCS,
+			PreviousOutputTargetCS);
+		bHasSmoothedCorrection[LegIndex] = true;
+	}
+	else if (!bHasSmoothedCorrection[LegIndex])
+	{
+		SmoothedCorrectionOffsetsCS[LegIndex] = DesiredCorrectionOffsetCS;
+		bHasSmoothedCorrection[LegIndex] = true;
+	}
+
+	SmoothedCorrectionOffsetsCS[LegIndex] = RpgFootPlacement::SmoothFootCorrectionOffset(
+		SmoothedCorrectionOffsetsCS[LegIndex],
+		DesiredCorrectionOffsetCS,
+		CachedDeltaTime,
+		ReleaseTranslationBlendHalfLife,
+		ReleaseRotationBlendHalfLife);
+	FTransform OutputTargetCS = RpgFootPlacement::ApplyFootCorrectionOffset(
+		FKFootTransformCS,
+		SmoothedCorrectionOffsetsCS[LegIndex]);
+	OutputTargetCS.SetScale3D(DesiredResolvedTargetCS.GetScale3D());
+	return OutputTargetCS;
+}
+
+void FAnimNode_RpgFootPlacement::CommitLegCorrectionTarget(
+	int32 LegIndex,
+	bool bLocked,
+	const FTransform& FKFootTransformCS,
+	const FTransform& FinalOutputTargetCS,
+	const FTransform& ComponentToWorld)
+{
+	check(LegIndex >= 0 && LegIndex < 2);
+	SmoothedCorrectionOffsetsCS[LegIndex] = RpgFootPlacement::CalculateFootCorrectionOffset(
+		FKFootTransformCS,
+		FinalOutputTargetCS);
+	bHasSmoothedCorrection[LegIndex] = true;
+	PreviousOutputTargetsWorld[LegIndex] = FinalOutputTargetCS * ComponentToWorld;
+	bHasPreviousOutputTarget[LegIndex] = true;
+	bWasLocked[LegIndex] = bLocked;
 }
 
 void FAnimNode_RpgFootPlacement::GatherDebugData(FNodeDebugData& DebugData)
@@ -33,10 +118,10 @@ void FAnimNode_RpgFootPlacement::UpdateInternal(const FAnimationUpdateContext& C
 		!UpdateCounter.WasSynchronizedCounter(ProxyUpdateCounter);
 	UpdateCounter.SynchronizeWith(ProxyUpdateCounter);
 
-	if (bSkippedRelevantUpdate || !Snapshot.bValid || !Snapshot.bGrounded || Snapshot.bReset)
+	if (bSkippedRelevantUpdate || !Snapshot.bValid || !Snapshot.bGrounded ||
+		Snapshot.bReset || LegsDefinition.Num() != 2)
 	{
-		CachedDeltaTime = 0.0f;
-		SmoothedPelvisOffset = 0.0f;
+		ResetInterpolationState();
 		return;
 	}
 
@@ -53,8 +138,7 @@ void FAnimNode_RpgFootPlacement::EvaluateSkeletalControl_AnyThread(
 
 	if (!Snapshot.bValid || !Snapshot.bGrounded || Snapshot.bReset || LegsDefinition.Num() != 2)
 	{
-		CachedDeltaTime = 0.0f;
-		SmoothedPelvisOffset = 0.0f;
+		ResetInterpolationState();
 		return;
 	}
 
@@ -135,37 +219,66 @@ void FAnimNode_RpgFootPlacement::EvaluateSkeletalControl_AnyThread(
 			LegSnapshot.bHasWalkableGround,
 			LegWeight,
 			GeometryWeight);
-		if (EffectiveLegWeight > UE_KINDA_SMALL_NUMBER)
+		const FVector ClampedTargetOffset = (
+			ProceduralTargetWorld.GetLocation() - FKFootTransformWorld.GetLocation())
+			.GetClampedToMaxSize(FMath::Max(MaxFootTranslation, 0.0f));
+		ProceduralTargetWorld.SetLocation(FKFootTransformWorld.GetLocation() + ClampedTargetOffset);
+		const float TargetRotationDegrees = FMath::RadiansToDegrees(
+			FKFootTransformWorld.GetRotation().AngularDistance(ProceduralTargetWorld.GetRotation()));
+		if (TargetRotationDegrees > MaxFootRotation && TargetRotationDegrees > UE_SMALL_NUMBER)
 		{
-			const FVector ClampedTargetOffset = (
-				ProceduralTargetWorld.GetLocation() - FKFootTransformWorld.GetLocation())
-				.GetClampedToMaxSize(FMath::Max(MaxFootTranslation, 0.0f));
-			ProceduralTargetWorld.SetLocation(FKFootTransformWorld.GetLocation() + ClampedTargetOffset);
-			const float TargetRotationDegrees = FMath::RadiansToDegrees(
-				FKFootTransformWorld.GetRotation().AngularDistance(ProceduralTargetWorld.GetRotation()));
-			if (TargetRotationDegrees > MaxFootRotation && TargetRotationDegrees > UE_SMALL_NUMBER)
-			{
-				ProceduralTargetWorld.SetRotation(FQuat::Slerp(
-					FKFootTransformWorld.GetRotation(),
-					ProceduralTargetWorld.GetRotation(),
-					MaxFootRotation / TargetRotationDegrees).GetNormalized());
-			}
-
-			FootOffsets[LegIndex] = FVector::DotProduct(
-				ProceduralTargetWorld.GetLocation() - FKFootTransformWorld.GetLocation(),
-				ComponentUpWorld) * EffectiveLegWeight;
+			ProceduralTargetWorld.SetRotation(FQuat::Slerp(
+				FKFootTransformWorld.GetRotation(),
+				ProceduralTargetWorld.GetRotation(),
+				MaxFootRotation / TargetRotationDegrees).GetNormalized());
 		}
 
 		const FTransform ProceduralTargetCS =
 			ProceduralTargetWorld.GetRelativeTransform(Snapshot.ComponentToWorld);
+		const FTransform LiveOutputTargetCS = RpgFootPlacement::ResolveIKFootTarget(
+			FKFootTransformCS,
+			ProceduralTargetCS,
+			EffectiveLegWeight);
+		FTransform OutputTargetCS = ResolveLegCorrectionTargetCS(
+			LegIndex,
+			LegSnapshot.bLocked,
+			FKFootTransformCS,
+			LiveOutputTargetCS,
+			Snapshot.ComponentToWorld);
+
+		FTransform OutputTargetWorld = OutputTargetCS * Snapshot.ComponentToWorld;
+		const FVector OutputTargetOffset = (
+			OutputTargetWorld.GetLocation() - FKFootTransformWorld.GetLocation())
+			.GetClampedToMaxSize(FMath::Max(MaxFootTranslation, 0.0f));
+		OutputTargetWorld.SetLocation(FKFootTransformWorld.GetLocation() + OutputTargetOffset);
+		const float OutputTargetRotationDegrees = FMath::RadiansToDegrees(
+			FKFootTransformWorld.GetRotation().AngularDistance(OutputTargetWorld.GetRotation()));
+		if (OutputTargetRotationDegrees > MaxFootRotation &&
+			OutputTargetRotationDegrees > UE_SMALL_NUMBER)
+		{
+			OutputTargetWorld.SetRotation(FQuat::Slerp(
+				FKFootTransformWorld.GetRotation(),
+				OutputTargetWorld.GetRotation(),
+				MaxFootRotation / OutputTargetRotationDegrees).GetNormalized());
+		}
+		OutputTargetCS = OutputTargetWorld.GetRelativeTransform(Snapshot.ComponentToWorld);
+		CommitLegCorrectionTarget(
+			LegIndex,
+			LegSnapshot.bLocked,
+			FKFootTransformCS,
+			OutputTargetCS,
+			Snapshot.ComponentToWorld);
+
+		if (!OutputTargetCS.Equals(FKFootTransformCS, UE_KINDA_SMALL_NUMBER))
+		{
+			FootOffsets[LegIndex] = FVector::DotProduct(
+				OutputTargetWorld.GetLocation() - FKFootTransformWorld.GetLocation(),
+				ComponentUpWorld);
+		}
+
 		// Stock Leg IK has one global alpha and always solves both legs. Writing the current
 		// FK ankle here prevents a static or unsuitable authored IK track from pinning a swing leg.
-		OutBoneTransforms.Emplace(
-			IKFootIndex,
-			RpgFootPlacement::ResolveIKFootTarget(
-				FKFootTransformCS,
-				ProceduralTargetCS,
-				EffectiveLegWeight));
+		OutBoneTransforms.Emplace(IKFootIndex, OutputTargetCS);
 	}
 
 	const FCompactPoseBoneIndex PelvisIndex = PelvisBone.GetCompactPoseIndex(BoneContainer);
@@ -227,4 +340,5 @@ void FAnimNode_RpgFootPlacement::InitializeBoneReferences(const FBoneContainer& 
 		LegDefinition.IKFootBone.Initialize(RequiredBones);
 		LegDefinition.BallBone.Initialize(RequiredBones);
 	}
+	ResetInterpolationState();
 }
