@@ -27,6 +27,8 @@
 #include "SurvivalRpg/Core/Game/Experience/RpgExperienceManagerComponent.h"
 #include "SurvivalRpg/Core/Game/RpgGameModeBase.h"
 #include "SurvivalRpg/Development/RpgDeveloperSettings.h"
+#include "SurvivalRpg/Equipment/RpgEquipmentManagerComponent.h"
+#include "SurvivalRpg/Equipment/RpgWeaponInstance.h"
 #include "SurvivalRpg/GameplayTags/RpgGameplayTags.h"
 
 #if ENABLE_PIE_NETWORK_TEST
@@ -40,7 +42,11 @@ namespace RpgGaspPIENetworkTests
 		TEXT("/Game/SurvivalRpg/Core/Character/GASP/BP_Rpg_Character_GASP");
 	constexpr TCHAR RootMotionAttackPath[] =
 		TEXT("/Game/SurvivalRpg/Characters/Mannequins/Anims/Unarmed/Attack/MM_Attack_01.MM_Attack_01");
+	constexpr TCHAR BasicShieldDefinitionClassPath[] =
+		TEXT("/GF_Combat_Core/Equipment/Weapons/ED_BasicShield.ED_BasicShield_C");
 	const FName DefaultSlotName(TEXT("DefaultSlot"));
+	const FName OneHandSwordProfileName(TEXT("OneHandSword"));
+	const FName SwordShieldProfileName(TEXT("SwordShield"));
 
 	struct FNetworkState : public FBasePIENetworkComponentState
 	{
@@ -60,6 +66,7 @@ namespace RpgGaspPIENetworkTests
 		double StableCoastStartTime = 0.0;
 		TWeakObjectPtr<ARpgCharacter> StableCoastSubject;
 		double LastCoastDiagnosticTime = -1.0;
+		double LastCombatAnimationDiagnosticTime = -1.0;
 		FRpgCharacterMovementProfile BaselineCoastProfile;
 		bool bHasBaselineCoastProfile = false;
 		float BaselineSubjectNetCullDistanceSquared = 0.0f;
@@ -1034,6 +1041,124 @@ namespace RpgGaspPIENetworkTests
 			AnimMode == ExpectedMode;
 	}
 
+	bool HasCombatAnimationPresentation(
+		FNetworkState& State,
+		const ENetRole ExpectedLocalRole,
+		const FName ExpectedProfileName,
+		const bool bExpectedCombatReady)
+	{
+		ARpgCharacter* Character = FindCharacterByPlayerId(
+			State.World,
+			State.SubjectPlayerId);
+		URpgAnimInstance* AnimInstance = GetPilotAnimInstance(Character);
+		const URpgEquipmentManagerComponent* EquipmentManager = Character
+			? Character->GetEquipmentManagerComponent()
+			: nullptr;
+		const URpgWeaponInstance* MainHandWeapon = EquipmentManager
+			? Cast<URpgWeaponInstance>(EquipmentManager->GetEquipmentInstanceInSlot(
+				ERpgEquipmentSlot::MainHand))
+			: nullptr;
+		const URpgWeaponInstance* OffHandWeapon = EquipmentManager
+			? Cast<URpgWeaponInstance>(EquipmentManager->GetEquipmentInstanceInSlot(
+				ERpgEquipmentSlot::OffHand))
+			: nullptr;
+		static const FGameplayTag OneHandSwordAnimationTag =
+			FGameplayTag::RequestGameplayTag(
+				TEXT("Equipment.AnimationProfile.OneHandSword"));
+		static const FGameplayTag ShieldAnimationTag =
+			FGameplayTag::RequestGameplayTag(
+				TEXT("Equipment.AnimationProfile.Shield"));
+		const bool bHasOneHandSword = MainHandWeapon &&
+			MainHandWeapon->GetEquipmentTraitTags().HasTagExact(
+				OneHandSwordAnimationTag);
+		const bool bEquipmentMatches =
+			(ExpectedProfileName == SwordShieldProfileName &&
+			 bHasOneHandSword && OffHandWeapon &&
+			 OffHandWeapon->GetEquipmentTraitTags().HasTagExact(
+				 ShieldAnimationTag)) ||
+			(ExpectedProfileName == OneHandSwordProfileName &&
+			 bHasOneHandSword && !OffHandWeapon) ||
+			(ExpectedProfileName != SwordShieldProfileName &&
+			 ExpectedProfileName != OneHandSwordProfileName);
+		FName ProfileName = NAME_None;
+		float OverlayAlpha = 0.0f;
+		bool bCombatReady = !bExpectedCombatReady;
+		bool bFallback = true;
+		TObjectPtr<UAnimSequence> EquippedAnimation = nullptr;
+		TObjectPtr<UAnimSequence> CombatReadyAnimation = nullptr;
+		const bool bReadProfileName = ReadAnimProperty(
+				AnimInstance,
+				TEXT("CombatAnimationProfileName"),
+				ProfileName);
+		const bool bReadOverlayAlpha = ReadAnimProperty(
+				AnimInstance,
+				TEXT("CombatAnimationOverlayAlpha"),
+				OverlayAlpha);
+		const bool bReadCombatReady = ReadAnimProperty(
+				AnimInstance,
+				TEXT("bCombatAnimationReady"),
+				bCombatReady);
+		const bool bReadFallback = ReadAnimProperty(
+				AnimInstance,
+				TEXT("bCombatAnimationProfileFallback"),
+				bFallback);
+		const bool bReadEquippedAnimation = ReadAnimProperty(
+				AnimInstance,
+				TEXT("CombatEquippedUpperBodyAnimation"),
+				EquippedAnimation);
+		const bool bReadCombatReadyAnimation = ReadAnimProperty(
+				AnimInstance,
+				TEXT("CombatReadyUpperBodyAnimation"),
+				CombatReadyAnimation);
+		const bool bMatches = Character &&
+			Character->GetLocalRole() == ExpectedLocalRole &&
+			bEquipmentMatches &&
+			bReadProfileName && bReadOverlayAlpha && bReadCombatReady &&
+			bReadFallback && bReadEquippedAnimation &&
+			bReadCombatReadyAnimation &&
+			ProfileName == ExpectedProfileName &&
+			FMath::IsNearlyEqual(OverlayAlpha, 1.0f, 0.01f) &&
+			bCombatReady == bExpectedCombatReady &&
+			!bFallback && EquippedAnimation && CombatReadyAnimation;
+		const double Now = FPlatformTime::Seconds();
+		if (!bMatches && Now - State.LastCombatAnimationDiagnosticTime >= 1.0)
+		{
+			State.LastCombatAnimationDiagnosticTime = Now;
+			UE_LOG(
+				LogTemp,
+				Display,
+				TEXT("Combat presentation mismatch: expectedRole=%d expectedProfile=%s expectedReady=%d | character=%d role=%d anim=%d equipment=%d main=%s mainTraits=%s off=%s offTraits=%s profileRead=%d profile=%s alphaRead=%d alpha=%.3f readyRead=%d ready=%d fallbackRead=%d fallback=%d equippedRead=%d equipped=%s combatRead=%d combat=%s"),
+				static_cast<int32>(ExpectedLocalRole),
+				*ExpectedProfileName.ToString(),
+				static_cast<int32>(bExpectedCombatReady),
+				static_cast<int32>(Character != nullptr),
+				Character ? static_cast<int32>(Character->GetLocalRole()) : -1,
+				static_cast<int32>(AnimInstance != nullptr),
+				static_cast<int32>(bEquipmentMatches),
+				*GetNameSafe(MainHandWeapon),
+				MainHandWeapon
+					? *MainHandWeapon->GetEquipmentTraitTags().ToStringSimple()
+					: TEXT("None"),
+				*GetNameSafe(OffHandWeapon),
+				OffHandWeapon
+					? *OffHandWeapon->GetEquipmentTraitTags().ToStringSimple()
+					: TEXT("None"),
+				static_cast<int32>(bReadProfileName),
+				*ProfileName.ToString(),
+				static_cast<int32>(bReadOverlayAlpha),
+				static_cast<double>(OverlayAlpha),
+				static_cast<int32>(bReadCombatReady),
+				static_cast<int32>(bCombatReady),
+				static_cast<int32>(bReadFallback),
+				static_cast<int32>(bFallback),
+				static_cast<int32>(bReadEquippedAnimation),
+				*GetNameSafe(EquippedAnimation),
+				static_cast<int32>(bReadCombatReadyAnimation),
+				*GetNameSafe(CombatReadyAnimation));
+		}
+		return bMatches;
+	}
+
 	bool HasCrouchState(FNetworkState& State, const bool bExpectedCrouched)
 	{
 		ARpgCharacter* Character = FindCharacterByPlayerId(
@@ -1516,26 +1641,132 @@ NETWORK_TEST_CLASS(GaspPilotPIE, "SurvivalRpg.Network")
 				},
 				NetworkTimeout())
 			.UntilServer(
-				TEXT("Authority applies the GASP Free rotation policy"),
+				TEXT("Authority applies Free rotation with the SwordShield presentation"),
 				[](FNetworkState& State)
 				{
-					return HasFreeRotationPolicy(State, ROLE_Authority);
+					return HasFreeRotationPolicy(State, ROLE_Authority) &&
+						HasCombatAnimationPresentation(
+							State,
+							ROLE_Authority,
+							SwordShieldProfileName,
+							false);
 				},
 				NetworkTimeout())
 			.UntilClient(
-				TEXT("Owner applies the GASP Free rotation policy"),
+				TEXT("Owner applies Free rotation with the SwordShield presentation"),
 				0,
 				[](FNetworkState& State)
 				{
-					return HasFreeRotationPolicy(State, ROLE_AutonomousProxy);
+					return HasFreeRotationPolicy(State, ROLE_AutonomousProxy) &&
+						HasCombatAnimationPresentation(
+							State,
+							ROLE_AutonomousProxy,
+							SwordShieldProfileName,
+							false);
 				},
 				NetworkTimeout())
 			.UntilClient(
-				TEXT("Moving late join applies the GASP Free rotation policy"),
+				TEXT("Moving late join reconstructs Free rotation and SwordShield presentation"),
 				1,
 				[](FNetworkState& State)
 				{
-					return HasFreeRotationPolicy(State, ROLE_SimulatedProxy);
+					return HasFreeRotationPolicy(State, ROLE_SimulatedProxy) &&
+						HasCombatAnimationPresentation(
+							State,
+							ROLE_SimulatedProxy,
+							SwordShieldProfileName,
+							false);
+				},
+				NetworkTimeout())
+			.ThenServer(
+				TEXT("Unequip the replicated starter Shield"),
+				[this](FNetworkState& State)
+				{
+					ARpgCharacter* Character = FindCharacterByPlayerId(
+						State.World,
+						State.SubjectPlayerId);
+					URpgEquipmentManagerComponent* EquipmentManager = Character
+						? Character->GetEquipmentManagerComponent()
+						: nullptr;
+					ASSERT_THAT(IsNotNull(EquipmentManager));
+					if (EquipmentManager)
+					{
+						EquipmentManager->UnequipItemInSlot(
+							ERpgEquipmentSlot::OffHand);
+						Character->ForceNetUpdate();
+					}
+				})
+			.UntilServer(
+				TEXT("Authority blends from SwordShield to OneHandSword after unequip"),
+				[](FNetworkState& State)
+				{
+					return HasCombatAnimationPresentation(
+						State,
+						ROLE_Authority,
+						OneHandSwordProfileName,
+						false);
+				},
+				NetworkTimeout())
+			.UntilClients(
+				TEXT("Shield unequip and OneHandSword presentation reach owner and simulated proxy"),
+				[](FNetworkState& State)
+				{
+					return HasCombatAnimationPresentation(
+						State,
+						State.ClientIndex == 0
+							? ROLE_AutonomousProxy
+							: ROLE_SimulatedProxy,
+						OneHandSwordProfileName,
+						false);
+				},
+				NetworkTimeout())
+			.ThenServer(
+				TEXT("Re-equip the Shield into its authored OffHand slot"),
+				[this](FNetworkState& State)
+				{
+					ARpgCharacter* Character = FindCharacterByPlayerId(
+						State.World,
+						State.SubjectPlayerId);
+					URpgEquipmentManagerComponent* EquipmentManager = Character
+						? Character->GetEquipmentManagerComponent()
+						: nullptr;
+					const TSubclassOf<URpgEquipmentDefinition> ShieldDefinition =
+						LoadClass<URpgEquipmentDefinition>(
+							nullptr,
+							BasicShieldDefinitionClassPath);
+					ASSERT_THAT(IsNotNull(EquipmentManager));
+					ASSERT_THAT(IsNotNull(ShieldDefinition.Get()));
+					if (EquipmentManager && ShieldDefinition)
+					{
+						ASSERT_THAT(IsNotNull(
+							EquipmentManager->EquipItemInSlot(
+								ShieldDefinition,
+								ERpgEquipmentSlot::OffHand)));
+						Character->ForceNetUpdate();
+					}
+				})
+			.UntilServer(
+				TEXT("Authority restores SwordShield after OffHand re-equip"),
+				[](FNetworkState& State)
+				{
+					return HasCombatAnimationPresentation(
+						State,
+						ROLE_Authority,
+						SwordShieldProfileName,
+						false);
+				},
+				NetworkTimeout())
+			.UntilClients(
+				TEXT("Shield re-equip and SwordShield presentation reach owner and simulated proxy"),
+				[](FNetworkState& State)
+				{
+					return HasCombatAnimationPresentation(
+						State,
+						State.ClientIndex == 0
+							? ROLE_AutonomousProxy
+							: ROLE_SimulatedProxy,
+						SwordShieldProfileName,
+						false);
 				},
 				NetworkTimeout())
 			.UntilServer(
@@ -1839,17 +2070,29 @@ NETWORK_TEST_CLASS(GaspPilotPIE, "SurvivalRpg.Network")
 						EGameplayTagReplicationState::TagAndCountToAll);
 				})
 			.UntilServer(
-				TEXT("Authority resolves Aim locomotion"),
-				[](FNetworkState& State)
-				{
-					return HasRotationMode(State, ERpgCharacterRotationMode::Aim);
-				},
-				NetworkTimeout())
-			.UntilClients(
-				TEXT("Aim locomotion reaches owner and simulated proxy"),
+				TEXT("Authority resolves Aim and combat-ready SwordShield presentation"),
 				[](FNetworkState& State)
 				{
 					return HasRotationMode(State, ERpgCharacterRotationMode::Aim) &&
+						HasCombatAnimationPresentation(
+							State,
+							ROLE_Authority,
+							SwordShieldProfileName,
+							true);
+				},
+				NetworkTimeout())
+			.UntilClients(
+				TEXT("Aim and combat-ready SwordShield reach owner and simulated proxy"),
+				[](FNetworkState& State)
+				{
+					return HasRotationMode(State, ERpgCharacterRotationMode::Aim) &&
+						HasCombatAnimationPresentation(
+							State,
+							State.ClientIndex == 0
+								? ROLE_AutonomousProxy
+								: ROLE_SimulatedProxy,
+							SwordShieldProfileName,
+							true) &&
 						State.bSawAim;
 				},
 				NetworkTimeout())
@@ -1878,13 +2121,34 @@ NETWORK_TEST_CLASS(GaspPilotPIE, "SurvivalRpg.Network")
 						1,
 						EGameplayTagReplicationState::TagAndCountToAll);
 				})
+			.UntilServer(
+				TEXT("Authority restores CombatStrafe with combat-ready SwordShield"),
+				[](FNetworkState& State)
+				{
+					return HasRotationMode(
+							State,
+							ERpgCharacterRotationMode::CombatStrafe) &&
+						HasCombatAnimationPresentation(
+							State,
+							ROLE_Authority,
+							SwordShieldProfileName,
+							true);
+				},
+				NetworkTimeout())
 			.UntilClients(
-				TEXT("CombatStrafe locomotion is restored after Aim"),
+				TEXT("CombatStrafe and combat-ready SwordShield reach both clients"),
 				[](FNetworkState& State)
 				{
 					return HasRotationMode(
 						State,
-						ERpgCharacterRotationMode::CombatStrafe);
+						ERpgCharacterRotationMode::CombatStrafe) &&
+						HasCombatAnimationPresentation(
+							State,
+							State.ClientIndex == 0
+								? ROLE_AutonomousProxy
+								: ROLE_SimulatedProxy,
+							SwordShieldProfileName,
+							true);
 				},
 				NetworkTimeout())
 			.UntilServer(
@@ -2554,7 +2818,7 @@ NETWORK_TEST_CLASS(GaspPilotPIE, "SurvivalRpg.Network")
 					State.SubjectPlayerId = SubjectPlayerId;
 				})
 			.UntilClient(
-				TEXT("Stationary late join reconstructs native zero input"),
+				TEXT("Stationary late join reconstructs zero input and combat-ready SwordShield"),
 				2,
 				[](FNetworkState& State)
 				{
@@ -2563,7 +2827,12 @@ NETWORK_TEST_CLASS(GaspPilotPIE, "SurvivalRpg.Network")
 						State.SubjectPlayerId);
 					return Character &&
 						Character->GetLocalRole() == ROLE_SimulatedProxy &&
-						HasStoppedAnimation(State);
+						HasStoppedAnimation(State) &&
+						HasCombatAnimationPresentation(
+							State,
+							ROLE_SimulatedProxy,
+							SwordShieldProfileName,
+							true);
 				},
 				NetworkTimeout())
 			.ThenServer(
@@ -3576,7 +3845,7 @@ NETWORK_TEST_CLASS(GaspPilotPIE, "SurvivalRpg.Network")
 				},
 				NetworkTimeout())
 			.UntilClient(
-				TEXT("Recreated proxy reconstructs Run coast after relevancy return"),
+				TEXT("Recreated proxy reconstructs Run coast and SwordShield after relevancy return"),
 				1,
 				[](FNetworkState& State)
 				{
@@ -3589,7 +3858,12 @@ NETWORK_TEST_CLASS(GaspPilotPIE, "SurvivalRpg.Network")
 							State,
 							ROLE_SimulatedProxy,
 							ERpgLocomotionGait::Run,
-							true);
+							true) &&
+						HasCombatAnimationPresentation(
+							State,
+							ROLE_SimulatedProxy,
+							SwordShieldProfileName,
+							false);
 				},
 				NetworkTimeout())
 			.UntilServer(

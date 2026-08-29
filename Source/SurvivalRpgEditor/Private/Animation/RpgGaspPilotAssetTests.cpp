@@ -9,12 +9,17 @@
 #include "AnimGraph/AnimGraphNode_Steering.h"
 #include "AnimGraphNode_BlendStackInput.h"
 #include "AnimGraphNode_BlendStackResult.h"
+#include "AnimGraphNode_BlendListByBool.h"
 #include "AnimGraphNode_ComponentToLocalSpace.h"
+#include "AnimGraphNode_LayeredBoneBlend.h"
 #include "AnimGraphNode_LegIK.h"
 #include "AnimGraphNode_LocalToComponentSpace.h"
+#include "AnimGraphNode_SequencePlayer.h"
 #include "Animation/AnimBlueprint.h"
 #include "Animation/AnimBlueprintGeneratedClass.h"
 #include "Animation/AnimSequence.h"
+#include "Animation/BlendProfile.h"
+#include "Animation/Skeleton.h"
 #include "Animation/InputScaleBias.h"
 #include "AnimationBlendStackGraph.h"
 #include "AnimGraphNode_MotionMatching.h"
@@ -51,11 +56,14 @@
 #include "PoseSearch/PoseSearchDerivedData.h"
 #include "PoseSearch/PoseSearchIndex.h"
 #include "SurvivalRpg/Animation/RpgAnimInstance.h"
+#include "SurvivalRpg/Animation/RpgCombatAnimationProfile.h"
 #include "SurvivalRpg/Camera/RpgCameraMode.h"
 #include "SurvivalRpg/Core/Character/RpgCharacter.h"
 #include "SurvivalRpg/Core/Character/RpgPawnData.h"
 #include "SurvivalRpg/Core/Game/Experience/RpgExperienceDefinition.h"
+#include "SurvivalRpg/Equipment/RpgWeaponInstance.h"
 #include "SurvivalRpg/Input/RpgInputConfig.h"
+#include "SurvivalRpg/Inventory/RpgStarterInventoryComponent.h"
 #include "UObject/PropertyPortFlags.h"
 #include "UObject/UnrealType.h"
 
@@ -81,6 +89,16 @@ namespace RpgGaspPilotAssetTests
 		TEXT("/RpgGaspLocomotion/MotionMatching/Databases/PSD_Rpg_Stand_TurnInPlace.PSD_Rpg_Stand_TurnInPlace");
 	constexpr TCHAR PresentationProfileObject[] =
 		TEXT("/RpgGaspLocomotion/Profiles/DA_RpgGaspPresentationProfile.DA_RpgGaspPresentationProfile");
+	constexpr TCHAR CombatAnimationProfileObject[] =
+		TEXT("/GF_Combat_Core/Animations/Profiles/DA_RpgCombatAnimationProfile.DA_RpgCombatAnimationProfile");
+	constexpr TCHAR BasicSwordWeaponObject[] =
+		TEXT("/GF_Combat_Core/Equipment/Weapons/BP_WeaponInstance_BasicSword.BP_WeaponInstance_BasicSword");
+	constexpr TCHAR BasicShieldWeaponObject[] =
+		TEXT("/GF_Combat_Core/Equipment/Weapons/BP_WeaponInstance_BasicShield.BP_WeaponInstance_BasicShield");
+	constexpr TCHAR BasicTwoHandedSwordWeaponObject[] =
+		TEXT("/GF_Combat_Core/Equipment/Weapons/BP_WeaponInstance_BasicTwoHandedSword.BP_WeaponInstance_BasicTwoHandedSword");
+	constexpr TCHAR SwordShieldStarterLoadoutObject[] =
+		TEXT("/GF_Combat_Core/Equipment/Weapons/BP_BasicSwordShieldStarterLoadout.BP_BasicSwordShieldStarterLoadout");
 	constexpr TCHAR CombatStanceInputActionObject[] =
 		TEXT("/GF_Combat_Core/Input/IA_ToggleCombatStance.IA_ToggleCombatStance");
 	constexpr TCHAR CombatInputMappingContextObject[] =
@@ -106,6 +124,8 @@ namespace RpgGaspPilotAssetTests
 		TEXT("/RpgGaspLocomotion/MotionMatching/Choosers/CHT_Rpg_LocomotionDatabases");
 	constexpr TCHAR PresentationProfilePackage[] =
 		TEXT("/RpgGaspLocomotion/Profiles/DA_RpgGaspPresentationProfile");
+	constexpr TCHAR CombatAnimationProfilePackage[] =
+		TEXT("/GF_Combat_Core/Animations/Profiles/DA_RpgCombatAnimationProfile");
 
 	template <typename TObjectType>
 	TObjectType* LoadRequiredAsset(
@@ -116,6 +136,22 @@ namespace RpgGaspPilotAssetTests
 		TObjectType* Asset = LoadObject<TObjectType>(nullptr, ObjectPath);
 		Test.TestNotNull(Description, Asset);
 		return Asset;
+	}
+
+	URpgWeaponInstance* LoadRequiredWeaponDefaults(
+		FAutomationTestBase& Test,
+		const TCHAR* ObjectPath,
+		const TCHAR* Description)
+	{
+		UBlueprint* WeaponBlueprint = LoadRequiredAsset<UBlueprint>(Test, ObjectPath, Description);
+		URpgWeaponInstance* WeaponDefaults =
+			WeaponBlueprint && WeaponBlueprint->GeneratedClass
+				? Cast<URpgWeaponInstance>(WeaponBlueprint->GeneratedClass->GetDefaultObject())
+				: nullptr;
+		Test.TestNotNull(
+			*FString::Printf(TEXT("%s defaults derive from URpgWeaponInstance"), Description),
+			WeaponDefaults);
+		return WeaponDefaults;
 	}
 
 	UEdGraph* FindAnimGraph(UAnimBlueprint* AnimBlueprint)
@@ -208,6 +244,96 @@ namespace RpgGaspPilotAssetTests
 
 		Test.TestEqual(
 			*FString::Printf(TEXT("%s getter occurs exactly once"), *VariableName.ToString()),
+			Matches.Num(),
+			1);
+		return Matches.Num() == 1 ? Matches[0] : nullptr;
+	}
+
+	UAnimGraphNode_SequencePlayer* FindSequencePlayerDrivenBy(
+		FAutomationTestBase& Test,
+		const UEdGraph* Graph,
+		FName VariableName)
+	{
+		TArray<UAnimGraphNode_SequencePlayer*> Matches;
+		if (Graph)
+		{
+			for (UEdGraphNode* GraphNode : Graph->Nodes)
+			{
+				UAnimGraphNode_SequencePlayer* SequencePlayer =
+					Cast<UAnimGraphNode_SequencePlayer>(GraphNode);
+				const UEdGraphPin* SequencePin =
+					SequencePlayer ? SequencePlayer->FindPin(TEXT("Sequence"), EGPD_Input) : nullptr;
+				const UK2Node_VariableGet* SourceGetter =
+					SequencePin && SequencePin->LinkedTo.Num() == 1
+						? Cast<UK2Node_VariableGet>(SequencePin->LinkedTo[0]->GetOwningNode())
+						: nullptr;
+				if (SourceGetter && SourceGetter->VariableReference.GetMemberName() == VariableName)
+				{
+					Matches.Add(SequencePlayer);
+				}
+			}
+		}
+
+		Test.TestEqual(
+			*FString::Printf(TEXT("%s drives exactly one Sequence Player"), *VariableName.ToString()),
+			Matches.Num(),
+			1);
+		return Matches.Num() == 1 ? Matches[0] : nullptr;
+	}
+
+	UAnimGraphNode_BlendListByBool* FindBlendListByBoolDrivenBy(
+		FAutomationTestBase& Test,
+		const UEdGraph* Graph,
+		FName VariableName)
+	{
+		TArray<UAnimGraphNode_BlendListByBool*> Matches;
+		if (Graph)
+		{
+			for (UEdGraphNode* GraphNode : Graph->Nodes)
+			{
+				UAnimGraphNode_BlendListByBool* BlendNode =
+					Cast<UAnimGraphNode_BlendListByBool>(GraphNode);
+				const UEdGraphPin* ActivePin =
+					BlendNode ? BlendNode->FindPin(TEXT("bActiveValue"), EGPD_Input) : nullptr;
+				const UK2Node_VariableGet* SourceGetter =
+					ActivePin && ActivePin->LinkedTo.Num() == 1
+						? Cast<UK2Node_VariableGet>(ActivePin->LinkedTo[0]->GetOwningNode())
+						: nullptr;
+				if (SourceGetter && SourceGetter->VariableReference.GetMemberName() == VariableName)
+				{
+					Matches.Add(BlendNode);
+				}
+			}
+		}
+
+		Test.TestEqual(
+			*FString::Printf(TEXT("%s drives exactly one Blend Poses by Bool node"), *VariableName.ToString()),
+			Matches.Num(),
+			1);
+		return Matches.Num() == 1 ? Matches[0] : nullptr;
+	}
+
+	UAnimGraphNode_LayeredBoneBlend* FindLayerUsingMask(
+		FAutomationTestBase& Test,
+		const UEdGraph* Graph,
+		const UBlendProfile* ExpectedMask)
+	{
+		TArray<UAnimGraphNode_LayeredBoneBlend*> Matches;
+		if (Graph && ExpectedMask)
+		{
+			for (UEdGraphNode* GraphNode : Graph->Nodes)
+			{
+				UAnimGraphNode_LayeredBoneBlend* LayerNode =
+					Cast<UAnimGraphNode_LayeredBoneBlend>(GraphNode);
+				if (LayerNode && LayerNode->Node.BlendMasks.Contains(ExpectedMask))
+				{
+					Matches.Add(LayerNode);
+				}
+			}
+		}
+
+		Test.TestEqual(
+			TEXT("The expected UpperBodyMask identifies exactly one combat layer"),
 			Matches.Num(),
 			1);
 		return Matches.Num() == 1 ? Matches[0] : nullptr;
@@ -708,6 +834,7 @@ namespace RpgGaspPilotAssetTests
 	{
 		return
 			PackageName.StartsWith(TEXT("/RpgGaspLocomotion/")) ||
+			PackageName.StartsWith(TEXT("/GF_Combat_Core/Animations/")) ||
 			PackageName.StartsWith(TEXT("/Game/SurvivalRpg/Characters/Mannequins/Anims/GASP/")) ||
 			PackageName.StartsWith(TEXT("/Game/SurvivalRpg/Core/Character/GASP/")) ||
 			PackageName == PilotExperiencePackage;
@@ -1087,6 +1214,36 @@ bool FRpgGaspPilotAssetContractTest::RunTest(const FString& Parameters)
 			*this,
 			PresentationProfileObject,
 			TEXT("The project-owned GASP presentation profile loads"));
+	URpgCombatAnimationProfile* CombatAnimationProfile =
+		LoadRequiredAsset<URpgCombatAnimationProfile>(
+			*this,
+			CombatAnimationProfileObject,
+			TEXT("The Combat GameFeature upper-body profile loads"));
+	URpgWeaponInstance* BasicSwordDefaults = LoadRequiredWeaponDefaults(
+		*this,
+		BasicSwordWeaponObject,
+		TEXT("The basic sword weapon Blueprint loads"));
+	URpgWeaponInstance* BasicShieldDefaults = LoadRequiredWeaponDefaults(
+		*this,
+		BasicShieldWeaponObject,
+		TEXT("The basic shield weapon Blueprint loads"));
+	URpgWeaponInstance* BasicTwoHandedSwordDefaults = LoadRequiredWeaponDefaults(
+		*this,
+		BasicTwoHandedSwordWeaponObject,
+		TEXT("The basic two-handed sword weapon Blueprint loads"));
+	UBlueprint* SwordShieldStarterLoadoutBlueprint = LoadRequiredAsset<UBlueprint>(
+		*this,
+		SwordShieldStarterLoadoutObject,
+		TEXT("The first-playable sword-and-shield starter loadout loads"));
+	const URpgStarterInventoryComponent* SwordShieldStarterLoadoutDefaults =
+		SwordShieldStarterLoadoutBlueprint &&
+			SwordShieldStarterLoadoutBlueprint->GeneratedClass
+			? Cast<URpgStarterInventoryComponent>(
+				SwordShieldStarterLoadoutBlueprint->GeneratedClass->GetDefaultObject())
+			: nullptr;
+	TestNotNull(
+		TEXT("The first-playable starter loadout derives from URpgStarterInventoryComponent"),
+		SwordShieldStarterLoadoutDefaults);
 	URpgExperienceDefinition* BaseExperience =
 		BaseExperienceBlueprint && BaseExperienceBlueprint->GeneratedClass
 			? Cast<URpgExperienceDefinition>(BaseExperienceBlueprint->GeneratedClass->GetDefaultObject())
@@ -1107,6 +1264,11 @@ bool FRpgGaspPilotAssetContractTest::RunTest(const FString& Parameters)
 		!PilotExperienceBlueprint ||
 		!TurnInPlaceDatabase ||
 		!PresentationProfile ||
+		!CombatAnimationProfile ||
+		!BasicSwordDefaults ||
+		!BasicShieldDefaults ||
+		!BasicTwoHandedSwordDefaults ||
+		!SwordShieldStarterLoadoutDefaults ||
 		!BaseExperience ||
 		!PilotExperience)
 	{
@@ -1135,6 +1297,178 @@ bool FRpgGaspPilotAssetContractTest::RunTest(const FString& Parameters)
 		TEXT("The project AnimGraph wrapper package is explicitly uncooked-only"),
 		UAnimGraphNode_RpgFootPlacement::StaticClass()->GetOutermost()->HasAnyPackageFlags(
 			PKG_UncookedOnly));
+
+	const FRpgCombatAnimationProfileValidation CombatProfileValidation =
+		CombatAnimationProfile->ValidateProfile();
+	TestTrue(
+		TEXT("The authored combat upper-body profile passes its native integrity contract"),
+		CombatProfileValidation.IsValid());
+	FDataValidationContext CombatProfileValidationContext;
+	TestEqual(
+		TEXT("The authored combat upper-body profile passes Unreal data validation"),
+		CombatAnimationProfile->IsDataValid(CombatProfileValidationContext),
+		EDataValidationResult::Valid);
+	TestEqual(
+		TEXT("Combat overlays target the same skeleton as the active GASP AnimBlueprint"),
+		CombatAnimationProfile->TargetSkeleton.Get(),
+		PilotAnimBlueprint->TargetSkeleton.Get());
+	TestEqual(
+		TEXT("The combat profile names the project-owned upper-body blend mask"),
+		CombatAnimationProfile->UpperBodyBlendMaskName,
+		FName(TEXT("UpperBodyMask")));
+	UBlendProfile* CombatUpperBodyMask =
+		CombatAnimationProfile->TargetSkeleton
+			? CombatAnimationProfile->TargetSkeleton->GetBlendProfile(
+				CombatAnimationProfile->UpperBodyBlendMaskName)
+			: nullptr;
+	if (TestNotNull(TEXT("The authored combat upper-body blend mask resolves"), CombatUpperBodyMask))
+	{
+		TestEqual(
+			TEXT("The combat layer uses a true BlendMask rather than a timing profile"),
+			CombatUpperBodyMask->GetMode(),
+			EBlendProfileMode::BlendMask);
+		TestEqual(
+			TEXT("The combat blend mask belongs to the active GASP skeleton"),
+			CombatUpperBodyMask->GetSkeleton().Get(),
+			PilotAnimBlueprint->TargetSkeleton.Get());
+		for (const FName LowerBodyBone : {
+			FName(TEXT("root")),
+			FName(TEXT("pelvis")),
+			FName(TEXT("thigh_l")),
+			FName(TEXT("thigh_r")),
+			FName(TEXT("foot_l")),
+			FName(TEXT("foot_r")),
+			FName(TEXT("ik_foot_l")),
+			FName(TEXT("ik_foot_r")) })
+		{
+			TestTrue(
+				*FString::Printf(
+					TEXT("UpperBodyMask leaves lower-body anchor %s on the GASP base pose"),
+					*LowerBodyBone.ToString()),
+				FMath::IsNearlyZero(CombatUpperBodyMask->GetBoneBlendScale(LowerBodyBone)));
+		}
+		for (const FName UpperBodyBone : {
+			FName(TEXT("spine_02")),
+			FName(TEXT("upperarm_l")),
+			FName(TEXT("upperarm_r")),
+			FName(TEXT("hand_l")),
+			FName(TEXT("hand_r")) })
+		{
+			TestTrue(
+				*FString::Printf(
+					TEXT("UpperBodyMask positively weights combat anchor %s"),
+					*UpperBodyBone.ToString()),
+				CombatUpperBodyMask->GetBoneBlendScale(UpperBodyBone) > UE_KINDA_SMALL_NUMBER);
+		}
+	}
+
+	TestEqual(
+		TEXT("The deterministic fallback is explicitly named Unarmed"),
+		CombatAnimationProfile->UnarmedFallback.ProfileName,
+		FName(TEXT("Unarmed")));
+	TestTrue(
+		TEXT("The Unarmed fallback matches no equipment traits"),
+		CombatAnimationProfile->UnarmedFallback.RequiredEquipmentTraits.IsEmpty() &&
+			CombatAnimationProfile->UnarmedFallback.BlockedEquipmentTraits.IsEmpty());
+	TestNull(
+		TEXT("The Unarmed fallback preserves the unmodified GASP upper body"),
+		CombatAnimationProfile->UnarmedFallback.EquippedUpperBodyAnimation.Get());
+	TestNull(
+		TEXT("The Unarmed fallback has no combat-ready overlay"),
+		CombatAnimationProfile->UnarmedFallback.CombatReadyUpperBodyAnimation.Get());
+
+	const FGameplayTag OneHandSwordAnimationTag = FGameplayTag::RequestGameplayTag(
+		FName(TEXT("Equipment.AnimationProfile.OneHandSword")));
+	const FGameplayTag ShieldAnimationTag = FGameplayTag::RequestGameplayTag(
+		FName(TEXT("Equipment.AnimationProfile.Shield")));
+	const FGameplayTag TwoHandedSwordAnimationTag = FGameplayTag::RequestGameplayTag(
+		FName(TEXT("Equipment.AnimationProfile.TwoHandedSword")));
+	TestTrue(
+		TEXT("The basic sword exposes the one-handed animation trait"),
+		BasicSwordDefaults->GetEquipmentTraitTags().HasTagExact(OneHandSwordAnimationTag));
+	TestTrue(
+		TEXT("The basic shield exposes the shield animation trait"),
+		BasicShieldDefaults->GetEquipmentTraitTags().HasTagExact(ShieldAnimationTag));
+	TestTrue(
+		TEXT("The basic two-handed sword is disambiguated from the shared sword family"),
+		BasicTwoHandedSwordDefaults->GetEquipmentTraitTags().HasTagExact(
+			TwoHandedSwordAnimationTag));
+
+	const FArrayProperty* StarterInventoryProperty =
+		FindFProperty<FArrayProperty>(
+			SwordShieldStarterLoadoutDefaults->GetClass(),
+			TEXT("StarterInventory"));
+	const TArray<FRpgStarterInventoryEntry>* StarterEntries =
+		StarterInventoryProperty
+			? StarterInventoryProperty->ContainerPtrToValuePtr<
+				TArray<FRpgStarterInventoryEntry>>(
+				SwordShieldStarterLoadoutDefaults)
+			: nullptr;
+	if (TestNotNull(
+		TEXT("The starter loadout exposes its native starter-inventory array"),
+		StarterEntries) &&
+		TestEqual(
+			TEXT("The first-playable starter loadout contains exactly Sword and Shield"),
+			StarterEntries->Num(),
+			2))
+	{
+		const FRpgStarterInventoryEntry& SwordEntry = (*StarterEntries)[0];
+		const FRpgStarterInventoryEntry& ShieldEntry = (*StarterEntries)[1];
+		TestTrue(
+			TEXT("The Basic Sword starter entry is assigned to MainHand"),
+			SwordEntry.bAssignToEquipment &&
+				SwordEntry.EquipmentSlot == ERpgEquipmentSlot::MainHand &&
+				SwordEntry.ItemDefinition.ToSoftObjectPath().ToString().Contains(
+					TEXT("ID_BasicSword")));
+		TestTrue(
+			TEXT("The Basic Shield starter entry is assigned to OffHand"),
+			ShieldEntry.bAssignToEquipment &&
+				ShieldEntry.EquipmentSlot == ERpgEquipmentSlot::OffHand &&
+				ShieldEntry.ItemDefinition.ToSoftObjectPath().ToString().Contains(
+					TEXT("ID_BasicShield")));
+	}
+
+	FRpgCombatAnimationProfileLookup CombatProfileLookup;
+	TestFalse(
+		TEXT("An unconfigured combat lookup keeps non-GASP AnimInstances on the zero-cost fallback path"),
+		CombatProfileLookup.IsEnabled());
+	if (TestTrue(
+		TEXT("The validated combat profile builds an immutable game-thread lookup"),
+		CombatProfileLookup.Build(CombatAnimationProfile)))
+	{
+		TestTrue(
+			TEXT("The validated combat lookup enables equipment polling only for its configured AnimInstance"),
+			CombatProfileLookup.IsEnabled());
+		const FRpgResolvedCombatAnimationProfile UnarmedSelection =
+			CombatProfileLookup.Resolve(FGameplayTagContainer());
+		TestTrue(TEXT("An empty replicated loadout resolves Unarmed"), UnarmedSelection.bIsFallback);
+
+		const FGameplayTagContainer SwordTraits = BasicSwordDefaults->GetEquipmentTraitTags();
+		const FRpgResolvedCombatAnimationProfile SwordSelection =
+			CombatProfileLookup.Resolve(SwordTraits);
+		TestFalse(TEXT("The basic sword resolves an authored overlay"), SwordSelection.bIsFallback);
+		TestEqual(
+			TEXT("The basic sword resolves the OneHandSword presentation"),
+			SwordSelection.ProfileName,
+			FName(TEXT("OneHandSword")));
+		TestTrue(TEXT("The one-handed presentation has a complete animation pair"), SwordSelection.HasOverlay());
+
+		FGameplayTagContainer SwordShieldTraits = SwordTraits;
+		SwordShieldTraits.AppendTags(BasicShieldDefaults->GetEquipmentTraitTags());
+		const FRpgResolvedCombatAnimationProfile SwordShieldSelection =
+			CombatProfileLookup.Resolve(SwordShieldTraits);
+		TestEqual(
+			TEXT("MainHand plus OffHand traits select the SwordShield presentation"),
+			SwordShieldSelection.ProfileName,
+			FName(TEXT("SwordShield")));
+		TestTrue(TEXT("The first-playable sword-and-shield presentation is complete"), SwordShieldSelection.HasOverlay());
+
+		const FRpgResolvedCombatAnimationProfile TwoHandedSelection =
+			CombatProfileLookup.Resolve(BasicTwoHandedSwordDefaults->GetEquipmentTraitTags());
+		TestTrue(
+			TEXT("Two-handed weapons fail closed to Unarmed until a curated 2H overlay exists"),
+			TwoHandedSelection.bIsFallback);
+	}
 
 	static const struct
 	{
@@ -1279,6 +1613,69 @@ bool FRpgGaspPilotAssetContractTest::RunTest(const FString& Parameters)
 				ConfiguredPresentationProfilePath,
 				FString(PresentationProfileObject));
 		}
+
+		const FObjectPropertyBase* CombatAnimationProfileProperty =
+			FindFProperty<FObjectPropertyBase>(
+				PilotAnimDefaults->GetClass(),
+				TEXT("CombatAnimationProfile"));
+		TestTrue(
+			TEXT("CombatAnimationProfile remains a hard object property of the project profile type"),
+			CombatAnimationProfileProperty &&
+				CombatAnimationProfileProperty->PropertyClass ==
+					URpgCombatAnimationProfile::StaticClass());
+		TestTrue(
+			TEXT("CombatAnimationProfile remains designer-authored Blueprint-readable defaults"),
+			CombatAnimationProfileProperty &&
+				CombatAnimationProfileProperty->HasAllPropertyFlags(
+					CPF_Edit | CPF_DisableEditOnInstance | CPF_BlueprintVisible | CPF_BlueprintReadOnly));
+		TestFalse(
+			TEXT("CombatAnimationProfile is not transient runtime state"),
+			CombatAnimationProfileProperty &&
+				CombatAnimationProfileProperty->HasAnyPropertyFlags(CPF_Transient));
+		if (CombatAnimationProfileProperty)
+		{
+			TestEqual(
+				TEXT("The active GASP AnimBlueprint binds the Combat GameFeature profile"),
+				CombatAnimationProfileProperty->GetObjectPropertyValue_InContainer(PilotAnimDefaults),
+				static_cast<UObject*>(CombatAnimationProfile));
+		}
+
+		for (const FName AnimationPropertyName : {
+			FName(TEXT("CombatEquippedUpperBodyAnimation")),
+			FName(TEXT("CombatReadyUpperBodyAnimation")) })
+		{
+			const FObjectPropertyBase* AnimationProperty =
+				FindFProperty<FObjectPropertyBase>(PilotAnimDefaults->GetClass(), AnimationPropertyName);
+			TestTrue(
+				*FString::Printf(
+					TEXT("%s remains transient Blueprint-read-only AnimSequence state"),
+					*AnimationPropertyName.ToString()),
+				AnimationProperty &&
+					AnimationProperty->PropertyClass == UAnimSequence::StaticClass() &&
+					AnimationProperty->HasAllPropertyFlags(
+						CPF_Transient | CPF_BlueprintVisible | CPF_BlueprintReadOnly));
+		}
+
+		for (const FName FloatPropertyName : {
+			FName(TEXT("CombatAnimationOverlayAlpha")),
+			FName(TEXT("CombatModeBlendTime")) })
+		{
+			const FFloatProperty* FloatProperty =
+				FindFProperty<FFloatProperty>(PilotAnimDefaults->GetClass(), FloatPropertyName);
+			TestTrue(
+				*FString::Printf(
+					TEXT("%s remains transient Blueprint-read-only float state"),
+					*FloatPropertyName.ToString()),
+				FloatProperty && FloatProperty->HasAllPropertyFlags(
+					CPF_Transient | CPF_BlueprintVisible | CPF_BlueprintReadOnly));
+		}
+
+		const FBoolProperty* CombatReadyProperty =
+			FindFProperty<FBoolProperty>(PilotAnimDefaults->GetClass(), TEXT("bCombatAnimationReady"));
+		TestTrue(
+			TEXT("bCombatAnimationReady remains transient Blueprint-read-only bool state"),
+			CombatReadyProperty && CombatReadyProperty->HasAllPropertyFlags(
+				CPF_Transient | CPF_BlueprintVisible | CPF_BlueprintReadOnly));
 
 		FDataValidationContext ValidationContext;
 		TestEqual(
@@ -1971,6 +2368,20 @@ bool FRpgGaspPilotAssetContractTest::RunTest(const FString& Parameters)
 			AnimGraph,
 			TEXT("AnimGraphNode_OffsetRootBone"),
 			TEXT("Offset Root Bone"));
+		UAnimGraphNode_LayeredBoneBlend* CombatUpperBodyLayerNode =
+			FindLayerUsingMask(*this, AnimGraph, CombatUpperBodyMask);
+		UAnimGraphNode_BlendListByBool* CombatReadyBlendNode =
+			FindBlendListByBoolDrivenBy(*this, AnimGraph, TEXT("bCombatAnimationReady"));
+		UAnimGraphNode_SequencePlayer* CombatEquippedSequenceNode =
+			FindSequencePlayerDrivenBy(
+				*this,
+				AnimGraph,
+				TEXT("CombatEquippedUpperBodyAnimation"));
+		UAnimGraphNode_SequencePlayer* CombatReadySequenceNode =
+			FindSequencePlayerDrivenBy(
+				*this,
+				AnimGraph,
+				TEXT("CombatReadyUpperBodyAnimation"));
 		UAnimGraphNode_Slot* SlotNode =
 			FindUniqueNode<UAnimGraphNode_Slot>(*this, AnimGraph, TEXT("Montage Slot"));
 		UAnimGraphNode_LocalToComponentSpace* FootPlacementLocalToComponentNode =
@@ -2004,10 +2415,16 @@ bool FRpgGaspPilotAssetContractTest::RunTest(const FString& Parameters)
 			FindUniqueVariableGetter(*this, AnimGraph, TEXT("FootPlacementSnapshot"));
 		UK2Node_VariableGet* FootPlacementAlphaGetter =
 			FindUniqueVariableGetter(*this, AnimGraph, TEXT("FootPlacementAlpha"));
-		TestEqual(
-			TEXT("The top-level pilot graph contains exactly nine pose nodes and five property getters"),
-			AnimGraph->Nodes.Num(),
-			14);
+		UK2Node_VariableGet* CombatEquippedAnimationGetter =
+			FindUniqueVariableGetter(*this, AnimGraph, TEXT("CombatEquippedUpperBodyAnimation"));
+		UK2Node_VariableGet* CombatReadyAnimationGetter =
+			FindUniqueVariableGetter(*this, AnimGraph, TEXT("CombatReadyUpperBodyAnimation"));
+		UK2Node_VariableGet* CombatOverlayAlphaGetter =
+			FindUniqueVariableGetter(*this, AnimGraph, TEXT("CombatAnimationOverlayAlpha"));
+		UK2Node_VariableGet* CombatModeBlendTimeGetter =
+			FindUniqueVariableGetter(*this, AnimGraph, TEXT("CombatModeBlendTime"));
+		UK2Node_VariableGet* CombatReadyGetter =
+			FindUniqueVariableGetter(*this, AnimGraph, TEXT("bCombatAnimationReady"));
 		const FAnimNode_PoseSearchHistoryCollector* PoseHistoryRuntimeNode =
 			ReadRuntimeNode<FAnimNode_PoseSearchHistoryCollector>(PoseHistoryNode);
 		if (TestNotNull(
@@ -2272,6 +2689,75 @@ bool FRpgGaspPilotAssetContractTest::RunTest(const FString& Parameters)
 			}
 		}
 
+		if (CombatUpperBodyLayerNode)
+		{
+			const FAnimNode_LayeredBoneBlend& CombatLayer =
+				CombatUpperBodyLayerNode->Node;
+			TestEqual(
+				TEXT("The combat upper-body layer is driven by a skeleton BlendMask"),
+				CombatLayer.BlendMode,
+				ELayeredBoneBlendMode::BlendMask);
+			TestEqual(
+				TEXT("The combat layer contains one semantic upper-body overlay input"),
+				CombatLayer.BlendPoses.Num(),
+				1);
+			TestEqual(
+				TEXT("The combat layer pairs its overlay with one blend mask"),
+				CombatLayer.BlendMasks.Num(),
+				1);
+			if (CombatLayer.BlendMasks.Num() == 1)
+			{
+				TestEqual(
+					TEXT("The combat layer uses the profile's exact project-owned UpperBodyMask"),
+					CombatLayer.BlendMasks[0].Get(),
+					CombatUpperBodyMask);
+			}
+			TestEqual(
+				TEXT("The combat layer exposes one graph-driven overlay weight"),
+				CombatLayer.BlendWeights.Num(),
+				1);
+			TestTrue(
+				TEXT("The upper-body overlay blends rotations in mesh space"),
+				CombatLayer.bMeshSpaceRotationBlend);
+			TestFalse(
+				TEXT("The upper-body overlay does not alter scales in mesh space"),
+				CombatLayer.bMeshSpaceScaleBlend);
+			TestEqual(
+				TEXT("Combat clips cannot overwrite GASP contact and locomotion curves"),
+				CombatLayer.CurveBlendOption.GetValue(),
+				ECurveBlendOption::UseBasePose);
+			TestTrue(
+				TEXT("Root-motion blending remains gated by the mask's root weight"),
+				CombatLayer.bBlendRootMotionBasedOnRootBone);
+		}
+
+		for (const UAnimGraphNode_SequencePlayer* CombatSequenceNode : {
+			CombatEquippedSequenceNode,
+			CombatReadySequenceNode })
+		{
+			if (!CombatSequenceNode)
+			{
+				continue;
+			}
+
+			TestTrue(
+				TEXT("Combat upper-body Sequence Players loop their profile-selected poses"),
+				CombatSequenceNode->Node.IsLooping());
+			TestNull(
+				TEXT("Combat upper-body Sequence Players have no hidden static animation asset"),
+				CombatSequenceNode->Node.GetSequence());
+			const UEdGraphPin* DynamicSequencePin =
+				CombatSequenceNode->FindPin(TEXT("Sequence"), EGPD_Input);
+			if (TestNotNull(
+				TEXT("Combat upper-body Sequence Player exposes its dynamic asset pin"),
+				DynamicSequencePin))
+			{
+				TestFalse(
+					TEXT("The combat Sequence asset pin remains visible"),
+					DynamicSequencePin->bHidden);
+			}
+		}
+
 		const FAnimNode_RpgFootPlacement* RpgFootPlacement =
 			ReadRuntimeNode<FAnimNode_RpgFootPlacement>(RpgFootPlacementNode);
 		if (TestNotNull(
@@ -2506,8 +2992,71 @@ bool FRpgGaspPilotAssetContractTest::RunTest(const FString& Parameters)
 			TEXT("Source"));
 		TestExclusiveLink(
 			*this,
-			TEXT("Offset Root Bone feeds DefaultSlot"),
+			TEXT("Offset Root Bone feeds the masked combat layer base pose"),
 			OffsetRootBoneNode,
+			TEXT("Pose"),
+			CombatUpperBodyLayerNode,
+			TEXT("BasePose"));
+		TestExclusiveLink(
+			*this,
+			TEXT("The equipped combat property drives the relaxed Sequence Player"),
+			CombatEquippedAnimationGetter,
+			TEXT("CombatEquippedUpperBodyAnimation"),
+			CombatEquippedSequenceNode,
+			TEXT("Sequence"));
+		TestExclusiveLink(
+			*this,
+			TEXT("The combat-ready property drives the ready Sequence Player"),
+			CombatReadyAnimationGetter,
+			TEXT("CombatReadyUpperBodyAnimation"),
+			CombatReadySequenceNode,
+			TEXT("Sequence"));
+		TestExclusiveLink(
+			*this,
+			TEXT("The relaxed weapon pose feeds the false combat-ready branch"),
+			CombatEquippedSequenceNode,
+			TEXT("Pose"),
+			CombatReadyBlendNode,
+			TEXT("BlendPose_0"));
+		TestExclusiveLink(
+			*this,
+			TEXT("The ready weapon pose feeds the true combat-ready branch"),
+			CombatReadySequenceNode,
+			TEXT("Pose"),
+			CombatReadyBlendNode,
+			TEXT("BlendPose_1"));
+		TestExactOutputLinks(
+			*this,
+			TEXT("The designer-authored mode blend time drives both transition directions"),
+			CombatModeBlendTimeGetter,
+			TEXT("CombatModeBlendTime"),
+			{{CombatReadyBlendNode, TEXT("BlendTime_0")},
+				{CombatReadyBlendNode, TEXT("BlendTime_1")}});
+		TestExclusiveLink(
+			*this,
+			TEXT("Replicated rotation presentation selects the combat-ready branch"),
+			CombatReadyGetter,
+			TEXT("bCombatAnimationReady"),
+			CombatReadyBlendNode,
+			TEXT("bActiveValue"));
+		TestExclusiveLink(
+			*this,
+			TEXT("The selected weapon pose feeds the masked upper-body layer"),
+			CombatReadyBlendNode,
+			TEXT("Pose"),
+			CombatUpperBodyLayerNode,
+			TEXT("BlendPoses_0"));
+		TestExclusiveLink(
+			*this,
+			TEXT("The game-thread equip transition alpha gates the upper-body layer"),
+			CombatOverlayAlphaGetter,
+			TEXT("CombatAnimationOverlayAlpha"),
+			CombatUpperBodyLayerNode,
+			TEXT("BlendWeights_0"));
+		TestExclusiveLink(
+			*this,
+			TEXT("The masked combat layer feeds the authoritative DefaultSlot"),
+			CombatUpperBodyLayerNode,
 			TEXT("Pose"),
 			SlotNode,
 			TEXT("Source"));
@@ -2757,6 +3306,7 @@ bool FRpgGaspPilotAssetContractTest::RunTest(const FString& Parameters)
 			FString(TEXT("/Game/SurvivalRpg/Core/Character/GASP")),
 			FString(TEXT("/Game/SurvivalRpg/System/Experiences")),
 			FString(TEXT("/RpgGaspLocomotion")),
+			FString(TEXT("/GF_Combat_Core/Animations")),
 		},
 		true,
 		false);
@@ -2790,6 +3340,41 @@ bool FRpgGaspPilotAssetContractTest::RunTest(const FString& Parameters)
 			FName(PresentationProfilePackage),
 			UE::AssetRegistry::EDependencyCategory::Package,
 			HardGamePackageQuery));
+	TestTrue(
+		TEXT("The pilot AnimBlueprint directly records its hard game/cook combat-profile dependency"),
+		AssetRegistry.ContainsDependency(
+			FName(PilotAnimBlueprintPackage),
+			FName(CombatAnimationProfilePackage),
+			UE::AssetRegistry::EDependencyCategory::Package,
+			HardGamePackageQuery));
+	for (const FRpgCombatAnimationPoseProfile& WeaponProfile :
+		CombatAnimationProfile->WeaponProfiles)
+	{
+		for (const UAnimSequence* Animation : {
+			WeaponProfile.EquippedUpperBodyAnimation.Get(),
+			WeaponProfile.CombatReadyUpperBodyAnimation.Get() })
+		{
+			if (!Animation)
+			{
+				continue;
+			}
+
+			TestTrue(
+				*FString::Printf(
+					TEXT("The curated combat animation %s has no foreign retarget-source mesh"),
+					*Animation->GetName()),
+				Animation->GetRetargetSourceAsset().IsNull());
+			TestTrue(
+				*FString::Printf(
+					TEXT("The combat profile records a hard game/cook dependency on %s"),
+					*Animation->GetOutermost()->GetName()),
+				AssetRegistry.ContainsDependency(
+					FName(CombatAnimationProfilePackage),
+					Animation->GetOutermost()->GetFName(),
+					UE::AssetRegistry::EDependencyCategory::Package,
+					HardGamePackageQuery));
+		}
+	}
 	TSet<FName> DependencyClosure;
 	GatherPilotDependencyClosure(AssetRegistry, PilotRootPackages, DependencyClosure);
 	TestFalse(

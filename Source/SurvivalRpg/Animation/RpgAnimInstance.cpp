@@ -21,6 +21,8 @@
 
 #include "SurvivalRpg/Core/Character/RpgCharacter.h"
 #include "SurvivalRpg/Core/Character/RpgCharacterMovementComponent.h"
+#include "SurvivalRpg/Equipment/RpgEquipmentManagerComponent.h"
+#include "SurvivalRpg/Equipment/RpgWeaponInstance.h"
 
 #include UE_INLINE_GENERATED_CPP_BY_NAME(RpgAnimInstance)
 
@@ -89,6 +91,123 @@ void ResetFootPlacementInitializationState(FRpgAnimInstanceProxy& Proxy)
 	Proxy.bHasPreviousFootPlacementComponentTransform = false;
 	Proxy.bHasPreviousMovementBaseTransform = false;
 	Proxy.bPreviousFootPlacementSourceEligible = false;
+}
+
+FGameplayTagContainer GatherCombatAnimationEquipmentTraits(
+	const ARpgCharacter& Character)
+{
+	FGameplayTagContainer Result;
+	const URpgEquipmentManagerComponent* EquipmentManager =
+		Character.GetEquipmentManagerComponent();
+	if (!EquipmentManager)
+	{
+		return Result;
+	}
+
+	static constexpr ERpgEquipmentSlot HandSlots[] = {
+		ERpgEquipmentSlot::MainHand,
+		ERpgEquipmentSlot::OffHand,
+	};
+	for (const ERpgEquipmentSlot Slot : HandSlots)
+	{
+		const URpgWeaponInstance* Weapon = Cast<URpgWeaponInstance>(
+			EquipmentManager->GetEquipmentInstanceInSlot(Slot));
+		if (Weapon)
+		{
+			Result.AppendTags(Weapon->GetEquipmentTraitTags());
+		}
+	}
+	return Result;
+}
+
+void PublishCombatAnimationSnapshot(FRpgAnimInstanceProxy& Proxy)
+{
+	const FRpgResolvedCombatAnimationProfile& Active =
+		Proxy.ActiveCombatAnimationProfile;
+	Proxy.CombatEquippedUpperBodyAnimation = Active.EquippedUpperBodyAnimation;
+	Proxy.CombatReadyUpperBodyAnimation = Active.CombatReadyUpperBodyAnimation;
+	Proxy.CombatAnimationProfileName = Active.ProfileName;
+	Proxy.CombatModeBlendTime = Active.CombatModeBlendTime;
+	Proxy.bCombatAnimationProfileFallback = Active.bIsFallback;
+}
+
+void ResetCombatAnimationSnapshot(FRpgAnimInstanceProxy& Proxy)
+{
+	Proxy.ActiveCombatAnimationProfile = FRpgResolvedCombatAnimationProfile();
+	Proxy.ActiveCombatAnimationProfile.ProfileName = TEXT("Unarmed");
+	Proxy.PendingCombatAnimationProfile = FRpgResolvedCombatAnimationProfile();
+	Proxy.bHasPendingCombatAnimationProfile = false;
+	Proxy.CombatAnimationOverlayAlpha = 0.0f;
+	Proxy.bCombatAnimationReady = false;
+	PublishCombatAnimationSnapshot(Proxy);
+}
+
+float AdvanceLinearBlend(
+	float CurrentAlpha,
+	float TargetAlpha,
+	float Duration,
+	float DeltaSeconds)
+{
+	if (!FMath::IsFinite(Duration) || Duration <= UE_KINDA_SMALL_NUMBER)
+	{
+		return TargetAlpha;
+	}
+	return FMath::FInterpConstantTo(
+		CurrentAlpha,
+		TargetAlpha,
+		FMath::Max(0.0f, DeltaSeconds),
+		1.0f / Duration);
+}
+
+void AdvanceCombatAnimationSnapshot(
+	FRpgAnimInstanceProxy& Proxy,
+	const FRpgResolvedCombatAnimationProfile& DesiredProfile,
+	bool bCombatReady,
+	float DeltaSeconds)
+{
+	Proxy.bCombatAnimationReady = bCombatReady;
+	if (Proxy.ActiveCombatAnimationProfile.IsSameProfile(DesiredProfile))
+	{
+		Proxy.bHasPendingCombatAnimationProfile = false;
+	}
+	else
+	{
+		Proxy.PendingCombatAnimationProfile = DesiredProfile;
+		Proxy.bHasPendingCombatAnimationProfile = true;
+	}
+
+	if (Proxy.bHasPendingCombatAnimationProfile)
+	{
+		Proxy.CombatAnimationOverlayAlpha = AdvanceLinearBlend(
+			Proxy.CombatAnimationOverlayAlpha,
+			0.0f,
+			Proxy.ActiveCombatAnimationProfile.EquipBlendOutTime,
+			DeltaSeconds);
+		if (Proxy.CombatAnimationOverlayAlpha <= UE_KINDA_SMALL_NUMBER)
+		{
+			Proxy.CombatAnimationOverlayAlpha = 0.0f;
+			Proxy.ActiveCombatAnimationProfile =
+				Proxy.PendingCombatAnimationProfile;
+			Proxy.PendingCombatAnimationProfile =
+				FRpgResolvedCombatAnimationProfile();
+			Proxy.bHasPendingCombatAnimationProfile = false;
+		}
+	}
+
+	if (!Proxy.bHasPendingCombatAnimationProfile)
+	{
+		const float TargetAlpha =
+			Proxy.ActiveCombatAnimationProfile.HasOverlay() ? 1.0f : 0.0f;
+		const float BlendDuration = TargetAlpha > Proxy.CombatAnimationOverlayAlpha
+			? Proxy.ActiveCombatAnimationProfile.EquipBlendInTime
+			: Proxy.ActiveCombatAnimationProfile.EquipBlendOutTime;
+		Proxy.CombatAnimationOverlayAlpha = AdvanceLinearBlend(
+			Proxy.CombatAnimationOverlayAlpha,
+			TargetAlpha,
+			BlendDuration,
+			DeltaSeconds);
+	}
+	PublishCombatAnimationSnapshot(Proxy);
 }
 
 FRpgFootPlacementTraceResult TraceFootGround(
@@ -585,6 +704,23 @@ void FRpgAnimInstanceProxy::PreUpdate(UAnimInstance* InAnimInstance, float Delta
 		 RpgAnimInstance->bStateStaggered ||
 		 RpgAnimInstance->bStateGuardBroken);
 	const ARpgCharacter* Character = RpgAnimInstance ? Cast<ARpgCharacter>(RpgAnimInstance->TryGetPawnOwner()) : nullptr;
+	if (Character)
+	{
+		RotationMode = Character->GetRotationMode();
+	}
+	if (RpgAnimInstance &&
+		RpgAnimInstance->CombatAnimationProfileLookup.IsEnabled())
+	{
+		const FGameplayTagContainer CombatEquipmentTraits = Character
+			? GatherCombatAnimationEquipmentTraits(*Character)
+			: FGameplayTagContainer();
+		AdvanceCombatAnimationSnapshot(
+			*this,
+			RpgAnimInstance->CombatAnimationProfileLookup.Resolve(
+				CombatEquipmentTraits),
+			Character && RotationMode != ERpgCharacterRotationMode::Free,
+			DeltaSeconds);
+	}
 	if (!Character)
 	{
 		LastNonZeroWorldVelocity = FVector::ZeroVector;
@@ -599,8 +735,6 @@ void FRpgAnimInstanceProxy::PreUpdate(UAnimInstance* InAnimInstance, float Delta
 		bHasPreviousOwnerSnapshot = false;
 		return;
 	}
-	RotationMode = Character->GetRotationMode();
-
 	URpgCharacterMovementComponent* MovementComponent = Cast<URpgCharacterMovementComponent>(Character->GetCharacterMovement());
 	if (!MovementComponent || !Character->GetWorld())
 	{
@@ -1214,6 +1348,12 @@ EDataValidationResult URpgAnimInstance::IsDataValid(FDataValidationContext& Cont
 	Super::IsDataValid(Context);
 
 	GameplayTagPropertyMap.IsDataValid(this, Context);
+	if (CombatAnimationProfile &&
+		!CombatAnimationProfile->ValidateProfile().IsValid())
+	{
+		Context.AddError(FText::FromString(
+			TEXT("The configured combat animation profile has an invalid fallback, trait map, skeleton, mask, animation, or blend contract.")));
+	}
 	if (bGeneratePoseSearchTrajectory)
 	{
 		if (TrajectoryCollisionSettings.bEnabled &&
@@ -1463,8 +1603,10 @@ void URpgAnimInstance::NativeInitializeAnimation()
 {
 	Super::NativeInitializeAnimation();
 	InitializeGaspRuntimeConfiguration();
+	CombatAnimationProfileLookup.Build(CombatAnimationProfile);
 	FRpgAnimInstanceProxy& Proxy = GetProxyOnGameThread<FRpgAnimInstanceProxy>();
 	ResetFootPlacementInitializationState(Proxy);
+	ResetCombatAnimationSnapshot(Proxy);
 	ResetPoseSearchTrajectoryState(Proxy);
 	Proxy.LandingSelectionSnapshot = FRpgLandingSelectionSnapshot();
 	Proxy.LastGroundedGait = ERpgLocomotionGait::Idle;
@@ -1481,6 +1623,13 @@ void URpgAnimInstance::NativeInitializeAnimation()
 	TrajectoryLandingPrediction = FRpgTrajectoryLandingPrediction();
 	PreTouchdownLandingSnapshot = FRpgLandingSelectionSnapshot();
 	AirborneProceduralAlpha = 0.0f;
+	CombatEquippedUpperBodyAnimation = nullptr;
+	CombatReadyUpperBodyAnimation = nullptr;
+	CombatAnimationProfileName = TEXT("Unarmed");
+	CombatAnimationOverlayAlpha = 0.0f;
+	CombatModeBlendTime = 0.0f;
+	bCombatAnimationReady = false;
+	bCombatAnimationProfileFallback = true;
 	LandingRequestSerial = 0;
 	LandingInterruptedRequestSerial = 0;
 	PreviousGroundMotionMatchingDomainState = FRpgGroundMotionMatchingDomainState();
@@ -2307,6 +2456,16 @@ void URpgAnimInstance::NativeThreadSafeUpdateAnimation(float DeltaSeconds)
 	ProceduralLocomotionAlpha = Proxy.ProceduralLocomotionAlpha;
 	AirborneProceduralAlpha = Proxy.AirborneProceduralAlpha;
 	bIsAnyMontagePlaying = Proxy.bIsAnyMontagePlaying;
+	CombatEquippedUpperBodyAnimation =
+		Proxy.CombatEquippedUpperBodyAnimation;
+	CombatReadyUpperBodyAnimation =
+		Proxy.CombatReadyUpperBodyAnimation;
+	CombatAnimationProfileName = Proxy.CombatAnimationProfileName;
+	CombatAnimationOverlayAlpha = Proxy.CombatAnimationOverlayAlpha;
+	CombatModeBlendTime = Proxy.CombatModeBlendTime;
+	bCombatAnimationReady = Proxy.bCombatAnimationReady;
+	bCombatAnimationProfileFallback =
+		Proxy.bCombatAnimationProfileFallback;
 	UpdateJumpPhaseRuntime(DeltaSeconds, Proxy);
 	UpdateTurnInPlaceRuntime(DeltaSeconds, Proxy);
 }
