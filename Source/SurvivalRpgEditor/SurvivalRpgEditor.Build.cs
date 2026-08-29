@@ -6,6 +6,9 @@ public class SurvivalRpgEditor : ModuleRules
 	{
 		PCHUsage = PCHUsageMode.UseExplicitOrSharedPCHs;
 
+		// UE 5.8 installed builds omit this editor plugin's public headers when it is only a private dependency.
+		PrivateIncludePathModuleNames.Add("DataValidation");
+
 		PublicDependencyModuleNames.AddRange(new string[]
 		{
 			"Core",
