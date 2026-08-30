@@ -23,6 +23,7 @@ public class SurvivalRpgEditor : ModuleRules
 			"AIModule",
 			"AnimGraph",
 			"AnimGraphRuntime",
+			"AnimationBlueprintLibrary",
 			"AnimationWarpingEditor",
 			"AnimationWarpingRuntime",
 			"AssetRegistry",
