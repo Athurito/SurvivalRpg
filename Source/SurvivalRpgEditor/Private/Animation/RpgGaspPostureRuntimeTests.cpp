@@ -5,6 +5,7 @@
 #include "SurvivalRpg/Animation/RpgGaspLocomotionConfig.h"
 #include "SurvivalRpg/Animation/RpgGaspPostureRuntime.h"
 #include "SurvivalRpg/Core/Character/RpgCharacterMovementProfile.h"
+#include "SurvivalRpg/Core/Character/RpgCharacterRotationMode.h"
 
 #include <limits>
 
@@ -22,6 +23,36 @@ bool FRpgGaspPostureRuntimeTest::RunTest(const FString& Parameters)
 	TestTrue(
 		TEXT("Default posture tuning is runtime-valid"),
 		RpgGaspLocomotionConfig::IsTuningRuntimeValid(DefaultTuning));
+	TestTrue(
+		TEXT("Unarmed fallback keeps the correction in Free rotation"),
+		RpgGaspPostureRuntime::ShouldApplyCorrection(
+			ERpgCharacterRotationMode::Free,
+			true));
+	TestTrue(
+		TEXT("A resolved authored profile keeps the relaxed correction in Free locomotion"),
+		RpgGaspPostureRuntime::ShouldApplyCorrection(
+			ERpgCharacterRotationMode::Free,
+			false));
+	TestTrue(
+		TEXT("Unarmed fallback keeps the correction in CombatStrafe"),
+		RpgGaspPostureRuntime::ShouldApplyCorrection(
+			ERpgCharacterRotationMode::CombatStrafe,
+			true));
+	TestTrue(
+		TEXT("Unarmed fallback keeps the correction while aiming"),
+		RpgGaspPostureRuntime::ShouldApplyCorrection(
+			ERpgCharacterRotationMode::Aim,
+			true));
+	TestFalse(
+		TEXT("A resolved authored profile uses its combat torso posture in CombatStrafe"),
+		RpgGaspPostureRuntime::ShouldApplyCorrection(
+			ERpgCharacterRotationMode::CombatStrafe,
+			false));
+	TestFalse(
+		TEXT("A resolved authored profile uses its aiming torso posture in Aim"),
+		RpgGaspPostureRuntime::ShouldApplyCorrection(
+			ERpgCharacterRotationMode::Aim,
+			false));
 
 	FRpgGaspLocomotionTuning Tuning = DefaultTuning;
 	Tuning.UnarmedIdlePostureCorrectionDegrees = 2.0f;
@@ -56,6 +87,7 @@ bool FRpgGaspPostureRuntimeTest::RunTest(const FString& Parameters)
 	const float FirstRunStep = RpgGaspPostureRuntime::AdvanceCorrectionDegrees(
 		Tuning.UnarmedIdlePostureCorrectionDegrees,
 		ERpgLocomotionGait::Run,
+		true,
 		0.1f,
 		Tuning);
 	TestEqual(
@@ -67,12 +99,14 @@ bool FRpgGaspPostureRuntimeTest::RunTest(const FString& Parameters)
 		RpgGaspPostureRuntime::AdvanceCorrectionDegrees(
 			FirstRunStep,
 			ERpgLocomotionGait::Run,
+			true,
 			0.1f,
 			Tuning),
 		Tuning.UnarmedRunPostureCorrectionDegrees);
 	const float FirstIdleDecayStep = RpgGaspPostureRuntime::AdvanceCorrectionDegrees(
 		Tuning.UnarmedRunPostureCorrectionDegrees,
 		ERpgLocomotionGait::Idle,
+		true,
 		0.1f,
 		Tuning);
 	TestEqual(
@@ -84,14 +118,45 @@ bool FRpgGaspPostureRuntimeTest::RunTest(const FString& Parameters)
 		RpgGaspPostureRuntime::AdvanceCorrectionDegrees(
 			FirstIdleDecayStep,
 			ERpgLocomotionGait::Idle,
+			true,
 			0.1f,
 			Tuning),
 		Tuning.UnarmedIdlePostureCorrectionDegrees);
+	const float FirstSuppressedRunStep =
+		RpgGaspPostureRuntime::AdvanceCorrectionDegrees(
+			Tuning.UnarmedRunPostureCorrectionDegrees,
+			ERpgLocomotionGait::Run,
+			false,
+			0.1f,
+			Tuning);
+	TestEqual(
+		TEXT("Suppressing the relaxed posture decays at the same bounded rate"),
+		FirstSuppressedRunStep,
+		8.0f);
+	TestEqual(
+		TEXT("A second suppressed step reaches zero without undershoot"),
+		RpgGaspPostureRuntime::AdvanceCorrectionDegrees(
+			FirstSuppressedRunStep,
+			ERpgLocomotionGait::Run,
+			false,
+			0.2f,
+			Tuning),
+		0.0f);
+	TestEqual(
+		TEXT("A suppressed correction stays at zero across gait changes"),
+		RpgGaspPostureRuntime::AdvanceCorrectionDegrees(
+			0.0f,
+			ERpgLocomotionGait::Sprint,
+			false,
+			0.25f,
+			Tuning),
+		0.0f);
 	TestEqual(
 		TEXT("A non-positive delta preserves the current correction"),
 		RpgGaspPostureRuntime::AdvanceCorrectionDegrees(
 			Tuning.UnarmedWalkPostureCorrectionDegrees,
 			ERpgLocomotionGait::Idle,
+			true,
 			0.0f,
 			Tuning),
 		Tuning.UnarmedWalkPostureCorrectionDegrees);
@@ -100,6 +165,7 @@ bool FRpgGaspPostureRuntimeTest::RunTest(const FString& Parameters)
 		RpgGaspPostureRuntime::AdvanceCorrectionDegrees(
 			-10.0f,
 			ERpgLocomotionGait::Idle,
+			true,
 			0.0f,
 			Tuning),
 		0.0f);
@@ -108,6 +174,7 @@ bool FRpgGaspPostureRuntimeTest::RunTest(const FString& Parameters)
 		RpgGaspPostureRuntime::AdvanceCorrectionDegrees(
 			100.0f,
 			ERpgLocomotionGait::Idle,
+			true,
 			0.0f,
 			Tuning),
 		Tuning.UnarmedRunPostureCorrectionDegrees);
@@ -116,6 +183,7 @@ bool FRpgGaspPostureRuntimeTest::RunTest(const FString& Parameters)
 		RpgGaspPostureRuntime::AdvanceCorrectionDegrees(
 			Tuning.UnarmedWalkPostureCorrectionDegrees,
 			ERpgLocomotionGait::Run,
+			true,
 			std::numeric_limits<float>::quiet_NaN(),
 			Tuning),
 		Tuning.UnarmedWalkPostureCorrectionDegrees);
@@ -124,6 +192,7 @@ bool FRpgGaspPostureRuntimeTest::RunTest(const FString& Parameters)
 		FMath::IsFinite(RpgGaspPostureRuntime::AdvanceCorrectionDegrees(
 			std::numeric_limits<float>::quiet_NaN(),
 			ERpgLocomotionGait::Run,
+			true,
 			0.1f,
 			Tuning)));
 

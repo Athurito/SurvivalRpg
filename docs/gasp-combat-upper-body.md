@@ -33,8 +33,9 @@ GASP lower-body locomotion
   Motion Matching -> Offset Root Bone
     -> masked weapon upper-body overlay
       -> DefaultSlot
-        -> Foot Placement -> Leg IK
-          -> Pose History -> Output Pose
+        -> relaxed spine_01 posture correction
+          -> Foot Placement -> Leg IK
+            -> Pose History -> Output Pose
 ```
 
 The contract at each boundary is:
@@ -51,9 +52,15 @@ The contract at each boundary is:
    route. Attack, block, dodge, hit, death, and root-motion montages can therefore replace the
    composed locomotion/weapon pose without double posing. Existing montage sections, notifies,
    ability tasks, and root-motion authority remain unchanged.
-4. **Foot Placement and Leg IK** run after `DefaultSlot`, using their existing montage and
+4. **Relaxed posture** applies only an additive `spine_01` rotation after `DefaultSlot`. Its
+   gait-smoothed effective value stays active for `Free` locomotion and whenever fallback
+   presentation owns the upper body, then decays to zero when an authored combat profile resolves
+   successfully in `CombatStrafe`/`Aim`. It is driven by semantic
+   rotation/profile state, not `CombatAnimationOverlayAlpha`, so profile out/swap/in blending
+   cannot pulse the torso correction.
+5. **Foot Placement and Leg IK** run after `DefaultSlot`, using their existing montage and
    procedural gates. The weapon overlay must not take ownership of root, pelvis, or legs.
-5. **Pose History** records the final composed pose at its existing location. No parallel combat
+6. **Pose History** records the final composed pose at its existing location. No parallel combat
    history or second Motion Matching owner is introduced.
 
 `UpperBodyMask` is a skeleton `BlendMask`, not a transition blend profile. On `SK_Mannequin` it

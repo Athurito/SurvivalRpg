@@ -4,6 +4,7 @@
 
 #include "RpgGaspLocomotionConfig.h"
 #include "SurvivalRpg/Core/Character/RpgCharacterMovementProfile.h"
+#include "SurvivalRpg/Core/Character/RpgCharacterRotationMode.h"
 
 namespace
 {
@@ -25,6 +26,14 @@ float ResolveValidTargetCorrectionDegrees(
 }
 }
 
+bool RpgGaspPostureRuntime::ShouldApplyCorrection(
+	ERpgCharacterRotationMode RotationMode,
+	bool bUsesUnarmedFallback)
+{
+	return bUsesUnarmedFallback ||
+		RotationMode == ERpgCharacterRotationMode::Free;
+}
+
 float RpgGaspPostureRuntime::ResolveTargetCorrectionDegrees(
 	ERpgLocomotionGait Gait,
 	const FRpgGaspLocomotionTuning& Tuning)
@@ -40,6 +49,7 @@ float RpgGaspPostureRuntime::ResolveTargetCorrectionDegrees(
 float RpgGaspPostureRuntime::AdvanceCorrectionDegrees(
 	float CurrentCorrectionDegrees,
 	ERpgLocomotionGait Gait,
+	bool bAllowCorrection,
 	float DeltaSeconds,
 	const FRpgGaspLocomotionTuning& Tuning)
 {
@@ -47,7 +57,9 @@ float RpgGaspPostureRuntime::AdvanceCorrectionDegrees(
 	{
 		return 0.0f;
 	}
-	const float TargetCorrectionDegrees = ResolveValidTargetCorrectionDegrees(Gait, Tuning);
+	const float TargetCorrectionDegrees = bAllowCorrection
+		? ResolveValidTargetCorrectionDegrees(Gait, Tuning)
+		: 0.0f;
 
 	const float SafeCurrentCorrection = FMath::IsFinite(CurrentCorrectionDegrees)
 		? FMath::Clamp(

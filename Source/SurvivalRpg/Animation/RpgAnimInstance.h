@@ -697,9 +697,12 @@ protected:
 	float ProceduralLocomotionAlpha = 0.0f;
 
 	/**
-	 * Smoothed additive component-space rotation for the relaxed unarmed spine_01 correction.
-	 * Roll is component X in the pilot AnimGraph; Pitch and Yaw remain zero. The value is cosmetic,
-	 * profile-tuned, and consumed only after the authoritative DefaultSlot montage path.
+	 * Smoothed additive component-space rotation for the relaxed spine_01 correction.
+	 * The relaxed baseline remains active in Free rotation mode and whenever fallback presentation
+	 * owns the upper body. It decays only when an authored combat profile resolves successfully in
+	 * CombatStrafe/Aim. Roll is component X in the pilot AnimGraph;
+	 * Pitch and Yaw remain zero. The value is cosmetic, profile-tuned, and consumed only after the
+	 * authoritative DefaultSlot montage path.
 	 */
 	UPROPERTY(BlueprintReadOnly, Transient, Category = "Rpg|Animation|Posture")
 	FRotator UnarmedUpperBodyPostureCorrection = FRotator::ZeroRotator;

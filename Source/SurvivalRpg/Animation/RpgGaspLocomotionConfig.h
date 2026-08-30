@@ -50,19 +50,19 @@ struct SURVIVALRPG_API FRpgGaspLocomotionTuning
 	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Shared", meta = (ClampMin = "0.001", Units = "cm/s"))
 	float StationarySpeedThreshold = 3.0f;
 
-	/** Additive component-X correction applied to spine_01 for relaxed unarmed Idle, in degrees. */
+	/** Additive component-X baseline applied to spine_01 for relaxed Idle, in degrees. */
 	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Posture", meta = (ClampMin = "0.0", ClampMax = "30.0", Units = "deg"))
 	float UnarmedIdlePostureCorrectionDegrees = 3.0f;
 
-	/** Additive component-X correction applied to spine_01 for relaxed unarmed Walk, in degrees. */
+	/** Additive component-X baseline applied to spine_01 for relaxed Walk, in degrees. */
 	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Posture", meta = (ClampMin = "0.0", ClampMax = "30.0", Units = "deg"))
 	float UnarmedWalkPostureCorrectionDegrees = 6.0f;
 
-	/** Additive component-X correction applied to spine_01 for relaxed unarmed Run and Sprint, in degrees. */
+	/** Additive component-X baseline applied to spine_01 for relaxed Run and Sprint, in degrees. */
 	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Posture", meta = (ClampMin = "0.0", ClampMax = "30.0", Units = "deg"))
 	float UnarmedRunPostureCorrectionDegrees = 12.0f;
 
-	/** Constant interpolation rate used when the cosmetic unarmed posture changes gait, in degrees per second. */
+	/** Constant interpolation rate used when the cosmetic relaxed posture changes gait or ownership, in degrees per second. */
 	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Posture", meta = (ClampMin = "0.001", Units = "deg/s"))
 	float UnarmedPostureCorrectionSpeed = 45.0f;
 

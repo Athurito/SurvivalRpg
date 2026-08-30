@@ -252,36 +252,6 @@ namespace RpgGaspPilotAssetTests
 		return Matches.Num() == 1 ? Matches[0] : nullptr;
 	}
 
-	UK2Node_CallFunction* FindFunctionCallDriving(
-		FAutomationTestBase& Test,
-		const UEdGraphNode* TargetNode,
-		FName TargetPinName,
-		FName ExpectedFunctionName,
-		const TCHAR* Description)
-	{
-		const UEdGraphPin* TargetPin =
-			TargetNode ? TargetNode->FindPin(TargetPinName, EGPD_Input) : nullptr;
-		if (!Test.TestNotNull(
-				*FString::Printf(TEXT("%s target pin exists"), Description),
-				TargetPin))
-		{
-			return nullptr;
-		}
-
-		UK2Node_CallFunction* FunctionCall =
-			TargetPin->LinkedTo.Num() == 1
-				? Cast<UK2Node_CallFunction>(TargetPin->LinkedTo[0]->GetOwningNode())
-				: nullptr;
-		if (Test.TestNotNull(Description, FunctionCall))
-		{
-			Test.TestEqual(
-				*FString::Printf(TEXT("%s uses the expected helper"), Description),
-				FunctionCall->FunctionReference.GetMemberName(),
-				ExpectedFunctionName);
-		}
-		return FunctionCall;
-	}
-
 	UAnimGraphNode_SequencePlayer* FindSequencePlayerDrivenBy(
 		FAutomationTestBase& Test,
 		const UEdGraph* Graph,
@@ -1368,8 +1338,13 @@ bool FRpgGaspPilotAssetContractTest::RunTest(const FString& Parameters)
 			FName(TEXT("pelvis")),
 			FName(TEXT("thigh_l")),
 			FName(TEXT("thigh_r")),
+			FName(TEXT("calf_l")),
+			FName(TEXT("calf_r")),
 			FName(TEXT("foot_l")),
 			FName(TEXT("foot_r")),
+			FName(TEXT("ball_l")),
+			FName(TEXT("ball_r")),
+			FName(TEXT("ik_foot_root")),
 			FName(TEXT("ik_foot_l")),
 			FName(TEXT("ik_foot_r")) })
 		{
@@ -2477,13 +2452,6 @@ bool FRpgGaspPilotAssetContractTest::RunTest(const FString& Parameters)
 			FindUniqueVariableGetter(*this, AnimGraph, TEXT("CombatModeBlendTime"));
 		UK2Node_VariableGet* CombatReadyGetter =
 			FindUniqueVariableGetter(*this, AnimGraph, TEXT("bCombatAnimationReady"));
-		UK2Node_CallFunction* UnarmedPostureAlphaLerpNode =
-			FindFunctionCallDriving(
-				*this,
-				UnarmedPostureCorrectionNode,
-				TEXT("Alpha"),
-				TEXT("Lerp"),
-				TEXT("The posture correction alpha is driven by a Lerp call"));
 		const FAnimNode_PoseSearchHistoryCollector* PoseHistoryRuntimeNode =
 			ReadRuntimeNode<FAnimNode_PoseSearchHistoryCollector>(PoseHistoryNode);
 		if (TestNotNull(
@@ -2638,25 +2606,6 @@ bool FRpgGaspPilotAssetContractTest::RunTest(const FString& Parameters)
 				TEXT("The posture correction has no hidden LOD cutoff"),
 				PostureCorrection.LODThreshold,
 				INDEX_NONE);
-		}
-		if (UnarmedPostureAlphaLerpNode)
-		{
-			TestEqual(
-				TEXT("The posture alpha uses the engine's pure linear interpolation helper"),
-				UnarmedPostureAlphaLerpNode->FunctionReference.GetMemberName(),
-				FName(TEXT("Lerp")));
-			const UEdGraphPin* ZeroTargetInput =
-				UnarmedPostureAlphaLerpNode->FindPin(TEXT("B"), EGPD_Input);
-			if (TestNotNull(TEXT("The posture-alpha Lerp exposes its zero target"), ZeroTargetInput))
-			{
-				TestEqual(
-					TEXT("The overlay fade target is not wired to another source"),
-					ZeroTargetInput->LinkedTo.Num(),
-					0);
-				TestTrue(
-					TEXT("A full combat overlay fades the posture correction to zero"),
-					FMath::IsNearlyZero(FCString::Atod(*ZeroTargetInput->DefaultValue)));
-			}
 		}
 		if (RpgFootPlacementNode)
 		{
@@ -3216,11 +3165,10 @@ bool FRpgGaspPilotAssetContractTest::RunTest(const FString& Parameters)
 			TEXT("BlendPoses_0"));
 		TestExactOutputLinks(
 			*this,
-			TEXT("The game-thread equip transition alpha gates both upper-body presentation layers"),
+			TEXT("The game-thread equip transition alpha gates only the masked weapon overlay"),
 			CombatOverlayAlphaGetter,
 			TEXT("CombatAnimationOverlayAlpha"),
-			{{CombatUpperBodyLayerNode, TEXT("BlendWeights_0")},
-				{UnarmedPostureAlphaLerpNode, TEXT("Alpha")}});
+			{{CombatUpperBodyLayerNode, TEXT("BlendWeights_0")}});
 		TestExclusiveLink(
 			*this,
 			TEXT("The masked combat layer feeds the authoritative DefaultSlot"),
@@ -3251,16 +3199,9 @@ bool FRpgGaspPilotAssetContractTest::RunTest(const FString& Parameters)
 			TEXT("ComponentPose"));
 		TestExclusiveLink(
 			*this,
-			TEXT("The montage-safe grounded alpha supplies the posture correction baseline"),
+			TEXT("The montage-safe grounded alpha directly gates the effective posture rotation"),
 			ProceduralLocomotionAlphaGetter,
 			TEXT("ProceduralLocomotionAlpha"),
-			UnarmedPostureAlphaLerpNode,
-			TEXT("A"));
-		TestExclusiveLink(
-			*this,
-			TEXT("The overlay-faded posture alpha drives only the spine correction"),
-			UnarmedPostureAlphaLerpNode,
-			TEXT("ReturnValue"),
 			UnarmedPostureCorrectionNode,
 			TEXT("Alpha"));
 		TestExclusiveLink(

@@ -2517,12 +2517,17 @@ void URpgAnimInstance::NativeThreadSafeUpdateAnimation(float DeltaSeconds)
 	LocomotionGait = Proxy.Gait;
 	LocomotionStance = Proxy.Stance;
 	LocomotionMovementState = Proxy.MovementState;
+	const bool bAllowRelaxedPostureCorrection =
+		RpgGaspPostureRuntime::ShouldApplyCorrection(
+			Proxy.RotationMode,
+			Proxy.bCombatAnimationProfileFallback);
 	UnarmedUpperBodyPostureCorrection = FRotator(
 		0.0f,
 		0.0f,
 		RpgGaspPostureRuntime::AdvanceCorrectionDegrees(
 			UnarmedUpperBodyPostureCorrection.Roll,
 			LocomotionGait,
+			bAllowRelaxedPostureCorrection,
 			DeltaSeconds,
 			RuntimeGaspLocomotionTuning));
 	CharacterRotationMode = Proxy.RotationMode;
