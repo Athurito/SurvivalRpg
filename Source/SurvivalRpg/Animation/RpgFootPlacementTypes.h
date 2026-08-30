@@ -235,6 +235,11 @@ struct SURVIVALRPG_API FRpgFootPlacementSnapshot
 
 namespace RpgFootPlacement
 {
+	/** Combines the static AnimBP opt-in with the runtime diagnostic gate. */
+	SURVIVALRPG_API bool IsRuntimeFootPlacementEnabled(
+		bool bConfiguredEnabled,
+		int32 RuntimeEnableValue);
+
 	/** Converts a normalized GASP contact curve into the pseudo-speed expected by the plant policy. */
 	SURVIVALRPG_API float ConvertContactCurveToSpeed(float ContactCurveValue);
 

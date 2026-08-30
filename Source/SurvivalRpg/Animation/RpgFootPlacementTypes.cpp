@@ -20,6 +20,13 @@ FRpgFootPlacementSettings::FRpgFootPlacementSettings()
 
 namespace RpgFootPlacement
 {
+	bool IsRuntimeFootPlacementEnabled(
+		bool bConfiguredEnabled,
+		int32 RuntimeEnableValue)
+	{
+		return bConfiguredEnabled && RuntimeEnableValue != 0;
+	}
+
 	float ConvertContactCurveToSpeed(float ContactCurveValue)
 	{
 		return (1.0f - FMath::Clamp(ContactCurveValue, 0.0f, 1.0f)) * 100.0f;

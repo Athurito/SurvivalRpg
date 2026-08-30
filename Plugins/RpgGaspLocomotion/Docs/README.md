@@ -114,4 +114,10 @@ count changes are part of this externalization.
 
 Pose Search trajectory collision is also project-owned. `FRpgAnimInstanceProxy::PreUpdate` keeps the raw kinematic history separate from the worker-facing corrected trajectory, applies gravity, and resolves at most the 15 generated future samples against simple Visibility collision. The defaults preserve GASP's 0.01 cm floor offset and 150 cm search height, while a small sphere sweep plus CharacterMovement walkability rejects walls and non-walkable slopes. Valid sweep contacts are projected along gravity onto the hit plane, so the later sample keeps its authored horizontal time and remains above flat floors, ramps, and steps. All world queries remain on the game thread; the AnimGraph receives only the corrected value trajectory.
 
+For visual A/B diagnosis, `a.Rpg.FootPlacement.Enable 0` disables the project-local Foot Placement
+node and the shared downstream Leg IK alpha without changing CharacterMovement, PawnData,
+Experiences, Motion Matching, or replicated gameplay state; `1` restores the configured default.
+This is intentionally distinct from `a.AnimNode.LegIK.Enable 0`, which disables only the stock
+Leg IK solver while the project-local node can still update IK targets and pelvis presentation.
+
 The associated `FRpgTrajectoryLandingPrediction` is cosmetic and pointer-free: a valid snapshot contains the first walkable world-space contact, its normalized normal, and finite `TimeToLand`; no hit uses `bIsValid=false` and `TimeToLand=-1`. It is recomputed every update and invalidated on touchdown, missing owner/movement/world state, unsupported movement modes, malformed trajectories, teleports, large relocations, and owner/network-role changes. The prediction may inform airborne Pose Search and later moving/heavy landing selection, but it never starts a landing request, changes CharacterMovement, or becomes replicated gameplay truth. This deliberately tightens GASP's experimental helper, whose no-hit result is the trajectory horizon and whose collision result has no validity, point, normal, or walkability contract.

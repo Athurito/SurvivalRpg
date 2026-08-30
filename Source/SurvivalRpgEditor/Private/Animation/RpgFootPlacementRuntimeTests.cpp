@@ -45,6 +45,29 @@ namespace RpgFootPlacementRuntimeTests
 }
 
 IMPLEMENT_SIMPLE_AUTOMATION_TEST(
+	FRpgFootPlacementRuntimeGateTest,
+	"SurvivalRpg.Animation.FootPlacement.Runtime.RuntimeGate",
+	EAutomationTestFlags::EditorContext |
+		EAutomationTestFlags::EngineFilter)
+
+bool FRpgFootPlacementRuntimeGateTest::RunTest(const FString& Parameters)
+{
+	TestFalse(
+		TEXT("The runtime switch cannot opt a legacy AnimBP into Foot Placement"),
+		RpgFootPlacement::IsRuntimeFootPlacementEnabled(false, 1));
+	TestFalse(
+		TEXT("A zero runtime switch disables an opted-in GASP AnimBP"),
+		RpgFootPlacement::IsRuntimeFootPlacementEnabled(true, 0));
+	TestTrue(
+		TEXT("The default runtime switch keeps an opted-in GASP AnimBP active"),
+		RpgFootPlacement::IsRuntimeFootPlacementEnabled(true, 1));
+	TestTrue(
+		TEXT("Any non-zero runtime switch remains enabled for console compatibility"),
+		RpgFootPlacement::IsRuntimeFootPlacementEnabled(true, -1));
+	return true;
+}
+
+IMPLEMENT_SIMPLE_AUTOMATION_TEST(
 	FRpgFootPlacementPlantPolicyTest,
 	"SurvivalRpg.Animation.FootPlacement.Runtime.PlantPolicy",
 	EAutomationTestFlags::EditorContext |

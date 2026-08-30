@@ -10,6 +10,7 @@
 #include "Engine/World.h"
 #include "GameFramework/Character.h"
 #include "GameFramework/CharacterMovementComponent.h"
+#include "HAL/IConsoleManager.h"
 #include "Interfaces/MovementBaseInterface.h"
 #include "PoseSearch/AnimNode_MotionMatching.h"
 #include "PoseSearch/PoseSearchDatabase.h"
@@ -30,6 +31,14 @@
 
 namespace
 {
+TAutoConsoleVariable<int32> CVarRpgFootPlacementEnable(
+	TEXT("a.Rpg.FootPlacement.Enable"),
+	1,
+	TEXT("Controls SurvivalRpg's project-local GASP foot-placement path for visual diagnosis.\n")
+	TEXT("0: Disable the project-local Foot Placement node and its shared downstream Leg IK alpha.\n")
+	TEXT("1: Use the AnimBP-configured Foot Placement path (default)."),
+	ECVF_Cheat);
+
 void ResetPoseSearchTrajectoryState(FRpgAnimInstanceProxy& Proxy)
 {
 	Proxy.RawTransformTrajectory.Samples.Reset();
@@ -565,8 +574,12 @@ void UpdateFootPlacementSnapshot(
 	const bool bBaseIdentityChanged =
 		bHadPreviousComponentTransform &&
 		PreviousMovementBaseId != MovementBaseId;
+	const bool bRuntimeFootPlacementEnabled =
+		RpgFootPlacement::IsRuntimeFootPlacementEnabled(
+			Settings.bEnabled,
+			CVarRpgFootPlacementEnable.GetValueOnGameThread());
 	const bool bSourceEligible =
-		Settings.bEnabled &&
+		bRuntimeFootPlacementEnabled &&
 		Snapshot.bGrounded &&
 		(!Proxy.bIsCrouching || Settings.bApplyWhileCrouching) &&
 		!Proxy.bIsAnyMontagePlaying &&
