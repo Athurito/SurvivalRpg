@@ -697,6 +697,14 @@ protected:
 	float ProceduralLocomotionAlpha = 0.0f;
 
 	/**
+	 * Smoothed additive component-space rotation for the relaxed unarmed spine_01 correction.
+	 * Roll is component X in the pilot AnimGraph; Pitch and Yaw remain zero. The value is cosmetic,
+	 * profile-tuned, and consumed only after the authoritative DefaultSlot montage path.
+	 */
+	UPROPERTY(BlueprintReadOnly, Transient, Category = "Rpg|Animation|Posture")
+	FRotator UnarmedUpperBodyPostureCorrection = FRotator::ZeroRotator;
+
+	/**
 	 * Airborne procedural budget snapshotted independently from grounded locomotion.
 	 * It is cosmetic-only and becomes zero for crouch or montage overrides; the active asset still decides each node gate.
 	 */

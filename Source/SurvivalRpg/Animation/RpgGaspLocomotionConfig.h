@@ -50,6 +50,22 @@ struct SURVIVALRPG_API FRpgGaspLocomotionTuning
 	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Shared", meta = (ClampMin = "0.001", Units = "cm/s"))
 	float StationarySpeedThreshold = 3.0f;
 
+	/** Additive component-X correction applied to spine_01 for relaxed unarmed Idle, in degrees. */
+	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Posture", meta = (ClampMin = "0.0", ClampMax = "30.0", Units = "deg"))
+	float UnarmedIdlePostureCorrectionDegrees = 3.0f;
+
+	/** Additive component-X correction applied to spine_01 for relaxed unarmed Walk, in degrees. */
+	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Posture", meta = (ClampMin = "0.0", ClampMax = "30.0", Units = "deg"))
+	float UnarmedWalkPostureCorrectionDegrees = 6.0f;
+
+	/** Additive component-X correction applied to spine_01 for relaxed unarmed Run and Sprint, in degrees. */
+	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Posture", meta = (ClampMin = "0.0", ClampMax = "30.0", Units = "deg"))
+	float UnarmedRunPostureCorrectionDegrees = 12.0f;
+
+	/** Constant interpolation rate used when the cosmetic unarmed posture changes gait, in degrees per second. */
+	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Posture", meta = (ClampMin = "0.001", Units = "deg/s"))
+	float UnarmedPostureCorrectionSpeed = 45.0f;
+
 	/** Horizontal velocity tolerance used by the logical Motion Matching moving predicate, in cm/s. */
 	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Motion Matching", meta = (ClampMin = "0.0", Units = "cm/s"))
 	float ChooserVelocityTolerance = 0.1f;
@@ -187,6 +203,10 @@ namespace RpgGaspLocomotionConfig
 	/** Resolves exactly one known project role tag; duplicate or unknown project role tags fail closed. */
 	SURVIVALRPG_API ERpgMotionMatchingDatabaseRole ResolveDatabaseRoleTag(
 		TConstArrayView<FName> Tags);
+
+	/** Checks the finite, ordered, and bounded relaxed posture subset used on animation workers. */
+	SURVIVALRPG_API bool IsPostureTuningRuntimeValid(
+		const FRpgGaspLocomotionTuning& Tuning);
 
 	/** Checks finite values, normalized ranges, ordered thresholds, and positive presentation durations. */
 	SURVIVALRPG_API bool IsTuningRuntimeValid(const FRpgGaspLocomotionTuning& Tuning);

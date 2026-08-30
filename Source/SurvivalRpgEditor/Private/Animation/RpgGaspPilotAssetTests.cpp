@@ -2462,6 +2462,11 @@ bool FRpgGaspPilotAssetContractTest::RunTest(const FString& Parameters)
 			FindUniqueVariableGetter(*this, AnimGraph, TEXT("FootPlacementAlpha"));
 		UK2Node_VariableGet* ProceduralLocomotionAlphaGetter =
 			FindUniqueVariableGetter(*this, AnimGraph, TEXT("ProceduralLocomotionAlpha"));
+		UK2Node_VariableGet* UnarmedPostureRotationGetter =
+			FindUniqueVariableGetter(
+				*this,
+				AnimGraph,
+				TEXT("UnarmedUpperBodyPostureCorrection"));
 		UK2Node_VariableGet* CombatEquippedAnimationGetter =
 			FindUniqueVariableGetter(*this, AnimGraph, TEXT("CombatEquippedUpperBodyAnimation"));
 		UK2Node_VariableGet* CombatReadyAnimationGetter =
@@ -2616,9 +2621,8 @@ bool FRpgGaspPilotAssetContractTest::RunTest(const FString& Parameters)
 				PostureCorrection.ScaleMode.GetValue(),
 				BMM_Ignore);
 			TestTrue(
-				TEXT("The posture correction stays a small positive rotation around component X"),
-				PostureCorrection.Rotation.Roll > 0.0 &&
-				PostureCorrection.Rotation.Roll <= 10.0 &&
+				TEXT("The posture correction stores no hidden rotation behind its graph input"),
+				FMath::IsNearlyZero(PostureCorrection.Rotation.Roll) &&
 				FMath::IsNearlyZero(PostureCorrection.Rotation.Pitch) &&
 				FMath::IsNearlyZero(PostureCorrection.Rotation.Yaw));
 			TestEqual(
@@ -3126,6 +3130,27 @@ bool FRpgGaspPilotAssetContractTest::RunTest(const FString& Parameters)
 			}
 		}
 
+		if (UnarmedPostureRotationGetter)
+		{
+			const UEdGraphPin* RotationOutput =
+				UnarmedPostureRotationGetter->FindPin(
+					TEXT("UnarmedUpperBodyPostureCorrection"),
+					EGPD_Output);
+			if (TestNotNull(
+				TEXT("The gait-smoothed posture getter exposes its rotation"),
+				RotationOutput))
+			{
+				TestEqual(
+					TEXT("The posture getter uses a struct pin"),
+					RotationOutput->PinType.PinCategory,
+					UEdGraphSchema_K2::PC_Struct);
+				TestEqual(
+					TEXT("The posture getter exposes the engine Rotator type"),
+					RotationOutput->PinType.PinSubCategoryObject.Get(),
+					static_cast<UObject*>(TBaseStructure<FRotator>::Get()));
+			}
+		}
+
 		TestExclusiveLink(
 			*this,
 			TEXT("Motion Matching feeds Offset Root Bone"),
@@ -3238,6 +3263,13 @@ bool FRpgGaspPilotAssetContractTest::RunTest(const FString& Parameters)
 			TEXT("ReturnValue"),
 			UnarmedPostureCorrectionNode,
 			TEXT("Alpha"));
+		TestExclusiveLink(
+			*this,
+			TEXT("The gait-smoothed profile rotation drives only the spine correction"),
+			UnarmedPostureRotationGetter,
+			TEXT("UnarmedUpperBodyPostureCorrection"),
+			UnarmedPostureCorrectionNode,
+			TEXT("Rotation"));
 		TestExclusiveLink(
 			*this,
 			TEXT("Project-local Foot Placement feeds stock Leg IK"),
