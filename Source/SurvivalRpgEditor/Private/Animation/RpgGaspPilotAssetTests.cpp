@@ -14,6 +14,7 @@
 #include "AnimGraphNode_LayeredBoneBlend.h"
 #include "AnimGraphNode_LegIK.h"
 #include "AnimGraphNode_LocalToComponentSpace.h"
+#include "AnimGraphNode_ModifyBone.h"
 #include "AnimGraphNode_SequencePlayer.h"
 #include "Animation/AnimBlueprint.h"
 #include "Animation/AnimBlueprintGeneratedClass.h"
@@ -29,6 +30,7 @@
 #include "AnimGraphNode_Slot.h"
 #include "AssetRegistry/AssetRegistryModule.h"
 #include "AssetRegistry/IAssetRegistry.h"
+#include "BoneControllers/AnimNode_ModifyBone.h"
 #include "BoneControllers/AnimNode_OrientationWarping.h"
 #include "BoneControllers/AnimNode_OffsetRootBone.h"
 #include "BoneControllers/AnimNode_ResetRoot.h"
@@ -1336,8 +1338,13 @@ bool FRpgGaspPilotAssetContractTest::RunTest(const FString& Parameters)
 			FName(TEXT("pelvis")),
 			FName(TEXT("thigh_l")),
 			FName(TEXT("thigh_r")),
+			FName(TEXT("calf_l")),
+			FName(TEXT("calf_r")),
 			FName(TEXT("foot_l")),
 			FName(TEXT("foot_r")),
+			FName(TEXT("ball_l")),
+			FName(TEXT("ball_r")),
+			FName(TEXT("ik_foot_root")),
 			FName(TEXT("ik_foot_l")),
 			FName(TEXT("ik_foot_r")) })
 		{
@@ -2397,6 +2404,11 @@ bool FRpgGaspPilotAssetContractTest::RunTest(const FString& Parameters)
 				*this,
 				AnimGraph,
 				TEXT("Foot Placement Local To Component"));
+		UAnimGraphNode_ModifyBone* UnarmedPostureCorrectionNode =
+			FindUniqueNode<UAnimGraphNode_ModifyBone>(
+				*this,
+				AnimGraph,
+				TEXT("Unarmed upper-body posture correction"));
 		UAnimGraphNode_RpgFootPlacement* RpgFootPlacementNode =
 			FindUniqueNode<UAnimGraphNode_RpgFootPlacement>(
 				*this,
@@ -2423,6 +2435,13 @@ bool FRpgGaspPilotAssetContractTest::RunTest(const FString& Parameters)
 			FindUniqueVariableGetter(*this, AnimGraph, TEXT("FootPlacementSnapshot"));
 		UK2Node_VariableGet* FootPlacementAlphaGetter =
 			FindUniqueVariableGetter(*this, AnimGraph, TEXT("FootPlacementAlpha"));
+		UK2Node_VariableGet* ProceduralLocomotionAlphaGetter =
+			FindUniqueVariableGetter(*this, AnimGraph, TEXT("ProceduralLocomotionAlpha"));
+		UK2Node_VariableGet* UnarmedPostureRotationGetter =
+			FindUniqueVariableGetter(
+				*this,
+				AnimGraph,
+				TEXT("UnarmedUpperBodyPostureCorrection"));
 		UK2Node_VariableGet* CombatEquippedAnimationGetter =
 			FindUniqueVariableGetter(*this, AnimGraph, TEXT("CombatEquippedUpperBodyAnimation"));
 		UK2Node_VariableGet* CombatReadyAnimationGetter =
@@ -2539,6 +2558,54 @@ bool FRpgGaspPilotAssetContractTest::RunTest(const FString& Parameters)
 				TEXT("Foot Placement uses the exact Local To Component conversion class"),
 				FootPlacementLocalToComponentNode->GetClass(),
 				UAnimGraphNode_LocalToComponentSpace::StaticClass());
+		}
+		if (UnarmedPostureCorrectionNode)
+		{
+			TestEqual(
+				TEXT("The posture correction uses the exact Transform Modify Bone editor class"),
+				UnarmedPostureCorrectionNode->GetClass(),
+				UAnimGraphNode_ModifyBone::StaticClass());
+
+			const FAnimNode_ModifyBone& PostureCorrection =
+				UnarmedPostureCorrectionNode->Node;
+			TestEqual(
+				TEXT("The posture correction starts at the first spine bone"),
+				PostureCorrection.BoneToModify.BoneName,
+				FName(TEXT("spine_01")));
+			TestEqual(
+				TEXT("The posture correction adds to the authored spine rotation"),
+				PostureCorrection.RotationMode.GetValue(),
+				BMM_Additive);
+			TestEqual(
+				TEXT("The posture correction is stable in component space"),
+				PostureCorrection.RotationSpace.GetValue(),
+				BCS_ComponentSpace);
+			TestEqual(
+				TEXT("The posture correction never translates the spine"),
+				PostureCorrection.TranslationMode.GetValue(),
+				BMM_Ignore);
+			TestEqual(
+				TEXT("The posture correction never scales the spine"),
+				PostureCorrection.ScaleMode.GetValue(),
+				BMM_Ignore);
+			TestTrue(
+				TEXT("The posture correction stores no hidden rotation behind its graph input"),
+				FMath::IsNearlyZero(PostureCorrection.Rotation.Roll) &&
+				FMath::IsNearlyZero(PostureCorrection.Rotation.Pitch) &&
+				FMath::IsNearlyZero(PostureCorrection.Rotation.Yaw));
+			TestEqual(
+				TEXT("The posture correction uses a float graph alpha"),
+				PostureCorrection.AlphaInputType,
+				EAnimAlphaInputType::Float);
+			TestTrue(
+				TEXT("The posture correction clamps its graph alpha to the cosmetic zero-to-one range"),
+				PostureCorrection.AlphaScaleBiasClamp.bClampResult &&
+				FMath::IsNearlyZero(PostureCorrection.AlphaScaleBiasClamp.ClampMin) &&
+				FMath::IsNearlyEqual(PostureCorrection.AlphaScaleBiasClamp.ClampMax, 1.0f));
+			TestEqual(
+				TEXT("The posture correction has no hidden LOD cutoff"),
+				PostureCorrection.LODThreshold,
+				INDEX_NONE);
 		}
 		if (RpgFootPlacementNode)
 		{
@@ -2993,6 +3060,46 @@ bool FRpgGaspPilotAssetContractTest::RunTest(const FString& Parameters)
 			}
 		}
 
+		if (ProceduralLocomotionAlphaGetter)
+		{
+			const UEdGraphPin* AlphaOutput =
+				ProceduralLocomotionAlphaGetter->FindPin(
+					TEXT("ProceduralLocomotionAlpha"),
+					EGPD_Output);
+			if (TestNotNull(TEXT("ProceduralLocomotionAlpha getter exposes its value"), AlphaOutput))
+			{
+				TestEqual(
+					TEXT("The posture baseline alpha uses a real-number pin"),
+					AlphaOutput->PinType.PinCategory,
+					UEdGraphSchema_K2::PC_Real);
+				TestEqual(
+					TEXT("The posture baseline alpha is single precision"),
+					AlphaOutput->PinType.PinSubCategory,
+					UEdGraphSchema_K2::PC_Float);
+			}
+		}
+
+		if (UnarmedPostureRotationGetter)
+		{
+			const UEdGraphPin* RotationOutput =
+				UnarmedPostureRotationGetter->FindPin(
+					TEXT("UnarmedUpperBodyPostureCorrection"),
+					EGPD_Output);
+			if (TestNotNull(
+				TEXT("The gait-smoothed posture getter exposes its rotation"),
+				RotationOutput))
+			{
+				TestEqual(
+					TEXT("The posture getter uses a struct pin"),
+					RotationOutput->PinType.PinCategory,
+					UEdGraphSchema_K2::PC_Struct);
+				TestEqual(
+					TEXT("The posture getter exposes the engine Rotator type"),
+					RotationOutput->PinType.PinSubCategoryObject.Get(),
+					static_cast<UObject*>(TBaseStructure<FRotator>::Get()));
+			}
+		}
+
 		TestExclusiveLink(
 			*this,
 			TEXT("Motion Matching feeds Offset Root Bone"),
@@ -3056,13 +3163,12 @@ bool FRpgGaspPilotAssetContractTest::RunTest(const FString& Parameters)
 			TEXT("Pose"),
 			CombatUpperBodyLayerNode,
 			TEXT("BlendPoses_0"));
-		TestExclusiveLink(
+		TestExactOutputLinks(
 			*this,
-			TEXT("The game-thread equip transition alpha gates the upper-body layer"),
+			TEXT("The game-thread equip transition alpha gates only the masked weapon overlay"),
 			CombatOverlayAlphaGetter,
 			TEXT("CombatAnimationOverlayAlpha"),
-			CombatUpperBodyLayerNode,
-			TEXT("BlendWeights_0"));
+			{{CombatUpperBodyLayerNode, TEXT("BlendWeights_0")}});
 		TestExclusiveLink(
 			*this,
 			TEXT("The masked combat layer feeds the authoritative DefaultSlot"),
@@ -3079,11 +3185,32 @@ bool FRpgGaspPilotAssetContractTest::RunTest(const FString& Parameters)
 			TEXT("LocalPose"));
 		TestExclusiveLink(
 			*this,
-			TEXT("The component-space conversion feeds project-local Foot Placement"),
+			TEXT("The component-space conversion feeds the unarmed posture correction"),
 			FootPlacementLocalToComponentNode,
 			TEXT("ComponentPose"),
+			UnarmedPostureCorrectionNode,
+			TEXT("ComponentPose"));
+		TestExclusiveLink(
+			*this,
+			TEXT("The unarmed posture correction feeds project-local Foot Placement"),
+			UnarmedPostureCorrectionNode,
+			TEXT("Pose"),
 			RpgFootPlacementNode,
 			TEXT("ComponentPose"));
+		TestExclusiveLink(
+			*this,
+			TEXT("The montage-safe grounded alpha directly gates the effective posture rotation"),
+			ProceduralLocomotionAlphaGetter,
+			TEXT("ProceduralLocomotionAlpha"),
+			UnarmedPostureCorrectionNode,
+			TEXT("Alpha"));
+		TestExclusiveLink(
+			*this,
+			TEXT("The gait-smoothed profile rotation drives only the spine correction"),
+			UnarmedPostureRotationGetter,
+			TEXT("UnarmedUpperBodyPostureCorrection"),
+			UnarmedPostureCorrectionNode,
+			TEXT("Rotation"));
 		TestExclusiveLink(
 			*this,
 			TEXT("Project-local Foot Placement feeds stock Leg IK"),

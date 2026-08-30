@@ -90,6 +90,22 @@ ERpgMotionMatchingDatabaseRole RpgGaspLocomotionConfig::ResolveDatabaseRoleTag(
 		: ERpgMotionMatchingDatabaseRole::None;
 }
 
+bool RpgGaspLocomotionConfig::IsPostureTuningRuntimeValid(
+	const FRpgGaspLocomotionTuning& Tuning)
+{
+	return FMath::IsFinite(Tuning.UnarmedIdlePostureCorrectionDegrees) &&
+		FMath::IsFinite(Tuning.UnarmedWalkPostureCorrectionDegrees) &&
+		FMath::IsFinite(Tuning.UnarmedRunPostureCorrectionDegrees) &&
+		FMath::IsFinite(Tuning.UnarmedPostureCorrectionSpeed) &&
+		Tuning.UnarmedIdlePostureCorrectionDegrees >= 0.0f &&
+		Tuning.UnarmedIdlePostureCorrectionDegrees <=
+			Tuning.UnarmedWalkPostureCorrectionDegrees &&
+		Tuning.UnarmedWalkPostureCorrectionDegrees <=
+			Tuning.UnarmedRunPostureCorrectionDegrees &&
+		Tuning.UnarmedRunPostureCorrectionDegrees <= 30.0f &&
+		Tuning.UnarmedPostureCorrectionSpeed > 0.0f;
+}
+
 bool RpgGaspLocomotionConfig::IsTuningRuntimeValid(
 	const FRpgGaspLocomotionTuning& Tuning)
 {
@@ -139,6 +155,7 @@ bool RpgGaspLocomotionConfig::IsTuningRuntimeValid(
 
 	return Tuning.LastMeaningfulVelocityThreshold > 0.0f &&
 		Tuning.StationarySpeedThreshold > 0.0f &&
+		IsPostureTuningRuntimeValid(Tuning) &&
 		Tuning.ChooserVelocityTolerance >= 0.0f &&
 		Tuning.ChooserAccelerationTolerance >= 0.0f &&
 		Tuning.WalkStopMinimumSpeed > 0.0f &&

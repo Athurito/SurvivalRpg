@@ -22,6 +22,7 @@
 #include "SurvivalRpg/Core/Character/RpgCharacter.h"
 #include "SurvivalRpg/Core/Character/RpgCharacterMovementComponent.h"
 #include "SurvivalRpg/Animation/RpgCombatAnimationProfileProviderComponent.h"
+#include "SurvivalRpg/Animation/RpgGaspPostureRuntime.h"
 #include "SurvivalRpg/Equipment/RpgEquipmentManagerComponent.h"
 #include "SurvivalRpg/Equipment/RpgWeaponInstance.h"
 
@@ -1688,6 +1689,7 @@ void URpgAnimInstance::NativeInitializeAnimation()
 	TrajectoryLandingPrediction = FRpgTrajectoryLandingPrediction();
 	PreTouchdownLandingSnapshot = FRpgLandingSelectionSnapshot();
 	AirborneProceduralAlpha = 0.0f;
+	UnarmedUpperBodyPostureCorrection = FRotator::ZeroRotator;
 	ResetPublishedCombatAnimationState();
 	LandingRequestSerial = 0;
 	LandingInterruptedRequestSerial = 0;
@@ -2515,6 +2517,19 @@ void URpgAnimInstance::NativeThreadSafeUpdateAnimation(float DeltaSeconds)
 	LocomotionGait = Proxy.Gait;
 	LocomotionStance = Proxy.Stance;
 	LocomotionMovementState = Proxy.MovementState;
+	const bool bAllowRelaxedPostureCorrection =
+		RpgGaspPostureRuntime::ShouldApplyCorrection(
+			Proxy.RotationMode,
+			Proxy.bCombatAnimationProfileFallback);
+	UnarmedUpperBodyPostureCorrection = FRotator(
+		0.0f,
+		0.0f,
+		RpgGaspPostureRuntime::AdvanceCorrectionDegrees(
+			UnarmedUpperBodyPostureCorrection.Roll,
+			LocomotionGait,
+			bAllowRelaxedPostureCorrection,
+			DeltaSeconds,
+			RuntimeGaspLocomotionTuning));
 	CharacterRotationMode = Proxy.RotationMode;
 	LocomotionTrajectory = Proxy.TransformTrajectory;
 	TrajectoryLandingPrediction = Proxy.TrajectoryLandingPrediction;

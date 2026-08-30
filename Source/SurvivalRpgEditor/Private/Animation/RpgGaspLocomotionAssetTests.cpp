@@ -472,6 +472,13 @@ namespace RpgGaspLocomotionAssetTests
 		{ TEXT("LandingMovementHandoffWindow"), &FRpgGaspLocomotionTuning::LandingMovementHandoffWindow, 0.3f },
 	};
 
+	static const TCHAR* DesignerPostureTuningFields[] = {
+		TEXT("UnarmedIdlePostureCorrectionDegrees"),
+		TEXT("UnarmedWalkPostureCorrectionDegrees"),
+		TEXT("UnarmedRunPostureCorrectionDegrees"),
+		TEXT("UnarmedPostureCorrectionSpeed"),
+	};
+
 	struct FLandingDatabaseContract
 	{
 		const TCHAR* PackageName;
@@ -845,25 +852,41 @@ bool FRpgGaspLocomotionContentContractTest::RunTest(const FString& Parameters)
 					LegacyAggregateRunDatabasePackage,
 					*FPackageName::GetLongPackageAssetName(LegacyAggregateRunDatabasePackage))));
 
-		const FRpgGaspLocomotionTuning DefaultLocomotionTuning;
 		TestTrue(
 			TEXT("The profile locomotion tuning remains runtime-valid"),
 			RpgGaspLocomotionConfig::IsTuningRuntimeValid(PresentationProfile->LocomotionTuning));
 		TestEqual(
-			TEXT("The Step-4 tuning contract covers all thirty-four compatibility defaults"),
+			TEXT("The presentation tuning contract covers all thirty-four compatibility defaults"),
 			static_cast<int32>(UE_ARRAY_COUNT(TuningFloatDefaultContracts)),
 			34);
-		int32 ReflectedTuningFloatCount = 0;
+		int32 ReflectedCompatibilityTuningFloatCount = 0;
 		for (TFieldIterator<FFloatProperty> PropertyIt(FRpgGaspLocomotionTuning::StaticStruct());
 			PropertyIt;
 			++PropertyIt)
 		{
-			++ReflectedTuningFloatCount;
+			bool bIsDesignerPostureTuning = false;
+			for (const TCHAR* FieldName : DesignerPostureTuningFields)
+			{
+				if (PropertyIt->GetFName() == FName(FieldName))
+				{
+					bIsDesignerPostureTuning = true;
+					break;
+				}
+			}
+			ReflectedCompatibilityTuningFloatCount += bIsDesignerPostureTuning ? 0 : 1;
 		}
 		TestEqual(
-			TEXT("Every reflected tuning float has an explicit compatibility default contract"),
-			ReflectedTuningFloatCount,
+			TEXT("Every non-posture tuning float has an explicit compatibility default contract"),
+			ReflectedCompatibilityTuningFloatCount,
 			static_cast<int32>(UE_ARRAY_COUNT(TuningFloatDefaultContracts)));
+		for (const TCHAR* FieldName : DesignerPostureTuningFields)
+		{
+			TestNotNull(
+				*FString::Printf(TEXT("Designer posture tuning field %s remains a reflected float"), FieldName),
+				FindFProperty<FFloatProperty>(
+					FRpgGaspLocomotionTuning::StaticStruct(),
+					FieldName));
+		}
 		for (const FTuningFloatDefaultContract& Contract : TuningFloatDefaultContracts)
 		{
 			TestNotNull(
@@ -876,13 +899,6 @@ bool FRpgGaspLocomotionContentContractTest::RunTest(const FString& Parameters)
 				PresentationProfile->LocomotionTuning.*Contract.Member,
 				Contract.ExpectedValue);
 		}
-		TestTrue(
-			TEXT("The profile preserves every Step-4 locomotion tuning compatibility default"),
-			FRpgGaspLocomotionTuning::StaticStruct()->CompareScriptStruct(
-				&PresentationProfile->LocomotionTuning,
-				&DefaultLocomotionTuning,
-				0));
-
 		UE::AssetRegistry::FDependencyQuery RuntimeCookDependencyQuery;
 		RuntimeCookDependencyQuery.Required =
 			UE::AssetRegistry::EDependencyProperty::Hard |
