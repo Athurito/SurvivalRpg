@@ -2,6 +2,7 @@
 
 #if WITH_DEV_AUTOMATION_TESTS
 
+#include "AnimPose.h"
 #include "Animation/AnimNotifies/AnimNotify.h"
 #include "Animation/AnimNotifies/AnimNotifyState.h"
 #include "Animation/AnimSequence.h"
@@ -11,6 +12,7 @@
 #include "AssetRegistry/AssetRegistryModule.h"
 #include "AssetRegistry/IAssetRegistry.h"
 #include "Engine/DataTable.h"
+#include "Engine/SkeletalMesh.h"
 #include "Interfaces/IPluginManager.h"
 #include "Misc/AutomationTest.h"
 #include "Misc/DataValidation.h"
@@ -184,6 +186,15 @@ namespace RpgGaspLocomotionAssetTests
 		TEXT("/RpgGaspLocomotion/Animations/Stand/Run/M_Neutral_Run_Stop_B_Rfoot"),
 		TEXT("/RpgGaspLocomotion/Animations/Stand/Run/M_Neutral_Run_Stop_F_Lfoot"),
 		TEXT("/RpgGaspLocomotion/Animations/Stand/Run/M_Neutral_Run_Stop_F_Rfoot"),
+	};
+
+	static const TCHAR* const KneeGuardRunAnimationPackages[] = {
+		TEXT("/RpgGaspLocomotion/Animations/Stand/Run/M_Neutral_Run_Loop_F"),
+		TEXT("/RpgGaspLocomotion/Animations/Stand/Run/M_Neutral_Run_Start_F_Lfoot"),
+		TEXT("/RpgGaspLocomotion/Animations/Stand/Run/M_Neutral_Run_Start_F_Rfoot"),
+		TEXT("/RpgGaspLocomotion/Animations/Stand/Run/M_Neutral_Run_Pivot_B_F_Lfoot"),
+		TEXT("/RpgGaspLocomotion/Animations/Stand/Run/M_Neutral_Run_Pivot_B_F_Rfoot"),
+		TEXT("/RpgGaspLocomotion/Animations/Stand/Run/M_Neutral_Run_Reface_Start_F_R_090"),
 	};
 
 	static const TCHAR* const RunPivotAnimationPackages[] = {
@@ -496,6 +507,156 @@ namespace RpgGaspLocomotionAssetTests
 		{ RunLightLandingDatabasePackage, TEXT("Rpg.MotionMatching.Role.RunLightLanding"), RunLightLandingAnimationPackages, UE_ARRAY_COUNT(RunLightLandingAnimationPackages), -0.10f },
 		{ RunHeavyLandingDatabasePackage, TEXT("Rpg.MotionMatching.Role.RunHeavyLanding"), RunHeavyLandingAnimationPackages, UE_ARRAY_COUNT(RunHeavyLandingAnimationPackages), -0.01f },
 	};
+
+	static bool TryMeasureKneeAngle(
+		const FAnimPose& Pose,
+		const FName HipBone,
+		const FName KneeBone,
+		const FName AnkleBone,
+		double& OutAngleDegrees)
+	{
+		TArray<FName> BoneNames;
+		UAnimPoseExtensions::GetBoneNames(Pose, BoneNames);
+		if (!BoneNames.Contains(HipBone) ||
+			!BoneNames.Contains(KneeBone) ||
+			!BoneNames.Contains(AnkleBone))
+		{
+			return false;
+		}
+
+		const FVector HipLocation = UAnimPoseExtensions::GetBonePose(
+			Pose,
+			HipBone,
+			EAnimPoseSpaces::World).GetTranslation();
+		const FVector KneeLocation = UAnimPoseExtensions::GetBonePose(
+			Pose,
+			KneeBone,
+			EAnimPoseSpaces::World).GetTranslation();
+		const FVector AnkleLocation = UAnimPoseExtensions::GetBonePose(
+			Pose,
+			AnkleBone,
+			EAnimPoseSpaces::World).GetTranslation();
+		const FVector UpperLeg = HipLocation - KneeLocation;
+		const FVector LowerLeg = AnkleLocation - KneeLocation;
+		const double SegmentProduct = UpperLeg.Length() * LowerLeg.Length();
+		if (SegmentProduct <= UE_SMALL_NUMBER)
+		{
+			return false;
+		}
+
+		const double Cosine = FMath::Clamp(
+			FVector::DotProduct(UpperLeg, LowerLeg) / SegmentProduct,
+			-1.0,
+			1.0);
+		OutAngleDegrees = FMath::RadiansToDegrees(FMath::Acos(Cosine));
+		return FMath::IsFinite(OutAngleDegrees);
+	}
+
+	struct FKneePoseMetrics
+	{
+		double MaximumAngleDegrees = 0.0;
+		double NearStraightFrameFraction = 1.0;
+		int32 SampleCount = 0;
+	};
+
+	static bool TryMeasureKneePoseMetrics(
+		UAnimSequence* Animation,
+		USkeletalMesh* TargetMesh,
+		const EAnimDataEvalType EvaluationType,
+		const double SampleRate,
+		const double NearStraightDegrees,
+		FKneePoseMetrics& OutMetrics,
+		FString& OutFailure)
+	{
+		const double Duration = Animation ? Animation->GetPlayLength() : 0.0;
+		if (Duration <= 0.0)
+		{
+			OutFailure = TEXT("animation has no duration");
+			return false;
+		}
+
+		const int32 LastSampleIndex = FMath::CeilToInt(Duration * SampleRate);
+		TArray<double> SampleTimes;
+		SampleTimes.Reserve(LastSampleIndex + 1);
+		for (int32 SampleIndex = 0; SampleIndex <= LastSampleIndex; ++SampleIndex)
+		{
+			SampleTimes.Add(FMath::Min(Duration, SampleIndex / SampleRate));
+		}
+
+		FAnimPoseEvaluationOptions EvaluationOptions;
+		EvaluationOptions.EvaluationType = EvaluationType;
+		EvaluationOptions.bShouldRetarget = true;
+		EvaluationOptions.bExtractRootMotion = false;
+		EvaluationOptions.bEvaluateCurves = false;
+		EvaluationOptions.OptionalSkeletalMesh = TargetMesh;
+
+		TArray<FAnimPose> Poses;
+		UAnimPoseExtensions::GetAnimPoseAtTimeIntervals(
+			Animation,
+			SampleTimes,
+			EvaluationOptions,
+			Poses);
+		if (Poses.Num() != SampleTimes.Num())
+		{
+			OutFailure = FString::Printf(
+				TEXT("evaluated %d of %d requested poses"),
+				Poses.Num(),
+				SampleTimes.Num());
+			return false;
+		}
+
+		const FName LeftHipBone(TEXT("thigh_l"));
+		const FName LeftKneeBone(TEXT("calf_l"));
+		const FName LeftAnkleBone(TEXT("foot_l"));
+		const FName RightHipBone(TEXT("thigh_r"));
+		const FName RightKneeBone(TEXT("calf_r"));
+		const FName RightAnkleBone(TEXT("foot_r"));
+		int32 NearStraightFrameCount = 0;
+		for (int32 PoseIndex = 0; PoseIndex < Poses.Num(); ++PoseIndex)
+		{
+			const FAnimPose& Pose = Poses[PoseIndex];
+			if (!UAnimPoseExtensions::IsValid(Pose))
+			{
+				OutFailure = FString::Printf(
+					TEXT("invalid pose at %.6f s"),
+					SampleTimes[PoseIndex]);
+				return false;
+			}
+
+			double LeftKneeAngle = 0.0;
+			double RightKneeAngle = 0.0;
+			if (!TryMeasureKneeAngle(
+					Pose,
+					LeftHipBone,
+					LeftKneeBone,
+					LeftAnkleBone,
+					LeftKneeAngle) ||
+				!TryMeasureKneeAngle(
+					Pose,
+					RightHipBone,
+					RightKneeBone,
+					RightAnkleBone,
+					RightKneeAngle))
+			{
+				OutFailure = FString::Printf(
+					TEXT("invalid leg chain at %.6f s"),
+					SampleTimes[PoseIndex]);
+				return false;
+			}
+
+			const double FrameKneeAngle = FMath::Max(LeftKneeAngle, RightKneeAngle);
+			OutMetrics.MaximumAngleDegrees = FMath::Max(
+				OutMetrics.MaximumAngleDegrees,
+				FrameKneeAngle);
+			NearStraightFrameCount += FrameKneeAngle >= NearStraightDegrees;
+		}
+
+		OutMetrics.SampleCount = Poses.Num();
+		OutMetrics.NearStraightFrameFraction = Poses.IsEmpty()
+			? 1.0
+			: static_cast<double>(NearStraightFrameCount) / Poses.Num();
+		return !Poses.IsEmpty();
+	}
 }
 
 IMPLEMENT_SIMPLE_AUTOMATION_TEST(
@@ -2406,6 +2567,101 @@ bool FRpgGaspLocomotionContentContractTest::RunTest(const FString& Parameters)
 	{
 		TestEqual(TEXT("The mirror table uses FMirrorTableRow"), GetNameSafe(MirrorTable->GetRowStruct()), FString(TEXT("MirrorTableRow")));
 		TestTrue(TEXT("The mirror table contains generated pairs"), MirrorTable->GetRowMap().Num() > 0);
+	}
+
+	return !HasAnyErrors();
+}
+
+IMPLEMENT_SIMPLE_AUTOMATION_TEST(
+	FRpgGaspRunKneePoseContractTest,
+	"SurvivalRpg.Animation.Gasp.RunKneePoseContract",
+	EAutomationTestFlags::EditorContext |
+		EAutomationTestFlags::EngineFilter)
+
+bool FRpgGaspRunKneePoseContractTest::RunTest(const FString& Parameters)
+{
+	using namespace RpgGaspLocomotionAssetTests;
+
+	constexpr double SampleRate = 60.0;
+	constexpr double NearStraightDegrees = 175.0;
+	constexpr double MaximumAllowedDegrees = 177.0;
+	struct FEvaluationContract
+	{
+		EAnimDataEvalType Type;
+		const TCHAR* Name;
+		double MaximumNearStraightFrameFraction;
+	};
+	static const FEvaluationContract EvaluationContracts[] = {
+		{ EAnimDataEvalType::Raw, TEXT("Raw"), 0.0 },
+		{ EAnimDataEvalType::Compressed, TEXT("Compressed"), 0.01 },
+	};
+
+	USkeletalMesh* TargetMesh = LoadObject<USkeletalMesh>(nullptr, TargetMeshPath);
+	if (!TestNotNull(TEXT("The GASP knee-pose contract loads the project Manny mesh"), TargetMesh))
+	{
+		return false;
+	}
+
+	for (const TCHAR* AnimationPackage : KneeGuardRunAnimationPackages)
+	{
+		const FString ObjectPath = FString::Printf(
+			TEXT("%s.%s"),
+			AnimationPackage,
+			*FPackageName::GetLongPackageAssetName(AnimationPackage));
+		UAnimSequence* Animation = LoadObject<UAnimSequence>(nullptr, *ObjectPath);
+		if (!TestNotNull(
+			*FString::Printf(TEXT("The knee-guard animation loads: %s"), AnimationPackage),
+			Animation))
+		{
+			continue;
+		}
+
+		for (const FEvaluationContract& Contract : EvaluationContracts)
+		{
+			FKneePoseMetrics Metrics;
+			FString Failure;
+			if (!TryMeasureKneePoseMetrics(
+					Animation,
+					TargetMesh,
+					Contract.Type,
+					SampleRate,
+					NearStraightDegrees,
+					Metrics,
+					Failure))
+			{
+				AddError(FString::Printf(
+					TEXT("%s %s knee evaluation failed: %s"),
+					AnimationPackage,
+					Contract.Name,
+					*Failure));
+				continue;
+			}
+
+			TestTrue(
+				*FString::Printf(
+					TEXT("%s %s stays below %.1f degrees (observed %.4f)"),
+					AnimationPackage,
+					Contract.Name,
+					MaximumAllowedDegrees,
+					Metrics.MaximumAngleDegrees),
+				Metrics.MaximumAngleDegrees < MaximumAllowedDegrees);
+			TestTrue(
+				*FString::Printf(
+					TEXT("%s %s keeps near-straight frames at or below %.1f%% (observed %.2f%%)"),
+					AnimationPackage,
+					Contract.Name,
+					Contract.MaximumNearStraightFrameFraction * 100.0,
+					Metrics.NearStraightFrameFraction * 100.0),
+				Metrics.NearStraightFrameFraction <=
+					Contract.MaximumNearStraightFrameFraction);
+			AddInfo(FString::Printf(
+				TEXT("%s %s: max knee %.4f degrees, near-straight %.2f%% across %d poses"),
+				AnimationPackage,
+				Contract.Name,
+				Metrics.MaximumAngleDegrees,
+				Metrics.NearStraightFrameFraction * 100.0,
+				Metrics.SampleCount));
+		}
 	}
 
 	return !HasAnyErrors();
