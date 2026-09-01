@@ -16,7 +16,9 @@
 #include "Interfaces/IPluginManager.h"
 #include "Misc/AutomationTest.h"
 #include "Misc/DataValidation.h"
+#include "Misc/FileHelper.h"
 #include "Misc/PackageName.h"
+#include "Misc/Paths.h"
 #include "Modules/ModuleManager.h"
 #include "PoseSearch/PoseSearchDatabase.h"
 #include "PoseSearch/PoseSearchDerivedData.h"
@@ -28,6 +30,7 @@
 #include "PoseSearch/PoseSearchIndex.h"
 #include "PoseSearch/PoseSearchNormalizationSet.h"
 #include "PoseSearch/PoseSearchSchema.h"
+#include "Serialization/Csv/CsvParser.h"
 #include "SurvivalRpg/Animation/RpgGaspPresentationProfile.h"
 #include "UObject/UnrealType.h"
 #include "UObject/UObjectGlobals.h"
@@ -705,6 +708,7 @@ bool FRpgGaspLocomotionContentContractTest::RunTest(const FString& Parameters)
 	int32 JumpAirborneCount = 0;
 	int32 JumpLandCount = 0;
 	TMap<FString, ERpgGaspPresentationAssetCategory> ExpectedPresentationMembership;
+	TSet<FString> StandRunAnimationPackages;
 	for (const FAssetData& AssetData : Assets)
 	{
 		const FString ClassName = AssetData.AssetClassPath.GetAssetName().ToString();
@@ -742,7 +746,12 @@ bool FRpgGaspLocomotionContentContractTest::RunTest(const FString& Parameters)
 		CrouchWalkCount += AnimationPackageName.StartsWith(CrouchWalkRoot);
 		StandIdleCount += AnimationPackageName.StartsWith(StandIdleRoot);
 		StandWalkCount += AnimationPackageName.StartsWith(StandWalkRoot);
-		StandRunCount += AnimationPackageName.StartsWith(StandRunRoot);
+		const bool bIsStandRunAnimation = AnimationPackageName.StartsWith(StandRunRoot);
+		StandRunCount += bIsStandRunAnimation;
+		if (bIsStandRunAnimation)
+		{
+			StandRunAnimationPackages.Add(AnimationPackageName);
+		}
 		StandSprintCount += AnimationPackageName.StartsWith(StandSprintRoot);
 		JumpStartCount += AnimationPackageName.StartsWith(JumpStartRoot);
 		JumpAirborneCount += AnimationPackageName.StartsWith(JumpAirborneRoot);
@@ -849,6 +858,100 @@ bool FRpgGaspLocomotionContentContractTest::RunTest(const FString& Parameters)
 	TestEqual(TEXT("Exactly eight turn-in-place sequences are present"), TurnInPlaceSequenceCount, 8);
 	TestEqual(TEXT("Exactly 37 stand-walk sequences are present"), StandWalkCount, 37);
 	TestEqual(TEXT("Exactly 77 stand-run sequences are present"), StandRunCount, 77);
+
+	const FString ManifestPath = FPaths::Combine(
+		Plugin->GetBaseDir(),
+		TEXT("Docs"),
+		TEXT("CuratedAssetManifest.csv"));
+	FString ManifestSource;
+	if (TestTrue(
+			TEXT("The curated asset manifest is readable"),
+			FFileHelper::LoadFileToString(ManifestSource, *ManifestPath)))
+	{
+		const FCsvParser ManifestParser(MoveTemp(ManifestSource));
+		const FCsvParser::FRows& ManifestRows = ManifestParser.GetRows();
+		if (TestTrue(TEXT("The curated asset manifest has a header"), !ManifestRows.IsEmpty()))
+		{
+			const TArray<const TCHAR*>& Header = ManifestRows[0];
+			const auto FindColumn = [&Header](const TCHAR* ColumnName) -> int32
+			{
+				for (int32 ColumnIndex = 0; ColumnIndex < Header.Num(); ++ColumnIndex)
+				{
+					if (FCString::Strcmp(Header[ColumnIndex], ColumnName) == 0)
+					{
+						return ColumnIndex;
+					}
+				}
+				return INDEX_NONE;
+			};
+			const int32 TargetPackageColumn = FindColumn(TEXT("TargetPackage"));
+			const int32 DatabaseGroupColumn = FindColumn(TEXT("DatabaseGroup"));
+			const int32 RetargetProfileColumn = FindColumn(TEXT("RetargetProfile"));
+			const bool bHasRequiredColumns =
+				TargetPackageColumn != INDEX_NONE &&
+				DatabaseGroupColumn != INDEX_NONE &&
+				RetargetProfileColumn != INDEX_NONE;
+			if (TestTrue(
+					TEXT("The curated asset manifest exposes the rollout contract columns"),
+					bHasRequiredColumns))
+			{
+				const int32 LastRequiredColumn = FMath::Max3(
+					TargetPackageColumn,
+					DatabaseGroupColumn,
+					RetargetProfileColumn);
+				TSet<FString> ManifestRunPackages;
+				int32 StandRunManifestRowCount = 0;
+				for (int32 RowIndex = 1; RowIndex < ManifestRows.Num(); ++RowIndex)
+				{
+					const TArray<const TCHAR*>& Row = ManifestRows[RowIndex];
+					if (Row.Num() <= DatabaseGroupColumn ||
+						FCString::Strcmp(Row[DatabaseGroupColumn], TEXT("Stand.Run")) != 0)
+					{
+						continue;
+					}
+
+					++StandRunManifestRowCount;
+					if (!TestTrue(
+							*FString::Printf(TEXT("Stand.Run manifest row %d is complete"), RowIndex + 1),
+							Row.Num() > LastRequiredColumn))
+					{
+						continue;
+					}
+
+					const FString TargetPackage(Row[TargetPackageColumn]);
+					TestEqual(
+						*FString::Printf(TEXT("%s uses the complete run retarget profile"), *TargetPackage),
+						FString(Row[RetargetProfileColumn]),
+						FString(TEXT("rpg_no_leg_source_blend_v1")));
+					TestFalse(
+						*FString::Printf(TEXT("%s appears only once in the Stand.Run manifest"), *TargetPackage),
+						ManifestRunPackages.Contains(TargetPackage));
+					ManifestRunPackages.Add(TargetPackage);
+				}
+
+				TestEqual(
+					TEXT("Exactly 77 Stand.Run manifest rows use the rollout contract"),
+					StandRunManifestRowCount,
+					77);
+				TestEqual(
+					TEXT("The Stand.Run manifest contains 77 unique target packages"),
+					ManifestRunPackages.Num(),
+					77);
+				for (const FString& ManifestPackage : ManifestRunPackages)
+				{
+					TestTrue(
+						*FString::Printf(TEXT("The manifest target %s exists in the curated run folder"), *ManifestPackage),
+						StandRunAnimationPackages.Contains(ManifestPackage));
+				}
+				for (const FString& AnimationPackage : StandRunAnimationPackages)
+				{
+					TestTrue(
+						*FString::Printf(TEXT("The curated run asset %s is covered by the manifest"), *AnimationPackage),
+						ManifestRunPackages.Contains(AnimationPackage));
+				}
+			}
+		}
+	}
 	TestEqual(TEXT("Exactly ten stand-sprint sequences are present"), StandSprintCount, 10);
 	TestEqual(TEXT("Exactly 18 jump start/off sequences are present"), JumpStartCount, 18);
 	TestEqual(TEXT("Exactly one neutral airborne fall loop is present"), JumpAirborneCount, 1);
