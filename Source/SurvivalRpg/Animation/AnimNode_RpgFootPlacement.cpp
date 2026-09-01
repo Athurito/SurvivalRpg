@@ -20,10 +20,7 @@ void FAnimNode_RpgFootPlacement::ResetInterpolationState()
 	for (int32 LegIndex = 0; LegIndex < 2; ++LegIndex)
 	{
 		SmoothedCorrectionOffsetsCS[LegIndex] = FTransform::Identity;
-		PreviousOutputTargetsWorld[LegIndex] = FTransform::Identity;
 		bHasSmoothedCorrection[LegIndex] = false;
-		bHasPreviousOutputTarget[LegIndex] = false;
-		bWasLocked[LegIndex] = false;
 	}
 }
 
@@ -37,8 +34,7 @@ FTransform FAnimNode_RpgFootPlacement::ResolveLegCorrectionTargetCS(
 	int32 LegIndex,
 	bool bLocked,
 	const FTransform& FKFootTransformCS,
-	const FTransform& DesiredResolvedTargetCS,
-	const FTransform& ComponentToWorld)
+	const FTransform& DesiredResolvedTargetCS)
 {
 	check(LegIndex >= 0 && LegIndex < 2);
 	const FTransform DesiredCorrectionOffsetCS = RpgFootPlacement::CalculateFootCorrectionOffset(
@@ -51,16 +47,7 @@ FTransform FAnimNode_RpgFootPlacement::ResolveLegCorrectionTargetCS(
 		return DesiredResolvedTargetCS;
 	}
 
-	if (bWasLocked[LegIndex] && bHasPreviousOutputTarget[LegIndex])
-	{
-		const FTransform PreviousOutputTargetCS =
-			PreviousOutputTargetsWorld[LegIndex].GetRelativeTransform(ComponentToWorld);
-		SmoothedCorrectionOffsetsCS[LegIndex] = RpgFootPlacement::CalculateFootCorrectionOffset(
-			FKFootTransformCS,
-			PreviousOutputTargetCS);
-		bHasSmoothedCorrection[LegIndex] = true;
-	}
-	else if (!bHasSmoothedCorrection[LegIndex])
+	if (!bHasSmoothedCorrection[LegIndex])
 	{
 		SmoothedCorrectionOffsetsCS[LegIndex] = DesiredCorrectionOffsetCS;
 		bHasSmoothedCorrection[LegIndex] = true;
@@ -81,19 +68,14 @@ FTransform FAnimNode_RpgFootPlacement::ResolveLegCorrectionTargetCS(
 
 void FAnimNode_RpgFootPlacement::CommitLegCorrectionTarget(
 	int32 LegIndex,
-	bool bLocked,
 	const FTransform& FKFootTransformCS,
-	const FTransform& FinalOutputTargetCS,
-	const FTransform& ComponentToWorld)
+	const FTransform& FinalOutputTargetCS)
 {
 	check(LegIndex >= 0 && LegIndex < 2);
 	SmoothedCorrectionOffsetsCS[LegIndex] = RpgFootPlacement::CalculateFootCorrectionOffset(
 		FKFootTransformCS,
 		FinalOutputTargetCS);
 	bHasSmoothedCorrection[LegIndex] = true;
-	PreviousOutputTargetsWorld[LegIndex] = FinalOutputTargetCS * ComponentToWorld;
-	bHasPreviousOutputTarget[LegIndex] = true;
-	bWasLocked[LegIndex] = bLocked;
 }
 
 void FAnimNode_RpgFootPlacement::GatherDebugData(FNodeDebugData& DebugData)
@@ -243,8 +225,7 @@ void FAnimNode_RpgFootPlacement::EvaluateSkeletalControl_AnyThread(
 			LegIndex,
 			LegSnapshot.bLocked,
 			FKFootTransformCS,
-			LiveOutputTargetCS,
-			Snapshot.ComponentToWorld);
+			LiveOutputTargetCS);
 
 		FTransform OutputTargetWorld = OutputTargetCS * Snapshot.ComponentToWorld;
 		const FVector OutputTargetOffset = (
@@ -264,10 +245,8 @@ void FAnimNode_RpgFootPlacement::EvaluateSkeletalControl_AnyThread(
 		OutputTargetCS = OutputTargetWorld.GetRelativeTransform(Snapshot.ComponentToWorld);
 		CommitLegCorrectionTarget(
 			LegIndex,
-			LegSnapshot.bLocked,
 			FKFootTransformCS,
-			OutputTargetCS,
-			Snapshot.ComponentToWorld);
+			OutputTargetCS);
 
 		if (!OutputTargetCS.Equals(FKFootTransformCS, UE_KINDA_SMALL_NUMBER))
 		{
