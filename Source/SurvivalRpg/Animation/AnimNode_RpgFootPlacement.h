@@ -103,14 +103,11 @@ private:
 		int32 LegIndex,
 		bool bLocked,
 		const FTransform& FKFootTransformCS,
-		const FTransform& DesiredResolvedTargetCS,
-		const FTransform& ComponentToWorld);
+		const FTransform& DesiredResolvedTargetCS);
 	void CommitLegCorrectionTarget(
 		int32 LegIndex,
-		bool bLocked,
 		const FTransform& FKFootTransformCS,
-		const FTransform& FinalOutputTargetCS,
-		const FTransform& ComponentToWorld);
+		const FTransform& FinalOutputTargetCS);
 
 #if WITH_DEV_AUTOMATION_TESTS
 	friend class FRpgFootPlacementInterpolationStateTest;
@@ -122,20 +119,11 @@ private:
 	/** Persistent value-only pelvis state owned by this proxy's worker-thread node instance. */
 	float SmoothedPelvisOffset = 0.0f;
 
-	/** Component-space corrections applied after the current FK foot, never absolute smoothed targets. */
+	/** Relative corrections applied after the current FK foot and retained through the release blend. */
 	FTransform SmoothedCorrectionOffsetsCS[2];
-
-	/** Last actual world outputs preserve continuity across weight changes on the release edge. */
-	FTransform PreviousOutputTargetsWorld[2];
 
 	/** Per-leg initialization flags for the pointer-free correction state above. */
 	bool bHasSmoothedCorrection[2] = {false, false};
-
-	/** Guards the retained world target used only on an evaluated locked-to-unlocked edge. */
-	bool bHasPreviousOutputTarget[2] = {false, false};
-
-	/** Per-leg previous lock flags used to seed the release correction in current component space. */
-	bool bWasLocked[2] = {false, false};
 
 	/** Detects updates skipped while the graph alpha is zero so persistent state can reset safely. */
 	FGraphTraversalCounter UpdateCounter;

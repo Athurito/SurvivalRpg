@@ -516,19 +516,19 @@ bool FRpgFootPlacementInterpolationStateTest::RunTest(const FString& Parameters)
 		0,
 		true,
 		PreviousFKTargetCS,
-		PreviousWeightedOutputCS,
-		PreviousComponentToWorld);
+		PreviousWeightedOutputCS);
 	Node.CommitLegCorrectionTarget(
 		0,
-		true,
 		PreviousFKTargetCS,
-		LockedOutputCS,
-		PreviousComponentToWorld);
+		LockedOutputCS);
+	const FTransform RetainedRelativeCorrection = RpgFootPlacement::CalculateFootCorrectionOffset(
+		PreviousFKTargetCS,
+		PreviousWeightedOutputCS);
 	const FTransform PreviousRenderedWorld =
 		PreviousWeightedOutputCS * PreviousComponentToWorld;
 	TestTrue(
-		TEXT("The locked state commits the actual post-weight world output"),
-		TargetsMatch(Node.PreviousOutputTargetsWorld[0], PreviousRenderedWorld));
+		TEXT("The locked state commits the actual post-weight relative correction"),
+		TargetsMatch(Node.SmoothedCorrectionOffsetsCS[0], RetainedRelativeCorrection));
 
 	const FTransform CurrentFKTargetCS(
 		FQuat(FVector::UpVector, FMath::DegreesToRadians(35.0f)),
@@ -541,12 +541,17 @@ bool FRpgFootPlacementInterpolationStateTest::RunTest(const FString& Parameters)
 		0,
 		false,
 		CurrentFKTargetCS,
-		UnlockedDesiredOutputCS,
-		CurrentComponentToWorld);
+		UnlockedDesiredOutputCS);
+	const FTransform ExpectedRelativeReleaseOutputCS = RpgFootPlacement::ApplyFootCorrectionOffset(
+		CurrentFKTargetCS,
+		RetainedRelativeCorrection);
 	const FTransform FirstUnlockedOutputWorld =
 		FirstUnlockedOutputCS * CurrentComponentToWorld;
 	TestTrue(
-		TEXT("The node's locked-to-unlocked branch seeds from the prior rendered world target"),
+		TEXT("The release keeps GASP's retained relative correction on the current FK pose"),
+		TargetsMatch(FirstUnlockedOutputCS, ExpectedRelativeReleaseOutputCS));
+	TestFalse(
+		TEXT("The release no longer pins the rear foot to its prior absolute world output"),
 		TargetsMatch(FirstUnlockedOutputWorld, PreviousRenderedWorld));
 
 	const FTransform ClampedOutputCS(
@@ -554,17 +559,14 @@ bool FRpgFootPlacementInterpolationStateTest::RunTest(const FString& Parameters)
 		FVector(-7.0f, 12.0f, 3.0f));
 	Node.CommitLegCorrectionTarget(
 		0,
-		false,
 		CurrentFKTargetCS,
-		ClampedOutputCS,
-		CurrentComponentToWorld);
+		ClampedOutputCS);
 	Node.CachedDeltaTime = 0.0f;
 	const FTransform OutputAfterClampCommit = Node.ResolveLegCorrectionTargetCS(
 		0,
 		false,
 		CurrentFKTargetCS,
-		UnlockedDesiredOutputCS,
-		CurrentComponentToWorld);
+		UnlockedDesiredOutputCS);
 	TestTrue(
 		TEXT("The next frame starts from the committed post-clamp correction"),
 		TargetsMatch(OutputAfterClampCommit, ClampedOutputCS));
@@ -578,12 +580,7 @@ bool FRpgFootPlacementInterpolationStateTest::RunTest(const FString& Parameters)
 			Node.SmoothedCorrectionOffsetsCS[LegIndex] = FTransform(
 				FQuat(FVector::UpVector, 0.5f),
 				FVector(5.0f, 4.0f, 3.0f));
-			Node.PreviousOutputTargetsWorld[LegIndex] = FTransform(
-				FQuat(FVector::RightVector, 0.25f),
-				FVector(30.0f, 20.0f, 10.0f));
 			Node.bHasSmoothedCorrection[LegIndex] = true;
-			Node.bHasPreviousOutputTarget[LegIndex] = true;
-			Node.bWasLocked[LegIndex] = true;
 		}
 	};
 	const auto StateIsReset = [&Node]()
@@ -592,10 +589,7 @@ bool FRpgFootPlacementInterpolationStateTest::RunTest(const FString& Parameters)
 		for (int32 LegIndex = 0; LegIndex < 2; ++LegIndex)
 		{
 			bLegsReset &= Node.SmoothedCorrectionOffsetsCS[LegIndex].Equals(FTransform::Identity);
-			bLegsReset &= Node.PreviousOutputTargetsWorld[LegIndex].Equals(FTransform::Identity);
 			bLegsReset &= !Node.bHasSmoothedCorrection[LegIndex];
-			bLegsReset &= !Node.bHasPreviousOutputTarget[LegIndex];
-			bLegsReset &= !Node.bWasLocked[LegIndex];
 		}
 		return FMath::IsNearlyZero(Node.CachedDeltaTime) &&
 			FMath::IsNearlyZero(Node.SmoothedPelvisOffset) &&
