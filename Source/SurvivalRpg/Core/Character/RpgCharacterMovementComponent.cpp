@@ -457,8 +457,23 @@ void URpgCharacterMovementComponent::OnClientCorrectionReceived(
 	uint8 ServerMovementMode,
 	FVector ServerGravityDirection)
 {
+	const bool bLargeAcknowledgedAnimationCorrection =
+		UpdatedComponent &&
+		IsLargeAcknowledgedAnimationCorrection(
+			ClientData.LastAckedMove.Get(),
+			NewLocation,
+			NewMovementBaseInterfaceData,
+			NewBaseBoneName,
+			bHasBase,
+			bBaseRelativePosition);
+
 #if WITH_DEV_AUTOMATION_TESTS
 	++ClientCorrectionReceivedCountForTests;
+	if (bLargeAcknowledgedAnimationCorrection)
+	{
+		++LargeClientCorrectionReceivedCountForTests;
+		LastLargeClientCorrectionTimeStampForTests = TimeStamp;
+	}
 	LastClientCorrectionMovementBaseForTests.Clear();
 	if (MovementBaseUtility::IsMovementBaseDataValid(
 		NewMovementBaseInterfaceData))
@@ -484,13 +499,7 @@ void URpgCharacterMovementComponent::OnClientCorrectionReceived(
 		}
 		bHasPendingAnimationCorrection = true;
 		bPendingAnimationCorrectionDiscontinuity |=
-			IsLargeAcknowledgedAnimationCorrection(
-				ClientData.LastAckedMove.Get(),
-				NewLocation,
-				NewMovementBaseInterfaceData,
-				NewBaseBoneName,
-				bHasBase,
-				bBaseRelativePosition);
+			bLargeAcknowledgedAnimationCorrection;
 	}
 
 	Super::OnClientCorrectionReceived(

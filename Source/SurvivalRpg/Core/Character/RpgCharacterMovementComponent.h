@@ -78,6 +78,18 @@ public:
 		return ClientCorrectionReceivedCountForTests;
 	}
 
+	/** Returns how many received corrections exceeded the animation-history reset threshold. */
+	uint32 GetLargeClientCorrectionReceivedCountForTests() const
+	{
+		return LargeClientCorrectionReceivedCountForTests;
+	}
+
+	/** Returns the SavedMove timestamp of the latest received correction above the reset threshold. */
+	float GetLastLargeClientCorrectionTimeStampForTests() const
+	{
+		return LastLargeClientCorrectionTimeStampForTests;
+	}
+
 	/** Returns whether the latest observed correction used the expected resolved relative base frame. */
 	bool WasLastClientCorrectionBaseRelativeForTests(
 		const FMovementBaseInterfaceData* ExpectedMovementBaseInterfaceData,
@@ -213,6 +225,12 @@ protected:
 #if WITH_DEV_AUTOMATION_TESTS
 	/** Editor-test observation only; it is neither replicated nor consumed by gameplay. */
 	uint32 ClientCorrectionReceivedCountForTests = 0;
+
+	/** Editor-test count of accepted corrections that exceeded the animation-history reset threshold. */
+	uint32 LargeClientCorrectionReceivedCountForTests = 0;
+
+	/** Editor-test SavedMove timestamp associated with the latest above-threshold correction. */
+	float LastLargeClientCorrectionTimeStampForTests = -1.0f;
 
 	/** Last correction's base identity, retained only so PIE tests can prove the RPC contract. */
 	FMovementBaseInterfaceData LastClientCorrectionMovementBaseForTests;

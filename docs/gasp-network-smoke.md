@@ -1,9 +1,10 @@
 # GASP real-network smoke
 
-This runbook owns the reproducible PIE network acceptance for the isolated
-`RpgGaspPilotExperience`. It exercises the real Experience, PawnData, GASP character, AnimBP,
-CharacterMovement, Ability System Component, and replicated montage path without changing the
-default PawnData or introducing an alternate gameplay/runtime owner.
+This runbook owns the reproducible PIE network acceptance for the separately selectable
+`RpgGaspPilotExperience`. On the cutover branch it exercises the real Experience, PawnData, GASP
+character, AnimBP, CharacterMovement, Ability System Component, and replicated montage path while
+staging the global Experience fallback. It does not change `DefaultPawnData` or introduce an
+alternate gameplay/runtime owner.
 
 ## Automated acceptance
 
@@ -23,21 +24,34 @@ Focused issue #103 moving-base correction regression:
 
 `SurvivalRpg.Network.GaspPilotPIE.MovingBaseCorrectionPreservesAnimationHistory`
 
-Topology and network profile:
+Focused combat-profile GameFeature lifecycle regression:
+
+`SurvivalRpg.Network.GaspPilotPIE.CombatProfileGameFeatureDeactivationReactivation`
+
+Default-cutover and rollback selection contracts:
+
+`SurvivalRpg.Network.GaspPilotPIE.DefaultExperienceFallbackSelectsGasp`
+
+`SurvivalRpg.Network.PrototypeExperiencePIE.OverrideRemainsSelectable`
+
+Shared `GaspPilotPIE` topology and network profile:
 
 - one-process PIE listen server
-- one initial external client, one external client joining during movement, and one final external
-  client joining while the original subject is stationary
-- the original subject is observed as Authority, AutonomousProxy, and SimulatedProxy on both
-  late-join clients
+- one initial external client; tests that own late-join or relevancy contracts add their required
+  observer clients, while the smaller contracts use only the shared initial topology
 - `PktLag=60`, `PktLagVariance=10`, and no configured packet loss
 - one server-spawned editor-only floor fixture provides a shared network-addressable movement base
+- the primary contract adds one client during movement and a final client while the original subject
+  is stationary, observing the subject as Authority, AutonomousProxy, and SimulatedProxy
 - the #103 focus uses a replicated platform with deterministic fast translation and rotation, one
   AutonomousProxy owner, and a late-joined SimulatedProxy observer
+- the separate Prototype selection contract uses one client and does not inject packet simulation
 
 The test verifies:
 
 - the pilot Experience and GASP pawn composition on every world
+- the global fallback selects the GASP Experience when PIE has no override, while an explicit PIE
+  override still selects the separate Prototype Experience and pawn on server and client
 - UE 5.8 `FRepMovement` acceleration plus `AnalogInputModifier` parity at 25%, 50%, and 100%
   input, including the nonzero-to-zero stop edge
 - start, reversal/pivot, stop, and native acceleration reconstruction after moving and stationary
@@ -64,6 +78,13 @@ The test verifies:
   while the moving SimulatedProxy remains stable
 - explicit unit coverage for base/bone switches and unusable-base world-space fallbacks; UE's
   unresolved relative-base RPC is rejected before the project correction callback
+- deterministic server-authoritative Sword/Shield equipment setup, combat-profile provider removal
+  while the mesh cannot poll, neutral fallback, and reacquisition of one registered provider/profile
+  on the same authority and simulated-proxy pawn/AnimInstance after `GF_Combat_Core` reactivation
+
+The deliberate GameFeature reactivation currently emits ModularGameplay component-replacement
+warnings. The lifecycle contract proves the final single-provider/profile state; it does not claim a
+warning-free activation sequence.
 
 Run from PowerShell with a rendered RHI; `NullRHI` is intentionally not used for this PIE test:
 
@@ -94,10 +115,17 @@ Run the focused moving-base contract the same way with the #103 test name and de
 `Issue103MovingBase` report/log paths. It late-joins one observer, keeps both views based while the
 platform translates and rotates, then validates small and above-threshold relative corrections.
 
-The test temporarily selects the pilot Experience and disables disk persistence on the concrete
-GameMode CDO. Both values are restored during teardown. The owner and authority start the same
-dynamic montage through their ASCs, but this is not a GameplayAbility activation or prediction
-confirmation test.
+The suite command runs all six `GaspPilotPIE` contracts. Run the seventh, separate rollback contract
+with the same rendered command by replacing the test filter with
+`SurvivalRpg.Network.PrototypeExperiencePIE.OverrideRemainsSelectable` and using dedicated
+`Issue55PrototypeExperience` report/log paths.
+
+The six `GaspPilotPIE` tests clear the PIE Experience override before building their worlds, so they
+exercise the global GASP fallback rather than a test-only pilot selection. The separate
+`PrototypeExperiencePIE` contract sets the Prototype override before its world is built. Both suites
+disable disk persistence on the concrete GameMode CDO and restore the original settings during
+teardown. The owner and authority start the same dynamic montage through their ASCs, but this is not
+a GameplayAbility activation or prediction confirmation test.
 
 The coast test applies a deterministic low release-deceleration value only to in-memory copies of
 the authority and owner movement profiles, then drives real CharacterMovement velocity. Teardown
@@ -117,5 +145,11 @@ and correction for persistent mesh/capsule separation.
 This runbook does not claim gameplay-notify or attack-window reliability, ability costs/cooldowns,
 combos, equipment sockets, death/ragdoll presentation, packaged multi-process or Steam behavior,
 relevancy-return behavior outside the focused coast-gait contract, packet-loss handling,
-performance, memory, or the default PawnData cutover. Those remain in their dedicated
-multiplayer/combat/cutover issues.
+performance, memory, or packaged default/command-line Experience selection. Those remain in their
+dedicated multiplayer/combat/cutover issues.
+
+Do not close #55 or #99 from this in-process PIE evidence alone. Their same-build visual A/B capture,
+real multi-process listen-server/late-join run, packaged Experience selection, and remaining
+performance/memory gates still require separate evidence. The #55 matrix also retains manual
+equipment/socket, block/dodge/hit/death/ragdoll, harvesting-reward, fresh/restored-profile, and
+Experience-composition parity checks.

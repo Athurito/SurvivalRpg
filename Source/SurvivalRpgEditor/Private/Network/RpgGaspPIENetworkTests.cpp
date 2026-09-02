@@ -39,12 +39,17 @@
 namespace RpgGaspPIENetworkTests
 {
 	constexpr TCHAR PilotExperienceName[] = TEXT("RpgGaspPilotExperience");
+	constexpr TCHAR PrototypeExperienceName[] = TEXT("RpgPrototypeExperience");
 	constexpr TCHAR PilotGameModeClassPath[] =
 		TEXT("/Game/SurvivalRpg/Core/Game/BP_Rpg_GameMode.BP_Rpg_GameMode_C");
-	constexpr TCHAR PilotCharacterClassPrefix[] =
-		TEXT("/Game/SurvivalRpg/Core/Character/GASP/BP_Rpg_Character_GASP");
+	constexpr TCHAR PrototypeCharacterClassPath[] =
+		TEXT("/Game/SurvivalRpg/Core/Character/BP_Rpg_Character.BP_Rpg_Character_C");
+	constexpr TCHAR PilotCharacterClassPath[] =
+		TEXT("/Game/SurvivalRpg/Core/Character/GASP/BP_Rpg_Character_GASP.BP_Rpg_Character_GASP_C");
 	constexpr TCHAR RootMotionAttackPath[] =
 		TEXT("/Game/SurvivalRpg/Characters/Mannequins/Anims/Unarmed/Attack/MM_Attack_01.MM_Attack_01");
+	constexpr TCHAR BasicSwordDefinitionClassPath[] =
+		TEXT("/GF_Combat_Core/Equipment/Weapons/ED_BasicSword.ED_BasicSword_C");
 	constexpr TCHAR BasicShieldDefinitionClassPath[] =
 		TEXT("/GF_Combat_Core/Equipment/Weapons/ED_BasicShield.ED_BasicShield_C");
 	const FName DefaultSlotName(TEXT("DefaultSlot"));
@@ -88,6 +93,8 @@ namespace RpgGaspPIENetworkTests
 		uint64 AnimationResetStableStartFrame = 0;
 		FVector MovingBaseObservationStartLocation = FVector::ZeroVector;
 		uint32 ClientCorrectionCountBaseline = 0;
+		uint32 LargeClientCorrectionCountBaseline = 0;
+		uint32 AnimationDiscontinuityBaseline = 0;
 		FVector MontageStartLocation = FVector::ZeroVector;
 		double MontageConvergenceStartTime = 0.0;
 		float MaximumMontageDisplacement = 0.0f;
@@ -251,7 +258,10 @@ namespace RpgGaspPIENetworkTests
 		return true;
 	}
 
-	bool IsPilotExperienceReady(FNetworkState& State, const int32 ExpectedClients)
+	bool IsExperienceReady(
+		FNetworkState& State,
+		const int32 ExpectedClients,
+		const TCHAR* ExpectedExperienceName)
 	{
 		if (!IsValid(State.World))
 		{
@@ -276,18 +286,37 @@ namespace RpgGaspPIENetworkTests
 			ExperienceManager->GetCurrentExperienceChecked();
 		const FPrimaryAssetId ExpectedExperienceId(
 			URpgExperienceDefinition::StaticClass()->GetFName(),
-			PilotExperienceName);
+			FName(ExpectedExperienceName));
 		return bExpectedWorld && Experience &&
 			Experience->GetPrimaryAssetId() == ExpectedExperienceId;
 	}
 
+	bool IsPilotExperienceReady(FNetworkState& State, const int32 ExpectedClients)
+	{
+		return IsExperienceReady(State, ExpectedClients, PilotExperienceName);
+	}
+
+	bool IsCharacterReadyForClassPath(
+		ARpgCharacter* Character,
+		const TCHAR* ExpectedClassPath)
+	{
+		return IsValid(Character) && Character->GetClass()->GetPathName().Equals(
+			ExpectedClassPath) &&
+			IsValid(Character->GetPlayerState()) &&
+			IsValid(Character->GetRpgAbilitySystemComponent());
+	}
+
 	bool IsPilotCharacterReady(ARpgCharacter* Character)
 	{
-		return IsValid(Character) && Character->GetClass()->GetPathName().StartsWith(
-			PilotCharacterClassPrefix) &&
-			IsValid(Character->GetPlayerState()) &&
-			IsValid(Character->GetRpgAbilitySystemComponent()) &&
+		return IsCharacterReadyForClassPath(Character, PilotCharacterClassPath) &&
 			IsValid(GetPilotAnimInstance(Character));
+	}
+
+	bool IsPrototypeCharacterReady(ARpgCharacter* Character)
+	{
+		return IsCharacterReadyForClassPath(
+			Character,
+			PrototypeCharacterClassPath);
 	}
 
 	bool HasRoleCorrectFootPlacement(
@@ -1571,6 +1600,7 @@ NETWORK_TEST_CLASS(GaspPilotPIE, "SurvivalRpg.Network")
 	FPacketSimulationSettings PacketSettings;
 	FPrimaryAssetId OriginalExperienceOverride;
 	FVector AuthorityCorrectionBaseline = FVector::ZeroVector;
+	float DivergentClientMoveTimeStamp = -1.0f;
 	FVector AuthorityTeleportTarget = FVector::ZeroVector;
 	FVector AuthorityMontageEnd = FVector::ZeroVector;
 	int32 SubjectPlayerId = INDEX_NONE;
@@ -1586,6 +1616,7 @@ NETWORK_TEST_CLASS(GaspPilotPIE, "SurvivalRpg.Network")
 		CombatCorePluginURL.Reset();
 		bPluginTransitionComplete = false;
 		bPluginTransitionSucceeded = false;
+		DivergentClientMoveTimeStamp = -1.0f;
 		TestCommandBuilder.OnTearDown(
 			TEXT("Stop GASP network test timers"),
 			[]()
@@ -1616,9 +1647,7 @@ NETWORK_TEST_CLASS(GaspPilotPIE, "SurvivalRpg.Network")
 		ARpgGameModeBase* GameModeDefaults = CastChecked<ARpgGameModeBase>(
 			PilotGameModeClass->GetDefaultObject());
 		bOriginalDiskPersistence = GameModeDefaults->bEnableDiskPersistence;
-		DeveloperSettings->ExperienceOverride = FPrimaryAssetId(
-			URpgExperienceDefinition::StaticClass()->GetFName(),
-			PilotExperienceName);
+		DeveloperSettings->ExperienceOverride = FPrimaryAssetId();
 		GameModeDefaults->bEnableDiskPersistence = false;
 
 		PacketSettings = FPacketSimulationSettings();
@@ -1643,6 +1672,29 @@ NETWORK_TEST_CLASS(GaspPilotPIE, "SurvivalRpg.Network")
 			CastChecked<ARpgGameModeBase>(PilotGameModeClass->GetDefaultObject())
 				->bEnableDiskPersistence = bOriginalDiskPersistence;
 		}
+	}
+
+	TEST_METHOD(DefaultExperienceFallbackSelectsGasp)
+	{
+		using namespace RpgGaspPIENetworkTests;
+
+		Network
+			.UntilServer(
+				TEXT("Global fallback selects the GASP Experience and host pawn without an override"),
+				[](FNetworkState& State)
+				{
+					return IsPilotExperienceReady(State, 1) &&
+						IsPilotCharacterReady(FindLocalCharacter(State.World));
+				},
+				NetworkTimeout())
+			.UntilClients(
+				TEXT("Default GASP Experience and pawn composition resolve on the client"),
+				[](FNetworkState& State)
+				{
+					return IsPilotExperienceReady(State, 1) &&
+						IsPilotCharacterReady(FindLocalCharacter(State.World));
+				},
+				NetworkTimeout());
 	}
 
 	TEST_METHOD(CombatProfileGameFeatureDeactivationReactivation)
@@ -1698,8 +1750,45 @@ NETWORK_TEST_CLASS(GaspPilotPIE, "SurvivalRpg.Network")
 					State.CombatFeatureLifecycleAnimInstance =
 						GetPilotAnimInstance(Character);
 				})
+			.ThenServer(
+				TEXT("Equip the deterministic SwordShield lifecycle fixture on authority"),
+				[this](FNetworkState& State)
+				{
+					ARpgCharacter* Character = State.CombatFeatureLifecycleSubject.Get();
+					ASSERT_THAT(IsNotNull(Character));
+					ASSERT_THAT(IsTrue(Character && Character->HasAuthority()));
+					URpgEquipmentManagerComponent* EquipmentManager = Character
+						? Character->GetEquipmentManagerComponent()
+						: nullptr;
+					const TSubclassOf<URpgEquipmentDefinition> SwordDefinition =
+						LoadClass<URpgEquipmentDefinition>(
+							nullptr,
+							BasicSwordDefinitionClassPath);
+					const TSubclassOf<URpgEquipmentDefinition> ShieldDefinition =
+						LoadClass<URpgEquipmentDefinition>(
+							nullptr,
+							BasicShieldDefinitionClassPath);
+					ASSERT_THAT(IsNotNull(EquipmentManager));
+					ASSERT_THAT(IsNotNull(SwordDefinition.Get()));
+					ASSERT_THAT(IsNotNull(ShieldDefinition.Get()));
+					if (!Character || !Character->HasAuthority() ||
+						!EquipmentManager || !SwordDefinition || !ShieldDefinition)
+					{
+						return;
+					}
+
+					EquipmentManager->UnequipItemInSlot(ERpgEquipmentSlot::MainHand);
+					EquipmentManager->UnequipItemInSlot(ERpgEquipmentSlot::OffHand);
+					ASSERT_THAT(IsNotNull(EquipmentManager->EquipItemInSlot(
+						SwordDefinition,
+						ERpgEquipmentSlot::MainHand)));
+					ASSERT_THAT(IsNotNull(EquipmentManager->EquipItemInSlot(
+						ShieldDefinition,
+						ERpgEquipmentSlot::OffHand)));
+					Character->ForceNetUpdate();
+				})
 			.UntilServer(
-				TEXT("Authority starts with exactly one bound combat profile provider"),
+				TEXT("Authority resolves the explicit SwordShield fixture through one profile provider"),
 				[](FNetworkState& State)
 				{
 					return HasBoundCombatAnimationFeatureProfile(
@@ -1708,7 +1797,7 @@ NETWORK_TEST_CLASS(GaspPilotPIE, "SurvivalRpg.Network")
 				},
 				NetworkTimeout())
 			.UntilClients(
-				TEXT("Simulated proxy starts with the same feature-owned presentation"),
+				TEXT("Simulated proxy receives the replicated SwordShield animation presentation"),
 				[](FNetworkState& State)
 				{
 					return HasBoundCombatAnimationFeatureProfile(
@@ -2753,6 +2842,27 @@ NETWORK_TEST_CLASS(GaspPilotPIE, "SurvivalRpg.Network")
 					State.LastObservedAnimationResetDelta = MIN_int32;
 					State.AnimationResetStableStartTime = -1.0;
 					State.AnimationResetStableStartFrame = 0;
+
+					if (State.ClientIndex == 0)
+					{
+						ARpgCharacter* Character = FindCharacterByPlayerId(
+							State.World,
+							State.SubjectPlayerId);
+						URpgCharacterMovementComponent* MovementComponent = Character
+							? Cast<URpgCharacterMovementComponent>(
+								Character->GetCharacterMovement())
+							: nullptr;
+						ASSERT_THAT(IsNotNull(MovementComponent));
+						if (MovementComponent)
+						{
+							State.ClientCorrectionCountBaseline =
+								MovementComponent->GetClientCorrectionReceivedCountForTests();
+							State.LargeClientCorrectionCountBaseline =
+								MovementComponent->GetLargeClientCorrectionReceivedCountForTests();
+							State.AnimationDiscontinuityBaseline =
+								MovementComponent->GetAnimationDiscontinuitySerial();
+						}
+					}
 				})
 			.ThenClient(
 				TEXT("Create an owner-only lateral prediction divergence"),
@@ -2763,8 +2873,19 @@ NETWORK_TEST_CLASS(GaspPilotPIE, "SurvivalRpg.Network")
 						State.World,
 						State.SubjectPlayerId);
 					ASSERT_THAT(IsNotNull(Character));
+					URpgCharacterMovementComponent* MovementComponent = Character
+						? Cast<URpgCharacterMovementComponent>(
+							Character->GetCharacterMovement())
+						: nullptr;
+					ASSERT_THAT(IsNotNull(MovementComponent));
+					const float DivergenceDistance = MovementComponent
+						? FMath::Max(
+							MovementComponent->NetworkLargeClientCorrectionDistance + 25.0f,
+							100.0f)
+						: 100.0f;
 					const FVector DivergentLocation =
-						Character->GetActorLocation() + FVector(100.0, 0.0, 0.0);
+						Character->GetActorLocation() +
+							FVector(DivergenceDistance, 0.0, 0.0);
 					Character->SetActorLocation(
 						DivergentLocation,
 						false,
@@ -2772,53 +2893,109 @@ NETWORK_TEST_CLASS(GaspPilotPIE, "SurvivalRpg.Network")
 						ETeleportType::None);
 					ASSERT_THAT(IsTrue(FMath::Abs(
 						Character->GetActorLocation().X -
-							AuthorityCorrectionBaseline.X) > 60.0));
+							AuthorityCorrectionBaseline.X) >
+								(MovementComponent
+									? MovementComponent->NetworkLargeClientCorrectionDistance
+									: 0.0f)));
+					if (MovementComponent)
+					{
+						ASSERT_THAT(IsTrue(
+							MovementComponent->GetAnimationDiscontinuitySerial() ==
+								State.AnimationDiscontinuityBaseline));
+					}
 					StartMovementInput(State, FVector::YAxisVector);
 				})
-			.ThenServer(
-				TEXT("Force the authoritative adjustment for the deliberate divergence"),
+			.UntilClient(
+				TEXT("Autonomous owner records the divergent SavedMove"),
+				0,
 				[this](FNetworkState& State)
 				{
 					ARpgCharacter* Character = FindCharacterByPlayerId(
 						State.World,
 						State.SubjectPlayerId);
 					URpgCharacterMovementComponent* MovementComponent = Character
-						? Cast<URpgCharacterMovementComponent>(Character->GetCharacterMovement())
+						? Cast<URpgCharacterMovementComponent>(
+							Character->GetCharacterMovement())
 						: nullptr;
-					ASSERT_THAT(IsNotNull(MovementComponent));
-					if (MovementComponent)
+					FNetworkPredictionData_Client_Character* ClientPrediction =
+						MovementComponent
+							? MovementComponent->GetPredictionData_Client_Character()
+							: nullptr;
+					if (!ClientPrediction)
 					{
-						FVector AuthoritativeLocation = Character->GetActorLocation();
-						AuthoritativeLocation.X = AuthorityCorrectionBaseline.X;
-						Character->SetActorLocation(
-							AuthoritativeLocation,
-							false,
-							nullptr,
-							ETeleportType::None);
-						ASSERT_THAT(IsTrue(FMath::Abs(
-							Character->GetActorLocation().X -
-								AuthorityCorrectionBaseline.X) <= 1.0));
-
-						FNetworkPredictionData_Server_Character* ServerPrediction =
-							MovementComponent->GetPredictionData_Server_Character();
-						ASSERT_THAT(IsNotNull(ServerPrediction));
-						if (ServerPrediction)
-						{
-							// Force the next genuine ServerMove through UE's correction path. The
-							// replication and adjustment calls bypass its update and send throttles;
-							// neither one queues a correction without bForceClientUpdate.
-							ServerPrediction->bForceClientUpdate = true;
-						}
-						MovementComponent->ForceReplicationUpdate();
-						MovementComponent->ForceClientAdjustment();
+						return false;
 					}
-				})
-			.UntilClient(
-				TEXT("Autonomous presentation observes the server correction"),
-				0,
-				[](FNetworkState& State)
+
+					for (int32 MoveIndex = ClientPrediction->SavedMoves.Num() - 1;
+						 MoveIndex >= 0;
+						 --MoveIndex)
+					{
+						const FSavedMovePtr& SavedMove =
+							ClientPrediction->SavedMoves[MoveIndex];
+						if (SavedMove.IsValid() &&
+							SavedMove != ClientPrediction->PendingMove &&
+							FMath::Abs(
+								SavedMove->SavedLocation.X -
+									AuthorityCorrectionBaseline.X) >
+									MovementComponent->NetworkLargeClientCorrectionDistance &&
+							FVector::DotProduct(
+								SavedMove->Acceleration.GetSafeNormal2D(),
+								FVector::YAxisVector) > 0.98)
+						{
+							DivergentClientMoveTimeStamp = SavedMove->TimeStamp;
+							return true;
+						}
+					}
+					return false;
+				},
+				NetworkTimeout())
+			.UntilServer(
+				TEXT("Authority processes the captured divergent SavedMove"),
+				[this](FNetworkState& State)
 				{
-					return HasAnimationResetDeltaAtLeast(State, 1);
+					ARpgCharacter* Character = FindCharacterByPlayerId(
+						State.World,
+						State.SubjectPlayerId);
+					URpgCharacterMovementComponent* MovementComponent = Character
+						? Cast<URpgCharacterMovementComponent>(
+							Character->GetCharacterMovement())
+						: nullptr;
+					FNetworkPredictionData_Server_Character* ServerPrediction =
+						MovementComponent
+							? MovementComponent->GetPredictionData_Server_Character()
+							: nullptr;
+					const FVector AccelerationDirection = MovementComponent
+						? MovementComponent->GetCurrentAcceleration().GetSafeNormal2D()
+						: FVector::ZeroVector;
+					return DivergentClientMoveTimeStamp > 0.0f &&
+						ServerPrediction &&
+						ServerPrediction->CurrentClientTimeStamp + UE_KINDA_SMALL_NUMBER >=
+							DivergentClientMoveTimeStamp &&
+						FVector::DotProduct(
+							AccelerationDirection,
+							FVector::YAxisVector) > 0.98 &&
+						MovementComponent->GetAnalogInputModifier() > 0.9f;
+				},
+				NetworkTimeout())
+			.UntilClient(
+				TEXT("Autonomous owner receives the divergent-move correction"),
+				0,
+				[this](FNetworkState& State)
+				{
+					ARpgCharacter* Character = FindCharacterByPlayerId(
+						State.World,
+						State.SubjectPlayerId);
+					URpgCharacterMovementComponent* MovementComponent = Character
+						? Cast<URpgCharacterMovementComponent>(
+							Character->GetCharacterMovement())
+						: nullptr;
+					return MovementComponent &&
+						MovementComponent->GetClientCorrectionReceivedCountForTests() >
+							State.ClientCorrectionCountBaseline &&
+						MovementComponent->GetLargeClientCorrectionReceivedCountForTests() >
+							State.LargeClientCorrectionCountBaseline &&
+						MovementComponent->GetLastLargeClientCorrectionTimeStampForTests() +
+							UE_KINDA_SMALL_NUMBER >= DivergentClientMoveTimeStamp;
 				},
 				NetworkTimeout())
 			.ThenClient(
@@ -2828,6 +3005,31 @@ NETWORK_TEST_CLASS(GaspPilotPIE, "SurvivalRpg.Network")
 				{
 					StopMovementInput(State);
 				})
+			.UntilClient(
+				TEXT("Autonomous movement marks the correction discontinuity"),
+				0,
+				[](FNetworkState& State)
+				{
+					ARpgCharacter* Character = FindCharacterByPlayerId(
+						State.World,
+						State.SubjectPlayerId);
+					URpgCharacterMovementComponent* MovementComponent = Character
+						? Cast<URpgCharacterMovementComponent>(
+							Character->GetCharacterMovement())
+						: nullptr;
+					return MovementComponent &&
+						MovementComponent->GetAnimationDiscontinuitySerial() >
+							State.AnimationDiscontinuityBaseline;
+				},
+				NetworkTimeout())
+			.UntilClient(
+				TEXT("Autonomous presentation observes the server correction"),
+				0,
+				[](FNetworkState& State)
+				{
+					return HasAnimationResetDeltaAtLeast(State, 1);
+				},
+				NetworkTimeout())
 			.UntilServer(
 				TEXT("Authority settles after the owner correction"),
 				[](FNetworkState& State)
@@ -2923,6 +3125,24 @@ NETWORK_TEST_CLASS(GaspPilotPIE, "SurvivalRpg.Network")
 						ResetDelta)));
 					ASSERT_THAT(IsTrue(
 						ResetDelta == (State.ClientIndex == 0 ? 1 : 0)));
+
+					if (State.ClientIndex == 0)
+					{
+						ARpgCharacter* Character = FindCharacterByPlayerId(
+							State.World,
+							State.SubjectPlayerId);
+						URpgCharacterMovementComponent* MovementComponent = Character
+							? Cast<URpgCharacterMovementComponent>(
+								Character->GetCharacterMovement())
+							: nullptr;
+						ASSERT_THAT(IsNotNull(MovementComponent));
+						if (MovementComponent)
+						{
+							ASSERT_THAT(IsTrue(
+								MovementComponent->GetAnimationDiscontinuitySerial() ==
+									State.AnimationDiscontinuityBaseline + 1));
+						}
+					}
 				})
 			.ThenServer(
 				TEXT("Capture authority history before a semantic teleport"),
@@ -5086,6 +5306,87 @@ NETWORK_TEST_CLASS(GaspPilotPIE, "SurvivalRpg.Network")
 					StopMovementInput(State);
 					State.World->GetTimerManager().ClearTimer(State.ObservationTimer);
 				});
+	}
+};
+
+NETWORK_TEST_CLASS(PrototypeExperiencePIE, "SurvivalRpg.Network")
+{
+	using FNetworkState = RpgGaspPIENetworkTests::FNetworkState;
+
+	FPIENetworkComponent<FNetworkState> Network{
+		TestRunner,
+		TestCommandBuilder,
+		bInitializing};
+	FPrimaryAssetId OriginalExperienceOverride;
+	bool bOriginalDiskPersistence = true;
+	UClass* PilotGameModeClass = nullptr;
+
+	BEFORE_EACH()
+	{
+		using namespace RpgGaspPIENetworkTests;
+
+		URpgDeveloperSettings* DeveloperSettings =
+			GetMutableDefault<URpgDeveloperSettings>();
+		OriginalExperienceOverride = DeveloperSettings->ExperienceOverride;
+		PilotGameModeClass = LoadClass<ARpgGameModeBase>(
+			nullptr,
+			PilotGameModeClassPath);
+		ASSERT_THAT(IsNotNull(PilotGameModeClass));
+		ARpgGameModeBase* GameModeDefaults = CastChecked<ARpgGameModeBase>(
+			PilotGameModeClass->GetDefaultObject());
+		bOriginalDiskPersistence = GameModeDefaults->bEnableDiskPersistence;
+		DeveloperSettings->ExperienceOverride = FPrimaryAssetId(
+			URpgExperienceDefinition::StaticClass()->GetFName(),
+			PrototypeExperienceName);
+		GameModeDefaults->bEnableDiskPersistence = false;
+
+		FNetworkComponentBuilder<FNetworkState>()
+			.WithClients(1)
+			.AsListenServer()
+			.WithGameInstanceClass(FSoftClassPath(
+				TEXT("/Game/SurvivalRpg/Core/Game/BP_Rpg_GameInstance.BP_Rpg_GameInstance_C")))
+			.WithGameMode(PilotGameModeClass)
+			.Build(Network);
+	}
+
+	AFTER_EACH()
+	{
+		GetMutableDefault<URpgDeveloperSettings>()->ExperienceOverride =
+			OriginalExperienceOverride;
+		if (IsValid(PilotGameModeClass))
+		{
+			CastChecked<ARpgGameModeBase>(PilotGameModeClass->GetDefaultObject())
+				->bEnableDiskPersistence = bOriginalDiskPersistence;
+		}
+	}
+
+	TEST_METHOD(OverrideRemainsSelectable)
+	{
+		using namespace RpgGaspPIENetworkTests;
+
+		Network
+			.UntilServer(
+				TEXT("Explicit PIE override selects the Prototype Experience and host pawn"),
+				[](FNetworkState& State)
+				{
+					return IsExperienceReady(
+							State,
+							1,
+							PrototypeExperienceName) &&
+						IsPrototypeCharacterReady(FindLocalCharacter(State.World));
+				},
+				NetworkTimeout())
+			.UntilClients(
+				TEXT("Prototype Experience and local pawn composition resolve on the client"),
+				[](FNetworkState& State)
+				{
+					return IsExperienceReady(
+							State,
+							1,
+							PrototypeExperienceName) &&
+						IsPrototypeCharacterReady(FindLocalCharacter(State.World));
+				},
+				NetworkTimeout());
 	}
 };
 

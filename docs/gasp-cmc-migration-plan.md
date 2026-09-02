@@ -4,7 +4,9 @@
 
 Adopt the useful CMC locomotion and Motion Matching patterns from Epic's Game Animation Sample Project (GASP) without replacing SurvivalRpg's Lyra-derived character, GAS montage, equipment, ragdoll, PawnData, or Experience architecture.
 
-The migration uses an isolated pilot before changing the default player character. The stock GASP character and AnimBP remain reference material rather than runtime dependencies.
+The migration was prepared through an isolated pilot. This cutover stages the project-owned GASP
+Experience as the global fallback while retaining the Prototype Experience as a separate path. The
+stock GASP character and AnimBP remain reference material rather than runtime dependencies.
 
 ## Why the sample is not migrated wholesale
 
@@ -47,7 +49,7 @@ The CMC AnimBP closure still pulls in experimental state-machine databases, larg
 - Derive the pilot AnimBP from `URpgAnimInstance`.
 - Preserve PawnData-selected Free/Combat/Aim rotation, combat-tag overrides, `DefaultSlot`, and root motion from montages only.
 - Keep `GetMesh()` authoritative for GAS montages, notifies, equipment sockets, corpse physics, and ragdoll.
-- Select the pilot through the Experience override until acceptance checks pass.
+- Select the pilot and prototype through their separate Experiences during acceptance; after cutover, keep both paths directly selectable.
 
 ### 4. Integration and cutover
 
@@ -55,8 +57,15 @@ The CMC AnimBP closure still pulls in experimental state-machine databases, larg
 - Verify attack combos, block, dodge, hit reactions, death, equipment sockets, and harvesting montage rewards.
 - Test a listen server with an autonomous owner and at least two observing clients, including simulated proxies, correction, Walk/Run coast late join, physical-stop cleanup, and actor-channel relevancy loss/return.
 - Keep the prototype and GASP PawnData/AnimBP paths cooked, separate, and directly selectable through their Experiences in the same build.
-- A later cutover may change only which Experience is selected by default; it must not repoint the prototype Experience or delete its PawnData/AnimBP.
+- The staged default cutover changes only the global fallback to `RpgGaspPilotExperience`; it does not repoint the prototype Experience or delete its PawnData/AnimBP. Merge and acceptance remain gated by the visual A/B and real multi-process checks in #99 and #55.
 - Switch Experiences only at a supported world/session boundary (World Settings, URL, PIE, or command line), never by hot-swapping an already-running pawn.
+
+The selection order remains URL `?Experience=`, PIE `ExperienceOverride`, command line
+`-Experience=`, per-map World Settings, then the global GASP fallback. Selecting
+`RpgPrototypeExperience` through any explicit seam therefore remains the immediate rollback and A/B
+path intended for the same cooked build. PIE currently proves the explicit DeveloperSettings path;
+packaged URL, command-line, and World Settings selection remain cutover gates. `DefaultPawnData`
+remains the technical emergency fallback and is not the default Experience selector.
 
 ## Acceptance criteria
 

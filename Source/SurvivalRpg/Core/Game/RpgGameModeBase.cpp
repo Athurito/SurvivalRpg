@@ -366,7 +366,7 @@ void ARpgGameModeBase::HandleMatchAssignmentIfNotExpectingOne()
 
 	if (!ExperienceId.IsValid())
 	{
-		ExperienceId = FPrimaryAssetId(FPrimaryAssetType(URpgExperienceDefinition::StaticClass()->GetFName()), FName(TEXT("RpgPrototypeExperience")));
+		ExperienceId = FPrimaryAssetId(FPrimaryAssetType(URpgExperienceDefinition::StaticClass()->GetFName()), FName(TEXT("RpgGaspPilotExperience")));
 		ExperienceIdSource = TEXT("Default");
 	}
 
