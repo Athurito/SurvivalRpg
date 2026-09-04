@@ -24,6 +24,12 @@ Focused issue #103 moving-base correction regression:
 
 `SurvivalRpg.Network.GaspPilotPIE.MovingBaseCorrectionPreservesAnimationHistory`
 
+Review regressions for retained gait and rotation handoff:
+
+- `SurvivalRpg.Network.GaspPilotPIE.RotatedBasePreservesSavedRunAtExitThreshold`
+- `SurvivalRpg.Network.GaspPilotPIE.ActiveRunLateJoinAndRelevancyReturn`
+- `SurvivalRpg.Network.GaspPilotPIE.RotationModeExitConvergesAfterInputRelease`
+
 Focused combat-profile GameFeature lifecycle regression:
 
 `SurvivalRpg.Network.GaspPilotPIE.CombatProfileGameFeatureDeactivationReactivation`
@@ -34,20 +40,25 @@ Default-cutover and rollback selection contracts:
 
 `SurvivalRpg.Network.PrototypeExperiencePIE.OverrideRemainsSelectable`
 
+Both suites are defined in
+[`RpgGaspPIENetworkTests.cpp`](../Source/SurvivalRpgEditor/Private/Network/RpgGaspPIENetworkTests.cpp).
+
 Shared `GaspPilotPIE` topology and network profile:
 
 - one-process PIE listen server
-- one initial external client; tests that own late-join or relevancy contracts add their required
+- one initial PIE client; tests that own late-join or relevancy contracts add their required
   observer clients, while the smaller contracts use only the shared initial topology
-- `PktLag=60`, `PktLagVariance=10`, and no configured packet loss
-- one server-spawned editor-only floor fixture provides a shared network-addressable movement base
+- `PktLag=60`, `PktLagVariance=10`; the active-gait and rotation-handoff regressions additionally
+  use 10% packet loss, while the other tests use no configured loss
+- movement contracts spawn a replicated editor-only floor or movable platform as their shared
+  network-addressable movement base; selection-only contracts need no collision fixture
 - the primary contract adds one client during movement and a final client while the original subject
   is stationary, observing the subject as Authority, AutonomousProxy, and SimulatedProxy
 - the #103 focus uses a replicated platform with deterministic fast translation and rotation, one
   AutonomousProxy owner, and a late-joined SimulatedProxy observer
 - the separate Prototype selection contract uses one client and does not inject packet simulation
 
-The test verifies:
+The suite checks the following contracts; record the actual outcome of each run separately:
 
 - the pilot Experience and GASP pawn composition on every world
 - the global fallback selects the GASP Experience when PIE has no override, while an explicit PIE
@@ -72,6 +83,12 @@ The test verifies:
 - an actual simulated-proxy relevancy loss, actor/channel teardown, recreated proxy on return, and
   preservation of the authoritative Run coast classification
 - deterministic coast-gait clearing to Idle at physical stop on every role
+- SavedMove Run remains selected at exactly 0.65 on a movable base at 50-degree yaw, including
+  the 500 cm/s cap and a three-second observation without recurring owner corrections
+- active Run held at 0.69 survives initial proxy creation and actor/channel teardown/recreation
+  without requiring that observer to witness the earlier Run-entry edge
+- CombatStrafe exit followed by input release during replication delay converges authoritative,
+  owner and observer capsule yaw through an actual CMC correction, then stays converged for one second
 - same-base/bone owner correction while the platform moves more than the reset threshold without a
   false history reset on either client role
 - a real relative owner divergence above the threshold producing exactly one AutonomousProxy reset
@@ -115,17 +132,34 @@ Run the focused moving-base contract the same way with the #103 test name and de
 `Issue103MovingBase` report/log paths. It late-joins one observer, keeps both views based while the
 platform translates and rotates, then validates small and above-threshold relative corrections.
 
-The suite command runs all six `GaspPilotPIE` contracts. Run the seventh, separate rollback contract
+The suite command runs all nine `GaspPilotPIE` contracts. Run the separate rollback contract
 with the same rendered command by replacing the test filter with
 `SurvivalRpg.Network.PrototypeExperiencePIE.OverrideRemainsSelectable` and using dedicated
 `Issue55PrototypeExperience` report/log paths.
 
-The six `GaspPilotPIE` tests clear the PIE Experience override before building their worlds, so they
+The `GaspPilotPIE` tests clear the PIE Experience override before building their worlds, so they
 exercise the global GASP fallback rather than a test-only pilot selection. The separate
 `PrototypeExperiencePIE` contract sets the Prototype override before its world is built. Both suites
 disable disk persistence on the concrete GameMode CDO and restore the original settings during
 teardown. The owner and authority start the same dynamic montage through their ASCs, but this is not
-a GameplayAbility activation or prediction confirmation test.
+a GameplayAbility activation or prediction confirmation test. After the authority is stopped,
+the montage test requires clients to settle within 10 cm with speed at most 5 cm/s for 0.5 seconds.
+
+The focused native filters `SurvivalRpg.Health.Lifecycle.DeathStateBeforeAbilitySystemInitialization`
+and `SurvivalRpg.Animation.Threading.ServerAutonomousPoseConsumesEveryMoveDelta` cover reversed
+DeathState/ASC initialization order and two autonomous mesh pose ticks in one engine frame.
+The latter uses real graph updates in Listen/Dedicated net modes but no dedicated transport session.
+Their implementations are in
+[`RpgHealthComponentTests.cpp`](../Source/SurvivalRpg/Core/Character/RpgHealthComponentTests.cpp) and
+[`RpgAnimationFoundationTests.cpp`](../Source/SurvivalRpgEditor/Private/Animation/RpgAnimationFoundationTests.cpp).
+
+`SurvivalRpg.Character.RotationMode.HandoffTimestampBoundary` checks stale/equal/new correction
+timestamps, timestamp resets, invalid values and cancellation.
+`SurvivalRpg.Character.Movement.SavedMovePrediction` also exercises native `ForcePositionUpdate`
+when the server extrapolates a missing owner move, retaining the last validated gait through the
+same base-rounding boundary. These tests live in
+[`RpgCharacterRotationModeTests.cpp`](../Source/SurvivalRpgEditor/Private/Character/RpgCharacterRotationModeTests.cpp)
+and [`RpgCharacterMovementProfileTests.cpp`](../Source/SurvivalRpgEditor/Private/Character/RpgCharacterMovementProfileTests.cpp).
 
 The coast test applies a deterministic low release-deceleration value only to in-memory copies of
 the authority and owner movement profiles, then drives real CharacterMovement velocity. Teardown
@@ -134,9 +168,9 @@ other content asset is mutated or saved.
 
 ## Visual smoke boundary
 
-The automation proves real replication, analog movement intent, lifecycle state, movement-history
+The automated acceptance covers real replication, analog movement intent, lifecycle state, movement-history
 reset plumbing, base-relative owner correction, correction/teleport convergence,
-montage/root-motion plumbing, Walk/Run coast initial replication, and the tested actor-channel
+montage/root-motion plumbing, active/coasting Walk/Run initial replication, and the tested actor-channel
 relevancy-return path. It cannot judge rendered pose choice or presentation quality. A rendered
 manual pass should still inspect
 start/stop/pivot/TIR, crouch, jump/landing, Foot Placement on uneven ground, Aim/CombatStrafe facing,
@@ -144,7 +178,7 @@ and correction for persistent mesh/capsule separation.
 
 This runbook does not claim gameplay-notify or attack-window reliability, ability costs/cooldowns,
 combos, equipment sockets, death/ragdoll presentation, packaged multi-process or Steam behavior,
-relevancy-return behavior outside the focused coast-gait contract, packet-loss handling,
+relevancy-return behavior outside the focused gait contracts, arbitrary packet-loss patterns,
 performance, memory, or packaged default/command-line Experience selection. Those remain in their
 dedicated multiplayer/combat/cutover issues.
 

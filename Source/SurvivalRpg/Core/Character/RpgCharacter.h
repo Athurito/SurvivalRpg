@@ -84,6 +84,9 @@ public:
 	UFUNCTION(BlueprintCallable, Category = "Rpg|Character|Rotation")
 	void ToggleCombatStance();
 
+	/** Completes a Free-mode handoff only after CMC receives a newer timestamped authority correction. */
+	void NotifyOwnerRotationCorrectionReceived(float ClientMoveTimeStamp);
+
 	UFUNCTION(BlueprintCallable, Category = "Rpg|Equipment")
 	URpgEquipmentManagerComponent* GetEquipmentManagerComponent() const { return EquipmentManagerComponent; }
 	
@@ -146,6 +149,12 @@ private:
 	/** Applies one resolved controller/movement rotation contract. */
 	void ApplyRotationPolicy(ERpgCharacterRotationMode InRotationMode);
 
+	/** Invalidates older owner handoffs whenever authority changes rotation policy or possession. */
+	void AdvanceRotationModeRevision();
+
+	/** Requests a timestamped CMC correction after this owner has actually applied the current Free policy. */
+	void RequestFreeRotationSynchronization(ERpgCharacterRotationMode AppliedMode);
+
 	/** Binds request-tag changes on the ASC currently using this pawn as its avatar. */
 	void BindRotationModeAbilitySystem(URpgAbilitySystemComponent* AbilitySystemComponent);
 
@@ -167,6 +176,21 @@ private:
 	UPROPERTY(Transient, ReplicatedUsing = OnRep_RotationMode)
 	ERpgCharacterRotationMode RotationMode = ERpgCharacterRotationMode::CombatStrafe;
 
+	/** Owner-only authority revision; zero is uninitialized and stale handoff acknowledgements are ignored. */
+	UPROPERTY(Transient, ReplicatedUsing = OnRep_RotationMode)
+	uint16 RotationModeRevision = 0;
+
+	/** Local owner revision already requested; retained after confirmation to avoid repeated idle RPCs. */
+	uint16 RequestedFreeRotationRevision = 0;
+
+	/** Owner acknowledges the applied policy and last pre-handoff SavedMove; does not author rotation. */
+	UFUNCTION(Server, Reliable)
+	void ServerAcknowledgeFreeRotationMode(uint16 Revision, float ClientMoveTimeStamp);
+
+	/** Stops retransmitting handoff corrections only after the owner receives one from a newer move. */
+	UFUNCTION(Server, Reliable)
+	void ServerConfirmFreeRotationSynchronization(uint16 Revision, float ClientMoveTimeStamp);
+
 	/** Applies newly replicated server truth; autonomous proxies may still overlay predicted ability tags cosmetically. */
 	UFUNCTION()
 	void OnRep_RotationMode();
@@ -183,18 +207,18 @@ private:
 	void OnRep_AnimationTeleportEpoch();
 
 	/**
-	 * Current authority-owned Walk/Run coast classification for simulated proxies.
-	 * Idle means no coast; this is semantic movement state, not replicated pose or AnimBP history.
+	 * Current authority-owned standing Walk/Run classification for simulated proxies, with or without input.
+	 * Idle clears at physical stop or when leaving standing ground movement; no pose/history is replicated.
 	 */
-	UPROPERTY(Transient, ReplicatedUsing = OnRep_GroundCoastGait)
-	ERpgLocomotionGait GroundCoastGait = ERpgLocomotionGait::Idle;
+	UPROPERTY(Transient, ReplicatedUsing = OnRep_GroundMovementGait)
+	ERpgLocomotionGait GroundMovementGait = ERpgLocomotionGait::Idle;
 
-	/** Applies the current coast classification to the local CharacterMovement resolver. */
+	/** Applies current server gait to the simulated-proxy CharacterMovement resolver. */
 	UFUNCTION()
-	void OnRep_GroundCoastGait();
+	void OnRep_GroundMovementGait();
 
-	/** Updates the simulated-proxy coast contract on authority and forces its transition onto the actor channel. */
-	void SetAuthoritativeGroundCoastGait(ERpgLocomotionGait NewCoastGait);
+	/** Publishes an authority gait transition so new/existing simulated proxies reconstruct the same state. */
+	void SetAuthoritativeGroundMovementGait(ERpgLocomotionGait NewCoastGait);
 
 	/** ASC whose rotation request-tag delegates are currently registered. */
 	TWeakObjectPtr<URpgAbilitySystemComponent> RotationModeAbilitySystem;

@@ -51,6 +51,7 @@ public class SurvivalRpgEditor : ModuleRules
 			"ModelViewViewModelEditor",
 			"ModularGameplay",
 			"ModularGameplayActors",
+			"NetCore",
 			"PropertyBindingUtils",
 			"PoseSearch",
 			"PoseSearchEditor",

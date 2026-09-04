@@ -262,7 +262,7 @@ void ARpgCharacter::RefreshRotationMode()
 		if (RotationMode != ResolvedMode)
 		{
 			RotationMode = ResolvedMode;
-			ForceNetUpdate();
+			AdvanceRotationModeRevision();
 		}
 	}
 
@@ -308,6 +308,103 @@ void ARpgCharacter::ApplyRotationPolicy(ERpgCharacterRotationMode InRotationMode
 
 	LastAppliedRotationMode = InRotationMode;
 	bHasAppliedRotationPolicy = true;
+	RequestFreeRotationSynchronization(InRotationMode);
+}
+
+void ARpgCharacter::AdvanceRotationModeRevision()
+{
+	check(HasAuthority());
+	if (++RotationModeRevision == 0)
+	{
+		++RotationModeRevision;
+	}
+	if (URpgCharacterMovementComponent* MovementComponent =
+		Cast<URpgCharacterMovementComponent>(GetCharacterMovement()))
+	{
+		MovementComponent->CancelOwnerRotationSynchronization();
+	}
+	ForceNetUpdate();
+}
+
+void ARpgCharacter::RequestFreeRotationSynchronization(ERpgCharacterRotationMode AppliedMode)
+{
+	if (GetLocalRole() != ROLE_AutonomousProxy || !IsLocallyControlled())
+	{
+		return;
+	}
+	URpgCharacterMovementComponent* MovementComponent =
+		Cast<URpgCharacterMovementComponent>(GetCharacterMovement());
+	if (!MovementComponent)
+	{
+		return;
+	}
+	if (AppliedMode != ERpgCharacterRotationMode::Free ||
+		RotationMode != ERpgCharacterRotationMode::Free || RotationModeRevision == 0)
+	{
+		// A predicted combat tag may temporarily override replicated Free. A later rejection
+		// must be allowed to request a fresh handoff even if the authority revision is unchanged.
+		RequestedFreeRotationRevision = 0;
+		MovementComponent->CancelOwnerRotationSynchronization();
+		return;
+	}
+	if (RequestedFreeRotationRevision == RotationModeRevision)
+	{
+		return;
+	}
+	const float ClientMoveTimeStamp = MovementComponent->GetCurrentOwnerMoveTimeStamp();
+	if (!FMath::IsFinite(ClientMoveTimeStamp) || ClientMoveTimeStamp < 0.0f)
+	{
+		return;
+	}
+	RequestedFreeRotationRevision = RotationModeRevision;
+	MovementComponent->RequestOwnerRotationSynchronization(ClientMoveTimeStamp);
+	ServerAcknowledgeFreeRotationMode(RotationModeRevision, ClientMoveTimeStamp);
+}
+
+void ARpgCharacter::ServerAcknowledgeFreeRotationMode_Implementation(
+	uint16 Revision, float ClientMoveTimeStamp)
+{
+	if (Revision == 0 || Revision != RotationModeRevision ||
+		RotationMode != ERpgCharacterRotationMode::Free)
+	{
+		return;
+	}
+	if (URpgCharacterMovementComponent* MovementComponent =
+		Cast<URpgCharacterMovementComponent>(GetCharacterMovement()))
+	{
+		// The next strictly newer move was authored after Free was applied on the owner.
+		// CMC corrects at that move's timestamp so replay never starts at an OnRep-only yaw.
+		MovementComponent->RequestOwnerRotationSynchronization(ClientMoveTimeStamp);
+	}
+}
+
+void ARpgCharacter::NotifyOwnerRotationCorrectionReceived(float ClientMoveTimeStamp)
+{
+	URpgCharacterMovementComponent* MovementComponent =
+		Cast<URpgCharacterMovementComponent>(GetCharacterMovement());
+	if (GetLocalRole() != ROLE_AutonomousProxy || !IsLocallyControlled() ||
+		RequestedFreeRotationRevision == 0 ||
+		RequestedFreeRotationRevision != RotationModeRevision ||
+		GetRotationMode() != ERpgCharacterRotationMode::Free || !MovementComponent ||
+		!MovementComponent->IsOwnerRotationSynchronizationCorrection(ClientMoveTimeStamp))
+	{
+		return;
+	}
+	ServerConfirmFreeRotationSynchronization(RotationModeRevision, ClientMoveTimeStamp);
+	MovementComponent->CancelOwnerRotationSynchronization();
+}
+
+void ARpgCharacter::ServerConfirmFreeRotationSynchronization_Implementation(
+	uint16 Revision, float ClientMoveTimeStamp)
+{
+	URpgCharacterMovementComponent* MovementComponent =
+		Cast<URpgCharacterMovementComponent>(GetCharacterMovement());
+	if (Revision != 0 && Revision == RotationModeRevision &&
+		RotationMode == ERpgCharacterRotationMode::Free && MovementComponent &&
+		MovementComponent->IsOwnerRotationSynchronizationCorrection(ClientMoveTimeStamp))
+	{
+		MovementComponent->CancelOwnerRotationSynchronization();
+	}
 }
 
 void ARpgCharacter::HandlePawnDataReady()
@@ -499,10 +596,11 @@ void ARpgCharacter::GetLifetimeReplicatedProps(TArray<FLifetimeProperty>& OutLif
 	DOREPLIFETIME_CONDITION(ThisClass, AnimationTeleportEpoch, COND_SimulatedOnly);
 	DOREPLIFETIME_CONDITION_NOTIFY(
 		ThisClass,
-		GroundCoastGait,
+		GroundMovementGait,
 		COND_SimulatedOnly,
 		REPNOTIFY_Always);
 	DOREPLIFETIME_CONDITION_NOTIFY(ThisClass, RotationMode, COND_None, REPNOTIFY_Always);
+	DOREPLIFETIME_CONDITION_NOTIFY(ThisClass, RotationModeRevision, COND_OwnerOnly, REPNOTIFY_Always);
 }
 
 bool ARpgCharacter::ShouldReplicateAcceleration() const
@@ -519,16 +617,16 @@ void ARpgCharacter::OnRep_AnimationTeleportEpoch()
 	}
 }
 
-void ARpgCharacter::OnRep_GroundCoastGait()
+void ARpgCharacter::OnRep_GroundMovementGait()
 {
 	if (URpgCharacterMovementComponent* MovementComponent =
 		Cast<URpgCharacterMovementComponent>(GetCharacterMovement()))
 	{
-		MovementComponent->NotifyReplicatedGroundCoastGait(GroundCoastGait);
+		MovementComponent->NotifyReplicatedGroundMovementGait(GroundMovementGait);
 	}
 }
 
-void ARpgCharacter::SetAuthoritativeGroundCoastGait(
+void ARpgCharacter::SetAuthoritativeGroundMovementGait(
 	ERpgLocomotionGait NewCoastGait)
 {
 	if (!HasAuthority())
@@ -542,9 +640,9 @@ void ARpgCharacter::SetAuthoritativeGroundCoastGait(
 		NewCoastGait = ERpgLocomotionGait::Idle;
 	}
 
-	if (GroundCoastGait != NewCoastGait)
+	if (GroundMovementGait != NewCoastGait)
 	{
-		GroundCoastGait = NewCoastGait;
+		GroundMovementGait = NewCoastGait;
 		ForceNetUpdate();
 	}
 }
@@ -592,11 +690,18 @@ void ARpgCharacter::PossessedBy(AController* NewController)
 {
 	Super::PossessedBy(NewController);
 	PawnExtensionComponent->HandleControllerChanged();
+	AdvanceRotationModeRevision();
 	RefreshRotationMode();
 }
 
 void ARpgCharacter::UnPossessed()
 {
+	RequestedFreeRotationRevision = 0;
+	if (URpgCharacterMovementComponent* MovementComponent =
+		Cast<URpgCharacterMovementComponent>(GetCharacterMovement()))
+	{
+		MovementComponent->CancelOwnerRotationSynchronization();
+	}
 	Super::UnPossessed();
 	PawnExtensionComponent->HandleControllerChanged();
 }
@@ -604,6 +709,7 @@ void ARpgCharacter::UnPossessed()
 void ARpgCharacter::OnRep_Controller()
 {
 	Super::OnRep_Controller();
+	RequestedFreeRotationRevision = 0;
 	PawnExtensionComponent->HandleControllerChanged();
 	RefreshRotationMode();
 }

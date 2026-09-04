@@ -34,6 +34,9 @@ ARpgGaspNetworkMovingBaseFixture::ARpgGaspNetworkMovingBaseFixture(
 	bReplicates = true;
 	bAlwaysRelevant = true;
 	SetReplicateMovement(true);
+	// The rotated-base regression needs the same nearly 50-degree frame on both peers.
+	// Byte rotation quantization would turn 50 degrees into 50.625 degrees on the owner.
+	GetReplicatedMovement_Mutable().RotationQuantizationLevel = ERotatorQuantization::ShortComponents;
 	PrimaryActorTick.bCanEverTick = true;
 	PrimaryActorTick.bStartWithTickEnabled = false;
 

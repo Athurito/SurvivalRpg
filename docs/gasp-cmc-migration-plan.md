@@ -27,10 +27,12 @@ The CMC AnimBP closure still pulls in experimental state-machine databases, larg
 - Make `URpgAnimInstance` the exported base class for player AnimBPs.
 - Snapshot character and movement state on the game thread through an AnimInstance proxy.
 - Consume only snapshot values during the worker-thread animation update.
-- Replicate compressed acceleration to simulated proxies so remote starts, stops, and pivots have the same inputs as the owning client.
+- Replicate acceleration through UE 5.8's native `FRepMovement` to simulated proxies so remote starts, stops, and pivots retain the owning client's movement input.
 - For standing, uncrouched ground movement, resolve a physical deadzone of `<= 0.10` before physics and SavedMove capture; preserve every magnitude above it, including `0.11`, `0.25`, and `0.50`, without renormalization beyond CharacterMovement's native `NetQuantize10` precision.
 - Keep desired gait prediction-owned: enter Run at `>= 0.70`, retain it at `>= 0.65`, and exit only below `0.65`. Store that state in one SavedMove `Custom0` flag and restore it for authoritative server movement and client replay.
-- Let simulated proxies reconstruct active-input gait from replicated acceleration. During inputless Walk/Run coast, replicate only the authority's current coast classification to simulated proxies so initial replication and relevancy return preserve the selected gait below the Walk cap; clear it deterministically at physical stop without replicating AnimBP, pose, or movement history. A proxy first observed with active input directly inside the `0.65`-to-`0.70` retention band remains a separate ambiguity outside issue #101.
+- Preserve each SavedMove's gait through base-space acceleration quantization and replay; validate Run against the exit threshold with only the bounded network-rounding allowance. Replicate the authority's current standing Walk/Run classification to simulated proxies during active movement and coast, so late join and relevancy return also reconstruct Run inside the `0.65`-to-`0.70` retention band. Clear it at physical stop or when leaving standing ground movement without replicating AnimBP or pose history.
+- During server `ForcePositionUpdate` extrapolation of a missing owner move, preserve the last validated gait with the same rounding allowance; do not treat reused acceleration as a fresh input decision.
+- Converge Free-facing yaw through a revisioned owner acknowledgement and a newer timestamped CMC correction, including input release during the mode's replication delay. Retry unreliable movement corrections until the owner confirms receipt.
 - Preserve the legacy input response for crouching, falling, and custom movement modes.
 - Let a PawnData-selected movement profile own GASP-pilot Walk/Run caps, response values, and the CMC gait consumed by animation; legacy PawnData remains opt-out.
 - Reparent the current `ABP_Unarmed` to the RPG base without changing its pose graph.
@@ -71,7 +73,7 @@ remains the technical emergency fallback and is not the default Experience selec
 
 - No runtime dependency on GASP's character Blueprint, Mover graph, traversal graph, generic retarget collection, or sample camera stack.
 - The AnimBP update path performs no character, component, ASC, or world queries on worker threads.
-- Simulated proxies reconstruct active-input gait from acceleration needed for start, stop, and pivot selection. A server-owned Walk/Run coast classification seeds only inputless simulated-proxy coast after late join or relevancy return, remains stable below the Walk cap, and clears to Idle at physical stop without replicating presentation history.
+- Simulated proxies consume replicated acceleration for move intent and the server's current standing Walk/Run classification for hysteretic gait. Active Run at 0.69 and inputless Run coast survive late join and relevancy return; physical stop clears the classification without replicating presentation history.
 - Existing GAS montages continue to use `DefaultSlot` and retain their gameplay notifies and root-motion behavior.
 - Walk/Run speed caps, response values, controlled Free yaw, and stable gait are selected by GASP PawnData and applied by CharacterMovement before animation consumes them.
 - Standing-ground input at or below `0.10` produces no physical movement; `0.11`, `0.25`, and `0.50` remain analog-scaled without renormalization beyond native movement-network precision, while crouching, falling, and custom movement retain their legacy response.

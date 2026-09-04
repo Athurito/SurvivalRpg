@@ -71,7 +71,9 @@ void URpgHealthComponent::InitializeWithAbilitySystem(URpgAbilitySystemComponent
 	HealthSet->OnMaxHealthChanged.AddUObject(this, &ThisClass::HandleMaxHealthChanged);
 	HealthSet->OnOutOfHealth.AddUObject(this, &ThisClass::HandleOutOfHealth);
 
-	ClearGameplayTags();
+	// DeathState may replicate before PawnData/PlayerState makes the ASC available.
+	// Restore that state without replaying death events when binding (or rebinding) the ASC.
+	ApplyDeathGameplayTags(DeathState);
 
 	OnHealthChanged.Broadcast(this, HealthSet->GetHealth(), HealthSet->GetHealth(), nullptr);
 	OnMaxHealthChanged.Broadcast(this, HealthSet->GetMaxHealth(), HealthSet->GetMaxHealth(), nullptr);

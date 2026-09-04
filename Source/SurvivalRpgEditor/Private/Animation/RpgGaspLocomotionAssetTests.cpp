@@ -11,6 +11,7 @@
 #include "AssetRegistry/AssetData.h"
 #include "AssetRegistry/AssetRegistryModule.h"
 #include "AssetRegistry/IAssetRegistry.h"
+#include "AssetCompilingManager.h"
 #include "Engine/DataTable.h"
 #include "Engine/SkeletalMesh.h"
 #include "Interfaces/IPluginManager.h"
@@ -708,7 +709,7 @@ bool FRpgGaspLocomotionContentContractTest::RunTest(const FString& Parameters)
 	int32 JumpAirborneCount = 0;
 	int32 JumpLandCount = 0;
 	TMap<FString, ERpgGaspPresentationAssetCategory> ExpectedPresentationMembership;
-	TSet<FString> StandRunAnimationPackages;
+	TSet<FString> CuratedAnimationPackages;
 	for (const FAssetData& AssetData : Assets)
 	{
 		const FString ClassName = AssetData.AssetClassPath.GetAssetName().ToString();
@@ -748,10 +749,7 @@ bool FRpgGaspLocomotionContentContractTest::RunTest(const FString& Parameters)
 		StandWalkCount += AnimationPackageName.StartsWith(StandWalkRoot);
 		const bool bIsStandRunAnimation = AnimationPackageName.StartsWith(StandRunRoot);
 		StandRunCount += bIsStandRunAnimation;
-		if (bIsStandRunAnimation)
-		{
-			StandRunAnimationPackages.Add(AnimationPackageName);
-		}
+		CuratedAnimationPackages.Add(AnimationPackageName);
 		StandSprintCount += AnimationPackageName.StartsWith(StandSprintRoot);
 		JumpStartCount += AnimationPackageName.StartsWith(JumpStartRoot);
 		JumpAirborneCount += AnimationPackageName.StartsWith(JumpAirborneRoot);
@@ -899,20 +897,14 @@ bool FRpgGaspLocomotionContentContractTest::RunTest(const FString& Parameters)
 					TargetPackageColumn,
 					DatabaseGroupColumn,
 					RetargetProfileColumn);
-				TSet<FString> ManifestRunPackages;
-				int32 StandRunManifestRowCount = 0;
+				TSet<FString> ManifestAnimationPackages;
+				int32 AnimationManifestRowCount = 0;
 				for (int32 RowIndex = 1; RowIndex < ManifestRows.Num(); ++RowIndex)
 				{
 					const TArray<const TCHAR*>& Row = ManifestRows[RowIndex];
-					if (Row.Num() <= DatabaseGroupColumn ||
-						FCString::Strcmp(Row[DatabaseGroupColumn], TEXT("Stand.Run")) != 0)
-					{
-						continue;
-					}
-
-					++StandRunManifestRowCount;
+					++AnimationManifestRowCount;
 					if (!TestTrue(
-							*FString::Printf(TEXT("Stand.Run manifest row %d is complete"), RowIndex + 1),
+							*FString::Printf(TEXT("Animation manifest row %d is complete"), RowIndex + 1),
 							Row.Num() > LastRequiredColumn))
 					{
 						continue;
@@ -920,34 +912,34 @@ bool FRpgGaspLocomotionContentContractTest::RunTest(const FString& Parameters)
 
 					const FString TargetPackage(Row[TargetPackageColumn]);
 					TestEqual(
-						*FString::Printf(TEXT("%s uses the complete run retarget profile"), *TargetPackage),
+						*FString::Printf(TEXT("%s uses the curated retarget profile"), *TargetPackage),
 						FString(Row[RetargetProfileColumn]),
 						FString(TEXT("rpg_no_leg_source_blend_v1")));
 					TestFalse(
-						*FString::Printf(TEXT("%s appears only once in the Stand.Run manifest"), *TargetPackage),
-						ManifestRunPackages.Contains(TargetPackage));
-					ManifestRunPackages.Add(TargetPackage);
+						*FString::Printf(TEXT("%s appears only once in the animation manifest"), *TargetPackage),
+						ManifestAnimationPackages.Contains(TargetPackage));
+					ManifestAnimationPackages.Add(TargetPackage);
 				}
 
 				TestEqual(
-					TEXT("Exactly 77 Stand.Run manifest rows use the rollout contract"),
-					StandRunManifestRowCount,
-					77);
+					TEXT("All 190 animation manifest rows use the retarget contract"),
+					AnimationManifestRowCount,
+					190);
 				TestEqual(
-					TEXT("The Stand.Run manifest contains 77 unique target packages"),
-					ManifestRunPackages.Num(),
-					77);
-				for (const FString& ManifestPackage : ManifestRunPackages)
+					TEXT("The animation manifest contains 190 unique target packages"),
+					ManifestAnimationPackages.Num(),
+					190);
+				for (const FString& ManifestPackage : ManifestAnimationPackages)
 				{
 					TestTrue(
-						*FString::Printf(TEXT("The manifest target %s exists in the curated run folder"), *ManifestPackage),
-						StandRunAnimationPackages.Contains(ManifestPackage));
+						*FString::Printf(TEXT("The manifest target %s exists in the curated content"), *ManifestPackage),
+						CuratedAnimationPackages.Contains(ManifestPackage));
 				}
-				for (const FString& AnimationPackage : StandRunAnimationPackages)
+				for (const FString& AnimationPackage : CuratedAnimationPackages)
 				{
 					TestTrue(
-						*FString::Printf(TEXT("The curated run asset %s is covered by the manifest"), *AnimationPackage),
-						ManifestRunPackages.Contains(AnimationPackage));
+						*FString::Printf(TEXT("The curated animation %s is covered by the manifest"), *AnimationPackage),
+						ManifestAnimationPackages.Contains(AnimationPackage));
 				}
 			}
 		}
@@ -2721,6 +2713,12 @@ bool FRpgGaspRunKneePoseContractTest::RunTest(const FString& Parameters)
 
 		for (const FEvaluationContract& Contract : EvaluationContracts)
 		{
+			// Compressed extraction silently falls back to raw while derived data is pending.
+			FAssetCompilingManager::Get().FinishAllCompilation();
+			if (!TestTrue(TEXT("Knee guard has valid compressed data"), Animation->IsCompressedDataValid()))
+			{
+				continue;
+			}
 			FKneePoseMetrics Metrics;
 			FString Failure;
 			if (!TryMeasureKneePoseMetrics(
@@ -2767,6 +2765,102 @@ bool FRpgGaspRunKneePoseContractTest::RunTest(const FString& Parameters)
 		}
 	}
 
+	return !HasAnyErrors();
+}
+
+IMPLEMENT_SIMPLE_AUTOMATION_TEST(FRpgGaspFullFamilyKneePoseContractTest,
+	"SurvivalRpg.Animation.Gasp.FullFamilyKneePoseContract",
+	EAutomationTestFlags::EditorContext | EAutomationTestFlags::EngineFilter)
+
+bool FRpgGaspFullFamilyKneePoseContractTest::RunTest(const FString& Parameters)
+{
+	using namespace RpgGaspLocomotionAssetTests;
+	const TSharedPtr<IPlugin> Plugin = IPluginManager::Get().FindPlugin(TEXT("RpgGaspLocomotion"));
+	USkeletalMesh* Mesh = LoadObject<USkeletalMesh>(nullptr, TargetMeshPath);
+	if (!Plugin.IsValid() || !TestNotNull(TEXT("Manny evaluation mesh loads"), Mesh))
+	{
+		return false;
+	}
+	FString ReferenceText;
+	if (!TestTrue(TEXT("Source pose references load"), FFileHelper::LoadFileToString(ReferenceText,
+		*FPaths::Combine(Plugin->GetBaseDir(), TEXT("Docs/RetargetPoseReference.csv")))))
+	{
+		return false;
+	}
+	FCsvParser Parser(ReferenceText);
+	const auto& Rows = Parser.GetRows();
+	if (!TestEqual(TEXT("Reference has a header and all 190 curated animations"), Rows.Num(), 191))
+	{
+		return false;
+	}
+	if (!TestTrue(TEXT("Source reference schema is explicit"), Rows[0].Num() == 3 &&
+		FCString::Strcmp(Rows[0][0], TEXT("TargetPackage")) == 0 &&
+		FCString::Strcmp(Rows[0][1], TEXT("SourceMaxKneeDegrees")) == 0 &&
+		FCString::Strcmp(Rows[0][2], TEXT("SourceNearStraightFraction")) == 0))
+	{
+		return false;
+	}
+	TMap<FString, UAnimSequence*> Animations;
+	for (int32 Index = 1; Index < Rows.Num(); ++Index)
+	{
+		if (!TestEqual(TEXT("Source knee reference has three columns"), Rows[Index].Num(), 3))
+		{
+			return false;
+		}
+		const FString Package = Rows[Index][0];
+		TestFalse(TEXT("Pose references are unique"), Animations.Contains(Package));
+		Animations.Add(Package, LoadObject<UAnimSequence>(nullptr,
+			*FString::Printf(TEXT("%s.%s"), *Package, *FPackageName::GetLongPackageAssetName(Package))));
+	}
+	FAssetCompilingManager::Get().FinishAllCompilation();
+	IAssetRegistry& Registry = FModuleManager::LoadModuleChecked<FAssetRegistryModule>(TEXT("AssetRegistry")).Get();
+	Registry.ScanPathsSynchronous({ FString(AnimationRoot) }, true);
+	Registry.WaitForCompletion();
+	TArray<FAssetData> Assets;
+	Registry.GetAssetsByPath(FName(AnimationRoot), Assets, true);
+	for (const FAssetData& Asset : Assets)
+	{
+		if (Asset.AssetClassPath == UAnimSequence::StaticClass()->GetClassPathName())
+		{
+			TestTrue(TEXT("Every curated animation has a source pose reference"), Animations.Contains(Asset.PackageName.ToString()));
+		}
+	}
+	for (int32 Index = 1; Index < Rows.Num(); ++Index)
+	{
+		const FString Package = Rows[Index][0];
+		UAnimSequence* Animation = Animations.FindRef(Package);
+		if (!TestNotNull(*Package, Animation) ||
+			!TestTrue(*FString::Printf(TEXT("%s has valid compressed data"), *Package), Animation->IsCompressedDataValid()))
+		{
+			continue;
+		}
+		const double SourceMaximum = FCString::Atod(Rows[Index][1]);
+		const double SourceNearStraight = FCString::Atod(Rows[Index][2]);
+		if (!TestTrue(TEXT("Source metrics are finite and within physical bounds"),
+			FMath::IsFinite(SourceMaximum) && SourceMaximum > 0.0 && SourceMaximum <= 180.0 &&
+			FMath::IsFinite(SourceNearStraight) && SourceNearStraight >= 0.0 && SourceNearStraight <= 1.0))
+		{
+			continue;
+		}
+		for (EAnimDataEvalType Evaluation : { EAnimDataEvalType::Raw, EAnimDataEvalType::Compressed })
+		{
+			FKneePoseMetrics Metrics;
+			FString Failure;
+			const bool bMeasured = TryMeasureKneePoseMetrics(Animation, Mesh, Evaluation, 60.0, 175.0, Metrics, Failure);
+			if (!TestTrue(*FString::Printf(TEXT("%s knee poses evaluate: %s"), *Package, *Failure), bMeasured))
+			{
+				continue;
+			}
+			// Allow modest proportional retarget/compression error and authored straight legs,
+			// while rejecting new full-reach holds (the stock leg-source-blend failure).
+			TestTrue(*FString::Printf(TEXT("%s %s max knee %.3f stays within source %.3f + 2 degrees"),
+				*Package, Evaluation == EAnimDataEvalType::Raw ? TEXT("Raw") : TEXT("Compressed"),
+				Metrics.MaximumAngleDegrees, SourceMaximum), Metrics.MaximumAngleDegrees <= SourceMaximum + 2.0);
+			TestTrue(*FString::Printf(TEXT("%s near-straight fraction %.4f stays within source %.4f + 0.02"),
+				*Package, Metrics.NearStraightFrameFraction, SourceNearStraight),
+				Metrics.NearStraightFrameFraction <= SourceNearStraight + 0.02);
+		}
+	}
 	return !HasAnyErrors();
 }
 

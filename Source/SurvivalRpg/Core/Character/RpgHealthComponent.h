@@ -61,7 +61,7 @@ public:
 	UFUNCTION(BlueprintPure, Category = "Rpg|Health")
 	static URpgHealthComponent* FindHealthComponent(const AActor* Actor) { return (Actor ? Actor->FindComponentByClass<URpgHealthComponent>() : nullptr); }
 
-	// Initialize the component using an ability system component.
+	/** Binds health attributes and mirrors the current replicated death state, including late ASC initialization. */
 	UFUNCTION(BlueprintCallable, Category = "Rpg|Health")
 	void InitializeWithAbilitySystem(URpgAbilitySystemComponent* InASC);
 
@@ -141,7 +141,11 @@ protected:
 	UPROPERTY()
 	TObjectPtr<const URpgHealthSet> HealthSet;
 
-	// Replicated state used to handle dying.
+	/** Server-authored death lifecycle, retained until a late-bound ASC can receive the corresponding death tags. */
 	UPROPERTY(ReplicatedUsing = OnRep_DeathState)
 	ERpgDeathState DeathState;
+
+#if WITH_DEV_AUTOMATION_TESTS
+	friend class FRpgHealthLateAbilitySystemInitializationTest;
+#endif
 };

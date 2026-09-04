@@ -380,7 +380,7 @@ public:
 		bool& bEnableSteering) const;
 
 	/**
-	 * Keeps listen-server copies of remote autonomous characters time-correct when several
+	 * Keeps listen/dedicated-server copies of remote autonomous characters time-correct when several
 	 * client moves tick their pose in one server frame; all regular animation work stays parallel.
 	 */
 	virtual bool CanRunParallelWork() const override;

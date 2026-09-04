@@ -18,6 +18,7 @@
 #include "GameFramework/GameStateBase.h"
 #include "GameFramework/PlayerController.h"
 #include "GameFramework/PlayerState.h"
+#include "HAL/IConsoleManager.h"
 #include "TimerManager.h"
 #include "UObject/UnrealType.h"
 
@@ -93,6 +94,7 @@ namespace RpgGaspPIENetworkTests
 		uint64 AnimationResetStableStartFrame = 0;
 		FVector MovingBaseObservationStartLocation = FVector::ZeroVector;
 		uint32 ClientCorrectionCountBaseline = 0;
+		double PredictionObservationStartTime = 0.0;
 		uint32 LargeClientCorrectionCountBaseline = 0;
 		uint32 AnimationDiscontinuityBaseline = 0;
 		FVector MontageStartLocation = FVector::ZeroVector;
@@ -422,7 +424,7 @@ namespace RpgGaspPIENetworkTests
 				AnimGait) &&
 			ReadObjectProperty(
 				Character,
-				TEXT("GroundCoastGait"),
+				TEXT("GroundMovementGait"),
 				CharacterCoastGait) &&
 			AnimGait == ERpgLocomotionGait::Idle &&
 			CharacterCoastGait == ERpgLocomotionGait::Idle &&
@@ -431,7 +433,7 @@ namespace RpgGaspPIENetworkTests
 			MovementComponent->GetAnalogInputModifier() <= 0.01f &&
 			MovementComponent->GetDesiredGait() == ERpgLocomotionGait::Idle &&
 			MovementComponent->GetGroundGait() == ERpgLocomotionGait::Idle &&
-			MovementComponent->GetReplicatedGroundCoastGait() ==
+			MovementComponent->GetReplicatedGroundMovementGait() ==
 				ERpgLocomotionGait::Idle &&
 			!MovementComponent->HasMoveIntent() &&
 			FMath::IsNearlyEqual(
@@ -818,7 +820,7 @@ namespace RpgGaspPIENetworkTests
 			AnimGait);
 		const bool bReadCharacterCoastGait = ReadObjectProperty(
 			Character,
-			TEXT("GroundCoastGait"),
+			TEXT("GroundMovementGait"),
 			CharacterCoastGait);
 		const bool bMatches = Character && MovementComponent && AnimInstance &&
 			Character->GetLocalRole() == ExpectedLocalRole &&
@@ -830,7 +832,7 @@ namespace RpgGaspPIENetworkTests
 			MovementComponent->GetAnalogInputModifier() <= 0.01f &&
 			MovementComponent->GetDesiredGait() == ERpgLocomotionGait::Idle &&
 			MovementComponent->GetGroundGait() == ExpectedGait &&
-			MovementComponent->GetReplicatedGroundCoastGait() ==
+			MovementComponent->GetReplicatedGroundMovementGait() ==
 				ExpectedMovementHint &&
 			!MovementComponent->HasMoveIntent() &&
 			bReadAnimGait && AnimGait == ExpectedGait &&
@@ -859,7 +861,7 @@ namespace RpgGaspPIENetworkTests
 				static_cast<int32>(MovementComponent ? MovementComponent->HasMoveIntent() : false),
 				static_cast<double>(MovementComponent ? MovementComponent->GetCurrentAcceleration().Size2D() : -1.0f),
 				static_cast<double>(MovementComponent ? MovementComponent->GetAnalogInputModifier() : -1.0f),
-				MovementComponent ? static_cast<int32>(MovementComponent->GetReplicatedGroundCoastGait()) : -1,
+				MovementComponent ? static_cast<int32>(MovementComponent->GetReplicatedGroundMovementGait()) : -1,
 				static_cast<int32>(bReadCharacterCoastGait),
 				static_cast<int32>(CharacterCoastGait),
 				static_cast<int32>(bReadAnimGait),
@@ -1601,6 +1603,8 @@ NETWORK_TEST_CLASS(GaspPilotPIE, "SurvivalRpg.Network")
 	FPrimaryAssetId OriginalExperienceOverride;
 	FVector AuthorityCorrectionBaseline = FVector::ZeroVector;
 	float DivergentClientMoveTimeStamp = -1.0f;
+	FNetworkState* RotationHandoffOwnerState = nullptr;
+	double RotationHandoffAuthorityYaw = 0.0;
 	FVector AuthorityTeleportTarget = FVector::ZeroVector;
 	FVector AuthorityMontageEnd = FVector::ZeroVector;
 	int32 SubjectPlayerId = INDEX_NONE;
@@ -1672,6 +1676,170 @@ NETWORK_TEST_CLASS(GaspPilotPIE, "SurvivalRpg.Network")
 			CastChecked<ARpgGameModeBase>(PilotGameModeClass->GetDefaultObject())
 				->bEnableDiskPersistence = bOriginalDiskPersistence;
 		}
+	}
+
+	TEST_METHOD(RotationModeExitConvergesAfterInputRelease)
+	{
+		PacketSettings.PktLoss = 10;
+		using namespace RpgGaspPIENetworkTests;
+		const auto HasStableFreeFacing = [this](FNetworkState& State)
+		{
+			ARpgCharacter* Character = FindCharacterByPlayerId(State.World, State.SubjectPlayerId);
+			const bool bMatches = Character && HasStoppedAnimation(State) &&
+				HasRotationMode(State, ERpgCharacterRotationMode::Free) &&
+				FMath::Abs(FMath::FindDeltaAngleDegrees(
+					Character->GetActorRotation().Yaw, RotationHandoffAuthorityYaw)) < 2.0;
+			if (!bMatches)
+			{
+				State.MovementStoppedStableStartTime = -1.0;
+				return false;
+			}
+			if (State.MovementStoppedStableStartTime < 0.0)
+			{
+				State.MovementStoppedStableStartTime = FPlatformTime::Seconds();
+			}
+			return FPlatformTime::Seconds() - State.MovementStoppedStableStartTime >= 1.0;
+		};
+
+		Network
+			.SpawnAndReplicate<ARpgGaspNetworkFloorFixture, &FNetworkState::Floor>(NetworkTimeout())
+			.UntilServer(TEXT("Rotation fixture loads the GASP Experience"),
+				[](FNetworkState& State) { return IsPilotExperienceReady(State, 1); }, NetworkTimeout())
+			.UntilClients(TEXT("Rotation owner receives the actual GASP pawn"),
+				[](FNetworkState& State)
+				{
+					return IsPilotExperienceReady(State, 1) &&
+						IsPilotCharacterReady(FindLocalCharacter(State.World));
+				}, NetworkTimeout())
+			.ThenClient(TEXT("Capture the remote owner for the delayed rotation handoff"), 0,
+				[this](FNetworkState& State)
+				{
+					ARpgCharacter* Character = FindLocalCharacter(State.World);
+					ASSERT_THAT(IsNotNull(Character));
+					ASSERT_THAT(IsNotNull(Character->GetPlayerState()));
+					SubjectPlayerId = Character->GetPlayerState()->GetPlayerId();
+					RotationHandoffOwnerState = &State;
+				})
+			.ThenClientJoins(NetworkTimeout())
+			.UntilServer(TEXT("Rotation observer establishes its server connection"),
+				[](FNetworkState& State) { return IsPilotExperienceReady(State, 2); }, NetworkTimeout())
+			.UntilClients(TEXT("Both rotation clients finish GASP composition"),
+				[](FNetworkState& State)
+				{
+					return IsValid(State.Floor) && IsPilotExperienceReady(State, 2) &&
+						IsPilotCharacterReady(FindLocalCharacter(State.World));
+				}, NetworkTimeout())
+			.ThenServer(TEXT("Separate rotation fixture pawns on the replicated floor"),
+				[this](FNetworkState& State)
+				{
+					State.SubjectPlayerId = SubjectPlayerId;
+					int32 LaneIndex = 0;
+					for (TActorIterator<ARpgCharacter> It(State.World); It; ++It)
+					{
+						ARpgCharacter* Character = *It;
+						Character->TeleportTo(FVector(-800.0 + LaneIndex++ * 800.0, 0.0, 100.0),
+							FRotator::ZeroRotator);
+						Character->GetCharacterMovement()->StopMovementImmediately();
+						Character->GetCharacterMovement()->SetMovementMode(MOVE_Walking);
+						Character->ForceNetUpdate();
+					}
+				})
+			.ThenClients(TEXT("Bind the same rotation subject on owner and observer"),
+				[this](FNetworkState& State) { State.SubjectPlayerId = SubjectPlayerId; })
+			.UntilServer(TEXT("Authority has a grounded equipped Free-mode subject"),
+				[](FNetworkState& State)
+				{
+					return HasFreeRotationPolicy(State, ROLE_Authority) &&
+						HasCombatAnimationPresentation(State, ROLE_Authority, SwordShieldProfileName, false);
+				}, NetworkTimeout())
+			.ThenServer(TEXT("Authority enables the real explicit combat stance"),
+				[this](FNetworkState& State)
+				{
+					ARpgCharacter* Character = FindCharacterByPlayerId(State.World, State.SubjectPlayerId);
+					ASSERT_THAT(IsNotNull(Character));
+					Character->ToggleCombatStance();
+					ASSERT_THAT(IsTrue(Character->GetRotationMode() == ERpgCharacterRotationMode::CombatStrafe));
+				})
+			.UntilClients(TEXT("CombatStrafe and its animation read model reach both clients"),
+				[](FNetworkState& State)
+				{
+					return HasRotationMode(State, ERpgCharacterRotationMode::CombatStrafe);
+				}, NetworkTimeout())
+			.ThenClient(TEXT("Owner strafes right while facing controller yaw zero"), 0,
+				[this](FNetworkState& State)
+				{
+					ARpgCharacter* Character = FindLocalCharacter(State.World);
+					ASSERT_THAT(IsNotNull(Character));
+					ASSERT_THAT(IsNotNull(Character->GetController()));
+					Character->GetController()->SetControlRotation(FRotator::ZeroRotator);
+					StartMovementInput(State, FVector::YAxisVector);
+				})
+			.UntilClient(TEXT("Owner predicts lateral motion without turning its facing"), 0,
+				[](FNetworkState& State)
+				{
+					const ARpgCharacter* Character = FindLocalCharacter(State.World);
+					return Character && HasMovingAnimation(State, ROLE_AutonomousProxy, FVector::YAxisVector) &&
+						FMath::Abs(Character->GetActorRotation().Yaw) < 2.0;
+				}, NetworkTimeout())
+			.UntilServer(TEXT("Pending remote moves are lateral while authority still faces zero"),
+				[](FNetworkState& State)
+				{
+					const ARpgCharacter* Character = FindCharacterByPlayerId(State.World, State.SubjectPlayerId);
+					return Character && HasMovingAnimation(State, ROLE_Authority, FVector::YAxisVector) &&
+						FMath::Abs(Character->GetActorRotation().Yaw) < 2.0;
+				}, NetworkTimeout())
+			.ThenServer(TEXT("Authority exits combat as the owner releases input before receiving Free"),
+				[this](FNetworkState& State)
+				{
+					ARpgCharacter* Character = FindCharacterByPlayerId(State.World, State.SubjectPlayerId);
+					ASSERT_THAT(IsNotNull(Character));
+					ASSERT_THAT(IsNotNull(RotationHandoffOwnerState));
+					Character->ToggleCombatStance();
+					ASSERT_THAT(IsTrue(Character->GetRotationMode() == ERpgCharacterRotationMode::Free));
+					ARpgCharacter* Owner = FindLocalCharacter(RotationHandoffOwnerState->World);
+					ASSERT_THAT(IsNotNull(Owner));
+					ASSERT_THAT(IsTrue(Owner->GetRotationMode() == ERpgCharacterRotationMode::CombatStrafe));
+					// Release in the same test step so no replicated Free update can precede it.
+					// Outstanding real CMC moves still arrive through the configured packet delay.
+					StopMovementInput(*RotationHandoffOwnerState);
+					RotationHandoffOwnerState->ClientCorrectionCountBaseline =
+						CastChecked<URpgCharacterMovementComponent>(Owner->GetCharacterMovement())
+							->GetClientCorrectionReceivedCountForTests();
+				})
+			.UntilServer(TEXT("Authority processes outstanding strafe input in Free and settles at a changed yaw"),
+				[this](FNetworkState& State)
+				{
+					const ARpgCharacter* Character = FindCharacterByPlayerId(State.World, State.SubjectPlayerId);
+					if (!Character || !HasStoppedAnimation(State) ||
+						FMath::Abs(Character->GetActorRotation().Yaw) <= 2.0)
+					{
+						return false;
+					}
+					RotationHandoffAuthorityYaw = Character->GetActorRotation().Yaw;
+					return true;
+				}, NetworkTimeout())
+			.UntilClient(TEXT("Idle owner receives a real movement correction for the Free handoff"), 0,
+				[](FNetworkState& State)
+				{
+					const ARpgCharacter* Character = FindLocalCharacter(State.World);
+					const URpgCharacterMovementComponent* Movement = Character
+						? Cast<URpgCharacterMovementComponent>(Character->GetCharacterMovement()) : nullptr;
+					return Movement && Movement->GetClientCorrectionReceivedCountForTests() >
+						State.ClientCorrectionCountBaseline;
+				}, NetworkTimeout())
+			.UntilServer(TEXT("Authority retains the settled Free facing for one second"),
+				HasStableFreeFacing, NetworkTimeout())
+			.UntilClients(TEXT("Idle owner and observer retain the same authority yaw without new input"),
+				HasStableFreeFacing, NetworkTimeout())
+			.UntilServer(TEXT("Reliable owner receipt confirmation retires the rotation correction retry"),
+				[](FNetworkState& State)
+				{
+					const ARpgCharacter* Character = FindCharacterByPlayerId(State.World, State.SubjectPlayerId);
+					const URpgCharacterMovementComponent* Movement = Character
+						? Cast<URpgCharacterMovementComponent>(Character->GetCharacterMovement()) : nullptr;
+					return Movement && !Movement->IsOwnerRotationSynchronizationCorrection(
+						Movement->GetPredictionData_Server_Character()->CurrentClientTimeStamp);
+				}, NetworkTimeout());
 	}
 
 	TEST_METHOD(DefaultExperienceFallbackSelectsGasp)
@@ -2810,6 +2978,38 @@ NETWORK_TEST_CLASS(GaspPilotPIE, "SurvivalRpg.Network")
 				},
 				NetworkTimeout())
 			.ThenServer(
+				TEXT("Hold automatic error corrections while recording the deliberate divergence"),
+				[this](FNetworkState& State)
+				{
+					ARpgCharacter* Character = FindCharacterByPlayerId(State.World, State.SubjectPlayerId);
+					ASSERT_THAT(IsNotNull(Character));
+					auto* Movement = CastChecked<URpgCharacterMovementComponent>(Character->GetCharacterMovement());
+					ASSERT_THAT(IsTrue(!Movement->bIgnoreClientMovementErrorChecksAndCorrection));
+					Movement->bIgnoreClientMovementErrorChecksAndCorrection = true;
+				})
+			.UntilClient(
+				TEXT("Owner drains landing corrections before a single divergence injection"), 0,
+				[](FNetworkState& State)
+				{
+					ARpgCharacter* Character = FindCharacterByPlayerId(State.World, State.SubjectPlayerId);
+					const auto* Movement = Character
+						? Cast<URpgCharacterMovementComponent>(Character->GetCharacterMovement()) : nullptr;
+					if (!Movement)
+					{
+						return false;
+					}
+					const double Now = FPlatformTime::Seconds();
+					const uint32 Corrections = Movement->GetClientCorrectionReceivedCountForTests();
+					if (!HasStoppedAnimation(State) || State.PredictionObservationStartTime <= 0.0 ||
+						Corrections != State.ClientCorrectionCountBaseline)
+					{
+						State.ClientCorrectionCountBaseline = Corrections;
+						State.PredictionObservationStartTime = Now;
+						return false;
+					}
+					return Now - State.PredictionObservationStartTime >= 0.5;
+				}, NetworkTimeout())
+			.ThenServer(
 				TEXT("Capture the authority baseline for correction"),
 				[this](FNetworkState& State)
 				{
@@ -2926,25 +3126,50 @@ NETWORK_TEST_CLASS(GaspPilotPIE, "SurvivalRpg.Network")
 						return false;
 					}
 
+					const auto TryCaptureMove = [this, MovementComponent](const FSavedMovePtr& SavedMove)
+					{
+						if (SavedMove.IsValid() &&
+							FMath::Abs(SavedMove->SavedLocation.X - AuthorityCorrectionBaseline.X) >
+								MovementComponent->NetworkLargeClientCorrectionDistance &&
+							FVector::DotProduct(SavedMove->Acceleration.GetSafeNormal2D(), FVector::YAxisVector) > 0.98)
+						{
+							DivergentClientMoveTimeStamp = SavedMove->TimeStamp;
+							UE_LOG(LogTemp, Display, TEXT("GASP divergence captured: stamp=%.6f offsetX=%.3f acceleration=%s"),
+								SavedMove->TimeStamp, SavedMove->SavedLocation.X - AuthorityCorrectionBaseline.X,
+								*SavedMove->Acceleration.ToCompactString());
+							return true;
+						}
+						return false;
+					};
 					for (int32 MoveIndex = ClientPrediction->SavedMoves.Num() - 1;
 						 MoveIndex >= 0;
 						 --MoveIndex)
 					{
 						const FSavedMovePtr& SavedMove =
 							ClientPrediction->SavedMoves[MoveIndex];
-						if (SavedMove.IsValid() &&
-							SavedMove != ClientPrediction->PendingMove &&
-							FMath::Abs(
-								SavedMove->SavedLocation.X -
-									AuthorityCorrectionBaseline.X) >
-									MovementComponent->NetworkLargeClientCorrectionDistance &&
-							FVector::DotProduct(
-								SavedMove->Acceleration.GetSafeNormal2D(),
-								FVector::YAxisVector) > 0.98)
+						if (SavedMove != ClientPrediction->PendingMove && TryCaptureMove(SavedMove))
 						{
-							DivergentClientMoveTimeStamp = SavedMove->TimeStamp;
 							return true;
 						}
+					}
+					// A good-move acknowledgement can remove a sent move before CQTest polls again.
+					// Error checks are still held, so its identical recorded position remains in LastAckedMove.
+					if (TryCaptureMove(ClientPrediction->LastAckedMove))
+					{
+						return true;
+					}
+					const double Now = FPlatformTime::Seconds();
+					if (Now - State.LastMovementInputDiagnosticTime >= 1.0)
+					{
+						State.LastMovementInputDiagnosticTime = Now;
+						UE_LOG(LogTemp, Display, TEXT("GASP divergence wait: liveX=%.3f baselineX=%.3f saved=%d pending=%d ackStamp=%.6f ackX=%.3f accel=%s corrections=%u large=%u"),
+							Character->GetActorLocation().X, AuthorityCorrectionBaseline.X,
+							ClientPrediction->SavedMoves.Num(), ClientPrediction->PendingMove.IsValid(),
+							ClientPrediction->LastAckedMove.IsValid() ? ClientPrediction->LastAckedMove->TimeStamp : -1.0f,
+							ClientPrediction->LastAckedMove.IsValid() ? ClientPrediction->LastAckedMove->SavedLocation.X : 0.0,
+							*MovementComponent->GetCurrentAcceleration().ToCompactString(),
+							MovementComponent->GetClientCorrectionReceivedCountForTests(),
+							MovementComponent->GetLargeClientCorrectionReceivedCountForTests());
 					}
 					return false;
 				},
@@ -2977,6 +3202,18 @@ NETWORK_TEST_CLASS(GaspPilotPIE, "SurvivalRpg.Network")
 						MovementComponent->GetAnalogInputModifier() > 0.9f;
 				},
 				NetworkTimeout())
+			.ThenServer(
+				TEXT("Restore error checks and correct the recorded divergence"),
+				[this](FNetworkState& State)
+				{
+					ARpgCharacter* Character = FindCharacterByPlayerId(State.World, State.SubjectPlayerId);
+					ASSERT_THAT(IsNotNull(Character));
+					auto* Movement = CastChecked<URpgCharacterMovementComponent>(Character->GetCharacterMovement());
+					Movement->bIgnoreClientMovementErrorChecksAndCorrection = false;
+					ASSERT_THAT(IsTrue(FMath::Abs(Character->GetActorLocation().X - AuthorityCorrectionBaseline.X) <= 10.0));
+					Movement->GetPredictionData_Server_Character()->bForceClientUpdate = true;
+					Movement->ForceClientAdjustment();
+				})
 			.UntilClient(
 				TEXT("Autonomous owner receives the divergent-move correction"),
 				0,
@@ -3335,7 +3572,8 @@ NETWORK_TEST_CLASS(GaspPilotPIE, "SurvivalRpg.Network")
 					URpgAbilitySystemComponent* AbilitySystem = Character
 						? Character->GetRpgAbilitySystemComponent()
 						: nullptr;
-					if (!Character || !AbilitySystem || AbilitySystem->GetCurrentMontage())
+					if (!Character || !AbilitySystem || AbilitySystem->GetCurrentMontage() ||
+						!HasStoppedAnimation(State))
 					{
 						return false;
 					}
@@ -3344,7 +3582,7 @@ NETWORK_TEST_CLASS(GaspPilotPIE, "SurvivalRpg.Network")
 				},
 				NetworkTimeout())
 			.UntilClients(
-				TEXT("Owner and simulated proxy converge after root motion"),
+				TEXT("Owner and simulated proxy settle within 10 cm after root motion"),
 				[this](FNetworkState& State)
 				{
 					ARpgCharacter* Character = FindCharacterByPlayerId(
@@ -3354,9 +3592,10 @@ NETWORK_TEST_CLASS(GaspPilotPIE, "SurvivalRpg.Network")
 						? Character->GetRpgAbilitySystemComponent()
 						: nullptr;
 					const bool bConverged = Character && AbilitySystem &&
-						!AbilitySystem->GetCurrentMontage() && FVector::Dist2D(
+						!AbilitySystem->GetCurrentMontage() &&
+						Character->GetVelocity().Size2D() <= 5.0f && FVector::Dist2D(
 							Character->GetActorLocation(),
-							AuthorityMontageEnd) <= 100.0;
+							AuthorityMontageEnd) <= 10.0;
 					if (!bConverged)
 					{
 						State.MontageConvergenceStartTime = 0.0;
@@ -3368,7 +3607,7 @@ NETWORK_TEST_CLASS(GaspPilotPIE, "SurvivalRpg.Network")
 					{
 						State.MontageConvergenceStartTime = Now;
 					}
-					return Now - State.MontageConvergenceStartTime >= 0.25;
+					return Now - State.MontageConvergenceStartTime >= 0.5;
 				},
 				NetworkTimeout())
 			.UntilServer(
@@ -3440,6 +3679,269 @@ NETWORK_TEST_CLASS(GaspPilotPIE, "SurvivalRpg.Network")
 					StopMovementInput(State);
 					State.World->GetTimerManager().ClearTimer(State.ObservationTimer);
 				});
+	}
+
+	TEST_METHOD(RotatedBasePreservesSavedRunAtExitThreshold)
+	{
+		using namespace RpgGaspPIENetworkTests;
+		// A movable base need not translate to exercise UE's base-relative acceleration
+		// transport. Keeping yaw at exactly 50 degrees makes the Quantize10 regression repeatable.
+		Network
+			.SpawnAndReplicate<ARpgGaspNetworkMovingBaseFixture, &FNetworkState::MovingBase>(NetworkTimeout())
+			.UntilServer(TEXT("Rotated-base authority loads the Pilot Experience"),
+				[](FNetworkState& State) { return IsPilotExperienceReady(State, 1); }, NetworkTimeout())
+			.UntilClients(TEXT("Rotated-base owner loads the Pilot pawn and fixture"),
+				[](FNetworkState& State)
+				{
+					return IsPilotExperienceReady(State, 1) && IsValid(State.MovingBase) &&
+						IsPilotCharacterReady(FindLocalCharacter(State.World));
+				}, NetworkTimeout())
+			.ThenClient(TEXT("Capture the rotated-base owner"), 0,
+				[this](FNetworkState& State)
+				{
+					ARpgCharacter* Character = FindLocalCharacter(State.World);
+					ASSERT_THAT(IsNotNull(Character));
+					ASSERT_THAT(IsNotNull(Character->GetPlayerState()));
+					SubjectPlayerId = Character->GetPlayerState()->GetPlayerId();
+					State.SubjectPlayerId = SubjectPlayerId;
+					const IConsoleVariable* BaseAcceleration = IConsoleManager::Get().FindConsoleVariable(
+						TEXT("p.NetUseBaseRelativeAcceleration"));
+					ASSERT_THAT(IsNotNull(BaseAcceleration));
+					ASSERT_THAT(IsTrue(BaseAcceleration && BaseAcceleration->GetBool()));
+				})
+			.ThenServer(TEXT("Place the subject on a movable base with 50 degree yaw"),
+				[this](FNetworkState& State)
+				{
+					State.SubjectPlayerId = SubjectPlayerId;
+					ARpgCharacter* Character = FindCharacterByPlayerId(State.World, SubjectPlayerId);
+					ASSERT_THAT(IsNotNull(Character));
+					State.MovingBase->SetActorLocationAndRotation(
+						FVector(-1500.0, 0.0, 200.0), FRotator(0.0, 50.0, 0.0));
+					State.MovingBase->ForceNetUpdate();
+					const FVector Location = State.MovingBase->GetActorTransform().TransformPosition(
+						FVector(200.0, 0.0, 27.0 + Character->GetSimpleCollisionHalfHeight()));
+					ASSERT_THAT(IsTrue(Character->TeleportTo(Location, FRotator::ZeroRotator)));
+					Character->GetCharacterMovement()->StopMovementImmediately();
+					Character->GetCharacterMovement()->SetMovementMode(MOVE_Walking);
+					Character->ForceNetUpdate();
+				})
+			.UntilServer(TEXT("Authority recognizes the rotated movable base"),
+				[](FNetworkState& State) { return IsSubjectOnMovingBase(State, ROLE_Authority); }, NetworkTimeout())
+			.UntilClient(TEXT("Owner recognizes the replicated rotated movable base"), 0,
+				[](FNetworkState& State)
+				{
+					const bool bBased = IsSubjectOnMovingBase(State, ROLE_AutonomousProxy);
+					const double Yaw = State.MovingBase->GetActorRotation().Yaw;
+					const bool bMatches = bBased && FMath::IsNearlyEqual(Yaw, 50.0, 0.01);
+					const double Now = FPlatformTime::Seconds();
+					if (!bMatches && Now - State.LastMovementInputDiagnosticTime >= 1.0)
+					{
+						State.LastMovementInputDiagnosticTime = Now;
+						ARpgCharacter* Character = FindCharacterByPlayerId(State.World, State.SubjectPlayerId);
+						UE_LOG(LogTemp, Display, TEXT("GASP rotated base wait: based=%d yaw=%.6f quantization=%d base=%s subject=%s movementBase=%s"),
+							bBased, Yaw, static_cast<int32>(State.MovingBase->GetReplicatedMovement().RotationQuantizationLevel),
+							*State.MovingBase->GetActorLocation().ToCompactString(),
+							Character ? *Character->GetActorLocation().ToCompactString() : TEXT("none"),
+							Character ? *GetNameSafe(Character->GetMovementBase()) : TEXT("none"));
+					}
+					return bMatches;
+				}, NetworkTimeout())
+			.ThenClient(TEXT("Enter Run in world X before testing the exit edge"), 0,
+				[](FNetworkState& State) { StartMovementInput(State, FVector::XAxisVector, 0.71f); })
+			.UntilServer(TEXT("Authority enters Run on the rotated base"),
+				[](FNetworkState& State)
+				{
+					return HasExpectedMovementInput(State, ROLE_Authority, FVector::XAxisVector, 0.71f, ERpgLocomotionGait::Run);
+				}, NetworkTimeout())
+			.UntilClient(TEXT("Owner enters Run on the rotated base"), 0,
+				[](FNetworkState& State)
+				{
+					return HasExpectedMovementInput(State, ROLE_AutonomousProxy, FVector::XAxisVector, 0.71f, ERpgLocomotionGait::Run);
+				}, NetworkTimeout())
+			.ThenClient(TEXT("Hold exactly 0.65 input across base-relative acceleration quantization"), 0,
+				[](FNetworkState& State) { StartMovementInput(State, FVector::XAxisVector, 0.65f); })
+			.UntilServer(TEXT("Server retains the SavedMove Run decision and 500 cm/s cap"),
+				[](FNetworkState& State)
+				{
+					return IsSubjectOnMovingBase(State, ROLE_Authority) &&
+						HasExpectedMovementInput(State, ROLE_Authority, FVector::XAxisVector, 0.65f, ERpgLocomotionGait::Run);
+				}, NetworkTimeout())
+			.UntilClient(TEXT("Owner retains Run at the inclusive exit threshold"), 0,
+				[](FNetworkState& State)
+				{
+					return HasExpectedMovementInput(State, ROLE_AutonomousProxy, FVector::XAxisVector, 0.65f, ERpgLocomotionGait::Run);
+				}, NetworkTimeout())
+			.ThenClient(TEXT("Observe steady prediction after the threshold transition settles"), 0,
+				[](FNetworkState& State)
+				{
+					const auto* Movement = CastChecked<URpgCharacterMovementComponent>(
+						FindCharacterByPlayerId(State.World, State.SubjectPlayerId)->GetCharacterMovement());
+					State.ClientCorrectionCountBaseline = Movement->GetClientCorrectionReceivedCountForTests();
+					State.PredictionObservationStartTime = FPlatformTime::Seconds();
+				})
+			.UntilClient(TEXT("Run stays stable without recurring position corrections for three seconds"), 0,
+				[this](FNetworkState& State)
+				{
+					const auto* Movement = CastChecked<URpgCharacterMovementComponent>(
+						FindCharacterByPlayerId(State.World, State.SubjectPlayerId)->GetCharacterMovement());
+					// Allow one already in-flight transition correction, never a sustained correction loop.
+					const bool bStablePrediction = Movement->GetDesiredGait() == ERpgLocomotionGait::Run &&
+						IsSubjectOnMovingBase(State, ROLE_AutonomousProxy) &&
+						Movement->GetClientCorrectionReceivedCountForTests() <= State.ClientCorrectionCountBaseline + 1;
+					const bool bPassed = Assert.IsTrue(bStablePrediction);
+					return !bPassed || FPlatformTime::Seconds() - State.PredictionObservationStartTime >= 3.0;
+				}, NetworkTimeout())
+			.UntilServer(TEXT("Authority still solves Run at 0.65 after the observation window"),
+				[](FNetworkState& State)
+				{
+					return IsSubjectOnMovingBase(State, ROLE_Authority) &&
+						HasExpectedMovementInput(State, ROLE_Authority, FVector::XAxisVector, 0.65f, ERpgLocomotionGait::Run);
+				}, NetworkTimeout())
+			.ThenClient(TEXT("Stop the rotated-base owner"), 0,
+				[](FNetworkState& State) { StopMovementInput(State); });
+	}
+
+	TEST_METHOD(ActiveRunLateJoinAndRelevancyReturn)
+	{
+		PacketSettings.PktLoss = 10;
+		using namespace RpgGaspPIENetworkTests;
+		Network
+			.SpawnAndReplicate<ARpgGaspNetworkFloorFixture, &FNetworkState::Floor>(NetworkTimeout())
+			.UntilServer(TEXT("Active-gait authority loads the Pilot Experience"),
+				[](FNetworkState& State) { return IsPilotExperienceReady(State, 1); }, NetworkTimeout())
+			.UntilClients(TEXT("Active-gait owner loads the Pilot pawn"),
+				[](FNetworkState& State)
+				{
+					return IsPilotExperienceReady(State, 1) && IsPilotCharacterReady(FindLocalCharacter(State.World));
+				}, NetworkTimeout())
+			.ThenClient(TEXT("Capture the active-gait owner"), 0,
+				[this](FNetworkState& State)
+				{
+					ARpgCharacter* Character = FindLocalCharacter(State.World);
+					ASSERT_THAT(IsNotNull(Character));
+					ASSERT_THAT(IsNotNull(Character->GetPlayerState()));
+					SubjectPlayerId = Character->GetPlayerState()->GetPlayerId();
+					State.SubjectPlayerId = SubjectPlayerId;
+				})
+			.ThenServer(TEXT("Place active-gait pawns on separated floor lanes"),
+				[this](FNetworkState& State)
+				{
+					State.SubjectPlayerId = SubjectPlayerId;
+					int32 Lane = 0;
+					for (TActorIterator<ARpgCharacter> It(State.World); It; ++It)
+					{
+						It->TeleportTo(FVector(-800.0 + 800.0 * Lane++, 0.0, 100.0), FRotator::ZeroRotator);
+						It->GetCharacterMovement()->StopMovementImmediately();
+						It->GetCharacterMovement()->SetMovementMode(MOVE_Walking);
+						It->ForceNetUpdate();
+					}
+				})
+			.UntilClient(TEXT("Active-gait owner is grounded"), 0,
+				[](FNetworkState& State)
+				{
+					ARpgCharacter* Character = FindLocalCharacter(State.World);
+					return Character && Character->GetCharacterMovement()->IsMovingOnGround();
+				}, NetworkTimeout())
+			.ThenClient(TEXT("Enter Run before the observer exists"), 0,
+				[](FNetworkState& State) { StartMovementInput(State, FVector::YAxisVector, 0.71f); })
+			.UntilServer(TEXT("Authority enters Run before late join"),
+				[](FNetworkState& State)
+				{
+					return HasExpectedMovementInput(State, ROLE_Authority, FVector::YAxisVector, 0.71f, ERpgLocomotionGait::Run);
+				}, NetworkTimeout())
+			.ThenClient(TEXT("Hold 0.69 Run so acceleration alone cannot reconstruct the gait"), 0,
+				[](FNetworkState& State) { StartMovementInput(State, FVector::YAxisVector, 0.69f); })
+			.UntilServer(TEXT("Authority holds Run inside the hysteresis band before late join"),
+				[](FNetworkState& State)
+				{
+					return HasExpectedMovementInput(State, ROLE_Authority, FVector::YAxisVector, 0.69f, ERpgLocomotionGait::Run);
+				}, NetworkTimeout())
+			.ThenClientJoins(NetworkTimeout())
+			.UntilServer(TEXT("Active-gait late join establishes the second connection"),
+				[](FNetworkState& State) { return IsPilotExperienceReady(State, 2); }, NetworkTimeout())
+			.UntilClient(TEXT("Active-gait late observer loads its pawn and floor"), 1,
+				[](FNetworkState& State)
+				{
+					return IsPilotExperienceReady(State, 2) && IsValid(State.Floor) &&
+						IsPilotCharacterReady(FindLocalCharacter(State.World));
+				}, NetworkTimeout())
+			.ThenClients(TEXT("Bind the running subject in both client worlds"),
+				[this](FNetworkState& State) { State.SubjectPlayerId = SubjectPlayerId; })
+			.UntilClients(TEXT("Owner and new simulated proxy agree on active Run at 0.69"),
+				[](FNetworkState& State)
+				{
+					return HasExpectedMovementInput(State,
+						State.ClientIndex == 0 ? ROLE_AutonomousProxy : ROLE_SimulatedProxy,
+						FVector::YAxisVector, 0.69f, ERpgLocomotionGait::Run);
+				}, NetworkTimeout())
+			.ThenClient(TEXT("Remember the observer proxy before relevancy loss"), 1,
+				[](FNetworkState& State)
+				{
+					State.SubjectBeforeRelevancyLoss = FindCharacterByPlayerId(State.World, State.SubjectPlayerId);
+				})
+			.ThenServer(TEXT("Move the observer outside running subject relevancy"),
+				[this](FNetworkState& State)
+				{
+					ARpgCharacter* Subject = FindCharacterByPlayerId(State.World, State.SubjectPlayerId);
+					APawn* Observer = State.ClientConnections[1]->PlayerController->GetPawn();
+					ASSERT_THAT(IsNotNull(Subject));
+					ASSERT_THAT(IsNotNull(Observer));
+					State.BaselineSubjectNetCullDistanceSquared = Subject->GetNetCullDistanceSquared();
+					State.bHasBaselineSubjectNetCullDistanceSquared = true;
+					Subject->SetNetCullDistanceSquared(FMath::Square(25000.0f));
+					ASSERT_THAT(IsTrue(Observer->TeleportTo(Subject->GetActorLocation() +
+						FVector(30000.0, 0.0, 0.0), FRotator::ZeroRotator)));
+					Observer->GetMovementComponent()->StopMovementImmediately();
+					Subject->ForceNetUpdate();
+				})
+			.UntilServer(TEXT("Active-gait observer actor channel closes"),
+				[](FNetworkState& State) { return HasSubjectActorChannel(State, 1, false); }, NetworkTimeout())
+			.UntilClient(TEXT("Active-gait observer destroys its old proxy"), 1,
+				[](FNetworkState& State)
+				{
+					return !State.SubjectBeforeRelevancyLoss.IsValid() &&
+						!FindCharacterByPlayerId(State.World, State.SubjectPlayerId);
+				}, NetworkTimeout())
+			.ThenServer(TEXT("Return the observer while the owner still holds 0.69 Run"),
+				[this](FNetworkState& State)
+				{
+					ARpgCharacter* Subject = FindCharacterByPlayerId(State.World, State.SubjectPlayerId);
+					APawn* Observer = State.ClientConnections[1]->PlayerController->GetPawn();
+					ASSERT_THAT(IsTrue(Observer->TeleportTo(Subject->GetActorLocation() +
+						FVector(500.0, 0.0, 0.0), FRotator::ZeroRotator)));
+					Observer->GetMovementComponent()->StopMovementImmediately();
+					Subject->ForceNetUpdate();
+				})
+			.UntilServer(TEXT("Active-gait observer actor channel reopens"),
+				[](FNetworkState& State) { return HasSubjectActorChannel(State, 1, true); }, NetworkTimeout())
+			.UntilClient(TEXT("Recreated proxy receives active Run without a new Run-enter event"), 1,
+				[](FNetworkState& State)
+				{
+					return HasExpectedMovementInput(State, ROLE_SimulatedProxy,
+						FVector::YAxisVector, 0.69f, ERpgLocomotionGait::Run);
+				}, NetworkTimeout())
+			.ThenServer(TEXT("Restore the subject relevancy distance"),
+				[](FNetworkState& State)
+				{
+					FindCharacterByPlayerId(State.World, State.SubjectPlayerId)->SetNetCullDistanceSquared(
+						State.BaselineSubjectNetCullDistanceSquared);
+					State.bHasBaselineSubjectNetCullDistanceSquared = false;
+				})
+			.ThenClient(TEXT("Exit Run below its lower threshold"), 0,
+				[](FNetworkState& State) { StartMovementInput(State, FVector::YAxisVector, 0.64f); })
+			.UntilClients(TEXT("Current-state replication also clears stale Run on the recreated proxy"),
+				[](FNetworkState& State)
+				{
+					return HasExpectedMovementInput(State,
+						State.ClientIndex == 0 ? ROLE_AutonomousProxy : ROLE_SimulatedProxy,
+						FVector::YAxisVector, 0.64f, ERpgLocomotionGait::Walk);
+				}, NetworkTimeout())
+			.ThenClient(TEXT("Stop active-gait owner input"), 0,
+				[](FNetworkState& State) { StopMovementInput(State); })
+			.UntilServer(TEXT("Authority clears current ground gait at physical stop"),
+				[](FNetworkState& State) { return HasStoppedAnimation(State); }, NetworkTimeout())
+			.UntilClients(TEXT("Owner and recreated proxy clear current ground gait at physical stop"),
+				[](FNetworkState& State) { return HasStoppedAnimation(State); }, NetworkTimeout());
 	}
 
 	TEST_METHOD(MovingBaseCorrectionPreservesAnimationHistory)

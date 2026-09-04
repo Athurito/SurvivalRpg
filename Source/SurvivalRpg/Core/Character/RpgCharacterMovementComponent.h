@@ -58,6 +58,24 @@ public:
 
 	/** Returns current normalized move intent reconstructed by CharacterMovement on this role. */
 	bool HasMoveIntent() const { return bHasMoveIntent; }
+
+	/** Returns the autonomous owner's current movement timestamp, or -1 when this is not the owner. */
+	float GetCurrentOwnerMoveTimeStamp() const;
+
+	/** Stores the Free-rotation acknowledgement boundary on owner/server; only authority sends corrections. */
+	void RequestOwnerRotationSynchronization(float OwnerAppliedMoveTimeStamp);
+
+	/** Clears a completed or superseded authority-owned rotation synchronization request. */
+	void CancelOwnerRotationSynchronization();
+
+	/** Validates a response timestamp against the current synchronization request, including CMC timestamp wrap. */
+	bool IsOwnerRotationSynchronizationCorrection(float TimeStamp) const;
+
+	/** Free-facing corrections must restore authoritative yaw before replaying the owner's later moves. */
+	virtual bool ShouldCorrectRotation() const override;
+
+	/** Extrapolates a remote owner's last validated gait during missing moves without reclassifying transport roundoff. */
+	virtual bool ForcePositionUpdate(float DeltaTime) override;
 	
 	virtual bool CanAttemptJump() const override;
 
@@ -99,11 +117,11 @@ public:
 	/** Applies the server's semantic teleport edge on a simulated proxy. */
 	void NotifyReplicatedAnimationTeleport();
 
-	/** Stores the authority's current Walk/Run coast classification for late join and relevancy return. */
-	void NotifyReplicatedGroundCoastGait(ERpgLocomotionGait NewCoastGait);
+	/** Stores current server Walk/Run movement state, including active input, late join, and coast. */
+	void NotifyReplicatedGroundMovementGait(ERpgLocomotionGait NewCoastGait);
 
-	/** Returns the local simulated-proxy coast hint; Idle means no authority coast is active. */
-	ERpgLocomotionGait GetReplicatedGroundCoastGait() const { return ReplicatedGroundCoastGait; }
+	/** Returns server ground gait for the simulated proxy; Idle means no active standing movement. */
+	ERpgLocomotionGait GetReplicatedGroundMovementGait() const { return ReplicatedGroundMovementGait; }
 
 	//~UMovementComponent interface
 	virtual void StopMovementImmediately() override;
@@ -118,6 +136,19 @@ public:
 	virtual float GetMaxBrakingDeceleration() const override;
 	//~End of UMovementComponent interface
 protected:
+	virtual void MoveAutonomous(
+		float ClientTimeStamp,
+		float DeltaTime,
+		uint8 CompressedFlags,
+		const FVector& NewAccel) override;
+	virtual void ServerMoveHandleClientError(
+		float ClientTimeStamp,
+		float DeltaTime,
+		const FVector& Accel,
+		const FVector& RelativeClientLocation,
+		FMovementBaseInterfaceData* ClientMovementBaseInterfaceData,
+		FName ClientBaseBoneName,
+		uint8 ClientMovementMode) override;
 	virtual void ControlledCharacterMove(
 		const FVector& InputVector,
 		float DeltaSeconds) override;
@@ -180,8 +211,8 @@ protected:
 	/** Rebuilds the value-only move-intent and gait snapshot after CharacterMovement updates. */
 	void RefreshLocomotionSnapshot();
 
-	/** Clears local ground presentation and the authority transport without discarding a received proxy hint. */
-	void ClearGroundCoastState();
+	/** Clears local ground presentation and server transport without discarding a received proxy snapshot. */
+	void ClearGroundGaitState();
 
 	/** Restores the physical Run latch encoded by a server move or client replay. */
 	void RestorePredictedGaitFromSavedMove(bool bSavedRunGait);
@@ -204,14 +235,23 @@ protected:
 	/** Prediction-owned input gait encoded in SavedMoves for Run hysteresis. */
 	ERpgLocomotionGait DesiredGait = ERpgLocomotionGait::Idle;
 
+	/** True only inside one authoritative ServerMove or client replay, whose gait was already saved. */
+	bool bResolvingSavedMove = false;
+
+	/** Run request for that exact move; validation must never latch a freshly rounded input into another gait. */
+	bool bCurrentSavedMoveRunGait = false;
+
+	/** Owner/server move boundary for a pending acknowledged Free-rotation transition; -1 means none. */
+	float OwnerRotationSynchronizationTimeStamp = -1.0f;
+
 	/** Current profile-thresholded input intent, including while airborne. */
 	bool bHasMoveIntent = false;
 
 	/** Current deadzone-resolved physical CMC input used by the GASP braking contract. */
 	bool bHasMovementInput = false;
 
-	/** Simulated-proxy-only semantic coast hint received from the authoritative character. */
-	ERpgLocomotionGait ReplicatedGroundCoastGait = ERpgLocomotionGait::Idle;
+	/** Simulated-proxy-only current ground gait received from the authoritative character. */
+	ERpgLocomotionGait ReplicatedGroundMovementGait = ERpgLocomotionGait::Idle;
 
 	// Cached ground info for the character.  Do not access this directly!  It's only updated when accessed via GetGroundInfo().
 	FRpgCharacterGroundInfo CachedGroundInfo;
@@ -269,6 +309,7 @@ protected:
 #if WITH_DEV_AUTOMATION_TESTS
 	friend class FRpgCharacterMovementProfileTest;
 	friend class FRpgCharacterMovementSavedMoveTest;
+	friend class FRpgCharacterRotationHandoffTimestampTest;
 #endif
 	friend class FSavedMove_RpgCharacter;
 };

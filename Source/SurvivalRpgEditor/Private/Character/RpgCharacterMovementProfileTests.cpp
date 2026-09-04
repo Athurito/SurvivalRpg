@@ -9,6 +9,7 @@
 #include "Components/BoxComponent.h"
 #include "Components/SceneComponent.h"
 #include "Misc/AutomationTest.h"
+#include "Net/Core/Serialization/QuantizedVectorSerialization.h"
 #include "Tests/AutomationCommon.h"
 #include "UObject/UnrealType.h"
 #include "SurvivalRpg/Core/Character/RpgCharacter.h"
@@ -122,15 +123,22 @@ bool FRpgCharacterMovementProfileTest::RunTest(const FString& Parameters)
 	}
 
 	TestEqual(
-		TEXT("Physical input ignores a stale Run coast hint"),
+		TEXT("Late active input inside the retention band consumes current server Run state"),
 		RpgCharacterMovementRuntime::ResolveGroundGait(
 			true,
 			150.0f,
-			0.5f,
+			0.69f,
 			ERpgLocomotionGait::Walk,
-			ERpgLocomotionGait::Run,
+			ERpgLocomotionGait::Idle,
 			ERpgLocomotionGait::Run,
 			Profile),
+		ERpgLocomotionGait::Run);
+	TestEqual(
+		TEXT("A server Walk transition repairs a proxy that missed the Run exit"),
+		RpgCharacterMovementRuntime::ResolveGroundGait(
+			true, 150.0f, 0.69f,
+			ERpgLocomotionGait::Run, ERpgLocomotionGait::Run,
+			ERpgLocomotionGait::Walk, Profile),
 		ERpgLocomotionGait::Walk);
 	FRpgCharacterMovementProfile PassiveCoastProfile = Profile;
 	PassiveCoastProfile.bOverrideCharacterMovement = false;
@@ -223,6 +231,37 @@ bool FRpgCharacterMovementProfileTest::RunTest(const FString& Parameters)
 			ERpgLocomotionGait::Walk,
 			Profile),
 		ERpgLocomotionGait::Walk);
+
+	const FQuat BaseRotation(FRotator(0.0f, 50.0f, 0.0f));
+	const FVector OwnerAcceleration(520.0f, 0.0f, 0.0f);
+	const FVector NetworkRelativeAcceleration = UE::Net::QuantizeVector(
+		10, BaseRotation.UnrotateVector(OwnerAcceleration));
+	const FVector ServerAcceleration = UE::Net::QuantizeVector(
+		10, BaseRotation.RotateVector(NetworkRelativeAcceleration));
+	const float ServerInput = static_cast<float>(ServerAcceleration.Size()) / Profile.MaxAcceleration;
+	TestTrue(
+		TEXT("The actual Quantize10 base roundtrip crosses the inclusive Run-exit boundary"),
+		ServerInput < Profile.RunInputExitThreshold);
+	TestEqual(
+		TEXT("A saved Run request survives that movement-base quantization boundary"),
+		RpgCharacterMovementRuntime::ResolveSavedMoveDesiredGait(
+			ServerInput, true, Profile.MaxAcceleration, Profile),
+		ERpgLocomotionGait::Run);
+	TestEqual(
+		TEXT("A saved Walk request cannot be promoted by upward transport roundoff"),
+		RpgCharacterMovementRuntime::ResolveSavedMoveDesiredGait(
+			0.7001f, false, Profile.MaxAcceleration, Profile),
+		ERpgLocomotionGait::Walk);
+	TestEqual(
+		TEXT("An invalid Run request below the allowed quantization margin remains Walk"),
+		RpgCharacterMovementRuntime::ResolveSavedMoveDesiredGait(
+			0.64f, true, Profile.MaxAcceleration, Profile),
+		ERpgLocomotionGait::Walk);
+	TestEqual(
+		TEXT("Run flags never restore input after a physical stop"),
+		RpgCharacterMovementRuntime::ResolveSavedMoveDesiredGait(
+			0.0f, true, Profile.MaxAcceleration, Profile),
+		ERpgLocomotionGait::Idle);
 	TestTrue(
 		TEXT("The movement profile never infers Sprint"),
 		RpgCharacterMovementRuntime::ResolveDesiredGait(
@@ -514,7 +553,7 @@ bool FRpgCharacterGroundCoastReplicationContractTest::RunTest(
 	const FString& Parameters)
 {
 	const FProperty* CoastGaitProperty =
-		ARpgCharacter::StaticClass()->FindPropertyByName(TEXT("GroundCoastGait"));
+		ARpgCharacter::StaticClass()->FindPropertyByName(TEXT("GroundMovementGait"));
 	TestNotNull(
 		TEXT("Character exposes reflected ground-coast state"),
 		CoastGaitProperty);
@@ -526,7 +565,7 @@ bool FRpgCharacterGroundCoastReplicationContractTest::RunTest(
 		TestEqual(
 			TEXT("Ground-coast state reconciles through its RepNotify"),
 			CoastGaitProperty->RepNotifyFunc,
-			FName(TEXT("OnRep_GroundCoastGait")));
+			FName(TEXT("OnRep_GroundMovementGait")));
 	}
 
 	URpgCharacterMovementComponent* MovementComponent =
@@ -534,11 +573,11 @@ bool FRpgCharacterGroundCoastReplicationContractTest::RunTest(
 	TestNotNull(TEXT("Movement component can store a coast hint"), MovementComponent);
 	if (MovementComponent)
 	{
-		MovementComponent->NotifyReplicatedGroundCoastGait(
+		MovementComponent->NotifyReplicatedGroundMovementGait(
 			ERpgLocomotionGait::Run);
 		TestEqual(
 			TEXT("Run is retained as a valid replicated coast hint"),
-			MovementComponent->GetReplicatedGroundCoastGait(),
+			MovementComponent->GetReplicatedGroundMovementGait(),
 			ERpgLocomotionGait::Run);
 
 		FRpgCharacterMovementProfile ActiveProfile;
@@ -548,19 +587,19 @@ bool FRpgCharacterGroundCoastReplicationContractTest::RunTest(
 			MovementComponent->ApplyMovementProfile(ActiveProfile));
 		TestEqual(
 			TEXT("A pre-PawnData coast hint survives movement-profile initialization"),
-			MovementComponent->GetReplicatedGroundCoastGait(),
+			MovementComponent->GetReplicatedGroundMovementGait(),
 			ERpgLocomotionGait::Run);
 		MovementComponent->StopMovementImmediately();
 		TestEqual(
 			TEXT("A local stop never discards the authority hint cached by a simulated proxy"),
-			MovementComponent->GetReplicatedGroundCoastGait(),
+			MovementComponent->GetReplicatedGroundMovementGait(),
 			ERpgLocomotionGait::Run);
 
-		MovementComponent->NotifyReplicatedGroundCoastGait(
+		MovementComponent->NotifyReplicatedGroundMovementGait(
 			ERpgLocomotionGait::Sprint);
 		TestEqual(
 			TEXT("Unsupported Sprint never enters the replicated coast contract"),
-			MovementComponent->GetReplicatedGroundCoastGait(),
+			MovementComponent->GetReplicatedGroundMovementGait(),
 			ERpgLocomotionGait::Idle);
 	}
 
@@ -632,7 +671,7 @@ bool FRpgCharacterMovementSavedMoveTest::RunTest(const FString& Parameters)
 	const FEnumProperty* CoastGaitProperty =
 		FindFProperty<FEnumProperty>(
 			ARpgCharacter::StaticClass(),
-			TEXT("GroundCoastGait"));
+			TEXT("GroundMovementGait"));
 	if (!TestNotNull(
 		TEXT("The authority coast transport is available for lifecycle checks"),
 		CoastGaitProperty))
@@ -1153,6 +1192,38 @@ bool FRpgCharacterMovementSavedMoveTest::RunTest(const FString& Parameters)
 		TEXT("A material live replay jump inside the shared base frame remains detectable"),
 		MovementComponent->IsLargePendingAnimationCorrection());
 	MovementComponent->ResetPendingAnimationCorrectionState();
+
+	// Exercise UE's real missing-move extrapolation path, which calls PerformMovement
+	// directly rather than MoveAutonomous. Reuse the fixture away from other test geometry.
+	MovingBaseComponent->SetBoxExtent(FVector(10000.0f, 10000.0f, 25.0f));
+	MovingBaseComponent->SetCollisionEnabled(ECollisionEnabled::QueryAndPhysics);
+	MovingBaseComponent->SetCollisionResponseToAllChannels(ECR_Block);
+	MovingBaseActor->SetActorTransform(FTransform(FRotator::ZeroRotator, FVector(-20000.0, 0.0, -25.0)));
+	MovementComponent->SetMovementMode(MOVE_Falling);
+	Character->SetActorLocation(FVector(-20000.0, 0.0, Character->GetSimpleCollisionHalfHeight() + 2.0));
+	Character->SetAutonomousProxy(true);
+	MovementComponent->bRunPhysicsWithNoController = true;
+	TestTrue(TEXT("Extrapolation fixture restores the standing profile"), MovementComponent->ApplyMovementProfile(Profile));
+	MovementComponent->SetMovementMode(MOVE_Walking);
+	MovementComponent->Velocity = FVector(325.0, 0.0, 0.0);
+	MovementComponent->MoveAutonomous(2.0f, 1.0f / 60.0f,
+		FSavedMove_Character::FLAG_Custom_0, FVector(519.9, 0.0, 0.0));
+	TestEqual(TEXT("Server validates the Run flag despite base-roundtrip acceleration below 0.65"),
+		MovementComponent->GetDesiredGait(), ERpgLocomotionGait::Run);
+	const FVector BeforeExtrapolation = Character->GetActorLocation();
+	TestTrue(TEXT("Authority extrapolates a remote owner through the native forced-update path"),
+		MovementComponent->ForcePositionUpdate(1.0f / 60.0f));
+	TestTrue(TEXT("Forced update actually advances the grounded subject"),
+		MovementComponent->IsMovingOnGround() && Character->GetActorLocation().X > BeforeExtrapolation.X);
+	TestEqual(TEXT("Missing-move extrapolation retains the last validated Run decision"),
+		MovementComponent->GetDesiredGait(), ERpgLocomotionGait::Run);
+	TestTrue(TEXT("Extrapolation preserves the Run cap"), FMath::IsNearlyEqual(MovementComponent->GetMaxSpeed(), 500.0f));
+	TestFalse(TEXT("Extrapolation does not leave a SavedMove scope active"), MovementComponent->bResolvingSavedMove);
+	MovementComponent->MoveAutonomous(2.1f, 1.0f / 60.0f, 0, FVector(552.0, 0.0, 0.0));
+	TestTrue(TEXT("Authority can extrapolate a validated Walk move too"),
+		MovementComponent->ForcePositionUpdate(1.0f / 60.0f));
+	TestEqual(TEXT("Forced update never invents Run from a Walk request inside the retention band"),
+		MovementComponent->GetDesiredGait(), ERpgLocomotionGait::Walk);
 
 	WorldWrapper.ForwardErrorMessages(this);
 	return !HasAnyErrors();

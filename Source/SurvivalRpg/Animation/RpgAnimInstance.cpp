@@ -644,9 +644,9 @@ bool URpgAnimInstance::CanRunParallelWork() const
 	const USkeletalMeshComponent* MeshComponent = GetSkelMeshComponent();
 	const UWorld* World = GetWorld();
 
-	const bool bIsRemoteAutonomousMoveOnListenServer =
+	const bool bIsRemoteAutonomousMoveOnServer =
 		World &&
-		World->GetNetMode() == NM_ListenServer &&
+		(World->GetNetMode() == NM_ListenServer || World->GetNetMode() == NM_DedicatedServer) &&
 		Character &&
 		Character->GetLocalRole() == ROLE_Authority &&
 		Character->GetRemoteRole() == ROLE_AutonomousProxy &&
@@ -655,8 +655,9 @@ bool URpgAnimInstance::CanRunParallelWork() const
 		MeshComponent->bIsAutonomousTickPose;
 
 	// Parallel updates collapse several autonomous move pose ticks into the last move delta.
-	// Updating this narrow path immediately preserves the full animation time and notify order.
-	return !bIsRemoteAutonomousMoveOnListenServer;
+	// CMC runs this path on listen and dedicated servers. Montages already advance per move;
+	// the graph must also consume each delta before the next move overwrites the proxy snapshot.
+	return !bIsRemoteAutonomousMoveOnServer;
 }
 
 void FRpgAnimInstanceProxy::PreUpdate(UAnimInstance* InAnimInstance, float DeltaSeconds)

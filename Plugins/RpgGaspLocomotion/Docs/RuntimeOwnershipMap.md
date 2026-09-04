@@ -25,7 +25,8 @@ the sample project a runtime dependency.
 | --- | --- | --- | --- |
 | `Update_PropertiesFromCharacter`, `Update_EssentialValues` | `InitializeWithAbilitySystem` for the ASC/tag map; `FRpgAnimInstanceProxy::PreUpdate` for the value snapshot | Existing ASC lifecycle plus proxy snapshot boundary | ASC delegates are initialized on the game thread. `PreUpdate` copies mirrored tag booleans and reads CharacterMovement/world state; no sample character hierarchy is imported. |
 | Character acceleration replication and analog trajectory intent | `ARpgCharacter::ShouldReplicateAcceleration`, UE 5.8 `FRepMovement`, and base `UCharacterMovementComponent::UpdateProxyAcceleration` | The same character-scoped engine path | The project opts only RPG characters into UE 5.8's native acceleration payload. Simulated proxies reconstruct both acceleration and `AnalogInputModifier`; there is no parallel custom acceleration property and no project-wide CVar override. |
-| Walk/Run prediction and inputless coast reconstruction | `URpgCharacterMovementComponent` `DesiredGait`/`GroundGait`, SavedMove `Custom0`, and `ARpgCharacter::GroundCoastGait` | CharacterMovement truth plus a narrow character replication bridge | Authority/autonomous prediction remains SavedMove-owned. Simulated proxies use replicated acceleration while input is active and the simulated-only semantic coast enum only while input is zero. Idle clears at physical stop; no pose, Pose History, Motion Matching, or AnimBP state replicates. |
+| Walk/Run prediction and active/coasting proxy reconstruction | `URpgCharacterMovementComponent` `DesiredGait`/`GroundGait`, SavedMove `Custom0`, and `ARpgCharacter::GroundMovementGait` | CharacterMovement truth plus a narrow character replication bridge | Authority/autonomous prediction remains SavedMove-owned. A scoped solve preserves each recorded gait through base-space acceleration quantization; server missing-move extrapolation preserves the last validated gait. Simulated proxies use replicated acceleration for intent and current simulated-only Walk/Run state for both active input and coast. Idle clears at physical stop or when leaving standing ground movement; no pose, Pose History, Motion Matching, or AnimBP state replicates. |
+| Controller-facing-to-Free rotation handoff | `ARpgCharacter` rotation policy/revision and reliable owner acknowledgements; `URpgCharacterMovementComponent` timestamped correction and replay | Existing Character authority/lifecycle plus CMC prediction | The owner acknowledges its last pre-Free move. Authority requests a yaw-bearing correction for a strictly newer move and retries until receipt is confirmed. Revision checks reject superseded handoffs; CMC restores capsule yaw before replay. AnimBP steering and turn presentation never author this synchronization. |
 | Network correction and semantic-teleport presentation resets | `URpgCharacterMovementComponent` local discontinuity serial, `ARpgCharacter` teleport epoch, and proxy `PreUpdate` | Existing Character/CharacterMovement authority plus one local presentation edge | Autonomous corrections compare the acknowledged move and server correction in the same resolved movement-base/bone frame, including the live pre-/post-replay check. Base/bone changes, absolute corrections, or unusable base data deliberately fall back to a world-space hard-reset classification; UE rejects unresolved relative-base RPCs before the project callback. Ordinary simulated-proxy smoothing never resets history; only semantic teleports or corrections beyond UE's no-smoothing range do. The AnimInstance no longer treats transient `bJustTeleported` as a durable network event. |
 | `Update_Trajectory` | Proxy `PreUpdate` orchestrates `PoseSearchGenerateTransformTrajectory`; `RpgPoseSearchTrajectory` owns its sampling constants and validation/correction helpers | Same split: proxy owns generation and snapshot lifetime; focused native helper owns the sampling/correction mechanism | Controller-yaw extrapolation is disabled for the controller-facing project character; raw history stays separate from worker-facing corrected output. |
 | `HandleTransformTrajectoryWorldCollisions` | `RpgPoseSearchTrajectory::ResolveWorldCollision` | Focused game-thread trajectory helper | Uses bounded sphere sweeps, CharacterMovement walkability, explicit validity, floor projection, and a pointer-free landing prediction. It never changes movement or touchdown authority. |
@@ -49,6 +50,7 @@ the sample project a runtime dependency.
 | Data or consumer | Authoritative or presentation frame | Contract |
 | --- | --- | --- |
 | Velocity, acceleration, `AnalogInputModifier`, MovementMode, floor/base state, and correction distance | CharacterMovement and the collision capsule | These values remain gameplay/network truth. Owner corrections compare the server position with the saved client move at the same acknowledged timestamp and, for the same resolved dynamic base and bone, in base-relative space. The documented fallback is world space when those frames cannot be shared; smoothed mesh state never feeds movement authority. |
+| Free-mode rotation correction | Authority capsule yaw at the corrected CMC move timestamp | The owner receives yaw through the normal CMC response and restores it before replaying newer moves. The handoff acknowledges a temporal boundary, not a client-authored yaw; no OnRep-only rotation snap or cosmetic turn result becomes authority. |
 | Local owner, standalone, and ordinary authority presentation | Actor/capsule transform | Their presentation snapshot uses the actor transform because it is not a network-smoothed remote view. |
 | SimulatedProxy and listen-server remote AutonomousProxy presentation | Skeletal-mesh component transform with the authored base translation and rotation offsets removed | One reconstructed presentation frame supplies snapshot location/yaw, local velocity/acceleration, Aim and locomotion angles, Pose Search trajectory history, and turn-in-place facing. This prevents capsule correction and mesh smoothing from being applied as two independent visual turns. |
 | Foot Placement | Smoothed mesh component plus game-thread floor/base traces | Foot locks and trace snapshots stay in the same visual frame as the rendered mesh. A shared semantic-discontinuity pulse resets their history; ordinary network smoothing does not. |
@@ -241,7 +243,7 @@ families, Sprint authority, combat polish, and default PawnData cutover are sepa
   PawnData, CharacterMovement, ASC, and AnimInstance paths. Issue #97 keeps gameplay authority in
   CharacterMovement, replaces the project-specific acceleration payload with UE 5.8
   `FRepMovement`, and adds only a semantic teleport epoch plus local presentation-reset serial.
-- **Topology:** the CQTest starts a listen host and one external client, late-joins a second client
+- **Topology:** the CQTest starts a listen host and one PIE client, late-joins a second client
   while the original subject is moving, then late-joins a third client while that subject is
   stationary. The subject is observed as Authority, AutonomousProxy, and SimulatedProxy.
 - **Network profile:** the test uses `PktLag=60` and `PktLagVariance=10`; configured packet loss,
@@ -262,20 +264,38 @@ families, Sprint authority, combat polish, and default PawnData cutover are sepa
   combat/death/ragdoll behavior, performance, and default cutover remain separate gates. See
   [the network smoke runbook](../../../docs/gasp-network-smoke.md).
 
-## Issue #101 coast-gait replication boundary
+## Issue #101 coast boundary and subsequent network review changes
+
+The original #101 slice introduced inputless-only `GroundCoastGait`. Subsequent network review
+supersedes that transport with `GroundMovementGait` for active input and coast, and adds the
+SavedMove/base-rounding and Free-rotation handoff fixes. The current contract below includes those
+later changes; they are not attributed to the original #101 slice.
 
 - **Authoritative truth:** CharacterMovement resolves Walk/Run from prediction-owned intent while
-  input is active. During inputless physical coast, `ARpgCharacter` stores only the authority's
-  current `Idle/Walk/Run` coast classification.
-- **Replication:** `GroundCoastGait` uses `COND_SimulatedOnly` plus RepNotify. The movement component
-  consumes Walk/Run only for an active standing-ground GASP profile with zero move intent; stop,
-  non-ground movement, and profile opt-out resolve and replicate Idle.
-- **Lifecycle:** a newly created or newly relevant proxy consumes the current coast classification
-  before local history or residual-speed fallback, so Run remains Run below the Walk cap. The hint
+  input is active and retains its physical coast classification after release. `ARpgCharacter`
+  stores the current standing `Idle/Walk/Run` classification in both cases.
+- **Prediction:** `Custom0` records the owner's Run decision. A scoped `MoveAutonomous` solve
+  validates it with only the bounded Quantize10 allowance, preserving the decision through
+  server movement and client replay. Server `ForcePositionUpdate` scopes the same validation
+  around its last accepted gait while extrapolating missing moves; reused acceleration does not
+  become a fresh input decision.
+- **Replication:** `GroundMovementGait` uses `COND_SimulatedOnly` plus RepNotify. The movement
+  component consumes Walk/Run only for a standing, uncrouched GASP profile, during active input
+  and coast; stop, non-standing movement, and profile opt-out clear the authority transport to Idle.
+- **Lifecycle:** a newly created or newly relevant proxy consumes current server gait before local
+  history or residual-speed fallback, preserving active Run inside the 0.65–0.70 retention band
+  and Run coast below the Walk cap. The hint
   survives PawnData/profile application ordering and clears deterministically at physical stop.
-- **Presentation boundary:** no AnimBP, Pose Search, Motion Matching, SavedMove, montage, or movement
-  history is replicated. `URpgAnimInstance` continues to consume the prepared CMC gait through its
-  existing worker-thread-safe snapshot.
+- **Rotation handoff:** Character authority advances an owner-only revision on policy/possession
+  changes. After actually applying Free, the owner reliably acknowledges its last pre-Free
+  movement timestamp. CMC requests a normal correction for a strictly newer move with
+  `bForceClientUpdate`, includes authority yaw through `ShouldCorrectRotation`, and restores it
+  before replay. The request survives unreliable response loss until the owner reliably confirms
+  receipt; new revisions cancel superseded requests. No movement input is needed after release.
+- **Presentation boundary:** the simulated-proxy gait bridge carries no AnimBP, Pose Search,
+  Motion Matching, SavedMove, montage, or movement history. The existing owner-to-server SavedMove
+  stream still carries `Custom0`. `URpgAnimInstance` consumes the prepared CMC gait through its
+  worker-thread-safe snapshot; replicated rotation and CMC corrections remain native gameplay seams.
 - **Experience boundary:** no content asset changes are required. `DA_PawnData_GASP` opts into the
   mechanism; the prototype PawnData remains opt-out and both Experiences remain independently
   selectable.
@@ -283,3 +303,12 @@ families, Sprint authority, combat polish, and default PawnData cutover are sepa
   `SurvivalRpg.Network.GaspPilotPIE.GroundCoastLateJoinAndRelevancyReturn` protects Walk and Run
   late join, Run coast below the Walk cap, real relevancy loss/recreation/return, role parity, and
   deterministic stop clearing in a rendered listen-server PIE session.
+- **Subsequent review regressions:**
+  `SurvivalRpg.Network.GaspPilotPIE.ActiveRunLateJoinAndRelevancyReturn` covers current Run state
+  inside the retention band; `RotatedBasePreservesSavedRunAtExitThreshold` in the same suite
+  covers base-space rounding; `RotationModeExitConvergesAfterInputRelease` covers delayed mode
+  replication, idle yaw convergence and receipt confirmation. Native
+  `SurvivalRpg.Character.Movement.SavedMovePrediction` also covers forced server extrapolation,
+  and `SurvivalRpg.Character.RotationMode.HandoffTimestampBoundary` covers timestamp/reset bounds
+  and an actual yaw-only CMC correction response with no positional error. These describe test
+  scope; run results belong with the tested revision and report in the network smoke runbook.

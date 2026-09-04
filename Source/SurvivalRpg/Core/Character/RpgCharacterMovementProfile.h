@@ -155,6 +155,16 @@ namespace RpgCharacterMovementRuntime
 		ERpgLocomotionGait PreviousGait,
 		const FRpgCharacterMovementProfile& Profile);
 
+	/**
+	 * Validates the move's recorded gait without repeating its hysteresis decision after base-space
+	 * network quantization. Run still requires its minimum input, allowing only Quantize10 roundoff.
+	 */
+	SURVIVALRPG_API ERpgLocomotionGait ResolveSavedMoveDesiredGait(
+		float InputMagnitude,
+		bool bSavedRunGait,
+		float MaxAcceleration,
+		const FRpgCharacterMovementProfile& Profile);
+
 	/** Reproduces GASP's forward/side/back mapping from an absolute local movement angle. */
 	SURVIVALRPG_API float ResolveDirectionalSpeed(
 		const FRpgDirectionalGroundSpeeds& Speeds,
@@ -174,7 +184,7 @@ namespace RpgCharacterMovementRuntime
 
 	/**
 	 * Resolves a stable grounded Idle/Walk/Run gait.
-	 * Deceleration retains local history, while a server coast hint reconstructs newly relevant simulated proxies.
+	 * A server gait hint reconstructs active input and coast on newly relevant simulated proxies.
 	 */
 	SURVIVALRPG_API ERpgLocomotionGait ResolveGroundGait(
 		bool bIsMovingOnGround,
@@ -182,6 +192,6 @@ namespace RpgCharacterMovementRuntime
 		float InputMagnitude,
 		ERpgLocomotionGait DesiredGait,
 		ERpgLocomotionGait PreviousGait,
-		ERpgLocomotionGait CoastGaitHint,
+		ERpgLocomotionGait AuthoritativeGaitHint,
 		const FRpgCharacterMovementProfile& Profile);
 }

@@ -7,8 +7,10 @@
 #include "GameplayAbilitiesDeveloperSettings.h"
 #include "Misc/AutomationTest.h"
 #include "SurvivalRpg/Core/Character/RpgCharacter.h"
+#include "SurvivalRpg/Core/Character/RpgCharacterMovementComponent.h"
 #include "SurvivalRpg/Core/Character/RpgPawnData.h"
 #include "SurvivalRpg/GameplayTags/RpgGameplayTags.h"
+#include "Tests/AutomationCommon.h"
 #include "UObject/UnrealType.h"
 
 IMPLEMENT_SIMPLE_AUTOMATION_TEST(
@@ -137,6 +139,14 @@ bool FRpgCharacterRotationModeReplicationContractTest::RunTest(const FString& Pa
 		TestTrue(TEXT("Rotation mode participates in actor replication"), RotationModeProperty->HasAnyPropertyFlags(CPF_Net));
 		TestEqual(TEXT("Rotation mode reconciles through OnRep_RotationMode"), RotationModeProperty->RepNotifyFunc, FName(TEXT("OnRep_RotationMode")));
 	}
+	const FProperty* RevisionProperty =
+		ARpgCharacter::StaticClass()->FindPropertyByName(TEXT("RotationModeRevision"));
+	TestNotNull(TEXT("Rotation handoffs have an authoritative replicated revision"), RevisionProperty);
+	if (RevisionProperty)
+	{
+		TestTrue(TEXT("Rotation revisions participate in actor replication"), RevisionProperty->HasAnyPropertyFlags(CPF_Net));
+		TestEqual(TEXT("A new revision retries the current mode handoff"), RevisionProperty->RepNotifyFunc, FName(TEXT("OnRep_RotationMode")));
+	}
 
 	TestTrue(TEXT("Combat-strafe request tag is registered"), RpgGameplayTags::State_Rotation_CombatStrafe.GetTag().IsValid());
 	TestTrue(TEXT("Aim request tag is registered"), RpgGameplayTags::State_Rotation_Aim.GetTag().IsValid());
@@ -152,6 +162,92 @@ bool FRpgCharacterRotationModeReplicationContractTest::RunTest(const FString& Pa
 	}
 
 	return true;
+}
+
+IMPLEMENT_SIMPLE_AUTOMATION_TEST(
+	FRpgCharacterRotationHandoffTimestampTest,
+	"SurvivalRpg.Character.RotationMode.HandoffTimestampBoundary",
+	EAutomationTestFlags::EditorContext | EAutomationTestFlags::EngineFilter)
+
+bool FRpgCharacterRotationHandoffTimestampTest::RunTest(const FString& Parameters)
+{
+	FTestWorldWrapper WorldWrapper;
+	if (!WorldWrapper.CreateTestWorld(EWorldType::Game) || !WorldWrapper.BeginPlayInTestWorld())
+	{
+		WorldWrapper.ForwardErrorMessages(this);
+		return false;
+	}
+	ARpgCharacter* Character = WorldWrapper.GetTestWorld()->SpawnActor<ARpgCharacter>();
+	URpgCharacterMovementComponent* Movement = Character
+		? Cast<URpgCharacterMovementComponent>(Character->GetCharacterMovement()) : nullptr;
+	if (!TestNotNull(TEXT("Rotation handoff owns a live CMC"), Movement))
+	{
+		return false;
+	}
+
+	Movement->RequestOwnerRotationSynchronization(10.0f);
+	TestFalse(TEXT("A pre-Free move cannot complete the handoff"),
+		Movement->IsOwnerRotationSynchronizationCorrection(9.9f));
+	TestFalse(TEXT("The last pre-Free SavedMove itself cannot complete the handoff"),
+		Movement->IsOwnerRotationSynchronizationCorrection(10.0f));
+	TestTrue(TEXT("A correction for a newer Free move completes the handoff"),
+		Movement->IsOwnerRotationSynchronizationCorrection(10.1f));
+	TestFalse(TEXT("Invalid corrections cannot complete the handoff"),
+		Movement->IsOwnerRotationSynchronizationCorrection(std::numeric_limits<float>::quiet_NaN()));
+	TestFalse(TEXT("Negative corrections cannot complete the handoff"),
+		Movement->IsOwnerRotationSynchronizationCorrection(-1.0f));
+	Movement->CancelOwnerRotationSynchronization();
+	TestFalse(TEXT("A cancelled handoff ignores later responses"),
+		Movement->IsOwnerRotationSynchronizationCorrection(10.1f));
+
+	const float ResetPeriod = Movement->MinTimeBetweenTimeStampResets;
+	Movement->RequestOwnerRotationSynchronization(ResetPeriod - 0.1f);
+	TestTrue(TEXT("The first newer move after a CMC timestamp reset is accepted"),
+		Movement->IsOwnerRotationSynchronizationCorrection(0.1f));
+	Movement->RequestOwnerRotationSynchronization(0.1f);
+	TestFalse(TEXT("A delayed response from before the reset cannot confirm the new revision"),
+		Movement->IsOwnerRotationSynchronizationCorrection(ResetPeriod - 0.1f));
+	TestTrue(TEXT("A newer response in the current timestamp epoch is accepted"),
+		Movement->IsOwnerRotationSynchronizationCorrection(0.2f));
+	Movement->CancelOwnerRotationSynchronization();
+	Movement->RequestOwnerRotationSynchronization(std::numeric_limits<float>::infinity());
+	TestFalse(TEXT("An invalid request never arms a correction"),
+		Movement->IsOwnerRotationSynchronizationCorrection(1.0f));
+
+	// Equal positions normally produce only GoodMove acknowledgements. Exercise the actual
+	// engine error/response path so a yaw-only handoff cannot silently omit its correction.
+	Movement->SetMovementMode(MOVE_Flying);
+	Movement->bOrientRotationToMovement = true;
+	Character->SetActorRotation(FRotator(0.0, 30.0, 0.0));
+	FNetworkPredictionData_Server_Character* ServerData = Movement->GetPredictionData_Server_Character();
+	ServerData->LastUpdateTime = WorldWrapper.GetTestWorld()->TimeSeconds;
+	const auto ProcessEqualPositionMove = [Movement, Character](float TimeStamp)
+	{
+		Movement->ServerMoveHandleClientError(TimeStamp, 1.0f / 60.0f, FVector::ZeroVector,
+			Character->GetActorLocation(), nullptr, NAME_None, Movement->PackNetworkMovementMode());
+	};
+	Movement->RequestOwnerRotationSynchronization(10.0f);
+	ProcessEqualPositionMove(10.0f);
+	TestTrue(TEXT("The last pre-Free move remains a normal acknowledgement"),
+		ServerData->PendingAdjustment.bAckGoodMove);
+	ProcessEqualPositionMove(10.1f);
+	TestFalse(TEXT("A newer Free move forces correction even with zero positional error"),
+		ServerData->PendingAdjustment.bAckGoodMove);
+	TestEqual(TEXT("The correction belongs to the eligible move timestamp"),
+		ServerData->PendingAdjustment.TimeStamp, 10.1f);
+	FCharacterMoveResponseDataContainer Response;
+	Response.ServerFillResponseData(*Movement, ServerData->PendingAdjustment);
+	TestTrue(TEXT("The normal CMC correction carries authoritative yaw"), Response.bHasRotation);
+	TestTrue(TEXT("Correction yaw comes from the authoritative capsule"),
+		FMath::IsNearlyEqual(ServerData->PendingAdjustment.NewRot.Yaw, 30.0));
+	ProcessEqualPositionMove(10.2f);
+	TestFalse(TEXT("Correction retries persist until the owner confirms receipt"),
+		ServerData->PendingAdjustment.bAckGoodMove);
+	Movement->CancelOwnerRotationSynchronization();
+	ProcessEqualPositionMove(10.3f);
+	TestTrue(TEXT("Confirmation restores ordinary acknowledgements without repeated corrections"),
+		ServerData->PendingAdjustment.bAckGoodMove);
+	return !HasAnyErrors();
 }
 
 #endif // WITH_DEV_AUTOMATION_TESTS

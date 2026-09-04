@@ -160,6 +160,98 @@ bool URpgCharacterMovementComponent::HasMovementStoppedTag() const
 	return ASC && ASC->HasMatchingGameplayTag(TAG_Gameplay_MovementStopped);
 }
 
+void URpgCharacterMovementComponent::MoveAutonomous(
+	float ClientTimeStamp,
+	float DeltaTime,
+	uint8 CompressedFlags,
+	const FVector& NewAccel)
+{
+	TGuardValue<bool> SavedMoveScope(bResolvingSavedMove, true);
+	TGuardValue<bool> RunRequestScope(
+		bCurrentSavedMoveRunGait,
+		(CompressedFlags & FSavedMove_Character::FLAG_Custom_0) != 0);
+	Super::MoveAutonomous(ClientTimeStamp, DeltaTime, CompressedFlags, NewAccel);
+}
+
+bool URpgCharacterMovementComponent::ForcePositionUpdate(float DeltaTime)
+{
+	if (CharacterOwner && CharacterOwner->HasAuthority() &&
+		CharacterOwner->GetRemoteRole() == ROLE_AutonomousProxy)
+	{
+		// UE extrapolates the previous acceleration directly through PerformMovement here,
+		// bypassing MoveAutonomous. Preserve its already validated gait, never infer a new request.
+		TGuardValue<bool> SavedMoveScope(bResolvingSavedMove, true);
+		TGuardValue<bool> RunRequestScope(
+			bCurrentSavedMoveRunGait, DesiredGait == ERpgLocomotionGait::Run);
+		return Super::ForcePositionUpdate(DeltaTime);
+	}
+	return Super::ForcePositionUpdate(DeltaTime);
+}
+
+float URpgCharacterMovementComponent::GetCurrentOwnerMoveTimeStamp() const
+{
+	if (!CharacterOwner || CharacterOwner->GetLocalRole() != ROLE_AutonomousProxy ||
+		!CharacterOwner->IsLocallyControlled())
+	{
+		return -1.0f;
+	}
+	const FNetworkPredictionData_Client_Character* ClientData = GetPredictionData_Client_Character();
+	return ClientData && FMath::IsFinite(ClientData->CurrentTimeStamp)
+		? ClientData->CurrentTimeStamp
+		: -1.0f;
+}
+
+void URpgCharacterMovementComponent::RequestOwnerRotationSynchronization(float OwnerAppliedMoveTimeStamp)
+{
+	if (CharacterOwner &&
+		FMath::IsFinite(OwnerAppliedMoveTimeStamp) && OwnerAppliedMoveTimeStamp >= 0.0f)
+	{
+		OwnerRotationSynchronizationTimeStamp = OwnerAppliedMoveTimeStamp;
+	}
+}
+
+void URpgCharacterMovementComponent::CancelOwnerRotationSynchronization()
+{
+	OwnerRotationSynchronizationTimeStamp = -1.0f;
+}
+
+bool URpgCharacterMovementComponent::IsOwnerRotationSynchronizationCorrection(float TimeStamp) const
+{
+	const float Delta = TimeStamp - OwnerRotationSynchronizationTimeStamp;
+	const float HalfResetPeriod = MinTimeBetweenTimeStampResets * 0.5f;
+	return OwnerRotationSynchronizationTimeStamp >= 0.0f && FMath::IsFinite(TimeStamp) &&
+		TimeStamp >= 0.0f &&
+		((Delta > 0.0f && Delta <= HalfResetPeriod) || Delta < -HalfResetPeriod);
+}
+
+bool URpgCharacterMovementComponent::ShouldCorrectRotation() const
+{
+	return bOrientRotationToMovement || Super::ShouldCorrectRotation();
+}
+
+void URpgCharacterMovementComponent::ServerMoveHandleClientError(
+	float ClientTimeStamp,
+	float DeltaTime,
+	const FVector& Accel,
+	const FVector& RelativeClientLocation,
+	FMovementBaseInterfaceData* ClientMovementBaseInterfaceData,
+	FName ClientBaseBoneName,
+	uint8 ClientMovementMode)
+{
+	if (bOrientRotationToMovement && IsOwnerRotationSynchronizationCorrection(ClientTimeStamp))
+	{
+		// Keep retrying through normal CMC response throttling until the owner confirms receipt.
+		// Move responses are unreliable; consuming the request here would lose yaw-only corrections.
+		// ForceClientAdjustment only clears the send timer. Rotation-only divergence also
+		// needs an explicit correction request because UE's position error check ignores yaw.
+		GetPredictionData_Server_Character()->bForceClientUpdate = true;
+		ForceClientAdjustment();
+	}
+	Super::ServerMoveHandleClientError(
+		ClientTimeStamp, DeltaTime, Accel, RelativeClientLocation,
+		ClientMovementBaseInterfaceData, ClientBaseBoneName, ClientMovementMode);
+}
+
 void URpgCharacterMovementComponent::ControlledCharacterMove(
 	const FVector& InputVector,
 	float DeltaSeconds)
@@ -239,10 +331,11 @@ void URpgCharacterMovementComponent::UpdatePredictedGaitFromInput(
 {
 	if (MovementProfile.bOverrideCharacterMovement)
 	{
-		DesiredGait = RpgCharacterMovementRuntime::ResolveDesiredGait(
-			InputMagnitude,
-			DesiredGait,
-			MovementProfile);
+		DesiredGait = bResolvingSavedMove
+			? RpgCharacterMovementRuntime::ResolveSavedMoveDesiredGait(
+				InputMagnitude, bCurrentSavedMoveRunGait, GetMaxAcceleration(), MovementProfile)
+			: RpgCharacterMovementRuntime::ResolveDesiredGait(
+				InputMagnitude, DesiredGait, MovementProfile);
 	}
 }
 
@@ -321,7 +414,7 @@ void URpgCharacterMovementComponent::OnMovementModeChanged(
 	Super::OnMovementModeChanged(PreviousMovementMode, PreviousCustomMode);
 	if (!UsesStandingGroundMovementProfile())
 	{
-		ClearGroundCoastState();
+		ClearGroundGaitState();
 	}
 }
 
@@ -372,38 +465,48 @@ void URpgCharacterMovementComponent::RefreshLocomotionSnapshot()
 				1.0f)
 			: 0.0f;
 	}
-	DesiredGait = RpgCharacterMovementRuntime::ResolveDesiredGait(
-		GaitInputMagnitude,
-		MovementProfile.bOverrideCharacterMovement
-			? DesiredGait
-			: ERpgLocomotionGait::Idle,
-		MovementProfile);
+	if (MovementProfile.bOverrideCharacterMovement)
+	{
+		UpdatePredictedGaitFromInput(GaitInputMagnitude);
+	}
+	else
+	{
+		DesiredGait = RpgCharacterMovementRuntime::ResolveDesiredGait(
+			GaitInputMagnitude, ERpgLocomotionGait::Idle, MovementProfile);
+	}
 	bHasMoveIntent = RpgCharacterMovementRuntime::HasMoveIntent(
 		GaitInputMagnitude,
 		MovementProfile);
+	const bool bUseAuthoritativeGait = bUsesStandingGroundProfile && CharacterOwner &&
+		CharacterOwner->GetLocalRole() == ROLE_SimulatedProxy &&
+		(ReplicatedGroundMovementGait == ERpgLocomotionGait::Walk ||
+		 ReplicatedGroundMovementGait == ERpgLocomotionGait::Run);
+	if (bUseAuthoritativeGait && bHasMoveIntent)
+	{
+		DesiredGait = ReplicatedGroundMovementGait;
+	}
 	GroundGait = RpgCharacterMovementRuntime::ResolveGroundGait(
 		IsMovingOnGround(),
 		Velocity.Size2D(),
 		PhysicalInputMagnitude,
 		DesiredGait,
 		GroundGait,
-		CharacterOwner && CharacterOwner->GetLocalRole() == ROLE_SimulatedProxy
-			? ReplicatedGroundCoastGait
+		bUseAuthoritativeGait
+			? ReplicatedGroundMovementGait
 			: ERpgLocomotionGait::Idle,
 		MovementProfile);
 
 	if (ARpgCharacter* RpgCharacter = Cast<ARpgCharacter>(CharacterOwner);
 		RpgCharacter && RpgCharacter->HasAuthority())
 	{
-		const ERpgLocomotionGait AuthoritativeCoastGait =
+		const ERpgLocomotionGait AuthoritativeGait =
 			MovementProfile.bOverrideCharacterMovement &&
 			UsesStandingGroundMovementProfile() &&
-			!bHasMoveIntent &&
 			(GroundGait == ERpgLocomotionGait::Walk ||
 			 GroundGait == ERpgLocomotionGait::Run)
 				? GroundGait
 				: ERpgLocomotionGait::Idle;
-		RpgCharacter->SetAuthoritativeGroundCoastGait(AuthoritativeCoastGait);
+		RpgCharacter->SetAuthoritativeGroundMovementGait(AuthoritativeGait);
 	}
 }
 
@@ -416,16 +519,16 @@ void URpgCharacterMovementComponent::OnTeleported()
 void URpgCharacterMovementComponent::StopMovementImmediately()
 {
 	Super::StopMovementImmediately();
-	ClearGroundCoastState();
+	ClearGroundGaitState();
 }
 
-void URpgCharacterMovementComponent::ClearGroundCoastState()
+void URpgCharacterMovementComponent::ClearGroundGaitState()
 {
 	GroundGait = ERpgLocomotionGait::Idle;
 	if (ARpgCharacter* RpgCharacter = Cast<ARpgCharacter>(CharacterOwner);
 		RpgCharacter && RpgCharacter->HasAuthority())
 	{
-		RpgCharacter->SetAuthoritativeGroundCoastGait(
+		RpgCharacter->SetAuthoritativeGroundMovementGait(
 			ERpgLocomotionGait::Idle);
 	}
 }
@@ -435,10 +538,10 @@ void URpgCharacterMovementComponent::NotifyReplicatedAnimationTeleport()
 	MarkAnimationDiscontinuity();
 }
 
-void URpgCharacterMovementComponent::NotifyReplicatedGroundCoastGait(
+void URpgCharacterMovementComponent::NotifyReplicatedGroundMovementGait(
 	ERpgLocomotionGait NewCoastGait)
 {
-	ReplicatedGroundCoastGait =
+	ReplicatedGroundMovementGait =
 		NewCoastGait == ERpgLocomotionGait::Walk ||
 		NewCoastGait == ERpgLocomotionGait::Run
 			? NewCoastGait
@@ -513,6 +616,10 @@ void URpgCharacterMovementComponent::OnClientCorrectionReceived(
 		bBaseRelativePosition,
 		ServerMovementMode,
 		ServerGravityDirection);
+	if (ARpgCharacter* RpgCharacter = Cast<ARpgCharacter>(CharacterOwner))
+	{
+		RpgCharacter->NotifyOwnerRotationCorrectionReceived(TimeStamp);
+	}
 }
 
 bool URpgCharacterMovementComponent::ClientUpdatePositionAfterServerUpdate()

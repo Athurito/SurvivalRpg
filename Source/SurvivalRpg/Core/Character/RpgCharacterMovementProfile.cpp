@@ -173,13 +173,33 @@ ERpgLocomotionGait RpgCharacterMovementRuntime::ResolveDesiredGait(
 		: ERpgLocomotionGait::Walk;
 }
 
+ERpgLocomotionGait RpgCharacterMovementRuntime::ResolveSavedMoveDesiredGait(
+	float InputMagnitude,
+	bool bSavedRunGait,
+	float MaxAcceleration,
+	const FRpgCharacterMovementProfile& Profile)
+{
+	const float PhysicalInput = ResolvePhysicalInputMagnitude(InputMagnitude, Profile);
+	if (PhysicalInput <= 0.0f || !FMath::IsFinite(MaxAcceleration) || MaxAcceleration <= UE_SMALL_NUMBER)
+	{
+		return ERpgLocomotionGait::Idle;
+	}
+
+	// A canonical world vector can be rounded once in movement-base space for the RPC and
+	// once after reconstruction. Each Quantize10 operation contributes at most sqrt(3)*0.05 cm/s^2.
+	const float InputRoundoff = (2.0f * UE_SQRT_3 * 0.05f) / MaxAcceleration;
+	return bSavedRunGait && PhysicalInput + InputRoundoff >= Profile.RunInputExitThreshold
+		? ERpgLocomotionGait::Run
+		: ERpgLocomotionGait::Walk;
+}
+
 ERpgLocomotionGait RpgCharacterMovementRuntime::ResolveGroundGait(
 	bool bIsMovingOnGround,
 	float GroundSpeed,
 	float InputMagnitude,
 	ERpgLocomotionGait DesiredGait,
 	ERpgLocomotionGait PreviousGait,
-	ERpgLocomotionGait CoastGaitHint,
+	ERpgLocomotionGait AuthoritativeGaitHint,
 	const FRpgCharacterMovementProfile& Profile)
 {
 	if (!bIsMovingOnGround ||
@@ -198,20 +218,20 @@ ERpgLocomotionGait RpgCharacterMovementRuntime::ResolveGroundGait(
 		return ERpgLocomotionGait::Idle;
 	}
 
+	// Input magnitude cannot recover a hysteretic gait when the proxy missed its entry edge.
+	// Current server state therefore precedes both active-input reconstruction and coast history.
+	if (Profile.bOverrideCharacterMovement &&
+		(AuthoritativeGaitHint == ERpgLocomotionGait::Walk ||
+		 AuthoritativeGaitHint == ERpgLocomotionGait::Run))
+	{
+		return AuthoritativeGaitHint;
+	}
+
 	if (bHasMoveIntent)
 	{
 		return DesiredGait == ERpgLocomotionGait::Run
 			? ERpgLocomotionGait::Run
 			: ERpgLocomotionGait::Walk;
-	}
-
-	// The authority publishes only the current Walk/Run coast classification. Prefer it
-	// over local history so a newly relevant proxy and an existing proxy converge alike.
-	if (Profile.bOverrideCharacterMovement &&
-		(CoastGaitHint == ERpgLocomotionGait::Walk ||
-		 CoastGaitHint == ERpgLocomotionGait::Run))
-	{
-		return CoastGaitHint;
 	}
 
 	// Preserve the moving database while physical deceleration finishes after input release.
