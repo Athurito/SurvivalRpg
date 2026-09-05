@@ -69,6 +69,7 @@ ERpgGaspPresentationAssetTrait GetRequiredDatabaseTrait(
 
 FRpgGaspPresentationProfileValidation URpgGaspPresentationProfile::ValidateProfile() const
 {
+	check(IsInGameThread());
 	FRpgGaspPresentationProfileValidation Validation;
 	TSet<const UAnimSequenceBase*> SeenAssets;
 	TMap<const UAnimationAsset*, ERpgGaspPresentationAssetTrait> TraitsByAsset;
@@ -118,6 +119,7 @@ FRpgGaspPresentationProfileValidation URpgGaspPresentationProfile::ValidateProfi
 
 	Validation.bHasEmptyRuntimeDatabases = RuntimeMotionMatchingDatabases.IsEmpty();
 	TSet<const UPoseSearchDatabase*> SeenDatabases;
+	TSet<const UAnimationAsset*> TurnDatabaseAssets;
 	constexpr int32 RoleCount = static_cast<int32>(ERpgMotionMatchingDatabaseRole::Count);
 	int32 CountsByRole[RoleCount] = {};
 	for (UPoseSearchDatabase* Database : RuntimeMotionMatchingDatabases)
@@ -149,6 +151,13 @@ FRpgGaspPresentationProfileValidation URpgGaspPresentationProfile::ValidateProfi
 		++CountsByRole[RoleIndex];
 		const int32 AnimationAssetCount = Database->GetNumAnimationAssets();
 		Validation.bHasRuntimeDatabaseWithoutAssets |= AnimationAssetCount <= 0;
+		if (Role == ERpgMotionMatchingDatabaseRole::StandTurnInPlace)
+		{
+			for (int32 AssetIndex = 0; AssetIndex < AnimationAssetCount; ++AssetIndex)
+			{
+				TurnDatabaseAssets.Add(Cast<UAnimationAsset>(Database->GetAnimationAsset(AssetIndex)));
+			}
+		}
 
 		const ERpgGaspPresentationAssetTrait RequiredTrait = GetRequiredDatabaseTrait(Role);
 		if (RequiredTrait == ERpgGaspPresentationAssetTrait::None)
@@ -190,6 +199,25 @@ FRpgGaspPresentationProfileValidation URpgGaspPresentationProfile::ValidateProfi
 	}
 	Validation.bHasInvalidTuning =
 		!RpgGaspLocomotionConfig::IsTuningRuntimeValid(LocomotionTuning);
+
+	if (!TurnInPlaceClipTimings.IsEmpty())
+	{
+		TSet<const UAnimationAsset*> TimedTurnAssets;
+		for (const FRpgTurnInPlaceClipTiming& Timing : TurnInPlaceClipTimings)
+		{
+			const UAnimSequenceBase* Asset = Timing.Asset.Get();
+			Validation.bHasInvalidTurnInPlaceTiming |=
+				!Asset || TimedTurnAssets.Contains(Asset) ||
+				!FMath::IsFinite(Timing.ReentryTimeSeconds) || Timing.ReentryTimeSeconds <= 0.0f ||
+				(Asset && (Asset->bLoop || !FMath::IsFinite(Asset->GetPlayLength()) ||
+					Timing.ReentryTimeSeconds > Asset->GetPlayLength()));
+			TimedTurnAssets.Add(Asset);
+			Validation.bHasTurnInPlaceTimingCoverageMismatch |= !TurnDatabaseAssets.Contains(Asset);
+		}
+		Validation.bHasTurnInPlaceTimingCoverageMismatch |=
+			CountsByRole[static_cast<int32>(ERpgMotionMatchingDatabaseRole::StandTurnInPlace)] != 1 ||
+			TimedTurnAssets.Num() != TurnDatabaseAssets.Num();
+	}
 
 	return Validation;
 }
@@ -282,6 +310,16 @@ EDataValidationResult URpgGaspPresentationProfile::IsDataValid(FDataValidationCo
 		Context.AddError(FText::FromString(
 			TEXT("GASP locomotion tuning must be finite and satisfy its normalized, ordered threshold, angle, and duration contracts.")));
 	}
+	if (Validation.bHasInvalidTurnInPlaceTiming)
+	{
+		Context.AddError(FText::FromString(
+			TEXT("Turn-in-place timings require unique non-null, non-looping assets and finite release times greater than zero and no later than the asset end.")));
+	}
+	if (Validation.bHasTurnInPlaceTimingCoverageMismatch)
+	{
+		Context.AddError(FText::FromString(
+			TEXT("A non-empty turn-in-place timing set must cover exactly the assets of one StandTurnInPlace runtime database.")));
+	}
 	return Context.GetNumErrors() > 0
 		? EDataValidationResult::Invalid
 		: EDataValidationResult::Valid;
@@ -300,8 +338,9 @@ bool FRpgGaspPresentationAssetLookup::BuildValidated(
 	const URpgGaspPresentationProfile* Profile,
 	const FRpgGaspPresentationProfileValidation& Validation)
 {
+	check(IsInGameThread());
 	Reset();
-	if (!Profile || !Validation.IsMembershipValid())
+	if (!Profile || !Validation.IsMembershipValid() || !Validation.IsTurnInPlaceTimingValid())
 	{
 		return false;
 	}
@@ -313,12 +352,25 @@ bool FRpgGaspPresentationAssetLookup::BuildValidated(
 			Membership.Asset.Get(),
 			ResolvePresentationTraits(Membership.Category));
 	}
+	for (const FRpgTurnInPlaceClipTiming& Timing : Profile->TurnInPlaceClipTimings)
+	{
+		TurnInPlaceReentryTimes.Add(Timing.Asset.Get(), Timing.ReentryTimeSeconds);
+	}
 	return true;
 }
 
 void FRpgGaspPresentationAssetLookup::Reset()
 {
 	AssetTraits.Reset();
+	TurnInPlaceReentryTimes.Reset();
+}
+
+bool FRpgGaspPresentationAssetLookup::FindTurnInPlaceReentryTime(
+	const UAnimationAsset* Asset, float& OutSeconds) const
+{
+	const float* ReentryTime = Asset ? TurnInPlaceReentryTimes.Find(Asset) : nullptr;
+	OutSeconds = ReentryTime ? *ReentryTime : 0.0f;
+	return ReentryTime != nullptr;
 }
 
 bool FRpgGaspPresentationAssetLookup::HasTrait(

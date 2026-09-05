@@ -1,6 +1,7 @@
 // Copyright Epic Games, Inc. All Rights Reserved.
 
 #include "RpgAnimInstance.h"
+#include "RpgAnimationPlaybackRuntime.h"
 #include "AbilitySystemGlobals.h"
 #include "Animation/AnimSequenceBase.h"
 #include "AnimationWarpingLibrary.h"
@@ -693,6 +694,7 @@ void FRpgAnimInstanceProxy::PreUpdate(UAnimInstance* InAnimInstance, float Delta
 	bLandingTouchdownPendingConsumption = false;
 	ActorYaw = 0.0f;
 	ActorYawDelta = 0.0f;
+	MeshBasisRotation = FQuat::Identity;
 	ActorLocation = FVector::ZeroVector;
 	TrajectoryLandingPrediction = FRpgTrajectoryLandingPrediction();
 	FootPlacementSnapshot = FRpgFootPlacementSnapshot();
@@ -763,6 +765,7 @@ void FRpgAnimInstanceProxy::PreUpdate(UAnimInstance* InAnimInstance, float Delta
 	const FTransform PresentationActorTransform = GetPresentationActorTransform(*Character);
 	const FQuat ActorRotation = PresentationActorTransform.GetRotation();
 	ActorYaw = ActorRotation.Rotator().Yaw;
+	MeshBasisRotation = Character->GetBaseRotationOffset().GetNormalized();
 	ActorLocation = PresentationActorTransform.GetLocation();
 	const uint32 OwnerUniqueId = Character->GetUniqueID();
 	const uint8 LocalRole = static_cast<uint8>(Character->GetLocalRole());
@@ -1824,6 +1827,7 @@ void URpgAnimInstance::ClearTurnInPlaceSelection()
 {
 	TurnInPlaceSelectedAsset = nullptr;
 	TurnInPlaceSelectedAssetStartTime = 0.0f;
+	TurnInPlaceSelectedAssetReentryTime = -1.0f;
 	TurnInPlaceSelectedAssetRemainingTime = MAX_flt;
 	TurnInPlaceSelectedRequestSerial = 0;
 	TurnInPlacePlaybackWatchdogDuration = RuntimeGaspLocomotionTuning.TurnActiveTimeout;
@@ -1910,6 +1914,7 @@ void URpgAnimInstance::UpdateTurnInPlaceRuntime(float DeltaSeconds, const FRpgAn
 			Proxy.ActorYaw,
 			TurnInPlaceAccumulatedYaw,
 			TurnInPlaceQueryAngle,
+			Proxy.MeshBasisRotation,
 			RuntimeGaspLocomotionTuning);
 		LocomotionTrajectory = TurnInPlaceSyntheticTrajectory;
 	}
@@ -1951,6 +1956,9 @@ bool URpgAnimInstance::TryLatchTurnInPlaceSelection(
 
 	TurnInPlaceSelectedAsset = SelectedAsset;
 	TurnInPlaceSelectedAssetStartTime = FMath::Max(SelectedTime, 0.0f);
+	TurnInPlaceSelectedAssetReentryTime = -1.0f;
+	GaspPresentationAssetLookup.FindTurnInPlaceReentryTime(
+		SelectedAsset, TurnInPlaceSelectedAssetReentryTime);
 	TurnInPlaceSelectedAssetRemainingTime = FMath::Max(
 		SelectedAsset->GetPlayLength() - TurnInPlaceSelectedAssetStartTime,
 		0.0f);
@@ -1995,9 +2003,9 @@ void URpgAnimInstance::UpdateTurnInPlaceLatchedPlayback(
 		const float EffectiveAssetLength = CurrentAssetLength > UE_SMALL_NUMBER
 			? CurrentAssetLength
 			: TurnInPlaceSelectedAsset->GetPlayLength();
-		TurnInPlaceSelectedAssetRemainingTime = FMath::Max(
-			EffectiveAssetLength - FMath::Max(CurrentAssetTime, 0.0f),
-			0.0f);
+		const float ClampedAssetTime = FMath::Clamp(CurrentAssetTime, 0.0f, EffectiveAssetLength);
+		TurnInPlaceSelectedAssetRemainingTime = CurrentAssetPlayRate < 0.0f
+			? ClampedAssetTime : EffectiveAssetLength - ClampedAssetTime;
 		if (bFirstPlaybackObservation)
 		{
 			TurnInPlacePlaybackWatchdogDuration =
@@ -2008,8 +2016,15 @@ void URpgAnimInstance::UpdateTurnInPlaceLatchedPlayback(
 				RuntimeGaspLocomotionTuning);
 			TurnInPlaceStateElapsed = 0.0f;
 		}
-		if (!bTurnInPlaceSelectedAssetLooping &&
-			TurnInPlaceSelectedAssetRemainingTime <= CompletionLeadTime)
+		const bool bHasForwardReentryMarker =
+			TurnInPlaceSelectedAssetReentryTime > 0.0f &&
+			FMath::IsFinite(CurrentAssetPlayRate) && CurrentAssetPlayRate > UE_SMALL_NUMBER;
+		// Authored contact safety is an exact asset-time boundary, never a frame-early completion hint.
+		const bool bPlaybackFinished = bHasForwardReentryMarker
+			? FMath::IsFinite(CurrentAssetTime) && CurrentAssetTime >= TurnInPlaceSelectedAssetReentryTime
+			: RpgAnimationPlaybackRuntime::RemainingPlaybackSeconds(
+				CurrentAssetTime, EffectiveAssetLength, CurrentAssetPlayRate) <= CompletionLeadTime;
+		if (!bTurnInPlaceSelectedAssetLooping && bPlaybackFinished)
 		{
 			bTurnInPlaceCompletionArmed = true;
 		}
@@ -2024,8 +2039,7 @@ void URpgAnimInstance::UpdateTurnInPlaceLatchedPlayback(
 		return;
 	}
 
-	if (!bTurnInPlaceSelectedAssetLooping &&
-		TurnInPlaceSelectedAssetRemainingTime <= CompletionLeadTime)
+	if (bTurnInPlaceCompletionArmed)
 	{
 		bTurnInPlacePoseSelected = true;
 		bTurnInPlaceCompletionArmed = true;

@@ -42,6 +42,21 @@ struct SURVIVALRPG_API FRpgGaspPresentationAssetMembership
 	ERpgGaspPresentationAssetCategory Category = ERpgGaspPresentationAssetCategory::None;
 };
 
+/** Designer-authored point at which a completed footstep may release its cosmetic turn selection. */
+USTRUCT(BlueprintType)
+struct SURVIVALRPG_API FRpgTurnInPlaceClipTiming
+{
+	GENERATED_BODY()
+
+	/** Non-looping member of the profile's StandTurnInPlace database; held alive by the profile. */
+	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Rpg|Animation|Turn In Place")
+	TObjectPtr<UAnimSequenceBase> Asset;
+
+	/** Safe release point in animation seconds, after the authored turn and foot placement settle. */
+	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Rpg|Animation|Turn In Place", meta = (ClampMin = "0.0", Units = "s"))
+	float ReentryTimeSeconds = 0.0f;
+};
+
 /** Value-only integrity result shared by editor validation and focused automation tests. */
 struct SURVIVALRPG_API FRpgGaspPresentationProfileValidation
 {
@@ -63,6 +78,13 @@ struct SURVIVALRPG_API FRpgGaspPresentationProfileValidation
 	bool bHasAirborneCoverageMismatch = false;
 	bool bHasLandingCoverageMismatch = false;
 	bool bHasInvalidTuning = false;
+	bool bHasInvalidTurnInPlaceTiming = false;
+	bool bHasTurnInPlaceTimingCoverageMismatch = false;
+
+	bool IsTurnInPlaceTimingValid() const
+	{
+		return !bHasInvalidTurnInPlaceTiming && !bHasTurnInPlaceTimingCoverageMismatch;
+	}
 
 	bool IsMembershipValid() const
 	{
@@ -78,7 +100,7 @@ struct SURVIVALRPG_API FRpgGaspPresentationProfileValidation
 			!bHasInvalidRuntimeDatabaseRoleTag &&
 			!bHasDuplicateRuntimeDatabaseRole && !bHasMissingRuntimeDatabaseRole &&
 			!bHasGroundMovingCoverageMismatch && !bHasAirborneCoverageMismatch &&
-			!bHasLandingCoverageMismatch;
+			!bHasLandingCoverageMismatch && IsTurnInPlaceTimingValid();
 	}
 
 	bool IsValid() const
@@ -115,11 +137,19 @@ public:
 	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Rpg|Animation|Motion Matching")
 	TArray<TObjectPtr<UPoseSearchDatabase>> RuntimeMotionMatchingDatabases;
 
+	/**
+	 * Optional complete timing set for the StandTurnInPlace database, copied before worker updates.
+	 * An empty set preserves full-asset completion for legacy profiles; a non-empty set must cover
+	 * every turn asset exactly once. These times are cosmetic and never authorize gameplay actions.
+	 */
+	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Rpg|Animation|Turn In Place")
+	TArray<FRpgTurnInPlaceClipTiming> TurnInPlaceClipTimings;
+
 	/** Cosmetic gait, Motion Matching, turn, jump, and landing feel copied at initialization. */
 	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Rpg|Animation|Motion Matching")
 	FRpgGaspLocomotionTuning LocomotionTuning;
 
-	/** Checks presentation membership, all 18 database roles/coverage, and finite ordered tuning. */
+	/** Checks membership, all database roles/coverage, optional turn timings, and finite ordered tuning on the game thread. */
 	FRpgGaspPresentationProfileValidation ValidateProfile() const;
 
 #if WITH_EDITOR
@@ -150,13 +180,16 @@ struct SURVIVALRPG_API FRpgGaspPresentationAssetLookup
 	/** Rebuilds the complete cache on the game thread; invalid profiles fail closed to an empty map. */
 	bool Build(const URpgGaspPresentationProfile* Profile);
 
-	/** Clears every cached trait before owner/profile rebinding. */
+	/** Clears every cached trait and turn release time before owner/profile rebinding. */
 	void Reset();
 
 	/** Tests a precomputed trait without touching profile data, paths, packages, or sequence metadata. */
 	bool HasTrait(
 		const UAnimationAsset* Asset,
 		ERpgGaspPresentationAssetTrait Trait) const;
+
+	/** Reads an immutable animation-time release point; false requests the full-asset legacy fallback. */
+	bool FindTurnInPlaceReentryTime(const UAnimationAsset* Asset, float& OutSeconds) const;
 
 private:
 	/** Populates from a validation result computed for the same immutable profile. */
@@ -165,6 +198,7 @@ private:
 		const FRpgGaspPresentationProfileValidation& Validation);
 
 	TMap<const UAnimationAsset*, ERpgGaspPresentationAssetTrait> AssetTraits;
+	TMap<const UAnimationAsset*, float> TurnInPlaceReentryTimes;
 
 	friend class URpgAnimInstance;
 };

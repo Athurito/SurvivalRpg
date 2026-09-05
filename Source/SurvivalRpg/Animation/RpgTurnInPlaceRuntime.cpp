@@ -119,6 +119,7 @@ FTransformTrajectory RpgTurnInPlaceRuntime::MakeSyntheticTrajectory(
 	float CurrentActorYaw,
 	float AccumulatedYaw,
 	float QuantizedAngle,
+	const FQuat& MeshBasisRotation,
 	const FRpgGaspLocomotionTuning& Tuning)
 {
 	FTransformTrajectory Result;
@@ -132,12 +133,23 @@ FTransformTrajectory RpgTurnInPlaceRuntime::MakeSyntheticTrajectory(
 		const float FacingAlpha = Sample.TimeInSeconds <= 0.0f
 			? 0.0f
 			: FMath::Clamp(Sample.TimeInSeconds / FacingDuration, 0.0f, 1.0f);
-		Sample.Facing = FRotator(
+		Sample.Facing = (FRotator(
 			0.0f,
 			StartYaw + QuantizedAngle * FacingAlpha,
-			0.0f).Quaternion();
+			0.0f).Quaternion() * MeshBasisRotation).GetNormalized();
 	}
 	return Result;
+}
+
+FTransformTrajectory RpgTurnInPlaceRuntime::MakeSyntheticTrajectory(
+	const FTransformTrajectory& SourceTrajectory,
+	float CurrentActorYaw,
+	float AccumulatedYaw,
+	float QuantizedAngle,
+	const FRpgGaspLocomotionTuning& Tuning)
+{
+	return MakeSyntheticTrajectory(
+		SourceTrajectory, CurrentActorYaw, AccumulatedYaw, QuantizedAngle, FQuat::Identity, Tuning);
 }
 
 float RpgTurnInPlaceRuntime::CalculatePlaybackWatchdogDuration(
@@ -333,6 +345,7 @@ FRpgTurnInPlaceUpdateResult RpgTurnInPlaceRuntime::Update(
 			180.0f);
 	}
 
+	float CollectionDeltaSeconds = SafeDeltaSeconds;
 	switch (Result.State.State)
 	{
 	case ERpgTurnInPlaceState::Inactive:
@@ -353,11 +366,23 @@ FRpgTurnInPlaceUpdateResult RpgTurnInPlaceRuntime::Update(
 		if (FMath::Abs(Result.State.AccumulatedYaw) >= Tuning.TurnCollectThreshold)
 		{
 			Result.State.State = ERpgTurnInPlaceState::Collecting;
-			Result.State.StateElapsed = 0.0f;
+			// Yaw describes the interval ending at this update. Preserve its portion after the
+			// collection threshold crossing instead of losing up to one whole low-FPS frame.
+			const float YawPastThreshold =
+				FMath::Abs(State.AccumulatedYaw + Snapshot.ActorYawDelta) - Tuning.TurnCollectThreshold;
+			const float FrameYaw = FMath::Abs(Snapshot.ActorYawDelta);
+			CollectionDeltaSeconds = FrameYaw > UE_SMALL_NUMBER
+				? SafeDeltaSeconds * FMath::Clamp(YawPastThreshold / FrameYaw, 0.0f, 1.0f)
+				: 0.0f;
+			Result.State.StateElapsed = CollectionDeltaSeconds;
 			Result.State.StableElapsed = 0.0f;
 			Result.OffsetRootRotationMode = EOffsetRootBoneMode::Accumulate;
 		}
-		break;
+		else
+		{
+			break;
+		}
+		[[fallthrough]];
 
 	case ERpgTurnInPlaceState::Collecting:
 		Result.OffsetRootRotationMode = EOffsetRootBoneMode::Accumulate;
@@ -367,7 +392,7 @@ FRpgTurnInPlaceUpdateResult RpgTurnInPlaceRuntime::Update(
 		}
 
 		Result.State.StableElapsed = AbsoluteActorYawRate <= Tuning.TurnStableYawRateThreshold
-			? Result.State.StableElapsed + SafeDeltaSeconds
+			? Result.State.StableElapsed + CollectionDeltaSeconds
 			: 0.0f;
 		if (FMath::Abs(Result.State.AccumulatedYaw) >= Tuning.TurnActivationThreshold &&
 			(Result.State.StableElapsed >= Tuning.TurnStabilityDuration ||

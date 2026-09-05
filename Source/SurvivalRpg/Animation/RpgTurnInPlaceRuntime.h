@@ -114,7 +114,16 @@ namespace RpgTurnInPlaceRuntime
 		bool bHardReset,
 		bool bSupportChanged);
 
-	/** Builds a facing-only trajectory while preserving source sample times and positions exactly. */
+	/** Builds mesh-facing samples from actor-space yaw while preserving source times and positions. */
+	SURVIVALRPG_API FTransformTrajectory MakeSyntheticTrajectory(
+		const FTransformTrajectory& SourceTrajectory,
+		float CurrentActorYaw,
+		float AccumulatedYaw,
+		float QuantizedAngle,
+		const FQuat& MeshBasisRotation,
+		const FRpgGaspLocomotionTuning& Tuning = FRpgGaspLocomotionTuning());
+
+	/** Compatibility helper for callers whose authored mesh and actor facing bases are identical. */
 	SURVIVALRPG_API FTransformTrajectory MakeSyntheticTrajectory(
 		const FTransformTrajectory& SourceTrajectory,
 		float CurrentActorYaw,

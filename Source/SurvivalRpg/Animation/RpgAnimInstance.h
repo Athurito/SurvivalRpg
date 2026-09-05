@@ -225,6 +225,8 @@ struct SURVIVALRPG_API FRpgAnimInstanceProxy : public FAnimInstanceProxy
 	float DesiredControllerYawLastUpdate = 0.0f;
 	float ActorYaw = 0.0f;
 	float ActorYawDelta = 0.0f;
+	/** Authored actor-to-mesh rotation, captured on the game thread for Mesh-Facing trajectories. */
+	FQuat MeshBasisRotation = FQuat::Identity;
 	FVector ActorLocation = FVector::ZeroVector;
 	ERpgLocomotionGait Gait = ERpgLocomotionGait::Idle;
 	ERpgLocomotionStance Stance = ERpgLocomotionStance::Standing;
@@ -980,6 +982,8 @@ private:
 	float TurnInPlaceSelectedAssetRemainingTime = 0.0f;
 	/** PoseSearch-selected start time copied from the completed PostSelection result, in seconds. */
 	float TurnInPlaceSelectedAssetStartTime = 0.0f;
+	/** Safe forward-playback release marker in asset seconds; non-positive retains legacy clip-end completion. */
+	float TurnInPlaceSelectedAssetReentryTime = -1.0f;
 	/** Wall-clock watchdog budget, restarted on playback observation and scaled by the actual non-looping play rate. */
 	float TurnInPlacePlaybackWatchdogDuration = 0.0f;
 	float TurnInPlaceRequestAccumulatedYaw = 0.0f;

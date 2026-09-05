@@ -967,6 +967,20 @@ bool FRpgGaspLocomotionContentContractTest::RunTest(const FString& Parameters)
 		TestTrue(
 			TEXT("The presentation profile passes reusable native validation"),
 			PresentationProfile->ValidateProfile().IsValid());
+		TestFalse(
+			TEXT("The pilot authors safe turn release times instead of the legacy full-clip fallback"),
+			PresentationProfile->TurnInPlaceClipTimings.IsEmpty());
+		FRpgGaspPresentationAssetLookup PresentationLookup;
+		TestTrue(TEXT("The validated pilot presentation profile builds its worker-safe lookup"),
+			PresentationLookup.Build(PresentationProfile));
+		for (const FRpgTurnInPlaceClipTiming& Timing : PresentationProfile->TurnInPlaceClipTimings)
+		{
+			float CachedReentryTime = 0.0f;
+			TestTrue(TEXT("Every authored turn release is available without worker-side asset reads"),
+				PresentationLookup.FindTurnInPlaceReentryTime(Timing.Asset, CachedReentryTime));
+			TestEqual(TEXT("The turn cache preserves the authored contact boundary"),
+				CachedReentryTime, Timing.ReentryTimeSeconds);
+		}
 		TestEqual(
 			TEXT("The old package classifier's complete curated domain has 170 assets"),
 			ExpectedPresentationMembership.Num(),

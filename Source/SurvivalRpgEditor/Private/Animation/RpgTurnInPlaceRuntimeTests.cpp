@@ -188,6 +188,78 @@ bool FRpgTurnInPlaceAngleAndTrajectoryTest::RunTest(const FString& Parameters)
 	TestTrue(
 		TEXT("A direct 180-degree query reaches the authored half-turn at one second"),
 		FMath::IsNearlyEqual(FMath::Abs(DirectHalfTurnFinalProgress), 180.0f, 0.1f));
+
+	const FQuat MeshBases[] = {
+		FQuat::Identity,
+		FRotator(0.0f, -90.0f, 0.0f).Quaternion(),
+		FRotator(13.0f, 37.0f, -9.0f).Quaternion(),
+	};
+	for (const FQuat& MeshBasis : MeshBases)
+	{
+		for (const float ActorYaw : { -179.0f, 179.0f })
+		{
+			for (const float TurnAngle : { -180.0f, -90.0f, 45.0f, 180.0f })
+			{
+				const FTransformTrajectory MeshFacingTrajectory =
+					RpgTurnInPlaceRuntime::MakeSyntheticTrajectory(
+						SourceTrajectory, ActorYaw, TurnAngle, TurnAngle, MeshBasis, DefaultTuning);
+				for (int32 Index = 0; Index < MeshFacingTrajectory.Samples.Num(); ++Index)
+				{
+					const FTransformTrajectorySample& Sample = MeshFacingTrajectory.Samples[Index];
+					const float Alpha = FMath::Clamp(
+						Sample.TimeInSeconds / RpgTurnInPlaceRuntime::GetFacingDuration(TurnAngle, DefaultTuning),
+						0.0f, 1.0f);
+					const FQuat ExpectedActorFacing =
+						FRotator(0.0f, ActorYaw - TurnAngle + TurnAngle * Alpha, 0.0f).Quaternion();
+					TestTrue(TEXT("Mesh basis is restored after actor yaw, including pitch/roll and half-turn wraps"),
+						(Sample.Facing * MeshBasis.Inverse()).Equals(ExpectedActorFacing, 1.e-5f));
+					TestTrue(TEXT("Mesh-facing trajectory preserves all source positions"),
+						Sample.Position.Equals(SourceTrajectory.Samples[Index].Position));
+					TestEqual(TEXT("Mesh-facing trajectory preserves source time"),
+						Sample.TimeInSeconds, SourceTrajectory.Samples[Index].TimeInSeconds);
+				}
+			}
+		}
+	}
+	return true;
+}
+
+IMPLEMENT_SIMPLE_AUTOMATION_TEST(
+	FRpgTurnInPlaceDispatchLatencyTest,
+	"SurvivalRpg.Animation.TurnInPlace.DispatchLatency",
+	EAutomationTestFlags::EditorContext | EAutomationTestFlags::EngineFilter)
+
+bool FRpgTurnInPlaceDispatchLatencyTest::RunTest(const FString& Parameters)
+{
+	// A continuous 90 deg/s input reaches collection at 20/90 seconds and remains unstable.
+	// Compare dispatch against that absolute input timeline, not a frame count after detection.
+	for (const float CollectionTimeout : { 0.2f, 0.21f })
+	{
+		FRpgGaspLocomotionTuning Tuning;
+		Tuning.TurnCollectionTimeout = CollectionTimeout;
+		const float ExpectedDispatchTime = Tuning.TurnCollectThreshold / 90.0f + CollectionTimeout;
+		for (const float FrameRate : { 15.0f, 30.0f, 60.0f, 120.0f })
+		{
+			const float DeltaSeconds = 1.0f / FrameRate;
+			FRpgTurnInPlaceRuntimeState State;
+			FRpgTurnInPlaceUpdateSnapshot Snapshot;
+			Snapshot.RotationMode = ERpgCharacterRotationMode::CombatStrafe;
+			Snapshot.MovementState = ERpgLocomotionMovementState::Grounded;
+			Snapshot.bEligible = true;
+			Snapshot.ActorYawDelta = 90.0f * DeltaSeconds;
+			float DispatchTime = 0.0f;
+			while (DispatchTime < 1.0f && State.State != ERpgTurnInPlaceState::Active)
+			{
+				State = RpgTurnInPlaceRuntime::Update(State, Snapshot, DeltaSeconds, Tuning).State;
+				DispatchTime += DeltaSeconds;
+			}
+			TestEqual(TEXT("Continuous input dispatches a turn"), State.State, ERpgTurnInPlaceState::Active);
+			TestTrue(FString::Printf(TEXT("%.0f FPS does not dispatch before the %.3f-second deadline"),
+				FrameRate, ExpectedDispatchTime), DispatchTime + 1.e-5f >= ExpectedDispatchTime);
+			TestTrue(FString::Printf(TEXT("%.0f FPS dispatches within one sample of the %.3f-second deadline"),
+				FrameRate, ExpectedDispatchTime), DispatchTime <= ExpectedDispatchTime + DeltaSeconds + 1.e-5f);
+		}
+	}
 	return true;
 }
 
@@ -646,6 +718,26 @@ bool FRpgTurnInPlaceStateMachineTest::RunTest(const FString& Parameters)
 	TestEqual(TEXT("The long turn naturally recovers at full-asset completion"), AnimInstance->TurnInPlaceState, ERpgTurnInPlaceState::Recovering);
 	TestFalse(TEXT("Long-turn natural completion remains a soft recovery"), AnimInstance->bResetOffsetRootEveryFrame);
 
+	for (const float PlayRate : { 0.25f, 1.0f, 3.0f })
+	{
+		AnimInstance->ResetTurnInPlaceRuntime(false);
+		AnimInstance->BeginTurnInPlaceRequest(90.0f);
+		AnimInstance->TurnInPlaceAccumulatedYaw = 90.0f;
+		TestTrue(TEXT("A timed turn fixture latches"), AnimInstance->TryLatchTurnInPlaceSelection(
+			SelectedTurn, TurnDatabase, 0.0f, false, AnimInstance->TurnInPlaceRequestSerial));
+		AnimInstance->TurnInPlaceSelectedAssetReentryTime = 0.7f;
+		AnimInstance->UpdateTurnInPlaceLatchedPlayback(SelectedTurn, 0.699f, 2.0f, PlayRate, 1.0f / 15.0f);
+		TestFalse(TEXT("A low-FPS update cannot anticipate the authored release marker at any forward rate"),
+			AnimInstance->bTurnInPlaceCompletionArmed);
+		AnimInstance->UpdateTurnInPlaceLatchedPlayback(SelectedTurn, 0.7f, 2.0f, PlayRate, 1.0f / 15.0f);
+		TestTrue(TEXT("Reaching the exact authored animation time releases slow and fast turns equally"),
+			AnimInstance->bTurnInPlaceCompletionArmed);
+		AnimInstance->UpdateTurnInPlaceRuntime(1.0f / 15.0f, Proxy);
+		TestEqual(TEXT("The authored marker enters ordinary soft recovery"),
+			AnimInstance->TurnInPlaceState, ERpgTurnInPlaceState::Recovering);
+		TestFalse(TEXT("Authored release preserves Offset Root continuity"), AnimInstance->bResetOffsetRootEveryFrame);
+	}
+
 	AnimInstance->ResetTurnInPlaceRuntime(false);
 	AnimInstance->BeginTurnInPlaceRequest(90.0f);
 	AnimInstance->TurnInPlaceAccumulatedYaw = 90.0f;
@@ -859,7 +951,7 @@ bool FRpgTurnInPlaceStateMachineTest::RunTest(const FString& Parameters)
 	AnimInstance->UpdateTurnInPlaceRuntime(0.01f, Proxy);
 	TestFalse(TEXT("Animation reinitialization resets Offset Root for only one frame"), AnimInstance->bResetOffsetRootEveryFrame);
 
-	const float FrameRates[] = { 20.0f, 60.0f, 120.0f };
+	const float FrameRates[] = { 15.0f, 20.0f, 30.0f, 60.0f, 120.0f };
 	for (const float FrameRate : FrameRates)
 	{
 		USkeletalMeshComponent* FrameRateAnimInstanceOuter = NewObject<USkeletalMeshComponent>();
