@@ -3086,6 +3086,18 @@ NETWORK_TEST_CLASS(GaspPilotPIE, "SurvivalRpg.Network")
 					const FVector DivergentLocation =
 						Character->GetActorLocation() +
 							FVector(DivergenceDistance, 0.0, 0.0);
+					if (MovementComponent)
+					{
+						FNetworkPredictionData_Client_Character* ClientPrediction =
+							MovementComponent->GetPredictionData_Client_Character();
+						if (ClientPrediction && ClientPrediction->PendingMove.IsValid())
+						{
+							// The deliberate out-of-band offset must survive the next real move. UE's
+							// CombineWith otherwise restores this pending move's pre-injection start.
+							// Keep the move queued for normal transmission, but preserve this boundary.
+							ClientPrediction->PendingMove->bForceNoCombine = true;
+						}
+					}
 					Character->SetActorLocation(
 						DivergentLocation,
 						false,

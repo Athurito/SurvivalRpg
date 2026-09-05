@@ -9,6 +9,10 @@ The evidence-based Adopt/Defer/Reject decisions for remaining Crouch, Walk, Run,
 Avoidance, and FromTraversal families are recorded in
 [LocomotionFamilyAudit.md](LocomotionFamilyAudit.md).
 
+The September 5 combat-turn and landing-search findings, local GASP comparison, bounded correction
+contracts, and pending acceptance are recorded in
+[TurnAndLandingReview20260905.md](TurnAndLandingReview20260905.md).
+
 The real listen-server acceptance procedure for issues #81, #97, #100, #101, and #103 is recorded
 in [the GASP real-network smoke runbook](../../../docs/gasp-network-smoke.md). It uses an actual PIE
 network session with native acceleration, analog gait prediction/correction, moving and stationary
