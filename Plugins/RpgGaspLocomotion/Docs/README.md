@@ -13,6 +13,9 @@ The September 5 combat-turn and landing-search findings, local GASP comparison, 
 contracts, and pending acceptance are recorded in
 [TurnAndLandingReview20260905.md](TurnAndLandingReview20260905.md).
 
+The subsequent user-reported response defects, double-counted turn query and Stop playback
+after physical standstill are tracked in [ResponseFollowup20260905.md](ResponseFollowup20260905.md).
+
 The real listen-server acceptance procedure for issues #81, #97, #100, #101, and #103 is recorded
 in [the GASP real-network smoke runbook](../../../docs/gasp-network-smoke.md). It uses an actual PIE
 network session with native acceleration, analog gait prediction/correction, moving and stationary

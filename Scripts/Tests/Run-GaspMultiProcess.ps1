@@ -5,7 +5,13 @@ param(
     [string]$ProjectRoot = 'D:\Repos\SurvivalRpg',
     [string]$Editor = 'D:\Programme\UE_5.8\Engine\Binaries\Win64\UnrealEditor-Cmd.exe',
     [ValidateRange(1024, 65000)][int]$BasePort = 17877,
+    [ValidateRange(0, 1000)][int]$PacketLag = 60,
+    [ValidateRange(0, 1000)][int]$PacketLagVariance = 10,
+    [ValidateRange(0, 100)][int]$PacketLoss = 10,
+    [switch]$NoHitch,
     [switch]$Offscreen,
+    # Transient render-only diagnostic settings; measured frame deltas still define coverage.
+    [switch]$ReducedRendering,
     [switch]$CaptureScreenshots
 )
 
@@ -24,6 +30,20 @@ function Quote-NativeArgument([string]$Value) {
     '"' + $Value + '"'
 }
 
+$reducedRenderingCommands = @()
+if ($ReducedRendering) {
+    $reducedRenderingCommands = @(
+        'sg.ShadowQuality 0',
+        'sg.GlobalIlluminationQuality 0',
+        'sg.ReflectionQuality 0',
+        'sg.PostProcessQuality 0',
+        'r.ScreenPercentage 50'
+    )
+}
+# UE ParseExecCommands separates deferred commands with commas. Keep the Automation command's
+# own semicolon-delimited queue intact, and apply rendering settings before starting that queue.
+$execCommands = @($reducedRenderingCommands) + @('Automation RunTests SurvivalRpg.Network.GaspMultiProcess.DiagnosticRole; Quit')
+
 function Start-GaspRole([string]$Role, [string]$CaseDirectory, [int]$Limit, [int]$Port) {
     $roleDirectory = Join-Path $CaseDirectory $Role
     $null = New-Item -ItemType Directory -Path $roleDirectory -Force
@@ -31,14 +51,17 @@ function Start-GaspRole([string]$Role, [string]$CaseDirectory, [int]$Limit, [int
         (Join-Path $ProjectRoot 'SurvivalRpg.uproject'),
         '-unattended', '-nop4', '-nosteam', '-nosplash', '-nosound', '-windowed', '-ResX=640', '-ResY=480',
         '-stdout', '-FullStdOutLogOutput', '-NoLogTimes', '-ddc=InstalledNoZenLocalFallback',
+        '-ini:Engine:[/Script/Engine.AutomationTestSettings]:DefaultInteractiveFramerate=5',
         "-UserDir=$roleDirectory\User", "-ShaderWorkingDir=$roleDirectory\Shaders",
         "-LocalDataCachePath=$ProjectRoot\Intermediate\GaspNetworkDDC",
         "-GaspProcessRole=$Role", "-GaspTraceDir=$CaseDirectory", "-GaspTraceFPS=$Limit", "-GaspTracePort=$Port",
-        '-ExecCmds=Automation RunTests SurvivalRpg.Network.GaspMultiProcess.DiagnosticRole; Quit',
+        "-GaspTraceLag=$PacketLag", "-GaspTraceLagVariance=$PacketLagVariance", "-GaspTraceLoss=$PacketLoss",
+        ('-ExecCmds=' + ($execCommands -join ', ')),
         '-TestExit=Automation Test Queue Empty', "-ReportExportPath=$roleDirectory\Automation", "-abslog=$roleDirectory\Editor.log"
     )
     if ($Offscreen) { $arguments += '-RenderOffscreen' }
     if ($CaptureScreenshots) { $arguments += '-GaspCaptureScreenshots' }
+    if ($NoHitch) { $arguments += '-GaspTraceNoHitch' }
     $argumentLine = ($arguments | ForEach-Object { Quote-NativeArgument $_ }) -join ' '
     Start-Process -FilePath $Editor -ArgumentList $argumentLine -WorkingDirectory $ProjectRoot -WindowStyle Hidden -PassThru
 }
@@ -58,8 +81,10 @@ function Wait-GaspMarker([string]$Path, [System.Collections.Generic.List[System.
 $metadata = [ordered]@{
     label = $Label; project = $ProjectRoot; editor = $Editor; started_utc = [DateTime]::UtcNow.ToString('o')
     topology = 'three OS processes: listen host, autonomous owner, late observer'
-    packet_lag_ms = 60; packet_lag_variance_ms = 10; packet_loss_percent = 10
+    packet_lag_ms = $PacketLag; packet_lag_variance_ms = $PacketLagVariance; packet_loss_percent = $PacketLoss; injected_hitch = -not [bool]$NoHitch
     frame_limits = $Fps; offscreen = [bool]$Offscreen; capture_screenshots = [bool]$CaptureScreenshots; output = $runRoot
+    editor_startup_min_fps = 5
+    reduced_rendering = [ordered]@{ enabled = [bool]$ReducedRendering; commands = @($reducedRenderingCommands) }
     scope = 'editor-process IP transport and synchronized diagnostic capture; not packaged/Steam acceptance or an uninstrumented performance benchmark'
 }
 $metadata | ConvertTo-Json -Depth 4 | Set-Content -LiteralPath (Join-Path $runRoot 'run.json') -Encoding utf8

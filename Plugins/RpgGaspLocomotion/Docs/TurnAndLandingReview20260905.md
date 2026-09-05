@@ -1,5 +1,8 @@
 # Combat turns and landing search: 2026-09-05 review
 
+Follow-up: [the response review](ResponseFollowup20260905.md) records why the earlier passes
+did not resolve the user's visible complaints and the corrected reproduction cases.
+
 This review records the narrow presentation corrections in
 [PR #122](https://github.com/Athurito/SurvivalRpg/pull/122). It separates visible symptoms,
 source evidence, and acceptance still to be completed. Broader medieval movement belongs to

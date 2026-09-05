@@ -124,23 +124,23 @@ FInputStep ResolveStep(double Seconds)
 	if (Seconds < 4.0) return Turn(TEXT("combat_stationary_45"), 45.0f, Combat);
 	if (Seconds < 6.0) return Turn(TEXT("combat_stationary_90"), 135.0f, Combat);
 	if (Seconds < 8.0) return Turn(TEXT("combat_stationary_180"), 315.0f, Combat);
-	if (Seconds < 11.0) return Turn(TEXT("combat_tail_followup"), 45.0f, Combat, 90.0f, 9.8);
-	if (Seconds < 14.0) return Turn(TEXT("combat_tail_opposite"), 225.0f, Combat, -90.0f, 12.8);
+	if (Seconds < 11.0) return Turn(TEXT("combat_active_followup"), 45.0f, Combat, 90.0f, 8.45);
+	if (Seconds < 14.0) return Turn(TEXT("combat_active_opposite"), 225.0f, Combat, -135.0f, 11.45);
 	if (Seconds < 16.0) return Turn(TEXT("aim_settle"), 135.0f, Aim);
 	if (Seconds < 18.0) return Turn(TEXT("aim_stationary_45"), 180.0f, Aim);
 	if (Seconds < 20.0) return Turn(TEXT("aim_stationary_90"), 270.0f, Aim);
 	if (Seconds < 22.0) return Turn(TEXT("aim_stationary_180"), 90.0f, Aim);
-	if (Seconds < 25.0) return Turn(TEXT("aim_tail_followup"), 180.0f, Aim, 90.0f, 23.8);
-	if (Seconds < 28.0) return Turn(TEXT("aim_tail_opposite"), 0.0f, Aim, -90.0f, 26.8);
+	if (Seconds < 25.0) return Turn(TEXT("aim_active_followup"), 180.0f, Aim, 90.0f, 22.45);
+	if (Seconds < 28.0) return Turn(TEXT("aim_active_opposite"), 0.0f, Aim, -135.0f, 25.45);
 	if (Seconds < 29.0) return {};
 	if (Seconds < 31.0) return {TEXT("run_before_jump"), FVector::ForwardVector, 1.0f};
 	if (Seconds < 32.0) return {TEXT("run_jump_hold_hitch"), FVector::ForwardVector, 1.0f, 0.0f, true};
 	if (Seconds < 34.0) return {TEXT("run_land_hold"), FVector::ForwardVector, 1.0f};
 	if (Seconds < 34.3) return {TEXT("run_jump_again"), FVector::ForwardVector, 1.0f, 0.0f, true};
-	if (Seconds < 37.0) return {TEXT("run_jump_release"), FVector::ZeroVector, 0.0f};
+	if (Seconds < 37.0) return {TEXT("run_land_stop"), FVector::ForwardVector, 1.0f};
 	if (Seconds < 39.0) return {TEXT("run_before_walk_jump"), FVector::ForwardVector, 1.0f};
 	if (Seconds < 39.3) return {TEXT("run_jump_to_walk"), FVector::ForwardVector, 1.0f, 0.0f, true};
-	if (Seconds < 42.0) return {TEXT("run_jump_land_walk"), FVector::ForwardVector, 0.5f};
+	if (Seconds < 42.0) return {TEXT("run_land_walk"), FVector::ForwardVector, 1.0f};
 	if (Seconds < 44.0) return {TEXT("stop"), FVector::ZeroVector, 0.0f};
 	if (Seconds < 46.0) return {TEXT("crouch"), FVector::ForwardVector, 0.5f, 0.0f, false, true};
 	return {TEXT("settle"), FVector::ZeroVector, 0.0f};
@@ -186,6 +186,9 @@ public:
 			Packets.PktLag = 60;
 			Packets.PktLagVariance = 10;
 			Packets.PktLoss = 10;
+			FParse::Value(FCommandLine::Get(), TEXT("GaspTraceLag="), Packets.PktLag);
+			FParse::Value(FCommandLine::Get(), TEXT("GaspTraceLagVariance="), Packets.PktLagVariance);
+			FParse::Value(FCommandLine::Get(), TEXT("GaspTraceLoss="), Packets.PktLoss);
 			World->GetNetDriver()->SetPacketSimulationSettings(Packets);
 			ConfiguredDrivers.Add(World->GetNetDriver());
 		}
@@ -258,7 +261,7 @@ private:
 		// Keep one write handle open, allowing readers; reopening an exclusive append handle races live readers on Windows.
 		CsvWriter.Reset(IFileManager::Get().CreateFileWriter(*CsvPath, FILEWRITE_Append | FILEWRITE_AllowRead));
 		bCaptureScreenshots = FParse::Param(FCommandLine::Get(), TEXT("GaspCaptureScreenshots"));
-		Buffer = TEXT("process_role,pid,fps_limit,delta_seconds,utc_ticks,phase,phase_seconds,world_seconds,pawn,player_id,player_name,local_role,locally_controlled,actor_x,actor_y,actor_z,actor_yaw,mesh_yaw,root_yaw,offset_root_yaw,trajectory_yaw_now,trajectory_yaw_future,speed,acceleration,rotation_mode,gait,history_resets,client_corrections,mm_database_role,mm_interrupt,mm_continuing,tir_state,landing_ground_search_released,mm_node,selected_clip,selected_asset_time,elapsed_pose_search,blend_index,blend_clip,blend_asset_time,play_rate,blend_scalar_weight,has_per_bone_blend_profile,input_scale,input_yaw,tail_followup_triggered,hitch_injected,tir_query_angle,tir_accumulated_yaw,tir_state_elapsed,jump_phase,landing_state_elapsed,contact_l,contact_r,foot_placement_alpha,mm_search_databases,selected_asset_fraction\n");
+		Buffer = TEXT("process_role,pid,fps_limit,delta_seconds,utc_ticks,phase,phase_seconds,world_seconds,pawn,player_id,player_name,local_role,locally_controlled,actor_x,actor_y,actor_z,actor_yaw,mesh_yaw,root_yaw,offset_root_yaw,trajectory_yaw_now,trajectory_yaw_future,speed,acceleration,rotation_mode,gait,history_resets,client_corrections,mm_database_role,mm_interrupt,mm_continuing,tir_state,landing_ground_search_released,mm_node,selected_clip,selected_asset_time,elapsed_pose_search,blend_index,blend_clip,blend_asset_time,play_rate,blend_scalar_weight,has_per_bone_blend_profile,input_scale,input_yaw,tail_followup_triggered,hitch_injected,tir_query_angle,tir_accumulated_yaw,tir_state_elapsed,jump_phase,landing_state_elapsed,contact_l,contact_r,foot_placement_alpha,mm_search_databases,selected_asset_fraction,tir_root_feedback,anim_update_counter,bone_revision,engine_frame\n");
 		Flush();
 		OriginalExperience = GetDefault<URpgDeveloperSettings>()->ExperienceOverride;
 		OriginalNetDrivers = GEngine->NetDriverDefinitions;
@@ -365,11 +368,33 @@ private:
 			if (bTailTriggered) CurrentStep.ControlYaw += CurrentStep.TailFollowupYaw;
 		}
 		const int32 Segment = ResumeTicks > 0 && Elapsed(ResumeTicks) >= 0.0 ? 1 : 0;
-		if (PhaseSeconds >= 31.3 && PhaseSeconds < 32.0 && HitchSegment != Segment && Phase != TEXT("late_wait_run"))
+		if (!FParse::Param(FCommandLine::Get(), TEXT("GaspTraceNoHitch")) &&
+			PhaseSeconds >= 31.3 && PhaseSeconds < 32.0 && HitchSegment != Segment && Phase != TEXT("late_wait_run"))
 		{
 			HitchSegment = Segment;
 			bHitchThisFrame = true;
 			FPlatformProcess::Sleep(0.150f);
+		}
+		// Change input after a real moving touchdown, so this exercises an already selected Run landing.
+		// The old schedule released/changed gait in flight and only tested Stand/Walk selection at touchdown.
+		if (GroundInputPhase != Phase)
+		{
+			GroundInputPhase = Phase;
+			bGroundInputSawAirborne = false;
+			GroundInputTouchdownElapsed = -1.0f;
+		}
+		if (Phase.EndsWith(TEXT("run_land_stop")) || Phase.EndsWith(TEXT("run_land_walk")))
+		{
+			const UCharacterMovementComponent* Movement = Character->GetCharacterMovement();
+			bGroundInputSawAirborne |= Movement->IsFalling();
+			if (bGroundInputSawAirborne && Movement->IsMovingOnGround())
+			{
+				GroundInputTouchdownElapsed = FMath::Max(GroundInputTouchdownElapsed, 0.0f) + DeltaSeconds;
+				if (GroundInputTouchdownElapsed >= 0.1f)
+				{
+					CurrentStep.Scale = Phase.EndsWith(TEXT("run_land_stop")) ? 0.0f : 0.5f;
+				}
+			}
 		}
 		PC->SetControlRotation(FRotator(0.0, CurrentStep.ControlYaw, 0.0));
 		Character->ConsumeMovementInputVector();
@@ -469,6 +494,8 @@ private:
 				Row.Add(SearchDatabasesText(MM, Anim));
 				const float ClipLength = MM ? MM->GetCurrentAssetLength() : 0.0f;
 				Row.Add(ClipLength > UE_SMALL_NUMBER ? LexToString(MM->GetCurrentAssetTime() / ClipLength) : TEXT("unavailable"));
+				Row.Add(PropertyText(Anim, TEXT("bTurnInPlaceUsingRootFeedback")));
+				Row.Append({LexToString(Anim->GetUpdateCounter().Get()), LexToString(Mesh->GetBoneTransformRevisionNumber()), LexToString(GFrameCounter)});
 				for (FString& Cell : Row) Cell = Csv(Cell);
 				Buffer += FString::Join(Row, TEXT(",")) + TEXT("\n");
 			}
@@ -508,7 +535,7 @@ private:
 		if (PC->GetViewTarget() != &Subject) { PC->SetViewTarget(&Subject); return; }
 		const int32 Segment = ResumeTicks > 0 && Elapsed(ResumeTicks) >= 0.0 ? 1 : 0;
 		if (!(Phase.StartsWith(TEXT("before_late/")) || Phase.StartsWith(TEXT("after_late/")))) return;
-		static constexpr double Times[] = {2.4, 4.4, 6.4, 9.8, 12.8, 16.4, 18.4, 20.4, 31.7, 32.25, 34.75, 40.4};
+		static constexpr double Times[] = {2.4, 4.4, 6.4, 8.65, 11.65, 16.4, 18.4, 20.4, 31.7, 32.25, 35.5, 40.4};
 		for (int32 Index = 0; Index < UE_ARRAY_COUNT(Times); ++Index)
 		{
 			const uint32 Bit = 1u << Index;
@@ -586,6 +613,9 @@ private:
 	bool bSawSubjectMove = false, bSawSubjectAirborne = false, bSawSubjectLand = false;
 	bool bSawSubjectCombatTurn = false, bSawSubjectAimTurn = false;
 	bool bTailTriggered = false, bHitchThisFrame = false;
+	FString GroundInputPhase;
+	bool bGroundInputSawAirborne = false;
+	float GroundInputTouchdownElapsed = -1.0f;
 	int32 HitchSegment = INDEX_NONE;
 	bool bWasJump = false, bWasCrouch = false, bOriginalPersistence = true;
 	float OriginalFps = 0.0f;
