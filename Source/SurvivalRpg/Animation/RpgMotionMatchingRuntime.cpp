@@ -53,6 +53,30 @@ bool RpgMotionMatchingRuntime::ShouldInterruptGroundMotionMatching(
 		(CurrentState.bChooserMoving && PreviousState.Gait != CurrentState.Gait);
 }
 
+bool RpgMotionMatchingRuntime::ShouldReleaseStoppedGroundPose(
+	ERpgMotionMatchingDatabaseRole CurrentDatabaseRole,
+	bool bChooserMoving,
+	float GroundSpeed,
+	const FRpgGaspLocomotionTuning& Tuning)
+{
+	if (bChooserMoving || !FMath::IsFinite(GroundSpeed) || GroundSpeed < 0.0f ||
+		!FMath::IsFinite(Tuning.ChooserVelocityTolerance) || Tuning.ChooserVelocityTolerance < 0.0f ||
+		GroundSpeed > Tuning.ChooserVelocityTolerance)
+	{
+		return false;
+	}
+
+	switch (CurrentDatabaseRole)
+	{
+	case ERpgMotionMatchingDatabaseRole::StandWalkStops:
+	case ERpgMotionMatchingDatabaseRole::StandRunStops:
+	case ERpgMotionMatchingDatabaseRole::StandSprintStops:
+		return true;
+	default:
+		return false;
+	}
+}
+
 FRpgResolvedMotionMatchingDatabaseRoles RpgMotionMatchingRuntime::ResolveDatabaseRoles(
 	const FRpgGroundMotionMatchingSelectionSnapshot& Snapshot,
 	const FRpgGaspLocomotionTuning& Tuning)

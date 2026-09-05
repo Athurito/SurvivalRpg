@@ -77,6 +77,19 @@ namespace RpgMotionMatchingRuntime
 		const FRpgGroundMotionMatchingDomainState& CurrentState);
 
 	/**
+	 * Releases a selected Walk/Run/Sprint Stop when horizontal speed reaches the existing
+	 * ChooserVelocityTolerance (cm/s, inclusive) and the logical movement gate is inactive.
+	 * Call only in the grounded standing search branch, using the completed result's role.
+	 * The caller requests a database-change interrupt; BlendStack still owns the pose transition.
+	 * Invalid speed/tolerance fails closed. This cosmetic rule never changes CharacterMovement.
+	 */
+	SURVIVALRPG_API bool ShouldReleaseStoppedGroundPose(
+		ERpgMotionMatchingDatabaseRole CurrentDatabaseRole,
+		bool bChooserMoving,
+		float GroundSpeed,
+		const FRpgGaspLocomotionTuning& Tuning = FRpgGaspLocomotionTuning());
+
+	/**
 	 * Evaluates the pointer-free project chooser contract and returns ordered database roles.
 	 * Airborne and crouching domains are resolved before grounded Idle/Walk/Run/Sprint rows.
 	 */

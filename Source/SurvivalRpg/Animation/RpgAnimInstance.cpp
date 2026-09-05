@@ -3000,7 +3000,12 @@ void URpgAnimInstance::UpdateGaspMotionMatching(
 		if (SelectionSnapshot.MovementState == ERpgLocomotionMovementState::Grounded &&
 			SelectionSnapshot.Stance == ERpgLocomotionStance::Standing)
 		{
-			InterruptMode = bInterruptGroundDomain || bInterruptLandingDatabaseExit
+			// Braking has ended even if logical Idle began on input release. Do not keep
+			// a Stop clip taking further steps after CMC has reached physical standstill.
+			const bool bReleaseStoppedPose = RpgMotionMatchingRuntime::ShouldReleaseStoppedGroundPose(
+				CurrentMotionMatchingDatabaseRole, CurrentGroundDomainState.bChooserMoving,
+				Proxy.GroundSpeed, RuntimeGaspLocomotionTuning);
+			InterruptMode = bInterruptGroundDomain || bInterruptLandingDatabaseExit || bReleaseStoppedPose
 				? EPoseSearchInterruptMode::InterruptOnDatabaseChange
 				: EPoseSearchInterruptMode::DoNotInterrupt;
 		}
