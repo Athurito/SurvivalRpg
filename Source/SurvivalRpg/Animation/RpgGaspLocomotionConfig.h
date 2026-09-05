@@ -186,6 +186,10 @@ struct SURVIVALRPG_API FRpgGaspLocomotionTuning
 	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Landing", meta = (ClampMin = "0.001", Units = "s"))
 	float LandingSelectionTimeout = 0.25f;
 
+	/** Cosmetic seconds after observed physical touchdown before live ground candidates may replace landing playback. */
+	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Landing", meta = (ClampMin = "0.0", Units = "s"))
+	float LandingExclusiveSearchDuration = 0.3f;
+
 	/** Maximum wall-clock lifetime of one active landing presentation, in seconds. */
 	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Landing", meta = (ClampMin = "0.1", Units = "s"))
 	float LandingActiveTimeout = 1.25f;

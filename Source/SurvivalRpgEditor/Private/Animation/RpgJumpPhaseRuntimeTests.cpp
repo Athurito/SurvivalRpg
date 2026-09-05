@@ -683,7 +683,7 @@ bool FRpgJumpPhaseRuntimeTest::RunTest(const FString& Parameters)
 		RunLandingRequest);
 
 	// The final airborne snapshot is consumed only at touchdown. Later grounded input and gait
-	// changes must not reclassify an already running cosmetic landing request.
+	// changes release the exclusive search without reclassifying the outgoing landing asset.
 	Proxy.WorldVelocity = FVector(100.0f, 0.0f, 0.0f);
 	Proxy.WorldAcceleration = FVector(1200.0f, 0.0f, 0.0f);
 	Proxy.GroundSpeed = 100.0f;
@@ -693,14 +693,21 @@ bool FRpgJumpPhaseRuntimeTest::RunTest(const FString& Parameters)
 	AnimInstance->UpdateJumpPhaseRuntime(0.01f, Proxy);
 	TestEqual(TEXT("A running landing survives live Walk chooser movement"), AnimInstance->JumpPhase, ERpgJumpPhase::Landing);
 	TestEqual(
-		TEXT("A moving landing role remains frozen after live gait and speed changes"),
+		TEXT("The outgoing landing retains its selected role after live gait and speed changes"),
 		AnimInstance->ActiveLandingDatabaseRole,
 		ERpgMotionMatchingDatabaseRole::RunLightLanding);
 	TestTrue(
 		TEXT("The exact moving landing asset remains active after live gait changes"),
 		AnimInstance->IsActiveLandingAsset(LandingClip));
 	TestEqual(TEXT("Grounded-input changes do not create another request"), AnimInstance->LandingRequestSerial, RunLandingRequest);
+	TestEqual(TEXT("The live gait change opens Ground candidates in the facade"),
+		AnimInstance->ResolveLandingSearchMode(true), ERpgLandingSearchMode::SearchGroundDuringLanding);
+	TestTrue(TEXT("The facade persists early Ground search release"), AnimInstance->bLandingGroundSearchReleased);
+	TestEqual(TEXT("Consuming the gait-change edge does not restore exclusive Landing search"),
+		AnimInstance->ResolveLandingSearchMode(false), ERpgLandingSearchMode::SearchGroundDuringLanding);
+	TestFalse(TEXT("Early search release does not complete the outgoing landing"), AnimInstance->bLandingCompletionArmed);
 	AnimInstance->ResetJumpPhaseRuntime();
+	TestFalse(TEXT("An explicit lifecycle reset clears the Ground search release latch"), AnimInstance->bLandingGroundSearchReleased);
 	TestEqual(
 		TEXT("Resetting the landing lifecycle clears its frozen database role"),
 		AnimInstance->ActiveLandingDatabaseRole,
@@ -927,13 +934,17 @@ bool FRpgJumpPhaseRuntimeTest::RunTest(const FString& Parameters)
 			Proxy.bHasGroundedMoveIntent = false;
 			AnimInstance->UpdateJumpPhaseRuntime(0.01f, Proxy);
 			TestEqual(
-				*FString::Printf(TEXT("%s %s moving landing stays frozen after input ends"), LandingCase.Name, GaitCase.Name),
+				*FString::Printf(TEXT("%s %s outgoing landing keeps its role after input ends"), LandingCase.Name, GaitCase.Name),
 				AnimInstance->ActiveLandingDatabaseRole,
 				ExpectedHandoffRole);
 			TestEqual(
-				*FString::Printf(TEXT("%s %s frozen moving landing creates no third request"), LandingCase.Name, GaitCase.Name),
+				*FString::Printf(TEXT("%s %s outgoing landing creates no third request"), LandingCase.Name, GaitCase.Name),
 				AnimInstance->LandingRequestSerial,
 				HandoffRequestSerial);
+			TestEqual(
+				*FString::Printf(TEXT("%s %s input release opens Ground search after the handoff"), LandingCase.Name, GaitCase.Name),
+				AnimInstance->ResolveLandingSearchMode(true),
+				ERpgLandingSearchMode::SearchGroundDuringLanding);
 		}
 	}
 
@@ -1152,7 +1163,7 @@ bool FRpgJumpPhaseRuntimeTest::RunTest(const FString& Parameters)
 		MissingHeavyResult.State.RequestSerial,
 		MissingHeavyState.RequestSerial + 1u);
 
-	// Horizontal movement after the source 0.3 second window exits to normal gait locomotion.
+	// The contact window opens Ground candidates while selected landing playback may still compete.
 	for (const FStationaryLandingCase& LandingCase : StationaryLandingCases)
 	{
 		const uint32 RequestSerial = EnterLatchedStationaryLanding(
@@ -1184,20 +1195,27 @@ bool FRpgJumpPhaseRuntimeTest::RunTest(const FString& Parameters)
 		Proxy.GroundSpeed = Proxy.WorldVelocity.Size2D();
 		AnimInstance->UpdateJumpPhaseRuntime(0.01f, Proxy);
 		TestEqual(
-			*FString::Printf(TEXT("Expired %s returns to normal grounded locomotion"), LandingCase.Name),
+			*FString::Printf(TEXT("Expired %s retains its outgoing landing playback"), LandingCase.Name),
 			AnimInstance->JumpPhase,
-			ERpgJumpPhase::Grounded);
+			ERpgJumpPhase::Landing);
+		TestEqual(
+			*FString::Printf(TEXT("Expired %s uses the normal Ground candidate search"), LandingCase.Name),
+			AnimInstance->ResolveLandingSearchMode(false),
+			ERpgLandingSearchMode::SearchGroundDuringLanding);
 		TestEqual(
 			*FString::Printf(TEXT("Expired %s creates no handoff request"), LandingCase.Name),
 			AnimInstance->LandingRequestSerial,
 			RequestSerial);
-		TestFalse(
-			*FString::Printf(TEXT("Expired %s clears its landing latch"), LandingCase.Name),
+		TestTrue(
+			*FString::Printf(TEXT("Expired %s keeps its outgoing landing latch"), LandingCase.Name),
 			AnimInstance->bLandingSelectionLatched);
 		TestEqual(
-			*FString::Printf(TEXT("Expired %s clears its landing role"), LandingCase.Name),
+			*FString::Printf(TEXT("Expired %s keeps its outgoing selected role"), LandingCase.Name),
 			AnimInstance->ActiveLandingDatabaseRole,
-			ERpgMotionMatchingDatabaseRole::None);
+			LandingCase.Role);
+		TestFalse(
+			*FString::Printf(TEXT("Expired %s is not marked complete by the timer"), LandingCase.Name),
+			AnimInstance->bLandingCompletionArmed);
 	}
 
 	// The live speed gate preserves the inclusive Idle boundary and releases immediately above it.
@@ -1345,6 +1363,7 @@ bool FRpgJumpPhaseRuntimeTest::RunTest(const FString& Parameters)
 	AnimInstance->UpdateJumpPhaseRuntime(0.01f, Proxy);
 	TestEqual(TEXT("Natural landing completion returns to grounded locomotion"), AnimInstance->JumpPhase, ERpgJumpPhase::Grounded);
 	TestFalse(TEXT("Natural completion clears the landing selection"), AnimInstance->bLandingSelectionLatched);
+	TestFalse(TEXT("Natural completion clears the Ground search release latch"), AnimInstance->bLandingGroundSearchReleased);
 
 	// A missing database result must release to gait locomotion after the fixed selection timeout.
 	Proxy.MovementState = ERpgLocomotionMovementState::Airborne;
@@ -1392,47 +1411,190 @@ bool FRpgJumpPhaseRuntimeTest::RunTest(const FString& Parameters)
 	TestEqual(TEXT("A stuck landing releases after 1.25 seconds"), AnimInstance->JumpPhase, ERpgJumpPhase::Grounded);
 
 	// Overrides and a second jump cancel a cosmetic landing immediately.
-	auto EnterLanding = [&]()
+	auto EnterLanding = [&](ERpgLocomotionGait Gait = ERpgLocomotionGait::Idle)
 	{
+		const bool bMoving = Gait != ERpgLocomotionGait::Idle;
+		const float Speed = bMoving ? 300.0f : 0.0f;
 		Proxy.bIsAnyMontagePlaying = false;
 		Proxy.bIsCrouching = false;
 		Proxy.bHasTurnInPlaceBlockingGameplayTag = false;
+		Proxy.bTurnInPlaceHardReset = false;
 		Proxy.MovementState = ERpgLocomotionMovementState::Airborne;
 		Proxy.bIsMovingOnGround = false;
 		Proxy.bIsFalling = true;
 		AnimInstance->UpdateJumpPhaseRuntime(0.01f, Proxy);
-		SetValidLandingSelectionSnapshot(ERpgLocomotionGait::Idle, 0.0f, 500.0f, false);
+		SetValidLandingSelectionSnapshot(Gait, Speed, 500.0f, bMoving);
 		Proxy.MovementState = ERpgLocomotionMovementState::Grounded;
 		Proxy.bIsMovingOnGround = true;
 		Proxy.bIsFalling = false;
-		Proxy.GroundSpeed = 0.0f;
-		Proxy.Gait = ERpgLocomotionGait::Idle;
-		Proxy.bHasGroundedMoveIntent = false;
+		Proxy.WorldVelocity = FVector(Speed, 0.0f, 0.0f);
+		Proxy.WorldAcceleration = bMoving ? FVector(2400.0f, 0.0f, 0.0f) : FVector::ZeroVector;
+		Proxy.GroundSpeed = Speed;
+		Proxy.Gait = Gait;
+		Proxy.bHasGroundedMoveIntent = bMoving;
 		AnimInstance->UpdateJumpPhaseRuntime(0.01f, Proxy);
+		TestFalse(TEXT("A fresh physical touchdown has no stale Ground search release"),
+			AnimInstance->bLandingGroundSearchReleased);
+	};
+	auto EnterLatchedLanding = [&](ERpgLocomotionGait Gait = ERpgLocomotionGait::Idle, bool bLooping = false)
+	{
+		EnterLanding(Gait);
+		const uint32 RequestSerial = AnimInstance->LandingRequestSerial;
+		TestTrue(TEXT("The facade fixture latches its actual requested database and serial"),
+			AnimInstance->TryLatchLandingSelection(
+				LandingClip,
+				AnimInstance->GetMotionMatchingDatabaseForRole(AnimInstance->ActiveLandingDatabaseRole),
+				0.2f, bLooping, RequestSerial));
+		return RequestSerial;
 	};
 
-	EnterLanding();
+	const uint32 ContactWindowRequest = EnterLatchedLanding(ERpgLocomotionGait::Run);
+	TestTrue(TEXT("The contact-window request consumes its one initial interrupt"),
+		AnimInstance->ConsumeLandingForceInterruptRequest());
+	AnimInstance->UpdateLandingLatchedPlayback(LandingClip, 0.2f, 2.0f, 1.0f, 0.01f);
+	AnimInstance->UpdateJumpPhaseRuntime(0.29f, Proxy);
+	TestEqual(TEXT("Real latched playback still owns the exclusive contact window before 0.3 seconds"),
+		AnimInstance->ResolveLandingSearchMode(false), ERpgLandingSearchMode::ContinueSelectedLanding);
+	AnimInstance->UpdateJumpPhaseRuntime(0.02f, Proxy);
+	TestEqual(TEXT("Real latched playback opens Ground search after 0.3 seconds"),
+		AnimInstance->ResolveLandingSearchMode(false), ERpgLandingSearchMode::SearchGroundDuringLanding);
+	TestEqual(TEXT("Contact-window release keeps the same request serial"),
+		AnimInstance->LandingRequestSerial, ContactWindowRequest);
+	TestEqual(TEXT("Contact-window release keeps the same selected serial"),
+		AnimInstance->LandingSelectedRequestSerial, ContactWindowRequest);
+	TestTrue(TEXT("Ground search release keeps the outgoing landing active"), AnimInstance->IsActiveLandingAsset(LandingClip));
+	TestFalse(TEXT("Elapsed contact time does not synthesize playback completion"), AnimInstance->bLandingCompletionArmed);
+	TestFalse(TEXT("Opening Ground search never generates another ForceInterrupt"),
+		AnimInstance->ConsumeLandingForceInterruptRequest());
+	AnimInstance->ResetJumpPhaseRuntime();
+	TestFalse(TEXT("Explicit reset clears the released search state"), AnimInstance->bLandingGroundSearchReleased);
+	TestEqual(TEXT("A reset request cannot remain in Ground-during-Landing search"),
+		AnimInstance->ResolveLandingSearchMode(false), ERpgLandingSearchMode::NormalLocomotion);
+
+	FRpgGroundMotionMatchingDomainState PreviousRunDomain;
+	PreviousRunDomain.PhysicalMovementState = ERpgLocomotionMovementState::Grounded;
+	PreviousRunDomain.Stance = ERpgLocomotionStance::Standing;
+	PreviousRunDomain.Gait = ERpgLocomotionGait::Run;
+	PreviousRunDomain.bChooserMoving = true;
+	const ERpgLocomotionGait EarlyGaitChanges[] = {ERpgLocomotionGait::Idle, ERpgLocomotionGait::Walk};
+	for (const ERpgLocomotionGait ChangedGait : EarlyGaitChanges)
+	{
+		const uint32 RequestSerial = EnterLatchedLanding(ERpgLocomotionGait::Run);
+		AnimInstance->UpdateLandingLatchedPlayback(LandingClip, 0.2f, 2.0f, 1.0f, 0.01f);
+		const bool bNowMoving = ChangedGait != ERpgLocomotionGait::Idle;
+		Proxy.Gait = ChangedGait;
+		Proxy.GroundSpeed = bNowMoving ? 100.0f : 0.0f;
+		Proxy.WorldVelocity = FVector(Proxy.GroundSpeed, 0.0f, 0.0f);
+		Proxy.WorldAcceleration = bNowMoving ? FVector(1200.0f, 0.0f, 0.0f) : FVector::ZeroVector;
+		Proxy.bHasGroundedMoveIntent = bNowMoving;
+		AnimInstance->UpdateJumpPhaseRuntime(0.01f, Proxy);
+		FRpgGroundMotionMatchingDomainState CurrentDomain = PreviousRunDomain;
+		CurrentDomain.Gait = ChangedGait;
+		CurrentDomain.bChooserMoving = bNowMoving;
+		const bool bDomainChanged = RpgLandingRuntime::DidGroundDomainChange(true, PreviousRunDomain, CurrentDomain);
+		TestTrue(TEXT("Stop and Walk transitions supply a grounded live-domain change"), bDomainChanged);
+		TestEqual(TEXT("An early Stop or Walk change opens Ground search in the same facade update"),
+			AnimInstance->ResolveLandingSearchMode(bDomainChanged), ERpgLandingSearchMode::SearchGroundDuringLanding);
+		TestEqual(TEXT("Ground search stays released after the live-domain edge is consumed"),
+			AnimInstance->ResolveLandingSearchMode(false), ERpgLandingSearchMode::SearchGroundDuringLanding);
+		TestEqual(TEXT("Early Stop or Walk release does not create a replacement landing request"),
+			AnimInstance->LandingRequestSerial, RequestSerial);
+		TestFalse(TEXT("Early input release does not complete the selected landing"), AnimInstance->bLandingCompletionArmed);
+	}
+
+	// A handoff requested just before the deadline must not accept a delayed landing result after it.
+	EnterLatchedLanding();
+	AnimInstance->UpdateLandingLatchedPlayback(LandingClip, 0.2f, 2.0f, 1.0f, 0.01f);
+	AnimInstance->UpdateJumpPhaseRuntime(0.29f, Proxy);
+	Proxy.Gait = ERpgLocomotionGait::Run;
+	Proxy.GroundSpeed = 300.0f;
+	Proxy.WorldVelocity = FVector(300.0f, 0.0f, 0.0f);
+	Proxy.WorldAcceleration = FVector(2400.0f, 0.0f, 0.0f);
+	Proxy.bHasGroundedMoveIntent = true;
+	AnimInstance->UpdateJumpPhaseRuntime(0.0f, Proxy);
+	const uint32 DelayedHandoffRequest = AnimInstance->LandingRequestSerial;
+	TestFalse(TEXT("The pending 0.29-second handoff has not latched a result yet"), AnimInstance->bLandingSelectionLatched);
+	AnimInstance->UpdateJumpPhaseRuntime(0.02f, Proxy);
+	TestEqual(TEXT("The pending handoff opens Ground search at the original touchdown deadline"),
+		AnimInstance->ResolveLandingSearchMode(false), ERpgLandingSearchMode::SearchGroundDuringLanding);
+	TestFalse(TEXT("A delayed callback cannot re-latch Landing after Ground search release"),
+		AnimInstance->TryLatchLandingSelection(LandingClip, RunLightLandingDatabase, 0.2f, false, DelayedHandoffRequest));
+	TestEqual(TEXT("Rejecting a late result leaves the handoff request serial unchanged"),
+		AnimInstance->LandingRequestSerial, DelayedHandoffRequest);
+
+	struct FLandingPlaybackCase
+	{
+		const TCHAR* Name;
+		float AssetTime;
+		float PlayRate;
+		float DeltaSeconds;
+		bool bExpectedCompletion;
+		float ExpectedWatchdog;
+	};
+	const FLandingPlaybackCase PlaybackCases[] =
+	{
+		{TEXT("Slow forward retains 80 ms of playback at 60 FPS"), 0.96f, 0.5f, 1.0f / 60.0f, false, 0.18f},
+		{TEXT("Fast forward completes with 75 ms left at 15 FPS"), 0.85f, 2.0f, 1.0f / 15.0f, true, 0.175f},
+		{TEXT("Paused playback cannot predict completion"), 0.99f, 0.0f, 1.0f / 15.0f, false, 1.25f},
+		{TEXT("Reverse uses the distance to the beginning for its watchdog"), 0.9f, -1.0f, 1.0f / 60.0f, false, 1.0f},
+		{TEXT("Slow reverse retains 80 ms of playback at 60 FPS"), 0.04f, -0.5f, 1.0f / 60.0f, false, 0.18f},
+		{TEXT("Fast reverse completes with 60 ms left at 60 FPS"), 0.12f, -2.0f, 1.0f / 60.0f, true, 0.16f},
+		{TEXT("Non-finite playback falls back to its watchdog"), 0.99f, QuietNaN, 1.0f / 60.0f, false, 1.25f},
+	};
+	for (const FLandingPlaybackCase& Playback : PlaybackCases)
+	{
+		EnterLatchedLanding(ERpgLocomotionGait::Run);
+		AnimInstance->UpdateLandingLatchedPlayback(
+			LandingClip, Playback.AssetTime, 1.0f, Playback.PlayRate, Playback.DeltaSeconds);
+		TestEqual(Playback.Name, AnimInstance->bLandingCompletionArmed, Playback.bExpectedCompletion);
+		// Forward playback subtracts the sampled time from clip length; allow float cancellation below 0.1 ms.
+		TestTrue(*FString::Printf(TEXT("%s: directional remaining duration sets the watchdog"), Playback.Name),
+			FMath::IsNearlyEqual(AnimInstance->LandingPlaybackWatchdogDuration, Playback.ExpectedWatchdog, 1.e-4f));
+	}
+	EnterLatchedLanding(ERpgLocomotionGait::Run, true);
+	AnimInstance->UpdateLandingLatchedPlayback(LandingClip, 0.99f, 1.0f, 2.0f, 0.1f);
+	TestFalse(TEXT("Looping playback remains watchdog-controlled at its nominal end"), AnimInstance->bLandingCompletionArmed);
+
+	auto EnterReleasedLanding = [&]()
+	{
+		EnterLatchedLanding();
+		AnimInstance->UpdateLandingLatchedPlayback(LandingClip, 0.2f, 2.0f, 1.0f, 0.01f);
+		AnimInstance->UpdateJumpPhaseRuntime(0.31f, Proxy);
+		TestEqual(TEXT("The cancellation fixture has released Ground search while retaining playback"),
+			AnimInstance->ResolveLandingSearchMode(false), ERpgLandingSearchMode::SearchGroundDuringLanding);
+	};
+	EnterReleasedLanding();
 	Proxy.bIsAnyMontagePlaying = true;
 	AnimInstance->UpdateJumpPhaseRuntime(0.01f, Proxy);
 	TestEqual(TEXT("A montage cancels cosmetic landing playback"), AnimInstance->JumpPhase, ERpgJumpPhase::Grounded);
+	TestFalse(TEXT("Montage cancellation clears released Ground search"), AnimInstance->bLandingGroundSearchReleased);
 
-	EnterLanding();
+	EnterReleasedLanding();
 	Proxy.bIsCrouching = true;
 	AnimInstance->UpdateJumpPhaseRuntime(0.01f, Proxy);
 	TestEqual(TEXT("Crouch cancels cosmetic landing playback"), AnimInstance->JumpPhase, ERpgJumpPhase::Grounded);
+	TestFalse(TEXT("Crouch cancellation clears released Ground search"), AnimInstance->bLandingGroundSearchReleased);
 
-	EnterLanding();
+	EnterReleasedLanding();
 	Proxy.bHasTurnInPlaceBlockingGameplayTag = true;
 	AnimInstance->UpdateJumpPhaseRuntime(0.01f, Proxy);
 	TestEqual(TEXT("A blocking gameplay tag cancels cosmetic landing playback"), AnimInstance->JumpPhase, ERpgJumpPhase::Grounded);
+	TestFalse(TEXT("Gameplay cancellation clears released Ground search"), AnimInstance->bLandingGroundSearchReleased);
 
-	EnterLanding();
+	EnterReleasedLanding();
+	Proxy.bTurnInPlaceHardReset = true;
+	AnimInstance->UpdateJumpPhaseRuntime(0.01f, Proxy);
+	TestEqual(TEXT("A hard reset cancels the released landing lifecycle"), AnimInstance->JumpPhase, ERpgJumpPhase::Grounded);
+	TestFalse(TEXT("A hard reset clears released Ground search"), AnimInstance->bLandingGroundSearchReleased);
+
+	EnterReleasedLanding();
 	Proxy.MovementState = ERpgLocomotionMovementState::Airborne;
 	Proxy.bIsMovingOnGround = false;
 	Proxy.bIsFalling = true;
 	AnimInstance->UpdateJumpPhaseRuntime(0.01f, Proxy);
 	TestEqual(TEXT("A second jump immediately re-enters Airborne"), AnimInstance->JumpPhase, ERpgJumpPhase::Airborne);
 	TestFalse(TEXT("A second jump clears the old landing selection"), AnimInstance->bLandingSelectionLatched);
+	TestFalse(TEXT("A second jump clears the previous Ground search release"), AnimInstance->bLandingGroundSearchReleased);
 
 	// Explicit immutable asset categories keep each Blend Stack sample stable while global movement phases change.
 	UPackage* JumpStartPackage = CreatePackage(

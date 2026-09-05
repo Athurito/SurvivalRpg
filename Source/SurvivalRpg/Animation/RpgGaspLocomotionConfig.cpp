@@ -142,6 +142,7 @@ bool RpgGaspLocomotionConfig::IsTuningRuntimeValid(
 		Tuning.BackwardJumpStartReleaseLeadTime,
 		Tuning.HeavyLandingSpeedThreshold,
 		Tuning.LandingSelectionTimeout,
+		Tuning.LandingExclusiveSearchDuration,
 		Tuning.LandingActiveTimeout,
 		Tuning.LandingMovementHandoffWindow,
 	};
@@ -195,6 +196,7 @@ bool RpgGaspLocomotionConfig::IsTuningRuntimeValid(
 		Tuning.BackwardJumpStartReleaseLeadTime < Tuning.BackwardJumpStartHoldTimeout &&
 		Tuning.HeavyLandingSpeedThreshold > 0.0f &&
 		Tuning.LandingSelectionTimeout > 0.0f &&
+		Tuning.LandingExclusiveSearchDuration >= 0.0f &&
 		// Landing watchdog math clamps to the native 0.1-second safety margin.
 		Tuning.LandingActiveTimeout >= 0.1f &&
 		Tuning.LandingMovementHandoffWindow >= 0.0f;

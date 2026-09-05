@@ -2110,6 +2110,7 @@ FRpgLandingRuntimeState URpgAnimInstance::CaptureLandingRuntimeState() const
 	State.InterruptedRequestSerial = LandingInterruptedRequestSerial;
 	State.bSelectionLatched = bLandingSelectionLatched;
 	State.bCompletionArmed = bLandingCompletionArmed;
+	State.bGroundSearchReleased = bLandingGroundSearchReleased;
 	return State;
 }
 
@@ -2123,6 +2124,7 @@ void URpgAnimInstance::ApplyLandingRuntimeResult(const FRpgLandingRuntimeResult&
 	LandingInterruptedRequestSerial = Result.State.InterruptedRequestSerial;
 	bLandingSelectionLatched = Result.State.bSelectionLatched;
 	bLandingCompletionArmed = Result.State.bCompletionArmed;
+	bLandingGroundSearchReleased = Result.State.bGroundSearchReleased;
 
 	switch (Result.Transition)
 	{
@@ -2143,6 +2145,21 @@ void URpgAnimInstance::ApplyLandingRuntimeResult(const FRpgLandingRuntimeResult&
 	{
 		ClearBackwardJumpStartHold();
 	}
+}
+
+ERpgLandingSearchMode URpgAnimInstance::ResolveLandingSearchMode(bool bLiveGroundDomainChanged)
+{
+	const ERpgLandingSearchMode SearchMode = RpgLandingRuntime::ResolveSearchMode(
+		CaptureLandingRuntimeState(),
+		JumpPhase == ERpgJumpPhase::Landing,
+		GetMotionMatchingDatabaseForRole(ActiveLandingDatabaseRole) != nullptr,
+		bLiveGroundDomainChanged,
+		RuntimeGaspLocomotionTuning);
+	if (SearchMode == ERpgLandingSearchMode::SearchGroundDuringLanding)
+	{
+		bLandingGroundSearchReleased = true;
+	}
+	return SearchMode;
 }
 
 FRpgLandingDatabaseAvailability URpgAnimInstance::BuildLandingDatabaseAvailability() const
@@ -2306,6 +2323,7 @@ bool URpgAnimInstance::TryLatchLandingSelection(
 {
 	if (JumpPhase != ERpgJumpPhase::Landing ||
 		bLandingSelectionLatched ||
+		bLandingGroundSearchReleased ||
 		!SelectedAsset ||
 		SelectedDatabase != GetMotionMatchingDatabaseForRole(ActiveLandingDatabaseRole) ||
 		SelectionRequestSerial == 0 ||
@@ -2358,9 +2376,9 @@ void URpgAnimInstance::UpdateLandingLatchedPlayback(
 		const float EffectiveAssetLength = CurrentAssetLength > UE_SMALL_NUMBER
 			? CurrentAssetLength
 			: LandingSelectedAsset->GetPlayLength();
-		LandingSelectedAssetRemainingTime = FMath::Max(
-			EffectiveAssetLength - FMath::Max(CurrentAssetTime, 0.0f),
-			0.0f);
+		const float ClampedAssetTime = FMath::Clamp(CurrentAssetTime, 0.0f, EffectiveAssetLength);
+		LandingSelectedAssetRemainingTime = CurrentAssetPlayRate < 0.0f
+			? ClampedAssetTime : EffectiveAssetLength - ClampedAssetTime;
 		if (bFirstPlaybackObservation)
 		{
 			LandingPlaybackWatchdogDuration =
@@ -2372,7 +2390,8 @@ void URpgAnimInstance::UpdateLandingLatchedPlayback(
 			LandingStateElapsed = 0.0f;
 		}
 		if (!bLandingSelectedAssetLooping &&
-			LandingSelectedAssetRemainingTime <= CompletionLeadTime)
+			RpgAnimationPlaybackRuntime::RemainingPlaybackSeconds(
+				CurrentAssetTime, EffectiveAssetLength, CurrentAssetPlayRate) <= CompletionLeadTime)
 		{
 			bLandingCompletionArmed = true;
 		}
@@ -2642,10 +2661,6 @@ void URpgAnimInstance::UpdateGaspMotionMatching(
 				ERpgMotionMatchingDatabaseRole::StandTurnInPlace) != nullptr,
 			bTurnInPlaceSelectionLatched,
 			bTurnInPlaceCompletionArmed);
-	const bool bForceNewLandingRequest =
-		SearchMode == ERpgTurnInPlaceSearchMode::NormalLocomotion &&
-		ConsumeLandingForceInterruptRequest();
-
 	if (JumpPhase == ERpgJumpPhase::Landing && bLandingSelectionLatched)
 	{
 		UpdateLandingLatchedPlayback(
@@ -2677,6 +2692,12 @@ void URpgAnimInstance::UpdateGaspMotionMatching(
 		JumpPhase,
 		bLandingCompletionArmed,
 		CurrentMotionMatchingDatabaseRole);
+	const bool bLiveLandingGroundDomainChanged = RpgLandingRuntime::DidGroundDomainChange(
+		bHasPreviousGroundMotionMatchingDomainState,
+		PreviousGroundMotionMatchingDomainState,
+		CurrentGroundDomainState);
+	const ERpgLandingSearchMode LandingSearchMode =
+		ResolveLandingSearchMode(bLiveLandingGroundDomainChanged);
 
 	TArray<UPoseSearchDatabase*, TInlineAllocator<5>> DatabasesToSearch;
 	EPoseSearchInterruptMode InterruptMode = EPoseSearchInterruptMode::InterruptOnDatabaseChange;
@@ -2692,21 +2713,17 @@ void URpgAnimInstance::UpdateGaspMotionMatching(
 		// It prevents a full TIR-database search from selecting another clip when the indexed range ends.
 		InterruptMode = EPoseSearchInterruptMode::DoNotInterrupt;
 	}
-	else if (JumpPhase == ERpgJumpPhase::Landing && !bLandingCompletionArmed)
+	else if (LandingSearchMode == ERpgLandingSearchMode::ContinueSelectedLanding)
 	{
-		if (bLandingSelectionLatched)
-		{
-			// Preserve only the continuing pose; a full landing-database search must happen once per touchdown.
-			InterruptMode = EPoseSearchInterruptMode::DoNotInterrupt;
-		}
-		else if (UPoseSearchDatabase* LandingDatabase =
-			GetMotionMatchingDatabaseForRole(ActiveLandingDatabaseRole))
-		{
-			DatabasesToSearch.Add(LandingDatabase);
-			InterruptMode = bForceNewLandingRequest
-				? EPoseSearchInterruptMode::ForceInterrupt
-				: EPoseSearchInterruptMode::InterruptOnDatabaseChange;
-		}
+		// Only the short contact window excludes Ground candidates. Selected playback has its own lifetime.
+		InterruptMode = EPoseSearchInterruptMode::DoNotInterrupt;
+	}
+	else if (LandingSearchMode == ERpgLandingSearchMode::SearchRequestedLanding)
+	{
+		DatabasesToSearch.Add(GetMotionMatchingDatabaseForRole(ActiveLandingDatabaseRole));
+		InterruptMode = ConsumeLandingForceInterruptRequest()
+			? EPoseSearchInterruptMode::ForceInterrupt
+			: EPoseSearchInterruptMode::InterruptOnDatabaseChange;
 	}
 	else if (bHoldBackwardJumpStart || bContinueLoopingAirborneFall)
 	{
@@ -2796,11 +2813,23 @@ void URpgAnimInstance::UpdateGaspMotionMatchingPostSelection(
 				!bTurnInPlaceSelectionLatched,
 			JumpPhase == ERpgJumpPhase::Landing &&
 				!bLandingSelectionLatched &&
+				!bLandingGroundSearchReleased &&
 				SelectedRole == ActiveLandingDatabaseRole);
 
 	CurrentMotionMatchingDatabaseRole = PostSelection.CurrentDatabaseRole;
 	bCurrentMotionMatchingResultIsContinuingPose = PostSelection.bIsContinuingPose;
 	CurrentMotionMatchingInterruptMode = PostSelection.InterruptMode;
+	if (JumpPhase == ERpgJumpPhase::Landing && bLandingGroundSearchReleased &&
+		SearchResult.SelectedAnim != nullptr &&
+		SelectedRole != ERpgMotionMatchingDatabaseRole::None &&
+		SelectedRole != ERpgMotionMatchingDatabaseRole::Count &&
+		SelectedRole != ERpgMotionMatchingDatabaseRole::Jump &&
+		SelectedRole != ERpgMotionMatchingDatabaseRole::StandTurnInPlace &&
+		!RpgMotionMatchingRuntime::IsLandingDatabaseRole(SelectedRole))
+	{
+		// End the request only after a real Ground result wins, not when the contact timer expires.
+		bLandingCompletionArmed = true;
+	}
 	if (PostSelection.bShouldLatchTurnInPlace)
 	{
 		TryLatchTurnInPlaceSelection(

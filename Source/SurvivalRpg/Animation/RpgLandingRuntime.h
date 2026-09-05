@@ -10,6 +10,7 @@ enum class ERpgJumpPhase : uint8;
 enum class ERpgLocomotionGait : uint8;
 enum class ERpgLocomotionMovementState : uint8;
 struct FRpgLandingSelectionSnapshot;
+struct FRpgGroundMotionMatchingDomainState;
 
 /** Pointer-free game-thread state retained across landing-capture updates. */
 struct SURVIVALRPG_API FRpgLandingCaptureState
@@ -69,6 +70,17 @@ struct SURVIVALRPG_API FRpgLandingRuntimeState
 	uint32 InterruptedRequestSerial = 0;
 	bool bSelectionLatched = false;
 	bool bCompletionArmed = false;
+	/** Once true, ground candidates remain available until this physical landing is reset. */
+	bool bGroundSearchReleased = false;
+};
+
+/** Separates the one landing selection from continued playback alongside live ground candidates. */
+enum class ERpgLandingSearchMode : uint8
+{
+	NormalLocomotion,
+	SearchRequestedLanding,
+	ContinueSelectedLanding,
+	SearchGroundDuringLanding,
 };
 
 /** Value-only live inputs used to advance an already active landing request. */
@@ -167,11 +179,28 @@ namespace RpgLandingRuntime
 		bool bForceInterrupt,
 		const FRpgGaspLocomotionTuning& Tuning = FRpgGaspLocomotionTuning());
 
-	/** Advances stationary handoff, selection timeout, playback watchdog, and completion. */
+	/** Advances the physical contact window, stationary handoff, and bounded playback lifecycle. */
 	SURVIVALRPG_API FRpgLandingRuntimeResult UpdateActive(
 		const FRpgLandingRuntimeState& State,
 		const FRpgLandingActiveSnapshot& Snapshot,
 		float DeltaSeconds,
+		const FRpgGaspLocomotionTuning& Tuning = FRpgGaspLocomotionTuning());
+
+	/** Detects live grounded domain changes without treating the initial touchdown as an interruption. */
+	SURVIVALRPG_API bool DidGroundDomainChange(
+		bool bHasPreviousState,
+		const FRpgGroundMotionMatchingDomainState& PreviousState,
+		const FRpgGroundMotionMatchingDomainState& CurrentState);
+
+	/**
+	 * Resolves the next search without consuming a request or ending selected playback.
+	 * The facade must retain bGroundSearchReleased when SearchGroundDuringLanding is returned.
+	 */
+	SURVIVALRPG_API ERpgLandingSearchMode ResolveSearchMode(
+		const FRpgLandingRuntimeState& State,
+		bool bLandingPhase,
+		bool bHasActiveDatabase,
+		bool bLiveGroundDomainChanged,
 		const FRpgGaspLocomotionTuning& Tuning = FRpgGaspLocomotionTuning());
 
 	/** Consumes at most one ForceInterrupt for the active request serial. */

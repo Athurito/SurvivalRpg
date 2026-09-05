@@ -485,6 +485,7 @@ namespace RpgGaspLocomotionAssetTests
 		{ TEXT("LandingSelectionTimeout"), &FRpgGaspLocomotionTuning::LandingSelectionTimeout, 0.25f },
 		{ TEXT("LandingActiveTimeout"), &FRpgGaspLocomotionTuning::LandingActiveTimeout, 1.25f },
 		{ TEXT("LandingMovementHandoffWindow"), &FRpgGaspLocomotionTuning::LandingMovementHandoffWindow, 0.3f },
+		{ TEXT("LandingExclusiveSearchDuration"), &FRpgGaspLocomotionTuning::LandingExclusiveSearchDuration, 0.3f },
 	};
 
 	static const TCHAR* DesignerPostureTuningFields[] = {
@@ -1126,9 +1127,9 @@ bool FRpgGaspLocomotionContentContractTest::RunTest(const FString& Parameters)
 			TEXT("The profile locomotion tuning remains runtime-valid"),
 			RpgGaspLocomotionConfig::IsTuningRuntimeValid(PresentationProfile->LocomotionTuning));
 		TestEqual(
-			TEXT("The presentation tuning contract covers all thirty-four compatibility defaults"),
+			TEXT("The presentation tuning contract covers all thirty-five compatibility defaults"),
 			static_cast<int32>(UE_ARRAY_COUNT(TuningFloatDefaultContracts)),
-			34);
+			35);
 		int32 ReflectedCompatibilityTuningFloatCount = 0;
 		for (TFieldIterator<FFloatProperty> PropertyIt(FRpgGaspLocomotionTuning::StaticStruct());
 			PropertyIt;

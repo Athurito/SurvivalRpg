@@ -344,6 +344,7 @@ FRpgLandingRuntimeResult RpgLandingRuntime::Reset(
 	Result.State.PlaybackWatchdogDuration = Tuning.LandingActiveTimeout;
 	Result.State.bSelectionLatched = false;
 	Result.State.bCompletionArmed = false;
+	Result.State.bGroundSearchReleased = false;
 	Result.Transition = ERpgLandingRuntimeTransition::ResetGrounded;
 	Result.bClearSelection = true;
 	Result.bClearBackwardHold = true;
@@ -359,6 +360,10 @@ FRpgLandingRuntimeResult RpgLandingRuntime::BeginRequest(
 	check(RpgMotionMatchingRuntime::IsLandingDatabaseRole(LandingRole));
 	FRpgLandingRuntimeResult Result;
 	Result.State = State;
+	if (!bForceInterrupt && State.bGroundSearchReleased)
+	{
+		return Result;
+	}
 	Result.State.ActiveRole = LandingRole;
 	Result.State.StateElapsed = 0.0f;
 	Result.State.PlaybackWatchdogDuration = Tuning.LandingActiveTimeout;
@@ -372,6 +377,7 @@ FRpgLandingRuntimeResult RpgLandingRuntime::BeginRequest(
 	if (bForceInterrupt)
 	{
 		Result.State.TouchdownElapsed = 0.0f;
+		Result.State.bGroundSearchReleased = false;
 	}
 	else
 	{
@@ -391,7 +397,7 @@ FRpgLandingRuntimeResult RpgLandingRuntime::UpdateActive(
 {
 	FRpgLandingRuntimeResult Result;
 	Result.State = State;
-	if (!IsEligible(Snapshot.Eligibility) ||
+	if (Result.State.bCompletionArmed || !IsEligible(Snapshot.Eligibility) ||
 		!RpgMotionMatchingRuntime::IsLandingDatabaseRole(Result.State.ActiveRole) ||
 		!IsRoleAvailable(Result.State.ActiveRole, Snapshot.Availability))
 	{
@@ -400,7 +406,9 @@ FRpgLandingRuntimeResult RpgLandingRuntime::UpdateActive(
 
 	const float SafeDeltaSeconds = FMath::Max(DeltaSeconds, 0.0f);
 	Result.State.TouchdownElapsed += SafeDeltaSeconds;
-	if (ShouldReleaseStationary(
+	Result.State.bGroundSearchReleased |=
+		Result.State.TouchdownElapsed >= Tuning.LandingExclusiveSearchDuration;
+	if (!Result.State.bGroundSearchReleased && ShouldReleaseStationary(
 		Result.State.ActiveRole,
 		Snapshot.bChooserMoving,
 		Snapshot.GroundSpeed,
@@ -425,11 +433,48 @@ FRpgLandingRuntimeResult RpgLandingRuntime::UpdateActive(
 	const bool bPlaybackTimedOut =
 		Result.State.bSelectionLatched &&
 		Result.State.StateElapsed >= Result.State.PlaybackWatchdogDuration;
-	if (Result.State.bCompletionArmed || bSelectionTimedOut || bPlaybackTimedOut)
+	if (bSelectionTimedOut || bPlaybackTimedOut)
 	{
 		return Reset(Result.State, Tuning);
 	}
 	return Result;
+}
+
+bool RpgLandingRuntime::DidGroundDomainChange(
+	bool bHasPreviousState,
+	const FRpgGroundMotionMatchingDomainState& PreviousState,
+	const FRpgGroundMotionMatchingDomainState& CurrentState)
+{
+	return bHasPreviousState &&
+		PreviousState.PhysicalMovementState == ERpgLocomotionMovementState::Grounded &&
+		CurrentState.PhysicalMovementState == ERpgLocomotionMovementState::Grounded &&
+		RpgMotionMatchingRuntime::ShouldInterruptGroundMotionMatching(
+			true, PreviousState, CurrentState);
+}
+
+ERpgLandingSearchMode RpgLandingRuntime::ResolveSearchMode(
+	const FRpgLandingRuntimeState& State,
+	bool bLandingPhase,
+	bool bHasActiveDatabase,
+	bool bLiveGroundDomainChanged,
+	const FRpgGaspLocomotionTuning& Tuning)
+{
+	if (!bLandingPhase || !bHasActiveDatabase || State.bCompletionArmed ||
+		!RpgMotionMatchingRuntime::IsLandingDatabaseRole(State.ActiveRole))
+	{
+		return ERpgLandingSearchMode::NormalLocomotion;
+	}
+	if (State.bGroundSearchReleased || State.TouchdownElapsed >= Tuning.LandingExclusiveSearchDuration)
+	{
+		return ERpgLandingSearchMode::SearchGroundDuringLanding;
+	}
+	if (!State.bSelectionLatched)
+	{
+		return ERpgLandingSearchMode::SearchRequestedLanding;
+	}
+	return bLiveGroundDomainChanged
+		? ERpgLandingSearchMode::SearchGroundDuringLanding
+		: ERpgLandingSearchMode::ContinueSelectedLanding;
 }
 
 bool RpgLandingRuntime::ConsumeForceInterrupt(
@@ -439,6 +484,7 @@ bool RpgLandingRuntime::ConsumeForceInterrupt(
 {
 	if (!bLandingPhase ||
 		!bHasActiveDatabase ||
+		State.bGroundSearchReleased ||
 		State.InterruptedRequestSerial == State.RequestSerial)
 	{
 		return false;

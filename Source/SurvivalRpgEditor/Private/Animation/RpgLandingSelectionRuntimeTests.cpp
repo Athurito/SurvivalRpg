@@ -572,7 +572,7 @@ bool FRpgLandingSelectionRuntimeTest::RunTest(const FString& Parameters)
 
 	FRpgLandingRuntimeState HandoffState;
 	HandoffState.ActiveRole = ERpgMotionMatchingDatabaseRole::StandHeavyLanding;
-	HandoffState.TouchdownElapsed = 0.29f;
+	HandoffState.TouchdownElapsed = 0.28f;
 	HandoffState.StateElapsed = 0.2f;
 	HandoffState.RequestSerial = 41u;
 	FRpgLandingActiveSnapshot HandoffSnapshot;
@@ -588,7 +588,7 @@ bool FRpgLandingSelectionRuntimeTest::RunTest(const FString& Parameters)
 		0.01f,
 		DefaultTuning);
 	TestEqual(
-		TEXT("The inclusive handoff window preserves Heavy severity in the Run domain"),
+		TEXT("A handoff before ground-search release preserves Heavy severity in the Run domain"),
 		HandoffResult.State.ActiveRole,
 		ERpgMotionMatchingDatabaseRole::RunHeavyLanding);
 	TestEqual(TEXT("A stationary-to-moving handoff advances the request serial"), HandoffResult.State.RequestSerial, 42u);
@@ -598,7 +598,7 @@ bool FRpgLandingSelectionRuntimeTest::RunTest(const FString& Parameters)
 		HandoffResult.State.RequestSerial);
 	TestTrue(
 		TEXT("A handoff preserves physical touchdown age"),
-		FMath::IsNearlyEqual(HandoffResult.State.TouchdownElapsed, 0.3f, 0.0001f));
+		FMath::IsNearlyEqual(HandoffResult.State.TouchdownElapsed, 0.29f, 0.0001f));
 
 	FRpgLandingRuntimeState LateHandoffState = HandoffState;
 	LateHandoffState.TouchdownElapsed = DefaultTuning.LandingMovementHandoffWindow;
@@ -608,9 +608,16 @@ bool FRpgLandingSelectionRuntimeTest::RunTest(const FString& Parameters)
 		0.01f,
 		DefaultTuning);
 	TestEqual(
-		TEXT("Movement after the handoff window exits to Grounded"),
+		TEXT("Movement after ground-search release preserves outgoing playback"),
 		LateHandoffResult.Transition,
-		ERpgLandingRuntimeTransition::ResetGrounded);
+		ERpgLandingRuntimeTransition::None);
+	TestTrue(
+		TEXT("Movement after the contact window searches ground without another landing request"),
+		LateHandoffResult.State.bGroundSearchReleased);
+	TestEqual(
+		TEXT("Late ground-search release does not advance the request serial"),
+		LateHandoffResult.State.RequestSerial,
+		LateHandoffState.RequestSerial);
 
 	FRpgGaspLocomotionTuning ShortHandoffTuning = DefaultTuning;
 	ShortHandoffTuning.LandingMovementHandoffWindow = 0.1f;
@@ -637,7 +644,7 @@ bool FRpgLandingSelectionRuntimeTest::RunTest(const FString& Parameters)
 		0.1f,
 		DefaultTuning);
 	TestEqual(
-		TEXT("An active moving landing role remains frozen across live gait changes"),
+		TEXT("The selected moving landing retains its playback identity across live gait changes"),
 		FrozenMovingResult.State.ActiveRole,
 		ERpgMotionMatchingDatabaseRole::RunHeavyLanding);
 

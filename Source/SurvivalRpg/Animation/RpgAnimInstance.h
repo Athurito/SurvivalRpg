@@ -923,6 +923,8 @@ private:
 	FRpgLandingRuntimeState CaptureLandingRuntimeState() const;
 	/** Applies value state and explicit phase/GC cleanup actions returned by the landing runtime. */
 	void ApplyLandingRuntimeResult(const FRpgLandingRuntimeResult& Result);
+	/** Resolves one search and permanently opens Ground candidates for the current touchdown when needed. */
+	ERpgLandingSearchMode ResolveLandingSearchMode(bool bLiveGroundDomainChanged);
 	/** Snapshots the six fixed database pointers as pointer-free availability flags. */
 	FRpgLandingDatabaseAvailability BuildLandingDatabaseAvailability() const;
 	/** Copies stable grounded presentation gates without exposing proxy or UObject state. */
@@ -1023,6 +1025,9 @@ private:
 	bool bLandingSelectedAssetLooping = false;
 	bool bLandingPlaybackObserved = false;
 	bool bLandingCompletionArmed = false;
+	/** Worker-owned cosmetic search release; the outgoing landing may continue blending after this becomes true. */
+	UPROPERTY(Transient)
+	bool bLandingGroundSearchReleased = false;
 
 	/** Exact initial backward Jump/Starts asset retained as a Continuing Pose for an ordinary short jump. */
 	UPROPERTY(Transient)
