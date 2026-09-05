@@ -31,6 +31,12 @@ void AddHardResetReason(
 		Reasons |= ToReasonMask(Reason);
 	}
 }
+
+float NormalizeSignedYaw(float Yaw)
+{
+	// Bound the unwind first: finite malformed input must not spend unbounded time subtracting turns.
+	return FMath::UnwindDegrees(FMath::Fmod(Yaw, 360.0f));
+}
 }
 
 bool RpgTurnInPlaceRuntime::SupportsTurnInPlace(
@@ -94,6 +100,29 @@ float RpgTurnInPlaceRuntime::CalculateYawDelta(
 	return FMath::FindDeltaAngleDegrees(PreviousActorYaw, CurrentActorYaw);
 }
 
+bool RpgTurnInPlaceRuntime::CalculateRootYawGap(
+	const FQuat& EvaluatedMeshRootRotation,
+	const FQuat& MeshBasisRotation,
+	float ActorYaw,
+	float& OutRootYawGap)
+{
+	OutRootYawGap = 0.0f;
+	if (EvaluatedMeshRootRotation.ContainsNaN() || MeshBasisRotation.ContainsNaN() ||
+		!FMath::IsFinite(EvaluatedMeshRootRotation.SizeSquared()) ||
+		!FMath::IsFinite(MeshBasisRotation.SizeSquared()) ||
+		EvaluatedMeshRootRotation.SizeSquared() <= UE_SMALL_NUMBER ||
+		MeshBasisRotation.SizeSquared() <= UE_SMALL_NUMBER || !FMath::IsFinite(ActorYaw))
+	{
+		return false;
+	}
+
+	const FQuat ActorSpaceRoot = (EvaluatedMeshRootRotation.GetNormalized() *
+		MeshBasisRotation.GetNormalized().Inverse()).GetNormalized();
+	OutRootYawGap = CalculateYawDelta(
+		static_cast<float>(ActorSpaceRoot.Rotator().Yaw), NormalizeSignedYaw(ActorYaw));
+	return FMath::IsFinite(OutRootYawGap);
+}
+
 bool RpgTurnInPlaceRuntime::DidSupportChange(
 	bool bHasPreviousSnapshot,
 	ERpgCharacterRotationMode PreviousMode,
@@ -152,6 +181,25 @@ FTransformTrajectory RpgTurnInPlaceRuntime::MakeSyntheticTrajectory(
 		SourceTrajectory, CurrentActorYaw, AccumulatedYaw, QuantizedAngle, FQuat::Identity, Tuning);
 }
 
+FTransformTrajectory RpgTurnInPlaceRuntime::MakeStationaryFacingTrajectory(
+	const FTransformTrajectory& SourceTrajectory,
+	float ActorYaw,
+	const FQuat& MeshBasisRotation,
+	const FQuat& LastEvaluatedComponentRotation)
+{
+	FTransformTrajectory Result = SourceTrajectory;
+	const FQuat EvaluatedMeshFacing = LastEvaluatedComponentRotation.GetNormalized();
+	const FQuat DesiredMeshFacing =
+		(FRotator(0.0f, ActorYaw, 0.0f).Quaternion() * MeshBasisRotation).GetNormalized();
+	for (FTransformTrajectorySample& Sample : Result.Samples)
+	{
+		// Pose History time zero is the previous evaluated root in its previous component basis.
+		// Replacing that basis with today's target would invent a root rotation on counter-input.
+		Sample.Facing = Sample.TimeInSeconds <= 0.0f ? EvaluatedMeshFacing : DesiredMeshFacing;
+	}
+	return Result;
+}
+
 float RpgTurnInPlaceRuntime::CalculatePlaybackWatchdogDuration(
 	float RemainingAnimationTime,
 	float PlayRate,
@@ -201,6 +249,9 @@ FRpgTurnInPlaceUpdateResult RpgTurnInPlaceRuntime::Reset(
 	Result.State.SelectionElapsed = 0.0f;
 	Result.State.PlaybackWatchdogDuration = Tuning.TurnActiveTimeout;
 	Result.State.RequestAccumulatedYaw = 0.0f;
+	Result.State.MeasuredRootYawDirection = 0.0f;
+	Result.State.TargetYawAnchor = 0.0f;
+	Result.State.bHasTargetYawAnchor = false;
 	Result.OffsetRootRotationMode = EOffsetRootBoneMode::Interpolate;
 	Result.bResetOffsetRootEveryFrame = bHardResetOffset;
 	Result.bClearSelection = true;
@@ -215,6 +266,8 @@ FRpgTurnInPlaceUpdateResult RpgTurnInPlaceRuntime::BeginRecovery(
 	FRpgTurnInPlaceUpdateResult Result;
 	Result.State = State;
 	Result.State.State = ERpgTurnInPlaceState::Recovering;
+	Result.State.MeasuredRootYawDirection = 0.0f;
+	Result.State.bHasTargetYawAnchor = false;
 	Result.State.StateElapsed = 0.0f;
 	Result.State.StableElapsed = 0.0f;
 	Result.State.SelectionElapsed = 0.0f;
@@ -239,6 +292,8 @@ FRpgTurnInPlaceUpdateResult RpgTurnInPlaceRuntime::BeginRequest(
 	Result.State.SelectionElapsed = 0.0f;
 	Result.State.PlaybackWatchdogDuration = Tuning.TurnActiveTimeout;
 	Result.State.RequestAccumulatedYaw = Result.State.AccumulatedYaw;
+	Result.State.MeasuredRootYawDirection = 0.0f;
+	Result.State.bHasTargetYawAnchor = false;
 	++Result.State.RequestSerial;
 	if (Result.State.RequestSerial == 0)
 	{
@@ -259,6 +314,25 @@ FRpgTurnInPlaceUpdateResult RpgTurnInPlaceRuntime::Update(
 	FRpgTurnInPlaceUpdateResult Result;
 	Result.State = State;
 	const float SafeDeltaSeconds = FMath::Max(DeltaSeconds, 0.0f);
+	const bool bUseRootYawGap = Snapshot.bHasRootYawGap &&
+		FMath::IsFinite(Snapshot.RootYawGap) && FMath::IsFinite(Snapshot.ActorYaw);
+	auto WithTargetAnchor = [&](FRpgTurnInPlaceUpdateResult Transition)
+	{
+		if (bUseRootYawGap)
+		{
+			Transition.State.TargetYawAnchor = NormalizeSignedYaw(Snapshot.ActorYaw);
+			Transition.State.bHasTargetYawAnchor = true;
+		}
+		return Transition;
+	};
+	auto Recover = [&](const FRpgTurnInPlaceRuntimeState& Current, bool bHardResetOffset)
+	{
+		return WithTargetAnchor(BeginRecovery(Current, bHardResetOffset, Tuning));
+	};
+	auto Request = [&](const FRpgTurnInPlaceRuntimeState& Current, float Angle)
+	{
+		return WithTargetAnchor(BeginRequest(Current, Angle, Tuning));
+	};
 	const float AbsoluteActorYawRate = SafeDeltaSeconds > UE_SMALL_NUMBER
 		? FMath::Abs(Snapshot.ActorYawDelta) / SafeDeltaSeconds
 		: (FMath::IsNearlyZero(Snapshot.ActorYawDelta) ? 0.0f : MAX_flt);
@@ -313,7 +387,7 @@ FRpgTurnInPlaceUpdateResult RpgTurnInPlaceRuntime::Update(
 
 	if (Snapshot.bSupportChanged)
 	{
-		return BeginRecovery(Result.State, true, Tuning);
+		return Recover(Result.State, true);
 	}
 
 	if (!Snapshot.bEligible)
@@ -321,14 +395,14 @@ FRpgTurnInPlaceUpdateResult RpgTurnInPlaceRuntime::Update(
 		if (Result.State.State == ERpgTurnInPlaceState::Collecting ||
 			Result.State.State == ERpgTurnInPlaceState::Active)
 		{
-			return BeginRecovery(Result.State, false, Tuning);
+			return Recover(Result.State, false);
 		}
 		if (Result.State.State == ERpgTurnInPlaceState::Recovering)
 		{
 			Result.State.StateElapsed += SafeDeltaSeconds;
 			if (Result.State.StateElapsed >= Tuning.TurnRecoveryDuration)
 			{
-				return Reset(Result.State, false, Tuning);
+				return WithTargetAnchor(Reset(Result.State, false, Tuning));
 			}
 			Result.OffsetRootRotationMode = EOffsetRootBoneMode::Interpolate;
 			return Result;
@@ -336,26 +410,77 @@ FRpgTurnInPlaceUpdateResult RpgTurnInPlaceRuntime::Update(
 		return Reset(Result.State, false, Tuning);
 	}
 
-	Result.State.StateElapsed += SafeDeltaSeconds;
-	if (Result.State.State != ERpgTurnInPlaceState::Recovering)
+	if (bUseRootYawGap)
+	{
+		Result.State.AccumulatedYaw = NormalizeSignedYaw(Snapshot.RootYawGap);
+		if (Result.State.State == ERpgTurnInPlaceState::Active && !Result.State.bHasTargetYawAnchor)
+		{
+			// Feedback can first become relevant after a legacy request has already selected its clip.
+			Result.State.TargetYawAnchor = NormalizeSignedYaw(Snapshot.ActorYaw);
+			Result.State.bHasTargetYawAnchor = true;
+			Result.State.RequestAccumulatedYaw = Result.State.AccumulatedYaw;
+			Result.State.MeasuredRootYawDirection = 0.0f;
+		}
+	}
+	else if (Result.State.State != ERpgTurnInPlaceState::Recovering)
 	{
 		Result.State.AccumulatedYaw = FMath::Clamp(
 			Result.State.AccumulatedYaw + Snapshot.ActorYawDelta,
 			-180.0f,
 			180.0f);
 	}
+	const float TargetYawChange = bUseRootYawGap && Result.State.bHasTargetYawAnchor
+		? CalculateYawDelta(Result.State.TargetYawAnchor, NormalizeSignedYaw(Snapshot.ActorYaw))
+		: 0.0f;
+	const bool bFreshRootTarget = !Result.State.bHasTargetYawAnchor ||
+		FMath::Abs(TargetYawChange) >= Tuning.TurnCollectThreshold;
+	const float RootProgress = bUseRootYawGap && Result.State.bHasTargetYawAnchor
+		? CalculateYawDelta(
+			NormalizeSignedYaw(Result.State.TargetYawAnchor - Result.State.RequestAccumulatedYaw),
+			NormalizeSignedYaw(Snapshot.ActorYaw - Result.State.AccumulatedYaw))
+		: 0.0f;
+	const bool bAmbiguousHalfTurn = FMath::IsNearlyEqual(FMath::Abs(Result.State.QueryAngle), 180.0f, 1.e-3f);
+	if (bUseRootYawGap && Result.State.State == ERpgTurnInPlaceState::Active && bAmbiguousHalfTurn &&
+		FMath::IsNearlyZero(Result.State.MeasuredRootYawDirection) &&
+		FMath::Abs(RootProgress) >= FMath::Max(Tuning.TurnCancelThreshold, UE_KINDA_SMALL_NUMBER) &&
+		FMath::Abs(RootProgress) < 180.0f - UE_KINDA_SMALL_NUMBER)
+	{
+		// +/-180 describe the same target; Motion Matching may select the same clip for either.
+		// Freeze its observed direction before endpoint yaw wraps at 180. Recomputing this sign
+		// after overshoot would mistake the wrapped progress for an authored reverse turn.
+		Result.State.MeasuredRootYawDirection = FMath::Sign(RootProgress);
+	}
+	const float ActiveTurnDirection = bAmbiguousHalfTurn && bUseRootYawGap
+		? Result.State.MeasuredRootYawDirection : FMath::Sign(Result.State.QueryAngle);
+	if (bUseRootYawGap && Result.State.State == ERpgTurnInPlaceState::Recovering &&
+		bFreshRootTarget && FMath::Abs(Result.State.AccumulatedYaw) >= Tuning.TurnCollectThreshold)
+	{
+		// New intent may interrupt recovery; an unchanged residual/overshoot must interpolate away.
+		Result.State.State = ERpgTurnInPlaceState::Inactive;
+		Result.State.StateElapsed = 0.0f;
+		Result.State.StableElapsed = 0.0f;
+		Result.State.bHasTargetYawAnchor = false;
+	}
+	Result.State.StateElapsed += SafeDeltaSeconds;
 
 	float CollectionDeltaSeconds = SafeDeltaSeconds;
 	switch (Result.State.State)
 	{
 	case ERpgTurnInPlaceState::Inactive:
 		Result.OffsetRootRotationMode = EOffsetRootBoneMode::Interpolate;
+		if (bUseRootYawGap && !bFreshRootTarget)
+		{
+			break;
+		}
 		if (AbsoluteActorYawRate <= Tuning.TurnInactiveYawRateThreshold)
 		{
 			Result.State.StableElapsed += SafeDeltaSeconds;
 			if (Result.State.StableElapsed >= Tuning.TurnInactiveAccumulatorTimeout)
 			{
-				Result.State.AccumulatedYaw = 0.0f;
+				if (!bUseRootYawGap)
+				{
+					Result.State.AccumulatedYaw = 0.0f;
+				}
 			}
 		}
 		else
@@ -388,7 +513,7 @@ FRpgTurnInPlaceUpdateResult RpgTurnInPlaceRuntime::Update(
 		Result.OffsetRootRotationMode = EOffsetRootBoneMode::Accumulate;
 		if (FMath::Abs(Result.State.AccumulatedYaw) < Tuning.TurnCancelThreshold)
 		{
-			return BeginRecovery(Result.State, false, Tuning);
+			return Recover(Result.State, false);
 		}
 
 		Result.State.StableElapsed = AbsoluteActorYawRate <= Tuning.TurnStableYawRateThreshold
@@ -398,30 +523,41 @@ FRpgTurnInPlaceUpdateResult RpgTurnInPlaceRuntime::Update(
 			(Result.State.StableElapsed >= Tuning.TurnStabilityDuration ||
 			 Result.State.StateElapsed >= Tuning.TurnCollectionTimeout))
 		{
-			return BeginRequest(
+			return Request(
 				Result.State,
-				QuantizeAngle(Result.State.AccumulatedYaw, Tuning),
-				Tuning);
+				QuantizeAngle(Result.State.AccumulatedYaw, Tuning));
 		}
 		if (Result.State.StateElapsed >= Tuning.TurnCollectionTimeout)
 		{
-			return BeginRecovery(Result.State, false, Tuning);
+			return Recover(Result.State, false);
 		}
 		break;
 
 	case ERpgTurnInPlaceState::Active:
-		Result.OffsetRootRotationMode = Snapshot.bSelectionLatched
+		Result.OffsetRootRotationMode = Snapshot.bSelectionLatched && !bUseRootYawGap
 			? EOffsetRootBoneMode::LockOffsetIncreaseAndConsumeAnimation
 			: EOffsetRootBoneMode::Accumulate;
-		if (FMath::Abs(Result.State.AccumulatedYaw) < Tuning.TurnCancelThreshold)
+		if (!bUseRootYawGap && FMath::Abs(Result.State.AccumulatedYaw) < Tuning.TurnCancelThreshold)
 		{
-			return BeginRecovery(Result.State, false, Tuning);
+			return Recover(Result.State, false);
+		}
+		if (bUseRootYawGap && Result.State.bHasTargetYawAnchor && !FMath::IsNearlyZero(ActiveTurnDirection) &&
+			FMath::Abs(TargetYawChange) >= Tuning.TurnActivationThreshold &&
+			(TargetYawChange * ActiveTurnDirection < 0.0f ||
+			 FMath::IsNearlyEqual(FMath::Abs(TargetYawChange), 180.0f, 1.e-3f)) &&
+			Result.State.AccumulatedYaw * ActiveTurnDirection <= 0.0f)
+		{
+			// Half-turn input has no unique sign; the actual root gap resolves its direction.
+			// Otherwise retain the target-direction guard so later overshoot is not new counter-input.
+			return FMath::Abs(Result.State.AccumulatedYaw) >= Tuning.TurnActivationThreshold
+				? Request(Result.State, QuantizeAngle(Result.State.AccumulatedYaw, Tuning))
+				: Recover(Result.State, false);
 		}
 
 		if (CanRetarget(Result.State, Snapshot.bSelectionLatched))
 		{
 			const float UpdatedQueryAngle = QuantizeAngle(Result.State.AccumulatedYaw, Tuning);
-			const float AdditionalYaw =
+			const float AdditionalYaw = bUseRootYawGap ? TargetYawChange :
 				Result.State.AccumulatedYaw - Result.State.RequestAccumulatedYaw;
 			const bool bDirectionChanged =
 				!FMath::IsNearlyZero(UpdatedQueryAngle) &&
@@ -432,7 +568,7 @@ FRpgTurnInPlaceUpdateResult RpgTurnInPlaceRuntime::Update(
 			if (FMath::Abs(AdditionalYaw) >= Tuning.TurnActivationThreshold &&
 				(bDirectionChanged || bQuantizedBucketChanged))
 			{
-				return BeginRequest(Result.State, UpdatedQueryAngle, Tuning);
+				return Request(Result.State, UpdatedQueryAngle);
 			}
 		}
 
@@ -441,21 +577,30 @@ FRpgTurnInPlaceUpdateResult RpgTurnInPlaceRuntime::Update(
 			Result.State.SelectionElapsed += SafeDeltaSeconds;
 			if (Result.State.SelectionElapsed >= Tuning.TurnSelectionTimeout)
 			{
-				return BeginRecovery(Result.State, true, Tuning);
+				return Recover(Result.State, true);
 			}
 		}
 		else if (Snapshot.bCompletionArmed)
 		{
-			return BeginRecovery(Result.State, false, Tuning);
+			if (bUseRootYawGap &&
+				FMath::Abs(Result.State.AccumulatedYaw) >= Tuning.TurnActivationThreshold &&
+				Result.State.AccumulatedYaw * ActiveTurnDirection > 0.0f &&
+				FMath::Abs(TargetYawChange) >= Tuning.TurnActivationThreshold)
+			{
+				// Only input added during this request can need another authored turn. The
+				// unchanged goal's blended root remainder belongs to ordinary recovery.
+				return Request(Result.State, QuantizeAngle(Result.State.AccumulatedYaw, Tuning));
+			}
+			return Recover(Result.State, false);
 		}
 		else if (Snapshot.bPlaybackObserved && !Snapshot.bPoseSelected)
 		{
-			return BeginRecovery(Result.State, true, Tuning);
+			return Recover(Result.State, true);
 		}
 
 		if (Result.State.StateElapsed >= Result.State.PlaybackWatchdogDuration)
 		{
-			return BeginRecovery(Result.State, true, Tuning);
+			return Recover(Result.State, true);
 		}
 		break;
 
@@ -463,7 +608,7 @@ FRpgTurnInPlaceUpdateResult RpgTurnInPlaceRuntime::Update(
 		Result.OffsetRootRotationMode = EOffsetRootBoneMode::Interpolate;
 		if (Result.State.StateElapsed >= Tuning.TurnRecoveryDuration)
 		{
-			return Reset(Result.State, false, Tuning);
+			return WithTargetAnchor(Reset(Result.State, false, Tuning));
 		}
 		break;
 	}

@@ -6,8 +6,10 @@
 #include "Animation/AnimInstanceProxy.h"
 #include "Animation/AnimExecutionContext.h"
 #include "Animation/AnimNodeReference.h"
+#include "Animation/AttributesRuntime.h"
 #include "Animation/TrajectoryTypes.h"
 #include "AnimationWarpingTypes.h"
+#include "BoneContainer.h"
 #include "Engine/EngineTypes.h"
 #include "GameplayEffectTypes.h"
 #include "PoseSearch/PoseSearchLibrary.h"
@@ -29,6 +31,7 @@ class UAnimationAsset;
 class UAnimSequence;
 class UPoseSearchDatabase;
 class URpgCombatAnimationProfileProviderComponent;
+struct FAnimNode_OffsetRootBone;
 #if WITH_DEV_AUTOMATION_TESTS
 class FRpgCombatAnimationProfileProviderLifecycleTest;
 class FRpgJumpPhaseRuntimeTest;
@@ -173,10 +176,10 @@ struct SURVIVALRPG_API FRpgLandingSelectionSnapshot
 };
 
 /**
- * Game-thread snapshot consumed by URpgAnimInstance during parallel animation updates.
+ * Game-thread snapshots and instance-owned evaluation cache used by parallel animation work.
  *
- * UObject and movement-component access is deliberately confined to PreUpdate; the animation
- * worker thread only reads the plain values stored here.
+ * UObject and movement-component access stays in game-thread lifecycle callbacks. Worker updates
+ * consume value snapshots; evaluation holds complete pose data between remote server move updates.
  */
 USTRUCT()
 struct SURVIVALRPG_API FRpgAnimInstanceProxy : public FAnimInstanceProxy
@@ -208,6 +211,18 @@ struct SURVIVALRPG_API FRpgAnimInstanceProxy : public FAnimInstanceProxy
 	}
 
 	virtual void PreUpdate(UAnimInstance* InAnimInstance, float DeltaSeconds) override;
+	/** Consumes each completed autonomous server move's graph delta before a later move can overwrite it. */
+	virtual void PostUpdate(UAnimInstance* InAnimInstance) const override;
+	/** Refreshes the server pose-hold scope on the game thread, including evaluations without a move update. */
+	virtual void PreEvaluateAnimation(UAnimInstance* InAnimInstance) override;
+	/** Evaluates the opted-in server graph once per update and holds its complete local pose, curves, and attributes. */
+	virtual bool Evaluate_WithRoot(FPoseContext& Output, FAnimNode_Base* InRootNode) override;
+	/** Clears held animation output and evaluated root history after initialization or a presentation discontinuity. */
+	void InvalidateServerPoseEvaluationCache();
+	/** Captures the component basis paired with the pose history produced by this evaluation. */
+	virtual void PostEvaluate(UAnimInstance* InAnimInstance) override;
+	/** Game-thread snapshot: GASP remote autonomous server poses use move time, not repeated render evaluations. */
+	bool bUseServerPoseEvaluationCache = false;
 
 	FVector WorldVelocity = FVector::ZeroVector;
 	FVector LastNonZeroWorldVelocity = FVector::ZeroVector;
@@ -227,6 +242,14 @@ struct SURVIVALRPG_API FRpgAnimInstanceProxy : public FAnimInstanceProxy
 	float ActorYawDelta = 0.0f;
 	/** Authored actor-to-mesh rotation, captured on the game thread for Mesh-Facing trajectories. */
 	FQuat MeshBasisRotation = FQuat::Identity;
+	/** Previous evaluated Offset Root facing, captured together with its component basis in PostEvaluate. */
+	FQuat EvaluatedTurnRootRotation = FQuat::Identity;
+	/** Last evaluated component facing; repeated updates must not replace the history's coordinate basis. */
+	FQuat EvaluatedTurnComponentRotation = FQuat::Identity;
+	/** Set only after a relevant evaluation and cleared across initialization or discontinuities. */
+	bool bHasEvaluatedTurnComponentRotation = false;
+	/** False on initialization, graph irrelevance, or movement discontinuities; never use stale root feedback. */
+	bool bHasEvaluatedTurnRootRotation = false;
 	FVector ActorLocation = FVector::ZeroVector;
 	ERpgLocomotionGait Gait = ERpgLocomotionGait::Idle;
 	ERpgLocomotionStance Stance = ERpgLocomotionStance::Standing;
@@ -299,6 +322,22 @@ struct SURVIVALRPG_API FRpgAnimInstanceProxy : public FAnimInstanceProxy
 	FRpgResolvedCombatAnimationProfile ActiveCombatAnimationProfile;
 	FRpgResolvedCombatAnimationProfile PendingCombatAnimationProfile;
 	bool bHasPendingCombatAnimationProfile = false;
+
+private:
+	void UpdateServerPoseEvaluationCacheScope(UAnimInstance* InAnimInstance);
+	void CaptureEvaluatedTurnRootPair(UAnimInstance* InAnimInstance);
+
+	TArray<FTransform> ServerPoseCachedBones;
+	/** Frozen mappings preserve held bones across RequiredBones/LOD recaches until the next real update. */
+	FBoneContainer ServerPoseCachedBoneContainer;
+	FBlendedHeapCurve ServerPoseCachedCurve;
+	UE::Anim::FMeshAttributeContainer ServerPoseCachedAttributes;
+	FGraphTraversalCounter ServerPoseCachedUpdateCounter;
+	FGraphTraversalCounter ServerPoseCachedInitializationCounter;
+	FGraphTraversalCounter PublishedTurnRootEvaluationCounter;
+	FAnimNode_Base* ServerPoseCachedRootNode = nullptr;
+	uint32 ServerPoseCacheOwnerId = 0;
+	bool bHasServerPoseEvaluationCache = false;
 };
 
 
@@ -1009,6 +1048,13 @@ private:
 	/** Per-reason mask used to emit one reset for each newly active hard condition without airborne masking. */
 	uint8 TurnInPlaceHardResetReasonsLastFrame = 0;
 	bool bTurnInPlaceInitializationResetPending = false;
+	float TurnInPlaceTargetYawAnchor = 0.0f;
+	bool bTurnInPlaceHasTargetYawAnchor = false;
+	/** Cosmetic per-request direction observed from an otherwise ambiguous half-turn root path. */
+	float TurnInPlaceMeasuredRootYawDirection = 0.0f;
+	/** Diagnostic read model: this update uses evaluated root-facing instead of the legacy actor-yaw accumulator. */
+	UPROPERTY(Transient)
+	bool bTurnInPlaceUsingRootFeedback = false;
 
 	/** Exact cosmetic landing chosen for the active request; Pose Search and Blend Stack retain ownership. */
 	UPROPERTY(Transient)
@@ -1050,6 +1096,10 @@ private:
 		EPoseSearchInterruptMode::DoNotInterrupt;
 	/** Last AnimInstance update seen by the Motion Matching callback, used to mirror node relevancy resets. */
 	FGraphTraversalCounter MotionMatchingNodeUpdateCounter;
+	/** Instance-owned generated node storage, rebound on initialize and cleared on uninitialize; game-thread reads only. */
+	FAnimNode_OffsetRootBone* TurnRootFeedbackNode = nullptr;
+	/** Last MM traversal was inside the bound graph's Offset Root provider; checked after the engine evaluation join. */
+	bool bMotionMatchingHasRootOffsetProvider = false;
 
 	/** Immutable presentation traits built on the game thread from GaspPresentationProfile. */
 	FRpgGaspPresentationAssetLookup GaspPresentationAssetLookup;

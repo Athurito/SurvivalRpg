@@ -30,6 +30,11 @@ struct SURVIVALRPG_API FRpgTurnInPlaceRuntimeState
 	float SelectionElapsed = 0.0f;
 	float PlaybackWatchdogDuration = 0.0f;
 	float RequestAccumulatedYaw = 0.0f;
+	/** First clear root-progress direction for an ambiguous half-turn (0 unknown, otherwise +/-1); reset per request. */
+	float MeasuredRootYawDirection = 0.0f;
+	/** World actor-facing target at request/recovery entry; unchanged goals cannot requeue overshoot. */
+	float TargetYawAnchor = 0.0f;
+	bool bHasTargetYawAnchor = false;
 	uint32 RequestSerial = 0;
 	uint32 InterruptedRequestSerial = 0;
 	uint8 HardResetReasonsLastFrame = 0;
@@ -57,6 +62,12 @@ struct SURVIVALRPG_API FRpgTurnInPlaceUpdateSnapshot
 	ERpgCharacterRotationMode RotationMode{};
 	ERpgLocomotionMovementState MovementState{};
 	float ActorYawDelta = 0.0f;
+	/** Current authoritative actor yaw, in world degrees; consumed only with valid root feedback. */
+	float ActorYaw = 0.0f;
+	/** Signed shortest gap from the last evaluated visual root to ActorYaw, after removing mesh basis. */
+	float RootYawGap = 0.0f;
+	/** True only for a finite, relevant, previously evaluated root snapshot from this lifecycle. */
+	bool bHasRootYawGap = false;
 	bool bEligible = false;
 	bool bProxyHardReset = false;
 	bool bSupportChanged = false;
@@ -101,6 +112,13 @@ namespace RpgTurnInPlaceRuntime
 	/** Calculates a wrap-safe signed actor-yaw delta in degrees. */
 	SURVIVALRPG_API float CalculateYawDelta(float PreviousActorYaw, float CurrentActorYaw);
 
+	/** Removes the mesh basis and calculates a world-facing gap; invalid inputs return false and zero. */
+	SURVIVALRPG_API bool CalculateRootYawGap(
+		const FQuat& EvaluatedMeshRootRotation,
+		const FQuat& MeshBasisRotation,
+		float ActorYaw,
+		float& OutRootYawGap);
+
 	/** Detects a transition across the Free versus controller-facing presentation boundary. */
 	SURVIVALRPG_API bool DidSupportChange(
 		bool bHasPreviousSnapshot,
@@ -130,6 +148,17 @@ namespace RpgTurnInPlaceRuntime
 		float AccumulatedYaw,
 		float QuantizedAngle,
 		const FRpgGaspLocomotionTuning& Tuning = FRpgGaspLocomotionTuning());
+
+	/**
+	 * Keeps time zero/past aligned with the component basis of the last evaluated Pose History pose.
+	 * Positive samples supply current world-facing intent; the trajectory interpolates between samples.
+	 * The evaluated component rotation must accompany the same pose as the root feedback snapshot.
+	 */
+	SURVIVALRPG_API FTransformTrajectory MakeStationaryFacingTrajectory(
+		const FTransformTrajectory& SourceTrajectory,
+		float ActorYaw,
+		const FQuat& MeshBasisRotation,
+		const FQuat& LastEvaluatedComponentRotation);
 
 	/** Resolves a finite watchdog at least as long as the configured fallback or selected clip. */
 	SURVIVALRPG_API float CalculatePlaybackWatchdogDuration(

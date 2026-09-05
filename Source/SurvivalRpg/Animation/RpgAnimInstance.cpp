@@ -4,7 +4,9 @@
 #include "RpgAnimationPlaybackRuntime.h"
 #include "AbilitySystemGlobals.h"
 #include "Animation/AnimSequenceBase.h"
+#include "Animation/AnimClassInterface.h"
 #include "AnimationWarpingLibrary.h"
+#include "BoneControllers/AnimNode_OffsetRootBone.h"
 #include "BlendStack/BlendStackAnimNodeLibrary.h"
 #include "Components/PrimitiveComponent.h"
 #include "Components/SkeletalMeshComponent.h"
@@ -15,6 +17,7 @@
 #include "PoseSearch/AnimNode_MotionMatching.h"
 #include "PoseSearch/PoseSearchDatabase.h"
 #include "PoseSearch/PoseSearchTrajectoryLibrary.h"
+#include "UObject/UnrealType.h"
 
 #if WITH_EDITOR
 #include "Misc/DataValidation.h"
@@ -661,9 +664,171 @@ bool URpgAnimInstance::CanRunParallelWork() const
 	return !bIsRemoteAutonomousMoveOnServer;
 }
 
+void FRpgAnimInstanceProxy::InvalidateServerPoseEvaluationCache()
+{
+	bHasServerPoseEvaluationCache = false;
+	ServerPoseCachedBones.Reset();
+	ServerPoseCachedBoneContainer.Reset();
+	ServerPoseCachedCurve.Empty();
+	ServerPoseCachedAttributes.Empty();
+	ServerPoseCachedUpdateCounter.Reset();
+	ServerPoseCachedInitializationCounter.Reset();
+	ServerPoseCachedRootNode = nullptr;
+	PublishedTurnRootEvaluationCounter.Reset();
+	bHasEvaluatedTurnComponentRotation = false;
+	bHasEvaluatedTurnRootRotation = false;
+}
+
+void FRpgAnimInstanceProxy::UpdateServerPoseEvaluationCacheScope(UAnimInstance* InAnimInstance)
+{
+	const URpgAnimInstance* RpgAnimInstance = Cast<URpgAnimInstance>(InAnimInstance);
+	const ARpgCharacter* Character = RpgAnimInstance ? Cast<ARpgCharacter>(RpgAnimInstance->TryGetPawnOwner()) : nullptr;
+	const USkeletalMeshComponent* Mesh = RpgAnimInstance ? RpgAnimInstance->GetSkelMeshComponent() : nullptr;
+	const UWorld* World = Character ? Character->GetWorld() : nullptr;
+	const uint32 OwnerId = Character ? Character->GetUniqueID() : 0;
+	const bool bUseCache = RpgAnimInstance && RpgAnimInstance->bGeneratePoseSearchTrajectory &&
+		RpgAnimInstance->RootMotionMode == ERootMotionMode::RootMotionFromMontagesOnly &&
+		World && (World->GetNetMode() == NM_ListenServer || World->GetNetMode() == NM_DedicatedServer) &&
+		Character->GetLocalRole() == ROLE_Authority && Character->GetRemoteRole() == ROLE_AutonomousProxy &&
+		Mesh && Mesh->GetAnimInstance() == RpgAnimInstance && Mesh->bOnlyAllowAutonomousTickPose;
+	if (bUseCache != bUseServerPoseEvaluationCache || OwnerId != ServerPoseCacheOwnerId)
+	{
+		InvalidateServerPoseEvaluationCache();
+	}
+	bUseServerPoseEvaluationCache = bUseCache;
+	ServerPoseCacheOwnerId = OwnerId;
+}
+
+void FRpgAnimInstanceProxy::PostUpdate(UAnimInstance* InAnimInstance) const
+{
+	check(IsInGameThread());
+	check(InAnimInstance && !InAnimInstance->IsRunningParallelEvaluation());
+	Super::PostUpdate(InAnimInstance);
+	const USkeletalMeshComponent* Mesh = InAnimInstance->GetSkelMeshComponent();
+	if (!bUseServerPoseEvaluationCache || !Mesh || !Mesh->bIsAutonomousTickPose ||
+		InAnimInstance->NeedsUpdate() || !GetUpdateCounter().HasEverBeenUpdated() || !GetRequiredBones().IsValid())
+	{
+		return;
+	}
+
+	// UE's only post-asset-tick override is const, but PostUpdateAnimation invokes it through
+	// a mutable proxy on the game thread after joining parallel work and flipping slot weights.
+	// CanRunParallelWork makes this autonomous-move path synchronous. Evaluate mutates this
+	// same owned proxy; no genuinely const object or parallel evaluation can reach this branch.
+	FRpgAnimInstanceProxy& MutableProxy = const_cast<FRpgAnimInstanceProxy&>(*this);
+	if (!MutableProxy.GetRootNode())
+	{
+		return;
+	}
+	FMemMark Mark(FMemStack::Get());
+	FPoseContext Pose(&MutableProxy);
+	MutableProxy.EvaluateAnimation(Pose);
+	MutableProxy.CaptureEvaluatedTurnRootPair(InAnimInstance);
+	// Keep UObject bindings alive for the outer engine PostUpdate's montage/root-motion work.
+	// No bone refresh, notify dispatch or PostEvaluate/ClearObjects belongs to this pose-only step.
+}
+
+void FRpgAnimInstanceProxy::PreEvaluateAnimation(UAnimInstance* InAnimInstance)
+{
+	Super::PreEvaluateAnimation(InAnimInstance);
+	UpdateServerPoseEvaluationCacheScope(InAnimInstance);
+}
+
+bool FRpgAnimInstanceProxy::Evaluate_WithRoot(FPoseContext& Output, FAnimNode_Base* InRootNode)
+{
+	if (!bUseServerPoseEvaluationCache || !InRootNode || InRootNode != GetRootNode() || !Output.Pose.IsValid())
+	{
+		return Super::Evaluate_WithRoot(Output, InRootNode);
+	}
+
+	const FBoneContainer& CurrentBoneContainer = Output.Pose.GetBoneContainer();
+	if (bHasServerPoseEvaluationCache && ServerPoseCachedRootNode == InRootNode &&
+		ServerPoseCachedUpdateCounter.IsSynchronized_All(GetUpdateCounter()) &&
+		ServerPoseCachedInitializationCounter.IsSynchronized_All(GetInitializationCounter()) &&
+		ServerPoseCachedBoneContainer.IsValid() &&
+		ServerPoseCachedBoneContainer.GetAsset() == CurrentBoneContainer.GetAsset() &&
+		ServerPoseCachedBoneContainer.GetSkeletonAsset() == CurrentBoneContainer.GetSkeletonAsset())
+	{
+		// A server render refresh is not a second animation tick. In particular, replaying the
+		// SequencePlayer's unchanged DeltaTimeRecord would apply Offset Root motion again.
+		if (ServerPoseCachedBoneContainer.GetSerialNumber() == CurrentBoneContainer.GetSerialNumber() &&
+			ServerPoseCachedBones.Num() == Output.Pose.GetNumBones())
+		{
+			Output.Pose.CopyBonesFrom(ServerPoseCachedBones);
+		}
+		else
+		{
+			// Match BlendStack's held-pose LOD policy: compact indices can change without an
+			// animation update. Preserve known local transforms through skeleton indices;
+			// newly required bones use the current reference pose until the next real update.
+			for (FCompactPoseBoneIndex CompactPoseIndex : Output.Pose.ForEachBoneIndex())
+			{
+				const FSkeletonPoseBoneIndex SkeletonPoseIndex =
+					CurrentBoneContainer.GetSkeletonPoseIndexFromCompactPoseIndex(CompactPoseIndex);
+				const FCompactPoseBoneIndex StoredCompactPoseIndex =
+					ServerPoseCachedBoneContainer.GetCompactPoseIndexFromSkeletonPoseIndex(SkeletonPoseIndex);
+				Output.Pose[CompactPoseIndex] = ServerPoseCachedBones.IsValidIndex(StoredCompactPoseIndex.GetInt())
+					? ServerPoseCachedBones[StoredCompactPoseIndex.GetInt()]
+					: CurrentBoneContainer.GetRefPoseTransform(CompactPoseIndex);
+			}
+		}
+		Output.Curve.CopyFrom(ServerPoseCachedCurve);
+		Output.CustomAttributes.CopyFrom(ServerPoseCachedAttributes, CurrentBoneContainer);
+		// Keep the original snapshot, including bones/attributes absent at this LOD, so a
+		// second recache in the same update can restore them without re-evaluating the graph.
+		return true;
+	}
+
+	// EvaluateAnimation_WithRoot has already cached bones. Call the node path directly so the
+	// normal evaluation counter/tracing runs once, without recursing through this override.
+	EvaluateAnimationNode_WithRoot(Output, InRootNode);
+	ServerPoseCachedBones = Output.Pose.GetBones();
+	ServerPoseCachedBoneContainer = Output.Pose.GetBoneContainer();
+	ServerPoseCachedCurve.CopyFrom(Output.Curve);
+	ServerPoseCachedAttributes.CopyFrom(Output.CustomAttributes, Output.Pose.GetBoneContainer());
+	ServerPoseCachedUpdateCounter.SynchronizeWith(GetUpdateCounter());
+	ServerPoseCachedInitializationCounter.SynchronizeWith(GetInitializationCounter());
+	ServerPoseCachedRootNode = InRootNode;
+	bHasServerPoseEvaluationCache = true;
+	return true;
+}
+
+void FRpgAnimInstanceProxy::CaptureEvaluatedTurnRootPair(UAnimInstance* InAnimInstance)
+{
+	if (!GetEvaluationCounter().HasEverBeenUpdated() ||
+		PublishedTurnRootEvaluationCounter.IsSynchronized_All(GetEvaluationCounter()))
+	{
+		// A held pose did not produce new Pose History or a newly evaluated component/root pair.
+		return;
+	}
+	PublishedTurnRootEvaluationCounter.SynchronizeWith(GetEvaluationCounter());
+	const URpgAnimInstance* RpgAnimInstance = Cast<URpgAnimInstance>(InAnimInstance);
+	bHasEvaluatedTurnComponentRotation = RpgAnimInstance &&
+		RpgAnimInstance->TurnRootFeedbackNode &&
+		RpgAnimInstance->bMotionMatchingHasRootOffsetProvider &&
+		RpgAnimInstance->MotionMatchingNodeUpdateCounter.IsSynchronized_All(GetUpdateCounter());
+	if (bHasEvaluatedTurnComponentRotation)
+	{
+		// Pose History stores the root in this evaluation's component space. PreUpdate may run
+		// repeatedly before the next evaluation (remote server moves), so capture the pair here.
+		EvaluatedTurnComponentRotation = GetComponentTransform().GetRotation();
+		EvaluatedTurnRootRotation = RpgAnimInstance->TurnRootFeedbackNode->GetOffsetRootRotation();
+		bHasEvaluatedTurnComponentRotation = !EvaluatedTurnComponentRotation.ContainsNaN() &&
+			EvaluatedTurnComponentRotation.IsNormalized() && !EvaluatedTurnRootRotation.ContainsNaN() &&
+			EvaluatedTurnRootRotation.IsNormalized();
+	}
+}
+
+void FRpgAnimInstanceProxy::PostEvaluate(UAnimInstance* InAnimInstance)
+{
+	CaptureEvaluatedTurnRootPair(InAnimInstance);
+	Super::PostEvaluate(InAnimInstance);
+}
+
 void FRpgAnimInstanceProxy::PreUpdate(UAnimInstance* InAnimInstance, float DeltaSeconds)
 {
 	Super::PreUpdate(InAnimInstance, DeltaSeconds);
+	UpdateServerPoseEvaluationCacheScope(InAnimInstance);
 
 	WorldVelocity = FVector::ZeroVector;
 	LocalVelocity = FVector::ZeroVector;
@@ -695,6 +860,7 @@ void FRpgAnimInstanceProxy::PreUpdate(UAnimInstance* InAnimInstance, float Delta
 	ActorYaw = 0.0f;
 	ActorYawDelta = 0.0f;
 	MeshBasisRotation = FQuat::Identity;
+	bHasEvaluatedTurnRootRotation = false;
 	ActorLocation = FVector::ZeroVector;
 	TrajectoryLandingPrediction = FRpgTrajectoryLandingPrediction();
 	FootPlacementSnapshot = FRpgFootPlacementSnapshot();
@@ -734,6 +900,7 @@ void FRpgAnimInstanceProxy::PreUpdate(UAnimInstance* InAnimInstance, float Delta
 	}
 	if (!Character)
 	{
+		InvalidateServerPoseEvaluationCache();
 		LastNonZeroWorldVelocity = FVector::ZeroVector;
 		ResetPoseSearchTrajectoryState(*this);
 		LandingSelectionSnapshot = FRpgLandingSelectionSnapshot();
@@ -749,6 +916,7 @@ void FRpgAnimInstanceProxy::PreUpdate(UAnimInstance* InAnimInstance, float Delta
 	URpgCharacterMovementComponent* MovementComponent = Cast<URpgCharacterMovementComponent>(Character->GetCharacterMovement());
 	if (!MovementComponent || !Character->GetWorld())
 	{
+		InvalidateServerPoseEvaluationCache();
 		LastNonZeroWorldVelocity = FVector::ZeroVector;
 		ResetPoseSearchTrajectoryState(*this);
 		LandingSelectionSnapshot = FRpgLandingSelectionSnapshot();
@@ -796,6 +964,21 @@ void FRpgAnimInstanceProxy::PreUpdate(UAnimInstance* InAnimInstance, float Delta
 		ActorYaw,
 		bTurnInPlaceHardReset,
 		bTurnInPlaceSupportChanged);
+	// GetProxyOnGameThread has joined the preceding parallel evaluation before PreUpdate.
+	// Use the root/component pair captured by PostEvaluate. Update-only node resets can change
+	// the live simulated root without producing new history, so never read that mutable node here.
+	if (bTurnInPlaceHardReset || bTurnInPlaceSupportChanged)
+	{
+		InvalidateServerPoseEvaluationCache();
+	}
+	if (bHasEvaluatedTurnComponentRotation &&
+		RpgAnimInstance->TurnRootFeedbackNode &&
+		RpgAnimInstance->bMotionMatchingHasRootOffsetProvider &&
+		GetEvaluationCounter().HasEverBeenUpdated() &&
+		RpgAnimInstance->MotionMatchingNodeUpdateCounter.IsSynchronized_All(GetUpdateCounter()))
+	{
+		bHasEvaluatedTurnRootRotation = true;
+	}
 
 	PreviousOwnerUniqueId = OwnerUniqueId;
 	PreviousLocalRole = LocalRole;
@@ -1674,6 +1857,8 @@ void URpgAnimInstance::NativeInitializeAnimation()
 	CombatAnimationProfileProvider.Reset();
 	ActiveCombatAnimationProfileSource = nullptr;
 	FRpgAnimInstanceProxy& Proxy = GetProxyOnGameThread<FRpgAnimInstanceProxy>();
+	Proxy.InvalidateServerPoseEvaluationCache();
+	Proxy.bUseServerPoseEvaluationCache = false;
 	ResetFootPlacementInitializationState(Proxy);
 	ResetCombatAnimationSnapshot(Proxy);
 	SynchronizeCombatAnimationProfileProvider(TryGetPawnOwner(), Proxy);
@@ -1704,6 +1889,29 @@ void URpgAnimInstance::NativeInitializeAnimation()
 	CurrentMotionMatchingInterruptMode = EPoseSearchInterruptMode::DoNotInterrupt;
 	PendingMotionMatchingInterruptMode = EPoseSearchInterruptMode::DoNotInterrupt;
 	MotionMatchingNodeUpdateCounter.Reset();
+	Proxy.bHasEvaluatedTurnComponentRotation = false;
+	Proxy.bHasEvaluatedTurnRootRotation = false;
+	bMotionMatchingHasRootOffsetProvider = false;
+	TurnRootFeedbackNode = nullptr;
+	if (bGeneratePoseSearchTrajectory)
+	{
+		if (const IAnimClassInterface* AnimClass = IAnimClassInterface::GetFromClass(GetClass()))
+		{
+			for (const FStructProperty* NodeProperty : AnimClass->GetAnimNodeProperties())
+			{
+				if (NodeProperty && NodeProperty->Struct == FAnimNode_OffsetRootBone::StaticStruct())
+				{
+					if (TurnRootFeedbackNode)
+					{
+						// An ambiguous graph needs an explicit binding; never guess a root from another branch.
+						TurnRootFeedbackNode = nullptr;
+						break;
+					}
+					TurnRootFeedbackNode = NodeProperty->ContainerPtrToValuePtr<FAnimNode_OffsetRootBone>(this);
+				}
+			}
+		}
+	}
 	ResetJumpPhaseRuntime();
 	ResetTurnInPlaceRuntime(false);
 
@@ -1719,6 +1927,12 @@ void URpgAnimInstance::NativeInitializeAnimation()
 void URpgAnimInstance::NativeUninitializeAnimation()
 {
 	FRpgAnimInstanceProxy& Proxy = GetProxyOnGameThread<FRpgAnimInstanceProxy>();
+	Proxy.InvalidateServerPoseEvaluationCache();
+	Proxy.bUseServerPoseEvaluationCache = false;
+	TurnRootFeedbackNode = nullptr;
+	bMotionMatchingHasRootOffsetProvider = false;
+	Proxy.bHasEvaluatedTurnRootRotation = false;
+	Proxy.bHasEvaluatedTurnComponentRotation = false;
 	ClearCombatAnimationProfileProvider(Proxy);
 	Super::NativeUninitializeAnimation();
 }
@@ -1734,6 +1948,9 @@ FRpgTurnInPlaceRuntimeState URpgAnimInstance::CaptureTurnInPlaceRuntimeState() c
 	State.SelectionElapsed = TurnInPlaceSelectionElapsed;
 	State.PlaybackWatchdogDuration = TurnInPlacePlaybackWatchdogDuration;
 	State.RequestAccumulatedYaw = TurnInPlaceRequestAccumulatedYaw;
+	State.TargetYawAnchor = TurnInPlaceTargetYawAnchor;
+	State.bHasTargetYawAnchor = bTurnInPlaceHasTargetYawAnchor;
+	State.MeasuredRootYawDirection = TurnInPlaceMeasuredRootYawDirection;
 	State.RequestSerial = TurnInPlaceRequestSerial;
 	State.InterruptedRequestSerial = TurnInPlaceInterruptedRequestSerial;
 	State.HardResetReasonsLastFrame = TurnInPlaceHardResetReasonsLastFrame;
@@ -1751,6 +1968,9 @@ void URpgAnimInstance::ApplyTurnInPlaceRuntimeResult(
 	TurnInPlaceSelectionElapsed = Result.State.SelectionElapsed;
 	TurnInPlacePlaybackWatchdogDuration = Result.State.PlaybackWatchdogDuration;
 	TurnInPlaceRequestAccumulatedYaw = Result.State.RequestAccumulatedYaw;
+	TurnInPlaceTargetYawAnchor = Result.State.TargetYawAnchor;
+	bTurnInPlaceHasTargetYawAnchor = Result.State.bHasTargetYawAnchor;
+	TurnInPlaceMeasuredRootYawDirection = Result.State.MeasuredRootYawDirection;
 	TurnInPlaceRequestSerial = Result.State.RequestSerial;
 	TurnInPlaceInterruptedRequestSerial = Result.State.InterruptedRequestSerial;
 	TurnInPlaceHardResetReasonsLastFrame = Result.State.HardResetReasonsLastFrame;
@@ -1887,6 +2107,11 @@ void URpgAnimInstance::UpdateTurnInPlaceRuntime(float DeltaSeconds, const FRpgAn
 	Snapshot.RotationMode = Proxy.RotationMode;
 	Snapshot.MovementState = Proxy.MovementState;
 	Snapshot.ActorYawDelta = Proxy.ActorYawDelta;
+	Snapshot.ActorYaw = Proxy.ActorYaw;
+	Snapshot.bHasRootYawGap = Proxy.bHasEvaluatedTurnRootRotation &&
+		RpgTurnInPlaceRuntime::CalculateRootYawGap(
+			Proxy.EvaluatedTurnRootRotation, Proxy.MeshBasisRotation, Proxy.ActorYaw, Snapshot.RootYawGap);
+	bTurnInPlaceUsingRootFeedback = Snapshot.bHasRootYawGap;
 	Snapshot.bEligible = RpgTurnInPlaceRuntime::IsEligible(
 		Eligibility,
 		RuntimeGaspLocomotionTuning);
@@ -1909,13 +2134,19 @@ void URpgAnimInstance::UpdateTurnInPlaceRuntime(float DeltaSeconds, const FRpgAn
 
 	if (Result.bUseSyntheticTrajectory)
 	{
-		TurnInPlaceSyntheticTrajectory = RpgTurnInPlaceRuntime::MakeSyntheticTrajectory(
-			Proxy.TransformTrajectory,
-			Proxy.ActorYaw,
-			TurnInPlaceAccumulatedYaw,
-			TurnInPlaceQueryAngle,
-			Proxy.MeshBasisRotation,
-			RuntimeGaspLocomotionTuning);
+		// Pose History supplies root-offset recovery. Its t=0 component basis must come from the
+		// same evaluation; only unevaluated component rotation is added towards the new goal.
+		TurnInPlaceSyntheticTrajectory = bTurnInPlaceUsingRootFeedback
+			? RpgTurnInPlaceRuntime::MakeStationaryFacingTrajectory(
+				Proxy.TransformTrajectory, Proxy.ActorYaw, Proxy.MeshBasisRotation,
+				Proxy.EvaluatedTurnComponentRotation)
+			: RpgTurnInPlaceRuntime::MakeSyntheticTrajectory(
+				Proxy.TransformTrajectory,
+				Proxy.ActorYaw,
+				TurnInPlaceAccumulatedYaw,
+				TurnInPlaceQueryAngle,
+				Proxy.MeshBasisRotation,
+				RuntimeGaspLocomotionTuning);
 		LocomotionTrajectory = TurnInPlaceSyntheticTrajectory;
 	}
 	else
@@ -2596,6 +2827,8 @@ void URpgAnimInstance::UpdateGaspMotionMatching(
 	}
 
 	const FAnimationUpdateContext* AnimationContext = Context.GetContext();
+	bMotionMatchingHasRootOffsetProvider = AnimationContext &&
+		AnimationContext->GetMessage<UE::AnimationWarping::FRootOffsetProvider>() != nullptr;
 	const bool bNodeBecameRelevant =
 		AnimationContext && AnimationContext->AnimInstanceProxy &&
 		SynchronizeMotionMatchingNodeUpdateCounter(
@@ -2660,7 +2893,9 @@ void URpgAnimInstance::UpdateGaspMotionMatching(
 			GetMotionMatchingDatabaseForRole(
 				ERpgMotionMatchingDatabaseRole::StandTurnInPlace) != nullptr,
 			bTurnInPlaceSelectionLatched,
-			bTurnInPlaceCompletionArmed);
+			// Root-feedback completion is consumed by the next lifecycle update. Keep the old
+			// pose for that one update so a queued turn does not take an intermediate Idle sample.
+			bTurnInPlaceCompletionArmed && !bTurnInPlaceUsingRootFeedback);
 	if (JumpPhase == ERpgJumpPhase::Landing && bLandingSelectionLatched)
 	{
 		UpdateLandingLatchedPlayback(

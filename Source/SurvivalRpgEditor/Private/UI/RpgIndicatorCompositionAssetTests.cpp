@@ -130,7 +130,7 @@ bool FRpgIndicatorHudCompositionAssetTest::RunTest(
 	const UBlueprint* PrototypeExperienceBlueprint =
 		LoadObject<UBlueprint>(
 			nullptr,
-			PrototypeExperiencePath);
+			RpgIndicatorCompositionAssetTests::PrototypeExperiencePath);
 	const URpgExperienceActionSet* StandardUiActionSet =
 		LoadObject<URpgExperienceActionSet>(
 			nullptr,
