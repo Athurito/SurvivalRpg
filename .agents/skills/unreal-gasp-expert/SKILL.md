@@ -1,20 +1,20 @@
 ---
 name: unreal-gasp-expert
-description: Use for Unreal Engine 5 Game Animation Sample Project (GASP) CMC locomotion, RPG movement, equipment-load-aware gait and sprint profiles, curated mantle/vault/climb/traversal, Motion Matching, Pose Search schemas/databases, trajectory generation, Blend Stack, Steering, Offset Root Bone, Foot Placement/IK, retargeting, animation-thread safety, multiplayer locomotion parity, GASP C++/Blueprint/DataAsset ownership, URpgAnimInstance refactoring, and integration with SurvivalRpg's Lyra-derived PawnData, Experiences, GAS montages, equipment, death, or ragdoll. Inspect the project and local GASP reference first; preserve project-owned curated content and pair with $unreal-lyra-expert at gameplay, composition, or character-lifecycle boundaries.
+description: Use for Unreal Engine 5 Game Animation Sample Project (GASP) CMC locomotion, RPG movement, equipment-load-aware gait and sprint profiles, curated mantle/vault/climb/traversal, Motion Matching, Pose Search schemas/databases, trajectory generation, Blend Stack, Steering, Offset Root Bone, Foot Placement/IK, retargeting, animation-thread safety, multiplayer locomotion parity, GASP Blueprint migration and C++/Blueprint/DataAsset ownership, and integration with SurvivalRpg's Lyra-derived PawnData, Experiences, GAS montages, equipment, death, or ragdoll. Inspect the project and local GASP reference first; respect the current migration stage and pair with $unreal-lyra-expert at gameplay, composition, or character-lifecycle boundaries.
 ---
 
 # Unreal GASP Expert
 
-Treat GASP as a technical reference for a project-owned animation system. Preserve SurvivalRpg's curated CMC path and integrate it through the Lyra-derived gameplay architecture instead of importing the sample wholesale.
+Inspect the original GASP Blueprints and current SurvivalRpg state before proposing animation changes. Respect the staged migration boundary below; the archived native port is historical reference, not a required runtime architecture.
 
 ## Start from current repository truth
 
 Inspect the affected project and reference assets before proposing or making changes.
 
 1. Read `SurvivalRpg.uproject` to confirm the engine version and enabled animation plugins.
-2. Read `docs/gasp-cmc-migration-plan.md` and `Plugins/RpgGaspLocomotion/Docs/README.md`.
-3. Read `Plugins/RpgGaspLocomotion/RpgGaspLocomotion.uplugin` and, for content changes, `Plugins/RpgGaspLocomotion/Docs/CuratedAssetManifest.csv`.
-4. Inspect `Source/SurvivalRpg/Animation`, the affected character/movement code, the active GASP AnimBP/PawnData/Experience, and the focused tests under `Source/SurvivalRpgEditor/Private/Animation`.
+2. Check the current migration stage and affected files. The old `docs/gasp-cmc-migration-plan.md` and `Plugins/RpgGaspLocomotion` README, descriptor, and curated manifest belong to the archive; do not recreate them to satisfy this skill.
+3. For a later requested migration, inspect the source Blueprints and their dependencies, then any manually migrated assets actually present.
+4. Inspect the current animation parent, character/movement code, PawnData/Experience, content boundaries, and available tests; do not assume the old GASP classes or assets still exist.
 5. Compare with `D:\Repos\GameAnimationSample` when available. Treat it as a version-matched comparison source, never as a required runtime dependency.
 6. Compare with `D:\Repos\LyraStarterGame` when a change crosses into PawnData, Experience, GAS, character lifecycle, equipment, death, or ragdoll.
 
@@ -27,7 +27,7 @@ Read [references/gasp-lyra-integration.md](references/gasp-lyra-integration.md) 
 Place the request in one or more concrete categories:
 
 - source-parity audit against GASP
-- curated animation import or retargeting
+- original Blueprint migration, animation import, or retargeting
 - Pose Search schema, database, normalization, or chooser work
 - AnimGraph, trajectory, Motion Matching, Blend Stack, Steering, Offset Root Bone, or Foot Placement work
 - starts, stops, pivots, turn-in-place, gait, crouch, jump, or landing debugging
@@ -49,22 +49,20 @@ Before implementing a slice, state which responsibility belongs in C++, Blueprin
 - Require a concrete threading, networking, engine-integration, performance, or deterministic-testability reason before moving cosmetic selection or tuning into C++.
 - Do not translate a complex native state machine one-to-one into Blueprint. Reduce and separate responsibilities first, then place each remaining part at its natural boundary.
 
-Treat `URpgAnimInstance` as a narrow integration coordinator, not the default owner of every GASP rule.
+When a later adaptation requires a native animation coordinator, keep it narrow; the archived GASP use of `URpgAnimInstance` does not prescribe the migrated AnimBP's parent or selection owner.
 
 - Before adding another enum, state machine, watchdog, database switch, or asset classifier, inspect whether an existing responsibility should be split into a focused value-only runtime/helper or moved into a profile, Chooser, AnimBP, or DataAsset.
 - Prefer configured roles, tags, or explicit profile membership over hard-coded asset package-path classification.
 - Avoid duplicating the same database contract across enums, fixed arrays, switch statements, validation, and tests when one data-driven contract can own it.
 - Preserve a concise mapping from relevant source GASP Blueprint/Chooser behavior to the SurvivalRpg C++/Blueprint/DataAsset seam so the adaptation remains learnable.
 
-## Preserve the project-owned CMC architecture
+## Respect the staged migration boundary
 
-- Treat the current CMC/Pose Search path as the production default unless the user explicitly requests a replacement evaluation.
-- Keep the stock GASP character, AnimBP, databases, and supporting systems as reference material rather than runtime dependencies.
-- Do not introduce GASP's full Mover/Traversal stack, Locomotor, NetworkPrediction, sample camera, Foley, audio, experimental state machines, generic retarget collections, or dense sample content merely because the sample contains them.
-- Require an isolated dependency and lifecycle evaluation before adopting any excluded sample subsystem.
-- Preserve the authoritative project skeleton, the native `URpgAnimInstance`/proxy integration seam, project-local schemas/databases, and the `RpgGaspLocomotion` content boundary.
-- Inspect current runtime selection before assuming the sample's Chooser or State Controller should own selection. Preserve project-native selection where it is intentional without treating that choice as permission to hard-code presentation tuning or grow a monolithic AnimInstance.
-- Record intentional source deviations in the plugin contract, manifest, or focused tests rather than relying on memory or issue-specific scripts.
+1. The previous native/curated port is preserved on `codex/archive-gasp-native-port-2026-09-06` (`ec8bef45`). Current archive/removal work does not migrate assets, adapt Lyra, or restore that port.
+2. The user plans to migrate the original GASP Blueprints manually. When that stage is requested, inspect and preserve the source Blueprint/Chooser behavior and approved dependency closure; do not substitute the old native selectors.
+3. Lyra adaptation follows as a separate step, after the migrated baseline is available. Reassess parent class, skeleton, content boundary, safe gameplay inputs, and any justified native integration against that baseline.
+
+Copied GASP Blueprints and dependencies may become project-owned runtime assets in the approved migration. The external sample checkout must remain unnecessary at runtime. Evaluate broader Mover/Traversal, Locomotor, NetworkPrediction, camera, Foley, audio, or experimental systems only within explicit scope. Record intentional source deviations in the active migration documentation and relevant asset contracts.
 
 ## Shape RPG locomotion and curated traversal
 
@@ -76,7 +74,7 @@ Treat `URpgAnimInstance` as a narrow integration coordinator, not the default ow
 - Inspect the current gait resolver before adding sprint. Add an explicit gameplay-owned sprint/gait state when the project needs true sprint instead of inferring it from a locally selected pose or speed alone.
 - Treat mantle, vault, hurdle, and short climb as curated RPG traversal actions. Prefer server-validated GAS abilities using the existing CMC path, project-owned montages, and Motion Warping where appropriate.
 - Treat sustained climbing, ledge hanging, ladders, or wall movement as explicit CharacterMovement custom modes or equally authoritative movement state. Do not implement sustained traversal only inside the AnimBP.
-- Retarget only the GASP sequences and metadata required by the approved action. Replace sample Blueprint helpers, BranchIn dependencies, camera logic, and traversal state machines with project-owned seams.
+- Inspect the source Blueprint helpers, BranchIn dependencies, camera logic, and traversal state machines required by the approved action. Preserve the migrated baseline first; replace or retarget only what the separately requested adaptation requires.
 - Start with one isolated traversal action, such as a forward standing mantle, in separate PawnData/Experience or a disposable development GameFeature. Prove collision validation, cancellation, multiplayer correction, and rollback before widening the move set.
 - Preserve combat, equipment, montage-slot, root-motion, hit-reaction, death, and ragdoll behavior while traversal is active or interrupted.
 - Evaluate Mover only as a separate movement-stack replacement study when CMC demonstrably cannot provide a required capability. Do not make Mover a prerequisite for curated traversal.
@@ -96,13 +94,13 @@ Treat `URpgAnimInstance` as a narrow integration coordinator, not the default ow
 For asset or Pose Search changes:
 
 - Audit the recursive dependency closure before migration.
-- Import only the animations and metadata required by the approved slice.
-- Retarget to the project skeleton and keep assets project-owned.
+- Import only the Blueprints, animations, and dependencies included in the approved migration slice.
+- Verify the source and target skeleton contract before retargeting; the archived port's skeleton is not a mandatory starting point. Keep migrated assets project-owned.
 - Preserve root-motion enablement, normalization, force-lock, and reference-pose locking where required by the current import contract.
 - Preserve curve spelling and case, including source variants, unless a documented project normalization replaces them.
 - Preserve required sampling ranges, exclusion/transition/cost notifies, mirroring, database membership, schema channels, normalization, tags, and cost biases.
 - Remove Foley, EarlyTransition, BranchIn, state-machine, or other excluded references only with an explicit local replacement policy.
-- Update the curated manifest and plugin contract when asset membership or source parity changes.
+- Update the active migration's asset inventory and content contract when membership or source parity changes; the archived curated manifest is historical.
 - Review binary/LFS scope and hard/soft/management references before accepting an asset diff.
 
 Do not treat on-disk compression size as the content contract when Unreal can recompress assets with project or engine defaults.
@@ -131,7 +129,7 @@ Do not duplicate Lyra, combat, or product authority inside this skill. Use the i
 Use the narrowest verification that proves the change, then widen when the boundary demands it.
 
 - Run the relevant editor build after C++ or module dependency changes; never claim compilation without running it.
-- Run focused automation filters such as `SurvivalRpg.Animation.Gasp`, `SurvivalRpg.Animation.MotionMatching`, `SurvivalRpg.Animation.FootPlacement`, `SurvivalRpg.Animation.TurnInPlace`, `SurvivalRpg.Animation.Jump`, `SurvivalRpg.Animation.Network`, or `SurvivalRpg.Animation.Threading` as applicable.
+- Discover and run the current focused automation filters for the changed behavior. Archived GASP-port tests are historical evidence, not required active fixtures or a reason to restore removed runtime code.
 - Validate affected assets, AnimBP compilation, parent class, skeleton, exposed defaults, graph nodes, reference closure, and cook/load assumptions.
 - Test locomotion in editor for starts, stops, pivots, gait boundaries, crouch, turns, jump/landing, uneven ground, LOD changes, and rapid input reversals.
 - For replicated changes, test a listen server with at least two clients, simulated proxies, correction scenarios, and late join.

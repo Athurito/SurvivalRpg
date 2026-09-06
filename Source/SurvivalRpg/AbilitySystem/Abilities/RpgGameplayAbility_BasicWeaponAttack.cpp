@@ -144,7 +144,6 @@ URpgGameplayAbility_BasicWeaponAttack::URpgGameplayAbility_BasicWeaponAttack(con
 	NetExecutionPolicy = EGameplayAbilityNetExecutionPolicy::LocalPredicted;
 	ActivationPolicy = ERpgAbilityActivationPolicy::OnInputTriggered;
 	ActivationGroup = ERpgAbilityActivationGroup::Exclusive_Blocking;
-	ActivationOwnedTags.AddTag(RpgGameplayTags::State_Rotation_CombatStrafe);
 	AttackDefinitionTag = RpgGameplayTags::Weapon_Attack_Primary;
 }
 

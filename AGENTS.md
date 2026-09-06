@@ -10,7 +10,7 @@ Established architecture:
 - Lyra Interaction is adopted approximately 1:1.
 - Inventory and Equipment use Lyra as the root architecture.
 - Inventory and Equipment are adapted for RPG systems.
-- GASP CMC locomotion is a project-owned, curated animation path integrated through Lyra PawnData and Experiences.
+- The previous native GASP port is archived and removed from the active project. The user plans to migrate the original GASP Blueprints manually, then adapt them to Lyra in a separate step.
 
 Use the closest matching skill:
 - Use `$survival-rpg-project` for game identity, feature scope, first-playable priorities, survival/crafting/progression tradeoffs, portal fantasy, and long-term resource relevance.
@@ -33,8 +33,8 @@ Architecture guardrails:
 - Preserve RPG inventory/equipment adaptations.
 - Do not revert RPG systems to plain Lyra sample behavior unless explicitly requested.
 - Do not introduce unrelated Lyra subsystems only because Lyra has them.
-- Treat Epic's GASP project as a comparison source, not a runtime dependency; preserve the project-owned CMC/Pose Search implementation.
-- Reuse GASP traversal assets only through project-owned CMC/GAS/Motion-Warping seams; do not import the full GASP Mover/Traversal stack, Locomotor, sample camera, Foley, or experimental state-machine content without an explicit isolated evaluation.
+- Archive/removal work does not authorize a new GASP migration or restoration of the old native port. For a later requested migration, use the original GASP Blueprints as the source; copied project assets must not depend on the external sample checkout.
+- During later Lyra traversal adaptation, keep gameplay authority in project-owned CMC/GAS/Motion-Warping seams. Inspect the approved source Blueprint dependency closure before adopting Mover/Traversal, Locomotor, sample camera, Foley, or experimental systems; these are not incidental additions to archive/removal work.
 - Pair `$unreal-gasp-expert` with `$unreal-lyra-expert` when animation work touches PawnData, Experiences, character lifecycle, movement replication, GAS montages, equipment, death, or ragdoll.
 - Add `$survival-rpg-combat-foundation` when GASP work touches attacks, dodge, block, hit reactions, combat tags, montage notifies, or equipment-granted combat behavior.
 
