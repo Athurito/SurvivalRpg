@@ -52,7 +52,6 @@ namespace RpgAICombatFeatureCompositionTests
 
 	constexpr const TCHAR* ExperienceClassPaths[] = {
 		TEXT("/Game/SurvivalRpg/System/Experiences/RpgPrototypeExperience.RpgPrototypeExperience_C"),
-		TEXT("/Game/SurvivalRpg/System/Experiences/RpgGaspPilotExperience.RpgGaspPilotExperience_C"),
 	};
 
 	int32 CountAbilitySetPath(

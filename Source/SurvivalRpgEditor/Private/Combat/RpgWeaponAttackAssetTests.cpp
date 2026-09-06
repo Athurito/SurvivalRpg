@@ -8,6 +8,8 @@
 #include "SurvivalRpg/AbilitySystem/Abilities/RpgGameplayAbility_BasicWeaponAttack.h"
 #include "SurvivalRpg/Animation/AnimNotify_RpgWeaponAttackWindow.h"
 #include "SurvivalRpg/Equipment/RpgWeaponInstance.h"
+#include "SurvivalRpg/Inventory/RpgStarterInventoryComponent.h"
+#include "UObject/UnrealType.h"
 
 namespace RpgWeaponAttackAssetTests
 {
@@ -343,6 +345,71 @@ bool FRpgWeaponAttackAssetContractTest::RunTest(const FString& Parameters)
 				*AttackDefinition);
 		}
 	}
+
+	return !HasAnyErrors();
+}
+
+IMPLEMENT_SIMPLE_AUTOMATION_TEST(
+	FRpgStarterEquipmentAssetContractTest,
+	"SurvivalRpg.Combat.StarterEquipmentAssetContract",
+	EAutomationTestFlags::EditorContext |
+		EAutomationTestFlags::EngineFilter)
+
+bool FRpgStarterEquipmentAssetContractTest::RunTest(const FString& Parameters)
+{
+	const UBlueprint* StarterBlueprint = LoadObject<UBlueprint>(
+		nullptr,
+		TEXT("/GF_Combat_Core/Equipment/Weapons/"
+			"BP_BasicSwordShieldStarterLoadout.BP_BasicSwordShieldStarterLoadout"));
+	const URpgStarterInventoryComponent* StarterDefaults =
+		StarterBlueprint && StarterBlueprint->GeneratedClass
+		? Cast<URpgStarterInventoryComponent>(
+			StarterBlueprint->GeneratedClass->GetDefaultObject())
+		: nullptr;
+	if (!TestNotNull(TEXT("Sword and shield starter loadout uses the native inventory component"),
+		StarterDefaults))
+	{
+		return false;
+	}
+
+	const FArrayProperty* EntriesProperty = FindFProperty<FArrayProperty>(
+		StarterDefaults->GetClass(), TEXT("StarterInventory"));
+	const FStructProperty* EntryProperty = EntriesProperty
+		? CastField<FStructProperty>(EntriesProperty->Inner)
+		: nullptr;
+	if (!TestTrue(TEXT("Starter loadout serializes native equipment assignment entries"),
+		EntryProperty && EntryProperty->Struct == FRpgStarterInventoryEntry::StaticStruct()))
+	{
+		return false;
+	}
+	const TArray<FRpgStarterInventoryEntry>& Entries =
+		*EntriesProperty->ContainerPtrToValuePtr<TArray<FRpgStarterInventoryEntry>>(StarterDefaults);
+	TestEqual(TEXT("Sword and shield starter loadout grants two items"), Entries.Num(), 2);
+
+	const auto ValidateEquipmentAssignment = [this, &Entries](
+		const TCHAR* Description, const TCHAR* DefinitionPath, ERpgEquipmentSlot ExpectedSlot)
+	{
+		const FSoftObjectPath ExpectedDefinition(DefinitionPath);
+		const FRpgStarterInventoryEntry* Entry = Entries.FindByPredicate(
+			[&ExpectedDefinition](const FRpgStarterInventoryEntry& Candidate)
+			{
+				return Candidate.ItemDefinition.ToSoftObjectPath() == ExpectedDefinition;
+			});
+		if (!TestNotNull(FString::Printf(TEXT("Starter loadout grants %s"), Description), Entry))
+		{
+			return;
+		}
+		TestTrue(FString::Printf(TEXT("Starter %s is assigned to equipment"), Description),
+			Entry->bAssignToEquipment);
+		TestEqual(FString::Printf(TEXT("Starter %s uses its intended hand role"), Description),
+			Entry->EquipmentSlot, ExpectedSlot);
+	};
+	ValidateEquipmentAssignment(TEXT("sword"),
+		TEXT("/GF_Combat_Core/Items/Weapons/ID_BasicSword.ID_BasicSword_C"),
+		ERpgEquipmentSlot::MainHand);
+	ValidateEquipmentAssignment(TEXT("shield"),
+		TEXT("/GF_Combat_Core/Items/Weapons/ID_BasicShield.ID_BasicShield_C"),
+		ERpgEquipmentSlot::OffHand);
 
 	return !HasAnyErrors();
 }

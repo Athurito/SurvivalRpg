@@ -3,7 +3,6 @@
 #include "CQTest.h"
 #include "Components/PIENetworkComponent.h"
 #include "Network/RpgCombatNetworkTestTypes.h"
-#include "Network/RpgGaspNetworkTestTypes.h"
 
 #include "AbilitySystemComponent.h"
 #include "AbilitySystemGlobals.h"
@@ -22,7 +21,7 @@
 #include "SurvivalRpg/AbilitySystem/Abilities/RpgGameplayAbility_BasicWeaponAttack.h"
 #include "SurvivalRpg/AbilitySystem/Attributes/RpgHealthSet.h"
 #include "SurvivalRpg/AbilitySystem/RpgAbilitySystemComponent.h"
-#include "SurvivalRpg/Animation/RpgAnimInstance.h"
+#include "Animation/AnimInstance.h"
 #include "SurvivalRpg/Combat/RpgCombatDeveloperSettings.h"
 #include "SurvivalRpg/Core/Character/RpgCharacter.h"
 #include "SurvivalRpg/Core/Game/Experience/RpgExperienceDefinition.h"
@@ -37,11 +36,11 @@
 
 namespace RpgCombatPIENetworkTests
 {
-	constexpr TCHAR PilotExperienceName[] = TEXT("RpgGaspPilotExperience");
-	constexpr TCHAR PilotGameModeClassPath[] =
+	constexpr TCHAR PrototypeExperienceName[] = TEXT("RpgPrototypeExperience");
+	constexpr TCHAR PrototypeGameModeClassPath[] =
 		TEXT("/Game/SurvivalRpg/Core/Game/BP_Rpg_GameMode.BP_Rpg_GameMode_C");
-	constexpr TCHAR PilotCharacterClassPrefix[] =
-		TEXT("/Game/SurvivalRpg/Core/Character/GASP/BP_Rpg_Character_GASP");
+	constexpr TCHAR PrototypeCharacterClassPrefix[] =
+		TEXT("/Game/SurvivalRpg/Core/Character/BP_Rpg_Character");
 	constexpr TCHAR BasicSwordDefinitionClassPath[] =
 		TEXT("/GF_Combat_Core/Equipment/Weapons/ED_BasicSword.ED_BasicSword_C");
 	constexpr int32 NormalCompletedAttackCount = 20;
@@ -67,7 +66,7 @@ namespace RpgCombatPIENetworkTests
 
 	struct FNetworkState : public FBasePIENetworkComponentState
 	{
-		ARpgGaspNetworkFloorFixture* Floor = nullptr;
+		ARpgCombatNetworkFloorFixture* Floor = nullptr;
 		ARpgCombatNetworkTargetFixture* Target = nullptr;
 		int32 SubjectPlayerId = INDEX_NONE;
 		TWeakObjectPtr<URpgWeaponInstance> AuthorityWeapon;
@@ -128,7 +127,7 @@ namespace RpgCombatPIENetworkTests
 		return nullptr;
 	}
 
-	bool IsPilotExperienceReady(FNetworkState& State, const int32 ExpectedClients)
+	bool IsPrototypeExperienceReady(FNetworkState& State, const int32 ExpectedClients)
 	{
 		if (!IsValid(State.World))
 		{
@@ -153,18 +152,18 @@ namespace RpgCombatPIENetworkTests
 			ExperienceManager->GetCurrentExperienceChecked();
 		const FPrimaryAssetId ExpectedExperienceId(
 			URpgExperienceDefinition::StaticClass()->GetFName(),
-			PilotExperienceName);
+			PrototypeExperienceName);
 		return Experience && Experience->GetPrimaryAssetId() == ExpectedExperienceId;
 	}
 
-	bool IsPilotCharacterReady(const ARpgCharacter* Character)
+	bool IsPrototypeCharacterReady(const ARpgCharacter* Character)
 	{
 		const USkeletalMeshComponent* Mesh = IsValid(Character) ? Character->GetMesh() : nullptr;
 		return IsValid(Character) &&
-			Character->GetClass()->GetPathName().StartsWith(PilotCharacterClassPrefix) &&
+			Character->GetClass()->GetPathName().StartsWith(PrototypeCharacterClassPrefix) &&
 			IsValid(Character->GetPlayerState()) &&
 			IsValid(Character->GetRpgAbilitySystemComponent()) &&
-			Mesh && IsValid(Cast<URpgAnimInstance>(Mesh->GetAnimInstance()));
+			Mesh && IsValid(Mesh->GetAnimInstance());
 	}
 
 	FGameplayAbilitySpec* FindPrimaryAttackSpec(
@@ -290,7 +289,7 @@ namespace RpgCombatPIENetworkTests
 		URpgGameplayAbility_BasicWeaponAttack* AttackAbility =
 			GetAttackAbilityInstance(AttackSpec);
 
-		return IsPilotCharacterReady(Character) &&
+		return IsPrototypeCharacterReady(Character) &&
 			Character->GetLocalRole() == ROLE_AutonomousProxy &&
 			Character->GetCharacterMovement()->IsMovingOnGround() &&
 			CountInputMatchingSpecs(AbilitySystem, PrimaryWeaponInputTag()) == 1 &&
@@ -497,7 +496,7 @@ NETWORK_TEST_CLASS(CombatRemoteMeleePIE, "SurvivalRpg.Network")
 	FGameplayAbilitySpecHandle AuthorityAttackAbilityHandle;
 	bool bOriginalDiskPersistence = true;
 	bool bOriginalAttackLifecycleLogging = false;
-	UClass* PilotGameModeClass = nullptr;
+	UClass* PrototypeGameModeClass = nullptr;
 	TArray<TSharedPtr<FString>> StepDescriptions;
 
 	const TCHAR* MakeStepDescription(const int32 AttackIndex, const TCHAR* Phase)
@@ -1057,12 +1056,12 @@ NETWORK_TEST_CLASS(CombatRemoteMeleePIE, "SurvivalRpg.Network")
 		bOriginalAttackLifecycleLogging =
 			CombatSettings->bLogWeaponAttackLifecycle;
 		CombatSettings->bLogWeaponAttackLifecycle = true;
-		PilotGameModeClass = LoadClass<ARpgGameModeBase>(
+		PrototypeGameModeClass = LoadClass<ARpgGameModeBase>(
 			nullptr,
-			PilotGameModeClassPath);
-		ASSERT_THAT(IsNotNull(PilotGameModeClass));
-		ARpgGameModeBase* GameModeDefaults = PilotGameModeClass
-			? Cast<ARpgGameModeBase>(PilotGameModeClass->GetDefaultObject())
+			PrototypeGameModeClassPath);
+		ASSERT_THAT(IsNotNull(PrototypeGameModeClass));
+		ARpgGameModeBase* GameModeDefaults = PrototypeGameModeClass
+			? Cast<ARpgGameModeBase>(PrototypeGameModeClass->GetDefaultObject())
 			: nullptr;
 		ASSERT_THAT(IsNotNull(GameModeDefaults));
 		bOriginalDiskPersistence = GameModeDefaults
@@ -1070,7 +1069,7 @@ NETWORK_TEST_CLASS(CombatRemoteMeleePIE, "SurvivalRpg.Network")
 			: true;
 		DeveloperSettings->ExperienceOverride = FPrimaryAssetId(
 			URpgExperienceDefinition::StaticClass()->GetFName(),
-			PilotExperienceName);
+			PrototypeExperienceName);
 		if (GameModeDefaults)
 		{
 			GameModeDefaults->bEnableDiskPersistence = false;
@@ -1085,7 +1084,7 @@ NETWORK_TEST_CLASS(CombatRemoteMeleePIE, "SurvivalRpg.Network")
 			.WithPacketSimulationSettings(&PacketSettings)
 			.WithGameInstanceClass(FSoftClassPath(
 				TEXT("/Game/SurvivalRpg/Core/Game/BP_Rpg_GameInstance.BP_Rpg_GameInstance_C")))
-			.WithGameMode(PilotGameModeClass)
+			.WithGameMode(PrototypeGameModeClass)
 			.Build(Network);
 	}
 
@@ -1095,9 +1094,9 @@ NETWORK_TEST_CLASS(CombatRemoteMeleePIE, "SurvivalRpg.Network")
 			OriginalExperienceOverride;
 		GetMutableDefault<URpgCombatDeveloperSettings>()
 			->bLogWeaponAttackLifecycle = bOriginalAttackLifecycleLogging;
-		if (IsValid(PilotGameModeClass))
+		if (IsValid(PrototypeGameModeClass))
 		{
-			CastChecked<ARpgGameModeBase>(PilotGameModeClass->GetDefaultObject())
+			CastChecked<ARpgGameModeBase>(PrototypeGameModeClass->GetDefaultObject())
 				->bEnableDiskPersistence = bOriginalDiskPersistence;
 		}
 	}
@@ -1108,7 +1107,7 @@ NETWORK_TEST_CLASS(CombatRemoteMeleePIE, "SurvivalRpg.Network")
 
 		Network
 			.SpawnAndReplicate<
-				ARpgGaspNetworkFloorFixture,
+				ARpgCombatNetworkFloorFixture,
 				&FNetworkState::Floor>(
 				NetworkTimeout())
 			.SpawnAndReplicate<
@@ -1120,20 +1119,20 @@ NETWORK_TEST_CLASS(CombatRemoteMeleePIE, "SurvivalRpg.Network")
 				},
 				NetworkTimeout())
 			.UntilServer(
-				TEXT("GASP Pilot Experience loads on the listen server"),
+				TEXT("Prototype Experience loads on the listen server"),
 				[](FNetworkState& State)
 				{
-					return IsPilotExperienceReady(State, 1);
+					return IsPrototypeExperienceReady(State, 1);
 				},
 				NetworkTimeout())
 			.UntilClient(
-				TEXT("Remote client owns a grounded GASP Pilot pawn"),
+				TEXT("Remote client owns a grounded Prototype pawn"),
 				0,
 				[](FNetworkState& State)
 				{
 					ARpgCharacter* Character = FindLocalCharacter(State.World);
-					return IsPilotExperienceReady(State, 1) &&
-						IsPilotCharacterReady(Character) &&
+					return IsPrototypeExperienceReady(State, 1) &&
+						IsPrototypeCharacterReady(Character) &&
 						Character->GetLocalRole() == ROLE_AutonomousProxy &&
 						Character->GetCharacterMovement()->IsMovingOnGround();
 				},

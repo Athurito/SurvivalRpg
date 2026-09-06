@@ -4,8 +4,6 @@
 
 #include "CoreMinimal.h"
 #include "Engine/DataAsset.h"
-#include "RpgCharacterMovementProfile.h"
-#include "RpgCharacterRotationMode.h"
 #include "RpgPawnData.generated.h"
 
 class URpgCameraMode;
@@ -47,30 +45,10 @@ public:
 	TSubclassOf<URpgCameraMode> DefaultCameraMode;
 
 	/**
-	 * Fallback rotation mode used when no transient GAS aim or combat-strafe request is active.
-	 * Static designer-authored PawnData; runtime authority remains on ARpgCharacter.
-	 */
-	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Rpg|Character|Rotation")
-	ERpgCharacterRotationMode DefaultRotationMode = ERpgCharacterRotationMode::CombatStrafe;
-
-	/**
-	 * Static CMC physics, input-gait, and free-rotation contract selected by this PawnData.
-	 * The same values are applied locally on authority, autonomous, and simulated roles; runtime
-	 * movement authority and prediction remain in CharacterMovement.
-	 */
-	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Rpg|Character|Movement")
-	FRpgCharacterMovementProfile MovementProfile;
-
-	/**
 	 * Static player-inventory layout selected by this PawnData.
 	 * This hard reference is designer-authored, cooked transitively with the PawnData, and read-only at runtime.
 	 * Non-player PawnData may leave it unset.
 	 */
 	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Rpg|Inventory")
 	TObjectPtr<const URpgPlayerInventoryLayoutDefinition> InventoryLayoutDefinition;
-
-#if WITH_EDITOR
-	/** Validates the finite and ordered movement profile selected by this PawnData. */
-	virtual EDataValidationResult IsDataValid(class FDataValidationContext& Context) const override;
-#endif
 };

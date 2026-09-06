@@ -13,11 +13,6 @@
 			]
 		},
 		{
-			"Name": "SurvivalRpgAnimGraph",
-			"Type": "UncookedOnly",
-			"LoadingPhase": "PreDefault"
-		},
-		{
 			"Name": "SurvivalRpgEditor",
 			"Type": "Editor",
 			"LoadingPhase": "Default"
@@ -116,22 +111,6 @@
 		},
 		{
 			"Name": "GameplayMessageRouter",
-			"Enabled": true
-		},
-		{
-			"Name": "PoseSearch",
-			"Enabled": true
-		},
-		{
-			"Name": "BlendStack",
-			"Enabled": true
-		},
-		{
-			"Name": "AnimationWarping",
-			"Enabled": true
-		},
-		{
-			"Name": "RpgGaspLocomotion",
 			"Enabled": true
 		},
 		{

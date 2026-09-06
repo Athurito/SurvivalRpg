@@ -6,9 +6,6 @@ public class SurvivalRpgEditor : ModuleRules
 	{
 		PCHUsage = PCHUsageMode.UseExplicitOrSharedPCHs;
 
-		// UE 5.8 installed builds omit this editor plugin's public headers when it is only a private dependency.
-		PrivateIncludePathModuleNames.Add("DataValidation");
-
 		PublicDependencyModuleNames.AddRange(new string[]
 		{
 			"Core",
@@ -21,21 +18,13 @@ public class SurvivalRpgEditor : ModuleRules
 		PrivateDependencyModuleNames.AddRange(new string[]
 		{
 			"AIModule",
-			"AnimGraph",
-			"AnimGraphRuntime",
-			"AnimationBlueprintLibrary",
-			"AnimationWarpingEditor",
-			"AnimationWarpingRuntime",
 			"AssetRegistry",
 			"AssetTools",
-			"BlendStack",
-			"BlendStackEditor",
 			"BlueprintGraph",
 			"BlueprintEditorLibrary",
 			"CQTest",
 			"CommonGame",
 			"CommonUI",
-			"DataValidation",
 			"EngineSettings",
 			"EnhancedInput",
 			"GF_Harvesting_Magic",
@@ -52,12 +41,9 @@ public class SurvivalRpgEditor : ModuleRules
 			"ModularGameplay",
 			"ModularGameplayActors",
 			"PropertyBindingUtils",
-			"PoseSearch",
-			"PoseSearchEditor",
 			"Projects",
 			"SlateCore",
 			"StateTreeEditorModule",
-			"SurvivalRpgAnimGraph",
 			"UIExtension",
 			"UMG",
 			"UMGEditor",

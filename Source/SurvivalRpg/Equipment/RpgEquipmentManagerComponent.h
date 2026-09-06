@@ -109,9 +109,6 @@ struct TStructOpsTypeTraits<FRpgEquipmentList> : public TStructOpsTypeTraitsBase
 	enum { WithNetDeltaSerializer = true };
 };
 
-/** Native notification fired after an authoritative equipment mutation is fully applied. */
-DECLARE_MULTICAST_DELEGATE(FRpgEquipmentChangedDelegate);
-
 UCLASS(BlueprintType, Const, meta = (BlueprintSpawnableComponent))
 class SURVIVALRPG_API URpgEquipmentManagerComponent : public UPawnComponent
 {
@@ -119,12 +116,6 @@ class SURVIVALRPG_API URpgEquipmentManagerComponent : public UPawnComponent
 
 public:
 	URpgEquipmentManagerComponent(const FObjectInitializer& ObjectInitializer = FObjectInitializer::Get());
-
-	/**
-	 * Authority-side seam for systems that must reconcile state after equipment changes.
-	 * Batched replacements emit once after the complete transaction, never for their temporary unequipped midpoint.
-	 */
-	FRpgEquipmentChangedDelegate OnEquipmentChanged;
 
 	/** Native authority seam that equips the definition into its default slot. */
 	URpgEquipmentInstance* EquipItem(TSubclassOf<URpgEquipmentDefinition> EquipmentDefinition);
@@ -188,21 +179,6 @@ private:
 	void RefreshEquipmentItemizationEffect(FRpgAppliedEquipmentEntry& Entry);
 	void RebuildEquipmentItemizationEffects();
 	void RebuildEquipmentAbilityGrants();
-
-	/** Starts a nested authority-side equipment mutation transaction. */
-	void BeginEquipmentChangeBatch();
-
-	/** Ends a mutation transaction and emits one deferred notification at the outermost boundary. */
-	void EndEquipmentChangeBatch();
-
-	/** Emits immediately outside a batch or marks the current transaction dirty. */
-	void NotifyEquipmentChanged();
-
-	/** Nested transaction depth used to coalesce replacement and multi-slot mutations. */
-	int32 EquipmentChangeBatchDepth = 0;
-
-	/** True when at least one successful mutation occurred inside the active transaction. */
-	bool bEquipmentChangePending = false;
 
 	UPROPERTY(Replicated)
 	FRpgEquipmentList EquipmentList;

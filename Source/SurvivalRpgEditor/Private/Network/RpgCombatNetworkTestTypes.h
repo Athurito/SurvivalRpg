@@ -6,12 +6,33 @@
 
 #include "RpgCombatNetworkTestTypes.generated.h"
 
+class UBoxComponent;
 class UCapsuleComponent;
+class USceneComponent;
 class URpgAbilitySystemComponent;
 class URpgDefenseSet;
 class URpgHealthComponent;
 class URpgHealthSet;
 struct FGameplayEffectSpec;
+
+/** Replicated static ground shared by the server and client combat test worlds. */
+UCLASS(NotBlueprintable, Transient)
+class ARpgCombatNetworkFloorFixture final : public AActor
+{
+	GENERATED_BODY()
+
+public:
+	/** Creates a network-addressable floor without depending on a locomotion implementation. */
+	explicit ARpgCombatNetworkFloorFixture(
+		const FObjectInitializer& ObjectInitializer = FObjectInitializer::Get());
+
+private:
+	UPROPERTY()
+	TObjectPtr<USceneComponent> SceneRoot;
+
+	UPROPERTY()
+	TObjectPtr<UBoxComponent> Collision;
+};
 
 /**
  * Replicated hostile target used by rendered melee network automation.

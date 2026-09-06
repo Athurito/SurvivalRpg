@@ -6,8 +6,15 @@ hit deduplication, and damage. Montage notifies remain designer-authored present
 signals, while the server derives its authoritative one-shot schedule from the same authored notify
 times.
 
-The tests temporarily select `RpgGaspPilotExperience`; they do not save or mutate Experience,
-PawnData, Game Feature, montage, weapon, or AnimBP assets. Experience switching remains intact.
+The tests temporarily select `RpgPrototypeExperience` with the restored
+`/Game/SurvivalRpg/Core/Character/BP_Rpg_Character` pawn. A replicated static floor in
+`RpgCombatNetworkTestTypes` supplies shared collision for the test worlds. The tests do not save or
+mutate Experience, PawnData, Game Feature, montage, weapon, or AnimBP assets.
+
+The successful runs recorded for PR #107 (`c0708cd8`) used the former GASP pilot. They remain
+historical evidence for the preserved authority mechanism; they do not establish acceptance of
+the restored Prototype pawn. Record a fresh build and run against the current commit using the
+commands below. The archived GASP pilot is no longer an active test dependency.
 
 ## Automated asset contract
 
@@ -23,6 +30,11 @@ dedicated-server delivery. Request-time filtering remains outside this asset con
 damage and traces do not depend on notify delivery. The end notify must occur before normal auto
 blend-out begins.
 
+`SurvivalRpg.Combat.StarterEquipmentAssetContract` additionally checks the preserved
+`BP_BasicSwordShieldStarterLoadout`: the Basic Sword and Basic Shield entries both request
+equipment assignment, using MainHand and OffHand respectively. This contract lives alongside the
+weapon asset tests and is independent of animation implementation.
+
 Run from PowerShell:
 
 ```powershell
@@ -31,8 +43,8 @@ Run from PowerShell:
   -unattended -nop4 -nosteam -nosplash -nosound -NullRHI `
   -stdout -FullStdOutLogOutput -NoLogTimes `
   -ddc=InstalledNoZenLocalFallback `
-  '-LocalDataCachePath=D:\Repos\SurvivalRpg\Intermediate\GaspNetworkDDC' `
-  '-ExecCmds=Automation RunTests SurvivalRpg.Combat.WeaponAttackAssetContract; Quit' `
+  '-LocalDataCachePath=D:\Repos\SurvivalRpg\Intermediate\CombatNetworkDDC' `
+  '-ExecCmds=Automation RunTests SurvivalRpg.Combat.WeaponAttackAssetContract+SurvivalRpg.Combat.StarterEquipmentAssetContract; Quit' `
   '-TestExit=Automation Test Queue Empty' `
   '-ReportExportPath=D:\Repos\SurvivalRpg\Saved\Automation\Issue57AssetContract' `
   '-abslog=D:\Repos\SurvivalRpg\Saved\Logs\Issue57AssetContract.log'
@@ -46,8 +58,8 @@ Test:
 
 Topology and network profile:
 
-- one-process PIE listen server with one external remote client
-- real `RpgGaspPilotExperience`, GASP pawn, ASC input route, Basic Sword, equipment grant,
+- PIE listen server and one remote client world in the same editor process
+- real `RpgPrototypeExperience`, `BP_Rpg_Character`, ASC input route, Basic Sword, equipment grant,
   predicted GameplayAbility, montage, sockets, traces, GameplayEffect, and health state
 - `PktLag=60`, `PktLagVariance=10`, and no configured packet loss
 - rendered offscreen RHI; `NullRHI` is intentionally not used
@@ -79,9 +91,9 @@ Run from PowerShell:
   'D:\Repos\SurvivalRpg\SurvivalRpg.uproject' `
   -unattended -nop4 -nosteam -nosplash -nosound -RenderOffscreen `
   -stdout -FullStdOutLogOutput -NoLogTimes `
-  '-ShaderWorkingDir=D:\Repos\SurvivalRpg\Intermediate\GaspNetworkShaders' `
+  '-ShaderWorkingDir=D:\Repos\SurvivalRpg\Intermediate\CombatNetworkShaders' `
   -ddc=InstalledNoZenLocalFallback `
-  '-LocalDataCachePath=D:\Repos\SurvivalRpg\Intermediate\GaspNetworkDDC' `
+  '-LocalDataCachePath=D:\Repos\SurvivalRpg\Intermediate\CombatNetworkDDC' `
   '-ini:Engine:[ConsoleVariables]:TestFramework.CQTest.CommandTimeout.Network=90' `
   '-ExecCmds=Automation RunTests SurvivalRpg.Network.CombatRemoteMeleePIE.RemoteClientAttackWindowDamageAndCancellation; Quit' `
   '-TestExit=Automation Test Queue Empty' `
@@ -96,10 +108,10 @@ the PR or issue. `Saved` reports and logs are local evidence and are not committ
 
 ## Packaged Steam close gate
 
-Automation proves the tested GASP remote-client path under PIE latency and jitter. Issue #57 still
-requires a packaged Development build with two separate Steam processes/accounts before merge or
-issue closure. Run the following matrix for both `RpgPrototypeExperience` and
-`RpgGaspPilotExperience`:
+A passing automation run covers the selected Prototype remote-client path under PIE latency and
+jitter. Packaged Steam acceptance additionally requires a Development build with two separate
+Steam processes/accounts. Run the following matrix for `RpgPrototypeExperience`; the historical
+GASP results do not substitute for this transport and pawn combination:
 
 | Actor | Movement | Input cadence | Minimum attacks |
 | --- | --- | --- | ---: |
@@ -122,10 +134,10 @@ Attack Traces` only as supporting visual evidence; persistent debug shapes are n
 
 ## Boundary
 
-The rendered test proves the current remote GASP authority lifecycle, real damage path, timer
+The rendered test checks the remote Prototype authority lifecycle, real damage path, timer
 cleanup, deduplication, and live server blade-pose movement against a fixed pre-input Basic Sword
 contact fixture. It does not judge visual combat polish, exact rendered client/server blade
-alignment, moving-target contact, fast-input behavior, host attacks, Prototype parity,
-rejected/downed activations,
+alignment, moving-target contact, fast-input behavior, host attacks, rejected/downed activations,
 multi-process packaged Steam transport, packet loss, or late join. Those remain manual close-gate
-checks here and feed the broader multiplayer acceptance in issue #55.
+checks here. An adapted test definition alone is not a successful run; record current results
+separately from the archived GASP evidence.
