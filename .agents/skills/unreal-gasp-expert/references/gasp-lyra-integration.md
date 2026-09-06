@@ -1,13 +1,13 @@
 # GASP-Lyra Integration Contract
 
-Use this contract when a task crosses SurvivalRpg animation, Lyra composition, GAS combat, equipment, character lifecycle, or networking.
+Use this contract for later Lyra adaptation when a task crosses SurvivalRpg animation, GAS combat, equipment, character lifecycle, or networking. Archive/removal is the current stage; the user plans to migrate original GASP Blueprints manually before that adaptation. The previous native port is retained on `codex/archive-gasp-native-port-2026-09-06` (`ec8bef45`).
 
 ## Canonical sources
 
 Use sources in this order:
 
 1. Current SurvivalRpg runtime code, assets, tests, and plugin contracts.
-2. `docs/gasp-cmc-migration-plan.md` for the adopted migration boundary.
+2. The currently requested migration stage and its documentation; `docs/gasp-cmc-migration-plan.md` and the old plugin contracts are historical archive sources, not the adopted runtime boundary.
 3. `D:\Repos\GameAnimationSample` for version-matched GASP comparison when present.
 4. `D:\Repos\LyraStarterGame` for Lyra lifecycle and composition comparison when present.
 
@@ -19,7 +19,7 @@ Never let either sample project override a deliberate SurvivalRpg adaptation wit
 | --- | --- | --- | --- |
 | Locomotion pose selection and presentation | GASP adaptation | Lyra for lifecycle/network inputs | Keep cosmetic state outside gameplay authority. |
 | AnimGraph, Pose Search, trajectory, procedural nodes | GASP adaptation | Combat when montage layers overlap | Preserve thread-safe snapshots and montage slots. |
-| Native animation integration | `URpgAnimInstance`/proxy and focused native helpers | AnimBP/DataAssets for presentation | Keep C++ narrow: snapshots, engine-facing hooks, world-query handoff, and justified pure resolvers rather than one growing state owner. |
+| Native animation integration, when justified | The inspected adaptation seam; no required archived GASP parent | AnimBP/DataAssets for presentation | Keep C++ narrow: snapshots, engine-facing hooks, world-query handoff, and justified pure resolvers rather than one growing state owner. |
 | Presentation composition and tuning | AnimBP, Choosers, profiles, and DataAssets | Native integration for safe inputs | Keep blend feel, database membership/references, masks, and cosmetic thresholds visible and data-driven by default. |
 | Pawn class and pawn configuration | Lyra/PawnData | GASP for AnimBP requirements | Compose through PawnData and Experience rather than a sample-owned character path. |
 | Mode and feature composition | Lyra Experiences/Game Features | GASP for required assets/plugins | Keep activation data-driven and dependencies narrow. |
@@ -31,20 +31,20 @@ Never let either sample project override a deliberate SurvivalRpg adaptation wit
 | Mantle, vault, hurdle, and short climb | GAS and CharacterMovement | GASP for curated montages; Lyra for composition | Validate traversal on the server and keep the action project-owned. |
 | Sustained climb, ledge hang, and ladders | CharacterMovement custom mode | GAS/Lyra for activation; GASP for presentation | Keep continuous movement authority outside the AnimBP. |
 | Death, corpse, and ragdoll | Character/combat lifecycle | GASP for AnimGraph and mesh handoff | Keep `GetMesh()` and physics transitions compatible. |
-| Curated animation content | `RpgGaspLocomotion` | Lyra only when composition changes | Keep assets project-owned and sample dependencies absent. |
+| Migrated animation content | The approved project content boundary | Lyra only when composition changes | Preserve the imported source baseline; runtime must not depend on the external sample checkout. |
 
-## Stable seams
+## Seams to verify during later Lyra adaptation
 
-Preserve these seams unless an inspected project change proves that they moved:
+Inspect these contracts against the migrated Blueprint baseline and existing Lyra gameplay; do not assume the archived GASP implementation is present:
 
-- `URpgAnimInstance` is the native base and integration coordinator for the GASP player AnimBP; it is not automatically the owner of every presentation rule.
+- Verify the migrated AnimBP's parent and introduce native integration only for a demonstrated need; do not require the archived `URpgAnimInstance` GASP coordinator.
 - The AnimInstance proxy captures gameplay and movement inputs on the game thread.
-- The active GASP character is selected through PawnData and an Experience.
+- Adapt production character selection through PawnData and an Experience after the isolated source Blueprint baseline is available.
 - `GetMesh()` remains the montage, notify, equipment socket, corpse, and ragdoll mesh.
 - `DefaultSlot` remains available to GAS combat montages.
 - Curated sequences preserve their authored root-motion import settings while the AnimInstance extraction policy remains root motion from montages only.
-- Runtime database selection remains project-owned even when its logic mirrors selected GASP chooser domains. Project-owned may combine focused native resolvers with asset-driven configuration; it does not require monolithic native ownership.
-- The content-only plugin owns curated locomotion assets but does not choose PawnData, Experience, or AnimBP.
+- Preserve the migrated Blueprint/Chooser selection baseline until an explicit adaptation changes it. Project ownership does not require native selection or restoration of the old resolvers.
+- Inspect the chosen content boundary separately from PawnData, Experience, and AnimBP composition; the removed content plugin is not a prerequisite.
 - Equipment/GAS and CharacterMovement own load and traversal state; the AnimInstance receives only animation-safe snapshots.
 
 ## Cross-system decision rules
@@ -60,12 +60,12 @@ Preserve these seams unless an inspected project change proves that they moved:
 
 - Do not query UObject gameplay state from worker-thread animation update.
 - Do not make combat success, hit detection, stamina use, or movement authority depend on cosmetic pose selection.
-- Do not replace Experience/PawnData composition with the GASP sample character hierarchy.
+- Do not replace production Experience/PawnData composition with the GASP sample character hierarchy; a separately requested isolated source Blueprint baseline may precede that integration.
 - Do not replace RPG equipment truth with AnimBP variables or socket state.
 - Do not remove montage slots, gameplay notifies, or root-motion behavior while simplifying locomotion graphs.
-- Do not hard-reference the sample project or import its broad dependency closure.
+- Do not create runtime references to the external sample checkout or import dependencies beyond the approved Blueprint migration scope.
 - Do not add Mover, Traversal, Locomotor, NetworkPrediction, sample camera, or Foley as incidental dependencies.
-- Do not add another presentation state machine, watchdog, database switch, or package-path classifier to `URpgAnimInstance` before evaluating a focused helper/runtime split and an AnimBP/Chooser/DataAsset alternative.
+- Do not add another presentation state machine, watchdog, database switch, or package-path classifier to a native animation coordinator before evaluating a focused helper/runtime split and an AnimBP/Chooser/DataAsset alternative.
 - Do not move complex native behavior one-to-one into Blueprint; simplify and separate the responsibility first.
 - Do not claim multiplayer completion from value-only unit tests. Verify authority, autonomous proxy, simulated proxy, correction, notify delivery, and late join in an actual network session when the change crosses those seams.
 

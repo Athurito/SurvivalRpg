@@ -41,14 +41,14 @@ For this project, treat the following as established architecture, not optional 
 - Game Feature plugins are an intended feature and content activation boundary.
 - Lyra-style Interaction is intentionally adopted approximately 1:1 and should be reused instead of rebuilding one-off interaction traces or widget-driven interaction logic.
 - Equipment and Inventory use Lyra as the root architecture, but the implementation is adapted for this project's RPG systems.
-- Project-owned GASP CMC locomotion is composed through Lyra PawnData and Experiences; the Epic sample character is not the gameplay composition root.
+- The previous native GASP port is archived and removed. A later manual migration of original GASP Blueprints will precede a separate Lyra adaptation; it is not an active production integration.
 
 Coordinate with `$unreal-gasp-expert` instead of duplicating GASP guidance here.
 
 - Let `$unreal-gasp-expert` lead Motion Matching, Pose Search, trajectory, Blend Stack, Steering, Offset Root Bone, Foot Placement/IK, retargeting, animation threading, and locomotion parity work.
 - Use both skills when animation changes affect PawnData, Experiences, Game Features, character class or lifecycle, movement replication, GAS montage execution, equipment sockets, death, or ragdoll.
 - Keep Lyra-derived gameplay and composition systems authoritative while GASP owns locomotion presentation and animation-specific selection.
-- Preserve the project-owned curated CMC path; do not replace it with GASP's sample character, Mover, Traversal, camera, Foley, or experimental state-machine stack without explicit evaluation.
+- Do not restore the archived native GASP path as an integration prerequisite. Preserve the manually migrated Blueprint baseline when it exists, then evaluate production PawnData/Experience and gameplay integration in the separately requested Lyra adaptation.
 - Let the GASP skill load its [GASP-Lyra integration contract](../unreal-gasp-expert/references/gasp-lyra-integration.md) when both domains are active.
 
 Inventory/equipment guidance:
