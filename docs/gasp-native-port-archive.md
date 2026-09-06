@@ -65,7 +65,8 @@ GASP, Pose Search, custom Foot Placement or rotation-mode references.
 
 ## Validation
 
-- UE 5.8 `SurvivalRpgEditor Win64 Development`: passed on the removal working tree.
+- UE 5.8 `SurvivalRpgEditor Win64 Development`: passed on the removal working tree and
+  again after committing the complete source changes (including normal Unity grouping).
 - Automation: 172 passed / 7 failed across combat, AI composition, frontend, quick access,
   inventory, equipment and health. All combat/AI/frontend/equipment checks passed, including
   the starter equipment contract. The seven inventory failures are classified below.
@@ -80,6 +81,7 @@ GASP, Pose Search, custom Foot Placement or rotation-mode references.
   UTF-16 LE/BE, zero retired GASP package/type names, missing LFS payloads or read errors.
 - Raw audit, LFS inventory and revert journal: local `Saved/Reviews/GaspArchive20260906`.
 - Build log: local `Saved/Logs/GaspArchiveRollbackBuild20260906.log`.
+- Clean committed-worktree build log: local `Saved/Logs/GaspArchiveRollbackCleanBuild20260906.log`.
 
 The seven inventory failures are outside the removed port. Five callback/revision assertions
 already fail identically in `Saved/Logs/CodexReusablePaneInventory.log` from 2026-07-30:
@@ -102,6 +104,7 @@ keeps those limits explicit. Old GASP test results remain historical evidence on
 
 ## GitHub lifecycle and next direction
 
+The removal is tracked in [PR #127](https://github.com/Athurito/SurvivalRpg/pull/127).
 Old-port issues and PRs use the `archived-gasp-port` label. Unfinished port work (#55, #62,
 #70, #99, #123, #125, #126 and PR #122) is closed as discontinued, not resolved by a fix.
 Already merged PRs remain merged; #117 remains closed. Retained skills #76/#82 and independent
