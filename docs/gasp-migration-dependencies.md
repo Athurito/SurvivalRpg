@@ -56,17 +56,14 @@ intentionally not versioned.
   `BP_Echo`, `BP_Twinblast`, `BP_UE4_Mannequin` and `/Game/MetaHumans/Kellan/BP_Kellan`.
   Selecting those variants is not validated. Resolve deliberately by migrating
   the desired variant and its dependency closure or removing that selection entry.
-- `LevelBlock.UserConstructionScript` accesses index 0 of an empty
-  `GetAllActorsOfClass` result in the RPG test map. Its sample level-composition
-  assumption needs a targeted guard or the required level actor; neither was
-  silently added to the map.
-- Pose Search reports that `BS_Relaxed_Run_Loop_F_Slopes` lacks
-  `bShouldMatchSyncPhases`. Source parity and the effect of changing that asset
-  setting remain open; no blanket blendspace edits were made.
+- Follow-up fixes now handle LevelBlock's absent optional `LevelVisuals` actor
+  without an empty-array access and enable the required phase-matching flag on
+  `BS_Relaxed_Run_Loop_F_Slopes`. See the [warning audit](gasp-warning-audit.md)
+  for source comparisons, semantic diffs, tests and remaining findings.
 - Broader existing/editor messages remain, including unspecified GameplayCue scan
   paths, optional MetaHuman content, voice-interface availability and the earlier
   `r.MotionVectorSimulation` render-thread warning. The headless test also emits
-  editor-plugin self-test, unsupported-RHI, sandbox file-access and offline-service
+  unspecified editor startup, unsupported-RHI, sandbox file-access and offline-service
   diagnostics. These are not evidence that all editor warnings are resolved.
 - Full SmartObject use/cancellation, motion matching under visible movement,
   multiplayer/late join and cooking were **not tested** in this dependency fix.
