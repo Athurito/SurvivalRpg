@@ -212,6 +212,11 @@
 		{
 			"Name": "CurveExpression",
 			"Enabled": true
+		},
+		{
+			"Name": "MovieSceneAnimMixer",
+			"Enabled": true,
+			"Description": "GASP-Migration: D:/Repos/GameAnimationSample/GameAnimationSample.uproject (EngineAssociation 5.8; sample build unspecified). Required by the serialized AnimSubsystem_SequencerMixer in SandboxCharacter_CMC_ABP and SandboxCharacter_Mover_ABP. Matches the sample; supplies runtime and editor struct types through the plugin's declared dependencies."
 		}
 	]
 }
