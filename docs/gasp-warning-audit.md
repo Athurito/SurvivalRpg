@@ -82,8 +82,11 @@ already establishes the dependency order mesh -> `AC_PostABPTick` -> Physics
 Control. Adding extra per-frame cache updates without that evidence could alter
 velocity/timing behavior. The user does not yet know the trigger.
 
-The four previously identified optional character soft references in `GM_Sandbox`
-also remain open; see [the dependency audit](gasp-migration-dependencies.md).
+The four deliberately excluded optional character soft references in `GM_Sandbox`
+were subsequently removed on 2026-09-08. Additional tests covered both Sandbox
+GameModes, appearance/pawn cycling and ragdoll entry/get-up without reproducing
+the bone-cache warning. The exact historical timing remains unresolved; see the
+[Physics Control follow-up](gasp-physics-control-followup.md).
 No collision assignment conflicts were introduced or changed in this follow-up.
 
 ## Verification actually performed

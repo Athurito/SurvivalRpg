@@ -52,10 +52,10 @@ intentionally not versioned.
 
 ## Remaining findings and limits
 
-- `GM_Sandbox` still has four unresolved **soft**, optional character references:
-  `BP_Echo`, `BP_Twinblast`, `BP_UE4_Mannequin` and `/Game/MetaHumans/Kellan/BP_Kellan`.
-  Selecting those variants is not validated. Resolve deliberately by migrating
-  the desired variant and its dependency closure or removing that selection entry.
+- The four deliberately excluded optional variants (Echo, Twinblast, UE4 Mannequin
+  and Kellan) were removed from `GM_Sandbox.VisualOverrides_Soft` on 2026-09-08.
+  Manny/Quinn and the inherited Ragdoll selection passed fresh-load and runtime
+  checks; see the [Physics Control follow-up](gasp-physics-control-followup.md).
 - Follow-up fixes now handle LevelBlock's absent optional `LevelVisuals` actor
   without an empty-array access and enable the required phase-matching flag on
   `BS_Relaxed_Run_Loop_F_Slopes`. See the [warning audit](gasp-warning-audit.md)
