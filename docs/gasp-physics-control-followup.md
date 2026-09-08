@@ -172,3 +172,44 @@ Local evidence: `Saved/PlacedRagdollAudit20260908/`, including
 `instance-comparison.json`, `fresh-instance-comparison.json`, `pie-with.json`,
 `pie-without.json`, the four per-case logs, `editor.log`, `content-before.json`,
 `content-after.json` and `mcp-operations.jsonl`.
+
+## CMC selected before Play: new reproduction evidence (2026-09-08)
+
+The user reports intermittent warnings when selecting CMC **before** starting
+Play. A new snapshot of the user's actual editor log confirms four further
+bursts, at 18:52:03, 18:52:24, 18:52:30 and 18:52:41 UTC, with **67 warnings each**.
+All 268 messages identify the same placed Ragdoll instance above, immediately
+after startup under `GM_Sandbox_C`. This log is from **UE 5.8.2, CL 56702186**:
+the intermittent problem demonstrably still occurs on this engine build.
+The log identifies the emitting actor; the CMC selection at those historical
+starts is user-reported, rather than independently recorded by that log.
+
+A read-only MCP inspection of the user's editor found the test map open with
+an unsaved `GM_Sandbox` world override. This editor was left untouched. A second
+offscreen editor used its own MCP port 8001 for controlled tests, selecting
+`DDCvar.PawnClass = 0` before each PIE start. All twelve runs verified the actual
+spawned `SandboxCharacter_CMC_C_0`, rather than assuming the selector worked:
+
+- Six starts with the original placed Ragdoll: zero bone-cache warnings.
+- Six starts with that Ragdoll removed **only in the unsaved test world**: zero
+  bone-cache warnings; CMC spawn succeeded each time.
+- MCP inspection of the CMC Blueprint's 14 component templates found no
+  `PhysicsControlComponent`. The warning's owner is the separate Ragdoll NPC.
+
+These observations support separating the placed Ragdoll test NPC from a map
+intended solely for CMC tests. Removing it would remove this particular emitter
+from that map; it would not repair or explain the intermittent Ragdoll cache
+failure. The controlled runs again did not reproduce the warning with the actor
+present, so they cannot establish a causal CMC/Ragdoll interaction or prove a
+cache fix. No failure stack was captured and no Blueprint/engine fix was applied.
+
+The isolated editor restored its selector and RPG GameMode and exited without
+saving. Map, Ragdoll Blueprint and `GM_Sandbox` SHA256 values remained unchanged.
+The user's open editor and its unsaved settings were preserved. This follow-up
+only adds documentation; the migration baseline tag remains unchanged. No C++
+build, cook or multiplayer parity test was performed.
+
+Local evidence: `Saved/CmcSpawnAudit20260908/user-before.log`,
+`user-warning-lines.json`, `user-editor-readonly.json`, `cmc-components.json`,
+`cmc-with-results.json`, `cmc-without-results.json`, the twelve per-run logs,
+`mcp-operations.jsonl`, `content-before.json` and `content-after.json`.
