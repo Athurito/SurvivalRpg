@@ -148,6 +148,75 @@
 		{
 			"Name": "GF_Dev_Sandbox",
 			"Enabled": true
+		},
+		{
+			"Name": "MotionTrajectory",
+			"Enabled": true
+		},
+		{
+			"Name": "PoseSearch",
+			"Enabled": true
+		},
+		{
+			"Name": "MotionWarping",
+			"Enabled": true
+		},
+		{
+			"Name": "AnimationWarping",
+			"Enabled": true
+		},
+		{
+			"Name": "Chooser",
+			"Enabled": true
+		},
+		{
+			"Name": "AnimationLocomotionLibrary",
+			"Enabled": true
+		},
+		{
+			"Name": "Mover",
+			"Enabled": true
+		},
+		{
+			"Name": "MoverExamples",
+			"Enabled": true
+		},
+		{
+			"Name": "DrawDebugLibrary",
+			"Enabled": true
+		},
+		{
+			"Name": "MetaHumanCoreTech",
+			"Enabled": true
+		},
+		{
+			"Name": "MetaHumanCharacter",
+			"Enabled": true
+		},
+		{
+			"Name": "LiveLinkControlRig",
+			"Enabled": true
+		},
+		{
+			"Name": "GameplayInteractions",
+			"Enabled": true
+		},
+		{
+			"Name": "GameplayBehaviorSmartObjects",
+			"Enabled": true
+		},
+		{
+			"Name": "SmartObjects",
+			"Enabled": true
+		},
+		{
+			"Name": "CurveExpression",
+			"Enabled": true
+		},
+		{
+			"Name": "MovieSceneAnimMixer",
+			"Enabled": true,
+			"Description": "GASP-Migration: D:/Repos/GameAnimationSample/GameAnimationSample.uproject (EngineAssociation 5.8; sample build unspecified). Required by the serialized AnimSubsystem_SequencerMixer in SandboxCharacter_CMC_ABP and SandboxCharacter_Mover_ABP. Matches the sample; supplies runtime and editor struct types through the plugin's declared dependencies."
 		}
 	]
 }

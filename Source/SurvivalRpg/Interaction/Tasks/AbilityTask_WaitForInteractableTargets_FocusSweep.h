@@ -4,6 +4,7 @@
 
 #include "AbilityTask_WaitForInteractableTargets.h"
 #include "SurvivalRpg/Interaction/InteractionQuery.h"
+#include "SurvivalRpg/Physics/RpgCollisionChannels.h"
 
 #include "AbilityTask_WaitForInteractableTargets_FocusSweep.generated.h"
 
@@ -45,7 +46,7 @@ private:
 	UPROPERTY()
 	FGameplayAbilityTargetingLocationInfo StartLocation;
 
-	TEnumAsByte<ECollisionChannel> InteractionTraceChannel = ECC_GameTraceChannel1;
+	TEnumAsByte<ECollisionChannel> InteractionTraceChannel = Rpg_TraceChannel_Interaction;
 	float MaxFocusRange = 500.0f;
 	float ScanRate = 0.05f;
 	float SweepRadius = 12.0f;

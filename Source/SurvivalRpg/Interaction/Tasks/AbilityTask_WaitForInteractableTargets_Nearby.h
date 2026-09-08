@@ -4,6 +4,7 @@
 
 #include "AbilityTask_WaitForInteractableTargets.h"
 #include "SurvivalRpg/Interaction/InteractionQuery.h"
+#include "SurvivalRpg/Physics/RpgCollisionChannels.h"
 
 #include "AbilityTask_WaitForInteractableTargets_Nearby.generated.h"
 
@@ -34,7 +35,7 @@ private:
 	UPROPERTY()
 	FInteractionQuery InteractionQuery;
 
-	TEnumAsByte<ECollisionChannel> InteractionTraceChannel = ECC_GameTraceChannel1;
+	TEnumAsByte<ECollisionChannel> InteractionTraceChannel = Rpg_TraceChannel_Interaction;
 	float ScanRange = 800.0f;
 	float ScanRate = 0.25f;
 	int32 MaxVisibleOptions = 12;
