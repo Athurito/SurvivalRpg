@@ -116,3 +116,59 @@ Local evidence: `Saved/PhysicsControlInvestigation20260908/`, particularly
 `array-change.json`, `validation-results.json`, `validation.log`,
 `sandbox-matrix-results.json`, `runtime-*.json`, `mcp-operations.jsonl`,
 `editor-before.log` and `editor-matrix.log`.
+
+## Placed Ragdoll actor A/B investigation (2026-09-08)
+
+The historical warnings name the specific placed instance
+`SandboxCharacter_Mover_Ragdoll_C_UAID_8A884BC111253CFF02_1573519336`
+in `Lvl_ThirdPerson`, rather than a GameMode-spawned player. This identifies the
+affected actor; it does not establish that placing it in the level is itself
+the cause of the first-frame cache miss.
+
+Read-only MCP inspection compared the actor with its Blueprint CDO and component
+templates. Physics Control (38 properties) and `AC_PostABPTick` (13 properties)
+matched. The mesh template comparison showed `bNotifyRigidBodyCollision` and
+tick `endTickGroup` differences. A fresh instance of the **same Ragdoll Blueprint**,
+created temporarily at the same transform, had those same values. Across all
+169 inspected actor/component properties (52 actor, 38 Physics Control, 66 mesh,
+13 post-animation), the original and fresh instances matched after normalizing
+instance-owned component references. No properties in this selection were
+unreadable. This excludes a difference in those inspected instance settings;
+it is not an exhaustive comparison of every serialized property or runtime state.
+
+A separate UE **5.8.2, CL 56702186** D3D12 offscreen editor ran four PIE sessions:
+
+| GameMode | Placed Ragdoll present | Ragdoll actors verified in PIE | Bone-cache warnings |
+| --- | --- | --- | --- |
+| `BP_Rpg_GameMode` | Yes | Placed instance only | 0 |
+| `GM_Sandbox_Ragdoll` | Yes | Placed instance and spawned player | 0 |
+| `BP_Rpg_GameMode` | No, temporarily removed | None | 0 |
+| `GM_Sandbox_Ragdoll` | No, temporarily removed | Spawned player only | 0 |
+
+The original `TriggerRagdoll` and `ExitRagdoll` events were also exercised:
+
+- Placed instance under the RPG GameMode: measured **Walking -> Ragdoll -> Walking**.
+- Placed instance under the Sandbox Ragdoll GameMode: calls completed, but the
+  sampled mode was Walking throughout; a transition was **not verified** in this
+  case. The samples cannot establish whether an intermediate transition occurred.
+- Spawned Sandbox Ragdoll player with the placed actor removed: measured
+  **Walking -> Ragdoll -> Walking**. Thus the negative warning result without the
+  placed actor was also checked with an active Physics Control/Ragdoll character.
+
+No Physics Control warnings occurred in any of the four sessions. Because the
+warning was absent in the unchanged-actor control runs too, this A/B test does
+**not** demonstrate that removing the actor fixes it. The historical startup
+cache failure remains unresolved; no new engine or Blueprint fix is justified
+by these results. Other editor/plugin warnings remain outside this comparison.
+
+Both actor removals and GameMode overrides were restricted to the unsaved test
+world. The RPG GameMode was restored, PIE stopped, and the isolated editor ended
+without saving. SHA256 before/after checks confirm that the map and Ragdoll
+Blueprint are unchanged; the baseline tag still resolves to `3acb2492`. The only
+tracked change from this investigation is this report. No build, cook, visible
+animation-quality assessment or multiplayer/late-join test was performed.
+
+Local evidence: `Saved/PlacedRagdollAudit20260908/`, including
+`instance-comparison.json`, `fresh-instance-comparison.json`, `pie-with.json`,
+`pie-without.json`, the four per-case logs, `editor.log`, `content-before.json`,
+`content-after.json` and `mcp-operations.jsonl`.
