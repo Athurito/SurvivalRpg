@@ -117,3 +117,47 @@ Local evidence: `Saved/RemainingWarnings20260907/` contains `inventory.json`,
 `asset-inspection*.json`, `mcp-operations.jsonl`, `saved-migration-metadata.json`,
 `validation-results.json`, `validation.log`, `editor-mcp.log` and
 `editor-rendered.log`. These generated logs and backups remain unversioned.
+
+## MoverExamples parent-load comparison with original GASP (2026-09-08)
+
+The two suspect engine example Blueprints were explicitly loaded, using the same
+read-only Python commandlet in `D:/Repos/GameAnimationSample` and SurvivalRpg.
+Both used **UE 5.8.2, CL 56702186**, from `D:/Programme/UE_5.8`. The result is
+identical: the missing-parent warnings also reproduce in the original GASP.
+This particular load failure is not introduced by the project migration.
+
+| Engine Blueprint under `/MoverExamples/Components/` | Original GASP | SurvivalRpg |
+| --- | --- | --- |
+| `DefaultPhysicsCharacterMoverComponent` | Missing parent; generated class null | Same |
+| `ExtendedPhysicsCharacterMoverComponent` | Missing parent; generated class null | Same |
+| `DefaultCharacterMoverComponent` | Parent and generated class resolve | Same |
+| `ExtendedCharacterMoverComponent` | Parent and generated class resolve | Same |
+| `ChaosMoverComponent` | Parent and generated class resolve | Same |
+
+The two failing native paths are `/Script/Mover.PhysicsCharacterMoverComponent`
+and `/Script/MoverExamples.MoverExamplesPhysicsCharacterMoverComponent`.
+Both direct native-class loads return null in both projects. Asset Registry tags
+confirm that the affected Blueprints still declare exactly those parents.
+Although loading returns the Blueprint container object, its generated class
+does not exist, and the log reproduces `CreateExport: Failed to load Class ... as
+Parent`. The healthy controls resolve `CharacterMoverComponent` or
+`ChaosCharacterMoverComponent` and their generated classes normally.
+
+Both final probes completed with **exit 0** and verified the expected success and
+failure cases. This means the diagnostic completed; the two broken assets remain
+broken. The initial probe also reproduced the warnings, but its optional Python
+`parent_class` property read was unavailable in this engine build. The corrected
+probe uses registry parent tags, direct native-class resolution and actual
+generated-class availability; initial property-read failures were not counted
+as asset-load failures.
+
+No compilation, save, reparenting or redirect was performed. SHA256 checks for
+the five engine assets and both `.uproject` files match before/after. Whether
+these inconsistent engine examples are installation leftovers or distributed
+sample-content defects remains unverified. This is separate from the intermittent
+Physics Control bone-cache warning. No gameplay, cook or C++ build test was run.
+
+Evidence: `Saved/MoverExamplesParentAudit20260908/`, especially
+`original-verified.log`, `project-verified.log`, `GameAnimationSample-results.json`,
+`SurvivalRpg-results.json`, `comparison.json`, `hashes-before.json` and
+`hashes-after.json`. The only tracked change is this audit update.
