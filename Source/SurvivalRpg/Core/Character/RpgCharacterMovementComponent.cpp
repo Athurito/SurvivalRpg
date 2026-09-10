@@ -23,21 +23,6 @@ URpgCharacterMovementComponent::URpgCharacterMovementComponent(const FObjectInit
 	
 }
 
-void URpgCharacterMovementComponent::SimulateMovement(float DeltaTime)
-{
-	if (bHasReplicatedAcceleration)
-	{
-		// Preserve our replicated acceleration
-		const FVector OriginalAcceleration = Acceleration;
-		Super::SimulateMovement(DeltaTime);
-		Acceleration = OriginalAcceleration;
-	}
-	else
-	{
-		Super::SimulateMovement(DeltaTime);
-	}
-}
-
 bool URpgCharacterMovementComponent::CanAttemptJump() const
 {
 	// Same as UCharacterMovementComponent's implementation but without the crouch check
@@ -90,12 +75,6 @@ const FRpgCharacterGroundInfo& URpgCharacterMovementComponent::GetGroundInfo()
 	CachedGroundInfo.LastUpdateFrame = GFrameCounter;
 
 	return CachedGroundInfo;
-}
-
-void URpgCharacterMovementComponent::SetReplicatedAcceleration(const FVector& InAcceleration)
-{
-	bHasReplicatedAcceleration = true;
-	Acceleration = InAcceleration;
 }
 
 FRotator URpgCharacterMovementComponent::GetDeltaRotation(float DeltaTime) const

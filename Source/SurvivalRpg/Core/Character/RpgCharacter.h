@@ -61,8 +61,12 @@ public:
 	virtual void FellOutOfWorld(const class UDamageType& dmgType) override;
 
 protected:
-	// Called when the game starts or when spawned
-	
+	/**
+	 * Includes authoritative input acceleration in the engine's movement packet for simulated proxies.
+	 * Values remain in cm/s^2 and use ReplicatedMovement.VelocityQuantizationLevel, without receiver MaxAcceleration scaling.
+	 */
+	virtual bool ShouldReplicateAcceleration() const override { return true; }
+
 	virtual void OnAbilitySystemInitialized();
 	virtual void OnAbilitySystemUninitialized();
 	

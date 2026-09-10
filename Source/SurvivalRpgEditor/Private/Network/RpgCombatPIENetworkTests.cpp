@@ -10,13 +10,17 @@
 #include "Components/CapsuleComponent.h"
 #include "Components/SceneComponent.h"
 #include "Components/SkeletalMeshComponent.h"
+#include "Engine/Engine.h"
 #include "Engine/NetDriver.h"
+#include "Engine/World.h"
 #include "EngineUtils.h"
 #include "GameFramework/CharacterMovementComponent.h"
+#include "GameFramework/GameModeBase.h"
 #include "GameFramework/GameStateBase.h"
 #include "GameFramework/PlayerController.h"
 #include "GameFramework/PlayerState.h"
 #include "GameplayTagContainer.h"
+#include "Misc/Guid.h"
 
 #include "SurvivalRpg/AbilitySystem/Abilities/RpgGameplayAbility_BasicWeaponAttack.h"
 #include "SurvivalRpg/AbilitySystem/Attributes/RpgHealthSet.h"
@@ -49,6 +53,73 @@ namespace RpgCombatPIENetworkTests
 	constexpr float MinimumBladeCenterAdvance = 2.0f;
 	constexpr float FastMontageTimingPlayRate = 1.5f;
 	const FVector FixedBasicSwordContactOffset(140.0f, -25.0f, 0.0f);
+
+	/** Keeps every newly created test PIE world off disk before its GameMode can load a save. */
+	class FScopedPIEWorldSaveIsolation final
+	{
+	public:
+		~FScopedPIEWorldSaveIsolation()
+		{
+			FGameModeEvents::OnGameModeInitializedEvent().Remove(GameModeInitializedHandle);
+			// The actual test actors stay isolated through Logout/EndPlay, even after an aborted test.
+		}
+
+		void Start()
+		{
+			check(!GameModeInitializedHandle.IsValid());
+			SlotPrefix = TEXT("SurvivalRpg_CombatPIETest_") + FGuid::NewGuid().ToString(EGuidFormats::Digits);
+			GameModeInitializedHandle = FGameModeEvents::OnGameModeInitializedEvent().AddRaw(
+				this, &FScopedPIEWorldSaveIsolation::IsolateGameMode);
+		}
+
+		bool IsWorldIsolated(UWorld* World) const
+		{
+			if (!IsValid(World) || World->WorldType != EWorldType::PIE)
+			{
+				return false;
+			}
+
+			// Network clients never own a GameMode; the authoritative world owns all world persistence.
+			if (World->GetNetMode() == NM_Client)
+			{
+				return World->GetAuthGameMode() == nullptr;
+			}
+
+			const ARpgGameModeBase* GameMode = World->GetAuthGameMode<ARpgGameModeBase>();
+			const FString* IsolatedSlot = GameMode ? GameModeSlots.Find(GameMode) : nullptr;
+			return GameMode && IsolatedSlot && !GameMode->bEnableDiskPersistence &&
+				GameMode->WorldSaveSlotName == *IsolatedSlot &&
+				GameMode->WorldSaveBackupSlotName == *IsolatedSlot + TEXT("_Backup") &&
+				GameMode->WorldSaveRecoverySlotName == *IsolatedSlot + TEXT("_Recovery");
+		}
+
+	private:
+		void IsolateGameMode(AGameModeBase* InitializedGameMode)
+		{
+			ARpgGameModeBase* GameMode = Cast<ARpgGameModeBase>(InitializedGameMode);
+			if (!GameMode || !GameMode->GetWorld() || GameMode->GetWorld()->WorldType != EWorldType::PIE)
+			{
+				return;
+			}
+
+			// AGameModeBase broadcasts inside Super::InitGame, before ARpgGameModeBase loads world saves.
+			// This applies to every authoritative PIE world, including entry/travel/late-join setup worlds.
+			// Editing only the Blueprint CDO did not isolate the instance in the previous PIE save incident.
+			FString& IsolatedSlot = GameModeSlots.FindOrAdd(GameMode);
+			if (IsolatedSlot.IsEmpty())
+			{
+				IsolatedSlot = FString::Printf(TEXT("%s_%u"), *SlotPrefix, GameMode->GetUniqueID());
+			}
+			GameMode->bEnableDiskPersistence = false;
+			GameMode->WorldSaveSlotName = IsolatedSlot;
+			GameMode->WorldSaveBackupSlotName = IsolatedSlot + TEXT("_Backup");
+			GameMode->WorldSaveRecoverySlotName = IsolatedSlot + TEXT("_Recovery");
+		}
+
+		FString SlotPrefix;
+		FDelegateHandle GameModeInitializedHandle;
+		TMap<TWeakObjectPtr<const ARpgGameModeBase>, FString> GameModeSlots;
+	};
 
 	const FGameplayTag& PrimaryWeaponInputTag()
 	{
@@ -486,6 +557,8 @@ NETWORK_TEST_CLASS(CombatRemoteMeleePIE, "SurvivalRpg.Network")
 {
 	using FNetworkState = RpgCombatPIENetworkTests::FNetworkState;
 
+	// Keep the hooks alive through CQTest network teardown; never restore persistence on test actors.
+	RpgCombatPIENetworkTests::FScopedPIEWorldSaveIsolation WorldSaveIsolation;
 	FPIENetworkComponent<FNetworkState> Network{
 		TestRunner,
 		TestCommandBuilder,
@@ -494,7 +567,6 @@ NETWORK_TEST_CLASS(CombatRemoteMeleePIE, "SurvivalRpg.Network")
 	FPrimaryAssetId OriginalExperienceOverride;
 	int32 SubjectPlayerId = INDEX_NONE;
 	FGameplayAbilitySpecHandle AuthorityAttackAbilityHandle;
-	bool bOriginalDiskPersistence = true;
 	bool bOriginalAttackLifecycleLogging = false;
 	UClass* PrototypeGameModeClass = nullptr;
 	TArray<TSharedPtr<FString>> StepDescriptions;
@@ -1055,25 +1127,24 @@ NETWORK_TEST_CLASS(CombatRemoteMeleePIE, "SurvivalRpg.Network")
 		OriginalExperienceOverride = DeveloperSettings->ExperienceOverride;
 		bOriginalAttackLifecycleLogging =
 			CombatSettings->bLogWeaponAttackLifecycle;
+		for (const FWorldContext& Context : GEngine->GetWorldContexts())
+		{
+			if (Context.WorldType == EWorldType::PIE && IsValid(Context.World()))
+			{
+				// Do not let CQTest stop an existing user session: its teardown may persist real progress.
+				TestRunner->AddError(TEXT("Combat PIE automation requires all existing PIE sessions to be stopped first."));
+				return;
+			}
+		}
+		WorldSaveIsolation.Start();
 		CombatSettings->bLogWeaponAttackLifecycle = true;
 		PrototypeGameModeClass = LoadClass<ARpgGameModeBase>(
 			nullptr,
 			PrototypeGameModeClassPath);
 		ASSERT_THAT(IsNotNull(PrototypeGameModeClass));
-		ARpgGameModeBase* GameModeDefaults = PrototypeGameModeClass
-			? Cast<ARpgGameModeBase>(PrototypeGameModeClass->GetDefaultObject())
-			: nullptr;
-		ASSERT_THAT(IsNotNull(GameModeDefaults));
-		bOriginalDiskPersistence = GameModeDefaults
-			? GameModeDefaults->bEnableDiskPersistence
-			: true;
 		DeveloperSettings->ExperienceOverride = FPrimaryAssetId(
 			URpgExperienceDefinition::StaticClass()->GetFName(),
 			PrototypeExperienceName);
-		if (GameModeDefaults)
-		{
-			GameModeDefaults->bEnableDiskPersistence = false;
-		}
 
 		PacketSettings = FPacketSimulationSettings();
 		PacketSettings.PktLag = 60;
@@ -1094,11 +1165,6 @@ NETWORK_TEST_CLASS(CombatRemoteMeleePIE, "SurvivalRpg.Network")
 			OriginalExperienceOverride;
 		GetMutableDefault<URpgCombatDeveloperSettings>()
 			->bLogWeaponAttackLifecycle = bOriginalAttackLifecycleLogging;
-		if (IsValid(PrototypeGameModeClass))
-		{
-			CastChecked<ARpgGameModeBase>(PrototypeGameModeClass->GetDefaultObject())
-				->bEnableDiskPersistence = bOriginalDiskPersistence;
-		}
 	}
 
 	TEST_METHOD(RemoteClientAttackWindowDamageAndCancellation)
@@ -1106,6 +1172,18 @@ NETWORK_TEST_CLASS(CombatRemoteMeleePIE, "SurvivalRpg.Network")
 		using namespace RpgCombatPIENetworkTests;
 
 		Network
+			.ThenServer(
+				TEXT("Listen server uses its own nonpersistent test GameMode instance"),
+				[this](FNetworkState& State)
+				{
+					ASSERT_THAT(IsTrue(WorldSaveIsolation.IsWorldIsolated(State.World)));
+				})
+			.ThenClients(
+				TEXT("Client worlds have no authoritative world persistence"),
+				[this](FNetworkState& State)
+				{
+					ASSERT_THAT(IsTrue(WorldSaveIsolation.IsWorldIsolated(State.World)));
+				})
 			.SpawnAndReplicate<
 				ARpgCombatNetworkFloorFixture,
 				&FNetworkState::Floor>(
