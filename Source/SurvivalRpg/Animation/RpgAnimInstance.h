@@ -12,10 +12,10 @@ class UAbilitySystemComponent;
 /**
  * URpgAnimInstance
  *
- *	The base game animation instance class used by this project.
+ * Shared animation base for RPG characters, including GAS tag bindings and network pose timing.
  */
 UCLASS(Config = Game)
-class URpgAnimInstance : public UAnimInstance
+class SURVIVALRPG_API URpgAnimInstance : public UAnimInstance
 {
 	GENERATED_BODY()
 
@@ -24,6 +24,9 @@ public:
 	explicit URpgAnimInstance(const FObjectInitializer& ObjectInitializer);
 
 	virtual void InitializeWithAbilitySystem(UAbilitySystemComponent* ASC);
+
+	/** Processes each remote autonomous pose tick immediately on a listen server, preserving its animation time. */
+	virtual bool CanRunParallelWork() const override;
 
 #if WITH_EDITOR
 	virtual EDataValidationResult IsDataValid(class FDataValidationContext& Context) const override;
