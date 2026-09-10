@@ -1,0 +1,483 @@
+{
+  "schema_version": 1,
+  "date": "2026-09-10",
+  "engine_version": "5.8.2-56702186",
+  "source_commit": "535b41238ca024edce7e8fd5d7d4bea4a81ed40e",
+  "status": "passed_observed_with_documented_coverage_gaps",
+  "scope": "Asset-only source/copy semantic parity, using final fresh snapshots. This aggregate classifies preserved raw differences; it does not rewrite raw reports or apply broad GUID/cache removal.",
+  "manifest": "gasp-asset-map.json",
+  "manifest_sha256": "8754649c27ae917263ea48760fb4655749c783a4761e3e56a2f3d8cf142a01f6",
+  "totals": {
+    "matched_packages": 2138,
+    "raw_equal_packages": 2089,
+    "classified_raw_difference_packages": 49,
+    "unexplained_difference_packages": 0,
+    "unexplained_differences": 0,
+    "old_source_backreferences": 0,
+    "missing_packages": 0,
+    "missing_native_exports": 0,
+    "truncated_raw_reports": 0,
+    "specialized_blueprint_and_runtime_rig_assets_passed": 63,
+    "independently_verified_local_variable_guids": 60
+  },
+  "classification_counts": {
+    "blueprint_resolved_pin_and_compiler_identity": 45,
+    "statetree_compiled_editor_data_hash": 1,
+    "rig_derived_identity_and_structure_cache": 2,
+    "fullbodyik_transient_editor_graph_guid": 1
+  },
+  "classification_rules": {
+    "blueprint_resolved_pin_and_compiler_identity": "Specialized audit resolves pins and all pin references to unique node/name/direction roles, retaining links, types, defaults, flags, PersistentGuid and authored node/graph GUIDs. Only proven directly owned non-authored Engine.EdGraph compiler products use graph/node identity. Their bodies are still compared; derived enum labels and hidden ErrorTolerance/SplitPin prototype identities are separately classified.",
+    "fullbodyik_transient_editor_graph_guid": "Only *_EditorOnly.RigVMFunctionLibraryEdGraph.GraphGuid differs. FunctionLibraryEdGraph is a transient editor visualization; the actual RigVM authored graph remains literal.",
+    "statetree_compiled_editor_data_hash": "Only LastCompiledEditorDataHash differs. StateTree editor CRC serializes external object paths, so remapped asset/class paths affect it. All 9 states and 18 bindings retain matching roles and segments; every source and target binding endpoint independently resolves, including derived IDs. No GUID normalization was used to conceal unresolved bindings.",
+    "rig_local_variable_deterministic_guid": "Each LocalVariables(n).Guid independently matches the exact Engine NewDeterministicGuid(GraphPath+\".\"+Name+\":\"+CPPType) formula on its respective side. Name, CPPType and every other variable field remain identical after package remapping. All 60 source/target values verified with tested BLAKE3.",
+    "rig_presave_structure_cache": "Only RigVMGraph.LastStructureHash is classified as a derived cache. Native PreSave recalculates it from node and pin structure; function-reference structure hashing explicitly includes full LibraryNodePath. No claim is made that path remapping alone numerically explains every hash change. Complete observed authored graph content is equal apart from independently verified local-variable GUIDs, and fresh compile/validation plus strict pre/post graph, pin, default, type and link equality passed."
+  },
+  "fresh_validation": {
+    "all_packages_loaded": 2138,
+    "blueprints_compiled": 65,
+    "warnings_as_errors": true,
+    "asset_compile_and_validation_checks": 66,
+    "failed_checks": 0,
+    "final_refreshed_rigs_checked_again": 2,
+    "final_refreshed_rigs_failed": 0
+  },
+  "references": {
+    "missing": 0,
+    "backrefs": 0,
+    "dependency_differences": 0,
+    "leftovers": 0
+  },
+  "preservation": {
+    "tracked_files_checked": 6125,
+    "changed_preexisting_files": [],
+    "save_files_checked": 7,
+    "changed_saves": []
+  },
+  "state_tree": {
+    "states": 9,
+    "bindings": 18,
+    "all_source_and_target_endpoints_resolve": true
+  },
+  "coverage": {
+    "raw_gap_counts": {
+      "source_unreadable": 867528,
+      "source_native_supplement_marked": 121067,
+      "source_deliberately_omitted": 4325,
+      "target_unreadable": 867528,
+      "target_native_supplement_marked": 121067,
+      "target_deliberately_omitted": 4325
+    },
+    "limitation": "All equality claims cover captured data. Snapshot unreadable fields and deliberately omitted non-UPROPERTY/bulk/derived data remain visible in raw per-asset records; matching observations are not blanket proof of uncaptured binary payloads.",
+    "runtime_or_pie_test_performed_for_this_asset_foundation": false
+  },
+  "not_performed": [
+    "PIE",
+    "visual runtime animation/network testing",
+    "cook",
+    "C++ build",
+    "gameplay or save operations"
+  ],
+  "classified_assets": [
+    {
+      "source": "/Game/Audio/Foley/AC_FoleyEvents",
+      "target": "/Game/SurvivalRpg/Characters/GASP/Shared/Audio/Foley/AC_FoleyEvents",
+      "class": "/Script/Engine.Blueprint",
+      "category": "blueprint_resolved_pin_and_compiler_identity",
+      "raw_difference_count": 85,
+      "unexplained_differences": 0
+    },
+    {
+      "source": "/Game/Audio/Foley/DABP_FoleyAudioBank",
+      "target": "/Game/SurvivalRpg/Characters/GASP/Shared/Audio/Foley/DABP_FoleyAudioBank",
+      "class": "/Script/Engine.Blueprint",
+      "category": "blueprint_resolved_pin_and_compiler_identity",
+      "raw_difference_count": 1,
+      "unexplained_differences": 0
+    },
+    {
+      "source": "/Game/Blueprints/AC_PreCMCTick",
+      "target": "/Game/SurvivalRpg/Characters/GASP/Shared/AC_PreCMCTick",
+      "class": "/Script/Engine.Blueprint",
+      "category": "blueprint_resolved_pin_and_compiler_identity",
+      "raw_difference_count": 17,
+      "unexplained_differences": 0
+    },
+    {
+      "source": "/Game/Blueprints/AC_TraversalLogic",
+      "target": "/Game/SurvivalRpg/Characters/GASP/Shared/AC_TraversalLogic",
+      "class": "/Script/Engine.Blueprint",
+      "category": "blueprint_resolved_pin_and_compiler_identity",
+      "raw_difference_count": 1304,
+      "unexplained_differences": 0
+    },
+    {
+      "source": "/Game/Blueprints/AC_VisualOverrideManager",
+      "target": "/Game/SurvivalRpg/Characters/GASP/Shared/AC_VisualOverrideManager",
+      "class": "/Script/Engine.Blueprint",
+      "category": "blueprint_resolved_pin_and_compiler_identity",
+      "raw_difference_count": 122,
+      "unexplained_differences": 0
+    },
+    {
+      "source": "/Game/Blueprints/AI/StateTree/ST_Player_SandboxCharacter_SmartObject",
+      "target": "/Game/SurvivalRpg/Characters/GASP/Shared/AI/StateTree/ST_Player_SandboxCharacter_SmartObject",
+      "class": "/Script/StateTreeModule.StateTree",
+      "category": "statetree_compiled_editor_data_hash",
+      "raw_difference_count": 1,
+      "unexplained_differences": 0
+    },
+    {
+      "source": "/Game/Blueprints/AI/StateTree/TasksAndConditions/STT_CharacterIgnoreCollisionsWithOtherActor",
+      "target": "/Game/SurvivalRpg/Characters/GASP/Shared/AI/StateTree/TasksAndConditions/STT_CharacterIgnoreCollisionsWithOtherActor",
+      "class": "/Script/Engine.Blueprint",
+      "category": "blueprint_resolved_pin_and_compiler_identity",
+      "raw_difference_count": 17,
+      "unexplained_differences": 0
+    },
+    {
+      "source": "/Game/Blueprints/AI/StateTree/TasksAndConditions/STT_FindSlotTransforms",
+      "target": "/Game/SurvivalRpg/Characters/GASP/Shared/AI/StateTree/TasksAndConditions/STT_FindSlotTransforms",
+      "class": "/Script/Engine.Blueprint",
+      "category": "blueprint_resolved_pin_and_compiler_identity",
+      "raw_difference_count": 23,
+      "unexplained_differences": 0
+    },
+    {
+      "source": "/Game/Blueprints/AnimModifiers/AM_BakePhaseCurveFromFootstepNotifies",
+      "target": "/Game/SurvivalRpg/Characters/GASP/Shared/AnimModifiers/AM_BakePhaseCurveFromFootstepNotifies",
+      "class": "/Script/Engine.Blueprint",
+      "category": "blueprint_resolved_pin_and_compiler_identity",
+      "raw_difference_count": 323,
+      "unexplained_differences": 0
+    },
+    {
+      "source": "/Game/Blueprints/AnimNotifies/BP_AnimNotify_FoleyEvent",
+      "target": "/Game/SurvivalRpg/Characters/GASP/Shared/AnimNotifies/BP_AnimNotify_FoleyEvent",
+      "class": "/Script/Engine.Blueprint",
+      "category": "blueprint_resolved_pin_and_compiler_identity",
+      "raw_difference_count": 23,
+      "unexplained_differences": 0
+    },
+    {
+      "source": "/Game/Blueprints/AnimNotifies/BP_NotifyState_EarlyTransition",
+      "target": "/Game/SurvivalRpg/Characters/GASP/Shared/AnimNotifies/BP_NotifyState_EarlyTransition",
+      "class": "/Script/Engine.Blueprint",
+      "category": "blueprint_resolved_pin_and_compiler_identity",
+      "raw_difference_count": 79,
+      "unexplained_differences": 0
+    },
+    {
+      "source": "/Game/Blueprints/AnimNotifies/BP_NotifyState_MontageBlendOut",
+      "target": "/Game/SurvivalRpg/Characters/GASP/Shared/AnimNotifies/BP_NotifyState_MontageBlendOut",
+      "class": "/Script/Engine.Blueprint",
+      "category": "blueprint_resolved_pin_and_compiler_identity",
+      "raw_difference_count": 23,
+      "unexplained_differences": 0
+    },
+    {
+      "source": "/Game/Blueprints/Cameras/CameraDirector_SandboxCharacter",
+      "target": "/Game/SurvivalRpg/Characters/GASP/Shared/Cameras/CameraDirector_SandboxCharacter",
+      "class": "/Script/Engine.Blueprint",
+      "category": "blueprint_resolved_pin_and_compiler_identity",
+      "raw_difference_count": 118,
+      "unexplained_differences": 0
+    },
+    {
+      "source": "/Game/Blueprints/ControlRigs/CR_Biped_FootPlacement",
+      "target": "/Game/SurvivalRpg/Characters/GASP/Shared/ControlRigs/CR_Biped_FootPlacement",
+      "class": "/Script/ControlRigDeveloper.ControlRigBlueprint",
+      "category": "rig_derived_identity_and_structure_cache",
+      "raw_difference_count": 33,
+      "unexplained_differences": 0
+    },
+    {
+      "source": "/Game/Blueprints/Data/BFL_HelpfulFunctions",
+      "target": "/Game/SurvivalRpg/Characters/GASP/Shared/Data/BFL_HelpfulFunctions",
+      "class": "/Script/Engine.Blueprint",
+      "category": "blueprint_resolved_pin_and_compiler_identity",
+      "raw_difference_count": 906,
+      "unexplained_differences": 0
+    },
+    {
+      "source": "/Game/Blueprints/GM_Sandbox",
+      "target": "/Game/SurvivalRpg/Characters/GASP/Shared/GM_Sandbox",
+      "class": "/Script/Engine.Blueprint",
+      "category": "blueprint_resolved_pin_and_compiler_identity",
+      "raw_difference_count": 169,
+      "unexplained_differences": 0
+    },
+    {
+      "source": "/Game/Blueprints/MovementModes/BP_MovementMode_Falling",
+      "target": "/Game/SurvivalRpg/Characters/GASP/Mover/Blueprints/MovementModes/BP_MovementMode_Falling",
+      "class": "/Script/Engine.Blueprint",
+      "category": "blueprint_resolved_pin_and_compiler_identity",
+      "raw_difference_count": 21,
+      "unexplained_differences": 0
+    },
+    {
+      "source": "/Game/Blueprints/MovementModes/BP_MovementMode_Slide",
+      "target": "/Game/SurvivalRpg/Characters/GASP/Mover/Blueprints/MovementModes/BP_MovementMode_Slide",
+      "class": "/Script/Engine.Blueprint",
+      "category": "blueprint_resolved_pin_and_compiler_identity",
+      "raw_difference_count": 118,
+      "unexplained_differences": 0
+    },
+    {
+      "source": "/Game/Blueprints/MovementModes/BP_MovementMode_Walking",
+      "target": "/Game/SurvivalRpg/Characters/GASP/Mover/Blueprints/MovementModes/BP_MovementMode_Walking",
+      "class": "/Script/Engine.Blueprint",
+      "category": "blueprint_resolved_pin_and_compiler_identity",
+      "raw_difference_count": 206,
+      "unexplained_differences": 0
+    },
+    {
+      "source": "/Game/Blueprints/MovementModes/BP_MovementTransition_FromSlide",
+      "target": "/Game/SurvivalRpg/Characters/GASP/Mover/Blueprints/MovementModes/BP_MovementTransition_FromSlide",
+      "class": "/Script/Engine.Blueprint",
+      "category": "blueprint_resolved_pin_and_compiler_identity",
+      "raw_difference_count": 11,
+      "unexplained_differences": 0
+    },
+    {
+      "source": "/Game/Blueprints/MovementModes/BP_MovementTransition_ToSlide",
+      "target": "/Game/SurvivalRpg/Characters/GASP/Mover/Blueprints/MovementModes/BP_MovementTransition_ToSlide",
+      "class": "/Script/Engine.Blueprint",
+      "category": "blueprint_resolved_pin_and_compiler_identity",
+      "raw_difference_count": 11,
+      "unexplained_differences": 0
+    },
+    {
+      "source": "/Game/Blueprints/MovementModes/B_MovementMode_Flying",
+      "target": "/Game/SurvivalRpg/Characters/GASP/Mover/Blueprints/MovementModes/B_MovementMode_Flying",
+      "class": "/Script/Engine.Blueprint",
+      "category": "blueprint_resolved_pin_and_compiler_identity",
+      "raw_difference_count": 1,
+      "unexplained_differences": 0
+    },
+    {
+      "source": "/Game/Blueprints/PC_Sandbox",
+      "target": "/Game/SurvivalRpg/Characters/GASP/Shared/PC_Sandbox",
+      "class": "/Script/Engine.Blueprint",
+      "category": "blueprint_resolved_pin_and_compiler_identity",
+      "raw_difference_count": 249,
+      "unexplained_differences": 0
+    },
+    {
+      "source": "/Game/Blueprints/RetargetedCharacters/ABP_GenericRetarget",
+      "target": "/Game/SurvivalRpg/Characters/GASP/Shared/RetargetedCharacters/ABP_GenericRetarget",
+      "class": "/Script/Engine.AnimBlueprint",
+      "category": "blueprint_resolved_pin_and_compiler_identity",
+      "raw_difference_count": 166,
+      "unexplained_differences": 0
+    },
+    {
+      "source": "/Game/Blueprints/RetargetedCharacters/BP_Manny",
+      "target": "/Game/SurvivalRpg/Characters/GASP/Shared/RetargetedCharacters/BP_Manny",
+      "class": "/Script/Engine.Blueprint",
+      "category": "blueprint_resolved_pin_and_compiler_identity",
+      "raw_difference_count": 23,
+      "unexplained_differences": 0
+    },
+    {
+      "source": "/Game/Blueprints/RetargetedCharacters/BP_Quinn",
+      "target": "/Game/SurvivalRpg/Characters/GASP/Shared/RetargetedCharacters/BP_Quinn",
+      "class": "/Script/Engine.Blueprint",
+      "category": "blueprint_resolved_pin_and_compiler_identity",
+      "raw_difference_count": 23,
+      "unexplained_differences": 0
+    },
+    {
+      "source": "/Game/Blueprints/SandboxCharacter_CMC",
+      "target": "/Game/SurvivalRpg/Characters/GASP/CMC/Blueprints/SandboxCharacter_CMC",
+      "class": "/Script/Engine.Blueprint",
+      "category": "blueprint_resolved_pin_and_compiler_identity",
+      "raw_difference_count": 1817,
+      "unexplained_differences": 0
+    },
+    {
+      "source": "/Game/Blueprints/SandboxCharacter_CMC_ABP",
+      "target": "/Game/SurvivalRpg/Characters/GASP/CMC/Blueprints/SandboxCharacter_CMC_ABP",
+      "class": "/Script/Engine.AnimBlueprint",
+      "category": "blueprint_resolved_pin_and_compiler_identity",
+      "raw_difference_count": 4867,
+      "unexplained_differences": 0
+    },
+    {
+      "source": "/Game/Blueprints/SandboxCharacter_Mover",
+      "target": "/Game/SurvivalRpg/Characters/GASP/Mover/Blueprints/SandboxCharacter_Mover",
+      "class": "/Script/Engine.Blueprint",
+      "category": "blueprint_resolved_pin_and_compiler_identity",
+      "raw_difference_count": 2786,
+      "unexplained_differences": 0
+    },
+    {
+      "source": "/Game/Blueprints/SandboxCharacter_Mover_ABP",
+      "target": "/Game/SurvivalRpg/Characters/GASP/Mover/Blueprints/SandboxCharacter_Mover_ABP",
+      "class": "/Script/Engine.AnimBlueprint",
+      "category": "blueprint_resolved_pin_and_compiler_identity",
+      "raw_difference_count": 6877,
+      "unexplained_differences": 0
+    },
+    {
+      "source": "/Game/Blueprints/SmartObjects/AC_SmartObjectAnimation",
+      "target": "/Game/SurvivalRpg/Characters/GASP/Shared/SmartObjects/AC_SmartObjectAnimation",
+      "class": "/Script/Engine.Blueprint",
+      "category": "blueprint_resolved_pin_and_compiler_identity",
+      "raw_difference_count": 1057,
+      "unexplained_differences": 0
+    },
+    {
+      "source": "/Game/Blueprints/SmartObjects/DistanceToSmartObject",
+      "target": "/Game/SurvivalRpg/Characters/GASP/Shared/SmartObjects/DistanceToSmartObject",
+      "class": "/Script/Engine.Blueprint",
+      "category": "blueprint_resolved_pin_and_compiler_identity",
+      "raw_difference_count": 8,
+      "unexplained_differences": 0
+    },
+    {
+      "source": "/Game/Blueprints/SmartObjects/TasksAndConditions/STT_ClaimSlot",
+      "target": "/Game/SurvivalRpg/Characters/GASP/Shared/SmartObjects/TasksAndConditions/STT_ClaimSlot",
+      "class": "/Script/Engine.Blueprint",
+      "category": "blueprint_resolved_pin_and_compiler_identity",
+      "raw_difference_count": 49,
+      "unexplained_differences": 0
+    },
+    {
+      "source": "/Game/Blueprints/SmartObjects/TasksAndConditions/STT_ClearHandle",
+      "target": "/Game/SurvivalRpg/Characters/GASP/Shared/SmartObjects/TasksAndConditions/STT_ClearHandle",
+      "class": "/Script/Engine.Blueprint",
+      "category": "blueprint_resolved_pin_and_compiler_identity",
+      "raw_difference_count": 17,
+      "unexplained_differences": 0
+    },
+    {
+      "source": "/Game/Blueprints/SmartObjects/TasksAndConditions/STT_PlayAnimFromBestCost",
+      "target": "/Game/SurvivalRpg/Characters/GASP/Shared/SmartObjects/TasksAndConditions/STT_PlayAnimFromBestCost",
+      "class": "/Script/Engine.Blueprint",
+      "category": "blueprint_resolved_pin_and_compiler_identity",
+      "raw_difference_count": 166,
+      "unexplained_differences": 0
+    },
+    {
+      "source": "/Game/Blueprints/SmartObjects/TasksAndConditions/STT_PlayAnimMontage",
+      "target": "/Game/SurvivalRpg/Characters/GASP/Shared/SmartObjects/TasksAndConditions/STT_PlayAnimMontage",
+      "class": "/Script/Engine.Blueprint",
+      "category": "blueprint_resolved_pin_and_compiler_identity",
+      "raw_difference_count": 78,
+      "unexplained_differences": 0
+    },
+    {
+      "source": "/Game/Characters/UE5_Mannequins/Rigs/ABP_Manny_PostProcess",
+      "target": "/Game/SurvivalRpg/Characters/GASP/Shared/Characters/UE5_Mannequins/Rigs/ABP_Manny_PostProcess",
+      "class": "/Script/Engine.AnimBlueprint",
+      "category": "blueprint_resolved_pin_and_compiler_identity",
+      "raw_difference_count": 18,
+      "unexplained_differences": 0
+    },
+    {
+      "source": "/Game/Characters/UE5_Mannequins/Rigs/ABP_Quinn_PostProcess",
+      "target": "/Game/SurvivalRpg/Characters/GASP/Shared/Characters/UE5_Mannequins/Rigs/ABP_Quinn_PostProcess",
+      "class": "/Script/Engine.AnimBlueprint",
+      "category": "blueprint_resolved_pin_and_compiler_identity",
+      "raw_difference_count": 18,
+      "unexplained_differences": 0
+    },
+    {
+      "source": "/Game/Characters/UE5_Mannequins/Rigs/CR_Mannequin_Body",
+      "target": "/Game/SurvivalRpg/Characters/GASP/Shared/Characters/UE5_Mannequins/Rigs/CR_Mannequin_Body",
+      "class": "/Script/ControlRigDeveloper.ControlRigBlueprint",
+      "category": "rig_derived_identity_and_structure_cache",
+      "raw_difference_count": 49,
+      "unexplained_differences": 0
+    },
+    {
+      "source": "/Game/Characters/UEFN_Mannequin/Animations/MotionMatchingData/Channels/PSC_Traversal_Head",
+      "target": "/Game/SurvivalRpg/Characters/GASP/Shared/Characters/UEFN_Mannequin/Animations/MotionMatchingData/Channels/PSC_Traversal_Head",
+      "class": "/Script/Engine.Blueprint",
+      "category": "blueprint_resolved_pin_and_compiler_identity",
+      "raw_difference_count": 14,
+      "unexplained_differences": 0
+    },
+    {
+      "source": "/Game/Characters/UEFN_Mannequin/Animations/MotionMatchingData/Channels/PSC_Traversal_Pos",
+      "target": "/Game/SurvivalRpg/Characters/GASP/Shared/Characters/UEFN_Mannequin/Animations/MotionMatchingData/Channels/PSC_Traversal_Pos",
+      "class": "/Script/Engine.Blueprint",
+      "category": "blueprint_resolved_pin_and_compiler_identity",
+      "raw_difference_count": 14,
+      "unexplained_differences": 0
+    },
+    {
+      "source": "/Game/Characters/UEFN_Mannequin/Rigs/ABP_UEFN_Mannequin_PostProcess",
+      "target": "/Game/SurvivalRpg/Characters/GASP/Shared/Characters/UEFN_Mannequin/Rigs/ABP_UEFN_Mannequin_PostProcess",
+      "class": "/Script/Engine.AnimBlueprint",
+      "category": "blueprint_resolved_pin_and_compiler_identity",
+      "raw_difference_count": 18,
+      "unexplained_differences": 0
+    },
+    {
+      "source": "/Game/Characters/UEFN_Mannequin/Rigs/CR_UEFN_Mannequin_FullBodyIK",
+      "target": "/Game/SurvivalRpg/Characters/GASP/Shared/Characters/UEFN_Mannequin/Rigs/CR_UEFN_Mannequin_FullBodyIK",
+      "class": "/Script/ControlRig.ControlRigRuntimeAsset",
+      "category": "fullbodyik_transient_editor_graph_guid",
+      "raw_difference_count": 1,
+      "unexplained_differences": 0
+    },
+    {
+      "source": "/Game/Levels/LevelPrototyping/LevelBlock",
+      "target": "/Game/SurvivalRpg/Characters/GASP/Shared/Levels/LevelPrototyping/LevelBlock",
+      "class": "/Script/Engine.Blueprint",
+      "category": "blueprint_resolved_pin_and_compiler_identity",
+      "raw_difference_count": 268,
+      "unexplained_differences": 0
+    },
+    {
+      "source": "/Game/Levels/LevelPrototyping/LevelBlock_Traversable",
+      "target": "/Game/SurvivalRpg/Characters/GASP/Shared/Levels/LevelPrototyping/LevelBlock_Traversable",
+      "class": "/Script/Engine.Blueprint",
+      "category": "blueprint_resolved_pin_and_compiler_identity",
+      "raw_difference_count": 109,
+      "unexplained_differences": 0
+    },
+    {
+      "source": "/Game/Levels/LevelPrototyping/LevelButton",
+      "target": "/Game/SurvivalRpg/Characters/GASP/Shared/Levels/LevelPrototyping/LevelButton",
+      "class": "/Script/Engine.Blueprint",
+      "category": "blueprint_resolved_pin_and_compiler_identity",
+      "raw_difference_count": 77,
+      "unexplained_differences": 0
+    },
+    {
+      "source": "/Game/Levels/LevelPrototyping/LevelVisuals",
+      "target": "/Game/SurvivalRpg/Characters/GASP/Shared/Levels/LevelPrototyping/LevelVisuals",
+      "class": "/Script/Engine.Blueprint",
+      "category": "blueprint_resolved_pin_and_compiler_identity",
+      "raw_difference_count": 93,
+      "unexplained_differences": 0
+    },
+    {
+      "source": "/Game/Levels/LevelPrototyping/Teleporter_Destination",
+      "target": "/Game/SurvivalRpg/Characters/GASP/Shared/Levels/LevelPrototyping/Teleporter_Destination",
+      "class": "/Script/Engine.Blueprint",
+      "category": "blueprint_resolved_pin_and_compiler_identity",
+      "raw_difference_count": 35,
+      "unexplained_differences": 0
+    },
+    {
+      "source": "/Game/Levels/LevelPrototyping/Teleporter_Sender",
+      "target": "/Game/SurvivalRpg/Characters/GASP/Shared/Levels/LevelPrototyping/Teleporter_Sender",
+      "class": "/Script/Engine.Blueprint",
+      "category": "blueprint_resolved_pin_and_compiler_identity",
+      "raw_difference_count": 143,
+      "unexplained_differences": 0
+    }
+  ],
+  "local_evidence": {
+    "directory": "Saved/GaspAssetFoundation20260910",
+    "committed": false,
+    "aggregate_report": "final-semantic-review.json",
+    "aggregate_sha256": "02d7fdd6f365590b52c8e97425b3ce97f58c7a7793a48e1bc7d7dab38ae62568",
+    "raw_comparison_directory": "comparison-final",
+    "note": "Raw exports and per-asset snapshots remain local. This summary does not replace their documented inspection gaps."
+  }
+}
