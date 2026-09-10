@@ -2,6 +2,8 @@
 
 #include "RpgAnimInstance.h"
 #include "AbilitySystemGlobals.h"
+#include "Components/SkeletalMeshComponent.h"
+#include "Engine/World.h"
 
 #if WITH_EDITOR
 #include "Misc/DataValidation.h"
@@ -16,6 +18,28 @@
 URpgAnimInstance::URpgAnimInstance(const FObjectInitializer& ObjectInitializer)
 	: Super(ObjectInitializer)
 {
+}
+
+bool URpgAnimInstance::CanRunParallelWork() const
+{
+	if (!Super::CanRunParallelWork())
+	{
+		return false;
+	}
+
+	const ARpgCharacter* Character = Cast<ARpgCharacter>(TryGetPawnOwner());
+	const USkeletalMeshComponent* MeshComponent = GetSkelMeshComponent();
+	const UWorld* World = GetWorld();
+	const bool bIsRemoteAutonomousPoseTick =
+		World && World->GetNetMode() == NM_ListenServer &&
+		Character && Character->GetLocalRole() == ROLE_Authority &&
+		Character->GetRemoteRole() == ROLE_AutonomousProxy &&
+		MeshComponent && MeshComponent->bOnlyAllowAutonomousTickPose &&
+		MeshComponent->bIsAutonomousTickPose;
+
+	// Several client moves can tick the pose within one server frame. A deferred graph
+	// update retains only the last move's delta; consume each move before it is overwritten.
+	return !bIsRemoteAutonomousPoseTick;
 }
 
 void URpgAnimInstance::InitializeWithAbilitySystem(UAbilitySystemComponent* ASC)
