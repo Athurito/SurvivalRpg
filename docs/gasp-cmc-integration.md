@@ -38,6 +38,11 @@ acceleration/braking limits, crouch state, floor and rotation settings. The curr
 RPG input supports running, crouching and jumping; this first preset uses Run.
 Load-dependent gaits and sprint input remain a later movement slice.
 
+The gameplay mesh uses the copied `MI_UEFN_Mannequin_CMC` material in override
+slot 0, matching the imported CMC character. The initial RPG character setup
+omitted this component override and displayed the mesh's default material.
+Restoring the override changes neither the UEFN mesh nor its animation class.
+
 The Blueprint caches the preceding airborne state and velocity solely for the
 0.3-second landing presentation on every network role. These four local fields
 are neither replicated nor saved. They do not control movement or landing damage.
@@ -55,9 +60,20 @@ The pawn's existing `GaspFoleyEvents` component uses its own
 `Audio/DA_RpgGaspCMCFoley` bank. It copies the shared
 `DefaultFoleyEventAudioBank` and replaces only `Foley.Event.Run` with
 `Audio/MSS_RpgGasp_Run`, a copy of `MSS_FoleySound_Run_Soft` with Volume 0.48
-instead of 0.24 (+6.02 dB). This makes sustained running audible without raising
-the other 15 events or changing animation notifies, sound concurrency, spatial
-attenuation or the shared GASP bank. The gain is designer-owned audio tuning.
+instead of 0.24 (+6.02 dB). This raises sustained-running gain without raising
+the other 15 events or changing sound concurrency, spatial attenuation or the
+shared GASP bank. The gain is designer-owned audio tuning; it raises existing
+sound starts and cannot repair missing starts or establish final perceived
+loudness by itself.
+
+The RPG AnimBP's Motion Matching node disables `bShouldFilterNotifies`. The
+shared `BP_AnimNotify_FoleyEvent` still rejects notifications from blending-out
+animations. The imported, foundation and initial RPG graphs combined that guard
+with the engine's 0.2-second Run notify cooldown. Local engine source shows that
+an outgoing notify can consume this cooldown before the Blueprint rejects it,
+suppressing an incoming step. The user also reported possible small gaps in the
+original project; this does not establish a universal sample defect. This adaptation
+changes only the owned AnimBP; shared notifies and animation clips stay intact.
 
 ## Asset composition
 
@@ -109,7 +125,12 @@ That GameMode disables disk persistence and uses `SurvivalRpg_GaspCMCTest`,
    crouching, jumping and landing; inspect the UEFN pose, feet and equipment
    attachment. Exercise the existing primary weapon attack and its return to
    locomotion. The small steps test grounding, not mantle/vault traversal.
-3. With PIE stopped, run automation groups `SurvivalRpg.GASP.CMC`,
+3. For the material/Foley check, run for 30–60 seconds as a listen server,
+   initially with one player. Include sustained running, small steering changes,
+   pivots, stops and attacks. Confirm the imported CMC appearance and listen for
+   missing or clustered steps, particularly at Run/Strafe transitions. Repeat
+   with two players and check both views; final loudness still needs listening.
+4. With PIE stopped, run automation groups `SurvivalRpg.GASP.CMC`,
    `SurvivalRpg.Movement.Acceleration`, and `SurvivalRpg.Animation.ListenServer`.
    The network test creates a temporary CQTest world and adds a late-joining
    client. Its actual GameMode instances receive unique test slots and disabled
@@ -120,7 +141,7 @@ That GameMode disables disk persistence and uses `SurvivalRpg_GaspCMCTest`,
 
 The latest Unreal Editor target build succeeded. The six targeted native
 acceleration/listen-server animation tests passed without warnings or errors.
-The final two CMC tests passed in 17.83 seconds: asset composition and
+The initial two CMC tests passed in 17.83 seconds: asset composition and
 the listen-server test with a remote owner and late join. They cover movement
 and animation velocity agreement, Motion Matching database selection on owner
 and server, crouch replication, airborne/grounded presentation, and the existing
@@ -161,8 +182,33 @@ run confirmed the new preset on host, remote owner and observed proxies. Both
 owning pawns retained about 18 Foley starts per five seconds, with no gap above
 0.49 seconds during that run. The updated Blueprint compiled, the two new audio
 assets resolved locally, and only one of the bank's 16 entries changed. This
-verifies delivery and the configured gain; the preferred final loudness remains
-subject to listening in play. Evidence: `Saved/GaspFoley20260910/`.
+verifies component starts and the configured gain, not uninterrupted rendered
+audio; the preferred final loudness remains subject to listening in play.
+Evidence: `Saved/GaspFoley20260910/`.
+
+The user's subsequent synchronized video/trace captured missing starts during
+animation changes: all 112 started sounds reached the mixer with nonzero source
+envelopes, while 40 of 41 dispatched notifies without a sound came from a
+previously selected animation. Evidence: `Saved/FoleyDiagnostic20260910/analysis/`.
+
+A controlled replay used the same normalized world directions derived from that
+recording; it did not reproduce the exact original inputs or pose choices.
+With the Motion Matching filter enabled, the initial and warmed repeat runs had
+11 and 13 high-speed gaps above 0.55 seconds, with maxima of 1.674 and 1.391
+seconds. With it disabled there were no such gaps; the maximum was 0.545 seconds.
+The initial run had a 0.4-second sampling hitch; intervals crossing sampling gaps
+above 0.1 seconds were excluded. The disabled run had two intervals below 0.15
+seconds at Run/Strafe transitions, none within one sound family. Its trace had
+147 sound starts (143 steps and four scuffs), while 80 notifies from other,
+outgoing animation assets still produced no sound. Background-editor source
+envelopes were zero, so this comparison verifies cadence, not audible quality
+or the absence of perceived double steps. Evidence:
+`Saved/FoleyFilterAB20260910/comparison.json`.
+
+After the material/filter changes, both owned Blueprints compiled with warnings
+treated as errors. Both CMC tests passed again in 13.64 seconds, covering network
+movement, late join, the equipment montage, death and respawn. Existing warnings
+remained, with no errors. No additional native code was changed for this fix.
 
 A Python-driven respawn probe failed in editor scripting: the editor script
 execution guard forced local RPC dispatch. The passing native latent test above
