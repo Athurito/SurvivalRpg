@@ -66,6 +66,15 @@ shared GASP bank. The gain is designer-owned audio tuning; it raises existing
 sound starts and cannot repair missing starts or establish final perceived
 loudness by itself.
 
+The RPG Run preset's `Waves` override excludes only
+`Foley_fs_1p_sneaker_concrete_walk_10`, retaining the other 29 source waves in
+their original order. Waveform matching identified the scratch in the user's
+19:33 recording as this sample's recorded tail. This is a listening trial in
+the owned preset; the source sample and shared Run_Soft preset stay available.
+The existing gain, pitch variation, Scuff events and notify-filter setting are
+preserved. Local diagnosis and authoring evidence:
+`Saved/FoleyScratch20260910/` and `Saved/FoleyRunTuning20260910/`.
+
 The RPG AnimBP's Motion Matching node disables `bShouldFilterNotifies`. The
 shared `BP_AnimNotify_FoleyEvent` still rejects notifications from blending-out
 animations. The imported, foundation and initial RPG graphs combined that guard
