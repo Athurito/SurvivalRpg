@@ -51,6 +51,14 @@ state machine or another locomotion implementation. The engine Offset Root Bone
 enable CVar is retained. This is an integration choice, not a claim that Unreal's
 thread-safe animation APIs are defective.
 
+The pawn's existing `GaspFoleyEvents` component uses its own
+`Audio/DA_RpgGaspCMCFoley` bank. It copies the shared
+`DefaultFoleyEventAudioBank` and replaces only `Foley.Event.Run` with
+`Audio/MSS_RpgGasp_Run`, a copy of `MSS_FoleySound_Run_Soft` with Volume 0.48
+instead of 0.24 (+6.02 dB). This makes sustained running audible without raising
+the other 15 events or changing animation notifies, sound concurrency, spatial
+attenuation or the shared GASP bank. The gain is designer-owned audio tuning.
+
 ## Asset composition
 
 The new Experience preserves the baseline's feature list, UI actions, ability
@@ -125,7 +133,7 @@ and restored movement/Motion Matching on the owner, server and late-joined
 observer. Both PIE runs used separate network worlds within one editor process;
 packaged and separate-process sessions have not been exercised in this slice.
 
-Fresh-editor validation loaded all 11 integration packages and compiled the four
+Initial fresh-editor validation loaded the 11 movement packages and compiled the four
 owned Blueprints with warnings treated as errors. All 86 Chooser tables and
 owned child tables validated without warnings or errors. The dependency audit
 visited 1,354 project packages and 13,950 dependency edges, with no `/Game`
@@ -146,6 +154,15 @@ recorded 73 samples with matching jump, crouch, landing and database-selection
 states. Screenshots showed the UEFN character with sword/shield and the existing
 death UI, without obvious deformation. This is an initial visual check, not a
 complete retarget-quality acceptance of every pose, socket or montage.
+
+A subsequent 31-second two-player Foley check found regular audio starts during
+sustained running. After raising the CMC Run preset by 6.02 dB, another 31-second
+run confirmed the new preset on host, remote owner and observed proxies. Both
+owning pawns retained about 18 Foley starts per five seconds, with no gap above
+0.49 seconds during that run. The updated Blueprint compiled, the two new audio
+assets resolved locally, and only one of the bank's 16 entries changed. This
+verifies delivery and the configured gain; the preferred final loudness remains
+subject to listening in play. Evidence: `Saved/GaspFoley20260910/`.
 
 A Python-driven respawn probe failed in editor scripting: the editor script
 execution guard forced local RPC dispatch. The passing native latent test above
