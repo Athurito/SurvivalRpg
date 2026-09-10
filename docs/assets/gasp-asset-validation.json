@@ -17,7 +17,7 @@
     "missing_packages": 0,
     "missing_native_exports": 0,
     "truncated_raw_reports": 0,
-    "specialized_blueprint_assets_passed": 63,
+    "specialized_blueprint_and_runtime_rig_assets_passed": 63,
     "independently_verified_local_variable_guids": 60
   },
   "classification_counts": {
