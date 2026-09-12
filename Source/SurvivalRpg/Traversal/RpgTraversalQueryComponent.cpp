@@ -16,22 +16,28 @@ bool URpgTraversalQueryComponent::IsAnimationAllowed(const ACharacter& Character
 	const UCharacterMovementComponent* Movement = Character.GetCharacterMovement();
 	if (!Movement || !Result.ChosenMontage || !FMath::IsFinite(Result.StartTime) || !FMath::IsFinite(Result.PlayRate)
 		|| !FMath::IsNearlyEqual(Result.PlayRate, 1.0, 0.001) || !FMath::IsFinite(Result.ObstacleHeight)
-		|| Result.StartTime < 0.0 || Result.StartTime >= Result.ChosenMontage->GetPlayLength()) return false;
+		|| !FMath::IsFinite(Result.ObstacleDepth) || Result.StartTime < 0.0 || Result.StartTime >= Result.ChosenMontage->GetPlayLength()) return false;
 	const float Speed = Character.GetVelocity().Size2D();
 	const float SpeedTolerance = FMath::Clamp(NetworkSpeedTolerance, 0.0f, 100.0f);
 	const float HeightTolerance = Movement->IsFalling() ? FMath::Clamp(NetworkAirborneHeightTolerance, 0.0f, 50.0f) : 3.0f;
 	const TArray<FRpgTraversalAnimationEntry>* Entries = Result.ActionType == 3 ? &AllowedMantleAnimations
-		: Result.ActionType == 2 && Movement->IsMovingOnGround() ? &AllowedVaultAnimations : nullptr;
+		: Result.ActionType == 2 && Movement->IsMovingOnGround() ? &AllowedVaultAnimations
+		: Result.ActionType == 1 && Movement->IsMovingOnGround() ? &AllowedHurdleAnimations : nullptr;
 	if (!Entries) return false;
 	for (const FRpgTraversalAnimationEntry& Entry : *Entries)
 	{
 		if (Entry.Montage != Result.ChosenMontage || Entry.bAirborne != Movement->IsFalling()) continue;
 		if (!FMath::IsFinite(Entry.MinHeight) || !FMath::IsFinite(Entry.MaxHeight) || Entry.MaxHeight < Entry.MinHeight
+			|| !FMath::IsFinite(Entry.MinDepth) || !FMath::IsFinite(Entry.MaxDepth) || Entry.MinDepth < 0.0f || Entry.MaxDepth < Entry.MinDepth
 			|| !FMath::IsFinite(Entry.MinSpeed) || !FMath::IsFinite(Entry.MaxSpeed) || Entry.MaxSpeed < Entry.MinSpeed
 			|| !FMath::IsFinite(Entry.MinStartTime) || !FMath::IsFinite(Entry.MaxStartTime) || Entry.MaxStartTime < Entry.MinStartTime
 			|| !FMath::IsFinite(Entry.HandoffTime) || Entry.HandoffTime <= Result.StartTime
-			|| Entry.HandoffTime > Result.ChosenMontage->GetPlayLength() + 0.001f) continue;
+			|| Entry.HandoffTime > Result.ChosenMontage->GetPlayLength() + 0.001f
+			|| !FMath::IsFinite(Entry.MovementInputHandoffTime) || Entry.MovementInputHandoffTime < 0.0f
+			|| (Entry.MovementInputHandoffTime > 0.0f && (Entry.MovementInputHandoffTime <= Result.StartTime
+				|| Entry.MovementInputHandoffTime > Entry.HandoffTime))) continue;
 		if (Result.ObstacleHeight >= Entry.MinHeight - HeightTolerance && Result.ObstacleHeight <= Entry.MaxHeight + HeightTolerance
+			&& Result.ObstacleDepth >= Entry.MinDepth && Result.ObstacleDepth <= Entry.MaxDepth
 			&& Speed >= Entry.MinSpeed - SpeedTolerance && Speed <= Entry.MaxSpeed + SpeedTolerance
 			&& Result.StartTime >= Entry.MinStartTime - 0.001 && Result.StartTime <= Entry.MaxStartTime + 0.001) return true;
 	}

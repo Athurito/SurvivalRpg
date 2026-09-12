@@ -31,7 +31,7 @@ template<> struct TStructOpsTypeTraits<FRpgMantleTargetData> : TStructOpsTypeTra
 	enum { WithNetSerializer = true, WithCopy = true };
 };
 
-/** Shared predicted GAS lifecycle for source GASP mantle and grounded vault; the reflected name preserves existing Blueprint assets. */
+/** Shared predicted GAS lifecycle for source GASP mantle, grounded vault and hurdle; the reflected name preserves existing Blueprint assets. */
 UCLASS(Abstract, Blueprintable)
 class SURVIVALRPG_API URpgGameplayAbility_Mantle : public URpgGameplayAbility
 {
@@ -60,6 +60,14 @@ public:
 	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Traversal|Animation")
 	FName BackLedgeWarpTargetName = TEXT("BackLedge");
 
+	/** Ground target owned while the selected hurdle montage contains a BackFloor warp. */
+	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Traversal|Animation")
+	FName BackFloorWarpTargetName = TEXT("BackFloor");
+
+	/** Source animation distance curve used to place the hurdle's BackFloor target beyond the opposite ledge, in centimeters. */
+	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Traversal|Animation")
+	FName BackFloorDistanceCurveName = TEXT("Distance_From_Ledge");
+
 	/** Small vertical offset from the authored front ledge, in centimeters, matching the montage's hand target. */
 	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Mantle|Animation", meta = (Units = "cm"))
 	float LedgeVerticalOffset = 0.5f;
@@ -85,6 +93,9 @@ public:
 	/** Derives vault feet at the configured source handoff; unsupported exits return to normal CMC falling rather than inventing a floor. */
 	bool GetVaultExitLocation(const ACharacter& Character, const FRpgTraversalQueryResult& Result, FVector& OutLocation) const;
 
+	/** Derives hurdle feet at the source row's normal handoff from its curve-placed BackFloor warp and remaining root motion. */
+	bool GetHurdleLandingLocation(const ACharacter& Character, const FRpgTraversalQueryResult& Result, FVector& OutLocation) const;
+
 	virtual bool CanActivateAbility(const FGameplayAbilitySpecHandle Handle,
 		const FGameplayAbilityActorInfo* ActorInfo, const FGameplayTagContainer* SourceTags = nullptr,
 		const FGameplayTagContainer* TargetTags = nullptr, FGameplayTagContainer* OptionalRelevantTags = nullptr) const override;
@@ -106,6 +117,12 @@ private:
 	void BeginMantle(const FRpgTraversalQueryResult& Result);
 	bool ValidateTraversal(const ACharacter& Character, const FRpgTraversalQueryResult& Result) const;
 	bool ValidateVaultTraversal(const ACharacter& Character, const FRpgTraversalQueryResult& Result) const;
+	bool ValidateHurdleTraversal(const ACharacter& Character, const FRpgTraversalQueryResult& Result) const;
+	bool ValidateThinObstacleFaces(const ACharacter& Character, const FRpgTraversalQueryResult& Result) const;
+	bool GetHurdleTargetsAndLanding(const ACharacter& Character, const FRpgTraversalQueryResult& Result,
+		float HandoffTime, FVector& OutFloorTarget, FVector& OutLocation) const;
+	bool FindHurdleSupport(const ACharacter& Character, const FVector& Feet, FHitResult& OutHit) const;
+	float GetAdmissibleSourceHandoffTime() const;
 	void CancelCurrentMantle();
 	void CleanupMovement(bool bWasCancelled);
 	bool IsCapsuleClear(const ACharacter& Character, const FVector& Location) const;
@@ -119,8 +136,11 @@ private:
 
 	TWeakObjectPtr<ACharacter> ActiveCharacter;
 	TWeakObjectPtr<UPrimitiveComponent> IgnoredComponent;
+	TWeakObjectPtr<UPrimitiveComponent> HurdleSupportComponent;
 	TWeakObjectPtr<UMotionWarpingComponent> ActiveWarping;
 	FTransform ColliderAtActivation;
+	FTransform HurdleSupportAtActivation;
+	FVector HurdleEarlyLanding = FVector::ZeroVector;
 	FVector LandingAtActivation = FVector::ZeroVector;
 	FVector LastClearLocation = FVector::ZeroVector;
 	FVector EntryLocation = FVector::ZeroVector;
@@ -129,6 +149,7 @@ private:
 	int32 ActiveMontageInstanceId = INDEX_NONE;
 	float FinalWarpEndTime = 0.0f;
 	float SourceHandoffTime = 0.0f;
+	float MovementInputHandoffTime = 0.0f;
 	uint8 ActiveActionType = 0;
 	TArray<FName> OwnedWarpTargets;
 	bool bOwnsMovement = false;

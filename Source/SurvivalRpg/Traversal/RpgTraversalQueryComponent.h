@@ -13,7 +13,7 @@ struct SURVIVALRPG_API FRpgTraversalQueryResult
 {
 	GENERATED_BODY()
 
-	/** Source GASP action value: 0 none, 1 hurdle, 2 vault, 3 mantle. Native execution currently admits mantle and grounded vault. */
+	/** Source GASP action value: 0 none, 1 hurdle, 2 vault, 3 mantle. Vault and hurdle entries currently require grounded approach. */
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Traversal") uint8 ActionType = 0;
 	/** Whether the prepared obstacle supplied a usable front ledge. */
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Traversal") bool HasFrontLedge = false;
@@ -27,7 +27,7 @@ struct SURVIVALRPG_API FRpgTraversalQueryResult
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Traversal") FVector BackLedgeLocation = FVector::ZeroVector;
 	/** World-space outward normal of the opposite ledge. */
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Traversal") FVector BackLedgeNormal = FVector::ZeroVector;
-	/** Whether the query found walkable ground beyond the obstacle. */
+	/** Whether the source query found a blocking floor proposal beyond the obstacle; native validation separately checks walkability. */
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Traversal") bool HasBackFloor = false;
 	/** World-space ground position beyond the obstacle in centimeters. */
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Traversal") FVector BackFloorLocation = FVector::ZeroVector;
@@ -43,7 +43,7 @@ struct SURVIVALRPG_API FRpgTraversalQueryResult
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Traversal") TObjectPtr<UAnimMontage> ChosenMontage = nullptr;
 	/** Pose-matched montage entry time in seconds. */
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Traversal") double StartTime = 0.0;
-	/** Montage playback multiplier. The current source mantle family uses 1. */
+	/** Montage playback multiplier. The current source traversal families use 1. */
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Traversal") double PlayRate = 1.0;
 };
 
@@ -59,6 +59,10 @@ struct SURVIVALRPG_API FRpgTraversalAnimationEntry
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Traversal") float MinHeight = 0.0f;
 	/** Maximum front ledge height above capsule feet, in centimeters. */
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Traversal") float MaxHeight = 150.0f;
+	/** Minimum obstacle depth in centimeters from the source chooser row; checked against server geometry without a network tolerance. */
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Traversal", meta = (ClampMin = "0", Units = "cm")) float MinDepth = 0.0f;
+	/** Maximum obstacle depth in centimeters. The default preserves existing rows that did not constrain animation by depth. */
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Traversal", meta = (ClampMin = "0", Units = "cm")) float MaxDepth = MAX_flt;
 	/** Minimum horizontal approach speed in centimeters per second. */
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Traversal") float MinSpeed = 0.0f;
 	/** Maximum horizontal approach speed in centimeters per second. */
@@ -71,6 +75,8 @@ struct SURVIVALRPG_API FRpgTraversalAnimationEntry
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Traversal") float MaxStartTime = 0.1f;
 	/** Montage time used to validate support: the source unconditional blend-out start, or clip end when exiting is conditional. */
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Traversal", meta = (ClampMin = "0", Units = "s")) float HandoffTime = 0.0f;
+	/** Earliest source notify time that can hand off with movement input, in seconds; zero disables conditional early completion. */
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Traversal", meta = (ClampMin = "0", Units = "s")) float MovementInputHandoffTime = 0.0f;
 };
 
 /** Native query contract for copied GASP Blueprint geometry and pose selection; GAS owns execution and replication. */
@@ -93,6 +99,10 @@ public:
 	/** Grounded vault chooser rows. Empty by default so existing mantle-only compositions do not acquire another action. */
 	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Traversal|Validation")
 	TArray<FRpgTraversalAnimationEntry> AllowedVaultAnimations;
+
+	/** Grounded hurdle chooser rows with source depth and conditional-handoff contracts. Empty leaves existing compositions unchanged. */
+	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Traversal|Validation")
+	TArray<FRpgTraversalAnimationEntry> AllowedHurdleAnimations;
 
 	/** Horizontal speed tolerance in cm/s for client/server sampling at a gait boundary; geometry remains independently checked. */
 	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Traversal|Validation", meta = (ClampMin = "0", ClampMax = "100", Units = "cm/s"))
