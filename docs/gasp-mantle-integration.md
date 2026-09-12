@@ -1,171 +1,53 @@
-# GASP standing mantle pilot
+# GASP contextual mantle integration
 
-This slice adds a contextual jump/mantle action to an isolated CMC test
-composition. It starts from the accepted CMC integration, including its material
-and Foley adjustments. The first action is a grounded forward standing mantle
-onto prepared static ledges. Running/walking variants, airborne catches, Vault,
-Hurdle, sustained climbing and the Mover Experiences remain separate work.
+This Experience extends the accepted CMC integration with the original GASP mantle query and montage selection on the existing RPG gameplay mesh. Mantle comes first; Vault, Hurdle, other visible skeletons and Mover remain subsequent work. The baseline and accepted CMC Experience retain their material and Foley setup.
 
-**Status:** implemented and validated on UE 5.8.2. The nine pilot packages load,
-the five Blueprints compile, and the Editor target builds. The focused mantle
-network test and existing CMC/combat regressions pass. The demonstration map is
-ready for a manual feel and presentation review.
+## Input and content ownership
 
-## Ownership decision
+Space attempts traversal on Started and requests one ordinary jump if no usable mantle is found. Held input retries traversal, including during that jump. GASP's Down trigger reports Triggered while held; the existing RPG Pressed/Released action reports Ongoing. Both events feed the same retry, gated on a nonzero input value so releasing Space does not start traversal. The shared input assets are unchanged. Active traversal consumes repeated presses. An occupied DefaultSlot also consumes jump in the traversal Experience, matching the source guard against jumping through another montage.
 
-Two native runtime classes are justified by reusable schema and authority:
+AC_RpgGasp_TraversalQuery copies Shared/AC_TraversalLogic. Its original 228-node TryTraversalAction retains geometry, spline ledges, chooser and pose history. Only the two terminal sample execution calls are removed; the cached result returns immediately. Sample execution/RPC graphs are removed from this copy. The wrapper clears the previous result before each query and requires fresh collider, montage, action and successful failure flags.
 
-- `URpgMantleAnchorComponent` defines a prepared static ledge and landing
-  location. Designers configure these on obstacle Blueprint instances; native
-  validation checks the physical target rather than trusting client positions.
-- Abstract `URpgGameplayAbility_Mantle` owns prediction-key-scoped target-data
-  exchange, authoritative geometry checks, ability commitment and lifecycle
-  cleanup. CharacterMovement remains movement truth and the existing RPG ASC
-  remains the ability owner. Traversal state is transient, not saved.
+The wrapper reproduces source CMC inputs: capsule radius 30 cm, half-height 60 cm and forward reach 75–350 cm mapped from forward velocity 0–500 cm/s. Falling uses reach 75 cm, half-height 86 cm and end offset Z+50 cm. The pawn supplies its gameplay capsule, mesh, MotionWarping component and CMC snapshot through the existing GASP pawn interface. The accepted AnimBP supplies interaction transforms and pose history.
 
-The concrete `GA_RpgGasp_Mantle` Blueprint owns its montage, GAS graph and tuning.
-Blueprint/PawnData/Experience assets compose the pilot; the AnimBP presents the
-existing gameplay mesh and keeps `DefaultSlot` and montage-only root motion.
-Unreal MCP authors, compiles, saves and validates the owned assets. No new
-animation coordinator, sample character hierarchy or parallel gameplay manager
-is part of this slice.
+The owned CMC chooser references fifteen owned mantle/climb/catch montage copies. Animation sequences remain shared project-local foundation assets. Original notifies, warp windows, pose-search ranges, root-motion settings, skeleton and DefaultSlot are retained. Foundation and import files stay unchanged.
 
-The existing RPG CharacterMovement component replicates only the mantle's
-temporary collision exception to simulated proxies. Its owner applies this
-exception predictively; the server installs it only after validation. Unreal's
-MotionWarping component replicates warp targets to simulated proxies. Ordinary
-movement remains under the existing CharacterMovement replication path.
+Their PoseSearchBranchIn notifies reference the owned PSD_RpgGasp_Traversal database. Unreal synchronizes database membership when montage notifies change; keeping these references on Shared/PSD_Traversal would enroll the copies in the shared database. The owned database preserves the source schema and non-selected rows, with the fifteen selected rows synchronized to their new notify identities and original sampling ranges.
 
-## Source mapping and deliberate adaptations
+## Runtime authority and animation handoff
 
-The approved foundation is the source of animation content. The external
-`D:/Repos/GameAnimationSample` checkout is a comparison source only and is not
-required at runtime. Existing imported/foundation packages remain unchanged.
+URpgTraversalQueryComponent defines the Blueprint query/result contract and designer-owned animation eligibility rows. URpgGameplayAbility_Mantle owns GAS prediction, commitment, server validation and cleanup. The concrete GA_RpgGasp_Mantle Blueprint starts the selected montage with PlayMontageAndWait.
 
-| Approved source | Pilot responsibility |
-| --- | --- |
-| `Shared/AC_TraversalLogic.TryTraversalAction` | Native prepared-anchor, reach and capsule-clearance validation |
-| `Shared/Levels/LevelPrototyping/LevelBlock_Traversable` | Obstacle Blueprint with native ledge/landing schema |
-| `CMC/.../Traversal/CHT_TraversalMontages_CMC` | One designer-configured standing montage for the first action |
-| `Shared/.../Traversal/Mantle/AM_M_Neutral_Traversal_Mantle_1_0_stand_F_Lfoot` | Owned `AM_RpgGasp_MantleStanding` copy |
-| `Shared/AC_TraversalLogic.SetWarpTargets` | Preserve the montage's `FrontLedge` alignment contract |
-| `Shared/AC_TraversalLogic.PerformTraversalAction_CMC` | GAS montage lifecycle and CMC handoff with server validation |
+The predicted proposal contains only collider identity, approved montage and bounded pose-search entry time, correlated with the GAS activation prediction key. The server reruns the query and physical face, support and capsule-route checks; it does not accept client ledge or landing coordinates. Eligibility allows bounded sampling differences at speed/airborne-height boundaries. Costs and effects are followed by revalidation before movement.
 
-Source paths in this table are relative to
-`/Game/SurvivalRpg/Characters/GASP/`; `...` expands to
-`Characters/UEFN_Mannequin/Animations`.
+The owning player executes the fresh result sampled during activation through that same native validation/commit path. It does not run an additional stateful pose query after sending its proposal: that redundant query could reject a valid immediate retry after server rejection. The remote authority still samples independently.
 
-The source jump input tries traversal first and jumps if geometry or montage
-selection fails. Holding the source input also repeats traversal checks, including
-airborne catches. The pilot keeps contextual jump fallback and narrows traversal
-to the initial grounded standing action.
+Landing derives from the selected clip’s final FrontLedge warp and root motion through its source action handoff. The 1 m running montage forces blend-out at 0.732103 seconds; its later running tail is not the mantle landing. HandoffTime records that source boundary in the eligibility row. Clips with conditional movement-input exits use their natural endpoint for conservative preflight. Original notify conditions and blend profiles remain active. The interrupted montage callback releases traversal, as in GASP.
 
-The source chooser admits standing mantle clips at speeds up to 100 cm/s and
-heights up to 150 cm; its first authored clips represent a 1 m mantle. It uses
-pose matching to select a foot and entry time. This pilot intentionally starts
-with one standing clip; it does not reproduce the complete sample selector.
+The ability owns only its temporary collision exception and FrontLedge warp. Movable, non-simulating source cubes are supported, but their transform and support must remain unchanged during the action. The CMC collision lease and MotionWarping targets replicate to simulated proxies; the owner predicts locally. Server movement correction remains enabled. Blocked landings, cancellation, death and collider destruction release state and recover a checked capsule position. Death or another movement owner retains its newer movement mode.
 
-The standing source montage is 2 seconds long, with 0.25-second Hermite blends.
-Its two `FrontLedge` warping windows run approximately 0.141-0.365 and
-0.365-0.699 seconds. Both use the UEFN `attach` bone, translation and rotation
-warping, feet-relative placement and Z warping. The source target is the front
-ledge plus 0.5 cm vertically, facing into the negative ledge normal. Mantle does
-not require `BackLedge` or `BackFloor` warp targets. The sequence preserves root
-motion enabled, force root lock, normalized scale and reference-pose root lock.
+The warp includes GASP’s 0.5 cm ledge offset plus the existing mesh/capsule separation (CapsuleHalfHeight + BaseTranslationOffset.Z). The gameplay mesh transform and montage-only root-motion policy stay unchanged.
 
-At the final warp window's end, the root is approximately 6 cm before the
-authored attach-bone target. The remaining 56 cm of root motion places the
-standing clip's endpoint 50 cm beyond `FrontLedge`; the prepared obstacle's
-landing offset is `(50, 0, 0)`. The target additionally
-compensates the gameplay mesh's base translation relative to capsule feet
-(`CapsuleHalfHeight + BaseTranslationOffset.Z`, 2 cm for this pawn), preserving
-the source's 0.5 cm clearance without changing the existing mesh transform.
+Unreal MCP authors and validates the assets. CopyAnimationNotifies is an editor-only helper for copying exact event records and instanced notify objects between identical animation timelines; Python cannot write the protected Notifies array. It changes only the target and does not save automatically.
 
-The owned montage removes only the source movement-input early-blend notify so
-GAS owns completion and interruption. The source notify could stop the montage
-from approximately 1.421 seconds using a 0.3-second blend and
-`FastFeet_InstantRoot`. Warping and the underlying source sequence remain intact;
-the shared notify and source montage are preserved.
+## Test map
 
-The sample's CMC path temporarily enables both
-`bIgnoreClientMovementErrorChecksAndCorrection` and
-`bServerAcceptClientAuthoritativePosition`. The pilot does not adopt these
-bypasses: target validation and commitment belong to the server. Cleanup must
-restore collision/movement safely on failure, rejection, cancellation and death,
-rather than blindly restoring Walking during an interrupted airborne move.
+Open /Game/SurvivalRpg/Maps/Test/Lvl_RpgGaspMantle. WorldSettings selects RpgGaspMantleExperience and the isolated test GameMode, with disk persistence disabled. PawnData, ability set, character, query, chooser and montages live under /Game/SurvivalRpg/Characters/GASP/CMC/RPG/Traversal.
 
-## Isolated asset composition
+The three platforms inherit the original LevelBlock_Traversable, using its cube, four spline ledges and traversal collision preset. Actor scale (4,4,1) gives 400 × 400 × 100 cm platforms. The corner-based pivots are accounted for; PlayerStarts remain in front of the same lanes.
 
-The following assets live under
-`/Game/SurvivalRpg/Characters/GASP/CMC/RPG/Traversal/`:
+The floor uses original LevelBlock and M_Grid with the GASP floor color. Original LevelVisuals supplies a matched sun, skylight, cubemap, fog and manual exposure configuration.
 
-- `BP_RpgGasp_MantleCharacter`
-- `DA_PawnData_GaspMantle`
-- `GA_RpgGasp_Mantle`
-- `LAS_RpgGasp_Mantle`
-- `BP_RpgMantleObstacle`
-- `AM_RpgGasp_MantleStanding`
+Run toward a platform and press Space, approach away from its center, or press Space while touching it. Hold Space well before reaching it to exercise an ordinary jump followed by a traversal retry on the same held key. Check both a single-player listen-server host and a remote client.
 
-The separate Experience is
-`/Game/SurvivalRpg/System/Experiences/RpgGaspMantleExperience`, selected by
-`/Game/SurvivalRpg/Maps/Test/Lvl_RpgGaspMantle`. Its test GameMode is
-`/Game/SurvivalRpg/Maps/Test/GaspMantle/BP_Rpg_GaspMantleTestGameMode`.
-The test composition disables disk persistence. The baseline and accepted
-CMC Experience remain available without the mantle grant.
+## Validation
 
-To try the pilot, open `Lvl_RpgGaspMantle` and approach the front of one of the
-three prepared platforms. Stop close to the center of the front face, face the
-platform and press Space once. Without a valid standing entry, Space retains
-ordinary jump behavior. Repeated presses during mantle do not queue another
-jump. Test a remote player from the listen-server window as well as locally.
+The previous standing-only fixture teleported the pawn to a narrow valid entry and missed the real input problem. The replacement tests start the saved map with its GameMode, Experience and PlayerStarts and drive mapped W/Space key events, without candidate-based placement or forced velocity.
 
-## Validation performed on 2026-09-12
+Focused cases cover running, lateral approach, collision contact, held-input retry and single-player listen-server host input. The network fixture retains server rejection, late join, cancellation, death/respawn, latency and collider destruction using source cubes and dynamic montage selection. Save isolation installs before GameMode initialization. CMC and combat regressions cover the accepted compositions.
 
-- `SurvivalRpgEditor Win64 Development`: build passed, including both runtime
-  classes, the CMC lifecycle fix and the native network fixture.
-- Fresh editor: nine packages loaded; five Blueprints compiled with no errors.
-  Dependency audit followed 1,500 packages and 14,727 hard/soft edges, with no
-  missing content packages or `/Game` dependencies outside `/Game/SurvivalRpg`.
-- Source/owned montage comparison passed for skeleton, slot/sequence, sections,
-  blends, root-motion settings/extraction and retained notifies/warp settings.
-  The sole intentional difference is the removed early-blend notify.
-- `SurvivalRpg.GASP.Mantle.AssetComposition`: passed.
-- `SurvivalRpg.GASP.Mantle.GaspMantleExperiencePIE.AuthoritativeValidationRootMotionLateJoinAndLifecycle`:
-  passed (15.74 seconds). Actual listen server, autonomous owner and late-joined
-  simulated observer; jump fallback, geometry rejection, authority-only landing
-  blocker/rejected prediction, repeated input, advancing root motion, landing,
-  authoritative cancellation, final death/respawn, 75 ms outgoing latency per
-  driver, obstacle destruction and replacement-entry readiness. Server movement
-  correction remains enabled throughout. GAS commitment is observed, but this
-  pilot configures no stamina cost.
-- `SurvivalRpg.GASP.CMC.AssetComposition`,
-  `SurvivalRpg.GASP.CMC.GaspCMCExperiencePIE.RemoteMovementLateJoinAndEquipmentMontage`,
-  and `SurvivalRpg.Network.CombatRemoteMeleePIE.RemoteClientAttackWindowDamageAndCancellation`:
-  all passed (40.59 seconds combined). These retain equipment/montage regression
-  coverage for the existing CMC and combat compositions.
-- Existing assets and saves are checked against pre-authoring hashes: 7,570
-  tracked content/plugin files and seven saves unchanged, no new saves.
-- The demonstration map's three prepared platforms were visually inspected.
-  The automation proves movement/network lifecycle, not subjective animation
-  feel. Manual mantle presentation and attack-to-mantle transitions remain
-  useful review cases; no packaged-build or dedicated-server pass is claimed.
+Validated on Unreal 5.8.2: the final SurvivalRpgEditor Win64 Development build passed, and the four owned Blueprints compiled with warnings treated as errors. All ten final automation tests passed: six authored-input/composition cases, the complete Mantle network lifecycle case, and three CMC/combat regressions. Gameplay coverage uses the 1 m platforms; the higher/cliff montage copies have asset parity coverage but still need dedicated gameplay cases. No packaged-build or dedicated-server validation is implied.
 
-The temporary PIE fixture disables persistence before GameMode initialization
-and restores packet simulation settings. After final death it uses a fresh
-obstacle lane: the existing death-drop `DisplayMesh` correctly blocks the old
-entry, so teleporting a test pawn there would not establish a valid approach.
-Known local voice-interface and temporary-world NetGUID warnings were present;
-the passing runs contain no automation errors.
+The fresh asset audit passed for 22 roots, 1,602 dependency packages, all fifteen montage pairs, the original executable query graph and chooser, and the owned database's exact BranchIn identities/ranges. Hash preservation checked all 7,579 existing content/plugin files and seven saves; only the five authorized pilot assets changed. No save was added or changed. Runs also reported voice-interface and temporary-world NetGUID warnings, plus a tick-setting warning on the unchanged respawn widget.
 
-Evidence and the read-only preservation script are in
-`Saved/GaspMantle20260912/`: `build.log`, `validate.json`,
-`final-asset-audit.json`, `mantle-final-results.json`, `regression-results.json`,
-the editor log and preservation comparison. Existing source packages remain
-unchanged; only the nine new content packages belong to this slice.
-
-Source audit evidence is retained in
-`Saved/GaspAssetFoundation20260910/snapshots-source/` and `native_exports/`.
-Relevant snapshot prefixes: traversal logic `69bf2b72f0bddd06ad33`, CMC character
-`d45b8e7f60de851dba3a`, chooser `07e2b7a177defdf96f20`, prepared block
-`0928c64abc0d136f45bd`, standing montage `c2cabefec11015a80eff`, standing
-sequence `34aa7168ddf93b166a01`, early-blend notify `062e3e69af38dc966f57`.
+Evidence is in Saved/GaspTraversalFix20260912: final-input-results.json, final-network-results.json, final-regression-results.json, build.log and fix-asset-audit.json. Source snapshots remain in Saved/GaspAssetFoundation20260910. The full temporary PoseSearch recovery asset is retained under Saved and has no runtime reference.

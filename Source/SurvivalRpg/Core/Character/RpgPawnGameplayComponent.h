@@ -81,6 +81,8 @@ public:
 	void Input_Crouch(const FInputActionValue& InputActionValue);
 	void Input_AutoRun(const FInputActionValue& InputActionValue);
 	void Input_Jump(const FInputActionValue& InputActionValue);
+	/** Retries contextual traversal while jump is held, including during the initial ordinary jump. */
+	void Input_JumpHeld(const FInputActionValue& InputActionValue);
 	void Input_StopJump(const FInputActionValue& InputActionValue);
 	void Input_GameplayHotkeyPressed(FGameplayTag InputTag);
 	void Input_GameplayHotkeyReleased(FGameplayTag InputTag);
@@ -113,6 +115,7 @@ protected:
 	bool bReadyToBindInputs = false;
 
 private:
+	bool TryContextualTraversal();
 	void HandleAbilitySystemUninitialized();
 	void BindRoutedGameplayHotkeys(const URpgInputConfig* InputConfig, class URpgInputComponent* RpgIC, TArray<uint32>* BindHandles = nullptr);
 	class URpgPlayerGameplayInputRouterComponent* GetGameplayInputRouter() const;

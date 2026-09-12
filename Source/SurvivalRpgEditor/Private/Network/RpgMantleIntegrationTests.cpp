@@ -14,6 +14,7 @@
 #include "Engine/Engine.h"
 #include "Engine/NetDriver.h"
 #include "Engine/OverlapResult.h"
+#include "Engine/SkeletalMesh.h"
 #include "Engine/World.h"
 #include "EngineUtils.h"
 #include "GameFramework/CharacterMovementComponent.h"
@@ -22,6 +23,12 @@
 #include "GameFramework/PlayerController.h"
 #include "GameFramework/PlayerState.h"
 #include "InputActionValue.h"
+#include "InputKeyEventArgs.h"
+#include "Editor/UnrealEdEngine.h"
+#include "PlayInEditorDataTypes.h"
+#include "Settings/LevelEditorPlaySettings.h"
+#include "UnrealEdGlobals.h"
+#include "UObject/StrongObjectPtr.h"
 #include "Misc/AutomationTest.h"
 #include "Misc/Guid.h"
 #include "MotionWarpingComponent.h"
@@ -40,7 +47,7 @@
 #include "SurvivalRpg/Core/Player/RpgPlayerState.h"
 #include "SurvivalRpg/Development/RpgDeveloperSettings.h"
 #include "SurvivalRpg/Traversal/RpgGameplayAbility_Mantle.h"
-#include "SurvivalRpg/Traversal/RpgMantleAnchorComponent.h"
+#include "SurvivalRpg/Traversal/RpgTraversalQueryComponent.h"
 
 namespace RpgMantleIntegrationTests
 {
@@ -106,18 +113,12 @@ bool FRpgMantleCompositionTest::RunTest(const FString& Parameters)
 	TestTrue(TEXT("Movement can replicate the simulated-proxy mantle collision lease"), MovementDefaults->GetIsReplicated());
 	TestFalse(TEXT("Mantle keeps authoritative movement error checks enabled"), MovementDefaults->bIgnoreClientMovementErrorChecksAndCorrection);
 	TestFalse(TEXT("Mantle does not accept unchecked client positions"), MovementDefaults->bServerAcceptClientAuthoritativePosition);
-	TestNotNull(TEXT("Designer ability supplies a root-motion montage"), Ability->Montage.Get());
-	if (Ability->Montage)
-	{
-		const ARpgCharacter* Pawn = PawnClass->GetDefaultObject<ARpgCharacter>();
-		const ARpgCharacter* CmcPawn = CmcPawnData->PawnClass->GetDefaultObject<ARpgCharacter>();
-		TestTrue(TEXT("The accepted CMC gameplay mesh and AnimBP remain in use"),
-			Pawn->GetMesh()->GetSkeletalMeshAsset() == CmcPawn->GetMesh()->GetSkeletalMeshAsset()
-			&& Pawn->GetMesh()->GetAnimClass() == CmcPawn->GetMesh()->GetAnimClass());
-		TestTrue(TEXT("Montage contains authored root motion"), Ability->Montage->HasRootMotion());
-		TestTrue(TEXT("Montage uses the existing gameplay animation slot"), Ability->Montage->IsValidSlot(TEXT("DefaultSlot")));
-		TestTrue(TEXT("Montage is project-owned"), Ability->Montage->GetPathName().StartsWith(TEXT("/Game/SurvivalRpg/")));
-	}
+	const ARpgCharacter* Pawn = PawnClass->GetDefaultObject<ARpgCharacter>();
+	const ARpgCharacter* CmcPawn = CmcPawnData->PawnClass->GetDefaultObject<ARpgCharacter>();
+	TestTrue(TEXT("The accepted CMC gameplay mesh and AnimBP remain in use"),
+		Pawn->GetMesh()->GetSkeletalMeshAsset() == CmcPawn->GetMesh()->GetSkeletalMeshAsset()
+		&& Pawn->GetMesh()->GetAnimClass() == CmcPawn->GetMesh()->GetAnimClass());
+	// The concrete chooser selects the montage at runtime. The PIE contract checks the selected asset and its root motion.
 	const ARpgGameModeBase* GameMode = GameModeClass->GetDefaultObject<ARpgGameModeBase>();
 	const ARpgGameModeBase* Baseline = GetDefault<ARpgGameModeBase>();
 	TestFalse(TEXT("Mantle demonstration map disables disk persistence"), GameMode->bEnableDiskPersistence);
@@ -255,14 +256,36 @@ namespace RpgMantleIntegrationTests
 		}
 		return nullptr;
 	}
-	URpgMantleAnchorComponent* AnchorInWorld(UWorld* World)
+	UPrimitiveComponent* ObstacleInWorld(UWorld* World)
 	{
 		if (!IsActiveTestWorld(World)) return nullptr;
 		for (TActorIterator<AActor> It(World); It; ++It)
 		{
-			if (URpgMantleAnchorComponent* Anchor = It->FindComponentByClass<URpgMantleAnchorComponent>()) return Anchor;
+			if (It->GetClass()->GetPathName() != ObstacleClassPath) continue;
+			TInlineComponentArray<UPrimitiveComponent*> Components(*It);
+			for (UPrimitiveComponent* Component : Components)
+			{
+				if (Component && Component->IsQueryCollisionEnabled() && !Component->IsSimulatingPhysics()
+					&& Component->GetCollisionResponseToChannel(ECC_GameTraceChannel1) == ECR_Block) return Component;
+			}
 		}
 		return nullptr;
+	}
+	bool HasTraversalCandidate(const ARpgCharacter* Character)
+	{
+		const URpgGameplayAbility_Mantle* Definition = AbilityDefinition();
+		FRpgTraversalQueryResult Candidate;
+		return Character && Definition && Definition->FindTraversalCandidate(*Character, Candidate)
+			&& Candidate.HitComponent == ObstacleInWorld(Character->GetWorld());
+	}
+	bool QueryLandingPosition(const ARpgCharacter& Character, FVector& OutPosition)
+	{
+		const URpgGameplayAbility_Mantle* Definition = AbilityDefinition();
+		FRpgTraversalQueryResult Candidate;
+		if (!Definition || !Definition->FindTraversalCandidate(Character, Candidate)
+			|| !Definition->GetMantleLandingLocation(Character, Candidate, OutPosition)) return false;
+		OutPosition.Z += Character.GetCapsuleComponent()->GetScaledCapsuleHalfHeight() + 2.5;
+		return true;
 	}
 	bool Ready(UWorld* World, ARpgCharacter* Character)
 	{
@@ -274,54 +297,73 @@ namespace RpgMantleIntegrationTests
 			&& Character && Character->GetClass()->GetPathName() == PawnClassPath && Character->GetPlayerState()
 			&& Character->GetRpgAbilitySystemComponent() && Character->GetMesh()->GetAnimInstance()
 			&& Character->GetMesh()->GetAnimInstance()->IsA<URpgAnimInstance>()
-			&& Character->FindComponentByClass<UMotionWarpingComponent>();
+			&& Character->FindComponentByClass<UMotionWarpingComponent>()
+			&& Character->FindComponentByClass<URpgTraversalQueryComponent>();
 	}
 	bool Grounded(const ARpgCharacter* Character)
 	{
 		return Character && Character->GetCharacterMovement()->IsMovingOnGround() && Character->GetVelocity().Size2D() < 5.0;
 	}
-	FVector EntryPosition(const ARpgCharacter& Character, const URpgMantleAnchorComponent& Anchor, float Distance = 110.0f)
+	// The original standing query sweeps 75 cm with a 30 cm radius; this idealized lifecycle fixture starts inside that reach.
+	FVector EntryPosition(const ARpgCharacter& Character, const UPrimitiveComponent& Obstacle, float Distance = 100.0f)
 	{
-		FVector Position = Anchor.GetComponentLocation() - Anchor.GetForwardVector() * Distance;
+		const FBox Bounds = Obstacle.Bounds.GetBox();
+		FVector Position(Bounds.Min.X - Distance, Bounds.GetCenter().Y, 0.0);
 		Position.Z = Character.GetCapsuleComponent()->GetScaledCapsuleHalfHeight() + 2.5;
 		return Position;
 	}
-	FVector LandingPosition(const ARpgCharacter& Character, const URpgMantleAnchorComponent& Anchor)
+	FVector LandingPosition(const ARpgCharacter& Character, const UPrimitiveComponent& Obstacle)
 	{
-		return Anchor.GetLandingLocation() + FVector(0.0, 0.0, Character.GetCapsuleComponent()->GetScaledCapsuleHalfHeight() + 2.5);
+		const FBox Bounds = Obstacle.Bounds.GetBox();
+		return FVector(Bounds.Min.X + 50.0, Bounds.GetCenter().Y,
+			Bounds.Max.Z + Character.GetCapsuleComponent()->GetScaledCapsuleHalfHeight() + 2.5);
 	}
 	bool HasCleanMantleState(ARpgCharacter* Character)
 	{
 		if (!Character) return false;
-		const URpgGameplayAbility_Mantle* Definition = AbilityDefinition();
 		const FGameplayAbilitySpec* Spec = MantleSpec(Character);
 		const UMotionWarpingComponent* Warping = Character->FindComponentByClass<UMotionWarpingComponent>();
-		if (!Definition || !Warping || (Spec && Spec->IsActive()) || Warping->FindWarpTarget(Definition->WarpTargetName)) return false;
+		if (!Warping || (Spec && Spec->IsActive()) || Warping->FindWarpTarget(TEXT("FrontLedge"))
+			|| Warping->FindWarpTarget(TEXT("BackLedge")) || Warping->FindWarpTarget(TEXT("BackFloor"))) return false;
 		const URpgAbilitySystemComponent* ASC = Character->GetRpgAbilitySystemComponent();
 		const UAnimInstance* Animation = Character->GetMesh()->GetAnimInstance();
-		const URpgMantleAnchorComponent* Anchor = AnchorInWorld(Character->GetWorld());
+		const URpgTraversalQueryComponent* Query = Character->FindComponentByClass<URpgTraversalQueryComponent>();
+		if (!Query) return false;
+		// Death may synchronously take over the same gameplay slot. Require every allowed traversal montage to stop,
+		// while permitting the successor ability's montage to play and supply its own legitimate root motion.
+		if (Animation)
+		{
+			for (const FRpgTraversalAnimationEntry& Entry : Query->AllowedMantleAnimations)
+			{
+				if (Entry.Montage && Animation->Montage_IsPlaying(Entry.Montage)) return false;
+			}
+		}
+		const UGameplayAbility* AnimatingAbility = ASC ? ASC->GetAnimatingAbility() : nullptr;
+		if (AnimatingAbility && AnimatingAbility->IsA<URpgGameplayAbility_Mantle>()) return false;
+		const UPrimitiveComponent* Obstacle = ObstacleInWorld(Character->GetWorld());
 		const URpgCharacterMovementComponent* Movement = Cast<URpgCharacterMovementComponent>(Character->GetCharacterMovement());
-		return (!ASC || ASC->GetCurrentMontage() != Definition->Montage)
-			&& (!Animation || !Animation->Montage_IsPlaying(Definition->Montage))
-			&& Movement && !Movement->GetMantleCollisionComponent()
-			&& (!Anchor || !Character->GetCapsuleComponent()->GetMoveIgnoreComponents().Contains(Anchor->GetTraversedComponent()))
+		return Movement && !Movement->GetMantleCollisionComponent()
+			&& (!Obstacle || !Character->GetCapsuleComponent()->GetMoveIgnoreComponents().Contains(Obstacle))
 			&& Character->GetCharacterMovement()->MovementMode != MOVE_Flying;
 	}
 	bool CompletedMantle(UWorld* World, int32 PlayerId)
 	{
 		ARpgCharacter* Character = FindCharacter(World, PlayerId);
-		const URpgMantleAnchorComponent* Anchor = AnchorInWorld(World);
-		return Anchor && Grounded(Character) && HasCleanMantleState(Character)
-			&& Character->GetActorLocation().Equals(LandingPosition(*Character, *Anchor), 45.0);
+		const UPrimitiveComponent* Obstacle = ObstacleInWorld(World);
+		if (!Obstacle || !Grounded(Character) || !HasCleanMantleState(Character)) return false;
+		const FBox Bounds = Obstacle->Bounds.GetBox();
+		const FVector Position = Character->GetActorLocation();
+		const double FeetZ = Position.Z - Character->GetCapsuleComponent()->GetScaledCapsuleHalfHeight();
+		return Character->GetCharacterMovement()->CurrentFloor.HitResult.GetComponent() == Obstacle
+			&& Position.X > Bounds.Min.X && Position.X < Bounds.Max.X && Position.Y > Bounds.Min.Y && Position.Y < Bounds.Max.Y
+			&& FMath::Abs(FeetZ - Bounds.Max.Z) < 8.0;
 	}
 	bool ReadyAtEntry(UWorld* World, int32 PlayerId)
 	{
 		ARpgCharacter* Character = FindCharacter(World, PlayerId);
-		const URpgGameplayAbility_Mantle* Definition = AbilityDefinition();
-		const URpgMantleAnchorComponent* Anchor = AnchorInWorld(World);
-		return Ready(World, Character) && Grounded(Character) && HasCleanMantleState(Character) && Anchor && Definition
-			&& Character->GetActorLocation().Equals(EntryPosition(*Character, *Anchor), 12.0)
-			&& Definition->FindCandidate(*Character) == Anchor;
+		const UPrimitiveComponent* Obstacle = ObstacleInWorld(World);
+		return Ready(World, Character) && Grounded(Character) && HasCleanMantleState(Character) && Obstacle
+			&& Character->GetActorLocation().Equals(EntryPosition(*Character, *Obstacle), 12.0) && HasTraversalCandidate(Character);
 	}
 	void PressJump(ARpgCharacter* Character)
 	{
@@ -340,10 +382,10 @@ namespace RpgMantleIntegrationTests
 	void PositionAtEntry(UWorld* World, int32 PlayerId)
 	{
 		ARpgCharacter* Character = FindCharacter(World, PlayerId);
-		URpgMantleAnchorComponent* Anchor = AnchorInWorld(World);
-		if (!Character || !Anchor || !Character->HasAuthority()) return;
-		const FVector Requested = EntryPosition(*Character, *Anchor);
-		const bool bTeleported = Character->TeleportTo(Requested, Anchor->GetComponentRotation());
+		UPrimitiveComponent* Obstacle = ObstacleInWorld(World);
+		if (!Character || !Obstacle || !Character->HasAuthority()) return;
+		const FVector Requested = EntryPosition(*Character, *Obstacle);
+		const bool bTeleported = Character->TeleportTo(Requested, FRotator::ZeroRotator);
 		if (!bTeleported || !Character->GetActorLocation().Equals(Requested, 1.0))
 		{
 			UE_LOG(LogTemp, Display, TEXT("RpgMantleFixturePlacement success=%d requested=%s actual=%s"),
@@ -470,23 +512,23 @@ namespace RpgMantleIntegrationTests
 			Record->MaxHeight = FMath::Max(Record->MaxHeight, static_cast<float>(Character->GetActorLocation().Z - Record->StartLocation.Z));
 			Record->MaxDistance = FMath::Max(Record->MaxDistance, static_cast<float>(FVector::Dist2D(Record->StartLocation, Character->GetActorLocation())));
 			UAnimInstance* Animation = Character->GetMesh()->GetAnimInstance();
-			const URpgGameplayAbility_Mantle* Definition = AbilityDefinition();
-			const bool bMontagePlaying = Animation && Definition && Animation->Montage_IsPlaying(Definition->Montage);
+			UAnimMontage* Montage = Animation ? Animation->GetCurrentActiveMontage() : nullptr;
+			const bool bMontagePlaying = Animation && Montage && Animation->Montage_IsPlaying(Montage);
 			if (bMontagePlaying)
 			{
-				const float Position = Animation->Montage_GetPosition(Definition->Montage);
+				const float Position = Animation->Montage_GetPosition(Montage);
 				if (Record->FirstMontagePosition < 0.0f) Record->FirstMontagePosition = Position;
 				Record->LastMontagePosition = Position;
 				Record->bRootMotion |= Character->IsPlayingRootMotion();
 				Record->bFlying |= Character->GetCharacterMovement()->MovementMode == MOVE_Flying;
-				const URpgMantleAnchorComponent* Anchor = AnchorInWorld(World);
-				Record->bCollisionLease |= Movement && Anchor && Movement->GetIsReplicated()
-					&& Movement->GetMantleCollisionComponent() == Anchor->GetTraversedComponent()
-					&& Character->GetCapsuleComponent()->GetMoveIgnoreComponents().Contains(Anchor->GetTraversedComponent());
+				const UPrimitiveComponent* Obstacle = ObstacleInWorld(World);
+				Record->bCollisionLease |= Movement && Obstacle && Movement->GetIsReplicated()
+					&& Movement->GetMantleCollisionComponent() == Obstacle
+					&& Character->GetCapsuleComponent()->GetMoveIgnoreComponents().Contains(Obstacle);
 			}
-			const URpgMantleAnchorComponent* Anchor = AnchorInWorld(World);
+			const UPrimitiveComponent* Obstacle = ObstacleInWorld(World);
 			const FVector Actual = Character->GetActorLocation();
-			const FVector Expected = Anchor ? LandingPosition(*Character, *Anchor) : FVector::ZeroVector;
+			const FVector Expected = Obstacle ? LandingPosition(*Character, *Obstacle) : FVector::ZeroVector;
 			const FGameplayAbilitySpec* Spec = MantleSpec(Character);
 			const URpgAbilitySystemComponent* ASC = Character->GetRpgAbilitySystemComponent();
 			const UMotionWarpingComponent* Warping = Character->FindComponentByClass<UMotionWarpingComponent>();
@@ -496,11 +538,11 @@ namespace RpgMantleIntegrationTests
 				Actual.X, Actual.Y, Actual.Z, Expected.X, Expected.Y, Expected.Z, FVector::Dist(Actual, Expected),
 				static_cast<int32>(Character->GetCharacterMovement()->MovementMode), Character->GetVelocity().Size2D(),
 				Grounded(Character), HasCleanMantleState(Character), Spec && Spec->IsActive(), bMontagePlaying,
-				Animation && Definition ? Animation->Montage_GetPosition(Definition->Montage) : -1.0f,
+				Animation && Montage ? Animation->Montage_GetPosition(Montage) : -1.0f,
 				*GetPathNameSafe(Animation ? Animation->GetCurrentActiveMontage() : nullptr).ReplaceCharWithEscapedChar(),
 				*GetPathNameSafe(ASC ? ASC->GetCurrentMontage() : nullptr).ReplaceCharWithEscapedChar(),
 				*GetPathNameSafe(Movement ? Movement->GetMantleCollisionComponent() : nullptr).ReplaceCharWithEscapedChar(),
-				Warping && Definition && Warping->FindWarpTarget(Definition->WarpTargetName));
+				Warping && Warping->FindWarpTarget(TEXT("FrontLedge")));
 			if (!Record->bWasMontagePlaying && bMontagePlaying) Report(TEXT("montage_started"), *Record);
 			if (Record->bWasMontagePlaying && !bMontagePlaying) Report(TEXT("montage_stopped"), *Record);
 			Record->bWasMontagePlaying = bMontagePlaying;
@@ -543,12 +585,12 @@ namespace RpgMantleIntegrationTests
 		return World->SpawnActor<AActor>(ObstacleClass, Transform, Params);
 	}
 
-	void ReportEntryBlockers(UWorld* World, const ARpgCharacter& Character, const URpgMantleAnchorComponent& Anchor)
+	void ReportEntryBlockers(UWorld* World, const ARpgCharacter& Character, const UPrimitiveComponent& Obstacle)
 	{
 		if (!IsActiveTestWorld(World)) return;
 		const UCapsuleComponent* Capsule = Character.GetCapsuleComponent();
 		TArray<FOverlapResult> Overlaps;
-		World->OverlapMultiByChannel(Overlaps, EntryPosition(Character, Anchor), Capsule->GetComponentQuat(),
+		World->OverlapMultiByChannel(Overlaps, EntryPosition(Character, Obstacle), Capsule->GetComponentQuat(),
 			Capsule->GetCollisionObjectType(), FCollisionShape::MakeCapsule(Capsule->GetScaledCapsuleRadius(), Capsule->GetScaledCapsuleHalfHeight()),
 			FCollisionQueryParams(SCENE_QUERY_STAT(RpgMantleFixtureEntry), false, &Character),
 			FCollisionResponseParams(Capsule->GetCollisionResponseToChannels()));
@@ -658,9 +700,10 @@ NETWORK_TEST_CLASS(GaspMantleExperiencePIE, "SurvivalRpg.GASP.Mantle")
 				if (!ObstacleClass) return;
 				FActorSpawnParameters Params;
 				Params.SpawnCollisionHandlingOverride = ESpawnActorCollisionHandlingMethod::AlwaysSpawn;
-				AActor* Obstacle = State.World->SpawnActor<AActor>(ObstacleClass, FVector(1000.0, 0.0, 0.0), FRotator::ZeroRotator, Params);
+				const FTransform ObstacleTransform(FRotator::ZeroRotator, FVector(1000.0, -200.0, 0.0), FVector(4.0, 4.0, 1.0));
+				AActor* Obstacle = State.World->SpawnActor<AActor>(ObstacleClass, ObstacleTransform, Params);
 				ASSERT_THAT(IsNotNull(Obstacle));
-				ASSERT_THAT(IsNotNull(Obstacle ? Obstacle->FindComponentByClass<URpgMantleAnchorComponent>() : nullptr));
+				ASSERT_THAT(IsNotNull(ObstacleInWorld(State.World)));
 				int32 ParkingIndex = 0;
 				for (TActorIterator<ARpgCharacter> It(State.World); It; ++It)
 				{
@@ -670,38 +713,52 @@ NETWORK_TEST_CLASS(GaspMantleExperiencePIE, "SurvivalRpg.GASP.Mantle")
 				}
 				PositionAtEntry(State.World, SubjectId);
 			})
-			.UntilClient(TEXT("Prepared anchor and authoritative entry position reach the owner"), 0, [this](FState& State)
+			.UntilClient(TEXT("Prepared source cube and authoritative entry position reach the owner"), 0, [this](FState& State)
 				{ return ReadyAtEntry(State.World, SubjectId); }, Timeout())
 			.ThenServer(TEXT("Server rejects unmarked, distant, excessive-height and obstructed landing proposals"), [this](FState& State)
 			{
 				ARpgCharacter* Character = FindCharacter(State.World, SubjectId);
-				URpgMantleAnchorComponent* Anchor = AnchorInWorld(State.World);
+				UPrimitiveComponent* Obstacle = ObstacleInWorld(State.World);
 				const URpgGameplayAbility_Mantle* Definition = AbilityDefinition();
 				ASSERT_THAT(IsNotNull(Character));
-				ASSERT_THAT(IsNotNull(Anchor));
-				if (!Character || !Anchor || !Definition) return;
-				ASSERT_THAT(IsTrue(Definition->ValidateAnchor(*Character, *Anchor)));
+				ASSERT_THAT(IsNotNull(Obstacle));
+				if (!Character || !Obstacle || !Definition) return;
+				FRpgTraversalQueryResult Candidate;
+				ASSERT_THAT(IsTrue(Definition->FindTraversalCandidate(*Character, Candidate)));
+				ASSERT_THAT(IsTrue(Candidate.HitComponent == Obstacle));
+				ASSERT_THAT(IsNotNull(Candidate.ChosenMontage.Get()));
+				if (Candidate.ChosenMontage)
+				{
+					ASSERT_THAT(IsTrue(Candidate.ChosenMontage->HasRootMotion()));
+					ASSERT_THAT(IsTrue(Candidate.ChosenMontage->IsValidSlot(TEXT("DefaultSlot"))));
+					ASSERT_THAT(IsTrue(Candidate.ChosenMontage->GetPathName().StartsWith(TEXT("/Game/SurvivalRpg/"))));
+					ASSERT_THAT(IsTrue(Candidate.ChosenMontage->GetSkeleton() == Character->GetMesh()->GetSkeletalMeshAsset()->GetSkeleton()));
+				}
+				FVector SelectedLanding = FVector::ZeroVector;
+				const bool bHasSelectedLanding = QueryLandingPosition(*Character, SelectedLanding);
+				ASSERT_THAT(IsTrue(bHasSelectedLanding));
+				if (!bHasSelectedLanding) return;
 				const FTransform Entry = Character->GetActorTransform();
-				Character->SetActorLocation(Entry.GetLocation() - Anchor->GetForwardVector() * (Anchor->MaxApproachDistance + 100.0f));
-				ASSERT_THAT(IsFalse(Definition->ValidateAnchor(*Character, *Anchor)));
-				Character->SetActorLocation(Entry.GetLocation() - FVector(0.0, 0.0, Anchor->MaxHeight + 100.0f));
-				ASSERT_THAT(IsFalse(Definition->ValidateAnchor(*Character, *Anchor)));
+				Character->SetActorLocation(Entry.GetLocation() - FVector(600.0, 0.0, 0.0));
+				ASSERT_THAT(IsFalse(HasTraversalCandidate(Character)));
+				Character->SetActorLocation(Entry.GetLocation() - FVector(0.0, 0.0, 350.0));
+				ASSERT_THAT(IsFalse(HasTraversalCandidate(Character)));
 				Character->SetActorTransform(Entry);
-				AActor* Blocker = SpawnBlocker(State.World, LandingPosition(*Character, *Anchor), FVector(35.0, 35.0, 60.0));
+				AActor* Blocker = SpawnBlocker(State.World, SelectedLanding, FVector(35.0, 35.0, 60.0));
 				ASSERT_THAT(IsNotNull(Blocker));
-				ASSERT_THAT(IsFalse(Definition->ValidateAnchor(*Character, *Anchor)));
+				ASSERT_THAT(IsFalse(HasTraversalCandidate(Character)));
 				if (Blocker) Blocker->Destroy();
-				Blocker = SpawnBlocker(State.World, Entry.GetLocation() + Anchor->GetForwardVector() * 65.0, FVector(12.0, 100.0, 100.0));
+				Blocker = SpawnBlocker(State.World, Entry.GetLocation() + FVector(65.0, 0.0, 0.0), FVector(12.0, 100.0, 100.0));
 				ASSERT_THAT(IsNotNull(Blocker));
-				ASSERT_THAT(IsNull(Definition->FindCandidate(*Character)));
+				ASSERT_THAT(IsFalse(HasTraversalCandidate(Character)));
 				if (Blocker) Blocker->Destroy();
-				ASSERT_THAT(IsTrue(Definition->FindCandidate(*Character) == Anchor));
-				Character->TeleportTo(EntryPosition(*Character, *Anchor, 500.0f), Anchor->GetComponentRotation());
+				ASSERT_THAT(IsTrue(HasTraversalCandidate(Character)));
+				Character->TeleportTo(EntryPosition(*Character, *Obstacle, 500.0f), FRotator::ZeroRotator);
 				Character->GetCharacterMovement()->StopMovementImmediately();
 				Character->ForceNetUpdate();
 			})
 			.UntilClient(TEXT("Owner is grounded outside the prepared entry"), 0, [](FState& State)
-				{ ARpgCharacter* Character = LocalCharacter(State.World); return Grounded(Character) && !AbilityDefinition()->FindCandidate(*Character); }, Timeout())
+				{ ARpgCharacter* Character = LocalCharacter(State.World); return Grounded(Character) && !HasTraversalCandidate(Character); }, Timeout())
 			.ThenClient(TEXT("The contextual jump button falls back to ordinary jumping without a candidate"), 0, [](FState& State)
 				{ PressJump(LocalCharacter(State.World)); })
 			.UntilServer(TEXT("Fallback jump reaches authoritative CMC without starting mantle"), [this](FState& State)
@@ -717,16 +774,20 @@ NETWORK_TEST_CLASS(GaspMantleExperiencePIE, "SurvivalRpg.GASP.Mantle")
 			.ThenServer(TEXT("Block landing only on authority to exercise a rejected client proposal"), [this](FState& State)
 			{
 				ARpgCharacter* Character = FindCharacter(State.World, SubjectId);
-				const URpgMantleAnchorComponent* Anchor = AnchorInWorld(State.World);
-				if (!Character || !Anchor) return;
-				State.LandingBlocker = SpawnBlocker(State.World, LandingPosition(*Character, *Anchor), FVector(35.0, 35.0, 60.0));
+				const UPrimitiveComponent* Obstacle = ObstacleInWorld(State.World);
+				if (!Character || !Obstacle) return;
+				FVector SelectedLanding = FVector::ZeroVector;
+				const bool bHasSelectedLanding = QueryLandingPosition(*Character, SelectedLanding);
+				ASSERT_THAT(IsTrue(bHasSelectedLanding));
+				if (!bHasSelectedLanding) return;
+				State.LandingBlocker = SpawnBlocker(State.World, SelectedLanding, FVector(35.0, 35.0, 60.0));
 				ASSERT_THAT(IsTrue(State.LandingBlocker.IsValid()));
 			})
 			.ThenClient(TEXT("Owner predicts its locally clear entry through ordinary jump input"), 0, [this](FState& State)
 			{
 				ARpgCharacter* Character = LocalCharacter(State.World);
 				if (!Character) return;
-				ASSERT_THAT(IsNotNull(AbilityDefinition()->FindCandidate(*Character)));
+				ASSERT_THAT(IsTrue(HasTraversalCandidate(Character)));
 				Observations.Start(SubjectId);
 				PressJump(Character);
 				ASSERT_THAT(IsTrue(MantleSpec(Character)->IsActive()));
@@ -742,7 +803,8 @@ NETWORK_TEST_CLASS(GaspMantleExperiencePIE, "SurvivalRpg.GASP.Mantle")
 			{
 				ARpgCharacter* Character = FindCharacter(State.World, SubjectId);
 				return Grounded(Character) && HasCleanMantleState(Character)
-					&& Character->GetActorLocation().Equals(EntryPosition(*Character, *AnchorInWorld(State.World)), 20.0);
+					&& ObstacleInWorld(State.World)
+					&& Character->GetActorLocation().Equals(EntryPosition(*Character, *ObstacleInWorld(State.World)), 20.0);
 			}, Timeout())
 			.ThenServer(TEXT("Remove the test obstruction and restore the valid standing entry"), [this](FState& State)
 			{
@@ -854,12 +916,12 @@ NETWORK_TEST_CLASS(GaspMantleExperiencePIE, "SurvivalRpg.GASP.Mantle")
 			.ThenServer(TEXT("Prepare a fresh lane for the respawned character while preserving the corpse"), [this](FState& State)
 			{
 				ARpgCharacter* Character = FindCharacter(State.World, SubjectId);
-				URpgMantleAnchorComponent* OldAnchor = AnchorInWorld(State.World);
-				if (!Character || !OldAnchor) return;
-				ReportEntryBlockers(State.World, *Character, *OldAnchor);
-				FTransform NewLane = OldAnchor->GetOwner()->GetActorTransform();
+				UPrimitiveComponent* OldObstacle = ObstacleInWorld(State.World);
+				if (!Character || !OldObstacle) return;
+				ReportEntryBlockers(State.World, *Character, *OldObstacle);
+				FTransform NewLane = OldObstacle->GetOwner()->GetActorTransform();
 				NewLane.AddToTranslation(FVector(0.0, 2000.0, 0.0));
-				ASSERT_THAT(IsTrue(OldAnchor->GetOwner()->Destroy()));
+				ASSERT_THAT(IsTrue(OldObstacle->GetOwner()->Destroy()));
 				ASSERT_THAT(IsNotNull(SpawnPreparedObstacle(State.World, NewLane)));
 				PositionAtEntry(State.World, SubjectId);
 			})
@@ -907,27 +969,27 @@ NETWORK_TEST_CLASS(GaspMantleExperiencePIE, "SurvivalRpg.GASP.Mantle")
 			}, Timeout())
 			.ThenServer(TEXT("Destroy the prepared obstacle while the server mantle owns its collision lease"), [this](FState& State)
 			{
-				URpgMantleAnchorComponent* Anchor = AnchorInWorld(State.World);
-				ASSERT_THAT(IsNotNull(Anchor));
-				if (!Anchor) return;
-				AActor* Obstacle = Anchor->GetOwner();
-				State.DestroyedObstacleTransform = Obstacle->GetActorTransform();
-				ASSERT_THAT(IsTrue(Obstacle->Destroy()));
+				UPrimitiveComponent* Obstacle = ObstacleInWorld(State.World);
+				ASSERT_THAT(IsNotNull(Obstacle));
+				if (!Obstacle) return;
+				AActor* ObstacleActor = Obstacle->GetOwner();
+				State.DestroyedObstacleTransform = ObstacleActor->GetActorTransform();
+				ASSERT_THAT(IsTrue(ObstacleActor->Destroy()));
 			})
 			.UntilServer(TEXT("Destroyed obstacle releases authority ability, warp and stale collision lease"), [this](FState& State)
 			{
 				ARpgCharacter* Character = FindCharacter(State.World, SubjectId);
-				return !AnchorInWorld(State.World) && Grounded(Character) && HasCleanMantleState(Character);
+				return !ObstacleInWorld(State.World) && Grounded(Character) && HasCleanMantleState(Character);
 			}, Timeout())
 			.UntilClient(TEXT("Owner reconciles obstacle destruction and returns to grounded movement"), 0, [this](FState& State)
 			{
 				ARpgCharacter* Character = FindCharacter(State.World, SubjectId);
-				return !AnchorInWorld(State.World) && Grounded(Character) && HasCleanMantleState(Character);
+				return !ObstacleInWorld(State.World) && Grounded(Character) && HasCleanMantleState(Character);
 			}, Timeout())
 			.UntilClient(TEXT("Simulated observer also releases the destroyed obstacle lease"), 1, [this](FState& State)
 			{
 				ARpgCharacter* Character = FindCharacter(State.World, SubjectId);
-				return !AnchorInWorld(State.World) && Grounded(Character) && HasCleanMantleState(Character);
+				return !ObstacleInWorld(State.World) && Grounded(Character) && HasCleanMantleState(Character);
 			}, Timeout())
 			.ThenServer(TEXT("Spawn replacement authored geometry at the same prepared entry"), [this](FState& State)
 			{
@@ -945,6 +1007,330 @@ NETWORK_TEST_CLASS(GaspMantleExperiencePIE, "SurvivalRpg.GASP.Mantle")
 	{
 		ARpgCharacter* Character = RpgMantleIntegrationTests::RespawnedCharacter(State, SubjectId);
 		return Character && Character->HasAuthority() && RpgMantleIntegrationTests::Grounded(Character);
+	}
+};
+
+/** Exercises the saved map and physical key mapping, independently of the idealized network fixture above. */
+NETWORK_TEST_CLASS(GaspMantleAuthoredMapPIE, "SurvivalRpg.GASP.Mantle")
+{
+	using FIsolation = RpgMantleIntegrationTests::FScopedSaveIsolation;
+	FIsolation Isolation;
+	TStrongObjectPtr<ULevelEditorPlaySettings> PlaySettings;
+	FPrimaryAssetId OriginalExperience;
+	TWeakObjectPtr<UWorld> ServerWorld;
+	TWeakObjectPtr<UWorld> ClientWorld;
+	TWeakObjectPtr<UPrimitiveComponent> Obstacle;
+	FDelegateHandle TickHandle;
+	FVector SpawnLocation = FVector::ZeroVector;
+	FBox ObstacleBounds{ForceInit};
+	double AttemptStart = 0.0;
+	double ContactStart = -1.0;
+	float LateralOffset = 0.0f;
+	float MaximumApproachSpeed = 0.0f;
+	float SpacePressDistance = 0.0f;
+	float SpacePressSpeed = 0.0f;
+	float SpacePressLateralOffset = 0.0f;
+	float FirstOwnerMontageTime = -1.0f;
+	float LastOwnerMontageTime = -1.0f;
+	float FirstServerMontageTime = -1.0f;
+	float LastServerMontageTime = -1.0f;
+	int32 SubjectId = INDEX_NONE;
+	bool bOwnsSession = false;
+	bool bConfigured = false;
+	bool bDriving = false;
+	bool bPressedSpace = false;
+	bool bSawFallbackJump = false;
+	bool bSawOwnerRootMotion = false;
+	bool bSawServerRootMotion = false;
+	bool bSawOwnerLease = false;
+	bool bSawServerLease = false;
+	bool bStopAtContact = false;
+	bool bHoldBeforeReach = false;
+	bool bReleasedMovement = false;
+	bool bReportedWait = false;
+	bool bUseHost = false;
+
+	BEFORE_EACH()
+	{
+		for (const FWorldContext& Context : GEngine->GetWorldContexts())
+		{
+			if (Context.WorldType == EWorldType::PIE && IsValid(Context.World()))
+			{
+				TestRunner->AddError(TEXT("Authored-map mantle test refuses to interrupt an existing PIE session."));
+				return;
+			}
+		}
+		// Register before RequestPlaySession: InitGame may load persistence before a pawn or a test tick exists.
+		Isolation.Start();
+		OriginalExperience = GetDefault<URpgDeveloperSettings>()->ExperienceOverride;
+		GetMutableDefault<URpgDeveloperSettings>()->ExperienceOverride = FPrimaryAssetId();
+		bConfigured = true;
+		TestCommandBuilder.OnTearDown(TEXT("Release injected keys and close only the authored-map test session"), [this]() { Cleanup(); });
+	}
+	AFTER_EACH() { Cleanup(); }
+
+	TEST_METHOD(RunningApproachUsesAuthoredMapAndEnhancedInput) { QueueApproach(0.0f, false, false); }
+	TEST_METHOD(OffsetApproachTraversesAwayFromTheOldCenterStripe) { QueueApproach(110.0f, false, false); }
+	TEST_METHOD(CollisionContactStillAllowsContextualTraversal) { QueueApproach(0.0f, true, false); }
+	TEST_METHOD(HeldJumpRetriesAfterTheInitialOrdinaryJump) { QueueApproach(0.0f, false, true); }
+	TEST_METHOD(ListenServerHostRunsAndTraverses) { QueueApproach(0.0f, false, false, true); }
+
+	void QueueApproach(float InLateralOffset, bool bInStopAtContact, bool bInHoldBeforeReach, bool bInUseHost = false)
+	{
+		if (!bConfigured) return;
+		LateralOffset = InLateralOffset;
+		bStopAtContact = bInStopAtContact;
+		bHoldBeforeReach = bInHoldBeforeReach;
+		bUseHost = bInUseHost;
+		TestCommandBuilder
+			.Do(TEXT("Play the saved mantle map with its own GameMode and Experience"), [this]()
+			{
+				PlaySettings.Reset(NewObject<ULevelEditorPlaySettings>());
+				PlaySettings->SetPlayNetMode(EPlayNetMode::PIE_ListenServer);
+				PlaySettings->SetPlayNumberOfClients(bUseHost ? 1 : 2);
+				PlaySettings->SetRunUnderOneProcess(true);
+				PlaySettings->bLaunchSeparateServer = false;
+				PlaySettings->GameGetsMouseControl = false;
+				FRequestPlaySessionParams Params;
+				Params.EditorPlaySettings = PlaySettings.Get();
+				Params.GlobalMapOverride = TEXT("/Game/SurvivalRpg/Maps/Test/Lvl_RpgGaspMantle");
+				Params.bAllowOnlineSubsystem = false;
+				// No pawn placement, GameMode or Experience override: composition and PlayerStarts come from the saved map.
+				bOwnsSession = true;
+				GUnrealEd->RequestPlaySession(Params);
+				GUnrealEd->StartQueuedPlaySessionRequest();
+			})
+			.Until(TEXT("The authored map grants traversal and initializes the locally controlled player's actual input"), [this]()
+			{
+				FindWorlds();
+				ARpgCharacter* Character = Owner();
+				const URpgPawnGameplayComponent* Input = URpgPawnGameplayComponent::FindPawnGameplayComponent(Character);
+				if (!RpgMantleIntegrationTests::Ready(InputWorld(), Character)
+					|| !RpgMantleIntegrationTests::Grounded(Character) || !Input || !Input->IsReadyToBindInputs()
+					|| !RpgMantleIntegrationTests::MantleSpec(Character)) return false;
+				SubjectId = Character->GetPlayerState()->GetPlayerId();
+				return RpgMantleIntegrationTests::Ready(ServerWorld.Get(), Authority())
+					&& RpgMantleIntegrationTests::MantleSpec(Authority()) && Isolation.IsIsolated(ServerWorld.Get());
+			}, FTimespan::FromSeconds(60.0))
+			.Then(TEXT("Choose the authored obstacle in the player's lane and begin real W input"), [this]()
+			{
+				ARpgCharacter* Character = Owner();
+				if (!Character) return;
+				SpawnLocation = Character->GetActorLocation();
+				FindLaneObstacle(*Character);
+				ASSERT_THAT(IsTrue(Obstacle.IsValid()));
+				if (!Obstacle.IsValid()) return;
+				ASSERT_THAT(IsTrue(ObstacleBounds.Min.X - SpawnLocation.X > 600.0));
+				ASSERT_THAT(IsTrue(SpawnLocation.Y + LateralOffset > ObstacleBounds.Min.Y + 50.0
+					&& SpawnLocation.Y + LateralOffset < ObstacleBounds.Max.Y - 50.0));
+				AttemptStart = InputWorld()->GetTimeSeconds();
+				bDriving = true;
+				TickHandle = FWorldDelegates::OnWorldTickEnd.AddRaw(this, &GaspMantleAuthoredMapPIE::OnTick);
+				Key(EKeys::W, true);
+			})
+			.Until(TEXT("Mapped Space starts advancing local and authoritative traversal root motion"), [this]()
+			{
+				return bSawOwnerRootMotion && bSawServerRootMotion && bSawOwnerLease && bSawServerLease
+					&& LastOwnerMontageTime > FirstOwnerMontageTime + 0.1f
+					&& LastServerMontageTime > FirstServerMontageTime + 0.1f;
+			}, FTimespan::FromSeconds(18.0))
+			.Until(TEXT("The local owner and authority finish above the actual cube and release traversal state"), [this]()
+			{
+				return FinishedOnObstacle(Owner()) && FinishedOnObstacle(Authority());
+			}, FTimespan::FromSeconds(10.0))
+			.Then(TEXT("The approach covered player input, speed, geometry and cleanup rather than forced candidate placement"), [this]()
+			{
+				ASSERT_THAT(IsTrue(MaximumApproachSpeed > 100.0f));
+				ASSERT_THAT(IsTrue(bPressedSpace));
+				if (!bStopAtContact) ASSERT_THAT(IsTrue(SpacePressSpeed > 100.0f));
+				if (bStopAtContact) ASSERT_THAT(IsTrue(ContactStart >= 0.0));
+				if (bHoldBeforeReach) ASSERT_THAT(IsTrue(bSawFallbackJump));
+				if (LateralOffset != 0.0f) ASSERT_THAT(IsTrue(FMath::Abs(SpacePressLateralOffset) > 80.0f));
+				ASSERT_THAT(IsTrue(Isolation.IsIsolated(ServerWorld.Get())));
+				Report(TEXT("completed"));
+			});
+	}
+
+	void FindWorlds()
+	{
+		for (const FWorldContext& Context : GEngine->GetWorldContexts())
+		{
+			UWorld* World = Context.World();
+			if (Context.WorldType != EWorldType::PIE || !IsValid(World)
+				|| !World->GetMapName().Contains(TEXT("Lvl_RpgGaspMantle"))) continue;
+			if (World->GetNetMode() == NM_ListenServer) ServerWorld = World;
+			if (World->GetNetMode() == NM_Client) ClientWorld = World;
+		}
+	}
+	UWorld* InputWorld() const { return bUseHost ? ServerWorld.Get() : ClientWorld.Get(); }
+	ARpgCharacter* Owner() const { return RpgMantleIntegrationTests::LocalCharacter(InputWorld()); }
+	ARpgCharacter* Authority() const { return RpgMantleIntegrationTests::FindCharacter(ServerWorld.Get(), SubjectId); }
+	void Key(FKey InKey, bool bPressed)
+	{
+		APlayerController* Controller = Owner() ? Cast<APlayerController>(Owner()->GetController()) : nullptr;
+		if (Controller) Controller->InputKey(FInputKeyEventArgs::CreateSimulated(InKey, bPressed ? IE_Pressed : IE_Released, bPressed ? 1.0f : 0.0f));
+	}
+	void FindLaneObstacle(const ARpgCharacter& Character)
+	{
+		const FVector Position = Character.GetActorLocation();
+		const double FeetZ = Position.Z - Character.GetCapsuleComponent()->GetScaledCapsuleHalfHeight();
+		double BestDistance = TNumericLimits<double>::Max();
+		for (TActorIterator<AActor> It(InputWorld()); It; ++It)
+		{
+			TInlineComponentArray<UPrimitiveComponent*> Components(*It);
+			for (UPrimitiveComponent* Component : Components)
+			{
+				if (!Component || Component->IsSimulatingPhysics() || !Component->IsQueryCollisionEnabled()
+					|| Component->GetCollisionResponseToChannel(ECC_GameTraceChannel1) != ECR_Block) continue;
+				const FBox Bounds = Component->Bounds.GetBox();
+				const double Distance = Bounds.Min.X - Position.X;
+				if (Distance <= 0.0 || Distance >= BestDistance || Bounds.Max.Z - FeetZ < 80.0 || Bounds.Max.Z - FeetZ > 155.0
+					|| Position.Y < Bounds.Min.Y + 50.0 || Position.Y > Bounds.Max.Y - 50.0 || Bounds.GetSize().X < 150.0) continue;
+				Obstacle = Component;
+				ObstacleBounds = Bounds;
+				BestDistance = Distance;
+			}
+		}
+	}
+	void OnTick(UWorld* World, ELevelTick TickType, float DeltaSeconds)
+	{
+		if (!bDriving || !RpgMantleIntegrationTests::IsActiveTestWorld(World)) return;
+		if (World == ServerWorld.Get()) Observe(Authority(), false);
+		if (World != InputWorld()) return;
+		ARpgCharacter* Character = Owner();
+		if (!Character) return;
+		Observe(Character, true);
+		if (!bReportedWait && World->GetTimeSeconds() - AttemptStart >= 5.0)
+		{
+			Report(TEXT("five_second_checkpoint"));
+			bReportedWait = true;
+		}
+		const FGameplayAbilitySpec* Spec = RpgMantleIntegrationTests::MantleSpec(Character);
+		const bool bActive = Spec && Spec->IsActive();
+		if (bPressedSpace && Character->GetCharacterMovement()->IsFalling() && !bActive) bSawFallbackJump = true;
+		if (bActive && !bReleasedMovement)
+		{
+			Key(EKeys::W, false);
+			Key(EKeys::SpaceBar, false);
+			bReleasedMovement = true;
+		}
+		if (bReleasedMovement) return;
+		const FVector Position = Character->GetActorLocation();
+		const float Distance = static_cast<float>(ObstacleBounds.Min.X - Position.X);
+		const float Speed = static_cast<float>(Character->GetVelocity().Size2D());
+		MaximumApproachSpeed = FMath::Max(MaximumApproachSpeed, Speed);
+		APlayerController* Controller = Cast<APlayerController>(Character->GetController());
+		if (Controller)
+		{
+			// Aim while walking; there is no pawn teleport, forced velocity or direct movement-component call.
+			const FVector Direction(250.0, SpawnLocation.Y + LateralOffset - Position.Y, 0.0);
+			Controller->SetControlRotation(Direction.Rotation());
+		}
+		if (bPressedSpace) return;
+		if (bStopAtContact)
+		{
+			const float Radius = Character->GetCapsuleComponent()->GetScaledCapsuleRadius();
+			if (Distance <= Radius + 4.0f && Speed < 5.0f)
+			{
+				if (ContactStart < 0.0) ContactStart = World->GetTimeSeconds();
+				if (World->GetTimeSeconds() - ContactStart < 0.15) return;
+			}
+			else return;
+		}
+		// Jump well before the one-meter cube, then arrive with Space still held. A jump started close to this low
+		// obstacle can legitimately clear it, which would not establish an opportunity for the held traversal retry.
+		else if (Distance > (bHoldBeforeReach ? 900.0f : 170.0f)) return;
+		SpacePressDistance = Distance;
+		SpacePressSpeed = Speed;
+		SpacePressLateralOffset = static_cast<float>(Position.Y - ObstacleBounds.GetCenter().Y);
+		bPressedSpace = true;
+		Report(TEXT("space_pressed"));
+		Key(EKeys::SpaceBar, true);
+	}
+	void Observe(ARpgCharacter* Character, bool bOwner)
+	{
+		if (!Character) return;
+		const FGameplayAbilitySpec* Spec = RpgMantleIntegrationTests::MantleSpec(Character);
+		const URpgAbilitySystemComponent* ASC = Character->GetRpgAbilitySystemComponent();
+		UAnimInstance* Animation = Character->GetMesh()->GetAnimInstance();
+		UAnimMontage* Montage = ASC ? ASC->GetCurrentMontage() : nullptr;
+		if (!Spec || !Spec->IsActive() || !Animation || !Montage || !Animation->Montage_IsPlaying(Montage)) return;
+		const float Position = Animation->Montage_GetPosition(Montage);
+		float& First = bOwner ? FirstOwnerMontageTime : FirstServerMontageTime;
+		float& Last = bOwner ? LastOwnerMontageTime : LastServerMontageTime;
+		if (First < 0.0f) First = Position;
+		Last = Position;
+		(bOwner ? bSawOwnerRootMotion : bSawServerRootMotion) |= Character->IsPlayingRootMotion();
+		const URpgCharacterMovementComponent* Movement = Cast<URpgCharacterMovementComponent>(Character->GetCharacterMovement());
+		(bOwner ? bSawOwnerLease : bSawServerLease) |= Movement && Movement->GetMantleCollisionComponent()
+			&& Movement->MovementMode == MOVE_Flying;
+		if (Movement && (Movement->bIgnoreClientMovementErrorChecksAndCorrection || Movement->bServerAcceptClientAuthoritativePosition))
+		{
+			TestRunner->AddError(TEXT("Authored-map traversal disabled authoritative CMC movement correction."));
+		}
+	}
+	bool FinishedOnObstacle(ARpgCharacter* Character) const
+	{
+		if (!RpgMantleIntegrationTests::Grounded(Character)) return false;
+		const FGameplayAbilitySpec* Spec = RpgMantleIntegrationTests::MantleSpec(Character);
+		const URpgCharacterMovementComponent* Movement = Cast<URpgCharacterMovementComponent>(Character->GetCharacterMovement());
+		const FVector Position = Character->GetActorLocation();
+		const double FeetZ = Position.Z - Character->GetCapsuleComponent()->GetScaledCapsuleHalfHeight();
+		return Spec && !Spec->IsActive() && Movement && !Movement->GetMantleCollisionComponent()
+			&& Position.X > ObstacleBounds.Min.X && Position.X < ObstacleBounds.Max.X
+			&& Position.Y > ObstacleBounds.Min.Y && Position.Y < ObstacleBounds.Max.Y
+			&& FMath::Abs(FeetZ - ObstacleBounds.Max.Z) < 8.0;
+	}
+	void Report(const TCHAR* Phase) const
+	{
+		const ARpgCharacter* Character = Owner();
+		UE_LOG(LogTemp, Display, TEXT("RpgMantleAuthoredInput phase=%s host=%d offset=%.1f contact=%d heldRetry=%d spawn=%s position=%s maxApproachSpeed=%.1f pressSpeed=%.1f pressDistance=%.1f pressLateral=%.1f fallbackJump=%d ownerRootMotion=%d serverRootMotion=%d ownerMontage=%.3f..%.3f serverMontage=%.3f..%.3f"),
+			Phase, bUseHost, LateralOffset, bStopAtContact, bHoldBeforeReach, *SpawnLocation.ToCompactString(),
+			Character ? *Character->GetActorLocation().ToCompactString() : TEXT("None"), MaximumApproachSpeed,
+			SpacePressSpeed, SpacePressDistance, SpacePressLateralOffset, bSawFallbackJump, bSawOwnerRootMotion, bSawServerRootMotion,
+			FirstOwnerMontageTime, LastOwnerMontageTime, FirstServerMontageTime, LastServerMontageTime);
+		if (Character && FCString::Strcmp(Phase, TEXT("space_pressed")) == 0)
+		{
+			URpgTraversalQueryComponent* Query = Character->FindComponentByClass<URpgTraversalQueryComponent>();
+			const URpgGameplayAbility_Mantle* Definition = RpgMantleIntegrationTests::AbilityDefinition();
+			FRpgTraversalQueryResult Raw;
+			FRpgTraversalQueryResult Validated;
+			const bool bRawQuery = Query && Query->QueryTraversal(Raw);
+			const bool bAnimationAllowed = Query && Query->IsAnimationAllowed(*Character, Raw);
+			FVector Landing = FVector::ZeroVector;
+			const bool bLanding = Definition && Definition->GetMantleLandingLocation(*Character, Raw, Landing);
+			const bool bValidated = Definition && Definition->FindTraversalCandidate(*Character, Validated);
+			const UAnimInstance* Animation = Character->GetMesh()->GetAnimInstance();
+			const UCharacterMovementComponent* Movement = Character->GetCharacterMovement();
+			UE_LOG(LogTemp, Display, TEXT("RpgMantleAuthoredQuery raw=%d validated=%d action=%d hasFront=%d height=%.3f depth=%.3f front=%s normal=%s collider=%s montage=%s start=%.4f rate=%.4f allowed=%d landingValid=%d landing=%s queryClass=%s mode=%d ground=%d falling=%d slotActive=%d rootMotionMode=%d activeMontage=%s searchDistance=%.1f"),
+				bRawQuery, bValidated, static_cast<int32>(Raw.ActionType), Raw.HasFrontLedge, Raw.ObstacleHeight, Raw.ObstacleDepth,
+				*Raw.FrontLedgeLocation.ToCompactString(), *Raw.FrontLedgeNormal.ToCompactString(), *GetPathNameSafe(Raw.HitComponent.Get()),
+				*GetPathNameSafe(Raw.ChosenMontage.Get()), Raw.StartTime, Raw.PlayRate, bAnimationAllowed, bLanding, *Landing.ToCompactString(),
+				*GetNameSafe(Query ? Query->GetClass() : nullptr), Movement ? static_cast<int32>(Movement->MovementMode) : -1,
+				Movement && Movement->IsMovingOnGround(), Movement && Movement->IsFalling(), Animation && Animation->IsSlotActive(TEXT("DefaultSlot")),
+				Animation ? static_cast<int32>(Animation->RootMotionMode) : -1, *GetPathNameSafe(Animation ? Animation->GetCurrentActiveMontage() : nullptr),
+				Definition ? Definition->CandidateSearchDistance : -1.0f);
+		}
+	}
+	void Cleanup()
+	{
+		if (bDriving) Report(TEXT("teardown"));
+		FWorldDelegates::OnWorldTickEnd.Remove(TickHandle);
+		TickHandle.Reset();
+		Key(EKeys::W, false);
+		Key(EKeys::SpaceBar, false);
+		bDriving = false;
+		if (bOwnsSession && GUnrealEd)
+		{
+			GUnrealEd->EndPlayMap();
+			bOwnsSession = false;
+		}
+		if (bConfigured)
+		{
+			GetMutableDefault<URpgDeveloperSettings>()->ExperienceOverride = OriginalExperience;
+			bConfigured = false;
+		}
+		PlaySettings.Reset();
 	}
 };
 

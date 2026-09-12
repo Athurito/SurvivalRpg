@@ -1,15 +1,37 @@
 #pragma once
 
 #include "SurvivalRpg/AbilitySystem/Abilities/RpgGameplayAbility.h"
+#include "Abilities/GameplayAbilityTargetTypes.h"
+#include "RpgTraversalQueryComponent.h"
 #include "RpgGameplayAbility_Mantle.generated.h"
 
 class UAnimMontage;
 class UMotionWarpingComponent;
 class UPrimitiveComponent;
-class URpgMantleAnchorComponent;
 struct FGameplayAbilityTargetDataHandle;
 
-/** Predicted GAS lifecycle and authoritative geometry validation for designer-authored static mantle entries. */
+/** Predicted animation proposal; the server reconstructs every world-space traversal location itself. */
+USTRUCT()
+struct SURVIVALRPG_API FRpgMantleTargetData : public FGameplayAbilityTargetData
+{
+	GENERATED_BODY()
+	/** Collider identity only; no client-authored ledge or landing coordinates are serialized. */
+	UPROPERTY() TObjectPtr<UPrimitiveComponent> HitComponent = nullptr;
+	/** Predicted presentation choice, validated against server-owned chooser eligibility rows. */
+	UPROPERTY() TObjectPtr<UAnimMontage> Montage = nullptr;
+	/** Predicted entry time in seconds, constrained by the server-owned chooser sampling range. */
+	UPROPERTY() float StartTime = 0.0f;
+
+	virtual UScriptStruct* GetScriptStruct() const override { return StaticStruct(); }
+	bool NetSerialize(FArchive& Ar, UPackageMap* Map, bool& bOutSuccess);
+};
+
+template<> struct TStructOpsTypeTraits<FRpgMantleTargetData> : TStructOpsTypeTraitsBase2<FRpgMantleTargetData>
+{
+	enum { WithNetSerializer = true, WithCopy = true };
+};
+
+/** Predicted GAS lifecycle and authoritative geometry validation for source GASP mantle queries. */
 UCLASS(Abstract, Blueprintable)
 class SURVIVALRPG_API URpgGameplayAbility_Mantle : public URpgGameplayAbility
 {
@@ -18,16 +40,16 @@ class SURVIVALRPG_API URpgGameplayAbility_Mantle : public URpgGameplayAbility
 public:
 	URpgGameplayAbility_Mantle(const FObjectInitializer& ObjectInitializer = FObjectInitializer::Get());
 
-	/** Designer-selected root-motion montage. The concrete Blueprint plays it with PlayMontageAndWait after activation. */
-	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Mantle|Animation")
+	/** Runtime-selected root-motion montage. The concrete Blueprint plays it with PlayMontageAndWait after validation. */
+	UPROPERTY(Transient, BlueprintReadOnly, Category = "Mantle|Animation")
 	TObjectPtr<UAnimMontage> Montage;
 
-	/** Playback multiplier consumed by the concrete Blueprint montage task. */
-	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Mantle|Animation", meta = (ClampMin = "0.1", ClampMax = "3"))
+	/** Runtime-selected playback multiplier consumed by the concrete Blueprint montage task. */
+	UPROPERTY(Transient, BlueprintReadOnly, Category = "Mantle|Animation")
 	float PlayRate = 1.0f;
 
-	/** Montage start position in seconds, configured to match the authored entry animation. */
-	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Mantle|Animation", meta = (ClampMin = "0", Units = "s"))
+	/** Runtime-selected pose-search entry position in seconds, consumed by the concrete Blueprint montage task. */
+	UPROPERTY(Transient, BlueprintReadOnly, Category = "Mantle|Animation", meta = (Units = "s"))
 	float StartTimeSeconds = 0.0f;
 
 	/** Motion-warping target addressed by the selected montage. This ability exclusively owns it while active. */
@@ -38,13 +60,9 @@ public:
 	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Mantle|Animation", meta = (Units = "cm"))
 	float LedgeVerticalOffset = 0.5f;
 
-	/** Maximum standing approach speed in centimeters per second for this montage family. */
-	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Mantle|Validation", meta = (ClampMin = "0", Units = "cm/s"))
-	float MaxGroundSpeed = 100.0f;
-
-	/** Forward query length in centimeters; accepted range is also bounded by each authored entry. */
+	/** Maximum independently accepted query reach in centimeters; 400 covers GASP's 350 cm forward sweep plus its 30 cm radius. */
 	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Mantle|Validation", meta = (ClampMin = "1", Units = "cm"))
-	float CandidateSearchDistance = 200.0f;
+	float CandidateSearchDistance = 400.0f;
 
 	/** Extra centimeters above the ledge for the conservative capsule clearance route. */
 	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Mantle|Validation", meta = (ClampMin = "0", Units = "cm"))
@@ -54,11 +72,11 @@ public:
 	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Mantle|Validation", meta = (ClampMin = "0.1", Units = "s"))
 	float TargetDataTimeout = 2.0f;
 
-	/** Validates a proposed prepared entry on the current world; no client coordinates are accepted. */
-	bool ValidateAnchor(const ACharacter& Character, const URpgMantleAnchorComponent& Anchor) const;
+	/** Runs the copied GASP query and validates its geometry and animation without activating gameplay. */
+	bool FindTraversalCandidate(const ACharacter& Character, FRpgTraversalQueryResult& OutResult) const;
 
-	/** Finds a validated entry reached by the character's ordinary forward traversal query. */
-	URpgMantleAnchorComponent* FindCandidate(const ACharacter& Character, FHitResult* OutHit = nullptr) const;
+	/** Derives supported feet at the source montage's configured handoff time from its last front-ledge warp and root motion. */
+	bool GetMantleLandingLocation(const ACharacter& Character, const FRpgTraversalQueryResult& Result, FVector& OutLocation) const;
 
 	virtual bool CanActivateAbility(const FGameplayAbilitySpecHandle Handle,
 		const FGameplayAbilityActorInfo* ActorInfo, const FGameplayTagContainer* SourceTags = nullptr,
@@ -73,7 +91,10 @@ protected:
 private:
 	bool IsCharacterReady(const ACharacter& Character) const;
 	void HandleTargetData(const FGameplayAbilityTargetDataHandle& Data, FGameplayTag ApplicationTag);
-	void BeginMantle(URpgMantleAnchorComponent& Anchor);
+	void ResolveTraversal(const FRpgTraversalQueryResult& Result);
+	void LogTraversalRejection(const TCHAR* Stage, const FRpgTraversalQueryResult& Result) const;
+	void BeginMantle(const FRpgTraversalQueryResult& Result);
+	bool ValidateTraversal(const ACharacter& Character, const FRpgTraversalQueryResult& Result) const;
 	void CancelCurrentMantle();
 	void CleanupMovement();
 	bool IsCapsuleClear(const ACharacter& Character, const FVector& Location) const;
@@ -86,10 +107,8 @@ private:
 	void HandleMovementModeChanged(ACharacter* Character, EMovementMode PreviousMode, uint8 PreviousCustomMode);
 
 	TWeakObjectPtr<ACharacter> ActiveCharacter;
-	TWeakObjectPtr<URpgMantleAnchorComponent> ActiveAnchor;
 	TWeakObjectPtr<UPrimitiveComponent> IgnoredComponent;
 	TWeakObjectPtr<UMotionWarpingComponent> ActiveWarping;
-	FTransform AnchorAtActivation;
 	FTransform ColliderAtActivation;
 	FVector LandingAtActivation = FVector::ZeroVector;
 	FVector LastClearLocation = FVector::ZeroVector;

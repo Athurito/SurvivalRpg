@@ -2,6 +2,8 @@
 
 
 #include "RpgPawnGameplayComponent.h"
+#include "Animation/AnimInstance.h"
+#include "Components/SkeletalMeshComponent.h"
 
 #include "SurvivalRpg/AbilitySystem/RpgAbilitySystemComponent.h"
 #include "GameplayTagContainer.h"
@@ -302,6 +304,8 @@ void URpgPawnGameplayComponent::InitializePlayerInput(UInputComponent* PlayerInp
 					RpgIC->BindNativeAction(InputConfig, RpgGameplayTags::InputTag_Crouch, ETriggerEvent::Triggered, this, &ThisClass::Input_Crouch, /*bLogIfNotFound=*/ false);
 					RpgIC->BindNativeAction(InputConfig, RpgGameplayTags::InputTag_AutoRun, ETriggerEvent::Triggered, this, &ThisClass::Input_AutoRun, /*bLogIfNotFound=*/ false);
 					RpgIC->BindNativeAction(InputConfig, RpgGameplayTags::InputTag_Jump, ETriggerEvent::Started, this, &ThisClass::Input_Jump, /*bLogIfNotFound=*/ false);
+					RpgIC->BindNativeAction(InputConfig, RpgGameplayTags::InputTag_Jump, ETriggerEvent::Triggered, this, &ThisClass::Input_JumpHeld, /*bLogIfNotFound=*/ false);
+					RpgIC->BindNativeAction(InputConfig, RpgGameplayTags::InputTag_Jump, ETriggerEvent::Ongoing, this, &ThisClass::Input_JumpHeld, /*bLogIfNotFound=*/ false);
 					RpgIC->BindNativeAction(InputConfig, RpgGameplayTags::InputTag_StopJump, ETriggerEvent::Completed, this, &ThisClass::Input_StopJump, /*bLogIfNotFound=*/ false);
 
 					BindRoutedGameplayHotkeys(InputConfig, RpgIC);
@@ -515,27 +519,55 @@ void URpgPawnGameplayComponent::Input_AutoRun(const FInputActionValue& InputActi
 	}
 }
 
-void URpgPawnGameplayComponent::Input_Jump(const FInputActionValue& InputActionValue)
+bool URpgPawnGameplayComponent::TryContextualTraversal()
 {
 	if (ARpgCharacter* Character = GetPawn<ARpgCharacter>())
 	{
 		if (URpgAbilitySystemComponent* ASC = Character->GetRpgAbilitySystemComponent())
 		{
-			// Only Experiences granting traversal participate. Repeated presses must not queue a jump on landing.
+			// Only Experiences granting traversal participate. Holding or pressing again consumes input while active.
+			bool bHasTraversal = false;
 			for (const FGameplayAbilitySpec& Spec : ASC->GetActivatableAbilities())
 			{
+				bHasTraversal |= Spec.GetDynamicSpecSourceTags().HasTagExact(RpgGameplayTags::InputTag_Ability_Traversal);
 				if (Spec.IsActive() && Spec.GetDynamicSpecSourceTags().HasTagExact(RpgGameplayTags::InputTag_Ability_Traversal))
 				{
-					return;
+					return true;
 				}
+			}
+			if (bHasTraversal && Character->GetMesh() && Character->GetMesh()->GetAnimInstance()
+				&& Character->GetMesh()->GetAnimInstance()->IsSlotActive(TEXT("DefaultSlot")))
+			{
+				return true;
 			}
 			if (ASC->TryActivateFirstAbilityByInputTag(RpgGameplayTags::InputTag_Ability_Traversal, true))
 			{
-				return;
+				return true;
 			}
 		}
-		Character->UnCrouch();
-		Character->Jump();
+	}
+	return false;
+}
+
+void URpgPawnGameplayComponent::Input_Jump(const FInputActionValue& InputActionValue)
+{
+	if (!TryContextualTraversal())
+	{
+		if (ARpgCharacter* Character = GetPawn<ARpgCharacter>())
+		{
+			Character->UnCrouch();
+			Character->Jump();
+		}
+	}
+}
+
+void URpgPawnGameplayComponent::Input_JumpHeld(const FInputActionValue& InputActionValue)
+{
+	// GASP's Down trigger reports Triggered while held; the RPG Pressed/Released action reports Ongoing.
+	// Retry for either configuration, but never on the Released trigger's zero-value event.
+	if (InputActionValue.Get<bool>())
+	{
+		TryContextualTraversal();
 	}
 }
 
