@@ -11,6 +11,7 @@ class URpgInputConfig;
 class URpgAbilitySet;
 class URpgAbilityTagRelationshipMapping;
 class URpgPlayerInventoryLayoutDefinition;
+class URpgRuntimeRetargetProfile;
 /**
  * 
  */
@@ -51,4 +52,8 @@ public:
 	 */
 	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Rpg|Inventory")
 	TObjectPtr<const URpgPlayerInventoryLayoutDefinition> InventoryLayoutDefinition;
+
+	/** Optional static cosmetic appearance consumed by a RuntimeRetarget component on this pawn class; null retains the gameplay mesh. */
+	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Rpg|Appearance")
+	TObjectPtr<const URpgRuntimeRetargetProfile> RuntimeRetargetProfile;
 };

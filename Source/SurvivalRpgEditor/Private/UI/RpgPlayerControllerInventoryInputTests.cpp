@@ -24,7 +24,7 @@
 #include "Misc/AutomationTest.h"
 #include "Modules/ModuleManager.h"
 
-namespace
+namespace RpgPlayerControllerInventoryInputTests
 {
 	constexpr TCHAR PlayerControllerBlueprintPath[] =
 		TEXT("/Game/SurvivalRpg/Core/Player/BP_Rpg_PlayerController.BP_Rpg_PlayerController");
@@ -134,6 +134,7 @@ IMPLEMENT_SIMPLE_AUTOMATION_TEST(
 bool FRpgPlayerControllerInventoryDebugHarnessRetiredAssetTest::RunTest(
 	const FString& Parameters)
 {
+	using namespace RpgPlayerControllerInventoryInputTests;
 	UBlueprint* PlayerControllerBlueprint =
 		LoadObject<UBlueprint>(nullptr, PlayerControllerBlueprintPath);
 	if (!TestNotNull(
@@ -231,6 +232,7 @@ IMPLEMENT_SIMPLE_AUTOMATION_TEST(
 
 bool FRpgPlayerControllerInventoryInputAssetTest::RunTest(const FString& Parameters)
 {
+	using namespace RpgPlayerControllerInventoryInputTests;
 	const UInputAction* InventoryAction =
 		LoadObject<UInputAction>(nullptr, InventoryInputActionPath);
 	const UInputAction* MenuAction =
@@ -458,6 +460,7 @@ IMPLEMENT_SIMPLE_AUTOMATION_TEST(
 
 bool FRpgPlayerHudMappingCompositionAuthorityTest::RunTest(const FString& Parameters)
 {
+	using namespace RpgPlayerControllerInventoryInputTests;
 	const UInputMappingContext* PlayerHudContext =
 		LoadObject<UInputMappingContext>(nullptr, PlayerHudMappingContextPath);
 	const UBlueprint* PrototypeExperienceBlueprint =
