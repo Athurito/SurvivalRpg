@@ -34,6 +34,7 @@ public class SurvivalRpg : ModuleRules
 		PrivateDependencyModuleNames.AddRange(
 			new string[]
 			{
+				"AnimationWarpingRuntime",
 				"CommonInput",
 				"DeveloperSettings",
 				"EnhancedInput",

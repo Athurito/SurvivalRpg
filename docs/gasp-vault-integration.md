@@ -1,6 +1,6 @@
 # GASP grounded Vault integration
 
-This slice extends the existing CMC traversal Experience with the three original grounded Vault variants. The gameplay mesh remains the UEFN mannequin. Hurdle, additional visible skeletons and Mover remain separate integration steps.
+This slice extends the existing CMC traversal Experience with the three original grounded Vault variants. The gameplay mesh remains the UEFN mannequin. Grounded Hurdle follows in [its own integration slice](gasp-hurdle-integration.md); additional visible skeletons and Mover remain separate steps.
 
 ## Source behavior and ownership
 
