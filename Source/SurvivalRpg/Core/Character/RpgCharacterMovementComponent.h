@@ -47,18 +47,11 @@ public:
 	UFUNCTION(BlueprintCallable, Category = "Rpg|CharacterMovement")
 	const FRpgCharacterGroundInfo& GetGroundInfo();
 
-	void SetReplicatedAcceleration(const FVector& InAcceleration);
-
 	//~UMovementComponent interface
 	virtual FRotator GetDeltaRotation(float DeltaTime) const override;
 	virtual float GetMaxSpeed() const override;
 	//~End of UMovementComponent interface
 protected:
-	virtual void SimulateMovement(float DeltaTime) override;
-protected:
 	// Cached ground info for the character.  Do not access this directly!  It's only updated when accessed via GetGroundInfo().
 	FRpgCharacterGroundInfo CachedGroundInfo;
-
-	UPROPERTY(Transient)
-	bool bHasReplicatedAcceleration = false;
 };
