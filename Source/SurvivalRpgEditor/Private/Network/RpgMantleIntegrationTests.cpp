@@ -905,6 +905,20 @@ NETWORK_TEST_CLASS(GaspMantleExperiencePIE, "SurvivalRpg.GASP.Mantle")
 				{ return HasCleanMantleState(FindCharacter(State.World, SubjectId)) && Grounded(FindCharacter(State.World, SubjectId)); }, Timeout())
 			.UntilClient(TEXT("Cancellation reconciles the predicted owner without residual root motion"), 0, [this](FState& State)
 				{ return HasCleanMantleState(FindCharacter(State.World, SubjectId)) && Grounded(FindCharacter(State.World, SubjectId)); }, Timeout())
+			.ThenClient(TEXT("Turn the ordinary view after cancellation released traversal rotation"), 0, [](FState& State)
+			{
+				ARpgCharacter* Character = LocalCharacter(State.World);
+				if (AController* Controller = Character ? Character->GetController() : nullptr)
+				{
+					Controller->SetControlRotation(FRotator(0.0, 35.0, 0.0));
+				}
+			})
+			.UntilClient(TEXT("Normal pawn facing follows the view again after cancellation"), 0, [this](FState& State)
+			{
+				ARpgCharacter* Character = FindCharacter(State.World, SubjectId);
+				return Character && HasCleanMantleState(Character)
+					&& FMath::Abs(FMath::FindDeltaAngleDegrees(Character->GetActorRotation().Yaw, 35.0)) < 1.0;
+			}, Timeout())
 			.ThenServer(TEXT("Prepare a mantle interrupted by final death"), [this](FState& State) { PositionAtEntry(State.World, SubjectId); })
 			.UntilClient(TEXT("Owner can restart after cancellation"), 0, [this](FState& State) { return ReadyAtEntry(State.World, SubjectId); }, Timeout())
 			.ThenClients(TEXT("Remember persistent ASC and avatar before death"), [this](FState& State)
@@ -1060,6 +1074,7 @@ NETWORK_TEST_CLASS(GaspMantleAuthoredMapPIE, "SurvivalRpg.GASP.Mantle")
 	FPrimaryAssetId OriginalExperience;
 	TWeakObjectPtr<UWorld> ServerWorld;
 	TWeakObjectPtr<UWorld> ClientWorld;
+	TWeakObjectPtr<UWorld> ObserverWorld;
 	TWeakObjectPtr<UPrimitiveComponent> Obstacle;
 	FDelegateHandle TickHandle;
 	struct FHandoffObservation
@@ -1075,11 +1090,33 @@ NETWORK_TEST_CLASS(GaspMantleAuthoredMapPIE, "SurvivalRpg.GASP.Mantle")
 	};
 	FHandoffObservation OwnerHandoff;
 	FHandoffObservation ServerHandoff;
+	struct FFacingObservation
+	{
+		TWeakObjectPtr<UAnimMontage> Montage;
+		float LateWarpTime = -1.0f;
+		float FinalWarpEndTime = -1.0f;
+		float WarpYaw = 0.0f;
+		float BestLateWarpError = 180.0f;
+		float LateActorYaw = 0.0f;
+		float LateControlYaw = 0.0f;
+		float MaximumPostWarpError = 0.0f;
+		int32 PostWarpSamples = 0;
+		bool bHasWarpTarget = false;
+		bool bSawRootMotionLease = false;
+		bool bLanded = false;
+		bool bRestoredFacing = false;
+	};
+	FFacingObservation OwnerFacing;
+	FFacingObservation ServerFacing;
+	FFacingObservation ObserverFacing;
 	FVector SpawnLocation = FVector::ZeroVector;
 	FBox ObstacleBounds{ForceInit};
 	double AttemptStart = 0.0;
 	double ContactStart = -1.0;
 	float LateralOffset = 0.0f;
+	float AngledApproachYaw = 0.0f;
+	float SpacePressActorYaw = 0.0f;
+	float MaximumControlYawError = 0.0f;
 	float MaximumApproachSpeed = 0.0f;
 	float SpacePressDistance = 0.0f;
 	float SpacePressSpeed = 0.0f;
@@ -1105,6 +1142,7 @@ NETWORK_TEST_CLASS(GaspMantleAuthoredMapPIE, "SurvivalRpg.GASP.Mantle")
 	bool bReleasedMovement = false;
 	bool bReportedWait = false;
 	bool bUseHost = false;
+	bool bSetAngledHeading = false;
 
 	BEFORE_EACH()
 	{
@@ -1132,9 +1170,12 @@ NETWORK_TEST_CLASS(GaspMantleAuthoredMapPIE, "SurvivalRpg.GASP.Mantle")
 	TEST_METHOD(ListenServerHostRunsAndTraverses) { QueueApproach(0.0f, false, false, true); }
 	TEST_METHOD(HeldMovementContinuesAcrossMantleHandoff) { QueueApproach(0.0f, false, false, false, true); }
 	TEST_METHOD(ListenServerHostMaintainsMovementAcrossMantleHandoff) { QueueApproach(0.0f, false, false, true, true); }
+	TEST_METHOD(PositiveAngledApproachAlignsBodyWithoutTurningView) { QueueApproach(-130.0f, false, false, false, true, 35.0f); }
+	TEST_METHOD(NegativeAngledApproachAlignsBodyWithoutTurningView) { QueueApproach(130.0f, false, false, false, true, -35.0f); }
+	TEST_METHOD(ListenServerAngledApproachAlignsBodyWithoutTurningView) { QueueApproach(-130.0f, false, false, true, true, 35.0f); }
 
 	void QueueApproach(float InLateralOffset, bool bInStopAtContact, bool bInHoldBeforeReach, bool bInUseHost = false,
-		bool bInHoldMovementThroughHandoff = false)
+		bool bInHoldMovementThroughHandoff = false, float InAngledApproachYaw = 0.0f)
 	{
 		if (!bConfigured) return;
 		LateralOffset = InLateralOffset;
@@ -1142,12 +1183,13 @@ NETWORK_TEST_CLASS(GaspMantleAuthoredMapPIE, "SurvivalRpg.GASP.Mantle")
 		bHoldBeforeReach = bInHoldBeforeReach;
 		bUseHost = bInUseHost;
 		bHoldMovementThroughHandoff = bInHoldMovementThroughHandoff;
+		AngledApproachYaw = InAngledApproachYaw;
 		TestCommandBuilder
 			.Do(TEXT("Play the saved mantle map with its own GameMode and Experience"), [this]()
 			{
 				PlaySettings.Reset(NewObject<ULevelEditorPlaySettings>());
 				PlaySettings->SetPlayNetMode(EPlayNetMode::PIE_ListenServer);
-				PlaySettings->SetPlayNumberOfClients(bUseHost ? 1 : 2);
+				PlaySettings->SetPlayNumberOfClients(AngledApproachYaw != 0.0f ? (bUseHost ? 2 : 3) : (bUseHost ? 1 : 2));
 				PlaySettings->SetRunUnderOneProcess(true);
 				PlaySettings->bLaunchSeparateServer = false;
 				PlaySettings->GameGetsMouseControl = false;
@@ -1170,7 +1212,9 @@ NETWORK_TEST_CLASS(GaspMantleAuthoredMapPIE, "SurvivalRpg.GASP.Mantle")
 					|| !RpgMantleIntegrationTests::MantleSpec(Character)) return false;
 				SubjectId = Character->GetPlayerState()->GetPlayerId();
 				return RpgMantleIntegrationTests::Ready(ServerWorld.Get(), Authority())
-					&& RpgMantleIntegrationTests::MantleSpec(Authority()) && Isolation.IsIsolated(ServerWorld.Get());
+					&& RpgMantleIntegrationTests::MantleSpec(Authority()) && Isolation.IsIsolated(ServerWorld.Get())
+					&& (AngledApproachYaw == 0.0f || (RpgMantleIntegrationTests::Ready(ObserverWorld.Get(), Observer())
+						&& Observer()->GetLocalRole() == ROLE_SimulatedProxy));
 			}, FTimespan::FromSeconds(60.0))
 			.Then(TEXT("Choose the authored obstacle in the player's lane and begin real W input"), [this]()
 			{
@@ -1208,6 +1252,11 @@ NETWORK_TEST_CLASS(GaspMantleAuthoredMapPIE, "SurvivalRpg.GASP.Mantle")
 				return !bHoldMovementThroughHandoff
 					|| (OwnerHandoff.bContinuedMoving && ServerHandoff.bContinuedMoving && bReleasedMovement);
 			}, FTimespan::FromSeconds(3.0))
+			.Until(TEXT("Angled traversal lands on every peer and ordinary facing resumes without changing the view"), [this]()
+			{
+				return AngledApproachYaw == 0.0f || (OwnerFacing.bLanded && ServerFacing.bLanded && ObserverFacing.bLanded
+					&& OwnerFacing.bRestoredFacing && ServerFacing.bRestoredFacing && ObserverFacing.bRestoredFacing);
+			}, FTimespan::FromSeconds(5.0))
 			.Then(TEXT("The approach covered player input, speed, geometry and cleanup rather than forced candidate placement"), [this]()
 			{
 				ASSERT_THAT(IsTrue(MaximumApproachSpeed > 100.0f));
@@ -1215,7 +1264,23 @@ NETWORK_TEST_CLASS(GaspMantleAuthoredMapPIE, "SurvivalRpg.GASP.Mantle")
 				if (!bStopAtContact) ASSERT_THAT(IsTrue(SpacePressSpeed > 100.0f));
 				if (bStopAtContact) ASSERT_THAT(IsTrue(ContactStart >= 0.0));
 				if (bHoldBeforeReach) ASSERT_THAT(IsTrue(bSawFallbackJump));
-				if (LateralOffset != 0.0f) ASSERT_THAT(IsTrue(FMath::Abs(SpacePressLateralOffset) > 80.0f));
+				if (LateralOffset != 0.0f && AngledApproachYaw == 0.0f) ASSERT_THAT(IsTrue(FMath::Abs(SpacePressLateralOffset) > 80.0f));
+				if (AngledApproachYaw != 0.0f)
+				{
+					ASSERT_THAT(IsTrue(FMath::Abs(SpacePressActorYaw) >= 25.0f));
+					ASSERT_THAT(IsTrue(MaximumControlYawError < 1.0f));
+					ASSERT_THAT(IsTrue(OwnerFacing.PostWarpSamples > 0 && ServerFacing.PostWarpSamples > 0));
+					for (const FFacingObservation* Facing : {&OwnerFacing, &ServerFacing, &ObserverFacing})
+					{
+						ASSERT_THAT(IsTrue(Facing->bSawRootMotionLease));
+						ASSERT_THAT(IsTrue(Facing->bHasWarpTarget && Facing->BestLateWarpError < 8.0f));
+						if (Facing->PostWarpSamples > 0) ASSERT_THAT(IsTrue(Facing->MaximumPostWarpError < 8.0f));
+						UE_LOG(LogTemp, Display, TEXT("RpgMantleAngledResult host=%d requestedYaw=%.2f pressActorYaw=%.2f controlError=%.2f warpYaw=%.2f lateActorYaw=%.2f lateControlYaw=%.2f alignmentError=%.2f postWarpSamples=%d postWarpError=%.2f landed=%d facingRestored=%d"),
+							bUseHost, AngledApproachYaw, SpacePressActorYaw, MaximumControlYawError, Facing->WarpYaw,
+							Facing->LateActorYaw, Facing->LateControlYaw, Facing->BestLateWarpError, Facing->PostWarpSamples,
+							Facing->MaximumPostWarpError, Facing->bLanded, Facing->bRestoredFacing);
+					}
+				}
 				if (bHoldMovementThroughHandoff)
 				{
 					// Sample the end delegate, before the next movement tick can hide a cleanup-induced full stop.
@@ -1237,12 +1302,18 @@ NETWORK_TEST_CLASS(GaspMantleAuthoredMapPIE, "SurvivalRpg.GASP.Mantle")
 			if (Context.WorldType != EWorldType::PIE || !IsValid(World)
 				|| !World->GetMapName().Contains(TEXT("Lvl_RpgGaspMantle"))) continue;
 			if (World->GetNetMode() == NM_ListenServer) ServerWorld = World;
-			if (World->GetNetMode() == NM_Client) ClientWorld = World;
+			if (World->GetNetMode() == NM_Client)
+			{
+				if (!ClientWorld.IsValid()) ClientWorld = World;
+				else if (World != ClientWorld.Get() && !ObserverWorld.IsValid()) ObserverWorld = World;
+			}
 		}
+		if (bUseHost && AngledApproachYaw != 0.0f) ObserverWorld = ClientWorld;
 	}
 	UWorld* InputWorld() const { return bUseHost ? ServerWorld.Get() : ClientWorld.Get(); }
 	ARpgCharacter* Owner() const { return RpgMantleIntegrationTests::LocalCharacter(InputWorld()); }
 	ARpgCharacter* Authority() const { return RpgMantleIntegrationTests::FindCharacter(ServerWorld.Get(), SubjectId); }
+	ARpgCharacter* Observer() const { return RpgMantleIntegrationTests::FindCharacter(ObserverWorld.Get(), SubjectId); }
 	void Key(FKey InKey, bool bPressed)
 	{
 		APlayerController* Controller = Owner() ? Cast<APlayerController>(Owner()->GetController()) : nullptr;
@@ -1277,12 +1348,20 @@ NETWORK_TEST_CLASS(GaspMantleAuthoredMapPIE, "SurvivalRpg.GASP.Mantle")
 		{
 			Observe(Authority(), false);
 			ObserveContinuation(Authority(), ServerHandoff);
+			ObserveFacing(Authority(), ServerFacing);
 		}
+		if (World == ObserverWorld.Get()) ObserveFacing(Observer(), ObserverFacing);
 		if (World != InputWorld()) return;
 		ARpgCharacter* Character = Owner();
 		if (!Character) return;
 		Observe(Character, true);
 		ObserveContinuation(Character, OwnerHandoff);
+		ObserveFacing(Character, OwnerFacing);
+		if (bSetAngledHeading && Character->GetController())
+		{
+			MaximumControlYawError = FMath::Max(MaximumControlYawError,
+				static_cast<float>(FMath::Abs(FMath::FindDeltaAngleDegrees(Character->GetController()->GetControlRotation().Yaw, static_cast<double>(AngledApproachYaw)))));
+		}
 		if (!bReportedWait && World->GetTimeSeconds() - AttemptStart >= 5.0)
 		{
 			Report(TEXT("five_second_checkpoint"));
@@ -1318,8 +1397,19 @@ NETWORK_TEST_CLASS(GaspMantleAuthoredMapPIE, "SurvivalRpg.GASP.Mantle")
 		if (Controller)
 		{
 			// Aim while walking; there is no pawn teleport, forced velocity or direct movement-component call.
-			const FVector Direction(250.0, SpawnLocation.Y + LateralOffset - Position.Y, 0.0);
-			Controller->SetControlRotation(Direction.Rotation());
+			if (AngledApproachYaw != 0.0f && Distance <= 220.0f)
+			{
+				if (!bSetAngledHeading)
+				{
+					Controller->SetControlRotation(FRotator(0.0, AngledApproachYaw, 0.0));
+					bSetAngledHeading = true;
+				}
+			}
+			else if (!bSetAngledHeading)
+			{
+				const FVector Direction(250.0, SpawnLocation.Y + LateralOffset - Position.Y, 0.0);
+				Controller->SetControlRotation(Direction.Rotation());
+			}
 		}
 		if (bPressedSpace) return;
 		if (bStopAtContact)
@@ -1338,6 +1428,7 @@ NETWORK_TEST_CLASS(GaspMantleAuthoredMapPIE, "SurvivalRpg.GASP.Mantle")
 		SpacePressDistance = Distance;
 		SpacePressSpeed = Speed;
 		SpacePressLateralOffset = static_cast<float>(Position.Y - ObstacleBounds.GetCenter().Y);
+		SpacePressActorYaw = static_cast<float>(FRotator::NormalizeAxis(Character->GetActorRotation().Yaw));
 		bPressedSpace = true;
 		Report(TEXT("space_pressed"));
 		Key(EKeys::SpaceBar, true);
@@ -1371,6 +1462,71 @@ NETWORK_TEST_CLASS(GaspMantleAuthoredMapPIE, "SurvivalRpg.GASP.Mantle")
 		Observation.bContinuedMoving = FinishedOnObstacle(Character)
 			&& Character->GetActorLocation().X > Observation.Location.X + 1.0 && Character->GetVelocity().X > 1.0;
 	}
+	void ObserveFacing(ARpgCharacter* Character, FFacingObservation& Observation)
+	{
+		if (AngledApproachYaw == 0.0f || !Character) return;
+		const URpgCharacterMovementComponent* Movement = Cast<URpgCharacterMovementComponent>(Character->GetCharacterMovement());
+		if (!Movement) return;
+		const bool bHasLease = Movement->GetMantleCollisionComponent() != nullptr;
+		Observation.bLanded |= FinishedOnObstacle(Character);
+		Observation.bRestoredFacing |= Observation.bLanded && !bHasLease
+			&& FMath::Abs(FMath::FindDeltaAngleDegrees(Character->GetActorRotation().Yaw, static_cast<double>(AngledApproachYaw))) < 5.0;
+		UAnimInstance* Animation = Character->GetMesh() ? Character->GetMesh()->GetAnimInstance() : nullptr;
+		UAnimMontage* Montage = Animation ? Animation->GetCurrentActiveMontage() : nullptr;
+		if (!bHasLease || !Animation || !Montage || !Animation->Montage_IsPlaying(Montage)) return;
+		Observation.bSawRootMotionLease |= Character->IsPlayingRootMotion() && Movement->MovementMode == MOVE_Flying;
+		if (Observation.Montage.Get() != Montage)
+		{
+			Observation.Montage = Montage;
+			TArray<FMotionWarpingWindowData> Windows;
+			UMotionWarpingUtilities::GetMotionWarpingWindowsForWarpTargetFromAnimation(Montage, TEXT("FrontLedge"), Windows);
+			float LatestEnd = -1.0f;
+			for (const FMotionWarpingWindowData& Window : Windows)
+			{
+				if (Window.EndTime > LatestEnd)
+				{
+					LatestEnd = Window.EndTime;
+					Observation.FinalWarpEndTime = Window.EndTime;
+					Observation.LateWarpTime = FMath::Lerp(Window.StartTime, Window.EndTime, 0.8f);
+				}
+			}
+		}
+		const UMotionWarpingComponent* Warping = Character->FindComponentByClass<UMotionWarpingComponent>();
+		const FMotionWarpingTarget* Target = Warping ? Warping->FindWarpTarget(TEXT("FrontLedge")) : nullptr;
+		if (Target)
+		{
+			Observation.WarpYaw = static_cast<float>(Target->Rotator().Yaw);
+			Observation.bHasWarpTarget = true;
+		}
+		else if (Character->GetLocalRole() == ROLE_SimulatedProxy && ServerFacing.bHasWarpTarget)
+		{
+			// Simulated proxies replay server root motion, without running a local GAS query or owning warp targets.
+			Observation.WarpYaw = ServerFacing.WarpYaw;
+			Observation.bHasWarpTarget = true;
+		}
+		if (!Observation.bHasWarpTarget || Observation.LateWarpTime < 0.0f
+			|| Animation->Montage_GetPosition(Montage) < Observation.LateWarpTime) return;
+		const float Error = static_cast<float>(FMath::Abs(FMath::FindDeltaAngleDegrees(
+			Character->GetActorRotation().Yaw, static_cast<double>(Observation.WarpYaw))));
+		if (Observation.FinalWarpEndTime >= 0.0f && Animation->Montage_GetPosition(Montage) > Observation.FinalWarpEndTime)
+		{
+			++Observation.PostWarpSamples;
+			Observation.MaximumPostWarpError = FMath::Max(Observation.MaximumPostWarpError, Error);
+			UE_LOG(LogTemp, Display, TEXT("RpgMantleAngledAfterWarp role=%d requestedYaw=%.2f actorYaw=%.2f warpYaw=%.2f montage=%.3f warpEnd=%.3f error=%.2f"),
+				static_cast<int32>(Character->GetLocalRole()), AngledApproachYaw, Character->GetActorRotation().Yaw,
+				Observation.WarpYaw, Animation->Montage_GetPosition(Montage), Observation.FinalWarpEndTime, Error);
+		}
+		if (Error < Observation.BestLateWarpError)
+		{
+			Observation.BestLateWarpError = Error;
+			Observation.LateActorYaw = static_cast<float>(Character->GetActorRotation().Yaw);
+			Observation.LateControlYaw = Character->GetController()
+				? static_cast<float>(Character->GetController()->GetControlRotation().Yaw) : AngledApproachYaw;
+			UE_LOG(LogTemp, Display, TEXT("RpgMantleAngledFacing role=%d requestedYaw=%.2f actorYaw=%.2f controlYaw=%.2f warpYaw=%.2f montage=%.3f lateWindow=%.3f error=%.2f"),
+				static_cast<int32>(Character->GetLocalRole()), AngledApproachYaw, Observation.LateActorYaw,
+				Observation.LateControlYaw, Observation.WarpYaw, Animation->Montage_GetPosition(Montage), Observation.LateWarpTime, Error);
+		}
+	}
 	void Observe(ARpgCharacter* Character, bool bOwner)
 	{
 		if (!Character) return;
@@ -1402,7 +1558,8 @@ NETWORK_TEST_CLASS(GaspMantleAuthoredMapPIE, "SurvivalRpg.GASP.Mantle")
 		const URpgCharacterMovementComponent* Movement = Cast<URpgCharacterMovementComponent>(Character->GetCharacterMovement());
 		const FVector Position = Character->GetActorLocation();
 		const double FeetZ = Position.Z - Character->GetCapsuleComponent()->GetScaledCapsuleHalfHeight();
-		return Spec && !Spec->IsActive() && Movement && !Movement->GetMantleCollisionComponent()
+		const bool bAbilityFinished = Spec ? !Spec->IsActive() : Character->GetLocalRole() == ROLE_SimulatedProxy;
+		return bAbilityFinished && Movement && !Movement->GetMantleCollisionComponent()
 			&& Position.X > ObstacleBounds.Min.X && Position.X < ObstacleBounds.Max.X
 			&& Position.Y > ObstacleBounds.Min.Y && Position.Y < ObstacleBounds.Max.Y
 			&& FMath::Abs(FeetZ - ObstacleBounds.Max.Z) < 8.0;
@@ -1415,7 +1572,7 @@ NETWORK_TEST_CLASS(GaspMantleAuthoredMapPIE, "SurvivalRpg.GASP.Mantle")
 			Character ? *Character->GetActorLocation().ToCompactString() : TEXT("None"), MaximumApproachSpeed,
 			SpacePressSpeed, SpacePressDistance, SpacePressLateralOffset, bSawFallbackJump, bSawOwnerRootMotion, bSawServerRootMotion,
 			FirstOwnerMontageTime, LastOwnerMontageTime, FirstServerMontageTime, LastServerMontageTime);
-		if (Character && FCString::Strcmp(Phase, TEXT("space_pressed")) == 0)
+		if (AngledApproachYaw == 0.0f && Character && FCString::Strcmp(Phase, TEXT("space_pressed")) == 0)
 		{
 			URpgTraversalQueryComponent* Query = Character->FindComponentByClass<URpgTraversalQueryComponent>();
 			const URpgGameplayAbility_Mantle* Definition = RpgMantleIntegrationTests::AbilityDefinition();

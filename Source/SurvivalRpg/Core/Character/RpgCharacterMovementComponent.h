@@ -52,6 +52,9 @@ public:
 	/** Current obstacle for this component's mantle collision lease, or null while ordinary movement owns collision. */
 	UPrimitiveComponent* GetMantleCollisionComponent() const { return MantleCollisionComponent; }
 
+	/** Root-motion rotation owns the same validated mantle lifetime on the predicting owner, server and simulated proxies. */
+	bool IsMantleControllingRotation() const { return MantleCollisionComponent != nullptr; }
+
 	virtual void GetLifetimeReplicatedProps(TArray<FLifetimeProperty>& OutLifetimeProps) const override;
 	virtual void EndPlay(const EEndPlayReason::Type EndPlayReason) override;
 
@@ -64,6 +67,9 @@ public:
 	virtual float GetMaxSpeed() const override;
 	//~End of UMovementComponent interface
 protected:
+	/** Preserves authored rotation warping during mantle even when ordinary locomotion enables physics rotation. */
+	virtual void PhysicsRotation(float DeltaTime) override;
+
 	// Cached ground info for the character.  Do not access this directly!  It's only updated when accessed via GetGroundInfo().
 	FRpgCharacterGroundInfo CachedGroundInfo;
 

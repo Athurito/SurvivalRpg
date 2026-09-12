@@ -79,6 +79,16 @@ const FRpgCharacterGroundInfo& URpgCharacterMovementComponent::GetGroundInfo()
 	return CachedGroundInfo;
 }
 
+void URpgCharacterMovementComponent::PhysicsRotation(float DeltaTime)
+{
+	// Pawn::FaceRotation is gated separately: controller updates and saved-move replay can call it outside CMC physics.
+	// Reuse the ability's existing lease so cancellation, rejection, death and replication release both policies together.
+	if (!IsMantleControllingRotation())
+	{
+		Super::PhysicsRotation(DeltaTime);
+	}
+}
+
 FRotator URpgCharacterMovementComponent::GetDeltaRotation(float DeltaTime) const
 {
 	if (UAbilitySystemComponent* ASC = UAbilitySystemGlobals::GetAbilitySystemComponentFromActor(GetOwner()))
