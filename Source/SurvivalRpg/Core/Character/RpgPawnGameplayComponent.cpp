@@ -519,6 +519,21 @@ void URpgPawnGameplayComponent::Input_Jump(const FInputActionValue& InputActionV
 {
 	if (ARpgCharacter* Character = GetPawn<ARpgCharacter>())
 	{
+		if (URpgAbilitySystemComponent* ASC = Character->GetRpgAbilitySystemComponent())
+		{
+			// Only Experiences granting traversal participate. Repeated presses must not queue a jump on landing.
+			for (const FGameplayAbilitySpec& Spec : ASC->GetActivatableAbilities())
+			{
+				if (Spec.IsActive() && Spec.GetDynamicSpecSourceTags().HasTagExact(RpgGameplayTags::InputTag_Ability_Traversal))
+				{
+					return;
+				}
+			}
+			if (ASC->TryActivateFirstAbilityByInputTag(RpgGameplayTags::InputTag_Ability_Traversal, true))
+			{
+				return;
+			}
+		}
 		Character->UnCrouch();
 		Character->Jump();
 	}

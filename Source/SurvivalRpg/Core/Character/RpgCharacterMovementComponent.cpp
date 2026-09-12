@@ -8,6 +8,7 @@
 #include "Components/CapsuleComponent.h"
 #include "NativeGameplayTags.h"
 #include "GameFramework/Character.h"
+#include "Net/UnrealNetwork.h"
 
 
 UE_DEFINE_GAMEPLAY_TAG(TAG_Gameplay_MovementStopped, "Gameplay.MovementStopped");
@@ -20,7 +21,8 @@ namespace RpgCharacter
 
 URpgCharacterMovementComponent::URpgCharacterMovementComponent(const FObjectInitializer& ObjectInitializer) : Super(ObjectInitializer)
 {
-	
+	// Character still owns ordinary movement replication; this component adds only the simulated mantle collision lease.
+	SetIsReplicatedByDefault(true);
 }
 
 bool URpgCharacterMovementComponent::CanAttemptJump() const
@@ -101,4 +103,48 @@ float URpgCharacterMovementComponent::GetMaxSpeed() const
 	}
 
 	return Super::GetMaxSpeed();
+}
+
+void URpgCharacterMovementComponent::GetLifetimeReplicatedProps(TArray<FLifetimeProperty>& OutLifetimeProps) const
+{
+	Super::GetLifetimeReplicatedProps(OutLifetimeProps);
+	DOREPLIFETIME_CONDITION(URpgCharacterMovementComponent, MantleCollisionComponent, COND_SimulatedOnly);
+}
+
+bool URpgCharacterMovementComponent::BeginMantleCollisionIgnore(UPrimitiveComponent* Component)
+{
+	if (!CharacterOwner || (!CharacterOwner->HasAuthority() && !CharacterOwner->IsLocallyControlled())
+		|| !IsValid(Component) || MantleCollisionComponent) return false;
+	MantleCollisionComponent = Component;
+	OnRep_MantleCollisionComponent();
+	return true;
+}
+
+void URpgCharacterMovementComponent::EndMantleCollisionIgnore(UPrimitiveComponent* ExpectedComponent)
+{
+	// A destroyed obstacle disappears from the ability's weak reference before this replicated pointer is collected.
+	// Permit that stale lease to clear, but never release a valid replacement belonging to another activation.
+	if (MantleCollisionComponent != ExpectedComponent && (ExpectedComponent || IsValid(MantleCollisionComponent))) return;
+	MantleCollisionComponent = nullptr;
+	OnRep_MantleCollisionComponent();
+}
+
+void URpgCharacterMovementComponent::OnRep_MantleCollisionComponent()
+{
+	UCapsuleComponent* Capsule = CharacterOwner ? CharacterOwner->GetCapsuleComponent() : nullptr;
+	if (Capsule && bAddedMantleCollisionIgnore && AppliedMantleCollisionComponent.IsValid())
+	{
+		Capsule->IgnoreComponentWhenMoving(AppliedMantleCollisionComponent.Get(), false);
+	}
+	AppliedMantleCollisionComponent = MantleCollisionComponent;
+	bAddedMantleCollisionIgnore = Capsule && MantleCollisionComponent
+		&& !Capsule->GetMoveIgnoreComponents().Contains(MantleCollisionComponent);
+	if (bAddedMantleCollisionIgnore) Capsule->IgnoreComponentWhenMoving(MantleCollisionComponent, true);
+}
+
+void URpgCharacterMovementComponent::EndPlay(const EEndPlayReason::Type EndPlayReason)
+{
+	MantleCollisionComponent = nullptr;
+	OnRep_MantleCollisionComponent();
+	Super::EndPlay(EndPlayReason);
 }

@@ -43,6 +43,18 @@ public:
 	
 	virtual bool CanAttemptJump() const override;
 
+	/** Acquires one validated mantle obstacle ignore; server state replicates to simulated proxies only. */
+	bool BeginMantleCollisionIgnore(UPrimitiveComponent* Component);
+
+	/** Releases only the matching mantle obstacle; existing unrelated collision ignores are preserved. */
+	void EndMantleCollisionIgnore(UPrimitiveComponent* ExpectedComponent);
+
+	/** Current obstacle for this component's mantle collision lease, or null while ordinary movement owns collision. */
+	UPrimitiveComponent* GetMantleCollisionComponent() const { return MantleCollisionComponent; }
+
+	virtual void GetLifetimeReplicatedProps(TArray<FLifetimeProperty>& OutLifetimeProps) const override;
+	virtual void EndPlay(const EEndPlayReason::Type EndPlayReason) override;
+
 	// Returns the current ground info.  Calling this will update the ground info if it's out of date.
 	UFUNCTION(BlueprintCallable, Category = "Rpg|CharacterMovement")
 	const FRpgCharacterGroundInfo& GetGroundInfo();
@@ -54,4 +66,15 @@ public:
 protected:
 	// Cached ground info for the character.  Do not access this directly!  It's only updated when accessed via GetGroundInfo().
 	FRpgCharacterGroundInfo CachedGroundInfo;
+
+private:
+	UFUNCTION()
+	void OnRep_MantleCollisionComponent();
+
+	/** Server-selected collision exception for simulated root-motion physics; the owning client predicts its own lease. */
+	UPROPERTY(Transient, ReplicatedUsing = OnRep_MantleCollisionComponent)
+	TObjectPtr<UPrimitiveComponent> MantleCollisionComponent;
+
+	TWeakObjectPtr<UPrimitiveComponent> AppliedMantleCollisionComponent;
+	bool bAddedMantleCollisionIgnore = false;
 };
