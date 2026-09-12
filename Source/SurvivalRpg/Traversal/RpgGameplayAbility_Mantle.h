@@ -81,6 +81,9 @@ public:
 	virtual bool CanActivateAbility(const FGameplayAbilitySpecHandle Handle,
 		const FGameplayAbilityActorInfo* ActorInfo, const FGameplayTagContainer* SourceTags = nullptr,
 		const FGameplayTagContainer* TargetTags = nullptr, FGameplayTagContainer* OptionalRelevantTags = nullptr) const override;
+	/** Records gameplay cancellation before montage-task callbacks can report an ordinary blend-out end. */
+	virtual void CancelAbility(const FGameplayAbilitySpecHandle Handle, const FGameplayAbilityActorInfo* ActorInfo,
+		const FGameplayAbilityActivationInfo ActivationInfo, bool bReplicateCancelAbility) override;
 
 protected:
 	virtual void ActivateAbility(const FGameplayAbilitySpecHandle Handle, const FGameplayAbilityActorInfo* ActorInfo,
@@ -96,7 +99,7 @@ private:
 	void BeginMantle(const FRpgTraversalQueryResult& Result);
 	bool ValidateTraversal(const ACharacter& Character, const FRpgTraversalQueryResult& Result) const;
 	void CancelCurrentMantle();
-	void CleanupMovement();
+	void CleanupMovement(bool bWasCancelled);
 	bool IsCapsuleClear(const ACharacter& Character, const FVector& Location) const;
 	bool RestoreSafeCapsuleLocation(ACharacter& Character) const;
 
@@ -115,7 +118,10 @@ private:
 	FVector EntryLocation = FVector::ZeroVector;
 	FDelegateHandle TargetDataDelegate;
 	FTimerHandle TimeoutHandle;
+	int32 ActiveMontageInstanceId = INDEX_NONE;
+	float FinalWarpEndTime = 0.0f;
 	bool bOwnsMovement = false;
 	bool bEnding = false;
 	bool bReceivedTargetData = false;
+	bool bGameplayCancellationRequested = false;
 };

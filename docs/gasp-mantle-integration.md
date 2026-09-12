@@ -26,6 +26,14 @@ Landing derives from the selected clip’s final FrontLedge warp and root motion
 
 The ability owns only its temporary collision exception and FrontLedge warp. Movable, non-simulating source cubes are supported, but their transform and support must remain unchanged during the action. The CMC collision lease and MotionWarping targets replicate to simulated proxies; the owner predicts locally. Server movement correction remains enabled. Blocked landings, cancellation, death and collider destruction release state and recover a checked capsule position. Death or another movement owner retains its newer movement mode.
 
+The approach retains CMC velocity and acceleration when root motion takes over. A normal montage handoff also retains momentum when the same montage has finished its final warp, the capsule is clear, and the traversed collider provides walkable support. The concrete Ability routes the source notify's OnInterrupted callback to EndAbility; OnCancelled retains CancelAbility. Gameplay cancellation is recorded before GAS montage callbacks can report an ordinary interruption and remains a cancellation for GAS observers; cancellation, recovery and unsafe exits retain the previous stop behavior. Playback rate, source notifies and blend profiles remain unchanged.
+
+## Camera presentation
+
+The user's approved feel keeps GASP animation tempo and softens camera and movement transitions. CM_RpgGasp_Traversal inherits the existing RPG third-person camera and is selected only by the Mantle PawnData. Its designer-owned PositionDampingFactor is 20 rad/s, matching the uniform position damping in GASP's free-camera rigs. The existing RPG camera mode provides the reusable critical-spring mechanism. It follows the moving pivot while leaving view/control rotation immediate and applying camera collision afterward.
+
+The shared camera defaults to zero damping. Activation, target changes, explicit interpolation resets and target displacements greater than the configured 500 cm reset distance discard camera history. This is cosmetic state; it does not drive character movement, replication or montage speed.
+
 The warp includes GASP’s 0.5 cm ledge offset plus the existing mesh/capsule separation (CapsuleHalfHeight + BaseTranslationOffset.Z). The gameplay mesh transform and montage-only root-motion policy stay unchanged.
 
 Unreal MCP authors and validates the assets. CopyAnimationNotifies is an editor-only helper for copying exact event records and instanced notify objects between identical animation timelines; Python cannot write the protected Notifies array. It changes only the target and does not save automatically.
@@ -38,6 +46,8 @@ The three platforms inherit the original LevelBlock_Traversable, using its cube,
 
 The floor uses original LevelBlock and M_Grid with the GASP floor color. Original LevelVisuals supplies a matched sun, skylight, cubemap, fog and manual exposure configuration.
 
+This approved setup is the starting point for further prototype/test maps, as recorded in AGENTS.md. It is a readable test presentation, not the final dark-fantasy art direction.
+
 Run toward a platform and press Space, approach away from its center, or press Space while touching it. Hold Space well before reaching it to exercise an ordinary jump followed by a traversal retry on the same held key. Check both a single-player listen-server host and a remote client.
 
 ## Validation
@@ -46,8 +56,12 @@ The previous standing-only fixture teleported the pawn to a narrow valid entry a
 
 Focused cases cover running, lateral approach, collision contact, held-input retry and single-player listen-server host input. The network fixture retains server rejection, late join, cancellation, death/respawn, latency and collider destruction using source cubes and dynamic montage selection. Save isolation installs before GameMode initialization. CMC and combat regressions cover the accepted compositions.
 
-Validated on Unreal 5.8.2: the final SurvivalRpgEditor Win64 Development build passed, and the four owned Blueprints compiled with warnings treated as errors. All ten final automation tests passed: six authored-input/composition cases, the complete Mantle network lifecycle case, and three CMC/combat regressions. Gameplay coverage uses the 1 m platforms; the higher/cliff montage copies have asset parity coverage but still need dedicated gameplay cases. No packaged-build or dedicated-server validation is implied.
+Additional handoff cases hold W through the action on a remote owner and listen-server host. They sample velocity and acceleration directly from the ability-ended delegate, before a later movement tick could conceal a full stop, then require continued grounded forward movement. Pure camera tests cover direct-follow compatibility, resets, convergence, frame-rate agreement, a hitch and pause/resume.
 
-The fresh asset audit passed for 22 roots, 1,602 dependency packages, all fifteen montage pairs, the original executable query graph and chooser, and the owned database's exact BranchIn identities/ranges. Hash preservation checked all 7,579 existing content/plugin files and seven saves; only the five authorized pilot assets changed. No save was added or changed. Runs also reported voice-interface and temporary-world NetGUID warnings, plus a tick-setting warning on the unchanged respawn widget.
+Validated on Unreal 5.8.2: the final SurvivalRpgEditor Win64 Development build passed. The new camera and changed Ability compiled with warnings treated as errors. Fifteen automation tests passed: seven authored-input scenarios, three camera tests, two asset-composition checks, the complete Mantle network lifecycle, and two CMC/combat gameplay regressions. Gameplay coverage uses the 1 m platforms; the higher/cliff montage copies have asset parity coverage but still need dedicated gameplay cases. No packaged-build or dedicated-server validation is implied.
 
-Evidence is in Saved/GaspTraversalFix20260912: final-input-results.json, final-network-results.json, final-regression-results.json, build.log and fix-asset-audit.json. Source snapshots remain in Saved/GaspAssetFoundation20260910. The full temporary PoseSearch recovery asset is retained under Saved and has no runtime reference.
+The standing network fixture now synchronizes the server and owning controller's view heading with its prepared entry and waits for alignment. A pawn teleport alone did not reset the owner's view. An earlier run landed at the edge after respawn; the final run passed immediately after all seven input scenarios, with the original landing geometry assertions retained. Transform diagnostics record entry facing and warp targets without resampling the stateful query.
+
+The original asset audit passed for 22 roots, 1,602 dependency packages, all fifteen montage pairs, the original executable query graph and chooser, and the owned database's exact BranchIn identities/ranges. The transition follow-up checked hashes of 7,596 existing content/plugin files and seven saves: only the Mantle PawnData and Ability changed, with one new camera asset. Original animations, import content, the accepted baseline and saves remain unchanged. Runs also reported voice-interface and temporary-world NetGUID warnings, plus a tick-setting warning on the unchanged respawn widget.
+
+Transition evidence is in Saved/GaspMantleFeel20260912: input-final-results.json, input-camera-final-results.json, network-final-results.json, regression-final-results.json, build-final.log and preservation-final.json. The initial handoff failure and network reproduction are retained there. Original migration evidence remains in Saved/GaspTraversalFix20260912/fix-asset-audit.json and Saved/GaspAssetFoundation20260910. The full temporary PoseSearch recovery asset is retained under Saved and has no runtime reference.

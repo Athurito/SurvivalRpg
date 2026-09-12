@@ -38,6 +38,12 @@ Architecture guardrails:
 - Pair `$unreal-gasp-expert` with `$unreal-lyra-expert` when animation work touches PawnData, Experiences, character lifecycle, movement replication, GAS montages, equipment, death, or ragdoll.
 - Add `$survival-rpg-combat-foundation` when GASP work touches attacks, dodge, block, hit reactions, combat tags, montage notifies, or equipment-granted combat behavior.
 
+## Map presentation preference
+
+- For further prototype and test maps, use the approved GASP presentation in `Lvl_RpgGaspMantle` as the starting point: original project-local GASP blocks and floor/grid materials, with the matching LevelVisuals lighting, skylight, fog and exposure.
+- Keep lighting and exposure coordinated so surfaces and movement remain readable without overexposure. Reuse this setup for new test environments unless the user requests a different look; it is not the final dark-fantasy art direction.
+- The approved setup and asset ownership are documented in `docs/gasp-mantle-integration.md`.
+
 ## Documentation defaults
 
 Codex should add concise Unreal-style documentation comments by default when creating or modifying designer-facing or gameplay-facing APIs.

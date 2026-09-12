@@ -218,6 +218,9 @@ void URpgGameplayAbility_Mantle::ActivateAbility(const FGameplayAbilitySpecHandl
 		*ActivationInfo.GetActivationPredictionKey().ToString());
 	bEnding = false;
 	bReceivedTargetData = false;
+	bGameplayCancellationRequested = false;
+	ActiveMontageInstanceId = INDEX_NONE;
+	FinalWarpEndTime = 0.0f;
 	ActiveCharacter = ActorInfo ? Cast<ACharacter>(ActorInfo->AvatarActor.Get()) : nullptr;
 	UAbilitySystemComponent* ASC = ActorInfo ? ActorInfo->AbilitySystemComponent.Get() : nullptr;
 	if (!ASC || !ActiveCharacter.IsValid()) { CancelCurrentMantle(); return; }
@@ -332,6 +335,12 @@ void URpgGameplayAbility_Mantle::BeginMantle(const FRpgTraversalQueryResult& Res
 	Montage = Result.ChosenMontage;
 	StartTimeSeconds = Result.StartTime;
 	PlayRate = Result.PlayRate;
+	TArray<FMotionWarpingWindowData> Windows;
+	UMotionWarpingUtilities::GetMotionWarpingWindowsForWarpTargetFromAnimation(Montage, WarpTargetName, Windows);
+	for (const FMotionWarpingWindowData& Window : Windows)
+	{
+		FinalWarpEndTime = FMath::Max(FinalWarpEndTime, Window.EndTime);
+	}
 	ActiveWarping = Warping;
 	IgnoredComponent = Result.HitComponent;
 	ColliderAtActivation = IgnoredComponent->GetComponentTransform();
@@ -344,7 +353,7 @@ void URpgGameplayAbility_Mantle::BeginMantle(const FRpgTraversalQueryResult& Res
 		Result.FrontLedgeLocation + FVector(0, 0, LedgeVerticalOffset + MeshAboveCapsuleFeet),
 		(-Result.FrontLedgeNormal.GetSafeNormal2D()).Rotation());
 	Character->StopJumping();
-	Character->GetCharacterMovement()->StopMovementImmediately();
+	// Preserve the sampled approach velocity and input, as source GASP does when handing movement to root motion.
 	bOwnsMovement = true;
 	Character->GetCharacterMovement()->SetMovementMode(MOVE_Flying);
 	Character->OnCharacterMovementUpdated.AddDynamic(this, &ThisClass::HandleMovementUpdated);
@@ -353,6 +362,13 @@ void URpgGameplayAbility_Mantle::BeginMantle(const FRpgTraversalQueryResult& Res
 	GetWorld()->GetTimerManager().SetTimer(TimeoutHandle, this, &ThisClass::CancelCurrentMantle, MaximumDuration);
 	// Concrete Blueprint content starts its GAS montage task only after the native movement lease and commit succeed.
 	Super::ActivateAbility(CurrentSpecHandle, CurrentActorInfo, CurrentActivationInfo, nullptr);
+	if (bOwnsMovement && IsActive() && Character->GetMesh() && Character->GetMesh()->GetAnimInstance())
+	{
+		if (const FAnimMontageInstance* Instance = Character->GetMesh()->GetAnimInstance()->GetActiveInstanceForMontage(Montage))
+		{
+			ActiveMontageInstanceId = Instance->GetInstanceID();
+		}
+	}
 }
 
 void URpgGameplayAbility_Mantle::HandleMovementUpdated(float DeltaSeconds, FVector OldLocation, FVector OldVelocity)
@@ -395,6 +411,14 @@ void URpgGameplayAbility_Mantle::CancelCurrentMantle()
 	if (IsActive() && !bEnding) EndAbility(CurrentSpecHandle, CurrentActorInfo, CurrentActivationInfo, true, true);
 }
 
+void URpgGameplayAbility_Mantle::CancelAbility(const FGameplayAbilitySpecHandle Handle, const FGameplayAbilityActorInfo* ActorInfo,
+	const FGameplayAbilityActivationInfo ActivationInfo, bool bReplicateCancelAbility)
+{
+	// GAS broadcasts cancellation before EndAbility; PlayMontageAndWait may synchronously turn it into OnInterrupted.
+	if (IsActive() && CanBeCanceled()) bGameplayCancellationRequested = true;
+	Super::CancelAbility(Handle, ActorInfo, ActivationInfo, bReplicateCancelAbility);
+}
+
 bool URpgGameplayAbility_Mantle::RestoreSafeCapsuleLocation(ACharacter& Character) const
 {
 	if (IsCapsuleClear(Character, Character.GetActorLocation())) return true;
@@ -418,7 +442,7 @@ bool URpgGameplayAbility_Mantle::RestoreSafeCapsuleLocation(ACharacter& Characte
 	return false;
 }
 
-void URpgGameplayAbility_Mantle::CleanupMovement()
+void URpgGameplayAbility_Mantle::CleanupMovement(bool bWasCancelled)
 {
 	ACharacter* Character = ActiveCharacter.Get();
 	if (Character)
@@ -427,7 +451,12 @@ void URpgGameplayAbility_Mantle::CleanupMovement()
 		Character->MovementModeChangedDelegate.RemoveDynamic(this, &ThisClass::HandleMovementModeChanged);
 		if (bOwnsMovement)
 		{
-			RestoreSafeCapsuleLocation(*Character);
+			const bool bCapsuleWasClear = IsCapsuleClear(*Character, Character->GetActorLocation());
+			if (!bCapsuleWasClear) RestoreSafeCapsuleLocation(*Character);
+			UAnimInstance* Animation = Character->GetMesh() ? Character->GetMesh()->GetAnimInstance() : nullptr;
+			const FAnimMontageInstance* Instance = Animation ? Animation->GetMontageInstanceForID(ActiveMontageInstanceId) : nullptr;
+			const bool bFinishedWarp = Instance && Instance->Montage == Montage && Instance->IsStopped()
+				&& FinalWarpEndTime > 0.0f && Instance->GetPosition() >= FinalWarpEndTime;
 			if (URpgCharacterMovementComponent* RpgMovement = Cast<URpgCharacterMovementComponent>(Character->GetCharacterMovement()))
 			{
 				RpgMovement->EndMantleCollisionIgnore(IgnoredComponent.Get());
@@ -436,10 +465,18 @@ void URpgGameplayAbility_Mantle::CleanupMovement()
 			// Death/downed or a newer movement owner may have changed the mode before cancelling this ability.
 			if (Movement->MovementMode == MOVE_Flying && !RpgMantle::IsIncapacitated(*Character))
 			{
-				Movement->StopMovementImmediately();
 				FFindFloorResult Floor;
 				Movement->FindFloor(Character->GetActorLocation(), Floor, false);
-				Movement->SetMovementMode(Floor.IsWalkableFloor() && Floor.FloorDist <= UCharacterMovementComponent::MAX_FLOOR_DIST ? MOVE_Walking : MOVE_Falling);
+				const bool bSupported = Floor.IsWalkableFloor() && Floor.FloorDist <= UCharacterMovementComponent::MAX_FLOOR_DIST;
+				// A source notify is reported as a montage interruption. Preserve its grounded handoff without also
+				// preserving momentum for gameplay cancellation, interrupted warps, recovery or an unsupported exit.
+				const bool bPreserveMomentum = !bWasCancelled && !bGameplayCancellationRequested && bCapsuleWasClear
+					&& bFinishedWarp && bSupported && Floor.HitResult.GetComponent() == IgnoredComponent.Get();
+				UE_LOG(LogRpgAbilitySystem, Verbose, TEXT("Mantle movement handoff: pawn=%s preserveMomentum=%d cancelled=%d gameplayCancel=%d capsuleClear=%d finishedWarp=%d supported=%d floorDistance=%.3f speed=%.3f acceleration=%.3f"),
+					*GetPathNameSafe(Character), bPreserveMomentum, bWasCancelled, bGameplayCancellationRequested, bCapsuleWasClear,
+					bFinishedWarp, bSupported, Floor.FloorDist, Movement->Velocity.Size2D(), Movement->GetCurrentAcceleration().Size2D());
+				if (!bPreserveMomentum) Movement->StopMovementImmediately();
+				Movement->SetMovementMode(bSupported ? MOVE_Walking : MOVE_Falling);
 			}
 		}
 	}
@@ -448,12 +485,17 @@ void URpgGameplayAbility_Mantle::CleanupMovement()
 	IgnoredComponent.Reset();
 	ActiveWarping.Reset();
 	bOwnsMovement = false;
+	ActiveMontageInstanceId = INDEX_NONE;
+	FinalWarpEndTime = 0.0f;
 }
 
 void URpgGameplayAbility_Mantle::EndAbility(const FGameplayAbilitySpecHandle Handle, const FGameplayAbilityActorInfo* ActorInfo,
 	const FGameplayAbilityActivationInfo ActivationInfo, bool bReplicateEndAbility, bool bWasCancelled)
 {
 	if (!IsEndAbilityValid(Handle, ActorInfo) || bEnding) return;
+	// A montage task can call ordinary EndAbility during GAS cancellation's OnInterrupted callback.
+	// Preserve the original gameplay reason for both movement cleanup and GAS end observers.
+	bWasCancelled |= bGameplayCancellationRequested;
 	if (ScopeLockCount > 0)
 	{
 		WaitingToExecute.Add(FPostLockDelegate::CreateUObject(this, &ThisClass::EndAbility, Handle, ActorInfo, ActivationInfo, bReplicateEndAbility, bWasCancelled));
@@ -472,6 +514,6 @@ void URpgGameplayAbility_Mantle::EndAbility(const FGameplayAbilitySpecHandle Han
 	}
 	TargetDataDelegate.Reset();
 	// Stop our montage and release movement before EndAbility broadcasts can activate the next action.
-	CleanupMovement();
+	CleanupMovement(bWasCancelled);
 	Super::EndAbility(Handle, ActorInfo, ActivationInfo, bReplicateEndAbility, bWasCancelled);
 }

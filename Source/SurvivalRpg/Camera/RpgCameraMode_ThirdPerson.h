@@ -3,6 +3,7 @@
 #pragma once
 
 #include "RpgCameraMode.h"
+#include "RpgCameraPivotDamping.h"
 #include "Curves/CurveFloat.h"
 #include "RpgPenetrationAvoidanceFeeler.h"
 #include "DrawDebugHelpers.h"
@@ -24,7 +25,18 @@ public:
 
 	URpgCameraMode_ThirdPerson();
 
+	/** Start a fresh cosmetic position history whenever this mode returns to the camera stack. */
+	virtual void OnActivation() override;
+
 protected:
+
+	/** Designer-tuned pivot damping frequency in rad/s. Zero follows immediately; larger values catch up faster. Cosmetic only. */
+	UPROPERTY(EditDefaultsOnly, Category = "Third Person|Position Damping", Meta = (ClampMin = "0.0", UIMax = "50.0"))
+	float PositionDampingFactor = 0.0f;
+
+	/** Per-frame target displacement in cm that resets damping after a teleport. Cosmetic only; must exceed normal traversal motion. */
+	UPROPERTY(EditDefaultsOnly, Category = "Third Person|Position Damping", Meta = (ClampMin = "1.0", Units = "cm", EditCondition = "PositionDampingFactor > 0.0"))
+	float PositionDampingResetDistance = 500.0f;
 
 	virtual void UpdateView(float DeltaTime) override;
 
@@ -110,5 +122,8 @@ protected:
 	FVector TargetCrouchOffset = FVector::ZeroVector;
 	float CrouchOffsetBlendPct = 1.0f;
 	FVector CurrentCrouchOffset = FVector::ZeroVector;
+
+	FRpgCameraPivotDamping PivotDamping;
+	TWeakObjectPtr<AActor> DampingTarget;
 	
 };

@@ -99,9 +99,10 @@ bool FRpgMantleCompositionTest::RunTest(const FString& Parameters)
 	TestTrue(TEXT("Experience selects the isolated mantle PawnData"), Experience->DefaultPawnData == PawnData);
 	TestTrue(TEXT("Mantle pawn extends the accepted CMC pawn"), PawnClass->IsChildOf(CmcPawnData->PawnClass));
 	TestTrue(TEXT("PawnData selects the isolated mantle pawn"), PawnData->PawnClass.Get() == PawnClass);
-	TestTrue(TEXT("Existing camera, input and RPG inventory composition are preserved"),
+	TestTrue(TEXT("The traversal camera uses the RPG camera mechanism"),
+		PawnData->DefaultCameraMode && PawnData->DefaultCameraMode->IsChildOf(URpgCameraMode::StaticClass()));
+	TestTrue(TEXT("Existing input and RPG inventory composition are preserved"),
 		PawnData->InputConfig && PawnData->InputConfig == CmcPawnData->InputConfig
-		&& PawnData->DefaultCameraMode == CmcPawnData->DefaultCameraMode
 		&& PawnData->InventoryLayoutDefinition == CmcPawnData->InventoryLayoutDefinition);
 	for (const URpgAbilitySet* ExistingSet : CmcPawnData->AbilitySets)
 	{
@@ -362,7 +363,13 @@ namespace RpgMantleIntegrationTests
 	{
 		ARpgCharacter* Character = FindCharacter(World, PlayerId);
 		const UPrimitiveComponent* Obstacle = ObstacleInWorld(World);
+		if (!Character) return false;
+		const AController* Controller = Character->GetController();
+		const bool bRequiresController = Character->HasAuthority() || Character->GetLocalRole() == ROLE_AutonomousProxy;
+		const bool bViewAligned = !bRequiresController || (Controller
+			&& FMath::Abs(FRotator::NormalizeAxis(Controller->GetControlRotation().Yaw)) < 1.0);
 		return Ready(World, Character) && Grounded(Character) && HasCleanMantleState(Character) && Obstacle
+			&& bViewAligned && FMath::Abs(FRotator::NormalizeAxis(Character->GetActorRotation().Yaw)) < 1.0
 			&& Character->GetActorLocation().Equals(EntryPosition(*Character, *Obstacle), 12.0) && HasTraversalCandidate(Character);
 	}
 	void PressJump(ARpgCharacter* Character)
@@ -390,6 +397,13 @@ namespace RpgMantleIntegrationTests
 		{
 			UE_LOG(LogTemp, Display, TEXT("RpgMantleFixturePlacement success=%d requested=%s actual=%s"),
 				bTeleported, *Requested.ToCompactString(), *Character->GetActorLocation().ToCompactString());
+		}
+		if (APlayerController* Controller = Cast<APlayerController>(Character->GetController()))
+		{
+			// This standing fixture specifies a forward-facing entry. A pawn teleport alone leaves the owner's
+			// view heading unchanged, so its next FaceRotation can undo the authoritative entry rotation.
+			Controller->SetControlRotation(FRotator::ZeroRotator);
+			Controller->ClientSetRotation(FRotator::ZeroRotator, true);
 		}
 		Character->GetCharacterMovement()->StopMovementImmediately();
 		Character->GetCharacterMovement()->SetMovementMode(MOVE_Walking);
@@ -437,6 +451,7 @@ namespace RpgMantleIntegrationTests
 				FObservation& Record = Records.FindOrAdd(World);
 				Record.StartLocation = Character->GetActorLocation();
 				Record.StartTime = World->GetTimeSeconds();
+				ReportTransforms(TEXT("before_activation"), *Character);
 				if (URpgAbilitySystemComponent* ASC = Character->GetRpgAbilitySystemComponent())
 				{
 					FSubscriptions Subscription;
@@ -490,6 +505,28 @@ namespace RpgMantleIntegrationTests
 				&& Record->MaxDistance > 40.0f && Record->LastMontagePosition > Record->FirstMontagePosition + 0.1f;
 		}
 	private:
+		void ReportTransforms(const TCHAR* Phase, const ARpgCharacter& Character) const
+		{
+			const UCharacterMovementComponent* Movement = Character.GetCharacterMovement();
+			const USkeletalMeshComponent* Mesh = Character.GetMesh();
+			const AController* Controller = Character.GetController();
+			const UPrimitiveComponent* Obstacle = ObstacleInWorld(Character.GetWorld());
+			const FBox Bounds = Obstacle ? Obstacle->Bounds.GetBox() : FBox(ForceInit);
+			const UMotionWarpingComponent* Warping = Character.FindComponentByClass<UMotionWarpingComponent>();
+			const FMotionWarpingTarget* Warp = Warping ? Warping->FindWarpTarget(TEXT("FrontLedge")) : nullptr;
+			const URpgAbilitySystemComponent* ASC = Character.GetRpgAbilitySystemComponent();
+			const URpgGameplayAbility_Mantle* Ability = ASC ? Cast<URpgGameplayAbility_Mantle>(ASC->GetAnimatingAbility()) : nullptr;
+			// Read only existing transforms and the active proposal; querying again would change the pose-search history.
+			UE_LOG(LogTemp, Display, TEXT("RpgMantleFixtureTransforms observation=%d phase=%s role=%d position=%s actorRotation=%s controlRotation=%s meshWorldRotation=%s meshRelativeRotation=%s velocity=%s acceleration=%s controllerYaw=%d physicsRotationDuringRootMotion=%d obstacleMin=%s obstacleMax=%s obstacleRotation=%s montage=%s start=%.4f hasWarp=%d warpPosition=%s warpRotation=%s"),
+				ObservationId, Phase, static_cast<int32>(Character.GetLocalRole()), *Character.GetActorLocation().ToCompactString(),
+				*Character.GetActorRotation().ToCompactString(), Controller ? *Controller->GetControlRotation().ToCompactString() : TEXT("None"),
+				Mesh ? *Mesh->GetComponentRotation().ToCompactString() : TEXT("None"), Mesh ? *Mesh->GetRelativeRotation().ToCompactString() : TEXT("None"),
+				*Character.GetVelocity().ToCompactString(), Movement ? *Movement->GetCurrentAcceleration().ToCompactString() : TEXT("None"),
+				Character.bUseControllerRotationYaw, Movement && Movement->bAllowPhysicsRotationDuringAnimRootMotion,
+				*Bounds.Min.ToCompactString(), *Bounds.Max.ToCompactString(), Obstacle ? *Obstacle->GetComponentRotation().ToCompactString() : TEXT("None"),
+				*GetPathNameSafe(Ability ? Ability->Montage.Get() : nullptr), Ability ? Ability->StartTimeSeconds : -1.0f,
+				Warp != nullptr, Warp ? *Warp->GetLocation().ToCompactString() : TEXT("None"), Warp ? *Warp->Rotator().ToCompactString() : TEXT("None"));
+		}
 		static void Report(const TCHAR* Reason, const FObservation& Record)
 		{
 			// One parseable line per transition/wait diagnostic, including a cached last sample if PIE was already torn down.
@@ -543,7 +580,11 @@ namespace RpgMantleIntegrationTests
 				*GetPathNameSafe(ASC ? ASC->GetCurrentMontage() : nullptr).ReplaceCharWithEscapedChar(),
 				*GetPathNameSafe(Movement ? Movement->GetMantleCollisionComponent() : nullptr).ReplaceCharWithEscapedChar(),
 				Warping && Warping->FindWarpTarget(TEXT("FrontLedge")));
-			if (!Record->bWasMontagePlaying && bMontagePlaying) Report(TEXT("montage_started"), *Record);
+			if (!Record->bWasMontagePlaying && bMontagePlaying)
+			{
+				Report(TEXT("montage_started"), *Record);
+				ReportTransforms(TEXT("montage_started"), *Character);
+			}
 			if (Record->bWasMontagePlaying && !bMontagePlaying) Report(TEXT("montage_stopped"), *Record);
 			Record->bWasMontagePlaying = bMontagePlaying;
 			if (!Record->bReportedAfterFiveSeconds && World->GetTimeSeconds() - Record->StartTime >= 5.0)
@@ -1021,6 +1062,19 @@ NETWORK_TEST_CLASS(GaspMantleAuthoredMapPIE, "SurvivalRpg.GASP.Mantle")
 	TWeakObjectPtr<UWorld> ClientWorld;
 	TWeakObjectPtr<UPrimitiveComponent> Obstacle;
 	FDelegateHandle TickHandle;
+	struct FHandoffObservation
+	{
+		TWeakObjectPtr<URpgAbilitySystemComponent> ASC;
+		FDelegateHandle EndedHandle;
+		FVector Location = FVector::ZeroVector;
+		FVector Velocity = FVector::ZeroVector;
+		FVector Acceleration = FVector::ZeroVector;
+		double Time = -1.0;
+		bool bCancelled = false;
+		bool bContinuedMoving = false;
+	};
+	FHandoffObservation OwnerHandoff;
+	FHandoffObservation ServerHandoff;
 	FVector SpawnLocation = FVector::ZeroVector;
 	FBox ObstacleBounds{ForceInit};
 	double AttemptStart = 0.0;
@@ -1046,6 +1100,8 @@ NETWORK_TEST_CLASS(GaspMantleAuthoredMapPIE, "SurvivalRpg.GASP.Mantle")
 	bool bSawServerLease = false;
 	bool bStopAtContact = false;
 	bool bHoldBeforeReach = false;
+	bool bHoldMovementThroughHandoff = false;
+	bool bReleasedJump = false;
 	bool bReleasedMovement = false;
 	bool bReportedWait = false;
 	bool bUseHost = false;
@@ -1074,14 +1130,18 @@ NETWORK_TEST_CLASS(GaspMantleAuthoredMapPIE, "SurvivalRpg.GASP.Mantle")
 	TEST_METHOD(CollisionContactStillAllowsContextualTraversal) { QueueApproach(0.0f, true, false); }
 	TEST_METHOD(HeldJumpRetriesAfterTheInitialOrdinaryJump) { QueueApproach(0.0f, false, true); }
 	TEST_METHOD(ListenServerHostRunsAndTraverses) { QueueApproach(0.0f, false, false, true); }
+	TEST_METHOD(HeldMovementContinuesAcrossMantleHandoff) { QueueApproach(0.0f, false, false, false, true); }
+	TEST_METHOD(ListenServerHostMaintainsMovementAcrossMantleHandoff) { QueueApproach(0.0f, false, false, true, true); }
 
-	void QueueApproach(float InLateralOffset, bool bInStopAtContact, bool bInHoldBeforeReach, bool bInUseHost = false)
+	void QueueApproach(float InLateralOffset, bool bInStopAtContact, bool bInHoldBeforeReach, bool bInUseHost = false,
+		bool bInHoldMovementThroughHandoff = false)
 	{
 		if (!bConfigured) return;
 		LateralOffset = InLateralOffset;
 		bStopAtContact = bInStopAtContact;
 		bHoldBeforeReach = bInHoldBeforeReach;
 		bUseHost = bInUseHost;
+		bHoldMovementThroughHandoff = bInHoldMovementThroughHandoff;
 		TestCommandBuilder
 			.Do(TEXT("Play the saved mantle map with its own GameMode and Experience"), [this]()
 			{
@@ -1124,6 +1184,11 @@ NETWORK_TEST_CLASS(GaspMantleAuthoredMapPIE, "SurvivalRpg.GASP.Mantle")
 				ASSERT_THAT(IsTrue(SpawnLocation.Y + LateralOffset > ObstacleBounds.Min.Y + 50.0
 					&& SpawnLocation.Y + LateralOffset < ObstacleBounds.Max.Y - 50.0));
 				AttemptStart = InputWorld()->GetTimeSeconds();
+				if (bHoldMovementThroughHandoff)
+				{
+					SubscribeHandoff(Character, OwnerHandoff);
+					SubscribeHandoff(Authority(), ServerHandoff);
+				}
 				bDriving = true;
 				TickHandle = FWorldDelegates::OnWorldTickEnd.AddRaw(this, &GaspMantleAuthoredMapPIE::OnTick);
 				Key(EKeys::W, true);
@@ -1138,6 +1203,11 @@ NETWORK_TEST_CLASS(GaspMantleAuthoredMapPIE, "SurvivalRpg.GASP.Mantle")
 			{
 				return FinishedOnObstacle(Owner()) && FinishedOnObstacle(Authority());
 			}, FTimespan::FromSeconds(10.0))
+			.Until(TEXT("Held movement continues on the owner and authority after traversal releases control"), [this]()
+			{
+				return !bHoldMovementThroughHandoff
+					|| (OwnerHandoff.bContinuedMoving && ServerHandoff.bContinuedMoving && bReleasedMovement);
+			}, FTimespan::FromSeconds(3.0))
 			.Then(TEXT("The approach covered player input, speed, geometry and cleanup rather than forced candidate placement"), [this]()
 			{
 				ASSERT_THAT(IsTrue(MaximumApproachSpeed > 100.0f));
@@ -1146,6 +1216,14 @@ NETWORK_TEST_CLASS(GaspMantleAuthoredMapPIE, "SurvivalRpg.GASP.Mantle")
 				if (bStopAtContact) ASSERT_THAT(IsTrue(ContactStart >= 0.0));
 				if (bHoldBeforeReach) ASSERT_THAT(IsTrue(bSawFallbackJump));
 				if (LateralOffset != 0.0f) ASSERT_THAT(IsTrue(FMath::Abs(SpacePressLateralOffset) > 80.0f));
+				if (bHoldMovementThroughHandoff)
+				{
+					// Sample the end delegate, before the next movement tick can hide a cleanup-induced full stop.
+					ASSERT_THAT(IsTrue(OwnerHandoff.Time >= 0.0 && ServerHandoff.Time >= 0.0));
+					ASSERT_THAT(IsFalse(OwnerHandoff.bCancelled || ServerHandoff.bCancelled));
+					ASSERT_THAT(IsTrue(OwnerHandoff.Velocity.X > 1.0 && ServerHandoff.Velocity.X > 1.0));
+					ASSERT_THAT(IsTrue(OwnerHandoff.Acceleration.X > 1.0 && ServerHandoff.Acceleration.X > 1.0));
+				}
 				ASSERT_THAT(IsTrue(Isolation.IsIsolated(ServerWorld.Get())));
 				Report(TEXT("completed"));
 			});
@@ -1195,11 +1273,16 @@ NETWORK_TEST_CLASS(GaspMantleAuthoredMapPIE, "SurvivalRpg.GASP.Mantle")
 	void OnTick(UWorld* World, ELevelTick TickType, float DeltaSeconds)
 	{
 		if (!bDriving || !RpgMantleIntegrationTests::IsActiveTestWorld(World)) return;
-		if (World == ServerWorld.Get()) Observe(Authority(), false);
+		if (World == ServerWorld.Get())
+		{
+			Observe(Authority(), false);
+			ObserveContinuation(Authority(), ServerHandoff);
+		}
 		if (World != InputWorld()) return;
 		ARpgCharacter* Character = Owner();
 		if (!Character) return;
 		Observe(Character, true);
+		ObserveContinuation(Character, OwnerHandoff);
 		if (!bReportedWait && World->GetTimeSeconds() - AttemptStart >= 5.0)
 		{
 			Report(TEXT("five_second_checkpoint"));
@@ -1208,13 +1291,25 @@ NETWORK_TEST_CLASS(GaspMantleAuthoredMapPIE, "SurvivalRpg.GASP.Mantle")
 		const FGameplayAbilitySpec* Spec = RpgMantleIntegrationTests::MantleSpec(Character);
 		const bool bActive = Spec && Spec->IsActive();
 		if (bPressedSpace && Character->GetCharacterMovement()->IsFalling() && !bActive) bSawFallbackJump = true;
-		if (bActive && !bReleasedMovement)
+		if (bActive && !bReleasedJump)
 		{
-			Key(EKeys::W, false);
 			Key(EKeys::SpaceBar, false);
-			bReleasedMovement = true;
+			bReleasedJump = true;
+			if (!bHoldMovementThroughHandoff)
+			{
+				Key(EKeys::W, false);
+				bReleasedMovement = true;
+			}
 		}
-		if (bReleasedMovement) return;
+		if (bReleasedJump)
+		{
+			if (!bReleasedMovement && OwnerHandoff.bContinuedMoving && ServerHandoff.bContinuedMoving)
+			{
+				Key(EKeys::W, false);
+				bReleasedMovement = true;
+			}
+			return;
+		}
 		const FVector Position = Character->GetActorLocation();
 		const float Distance = static_cast<float>(ObstacleBounds.Min.X - Position.X);
 		const float Speed = static_cast<float>(Character->GetVelocity().Size2D());
@@ -1247,6 +1342,35 @@ NETWORK_TEST_CLASS(GaspMantleAuthoredMapPIE, "SurvivalRpg.GASP.Mantle")
 		Report(TEXT("space_pressed"));
 		Key(EKeys::SpaceBar, true);
 	}
+	void SubscribeHandoff(ARpgCharacter* Character, FHandoffObservation& Observation)
+	{
+		URpgAbilitySystemComponent* ASC = Character ? Character->GetRpgAbilitySystemComponent() : nullptr;
+		if (!ASC) return;
+		Observation.ASC = ASC;
+		Observation.EndedHandle = ASC->OnAbilityEnded.AddLambda(
+			[WeakCharacter = TWeakObjectPtr<ARpgCharacter>(Character), Record = &Observation](const FAbilityEndedData& Data)
+		{
+			ARpgCharacter* Pawn = WeakCharacter.Get();
+			if (!Pawn || !RpgMantleIntegrationTests::IsActiveTestWorld(Pawn->GetWorld()) || Record->Time >= 0.0
+				|| !Data.AbilityThatEnded || !Data.AbilityThatEnded->IsA<URpgGameplayAbility_Mantle>()) return;
+			Record->Location = Pawn->GetActorLocation();
+			Record->Velocity = Pawn->GetVelocity();
+			Record->Acceleration = Pawn->GetCharacterMovement()->GetCurrentAcceleration();
+			Record->Time = Pawn->GetWorld()->GetTimeSeconds();
+			Record->bCancelled = Data.bWasCancelled;
+			UE_LOG(LogTemp, Display, TEXT("RpgMantleInputHandoff authority=%d cancelled=%d position=%s velocity=%s acceleration=%s"),
+				Pawn->HasAuthority(), Record->bCancelled, *Record->Location.ToCompactString(),
+				*Record->Velocity.ToCompactString(), *Record->Acceleration.ToCompactString());
+		});
+	}
+	void ObserveContinuation(ARpgCharacter* Character, FHandoffObservation& Observation) const
+	{
+		if (!bHoldMovementThroughHandoff || !Character || Observation.Time < 0.0 || Observation.bContinuedMoving
+			|| Character->GetWorld()->GetTimeSeconds() - Observation.Time < 0.15) return;
+		// Keep physical W held past handoff; observing later movement alone would miss a one-frame stop at ability end.
+		Observation.bContinuedMoving = FinishedOnObstacle(Character)
+			&& Character->GetActorLocation().X > Observation.Location.X + 1.0 && Character->GetVelocity().X > 1.0;
+	}
 	void Observe(ARpgCharacter* Character, bool bOwner)
 	{
 		if (!Character) return;
@@ -1271,7 +1395,9 @@ NETWORK_TEST_CLASS(GaspMantleAuthoredMapPIE, "SurvivalRpg.GASP.Mantle")
 	}
 	bool FinishedOnObstacle(ARpgCharacter* Character) const
 	{
-		if (!RpgMantleIntegrationTests::Grounded(Character)) return false;
+		if (!Character || !Character->GetCharacterMovement()->IsMovingOnGround()) return false;
+		// The held-W scenario must accept a grounded runner; the other cases still prove a settled landing.
+		if (!bHoldMovementThroughHandoff && !RpgMantleIntegrationTests::Grounded(Character)) return false;
 		const FGameplayAbilitySpec* Spec = RpgMantleIntegrationTests::MantleSpec(Character);
 		const URpgCharacterMovementComponent* Movement = Cast<URpgCharacterMovementComponent>(Character->GetCharacterMovement());
 		const FVector Position = Character->GetActorLocation();
@@ -1317,6 +1443,12 @@ NETWORK_TEST_CLASS(GaspMantleAuthoredMapPIE, "SurvivalRpg.GASP.Mantle")
 		if (bDriving) Report(TEXT("teardown"));
 		FWorldDelegates::OnWorldTickEnd.Remove(TickHandle);
 		TickHandle.Reset();
+		for (FHandoffObservation* Observation : {&OwnerHandoff, &ServerHandoff})
+		{
+			if (Observation->ASC.IsValid()) Observation->ASC->OnAbilityEnded.Remove(Observation->EndedHandle);
+			Observation->ASC.Reset();
+			Observation->EndedHandle.Reset();
+		}
 		Key(EKeys::W, false);
 		Key(EKeys::SpaceBar, false);
 		bDriving = false;
