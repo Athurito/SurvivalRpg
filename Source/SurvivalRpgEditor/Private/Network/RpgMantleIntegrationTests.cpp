@@ -1075,6 +1075,7 @@ NETWORK_TEST_CLASS(GaspMantleAuthoredMapPIE, "SurvivalRpg.GASP.Mantle")
 	TWeakObjectPtr<UWorld> ServerWorld;
 	TWeakObjectPtr<UWorld> ClientWorld;
 	TWeakObjectPtr<UWorld> ObserverWorld;
+	TWeakObjectPtr<APlayerController> LookInputController;
 	TWeakObjectPtr<UPrimitiveComponent> Obstacle;
 	FDelegateHandle TickHandle;
 	struct FHandoffObservation
@@ -1220,6 +1221,13 @@ NETWORK_TEST_CLASS(GaspMantleAuthoredMapPIE, "SurvivalRpg.GASP.Mantle")
 			{
 				ARpgCharacter* Character = Owner();
 				if (!Character) return;
+				if (APlayerController* Controller = Cast<APlayerController>(Character->GetController()))
+				{
+					// Exclude physical mouse/stick look from this scripted approach. Direct camera/ability
+					// SetControlRotation calls remain observable by the unchanged view-preservation checks.
+					Controller->SetIgnoreLookInput(true);
+					LookInputController = Controller;
+				}
 				SpawnLocation = Character->GetActorLocation();
 				FindLaneObstacle(*Character);
 				ASSERT_THAT(IsTrue(Obstacle.IsValid()));
@@ -1608,6 +1616,8 @@ NETWORK_TEST_CLASS(GaspMantleAuthoredMapPIE, "SurvivalRpg.GASP.Mantle")
 		}
 		Key(EKeys::W, false);
 		Key(EKeys::SpaceBar, false);
+		if (LookInputController.IsValid()) LookInputController->SetIgnoreLookInput(false);
+		LookInputController.Reset();
 		bDriving = false;
 		if (bOwnsSession && GUnrealEd)
 		{

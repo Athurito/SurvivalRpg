@@ -13,7 +13,7 @@ struct SURVIVALRPG_API FRpgTraversalQueryResult
 {
 	GENERATED_BODY()
 
-	/** Source GASP action value: 0 none, 1 hurdle, 2 vault, 3 mantle. Only mantle is admitted by this slice. */
+	/** Source GASP action value: 0 none, 1 hurdle, 2 vault, 3 mantle. Native execution currently admits mantle and grounded vault. */
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Traversal") uint8 ActionType = 0;
 	/** Whether the prepared obstacle supplied a usable front ledge. */
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Traversal") bool HasFrontLedge = false;
@@ -47,7 +47,7 @@ struct SURVIVALRPG_API FRpgTraversalQueryResult
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Traversal") double PlayRate = 1.0;
 };
 
-/** Server-checkable eligibility copied from one designer-owned mantle chooser row. */
+/** Server-checkable eligibility copied from one designer-owned traversal chooser row. */
 USTRUCT(BlueprintType)
 struct SURVIVALRPG_API FRpgTraversalAnimationEntry
 {
@@ -86,9 +86,13 @@ public:
 	UFUNCTION(BlueprintImplementableEvent, BlueprintCallable, Category = "Rpg|Traversal")
 	bool QueryTraversal(FRpgTraversalQueryResult& OutResult);
 
-	/** Source chooser row contracts used by the authority to validate a predicted montage and entry time. */
+	/** Mantle chooser rows used by the authority to validate a predicted montage and entry time; the serialized name is retained. */
 	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Traversal|Validation")
 	TArray<FRpgTraversalAnimationEntry> AllowedMantleAnimations;
+
+	/** Grounded vault chooser rows. Empty by default so existing mantle-only compositions do not acquire another action. */
+	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Traversal|Validation")
+	TArray<FRpgTraversalAnimationEntry> AllowedVaultAnimations;
 
 	/** Horizontal speed tolerance in cm/s for client/server sampling at a gait boundary; geometry remains independently checked. */
 	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Traversal|Validation", meta = (ClampMin = "0", ClampMax = "100", Units = "cm/s"))

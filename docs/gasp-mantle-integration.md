@@ -1,6 +1,6 @@
 # GASP contextual mantle integration
 
-This Experience extends the accepted CMC integration with the original GASP mantle query and montage selection on the existing RPG gameplay mesh. Mantle comes first; Vault, Hurdle, other visible skeletons and Mover remain subsequent work. The baseline and accepted CMC Experience retain their material and Foley setup.
+This Experience extends the accepted CMC integration with the original GASP mantle query and montage selection on the existing RPG gameplay mesh. The subsequent [grounded Vault extension](gasp-vault-integration.md) uses this same composition. Hurdle, other visible skeletons and Mover remain subsequent work. The baseline and accepted CMC Experience retain their material and Foley setup.
 
 ## Input and content ownership
 
