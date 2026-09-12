@@ -30,12 +30,23 @@ URpgCameraMode_ThirdPerson::URpgCameraMode_ThirdPerson()
 	PenetrationAvoidanceFeelers.Add(FRpgPenetrationAvoidanceFeeler(FRotator(-20.0f, +00.0f, 0.0f), 0.50f, 0.50f, 00.f, 4));
 }
 
+void URpgCameraMode_ThirdPerson::OnActivation()
+{
+	Super::OnActivation();
+	PivotDamping.Reset();
+	DampingTarget.Reset();
+}
+
 void URpgCameraMode_ThirdPerson::UpdateView(float DeltaTime)
 {
 	UpdateForTarget(DeltaTime);
 	UpdateCrouchOffset(DeltaTime);
 
-	FVector PivotLocation = GetPivotLocation() + CurrentCrouchOffset;
+	AActor* TargetActor = GetTargetActor();
+	const bool bResetDamping = bResetInterpolation || DampingTarget.Get() != TargetActor;
+	DampingTarget = TargetActor;
+	const FVector PivotLocation = PivotDamping.Update(GetPivotLocation() + CurrentCrouchOffset,
+		DeltaTime, PositionDampingFactor, PositionDampingResetDistance, bResetDamping);
 	FRotator PivotRotation = GetPivotRotation();
 
 	PivotRotation.Pitch = FMath::ClampAngle(PivotRotation.Pitch, ViewPitchMin, ViewPitchMax);
@@ -67,6 +78,7 @@ void URpgCameraMode_ThirdPerson::UpdateView(float DeltaTime)
 
 	// Adjust final desired camera location to prevent any penetration
 	UpdatePreventPenetration(DeltaTime);
+	bResetInterpolation = false;
 }
 
 void URpgCameraMode_ThirdPerson::UpdateForTarget(float DeltaTime)

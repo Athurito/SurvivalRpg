@@ -31,6 +31,9 @@ public:
 	// Sets default values for this character's properties
 	explicit ARpgCharacter(const FObjectInitializer& ObjectInitializer = FObjectInitializer::Get());
 	virtual void BeginPlay() override;
+
+	/** Lets validated mantle root motion turn the body independently of the player's control/view rotation. */
+	virtual void FaceRotation(FRotator NewControlRotation, float DeltaTime = 0.f) override;
 	
 	UFUNCTION(BlueprintCallable, Category = "Rpg|Character")
 	ARpgPlayerController* GetRpgPlayerController() const;

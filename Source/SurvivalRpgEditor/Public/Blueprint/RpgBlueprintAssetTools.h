@@ -5,6 +5,7 @@
 #include "RpgBlueprintAssetTools.generated.h"
 
 class UBlueprint;
+class UAnimSequenceBase;
 
 /** Reusable editor operations for authoring Blueprint contracts through Unreal MCP/Python. */
 UCLASS()
@@ -33,4 +34,14 @@ public:
 	 */
 	UFUNCTION(BlueprintCallable, Category = "Rpg|Blueprint|Editor")
 	static int32 RemapOwnedObjectReferences(UObject* Asset, const TMap<UObject*, UObject*>& Replacements);
+
+	/**
+	 * Replaces target notifies with exact event metadata from an animation with the same class, skeleton and timeline.
+	 * Montage slots, segment timing and sequence references must match. Notify objects are duplicated into the target;
+	 * event GUIDs, cached linkage, out-of-range state end times and shared animation references are preserved.
+	 * Runs only on the editor game thread outside PIE, records target undo and marks it dirty. Does not compile or save.
+	 * Returns the copied event count, or -1 for incompatible assets or an unavailable editor context.
+	 */
+	UFUNCTION(BlueprintCallable, Category = "Rpg|Animation|Editor")
+	static int32 CopyAnimationNotifies(UAnimSequenceBase* Source, UAnimSequenceBase* Target);
 };

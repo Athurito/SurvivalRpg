@@ -1,6 +1,11 @@
 #include "Blueprint/RpgBlueprintAssetTools.h"
 
+#include "Animation/AnimMontage.h"
+#include "Animation/AnimNotifies/AnimNotify.h"
+#include "Animation/AnimNotifies/AnimNotifyState.h"
+#include "Editor.h"
 #include "Engine/Blueprint.h"
+#include "Engine/Engine.h"
 #include "Kismet2/BlueprintEditorUtils.h"
 #include "ScopedTransaction.h"
 #include "Serialization/ArchiveReplaceObjectRef.h"
@@ -167,4 +172,97 @@ int32 URpgBlueprintAssetTools::RemapOwnedObjectReferences(UObject* Asset, const 
 	Asset->MarkPackageDirty();
 	Asset->PostEditChange();
 	return ReplacementCount;
+}
+
+int32 URpgBlueprintAssetTools::CopyAnimationNotifies(UAnimSequenceBase* Source, UAnimSequenceBase* Target)
+{
+	if (!IsInGameThread() || !GIsEditor || !GEditor || !GEngine || !IsValid(Source) || !IsValid(Target)
+		|| Source == Target || !Source->IsAsset() || !Target->IsAsset() || Source->GetClass() != Target->GetClass()
+		|| Source->GetSkeleton() != Target->GetSkeleton() || Source->GetPlayLength() != Target->GetPlayLength()) return -1;
+	for (const FWorldContext& Context : GEngine->GetWorldContexts())
+	{
+		if (Context.WorldType == EWorldType::PIE) return -1;
+	}
+	if (const UAnimMontage* SourceMontage = Cast<UAnimMontage>(Source))
+	{
+		const UAnimMontage* TargetMontage = CastChecked<UAnimMontage>(Target);
+		if (SourceMontage->SlotAnimTracks.Num() != TargetMontage->SlotAnimTracks.Num()) return -1;
+		for (int32 SlotIndex = 0; SlotIndex < SourceMontage->SlotAnimTracks.Num(); ++SlotIndex)
+		{
+			const FSlotAnimationTrack& SourceSlot = SourceMontage->SlotAnimTracks[SlotIndex];
+			const FSlotAnimationTrack& TargetSlot = TargetMontage->SlotAnimTracks[SlotIndex];
+			if (SourceSlot.SlotName != TargetSlot.SlotName || SourceSlot.AnimTrack.AnimSegments.Num() != TargetSlot.AnimTrack.AnimSegments.Num()) return -1;
+			for (int32 SegmentIndex = 0; SegmentIndex < SourceSlot.AnimTrack.AnimSegments.Num(); ++SegmentIndex)
+			{
+				const FAnimSegment& A = SourceSlot.AnimTrack.AnimSegments[SegmentIndex];
+				const FAnimSegment& B = TargetSlot.AnimTrack.AnimSegments[SegmentIndex];
+				if (A.GetAnimReference() != B.GetAnimReference() || A.StartPos != B.StartPos || A.AnimStartTime != B.AnimStartTime
+					|| A.AnimEndTime != B.AnimEndTime || A.AnimPlayRate != B.AnimPlayRate || A.LoopingCount != B.LoopingCount) return -1;
+			}
+		}
+	}
+	for (const FAnimNotifyEvent& Event : Source->Notifies)
+	{
+		if (!FMath::IsFinite(Event.GetTime()) || !FMath::IsFinite(Event.EndLink.GetTime())
+			|| !Source->AnimNotifyTracks.IsValidIndex(Event.TrackIndex)
+			|| (Event.Notify && !IsValid(Event.Notify)) || (Event.NotifyStateClass && !IsValid(Event.NotifyStateClass))) return -1;
+	}
+
+	FScopedTransaction Transaction(NSLOCTEXT("RpgBlueprintAssetTools", "CopyAnimationNotifies", "Copy Animation Notifies"));
+	Target->SetFlags(RF_Transactional);
+	Target->Modify(false);
+	TArray<FAnimNotifyEvent> Copied = Source->Notifies;
+	TMap<UObject*, UObject*> Replacements;
+	Replacements.Add(Source, Target);
+	auto DuplicateNotify = [&Replacements, Target](UObject* Original) -> UObject*
+	{
+		if (!Original) return nullptr;
+		if (UObject** Existing = Replacements.Find(Original)) return *Existing;
+		FName Name = Original->GetFName();
+		if (FindObjectFast<UObject>(Target, Name)) Name = MakeUniqueObjectName(Target, Original->GetClass(), Name);
+		UObject* Duplicate = DuplicateObject<UObject>(Original, Target, Name);
+		if (Duplicate)
+		{
+			Duplicate->SetFlags(RF_Transactional);
+			Replacements.Add(Original, Duplicate);
+		}
+		return Duplicate;
+	};
+	for (FAnimNotifyEvent& Event : Copied)
+	{
+		UAnimNotify* Notify = Cast<UAnimNotify>(DuplicateNotify(Event.Notify));
+		UAnimNotifyState* State = Cast<UAnimNotifyState>(DuplicateNotify(Event.NotifyStateClass));
+		if ((Event.Notify && !Notify) || (Event.NotifyStateClass && !State))
+		{
+			Transaction.Cancel();
+			return -1;
+		}
+		Event.Notify = Notify;
+		Event.NotifyStateClass = State;
+	}
+	for (FAnimNotifyEvent& Event : Copied)
+	{
+		// Serialize only the copied struct: unrelated target properties (e.g. a parent montage) must not be remapped.
+		// Replacing its cached linked asset preserves timing beyond the final segment without Link()/Update() clamping it.
+		FArchiveReplaceObjectRef<UObject> Archive(Target, Replacements, EArchiveReplaceObjectFlags::DelayStart
+			| EArchiveReplaceObjectFlags::IgnoreOuterRef | EArchiveReplaceObjectFlags::IgnoreArchetypeRef);
+		FAnimNotifyEvent::StaticStruct()->SerializeItem(Archive, &Event, nullptr);
+	}
+	for (const TPair<UObject*, UObject*>& Pair : Replacements)
+	{
+		if (Pair.Key == Source) continue;
+		FArchiveReplaceObjectRef<UObject> Archive(Pair.Value, Replacements,
+			EArchiveReplaceObjectFlags::IgnoreOuterRef | EArchiveReplaceObjectFlags::IgnoreArchetypeRef);
+	}
+	while (Target->AnimNotifyTracks.Num() < Source->AnimNotifyTracks.Num())
+	{
+		const FAnimNotifyTrack& SourceTrack = Source->AnimNotifyTracks[Target->AnimNotifyTracks.Num()];
+		FAnimNotifyTrack& NewTrack = Target->AnimNotifyTracks.AddDefaulted_GetRef();
+		NewTrack.TrackName = SourceTrack.TrackName;
+		NewTrack.TrackColor = SourceTrack.TrackColor;
+	}
+	Target->Notifies = MoveTemp(Copied);
+	Target->RefreshCacheData();
+	Target->MarkPackageDirty();
+	return Target->Notifies.Num();
 }

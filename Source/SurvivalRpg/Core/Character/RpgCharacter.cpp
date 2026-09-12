@@ -78,6 +78,15 @@ ARpgCharacter::ARpgCharacter(const FObjectInitializer& ObjectInitializer) :
 	CrouchedEyeHeight = 50.0f;
 }
 
+void ARpgCharacter::FaceRotation(FRotator NewControlRotation, float DeltaTime)
+{
+	const URpgCharacterMovementComponent* RpgMoveComp = CastChecked<URpgCharacterMovementComponent>(GetCharacterMovement());
+	if (!RpgMoveComp->IsMantleControllingRotation())
+	{
+		Super::FaceRotation(NewControlRotation, DeltaTime);
+	}
+}
+
 ARpgPlayerController* ARpgCharacter::GetRpgPlayerController() const
 {
 	return Cast<ARpgPlayerController>(GetController());

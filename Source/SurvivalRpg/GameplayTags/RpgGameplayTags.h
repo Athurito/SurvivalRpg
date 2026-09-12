@@ -35,6 +35,8 @@ namespace RpgGameplayTags
 	UE_DECLARE_GAMEPLAY_TAG_EXTERN(InputTag_Jump);   
 	UE_DECLARE_GAMEPLAY_TAG_EXTERN(InputTag_StopJump);   
 	extern SURVIVALRPG_API FNativeGameplayTag InputTag_Ability_Interact;
+	/** Contextual traversal attempt on jump; granted only by Experiences that support prepared obstacles. */
+	extern SURVIVALRPG_API FNativeGameplayTag InputTag_Ability_Traversal;
 	UE_DECLARE_GAMEPLAY_TAG_EXTERN(InputTag_UI_Inventory);
 	UE_DECLARE_GAMEPLAY_TAG_EXTERN(InputTag_UI_QuickAccessRadial_Hold);
 	UE_DECLARE_GAMEPLAY_TAG_EXTERN(InputTag_UI_QuickAccessRadial_Select);

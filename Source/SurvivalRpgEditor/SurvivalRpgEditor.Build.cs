@@ -40,6 +40,7 @@ public class SurvivalRpgEditor : ModuleRules
 			"ModelViewViewModelEditor",
 			"ModularGameplay",
 			"ModularGameplayActors",
+			"MotionWarping",
 			"PropertyBindingUtils",
 			"Projects",
 			"SlateCore",
