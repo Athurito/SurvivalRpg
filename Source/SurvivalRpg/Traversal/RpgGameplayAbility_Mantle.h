@@ -31,7 +31,7 @@ template<> struct TStructOpsTypeTraits<FRpgMantleTargetData> : TStructOpsTypeTra
 	enum { WithNetSerializer = true, WithCopy = true };
 };
 
-/** Predicted GAS lifecycle and authoritative geometry validation for source GASP mantle queries. */
+/** Shared predicted GAS lifecycle for source GASP mantle and grounded vault; the reflected name preserves existing Blueprint assets. */
 UCLASS(Abstract, Blueprintable)
 class SURVIVALRPG_API URpgGameplayAbility_Mantle : public URpgGameplayAbility
 {
@@ -56,6 +56,10 @@ public:
 	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Mantle|Animation")
 	FName WarpTargetName;
 
+	/** Opposite ledge target used by source vault montages that contain a BackLedge warp; owned only while that montage is active. */
+	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Traversal|Animation")
+	FName BackLedgeWarpTargetName = TEXT("BackLedge");
+
 	/** Small vertical offset from the authored front ledge, in centimeters, matching the montage's hand target. */
 	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Mantle|Animation", meta = (Units = "cm"))
 	float LedgeVerticalOffset = 0.5f;
@@ -78,6 +82,9 @@ public:
 	/** Derives supported feet at the source montage's configured handoff time from its last front-ledge warp and root motion. */
 	bool GetMantleLandingLocation(const ACharacter& Character, const FRpgTraversalQueryResult& Result, FVector& OutLocation) const;
 
+	/** Derives vault feet at the configured source handoff; unsupported exits return to normal CMC falling rather than inventing a floor. */
+	bool GetVaultExitLocation(const ACharacter& Character, const FRpgTraversalQueryResult& Result, FVector& OutLocation) const;
+
 	virtual bool CanActivateAbility(const FGameplayAbilitySpecHandle Handle,
 		const FGameplayAbilityActorInfo* ActorInfo, const FGameplayTagContainer* SourceTags = nullptr,
 		const FGameplayTagContainer* TargetTags = nullptr, FGameplayTagContainer* OptionalRelevantTags = nullptr) const override;
@@ -98,6 +105,7 @@ private:
 	void LogTraversalRejection(const TCHAR* Stage, const FRpgTraversalQueryResult& Result) const;
 	void BeginMantle(const FRpgTraversalQueryResult& Result);
 	bool ValidateTraversal(const ACharacter& Character, const FRpgTraversalQueryResult& Result) const;
+	bool ValidateVaultTraversal(const ACharacter& Character, const FRpgTraversalQueryResult& Result) const;
 	void CancelCurrentMantle();
 	void CleanupMovement(bool bWasCancelled);
 	bool IsCapsuleClear(const ACharacter& Character, const FVector& Location) const;
@@ -120,6 +128,9 @@ private:
 	FTimerHandle TimeoutHandle;
 	int32 ActiveMontageInstanceId = INDEX_NONE;
 	float FinalWarpEndTime = 0.0f;
+	float SourceHandoffTime = 0.0f;
+	uint8 ActiveActionType = 0;
+	TArray<FName> OwnedWarpTargets;
 	bool bOwnsMovement = false;
 	bool bEnding = false;
 	bool bReceivedTargetData = false;

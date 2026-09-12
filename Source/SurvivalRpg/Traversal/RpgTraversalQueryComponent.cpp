@@ -20,7 +20,10 @@ bool URpgTraversalQueryComponent::IsAnimationAllowed(const ACharacter& Character
 	const float Speed = Character.GetVelocity().Size2D();
 	const float SpeedTolerance = FMath::Clamp(NetworkSpeedTolerance, 0.0f, 100.0f);
 	const float HeightTolerance = Movement->IsFalling() ? FMath::Clamp(NetworkAirborneHeightTolerance, 0.0f, 50.0f) : 3.0f;
-	for (const FRpgTraversalAnimationEntry& Entry : AllowedMantleAnimations)
+	const TArray<FRpgTraversalAnimationEntry>* Entries = Result.ActionType == 3 ? &AllowedMantleAnimations
+		: Result.ActionType == 2 && Movement->IsMovingOnGround() ? &AllowedVaultAnimations : nullptr;
+	if (!Entries) return false;
+	for (const FRpgTraversalAnimationEntry& Entry : *Entries)
 	{
 		if (Entry.Montage != Result.ChosenMontage || Entry.bAirborne != Movement->IsFalling()) continue;
 		if (!FMath::IsFinite(Entry.MinHeight) || !FMath::IsFinite(Entry.MaxHeight) || Entry.MaxHeight < Entry.MinHeight
