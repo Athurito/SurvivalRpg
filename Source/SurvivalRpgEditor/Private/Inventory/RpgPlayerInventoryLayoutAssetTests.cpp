@@ -19,7 +19,7 @@
 #include "UObject/Package.h"
 #include "UObject/UnrealType.h"
 
-namespace
+namespace RpgPlayerInventoryLayoutAssetTests
 {
 	constexpr TCHAR PlayerInventoryLayoutPath[] =
 		TEXT("/Game/SurvivalRpg/Inventory/Layouts/DA_PlayerInventoryLayout_Default.DA_PlayerInventoryLayout_Default");
@@ -164,6 +164,7 @@ IMPLEMENT_SIMPLE_AUTOMATION_TEST(
 
 bool FRpgPlayerInventoryLayoutAssetCompositionTest::RunTest(const FString& Parameters)
 {
+	using namespace RpgPlayerInventoryLayoutAssetTests;
 	const URpgPlayerInventoryLayoutDefinition* Layout =
 		LoadObject<URpgPlayerInventoryLayoutDefinition>(
 			nullptr,
@@ -502,6 +503,7 @@ IMPLEMENT_SIMPLE_AUTOMATION_TEST(
 bool FRpgPlayerInventoryLayoutDataValidationTest::RunTest(
 	const FString& Parameters)
 {
+	using namespace RpgPlayerInventoryLayoutAssetTests;
 	URpgPlayerInventoryLayoutDefinition* ValidLayout =
 		MakeValidTransientLayout();
 	if (!TestNotNull(
@@ -826,6 +828,7 @@ IMPLEMENT_SIMPLE_AUTOMATION_TEST(
 bool FRpgPlayerInventoryLayoutAuthoredAssetDataValidationTest::RunTest(
 	const FString& Parameters)
 {
+	using namespace RpgPlayerInventoryLayoutAssetTests;
 	IAssetRegistry& AssetRegistry =
 		FModuleManager::LoadModuleChecked<FAssetRegistryModule>(
 			TEXT("AssetRegistry")).Get();
@@ -890,6 +893,7 @@ IMPLEMENT_SIMPLE_AUTOMATION_TEST(
 bool FRpgInventoryItemDefinitionExplicitSpatialFragmentAssetTest::RunTest(
 	const FString& Parameters)
 {
+	using namespace RpgPlayerInventoryLayoutAssetTests;
 	IAssetRegistry& AssetRegistry =
 		FModuleManager::LoadModuleChecked<FAssetRegistryModule>(
 			TEXT("AssetRegistry")).Get();

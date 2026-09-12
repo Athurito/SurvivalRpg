@@ -32,6 +32,7 @@ public class SurvivalRpgEditor : ModuleRules
 			"GameplayAbilities",
 			"GameplayStateTreeModule",
 			"GameplayTags",
+			"IKRig",
 			"InputBlueprintNodes",
 			"InputCore",
 			"LevelEditor",

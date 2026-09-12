@@ -42,6 +42,7 @@ public class SurvivalRpg : ModuleRules
 				"GameplayAbilities",
 				"GameplayTags",
 				"GameplayTasks",
+				"IKRig",
 				"ModelViewViewModel",
 				"MotionWarping",
 				"AdvancedSessions",
