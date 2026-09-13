@@ -103,6 +103,19 @@ public:
 	/** Preserves the GASP input producer and appends this tick's local GAS root-motion playback interval. */
 	virtual void ProduceInput(int32 DeltaTimeMS, FMoverInputCmdContext* Cmd) override;
 
+	/**
+	 * Stops this pawn permanently after its authoritative health lifecycle starts death. Called by authority
+	 * and replicated health notifications; the terminal movement mode travels in Mover's existing sync state.
+	 * Repeated notifications preserve the original local simulation boundary and any subsequent death montage.
+	 */
+	void DisableMovementForDeath();
+
+	/** Reports the terminal stop for a particular simulation frame, including historical correction frames. */
+	bool IsMovementDisabledForDeath(const FMoverSyncState& SyncState, const FMoverTimeStep& TimeStep) const;
+
+	/** Sanitizes terminal-frame input before GASP and engine handlers, then schedules the authoritative stop. */
+	virtual void OnPreSimulate(const FMoverTimeStep& TimeStep, const FMoverTickStartData& StartingData) override;
+
 	/** Checks the supported linear montage and gameplay-mesh contract before GAS starts playback. */
 	bool CanPlayAbilityRootMotion(const UAbilitySystemComponent* AbilitySystem, const UAnimMontage* Montage,
 		float PlayRate, FName StartSection, float StartTimeSeconds) const;
@@ -144,4 +157,10 @@ private:
 	FPredictionKey LastActivationKey;
 	uint32 LastMontageSequence = 0;
 	int32 AbilityMontageInstanceId = INDEX_NONE;
+
+	// Local receipt time is a prediction boundary, not a second replicated death authority. A corrected
+	// RpgDead sync state wins even before this time; older living frames may still replay their original inputs.
+	double DeathMovementStartTimeMs = 0.0;
+	bool bDeathMovementRequested = false;
+	bool bSuppressMovementForDeathThisTick = false;
 };

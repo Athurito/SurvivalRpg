@@ -1,10 +1,14 @@
 #include "RpgCharacterMoverComponent.h"
 
+#include "RpgDeadMovementMode.h"
+
 #include "AbilitySystemComponent.h"
 #include "Abilities/GameplayAbility.h"
 #include "Animation/AnimInstance.h"
 #include "Animation/AnimMontage.h"
 #include "Components/SkeletalMeshComponent.h"
+#include "DefaultMovementSet/InstantMovementEffects/BasicInstantMovementEffects.h"
+#include "MoverDataModelTypes.h"
 #include "MoverSimulation.h"
 #include "MoverSimulationTypes.h"
 #include "SurvivalRpg/SurvivalRpg.h"
@@ -23,7 +27,7 @@ bool FRpgMoverAbilityRootMotion::GenerateMove(const FMoverTickStartData& StartSt
 	const UMoverComponent* MoverComp, UMoverBlackboard* SimBlackboard, FProposedMove& OutProposedMove)
 {
 	const URpgCharacterMoverComponent* RpgMover = Cast<URpgCharacterMoverComponent>(MoverComp);
-	if (!RpgMover)
+	if (!RpgMover || RpgMover->IsMovementDisabledForDeath(StartState.SyncState, TimeStep))
 	{
 		DurationMs = 0.0f;
 		return false;
@@ -128,17 +132,81 @@ void FRpgMoverAbilityRootMotionInputs::Interpolate(const FMoverDataStructBase& F
 
 void URpgCharacterMoverComponent::BeginPlay()
 {
+	// The copied Blueprint serializes its own MovementModes map, so register this engine-facing lifecycle
+	// mode on the instance as well as the simulation. Authored GASP modes and tuning remain untouched.
+	if (!MovementModes.Contains(URpgDeadMovementMode::ModeName))
+	{
+		AddMovementModeFromClass(URpgDeadMovementMode::ModeName, URpgDeadMovementMode::StaticClass());
+	}
 	Super::BeginPlay();
 	OnPreSimulationTick.AddUniqueDynamic(this, &ThisClass::HandleAbilityRootMotionPreSimulation);
+}
+
+void URpgCharacterMoverComponent::DisableMovementForDeath()
+{
+	if (bDeathMovementRequested)
+	{
+		return;
+	}
+	bDeathMovementRequested = true;
+	DeathMovementStartTimeMs = BackendLiaisonComp ? BackendLiaisonComp->GetCurrentSimTimeMs() : 0.0;
+	ClearAbilityRootMotion();
+}
+
+bool URpgCharacterMoverComponent::IsMovementDisabledForDeath(const FMoverSyncState& SyncState, const FMoverTimeStep& TimeStep) const
+{
+	return SyncState.MovementMode == URpgDeadMovementMode::ModeName ||
+		(bDeathMovementRequested && TimeStep.BaseSimTimeMs >= DeathMovementStartTimeMs);
+}
+
+void URpgCharacterMoverComponent::OnPreSimulate(const FMoverTimeStep& TimeStep, const FMoverTickStartData& StartingData)
+{
+	bSuppressMovementForDeathThisTick = IsMovementDisabledForDeath(StartingData.SyncState, TimeStep);
+	if (bSuppressMovementForDeathThisTick)
+	{
+		// The NP liaison deep-copies its stored command into StartingData before this callback. Mutating
+		// its collection changes only this simulation tick, preserving living input history for rollback.
+		if (FCharacterDefaultInputs* Inputs = StartingData.InputCmd.InputCollection.FindMutableDataByType<FCharacterDefaultInputs>())
+		{
+			*Inputs = FCharacterDefaultInputs{};
+		}
+		if (FRpgMoverAbilityRootMotionInputs* Inputs = StartingData.InputCmd.InputCollection.FindMutableDataByType<FRpgMoverAbilityRootMotionInputs>())
+		{
+			Inputs->RootMotion = FRpgMoverAbilityRootMotion{};
+			Inputs->RetainMontageForHistory();
+		}
+		// Preserve the collision stance reached at death; held GASP crouch input must not change it.
+		bWantsToCrouch = IsCrouching();
+	}
+
+	Super::OnPreSimulate(TimeStep, StartingData);
+
+	if (bSuppressMovementForDeathThisTick && BackendLiaisonComp && Simulation && !IsBackendAsync() && TimeStep.StepMs > 0.0f)
+	{
+		// Queue after engine/GASP callbacks. The instant effect wins over queued jump impulses and layered
+		// preferred modes in this tick; the terminal mode discards any remaining movement contribution.
+		TSharedPtr<FApplyVelocityEffect> StopEffect = MakeShared<FApplyVelocityEffect>();
+		StopEffect->VelocityToApply = FVector::ZeroVector;
+		StopEffect->bAdditiveVelocity = false;
+		StopEffect->ForceMovementMode = URpgDeadMovementMode::ModeName;
+		const FMoverTime FrameTime(TimeStep.ServerFrame, TimeStep.BaseSimTimeMs);
+		const FMoverSchedulingInfo Scheduling(FrameTime, FrameTime, BackendLiaisonComp->IsFixedDt());
+		Simulation->QueueInstantMovementEffect(FScheduledInstantMovementEffect(Scheduling, StopEffect));
+	}
 }
 
 void URpgCharacterMoverComponent::ProduceInput(int32 DeltaTimeMS, FMoverInputCmdContext* Cmd)
 {
 	Super::ProduceInput(DeltaTimeMS, Cmd);
 	FRpgMoverAbilityRootMotionInputs& Inputs = Cmd->InputCollection.FindOrAddMutableDataByType<FRpgMoverAbilityRootMotionInputs>();
-	if (!BackendLiaisonComp || !SampleAbilityRootMotion(BackendLiaisonComp->GetCurrentSimTimeMs(), Inputs.RootMotion))
+	const bool bDeathInput = bDeathMovementRequested || GetSyncState().MovementMode == URpgDeadMovementMode::ModeName;
+	if (!BackendLiaisonComp || bDeathInput || !SampleAbilityRootMotion(BackendLiaisonComp->GetCurrentSimTimeMs(), Inputs.RootMotion))
 	{
 		Inputs.RootMotion = FRpgMoverAbilityRootMotion{};
+	}
+	if (bDeathInput)
+	{
+		Cmd->InputCollection.FindOrAddMutableDataByType<FCharacterDefaultInputs>() = FCharacterDefaultInputs{};
 	}
 	Inputs.RetainMontageForHistory();
 	CachedLastProducedInputCmd = *Cmd;
@@ -165,7 +233,7 @@ bool URpgCharacterMoverComponent::SampleAbilityRootMotion(double SimTimeMs, FRpg
 
 void URpgCharacterMoverComponent::HandleAbilityRootMotionPreSimulation(const FMoverTimeStep& TimeStep, const FMoverInputCmdContext& InputCmd)
 {
-	if (!BackendLiaisonComp || !Simulation || IsBackendAsync() || TimeStep.StepMs <= 0.0f)
+	if (!BackendLiaisonComp || !Simulation || IsBackendAsync() || TimeStep.StepMs <= 0.0f || bSuppressMovementForDeathThisTick)
 	{
 		return;
 	}

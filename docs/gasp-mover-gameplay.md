@@ -5,6 +5,11 @@ RPG equipment, combat input and GAS montage path. UEFN remains the gameplay and
 default visible mesh. The original GASP walk/sprint/movement selection remains
 in the working Blueprint and its simulation callbacks.
 
+Accepted in PR #139. The subsequent [health/death/respawn integration](gasp-mover-lifecycle.md)
+extends the lifecycle intentionally left out of this stage. The user accepted
+the current block behavior and deferred stationary legs during movement with
+block held to a later combat/locomotion blending step, alongside CMC.
+
 ## Ownership
 
 `URpgEquipmentManagerComponent` owns equipped instances and their replicated
@@ -147,7 +152,7 @@ backend, not Chaos physics, extrapolated proxies or montage section jumps.
 
 Mover attack coverage verifies server trace sampling and authored
 windows; the existing CMC melee test additionally verifies damage. The tests
-do not establish Mover health/death/respawn support. Network tests ran in
+predate the [Mover health/death/respawn integration](gasp-mover-lifecycle.md). Network tests ran in
 single-process PIE; separate-process and packaged multiplayer remain untested.
 Existing transient-level NetGUID, voice-interface and Independent interpolation
 warnings occurred, especially during joins and simulated latency. No
