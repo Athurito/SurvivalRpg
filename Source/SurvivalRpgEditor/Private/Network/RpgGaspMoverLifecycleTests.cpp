@@ -320,9 +320,14 @@ namespace RpgGaspMoverLifecycleTests
 		TArray<TWeakObjectPtr<AActor>> OldEquipmentActors;
 		FDelegateHandle HealthHandle, EndHandle;
 		FVector DeathLocation = FVector::ZeroVector, RespawnLocation = FVector::ZeroVector;
+		FVector FirstTerminalLocation = FVector::ZeroVector;
+		FVector MaximumDeathDriftLocation = FVector::ZeroVector, MaximumDeathDriftSyncLocation = FVector::ZeroVector;
+		float MaximumDeathDriftSeconds = 0.0f;
+		float ProxyDeathConvergenceSeconds = 0.0f, ProxyDeathTargetError = -1.0f;
 		float StartingHealth = 0.0f, DamagedHealth = 0.0f, DeadSeconds = 0.0f, MaximumDeathDrift = 0.0f;
 		int32 AttackCancellations = 0, BlockCancellations = 0, RealDamageEvents = 0;
 		bool bMeshHitContext = false, bObservedDeath = false, bSawTerminalSync = false, bInvalidDeadState = false, bSawRespawnMontage = false, bCapturedRespawn = false;
+		bool bProxyDeathConverged = false;
 	};
 	/** Reads real ASC events and naturally simulated states; it never advances death or respawn itself. */
 	class FScopedObservations final
@@ -375,12 +380,18 @@ namespace RpgGaspMoverLifecycleTests
 		bool Has(UWorld* World) const { return Peers.Contains(World); }
 		void Report() const
 		{
+			const FPeer* Authority = FindAuthorityPeer();
 			for (const auto& Entry : Peers)
 			{
 				const FPeer& Peer = Entry.Value;
 				UE_LOG(LogTemp, Display, TEXT("RpgMoverLifecycle world=%s damageEvents=%d meshHit=%d health=%.2f deathSeen=%d deadSeconds=%.3f terminalSync=%d deathDrift=%.3f invalidDead=%d attackCancelled=%d blockCancelled=%d oldPawn=%s respawnMontage=%d"),
 					*GetPathNameSafe(Entry.Key.Get()), Peer.RealDamageEvents, Peer.bMeshHitContext, Peer.DamagedHealth, Peer.bObservedDeath, Peer.DeadSeconds,
 					Peer.bSawTerminalSync, Peer.MaximumDeathDrift, Peer.bInvalidDeadState, Peer.AttackCancellations, Peer.BlockCancellations, *GetNameSafe(Peer.OldPawn.Get()), Peer.bSawRespawnMontage);
+				UE_LOG(LogTemp, Display, TEXT("RpgMoverLifecycle death position world=%s firstTerminal=%s anchor=%s authorityDeath=%s proxyConverged=%d convergenceSeconds=%.4f targetError=%.4f maxDriftActor=%s maxDriftSync=%s maxDriftSeconds=%.4f"),
+					*GetPathNameSafe(Entry.Key.Get()), *Peer.FirstTerminalLocation.ToCompactString(), *Peer.DeathLocation.ToCompactString(),
+					Authority && Authority->bObservedDeath ? *Authority->DeathLocation.ToCompactString() : TEXT("unobserved"),
+					Peer.bProxyDeathConverged, Peer.ProxyDeathConvergenceSeconds, Peer.ProxyDeathTargetError,
+					*Peer.MaximumDeathDriftLocation.ToCompactString(), *Peer.MaximumDeathDriftSyncLocation.ToCompactString(), Peer.MaximumDeathDriftSeconds);
 			}
 		}
 		void Stop()
@@ -393,6 +404,12 @@ namespace RpgGaspMoverLifecycleTests
 			}
 		}
 	private:
+		const FPeer* FindAuthorityPeer() const
+		{
+			for (const auto& Entry : Peers)
+				if (Entry.Key.IsValid() && Entry.Key->GetNetMode() != NM_Client) return &Entry.Value;
+			return nullptr;
+		}
 		void Tick(UWorld* World, ELevelTick, float DeltaSeconds)
 		{
 			if (!ActiveWorld(World)) return;
@@ -413,18 +430,44 @@ namespace RpgGaspMoverLifecycleTests
 				if (bTerminal && !Peer->bSawTerminalSync)
 				{
 					Peer->bSawTerminalSync = true;
-					// Independent proxies interpolate an older motion stream (100ms by default). Mode uses
-					// the newer sample while velocity still interpolates, so wait for the full terminal state.
-					if (bProxy) Peer->DeathLocation = Old->GetActorLocation();
+					Peer->FirstTerminalLocation = Old->GetActorLocation();
 				}
-				if (bProxy && !Peer->bSawTerminalSync && Peer->DeadSeconds > 0.75f)
-					Peer->bInvalidDeadState = true;
-				// Owner/authority retain their DeathStart boundary; only the buffered proxy starts at receipt.
+				if (bProxy)
+				{
+					const FPeer* Authority = FindAuthorityPeer();
+					if (Authority && Authority->bObservedDeath && Authority->bSawTerminalSync)
+					{
+						Peer->ProxyDeathTargetError = static_cast<float>(FVector::Dist(Old->GetActorLocation(), Authority->DeathLocation));
+						// Mode comes from the newer NP sample, but position interpolates independently of
+						// velocity/intent: even two zero-velocity samples can still have different positions.
+						// Require arrival at the fixed authoritative death position within the existing budget.
+						if (!Peer->bProxyDeathConverged && bTerminal && Peer->DeadSeconds <= 0.75f && Peer->ProxyDeathTargetError <= 1.0f)
+						{
+							Peer->DeathLocation = Authority->DeathLocation;
+							Peer->bProxyDeathConverged = true;
+							Peer->ProxyDeathConvergenceSeconds = Peer->DeadSeconds;
+						}
+					}
+					if (!Peer->bProxyDeathConverged && Peer->DeadSeconds > 0.75f) Peer->bInvalidDeadState = true;
+				}
+				// Terminal/ability checks start at the first complete terminal sample, independently of convergence.
 				if (bProxy ? Peer->bSawTerminalSync : Peer->DeadSeconds > 0.05f)
 				{
-					// Exclude only the known, intentionally injected prediction error; ordinary motion still counts.
-					const FVector ArtificialOffset = TestPredictionOffset ? TestPredictionOffset(World) : FVector::ZeroVector;
-					Peer->MaximumDeathDrift = FMath::Max(Peer->MaximumDeathDrift, static_cast<float>(FVector::Dist(Peer->DeathLocation, Old->GetActorLocation() - ArtificialOffset)));
+					// Authority/owner retain their strict DeathStart anchor. Only buffered proxies wait for arrival.
+					if (!bProxy || Peer->bProxyDeathConverged)
+					{
+						// Exclude only the known, intentionally injected owner prediction error.
+						const FVector ArtificialOffset = TestPredictionOffset ? TestPredictionOffset(World) : FVector::ZeroVector;
+						const FVector ObservedLocation = Old->GetActorLocation() - ArtificialOffset;
+						const float Drift = static_cast<float>(FVector::Dist(Peer->DeathLocation, ObservedLocation));
+						if (Drift > Peer->MaximumDeathDrift)
+						{
+							Peer->MaximumDeathDrift = Drift;
+							Peer->MaximumDeathDriftLocation = ObservedLocation;
+							Peer->MaximumDeathDriftSyncLocation = Default ? Default->GetLocation_WorldSpace() : FVector::ZeroVector;
+							Peer->MaximumDeathDriftSeconds = Peer->DeadSeconds;
+						}
+					}
 					const bool bInvalid = !bTerminal;
 					if (bInvalid && !Peer->bInvalidDeadState)
 						UE_LOG(LogTemp, Display, TEXT("RpgMoverLifecycle invalid death world=%s seconds=%.3f mode=%s velocity=%s angular=%s rootMotion=%d"),
@@ -546,6 +589,7 @@ NETWORK_TEST_CLASS(GaspMoverLifecyclePIE, "SurvivalRpg.GASP.Mover.Lifecycle")
 		ASSERT_THAT(IsTrue(Peer.bSawTerminalSync));
 		ASSERT_THAT(IsFalse(Peer.bInvalidDeadState));
 		ASSERT_THAT(IsTrue(Peer.MaximumDeathDrift < 5.0f));
+		if (World == ObserverWorld.Get()) ASSERT_THAT(IsTrue(Peer.bProxyDeathConverged && Peer.ProxyDeathConvergenceSeconds <= 0.75f));
 		if (World == AuthorityWorld.Get() || World == OwnerWorld.Get())
 			ASSERT_THAT(IsTrue(bBlock ? Peer.BlockCancellations > 0 : Peer.AttackCancellations > 0));
 		if (World == AuthorityWorld.Get())

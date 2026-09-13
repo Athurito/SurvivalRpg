@@ -1,6 +1,8 @@
 # GASP Mover health, death and respawn
 
-This slice extends the equipment/montage integration accepted in PR #139.
+This slice, accepted in PR #140, extends the equipment/montage integration
+accepted in PR #139. The subsequent [grounded Mantle integration](gasp-mover-mantle.md)
+adds traversal to the same Experience.
 The existing PlayerState ASC, HealthSet, HealthComponent, DeathComponent,
 `GA_Combat_Death`, GameMode respawn and controller-owned inventory/loadout
 remain responsible for the RPG lifecycle. No second health or respawn system

@@ -521,9 +521,10 @@ void URpgPawnGameplayComponent::Input_AutoRun(const FInputActionValue& InputActi
 
 bool URpgPawnGameplayComponent::TryContextualTraversal()
 {
-	if (ARpgCharacter* Character = GetPawn<ARpgCharacter>())
+	if (APawn* Pawn = GetPawn<APawn>())
 	{
-		if (URpgAbilitySystemComponent* ASC = Character->GetRpgAbilitySystemComponent())
+		const URpgPawnExtensionComponent* Extension = URpgPawnExtensionComponent::FindPawnExtensionComponent(Pawn);
+		if (URpgAbilitySystemComponent* ASC = Extension ? Extension->GetRpgAbilitySystemComponent() : nullptr)
 		{
 			// Only Experiences granting traversal participate. Holding or pressing again consumes input while active.
 			bool bHasTraversal = false;
@@ -535,8 +536,9 @@ bool URpgPawnGameplayComponent::TryContextualTraversal()
 					return true;
 				}
 			}
-			if (bHasTraversal && Character->GetMesh() && Character->GetMesh()->GetAnimInstance()
-				&& Character->GetMesh()->GetAnimInstance()->IsSlotActive(TEXT("DefaultSlot")))
+			const USkeletalMeshComponent* Mesh = URpgPawnExtensionComponent::FindGameplayMesh(Pawn);
+			if (bHasTraversal && Mesh && Mesh->GetAnimInstance()
+				&& Mesh->GetAnimInstance()->IsSlotActive(TEXT("DefaultSlot")))
 			{
 				return true;
 			}

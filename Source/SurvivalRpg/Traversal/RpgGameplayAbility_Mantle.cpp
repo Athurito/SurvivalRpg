@@ -13,11 +13,16 @@
 #include "Engine/PackageMapClient.h"
 #include "GameFramework/CharacterMovementComponent.h"
 #include "MotionWarpingComponent.h"
+#include "MoverDataModelTypes.h"
 #include "RootMotionModifier_SkewWarp.h"
 #include "Misc/MemStack.h"
 #include "SurvivalRpg/SurvivalRpg.h"
+#include "SurvivalRpg/AbilitySystem/RpgAbilitySystemComponent.h"
 #include "SurvivalRpg/Core/Character/RpgDownedComponent.h"
 #include "SurvivalRpg/Core/Character/RpgCharacterMovementComponent.h"
+#include "SurvivalRpg/Core/Character/RpgCharacterMoverComponent.h"
+#include "SurvivalRpg/Core/Character/RpgMoverTraversalTypes.h"
+#include "SurvivalRpg/Core/Character/RpgPawnExtensionComponent.h"
 #include "SurvivalRpg/Core/Character/RpgHealthComponent.h"
 #include "TimerManager.h"
 
@@ -41,13 +46,29 @@ bool FRpgMantleTargetData::NetSerialize(FArchive& Ar, UPackageMap* Map, bool& bO
 
 namespace RpgMantle
 {
-	FCollisionShape CapsuleShape(const ACharacter& Character)
+	UCapsuleComponent* Capsule(const APawn& Pawn)
 	{
-		return FCollisionShape::MakeCapsule(Character.GetCapsuleComponent()->GetScaledCapsuleRadius(),
-			Character.GetCapsuleComponent()->GetScaledCapsuleHalfHeight());
+		const ACharacter* Character = Cast<ACharacter>(&Pawn);
+		return Character ? Character->GetCapsuleComponent() : Cast<UCapsuleComponent>(Pawn.GetRootComponent());
 	}
 
-	bool IsIncapacitated(const ACharacter& Character)
+	FCollisionShape CapsuleShape(const APawn& Pawn)
+	{
+		const UCapsuleComponent* PawnCapsule = Capsule(Pawn);
+		return FCollisionShape::MakeCapsule(PawnCapsule->GetScaledCapsuleRadius(), PawnCapsule->GetScaledCapsuleHalfHeight());
+	}
+
+	bool IsWalkable(const APawn& Pawn, const FHitResult& Hit)
+	{
+		if (const ACharacter* Character = Cast<ACharacter>(&Pawn))
+		{
+			return Character->GetCharacterMovement() && Character->GetCharacterMovement()->IsWalkable(Hit);
+		}
+		const URpgCharacterMoverComponent* Mover = Pawn.FindComponentByClass<URpgCharacterMoverComponent>();
+		return Mover && Mover->IsTraversalWalkable(Hit);
+	}
+
+	bool IsIncapacitated(const AActor& Character)
 	{
 		const URpgHealthComponent* Health = URpgHealthComponent::FindHealthComponent(&Character);
 		const URpgDownedComponent* Downed = URpgDownedComponent::FindDownedComponent(&Character);
@@ -82,18 +103,53 @@ bool URpgGameplayAbility_Mantle::IsCharacterReady(const ACharacter& Character) c
 		&& Warping && !Warping->FindWarpTarget(WarpTargetName) && RpgMovement && !RpgMovement->GetMantleCollisionComponent();
 }
 
+bool URpgGameplayAbility_Mantle::IsPawnReady(const APawn& Pawn) const
+{
+	if (const ACharacter* Character = Cast<ACharacter>(&Pawn)) return IsCharacterReady(*Character);
+	const URpgCharacterMoverComponent* Mover = Pawn.FindComponentByClass<URpgCharacterMoverComponent>();
+	const UCapsuleComponent* Capsule = RpgMantle::Capsule(Pawn);
+	const USkeletalMeshComponent* Mesh = URpgPawnExtensionComponent::FindGameplayMesh(&Pawn);
+	const UAnimInstance* Animation = Mesh ? Mesh->GetAnimInstance() : nullptr;
+	const UMotionWarpingComponent* Warping = Pawn.FindComponentByClass<UMotionWarpingComponent>();
+	return Mover && Capsule && Mover->GetUpdatedComponent() == Capsule && Capsule->IsQueryCollisionEnabled()
+		&& Mover->IsOnGround() && !Mover->IsCrouching() && !RpgMantle::IsIncapacitated(Pawn)
+		&& Mesh && Mesh->GetSkeletalMeshAsset() && Mover->GetPrimaryVisualComponent() == Mesh
+		&& Animation && !Animation->IsSlotActive(TEXT("DefaultSlot"))
+		&& Pawn.FindComponentByClass<URpgTraversalQueryComponent>() && !WarpTargetName.IsNone()
+		&& FMath::IsFinite(LedgeVerticalOffset) && FMath::IsFinite(CandidateSearchDistance) && CandidateSearchDistance > 0.0f
+		&& FMath::IsFinite(PathClearance) && PathClearance >= 0.0f
+		&& Warping && !Warping->FindWarpTarget(WarpTargetName) && Mover->GetTraversalWarpingAdapter() && !Mover->HasTraversalLease();
+}
+
 bool URpgGameplayAbility_Mantle::GetMantleLandingLocation(const ACharacter& Character,
 	const FRpgTraversalQueryResult& Result, FVector& OutLocation) const
 {
+	return GetMantleLandingLocation(static_cast<const APawn&>(Character), Result, OutLocation);
+}
+
+bool URpgGameplayAbility_Mantle::GetMantleLandingLocation(const APawn& Pawn,
+	const FRpgTraversalQueryResult& Result, FVector& OutLocation) const
+{
 	OutLocation = FVector::ZeroVector;
-	if (!Result.ChosenMontage || !Character.GetMesh() || !Character.GetMesh()->GetAnimInstance()
-		|| Result.FrontLedgeLocation.ContainsNaN() || Result.FrontLedgeNormal.ContainsNaN()) return false;
-	const URpgTraversalQueryComponent* Query = Character.FindComponentByClass<URpgTraversalQueryComponent>();
+	const URpgTraversalQueryComponent* Query = Pawn.FindComponentByClass<URpgTraversalQueryComponent>();
 	const FRpgTraversalAnimationEntry* Entry = Query ? Query->AllowedMantleAnimations.FindByPredicate(
 		[&Result](const FRpgTraversalAnimationEntry& Candidate) { return Candidate.Montage == Result.ChosenMontage; }) : nullptr;
-	if (!Entry || !FMath::IsFinite(Entry->HandoffTime) || Entry->HandoffTime <= Result.StartTime
-		|| Entry->HandoffTime > Result.ChosenMontage->GetPlayLength() + 0.001f) return false;
-	const float HandoffTime = FMath::Min(Entry->HandoffTime, Result.ChosenMontage->GetPlayLength());
+	return Entry && GetMantleLandingAtTime(Pawn, Result, Entry->HandoffTime, OutLocation);
+}
+
+bool URpgGameplayAbility_Mantle::GetMantleLandingAtTime(const APawn& Pawn, const FRpgTraversalQueryResult& Result,
+	float HandoffTime, FVector& OutLocation) const
+{
+	OutLocation = FVector::ZeroVector;
+	const ACharacter* Character = Cast<ACharacter>(&Pawn);
+	const USkeletalMeshComponent* Mesh = URpgPawnExtensionComponent::FindGameplayMesh(&Pawn);
+	const URpgCharacterMoverComponent* Mover = Character ? nullptr : Pawn.FindComponentByClass<URpgCharacterMoverComponent>();
+	const UMotionWarpingBaseAdapter* Adapter = Mover ? Mover->GetTraversalWarpingAdapter() : nullptr;
+	if ((!Character && !Adapter) || !Result.ChosenMontage || !Mesh || !Mesh->GetAnimInstance()
+		|| Result.FrontLedgeLocation.ContainsNaN() || Result.FrontLedgeNormal.ContainsNaN()) return false;
+	if (!FMath::IsFinite(HandoffTime) || HandoffTime <= Result.StartTime
+		|| HandoffTime > Result.ChosenMontage->GetPlayLength() + 0.001f) return false;
+	HandoffTime = FMath::Min(HandoffTime, Result.ChosenMontage->GetPlayLength());
 	TArray<FMotionWarpingWindowData> Windows;
 	UMotionWarpingUtilities::GetMotionWarpingWindowsForWarpTargetFromAnimation(Result.ChosenMontage, WarpTargetName, Windows);
 	const FMotionWarpingWindowData* Last = nullptr;
@@ -109,16 +165,18 @@ bool URpgGameplayAbility_Mantle::GetMantleLandingLocation(const ACharacter& Char
 	FTransform Offset = FTransform::Identity;
 	if (Modifier->WarpPointAnimProvider == EWarpPointAnimProvider::Bone)
 	{
-		if (Character.GetMesh()->GetBoneIndex(Modifier->WarpPointAnimBoneName) == INDEX_NONE) return false;
-		Offset = UMotionWarpingUtilities::CalculateRootTransformRelativeToWarpPointAtTime(Character, Result.ChosenMontage,
-			Last->EndTime, Modifier->WarpPointAnimBoneName);
+		if (Mesh->GetBoneIndex(Modifier->WarpPointAnimBoneName) == INDEX_NONE) return false;
+		Offset = Character
+			? UMotionWarpingUtilities::CalculateRootTransformRelativeToWarpPointAtTime(*Character, Result.ChosenMontage, Last->EndTime, Modifier->WarpPointAnimBoneName)
+			: UMotionWarpingUtilities::CalculateRootTransformRelativeToWarpPointAtTime(*Adapter, Result.ChosenMontage, Last->EndTime, Modifier->WarpPointAnimBoneName);
 	}
 	else if (Modifier->WarpPointAnimProvider == EWarpPointAnimProvider::Static)
 	{
-		Offset = UMotionWarpingUtilities::CalculateRootTransformRelativeToWarpPointAtTime(Character, Result.ChosenMontage,
-			Last->EndTime, Modifier->WarpPointAnimTransform);
+		Offset = Character
+			? UMotionWarpingUtilities::CalculateRootTransformRelativeToWarpPointAtTime(*Character, Result.ChosenMontage, Last->EndTime, Modifier->WarpPointAnimTransform)
+			: UMotionWarpingUtilities::CalculateRootTransformRelativeToWarpPointAtTime(*Adapter, Result.ChosenMontage, Last->EndTime, Modifier->WarpPointAnimTransform);
 	}
-	Offset.ScaleTranslation(Character.GetMesh()->GetComponentScale());
+	Offset.ScaleTranslation(Mesh->GetComponentScale());
 	const FQuat Facing = (-Result.FrontLedgeNormal.GetSafeNormal2D()).ToOrientationQuat();
 	const FTransform RootAtWarp = Offset * FTransform(Facing, Result.FrontLedgeLocation + FVector(0, 0, LedgeVerticalOffset));
 	// Running samples continue with a long locomotion tail after their forced blend-out notify releases traversal.
@@ -126,7 +184,8 @@ bool URpgGameplayAbility_Mantle::GetMantleLandingLocation(const ACharacter& Char
 	const FTransform Remaining = Modifier->bSubtractRemainingRootMotion ? FTransform::Identity
 		: UMotionWarpingUtilities::ExtractRootMotionFromAnimation(Result.ChosenMontage, Last->EndTime, HandoffTime);
 	const FQuat ActorRotation = Modifier->AdditionalRotationOffset.Quaternion() * RootAtWarp.GetRotation();
-	OutLocation = RootAtWarp.GetLocation() + (ActorRotation * Character.GetBaseRotationOffset()).RotateVector(Remaining.GetTranslation());
+	const FQuat VisualRotation = Character ? Character->GetBaseRotationOffset() : Mover->GetBaseVisualComponentTransform().GetRotation();
+	OutLocation = RootAtWarp.GetLocation() + (ActorRotation * VisualRotation).RotateVector(Remaining.GetTranslation());
 	return !OutLocation.ContainsNaN();
 }
 
@@ -279,36 +338,44 @@ bool URpgGameplayAbility_Mantle::GetHurdleTargetsAndLanding(const ACharacter& Ch
 	return !OutLocation.ContainsNaN() && !OutFloorTarget.ContainsNaN();
 }
 
-bool URpgGameplayAbility_Mantle::ValidateTraversal(const ACharacter& Character, const FRpgTraversalQueryResult& Result) const
+bool URpgGameplayAbility_Mantle::ValidateTraversal(const APawn& Pawn, const FRpgTraversalQueryResult& Result) const
 {
-	URpgTraversalQueryComponent* Query = Character.FindComponentByClass<URpgTraversalQueryComponent>();
+	const ACharacter* Character = Cast<ACharacter>(&Pawn);
+	URpgTraversalQueryComponent* Query = Pawn.FindComponentByClass<URpgTraversalQueryComponent>();
 	UPrimitiveComponent* Collider = Result.HitComponent;
-	const UCapsuleComponent* Capsule = Character.GetCapsuleComponent();
+	const UCapsuleComponent* Capsule = RpgMantle::Capsule(Pawn);
 	const UAnimMontage* SelectedMontage = Result.ChosenMontage;
-	if (!IsCharacterReady(Character) || !Query || (Result.ActionType != 3 && Result.ActionType != 2 && Result.ActionType != 1) || !Result.HasFrontLedge
-		|| !IsValid(Collider) || !Collider->IsRegistered() || Collider->GetWorld() != Character.GetWorld()
+	if (!IsPawnReady(Pawn) || !Query || (Result.ActionType != 3 && Result.ActionType != 2 && Result.ActionType != 1) || !Result.HasFrontLedge
+		|| !IsValid(Collider) || !Collider->IsRegistered() || Collider->GetWorld() != Pawn.GetWorld()
 		|| Collider->IsSimulatingPhysics() || !Collider->IsQueryCollisionEnabled()
 		|| Collider->GetCollisionResponseToChannel(ECC_GameTraceChannel1) != ECR_Block
 		|| !SelectedMontage || !SelectedMontage->HasRootMotion()
-		|| SelectedMontage->GetSkeleton() != Character.GetMesh()->GetSkeletalMeshAsset()->GetSkeleton()
-		|| !Query->IsAnimationAllowed(Character, Result) || Result.FrontLedgeLocation.ContainsNaN()
+		|| SelectedMontage->GetSkeleton() != URpgPawnExtensionComponent::FindGameplayMesh(&Pawn)->GetSkeletalMeshAsset()->GetSkeleton()
+		|| !Query->IsAnimationAllowed(Pawn, Result) || Result.FrontLedgeLocation.ContainsNaN()
 		|| Result.FrontLedgeNormal.ContainsNaN() || Result.FrontLedgeNormal.GetSafeNormal2D().IsNearlyZero()
 		|| FMath::Abs(Result.FrontLedgeNormal.Z) > 0.1 || !FMath::IsFinite(Result.ObstacleDepth)
 		|| Result.ObstacleDepth < 0.0
-		|| !IsCapsuleClear(Character, Character.GetActorLocation())) return false;
+		|| !IsCapsuleClear(Pawn, Pawn.GetActorLocation())) return false;
+	if (const URpgCharacterMoverComponent* Mover = Character ? nullptr : Pawn.FindComponentByClass<URpgCharacterMoverComponent>())
+	{
+		const URpgPawnExtensionComponent* Extension = URpgPawnExtensionComponent::FindPawnExtensionComponent(&Pawn);
+		if (Result.ActionType != 3 || !Mover->IsOnGround()
+			|| !Mover->CanPlayAbilityRootMotion(Extension ? Extension->GetRpgAbilitySystemComponent() : nullptr,
+				SelectedMontage, Result.PlayRate, NAME_None, Result.StartTime)) return false;
+	}
 	const FVector Normal = Result.FrontLedgeNormal.GetSafeNormal2D();
-	const FVector Feet = Character.GetActorLocation() - FVector(0, 0, Capsule->GetScaledCapsuleHalfHeight());
+	const FVector Feet = Pawn.GetActorLocation() - FVector(0, 0, Capsule->GetScaledCapsuleHalfHeight());
 	const double Height = Result.FrontLedgeLocation.Z - Feet.Z;
 	if (!FMath::IsFinite(Height) || Height < -3.0 || Height > 280.0
 		|| FMath::Abs(Height - Result.ObstacleHeight) > 5.0
-		|| FVector::Dist2D(Character.GetActorLocation(), Result.FrontLedgeLocation) > CandidateSearchDistance
-		|| FVector::DotProduct(Character.GetActorLocation() - Result.FrontLedgeLocation, Normal) <= 0.0) return false;
-	if (Result.ActionType == 2) return ValidateVaultTraversal(Character, Result);
-	if (Result.ActionType == 1) return ValidateHurdleTraversal(Character, Result);
+		|| FVector::Dist2D(Pawn.GetActorLocation(), Result.FrontLedgeLocation) > CandidateSearchDistance
+		|| FVector::DotProduct(Pawn.GetActorLocation() - Result.FrontLedgeLocation, Normal) <= 0.0) return false;
+	if (Result.ActionType == 2) return Character && ValidateVaultTraversal(*Character, Result);
+	if (Result.ActionType == 1) return Character && ValidateHurdleTraversal(*Character, Result);
 	FVector Landing;
-	if (!GetMantleLandingLocation(Character, Result, Landing)) return false;
-	const UWorld* World = Character.GetWorld();
-	FCollisionQueryParams Params(SCENE_QUERY_STAT(RpgGaspMantleRoute), false, &Character);
+	if (!GetMantleLandingLocation(Pawn, Result, Landing)) return false;
+	const UWorld* World = Pawn.GetWorld();
+	FCollisionQueryParams Params(SCENE_QUERY_STAT(RpgGaspMantleRoute), false, &Pawn);
 	const FCollisionResponseParams Responses(Capsule->GetCollisionResponseToChannels());
 	const ECollisionChannel Channel = Capsule->GetCollisionObjectType();
 	FHitResult Hit;
@@ -316,19 +383,34 @@ bool URpgGameplayAbility_Mantle::ValidateTraversal(const ACharacter& Character, 
 	FVector Face = Result.FrontLedgeLocation - FVector(0, 0, FMath::Min(10.0, FMath::Max(2.0, Height * 0.5)));
 	if (!World->LineTraceSingleByChannel(Hit, Face + Normal * (Capsule->GetScaledCapsuleRadius() + 10),
 		Face - Normal * 10.0, Channel, Params, Responses) || Hit.GetComponent() != Collider) return false;
-	// Support and capsule clearance are measured at the selected animation's authored handoff.
-	if (!World->LineTraceSingleByChannel(Hit, Landing + FVector(0, 0, 10), Landing - FVector(0, 0, 10), Channel, Params, Responses)
-		|| Hit.GetComponent() != Collider || !Character.GetCharacterMovement()->IsWalkable(Hit)
-		|| FMath::Abs(Hit.ImpactPoint.Z - Landing.Z) > 5.0) return false;
-	const FVector Destination(Landing.X, Landing.Y, Hit.ImpactPoint.Z + Capsule->GetScaledCapsuleHalfHeight() + 2.0f);
-	if (!IsCapsuleClear(Character, Destination)) return false;
-	const double RouteZ = FMath::Max(Character.GetActorLocation().Z, Destination.Z) + PathClearance;
-	const FVector Route[] = { Character.GetActorLocation(), FVector(Character.GetActorLocation().X, Character.GetActorLocation().Y, RouteZ),
-		FVector(Destination.X, Destination.Y, RouteZ), Destination };
-	for (int32 Index = 1; Index < UE_ARRAY_COUNT(Route); ++Index)
+	const auto ValidateLanding = [&](const FVector& FeetLocation)
 	{
-		if (World->SweepSingleByChannel(Hit, Route[Index - 1], Route[Index], Capsule->GetComponentQuat(), Channel,
-			RpgMantle::CapsuleShape(Character), Params, Responses)) return false;
+		// Validate the actual supported capsule route for both natural and conditional source handoffs.
+		if (!World->LineTraceSingleByChannel(Hit, FeetLocation + FVector(0, 0, 10), FeetLocation - FVector(0, 0, 10), Channel, Params, Responses)
+			|| Hit.GetComponent() != Collider || !RpgMantle::IsWalkable(Pawn, Hit)
+			|| FMath::Abs(Hit.ImpactPoint.Z - FeetLocation.Z) > 5.0) return false;
+		const FVector Destination(FeetLocation.X, FeetLocation.Y, Hit.ImpactPoint.Z + Capsule->GetScaledCapsuleHalfHeight() + 2.0f);
+		if (!IsCapsuleClear(Pawn, Destination)) return false;
+		const double RouteZ = FMath::Max(Pawn.GetActorLocation().Z, Destination.Z) + PathClearance;
+		const FVector Route[] = { Pawn.GetActorLocation(), FVector(Pawn.GetActorLocation().X, Pawn.GetActorLocation().Y, RouteZ),
+			FVector(Destination.X, Destination.Y, RouteZ), Destination };
+		for (int32 Index = 1; Index < UE_ARRAY_COUNT(Route); ++Index)
+		{
+			if (World->SweepSingleByChannel(Hit, Route[Index - 1], Route[Index], Capsule->GetComponentQuat(), Channel,
+				RpgMantle::CapsuleShape(Pawn), Params, Responses)) return false;
+		}
+		return true;
+	};
+	if (!ValidateLanding(Landing)) return false;
+	if (!Character)
+	{
+		const FRpgTraversalAnimationEntry* Entry = Query->AllowedMantleAnimations.FindByPredicate(
+			[&Result](const FRpgTraversalAnimationEntry& Candidate) { return Candidate.Montage == Result.ChosenMontage; });
+		if (Entry && Entry->MovementInputHandoffTime > 0.0f)
+		{
+			FVector EarlyLanding;
+			if (!GetMantleLandingAtTime(Pawn, Result, Entry->MovementInputHandoffTime, EarlyLanding) || !ValidateLanding(EarlyLanding)) return false;
+		}
 	}
 	return true;
 }
@@ -463,18 +545,24 @@ bool URpgGameplayAbility_Mantle::ValidateHurdleTraversal(const ACharacter& Chara
 
 bool URpgGameplayAbility_Mantle::FindTraversalCandidate(const ACharacter& Character, FRpgTraversalQueryResult& OutResult) const
 {
-	OutResult = FRpgTraversalQueryResult();
-	if (!IsCharacterReady(Character)) return false;
-	URpgTraversalQueryComponent* Query = Character.FindComponentByClass<URpgTraversalQueryComponent>();
-	return Query && Query->QueryTraversal(OutResult) && ValidateTraversal(Character, OutResult);
+	return FindTraversalCandidate(static_cast<const APawn&>(Character), OutResult);
 }
 
-bool URpgGameplayAbility_Mantle::IsCapsuleClear(const ACharacter& Character, const FVector& Location) const
+bool URpgGameplayAbility_Mantle::FindTraversalCandidate(const APawn& Pawn, FRpgTraversalQueryResult& OutResult) const
 {
-	const UCapsuleComponent* Capsule = Character.GetCapsuleComponent();
-	FCollisionQueryParams Params(SCENE_QUERY_STAT(RpgMantleClearance), false, &Character);
-	return !Character.GetWorld()->OverlapBlockingTestByChannel(Location, Capsule->GetComponentQuat(),
-		Capsule->GetCollisionObjectType(), RpgMantle::CapsuleShape(Character), Params,
+	OutResult = FRpgTraversalQueryResult();
+	if (!IsPawnReady(Pawn)) return false;
+	URpgTraversalQueryComponent* Query = Pawn.FindComponentByClass<URpgTraversalQueryComponent>();
+	return Query && Query->QueryTraversal(OutResult) && ValidateTraversal(Pawn, OutResult);
+}
+
+bool URpgGameplayAbility_Mantle::IsCapsuleClear(const APawn& Pawn, const FVector& Location) const
+{
+	const UCapsuleComponent* Capsule = RpgMantle::Capsule(Pawn);
+	if (!Capsule || !Pawn.GetWorld() || Location.ContainsNaN()) return false;
+	FCollisionQueryParams Params(SCENE_QUERY_STAT(RpgMantleClearance), false, &Pawn);
+	return !Pawn.GetWorld()->OverlapBlockingTestByChannel(Location, Capsule->GetComponentQuat(),
+		Capsule->GetCollisionObjectType(), RpgMantle::CapsuleShape(Pawn), Params,
 		FCollisionResponseParams(Capsule->GetCollisionResponseToChannels()));
 }
 
@@ -483,11 +571,11 @@ bool URpgGameplayAbility_Mantle::CanActivateAbility(const FGameplayAbilitySpecHa
 	const FGameplayTagContainer* TargetTags, FGameplayTagContainer* OptionalRelevantTags) const
 {
 	if (!Super::CanActivateAbility(Handle, ActorInfo, SourceTags, TargetTags, OptionalRelevantTags)) return false;
-	const ACharacter* Character = ActorInfo ? Cast<ACharacter>(ActorInfo->AvatarActor.Get()) : nullptr;
-	if (!Character || !IsCharacterReady(*Character)) return false;
+	const APawn* Pawn = ActorInfo ? Cast<APawn>(ActorInfo->AvatarActor.Get()) : nullptr;
+	if (!Pawn || !IsPawnReady(*Pawn)) return false;
 	// The remote server validates the correlated proposal after receiving it; it never substitutes another entry.
 	FRpgTraversalQueryResult Result;
-	return !ActorInfo->IsLocallyControlled() && ActorInfo->IsNetAuthority() ? true : FindTraversalCandidate(*Character, Result);
+	return !ActorInfo->IsLocallyControlled() && ActorInfo->IsNetAuthority() ? true : FindTraversalCandidate(*Pawn, Result);
 }
 
 void URpgGameplayAbility_Mantle::ActivateAbility(const FGameplayAbilitySpecHandle Handle, const FGameplayAbilityActorInfo* ActorInfo,
@@ -500,19 +588,22 @@ void URpgGameplayAbility_Mantle::ActivateAbility(const FGameplayAbilitySpecHandl
 	bReceivedTargetData = false;
 	bGameplayCancellationRequested = false;
 	ActiveMontageInstanceId = INDEX_NONE;
+	MoverLeaseSequence = 0;
 	FinalWarpEndTime = 0.0f;
 	SourceHandoffTime = 0.0f;
 	MovementInputHandoffTime = 0.0f;
 	HurdleSupportComponent.Reset();
 	ActiveActionType = 0;
 	OwnedWarpTargets.Reset();
-	ActiveCharacter = ActorInfo ? Cast<ACharacter>(ActorInfo->AvatarActor.Get()) : nullptr;
+	ActivePawn = ActorInfo ? Cast<APawn>(ActorInfo->AvatarActor.Get()) : nullptr;
+	ActiveCharacter = Cast<ACharacter>(ActivePawn.Get());
+	ActiveMover = ActivePawn.IsValid() && !ActiveCharacter.IsValid() ? ActivePawn->FindComponentByClass<URpgCharacterMoverComponent>() : nullptr;
 	UAbilitySystemComponent* ASC = ActorInfo ? ActorInfo->AbilitySystemComponent.Get() : nullptr;
-	if (!ASC || !ActiveCharacter.IsValid()) { CancelCurrentMantle(); return; }
+	if (!ASC || !ActivePawn.IsValid()) { CancelCurrentMantle(); return; }
 	if (ActorInfo->IsLocallyControlled())
 	{
 		FRpgTraversalQueryResult Result;
-		if (!FindTraversalCandidate(*ActiveCharacter, Result)) { CancelCurrentMantle(); return; }
+		if (!FindTraversalCandidate(*ActivePawn, Result)) { CancelCurrentMantle(); return; }
 		FRpgMantleTargetData* Proposal = new FRpgMantleTargetData();
 		Proposal->HitComponent = Result.HitComponent;
 		Proposal->Montage = Result.ChosenMontage;
@@ -543,7 +634,11 @@ void URpgGameplayAbility_Mantle::HandleTargetData(const FGameplayAbilityTargetDa
 	bReceivedTargetData = true;
 	// Hold our own handle while consuming the ASC's cached entry and invoking gameplay callbacks.
 	const FGameplayAbilityTargetDataHandle LocalData = Data;
-	UAbilitySystemComponent* ASC = CurrentActorInfo->AbilitySystemComponent.Get();
+	UAbilitySystemComponent* ASC = CurrentActorInfo ? CurrentActorInfo->AbilitySystemComponent.Get() : nullptr;
+	if (!ASC || !ActivePawn.IsValid() || CurrentActorInfo->AvatarActor.Get() != ActivePawn.Get())
+	{
+		CancelCurrentMantle(); return;
+	}
 	ASC->ConsumeClientReplicatedTargetData(CurrentSpecHandle, CurrentActivationInfo.GetActivationPredictionKey());
 	if (LocalData.Num() != 1 || !LocalData.Get(0)
 		|| LocalData.Get(0)->GetScriptStruct() != FRpgMantleTargetData::StaticStruct())
@@ -553,8 +648,8 @@ void URpgGameplayAbility_Mantle::HandleTargetData(const FGameplayAbilityTargetDa
 	}
 	const FRpgMantleTargetData* Proposal = static_cast<const FRpgMantleTargetData*>(LocalData.Get(0));
 	FRpgTraversalQueryResult Result;
-	URpgTraversalQueryComponent* Query = ActiveCharacter.IsValid()
-		? ActiveCharacter->FindComponentByClass<URpgTraversalQueryComponent>() : nullptr;
+	URpgTraversalQueryComponent* Query = ActivePawn.IsValid()
+		? ActivePawn->FindComponentByClass<URpgTraversalQueryComponent>() : nullptr;
 	const bool bQuerySucceeded = Query && Query->QueryTraversal(Result);
 	if (!bQuerySucceeded || Result.HitComponent != Proposal->HitComponent)
 	{
@@ -575,7 +670,8 @@ void URpgGameplayAbility_Mantle::HandleTargetData(const FGameplayAbilityTargetDa
 void URpgGameplayAbility_Mantle::ResolveTraversal(const FRpgTraversalQueryResult& Result)
 {
 	if (!IsActive() || bEnding) return;
-	if (!ActiveCharacter.IsValid() || !ValidateTraversal(*ActiveCharacter, Result))
+	if (!ActivePawn.IsValid() || !CurrentActorInfo || CurrentActorInfo->AvatarActor.Get() != ActivePawn.Get()
+		|| !ValidateTraversal(*ActivePawn, Result))
 	{
 		LogTraversalRejection(TEXT("geometry_or_animation"), Result); CancelCurrentMantle(); return;
 	}
@@ -584,8 +680,9 @@ void URpgGameplayAbility_Mantle::ResolveTraversal(const FRpgTraversalQueryResult
 		LogTraversalRejection(TEXT("commit"), Result); CancelCurrentMantle(); return;
 	}
 	// Authored costs/effects can synchronously kill, unpossess or cancel the avatar, including deferred EndAbility calls.
-	if (!IsActive() || bEnding || !ActiveCharacter.IsValid()
-		|| !ValidateTraversal(*ActiveCharacter, Result)) { LogTraversalRejection(TEXT("post_commit"), Result); CancelCurrentMantle(); return; }
+	if (!IsActive() || bEnding || !ActivePawn.IsValid()
+		|| !CurrentActorInfo || CurrentActorInfo->AvatarActor.Get() != ActivePawn.Get()
+		|| !ValidateTraversal(*ActivePawn, Result)) { LogTraversalRejection(TEXT("post_commit"), Result); CancelCurrentMantle(); return; }
 	BeginMantle(Result);
 }
 
@@ -593,25 +690,28 @@ void URpgGameplayAbility_Mantle::LogTraversalRejection(const TCHAR* Stage, const
 {
 	// Inspect only the existing result; diagnostics must not rerun the stateful designer query.
 	if (!UE_LOG_ACTIVE(LogRpgAbilitySystem, Verbose)) return;
+	const APawn* Pawn = ActivePawn.Get();
 	const ACharacter* Character = ActiveCharacter.Get();
 	const UCharacterMovementComponent* Movement = Character ? Character->GetCharacterMovement() : nullptr;
-	const UAnimInstance* Animation = Character && Character->GetMesh() ? Character->GetMesh()->GetAnimInstance() : nullptr;
-	const URpgTraversalQueryComponent* Query = Character ? Character->FindComponentByClass<URpgTraversalQueryComponent>() : nullptr;
+	const USkeletalMeshComponent* Mesh = URpgPawnExtensionComponent::FindGameplayMesh(Pawn);
+	const UAnimInstance* Animation = Mesh ? Mesh->GetAnimInstance() : nullptr;
+	const URpgTraversalQueryComponent* Query = Pawn ? Pawn->FindComponentByClass<URpgTraversalQueryComponent>() : nullptr;
 	FVector Landing = FVector::ZeroVector;
-	const bool bLandingValid = Character && (Result.ActionType == 2 ? GetVaultExitLocation(*Character, Result, Landing)
-		: Result.ActionType == 1 ? GetHurdleLandingLocation(*Character, Result, Landing) : GetMantleLandingLocation(*Character, Result, Landing));
+	const bool bLandingValid = Pawn && (Result.ActionType == 2 ? Character && GetVaultExitLocation(*Character, Result, Landing)
+		: Result.ActionType == 1 ? Character && GetHurdleLandingLocation(*Character, Result, Landing) : GetMantleLandingLocation(*Pawn, Result, Landing));
 	UE_LOG(LogRpgAbilitySystem, Verbose, TEXT("Mantle rejected: stage=%s ability=%s pawn=%s role=%d active=%d ending=%d ready=%d allowed=%d landingValid=%d landing=%s action=%u height=%.3f depth=%.3f front=%s normal=%s collider=%s montage=%s start=%.6f mode=%d speed=%.3f slotActive=%d animMontage=%s"),
-		Stage, *GetPathName(), *GetPathNameSafe(Character), Character ? static_cast<int32>(Character->GetLocalRole()) : -1,
-		IsActive(), bEnding, Character && IsCharacterReady(*Character), Query && Character && Query->IsAnimationAllowed(*Character, Result),
+		Stage, *GetPathName(), *GetPathNameSafe(Pawn), Pawn ? static_cast<int32>(Pawn->GetLocalRole()) : -1,
+		IsActive(), bEnding, Pawn && IsPawnReady(*Pawn), Query && Pawn && Query->IsAnimationAllowed(*Pawn, Result),
 		bLandingValid, *Landing.ToCompactString(), static_cast<uint32>(Result.ActionType), Result.ObstacleHeight, Result.ObstacleDepth,
 		*Result.FrontLedgeLocation.ToCompactString(), *Result.FrontLedgeNormal.ToCompactString(), *GetPathNameSafe(Result.HitComponent),
 		*GetPathNameSafe(Result.ChosenMontage), Result.StartTime, Movement ? static_cast<int32>(Movement->MovementMode) : -1,
-		Character ? Character->GetVelocity().Size2D() : 0.0, Animation && Animation->IsSlotActive(TEXT("DefaultSlot")),
+		Pawn ? Pawn->GetVelocity().Size2D() : 0.0, Animation && Animation->IsSlotActive(TEXT("DefaultSlot")),
 		*GetPathNameSafe(Animation ? Animation->GetCurrentActiveMontage() : nullptr));
 }
 
 void URpgGameplayAbility_Mantle::BeginMantle(const FRpgTraversalQueryResult& Result)
 {
+	if (ActiveMover.IsValid()) { BeginMoverMantle(Result); return; }
 	ACharacter* Character = ActiveCharacter.Get();
 	UMotionWarpingComponent* Warping = Character ? Character->FindComponentByClass<UMotionWarpingComponent>() : nullptr;
 	URpgCharacterMovementComponent* Movement = Character ? Cast<URpgCharacterMovementComponent>(Character->GetCharacterMovement()) : nullptr;
@@ -713,6 +813,97 @@ void URpgGameplayAbility_Mantle::BeginMantle(const FRpgTraversalQueryResult& Res
 	}
 }
 
+void URpgGameplayAbility_Mantle::BeginMoverMantle(const FRpgTraversalQueryResult& Result)
+{
+	APawn* Pawn = ActivePawn.Get();
+	URpgCharacterMoverComponent* Mover = ActiveMover.Get();
+	const UCapsuleComponent* Capsule = Pawn ? RpgMantle::Capsule(*Pawn) : nullptr;
+	const URpgTraversalQueryComponent* Query = Pawn ? Pawn->FindComponentByClass<URpgTraversalQueryComponent>() : nullptr;
+	const FRpgTraversalAnimationEntry* Entry = Query ? Query->AllowedMantleAnimations.FindByPredicate(
+		[&Result](const FRpgTraversalAnimationEntry& Candidate) { return Candidate.Montage == Result.ChosenMontage && !Candidate.bAirborne; }) : nullptr;
+	if (!Pawn || !Mover || !Capsule || !Entry || Result.ActionType != 3
+		|| !GetMantleLandingLocation(*Pawn, Result, LandingAtActivation)) { CancelCurrentMantle(); return; }
+
+	Montage = Result.ChosenMontage;
+	StartTimeSeconds = Result.StartTime;
+	PlayRate = Result.PlayRate;
+	SourceHandoffTime = Entry->HandoffTime;
+	MovementInputHandoffTime = Entry->MovementInputHandoffTime;
+	ConditionalMantleLanding = LandingAtActivation;
+	if (MovementInputHandoffTime > 0.0f
+		&& !GetMantleLandingAtTime(*Pawn, Result, MovementInputHandoffTime, ConditionalMantleLanding)) { CancelCurrentMantle(); return; }
+	TArray<FMotionWarpingWindowData> Windows;
+	UMotionWarpingUtilities::GetMotionWarpingWindowsForWarpTargetFromAnimation(Montage, WarpTargetName, Windows);
+	for (const FMotionWarpingWindowData& Window : Windows) FinalWarpEndTime = FMath::Max(FinalWarpEndTime, Window.EndTime);
+	IgnoredComponent = Result.HitComponent;
+	ColliderAtActivation = Result.HitComponent->GetComponentTransform();
+	EntryLocation = LastClearLocation = Pawn->GetActorLocation();
+	ActiveActionType = 3;
+
+	FRpgMoverTraversalRequest Request;
+	Request.Collider = Result.HitComponent;
+	Request.ColliderTransform = ColliderAtActivation;
+	Request.EntryCapsuleLocation = EntryLocation;
+	Request.LandingCapsuleLocation = LandingAtActivation + FVector(0, 0, Capsule->GetScaledCapsuleHalfHeight() + 2.0f);
+	// The adapter measures animated warp points from Mover's saved visual base, never its smoothed live mesh.
+	const double VisualBaseAboveFeet = Capsule->GetScaledCapsuleHalfHeight() + Mover->GetBaseVisualComponentTransform().GetTranslation().Z;
+	Request.FrontLedgeTarget = FTransform((-Result.FrontLedgeNormal.GetSafeNormal2D()).Rotation(),
+		Result.FrontLedgeLocation + FVector(0, 0, LedgeVerticalOffset + VisualBaseAboveFeet));
+	Request.WarpTargetName = WarpTargetName;
+	Request.Montage = Montage;
+	Request.StartTimeSeconds = StartTimeSeconds;
+	Request.PlayRate = PlayRate;
+	Request.HandoffTimeSeconds = SourceHandoffTime;
+	MoverLeaseSequence = Mover->BeginTraversal(this, CurrentActivationInfo.GetActivationPredictionKey(), Request);
+	if (!MoverLeaseSequence) { CancelCurrentMantle(); return; }
+	bOwnsMovement = true;
+	Mover->OnPostFinalize.AddDynamic(this, &ThisClass::HandleMoverPostFinalize);
+	const float MaximumDuration = (Montage->GetPlayLength() - StartTimeSeconds) / PlayRate + 1.0f;
+	GetWorld()->GetTimerManager().SetTimer(TimeoutHandle, this, &ThisClass::CancelCurrentMantle, MaximumDuration);
+	// The existing ASC bridge adopts the Blueprint's real GAS montage once the predicted movement lease exists.
+	Super::ActivateAbility(CurrentSpecHandle, CurrentActorInfo, CurrentActivationInfo, nullptr);
+	const USkeletalMeshComponent* Mesh = URpgPawnExtensionComponent::FindGameplayMesh(Pawn);
+	if (bOwnsMovement && IsActive() && Mesh && Mesh->GetAnimInstance())
+	{
+		if (const FAnimMontageInstance* Instance = Mesh->GetAnimInstance()->GetActiveInstanceForMontage(Montage))
+		{
+			ActiveMontageInstanceId = Instance->GetInstanceID();
+		}
+	}
+}
+
+void URpgGameplayAbility_Mantle::HandleMoverPostFinalize(const FMoverSyncState& SyncState, const FMoverAuxStateContext& AuxState)
+{
+	if (bEnding || !bOwnsMovement) return;
+	APawn* Pawn = ActivePawn.Get();
+	URpgCharacterMoverComponent* Mover = ActiveMover.Get();
+	const UCapsuleComponent* Capsule = Pawn ? RpgMantle::Capsule(*Pawn) : nullptr;
+	if (!Pawn || !Mover || !Capsule || !CurrentActorInfo || CurrentActorInfo->AvatarActor.Get() != Pawn
+		|| !Mover->OwnsTraversalLease(CurrentSpecHandle, CurrentActivationInfo.GetActivationPredictionKey(), MoverLeaseSequence)
+		|| RpgMantle::IsIncapacitated(*Pawn) || !IgnoredComponent.IsValid() || !IgnoredComponent->IsRegistered()
+		|| IgnoredComponent->IsSimulatingPhysics() || !IgnoredComponent->IsQueryCollisionEnabled()
+		|| IgnoredComponent->GetCollisionResponseToChannel(ECC_GameTraceChannel1) != ECR_Block
+		|| !IgnoredComponent->GetComponentTransform().Equals(ColliderAtActivation, 0.01))
+	{
+		CancelCurrentMantle(); return;
+	}
+	FHitResult Support;
+	FCollisionQueryParams Params(SCENE_QUERY_STAT(RpgMoverMantleActiveSupport), false, Pawn);
+	for (const FVector& Feet : {LandingAtActivation, ConditionalMantleLanding})
+	{
+		if (!IsCapsuleClear(*Pawn, Feet + FVector(0, 0, Capsule->GetScaledCapsuleHalfHeight() + 2.0f))
+			|| !Pawn->GetWorld()->LineTraceSingleByChannel(Support, Feet + FVector(0, 0, 10),
+				Feet - FVector(0, 0, 10), Capsule->GetCollisionObjectType(), Params,
+				FCollisionResponseParams(Capsule->GetCollisionResponseToChannels()))
+			|| Support.GetComponent() != IgnoredComponent.Get() || !Mover->IsTraversalWalkable(Support)
+			|| FMath::Abs(Support.ImpactPoint.Z - Feet.Z) > 5.0)
+		{
+			CancelCurrentMantle(); return;
+		}
+	}
+	if (IsCapsuleClear(*Pawn, Pawn->GetActorLocation())) LastClearLocation = Pawn->GetActorLocation();
+}
+
 void URpgGameplayAbility_Mantle::HandleMovementUpdated(float DeltaSeconds, FVector OldLocation, FVector OldVelocity)
 {
 	if (bEnding || !bOwnsMovement) return;
@@ -801,28 +992,46 @@ void URpgGameplayAbility_Mantle::CancelAbility(const FGameplayAbilitySpecHandle 
 bool URpgGameplayAbility_Mantle::RestoreSafeCapsuleLocation(ACharacter& Character) const
 {
 	if (IsCapsuleClear(Character, Character.GetActorLocation())) return true;
-	const UCapsuleComponent* Capsule = Character.GetCapsuleComponent();
-	FCollisionQueryParams Params(SCENE_QUERY_STAT(RpgMantleRecovery), false, &Character);
-	// The capsule can be inside only the explicitly traversed surface. Recovery still sweeps every other obstacle.
-	if (IgnoredComponent.IsValid()) Params.AddIgnoredComponent(IgnoredComponent.Get());
-	for (const FVector& Candidate : {LastClearLocation, EntryLocation})
+	if (const TOptional<FVector> Recovery = FindSafeRecoveryLocation(Character); Recovery.IsSet())
 	{
-		if (!IsCapsuleClear(Character, Candidate)) continue;
-		FHitResult Hit;
-		if (!Character.GetWorld()->SweepSingleByChannel(Hit, Character.GetActorLocation(), Candidate, Capsule->GetComponentQuat(),
-			Capsule->GetCollisionObjectType(), RpgMantle::CapsuleShape(Character), Params,
-			FCollisionResponseParams(Capsule->GetCollisionResponseToChannels())))
-		{
-			// This is rollback along a checked route to a previously clear position, never a teleport to the ledge destination.
-			Character.SetActorLocation(Candidate, false, nullptr, ETeleportType::TeleportPhysics);
-			return true;
-		}
+		// CMC owns its actor transform; Mover applies this checked recovery through its simulation instead.
+		Character.SetActorLocation(Recovery.GetValue(), false, nullptr, ETeleportType::TeleportPhysics);
+		return true;
 	}
 	return false;
 }
 
+TOptional<FVector> URpgGameplayAbility_Mantle::FindSafeRecoveryLocation(const APawn& Pawn) const
+{
+	const UCapsuleComponent* Capsule = RpgMantle::Capsule(Pawn);
+	if (!Capsule || !Pawn.GetWorld()) return {};
+	FCollisionQueryParams Params(SCENE_QUERY_STAT(RpgMantleRecovery), false, &Pawn);
+	// The capsule can be inside only the explicitly traversed surface. Recovery still sweeps every other obstacle.
+	if (IgnoredComponent.IsValid()) Params.AddIgnoredComponent(IgnoredComponent.Get());
+	for (const FVector& Candidate : {LastClearLocation, EntryLocation})
+	{
+		if (!IsCapsuleClear(Pawn, Candidate)) continue;
+		FHitResult Hit;
+		if (!Pawn.GetWorld()->SweepSingleByChannel(Hit, Pawn.GetActorLocation(), Candidate, Capsule->GetComponentQuat(),
+			Capsule->GetCollisionObjectType(), RpgMantle::CapsuleShape(Pawn), Params,
+			FCollisionResponseParams(Capsule->GetCollisionResponseToChannels())))
+		{
+			// This is rollback along a checked route to a previously clear position, never a teleport to the ledge destination.
+			return Candidate;
+		}
+	}
+	return {};
+}
+
 float URpgGameplayAbility_Mantle::GetAdmissibleSourceHandoffTime() const
 {
+	if (ActiveMover.IsValid() && MovementInputHandoffTime > 0.0f)
+	{
+		// The original Mover animation interface exposes the post-simulation input vector as InputAcceleration.
+		// Its notify compares that vector with zero at 0.1 tolerance; this is input intent, not root-motion velocity.
+		const FCharacterDefaultInputs* Inputs = ActiveMover->GetLastInputCmd().InputCollection.FindDataByType<FCharacterDefaultInputs>();
+		if (Inputs && !Inputs->GetMoveInput().Equals(FVector::ZeroVector, 0.1)) return MovementInputHandoffTime;
+	}
 	const UCharacterMovementComponent* Movement = ActiveCharacter.IsValid() ? ActiveCharacter->GetCharacterMovement() : nullptr;
 	// Match the source notify's NotEqual_VectorVector(InputAcceleration, Zero, 0.1) predicate on each machine.
 	return ActiveActionType == 1 && MovementInputHandoffTime > 0.0f && Movement
@@ -830,8 +1039,45 @@ float URpgGameplayAbility_Mantle::GetAdmissibleSourceHandoffTime() const
 		? MovementInputHandoffTime : SourceHandoffTime;
 }
 
+void URpgGameplayAbility_Mantle::CleanupMoverMovement(bool bWasCancelled)
+{
+	URpgCharacterMoverComponent* Mover = ActiveMover.Get();
+	if (!Mover) return;
+	Mover->OnPostFinalize.RemoveDynamic(this, &ThisClass::HandleMoverPostFinalize);
+	APawn* Pawn = ActivePawn.Get();
+	if (!Pawn || !bOwnsMovement || !Mover->OwnsTraversalLease(CurrentSpecHandle, CurrentActivationInfo.GetActivationPredictionKey(), MoverLeaseSequence)) return;
+
+	const bool bAlive = !RpgMantle::IsIncapacitated(*Pawn);
+	const bool bCapsuleClear = IsCapsuleClear(*Pawn, Pawn->GetActorLocation());
+	const TOptional<FVector> Recovery = bAlive && !bCapsuleClear ? FindSafeRecoveryLocation(*Pawn) : TOptional<FVector>();
+	const USkeletalMeshComponent* Mesh = URpgPawnExtensionComponent::FindGameplayMesh(Pawn);
+	UAnimInstance* Animation = Mesh ? Mesh->GetAnimInstance() : nullptr;
+	const FAnimMontageInstance* Instance = Animation ? Animation->GetMontageInstanceForID(ActiveMontageInstanceId) : nullptr;
+	const float AdmissibleHandoffTime = GetAdmissibleSourceHandoffTime();
+	// Natural completion clears the montage pointer before dispatching GAS OnCompleted, but deletes the instance
+	// afterward. The captured instance ID still identifies our exact play throughout that terminal callback.
+	const bool bReachedHandoff = Instance && (Instance->Montage == Montage || Instance->Montage == nullptr) && Instance->IsStopped()
+		&& FinalWarpEndTime > 0.0f && Instance->GetPosition() >= FinalWarpEndTime
+		&& AdmissibleHandoffTime > 0.0f && Instance->GetPosition() >= AdmissibleHandoffTime - 0.001f;
+	bool bSupported = false;
+	if (bAlive && bCapsuleClear && bReachedHandoff)
+	{
+		const UCapsuleComponent* Capsule = RpgMantle::Capsule(*Pawn);
+		const FVector Feet = Pawn->GetActorLocation() - FVector(0, 0, Capsule->GetScaledCapsuleHalfHeight());
+		FHitResult Hit;
+		FCollisionQueryParams Params(SCENE_QUERY_STAT(RpgMoverMantleHandoff), false, Pawn);
+		bSupported = Pawn->GetWorld()->LineTraceSingleByChannel(Hit, Feet + FVector(0, 0, 5), Feet - FVector(0, 0, 10),
+			Capsule->GetCollisionObjectType(), Params, FCollisionResponseParams(Capsule->GetCollisionResponseToChannels()))
+			&& Hit.GetComponent() == IgnoredComponent.Get() && Mover->IsTraversalWalkable(Hit);
+	}
+	const bool bPreserveMomentum = !bWasCancelled && !bGameplayCancellationRequested && bAlive && bCapsuleClear && bReachedHandoff && bSupported;
+	// The simulation owns collision restoration, safe recovery and movement handoff. Death or a newer lease wins.
+	Mover->EndTraversal(CurrentSpecHandle, CurrentActivationInfo.GetActivationPredictionKey(), MoverLeaseSequence, bPreserveMomentum, Recovery);
+}
+
 void URpgGameplayAbility_Mantle::CleanupMovement(bool bWasCancelled)
 {
+	CleanupMoverMovement(bWasCancelled);
 	ACharacter* Character = ActiveCharacter.Get();
 	if (Character)
 	{
@@ -886,7 +1132,10 @@ void URpgGameplayAbility_Mantle::CleanupMovement(bool bWasCancelled)
 		for (const FName Target : OwnedWarpTargets) ActiveWarping->RemoveWarpTarget(Target);
 	}
 	OwnedWarpTargets.Reset();
+	ActivePawn.Reset();
 	ActiveCharacter.Reset();
+	ActiveMover.Reset();
+	MoverLeaseSequence = 0;
 	IgnoredComponent.Reset();
 	HurdleSupportComponent.Reset();
 	ActiveWarping.Reset();
@@ -910,10 +1159,10 @@ void URpgGameplayAbility_Mantle::EndAbility(const FGameplayAbilitySpecHandle Han
 		WaitingToExecute.Add(FPostLockDelegate::CreateUObject(this, &ThisClass::EndAbility, Handle, ActorInfo, ActivationInfo, bReplicateEndAbility, bWasCancelled));
 		return;
 	}
-	if (!bWasCancelled && !bReplicateEndAbility && RemoteInstanceEnded && (ActiveActionType == 2 || ActiveActionType == 1) && bOwnsMovement
-		&& ActorInfo && ActorInfo->IsNetAuthority() && !ActorInfo->IsLocallyControlled() && ActiveCharacter.IsValid())
+	if (!bWasCancelled && !bReplicateEndAbility && RemoteInstanceEnded && (ActiveActionType == 2 || ActiveActionType == 1 || ActiveMover.IsValid()) && bOwnsMovement
+		&& ActorInfo && ActorInfo->IsNetAuthority() && !ActorInfo->IsLocallyControlled() && ActivePawn.IsValid())
 	{
-		const USkeletalMeshComponent* Mesh = ActiveCharacter->GetMesh();
+		const USkeletalMeshComponent* Mesh = URpgPawnExtensionComponent::FindGameplayMesh(ActivePawn.Get());
 		UAnimInstance* Animation = Mesh ? Mesh->GetAnimInstance() : nullptr;
 		const FAnimMontageInstance* Instance = Animation ? Animation->GetMontageInstanceForID(ActiveMontageInstanceId) : nullptr;
 		const float AdmissibleHandoffTime = GetAdmissibleSourceHandoffTime();
@@ -924,7 +1173,7 @@ void URpgGameplayAbility_Mantle::EndAbility(const FGameplayAbilitySpecHandle Han
 			// authority's montage before its own source notify and then mistake that artificial stop for an interruption.
 			// The existing montage task, geometry checks and duration timeout remain active; cancellation is never deferred.
 			UE_LOG(LogRpgAbilitySystem, Verbose, TEXT("Traversal deferred remote normal end: pawn=%s instance=%d montagePosition=%.6f previousPosition=%.6f sourceHandoff=%.6f finalWarpEnd=%.6f action=%u admissibleHandoff=%.6f"),
-				*GetPathNameSafe(ActiveCharacter.Get()), ActiveMontageInstanceId, Instance->GetPosition(), Instance->GetPreviousPosition(),
+				*GetPathNameSafe(ActivePawn.Get()), ActiveMontageInstanceId, Instance->GetPosition(), Instance->GetPreviousPosition(),
 				SourceHandoffTime, FinalWarpEndTime, static_cast<uint32>(ActiveActionType), AdmissibleHandoffTime);
 			return;
 		}

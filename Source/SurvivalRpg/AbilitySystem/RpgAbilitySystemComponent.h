@@ -15,6 +15,7 @@ class URpgAbilityTagRelationshipMapping;
 class URpgAbilitySet;
 class UGameplayAbility;
 class ARpgBasePlayerState;
+class UAnimInstance;
 
 UCLASS(ClassGroup=(Custom), meta=(BlueprintSpawnableComponent))
 class SURVIVALRPG_API URpgAbilitySystemComponent : public UAbilitySystemComponent
@@ -26,6 +27,7 @@ class SURVIVALRPG_API URpgAbilitySystemComponent : public UAbilitySystemComponen
 public:
 	explicit URpgAbilitySystemComponent(const FObjectInitializer& ObjectInitializer = FObjectInitializer::Get());
 	virtual void EndPlay(const EEndPlayReason::Type EndPlayReason) override;
+	/** Refreshes an unchanged avatar without restarting its GAS montage; replacement avatars/animation instances fully initialize. */
 	virtual void InitAbilityActorInfo(AActor* InOwnerActor, AActor* InAvatarActor) override;
 	/** Releases any opt-in Mover montage association before this ASC loses its avatar. */
 	virtual void ClearActorInfo() override;
@@ -186,6 +188,9 @@ protected:
 	TArray<FGameplayAbilitySpec> LastActiveAbilities;
 	
 private:
+	/** Weak identity of the last initialized animation instance; ActorInfo resolves the mesh's current instance dynamically. */
+	TWeakObjectPtr<UAnimInstance> InitializedAnimInstance;
+
 	UPROPERTY(Transient)
 	bool bDefaultSetupApplied = false;
 
