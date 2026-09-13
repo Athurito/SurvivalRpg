@@ -71,7 +71,9 @@ void URpgHealthComponent::InitializeWithAbilitySystem(URpgAbilitySystemComponent
 	HealthSet->OnMaxHealthChanged.AddUObject(this, &ThisClass::HandleMaxHealthChanged);
 	HealthSet->OnOutOfHealth.AddUObject(this, &ThisClass::HandleOutOfHealth);
 
-	ClearGameplayTags();
+	// A late joiner can receive DeathState before its external ASC is bound. Reconstruct that state
+	// instead of clearing the death tags until another replicated transition happens.
+	ApplyDeathGameplayTags(DeathState);
 
 	OnHealthChanged.Broadcast(this, HealthSet->GetHealth(), HealthSet->GetHealth(), nullptr);
 	OnMaxHealthChanged.Broadcast(this, HealthSet->GetMaxHealth(), HealthSet->GetMaxHealth(), nullptr);
@@ -95,6 +97,13 @@ void URpgHealthComponent::UninitializeFromAbilitySystem()
 void URpgHealthComponent::ApplyDeathGameplayTags(ERpgDeathState StateToApply) const
 {
 	if (!AbilitySystemComponent)
+	{
+		return;
+	}
+
+	// A retired pawn must not modify the reused PlayerState ASC after a replacement avatar has bound it.
+	// A null avatar is valid during PawnExtension's normal detach-then-uninitialize callback sequence.
+	if (const AActor* CurrentAvatar = AbilitySystemComponent->GetAvatarActor(); CurrentAvatar && CurrentAvatar != GetOwner())
 	{
 		return;
 	}
