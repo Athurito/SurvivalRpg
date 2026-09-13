@@ -11,6 +11,7 @@
 class URpgPawnData;
 class UAbilitySystemComponent;
 class URpgAbilitySystemComponent;
+class USkeletalMeshComponent;
 
 /**
  * Core pawn extension used by player and AI pawns.
@@ -40,6 +41,15 @@ public:
 	/** Returns the pawn extension component if one exists on the specified actor. */
 	UFUNCTION(BlueprintPure, Category = "Lyra|Pawn")
 	static URpgPawnExtensionComponent* FindPawnExtensionComponent(const AActor* Actor) { return (Actor ? Actor->FindComponentByClass<URpgPawnExtensionComponent>() : nullptr); }
+
+	/**
+	 * Returns the mesh owning gameplay montages and sockets. Characters retain GetMesh(); other pawns
+	 * with PawnExtension use GAS ActorInfo's first skeletal component. Author the source before cosmetic
+	 * followers; this lookup never chooses a replacement by visibility, component name or asset identity.
+	 * Returns null for actors outside that composition contract or when its source mesh is absent.
+	 */
+	UFUNCTION(BlueprintPure, Category = "Rpg|Pawn")
+	static USkeletalMeshComponent* FindGameplayMesh(const AActor* Actor);
 	
 	/** Gets the pawn data, which is used to specify pawn properties in data */
 	template<class T>

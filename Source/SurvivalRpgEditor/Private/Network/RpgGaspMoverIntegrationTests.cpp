@@ -32,6 +32,7 @@
 #include "Misc/StringBuilder.h"
 #include "MoverSimulationTypes.h"
 #include "SurvivalRpg/AbilitySystem/RpgAbilitySystemComponent.h"
+#include "SurvivalRpg/Animation/RpgRuntimeRetargetProfile.h"
 #include "SurvivalRpg/Camera/RpgCameraComponent.h"
 #include "SurvivalRpg/Camera/RpgCameraMode.h"
 #include "SurvivalRpg/Core/Character/RpgMoverPawn.h"
@@ -43,6 +44,8 @@
 #include "SurvivalRpg/Core/Game/RpgGameModeBase.h"
 #include "SurvivalRpg/Core/Player/RpgPlayerState.h"
 #include "SurvivalRpg/Development/RpgDeveloperSettings.h"
+#include "SurvivalRpg/Equipment/RpgEquipmentManagerComponent.h"
+#include "SurvivalRpg/Input/RpgInputConfig.h"
 
 namespace RpgGaspMoverIntegrationTests
 {
@@ -82,8 +85,20 @@ bool FRpgGaspMoverCompositionTest::RunTest(const FString& Parameters)
 	TestNotNull(TEXT("PawnExtension remains the replicated PawnData and ASC foundation"), URpgPawnExtensionComponent::FindPawnExtensionComponent(Defaults));
 	TestNotNull(TEXT("PawnGameplay retains RPG player and camera initialization"), URpgPawnGameplayComponent::FindPawnGameplayComponent(Defaults));
 	TestTrue(TEXT("PawnData selects an RPG camera"), PawnData->DefaultCameraMode && PawnData->DefaultCameraMode->IsChildOf(URpgCameraMode::StaticClass()));
-	TestNull(TEXT("Source Mover actions have no competing native RPG input bindings"), PawnData->InputConfig.Get());
-	TestNull(TEXT("UEFN is the only configured presentation in this foundation"), PawnData->RuntimeRetargetProfile.Get());
+	TestNotNull(TEXT("Mover receives the existing RPG equipment foundation"), Defaults->FindComponentByClass<URpgEquipmentManagerComponent>());
+	if (TestNotNull(TEXT("RPG UI and interaction input is composed separately from source movement"), PawnData->InputConfig.Get()))
+	{
+		for (const TCHAR* MovementTag : { TEXT("InputTag.Move"), TEXT("InputTag.Look.Mouse"), TEXT("InputTag.Look.Stick"),
+			TEXT("InputTag.Crouch"), TEXT("InputTag.Jump"), TEXT("InputTag.StopJump"), TEXT("InputTag.AutoRun") })
+			TestNull(FString::Printf(TEXT("Source Mover input retains ownership of %s"), MovementTag), PawnData->InputConfig->FindNativeInputActionForTag(
+				FGameplayTag::RequestGameplayTag(MovementTag), false));
+	}
+	if (TestNotNull(TEXT("Mover exposes an optional designer-owned retarget profile"), PawnData->RuntimeRetargetProfile.Get()))
+	{
+		TestNull(TEXT("UEFN remains the default visible mesh"), PawnData->RuntimeRetargetProfile->TargetMesh.Get());
+		TestNull(TEXT("The default profile selects no alternate skeleton"), PawnData->RuntimeRetargetProfile->Retargeter.Get());
+		TestNotNull(TEXT("Optional presentation has a configured AnimBP"), PawnData->RuntimeRetargetProfile->RetargetAnimClass.Get());
+	}
 	const ARpgGameModeBase* Mode = GameModeClass->GetDefaultObject<ARpgGameModeBase>();
 	const ARpgGameModeBase* Production = GetDefault<ARpgGameModeBase>();
 	TestFalse(TEXT("Authored test GameMode disables disk persistence"), Mode->bEnableDiskPersistence);

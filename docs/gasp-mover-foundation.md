@@ -1,5 +1,9 @@
 # GASP Mover foundation
 
+This document records the foundation accepted in PR #138. The subsequent
+[equipment/montage integration](gasp-mover-gameplay.md) extends its composition;
+the original pilot's empty RPG inputs/ability sets describe that earlier stage.
+
 This pilot adds a separate `RpgGaspMoverExperience` using the project-local GASP
 Mover Blueprint. It proves the composition boundary for ordinary locomotion,
 camera, crouch and jump. The accepted baseline and CMC traversal Experiences

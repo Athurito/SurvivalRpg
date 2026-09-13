@@ -22,6 +22,7 @@ public class SurvivalRpg : ModuleRules
 			"InputCore",
 			"ModularGameplay",
 			"ModularGameplayActors",
+			"Mover",
 			"NetCore",
 			"StateTreeModule",
 			"UMG",

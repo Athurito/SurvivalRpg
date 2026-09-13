@@ -10,13 +10,15 @@
 
 class UAbilitySystemComponent;
 class URpgAbilitySystemComponent;
+class URpgEquipmentManagerComponent;
 class URpgPawnExtensionComponent;
 class URpgPawnGameplayComponent;
 
 /**
  * Experience-composed pawn foundation for Blueprint-authored Mover characters.
  * PawnExtension connects the PlayerState-owned ASC; the Blueprint owns its collision, mesh,
- * Mover simulation/input producer and RPG camera. No CharacterMovement or combat lifecycle is added.
+ * Mover simulation/input producer and RPG camera. The existing equipment manager owns equipped state;
+ * CharacterMovement, health, death and downed behavior remain separate integration work.
  */
 UCLASS(Abstract, Blueprintable)
 class SURVIVALRPG_API ARpgMoverPawn : public AModularPawn, public IAbilitySystemInterface
@@ -59,4 +61,8 @@ private:
 	 */
 	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "Rpg|Pawn", meta = (AllowPrivateAccess = "true"))
 	TObjectPtr<URpgPawnGameplayComponent> PawnGameplayComponent;
+
+	/** Reuses the server-owned equipment state, grants and replicated actors on this pawn's gameplay mesh. */
+	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "Rpg|Equipment", meta = (AllowPrivateAccess = "true"))
+	TObjectPtr<URpgEquipmentManagerComponent> EquipmentManagerComponent;
 };

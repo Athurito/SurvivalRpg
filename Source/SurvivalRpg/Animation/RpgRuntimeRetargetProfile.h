@@ -27,7 +27,7 @@ public:
 	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Retarget")
 	TObjectPtr<UIKRetargeter> Retargeter;
 
-	/** Cosmetic transform relative to Character::GetMesh(), in centimeters/degrees; scale must be positive. Does not change the capsule. */
+	/** Cosmetic transform relative to PawnExtension's gameplay mesh, in centimeters/degrees; scale must be positive. Does not change the capsule. */
 	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Retarget")
 	FTransform RelativeTransform = FTransform::Identity;
 

@@ -3,15 +3,20 @@
 #include "Animation/AnimMontage.h"
 #include "Animation/AnimNotifies/AnimNotify.h"
 #include "Animation/AnimNotifies/AnimNotifyState.h"
+#include "Components/ActorComponent.h"
 #include "Editor.h"
 #include "Engine/Blueprint.h"
+#include "Engine/BlueprintGeneratedClass.h"
 #include "Engine/Engine.h"
+#include "Engine/SCS_Node.h"
+#include "Engine/SimpleConstructionScript.h"
 #include "Kismet2/BlueprintEditorUtils.h"
 #include "ScopedTransaction.h"
 #include "Serialization/ArchiveReplaceObjectRef.h"
 #include "UObject/Package.h"
 #include "UObject/SoftObjectPtr.h"
 #include "UObject/UObjectHash.h"
+#include "UObject/UObjectGlobals.h"
 
 namespace
 {
@@ -89,6 +94,138 @@ bool URpgBlueprintAssetTools::ImplementInterface(UBlueprint* Blueprint, TSubclas
 	const FScopedTransaction Transaction(NSLOCTEXT("RpgBlueprintAssetTools", "ImplementInterface", "Implement Blueprint Interface"));
 	Blueprint->Modify();
 	return FBlueprintEditorUtils::ImplementNewInterface(Blueprint, InterfaceClass->GetClassPathName());
+}
+
+bool URpgBlueprintAssetTools::ChangeOwnSCSComponentClass(UBlueprint* Blueprint, FName ComponentVariableName,
+	TSubclassOf<UActorComponent> NewComponentClass)
+{
+	UClass* NewClass = NewComponentClass.Get();
+	if (!IsInGameThread() || !GIsEditor || !GEditor || !GEngine || !IsValid(Blueprint) || !Blueprint->IsAsset()
+		|| (Blueprint->HasAllFlags(RF_WasLoaded) && !Blueprint->HasAllFlags(RF_LoadCompleted))
+		|| Blueprint->bBeingCompiled || Blueprint->bIsRegeneratingOnLoad || Blueprint->bQueuedForCompilation
+		|| Blueprint->bSuppressStructurallyModified || ComponentVariableName.IsNone()
+		|| !IsValid(NewClass) || NewClass->HasAnyClassFlags(CLASS_Abstract | CLASS_Deprecated | CLASS_NewerVersionExists)) return false;
+	for (const FWorldContext& Context : GEngine->GetWorldContexts())
+	{
+		if (Context.WorldType == EWorldType::PIE) return false;
+	}
+	USimpleConstructionScript* SCS = Blueprint->SimpleConstructionScript;
+	if (!SCS || SCS->GetBlueprint() != Blueprint || !Blueprint->GeneratedClass) return false;
+	USCS_Node* Node = nullptr;
+	for (USCS_Node* Candidate : SCS->GetAllNodes())
+	{
+		if (Candidate && Candidate->GetOuter() == SCS && Candidate->GetVariableName() == ComponentVariableName)
+		{
+			if (Node) return false;
+			Node = Candidate;
+		}
+	}
+	UActorComponent* OldTemplate = Node ? Node->ComponentTemplate.Get() : nullptr;
+	if (!IsValid(OldTemplate) || !OldTemplate->IsTemplate() || OldTemplate->GetOuter() != Blueprint->GeneratedClass
+		|| OldTemplate->IsRegistered() || Node->ComponentClass != OldTemplate->GetClass()
+		|| !NewClass->IsChildOf(OldTemplate->GetClass())
+		|| !OldTemplate->GetOuter()->IsA(NewClass->ClassWithin)) return false;
+
+	// DestClass duplication supports inherited reflected data and instanced UObjects. Nested component
+	// hierarchies need a different reinstancing operation; do not silently apply this narrower contract to them.
+	for (UObject* TemplateRoot : {static_cast<UObject*>(OldTemplate), NewClass->GetDefaultObject()})
+	{
+		TArray<UObject*> Children;
+		GetObjectsWithOuter(TemplateRoot, Children, EGetObjectsFlags::IncludeNestedObjects);
+		for (UObject* Child : Children)
+		{
+			if (Child->IsA<UActorComponent>()) return false;
+		}
+	}
+
+	TArray<UObject*> Roots{Blueprint, Blueprint->GeneratedClass.Get()};
+	if (Blueprint->SkeletonGeneratedClass && Blueprint->SkeletonGeneratedClass != Blueprint->GeneratedClass)
+	{
+		Roots.Add(Blueprint->SkeletonGeneratedClass);
+	}
+	TSet<UObject*> ExistingObjects;
+	for (UObject* Root : Roots)
+	{
+		TArray<UObject*> Owned{Root};
+		GetObjectsWithOuter(Root, Owned, EGetObjectsFlags::IncludeNestedObjects);
+		for (UObject* Object : Owned) ExistingObjects.Add(Object);
+	}
+	auto RecordExistingObjects = [&ExistingObjects]()
+	{
+		for (UObject* Object : ExistingObjects)
+		{
+			if (IsValid(Object))
+			{
+				Object->SetFlags(RF_Transactional);
+				Object->Modify(false);
+			}
+		}
+	};
+	auto RefreshComponentReferences = [Blueprint]()
+	{
+		// SCS now supplies the new property type. Regenerate that skeleton before reconstructing GET,
+		// call and delegate nodes whose serialized pins can still carry the previous component class.
+		FBlueprintEditorUtils::MarkBlueprintAsStructurallyModified(Blueprint);
+		// Unreal refreshes structural entry/event nodes first, rebuilds their signatures, then their users.
+		FBlueprintEditorUtils::RefreshAllNodes(Blueprint);
+	};
+	if (NewClass == OldTemplate->GetClass())
+	{
+		FScopedTransaction Transaction(NSLOCTEXT("RpgBlueprintAssetTools", "RefreshOwnSCSComponentClass", "Refresh Blueprint Component Class References"));
+		RecordExistingObjects();
+		RefreshComponentReferences();
+		return true;
+	}
+
+	const FName TemplateName = OldTemplate->GetFName();
+	UObject* TemplateOuter = OldTemplate->GetOuter();
+	TMap<UObject*, UObject*> Replacements;
+	FObjectDuplicationParameters Parameters(OldTemplate, TemplateOuter);
+	Parameters.DestName = MakeUniqueObjectName(TemplateOuter, NewClass, TEXT("RpgSCSTemplateReplacement"));
+	Parameters.DestClass = NewClass;
+	Parameters.ApplyFlags = RF_Transactional;
+	Parameters.CreatedObjects = &Replacements;
+	UActorComponent* NewTemplate = Cast<UActorComponent>(StaticDuplicateObjectEx(Parameters));
+	if (!NewTemplate) return false;
+	Replacements.Add(OldTemplate, NewTemplate);
+
+	FScopedTransaction Transaction(NSLOCTEXT("RpgBlueprintAssetTools", "ChangeOwnSCSComponentClass", "Change Blueprint Component Class"));
+	RecordExistingObjects();
+	const ERenameFlags RenameFlags = REN_DontCreateRedirectors | REN_AllowPackageLinkerMismatch | REN_DoNotDirty;
+	const FName RetiredName = MakeUniqueObjectName(GetTransientPackage(), OldTemplate->GetClass(), TEXT("RpgSCSPreviousTemplate"));
+	if (!OldTemplate->Rename(*RetiredName.ToString(), GetTransientPackage(), RenameFlags))
+	{
+		Transaction.Cancel();
+		NewTemplate->MarkAsGarbage();
+		return false;
+	}
+	// Record the new object's temporary name after the old object's original name. Undo can vacate the
+	// canonical name before restoring the original template; neither object is destroyed by the transaction.
+	for (const TPair<UObject*, UObject*>& Pair : Replacements)
+	{
+		Pair.Value->SetFlags(RF_Transactional);
+		Pair.Value->Modify(false);
+	}
+	if (!NewTemplate->Rename(*TemplateName.ToString(), TemplateOuter, RenameFlags))
+	{
+		OldTemplate->Rename(*TemplateName.ToString(), TemplateOuter, RenameFlags);
+		Transaction.Cancel();
+		NewTemplate->MarkAsGarbage();
+		return false;
+	}
+
+	// Component templates are package-sibling generated-class objects, not children of UBlueprint.
+	// Include both generated roots while keeping unrelated assets and live actor instances out of the archive.
+	for (UObject* Root : Roots)
+	{
+		TArray<UObject*> Owned{Root};
+		GetObjectsWithOuter(Root, Owned, EGetObjectsFlags::IncludeNestedObjects);
+		FOwnedObjectReferenceArchive Archive(Root, Replacements, Owned);
+	}
+	Node->ComponentClass = NewClass;
+	Node->ComponentTemplate = NewTemplate;
+	RefreshComponentReferences();
+	return true;
 }
 
 int32 URpgBlueprintAssetTools::RemapOwnedObjectReferences(UObject* Asset, const TMap<UObject*, UObject*>& Replacements)
