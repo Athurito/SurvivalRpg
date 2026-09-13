@@ -27,6 +27,13 @@ public:
 	explicit URpgAbilitySystemComponent(const FObjectInitializer& ObjectInitializer = FObjectInitializer::Get());
 	virtual void EndPlay(const EEndPlayReason::Type EndPlayReason) override;
 	virtual void InitAbilityActorInfo(AActor* InOwnerActor, AActor* InAvatarActor) override;
+	/** Releases any opt-in Mover montage association before this ASC loses its avatar. */
+	virtual void ClearActorInfo() override;
+	/** GAS remains the montage playback owner; composed RPG Mover avatars additionally consume its root motion. */
+	virtual float PlayMontage(UGameplayAbility* AnimatingAbility, FGameplayAbilityActivationInfo ActivationInfo,
+		UAnimMontage* Montage, float InPlayRate, FName StartSectionName = NAME_None, float StartTimeSeconds = 0.0f) override;
+	/** Stops the matching Mover root-motion instance as well as the GAS montage, without affecting a replacement. */
+	virtual void CurrentMontageStop(float OverrideBlendOutTime = -1.0f) override;
 	
 	typedef TFunctionRef<bool(const URpgGameplayAbility* RpgAbility, FGameplayAbilitySpecHandle Handle)> TShouldCancelAbilityFunc;
 	void CancelAbilitiesByFunc(TShouldCancelAbilityFunc ShouldCancelFunc, bool bReplicateCancelAbility);

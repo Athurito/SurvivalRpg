@@ -4,12 +4,15 @@
 #include "RpgAbilitySystemComponent.h"
 
 #include "GameplayEffect.h"
+#include "Animation/AnimInstance.h"
+#include "Animation/AnimMontage.h"
 #include "RpgAbilityTagRelationshipMapping.h"
 #include "RpgGlobalAbilitySystem.h"
 #include "SurvivalRpg/AbilitySystem/Abilities/RpgGameplayAbility_BasicWeaponAttack.h"
 #include "SurvivalRpg/Combat/RpgCombatDeveloperSettings.h"
 #include "SurvivalRpg/SurvivalRpg.h"
 #include "SurvivalRpg/Animation/RpgAnimInstance.h"
+#include "SurvivalRpg/Core/Character/RpgCharacterMoverComponent.h"
 #include "SurvivalRpg/Core/Player/RpgBasePlayerState.h"
 #include "SurvivalRpg/GameplayTags/RpgGameplayTags.h"
 #include "SurvivalRpg/System/RpgAssetManager.h"
@@ -47,6 +50,13 @@ URpgAbilitySystemComponent::URpgAbilitySystemComponent(const FObjectInitializer&
 
 void URpgAbilitySystemComponent::EndPlay(const EEndPlayReason::Type EndPlayReason)
 {
+	if (AActor* Avatar = GetAvatarActor())
+	{
+		if (URpgCharacterMoverComponent* Mover = Avatar->FindComponentByClass<URpgCharacterMoverComponent>())
+		{
+			Mover->ClearAbilityRootMotion();
+		}
+	}
 	if (UWorld* World = GetWorld())
 	{
 		for (TPair<FGameplayTag, FTimerHandle>& Entry : TimedLooseTagTimerHandles)
@@ -70,6 +80,13 @@ void URpgAbilitySystemComponent::InitAbilityActorInfo(AActor* InOwnerActor, AAct
 	check(InOwnerActor);
 
 	const bool bHasNewPawnAvatar = Cast<APawn>(InAvatarActor) && (InAvatarActor != ActorInfo->AvatarActor);
+	if (ActorInfo->AvatarActor.IsValid() && ActorInfo->AvatarActor.Get() != InAvatarActor)
+	{
+		if (URpgCharacterMoverComponent* Mover = ActorInfo->AvatarActor->FindComponentByClass<URpgCharacterMoverComponent>())
+		{
+			Mover->ClearAbilityRootMotion();
+		}
+	}
 	
 	Super::InitAbilityActorInfo(InOwnerActor, InAvatarActor);
 	OwnerPlayerState = Cast<ARpgBasePlayerState>(InOwnerActor);
@@ -107,6 +124,65 @@ PRAGMA_ENABLE_DEPRECATION_WARNINGS
 		}
 
 		TryActivateAbilitiesOnSpawn();
+	}
+}
+
+void URpgAbilitySystemComponent::ClearActorInfo()
+{
+	if (AActor* Avatar = GetAvatarActor())
+	{
+		if (URpgCharacterMoverComponent* Mover = Avatar->FindComponentByClass<URpgCharacterMoverComponent>())
+		{
+			Mover->ClearAbilityRootMotion();
+		}
+	}
+	Super::ClearActorInfo();
+}
+
+float URpgAbilitySystemComponent::PlayMontage(UGameplayAbility* AnimatingAbility,
+	FGameplayAbilityActivationInfo ActivationInfo, UAnimMontage* Montage, float InPlayRate,
+	FName StartSectionName, float StartTimeSeconds)
+{
+	AActor* Avatar = GetAvatarActor();
+	URpgCharacterMoverComponent* Mover = Avatar ? Avatar->FindComponentByClass<URpgCharacterMoverComponent>() : nullptr;
+	if (!Mover || !Montage || !Montage->HasRootMotion())
+	{
+		return Super::PlayMontage(AnimatingAbility, ActivationInfo, Montage, InPlayRate, StartSectionName, StartTimeSeconds);
+	}
+	if (!AnimatingAbility || !Mover->CanPlayAbilityRootMotion(this, Montage, InPlayRate, StartSectionName, StartTimeSeconds))
+	{
+		UE_LOG(LogRpgAbilitySystem, Warning,
+			TEXT("Mover GAS root motion rejected unsupported montage/backend/mesh configuration: Avatar=%s Montage=%s"),
+			*GetNameSafe(Avatar), *GetNameSafe(Montage));
+		return -1.0f;
+	}
+
+	TWeakObjectPtr<URpgCharacterMoverComponent> WeakMover = Mover;
+	const float Duration = Super::PlayMontage(AnimatingAbility, ActivationInfo, Montage, InPlayRate, StartSectionName, StartTimeSeconds);
+	if (Duration > 0.0f && (!WeakMover.IsValid() || !WeakMover->StartAbilityRootMotion(this, AnimatingAbility,
+		ActivationInfo.GetActivationPredictionKey(), Montage, InPlayRate)))
+	{
+		// Playback can invoke callbacks which end or replace the ability. Never stop a replacement montage.
+		if (GetAnimatingAbility() == AnimatingAbility && GetCurrentMontage() == Montage)
+		{
+			CurrentMontageStop();
+		}
+		return -1.0f;
+	}
+	return Duration;
+}
+
+void URpgAbilitySystemComponent::CurrentMontageStop(float OverrideBlendOutTime)
+{
+	AActor* Avatar = GetAvatarActor();
+	TWeakObjectPtr<URpgCharacterMoverComponent> Mover = Avatar ? Avatar->FindComponentByClass<URpgCharacterMoverComponent>() : nullptr;
+	UAnimInstance* AnimInstance = AbilityActorInfo.IsValid() ? AbilityActorInfo->GetAnimInstance() : nullptr;
+	const FAnimMontageInstance* Instance = AnimInstance ? AnimInstance->GetActiveInstanceForMontage(GetCurrentMontage()) : nullptr;
+	const int32 InstanceId = Instance ? Instance->GetInstanceID() : INDEX_NONE;
+	Super::CurrentMontageStop(OverrideBlendOutTime);
+	if (Mover.IsValid())
+	{
+		Mover->StopAbilityRootMotion(AnimInstance, InstanceId);
 	}
 }
 

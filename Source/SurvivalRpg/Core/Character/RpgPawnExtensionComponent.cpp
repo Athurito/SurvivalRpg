@@ -4,7 +4,10 @@
 #include "RpgPawnExtensionComponent.h"
 
 #include "Components/GameFrameworkComponentManager.h"
+#include "Components/SkeletalMeshComponent.h"
+#include "GameFramework/Character.h"
 #include "GameFramework/Controller.h"
+#include "GameFramework/Pawn.h"
 #include "Net/UnrealNetwork.h"
 #include "SurvivalRpg/AbilitySystem/RpgAbilitySystemComponent.h"
 #include "SurvivalRpg/Core/Character/RpgPawnData.h"
@@ -12,6 +15,17 @@
 #include "SurvivalRpg/GameplayTags/RpgGameplayTags.h"
 
 const FName URpgPawnExtensionComponent::Name_ActorFeatureName = FName("PawnExtension");
+
+USkeletalMeshComponent* URpgPawnExtensionComponent::FindGameplayMesh(const AActor* Actor)
+{
+	if (const ACharacter* Character = Cast<ACharacter>(Actor))
+	{
+		return Character->GetMesh();
+	}
+
+	const APawn* Pawn = Cast<APawn>(Actor);
+	return Pawn && FindPawnExtensionComponent(Pawn) ? Pawn->FindComponentByClass<USkeletalMeshComponent>() : nullptr;
+}
 
 
 URpgPawnExtensionComponent::URpgPawnExtensionComponent(const FObjectInitializer& ObjectInitializer) : Super(ObjectInitializer)

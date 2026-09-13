@@ -6,6 +6,7 @@
 
 class UBlueprint;
 class UAnimSequenceBase;
+class UActorComponent;
 
 /** Reusable editor operations for authoring Blueprint contracts through Unreal MCP/Python. */
 UCLASS()
@@ -17,6 +18,21 @@ public:
 	/** Adds an interface with Unreal's native graph setup; idempotent for inherited or existing interfaces. Compile and save the Blueprint afterwards. */
 	UFUNCTION(BlueprintCallable, Category = "Rpg|Blueprint|Editor")
 	static bool ImplementInterface(UBlueprint* Blueprint, TSubclassOf<UInterface> InterfaceClass);
+
+	/**
+	 * Changes an existing component declared in this Blueprint's own SCS to an instantiable subclass.
+	 * Keeps its node, variable name/GUID, attachments and graph links; duplicates template defaults and
+	 * owned UObject subobjects, then remaps references within this Blueprint and its generated classes.
+	 * Native/inherited components and templates with nested ActorComponents are unsupported. The engine's
+	 * ChangeSubobjectClass covers native components only; this operation supplies the SCS authoring gap.
+	 * Runs on the editor game thread outside PIE, records undo, regenerates the skeleton and refreshes graph nodes.
+	 * An already matching class still refreshes nodes, allowing recovery from a previous incomplete authoring step.
+	 * Normal Blueprint reconstruction can refresh loaded instances/derived Blueprints; use an isolated working asset.
+	 * Does not save or run a full Blueprint compile. Compile and validate the Blueprint afterwards.
+	 * Returns true after replacement/refresh; false leaves the SCS unchanged.
+	 */
+	UFUNCTION(BlueprintCallable, Category = "Rpg|Blueprint|Editor")
+	static bool ChangeOwnSCSComponentClass(UBlueprint* Blueprint, FName ComponentVariableName, TSubclassOf<UActorComponent> NewComponentClass);
 
 	/**
 	 * Remaps serialized object references only in this asset and its nested Outer-owned objects.

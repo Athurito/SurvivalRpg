@@ -1,0 +1,147 @@
+#pragma once
+
+#include "CoreMinimal.h"
+#include "Animation/AnimMontage.h"
+#include "DefaultMovementSet/CharacterMoverComponent.h"
+#include "DefaultMovementSet/LayeredMoves/AnimRootMotionLayeredMove.h"
+#include "GameplayAbilitySpecHandle.h"
+#include "GameplayPrediction.h"
+#include "UObject/StrongObjectPtr.h"
+#include "RpgCharacterMoverComponent.generated.h"
+
+class UAbilitySystemComponent;
+class UAnimInstance;
+class UGameplayAbility;
+
+/**
+ * Engine montage root motion with a GAS activation identity. The identity survives Mover rollback and
+ * distinguishes successive plays of the same asset; skeletal montage instance IDs remain local.
+ * Extraction, motion warping, collision movement and simulation timing stay in the engine implementation.
+ */
+USTRUCT()
+struct SURVIVALRPG_API FRpgMoverAbilityRootMotion : public FLayeredMove_AnimRootMotion
+{
+	GENERATED_BODY()
+
+	/** Granted ability responsible for this move, serialized with the Mover simulation state. */
+	UPROPERTY()
+	FGameplayAbilitySpecHandle AbilityHandle;
+
+	/** GAS activation key identity; this is correlation data, never authority to activate an ability. */
+	UPROPERTY()
+	int16 ActivationPredictionKey = 0;
+
+	/** Separates server-created activation keys from client prediction keys with the same integer. */
+	UPROPERTY()
+	bool bServerInitiatedKey = false;
+
+	/** One-based play number within the activation, keeping repeated uses of one montage distinct. */
+	UPROPERTY()
+	uint32 MontageSequence = 0;
+
+	virtual bool GenerateMove(const FMoverTickStartData& StartState, const FMoverTimeStep& TimeStep,
+		const UMoverComponent* MoverComp, UMoverBlackboard* SimBlackboard, FProposedMove& OutProposedMove) override;
+	virtual FLayeredMoveBase* Clone() const override;
+	virtual void NetSerialize(FArchive& Ar) override;
+	virtual UScriptStruct* GetScriptStruct() const override;
+	virtual void AddReferencedObjects(FReferenceCollector& Collector) override;
+};
+
+template<>
+struct TStructOpsTypeTraits<FRpgMoverAbilityRootMotion> : public TStructOpsTypeTraitsBase2<FRpgMoverAbilityRootMotion>
+{
+	enum { WithCopy = true };
+};
+
+/**
+ * Local GAS playback sampled into the existing NetworkPrediction input history. Each entry describes
+ * one simulation tick, including an empty entry after stop. Playback data is local-only, never sent to authority.
+ * Retained input frames can therefore reconstruct starts, cancellations and replays during correction.
+ */
+USTRUCT()
+struct SURVIVALRPG_API FRpgMoverAbilityRootMotionInputs : public FMoverDataStructBase
+{
+	GENERATED_BODY()
+
+	/** Immutable playback interval for this input frame; a null montage means no GAS root motion. */
+	UPROPERTY()
+	FRpgMoverAbilityRootMotion RootMotion;
+
+	/** Pins the sampled montage until all copies of this local input frame have left NP history. */
+	void RetainMontageForHistory();
+
+	virtual FMoverDataStructBase* Clone() const override;
+	virtual UScriptStruct* GetScriptStruct() const override;
+	virtual bool NetSerialize(FArchive& Ar, UPackageMap* Map, bool& bOutSuccess) override;
+	virtual void AddReferencedObjects(FReferenceCollector& Collector) override;
+	virtual bool ShouldReconcile(const FMoverDataStructBase& AuthorityState) const override;
+	virtual void Interpolate(const FMoverDataStructBase& From, const FMoverDataStructBase& To, float Pct) override;
+
+private:
+	// NP's native frame buffer is outside UObject GC traversal. Copy/Clone retain this explicit reference;
+	// empty input, network loading, frame overwrite and buffer destruction release it automatically.
+	TStrongObjectPtr<UAnimMontage> MontageLifetime;
+};
+
+template<>
+struct TStructOpsTypeTraits<FRpgMoverAbilityRootMotionInputs> : public TStructOpsTypeTraitsBase2<FRpgMoverAbilityRootMotionInputs>
+{
+	enum { WithNetSerializer = true, WithCopy = true };
+};
+
+/**
+ * Opt-in bridge for GAS montages on the game-thread Character Mover backend. GAS owns montage playback,
+ * prediction and callbacks; Mover consumes the corresponding root motion and replicates actor movement.
+ * Authored movement modes, input and presentation remain on the composed GASP pawn Blueprint.
+ */
+UCLASS(ClassGroup = (Movement), meta = (BlueprintSpawnableComponent))
+class SURVIVALRPG_API URpgCharacterMoverComponent : public UCharacterMoverComponent
+{
+	GENERATED_BODY()
+
+public:
+	/** Preserves the GASP input producer and appends this tick's local GAS root-motion playback interval. */
+	virtual void ProduceInput(int32 DeltaTimeMS, FMoverInputCmdContext* Cmd) override;
+
+	/** Checks the supported linear montage and gameplay-mesh contract before GAS starts playback. */
+	bool CanPlayAbilityRootMotion(const UAbilitySystemComponent* AbilitySystem, const UAnimMontage* Montage,
+		float PlayRate, FName StartSection, float StartTimeSeconds) const;
+
+	/** Adopts an already-playing GAS montage without playing it again. Called on authority and predicting owner. */
+	bool StartAbilityRootMotion(UAbilitySystemComponent* AbilitySystem, UGameplayAbility* Ability,
+		const FPredictionKey& ActivationKey, UAnimMontage* Montage, float PlayRate);
+
+	/** Stops only the tracked local instance; a callback for an older montage cannot cancel its replacement. */
+	void StopAbilityRootMotion(const UAnimInstance* AnimInstance, int32 MontageInstanceId);
+
+	/** Releases the local association when the ASC changes avatar or the component is removed. */
+	void ClearAbilityRootMotion();
+
+	/** Read-only live-instance check used by authority and by fresh local input sampling. */
+	bool IsAbilityRootMotionCurrent(const FRpgMoverAbilityRootMotion& Move) const;
+
+protected:
+	virtual void BeginPlay() override;
+	virtual void EndPlay(const EEndPlayReason::Type EndPlayReason) override;
+	virtual void UpdateSyncedMontageState(const FMoverTimeStep& TimeStep, const FMoverSyncState& SyncState,
+		const FMoverAuxStateContext& AuxState) override;
+
+private:
+	/** Builds the movement contribution for a tick from authority playback or the owner's historical input. */
+	UFUNCTION()
+	void HandleAbilityRootMotionPreSimulation(const FMoverTimeStep& TimeStep, const FMoverInputCmdContext& InputCmd);
+
+	bool SampleAbilityRootMotion(double SimTimeMs, FRpgMoverAbilityRootMotion& OutMove) const;
+
+	/** Local source descriptor, sampled into input frames; never populated from a client's network payload. */
+	UPROPERTY(Transient)
+	FRpgMoverAbilityRootMotion AbilityRootMotion;
+
+	double AbilityRootMotionStartTimeMs = 0.0;
+	TWeakObjectPtr<UAnimInstance> AbilityAnimInstance;
+	TWeakObjectPtr<UAnimMontage> AbilityMontage;
+	FGameplayAbilitySpecHandle LastAbilityHandle;
+	FPredictionKey LastActivationKey;
+	uint32 LastMontageSequence = 0;
+	int32 AbilityMontageInstanceId = INDEX_NONE;
+};

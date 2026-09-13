@@ -5,6 +5,7 @@
 #include "RpgPawnExtensionComponent.h"
 #include "RpgPawnGameplayComponent.h"
 #include "SurvivalRpg/AbilitySystem/RpgAbilitySystemComponent.h"
+#include "SurvivalRpg/Equipment/RpgEquipmentManagerComponent.h"
 
 #include UE_INLINE_GENERATED_CPP_BY_NAME(RpgMoverPawn)
 
@@ -25,6 +26,7 @@ ARpgMoverPawn::ARpgMoverPawn(const FObjectInitializer& ObjectInitializer)
 
 	PawnExtensionComponent = CreateDefaultSubobject<URpgPawnExtensionComponent>(TEXT("PawnExtensionComponent"));
 	PawnGameplayComponent = CreateDefaultSubobject<URpgPawnGameplayComponent>(TEXT("PawnGameplayComponent"));
+	EquipmentManagerComponent = CreateDefaultSubobject<URpgEquipmentManagerComponent>(TEXT("EquipmentManagerComponent"));
 }
 
 URpgAbilitySystemComponent* ARpgMoverPawn::GetRpgAbilitySystemComponent() const

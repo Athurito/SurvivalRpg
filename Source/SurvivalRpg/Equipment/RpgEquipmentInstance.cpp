@@ -4,6 +4,7 @@
 #include "GameFramework/Character.h"
 #include "Net/UnrealNetwork.h"
 #include "RpgEquipmentDefinition.h"
+#include "SurvivalRpg/Core/Character/RpgPawnExtensionComponent.h"
 
 #include "Components/SceneComponent.h"
 #include "Iris/ReplicationSystem/ReplicationFragmentUtil.h"
@@ -63,10 +64,11 @@ void URpgEquipmentInstance::SpawnEquipmentActors(const TArray<FRpgEquipmentActor
 		return;
 	}
 
-	USceneComponent* AttachTarget = OwningPawn->GetRootComponent();
-	if (const ACharacter* Character = Cast<ACharacter>(OwningPawn))
+	USceneComponent* AttachTarget = URpgPawnExtensionComponent::FindGameplayMesh(OwningPawn);
+	if (!AttachTarget && !OwningPawn->IsA<ACharacter>())
 	{
-		AttachTarget = Character->GetMesh();
+		// Preserve root attachment for pawns without the RPG mesh contract, and the existing missing-character-mesh behavior.
+		AttachTarget = OwningPawn->GetRootComponent();
 	}
 
 	for (const FRpgEquipmentActorToSpawn& SpawnInfo : ActorsToSpawn)

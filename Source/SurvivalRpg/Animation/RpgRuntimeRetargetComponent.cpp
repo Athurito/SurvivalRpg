@@ -9,7 +9,7 @@
 #include "Engine/GameInstance.h"
 #include "Engine/SkeletalMesh.h"
 #include "Engine/World.h"
-#include "GameFramework/Character.h"
+#include "GameFramework/Pawn.h"
 #include "SurvivalRpg/Core/Character/RpgPawnData.h"
 #include "SurvivalRpg/Core/Character/RpgPawnExtensionComponent.h"
 #include "SurvivalRpg/GameplayTags/RpgGameplayTags.h"
@@ -39,9 +39,9 @@ void URpgRuntimeRetargetComponent::BeginPlay()
 
 void URpgRuntimeRetargetComponent::InitializeFromPawnData()
 {
-	ACharacter* Character = Cast<ACharacter>(GetOwner());
-	if (!Character || !GetWorld() || !GetWorld()->IsGameWorld()
-		|| Character->FindComponentByClass<URpgRuntimeRetargetComponent>() != this) return;
+	APawn* Pawn = Cast<APawn>(GetOwner());
+	if (!Pawn || !GetWorld() || !GetWorld()->IsGameWorld()
+		|| Pawn->FindComponentByClass<URpgRuntimeRetargetComponent>() != this) return;
 	if (!PawnDataDelegate.IsValid())
 	{
 		if (UGameInstance* GameInstance = GetWorld()->GetGameInstance())
@@ -49,7 +49,7 @@ void URpgRuntimeRetargetComponent::InitializeFromPawnData()
 			if (UGameFrameworkComponentManager* Manager = GameInstance->GetSubsystem<UGameFrameworkComponentManager>())
 			{
 				ComponentManager = Manager;
-				PawnDataDelegate = Manager->RegisterAndCallForActorInitState(Character,
+				PawnDataDelegate = Manager->RegisterAndCallForActorInitState(Pawn,
 					URpgPawnExtensionComponent::Name_ActorFeatureName, RpgGameplayTags::InitState_DataAvailable,
 					FActorInitStateChangedDelegate::CreateUObject(this, &ThisClass::HandlePawnDataAvailable), false);
 			}
@@ -81,10 +81,10 @@ UIKRetargeter* URpgRuntimeRetargetComponent::GetRetargeter() const
 bool URpgRuntimeRetargetComponent::ApplyProfile(const URpgRuntimeRetargetProfile* Profile)
 {
 	ClearPresentation();
-	ACharacter* Character = Cast<ACharacter>(GetOwner());
-	if (!IsRegistered() || !Character || !GetWorld() || !GetWorld()->IsGameWorld()
-		|| Character->FindComponentByClass<URpgRuntimeRetargetComponent>() != this) return false;
-	USkeletalMeshComponent* GameplayMesh = Character->GetMesh();
+	APawn* Pawn = Cast<APawn>(GetOwner());
+	if (!IsRegistered() || !Pawn || !GetWorld() || !GetWorld()->IsGameWorld()
+		|| Pawn->FindComponentByClass<URpgRuntimeRetargetComponent>() != this) return false;
+	USkeletalMeshComponent* GameplayMesh = URpgPawnExtensionComponent::FindGameplayMesh(Pawn);
 	if (!Profile || !Profile->TargetMesh)
 	{
 		ActiveProfile = Profile;
@@ -93,11 +93,11 @@ bool URpgRuntimeRetargetComponent::ApplyProfile(const URpgRuntimeRetargetProfile
 	}
 	FText Error;
 	if (!GameplayMesh || !GameplayMesh->IsRegistered() || !GameplayMesh->GetSkeletalMeshAsset()
-		|| Character->FindComponentByClass<USkeletalMeshComponent>() != GameplayMesh
+		|| Pawn->FindComponentByClass<USkeletalMeshComponent>() != GameplayMesh
 		|| !Profile->ValidateConfiguration(GameplayMesh->GetSkeletalMeshAsset(), Error))
 	{
 		UE_LOG(LogRpgCharacter, Warning, TEXT("Runtime retarget profile [%s] rejected for [%s]: %s; keeping the gameplay mesh."),
-			*GetPathNameSafe(Profile), *GetNameSafe(Character), Error.IsEmpty() ? TEXT("Gameplay mesh is unavailable") : *Error.ToString());
+			*GetPathNameSafe(Profile), *GetNameSafe(Pawn), Error.IsEmpty() ? TEXT("Gameplay mesh is unavailable") : *Error.ToString());
 		return false;
 	}
 	ActiveProfile = Profile;
@@ -110,7 +110,7 @@ bool URpgRuntimeRetargetComponent::ApplyProfile(const URpgRuntimeRetargetProfile
 	bPreviousSourceVisible = GameplayMesh->GetVisibleFlag();
 	GameplayMesh->VisibilityBasedAnimTickOption = EVisibilityBasedAnimTickOption::AlwaysTickPoseAndRefreshBones;
 	GameplayMesh->bEnableUpdateRateOptimizations = false;
-	RetargetMesh = NewObject<USkeletalMeshComponent>(Character, NAME_None, RF_Transient);
+	RetargetMesh = NewObject<USkeletalMeshComponent>(Pawn, NAME_None, RF_Transient);
 	RetargetMesh->SetupAttachment(GameplayMesh);
 	RetargetMesh->SetRelativeTransform(Profile->RelativeTransform);
 	RetargetMesh->SetCollisionEnabled(ECollisionEnabled::NoCollision);
@@ -132,9 +132,9 @@ bool URpgRuntimeRetargetComponent::ApplyProfile(const URpgRuntimeRetargetProfile
 	RetargetMesh->RegisterComponent();
 	// GAS discovers the avatar mesh through this engine component lookup. Adding presentation must not change its result.
 	if (!RetargetMesh->IsRegistered() || !RetargetMesh->GetAnimInstance()
-		|| Character->FindComponentByClass<USkeletalMeshComponent>() != GameplayMesh)
+		|| Pawn->FindComponentByClass<USkeletalMeshComponent>() != GameplayMesh)
 	{
-		UE_LOG(LogRpgCharacter, Warning, TEXT("Runtime retarget AnimBP failed to initialize for [%s]; keeping the gameplay mesh."), *GetNameSafe(Character));
+		UE_LOG(LogRpgCharacter, Warning, TEXT("Runtime retarget AnimBP failed to initialize for [%s]; keeping the gameplay mesh."), *GetNameSafe(Pawn));
 		ClearPresentation();
 		return false;
 	}

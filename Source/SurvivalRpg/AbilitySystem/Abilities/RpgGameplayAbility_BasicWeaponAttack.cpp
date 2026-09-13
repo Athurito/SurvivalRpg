@@ -8,13 +8,13 @@
 #include "Animation/AnimMontage.h"
 #include "Components/SkeletalMeshComponent.h"
 #include "DrawDebugHelpers.h"
-#include "GameFramework/Character.h"
 #include "GameFramework/Controller.h"
 #include "SurvivalRpg/AbilitySystem/RpgAbilitySystemComponent.h"
 #include "SurvivalRpg/Animation/AnimNotify_RpgWeaponAttackWindow.h"
 #include "SurvivalRpg/Camera/RpgCameraMode.h"
 #include "SurvivalRpg/Combat/RpgCombatDeveloperSettings.h"
 #include "SurvivalRpg/Core/Character/RpgHealthComponent.h"
+#include "SurvivalRpg/Core/Character/RpgPawnExtensionComponent.h"
 #include "SurvivalRpg/GameplayTags/RpgGameplayTags.h"
 #include "SurvivalRpg/Inventory/Itemization/RpgItemizationGameplayTags.h"
 #include "SurvivalRpg/Inventory/RpgInventoryItemInstance.h"
@@ -1055,8 +1055,7 @@ bool URpgGameplayAbility_BasicWeaponAttack::TryGetSocketLocationFromAvatar(FName
 		return false;
 	}
 
-	const ACharacter* Character = Cast<ACharacter>(GetAvatarActorFromActorInfo());
-	const USkeletalMeshComponent* Mesh = Character ? Character->GetMesh() : nullptr;
+	const USkeletalMeshComponent* Mesh = URpgPawnExtensionComponent::FindGameplayMesh(GetAvatarActorFromActorInfo());
 	if (Mesh && Mesh->DoesSocketExist(SocketName))
 	{
 		OutLocation = Mesh->GetSocketLocation(SocketName);

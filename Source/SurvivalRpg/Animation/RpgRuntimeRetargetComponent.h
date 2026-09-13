@@ -12,7 +12,7 @@ class URpgRuntimeRetargetProfile;
 class USkeletalMeshComponent;
 struct FActorInitStateChangedParams;
 
-/** Optional local presentation follower. PawnData selects content; Character::GetMesh() retains every gameplay responsibility. */
+/** Optional local presentation follower. PawnData selects content; PawnExtension's gameplay mesh retains montages, sockets and movement ownership. */
 UCLASS(ClassGroup = (Rpg), meta = (BlueprintSpawnableComponent))
 class SURVIVALRPG_API URpgRuntimeRetargetComponent : public UActorComponent
 {
