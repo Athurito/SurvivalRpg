@@ -6,6 +6,7 @@
 #include "Engine/Canvas.h"
 #include "GameFramework/Character.h"
 #include "RpgCameraComponent.h"
+#include "RpgCameraAssistInterface.h"
 #include "RpgPlayerCameraManager.h"
 
 #include UE_INLINE_GENERATED_CPP_BY_NAME(RpgCameraMode)
@@ -83,6 +84,14 @@ FVector URpgCameraMode::GetPivotLocation() const
 {
 	const AActor* TargetActor = GetTargetActor();
 	check(TargetActor);
+
+	if (const IRpgCameraAssistInterface* CameraAssist = Cast<IRpgCameraAssistInterface>(TargetActor))
+	{
+		if (const TOptional<FVector> Pivot = CameraAssist->GetCameraPivotLocation(); Pivot.IsSet())
+		{
+			return Pivot.GetValue();
+		}
+	}
 
 	if (const APawn* TargetPawn = Cast<APawn>(TargetActor))
 	{

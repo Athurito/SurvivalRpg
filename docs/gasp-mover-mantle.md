@@ -106,6 +106,11 @@ both directions.
 
 ## Validation
 
+The record below covers the initial Independent-backend implementation. The
+subsequent Fixed 50 Hz adaptation, input handoff, asymmetric-FPS measurements
+and remaining engine limitations are recorded separately in
+[`gasp-mover-fixed-tick.md`](gasp-mover-fixed-tick.md).
+
 The SurvivalRpgEditor Win64 Development target built successfully with UE
 5.8.2 (CL 56702186). Working evidence is kept in
 `Saved/GaspMoverMantle20260913`.

@@ -178,6 +178,10 @@
 			"Enabled": true
 		},
 		{
+			"Name": "NetworkPrediction",
+			"Enabled": true
+		},
+		{
 			"Name": "MoverExamples",
 			"Enabled": true
 		},

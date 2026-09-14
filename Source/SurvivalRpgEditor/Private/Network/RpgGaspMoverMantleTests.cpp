@@ -3,6 +3,8 @@
 #if WITH_DEV_AUTOMATION_TESTS
 
 #include "CQTest.h"
+#include "Network/RpgMoverPredictionTestHelpers.h"
+#include "Network/RpgMoverPredictionTestTypes.h"
 #include "Components/PIENetworkComponent.h"
 #include "Abilities/GameplayAbilityRepAnimMontage.h"
 #include "Animation/AnimInstance.h"
@@ -16,6 +18,7 @@
 #include "Editor/UnrealEdEngine.h"
 #include "Engine/Engine.h"
 #include "Engine/NetDriver.h"
+#include "Engine/NetConnection.h"
 #include "Engine/World.h"
 #include "EngineUtils.h"
 #include "GameFramework/GameModeBase.h"
@@ -24,6 +27,9 @@
 #include "InputKeyEventArgs.h"
 #include "Misc/Guid.h"
 #include "MotionWarpingComponent.h"
+#include "MoveLibrary/MoverBlackboard.h"
+#include "MoverSimulationTypes.h"
+#include "NetworkPredictionWorldManager.h"
 #include "PlayInEditorDataTypes.h"
 #include "Settings/LevelEditorPlaySettings.h"
 #include "SurvivalRpg/AbilitySystem/RpgAbilitySystemComponent.h"
@@ -59,6 +65,30 @@ namespace RpgGaspMoverMantleTests
 			if (Context.WorldType == EWorldType::PIE && Context.World() == World)
 				return IsValid(World) && !World->bIsTearingDown && !World->IsBeingCleanedUp();
 		return false;
+	}
+	/** Event-bounded transport evidence; cumulative counters and wall time permit short-interval throughput calculation. */
+	void ReportConnections(const TCHAR* Phase, UWorld* World)
+	{
+		UNetDriver* Driver = ActiveWorld(World) ? World->GetNetDriver() : nullptr;
+		if (!Driver) return;
+		if (const UNetworkPredictionWorldManager* Prediction = World->GetSubsystem<UNetworkPredictionWorldManager>())
+		{
+			const FFixedTickState& Clock = Prediction->GetFixedTickState();
+			UE_LOG(LogTemp, Display, TEXT("RpgMoverMantle prediction phase=%s world=%s local=%d offset=%d step=%d latestAP=%d latestSP=%d toFrame=%d pct=%.3f interpolationMs=%d"),
+				Phase, *World->GetPathName(), Clock.PendingFrame, Clock.Offset, Clock.FixedStepMS,
+				Clock.Interpolation.LatestRecvFrameAP, Clock.Interpolation.LatestRecvFrameSP, Clock.Interpolation.ToFrame,
+				Clock.Interpolation.PCT, Clock.Interpolation.InterpolatedTimeMS);
+		}
+		auto ReportConnection = [Phase, World](const UNetConnection* Connection)
+		{
+			if (!Connection) return;
+			UE_LOG(LogTemp, Display, TEXT("RpgMoverMantle transport phase=%s world=%s connection=%s wall=%.6f netSpeed=%d queuedBits=%d ready=%d outBytes=%d outPackets=%d outBps=%d inBytes=%d inBps=%d pingMs=%.2f"),
+				Phase, *World->GetPathName(), *Connection->GetName(), FPlatformTime::Seconds(), Connection->CurrentNetSpeed,
+				Connection->QueuedBits, Connection->IsNetReady(), Connection->OutTotalBytes, Connection->OutTotalPackets,
+				Connection->OutBytesPerSecond, Connection->InTotalBytes, Connection->InBytesPerSecond, Connection->RawPingInSeconds * 1000.0);
+		};
+		ReportConnection(Driver->ServerConnection);
+		for (const UNetConnection* Connection : Driver->ClientConnections) ReportConnection(Connection);
 	}
 	APawn* LocalPawn(UWorld* World)
 	{
@@ -141,7 +171,7 @@ namespace RpgGaspMoverMantleTests
 		FString Prefix;
 		FDelegateHandle Handle;
 	};
-	/** Observes the genuine Independent NP restore/resimulation between network dispatch and forward simulation. */
+	/** Observes Fixed NP restore/resimulation between network dispatch and forward simulation. */
 	class FPredictionCorrection final
 	{
 	public:
@@ -149,6 +179,9 @@ namespace RpgGaspMoverMantleTests
 		bool Inject(APawn* Character, bool bAfterHandoff, UAnimMontage* ObservedMontage)
 		{
 			if (bInjected || !Character || Character->GetLocalRole() != ROLE_AutonomousProxy) return false;
+			const UNetworkPredictionWorldManager* Prediction = Character->GetWorld()->GetSubsystem<UNetworkPredictionWorldManager>();
+			if (!Prediction || Prediction->GetSettings().PreferredTickingPolicy != ENetworkPredictionTickingPolicy::Fixed
+				|| !Prediction->GetSettings().bEnableFixedTickSmoothing || Prediction->GetFixedTickState().PendingFrame <= 0) return false;
 			UMoverNetworkPredictionLiaisonComponent* Backend = Character->FindComponentByClass<UMoverNetworkPredictionLiaisonComponent>();
 			FMoverSyncState Sync;
 			if (!Backend || !Backend->ReadPendingSyncState(Sync)) return false;
@@ -167,14 +200,27 @@ namespace RpgGaspMoverMantleTests
 			if (!bAfterHandoff && !Instance) return false;
 			Owner = Character; Liaison = Backend; bTerminalExpected = bAfterHandoff;
 			CrossDirection = Character->GetActorRightVector().GetSafeNormal2D();
+			const FString PriorBaseName = GetPathNameSafe(Default->GetMovementBase());
 			Default->SetTransforms_WorldSpace(Default->GetLocation_WorldSpace() + CrossDirection * 50.0,
 				Default->GetOrientation_WorldSpace(), Default->GetVelocity_WorldSpace(), Default->GetAngularVelocityDegrees_WorldSpace(),
-				Default->GetMovementBase(), Default->GetMovementBaseBoneName());
+				nullptr);
 			if (!Backend->WritePendingSyncState(Sync)) return false;
 			// The kinematic backend captures its UpdatedComponent after moving: both parts of the one-off
 			// prediction error must agree or the next normal tick would erase it without reconciliation.
 			Mover(Character)->GetUpdatedComponent()->SetWorldLocation(Default->GetLocation_WorldSpace(), false, nullptr, ETeleportType::TeleportPhysics);
+			// Match FTeleportEffect's local cache invalidation. Otherwise a movable landing block's cached
+			// floor contact moves the pawn straight back during a normal based-movement tick, before NP can correct it.
+			if (UMoverBlackboard* Blackboard = Mover(Character)->GetSimBlackboard_Mutable())
+			{
+				Blackboard->Invalidate(CommonBlackboard::LastFloorResult);
+				Blackboard->Invalidate(CommonBlackboard::LastFoundDynamicMovementBase);
+			}
+			RollbackObserver.Reset(NewObject<URpgMoverRollbackTestObserver>());
+			Mover(Character)->OnPostSimulationRollback.AddDynamic(RollbackObserver.Get(), &URpgMoverRollbackTestObserver::ObserveRollback);
 			bInjected = true;
+			UE_LOG(LogTemp, Display, TEXT("RpgMoverMantleCorrection injection frame=%d time=%.0f afterHandoff=%d location=%s component=%s priorBase=%s"),
+				Backend->GetCurrentSimFrame(), Backend->GetCurrentSimTimeMs(), bAfterHandoff,
+				*Default->GetLocation_WorldSpace().ToCompactString(), *Mover(Character)->GetUpdatedComponent()->GetComponentLocation().ToCompactString(), *PriorBaseName);
 			BeforeHandle = FWorldDelegates::OnWorldTickStart.AddRaw(this, &FPredictionCorrection::BeforeDispatch);
 			AfterHandle = FWorldDelegates::OnWorldPreActorTick.AddRaw(this, &FPredictionCorrection::AfterDispatch);
 			Report(TEXT("injected"));
@@ -188,11 +234,19 @@ namespace RpgGaspMoverMantleTests
 			UE_LOG(LogTemp, Display, TEXT("RpgMoverMantleCorrection phase=%s injected=%d observed=%d afterHandoff=%d sameFrame=%d frame=%d->%d time=%.0f->%.0f delta=%s identity=%d context=%d lifecycle=%d montage=%d warpHistory=%d"),
 				Phase, bInjected, bObserved, bTerminalExpected, bSameFrame, BeforeFrame, AfterFrame, BeforeTime, AfterTime,
 				*Delta.ToCompactString(), bIdentity, bContext, bLifecycle, bMontage, bWarpHistory);
+			UE_LOG(LogTemp, Display, TEXT("RpgMoverMantleCorrection clock local=%d->%d offset=%d->%d step=%d->%d rollbacks=%d->%d restoredFrame=%d expungedFrame=%d"),
+				BeforeClock.LocalPendingFrame, AfterClock.LocalPendingFrame, BeforeClock.ServerOffset, AfterClock.ServerOffset,
+				BeforeClock.StepMs, AfterClock.StepMs, BeforeRollbackCount, RollbackObserver.IsValid() ? RollbackObserver->Count : 0,
+				RollbackObserver.IsValid() ? RollbackObserver->LastRestored.ServerFrame : INDEX_NONE,
+				RollbackObserver.IsValid() ? RollbackObserver->LastExpunged.ServerFrame : INDEX_NONE);
 		}
 		void Stop()
 		{
 			FWorldDelegates::OnWorldTickStart.Remove(BeforeHandle); FWorldDelegates::OnWorldPreActorTick.Remove(AfterHandle);
 			BeforeHandle.Reset(); AfterHandle.Reset();
+			if (Owner.IsValid() && Mover(Owner.Get()) && RollbackObserver.IsValid())
+				Mover(Owner.Get())->OnPostSimulationRollback.RemoveDynamic(RollbackObserver.Get(), &URpgMoverRollbackTestObserver::ObserveRollback);
+			RollbackObserver.Reset();
 			// A copied native NP frame can own history references; release it before EndPlayMap runs GC.
 			Before = FMoverSyncState();
 			bBeforeValid = false;
@@ -207,7 +261,9 @@ namespace RpgGaspMoverMantleTests
 		{
 			if (bObserved || !Owner.IsValid() || Owner->GetWorld() != World || !Liaison.IsValid()) return;
 			bBeforeValid = Liaison->ReadPendingSyncState(Before);
-			BeforeFrame = Liaison->GetCurrentSimFrame(); BeforeTime = Liaison->GetCurrentSimTimeMs();
+			BeforeRollbackCount = RollbackObserver.IsValid() ? RollbackObserver->Count : 0;
+			BeforeClock = RpgMoverPredictionTests::FFixedPredictionHeadSnapshot::Capture(World, Liaison.Get());
+			BeforeFrame = BeforeClock.ServerFrame; BeforeTime = BeforeClock.SimulationTimeMs;
 		}
 		void AfterDispatch(UWorld* World, ELevelTick, float)
 		{
@@ -218,10 +274,22 @@ namespace RpgGaspMoverMantleTests
 			const FMoverDefaultSyncState* AfterMove = After.SyncStateCollection.FindDataByType<FMoverDefaultSyncState>();
 			if (!BeforeMove || !AfterMove) return;
 			const FVector Movement = AfterMove->GetLocation_WorldSpace() - BeforeMove->GetLocation_WorldSpace();
-			if (FVector::DotProduct(Movement, CrossDirection) > -25.0) return;
+			if (DiagnosticSamples++ < 12)
+			{
+				UE_LOG(LogTemp, Display, TEXT("RpgMoverMantleCorrection dispatch sample=%d afterHandoff=%d frame=%d->%d time=%.0f->%.0f before=%s after=%s component=%s"),
+					DiagnosticSamples, bTerminalExpected, BeforeFrame, Liaison->GetCurrentSimFrame(), BeforeTime, Liaison->GetCurrentSimTimeMs(),
+					*BeforeMove->GetLocation_WorldSpace().ToCompactString(), *AfterMove->GetLocation_WorldSpace().ToCompactString(),
+					*Mover(Owner.Get())->GetUpdatedComponent()->GetComponentLocation().ToCompactString());
+			}
+			// Active Motion Warping can remove most of the 50 cm injection during legitimate forward ticks.
+			// Require the actual engine rollback callback inside this dispatch bracket and a remaining
+			// measurable correction; forward warping or based movement can satisfy neither callback proof.
+			if (!RollbackObserver.IsValid() || RollbackObserver->Count <= BeforeRollbackCount
+				|| FVector::DotProduct(Movement, CrossDirection) > -1.0) return;
 			bObserved = true; Delta = Movement;
 			AfterFrame = Liaison->GetCurrentSimFrame(); AfterTime = Liaison->GetCurrentSimTimeMs();
-			bSameFrame = BeforeFrame == AfterFrame && BeforeTime == AfterTime;
+			AfterClock = RpgMoverPredictionTests::FFixedPredictionHeadSnapshot::Capture(World, Liaison.Get());
+			bSameFrame = BeforeClock.IsSameLocalHead(AfterClock);
 			const FRpgMoverTraversalSyncState* BeforeTraversal = Before.SyncStateCollection.FindDataByType<FRpgMoverTraversalSyncState>();
 			const FRpgMoverTraversalSyncState* AfterTraversal = After.SyncStateCollection.FindDataByType<FRpgMoverTraversalSyncState>();
 			if (BeforeTraversal && AfterTraversal)
@@ -268,14 +336,17 @@ namespace RpgGaspMoverMantleTests
 		TWeakObjectPtr<UMoverNetworkPredictionLiaisonComponent> Liaison;
 		TWeakObjectPtr<UPrimitiveComponent> OriginalCollider;
 		TWeakObjectPtr<UAnimMontage> OriginalMontage;
+		TStrongObjectPtr<URpgMoverRollbackTestObserver> RollbackObserver;
 		FRpgMoverTraversalIdentity OriginalIdentity;
 		ERpgMoverTraversalPhase OriginalPhase = ERpgMoverTraversalPhase::None;
 		FName OriginalTargetName;
 		FTransform OriginalTarget = FTransform::Identity;
 		FMoverSyncState Before;
+		RpgMoverPredictionTests::FFixedPredictionHeadSnapshot BeforeClock, AfterClock;
 		FDelegateHandle BeforeHandle, AfterHandle;
 		FVector CrossDirection = FVector::ZeroVector, Delta = FVector::ZeroVector;
-		int32 OriginalInstance = INDEX_NONE, BeforeFrame = INDEX_NONE, AfterFrame = INDEX_NONE;
+		int32 OriginalInstance = INDEX_NONE, BeforeFrame = INDEX_NONE, AfterFrame = INDEX_NONE, DiagnosticSamples = 0;
+		int32 BeforeRollbackCount = 0;
 		double BeforeTime = 0.0, AfterTime = 0.0;
 		bool bInjected = false, bObserved = false, bTerminalExpected = false, bBeforeValid = false;
 		bool bSameFrame = false, bIdentity = false, bContext = false, bLifecycle = false, bMontage = false, bWarpHistory = false;
@@ -363,8 +434,8 @@ NETWORK_TEST_CLASS(GaspMoverMantlePIE, "SurvivalRpg.GASP.Mover.Mantle")
 	TEST_METHOD(DeathDuringMantleReleasesTraversalAndStopsMover) { Queue(EGait::Run, EScenario::Death); }
 	TEST_METHOD(LostAuthorityColliderCancelsTheActiveMantle) { Queue(EGait::Run, EScenario::ColliderLoss); }
 	TEST_METHOD(LateJoinReconstructsTheCurrentMantleState) { Queue(EGait::Stand, EScenario::LateJoin); }
-	TEST_METHOD(IndependentCorrectionPreservesActiveWarpAndCollider) { Queue(EGait::Stand, EScenario::CorrectDuringWarp); }
-	TEST_METHOD(IndependentCorrectionAfterHandoffCannotRestoreOldTraversal) { Queue(EGait::Stand, EScenario::CorrectAfterWarp); }
+	TEST_METHOD(FixedCorrectionPreservesActiveWarpAndCollider) { Queue(EGait::Stand, EScenario::CorrectDuringWarp); }
+	TEST_METHOD(FixedCorrectionAfterHandoffCannotRestoreOldTraversal) { Queue(EGait::Stand, EScenario::CorrectAfterWarp); }
 
 	UWorld* InputWorld() const { return bHost ? ServerWorld.Get() : ClientWorld.Get(); }
 	APawn* Owner() const { return RpgGaspMoverMantleTests::LocalPawn(InputWorld()); }
@@ -502,6 +573,7 @@ NETWORK_TEST_CLASS(GaspMoverMantlePIE, "SurvivalRpg.GASP.Mover.Mantle")
 				Snapshot->bCommittedAfterGroundedRetry |= Snapshot->bGroundedAfterJump || (Snapshot->bOrdinaryJump && bGroundedAtCommit);
 				UE_LOG(LogTemp, Display, TEXT("RpgMoverMantle commit pawn=%s attempt=%d grounded=%d"),
 					*GetPathNameSafe(Snapshot->Character.Get()), Snapshot->Commits, bGroundedAtCommit);
+				ReportConnections(TEXT("commit"), Snapshot->World.Get());
 			}
 		});
 		Record.Ended = ASC(Character)->OnAbilityEnded.AddLambda([this, Snapshot = &Record](const FAbilityEndedData& Data)
@@ -534,6 +606,7 @@ NETWORK_TEST_CLASS(GaspMoverMantlePIE, "SurvivalRpg.GASP.Mover.Mantle")
 			*GetPathNameSafe(Record.Montage.Get()), Record.InstanceId, *GetPathNameSafe(Montage), Instance ? Instance->GetInstanceID() : INDEX_NONE,
 			Record.LastTime, Position, Replicated ? static_cast<int32>(Replicated->PlayInstanceId) : INDEX_NONE,
 			Replicated ? static_cast<int32>(Replicated->IsStopped) : INDEX_NONE, Instance ? static_cast<int32>(Instance->IsStopped()) : INDEX_NONE);
+		RpgGaspMoverMantleTests::ReportConnections(Phase, Record.World.Get());
 	}
 	void Observe(FObservation& Record, float DeltaSeconds)
 	{
@@ -547,6 +620,14 @@ NETWORK_TEST_CLASS(GaspMoverMantlePIE, "SurvivalRpg.GASP.Mover.Mantle")
 		const bool bObserveConfirmedPlay = Scenario != EScenario::HeldRetry || AuthorityRecord.Commits > 0;
 		const bool bPlaying = bObserveConfirmedPlay && Animation && IsMantle(Character, Montage) && Animation->Montage_IsPlaying(Montage);
 		const bool bLease = bObserveConfirmedPlay && Mover(Character)->HasTraversalLease();
+		// NP owns collision/warp lifecycle independently of GAS montage replication and its presentation clock.
+		// Record the full lease contract even when a remote visible montage has not arrived yet.
+		UPrimitiveComponent* ExpectedCollider = Collider(Record.World.Get());
+		Record.bLease |= bLease && ExpectedCollider && Mover(Character)->GetTraversalCollider() == ExpectedCollider
+			&& Capsule(Character)->GetMoveIgnoreComponents().Contains(ExpectedCollider)
+			&& Mover(Character)->FindActiveLayeredMoveByType(FRpgMoverAbilityRootMotion::StaticStruct());
+		const FMotionWarpingTarget* CurrentWarpTarget = Warping(Character)->FindWarpTarget(TEXT("FrontLedge"));
+		if (CurrentWarpTarget) { Record.bWarpTarget = true; Record.WarpYaw = static_cast<float>(CurrentWarpTarget->Rotator().Yaw); }
 		const FMotionWarpingTarget* Unrelated = Warping(Character)->FindWarpTarget(UnrelatedTarget);
 		Record.bLostUnrelatedTarget |= !Unrelated || !Unrelated->GetLocation().Equals(UnrelatedLocation, 0.01);
 		if (Record.bWasLease && !bLease)
@@ -559,6 +640,7 @@ NETWORK_TEST_CLASS(GaspMoverMantlePIE, "SurvivalRpg.GASP.Mover.Mantle")
 			UE_LOG(LogTemp, Display, TEXT("RpgMoverMantle simulation handoff role=%d grounded=%d previousSpeed=%.2f position=%s velocity=%s"),
 				static_cast<int32>(Character->GetLocalRole()), Record.bHandoffGrounded, Record.LastLeaseSpeed,
 				*Record.HandoffLocation.ToCompactString(), *Record.HandoffVelocity.ToCompactString());
+			ReportConnections(TEXT("handoff"), Record.World.Get());
 		}
 		Record.bWasLease = bLease;
 		if (bLease) Record.LastLeaseSpeed = static_cast<float>(Mover(Character)->GetVelocity().Size2D());
@@ -605,12 +687,6 @@ NETWORK_TEST_CLASS(GaspMoverMantlePIE, "SurvivalRpg.GASP.Mover.Mantle")
 			}
 			Record.LastTime = Position;
 			Record.bMontageRestarted |= bDifferentPlay;
-			UPrimitiveComponent* ExpectedCollider = Collider(Record.World.Get());
-			Record.bLease |= bLease && ExpectedCollider && Mover(Character)->GetTraversalCollider() == ExpectedCollider
-				&& Capsule(Character)->GetMoveIgnoreComponents().Contains(ExpectedCollider)
-				&& Mover(Character)->FindActiveLayeredMoveByType(FRpgMoverAbilityRootMotion::StaticStruct());
-			const FMotionWarpingTarget* Target = Warping(Character)->FindWarpTarget(TEXT("FrontLedge"));
-			if (Target) { Record.bWarpTarget = true; Record.WarpYaw = static_cast<float>(Target->Rotator().Yaw); }
 			if (Character->GetLocalRole() != ROLE_SimulatedProxy && bLease && Record.bWarpTarget && Character->GetActorLocation().X >= Bounds.Min.X)
 			{
 				const float Error = FMath::Abs(FMath::FindDeltaAngleDegrees(static_cast<float>(Character->GetActorRotation().Yaw), Record.WarpYaw));
@@ -690,8 +766,10 @@ NETWORK_TEST_CLASS(GaspMoverMantlePIE, "SurvivalRpg.GASP.Mover.Mantle")
 		if (World == ServerWorld.Get())
 		{
 			Observe(AuthorityRecord, DeltaSeconds);
+			const FGameplayAbilitySpec* ActiveAbility = Spec(Authority());
 			if (!bInterrupted && (Scenario == EScenario::Cancel || Scenario == EScenario::Death || Scenario == EScenario::ColliderLoss)
-				&& AuthorityRecord.bLease && ProxyRecord.bLease && AuthorityRecord.LastTime > AuthorityRecord.FirstTime + 0.25f)
+				&& AuthorityRecord.bLease && ProxyRecord.bLease && AuthorityRecord.LastTime > AuthorityRecord.FirstTime + 0.25f
+				&& ActiveAbility && ActiveAbility->IsActive() && Mover(Authority())->HasTraversalLease())
 			{
 				bInterrupted = true;
 				if (Scenario == EScenario::Death) URpgHealthComponent::FindHealthComponent(Authority())->DamageSelfDestruct(false);
@@ -885,6 +963,8 @@ NETWORK_TEST_CLASS(GaspMoverMantlePIE, "SurvivalRpg.GASP.Mover.Mantle")
 	}
 	void Report(const TCHAR* Phase) const
 	{
+		for (UWorld* World : { ServerWorld.Get(), ClientWorld.Get(), ObserverWorld.Get() })
+			RpgGaspMoverMantleTests::ReportConnections(Phase, World);
 		UE_LOG(LogTemp, Display, TEXT("RpgMoverMantle phase=%s scenario=%d gait=%d host=%d position=%s bounds=%s..%s pressSpeed=%.2f pressYaw=%.2f controlError=%.2f"),
 			Phase, static_cast<int32>(Scenario), static_cast<int32>(Gait), bHost, Owner() ? *Owner()->GetActorLocation().ToCompactString() : TEXT("none"),
 			*Bounds.Min.ToCompactString(), *Bounds.Max.ToCompactString(), PressSpeed, PressYaw, MaximumViewError);

@@ -55,6 +55,10 @@ held are accepted for now, as with CMC; combat/locomotion blending is deferred.
 
 ## Validation record
 
+This initial record used Independent ticking. The later Fixed-backend
+adaptation and fresh lifecycle/correction results are tracked in
+[`gasp-mover-fixed-tick.md`](gasp-mover-fixed-tick.md).
+
 UE 5.8.2 Development Editor builds succeeded, including the final lifecycle
 test source. All 50 distinct automation tests passed: two Health lifecycle
 contracts, two Mover lifecycle network cases and 46 existing camera, CMC,

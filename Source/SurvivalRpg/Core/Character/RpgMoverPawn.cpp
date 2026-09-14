@@ -54,6 +54,21 @@ UAbilitySystemComponent* ARpgMoverPawn::GetAbilitySystemComponent() const
 	return GetRpgAbilitySystemComponent();
 }
 
+TOptional<FVector> ARpgMoverPawn::GetCameraPivotLocation() const
+{
+	const URpgCharacterMoverComponent* Mover = FindComponentByClass<URpgCharacterMoverComponent>();
+	const USceneComponent* Visual = Mover ? Mover->GetPrimaryVisualComponent() : nullptr;
+	if (!Visual || Visual == GetRootComponent())
+	{
+		return {};
+	}
+
+	// Mover renders BaseVisualTransform * SmoothedActorTransform. Remove only the authored
+	// mesh offset; animation and retargeted bones must never drive this presentation pivot.
+	const FTransform SmoothedActor = Mover->GetBaseVisualComponentTransform().Inverse() * Visual->GetComponentTransform();
+	return SmoothedActor.GetLocation() + (GetPawnViewLocation() - GetActorLocation());
+}
+
 void ARpgMoverPawn::OnAbilitySystemInitialized()
 {
 	URpgAbilitySystemComponent* ASC = GetRpgAbilitySystemComponent();

@@ -19,6 +19,52 @@
 
 namespace RpgAbilityRootMotion
 {
+/** Keeps visual network smoothing out of GAS movement while preserving both authored processing delegates. */
+class FScopedBaseVisualRootMotion
+{
+public:
+	FScopedBaseVisualRootMotion(URpgCharacterMoverComponent& InMover, const FTransform& InActorTransform)
+		: Mover(InMover), ActorTransform(InActorTransform), BaseVisualTransform(InMover.GetBaseVisualComponentTransform()),
+		  SavedLocalDelegate(InMover.ProcessLocalRootMotionDelegate), SavedWorldDelegate(InMover.ProcessWorldRootMotionDelegate)
+	{
+		Mover.ProcessLocalRootMotionDelegate.BindLambda([this](const FTransform& LocalRootMotion,
+			float DeltaSeconds, const FMotionWarpingUpdateContext* Context)
+		{
+			ProcessedLocalRootMotion = SavedLocalDelegate.IsBound()
+				? SavedLocalDelegate.Execute(LocalRootMotion, DeltaSeconds, Context) : LocalRootMotion;
+			return ProcessedLocalRootMotion;
+		});
+		Mover.ProcessWorldRootMotionDelegate.BindLambda([this](const FTransform&, float DeltaSeconds,
+			const FMotionWarpingUpdateContext* Context)
+		{
+			// Match Mover's alternate-world conversion, using its fixed visual base instead of the live
+			// mesh-to-actor transform, which can still contain the preceding render frame's smoothing.
+			const FTransform NewActor = BaseVisualTransform.Inverse() * (ProcessedLocalRootMotion * (BaseVisualTransform * ActorTransform));
+			const FTransform Delta = NewActor.GetRelativeTransform(ActorTransform);
+			const FTransform WorldRootMotion(Delta.GetRotation(), NewActor.GetTranslation() - ActorTransform.GetTranslation());
+			return SavedWorldDelegate.IsBound()
+				? SavedWorldDelegate.Execute(WorldRootMotion, DeltaSeconds, Context) : WorldRootMotion;
+		});
+	}
+
+	~FScopedBaseVisualRootMotion()
+	{
+		Mover.ProcessLocalRootMotionDelegate = SavedLocalDelegate;
+		Mover.ProcessWorldRootMotionDelegate = SavedWorldDelegate;
+	}
+
+	FScopedBaseVisualRootMotion(const FScopedBaseVisualRootMotion&) = delete;
+	FScopedBaseVisualRootMotion& operator=(const FScopedBaseVisualRootMotion&) = delete;
+
+private:
+	URpgCharacterMoverComponent& Mover;
+	FTransform ActorTransform;
+	FTransform BaseVisualTransform;
+	FTransform ProcessedLocalRootMotion;
+	FOnWarpLocalspaceRootMotionWithContext SavedLocalDelegate;
+	FOnWarpWorldspaceRootMotionWithContext SavedWorldDelegate;
+};
+
 bool MatchesPlayback(const FRpgMoverAbilityRootMotion& A, const FRpgMoverAbilityRootMotion& B)
 {
 	return A.AbilityHandle == B.AbilityHandle && A.ActivationPredictionKey == B.ActivationPredictionKey &&
@@ -87,11 +133,18 @@ bool FRpgMoverAbilityRootMotion::GenerateMove(const FMoverTickStartData& StartSt
 	}
 	const bool bTraversalScope = MutableMover->BeginTraversalRootMotion(*this, StartState);
 	if (bTraversalIdentity && !bTraversalScope) { DurationMs = 0.f; return false; }
-	const bool bGenerated = Super::GenerateMove(StartState, ExtractionTimeStep, MoverComp, SimBlackboard, OutProposedMove);
+	bool bGenerated = false;
 	if (bTraversalScope)
 	{
+		bGenerated = Super::GenerateMove(StartState, ExtractionTimeStep, MoverComp, SimBlackboard, OutProposedMove);
 		MutableMover->EndTraversalRootMotion(MontageState.CurrentPosition);
 		OutProposedMove.PreferredMode = TEXT("Traversing");
+	}
+	else if (const FMoverDefaultSyncState* Default = StartState.SyncState.SyncStateCollection.FindDataByType<FMoverDefaultSyncState>())
+	{
+		RpgAbilityRootMotion::FScopedBaseVisualRootMotion Conversion(*MutableMover,
+			FTransform(Default->GetOrientation_WorldSpace(), Default->GetLocation_WorldSpace()));
+		bGenerated = Super::GenerateMove(StartState, ExtractionTimeStep, MoverComp, SimBlackboard, OutProposedMove);
 	}
 	return bGenerated;
 }

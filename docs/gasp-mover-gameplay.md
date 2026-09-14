@@ -113,6 +113,10 @@ change; the existing BasicWeaponAttack montage/attack-window contract remains.
 
 ## Validation
 
+This initial validation used Independent ticking. Current Fixed-backend
+correction checks and the render-independent root-motion conversion are covered
+in [`gasp-mover-fixed-tick.md`](gasp-mover-fixed-tick.md).
+
 The Development Editor build succeeded on UE 5.8.2. All 46 distinct tests
 passed: seven Mover tests and 39 existing camera, CMC, traversal, retarget and
 remote-melee tests. The final block-input fix passed its hold/release test,
