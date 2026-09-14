@@ -88,7 +88,27 @@ void URpgAbilitySystemComponent::InitAbilityActorInfo(AActor* InOwnerActor, AAct
 		}
 	}
 	
-	Super::InitAbilityActorInfo(InOwnerActor, InAvatarActor);
+	const bool bSameActorPair = ActorInfo->OwnerActor.Get() == InOwnerActor && ActorInfo->AvatarActor.Get() == InAvatarActor
+		&& GetOwnerActor() == InOwnerActor && GetAvatarActor_Direct() == InAvatarActor;
+	bool bPreserveMontageState = false;
+	if (bSameActorPair)
+	{
+		// ASC replication can bind a late joiner's avatar before PawnExtension completes its own binding.
+		// Refresh controller/component references, but do not let a duplicate init clear LocalAnimMontageInfo:
+		// the next montage OnRep would replay the already-running montage with a new local instance ID.
+		RefreshAbilityActorInfo();
+		bPreserveMontageState = InitializedAnimInstance.IsValid() && InitializedAnimInstance.Get() == ActorInfo->GetAnimInstance();
+	}
+	if (!bPreserveMontageState)
+	{
+		Super::InitAbilityActorInfo(InOwnerActor, InAvatarActor);
+	}
+	else if (bPendingMontageRep)
+	{
+		// A refresh may make deferred montage replication ready; retain the normal GAS readiness/replay checks.
+		OnRep_ReplicatedAnimMontage();
+	}
+	InitializedAnimInstance = ActorInfo->GetAnimInstance();
 	OwnerPlayerState = Cast<ARpgBasePlayerState>(InOwnerActor);
 	
 	if (bHasNewPawnAvatar)
@@ -129,6 +149,7 @@ PRAGMA_ENABLE_DEPRECATION_WARNINGS
 
 void URpgAbilitySystemComponent::ClearActorInfo()
 {
+	InitializedAnimInstance.Reset();
 	if (AActor* Avatar = GetAvatarActor())
 	{
 		if (URpgCharacterMoverComponent* Mover = Avatar->FindComponentByClass<URpgCharacterMoverComponent>())

@@ -5,6 +5,8 @@
 #include "CQTest.h"
 #include "Components/PIENetworkComponent.h"
 #include "Network/RpgCombatNetworkTestTypes.h"
+#include "Network/RpgMoverPredictionTestHelpers.h"
+#include "Network/RpgMoverPredictionTestTypes.h"
 #include "AbilitySystemGlobals.h"
 #include "Animation/AnimInstance.h"
 #include "Animation/AnimMontage.h"
@@ -20,6 +22,7 @@
 #include "GameplayEffect.h"
 #include "InputKeyEventArgs.h"
 #include "Misc/Guid.h"
+#include "NetworkPredictionWorldManager.h"
 #include "Retargeter/IKRetargeter.h"
 #include "UObject/StrongObjectPtr.h"
 #include "SurvivalRpg/AbilitySystem/Abilities/RpgGameplayAbility_BasicWeaponAttack.h"
@@ -251,6 +254,9 @@ namespace RpgGaspMoverLifecycleTests
 			FMoverSyncState Sync;
 			if (!Liaison.IsValid() || Character->GetLocalRole() != ROLE_AutonomousProxy || !Liaison->ReadPendingSyncState(Sync)
 				|| Sync.MovementMode != URpgDeadMovementMode::ModeName) return false;
+			const UNetworkPredictionWorldManager* Prediction = Character->GetWorld()->GetSubsystem<UNetworkPredictionWorldManager>();
+			if (!Prediction || Prediction->GetSettings().PreferredTickingPolicy != ENetworkPredictionTickingPolicy::Fixed
+				|| !Prediction->GetSettings().bEnableFixedTickSmoothing || Prediction->GetFixedTickState().PendingFrame <= 0) return false;
 			FMoverDefaultSyncState* Default = Sync.SyncStateCollection.FindMutableDataByType<FMoverDefaultSyncState>();
 			if (!Default) return false;
 			Offset = Character->GetActorRightVector().GetSafeNormal2D() * 50.0;
@@ -271,18 +277,24 @@ namespace RpgGaspMoverLifecycleTests
 		{
 			UE_LOG(LogTemp, Display, TEXT("RpgMoverDeathCorrection injected=%d observed=%d sameFrame=%d terminal=%d frame=%d time=%.0f delta=%s"),
 				bInjected, bObserved, bSameSimulationFrame, bTerminal, BeforeFrame, BeforeTimeMs, *CorrectionDelta.ToCompactString());
+			UE_LOG(LogTemp, Display, TEXT("RpgMoverDeathCorrection clock local=%d->%d offset=%d->%d step=%d->%d"),
+				BeforeClock.LocalPendingFrame, AfterClock.LocalPendingFrame, BeforeClock.ServerOffset, AfterClock.ServerOffset,
+				BeforeClock.StepMs, AfterClock.StepMs);
 		}
 		void Stop()
 		{
 			FWorldDelegates::OnWorldTickStart.Remove(BeforeHandle); FWorldDelegates::OnWorldPreActorTick.Remove(AfterHandle);
 			BeforeHandle.Reset(); AfterHandle.Reset();
+			Before = FMoverSyncState();
+			bBeforeValid = false;
 		}
 	private:
 		void BeforeDispatch(UWorld* World, ELevelTick, float)
 		{
 			if (bObserved || !Owner.IsValid() || Owner->GetWorld() != World || !Liaison.IsValid()) return;
 			bBeforeValid = Liaison->ReadPendingSyncState(Before);
-			BeforeFrame = Liaison->GetCurrentSimFrame(); BeforeTimeMs = Liaison->GetCurrentSimTimeMs();
+			BeforeClock = RpgMoverPredictionTests::FFixedPredictionHeadSnapshot::Capture(World, Liaison.Get());
+			BeforeFrame = BeforeClock.ServerFrame; BeforeTimeMs = BeforeClock.SimulationTimeMs;
 		}
 		void AfterDispatch(UWorld* World, ELevelTick, float)
 		{
@@ -295,7 +307,8 @@ namespace RpgGaspMoverLifecycleTests
 			const FVector Delta = B->GetLocation_WorldSpace() - A->GetLocation_WorldSpace();
 			if (FVector::DotProduct(Delta, Offset.GetSafeNormal()) > -25.0) return;
 			bObserved = true; CorrectionDelta = Delta;
-			bSameSimulationFrame = BeforeFrame == Liaison->GetCurrentSimFrame() && BeforeTimeMs == Liaison->GetCurrentSimTimeMs();
+			AfterClock = RpgMoverPredictionTests::FFixedPredictionHeadSnapshot::Capture(World, Liaison.Get());
+			bSameSimulationFrame = BeforeClock.IsSameLocalHead(AfterClock);
 			bTerminal = After.MovementMode == URpgDeadMovementMode::ModeName && B->GetVelocity_WorldSpace().IsNearlyZero(1.0)
 				&& B->GetAngularVelocityDegrees_WorldSpace().IsNearlyZero(1.0) && B->GetIntent_WorldSpace().IsNearlyZero()
 				&& !B->GetMovementBase() && !After.LayeredMoves.FindActiveMove<FRpgMoverAbilityRootMotion>();
@@ -305,6 +318,7 @@ namespace RpgGaspMoverLifecycleTests
 		TWeakObjectPtr<UMoverNetworkPredictionLiaisonComponent> Liaison;
 		FDelegateHandle BeforeHandle, AfterHandle;
 		FMoverSyncState Before;
+		RpgMoverPredictionTests::FFixedPredictionHeadSnapshot BeforeClock, AfterClock;
 		FVector Offset = FVector::ZeroVector, CorrectionDelta = FVector::ZeroVector;
 		int32 BeforeFrame = INDEX_NONE;
 		double BeforeTimeMs = 0.0;
@@ -319,10 +333,22 @@ namespace RpgGaspMoverLifecycleTests
 		TWeakObjectPtr<USkeletalMeshComponent> OldFollower;
 		TArray<TWeakObjectPtr<AActor>> OldEquipmentActors;
 		FDelegateHandle HealthHandle, EndHandle;
+		TStrongObjectPtr<URpgMoverRollbackTestObserver> RollbackObserver;
+		FMoverSyncState BeforeDeathDispatch;
+		RpgMoverPredictionTests::FFixedPredictionHeadSnapshot BeforeDeathClock;
+		FVector BeforeDeathActorLocation = FVector::ZeroVector, BeforeDeathArtificialOffset = FVector::ZeroVector;
 		FVector DeathLocation = FVector::ZeroVector, RespawnLocation = FVector::ZeroVector;
+		FVector FirstTerminalLocation = FVector::ZeroVector;
+		FVector MaximumDeathDriftLocation = FVector::ZeroVector, MaximumDeathDriftSyncLocation = FVector::ZeroVector;
+		float MaximumDeathDriftSeconds = 0.0f;
+		float ProxyDeathConvergenceSeconds = 0.0f, ProxyDeathTargetError = -1.0f;
+		float OwnerDeathConvergenceSeconds = 0.0f, OwnerDeathTargetError = -1.0f;
 		float StartingHealth = 0.0f, DamagedHealth = 0.0f, DeadSeconds = 0.0f, MaximumDeathDrift = 0.0f;
 		int32 AttackCancellations = 0, BlockCancellations = 0, RealDamageEvents = 0;
+		int32 BeforeDeathRollbacks = 0, OwnerDeathAnchorAdjustments = 0;
 		bool bMeshHitContext = false, bObservedDeath = false, bSawTerminalSync = false, bInvalidDeadState = false, bSawRespawnMontage = false, bCapturedRespawn = false;
+		bool bProxyDeathConverged = false;
+		bool bOwnerDeathConverged = false, bBeforeDeathDispatchValid = false;
 	};
 	/** Reads real ASC events and naturally simulated states; it never advances death or respawn itself. */
 	class FScopedObservations final
@@ -333,6 +359,8 @@ namespace RpgGaspMoverLifecycleTests
 		void Start(int32 Id)
 		{
 			Subject = Id;
+			BeforeDispatchHandle = FWorldDelegates::OnWorldTickStart.AddRaw(this, &FScopedObservations::BeforeDispatch);
+			AfterDispatchHandle = FWorldDelegates::OnWorldPreActorTick.AddRaw(this, &FScopedObservations::AfterDispatch);
 			TickHandle = FWorldDelegates::OnWorldTickEnd.AddRaw(this, &FScopedObservations::Tick);
 		}
 		void Add(UWorld* World)
@@ -350,6 +378,11 @@ namespace RpgGaspMoverLifecycleTests
 				Peer.OldFollower = Retarget(Character)->GetRetargetMesh();
 				for (ERpgEquipmentSlot Slot : { ERpgEquipmentSlot::MainHand, ERpgEquipmentSlot::OffHand })
 					for (AActor* Actor : Equipment(Character)->GetEquipmentInstanceInSlot(Slot)->GetSpawnedActors()) Peer.OldEquipmentActors.Add(Actor);
+				if (Character->GetLocalRole() == ROLE_AutonomousProxy && Mover(Character))
+				{
+					Peer.RollbackObserver.Reset(NewObject<URpgMoverRollbackTestObserver>());
+					Mover(Character)->OnPostSimulationRollback.AddDynamic(Peer.RollbackObserver.Get(), &URpgMoverRollbackTestObserver::ObserveRollback);
+				}
 			}
 			Peer.HealthHandle = Peer.HealthSet->OnHealthChanged.AddLambda([this, World](AActor*, AActor*, const FGameplayEffectSpec* Spec, float, float Before, float After)
 			{
@@ -375,24 +408,109 @@ namespace RpgGaspMoverLifecycleTests
 		bool Has(UWorld* World) const { return Peers.Contains(World); }
 		void Report() const
 		{
+			const FPeer* Authority = FindAuthorityPeer();
 			for (const auto& Entry : Peers)
 			{
 				const FPeer& Peer = Entry.Value;
 				UE_LOG(LogTemp, Display, TEXT("RpgMoverLifecycle world=%s damageEvents=%d meshHit=%d health=%.2f deathSeen=%d deadSeconds=%.3f terminalSync=%d deathDrift=%.3f invalidDead=%d attackCancelled=%d blockCancelled=%d oldPawn=%s respawnMontage=%d"),
 					*GetPathNameSafe(Entry.Key.Get()), Peer.RealDamageEvents, Peer.bMeshHitContext, Peer.DamagedHealth, Peer.bObservedDeath, Peer.DeadSeconds,
 					Peer.bSawTerminalSync, Peer.MaximumDeathDrift, Peer.bInvalidDeadState, Peer.AttackCancellations, Peer.BlockCancellations, *GetNameSafe(Peer.OldPawn.Get()), Peer.bSawRespawnMontage);
+				UE_LOG(LogTemp, Display, TEXT("RpgMoverLifecycle death position world=%s firstTerminal=%s anchor=%s authorityDeath=%s proxyConverged=%d convergenceSeconds=%.4f targetError=%.4f maxDriftActor=%s maxDriftSync=%s maxDriftSeconds=%.4f"),
+					*GetPathNameSafe(Entry.Key.Get()), *Peer.FirstTerminalLocation.ToCompactString(), *Peer.DeathLocation.ToCompactString(),
+					Authority && Authority->bObservedDeath ? *Authority->DeathLocation.ToCompactString() : TEXT("unobserved"),
+					Peer.bProxyDeathConverged, Peer.ProxyDeathConvergenceSeconds, Peer.ProxyDeathTargetError,
+						*Peer.MaximumDeathDriftLocation.ToCompactString(), *Peer.MaximumDeathDriftSyncLocation.ToCompactString(), Peer.MaximumDeathDriftSeconds);
+				UE_LOG(LogTemp, Display, TEXT("RpgMoverLifecycle owner death world=%s converged=%d convergenceSeconds=%.4f targetError=%.4f anchorAdjustments=%d"),
+					*GetPathNameSafe(Entry.Key.Get()), Peer.bOwnerDeathConverged, Peer.OwnerDeathConvergenceSeconds,
+					Peer.OwnerDeathTargetError, Peer.OwnerDeathAnchorAdjustments);
 			}
 		}
 		void Stop()
 		{
 			FWorldDelegates::OnWorldTickEnd.Remove(TickHandle); TickHandle.Reset();
+			FWorldDelegates::OnWorldTickStart.Remove(BeforeDispatchHandle); BeforeDispatchHandle.Reset();
+			FWorldDelegates::OnWorldPreActorTick.Remove(AfterDispatchHandle); AfterDispatchHandle.Reset();
 			for (auto& Entry : Peers)
 			{
 				if (Entry.Value.HealthSet.IsValid()) Entry.Value.HealthSet->OnHealthChanged.Remove(Entry.Value.HealthHandle);
 				if (Entry.Value.PersistentASC.IsValid()) Entry.Value.PersistentASC->OnAbilityEnded.Remove(Entry.Value.EndHandle);
+				if (Entry.Value.OldPawn.IsValid() && Mover(Entry.Value.OldPawn.Get()) && Entry.Value.RollbackObserver.IsValid())
+					Mover(Entry.Value.OldPawn.Get())->OnPostSimulationRollback.RemoveDynamic(Entry.Value.RollbackObserver.Get(), &URpgMoverRollbackTestObserver::ObserveRollback);
+				Entry.Value.RollbackObserver.Reset();
+				Entry.Value.BeforeDeathDispatch = FMoverSyncState();
+				Entry.Value.bBeforeDeathDispatchValid = false;
 			}
 		}
 	private:
+		static bool IsTerminal(const FMoverSyncState& Sync)
+		{
+			const FMoverDefaultSyncState* Default = Sync.SyncStateCollection.FindDataByType<FMoverDefaultSyncState>();
+			return Sync.MovementMode == URpgDeadMovementMode::ModeName && Default
+				&& Default->GetVelocity_WorldSpace().IsNearlyZero(1.0) && Default->GetAngularVelocityDegrees_WorldSpace().IsNearlyZero(1.0)
+				&& Default->GetIntent_WorldSpace().IsNearlyZero() && !Default->GetMovementBase()
+				&& !Sync.LayeredMoves.FindActiveMove<FRpgMoverAbilityRootMotion>();
+		}
+		static void RecordDrift(FPeer& Peer, const FVector& ObservedLocation, const FVector& SyncLocation)
+		{
+			const float Drift = static_cast<float>(FVector::Dist(Peer.DeathLocation, ObservedLocation));
+			if (Drift > Peer.MaximumDeathDrift)
+			{
+				Peer.MaximumDeathDrift = Drift;
+				Peer.MaximumDeathDriftLocation = ObservedLocation;
+				Peer.MaximumDeathDriftSyncLocation = SyncLocation;
+				Peer.MaximumDeathDriftSeconds = Peer.DeadSeconds;
+			}
+		}
+		void BeforeDispatch(UWorld* World, ELevelTick, float)
+		{
+			FPeer* Peer = ActiveWorld(World) ? Peers.Find(World) : nullptr;
+			if (!Peer || !Peer->bObservedDeath || !Peer->bSawTerminalSync || Peer->bOwnerDeathConverged || !Peer->RollbackObserver.IsValid()) return;
+			APawn* Old = Peer->OldPawn.Get();
+			UMoverNetworkPredictionLiaisonComponent* Liaison = Old ? Old->FindComponentByClass<UMoverNetworkPredictionLiaisonComponent>() : nullptr;
+			Peer->bBeforeDeathDispatchValid = Liaison && Liaison->ReadPendingSyncState(Peer->BeforeDeathDispatch);
+			Peer->BeforeDeathClock = RpgMoverPredictionTests::FFixedPredictionHeadSnapshot::Capture(World, Liaison);
+			Peer->BeforeDeathRollbacks = Peer->RollbackObserver->Count;
+			Peer->BeforeDeathActorLocation = Old ? Old->GetActorLocation() : FVector::ZeroVector;
+			Peer->BeforeDeathArtificialOffset = TestPredictionOffset ? TestPredictionOffset(World) : FVector::ZeroVector;
+		}
+		void AfterDispatch(UWorld* World, ELevelTick, float DeltaSeconds)
+		{
+			FPeer* Peer = ActiveWorld(World) ? Peers.Find(World) : nullptr;
+			if (!Peer || !Peer->bBeforeDeathDispatchValid || Peer->bOwnerDeathConverged || !Peer->RollbackObserver.IsValid()
+				|| Peer->RollbackObserver->Count <= Peer->BeforeDeathRollbacks) return;
+			APawn* Old = Peer->OldPawn.Get();
+			UMoverNetworkPredictionLiaisonComponent* Liaison = Old ? Old->FindComponentByClass<UMoverNetworkPredictionLiaisonComponent>() : nullptr;
+			const FPeer* Authority = FindAuthorityPeer();
+			FMoverSyncState After;
+			const float ConvergenceSeconds = Peer->DeadSeconds + DeltaSeconds;
+			if (!Liaison || !Liaison->ReadPendingSyncState(After) || !Authority || !Authority->bSawTerminalSync
+				|| ConvergenceSeconds > 0.75f || !IsTerminal(Peer->BeforeDeathDispatch) || !IsTerminal(After)
+				|| !Peer->BeforeDeathClock.IsSameLocalHead(RpgMoverPredictionTests::FFixedPredictionHeadSnapshot::Capture(World, Liaison))) return;
+			const FMoverDefaultSyncState* BeforeDefault = Peer->BeforeDeathDispatch.SyncStateCollection.FindDataByType<FMoverDefaultSyncState>();
+			const FMoverDefaultSyncState* AfterDefault = After.SyncStateCollection.FindDataByType<FMoverDefaultSyncState>();
+			if (FVector::DistSquared(AfterDefault->GetLocation_WorldSpace(), Authority->DeathLocation) > 1.0
+				|| FVector::DistSquared(Old->GetActorLocation(), AfterDefault->GetLocation_WorldSpace()) > 1.0) return;
+			// The owner initially stops at its predicted position. Only the first proven NP rollback to
+			// the authority's already stationary Dead state may replace that anchor; ordinary movement
+			// before or after this correction remains subject to the unchanged strict drift bound.
+			RecordDrift(*Peer, Peer->BeforeDeathActorLocation - Peer->BeforeDeathArtificialOffset, BeforeDefault->GetLocation_WorldSpace());
+			Peer->DeathLocation = Authority->DeathLocation;
+			Peer->bOwnerDeathConverged = true;
+			Peer->OwnerDeathConvergenceSeconds = ConvergenceSeconds;
+			Peer->OwnerDeathAnchorAdjustments = 1;
+			UE_LOG(LogTemp, Display, TEXT("RpgMoverLifecycle owner death reconciled world=%s seconds=%.4f localFrame=%d rollbacks=%d->%d from=%s authority=%s"),
+				*World->GetPathName(), ConvergenceSeconds, Peer->BeforeDeathClock.LocalPendingFrame,
+				Peer->BeforeDeathRollbacks, Peer->RollbackObserver->Count,
+				*BeforeDefault->GetLocation_WorldSpace().ToCompactString(), *Authority->DeathLocation.ToCompactString());
+			Peer->BeforeDeathDispatch = FMoverSyncState();
+			Peer->bBeforeDeathDispatchValid = false;
+		}
+		const FPeer* FindAuthorityPeer() const
+		{
+			for (const auto& Entry : Peers)
+				if (Entry.Key.IsValid() && Entry.Key->GetNetMode() != NM_Client) return &Entry.Value;
+			return nullptr;
+		}
 		void Tick(UWorld* World, ELevelTick, float DeltaSeconds)
 		{
 			if (!ActiveWorld(World)) return;
@@ -405,26 +523,61 @@ namespace RpgGaspMoverLifecycleTests
 				Peer->DeadSeconds += DeltaSeconds;
 				const FMoverSyncState& Sync = Mover(Old)->GetSyncState();
 				const FMoverDefaultSyncState* Default = Sync.SyncStateCollection.FindDataByType<FMoverDefaultSyncState>();
-				const bool bTerminal = Sync.MovementMode == URpgDeadMovementMode::ModeName && Default
-					&& Default->GetVelocity_WorldSpace().IsNearlyZero(1.0) && Default->GetAngularVelocityDegrees_WorldSpace().IsNearlyZero(1.0)
-					&& Default->GetIntent_WorldSpace().IsNearlyZero() && !Default->GetMovementBase()
-					&& !Sync.LayeredMoves.FindActiveMove<FRpgMoverAbilityRootMotion>();
+				const bool bTerminal = IsTerminal(Sync);
 				const bool bProxy = Old->GetLocalRole() == ROLE_SimulatedProxy;
 				if (bTerminal && !Peer->bSawTerminalSync)
 				{
 					Peer->bSawTerminalSync = true;
-					// Independent proxies interpolate an older motion stream (100ms by default). Mode uses
-					// the newer sample while velocity still interpolates, so wait for the full terminal state.
-					if (bProxy) Peer->DeathLocation = Old->GetActorLocation();
+					Peer->FirstTerminalLocation = Old->GetActorLocation();
 				}
-				if (bProxy && !Peer->bSawTerminalSync && Peer->DeadSeconds > 0.75f)
-					Peer->bInvalidDeadState = true;
-				// Owner/authority retain their DeathStart boundary; only the buffered proxy starts at receipt.
+				if (bProxy)
+				{
+					const FPeer* Authority = FindAuthorityPeer();
+					if (Authority && Authority->bObservedDeath && Authority->bSawTerminalSync)
+					{
+						Peer->ProxyDeathTargetError = static_cast<float>(FVector::Dist(Old->GetActorLocation(), Authority->DeathLocation));
+						// Mode comes from the newer NP sample, but position interpolates independently of
+						// velocity/intent: even two zero-velocity samples can still have different positions.
+						// Require arrival at the fixed authoritative death position within the existing budget.
+						if (!Peer->bProxyDeathConverged && bTerminal && Peer->DeadSeconds <= 0.75f && Peer->ProxyDeathTargetError <= 1.0f)
+						{
+							Peer->DeathLocation = Authority->DeathLocation;
+							Peer->bProxyDeathConverged = true;
+							Peer->ProxyDeathConvergenceSeconds = Peer->DeadSeconds;
+						}
+					}
+					if (!Peer->bProxyDeathConverged && Peer->DeadSeconds > 0.75f) Peer->bInvalidDeadState = true;
+				}
+				else if (Old->GetLocalRole() == ROLE_AutonomousProxy)
+				{
+					const FPeer* Authority = FindAuthorityPeer();
+					if (Authority && Authority->bSawTerminalSync)
+					{
+						Peer->OwnerDeathTargetError = static_cast<float>(FVector::Dist(Old->GetActorLocation(), Authority->DeathLocation));
+						// Already matching the server needs no anchor change; a differing predicted anchor
+						// can converge only through the explicitly observed rollback above.
+						if (!Peer->bOwnerDeathConverged && bTerminal && Peer->DeadSeconds <= 0.75f
+							&& FVector::DistSquared(Peer->DeathLocation, Authority->DeathLocation) <= 1.0 && Peer->OwnerDeathTargetError <= 1.0f)
+						{
+							Peer->bOwnerDeathConverged = true;
+							Peer->OwnerDeathConvergenceSeconds = Peer->DeadSeconds;
+							Peer->BeforeDeathDispatch = FMoverSyncState();
+							Peer->bBeforeDeathDispatchValid = false;
+						}
+					}
+					if (!Peer->bOwnerDeathConverged && Peer->DeadSeconds > 0.75f) Peer->bInvalidDeadState = true;
+				}
+				// Terminal/ability checks start at the first complete terminal sample, independently of convergence.
 				if (bProxy ? Peer->bSawTerminalSync : Peer->DeadSeconds > 0.05f)
 				{
-					// Exclude only the known, intentionally injected prediction error; ordinary motion still counts.
-					const FVector ArtificialOffset = TestPredictionOffset ? TestPredictionOffset(World) : FVector::ZeroVector;
-					Peer->MaximumDeathDrift = FMath::Max(Peer->MaximumDeathDrift, static_cast<float>(FVector::Dist(Peer->DeathLocation, Old->GetActorLocation() - ArtificialOffset)));
+					// Owners retain their predicted anchor until a proven authoritative rollback. Only buffered proxies wait for arrival.
+					if (!bProxy || Peer->bProxyDeathConverged)
+					{
+						// Exclude only the known, intentionally injected owner prediction error.
+						const FVector ArtificialOffset = TestPredictionOffset ? TestPredictionOffset(World) : FVector::ZeroVector;
+						const FVector ObservedLocation = Old->GetActorLocation() - ArtificialOffset;
+						RecordDrift(*Peer, ObservedLocation, Default ? Default->GetLocation_WorldSpace() : FVector::ZeroVector);
+					}
 					const bool bInvalid = !bTerminal;
 					if (bInvalid && !Peer->bInvalidDeadState)
 						UE_LOG(LogTemp, Display, TEXT("RpgMoverLifecycle invalid death world=%s seconds=%.3f mode=%s velocity=%s angular=%s rootMotion=%d"),
@@ -453,6 +606,7 @@ namespace RpgGaspMoverLifecycleTests
 		}
 		TMap<TWeakObjectPtr<UWorld>, FPeer> Peers;
 		FDelegateHandle TickHandle;
+		FDelegateHandle BeforeDispatchHandle, AfterDispatchHandle;
 		int32 Subject = INDEX_NONE;
 	};
 	struct FState : FBasePIENetworkComponentState {};
@@ -546,6 +700,8 @@ NETWORK_TEST_CLASS(GaspMoverLifecyclePIE, "SurvivalRpg.GASP.Mover.Lifecycle")
 		ASSERT_THAT(IsTrue(Peer.bSawTerminalSync));
 		ASSERT_THAT(IsFalse(Peer.bInvalidDeadState));
 		ASSERT_THAT(IsTrue(Peer.MaximumDeathDrift < 5.0f));
+		if (World == ObserverWorld.Get()) ASSERT_THAT(IsTrue(Peer.bProxyDeathConverged && Peer.ProxyDeathConvergenceSeconds <= 0.75f));
+		if (World == OwnerWorld.Get()) ASSERT_THAT(IsTrue(Peer.bOwnerDeathConverged && Peer.OwnerDeathConvergenceSeconds <= 0.75f));
 		if (World == AuthorityWorld.Get() || World == OwnerWorld.Get())
 			ASSERT_THAT(IsTrue(bBlock ? Peer.BlockCancellations > 0 : Peer.AttackCancellations > 0));
 		if (World == AuthorityWorld.Get())
@@ -664,7 +820,7 @@ NETWORK_TEST_CLASS(GaspMoverLifecyclePIE, "SurvivalRpg.GASP.Mover.Lifecycle")
 				}, Timeout())
 				.ThenClient(TEXT("Introduce one incorrect owner prediction without changing authority or held input"), 0, [this](FState& State)
 					{ ASSERT_THAT(IsTrue(Correction.Inject(Pawn(State.World, SubjectId)))); })
-				.UntilClient(TEXT("A real independent NP correction restores the dead pawn before the next simulation frame"), 0,
+				.UntilClient(TEXT("A real Fixed NP correction restores the dead pawn before the next simulation frame"), 0,
 					[this](FState&) { return Correction.Observed(); }, Timeout())
 				.ThenClient(TEXT("Reconciliation retains terminal mode and cannot revive velocity or attack root motion"), 0,
 					[this](FState&) { ASSERT_THAT(IsTrue(Correction.KeptTerminalState())); });

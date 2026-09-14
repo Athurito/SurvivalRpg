@@ -81,6 +81,13 @@ public:
 	void Input_Crouch(const FInputActionValue& InputActionValue);
 	void Input_AutoRun(const FInputActionValue& InputActionValue);
 	void Input_Jump(const FInputActionValue& InputActionValue);
+	/**
+	 * Attempts the Experience-granted contextual traversal on this pawn's ASC. True consumes the jump input,
+	 * including while traversal or another DefaultSlot montage is active; false permits the caller's ordinary jump.
+	 * Mover's existing Blueprint input producer calls this on press and while held without another native jump binding.
+	 */
+	UFUNCTION(BlueprintCallable, Category = "Rpg|Traversal")
+	bool TryContextualTraversal();
 	/** Retries contextual traversal while jump is held, including during the initial ordinary jump. */
 	void Input_JumpHeld(const FInputActionValue& InputActionValue);
 	void Input_StopJump(const FInputActionValue& InputActionValue);
@@ -115,7 +122,6 @@ protected:
 	bool bReadyToBindInputs = false;
 
 private:
-	bool TryContextualTraversal();
 	void HandleAbilitySystemUninitialized();
 	void BindRoutedGameplayHotkeys(const URpgInputConfig* InputConfig, class URpgInputComponent* RpgIC, TArray<uint32>* BindHandles = nullptr);
 	class URpgPlayerGameplayInputRouterComponent* GetGameplayInputRouter() const;

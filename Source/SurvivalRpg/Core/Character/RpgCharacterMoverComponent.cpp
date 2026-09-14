@@ -1,13 +1,17 @@
 #include "RpgCharacterMoverComponent.h"
 
 #include "RpgDeadMovementMode.h"
+#include "RpgMoverMotionWarpingComponent.h"
 
 #include "AbilitySystemComponent.h"
 #include "Abilities/GameplayAbility.h"
 #include "Animation/AnimInstance.h"
 #include "Animation/AnimMontage.h"
 #include "Components/SkeletalMeshComponent.h"
+#include "Components/CapsuleComponent.h"
 #include "DefaultMovementSet/InstantMovementEffects/BasicInstantMovementEffects.h"
+#include "DefaultMovementSet/Settings/CommonLegacyMovementSettings.h"
+#include "MoveLibrary/FloorQueryUtils.h"
 #include "MoverDataModelTypes.h"
 #include "MoverSimulation.h"
 #include "MoverSimulationTypes.h"
@@ -15,11 +19,65 @@
 
 namespace RpgAbilityRootMotion
 {
+/** Keeps visual network smoothing out of GAS movement while preserving both authored processing delegates. */
+class FScopedBaseVisualRootMotion
+{
+public:
+	FScopedBaseVisualRootMotion(URpgCharacterMoverComponent& InMover, const FTransform& InActorTransform)
+		: Mover(InMover), ActorTransform(InActorTransform), BaseVisualTransform(InMover.GetBaseVisualComponentTransform()),
+		  SavedLocalDelegate(InMover.ProcessLocalRootMotionDelegate), SavedWorldDelegate(InMover.ProcessWorldRootMotionDelegate)
+	{
+		Mover.ProcessLocalRootMotionDelegate.BindLambda([this](const FTransform& LocalRootMotion,
+			float DeltaSeconds, const FMotionWarpingUpdateContext* Context)
+		{
+			ProcessedLocalRootMotion = SavedLocalDelegate.IsBound()
+				? SavedLocalDelegate.Execute(LocalRootMotion, DeltaSeconds, Context) : LocalRootMotion;
+			return ProcessedLocalRootMotion;
+		});
+		Mover.ProcessWorldRootMotionDelegate.BindLambda([this](const FTransform&, float DeltaSeconds,
+			const FMotionWarpingUpdateContext* Context)
+		{
+			// Match Mover's alternate-world conversion, using its fixed visual base instead of the live
+			// mesh-to-actor transform, which can still contain the preceding render frame's smoothing.
+			const FTransform NewActor = BaseVisualTransform.Inverse() * (ProcessedLocalRootMotion * (BaseVisualTransform * ActorTransform));
+			const FTransform Delta = NewActor.GetRelativeTransform(ActorTransform);
+			const FTransform WorldRootMotion(Delta.GetRotation(), NewActor.GetTranslation() - ActorTransform.GetTranslation());
+			return SavedWorldDelegate.IsBound()
+				? SavedWorldDelegate.Execute(WorldRootMotion, DeltaSeconds, Context) : WorldRootMotion;
+		});
+	}
+
+	~FScopedBaseVisualRootMotion()
+	{
+		Mover.ProcessLocalRootMotionDelegate = SavedLocalDelegate;
+		Mover.ProcessWorldRootMotionDelegate = SavedWorldDelegate;
+	}
+
+	FScopedBaseVisualRootMotion(const FScopedBaseVisualRootMotion&) = delete;
+	FScopedBaseVisualRootMotion& operator=(const FScopedBaseVisualRootMotion&) = delete;
+
+private:
+	URpgCharacterMoverComponent& Mover;
+	FTransform ActorTransform;
+	FTransform BaseVisualTransform;
+	FTransform ProcessedLocalRootMotion;
+	FOnWarpLocalspaceRootMotionWithContext SavedLocalDelegate;
+	FOnWarpWorldspaceRootMotionWithContext SavedWorldDelegate;
+};
+
 bool MatchesPlayback(const FRpgMoverAbilityRootMotion& A, const FRpgMoverAbilityRootMotion& B)
 {
 	return A.AbilityHandle == B.AbilityHandle && A.ActivationPredictionKey == B.ActivationPredictionKey &&
 		A.bServerInitiatedKey == B.bServerInitiatedKey && A.MontageSequence == B.MontageSequence &&
 		A.MontageState.Montage == B.MontageState.Montage;
+}
+
+bool MatchesTraversal(const FRpgMoverAbilityRootMotion& Move, const FRpgMoverTraversalCommand& Command)
+{
+	return Command.IsActive() && Command.Identity.AbilityHandle == Move.AbilityHandle &&
+		Command.Identity.ActivationPredictionKey == Move.ActivationPredictionKey &&
+		Command.Identity.bServerInitiatedKey == Move.bServerInitiatedKey &&
+		Command.Identity.MontageSequence == Move.MontageSequence && Command.Context.Montage == Move.MontageState.Montage;
 }
 }
 
@@ -41,23 +99,54 @@ bool FRpgMoverAbilityRootMotion::GenerateMove(const FMoverTickStartData& StartSt
 			DurationMs = 0.0f;
 			return false;
 		}
-		return Super::GenerateMove(StartState, TimeStep, MoverComp, SimBlackboard, OutProposedMove);
 	}
-
-	const FRpgMoverAbilityRootMotionInputs* Inputs = StartState.InputCmd.InputCollection.FindDataByType<FRpgMoverAbilityRootMotionInputs>();
-	if (RpgMover->GetOwnerRole() != ROLE_AutonomousProxy || !Inputs ||
-		!RpgAbilityRootMotion::MatchesPlayback(*this, Inputs->RootMotion))
+	else
 	{
-		DurationMs = 0.0f;
-		return false;
+		const FRpgMoverAbilityRootMotionInputs* Inputs = StartState.InputCmd.InputCollection.FindDataByType<FRpgMoverAbilityRootMotionInputs>();
+		if (RpgMover->GetOwnerRole() != ROLE_AutonomousProxy ||
+			(!(Inputs && RpgAbilityRootMotion::MatchesPlayback(*this, Inputs->RootMotion)) &&
+			 !RpgAbilityRootMotion::MatchesTraversal(*this, RpgMover->TraversalSimulationState.Command)))
+		{
+			DurationMs = 0.0f;
+			return false;
+		}
 	}
 
 	// The NP backend does not set bIsResimulating. Its stored input nevertheless identifies the exact
 	// historical interval. Only bypass the engine's present-day AnimInstance check, after that validation;
 	// preserve the real timestep, simulation state, extraction and movement collision handling.
 	FMoverTimeStep ExtractionTimeStep = TimeStep;
-	ExtractionTimeStep.bIsResimulating = true;
-	return Super::GenerateMove(StartState, ExtractionTimeStep, MoverComp, SimBlackboard, OutProposedMove);
+	ExtractionTimeStep.bIsResimulating = RpgMover->GetOwnerRole() == ROLE_AutonomousProxy || TimeStep.bIsResimulating;
+	URpgCharacterMoverComponent* MutableMover = const_cast<URpgCharacterMoverComponent*>(RpgMover);
+	const FRpgMoverTraversalCommand& Traversal = MutableMover->TraversalSimulationState.Command;
+	const bool bTraversalIdentity = Traversal.Identity.AbilityHandle == AbilityHandle &&
+		Traversal.Identity.ActivationPredictionKey == ActivationPredictionKey &&
+		Traversal.Identity.bServerInitiatedKey == bServerInitiatedKey && Traversal.Identity.MontageSequence == MontageSequence;
+	if (bTraversalIdentity && !Traversal.IsActive()) { DurationMs = 0.f; return false; }
+	if (Traversal.IsActive() && !bTraversalIdentity) { DurationMs = 0.f; return false; }
+	if (bTraversalIdentity && MutableMover->bTraversalGeometryInvalidThisTick)
+	{
+		OutProposedMove = FProposedMove{};
+		OutProposedMove.MixMode = EMoveMixMode::OverrideAll;
+		OutProposedMove.PreferredMode = TEXT("Traversing");
+		return true;
+	}
+	const bool bTraversalScope = MutableMover->BeginTraversalRootMotion(*this, StartState);
+	if (bTraversalIdentity && !bTraversalScope) { DurationMs = 0.f; return false; }
+	bool bGenerated = false;
+	if (bTraversalScope)
+	{
+		bGenerated = Super::GenerateMove(StartState, ExtractionTimeStep, MoverComp, SimBlackboard, OutProposedMove);
+		MutableMover->EndTraversalRootMotion(MontageState.CurrentPosition);
+		OutProposedMove.PreferredMode = TEXT("Traversing");
+	}
+	else if (const FMoverDefaultSyncState* Default = StartState.SyncState.SyncStateCollection.FindDataByType<FMoverDefaultSyncState>())
+	{
+		RpgAbilityRootMotion::FScopedBaseVisualRootMotion Conversion(*MutableMover,
+			FTransform(Default->GetOrientation_WorldSpace(), Default->GetLocation_WorldSpace()));
+		bGenerated = Super::GenerateMove(StartState, ExtractionTimeStep, MoverComp, SimBlackboard, OutProposedMove);
+	}
+	return bGenerated;
 }
 
 FLayeredMoveBase* FRpgMoverAbilityRootMotion::Clone() const
@@ -88,6 +177,7 @@ void FRpgMoverAbilityRootMotion::AddReferencedObjects(FReferenceCollector& Colle
 void FRpgMoverAbilityRootMotionInputs::RetainMontageForHistory()
 {
 	MontageLifetime.Reset(RootMotion.MontageState.Montage.Get());
+	Traversal.RetainObjectsForHistory();
 }
 
 FMoverDataStructBase* FRpgMoverAbilityRootMotionInputs::Clone() const
@@ -108,6 +198,7 @@ bool FRpgMoverAbilityRootMotionInputs::NetSerialize(FArchive& Ar, UPackageMap* M
 	if (Ar.IsLoading())
 	{
 		RootMotion = FRpgMoverAbilityRootMotion{};
+		Traversal = FRpgMoverTraversalCommand{};
 		RetainMontageForHistory();
 	}
 	bOutSuccess = true;
@@ -117,6 +208,7 @@ bool FRpgMoverAbilityRootMotionInputs::NetSerialize(FArchive& Ar, UPackageMap* M
 void FRpgMoverAbilityRootMotionInputs::AddReferencedObjects(FReferenceCollector& Collector)
 {
 	RootMotion.AddReferencedObjects(Collector);
+	Traversal.AddReferencedObjects(Collector);
 }
 
 bool FRpgMoverAbilityRootMotionInputs::ShouldReconcile(const FMoverDataStructBase& AuthorityState) const
@@ -138,8 +230,11 @@ void URpgCharacterMoverComponent::BeginPlay()
 	{
 		AddMovementModeFromClass(URpgDeadMovementMode::ModeName, URpgDeadMovementMode::StaticClass());
 	}
+	PersistentSyncStateDataTypes.Add(FMoverDataPersistence(FRpgMoverTraversalSyncState::StaticStruct(), true));
+	TraversalWarping = GetOwner()->FindComponentByClass<URpgMoverMotionWarpingComponent>();
 	Super::BeginPlay();
 	OnPreSimulationTick.AddUniqueDynamic(this, &ThisClass::HandleAbilityRootMotionPreSimulation);
+	OnPostFinalize.AddUniqueDynamic(this, &ThisClass::HandleTraversalPostFinalize);
 }
 
 void URpgCharacterMoverComponent::DisableMovementForDeath()
@@ -150,6 +245,12 @@ void URpgCharacterMoverComponent::DisableMovementForDeath()
 	}
 	bDeathMovementRequested = true;
 	DeathMovementStartTimeMs = BackendLiaisonComp ? BackendLiaisonComp->GetCurrentSimTimeMs() : 0.0;
+	if (TraversalCommand.IsActive())
+	{
+		TraversalCommand.Phase = ERpgMoverTraversalPhase::Cancelled;
+		TraversalCommand.bHasRecoveryLocation = false;
+		TraversalCommand.bPreserveMomentum = false;
+	}
 	ClearAbilityRootMotion();
 }
 
@@ -162,6 +263,7 @@ bool URpgCharacterMoverComponent::IsMovementDisabledForDeath(const FMoverSyncSta
 void URpgCharacterMoverComponent::OnPreSimulate(const FMoverTimeStep& TimeStep, const FMoverTickStartData& StartingData)
 {
 	bSuppressMovementForDeathThisTick = IsMovementDisabledForDeath(StartingData.SyncState, TimeStep);
+	PrepareTraversalSimulation(TimeStep, StartingData);
 	if (bSuppressMovementForDeathThisTick)
 	{
 		// The NP liaison deep-copies its stored command into StartingData before this callback. Mutating
@@ -179,7 +281,42 @@ void URpgCharacterMoverComponent::OnPreSimulate(const FMoverTimeStep& TimeStep, 
 		bWantsToCrouch = IsCrouching();
 	}
 
+	// A copied GASP custom-input handler can update crouch intent during this broadcast. Disable native
+	// stance processing for the scope, then restore its setting and the already-reached stance.
+	const bool bLockStance = bSuppressMovementForDeathThisTick || TraversalSimulationState.Command.IsActive();
+	const bool bSavedStanceHandling = bHandleStanceChanges;
+	if (bLockStance) { bHandleStanceChanges = false; }
 	Super::OnPreSimulate(TimeStep, StartingData);
+	bHandleStanceChanges = bSavedStanceHandling;
+	if (bLockStance) { bWantsToCrouch = IsCrouching(); }
+
+	if (!bSuppressMovementForDeathThisTick && BackendLiaisonComp && Simulation && !IsBackendAsync() && TimeStep.StepMs > 0.f)
+	{
+		FRpgMoverTraversalCommand& Command = TraversalSimulationState.Command;
+		const bool bStart = Command.IsActive() && !TraversalSimulationState.bStartApplied;
+		const bool bEnd = Command.IsTerminal() && !TraversalSimulationState.bEndApplied;
+		if (bStart || bEnd || bTraversalGeometryInvalidThisTick)
+		{
+			const FMoverTime FrameTime(TimeStep.ServerFrame, TimeStep.BaseSimTimeMs);
+			const FMoverSchedulingInfo Scheduling(FrameTime, FrameTime, BackendLiaisonComp->IsFixedDt());
+			const FMoverDefaultSyncState* Default = StartingData.SyncState.SyncStateCollection.FindDataByType<FMoverDefaultSyncState>();
+			if (bEnd && Command.bHasRecoveryLocation)
+			{
+				TSharedPtr<FTeleportEffect> Recovery = MakeShared<FTeleportEffect>();
+				Recovery->TargetLocation = Command.RecoveryCapsuleLocation;
+				Recovery->bUseActorRotation = true;
+				Simulation->QueueInstantMovementEffect(FScheduledInstantMovementEffect(Scheduling, Recovery));
+			}
+			TSharedPtr<FApplyVelocityEffect> Transition = MakeShared<FApplyVelocityEffect>();
+			Transition->VelocityToApply = Default && !bTraversalGeometryInvalidThisTick && (bStart || Command.bPreserveMomentum) ? Default->GetVelocity_WorldSpace() : FVector::ZeroVector;
+			Transition->bAdditiveVelocity = false;
+			// Falling performs a fresh floor check with the obstacle restored; no actor-only landing snap.
+			Transition->ForceMovementMode = Command.IsActive() ? FName(TEXT("Traversing")) : DefaultModeNames::Falling;
+			Simulation->QueueInstantMovementEffect(FScheduledInstantMovementEffect(Scheduling, Transition));
+			TraversalSimulationState.bStartApplied |= bStart;
+			TraversalSimulationState.bEndApplied |= bEnd;
+		}
+	}
 
 	if (bSuppressMovementForDeathThisTick && BackendLiaisonComp && Simulation && !IsBackendAsync() && TimeStep.StepMs > 0.0f)
 	{
@@ -199,6 +336,7 @@ void URpgCharacterMoverComponent::ProduceInput(int32 DeltaTimeMS, FMoverInputCmd
 {
 	Super::ProduceInput(DeltaTimeMS, Cmd);
 	FRpgMoverAbilityRootMotionInputs& Inputs = Cmd->InputCollection.FindOrAddMutableDataByType<FRpgMoverAbilityRootMotionInputs>();
+	Inputs.Traversal = TraversalCommand;
 	const bool bDeathInput = bDeathMovementRequested || GetSyncState().MovementMode == URpgDeadMovementMode::ModeName;
 	if (!BackendLiaisonComp || bDeathInput || !SampleAbilityRootMotion(BackendLiaisonComp->GetCurrentSimTimeMs(), Inputs.RootMotion))
 	{
@@ -210,6 +348,223 @@ void URpgCharacterMoverComponent::ProduceInput(int32 DeltaTimeMS, FMoverInputCmd
 	}
 	Inputs.RetainMontageForHistory();
 	CachedLastProducedInputCmd = *Cmd;
+}
+
+uint32 URpgCharacterMoverComponent::BeginTraversal(UGameplayAbility* Ability, const FPredictionKey& ActivationKey,
+	const FRpgMoverTraversalRequest& Request)
+{
+	if (!Ability || Ability->GetAvatarActorFromActorInfo() != GetOwner() || !Ability->GetCurrentAbilitySpecHandle().IsValid() ||
+		(GetOwnerRole() != ROLE_Authority && GetOwnerRole() != ROLE_AutonomousProxy) ||
+		!BackendLiaisonComp || !Simulation || IsBackendAsync() || bDeathMovementRequested || HasTraversalLease() ||
+		!IsOnGround() || IsCrouching() || !MovementModes.Contains(TEXT("Traversing")) ||
+		!Request.Collider.IsValid() || Request.Collider->IsSimulatingPhysics() ||
+		!Request.Collider->GetComponentTransform().Equals(Request.ColliderTransform, .1f) ||
+		Request.ColliderTransform.ContainsNaN() || Request.FrontLedgeTarget.ContainsNaN() ||
+		Request.EntryCapsuleLocation.ContainsNaN() || Request.LandingCapsuleLocation.ContainsNaN() ||
+		!FMath::IsFinite(Request.StartTimeSeconds) || !FMath::IsFinite(Request.PlayRate) ||
+		!FMath::IsFinite(Request.HandoffTimeSeconds) || Request.StartTimeSeconds < 0.f ||
+		Request.PlayRate <= UE_SMALL_NUMBER || Request.HandoffTimeSeconds <= Request.StartTimeSeconds ||
+		!TraversalWarping || !TraversalWarping->SupportsTraversal(Request)) { return 0; }
+
+	const FRpgMoverTraversalCommand PreviousCommand = TraversalCommand;
+	const FRpgMoverTraversalSyncState* ObservedSync = GetSyncState().SyncStateCollection.FindDataByType<FRpgMoverTraversalSyncState>();
+	TraversalCommand = FRpgMoverTraversalCommand{};
+	TraversalCommand.RecordPredecessors(PreviousCommand, ObservedSync ? ObservedSync->Command.Identity : FRpgMoverTraversalIdentity{});
+	TraversalCommand.Identity.AbilityHandle = Ability->GetCurrentAbilitySpecHandle();
+	TraversalCommand.Identity.ActivationPredictionKey = ActivationKey.Current;
+	TraversalCommand.Identity.bServerInitiatedKey = ActivationKey.bIsServerInitiated;
+	TraversalCommand.Identity.MontageSequence = LastAbilityHandle == Ability->GetCurrentAbilitySpecHandle() && LastActivationKey == ActivationKey ?
+		LastMontageSequence + 1 : 1;
+	if (!TraversalCommand.Identity.MontageSequence) { TraversalCommand.Identity.MontageSequence = 1; }
+	TraversalCommand.Phase = ERpgMoverTraversalPhase::Active;
+	TraversalCommand.Context = Request;
+	TraversalCommand.BaseVisualTransform = GetBaseVisualComponentTransform();
+	TraversalCommand.RetainObjectsForHistory();
+	return TraversalCommand.Identity.MontageSequence;
+}
+
+void URpgCharacterMoverComponent::EndTraversal(FGameplayAbilitySpecHandle Handle, const FPredictionKey& ActivationKey,
+	uint32 LeaseSequence, bool bPreserveMomentum, TOptional<FVector> RecoveryCapsuleLocation)
+{
+	const FRpgMoverTraversalIdentity& Identity = TraversalCommand.Identity;
+	if (!TraversalCommand.IsActive() || Identity.AbilityHandle != Handle || Identity.ActivationPredictionKey != ActivationKey.Current ||
+		Identity.bServerInitiatedKey != ActivationKey.bIsServerInitiated || Identity.MontageSequence != LeaseSequence) { return; }
+	TraversalCommand.Phase = bPreserveMomentum ? ERpgMoverTraversalPhase::Finished : ERpgMoverTraversalPhase::Cancelled;
+	TraversalCommand.bPreserveMomentum = bPreserveMomentum && !bDeathMovementRequested;
+	TraversalCommand.bHasRecoveryLocation = !bDeathMovementRequested && RecoveryCapsuleLocation.IsSet() && !RecoveryCapsuleLocation->ContainsNaN();
+	TraversalCommand.RecoveryCapsuleLocation = TraversalCommand.bHasRecoveryLocation ? RecoveryCapsuleLocation.GetValue() : FVector::ZeroVector;
+}
+
+const FRpgMoverTraversalCommand& URpgCharacterMoverComponent::GetVisibleTraversalCommand() const
+{
+	if (const FRpgMoverTraversalSyncState* Sync = GetSyncState().SyncStateCollection.FindDataByType<FRpgMoverTraversalSyncState>())
+	{
+		if (GetOwnerRole() == ROLE_SimulatedProxy ||
+			(Sync->Command.Identity == TraversalCommand.Identity && Sync->Command.IsTerminal())) { return Sync->Command; }
+	}
+	return TraversalCommand;
+}
+
+bool URpgCharacterMoverComponent::HasTraversalLease() const { return !bDeathMovementRequested && GetVisibleTraversalCommand().IsActive(); }
+bool URpgCharacterMoverComponent::OwnsTraversalLease(FGameplayAbilitySpecHandle Handle, const FPredictionKey& ActivationKey, uint32 LeaseSequence) const
+{
+	const FRpgMoverTraversalCommand& Command = GetVisibleTraversalCommand();
+	return HasTraversalLease() && Command.Identity.AbilityHandle == Handle && Command.Identity.ActivationPredictionKey == ActivationKey.Current &&
+		Command.Identity.bServerInitiatedKey == ActivationKey.bIsServerInitiated && Command.Identity.MontageSequence == LeaseSequence;
+}
+UPrimitiveComponent* URpgCharacterMoverComponent::GetTraversalCollider() const
+{
+	return HasTraversalLease() ? GetVisibleTraversalCommand().Context.Collider.Get() : nullptr;
+}
+const UMotionWarpingBaseAdapter* URpgCharacterMoverComponent::GetTraversalWarpingAdapter() const
+{
+	return TraversalWarping ? TraversalWarping->GetTraversalAdapter(const_cast<URpgCharacterMoverComponent*>(this)) : nullptr;
+}
+bool URpgCharacterMoverComponent::IsTraversalWalkable(const FHitResult& Hit) const
+{
+	const UCommonLegacyMovementSettings* Settings = FindSharedSettings<UCommonLegacyMovementSettings>();
+	return Settings && UFloorQueryUtils::IsHitSurfaceWalkable(Hit, GetUpDirection(), Settings->MaxWalkSlopeCosine);
+}
+
+void URpgCharacterMoverComponent::PrepareTraversalSimulation(const FMoverTimeStep& TimeStep, const FMoverTickStartData& StartingData)
+{
+	bTraversalGeometryInvalidThisTick = false;
+	bRestoreTraversalPresentationInputs = false;
+	const FRpgMoverTraversalSyncState* Prior = StartingData.SyncState.SyncStateCollection.FindDataByType<FRpgMoverTraversalSyncState>();
+	TraversalSimulationState = Prior ? *Prior : FRpgMoverTraversalSyncState{};
+	const FRpgMoverTraversalCommand* Command = nullptr;
+	if (GetOwnerRole() == ROLE_Authority) { Command = &TraversalCommand; }
+	else if (GetOwnerRole() == ROLE_AutonomousProxy)
+	{
+		if (const FRpgMoverAbilityRootMotionInputs* Input = StartingData.InputCmd.InputCollection.FindDataByType<FRpgMoverAbilityRootMotionInputs>())
+		{
+			Command = &Input->Traversal;
+		}
+	}
+	if (Command && Command->Phase != ERpgMoverTraversalPhase::None)
+	{
+		if (!(TraversalSimulationState.Command.Identity == Command->Identity) &&
+			(GetOwnerRole() == ROLE_Authority || TraversalSimulationState.Command.Phase == ERpgMoverTraversalPhase::None ||
+			 Command->IsSuccessorOf(TraversalSimulationState.Command.Identity)))
+		{
+			TraversalSimulationState = FRpgMoverTraversalSyncState{};
+			TraversalSimulationState.Command = *Command;
+			TraversalSimulationState.MontagePosition = Command->Context.StartTimeSeconds;
+		}
+		else if (TraversalSimulationState.Command.Identity == Command->Identity &&
+			!TraversalSimulationState.Command.IsTerminal() && Command->IsTerminal())
+		{
+			// Preserve corrected immutable target/base values and mutable warp caches. Only the historical end
+			// intent is local; an authoritative terminal state cannot be resurrected by an older active input.
+			TraversalSimulationState.Command.Phase = Command->Phase;
+			TraversalSimulationState.Command.bPreserveMomentum = Command->bPreserveMomentum;
+			TraversalSimulationState.Command.bHasRecoveryLocation = Command->bHasRecoveryLocation;
+			TraversalSimulationState.Command.RecoveryCapsuleLocation = Command->RecoveryCapsuleLocation;
+		}
+	}
+	FRpgMoverTraversalCommand& Active = TraversalSimulationState.Command;
+	if (Active.IsActive())
+	{
+		const bool bModeTakenOver = TraversalSimulationState.bStartApplied && StartingData.SyncState.MovementMode != TEXT("Traversing");
+		if (bSuppressMovementForDeathThisTick || bModeTakenOver)
+		{
+			Active.Phase = ERpgMoverTraversalPhase::Cancelled;
+			Active.bHasRecoveryLocation = false;
+			Active.bPreserveMomentum = false;
+			// A newer movement owner has already selected its mode/velocity; relinquish only our resources.
+			TraversalSimulationState.bEndApplied |= bModeTakenOver;
+		}
+		else
+		{
+			// Stop before using changed geometry, then let GAS' post-finalize validator select its already
+			// established collision-safe recovery. Keeping ownership until that callback permits exact cleanup.
+			bTraversalGeometryInvalidThisTick = !Active.Context.Collider.IsValid() ||
+				!Active.Context.Collider->GetComponentTransform().Equals(Active.Context.ColliderTransform, .01f) ||
+				!TraversalWarping || !TraversalWarping->SupportsTraversal(Active.Context);
+			if (FCharacterDefaultInputs* Input = StartingData.InputCmd.InputCollection.FindMutableDataByType<FCharacterDefaultInputs>())
+			{
+				// Full motion, including orientation, belongs to the authored root motion while traversing.
+				TraversalPresentationInputs = *Input;
+				bRestoreTraversalPresentationInputs = true;
+				*Input = FCharacterDefaultInputs{};
+			}
+		}
+	}
+	if (bSuppressMovementForDeathThisTick && Active.IsTerminal()) { TraversalSimulationState.bEndApplied = true; }
+	ApplyTraversalCollisionLease(Active.IsActive() ? Active.Context.Collider.Get() : nullptr);
+}
+
+bool URpgCharacterMoverComponent::BeginTraversalRootMotion(const FRpgMoverAbilityRootMotion& Move, const FMoverTickStartData& StartState)
+{
+	const FRpgMoverTraversalCommand& Command = TraversalSimulationState.Command;
+	if (!Command.IsActive() || !TraversalWarping || Command.Identity.AbilityHandle != Move.AbilityHandle ||
+		Command.Identity.ActivationPredictionKey != Move.ActivationPredictionKey || Command.Identity.bServerInitiatedKey != Move.bServerInitiatedKey ||
+		Command.Identity.MontageSequence != Move.MontageSequence || Command.Context.Montage != Move.MontageState.Montage) { return false; }
+	const FMoverDefaultSyncState* Default = StartState.SyncState.SyncStateCollection.FindDataByType<FMoverDefaultSyncState>();
+	if (!Default) { return false; }
+	bTraversalRootMotionScope = TraversalWarping->BeginSimulationWarp(this, TraversalSimulationState,
+		FTransform(Default->GetOrientation_WorldSpace(), Default->GetLocation_WorldSpace()));
+	return bTraversalRootMotionScope;
+}
+void URpgCharacterMoverComponent::EndTraversalRootMotion(float MontagePosition)
+{
+	if (!bTraversalRootMotionScope) { return; }
+	TraversalWarping->EndSimulationWarp();
+	TraversalSimulationState.MontagePosition = MontagePosition;
+	bTraversalRootMotionScope = false;
+}
+
+void URpgCharacterMoverComponent::OnPostSimulate(const FMoverTimeStep& TimeStep, const FMoverTickStartData& StartingData, FMoverTickEndData& EndingData)
+{
+	if (TraversalSimulationState.bEndApplied && TraversalSimulationState.Command.IsTerminal())
+	{
+		// Historical active frames retain their complete values. The applied terminal tombstone needs only
+		// identity and target name, avoiding persistent modifier/asset payload and strong collider ownership.
+		TraversalSimulationState.Command.CompactAppliedEnd();
+		TraversalSimulationState.WarpModifiers.Reset();
+		TraversalSimulationState.MontagePosition = 0.f;
+		TraversalSimulationState.bStartApplied = false;
+	}
+	EndingData.SyncState.SyncStateCollection.FindOrAddMutableDataByType<FRpgMoverTraversalSyncState>() = TraversalSimulationState;
+	if (bRestoreTraversalPresentationInputs)
+	{
+		// Only the completed-frame read model receives the original input. GASP's existing WithMovementInput
+		// montage notify needs this on authority, owner and proxies, while the actual simulation uses neutral input.
+		FMoverTickStartData PresentationData = StartingData;
+		PresentationData.InputCmd.InputCollection.FindOrAddMutableDataByType<FCharacterDefaultInputs>() = TraversalPresentationInputs;
+		Super::OnPostSimulate(TimeStep, PresentationData, EndingData);
+	}
+	else { Super::OnPostSimulate(TimeStep, StartingData, EndingData); }
+}
+
+void URpgCharacterMoverComponent::ApplyTraversalCollisionLease(UPrimitiveComponent* Collider)
+{
+	UPrimitiveComponent* Capsule = Cast<UPrimitiveComponent>(GetUpdatedComponent());
+	if (!Capsule || LeasedCollisionComponent.Get() == Collider) { return; }
+	if (bAddedCollisionIgnore && LeasedCollisionComponent)
+	{
+		Capsule->IgnoreComponentWhenMoving(LeasedCollisionComponent.Get(), false);
+	}
+	LeasedCollisionComponent = Collider;
+	bAddedCollisionIgnore = Collider && !Capsule->GetMoveIgnoreComponents().Contains(Collider);
+	if (bAddedCollisionIgnore) { Capsule->IgnoreComponentWhenMoving(Collider, true); }
+}
+
+void URpgCharacterMoverComponent::HandleTraversalPostFinalize(const FMoverSyncState& SyncState, const FMoverAuxStateContext& AuxState)
+{
+	const FRpgMoverTraversalSyncState* State = SyncState.SyncStateCollection.FindDataByType<FRpgMoverTraversalSyncState>();
+	const bool bActive = State && State->Command.IsActive() && SyncState.MovementMode != URpgDeadMovementMode::ModeName;
+	if (State && State->bEndApplied && State->Command.IsTerminal() &&
+		TraversalCommand.IsTerminal() && State->Command.Identity == TraversalCommand.Identity)
+	{
+		TraversalCommand.CompactAppliedEnd();
+	}
+	ApplyTraversalCollisionLease(bActive ? State->Command.Context.Collider.Get() : nullptr);
+	if (TraversalWarping && State && State->Command.Phase != ERpgMoverTraversalPhase::None)
+	{
+		if (bActive) { TraversalWarping->AddOrUpdateWarpTargetFromTransform(State->Command.Context.WarpTargetName, State->Command.Context.FrontLedgeTarget); }
+		else { TraversalWarping->RemoveWarpTarget(State->Command.Context.WarpTargetName); }
+	}
 }
 
 bool URpgCharacterMoverComponent::SampleAbilityRootMotion(double SimTimeMs, FRpgMoverAbilityRootMotion& OutMove) const
@@ -248,15 +603,40 @@ void URpgCharacterMoverComponent::HandleAbilityRootMotionPreSimulation(const FMo
 	else if (GetOwnerRole() == ROLE_AutonomousProxy)
 	{
 		const FRpgMoverAbilityRootMotionInputs* Inputs = InputCmd.InputCollection.FindDataByType<FRpgMoverAbilityRootMotionInputs>();
-		if (!Inputs || !Inputs->RootMotion.MontageState.Montage)
+		const FRpgMoverTraversalCommand& Active = TraversalSimulationState.Command;
+		if (Active.IsActive() && (!Inputs || !RpgAbilityRootMotion::MatchesTraversal(Inputs->RootMotion, Active)))
+		{
+			// GAS RPCs can start B on authority while NP still consumes an older input frame from A. When
+			// corrected B reaches that historical frame, continue its approved sync trajectory; do not replay A
+			// or wait for today's montage/actor to catch up. This context never comes from client wire input.
+			Move.AbilityHandle = Active.Identity.AbilityHandle;
+			Move.ActivationPredictionKey = Active.Identity.ActivationPredictionKey;
+			Move.bServerInitiatedKey = Active.Identity.bServerInitiatedKey;
+			Move.MontageSequence = Active.Identity.MontageSequence;
+			Move.MontageState.Montage = Active.Context.Montage;
+			Move.MontageState.PlayRate = Active.Context.PlayRate;
+			Move.MontageState.BlendOutTimeSeconds = Active.Context.Montage ? Active.Context.Montage->GetDefaultBlendOutTime() : 0.f;
+			Move.MontageState.bEnableAutoBlendOut = Active.Context.Montage && Active.Context.Montage->bEnableAutoBlendOut;
+		}
+		else if (!Inputs || !Inputs->RootMotion.MontageState.Montage)
 		{
 			return;
 		}
-		Move = Inputs->RootMotion;
+		else { Move = Inputs->RootMotion; }
 	}
 	else
 	{
 		return;
+	}
+	const FRpgMoverTraversalCommand& Traversal = TraversalSimulationState.Command;
+	const bool bTraversalIdentity = Traversal.Identity.AbilityHandle == Move.AbilityHandle &&
+		Traversal.Identity.ActivationPredictionKey == Move.ActivationPredictionKey &&
+		Traversal.Identity.bServerInitiatedKey == Move.bServerInitiatedKey && Traversal.Identity.MontageSequence == Move.MontageSequence;
+	if (bTraversalIdentity)
+	{
+		if (!Traversal.IsActive()) { return; }
+		Move.MontageState.StartingMontagePosition = TraversalSimulationState.MontagePosition;
+		Move.MontageState.CurrentPosition = TraversalSimulationState.MontagePosition;
 	}
 
 	// The input history is the start/stop history. Reconstruct one contribution for this exact tick,
@@ -399,6 +779,10 @@ void URpgCharacterMoverComponent::UpdateSyncedMontageState(const FMoverTimeStep&
 void URpgCharacterMoverComponent::EndPlay(const EEndPlayReason::Type EndPlayReason)
 {
 	OnPreSimulationTick.RemoveDynamic(this, &ThisClass::HandleAbilityRootMotionPreSimulation);
+	OnPostFinalize.RemoveDynamic(this, &ThisClass::HandleTraversalPostFinalize);
+	ApplyTraversalCollisionLease(nullptr);
+	TraversalCommand = FRpgMoverTraversalCommand{};
+	TraversalSimulationState = FRpgMoverTraversalSyncState{};
 	ClearAbilityRootMotion();
 	Super::EndPlay(EndPlayReason);
 }

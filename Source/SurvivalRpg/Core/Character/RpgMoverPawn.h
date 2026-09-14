@@ -5,6 +5,7 @@
 #include "CoreMinimal.h"
 #include "AbilitySystemInterface.h"
 #include "ModularPawn.h"
+#include "SurvivalRpg/Camera/RpgCameraAssistInterface.h"
 
 #include "RpgMoverPawn.generated.h"
 
@@ -23,7 +24,7 @@ class URpgPawnGameplayComponent;
  * player death returns to the GameMode's respawn flow. Downed and ragdoll remain separate integrations.
  */
 UCLASS(Abstract, Blueprintable)
-class SURVIVALRPG_API ARpgMoverPawn : public AModularPawn, public IAbilitySystemInterface
+class SURVIVALRPG_API ARpgMoverPawn : public AModularPawn, public IAbilitySystemInterface, public IRpgCameraAssistInterface
 {
 	GENERATED_BODY()
 
@@ -36,6 +37,9 @@ public:
 
 	/** Exposes the same PlayerState-owned ASC to engine gameplay-ability callers. */
 	virtual UAbilitySystemComponent* GetAbilitySystemComponent() const override;
+
+	/** Follows Mover's smoothed visual origin with the existing eye offset, without following animated bones. */
+	virtual TOptional<FVector> GetCameraPivotLocation() const override;
 
 	/** Advances Experience initialization when local player input becomes available. */
 	virtual void SetupPlayerInputComponent(UInputComponent* PlayerInputComponent) override;

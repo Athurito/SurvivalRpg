@@ -6,12 +6,16 @@
 #include "DefaultMovementSet/LayeredMoves/AnimRootMotionLayeredMove.h"
 #include "GameplayAbilitySpecHandle.h"
 #include "GameplayPrediction.h"
+#include "MoverDataModelTypes.h"
+#include "RpgMoverTraversalTypes.h"
 #include "UObject/StrongObjectPtr.h"
 #include "RpgCharacterMoverComponent.generated.h"
 
 class UAbilitySystemComponent;
 class UAnimInstance;
 class UGameplayAbility;
+class UMotionWarpingBaseAdapter;
+class URpgMoverMotionWarpingComponent;
 
 /**
  * Engine montage root motion with a GAS activation identity. The identity survives Mover rollback and
@@ -67,6 +71,10 @@ struct SURVIVALRPG_API FRpgMoverAbilityRootMotionInputs : public FMoverDataStruc
 	UPROPERTY()
 	FRpgMoverAbilityRootMotion RootMotion;
 
+	/** Immutable local validation/end command. Authority never accepts this context from a client payload. */
+	UPROPERTY()
+	FRpgMoverTraversalCommand Traversal;
+
 	/** Pins the sampled montage until all copies of this local input frame have left NP history. */
 	void RetainMontageForHistory();
 
@@ -115,6 +123,23 @@ public:
 
 	/** Sanitizes terminal-frame input before GASP and engine handlers, then schedules the authoritative stop. */
 	virtual void OnPreSimulate(const FMoverTimeStep& TimeStep, const FMoverTickStartData& StartingData) override;
+	virtual void OnPostSimulate(const FMoverTimeStep& TimeStep, const FMoverTickStartData& StartingData, FMoverTickEndData& EndingData) override;
+
+	/** Reserves a validated GAS traversal before montage playback; zero indicates rejection, otherwise exact play sequence. */
+	uint32 BeginTraversal(UGameplayAbility* Ability, const FPredictionKey& ActivationKey, const FRpgMoverTraversalRequest& Request);
+	/** Ends only this activation's lease. Optional validated recovery is applied in the simulation, in capsule-center world cm. */
+	void EndTraversal(FGameplayAbilitySpecHandle Handle, const FPredictionKey& ActivationKey, uint32 LeaseSequence,
+		bool bPreserveMomentum, TOptional<FVector> RecoveryCapsuleLocation = {});
+	/** Read-only lifecycle/collision ownership for GAS cleanup and world revalidation after finalization. */
+	bool OwnsTraversalLease(FGameplayAbilitySpecHandle Handle, const FPredictionKey& ActivationKey, uint32 LeaseSequence) const;
+	bool HasTraversalLease() const;
+	UPrimitiveComponent* GetTraversalCollider() const;
+	/** Uses the same fixed gameplay-mesh base and ground slope rule as the simulation. */
+	const UMotionWarpingBaseAdapter* GetTraversalWarpingAdapter() const;
+	bool IsTraversalWalkable(const FHitResult& Hit) const;
+	/** Opens/closes stock MotionWarping on this exact sync frame; used only by this component's GAS layered move. */
+	bool BeginTraversalRootMotion(const FRpgMoverAbilityRootMotion& Move, const FMoverTickStartData& StartState);
+	void EndTraversalRootMotion(float MontagePosition);
 
 	/** Checks the supported linear montage and gameplay-mesh contract before GAS starts playback. */
 	bool CanPlayAbilityRootMotion(const UAbilitySystemComponent* AbilitySystem, const UAnimMontage* Montage,
@@ -140,11 +165,30 @@ protected:
 		const FMoverAuxStateContext& AuxState) override;
 
 private:
+	friend struct FRpgMoverAbilityRootMotion;
+
 	/** Builds the movement contribution for a tick from authority playback or the owner's historical input. */
 	UFUNCTION()
 	void HandleAbilityRootMotionPreSimulation(const FMoverTimeStep& TimeStep, const FMoverInputCmdContext& InputCmd);
 
 	bool SampleAbilityRootMotion(double SimTimeMs, FRpgMoverAbilityRootMotion& OutMove) const;
+	void PrepareTraversalSimulation(const FMoverTimeStep& TimeStep, const FMoverTickStartData& StartingData);
+	void ApplyTraversalCollisionLease(UPrimitiveComponent* Collider);
+	const FRpgMoverTraversalCommand& GetVisibleTraversalCommand() const;
+	UFUNCTION()
+	void HandleTraversalPostFinalize(const FMoverSyncState& SyncState, const FMoverAuxStateContext& AuxState);
+
+	/** Live GAS command is sampled into input history, while mutable warp state is written only to sync history. */
+	UPROPERTY(Transient) FRpgMoverTraversalCommand TraversalCommand;
+	UPROPERTY(Transient) FRpgMoverTraversalSyncState TraversalSimulationState;
+	UPROPERTY(Transient) TObjectPtr<URpgMoverMotionWarpingComponent> TraversalWarping;
+	/** Original per-tick input for GASP's animation/conditional blend-out read model, never used to move the leased capsule. */
+	UPROPERTY(Transient) FCharacterDefaultInputs TraversalPresentationInputs;
+	UPROPERTY(Transient) TObjectPtr<UPrimitiveComponent> LeasedCollisionComponent;
+	bool bAddedCollisionIgnore = false;
+	bool bTraversalRootMotionScope = false;
+	bool bTraversalGeometryInvalidThisTick = false;
+	bool bRestoreTraversalPresentationInputs = false;
 
 	/** Local source descriptor, sampled into input frames; never populated from a client's network payload. */
 	UPROPERTY(Transient)

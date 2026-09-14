@@ -3,12 +3,16 @@
 #include "SurvivalRpg/AbilitySystem/Abilities/RpgGameplayAbility.h"
 #include "Abilities/GameplayAbilityTargetTypes.h"
 #include "RpgTraversalQueryComponent.h"
+#include "MoverSimulationTypes.h"
 #include "RpgGameplayAbility_Mantle.generated.h"
 
 class UAnimMontage;
 class UMotionWarpingComponent;
 class UPrimitiveComponent;
+class URpgCharacterMoverComponent;
 struct FGameplayAbilityTargetDataHandle;
+struct FMoverSyncState;
+struct FMoverAuxStateContext;
 
 /** Predicted animation proposal; the server reconstructs every world-space traversal location itself. */
 USTRUCT()
@@ -31,7 +35,7 @@ template<> struct TStructOpsTypeTraits<FRpgMantleTargetData> : TStructOpsTypeTra
 	enum { WithNetSerializer = true, WithCopy = true };
 };
 
-/** Shared predicted GAS lifecycle for source GASP mantle, grounded vault and hurdle; the reflected name preserves existing Blueprint assets. */
+/** Shared predicted GAS traversal lifecycle: CMC mantle/vault/hurdle and grounded Mover mantle; concrete Blueprint assets own montage presentation. */
 UCLASS(Abstract, Blueprintable)
 class SURVIVALRPG_API URpgGameplayAbility_Mantle : public URpgGameplayAbility
 {
@@ -86,9 +90,13 @@ public:
 
 	/** Runs the copied GASP query and validates its geometry and animation without activating gameplay. */
 	bool FindTraversalCandidate(const ACharacter& Character, FRpgTraversalQueryResult& OutResult) const;
+	/** Runs the same authoritative proposal checks for an Experience-composed CMC or grounded Mover pawn. */
+	bool FindTraversalCandidate(const APawn& Pawn, FRpgTraversalQueryResult& OutResult) const;
 
 	/** Derives supported feet at the source montage's configured handoff time from its last front-ledge warp and root motion. */
 	bool GetMantleLandingLocation(const ACharacter& Character, const FRpgTraversalQueryResult& Result, FVector& OutLocation) const;
+	/** Resolves montage-authored mantle feet using the pawn's movement-specific visual-root transform. */
+	bool GetMantleLandingLocation(const APawn& Pawn, const FRpgTraversalQueryResult& Result, FVector& OutLocation) const;
 
 	/** Derives vault feet at the configured source handoff; unsupported exits return to normal CMC falling rather than inventing a floor. */
 	bool GetVaultExitLocation(const ACharacter& Character, const FRpgTraversalQueryResult& Result, FVector& OutLocation) const;
@@ -111,11 +119,14 @@ protected:
 
 private:
 	bool IsCharacterReady(const ACharacter& Character) const;
+	bool IsPawnReady(const APawn& Pawn) const;
 	void HandleTargetData(const FGameplayAbilityTargetDataHandle& Data, FGameplayTag ApplicationTag);
 	void ResolveTraversal(const FRpgTraversalQueryResult& Result);
 	void LogTraversalRejection(const TCHAR* Stage, const FRpgTraversalQueryResult& Result) const;
 	void BeginMantle(const FRpgTraversalQueryResult& Result);
-	bool ValidateTraversal(const ACharacter& Character, const FRpgTraversalQueryResult& Result) const;
+	void BeginMoverMantle(const FRpgTraversalQueryResult& Result);
+	bool ValidateTraversal(const APawn& Pawn, const FRpgTraversalQueryResult& Result) const;
+	bool GetMantleLandingAtTime(const APawn& Pawn, const FRpgTraversalQueryResult& Result, float HandoffTime, FVector& OutLocation) const;
 	bool ValidateVaultTraversal(const ACharacter& Character, const FRpgTraversalQueryResult& Result) const;
 	bool ValidateHurdleTraversal(const ACharacter& Character, const FRpgTraversalQueryResult& Result) const;
 	bool ValidateThinObstacleFaces(const ACharacter& Character, const FRpgTraversalQueryResult& Result) const;
@@ -125,7 +136,9 @@ private:
 	float GetAdmissibleSourceHandoffTime() const;
 	void CancelCurrentMantle();
 	void CleanupMovement(bool bWasCancelled);
-	bool IsCapsuleClear(const ACharacter& Character, const FVector& Location) const;
+	void CleanupMoverMovement(bool bWasCancelled);
+	bool IsCapsuleClear(const APawn& Pawn, const FVector& Location) const;
+	TOptional<FVector> FindSafeRecoveryLocation(const APawn& Pawn) const;
 	bool RestoreSafeCapsuleLocation(ACharacter& Character) const;
 
 	UFUNCTION()
@@ -134,19 +147,26 @@ private:
 	UFUNCTION()
 	void HandleMovementModeChanged(ACharacter* Character, EMovementMode PreviousMode, uint8 PreviousCustomMode);
 
+	UFUNCTION()
+	void HandleMoverPostFinalize(const FMoverSyncState& SyncState, const FMoverAuxStateContext& AuxState);
+
+	TWeakObjectPtr<APawn> ActivePawn;
 	TWeakObjectPtr<ACharacter> ActiveCharacter;
+	TWeakObjectPtr<URpgCharacterMoverComponent> ActiveMover;
 	TWeakObjectPtr<UPrimitiveComponent> IgnoredComponent;
 	TWeakObjectPtr<UPrimitiveComponent> HurdleSupportComponent;
 	TWeakObjectPtr<UMotionWarpingComponent> ActiveWarping;
 	FTransform ColliderAtActivation;
 	FTransform HurdleSupportAtActivation;
 	FVector HurdleEarlyLanding = FVector::ZeroVector;
+	FVector ConditionalMantleLanding = FVector::ZeroVector;
 	FVector LandingAtActivation = FVector::ZeroVector;
 	FVector LastClearLocation = FVector::ZeroVector;
 	FVector EntryLocation = FVector::ZeroVector;
 	FDelegateHandle TargetDataDelegate;
 	FTimerHandle TimeoutHandle;
 	int32 ActiveMontageInstanceId = INDEX_NONE;
+	uint32 MoverLeaseSequence = 0;
 	float FinalWarpEndTime = 0.0f;
 	float SourceHandoffTime = 0.0f;
 	float MovementInputHandoffTime = 0.0f;

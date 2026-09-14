@@ -633,6 +633,22 @@ NETWORK_TEST_CLASS(GaspMoverExperiencePIE, "SurvivalRpg.GASP.Mover")
 			.ThenServer(TEXT("Drive the original Blueprint movement input on a normal floor"), [this](FState& State)
 			{
 				VerifyPawn(State.World);
+				// A render-only offset must move the camera pivot while the collision and gameplay view stay put.
+				ARpgMoverPawn* CameraPawn = CastChecked<ARpgMoverPawn>(Input.Pawn());
+				UCharacterMoverComponent* CameraMover = Mover(CameraPawn);
+				USceneComponent* Visual = CameraMover->GetPrimaryVisualComponent();
+				ASSERT_THAT(IsNotNull(Visual));
+				const FTransform OriginalVisual = Visual->GetComponentTransform();
+				const FVector CollisionLocation = CameraPawn->GetActorLocation();
+				const FVector GameplayView = CameraPawn->GetPawnViewLocation();
+				const FTransform SmoothedActor(FRotator(0.0, 37.0, 0.0), CollisionLocation + FVector(-8.0, 3.0, 2.0));
+				Visual->SetWorldTransform(CameraMover->GetBaseVisualComponentTransform() * SmoothedActor);
+				const TOptional<FVector> CameraPivot = CameraPawn->GetCameraPivotLocation();
+				Visual->SetWorldTransform(OriginalVisual);
+				ASSERT_THAT(IsTrue(CameraPivot.IsSet()));
+				ASSERT_THAT(IsTrue(CameraPivot.GetValue().Equals(SmoothedActor.GetLocation() + GameplayView - CollisionLocation, 0.001)));
+				ASSERT_THAT(IsTrue(CameraPawn->GetActorLocation().Equals(CollisionLocation, 0.001)));
+				ASSERT_THAT(IsTrue(CameraPawn->GetPawnViewLocation().Equals(GameplayView, 0.001)));
 				InitialCameraLocation = Cast<APlayerController>(Input.Pawn()->GetController())->PlayerCameraManager->GetCameraLocation();
 				InitialPawnLocation = Input.Pawn()->GetActorLocation();
 				InitialCameraComponentLocation = Input.Pawn()->FindComponentByClass<URpgCameraComponent>()->GetComponentLocation();

@@ -32,13 +32,15 @@ synchronization for simulated proxies. The pawn replicates, but actor
 Controller yaw does not directly rotate the pawn; body orientation belongs to
 Mover while control rotation supplies the view and movement intent.
 
-`Config/DefaultNetworkPrediction.ini` is unchanged: Independent ticking,
+The original foundation retained Independent ticking in `Config/DefaultNetworkPrediction.ini`:
 Interpolated simulated proxies, 100 ms interpolation buffering, 250 ms maximum
 Independent buffering and input send count 6. The original kinematic Mover
 simulation is retained; this slice does not introduce the sample physics or
 ragdoll Mover variants. Interpolation starvation warnings require measurement
 of the affected world, role and frame/network timing; no global settings change
-is presented as an animation-speed fix.
+is presented as an animation-speed fix. The later measured frame-rate mismatch
+and the switch to Fixed ticking with visual smoothing are documented in
+[`gasp-mover-fixed-tick.md`](gasp-mover-fixed-tick.md).
 
 ## Asset mapping
 

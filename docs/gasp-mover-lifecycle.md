@@ -1,6 +1,8 @@
 # GASP Mover health, death and respawn
 
-This slice extends the equipment/montage integration accepted in PR #139.
+This slice, accepted in PR #140, extends the equipment/montage integration
+accepted in PR #139. The subsequent [grounded Mantle integration](gasp-mover-mantle.md)
+adds traversal to the same Experience.
 The existing PlayerState ASC, HealthSet, HealthComponent, DeathComponent,
 `GA_Combat_Death`, GameMode respawn and controller-owned inventory/loadout
 remain responsible for the RPG lifecycle. No second health or respawn system
@@ -52,6 +54,10 @@ separate steps. The user-observed stationary legs while moving with block
 held are accepted for now, as with CMC; combat/locomotion blending is deferred.
 
 ## Validation record
+
+This initial record used Independent ticking. The later Fixed-backend
+adaptation and fresh lifecycle/correction results are tracked in
+[`gasp-mover-fixed-tick.md`](gasp-mover-fixed-tick.md).
 
 UE 5.8.2 Development Editor builds succeeded, including the final lifecycle
 test source. All 50 distinct automation tests passed: two Health lifecycle

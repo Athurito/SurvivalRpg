@@ -7,7 +7,7 @@
 
 #include "RpgCameraAssistInterface.generated.h"
 
-/** */
+/** Optional presentation and collision assistance supplied by camera targets or their controllers. */
 UINTERFACE(BlueprintType)
 class URpgCameraAssistInterface : public UInterface
 {
@@ -19,6 +19,9 @@ class IRpgCameraAssistInterface
 	GENERATED_BODY()
 
 public:
+	/** Optional world-space presentation pivot; does not change the pawn's gameplay view or collision location. */
+	virtual TOptional<FVector> GetCameraPivotLocation() const { return {}; }
+
 	/**
 	 * Get the list of actors that we're allowing the camera to penetrate. Useful in 3rd person cameras
 	 * when you need the following camera to ignore things like the a collection of view targets, the pawn,

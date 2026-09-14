@@ -5,6 +5,7 @@
 #include "CQTest.h"
 #include "Components/PIENetworkComponent.h"
 #include "Network/RpgCombatNetworkTestTypes.h"
+#include "Network/RpgMoverPredictionTestHelpers.h"
 #include "Animation/AnimInstance.h"
 #include "Animation/AnimMontage.h"
 #include "Backends/MoverNetworkPredictionLiaison.h"
@@ -23,6 +24,7 @@
 #include "InputKeyEventArgs.h"
 #include "InputAction.h"
 #include "Misc/Guid.h"
+#include "NetworkPredictionWorldManager.h"
 #include "Retargeter/IKRetargeter.h"
 #include "UObject/StrongObjectPtr.h"
 #include "SurvivalRpg/AbilitySystem/Abilities/RpgGameplayAbility_BasicWeaponAttack.h"
@@ -338,22 +340,46 @@ namespace RpgGaspMoverGameplayTests
 		};
 	public:
 		~FScopedPredictionCorrection() { Stop(); }
-		bool Inject(APawn* Owner, UAnimMontage* InMontage)
+		bool CaptureOriginal(APawn* Owner, UAnimMontage* InMontage)
 		{
 			Pawn = Owner;
 			Montage = InMontage;
 			Liaison = Owner ? Owner->FindComponentByClass<UMoverNetworkPredictionLiaisonComponent>() : nullptr;
 			FMoverSyncState State;
 			if (!Owner || Owner->GetLocalRole() != ROLE_AutonomousProxy || !Liaison.IsValid() || !Liaison->ReadPendingSyncState(State)) return false;
+			const UNetworkPredictionWorldManager* Prediction = Owner->GetWorld()->GetSubsystem<UNetworkPredictionWorldManager>();
+			if (!Prediction || Prediction->GetSettings().PreferredTickingPolicy != ENetworkPredictionTickingPolicy::Fixed
+				|| !Prediction->GetSettings().bEnableFixedTickSmoothing || Prediction->GetFixedTickState().PendingFrame <= 0) return false;
 			FMoverDefaultSyncState* Default = State.SyncStateCollection.FindMutableDataByType<FMoverDefaultSyncState>();
 			const FRpgMoverAbilityRootMotion* Move = State.LayeredMoves.FindActiveMove<FRpgMoverAbilityRootMotion>();
 			const FAnimMontageInstance* Instance = Mesh(Owner)->GetAnimInstance()->GetActiveInstanceForMontage(InMontage);
 			if (!Default || !Move || !Instance) return false;
 			OriginalAttack.Set(*Move);
 			OriginalInstanceId = Instance->GetInstanceID();
+			OriginalFrame = Liaison->GetCurrentSimFrame();
+			OriginalLocalFrame = Prediction->GetFixedTickState().PendingFrame;
+			return true;
+		}
+		bool CaptureReplayAndInject()
+		{
+			FMoverSyncState State;
+			if (bInjected) return bReplayCaptured;
+			if (!Liaison.IsValid() || !Liaison->ReadPendingSyncState(State) || !Pawn.IsValid()) return false;
+			FMoverDefaultSyncState* Default = State.SyncStateCollection.FindMutableDataByType<FMoverDefaultSyncState>();
+			const FRpgMoverAbilityRootMotion* Move = State.LayeredMoves.FindActiveMove<FRpgMoverAbilityRootMotion>();
+			const FAnimMontageInstance* Instance = Mesh(Pawn.Get())->GetAnimInstance()->GetActiveInstanceForMontage(Montage.Get());
+			const auto InjectionClock = RpgMoverPredictionTests::FFixedPredictionHeadSnapshot::Capture(Pawn->GetWorld(), Liaison.Get());
+			if (!Default || !Move || OriginalAttack.Matches(Move) || !Instance || !Instance->IsPlaying()
+				|| Instance->GetInstanceID() == OriginalInstanceId || !InjectionClock.bValid
+				|| InjectionClock.LocalPendingFrame <= OriginalLocalFrame) return false;
+			ReplayAttack.Set(*Move);
+			ReplayInstanceId = Instance->GetInstanceID();
 			InjectedFrame = Liaison->GetCurrentSimFrame();
 			InjectedTimeMs = Liaison->GetCurrentSimTimeMs();
-			CrossDirection = Owner->GetActorRightVector().GetSafeNormal2D();
+			InjectedLocalFrame = InjectionClock.LocalPendingFrame;
+			CrossDirection = Pawn->GetActorRightVector().GetSafeNormal2D();
+			// Fixed ticking can reconcile before Enhanced Input has started B. Introduce the error only
+			// once B is already in simulation history, while A's recently cancelled history remains buffered.
 			// Preserve all velocity, base, rotation and movement data. Only this owner's predicted location is wrong.
 			Default->SetTransforms_WorldSpace(Default->GetLocation_WorldSpace() + CrossDirection * 50.0,
 				Default->GetOrientation_WorldSpace(), Default->GetVelocity_WorldSpace(), Default->GetAngularVelocityDegrees_WorldSpace(),
@@ -362,34 +388,26 @@ namespace RpgGaspMoverGameplayTests
 			// Kinematic Mover advances its actual UpdatedComponent and captures that transform into the
 			// next sync state. Keep both halves of this intentional prediction error consistent, otherwise
 			// the next ordinary walking tick erases it before an authoritative packet can reconcile it.
-			Mover(Owner)->GetUpdatedComponent()->SetWorldLocation(Default->GetLocation_WorldSpace(), false, nullptr, ETeleportType::TeleportPhysics);
+			Mover(Pawn.Get())->GetUpdatedComponent()->SetWorldLocation(Default->GetLocation_WorldSpace(), false, nullptr, ETeleportType::TeleportPhysics);
 			UE_LOG(LogTemp, Display, TEXT("RpgMoverCorrection injection frame=%d time=%.0f state=%s component=%s direction=%s externalMovement=%d"),
 				InjectedFrame, InjectedTimeMs, *Default->GetLocation_WorldSpace().ToCompactString(),
-				*Mover(Owner)->GetUpdatedComponent()->GetComponentLocation().ToCompactString(), *CrossDirection.ToCompactString(), Mover(Owner)->bAcceptExternalMovement);
+				*Mover(Pawn.Get())->GetUpdatedComponent()->GetComponentLocation().ToCompactString(), *CrossDirection.ToCompactString(), Mover(Pawn.Get())->bAcceptExternalMovement);
 			bInjected = true;
+			bReplayCaptured = true;
 			BeforeHandle = FWorldDelegates::OnWorldTickStart.AddRaw(this, &FScopedPredictionCorrection::BeforeDispatch);
 			AfterHandle = FWorldDelegates::OnWorldPreActorTick.AddRaw(this, &FScopedPredictionCorrection::AfterDispatch);
-			return true;
-		}
-		bool CaptureReplay()
-		{
-			FMoverSyncState State;
-			if (!Liaison.IsValid() || !Liaison->ReadPendingSyncState(State) || !Pawn.IsValid()) return false;
-			const FRpgMoverAbilityRootMotion* Move = State.LayeredMoves.FindActiveMove<FRpgMoverAbilityRootMotion>();
-			const FAnimMontageInstance* Instance = Mesh(Pawn.Get())->GetAnimInstance()->GetActiveInstanceForMontage(Montage.Get());
-			if (!Move || OriginalAttack.Matches(Move) || !Instance || Instance->GetInstanceID() == OriginalInstanceId) return false;
-			ReplayAttack.Set(*Move);
-			ReplayInstanceId = Instance->GetInstanceID();
-			bReplayCaptured = true;
 			return true;
 		}
 		bool WasObserved() const { return bObserved; }
 		bool PreservedReplay() const { return bObserved && bReplayCaptured && bPreservedReplay && !bForwardTickBetweenSamples; }
 		void Report() const
 		{
-			UE_LOG(LogTemp, Display, TEXT("RpgMoverCorrection injected=%d injectionFrame=%d injectionTime=%.0f replayCaptured=%d originalInstance=%d replayInstance=%d observed=%d frameBefore=%d frameAfter=%d timeBefore=%.0f timeAfter=%.0f correction=%s preservedReplay=%d forwardTickBetween=%d"),
-				bInjected, InjectedFrame, InjectedTimeMs, bReplayCaptured, OriginalInstanceId, ReplayInstanceId, bObserved,
+			UE_LOG(LogTemp, Display, TEXT("RpgMoverCorrection injected=%d originalFrame=%d injectionFrame=%d injectionTime=%.0f replayCaptured=%d originalInstance=%d replayInstance=%d observed=%d frameBefore=%d frameAfter=%d timeBefore=%.0f timeAfter=%.0f correction=%s preservedReplay=%d forwardTickBetween=%d"),
+				bInjected, OriginalFrame, InjectedFrame, InjectedTimeMs, bReplayCaptured, OriginalInstanceId, ReplayInstanceId, bObserved,
 				BeforeFrame, CorrectedFrame, BeforeTimeMs, CorrectedTimeMs, *CorrectionDelta.ToCompactString(), bPreservedReplay, bForwardTickBetweenSamples);
+			UE_LOG(LogTemp, Display, TEXT("RpgMoverCorrection clock local=%d->%d offset=%d->%d step=%d->%d originalLocal=%d injectionLocal=%d"),
+				BeforeClock.LocalPendingFrame, AfterClock.LocalPendingFrame, BeforeClock.ServerOffset, AfterClock.ServerOffset,
+				BeforeClock.StepMs, AfterClock.StepMs, OriginalLocalFrame, InjectedLocalFrame);
 		}
 		void Stop()
 		{
@@ -397,14 +415,17 @@ namespace RpgGaspMoverGameplayTests
 			FWorldDelegates::OnWorldPreActorTick.Remove(AfterHandle);
 			BeforeHandle.Reset();
 			AfterHandle.Reset();
+			BeforeState = FMoverSyncState();
+			bBeforeValid = false;
 		}
 	private:
 		void BeforeDispatch(UWorld* World, ELevelTick, float)
 		{
 			if (bObserved || !Pawn.IsValid() || Pawn->GetWorld() != World || !Liaison.IsValid()) return;
 			bBeforeValid = Liaison->ReadPendingSyncState(BeforeState);
-			BeforeFrame = Liaison->GetCurrentSimFrame();
-			BeforeTimeMs = Liaison->GetCurrentSimTimeMs();
+			BeforeClock = RpgMoverPredictionTests::FFixedPredictionHeadSnapshot::Capture(World, Liaison.Get());
+			BeforeFrame = BeforeClock.ServerFrame;
+			BeforeTimeMs = BeforeClock.SimulationTimeMs;
 		}
 		void AfterDispatch(UWorld* World, ELevelTick, float)
 		{
@@ -431,11 +452,13 @@ namespace RpgGaspMoverGameplayTests
 			CorrectionDelta = Delta;
 			CorrectedFrame = Liaison->GetCurrentSimFrame();
 			CorrectedTimeMs = Liaison->GetCurrentSimTimeMs();
+			AfterClock = RpgMoverPredictionTests::FFixedPredictionHeadSnapshot::Capture(World, Liaison.Get());
 			// UE5.8 calls newly added delegates first. PreActorTick therefore observes completed network
 			// reconciliation before NP starts the next forward frame; verify the clock instead of assuming it.
-			bForwardTickBetweenSamples = CorrectedFrame != BeforeFrame || CorrectedTimeMs != BeforeTimeMs;
+			bForwardTickBetweenSamples = !BeforeClock.IsSameLocalHead(AfterClock);
 			const FAnimMontageInstance* Instance = Mesh(Pawn.Get())->GetAnimInstance()->GetActiveInstanceForMontage(Montage.Get());
-			bPreservedReplay = BeforeFrame > InjectedFrame && ReplayAttack.Matches(BeforeState.LayeredMoves.FindActiveMove<FRpgMoverAbilityRootMotion>())
+			bPreservedReplay = BeforeClock.LocalPendingFrame > OriginalLocalFrame && BeforeClock.LocalPendingFrame >= InjectedLocalFrame
+				&& ReplayAttack.Matches(BeforeState.LayeredMoves.FindActiveMove<FRpgMoverAbilityRootMotion>())
 				&& ReplayAttack.Matches(AfterState.LayeredMoves.FindActiveMove<FRpgMoverAbilityRootMotion>())
 				&& Instance && Instance->GetInstanceID() == ReplayInstanceId && Instance->IsPlaying()
 				&& ASC(Pawn.Get())->GetCurrentMontage() == Montage.Get();
@@ -446,9 +469,11 @@ namespace RpgGaspMoverGameplayTests
 		TWeakObjectPtr<UAnimMontage> Montage;
 		FAttackIdentity OriginalAttack, ReplayAttack;
 		FMoverSyncState BeforeState;
+		RpgMoverPredictionTests::FFixedPredictionHeadSnapshot BeforeClock, AfterClock;
 		FDelegateHandle BeforeHandle, AfterHandle;
 		FVector CrossDirection = FVector::ZeroVector, CorrectionDelta = FVector::ZeroVector;
-		int32 OriginalInstanceId = INDEX_NONE, ReplayInstanceId = INDEX_NONE, InjectedFrame = INDEX_NONE;
+		int32 OriginalInstanceId = INDEX_NONE, ReplayInstanceId = INDEX_NONE, OriginalFrame = INDEX_NONE, InjectedFrame = INDEX_NONE;
+		int32 OriginalLocalFrame = INDEX_NONE, InjectedLocalFrame = INDEX_NONE;
 		int32 BeforeFrame = INDEX_NONE, CorrectedFrame = INDEX_NONE;
 		int32 DiagnosticSamples = 0;
 		double InjectedTimeMs = 0.0, BeforeTimeMs = 0.0, CorrectedTimeMs = 0.0;
@@ -771,7 +796,7 @@ NETWORK_TEST_CLASS(GaspMoverGameplayPIE, "SurvivalRpg.GASP.Mover.Gameplay")
 	}
 	TEST_METHOD(RemoteEquipmentInputMontageLateJoinAndCancellation) { Queue(false); }
 	TEST_METHOD(OptionalFollowerPreservesGameplayEquipmentAndAttack) { Queue(true); }
-	TEST_METHOD(IndependentCorrectionPreservesImmediateMontageReplay) { Queue(false, true); }
+	TEST_METHOD(FixedCorrectionPreservesImmediateMontageReplay) { Queue(false, true); }
 	TEST_METHOD(RightMouseHoldReplicatesBlockAndReleasesCleanly) { Queue(false, false, true); }
 
 	const URpgEquipmentDefinition* Sword() const { return SwordClass->GetDefaultObject<URpgEquipmentDefinition>(); }
@@ -1013,10 +1038,10 @@ NETWORK_TEST_CLASS(GaspMoverGameplayPIE, "SurvivalRpg.GASP.Mover.Gameplay")
 				return HasAttackRootMotion(Pawn) && Animation->Montage_IsPlaying(Montage.Get())
 					&& Animation->Montage_GetPosition(Montage.Get()) > 0.2f;
 			}, Timeout())
-			.ThenClient(TEXT("Perturb only owner prediction, cancel A and immediately request the same montage as B"), 0, [this](FState& State)
+			.ThenClient(TEXT("Record attack A, cancel it and immediately request the same montage as B"), 0, [this](FState& State)
 			{
 				APawn* Pawn = LocalPawn(State.World);
-				ASSERT_THAT(IsTrue(Correction.Inject(Pawn, Montage.Get())));
+				ASSERT_THAT(IsTrue(Correction.CaptureOriginal(Pawn, Montage.Get())));
 				const FGameplayAbilitySpec* Spec = AttackSpec(Pawn);
 				ASSERT_THAT(IsTrue(Spec && Spec->IsActive()));
 				if (Spec) ASC(Pawn)->CancelAbilityHandle(Spec->Handle);
@@ -1024,8 +1049,8 @@ NETWORK_TEST_CLASS(GaspMoverGameplayPIE, "SurvivalRpg.GASP.Mover.Gameplay")
 				ASSERT_THAT(IsTrue(Observations.Get(State.World).Cancellations == 1));
 				Input.PressAttack();
 			})
-			.UntilClient(TEXT("Replay B gets a new activation identity and montage instance through input"), 0, [this](FState&)
-				{ return Correction.CaptureReplay(); }, Timeout())
+			.UntilClient(TEXT("Replay B enters simulation history before only its owner prediction is perturbed"), 0, [this](FState&)
+				{ return Correction.CaptureReplayAndInject(); }, Timeout())
 			.UntilClient(TEXT("A real authority correction restores and resimulates the perturbed owner history"), 0, [this](FState&)
 				{ return Correction.WasObserved(); }, Timeout())
 			.ThenClient(TEXT("The first correction preserves the active replay before another forward tick can repair it"), 0, [this](FState&)
