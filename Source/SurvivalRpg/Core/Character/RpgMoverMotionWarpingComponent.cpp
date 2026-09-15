@@ -46,21 +46,35 @@ FQuat URpgMoverMotionWarpingAdapter::GetBaseVisualRotationOffset() const { retur
 bool URpgMoverMotionWarpingComponent::SupportsTraversal(const FRpgMoverTraversalRequest& Request) const
 {
 	// Moving targets, Blueprint modifier callbacks and switch-off logic have additional mutable/world state.
-	// The first grounded GASP mantle deliberately uses the audited standard fixed FrontLedge windows.
+	// Grounded Mantle/Vault use audited fixed front targets and an optional translation-only rear target.
 	if (!Request.Montage || Request.WarpTargetName.IsNone() || bSearchForWindowsInAnimsWithinMontages ||
+		Request.FrontLedgeTarget.ContainsNaN() || Request.BackLedgeWarpTargetName == Request.WarpTargetName ||
+		(!Request.BackLedgeWarpTargetName.IsNone() && Request.BackLedgeTarget.ContainsNaN()) ||
 		!SwitchOffConditions.IsEmpty() || OnPreUpdate.IsBound() || IsPredictingTrajectory()) { return false; }
 	TArray<FMotionWarpingWindowData> Windows;
 	UMotionWarpingUtilities::GetMotionWarpingWindowsFromAnimation(Request.Montage, Windows);
 	if (Windows.IsEmpty() || Windows.Num() > 16) { return false; }
+	bool bHasFrontWindow = false;
+	bool bHasBackWindow = false;
 	for (const FMotionWarpingWindowData& Window : Windows)
 	{
 		const UAnimNotifyState_MotionWarping* Notify = Window.AnimNotify;
 		const URootMotionModifier_SkewWarp* Modifier = Notify ? Cast<URootMotionModifier_SkewWarp>(Notify->RootMotionModifier) : nullptr;
 		if (!Notify || Notify->GetClass() != UAnimNotifyState_MotionWarping::StaticClass() || !Modifier ||
-			Modifier->GetClass() != URootMotionModifier_SkewWarp::StaticClass() || Modifier->WarpTargetName != Request.WarpTargetName ||
+			Modifier->GetClass() != URootMotionModifier_SkewWarp::StaticClass() ||
 			Modifier->RotationType != EMotionWarpRotationType::Default || Window.EndTime <= Window.StartTime) { return false; }
+		if (Modifier->WarpTargetName == Request.WarpTargetName) { bHasFrontWindow = true; }
+		else if (!Request.BackLedgeWarpTargetName.IsNone() && Modifier->WarpTargetName == Request.BackLedgeWarpTargetName)
+		{
+			// The approved rear-edge warp keeps authored rotation and has no animated hand/bone offset.
+			if (!Modifier->bWarpTranslation || Modifier->bIgnoreZAxis || !Modifier->bWarpToFeetLocation ||
+				Modifier->bWarpRotation || Modifier->WarpPointAnimProvider != EWarpPointAnimProvider::None ||
+				Modifier->bSubtractRemainingRootMotion) { return false; }
+			bHasBackWindow = true;
+		}
+		else { return false; }
 	}
-	return true;
+	return bHasFrontWindow && (bHasBackWindow == !Request.BackLedgeWarpTargetName.IsNone());
 }
 
 const UMotionWarpingBaseAdapter* URpgMoverMotionWarpingComponent::GetTraversalAdapter(URpgCharacterMoverComponent* Mover)
@@ -83,6 +97,10 @@ bool URpgMoverMotionWarpingComponent::BeginSimulationWarp(URpgCharacterMoverComp
 	Swap(Modifiers, SavedModifiers);
 	Swap(WarpTargets, SavedTargets);
 	WarpTargets.Add(FMotionWarpingTarget(State.Command.Context.WarpTargetName, State.Command.Context.FrontLedgeTarget));
+	if (!State.Command.Context.BackLedgeWarpTargetName.IsNone())
+	{
+		WarpTargets.Add(FMotionWarpingTarget(State.Command.Context.BackLedgeWarpTargetName, State.Command.Context.BackLedgeTarget));
+	}
 	UMotionWarpingUtilities::GetMotionWarpingWindowsFromAnimation(State.Command.Context.Montage, SimulationWindows);
 	for (FMotionWarpingWindowData& Window : SimulationWindows)
 	{
@@ -150,7 +168,10 @@ void URpgMoverMotionWarpingComponent::EndSimulationWarp()
 		if (!Modifier) { continue; }
 		const int32 WindowIndex = SimulationWindows.IndexOfByPredicate([Modifier](const FMotionWarpingWindowData& Window)
 		{
-			return FMath::IsNearlyEqual(Window.StartTime, Modifier->StartTime) && FMath::IsNearlyEqual(Window.EndTime, Modifier->EndTime);
+			const URootMotionModifier_Warp* Warp = Cast<URootMotionModifier_Warp>(Modifier);
+			const URootMotionModifier_Warp* Template = Window.AnimNotify ? Cast<URootMotionModifier_Warp>(Window.AnimNotify->RootMotionModifier) : nullptr;
+			return Warp && Template && Warp->WarpTargetName == Template->WarpTargetName &&
+				FMath::IsNearlyEqual(Window.StartTime, Modifier->StartTime) && FMath::IsNearlyEqual(Window.EndTime, Modifier->EndTime);
 		});
 		if (!SimulationWindows.IsValidIndex(WindowIndex)) { continue; }
 		FRpgMoverWarpModifierState& Snapshot = SimulationState->WarpModifiers.AddDefaulted_GetRef();

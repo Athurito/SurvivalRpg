@@ -174,6 +174,8 @@ private:
 	bool SampleAbilityRootMotion(double SimTimeMs, FRpgMoverAbilityRootMotion& OutMove) const;
 	void PrepareTraversalSimulation(const FMoverTimeStep& TimeStep, const FMoverTickStartData& StartingData);
 	void ApplyTraversalCollisionLease(UPrimitiveComponent* Collider);
+	/** Publishes only this corrected command's fixed targets and releases targets from the preceding visible state. */
+	void UpdateTraversalWarpTargets(const FRpgMoverTraversalRequest* Request);
 	const FRpgMoverTraversalCommand& GetVisibleTraversalCommand() const;
 	UFUNCTION()
 	void HandleTraversalPostFinalize(const FMoverSyncState& SyncState, const FMoverAuxStateContext& AuxState);
@@ -185,6 +187,8 @@ private:
 	/** Original per-tick input for GASP's animation/conditional blend-out read model, never used to move the leased capsule. */
 	UPROPERTY(Transient) FCharacterDefaultInputs TraversalPresentationInputs;
 	UPROPERTY(Transient) TObjectPtr<UPrimitiveComponent> LeasedCollisionComponent;
+	// Presentation target names owned by this component; never retain a replaced Vault's rear target during Mantle.
+	TArray<FName, TInlineAllocator<2>> PublishedTraversalWarpTargets;
 	bool bAddedCollisionIgnore = false;
 	bool bTraversalRootMotionScope = false;
 	bool bTraversalGeometryInvalidThisTick = false;

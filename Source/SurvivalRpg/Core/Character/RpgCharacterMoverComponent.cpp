@@ -360,6 +360,7 @@ uint32 URpgCharacterMoverComponent::BeginTraversal(UGameplayAbility* Ability, co
 		!Request.Collider.IsValid() || Request.Collider->IsSimulatingPhysics() ||
 		!Request.Collider->GetComponentTransform().Equals(Request.ColliderTransform, .1f) ||
 		Request.ColliderTransform.ContainsNaN() || Request.FrontLedgeTarget.ContainsNaN() ||
+		(!Request.BackLedgeWarpTargetName.IsNone() && Request.BackLedgeTarget.ContainsNaN()) ||
 		Request.EntryCapsuleLocation.ContainsNaN() || Request.LandingCapsuleLocation.ContainsNaN() ||
 		!FMath::IsFinite(Request.StartTimeSeconds) || !FMath::IsFinite(Request.PlayRate) ||
 		!FMath::IsFinite(Request.HandoffTimeSeconds) || Request.StartTimeSeconds < 0.f ||
@@ -519,7 +520,7 @@ void URpgCharacterMoverComponent::OnPostSimulate(const FMoverTimeStep& TimeStep,
 	if (TraversalSimulationState.bEndApplied && TraversalSimulationState.Command.IsTerminal())
 	{
 		// Historical active frames retain their complete values. The applied terminal tombstone needs only
-		// identity and target name, avoiding persistent modifier/asset payload and strong collider ownership.
+		// identity and target names, avoiding persistent modifier/asset payload and strong collider ownership.
 		TraversalSimulationState.Command.CompactAppliedEnd();
 		TraversalSimulationState.WarpModifiers.Reset();
 		TraversalSimulationState.MontagePosition = 0.f;
@@ -560,11 +561,35 @@ void URpgCharacterMoverComponent::HandleTraversalPostFinalize(const FMoverSyncSt
 		TraversalCommand.CompactAppliedEnd();
 	}
 	ApplyTraversalCollisionLease(bActive ? State->Command.Context.Collider.Get() : nullptr);
-	if (TraversalWarping && State && State->Command.Phase != ERpgMoverTraversalPhase::None)
+	UpdateTraversalWarpTargets(bActive ? &State->Command.Context : nullptr);
+}
+
+void URpgCharacterMoverComponent::UpdateTraversalWarpTargets(const FRpgMoverTraversalRequest* Request)
+{
+	TArray<FName, TInlineAllocator<2>> TargetNames;
+	if (Request)
 	{
-		if (bActive) { TraversalWarping->AddOrUpdateWarpTargetFromTransform(State->Command.Context.WarpTargetName, State->Command.Context.FrontLedgeTarget); }
-		else { TraversalWarping->RemoveWarpTarget(State->Command.Context.WarpTargetName); }
+		TargetNames.Add(Request->WarpTargetName);
+		if (!Request->BackLedgeWarpTargetName.IsNone()) { TargetNames.Add(Request->BackLedgeWarpTargetName); }
 	}
+	if (TraversalWarping)
+	{
+		// Corrections can replace an active Vault with Mantle, a terminal command or no command at all.
+		// Remove our obsolete names before publishing the corrected set; unrelated warp targets remain owned elsewhere.
+		for (FName Name : PublishedTraversalWarpTargets)
+		{
+			if (!TargetNames.Contains(Name)) { TraversalWarping->RemoveWarpTarget(Name); }
+		}
+		if (Request)
+		{
+			TraversalWarping->AddOrUpdateWarpTargetFromTransform(Request->WarpTargetName, Request->FrontLedgeTarget);
+			if (!Request->BackLedgeWarpTargetName.IsNone())
+			{
+				TraversalWarping->AddOrUpdateWarpTargetFromTransform(Request->BackLedgeWarpTargetName, Request->BackLedgeTarget);
+			}
+		}
+	}
+	PublishedTraversalWarpTargets = MoveTemp(TargetNames);
 }
 
 bool URpgCharacterMoverComponent::SampleAbilityRootMotion(double SimTimeMs, FRpgMoverAbilityRootMotion& OutMove) const
@@ -781,6 +806,7 @@ void URpgCharacterMoverComponent::EndPlay(const EEndPlayReason::Type EndPlayReas
 	OnPreSimulationTick.RemoveDynamic(this, &ThisClass::HandleAbilityRootMotionPreSimulation);
 	OnPostFinalize.RemoveDynamic(this, &ThisClass::HandleTraversalPostFinalize);
 	ApplyTraversalCollisionLease(nullptr);
+	UpdateTraversalWarpTargets(nullptr);
 	TraversalCommand = FRpgMoverTraversalCommand{};
 	TraversalSimulationState = FRpgMoverTraversalSyncState{};
 	ClearAbilityRootMotion();

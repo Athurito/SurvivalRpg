@@ -83,6 +83,8 @@ bool FRpgMoverTraversalSnapshotTest::RunTest(const FString& Parameters)
 	FRpgMoverTraversalSyncState Active;
 	Active.Command = Command(130);
 	Active.Command.Context.FrontLedgeTarget = FTransform(FRotator(0, 35, 0), FVector(125, -27, 100));
+	Active.Command.Context.BackLedgeWarpTargetName = TEXT("BackLedge");
+	Active.Command.Context.BackLedgeTarget = FTransform(FRotator(0, 35, 0), FVector(175, -27, 100));
 	Active.Command.Context.LandingCapsuleLocation = FVector(180, -27, 190);
 	Active.Command.BaseVisualTransform = FTransform(FRotator(0, -90, 0), FVector(0, 0, -88));
 	Active.MontagePosition = .42f;
@@ -108,6 +110,14 @@ bool FRpgMoverTraversalSnapshotTest::RunTest(const FString& Parameters)
 	int64 ActiveBytes = 0;
 	TestTrue(TEXT("Full native warp snapshot round-trips"), RoundTrip(Active, Loaded, ActiveBytes));
 	TestFalse(TEXT("Round-trip preserves all reconciled stock modifier values"), Active.ShouldReconcile(Loaded));
+	TestEqual(TEXT("Vault rear target name survives serialization"), Loaded.Command.Context.BackLedgeWarpTargetName, FName(TEXT("BackLedge")));
+	TestTrue(TEXT("Vault rear transform survives serialization"), Loaded.Command.Context.BackLedgeTarget.Equals(Active.Command.Context.BackLedgeTarget));
+	Loaded.Command.Context.BackLedgeTarget.AddToTranslation(FVector(10, 0, 0));
+	TestTrue(TEXT("Correcting only the rear ledge requires replay"), Active.ShouldReconcile(Loaded));
+	Loaded = Active;
+	Loaded.Command.Context.BackLedgeWarpTargetName = NAME_None;
+	TestTrue(TEXT("Correcting rear target ownership requires replay"), Active.ShouldReconcile(Loaded));
+	Loaded = Active;
 	Loaded.WarpModifiers[0].Value.CachedOffsetFromWarpPoint = FTransform(FVector(9, 0, 0));
 	TestTrue(TEXT("A corrected bone warp offset requires replay"), Active.ShouldReconcile(Loaded));
 
@@ -124,6 +134,8 @@ bool FRpgMoverTraversalSnapshotTest::RunTest(const FString& Parameters)
 	TestTrue(TEXT("Terminal sync stops sending the active warp/context payload"), TerminalBytes * 4 < ActiveBytes);
 	TestTrue(TEXT("Terminal carries no modifier/collider/montage resources"), Loaded.WarpModifiers.IsEmpty() &&
 		!Loaded.Command.Context.Collider.IsValid() && !Loaded.Command.Context.Montage && Loaded.bEndApplied);
+	TestEqual(TEXT("Terminal retains the rear name needed to release its published target"), Loaded.Command.Context.BackLedgeWarpTargetName, FName(TEXT("BackLedge")));
+	TestTrue(TEXT("Terminal discards the rear transform payload"), Loaded.Command.Context.BackLedgeTarget.Equals(FTransform::Identity));
 
 	// Native NP buffers pin asset data themselves, but must observe geometry destruction without retaining
 	// its actor/world until the buffer's later GC destruction (the EndPlayMap regression).

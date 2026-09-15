@@ -24,7 +24,7 @@ bool URpgTraversalQueryComponent::IsAnimationAllowed(const APawn& Pawn, const FR
 	const URpgCharacterMoverComponent* Mover = Character ? nullptr : Pawn.FindComponentByClass<URpgCharacterMoverComponent>();
 	const bool bGrounded = Movement ? Movement->IsMovingOnGround() : Mover && Mover->IsOnGround();
 	const bool bFalling = Movement ? Movement->IsFalling() : Mover && Mover->IsFalling();
-	if ((!Movement && !Mover) || (Mover && (!bGrounded || Result.ActionType != 3))
+	if ((!Movement && !Mover) || (Mover && (!bGrounded || (Result.ActionType != 3 && Result.ActionType != 2)))
 		|| !Result.ChosenMontage || !FMath::IsFinite(Result.StartTime) || !FMath::IsFinite(Result.PlayRate)
 		|| !FMath::IsNearlyEqual(Result.PlayRate, 1.0, 0.001) || !FMath::IsFinite(Result.ObstacleHeight)
 		|| !FMath::IsFinite(Result.ObstacleDepth) || Result.StartTime < 0.0 || Result.StartTime >= Result.ChosenMontage->GetPlayLength()) return false;

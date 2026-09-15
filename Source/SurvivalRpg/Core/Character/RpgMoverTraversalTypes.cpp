@@ -11,7 +11,9 @@ struct FRpgMoverTraversalLineage
 void FRpgMoverTraversalRequest::Serialize(FArchive& Ar)
 {
 	Ar << Collider << ColliderTransform << EntryCapsuleLocation << LandingCapsuleLocation << FrontLedgeTarget;
-	Ar << Montage << StartTimeSeconds << PlayRate << HandoffTimeSeconds << WarpTargetName;
+	Ar << Montage << StartTimeSeconds << PlayRate << HandoffTimeSeconds << WarpTargetName << BackLedgeWarpTargetName;
+	if (!BackLedgeWarpTargetName.IsNone()) { Ar << BackLedgeTarget; }
+	else if (Ar.IsLoading()) { BackLedgeTarget = FTransform::Identity; }
 }
 
 bool FRpgMoverTraversalRequest::Equals(const FRpgMoverTraversalRequest& B) const
@@ -20,7 +22,9 @@ bool FRpgMoverTraversalRequest::Equals(const FRpgMoverTraversalRequest& B) const
 		EntryCapsuleLocation.Equals(B.EntryCapsuleLocation, .01f) && LandingCapsuleLocation.Equals(B.LandingCapsuleLocation, .01f) &&
 		FrontLedgeTarget.Equals(B.FrontLedgeTarget, .01f) && Montage == B.Montage &&
 		FMath::IsNearlyEqual(StartTimeSeconds, B.StartTimeSeconds) && FMath::IsNearlyEqual(PlayRate, B.PlayRate) &&
-		FMath::IsNearlyEqual(HandoffTimeSeconds, B.HandoffTimeSeconds) && WarpTargetName == B.WarpTargetName;
+		FMath::IsNearlyEqual(HandoffTimeSeconds, B.HandoffTimeSeconds) && WarpTargetName == B.WarpTargetName &&
+		BackLedgeWarpTargetName == B.BackLedgeWarpTargetName &&
+		(BackLedgeWarpTargetName.IsNone() || BackLedgeTarget.Equals(B.BackLedgeTarget, .01f));
 }
 
 bool FRpgMoverTraversalIdentity::operator==(const FRpgMoverTraversalIdentity& B) const
@@ -88,8 +92,10 @@ bool FRpgMoverTraversalCommand::IsSuccessorOf(const FRpgMoverTraversalIdentity& 
 void FRpgMoverTraversalCommand::CompactAppliedEnd()
 {
 	const FName TargetName = Context.WarpTargetName;
+	const FName BackTargetName = Context.BackLedgeWarpTargetName;
 	Context = FRpgMoverTraversalRequest{};
 	Context.WarpTargetName = TargetName;
+	Context.BackLedgeWarpTargetName = BackTargetName;
 	BaseVisualTransform = FTransform::Identity;
 	bPreserveMomentum = false;
 	bHasRecoveryLocation = false;
@@ -142,7 +148,7 @@ bool FRpgMoverTraversalSyncState::NetSerialize(FArchive& Ar, UPackageMap* Map, b
 		if (Ar.IsLoading()) { *this = FRpgMoverTraversalSyncState{}; }
 		Ar << Command.Phase;
 		Command.Identity.Serialize(Ar);
-		Ar << Command.Context.WarpTargetName;
+		Ar << Command.Context.WarpTargetName << Command.Context.BackLedgeWarpTargetName;
 		bEndApplied = true;
 		bOutSuccess = !Ar.IsError();
 		return bOutSuccess;
