@@ -119,6 +119,11 @@ save files remain unchanged. The three copied montages are the only new content
 packages. No spawn policy, gameplay map, engine plugin or Network Prediction
 configuration is changed.
 
+The September 18 follow-up adds occupied PlayerStart selection and a separately
+versioned NetworkPrediction correction. The paragraphs above record the original
+Vault slice; current behavior and validation are documented in
+[`gasp-mover-network-recovery.md`](gasp-mover-network-recovery.md).
+
 ## Open regression: intermittent movement after respawn
 
 The existing `WeaponDamageCancelsAttackStopsMovementAndRespawnsForLateJoin` test
@@ -138,7 +143,7 @@ Per-role input, capsule, movement and overlap diagnostics remain in the lifecycl
 fixture. The PR stays **draft** while the intermittent regression is unresolved;
 later passing runs are not treated as proof of a fix or merge readiness.
 
-## Separate-process observation and open limitation
+## Original separate-process observation and interpolation limitation
 
 An uncooked three-process test drove the real movement and Space actions from
 the saved PlayerStart through the original stairs to a standing Vault. Median
@@ -158,6 +163,10 @@ the functional crossing and handoff under unequal render rates, **not smooth
 proxy presentation**. The known cold-load recovery problem remains open and
 must be checked in the planned cooked/packaged multiplayer validation. No
 interpolation clock, engine plugin or graphics FPS limit was changed to mask it.
+
+The September 18 follow-up reproduced and corrected persistent interpolation
+backlog in separate processes. See the linked recovery document for before/after
+measurements; cooked/packaged multiplayer validation remains outstanding.
 
 The raw logs retain uncooked editor-Python plugin startup diagnostics as well
 as the interpolation ensures. `probe_run_fixed50_vault_h20_o240/analysis.json`
