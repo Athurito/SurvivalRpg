@@ -1195,7 +1195,9 @@ void URpgGameplayAbility_Mantle::EndAbility(const FGameplayAbilitySpecHandle Han
 		return;
 	}
 	if (!bWasCancelled && !bReplicateEndAbility && RemoteInstanceEnded && (ActiveActionType == 2 || ActiveActionType == 1 || ActiveMover.IsValid()) && bOwnsMovement
-		&& ActorInfo && ActorInfo->IsNetAuthority() && !ActorInfo->IsLocallyControlled() && ActivePawn.IsValid())
+		&& ActorInfo && ActivePawn.IsValid()
+		&& ((ActorInfo->IsNetAuthority() && !ActorInfo->IsLocallyControlled())
+			|| (ActiveMover.IsValid() && ActorInfo->IsLocallyControlled() && ActivePawn->GetLocalRole() == ROLE_AutonomousProxy)))
 	{
 		const USkeletalMeshComponent* Mesh = URpgPawnExtensionComponent::FindGameplayMesh(ActivePawn.Get());
 		UAnimInstance* Animation = Mesh ? Mesh->GetAnimInstance() : nullptr;
@@ -1204,8 +1206,8 @@ void URpgGameplayAbility_Mantle::EndAbility(const FGameplayAbilitySpecHandle Han
 		if (Instance && Instance->Montage == Montage && Instance->IsPlaying() && !Instance->IsStopped()
 			&& AdmissibleHandoffTime > 0.0f && Instance->GetPosition() < AdmissibleHandoffTime)
 		{
-			// GAS's reliable normal-end RPC can overtake the owner's final movement/pose update. Do not stop the
-			// authority's montage before its own source notify and then mistake that artificial stop for an interruption.
+			// GAS's reliable normal-end RPC can overtake the receiving montage's source notify on either the
+			// authority or the predicted Mover owner. Stopping it early would discard the authored exit momentum.
 			// The existing montage task, geometry checks and duration timeout remain active; cancellation is never deferred.
 			UE_LOG(LogRpgAbilitySystem, Verbose, TEXT("Traversal deferred remote normal end: pawn=%s instance=%d montagePosition=%.6f previousPosition=%.6f sourceHandoff=%.6f finalWarpEnd=%.6f action=%u admissibleHandoff=%.6f"),
 				*GetPathNameSafe(ActivePawn.Get()), ActiveMontageInstanceId, Instance->GetPosition(), Instance->GetPreviousPosition(),

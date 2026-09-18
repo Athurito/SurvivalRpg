@@ -786,8 +786,8 @@ struct FRpgGaspMoverTraversalTestFixture::FState
 			Record.bHandoffGrounded = FinalizedSync.MovementMode == DefaultModeNames::Walking;
 			Record.bHandoffFalling = FinalizedSync.MovementMode == DefaultModeNames::Falling;
 			Record.bStoppedAtHandoff |= Record.LastLeaseSpeed > 100.0f && Record.HandoffVelocity.Size2D() < 1.0;
-			UE_LOG(LogTemp, Display, TEXT("RpgMoverTraversal simulation handoff role=%d mode=%s endApplied=%d grounded=%d previousSpeed=%.2f position=%s velocity=%s"),
-				static_cast<int32>(Character->GetLocalRole()), *FinalizedSync.MovementMode.ToString(), TraversalState->bEndApplied, Record.bHandoffGrounded, Record.LastLeaseSpeed,
+			UE_LOG(LogTemp, Display, TEXT("RpgMoverTraversal simulation handoff role=%d mode=%s endApplied=%d grounded=%d terminalPhase=%d previousSpeed=%.2f position=%s velocity=%s"),
+				static_cast<int32>(Character->GetLocalRole()), *FinalizedSync.MovementMode.ToString(), TraversalState->bEndApplied, Record.bHandoffGrounded, static_cast<int32>(TraversalState->Command.Phase), Record.LastLeaseSpeed,
 				*Record.HandoffLocation.ToCompactString(), *Record.HandoffVelocity.ToCompactString());
 			ReportConnections(TEXT("handoff"), Record.World.Get());
 		}
