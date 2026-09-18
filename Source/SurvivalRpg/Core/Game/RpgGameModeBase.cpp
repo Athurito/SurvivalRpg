@@ -5,7 +5,12 @@
 
 #include "RpgWorldSettings.h"
 #include "AssetRegistry/AssetData.h"
+#include "Components/CapsuleComponent.h"
+#include "Engine/BlueprintGeneratedClass.h"
 #include "Engine/LocalPlayer.h"
+#include "Engine/PlayerStartPIE.h"
+#include "Engine/SCS_Node.h"
+#include "Engine/SimpleConstructionScript.h"
 #include "EngineUtils.h"
 #include "Kismet/GameplayStatics.h"
 #include "Misc/CommandLine.h"
@@ -44,6 +49,67 @@
 #include "GameFramework/GameStateBase.h"
 #include "GameFramework/PlayerState.h"
 #include "TimerManager.h"
+
+namespace RpgPlayerSpawning
+{
+	// SCS components do not exist on the pawn CDO. Match construction order and resolve the
+	// selected class's inherited override rather than measuring the empty CDO or a parent default.
+	const UCapsuleComponent* FindBlueprintRootCapsule(UClass* PawnClass)
+	{
+		UBlueprintGeneratedClass* ActualClass = Cast<UBlueprintGeneratedClass>(PawnClass);
+		TArray<UBlueprintGeneratedClass*> Hierarchy;
+		for (UClass* Class = PawnClass; Class; Class = Class->GetSuperClass())
+		{
+			if (UBlueprintGeneratedClass* BlueprintClass = Cast<UBlueprintGeneratedClass>(Class))
+			{
+				Hierarchy.Add(BlueprintClass);
+			}
+		}
+		for (int32 Index = Hierarchy.Num() - 1; Index >= 0; --Index)
+		{
+			if (const USimpleConstructionScript* Script = Hierarchy[Index]->SimpleConstructionScript)
+			{
+				for (const USCS_Node* Node : Script->GetRootNodes())
+				{
+					const USceneComponent* Template = Node
+						? Cast<USceneComponent>(Node->GetActualComponentTemplate(ActualClass)) : nullptr;
+					if (Template)
+					{
+						return Cast<UCapsuleComponent>(Template);
+					}
+				}
+			}
+		}
+		return nullptr;
+	}
+
+	bool IsStartBlocked(UWorld& World, const APawn& PawnDefaults, const UCapsuleComponent* BlueprintCapsule,
+		const APlayerStart& Start)
+	{
+		if (!BlueprintCapsule)
+		{
+			return World.EncroachingBlockingGeometry(&PawnDefaults, Start.GetActorLocation(), Start.GetActorRotation());
+		}
+		if (!PawnDefaults.GetActorEnableCollision() || !BlueprintCapsule->IsQueryCollisionEnabled())
+		{
+			return false;
+		}
+
+		// SpawnDefaultPawnFor supplies yaw-only rotation and unit scale; SpawnDefaultPawnAtTransform
+		// uses MultiplyWithRoot. Root template translation, rotation and scale therefore matter.
+		const FTransform SpawnTransform(FRotator(0, Start.GetActorRotation().Yaw, 0), Start.GetActorLocation());
+		const FTransform CapsuleTransform = BlueprintCapsule->GetRelativeTransform() * SpawnTransform;
+		const float ShapeScale = CapsuleTransform.GetMinimumAxisScale();
+		const FCollisionShape Shape = FCollisionShape::MakeCapsule(
+			BlueprintCapsule->GetUnscaledCapsuleRadius() * ShapeScale,
+			BlueprintCapsule->GetUnscaledCapsuleHalfHeight() * ShapeScale);
+		FCollisionQueryParams QueryParams(SCENE_QUERY_STAT(RpgPlayerStartOccupancy), false, &PawnDefaults);
+		FCollisionResponseParams ResponseParams;
+		BlueprintCapsule->InitSweepCollisionParams(QueryParams, ResponseParams);
+		return World.OverlapBlockingTestByChannel(CapsuleTransform.GetLocation(), CapsuleTransform.GetRotation(),
+			BlueprintCapsule->GetCollisionObjectType(), Shape, QueryParams, ResponseParams);
+	}
+}
 
 bool ARpgGameModeBase::IsDurableOnlineProfileId(
 	const FUniqueNetIdRepl& NetId)
@@ -231,6 +297,45 @@ UClass* ARpgGameModeBase::GetDefaultPawnClassForController_Implementation(AContr
 	}
 
 	return Super::GetDefaultPawnClassForController_Implementation(InController);
+}
+
+AActor* ARpgGameModeBase::ChoosePlayerStart_Implementation(AController* Player)
+{
+	UClass* PawnClass = GetDefaultPawnClassForController(Player);
+	const APawn* PawnDefaults = PawnClass ? PawnClass->GetDefaultObject<APawn>() : nullptr;
+	UWorld* World = GetWorld();
+	if (!World || !PawnDefaults)
+	{
+		return Super::ChoosePlayerStart_Implementation(Player);
+	}
+	const UCapsuleComponent* BlueprintCapsule = PawnDefaults->GetRootComponent()
+		? nullptr : RpgPlayerSpawning::FindBlueprintRootCapsule(PawnClass);
+	if (!PawnDefaults->GetRootComponent() && !BlueprintCapsule)
+	{
+		return Super::ChoosePlayerStart_Implementation(Player);
+	}
+
+	TArray<APlayerStart*> UnoccupiedStarts;
+	for (TActorIterator<APlayerStart> It(World); It; ++It)
+	{
+		APlayerStart* Start = *It;
+		if (!RpgPlayerSpawning::IsStartBlocked(*World, *PawnDefaults, BlueprintCapsule, *Start))
+		{
+			if (Start->IsA<APlayerStartPIE>())
+			{
+				return Start;
+			}
+			UnoccupiedStarts.Add(Start);
+		}
+	}
+	if (!UnoccupiedStarts.IsEmpty())
+	{
+		return UnoccupiedStarts[FMath::RandRange(0, UnoccupiedStarts.Num() - 1)];
+	}
+
+	// Preserve the existing fully occupied-map policy. Rejecting a pawn here would also
+	// change checkpoint respawn and FailedToRestartPlayer's retry lifecycle.
+	return Super::ChoosePlayerStart_Implementation(Player);
 }
 
 APawn* ARpgGameModeBase::SpawnDefaultPawnAtTransform_Implementation(AController* NewPlayer, const FTransform& SpawnTransform)
