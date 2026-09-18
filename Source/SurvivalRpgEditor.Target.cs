@@ -12,5 +12,6 @@ public class SurvivalRpgEditorTarget : TargetRules
 		IncludeOrderVersion = EngineIncludeOrderVersion.Unreal5_8;
 
 		ExtraModuleNames.AddRange( new string[] { "SurvivalRpg", "SurvivalRpgEditor" } );
+		RpgNetworkPredictionPatch.RequirePrepared(ProjectFile?.Directory.FullName, Version);
 	}
 }

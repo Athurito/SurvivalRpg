@@ -8,6 +8,13 @@
 /Plugins/**/Intermediate/
 /Plugins/**/Binaries/
 
+# Reproducible UE 5.8.2 overrides; source and content come from the licensed local Engine.
+# Prepare with Build/Patches/NetworkPrediction/prepare.py; only its patch/manifest are versioned.
+/Plugins/NetworkPrediction/
+/Plugins/Mover/
+/Plugins/ChaosMover/
+/Plugins/MoverExamples/
+
 # IDE / editor user files
 .vs/
 .vscode/

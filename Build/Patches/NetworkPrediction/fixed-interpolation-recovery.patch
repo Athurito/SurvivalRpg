@@ -1,0 +1,110 @@
+--- a/Source/NetworkPrediction/Private/NetworkPredictionWorldManager.cpp
++++ b/Source/NetworkPrediction/Private/NetworkPredictionWorldManager.cpp
+@@ -1,6 +1,7 @@
+ // Copyright Epic Games, Inc. All Rights Reserved.
+ 
+ #include "NetworkPredictionWorldManager.h"
++#include "NetworkPredictionFixedInterpolationRecovery.h"
+ #include "Engine/Engine.h"
+ #include "PBDRigidsSolver.h"
+ #include "ChaosSolversModule.h"
+@@ -15,6 +16,14 @@
+ 
+ UNetworkPredictionWorldManager* UNetworkPredictionWorldManager::ActiveInstance=nullptr;
+ 
++// Bound client presentation backlog without changing simulation or input clocks.
++static TAutoConsoleVariable<int32> CVarFixedInterpolationMaxBufferedMS(
++	TEXT("np.FixedInterpolation.MaxBufferedMS"), 250,
++	TEXT("Maximum fixed interpolation backlog before restoring the configured target buffer."));
++
++// GT-only, one render-frame handoff; keep the public module ABI unchanged.
++static TMap<const UNetworkPredictionWorldManager*, uint64> FixedInterpolationRecoveryFrames;
++
+ // -----------------------------------------------------------------------------------------------
+ //
+ // -----------------------------------------------------------------------------------------------
+@@ -41,6 +50,7 @@
+ 
+ void UNetworkPredictionWorldManager::Deinitialize()
+ {
++	FixedInterpolationRecoveryFrames.Remove(this);
+ 	if (UWorld* World = GetWorld())
+ 	{
+ 		if (PreTickDispatchHandle.IsValid())
+@@ -137,6 +147,22 @@
+ 	//	Non-rollback reconcile services
+ 	// -------------------------------------------------------------------------
+ 
++	// Recover before any service accesses a bounded history ring after a dispatch stall.
++	if (Services.FixedInterpolate.Array.Num() > 0)
++	{
++		const int32 PreviousToFrame = FixedTickState.Interpolation.ToFrame;
++		if (UE::NetworkPrediction::FixedInterpolationRecovery::Recover(FixedTickState,
++			Settings.FixedTickInterpolationBufferedMS, CVarFixedInterpolationMaxBufferedMS.GetValueOnGameThread()))
++		{
++			FixedInterpolationRecoveryFrames.Add(this, GFrameCounter);
++			const int32 LatestFrame = FMath::Max(FixedTickState.Interpolation.LatestRecvFrameAP, FixedTickState.Interpolation.LatestRecvFrameSP);
++			UE_LOG(LogNetworkPrediction, Verbose, TEXT("Fixed interpolation recovered backlog: ToFrame %d -> %d, Latest %d, BufferedMS %d -> %d"),
++				PreviousToFrame, FixedTickState.Interpolation.ToFrame, LatestFrame,
++				(LatestFrame - PreviousToFrame) * FixedTickState.FixedStepMS,
++				(LatestFrame - FixedTickState.Interpolation.ToFrame) * FixedTickState.FixedStepMS);
++		}
++	}
++
+ 	// Don't reconcile FixedTick interpolates until we've started interpolation
+ 	// This makes the service's implementation easier if it can rely on a known
+ 	// ToFrame while reconciling network updates
+@@ -260,6 +286,8 @@
+ 	bLockServices = true;
+ 
+ 	const float fEngineFrameDeltaTimeMS = DeltaTimeSeconds * 1000.f;
++	uint64 RecoveryFrame = 0;
++	const bool bRecoveredThisFrame = FixedInterpolationRecoveryFrames.RemoveAndCopyValue(this, RecoveryFrame) && RecoveryFrame == GFrameCounter;
+ 
+ 	// -------------------------------------------------------------------------
+ 	//	Fixed Tick
+@@ -393,7 +421,7 @@
+ 
+ 					//UE_LOGF(LogTemp, Warning, "BufferedMS: %d Frames: %d (No ToFrame)", BufferedMS, NumBufferedFrames);
+ 
+-					if (BufferedMS < DesiredBufferedMS)
++					if (NumBufferedFrames <= UE::NetworkPrediction::FixedInterpolationRecovery::DesiredFrames(FixedTickState, DesiredBufferedMS))
+ 					{
+ 						// Not enough time buffered yet to start interpolating
+ 						InterpolateRate = 0.f;
+@@ -401,7 +429,7 @@
+ 					else
+ 					{
+ 						// Begin interpolation
+-						const int32 DesiredNumBufferedFrames = (DesiredBufferedMS / FixedTickState.FixedStepMS);
++						const int32 DesiredNumBufferedFrames = UE::NetworkPrediction::FixedInterpolationRecovery::DesiredFrames(FixedTickState, DesiredBufferedMS);
+ 						FixedTickState.Interpolation.ToFrame = LatestRecvFrame - DesiredNumBufferedFrames;
+ 
+ 						FixedTickState.Interpolation.PCT = 0.f;
+@@ -427,24 +455,10 @@
+ 					}
+ 				}
+ 
+-				int32 AdvanceFrames = 0;
+ 				if (InterpolateRate > 0.f)
+ 				{
+-					const float fScaledDeltaTimeMS = (InterpolateRate * fEngineFrameDeltaTimeMS);
+-
+-					FixedTickState.Interpolation.AccumulatedTimeMS += fScaledDeltaTimeMS;
+-					AdvanceFrames = (int32)FixedTickState.Interpolation.AccumulatedTimeMS / FixedTickState.FixedStepRealTimeMS;
+-					if (AdvanceFrames > 0)
+-					{
+-						FixedTickState.Interpolation.ToFrame += AdvanceFrames;
+-						FixedTickState.Interpolation.AccumulatedTimeMS -= (AdvanceFrames * FixedTickState.FixedStepRealTimeMS);
+-					}
+-					const float RawPCT = FixedTickState.Interpolation.AccumulatedTimeMS / (float)FixedTickState.FixedStepRealTimeMS;
+-					FixedTickState.Interpolation.PCT = FMath::Clamp<float>(RawPCT, 0.f, 1.f);
+-					npEnsureMsgf(FixedTickState.Interpolation.PCT >= 0.f && FixedTickState.Interpolation.PCT <= 1.f, TEXT("Interpolation PCT out of range. %f"), FixedTickState.Interpolation.PCT);
+-
+-					const float PCTms = FixedTickState.Interpolation.PCT * (float)FixedTickState.FixedStepMS;
+-					FixedTickState.Interpolation.InterpolatedTimeMS = ((FixedTickState.Interpolation.ToFrame-1) * FixedTickState.FixedStepMS) + (int32)PCTms;
++					UE::NetworkPrediction::FixedInterpolationRecovery::Advance(FixedTickState,
++						fEngineFrameDeltaTimeMS, bRecoveredThisFrame);
+ 
+ 					//UE_LOGF(LogTemp, Warning, "[Interpolate] %ls Interpolating ToFrame %d. PCT: %.2f. Buffered: %d", *GetPathName(), FixedTickState.Interpolation.ToFrame, FixedTickState.Interpolation.PCT, FixedTickState.Interpolation.LatestRecvFrame - FixedTickState.Interpolation.ToFrame);
+ 
