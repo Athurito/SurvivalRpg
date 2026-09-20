@@ -106,7 +106,11 @@ used as a steady-running measurement. Evidence is in
 `probe_run_fixed50_h10_o240_observer/clean-return-segment.json` under the validation
 directory. These loopback measurements do not cover packaged builds or WAN loss.
 
-### Open engine limitation: a severe cold-join stall
+### Original engine limitation: a severe cold-join stall
+
+The separately versioned UE 5.8.2 correction and its September 18 measurements
+are documented in [Mover network recovery](gasp-mover-network-recovery.md).
+The evidence below describes the original unpatched Fixed-tick implementation.
 
 The uncooked cold observer join spent 18.38 seconds in asset loading, texture and
 skinned-asset compilation and PoseSearch derived-data work. This stalled network

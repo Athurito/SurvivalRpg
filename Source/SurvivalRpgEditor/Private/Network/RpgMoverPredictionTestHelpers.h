@@ -29,13 +29,11 @@ namespace RpgMoverPredictionTests
 
 		bool IsSameLocalHead(const FFixedPredictionHeadSnapshot& After) const
 		{
-			// Fixed AP NetRecv can change the server-frame offset without advancing the local input head.
-			// Rollback restores that same local head, but its liaison frame/time then include the new offset.
-			// Verify both clocks after removing exactly that offset; any genuine forward tick still fails.
-			return bValid && After.bValid && LocalPendingFrame == After.LocalPendingFrame && StepMs == After.StepMs
-				&& ServerFrame - ServerOffset == After.ServerFrame - After.ServerOffset
-				&& SimulationTimeMs - static_cast<double>(ServerOffset) * StepMs
-					== After.SimulationTimeMs - static_cast<double>(After.ServerOffset) * After.StepMs;
+			// Every fixed forward tick advances the world's local PendingFrame; rollback restores its
+			// saved head. Equality across this synchronous dispatch bracket therefore excludes forward work.
+			// Liaison frame/time are cached per-instance views: rollback can refresh a stale view while
+			// AP NetRecv changes the world offset independently. Keep those values for diagnostics only.
+			return bValid && After.bValid && LocalPendingFrame == After.LocalPendingFrame && StepMs == After.StepMs;
 		}
 
 		int32 LocalPendingFrame = INDEX_NONE;

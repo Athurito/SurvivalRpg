@@ -11,9 +11,11 @@
 #include "Animation/AnimInstance.h"
 #include "Animation/AnimMontage.h"
 #include "Backends/MoverNetworkPredictionLiaison.h"
+#include "Components/CapsuleComponent.h"
 #include "Components/SkeletalMeshComponent.h"
 #include "Engine/Engine.h"
 #include "Engine/NetDriver.h"
+#include "Engine/OverlapResult.h"
 #include "Engine/SkeletalMesh.h"
 #include "Engine/World.h"
 #include "GameFramework/GameModeBase.h"
@@ -22,6 +24,7 @@
 #include "GameplayEffect.h"
 #include "InputKeyEventArgs.h"
 #include "Misc/Guid.h"
+#include "MoverDataModelTypes.h"
 #include "NetworkPredictionWorldManager.h"
 #include "Retargeter/IKRetargeter.h"
 #include "UObject/StrongObjectPtr.h"
@@ -158,6 +161,22 @@ namespace RpgGaspMoverLifecycleTests
 			const ARpgGameModeBase* Mode = World->GetAuthGameMode<ARpgGameModeBase>();
 			return Mode && !Mode->bEnableDiskPersistence && Mode->WorldSaveSlotName.StartsWith(Prefix) && Mode->OfflineProfileKey == Prefix;
 		}
+		bool RetainOnlyStart(UWorld* World, const FTransform& Transform)
+		{
+			if (!Isolated(World) || World->GetNetMode() == NM_Client) return false;
+			APlayerStart* Retained = nullptr;
+			for (const TWeakObjectPtr<APlayerStart>& Start : Starts)
+				if (Start.IsValid() && Start->GetWorld() == World && Start->GetActorTransform().Equals(Transform, 0.01))
+				{
+					if (Retained) return false;
+					Retained = Start.Get();
+				}
+			if (!Retained) return false;
+			// Only this fixture's transient starts are removed. The retained start and all pawns live until PIE teardown.
+			for (const TWeakObjectPtr<APlayerStart>& Start : Starts)
+				if (Start.IsValid() && Start->GetWorld() == World && Start.Get() != Retained && !Start->Destroy()) return false;
+			return true;
+		}
 	private:
 		void Initialize(AGameModeBase* Initialized)
 		{
@@ -173,10 +192,11 @@ namespace RpgGaspMoverLifecycleTests
 			Spawn.SpawnCollisionHandlingOverride = ESpawnActorCollisionHandlingMethod::AlwaysSpawn;
 			Mode->GetWorld()->SpawnActor<ARpgCombatNetworkFloorFixture>(FVector::ZeroVector, FRotator::ZeroRotator, Spawn);
 			for (int32 Index = 0; Index < 3; ++Index)
-				Mode->GetWorld()->SpawnActor<APlayerStart>(FVector(0, (Index - 1) * 500.0, 120.0), FRotator::ZeroRotator, Spawn);
+				Starts.Add(Mode->GetWorld()->SpawnActor<APlayerStart>(FVector(0, (Index - 1) * 500.0, 120.0), FRotator::ZeroRotator, Spawn));
 		}
 		FString Prefix;
 		FDelegateHandle Handle;
+		TArray<TWeakObjectPtr<APlayerStart>> Starts;
 	};
 	class FScopedInput final
 	{
@@ -624,7 +644,12 @@ NETWORK_TEST_CLASS(GaspMoverLifecyclePIE, "SurvivalRpg.GASP.Mover.Lifecycle")
 	FPrimaryAssetId PreviousExperience;
 	TWeakObjectPtr<UWorld> AuthorityWorld, OwnerWorld, ObserverWorld;
 	int32 SubjectId = INDEX_NONE;
+	double RespawnMovementStarted = 0.0;
+	bool bReportedRespawnMovement = false;
 	bool bConfigured = false, bFollower = false, bBlock = false;
+	bool bOccupiedRespawnStart = false;
+	FTransform OccupiedRespawnTransform = FTransform::Identity;
+	int32 RespawnBlockerId = INDEX_NONE;
 
 	BEFORE_EACH()
 	{
@@ -668,6 +693,23 @@ NETWORK_TEST_CLASS(GaspMoverLifecyclePIE, "SurvivalRpg.GASP.Mover.Lifecycle")
 	}
 	TEST_METHOD(WeaponDamageCancelsAttackStopsMovementAndRespawnsForLateJoin) { Queue(false); }
 	TEST_METHOD(DeathCancelsHeldBlockAndRespawnRecomposesOptionalFollower) { Queue(true); }
+	TEST_METHOD(OccupiedRespawnStartAllowsMovementAndCombat) { Queue(false, true); }
+
+	bool RespawnStartHasBlocker(UWorld* World) const
+	{
+		using namespace RpgGaspMoverLifecycleTests;
+		APawn* Blocker = Pawn(World, RespawnBlockerId);
+		const UCapsuleComponent* Capsule = Blocker ? Cast<UCapsuleComponent>(Blocker->GetRootComponent()) : nullptr;
+		if (!Ready(World, Blocker, false) || !Capsule || !Mover(Blocker)->IsOnGround()
+			|| FVector::Dist2D(Blocker->GetActorLocation(), OccupiedRespawnTransform.GetLocation()) > 1.0) return false;
+		TArray<FOverlapResult> Overlaps;
+		World->OverlapMultiByChannel(Overlaps, OccupiedRespawnTransform.GetLocation(), OccupiedRespawnTransform.GetRotation(),
+			Capsule->GetCollisionObjectType(), FCollisionShape::MakeCapsule(Capsule->GetScaledCapsuleRadius(), Capsule->GetScaledCapsuleHalfHeight()),
+			FCollisionQueryParams(SCENE_QUERY_STAT(RpgMoverLifecycleOccupiedStart), false),
+			FCollisionResponseParams(Capsule->GetCollisionResponseToChannels()));
+		return Overlaps.ContainsByPredicate([Blocker, Capsule](const FOverlapResult& Overlap)
+			{ return Overlap.bBlockingHit && Overlap.GetActor() == Blocker && Overlap.GetComponent() == Capsule; });
+	}
 
 	bool Respawned(UWorld* World) const
 	{
@@ -690,6 +732,66 @@ NETWORK_TEST_CLASS(GaspMoverLifecyclePIE, "SurvivalRpg.GASP.Mover.Lifecycle")
 		if (Peer.OldPawn.IsValid() || Peer.OldFollower.IsValid()) return false;
 		for (const TWeakObjectPtr<AActor>& Actor : Peer.OldEquipmentActors) if (Actor.IsValid()) return false;
 		return true;
+	}
+	void ReportRespawnMovement() const
+	{
+		using namespace RpgGaspMoverLifecycleTests;
+		for (UWorld* World : { AuthorityWorld.Get(), OwnerWorld.Get(), ObserverWorld.Get() })
+		{
+			APawn* Character = Pawn(World, SubjectId);
+			const URpgCharacterMoverComponent* Movement = Mover(Character);
+			const FMoverDefaultSyncState* Sync = Movement ? Movement->GetSyncState().SyncStateCollection.FindDataByType<FMoverDefaultSyncState>() : nullptr;
+			const FCharacterDefaultInputs* Inputs = Movement ? Movement->GetLastInputCmd().InputCollection.FindDataByType<FCharacterDefaultInputs>() : nullptr;
+			const APlayerController* PC = Character ? Cast<APlayerController>(Character->GetController()) : nullptr;
+			const URpgPawnGameplayComponent* Gameplay = URpgPawnGameplayComponent::FindPawnGameplayComponent(Character);
+			const FVector Start = Observations.Has(World) ? Observations.Get(World).RespawnLocation : FVector::ZeroVector;
+			UE_LOG(LogTemp, Display, TEXT("RpgMoverLifecycle respawn movement world=%s pawn=%s role=%d ready=%d respawned=%d inputReady=%d local=%d ignoreMove=%d rawLeftY=%.3f actor=%s sync=%s start=%s velocity=%s mode=%s moveInput=%s traversal=%d frame=%d"),
+				*GetPathNameSafe(World), *GetPathNameSafe(Character), Character ? static_cast<int32>(Character->GetLocalRole()) : -1,
+				Ready(World, Character, bFollower), Respawned(World), Gameplay && Gameplay->IsReadyToBindInputs(), PC && PC->IsLocalController(),
+				PC && PC->IsMoveInputIgnored(), PC ? PC->GetInputAnalogKeyState(EKeys::Gamepad_LeftY) : 0.0f,
+				Character ? *Character->GetActorLocation().ToCompactString() : TEXT("missing"),
+				Sync ? *Sync->GetLocation_WorldSpace().ToCompactString() : TEXT("missing"), *Start.ToCompactString(),
+				Movement ? *Movement->GetVelocity().ToCompactString() : TEXT("missing"),
+				Movement ? *Movement->GetSyncState().MovementMode.ToString() : TEXT("missing"),
+				Inputs ? *Inputs->GetMoveInput().ToCompactString() : TEXT("missing"),
+				Movement && Movement->HasTraversalLease(), Movement ? Movement->GetLastTimeStep().ServerFrame : INDEX_NONE);
+			const UCapsuleComponent* Capsule = Movement ? Cast<UCapsuleComponent>(Movement->GetUpdatedComponent()) : nullptr;
+			UE_LOG(LogTemp, Display, TEXT("RpgMoverLifecycle respawn capsule world=%s updated=%s root=%s collision=%d radius=%.3f halfHeight=%.3f simulatePhysics=%d"),
+				*GetPathNameSafe(World), *GetPathNameSafe(Movement ? Movement->GetUpdatedComponent() : nullptr),
+				*GetPathNameSafe(Character ? Character->GetRootComponent() : nullptr), Capsule ? static_cast<int32>(Capsule->GetCollisionEnabled()) : -1,
+				Capsule ? Capsule->GetScaledCapsuleRadius() : 0.0f, Capsule ? Capsule->GetScaledCapsuleHalfHeight() : 0.0f,
+				Capsule && Capsule->IsSimulatingPhysics());
+			const AGameStateBase* GameState = ActiveWorld(World) ? World->GetGameState() : nullptr;
+			if (GameState)
+			{
+				for (const APlayerState* State : GameState->PlayerArray)
+				{
+					const APawn* Other = State ? State->GetPawn() : nullptr;
+					if (!Other || Other == Character) continue;
+					const UCapsuleComponent* OtherCapsule = Cast<UCapsuleComponent>(Other->GetRootComponent());
+					UE_LOG(LogTemp, Display, TEXT("RpgMoverLifecycle respawn other pawn world=%s playerId=%d pawn=%s actor=%s distance=%.3f distance2D=%.3f capsule=%s collision=%d radius=%.3f halfHeight=%.3f pawnResponse=%d"),
+						*GetPathNameSafe(World), State->GetPlayerId(), *GetPathNameSafe(Other), *Other->GetActorLocation().ToCompactString(),
+						Character ? FVector::Distance(Character->GetActorLocation(), Other->GetActorLocation()) : -1.0,
+						Character ? FVector::Dist2D(Character->GetActorLocation(), Other->GetActorLocation()) : -1.0,
+						*GetPathNameSafe(OtherCapsule), OtherCapsule ? static_cast<int32>(OtherCapsule->GetCollisionEnabled()) : -1,
+						OtherCapsule ? OtherCapsule->GetScaledCapsuleRadius() : 0.0f, OtherCapsule ? OtherCapsule->GetScaledCapsuleHalfHeight() : 0.0f,
+						OtherCapsule ? static_cast<int32>(OtherCapsule->GetCollisionResponseToChannel(ECC_Pawn)) : -1);
+				}
+			}
+			if (ActiveWorld(World) && Character && Capsule)
+			{
+				TArray<FOverlapResult> Overlaps;
+				World->OverlapMultiByChannel(Overlaps, Capsule->GetComponentLocation(), Capsule->GetComponentQuat(),
+					Capsule->GetCollisionObjectType(), FCollisionShape::MakeCapsule(Capsule->GetScaledCapsuleRadius(), Capsule->GetScaledCapsuleHalfHeight()),
+					FCollisionQueryParams(SCENE_QUERY_STAT(RpgMoverLifecycleRespawn), false, Character),
+					FCollisionResponseParams(Capsule->GetCollisionResponseToChannels()));
+				for (const FOverlapResult& Overlap : Overlaps)
+				{
+					UE_LOG(LogTemp, Display, TEXT("RpgMoverLifecycle respawn overlap world=%s blocking=%d actor=%s component=%s"),
+						*GetPathNameSafe(World), Overlap.bBlockingHit, *GetPathNameSafe(Overlap.GetActor()), *GetPathNameSafe(Overlap.GetComponent()));
+				}
+			}
+		}
 	}
 	void VerifyDeath(UWorld* World)
 	{
@@ -749,11 +851,12 @@ NETWORK_TEST_CLASS(GaspMoverLifecyclePIE, "SurvivalRpg.GASP.Mover.Lifecycle")
 			AbilitySystem->ApplyGameplayEffectSpecToSelf(*Spec.Data.Get());
 		}
 	}
-	void Queue(bool bOptionalFollower)
+	void Queue(bool bOptionalFollower, bool bRequireOccupiedRespawn = false)
 	{
 		using namespace RpgGaspMoverLifecycleTests;
 		if (!bConfigured) return;
 		ASSERT_THAT(IsTrue(bFollower == bOptionalFollower));
+		bOccupiedRespawnStart = bRequireOccupiedRespawn;
 		Network.UntilClient(TEXT("Owner composes normal healthy Mover, ASC, equipment and optional presentation"), 0, [this](FState& State)
 			{ return Ready(State.World, LocalPawn(State.World), bFollower) && Mover(LocalPawn(State.World))->IsOnGround(); }, Timeout())
 			.ThenClient(TEXT("Select the real owning player and retain its normal input route"), 0, [this](FState& State)
@@ -810,7 +913,7 @@ NETWORK_TEST_CLASS(GaspMoverLifecyclePIE, "SurvivalRpg.GASP.Mover.Lifecycle")
 			}, Timeout())
 			.ThenServer(TEXT("Apply lethal damage through the existing authoritative gameplay effect, retaining held input"), [this](FState& State)
 				{ Health(Pawn(State.World, SubjectId))->DamageSelfDestruct(false); });
-		if (!bFollower)
+		if (!bFollower && !bOccupiedRespawnStart)
 		{
 			Network.UntilClient(TEXT("Owner has entered the terminal simulated mode while movement remains held"), 0, [this](FState& State)
 				{
@@ -840,6 +943,21 @@ NETWORK_TEST_CLASS(GaspMoverLifecyclePIE, "SurvivalRpg.GASP.Mover.Lifecycle")
 		}
 		else
 		{
+			if (bOccupiedRespawnStart)
+			{
+				Network.ThenServer(TEXT("Keep only the stored respawn start for a real late-joining player's normal spawn"), [this](FState& State)
+				{
+					ARpgPlayerState* Subject = Player(State.World, SubjectId);
+					APlayerController* PC = Subject ? Cast<APlayerController>(Subject->GetOwner()) : nullptr;
+					ARpgGameModeBase* Mode = State.World->GetAuthGameMode<ARpgGameModeBase>();
+					ASSERT_THAT(IsTrue(Subject && Subject->IsWaitingForRespawn() && !Subject->GetPawn() && PC && Mode));
+					if (!PC || !Mode) return;
+					OccupiedRespawnTransform = Mode->GetPlayerCheckpointTransform(PC);
+					ASSERT_THAT(IsTrue(Isolation.RetainOnlyStart(State.World, OccupiedRespawnTransform)));
+					UE_LOG(LogTemp, Display, TEXT("RpgMoverLifecycle occupied start retained world=%s reserved=%s"),
+						*GetPathNameSafe(State.World), *OccupiedRespawnTransform.GetLocation().ToCompactString());
+				});
+			}
 			Network.ThenClientJoins()
 				.UntilClient(TEXT("Late join while dead receives waiting PlayerState with no living avatar"), 1, [this](FState& State)
 				{
@@ -850,12 +968,35 @@ NETWORK_TEST_CLASS(GaspMoverLifecyclePIE, "SurvivalRpg.GASP.Mover.Lifecycle")
 				}, Timeout())
 				.ThenClient(TEXT("Retain the late observer's persistent ASC before the next pawn spawns"), 1, [this](FState& State)
 					{ ObserverWorld = State.World; Observations.Add(State.World); });
+			if (bOccupiedRespawnStart)
+			{
+				Network.UntilClient(TEXT("The late joiner's own pawn naturally settles on the only remaining start"), 1, [this](FState& State)
+					{ return Ready(State.World, LocalPawn(State.World), false) && Mover(LocalPawn(State.World))->IsOnGround(); }, Timeout())
+					.ThenClient(TEXT("Identify the live player occupying the reserved respawn point"), 1, [this](FState& State)
+					{
+						RespawnBlockerId = LocalPawn(State.World)->GetPlayerState()->GetPlayerId();
+						ASSERT_THAT(IsTrue(RespawnBlockerId != SubjectId));
+					})
+					.UntilServer(TEXT("The real late-join capsule blocks the reserved respawn shape on authority"), [this](FState& State)
+						{ return RespawnStartHasBlocker(State.World); }, Timeout());
+			}
 		}
 		Network.UntilServer(TEXT("Old authority pawn, equipment actors and follower are released"), [this](FState& State) { return OldObjectsReleased(State.World); }, Timeout())
 			.UntilClients(TEXT("All clients release the old pawn-owned visual and equipment objects"), [this](FState& State) { return OldObjectsReleased(State.World); }, Timeout())
 			.UntilClient(TEXT("Server-authored respawn delay permits the existing owner request"), 0, [this](FState& State)
-				{ const ARpgPlayerState* StateOwner = Player(State.World, SubjectId); return StateOwner && StateOwner->IsWaitingForRespawn() && StateOwner->CanRespawnNow(); }, Timeout())
-			.ThenClient(TEXT("Release old held input and send the real owning-controller respawn RPC once"), 0, [this](FState& State)
+				{ const ARpgPlayerState* StateOwner = Player(State.World, SubjectId); return StateOwner && StateOwner->IsWaitingForRespawn() && StateOwner->CanRespawnNow(); }, Timeout());
+		if (bOccupiedRespawnStart)
+		{
+			Network.ThenServer(TEXT("Verify the late joiner still physically blocks the stored start immediately before the real respawn RPC"), [this](FState& State)
+			{
+				const bool bBlocked = RespawnStartHasBlocker(State.World);
+				ASSERT_THAT(IsTrue(bBlocked));
+				UE_LOG(LogTemp, Display, TEXT("RpgMoverLifecycle occupied start before respawn blocking=%d reserved=%s blocker=%s actor=%s"),
+					bBlocked, *OccupiedRespawnTransform.GetLocation().ToCompactString(), *GetPathNameSafe(Pawn(State.World, RespawnBlockerId)),
+					Pawn(State.World, RespawnBlockerId) ? *Pawn(State.World, RespawnBlockerId)->GetActorLocation().ToCompactString() : TEXT("missing"));
+			});
+		}
+		Network.ThenClient(TEXT("Release old held input and send the real owning-controller respawn RPC once"), 0, [this](FState& State)
 			{
 				Input.Stop();
 				ARpgPlayerController* PC = Cast<ARpgPlayerController>(State.World->GetFirstPlayerController());
@@ -865,9 +1006,13 @@ NETWORK_TEST_CLASS(GaspMoverLifecyclePIE, "SurvivalRpg.GASP.Mover.Lifecycle")
 			.UntilServer(TEXT("Respawn reuses PlayerState ASC and composes a new healthy equipped Mover on authority"), [this](FState& State) { return Respawned(State.World); }, Timeout())
 			.UntilClients(TEXT("Owner and late observer receive the new healthy pawn and automatic profile composition"), [this](FState& State) { return Respawned(State.World); }, Timeout())
 			.ThenClient(TEXT("Drive the newly possessed pawn through normal Mover input"), 0, [this](FState& State)
-				{ Input.Start(LocalPawn(State.World)); Input.Move(true); })
+				{ Input.Start(LocalPawn(State.World)); Input.Move(true); RespawnMovementStarted = FPlatformTime::Seconds(); })
 			.UntilServer(TEXT("All roles naturally move the respawned pawn beyond its starting position"), [this](FState&)
 			{
+				if (!bReportedRespawnMovement && FPlatformTime::Seconds() - RespawnMovementStarted >= 2.5)
+				{
+					bReportedRespawnMovement = true; ReportRespawnMovement();
+				}
 				for (UWorld* World : { AuthorityWorld.Get(), OwnerWorld.Get(), ObserverWorld.Get() })
 				{
 					APawn* Character = Pawn(World, SubjectId);

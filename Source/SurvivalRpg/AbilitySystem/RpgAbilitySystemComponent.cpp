@@ -17,6 +17,7 @@
 #include "SurvivalRpg/GameplayTags/RpgGameplayTags.h"
 #include "SurvivalRpg/System/RpgAssetManager.h"
 #include "SurvivalRpg/System/RpgGameData.h"
+#include "SurvivalRpg/Traversal/RpgTraversalQueryComponent.h"
 
 UE_DEFINE_GAMEPLAY_TAG(TAG_Gameplay_AbilityInputBlocked, "Gameplay.AbilityInputBlocked");
 
@@ -50,6 +51,7 @@ URpgAbilitySystemComponent::URpgAbilitySystemComponent(const FObjectInitializer&
 
 void URpgAbilitySystemComponent::EndPlay(const EEndPlayReason::Type EndPlayReason)
 {
+	ResetSimulatedMoverTraversalPresentation();
 	if (AActor* Avatar = GetAvatarActor())
 	{
 		if (URpgCharacterMoverComponent* Mover = Avatar->FindComponentByClass<URpgCharacterMoverComponent>())
@@ -101,6 +103,7 @@ void URpgAbilitySystemComponent::InitAbilityActorInfo(AActor* InOwnerActor, AAct
 	}
 	if (!bPreserveMontageState)
 	{
+		ResetSimulatedMoverTraversalPresentation();
 		Super::InitAbilityActorInfo(InOwnerActor, InAvatarActor);
 	}
 	else if (bPendingMontageRep)
@@ -145,10 +148,22 @@ PRAGMA_ENABLE_DEPRECATION_WARNINGS
 
 		TryActivateAbilitiesOnSpawn();
 	}
+	if (InAvatarActor && InAvatarActor->GetLocalRole() == ROLE_SimulatedProxy)
+	{
+		if (URpgCharacterMoverComponent* Mover = InAvatarActor->FindComponentByClass<URpgCharacterMoverComponent>())
+		{
+			// Actor channels can finish ASC binding after Mover has already finalized the late joiner's
+			// current frame. Catch up that same snapshot now; ordinary replacement guards still apply.
+			UE_LOG(LogRpgAbilitySystem, Verbose, TEXT("Mover traversal presentation avatar binding: avatar=%s animation=%s preserved=%d"),
+				*GetPathNameSafe(InAvatarActor), *GetPathNameSafe(ActorInfo->GetAnimInstance()), bPreserveMontageState);
+			Mover->RefreshTraversalPresentation(this);
+		}
+	}
 }
 
 void URpgAbilitySystemComponent::ClearActorInfo()
 {
+	ResetSimulatedMoverTraversalPresentation();
 	InitializedAnimInstance.Reset();
 	if (AActor* Avatar = GetAvatarActor())
 	{
@@ -158,6 +173,192 @@ void URpgAbilitySystemComponent::ClearActorInfo()
 		}
 	}
 	Super::ClearActorInfo();
+}
+
+bool URpgAbilitySystemComponent::IsSimulatedMoverTraversalMontage(const UAnimMontage* Montage) const
+{
+	const AActor* Avatar = GetAvatarActor();
+	if (!Montage || !Avatar || Avatar->GetLocalRole() != ROLE_SimulatedProxy
+		|| !Avatar->FindComponentByClass<URpgCharacterMoverComponent>()) return false;
+	const URpgTraversalQueryComponent* Query = Avatar->FindComponentByClass<URpgTraversalQueryComponent>();
+	if (!Query) return false;
+	const auto Matches = [Montage](const FRpgTraversalAnimationEntry& Entry) { return Entry.Montage == Montage; };
+	return Query->AllowedMantleAnimations.ContainsByPredicate(Matches)
+		|| Query->AllowedVaultAnimations.ContainsByPredicate(Matches)
+		|| Query->AllowedHurdleAnimations.ContainsByPredicate(Matches);
+}
+
+void URpgAbilitySystemComponent::OnRep_ReplicatedAnimMontage()
+{
+	const FGameplayAbilityRepAnimMontage& Replicated = GetRepAnimMontageInfo();
+	UAnimMontage* Montage = Replicated.GetAnimMontage();
+	if (IsSimulatedMoverTraversalMontage(Montage))
+	{
+		// Receipt may precede the interpolated start by several movement frames. In particular, do not let
+		// stock GAS fast-forward and emit notifies before the corresponding capsule state is presented.
+		LastReceivedMoverTraversalMontage = Montage;
+		LastReceivedMoverTraversalPlayId = Replicated.PlayInstanceId;
+		bHasReceivedMoverTraversal = true;
+		bPendingMontageRep = false;
+		return;
+	}
+	if (const AActor* Avatar = GetAvatarActor(); Avatar && Avatar->GetLocalRole() == ROLE_SimulatedProxy
+		&& Avatar->FindComponentByClass<URpgCharacterMoverComponent>() && Replicated.Animation)
+	{
+		// An unrelated montage keeps ordinary GAS behavior. Older buffered traversal frames must never
+		// restart over that replacement, including when its delayed movement start has not arrived yet.
+		bWaitForNewMoverTraversalPlay = true;
+		bHasReceivedMoverTraversal = false;
+		if (bHasPresentedMoverTraversal)
+		{
+			BlockedMoverTraversalIdentity = PresentedMoverTraversalIdentity;
+			bHasBlockedMoverTraversal = true;
+		}
+		StopPresentedMoverTraversal(TEXT("ordinary montage replacement"));
+	}
+	Super::OnRep_ReplicatedAnimMontage();
+}
+
+void URpgAbilitySystemComponent::StopPresentedMoverTraversal(const TCHAR* Reason, const FMontageBlendSettings* BlendSettings)
+{
+	UAnimInstance* Animation = PresentedMoverTraversalAnimation.Get();
+	UAnimMontage* Montage = PresentedMoverTraversalMontage.Get();
+	FAnimMontageInstance* Instance = Animation ? Animation->GetMontageInstanceForID(PresentedMoverTraversalInstanceId) : nullptr;
+	if (Montage && Instance && Instance->Montage == Montage)
+	{
+		Instance->bEnableAutoBlendOut = Montage->bEnableAutoBlendOut;
+		if (Instance->IsActive() && Animation->GetActiveInstanceForMontage(Montage) == Instance)
+		{
+			UE_LOG(LogRpgAbilitySystem, Verbose, TEXT("Mover traversal presentation stop: avatar=%s reason=%s montage=%s instance=%d phase=%.6f authoritativeBlend=%d"),
+				*GetNameSafe(GetAvatarActor()), Reason, *GetNameSafe(Montage), PresentedMoverTraversalInstanceId, Instance->GetPosition(), BlendSettings != nullptr);
+			if (BlendSettings) Animation->Montage_StopWithBlendSettings(*BlendSettings, Montage);
+			else Animation->Montage_Stop(Montage->GetDefaultBlendOutTime(), Montage);
+		}
+	}
+	bPresentedMoverTraversalEnded = true;
+}
+
+void URpgAbilitySystemComponent::ResetSimulatedMoverTraversalPresentation()
+{
+	StopPresentedMoverTraversal();
+	PresentedMoverTraversalIdentity = {};
+	BlockedMoverTraversalIdentity = {};
+	PresentedMoverTraversalAnimation.Reset();
+	PresentedMoverTraversalMontage.Reset();
+	LastReceivedMoverTraversalMontage.Reset();
+	PresentedMoverTraversalInstanceId = INDEX_NONE;
+	PresentedMoverTraversalNotifyPosition = 0.f;
+	LastReceivedMoverTraversalPlayId = 0;
+	bHasPresentedMoverTraversal = bPresentedMoverTraversalEnded = bHasBlockedMoverTraversal = false;
+	bHasReceivedMoverTraversal = bWaitForNewMoverTraversalPlay = false;
+}
+
+void URpgAbilitySystemComponent::UpdateSimulatedMoverTraversal(const FRpgMoverTraversalSyncState* State, bool bMovementDisabled)
+{
+	const AActor* Avatar = GetAvatarActor();
+	if (!Avatar || Avatar->GetLocalRole() != ROLE_SimulatedProxy) return;
+	if (bMovementDisabled || !State || !State->Command.IsActive())
+	{
+		const FRpgMoverTraversalCommand* End = State && State->Command.IsTerminal()
+			&& bHasPresentedMoverTraversal && PresentedMoverTraversalIdentity == State->Command.Identity
+			&& State->Command.PresentationEndPosition >= 0.f ? &State->Command : nullptr;
+		UAnimInstance* Animation = PresentedMoverTraversalAnimation.Get();
+		FAnimMontageInstance* Instance = Animation ? Animation->GetMontageInstanceForID(PresentedMoverTraversalInstanceId) : nullptr;
+		if (!bMovementDisabled && End && !bPresentedMoverTraversalEnded && Instance && Instance->IsActive() && Instance->IsPlaying()
+			&& Instance->Montage == PresentedMoverTraversalMontage.Get()
+			&& Animation->GetActiveInstanceForMontage(Instance->Montage) == Instance
+			&& Instance->GetPosition() < End->PresentationEndPosition - UE_SMALL_NUMBER)
+		{
+			// Let the ordinary mesh tick consume the final authoritative interval once, including source blend
+			// notifies. Conditional inputs may have changed at this terminal boundary; the captured blend is fallback.
+			SetPresentedMoverTraversalPosition(*Instance, End->PresentationEndPosition);
+			return;
+		}
+		StopPresentedMoverTraversal(bMovementDisabled ? TEXT("death") : TEXT("terminal or absent sync"), End ? &End->PresentationEndBlend : nullptr);
+		return;
+	}
+	const FRpgMoverTraversalCommand& Command = State->Command;
+	UAnimMontage* Montage = Command.Context.Montage;
+	UAnimInstance* Animation = AbilityActorInfo.IsValid() ? AbilityActorInfo->GetAnimInstance() : nullptr;
+	if (!Animation || !IsReadyForReplicatedMontage())
+	{
+		UE_LOG(LogRpgAbilitySystem, Verbose, TEXT("Mover traversal presentation deferred: avatar=%s reason=%s phase=%.6f"),
+			*GetPathNameSafe(Avatar), Animation ? TEXT("montage readiness") : TEXT("AnimInstance not ready"), State->MontagePosition);
+		return;
+	}
+	if (!IsSimulatedMoverTraversalMontage(Montage)
+		|| !FMath::IsFinite(State->MontagePosition)
+		|| (bHasBlockedMoverTraversal && BlockedMoverTraversalIdentity == Command.Identity)) return;
+	if (bWaitForNewMoverTraversalPlay)
+	{
+		// The receipt of B cannot release an older, previously unseen A from the interpolation buffer.
+		// Correlate the actual authority play token, rather than comparing two unrelated identity counters.
+		if (!Command.bHasPresentationPlayId || !bHasReceivedMoverTraversal
+			|| LastReceivedMoverTraversalMontage.Get() != Montage || LastReceivedMoverTraversalPlayId != Command.PresentationPlayId)
+		{
+			UE_LOG(LogRpgAbilitySystem, Verbose, TEXT("Mover traversal presentation deferred: avatar=%s reason=ordinary replacement token phase=%.6f presentedId=%u receivedId=%u received=%d"),
+				*GetPathNameSafe(Avatar), State->MontagePosition, Command.PresentationPlayId, LastReceivedMoverTraversalPlayId, bHasReceivedMoverTraversal);
+			return;
+		}
+		bWaitForNewMoverTraversalPlay = false;
+	}
+	const float Position = FMath::Clamp(State->MontagePosition, 0.f, Montage->GetPlayLength());
+	if (!bHasPresentedMoverTraversal || !(PresentedMoverTraversalIdentity == Command.Identity))
+	{
+		StopPresentedMoverTraversal(TEXT("new traversal identity"));
+		// Joining an already-active traversal starts at its presented pose, without replaying historical notifies.
+		if (Animation->Montage_Play(Montage, Command.Context.PlayRate, EMontagePlayReturnType::MontageLength, Position) <= 0.f) return;
+		FAnimMontageInstance* Instance = Animation->GetActiveInstanceForMontage(Montage);
+		if (!Instance) return;
+		Instance->PushDisableRootMotion();
+		// Forced phase catch-up derives a temporary high substep rate. Its time-to-clip-end estimate must
+		// not trigger an early automatic blend; source notifies and the authoritative terminal own this instance's stop.
+		Instance->bEnableAutoBlendOut = false;
+		LocalAnimMontageInfo.AnimMontage = Montage;
+		PresentedMoverTraversalIdentity = Command.Identity;
+		PresentedMoverTraversalAnimation = Animation;
+		PresentedMoverTraversalMontage = Montage;
+		PresentedMoverTraversalInstanceId = Instance->GetInstanceID();
+		PresentedMoverTraversalNotifyPosition = Position;
+		bHasPresentedMoverTraversal = true;
+		bPresentedMoverTraversalEnded = false;
+		UE_LOG(LogRpgAbilitySystem, Verbose, TEXT("Mover traversal presentation start: avatar=%s montage=%s instance=%d sequence=%u wireId=%u phase=%.6f"),
+			*GetNameSafe(GetAvatarActor()), *GetNameSafe(Montage), PresentedMoverTraversalInstanceId, Command.Identity.MontageSequence,
+			Command.PresentationPlayId, Position);
+	}
+	FAnimMontageInstance* Instance = Animation->GetMontageInstanceForID(PresentedMoverTraversalInstanceId);
+	if (bPresentedMoverTraversalEnded || PresentedMoverTraversalAnimation.Get() != Animation || !Instance
+		|| Instance->Montage != Montage || !Instance->IsActive() || !Instance->IsPlaying()) return;
+	if (Animation->GetCurrentActiveMontage() != Montage || Animation->GetActiveInstanceForMontage(Montage) != Instance)
+	{
+		BlockedMoverTraversalIdentity = Command.Identity;
+		bHasBlockedMoverTraversal = true;
+		bPresentedMoverTraversalEnded = true;
+		UE_LOG(LogRpgAbilitySystem, Verbose, TEXT("Mover traversal presentation blocked: avatar=%s montage=%s instance=%d current=%s"),
+			*GetNameSafe(GetAvatarActor()), *GetNameSafe(Montage), PresentedMoverTraversalInstanceId, *GetNameSafe(Animation->GetCurrentActiveMontage()));
+		return;
+	}
+	// The ordinary animation tick consumes this exact interval and fires source notifies once. A repeated
+	// frozen frame keeps active notify states alive; backward corrections do not replay historical one-shot intervals.
+	Instance->SetPlayRate(Command.Context.PlayRate);
+	SetPresentedMoverTraversalPosition(*Instance, Position);
+}
+
+void URpgAbilitySystemComponent::SetPresentedMoverTraversalPosition(FAnimMontageInstance& Instance, float Position)
+{
+	PresentedMoverTraversalNotifyPosition = FMath::Max(PresentedMoverTraversalNotifyPosition, Instance.GetPosition());
+	if (Position <= PresentedMoverTraversalNotifyPosition)
+	{
+		Instance.SetPosition(Position);
+		Instance.SetNextPositionWithEvents(Position, Position);
+	}
+	else
+	{
+		// Set the origin once: the two-argument overload reuses its origin on every branching-point substep,
+		// which would repeatedly emit the same interval. A stationary range above is safe and preserves notify states.
+		Instance.SetPosition(PresentedMoverTraversalNotifyPosition);
+		Instance.SetNextPositionWithEvents(Position);
+	}
 }
 
 float URpgAbilitySystemComponent::PlayMontage(UGameplayAbility* AnimatingAbility,
@@ -181,7 +382,7 @@ float URpgAbilitySystemComponent::PlayMontage(UGameplayAbility* AnimatingAbility
 	TWeakObjectPtr<URpgCharacterMoverComponent> WeakMover = Mover;
 	const float Duration = Super::PlayMontage(AnimatingAbility, ActivationInfo, Montage, InPlayRate, StartSectionName, StartTimeSeconds);
 	if (Duration > 0.0f && (!WeakMover.IsValid() || !WeakMover->StartAbilityRootMotion(this, AnimatingAbility,
-		ActivationInfo.GetActivationPredictionKey(), Montage, InPlayRate)))
+		ActivationInfo.GetActivationPredictionKey(), Montage, InPlayRate, GetRepAnimMontageInfo().PlayInstanceId)))
 	{
 		// Playback can invoke callbacks which end or replace the ability. Never stop a replacement montage.
 		if (GetAnimatingAbility() == AnimatingAbility && GetCurrentMontage() == Montage)

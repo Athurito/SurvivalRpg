@@ -7,6 +7,9 @@ the prepared one-metre blocks. UEFN remains the gameplay mesh. Vault, Hurdle,
 airborne catches, taller climbs, ragdoll and the deferred block/walking pose
 work are separate steps.
 
+Grounded Vault is implemented in the subsequent
+[Mover Vault slice](gasp-mover-vault.md), reusing this ability and Experience.
+
 The PlayerState-owned ASC and Experience/PawnData composition stay in place.
 `GA_RpgGasp_MoverMantle` is a concrete Blueprint on the existing abstract
 `URpgGameplayAbility_Mantle` family. That family shares server target-data

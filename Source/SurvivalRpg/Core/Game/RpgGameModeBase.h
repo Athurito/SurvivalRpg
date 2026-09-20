@@ -64,6 +64,8 @@ public:
 	virtual void Logout(AController* Exiting) override;
 	virtual void HandleStartingNewPlayer_Implementation(APlayerController* NewPlayer) override;
 	virtual UClass* GetDefaultPawnClassForController_Implementation(AController* InController) override;
+	/** Prefers an unblocked player start, including Blueprint-owned collision and occupied PIE camera starts. */
+	virtual AActor* ChoosePlayerStart_Implementation(AController* Player) override;
 	virtual APawn* SpawnDefaultPawnAtTransform_Implementation(AController* NewPlayer, const FTransform& SpawnTransform) override;
 	virtual bool ShouldSpawnAtStartSpot(AController* Player) override;
 	virtual void FinishRestartPlayer(AController* NewPlayer, const FRotator& StartRotation) override;

@@ -1,4 +1,6 @@
 #include "RpgMoverTraversalTypes.h"
+#include "Animation/BlendProfile.h"
+#include "Curves/CurveFloat.h"
 
 /** A frame holds its own node strongly. It cannot keep arbitrarily old predecessor frames alive. */
 struct FRpgMoverTraversalLineage
@@ -11,7 +13,9 @@ struct FRpgMoverTraversalLineage
 void FRpgMoverTraversalRequest::Serialize(FArchive& Ar)
 {
 	Ar << Collider << ColliderTransform << EntryCapsuleLocation << LandingCapsuleLocation << FrontLedgeTarget;
-	Ar << Montage << StartTimeSeconds << PlayRate << HandoffTimeSeconds << WarpTargetName;
+	Ar << Montage << StartTimeSeconds << PlayRate << HandoffTimeSeconds << WarpTargetName << BackLedgeWarpTargetName;
+	if (!BackLedgeWarpTargetName.IsNone()) { Ar << BackLedgeTarget; }
+	else if (Ar.IsLoading()) { BackLedgeTarget = FTransform::Identity; }
 }
 
 bool FRpgMoverTraversalRequest::Equals(const FRpgMoverTraversalRequest& B) const
@@ -20,7 +24,9 @@ bool FRpgMoverTraversalRequest::Equals(const FRpgMoverTraversalRequest& B) const
 		EntryCapsuleLocation.Equals(B.EntryCapsuleLocation, .01f) && LandingCapsuleLocation.Equals(B.LandingCapsuleLocation, .01f) &&
 		FrontLedgeTarget.Equals(B.FrontLedgeTarget, .01f) && Montage == B.Montage &&
 		FMath::IsNearlyEqual(StartTimeSeconds, B.StartTimeSeconds) && FMath::IsNearlyEqual(PlayRate, B.PlayRate) &&
-		FMath::IsNearlyEqual(HandoffTimeSeconds, B.HandoffTimeSeconds) && WarpTargetName == B.WarpTargetName;
+		FMath::IsNearlyEqual(HandoffTimeSeconds, B.HandoffTimeSeconds) && WarpTargetName == B.WarpTargetName &&
+		BackLedgeWarpTargetName == B.BackLedgeWarpTargetName &&
+		(BackLedgeWarpTargetName.IsNone() || BackLedgeTarget.Equals(B.BackLedgeTarget, .01f));
 }
 
 bool FRpgMoverTraversalIdentity::operator==(const FRpgMoverTraversalIdentity& B) const
@@ -46,21 +52,45 @@ void FRpgMoverTraversalCommand::Serialize(FArchive& Ar)
 	Identity.Serialize(Ar);
 	Context.Serialize(Ar);
 	Ar << BaseVisualTransform << bPreserveMomentum << bHasRecoveryLocation << RecoveryCapsuleLocation;
+	SerializePresentation(Ar);
 	if (Ar.IsLoading()) { RetainObjectsForHistory(); }
+}
+
+void FRpgMoverTraversalCommand::SerializePresentation(FArchive& Ar)
+{
+	Ar << bHasPresentationPlayId;
+	if (bHasPresentationPlayId) Ar << PresentationPlayId;
+	bool bHasEnd = PresentationEndPosition >= 0.f && FMath::IsFinite(PresentationEndPosition);
+	Ar << bHasEnd;
+	if (bHasEnd)
+	{
+		Ar << PresentationEndPosition << PresentationEndBlend.Blend.BlendTime << PresentationEndBlend.Blend.BlendOption;
+		Ar << PresentationEndBlend.Blend.CustomCurve << PresentationEndBlend.BlendProfile;
+	}
+	else if (Ar.IsLoading())
+	{
+		PresentationEndPosition = -1.f;
+		PresentationEndBlend = FMontageBlendSettings{};
+	}
 }
 
 void FRpgMoverTraversalCommand::RetainObjectsForHistory()
 {
 	MontageLifetime.Reset(Context.Montage.Get());
+	PresentationProfileLifetime.Reset(PresentationEndBlend.BlendProfile.Get());
+	PresentationCurveLifetime.Reset(PresentationEndBlend.Blend.CustomCurve.Get());
 }
 
 void FRpgMoverTraversalCommand::AddReferencedObjects(FReferenceCollector& Collector)
 {
 	Collector.AddReferencedObject(Context.Montage);
+	Collector.AddReferencedObject(PresentationEndBlend.BlendProfile);
+	Collector.AddReferencedObject(PresentationEndBlend.Blend.CustomCurve);
 }
 
 bool FRpgMoverTraversalCommand::Equals(const FRpgMoverTraversalCommand& B) const
 {
+	// Cosmetic receipt correlation and stop blending do not change predicted movement or command identity.
 	return Identity == B.Identity && Phase == B.Phase && Context.Equals(B.Context) &&
 		BaseVisualTransform.Equals(B.BaseVisualTransform, .001f) && bPreserveMomentum == B.bPreserveMomentum &&
 		bHasRecoveryLocation == B.bHasRecoveryLocation && RecoveryCapsuleLocation.Equals(B.RecoveryCapsuleLocation, .01f);
@@ -88,8 +118,10 @@ bool FRpgMoverTraversalCommand::IsSuccessorOf(const FRpgMoverTraversalIdentity& 
 void FRpgMoverTraversalCommand::CompactAppliedEnd()
 {
 	const FName TargetName = Context.WarpTargetName;
+	const FName BackTargetName = Context.BackLedgeWarpTargetName;
 	Context = FRpgMoverTraversalRequest{};
 	Context.WarpTargetName = TargetName;
+	Context.BackLedgeWarpTargetName = BackTargetName;
 	BaseVisualTransform = FTransform::Identity;
 	bPreserveMomentum = false;
 	bHasRecoveryLocation = false;
@@ -142,7 +174,9 @@ bool FRpgMoverTraversalSyncState::NetSerialize(FArchive& Ar, UPackageMap* Map, b
 		if (Ar.IsLoading()) { *this = FRpgMoverTraversalSyncState{}; }
 		Ar << Command.Phase;
 		Command.Identity.Serialize(Ar);
-		Ar << Command.Context.WarpTargetName;
+		Ar << Command.Context.WarpTargetName << Command.Context.BackLedgeWarpTargetName;
+		Command.SerializePresentation(Ar);
+		if (Ar.IsLoading()) Command.RetainObjectsForHistory();
 		bEndApplied = true;
 		bOutSuccess = !Ar.IsError();
 		return bOutSuccess;
@@ -182,4 +216,22 @@ void FRpgMoverTraversalSyncState::Interpolate(const FMoverDataStructBase& From, 
 {
 	// Identity, collision and modifier activation are discrete. Interpolating cached warp starts creates a new trajectory.
 	*this = static_cast<const FRpgMoverTraversalSyncState&>(Pct < 1.f ? From : To);
+	const auto& FromState = static_cast<const FRpgMoverTraversalSyncState&>(From);
+	const auto& ToState = static_cast<const FRpgMoverTraversalSyncState&>(To);
+	if (!FromState.Command.IsActive() && ToState.Command.IsActive() && Pct > 0.f)
+	{
+		// Mover already presents To's movement mode and layered moves across this interval, including
+		// gap-filled network frames. Start its pose with that motion instead of waiting for the endpoint.
+		// Adopt discrete targets and warp caches intact; only the authored montage phase is interpolated.
+		*this = ToState;
+		MontagePosition = FMath::Lerp(ToState.Command.Context.StartTimeSeconds, ToState.MontagePosition,
+			FMath::Clamp(Pct, 0.f, 1.f));
+	}
+	else if (FromState.Command.IsActive() && ToState.Command.IsActive()
+		&& FromState.Command.Identity == ToState.Command.Identity
+		&& FromState.Command.Context.Montage == ToState.Command.Context.Montage)
+	{
+		// Pose phase follows the same interpolation fraction as the capsule; simulation warp caches remain discrete.
+		MontagePosition = FMath::Lerp(FromState.MontagePosition, ToState.MontagePosition, FMath::Clamp(Pct, 0.f, 1.f));
+	}
 }

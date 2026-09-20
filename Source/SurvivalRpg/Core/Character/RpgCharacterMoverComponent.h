@@ -15,6 +15,7 @@ class UAbilitySystemComponent;
 class UAnimInstance;
 class UGameplayAbility;
 class UMotionWarpingBaseAdapter;
+class URpgAbilitySystemComponent;
 class URpgMoverMotionWarpingComponent;
 
 /**
@@ -108,6 +109,11 @@ class SURVIVALRPG_API URpgCharacterMoverComponent : public UCharacterMoverCompon
 	GENERATED_BODY()
 
 public:
+	URpgCharacterMoverComponent();
+	/** Holds proxy traversal presentation at its last finalized pose while the network interpolation buffer is starved. */
+	virtual void TickComponent(float DeltaTime, ELevelTick TickType, FActorComponentTickFunction* ThisTickFunction) override;
+	/** Applies the current cosmetic snapshot when ASC avatar binding becomes ready after Mover finalization. */
+	void RefreshTraversalPresentation(URpgAbilitySystemComponent* AbilitySystem);
 	/** Preserves the GASP input producer and appends this tick's local GAS root-motion playback interval. */
 	virtual void ProduceInput(int32 DeltaTimeMS, FMoverInputCmdContext* Cmd) override;
 
@@ -145,9 +151,9 @@ public:
 	bool CanPlayAbilityRootMotion(const UAbilitySystemComponent* AbilitySystem, const UAnimMontage* Montage,
 		float PlayRate, FName StartSection, float StartTimeSeconds) const;
 
-	/** Adopts an already-playing GAS montage without playing it again. Called on authority and predicting owner. */
+	/** Adopts an already-playing GAS montage; the authority's GAS play token correlates cosmetic proxy presentation only. */
 	bool StartAbilityRootMotion(UAbilitySystemComponent* AbilitySystem, UGameplayAbility* Ability,
-		const FPredictionKey& ActivationKey, UAnimMontage* Montage, float PlayRate);
+		const FPredictionKey& ActivationKey, UAnimMontage* Montage, float PlayRate, uint8 PresentationPlayId);
 
 	/** Stops only the tracked local instance; a callback for an older montage cannot cancel its replacement. */
 	void StopAbilityRootMotion(const UAnimInstance* AnimInstance, int32 MontageInstanceId);
@@ -172,8 +178,12 @@ private:
 	void HandleAbilityRootMotionPreSimulation(const FMoverTimeStep& TimeStep, const FMoverInputCmdContext& InputCmd);
 
 	bool SampleAbilityRootMotion(double SimTimeMs, FRpgMoverAbilityRootMotion& OutMove) const;
+	void CaptureTraversalPresentationEnd(const UAnimInstance* Animation, int32 InstanceId);
+	void UpdateTraversalPresentation(const FMoverSyncState& SyncState, URpgAbilitySystemComponent* AbilitySystem = nullptr);
 	void PrepareTraversalSimulation(const FMoverTimeStep& TimeStep, const FMoverTickStartData& StartingData);
 	void ApplyTraversalCollisionLease(UPrimitiveComponent* Collider);
+	/** Publishes only this corrected command's fixed targets and releases targets from the preceding visible state. */
+	void UpdateTraversalWarpTargets(const FRpgMoverTraversalRequest* Request);
 	const FRpgMoverTraversalCommand& GetVisibleTraversalCommand() const;
 	UFUNCTION()
 	void HandleTraversalPostFinalize(const FMoverSyncState& SyncState, const FMoverAuxStateContext& AuxState);
@@ -185,6 +195,8 @@ private:
 	/** Original per-tick input for GASP's animation/conditional blend-out read model, never used to move the leased capsule. */
 	UPROPERTY(Transient) FCharacterDefaultInputs TraversalPresentationInputs;
 	UPROPERTY(Transient) TObjectPtr<UPrimitiveComponent> LeasedCollisionComponent;
+	// Presentation target names owned by this component; never retain a replaced Vault's rear target during Mantle.
+	TArray<FName, TInlineAllocator<2>> PublishedTraversalWarpTargets;
 	bool bAddedCollisionIgnore = false;
 	bool bTraversalRootMotionScope = false;
 	bool bTraversalGeometryInvalidThisTick = false;

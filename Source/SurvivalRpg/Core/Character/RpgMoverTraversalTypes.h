@@ -25,17 +25,21 @@ struct SURVIVALRPG_API FRpgMoverTraversalRequest
 	UPROPERTY() TWeakObjectPtr<UPrimitiveComponent> Collider;
 	/** Obstacle pose validated by this activation. Moving obstacles require a later integration. */
 	UPROPERTY() FTransform ColliderTransform = FTransform::Identity;
-	/** Collision-safe start and landing positions, including the query's floor clearance. */
+	/** Collision-safe start and montage exit capsule centers; a Vault exit may be airborne. */
 	UPROPERTY() FVector EntryCapsuleLocation = FVector::ZeroVector;
 	UPROPERTY() FVector LandingCapsuleLocation = FVector::ZeroVector;
 	/** GASP's fixed front ledge target in the gameplay mesh's base-space convention. */
 	UPROPERTY() FTransform FrontLedgeTarget = FTransform::Identity;
+	/** Optional validated rear ledge for translation-only Vault windows, in the same world/base-space convention. */
+	UPROPERTY() FTransform BackLedgeTarget = FTransform::Identity;
 	/** Validated designer-authored linear montage and playback interval in seconds. */
 	UPROPERTY() TObjectPtr<UAnimMontage> Montage = nullptr;
 	UPROPERTY() float StartTimeSeconds = 0.f;
 	UPROPERTY() float PlayRate = 1.f;
 	UPROPERTY() float HandoffTimeSeconds = 0.f;
 	UPROPERTY() FName WarpTargetName = TEXT("FrontLedge");
+	/** Name of the optional rear target; None means this montage has no rear ledge warp window. */
+	UPROPERTY() FName BackLedgeWarpTargetName = NAME_None;
 
 	void Serialize(FArchive& Ar);
 	bool Equals(const FRpgMoverTraversalRequest& Other) const;
@@ -67,23 +71,32 @@ struct SURVIVALRPG_API FRpgMoverTraversalCommand
 	UPROPERTY() bool bPreserveMomentum = false;
 	UPROPERTY() bool bHasRecoveryLocation = false;
 	UPROPERTY() FVector RecoveryCapsuleLocation = FVector::ZeroVector;
+	/** Cosmetic correlation with authority GAS replication; never used to validate or reconcile gameplay commands. */
+	UPROPERTY() uint8 PresentationPlayId = 0;
+	UPROPERTY() bool bHasPresentationPlayId = false;
+	/** Actual authority stop pose and effective blend, retained by terminal history so source tails survive fixed-step boundaries. */
+	UPROPERTY() float PresentationEndPosition = -1.f;
+	UPROPERTY() FMontageBlendSettings PresentationEndBlend;
 
 	bool IsActive() const { return Phase == ERpgMoverTraversalPhase::Active; }
 	bool IsTerminal() const { return Phase == ERpgMoverTraversalPhase::Finished || Phase == ERpgMoverTraversalPhase::Cancelled; }
 	void Serialize(FArchive& Ar);
+	void SerializePresentation(FArchive& Ar);
 	void RetainObjectsForHistory();
 	void AddReferencedObjects(FReferenceCollector& Collector);
 	bool Equals(const FRpgMoverTraversalCommand& Other) const;
 	/** Records actual local predecessors. Weak links expire with their native NP input frames, never with a timer. */
 	void RecordPredecessors(const FRpgMoverTraversalCommand& Previous, const FRpgMoverTraversalIdentity& ObservedSyncIdentity);
 	bool IsSuccessorOf(const FRpgMoverTraversalIdentity& Other) const;
-	/** Releases applied recovery/asset resources while retaining the exact terminal identity and target name. */
+	/** Releases movement context and montage ownership; retains identity, target names and the small cosmetic stop payload. */
 	void CompactAppliedEnd();
 
 private:
 	// Native NP frame buffers are outside UObject GC traversal. Pin asset data, but never world-owned geometry:
 	// NP data stores can outlive World::CleanupWorld, and a strong collider reference would retain the old PIE world.
 	TStrongObjectPtr<UAnimMontage> MontageLifetime;
+	TStrongObjectPtr<UObject> PresentationProfileLifetime;
+	TStrongObjectPtr<UObject> PresentationCurveLifetime;
 	// Local history provenance only: deliberately absent from the client payload and authority sync serialization.
 	TSharedPtr<const FRpgMoverTraversalLineage> LocalLineage;
 };
@@ -105,7 +118,7 @@ USTRUCT()
 struct SURVIVALRPG_API FRpgMoverTraversalSyncState : public FMoverDataStructBase
 {
 	GENERATED_BODY()
-	/** Approved identity, fixed target and collision lease; simulated proxies receive this same state. */
+	/** Approved identity, fixed targets and collision lease; simulated proxies receive this same state. */
 	UPROPERTY() FRpgMoverTraversalCommand Command;
 	/** Value snapshots after the preceding simulation tick, including stock bone offset and rotation caches. */
 	UPROPERTY() TArray<FRpgMoverWarpModifierState> WarpModifiers;

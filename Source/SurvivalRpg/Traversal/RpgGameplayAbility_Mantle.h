@@ -35,7 +35,7 @@ template<> struct TStructOpsTypeTraits<FRpgMantleTargetData> : TStructOpsTypeTra
 	enum { WithNetSerializer = true, WithCopy = true };
 };
 
-/** Shared predicted GAS traversal lifecycle: CMC mantle/vault/hurdle and grounded Mover mantle; concrete Blueprint assets own montage presentation. */
+/** Shared predicted GAS traversal lifecycle: CMC mantle/vault/hurdle and grounded Mover mantle/vault; concrete Blueprint assets own montage presentation. */
 UCLASS(Abstract, Blueprintable)
 class SURVIVALRPG_API URpgGameplayAbility_Mantle : public URpgGameplayAbility
 {
@@ -98,8 +98,10 @@ public:
 	/** Resolves montage-authored mantle feet using the pawn's movement-specific visual-root transform. */
 	bool GetMantleLandingLocation(const APawn& Pawn, const FRpgTraversalQueryResult& Result, FVector& OutLocation) const;
 
-	/** Derives vault feet at the configured source handoff; unsupported exits return to normal CMC falling rather than inventing a floor. */
+	/** Derives vault feet at the configured source handoff; the movement system resumes ordinary falling at the unsupported exit. */
 	bool GetVaultExitLocation(const ACharacter& Character, const FRpgTraversalQueryResult& Result, FVector& OutLocation) const;
+	/** Resolves the same authored vault exit using CMC's mesh base or Mover's fixed simulation visual base. */
+	bool GetVaultExitLocation(const APawn& Pawn, const FRpgTraversalQueryResult& Result, FVector& OutLocation) const;
 
 	/** Derives hurdle feet at the source row's normal handoff from its curve-placed BackFloor warp and remaining root motion. */
 	bool GetHurdleLandingLocation(const ACharacter& Character, const FRpgTraversalQueryResult& Result, FVector& OutLocation) const;
@@ -127,9 +129,9 @@ private:
 	void BeginMoverMantle(const FRpgTraversalQueryResult& Result);
 	bool ValidateTraversal(const APawn& Pawn, const FRpgTraversalQueryResult& Result) const;
 	bool GetMantleLandingAtTime(const APawn& Pawn, const FRpgTraversalQueryResult& Result, float HandoffTime, FVector& OutLocation) const;
-	bool ValidateVaultTraversal(const ACharacter& Character, const FRpgTraversalQueryResult& Result) const;
+	bool ValidateVaultTraversal(const APawn& Pawn, const FRpgTraversalQueryResult& Result) const;
 	bool ValidateHurdleTraversal(const ACharacter& Character, const FRpgTraversalQueryResult& Result) const;
-	bool ValidateThinObstacleFaces(const ACharacter& Character, const FRpgTraversalQueryResult& Result) const;
+	bool ValidateThinObstacleFaces(const APawn& Pawn, const FRpgTraversalQueryResult& Result) const;
 	bool GetHurdleTargetsAndLanding(const ACharacter& Character, const FRpgTraversalQueryResult& Result,
 		float HandoffTime, FVector& OutFloorTarget, FVector& OutLocation) const;
 	bool FindHurdleSupport(const ACharacter& Character, const FVector& Feet, FHitResult& OutHit) const;

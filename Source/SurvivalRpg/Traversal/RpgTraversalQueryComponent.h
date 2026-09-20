@@ -115,6 +115,6 @@ public:
 
 	/** Checks the proposed animation against server-observed movement and the configured source chooser row. */
 	bool IsAnimationAllowed(const ACharacter& Character, const FRpgTraversalQueryResult& Result) const;
-	/** Applies the same eligibility rows to a composed pawn; the initial Mover integration accepts grounded mantle only. */
+	/** Applies the same eligibility rows to a composed pawn; Mover accepts configured grounded mantle and vault entries. */
 	bool IsAnimationAllowed(const APawn& Pawn, const FRpgTraversalQueryResult& Result) const;
 };
