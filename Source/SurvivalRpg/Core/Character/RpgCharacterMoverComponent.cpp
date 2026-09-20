@@ -7,6 +7,7 @@
 #include "Abilities/GameplayAbility.h"
 #include "Animation/AnimInstance.h"
 #include "Animation/AnimMontage.h"
+#include "Animation/BlendProfile.h"
 #include "Components/SkeletalMeshComponent.h"
 #include "Components/CapsuleComponent.h"
 #include "DefaultMovementSet/InstantMovementEffects/BasicInstantMovementEffects.h"
@@ -16,6 +17,8 @@
 #include "MoverSimulation.h"
 #include "MoverSimulationTypes.h"
 #include "SurvivalRpg/SurvivalRpg.h"
+#include "SurvivalRpg/AbilitySystem/RpgAbilitySystemComponent.h"
+#include "SurvivalRpg/Core/Character/RpgPawnExtensionComponent.h"
 
 namespace RpgAbilityRootMotion
 {
@@ -222,6 +225,21 @@ void FRpgMoverAbilityRootMotionInputs::Interpolate(const FMoverDataStructBase& F
 	*this = static_cast<const FRpgMoverAbilityRootMotionInputs&>(Pct < 1.0f ? From : To);
 }
 
+URpgCharacterMoverComponent::URpgCharacterMoverComponent()
+{
+	PrimaryComponentTick.bCanEverTick = true;
+	PrimaryComponentTick.bStartWithTickEnabled = false;
+}
+
+void URpgCharacterMoverComponent::TickComponent(float DeltaTime, ELevelTick TickType, FActorComponentTickFunction* ThisTickFunction)
+{
+	Super::TickComponent(DeltaTime, TickType, ThisTickFunction);
+	if (GetOwnerRole() == ROLE_SimulatedProxy)
+	{
+		UpdateTraversalPresentation(GetSyncState());
+	}
+}
+
 void URpgCharacterMoverComponent::BeginPlay()
 {
 	// The copied Blueprint serializes its own MovementModes map, so register this engine-facing lifecycle
@@ -235,6 +253,8 @@ void URpgCharacterMoverComponent::BeginPlay()
 	Super::BeginPlay();
 	OnPreSimulationTick.AddUniqueDynamic(this, &ThisClass::HandleAbilityRootMotionPreSimulation);
 	OnPostFinalize.AddUniqueDynamic(this, &ThisClass::HandleTraversalPostFinalize);
+	SetComponentTickEnabled(GetOwnerRole() == ROLE_SimulatedProxy);
+	if (USceneComponent* Visual = GetPrimaryVisualComponent()) Visual->AddTickPrerequisiteComponent(this);
 }
 
 void URpgCharacterMoverComponent::DisableMovementForDeath()
@@ -390,6 +410,7 @@ void URpgCharacterMoverComponent::EndTraversal(FGameplayAbilitySpecHandle Handle
 	const FRpgMoverTraversalIdentity& Identity = TraversalCommand.Identity;
 	if (!TraversalCommand.IsActive() || Identity.AbilityHandle != Handle || Identity.ActivationPredictionKey != ActivationKey.Current ||
 		Identity.bServerInitiatedKey != ActivationKey.bIsServerInitiated || Identity.MontageSequence != LeaseSequence) { return; }
+	CaptureTraversalPresentationEnd(AbilityAnimInstance.Get(), AbilityMontageInstanceId);
 	TraversalCommand.Phase = bPreserveMomentum ? ERpgMoverTraversalPhase::Finished : ERpgMoverTraversalPhase::Cancelled;
 	TraversalCommand.bPreserveMomentum = bPreserveMomentum && !bDeathMovementRequested;
 	TraversalCommand.bHasRecoveryLocation = !bDeathMovementRequested && RecoveryCapsuleLocation.IsSet() && !RecoveryCapsuleLocation->ContainsNaN();
@@ -461,6 +482,9 @@ void URpgCharacterMoverComponent::PrepareTraversalSimulation(const FMoverTimeSte
 			TraversalSimulationState.Command.bPreserveMomentum = Command->bPreserveMomentum;
 			TraversalSimulationState.Command.bHasRecoveryLocation = Command->bHasRecoveryLocation;
 			TraversalSimulationState.Command.RecoveryCapsuleLocation = Command->RecoveryCapsuleLocation;
+			TraversalSimulationState.Command.PresentationEndPosition = Command->PresentationEndPosition;
+			TraversalSimulationState.Command.PresentationEndBlend = Command->PresentationEndBlend;
+			TraversalSimulationState.Command.RetainObjectsForHistory();
 		}
 	}
 	FRpgMoverTraversalCommand& Active = TraversalSimulationState.Command;
@@ -519,8 +543,8 @@ void URpgCharacterMoverComponent::OnPostSimulate(const FMoverTimeStep& TimeStep,
 {
 	if (TraversalSimulationState.bEndApplied && TraversalSimulationState.Command.IsTerminal())
 	{
-		// Historical active frames retain their complete values. The applied terminal tombstone needs only
-		// identity and target names, avoiding persistent modifier/asset payload and strong collider ownership.
+		// Historical active frames retain complete values. The terminal retains identity, target names and
+		// the actual cosmetic stop blend, without warp caches, a montage reference or strong collider ownership.
 		TraversalSimulationState.Command.CompactAppliedEnd();
 		TraversalSimulationState.WarpModifiers.Reset();
 		TraversalSimulationState.MontagePosition = 0.f;
@@ -553,6 +577,7 @@ void URpgCharacterMoverComponent::ApplyTraversalCollisionLease(UPrimitiveCompone
 
 void URpgCharacterMoverComponent::HandleTraversalPostFinalize(const FMoverSyncState& SyncState, const FMoverAuxStateContext& AuxState)
 {
+	SetComponentTickEnabled(GetOwnerRole() == ROLE_SimulatedProxy);
 	const FRpgMoverTraversalSyncState* State = SyncState.SyncStateCollection.FindDataByType<FRpgMoverTraversalSyncState>();
 	const bool bActive = State && State->Command.IsActive() && SyncState.MovementMode != URpgDeadMovementMode::ModeName;
 	if (State && State->bEndApplied && State->Command.IsTerminal() &&
@@ -562,6 +587,35 @@ void URpgCharacterMoverComponent::HandleTraversalPostFinalize(const FMoverSyncSt
 	}
 	ApplyTraversalCollisionLease(bActive ? State->Command.Context.Collider.Get() : nullptr);
 	UpdateTraversalWarpTargets(bActive ? &State->Command.Context : nullptr);
+	UpdateTraversalPresentation(SyncState);
+}
+
+void URpgCharacterMoverComponent::RefreshTraversalPresentation(URpgAbilitySystemComponent* AbilitySystem)
+{
+	UpdateTraversalPresentation(GetSyncState(), AbilitySystem);
+}
+
+void URpgCharacterMoverComponent::UpdateTraversalPresentation(const FMoverSyncState& SyncState, URpgAbilitySystemComponent* AbilitySystem)
+{
+	if (GetOwnerRole() != ROLE_SimulatedProxy) return;
+	const FRpgMoverTraversalSyncState* State = SyncState.SyncStateCollection.FindDataByType<FRpgMoverTraversalSyncState>();
+	if (!AbilitySystem)
+	{
+		if (const URpgPawnExtensionComponent* Extension = URpgPawnExtensionComponent::FindPawnExtensionComponent(GetOwner()))
+		{
+			AbilitySystem = Extension->GetRpgAbilitySystemComponent();
+		}
+	}
+	if (!AbilitySystem || AbilitySystem->GetAvatarActor() != GetOwner())
+	{
+		if (State && State->Command.IsActive())
+		{
+			UE_LOG(LogRpgAbilitySystem, Verbose, TEXT("Mover traversal presentation deferred: pawn=%s reason=%s phase=%.6f"),
+				*GetPathNameSafe(GetOwner()), AbilitySystem ? TEXT("avatar not bound") : TEXT("PawnExtension ASC not ready"), State->MontagePosition);
+		}
+		return;
+	}
+	AbilitySystem->UpdateSimulatedMoverTraversal(State, bDeathMovementRequested || SyncState.MovementMode == URpgDeadMovementMode::ModeName);
 }
 
 void URpgCharacterMoverComponent::UpdateTraversalWarpTargets(const FRpgMoverTraversalRequest* Request)
@@ -698,7 +752,7 @@ bool URpgCharacterMoverComponent::CanPlayAbilityRootMotion(const UAbilitySystemC
 }
 
 bool URpgCharacterMoverComponent::StartAbilityRootMotion(UAbilitySystemComponent* AbilitySystem,
-	UGameplayAbility* Ability, const FPredictionKey& ActivationKey, UAnimMontage* Montage, float PlayRate)
+	UGameplayAbility* Ability, const FPredictionKey& ActivationKey, UAnimMontage* Montage, float PlayRate, uint8 PresentationPlayId)
 {
 	USkeletalMeshComponent* Mesh = Cast<USkeletalMeshComponent>(GetPrimaryVisualComponent());
 	UAnimInstance* AnimInstance = Mesh ? Mesh->GetAnimInstance() : nullptr;
@@ -746,6 +800,11 @@ bool URpgCharacterMoverComponent::StartAbilityRootMotion(UAbilitySystemComponent
 	AbilityRootMotion.MontageState.BlendOutTimeSeconds = Montage->GetDefaultBlendOutTime();
 	AbilityRootMotion.MontageState.bEnableAutoBlendOut = Montage->bEnableAutoBlendOut;
 	AbilityRootMotionStartTimeMs = BackendLiaisonComp->GetCurrentSimTimeMs();
+	if (GetOwnerRole() == ROLE_Authority && RpgAbilityRootMotion::MatchesTraversal(AbilityRootMotion, TraversalCommand))
+	{
+		TraversalCommand.PresentationPlayId = PresentationPlayId;
+		TraversalCommand.bHasPresentationPlayId = true;
+	}
 
 	UE_LOG(LogRpgAbilitySystem, Verbose,
 		TEXT("Mover GAS root motion started: Pawn=%s Montage=%s Instance=%d Ability=%s Key=%s Sequence=%u Rate=%.3f Start=%.3f"),
@@ -758,8 +817,28 @@ void URpgCharacterMoverComponent::StopAbilityRootMotion(const UAnimInstance* Ani
 {
 	if (AbilityAnimInstance.Get() == AnimInstance && AbilityMontageInstanceId == MontageInstanceId)
 	{
+		CaptureTraversalPresentationEnd(AnimInstance, MontageInstanceId);
 		ClearAbilityRootMotion();
 	}
+}
+
+void URpgCharacterMoverComponent::CaptureTraversalPresentationEnd(const UAnimInstance* Animation, int32 InstanceId)
+{
+	if (GetOwnerRole() != ROLE_Authority || !TraversalCommand.IsActive()
+		|| !RpgAbilityRootMotion::MatchesTraversal(AbilityRootMotion, TraversalCommand)) return;
+	const FAnimMontageInstance* Instance = nullptr;
+	if (Animation)
+	{
+		for (const FAnimMontageInstance* Candidate : Animation->MontageInstances)
+		{
+			if (Candidate && Candidate->GetInstanceID() == InstanceId) { Instance = Candidate; break; }
+		}
+	}
+	if (!Instance || !Instance->IsStopped() || (Instance->Montage && Instance->Montage != TraversalCommand.Context.Montage)) return;
+	TraversalCommand.PresentationEndPosition = Instance->GetPosition();
+	TraversalCommand.PresentationEndBlend = FMontageBlendSettings(FAlphaBlendArgs(Instance->GetBlend()));
+	TraversalCommand.PresentationEndBlend.BlendProfile = const_cast<UBlendProfile*>(Instance->GetActiveBlendProfile());
+	TraversalCommand.RetainObjectsForHistory();
 }
 
 void URpgCharacterMoverComponent::ClearAbilityRootMotion()
@@ -792,7 +871,7 @@ void URpgCharacterMoverComponent::UpdateSyncedMontageState(const FMoverTimeStep&
 {
 	if (SyncState.LayeredMoves.FindActiveMove(FRpgMoverAbilityRootMotion::StaticStruct()))
 	{
-		// ASC's replicated montage owns playback, position correction and stop on simulated proxies.
+		// ASC owns the single playback instance: ordinary montage replication or the finalized traversal clock.
 		// Running the engine's second playback path would restart the same montage and duplicate notifies.
 		// FMoverAnimMontageState::Reset is not exported by Mover; value initialization clears the same ownership.
 		SyncedMontageState = FMoverAnimMontageState{};

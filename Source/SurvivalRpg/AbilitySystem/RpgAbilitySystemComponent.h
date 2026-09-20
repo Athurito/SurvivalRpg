@@ -7,6 +7,7 @@
 #include "RpgAbilitySet.h"
 #include "Abilities/RpgGameplayAbility.h"
 #include "TimerManager.h"
+#include "SurvivalRpg/Core/Character/RpgMoverTraversalTypes.h"
 
 #include "RpgAbilitySystemComponent.generated.h"
 
@@ -36,6 +37,8 @@ public:
 		UAnimMontage* Montage, float InPlayRate, FName StartSectionName = NAME_None, float StartTimeSeconds = 0.0f) override;
 	/** Stops the matching Mover root-motion instance as well as the GAS montage, without affecting a replacement. */
 	virtual void CurrentMontageStop(float OverrideBlendOutTime = -1.0f) override;
+	/** Presents remote Mover traversal on the finalized movement clock; authority and predicting owners retain ordinary GAS playback. */
+	void UpdateSimulatedMoverTraversal(const FRpgMoverTraversalSyncState* State, bool bMovementDisabled);
 	
 	typedef TFunctionRef<bool(const URpgGameplayAbility* RpgAbility, FGameplayAbilitySpecHandle Handle)> TShouldCancelAbilityFunc;
 	void CancelAbilitiesByFunc(TShouldCancelAbilityFunc ShouldCancelFunc, bool bReplicateCancelAbility);
@@ -82,6 +85,8 @@ public:
 	void TryActivateAbilitiesOnSpawn();
 
 protected:
+	/** Configured Mover traversal montages are presented from movement history, preventing an earlier GAS receipt clock. */
+	virtual void OnRep_ReplicatedAnimMontage() override;
 	virtual void AbilitySpecInputPressed(FGameplayAbilitySpec& Spec) override;
 	virtual void AbilitySpecInputReleased(FGameplayAbilitySpec& Spec) override;
 	
@@ -188,6 +193,25 @@ protected:
 	TArray<FGameplayAbilitySpec> LastActiveAbilities;
 	
 private:
+	bool IsSimulatedMoverTraversalMontage(const UAnimMontage* Montage) const;
+	void StopPresentedMoverTraversal(const TCHAR* Reason = TEXT("reset"), const FMontageBlendSettings* BlendSettings = nullptr);
+	void SetPresentedMoverTraversalPosition(FAnimMontageInstance& Instance, float Position);
+	void ResetSimulatedMoverTraversalPresentation();
+	// Cosmetic identity is independent of ASC's byte-sized wire play ID and survives the authored blend-out.
+	FRpgMoverTraversalIdentity PresentedMoverTraversalIdentity;
+	FRpgMoverTraversalIdentity BlockedMoverTraversalIdentity;
+	TWeakObjectPtr<UAnimInstance> PresentedMoverTraversalAnimation;
+	TWeakObjectPtr<UAnimMontage> PresentedMoverTraversalMontage;
+	TWeakObjectPtr<UAnimMontage> LastReceivedMoverTraversalMontage;
+	int32 PresentedMoverTraversalInstanceId = INDEX_NONE;
+	float PresentedMoverTraversalNotifyPosition = 0.f;
+	uint8 LastReceivedMoverTraversalPlayId = 0;
+	bool bHasPresentedMoverTraversal = false;
+	bool bPresentedMoverTraversalEnded = false;
+	bool bHasBlockedMoverTraversal = false;
+	bool bHasReceivedMoverTraversal = false;
+	bool bWaitForNewMoverTraversalPlay = false;
+
 	/** Weak identity of the last initialized animation instance; ActorInfo resolves the mesh's current instance dynamically. */
 	TWeakObjectPtr<UAnimInstance> InitializedAnimInstance;
 

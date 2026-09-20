@@ -11,7 +11,7 @@ class FTestCommandBuilder;
 namespace RpgGaspMoverTraversalTests
 {
 enum class EAction : uint8 { Mantle, Vault };
-enum class EScenario : uint8 { Success, Jump, HeldRetry, BlockedExit, Cancel, Death, ColliderLoss, LateJoin, CorrectDuringWarp, CorrectAfterWarp };
+enum class EScenario : uint8 { Success, Jump, HeldRetry, BlockedExit, Cancel, Death, ColliderLoss, LateJoin, CorrectDuringWarp, CorrectAfterWarp, ReplaceActiveAndReplay, ReplacePendingAndReplay };
 enum class EGait : uint8 { Stand, Walk, Run };
 }
 

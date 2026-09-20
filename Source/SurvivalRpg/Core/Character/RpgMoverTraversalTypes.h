@@ -71,23 +71,32 @@ struct SURVIVALRPG_API FRpgMoverTraversalCommand
 	UPROPERTY() bool bPreserveMomentum = false;
 	UPROPERTY() bool bHasRecoveryLocation = false;
 	UPROPERTY() FVector RecoveryCapsuleLocation = FVector::ZeroVector;
+	/** Cosmetic correlation with authority GAS replication; never used to validate or reconcile gameplay commands. */
+	UPROPERTY() uint8 PresentationPlayId = 0;
+	UPROPERTY() bool bHasPresentationPlayId = false;
+	/** Actual authority stop pose and effective blend, retained by terminal history so source tails survive fixed-step boundaries. */
+	UPROPERTY() float PresentationEndPosition = -1.f;
+	UPROPERTY() FMontageBlendSettings PresentationEndBlend;
 
 	bool IsActive() const { return Phase == ERpgMoverTraversalPhase::Active; }
 	bool IsTerminal() const { return Phase == ERpgMoverTraversalPhase::Finished || Phase == ERpgMoverTraversalPhase::Cancelled; }
 	void Serialize(FArchive& Ar);
+	void SerializePresentation(FArchive& Ar);
 	void RetainObjectsForHistory();
 	void AddReferencedObjects(FReferenceCollector& Collector);
 	bool Equals(const FRpgMoverTraversalCommand& Other) const;
 	/** Records actual local predecessors. Weak links expire with their native NP input frames, never with a timer. */
 	void RecordPredecessors(const FRpgMoverTraversalCommand& Previous, const FRpgMoverTraversalIdentity& ObservedSyncIdentity);
 	bool IsSuccessorOf(const FRpgMoverTraversalIdentity& Other) const;
-	/** Releases applied recovery/asset resources while retaining the exact terminal identity and owned target names. */
+	/** Releases movement context and montage ownership; retains identity, target names and the small cosmetic stop payload. */
 	void CompactAppliedEnd();
 
 private:
 	// Native NP frame buffers are outside UObject GC traversal. Pin asset data, but never world-owned geometry:
 	// NP data stores can outlive World::CleanupWorld, and a strong collider reference would retain the old PIE world.
 	TStrongObjectPtr<UAnimMontage> MontageLifetime;
+	TStrongObjectPtr<UObject> PresentationProfileLifetime;
+	TStrongObjectPtr<UObject> PresentationCurveLifetime;
 	// Local history provenance only: deliberately absent from the client payload and authority sync serialization.
 	TSharedPtr<const FRpgMoverTraversalLineage> LocalLineage;
 };

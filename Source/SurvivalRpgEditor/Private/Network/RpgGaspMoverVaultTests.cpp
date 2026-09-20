@@ -21,6 +21,9 @@ NETWORK_TEST_CLASS(GaspMoverVaultPIE, "SurvivalRpg.GASP.Mover.Vault")
 	TEST_METHOD(RemoteStandingVaultCrossesRearEdgeAndFallsToLowerFloor) { Queue(EGait::Stand); }
 	TEST_METHOD(RemoteWalkingVaultCrossesRearEdgeAndKeepsMoving) { Queue(EGait::Walk); }
 	TEST_METHOD(RemoteRunningVaultCrossesRearEdgeAndKeepsMoving) { Queue(EGait::Run); }
+	TEST_METHOD(ListenHostRunningVaultKeepsObserverMontageWithDisplayedMovement) { Queue(EGait::Run, EScenario::Success, true); }
+	TEST_METHOD(EquipmentMontageReplacesPresentedVaultThenSameAssetCanReplay) { Queue(EGait::Stand, EScenario::ReplaceActiveAndReplay, true); }
+	TEST_METHOD(EquipmentMontageReplacesPendingVaultWithoutDelayedResurrection) { Queue(EGait::Stand, EScenario::ReplacePendingAndReplay, true); }
 	TEST_METHOD(PositiveAngleAlignsOwnerBodyWithoutTurningView) { Queue(EGait::Run, EScenario::Success, false, 35.0f); }
 	TEST_METHOD(NegativeAngleAlignsListenHostWithoutTurningView) { Queue(EGait::Run, EScenario::Success, true, -35.0f); }
 	TEST_METHOD(ListenHostStandingVaultCrossesTheThinnerBarrier) { Queue(EGait::Stand, EScenario::Success, true, 0.0f, 1); }

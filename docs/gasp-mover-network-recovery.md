@@ -4,6 +4,11 @@ The September 18 listen-server recording exposed two separate problems: an occup
 PIE camera start was reused, and a client's displayed server pawn could retain a
 large delay after a loading stall. Animation play rate is unchanged by this fix.
 
+The September 20 follow-up separately aligns the visible traversal montage with
+that buffered movement clock. Recovery of movement delay alone did not fix an
+early Vault roll on observing clients; see
+[`gasp-mover-traversal-presentation.md`](gasp-mover-traversal-presentation.md).
+
 ## Spawn selection
 
 `ARpgGameModeBase` now checks occupancy before preferring a PIE camera start and

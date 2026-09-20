@@ -45,6 +45,8 @@
 #include "SurvivalRpg/Core/Game/RpgGameModeBase.h"
 #include "SurvivalRpg/Core/Player/RpgPlayerState.h"
 #include "SurvivalRpg/Development/RpgDeveloperSettings.h"
+#include "SurvivalRpg/Equipment/RpgEquipmentManagerComponent.h"
+#include "SurvivalRpg/Equipment/RpgWeaponInstance.h"
 #include "SurvivalRpg/Traversal/RpgGameplayAbility_Mantle.h"
 #include "SurvivalRpg/Traversal/RpgTraversalQueryComponent.h"
 #include "UnrealEdGlobals.h"
@@ -121,6 +123,12 @@ namespace RpgGaspMoverTraversalTests
 		if (ASC(Character)) for (FGameplayAbilitySpec& Candidate : ASC(Character)->GetActivatableAbilities())
 			if (Candidate.Ability && Candidate.Ability->GetClass()->GetPathName() == AbilityPath) return &Candidate;
 		return nullptr;
+	}
+	const FRpgWeaponAttackDefinition* PrimaryAttack(const APawn* Character)
+	{
+		const URpgEquipmentManagerComponent* Equipment = Character ? Character->FindComponentByClass<URpgEquipmentManagerComponent>() : nullptr;
+		const URpgWeaponInstance* Weapon = Equipment ? Cast<URpgWeaponInstance>(Equipment->GetEquipmentInstanceInSlot(ERpgEquipmentSlot::MainHand)) : nullptr;
+		return Weapon ? Weapon->FindAttackDefinition(FGameplayTag::RequestGameplayTag(TEXT("Weapon.Attack.Primary"))) : nullptr;
 	}
 	const TArray<FRpgTraversalAnimationEntry>& AnimationEntries(const APawn* Character, EAction Action)
 	{
@@ -337,6 +345,14 @@ namespace RpgGaspMoverTraversalTests
 					bLifecycle = BeforeTraversal->Command.IsTerminal() && BeforeTraversal->Command.Phase == OriginalPhase
 						&& AfterTraversal->Command.Phase == OriginalPhase && BeforeTraversal->bEndApplied
 						&& AfterTraversal->bEndApplied && Clean(Owner.Get());
+					const FGameplayAbilitySpec* Ability = Spec(Owner.Get());
+					UE_LOG(LogTemp, Display, TEXT("RpgMoverTraversalCorrection terminal expectedPhase=%d beforePhase=%d afterPhase=%d beforeEndApplied=%d afterEndApplied=%d clean=%d lease=%d collider=%s rootMove=%d abilityActive=%d frontTarget=%d rearTarget=%d floorTarget=%d"),
+						static_cast<int32>(OriginalPhase), static_cast<int32>(BeforeTraversal->Command.Phase), static_cast<int32>(AfterTraversal->Command.Phase),
+						BeforeTraversal->bEndApplied, AfterTraversal->bEndApplied, Clean(Owner.Get()), Mover(Owner.Get())->HasTraversalLease(),
+						*GetPathNameSafe(Mover(Owner.Get())->GetTraversalCollider()),
+						Mover(Owner.Get())->FindActiveLayeredMoveByType(FRpgMoverAbilityRootMotion::StaticStruct()) != nullptr,
+						Ability && Ability->IsActive(), Warping(Owner.Get())->FindWarpTarget(TEXT("FrontLedge")) != nullptr,
+						Warping(Owner.Get())->FindWarpTarget(TEXT("BackLedge")) != nullptr, Warping(Owner.Get())->FindWarpTarget(TEXT("BackFloor")) != nullptr);
 					bMontage = OriginalMontage.IsValid() && (!Instance || !Instance->IsPlaying());
 					bWarpHistory = BeforeTraversal->WarpModifiers.IsEmpty() && AfterTraversal->WarpModifiers.IsEmpty();
 				}
@@ -411,6 +427,11 @@ namespace RpgGaspMoverTraversalTests
 		float FirstTime = -1.0f, LastTime = -1.0f, LastWarpEnd = 0.0f, WarpYaw = 0.0f;
 		float BestAlignmentError = 180.0f, MaximumPostWarpError = 0.0f;
 		float LastLeaseSpeed = 0.0f;
+		float MaximumProxyMontagePhaseError = 0.0f;
+		float ProxyOnsetGapSeconds = 0.0f, ProxyOnsetGapFrameSeconds = 0.0f, MaximumProxyOnsetGapSeconds = 0.0f;
+		int32 ProxyMontagePhaseSamples = 0, ProxyPreTraversalSamples = 0;
+		bool bProxyMontageBeforeTraversal = false, bProxyMontagePhaseMismatch = false, bProxyActiveMontageMissing = false;
+		bool bProxyTraversalOnsetDelayed = false;
 		float DeadSeconds = 0.0f, MaximumDeathDrift = 0.0f;
 		float MaximumDeathDriftSeconds = 0.0f, OwnerDeathConvergenceSeconds = 0.0f;
 		int32 BeforeDeathRollbacks = 0, OwnerDeathAnchorAdjustments = 0;
@@ -450,6 +471,15 @@ struct FRpgGaspMoverTraversalTestFixture::FState
 	ECollisionEnabled::Type PreviousCollision = ECollisionEnabled::NoCollision;
 	FBox Bounds{ForceInit}, DeckBounds{ForceInit};
 	FObservation OwnerRecord, AuthorityRecord, ProxyRecord;
+	TStrongObjectPtr<URpgMoverTraversalNotifyTestObserver> ProxyNotifyObserver;
+	TWeakObjectPtr<UAnimInstance> ProxyNotifyAnimation;
+	TWeakObjectPtr<UAnimMontage> ReplacementMontage, RepeatedTraversalMontage;
+	FRpgMoverTraversalIdentity FirstTraversalIdentity;
+	int32 FirstTraversalInstanceId = INDEX_NONE, FirstProxyInstanceId = INDEX_NONE;
+	int32 ReplacementOwnerInstance = INDEX_NONE, ReplacementProxyInstance = INDEX_NONE, AttackReleaseFrames = 0;
+	float ReplacementOwnerFirst = -1.f, ReplacementOwnerLast = -1.f, ReplacementProxyFirst = -1.f, ReplacementProxyLast = -1.f;
+	bool bReplacementTriggered = false, bReplayStarted = false, bReplacementRestarted = false, bTraversalReplacedTheAttack = false;
+	bool bReplacementOverlappedPresentedTraversal = false, bFirstProxyHadTraversal = false;
 	FDelegateHandle TickHandle, BeforeDeathDispatchHandle, AfterDeathDispatchHandle;
 	FVector SpawnLocation = FVector::ZeroVector;
 	int32 PlayerId = INDEX_NONE, LaneIndex = 0, Waypoint = 0;
@@ -482,6 +512,7 @@ struct FRpgGaspMoverTraversalTestFixture::FState
 	APawn* Authority() const { return RpgGaspMoverTraversalTests::Pawn(ServerWorld.Get(), PlayerId); }
 	APawn* Observer() const { return RpgGaspMoverTraversalTests::Pawn(ObserverWorld.Get(), PlayerId); }
 	bool InterruptedScenario() const { return Scenario == EScenario::Cancel || Scenario == EScenario::Death || Scenario == EScenario::ColliderLoss || Scenario == EScenario::BlockedExit; }
+	bool ReplacementScenario() const { return Scenario == EScenario::ReplaceActiveAndReplay || Scenario == EScenario::ReplacePendingAndReplay; }
 	bool HoldMovement() const { return Scenario != EScenario::LateJoin && Scenario != EScenario::CorrectDuringWarp && Scenario != EScenario::CorrectAfterWarp; }
 	bool Landed(const FObservation& Record) const { return Action == EAction::Vault ? Record.bLandedBeyond : Record.bLandedOnObstacle; }
 	bool Finished(const FObservation& Record) const { return Landed(Record) && Record.bRestoredFacing && (!HoldMovement() || Record.bContinuedMoving); }
@@ -511,6 +542,7 @@ struct FRpgGaspMoverTraversalTestFixture::FState
 			if (!Ready(InputWorld(), Character, Action) || !Input || !Input->IsReadyToBindInputs() || !Spec(Character) || !Mover(Character)->IsOnGround()) return false;
 			PlayerId = Character->GetPlayerState()->GetPlayerId();
 			if (!Ready(ServerWorld.Get(), Authority(), Action) || !Isolation.Isolated(ServerWorld.Get())) return false;
+			if (ReplacementScenario() && (!PrimaryAttack(Authority()) || !PrimaryAttack(Character))) return false;
 			return Scenario == EScenario::LateJoin || (Ready(ObserverWorld.Get(), Observer(), Action) && Observer()->GetLocalRole() == ROLE_SimulatedProxy);
 		}, FTimespan::FromSeconds(60.0))
 		.Then(TEXT("Find the prepared one-meter lane and start ordinary forward input"), [this]()
@@ -667,6 +699,12 @@ struct FRpgGaspMoverTraversalTestFixture::FState
 		ProxyRecord.AbilitySystem = RpgGaspMoverTraversalTests::ASC(Observer());
 		RpgGaspMoverTraversalTests::Warping(Observer())->AddOrUpdateWarpTargetFromLocationAndRotation(
 			RpgGaspMoverTraversalTests::UnrelatedTarget, RpgGaspMoverTraversalTests::UnrelatedLocation, FRotator::ZeroRotator);
+		ProxyNotifyObserver.Reset(NewObject<URpgMoverTraversalNotifyTestObserver>());
+		for (const FRpgTraversalAnimationEntry& Entry : RpgGaspMoverTraversalTests::AnimationEntries(Observer(), Action))
+			ProxyNotifyObserver->AddMontage(Entry.Montage.Get());
+		ProxyNotifyAnimation = RpgGaspMoverTraversalTests::Mesh(Observer())->GetAnimInstance();
+		ProxyNotifyAnimation->OnPlayMontageNotifyBegin.AddDynamic(ProxyNotifyObserver.Get(), &URpgMoverTraversalNotifyTestObserver::ObserveBegin);
+		ProxyNotifyAnimation->OnPlayMontageNotifyEnd.AddDynamic(ProxyNotifyObserver.Get(), &URpgMoverTraversalNotifyTestObserver::ObserveEnd);
 	}
 	void ReportMontage(const TCHAR* Phase, const FObservation& Record, APawn* Character, UAnimInstance* Animation,
 		UAnimMontage* Montage, const FAnimMontageInstance* Instance, float Position) const
@@ -737,6 +775,166 @@ struct FRpgGaspMoverTraversalTestFixture::FState
 		Record.OwnerDeathAnchorAdjustments = 1;
 		Record.BeforeDeathDispatch = FMoverSyncState(); Record.bBeforeDeathDispatchValid = false;
 	}
+	void TryReplaceTraversal()
+	{
+		using namespace RpgGaspMoverTraversalTests;
+		if (!ReplacementScenario() || bReplacementTriggered || !AuthorityRecord.bSawActiveSimulation || !AuthorityRecord.Montage.IsValid()) return;
+		if (Scenario == EScenario::ReplaceActiveAndReplay && (!ProxyRecord.bSawActiveSimulation || !ProxyRecord.Montage.IsValid())) return;
+		const FGameplayAbilitySpec* Ability = Spec(Authority());
+		const FRpgWeaponAttackDefinition* Attack = PrimaryAttack(Authority());
+		if (!Ability || !Ability->IsActive() || !Attack || !Attack->Montage) return;
+		bFirstProxyHadTraversal = ProxyRecord.bSawActiveSimulation;
+		FirstTraversalIdentity = AuthorityRecord.ObservedSimulationIdentity;
+		FirstTraversalInstanceId = AuthorityRecord.InstanceId;
+		FirstProxyInstanceId = ProxyRecord.InstanceId;
+		RepeatedTraversalMontage = AuthorityRecord.Montage;
+		ReplacementMontage = Attack->Montage;
+		bReplacementTriggered = bInterrupted = true;
+		Key(EKeys::W, false); bMoveReleased = true;
+		Key(EKeys::SpaceBar, false); bSpaceReleased = true;
+		// Exercise the real equipment input and ordinary replicated GAS montage immediately after a
+		// gameplay cancellation. The observer still has the old traversal in its interpolation history.
+		ASC(Authority())->CancelAbilityHandle(Ability->Handle);
+		Key(EKeys::LeftMouseButton, true); AttackReleaseFrames = 2;
+		Report(TEXT("replacement_requested"));
+	}
+	void ObserveReplacement(APawn* Character, bool bProxy)
+	{
+		using namespace RpgGaspMoverTraversalTests;
+		if (!ReplacementScenario() || !bReplacementTriggered || bReplayStarted || !Character || !Mesh(Character)) return;
+		UAnimInstance* Animation = Mesh(Character)->GetAnimInstance();
+		if (!Animation) return;
+		UAnimMontage* Current = Animation->GetCurrentActiveMontage();
+		int32& InstanceId = bProxy ? ReplacementProxyInstance : ReplacementOwnerInstance;
+		float& First = bProxy ? ReplacementProxyFirst : ReplacementOwnerFirst;
+		float& Last = bProxy ? ReplacementProxyLast : ReplacementOwnerLast;
+		if (Current == ReplacementMontage.Get() && Animation->Montage_IsPlaying(Current))
+		{
+			const FAnimMontageInstance* Instance = Animation->GetActiveInstanceForMontage(Current);
+			if (!Instance) return;
+			if (InstanceId == INDEX_NONE) { InstanceId = Instance->GetInstanceID(); First = Instance->GetPosition(); }
+			else bReplacementRestarted |= InstanceId != Instance->GetInstanceID();
+			Last = Instance->GetPosition();
+			if (bProxy)
+			{
+				const FRpgMoverTraversalSyncState* Traversal = Mover(Character)->GetSyncState().SyncStateCollection.FindDataByType<FRpgMoverTraversalSyncState>();
+				bReplacementOverlappedPresentedTraversal |= Traversal && Traversal->Command.IsActive() && Traversal->Command.Identity == FirstTraversalIdentity;
+			}
+		}
+		else if (bProxy && InstanceId != INDEX_NONE && IsTraversal(Character, Current, Action))
+		{
+			bTraversalReplacedTheAttack = true;
+		}
+	}
+	void TryReplayTraversal()
+	{
+		using namespace RpgGaspMoverTraversalTests;
+		if (!ReplacementScenario() || !bReplacementTriggered || bReplayStarted
+			|| ReplacementOwnerLast < ReplacementOwnerFirst + .1f || ReplacementProxyLast < ReplacementProxyFirst + .1f) return;
+		for (APawn* Character : { Owner(), Authority(), Observer() })
+		{
+			if (!Character || !Clean(Character) || !Mover(Character)->IsOnGround()
+				|| Mesh(Character)->GetAnimInstance()->Montage_IsPlaying(ReplacementMontage.Get())) return;
+		}
+		TestRunner->TestTrue(TEXT("Equipment replacement overlapped the observer's old active NP traversal"), bReplacementOverlappedPresentedTraversal);
+		TestRunner->TestFalse(TEXT("Buffered traversal cannot take over the equipment montage"), bTraversalReplacedTheAttack);
+		TestRunner->TestFalse(TEXT("Ordinary equipment replacement keeps one montage instance"), bReplacementRestarted);
+		TestRunner->TestEqual(TEXT("Replacement occurred at the requested observer lifecycle boundary"),
+			bFirstProxyHadTraversal, Scenario == EScenario::ReplaceActiveAndReplay);
+		TestRunner->TestFalse(TEXT("First traversal did not start before its presented movement"), ProxyRecord.bProxyMontageBeforeTraversal);
+		TestRunner->TestFalse(TEXT("First traversal kept its presented montage phase"), ProxyRecord.bProxyMontagePhaseMismatch);
+		TestRunner->TestFalse(TEXT("First traversal did not restart"), ProxyRecord.bMontageRestarted);
+		Report(TEXT("replacement_completed"));
+		// Keep the same worlds, actors, ASC, mesh and callback bindings; only per-play observations reset.
+		for (FObservation* Record : { &OwnerRecord, &AuthorityRecord, &ProxyRecord })
+		{
+			const auto World = Record->World; const auto Character = Record->Character; const auto AbilitySystem = Record->AbilitySystem;
+			const FDelegateHandle Committed = Record->Committed, Ended = Record->Ended;
+			*Record = FObservation();
+			Record->World = World; Record->Character = Character; Record->AbilitySystem = AbilitySystem;
+			Record->Committed = Committed; Record->Ended = Ended;
+		}
+		bReplayStarted = true; bInterrupted = false; bFinalHeading = false;
+		bSpaceReleased = false; bMoveReleased = false; PressedAt = -1.0; ContactAt = -1.0;
+		InputController->SetControlRotation(FRotator::ZeroRotator);
+		Key(EKeys::W, true);
+	}
+	/** Sample after NP finalization and skeletal animation, when both values describe this displayed frame. */
+	void ObserveProxyPresentation(FObservation& Record, APawn* Character, UAnimInstance* Animation,
+		UAnimMontage* VisibleMontage, const FRpgMoverTraversalSyncState* Presented, bool bPlaying, bool bActive,
+		bool bPresentedTraversing, float DeltaSeconds)
+	{
+		using namespace RpgGaspMoverTraversalTests;
+		const bool bWasInvalid = Record.bProxyMontageBeforeTraversal || Record.bProxyMontagePhaseMismatch || Record.bProxyActiveMontageMissing || Record.bProxyTraversalOnsetDelayed;
+		if (!bActive && !Record.bSawActiveSimulation && bPresentedTraversing && !bInterrupted)
+		{
+			Record.ProxyOnsetGapSeconds += DeltaSeconds;
+			Record.ProxyOnsetGapFrameSeconds = FMath::Max(Record.ProxyOnsetGapFrameSeconds, DeltaSeconds);
+			Record.MaximumProxyOnsetGapSeconds = FMath::Max(Record.MaximumProxyOnsetGapSeconds, Record.ProxyOnsetGapSeconds);
+			const UNetworkPredictionWorldManager* Prediction = Character->GetWorld()->GetSubsystem<UNetworkPredictionWorldManager>();
+			const float FixedStepSeconds = Prediction ? Prediction->GetFixedTickState().FixedStepMS * .001f : 0.0f;
+			// Pct=0 preserves the inactive endpoint although stock Mover already names Traversing.
+			// Allow that boundary and one observed render frame, but reject a multi-frame gap where
+			// the capsule traverses while its animation state still describes the approach.
+			Record.bProxyTraversalOnsetDelayed |= Record.ProxyOnsetGapSeconds > FixedStepSeconds + Record.ProxyOnsetGapFrameSeconds + .005f;
+		}
+		else
+		{
+			Record.ProxyOnsetGapSeconds = Record.ProxyOnsetGapFrameSeconds = 0.0f;
+		}
+		if (!bActive && !Record.bSawActiveSimulation)
+		{
+			++Record.ProxyPreTraversalSamples;
+			// A late packet must not start traversal while the observer still displays the approach.
+			// An already-presented play may retain its authored blend-out after a terminal snapshot.
+			Record.bProxyMontageBeforeTraversal |= bPlaying;
+		}
+		UAnimMontage* ExpectedMontage = bActive ? Presented->Command.Context.Montage.Get() : nullptr;
+		const FAnimMontageInstance* Instance = ExpectedMontage && Animation ? Animation->GetActiveInstanceForMontage(ExpectedMontage) : nullptr;
+		float PhaseError = 0.0f;
+		if (bActive && ExpectedMontage && !bInterrupted)
+		{
+			const bool bExpectedPlaying = bPlaying && VisibleMontage == ExpectedMontage && Instance;
+			// Immediate gameplay cancellation is allowed even before its delayed NP tombstone.
+			// Natural montage blend-out is likewise not required to retain an active instance.
+			float SourceHandoff = Presented->Command.Context.HandoffTimeSeconds;
+			const FRpgTraversalAnimationEntry* Entry = AnimationEntries(Character, Action).FindByPredicate(
+				[ExpectedMontage](const FRpgTraversalAnimationEntry& Candidate) { return Candidate.Montage == ExpectedMontage; });
+			const FCharacterDefaultInputs* PresentedInputs = Mover(Character)->GetLastInputCmd().InputCollection.FindDataByType<FCharacterDefaultInputs>();
+			if (Entry && Entry->MovementInputHandoffTime > 0.f && PresentedInputs
+				&& !PresentedInputs->GetMoveInput().Equals(FVector::ZeroVector, .1))
+			{
+				// Match the approved source notify's conditional handoff rather than requiring a visible
+				// instance after its legitimate WithMovementInput blend-out has already begun.
+				SourceHandoff = FMath::Min(SourceHandoff, Entry->MovementInputHandoffTime);
+			}
+			const float RequiredUntil = FMath::Min(SourceHandoff,
+				ExpectedMontage->GetPlayLength() - ExpectedMontage->GetDefaultBlendOutTime());
+			Record.bProxyActiveMontageMissing |= Presented->MontagePosition < RequiredUntil - KINDA_SMALL_NUMBER && !bExpectedPlaying;
+			if (bExpectedPlaying)
+			{
+				++Record.ProxyMontagePhaseSamples;
+				PhaseError = FMath::Abs(Instance->GetPosition() - Presented->MontagePosition);
+				Record.MaximumProxyMontagePhaseError = FMath::Max(Record.MaximumProxyMontagePhaseError, PhaseError);
+				const UNetworkPredictionWorldManager* Prediction = Character->GetWorld()->GetSubsystem<UNetworkPredictionWorldManager>();
+				const float FixedStepSeconds = Prediction ? Prediction->GetFixedTickState().FixedStepMS * .001f : 0.0f;
+				// Permit one simulation sample plus numerical tolerance, never the interpolation buffer's
+				// ~100 ms lead that caused the observer to roll before reaching the obstacle.
+				const float AllowedPhaseError = FixedStepSeconds * Presented->Command.Context.PlayRate * ExpectedMontage->RateScale + .005f;
+				Record.bProxyMontagePhaseMismatch |= PhaseError > AllowedPhaseError;
+			}
+		}
+		const bool bInvalid = Record.bProxyMontageBeforeTraversal || Record.bProxyMontagePhaseMismatch || Record.bProxyActiveMontageMissing || Record.bProxyTraversalOnsetDelayed;
+		if (bInvalid && !bWasInvalid)
+		{
+			UE_LOG(LogTemp, Display, TEXT("RpgMoverTraversal proxy presentation mismatch pawn=%s active=%d phase=%d npTime=%.4f visibleTime=%.4f error=%.4f early=%d wrongPhase=%d missing=%d onsetDelayed=%d onsetGap=%.4f expected=%s visible=%s"),
+				*GetPathNameSafe(Character), bActive, Presented ? static_cast<int32>(Presented->Command.Phase) : INDEX_NONE,
+				Presented ? Presented->MontagePosition : -1.0f, Instance ? Instance->GetPosition() : -1.0f, PhaseError,
+				Record.bProxyMontageBeforeTraversal, Record.bProxyMontagePhaseMismatch, Record.bProxyActiveMontageMissing,
+				Record.bProxyTraversalOnsetDelayed, Record.MaximumProxyOnsetGapSeconds,
+				*GetPathNameSafe(ExpectedMontage), *GetPathNameSafe(VisibleMontage));
+		}
+	}
 	void Observe(FObservation& Record, float DeltaSeconds)
 	{
 		using namespace RpgGaspMoverTraversalTests;
@@ -767,6 +965,11 @@ struct FRpgGaspMoverTraversalTestFixture::FState
 		const FMotionWarpingTarget* Unrelated = Warping(Character)->FindWarpTarget(UnrelatedTarget);
 		Record.bLostUnrelatedTarget |= !Unrelated || !Unrelated->GetLocation().Equals(UnrelatedLocation, 0.01);
 		const bool bSimulationActive = bObserveConfirmedPlay && TraversalState && TraversalState->Command.IsActive() && !TraversalState->bEndApplied;
+		if (Character->GetLocalRole() == ROLE_SimulatedProxy && bObserveConfirmedPlay)
+		{
+			ObserveProxyPresentation(Record, Character, Animation, Montage, TraversalState, bPlaying, bSimulationActive,
+				FinalizedSync.MovementMode == TEXT("Traversing"), DeltaSeconds);
+		}
 		if (bSimulationActive && FinalizedMovement)
 		{
 			Record.bSawActiveSimulation = true;
@@ -862,9 +1065,9 @@ struct FRpgGaspMoverTraversalTestFixture::FState
 		}
 		if (Character->GetLocalRole() == ROLE_SimulatedProxy && bObserveConfirmedPlay && bLease && Record.Montage.IsValid())
 		{
-			// GAS montage replication and NP interpolation have separate clocks. The finalized NP state
-			// supplies both the capsule pose and the traversal phase; its retained From time is a conservative
-			// post-warp boundary, even if the independently replicated visible montage has already stopped.
+			// The finalized NP state supplies capsule pose and visible traversal phase on the same clock.
+			// ObserveProxyPresentation also checks the actual montage; location checks alone missed an
+			// independently replicated GAS montage finishing while this displayed traversal was still active.
 			const FMoverSyncState& Sync = Mover(Character)->GetSyncState();
 			const FRpgMoverTraversalSyncState* Traversal = Sync.SyncStateCollection.FindDataByType<FRpgMoverTraversalSyncState>();
 			const FMoverDefaultSyncState* Move = Sync.SyncStateCollection.FindDataByType<FMoverDefaultSyncState>();
@@ -913,8 +1116,7 @@ struct FRpgGaspMoverTraversalTestFixture::FState
 		const double Feet = Position.Z - Capsule(Character)->GetScaledCapsuleHalfHeight();
 		if (Action == EAction::Vault)
 		{
-			// NP phase, montage identity and capsule share a clock. The proxy's separately replicated
-			// visible GAS montage may already have stopped while its interpolated traversal is still active.
+			// NP phase, visible montage identity and capsule share the displayed traversal clock.
 			const bool bActiveVault = bLease && TraversalState && TraversalState->Command.IsActive()
 				&& IsTraversal(Character, TraversalState->Command.Context.Montage, Action);
 			Record.bCrossedRear |= bActiveVault && Position.X > Bounds.Max.X;
@@ -952,6 +1154,7 @@ struct FRpgGaspMoverTraversalTestFixture::FState
 		if (World == ServerWorld.Get())
 		{
 			Observe(AuthorityRecord, DeltaSeconds);
+			TryReplaceTraversal();
 			const FGameplayAbilitySpec* ActiveAbility = Spec(Authority());
 			if (!bInterrupted && (Scenario == EScenario::Cancel || Scenario == EScenario::Death || Scenario == EScenario::ColliderLoss)
 				&& AuthorityRecord.bLease && ProxyRecord.bLease && AuthorityRecord.LastTime > AuthorityRecord.FirstTime + 0.25f
@@ -966,9 +1169,16 @@ struct FRpgGaspMoverTraversalTestFixture::FState
 				}
 			}
 		}
-		if (World == ObserverWorld.Get()) Observe(ProxyRecord, DeltaSeconds);
+		if (World == ObserverWorld.Get())
+		{
+			Observe(ProxyRecord, DeltaSeconds);
+			ObserveReplacement(Observer(), true);
+		}
 		if (World != InputWorld() || !Owner()) return;
 		Observe(OwnerRecord, DeltaSeconds);
+		ObserveReplacement(Owner(), false);
+		if (AttackReleaseFrames > 0 && --AttackReleaseFrames == 0) Key(EKeys::LeftMouseButton, false);
+		TryReplayTraversal();
 		if (!bCheckpointLogged && World->GetTimeSeconds() - StartedAt > 12.0) { Report(TEXT("checkpoint")); bCheckpointLogged = true; }
 		if (bFinalHeading) MaximumViewError = FMath::Max(MaximumViewError,
 			static_cast<float>(FMath::Abs(FMath::FindDeltaAngleDegrees(InputController->GetControlRotation().Yaw, static_cast<double>(ApproachYaw)))));
@@ -1032,6 +1242,7 @@ struct FRpgGaspMoverTraversalTestFixture::FState
 	{
 		using namespace RpgGaspMoverTraversalTests;
 		if (PressedAt < 0.0) return false;
+		if (ReplacementScenario() && !bReplayStarted) return false;
 		if (Scenario == EScenario::Jump)
 			return OwnerRecord.bGroundedAfterJump && AuthorityRecord.bGroundedAfterJump && Clean(Owner()) && Clean(Authority());
 		if (Scenario == EScenario::Death && (OwnerRecord.DeadSeconds < 0.5f || AuthorityRecord.DeadSeconds < 0.5f || ProxyRecord.DeadSeconds < 0.5f)) return false;
@@ -1053,6 +1264,13 @@ struct FRpgGaspMoverTraversalTestFixture::FState
 		{
 			ASSERT_THAT(IsFalse(Record->bLostUnrelatedTarget));
 		}
+		TestRunner->TestFalse(TEXT("Observer cannot start a traversal montage before its displayed NP traversal starts"), ProxyRecord.bProxyMontageBeforeTraversal);
+		TestRunner->TestFalse(TEXT("Observer montage phase follows the same finalized NP snapshot as displayed movement"), ProxyRecord.bProxyMontagePhaseMismatch);
+		TestRunner->TestFalse(TEXT("Observer keeps its montage through the active presentation interval"), ProxyRecord.bProxyActiveMontageMissing);
+		TestRunner->TestFalse(TEXT("Observer traversal mode cannot move through a multi-frame onset gap without its traversal animation state"), ProxyRecord.bProxyTraversalOnsetDelayed);
+		TestRunner->TestFalse(TEXT("Observer retains the same montage instance for one traversal play"), ProxyRecord.bMontageRestarted);
+		TestRunner->TestTrue(TEXT("Observer branching-window callbacks occur at most once per linear traversal play"),
+			ProxyNotifyObserver.IsValid() && !ProxyNotifyObserver->HasDuplicateCallbacks());
 		if (Scenario == EScenario::Jump)
 		{
 			ASSERT_THAT(IsTrue(OwnerRecord.bOrdinaryJump && AuthorityRecord.bOrdinaryJump));
@@ -1115,6 +1333,26 @@ struct FRpgGaspMoverTraversalTestFixture::FState
 		else
 		{
 			ASSERT_THAT(IsFalse(OwnerRecord.bOrdinaryJump));
+		}
+		if (!ProxyRecord.bJoinedTerminalState)
+		{
+			TestRunner->TestTrue(TEXT("Observer phase was compared against a real visible montage"), ProxyRecord.ProxyMontagePhaseSamples > 0);
+		}
+		if (ReplacementScenario())
+		{
+			TestRunner->TestTrue(TEXT("A second traversal was activated through ordinary movement and Space input"), bReplayStarted);
+			TestRunner->TestTrue(TEXT("The replay keeps the configured montage asset on owner and observer"),
+				OwnerRecord.Montage == RepeatedTraversalMontage && ProxyRecord.Montage == RepeatedTraversalMontage);
+			TestRunner->TestTrue(TEXT("A same-asset replay has a new traversal identity and animation instance"),
+				!(AuthorityRecord.ObservedSimulationIdentity == FirstTraversalIdentity) && OwnerRecord.InstanceId != FirstTraversalInstanceId
+				&& ProxyRecord.InstanceId != FirstProxyInstanceId && ProxyRecord.ObservedSimulationIdentity == AuthorityRecord.ObservedSimulationIdentity);
+		}
+		if (Action == EAction::Vault && bHost && Gait == EGait::Run && ApproachYaw == 0.0f && Scenario == EScenario::Success)
+		{
+			TestRunner->TestTrue(TEXT("Listen-host observer was sampled during the delayed approach before traversal"), ProxyRecord.ProxyPreTraversalSamples > 0);
+			TestRunner->TestTrue(TEXT("Listen-host running vault compares successive displayed montage phases"), ProxyRecord.ProxyMontagePhaseSamples > 1);
+			TestRunner->TestTrue(TEXT("Listen-host running vault exercised actual source branching callbacks"),
+				ProxyNotifyObserver.IsValid() && ProxyNotifyObserver->ObservedBegins() > 0);
 		}
 		for (const FObservation* Record : { &OwnerRecord, &AuthorityRecord, &ProxyRecord })
 		{
@@ -1195,6 +1433,18 @@ struct FRpgGaspMoverTraversalTestFixture::FState
 		UE_LOG(LogTemp, Display, TEXT("RpgMoverTraversal phase=%s action=%d scenario=%d gait=%d host=%d position=%s bounds=%s..%s pressSpeed=%.2f pressYaw=%.2f controlError=%.2f"),
 			Phase, static_cast<int32>(Action), static_cast<int32>(Scenario), static_cast<int32>(Gait), bHost, Owner() ? *Owner()->GetActorLocation().ToCompactString() : TEXT("none"),
 			*Bounds.Min.ToCompactString(), *Bounds.Max.ToCompactString(), PressSpeed, PressYaw, MaximumViewError);
+		UE_LOG(LogTemp, Display, TEXT("RpgMoverTraversal proxy presentation phase=%s samples=%d beforeActive=%d maxError=%.4f early=%d wrongPhase=%d missing=%d onsetDelayed=%d onsetGap=%.4f"),
+			Phase, ProxyRecord.ProxyMontagePhaseSamples, ProxyRecord.ProxyPreTraversalSamples, ProxyRecord.MaximumProxyMontagePhaseError,
+			ProxyRecord.bProxyMontageBeforeTraversal, ProxyRecord.bProxyMontagePhaseMismatch, ProxyRecord.bProxyActiveMontageMissing,
+			ProxyRecord.bProxyTraversalOnsetDelayed, ProxyRecord.MaximumProxyOnsetGapSeconds);
+		UE_LOG(LogTemp, Display, TEXT("RpgMoverTraversal proxy notifies phase=%s begins=%d duplicated=%d"), Phase,
+			ProxyNotifyObserver.IsValid() ? ProxyNotifyObserver->ObservedBegins() : 0,
+			ProxyNotifyObserver.IsValid() && ProxyNotifyObserver->HasDuplicateCallbacks());
+		if (ReplacementScenario())
+			UE_LOG(LogTemp, Display, TEXT("RpgMoverTraversal replacement phase=%s requested=%d replay=%d proxyHadTraversal=%d overlap=%d oldTookOver=%d restarted=%d ownerInstance=%d ownerTime=%.3f..%.3f proxyInstance=%d proxyTime=%.3f..%.3f"),
+				Phase, bReplacementTriggered, bReplayStarted, bFirstProxyHadTraversal, bReplacementOverlappedPresentedTraversal,
+				bTraversalReplacedTheAttack, bReplacementRestarted, ReplacementOwnerInstance, ReplacementOwnerFirst, ReplacementOwnerLast,
+				ReplacementProxyInstance, ReplacementProxyFirst, ReplacementProxyLast);
 		for (const FObservation* Record : { &OwnerRecord, &AuthorityRecord, &ProxyRecord })
 			UE_LOG(LogTemp, Display, TEXT("RpgMoverTraversal peer=%s commits=%d ends=%d cancelled=%d successfulEnds=%d cancelledEnds=%d airborneCommit=%d montage=%s time=%.3f..%.3f warpEnd=%.3f lease=%d target=%d restart=%d landed=%d moving=%d facing=%d lateError=%.2f postSamples=%d postError=%.2f jump=%d groundedRetry=%d cleanInterrupted=%d death=%d"),
 				*GetPathNameSafe(Record->World.Get()), Record->Commits, Record->Ends, Record->bCancelled,
@@ -1223,6 +1473,12 @@ struct FRpgGaspMoverTraversalTestFixture::FState
 		FWorldDelegates::OnWorldTickEnd.Remove(TickHandle); TickHandle.Reset();
 		FWorldDelegates::OnWorldTickStart.Remove(BeforeDeathDispatchHandle); BeforeDeathDispatchHandle.Reset();
 		FWorldDelegates::OnWorldPreActorTick.Remove(AfterDeathDispatchHandle); AfterDeathDispatchHandle.Reset();
+		if (ProxyNotifyAnimation.IsValid() && ProxyNotifyObserver.IsValid())
+		{
+			ProxyNotifyAnimation->OnPlayMontageNotifyBegin.RemoveDynamic(ProxyNotifyObserver.Get(), &URpgMoverTraversalNotifyTestObserver::ObserveBegin);
+			ProxyNotifyAnimation->OnPlayMontageNotifyEnd.RemoveDynamic(ProxyNotifyObserver.Get(), &URpgMoverTraversalNotifyTestObserver::ObserveEnd);
+		}
+		ProxyNotifyAnimation.Reset(); ProxyNotifyObserver.Reset();
 		for (FObservation* Record : { &OwnerRecord, &AuthorityRecord })
 		{
 			if (Record->AbilitySystem.IsValid())
@@ -1234,7 +1490,7 @@ struct FRpgGaspMoverTraversalTestFixture::FState
 				RpgGaspMoverTraversalTests::Mover(Record->Character.Get())->OnPostSimulationRollback.RemoveDynamic(Record->DeathRollbackObserver.Get(), &URpgMoverRollbackTestObserver::ObserveRollback);
 			Record->DeathRollbackObserver.Reset(); Record->BeforeDeathDispatch = FMoverSyncState(); Record->bBeforeDeathDispatchValid = false;
 		}
-		Key(EKeys::W, false); Key(EKeys::SpaceBar, false); Key(EKeys::LeftControl, false);
+		Key(EKeys::W, false); Key(EKeys::SpaceBar, false); Key(EKeys::LeftControl, false); Key(EKeys::LeftMouseButton, false);
 		if (InputController.IsValid()) InputController->SetIgnoreLookInput(false);
 		InputController.Reset(); bDriving = false;
 		if (DisabledCollider.IsValid()) DisabledCollider->SetCollisionEnabled(PreviousCollision);

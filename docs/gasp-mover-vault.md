@@ -168,6 +168,11 @@ The September 18 follow-up reproduced and corrected persistent interpolation
 backlog in separate processes. See the linked recovery document for before/after
 measurements; cooked/packaged multiplayer validation remains outstanding.
 
+The September 20 presentation correction also measures the visible montage at
+the same displayed obstacle positions. It aligns proxy traversal with Mover's
+presentation clock and checks packet starvation and montage replacement; see
+[`gasp-mover-traversal-presentation.md`](gasp-mover-traversal-presentation.md).
+
 The raw logs retain uncooked editor-Python plugin startup diagnostics as well
 as the interpolation ensures. `probe_run_fixed50_vault_h20_o240/analysis.json`
 and its per-role traces distinguish these from the successful scoped probe.
