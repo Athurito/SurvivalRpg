@@ -14,7 +14,7 @@ Abnahme. Beide bei relevanten Fortschritten im selben PR aktualisieren.
 | Zuständiger Chat / beanspruchte Dateien | Noch nicht zugeteilt; keine Implementierungsdateien beansprucht |
 | Runtime-Ausgangspunkt | `master`, Merge `8268b07325f0404617a9e8e70d938d05c581afc6` aus PR #142; bei Start neueren Stand prüfen |
 | Dokumentations-Branch | `codex/gasp-integration-roadmap` |
-| Dokumentations-PR | Noch keiner; Dokumentation lokal erstellt, Veröffentlichung ausstehend |
+| Dokumentations-PR | [PR #143](https://github.com/Athurito/SurvivalRpg/pull/143); aktuellen Merge-Stand dort prüfen |
 | Nächster Handgriff | Branch-/Editor-/Plugin-Stand prüfen, dann Mover-Hurdle-Quellchooser und die CMC-Hurdle-Anbindung gegen die vorhandenen Mover-Seams auditieren; Umfang vor Assetänderungen festhalten |
 | Blocker | Keiner für den Quellen-Audit; konkrete Lifecycle-/Netzwerk-Folgearbeiten stehen im Register `GASP-02` |
 
