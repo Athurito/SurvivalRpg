@@ -15,9 +15,9 @@ Abnahme. Beide bei relevanten Fortschritten im selben PR aktualisieren.
 | Runtime-Ausgangspunkt | `ae4d620c3b20bc45d0655ceddb0e45dc4f9bdcce`, bestätigter Merge PR #143 auf `master`; `origin/master` frisch abgerufen |
 | Implementierungs-Branch / Checkout | `codex/gasp-01-mover-hurdle`, `D:/Repos/SurvivalRpg` |
 | Letzter Implementierungs-Commit | `b78edf5b69296369a684b57e5103e4e0920dd0c5`; Hurdle-Grundlage `c8961b53ba413ddcd62741d643883d6fda816ac6` |
-| Arbeits-PR | In Vorbereitung; noch kein Merge |
-| Nächster Handgriff | PR öffnen; manuellen Sichttest in `Lvl_RpgGaspMover` durchführen und Review abschließen |
-| Blocker / offene Abnahme | Manueller Sichttest offen; bestehende Lifecycle-/Netzwerk-Folgearbeiten unter `GASP-02` bleiben offen |
+| Arbeits-PR | Noch keiner erstellt. Automatische Freigabeprüfung hat den Push mangels ausdrücklicher Zielbestätigung abgelehnt; vorhandenes `origin`: `https://github.com/Athurito/SurvivalRpg.git` |
+| Nächster Handgriff | Nutzerbestätigung für Push nach `Athurito/SurvivalRpg` und Draft-PR einholen; danach Sichttest in `Lvl_RpgGaspMover` und Review abschließen |
+| Blocker / offene Abnahme | Nur Veröffentlichung braucht die Zielbestätigung; manueller Sichttest offen. Bestehende Lifecycle-/Netzwerk-Folgearbeiten unter `GASP-02` bleiben offen |
 
 ## GASP-01 – aktueller Implementierungsnachweis
 
