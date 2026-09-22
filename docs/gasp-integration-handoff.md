@@ -9,14 +9,14 @@ Abnahme. Beide bei relevanten Fortschritten im selben PR aktualisieren.
 
 | Feld | Wert |
 | --- | --- |
-| Aktive Implementierungsaufgabe | `GASP-02` / `GASP-STAB-01` – Block-Cleanup, **Validierung bestanden**, PR in Vorbereitung |
+| Aktive Implementierungsaufgabe | `GASP-02` / `GASP-STAB-01` – Block-Cleanup, **PR offen**, Validierung bestanden |
 | Nächste bereite Aufgabe | Nach diesem Schritt `GASP-STAB-02` gezielt untersuchen |
 | Zuständiger Chat / beanspruchte Dateien | Dieser Chat: Block-Ability `.h/.cpp`, fokussierte Block-Lifecycle-Tests und GASP-Roadmap/Übergabe/Bericht. Keine binären Assets oder parallele Editor-Sitzung beansprucht |
 | Runtime-Ausgangspunkt | `aa4447d69d3187dec3592913a1f683b5c91c0a7b`, bestätigter Merge PR #144 auf `master` am 22.09.2026 |
 | Checkout / aktiver Branch | `codex/gasp-02-block-cleanup`, `D:/Repos/SurvivalRpg`; Basis `b00ba74b7b09f6f7801aa731922d012182d80972`; Remote-master identisch, keine offenen PRs beim Start |
 | Letzter Implementierungs-Commit | `43ac69b8b6f109b942ffdd1edc83d0ef333257aa` – reihenfolgefester Block-Cleanup und acht native Regressionstests |
-| Aktueller Arbeits-PR | Noch nicht erstellt; letzter gemergter Runtime-PR bleibt [PR #144](https://github.com/Athurito/SurvivalRpg/pull/144) |
-| Nächster Handgriff | Geprüften Branch pushen und Draft-PR zur Prüfung öffnen; danach Merge nur auf Nutzerauftrag |
+| Aktueller Arbeits-PR | [Draft-PR #145](https://github.com/Athurito/SurvivalRpg/pull/145), offen und noch nicht gemergt; letzter gemergter Runtime-PR bleibt [PR #144](https://github.com/Athurito/SurvivalRpg/pull/144) |
+| Nächster Handgriff | Draft-PR #145 prüfen; Merge nur auf Nutzerauftrag. Danach `GASP-STAB-02` als eigenen begrenzten Auftrag untersuchen |
 | Blocker / offene Abnahme | Keine Implementierungsblocker für GASP-STAB-01. Kein neuer manueller Sichttest; kein Editor/PIE/Build aktiv. Übrige GASP-02-Befunde offen |
 
 ## Aktueller validierter Schritt – GASP-STAB-01

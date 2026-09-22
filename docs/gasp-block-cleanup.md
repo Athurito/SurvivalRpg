@@ -2,7 +2,8 @@
 
 Teil von `GASP-02`, begonnen am 22.09.2026 auf `b00ba74b`.
 Branch: `codex/gasp-02-block-cleanup`. Implementierungs-Commit:
-`43ac69b8b6f109b942ffdd1edc83d0ef333257aa`. Status: **Validiert, PR wird vorbereitet**.
+`43ac69b8b6f109b942ffdd1edc83d0ef333257aa`. Status: **PR offen**,
+[Draft-PR #145](https://github.com/Athurito/SurvivalRpg/pull/145); noch nicht gemergt.
 
 ## Befund und Ownership
 

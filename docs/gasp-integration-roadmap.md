@@ -7,7 +7,7 @@ nicht eine neue Gesamtplanung für Combat, Crafting oder Portale.
 
 ## Schnellstart
 
-- **Validiert: `GASP-02` / `GASP-STAB-01` – reihenfolgefester Block-Cleanup.** Branch `codex/gasp-02-block-cleanup`, Runtime `43ac69b8`; PR wird vorbereitet. Die weiteren Registerpunkte bleiben offen. `GASP-01` ist mit [PR #144](https://github.com/Athurito/SurvivalRpg/pull/144) gemergt.
+- **PR offen: `GASP-02` / `GASP-STAB-01` – reihenfolgefester Block-Cleanup.** [Draft-PR #145](https://github.com/Athurito/SurvivalRpg/pull/145), Branch `codex/gasp-02-block-cleanup`, Runtime `43ac69b8`. Die weiteren Registerpunkte bleiben offen. `GASP-01` ist mit [PR #144](https://github.com/Athurito/SurvivalRpg/pull/144) gemergt.
 - Aktive Aufgabe, Branch, letzte Ergebnisse und konkrete Fortsetzung stehen in
   [gasp-integration-handoff.md](gasp-integration-handoff.md).
 - Letzter akzeptierter Runtime-Stand: [PR #144](https://github.com/Athurito/SurvivalRpg/pull/144),
@@ -41,7 +41,7 @@ Vorgabe, insgesamt genau drei Experience-Dateien zu besitzen.
 | ID | Arbeitspaket | Status | Voraussetzung / Abschluss |
 | --- | --- | --- | --- |
 | `GASP-01` | Grounded Hurdle für Mover | **Gemergt** | [PR #144](https://github.com/Athurito/SurvivalRpg/pull/144), Merge `aa4447d6`; Runtime `b78edf5b`; Editor/Game, 47 Tests und zwei Prozessläufe bestanden; Nutzer-Sichtabnahme am 22.09.2026; [Bericht](gasp-mover-hurdle.md) |
-| `GASP-02` | Gezielte Stabilisierung | **Validierung** | `GASP-STAB-01`: Editor/Game und 11/11 Tests bestanden, Runtime `43ac69b8`; PR wird vorbereitet; übrige Registerpunkte offen |
+| `GASP-02` | Gezielte Stabilisierung | **PR offen (Teilauftrag)** | `GASP-STAB-01`: [Draft-PR #145](https://github.com/Athurito/SurvivalRpg/pull/145), Editor/Game und 11/11 Tests bestanden, Runtime `43ac69b8`; übrige Registerpunkte offen |
 | `GASP-03` | Mover-Ragdoll-Experience | Geplant | `GASP-01`; belastbarer Lifecycle-Stand aus `GASP-02`; Source-Audit zuerst |
 | `GASP-04` | Vergleich der drei Varianten | Geplant | `GASP-03`; dokumentierte gemeinsame Abnahmematrix |
 | `GASP-05` | Importbereinigung | Geplant | `GASP-04`; geprüfte Abhängigkeiten und konkrete Entfernungsliste |
@@ -103,12 +103,12 @@ Einstieg: [CMC-Hurdle](gasp-hurdle-integration.md),
 ## GASP-02 – Register der offenen Folgearbeiten
 
 Jede Zeile ist ein begrenzter Folgeauftrag, keine Aufforderung, alle Probleme in
-einem PR zu bearbeiten. **`GASP-STAB-01` ist validiert und wartet auf PR/Review; die übrigen Punkte sind offen.** Die Priorität
+einem PR zu bearbeiten. **`GASP-STAB-01` wartet in Draft-PR #145 auf Review; die übrigen Punkte sind offen.** Die Priorität
 innerhalb dieses Schritts beginnt bei den Lifecycle-Punkten.
 
 | ID | Einordnung | Arbeit und Abschlussnachweis |
 | --- | --- | --- |
-| `GASP-STAB-01` | Cleanup-Fehler korrigiert, PR in Vorbereitung | Ursprünglichen Ensure frisch reproduziert; Cleanup an ursprünglichen ASC/DefenseSet gebunden, Basiswerte und rekursive Enden abgesichert. Runtime `43ac69b8`; Editor/Game und 11/11 Tests bestanden. Noch nicht gemergt; [Bericht](gasp-block-cleanup.md). |
+| `GASP-STAB-01` | Cleanup-Fehler korrigiert, PR offen | Ursprünglichen Ensure frisch reproduziert; Cleanup an ursprünglichen ASC/DefenseSet gebunden, Basiswerte und rekursive Enden abgesichert. Runtime `43ac69b8`; Editor/Game und 11/11 Tests bestanden. [Draft-PR #145](https://github.com/Athurito/SurvivalRpg/pull/145), noch nicht gemergt; [Bericht](gasp-block-cleanup.md). |
 | `GASP-STAB-02` | Ungeklärtes Laufzeit-Symptom | Gelegentlich Falling mit Geschwindigkeit null nach Respawn. Fehlenden Übergang mit Eingabe-, Movement- und Lifecycle-Daten erfassen; Ursache und gezielten Nachweis liefern. Später grüne Wiederholungen sind allein kein Fix. |
 | `GASP-NET-01` | Korrektur-Nachweislücke | Beim aktiven Mantle kann normales Warping die injizierte Abweichung entfernen, bevor der Test die relevante Korrektur erfasst. Echten Rollback über den betroffenen aktiven Frame nachweisen; Warp-/Collider-Vertrag nicht abschwächen. |
 | `GASP-NET-02` | Ungeklärte Zustandsabweichung | Ein Lauf zeigte vorhergesagtes `Finished` gegenüber autoritativem `Cancelled`. Ursache und zulässige terminale Semantik klären. Ein Wiederholungslauf mit gleichem Grund auf beiden Seiten löst diese Beobachtung nicht. |
