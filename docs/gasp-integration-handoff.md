@@ -9,17 +9,47 @@ Abnahme. Beide bei relevanten Fortschritten im selben PR aktualisieren.
 
 | Feld | Wert |
 | --- | --- |
-| Aktive Implementierungsaufgabe | `GASP-02` / `GASP-STAB-01` – Block-Cleanup, **PR offen**, Validierung bestanden |
-| Nächste bereite Aufgabe | Nach diesem Schritt `GASP-STAB-02` gezielt untersuchen |
-| Zuständiger Chat / beanspruchte Dateien | Dieser Chat: Block-Ability `.h/.cpp`, fokussierte Block-Lifecycle-Tests und GASP-Roadmap/Übergabe/Bericht. Keine binären Assets oder parallele Editor-Sitzung beansprucht |
-| Runtime-Ausgangspunkt | `aa4447d69d3187dec3592913a1f683b5c91c0a7b`, bestätigter Merge PR #144 auf `master` am 22.09.2026 |
-| Checkout / aktiver Branch | `codex/gasp-02-block-cleanup`, `D:/Repos/SurvivalRpg`; Basis `b00ba74b7b09f6f7801aa731922d012182d80972`; Remote-master identisch, keine offenen PRs beim Start |
-| Letzter Implementierungs-Commit | `43ac69b8b6f109b942ffdd1edc83d0ef333257aa` – reihenfolgefester Block-Cleanup und acht native Regressionstests |
-| Aktueller Arbeits-PR | [Draft-PR #145](https://github.com/Athurito/SurvivalRpg/pull/145), offen und noch nicht gemergt; letzter gemergter Runtime-PR bleibt [PR #144](https://github.com/Athurito/SurvivalRpg/pull/144) |
-| Nächster Handgriff | Draft-PR #145 prüfen; Merge nur auf Nutzerauftrag. Danach `GASP-STAB-02` als eigenen begrenzten Auftrag untersuchen |
-| Blocker / offene Abnahme | Keine Implementierungsblocker für GASP-STAB-01. Kein neuer manueller Sichttest; kein Editor/PIE/Build aktiv. Übrige GASP-02-Befunde offen |
+| Aktive Implementierungsaufgabe | `GASP-02` / `GASP-STAB-02` – Falling bei belegtem Respawn, **implementiert und validiert**, PR-Vorbereitung |
+| Nächste bereite Aufgabe | Nach Review/Merge `GASP-NET-01`: echten Rollback während aktivem Mantle nachweisen |
+| Zuständiger Chat / beanspruchte Dateien | Dieser Chat: Mover-Lifecycle-Testharness, konkreter `Mover/RPG/BP_RpgGasp_Mover` (Spawn-Kollisionspolitik nach rotem Crowd-Repro) und GASP-Roadmap/Übergabe/Bericht. Editor-/Buildkoordination ausschließlich durch Root |
+| Runtime-Ausgangspunkt | `4039be2560b1733859005ec052865cff0bb03d3b`, bestätigter Merge PR #145 auf `master` am 22.09.2026 |
+| Checkout / aktiver Branch | `codex/gasp-02-respawn-falling`, `D:/Repos/SurvivalRpg`; Basis `4039be25`, nach Merge von origin/master fast-forward synchronisiert |
+| Letzter Implementierungs-Commit | `57fa8de9` – Spawnanpassung im konkreten RPG-Mover-Pawn und gezielter Crowd-/Checkpoint-Nachweis |
+| Aktueller Arbeits-PR | Für STAB-02 noch keiner; [PR #145](https://github.com/Athurito/SurvivalRpg/pull/145) ist bestätigt gemergt |
+| Nächster Handgriff | Validierten STAB-02-Branch als Draft-PR veröffentlichen und Review/Merge-Status festhalten |
+| Blocker / offene Abnahme | Kein Implementierungsblocker. PR/Merge noch offen; keine manuelle/Independent/Packaged/WAN-Abnahme. Vier Overrides verifiziert; kein Editor/PIE/Build aktiv |
 
-## Aktueller validierter Schritt – GASP-STAB-01
+## Aktueller validierter Schritt – GASP-STAB-02
+
+- Echte Zwei-Pawn-Belegung am gespeicherten Checkpoint reproduziert denselben
+  Falling-/Nullgeschwindigkeitszustand auf Authority, Owner und Late Observer.
+  Normale Eingabe liegt an; `LogMover` belegt scheiternde Penetrationsauflösung.
+  Der rote Lauf bleibt mit seinem 35-Sekunden-Bewegungstimeout erhalten.
+- Einzige Runtimeänderung: `BP_RpgGasp_Mover` nutzt
+  `AdjustIfPossibleButAlwaysSpawn`. Engine-Spawnanpassung erfolgt vor BeginPlay,
+  der vorhandene NP-Liaison übernimmt die Position. Keine neue native
+  Spawnpolicy, keine Mover-/NetworkPrediction-Änderung, keine Laufzeitteleports.
+- Identischer Testquellcode nach ausschließlich dieser Assetänderung grün.
+  Der zuvor ungenaue Einzelblocker-Test pinnt seinen Checkpoint jetzt vor Tod;
+  begrenzte passive Aufzeichnung hält erste Respawnzustände fest.
+- UE 5.8.2 Win64 Development Editor und Game gebaut; final **11/11** in einem
+  Lauf bestanden: vier Lifecycle-, zwei Mover-Input/Kamera-, drei Startauswahl-,
+  ein AssetComposition- und ein CMC-Fall. Keine Testfehler/Ensures/Fatals,
+  526 Warnungen und zwei bekannte Startmeldungen vor den Tests dokumentiert.
+- MCP: reflektierte Eigenschaft gesetzt, Blueprint kompiliert/gespeichert/frisch
+  geladen. Aktive Graphen und Verbindungen unverändert. Zehn Maps und sieben
+  SaveGames unverändert; getestete Quell-/Assethashes nachgeprüft.
+- [Bericht und ausführbarer Repro-Befehl](gasp-respawn-falling.md), lokale
+  ignorierte Belege `Saved/GaspRespawnFalling20260922`. Der ursprüngliche
+  historische Lauf hatte keine Blockerpositionsdaten; der neue Ursachenbeleg
+  wird davon getrennt. Vollständig verbaute Checkpoints behalten den bisherigen
+  AlwaysSpawn-Fallback; die übrigen GASP-02-Registerpunkte bleiben offen.
+
+## Letzter abgeschlossener Schritt – GASP-STAB-01
+
+- PR #145 am 22.09.2026 um 20:05:43 UTC auf Nutzerauftrag gemergt:
+  `4039be2560b1733859005ec052865cff0bb03d3b`, finaler PR-Head `82542580`.
+  Keine neue manuelle Sichtabnahme; gezielte Reproduktion erfolgte automatisiert.
 
 - Originalen `ClearBlockState`-Ensure nach entferntem DefenseSet in einem frischen
   Editorprozess nachgewiesen; sieben initiale Regressionstests ergaben zuvor
@@ -42,7 +72,7 @@ Abnahme. Beide bei relevanten Fortschritten im selben PR aktualisieren.
   andere `GASP-02`-Netzwerk-/Messbefunde. Nächster begrenzter Auftrag:
   `GASP-STAB-02` mit gezielter Lifecycle-/Movement-Aufzeichnung untersuchen.
 
-## Letzter abgeschlossener Runtime-Schritt – GASP-01
+## Vorheriger abgeschlossener Runtime-Schritt – GASP-01
 
 - [PR #144](https://github.com/Athurito/SurvivalRpg/pull/144) ist nach ausdrücklicher
   Nutzerfreigabe seit 22.09.2026 gemergt: `aa4447d69d3187dec3592913a1f683b5c91c0a7b`.
