@@ -1,6 +1,6 @@
 # GASP-STAB-02 – Falling nach Respawn
 
-Status: **Implementiert und validiert, [Draft-PR #146](https://github.com/Athurito/SurvivalRpg/pull/146) offen**, Branch `codex/gasp-02-respawn-falling`, Basis
+Status: **Implementiert und selbst im Editor validiert, [PR #146](https://github.com/Athurito/SurvivalRpg/pull/146) bereit zur Prüfung**, Branch `codex/gasp-02-respawn-falling`, Basis
 `4039be2560b1733859005ec052865cff0bb03d3b` (gemergter PR #145).
 Implementierungs-Commit: `57fa8de9`.
 
@@ -149,6 +149,36 @@ Hashes des getesteten Quellcodes und Assets stimmen weiterhin überein. Editor-,
 PIE- und Buildprozesse beendet. Lokale Belege unter
 `Saved/GaspRespawnFalling20260922` sind ignoriert und nicht automatisch in einem
 anderen Checkout verfügbar; der versionierte Automation-Test bleibt ausführbar.
+
+## Zusätzliche eigene Editor-Validierung – 22.09.2026
+
+Auf Nutzerauftrag den sichtbaren Unreal Editor in `Lvl_RpgGaspMover` gestartet
+und über den vorhandenen MCP-Automation-Controller erneut selbst geprüft:
+`CrowdedCheckpointAllowsMovementAndCombat` und
+`DeathCancelsHeldBlockAndRespawnRecomposesOptionalFollower` **2/2 bestanden**,
+164 Warnungen, keine Testfehler. Der zweite Fall prüft außerdem gehaltenen Block,
+Tod/Respawn und erneute Komposition des optionalen Retarget-Followers.
+
+Die isolierte Automation-Welt besitzt keine Beleuchtung; erste Screenshots
+zeigen daher nur das HUD und sind kein Sichtnachweis für die Körper. Für eine
+zusätzliche Diagnoseprüfung ausschließlich `ShowFlag.Lighting 0` gesetzt,
+den Crowd-Test erneut ausgeführt (**1/1 bestanden**, 73 Warnungen) und echte
+Owner-/Observer-PIE-Fenster per Slate-MCP aufgenommen. Die Aufnahmen selbst
+geprüft: getrennte Körper nach Respawn, anschließend Laufpose und Waffenangriff
+beim Owner. Die numerischen Bewegung-/Angriffskriterien auf allen drei Rollen
+bleiben die unveränderten Testbedingungen. Snapshot-Namen bezeichnen den
+auslösenden Logabschnitt, keine framegenaue Aufnahme desselben Moments.
+
+Danach `ShowFlag.Lighting 2` wiederhergestellt und im Konsolenlog bestätigt.
+Keine Gameplay-/Assetänderung für die Sichtprüfung, keine neue handgespielte
+Abnahme der vollständig beleuchteten Map behauptet. Zehn Maps und sieben
+SaveGames erneut unverändert; getestete Quell-/Assethashes identisch. Keine
+schmutzigen Content-/Map-Packages, PIE beendet. Der sichtbare Editor bleibt
+auf Nutzerwunsch in `Lvl_RpgGaspMover` geöffnet. Neue ignorierte Belege:
+`Saved/GaspRespawnEditor20260922/visible-run-details.json`,
+`unlit-run-details.json`, `unlit-capture-manifest.json` und zugehörige PNGs.
+Die obigen Builds und elf Regressionstests sind frühere Ergebnisse desselben
+unveränderten Runtime-/Teststands; sie wurden für diese Ergänzung nicht neu gebaut.
 
 ## Nachstellen
 

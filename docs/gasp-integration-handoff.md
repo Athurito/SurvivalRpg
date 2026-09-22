@@ -9,18 +9,25 @@ Abnahme. Beide bei relevanten Fortschritten im selben PR aktualisieren.
 
 | Feld | Wert |
 | --- | --- |
-| Aktive Implementierungsaufgabe | `GASP-02` / `GASP-STAB-02` – Falling bei belegtem Respawn, **implementiert und validiert**, Draft-PR #146 offen |
+| Aktive Implementierungsaufgabe | `GASP-02` / `GASP-STAB-02` – Falling bei belegtem Respawn, **implementiert und selbst im Editor validiert**, PR #146 bereit zur Prüfung |
 | Nächste bereite Aufgabe | Nach Review/Merge `GASP-NET-01`: echten Rollback während aktivem Mantle nachweisen |
 | Zuständiger Chat / beanspruchte Dateien | Dieser Chat: Mover-Lifecycle-Testharness, konkreter `Mover/RPG/BP_RpgGasp_Mover` (Spawn-Kollisionspolitik nach rotem Crowd-Repro) und GASP-Roadmap/Übergabe/Bericht. Editor-/Buildkoordination ausschließlich durch Root |
 | Runtime-Ausgangspunkt | `4039be2560b1733859005ec052865cff0bb03d3b`, bestätigter Merge PR #145 auf `master` am 22.09.2026 |
 | Checkout / aktiver Branch | `codex/gasp-02-respawn-falling`, `D:/Repos/SurvivalRpg`; Basis `4039be25`, nach Merge von origin/master fast-forward synchronisiert |
 | Letzter Implementierungs-Commit | `57fa8de9` – Spawnanpassung im konkreten RPG-Mover-Pawn und gezielter Crowd-/Checkpoint-Nachweis |
-| Aktueller Arbeits-PR | [Draft-PR #146](https://github.com/Athurito/SurvivalRpg/pull/146) offen; [PR #145](https://github.com/Athurito/SurvivalRpg/pull/145) ist bestätigt gemergt |
+| Aktueller Arbeits-PR | [PR #146](https://github.com/Athurito/SurvivalRpg/pull/146) offen und bereit zur Prüfung; [PR #145](https://github.com/Athurito/SurvivalRpg/pull/145) ist bestätigt gemergt |
 | Nächster Handgriff | STAB-02 in PR #146 prüfen; nach Merge Status nachführen und mit `GASP-NET-01` fortsetzen |
-| Blocker / offene Abnahme | Kein Implementierungsblocker. Review/Merge noch offen; keine manuelle/Independent/Packaged/WAN-Abnahme. Vier Overrides verifiziert; kein Editor/PIE/Build aktiv |
+| Blocker / offene Abnahme | Kein Implementierungsblocker. Review/Merge noch offen; gezielte eigene Live-/Diagnosesichtprüfung erfolgt, keine Independent/Packaged/WAN-Abnahme. Sichtbarer Editor PID 2936 in `Lvl_RpgGaspMover` geöffnet; kein PIE/Build aktiv, keine schmutzigen Packages |
 
 ## Aktueller validierter Schritt – GASP-STAB-02
 
+- Auf Nutzerauftrag zusätzlich selbst im sichtbaren Editor validiert: Crowd-
+  sowie Block-/Follower-Lifecycle **2/2 bestanden**. Unbeleuchtete Fixture für
+  eine weitere eigene Sichtprüfung vorübergehend ohne Lighting gerendert,
+  Crowd erneut **1/1 bestanden**; Owner-Körper, Laufpose und Waffenangriff in
+  echten PIE-Aufnahmen geprüft. Normalen Renderzustand wiederhergestellt,
+  Editor in GASP-Testmap offen gelassen. Keine Runtimeänderung; Maps/SaveGames
+  und Quell-/Assethashes unverändert. Belege `Saved/GaspRespawnEditor20260922`.
 - Echte Zwei-Pawn-Belegung am gespeicherten Checkpoint reproduziert denselben
   Falling-/Nullgeschwindigkeitszustand auf Authority, Owner und Late Observer.
   Normale Eingabe liegt an; `LogMover` belegt scheiternde Penetrationsauflösung.
