@@ -82,6 +82,19 @@ bool MatchesTraversal(const FRpgMoverAbilityRootMotion& Move, const FRpgMoverTra
 		Command.Identity.bServerInitiatedKey == Move.bServerInitiatedKey &&
 		Command.Identity.MontageSequence == Move.MontageSequence && Command.Context.Montage == Move.MontageState.Montage;
 }
+
+bool HasFixedLandingSupport(const FRpgMoverTraversalRequest& Request, const UPrimitiveComponent* Capsule)
+{
+	if (Request.BackFloorWarpTargetName.IsNone()) { return true; }
+	const UPrimitiveComponent* Support = Request.LandingSupport.Get();
+	// Replay can revisit an active frame after its GAS instance has ended. Retain only the accepted support
+	// identity/pose in history, and stop before applying a floor warp after its world geometry is invalidated.
+	return Support && Capsule && Support != Request.Collider.Get() && Support->IsRegistered() &&
+		Support->IsQueryCollisionEnabled() && !Support->IsSimulatingPhysics() && !Request.LandingSupportTransform.ContainsNaN() &&
+		Support->GetComponentTransform().Equals(Request.LandingSupportTransform, .01f) &&
+		Support->GetCollisionResponseToChannel(Capsule->GetCollisionObjectType()) == ECR_Block &&
+		Capsule->GetCollisionResponseToChannel(Support->GetCollisionObjectType()) == ECR_Block;
+}
 }
 
 bool FRpgMoverAbilityRootMotion::GenerateMove(const FMoverTickStartData& StartState, const FMoverTimeStep& TimeStep,
@@ -381,6 +394,7 @@ uint32 URpgCharacterMoverComponent::BeginTraversal(UGameplayAbility* Ability, co
 		!Request.Collider->GetComponentTransform().Equals(Request.ColliderTransform, .1f) ||
 		Request.ColliderTransform.ContainsNaN() || Request.FrontLedgeTarget.ContainsNaN() ||
 		(!Request.BackLedgeWarpTargetName.IsNone() && Request.BackLedgeTarget.ContainsNaN()) ||
+		!RpgAbilityRootMotion::HasFixedLandingSupport(Request, Cast<UPrimitiveComponent>(GetUpdatedComponent())) ||
 		Request.EntryCapsuleLocation.ContainsNaN() || Request.LandingCapsuleLocation.ContainsNaN() ||
 		!FMath::IsFinite(Request.StartTimeSeconds) || !FMath::IsFinite(Request.PlayRate) ||
 		!FMath::IsFinite(Request.HandoffTimeSeconds) || Request.StartTimeSeconds < 0.f ||
@@ -505,6 +519,7 @@ void URpgCharacterMoverComponent::PrepareTraversalSimulation(const FMoverTimeSte
 			// established collision-safe recovery. Keeping ownership until that callback permits exact cleanup.
 			bTraversalGeometryInvalidThisTick = !Active.Context.Collider.IsValid() ||
 				!Active.Context.Collider->GetComponentTransform().Equals(Active.Context.ColliderTransform, .01f) ||
+				!RpgAbilityRootMotion::HasFixedLandingSupport(Active.Context, Cast<UPrimitiveComponent>(GetUpdatedComponent())) ||
 				!TraversalWarping || !TraversalWarping->SupportsTraversal(Active.Context);
 			if (FCharacterDefaultInputs* Input = StartingData.InputCmd.InputCollection.FindMutableDataByType<FCharacterDefaultInputs>())
 			{
@@ -620,15 +635,16 @@ void URpgCharacterMoverComponent::UpdateTraversalPresentation(const FMoverSyncSt
 
 void URpgCharacterMoverComponent::UpdateTraversalWarpTargets(const FRpgMoverTraversalRequest* Request)
 {
-	TArray<FName, TInlineAllocator<2>> TargetNames;
+	TArray<FName, TInlineAllocator<3>> TargetNames;
 	if (Request)
 	{
 		TargetNames.Add(Request->WarpTargetName);
 		if (!Request->BackLedgeWarpTargetName.IsNone()) { TargetNames.Add(Request->BackLedgeWarpTargetName); }
+		if (!Request->BackFloorWarpTargetName.IsNone()) { TargetNames.Add(Request->BackFloorWarpTargetName); }
 	}
 	if (TraversalWarping)
 	{
-		// Corrections can replace an active Vault with Mantle, a terminal command or no command at all.
+		// Corrections can replace Hurdle/Vault with Mantle, a terminal command or no command at all.
 		// Remove our obsolete names before publishing the corrected set; unrelated warp targets remain owned elsewhere.
 		for (FName Name : PublishedTraversalWarpTargets)
 		{
@@ -640,6 +656,10 @@ void URpgCharacterMoverComponent::UpdateTraversalWarpTargets(const FRpgMoverTrav
 			if (!Request->BackLedgeWarpTargetName.IsNone())
 			{
 				TraversalWarping->AddOrUpdateWarpTargetFromTransform(Request->BackLedgeWarpTargetName, Request->BackLedgeTarget);
+			}
+			if (!Request->BackFloorWarpTargetName.IsNone())
+			{
+				TraversalWarping->AddOrUpdateWarpTargetFromTransform(Request->BackFloorWarpTargetName, Request->BackFloorTarget);
 			}
 		}
 	}

@@ -25,13 +25,19 @@ struct SURVIVALRPG_API FRpgMoverTraversalRequest
 	UPROPERTY() TWeakObjectPtr<UPrimitiveComponent> Collider;
 	/** Obstacle pose validated by this activation. Moving obstacles require a later integration. */
 	UPROPERTY() FTransform ColliderTransform = FTransform::Identity;
+	/** Optional Hurdle landing support validated by GAS; weak history ownership must not retain a destroyed world. */
+	UPROPERTY() TWeakObjectPtr<UPrimitiveComponent> LandingSupport;
+	/** Accepted support pose for fixed-target Hurdle replay. Moving support invalidates the traversal. */
+	UPROPERTY() FTransform LandingSupportTransform = FTransform::Identity;
 	/** Collision-safe start and montage exit capsule centers; a Vault exit may be airborne. */
 	UPROPERTY() FVector EntryCapsuleLocation = FVector::ZeroVector;
 	UPROPERTY() FVector LandingCapsuleLocation = FVector::ZeroVector;
 	/** GASP's fixed front ledge target in the gameplay mesh's base-space convention. */
 	UPROPERTY() FTransform FrontLedgeTarget = FTransform::Identity;
-	/** Optional validated rear ledge for translation-only Vault windows, in the same world/base-space convention. */
+	/** Optional validated rear ledge for translation-only Vault/Hurdle windows, in the same world/base-space convention. */
 	UPROPERTY() FTransform BackLedgeTarget = FTransform::Identity;
+	/** Optional fixed Hurdle floor target, derived from source curves and validated landing support in world/base space. */
+	UPROPERTY() FTransform BackFloorTarget = FTransform::Identity;
 	/** Validated designer-authored linear montage and playback interval in seconds. */
 	UPROPERTY() TObjectPtr<UAnimMontage> Montage = nullptr;
 	UPROPERTY() float StartTimeSeconds = 0.f;
@@ -40,6 +46,8 @@ struct SURVIVALRPG_API FRpgMoverTraversalRequest
 	UPROPERTY() FName WarpTargetName = TEXT("FrontLedge");
 	/** Name of the optional rear target; None means this montage has no rear ledge warp window. */
 	UPROPERTY() FName BackLedgeWarpTargetName = NAME_None;
+	/** Name of the optional Hurdle floor target; None means no floor window or landing-support contract. */
+	UPROPERTY() FName BackFloorWarpTargetName = NAME_None;
 
 	void Serialize(FArchive& Ar);
 	bool Equals(const FRpgMoverTraversalRequest& Other) const;

@@ -62,6 +62,7 @@ namespace RpgGaspMoverTraversalTests
 	const FName UnrelatedTarget(TEXT("MoverMantleFixtureUnrelated"));
 	const FName VaultTag(TEXT("Rpg.TraversalTest.Vault"));
 	const FName VaultApproachTag(TEXT("Rpg.TraversalTest.Vault.Approach"));
+	const FName HurdleTag(TEXT("Rpg.TraversalTest.Hurdle"));
 	const FVector UnrelatedLocation(123.0, 456.0, 789.0);
 	bool ActiveWorld(const UWorld* World)
 	{
@@ -132,6 +133,7 @@ namespace RpgGaspMoverTraversalTests
 	}
 	const TArray<FRpgTraversalAnimationEntry>& AnimationEntries(const APawn* Character, EAction Action)
 	{
+		if (Action == EAction::Hurdle) return Query(Character)->AllowedHurdleAnimations;
 		return Action == EAction::Vault ? Query(Character)->AllowedVaultAnimations : Query(Character)->AllowedMantleAnimations;
 	}
 	bool IsTraversal(const APawn* Character, const UAnimMontage* Montage, EAction Action)
@@ -223,12 +225,25 @@ namespace RpgGaspMoverTraversalTests
 					{ return FMath::IsNearlyEqual(Window.StartTime, Warp.Value.StartTime) && FMath::IsNearlyEqual(Window.EndTime, Warp.Value.EndTime); });
 				});
 				if (!bRequiredWindowActive) return false;
+				if (RequiredActiveTarget == TEXT("BackFloor"))
+				{
+					const FRpgMoverWarpModifierState* FloorWarp = Traversal->WarpModifiers.FindByPredicate([&RequiredWindows](const FRpgMoverWarpModifierState& Warp)
+					{
+						return Warp.Value.State == ERootMotionModifierState::Active && RequiredWindows.ContainsByPredicate([&Warp](const FMotionWarpingWindowData& Window)
+						{ return FMath::IsNearlyEqual(Window.StartTime, Warp.Value.StartTime) && FMath::IsNearlyEqual(Window.EndTime, Warp.Value.EndTime); });
+					});
+					RequiredFloorWindow = FloorWarp->WindowIndex;
+				}
 			}
 			OriginalIdentity = Traversal->Command.Identity; OriginalCollider = Traversal->Command.Context.Collider;
 			OriginalPhase = Traversal->Command.Phase; OriginalTargetName = Traversal->Command.Context.WarpTargetName;
 			OriginalTarget = Traversal->Command.Context.FrontLedgeTarget;
 			OriginalRearName = Traversal->Command.Context.BackLedgeWarpTargetName;
 			OriginalRearTarget = Traversal->Command.Context.BackLedgeTarget;
+			OriginalFloorName = Traversal->Command.Context.BackFloorWarpTargetName;
+			OriginalFloorTarget = Traversal->Command.Context.BackFloorTarget;
+			OriginalSupport = Traversal->Command.Context.LandingSupport;
+			OriginalSupportTransform = Traversal->Command.Context.LandingSupportTransform;
 			OriginalMontage = bAfterHandoff ? ObservedMontage : Traversal->Command.Context.Montage.Get();
 			const FAnimMontageInstance* Instance = OriginalMontage.IsValid()
 				? Mesh(Character)->GetAnimInstance()->GetActiveInstanceForMontage(OriginalMontage.Get()) : nullptr;
@@ -341,7 +356,11 @@ namespace RpgGaspMoverTraversalTests
 						&& BeforeTraversal->Command.Context.WarpTargetName == OriginalTargetName
 						&& AfterTraversal->Command.Context.WarpTargetName == OriginalTargetName
 						&& BeforeTraversal->Command.Context.BackLedgeWarpTargetName == OriginalRearName
-						&& AfterTraversal->Command.Context.BackLedgeWarpTargetName == OriginalRearName;
+						&& AfterTraversal->Command.Context.BackLedgeWarpTargetName == OriginalRearName
+						&& BeforeTraversal->Command.Context.BackFloorWarpTargetName == OriginalFloorName
+						&& AfterTraversal->Command.Context.BackFloorWarpTargetName == OriginalFloorName
+						&& !BeforeTraversal->Command.Context.LandingSupport.IsValid()
+						&& !AfterTraversal->Command.Context.LandingSupport.IsValid();
 					bLifecycle = BeforeTraversal->Command.IsTerminal() && BeforeTraversal->Command.Phase == OriginalPhase
 						&& AfterTraversal->Command.Phase == OriginalPhase && BeforeTraversal->bEndApplied
 						&& AfterTraversal->bEndApplied && Clean(Owner.Get());
@@ -363,12 +382,23 @@ namespace RpgGaspMoverTraversalTests
 						&& AfterTraversal->Command.Context.FrontLedgeTarget.GetLocation().Equals(OriginalTarget.GetLocation(), 1.0)
 						&& AfterTraversal->Command.Context.FrontLedgeTarget.GetRotation().Equals(OriginalTarget.GetRotation(), 0.001)
 						&& AfterTraversal->Command.Context.BackLedgeWarpTargetName == OriginalRearName
-						&& (OriginalRearName.IsNone() || AfterTraversal->Command.Context.BackLedgeTarget.Equals(OriginalRearTarget, 0.01));
+						&& (OriginalRearName.IsNone() || AfterTraversal->Command.Context.BackLedgeTarget.Equals(OriginalRearTarget, 0.01))
+						&& AfterTraversal->Command.Context.BackFloorWarpTargetName == OriginalFloorName
+						&& (OriginalFloorName.IsNone() || AfterTraversal->Command.Context.BackFloorTarget.Equals(OriginalFloorTarget, 0.01))
+						&& AfterTraversal->Command.Context.LandingSupport == OriginalSupport
+						&& AfterTraversal->Command.Context.LandingSupportTransform.Equals(OriginalSupportTransform, 0.01);
 					bLifecycle = BeforeTraversal->Command.IsActive() && AfterTraversal->Command.IsActive() && !AfterTraversal->bEndApplied
 						&& Mover(Owner.Get())->HasTraversalLease() && Mover(Owner.Get())->GetTraversalCollider() == OriginalCollider.Get();
 					bMontage = Instance && Instance->GetInstanceID() == OriginalInstance && Instance->IsPlaying();
-					const FRpgMoverWarpModifierState* OldWarp = ActiveWarp(*BeforeTraversal);
-					const FRpgMoverWarpModifierState* NewWarp = ActiveWarp(*AfterTraversal);
+					// Hurdle must witness rollback while its floor window is active on both sides;
+					// a later correction during another window cannot stand in for this contract.
+					const auto RelevantWarp = [this](const FRpgMoverTraversalSyncState& State)
+					{
+						return RequiredFloorWindow == INDEX_NONE ? ActiveWarp(State) : State.WarpModifiers.FindByPredicate(
+							[this](const FRpgMoverWarpModifierState& Warp) { return Warp.WindowIndex == RequiredFloorWindow && Warp.Value.State == ERootMotionModifierState::Active; });
+					};
+					const FRpgMoverWarpModifierState* OldWarp = RelevantWarp(*BeforeTraversal);
+					const FRpgMoverWarpModifierState* NewWarp = RelevantWarp(*AfterTraversal);
 					// Compare immutable window/bone-cache identity, not a frozen trajectory or a particular allocation.
 					bWarpHistory = OldWarp && NewWarp && OldWarp->WindowIndex == NewWarp->WindowIndex
 						&& FMath::IsNearlyEqual(OldWarp->Value.StartTime, NewWarp->Value.StartTime)
@@ -393,18 +423,21 @@ namespace RpgGaspMoverTraversalTests
 		TWeakObjectPtr<APawn> Owner;
 		TWeakObjectPtr<UMoverNetworkPredictionLiaisonComponent> Liaison;
 		TWeakObjectPtr<UPrimitiveComponent> OriginalCollider;
+		TWeakObjectPtr<UPrimitiveComponent> OriginalSupport;
 		TWeakObjectPtr<UAnimMontage> OriginalMontage;
 		TStrongObjectPtr<URpgMoverRollbackTestObserver> RollbackObserver;
 		FRpgMoverTraversalIdentity OriginalIdentity;
 		ERpgMoverTraversalPhase OriginalPhase = ERpgMoverTraversalPhase::None;
-		FName OriginalTargetName, OriginalRearName;
+		FName OriginalTargetName, OriginalRearName, OriginalFloorName;
 		FTransform OriginalTarget = FTransform::Identity, OriginalRearTarget = FTransform::Identity;
+		FTransform OriginalFloorTarget = FTransform::Identity, OriginalSupportTransform = FTransform::Identity;
 		FMoverSyncState Before;
 		RpgMoverPredictionTests::FFixedPredictionHeadSnapshot BeforeClock, AfterClock;
 		FDelegateHandle BeforeHandle, AfterHandle;
 		FVector CrossDirection = FVector::ZeroVector, Delta = FVector::ZeroVector;
 		int32 OriginalInstance = INDEX_NONE, BeforeFrame = INDEX_NONE, AfterFrame = INDEX_NONE, DiagnosticSamples = 0;
 		int32 BeforeRollbackCount = 0;
+		int32 RequiredFloorWindow = INDEX_NONE;
 		double BeforeTime = 0.0, AfterTime = 0.0;
 		bool bInjected = false, bObserved = false, bTerminalExpected = false, bBeforeValid = false;
 		bool bSameFrame = false, bIdentity = false, bContext = false, bLifecycle = false, bMontage = false, bWarpHistory = false;
@@ -421,6 +454,9 @@ namespace RpgGaspMoverTraversalTests
 		RpgMoverPredictionTests::FFixedPredictionHeadSnapshot BeforeDeathClock;
 		TWeakObjectPtr<UAnimMontage> Montage;
 		FVector HandoffLocation = FVector::ZeroVector, HandoffVelocity = FVector::ZeroVector;
+		FVector BackFloorLocation = FVector::ZeroVector;
+		TWeakObjectPtr<UPrimitiveComponent> LandingSupport;
+		float HandoffMontageTime = -1.0f, LastFrontWarpEnd = 0.0f;
 		FVector DeathLocation = FVector::ZeroVector;
 		FVector FirstTerminalDeathLocation = FVector::ZeroVector, BeforeDeathActorLocation = FVector::ZeroVector;
 		FVector MaximumDeathDriftLocation = FVector::ZeroVector, MaximumDeathDriftSyncLocation = FVector::ZeroVector;
@@ -439,6 +475,7 @@ namespace RpgGaspMoverTraversalTests
 		bool bCancelled = false, bLease = false, bWarpTarget = false, bBackWarpTarget = false, bMontageRestarted = false;
 		bool bLandedOnObstacle = false, bContinuedMoving = false, bRestoredFacing = false;
 		bool bCrossedRear = false, bReleasedFalling = false, bLandedBeyond = false, bHandoffFalling = false;
+		bool bBackFloorTarget = false, bSupportContext = false, bNeedsBackWarp = false, bHandoffSupportedBeyond = false;
 		bool bOrdinaryJump = false, bGroundedAfterJump = false, bCommittedAfterGroundedRetry = false;
 		bool bCommittedWhileAirborne = false;
 		bool bConfirmedPlayCancelled = false;
@@ -466,9 +503,10 @@ struct FRpgGaspMoverTraversalTestFixture::FState
 	FPrimaryAssetId PreviousExperience;
 	TWeakObjectPtr<UWorld> ServerWorld, ClientWorld, ObserverWorld;
 	TWeakObjectPtr<APlayerController> InputController;
-	TWeakObjectPtr<UPrimitiveComponent> Obstacle, DisabledCollider;
+	TWeakObjectPtr<UPrimitiveComponent> Obstacle, DisabledCollider, DisabledSupport;
 	TWeakObjectPtr<AActor> Blocker;
 	ECollisionEnabled::Type PreviousCollision = ECollisionEnabled::NoCollision;
+	ECollisionEnabled::Type PreviousSupportCollision = ECollisionEnabled::NoCollision;
 	FBox Bounds{ForceInit}, DeckBounds{ForceInit};
 	FObservation OwnerRecord, AuthorityRecord, ProxyRecord;
 	TStrongObjectPtr<URpgMoverTraversalNotifyTestObserver> ProxyNotifyObserver;
@@ -488,9 +526,11 @@ struct FRpgGaspMoverTraversalTestFixture::FState
 	EScenario Scenario = EScenario::Success;
 	float ApproachYaw = 0.0f, PressSpeed = 0.0f, PressYaw = 0.0f, MaximumViewError = 0.0f;
 	double StartedAt = 0.0, PressedAt = -1.0, ContactAt = -1.0;
+	double FloorZ = 0.0;
 	bool bConfigured = false, bOwnsSession = false, bDriving = false, bHost = false;
 	bool bFinalHeading = false, bSpaceReleased = false, bMoveReleased = false, bInterrupted = false;
 	bool bLateJoinRequested = false, bCheckpointLogged = false;
+	bool bResumedStandingInput = false;
 
 	void Initialize()
 	{
@@ -511,10 +551,10 @@ struct FRpgGaspMoverTraversalTestFixture::FState
 	APawn* Owner() const { return RpgGaspMoverTraversalTests::LocalPawn(InputWorld()); }
 	APawn* Authority() const { return RpgGaspMoverTraversalTests::Pawn(ServerWorld.Get(), PlayerId); }
 	APawn* Observer() const { return RpgGaspMoverTraversalTests::Pawn(ObserverWorld.Get(), PlayerId); }
-	bool InterruptedScenario() const { return Scenario == EScenario::Cancel || Scenario == EScenario::Death || Scenario == EScenario::ColliderLoss || Scenario == EScenario::BlockedExit; }
+	bool InterruptedScenario() const { return Scenario == EScenario::Cancel || Scenario == EScenario::Death || Scenario == EScenario::ColliderLoss || Scenario == EScenario::BlockedExit || Scenario == EScenario::SupportLoss; }
 	bool ReplacementScenario() const { return Scenario == EScenario::ReplaceActiveAndReplay || Scenario == EScenario::ReplacePendingAndReplay; }
-	bool HoldMovement() const { return Scenario != EScenario::LateJoin && Scenario != EScenario::CorrectDuringWarp && Scenario != EScenario::CorrectAfterWarp; }
-	bool Landed(const FObservation& Record) const { return Action == EAction::Vault ? Record.bLandedBeyond : Record.bLandedOnObstacle; }
+	bool HoldMovement() const { return Scenario != EScenario::LateJoin && Scenario != EScenario::CorrectDuringWarp && Scenario != EScenario::CorrectAfterWarp && Scenario != EScenario::NaturalEnd; }
+	bool Landed(const FObservation& Record) const { return Action == EAction::Mantle ? Record.bLandedOnObstacle : Record.bLandedBeyond; }
 	bool Finished(const FObservation& Record) const { return Landed(Record) && Record.bRestoredFacing && (!HoldMovement() || Record.bContinuedMoving); }
 	void Queue(EGait InGait, EScenario InScenario = EScenario::Success, bool bInHost = false, float InYaw = 0.0f)
 	{
@@ -554,6 +594,13 @@ struct FRpgGaspMoverTraversalTestFixture::FState
 			{
 				ASSERT_THAT(IsTrue(DeckBounds.IsValid && FMath::Abs(Bounds.Max.Z - DeckBounds.Max.Z - 100.0) < 2.0
 					&& Bounds.GetSize().X >= 29.0 && Bounds.GetSize().X <= 59.0 && Bounds.GetSize().Y >= 350.0));
+			}
+			else if (Action == EAction::Hurdle)
+			{
+				ASSERT_THAT(IsTrue(FMath::Abs(Bounds.Max.Z - FloorZ - 100.0) < 5.0
+					&& Bounds.GetSize().X > 10.0 && Bounds.GetSize().X <= 59.0 && Bounds.GetSize().Y >= 350.0));
+				ASSERT_THAT(IsTrue(LaneIndex == 0 ? Bounds.GetSize().X < 25.0 : Bounds.GetSize().X > 25.0));
+				if (LaneIndex == 2) ASSERT_THAT(IsTrue(FMath::Abs(Bounds.GetSize().X - 59.0) < 0.1));
 			}
 			else ASSERT_THAT(IsTrue(FMath::Abs(Bounds.GetSize().Z - 100.0) < 2.0 && Bounds.GetSize().X >= 350.0 && Bounds.GetSize().Y >= 350.0));
 			InputController = Cast<APlayerController>(Owner()->GetController());
@@ -631,6 +678,18 @@ struct FRpgGaspMoverTraversalTestFixture::FState
 			*GetPathNameSafe(FloorHit.GetComponent()), *FloorHit.ImpactPoint.ToCompactString(), *FloorHit.ImpactNormal.ToCompactString());
 		if (!bFloorHit || !FloorHit.IsValidBlockingHit() || FloorHit.ImpactNormal.Z < 0.7) return;
 		const double FloorHeight = FloorHit.ImpactPoint.Z;
+		if (Action == EAction::Hurdle)
+		{
+			FloorZ = FloorHeight;
+			TArray<AActor*> Barriers;
+			for (TActorIterator<AActor> It(InputWorld()); It; ++It)
+				if (It->ActorHasTag(HurdleTag)) Barriers.Add(*It);
+			Barriers.Sort([](const AActor& A, const AActor& B) { return A.GetActorLocation().Y < B.GetActorLocation().Y; });
+			if (!Barriers.IsValidIndex(LaneIndex)) return;
+			Obstacle = Barriers[LaneIndex]->FindComponentByClass<UStaticMeshComponent>();
+			if (Obstacle.IsValid() && Obstacle->IsQueryCollisionEnabled()) Bounds = Obstacle->Bounds.GetBox();
+			return;
+		}
 		double Nearest = TNumericLimits<double>::Max();
 		for (TActorIterator<AActor> It(InputWorld()); It; ++It)
 		{
@@ -935,6 +994,22 @@ struct FRpgGaspMoverTraversalTestFixture::FState
 				*GetPathNameSafe(ExpectedMontage), *GetPathNameSafe(VisibleMontage));
 		}
 	}
+	/** Check the measured floor under the finalized capsule, independently of ordinary motion after handoff. */
+	bool SupportedBeyondHurdle(APawn* Character, const FVector& Position, UPrimitiveComponent* ExpectedSupport) const
+	{
+		using namespace RpgGaspMoverTraversalTests;
+		if (!Character || !ExpectedSupport || !ExpectedSupport->IsQueryCollisionEnabled() || !Capsule(Character)) return false;
+		if (Position.X - Capsule(Character)->GetScaledCapsuleRadius() <= Bounds.Max.X
+			|| FMath::Abs(Position.Z - Capsule(Character)->GetScaledCapsuleHalfHeight() - FloorZ) >= 8.0) return false;
+		FCollisionQueryParams Params(SCENE_QUERY_STAT(RpgMoverHurdleFixtureFloor), false, Character);
+		TArray<AActor*> Attached;
+		Character->GetAttachedActors(Attached, true, true); Params.AddIgnoredActors(Attached);
+		FHitResult Floor;
+		return Character->GetWorld()->LineTraceSingleByChannel(Floor, Position,
+			Position - FVector(0, 0, Capsule(Character)->GetScaledCapsuleHalfHeight() + 30.0), ECC_Visibility, Params)
+			&& Floor.IsValidBlockingHit() && Floor.GetComponent() == ExpectedSupport && Floor.ImpactNormal.Z >= 0.7
+			&& FMath::Abs(Floor.ImpactPoint.Z - FloorZ) < 5.0 && Floor.GetActor() && !Floor.GetActor()->ActorHasTag(HurdleTag);
+	}
 	void Observe(FObservation& Record, float DeltaSeconds)
 	{
 		using namespace RpgGaspMoverTraversalTests;
@@ -962,6 +1037,18 @@ struct FRpgGaspMoverTraversalTestFixture::FState
 		Record.bBackWarpTarget |= BackWarpTarget && TraversalState && TraversalState->Command.IsActive()
 			&& TraversalState->Command.Context.BackLedgeWarpTargetName == TEXT("BackLedge")
 			&& BackWarpTarget->GetLocation().Equals(TraversalState->Command.Context.BackLedgeTarget.GetLocation(), 1.0);
+		const FMotionWarpingTarget* FloorWarpTarget = Warping(Character)->FindWarpTarget(TEXT("BackFloor"));
+		if (Action == EAction::Hurdle && TraversalState && TraversalState->Command.IsActive())
+		{
+			const FRpgMoverTraversalRequest& Context = TraversalState->Command.Context;
+			Record.bBackFloorTarget |= FloorWarpTarget && Context.BackFloorWarpTargetName == TEXT("BackFloor")
+				&& FloorWarpTarget->GetLocation().Equals(Context.BackFloorTarget.GetLocation(), 1.0);
+			Record.BackFloorLocation = Context.BackFloorTarget.GetLocation();
+			Record.LandingSupport = Context.LandingSupport;
+			Record.bSupportContext |= Context.LandingSupport.IsValid() && Context.LandingSupport != Context.Collider
+				&& Context.LandingSupport->GetWorld() == Character->GetWorld()
+				&& Context.LandingSupport->GetComponentTransform().Equals(Context.LandingSupportTransform, 0.01);
+		}
 		const FMotionWarpingTarget* Unrelated = Warping(Character)->FindWarpTarget(UnrelatedTarget);
 		Record.bLostUnrelatedTarget |= !Unrelated || !Unrelated->GetLocation().Equals(UnrelatedLocation, 0.01);
 		const bool bSimulationActive = bObserveConfirmedPlay && TraversalState && TraversalState->Command.IsActive() && !TraversalState->bEndApplied;
@@ -988,6 +1075,9 @@ struct FRpgGaspMoverTraversalTestFixture::FState
 			Record.HandoffVelocity = FinalizedMovement->GetVelocity_WorldSpace();
 			Record.bHandoffGrounded = FinalizedSync.MovementMode == DefaultModeNames::Walking;
 			Record.bHandoffFalling = FinalizedSync.MovementMode == DefaultModeNames::Falling;
+			Record.HandoffMontageTime = FMath::Max(Record.LastTime, TraversalState->Command.PresentationEndPosition);
+			Record.bHandoffSupportedBeyond = Action == EAction::Hurdle && Record.bHandoffGrounded
+				&& SupportedBeyondHurdle(Character, Record.HandoffLocation, Record.LandingSupport.Get());
 			Record.bStoppedAtHandoff |= Record.LastLeaseSpeed > 100.0f && Record.HandoffVelocity.Size2D() < 1.0;
 			UE_LOG(LogTemp, Display, TEXT("RpgMoverTraversal simulation handoff role=%d mode=%s endApplied=%d grounded=%d terminalPhase=%d previousSpeed=%.2f position=%s velocity=%s"),
 				static_cast<int32>(Character->GetLocalRole()), *FinalizedSync.MovementMode.ToString(), TraversalState->bEndApplied, Record.bHandoffGrounded, static_cast<int32>(TraversalState->Command.Phase), Record.LastLeaseSpeed,
@@ -1043,7 +1133,12 @@ struct FRpgGaspMoverTraversalTestFixture::FState
 				{
 					TArray<FMotionWarpingWindowData> Windows;
 					UMotionWarpingUtilities::GetMotionWarpingWindowsForWarpTargetFromAnimation(Montage, Name, Windows);
-					for (const FMotionWarpingWindowData& Window : Windows) Record.LastWarpEnd = FMath::Max(Record.LastWarpEnd, Window.EndTime);
+					if (Name == TEXT("BackLedge")) Record.bNeedsBackWarp = !Windows.IsEmpty();
+					for (const FMotionWarpingWindowData& Window : Windows)
+					{
+						Record.LastWarpEnd = FMath::Max(Record.LastWarpEnd, Window.EndTime);
+						if (Name == TEXT("FrontLedge")) Record.LastFrontWarpEnd = FMath::Max(Record.LastFrontWarpEnd, Window.EndTime);
+					}
 				}
 			}
 			const bool bDifferentPlay = Montage != Record.Montage.Get() || (Instance && Instance->GetInstanceID() != Record.InstanceId);
@@ -1057,7 +1152,7 @@ struct FRpgGaspMoverTraversalTestFixture::FState
 			{
 				const float Error = FMath::Abs(FMath::FindDeltaAngleDegrees(static_cast<float>(Character->GetActorRotation().Yaw), Record.WarpYaw));
 				Record.BestAlignmentError = FMath::Min(Record.BestAlignmentError, Error);
-				if (Position > Record.LastWarpEnd + KINDA_SMALL_NUMBER)
+				if (Position > (Action == EAction::Hurdle ? Record.LastFrontWarpEnd : Record.LastWarpEnd) + KINDA_SMALL_NUMBER)
 				{
 					++Record.PostWarpSamples; Record.MaximumPostWarpError = FMath::Max(Record.MaximumPostWarpError, Error);
 				}
@@ -1082,7 +1177,7 @@ struct FRpgGaspMoverTraversalTestFixture::FState
 				const float ActorYaw = static_cast<float>(Character->GetActorRotation().Yaw);
 				const float Error = FMath::Abs(FMath::FindDeltaAngleDegrees(ActorYaw, ExpectedYaw));
 				Record.BestAlignmentError = FMath::Min(Record.BestAlignmentError, Error);
-				if (Traversal->MontagePosition > Record.LastWarpEnd + KINDA_SMALL_NUMBER)
+				if (Traversal->MontagePosition > (Action == EAction::Hurdle ? Record.LastFrontWarpEnd : Record.LastWarpEnd) + KINDA_SMALL_NUMBER)
 				{
 					if (Record.PostWarpSamples == 0)
 					{
@@ -1095,7 +1190,9 @@ struct FRpgGaspMoverTraversalTestFixture::FState
 				}
 			}
 		}
-		const bool bClean = Clean(Character);
+		const UGameplayAbility* AnimatingAbility = ASC(Character) ? ASC(Character)->GetAnimatingAbility() : nullptr;
+		const bool bClean = Clean(Character) && (Action != EAction::Hurdle
+			|| (!bPlaying && (!AnimatingAbility || !AnimatingAbility->IsA<URpgGameplayAbility_Mantle>())));
 		if (Scenario == EScenario::LateJoin && &Record == &ProxyRecord && !Record.Montage.IsValid() && bClean)
 		{
 			const FRpgMoverTraversalSyncState* Remote = Mover(Character)->GetSyncState().SyncStateCollection.FindDataByType<FRpgMoverTraversalSyncState>();
@@ -1105,6 +1202,8 @@ struct FRpgGaspMoverTraversalTestFixture::FState
 				&& Remote->Command.Identity == Server->Command.Identity
 				&& Remote->Command.Context.WarpTargetName == Server->Command.Context.WarpTargetName
 				&& Remote->Command.Context.BackLedgeWarpTargetName == Server->Command.Context.BackLedgeWarpTargetName
+				&& Remote->Command.Context.BackFloorWarpTargetName == Server->Command.Context.BackFloorWarpTargetName
+				&& !Remote->Command.Context.LandingSupport.IsValid()
 				&& !Remote->Command.Context.Montage && !Remote->Command.Context.Collider.IsValid() && Remote->WarpModifiers.IsEmpty();
 		}
 		const bool bObservedInterruption = Record.Ends > 0 || (Character->GetLocalRole() == ROLE_SimulatedProxy
@@ -1135,6 +1234,23 @@ struct FRpgGaspMoverTraversalTestFixture::FState
 					Record.bLandedBeyond = true;
 			}
 		}
+		if (Action == EAction::Hurdle)
+		{
+			Record.bCrossedRear |= bLease && TraversalState && TraversalState->Command.IsActive()
+				&& IsTraversal(Character, TraversalState->Command.Context.Montage, Action) && Position.X > Bounds.Max.X;
+			// A terminal-only late join has no active support pointer; measure the actual world support there.
+			if (Record.bJoinedTerminalState && !Record.LandingSupport.IsValid())
+			{
+				FCollisionQueryParams Params(SCENE_QUERY_STAT(RpgMoverHurdleLateJoinFloor), false, Character);
+				TArray<AActor*> Attached; Character->GetAttachedActors(Attached, true, true); Params.AddIgnoredActors(Attached);
+				FHitResult Floor;
+				if (Record.World->LineTraceSingleByChannel(Floor, Position,
+					Position - FVector(0, 0, Capsule(Character)->GetScaledCapsuleHalfHeight() + 30.0), ECC_Visibility, Params))
+					Record.LandingSupport = Floor.GetComponent();
+			}
+			Record.bLandedBeyond |= (Record.bHandoffSupportedBeyond || Record.bJoinedTerminalState) && bClean
+				&& Mover(Character)->IsOnGround() && SupportedBeyondHurdle(Character, Position, Record.LandingSupport.Get());
+		}
 		Record.bLandedOnObstacle |= (Record.Montage.IsValid() || Record.bJoinedTerminalState) && bClean && Mover(Character)->IsOnGround() && FMath::Abs(Feet - Bounds.Max.Z) < 8.0
 			&& Position.X >= Bounds.Min.X + Radius && Position.X <= Bounds.Max.X - Radius
 			&& Position.Y >= Bounds.Min.Y + Radius && Position.Y <= Bounds.Max.Y - Radius;
@@ -1156,16 +1272,31 @@ struct FRpgGaspMoverTraversalTestFixture::FState
 			Observe(AuthorityRecord, DeltaSeconds);
 			TryReplaceTraversal();
 			const FGameplayAbilitySpec* ActiveAbility = Spec(Authority());
-			if (!bInterrupted && (Scenario == EScenario::Cancel || Scenario == EScenario::Death || Scenario == EScenario::ColliderLoss)
+			if (!bInterrupted && (Scenario == EScenario::Cancel || Scenario == EScenario::Death || Scenario == EScenario::ColliderLoss || Scenario == EScenario::SupportLoss)
 				&& AuthorityRecord.bLease && ProxyRecord.bLease && AuthorityRecord.LastTime > AuthorityRecord.FirstTime + 0.25f
 				&& ActiveAbility && ActiveAbility->IsActive() && Mover(Authority())->HasTraversalLease())
 			{
-				bInterrupted = true;
-				if (Scenario == EScenario::Death) URpgHealthComponent::FindHealthComponent(Authority())->DamageSelfDestruct(false);
-				else if (Scenario == EScenario::Cancel) { if (FGameplayAbilitySpec* Ability = Spec(Authority())) ASC(Authority())->CancelAbilityHandle(Ability->Handle); }
-				else if (UPrimitiveComponent* Physical = Collider(World))
+				if (Scenario == EScenario::SupportLoss)
 				{
-					DisabledCollider = Physical; PreviousCollision = Physical->GetCollisionEnabled(); Physical->SetCollisionEnabled(ECollisionEnabled::NoCollision);
+					UPrimitiveComponent* Support = AuthorityRecord.LandingSupport.Get();
+					if (AuthorityRecord.bBackFloorTarget && Support && Support->GetWorld() == World
+						&& Support != Collider(World) && Support->IsQueryCollisionEnabled())
+					{
+						DisabledSupport = Support; PreviousSupportCollision = Support->GetCollisionEnabled();
+						Support->SetCollisionEnabled(ECollisionEnabled::NoCollision); bInterrupted = true;
+						UE_LOG(LogTemp, Display, TEXT("RpgMoverHurdle disabled authority support=%s montageTime=%.3f"),
+							*Support->GetPathName(), AuthorityRecord.LastTime);
+					}
+				}
+				else
+				{
+					bInterrupted = true;
+					if (Scenario == EScenario::Death) URpgHealthComponent::FindHealthComponent(Authority())->DamageSelfDestruct(false);
+					else if (Scenario == EScenario::Cancel) { if (FGameplayAbilitySpec* Ability = Spec(Authority())) ASC(Authority())->CancelAbilityHandle(Ability->Handle); }
+					else if (UPrimitiveComponent* Physical = Collider(World))
+					{
+						DisabledCollider = Physical; PreviousCollision = Physical->GetCollisionEnabled(); Physical->SetCollisionEnabled(ECollisionEnabled::NoCollision);
+					}
 				}
 			}
 		}
@@ -1184,11 +1315,17 @@ struct FRpgGaspMoverTraversalTestFixture::FState
 			static_cast<float>(FMath::Abs(FMath::FindDeltaAngleDegrees(InputController->GetControlRotation().Yaw, static_cast<double>(ApproachYaw)))));
 		if (PressedAt >= 0.0)
 		{
+			if (Scenario == EScenario::ResumeStandingInput && !bResumedStandingInput && OwnerRecord.bLease
+				&& OwnerRecord.LastTime > OwnerRecord.FirstTime + 0.15f && OwnerRecord.Ends == 0)
+			{
+				Key(EKeys::W, true); bResumedStandingInput = true; bMoveReleased = false;
+			}
 			if (!Correction.Injected())
 			{
 				if (Scenario == EScenario::CorrectDuringWarp)
 				{
 					if (Action == EAction::Vault) Correction.Inject(Owner(), false, OwnerRecord.Montage.Get(), TEXT("BackLedge"));
+					else if (Action == EAction::Hurdle) Correction.Inject(Owner(), false, OwnerRecord.Montage.Get(), TEXT("BackFloor"));
 					else if (OwnerRecord.LastTime > OwnerRecord.FirstTime + 0.2f && OwnerRecord.LastTime < OwnerRecord.LastWarpEnd - 0.15f)
 						Correction.Inject(Owner(), false, OwnerRecord.Montage.Get());
 				}
@@ -1205,6 +1342,15 @@ struct FRpgGaspMoverTraversalTestFixture::FState
 			return;
 		}
 		const FVector Position = Owner()->GetActorLocation();
+		if (Action == EAction::Hurdle && Waypoint < 4)
+		{
+			// Use the approved CMC corridor through the copied same-floor map without teleporting across obstacles.
+			const FVector Route[] = { FVector(-2000.0, SpawnLocation.Y, Position.Z), FVector(-2000.0, -1600.0, Position.Z),
+				FVector(600.0, -1600.0, Position.Z), FVector(600.0, Bounds.GetCenter().Y, Position.Z) };
+			const FVector Destination = Route[Waypoint];
+			if (FVector::Dist2D(Position, Destination) < 40.0) { ++Waypoint; if (Waypoint < 4) return; }
+			else { InputController->SetControlRotation((Destination - Position).Rotation()); return; }
+		}
 		if (Action == EAction::Vault && Waypoint < 2)
 		{
 			// Walk around the original Mantle lanes, then climb the authored stairs normally.
@@ -1225,10 +1371,16 @@ struct FRpgGaspMoverTraversalTestFixture::FState
 		}
 		if (!Mover(Owner())->IsOnGround()) return;
 		if (Action == EAction::Vault && FMath::Abs(Position.Z - Capsule(Owner())->GetScaledCapsuleHalfHeight() - DeckBounds.Max.Z) > 8.0) return;
+		if (Action == EAction::Hurdle && FMath::Abs(Position.Z - Capsule(Owner())->GetScaledCapsuleHalfHeight() - FloorZ) > 8.0) return;
 		if (Gait == EGait::Stand)
 		{
 			if (Distance > Capsule(Owner())->GetScaledCapsuleRadius() + 5.0 || Speed >= 5.0f) return;
-			if (ContactAt < 0.0) ContactAt = World->GetTimeSeconds();
+			if (ContactAt < 0.0)
+			{
+				ContactAt = World->GetTimeSeconds();
+				// Standing Hurdle's source window consumes movement input; prove a truly neutral start.
+				if (Action == EAction::Hurdle) { Key(EKeys::W, false); bMoveReleased = true; }
+			}
 			if (World->GetTimeSeconds() - ContactAt < 0.15) return;
 		}
 		else if (Distance > (Scenario == EScenario::Jump || Scenario == EScenario::HeldRetry ? 900.0 : 170.0)) return;
@@ -1278,7 +1430,7 @@ struct FRpgGaspMoverTraversalTestFixture::FState
 			return;
 		}
 		ASSERT_THAT(IsTrue(Gait == EGait::Stand ? PressSpeed < 5.0f : Gait == EGait::Walk ? PressSpeed > 100.0f && PressSpeed < 250.0f : PressSpeed > 250.0f));
-		if (Action == EAction::Vault)
+		if (Action == EAction::Vault || Action == EAction::Hurdle)
 		{
 			ASSERT_THAT(IsFalse(OwnerRecord.bCommittedWhileAirborne || AuthorityRecord.bCommittedWhileAirborne));
 		}
@@ -1287,7 +1439,7 @@ struct FRpgGaspMoverTraversalTestFixture::FState
 			ASSERT_THAT(IsTrue(OwnerRecord.Commits == 1 && AuthorityRecord.Commits == 0));
 			ASSERT_THAT(IsTrue(OwnerRecord.bCancelled && AuthorityRecord.bCancelled));
 			ASSERT_THAT(IsFalse(Landed(OwnerRecord) || Landed(AuthorityRecord)));
-			if (Action == EAction::Vault) ASSERT_THAT(IsFalse(OwnerRecord.bCrossedRear || AuthorityRecord.bCrossedRear));
+			if (Action != EAction::Mantle) ASSERT_THAT(IsFalse(OwnerRecord.bCrossedRear || AuthorityRecord.bCrossedRear));
 			return;
 		}
 		if (Scenario == EScenario::HeldRetry)
@@ -1308,6 +1460,12 @@ struct FRpgGaspMoverTraversalTestFixture::FState
 			if (Scenario == EScenario::Cancel)
 			{
 				ASSERT_THAT(IsTrue(OwnerRecord.bRestoredFacing && AuthorityRecord.bRestoredFacing && ProxyRecord.bRestoredFacing));
+			}
+			if (Scenario == EScenario::SupportLoss)
+			{
+				ASSERT_THAT(IsTrue(DisabledSupport.IsValid() && !DisabledSupport->IsQueryCollisionEnabled()));
+				ASSERT_THAT(IsTrue(AuthorityRecord.bSupportContext && AuthorityRecord.bBackFloorTarget));
+				ASSERT_THAT(IsFalse(AuthorityRecord.bHandoffSupportedBeyond || AuthorityRecord.bLandedBeyond));
 			}
 			if (Scenario == EScenario::Death)
 			{
@@ -1347,15 +1505,33 @@ struct FRpgGaspMoverTraversalTestFixture::FState
 				!(AuthorityRecord.ObservedSimulationIdentity == FirstTraversalIdentity) && OwnerRecord.InstanceId != FirstTraversalInstanceId
 				&& ProxyRecord.InstanceId != FirstProxyInstanceId && ProxyRecord.ObservedSimulationIdentity == AuthorityRecord.ObservedSimulationIdentity);
 		}
-		if (Action == EAction::Vault && bHost && Gait == EGait::Run && ApproachYaw == 0.0f && Scenario == EScenario::Success)
+		if ((Action == EAction::Vault || Action == EAction::Hurdle) && bHost && Gait == EGait::Run && ApproachYaw == 0.0f && Scenario == EScenario::Success)
 		{
 			TestRunner->TestTrue(TEXT("Listen-host observer was sampled during the delayed approach before traversal"), ProxyRecord.ProxyPreTraversalSamples > 0);
-			TestRunner->TestTrue(TEXT("Listen-host running vault compares successive displayed montage phases"), ProxyRecord.ProxyMontagePhaseSamples > 1);
-			TestRunner->TestTrue(TEXT("Listen-host running vault exercised actual source branching callbacks"),
-				ProxyNotifyObserver.IsValid() && ProxyNotifyObserver->ObservedBegins() > 0);
+			TestRunner->TestTrue(TEXT("Listen-host running traversal compares successive displayed montage phases"), ProxyRecord.ProxyMontagePhaseSamples > 1);
+			if (Action == EAction::Vault)
+			{
+				// The audited Relaxed Hurdle clips use queued notify states, which do not emit
+				// these branching delegates. Keep the existing Vault callback coverage.
+				TestRunner->TestTrue(TEXT("Listen-host running traversal exercised actual source branching callbacks"),
+					ProxyNotifyObserver.IsValid() && ProxyNotifyObserver->ObservedBegins() > 0);
+			}
 		}
 		for (const FObservation* Record : { &OwnerRecord, &AuthorityRecord, &ProxyRecord })
 		{
+			if (Action == EAction::Hurdle)
+			{
+				const FRpgMoverTraversalSyncState* Remote = Mover(Record->Character.Get())->GetSyncState().SyncStateCollection.FindDataByType<FRpgMoverTraversalSyncState>();
+				const FRpgMoverTraversalSyncState* Server = Mover(Authority())->GetSyncState().SyncStateCollection.FindDataByType<FRpgMoverTraversalSyncState>();
+				// Geometry alone cannot distinguish a successful natural end from a cancelled zero-speed exit.
+				// A peer that first sees the terminal snapshot still has to match the authority's exact play.
+				TestRunner->TestTrue(FString::Printf(TEXT("Successful Hurdle peer %s applies Finished for the authoritative traversal identity"),
+					*GetPathNameSafe(Record->World.Get())), Remote && Server && Remote->bEndApplied && Server->bEndApplied
+					&& Remote->Command.Phase == ERpgMoverTraversalPhase::Finished && Server->Command.Phase == ERpgMoverTraversalPhase::Finished
+					&& Remote->Command.Identity == Server->Command.Identity
+					&& (Record->bJoinedTerminalState || (Record->bSawActiveSimulation && Record->bCapturedHandoff
+						&& Remote->Command.Identity == Record->ObservedSimulationIdentity)));
+			}
 			if (Scenario == EScenario::LateJoin && Record == &ProxyRecord && Record->bJoinedTerminalState)
 			{
 				ASSERT_THAT(IsTrue(Landed(*Record) && Record->bRestoredFacing));
@@ -1364,9 +1540,9 @@ struct FRpgGaspMoverTraversalTestFixture::FState
 			}
 			ASSERT_THAT(IsTrue(Record->Montage.IsValid() && Record->bLease && Record->bWarpTarget));
 			ASSERT_THAT(IsFalse(Record->bMontageRestarted));
-			if (Action == EAction::Vault && Scenario == EScenario::LateJoin && Record == &ProxyRecord)
+			if (Action != EAction::Mantle && Scenario == EScenario::LateJoin && Record == &ProxyRecord)
 			{
-				// A peer can receive the final few milliseconds of a short Vault clip. Require real
+				// A peer can receive the final few milliseconds of a short crossing clip. Require real
 				// visible advancement and the same authoritative active->applied-terminal identity,
 				// rather than inventing another 100 ms of animation after the source handoff.
 				ASSERT_THAT(IsTrue(Record->LastTime > Record->FirstTime + KINDA_SMALL_NUMBER));
@@ -1386,6 +1562,22 @@ struct FRpgGaspMoverTraversalTestFixture::FState
 				ASSERT_THAT(IsFalse(Record->bLandedOnObstacle));
 				if (Gait == EGait::Stand) ASSERT_THAT(IsTrue(Record->bBackWarpTarget));
 			}
+			if (Action == EAction::Hurdle)
+			{
+				ASSERT_THAT(IsTrue(Record->bCrossedRear && Record->bHandoffGrounded && Record->bHandoffSupportedBeyond));
+				ASSERT_THAT(IsTrue(Record->bBackFloorTarget && Record->bSupportContext));
+				ASSERT_THAT(IsTrue(Record->bBackWarpTarget == Record->bNeedsBackWarp));
+				const double VisualBaseAboveFeet = Mover(Record->Character.Get())->GetBaseVisualComponentTransform().GetLocation().Z
+					+ Capsule(Record->Character.Get())->GetScaledCapsuleHalfHeight();
+				ASSERT_THAT(IsTrue(Record->BackFloorLocation.X > Bounds.Max.X
+					&& FMath::Abs(Record->BackFloorLocation.Z - VisualBaseAboveFeet - FloorZ) < 5.0));
+				ASSERT_THAT(IsFalse(Record->bHandoffFalling || Record->bLandedOnObstacle));
+				// The standing Relaxed clip can reach its input handoff with zero source velocity
+				// (observed owner: 0 -> 0). Held input must resume ordinary Walking below;
+				// only a walking/running entry is required to inherit positive forward momentum.
+				if (HoldMovement() && !(Gait == EGait::Stand && Scenario == EScenario::ResumeStandingInput))
+					ASSERT_THAT(IsTrue(Record->HandoffVelocity.X > 1.0));
+			}
 			if (HoldMovement())
 			{
 				ASSERT_THAT(IsTrue(Record->bContinuedMoving));
@@ -1399,6 +1591,21 @@ struct FRpgGaspMoverTraversalTestFixture::FState
 			const FRpgTraversalAnimationEntry* Row = AnimationEntries(Record->Character.Get(), Action).FindByPredicate(
 				[Record](const FRpgTraversalAnimationEntry& Entry) { return Entry.Montage == Record->Montage.Get(); });
 			ASSERT_THAT(IsTrue(Row && !Row->bAirborne));
+			if (Action == EAction::Hurdle)
+			{
+				ASSERT_THAT(IsTrue(Row && (LaneIndex == 0 ? Row->MaxDepth <= 25.0f : Row->MinDepth >= 25.0f)));
+				if (Record != &ProxyRecord && Scenario == EScenario::NaturalEnd)
+				{
+					ASSERT_THAT(IsTrue(Row && Row->MovementInputHandoffTime > 0.0f && Row->HandoffTime > Row->MovementInputHandoffTime));
+					ASSERT_THAT(IsTrue(Row && Record->HandoffMontageTime >= Row->HandoffTime - 0.05f));
+				}
+				if (Record != &ProxyRecord && Scenario == EScenario::ResumeStandingInput)
+				{
+					ASSERT_THAT(IsTrue(bResumedStandingInput && Row && Row->MovementInputHandoffTime > 0.0f));
+					ASSERT_THAT(IsTrue(Row && Record->HandoffMontageTime >= Row->MovementInputHandoffTime - 0.05f
+						&& Record->HandoffMontageTime < Row->HandoffTime - 0.1f));
+				}
+			}
 			if (Gait == EGait::Walk)
 			{
 				ASSERT_THAT(IsTrue(Row && Row->MinSpeed >= 100.0f && Row->MaxSpeed <= 250.0f));
@@ -1419,9 +1626,11 @@ struct FRpgGaspMoverTraversalTestFixture::FState
 		if (!Actor) return;
 		UBoxComponent* Box = NewObject<UBoxComponent>(Actor);
 		Actor->SetRootComponent(Box); Actor->AddInstanceComponent(Box);
-		Box->InitBoxExtent(Action == EAction::Vault ? FVector(45, 180, 100) : FVector(65, 190, 100));
+		Box->InitBoxExtent(Action == EAction::Hurdle ? FVector(180, 180, 100)
+			: Action == EAction::Vault ? FVector(45, 180, 100) : FVector(65, 190, 100));
 		Box->SetCollisionEnabled(ECollisionEnabled::QueryAndPhysics); Box->SetCollisionResponseToAllChannels(ECR_Block);
-		Box->SetWorldLocation(Action == EAction::Vault
+		Box->SetWorldLocation(Action == EAction::Hurdle ? FVector(Bounds.Max.X + 190.0, Bounds.GetCenter().Y, FloorZ + 100.0)
+			: Action == EAction::Vault
 			? FVector(Bounds.Max.X + 75.0, Bounds.GetCenter().Y, DeckBounds.Max.Z + 50.0)
 			: FVector(Bounds.Min.X + 80.0, Bounds.GetCenter().Y, Bounds.Max.Z + 100.0));
 		Box->SetMobility(EComponentMobility::Static); Box->RegisterComponent(); Blocker = Actor;
@@ -1457,6 +1666,13 @@ struct FRpgGaspMoverTraversalTestFixture::FState
 				UE_LOG(LogTemp, Display, TEXT("RpgMoverVault peer=%s rearTarget=%d crossed=%d releasedFalling=%d landedBeyond=%d handoffFalling=%d handoffVelocity=%s joinedTerminal=%d"),
 					*GetPathNameSafe(Record->World.Get()), Record->bBackWarpTarget, Record->bCrossedRear, Record->bReleasedFalling,
 					Record->bLandedBeyond, Record->bHandoffFalling, *Record->HandoffVelocity.ToCompactString(), Record->bJoinedTerminalState);
+		if (Action == EAction::Hurdle)
+			for (const FObservation* Record : { &OwnerRecord, &AuthorityRecord, &ProxyRecord })
+				UE_LOG(LogTemp, Display, TEXT("RpgMoverHurdle peer=%s floorTarget=%d floor=%s support=%s validSupport=%d rearTarget=%d needsRear=%d crossed=%d groundedHandoff=%d supportedHandoff=%d handoffTime=%.3f landed=%d resumedInput=%d"),
+					*GetPathNameSafe(Record->World.Get()), Record->bBackFloorTarget, *Record->BackFloorLocation.ToCompactString(),
+					*GetPathNameSafe(Record->LandingSupport.Get()), Record->bSupportContext, Record->bBackWarpTarget, Record->bNeedsBackWarp,
+					Record->bCrossedRear, Record->bHandoffGrounded, Record->bHandoffSupportedBeyond, Record->HandoffMontageTime,
+					Record->bLandedBeyond, bResumedStandingInput);
 		if (Scenario == EScenario::Death)
 			for (const FObservation* Record : { &OwnerRecord, &AuthorityRecord, &ProxyRecord })
 				UE_LOG(LogTemp, Display, TEXT("RpgMoverTraversal death peer=%s anchor=%s firstTerminal=%s maxDrift=%.4f maxActor=%s maxSync=%s maxSeconds=%.4f seconds=%.4f converged=%d convergenceSeconds=%.4f anchorAdjustments=%d rollbacks=%d"),
@@ -1494,6 +1710,8 @@ struct FRpgGaspMoverTraversalTestFixture::FState
 		if (InputController.IsValid()) InputController->SetIgnoreLookInput(false);
 		InputController.Reset(); bDriving = false;
 		if (DisabledCollider.IsValid()) DisabledCollider->SetCollisionEnabled(PreviousCollision);
+		if (DisabledSupport.IsValid()) DisabledSupport->SetCollisionEnabled(PreviousSupportCollision);
+		DisabledSupport.Reset();
 		if (Blocker.IsValid()) Blocker->Destroy();
 		if (bOwnsSession && GUnrealEd) { GUnrealEd->EndPlayMap(); bOwnsSession = false; }
 		if (bConfigured) { GetMutableDefault<URpgDeveloperSettings>()->ExperienceOverride = PreviousExperience; bConfigured = false; }

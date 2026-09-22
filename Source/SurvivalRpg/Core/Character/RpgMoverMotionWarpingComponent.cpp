@@ -46,16 +46,19 @@ FQuat URpgMoverMotionWarpingAdapter::GetBaseVisualRotationOffset() const { retur
 bool URpgMoverMotionWarpingComponent::SupportsTraversal(const FRpgMoverTraversalRequest& Request) const
 {
 	// Moving targets, Blueprint modifier callbacks and switch-off logic have additional mutable/world state.
-	// Grounded Mantle/Vault use audited fixed front targets and an optional translation-only rear target.
+	// Mantle, Vault and Hurdle use audited fixed targets; rear/floor windows preserve authored translation-only warping.
 	if (!Request.Montage || Request.WarpTargetName.IsNone() || bSearchForWindowsInAnimsWithinMontages ||
 		Request.FrontLedgeTarget.ContainsNaN() || Request.BackLedgeWarpTargetName == Request.WarpTargetName ||
 		(!Request.BackLedgeWarpTargetName.IsNone() && Request.BackLedgeTarget.ContainsNaN()) ||
+		(!Request.BackFloorWarpTargetName.IsNone() && (Request.BackFloorTarget.ContainsNaN() ||
+			Request.BackFloorWarpTargetName == Request.WarpTargetName || Request.BackFloorWarpTargetName == Request.BackLedgeWarpTargetName)) ||
 		!SwitchOffConditions.IsEmpty() || OnPreUpdate.IsBound() || IsPredictingTrajectory()) { return false; }
 	TArray<FMotionWarpingWindowData> Windows;
 	UMotionWarpingUtilities::GetMotionWarpingWindowsFromAnimation(Request.Montage, Windows);
 	if (Windows.IsEmpty() || Windows.Num() > 16) { return false; }
 	bool bHasFrontWindow = false;
 	bool bHasBackWindow = false;
+	bool bHasFloorWindow = false;
 	for (const FMotionWarpingWindowData& Window : Windows)
 	{
 		const UAnimNotifyState_MotionWarping* Notify = Window.AnimNotify;
@@ -64,17 +67,21 @@ bool URpgMoverMotionWarpingComponent::SupportsTraversal(const FRpgMoverTraversal
 			Modifier->GetClass() != URootMotionModifier_SkewWarp::StaticClass() ||
 			Modifier->RotationType != EMotionWarpRotationType::Default || Window.EndTime <= Window.StartTime) { return false; }
 		if (Modifier->WarpTargetName == Request.WarpTargetName) { bHasFrontWindow = true; }
-		else if (!Request.BackLedgeWarpTargetName.IsNone() && Modifier->WarpTargetName == Request.BackLedgeWarpTargetName)
+		else if ((!Request.BackLedgeWarpTargetName.IsNone() && Modifier->WarpTargetName == Request.BackLedgeWarpTargetName) ||
+			(!Request.BackFloorWarpTargetName.IsNone() && Modifier->WarpTargetName == Request.BackFloorWarpTargetName))
 		{
-			// The approved rear-edge warp keeps authored rotation and has no animated hand/bone offset.
+			// Source Hurdle rear/floor windows may overlap. Keep both stock modifiers and their montage order;
+			// neither rotates or introduces an animated hand/bone offset during the landing phase.
 			if (!Modifier->bWarpTranslation || Modifier->bIgnoreZAxis || !Modifier->bWarpToFeetLocation ||
 				Modifier->bWarpRotation || Modifier->WarpPointAnimProvider != EWarpPointAnimProvider::None ||
 				Modifier->bSubtractRemainingRootMotion) { return false; }
-			bHasBackWindow = true;
+			bHasBackWindow |= Modifier->WarpTargetName == Request.BackLedgeWarpTargetName;
+			bHasFloorWindow |= Modifier->WarpTargetName == Request.BackFloorWarpTargetName;
 		}
 		else { return false; }
 	}
-	return bHasFrontWindow && (bHasBackWindow == !Request.BackLedgeWarpTargetName.IsNone());
+	return bHasFrontWindow && (bHasBackWindow == !Request.BackLedgeWarpTargetName.IsNone()) &&
+		(bHasFloorWindow == !Request.BackFloorWarpTargetName.IsNone());
 }
 
 const UMotionWarpingBaseAdapter* URpgMoverMotionWarpingComponent::GetTraversalAdapter(URpgCharacterMoverComponent* Mover)
@@ -100,6 +107,10 @@ bool URpgMoverMotionWarpingComponent::BeginSimulationWarp(URpgCharacterMoverComp
 	if (!State.Command.Context.BackLedgeWarpTargetName.IsNone())
 	{
 		WarpTargets.Add(FMotionWarpingTarget(State.Command.Context.BackLedgeWarpTargetName, State.Command.Context.BackLedgeTarget));
+	}
+	if (!State.Command.Context.BackFloorWarpTargetName.IsNone())
+	{
+		WarpTargets.Add(FMotionWarpingTarget(State.Command.Context.BackFloorWarpTargetName, State.Command.Context.BackFloorTarget));
 	}
 	UMotionWarpingUtilities::GetMotionWarpingWindowsFromAnimation(State.Command.Context.Montage, SimulationWindows);
 	for (FMotionWarpingWindowData& Window : SimulationWindows)

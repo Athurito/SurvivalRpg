@@ -40,7 +40,7 @@ class SURVIVALRPG_API URpgMoverMotionWarpingComponent : public UMotionWarpingCom
 {
 	GENERATED_BODY()
 public:
-	/** Checks fixed front/optional rear targets and the standard SkewWarp montage contract before GAS playback. */
+	/** Checks fixed front/optional rear/floor targets and the standard SkewWarp montage contract before GAS playback. */
 	bool SupportsTraversal(const FRpgMoverTraversalRequest& Request) const;
 	/** Adapter for query-time root-to-warp-point calculations, outside the mutable simulation scope. */
 	const UMotionWarpingBaseAdapter* GetTraversalAdapter(URpgCharacterMoverComponent* Mover);

@@ -195,8 +195,8 @@ private:
 	/** Original per-tick input for GASP's animation/conditional blend-out read model, never used to move the leased capsule. */
 	UPROPERTY(Transient) FCharacterDefaultInputs TraversalPresentationInputs;
 	UPROPERTY(Transient) TObjectPtr<UPrimitiveComponent> LeasedCollisionComponent;
-	// Presentation target names owned by this component; never retain a replaced Vault's rear target during Mantle.
-	TArray<FName, TInlineAllocator<2>> PublishedTraversalWarpTargets;
+	// Presentation target names owned by this component; release replaced rear/floor targets after corrections or handoff.
+	TArray<FName, TInlineAllocator<3>> PublishedTraversalWarpTargets;
 	bool bAddedCollisionIgnore = false;
 	bool bTraversalRootMotionScope = false;
 	bool bTraversalGeometryInvalidThisTick = false;

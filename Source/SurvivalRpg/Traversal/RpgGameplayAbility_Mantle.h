@@ -35,7 +35,7 @@ template<> struct TStructOpsTypeTraits<FRpgMantleTargetData> : TStructOpsTypeTra
 	enum { WithNetSerializer = true, WithCopy = true };
 };
 
-/** Shared predicted GAS traversal lifecycle: CMC mantle/vault/hurdle and grounded Mover mantle/vault; concrete Blueprint assets own montage presentation. */
+/** Shared predicted GAS mantle/vault/hurdle lifecycle for CMC and grounded Mover; concrete Blueprint assets own montage presentation. */
 UCLASS(Abstract, Blueprintable)
 class SURVIVALRPG_API URpgGameplayAbility_Mantle : public URpgGameplayAbility
 {
@@ -105,6 +105,8 @@ public:
 
 	/** Derives hurdle feet at the source row's normal handoff from its curve-placed BackFloor warp and remaining root motion. */
 	bool GetHurdleLandingLocation(const ACharacter& Character, const FRpgTraversalQueryResult& Result, FVector& OutLocation) const;
+	/** Resolves the supported hurdle exit using CMC's mesh base or Mover's fixed simulation visual base. */
+	bool GetHurdleLandingLocation(const APawn& Pawn, const FRpgTraversalQueryResult& Result, FVector& OutLocation) const;
 
 	virtual bool CanActivateAbility(const FGameplayAbilitySpecHandle Handle,
 		const FGameplayAbilityActorInfo* ActorInfo, const FGameplayTagContainer* SourceTags = nullptr,
@@ -130,11 +132,12 @@ private:
 	bool ValidateTraversal(const APawn& Pawn, const FRpgTraversalQueryResult& Result) const;
 	bool GetMantleLandingAtTime(const APawn& Pawn, const FRpgTraversalQueryResult& Result, float HandoffTime, FVector& OutLocation) const;
 	bool ValidateVaultTraversal(const APawn& Pawn, const FRpgTraversalQueryResult& Result) const;
-	bool ValidateHurdleTraversal(const ACharacter& Character, const FRpgTraversalQueryResult& Result) const;
+	bool ValidateHurdleTraversal(const APawn& Pawn, const FRpgTraversalQueryResult& Result) const;
 	bool ValidateThinObstacleFaces(const APawn& Pawn, const FRpgTraversalQueryResult& Result) const;
-	bool GetHurdleTargetsAndLanding(const ACharacter& Character, const FRpgTraversalQueryResult& Result,
+	bool GetHurdleTargetsAndLanding(const APawn& Pawn, const FRpgTraversalQueryResult& Result,
 		float HandoffTime, FVector& OutFloorTarget, FVector& OutLocation) const;
-	bool FindHurdleSupport(const ACharacter& Character, const FVector& Feet, FHitResult& OutHit) const;
+	bool FindHurdleSupport(const APawn& Pawn, const FVector& Feet, FHitResult& OutHit) const;
+	bool ValidateActiveHurdleSupport(const APawn& Pawn) const;
 	float GetAdmissibleSourceHandoffTime() const;
 	void CancelCurrentMantle();
 	void CleanupMovement(bool bWasCancelled);
@@ -161,7 +164,7 @@ private:
 	FTransform ColliderAtActivation;
 	FTransform HurdleSupportAtActivation;
 	FVector HurdleEarlyLanding = FVector::ZeroVector;
-	FVector ConditionalMantleLanding = FVector::ZeroVector;
+	FVector ConditionalLanding = FVector::ZeroVector;
 	FVector LandingAtActivation = FVector::ZeroVector;
 	FVector LastClearLocation = FVector::ZeroVector;
 	FVector EntryLocation = FVector::ZeroVector;
@@ -178,4 +181,6 @@ private:
 	bool bEnding = false;
 	bool bReceivedTargetData = false;
 	bool bGameplayCancellationRequested = false;
+	// Set only by our exact Mover Hurdle play's noninterrupted end callback, before the Blueprint montage task ends GAS.
+	bool bMoverHurdleCompletedNaturally = false;
 };
