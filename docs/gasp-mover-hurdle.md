@@ -1,5 +1,8 @@
 # GASP-01: Grounded Mover Hurdle
 
+Review: [Draft-PR #144](https://github.com/Athurito/SurvivalRpg/pull/144), open and
+unmerged; manual visual acceptance remains pending.
+
 This slice extends the existing `RpgGaspMoverExperience`, contextual Space input,
 query and `GA_RpgGasp_MoverMantle`. Hurdle crosses a thin obstacle with validated
 ground behind it and returns to ordinary Walking. Vault still requires the

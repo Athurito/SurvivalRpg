@@ -9,14 +9,14 @@ Abnahme. Beide bei relevanten Fortschritten im selben PR aktualisieren.
 
 | Feld | Wert |
 | --- | --- |
-| Aktive Implementierungsaufgabe | `GASP-01` – Grounded Hurdle für Mover; Validierung |
+| Aktive Implementierungsaufgabe | `GASP-01` – Grounded Hurdle für Mover; PR offen |
 | Nächste bereite Aufgabe | GASP-01-Sichttest/Review abschließen; danach GASP-02 getrennt bewerten |
 | Zuständiger Chat / beanspruchte Dateien | GASP-01-Chat; Traversal Ability/Query, Mover Types/Component/Warping, Editor-Traversal-Tests, optionaler MCP-Adapter, Mover Query/Chooser und zehn Hurdle-Montagen. Keine Mapänderung |
 | Runtime-Ausgangspunkt | `ae4d620c3b20bc45d0655ceddb0e45dc4f9bdcce`, bestätigter Merge PR #143 auf `master`; `origin/master` frisch abgerufen |
 | Implementierungs-Branch / Checkout | `codex/gasp-01-mover-hurdle`, `D:/Repos/SurvivalRpg` |
 | Letzter Implementierungs-Commit | `b78edf5b69296369a684b57e5103e4e0920dd0c5`; Hurdle-Grundlage `c8961b53ba413ddcd62741d643883d6fda816ac6` |
-| Arbeits-PR | In Vorbereitung; Nutzer hat Push nach `Athurito/SurvivalRpg` und Draft-PR ausdrücklich bestätigt |
-| Nächster Handgriff | Draft-PR öffnen; danach Sichttest in `Lvl_RpgGaspMover` und Review abschließen |
+| Arbeits-PR | [Draft-PR #144](https://github.com/Athurito/SurvivalRpg/pull/144); offen, nicht gemergt |
+| Nächster Handgriff | Manuellen Sichttest in `Lvl_RpgGaspMover` durchführen und PR #144 reviewen; Merge erst nach Abnahme |
 | Blocker / offene Abnahme | Manueller Sichttest offen. Bestehende Lifecycle-/Netzwerk-Folgearbeiten unter `GASP-02` bleiben offen |
 
 ## GASP-01 – aktueller Implementierungsnachweis

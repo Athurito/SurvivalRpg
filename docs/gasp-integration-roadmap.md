@@ -7,7 +7,7 @@ nicht eine neue Gesamtplanung für Combat, Crafting oder Portale.
 
 ## Schnellstart
 
-- **Aktiver Schritt: `GASP-01` – Hurdle für Mover.** Implementiert und automatisiert geprüft auf `codex/gasp-01-mover-hurdle`; Sichttest/Review offen.
+- **Aktiver Schritt: `GASP-01` – Hurdle für Mover.** [Draft-PR #144](https://github.com/Athurito/SurvivalRpg/pull/144) offen; implementiert und automatisiert geprüft, Sichttest/Review ausstehend.
 - Aktive Aufgabe, Branch, letzte Ergebnisse und konkrete Fortsetzung stehen in
   [gasp-integration-handoff.md](gasp-integration-handoff.md).
 - Letzter akzeptierter Runtime-Stand: [PR #142](https://github.com/Athurito/SurvivalRpg/pull/142),
@@ -39,7 +39,7 @@ Vorgabe, insgesamt genau drei Experience-Dateien zu besitzen.
 
 | ID | Arbeitspaket | Status | Voraussetzung / Abschluss |
 | --- | --- | --- | --- |
-| `GASP-01` | Grounded Hurdle für Mover | **Validierung** | Runtime `b78edf5b`; Editor/Game, 47 Tests und zwei Prozessläufe bestanden; Sichttest/Review offen; [Bericht](gasp-mover-hurdle.md) |
+| `GASP-01` | Grounded Hurdle für Mover | **PR offen** | [Draft #144](https://github.com/Athurito/SurvivalRpg/pull/144); Runtime `b78edf5b`; Editor/Game, 47 Tests und zwei Prozessläufe bestanden; Sichttest/Review offen; [Bericht](gasp-mover-hurdle.md) |
 | `GASP-02` | Gezielte Stabilisierung | Offen | Kleine getrennte Aufgaben aus dem Register unten; vor Erweiterung um Ragdoll bewerten |
 | `GASP-03` | Mover-Ragdoll-Experience | Geplant | `GASP-01`; belastbarer Lifecycle-Stand aus `GASP-02`; Source-Audit zuerst |
 | `GASP-04` | Vergleich der drei Varianten | Geplant | `GASP-03`; dokumentierte gemeinsame Abnahmematrix |
