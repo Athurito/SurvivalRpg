@@ -456,7 +456,7 @@ namespace RpgGaspMoverTraversalTests
 		FVector HandoffLocation = FVector::ZeroVector, HandoffVelocity = FVector::ZeroVector;
 		FVector BackFloorLocation = FVector::ZeroVector;
 		TWeakObjectPtr<UPrimitiveComponent> LandingSupport;
-		float HandoffMontageTime = -1.0f, LastFrontWarpEnd = 0.0f;
+		float HandoffMontageTime = -1.0f, AbilityEndMontageTime = -1.0f, LastFrontWarpEnd = 0.0f;
 		FVector DeathLocation = FVector::ZeroVector;
 		FVector FirstTerminalDeathLocation = FVector::ZeroVector, BeforeDeathActorLocation = FVector::ZeroVector;
 		FVector MaximumDeathDriftLocation = FVector::ZeroVector, MaximumDeathDriftSyncLocation = FVector::ZeroVector;
@@ -746,6 +746,15 @@ struct FRpgGaspMoverTraversalTestFixture::FState
 		{
 			APawn* Character = Snapshot->Character.Get();
 			if (!Character || !Data.AbilityThatEnded || Data.AbilityThatEnded->GetClass()->GetPathName() != AbilityPath) return;
+			UAnimInstance* Animation = Mesh(Character) ? Mesh(Character)->GetAnimInstance() : nullptr;
+			const FAnimMontageInstance* Instance = Animation ? Animation->GetMontageInstanceForID(Snapshot->InstanceId) : nullptr;
+			if (Snapshot->Montage.IsValid() && Instance && Instance->IsStopped()
+				&& (Instance->Montage == Snapshot->Montage.Get() || Instance->Montage == nullptr))
+			{
+				// Auto blend-out removes the active montage lookup before completion. The exact play instance
+				// remains available through this GAS end callback, even after natural termination clears its asset.
+				Snapshot->AbilityEndMontageTime = Instance->GetPosition();
+			}
 			++Snapshot->Ends; Snapshot->bCancelled |= Data.bWasCancelled;
 			Snapshot->bConfirmedPlayCancelled |= Scenario == EScenario::HeldRetry && AuthorityRecord.Commits > 0 && Data.bWasCancelled;
 			if (Data.bWasCancelled) ++Snapshot->CancelledEnds;
@@ -1075,7 +1084,7 @@ struct FRpgGaspMoverTraversalTestFixture::FState
 			Record.HandoffVelocity = FinalizedMovement->GetVelocity_WorldSpace();
 			Record.bHandoffGrounded = FinalizedSync.MovementMode == DefaultModeNames::Walking;
 			Record.bHandoffFalling = FinalizedSync.MovementMode == DefaultModeNames::Falling;
-			Record.HandoffMontageTime = FMath::Max(Record.LastTime, TraversalState->Command.PresentationEndPosition);
+			Record.HandoffMontageTime = FMath::Max3(Record.LastTime, Record.AbilityEndMontageTime, TraversalState->Command.PresentationEndPosition);
 			Record.bHandoffSupportedBeyond = Action == EAction::Hurdle && Record.bHandoffGrounded
 				&& SupportedBeyondHurdle(Character, Record.HandoffLocation, Record.LandingSupport.Get());
 			Record.bStoppedAtHandoff |= Record.LastLeaseSpeed > 100.0f && Record.HandoffVelocity.Size2D() < 1.0;
@@ -1668,10 +1677,10 @@ struct FRpgGaspMoverTraversalTestFixture::FState
 					Record->bLandedBeyond, Record->bHandoffFalling, *Record->HandoffVelocity.ToCompactString(), Record->bJoinedTerminalState);
 		if (Action == EAction::Hurdle)
 			for (const FObservation* Record : { &OwnerRecord, &AuthorityRecord, &ProxyRecord })
-				UE_LOG(LogTemp, Display, TEXT("RpgMoverHurdle peer=%s floorTarget=%d floor=%s support=%s validSupport=%d rearTarget=%d needsRear=%d crossed=%d groundedHandoff=%d supportedHandoff=%d handoffTime=%.3f landed=%d resumedInput=%d"),
+				UE_LOG(LogTemp, Display, TEXT("RpgMoverHurdle peer=%s floorTarget=%d floor=%s support=%s validSupport=%d rearTarget=%d needsRear=%d crossed=%d groundedHandoff=%d supportedHandoff=%d handoffTime=%.3f abilityEndTime=%.3f landed=%d resumedInput=%d"),
 					*GetPathNameSafe(Record->World.Get()), Record->bBackFloorTarget, *Record->BackFloorLocation.ToCompactString(),
 					*GetPathNameSafe(Record->LandingSupport.Get()), Record->bSupportContext, Record->bBackWarpTarget, Record->bNeedsBackWarp,
-					Record->bCrossedRear, Record->bHandoffGrounded, Record->bHandoffSupportedBeyond, Record->HandoffMontageTime,
+					Record->bCrossedRear, Record->bHandoffGrounded, Record->bHandoffSupportedBeyond, Record->HandoffMontageTime, Record->AbilityEndMontageTime,
 					Record->bLandedBeyond, bResumedStandingInput);
 		if (Scenario == EScenario::Death)
 			for (const FObservation* Record : { &OwnerRecord, &AuthorityRecord, &ProxyRecord })

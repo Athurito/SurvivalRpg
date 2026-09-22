@@ -607,20 +607,39 @@ void URpgCharacterMoverComponent::HandleTraversalPostFinalize(const FMoverSyncSt
 
 void URpgCharacterMoverComponent::RefreshTraversalPresentation(URpgAbilitySystemComponent* AbilitySystem)
 {
-	UpdateTraversalPresentation(GetSyncState(), AbilitySystem);
+	// ASC actor-channel binding may precede PawnExtension initialization by a frame. Keep that explicit
+	// binding available to pre-mesh finalization/tick, so a late join does not hold the previous snapshot
+	// until PawnExtension initializes after the mesh has already consumed its animation interval.
+	TraversalPresentationAbilitySystem = GetOwnerRole() == ROLE_SimulatedProxy && IsValid(AbilitySystem)
+		&& AbilitySystem->GetAvatarActor() == GetOwner() ? AbilitySystem : nullptr;
+	UpdateTraversalPresentation(GetSyncState());
 }
 
-void URpgCharacterMoverComponent::UpdateTraversalPresentation(const FMoverSyncState& SyncState, URpgAbilitySystemComponent* AbilitySystem)
+void URpgCharacterMoverComponent::UpdateTraversalPresentation(const FMoverSyncState& SyncState)
 {
-	if (GetOwnerRole() != ROLE_SimulatedProxy) return;
-	const FRpgMoverTraversalSyncState* State = SyncState.SyncStateCollection.FindDataByType<FRpgMoverTraversalSyncState>();
-	if (!AbilitySystem)
+	if (GetOwnerRole() != ROLE_SimulatedProxy)
 	{
-		if (const URpgPawnExtensionComponent* Extension = URpgPawnExtensionComponent::FindPawnExtensionComponent(GetOwner()))
+		TraversalPresentationAbilitySystem.Reset();
+		return;
+	}
+	const FRpgMoverTraversalSyncState* State = SyncState.SyncStateCollection.FindDataByType<FRpgMoverTraversalSyncState>();
+	URpgAbilitySystemComponent* BoundAbilitySystem = TraversalPresentationAbilitySystem.Get();
+	if (!BoundAbilitySystem || BoundAbilitySystem->GetAvatarActor() != GetOwner())
+	{
+		TraversalPresentationAbilitySystem.Reset();
+		BoundAbilitySystem = nullptr;
+	}
+	URpgAbilitySystemComponent* AbilitySystem = nullptr;
+	if (const URpgPawnExtensionComponent* Extension = URpgPawnExtensionComponent::FindPawnExtensionComponent(GetOwner()))
+	{
+		AbilitySystem = Extension->GetRpgAbilitySystemComponent();
+		if (AbilitySystem)
 		{
-			AbilitySystem = Extension->GetRpgAbilitySystemComponent();
+			// PawnExtension remains canonical once available, including a replacement that is not bound yet.
+			TraversalPresentationAbilitySystem.Reset();
 		}
 	}
+	if (!AbilitySystem) AbilitySystem = BoundAbilitySystem;
 	if (!AbilitySystem || AbilitySystem->GetAvatarActor() != GetOwner())
 	{
 		if (State && State->Command.IsActive())
@@ -863,6 +882,7 @@ void URpgCharacterMoverComponent::CaptureTraversalPresentationEnd(const UAnimIns
 
 void URpgCharacterMoverComponent::ClearAbilityRootMotion()
 {
+	TraversalPresentationAbilitySystem.Reset();
 	AbilityAnimInstance.Reset();
 	AbilityMontage.Reset();
 	AbilityMontageInstanceId = INDEX_NONE;
