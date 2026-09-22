@@ -2,8 +2,12 @@
 
 Teil von `GASP-02`, begonnen am 22.09.2026 auf `b00ba74b`.
 Branch: `codex/gasp-02-block-cleanup`. Implementierungs-Commit:
-`43ac69b8b6f109b942ffdd1edc83d0ef333257aa`. Status: **PR offen**,
-[Draft-PR #145](https://github.com/Athurito/SurvivalRpg/pull/145); noch nicht gemergt.
+`43ac69b8b6f109b942ffdd1edc83d0ef333257aa`. Status: **Gemergt**,
+[PR #145](https://github.com/Athurito/SurvivalRpg/pull/145), bestätigter Merge
+`4039be2560b1733859005ec052865cff0bb03d3b` am 22.09.2026 um 20:05:43 UTC.
+Der Nutzer beauftragte den Merge ohne weiteren Sichttest, falls eine zuverlässige
+manuelle Reproduktion nicht möglich ist. Den gezielten Abbaufehler beweisen die
+Automation-Tests; für normales Spiel ist kein deterministischer Sichttest bekannt.
 
 ## Befund und Ownership
 
