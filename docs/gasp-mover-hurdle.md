@@ -1,7 +1,8 @@
 # GASP-01: Grounded Mover Hurdle
 
-Review: [PR #144](https://github.com/Athurito/SurvivalRpg/pull/144), open and
-unmerged; the user accepted the visual review and authorized merging on 22 September 2026.
+Review: [PR #144](https://github.com/Athurito/SurvivalRpg/pull/144), merged on
+22 September 2026 after the user's visual acceptance and explicit authorization.
+Confirmed merge commit: `aa4447d69d3187dec3592913a1f683b5c91c0a7b`.
 
 This slice extends the existing `RpgGaspMoverExperience`, contextual Space input,
 query and `GA_RpgGasp_MoverMantle`. Hurdle crosses a thin obstacle with validated
@@ -209,4 +210,5 @@ and authorized merging on 22 September 2026: “schaut gut aus kann gemerged wer
 The exact manual role, gait and obstacle coverage was not individually recorded;
 the automated host/owner/observer evidence above remains a separate validation.
 Only documentation changed after tested runtime commit `b78edf5b`; the builds and
-automated tests were not rerun for this acceptance update. The merge is still pending.
+automated tests were not rerun for this acceptance update or the subsequent
+documentation-only merge-status update. PR #144 is confirmed merged.

@@ -7,12 +7,13 @@ nicht eine neue Gesamtplanung für Combat, Crafting oder Portale.
 
 ## Schnellstart
 
-- **Aktiver Schritt: `GASP-01` – Hurdle für Mover.** [PR #144](https://github.com/Athurito/SurvivalRpg/pull/144) offen; implementiert und automatisiert geprüft, Nutzer-Sichtabnahme und Merge-Freigabe vom 22.09.2026 liegen vor.
+- **Nächster Schritt: `GASP-02` – gezielte Stabilisierung.** `GASP-01` ist nach Nutzer-Sichtabnahme am 22.09.2026 mit [PR #144](https://github.com/Athurito/SurvivalRpg/pull/144) gemergt. Keine Implementierungsaufgabe ist aktuell beansprucht.
 - Aktive Aufgabe, Branch, letzte Ergebnisse und konkrete Fortsetzung stehen in
   [gasp-integration-handoff.md](gasp-integration-handoff.md).
-- Letzter akzeptierter Runtime-Stand: [PR #142](https://github.com/Athurito/SurvivalRpg/pull/142),
-  am 20.09.2026 nach manuellem Sichttest auf `master` gemergt.
-  Merge: `8268b07325f0404617a9e8e70d938d05c581afc6`, getesteter Feature-Commit: `06d810fa`.
+- Letzter akzeptierter Runtime-Stand: [PR #144](https://github.com/Athurito/SurvivalRpg/pull/144),
+  am 22.09.2026 nach manuellem Sichttest auf `master` gemergt.
+  Merge: `aa4447d69d3187dec3592913a1f683b5c91c0a7b`, getesteter Runtime-Commit: `b78edf5b`.
+  Der finale PR-Head `159521b3` ergänzt ausschließlich Dokumentation zu diesem Runtime-Stand.
 - Dieser Stand enthält offene Folgearbeiten. „Gemergt“ bedeutet nicht, dass alle
   Netzwerk-/Lifecycle-Randfälle gelöst oder alle Umgebungen getestet sind.
 - Vor Arbeit prüfen: aktueller Git-Stand, diese Roadmap, Übergabe und die zum
@@ -27,7 +28,7 @@ nicht eine neue Gesamtplanung für Combat, Crafting oder Portale.
 | CMC | GASP-Locomotion, Mantle, Vault und Hurdle in bestehenden Experiences | [CMC](gasp-cmc-integration.md), [Mantle](gasp-mantle-integration.md), [Vault](gasp-vault-integration.md), [Hurdle](gasp-hurdle-integration.md) |
 | Runtime-Retargeting | Optionales Profil; UEFN bleibt Gameplay-Mesh und sichtbarer Standard; noch kein fest ausgewählter neuer Hauptcharacter | [Retargeting](gasp-runtime-retargeting.md), [Mover-Anbindung](gasp-mover-gameplay.md) |
 | Mover-Grundlage | Eigene `RpgGaspMoverExperience`, Bewegung inklusive vorhandener Sprint-Eingabe, Equipment/GAS, Tod/Respawn und optionales Retargeting | [Foundation](gasp-mover-foundation.md), [Gameplay](gasp-mover-gameplay.md), [Lifecycle](gasp-mover-lifecycle.md) |
-| Mover-Traversal | Mantle und Vault akzeptiert; Grounded Hurdle im GASP-01-Branch implementiert, noch nicht gemergt | [Mover-Mantle](gasp-mover-mantle.md), [Mover-Vault](gasp-mover-vault.md), [Mover-Hurdle](gasp-mover-hurdle.md) |
+| Mover-Traversal | Mantle, Vault und Grounded Hurdle akzeptiert und gemergt | [Mover-Mantle](gasp-mover-mantle.md), [Mover-Vault](gasp-mover-vault.md), [Mover-Hurdle](gasp-mover-hurdle.md) |
 | Mover-Netzwerk | Fixed 50 Hz; versionierte UE-5.8.2-Interpolationserholung; entfernte Traversal-Animation folgt angezeigter Bewegung | [Fixed](gasp-mover-fixed-tick.md), [Recovery](gasp-mover-network-recovery.md), [Darstellung](gasp-mover-traversal-presentation.md) |
 | Mover-Ragdoll | Noch keine integrierte RPG-Experience/PawnData. Die Assetbasis enthält unter `Mover/Ragdoll` bisher nur die referenzierte Input-Struktur; die vollständige Pawn-Abhängigkeit ist neu zu prüfen | [Assetumfang](gasp-asset-foundation.md) |
 
@@ -39,7 +40,7 @@ Vorgabe, insgesamt genau drei Experience-Dateien zu besitzen.
 
 | ID | Arbeitspaket | Status | Voraussetzung / Abschluss |
 | --- | --- | --- | --- |
-| `GASP-01` | Grounded Hurdle für Mover | **PR offen** | [PR #144](https://github.com/Athurito/SurvivalRpg/pull/144); Runtime `b78edf5b`; Editor/Game, 47 Tests und zwei Prozessläufe bestanden; Nutzer-Sichtabnahme und Merge-Freigabe am 22.09.2026; [Bericht](gasp-mover-hurdle.md) |
+| `GASP-01` | Grounded Hurdle für Mover | **Gemergt** | [PR #144](https://github.com/Athurito/SurvivalRpg/pull/144), Merge `aa4447d6`; Runtime `b78edf5b`; Editor/Game, 47 Tests und zwei Prozessläufe bestanden; Nutzer-Sichtabnahme am 22.09.2026; [Bericht](gasp-mover-hurdle.md) |
 | `GASP-02` | Gezielte Stabilisierung | Offen | Kleine getrennte Aufgaben aus dem Register unten; vor Erweiterung um Ragdoll bewerten |
 | `GASP-03` | Mover-Ragdoll-Experience | Geplant | `GASP-01`; belastbarer Lifecycle-Stand aus `GASP-02`; Source-Audit zuerst |
 | `GASP-04` | Vergleich der drei Varianten | Geplant | `GASP-03`; dokumentierte gemeinsame Abnahmematrix |

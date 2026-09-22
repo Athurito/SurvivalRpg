@@ -9,18 +9,22 @@ Abnahme. Beide bei relevanten Fortschritten im selben PR aktualisieren.
 
 | Feld | Wert |
 | --- | --- |
-| Aktive Implementierungsaufgabe | `GASP-01` – Grounded Hurdle für Mover; PR offen |
-| Nächste bereite Aufgabe | GASP-01 nach Nutzerfreigabe mergen; danach GASP-02 getrennt bewerten |
-| Zuständiger Chat / beanspruchte Dateien | GASP-01-Chat; Traversal Ability/Query, Mover Types/Component/Warping, Editor-Traversal-Tests, optionaler MCP-Adapter, Mover Query/Chooser und zehn Hurdle-Montagen. Keine Mapänderung |
-| Runtime-Ausgangspunkt | `ae4d620c3b20bc45d0655ceddb0e45dc4f9bdcce`, bestätigter Merge PR #143 auf `master`; `origin/master` frisch abgerufen |
-| Implementierungs-Branch / Checkout | `codex/gasp-01-mover-hurdle`, `D:/Repos/SurvivalRpg` |
+| Aktive Implementierungsaufgabe | Keine; `GASP-01` ist abgeschlossen und gemergt |
+| Nächste bereite Aufgabe | `GASP-02` – gezielte Stabilisierung; einen begrenzten Befund aus dem Roadmap-Register auswählen |
+| Zuständiger Chat / beanspruchte Dateien | GASP-01 abgeschlossen, keine Dateien mehr beansprucht. Mover Query/Chooser und zehn Hurdle-Montagen übernommen; keine Mapänderung |
+| Runtime-Ausgangspunkt | `aa4447d69d3187dec3592913a1f683b5c91c0a7b`, bestätigter Merge PR #144 auf `master` am 22.09.2026 |
+| Checkout / abgeschlossener Branch | `master`, `D:/Repos/SurvivalRpg`; abgeschlossener Feature-Branch `codex/gasp-01-mover-hurdle` |
 | Letzter Implementierungs-Commit | `b78edf5b69296369a684b57e5103e4e0920dd0c5`; Hurdle-Grundlage `c8961b53ba413ddcd62741d643883d6fda816ac6` |
-| Arbeits-PR | [PR #144](https://github.com/Athurito/SurvivalRpg/pull/144); offen, Nutzerfreigabe zum Merge liegt vor |
-| Nächster Handgriff | PR #144 mergen, bestätigten Merge eintragen und lokalen `master` synchronisieren |
-| Blocker / offene Abnahme | Nutzer hat den Sichttest am 22.09.2026 akzeptiert und den Merge beauftragt. Bestehende Lifecycle-/Netzwerk-Folgearbeiten unter `GASP-02` bleiben offen |
+| Abgeschlossener Arbeits-PR | [PR #144](https://github.com/Athurito/SurvivalRpg/pull/144); Merge bestätigt, finaler PR-Head `159521b3988591f9d176b80dc224ab4588e10533` |
+| Nächster Handgriff | Für `GASP-02` Repository-/PR-Stand und offene Befunde prüfen, dann einen einzelnen Stabilisierungsschritt im eigenen `codex/`-Branch bearbeiten |
+| Blocker / offene Abnahme | GASP-01-Sichttest am 22.09.2026 akzeptiert. Bestehende Lifecycle-/Netzwerk-Folgearbeiten unter `GASP-02` bleiben offen |
 
-## GASP-01 – aktueller Implementierungsnachweis
+## Letzter abgeschlossener Runtime-Schritt – GASP-01
 
+- [PR #144](https://github.com/Athurito/SurvivalRpg/pull/144) ist nach ausdrücklicher
+  Nutzerfreigabe seit 22.09.2026 gemergt: `aa4447d69d3187dec3592913a1f683b5c91c0a7b`.
+  Der lokale `master` wurde per Fast-forward synchronisiert. Diese Statuspflege
+  nach dem Merge ändert ausschließlich Dokumentation.
 - Bestehende Experience/Space-Ability erweitert; zehn originale grounded Relaxed
   Mover-Hurdle-Montagen, BackFloor und schwacher Landing-Support in Fixed-Historie,
   serverseitige Geometrieprüfung und vorhandener Collision-/Warp-Cleanup.
@@ -55,7 +59,7 @@ Abnahme. Beide bei relevanten Fortschritten im selben PR aktualisieren.
   den NetworkPrediction-Override gemäß `Build/Patches/NetworkPrediction/README.md`
   vorbereiten/prüfen.
 
-## Letzter abgeschlossener Runtime-Schritt
+## Vorheriger akzeptierter Runtime-Schritt – Mover-Vault
 
 - [PR #142](https://github.com/Athurito/SurvivalRpg/pull/142) ist seit 20.09.2026
   gemergt. Feature-Commit `06d810fa`; Nutzer bestätigte die sichtbare Vault-Korrektur
