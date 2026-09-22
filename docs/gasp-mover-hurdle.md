@@ -1,7 +1,7 @@
 # GASP-01: Grounded Mover Hurdle
 
-Review: [Draft-PR #144](https://github.com/Athurito/SurvivalRpg/pull/144), open and
-unmerged; manual visual acceptance remains pending.
+Review: [PR #144](https://github.com/Athurito/SurvivalRpg/pull/144), open and
+unmerged; the user accepted the visual review and authorized merging on 22 September 2026.
 
 This slice extends the existing `RpgGaspMoverExperience`, contextual Space input,
 query and `GA_RpgGasp_MoverMantle`. Hurdle crosses a thin obstacle with validated
@@ -117,8 +117,8 @@ binding fix (`build-editor-03.log`, `build-game-03.log`).
   optional-retargeting cases, CMC Mantle/Vault handoffs and two native smoothing/
   interpolation contracts. That is **47 distinct passing tests in three batches**
   of 2, 17 and 28 on the final implementation, not one combined 47-test run.
-- Both separate-process probes below pass. User visual acceptance and
-  packaged/WAN validation have not been performed.
+- Both separate-process probes below pass. The user accepted the visual review
+  on 22 September 2026. Packaged/WAN validation has not been performed.
 
 Three uncooked `UnrealEditor -game` processes use ordinary loopback transport
 and the existing Enhanced Input actions. Target frame limits are 60/120/60;
@@ -204,8 +204,9 @@ Existing unrelated limitations remain in the [roadmap](gasp-integration-roadmap.
 under GASP-02. This slice does not close historical lifecycle or network findings
 merely because another run succeeds.
 
-Manual acceptance remains: in `Lvl_RpgGaspMover`, approach the 20/40/59 cm lanes
-standing, walking, running and obliquely, use contextual Space, and inspect the
-landing and held-input continuation as host, owner and observer. Compare adjacent
-Mantle/Vault lanes and confirm the approved lighting/material presentation.
-The PR remains unmerged until this review is accepted.
+After editor validation in `Lvl_RpgGaspMover`, the user accepted the visible result
+and authorized merging on 22 September 2026: “schaut gut aus kann gemerged werden”.
+The exact manual role, gait and obstacle coverage was not individually recorded;
+the automated host/owner/observer evidence above remains a separate validation.
+Only documentation changed after tested runtime commit `b78edf5b`; the builds and
+automated tests were not rerun for this acceptance update. The merge is still pending.

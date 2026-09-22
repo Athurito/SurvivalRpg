@@ -10,14 +10,14 @@ Abnahme. Beide bei relevanten Fortschritten im selben PR aktualisieren.
 | Feld | Wert |
 | --- | --- |
 | Aktive Implementierungsaufgabe | `GASP-01` – Grounded Hurdle für Mover; PR offen |
-| Nächste bereite Aufgabe | GASP-01-Sichttest/Review abschließen; danach GASP-02 getrennt bewerten |
+| Nächste bereite Aufgabe | GASP-01 nach Nutzerfreigabe mergen; danach GASP-02 getrennt bewerten |
 | Zuständiger Chat / beanspruchte Dateien | GASP-01-Chat; Traversal Ability/Query, Mover Types/Component/Warping, Editor-Traversal-Tests, optionaler MCP-Adapter, Mover Query/Chooser und zehn Hurdle-Montagen. Keine Mapänderung |
 | Runtime-Ausgangspunkt | `ae4d620c3b20bc45d0655ceddb0e45dc4f9bdcce`, bestätigter Merge PR #143 auf `master`; `origin/master` frisch abgerufen |
 | Implementierungs-Branch / Checkout | `codex/gasp-01-mover-hurdle`, `D:/Repos/SurvivalRpg` |
 | Letzter Implementierungs-Commit | `b78edf5b69296369a684b57e5103e4e0920dd0c5`; Hurdle-Grundlage `c8961b53ba413ddcd62741d643883d6fda816ac6` |
-| Arbeits-PR | [Draft-PR #144](https://github.com/Athurito/SurvivalRpg/pull/144); offen, nicht gemergt |
-| Nächster Handgriff | Manuellen Sichttest in `Lvl_RpgGaspMover` durchführen und PR #144 reviewen; Merge erst nach Abnahme |
-| Blocker / offene Abnahme | Manueller Sichttest offen. Bestehende Lifecycle-/Netzwerk-Folgearbeiten unter `GASP-02` bleiben offen |
+| Arbeits-PR | [PR #144](https://github.com/Athurito/SurvivalRpg/pull/144); offen, Nutzerfreigabe zum Merge liegt vor |
+| Nächster Handgriff | PR #144 mergen, bestätigten Merge eintragen und lokalen `master` synchronisieren |
+| Blocker / offene Abnahme | Nutzer hat den Sichttest am 22.09.2026 akzeptiert und den Merge beauftragt. Bestehende Lifecycle-/Netzwerk-Folgearbeiten unter `GASP-02` bleiben offen |
 
 ## GASP-01 – aktueller Implementierungsnachweis
 
@@ -46,7 +46,12 @@ Abnahme. Beide bei relevanten Fortschritten im selben PR aktualisieren.
   Prozessvergleich stehen im [Mover-Hurdle-Bericht](gasp-mover-hurdle.md).
   Lokale Belege: `Saved/GaspMoverHurdle20260922`; ignoriert, nicht automatisch
   in anderen Checkouts verfügbar. Versionierte Automationstests bleiben ausführbar.
-- Kein Packaged-/WAN-Test und keine Nutzer-Sichtabnahme. Vor einem erneuten Build
+- Nutzer-Sichtabnahme am 22.09.2026 nach Editor-Validierung in `Lvl_RpgGaspMover`:
+  „schaut gut aus kann gemerged werden“. Die genaue manuelle Rollen-/Gangarten-/
+  Hindernisabdeckung wurde nicht einzeln protokolliert; die automatisierten
+  Nachweise oben bleiben davon getrennt. Seit `b78edf5b` nur Dokumentation geändert;
+  Builds und Tests wurden für diese Abnahmeaktualisierung nicht erneut ausgeführt.
+- Kein Packaged-/WAN-Test. Vor einem erneuten Build
   den NetworkPrediction-Override gemäß `Build/Patches/NetworkPrediction/README.md`
   vorbereiten/prüfen.
 
