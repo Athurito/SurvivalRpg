@@ -277,19 +277,29 @@ bool URpgGameplayAbility_Mantle::GetVaultExitLocation(const APawn& Pawn,
 bool URpgGameplayAbility_Mantle::GetHurdleLandingLocation(const ACharacter& Character,
 	const FRpgTraversalQueryResult& Result, FVector& OutLocation) const
 {
+	return GetHurdleLandingLocation(static_cast<const APawn&>(Character), Result, OutLocation);
+}
+
+bool URpgGameplayAbility_Mantle::GetHurdleLandingLocation(const APawn& Pawn,
+	const FRpgTraversalQueryResult& Result, FVector& OutLocation) const
+{
 	OutLocation = FVector::ZeroVector;
-	const URpgTraversalQueryComponent* Query = Character.FindComponentByClass<URpgTraversalQueryComponent>();
+	const URpgTraversalQueryComponent* Query = Pawn.FindComponentByClass<URpgTraversalQueryComponent>();
 	const FRpgTraversalAnimationEntry* Entry = Query ? Query->AllowedHurdleAnimations.FindByPredicate(
 		[&Result](const FRpgTraversalAnimationEntry& Candidate) { return Candidate.Montage == Result.ChosenMontage; }) : nullptr;
 	FVector FloorTarget;
-	return Entry && GetHurdleTargetsAndLanding(Character, Result, Entry->HandoffTime, FloorTarget, OutLocation);
+	return Entry && GetHurdleTargetsAndLanding(Pawn, Result, Entry->HandoffTime, FloorTarget, OutLocation);
 }
 
-bool URpgGameplayAbility_Mantle::GetHurdleTargetsAndLanding(const ACharacter& Character, const FRpgTraversalQueryResult& Result,
+bool URpgGameplayAbility_Mantle::GetHurdleTargetsAndLanding(const APawn& Pawn, const FRpgTraversalQueryResult& Result,
 	float HandoffTime, FVector& OutFloorTarget, FVector& OutLocation) const
 {
 	OutFloorTarget = OutLocation = FVector::ZeroVector;
-	if (Result.ActionType != 1 || !Result.ChosenMontage || !Character.GetMesh() || !Character.GetMesh()->GetAnimInstance()
+	const ACharacter* Character = Cast<ACharacter>(&Pawn);
+	const USkeletalMeshComponent* Mesh = URpgPawnExtensionComponent::FindGameplayMesh(&Pawn);
+	const URpgCharacterMoverComponent* Mover = Character ? nullptr : Pawn.FindComponentByClass<URpgCharacterMoverComponent>();
+	const UMotionWarpingBaseAdapter* Adapter = Mover ? Mover->GetTraversalWarpingAdapter() : nullptr;
+	if ((!Character && !Adapter) || Result.ActionType != 1 || !Result.ChosenMontage || !Mesh || !Mesh->GetAnimInstance()
 		|| !FMath::IsFinite(HandoffTime) || HandoffTime <= Result.StartTime || HandoffTime > Result.ChosenMontage->GetPlayLength() + 0.001f
 		|| Result.FrontLedgeLocation.ContainsNaN() || Result.FrontLedgeNormal.ContainsNaN() || Result.BackLedgeLocation.ContainsNaN()
 		|| Result.BackLedgeNormal.ContainsNaN() || Result.BackFloorLocation.ContainsNaN() || BackFloorDistanceCurveName.IsNone()
@@ -311,7 +321,7 @@ bool URpgGameplayAbility_Mantle::GetHurdleTargetsAndLanding(const ACharacter& Ch
 	if (!FrontModifier || !FrontModifier->bWarpTranslation || FrontModifier->bIgnoreZAxis || !FrontModifier->bWarpToFeetLocation
 		|| !FrontModifier->bWarpRotation || FrontModifier->RotationType != EMotionWarpRotationType::Default
 		|| FrontModifier->bSubtractRemainingRootMotion || FrontModifier->WarpPointAnimProvider != EWarpPointAnimProvider::Bone
-		|| Character.GetMesh()->GetBoneIndex(FrontModifier->WarpPointAnimBoneName) == INDEX_NONE) return false;
+		|| Mesh->GetBoneIndex(FrontModifier->WarpPointAnimBoneName) == INDEX_NONE) return false;
 	float FinalFloorEnd = 0.0f;
 	for (const TArray<FMotionWarpingWindowData>* Windows : { &BackWindows, &FloorWindows })
 	{
@@ -337,17 +347,19 @@ bool URpgGameplayAbility_Mantle::GetHurdleTargetsAndLanding(const ACharacter& Ch
 	OutFloorTarget = Result.BackLedgeLocation + Result.BackLedgeNormal * FMath::Abs(BackDistance - FloorDistance);
 	OutFloorTarget.Z = Result.BackFloorLocation.Z;
 	FMemMark Mark(FMemStack::Get());
-	const FTransform Offset = UMotionWarpingUtilities::CalculateRootTransformRelativeToWarpPointAtTime(Character,
-		Result.ChosenMontage, Front->EndTime, FrontModifier->WarpPointAnimBoneName);
+	const FTransform Offset = Character
+		? UMotionWarpingUtilities::CalculateRootTransformRelativeToWarpPointAtTime(*Character, Result.ChosenMontage, Front->EndTime, FrontModifier->WarpPointAnimBoneName)
+		: UMotionWarpingUtilities::CalculateRootTransformRelativeToWarpPointAtTime(*Adapter, Result.ChosenMontage, Front->EndTime, FrontModifier->WarpPointAnimBoneName);
+	const FQuat VisualRotation = Character ? Character->GetBaseRotationOffset() : Mover->GetBaseVisualComponentTransform().GetRotation();
 	const FQuat Facing = (-Result.FrontLedgeNormal.GetSafeNormal2D()).ToOrientationQuat();
 	const FQuat ActorAtFront = FrontModifier->AdditionalRotationOffset.Quaternion() * Facing * Offset.GetRotation();
-	const FQuat MeshAtFront = ActorAtFront * Character.GetBaseRotationOffset();
+	const FQuat MeshAtFront = ActorAtFront * VisualRotation;
 	const FTransform Between = UMotionWarpingUtilities::ExtractRootMotionFromAnimation(Result.ChosenMontage, Front->EndTime, FinalFloorEnd);
 	const FQuat ActorAtFloor = MeshAtFront * Between.GetRotation() * MeshAtFront.Inverse() * ActorAtFront;
 	// BackFloor is the last absolute translation target. Preserve the source BackLedge/BackFloor overlap; neither rotates.
 	const FTransform Remaining = UMotionWarpingUtilities::ExtractRootMotionFromAnimation(Result.ChosenMontage, FinalFloorEnd,
 		FMath::Min(HandoffTime, Result.ChosenMontage->GetPlayLength()));
-	OutLocation = OutFloorTarget + (ActorAtFloor * Character.GetBaseRotationOffset()).RotateVector(Remaining.GetTranslation());
+	OutLocation = OutFloorTarget + (ActorAtFloor * VisualRotation).RotateVector(Remaining.GetTranslation());
 	return !OutLocation.ContainsNaN() && !OutFloorTarget.ContainsNaN();
 }
 
@@ -372,7 +384,7 @@ bool URpgGameplayAbility_Mantle::ValidateTraversal(const APawn& Pawn, const FRpg
 	if (const URpgCharacterMoverComponent* Mover = Character ? nullptr : Pawn.FindComponentByClass<URpgCharacterMoverComponent>())
 	{
 		const URpgPawnExtensionComponent* Extension = URpgPawnExtensionComponent::FindPawnExtensionComponent(&Pawn);
-		if ((Result.ActionType != 3 && Result.ActionType != 2) || !Mover->IsOnGround()
+		if ((Result.ActionType != 3 && Result.ActionType != 2 && Result.ActionType != 1) || !Mover->IsOnGround()
 			|| !Mover->CanPlayAbilityRootMotion(Extension ? Extension->GetRpgAbilitySystemComponent() : nullptr,
 				SelectedMontage, Result.PlayRate, NAME_None, Result.StartTime)) return false;
 	}
@@ -384,7 +396,7 @@ bool URpgGameplayAbility_Mantle::ValidateTraversal(const APawn& Pawn, const FRpg
 		|| FVector::Dist2D(Pawn.GetActorLocation(), Result.FrontLedgeLocation) > CandidateSearchDistance
 		|| FVector::DotProduct(Pawn.GetActorLocation() - Result.FrontLedgeLocation, Normal) <= 0.0) return false;
 	if (Result.ActionType == 2) return ValidateVaultTraversal(Pawn, Result);
-	if (Result.ActionType == 1) return Character && ValidateHurdleTraversal(*Character, Result);
+	if (Result.ActionType == 1) return ValidateHurdleTraversal(Pawn, Result);
 	FVector Landing;
 	if (!GetMantleLandingLocation(Pawn, Result, Landing)) return false;
 	const UWorld* World = Pawn.GetWorld();
@@ -495,41 +507,42 @@ bool URpgGameplayAbility_Mantle::ValidateThinObstacleFaces(const APawn& Pawn, co
 	return true;
 }
 
-bool URpgGameplayAbility_Mantle::FindHurdleSupport(const ACharacter& Character, const FVector& Feet, FHitResult& OutHit) const
+bool URpgGameplayAbility_Mantle::FindHurdleSupport(const APawn& Pawn, const FVector& Feet, FHitResult& OutHit) const
 {
-	const UCapsuleComponent* Capsule = Character.GetCapsuleComponent();
-	FCollisionQueryParams Params(SCENE_QUERY_STAT(RpgHurdleSupport), false, &Character);
-	if (!Character.GetWorld()->LineTraceSingleByChannel(OutHit, Feet + FVector(0, 0, 10), Feet - FVector(0, 0, 10),
+	const UCapsuleComponent* Capsule = RpgMantle::Capsule(Pawn);
+	if (!Capsule || !Pawn.GetWorld() || Feet.ContainsNaN()) return false;
+	FCollisionQueryParams Params(SCENE_QUERY_STAT(RpgHurdleSupport), false, &Pawn);
+	if (!Pawn.GetWorld()->LineTraceSingleByChannel(OutHit, Feet + FVector(0, 0, 10), Feet - FVector(0, 0, 10),
 		Capsule->GetCollisionObjectType(), Params, FCollisionResponseParams(Capsule->GetCollisionResponseToChannels()))) return false;
 	const UPrimitiveComponent* Support = OutHit.GetComponent();
 	return IsValid(Support) && Support->IsRegistered() && !Support->IsSimulatingPhysics() && Support->IsQueryCollisionEnabled()
-		&& Character.GetCharacterMovement()->IsWalkable(OutHit) && FMath::Abs(OutHit.ImpactPoint.Z - Feet.Z) <= 5.0;
+		&& RpgMantle::IsWalkable(Pawn, OutHit) && FMath::Abs(OutHit.ImpactPoint.Z - Feet.Z) <= 5.0;
 }
 
-bool URpgGameplayAbility_Mantle::ValidateHurdleTraversal(const ACharacter& Character, const FRpgTraversalQueryResult& Result) const
+bool URpgGameplayAbility_Mantle::ValidateHurdleTraversal(const APawn& Pawn, const FRpgTraversalQueryResult& Result) const
 {
-	if (!Result.HasBackFloor || !ValidateThinObstacleFaces(Character, Result) || Result.BackFloorLocation.ContainsNaN()
+	if (!Result.HasBackFloor || !ValidateThinObstacleFaces(Pawn, Result) || Result.BackFloorLocation.ContainsNaN()
 		|| !FMath::IsFinite(Result.BackLedgeHeight) || Result.BackLedgeHeight < 50.0
 		|| Result.BackFloorLocation.Z >= Result.BackLedgeLocation.Z
 		|| FMath::Abs(Result.BackLedgeLocation.Z - Result.BackFloorLocation.Z - Result.BackLedgeHeight) > 5.0) return false;
-	const URpgTraversalQueryComponent* Query = Character.FindComponentByClass<URpgTraversalQueryComponent>();
+	const URpgTraversalQueryComponent* Query = Pawn.FindComponentByClass<URpgTraversalQueryComponent>();
 	const FRpgTraversalAnimationEntry* Entry = Query->AllowedHurdleAnimations.FindByPredicate(
 		[&Result](const FRpgTraversalAnimationEntry& Candidate) { return Candidate.Montage == Result.ChosenMontage; });
 	if (!Entry) return false;
-	const UMotionWarpingComponent* Warping = Character.FindComponentByClass<UMotionWarpingComponent>();
+	const UMotionWarpingComponent* Warping = Pawn.FindComponentByClass<UMotionWarpingComponent>();
 	if (!Warping || Warping->FindWarpTarget(BackFloorWarpTargetName)) return false;
 	TArray<FMotionWarpingWindowData> BackWindows;
 	UMotionWarpingUtilities::GetMotionWarpingWindowsForWarpTargetFromAnimation(Result.ChosenMontage, BackLedgeWarpTargetName, BackWindows);
 	if (!BackWindows.IsEmpty() && Warping->FindWarpTarget(BackLedgeWarpTargetName)) return false;
 	FHitResult QueriedSupport;
-	if (!FindHurdleSupport(Character, Result.BackFloorLocation, QueriedSupport) || QueriedSupport.GetComponent() == Result.HitComponent) return false;
+	if (!FindHurdleSupport(Pawn, Result.BackFloorLocation, QueriedSupport) || QueriedSupport.GetComponent() == Result.HitComponent) return false;
 	FVector FloorTarget, Landing;
-	if (!GetHurdleTargetsAndLanding(Character, Result, Entry->HandoffTime, FloorTarget, Landing)) return false;
+	if (!GetHurdleTargetsAndLanding(Pawn, Result, Entry->HandoffTime, FloorTarget, Landing)) return false;
 	FVector EarlyLanding = Landing;
 	if (Entry->MovementInputHandoffTime > 0.0f
-		&& !GetHurdleTargetsAndLanding(Character, Result, Entry->MovementInputHandoffTime, FloorTarget, EarlyLanding)) return false;
-	const UCapsuleComponent* Capsule = Character.GetCapsuleComponent();
-	FCollisionQueryParams Params(SCENE_QUERY_STAT(RpgHurdleRoute), false, &Character);
+		&& !GetHurdleTargetsAndLanding(Pawn, Result, Entry->MovementInputHandoffTime, FloorTarget, EarlyLanding)) return false;
+	const UCapsuleComponent* Capsule = RpgMantle::Capsule(Pawn);
+	FCollisionQueryParams Params(SCENE_QUERY_STAT(RpgHurdleRoute), false, &Pawn);
 	const FCollisionResponseParams Responses(Capsule->GetCollisionResponseToChannels());
 	const ECollisionChannel Channel = Capsule->GetCollisionObjectType();
 	FVector PreviousDestination = FVector::ZeroVector;
@@ -538,24 +551,24 @@ bool URpgGameplayAbility_Mantle::ValidateHurdleTraversal(const ACharacter& Chara
 		FHitResult Support;
 		if (FVector::DotProduct(Feet - Result.BackLedgeLocation, Result.BackLedgeNormal) <= 0.0
 			|| FVector::Dist(Feet, Result.BackLedgeLocation) > CandidateSearchDistance
-			|| !FindHurdleSupport(Character, Feet, Support) || Support.GetComponent() != QueriedSupport.GetComponent()) return false;
+			|| !FindHurdleSupport(Pawn, Feet, Support) || Support.GetComponent() != QueriedSupport.GetComponent()) return false;
 		const FVector Destination(Feet.X, Feet.Y, Support.ImpactPoint.Z + Capsule->GetScaledCapsuleHalfHeight() + 2.0f);
-		if (!IsCapsuleClear(Character, Destination)) return false;
+		if (!IsCapsuleClear(Pawn, Destination)) return false;
 		FHitResult Hit;
-		if (!PreviousDestination.IsZero() && Character.GetWorld()->SweepSingleByChannel(Hit, PreviousDestination, Destination,
-			Capsule->GetComponentQuat(), Channel, RpgMantle::CapsuleShape(Character), Params, Responses)) return false;
+		if (!PreviousDestination.IsZero() && Pawn.GetWorld()->SweepSingleByChannel(Hit, PreviousDestination, Destination,
+			Capsule->GetComponentQuat(), Channel, RpgMantle::CapsuleShape(Pawn), Params, Responses)) return false;
 		PreviousDestination = Destination;
 	}
-	const double RouteZ = FMath::Max(Character.GetActorLocation().Z,
+	const double RouteZ = FMath::Max(Pawn.GetActorLocation().Z,
 		FMath::Max(Result.FrontLedgeLocation.Z, Result.BackLedgeLocation.Z) + Capsule->GetScaledCapsuleHalfHeight()) + PathClearance;
 	const FVector Destination = FloorTarget + FVector(0, 0, Capsule->GetScaledCapsuleHalfHeight() + 2.0f);
-	const FVector Route[] = {Character.GetActorLocation(), FVector(Character.GetActorLocation().X, Character.GetActorLocation().Y, RouteZ),
+	const FVector Route[] = {Pawn.GetActorLocation(), FVector(Pawn.GetActorLocation().X, Pawn.GetActorLocation().Y, RouteZ),
 		FVector(Destination.X, Destination.Y, RouteZ), Destination};
 	for (int32 Index = 1; Index < UE_ARRAY_COUNT(Route); ++Index)
 	{
 		FHitResult Hit;
-		if (Character.GetWorld()->SweepSingleByChannel(Hit, Route[Index - 1], Route[Index], Capsule->GetComponentQuat(), Channel,
-			RpgMantle::CapsuleShape(Character), Params, Responses)) return false;
+		if (Pawn.GetWorld()->SweepSingleByChannel(Hit, Route[Index - 1], Route[Index], Capsule->GetComponentQuat(), Channel,
+			RpgMantle::CapsuleShape(Pawn), Params, Responses)) return false;
 	}
 	return true;
 }
@@ -604,6 +617,7 @@ void URpgGameplayAbility_Mantle::ActivateAbility(const FGameplayAbilitySpecHandl
 	bEnding = false;
 	bReceivedTargetData = false;
 	bGameplayCancellationRequested = false;
+	bMoverHurdleCompletedNaturally = false;
 	ActiveMontageInstanceId = INDEX_NONE;
 	MoverLeaseSequence = 0;
 	FinalWarpEndTime = 0.0f;
@@ -715,7 +729,7 @@ void URpgGameplayAbility_Mantle::LogTraversalRejection(const TCHAR* Stage, const
 	const URpgTraversalQueryComponent* Query = Pawn ? Pawn->FindComponentByClass<URpgTraversalQueryComponent>() : nullptr;
 	FVector Landing = FVector::ZeroVector;
 	const bool bLandingValid = Pawn && (Result.ActionType == 2 ? GetVaultExitLocation(*Pawn, Result, Landing)
-		: Result.ActionType == 1 ? Character && GetHurdleLandingLocation(*Character, Result, Landing) : GetMantleLandingLocation(*Pawn, Result, Landing));
+		: Result.ActionType == 1 ? GetHurdleLandingLocation(*Pawn, Result, Landing) : GetMantleLandingLocation(*Pawn, Result, Landing));
 	UE_LOG(LogRpgAbilitySystem, Verbose, TEXT("Mantle rejected: stage=%s ability=%s pawn=%s role=%d active=%d ending=%d ready=%d allowed=%d landingValid=%d landing=%s action=%u height=%.3f depth=%.3f front=%s normal=%s collider=%s montage=%s start=%.6f mode=%d speed=%.3f slotActive=%d animMontage=%s"),
 		Stage, *GetPathName(), *GetPathNameSafe(Pawn), Pawn ? static_cast<int32>(Pawn->GetLocalRole()) : -1,
 		IsActive(), bEnding, Pawn && IsPawnReady(*Pawn), Query && Pawn && Query->IsAnimationAllowed(*Pawn, Result),
@@ -837,29 +851,46 @@ void URpgGameplayAbility_Mantle::BeginMoverMantle(const FRpgTraversalQueryResult
 	const UCapsuleComponent* Capsule = Pawn ? RpgMantle::Capsule(*Pawn) : nullptr;
 	const URpgTraversalQueryComponent* Query = Pawn ? Pawn->FindComponentByClass<URpgTraversalQueryComponent>() : nullptr;
 	const TArray<FRpgTraversalAnimationEntry>* Entries = Query ? (Result.ActionType == 3 ? &Query->AllowedMantleAnimations
-		: Result.ActionType == 2 ? &Query->AllowedVaultAnimations : nullptr) : nullptr;
+		: Result.ActionType == 2 ? &Query->AllowedVaultAnimations : Result.ActionType == 1 ? &Query->AllowedHurdleAnimations : nullptr) : nullptr;
 	const FRpgTraversalAnimationEntry* Entry = Entries ? Entries->FindByPredicate(
 		[&Result](const FRpgTraversalAnimationEntry& Candidate) { return Candidate.Montage == Result.ChosenMontage && !Candidate.bAirborne; }) : nullptr;
-	if (!Pawn || !Mover || !Capsule || !Entry
-		|| !(Result.ActionType == 2 ? GetVaultExitLocation(*Pawn, Result, LandingAtActivation)
-			: GetMantleLandingLocation(*Pawn, Result, LandingAtActivation))) { CancelCurrentMantle(); return; }
+	if (!Pawn || !Mover || !Capsule || !Entry) { CancelCurrentMantle(); return; }
+	FVector HurdleFloorTarget;
+	FHitResult HurdleSupport;
+	if (Result.ActionType == 1)
+	{
+		if (!GetHurdleTargetsAndLanding(*Pawn, Result, Entry->HandoffTime, HurdleFloorTarget, LandingAtActivation)
+			|| !FindHurdleSupport(*Pawn, LandingAtActivation, HurdleSupport)) { CancelCurrentMantle(); return; }
+		HurdleSupportComponent = HurdleSupport.GetComponent();
+		HurdleSupportAtActivation = HurdleSupportComponent->GetComponentTransform();
+	}
+	else if (!(Result.ActionType == 2 ? GetVaultExitLocation(*Pawn, Result, LandingAtActivation)
+		: GetMantleLandingLocation(*Pawn, Result, LandingAtActivation))) { CancelCurrentMantle(); return; }
 
 	Montage = Result.ChosenMontage;
 	StartTimeSeconds = Result.StartTime;
 	PlayRate = Result.PlayRate;
 	SourceHandoffTime = Entry->HandoffTime;
 	MovementInputHandoffTime = Entry->MovementInputHandoffTime;
-	ConditionalMantleLanding = LandingAtActivation;
-	if (MovementInputHandoffTime > 0.0f
-		&& !GetMantleLandingAtTime(*Pawn, Result, MovementInputHandoffTime, ConditionalMantleLanding)) { CancelCurrentMantle(); return; }
+	ConditionalLanding = LandingAtActivation;
+	if (MovementInputHandoffTime > 0.0f && !(Result.ActionType == 1
+		? GetHurdleTargetsAndLanding(*Pawn, Result, MovementInputHandoffTime, HurdleFloorTarget, ConditionalLanding)
+		: GetMantleLandingAtTime(*Pawn, Result, MovementInputHandoffTime, ConditionalLanding))) { CancelCurrentMantle(); return; }
+	HurdleEarlyLanding = ConditionalLanding;
 	TArray<FMotionWarpingWindowData> Windows;
 	TArray<FMotionWarpingWindowData> BackWindows;
 	UMotionWarpingUtilities::GetMotionWarpingWindowsForWarpTargetFromAnimation(Montage, WarpTargetName, Windows);
 	for (const FMotionWarpingWindowData& Window : Windows) FinalWarpEndTime = FMath::Max(FinalWarpEndTime, Window.EndTime);
-	if (Result.ActionType == 2)
+	if (Result.ActionType == 2 || Result.ActionType == 1)
 	{
 		UMotionWarpingUtilities::GetMotionWarpingWindowsForWarpTargetFromAnimation(Montage, BackLedgeWarpTargetName, BackWindows);
 		for (const FMotionWarpingWindowData& Window : BackWindows) FinalWarpEndTime = FMath::Max(FinalWarpEndTime, Window.EndTime);
+	}
+	if (Result.ActionType == 1)
+	{
+		TArray<FMotionWarpingWindowData> FloorWindows;
+		UMotionWarpingUtilities::GetMotionWarpingWindowsForWarpTargetFromAnimation(Montage, BackFloorWarpTargetName, FloorWindows);
+		for (const FMotionWarpingWindowData& Window : FloorWindows) FinalWarpEndTime = FMath::Max(FinalWarpEndTime, Window.EndTime);
 	}
 	IgnoredComponent = Result.HitComponent;
 	ColliderAtActivation = Result.HitComponent->GetComponentTransform();
@@ -872,6 +903,13 @@ void URpgGameplayAbility_Mantle::BeginMoverMantle(const FRpgTraversalQueryResult
 	Request.EntryCapsuleLocation = EntryLocation;
 	Request.LandingCapsuleLocation = LandingAtActivation + FVector(0, 0, Capsule->GetScaledCapsuleHalfHeight()
 		+ (ActiveActionType == 2 ? 0.0f : 2.0f));
+	if (ActiveActionType == 1)
+	{
+		// The source root may retain a small vertical residual; clearance and the immutable landing use the measured floor.
+		Request.LandingCapsuleLocation.Z = HurdleSupport.ImpactPoint.Z + Capsule->GetScaledCapsuleHalfHeight() + 2.0f;
+		Request.LandingSupport = HurdleSupportComponent;
+		Request.LandingSupportTransform = HurdleSupportAtActivation;
+	}
 	// The adapter measures animated warp points from Mover's saved visual base, never its smoothed live mesh.
 	const double VisualBaseAboveFeet = Capsule->GetScaledCapsuleHalfHeight() + Mover->GetBaseVisualComponentTransform().GetTranslation().Z;
 	Request.FrontLedgeTarget = FTransform((-Result.FrontLedgeNormal.GetSafeNormal2D()).Rotation(),
@@ -882,6 +920,11 @@ void URpgGameplayAbility_Mantle::BeginMoverMantle(const FRpgTraversalQueryResult
 		// Source BackLedge is translation-only and has no front hand-height offset.
 		Request.BackLedgeTarget = FTransform(FQuat::Identity, Result.BackLedgeLocation + FVector(0, 0, VisualBaseAboveFeet));
 		Request.BackLedgeWarpTargetName = BackLedgeWarpTargetName;
+	}
+	if (ActiveActionType == 1)
+	{
+		Request.BackFloorTarget = FTransform(FQuat::Identity, HurdleFloorTarget + FVector(0, 0, VisualBaseAboveFeet));
+		Request.BackFloorWarpTargetName = BackFloorWarpTargetName;
 	}
 	Request.Montage = Montage;
 	Request.StartTimeSeconds = StartTimeSeconds;
@@ -898,9 +941,24 @@ void URpgGameplayAbility_Mantle::BeginMoverMantle(const FRpgTraversalQueryResult
 	const USkeletalMeshComponent* Mesh = URpgPawnExtensionComponent::FindGameplayMesh(Pawn);
 	if (bOwnsMovement && IsActive() && Mesh && Mesh->GetAnimInstance())
 	{
-		if (const FAnimMontageInstance* Instance = Mesh->GetAnimInstance()->GetActiveInstanceForMontage(Montage))
+		if (FAnimMontageInstance* Instance = Mesh->GetAnimInstance()->GetActiveInstanceForMontage(Montage))
 		{
 			ActiveMontageInstanceId = Instance->GetInstanceID();
+			if (ActiveActionType == 1 && FMath::IsNearlyEqual(SourceHandoffTime, Montage->GetPlayLength()))
+			{
+				// The engine can finish a natural blend just before the last authored frame. Preserve its actual
+				// interruption reason before PlayMontageAndWait broadcasts OnCompleted and ends this ability.
+				const FOnMontageEnded TaskEndDelegate = Instance->OnMontageEnded;
+				const int32 InstanceId = ActiveMontageInstanceId;
+				Instance->OnMontageEnded.BindWeakLambda(this, [this, InstanceId, TaskEndDelegate](UAnimMontage* EndedMontage, bool bInterrupted)
+				{
+					if (!bEnding && IsActive() && ActiveMontageInstanceId == InstanceId && EndedMontage == Montage)
+					{
+						bMoverHurdleCompletedNaturally = !bInterrupted;
+					}
+					TaskEndDelegate.ExecuteIfBound(EndedMontage, bInterrupted);
+				});
+			}
 		}
 	}
 }
@@ -920,9 +978,15 @@ void URpgGameplayAbility_Mantle::HandleMoverPostFinalize(const FMoverSyncState& 
 	{
 		CancelCurrentMantle(); return;
 	}
+	if (ActiveActionType == 1)
+	{
+		if (!ValidateActiveHurdleSupport(*Pawn)) { CancelCurrentMantle(); return; }
+		if (IsCapsuleClear(*Pawn, Pawn->GetActorLocation())) LastClearLocation = Pawn->GetActorLocation();
+		return;
+	}
 	FHitResult Support;
 	FCollisionQueryParams Params(SCENE_QUERY_STAT(RpgMoverMantleActiveSupport), false, Pawn);
-	for (const FVector& Feet : {LandingAtActivation, ConditionalMantleLanding})
+	for (const FVector& Feet : {LandingAtActivation, ConditionalLanding})
 	{
 		if (!IsCapsuleClear(*Pawn, Feet + FVector(0, 0, Capsule->GetScaledCapsuleHalfHeight() + (ActiveActionType == 2 ? 0.0f : 2.0f)))
 			|| (ActiveActionType == 3 && (!Pawn->GetWorld()->LineTraceSingleByChannel(Support, Feet + FVector(0, 0, 10),
@@ -969,32 +1033,41 @@ void URpgGameplayAbility_Mantle::HandleMovementUpdated(float DeltaSeconds, FVect
 	{
 		CancelCurrentMantle(); return;
 	}
-	if (ActiveActionType == 1)
+	if (ActiveActionType == 1 && !ValidateActiveHurdleSupport(*Character))
 	{
-		if (!HurdleSupportComponent.IsValid() || !HurdleSupportComponent->IsRegistered()
-			|| !HurdleSupportComponent->GetComponentTransform().Equals(HurdleSupportAtActivation, 0.01))
-		{
-			UE_LOG(LogRpgAbilitySystem, Verbose, TEXT("Hurdle active support changed: pawn=%s support=%s landing=%s"),
-				*GetPathNameSafe(Character), *GetPathNameSafe(HurdleSupportComponent.Get()), *LandingAtActivation.ToCompactString());
-			CancelCurrentMantle(); return;
-		}
-		for (const FVector& Feet : {HurdleEarlyLanding, LandingAtActivation})
-		{
-			const bool bHasSupport = FindHurdleSupport(*Character, Feet, Support);
-			const bool bSameSupport = bHasSupport && Support.GetComponent() == HurdleSupportComponent.Get();
-			const FVector SupportedCapsule(Feet.X, Feet.Y, Support.ImpactPoint.Z + Capsule->GetScaledCapsuleHalfHeight() + 2.0f);
-			const bool bClear = bSameSupport && IsCapsuleClear(*Character, SupportedCapsule);
-			if (!bClear)
-			{
-				UE_LOG(LogRpgAbilitySystem, Verbose, TEXT("Hurdle active landing rejected: pawn=%s supportValid=%d sameSupport=%d capsuleClear=%d feet=%s supportPoint=%s supportedCapsule=%s expectedSupport=%s actualSupport=%s montage=%s"),
-					*GetPathNameSafe(Character), bHasSupport, bSameSupport, bClear, *Feet.ToCompactString(),
-					*Support.ImpactPoint.ToCompactString(), *SupportedCapsule.ToCompactString(),
-					*GetPathNameSafe(HurdleSupportComponent.Get()), *GetPathNameSafe(Support.GetComponent()), *GetPathNameSafe(Montage));
-				CancelCurrentMantle(); return;
-			}
-		}
+		CancelCurrentMantle(); return;
 	}
 	if (IsCapsuleClear(*Character, Character->GetActorLocation())) LastClearLocation = Character->GetActorLocation();
+}
+
+bool URpgGameplayAbility_Mantle::ValidateActiveHurdleSupport(const APawn& Pawn) const
+{
+	const UCapsuleComponent* Capsule = RpgMantle::Capsule(Pawn);
+	if (!Capsule || !HurdleSupportComponent.IsValid() || !HurdleSupportComponent->IsRegistered()
+		|| !HurdleSupportComponent->GetComponentTransform().Equals(HurdleSupportAtActivation, 0.01))
+	{
+		UE_LOG(LogRpgAbilitySystem, Verbose, TEXT("Hurdle active support changed: pawn=%s support=%s landing=%s"),
+			*GetPathNameSafe(&Pawn), *GetPathNameSafe(HurdleSupportComponent.Get()), *LandingAtActivation.ToCompactString());
+		return false;
+	}
+	for (const FVector& Feet : {HurdleEarlyLanding, LandingAtActivation})
+	{
+		FHitResult Support;
+		const bool bHasSupport = FindHurdleSupport(Pawn, Feet, Support);
+		const bool bSameSupport = bHasSupport && Support.GetComponent() == HurdleSupportComponent.Get();
+		// Both movement stacks check the support plane, not the montage's small vertical root residual.
+		const FVector SupportedCapsule(Feet.X, Feet.Y, Support.ImpactPoint.Z + Capsule->GetScaledCapsuleHalfHeight() + 2.0f);
+		const bool bClear = bSameSupport && IsCapsuleClear(Pawn, SupportedCapsule);
+		if (!bClear)
+		{
+			UE_LOG(LogRpgAbilitySystem, Verbose, TEXT("Hurdle active landing rejected: pawn=%s supportValid=%d sameSupport=%d capsuleClear=%d feet=%s supportPoint=%s supportedCapsule=%s expectedSupport=%s actualSupport=%s montage=%s"),
+				*GetPathNameSafe(&Pawn), bHasSupport, bSameSupport, bClear, *Feet.ToCompactString(),
+				*Support.ImpactPoint.ToCompactString(), *SupportedCapsule.ToCompactString(),
+				*GetPathNameSafe(HurdleSupportComponent.Get()), *GetPathNameSafe(Support.GetComponent()), *GetPathNameSafe(Montage));
+			return false;
+		}
+	}
+	return true;
 }
 
 void URpgGameplayAbility_Mantle::HandleMovementModeChanged(ACharacter* Character, EMovementMode PreviousMode, uint8 PreviousCustomMode)
@@ -1089,19 +1162,31 @@ void URpgGameplayAbility_Mantle::CleanupMoverMovement(bool bWasCancelled)
 	const float AdmissibleHandoffTime = GetAdmissibleSourceHandoffTime();
 	// Natural completion clears the montage pointer before dispatching GAS OnCompleted, but deletes the instance
 	// afterward. The captured instance ID still identifies our exact play throughout that terminal callback.
+	// For a Hurdle authored to run to the clip end, the engine's noninterrupted completion is authoritative:
+	// blend completion need not land on the exact final frame. Forced and conditional source stops remain time-gated.
+	const bool bNaturalHurdleEnd = ActiveActionType == 1 && bMoverHurdleCompletedNaturally
+		&& Montage && FMath::IsNearlyEqual(SourceHandoffTime, Montage->GetPlayLength());
 	const bool bReachedHandoff = Instance && (Instance->Montage == Montage || Instance->Montage == nullptr) && Instance->IsStopped()
 		&& FinalWarpEndTime > 0.0f && Instance->GetPosition() >= FinalWarpEndTime
-		&& AdmissibleHandoffTime > 0.0f && Instance->GetPosition() >= AdmissibleHandoffTime - 0.001f;
+		&& AdmissibleHandoffTime > 0.0f && (bNaturalHurdleEnd || Instance->GetPosition() >= AdmissibleHandoffTime - 0.001f);
 	bool bSupported = false;
-	if (ActiveActionType == 3 && bAlive && bCapsuleClear && bReachedHandoff)
+	if ((ActiveActionType == 3 || ActiveActionType == 1) && bAlive && bCapsuleClear && bReachedHandoff)
 	{
 		const UCapsuleComponent* Capsule = RpgMantle::Capsule(*Pawn);
 		const FVector Feet = Pawn->GetActorLocation() - FVector(0, 0, Capsule->GetScaledCapsuleHalfHeight());
 		FHitResult Hit;
-		FCollisionQueryParams Params(SCENE_QUERY_STAT(RpgMoverMantleHandoff), false, Pawn);
-		bSupported = Pawn->GetWorld()->LineTraceSingleByChannel(Hit, Feet + FVector(0, 0, 5), Feet - FVector(0, 0, 10),
-			Capsule->GetCollisionObjectType(), Params, FCollisionResponseParams(Capsule->GetCollisionResponseToChannels()))
-			&& Hit.GetComponent() == IgnoredComponent.Get() && Mover->IsTraversalWalkable(Hit);
+		if (ActiveActionType == 1)
+		{
+			bSupported = ValidateActiveHurdleSupport(*Pawn) && FindHurdleSupport(*Pawn, Feet, Hit)
+				&& Hit.GetComponent() == HurdleSupportComponent.Get();
+		}
+		else
+		{
+			FCollisionQueryParams Params(SCENE_QUERY_STAT(RpgMoverMantleHandoff), false, Pawn);
+			bSupported = Pawn->GetWorld()->LineTraceSingleByChannel(Hit, Feet + FVector(0, 0, 5), Feet - FVector(0, 0, 10),
+				Capsule->GetCollisionObjectType(), Params, FCollisionResponseParams(Capsule->GetCollisionResponseToChannels()))
+				&& Hit.GetComponent() == IgnoredComponent.Get() && Mover->IsTraversalWalkable(Hit);
+		}
 	}
 	// Vault's authored endpoint is beyond the ledge without support; the existing simulation end resumes Falling.
 	const bool bPreserveMomentum = !bWasCancelled && !bGameplayCancellationRequested && bAlive && bCapsuleClear && bReachedHandoff
@@ -1175,6 +1260,7 @@ void URpgGameplayAbility_Mantle::CleanupMovement(bool bWasCancelled)
 	HurdleSupportComponent.Reset();
 	ActiveWarping.Reset();
 	bOwnsMovement = false;
+	bMoverHurdleCompletedNaturally = false;
 	ActiveMontageInstanceId = INDEX_NONE;
 	FinalWarpEndTime = 0.0f;
 	SourceHandoffTime = 0.0f;
@@ -1203,11 +1289,14 @@ void URpgGameplayAbility_Mantle::EndAbility(const FGameplayAbilitySpecHandle Han
 		UAnimInstance* Animation = Mesh ? Mesh->GetAnimInstance() : nullptr;
 		const FAnimMontageInstance* Instance = Animation ? Animation->GetMontageInstanceForID(ActiveMontageInstanceId) : nullptr;
 		const float AdmissibleHandoffTime = GetAdmissibleSourceHandoffTime();
-		if (Instance && Instance->Montage == Montage && Instance->IsPlaying() && !Instance->IsStopped()
+		const bool bAwaitingNaturalHurdleEnd = ActiveMover.IsValid() && ActiveActionType == 1
+			&& !bMoverHurdleCompletedNaturally && Montage && FMath::IsNearlyEqual(SourceHandoffTime, Montage->GetPlayLength());
+		if (Instance && Instance->Montage == Montage && Instance->IsPlaying() && (!Instance->IsStopped() || bAwaitingNaturalHurdleEnd)
 			&& AdmissibleHandoffTime > 0.0f && Instance->GetPosition() < AdmissibleHandoffTime)
 		{
 			// GAS's reliable normal-end RPC can overtake the receiving montage's source notify on either the
 			// authority or the predicted Mover owner. Stopping it early would discard the authored exit momentum.
+			// A natural Hurdle must also finish its local blend and report its end reason before a remote normal end.
 			// The existing montage task, geometry checks and duration timeout remain active; cancellation is never deferred.
 			UE_LOG(LogRpgAbilitySystem, Verbose, TEXT("Traversal deferred remote normal end: pawn=%s instance=%d montagePosition=%.6f previousPosition=%.6f sourceHandoff=%.6f finalWarpEnd=%.6f action=%u admissibleHandoff=%.6f"),
 				*GetPathNameSafe(ActivePawn.Get()), ActiveMontageInstanceId, Instance->GetPosition(), Instance->GetPreviousPosition(),

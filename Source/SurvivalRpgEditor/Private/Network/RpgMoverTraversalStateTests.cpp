@@ -90,6 +90,10 @@ bool FRpgMoverTraversalSnapshotTest::RunTest(const FString& Parameters)
 	Active.Command.Context.FrontLedgeTarget = FTransform(FRotator(0, 35, 0), FVector(125, -27, 100));
 	Active.Command.Context.BackLedgeWarpTargetName = TEXT("BackLedge");
 	Active.Command.Context.BackLedgeTarget = FTransform(FRotator(0, 35, 0), FVector(175, -27, 100));
+	Active.Command.Context.BackFloorWarpTargetName = TEXT("BackFloor");
+	Active.Command.Context.BackFloorTarget = FTransform(FVector(255, -27, 0));
+	Active.Command.Context.LandingSupport = NewObject<UBoxComponent>();
+	Active.Command.Context.LandingSupportTransform = FTransform(FRotator(0, 15, 0), FVector(200, -20, -50));
 	Active.Command.Context.LandingCapsuleLocation = FVector(180, -27, 190);
 	Active.Command.BaseVisualTransform = FTransform(FRotator(0, -90, 0), FVector(0, 0, -88));
 	Active.MontagePosition = .42f;
@@ -119,6 +123,23 @@ bool FRpgMoverTraversalSnapshotTest::RunTest(const FString& Parameters)
 		Loaded.Command.bHasPresentationPlayId && Loaded.Command.PresentationPlayId == Active.Command.PresentationPlayId);
 	TestEqual(TEXT("Vault rear target name survives serialization"), Loaded.Command.Context.BackLedgeWarpTargetName, FName(TEXT("BackLedge")));
 	TestTrue(TEXT("Vault rear transform survives serialization"), Loaded.Command.Context.BackLedgeTarget.Equals(Active.Command.Context.BackLedgeTarget));
+	TestEqual(TEXT("Hurdle floor target name survives serialization"), Loaded.Command.Context.BackFloorWarpTargetName, FName(TEXT("BackFloor")));
+	TestTrue(TEXT("Hurdle floor transform survives serialization"), Loaded.Command.Context.BackFloorTarget.Equals(Active.Command.Context.BackFloorTarget));
+	TestTrue(TEXT("Hurdle support identity and accepted transform survive serialization"),
+		Loaded.Command.Context.LandingSupport == Active.Command.Context.LandingSupport
+		&& Loaded.Command.Context.LandingSupportTransform.Equals(Active.Command.Context.LandingSupportTransform));
+	Loaded.Command.Context.BackFloorTarget.AddToTranslation(FVector(10, 0, 0));
+	TestTrue(TEXT("Correcting only the back floor requires replay"), Active.ShouldReconcile(Loaded));
+	Loaded = Active;
+	Loaded.Command.Context.BackFloorWarpTargetName = NAME_None;
+	TestTrue(TEXT("Correcting floor target ownership requires replay"), Active.ShouldReconcile(Loaded));
+	Loaded = Active;
+	Loaded.Command.Context.LandingSupport = NewObject<UBoxComponent>();
+	TestTrue(TEXT("Replacing landing support requires replay even at the same transform"), Active.ShouldReconcile(Loaded));
+	Loaded = Active;
+	Loaded.Command.Context.LandingSupportTransform.AddToTranslation(FVector(0, 0, 10));
+	TestTrue(TEXT("Correcting the accepted support plane requires replay"), Active.ShouldReconcile(Loaded));
+	Loaded = Active;
 	Loaded.Command.Context.BackLedgeTarget.AddToTranslation(FVector(10, 0, 0));
 	TestTrue(TEXT("Correcting only the rear ledge requires replay"), Active.ShouldReconcile(Loaded));
 	Loaded = Active;
@@ -127,6 +148,17 @@ bool FRpgMoverTraversalSnapshotTest::RunTest(const FString& Parameters)
 	Loaded = Active;
 	Loaded.WarpModifiers[0].Value.CachedOffsetFromWarpPoint = FTransform(FVector(9, 0, 0));
 	TestTrue(TEXT("A corrected bone warp offset requires replay"), Active.ShouldReconcile(Loaded));
+	FRpgMoverTraversalSyncState WithoutFloor = Active;
+	WithoutFloor.Command.Context.BackFloorWarpTargetName = NAME_None;
+	WithoutFloor.Command.Context.BackFloorTarget = FTransform::Identity;
+	WithoutFloor.Command.Context.LandingSupport.Reset();
+	WithoutFloor.Command.Context.LandingSupportTransform = FTransform::Identity;
+	int64 WithoutFloorBytes = 0;
+	TestTrue(TEXT("A following Mantle or Vault can reuse a destination that held Hurdle history"), RoundTrip(WithoutFloor, Loaded, WithoutFloorBytes));
+	TestFalse(TEXT("The no-floor request round-trips without stale optional geometry"), WithoutFloor.ShouldReconcile(Loaded));
+	TestTrue(TEXT("A no-floor request clears optional support and target payload"), !Loaded.Command.Context.LandingSupport.IsValid()
+		&& Loaded.Command.Context.BackFloorTarget.Equals(FTransform::Identity)
+		&& Loaded.Command.Context.LandingSupportTransform.Equals(FTransform::Identity));
 
 	FRpgMoverTraversalSyncState Terminal = Active;
 	Terminal.Command.Phase = ERpgMoverTraversalPhase::Finished;
@@ -143,6 +175,10 @@ bool FRpgMoverTraversalSnapshotTest::RunTest(const FString& Parameters)
 		!Loaded.Command.Context.Collider.IsValid() && !Loaded.Command.Context.Montage && Loaded.bEndApplied);
 	TestEqual(TEXT("Terminal retains the rear name needed to release its published target"), Loaded.Command.Context.BackLedgeWarpTargetName, FName(TEXT("BackLedge")));
 	TestTrue(TEXT("Terminal discards the rear transform payload"), Loaded.Command.Context.BackLedgeTarget.Equals(FTransform::Identity));
+	TestEqual(TEXT("Terminal retains the floor name needed to release its published target"), Loaded.Command.Context.BackFloorWarpTargetName, FName(TEXT("BackFloor")));
+	TestTrue(TEXT("Terminal releases floor geometry and its payload"), !Loaded.Command.Context.LandingSupport.IsValid()
+		&& Loaded.Command.Context.BackFloorTarget.Equals(FTransform::Identity)
+		&& Loaded.Command.Context.LandingSupportTransform.Equals(FTransform::Identity));
 	Terminal.Command.PresentationEndPosition = .73f;
 	Terminal.Command.PresentationEndBlend.Blend.BlendTime = .37f;
 	Terminal.Command.PresentationEndBlend.Blend.BlendOption = EAlphaBlendOption::Custom;
@@ -169,6 +205,7 @@ bool FRpgMoverTraversalSnapshotTest::RunTest(const FString& Parameters)
 	NativeFrame.Command = Command(140);
 	NativeFrame.Command.Context.Montage = NewObject<UAnimMontage>();
 	NativeFrame.Command.Context.Collider = NewObject<UBoxComponent>();
+	NativeFrame.Command.Context.LandingSupport = NewObject<UBoxComponent>();
 	NativeFrame.Command.PresentationEndPosition = .5f;
 	NativeFrame.Command.PresentationEndBlend.Blend.CustomCurve = NewObject<UCurveFloat>();
 	NativeFrame.Command.PresentationEndBlend.BlendProfile = NewObject<UBlendProfile>();
@@ -179,6 +216,7 @@ bool FRpgMoverTraversalSnapshotTest::RunTest(const FString& Parameters)
 	NativeFrame.Command.RetainObjectsForHistory();
 	TWeakObjectPtr<UAnimMontage> Montage = NativeFrame.Command.Context.Montage;
 	TWeakObjectPtr<UPrimitiveComponent> Collider = NativeFrame.Command.Context.Collider;
+	TWeakObjectPtr<UPrimitiveComponent> Support = NativeFrame.Command.Context.LandingSupport;
 	TWeakObjectPtr<UCurveFloat> Curve = NativeFrame.Command.PresentationEndBlend.Blend.CustomCurve;
 	TWeakObjectPtr<UBlendProfile> Profile = NativeFrame.Command.PresentationEndBlend.BlendProfile;
 	FRpgMoverTraversalSyncState RetainedFrame = NativeFrame;
@@ -191,6 +229,8 @@ bool FRpgMoverTraversalSnapshotTest::RunTest(const FString& Parameters)
 	TestTrue(TEXT("Copied native frame pins source-tail curve and profile through GC"), Curve.IsValid() && Profile.IsValid());
 	TestFalse(TEXT("History does not keep destroyed world-owned geometry alive"), Collider.IsValid());
 	TestFalse(TEXT("Retained historical collider reference safely expires after GC"), RetainedFrame.Command.Context.Collider.IsValid());
+	TestFalse(TEXT("History does not keep destroyed world-owned landing support alive"), Support.IsValid());
+	TestFalse(TEXT("Retained historical support reference safely expires after GC"), RetainedFrame.Command.Context.LandingSupport.IsValid());
 	RetainedFrame.Command.Phase = ERpgMoverTraversalPhase::Cancelled;
 	RetainedFrame.Command.CompactAppliedEnd();
 	CollectGarbage(GARBAGE_COLLECTION_KEEPFLAGS);
@@ -251,6 +291,9 @@ bool FRpgMoverTraversalPresentationInterpolationTest::RunTest(const FString& Par
 	From.Command = Command(150);
 	From.Command.Context.Montage = NewObject<UAnimMontage>();
 	From.Command.Context.FrontLedgeTarget = FTransform(FVector(100, 0, 90));
+	From.Command.Context.BackFloorWarpTargetName = TEXT("BackFloor");
+	From.Command.Context.BackFloorTarget = FTransform(FVector(200, 0, 0));
+	From.Command.Context.LandingSupportTransform = FTransform(FVector(0, 0, -50));
 	From.MontagePosition = .4f;
 	From.bStartApplied = true;
 	FRpgMoverWarpModifierState& InitialWarp = From.WarpModifiers.AddDefaulted_GetRef();
@@ -261,6 +304,8 @@ bool FRpgMoverTraversalPresentationInterpolationTest::RunTest(const FString& Par
 	FRpgMoverTraversalSyncState To = From;
 	To.MontagePosition = .8f;
 	To.Command.Context.FrontLedgeTarget = FTransform(FVector(120, 10, 90));
+	To.Command.Context.BackFloorTarget = FTransform(FVector(220, 10, 0));
+	To.Command.Context.LandingSupportTransform = FTransform(FVector(10, 0, -50));
 	To.WarpModifiers[0].Value.StartTransform = FTransform(FVector(40, 50, 60));
 	To.WarpModifiers[0].Value.CurrentPosition = .8f;
 	FRpgMoverTraversalSyncState Presented;

@@ -9,14 +9,51 @@ Abnahme. Beide bei relevanten Fortschritten im selben PR aktualisieren.
 
 | Feld | Wert |
 | --- | --- |
-| Aktive Implementierungsaufgabe | Keine |
-| Nächste bereite Aufgabe | `GASP-01` – Grounded Hurdle für Mover |
-| Zuständiger Chat / beanspruchte Dateien | Noch nicht zugeteilt; keine Implementierungsdateien beansprucht |
-| Runtime-Ausgangspunkt | `master`, Merge `8268b07325f0404617a9e8e70d938d05c581afc6` aus PR #142; bei Start neueren Stand prüfen |
-| Dokumentations-Branch | `codex/gasp-integration-roadmap` |
-| Dokumentations-PR | [PR #143](https://github.com/Athurito/SurvivalRpg/pull/143); aktuellen Merge-Stand dort prüfen |
-| Nächster Handgriff | Branch-/Editor-/Plugin-Stand prüfen, dann Mover-Hurdle-Quellchooser und die CMC-Hurdle-Anbindung gegen die vorhandenen Mover-Seams auditieren; Umfang vor Assetänderungen festhalten |
-| Blocker | Keiner für den Quellen-Audit; konkrete Lifecycle-/Netzwerk-Folgearbeiten stehen im Register `GASP-02` |
+| Aktive Implementierungsaufgabe | `GASP-01` – Grounded Hurdle für Mover; PR offen |
+| Nächste bereite Aufgabe | GASP-01 nach Nutzerfreigabe mergen; danach GASP-02 getrennt bewerten |
+| Zuständiger Chat / beanspruchte Dateien | GASP-01-Chat; Traversal Ability/Query, Mover Types/Component/Warping, Editor-Traversal-Tests, optionaler MCP-Adapter, Mover Query/Chooser und zehn Hurdle-Montagen. Keine Mapänderung |
+| Runtime-Ausgangspunkt | `ae4d620c3b20bc45d0655ceddb0e45dc4f9bdcce`, bestätigter Merge PR #143 auf `master`; `origin/master` frisch abgerufen |
+| Implementierungs-Branch / Checkout | `codex/gasp-01-mover-hurdle`, `D:/Repos/SurvivalRpg` |
+| Letzter Implementierungs-Commit | `b78edf5b69296369a684b57e5103e4e0920dd0c5`; Hurdle-Grundlage `c8961b53ba413ddcd62741d643883d6fda816ac6` |
+| Arbeits-PR | [PR #144](https://github.com/Athurito/SurvivalRpg/pull/144); offen, Nutzerfreigabe zum Merge liegt vor |
+| Nächster Handgriff | PR #144 mergen, bestätigten Merge eintragen und lokalen `master` synchronisieren |
+| Blocker / offene Abnahme | Nutzer hat den Sichttest am 22.09.2026 akzeptiert und den Merge beauftragt. Bestehende Lifecycle-/Netzwerk-Folgearbeiten unter `GASP-02` bleiben offen |
+
+## GASP-01 – aktueller Implementierungsnachweis
+
+- Bestehende Experience/Space-Ability erweitert; zehn originale grounded Relaxed
+  Mover-Hurdle-Montagen, BackFloor und schwacher Landing-Support in Fixed-Historie,
+  serverseitige Geometrieprüfung und vorhandener Collision-/Warp-Cleanup.
+- Natürliches Montage-Ende berücksichtigt den echten Engine-Endgrund. Eine
+  reproduzierte Late-Join-Lücke zwischen ASC-Binding und PawnExtension wurde
+  geschlossen. Kein pauschaler Abschluss von `GASP-NET-02`/`GASP-NET-03`.
+- UE 5.8.2 Win64 Development **Editor und Game tatsächlich erfolgreich gebaut**
+  auf dem Quellstand von `b78edf5b` (`build-editor-03.log`, `build-game-03.log`).
+- **47/47 verschiedene Tests bestanden**, drei Läufe mit 2 + 17 + 28 Tests auf
+  diesem Stand. Darunter alle 15 Mover-Hurdle-Fälle, echte Fixed-Rollbacks während
+  BackFloor-Warping und nach Handoff, Late Join, CMC-Traversal, Mover-Mantle/Vault,
+  Equipment und optionales Retargeting. Kein einzelner 47-Test-Lauf.
+- Asset-MCP: frisch geladen/kompiliert; zehn Montageverträge und 30 Chooser-
+  Referenzänderungen geprüft, authored Query-Graph erhalten, 2.292 Packages in
+  der Abhängigkeitshülle ohne `/Game`-Referenz außerhalb `/Game/SurvivalRpg`.
+- Zwei getrennte Loopback-Prozessläufe bestanden: Owner-Stand (20 cm) mit 8/8
+  Ebenen je Client, Host-Run (40 cm) mit 15/15 je Client; eine Onset-Ebene beim
+  Host-Run ausdrücklich ausgenommen. Messtoleranzen und tatsächliche FPS im Bericht.
+- Nach allen Läufen 7.637 Bestandsdateien erneut geprüft: nur Query/Chooser
+  geändert, zehn neue Montagen; alle zehn Maps und sieben Spielstände unverändert.
+  Editor, PIE, Build und sämtliche sechs Probe-Spielprozesse sind beendet.
+- Vorherige Fehlversuche, Warnungen, genaue Quell-/Asset-Verträge und aktueller
+  Prozessvergleich stehen im [Mover-Hurdle-Bericht](gasp-mover-hurdle.md).
+  Lokale Belege: `Saved/GaspMoverHurdle20260922`; ignoriert, nicht automatisch
+  in anderen Checkouts verfügbar. Versionierte Automationstests bleiben ausführbar.
+- Nutzer-Sichtabnahme am 22.09.2026 nach Editor-Validierung in `Lvl_RpgGaspMover`:
+  „schaut gut aus kann gemerged werden“. Die genaue manuelle Rollen-/Gangarten-/
+  Hindernisabdeckung wurde nicht einzeln protokolliert; die automatisierten
+  Nachweise oben bleiben davon getrennt. Seit `b78edf5b` nur Dokumentation geändert;
+  Builds und Tests wurden für diese Abnahmeaktualisierung nicht erneut ausgeführt.
+- Kein Packaged-/WAN-Test. Vor einem erneuten Build
+  den NetworkPrediction-Override gemäß `Build/Patches/NetworkPrediction/README.md`
+  vorbereiten/prüfen.
 
 ## Letzter abgeschlossener Runtime-Schritt
 

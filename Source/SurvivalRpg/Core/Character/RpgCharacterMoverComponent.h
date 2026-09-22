@@ -112,7 +112,7 @@ public:
 	URpgCharacterMoverComponent();
 	/** Holds proxy traversal presentation at its last finalized pose while the network interpolation buffer is starved. */
 	virtual void TickComponent(float DeltaTime, ELevelTick TickType, FActorComponentTickFunction* ThisTickFunction) override;
-	/** Applies the current cosmetic snapshot when ASC avatar binding becomes ready after Mover finalization. */
+	/** Applies the current cosmetic snapshot and bridges ASC avatar binding until PawnExtension exposes that ASC. */
 	void RefreshTraversalPresentation(URpgAbilitySystemComponent* AbilitySystem);
 	/** Preserves the GASP input producer and appends this tick's local GAS root-motion playback interval. */
 	virtual void ProduceInput(int32 DeltaTimeMS, FMoverInputCmdContext* Cmd) override;
@@ -179,7 +179,7 @@ private:
 
 	bool SampleAbilityRootMotion(double SimTimeMs, FRpgMoverAbilityRootMotion& OutMove) const;
 	void CaptureTraversalPresentationEnd(const UAnimInstance* Animation, int32 InstanceId);
-	void UpdateTraversalPresentation(const FMoverSyncState& SyncState, URpgAbilitySystemComponent* AbilitySystem = nullptr);
+	void UpdateTraversalPresentation(const FMoverSyncState& SyncState);
 	void PrepareTraversalSimulation(const FMoverTimeStep& TimeStep, const FMoverTickStartData& StartingData);
 	void ApplyTraversalCollisionLease(UPrimitiveComponent* Collider);
 	/** Publishes only this corrected command's fixed targets and releases targets from the preceding visible state. */
@@ -195,8 +195,10 @@ private:
 	/** Original per-tick input for GASP's animation/conditional blend-out read model, never used to move the leased capsule. */
 	UPROPERTY(Transient) FCharacterDefaultInputs TraversalPresentationInputs;
 	UPROPERTY(Transient) TObjectPtr<UPrimitiveComponent> LeasedCollisionComponent;
-	// Presentation target names owned by this component; never retain a replaced Vault's rear target during Mantle.
-	TArray<FName, TInlineAllocator<2>> PublishedTraversalWarpTargets;
+	// Presentation target names owned by this component; release replaced rear/floor targets after corrections or handoff.
+	TArray<FName, TInlineAllocator<3>> PublishedTraversalWarpTargets;
+	/** Cosmetic-only binding supplied by ASC initialization; weak, avatar-validated and discarded when PawnExtension is ready. */
+	TWeakObjectPtr<URpgAbilitySystemComponent> TraversalPresentationAbilitySystem;
 	bool bAddedCollisionIgnore = false;
 	bool bTraversalRootMotionScope = false;
 	bool bTraversalGeometryInvalidThisTick = false;
