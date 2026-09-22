@@ -44,6 +44,10 @@ bool URpgGameplayAbility_Block::CanActivateAbility(
 	{
 		return false;
 	}
+	if (!ActorInfo->AbilitySystemComponent->GetSet<URpgDefenseSet>())
+	{
+		return false;
+	}
 
 	const URpgHealthComponent* HealthComponent = ActorInfo ? URpgHealthComponent::FindHealthComponent(ActorInfo->AvatarActor.Get()) : nullptr;
 	if (HealthComponent && HealthComponent->IsDeadOrDying())
@@ -70,6 +74,7 @@ void URpgGameplayAbility_Block::ActivateAbility(
 	const FGameplayEventData* TriggerEventData)
 {
 	check(ActorInfo);
+	bEndingBlock = false;
 
 	const FRpgWeaponBlockDefinition* BlockDefinition = ResolveBlockDefinition(Handle, ActorInfo);
 	if (!BlockDefinition || !BlockDefinition->bCanBlock)
@@ -90,9 +95,14 @@ void URpgGameplayAbility_Block::ActivateAbility(
 
 	Super::ActivateAbility(Handle, ActorInfo, ActivationInfo, TriggerEventData);
 
-	if (ActorInfo->IsNetAuthority())
+	if (!IsActive() || bEndingBlock)
 	{
-		ApplyBlockState(ActiveBlockDefinition);
+		return;
+	}
+	if (ActorInfo->IsNetAuthority() && !ApplyBlockState(ActiveBlockDefinition))
+	{
+		EndAbility(Handle, ActorInfo, ActivationInfo, true, true);
+		return;
 	}
 
 	if (ActiveBlockDefinition.BlockStartMontage)
@@ -128,6 +138,18 @@ void URpgGameplayAbility_Block::EndAbility(
 	bool bReplicateEndAbility,
 	bool bWasCancelled)
 {
+	if (!IsEndAbilityValid(Handle, ActorInfo) || bEndingBlock)
+	{
+		return;
+	}
+	if (ScopeLockCount > 0)
+	{
+		WaitingToExecute.Add(FPostLockDelegate::CreateUObject(this, &ThisClass::EndAbility,
+			Handle, ActorInfo, ActivationInfo, bReplicateEndAbility, bWasCancelled));
+		return;
+	}
+	bEndingBlock = true;
+
 	if (UWorld* World = GetWorld())
 	{
 		World->GetTimerManager().ClearTimer(BlockLoopTimerHandle);
@@ -235,37 +257,56 @@ const FRpgWeaponBlockDefinition* URpgGameplayAbility_Block::ResolveBlockDefiniti
 	return &DefaultBlockDefinition;
 }
 
-void URpgGameplayAbility_Block::ApplyBlockState(const FRpgWeaponBlockDefinition& BlockDefinition)
+bool URpgGameplayAbility_Block::ApplyBlockState(const FRpgWeaponBlockDefinition& BlockDefinition)
 {
 	URpgAbilitySystemComponent* ASC = GetRpgAbilitySystemComponentFromActorInfo();
-	if (!ASC)
+	const URpgDefenseSet* DefenseSet = ASC ? ASC->GetSet<URpgDefenseSet>() : nullptr;
+	if (!DefenseSet)
 	{
-		return;
+		return false;
 	}
 
-	PreviousBlockAngleDegrees = ASC->GetNumericAttribute(URpgDefenseSet::GetBlockAngleDegreesAttribute());
-	PreviousBlockStaminaCost = ASC->GetNumericAttribute(URpgDefenseSet::GetBlockStaminaCostAttribute());
-	PreviousBlockDamageReduction = ASC->GetNumericAttribute(URpgDefenseSet::GetBlockDamageReductionAttribute());
-	PreviousBlockStaggerDamageMultiplier = ASC->GetNumericAttribute(URpgDefenseSet::GetBlockStaggerDamageMultiplierAttribute());
-	PreviousPerfectBlockStaminaRestore = ASC->GetNumericAttribute(URpgDefenseSet::GetPerfectBlockStaminaRestoreAttribute());
-	PreviousPerfectBlockStaggerDamage = ASC->GetNumericAttribute(URpgDefenseSet::GetPerfectBlockStaggerDamageAttribute());
-	bStoredPreviousBlockAttributes = true;
+	BlockStateASC = ASC;
+	BlockStateDefenseSet = DefenseSet;
+	PreviousBlockAngleDegrees = ASC->GetNumericAttributeBase(URpgDefenseSet::GetBlockAngleDegreesAttribute());
+	PreviousBlockStaminaCost = ASC->GetNumericAttributeBase(URpgDefenseSet::GetBlockStaminaCostAttribute());
+	PreviousBlockDamageReduction = ASC->GetNumericAttributeBase(URpgDefenseSet::GetBlockDamageReductionAttribute());
+	PreviousBlockStaggerDamageMultiplier = ASC->GetNumericAttributeBase(URpgDefenseSet::GetBlockStaggerDamageMultiplierAttribute());
+	PreviousPerfectBlockStaminaRestore = ASC->GetNumericAttributeBase(URpgDefenseSet::GetPerfectBlockStaminaRestoreAttribute());
+	PreviousPerfectBlockStaggerDamage = ASC->GetNumericAttributeBase(URpgDefenseSet::GetPerfectBlockStaggerDamageAttribute());
 
-	ASC->SetNumericAttributeBase(URpgDefenseSet::GetBlockAngleDegreesAttribute(), BlockDefinition.BlockAngleDegrees);
-	ASC->SetNumericAttributeBase(URpgDefenseSet::GetBlockStaminaCostAttribute(), BlockDefinition.StaminaCost);
-	ASC->SetNumericAttributeBase(URpgDefenseSet::GetBlockDamageReductionAttribute(), BlockDefinition.DamageReduction);
-	ASC->SetNumericAttributeBase(URpgDefenseSet::GetBlockStaggerDamageMultiplierAttribute(), BlockDefinition.BlockStaggerDamageMultiplier);
-	ASC->SetNumericAttributeBase(URpgDefenseSet::GetPerfectBlockStaminaRestoreAttribute(), BlockDefinition.PerfectBlockStaminaRestore);
-	ASC->SetNumericAttributeBase(
-		URpgDefenseSet::GetPerfectBlockStaggerDamageAttribute(),
-		BlockDefinition.PerfectBlockStaggerDamage * FMath::Max(0.0f, BlockDefinition.PerfectBlockStaggerDamageMultiplier));
+	const auto OwnsAttributes = [this, ASC, DefenseSet]()
+	{
+		return IsActive() && !bEndingBlock && BlockStateASC.Get() == ASC
+			&& BlockStateDefenseSet.Get() == DefenseSet && ASC->GetSet<URpgDefenseSet>() == DefenseSet;
+	};
+	const auto ApplyAttribute = [ASC, &OwnsAttributes](FGameplayAttribute Attribute, float Value)
+	{
+		if (!OwnsAttributes()) return false;
+		ASC->SetNumericAttributeBase(Attribute, Value);
+		return true;
+	};
+	// Attribute/tag listeners may synchronously end the ability or remove its feature while applying state.
+	if (!ApplyAttribute(URpgDefenseSet::GetBlockAngleDegreesAttribute(), BlockDefinition.BlockAngleDegrees)
+		|| !ApplyAttribute(URpgDefenseSet::GetBlockStaminaCostAttribute(), BlockDefinition.StaminaCost)
+		|| !ApplyAttribute(URpgDefenseSet::GetBlockDamageReductionAttribute(), BlockDefinition.DamageReduction)
+		|| !ApplyAttribute(URpgDefenseSet::GetBlockStaggerDamageMultiplierAttribute(), BlockDefinition.BlockStaggerDamageMultiplier)
+		|| !ApplyAttribute(URpgDefenseSet::GetPerfectBlockStaminaRestoreAttribute(), BlockDefinition.PerfectBlockStaminaRestore)
+		|| !ApplyAttribute(URpgDefenseSet::GetPerfectBlockStaggerDamageAttribute(),
+			BlockDefinition.PerfectBlockStaggerDamage * FMath::Max(0.0f, BlockDefinition.PerfectBlockStaggerDamageMultiplier))
+		|| !OwnsAttributes())
+	{
+		return false;
+	}
 
-	SetReplicatedLooseTagCount(RpgGameplayTags::State_Blocking, 1);
 	bAppliedBlockState = true;
+	SetReplicatedLooseTagCount(RpgGameplayTags::State_Blocking, 1);
+	if (!OwnsAttributes()) return false;
 
 	if (BlockDefinition.bAllowPerfectBlock && BlockDefinition.PerfectBlockWindow > 0.0f)
 	{
 		SetReplicatedLooseTagCount(RpgGameplayTags::State_PerfectBlockWindow, 1);
+		if (!OwnsAttributes()) return false;
 
 		if (UWorld* World = GetWorld())
 		{
@@ -281,6 +322,7 @@ void URpgGameplayAbility_Block::ApplyBlockState(const FRpgWeaponBlockDefinition&
 	{
 		SetReplicatedLooseTagCount(RpgGameplayTags::State_PerfectBlockWindow, 0);
 	}
+	return OwnsAttributes();
 }
 
 void URpgGameplayAbility_Block::ClearBlockState()
@@ -291,32 +333,38 @@ void URpgGameplayAbility_Block::ClearBlockState()
 		World->GetTimerManager().ClearTimer(BlockLoopTimerHandle);
 	}
 
-	URpgAbilitySystemComponent* ASC = GetRpgAbilitySystemComponentFromActorInfo();
-	if (!ASC)
-	{
-		return;
-	}
-
-	SetReplicatedLooseTagCount(RpgGameplayTags::State_Blocking, 0);
-	SetReplicatedLooseTagCount(RpgGameplayTags::State_PerfectBlockWindow, 0);
-
-	if (bStoredPreviousBlockAttributes)
-	{
-		ASC->SetNumericAttributeBase(URpgDefenseSet::GetBlockAngleDegreesAttribute(), PreviousBlockAngleDegrees);
-		ASC->SetNumericAttributeBase(URpgDefenseSet::GetBlockStaminaCostAttribute(), PreviousBlockStaminaCost);
-		ASC->SetNumericAttributeBase(URpgDefenseSet::GetBlockDamageReductionAttribute(), PreviousBlockDamageReduction);
-		ASC->SetNumericAttributeBase(URpgDefenseSet::GetBlockStaggerDamageMultiplierAttribute(), PreviousBlockStaggerDamageMultiplier);
-		ASC->SetNumericAttributeBase(URpgDefenseSet::GetPerfectBlockStaminaRestoreAttribute(), PreviousPerfectBlockStaminaRestore);
-		ASC->SetNumericAttributeBase(URpgDefenseSet::GetPerfectBlockStaggerDamageAttribute(), PreviousPerfectBlockStaggerDamage);
-	}
-
+	const TWeakObjectPtr<URpgAbilitySystemComponent> SavedASC = BlockStateASC;
+	const TWeakObjectPtr<const URpgDefenseSet> SavedDefenseSet = BlockStateDefenseSet;
+	const TPair<FGameplayAttribute, float> SavedBases[] = {
+		{ URpgDefenseSet::GetBlockAngleDegreesAttribute(), PreviousBlockAngleDegrees },
+		{ URpgDefenseSet::GetBlockStaminaCostAttribute(), PreviousBlockStaminaCost },
+		{ URpgDefenseSet::GetBlockDamageReductionAttribute(), PreviousBlockDamageReduction },
+		{ URpgDefenseSet::GetBlockStaggerDamageMultiplierAttribute(), PreviousBlockStaggerDamageMultiplier },
+		{ URpgDefenseSet::GetPerfectBlockStaminaRestoreAttribute(), PreviousPerfectBlockStaminaRestore },
+		{ URpgDefenseSet::GetPerfectBlockStaggerDamageAttribute(), PreviousPerfectBlockStaggerDamage }
+	};
+	// Consume ownership before callbacks, including when the original ASC has already gone away.
+	BlockStateASC.Reset();
+	BlockStateDefenseSet.Reset();
 	bAppliedBlockState = false;
-	bStoredPreviousBlockAttributes = false;
+
+	if (URpgAbilitySystemComponent* ASC = SavedASC.Get())
+	{
+		ASC->SetLooseGameplayTagCount(RpgGameplayTags::State_Blocking, 0, EGameplayTagReplicationState::TagAndCountToAll);
+		ASC->SetLooseGameplayTagCount(RpgGameplayTags::State_PerfectBlockWindow, 0, EGameplayTagReplicationState::TagAndCountToAll);
+	}
+	for (const TPair<FGameplayAttribute, float>& SavedBase : SavedBases)
+	{
+		URpgAbilitySystemComponent* ASC = SavedASC.Get();
+		// Recheck after every tag/attribute callback; a same-class replacement does not own this snapshot.
+		if (!ASC || !SavedDefenseSet.IsValid() || ASC->GetSet<URpgDefenseSet>() != SavedDefenseSet.Get()) break;
+		ASC->SetNumericAttributeBase(SavedBase.Key, SavedBase.Value);
+	}
 }
 
 void URpgGameplayAbility_Block::SetReplicatedLooseTagCount(FGameplayTag Tag, int32 Count) const
 {
-	if (URpgAbilitySystemComponent* ASC = GetRpgAbilitySystemComponentFromActorInfo())
+	if (URpgAbilitySystemComponent* ASC = BlockStateASC.Get())
 	{
 		ASC->SetLooseGameplayTagCount(Tag, Count, EGameplayTagReplicationState::TagAndCountToAll);
 	}
