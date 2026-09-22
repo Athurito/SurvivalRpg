@@ -1,5 +1,10 @@
 # Mover spawn selection and interpolation recovery
 
+Status update: PR #142 was merged on September 20, 2026 after user visual
+validation and an explicit merge request. Draft references in the validation
+record below describe its earlier state. Remaining findings are tracked in the
+[current roadmap](gasp-integration-roadmap.md#gasp-02--register-der-offenen-folgearbeiten).
+
 The September 18 listen-server recording exposed two separate problems: an occupied
 PIE camera start was reused, and a client's displayed server pawn could retain a
 large delay after a loading stall. Animation play rate is unchanged by this fix.

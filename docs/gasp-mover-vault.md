@@ -1,5 +1,10 @@
 # Grounded GASP Mover Vault
 
+Status update: PR #142 was merged on September 20, 2026 after user visual
+validation and an explicit merge request. The draft status in the historical
+validation record below is superseded; open findings remain in the
+[current roadmap](gasp-integration-roadmap.md).
+
 This slice extends `RpgGaspMoverExperience` with grounded Vault through its
 existing contextual Space input and concrete `GA_RpgGasp_MoverMantle` asset.
 UEFN remains the gameplay mesh. The serialized ability, chooser and query names
