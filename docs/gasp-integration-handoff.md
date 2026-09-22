@@ -9,15 +9,38 @@ Abnahme. Beide bei relevanten Fortschritten im selben PR aktualisieren.
 
 | Feld | Wert |
 | --- | --- |
-| Aktive Implementierungsaufgabe | Keine; `GASP-01` ist abgeschlossen und gemergt |
-| Nächste bereite Aufgabe | `GASP-02` – gezielte Stabilisierung; einen begrenzten Befund aus dem Roadmap-Register auswählen |
-| Zuständiger Chat / beanspruchte Dateien | GASP-01 abgeschlossen, keine Dateien mehr beansprucht. Mover Query/Chooser und zehn Hurdle-Montagen übernommen; keine Mapänderung |
+| Aktive Implementierungsaufgabe | `GASP-02` / `GASP-STAB-01` – Block-Cleanup, **Validierung bestanden**, PR in Vorbereitung |
+| Nächste bereite Aufgabe | Nach diesem Schritt `GASP-STAB-02` gezielt untersuchen |
+| Zuständiger Chat / beanspruchte Dateien | Dieser Chat: Block-Ability `.h/.cpp`, fokussierte Block-Lifecycle-Tests und GASP-Roadmap/Übergabe/Bericht. Keine binären Assets oder parallele Editor-Sitzung beansprucht |
 | Runtime-Ausgangspunkt | `aa4447d69d3187dec3592913a1f683b5c91c0a7b`, bestätigter Merge PR #144 auf `master` am 22.09.2026 |
-| Checkout / abgeschlossener Branch | `master`, `D:/Repos/SurvivalRpg`; abgeschlossener Feature-Branch `codex/gasp-01-mover-hurdle` |
-| Letzter Implementierungs-Commit | `b78edf5b69296369a684b57e5103e4e0920dd0c5`; Hurdle-Grundlage `c8961b53ba413ddcd62741d643883d6fda816ac6` |
-| Abgeschlossener Arbeits-PR | [PR #144](https://github.com/Athurito/SurvivalRpg/pull/144); Merge bestätigt, finaler PR-Head `159521b3988591f9d176b80dc224ab4588e10533` |
-| Nächster Handgriff | Für `GASP-02` Repository-/PR-Stand und offene Befunde prüfen, dann einen einzelnen Stabilisierungsschritt im eigenen `codex/`-Branch bearbeiten |
-| Blocker / offene Abnahme | GASP-01-Sichttest am 22.09.2026 akzeptiert. Bestehende Lifecycle-/Netzwerk-Folgearbeiten unter `GASP-02` bleiben offen |
+| Checkout / aktiver Branch | `codex/gasp-02-block-cleanup`, `D:/Repos/SurvivalRpg`; Basis `b00ba74b7b09f6f7801aa731922d012182d80972`; Remote-master identisch, keine offenen PRs beim Start |
+| Letzter Implementierungs-Commit | `43ac69b8b6f109b942ffdd1edc83d0ef333257aa` – reihenfolgefester Block-Cleanup und acht native Regressionstests |
+| Aktueller Arbeits-PR | Noch nicht erstellt; letzter gemergter Runtime-PR bleibt [PR #144](https://github.com/Athurito/SurvivalRpg/pull/144) |
+| Nächster Handgriff | Geprüften Branch pushen und Draft-PR zur Prüfung öffnen; danach Merge nur auf Nutzerauftrag |
+| Blocker / offene Abnahme | Keine Implementierungsblocker für GASP-STAB-01. Kein neuer manueller Sichttest; kein Editor/PIE/Build aktiv. Übrige GASP-02-Befunde offen |
+
+## Aktueller validierter Schritt – GASP-STAB-01
+
+- Originalen `ClearBlockState`-Ensure nach entferntem DefenseSet in einem frischen
+  Editorprozess nachgewiesen; sieben initiale Regressionstests ergaben zuvor
+  zwei erfolgreiche und fünf fehlgeschlagene Fälle. Fehlversuche erhalten.
+- Fix im bestehenden Block-Ability-Lifecycle: Basiswerte gehören zur exakten
+  ASC-/DefenseSet-Instanz; Cleanup verbraucht seinen Snapshot vor Callbacks,
+  prüft jede weitere Wiederherstellung und schützt vor mehrfachen/rekursiven Enden.
+  Keine globale Grant-Umordnung, keine neuen nativen Klassen oder Assetänderungen.
+- UE 5.8.2 Win64 Development Editor und Game tatsächlich erfolgreich gebaut.
+  **11/11 Tests in einem Lauf bestanden**: acht native Lifecycle-Tests plus drei
+  gerenderte CMC-/Mover-PIE-Fälle für Blockfreigabe, Equipment, Tod/Respawn,
+  optionales Retargeting und Late Join mit Owner/Authority/Observer.
+- Keine Fehler/Ensures im Testintervall. 238 PIE-Warnungen und zwei ungeklärte
+  `Condition failed`-Startmeldungen vor den Tests erhalten; keine Packaged-/WAN-
+  oder neue manuelle Sichtabnahme behauptet. Zehn Maps und sieben SaveGames
+  unverändert. Test-/Editorprozesse beendet.
+- Quelle und Einschränkungen: [Block-Cleanup-Bericht](gasp-block-cleanup.md).
+  Lokale, ignorierte Belege unter `Saved/GaspBlockCleanup20260922`.
+- Dieser Schritt schließt weder das intermittierende Falling nach Respawn noch
+  andere `GASP-02`-Netzwerk-/Messbefunde. Nächster begrenzter Auftrag:
+  `GASP-STAB-02` mit gezielter Lifecycle-/Movement-Aufzeichnung untersuchen.
 
 ## Letzter abgeschlossener Runtime-Schritt – GASP-01
 
