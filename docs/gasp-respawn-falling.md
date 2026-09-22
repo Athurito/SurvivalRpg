@@ -1,6 +1,6 @@
 # GASP-STAB-02 – Falling nach Respawn
 
-Status: **Implementiert und validiert, PR-Vorbereitung**, Branch `codex/gasp-02-respawn-falling`, Basis
+Status: **Implementiert und validiert, [Draft-PR #146](https://github.com/Athurito/SurvivalRpg/pull/146) offen**, Branch `codex/gasp-02-respawn-falling`, Basis
 `4039be2560b1733859005ec052865cff0bb03d3b` (gemergter PR #145).
 Implementierungs-Commit: `57fa8de9`.
 

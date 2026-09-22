@@ -9,15 +9,15 @@ Abnahme. Beide bei relevanten Fortschritten im selben PR aktualisieren.
 
 | Feld | Wert |
 | --- | --- |
-| Aktive Implementierungsaufgabe | `GASP-02` / `GASP-STAB-02` – Falling bei belegtem Respawn, **implementiert und validiert**, PR-Vorbereitung |
+| Aktive Implementierungsaufgabe | `GASP-02` / `GASP-STAB-02` – Falling bei belegtem Respawn, **implementiert und validiert**, Draft-PR #146 offen |
 | Nächste bereite Aufgabe | Nach Review/Merge `GASP-NET-01`: echten Rollback während aktivem Mantle nachweisen |
 | Zuständiger Chat / beanspruchte Dateien | Dieser Chat: Mover-Lifecycle-Testharness, konkreter `Mover/RPG/BP_RpgGasp_Mover` (Spawn-Kollisionspolitik nach rotem Crowd-Repro) und GASP-Roadmap/Übergabe/Bericht. Editor-/Buildkoordination ausschließlich durch Root |
 | Runtime-Ausgangspunkt | `4039be2560b1733859005ec052865cff0bb03d3b`, bestätigter Merge PR #145 auf `master` am 22.09.2026 |
 | Checkout / aktiver Branch | `codex/gasp-02-respawn-falling`, `D:/Repos/SurvivalRpg`; Basis `4039be25`, nach Merge von origin/master fast-forward synchronisiert |
 | Letzter Implementierungs-Commit | `57fa8de9` – Spawnanpassung im konkreten RPG-Mover-Pawn und gezielter Crowd-/Checkpoint-Nachweis |
-| Aktueller Arbeits-PR | Für STAB-02 noch keiner; [PR #145](https://github.com/Athurito/SurvivalRpg/pull/145) ist bestätigt gemergt |
-| Nächster Handgriff | Validierten STAB-02-Branch als Draft-PR veröffentlichen und Review/Merge-Status festhalten |
-| Blocker / offene Abnahme | Kein Implementierungsblocker. PR/Merge noch offen; keine manuelle/Independent/Packaged/WAN-Abnahme. Vier Overrides verifiziert; kein Editor/PIE/Build aktiv |
+| Aktueller Arbeits-PR | [Draft-PR #146](https://github.com/Athurito/SurvivalRpg/pull/146) offen; [PR #145](https://github.com/Athurito/SurvivalRpg/pull/145) ist bestätigt gemergt |
+| Nächster Handgriff | STAB-02 in PR #146 prüfen; nach Merge Status nachführen und mit `GASP-NET-01` fortsetzen |
+| Blocker / offene Abnahme | Kein Implementierungsblocker. Review/Merge noch offen; keine manuelle/Independent/Packaged/WAN-Abnahme. Vier Overrides verifiziert; kein Editor/PIE/Build aktiv |
 
 ## Aktueller validierter Schritt – GASP-STAB-02
 
