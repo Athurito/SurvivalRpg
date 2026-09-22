@@ -10,7 +10,7 @@ Established architecture:
 - Lyra Interaction is adopted approximately 1:1.
 - Inventory and Equipment use Lyra as the root architecture.
 - Inventory and Equipment are adapted for RPG systems.
-- The previous native GASP port is archived and removed from the active project. The user plans to migrate the original GASP Blueprints manually, then adapt them to Lyra in a separate step.
+- The previous native GASP port is archived and removed from the active project. The original Blueprint migration and staged CMC/Mover RPG integration have progressed; use `docs/gasp-integration-roadmap.md` for the current accepted state instead of historical migration intentions.
 
 Use the closest matching skill:
 - Use `$survival-rpg-project` for game identity, feature scope, first-playable priorities, survival/crafting/progression tradeoffs, portal fantasy, and long-term resource relevance.
@@ -37,6 +37,13 @@ Architecture guardrails:
 - During later Lyra traversal adaptation, keep gameplay authority in project-owned CMC/GAS/Motion-Warping seams. Inspect the approved source Blueprint dependency closure before adopting Mover/Traversal, Locomotor, sample camera, Foley, or experimental systems; these are not incidental additions to archive/removal work.
 - Pair `$unreal-gasp-expert` with `$unreal-lyra-expert` when animation work touches PawnData, Experiences, character lifecycle, movement replication, GAS montages, equipment, death, or ragdoll.
 - Add `$survival-rpg-combat-foundation` when GASP work touches attacks, dodge, block, hit reactions, combat tags, montage notifies, or equipment-granted combat behavior.
+
+## GASP roadmap and cross-chat handoff
+
+- Before GASP integration or movement follow-up work, read `docs/gasp-integration-roadmap.md` and `docs/gasp-integration-handoff.md`, then verify the current branch, PR and repository state.
+- Use the roadmap's stable task IDs and keep one bounded task per implementation chat/PR. Respect the active task and recorded file ownership; coordinate shared editor/MCP sessions and binary assets across worktrees.
+- Update roadmap status and the handoff in the same work PR with actual commits, validation, open findings and the next concrete action. Do not report an open PR as merged or historical test results as newly executed.
+- Ignored `Saved/` evidence and generated NetworkPrediction/Mover plugin overrides are not automatically available in another checkout. Follow the roadmap and `Build/Patches/NetworkPrediction/README.md` before building or changing branches.
 
 ## Map presentation preference
 
