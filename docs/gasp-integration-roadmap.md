@@ -7,7 +7,7 @@ nicht eine neue Gesamtplanung für Combat, Crafting oder Portale.
 
 ## Schnellstart
 
-- **Nächster Schritt: `GASP-01` – Hurdle für Mover.** Noch nicht begonnen.
+- **Aktiver Schritt: `GASP-01` – Hurdle für Mover.** Implementiert und automatisiert geprüft auf `codex/gasp-01-mover-hurdle`; Sichttest/Review offen.
 - Aktive Aufgabe, Branch, letzte Ergebnisse und konkrete Fortsetzung stehen in
   [gasp-integration-handoff.md](gasp-integration-handoff.md).
 - Letzter akzeptierter Runtime-Stand: [PR #142](https://github.com/Athurito/SurvivalRpg/pull/142),
@@ -27,7 +27,7 @@ nicht eine neue Gesamtplanung für Combat, Crafting oder Portale.
 | CMC | GASP-Locomotion, Mantle, Vault und Hurdle in bestehenden Experiences | [CMC](gasp-cmc-integration.md), [Mantle](gasp-mantle-integration.md), [Vault](gasp-vault-integration.md), [Hurdle](gasp-hurdle-integration.md) |
 | Runtime-Retargeting | Optionales Profil; UEFN bleibt Gameplay-Mesh und sichtbarer Standard; noch kein fest ausgewählter neuer Hauptcharacter | [Retargeting](gasp-runtime-retargeting.md), [Mover-Anbindung](gasp-mover-gameplay.md) |
 | Mover-Grundlage | Eigene `RpgGaspMoverExperience`, Bewegung inklusive vorhandener Sprint-Eingabe, Equipment/GAS, Tod/Respawn und optionales Retargeting | [Foundation](gasp-mover-foundation.md), [Gameplay](gasp-mover-gameplay.md), [Lifecycle](gasp-mover-lifecycle.md) |
-| Mover-Traversal | Mantle und Vault über kontextabhängige Leertaste; noch kein integriertes Mover-Hurdle | [Mover-Mantle](gasp-mover-mantle.md), [Mover-Vault](gasp-mover-vault.md) |
+| Mover-Traversal | Mantle und Vault akzeptiert; Grounded Hurdle im GASP-01-Branch implementiert, noch nicht gemergt | [Mover-Mantle](gasp-mover-mantle.md), [Mover-Vault](gasp-mover-vault.md), [Mover-Hurdle](gasp-mover-hurdle.md) |
 | Mover-Netzwerk | Fixed 50 Hz; versionierte UE-5.8.2-Interpolationserholung; entfernte Traversal-Animation folgt angezeigter Bewegung | [Fixed](gasp-mover-fixed-tick.md), [Recovery](gasp-mover-network-recovery.md), [Darstellung](gasp-mover-traversal-presentation.md) |
 | Mover-Ragdoll | Noch keine integrierte RPG-Experience/PawnData. Die Assetbasis enthält unter `Mover/Ragdoll` bisher nur die referenzierte Input-Struktur; die vollständige Pawn-Abhängigkeit ist neu zu prüfen | [Assetumfang](gasp-asset-foundation.md) |
 
@@ -39,7 +39,7 @@ Vorgabe, insgesamt genau drei Experience-Dateien zu besitzen.
 
 | ID | Arbeitspaket | Status | Voraussetzung / Abschluss |
 | --- | --- | --- | --- |
-| `GASP-01` | Grounded Hurdle für Mover | **Bereit – als Nächstes** | Auf dem gemergten PR #142 aufbauen; eigener PR und Sichttest |
+| `GASP-01` | Grounded Hurdle für Mover | **Validierung** | Runtime `b78edf5b`; Editor/Game, 47 Tests und zwei Prozessläufe bestanden; Sichttest/Review offen; [Bericht](gasp-mover-hurdle.md) |
 | `GASP-02` | Gezielte Stabilisierung | Offen | Kleine getrennte Aufgaben aus dem Register unten; vor Erweiterung um Ragdoll bewerten |
 | `GASP-03` | Mover-Ragdoll-Experience | Geplant | `GASP-01`; belastbarer Lifecycle-Stand aus `GASP-02`; Source-Audit zuerst |
 | `GASP-04` | Vergleich der drei Varianten | Geplant | `GASP-03`; dokumentierte gemeinsame Abnahmematrix |
@@ -92,6 +92,7 @@ welche bestehende Schnittstelle nicht ausreicht; keine vorab verordnete neue Kla
   frisch laden/kompilieren und Quell-Ziel-/Referenzvergleich dokumentieren.
 - Manuellen Sichttest sowie verbleibende Grenzen im PR/Übergabestand festhalten.
 
+Umsetzung und aktuelle Belege: [Mover-Hurdle](gasp-mover-hurdle.md).
 Einstieg: [CMC-Hurdle](gasp-hurdle-integration.md),
 [Mover-Vault](gasp-mover-vault.md),
 [Traversal-Darstellung](gasp-mover-traversal-presentation.md),
