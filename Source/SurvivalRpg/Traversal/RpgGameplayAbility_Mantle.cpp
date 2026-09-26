@@ -617,7 +617,7 @@ void URpgGameplayAbility_Mantle::ActivateAbility(const FGameplayAbilitySpecHandl
 	bEnding = false;
 	bReceivedTargetData = false;
 	bGameplayCancellationRequested = false;
-	bMoverHurdleCompletedNaturally = false;
+	bMoverTraversalCompletedNaturally = false;
 	ActiveMontageInstanceId = INDEX_NONE;
 	MoverLeaseSequence = 0;
 	FinalWarpEndTime = 0.0f;
@@ -944,7 +944,7 @@ void URpgGameplayAbility_Mantle::BeginMoverMantle(const FRpgTraversalQueryResult
 		if (FAnimMontageInstance* Instance = Mesh->GetAnimInstance()->GetActiveInstanceForMontage(Montage))
 		{
 			ActiveMontageInstanceId = Instance->GetInstanceID();
-			if (ActiveActionType == 1 && FMath::IsNearlyEqual(SourceHandoffTime, Montage->GetPlayLength()))
+			if ((ActiveActionType == 1 || ActiveActionType == 3) && FMath::IsNearlyEqual(SourceHandoffTime, Montage->GetPlayLength()))
 			{
 				// The engine can finish a natural blend just before the last authored frame. Preserve its actual
 				// interruption reason before PlayMontageAndWait broadcasts OnCompleted and ends this ability.
@@ -954,7 +954,7 @@ void URpgGameplayAbility_Mantle::BeginMoverMantle(const FRpgTraversalQueryResult
 				{
 					if (!bEnding && IsActive() && ActiveMontageInstanceId == InstanceId && EndedMontage == Montage)
 					{
-						bMoverHurdleCompletedNaturally = !bInterrupted;
+						bMoverTraversalCompletedNaturally = !bInterrupted;
 					}
 					TaskEndDelegate.ExecuteIfBound(EndedMontage, bInterrupted);
 				});
@@ -1162,13 +1162,13 @@ void URpgGameplayAbility_Mantle::CleanupMoverMovement(bool bWasCancelled)
 	const float AdmissibleHandoffTime = GetAdmissibleSourceHandoffTime();
 	// Natural completion clears the montage pointer before dispatching GAS OnCompleted, but deletes the instance
 	// afterward. The captured instance ID still identifies our exact play throughout that terminal callback.
-	// For a Hurdle authored to run to the clip end, the engine's noninterrupted completion is authoritative:
+	// For a Mantle or Hurdle authored to run to the clip end, the engine's noninterrupted completion is authoritative:
 	// blend completion need not land on the exact final frame. Forced and conditional source stops remain time-gated.
-	const bool bNaturalHurdleEnd = ActiveActionType == 1 && bMoverHurdleCompletedNaturally
+	const bool bNaturalTraversalEnd = (ActiveActionType == 1 || ActiveActionType == 3) && bMoverTraversalCompletedNaturally
 		&& Montage && FMath::IsNearlyEqual(SourceHandoffTime, Montage->GetPlayLength());
 	const bool bReachedHandoff = Instance && (Instance->Montage == Montage || Instance->Montage == nullptr) && Instance->IsStopped()
 		&& FinalWarpEndTime > 0.0f && Instance->GetPosition() >= FinalWarpEndTime
-		&& AdmissibleHandoffTime > 0.0f && (bNaturalHurdleEnd || Instance->GetPosition() >= AdmissibleHandoffTime - 0.001f);
+		&& AdmissibleHandoffTime > 0.0f && (bNaturalTraversalEnd || Instance->GetPosition() >= AdmissibleHandoffTime - 0.001f);
 	bool bSupported = false;
 	if ((ActiveActionType == 3 || ActiveActionType == 1) && bAlive && bCapsuleClear && bReachedHandoff)
 	{
@@ -1191,6 +1191,11 @@ void URpgGameplayAbility_Mantle::CleanupMoverMovement(bool bWasCancelled)
 	// Vault's authored endpoint is beyond the ledge without support; the existing simulation end resumes Falling.
 	const bool bPreserveMomentum = !bWasCancelled && !bGameplayCancellationRequested && bAlive && bCapsuleClear && bReachedHandoff
 		&& (ActiveActionType == 2 || bSupported);
+	UE_LOG(LogRpgAbilitySystem, Verbose, TEXT("Mover traversal handoff: pawn=%s preserveMomentum=%d cancelled=%d gameplayCancel=%d alive=%d capsuleClear=%d reachedHandoff=%d supported=%d instance=%d stopped=%d montagePosition=%.6f sourceHandoff=%.6f admissibleHandoff=%.6f finalWarpEnd=%.6f action=%u remoteEnded=%d naturalEnd=%d location=%s"),
+		*GetPathNameSafe(Pawn), bPreserveMomentum, bWasCancelled, bGameplayCancellationRequested, bAlive, bCapsuleClear,
+		bReachedHandoff, bSupported, ActiveMontageInstanceId, Instance && Instance->IsStopped(),
+		Instance ? Instance->GetPosition() : -1.0f, SourceHandoffTime, AdmissibleHandoffTime, FinalWarpEndTime,
+		static_cast<uint32>(ActiveActionType), RemoteInstanceEnded, bNaturalTraversalEnd, *Pawn->GetActorLocation().ToCompactString());
 	// The simulation owns collision restoration, safe recovery and movement handoff. Death or a newer lease wins.
 	Mover->EndTraversal(CurrentSpecHandle, CurrentActivationInfo.GetActivationPredictionKey(), MoverLeaseSequence, bPreserveMomentum, Recovery);
 }
@@ -1260,7 +1265,7 @@ void URpgGameplayAbility_Mantle::CleanupMovement(bool bWasCancelled)
 	HurdleSupportComponent.Reset();
 	ActiveWarping.Reset();
 	bOwnsMovement = false;
-	bMoverHurdleCompletedNaturally = false;
+	bMoverTraversalCompletedNaturally = false;
 	ActiveMontageInstanceId = INDEX_NONE;
 	FinalWarpEndTime = 0.0f;
 	SourceHandoffTime = 0.0f;
@@ -1289,14 +1294,14 @@ void URpgGameplayAbility_Mantle::EndAbility(const FGameplayAbilitySpecHandle Han
 		UAnimInstance* Animation = Mesh ? Mesh->GetAnimInstance() : nullptr;
 		const FAnimMontageInstance* Instance = Animation ? Animation->GetMontageInstanceForID(ActiveMontageInstanceId) : nullptr;
 		const float AdmissibleHandoffTime = GetAdmissibleSourceHandoffTime();
-		const bool bAwaitingNaturalHurdleEnd = ActiveMover.IsValid() && ActiveActionType == 1
-			&& !bMoverHurdleCompletedNaturally && Montage && FMath::IsNearlyEqual(SourceHandoffTime, Montage->GetPlayLength());
-		if (Instance && Instance->Montage == Montage && Instance->IsPlaying() && (!Instance->IsStopped() || bAwaitingNaturalHurdleEnd)
+		const bool bAwaitingNaturalTraversalEnd = ActiveMover.IsValid() && (ActiveActionType == 1 || ActiveActionType == 3)
+			&& !bMoverTraversalCompletedNaturally && Montage && FMath::IsNearlyEqual(SourceHandoffTime, Montage->GetPlayLength());
+		if (Instance && Instance->Montage == Montage && Instance->IsPlaying() && (!Instance->IsStopped() || bAwaitingNaturalTraversalEnd)
 			&& AdmissibleHandoffTime > 0.0f && Instance->GetPosition() < AdmissibleHandoffTime)
 		{
 			// GAS's reliable normal-end RPC can overtake the receiving montage's source notify on either the
 			// authority or the predicted Mover owner. Stopping it early would discard the authored exit momentum.
-			// A natural Hurdle must also finish its local blend and report its end reason before a remote normal end.
+			// A natural Mantle or Hurdle must also finish its local blend and report its end reason before a remote normal end.
 			// The existing montage task, geometry checks and duration timeout remain active; cancellation is never deferred.
 			UE_LOG(LogRpgAbilitySystem, Verbose, TEXT("Traversal deferred remote normal end: pawn=%s instance=%d montagePosition=%.6f previousPosition=%.6f sourceHandoff=%.6f finalWarpEnd=%.6f action=%u admissibleHandoff=%.6f"),
 				*GetPathNameSafe(ActivePawn.Get()), ActiveMontageInstanceId, Instance->GetPosition(), Instance->GetPreviousPosition(),

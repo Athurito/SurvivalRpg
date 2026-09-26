@@ -28,6 +28,8 @@ NETWORK_TEST_CLASS(GaspMoverMantlePIE, "SurvivalRpg.GASP.Mover.Mantle")
 	TEST_METHOD(LateJoinReconstructsTheCurrentMantleState) { Fixture.Queue(EGait::Stand, EScenario::LateJoin); }
 	TEST_METHOD(FixedCorrectionPreservesActiveWarpAndCollider) { Fixture.Queue(EGait::Stand, EScenario::CorrectDuringWarp); }
 	TEST_METHOD(FixedCorrectionAfterHandoffCannotRestoreOldTraversal) { Fixture.Queue(EGait::Stand, EScenario::CorrectAfterWarp); }
+	TEST_METHOD(NaturalAutoBlendCompletionRetainsFinishedOnEveryRole) { Fixture.Queue(EGait::Stand, EScenario::AutoBlendNaturalEnd); }
+	TEST_METHOD(AuthorityCancellationDuringAutoBlendRemainsCancelled) { Fixture.Queue(EGait::Stand, EScenario::CancelDuringAutoBlend); }
 
 };
 #endif
