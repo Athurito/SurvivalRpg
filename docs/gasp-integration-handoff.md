@@ -15,9 +15,9 @@ Abnahme. Beide bei relevanten Fortschritten im selben PR aktualisieren.
 | Runtime-Ausgangspunkt | `44a5e5127bab0d064608b682fcd002adf91c4159`, bestätigter Merge PR #147 am 26.09.2026 um 10:24:29 UTC; NET-01 änderte nur Editor-Testcode und Dokumentation |
 | Checkout / aktiver Branch | `codex/gasp-net-02-terminal-reconciliation`, `D:/Repos/SurvivalRpg`; Basis `44a5e512` |
 | Letzter Implementierungs-Commit | `8de5d927` – natürlicher Mover-Mantle-Abschluss trotz Remote-Ende im Auto-Blend-Out, zwei Runtime- und drei Testdateien |
-| Aktueller Arbeits-PR | Noch keiner für NET-02; [PR #147](https://github.com/Athurito/SurvivalRpg/pull/147) und [PR #146](https://github.com/Athurito/SurvivalRpg/pull/146) sind bestätigt gemergt |
+| Aktueller Arbeits-PR | [PR #148](https://github.com/Athurito/SurvivalRpg/pull/148), **Draft, offen**; [PR #147](https://github.com/Athurito/SurvivalRpg/pull/147) und [PR #146](https://github.com/Athurito/SurvivalRpg/pull/146) sind bestätigt gemergt |
 | Übernommene Statuspflege | Bestätigten NET-01-Merge in Roadmap, Übergabe und `gasp-active-mantle-rollback.md` im NET-02-Arbeitsbranch nachgeführt |
-| Nächster Handgriff | PR mit finalem Ursachenbeleg, identischem Rot-/Grünvergleich und 28/28-Regression anlegen; Review/Merge abschließen |
+| Nächster Handgriff | Validierten NET-02-Stand in PR #148 prüfen; nach bestätigtem Merge mit NET-03 fortsetzen |
 | Blocker / offene Abnahme | Kein bekannter Implementierungsblocker. Editor/Game, Fokus 3/3 und Regression 28/28 bestanden; Erhaltung und Overrides geprüft, alle Prozesse beendet. Review/Merge offen; dokumentierte Warnungen und Umgebungsgrenzen bleiben bestehen |
 
 ## Aktueller Auftrag – GASP-NET-02

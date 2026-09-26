@@ -5,7 +5,7 @@ gemeinsame Regression 28/28 und Editor-/Game-Builds bestanden; Review/Merge offe
 Branch `codex/gasp-net-02-terminal-reconciliation`, Basis `44a5e512`
 (bestätigter Merge PR #147), Implementierung `8de5d927`. Die
 [Roadmap](gasp-integration-roadmap.md) führt NET-02 als begrenzten Folgeauftrag
-in abgeschlossener technischer Validierung. Ein Arbeits-PR ist noch nicht angelegt.
+in abgeschlossener technischer Validierung: [Draft-PR #148](https://github.com/Athurito/SurvivalRpg/pull/148), offen.
 
 ## Historischer Befund vom 20.09.2026
 
