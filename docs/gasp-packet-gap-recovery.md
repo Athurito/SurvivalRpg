@@ -1,12 +1,18 @@
 # GASP-NET-03 – Traversal-Darstellung nach Paketpause
 
-Stand: **26.09.2026, Grenze bewertet und Werkzeug validiert; Review/Merge offen**. Branch
+Stand: **26.09.2026, gemergt in [PR #149](https://github.com/Athurito/SurvivalRpg/pull/149)**:
+`d933148f22e8051f0a50ab68719f2f507a6158b5`, bestätigt um 12:27:04 UTC.
+Finaler PR-Head `8eafc16db581c898f7ebf3d8a54e486678d306c0`. Arbeitsbranch war
 `codex/gasp-net-03-packet-gap-recovery`, Basis
 `1490dd7d85306bffa2b2a4b1ab7d9202f1a9b0c4`, bestätigter Merge von PR #148.
 Implementierung `49de7c876d72ce5414b75fc25a2708f8755c5525` (acht Tooldateien).
-[Draft-PR #149](https://github.com/Athurito/SurvivalRpg/pull/149) ist offen. Die
-[Roadmap](gasp-integration-roadmap.md) begrenzt diesen Auftrag auf die Bewertung
-und Verbesserung des belegten Paketverlust-Befunds.
+Die [Roadmap](gasp-integration-roadmap.md) führt NET-03 als gemergt und
+[VAL-03](gasp-buffered-traversal-replay.md) als validierten Folgeauftrag mit
+[Draft-PR #150](https://github.com/Athurito/SurvivalRpg/pull/150) (Testcommit `8bc887e1`; Runtime/Assets unverändert,
+Review/Merge offen). Danach folgt der begrenzte GASP-03-Source-Audit.
+Die Ergebnisse unten gehören zur NET-03-Abnahme; für diese Merge-Statuspflege
+wurden keine Tests oder Prozessläufe erneut ausgeführt. Die Bewertung behebt
+die dokumentierte Laufzeit-Rekonstruktionsgrenze nicht.
 
 Die frische Baseline und der portable Pausenlauf reproduzieren Abweichungen zwischen der nach einer Pause
 angezeigten Traversal und der autoritativen Bahn. Montage und angezeigte Bewegung
@@ -304,11 +310,11 @@ jeweiligen JSON-Ergebnisse und ihre Ausschlüsse sind maßgeblich.
 | Normale Kontrolle und Pause mit neuen Metriken | Abgeschlossen; Kontrolle 16/16, Pause 13/16 nach unverändertem Ebenenkriterium, Freeze bestanden. Räumliche Grenze bleibt sichtbar. |
 | Unreal-Build | Nicht erforderlich und nicht ausgeführt; vorhandene Binaries verwendet. |
 | Erhaltungsprüfung / Overrides / Prozesse | Zehn Maps und sieben SaveGames unverändert, vier Overrides verifiziert, keine Unreal-Prozesse verblieben. |
-| Review / Merge | Noch offen. |
+| Review / Merge | PR #149 am 26.09.2026 um 12:27:04 UTC bestätigt gemergt; Merge `d933148f`. |
 
 NET-03 bewertet die bekannte Rekonstruktionsgrenze und liefert einen wiederholbaren
-Nachweis. Es behebt die verlorene gekrümmte Bahn nicht. Der nächste begrenzte
-Auftrag ist **GASP-VAL-03**: Traversal B trifft nach gewöhnlicher Montage-Ersetzung
+Nachweis. Es behebt die verlorene gekrümmte Bahn nicht. Der aktive Folgeauftrag
+ist **[GASP-VAL-03](gasp-buffered-traversal-replay.md)**: Traversal B trifft nach gewöhnlicher Montage-Ersetzung
 ein, während A noch im Präsentationspuffer liegt. Die vorhandene Play-Token-
 Korrelation soll genau in dieser Reihenfolge ausgeübt werden. `GASP-VAL-01`
 bleibt eine dokumentierte Onset-Messgrenze; `GASP-VAL-02` bleibt die offene

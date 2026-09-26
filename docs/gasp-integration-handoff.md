@@ -9,18 +9,68 @@ Abnahme. Beide bei relevanten Fortschritten im selben PR aktualisieren.
 
 | Feld | Wert |
 | --- | --- |
-| Aktive Implementierungsaufgabe | `GASP-02` / `GASP-NET-03` – **bewertet und Werkzeug validiert; Review/Merge offen**, Runtime-Rekonstruktionsgrenze bleibt bestehen |
-| Nächste bereite Aufgabe | Nach NET-03 `GASP-VAL-03`: Traversal B nach gewöhnlicher Montage-Ersetzung empfangen, während A noch im Präsentationspuffer liegt; konkrete Play-Token-Reihenfolge gezielt prüfen |
-| Zuständiger Chat / beanspruchte Dateien | Root: Launcher, Probe-Runtime und Prozesssitzungen. Testagent: Analyzer unter `Build/Tools/GaspPacketGap`. Dokumentationsagent: Roadmap, Übergabe, NET-02-Mergestatus und NET-03-Bericht. Keine C++-/Assetänderung |
-| Runtime-Ausgangspunkt | `1490dd7d85306bffa2b2a4b1ab7d9202f1a9b0c4`, bestätigter Merge PR #148 am 26.09.2026 um 11:56:35 UTC; Runtime `8de5d927` |
-| Checkout / aktiver Branch | `codex/gasp-net-03-packet-gap-recovery`, `D:/Repos/SurvivalRpg`; Basis `1490dd7d` |
-| Letzter Implementierungs-Commit | `49de7c876d72ce5414b75fc25a2708f8755c5525` – acht Tooldateien für reproduzierbaren Paketpausen-Probe und Offline-Diagnose, keine C++-/Assetänderung |
-| Aktueller Arbeits-PR | [PR #149](https://github.com/Athurito/SurvivalRpg/pull/149), **Draft, offen**; [PR #148](https://github.com/Athurito/SurvivalRpg/pull/148) ist bestätigt gemergt, finaler Head `065bacc917aedf80051281aee04655492ce3d657` |
-| Übernommene Statuspflege | Bestätigten NET-02-Merge in Roadmap, Übergabe und `gasp-terminal-reconciliation.md` im NET-03-Arbeitsbranch nachgeführt |
-| Nächster Handgriff | Validierten Werkzeugstand und verbleibende Runtime-Grenze in PR #149 prüfen; nach bestätigtem Merge mit GASP-VAL-03 fortsetzen |
-| Blocker / offene Abnahme | Kein Werkzeugblocker; 19/19 Tests, vier CLI-Negativprüfungen und beide Prozessläufe abgeschlossen. Review/Merge offen. Rekonstruktionsgrenze bleibt bestehen; keine C++-/Assetänderung oder neuer Unreal-Build |
+| Aktive Implementierungsaufgabe | `GASP-02` / `GASP-VAL-03` – B-GAS-Empfang bei noch gepufferter Traversal A nach beendeter normaler Waffenmontage, **PR offen (Draft), Validierung abgeschlossen** |
+| Nächste bereite Aufgabe | Nach VAL-03-Review/Merge `GASP-03`: begrenzter Source-Audit des originalen Mover-Ragdoll-Pawns und seiner Abhängigkeiten. VAL-01/02 und NET-03-Rekonstruktionsgrenze bleiben offen |
+| Zuständiger Chat / beanspruchte Dateien | Root: Runtime und alle Build-/Editorsitzungen. Testagent: drei gemeinsame Fixture-/Vault-Testdateien. Runtimeagent: rein lesender Audit. Dokumentationsagent: Roadmap, Übergabe, NET-03-Mergestatus und VAL-03-Bericht. Keine Assetänderung |
+| Runtime-Ausgangspunkt | `d933148f22e8051f0a50ab68719f2f507a6158b5`, bestätigter Merge PR #149 am 26.09.2026 um 12:27:04 UTC; letzter Runtimefix weiterhin `8de5d927`, NET-03 änderte nur Werkzeuge und Dokumentation |
+| Checkout / aktiver Branch | `codex/gasp-val-03-buffered-traversal-replay`, `D:/Repos/SurvivalRpg`; Basis `d933148f` |
+| Letzter Implementierungs-Commit | `8bc887e16d9db543f94e6f00f4328aec43ceb19d` – drei Editor-Testdateien, Runtime und Assets unverändert |
+| Aktueller Arbeits-PR | [Draft-PR #150](https://github.com/Athurito/SurvivalRpg/pull/150), offen und nicht gemergt; Vorgänger PR #149 bestätigt gemergt |
+| Übernommene Statuspflege | Bestätigten NET-03-Merge in Roadmap, Übergabe und `gasp-packet-gap-recovery.md` im VAL-03-Arbeitsbranch nachgeführt |
+| Nächster Handgriff | Draft-PR #150 abschließend prüfen und nach Merge mit dem begrenzten GASP-03-Source-Audit beginnen |
+| Blocker / offene Abnahme | Review/Merge offen. Fokus und 30 FPS grün, Negativkontrolle erwartungsgemäß rot, wiederhergestellter Editor-Build und Abschlussaudit bestanden. Regression bleibt 15/16; alter Pending-Replay-Fall verfehlt Overlap-Beobachtung, besteht unverändert isoliert 1/1. Dessen Timingempfindlichkeit bleibt ein Folgepunkt; kein Runtimebug oder Fix behauptet |
 
-## Aktueller Auftrag – GASP-NET-03
+## Aktueller Auftrag – GASP-VAL-03
+
+- Geforderte Reihenfolge: Traversal A, normale Waffenmontage als Ersetzung,
+  anschließend Empfang der GAS-Montage für Traversal B, während A auf dem
+  beobachtenden Client noch im NP-Präsentationspuffer liegt.
+- Die vorhandene Play-Token-Korrelation soll A weiterhin sperren und B erst mit
+  der passenden präsentierten Traversalidentität zulassen. Ein neuer Empfang
+  derselben Montage allein darf A nicht freigeben.
+- `TryReplayTraversal` wartet bisher auf `Clean`, `IsOnGround` und Ende der
+  Ersetzungsmontage auf Owner, Authority und Observer. Die bisherigen Tests
+  belegen Ersetzung und späteren Replay, nicht diese engere A/B-Überlappung.
+- Testcommit `8bc887e1` setzt den testlokalen NP-Puffer vor PIE auf 1000 ms
+  und stellt ihn nach PIE wieder her. A erreicht mindestens 150 ms beobachteten
+  Montagefortschritt, wird
+  autoritativ abgebrochen; echte Waffenmontage O wird empfangen, schreitet
+  fort und endet durch Gameplay-Cancel. Erst danach B per W/Space. Empfangs-
+  Wire-Kante und alter A-Sync werden im selben Dispatch beobachtet, volle
+  B-Identität gegebenenfalls im nächsten Fixed-Schritt gebunden.
+- Korrigierter Fokus **1/1 bestanden**, vier Warnungen, null Testfehler.
+  Receipt Frame 2215: O2→B3 bei A1; Bindung 2216, B-Instanz 4 ab 2289,
+  A nie sichtbar, genau eine Traversalinstanz. Erster roter Messversuch und
+  vorheriger Null-Test-Filterversuch bleiben dokumentiert.
+- Nur den Runtime-Tokenvergleich temporär entfernt: gleicher Test erwartungsgemäß
+  rot mit drei Assertions, tatsächlicher A-Instanz 4 nach gültigem B-Empfang
+  und späterer B-Instanz 5. Testhashes unverändert. Originalruntime exakt
+  wiederhergestellt, kein Runtime-Diff; anschließender Editor-Build **Succeeded,
+  17,87 s**. Kein Runtimebug oder Assetfix behauptet.
+- Gemeinsame Regression **15/16 bestanden**, genau eine Assertion im alten
+  Pending-Replay-Test, 129 Warnungen, 185,93 s. Neuer VAL-03-Fall bestanden.
+  Der Altfall verfehlt seine kurze Overlap-Beobachtungsvoraussetzung; keine
+  Traversal-Wiederbelebung. Isolierter Repeat mit unverändertem Code **1/1
+  bestanden**, vier Warnungen, keine Testfehler, 38,916065 s; echte Überlappung
+  diesmal belegt. Der rote Batch bleibt 15/16; alte Timingempfindlichkeit offen.
+- Zusätzlicher Lauf bei 30 Render-FPS und 50 Hz Fixed **1/1 bestanden**,
+  16 Warnungen, keine Testfehler, 35,490707 s. Receipt/Bindung Frame 760 bei
+  unsichtbarer A, B-Start 789; sechs A-Proben, drei nach Empfang, kein A- oder
+  Frühstart. Genau eine B-Instanz, 22 B-Proben, Phasenfehler 0, ein Notify-Beginn
+  ohne Duplikat.
+- Abschlussaudit: alle zehn Maps und sieben SaveGames unverändert, vier
+  Overrides verifiziert, geladene Projekt-DLLs im 30-FPS-Log belegt,
+  Runtime-Git-Diff leer und keine Unreal-Prozesse. Kein neuer Game-Build für
+  die ausschließlich im Editor-Modul liegende Teständerung ausgeführt.
+  [Architektur, Belege und portables Nachstellen](gasp-buffered-traversal-replay.md).
+
+## Letzter abgeschlossener Schritt – GASP-NET-03
+
+- [PR #149](https://github.com/Athurito/SurvivalRpg/pull/149) am 26.09.2026 um
+  12:27:04 UTC bestätigt gemergt: `d933148f22e8051f0a50ab68719f2f507a6158b5`,
+  finaler Head `8eafc16db581c898f7ebf3d8a54e486678d306c0`.
+  Die folgenden Ergebnisse gehören zur abgeschlossenen NET-03-Abnahme und
+  wurden für diese Merge-Statuspflege nicht erneut ausgeführt.
 
 - Historischer Ausgangspunkt ist
   `Saved/GaspMoverProxyPose20260920/probe_run_final_host_gap`: zwei Prozesse,
@@ -61,10 +111,10 @@ Abnahme. Beide bei relevanten Fortschritten im selben PR aktualisieren.
   im Pausenlauf nachgewiesen. Pro portablem Lauf 82 Startup-Warnungen und 116
   Python-Error-Zeilen erhalten; ab Trigger bis Shutdown keine Warning/Error.
 - [Befunde, Ownership, Nachstellen und Grenzen](gasp-packet-gap-recovery.md).
-  Als nächster Auftrag folgt nach Review/Merge VAL-03; VAL-01 bleibt
+  Der anschließend gestartete Auftrag ist VAL-03; VAL-01 bleibt
   dokumentierte Messgrenze, VAL-02 offene Produktionsumgebungsprüfung.
 
-## Letzter abgeschlossener Schritt – GASP-NET-02
+## Vorheriger abgeschlossener Schritt – GASP-NET-02
 
 - [PR #148](https://github.com/Athurito/SurvivalRpg/pull/148) am 26.09.2026 um
   11:56:35 UTC bestätigt gemergt: `1490dd7d85306bffa2b2a4b1ab7d9202f1a9b0c4`,
