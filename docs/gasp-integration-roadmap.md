@@ -7,16 +7,17 @@ nicht eine neue Gesamtplanung für Combat, Crafting oder Portale.
 
 ## Schnellstart
 
-- **Implementiert und validiert: `GASP-02` / `GASP-NET-02` – terminaler Mantle-Grund bei Reconciliation; Review/Merge offen.** Branch `codex/gasp-net-02-terminal-reconciliation`, Implementierung `8de5d927`, [Draft-PR #148](https://github.com/Athurito/SurvivalRpg/pull/148). Normales Remote-Ende wartete im Auto-Blend-Out nicht auf den natürlichen Engine-Abschluss; fixiert im vorhandenen Ability-Pfad. Identischer Fokusvergleich rot 1/3, grün 3/3; Editor/Game und gemeinsame Regression **28/28** bestanden. Maps/SaveGames unverändert, Overrides verifiziert; 287 Warnungen und offene Diagnosebefunde dokumentiert. [Ursache und Belege](gasp-terminal-reconciliation.md).
+- **Bewertet und Werkzeug validiert: `GASP-02` / `GASP-NET-03`; Review/Merge offen.** [Draft-PR #149](https://github.com/Athurito/SurvivalRpg/pull/149), Branch `codex/gasp-net-03-packet-gap-recovery`, Commit `49de7c87`. Getrackter Zwei-Prozess-Probe, 19/19 Offline-Tests und vier CLI-Negativprüfungen. Kontrolle 16/16 Ebenen bestanden, Pause weiterhin 13/16; bis 64,00 cm Root-Abweichung bei gleicher beobachteter Phase, Freeze korrekt. Rekonstruktionsgrenze bleibt bestehen; keine C++-/Assetänderung, kein neuer Unreal-Build oder höherer Toleranzwert. [Bericht](gasp-packet-gap-recovery.md). Nächster begrenzter Auftrag nach Merge: `GASP-VAL-03`.
+- **Gemergt: `GASP-NET-02` – terminaler Mantle-Grund bei Reconciliation.** Implementierung `8de5d927`, [PR #148](https://github.com/Athurito/SurvivalRpg/pull/148), bestätigter Merge `1490dd7d85306bffa2b2a4b1ab7d9202f1a9b0c4` am 26.09.2026 um 11:56:35 UTC. Identischer Fokusvergleich rot 1/3, grün 3/3; Editor/Game und Regression **28/28** bestanden. Maps/SaveGames unverändert, Overrides verifiziert; 287 Warnungen und offene Befunde dokumentiert. [Ursache und Belege](gasp-terminal-reconciliation.md).
 - **Gemergt: `GASP-NET-01` – Rollback während aktivem Mantle.** Commit `b6709eb4`, [PR #147](https://github.com/Athurito/SurvivalRpg/pull/147), bestätigter Merge `44a5e5127bab0d064608b682fcd002adf91c4159` am 26.09.2026 um 10:24:29 UTC. Editor-Build, 10/10 Regressionen, zusätzlicher 30-FPS-Lauf und echte Negativkontrolle; [Nachweis](gasp-active-mantle-rollback.md). Ausschließlich Editor-Testcode und Dokumentation, Runtime unverändert.
 
 - **Gemergt: `GASP-02` / `GASP-STAB-02` – Falling bei belegtem Respawn.** Commit `57fa8de9`, [PR #146](https://github.com/Athurito/SurvivalRpg/pull/146), bestätigter Merge `b9a65360`. `GASP-STAB-01` ist mit [PR #145](https://github.com/Athurito/SurvivalRpg/pull/145) gemergt (`4039be25`). Der anschließende NET-01-Nachweis steht oben; weitere Registerpunkte bleiben offen.
 - Aktive Aufgabe, Branch, letzte Ergebnisse und konkrete Fortsetzung stehen in
   [gasp-integration-handoff.md](gasp-integration-handoff.md).
-- Letzter akzeptierter Runtime-Stand: [PR #146](https://github.com/Athurito/SurvivalRpg/pull/146),
-  am 22.09.2026 um 21:09:22 UTC auf Nutzerauftrag gemergt; Merge `b9a653608b6ada64dfd1c17b2e24d5dfc691202c`,
-  getesteter Runtime-Commit `57fa8de9`. Finaler PR-Head `e98e3741` ergänzt ausschließlich
-  Dokumentation. GASP-01 bleibt mit PR #144 und damaliger Sichtabnahme übernommen.
+- Letzter akzeptierter Runtime-Stand: [PR #148](https://github.com/Athurito/SurvivalRpg/pull/148),
+  am 26.09.2026 um 11:56:35 UTC bestätigt gemergt; Merge `1490dd7d`, getesteter
+  Runtime-Commit `8de5d927`. Finaler PR-Head `065bacc917aedf80051281aee04655492ce3d657`
+  ergänzt Dokumentation. GASP-01 bleibt mit PR #144 und damaliger Sichtabnahme übernommen.
 - Dieser Stand enthält offene Folgearbeiten. „Gemergt“ bedeutet nicht, dass alle
   Netzwerk-/Lifecycle-Randfälle gelöst oder alle Umgebungen getestet sind.
 - Vor Arbeit prüfen: aktueller Git-Stand, diese Roadmap, Übergabe und die zum
@@ -44,7 +45,7 @@ Vorgabe, insgesamt genau drei Experience-Dateien zu besitzen.
 | ID | Arbeitspaket | Status | Voraussetzung / Abschluss |
 | --- | --- | --- | --- |
 | `GASP-01` | Grounded Hurdle für Mover | **Gemergt** | [PR #144](https://github.com/Athurito/SurvivalRpg/pull/144), Merge `aa4447d6`; Runtime `b78edf5b`; Editor/Game, 47 Tests und zwei Prozessläufe bestanden; Nutzer-Sichtabnahme am 22.09.2026; [Bericht](gasp-mover-hurdle.md) |
-| `GASP-02` | Gezielte Stabilisierung | **In Arbeit (Teilauftrag)** | `GASP-STAB-01` gemergt in PR #145; `GASP-STAB-02` gemergt in PR #146; `GASP-NET-01` gemergt in PR #147; `GASP-NET-02` validiert, Review/Merge offen; weitere Registerpunkte offen |
+| `GASP-02` | Gezielte Stabilisierung | **In Arbeit (Teilauftrag)** | `GASP-STAB-01/02` gemergt in PR #145/146; `GASP-NET-01/02` gemergt in PR #147/148; `GASP-NET-03` bewertet, Werkzeug validiert, Review/Merge offen; danach `GASP-VAL-03` |
 | `GASP-03` | Mover-Ragdoll-Experience | Geplant | `GASP-01`; belastbarer Lifecycle-Stand aus `GASP-02`; Source-Audit zuerst |
 | `GASP-04` | Vergleich der drei Varianten | Geplant | `GASP-03`; dokumentierte gemeinsame Abnahmematrix |
 | `GASP-05` | Importbereinigung | Geplant | `GASP-04`; geprüfte Abhängigkeiten und konkrete Entfernungsliste |
@@ -106,19 +107,20 @@ Einstieg: [CMC-Hurdle](gasp-hurdle-integration.md),
 ## GASP-02 – Register der offenen Folgearbeiten
 
 Jede Zeile ist ein begrenzter Folgeauftrag, keine Aufforderung, alle Probleme in
-einem PR zu bearbeiten. **`GASP-STAB-01`, `GASP-STAB-02` und `GASP-NET-01` sind
-gemergt; `GASP-NET-02` ist validiert, Review/Merge und die übrigen Punkte sind offen.**
+einem PR zu bearbeiten. **`GASP-STAB-01/02` und `GASP-NET-01/02` sind gemergt;
+`GASP-NET-03` ist bewertet und sein Werkzeug validiert, Review/Merge offen.
+`GASP-VAL-03` ist der nächste begrenzte Auftrag.**
 
 | ID | Einordnung | Arbeit und Abschlussnachweis |
 | --- | --- | --- |
 | `GASP-STAB-01` | **Gemergt** | Ursprünglichen Ensure frisch reproduziert; Cleanup an ursprünglichen ASC/DefenseSet gebunden, Basiswerte und rekursive Enden abgesichert. Runtime `43ac69b8`; Editor/Game und 11/11 Tests bestanden. [PR #145](https://github.com/Athurito/SurvivalRpg/pull/145), Merge `4039be25`; [Bericht](gasp-block-cleanup.md). |
 | `GASP-STAB-02` | **Gemergt** | Zwei reale Pawns am Checkpoint reproduzieren Falling/Velocity 0 durch gescheiterte Penetrationsauflösung. Konkreter RPG-Pawn nutzt Engine-Spawnanpassung; identischer Crowd-Test rot/grün, Editor/Game und 11/11 Regressionen bestanden. Zusätzlich 2/2 im sichtbaren Editor und 1/1 Crowd-Diagnose mit eigener Sichtprüfung. Commit `57fa8de9`, [PR #146](https://github.com/Athurito/SurvivalRpg/pull/146), Merge `b9a65360`; [Ursache, Grenzen und Nachstellen](gasp-respawn-falling.md). Kein allgemeiner Anspruch bei vollständig verbautem Checkpoint. |
 | `GASP-NET-01` | **Gemergt** | Echten Restore/Replay samt Gegenkorrektur desselben aufgezeichneten aktiven Frames nachgewiesen, einschließlich vom Server übersprungenem Injektionsframe. Warp-/Collider-/Montagevertrag erhalten; Editor-Build, 10/10 Regressionen, 30-FPS-Fokus und erwartete negative Gegenprobe. Commit `b6709eb4`, [PR #147](https://github.com/Athurito/SurvivalRpg/pull/147), Merge `44a5e512`; [Nachweis](gasp-active-mantle-rollback.md). |
-| `GASP-NET-02` | **PR offen**, validiert | Frische Cleanup-Gates belegen vorzeitigen Abbruch durch normales Remote-Ende während Auto-Blend-Out. Vorhandenen exakten Hurdle-Endcallback auf natürlichen Mover-Mantle erweitert; echte Cancellation bleibt sofort wirksam. Commit `8de5d927`, [Draft-PR #148](https://github.com/Athurito/SurvivalRpg/pull/148), identischer 30-FPS-Fokus rot 1/3 und grün 3/3, Editor/Game und Regression **28/28** bestanden; [Bericht](gasp-terminal-reconciliation.md). |
-| `GASP-NET-03` | Nächster Auftrag nach NET-02; gemessene Paketverlust-Grenze | Nach 350 ms Paketpause stehen Animation und Position gemeinsam still, beim Aufholen bleibt an einer Ebene eine Abweichung von etwa 71 ms durch die rekonstruierte Bahn. Einstieg: `Saved/GaspMoverProxyPose20260920/probe_run_final_host_gap`, aktuelle Reproduktion und Prüfung der Bahn/Messklammer. Gezielt bewerten/verbessern; keine pauschale perfekte Pose-/Hindernisübereinstimmung bei Verlust behaupten. |
+| `GASP-NET-02` | **Gemergt** | Frische Cleanup-Gates belegen vorzeitigen Abbruch durch normales Remote-Ende während Auto-Blend-Out. Exakten natürlichen Endcallback auf Mover-Mantle erweitert; echte Cancellation bleibt sofort wirksam. Commit `8de5d927`, [PR #148](https://github.com/Athurito/SurvivalRpg/pull/148), Merge `1490dd7d`; 30-FPS-Fokus rot 1/3 und grün 3/3, Editor/Game und Regression **28/28** bestanden; [Bericht](gasp-terminal-reconciliation.md). |
+| `GASP-NET-03` | **Bewertet / Werkzeug validiert**, Review/Merge offen | Commit `49de7c87`, getrackter Probe und getrennte Offline-Diagnose. 19/19 Tests; Kontrolle 16/16 Ebenen, Pause 13/16, maximal 86,21 ms im unveränderten alten Kriterium. Same-phase-Root-Abweichung bis 64,00 cm nach Pause, schon 28,54 cm in der Kontrolle; Freeze besteht. Runtime-Rekonstruktionsgrenze bleibt bestehen, keine Toleranzerhöhung; [Bericht](gasp-packet-gap-recovery.md). |
 | `GASP-VAL-01` | Messgrenze | Im finalen separaten Prozesslauf ist ein Walking→Traversing-Messpaar nicht numerisch vergleichbar. Die erste aktive Traversing-Probe enthält bereits die Montage. Bei Bedarf Onset-Messung verfeinern; keinen belegten Animationsaussetzer daraus ableiten. |
 | `GASP-VAL-02` | Noch nicht ausgeführte Umgebungsprüfung | Cooked/packaged und WAN bzw. gezielt emulierte Netzwerkbedingungen prüfen: verschiedene Render-FPS, Delay/Jitter/Loss, Late Join, Traversal, Korrekturen und Respawn. Lokale uncooked Ergebnisse ersetzen diese Prüfung nicht. |
-| `GASP-VAL-03` | Noch nicht gezielt ausgeübte Reihenfolge | Traversal B trifft ein, während A noch im Präsentationspuffer liegt, nach einer gewöhnlichen Montage-Ersetzung. Play-Token-Korrelation ist implementiert; der bisherige Replay-Test wartet vor B auf Cleanup und beweist diesen engeren Fall nicht. |
+| `GASP-VAL-03` | Nächster begrenzter Auftrag nach NET-03 | Traversal B trifft ein, während A noch im Präsentationspuffer liegt, nach einer gewöhnlichen Montage-Ersetzung. Play-Token-Korrelation ist implementiert; der bisherige Replay-Test wartet vor B auf Cleanup und beweist diesen engeren Fall nicht. Genau diese A/B-Reihenfolge gezielt ausüben; VAL-01 bleibt dokumentierte Messgrenze und VAL-02 offene Produktionsumgebungsprüfung. |
 
 Quellen: [Recovery-Ergebnisse](gasp-mover-network-recovery.md),
 [Präsentations-Ergebnisse und Grenzen](gasp-mover-traversal-presentation.md).
