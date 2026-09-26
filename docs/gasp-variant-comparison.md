@@ -1,6 +1,9 @@
 # GASP-04 – Gemeinsamer Variantenvergleich
 
-Stand: **27.09.2026, technisch validiert; [PR #154](https://github.com/Athurito/SurvivalRpg/pull/154) offen**.
+Stand: **27.09.2026, [PR #154](https://github.com/Athurito/SurvivalRpg/pull/154) bestätigt gemergt**.
+Merge am 26.09.2026 um 23:49:16 UTC als `bb690eefc111bd22f9267b78c07e01e7937fc499`,
+finaler geprüfter PR-Head `d3240b4ba59e4ebb3a5b2748b8a9293f0957b3ed`. Die nachfolgende
+Merge-Statuspflege führt keine neuen Builds oder Tests aus.
 Testcode `b96083570d463547aa8f23b93445619010999269`, Branch `codex/gasp-04-variant-comparison`,
 Basis `4c23134f320eb1b94d6bd2e7adaee2dfebbe0e33`. PR #152 brachte den
 Ragdoll-Piloten einschließlich grüner Farbe und MetaSound-Korrektur; PR #153

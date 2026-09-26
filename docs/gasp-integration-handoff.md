@@ -9,18 +9,22 @@ Abnahme. Beide bei relevanten Fortschritten im selben PR aktualisieren.
 
 | Feld | Wert |
 | --- | --- |
-| Aktive Implementierungsaufgabe | `GASP-04` – technisch validiert, [PR #154](https://github.com/Athurito/SurvivalRpg/pull/154) offen |
-| Nächste bereite Aufgabe | GASP-04-PR abschließen; danach GASP-05 als eigenen begrenzten Abhängigkeits-/Entfernungslisten-Audit beginnen |
-| Zuständiger Chat / beanspruchte Dateien | Root: PR und Statusdokumentation. Editor/MCP beendet; Testagenten fertig, keine binären Assets beansprucht |
+| Aktive Implementierungsaufgabe | Keine; GASP-04 bestätigt gemergt |
+| Nächste bereite Aufgabe | `GASP-05`: eigener Abhängigkeits-/Entfernungslisten-Audit; noch nicht begonnen, keine pauschale Asset-Löschfreigabe aus der Vergleichsmatrix |
+| Zuständiger Chat / beanspruchte Dateien | Keine aktive Implementierungsreservierung; Editor-/Asset-Sitzungen beendet |
 | Runtime-Ausgangspunkt | `9de031c9e255a13d117662713739e44984a98edc`, bestätigter Merge PR #152 am 26.09.2026 um 20:51:05 UTC |
-| Checkout / aktiver Branch | `codex/gasp-04-variant-comparison`, `D:/Repos/SurvivalRpg`; Basis `4c23134f320eb1b94d6bd2e7adaee2dfebbe0e33` (bestätigter Dokumentationsmerge PR #153) |
+| Checkout / abgeschlossener Arbeitsbranch | `D:/Repos/SurvivalRpg`; GASP-04-Merge `bb690eefc111bd22f9267b78c07e01e7937fc499` lokal übernommen; Arbeitsbranch `codex/gasp-04-variant-comparison`, anschließende reine Statuspflege separat. Vor Folgearbeit tatsächlichen Git-Stand prüfen |
 | Letzter Implementierungs-Commit | `b96083570d463547aa8f23b93445619010999269`: vier zusätzliche Editor-Tests; Runtime/Assets unverändert |
-| Letzter gemergter PR | [PR #153](https://github.com/Athurito/SurvivalRpg/pull/153), Statuspflege als `4c23134f`; letzter Runtime-/Assetmerge bleibt [PR #152](https://github.com/Athurito/SurvivalRpg/pull/152) |
+| Letzter gemergter GASP-Arbeits-PR | [PR #154](https://github.com/Athurito/SurvivalRpg/pull/154), **MERGED**, `bb690eefc111bd22f9267b78c07e01e7937fc499`, 26.09.2026 23:49:16 UTC; finaler geprüfter Head `d3240b4ba59e4ebb3a5b2748b8a9293f0957b3ed` |
 | Aktuelle Belege | Editor/Game erfolgreich; 31/31 Tests, neun Blueprint-/AnimBP-Compiles, sechs Registry-Hüllen und Root-Sichtprobe. [Vergleich](gasp-variant-comparison.md), [Manifest](assets/gasp-variant-comparison.json) |
-| Nächster Handgriff | Geprüften GASP-04-Test-/Dokumentationsstand pushen und PR abschließen; bestätigten Merge nachführen |
+| Nächster Handgriff | Für GASP-05 eigenen Branch anlegen, vier Overrides prüfen und konkrete aktive Dependency-/Entfernungsliste ableiten; keinen Altimport pauschal löschen |
 | Blocker / offene Abnahme | Kein konkreter technischer Blocker. 1361 Testwarnungen dokumentiert; keine neue GASP-04-Nutzerabnahme oder vollständige Gait-/Retarget-Kreuzproduktprüfung. VAL-01/02, NET-03-Grenze und ältere Pending-Fixture-Timingempfindlichkeit bleiben Folgepunkte |
 
-## Aktueller Abschluss – GASP-04
+## Letzter abgeschlossener Schritt – GASP-04
+
+[PR #154](https://github.com/Athurito/SurvivalRpg/pull/154) ist bestätigt gemergt als `bb690eefc111bd22f9267b78c07e01e7937fc499`.
+Die folgenden GASP-04-Ergebnisse wurden für die reine Merge-Statuspflege nicht
+erneut ausgeführt.
 
 Frische Prüfung am 27.09.2026: Editor **77,46 s**, Game **66,77 s**, gemeinsame
 Auswahl **31/31 Success** in **291,05 s** ohne Testfehler. Neue Fälle schließen
