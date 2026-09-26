@@ -181,6 +181,6 @@ private:
 	bool bEnding = false;
 	bool bReceivedTargetData = false;
 	bool bGameplayCancellationRequested = false;
-	// Set only by our exact Mover Hurdle play's noninterrupted end callback, before the Blueprint montage task ends GAS.
-	bool bMoverHurdleCompletedNaturally = false;
+	// Set only by our exact full-length Mover traversal play's noninterrupted end callback, before the Blueprint task ends GAS.
+	bool bMoverTraversalCompletedNaturally = false;
 };

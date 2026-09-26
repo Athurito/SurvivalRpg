@@ -489,6 +489,19 @@ namespace RpgGaspMoverTraversalTests
 		bool bInjected = false, bObserved = false, bTerminalExpected = false, bBeforeValid = false;
 		bool bSameFrame = false, bIdentity = false, bContext = false, bLifecycle = false, bMontage = false, bWarpHistory = false;
 	};
+	/** Observe the exact native end while holding only its post-warp playback position, not its blend clock. */
+	struct FAutoBlendObservation
+	{
+		TWeakObjectPtr<UAnimInstance> Animation;
+		TWeakObjectPtr<UAnimMontage> Montage;
+		FOnMontageEnded OriginalEndDelegate;
+		FDelegateHandle ObserverDelegate;
+		FRpgMoverTraversalIdentity Identity;
+		int32 InstanceId = INDEX_NONE, EndCallbacks = 0;
+		float OriginalPlayRate = 1.f, HeldPosition = -1.f, HandoffTime = -1.f, EndPosition = -1.f;
+		bool bInterrupted = false, bExactEndInstance = false, bOwnerEndedDuringBlend = false;
+		bool bAuthorityEndedBeforeNativeEnd = false, bCancelAppliedImmediately = false;
+	};
 	struct FObservation
 	{
 		TWeakObjectPtr<UWorld> World;
@@ -496,6 +509,7 @@ namespace RpgGaspMoverTraversalTests
 		TWeakObjectPtr<URpgAbilitySystemComponent> AbilitySystem;
 		FDelegateHandle Committed, Ended;
 		FRpgMoverTraversalIdentity ObservedSimulationIdentity;
+		ERpgMoverTraversalPhase FirstTerminalPhase = ERpgMoverTraversalPhase::None;
 		TStrongObjectPtr<URpgMoverRollbackTestObserver> DeathRollbackObserver;
 		FMoverSyncState BeforeDeathDispatch;
 		RpgMoverPredictionTests::FFixedPredictionHeadSnapshot BeforeDeathClock;
@@ -556,6 +570,7 @@ struct FRpgGaspMoverTraversalTestFixture::FState
 	ECollisionEnabled::Type PreviousSupportCollision = ECollisionEnabled::NoCollision;
 	FBox Bounds{ForceInit}, DeckBounds{ForceInit};
 	FObservation OwnerRecord, AuthorityRecord, ProxyRecord;
+	TSharedPtr<RpgGaspMoverTraversalTests::FAutoBlendObservation> AutoBlendObservation;
 	TStrongObjectPtr<URpgMoverTraversalNotifyTestObserver> ProxyNotifyObserver;
 	TWeakObjectPtr<UAnimInstance> ProxyNotifyAnimation;
 	TWeakObjectPtr<UAnimMontage> ReplacementMontage, RepeatedTraversalMontage;
@@ -600,7 +615,8 @@ struct FRpgGaspMoverTraversalTestFixture::FState
 	APawn* Observer() const { return RpgGaspMoverTraversalTests::Pawn(ObserverWorld.Get(), PlayerId); }
 	bool InterruptedScenario() const { return Scenario == EScenario::Cancel || Scenario == EScenario::Death || Scenario == EScenario::ColliderLoss || Scenario == EScenario::BlockedExit || Scenario == EScenario::SupportLoss; }
 	bool ReplacementScenario() const { return Scenario == EScenario::ReplaceActiveAndReplay || Scenario == EScenario::ReplacePendingAndReplay; }
-	bool HoldMovement() const { return Scenario != EScenario::LateJoin && Scenario != EScenario::CorrectDuringWarp && Scenario != EScenario::CorrectAfterWarp && Scenario != EScenario::NaturalEnd; }
+	bool AutoBlendScenario() const { return Scenario == EScenario::AutoBlendNaturalEnd || Scenario == EScenario::CancelDuringAutoBlend; }
+	bool HoldMovement() const { return Scenario != EScenario::LateJoin && Scenario != EScenario::CorrectDuringWarp && Scenario != EScenario::CorrectAfterWarp && Scenario != EScenario::NaturalEnd && !AutoBlendScenario(); }
 	bool Landed(const FObservation& Record) const { return Action == EAction::Mantle ? Record.bLandedOnObstacle : Record.bLandedBeyond; }
 	bool Finished(const FObservation& Record) const { return Landed(Record) && Record.bRestoredFacing && (!HoldMovement() || Record.bContinuedMoving); }
 	void Queue(EGait InGait, EScenario InScenario = EScenario::Success, bool bInHost = false, float InYaw = 0.0f)
@@ -806,6 +822,17 @@ struct FRpgGaspMoverTraversalTestFixture::FState
 			Snapshot->bConfirmedPlayCancelled |= Scenario == EScenario::HeldRetry && AuthorityRecord.Commits > 0 && Data.bWasCancelled;
 			if (Data.bWasCancelled) ++Snapshot->CancelledEnds;
 			else ++Snapshot->SuccessfulEnds;
+			if (AutoBlendObservation)
+			{
+				if (Snapshot == &AuthorityRecord)
+					AutoBlendObservation->bAuthorityEndedBeforeNativeEnd |= AutoBlendObservation->EndCallbacks == 0;
+				if (Snapshot == &OwnerRecord && !Data.bWasCancelled && AutoBlendObservation->Animation.IsValid())
+				{
+					const FAnimMontageInstance* Held = AutoBlendObservation->Animation->GetMontageInstanceForID(AutoBlendObservation->InstanceId);
+					AutoBlendObservation->bOwnerEndedDuringBlend |= Held && Held->IsStopped() && Held->IsPlaying()
+						&& Held->Montage == AutoBlendObservation->Montage.Get() && AuthorityRecord.Ends == 0;
+				}
+			}
 		});
 	}
 	void SubscribeProxy()
@@ -1127,6 +1154,7 @@ struct FRpgGaspMoverTraversalTestFixture::FState
 			// before a fixed step consumes that command. Measure the applied terminal simulation
 			// state itself, with mode, location and velocity from the same finalized snapshot.
 			Record.bCapturedHandoff = true;
+			Record.FirstTerminalPhase = TraversalState->Command.Phase;
 			Record.HandoffLocation = FinalizedMovement->GetLocation_WorldSpace();
 			Record.HandoffVelocity = FinalizedMovement->GetVelocity_WorldSpace();
 			Record.bHandoffGrounded = FinalizedSync.MovementMode == DefaultModeNames::Walking;
@@ -1315,6 +1343,69 @@ struct FRpgGaspMoverTraversalTestFixture::FState
 		Record.bContinuedMoving |= Landed(Record) && Record.bCapturedHandoff && Mover(Character)->GetVelocity().X > 1.0
 			&& Position.X > Record.HandoffLocation.X + 1.0;
 	}
+	void TryHoldAuthorityAutoBlend()
+	{
+		using namespace RpgGaspMoverTraversalTests;
+		if (!AutoBlendScenario() || AutoBlendObservation || Action != EAction::Mantle || !AuthorityRecord.bSawActiveSimulation
+			|| !AuthorityRecord.Montage.IsValid() || AuthorityRecord.Ends != 0 || OwnerRecord.Ends != 0) return;
+		APawn* Character = Authority();
+		FGameplayAbilitySpec* Ability = Spec(Character);
+		UAnimInstance* Animation = Mesh(Character) ? Mesh(Character)->GetAnimInstance() : nullptr;
+		FAnimMontageInstance* Instance = Animation ? Animation->GetMontageInstanceForID(AuthorityRecord.InstanceId) : nullptr;
+		const FRpgMoverTraversalSyncState* TraversalSnapshot = Mover(Character) ? Mover(Character)->GetSyncState().SyncStateCollection.FindDataByType<FRpgMoverTraversalSyncState>() : nullptr;
+		if (!Ability || !Ability->IsActive() || !Mover(Character)->HasTraversalLease() || !TraversalSnapshot || !TraversalSnapshot->Command.IsActive()
+			|| !(TraversalSnapshot->Command.Identity == AuthorityRecord.ObservedSimulationIdentity) || !Instance
+			|| Instance->Montage != AuthorityRecord.Montage.Get() || !Instance->IsStopped() || !Instance->IsPlaying()
+			|| AuthorityRecord.LastWarpEnd <= 0.f || Instance->GetPosition() < AuthorityRecord.LastWarpEnd
+			|| !FMath::IsNearlyEqual(TraversalSnapshot->Command.Context.HandoffTimeSeconds, Instance->Montage->GetPlayLength())
+			|| Instance->GetPosition() >= TraversalSnapshot->Command.Context.HandoffTimeSeconds - .001f) return;
+
+		AutoBlendObservation = MakeShared<FAutoBlendObservation>();
+		const TSharedPtr<FAutoBlendObservation> Observation = AutoBlendObservation;
+		Observation->Animation = Animation; Observation->Montage = Instance->Montage;
+		Observation->InstanceId = Instance->GetInstanceID(); Observation->Identity = TraversalSnapshot->Command.Identity;
+		Observation->OriginalPlayRate = Instance->GetPlayRate(); Observation->HeldPosition = Instance->GetPosition();
+		Observation->HandoffTime = TraversalSnapshot->Command.Context.HandoffTimeSeconds;
+		Observation->OriginalEndDelegate = Instance->OnMontageEnded;
+		Instance->OnMontageEnded.BindLambda([Observation](UAnimMontage* EndedMontage, bool bInterrupted)
+		{
+			const FAnimMontageInstance* Ended = Observation->Animation.IsValid()
+				? Observation->Animation->GetMontageInstanceForID(Observation->InstanceId) : nullptr;
+			++Observation->EndCallbacks; Observation->bInterrupted |= bInterrupted;
+			Observation->bExactEndInstance = Ended && EndedMontage == Observation->Montage.Get()
+				&& (Ended->Montage == EndedMontage || Ended->Montage == nullptr);
+			Observation->EndPosition = Ended ? Ended->GetPosition() : -1.f;
+			UE_LOG(LogTemp, Display, TEXT("RpgMoverMantle autoBlend nativeEnd instance=%d exact=%d interrupted=%d position=%.6f held=%.6f handoff=%.6f"),
+				Observation->InstanceId, Observation->bExactEndInstance, bInterrupted, Observation->EndPosition,
+				Observation->HeldPosition, Observation->HandoffTime);
+			Observation->OriginalEndDelegate.ExecuteIfBound(EndedMontage, bInterrupted);
+		});
+		Observation->ObserverDelegate = Instance->OnMontageEnded.GetHandle();
+		// Native AutoBlend has already started without interruption. The engine continues advancing
+		// its weight at real delta time, so this exercises a genuine natural end below the final frame.
+		Instance->SetPlayRate(0.f);
+		UE_LOG(LogTemp, Display, TEXT("RpgMoverMantle autoBlend armed instance=%d position=%.6f warpEnd=%.6f handoff=%.6f cancel=%d"),
+			Observation->InstanceId, Observation->HeldPosition, AuthorityRecord.LastWarpEnd, Observation->HandoffTime,
+			Scenario == EScenario::CancelDuringAutoBlend);
+		if (Scenario == EScenario::CancelDuringAutoBlend)
+		{
+			bInterrupted = true;
+			ASC(Character)->CancelAbilityHandle(Ability->Handle);
+			Observation->bCancelAppliedImmediately = AuthorityRecord.Ends == 1 && AuthorityRecord.CancelledEnds == 1
+				&& !Ability->IsActive() && !Mover(Character)->HasTraversalLease();
+		}
+	}
+	bool PeersHaveAppliedTerminal() const
+	{
+		using namespace RpgGaspMoverTraversalTests;
+		for (const FObservation* Record : { &OwnerRecord, &AuthorityRecord, &ProxyRecord })
+		{
+			const URpgCharacterMoverComponent* Move = Mover(Record->Character.Get());
+			const FRpgMoverTraversalSyncState* TraversalSnapshot = Move ? Move->GetSyncState().SyncStateCollection.FindDataByType<FRpgMoverTraversalSyncState>() : nullptr;
+			if (!TraversalSnapshot || !TraversalSnapshot->Command.IsTerminal() || !TraversalSnapshot->bEndApplied || !Clean(Record->Character.Get())) return false;
+		}
+		return true;
+	}
 	void Tick(UWorld* World, ELevelTick, float DeltaSeconds)
 	{
 		using namespace RpgGaspMoverTraversalTests;
@@ -1326,6 +1417,7 @@ struct FRpgGaspMoverTraversalTestFixture::FState
 		if (World == ServerWorld.Get())
 		{
 			Observe(AuthorityRecord, DeltaSeconds);
+			TryHoldAuthorityAutoBlend();
 			TryReplaceTraversal();
 			const FGameplayAbilitySpec* ActiveAbility = Spec(Authority());
 			if (!bInterrupted && (Scenario == EScenario::Cancel || Scenario == EScenario::Death || Scenario == EScenario::ColliderLoss || Scenario == EScenario::SupportLoss)
@@ -1455,6 +1547,12 @@ struct FRpgGaspMoverTraversalTestFixture::FState
 		if (Scenario == EScenario::Death && (OwnerRecord.DeadSeconds < 0.5f || AuthorityRecord.DeadSeconds < 0.5f || ProxyRecord.DeadSeconds < 0.5f)) return false;
 		if (Scenario == EScenario::Death && !bHost && !OwnerRecord.bOwnerDeathConverged && OwnerRecord.DeadSeconds < 0.75f) return false;
 		if (Scenario == EScenario::Cancel && (!OwnerRecord.bRestoredFacing || !AuthorityRecord.bRestoredFacing || !ProxyRecord.bRestoredFacing)) return false;
+		if (AutoBlendScenario())
+		{
+			if (!AutoBlendObservation || AutoBlendObservation->EndCallbacks == 0 || OwnerRecord.Ends == 0 || AuthorityRecord.Ends == 0
+				|| !PeersHaveAppliedTerminal()) return false;
+			if (Scenario == EScenario::CancelDuringAutoBlend) return true;
+		}
 		if (InterruptedScenario())
 			return OwnerRecord.Ends > 0 && AuthorityRecord.Ends > 0 && OwnerRecord.bCleanAfterInterruption
 				&& AuthorityRecord.bCleanAfterInterruption && ProxyRecord.bCleanAfterInterruption;
@@ -1507,6 +1605,46 @@ struct FRpgGaspMoverTraversalTestFixture::FState
 		else
 		{
 			ASSERT_THAT(IsTrue(OwnerRecord.Commits == 1 && AuthorityRecord.Commits == 1));
+		}
+		if (AutoBlendScenario())
+		{
+			TestRunner->TestTrue(TEXT("Authority auto blend was held after its real final warp and before the source handoff"),
+				AutoBlendObservation && AutoBlendObservation->HeldPosition >= AuthorityRecord.LastWarpEnd
+				&& AutoBlendObservation->HeldPosition < AutoBlendObservation->HandoffTime - .001f);
+			if (AutoBlendObservation)
+			{
+				TestRunner->TestTrue(TEXT("The exact held montage instance reached one real engine end at its held position"),
+					AutoBlendObservation->EndCallbacks == 1 && AutoBlendObservation->bExactEndInstance
+					&& FMath::IsNearlyEqual(AutoBlendObservation->EndPosition, AutoBlendObservation->HeldPosition, .001f));
+				if (Scenario == EScenario::AutoBlendNaturalEnd)
+				{
+					TestRunner->TestFalse(TEXT("Natural auto blend reports no interruption"), AutoBlendObservation->bInterrupted);
+					TestRunner->TestFalse(TEXT("Authority GAS remains active until the observed native montage completion"),
+						AutoBlendObservation->bAuthorityEndedBeforeNativeEnd);
+					TestRunner->TestTrue(TEXT("Natural owner and authority each end GAS normally exactly once"),
+						OwnerRecord.Ends == 1 && AuthorityRecord.Ends == 1 && OwnerRecord.SuccessfulEnds == 1 && AuthorityRecord.SuccessfulEnds == 1);
+				}
+				else
+				{
+					TestRunner->TestTrue(TEXT("Gameplay cancellation during auto blend ends authority immediately"), AutoBlendObservation->bCancelAppliedImmediately);
+					TestRunner->TestTrue(TEXT("Owner and authority each retain the replicated GAS cancellation reason"),
+						OwnerRecord.Ends == 1 && AuthorityRecord.Ends == 1 && OwnerRecord.CancelledEnds == 1 && AuthorityRecord.CancelledEnds == 1);
+				}
+			}
+			const ERpgMoverTraversalPhase ExpectedPhase = Scenario == EScenario::CancelDuringAutoBlend
+				? ERpgMoverTraversalPhase::Cancelled : ERpgMoverTraversalPhase::Finished;
+			for (const FObservation* Record : { &OwnerRecord, &AuthorityRecord, &ProxyRecord })
+			{
+				const FRpgMoverTraversalSyncState* TraversalSnapshot = Mover(Record->Character.Get())->GetSyncState().SyncStateCollection.FindDataByType<FRpgMoverTraversalSyncState>();
+				TestRunner->TestTrue(FString::Printf(TEXT("Auto blend peer %s retains the exact traversal and required terminal phase"), *GetPathNameSafe(Record->World.Get())),
+					AutoBlendObservation && TraversalSnapshot && TraversalSnapshot->bEndApplied && TraversalSnapshot->Command.Phase == ExpectedPhase
+					&& Record->bCapturedHandoff && Record->FirstTerminalPhase == ExpectedPhase
+					&& TraversalSnapshot->Command.Identity == AutoBlendObservation->Identity && Record->ObservedSimulationIdentity == AutoBlendObservation->Identity
+					&& Record->Montage == AutoBlendObservation->Montage && !Record->bMontageRestarted && Clean(Record->Character.Get())
+					&& !TraversalSnapshot->Command.Context.Montage && !TraversalSnapshot->Command.Context.Collider.IsValid() && TraversalSnapshot->WarpModifiers.IsEmpty()
+					&& !Capsule(Record->Character.Get())->GetMoveIgnoreComponents().Contains(Collider(Record->World.Get())));
+			}
+			if (Scenario == EScenario::CancelDuringAutoBlend) return;
 		}
 		if (InterruptedScenario())
 		{
@@ -1574,13 +1712,13 @@ struct FRpgGaspMoverTraversalTestFixture::FState
 		}
 		for (const FObservation* Record : { &OwnerRecord, &AuthorityRecord, &ProxyRecord })
 		{
-			if (Action == EAction::Hurdle)
+			if (Action == EAction::Hurdle || (Action == EAction::Mantle && !HoldMovement()))
 			{
 				const FRpgMoverTraversalSyncState* Remote = Mover(Record->Character.Get())->GetSyncState().SyncStateCollection.FindDataByType<FRpgMoverTraversalSyncState>();
 				const FRpgMoverTraversalSyncState* Server = Mover(Authority())->GetSyncState().SyncStateCollection.FindDataByType<FRpgMoverTraversalSyncState>();
 				// Geometry alone cannot distinguish a successful natural end from a cancelled zero-speed exit.
 				// A peer that first sees the terminal snapshot still has to match the authority's exact play.
-				TestRunner->TestTrue(FString::Printf(TEXT("Successful Hurdle peer %s applies Finished for the authoritative traversal identity"),
+				TestRunner->TestTrue(FString::Printf(TEXT("Successful traversal peer %s applies Finished for the authoritative traversal identity"),
 					*GetPathNameSafe(Record->World.Get())), Remote && Server && Remote->bEndApplied && Server->bEndApplied
 					&& Remote->Command.Phase == ERpgMoverTraversalPhase::Finished && Server->Command.Phase == ERpgMoverTraversalPhase::Finished
 					&& Remote->Command.Identity == Server->Command.Identity
@@ -1704,6 +1842,13 @@ struct FRpgGaspMoverTraversalTestFixture::FState
 		UE_LOG(LogTemp, Display, TEXT("RpgMoverTraversal proxy notifies phase=%s begins=%d duplicated=%d"), Phase,
 			ProxyNotifyObserver.IsValid() ? ProxyNotifyObserver->ObservedBegins() : 0,
 			ProxyNotifyObserver.IsValid() && ProxyNotifyObserver->HasDuplicateCallbacks());
+		if (AutoBlendScenario())
+			UE_LOG(LogTemp, Display, TEXT("RpgMoverMantle autoBlend phase=%s armed=%d nativeEnds=%d exact=%d interrupted=%d held=%.6f ended=%.6f handoff=%.6f ownerEndDuringBlend=%d authorityEarlyEnd=%d immediateCancel=%d"),
+				Phase, AutoBlendObservation.IsValid(), AutoBlendObservation ? AutoBlendObservation->EndCallbacks : 0,
+				AutoBlendObservation && AutoBlendObservation->bExactEndInstance, AutoBlendObservation && AutoBlendObservation->bInterrupted,
+				AutoBlendObservation ? AutoBlendObservation->HeldPosition : -1.f, AutoBlendObservation ? AutoBlendObservation->EndPosition : -1.f,
+				AutoBlendObservation ? AutoBlendObservation->HandoffTime : -1.f, AutoBlendObservation && AutoBlendObservation->bOwnerEndedDuringBlend,
+				AutoBlendObservation && AutoBlendObservation->bAuthorityEndedBeforeNativeEnd, AutoBlendObservation && AutoBlendObservation->bCancelAppliedImmediately);
 		if (ReplacementScenario())
 			UE_LOG(LogTemp, Display, TEXT("RpgMoverTraversal replacement phase=%s requested=%d replay=%d proxyHadTraversal=%d overlap=%d oldTookOver=%d restarted=%d ownerInstance=%d ownerTime=%.3f..%.3f proxyInstance=%d proxyTime=%.3f..%.3f"),
 				Phase, bReplacementTriggered, bReplayStarted, bFirstProxyHadTraversal, bReplacementOverlappedPresentedTraversal,
@@ -1744,6 +1889,16 @@ struct FRpgGaspMoverTraversalTestFixture::FState
 		FWorldDelegates::OnWorldTickEnd.Remove(TickHandle); TickHandle.Reset();
 		FWorldDelegates::OnWorldTickStart.Remove(BeforeDeathDispatchHandle); BeforeDeathDispatchHandle.Reset();
 		FWorldDelegates::OnWorldPreActorTick.Remove(AfterDeathDispatchHandle); AfterDeathDispatchHandle.Reset();
+		if (AutoBlendObservation && AutoBlendObservation->Animation.IsValid())
+		{
+			if (FAnimMontageInstance* Instance = AutoBlendObservation->Animation->GetMontageInstanceForID(AutoBlendObservation->InstanceId))
+			{
+				if (Instance->OnMontageEnded.GetHandle() == AutoBlendObservation->ObserverDelegate)
+					Instance->OnMontageEnded = AutoBlendObservation->OriginalEndDelegate;
+				if (Instance->Montage == AutoBlendObservation->Montage.Get()) Instance->SetPlayRate(AutoBlendObservation->OriginalPlayRate);
+			}
+		}
+		AutoBlendObservation.Reset();
 		if (ProxyNotifyAnimation.IsValid() && ProxyNotifyObserver.IsValid())
 		{
 			ProxyNotifyAnimation->OnPlayMontageNotifyBegin.RemoveDynamic(ProxyNotifyObserver.Get(), &URpgMoverTraversalNotifyTestObserver::ObserveBegin);
