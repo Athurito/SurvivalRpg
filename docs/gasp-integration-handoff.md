@@ -9,28 +9,42 @@ Abnahme. Beide bei relevanten Fortschritten im selben PR aktualisieren.
 
 | Feld | Wert |
 | --- | --- |
-| Aktive Implementierungsaufgabe | `GASP-02` / `GASP-NET-01` – echter Rollback während aktivem Mantle, **In Arbeit** |
+| Aktive Implementierungsaufgabe | `GASP-02` / `GASP-NET-01` – echter Rollback während aktivem Mantle, **implementiert und validiert**, Review/Merge offen |
 | Nächste bereite Aufgabe | Nach NET-01 `GASP-NET-02`: vorhergesagtes Finished gegenüber autoritativem Cancelled klären |
-| Zuständiger Chat / beanspruchte Dateien | Dieser Chat: `RpgGaspMoverTraversalTestFixture.cpp`, `RpgMoverPredictionTestTypes.*`, passende native Belegtests und GASP-Dokumentation. Root besitzt Editor/Build; parallele Audits koordinieren ihre Dateigrenzen |
+| Zuständiger Chat / beanspruchte Dateien | NET-01: `RpgGaspMoverTraversalTestFixture.cpp`, `RpgMoverPredictionTestTypes.*` und GASP-Dokumentation. Kein Editor/Build mehr aktiv; keine Binärassets geändert |
 | Runtime-Ausgangspunkt | `b9a653608b6ada64dfd1c17b2e24d5dfc691202c`, bestätigter Merge PR #146 auf `master` am 22.09.2026 um 21:09:22 UTC |
 | Checkout / aktiver Branch | `codex/gasp-net-01-active-mantle-rollback`, `D:/Repos/SurvivalRpg`; Basis `b9a65360`, origin/master am 26.09.2026 verifiziert |
-| Letzter Implementierungs-Commit | `57fa8de9` – Spawnanpassung im konkreten RPG-Mover-Pawn und gezielter Crowd-/Checkpoint-Nachweis |
+| Letzter Implementierungs-Commit | `b6709eb4` – passiver Nachweis gleicher betroffener Prediction-Frames bei Mantle-Restore/Replay; ausschließlich Editor-Testcode |
 | Aktueller Arbeits-PR | Keiner; [PR #146](https://github.com/Athurito/SurvivalRpg/pull/146) und [PR #145](https://github.com/Athurito/SurvivalRpg/pull/145) sind bestätigt gemergt |
 | Übernommene Statuspflege | Bestätigten STAB-02-Merge in Roadmap, Übergabe und `gasp-respawn-falling.md` im NET-01-Arbeitsbranch nachgeführt |
-| Nächster Handgriff | Bestehenden Mantle-Korrekturfall frisch ausführen; Injektion, restaurierten aktiven Frame und tatsächliche Resimulation eindeutig korrelieren |
-| Blocker / offene Abnahme | Kein Implementierungsblocker; NET-01-Build und Nachweis noch offen. Am 26.09.2026 vor Arbeitsbeginn kein Editor/Build aktiv; neue Prüfsitzung ausschließlich durch Root. Vier Plugin-Overrides verifiziert |
+| Nächster Handgriff | NET-01 als Draft-PR veröffentlichen und prüfen; nach bestätigtem Merge mit `GASP-NET-02` fortsetzen |
+| Blocker / offene Abnahme | Kein Implementierungsblocker. Editor-Build, 10/10 gemeinsame Regressionen, 30-FPS-Fokus und echte Negativkontrolle ausgeführt. Review/Merge offen; keine neue Independent-/Packaged-/WAN-Abnahme |
 
-## Aktueller Auftrag – GASP-NET-01
+## Aktueller validierter Schritt – GASP-NET-01
 
 - Ownership bleibt bei GAS/Projekt-Mover für Traversal und NetworkPrediction
   für History/Replay. Konkrete Blueprint-/Montage-/Chooser-Inhalte unverändert;
   Nachweisinstrumentierung gehört in das bestehende native Editor-Testharness.
-- Die historische Nachweislücke bleibt bis zum frischen framebezogenen Beleg
-  offen. Ein Rollbackzähler oder eine durch normales Warping korrigierte Position
-  allein genügt nicht. Warp-/Collider-/Montagevertrag nicht abschwächen.
-- Lokale neue Belege: `Saved/GaspActiveMantleRollback20260926`; Ausgangshashes
-  aller zehn Maps und sieben SaveGames gesichert. Historische Ergebnisse unten
-  sind keine neu ausgeführten Prüfungen dieses Auftrags.
+- Begrenzte echte Forward-History mit dem restaurierten/replayten Zustand
+  desselben Frames verglichen. Aktiver Request, konkretes Warp-Fenster, Collider,
+  Montage und unveränderter lokaler Head bleiben Teil der Abnahme. Veraltete
+  History wird bei Restore verworfen, alle Kopien vor PIE-GC freigegeben.
+- Finaler Editor-Build erfolgreich; gemeinsame Regression **10/10 bestanden**.
+  Mantle: Injektion K=218, korrigierter Frame F=R=219, H=220, ein Replay-Schritt,
+  −43,72 cm Gegenkorrektur. Zusätzlich 30-FPS-Limit bei Fixed 50 Hz bestanden:
+  K=R=F=206, H=209, drei Replay-Schritte, −50 cm. Damit sind ursprünglicher Frame
+  und betroffener Folgeframe tatsächlich ausgeübt.
+- Echte Negativkontrolle mit `np.SkipReconcile 1` und `np.ForceReconcile 0`:
+  alle Rollen beenden/landen, aber kein Restore-/Replaybeleg; erwarteter Timeout.
+  Erste 9/10-Regression und fehlgeschlagener Include-Build bleiben dokumentiert.
+- Finaler Regressionslauf: 110 Warnungen, keine Testfehler/Ensures/Fatals;
+  zwei bekannte ungeklärte Startmeldungen vor den Tests bleiben erhalten.
+  Alle zehn Maps und sieben SaveGames unverändert, vier Overrides verifiziert.
+  Editor-/Test-/Buildprozesse beendet. Keine neue handgespielte Sichtabnahme.
+- [Nachweis, Grenzen und Nachstellen](gasp-active-mantle-rollback.md), lokale
+  ignorierte Belege `Saved/GaspActiveMantleRollback20260926`. NET-02 und weitere
+  Registerpunkte bleiben offen; bestehende historische Ergebnisse unten sind
+  keine neu ausgeführten Prüfungen dieses Auftrags.
 
 ## Letzter abgeschlossener Schritt – GASP-STAB-02
 
@@ -39,7 +53,7 @@ Abnahme. Beide bei relevanten Fortschritten im selben PR aktualisieren.
   `e98e37418d9f3c326bc1883404a54e9e1b60c07e`. Lokaler `master` synchronisiert;
   vier NetworkPrediction-Overrides vor dem Wechsel erfolgreich verifiziert.
   Nachfolgende Statuspflege ändert nur Dokumentation; Builds und Tests dafür
-  nicht erneut ausgeführt. Nächster begrenzter Auftrag ist `GASP-NET-01`.
+  nicht erneut ausgeführt. Der anschließende Auftrag `GASP-NET-01` ist oben dokumentiert.
 
 - Auf Nutzerauftrag zusätzlich selbst im sichtbaren Editor validiert: Crowd-
   sowie Block-/Follower-Lifecycle **2/2 bestanden**. Unbeleuchtete Fixture für

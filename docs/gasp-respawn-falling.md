@@ -8,7 +8,7 @@ Implementierungsbranch `codex/gasp-02-respawn-falling`, Basis
 Implementierungs-Commit: `57fa8de9`.
 Lokaler `master` nach Merge synchronisiert. Die abschließende Statuspflege
 ändert nur Dokumentation; die unten genannten Builds und Tests wurden dafür
-nicht wiederholt. Nächster begrenzter Roadmap-Auftrag: `GASP-NET-01`.
+nicht wiederholt. Folgeauftrag: [GASP-NET-01](gasp-active-mantle-rollback.md).
 
 ## Historischer Befund und Nachweislücke
 
