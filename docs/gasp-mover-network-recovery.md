@@ -5,6 +5,11 @@ validation and an explicit merge request. Draft references in the validation
 record below describe its earlier state. Remaining findings are tracked in the
 [current roadmap](gasp-integration-roadmap.md#gasp-02--register-der-offenen-folgearbeiten).
 
+September 26 follow-up: the active-Mantle correction witness gap recorded below
+now has a frame-matched restore/replay proof and a real negative control in
+[GASP-NET-01](gasp-active-mantle-rollback.md). The older failed runs remain part
+of this historical record; NET-01 review/merge is still separate.
+
 The September 18 listen-server recording exposed two separate problems: an occupied
 PIE camera start was reused, and a client's displayed server pawn could retain a
 large delay after a loading stall. Animation play rate is unchanged by this fix.
