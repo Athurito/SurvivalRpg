@@ -44,6 +44,8 @@ public class SurvivalRpgEditor : ModuleRules
 			"MotionWarping",
 			"Mover",
 			"NetworkPrediction",
+			"PhysicsControl",
+			"PhysicsCore",
 			"PropertyBindingUtils",
 			"Projects",
 			"SlateCore",

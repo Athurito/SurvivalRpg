@@ -1,13 +1,17 @@
 # GASP-03 – Source-Audit der Mover-Ragdoll-Variante
 
-Stand: **26.09.2026, begrenzter Source-Audit abgeschlossen und reviewt;
-PR #151 zum Dokumentationsstand offen**. Branch
+Stand: **26.09.2026, begrenzter Source-Audit gemergt in
+[PR #151](https://github.com/Athurito/SurvivalRpg/pull/151)** am 26.09.2026 um
+13:40:22 UTC: `9baac5f36fd978b86c364df3e82aa74d76cfb7d2`, finaler Head
+`5a0e743c4796d7ef2aacf7ddb82c5fa565edcf17`. Arbeitsbranch war
 `codex/gasp-03-ragdoll-source-audit`, Basis
 `4ed174d2cdc1a2d52fc5a9272ad68437fed98025`, bestätigter Merge von
 [PR #150](https://github.com/Athurito/SurvivalRpg/pull/150) am 26.09.2026 um
-13:09:25 UTC. Auditcommit `1d89072cbd7dac1da86e9f793b18335d010e36b8`,
-[PR #151](https://github.com/Athurito/SurvivalRpg/pull/151), zu diesem
-Dokumentationsstand offen. Keine Runtimeimplementierung in diesem PR.
+13:09:25 UTC. Auditcommit `1d89072cbd7dac1da86e9f793b18335d010e36b8`.
+Keine Runtimeimplementierung in diesem PR. Die Ergebnisse dieses Berichts
+gehören zum abgeschlossenen Audit und wurden für die Merge-Statuspflege nicht
+erneut ausgeführt. Der folgende [GASP-03-Pilot](gasp-mover-ragdoll-pilot.md)
+ist ein eigener Implementierungsauftrag.
 
 Dieser erste Teilauftrag prüft den originalen GASP-Mover-Ragdoll-Pawn, seine
 Physics-Control-/Mover-Abhängigkeiten und die passenden Schnittstellen in
@@ -273,8 +277,8 @@ prüfen, besonders beim Übergang zu Tod und beim Wiederherstellen der Kollision
 - Dieser Audit führt keine Runtime- oder Assetmigration vorweg. Die belegten
   Quellabläufe, das korrigierte Inventar und die vorgeschlagenen Zuständigkeiten
   bilden den abgeschlossenen begrenzten Audit. Beide unabhängigen Reviews sind
-  ohne verbleibende Findings abgeschlossen; PR #151 ist zum Dokumentationsstand
-  offen. Die gesamte GASP-03-Variante ist damit nicht implementiert.
+  ohne verbleibende Findings abgeschlossen; PR #151 ist bestätigt gemergt.
+  Die gesamte GASP-03-Variante ist damit nicht implementiert.
 
 ## Tatsächliche Abschlussprüfung
 

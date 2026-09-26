@@ -17,7 +17,7 @@ struct FGameplayEffectSpec;
 
 /** Replicated static ground shared by the server and client combat test worlds. */
 UCLASS(NotBlueprintable, Transient)
-class ARpgCombatNetworkFloorFixture final : public AActor
+class ARpgCombatNetworkFloorFixture : public AActor
 {
 	GENERATED_BODY()
 
@@ -30,8 +30,19 @@ private:
 	UPROPERTY()
 	TObjectPtr<USceneComponent> SceneRoot;
 
+protected:
 	UPROPERTY()
 	TObjectPtr<UBoxComponent> Collision;
+};
+
+/** Ragdoll-only ground uses the authored map's WorldStatic channel on every replicated instance. */
+UCLASS(NotBlueprintable, Transient)
+class ARpgMoverRagdollFloorFixture final : public ARpgCombatNetworkFloorFixture
+{
+	GENERATED_BODY()
+
+public:
+	explicit ARpgMoverRagdollFloorFixture(const FObjectInitializer& ObjectInitializer = FObjectInitializer::Get());
 };
 
 /**

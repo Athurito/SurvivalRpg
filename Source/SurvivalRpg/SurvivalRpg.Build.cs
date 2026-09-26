@@ -48,6 +48,7 @@ public class SurvivalRpg : ModuleRules
 				"ModelViewViewModel",
 				"AdvancedSessions",
 				"OnlineSubsystem",
+				"PhysicsCore",
 				"Projects",
 			});
 
