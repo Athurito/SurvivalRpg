@@ -9,18 +9,21 @@ Abnahme. Beide bei relevanten Fortschritten im selben PR aktualisieren.
 
 | Feld | Wert |
 | --- | --- |
-| Aktive Implementierungsaufgabe | `GASP-03` – begrenzter spielbarer Ragdoll-/Getup-Pilot, **PR offen (Draft)**; Prüfungen und Nutzerabnahme mit kosmetischer Nachbesserung erfolgt |
-| Nächste bereite Aufgabe | PR #152 mit gewünschter grüner Farbe und validiertem MetaSound-Identitätsfix abschließen; noch nicht gemergt |
-| Zuständiger Chat / beanspruchte Dateien | Root: sämtliche Editor-/MCP-/Buildsitzungen, binäre Assets und Mover-Integration. Runtimeagent: native Lifecycle-Konzeption. Testagent: Validierungskonzept. Dokumentationsagent: Roadmap, Übergabe, Audit-Mergestatus und `gasp-mover-ragdoll-pilot.md`. Weitere Dateizuteilungen nur koordiniert |
-| Runtime-Ausgangspunkt | `9baac5f36fd978b86c364df3e82aa74d76cfb7d2`, bestätigter Merge PR #151 am 26.09.2026 um 13:40:22 UTC; Audit enthält keine Runtimeänderung |
-| Checkout / aktiver Branch | `codex/gasp-03-ragdoll-pilot`, `D:/Repos/SurvivalRpg`; Basis `9baac5f3` |
+| Aktive Implementierungsaufgabe | Keine; `GASP-03` ist gemergt. Aktuell ausschließlich Merge-Statuspflege |
+| Nächste bereite Aufgabe | `GASP-04` – Vergleich der drei Varianten; noch nicht begonnen |
+| Zuständiger Chat / beanspruchte Dateien | Root: Abschluss und Statuspflege; keine weitere Runtime-/Assetarbeit oder aktive Datei-Reservierung |
+| Runtime-Ausgangspunkt | `9de031c9e255a13d117662713739e44984a98edc`, bestätigter Merge PR #152 am 26.09.2026 um 20:51:05 UTC |
+| Checkout / aktiver Branch | `codex/gasp-03-merge-status`, `D:/Repos/SurvivalRpg`; reine Dokumentation auf dem gemergten Runtime-/Assetstand |
 | Letzter Implementierungs-Commit | `7c2a769a26ec1396f9cbc3804eaedefee33cd2db`, einschließlich 25 LFS-Assets gepusht |
-| Aktueller Arbeits-PR | [PR #152](https://github.com/Athurito/SurvivalRpg/pull/152), **OPEN / Draft**, Basis `master`; Pilot `7c2a769a`, Farbfix `57ecde41`, nachfolgender MetaSound-Fix im selben PR; noch nicht gemergt |
-| Übernommene Statuspflege | Bestätigten Audit-Merge in Roadmap, Übergabe und `gasp-mover-ragdoll-source-audit.md` im Pilotbranch nachgeführt |
-| Nächster Handgriff | PR #152 mit Farbkorrektur und MetaSound-Identitätsfix abschließen, danach GASP-04 beginnen |
-| Blocker / offene Abnahme | Pilot mit Editor/Game, 20/20 Tests und Abschlussaudit validiert; Nutzer bestätigt „passt“ mit Farbwunsch, grüne kosmetische Korrektur ebenfalls geprüft. Builds/20 Tests vor Farbpatch, kein Neulauf. PR weiterhin offen. VAL-01/02, NET-03-Grenze und ältere Pending-Fixture-Timingempfindlichkeit bleiben Folgepunkte |
+| Letzter gemergter PR | [PR #152](https://github.com/Athurito/SurvivalRpg/pull/152), **MERGED**, finaler geprüfter Head `7ab180a85290c78474a903ce7683901e3b1c2dcd`; Pilot, Farbkorrektur und MetaSound-Fix enthalten |
+| Übernommene Statuspflege | Bestätigten PR-152-Merge in den vier Statusberichten nachgeführt; kein neuer Build, Test oder Editorlauf |
+| Nächster Handgriff | GASP-04 als begrenzten Vergleich der drei Varianten beginnen; bislang keine neue Implementierung |
+| Blocker / offene Abnahme | Historisch: Editor/Game, 20/20 Tests, Nutzerabnahme und MetaSound-Review 19/19 bestanden; Builds/20 Tests vor den Assetnachbesserungen. Keine Neuläufe für diese Statuspflege. VAL-01/02, NET-03-Grenze und ältere Pending-Fixture-Timingempfindlichkeit bleiben Folgepunkte |
 
-## Aktueller Auftrag – GASP-03-Pilot
+## Letzter abgeschlossener Schritt – GASP-03-Pilot
+
+PR #152 ist bestätigt gemergt; die folgenden Prüfungen sind historische
+Ergebnisse des Pilotauftrags und wurden für diese Statuspflege nicht wiederholt.
 
 MetaSound-Folgefix: 18 kopierte Shared/Foley-Klassen haben neue eindeutige IDs,
 19 Graphen wurden gezielt angepasst; `MSS_RpgGasp_Run` behält seine Root-ID.
@@ -92,11 +95,11 @@ zwei bestehende Startup-`Condition failed` im [Manifest](assets/gasp-metasound-i
   Builds/20 Tests gehören zum Stand davor, kein Neulauf. Farb-Editor PID556
   sauber geöffnet, PIE beendet und Playsettings restauriert. Erneut 6938
   Originalassets und 17 Map-/Savedateien unverändert. [PR #152](https://github.com/Athurito/SurvivalRpg/pull/152)
-  weiterhin offen und nicht gemergt; Farbkorrektur im selben PR.
+  inzwischen mit Farbkorrektur und MetaSound-Folgefix gemergt.
   Nachstellen: Pilotkarte Play, R, etwa 1 s warten, R, WASD/LMB.
 
 
-## Letzter abgeschlossener Schritt – GASP-03-Source-Audit
+## Historischer Schritt – GASP-03-Source-Audit
 
 - [PR #151](https://github.com/Athurito/SurvivalRpg/pull/151) bestätigt gemergt
   am 26.09.2026 um 13:40:22 UTC: `9baac5f36fd978b86c364df3e82aa74d76cfb7d2`,

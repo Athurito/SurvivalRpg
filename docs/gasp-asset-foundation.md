@@ -5,7 +5,7 @@ already imported into this repository at baseline commit `535b4123`, which
 includes the listen-server animation fix `8f54d995`. The external GASP sample
 checkout is a reference, not a runtime dependency.
 
-Follow-up in open draft PR #152 (2026-09-26): duplicate RunStrafe MetaSound
+Follow-up merged in PR #152 (2026-09-26, `9de031c9`): duplicate RunStrafe MetaSound
 GUIDs exposed shared identities in 18 copied Foley assets. These copies now
 have new UE class IDs, with references fixed in 19 graphs; the RPG Run graph
 retains its root ID. Fresh registration yields 37 unique IDs; independent

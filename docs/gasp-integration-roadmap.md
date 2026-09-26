@@ -8,7 +8,7 @@ nicht eine neue Gesamtplanung für Combat, Crafting oder Portale.
 ## Schnellstart
 
 - Folgefix in PR #152: Nach gemeldeter doppelter RunStrafe-MetaSound-GUID sind 18 Shared/Foley-Klassen neu identifiziert und 19 Graphen angepasst; 37 eindeutige Klassen-IDs, 19/19 semantische Reviews und Audio-PIE-Smoke bestätigt, keine doppelten Klassen oder MetaSound-Warnungen/-Fehler im frischen Log. Frühere vollständige Erhaltungszahlen gelten vor diesem gezielten Assetfix; kein neuer Build/20-Test-Lauf oder Klangqualitätsnachweis. Details einschließlich Editor-Regleränderungen und zweier bestehender Startup-Fehler im [Manifest](assets/gasp-metasound-identity-fix.json).
-- **PR offen (Draft): `GASP-03` – begrenzter spielbarer Ragdoll-/Getup-Pilot.** Branch `codex/gasp-03-ragdoll-pilot`, Basis `9baac5f3`, Implementierung `7c2a769a`, [Draft-PR #152](https://github.com/Athurito/SurvivalRpg/pull/152). Editor/Game, 20/20 Regressionen, Root-Sichtprüfung und Abschlussaudit bestanden; 1089 Warnungen dokumentiert, älterer Lauf bleibt 5/6. Nutzer bestätigt „passt“ mit Wunsch nach grüner GASP-Ragdoll-Farbe. Diese kosmetische Nachbesserung ist kompiliert, gespeichert/neu geladen und visuell geprüft; 26 Assethashes erfasst, Farb-Registry 2058/71 ohne fehlende oder rohe Sample-Verweise. Builds/20 Tests wurden vor der Farbänderung ausgeführt, kein Neulauf behauptet. PR weiterhin offen, nicht gemergt. [Pilotbericht](gasp-mover-ragdoll-pilot.md), [Manifest](assets/gasp-ragdoll-pilot.json).
+- **Gemergt: `GASP-03` – begrenzter spielbarer Ragdoll-/Getup-Pilot.** [PR #152](https://github.com/Athurito/SurvivalRpg/pull/152) am 26.09.2026 um 20:51:05 UTC bestätigt gemergt als `9de031c9e255a13d117662713739e44984a98edc`, finaler geprüfter Head `7ab180a85290c78474a903ce7683901e3b1c2dcd`. Historisch: Editor/Game, 20/20 Regressionen, Root-Sichtprüfung und Abschlussaudit bestanden; 1089 Warnungen dokumentiert, älterer Lauf bleibt 5/6. Nutzer bestätigt „passt“; grüne Farbe und MetaSound-Folgefix sind enthalten. Builds/20 Tests liefen vor den Assetnachbesserungen, MetaSound-Review 19/19 danach; für diese Merge-Statuspflege keine Neuläufe. Nächste bereite Aufgabe: **GASP-04**, noch nicht begonnen. [Pilotbericht](gasp-mover-ragdoll-pilot.md), [Manifest](assets/gasp-ragdoll-pilot.json).
 - **Source-Audit gemergt: `GASP-03`.** Auditcommit `1d89072c`, [PR #151](https://github.com/Athurito/SurvivalRpg/pull/151), bestätigt gemergt am 26.09.2026 um 13:40:22 UTC als `9baac5f36fd978b86c364df3e82aa74d76cfb7d2`. [Manifest](assets/gasp-ragdoll-source-audit.json): 44 Kandidaten, keine Import-Whitelist; korrigierte Registry 3017 Pakete, Exportlücken erfasst. Historische 115 Hashprüfungen, 17 erhaltene Map-/Savedateien und vier Overrides; kein Build/PIE oder Runtime-/Assetimport im Audit. Diese Ergebnisse werden nicht als neue Pilotabnahme ausgegeben; [Auditbericht](gasp-mover-ragdoll-source-audit.md).
 - **Gemergt: `GASP-02` / `GASP-VAL-03` – Traversal B bei noch gepufferter Traversal A.** Testcommit `8bc887e1`, [PR #150](https://github.com/Athurito/SurvivalRpg/pull/150), bestätigt gemergt am 26.09.2026 um 13:09:25 UTC als `4ed174d2cdc1a2d52fc5a9272ad68437fed98025`. Fokus und 30 FPS bestanden, Negativkontrolle erwartungsgemäß rot. Regression bleibt **15/16** mit 129 Warnungen und einer Assertion; alter Pending-Replay-Fall verfehlt die Overlap-Beobachtung, besteht unverändert isoliert 1/1. Runtime/Assets unverändert. Diese historischen Ergebnisse wurden für die Merge-Statuspflege nicht erneut ausgeführt; [Bericht](gasp-buffered-traversal-replay.md).
 - **Gemergt: `GASP-NET-03` – Rekonstruktionsgrenze bewertet und Werkzeug validiert.** Commit `49de7c87`, [PR #149](https://github.com/Athurito/SurvivalRpg/pull/149), bestätigter Merge `d933148f22e8051f0a50ab68719f2f507a6158b5` am 26.09.2026 um 12:27:04 UTC. Getrackter Probe, 19/19 Offline-Tests und vier CLI-Negativprüfungen. Kontrolle 16/16 Ebenen, Pause weiterhin 13/16; bis 64,00 cm Root-Abweichung bei gleicher beobachteter Phase, Freeze korrekt. Runtime-Rekonstruktionsgrenze bleibt bestehen; [Bericht](gasp-packet-gap-recovery.md).
@@ -18,10 +18,9 @@ nicht eine neue Gesamtplanung für Combat, Crafting oder Portale.
 - **Gemergt: `GASP-02` / `GASP-STAB-02` – Falling bei belegtem Respawn.** Commit `57fa8de9`, [PR #146](https://github.com/Athurito/SurvivalRpg/pull/146), bestätigter Merge `b9a65360`. `GASP-STAB-01` ist mit [PR #145](https://github.com/Athurito/SurvivalRpg/pull/145) gemergt (`4039be25`). Der anschließende NET-01-Nachweis steht oben; weitere Registerpunkte bleiben offen.
 - Aktive Aufgabe, Branch, letzte Ergebnisse und konkrete Fortsetzung stehen in
   [gasp-integration-handoff.md](gasp-integration-handoff.md).
-- Letzter akzeptierter Runtime-Stand: [PR #148](https://github.com/Athurito/SurvivalRpg/pull/148),
-  am 26.09.2026 um 11:56:35 UTC bestätigt gemergt; Merge `1490dd7d`, getesteter
-  Runtime-Commit `8de5d927`. Finaler PR-Head `065bacc917aedf80051281aee04655492ce3d657`
-  ergänzt Dokumentation. GASP-01 bleibt mit PR #144 und damaliger Sichtabnahme übernommen.
+- Letzter akzeptierter Runtime-/Assetstand: [PR #152](https://github.com/Athurito/SurvivalRpg/pull/152),
+  Merge `9de031c9`, finaler geprüfter Head `7ab180a8`. GASP-01 bleibt mit PR #144
+  und damaliger Sichtabnahme übernommen.
 - Dieser Stand enthält offene Folgearbeiten. „Gemergt“ bedeutet nicht, dass alle
   Netzwerk-/Lifecycle-Randfälle gelöst oder alle Umgebungen getestet sind.
 - Vor Arbeit prüfen: aktueller Git-Stand, diese Roadmap, Übergabe und die zum
@@ -38,7 +37,7 @@ nicht eine neue Gesamtplanung für Combat, Crafting oder Portale.
 | Mover-Grundlage | Eigene `RpgGaspMoverExperience`, Bewegung inklusive vorhandener Sprint-Eingabe, Equipment/GAS, Tod/Respawn und optionales Retargeting | [Foundation](gasp-mover-foundation.md), [Gameplay](gasp-mover-gameplay.md), [Lifecycle](gasp-mover-lifecycle.md) |
 | Mover-Traversal | Mantle, Vault und Grounded Hurdle akzeptiert und gemergt | [Mover-Mantle](gasp-mover-mantle.md), [Mover-Vault](gasp-mover-vault.md), [Mover-Hurdle](gasp-mover-hurdle.md) |
 | Mover-Netzwerk | Fixed 50 Hz; versionierte UE-5.8.2-Interpolationserholung; entfernte Traversal-Animation folgt angezeigter Bewegung | [Fixed](gasp-mover-fixed-tick.md), [Recovery](gasp-mover-network-recovery.md), [Darstellung](gasp-mover-traversal-presentation.md) |
-| Mover-Ragdoll | Akzeptierte Basis vor dem Pilot: unter `Mover/Ragdoll` nur die referenzierte Input-Struktur, keine abgenommene Experience/PawnData. Begrenzter Pilot in Draft-PR #152 validiert und vom Nutzer bestätigt; gewünschte grüne Farbe umgesetzt, PR-Übernahme offen | [Assetumfang](gasp-asset-foundation.md), [Pilot / PR #152](gasp-mover-ragdoll-pilot.md) |
+| Mover-Ragdoll | Begrenzter Pilot mit eigener Experience/PawnData, stationärem lebendem Ragdoll/Getup und verankerter Capsule validiert, vom Nutzer bestätigt und mit Farb-/MetaSound-Folgefix in PR #152 gemergt | [Assetumfang](gasp-asset-foundation.md), [Pilot / PR #152](gasp-mover-ragdoll-pilot.md) |
 
 Die Bezeichnung „drei Varianten“ meint **CMC, Mover und Mover-Ragdoll**. Bereits
 vorhandene Baseline-/CMC-Test-Experiences bleiben bestehen; daraus folgt keine
@@ -50,8 +49,8 @@ Vorgabe, insgesamt genau drei Experience-Dateien zu besitzen.
 | --- | --- | --- | --- |
 | `GASP-01` | Grounded Hurdle für Mover | **Gemergt** | [PR #144](https://github.com/Athurito/SurvivalRpg/pull/144), Merge `aa4447d6`; Runtime `b78edf5b`; Editor/Game, 47 Tests und zwei Prozessläufe bestanden; Nutzer-Sichtabnahme am 22.09.2026; [Bericht](gasp-mover-hurdle.md) |
 | `GASP-02` | Gezielte Stabilisierung | **Teilweise abgeschlossen, offene Folgepunkte** | `GASP-STAB-01/02`, `GASP-NET-01/02/03` und `GASP-VAL-03` gemergt in PR #145–150; VAL-01/02, NET-03-Rekonstruktionsgrenze und ältere Pending-Fixture-Timingempfindlichkeit bleiben offen |
-| `GASP-03` | Mover-Ragdoll-Experience | **PR offen (Draft)** | [PR #152](https://github.com/Athurito/SurvivalRpg/pull/152), Implementierung `7c2a769a`. Editor/Game, 20/20 Tests, Root-Sichtprüfung und Abschlussaudit bestanden. Nutzer bestätigt Pilot, kosmetischer Farbwunsch umgesetzt; PR noch nicht gemergt. [Pilotbericht](gasp-mover-ragdoll-pilot.md) |
-| `GASP-04` | Vergleich der drei Varianten | Geplant | `GASP-03`; dokumentierte gemeinsame Abnahmematrix |
+| `GASP-03` | Mover-Ragdoll-Experience | **Gemergt** | [PR #152](https://github.com/Athurito/SurvivalRpg/pull/152), Merge `9de031c9`, finaler Head `7ab180a8`. Historische Editor/Game-, 20/20-Test-, Sicht- und Assetprüfungen; Farb-/MetaSound-Folgefix enthalten. [Pilotbericht](gasp-mover-ragdoll-pilot.md) |
+| `GASP-04` | Vergleich der drei Varianten | **Bereit, noch nicht begonnen** | `GASP-03` gemergt; dokumentierte gemeinsame Abnahmematrix |
 | `GASP-05` | Importbereinigung | Geplant | `GASP-04`; geprüfte Abhängigkeiten und konkrete Entfernungsliste |
 | `GASP-06` | Blocken beim Laufen / RPG-Animationsfeinschliff | Zurückgestellt | Eigener späterer Auftrag; bestehende Zurückstellung respektieren |
 
@@ -112,8 +111,8 @@ Einstieg: [CMC-Hurdle](gasp-hurdle-integration.md),
 
 Jede Zeile ist ein begrenzter Folgeauftrag, keine Aufforderung, alle Probleme in
 einem PR zu bearbeiten. **`GASP-STAB-01/02`, `GASP-NET-01/02/03` und
-`GASP-VAL-03` sind gemergt. Der aktive Auftrag ist der GASP-03-Pilot nach
-bestätigtem Source-Audit-Merge.
+`GASP-VAL-03` sind gemergt. Auch der GASP-03-Pilot ist gemergt;
+GASP-04 ist bereit, noch nicht begonnen. Keine aktive Implementierungsaufgabe.
 VAL-01/02 bleiben dokumentierte
 Mess- bzw. Umgebungsgrenzen.**
 
@@ -150,13 +149,11 @@ Dieser Audit ist mit PR #151 bestätigt gemergt (`9baac5f3`); Quellbefunde und L
 [Auditbericht](gasp-mover-ragdoll-source-audit.md) und
 [Manifest](assets/gasp-ragdoll-source-audit.json). Er behauptet keine
 Runtimeänderung, importierten Assets oder neu bestandenen Unreal-Builds.
-Aktiver Teilauftrag ist der begrenzte **GASP-03-Pilot** auf vorhandenen
-RPG-Schnittstellen mit originalabgeleiteter Blueprint-/PhysicsControl-/Getup-
-Komposition und eigens nachzuweisendem autoritativem Netzwerk-Lifecycle.
-Der erste Umfang ist lebendes Ragdoll/Getup auf freier ebener Fläche mit UEFN;
-die genaue Grenze zwischen Capsule-Authority und lokaler Physics-Pose wird
-vor der Umsetzung festgelegt und jede bewusste Quellabweichung dokumentiert.
-[Aktueller Pilotbericht](gasp-mover-ragdoll-pilot.md).
+Der begrenzte **GASP-03-Pilot** ist mit PR #152 gemergt: originalabgeleitete
+Blueprint-/PhysicsControl-/Getup-Komposition auf vorhandenen RPG-Schnittstellen,
+lebendes stationäres Ragdoll/Getup auf freier ebener Fläche mit UEFN und
+autoritativ verankerter Capsule. Umfang, Quellabweichungen und begrenzte
+Netzwerknachweise stehen im [Pilotbericht](gasp-mover-ragdoll-pilot.md).
 
 Eine eigene Experience/PawnData-Variante aufbauen. Bestehende Experiences
 bleiben erhalten. Ragdoll-Einstieg und Aufstehen, Kontrollrückgabe, Equipment,
