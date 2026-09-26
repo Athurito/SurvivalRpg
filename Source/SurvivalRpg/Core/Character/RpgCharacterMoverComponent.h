@@ -8,6 +8,7 @@
 #include "GameplayPrediction.h"
 #include "MoverDataModelTypes.h"
 #include "RpgMoverTraversalTypes.h"
+#include "RpgMoverRagdollTypes.h"
 #include "UObject/StrongObjectPtr.h"
 #include "RpgCharacterMoverComponent.generated.h"
 
@@ -75,6 +76,8 @@ struct SURVIVALRPG_API FRpgMoverAbilityRootMotionInputs : public FMoverDataStruc
 	/** Immutable local validation/end command. Authority never accepts this context from a client payload. */
 	UPROPERTY()
 	FRpgMoverTraversalCommand Traversal;
+	/** Server-approved living-ragdoll command sampled at this local frame; never serialized from client to server. */
+	UPROPERTY() FRpgMoverRagdollState Ragdoll;
 
 	/** Pins the sampled montage until all copies of this local input frame have left NP history. */
 	void RetainMontageForHistory();
@@ -161,6 +164,11 @@ public:
 	/** Releases the local association when the ASC changes avatar or the component is removed. */
 	void ClearAbilityRootMotion();
 
+	/** Grounded stationary entry validation for the opt-in living-ragdoll component. */
+	bool CanBeginRagdoll(float MaximumSpeed) const;
+	/** Records a server-authored lifecycle revision for subsequent local input frames, without mutating historical frames. */
+	void SetRagdollCommand(const FRpgMoverRagdollState& State);
+
 	/** Read-only live-instance check used by authority and by fresh local input sampling. */
 	bool IsAbilityRootMotionCurrent(const FRpgMoverAbilityRootMotion& Move) const;
 
@@ -181,6 +189,7 @@ private:
 	void CaptureTraversalPresentationEnd(const UAnimInstance* Animation, int32 InstanceId);
 	void UpdateTraversalPresentation(const FMoverSyncState& SyncState);
 	void PrepareTraversalSimulation(const FMoverTimeStep& TimeStep, const FMoverTickStartData& StartingData);
+	void PrepareRagdollSimulation(const FMoverTimeStep& TimeStep, const FMoverTickStartData& StartingData);
 	void ApplyTraversalCollisionLease(UPrimitiveComponent* Collider);
 	/** Publishes only this corrected command's fixed targets and releases targets from the preceding visible state. */
 	void UpdateTraversalWarpTargets(const FRpgMoverTraversalRequest* Request);
@@ -191,6 +200,10 @@ private:
 	/** Live GAS command is sampled into input history, while mutable warp state is written only to sync history. */
 	UPROPERTY(Transient) FRpgMoverTraversalCommand TraversalCommand;
 	UPROPERTY(Transient) FRpgMoverTraversalSyncState TraversalSimulationState;
+	UPROPERTY(Transient) FRpgMoverRagdollState RagdollCommand;
+	UPROPERTY(Transient) FRpgMoverRagdollSyncState RagdollSimulationState;
+	bool bRagdollEnabled = false;
+	bool bSuppressMovementForRagdollThisTick = false;
 	UPROPERTY(Transient) TObjectPtr<URpgMoverMotionWarpingComponent> TraversalWarping;
 	/** Original per-tick input for GASP's animation/conditional blend-out read model, never used to move the leased capsule. */
 	UPROPERTY(Transient) FCharacterDefaultInputs TraversalPresentationInputs;

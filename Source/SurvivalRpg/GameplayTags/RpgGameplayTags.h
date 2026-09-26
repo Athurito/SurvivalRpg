@@ -37,6 +37,10 @@ namespace RpgGameplayTags
 	extern SURVIVALRPG_API FNativeGameplayTag InputTag_Ability_Interact;
 	/** Contextual traversal attempt on jump; granted only by Experiences that support prepared obstacles. */
 	extern SURVIVALRPG_API FNativeGameplayTag InputTag_Ability_Traversal;
+	/** Opt-in living-ragdoll input granted by a supporting Experience; press again to request getup. */
+	extern SURVIVALRPG_API FNativeGameplayTag InputTag_Ability_Ragdoll;
+	/** GAS-owned living-ragdoll/getup activation; separate from the terminal health/death lifecycle. */
+	extern SURVIVALRPG_API FNativeGameplayTag Status_Ragdoll;
 	UE_DECLARE_GAMEPLAY_TAG_EXTERN(InputTag_UI_Inventory);
 	UE_DECLARE_GAMEPLAY_TAG_EXTERN(InputTag_UI_QuickAccessRadial_Hold);
 	UE_DECLARE_GAMEPLAY_TAG_EXTERN(InputTag_UI_QuickAccessRadial_Select);

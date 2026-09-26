@@ -40,6 +40,12 @@ ARpgCombatNetworkFloorFixture::ARpgCombatNetworkFloorFixture(
 	Collision->SetCanEverAffectNavigation(false);
 }
 
+ARpgMoverRagdollFloorFixture::ARpgMoverRagdollFloorFixture(const FObjectInitializer& ObjectInitializer)
+	: Super(ObjectInitializer)
+{
+	Collision->SetCollisionObjectType(ECC_WorldStatic);
+}
+
 ARpgCombatNetworkTargetFixture::ARpgCombatNetworkTargetFixture(
 	const FObjectInitializer& ObjectInitializer)
 	: Super(ObjectInitializer)

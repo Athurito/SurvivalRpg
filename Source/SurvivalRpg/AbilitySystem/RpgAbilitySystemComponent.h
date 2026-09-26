@@ -39,6 +39,8 @@ public:
 	virtual void CurrentMontageStop(float OverrideBlendOutTime = -1.0f) override;
 	/** Presents remote Mover traversal on the finalized movement clock; authority and predicting owners retain ordinary GAS playback. */
 	void UpdateSimulatedMoverTraversal(const FRpgMoverTraversalSyncState* State, bool bMovementDisabled);
+	/** Retries a deferred ordinary getup montage after its replicated PhysicsControl exit is ready. */
+	void RefreshReplicatedRagdollMontage();
 	
 	typedef TFunctionRef<bool(const URpgGameplayAbility* RpgAbility, FGameplayAbilitySpecHandle Handle)> TShouldCancelAbilityFunc;
 	void CancelAbilitiesByFunc(TShouldCancelAbilityFunc ShouldCancelFunc, bool bReplicateCancelAbility);
@@ -87,6 +89,7 @@ public:
 protected:
 	/** Configured Mover traversal montages are presented from movement history, preventing an earlier GAS receipt clock. */
 	virtual void OnRep_ReplicatedAnimMontage() override;
+	virtual bool IsReadyForReplicatedMontage() override;
 	virtual void AbilitySpecInputPressed(FGameplayAbilitySpec& Spec) override;
 	virtual void AbilitySpecInputReleased(FGameplayAbilitySpec& Spec) override;
 	

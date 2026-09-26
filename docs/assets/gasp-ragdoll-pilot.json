@@ -1,0 +1,437 @@
+{
+  "schema_version": 1,
+  "task": "GASP-03 living ragdoll/getup pilot",
+  "status": "validated_commit_and_draft_pr_pending",
+  "provenance_checked_utc": "2026-09-26T14:49:18+00:00",
+  "repository_base": "9baac5f36fd978b86c364df3e82aa74d76cfb7d2",
+  "branch": "codex/gasp-03-ragdoll-pilot",
+  "engine_version": "5.8.2",
+  "source_project": "D:/Repos/GameAnimationSample/GameAnimationSample.uproject",
+  "source_release_identifier": null,
+  "source_audit_manifest": "docs/assets/gasp-ragdoll-source-audit.json",
+  "scope": "Provenance for the validated stationary, uncrouched, supported flat-ground UEFN pilot. The recorded tests and visual checks cover this bounded slice; they do not establish universal multiplayer parity, complete dynamic/cooked dependency closure or CAS acceptance.",
+  "hash_contract": {
+    "algorithm": "sha256",
+    "source": "Fresh bytes from the original reference checkout. The external checkout is an audit source, not a runtime dependency.",
+    "import_copy": "Fresh bytes from the preserved /Game import copy inside SurvivalRpg, which supplies the MCP duplicate operation. All 17 import hashes differ from their original sample counterparts; byte identity is not asserted.",
+    "target": "Final saved target bytes for all 25 assets, captured after authoring freeze and fresh save/reload. These hashes record content identity, not gameplay acceptance.",
+    "previous_audit": "All 16 overlapping source/import hash pairs exactly match the tracked source-audit manifest. FoleyEvent_Roll is the seventeenth mapping and was hashed directly; it was not a selected candidate in that manifest."
+  },
+  "counts": {
+    "source_derived_copies": 17,
+    "composition_assets": 8,
+    "matching_source_audit_pairs": 16
+  },
+  "source_derived_copies": [
+    {
+      "source": "/Game/Blueprints/AC_PostABPTick",
+      "source_sha256": "89b1daf15b4f5b03a3317830335514a5f41d6a7a244c6d9b0c33503d5b703667",
+      "import_copy": "/Game/Blueprints/AC_PostABPTick",
+      "import_copy_sha256": "b4fb2de80042aff09196b0653faabc5a2f71ee88f191d9327720ff53b223e71d",
+      "target": "/Game/SurvivalRpg/Characters/GASP/Mover/Ragdoll/Blueprints/AC_PostABPTick",
+      "source_audit_hashes_match": true,
+      "target_file": "Content/SurvivalRpg/Characters/GASP/Mover/Ragdoll/Blueprints/AC_PostABPTick.uasset",
+      "target_sha256": "afc12e037672ef138af6681af1918aa3910ccf3f09b16b25cd3ae59606a9de3c"
+    },
+    {
+      "source": "/Game/Blueprints/Data/S_CHT_GetUpMontages_IN",
+      "source_sha256": "6243636d35b20858be176d6cb661717750ae0676ade9ef604cef5e48386f357a",
+      "import_copy": "/Game/Blueprints/Data/S_CHT_GetUpMontages_IN",
+      "import_copy_sha256": "dd27a6a3f87e86a7c07772b8e9490e3e551cb00c50bbc30a344339c613d6ebc8",
+      "target": "/Game/SurvivalRpg/Characters/GASP/Mover/Ragdoll/Blueprints/Data/S_CHT_GetUpMontages_IN",
+      "source_audit_hashes_match": true,
+      "target_file": "Content/SurvivalRpg/Characters/GASP/Mover/Ragdoll/Blueprints/Data/S_CHT_GetUpMontages_IN.uasset",
+      "target_sha256": "6edc6fafa7cdb016a6cdec8e7da0942e30feee823cd944259727e33d34ac7214"
+    },
+    {
+      "source": "/Game/Blueprints/Data/S_CHT_GetUpMontages_OUT",
+      "source_sha256": "04634139a057d7a1bcb42cdb21661a9a666c61c26324bac776e9dfab5ff3c0e6",
+      "import_copy": "/Game/Blueprints/Data/S_CHT_GetUpMontages_OUT",
+      "import_copy_sha256": "506a9493e3d405b47db51a0bb0f57ede33f9f24d043e3183444371f9e7f54d3a",
+      "target": "/Game/SurvivalRpg/Characters/GASP/Mover/Ragdoll/Blueprints/Data/S_CHT_GetUpMontages_OUT",
+      "source_audit_hashes_match": true,
+      "target_file": "Content/SurvivalRpg/Characters/GASP/Mover/Ragdoll/Blueprints/Data/S_CHT_GetUpMontages_OUT.uasset",
+      "target_sha256": "5d3ea19f62fda55a14cc9dbb67136bc2dca625da968532053f8e7c3695196a1c"
+    },
+    {
+      "source": "/Game/Blueprints/SandboxCharacter_Mover_Ragdoll",
+      "source_sha256": "999ebb98389fec9d6cd78f3d40caed2f051dbb0cf01652b718a2ba643e18e923",
+      "import_copy": "/Game/Blueprints/SandboxCharacter_Mover_Ragdoll",
+      "import_copy_sha256": "46800ffa5a2937a1052f6f5f28ef63141e780b63c85adce91aaf57bb2d91159a",
+      "target": "/Game/SurvivalRpg/Characters/GASP/Mover/Ragdoll/RPG/BP_RpgGasp_MoverRagdoll",
+      "source_audit_hashes_match": true,
+      "target_file": "Content/SurvivalRpg/Characters/GASP/Mover/Ragdoll/RPG/BP_RpgGasp_MoverRagdoll.uasset",
+      "target_sha256": "6cbf8de1515d36412e52384dc4cf8470088de602da90ce791898da1de236f9fa"
+    },
+    {
+      "source": "/Game/Characters/UEFN_Mannequin/Animations/MotionMatchingData/Schemas/PSS_Ragdoll",
+      "source_sha256": "f810583f414467630db27bd7e198670d9847f46a0c24a4ce45b62959f0bdb0f8",
+      "import_copy": "/Game/Characters/UEFN_Mannequin/Animations/MotionMatchingData/Schemas/PSS_Ragdoll",
+      "import_copy_sha256": "ec1015df377a0c9303d075217d81ab5258c19bd921c0deab7018fb44c4713060",
+      "target": "/Game/SurvivalRpg/Characters/GASP/Mover/Ragdoll/Characters/UEFN_Mannequin/Animations/MotionMatchingData/Schemas/PSS_Ragdoll",
+      "source_audit_hashes_match": true,
+      "target_file": "Content/SurvivalRpg/Characters/GASP/Mover/Ragdoll/Characters/UEFN_Mannequin/Animations/MotionMatchingData/Schemas/PSS_Ragdoll.uasset",
+      "target_sha256": "e24d6dc5548275f2428008203ad9a7d16cb2162a2fb7d7fa06e30b57aa07d4ee"
+    },
+    {
+      "source": "/Game/Characters/UEFN_Mannequin/Animations/Ragdoll/AM_M_ragdoll_getup_roll_L",
+      "source_sha256": "0e0229934431a7bad000e9b33b7b204708b6041b6babab3b59cc8cc9c8ae9173",
+      "import_copy": "/Game/Characters/UEFN_Mannequin/Animations/Ragdoll/AM_M_ragdoll_getup_roll_L",
+      "import_copy_sha256": "cdb47d424be4f5f1e5b08cc7e001947d1db1b2c1a98da52f019f648ffaf9c1c9",
+      "target": "/Game/SurvivalRpg/Characters/GASP/Mover/Ragdoll/Characters/UEFN_Mannequin/Animations/Ragdoll/AM_M_ragdoll_getup_roll_L",
+      "source_audit_hashes_match": true,
+      "target_file": "Content/SurvivalRpg/Characters/GASP/Mover/Ragdoll/Characters/UEFN_Mannequin/Animations/Ragdoll/AM_M_ragdoll_getup_roll_L.uasset",
+      "target_sha256": "5dbb0ecefffd8a6eb77d0c0d516a0c7cd4600ed72daef72f135878095ec01aaf"
+    },
+    {
+      "source": "/Game/Characters/UEFN_Mannequin/Animations/Ragdoll/AM_M_ragdoll_getup_roll_R",
+      "source_sha256": "fd1686b9c1a609854dbc1b5ce98c75b702b0b9cc55492bdd82cc0be4114bed43",
+      "import_copy": "/Game/Characters/UEFN_Mannequin/Animations/Ragdoll/AM_M_ragdoll_getup_roll_R",
+      "import_copy_sha256": "904d4a9cafe02c351f34edcdd1e6d5e704e5bac7ad79bf7b776aa366cf65a6a3",
+      "target": "/Game/SurvivalRpg/Characters/GASP/Mover/Ragdoll/Characters/UEFN_Mannequin/Animations/Ragdoll/AM_M_ragdoll_getup_roll_R",
+      "source_audit_hashes_match": true,
+      "target_file": "Content/SurvivalRpg/Characters/GASP/Mover/Ragdoll/Characters/UEFN_Mannequin/Animations/Ragdoll/AM_M_ragdoll_getup_roll_R.uasset",
+      "target_sha256": "efd3b76ffa0968f24aa88706082cf18f66d0ec6dce1fd83c1f2666d4fe770d27"
+    },
+    {
+      "source": "/Game/Characters/UEFN_Mannequin/Animations/Ragdoll/AM_M_ragdoll_getup_stand_B",
+      "source_sha256": "f9ddda92d289a5f915613900dac72aa5d3d05c05cc5c7ba79a62e6a4eb927ab4",
+      "import_copy": "/Game/Characters/UEFN_Mannequin/Animations/Ragdoll/AM_M_ragdoll_getup_stand_B",
+      "import_copy_sha256": "625c41fe52ac99dd7da9d0cb38a4a799ffadcd7526e9732bd370b109ce67a0ec",
+      "target": "/Game/SurvivalRpg/Characters/GASP/Mover/Ragdoll/Characters/UEFN_Mannequin/Animations/Ragdoll/AM_M_ragdoll_getup_stand_B",
+      "source_audit_hashes_match": true,
+      "target_file": "Content/SurvivalRpg/Characters/GASP/Mover/Ragdoll/Characters/UEFN_Mannequin/Animations/Ragdoll/AM_M_ragdoll_getup_stand_B.uasset",
+      "target_sha256": "e9358175d557b3d2ad0b800c733c4e9b355c0b4b3886f93c6f181bc7f6003aa2"
+    },
+    {
+      "source": "/Game/Characters/UEFN_Mannequin/Animations/Ragdoll/AM_M_ragdoll_getup_stand_F",
+      "source_sha256": "e74bdd45169a757644022f5e8261577f5128821313e3fe63428aaacaddbe3272",
+      "import_copy": "/Game/Characters/UEFN_Mannequin/Animations/Ragdoll/AM_M_ragdoll_getup_stand_F",
+      "import_copy_sha256": "57e4be5be73594b55bfa489694f944a85dc75c9ae490baac9bec9d44d9b6b2ca",
+      "target": "/Game/SurvivalRpg/Characters/GASP/Mover/Ragdoll/Characters/UEFN_Mannequin/Animations/Ragdoll/AM_M_ragdoll_getup_stand_F",
+      "source_audit_hashes_match": true,
+      "target_file": "Content/SurvivalRpg/Characters/GASP/Mover/Ragdoll/Characters/UEFN_Mannequin/Animations/Ragdoll/AM_M_ragdoll_getup_stand_F.uasset",
+      "target_sha256": "d02029db4f3a2ccd3ed49a40be1da456f9aff26448fc16aac9938fac265dcb89"
+    },
+    {
+      "source": "/Game/Characters/UEFN_Mannequin/Animations/Ragdoll/CHT_GetUpMontages",
+      "source_sha256": "7064d443a947493d22335ea54e20a2c9f8da97950bde4d29310ae4ced816f125",
+      "import_copy": "/Game/Characters/UEFN_Mannequin/Animations/Ragdoll/CHT_GetUpMontages",
+      "import_copy_sha256": "2721037903464e98a0db8554711ce79d0bebbda632d0314da965f3728303771b",
+      "target": "/Game/SurvivalRpg/Characters/GASP/Mover/Ragdoll/Characters/UEFN_Mannequin/Animations/Ragdoll/CHT_GetUpMontages",
+      "source_audit_hashes_match": true,
+      "target_file": "Content/SurvivalRpg/Characters/GASP/Mover/Ragdoll/Characters/UEFN_Mannequin/Animations/Ragdoll/CHT_GetUpMontages.uasset",
+      "target_sha256": "07111923e798eb892f1b4525db136af444531c75e5eb8ca36dacbc83fbd82451"
+    },
+    {
+      "source": "/Game/Characters/UEFN_Mannequin/Animations/Ragdoll/Curve_Ragdoll_Getup_Roll_BlendIn",
+      "source_sha256": "3320803ab070a465f8e866a9dacd3d562d8ac1987b3953746f147c05bc2a072a",
+      "import_copy": "/Game/Characters/UEFN_Mannequin/Animations/Ragdoll/Curve_Ragdoll_Getup_Roll_BlendIn",
+      "import_copy_sha256": "0287f527521761290ba8f694204282707f628f53af6d4e76368984d9c415d6df",
+      "target": "/Game/SurvivalRpg/Characters/GASP/Mover/Ragdoll/Characters/UEFN_Mannequin/Animations/Ragdoll/Curve_Ragdoll_Getup_Roll_BlendIn",
+      "source_audit_hashes_match": true,
+      "target_file": "Content/SurvivalRpg/Characters/GASP/Mover/Ragdoll/Characters/UEFN_Mannequin/Animations/Ragdoll/Curve_Ragdoll_Getup_Roll_BlendIn.uasset",
+      "target_sha256": "e02882d8c87e667f113674bdec2330f8dd1bb13ec6966564eebf574e3467d8e4"
+    },
+    {
+      "source": "/Game/Characters/UEFN_Mannequin/Animations/Ragdoll/M_ragdoll_getup_roll_L",
+      "source_sha256": "fbe9a9141e9c7fe88cd9c92a7b244171d9c28b04e7e9cc65a828dbf17e5e50c8",
+      "import_copy": "/Game/Characters/UEFN_Mannequin/Animations/Ragdoll/M_ragdoll_getup_roll_L",
+      "import_copy_sha256": "0aa14078d23f61f25eee786bb6f60cf38a683ff52e775d3621a2177ee5e6f107",
+      "target": "/Game/SurvivalRpg/Characters/GASP/Mover/Ragdoll/Characters/UEFN_Mannequin/Animations/Ragdoll/M_ragdoll_getup_roll_L",
+      "source_audit_hashes_match": true,
+      "target_file": "Content/SurvivalRpg/Characters/GASP/Mover/Ragdoll/Characters/UEFN_Mannequin/Animations/Ragdoll/M_ragdoll_getup_roll_L.uasset",
+      "target_sha256": "4e99b852c754500d572d97315f820511461ff16f12fa19f556b0da0553772976"
+    },
+    {
+      "source": "/Game/Characters/UEFN_Mannequin/Animations/Ragdoll/M_ragdoll_getup_roll_R",
+      "source_sha256": "0ddfe86f2a28cee416795910a521802d8be9e61f459dfa1530f1b7475aee60f8",
+      "import_copy": "/Game/Characters/UEFN_Mannequin/Animations/Ragdoll/M_ragdoll_getup_roll_R",
+      "import_copy_sha256": "7051155fd6ad9e49c4aafcf0cb57e1e5812f8693950c76a4e1896106f05ba23f",
+      "target": "/Game/SurvivalRpg/Characters/GASP/Mover/Ragdoll/Characters/UEFN_Mannequin/Animations/Ragdoll/M_ragdoll_getup_roll_R",
+      "source_audit_hashes_match": true,
+      "target_file": "Content/SurvivalRpg/Characters/GASP/Mover/Ragdoll/Characters/UEFN_Mannequin/Animations/Ragdoll/M_ragdoll_getup_roll_R.uasset",
+      "target_sha256": "9897d40772e72dd6a8bf3acebf085a31bd8c07fea53b6da460aa1216d76ef70e"
+    },
+    {
+      "source": "/Game/Characters/UEFN_Mannequin/Animations/Ragdoll/M_ragdoll_getup_stand_B",
+      "source_sha256": "1083cd6fc2e1a371b3c9dcfbb8df74c145e82039f0bf6f83090a831bc26b02e1",
+      "import_copy": "/Game/Characters/UEFN_Mannequin/Animations/Ragdoll/M_ragdoll_getup_stand_B",
+      "import_copy_sha256": "457dfb4959a0aaaf7f29b91440541e0ba1a77842c8b267b3ff612d6447713d07",
+      "target": "/Game/SurvivalRpg/Characters/GASP/Mover/Ragdoll/Characters/UEFN_Mannequin/Animations/Ragdoll/M_ragdoll_getup_stand_B",
+      "source_audit_hashes_match": true,
+      "target_file": "Content/SurvivalRpg/Characters/GASP/Mover/Ragdoll/Characters/UEFN_Mannequin/Animations/Ragdoll/M_ragdoll_getup_stand_B.uasset",
+      "target_sha256": "c8cdb831de41f793992e46dd807715fc0b370f99e24134edc6070e52089f2af0"
+    },
+    {
+      "source": "/Game/Characters/UEFN_Mannequin/Animations/Ragdoll/M_ragdoll_getup_stand_F",
+      "source_sha256": "8a7c9c125c451b707eddc35a3cd06cec279121f23abb9633fd9a1af892b249fc",
+      "import_copy": "/Game/Characters/UEFN_Mannequin/Animations/Ragdoll/M_ragdoll_getup_stand_F",
+      "import_copy_sha256": "a4d7372c147fb0381357399e9988b14ee1aacd240d77279b8155da2fd5a35f26",
+      "target": "/Game/SurvivalRpg/Characters/GASP/Mover/Ragdoll/Characters/UEFN_Mannequin/Animations/Ragdoll/M_ragdoll_getup_stand_F",
+      "source_audit_hashes_match": true,
+      "target_file": "Content/SurvivalRpg/Characters/GASP/Mover/Ragdoll/Characters/UEFN_Mannequin/Animations/Ragdoll/M_ragdoll_getup_stand_F.uasset",
+      "target_sha256": "ed75e513877fc154d08680ba3d30567b37c96c47639dabc70f4409fccd28ab8b"
+    },
+    {
+      "source": "/Game/Characters/UEFN_Mannequin/Rigs/PCA_SandboxCharacter",
+      "source_sha256": "b2cb1f71187229dcb00e96ffe409b9f6cdcb7e460829b47838ac32f34a876f0c",
+      "import_copy": "/Game/Characters/UEFN_Mannequin/Rigs/PCA_SandboxCharacter",
+      "import_copy_sha256": "d0a4ba82d6ea4784f6d98ec54171fe733d390a39e96081d6adda5fb78d13c8ec",
+      "target": "/Game/SurvivalRpg/Characters/GASP/Mover/Ragdoll/Characters/UEFN_Mannequin/Rigs/PCA_SandboxCharacter",
+      "source_audit_hashes_match": true,
+      "target_file": "Content/SurvivalRpg/Characters/GASP/Mover/Ragdoll/Characters/UEFN_Mannequin/Rigs/PCA_SandboxCharacter.uasset",
+      "target_sha256": "13c5c34981d8a9018bfdc7def8ddac882bc076adbb4284089567172565d96b10"
+    },
+    {
+      "source": "/Game/Blueprints/AnimNotifies/BP_AnimNotify_FoleyEvent_Roll",
+      "source_sha256": "17eacb81c2615b20f9d1040cd901fa28e0455df8e2bda53b9900ba5c600fb49f",
+      "import_copy": "/Game/Blueprints/AnimNotifies/BP_AnimNotify_FoleyEvent_Roll",
+      "import_copy_sha256": "8797784bed095958e6499524b9a21b4a012b4ab018576d4506e8c1518fef7e1f",
+      "target": "/Game/SurvivalRpg/Characters/GASP/Mover/Ragdoll/Blueprints/AnimNotifies/BP_AnimNotify_FoleyEvent_Roll",
+      "source_audit_hashes_match": null,
+      "target_file": "Content/SurvivalRpg/Characters/GASP/Mover/Ragdoll/Blueprints/AnimNotifies/BP_AnimNotify_FoleyEvent_Roll.uasset",
+      "target_sha256": "c53a7a64793149a8cd571ead1d837bb5c2d7d3e460753988f669713b3a588d93"
+    }
+  ],
+  "composition_assets": [
+    {
+      "role": "data",
+      "origin": "project_asset_duplicate_and_adaptation",
+      "source": "/Game/SurvivalRpg/Characters/GASP/Mover/RPG/DA_PawnData_GaspMover",
+      "source_sha256": "f38922e380c49991fd7ad6f3d6eb2a1f0ba1da16598e2c09e7fdbbd4282e680d",
+      "target": "/Game/SurvivalRpg/Characters/GASP/Mover/Ragdoll/RPG/DA_PawnData_GaspMoverRagdoll",
+      "target_file": "Content/SurvivalRpg/Characters/GASP/Mover/Ragdoll/RPG/DA_PawnData_GaspMoverRagdoll.uasset",
+      "target_sha256": "45ed30c47f5f4140790942a486908b94ed991827b8fb2464a5282b07e66f10ab"
+    },
+    {
+      "role": "input",
+      "origin": "project_asset_duplicate_and_adaptation",
+      "source": "/Game/SurvivalRpg/Characters/GASP/Mover/RPG/Input/DA_InputConfig_GaspMover",
+      "source_sha256": "9757203876f3ebec7d25b2959d8991fef833914d00d402239a74c7b93bccdb4e",
+      "target": "/Game/SurvivalRpg/Characters/GASP/Mover/Ragdoll/RPG/Input/DA_InputConfig_GaspMoverRagdoll",
+      "target_file": "Content/SurvivalRpg/Characters/GASP/Mover/Ragdoll/RPG/Input/DA_InputConfig_GaspMoverRagdoll.uasset",
+      "target_sha256": "a3c07912e5ca8998b14569c8aa42039bb579eb3288e2a9d58d2f576c514f7339"
+    },
+    {
+      "role": "context",
+      "origin": "project_asset_duplicate_and_adaptation",
+      "source": "/Game/SurvivalRpg/Characters/GASP/Mover/RPG/Input/IMC_RpgGasp_Mover",
+      "source_sha256": "0aaa2b40e3acdcbdef1dd05e315d4335fb6ee0a58b4016eb760e012a7819ad3f",
+      "target": "/Game/SurvivalRpg/Characters/GASP/Mover/Ragdoll/RPG/Input/IMC_RpgGasp_MoverRagdoll",
+      "target_file": "Content/SurvivalRpg/Characters/GASP/Mover/Ragdoll/RPG/Input/IMC_RpgGasp_MoverRagdoll.uasset",
+      "target_sha256": "339e946a45d17c464653df9bf20c7a6fda10a652e53c9487b4f74636495e20e6"
+    },
+    {
+      "role": "ability",
+      "origin": "project_asset_duplicate_and_adaptation",
+      "source": "/Game/SurvivalRpg/Core/Character/DA_DefaultAbilitySet",
+      "source_sha256": "1a11ff6de8a611d3b113444c09a0990a5fc51e23fc288b94e65f3d7c9374f16b",
+      "target": "/Game/SurvivalRpg/Characters/GASP/Mover/Ragdoll/RPG/Abilities/LAS_RpgGasp_MoverRagdoll",
+      "target_file": "Content/SurvivalRpg/Characters/GASP/Mover/Ragdoll/RPG/Abilities/LAS_RpgGasp_MoverRagdoll.uasset",
+      "target_sha256": "cdf101f1d0baabb3ca5862c71e9e038e996cee0e8a965611f0a03df779ee0573"
+    },
+    {
+      "role": "experience",
+      "origin": "project_asset_duplicate_and_adaptation",
+      "source": "/Game/SurvivalRpg/System/Experiences/RpgGaspMoverExperience",
+      "source_sha256": "b6b1a845f238e84a54e0b11f1dac124f616a66f9022996863bce60f0391e245c",
+      "target": "/Game/SurvivalRpg/System/Experiences/RpgGaspMoverRagdollExperience",
+      "target_file": "Content/SurvivalRpg/System/Experiences/RpgGaspMoverRagdollExperience.uasset",
+      "target_sha256": "8739940754bf1b99988e5b69fda5da68c3e421e8647735fa669bfefebf4f48a1"
+    },
+    {
+      "role": "mode",
+      "origin": "project_asset_duplicate_and_adaptation",
+      "source": "/Game/SurvivalRpg/Maps/Test/GaspMover/BP_Rpg_GaspMoverTestGameMode",
+      "source_sha256": "bccb60b2acc61ab98646096b91127a722cfbf52157e689896def76da6edeeed1",
+      "target": "/Game/SurvivalRpg/Maps/Test/GaspMoverRagdoll/BP_Rpg_GaspMoverRagdollTestGameMode",
+      "target_file": "Content/SurvivalRpg/Maps/Test/GaspMoverRagdoll/BP_Rpg_GaspMoverRagdollTestGameMode.uasset",
+      "target_sha256": "94a09f4b8e91bc4f3088dbb5a2ff8ebbc6dabf1a09dc24bf49dbe156c0082499"
+    },
+    {
+      "role": "map",
+      "origin": "project_asset_duplicate_and_adaptation",
+      "source": "/Game/SurvivalRpg/Maps/Test/Lvl_RpgGaspMantle",
+      "source_sha256": "01b86df0a93118304f75e5bda1e108658e67f6504e83cb62e5f0ac52ef76579e",
+      "target": "/Game/SurvivalRpg/Maps/Test/Lvl_RpgGaspMoverRagdoll",
+      "target_file": "Content/SurvivalRpg/Maps/Test/Lvl_RpgGaspMoverRagdoll.umap",
+      "target_sha256": "86a5770d78bb0d634acb14ef67a282ed2e02c14a0f2572cc44434b984d2069d6"
+    },
+    {
+      "role": "gameplay_ability",
+      "origin": "new_concrete_blueprint",
+      "parent": "/Script/SurvivalRpg.RpgGameplayAbility",
+      "target": "/Game/SurvivalRpg/Characters/GASP/Mover/Ragdoll/RPG/Abilities/GA_RpgGasp_MoverRagdoll",
+      "target_file": "Content/SurvivalRpg/Characters/GASP/Mover/Ragdoll/RPG/Abilities/GA_RpgGasp_MoverRagdoll.uasset",
+      "target_sha256": "91897522af80f0f79f82b715be31a928772e98ca8a49717700159f5817d20bae"
+    }
+  ],
+  "existing_foundation_reuse": {
+    "inventory_reference": "docs/assets/gasp-ragdoll-source-audit.json#candidate_assets",
+    "policy": "Reuse project-owned skeleton/mesh/PhysicsAsset, Mover/ABP, shared data, input and Foley foundations after reference remapping. The earlier 27 foundation candidates are not a claim of this pilot's final dependency closure.",
+    "already_existing_pilot_path": "/Game/SurvivalRpg/Characters/GASP/Mover/Ragdoll/Blueprints/Data/S_MoverCustomInputs_Ragdoll",
+    "already_existing_note": "Present before this pilot according to the source-audit manifest; not one of the 17 new copies. The original physical-bone movement-input authority is not adopted."
+  },
+  "intentional_adaptations": [
+    "RPG Experience/PawnData composition and a concrete ServerInitiated, InstancedPerActor, Exclusive_Blocking Blueprint GA own entry, second-R getup request and cancellation.",
+    "A native Ragdoll movement mode anchors the authoritative capsule. Local PhysicsControl drives the gameplay mesh; no controlled rolling force or client bone-transform movement authority is imported.",
+    "Native lifecycle and revision/activation-scoped selection protect authority, getup publication, cancellation and terminal Death. Existing Health, Death and Respawn remain canonical.",
+    "Original PhysicsControl profiles/curves, snapshot/PoseHistory and pose-search chooser with four getup montages remain designer-owned; native code does not replace their content selection.",
+    "Project-local references replace raw sample references, including montage blend-out notify classes, Foley notify classes/types and explicitly mapped Foley bank values. Notify event timing, GUIDs, order, tracks and unrelated instance values must remain unchanged.",
+    "Source raw montage ownership, physics-derived capsule movement, NPC auto-getup and demo multi-character interactions are excluded from the pilot.",
+    "The pilot currently restores the physics profile before the GAS getup montage; source ordering is snapshot/history, chooser, montage, strength reduction, then next-frame default profile. Transition continuity remains an explicit validation requirement.",
+    "The test map derives from the approved mantle presentation, with a separate nonpersistent test GameMode and Experience. Retarget follower physics and new downed/revive systems are excluded.",
+    "Build 8 scopes local mesh QueryAndPhysics, WorldStatic blocking, ComponentTransformIsKinematic and disabled Mover smoothing during physical ragdoll. Original mesh collision/profile/responses and smoothing are restored only after actual bodies become kinematic; capsule authority and canonical visual identity/base offset remain unchanged.",
+    "Only the pilot Experience raises its input-context priority from 1 to 2: R conflicted with IMC_Combat Weapon03 at priority 1. Only that key intersection was confirmed; other Experiences are not remapped.",
+    "Only the new pilot map changes its floor root/mesh from Movable BlockAllDynamic to Static BlockAll with WorldStatic and its three PlayerStarts from Z=110 to Z=88.15 cm. Source map remains the provenance baseline."
+  ],
+  "evidence": [
+    {
+      "path": "Saved/GaspRagdollPilot20260926/pilot-copy-map.json",
+      "sha256": "f05d32963e8db7b46b4f47702608caa9ffae69c464aed59d6508d87cd326fd91",
+      "purpose": "17 exact source-to-target mappings"
+    },
+    {
+      "path": "Saved/GaspRagdollPilot20260926/pilot-composition-paths.json",
+      "sha256": "df9de0f71bdcc060917150d50bbd5e76bc24e6964bf78d7c1b42854c4ba47553",
+      "purpose": "7 duplicated composition assets; new GA recorded separately from author.py"
+    },
+    {
+      "path": "Saved/GaspRagdollPilot20260926/author.py",
+      "sha256": "76cf4503ba51f3c2f1a2a7267980f9a39bbc09a822b84eaf24cfd4d89e6e3d5a",
+      "purpose": "Concrete GA parent and MCP authoring provenance"
+    },
+    {
+      "path": "Saved/GaspRagdollPilot20260926/compose.py",
+      "sha256": "4820234a3939ac69504e9bf5a5e9f97e7ae653ba82ecd68b50d2b8cb49356f4b",
+      "purpose": "Composition duplicate origins and intentional project configuration"
+    },
+    {
+      "path": "Saved/GaspRagdollPilot20260926/import-source-pawn-comparison.json",
+      "purpose": "Original/import authored-graph comparison, not target gameplay acceptance"
+    },
+    {
+      "path": "Saved/GaspRagdollPilot20260926/notify-before-{0..3}.json / notify-after-{0..3}.json",
+      "purpose": "Offline pre-save four-montage event and property parity under explicit class/instance path substitution; not final reload/closure proof"
+    },
+    {
+      "path": "Saved/GaspRagdollPilot20260926/notify-before-{4..7}.json / notify-after-{4..7}.json",
+      "purpose": "Offline four-sequence comparison: 20 full event records unchanged except mapped classes/instance paths; all instance values unchanged except explicit project DefaultBank reference. Native export adds that bank explicitly for Roll L/R; a new empty unreferenced AssetImportData object appears for Roll L with its active import-data reference unchanged. No saved reload/closure proof."
+    },
+    {
+      "path": "Saved/GaspRagdollPilot20260926/notify-reloaded-{0..7}.json",
+      "purpose": "MCP save/reload followed by independent offline comparison: all 28 event records and active instance values preserved; retired original-class instances removed. Native sequence content unchanged except generated Signature GUIDs."
+    },
+    {
+      "path": "Saved/GaspRagdollPilot20260926/manual-final-{ragdoll-front,getup-front,recovered-front,standing,getup-0,getup-1,getup-2,recovered,movement,attack}.png",
+      "purpose": "Root visual inspection of actual PIE entry/getup/recovery/movement/attack after final save/reload; no audio or exact-frame smoothness claim."
+    }
+  ],
+  "validation_boundaries": [
+    "Saved evidence is ignored local material and is not automatically present in another checkout.",
+    "No CAS pass, complete cooked/dynamic reference closure, multiplayer acceptance is claimed by this manifest.",
+    "Four-montage and four-sequence parity was independently checked again after MCP save/reload: all 28 events and active instance values match the post-remap snapshots, all retired original-class instances are absent. Sequence native exports change only generated DataModel/MovieScene/Track/Section Signature GUIDs.",
+    "Actual runtime attempts and open findings belong to docs/gasp-mover-ragdoll-pilot.md. Source provenance and an editor build cannot establish living ragdoll/getup, late join, cancellation, death or movement/combat recovery.",
+    "Final Editor build 12 passed in 11.21 s and final incremental Game build passed in 22.82 s. On the saved/reloaded authored map with fresh binaries, root visually inspected actual InputKey-driven R entry, second-R getup, standing recovery, W movement and LMB weapon attack; front views avoided HUD occlusion. No claim of exact-frame transition smoothness or audio validation (-NoSound). The final 20-test run passed; environment/preservation audit passed; planned delivery is a Draft PR for manual review, not automatic merge."
+  ],
+  "observed_registry_closure": {
+    "evidence": "Saved/GaspRagdollPilot20260926/pilot-closure-after-notifies.json",
+    "sha256": "7cc19ef7442a62e235aec5a21351bc8789b8a5b47cb005b896988920fd4ca621",
+    "root": "/Game/SurvivalRpg/System/Experiences/RpgGaspMoverRagdollExperience",
+    "project_packages": 2115,
+    "external_boundaries": 81,
+    "missing": [],
+    "raw_game_references_outside_survivalrpg": 0,
+    "scope": "Observed registry hard/soft package and management edges including editor-only references; runtime-generated and cooked paths are not proven."
+  },
+  "target_hashes_checked_utc": "2026-09-26T15:39:54+00:00",
+  "automated_validation": {
+    "evidence": "Saved/GaspRagdollPilot20260926/final-tests.json",
+    "sha256": "304840fd404a566a4ac1f5c750308653832a5e55fc7dc824980671bb9e69f640",
+    "selection": "Saved/GaspRagdollPilot20260926/final-selected-names.json",
+    "passed": 20,
+    "failed": 0,
+    "skipped": 0,
+    "duration_seconds": 187.45457458496094,
+    "warnings": 1089,
+    "warning_categories": {
+      "LogNetPackageMap": 944,
+      "AdvancedFriendsInterfaceLog": 110,
+      "LogNetworkPrediction": 17,
+      "LogAnimation": 14,
+      "LogRpgCharacter": 3,
+      "LogBlueprint": 1
+    },
+    "targeted_warning_classes": {
+      "unsupported_move_input_type": 0,
+      "incompatible_simulate_options": 0,
+      "fully_simulated_mesh_movement": 0
+    },
+    "scope": "Selected editor PIE/asset regression including all six new ragdoll cases. Earlier six-test attempt remains 5/6; final preservation audit passed. Commit, Draft PR and manual user review remain open."
+  },
+  "final_audit": {
+    "result": "passed",
+    "blueprints_compiled_warnings_as_errors": 6,
+    "experience_closure": {
+      "project_packages": 2115,
+      "external_boundaries": 81,
+      "missing": [],
+      "raw_game_references_outside_survivalrpg": 0
+    },
+    "map_closure": {
+      "project_packages": 2225,
+      "external_boundaries": 99,
+      "missing": [],
+      "raw_game_references_outside_survivalrpg": 0
+    },
+    "preserved_original_assets": 6938,
+    "preserved_baseline_maps_and_saves": 17,
+    "unchanged_manifest_targets": 25,
+    "verified_generated_overrides": 4,
+    "editor_pid": 17044,
+    "dirty_content": [],
+    "dirty_maps": [],
+    "python_ast": "passed",
+    "project_json": "passed",
+    "diff_check": "passed",
+    "independent_runtime_review": "no concrete blockers",
+    "evidence": [
+      {
+        "path": "Saved/GaspRagdollPilot20260926/final-blueprint-compiles.json",
+        "sha256": "194652b1d3c434fc0acfac7aff925e7b4313ee8b35a5f8a61dcd18bad6044357"
+      },
+      {
+        "path": "Saved/GaspRagdollPilot20260926/final-closure-experience.json",
+        "sha256": "2a3225c892ffd29b5cb88d6fe2b605f85f39c8ce9014e21fa25d9196ca3178e3"
+      },
+      {
+        "path": "Saved/GaspRagdollPilot20260926/final-closure-map.json",
+        "sha256": "d73d454532003b59f595684353afac3329201e3d04ab4ca060ecd36aba6a4ea7"
+      },
+      {
+        "path": "Saved/GaspRagdollPilot20260926/final-assets-before-preserved.json",
+        "sha256": "4d14eae764805df57848c9d3bc4e5ee2b499390260f13f795679bbdf869a188a"
+      },
+      {
+        "path": "Saved/GaspRagdollPilot20260926/final-preservation-before-preserved.json",
+        "sha256": "064f27f6b26db9de33d7315d8ba2c3e9e55bcca138bce7af1579163f8e777e87"
+      },
+      {
+        "path": "Saved/GaspRagdollPilot20260926/final-target-hashes.json",
+        "sha256": "23bdc4f2e7e53a895ab169d69e7fd67af6f5266a24c2a091ceac83f837ca6a7e"
+      },
+      {
+        "path": "Saved/GaspRagdollPilot20260926/final-editor-after.json",
+        "sha256": "e5818eb634254d0554c85e36b7244405f941bfa5f3ac04e8fcbcbadfd36611bc"
+      },
+      {
+        "path": "Saved/GaspRagdollPilot20260926/final-editor-close.json",
+        "sha256": "e5818eb634254d0554c85e36b7244405f941bfa5f3ac04e8fcbcbadfd36611bc"
+      }
+    ],
+    "editor_cleanly_closed": true,
+    "remaining_unreal_editor_processes": 0,
+    "changes_after_final_build": "API intent comments only; no functional source or asset changes."
+  }
+}

@@ -1,11 +1,12 @@
-"""Optional editor-only MCP tools for reflected asset contracts and owned references.
+"""Optional editor-only MCP tools for asset contracts, owned references and local PIE inspection.
 
 Load from an editor Python startup script. Standard asset/Blueprint/object tools
 still own duplication, property edits, compilation and saves. These operations
 fill gaps in the UE 5.8 toolsets: complete exports, instanced reference remapping,
-precise montage notify timing and fresh package reloads.
+precise montage notify timing, fresh package reloads and gameplay input/view inspection in PIE.
 """
 import json
+import math
 import os
 from pathlib import Path
 
@@ -35,6 +36,28 @@ def _status():
 
 @unreal.uclass()
 class AssetContractTools(unreal.ToolsetDefinition):
+    @toolset_registry.tool_call
+    @staticmethod
+    def set_pie_view_rotation(controller_path: str, pitch: float, yaw: float) -> bool:
+        """Aim a local PIE player's view for gameplay inspection; no actor teleport or asset edit."""
+        controller = unreal.find_object(None, controller_path)
+        world = unreal.get_editor_subsystem(unreal.UnrealEditorSubsystem).get_game_world()
+        if (not isinstance(controller, unreal.PlayerController) or not world
+                or controller.get_world() != world or not controller.is_local_player_controller()
+                or not math.isfinite(pitch) or not math.isfinite(yaw) or abs(pitch) > 85):
+            raise RuntimeError('Expected a local current-PIE controller and finite view angles (pitch -85..85 degrees)')
+        controller.set_control_rotation(unreal.Rotator(pitch=pitch, yaw=yaw, roll=0))
+        return True
+
+    @toolset_registry.tool_call
+    @staticmethod
+    def set_pie_input_key(controller_path: str, key_name: str, pressed: bool) -> bool:
+        """Send a digital key transition through a local PIE controller; release in a later call after a game tick."""
+        controller = unreal.find_object(None, controller_path)
+        if not isinstance(controller, unreal.PlayerController):
+            raise RuntimeError('Expected an existing PIE PlayerController object path')
+        return unreal.RpgEditorPlaytestTools.set_pie_input_key(controller, key_name, pressed)
+
     @toolset_registry.tool_call
     @staticmethod
     def editor_status() -> str:
@@ -96,6 +119,42 @@ class AssetContractTools(unreal.ToolsetDefinition):
                             'state': state.get_path_name() if state else None,
                             'state_class': state.get_class().get_path_name() if state else None})
         return json.dumps({'path': montage.get_path_name(), 'length': montage.get_play_length(), 'notifies': records})
+
+    @toolset_registry.tool_call
+    @staticmethod
+    def remap_animation_notify_classes(asset_path: str, replacements_json: str,
+                                       type_replacements_json: str = '{}', object_replacements_json: str = '{}') -> int:
+        """Replace owned notify instances using compatible copied Blueprint classes; preserve events and do not save.
+
+        Both JSON objects map source paths to target paths. Notify paths must be generated class paths (_C).
+        Optional type mappings explicitly identify copied Blueprint parents, enums or script structs.
+        Optional object mappings identify exact asset values for direct hard object properties whose class changes.
+        """
+        _guard()
+        if not asset_path.startswith('/Game/'):
+            raise RuntimeError('Only project-owned animations can be edited')
+        animation = _asset(asset_path)
+        if not isinstance(animation, unreal.AnimSequenceBase):
+            raise RuntimeError('Expected an AnimSequenceBase')
+        pairs = json.loads(replacements_json)
+        types = json.loads(type_replacements_json)
+        objects = json.loads(object_replacements_json)
+        if not isinstance(pairs, dict) or not pairs or not isinstance(types, dict) or not isinstance(objects, dict):
+            raise RuntimeError('Expected notify-class and optional type/object path mappings')
+        def load_type(path, require_class=False):
+            if not isinstance(path, str) or not path.startswith('/'):
+                raise RuntimeError('Expected an absolute Unreal object or generated-class path')
+            value = unreal.load_class(None, path) if require_class or path.endswith('_C') else unreal.load_object(None, path)
+            if not value:
+                raise RuntimeError('Cannot load mapped type: ' + path)
+            return value
+        classes = {load_type(source, True): load_type(target, True) for source, target in pairs.items()}
+        type_objects = {load_type(source): load_type(target) for source, target in types.items()}
+        object_values = {_asset(source): _asset(target) for source, target in objects.items()}
+        count = unreal.RpgBlueprintAssetTools.remap_animation_notify_classes(animation, classes, type_objects, object_values)
+        if count < 0:
+            raise RuntimeError('Notify class remap rejected: incompatible schema, ownership or editor context')
+        return count
 
     @toolset_registry.tool_call
     @staticmethod
