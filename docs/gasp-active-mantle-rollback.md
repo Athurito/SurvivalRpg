@@ -1,9 +1,11 @@
 # GASP-NET-01 – Rollback während aktivem Mantle
 
-Stand: **26.09.2026, implementiert und validiert; Review/Merge offen**. Branch
+Stand: **26.09.2026, validiert und gemergt**. Arbeitsbranch
 `codex/gasp-net-01-active-mantle-rollback`, Basis `b9a65360` (Merge PR #146).
 Implementierung: `b6709eb4`; vorausgehende Merge-/Auftragsstatuspflege `91f49fcc`.
-Arbeits-PR: [#147](https://github.com/Athurito/SurvivalRpg/pull/147), **Draft, offen**.
+PR [#147](https://github.com/Athurito/SurvivalRpg/pull/147) am 26.09.2026 um
+10:24:29 UTC bestätigt gemergt: `44a5e5127bab0d064608b682fcd002adf91c4159`.
+Die Merge-Statuspflege führt keine neuen Builds oder Tests aus.
 Der Auftrag schließt die in der [Roadmap](gasp-integration-roadmap.md)
 erfasste Nachweislücke. Runtime, Engine-Overrides, Blueprints, Montagen und
 übrige Assets werden dafür nicht geändert.
@@ -144,8 +146,8 @@ Negativkontrolle einen getrennten Editorprozess verwenden; dessen vollständiger
 Aufruf steht im jeweiligen `*-command.json`. Der fehlende Rollback ist dann
 absichtlich ein Testfehler. Die Gegenprobe ist keine erfolgreiche Regression.
 
-NET-01 ist damit im getesteten Fixed-/PIE-Umfang nachgewiesen. Review und Merge
-sind noch offen. Eine neue handgespielte Sichtabnahme ist für diesen nativen
+NET-01 ist damit im getesteten Fixed-/PIE-Umfang nachgewiesen und in PR #147
+gemergt. Eine neue handgespielte Sichtabnahme ist für diesen nativen
 Frame-Nachweis nicht erfolgt; der numerische Verlauf stammt aus gerendertem PIE.
 
 Dieser Auftrag behebt nicht den gesonderten Terminal-Grund-Konflikt

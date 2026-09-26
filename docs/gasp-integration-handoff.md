@@ -9,18 +9,40 @@ Abnahme. Beide bei relevanten Fortschritten im selben PR aktualisieren.
 
 | Feld | Wert |
 | --- | --- |
-| Aktive Implementierungsaufgabe | `GASP-02` / `GASP-NET-01` – echter Rollback während aktivem Mantle, **implementiert und validiert**, Review/Merge offen |
-| Nächste bereite Aufgabe | Nach NET-01 `GASP-NET-02`: vorhergesagtes Finished gegenüber autoritativem Cancelled klären |
-| Zuständiger Chat / beanspruchte Dateien | NET-01: `RpgGaspMoverTraversalTestFixture.cpp`, `RpgMoverPredictionTestTypes.*` und GASP-Dokumentation. Kein Editor/Build mehr aktiv; keine Binärassets geändert |
-| Runtime-Ausgangspunkt | `b9a653608b6ada64dfd1c17b2e24d5dfc691202c`, bestätigter Merge PR #146 auf `master` am 22.09.2026 um 21:09:22 UTC |
-| Checkout / aktiver Branch | `codex/gasp-net-01-active-mantle-rollback`, `D:/Repos/SurvivalRpg`; Basis `b9a65360`, origin/master am 26.09.2026 verifiziert |
-| Letzter Implementierungs-Commit | `b6709eb4` – passiver Nachweis gleicher betroffener Prediction-Frames bei Mantle-Restore/Replay; ausschließlich Editor-Testcode |
-| Aktueller Arbeits-PR | [PR #147](https://github.com/Athurito/SurvivalRpg/pull/147), **Draft, offen**; [PR #146](https://github.com/Athurito/SurvivalRpg/pull/146) ist bestätigt gemergt |
-| Übernommene Statuspflege | Bestätigten STAB-02-Merge in Roadmap, Übergabe und `gasp-respawn-falling.md` im NET-01-Arbeitsbranch nachgeführt |
-| Nächster Handgriff | NET-01 in PR #147 prüfen; nach bestätigtem Merge mit `GASP-NET-02` fortsetzen |
-| Blocker / offene Abnahme | Kein Implementierungsblocker. Editor-Build, 10/10 gemeinsame Regressionen, 30-FPS-Fokus und echte Negativkontrolle ausgeführt. Review/Merge offen; keine neue Independent-/Packaged-/WAN-Abnahme |
+| Aktive Implementierungsaufgabe | `GASP-02` / `GASP-NET-02` – vorhergesagtes Finished gegenüber autoritativem Cancelled, **In Arbeit: Ursachenbeleg und Terminalvertrag** |
+| Nächste bereite Aufgabe | Nach NET-02 `GASP-NET-03`: rekonstruierte Traversal-Präsentation nach Paketverlust gezielt prüfen |
+| Zuständiger Chat / beanspruchte Dateien | Root: Runtime `RpgGameplayAbility_Mantle.cpp`, gemeinsame Traversal-Testfixture und sämtliche Editor-/Buildsitzungen. Dokumentationsagent: Roadmap, Übergabe und NET-01-Mergestatus. Keine Assetänderung vorgesehen |
+| Runtime-Ausgangspunkt | `44a5e5127bab0d064608b682fcd002adf91c4159`, bestätigter Merge PR #147 am 26.09.2026 um 10:24:29 UTC; NET-01 änderte nur Editor-Testcode und Dokumentation |
+| Checkout / aktiver Branch | `codex/gasp-net-02-terminal-reconciliation`, `D:/Repos/SurvivalRpg`; Basis `44a5e512` |
+| Letzter Implementierungs-Commit | `b6709eb4` – abgeschlossener NET-01-Nachweis; noch kein NET-02-Implementierungscommit |
+| Aktueller Arbeits-PR | Noch keiner für NET-02; [PR #147](https://github.com/Athurito/SurvivalRpg/pull/147) und [PR #146](https://github.com/Athurito/SurvivalRpg/pull/146) sind bestätigt gemergt |
+| Übernommene Statuspflege | Bestätigten NET-01-Merge in Roadmap, Übergabe und `gasp-active-mantle-rollback.md` im NET-02-Arbeitsbranch nachgeführt |
+| Nächster Handgriff | Historischen Endablauf frisch reproduzieren; natürliche Montagebeendigung, Cleanup-Bedingungen und autoritative Terminalkorrektur getrennt belegen |
+| Blocker / offene Abnahme | Kein bekannter Implementierungsblocker. NET-02-Ursache, Korrektur und Regression noch offen; keine NET-02-Build-/Testerfolge eingetragen. Root koordiniert die laufende Diagnose |
 
-## Aktueller validierter Schritt – GASP-NET-01
+## Aktueller Auftrag – GASP-NET-02
+
+- Historischer Beleg: `Saved/GaspMoverProxyPose20260920/regression-onset.log`,
+  Zeilen 8877–8891. Owner und Authority beenden dieselbe GAS-Aktivierung normal;
+  trotzdem ist der Owner-Terminalgrund `Finished`, der Authority-Grund `Cancelled`.
+  Die Abweichung besteht vor der Testinjektion. Reconciliation erhält Identität,
+  Montage und Warp-Cleanup, verletzt aber die bisherige Gleichheitsprüfung des
+  Terminalgrundes. Einzelne Cleanup-Bedingungen wurden damals nicht protokolliert.
+- Der spätere grüne Lauf hatte `Cancelled` auf beiden Seiten und beweist weder
+  die Ursache noch einen Fix. Die bestehende Hurdle-Behandlung natürlicher
+  Montageenden ist ein Vergleichspunkt, keine bereits validierte Mantle-Lösung.
+- Gameplay-Grund und Authority bleiben in GAS/Projekt-Mover. Der Test muss eine
+  echte terminale Reconciliation und fehlende Wiederbelebung alter Traversal
+  nachweisen; keine bloße Abschwächung auf beliebige Terminalzustände.
+- Aktuell Ursachenprüfung und Diagnose im bestehenden Ability-/Testpfad.
+  Noch kein abgeschlossener NET-02-Fix oder neuer Validierungserfolg.
+
+## Letzter abgeschlossener Schritt – GASP-NET-01
+
+- PR #147 am 26.09.2026 um 10:24:29 UTC bestätigt gemergt:
+  `44a5e5127bab0d064608b682fcd002adf91c4159`, Implementierung `b6709eb4`.
+  Die folgenden Ergebnisse gehören zum abgeschlossenen NET-01-Auftrag; sie
+  wurden für diese Merge-Statuspflege nicht erneut ausgeführt.
 
 - Ownership bleibt bei GAS/Projekt-Mover für Traversal und NetworkPrediction
   für History/Replay. Konkrete Blueprint-/Montage-/Chooser-Inhalte unverändert;
@@ -46,7 +68,7 @@ Abnahme. Beide bei relevanten Fortschritten im selben PR aktualisieren.
   Registerpunkte bleiben offen; bestehende historische Ergebnisse unten sind
   keine neu ausgeführten Prüfungen dieses Auftrags.
 
-## Letzter abgeschlossener Schritt – GASP-STAB-02
+## Vorheriger abgeschlossener Schritt – GASP-STAB-02
 
 - PR #146 am 22.09.2026 um 21:09:22 UTC auf ausdrücklichen Nutzerauftrag
   gemergt: `b9a653608b6ada64dfd1c17b2e24d5dfc691202c`, finaler PR-Head
