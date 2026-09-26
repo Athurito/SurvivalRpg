@@ -9,16 +9,16 @@ Abnahme. Beide bei relevanten Fortschritten im selben PR aktualisieren.
 
 | Feld | Wert |
 | --- | --- |
-| Aktive Implementierungsaufgabe | `GASP-03` – begrenzter spielbarer Ragdoll-/Getup-Pilot, **PR offen (Draft)**; Prüfungen abgeschlossen, Nutzersichtprüfung offen |
-| Nächste bereite Aufgabe | Nutzersichtprüfung des validierten Piloten, danach PR #152 bei Abnahme mergen; weitere Roadmap-Aufgaben danach neu bewerten |
+| Aktive Implementierungsaufgabe | `GASP-03` – begrenzter spielbarer Ragdoll-/Getup-Pilot, **PR offen (Draft)**; Prüfungen und Nutzerabnahme mit kosmetischer Nachbesserung erfolgt |
+| Nächste bereite Aufgabe | PR #152 abschließen; validierter Pilot mit gewünschter grüner Farbe, noch nicht gemergt |
 | Zuständiger Chat / beanspruchte Dateien | Root: sämtliche Editor-/MCP-/Buildsitzungen, binäre Assets und Mover-Integration. Runtimeagent: native Lifecycle-Konzeption. Testagent: Validierungskonzept. Dokumentationsagent: Roadmap, Übergabe, Audit-Mergestatus und `gasp-mover-ragdoll-pilot.md`. Weitere Dateizuteilungen nur koordiniert |
 | Runtime-Ausgangspunkt | `9baac5f36fd978b86c364df3e82aa74d76cfb7d2`, bestätigter Merge PR #151 am 26.09.2026 um 13:40:22 UTC; Audit enthält keine Runtimeänderung |
 | Checkout / aktiver Branch | `codex/gasp-03-ragdoll-pilot`, `D:/Repos/SurvivalRpg`; Basis `9baac5f3` |
 | Letzter Implementierungs-Commit | `7c2a769a26ec1396f9cbc3804eaedefee33cd2db`, einschließlich 25 LFS-Assets gepusht |
 | Aktueller Arbeits-PR | [PR #152](https://github.com/Athurito/SurvivalRpg/pull/152), **OPEN / Draft**, Basis `master`, Implementierungshead `7c2a769a`; noch nicht gemergt |
 | Übernommene Statuspflege | Bestätigten Audit-Merge in Roadmap, Übergabe und `gasp-mover-ragdoll-source-audit.md` im Pilotbranch nachgeführt |
-| Nächster Handgriff | Nutzer prüft Pilotkarte: Play, R, etwa 1 s warten, R, WASD/LMB; danach PR #152 bei Abnahme mergen |
-| Blocker / offene Abnahme | Finaler Editor 12 und Game bestanden; Root-Sichtprüfung von Ragdoll/Getup/Rückkehr/Bewegung/Angriff ausgeführt, 25 Zielhashes erfasst. Finale Regression 20/20 bestanden, 1089 Warnungen; Abschlussaudit bestanden, älterer Lauf bleibt 5/6. Draft-PR #152 offen; manuelle Nutzer-Sichtprüfung und Merge noch ausstehend. VAL-01/02, NET-03-Grenze und ältere Pending-Fixture-Timingempfindlichkeit bleiben Folgepunkte |
+| Nächster Handgriff | PR #152 mit Farbkorrektur abschließen, danach GASP-04 beginnen |
+| Blocker / offene Abnahme | Pilot mit Editor/Game, 20/20 Tests und Abschlussaudit validiert; Nutzer bestätigt „passt“ mit Farbwunsch, grüne kosmetische Korrektur ebenfalls geprüft. Builds/20 Tests vor Farbpatch, kein Neulauf. PR weiterhin offen. VAL-01/02, NET-03-Grenze und ältere Pending-Fixture-Timingempfindlichkeit bleiben Folgepunkte |
 
 ## Aktueller Auftrag – GASP-03-Pilot
 
@@ -64,20 +64,25 @@ Abnahme. Beide bei relevanten Fortschritten im selben PR aktualisieren.
   externe Grenzen**, keine fehlenden Pakete oder Sample-`/Game`-Referenzen
   außerhalb `/Game/SurvivalRpg`; dynamische/Cooked-Hülle bleibt unbewiesen.
   [Pilotmanifest](assets/gasp-ragdoll-pilot.json): 17 Quellkopien + acht
-  Kompositionsassets; alle 25 gespeicherten Zielhashes erfasst und erneut
-  geprüft. Final 6938 ursprüngliche Assets und 17 Baseline-Map-/Savedateien
+  Kompositionsassets im ursprünglichen Stand; später 18 Quellkopien + acht
+  Kompositionsassets nach Farbkorrektur, alle 26 gespeicherten Zielhashes geprüft. Final 6938 ursprüngliche Assets und 17 Baseline-Map-/Savedateien
   unverändert. Sechs Blueprints mit warnings_as_errors kompiliert;
   Experience-Hülle 2115/81 und Karten-Hülle 2225/99 ohne fehlende Pakete oder
   rohe Sample-Kanten. Editor 17044 sauber beendet, keine UnrealEditor-/Cmd-
   Prozesse übrig. Vier Overrides, Python-AST, Projekt-JSON und Diffprüfung
-  bestanden; unabhängiger Review ohne Blocker. Nach finalen Builds nur
-  erklärende API-Kommentare ergänzt, keine Funktions-/Assetänderung.
+  bestanden; unabhängiger Review ohne Blocker. Bis zur ersten PR-Veröffentlichung
+  nach den Builds nur erklärende API-Kommentare ergänzt; spätere Kosmetik unten.
   [Pilotbericht](gasp-mover-ragdoll-pilot.md).
-- [Draft-PR #152](https://github.com/Athurito/SurvivalRpg/pull/152) ist offen,
-  Implementierung `7c2a769a` gepusht. Nutzersichtprüfung, danach Merge bei Abnahme. Nachstellen: neue Pilotkarte Play,
-  R, etwa 1 s warten, R, dann WASD/LMB; bei Bedarf mit der Maus nach unten sehen.
-  Die Dauerfreigabe für nicht sinnvoll manuell prüfbare Schritte bleibt davon
-  unberührt; historische Prüfungen nicht als neue Pilotabnahme ausgeben.
+- Nutzer bestätigt den Piloten mit „passt“ und wünscht die grüne Quellfarbe.
+  Neue projektlokale Physics-MI und Slot-0-Override ausschließlich im Child-
+  Pawn umgesetzt; Parameterparität, Compile/Reload und stehende/Ragdoll/Getup-
+  Sichtprüfung bestanden. Farb-Hülle 2058/71 ohne fehlende/rohe Samplekanten.
+  Builds/20 Tests gehören zum Stand davor, kein Neulauf. Farb-Editor PID556
+  sauber geöffnet, PIE beendet und Playsettings restauriert. Erneut 6938
+  Originalassets und 17 Map-/Savedateien unverändert. [PR #152](https://github.com/Athurito/SurvivalRpg/pull/152)
+  weiterhin offen und nicht gemergt; Farbkorrektur im selben PR.
+  Nachstellen: Pilotkarte Play, R, etwa 1 s warten, R, WASD/LMB.
+
 
 ## Letzter abgeschlossener Schritt – GASP-03-Source-Audit
 

@@ -12,8 +12,10 @@ Ragdoll, Getup, Kontrollrückgabe und Waffenangriff sind auf der gespeicherten,
 neu geladenen Pilotkarte mit frischen Binaries manuell geprüft. Die finale
 Regression besteht mit **20/20**, einschließlich aller sechs neuen Fälle.
 Der ältere sechsteilige Lauf bleibt **5/6** mit inzwischen korrigierter
-Host-Fixture. Das Abschlussaudit ist bestanden. Nächster Schritt ist die
-Nutzersichtprüfung auf der Pilotkarte, danach Merge bei Abnahme.
+Host-Fixture. Das Abschlussaudit ist bestanden. Der Nutzer bestätigte den
+Piloten mit „passt“ und wünschte noch die grüne GASP-Ragdoll-Farbe. Diese
+kosmetische Korrektur ist umgesetzt und geprüft; PR #152 bleibt offen,
+nicht gemergt.
 
 Der vereinbarte erste Umfang ist **lebendes Ragdoll aus dem stationären,
 nicht geduckten Stand und kontrolliertes Aufstehen auf freier, unterstützter,
@@ -35,9 +37,11 @@ Identifier ist nicht bekannt. Das
 keine Import-Whitelist. Vorhandene Foundation-Referenzen brauchen semantische
 Prüfung; die tatsächlich benötigte minimale Assethülle ergibt sich aus dem
 konkreten Piloten. Das [Pilotmanifest](assets/gasp-ragdoll-pilot.json) erfasst
-17 Quellkopien und acht RPG-Kompositionsassets. Original- und Importkopie-
-Hashes wurden getrennt frisch gelesen. Nach dem Asset-Freeze sind auch alle
-25 gespeicherten Zielhashes erfasst und erneut geprüft.
+18 Quellkopien einschließlich der nachträglichen Physics-Materialinstanz und
+acht RPG-Kompositionsassets. Original- und Importkopie-
+Hashes wurden getrennt frisch gelesen. Die ursprünglichen 25 Pilotassets
+sind um die kosmetische Materialkopie erweitert; alle 26 gespeicherten
+Zielhashes sind im Manifest erfasst.
 
 Zu erhalten sind die designer-owned PhysicsControl-Profile und Kurven,
 PoseSnapshot/PoseHistory und die PoseSearch-basierte Getup-Auswahl samt
@@ -225,6 +229,25 @@ MCP `set_pie_view_rotation` die Kamerablickrichtung für die Sichtprüfung;
 es verändert keine Pawn-/Physics-Transforms. Die Gameplay-Eingabe und die
 Sichtprüfung bleiben von Runtime-Autorität getrennt.
 
+## Kosmetische Nachbesserung nach Nutzerabnahme
+
+Auf „passt, nur noch die grüne GASP-Ragdoll-Farbe“ folgt eine projektlokale
+`MI_UEFN_Mannequin_Physics` mit Shared-`M_UEFN_Mannequin_Masked_Bicolor` als
+Parent. Nur der Ragdoll-Child-Pawn setzt im Construction Script nach Parent
+Materialslot 0; Parent-Pawn und normale Mover-Farbe bleiben unverändert.
+Das Manifest enthält jetzt **18 Quellkopien + acht Kompositionsassets**.
+
+Scalar-/Vector-/Texturewerte sind nach Save/Reload exakt zum Rohimport;
+lineare Primary-RGB **0,416667 / 0,416667 / 0,416667**, Secondary-RGB
+**0,1 / 0,25 / 0,1**, jeweils Alpha 1. Pawn kompiliert mit warnings_as_errors;
+Root bestätigt Grün stehend, in Ragdoll und nach Getup (`color-*.png`). Finale
+Registry-Hülle **2058/71**, missing=[], keine rohen Sample-Kanten; Werte und
+Hülle unabhängig geprüft; 6938 Originalassets und 17 Map-/Savedateien erneut
+unverändert. Frischer Spawn nach Cachefix grün; PIE beendet, Playsettings
+restauriert, Editor 556 sauber geöffnet. **Builds und 20 Tests liefen vor dieser reinen
+Farbkorrektur**, ohne behaupteten Neulauf. Eigene Compile-/Reload-/Sichtbelege
+stehen in `color-material-fixed-reloaded.json` und `color-final-closure-fixed.json`.
+
 ## Validierungsstand
 
 Alle lokalen Belege liegen unter `Saved/GaspRagdollPilot20260926`. Ignorierte
@@ -239,9 +262,9 @@ Alle lokalen Belege liegen unter `Saved/GaspRagdollPilot20260926`. Ignorierte
 | Finale Regression | `final-tests.json`: **20/20 Success**, null Fehler, null übersprungen, **187,454575 s**. Alle sechs neuen Ragdollfälle einschließlich Listen Host bestanden; Auswahl in `final-selected-names.json`. |
 | Assets / Referenzen | Acht Notify-Assets nach Save/Reload geprüft; 28 Eventrecords erhalten. Registry 2115 Pakete / 81 externe Grenzen, keine fehlenden Pakete oder rohen Sample-`/Game`-Referenzen. Dynamische/Cooked-Hülle unbewiesen. |
 | Sichtprüfung | Direkter Ragdoll-Eintritt, Getup, stehende Rückkehr, Bewegung und Waffenangriff durch Root auf gespeicherter/neu geladener Karte geprüft; keine Audio-/exakte Frameglätteabnahme. |
-| Erhaltung / Manifest | Finale Prüfung bestanden: 6938 ursprüngliche Assethashes, 17 Baseline-Map-/Savedateien und alle 25 Manifest-Zielhashes unverändert. |
+| Erhaltung / Manifest | Vor dem Farbpatch: 6938 ursprüngliche Assethashes, 17 Baseline-Map-/Savedateien und 25 Manifest-Zielhashes unverändert. Danach Material ergänzt und Child-Pawn geändert; aktuelle 26 Zielhashes erfasst. |
 | Abschlussaudit | Sechs Blueprints mit `warnings_as_errors=true` kompiliert; Experience-Hülle 2115/81, Karten-Hülle 2225/99, jeweils keine fehlenden Pakete oder rohen Sample-`/Game`-Kanten. Editor 17044 ohne dirty Content/Maps sauber beendet; anschließend keine UnrealEditor-/Cmd-Prozesse. Vier Overrides, Python-AST, Projekt-JSON und Diffprüfung bestanden. Unabhängiger Runtime-Review ohne konkreten Blocker. |
-| PR / Merge | **PR offen (Draft): [#152](https://github.com/Athurito/SurvivalRpg/pull/152)**, Implementierung `7c2a769a26ec1396f9cbc3804eaedefee33cd2db` gepusht. Nutzer-Sichtprüfung ausstehend; Merge nach Abnahme. |
+| PR / Merge | **PR offen (Draft): [#152](https://github.com/Athurito/SurvivalRpg/pull/152)**, Implementierung `7c2a769a26ec1396f9cbc3804eaedefee33cd2db` gepusht. Nutzer bestätigt Pilot mit gewünschter Farbkorrektur; Korrektur validiert, PR weiterhin offen und nicht gemergt. |
 
 Der finale Lauf enthält **1089 Warnungen**: 944 NetPackageMap, 110
 VoiceInterface, 17 NetworkPrediction (`RollbackFrame == PendingFrame`),
@@ -253,9 +276,10 @@ vollständig simulierter Meshs sind im gesamten Testergebnis **null**.
 Die übrigen Warnungen werden weder als behoben noch als warnungsfreier Lauf
 ausgegeben; diese Zahlen beziehen sich auf die Testaufzeichnungen.
 
-Nach den finalen Builds wurden ausschließlich erläuternde API-Kommentare
-in Task-/State-Headern ergänzt; keine Runtimefunktion oder Assetdatei änderte
-sich danach.
+Nach den finalen Builds wurden zunächst ausschließlich erläuternde API-
+Kommentare ergänzt. Die oben getrennt dokumentierte kosmetische Nachbesserung
+änderte später den Child-Pawn und ergänzte eine Materialinstanz; Runtimecode
+und getestete Gameplay-Verträge wurden dafür nicht verändert.
 
 Finale Auditbelege: `final-blueprint-compiles.json`,
 `final-closure-experience.json`, `final-closure-map.json`,

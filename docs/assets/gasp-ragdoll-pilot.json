@@ -13,12 +13,12 @@
   "hash_contract": {
     "algorithm": "sha256",
     "source": "Fresh bytes from the original reference checkout. The external checkout is an audit source, not a runtime dependency.",
-    "import_copy": "Fresh bytes from the preserved /Game import copy inside SurvivalRpg, which supplies the MCP duplicate operation. All 17 import hashes differ from their original sample counterparts; byte identity is not asserted.",
-    "target": "Final saved target bytes for all 25 assets, captured after authoring freeze and fresh save/reload. These hashes record content identity, not gameplay acceptance.",
-    "previous_audit": "All 16 overlapping source/import hash pairs exactly match the tracked source-audit manifest. FoleyEvent_Roll is the seventeenth mapping and was hashed directly; it was not a selected candidate in that manifest."
+    "import_copy": "Fresh bytes from the preserved /Game import copy inside SurvivalRpg, which supplies the MCP duplicate operation. All 18 import hashes differ from their original sample counterparts; byte identity is not asserted.",
+    "target": "Latest saved target bytes for 26 assets after the cosmetic color follow-up. Relative to the original 25-asset validation, only the child pawn changes and the Physics material instance is added. Hashes record content identity, not a repeated build/test run.",
+    "previous_audit": "All 16 overlapping source/import hash pairs match the tracked source-audit manifest. FoleyEvent_Roll and MI_UEFN_Mannequin_Physics are two additional mappings hashed directly; they were not selected candidates in that manifest."
   },
   "counts": {
-    "source_derived_copies": 17,
+    "source_derived_copies": 18,
     "composition_assets": 8,
     "matching_source_audit_pairs": 16
   },
@@ -61,7 +61,7 @@
       "target": "/Game/SurvivalRpg/Characters/GASP/Mover/Ragdoll/RPG/BP_RpgGasp_MoverRagdoll",
       "source_audit_hashes_match": true,
       "target_file": "Content/SurvivalRpg/Characters/GASP/Mover/Ragdoll/RPG/BP_RpgGasp_MoverRagdoll.uasset",
-      "target_sha256": "6cbf8de1515d36412e52384dc4cf8470088de602da90ce791898da1de236f9fa"
+      "target_sha256": "18a2c1ef27d8a16f2c675884f46a29fe08f2ea79691a52dd4f3f6002ed72d21d"
     },
     {
       "source": "/Game/Characters/UEFN_Mannequin/Animations/MotionMatchingData/Schemas/PSS_Ragdoll",
@@ -192,6 +192,16 @@
       "source_audit_hashes_match": null,
       "target_file": "Content/SurvivalRpg/Characters/GASP/Mover/Ragdoll/Blueprints/AnimNotifies/BP_AnimNotify_FoleyEvent_Roll.uasset",
       "target_sha256": "c53a7a64793149a8cd571ead1d837bb5c2d7d3e460753988f669713b3a588d93"
+    },
+    {
+      "source": "/Game/Characters/UEFN_Mannequin/Materials/MI_UEFN_Mannequin_Physics",
+      "source_sha256": "88f8f97e6a3dc9e24e81f02fba641bec4e28dcd64f86b710d2affa56e42b42ef",
+      "import_copy": "/Game/Characters/UEFN_Mannequin/Materials/MI_UEFN_Mannequin_Physics",
+      "import_copy_sha256": "1389b28b86d5be0c80002dcf44017799b45e5865afe60858b3467653c084533a",
+      "target": "/Game/SurvivalRpg/Characters/GASP/Mover/Ragdoll/Characters/UEFN_Mannequin/Materials/MI_UEFN_Mannequin_Physics",
+      "source_audit_hashes_match": null,
+      "target_file": "Content/SurvivalRpg/Characters/GASP/Mover/Ragdoll/Characters/UEFN_Mannequin/Materials/MI_UEFN_Mannequin_Physics.uasset",
+      "target_sha256": "5d07ac82ed1d2c17883e3bb0564edb7dfb4eb862e570ccf2ecac12d8cc22111e"
     }
   ],
   "composition_assets": [
@@ -284,7 +294,8 @@
     "The test map derives from the approved mantle presentation, with a separate nonpersistent test GameMode and Experience. Retarget follower physics and new downed/revive systems are excluded.",
     "Build 8 scopes local mesh QueryAndPhysics, WorldStatic blocking, ComponentTransformIsKinematic and disabled Mover smoothing during physical ragdoll. Original mesh collision/profile/responses and smoothing are restored only after actual bodies become kinematic; capsule authority and canonical visual identity/base offset remain unchanged.",
     "Only the pilot Experience raises its input-context priority from 1 to 2: R conflicted with IMC_Combat Weapon03 at priority 1. Only that key intersection was confirmed; other Experiences are not remapped.",
-    "Only the new pilot map changes its floor root/mesh from Movable BlockAllDynamic to Static BlockAll with WorldStatic and its three PlayerStarts from Z=110 to Z=88.15 cm. Source map remains the provenance baseline."
+    "Only the new pilot map changes its floor root/mesh from Movable BlockAllDynamic to Static BlockAll with WorldStatic and its three PlayerStarts from Z=110 to Z=88.15 cm. Source map remains the provenance baseline.",
+    "User-requested green source ragdoll appearance: a new project-owned MI_UEFN_Mannequin_Physics uses the Shared masked-bicolor parent and cached texture references; only the ragdoll child Construction Script sets gameplay mesh slot 0 after Parent. Normal Mover and parent Pawn remain unchanged."
   ],
   "evidence": [
     {
@@ -333,7 +344,7 @@
     "No CAS pass, complete cooked/dynamic reference closure, multiplayer acceptance is claimed by this manifest.",
     "Four-montage and four-sequence parity was independently checked again after MCP save/reload: all 28 events and active instance values match the post-remap snapshots, all retired original-class instances are absent. Sequence native exports change only generated DataModel/MovieScene/Track/Section Signature GUIDs.",
     "Actual runtime attempts and open findings belong to docs/gasp-mover-ragdoll-pilot.md. Source provenance and an editor build cannot establish living ragdoll/getup, late join, cancellation, death or movement/combat recovery.",
-    "Final Editor build 12 passed in 11.21 s and final incremental Game build passed in 22.82 s. On the saved/reloaded authored map with fresh binaries, root visually inspected actual InputKey-driven R entry, second-R getup, standing recovery, W movement and LMB weapon attack; front views avoided HUD occlusion. No claim of exact-frame transition smoothness or audio validation (-NoSound). The final 20-test run passed; environment/preservation audit passed; Draft PR #152 is open for manual user review, with merge after acceptance."
+    "Final Editor build 12 passed in 11.21 s and final incremental Game build passed in 22.82 s. On the saved/reloaded authored map with fresh binaries, root visually inspected actual InputKey-driven R entry, second-R getup, standing recovery, W movement and LMB weapon attack; front views avoided HUD occlusion. No claim of exact-frame transition smoothness or audio validation (-NoSound). The final 20-test run passed; environment/preservation audit passed; Draft PR #152 remains open; user accepted the pilot with the separately documented cosmetic color adjustment, and the PR remains open and unmerged."
   ],
   "observed_registry_closure": {
     "evidence": "Saved/GaspRagdollPilot20260926/pilot-closure-after-notifies.json",
@@ -345,7 +356,7 @@
     "raw_game_references_outside_survivalrpg": 0,
     "scope": "Observed registry hard/soft package and management edges including editor-only references; runtime-generated and cooked paths are not proven."
   },
-  "target_hashes_checked_utc": "2026-09-26T15:39:54+00:00",
+  "target_hashes_checked_utc": "2026-09-26T20:09:27+00:00",
   "automated_validation": {
     "evidence": "Saved/GaspRagdollPilot20260926/final-tests.json",
     "sha256": "304840fd404a566a4ac1f5c750308653832a5e55fc7dc824980671bb9e69f640",
@@ -368,7 +379,7 @@
       "incompatible_simulate_options": 0,
       "fully_simulated_mesh_movement": 0
     },
-    "scope": "Selected editor PIE/asset regression including all six new ragdoll cases. Earlier six-test attempt remains 5/6; final preservation audit passed. Implementation commit is pushed and Draft PR #152 is open; manual user review and merge remain pending."
+    "scope": "Selected editor PIE/asset regression including all six new ragdoll cases, executed before the later purely cosmetic color correction. Earlier six-test attempt remains 5/6; original final audit passed. No repeated native build or 20-test run is claimed for the color follow-up."
   },
   "final_audit": {
     "result": "passed",
@@ -432,7 +443,8 @@
     ],
     "editor_cleanly_closed": true,
     "remaining_unreal_editor_processes": 0,
-    "changes_after_final_build": "API intent comments only; no functional source or asset changes."
+    "changes_after_final_build": "API comments only before this original audit; subsequent cosmetic asset changes have separate color_followup evidence.",
+    "scope": "Original 25-asset gameplay validation before the later cosmetic material/child-pawn change; its original hashes and process closure are historical evidence."
   },
   "implementation_commit": "7c2a769a26ec1396f9cbc3804eaedefee33cd2db",
   "pull_request": {
@@ -442,6 +454,78 @@
     "is_draft": true,
     "base": "master",
     "implementation_head": "7c2a769a26ec1396f9cbc3804eaedefee33cd2db",
-    "next_action": "User visual check: Play pilot map, R, wait about one second, R, WASD/LMB; merge after acceptance."
+    "next_action": "Finish PR #152 with the validated cosmetic color follow-up; the PR remains open and unmerged."
+  },
+  "color_followup": {
+    "user_feedback": "passt; only change requested is original GASP green ragdoll mannequin color",
+    "native_code_changed": false,
+    "native_build_repeated": false,
+    "automation_20_tests_repeated": false,
+    "source_parameters_match_after_save_reload": true,
+    "primary_linear_rgba": [
+      0.41666701436042786,
+      0.41666701436042786,
+      0.41666701436042786,
+      1
+    ],
+    "secondary_linear_rgba": [
+      0.10000000149011612,
+      0.25,
+      0.10000000149011612,
+      1
+    ],
+    "scalar_parameter_values_match": true,
+    "texture_parameter_values_match": true,
+    "parent": "/Game/SurvivalRpg/Characters/GASP/Shared/Characters/UEFN_Mannequin/Materials/M_UEFN_Mannequin_Masked_Bicolor",
+    "cached_texture_remaps": 2,
+    "pawn_blueprint_compiled_warnings_as_errors": true,
+    "pawn_material_slot": 0,
+    "root_visual_checks": [
+      "standing",
+      "ragdoll",
+      "getup_complete"
+    ],
+    "closure": {
+      "project_packages": 2058,
+      "external_boundaries": 71,
+      "missing": [],
+      "raw_game_references_outside_survivalrpg": 0
+    },
+    "editor_pid": 556,
+    "editor_clean": true,
+    "editor_remains_open": true,
+    "evidence": [
+      {
+        "path": "Saved/GaspRagdollPilot20260926/color-material-source.json",
+        "sha256": "28f4ad35b8f4847a0678528188accdd6fdee4cbd69e43ebfa90a566da65d8b30"
+      },
+      {
+        "path": "Saved/GaspRagdollPilot20260926/color-material-fixed-reloaded.json",
+        "sha256": "ec974f01a9c6d82e50e9f94a6f7a5bed340b52e5292656eb3b554036f9f9fc82"
+      },
+      {
+        "path": "Saved/GaspRagdollPilot20260926/color-cache-remap.json",
+        "sha256": "d4735e3a265e16eee03f59718b9b5d03019c07d8b6c51f90da3a666eec13ab35"
+      },
+      {
+        "path": "Saved/GaspRagdollPilot20260926/color-final-closure-fixed.json",
+        "sha256": "930d1e0cf2a447693359a890b48fa9986d5b0e27131685527821240e14707f90"
+      },
+      {
+        "path": "Saved/GaspRagdollPilot20260926/color-compile.json",
+        "sha256": "74234e98afe7498fb5daf1f36ac2d78acc339464f950703b8c019892f982b90b"
+      },
+      {
+        "path": "Saved/GaspRagdollPilot20260926/color-live-material.json",
+        "sha256": "e351e4c33044ccb497f551cfb6577e528085590d6c997fd416ba01ba70706731"
+      }
+    ],
+    "preserved_original_assets": 6938,
+    "preserved_baseline_maps_and_saves": 17,
+    "final_target_hashes_rechecked": 26,
+    "fresh_post_cache_fix_green_spawn_visually_verified": true,
+    "post_cache_fix_screenshot": "Saved/GaspRagdollPilot20260926/color-fixed-standing.png",
+    "pie_stopped": true,
+    "play_settings_restored": true
   }
 }
