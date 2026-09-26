@@ -1,15 +1,18 @@
 # GASP-VAL-03 – Neue Traversal bei noch gepufferter Vorgängerin
 
-Stand: **26.09.2026, Validierung abgeschlossen, Draft-PR #150 offen; Review/Merge
-offen**. Fokus und 30-FPS-Prüfung bestanden, Negativkontrolle erwartungsgemäß
+Stand: **26.09.2026, gemergt in [PR #150](https://github.com/Athurito/SurvivalRpg/pull/150)**
+am 26.09.2026 um 13:09:25 UTC: `4ed174d2cdc1a2d52fc5a9272ad68437fed98025`,
+finaler Head `453b265bdfa8439565017b397af66a3b193ed1a3`.
+Fokus und 30-FPS-Prüfung bestanden, Negativkontrolle erwartungsgemäß
 rot. Die gemeinsame Regression bleibt **15/16**; der ältere timingempfindliche
-Fall besteht unverändert bei isolierter Wiederholung. Branch
+Fall besteht unverändert bei isolierter Wiederholung. Arbeitsbranch war
 `codex/gasp-val-03-buffered-traversal-replay`, Basis
 `d933148f22e8051f0a50ab68719f2f507a6158b5`, bestätigter Merge von PR #149
 am 26.09.2026 um 12:27:04 UTC. Implementierung
 `8bc887e16d9db543f94e6f00f4328aec43ceb19d` (drei Testdateien).
-Arbeitsstand: [Draft-PR #150](https://github.com/Athurito/SurvivalRpg/pull/150). Die bestehende Runtime ist unverändert und geschützt;
-ein Runtimefehler ist nicht nachgewiesen.
+Die bestehende Runtime ist unverändert und geschützt; ein Runtimefehler ist
+nicht nachgewiesen. Die Ergebnisse dieses Berichts gehören zur abgeschlossenen
+VAL-03-Abnahme und wurden für diese Merge-Statuspflege nicht erneut ausgeführt.
 
 Der begrenzte Auftrag prüft eine konkrete Multiplayer-Reihenfolge:
 Traversal A wird autoritativ abgebrochen, eine normale Waffenmontage O über
@@ -294,7 +297,7 @@ Montagen, Equipment-Assets und Experience-Komposition bleiben designer-owned.
 | Isolierte Wiederholung | `pending-repeat-01`: unverändert 1/1 bestanden, vier Warnungen, null Testfehler, 38,916065 s; echte Überlappung diesmal belegt. Batch bleibt 15/16. |
 | 30 FPS | `buffered-30fps-01`: 1/1 bestanden, 16 Warnungen, null Testfehler, 35,490707 s; gültiger B-Empfang bei unsichtbarer A, genau eine B-Instanz, kein Phasenfehler. |
 | Abschlussaudit | Zehn Maps und sieben SaveGames unverändert, vier Overrides verifiziert, geladene Projekt-DLLs belegt, Runtime-Diff leer, keine Unreal-Prozesse. |
-| Review / Merge | [Draft-PR #150](https://github.com/Athurito/SurvivalRpg/pull/150) offen; nicht gemergt. |
+| Review / Merge | [PR #150](https://github.com/Athurito/SurvivalRpg/pull/150) bestätigt gemergt am 26.09.2026 um 13:09:25 UTC, Merge `4ed174d2`. |
 
 Die Ergebnisse des [NET-03-Berichts](gasp-packet-gap-recovery.md) gehören zum
 bereits abgeschlossenen Paketpausen-Auftrag und wurden für diese Statuspflege
@@ -303,8 +306,8 @@ Onset-Messgrenze aus VAL-01 und die offene Produktionsumgebungsprüfung aus
 VAL-02 bleiben getrennte Punkte. Dieser Bericht beansprucht keine
 neue handgespielte Sichtabnahme, Packaged- oder WAN-Validierung.
 
-Nach VAL-03-Review und Merge ist **GASP-03** der nächste begrenzte
-Auftrag: Source-Audit des originalen Mover-Ragdoll-Pawns und seiner
+Nach dem bestätigten VAL-03-Merge ist **GASP-03** als begrenzter
+[Source-Audit](gasp-mover-ragdoll-source-audit.md) aktiv: originaler Mover-Ragdoll-Pawn und seine
 Abhängigkeiten, noch keine vorausgesetzte vollständige Migration. VAL-01,
 VAL-02 und die NET-03-Rekonstruktionsgrenze bleiben dabei ausdrücklich offen.
 

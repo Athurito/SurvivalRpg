@@ -7,7 +7,8 @@ nicht eine neue Gesamtplanung für Combat, Crafting oder Portale.
 
 ## Schnellstart
 
-- **PR offen (Draft), Validierung abgeschlossen: `GASP-02` / `GASP-VAL-03` – Traversal B bei noch gepufferter Traversal A.** Branch `codex/gasp-val-03-buffered-traversal-replay`, Testcommit `8bc887e1`. Echte O→B-Empfangskante bei A-Sync im Fokus- und 30-FPS-Lauf bestanden; unveränderter Test ohne Tokenvergleich erwartungsgemäß rot. Originalruntime exakt wiederhergestellt, Editor-Build bestanden. Regression bleibt **15/16** mit 129 Warnungen und einer Assertion; alter Pending-Replay-Fall verfehlt die Overlap-Beobachtung, besteht unverändert isoliert 1/1. 17 Dateien erhalten, vier Overrides verifiziert, keine Unreal-Prozesse; [Bericht](gasp-buffered-traversal-replay.md). Keine Runtime-/Assetänderung; [Draft-PR #150](https://github.com/Athurito/SurvivalRpg/pull/150) offen. Nach Review/Merge folgt `GASP-03` als begrenzter Source-Audit.
+- **Source-Audit abgeschlossen und reviewt: `GASP-03`.** Auditcommit `1d89072c`, [PR #151](https://github.com/Athurito/SurvivalRpg/pull/151), zum Dokumentationsstand offen. Branch `codex/gasp-03-ragdoll-source-audit`, Basis `4ed174d2`. Frische Originalquellen aus `D:/Repos/GameAnimationSample` (UE 5.8.2) und RPG-Zuordnung dokumentiert. [Manifest](assets/gasp-ragdoll-source-audit.json): 44 Kandidaten, keine Import-Whitelist; korrigierte Registry 3017 Pakete, Exportlücken ausdrücklich erfasst. 115 Hashprüfungen, 17 erhaltene Map-/Savedateien und vier Overrides bestätigt. Kein Build/PIE, keine Runtime-/Assetmigration. Nächster Teilauftrag: begrenzter **GASP-03-Pilot**, autoritativer Netzwerk-Lifecycle noch umzusetzen und zu beweisen; [Auditbericht](gasp-mover-ragdoll-source-audit.md).
+- **Gemergt: `GASP-02` / `GASP-VAL-03` – Traversal B bei noch gepufferter Traversal A.** Testcommit `8bc887e1`, [PR #150](https://github.com/Athurito/SurvivalRpg/pull/150), bestätigt gemergt am 26.09.2026 um 13:09:25 UTC als `4ed174d2cdc1a2d52fc5a9272ad68437fed98025`. Fokus und 30 FPS bestanden, Negativkontrolle erwartungsgemäß rot. Regression bleibt **15/16** mit 129 Warnungen und einer Assertion; alter Pending-Replay-Fall verfehlt die Overlap-Beobachtung, besteht unverändert isoliert 1/1. Runtime/Assets unverändert. Diese historischen Ergebnisse wurden für die Merge-Statuspflege nicht erneut ausgeführt; [Bericht](gasp-buffered-traversal-replay.md).
 - **Gemergt: `GASP-NET-03` – Rekonstruktionsgrenze bewertet und Werkzeug validiert.** Commit `49de7c87`, [PR #149](https://github.com/Athurito/SurvivalRpg/pull/149), bestätigter Merge `d933148f22e8051f0a50ab68719f2f507a6158b5` am 26.09.2026 um 12:27:04 UTC. Getrackter Probe, 19/19 Offline-Tests und vier CLI-Negativprüfungen. Kontrolle 16/16 Ebenen, Pause weiterhin 13/16; bis 64,00 cm Root-Abweichung bei gleicher beobachteter Phase, Freeze korrekt. Runtime-Rekonstruktionsgrenze bleibt bestehen; [Bericht](gasp-packet-gap-recovery.md).
 - **Gemergt: `GASP-NET-02` – terminaler Mantle-Grund bei Reconciliation.** Implementierung `8de5d927`, [PR #148](https://github.com/Athurito/SurvivalRpg/pull/148), bestätigter Merge `1490dd7d85306bffa2b2a4b1ab7d9202f1a9b0c4` am 26.09.2026 um 11:56:35 UTC. Identischer Fokusvergleich rot 1/3, grün 3/3; Editor/Game und Regression **28/28** bestanden. Maps/SaveGames unverändert, Overrides verifiziert; 287 Warnungen und offene Befunde dokumentiert. [Ursache und Belege](gasp-terminal-reconciliation.md).
 - **Gemergt: `GASP-NET-01` – Rollback während aktivem Mantle.** Commit `b6709eb4`, [PR #147](https://github.com/Athurito/SurvivalRpg/pull/147), bestätigter Merge `44a5e5127bab0d064608b682fcd002adf91c4159` am 26.09.2026 um 10:24:29 UTC. Editor-Build, 10/10 Regressionen, zusätzlicher 30-FPS-Lauf und echte Negativkontrolle; [Nachweis](gasp-active-mantle-rollback.md). Ausschließlich Editor-Testcode und Dokumentation, Runtime unverändert.
@@ -46,8 +47,8 @@ Vorgabe, insgesamt genau drei Experience-Dateien zu besitzen.
 | ID | Arbeitspaket | Status | Voraussetzung / Abschluss |
 | --- | --- | --- | --- |
 | `GASP-01` | Grounded Hurdle für Mover | **Gemergt** | [PR #144](https://github.com/Athurito/SurvivalRpg/pull/144), Merge `aa4447d6`; Runtime `b78edf5b`; Editor/Game, 47 Tests und zwei Prozessläufe bestanden; Nutzer-Sichtabnahme am 22.09.2026; [Bericht](gasp-mover-hurdle.md) |
-| `GASP-02` | Gezielte Stabilisierung | **In Arbeit (Teilauftrag)** | `GASP-STAB-01/02` gemergt in PR #145/146; `GASP-NET-01/02/03` gemergt in PR #147/148/149; `GASP-VAL-03` validiert, Draft-PR #150 offen; VAL-01/02 und NET-03-Rekonstruktionsgrenze bleiben offen |
-| `GASP-03` | Mover-Ragdoll-Experience | Geplant | `GASP-01`; belastbarer Lifecycle-Stand aus `GASP-02`; Source-Audit zuerst |
+| `GASP-02` | Gezielte Stabilisierung | **Teilweise abgeschlossen, offene Folgepunkte** | `GASP-STAB-01/02`, `GASP-NET-01/02/03` und `GASP-VAL-03` gemergt in PR #145–150; VAL-01/02, NET-03-Rekonstruktionsgrenze und ältere Pending-Fixture-Timingempfindlichkeit bleiben offen |
+| `GASP-03` | Mover-Ragdoll-Experience | **Source-Audit abgeschlossen, PR offen** | Originalquellen, Inventar, RPG-Zuordnung und Erhaltungsprüfungen in `1d89072c`; beide Reviews ohne offene Findings. [PR #151](https://github.com/Athurito/SurvivalRpg/pull/151) zum Dokumentationsstand offen. Begrenzter GASP-03-Pilot als nächster Teilauftrag, Variante noch nicht implementiert. [Auditbericht](gasp-mover-ragdoll-source-audit.md) |
 | `GASP-04` | Vergleich der drei Varianten | Geplant | `GASP-03`; dokumentierte gemeinsame Abnahmematrix |
 | `GASP-05` | Importbereinigung | Geplant | `GASP-04`; geprüfte Abhängigkeiten und konkrete Entfernungsliste |
 | `GASP-06` | Blocken beim Laufen / RPG-Animationsfeinschliff | Zurückgestellt | Eigener späterer Auftrag; bestehende Zurückstellung respektieren |
@@ -108,8 +109,9 @@ Einstieg: [CMC-Hurdle](gasp-hurdle-integration.md),
 ## GASP-02 – Register der offenen Folgearbeiten
 
 Jede Zeile ist ein begrenzter Folgeauftrag, keine Aufforderung, alle Probleme in
-einem PR zu bearbeiten. **`GASP-STAB-01/02` und `GASP-NET-01/02/03` sind gemergt;
-`GASP-VAL-03` ist validiert, Draft-PR #150 offen; Review/Merge bleiben offen. VAL-01/02 bleiben dokumentierte
+einem PR zu bearbeiten. **`GASP-STAB-01/02`, `GASP-NET-01/02/03` und
+`GASP-VAL-03` sind gemergt. Der aktive Auftrag ist der GASP-03-Source-Audit.
+VAL-01/02 bleiben dokumentierte
 Mess- bzw. Umgebungsgrenzen.**
 
 | ID | Einordnung | Arbeit und Abschlussnachweis |
@@ -121,7 +123,7 @@ Mess- bzw. Umgebungsgrenzen.**
 | `GASP-NET-03` | **Gemergt**, Grenze bewertet / Werkzeug validiert | Commit `49de7c87`, [PR #149](https://github.com/Athurito/SurvivalRpg/pull/149), Merge `d933148f`. Getrackter Probe und getrennte Offline-Diagnose, 19/19 Tests. Kontrolle 16/16 Ebenen, Pause 13/16, maximal 86,21 ms im alten Kriterium; Root-Abweichung bis 64,00 cm nach Pause, schon 28,54 cm in Kontrolle. Freeze besteht; Runtime-Grenze bleibt, keine Toleranzerhöhung; [Bericht](gasp-packet-gap-recovery.md). |
 | `GASP-VAL-01` | Messgrenze | Im finalen separaten Prozesslauf ist ein Walking→Traversing-Messpaar nicht numerisch vergleichbar. Die erste aktive Traversing-Probe enthält bereits die Montage. Bei Bedarf Onset-Messung verfeinern; keinen belegten Animationsaussetzer daraus ableiten. |
 | `GASP-VAL-02` | Noch nicht ausgeführte Umgebungsprüfung | Cooked/packaged und WAN bzw. gezielt emulierte Netzwerkbedingungen prüfen: verschiedene Render-FPS, Delay/Jitter/Loss, Late Join, Traversal, Korrekturen und Respawn. Lokale uncooked Ergebnisse ersetzen diese Prüfung nicht. |
-| `GASP-VAL-03` | **PR offen (Draft)**, Validierung abgeschlossen | Testcommit `8bc887e1`: B-GAS-Empfang nach beendeter normaler Waffenmontage bei noch aktiver A im NP-Puffer belegt. Fokus und 30 FPS grün, Negativkontrolle erwartungsgemäß rot, Runtime exakt wiederhergestellt und Editor-Build bestanden. Regression bleibt 15/16; alter Overlap-Test rot, unverändert isoliert 1/1 grün. Runtime/Assets unverändert, Abschlussaudit bestanden. [Bericht](gasp-buffered-traversal-replay.md). |
+| `GASP-VAL-03` | **Gemergt** | Testcommit `8bc887e1`, [PR #150](https://github.com/Athurito/SurvivalRpg/pull/150), Merge `4ed174d2`: B-GAS-Empfang nach beendeter normaler Waffenmontage bei noch aktiver A im NP-Puffer belegt. Fokus und 30 FPS grün, Negativkontrolle erwartungsgemäß rot, Runtime exakt wiederhergestellt und Editor-Build bestanden. Regression bleibt 15/16; alter Overlap-Test rot, unverändert isoliert 1/1 grün. Runtime/Assets unverändert, Abschlussaudit bestanden. [Bericht](gasp-buffered-traversal-replay.md). |
 
 Quellen: [Recovery-Ergebnisse](gasp-mover-network-recovery.md),
 [Präsentations-Ergebnisse und Grenzen](gasp-mover-traversal-presentation.md).
@@ -141,6 +143,14 @@ pauschales Verbot eines begrenzten Ragdoll-Piloten.
 Abhängigkeiten und Anknüpfung an vorhandene RPG-Komponenten auditieren. Noch
 keine vollständige migrierte Ragdoll-Pawn-Basis voraussetzen. Ergebnis ist eine
 Quell-Ziel-/Ownership-Zuordnung und ein begrenzter Implementierungsumfang.
+Dieser Audit ist auf `codex/gasp-03-ragdoll-source-audit` abgeschlossen und
+reviewt, PR #151 zum Dokumentationsstand offen; Quellbefunde und Lücken stehen im
+[Auditbericht](gasp-mover-ragdoll-source-audit.md) und
+[Manifest](assets/gasp-ragdoll-source-audit.json). Er behauptet keine
+Runtimeänderung, importierten Assets oder neu bestandenen Unreal-Builds.
+Nächster Teilauftrag ist der begrenzte **GASP-03-Pilot** auf vorhandenen
+RPG-Schnittstellen mit originalabgeleiteter Blueprint-/PhysicsControl-/Getup-
+Komposition und eigens nachzuweisendem autoritativem Netzwerk-Lifecycle.
 
 Danach eine eigene Experience/PawnData-Variante aufbauen. Bestehende Experiences
 bleiben erhalten. Ragdoll-Einstieg und Aufstehen, Kontrollrückgabe, Equipment,
@@ -195,6 +205,13 @@ Tuning und schwereres Traversal-Gefühl sind eigene spätere Entscheidungen.
 Sie gehören nicht automatisch zu Hurdle oder zur Ragdoll-Basis.
 
 ## Verbindliche Arbeitsweise über mehrere Chats
+
+**Dauerhafte Nutzerfreigabe vom 26.09.2026:** Schritte, die sich nicht sinnvoll
+manuell prüfen lassen, nach geeigneter automatischer Validierung und Review
+direkt pushen, mergen und mit dem nächsten begrenzten Roadmap-Schritt fortfahren.
+Dafür nicht auf eine zusätzliche Sichtabnahme warten. Tatsächliche Ergebnisse,
+offene Befunde und den bestätigten Merge weiterhin dokumentieren. Sinnvolle
+manuelle Sichtprüfungen werden dadurch nicht als automatisch erledigt behauptet.
 
 1. `AGENTS.md`, diese Datei und die [Übergabe](gasp-integration-handoff.md) lesen.
    Auftrag anhand seiner ID auswählen; einen begonnenen Auftrag fortsetzen oder
@@ -254,7 +271,10 @@ docs/gasp-integration-handoff.md. Prüfe zuerst den aktuellen Repository- und
 PR-Stand. Bearbeite nur die dort als Nächstes bereite Aufgabe in einem eigenen
 codex/-Branch. Respektiere Umfang und Abnahmekriterien, dokumentiere tatsächliche
 Validierung und aktualisiere Roadmap und Übergabe. Push den geprüften Stand und
-öffne einen PR zur Prüfung. Merge nicht ohne meinen Auftrag.
+öffne einen PR zur Prüfung. Für nicht sinnvoll manuell prüfbare Schritte gilt
+meine dokumentierte Dauerfreigabe: nach geeigneter automatischer Validierung
+und Review direkt mergen und mit dem nächsten begrenzten Schritt fortfahren;
+nicht auf eine zusätzliche Sichtabnahme warten.
 ```
 
 Einen begonnenen Schritt fortsetzen:
