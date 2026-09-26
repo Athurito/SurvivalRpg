@@ -40,6 +40,7 @@ Architecture guardrails:
 
 ## GASP roadmap and cross-chat handoff
 
+- Standing user preference (26.09.2026): when a roadmap step cannot reasonably be tested manually by the user, perform the appropriate automated validation and review, then push/merge the verified work and continue with the next bounded step without requesting another manual sign-off. Preserve actual failures and remaining limits; this does not authorize bypassing required checks. For readily observable gameplay changes, provide a simple reproduction path.
 - Before GASP integration or movement follow-up work, read `docs/gasp-integration-roadmap.md` and `docs/gasp-integration-handoff.md`, then verify the current branch, PR and repository state.
 - Use the roadmap's stable task IDs and keep one bounded task per implementation chat/PR. Respect the active task and recorded file ownership; coordinate shared editor/MCP sessions and binary assets across worktrees.
 - Update roadmap status and the handoff in the same work PR with actual commits, validation, open findings and the next concrete action. Do not report an open PR as merged or historical test results as newly executed.

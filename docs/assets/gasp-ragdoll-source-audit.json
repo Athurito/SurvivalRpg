@@ -1,0 +1,1391 @@
+{
+  "schema_version": 1,
+  "task": "GASP-03 source audit",
+  "audit_date": "2026-09-26",
+  "repository_base": "4ed174d2cdc1a2d52fc5a9272ad68437fed98025",
+  "engine_version": "5.8.2",
+  "source_project": "D:/Repos/GameAnimationSample/GameAnimationSample.uproject",
+  "source_release_identifier": null,
+  "scope": "Audit metadata only. Candidate targets are neither an import whitelist nor an implemented variant. Raw sample copies at /Game remain preserved. Existing project-owned references need semantic review before reuse.",
+  "registry": {
+    "root": "/Game/Blueprints/SandboxCharacter_Mover_Ragdoll",
+    "options": {
+      "package": {
+        "include_soft_package_references": true,
+        "include_hard_package_references": true,
+        "include_game_package_references": true,
+        "include_editor_only_package_references": true,
+        "include_searchable_names": false,
+        "include_soft_management_references": false,
+        "include_hard_management_references": false
+      },
+      "management": {
+        "include_soft_package_references": false,
+        "include_hard_package_references": false,
+        "include_game_package_references": false,
+        "include_editor_only_package_references": false,
+        "include_searchable_names": false,
+        "include_soft_management_references": true,
+        "include_hard_management_references": true
+      }
+    },
+    "project_packages": 3017,
+    "package_edges": 25907,
+    "management_edges": 0,
+    "missing_registry_packages": [],
+    "external_boundaries": [
+      "/ACLPlugin/ACLAnimBoneCompressionSettings",
+      "/ACLPlugin/ACLAnimCurveCompressionSettings",
+      "/ControlRig/Controls/ControlRigGizmoMaterial",
+      "/ControlRig/Controls/ControlRig_Line",
+      "/ControlRig/Controls/ControlRig_Sphere_solid",
+      "/ControlRig/Controls/ControlRig_Square_Joystick",
+      "/ControlRig/Controls/DefaultGizmoLibrary",
+      "/ControlRig/Controls/DefaultGizmoLibraryNormalized",
+      "/Engine/Animation/DefaultAnimBoneCompressionSettings",
+      "/Engine/Animation/DefaultAnimCurveCompressionSettings",
+      "/Engine/Animation/DefaultRecorderBoneCompression",
+      "/Engine/Animation/DefaultVariableFrameStrippingSettings",
+      "/Engine/ArtTools/RenderToTexture/Textures/127grey",
+      "/Engine/BasicShapes/Cube",
+      "/Engine/BasicShapes/Cylinder",
+      "/Engine/EditorBlueprintResources/StandardMacros",
+      "/Engine/EditorMaterials/Cascade/CASC_Solo_On",
+      "/Engine/EditorResources/LightIcons/S_LightError",
+      "/Engine/EngineDebugMaterials/HeatmapGradient",
+      "/Engine/EngineMaterials/BaseFlattenNormalMap",
+      "/Engine/EngineMaterials/BlendFunc_DefBase",
+      "/Engine/EngineMaterials/BlendFunc_DefBlend",
+      "/Engine/EngineMaterials/DefaultDiffuse",
+      "/Engine/EngineMaterials/DefaultNormal",
+      "/Engine/EngineMaterials/FlatNormal",
+      "/Engine/EngineMaterials/Good64x64TilingNoiseHighFreq",
+      "/Engine/EngineMaterials/WorldGridMaterial",
+      "/Engine/EngineResources/Black",
+      "/Engine/EngineResources/DefaultTexture",
+      "/Engine/EngineResources/WhiteSquareTexture",
+      "/Engine/Engine_MI_Shaders/T_Normal",
+      "/Engine/Functions/Engine_MaterialFunctions01/Coordinates/WorldUnitsInPixel",
+      "/Engine/Functions/Engine_MaterialFunctions01/Density/ExponentialDensity",
+      "/Engine/Functions/Engine_MaterialFunctions01/Gradient/LinearGradient",
+      "/Engine/Functions/Engine_MaterialFunctions01/Gradient/RadialGradientExponential",
+      "/Engine/Functions/Engine_MaterialFunctions01/ImageAdjustment/BlurSampleOffsets",
+      "/Engine/Functions/Engine_MaterialFunctions01/ImageAdjustment/CheapContrast",
+      "/Engine/Functions/Engine_MaterialFunctions01/ImageAdjustment/CheapContrast_RGB",
+      "/Engine/Functions/Engine_MaterialFunctions01/ImageAdjustment/DeriveHDRfromLDR",
+      "/Engine/Functions/Engine_MaterialFunctions01/ImageAdjustment/SCurve",
+      "/Engine/Functions/Engine_MaterialFunctions01/ImageAdjustment/SceneTextureAverage",
+      "/Engine/Functions/Engine_MaterialFunctions01/Shading/FuzzyShading",
+      "/Engine/Functions/Engine_MaterialFunctions01/Shading/MetallicShading",
+      "/Engine/Functions/Engine_MaterialFunctions01/Texturing/FlattenNormal",
+      "/Engine/Functions/Engine_MaterialFunctions01/Texturing/ScaleUVsByCenter",
+      "/Engine/Functions/Engine_MaterialFunctions01/Texturing/WorldAlignedTexture",
+      "/Engine/Functions/Engine_MaterialFunctions02/HueShift",
+      "/Engine/Functions/Engine_MaterialFunctions02/Lerp_Multiple_Float",
+      "/Engine/Functions/Engine_MaterialFunctions02/Lerp_Multiple_Float3",
+      "/Engine/Functions/Engine_MaterialFunctions02/Math/CreateThirdOrthogonalVector",
+      "/Engine/Functions/Engine_MaterialFunctions02/Math/MultiplyAdd",
+      "/Engine/Functions/Engine_MaterialFunctions02/Math/Pi",
+      "/Engine/Functions/Engine_MaterialFunctions02/Math/TimeWithSpeedVariable",
+      "/Engine/Functions/Engine_MaterialFunctions02/Math/Transform3x3Matrix",
+      "/Engine/Functions/Engine_MaterialFunctions02/ObjectLocalBounds",
+      "/Engine/Functions/Engine_MaterialFunctions02/SafeNormalize",
+      "/Engine/Functions/Engine_MaterialFunctions02/SmoothStep",
+      "/Engine/Functions/Engine_MaterialFunctions02/TangentBasis",
+      "/Engine/Functions/Engine_MaterialFunctions02/Texturing/CustomRotator",
+      "/Engine/Functions/Engine_MaterialFunctions02/Texturing/ScreenAlignedPixelToPixelUVs",
+      "/Engine/Functions/Engine_MaterialFunctions02/UVs/BoundingBoxBased_0-1_UVW",
+      "/Engine/Functions/Engine_MaterialFunctions02/Utility/BlendAngleCorrectedNormals",
+      "/Engine/Functions/Engine_MaterialFunctions02/Utility/BreakOutFloat2Components",
+      "/Engine/Functions/Engine_MaterialFunctions02/Utility/BreakOutFloat3Components",
+      "/Engine/Functions/Engine_MaterialFunctions02/Utility/CameraVectorWithWPOOptions",
+      "/Engine/Functions/Engine_MaterialFunctions02/Utility/DitherTemporalAA",
+      "/Engine/Functions/Engine_MaterialFunctions02/Utility/MakeFloat2",
+      "/Engine/Functions/Engine_MaterialFunctions02/Utility/MakeFloat3",
+      "/Engine/Functions/Engine_MaterialFunctions02/Utility/Round",
+      "/Engine/Functions/Engine_MaterialFunctions02/Utility/Sign",
+      "/Engine/Functions/Engine_MaterialFunctions02/Utility/VectorLength",
+      "/Engine/Functions/Engine_MaterialFunctions02/WorldPositionOffset/CameraOffset",
+      "/Engine/Functions/Engine_MaterialFunctions02/WorldPositionOffset/ObjectPivotPoint",
+      "/Engine/Functions/Engine_MaterialFunctions02/WorldPositionOffset/RotateAboutWorldAxis_cheap",
+      "/Engine/Functions/Engine_MaterialFunctions03/Blends/Blend_Lighten",
+      "/Engine/Functions/Engine_MaterialFunctions03/Blends/Lerp_ScratchGrime",
+      "/Engine/Functions/Engine_MaterialFunctions03/Math/RemapValueRange",
+      "/Engine/Functions/MaterialLayerFunctions/MatLayerBlend_AO",
+      "/Engine/Functions/MaterialLayerFunctions/MatLayerBlend_BakedNormal",
+      "/Engine/Functions/MaterialLayerFunctions/MatLayerBlend_BreakBaseColor",
+      "/Engine/Functions/MaterialLayerFunctions/MatLayerBlend_Emissive",
+      "/Engine/Functions/MaterialLayerFunctions/MatLayerBlend_ModulateRoughness",
+      "/Engine/Functions/MaterialLayerFunctions/MatLayerBlend_NormalBlend",
+      "/Engine/Functions/MaterialLayerFunctions/MatLayerBlend_OverrideBaseColor",
+      "/Engine/Functions/MaterialLayerFunctions/MatLayerBlend_Simple",
+      "/Engine/Functions/MaterialLayerFunctions/MatLayerBlend_Standard",
+      "/Engine/Functions/MaterialLayerFunctions/MatLayerBlend_TenLayerBlend",
+      "/Engine/Functions/MaterialLayerFunctions/MatLayerBlend_Tint",
+      "/Engine/MapTemplates/TilingNoise05",
+      "/Engine/VREditor/Sounds/UI/Object_Snaps_To_Another_Actor",
+      "/MeshModelingToolsetExp/Textures/DefaultTexture",
+      "/Script/AIModule",
+      "/Script/AnimGraph",
+      "/Script/AnimGraphRuntime",
+      "/Script/AnimationBlueprintLibrary",
+      "/Script/AnimationCore",
+      "/Script/AnimationData",
+      "/Script/AnimationModifierLibrary",
+      "/Script/AnimationModifiers",
+      "/Script/AnimationWarpingEditor",
+      "/Script/AnimationWarpingRuntime",
+      "/Script/AudioExtensions",
+      "/Script/AudioMixer",
+      "/Script/BlendStack",
+      "/Script/BlendStackEditor",
+      "/Script/ChaosCloth",
+      "/Script/Chooser",
+      "/Script/ChooserUncooked",
+      "/Script/ClothingSystemRuntimeCommon",
+      "/Script/ClothingSystemRuntimeNv",
+      "/Script/ControlRig",
+      "/Script/ControlRigDeveloper",
+      "/Script/ControlRigSpline",
+      "/Script/CoreUObject",
+      "/Script/CurveExpression",
+      "/Script/CurveExpressionEditor",
+      "/Script/DrawDebugLibrary",
+      "/Script/Engine",
+      "/Script/EngineCameras",
+      "/Script/EnhancedInput",
+      "/Script/GameplayCameras",
+      "/Script/GameplayInteractionsModule",
+      "/Script/GameplayStateTreeModule",
+      "/Script/GameplayTags",
+      "/Script/HairStrandsCore",
+      "/Script/IKRig",
+      "/Script/IKRigDeveloper",
+      "/Script/InputBlueprintNodes",
+      "/Script/InputCore",
+      "/Script/InterchangeEngine",
+      "/Script/InterchangeImport",
+      "/Script/InterchangePipelines",
+      "/Script/Landscape",
+      "/Script/LiveLink",
+      "/Script/LiveLinkAnimationCore",
+      "/Script/LiveLinkGraphNode",
+      "/Script/LiveLinkInterface",
+      "/Script/MeshDescription",
+      "/Script/MetasoundEditor",
+      "/Script/MetasoundEngine",
+      "/Script/MetasoundFrontend",
+      "/Script/MotionWarping",
+      "/Script/Mover",
+      "/Script/MoverEditor",
+      "/Script/MovieScene",
+      "/Script/MovieSceneAnimMixer",
+      "/Script/MovieSceneAnimMixerEditor",
+      "/Script/NavigationSystem",
+      "/Script/PBIK",
+      "/Script/PhysicsControl",
+      "/Script/PhysicsCore",
+      "/Script/PoseSearch",
+      "/Script/PoseSearchEditor",
+      "/Script/PropertyAccessNode",
+      "/Script/ProxyTable",
+      "/Script/ProxyTableUncooked",
+      "/Script/RigLogicDeveloper",
+      "/Script/RigLogicModule",
+      "/Script/RigVM",
+      "/Script/RigVMDeveloper",
+      "/Script/SmartObjectsModule",
+      "/Script/StateTreeEditorModule",
+      "/Script/StateTreeModule",
+      "/Script/UnrealEd"
+    ],
+    "canonical_records_sha256": "77a6fd60dc0ce4a416e3b942243dfbad9e3b1728d87ca76d9ee8e02a9fe2cd52",
+    "limitation": "Recursive hard/soft package references, including editor-only; management queried separately. Dynamic paths and loaded/runtime/cooked closure are not proven."
+  },
+  "snapshot_coverage": [
+    {
+      "source": "/Game/Blueprints/SandboxCharacter_Mover_Ragdoll",
+      "reflection_status": "partial",
+      "objects": 2072,
+      "unreadable_fields": 46325,
+      "native_t3d_bytes": 6645559
+    },
+    {
+      "source": "/Game/Blueprints/MovementModes/BP_MovementMode_Ragdoll",
+      "reflection_status": "partial",
+      "objects": 227,
+      "unreadable_fields": 5270,
+      "native_t3d_bytes": 835743
+    },
+    {
+      "source": "/Game/Blueprints/SandboxCharacter_Mover",
+      "reflection_status": "partial",
+      "objects": 2602,
+      "unreadable_fields": 58457,
+      "native_t3d_bytes": 8586989
+    },
+    {
+      "source": "/Game/Blueprints/SandboxCharacter_Mover_ABP",
+      "reflection_status": "partial",
+      "objects": 7042,
+      "unreadable_fields": 143958,
+      "native_t3d_bytes": 48165644
+    },
+    {
+      "source": "/Game/Characters/UEFN_Mannequin/Rigs/PCA_SandboxCharacter",
+      "reflection_status": "partial",
+      "objects": 1,
+      "unreadable_fields": 5,
+      "native_t3d_bytes": 3695
+    },
+    {
+      "source": "/Game/Characters/UEFN_Mannequin/Animations/Ragdoll/CHT_GetUpMontages",
+      "reflection_status": "partial",
+      "objects": 2,
+      "unreadable_fields": 10,
+      "native_t3d_bytes": 6086
+    },
+    {
+      "source": "/Game/Blueprints/AC_PostABPTick",
+      "reflection_status": "partial",
+      "objects": 19,
+      "unreadable_fields": 384,
+      "native_t3d_bytes": 30668
+    }
+  ],
+  "candidate_assets": [
+    {
+      "source": "/Game/Blueprints/AC_PostABPTick",
+      "classes": [
+        "/Script/Engine.Blueprint"
+      ],
+      "source_sha256": "89b1daf15b4f5b03a3317830335514a5f41d6a7a244c6d9b0c33503d5b703667",
+      "import_copy": "/Game/Blueprints/AC_PostABPTick",
+      "import_copy_sha256": "b4fb2de80042aff09196b0653faabc5a2f71ee88f191d9327720ff53b223e71d",
+      "target": "/Game/SurvivalRpg/Characters/GASP/Mover/Ragdoll/Blueprints/AC_PostABPTick",
+      "target_status": "proposed_candidate_only",
+      "target_sha256": null,
+      "direct_package_dependencies": []
+    },
+    {
+      "source": "/Game/Blueprints/Data/E_RagdollInjuryState",
+      "classes": [
+        "/Script/Engine.UserDefinedEnum"
+      ],
+      "source_sha256": "e77d3f21a0c0328acf3943d8f952a985ae1eb963045d2153d5ed0554a31e933a",
+      "import_copy": "/Game/Blueprints/Data/E_RagdollInjuryState",
+      "import_copy_sha256": "6afe0c7fbdd3a4b2277b86ea0770793b36db9a012eb6c6fdf6ac1b23ab5ad105",
+      "target": "/Game/SurvivalRpg/Characters/GASP/Shared/Data/E_RagdollInjuryState",
+      "target_status": "existing_foundation_reference",
+      "target_sha256": "5005a507cb2d2d78489842cf53b58df30dc1afd2dfe7dc3a565dd8eb6f61abdc",
+      "direct_package_dependencies": []
+    },
+    {
+      "source": "/Game/Blueprints/Data/S_CHT_GetUpMontages_IN",
+      "classes": [
+        "/Script/CoreUObject.UserDefinedStruct"
+      ],
+      "source_sha256": "6243636d35b20858be176d6cb661717750ae0676ade9ef604cef5e48386f357a",
+      "import_copy": "/Game/Blueprints/Data/S_CHT_GetUpMontages_IN",
+      "import_copy_sha256": "dd27a6a3f87e86a7c07772b8e9490e3e551cb00c50bbc30a344339c613d6ebc8",
+      "target": "/Game/SurvivalRpg/Characters/GASP/Mover/Ragdoll/Blueprints/Data/S_CHT_GetUpMontages_IN",
+      "target_status": "proposed_candidate_only",
+      "target_sha256": null,
+      "direct_package_dependencies": [
+        "/Game/Blueprints/Data/E_MovementMode",
+        "/Script/PoseSearch"
+      ]
+    },
+    {
+      "source": "/Game/Blueprints/Data/S_CHT_GetUpMontages_OUT",
+      "classes": [
+        "/Script/CoreUObject.UserDefinedStruct"
+      ],
+      "source_sha256": "04634139a057d7a1bcb42cdb21661a9a666c61c26324bac776e9dfab5ff3c0e6",
+      "import_copy": "/Game/Blueprints/Data/S_CHT_GetUpMontages_OUT",
+      "import_copy_sha256": "506a9493e3d405b47db51a0bb0f57ede33f9f24d043e3183444371f9e7f54d3a",
+      "target": "/Game/SurvivalRpg/Characters/GASP/Mover/Ragdoll/Blueprints/Data/S_CHT_GetUpMontages_OUT",
+      "target_status": "proposed_candidate_only",
+      "target_sha256": null,
+      "direct_package_dependencies": []
+    },
+    {
+      "source": "/Game/Blueprints/Data/S_MoverCustomInputs_Ragdoll",
+      "classes": [
+        "/Script/CoreUObject.UserDefinedStruct"
+      ],
+      "source_sha256": "37b64dbd60367deb125eb6c27a96b8ceb346d3d83aee5a46ab4ec8d25ac1264e",
+      "import_copy": "/Game/Blueprints/Data/S_MoverCustomInputs_Ragdoll",
+      "import_copy_sha256": "cbb91bc2f5f2f7ab33aa0ec17ecb313ace79568e91f53a94170b5337be7d9a3e",
+      "target": "/Game/SurvivalRpg/Characters/GASP/Mover/Ragdoll/Blueprints/Data/S_MoverCustomInputs_Ragdoll",
+      "target_status": "existing_foundation_reference",
+      "target_sha256": "dc6ca69c95ad7092403f155f6388a60fbc22da8ac67f801b8e9933e48ef069ee",
+      "direct_package_dependencies": [
+        "/Script/CoreUObject"
+      ]
+    },
+    {
+      "source": "/Game/Blueprints/Data/S_RagdollProperties",
+      "classes": [
+        "/Script/CoreUObject.UserDefinedStruct"
+      ],
+      "source_sha256": "892c42575811c5f80201db7d5d95d7df8ce67a1f233feecb8e583a83f7ab83b0",
+      "import_copy": "/Game/Blueprints/Data/S_RagdollProperties",
+      "import_copy_sha256": "059b005130b032689d5ed0592613a480748e2c00153e1b905838bbac433b2408",
+      "target": "/Game/SurvivalRpg/Characters/GASP/Shared/Data/S_RagdollProperties",
+      "target_status": "existing_foundation_reference",
+      "target_sha256": "233f279bf0abe911e77764304ca0456e2870a9cc47bcb0e4d1d6ea408ccb5bdd",
+      "direct_package_dependencies": [
+        "/Game/Blueprints/Data/E_RagdollInjuryState",
+        "/Script/CoreUObject"
+      ]
+    },
+    {
+      "source": "/Game/Blueprints/MovementModes/BP_MovementMode_Ragdoll",
+      "classes": [
+        "/Script/Engine.Blueprint"
+      ],
+      "source_sha256": "751d191115f6e037b69a3ac1b8186cb73ee915a564d10793b5eb86afbcf9d9d9",
+      "import_copy": "/Game/Blueprints/MovementModes/BP_MovementMode_Ragdoll",
+      "import_copy_sha256": "ac3e50e3d00a52f12152e17959910e9782416458f589894667db820732f5001a",
+      "target": "/Game/SurvivalRpg/Characters/GASP/Mover/Ragdoll/Blueprints/MovementModes/BP_MovementMode_Ragdoll",
+      "target_status": "proposed_candidate_only",
+      "target_sha256": null,
+      "direct_package_dependencies": [
+        "/Game/Blueprints/Data/S_MoverCustomInputs_Ragdoll",
+        "/Script/Mover",
+        "/Script/PhysicsCore"
+      ]
+    },
+    {
+      "source": "/Game/Blueprints/SandboxCharacter_Mover",
+      "classes": [
+        "/Script/Engine.Blueprint"
+      ],
+      "source_sha256": "ec3f9762d715fb64638d9f79c1714dd59cb865107cc86d74b7a8efdbf6d2361d",
+      "import_copy": "/Game/Blueprints/SandboxCharacter_Mover",
+      "import_copy_sha256": "0a8ff5f45ca0159b857610abbdb1c2d0556833b473f79d256689ec44ec5be4a5",
+      "target": "/Game/SurvivalRpg/Characters/GASP/Mover/Blueprints/SandboxCharacter_Mover",
+      "target_status": "existing_foundation_reference",
+      "target_sha256": "e5382125174daee19993bac5d0146b1a4929f31fdecdc7b604d066b9f674c7b2",
+      "direct_package_dependencies": [
+        "/Engine/EditorBlueprintResources/StandardMacros",
+        "/Engine/VREditor/Sounds/UI/Object_Snaps_To_Another_Actor",
+        "/Game/Audio/Foley/AC_FoleyEvents",
+        "/Game/Audio/Foley/S_FoleyEventParams",
+        "/Game/Blueprints/AC_TraversalLogic",
+        "/Game/Blueprints/AC_VisualOverrideManager",
+        "/Game/Blueprints/BPI_SandboxCharacter_Pawn",
+        "/Game/Blueprints/Cameras/CameraAsset_SandboxCharacter",
+        "/Game/Blueprints/Cameras/E_CameraMode",
+        "/Game/Blueprints/Data/CHT_RotationOffsetCurve",
+        "/Game/Blueprints/Data/E_Gait",
+        "/Game/Blueprints/Data/E_MovementDirection",
+        "/Game/Blueprints/Data/E_MovementMode",
+        "/Game/Blueprints/Data/E_RotationMode",
+        "/Game/Blueprints/Data/E_Stance",
+        "/Game/Blueprints/Data/S_CharacterPropertiesForAnimation",
+        "/Game/Blueprints/Data/S_CharacterPropertiesForCamera",
+        "/Game/Blueprints/Data/S_CharacterPropertiesForTraversal",
+        "/Game/Blueprints/Data/S_MovementDirectionThresholds",
+        "/Game/Blueprints/Data/S_MoverCustomInputs",
+        "/Game/Blueprints/Data/S_MoverCustomInputs_Ragdoll",
+        "/Game/Blueprints/Data/S_PlayerInputState",
+        "/Game/Blueprints/Data/S_RagdollProperties",
+        "/Game/Blueprints/Data/S_RotationOffsetCurveChooser_Inputs",
+        "/Game/Blueprints/Data/S_TraversalCheckInputs",
+        "/Game/Blueprints/MovementModes/BP_MovementMode_Falling",
+        "/Game/Blueprints/MovementModes/BP_MovementMode_Slide",
+        "/Game/Blueprints/MovementModes/BP_MovementMode_Walking",
+        "/Game/Blueprints/MovementModes/BP_MovementTransition_FromSlide",
+        "/Game/Blueprints/MovementModes/BP_MovementTransition_ToSlide",
+        "/Game/Blueprints/MovementModes/B_MovementMode_Flying",
+        "/Game/Blueprints/SandboxCharacter_Mover_ABP",
+        "/Game/Blueprints/SmartObjects/AC_SmartObjectAnimation",
+        "/Game/Characters/UEFN_Mannequin/Animations/Idle/M_Neutral_Stand_Idle_Loop",
+        "/Game/Characters/UEFN_Mannequin/Materials/MI_UEFN_Mannequin_Mover",
+        "/Game/Characters/UEFN_Mannequin/Meshes/SKM_UEFN_Mannequin",
+        "/Game/Input/IA_Aim",
+        "/Game/Input/IA_Crouch",
+        "/Game/Input/IA_Jump",
+        "/Game/Input/IA_Look",
+        "/Game/Input/IA_Look_Gamepad",
+        "/Game/Input/IA_Move",
+        "/Game/Input/IA_Sprint",
+        "/Game/Input/IA_Strafe",
+        "/Game/Input/IA_TwinStick_AimDirection",
+        "/Game/Input/IA_Walk",
+        "/Game/Input/IMC_Sandbox",
+        "/Script/AIModule",
+        "/Script/AudioExtensions",
+        "/Script/Chooser",
+        "/Script/ChooserUncooked",
+        "/Script/DrawDebugLibrary",
+        "/Script/EnhancedInput",
+        "/Script/GameplayCameras",
+        "/Script/GameplayTags",
+        "/Script/InputBlueprintNodes",
+        "/Script/InputCore",
+        "/Script/MotionWarping",
+        "/Script/Mover",
+        "/Script/NavigationSystem",
+        "/Script/PhysicsCore",
+        "/Script/PoseSearch"
+      ]
+    },
+    {
+      "source": "/Game/Blueprints/SandboxCharacter_Mover_ABP",
+      "classes": [
+        "/Script/Engine.AnimBlueprint"
+      ],
+      "source_sha256": "c4d374224a8030a5b4454eabac26c36e9eeaf4cd094ac459dafc296b06e1a701",
+      "import_copy": "/Game/Blueprints/SandboxCharacter_Mover_ABP",
+      "import_copy_sha256": "f6b9858ab0267ce1acffb3414d9e4b84250e15e5f1de670e49045e00c4fc1ab3",
+      "target": "/Game/SurvivalRpg/Characters/GASP/Mover/Blueprints/SandboxCharacter_Mover_ABP",
+      "target_status": "existing_foundation_reference",
+      "target_sha256": "b3bfd07da9acec5a5aa03a49a4bfa7fbba114ff42354e6a3761cd1046b862930",
+      "direct_package_dependencies": [
+        "/Engine/EditorBlueprintResources/StandardMacros",
+        "/Game/Blueprints/BPI_SandboxCharacter_ABP",
+        "/Game/Blueprints/BPI_SandboxCharacter_Pawn",
+        "/Game/Blueprints/ControlRigs/CR_Biped_FootPlacement",
+        "/Game/Blueprints/Data/BFL_HelpfulFunctions",
+        "/Game/Blueprints/Data/E_ExperimentalStateMachineState",
+        "/Game/Blueprints/Data/E_Gait",
+        "/Game/Blueprints/Data/E_MovementDirection",
+        "/Game/Blueprints/Data/E_MovementMode",
+        "/Game/Blueprints/Data/E_MovementState",
+        "/Game/Blueprints/Data/E_RagdollInjuryState",
+        "/Game/Blueprints/Data/E_RotationMode",
+        "/Game/Blueprints/Data/E_Stance",
+        "/Game/Blueprints/Data/Ragdoll_Fall_to_Ground_BlendCurve",
+        "/Game/Blueprints/Data/S_BlendStackInputs",
+        "/Game/Blueprints/Data/S_CHT_MoverCharacterAnimations_OUT",
+        "/Game/Blueprints/Data/S_CharacterPropertiesForAnimation",
+        "/Game/Blueprints/Data/S_ChooserOutputs",
+        "/Game/Blueprints/Data/S_DebugGraphLineProperties",
+        "/Game/Blueprints/Data/S_PlayerInputState",
+        "/Game/Blueprints/Data/S_RagdollProperties",
+        "/Game/Characters/UEFN_Mannequin/Animations/AimOffset/AO_Blend_Curve",
+        "/Game/Characters/UEFN_Mannequin/Animations/AimOffset/BS_Neutral_AO_Stand_NoSmoothing",
+        "/Game/Characters/UEFN_Mannequin/Animations/ExperimentalStateMachineData/CHT_MoverCharacterAnimations_PoseMatch",
+        "/Game/Characters/UEFN_Mannequin/Animations/MotionMatchingData/CHT_PoseSearchDatabases_Relaxed",
+        "/Game/Characters/UEFN_Mannequin/Animations/Poses/BS_Relaxed_Lean_Head",
+        "/Game/Characters/UEFN_Mannequin/Animations/Poses/BS_Relaxed_Run_Leans",
+        "/Game/Characters/UEFN_Mannequin/Animations/Poses/BS_Relaxed_Walk_Leans",
+        "/Game/Characters/UEFN_Mannequin/Animations/Ragdoll/BS_Ragdoll_Flail",
+        "/Game/Characters/UEFN_Mannequin/Animations/Ragdoll/BS_Ragdoll_OnGround_Poses",
+        "/Game/Characters/UEFN_Mannequin/Animations/Ragdoll/BS_Ragdoll_Reach",
+        "/Game/Characters/UEFN_Mannequin/Animations/Ragdoll/BS_Ragdoll_Rolling_Poses",
+        "/Game/Characters/UEFN_Mannequin/Animations/Ragdoll/M_ragdoll_poses_injured",
+        "/Game/Characters/UEFN_Mannequin/Meshes/SK_UEFN_Mannequin",
+        "/Game/Characters/UEFN_Mannequin/Rigs/CR_UEFN_Mannequin_FullBodyIK",
+        "/Game/Characters/UEFN_Mannequin/Rigs/MDT_UEFN_Mannequin",
+        "/Script/AnimGraph",
+        "/Script/AnimGraphRuntime",
+        "/Script/AnimationWarpingEditor",
+        "/Script/AnimationWarpingRuntime",
+        "/Script/BlendStack",
+        "/Script/BlendStackEditor",
+        "/Script/Chooser",
+        "/Script/ChooserUncooked",
+        "/Script/ControlRig",
+        "/Script/ControlRigDeveloper",
+        "/Script/DrawDebugLibrary",
+        "/Script/Mover",
+        "/Script/MovieSceneAnimMixer",
+        "/Script/MovieSceneAnimMixerEditor",
+        "/Script/PoseSearch",
+        "/Script/PoseSearchEditor",
+        "/Script/PropertyAccessNode"
+      ]
+    },
+    {
+      "source": "/Game/Blueprints/SandboxCharacter_Mover_Ragdoll",
+      "classes": [
+        "/Script/Engine.Blueprint"
+      ],
+      "source_sha256": "999ebb98389fec9d6cd78f3d40caed2f051dbb0cf01652b718a2ba643e18e923",
+      "import_copy": "/Game/Blueprints/SandboxCharacter_Mover_Ragdoll",
+      "import_copy_sha256": "46800ffa5a2937a1052f6f5f28ef63141e780b63c85adce91aaf57bb2d91159a",
+      "target": "/Game/SurvivalRpg/Characters/GASP/Mover/Ragdoll/Blueprints/SandboxCharacter_Mover_Ragdoll",
+      "target_status": "proposed_candidate_only",
+      "target_sha256": null,
+      "direct_package_dependencies": [
+        "/Engine/EditorBlueprintResources/StandardMacros",
+        "/Game/Audio/Foley/AC_FoleyEvents",
+        "/Game/Audio/Foley/S_FoleyEventParams",
+        "/Game/Blueprints/AC_PostABPTick",
+        "/Game/Blueprints/AC_TraversalLogic",
+        "/Game/Blueprints/AC_VisualOverrideManager",
+        "/Game/Blueprints/AnimNotifies/E_FoleyEventSide",
+        "/Game/Blueprints/BPI_SandboxCharacter_ABP",
+        "/Game/Blueprints/BPI_SandboxCharacter_Pawn",
+        "/Game/Blueprints/Data/E_MovementMode",
+        "/Game/Blueprints/Data/E_RagdollInjuryState",
+        "/Game/Blueprints/Data/S_CHT_CharacterInteractionPSDs_IN",
+        "/Game/Blueprints/Data/S_CHT_CharacterInteractionPSDs_OUT",
+        "/Game/Blueprints/Data/S_CHT_GetUpMontages_IN",
+        "/Game/Blueprints/Data/S_CHT_GetUpMontages_OUT",
+        "/Game/Blueprints/Data/S_MoverCustomInputs_Ragdoll",
+        "/Game/Blueprints/Data/S_PlayerInputState",
+        "/Game/Blueprints/Data/S_RagdollProperties",
+        "/Game/Blueprints/MovementModes/BP_MovementMode_Falling",
+        "/Game/Blueprints/MovementModes/BP_MovementMode_Ragdoll",
+        "/Game/Blueprints/MovementModes/BP_MovementMode_Slide",
+        "/Game/Blueprints/MovementModes/BP_MovementMode_Walking",
+        "/Game/Blueprints/MovementModes/BP_MovementTransition_FromSlide",
+        "/Game/Blueprints/MovementModes/BP_MovementTransition_ToSlide",
+        "/Game/Blueprints/MovementModes/B_MovementMode_Flying",
+        "/Game/Blueprints/SandboxCharacter_Mover",
+        "/Game/Blueprints/SmartObjects/AC_SmartObjectAnimation",
+        "/Game/Characters/UEFN_Mannequin/Animations/Interactions/CHT_CharacterInteractionPSDs",
+        "/Game/Characters/UEFN_Mannequin/Animations/Ragdoll/CHT_GetUpMontages",
+        "/Game/Characters/UEFN_Mannequin/Materials/MI_UEFN_Mannequin_Physics",
+        "/Game/Characters/UEFN_Mannequin/Rigs/PCA_SandboxCharacter",
+        "/Game/Input/IA_Interact",
+        "/Game/Input/IA_Jump",
+        "/Game/Input/IA_Takedown",
+        "/Game/Input/IA_TriggerRagdoll",
+        "/Script/AnimGraphRuntime",
+        "/Script/Chooser",
+        "/Script/ChooserUncooked",
+        "/Script/DrawDebugLibrary",
+        "/Script/EnhancedInput",
+        "/Script/GameplayCameras",
+        "/Script/GameplayTags",
+        "/Script/InputBlueprintNodes",
+        "/Script/MotionWarping",
+        "/Script/Mover",
+        "/Script/MoverEditor",
+        "/Script/PhysicsControl",
+        "/Script/PhysicsCore",
+        "/Script/PoseSearch"
+      ]
+    },
+    {
+      "source": "/Game/Characters/UEFN_Mannequin/Animations/MotionMatchingData/Schemas/PSS_Ragdoll",
+      "classes": [
+        "/Script/PoseSearch.PoseSearchSchema"
+      ],
+      "source_sha256": "f810583f414467630db27bd7e198670d9847f46a0c24a4ce45b62959f0bdb0f8",
+      "import_copy": "/Game/Characters/UEFN_Mannequin/Animations/MotionMatchingData/Schemas/PSS_Ragdoll",
+      "import_copy_sha256": "ec1015df377a0c9303d075217d81ab5258c19bd921c0deab7018fb44c4713060",
+      "target": "/Game/SurvivalRpg/Characters/GASP/Mover/Ragdoll/Characters/UEFN_Mannequin/Animations/MotionMatchingData/Schemas/PSS_Ragdoll",
+      "target_status": "proposed_candidate_only",
+      "target_sha256": null,
+      "direct_package_dependencies": [
+        "/Game/Characters/UEFN_Mannequin/Meshes/SK_UEFN_Mannequin",
+        "/Script/PoseSearch"
+      ]
+    },
+    {
+      "source": "/Game/Characters/UEFN_Mannequin/Animations/Ragdoll/AM_M_ragdoll_getup_roll_L",
+      "classes": [
+        "/Script/Engine.AnimMontage"
+      ],
+      "source_sha256": "0e0229934431a7bad000e9b33b7b204708b6041b6babab3b59cc8cc9c8ae9173",
+      "import_copy": "/Game/Characters/UEFN_Mannequin/Animations/Ragdoll/AM_M_ragdoll_getup_roll_L",
+      "import_copy_sha256": "cdb47d424be4f5f1e5b08cc7e001947d1db1b2c1a98da52f019f648ffaf9c1c9",
+      "target": "/Game/SurvivalRpg/Characters/GASP/Mover/Ragdoll/Characters/UEFN_Mannequin/Animations/Ragdoll/AM_M_ragdoll_getup_roll_L",
+      "target_status": "proposed_candidate_only",
+      "target_sha256": null,
+      "direct_package_dependencies": [
+        "/Game/Blueprints/AnimNotifies/BP_NotifyState_MontageBlendOut",
+        "/Game/Characters/UEFN_Mannequin/Animations/Ragdoll/Curve_Ragdoll_Getup_Roll_BlendIn",
+        "/Game/Characters/UEFN_Mannequin/Animations/Ragdoll/M_ragdoll_getup_roll_L",
+        "/Game/Characters/UEFN_Mannequin/Meshes/SK_UEFN_Mannequin",
+        "/Script/PoseSearch"
+      ]
+    },
+    {
+      "source": "/Game/Characters/UEFN_Mannequin/Animations/Ragdoll/AM_M_ragdoll_getup_roll_R",
+      "classes": [
+        "/Script/Engine.AnimMontage"
+      ],
+      "source_sha256": "fd1686b9c1a609854dbc1b5ce98c75b702b0b9cc55492bdd82cc0be4114bed43",
+      "import_copy": "/Game/Characters/UEFN_Mannequin/Animations/Ragdoll/AM_M_ragdoll_getup_roll_R",
+      "import_copy_sha256": "904d4a9cafe02c351f34edcdd1e6d5e704e5bac7ad79bf7b776aa366cf65a6a3",
+      "target": "/Game/SurvivalRpg/Characters/GASP/Mover/Ragdoll/Characters/UEFN_Mannequin/Animations/Ragdoll/AM_M_ragdoll_getup_roll_R",
+      "target_status": "proposed_candidate_only",
+      "target_sha256": null,
+      "direct_package_dependencies": [
+        "/Game/Blueprints/AnimNotifies/BP_NotifyState_MontageBlendOut",
+        "/Game/Characters/UEFN_Mannequin/Animations/Ragdoll/Curve_Ragdoll_Getup_Roll_BlendIn",
+        "/Game/Characters/UEFN_Mannequin/Animations/Ragdoll/M_ragdoll_getup_roll_R",
+        "/Game/Characters/UEFN_Mannequin/Meshes/SK_UEFN_Mannequin",
+        "/Script/PoseSearch"
+      ]
+    },
+    {
+      "source": "/Game/Characters/UEFN_Mannequin/Animations/Ragdoll/AM_M_ragdoll_getup_stand_B",
+      "classes": [
+        "/Script/Engine.AnimMontage"
+      ],
+      "source_sha256": "f9ddda92d289a5f915613900dac72aa5d3d05c05cc5c7ba79a62e6a4eb927ab4",
+      "import_copy": "/Game/Characters/UEFN_Mannequin/Animations/Ragdoll/AM_M_ragdoll_getup_stand_B",
+      "import_copy_sha256": "625c41fe52ac99dd7da9d0cb38a4a799ffadcd7526e9732bd370b109ce67a0ec",
+      "target": "/Game/SurvivalRpg/Characters/GASP/Mover/Ragdoll/Characters/UEFN_Mannequin/Animations/Ragdoll/AM_M_ragdoll_getup_stand_B",
+      "target_status": "proposed_candidate_only",
+      "target_sha256": null,
+      "direct_package_dependencies": [
+        "/Game/Blueprints/AnimNotifies/BP_NotifyState_MontageBlendOut",
+        "/Game/Characters/UEFN_Mannequin/Animations/Ragdoll/M_ragdoll_getup_stand_B",
+        "/Game/Characters/UEFN_Mannequin/Meshes/SK_UEFN_Mannequin",
+        "/Script/PoseSearch"
+      ]
+    },
+    {
+      "source": "/Game/Characters/UEFN_Mannequin/Animations/Ragdoll/AM_M_ragdoll_getup_stand_F",
+      "classes": [
+        "/Script/Engine.AnimMontage"
+      ],
+      "source_sha256": "e74bdd45169a757644022f5e8261577f5128821313e3fe63428aaacaddbe3272",
+      "import_copy": "/Game/Characters/UEFN_Mannequin/Animations/Ragdoll/AM_M_ragdoll_getup_stand_F",
+      "import_copy_sha256": "57e4be5be73594b55bfa489694f944a85dc75c9ae490baac9bec9d44d9b6b2ca",
+      "target": "/Game/SurvivalRpg/Characters/GASP/Mover/Ragdoll/Characters/UEFN_Mannequin/Animations/Ragdoll/AM_M_ragdoll_getup_stand_F",
+      "target_status": "proposed_candidate_only",
+      "target_sha256": null,
+      "direct_package_dependencies": [
+        "/Game/Blueprints/AnimNotifies/BP_NotifyState_MontageBlendOut",
+        "/Game/Characters/UEFN_Mannequin/Animations/Ragdoll/M_ragdoll_getup_stand_F",
+        "/Game/Characters/UEFN_Mannequin/Meshes/SK_UEFN_Mannequin",
+        "/Script/PoseSearch"
+      ]
+    },
+    {
+      "source": "/Game/Characters/UEFN_Mannequin/Animations/Ragdoll/BS_Ragdoll_Flail",
+      "classes": [
+        "/Script/Engine.BlendSpace"
+      ],
+      "source_sha256": "5b110ceb6f3895bc47b4aec3e5f4a1e0c0e88aefcf47be185b4dd249f8fbe2b6",
+      "import_copy": "/Game/Characters/UEFN_Mannequin/Animations/Ragdoll/BS_Ragdoll_Flail",
+      "import_copy_sha256": "ff3aa4ac6d727a7790222933b063b6997f709161d46cdf83e551d0a700b2afe6",
+      "target": "/Game/SurvivalRpg/Characters/GASP/Shared/Characters/UEFN_Mannequin/Animations/Ragdoll/BS_Ragdoll_Flail",
+      "target_status": "existing_foundation_reference",
+      "target_sha256": "b15cd7a34bd4adaa872d0cb00d6492bbb142318c05a85c52fc2a2a2f0a09e84e",
+      "direct_package_dependencies": [
+        "/Game/Characters/UEFN_Mannequin/Animations/Ragdoll/M_ragdoll_flail_armsDown",
+        "/Game/Characters/UEFN_Mannequin/Animations/Ragdoll/M_ragdoll_flail_armsFirst",
+        "/Game/Characters/UEFN_Mannequin/Animations/Ragdoll/M_ragdoll_flail_legsFirst",
+        "/Game/Characters/UEFN_Mannequin/Meshes/SK_UEFN_Mannequin"
+      ]
+    },
+    {
+      "source": "/Game/Characters/UEFN_Mannequin/Animations/Ragdoll/BS_Ragdoll_OnGround_Poses",
+      "classes": [
+        "/Script/Engine.BlendSpace"
+      ],
+      "source_sha256": "6fb4c8d8d6b062f9630f3ad1d083cbae997040db113eacf75851f49292d83f39",
+      "import_copy": "/Game/Characters/UEFN_Mannequin/Animations/Ragdoll/BS_Ragdoll_OnGround_Poses",
+      "import_copy_sha256": "8fab1ae0476c767a849a592eda3599b60a6272bff1ecc26707811943d32b0768",
+      "target": "/Game/SurvivalRpg/Characters/GASP/Shared/Characters/UEFN_Mannequin/Animations/Ragdoll/BS_Ragdoll_OnGround_Poses",
+      "target_status": "existing_foundation_reference",
+      "target_sha256": "8785eaba50ab0ef9860e9595481ead79ce7c8b6f8f20a48a19de57d9cc3481cf",
+      "direct_package_dependencies": [
+        "/Game/Characters/UEFN_Mannequin/Animations/Ragdoll/M_ragdoll_poses_OnGround",
+        "/Game/Characters/UEFN_Mannequin/Meshes/SK_UEFN_Mannequin"
+      ]
+    },
+    {
+      "source": "/Game/Characters/UEFN_Mannequin/Animations/Ragdoll/BS_Ragdoll_Reach",
+      "classes": [
+        "/Script/Engine.BlendSpace"
+      ],
+      "source_sha256": "6439e36243c7ba8f4b0626ae2c0c5da7c1668ee595367de769dcf79471a7e0a9",
+      "import_copy": "/Game/Characters/UEFN_Mannequin/Animations/Ragdoll/BS_Ragdoll_Reach",
+      "import_copy_sha256": "ddefb0639703f3341ec47e7f7787d6e8eb2a3958ac4df630c15bd157060e7ef6",
+      "target": "/Game/SurvivalRpg/Characters/GASP/Shared/Characters/UEFN_Mannequin/Animations/Ragdoll/BS_Ragdoll_Reach",
+      "target_status": "existing_foundation_reference",
+      "target_sha256": "7650a23b61878ef2ccd8821116e5f75e2e182eac4856b039a4a952fa1eff5025",
+      "direct_package_dependencies": [
+        "/Game/Characters/UEFN_Mannequin/Animations/Ragdoll/M_ragdoll_reach_back",
+        "/Game/Characters/UEFN_Mannequin/Animations/Ragdoll/M_ragdoll_reach_down",
+        "/Game/Characters/UEFN_Mannequin/Animations/Ragdoll/M_ragdoll_reach_forward",
+        "/Game/Characters/UEFN_Mannequin/Animations/Ragdoll/M_ragdoll_reach_left",
+        "/Game/Characters/UEFN_Mannequin/Animations/Ragdoll/M_ragdoll_reach_right",
+        "/Game/Characters/UEFN_Mannequin/Animations/Ragdoll/M_ragdoll_reach_up",
+        "/Game/Characters/UEFN_Mannequin/Animations/Ragdoll/M_ragdoll_reach_up_back",
+        "/Game/Characters/UEFN_Mannequin/Animations/Ragdoll/M_ragdoll_reach_up_left",
+        "/Game/Characters/UEFN_Mannequin/Animations/Ragdoll/M_ragdoll_reach_up_right",
+        "/Game/Characters/UEFN_Mannequin/Meshes/SK_UEFN_Mannequin"
+      ]
+    },
+    {
+      "source": "/Game/Characters/UEFN_Mannequin/Animations/Ragdoll/BS_Ragdoll_Rolling_Poses",
+      "classes": [
+        "/Script/Engine.BlendSpace"
+      ],
+      "source_sha256": "b5859add1255d76239e944643562614a0d8fb1b1045633cb790f54c74c4d9ff6",
+      "import_copy": "/Game/Characters/UEFN_Mannequin/Animations/Ragdoll/BS_Ragdoll_Rolling_Poses",
+      "import_copy_sha256": "130e4293ba3736798d04cc8fbbe2febe72b22aa38aa70dc6084c62dcbbc8b0bd",
+      "target": "/Game/SurvivalRpg/Characters/GASP/Shared/Characters/UEFN_Mannequin/Animations/Ragdoll/BS_Ragdoll_Rolling_Poses",
+      "target_status": "existing_foundation_reference",
+      "target_sha256": "7170c307fe15a1f4c258e446dc5253b2172ad6ef17c4f121674e5e8de6129ff0",
+      "direct_package_dependencies": [
+        "/Game/Characters/UEFN_Mannequin/Animations/Ragdoll/M_ragdoll_poses_rolling",
+        "/Game/Characters/UEFN_Mannequin/Meshes/SK_UEFN_Mannequin"
+      ]
+    },
+    {
+      "source": "/Game/Characters/UEFN_Mannequin/Animations/Ragdoll/CHT_GetUpMontages",
+      "classes": [
+        "/Script/Chooser.ChooserTable"
+      ],
+      "source_sha256": "7064d443a947493d22335ea54e20a2c9f8da97950bde4d29310ae4ced816f125",
+      "import_copy": "/Game/Characters/UEFN_Mannequin/Animations/Ragdoll/CHT_GetUpMontages",
+      "import_copy_sha256": "2721037903464e98a0db8554711ce79d0bebbda632d0314da965f3728303771b",
+      "target": "/Game/SurvivalRpg/Characters/GASP/Mover/Ragdoll/Characters/UEFN_Mannequin/Animations/Ragdoll/CHT_GetUpMontages",
+      "target_status": "proposed_candidate_only",
+      "target_sha256": null,
+      "direct_package_dependencies": [
+        "/Game/Blueprints/Data/E_MovementMode",
+        "/Game/Blueprints/Data/S_CHT_GetUpMontages_IN",
+        "/Game/Blueprints/Data/S_CHT_GetUpMontages_OUT",
+        "/Game/Characters/UEFN_Mannequin/Animations/MotionMatchingData/Schemas/PSS_Ragdoll",
+        "/Game/Characters/UEFN_Mannequin/Animations/Ragdoll/AM_M_ragdoll_getup_roll_L",
+        "/Game/Characters/UEFN_Mannequin/Animations/Ragdoll/AM_M_ragdoll_getup_roll_R",
+        "/Game/Characters/UEFN_Mannequin/Animations/Ragdoll/AM_M_ragdoll_getup_stand_B",
+        "/Game/Characters/UEFN_Mannequin/Animations/Ragdoll/AM_M_ragdoll_getup_stand_F",
+        "/Script/Chooser",
+        "/Script/PoseSearch"
+      ]
+    },
+    {
+      "source": "/Game/Characters/UEFN_Mannequin/Animations/Ragdoll/Curve_Ragdoll_Getup_Roll_BlendIn",
+      "classes": [
+        "/Script/Engine.CurveFloat"
+      ],
+      "source_sha256": "3320803ab070a465f8e866a9dacd3d562d8ac1987b3953746f147c05bc2a072a",
+      "import_copy": "/Game/Characters/UEFN_Mannequin/Animations/Ragdoll/Curve_Ragdoll_Getup_Roll_BlendIn",
+      "import_copy_sha256": "0287f527521761290ba8f694204282707f628f53af6d4e76368984d9c415d6df",
+      "target": "/Game/SurvivalRpg/Characters/GASP/Mover/Ragdoll/Characters/UEFN_Mannequin/Animations/Ragdoll/Curve_Ragdoll_Getup_Roll_BlendIn",
+      "target_status": "proposed_candidate_only",
+      "target_sha256": null,
+      "direct_package_dependencies": []
+    },
+    {
+      "source": "/Game/Characters/UEFN_Mannequin/Animations/Ragdoll/M_ragdoll_flail_armsDown",
+      "classes": [
+        "/Script/Engine.AnimSequence"
+      ],
+      "source_sha256": "786c38505e4e0e508073aace6fcbb6f6e203223a6b377ed65f7047040730a6ca",
+      "import_copy": "/Game/Characters/UEFN_Mannequin/Animations/Ragdoll/M_ragdoll_flail_armsDown",
+      "import_copy_sha256": "f8383080734f190268f8efa7696c0258c87fd1f1fc71b709db789461e2196a36",
+      "target": "/Game/SurvivalRpg/Characters/GASP/Shared/Characters/UEFN_Mannequin/Animations/Ragdoll/M_ragdoll_flail_armsDown",
+      "target_status": "existing_foundation_reference",
+      "target_sha256": "a5d51051648bd8660dda4e1da334a60fcd301f71c2f2321a12106b54a50dd305",
+      "direct_package_dependencies": [
+        "/ACLPlugin/ACLAnimBoneCompressionSettings",
+        "/ACLPlugin/ACLAnimCurveCompressionSettings",
+        "/Engine/Animation/DefaultVariableFrameStrippingSettings",
+        "/Game/Characters/UEFN_Mannequin/Meshes/SK_UEFN_Mannequin",
+        "/Script/AnimationData",
+        "/Script/AnimationModifiers",
+        "/Script/ControlRig",
+        "/Script/InterchangeEngine",
+        "/Script/MovieScene"
+      ]
+    },
+    {
+      "source": "/Game/Characters/UEFN_Mannequin/Animations/Ragdoll/M_ragdoll_flail_armsFirst",
+      "classes": [
+        "/Script/Engine.AnimSequence"
+      ],
+      "source_sha256": "94fae442d32d6a07487f297654a4c847b2336e87cdc3621a2f3094141981bcf4",
+      "import_copy": "/Game/Characters/UEFN_Mannequin/Animations/Ragdoll/M_ragdoll_flail_armsFirst",
+      "import_copy_sha256": "072f765d15f661baa70f7ec2b752a42d3ba8289f0d133119d08a97c54f9a5f8b",
+      "target": "/Game/SurvivalRpg/Characters/GASP/Shared/Characters/UEFN_Mannequin/Animations/Ragdoll/M_ragdoll_flail_armsFirst",
+      "target_status": "existing_foundation_reference",
+      "target_sha256": "1a2091a21e708e3a8f6915b2b118ae75b4708527dc70a830d2e1fcb816a35ea3",
+      "direct_package_dependencies": [
+        "/ACLPlugin/ACLAnimBoneCompressionSettings",
+        "/ACLPlugin/ACLAnimCurveCompressionSettings",
+        "/Engine/Animation/DefaultVariableFrameStrippingSettings",
+        "/Game/Characters/UEFN_Mannequin/Meshes/SK_UEFN_Mannequin",
+        "/Script/AnimationData",
+        "/Script/AnimationModifiers",
+        "/Script/ControlRig",
+        "/Script/InterchangeEngine",
+        "/Script/MovieScene"
+      ]
+    },
+    {
+      "source": "/Game/Characters/UEFN_Mannequin/Animations/Ragdoll/M_ragdoll_flail_legsFirst",
+      "classes": [
+        "/Script/Engine.AnimSequence"
+      ],
+      "source_sha256": "6913ac84a942b468dccd7840d54b5ad44a39be9f302bbb145ec8593c6bda0a61",
+      "import_copy": "/Game/Characters/UEFN_Mannequin/Animations/Ragdoll/M_ragdoll_flail_legsFirst",
+      "import_copy_sha256": "6da7b122636747c5111e3a0bc15bc0c0fbca91ca057337fc8a64e701e64d876a",
+      "target": "/Game/SurvivalRpg/Characters/GASP/Shared/Characters/UEFN_Mannequin/Animations/Ragdoll/M_ragdoll_flail_legsFirst",
+      "target_status": "existing_foundation_reference",
+      "target_sha256": "1b3b670136aff658ddc7861f13df2220fa4a4b4670b2edc8842242fc36fa9d13",
+      "direct_package_dependencies": [
+        "/ACLPlugin/ACLAnimBoneCompressionSettings",
+        "/ACLPlugin/ACLAnimCurveCompressionSettings",
+        "/Engine/Animation/DefaultVariableFrameStrippingSettings",
+        "/Game/Characters/UEFN_Mannequin/Meshes/SK_UEFN_Mannequin",
+        "/Script/AnimationData",
+        "/Script/AnimationModifiers",
+        "/Script/ControlRig",
+        "/Script/InterchangeEngine",
+        "/Script/MovieScene"
+      ]
+    },
+    {
+      "source": "/Game/Characters/UEFN_Mannequin/Animations/Ragdoll/M_ragdoll_getup_roll_L",
+      "classes": [
+        "/Script/Engine.AnimSequence"
+      ],
+      "source_sha256": "fbe9a9141e9c7fe88cd9c92a7b244171d9c28b04e7e9cc65a828dbf17e5e50c8",
+      "import_copy": "/Game/Characters/UEFN_Mannequin/Animations/Ragdoll/M_ragdoll_getup_roll_L",
+      "import_copy_sha256": "0aa14078d23f61f25eee786bb6f60cf38a683ff52e775d3621a2177ee5e6f107",
+      "target": "/Game/SurvivalRpg/Characters/GASP/Mover/Ragdoll/Characters/UEFN_Mannequin/Animations/Ragdoll/M_ragdoll_getup_roll_L",
+      "target_status": "proposed_candidate_only",
+      "target_sha256": null,
+      "direct_package_dependencies": [
+        "/ACLPlugin/ACLAnimBoneCompressionSettings",
+        "/ACLPlugin/ACLAnimCurveCompressionSettings",
+        "/Engine/Animation/DefaultVariableFrameStrippingSettings",
+        "/Game/Blueprints/AnimNotifies/BP_AnimNotify_FoleyEvent_Handplant_L",
+        "/Game/Blueprints/AnimNotifies/BP_AnimNotify_FoleyEvent_Roll",
+        "/Game/Blueprints/AnimNotifies/BP_AnimNotify_FoleyEvent_Scuff_L",
+        "/Game/Blueprints/AnimNotifies/BP_AnimNotify_FoleyEvent_Walk_L",
+        "/Game/Blueprints/AnimNotifies/BP_AnimNotify_FoleyEvent_Walk_R",
+        "/Game/Characters/UEFN_Mannequin/Meshes/SK_UEFN_Mannequin",
+        "/Script/AnimationData",
+        "/Script/AnimationModifiers",
+        "/Script/ControlRig",
+        "/Script/GameplayTags",
+        "/Script/InterchangeEngine",
+        "/Script/MovieScene"
+      ]
+    },
+    {
+      "source": "/Game/Characters/UEFN_Mannequin/Animations/Ragdoll/M_ragdoll_getup_roll_R",
+      "classes": [
+        "/Script/Engine.AnimSequence"
+      ],
+      "source_sha256": "0ddfe86f2a28cee416795910a521802d8be9e61f459dfa1530f1b7475aee60f8",
+      "import_copy": "/Game/Characters/UEFN_Mannequin/Animations/Ragdoll/M_ragdoll_getup_roll_R",
+      "import_copy_sha256": "7051155fd6ad9e49c4aafcf0cb57e1e5812f8693950c76a4e1896106f05ba23f",
+      "target": "/Game/SurvivalRpg/Characters/GASP/Mover/Ragdoll/Characters/UEFN_Mannequin/Animations/Ragdoll/M_ragdoll_getup_roll_R",
+      "target_status": "proposed_candidate_only",
+      "target_sha256": null,
+      "direct_package_dependencies": [
+        "/ACLPlugin/ACLAnimBoneCompressionSettings",
+        "/ACLPlugin/ACLAnimCurveCompressionSettings",
+        "/Engine/Animation/DefaultVariableFrameStrippingSettings",
+        "/Game/Blueprints/AnimNotifies/BP_AnimNotify_FoleyEvent_Handplant_L",
+        "/Game/Blueprints/AnimNotifies/BP_AnimNotify_FoleyEvent_Roll",
+        "/Game/Blueprints/AnimNotifies/BP_AnimNotify_FoleyEvent_Scuff_L",
+        "/Game/Blueprints/AnimNotifies/BP_AnimNotify_FoleyEvent_Walk_L",
+        "/Game/Blueprints/AnimNotifies/BP_AnimNotify_FoleyEvent_Walk_R",
+        "/Game/Characters/UEFN_Mannequin/Meshes/SK_UEFN_Mannequin",
+        "/Script/AnimationData",
+        "/Script/AnimationModifiers",
+        "/Script/ControlRig",
+        "/Script/GameplayTags",
+        "/Script/InterchangeEngine",
+        "/Script/MovieScene"
+      ]
+    },
+    {
+      "source": "/Game/Characters/UEFN_Mannequin/Animations/Ragdoll/M_ragdoll_getup_stand_B",
+      "classes": [
+        "/Script/Engine.AnimSequence"
+      ],
+      "source_sha256": "1083cd6fc2e1a371b3c9dcfbb8df74c145e82039f0bf6f83090a831bc26b02e1",
+      "import_copy": "/Game/Characters/UEFN_Mannequin/Animations/Ragdoll/M_ragdoll_getup_stand_B",
+      "import_copy_sha256": "457dfb4959a0aaaf7f29b91440541e0ba1a77842c8b267b3ff612d6447713d07",
+      "target": "/Game/SurvivalRpg/Characters/GASP/Mover/Ragdoll/Characters/UEFN_Mannequin/Animations/Ragdoll/M_ragdoll_getup_stand_B",
+      "target_status": "proposed_candidate_only",
+      "target_sha256": null,
+      "direct_package_dependencies": [
+        "/ACLPlugin/ACLAnimBoneCompressionSettings",
+        "/ACLPlugin/ACLAnimCurveCompressionSettings",
+        "/Engine/Animation/DefaultVariableFrameStrippingSettings",
+        "/Game/Blueprints/AnimNotifies/BP_AnimNotify_FoleyEvent_Handplant_L",
+        "/Game/Blueprints/AnimNotifies/BP_AnimNotify_FoleyEvent_Scuff_L",
+        "/Game/Blueprints/AnimNotifies/BP_AnimNotify_FoleyEvent_Walk_L",
+        "/Game/Blueprints/AnimNotifies/BP_AnimNotify_FoleyEvent_Walk_R",
+        "/Game/Characters/UEFN_Mannequin/Meshes/SK_UEFN_Mannequin",
+        "/Script/AnimationData",
+        "/Script/AnimationModifiers",
+        "/Script/ControlRig",
+        "/Script/InterchangeEngine",
+        "/Script/MovieScene"
+      ]
+    },
+    {
+      "source": "/Game/Characters/UEFN_Mannequin/Animations/Ragdoll/M_ragdoll_getup_stand_F",
+      "classes": [
+        "/Script/Engine.AnimSequence"
+      ],
+      "source_sha256": "8a7c9c125c451b707eddc35a3cd06cec279121f23abb9633fd9a1af892b249fc",
+      "import_copy": "/Game/Characters/UEFN_Mannequin/Animations/Ragdoll/M_ragdoll_getup_stand_F",
+      "import_copy_sha256": "a4d7372c147fb0381357399e9988b14ee1aacd240d77279b8155da2fd5a35f26",
+      "target": "/Game/SurvivalRpg/Characters/GASP/Mover/Ragdoll/Characters/UEFN_Mannequin/Animations/Ragdoll/M_ragdoll_getup_stand_F",
+      "target_status": "proposed_candidate_only",
+      "target_sha256": null,
+      "direct_package_dependencies": [
+        "/ACLPlugin/ACLAnimBoneCompressionSettings",
+        "/ACLPlugin/ACLAnimCurveCompressionSettings",
+        "/Engine/Animation/DefaultVariableFrameStrippingSettings",
+        "/Game/Blueprints/AnimNotifies/BP_AnimNotify_FoleyEvent_Handplant_L",
+        "/Game/Blueprints/AnimNotifies/BP_AnimNotify_FoleyEvent_Scuff_L",
+        "/Game/Blueprints/AnimNotifies/BP_AnimNotify_FoleyEvent_Walk_L",
+        "/Game/Blueprints/AnimNotifies/BP_AnimNotify_FoleyEvent_Walk_R",
+        "/Game/Characters/UEFN_Mannequin/Meshes/SK_UEFN_Mannequin",
+        "/Script/AnimationData",
+        "/Script/AnimationModifiers",
+        "/Script/ControlRig",
+        "/Script/InterchangeEngine",
+        "/Script/MovieScene"
+      ]
+    },
+    {
+      "source": "/Game/Characters/UEFN_Mannequin/Animations/Ragdoll/M_ragdoll_poses_OnGround",
+      "classes": [
+        "/Script/Engine.AnimSequence"
+      ],
+      "source_sha256": "bffaf08b6421e5e8d2bede7ab34c51b4f2e3d32e7b45e3b28bd6a243d24a0a5c",
+      "import_copy": "/Game/Characters/UEFN_Mannequin/Animations/Ragdoll/M_ragdoll_poses_OnGround",
+      "import_copy_sha256": "468c0c96fa46c40d383d8fa74fbaf5a6815afc410ad4d7edf076147861bfdabd",
+      "target": "/Game/SurvivalRpg/Characters/GASP/Shared/Characters/UEFN_Mannequin/Animations/Ragdoll/M_ragdoll_poses_OnGround",
+      "target_status": "existing_foundation_reference",
+      "target_sha256": "8a3567f7cfc68237400f4084674afb874cf7c8e115b9e98e12384d365c0479f2",
+      "direct_package_dependencies": [
+        "/ACLPlugin/ACLAnimBoneCompressionSettings",
+        "/ACLPlugin/ACLAnimCurveCompressionSettings",
+        "/Engine/Animation/DefaultVariableFrameStrippingSettings",
+        "/Game/Characters/UEFN_Mannequin/Meshes/SK_UEFN_Mannequin",
+        "/Script/AnimationData",
+        "/Script/AnimationModifiers",
+        "/Script/ControlRig",
+        "/Script/InterchangeEngine",
+        "/Script/MovieScene"
+      ]
+    },
+    {
+      "source": "/Game/Characters/UEFN_Mannequin/Animations/Ragdoll/M_ragdoll_poses_injured",
+      "classes": [
+        "/Script/Engine.AnimSequence"
+      ],
+      "source_sha256": "2bef70b820793cc8859803ae498fb9ba4529421315579a31698f483f1a5ded76",
+      "import_copy": "/Game/Characters/UEFN_Mannequin/Animations/Ragdoll/M_ragdoll_poses_injured",
+      "import_copy_sha256": "dd997f57b20069ca887960d6eee3ed57f567949e3796345fdb802992424a6b24",
+      "target": "/Game/SurvivalRpg/Characters/GASP/Shared/Characters/UEFN_Mannequin/Animations/Ragdoll/M_ragdoll_poses_injured",
+      "target_status": "existing_foundation_reference",
+      "target_sha256": "241f96dd41469ecdb48a8ad7d3f891dd553a2cc367386beba27693414015731e",
+      "direct_package_dependencies": [
+        "/ACLPlugin/ACLAnimBoneCompressionSettings",
+        "/ACLPlugin/ACLAnimCurveCompressionSettings",
+        "/Engine/Animation/DefaultVariableFrameStrippingSettings",
+        "/Game/Characters/UEFN_Mannequin/Meshes/SK_UEFN_Mannequin",
+        "/Script/AnimationData",
+        "/Script/AnimationModifiers",
+        "/Script/ControlRig",
+        "/Script/InterchangeEngine",
+        "/Script/MovieScene"
+      ]
+    },
+    {
+      "source": "/Game/Characters/UEFN_Mannequin/Animations/Ragdoll/M_ragdoll_poses_rolling",
+      "classes": [
+        "/Script/Engine.AnimSequence"
+      ],
+      "source_sha256": "c39ccace96e5097e6a1355287d023414b2a665b6ae53269bbf1f68e8d67979d1",
+      "import_copy": "/Game/Characters/UEFN_Mannequin/Animations/Ragdoll/M_ragdoll_poses_rolling",
+      "import_copy_sha256": "dd460acc42b66d2e2d32d130ee9613ae4d5d04e05461b1b67bea31891e72108c",
+      "target": "/Game/SurvivalRpg/Characters/GASP/Shared/Characters/UEFN_Mannequin/Animations/Ragdoll/M_ragdoll_poses_rolling",
+      "target_status": "existing_foundation_reference",
+      "target_sha256": "fbbdd2453197f03882392f788b89a35fbc0f358091ebd7bcfae10dfb7599c55d",
+      "direct_package_dependencies": [
+        "/ACLPlugin/ACLAnimBoneCompressionSettings",
+        "/ACLPlugin/ACLAnimCurveCompressionSettings",
+        "/Engine/Animation/DefaultVariableFrameStrippingSettings",
+        "/Game/Characters/UEFN_Mannequin/Meshes/SK_UEFN_Mannequin",
+        "/Script/AnimationData",
+        "/Script/AnimationModifiers",
+        "/Script/ControlRig",
+        "/Script/InterchangeEngine",
+        "/Script/MovieScene"
+      ]
+    },
+    {
+      "source": "/Game/Characters/UEFN_Mannequin/Animations/Ragdoll/M_ragdoll_reach_back",
+      "classes": [
+        "/Script/Engine.AnimSequence"
+      ],
+      "source_sha256": "015b631c8eb9cec998081bc8c30010bdc3887576184bd7fa3d3fcfc61343cf94",
+      "import_copy": "/Game/Characters/UEFN_Mannequin/Animations/Ragdoll/M_ragdoll_reach_back",
+      "import_copy_sha256": "d64d82cc997c65697d893c6a71df9c781ecdfc203aaa5c018a466146e6adcc3d",
+      "target": "/Game/SurvivalRpg/Characters/GASP/Shared/Characters/UEFN_Mannequin/Animations/Ragdoll/M_ragdoll_reach_back",
+      "target_status": "existing_foundation_reference",
+      "target_sha256": "9b128dc62c473811d53e8b771583618c90651df7ceffe42734bcef1fb8c138e5",
+      "direct_package_dependencies": [
+        "/ACLPlugin/ACLAnimBoneCompressionSettings",
+        "/ACLPlugin/ACLAnimCurveCompressionSettings",
+        "/Engine/Animation/DefaultVariableFrameStrippingSettings",
+        "/Game/Characters/UEFN_Mannequin/Meshes/SK_UEFN_Mannequin",
+        "/Script/AnimationData",
+        "/Script/AnimationModifiers",
+        "/Script/ControlRig",
+        "/Script/InterchangeEngine",
+        "/Script/MovieScene"
+      ]
+    },
+    {
+      "source": "/Game/Characters/UEFN_Mannequin/Animations/Ragdoll/M_ragdoll_reach_down",
+      "classes": [
+        "/Script/Engine.AnimSequence"
+      ],
+      "source_sha256": "7a6b2c4eab057b848c9749b1d74c7d1ed611b5f85d014113bb7c6b644a74d191",
+      "import_copy": "/Game/Characters/UEFN_Mannequin/Animations/Ragdoll/M_ragdoll_reach_down",
+      "import_copy_sha256": "dc8cec8dad335d668e4085cf2eeae0733d8a8d2ba3a7a5db5af52327eb446daf",
+      "target": "/Game/SurvivalRpg/Characters/GASP/Shared/Characters/UEFN_Mannequin/Animations/Ragdoll/M_ragdoll_reach_down",
+      "target_status": "existing_foundation_reference",
+      "target_sha256": "38f85c91ba2428abec21be0ea27720dce5467ef193e87a3eba388adbf32a642a",
+      "direct_package_dependencies": [
+        "/ACLPlugin/ACLAnimBoneCompressionSettings",
+        "/ACLPlugin/ACLAnimCurveCompressionSettings",
+        "/Engine/Animation/DefaultVariableFrameStrippingSettings",
+        "/Game/Characters/UEFN_Mannequin/Meshes/SK_UEFN_Mannequin",
+        "/Script/AnimationData",
+        "/Script/AnimationModifiers",
+        "/Script/ControlRig",
+        "/Script/InterchangeEngine",
+        "/Script/MovieScene"
+      ]
+    },
+    {
+      "source": "/Game/Characters/UEFN_Mannequin/Animations/Ragdoll/M_ragdoll_reach_forward",
+      "classes": [
+        "/Script/Engine.AnimSequence"
+      ],
+      "source_sha256": "b87fcd2b98e89cf13a7b75d76c4638628e6f471e9cb905b9bb8ab6593907f19a",
+      "import_copy": "/Game/Characters/UEFN_Mannequin/Animations/Ragdoll/M_ragdoll_reach_forward",
+      "import_copy_sha256": "90da912b6300cb55fdcc40647b935ab06602a76c983529aad6895015c2d30de1",
+      "target": "/Game/SurvivalRpg/Characters/GASP/Shared/Characters/UEFN_Mannequin/Animations/Ragdoll/M_ragdoll_reach_forward",
+      "target_status": "existing_foundation_reference",
+      "target_sha256": "649bb70a8dbb2c64d9556be88da62597a89beceecdf36bcc4b2451d9ef5b639b",
+      "direct_package_dependencies": [
+        "/ACLPlugin/ACLAnimBoneCompressionSettings",
+        "/ACLPlugin/ACLAnimCurveCompressionSettings",
+        "/Engine/Animation/DefaultVariableFrameStrippingSettings",
+        "/Game/Characters/UEFN_Mannequin/Meshes/SK_UEFN_Mannequin",
+        "/Script/AnimationData",
+        "/Script/AnimationModifiers",
+        "/Script/ControlRig",
+        "/Script/InterchangeEngine",
+        "/Script/MovieScene"
+      ]
+    },
+    {
+      "source": "/Game/Characters/UEFN_Mannequin/Animations/Ragdoll/M_ragdoll_reach_left",
+      "classes": [
+        "/Script/Engine.AnimSequence"
+      ],
+      "source_sha256": "4e2d92bd830c6120f02d6b361b3609bd7051df4cfac81d7d28dfaa1d84d04616",
+      "import_copy": "/Game/Characters/UEFN_Mannequin/Animations/Ragdoll/M_ragdoll_reach_left",
+      "import_copy_sha256": "59e65dfc3393a5e6cee13525b3a12bf6671785b4a20d112c4993276a329cb0e7",
+      "target": "/Game/SurvivalRpg/Characters/GASP/Shared/Characters/UEFN_Mannequin/Animations/Ragdoll/M_ragdoll_reach_left",
+      "target_status": "existing_foundation_reference",
+      "target_sha256": "cedfafb2231c460206fe6391616df91696bb9c2bb35c893cf51852d352570e9d",
+      "direct_package_dependencies": [
+        "/ACLPlugin/ACLAnimBoneCompressionSettings",
+        "/ACLPlugin/ACLAnimCurveCompressionSettings",
+        "/Engine/Animation/DefaultVariableFrameStrippingSettings",
+        "/Game/Characters/UEFN_Mannequin/Meshes/SK_UEFN_Mannequin",
+        "/Script/AnimationData",
+        "/Script/AnimationModifiers",
+        "/Script/ControlRig",
+        "/Script/InterchangeEngine",
+        "/Script/MovieScene"
+      ]
+    },
+    {
+      "source": "/Game/Characters/UEFN_Mannequin/Animations/Ragdoll/M_ragdoll_reach_right",
+      "classes": [
+        "/Script/Engine.AnimSequence"
+      ],
+      "source_sha256": "9614027d3f67d32d1ab26098509f4d5927bca1ac3b2a6fb3d067d758bfcbf9c1",
+      "import_copy": "/Game/Characters/UEFN_Mannequin/Animations/Ragdoll/M_ragdoll_reach_right",
+      "import_copy_sha256": "bc6e1918083cca3dc61ce6438e5affa998aa339a7e760f4642f94c71806b9b44",
+      "target": "/Game/SurvivalRpg/Characters/GASP/Shared/Characters/UEFN_Mannequin/Animations/Ragdoll/M_ragdoll_reach_right",
+      "target_status": "existing_foundation_reference",
+      "target_sha256": "b4747530fe14a39f4b1285f913338a55c40c87fe9d6a12aa336fc3148fdfbf50",
+      "direct_package_dependencies": [
+        "/ACLPlugin/ACLAnimBoneCompressionSettings",
+        "/ACLPlugin/ACLAnimCurveCompressionSettings",
+        "/Engine/Animation/DefaultVariableFrameStrippingSettings",
+        "/Game/Characters/UEFN_Mannequin/Meshes/SK_UEFN_Mannequin",
+        "/Script/AnimationData",
+        "/Script/AnimationModifiers",
+        "/Script/ControlRig",
+        "/Script/InterchangeEngine",
+        "/Script/MovieScene"
+      ]
+    },
+    {
+      "source": "/Game/Characters/UEFN_Mannequin/Animations/Ragdoll/M_ragdoll_reach_up",
+      "classes": [
+        "/Script/Engine.AnimSequence"
+      ],
+      "source_sha256": "bb84a7eb5dcf657492090b6f703b776ef11094fb10d38dfa9e451e43a85052cf",
+      "import_copy": "/Game/Characters/UEFN_Mannequin/Animations/Ragdoll/M_ragdoll_reach_up",
+      "import_copy_sha256": "da5f3f05f0f688bfc94bff4c37ff0c8ef5036c9bbe99abd684680e7ad3ee8774",
+      "target": "/Game/SurvivalRpg/Characters/GASP/Shared/Characters/UEFN_Mannequin/Animations/Ragdoll/M_ragdoll_reach_up",
+      "target_status": "existing_foundation_reference",
+      "target_sha256": "54a151b272d7a973e8bb3e77ff7c9ca96fb54dbccd3a3ef76c002b438d8b3b0a",
+      "direct_package_dependencies": [
+        "/ACLPlugin/ACLAnimBoneCompressionSettings",
+        "/ACLPlugin/ACLAnimCurveCompressionSettings",
+        "/Engine/Animation/DefaultVariableFrameStrippingSettings",
+        "/Game/Characters/UEFN_Mannequin/Meshes/SK_UEFN_Mannequin",
+        "/Script/AnimationData",
+        "/Script/AnimationModifiers",
+        "/Script/ControlRig",
+        "/Script/InterchangeEngine",
+        "/Script/MovieScene"
+      ]
+    },
+    {
+      "source": "/Game/Characters/UEFN_Mannequin/Animations/Ragdoll/M_ragdoll_reach_up_back",
+      "classes": [
+        "/Script/Engine.AnimSequence"
+      ],
+      "source_sha256": "c923ab3058c3c23ff96c6d01738a7f890bc31cf91901cb2fe0452846c54c5cd3",
+      "import_copy": "/Game/Characters/UEFN_Mannequin/Animations/Ragdoll/M_ragdoll_reach_up_back",
+      "import_copy_sha256": "2471514f5ad89b8fa6b2cab1d53c2a1fe5f68747fb7e57f1ab27c79dae41599c",
+      "target": "/Game/SurvivalRpg/Characters/GASP/Shared/Characters/UEFN_Mannequin/Animations/Ragdoll/M_ragdoll_reach_up_back",
+      "target_status": "existing_foundation_reference",
+      "target_sha256": "5103a9d60641910345eca8fd520f2b27ad2438cd7865372751cce87853016471",
+      "direct_package_dependencies": [
+        "/ACLPlugin/ACLAnimBoneCompressionSettings",
+        "/ACLPlugin/ACLAnimCurveCompressionSettings",
+        "/Engine/Animation/DefaultVariableFrameStrippingSettings",
+        "/Game/Characters/UEFN_Mannequin/Meshes/SK_UEFN_Mannequin",
+        "/Script/AnimationData",
+        "/Script/AnimationModifiers",
+        "/Script/ControlRig",
+        "/Script/InterchangeEngine",
+        "/Script/MovieScene"
+      ]
+    },
+    {
+      "source": "/Game/Characters/UEFN_Mannequin/Animations/Ragdoll/M_ragdoll_reach_up_left",
+      "classes": [
+        "/Script/Engine.AnimSequence"
+      ],
+      "source_sha256": "508c54fc33460b6fcf5923bd06558ad02b878a7189172549c38ad66b19c37c87",
+      "import_copy": "/Game/Characters/UEFN_Mannequin/Animations/Ragdoll/M_ragdoll_reach_up_left",
+      "import_copy_sha256": "9534a6d65389a46ad61dbdb96ace1faa480e0085df10af45b5e89377d4dd9d28",
+      "target": "/Game/SurvivalRpg/Characters/GASP/Shared/Characters/UEFN_Mannequin/Animations/Ragdoll/M_ragdoll_reach_up_left",
+      "target_status": "existing_foundation_reference",
+      "target_sha256": "6cc740da5d0f9e967ad7406422c80c87b8d8116144ae78c24cfac257feb7e7f7",
+      "direct_package_dependencies": [
+        "/ACLPlugin/ACLAnimBoneCompressionSettings",
+        "/ACLPlugin/ACLAnimCurveCompressionSettings",
+        "/Engine/Animation/DefaultVariableFrameStrippingSettings",
+        "/Game/Characters/UEFN_Mannequin/Meshes/SK_UEFN_Mannequin",
+        "/Script/AnimationData",
+        "/Script/AnimationModifiers",
+        "/Script/ControlRig",
+        "/Script/InterchangeEngine",
+        "/Script/MovieScene"
+      ]
+    },
+    {
+      "source": "/Game/Characters/UEFN_Mannequin/Animations/Ragdoll/M_ragdoll_reach_up_right",
+      "classes": [
+        "/Script/Engine.AnimSequence"
+      ],
+      "source_sha256": "05872b26afd792036cb49af4e5365cf917587fbbd6407b8935e1bbd4daa5e1ee",
+      "import_copy": "/Game/Characters/UEFN_Mannequin/Animations/Ragdoll/M_ragdoll_reach_up_right",
+      "import_copy_sha256": "53a7f2cb234467574739b9cf32ae2574900b43c0e1ce5cad403d13906e9c8aa6",
+      "target": "/Game/SurvivalRpg/Characters/GASP/Shared/Characters/UEFN_Mannequin/Animations/Ragdoll/M_ragdoll_reach_up_right",
+      "target_status": "existing_foundation_reference",
+      "target_sha256": "cd8c98fe05e9e7f05a4d68c4eabfddfbfb49b055a2f1f52219191765bac675a4",
+      "direct_package_dependencies": [
+        "/ACLPlugin/ACLAnimBoneCompressionSettings",
+        "/ACLPlugin/ACLAnimCurveCompressionSettings",
+        "/Engine/Animation/DefaultVariableFrameStrippingSettings",
+        "/Game/Characters/UEFN_Mannequin/Meshes/SK_UEFN_Mannequin",
+        "/Script/AnimationData",
+        "/Script/AnimationModifiers",
+        "/Script/ControlRig",
+        "/Script/InterchangeEngine",
+        "/Script/MovieScene"
+      ]
+    },
+    {
+      "source": "/Game/Characters/UEFN_Mannequin/Meshes/SKM_UEFN_Mannequin",
+      "classes": [
+        "/Script/Engine.SkeletalMesh"
+      ],
+      "source_sha256": "0e8512588864e5c614ceacb9ba54481ee38f731fb2b8353de5cf3a4db933bfcf",
+      "import_copy": "/Game/Characters/UEFN_Mannequin/Meshes/SKM_UEFN_Mannequin",
+      "import_copy_sha256": "97c757e95ed3387321df7e036318252e4d25196bca350f1ccd96faf1034f0f66",
+      "target": "/Game/SurvivalRpg/Characters/GASP/Shared/Characters/UEFN_Mannequin/Meshes/SKM_UEFN_Mannequin",
+      "target_status": "existing_foundation_reference",
+      "target_sha256": "0a860c743708d5df9f66e0290b065c7ac2fd6c3affe5081ff0a2bae247e0998f",
+      "direct_package_dependencies": [
+        "/Game/Characters/UEFN_Mannequin/Materials/M_UEFN_Mannequin",
+        "/Game/Characters/UEFN_Mannequin/Meshes/Character_LodSettings",
+        "/Game/Characters/UEFN_Mannequin/Meshes/SK_UEFN_Mannequin",
+        "/Game/Characters/UEFN_Mannequin/Rigs/ABP_UEFN_Mannequin_PostProcess",
+        "/Game/Characters/UEFN_Mannequin/Rigs/PA_UEFN_Mannequin",
+        "/Script/InterchangeEngine",
+        "/Script/InterchangeImport",
+        "/Script/InterchangePipelines"
+      ]
+    },
+    {
+      "source": "/Game/Characters/UEFN_Mannequin/Rigs/PA_UEFN_Mannequin",
+      "classes": [
+        "/Script/Engine.PhysicsAsset"
+      ],
+      "source_sha256": "88d2a7d4c1a578cc27de3544e7ba29b47de429c006d33d41584dd13d9d5d97e8",
+      "import_copy": "/Game/Characters/UEFN_Mannequin/Rigs/PA_UEFN_Mannequin",
+      "import_copy_sha256": "8c99aa8aedb40e72eefc759b42d8b033f2eb2839a98a9f43029067bf719f96d4",
+      "target": "/Game/SurvivalRpg/Characters/GASP/Shared/Characters/UEFN_Mannequin/Rigs/PA_UEFN_Mannequin",
+      "target_status": "existing_foundation_reference",
+      "target_sha256": "8cb8b11595d55f749edd20bba7e361cef331c96e34626d121603bcbb12f83199",
+      "direct_package_dependencies": [
+        "/Game/Characters/UEFN_Mannequin/Meshes/SKM_UEFN_Mannequin",
+        "/Game/Characters/UEFN_Mannequin/Rigs/PM_UEFN_Mannequin"
+      ]
+    },
+    {
+      "source": "/Game/Characters/UEFN_Mannequin/Rigs/PCA_SandboxCharacter",
+      "classes": [
+        "/Script/PhysicsControl.PhysicsControlAsset"
+      ],
+      "source_sha256": "b2cb1f71187229dcb00e96ffe409b9f6cdcb7e460829b47838ac32f34a876f0c",
+      "import_copy": "/Game/Characters/UEFN_Mannequin/Rigs/PCA_SandboxCharacter",
+      "import_copy_sha256": "d0a4ba82d6ea4784f6d98ec54171fe733d390a39e96081d6adda5fb78d13c8ec",
+      "target": "/Game/SurvivalRpg/Characters/GASP/Mover/Ragdoll/Characters/UEFN_Mannequin/Rigs/PCA_SandboxCharacter",
+      "target_status": "proposed_candidate_only",
+      "target_sha256": null,
+      "direct_package_dependencies": [
+        "/Game/Characters/UEFN_Mannequin/Rigs/PA_UEFN_Mannequin",
+        "/Script/PhysicsControl"
+      ]
+    },
+    {
+      "source": "/Game/Input/IA_TriggerRagdoll",
+      "classes": [
+        "/Script/EnhancedInput.InputAction"
+      ],
+      "source_sha256": "6618f862dc0c0e0859ae5e5456c6a4b80095afd09216c70a516c3fd71d8b16d5",
+      "import_copy": "/Game/Input/IA_TriggerRagdoll",
+      "import_copy_sha256": "1a48d8f1b93724a0914f052adb1f719d2c7e518e74470ada5d28325747343165",
+      "target": "/Game/SurvivalRpg/Characters/GASP/Shared/Input/IA_TriggerRagdoll",
+      "target_status": "existing_foundation_reference",
+      "target_sha256": "8ad60610069538b9f44ffa1369c557766643c22c9b785e23a88bcadf9fc48a1f",
+      "direct_package_dependencies": [
+        "/Script/EnhancedInput"
+      ]
+    }
+  ],
+  "adaptation_targets": {
+    "pawn": "/Game/SurvivalRpg/Characters/GASP/Mover/Ragdoll/RPG/BP_RpgGasp_MoverRagdoll",
+    "pawn_parent": "/Game/SurvivalRpg/Characters/GASP/Mover/RPG/BP_RpgGasp_Mover",
+    "animation_parent": "/Game/SurvivalRpg/Characters/GASP/Mover/RPG/ABP_RpgGasp_Mover",
+    "pawn_data": "/Game/SurvivalRpg/Characters/GASP/Mover/Ragdoll/RPG/DA_PawnData_GaspMoverRagdoll",
+    "experience": "/Game/SurvivalRpg/System/Experiences/RpgGaspMoverRagdollExperience"
+  },
+  "excluded_from_first_pilot": [
+    "sample multi-character interactions and takedowns",
+    "sample shooting, spawning, NPC auto-getup and obstacle demo logic",
+    "sample camera/visual overrides as gameplay owners",
+    "shared baseline or source asset overwrite",
+    "ChaosMover backend replacement",
+    "retarget follower physics",
+    "corpse retention, downed/revive and new health/respawn systems"
+  ],
+  "export_limitations": {
+    "reflection_coverage": "All seven snapshots are partial; unreadable fields are counted per source. Native T3D supplements do not establish complete semantic parity.",
+    "dsl_failures": [
+      {
+        "graph": "/Game/Blueprints/SandboxCharacter_Mover_Ragdoll.SandboxCharacter_Mover_Ragdoll:Ragdoll_UpdateRollBehavior",
+        "kind": "tool_export_error"
+      },
+      {
+        "graph": "/Game/Blueprints/SandboxCharacter_Mover_Ragdoll.SandboxCharacter_Mover_Ragdoll:CheckForInteractableCharacters",
+        "kind": "tool_export_error"
+      },
+      {
+        "graph": "/Game/Blueprints/SandboxCharacter_Mover_Ragdoll.SandboxCharacter_Mover_Ragdoll:Demo_Spawn/RotateCharacter",
+        "kind": "local_filename_slash"
+      },
+      {
+        "graph": "/Game/Blueprints/SandboxCharacter_Mover.SandboxCharacter_Mover:Update_SmoothedAnalogInputAmount",
+        "kind": "tool_export_error"
+      },
+      {
+        "graph": "/Game/Blueprints/SandboxCharacter_Mover_ABP.SandboxCharacter_Mover_ABP:Update_EssentialValues",
+        "kind": "tool_export_error"
+      },
+      {
+        "graph": "/Game/Blueprints/SandboxCharacter_Mover_ABP.SandboxCharacter_Mover_ABP:OnUpdate_LocomotionTransition",
+        "kind": "tool_export_error"
+      },
+      {
+        "graph": "/Game/Blueprints/SandboxCharacter_Mover_ABP.SandboxCharacter_Mover_ABP:EventGraph.K2Node_Composite_0.SM Transition Debug Events",
+        "kind": "tool_export_error"
+      }
+    ],
+    "dsl_duplicate_leaf_names_skipped": true,
+    "interpretation": "Exporter failures are not evidence of malformed source graphs. Use full graph identity and pins in snapshots/native exports for audited findings."
+  },
+  "graph_landmarks": [
+    {
+      "source": "/Game/Blueprints/SandboxCharacter_Mover_Ragdoll",
+      "graphs": [
+        "EventGraph:TriggerRagdoll",
+        "EventGraph:On_RagdollMode_Exit",
+        "On_MovementModeChanged_PostFinalize"
+      ],
+      "observation": "Source queues local Ragdoll/Walking modes; every exit from Ragdoll enters getup without an RPG death gate."
+    },
+    {
+      "source": "/Game/Blueprints/SandboxCharacter_Mover_Ragdoll",
+      "graphs": [
+        "ProduceInput",
+        "Get_RagdollTransform",
+        "Get_RagdollTargetOrientation"
+      ],
+      "observation": "Physics-derived bone transform/orientation enters Mover input data. This is not proof of server validation."
+    },
+    {
+      "source": "/Game/Blueprints/MovementModes/BP_MovementMode_Ragdoll",
+      "graphs": [
+        "SimulationTick"
+      ],
+      "observation": "Source consumes ragdoll input, ground sphere trace and TrySafeMoveAndSlide with bSweep=false, then publishes Mover sync state."
+    },
+    {
+      "source": "/Game/Blueprints/SandboxCharacter_Mover_Ragdoll",
+      "graphs": [
+        "EventGraph:BeginPlay",
+        "EventGraph:PostABPTick",
+        "Ragdoll_UpdatePhysicsStrengthsFromCurves"
+      ],
+      "observation": "Mesh -> post-ABP tick -> PhysicsControl prerequisites; four animation curves scale ParentSpace control strengths."
+    },
+    {
+      "source": "/Game/Blueprints/SandboxCharacter_Mover_ABP",
+      "graphs": [
+        "EventGraph:BlueprintUpdateAnimation",
+        "Update_PropertiesFromCharacter",
+        "BlueprintThreadSafeUpdateAnimation",
+        "AnimGraph:Ragdoll"
+      ],
+      "observation": "Game-thread Pawn interfaces populate local animation read models. Ragdoll graph property access consumes these; no blanket thread/network parity proof."
+    }
+  ]
+}
