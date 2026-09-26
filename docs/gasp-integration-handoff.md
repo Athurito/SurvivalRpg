@@ -15,9 +15,9 @@ Abnahme. Beide bei relevanten Fortschritten im selben PR aktualisieren.
 | Runtime-Ausgangspunkt | `b9a653608b6ada64dfd1c17b2e24d5dfc691202c`, bestätigter Merge PR #146 auf `master` am 22.09.2026 um 21:09:22 UTC |
 | Checkout / aktiver Branch | `codex/gasp-net-01-active-mantle-rollback`, `D:/Repos/SurvivalRpg`; Basis `b9a65360`, origin/master am 26.09.2026 verifiziert |
 | Letzter Implementierungs-Commit | `b6709eb4` – passiver Nachweis gleicher betroffener Prediction-Frames bei Mantle-Restore/Replay; ausschließlich Editor-Testcode |
-| Aktueller Arbeits-PR | Keiner; [PR #146](https://github.com/Athurito/SurvivalRpg/pull/146) und [PR #145](https://github.com/Athurito/SurvivalRpg/pull/145) sind bestätigt gemergt |
+| Aktueller Arbeits-PR | [PR #147](https://github.com/Athurito/SurvivalRpg/pull/147), **Draft, offen**; [PR #146](https://github.com/Athurito/SurvivalRpg/pull/146) ist bestätigt gemergt |
 | Übernommene Statuspflege | Bestätigten STAB-02-Merge in Roadmap, Übergabe und `gasp-respawn-falling.md` im NET-01-Arbeitsbranch nachgeführt |
-| Nächster Handgriff | NET-01 als Draft-PR veröffentlichen und prüfen; nach bestätigtem Merge mit `GASP-NET-02` fortsetzen |
+| Nächster Handgriff | NET-01 in PR #147 prüfen; nach bestätigtem Merge mit `GASP-NET-02` fortsetzen |
 | Blocker / offene Abnahme | Kein Implementierungsblocker. Editor-Build, 10/10 gemeinsame Regressionen, 30-FPS-Fokus und echte Negativkontrolle ausgeführt. Review/Merge offen; keine neue Independent-/Packaged-/WAN-Abnahme |
 
 ## Aktueller validierter Schritt – GASP-NET-01

@@ -3,6 +3,7 @@
 Stand: **26.09.2026, implementiert und validiert; Review/Merge offen**. Branch
 `codex/gasp-net-01-active-mantle-rollback`, Basis `b9a65360` (Merge PR #146).
 Implementierung: `b6709eb4`; vorausgehende Merge-/Auftragsstatuspflege `91f49fcc`.
+Arbeits-PR: [#147](https://github.com/Athurito/SurvivalRpg/pull/147), **Draft, offen**.
 Der Auftrag schließt die in der [Roadmap](gasp-integration-roadmap.md)
 erfasste Nachweislücke. Runtime, Engine-Overrides, Blueprints, Montagen und
 übrige Assets werden dafür nicht geändert.
