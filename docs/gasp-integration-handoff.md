@@ -9,16 +9,16 @@ Abnahme. Beide bei relevanten Fortschritten im selben PR aktualisieren.
 
 | Feld | Wert |
 | --- | --- |
-| Aktive Implementierungsaufgabe | `GASP-02` / `GASP-NET-02` – vorhergesagtes Finished gegenüber autoritativem Cancelled, **In Arbeit: Ursachenbeleg und Terminalvertrag** |
-| Nächste bereite Aufgabe | Nach NET-02 `GASP-NET-03`: rekonstruierte Traversal-Präsentation nach Paketverlust gezielt prüfen |
-| Zuständiger Chat / beanspruchte Dateien | Root: Runtime `RpgGameplayAbility_Mantle.cpp`, gemeinsame Traversal-Testfixture und sämtliche Editor-/Buildsitzungen. Dokumentationsagent: Roadmap, Übergabe und NET-01-Mergestatus. Keine Assetänderung vorgesehen |
+| Aktive Implementierungsaufgabe | `GASP-02` / `GASP-NET-02` – vorhergesagtes Finished gegenüber autoritativem Cancelled, **implementiert und validiert; Review/Merge offen** |
+| Nächste bereite Aufgabe | Nach NET-02 `GASP-NET-03`: historische Abweichung von −70,99 ms nach 350-ms-Paketpause frisch reproduzieren und rekonstruierte Bahn/Messklammer prüfen |
+| Zuständiger Chat / beanspruchte Dateien | Root: Runtime `RpgGameplayAbility_Mantle.h/.cpp`, gemeinsame Traversal-Testfixture, Mantle-Tests und sämtliche Editor-/Buildsitzungen. Dokumentationsagent: Roadmap, Übergabe und NET-02-Bericht. Keine Assetänderung |
 | Runtime-Ausgangspunkt | `44a5e5127bab0d064608b682fcd002adf91c4159`, bestätigter Merge PR #147 am 26.09.2026 um 10:24:29 UTC; NET-01 änderte nur Editor-Testcode und Dokumentation |
 | Checkout / aktiver Branch | `codex/gasp-net-02-terminal-reconciliation`, `D:/Repos/SurvivalRpg`; Basis `44a5e512` |
-| Letzter Implementierungs-Commit | `b6709eb4` – abgeschlossener NET-01-Nachweis; noch kein NET-02-Implementierungscommit |
+| Letzter Implementierungs-Commit | `8de5d927` – natürlicher Mover-Mantle-Abschluss trotz Remote-Ende im Auto-Blend-Out, zwei Runtime- und drei Testdateien |
 | Aktueller Arbeits-PR | Noch keiner für NET-02; [PR #147](https://github.com/Athurito/SurvivalRpg/pull/147) und [PR #146](https://github.com/Athurito/SurvivalRpg/pull/146) sind bestätigt gemergt |
 | Übernommene Statuspflege | Bestätigten NET-01-Merge in Roadmap, Übergabe und `gasp-active-mantle-rollback.md` im NET-02-Arbeitsbranch nachgeführt |
-| Nächster Handgriff | Historischen Endablauf frisch reproduzieren; natürliche Montagebeendigung, Cleanup-Bedingungen und autoritative Terminalkorrektur getrennt belegen |
-| Blocker / offene Abnahme | Kein bekannter Implementierungsblocker. NET-02-Ursache, Korrektur und Regression noch offen; keine NET-02-Build-/Testerfolge eingetragen. Root koordiniert die laufende Diagnose |
+| Nächster Handgriff | PR mit finalem Ursachenbeleg, identischem Rot-/Grünvergleich und 28/28-Regression anlegen; Review/Merge abschließen |
+| Blocker / offene Abnahme | Kein bekannter Implementierungsblocker. Editor/Game, Fokus 3/3 und Regression 28/28 bestanden; Erhaltung und Overrides geprüft, alle Prozesse beendet. Review/Merge offen; dokumentierte Warnungen und Umgebungsgrenzen bleiben bestehen |
 
 ## Aktueller Auftrag – GASP-NET-02
 
@@ -28,14 +28,42 @@ Abnahme. Beide bei relevanten Fortschritten im selben PR aktualisieren.
   Die Abweichung besteht vor der Testinjektion. Reconciliation erhält Identität,
   Montage und Warp-Cleanup, verletzt aber die bisherige Gleichheitsprüfung des
   Terminalgrundes. Einzelne Cleanup-Bedingungen wurden damals nicht protokolliert.
-- Der spätere grüne Lauf hatte `Cancelled` auf beiden Seiten und beweist weder
-  die Ursache noch einen Fix. Die bestehende Hurdle-Behandlung natürlicher
-  Montageenden ist ein Vergleichspunkt, keine bereits validierte Mantle-Lösung.
+- Der spätere historische grüne Lauf hatte `Cancelled` auf beiden Seiten und
+  bewies weder Ursache noch Fix. Frische 30-FPS-Diagnose belegt jetzt den
+  vorzeitigen Authority-Cleanup durch normales Remote-Ende: 1,966675 s statt
+  2,0 s, `stopped=1`, Handoff noch nicht erreicht. Der Support-Trace wurde deshalb
+  noch gar nicht ausgeführt.
 - Gameplay-Grund und Authority bleiben in GAS/Projekt-Mover. Der Test muss eine
   echte terminale Reconciliation und fehlende Wiederbelebung alter Traversal
   nachweisen; keine bloße Abschwächung auf beliebige Terminalzustände.
-- Aktuell Ursachenprüfung und Diagnose im bestehenden Ability-/Testpfad.
-  Noch kein abgeschlossener NET-02-Fix oder neuer Validierungserfolg.
+- Commit `8de5d927` erweitert den vorhandenen exakten natürlichen Hurdle-
+  Endcallback auf Mover-Mantle am vollständigen Clipende und verschiebt normales
+  Remote-Ende bis dahin. Echte Cancellation, finale Warp-/Supportbedingungen
+  und bedingte Handoffs bleiben erhalten; CMC und Assets unverändert.
+- Identische Fixture bei 30 FPS: `red-01` **1/3**, `green-01` **3/3** bestanden.
+  Der rote natürliche Engine-Abschluss bei 1,766684 s beweist die Lücke ohne
+  künstlichen Completion-Callback. Grün beobachtet tatsächlich Remote-Ende vor
+  lokalem Engine-Abschluss, korrektes Warten und `Finished` auf allen Rollen;
+  echte Authority-Cancellation bleibt sofort `Cancelled`.
+- Finaler Editor-Build **Succeeded**, 23,27 s; Game-Build **Succeeded**, 123,09 s.
+  Vorheriger C4458-Buildfehler durch verdeckende Fixture-Variablennamen und rote
+  Läufe bleiben dokumentiert. Fokuslauf: 30 Warnungen, keine Testfehler.
+  Gemeinsame Regression **28/28 bestanden**, 227,00 s: alle 17 Mover-Mantle-
+  Fälle, drei Hurdle-, zwei Vault-, ein CMC-, vier native Vertrags- und ein
+  Gameplay-Replay-Fall. Keine Errors/Ensures/Fatals im Testintervall.
+- Finale 287 Warnungen: 140 Voice, 143 NetPackageMap, eine Blueprint-Tick-,
+  eine PoseSearch-AsyncBuildIndex- und zwei NP-`RollbackFrame == PendingFrame`-
+  Meldungen. Diese Befunde sowie zwei bekannte Start-`Condition failed`-Meldungen
+  bleiben offen und erhalten. Zehn Maps und sieben SaveGames unverändert,
+  vier Overrides verifiziert, Quellstand unverändert `8de5d927`, alle Prozesse beendet.
+- [Ursache, Runtimevertrag, Nachweise und Grenzen](gasp-terminal-reconciliation.md),
+  lokale ignorierte Belege `Saved/GaspTerminalReconciliation20260926`.
+- Nach Review/Merge ist NET-03 der begrenzte Folgeauftrag. Ausgangspunkt:
+  `Saved/GaspMoverProxyPose20260920/probe_run_final_host_gap` und
+  [Präsentations-Bericht](gasp-mover-traversal-presentation.md). Nach 350 ms
+  Paketpause halten 17 Framepaare die Montage mit der Bewegung; eine Ebene
+  bleibt beim Aufholen um −70,99 ms abweichend. Aktuell nachstellen und die
+  rekonstruierte Bahn samt Messklammer prüfen; durch NET-02 nicht abgenommen.
 
 ## Letzter abgeschlossener Schritt – GASP-NET-01
 

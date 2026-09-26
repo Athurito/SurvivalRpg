@@ -131,6 +131,12 @@ passed on rerun when both sides used `Cancelled`; that does not establish a fix
 for the differing-reason condition. Identity, montage and warp-history checks
 passed in the original failed observation.
 
+Follow-up on 2026-09-26: `GASP-NET-02` reproduced this disagreement and traced a
+normal remote GAS end overtaking the authority's natural Mantle blend-out.
+The [terminal reconciliation report](gasp-terminal-reconciliation.md) records
+the bounded fix, identical red/green regression cases and current validation.
+The results above remain the historical measurements, not new test executions.
+
 Two native test-harness details were corrected while retaining their contracts.
 GC lifetime checks now use the editor's standard `GARBAGE_COLLECTION_KEEPFLAGS`,
 with explicit checks that the transient test objects are not standalone; this
