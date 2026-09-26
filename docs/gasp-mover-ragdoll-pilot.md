@@ -242,11 +242,30 @@ lineare Primary-RGB **0,416667 / 0,416667 / 0,416667**, Secondary-RGB
 **0,1 / 0,25 / 0,1**, jeweils Alpha 1. Pawn kompiliert mit warnings_as_errors;
 Root bestätigt Grün stehend, in Ragdoll und nach Getup (`color-*.png`). Finale
 Registry-Hülle **2058/71**, missing=[], keine rohen Sample-Kanten; Werte und
-Hülle unabhängig geprüft; 6938 Originalassets und 17 Map-/Savedateien erneut
-unverändert. Frischer Spawn nach Cachefix grün; PIE beendet, Playsettings
+Hülle unabhängig geprüft; bei dieser Farbprüfung waren 6938 Originalassets
+und 17 Map-/Savedateien unverändert. Frischer Spawn nach Cachefix grün; PIE beendet, Playsettings
 restauriert, Editor 556 sauber geöffnet. **Builds und 20 Tests liefen vor dieser reinen
 Farbkorrektur**, ohne behaupteten Neulauf. Eigene Compile-/Reload-/Sichtbelege
 stehen in `color-material-fixed-reloaded.json` und `color-final-closure-fixed.json`.
+
+Nachfolgender MetaSound-Fix wegen doppelter RunStrafe-GUID: 18 Shared/Foley-
+Kopien erhielten über die öffentliche UE-API eigene Klassen-IDs; 19 Graphen
+einschließlich `MSS_RpgGasp_Run` wurden angepasst, dessen Root-ID blieb gleich.
+Frisches Registrieren beider Familien ergibt 37 eindeutige IDs; der unabhängige
+Graphvergleich besteht für 19/19 Graphen mit erhaltenen aktuellen Sounddefaults,
+Waves, Kanten und Templates. Der native Preset-Refresh regeneriert interne IDs
+und ändert Editor-Regler (`RadialSlider`/`Range`, vier `ClampDefault`-Flags in `Run_Soft`
+von `true` auf `false`): aktuelle Soundwerte bleiben gleich, künftige
+Designer-Eingabegrenzen und Bedienformen unterscheiden sich. Die 18 Importoriginale
+bleiben unverändert; von 6938 Baselineassets sind nun 6919 unverändert und
+genau 19 erwartungsgemäß geändert, alle 17 Map-/Savedateien erhalten. Details im
+[separaten Manifest](assets/gasp-metasound-identity-fix.json). Audioaktivierter
+PIE-Smoke mit W/D/S/A und R–Warten–R durchgeführt und beendet, Playsettings
+restauriert, Editor 58312 sauber geöffnet; keine hörbare Klangqualitätsabnahme.
+Frische Registry: Pawn 2058/71, CMC-Foley 274/5, ohne fehlende Pakete oder rohe
+Sample-Verweise. Log: keine doppelten Klassen und keine MetaSound-Warnungen/-Fehler;
+zwei bereits vor dem Fix vorhandene AutomationTest-`Condition failed` beim
+Editorstart bleiben dokumentiert. Kein neuer Build/20-Test-Lauf.
 
 ## Validierungsstand
 

@@ -10,17 +10,29 @@ Abnahme. Beide bei relevanten Fortschritten im selben PR aktualisieren.
 | Feld | Wert |
 | --- | --- |
 | Aktive Implementierungsaufgabe | `GASP-03` – begrenzter spielbarer Ragdoll-/Getup-Pilot, **PR offen (Draft)**; Prüfungen und Nutzerabnahme mit kosmetischer Nachbesserung erfolgt |
-| Nächste bereite Aufgabe | PR #152 abschließen; validierter Pilot mit gewünschter grüner Farbe, noch nicht gemergt |
+| Nächste bereite Aufgabe | PR #152 mit gewünschter grüner Farbe und validiertem MetaSound-Identitätsfix abschließen; noch nicht gemergt |
 | Zuständiger Chat / beanspruchte Dateien | Root: sämtliche Editor-/MCP-/Buildsitzungen, binäre Assets und Mover-Integration. Runtimeagent: native Lifecycle-Konzeption. Testagent: Validierungskonzept. Dokumentationsagent: Roadmap, Übergabe, Audit-Mergestatus und `gasp-mover-ragdoll-pilot.md`. Weitere Dateizuteilungen nur koordiniert |
 | Runtime-Ausgangspunkt | `9baac5f36fd978b86c364df3e82aa74d76cfb7d2`, bestätigter Merge PR #151 am 26.09.2026 um 13:40:22 UTC; Audit enthält keine Runtimeänderung |
 | Checkout / aktiver Branch | `codex/gasp-03-ragdoll-pilot`, `D:/Repos/SurvivalRpg`; Basis `9baac5f3` |
 | Letzter Implementierungs-Commit | `7c2a769a26ec1396f9cbc3804eaedefee33cd2db`, einschließlich 25 LFS-Assets gepusht |
-| Aktueller Arbeits-PR | [PR #152](https://github.com/Athurito/SurvivalRpg/pull/152), **OPEN / Draft**, Basis `master`, Implementierungshead `7c2a769a`; noch nicht gemergt |
+| Aktueller Arbeits-PR | [PR #152](https://github.com/Athurito/SurvivalRpg/pull/152), **OPEN / Draft**, Basis `master`; Pilot `7c2a769a`, Farbfix `57ecde41`, nachfolgender MetaSound-Fix im selben PR; noch nicht gemergt |
 | Übernommene Statuspflege | Bestätigten Audit-Merge in Roadmap, Übergabe und `gasp-mover-ragdoll-source-audit.md` im Pilotbranch nachgeführt |
-| Nächster Handgriff | PR #152 mit Farbkorrektur abschließen, danach GASP-04 beginnen |
+| Nächster Handgriff | PR #152 mit Farbkorrektur und MetaSound-Identitätsfix abschließen, danach GASP-04 beginnen |
 | Blocker / offene Abnahme | Pilot mit Editor/Game, 20/20 Tests und Abschlussaudit validiert; Nutzer bestätigt „passt“ mit Farbwunsch, grüne kosmetische Korrektur ebenfalls geprüft. Builds/20 Tests vor Farbpatch, kein Neulauf. PR weiterhin offen. VAL-01/02, NET-03-Grenze und ältere Pending-Fixture-Timingempfindlichkeit bleiben Folgepunkte |
 
 ## Aktueller Auftrag – GASP-03-Pilot
+
+MetaSound-Folgefix: 18 kopierte Shared/Foley-Klassen haben neue eindeutige IDs,
+19 Graphen wurden gezielt angepasst; `MSS_RpgGasp_Run` behält seine Root-ID.
+Frische Registrierung: 37 eindeutige IDs, unabhängiger Graphvergleich 19/19
+bestanden; keine doppelten Klassen oder MetaSound-Warnungen/-Fehler im Log.
+Audio-PIE-Smoke W/D/S/A und R–Warten–R beendet, Playsettings restauriert,
+Editor 58312 sauber geöffnet. Pawn-Registry 2058/71 und CMC-Foley 274/5 ohne
+fehlende Pakete oder rohe Sample-Verweise. Die folgenden 6938-Unverändert-Aussagen gehören zur früheren
+Pilot-/Farbprüfung: aktuell 6919 gleich plus genau 19 erwartete Änderungen,
+alle 18 Audio-Importoriginale und 17 Map-/Savedateien unverändert. Kein neuer
+Build/20-Test-Lauf oder Klangqualitätsnachweis; Editor-Regleränderungen und
+zwei bestehende Startup-`Condition failed` im [Manifest](assets/gasp-metasound-identity-fix.json).
 
 - Erstes lebendes Ragdoll aus stationärem, nicht geducktem Stand und Getup auf
   freier unterstützter Ebene; UEFN bleibt Physics-/GAS-/Equipment-Gameplay-Mesh.
