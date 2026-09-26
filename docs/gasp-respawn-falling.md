@@ -1,8 +1,14 @@
 # GASP-STAB-02 – Falling nach Respawn
 
-Status: **Implementiert und selbst im Editor validiert, [PR #146](https://github.com/Athurito/SurvivalRpg/pull/146) bereit zur Prüfung**, Branch `codex/gasp-02-respawn-falling`, Basis
+Status: **Gemergt**, [PR #146](https://github.com/Athurito/SurvivalRpg/pull/146)
+am 22.09.2026 um 21:09:22 UTC auf ausdrücklichen Nutzerauftrag.
+Merge: `b9a653608b6ada64dfd1c17b2e24d5dfc691202c`; finaler PR-Head: `e98e3741`.
+Implementierungsbranch `codex/gasp-02-respawn-falling`, Basis
 `4039be2560b1733859005ec052865cff0bb03d3b` (gemergter PR #145).
 Implementierungs-Commit: `57fa8de9`.
+Lokaler `master` nach Merge synchronisiert. Die abschließende Statuspflege
+ändert nur Dokumentation; die unten genannten Builds und Tests wurden dafür
+nicht wiederholt. Nächster begrenzter Roadmap-Auftrag: `GASP-NET-01`.
 
 ## Historischer Befund und Nachweislücke
 
@@ -57,8 +63,8 @@ Die Engine kann diese einzelne Überlappung also selbst auflösen.
 
 Die historische seitliche Verschiebung um rund 60,12 cm passt zu zwei
 Kapselradien von 30 cm plus Mover-Penetrationsabstand. Die damaligen Logs
-halten allerdings keine Positionen der anderen Spieler fest. Nächste gezielte
-Hypothese: Host und späterer Joiner stehen nebeneinander am selben Checkpoint;
+halten allerdings keine Positionen der anderen Spieler fest. Die nächste damals
+geprüfte Hypothese: Host und späterer Joiner stehen nebeneinander am selben Checkpoint;
 der dritte Spawn überlappt den Host und kann nicht in Richtung des Joiners
 ausweichen. Der ursprüngliche Fehlerlauf allein beweist diese Anordnung nicht.
 

@@ -1,18 +1,20 @@
 # GASP-Integration: Roadmap und Einstieg für neue Chats
 
-Stand: **22.09.2026**. Diese Datei ist der zentrale Arbeitsplan für die weitere
+Stand: **26.09.2026**. Diese Datei ist der zentrale Arbeitsplan für die weitere
 GASP-/Lyra-Integration. Sie ersetzt nicht die [Spielvision](game-vision.md) oder
 die technischen Einzelberichte. Der Umfang ist Bewegung und ihre RPG-Anbindung,
 nicht eine neue Gesamtplanung für Combat, Crafting oder Portale.
 
 ## Schnellstart
 
-- **Implementiert und selbst im Editor validiert: `GASP-02` / `GASP-STAB-02` – Falling bei belegtem Respawn.** Branch `codex/gasp-02-respawn-falling`, Commit `57fa8de9`, [PR #146](https://github.com/Athurito/SurvivalRpg/pull/146) bereit zur Prüfung. `GASP-STAB-01` ist mit [PR #145](https://github.com/Athurito/SurvivalRpg/pull/145) gemergt (`4039be25`). Die weiteren Registerpunkte bleiben offen.
+- **In Arbeit: `GASP-02` / `GASP-NET-01` – Rollback während aktivem Mantle.** Branch `codex/gasp-net-01-active-mantle-rollback`, Basis `b9a65360`; framebezogenen Nachweis im bestehenden Editor-Testharness ergänzen.
+
+- **Gemergt: `GASP-02` / `GASP-STAB-02` – Falling bei belegtem Respawn.** Commit `57fa8de9`, [PR #146](https://github.com/Athurito/SurvivalRpg/pull/146), bestätigter Merge `b9a65360`. `GASP-STAB-01` ist mit [PR #145](https://github.com/Athurito/SurvivalRpg/pull/145) gemergt (`4039be25`). Nächster begrenzter Auftrag: `GASP-NET-01`; die weiteren Registerpunkte bleiben offen.
 - Aktive Aufgabe, Branch, letzte Ergebnisse und konkrete Fortsetzung stehen in
   [gasp-integration-handoff.md](gasp-integration-handoff.md).
-- Letzter akzeptierter Runtime-Stand: [PR #145](https://github.com/Athurito/SurvivalRpg/pull/145),
-  am 22.09.2026 auf Nutzerauftrag gemergt; Merge `4039be2560b1733859005ec052865cff0bb03d3b`,
-  getesteter Runtime-Commit `43ac69b8`. Finaler PR-Head `82542580` ergänzt ausschließlich
+- Letzter akzeptierter Runtime-Stand: [PR #146](https://github.com/Athurito/SurvivalRpg/pull/146),
+  am 22.09.2026 um 21:09:22 UTC auf Nutzerauftrag gemergt; Merge `b9a653608b6ada64dfd1c17b2e24d5dfc691202c`,
+  getesteter Runtime-Commit `57fa8de9`. Finaler PR-Head `e98e3741` ergänzt ausschließlich
   Dokumentation. GASP-01 bleibt mit PR #144 und damaliger Sichtabnahme übernommen.
 - Dieser Stand enthält offene Folgearbeiten. „Gemergt“ bedeutet nicht, dass alle
   Netzwerk-/Lifecycle-Randfälle gelöst oder alle Umgebungen getestet sind.
@@ -41,7 +43,7 @@ Vorgabe, insgesamt genau drei Experience-Dateien zu besitzen.
 | ID | Arbeitspaket | Status | Voraussetzung / Abschluss |
 | --- | --- | --- | --- |
 | `GASP-01` | Grounded Hurdle für Mover | **Gemergt** | [PR #144](https://github.com/Athurito/SurvivalRpg/pull/144), Merge `aa4447d6`; Runtime `b78edf5b`; Editor/Game, 47 Tests und zwei Prozessläufe bestanden; Nutzer-Sichtabnahme am 22.09.2026; [Bericht](gasp-mover-hurdle.md) |
-| `GASP-02` | Gezielte Stabilisierung | **In Arbeit (Teilauftrag)** | `GASP-STAB-01` gemergt in PR #145; `GASP-STAB-02` inklusive eigener Live-Editorprüfung validiert, PR #146 offen; weitere Registerpunkte offen |
+| `GASP-02` | Gezielte Stabilisierung | **In Arbeit (Teilauftrag)** | `GASP-STAB-01` gemergt in PR #145; `GASP-STAB-02` inklusive eigener Live-Editorprüfung gemergt in PR #146; als Nächstes `GASP-NET-01`, weitere Registerpunkte offen |
 | `GASP-03` | Mover-Ragdoll-Experience | Geplant | `GASP-01`; belastbarer Lifecycle-Stand aus `GASP-02`; Source-Audit zuerst |
 | `GASP-04` | Vergleich der drei Varianten | Geplant | `GASP-03`; dokumentierte gemeinsame Abnahmematrix |
 | `GASP-05` | Importbereinigung | Geplant | `GASP-04`; geprüfte Abhängigkeiten und konkrete Entfernungsliste |
@@ -103,14 +105,14 @@ Einstieg: [CMC-Hurdle](gasp-hurdle-integration.md),
 ## GASP-02 – Register der offenen Folgearbeiten
 
 Jede Zeile ist ein begrenzter Folgeauftrag, keine Aufforderung, alle Probleme in
-einem PR zu bearbeiten. **`GASP-STAB-01` ist gemergt, `GASP-STAB-02` implementiert und validiert; die übrigen Punkte sind offen.** Die Priorität
+einem PR zu bearbeiten. **`GASP-STAB-01` und `GASP-STAB-02` sind gemergt; die übrigen Punkte sind offen.** Die Priorität
 innerhalb dieses Schritts beginnt bei den Lifecycle-Punkten.
 
 | ID | Einordnung | Arbeit und Abschlussnachweis |
 | --- | --- | --- |
 | `GASP-STAB-01` | **Gemergt** | Ursprünglichen Ensure frisch reproduziert; Cleanup an ursprünglichen ASC/DefenseSet gebunden, Basiswerte und rekursive Enden abgesichert. Runtime `43ac69b8`; Editor/Game und 11/11 Tests bestanden. [PR #145](https://github.com/Athurito/SurvivalRpg/pull/145), Merge `4039be25`; [Bericht](gasp-block-cleanup.md). |
-| `GASP-STAB-02` | **Implementiert, PR bereit zur Prüfung** | Zwei reale Pawns am Checkpoint reproduzieren Falling/Velocity 0 durch gescheiterte Penetrationsauflösung. Konkreter RPG-Pawn nutzt Engine-Spawnanpassung; identischer Crowd-Test rot/grün, Editor/Game und 11/11 Regressionen bestanden. Zusätzlich 2/2 im sichtbaren Editor und 1/1 Crowd-Diagnose mit eigener Sichtprüfung. Commit `57fa8de9`, [PR #146](https://github.com/Athurito/SurvivalRpg/pull/146); [Ursache, Grenzen und Nachstellen](gasp-respawn-falling.md). Kein allgemeiner Anspruch bei vollständig verbautem Checkpoint. |
-| `GASP-NET-01` | Korrektur-Nachweislücke | Beim aktiven Mantle kann normales Warping die injizierte Abweichung entfernen, bevor der Test die relevante Korrektur erfasst. Echten Rollback über den betroffenen aktiven Frame nachweisen; Warp-/Collider-Vertrag nicht abschwächen. |
+| `GASP-STAB-02` | **Gemergt** | Zwei reale Pawns am Checkpoint reproduzieren Falling/Velocity 0 durch gescheiterte Penetrationsauflösung. Konkreter RPG-Pawn nutzt Engine-Spawnanpassung; identischer Crowd-Test rot/grün, Editor/Game und 11/11 Regressionen bestanden. Zusätzlich 2/2 im sichtbaren Editor und 1/1 Crowd-Diagnose mit eigener Sichtprüfung. Commit `57fa8de9`, [PR #146](https://github.com/Athurito/SurvivalRpg/pull/146), Merge `b9a65360`; [Ursache, Grenzen und Nachstellen](gasp-respawn-falling.md). Kein allgemeiner Anspruch bei vollständig verbautem Checkpoint. |
+| `GASP-NET-01` | **In Arbeit** – Korrektur-Nachweislücke | Beim aktiven Mantle kann normales Warping die injizierte Abweichung entfernen, bevor der Test die relevante Korrektur erfasst. Echten Rollback über den betroffenen aktiven Frame nachweisen; Warp-/Collider-Vertrag nicht abschwächen. |
 | `GASP-NET-02` | Ungeklärte Zustandsabweichung | Ein Lauf zeigte vorhergesagtes `Finished` gegenüber autoritativem `Cancelled`. Ursache und zulässige terminale Semantik klären. Ein Wiederholungslauf mit gleichem Grund auf beiden Seiten löst diese Beobachtung nicht. |
 | `GASP-NET-03` | Gemessene Paketverlust-Grenze | Nach 350 ms Paketpause stehen Animation und Position gemeinsam still, beim Aufholen bleibt an einer Ebene eine Abweichung von etwa 71 ms durch die rekonstruierte Bahn. Gezielt bewerten/verbessern; keine pauschale perfekte Pose-/Hindernisübereinstimmung bei Verlust behaupten. |
 | `GASP-VAL-01` | Messgrenze | Im finalen separaten Prozesslauf ist ein Walking→Traversing-Messpaar nicht numerisch vergleichbar. Die erste aktive Traversing-Probe enthält bereits die Montage. Bei Bedarf Onset-Messung verfeinern; keinen belegten Animationsaussetzer daraus ableiten. |

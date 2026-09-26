@@ -5,21 +5,41 @@ Zentraler Plan und Aufgabenverträge:
 Diese Datei hält den **aktuellen Arbeitsstand**, die Roadmap die Reihenfolge und
 Abnahme. Beide bei relevanten Fortschritten im selben PR aktualisieren.
 
-## Aktueller Stand – 22.09.2026
+## Aktueller Stand – 26.09.2026
 
 | Feld | Wert |
 | --- | --- |
-| Aktive Implementierungsaufgabe | `GASP-02` / `GASP-STAB-02` – Falling bei belegtem Respawn, **implementiert und selbst im Editor validiert**, PR #146 bereit zur Prüfung |
-| Nächste bereite Aufgabe | Nach Review/Merge `GASP-NET-01`: echten Rollback während aktivem Mantle nachweisen |
-| Zuständiger Chat / beanspruchte Dateien | Dieser Chat: Mover-Lifecycle-Testharness, konkreter `Mover/RPG/BP_RpgGasp_Mover` (Spawn-Kollisionspolitik nach rotem Crowd-Repro) und GASP-Roadmap/Übergabe/Bericht. Editor-/Buildkoordination ausschließlich durch Root |
-| Runtime-Ausgangspunkt | `4039be2560b1733859005ec052865cff0bb03d3b`, bestätigter Merge PR #145 auf `master` am 22.09.2026 |
-| Checkout / aktiver Branch | `codex/gasp-02-respawn-falling`, `D:/Repos/SurvivalRpg`; Basis `4039be25`, nach Merge von origin/master fast-forward synchronisiert |
+| Aktive Implementierungsaufgabe | `GASP-02` / `GASP-NET-01` – echter Rollback während aktivem Mantle, **In Arbeit** |
+| Nächste bereite Aufgabe | Nach NET-01 `GASP-NET-02`: vorhergesagtes Finished gegenüber autoritativem Cancelled klären |
+| Zuständiger Chat / beanspruchte Dateien | Dieser Chat: `RpgGaspMoverTraversalTestFixture.cpp`, `RpgMoverPredictionTestTypes.*`, passende native Belegtests und GASP-Dokumentation. Root besitzt Editor/Build; parallele Audits koordinieren ihre Dateigrenzen |
+| Runtime-Ausgangspunkt | `b9a653608b6ada64dfd1c17b2e24d5dfc691202c`, bestätigter Merge PR #146 auf `master` am 22.09.2026 um 21:09:22 UTC |
+| Checkout / aktiver Branch | `codex/gasp-net-01-active-mantle-rollback`, `D:/Repos/SurvivalRpg`; Basis `b9a65360`, origin/master am 26.09.2026 verifiziert |
 | Letzter Implementierungs-Commit | `57fa8de9` – Spawnanpassung im konkreten RPG-Mover-Pawn und gezielter Crowd-/Checkpoint-Nachweis |
-| Aktueller Arbeits-PR | [PR #146](https://github.com/Athurito/SurvivalRpg/pull/146) offen und bereit zur Prüfung; [PR #145](https://github.com/Athurito/SurvivalRpg/pull/145) ist bestätigt gemergt |
-| Nächster Handgriff | STAB-02 in PR #146 prüfen; nach Merge Status nachführen und mit `GASP-NET-01` fortsetzen |
-| Blocker / offene Abnahme | Kein Implementierungsblocker. Review/Merge noch offen; gezielte eigene Live-/Diagnosesichtprüfung erfolgt, keine Independent/Packaged/WAN-Abnahme. Sichtbarer Editor PID 2936 in `Lvl_RpgGaspMover` geöffnet; kein PIE/Build aktiv, keine schmutzigen Packages |
+| Aktueller Arbeits-PR | Keiner; [PR #146](https://github.com/Athurito/SurvivalRpg/pull/146) und [PR #145](https://github.com/Athurito/SurvivalRpg/pull/145) sind bestätigt gemergt |
+| Übernommene Statuspflege | Bestätigten STAB-02-Merge in Roadmap, Übergabe und `gasp-respawn-falling.md` im NET-01-Arbeitsbranch nachgeführt |
+| Nächster Handgriff | Bestehenden Mantle-Korrekturfall frisch ausführen; Injektion, restaurierten aktiven Frame und tatsächliche Resimulation eindeutig korrelieren |
+| Blocker / offene Abnahme | Kein Implementierungsblocker; NET-01-Build und Nachweis noch offen. Am 26.09.2026 vor Arbeitsbeginn kein Editor/Build aktiv; neue Prüfsitzung ausschließlich durch Root. Vier Plugin-Overrides verifiziert |
 
-## Aktueller validierter Schritt – GASP-STAB-02
+## Aktueller Auftrag – GASP-NET-01
+
+- Ownership bleibt bei GAS/Projekt-Mover für Traversal und NetworkPrediction
+  für History/Replay. Konkrete Blueprint-/Montage-/Chooser-Inhalte unverändert;
+  Nachweisinstrumentierung gehört in das bestehende native Editor-Testharness.
+- Die historische Nachweislücke bleibt bis zum frischen framebezogenen Beleg
+  offen. Ein Rollbackzähler oder eine durch normales Warping korrigierte Position
+  allein genügt nicht. Warp-/Collider-/Montagevertrag nicht abschwächen.
+- Lokale neue Belege: `Saved/GaspActiveMantleRollback20260926`; Ausgangshashes
+  aller zehn Maps und sieben SaveGames gesichert. Historische Ergebnisse unten
+  sind keine neu ausgeführten Prüfungen dieses Auftrags.
+
+## Letzter abgeschlossener Schritt – GASP-STAB-02
+
+- PR #146 am 22.09.2026 um 21:09:22 UTC auf ausdrücklichen Nutzerauftrag
+  gemergt: `b9a653608b6ada64dfd1c17b2e24d5dfc691202c`, finaler PR-Head
+  `e98e37418d9f3c326bc1883404a54e9e1b60c07e`. Lokaler `master` synchronisiert;
+  vier NetworkPrediction-Overrides vor dem Wechsel erfolgreich verifiziert.
+  Nachfolgende Statuspflege ändert nur Dokumentation; Builds und Tests dafür
+  nicht erneut ausgeführt. Nächster begrenzter Auftrag ist `GASP-NET-01`.
 
 - Auf Nutzerauftrag zusätzlich selbst im sichtbaren Editor validiert: Crowd-
   sowie Block-/Follower-Lifecycle **2/2 bestanden**. Unbeleuchtete Fixture für
@@ -52,7 +72,7 @@ Abnahme. Beide bei relevanten Fortschritten im selben PR aktualisieren.
   wird davon getrennt. Vollständig verbaute Checkpoints behalten den bisherigen
   AlwaysSpawn-Fallback; die übrigen GASP-02-Registerpunkte bleiben offen.
 
-## Letzter abgeschlossener Schritt – GASP-STAB-01
+## Vorheriger abgeschlossener Schritt – GASP-STAB-01
 
 - PR #145 am 22.09.2026 um 20:05:43 UTC auf Nutzerauftrag gemergt:
   `4039be2560b1733859005ec052865cff0bb03d3b`, finaler PR-Head `82542580`.
@@ -75,9 +95,9 @@ Abnahme. Beide bei relevanten Fortschritten im selben PR aktualisieren.
   unverändert. Test-/Editorprozesse beendet.
 - Quelle und Einschränkungen: [Block-Cleanup-Bericht](gasp-block-cleanup.md).
   Lokale, ignorierte Belege unter `Saved/GaspBlockCleanup20260922`.
-- Dieser Schritt schließt weder das intermittierende Falling nach Respawn noch
-  andere `GASP-02`-Netzwerk-/Messbefunde. Nächster begrenzter Auftrag:
-  `GASP-STAB-02` mit gezielter Lifecycle-/Movement-Aufzeichnung untersuchen.
+- Dieser Schritt schloss weder das intermittierende Falling nach Respawn noch
+  andere `GASP-02`-Netzwerk-/Messbefunde. Der darauf folgende Auftrag
+  `GASP-STAB-02` ist oben mit eigenem Ursachenbeleg und Merge dokumentiert.
 
 ## Vorheriger abgeschlossener Runtime-Schritt – GASP-01
 
