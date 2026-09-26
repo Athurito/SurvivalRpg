@@ -614,7 +614,7 @@ struct FRpgGaspMoverTraversalTestFixture::FState
 	bool bLateJoinRequested = false, bCheckpointLogged = false;
 	bool bResumedStandingInput = false;
 
-	void Initialize()
+	void Initialize(const FPrimaryAssetId& ExperienceOverride)
 	{
 		for (const FWorldContext& Context : GEngine->GetWorldContexts())
 			if (Context.WorldType == EWorldType::PIE && IsValid(Context.World()))
@@ -624,7 +624,7 @@ struct FRpgGaspMoverTraversalTestFixture::FState
 			}
 		Isolation.Start();
 		PreviousExperience = GetDefault<URpgDeveloperSettings>()->ExperienceOverride;
-		GetMutableDefault<URpgDeveloperSettings>()->ExperienceOverride = FPrimaryAssetId();
+		GetMutableDefault<URpgDeveloperSettings>()->ExperienceOverride = ExperienceOverride;
 		bConfigured = true;
 		TestCommandBuilder.OnTearDown(TEXT("Release Mover traversal test input and only its own PIE session"), [this]() { Cleanup(); });
 	}
@@ -645,7 +645,7 @@ struct FRpgGaspMoverTraversalTestFixture::FState
 		using namespace RpgGaspMoverTraversalTests;
 		if (!bConfigured) return;
 		Gait = InGait; Scenario = InScenario; bHost = bInHost; ApproachYaw = InYaw;
-		TestCommandBuilder.Do(TEXT("Start the approved saved Mover map with its authored Experience"), [this]()
+		TestCommandBuilder.Do(TEXT("Start the approved saved Mover map with the selected Experience"), [this]()
 		{
 			if (BufferedReplayScenario())
 			{
@@ -2200,7 +2200,7 @@ FRpgGaspMoverTraversalTestFixture::FRpgGaspMoverTraversalTestFixture(FAutomation
 	FNoDiscardAsserter& Assert, FTestCommandBuilder& Builder)
 	: State(MakeUnique<FState>(Runner, Assert, Builder)) {}
 FRpgGaspMoverTraversalTestFixture::~FRpgGaspMoverTraversalTestFixture() { State->Cleanup(); }
-void FRpgGaspMoverTraversalTestFixture::Initialize() { State->Initialize(); }
+void FRpgGaspMoverTraversalTestFixture::Initialize(const FPrimaryAssetId& ExperienceOverride) { State->Initialize(ExperienceOverride); }
 void FRpgGaspMoverTraversalTestFixture::Cleanup() { State->Cleanup(); }
 void FRpgGaspMoverTraversalTestFixture::Queue(EGait Gait, EScenario Scenario, bool bHost, float Yaw, EAction Action, int32 Lane)
 {

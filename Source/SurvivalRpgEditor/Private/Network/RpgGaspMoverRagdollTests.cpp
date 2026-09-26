@@ -33,7 +33,10 @@
 #include "PhysicsEngine/PhysicsAsset.h"
 #include "PhysicsEngine/PhysicsSettings.h"
 #include "PhysicsEngine/SkeletalBodySetup.h"
+#include "Retargeter/IKRetargeter.h"
 #include "SurvivalRpg/AbilitySystem/RpgAbilitySystemComponent.h"
+#include "SurvivalRpg/Animation/RpgRuntimeRetargetComponent.h"
+#include "SurvivalRpg/Animation/RpgRuntimeRetargetProfile.h"
 #include "SurvivalRpg/Core/Character/RpgCharacterMoverComponent.h"
 #include "SurvivalRpg/Core/Character/RpgDeadMovementMode.h"
 #include "SurvivalRpg/Core/Character/RpgHealthComponent.h"
@@ -52,6 +55,7 @@
 #include "SurvivalRpg/Equipment/RpgEquipmentInstance.h"
 #include "SurvivalRpg/Input/RpgInputConfig.h"
 #include "UObject/UObjectIterator.h"
+#include "UObject/StrongObjectPtr.h"
 
 namespace RpgGaspMoverRagdollTests
 {
@@ -59,6 +63,7 @@ namespace RpgGaspMoverRagdollTests
 	constexpr TCHAR PawnDataPath[] = TEXT("/Game/SurvivalRpg/Characters/GASP/Mover/Ragdoll/RPG/DA_PawnData_GaspMoverRagdoll.DA_PawnData_GaspMoverRagdoll");
 	constexpr TCHAR PawnPath[] = TEXT("/Game/SurvivalRpg/Characters/GASP/Mover/Ragdoll/RPG/BP_RpgGasp_MoverRagdoll.BP_RpgGasp_MoverRagdoll_C");
 	constexpr TCHAR GameModePath[] = TEXT("/Game/SurvivalRpg/Maps/Test/GaspMoverRagdoll/BP_Rpg_GaspMoverRagdollTestGameMode.BP_Rpg_GaspMoverRagdollTestGameMode_C");
+	constexpr TCHAR SourceMeshPath[] = TEXT("/Game/SurvivalRpg/Characters/GASP/Shared/Characters/UEFN_Mannequin/Meshes/SKM_UEFN_Mannequin.SKM_UEFN_Mannequin");
 	FPrimaryAssetId ExperienceId() { return FPrimaryAssetId(URpgExperienceDefinition::StaticClass()->GetFName(), TEXT("RpgGaspMoverRagdollExperience")); }
 	FGameplayTag Tag(const TCHAR* Name) { return FGameplayTag::RequestGameplayTag(Name); }
 }
@@ -115,6 +120,7 @@ namespace RpgGaspMoverRagdollTests
 	URpgCharacterMoverComponent* Mover(const APawn* Character) { return Character ? Character->FindComponentByClass<URpgCharacterMoverComponent>() : nullptr; }
 	URpgMoverRagdollComponent* Ragdoll(const APawn* Character) { return Character ? Character->FindComponentByClass<URpgMoverRagdollComponent>() : nullptr; }
 	UPhysicsControlComponent* Controls(const APawn* Character) { return Character ? Character->FindComponentByClass<UPhysicsControlComponent>() : nullptr; }
+	URpgRuntimeRetargetComponent* Retarget(const APawn* Character) { return Character ? Character->FindComponentByClass<URpgRuntimeRetargetComponent>() : nullptr; }
 	URpgHealthComponent* Health(const APawn* Character) { return URpgHealthComponent::FindHealthComponent(Character); }
 	URpgAbilitySystemComponent* ASC(const APawn* Character)
 	{
@@ -157,6 +163,75 @@ namespace RpgGaspMoverRagdollTests
 			if (Source->GetBoneIndex(Bone) == INDEX_NONE || !Source->GetBodyInstance(Bone)) return false;
 		return true;
 	}
+	bool FollowerReady(const APawn* Character)
+	{
+		const URpgRuntimeRetargetComponent* Component = Retarget(Character);
+		const URpgRuntimeRetargetProfile* Profile = Component ? Component->GetRetargetProfile() : nullptr;
+		USkeletalMeshComponent* Target = Component ? Component->GetRetargetMesh() : nullptr;
+		const USkeletalMeshComponent* Source = Mesh(Character);
+		const URpgPawnExtensionComponent* Extension = URpgPawnExtensionComponent::FindPawnExtensionComponent(Character);
+		const URpgPawnData* Data = Extension ? Extension->GetPawnData<URpgPawnData>() : nullptr;
+		if (!Profile || !Data || Profile != Data->RuntimeRetargetProfile || !Profile->TargetMesh || !Target || !Source || Target == Source || !Target->IsRegistered()
+			|| !Target->IsVisible() || Target->bHiddenInGame || Source->IsVisible() || !Target->GetAnimInstance()
+			|| Target->GetAttachParent() != Source || Target->GetSkeletalMeshAsset() != Profile->TargetMesh
+			|| Target->GetAnimClass() != Profile->RetargetAnimClass || Component->GetRetargeter() != Profile->Retargeter
+			|| Target->GetCollisionEnabled() != ECollisionEnabled::NoCollision || Target->GetIsReplicated()
+			|| Target->IsSimulatingPhysics() || Target->PrimaryComponentTick.TickGroup != TG_PostPhysics
+			|| Target->GetAnimInstance()->GetCurrentActiveMontage()) return false;
+		for (const FBodyInstance* Body : Target->Bodies) if (Body && Body->IsInstanceSimulatingPhysics()) return false;
+		return Source->GetSkeletalMeshAsset() && Source->GetSkeletalMeshAsset()->GetPathName() == SourceMeshPath;
+	}
+	TArray<FQuat> FollowerLimbPose(USkeletalMeshComponent* Target, bool bReference = false)
+	{
+		TArray<FQuat> Result;
+		if (!Target || !Target->GetSkeletalMeshAsset()) return Result;
+		// Completed local bone rotations cannot change solely because the anchored capsule or mesh moves.
+		const TArray<FTransform> Pose = bReference ? Target->GetSkeletalMeshAsset()->GetRefSkeleton().GetRefBonePose() : Target->GetBoneSpaceTransforms();
+		for (const FName Bone : { FName(TEXT("thigh_l")), FName(TEXT("calf_r")), FName(TEXT("upperarm_l")), FName(TEXT("lowerarm_r")) })
+		{
+			const int32 Index = Target->GetBoneIndex(Bone);
+			if (!Pose.IsValidIndex(Index) || Pose[Index].ContainsNaN()) return {};
+			Result.Add(Pose[Index].GetRotation());
+		}
+		return Result;
+	}
+	float FollowerPoseDifference(const TArray<FQuat>& Before, const TArray<FQuat>& After)
+	{
+		if (Before.Num() != 4 || After.Num() != Before.Num()) return 0.0f;
+		float Result = 0.0f;
+		for (int32 Index = 0; Index < Before.Num(); ++Index) Result = FMath::Max(Result, static_cast<float>(Before[Index].AngularDistance(After[Index])));
+		return Result;
+	}
+	/** Compose one transient compatible appearance before PIE; preserve the authored Ragdoll PawnData exactly. */
+	class FScopedFollowerProfile final
+	{
+	public:
+		~FScopedFollowerProfile() { Restore(); }
+		bool Enable()
+		{
+			Data.Reset(LoadObject<URpgPawnData>(nullptr, PawnDataPath));
+			const URpgPawnData* MoverData = LoadObject<URpgPawnData>(nullptr, TEXT("/Game/SurvivalRpg/Characters/GASP/Mover/RPG/DA_PawnData_GaspMover.DA_PawnData_GaspMover"));
+			if (!Data.IsValid() || !MoverData || !MoverData->RuntimeRetargetProfile) return false;
+			Previous.Reset(const_cast<URpgRuntimeRetargetProfile*>(Data->RuntimeRetargetProfile.Get()));
+			Profile.Reset(DuplicateObject<URpgRuntimeRetargetProfile>(MoverData->RuntimeRetargetProfile.Get(), GetTransientPackage()));
+			if (!Profile.IsValid()) return false;
+			Profile->SetFlags(RF_Transient);
+			Profile->TargetMesh = LoadObject<USkeletalMesh>(nullptr, TEXT("/Game/SurvivalRpg/Characters/GASP/Shared/Characters/UE5_Mannequins/Meshes/SKM_Manny.SKM_Manny"));
+			Profile->Retargeter = LoadObject<UIKRetargeter>(nullptr, TEXT("/Game/SurvivalRpg/Characters/GASP/Shared/Characters/UE5_Mannequins/Rigs/RTG_UEFN_to_UE5_Mannequin.RTG_UEFN_to_UE5_Mannequin"));
+			if (!Profile->TargetMesh || !Profile->Retargeter || !Profile->RetargetAnimClass) return false;
+			Data->RuntimeRetargetProfile = Profile.Get(); bOverridden = true;
+			return true;
+		}
+		void Restore()
+		{
+			if (bOverridden && Data.IsValid()) Data->RuntimeRetargetProfile = Previous.Get();
+			bOverridden = false; Data.Reset(); Previous.Reset(); Profile.Reset();
+		}
+	private:
+		TStrongObjectPtr<URpgPawnData> Data;
+		TStrongObjectPtr<URpgRuntimeRetargetProfile> Previous, Profile;
+		bool bOverridden = false;
+	};
 	bool Ready(UWorld* World, APawn* Character)
 	{
 		const AGameStateBase* Game = ActiveWorld(World) ? World->GetGameState() : nullptr;
@@ -174,6 +249,8 @@ namespace RpgGaspMoverRagdollTests
 			&& ASC(Character)->AbilityActorInfo.IsValid() && ASC(Character)->AbilityActorInfo->SkeletalMeshComponent.Get() == Mesh(Character)
 			&& Mesh(Character) && Mesh(Character)->GetAnimInstance() && Mover(Character)->GetPrimaryVisualComponent() == Mesh(Character)
 			&& Health(Character) && !Health(Character)->IsDeadOrDying() && Equipped(Character) && ControlsReady(Character)
+			&& (!Extension->GetPawnData<URpgPawnData>()->RuntimeRetargetProfile
+				|| !Extension->GetPawnData<URpgPawnData>()->RuntimeRetargetProfile->TargetMesh || FollowerReady(Character))
 			&& (Character->GetLocalRole() == ROLE_SimulatedProxy || RagdollSpec(Character))
 			&& (!Character->IsLocallyControlled() || Gameplay->IsReadyToBindInputs());
 	}
@@ -406,6 +483,9 @@ namespace RpgGaspMoverRagdollTests
 		TWeakObjectPtr<APawn> OriginalPawn;
 		TWeakObjectPtr<USkeletalMeshComponent> OriginalMesh;
 		TWeakObjectPtr<UPhysicsControlComponent> OriginalControls;
+		TWeakObjectPtr<USkeletalMeshComponent> OriginalFollower;
+		TArray<FQuat> InitialFollowerPose, GetupFollowerPose, MovementFollowerPose;
+		float FollowerRagdollMotion = 0.0f, FollowerGetupMotion = 0.0f, FollowerMovementMotion = 0.0f;
 		FDelegateHandle ActivatedHandle, EndedHandle;
 		FGameplayAbilitySpecHandle RagdollHandle;
 		TArray<TWeakObjectPtr<AActor>> EquipmentActors;
@@ -437,7 +517,7 @@ namespace RpgGaspMoverRagdollTests
 	{
 	public:
 		~FScopedObservations() { Stop(); }
-		void Start(int32 Id) { Subject = Id; Handle = FWorldDelegates::OnWorldTickEnd.AddRaw(this, &FScopedObservations::Tick); }
+		void Start(int32 Id, bool bWithFollower = false) { Subject = Id; bObserveFollower = bWithFollower; Handle = FWorldDelegates::OnWorldTickEnd.AddRaw(this, &FScopedObservations::Tick); }
 		void Add(UWorld* World)
 		{
 			if (Peers.Contains(World)) return;
@@ -461,6 +541,12 @@ namespace RpgGaspMoverRagdollTests
 			});
 			Peer.MeshRelative = Mesh(Character)->GetRelativeTransform();
 			Peer.bHadNormalBaseline = Ragdoll(Character)->GetRagdollPhase() == ERpgMoverRagdollPhase::Inactive;
+			if (bObserveFollower)
+			{
+				Peer.OriginalFollower = Retarget(Character) ? Retarget(Character)->GetRetargetMesh() : nullptr;
+				// A late observer already joins a lying pose. Require a real non-reference pose, not another fall.
+				Peer.InitialFollowerPose = FollowerLimbPose(Peer.OriginalFollower.Get(), !Peer.bHadNormalBaseline);
+			}
 			const UCapsuleComponent* Capsule = Cast<UCapsuleComponent>(Character->GetRootComponent());
 			Peer.CapsuleCollision = Capsule->GetCollisionEnabled(); Peer.PawnResponse = Capsule->GetCollisionResponseToChannel(ECC_Pawn);
 			if (Peer.bHadNormalBaseline) for (const FName Name : Controls(Character)->GetAllControlNames())
@@ -507,6 +593,7 @@ namespace RpgGaspMoverRagdollTests
 			{
 				APawn* Character = Pawn(Entry.Key.Get(), Subject);
 				Entry.Value.MovementStart = Character->GetActorLocation(); Entry.Value.bTrackMovement = true; Entry.Value.bSawAttack = false;
+				if (bObserveFollower) Entry.Value.MovementFollowerPose = FollowerLimbPose(Entry.Value.OriginalFollower.Get());
 			}
 		}
 		void Stop()
@@ -528,6 +615,8 @@ namespace RpgGaspMoverRagdollTests
 					*GetPathNameSafe(Entry.Key.Get()), Peer.bHadNormalBaseline, Peer.RagdollEntries, Peer.RagdollSeconds, Peer.bSawPhysicalPose,
 					Peer.bPoseMoved, Peer.MaxAnchorDrift, Peer.bSawGetup, Peer.GetupInstance, Peer.GetupFirstTime, Peer.GetupLastTime,
 					Peer.bInvalid, Peer.bSawDeath, Peer.bGetupAfterDeath, Peer.bSawAttack);
+				if (bObserveFollower) UE_LOG(LogTemp, Display, TEXT("RpgMoverRagdollTest follower world=%s mesh=%s ragdollPoseRadians=%.4f getupPoseRadians=%.4f movementPoseRadians=%.4f"),
+					*GetPathNameSafe(Entry.Key.Get()), *GetPathNameSafe(Peer.OriginalFollower.Get()), Peer.FollowerRagdollMotion, Peer.FollowerGetupMotion, Peer.FollowerMovementMotion);
 				UE_LOG(LogTemp, Display, TEXT("RpgMoverRagdollTest GAS world=%s activated=%d ended=%d"), *GetPathNameSafe(Entry.Key.Get()), Peer.Activations, Peer.AbilityEnds);
 				UE_LOG(LogTemp, Display, TEXT("RpgMoverRagdollTest floor world=%s currentSupportedPose=%d sustained=%.3f floorZ=%.3f boundsAboveFloor=%.3f/%.3f contactMargin=%.3f"),
 					*GetPathNameSafe(Entry.Key.Get()), Peer.bCurrentSupportedPhysicalPose, Peer.ContinuousSupportedPoseSeconds,
@@ -550,6 +639,23 @@ namespace RpgGaspMoverRagdollTests
 			const bool bOriginal = Character == Peer->OriginalPawn.Get();
 			if (bOriginal)
 			{
+				if (bObserveFollower)
+				{
+					Peer->bInvalid |= !FollowerReady(Character) || Retarget(Character)->GetRetargetMesh() != Peer->OriginalFollower.Get()
+						|| !ASC(Character) || !ASC(Character)->AbilityActorInfo.IsValid() || ASC(Character)->AbilityActorInfo->SkeletalMeshComponent.Get() != Mesh(Character)
+						|| Mover(Character)->GetPrimaryVisualComponent() != Mesh(Character) || !Equipped(Character);
+					const TArray<FQuat> Pose = FollowerLimbPose(Peer->OriginalFollower.Get());
+					Peer->bInvalid |= Pose.Num() != 4;
+					if (Phase == ERpgMoverRagdollPhase::Ragdoll)
+						Peer->FollowerRagdollMotion = FMath::Max(Peer->FollowerRagdollMotion, FollowerPoseDifference(Peer->InitialFollowerPose, Pose));
+					if (Phase == ERpgMoverRagdollPhase::GettingUp)
+					{
+						if (Peer->GetupFollowerPose.IsEmpty()) Peer->GetupFollowerPose = Pose;
+						Peer->FollowerGetupMotion = FMath::Max(Peer->FollowerGetupMotion, FollowerPoseDifference(Peer->GetupFollowerPose, Pose));
+					}
+					if (Peer->bTrackMovement)
+						Peer->FollowerMovementMotion = FMath::Max(Peer->FollowerMovementMotion, FollowerPoseDifference(Peer->MovementFollowerPose, Pose));
+				}
 				if (Peer->EntryDiagnosticSamples++ < 4) ReportEntry(TEXT("InitialObservedTick"), World, Character);
 				Peer->bInvalid |= Mesh(Character) != Peer->OriginalMesh.Get() || Controls(Character) != Peer->OriginalControls.Get();
 				Peer->bSawDeath |= Health(Character)->IsDeadOrDying();
@@ -657,6 +763,7 @@ namespace RpgGaspMoverRagdollTests
 				&& Mesh(Character)->GetAnimInstance()->Montage_IsPlaying(ASC(Character)->GetCurrentMontage());
 		}
 		int32 Subject = INDEX_NONE;
+		bool bObserveFollower = false;
 		FDelegateHandle Handle;
 		TMap<TWeakObjectPtr<UWorld>, FPeer> Peers;
 	};
@@ -668,6 +775,7 @@ NETWORK_TEST_CLASS(GaspMoverRagdollPIE, "SurvivalRpg.GASP.Mover.Ragdoll")
 	using FState = RpgGaspMoverRagdollTests::FState;
 	using EScenario = RpgGaspMoverRagdollTests::EScenario;
 	RpgGaspMoverRagdollTests::FScopedWorld Isolation;
+	RpgGaspMoverRagdollTests::FScopedFollowerProfile FollowerProfile;
 	RpgGaspMoverRagdollTests::FScopedInput Input;
 	RpgGaspMoverRagdollTests::FScopedObservations Observations;
 	RpgGaspMoverRagdollTests::FScopedPhysicsWarnings PhysicsWarnings;
@@ -676,7 +784,7 @@ NETWORK_TEST_CLASS(GaspMoverRagdollPIE, "SurvivalRpg.GASP.Mover.Ragdoll")
 	TWeakObjectPtr<UWorld> AuthorityWorld, DrivingWorld;
 	FVector EntryWalkStart = FVector::ZeroVector;
 	int32 SubjectId = INDEX_NONE;
-	bool bConfigured = false;
+	bool bConfigured = false, bFollower = false;
 
 	BEFORE_EACH()
 	{
@@ -690,6 +798,13 @@ NETWORK_TEST_CLASS(GaspMoverRagdollPIE, "SurvivalRpg.GASP.Mover.Ragdoll")
 		UClass* GameMode = LoadClass<ARpgGameModeBase>(nullptr, GameModePath);
 		ASSERT_THAT(IsNotNull(GameMode));
 		if (!GameMode) return;
+		bFollower = TestRunner->GetTestContext().EndsWith(TEXT("OptionalFollowerPreservesPhysicsGetupAndLateJoin"));
+		if (bFollower)
+		{
+			const bool bEnabled = FollowerProfile.Enable();
+			ASSERT_THAT(IsTrue(bEnabled));
+			if (!bEnabled) return;
+		}
 		PhysicsWarnings.Start(); Isolation.Start();
 		PreviousExperience = GetDefault<URpgDeveloperSettings>()->ExperienceOverride;
 		GetMutableDefault<URpgDeveloperSettings>()->ExperienceOverride = ExperienceId(); bConfigured = true;
@@ -702,10 +817,12 @@ NETWORK_TEST_CLASS(GaspMoverRagdollPIE, "SurvivalRpg.GASP.Mover.Ragdoll")
 		Input.Stop(); Observations.Stop(); PhysicsWarnings.Stop();
 		for (const FString& Message : PhysicsWarnings.Get()) TestRunner->AddError(TEXT("Unexpected Ragdoll physics/movement warning: ") + Message);
 		Observations.Report();
+		FollowerProfile.Restore();
 		if (bConfigured) GetMutableDefault<URpgDeveloperSettings>()->ExperienceOverride = PreviousExperience;
 	}
 	TEST_METHOD(RemotePhysicsGetupAndLateJoinRestoreMovementAndCombat) { Queue(EScenario::Recover, false); }
 	TEST_METHOD(ListenHostPhysicsGetupReachesBothObservers) { Queue(EScenario::Recover, true); }
+	TEST_METHOD(OptionalFollowerPreservesPhysicsGetupAndLateJoin) { Queue(EScenario::Recover, false); }
 	TEST_METHOD(CancelledGetupCannotCompleteTheNextRagdollEpisode) { Queue(EScenario::Reenter, false); }
 	TEST_METHOD(DeathDuringRagdollReleasesPhysicsAndRespawns) { Queue(EScenario::DeathInRagdoll, false); }
 	TEST_METHOD(DeathDuringGetupCannotReviveTheOldPawn) { Queue(EScenario::DeathInGetup, false); }
@@ -724,7 +841,8 @@ NETWORK_TEST_CLASS(GaspMoverRagdollPIE, "SurvivalRpg.GASP.Mover.Ragdoll")
 				&& Peer.EntryCommand.Episode == Authority.EntryCommand.Episode && Peer.EntryCommand.AbilityHandle == Authority.EntryCommand.AbilityHandle
 				&& Peer.EntryCommand.ActivationPredictionKey == Authority.EntryCommand.ActivationPredictionKey
 				&& Peer.EntryCommand.bServerInitiatedKey == Authority.EntryCommand.bServerInitiatedKey
-				&& (!Peer.bHadNormalBaseline || Peer.bPoseMoved) && Peer.MaxAnchorDrift < 5.0f && !Peer.bInvalid;
+				&& (!Peer.bHadNormalBaseline || Peer.bPoseMoved) && Peer.MaxAnchorDrift < 5.0f && !Peer.bInvalid
+				&& (!bFollower || Peer.FollowerRagdollMotion > 0.15f);
 		}, Count);
 	}
 	bool AllGetup() const
@@ -736,6 +854,7 @@ NETWORK_TEST_CLASS(GaspMoverRagdollPIE, "SurvivalRpg.GASP.Mover.Ragdoll")
 			const FPeer& Authority = Observations.Get(AuthorityWorld.Get());
 			return Ready(World, Character) && Ragdoll(Character)->GetRagdollPhase() == ERpgMoverRagdollPhase::GettingUp
 				&& Peer.bSawGetup && Peer.GetupLastTime >= Peer.GetupFirstTime + 0.03f && !Peer.bInvalid
+				&& (!bFollower || Peer.FollowerGetupMotion > 0.15f)
 				&& Peer.GetupCommand.Episode == Authority.GetupCommand.Episode && Peer.GetupCommand.Revision == Authority.GetupCommand.Revision
 				&& Peer.GetupCommand.GetUpMontage == Authority.GetupCommand.GetUpMontage
 				&& FMath::IsNearlyEqual(Peer.GetupCommand.GetUpStartTime, Authority.GetupCommand.GetUpStartTime);
@@ -821,7 +940,7 @@ NETWORK_TEST_CLASS(GaspMoverRagdollPIE, "SurvivalRpg.GASP.Mover.Ragdoll")
 				{ return EntryReady(State.World, Pawn(State.World, SubjectId)) && EntryReady(DrivingWorld.Get(), Pawn(DrivingWorld.Get(), SubjectId)); }, Timeout())
 			.ThenServer(TEXT("Observe authority before the first actual R press"), [this](FState& State)
 			{
-				AuthorityWorld = State.World; Observations.Start(SubjectId); Observations.Add(State.World);
+				AuthorityWorld = State.World; Observations.Start(SubjectId, bFollower); Observations.Add(State.World);
 				ASSERT_THAT(IsNotNull(RagdollSpec(Pawn(State.World, SubjectId))));
 			})
 			.ThenClient(TEXT("Observe the initial owner or observer before entry"), 0, [this](FState& State) { Observations.Add(State.World); })
@@ -928,7 +1047,8 @@ NETWORK_TEST_CLASS(GaspMoverRagdollPIE, "SurvivalRpg.GASP.Mover.Ragdoll")
 					APawn* Character = Pawn(World, SubjectId);
 					return Ready(World, Character) && Ragdoll(Character)->GetRagdollPhase() == ERpgMoverRagdollPhase::Inactive
 						&& Mover(Character)->IsOnGround() && Mover(Character)->GetVelocity().Size2D() > 100.0
-						&& FVector::Dist2D(Peer.MovementStart, Character->GetActorLocation()) > 150.0;
+						&& FVector::Dist2D(Peer.MovementStart, Character->GetActorLocation()) > 150.0
+						&& (!bFollower || Peer.FollowerMovementMotion > 0.15f);
 				});
 			}, Timeout())
 			.ThenServer(TEXT("Press the existing weapon input after control is returned"), [this](FState&) { Input.Press(EKeys::LeftMouseButton); })

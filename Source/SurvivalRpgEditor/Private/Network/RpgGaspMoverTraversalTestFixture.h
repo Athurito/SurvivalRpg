@@ -3,6 +3,7 @@
 #pragma once
 
 #include "CoreMinimal.h"
+#include "UObject/PrimaryAssetId.h"
 
 class FAutomationTestBase;
 struct FNoDiscardAsserter;
@@ -24,7 +25,8 @@ public:
 	using EGait = RpgGaspMoverTraversalTests::EGait;
 	FRpgGaspMoverTraversalTestFixture(FAutomationTestBase* Runner, FNoDiscardAsserter& Assert, FTestCommandBuilder& Builder);
 	~FRpgGaspMoverTraversalTestFixture();
-	void Initialize();
+	/** Selects an optional PIE Experience; an empty ID uses the saved map, and cleanup restores the prior override. */
+	void Initialize(const FPrimaryAssetId& ExperienceOverride = FPrimaryAssetId());
 	void Cleanup();
 	void Queue(EGait Gait, EScenario Scenario = EScenario::Success, bool bHost = false, float Yaw = 0.0f,
 		EAction Action = EAction::Mantle, int32 Lane = 0);
