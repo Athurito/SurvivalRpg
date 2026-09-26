@@ -15,9 +15,9 @@ Abnahme. Beide bei relevanten Fortschritten im selben PR aktualisieren.
 | Runtime-Ausgangspunkt | `1490dd7d85306bffa2b2a4b1ab7d9202f1a9b0c4`, bestätigter Merge PR #148 am 26.09.2026 um 11:56:35 UTC; Runtime `8de5d927` |
 | Checkout / aktiver Branch | `codex/gasp-net-03-packet-gap-recovery`, `D:/Repos/SurvivalRpg`; Basis `1490dd7d` |
 | Letzter Implementierungs-Commit | `49de7c876d72ce5414b75fc25a2708f8755c5525` – acht Tooldateien für reproduzierbaren Paketpausen-Probe und Offline-Diagnose, keine C++-/Assetänderung |
-| Aktueller Arbeits-PR | Noch keiner für NET-03; [PR #148](https://github.com/Athurito/SurvivalRpg/pull/148) ist bestätigt gemergt, finaler Head `065bacc917aedf80051281aee04655492ce3d657` |
+| Aktueller Arbeits-PR | [PR #149](https://github.com/Athurito/SurvivalRpg/pull/149), **Draft, offen**; [PR #148](https://github.com/Athurito/SurvivalRpg/pull/148) ist bestätigt gemergt, finaler Head `065bacc917aedf80051281aee04655492ce3d657` |
 | Übernommene Statuspflege | Bestätigten NET-02-Merge in Roadmap, Übergabe und `gasp-terminal-reconciliation.md` im NET-03-Arbeitsbranch nachgeführt |
-| Nächster Handgriff | PR mit bewerteter Runtime-Grenze, validierten Werkzeugen und vollständigen Belegen anlegen; Review/Merge abschließen |
+| Nächster Handgriff | Validierten Werkzeugstand und verbleibende Runtime-Grenze in PR #149 prüfen; nach bestätigtem Merge mit GASP-VAL-03 fortsetzen |
 | Blocker / offene Abnahme | Kein Werkzeugblocker; 19/19 Tests, vier CLI-Negativprüfungen und beide Prozessläufe abgeschlossen. Review/Merge offen. Rekonstruktionsgrenze bleibt bestehen; keine C++-/Assetänderung oder neuer Unreal-Build |
 
 ## Aktueller Auftrag – GASP-NET-03

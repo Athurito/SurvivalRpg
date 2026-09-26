@@ -4,7 +4,7 @@ Stand: **26.09.2026, Grenze bewertet und Werkzeug validiert; Review/Merge offen*
 `codex/gasp-net-03-packet-gap-recovery`, Basis
 `1490dd7d85306bffa2b2a4b1ab7d9202f1a9b0c4`, bestätigter Merge von PR #148.
 Implementierung `49de7c876d72ce5414b75fc25a2708f8755c5525` (acht Tooldateien).
-Noch kein Arbeits-PR für NET-03. Die
+[Draft-PR #149](https://github.com/Athurito/SurvivalRpg/pull/149) ist offen. Die
 [Roadmap](gasp-integration-roadmap.md) begrenzt diesen Auftrag auf die Bewertung
 und Verbesserung des belegten Paketverlust-Befunds.
 
