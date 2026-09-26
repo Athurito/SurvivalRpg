@@ -9,7 +9,7 @@ Abnahme. Beide bei relevanten Fortschritten im selben PR aktualisieren.
 
 | Feld | Wert |
 | --- | --- |
-| Aktive Implementierungsaufgabe | `GASP-04` – technisch validiert, PR in Vorbereitung |
+| Aktive Implementierungsaufgabe | `GASP-04` – technisch validiert, [PR #154](https://github.com/Athurito/SurvivalRpg/pull/154) offen |
 | Nächste bereite Aufgabe | GASP-04-PR abschließen; danach GASP-05 als eigenen begrenzten Abhängigkeits-/Entfernungslisten-Audit beginnen |
 | Zuständiger Chat / beanspruchte Dateien | Root: PR und Statusdokumentation. Editor/MCP beendet; Testagenten fertig, keine binären Assets beansprucht |
 | Runtime-Ausgangspunkt | `9de031c9e255a13d117662713739e44984a98edc`, bestätigter Merge PR #152 am 26.09.2026 um 20:51:05 UTC |

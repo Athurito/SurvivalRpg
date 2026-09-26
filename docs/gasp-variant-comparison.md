@@ -1,6 +1,6 @@
 # GASP-04 – Gemeinsamer Variantenvergleich
 
-Stand: **27.09.2026, technisch validiert; PR in Vorbereitung**.
+Stand: **27.09.2026, technisch validiert; [PR #154](https://github.com/Athurito/SurvivalRpg/pull/154) offen**.
 Testcode `b96083570d463547aa8f23b93445619010999269`, Branch `codex/gasp-04-variant-comparison`,
 Basis `4c23134f320eb1b94d6bd2e7adaee2dfebbe0e33`. PR #152 brachte den
 Ragdoll-Piloten einschließlich grüner Farbe und MetaSound-Korrektur; PR #153
