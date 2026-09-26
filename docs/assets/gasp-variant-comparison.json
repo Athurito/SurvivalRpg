@@ -1,0 +1,340 @@
+{
+  "task": "GASP-04",
+  "date": "2026-09-27",
+  "branch": "codex/gasp-04-variant-comparison",
+  "base_commit": "4c23134f320eb1b94d6bd2e7adaee2dfebbe0e33",
+  "test_code_commit": "b96083570d463547aa8f23b93445619010999269",
+  "scope": "Editor-only tests and comparison documentation; no runtime or content changes.",
+  "engine": "5.8.2",
+  "evidence_directory": "Saved/GaspVariantComparison20260927",
+  "builds": [
+    {
+      "target": "SurvivalRpgEditor Win64 Development",
+      "result": "Succeeded",
+      "seconds": 77.46,
+      "log": "build-editor-attempt1.log"
+    },
+    {
+      "target": "SurvivalRpg Win64 Development",
+      "result": "Succeeded",
+      "seconds": 66.77,
+      "log": "build-game-attempt1.log"
+    }
+  ],
+  "automation": {
+    "passed": 31,
+    "failed": 0,
+    "seconds": 291.0521545410156,
+    "existing_selected": 27,
+    "new": 4,
+    "warning_count": 1361,
+    "warning_categories": {
+      "AdvancedFriendsInterfaceLog": 160,
+      "LogNetPackageMap": 1160,
+      "LogBlueprint": 1,
+      "LogPoseSearch": 1,
+      "LogNetworkPrediction": 18,
+      "LogAnimation": 14,
+      "LogRpgCharacter": 7
+    },
+    "warning_samples": {
+      "AdvancedFriendsInterfaceLog": "AdvancedFriendsInterfaceLog: UAdvancedFriendsInstance Failed to get voice interface!",
+      "LogAnimation": "LogAnimation: PoseAsset /Game/SurvivalRpg/Characters/GASP/Shared/Characters/UE5_Mannequins/Rigs/Poses/Manny/Manny_calf_l_pose.Manny_calf_l_pose is out-of-date with its source animation /Game/SurvivalRpg/Characters/GASP/Shared/Characters/UE5_Mannequins/Rigs/Poses/Manny/Manny_calf_l_anim.Manny_calf_l_anim CC78212CC2D05F60DB49B336943F61D9 vs 1D634D8727C63225C22E9D7F4FA6C1E2",
+      "LogBlueprint": "LogBlueprint: [AssetLog] D:\\Repos\\SurvivalRpg\\Content\\SurvivalRpg\\UI\\Respawn\\CUI_RespawnScreen.uasset: [Compiler] This widget may require a native tick but the widget is set to never tick.  Native tick will not be called.",
+      "LogNetPackageMap": "LogNetPackageMap: FNetGUIDCache::SupportsObject: Level /Temp/UEDPIE_0_Untitled_1.Untitled:PersistentLevel NOT Supported.",
+      "LogNetworkPrediction": "LogNetworkPrediction: RollbackFrame 2 EQUAL PendingFrame 2... Offset: 17",
+      "LogPoseSearch": "LogPoseSearch: UPoseSearchLibrary::MotionMatch - some searches have been skipped, since databases AsyncBuildIndex are in still in progress or failed",
+      "LogRpgCharacter": "LogRpgCharacter: Runtime retarget profile [/Engine/Transient.RpgRuntimeRetargetProfile_1] rejected for [BP_RpgGasp_Mover_C_1]: An enabled retarget profile requires a retargeter and a usable presentation AnimBP.; keeping the gameplay mesh."
+    },
+    "tests": [
+      {
+        "name": "SurvivalRpg.GASP.CMC.GaspCMCExperiencePIE.RemoteMovementLateJoinAndEquipmentMontage",
+        "state": "Success",
+        "errors": [],
+        "warning_count": 83
+      },
+      {
+        "name": "SurvivalRpg.GASP.CMC.AssetComposition",
+        "state": "Success",
+        "errors": [],
+        "warning_count": 0
+      },
+      {
+        "name": "SurvivalRpg.GASP.Hurdle.GaspHurdleAuthoredMapPIE.RunningHurdleKeepsMomentumAcrossGroundedHandoff",
+        "state": "Success",
+        "errors": [],
+        "warning_count": 6
+      },
+      {
+        "name": "SurvivalRpg.GASP.Mantle.GaspMantleAuthoredMapPIE.RunningApproachUsesAuthoredMapAndEnhancedInput",
+        "state": "Success",
+        "errors": [],
+        "warning_count": 4
+      },
+      {
+        "name": "SurvivalRpg.GASP.Mover.Gameplay.GaspMoverGameplayPIE.FixedCorrectionPreservesImmediateMontageReplay",
+        "state": "Success",
+        "errors": [],
+        "warning_count": 66
+      },
+      {
+        "name": "SurvivalRpg.GASP.Mover.Gameplay.GaspMoverGameplayPIE.OptionalFollowerPreservesGameplayEquipmentAndAttack",
+        "state": "Success",
+        "errors": [],
+        "warning_count": 85
+      },
+      {
+        "name": "SurvivalRpg.GASP.Mover.Gameplay.GaspMoverGameplayPIE.RemoteEquipmentInputMontageLateJoinAndCancellation",
+        "state": "Success",
+        "errors": [],
+        "warning_count": 64
+      },
+      {
+        "name": "SurvivalRpg.GASP.Mover.Gameplay.GaspMoverGameplayPIE.RightMouseHoldReplicatesBlockAndReleasesCleanly",
+        "state": "Success",
+        "errors": [],
+        "warning_count": 63
+      },
+      {
+        "name": "SurvivalRpg.GASP.Mover.GaspMoverExperiencePIE.ListenHostInputCameraJumpCrouchAndLateJoin",
+        "state": "Success",
+        "errors": [],
+        "warning_count": 65
+      },
+      {
+        "name": "SurvivalRpg.GASP.Mover.GaspMoverExperiencePIE.RemoteInputCameraJumpCrouchAndLateJoin",
+        "state": "Success",
+        "errors": [],
+        "warning_count": 65
+      },
+      {
+        "name": "SurvivalRpg.GASP.Mover.Hurdle.GaspMoverHurdlePIE.RemoteRunningHurdleKeepsMomentumAcrossGroundedHandoff",
+        "state": "Success",
+        "errors": [],
+        "warning_count": 6
+      },
+      {
+        "name": "SurvivalRpg.GASP.Mover.Lifecycle.GaspMoverLifecyclePIE.CrowdedCheckpointAllowsMovementAndCombat",
+        "state": "Success",
+        "errors": [],
+        "warning_count": 74
+      },
+      {
+        "name": "SurvivalRpg.GASP.Mover.Lifecycle.GaspMoverLifecyclePIE.DeathCancelsHeldBlockAndRespawnRecomposesOptionalFollower",
+        "state": "Success",
+        "errors": [],
+        "warning_count": 78
+      },
+      {
+        "name": "SurvivalRpg.GASP.Mover.Lifecycle.GaspMoverLifecyclePIE.OccupiedRespawnStartAllowsMovementAndCombat",
+        "state": "Success",
+        "errors": [],
+        "warning_count": 75
+      },
+      {
+        "name": "SurvivalRpg.GASP.Mover.Lifecycle.GaspMoverLifecyclePIE.WeaponDamageCancelsAttackStopsMovementAndRespawnsForLateJoin",
+        "state": "Success",
+        "errors": [],
+        "warning_count": 75
+      },
+      {
+        "name": "SurvivalRpg.GASP.Mover.Mantle.GaspMoverMantlePIE.RemoteRunningMantleKeepsMomentumAfterHandoff",
+        "state": "Success",
+        "errors": [],
+        "warning_count": 6
+      },
+      {
+        "name": "SurvivalRpg.GASP.Mover.Ragdoll.GaspMoverRagdollPIE.CancelledGetupCannotCompleteTheNextRagdollEpisode",
+        "state": "Success",
+        "errors": [],
+        "warning_count": 68
+      },
+      {
+        "name": "SurvivalRpg.GASP.Mover.Ragdoll.GaspMoverRagdollPIE.DeathDuringGetupCannotReviveTheOldPawn",
+        "state": "Success",
+        "errors": [],
+        "warning_count": 77
+      },
+      {
+        "name": "SurvivalRpg.GASP.Mover.Ragdoll.GaspMoverRagdollPIE.DeathDuringRagdollReleasesPhysicsAndRespawns",
+        "state": "Success",
+        "errors": [],
+        "warning_count": 78
+      },
+      {
+        "name": "SurvivalRpg.GASP.Mover.Ragdoll.GaspMoverRagdollPIE.ListenHostPhysicsGetupReachesBothObservers",
+        "state": "Success",
+        "errors": [],
+        "warning_count": 68
+      },
+      {
+        "name": "SurvivalRpg.GASP.Mover.Ragdoll.GaspMoverRagdollPIE.OptionalFollowerPreservesPhysicsGetupAndLateJoin",
+        "state": "Success",
+        "errors": [],
+        "warning_count": 68
+      },
+      {
+        "name": "SurvivalRpg.GASP.Mover.Ragdoll.GaspMoverRagdollPIE.RemotePhysicsGetupAndLateJoinRestoreMovementAndCombat",
+        "state": "Success",
+        "errors": [],
+        "warning_count": 68
+      },
+      {
+        "name": "SurvivalRpg.GASP.Mover.Ragdoll.AssetComposition",
+        "state": "Success",
+        "errors": [],
+        "warning_count": 0
+      },
+      {
+        "name": "SurvivalRpg.GASP.Mover.Vault.GaspMoverVaultPIE.RemoteRunningVaultCrossesRearEdgeAndKeepsMoving",
+        "state": "Success",
+        "errors": [],
+        "warning_count": 6
+      },
+      {
+        "name": "SurvivalRpg.GASP.Mover.AssetComposition",
+        "state": "Success",
+        "errors": [],
+        "warning_count": 0
+      },
+      {
+        "name": "SurvivalRpg.GASP.RuntimeRetarget.GaspRuntimeRetargetPIE.RemotePoseLateJoinTraversalEquipmentAndFallback",
+        "state": "Success",
+        "errors": [],
+        "warning_count": 89
+      },
+      {
+        "name": "SurvivalRpg.GASP.RuntimeRetarget.OptionalProfileComposition",
+        "state": "Success",
+        "errors": [],
+        "warning_count": 0
+      },
+      {
+        "name": "SurvivalRpg.GASP.VariantComparison.GaspVariantComparisonPIE.RagdollVariantRunningHurdlePreservesMoverTraversal",
+        "state": "Success",
+        "errors": [],
+        "warning_count": 6
+      },
+      {
+        "name": "SurvivalRpg.GASP.VariantComparison.GaspVariantComparisonPIE.RagdollVariantRunningMantlePreservesMoverTraversal",
+        "state": "Success",
+        "errors": [],
+        "warning_count": 6
+      },
+      {
+        "name": "SurvivalRpg.GASP.VariantComparison.GaspVariantComparisonPIE.RagdollVariantRunningVaultPreservesMoverTraversal",
+        "state": "Success",
+        "errors": [],
+        "warning_count": 6
+      },
+      {
+        "name": "SurvivalRpg.GASP.Vault.GaspVaultAuthoredMapPIE.RunningVaultCrossesRearEdgeAndKeepsMovingAfterLanding",
+        "state": "Success",
+        "errors": [],
+        "warning_count": 6
+      }
+    ]
+  },
+  "asset_compiles": {
+    "count": 9,
+    "warnings_as_errors": true,
+    "evidence": "blueprint-compiles.json"
+  },
+  "dependency_closures": [
+    {
+      "variant": "cmc",
+      "kind": "map",
+      "root": "/Game/SurvivalRpg/Maps/Test/Lvl_RpgGaspMantle",
+      "packages": 1536,
+      "external_boundaries": 86,
+      "missing": [],
+      "game_packages_outside_project_namespace": [],
+      "coverage": "Registry hard/soft package and management edges; runtime-generated paths are not proven."
+    },
+    {
+      "variant": "cmc",
+      "kind": "experience",
+      "root": "/Game/SurvivalRpg/System/Experiences/RpgGaspMantleExperience",
+      "packages": 1479,
+      "external_boundaries": 77,
+      "missing": [],
+      "game_packages_outside_project_namespace": [],
+      "coverage": "Registry hard/soft package and management edges; runtime-generated paths are not proven."
+    },
+    {
+      "variant": "mover",
+      "kind": "map",
+      "root": "/Game/SurvivalRpg/Maps/Test/Lvl_RpgGaspMover",
+      "packages": 2209,
+      "external_boundaries": 100,
+      "missing": [],
+      "game_packages_outside_project_namespace": [],
+      "coverage": "Registry hard/soft package and management edges; runtime-generated paths are not proven."
+    },
+    {
+      "variant": "mover",
+      "kind": "experience",
+      "root": "/Game/SurvivalRpg/System/Experiences/RpgGaspMoverExperience",
+      "packages": 2098,
+      "external_boundaries": 82,
+      "missing": [],
+      "game_packages_outside_project_namespace": [],
+      "coverage": "Registry hard/soft package and management edges; runtime-generated paths are not proven."
+    },
+    {
+      "variant": "ragdoll",
+      "kind": "map",
+      "root": "/Game/SurvivalRpg/Maps/Test/Lvl_RpgGaspMoverRagdoll",
+      "packages": 2226,
+      "external_boundaries": 99,
+      "missing": [],
+      "game_packages_outside_project_namespace": [],
+      "coverage": "Registry hard/soft package and management edges; runtime-generated paths are not proven."
+    },
+    {
+      "variant": "ragdoll",
+      "kind": "experience",
+      "root": "/Game/SurvivalRpg/System/Experiences/RpgGaspMoverRagdollExperience",
+      "packages": 2116,
+      "external_boundaries": 81,
+      "missing": [],
+      "game_packages_outside_project_namespace": [],
+      "coverage": "Registry hard/soft package and management edges; runtime-generated paths are not proven."
+    }
+  ],
+  "preservation": {
+    "assets": {
+      "count_before": 6964,
+      "unchanged": 6964,
+      "changed": [],
+      "new": [],
+      "removed": []
+    },
+    "saves": {
+      "count_before": 7,
+      "unchanged": 7,
+      "changed": [],
+      "new": [],
+      "removed": []
+    },
+    "editor": "{\"pid\": 8744, \"project\": \"D:/Repos/SurvivalRpg/\", \"dirty_content\": [], \"dirty_maps\": []}",
+    "head": "b96083570d463547aa8f23b93445619010999269"
+  },
+  "log_limits": {
+    "startup_condition_failed_errors": 2,
+    "metasound_warnings_or_errors": 0
+  },
+  "follower_observations": [
+    "world=/Temp/UEDPIE_0_Untitled_53.Untitled mesh=/Temp/UEDPIE_0_Untitled_53.Untitled:PersistentLevel.BP_RpgGasp_MoverRagdoll_C_1.SkeletalMeshComponent_0 ragdollPoseRadians=1.6626 getupPoseRadians=1.6314 movementPoseRadians=1.3941",
+    "world=/Temp/UEDPIE_1_Untitled_53.Untitled mesh=/Temp/UEDPIE_1_Untitled_53.Untitled:PersistentLevel.BP_RpgGasp_MoverRagdoll_C_0.SkeletalMeshComponent_0 ragdollPoseRadians=1.6541 getupPoseRadians=1.9988 movementPoseRadians=1.4096",
+    "world=/Temp/UEDPIE_2_Untitled_53.Untitled mesh=/Temp/UEDPIE_2_Untitled_53.Untitled:PersistentLevel.BP_RpgGasp_MoverRagdoll_C_1.SkeletalMeshComponent_0 ragdollPoseRadians=2.3572 getupPoseRadians=1.9145 movementPoseRadians=1.3935"
+  ],
+  "limits": [
+    "Selected 31-test local PIE comparison, not the full test suite or complete feature cross product.",
+    "CMC baseline integration and CMC traversal/retarget are distinct compositions.",
+    "No new Ragdoll-follower death/respawn, reentry or traversal test; normal Ragdoll traversal uses UEFN.",
+    "Follower checks prove local pose activity and ownership, not source-target bone-pose parity.",
+    "No fresh GASP-04 user visual acceptance or final character/grip/audio-quality decision.",
+    "GASP-VAL-01/02, NET-03 reconstruction limit and earlier pending-fixture timing finding remain open."
+  ]
+}

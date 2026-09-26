@@ -5,20 +5,37 @@ Zentraler Plan und Aufgabenverträge:
 Diese Datei hält den **aktuellen Arbeitsstand**, die Roadmap die Reihenfolge und
 Abnahme. Beide bei relevanten Fortschritten im selben PR aktualisieren.
 
-## Aktueller Stand – 26.09.2026
+## Aktueller Stand – 27.09.2026
 
 | Feld | Wert |
 | --- | --- |
-| Aktive Implementierungsaufgabe | Keine; `GASP-03` ist gemergt. Aktuell ausschließlich Merge-Statuspflege |
-| Nächste bereite Aufgabe | `GASP-04` – Vergleich der drei Varianten; noch nicht begonnen |
-| Zuständiger Chat / beanspruchte Dateien | Root: Abschluss und Statuspflege; keine weitere Runtime-/Assetarbeit oder aktive Datei-Reservierung |
+| Aktive Implementierungsaufgabe | `GASP-04` – technisch validiert, PR in Vorbereitung |
+| Nächste bereite Aufgabe | GASP-04-PR abschließen; danach GASP-05 als eigenen begrenzten Abhängigkeits-/Entfernungslisten-Audit beginnen |
+| Zuständiger Chat / beanspruchte Dateien | Root: PR und Statusdokumentation. Editor/MCP beendet; Testagenten fertig, keine binären Assets beansprucht |
 | Runtime-Ausgangspunkt | `9de031c9e255a13d117662713739e44984a98edc`, bestätigter Merge PR #152 am 26.09.2026 um 20:51:05 UTC |
-| Checkout / aktiver Branch | `codex/gasp-03-merge-status`, `D:/Repos/SurvivalRpg`; reine Dokumentation auf dem gemergten Runtime-/Assetstand |
-| Letzter Implementierungs-Commit | `7c2a769a26ec1396f9cbc3804eaedefee33cd2db`, einschließlich 25 LFS-Assets gepusht |
-| Letzter gemergter PR | [PR #152](https://github.com/Athurito/SurvivalRpg/pull/152), **MERGED**, finaler geprüfter Head `7ab180a85290c78474a903ce7683901e3b1c2dcd`; Pilot, Farbkorrektur und MetaSound-Fix enthalten |
-| Übernommene Statuspflege | Bestätigten PR-152-Merge in den vier Statusberichten nachgeführt; kein neuer Build, Test oder Editorlauf |
-| Nächster Handgriff | GASP-04 als begrenzten Vergleich der drei Varianten beginnen; bislang keine neue Implementierung |
-| Blocker / offene Abnahme | Historisch: Editor/Game, 20/20 Tests, Nutzerabnahme und MetaSound-Review 19/19 bestanden; Builds/20 Tests vor den Assetnachbesserungen. Keine Neuläufe für diese Statuspflege. VAL-01/02, NET-03-Grenze und ältere Pending-Fixture-Timingempfindlichkeit bleiben Folgepunkte |
+| Checkout / aktiver Branch | `codex/gasp-04-variant-comparison`, `D:/Repos/SurvivalRpg`; Basis `4c23134f320eb1b94d6bd2e7adaee2dfebbe0e33` (bestätigter Dokumentationsmerge PR #153) |
+| Letzter Implementierungs-Commit | `b96083570d463547aa8f23b93445619010999269`: vier zusätzliche Editor-Tests; Runtime/Assets unverändert |
+| Letzter gemergter PR | [PR #153](https://github.com/Athurito/SurvivalRpg/pull/153), Statuspflege als `4c23134f`; letzter Runtime-/Assetmerge bleibt [PR #152](https://github.com/Athurito/SurvivalRpg/pull/152) |
+| Aktuelle Belege | Editor/Game erfolgreich; 31/31 Tests, neun Blueprint-/AnimBP-Compiles, sechs Registry-Hüllen und Root-Sichtprobe. [Vergleich](gasp-variant-comparison.md), [Manifest](assets/gasp-variant-comparison.json) |
+| Nächster Handgriff | Geprüften GASP-04-Test-/Dokumentationsstand pushen und PR abschließen; bestätigten Merge nachführen |
+| Blocker / offene Abnahme | Kein konkreter technischer Blocker. 1361 Testwarnungen dokumentiert; keine neue GASP-04-Nutzerabnahme oder vollständige Gait-/Retarget-Kreuzproduktprüfung. VAL-01/02, NET-03-Grenze und ältere Pending-Fixture-Timingempfindlichkeit bleiben Folgepunkte |
+
+## Aktueller Abschluss – GASP-04
+
+Frische Prüfung am 27.09.2026: Editor **77,46 s**, Game **66,77 s**, gemeinsame
+Auswahl **31/31 Success** in **291,05 s** ohne Testfehler. Neue Fälle schließen
+Ragdoll-Pawn-Traversal (Mantle/Vault/Hurdle) sowie optionales Manny-Follower-
+Ragdoll/Getup mit Late Join, Bewegung und Angriff ein. Profil und Experience-
+Overrides bleiben sitzungsbezogen und werden restauriert. Kein neuer Runtimepfad.
+
+Root-Sichtprobe aller drei UEFN-Varianten mit tatsächlicher Eingabe; CMC Strg
+ist Hocke, Mover Strg/Shift/C sind Walk/Sprint/Hocke. Keine gemeinsame vollständige
+Gait-Abnahme oder neue Nutzerfreigabe behauptet. Retarget- und Lifecycle-
+Teilmengen, 1361 Warnungen und zwei Startup-`Condition failed` stehen im Bericht;
+null MetaSound-Warnungen/-Fehler im frischen Testlog. 6964 Assets/Maps und sieben
+SaveGames unverändert, vier Plugin-Overrides verifiziert. Editor zuletzt PID8744
+sauber geschlossen, PIE beendet und Playsettings restauriert. Lokale Belege:
+`Saved/GaspVariantComparison20260927`, versionierte Ergebnisse im Manifest.
 
 ## Letzter abgeschlossener Schritt – GASP-03-Pilot
 
