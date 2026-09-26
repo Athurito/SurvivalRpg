@@ -5,6 +5,20 @@ already imported into this repository at baseline commit `535b4123`, which
 includes the listen-server animation fix `8f54d995`. The external GASP sample
 checkout is a reference, not a runtime dependency.
 
+Follow-up in open draft PR #152 (2026-09-26): duplicate RunStrafe MetaSound
+GUIDs exposed shared identities in 18 copied Foley assets. These copies now
+have new UE class IDs, with references fixed in 19 graphs; the RPG Run graph
+retains its root ID. Fresh registration yields 37 unique IDs; independent
+comparison passes for 19/19 graphs with current sound defaults, waves, edges
+and templates preserved. Internal IDs and editor control settings changed as
+recorded in the manifest. All 18 imported originals remain
+unchanged. The foundation manifest and preservation statements below remain
+historical; the [separate follow-up manifest](assets/gasp-metasound-identity-fix.json)
+records this change. An audio-enabled PIE movement/ragdoll/getup smoke completed;
+the fresh log has no duplicate classes or MetaSound warnings/errors. Two existing
+startup AutomationTest conditions remain; no new build, 20-test rerun or audible
+sound-quality acceptance is claimed.
+
 This change establishes project-owned copies under
 `/Game/SurvivalRpg/Characters/GASP`. It changes references inside those copies
 and preserves the imported originals and existing RPG baseline. Experience,

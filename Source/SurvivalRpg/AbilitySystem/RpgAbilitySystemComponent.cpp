@@ -13,6 +13,7 @@
 #include "SurvivalRpg/SurvivalRpg.h"
 #include "SurvivalRpg/Animation/RpgAnimInstance.h"
 #include "SurvivalRpg/Core/Character/RpgCharacterMoverComponent.h"
+#include "SurvivalRpg/Core/Character/RpgMoverRagdollComponent.h"
 #include "SurvivalRpg/Core/Player/RpgBasePlayerState.h"
 #include "SurvivalRpg/GameplayTags/RpgGameplayTags.h"
 #include "SurvivalRpg/System/RpgAssetManager.h"
@@ -186,6 +187,21 @@ bool URpgAbilitySystemComponent::IsSimulatedMoverTraversalMontage(const UAnimMon
 	return Query->AllowedMantleAnimations.ContainsByPredicate(Matches)
 		|| Query->AllowedVaultAnimations.ContainsByPredicate(Matches)
 		|| Query->AllowedHurdleAnimations.ContainsByPredicate(Matches);
+}
+
+bool URpgAbilitySystemComponent::IsReadyForReplicatedMontage()
+{
+	const AActor* Avatar = GetAvatarActor();
+	const URpgMoverRagdollComponent* Ragdoll = Avatar ? Avatar->FindComponentByClass<URpgMoverRagdollComponent>() : nullptr;
+	const FGameplayAbilityRepAnimMontage& Montage = GetRepAnimMontageInfo();
+	// Stops must always pass, especially after death. A new getup waits for the matching replicated
+	// selection and Blueprint physics-exit callback; GAS remains the only montage playback owner.
+	return Super::IsReadyForReplicatedMontage() && (!Ragdoll || Montage.IsStopped || Ragdoll->IsReadyForReplicatedGetUp(Montage.GetAnimMontage(), Montage.PlayInstanceId));
+}
+
+void URpgAbilitySystemComponent::RefreshReplicatedRagdollMontage()
+{
+	if (bPendingMontageRep) { OnRep_ReplicatedAnimMontage(); }
 }
 
 void URpgAbilitySystemComponent::OnRep_ReplicatedAnimMontage()

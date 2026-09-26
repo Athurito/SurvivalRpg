@@ -2,6 +2,8 @@
 
 #include "RpgDeadMovementMode.h"
 #include "RpgMoverMotionWarpingComponent.h"
+#include "RpgMoverRagdollComponent.h"
+#include "RpgMoverRagdollMovementMode.h"
 
 #include "AbilitySystemComponent.h"
 #include "Abilities/GameplayAbility.h"
@@ -95,6 +97,13 @@ bool HasFixedLandingSupport(const FRpgMoverTraversalRequest& Request, const UPri
 		Support->GetCollisionResponseToChannel(Capsule->GetCollisionObjectType()) == ECR_Block &&
 		Capsule->GetCollisionResponseToChannel(Support->GetCollisionObjectType()) == ECR_Block;
 }
+
+bool MatchesGetUp(const FRpgMoverAbilityRootMotion& Move, const FRpgMoverRagdollState& State)
+{
+	return State.Phase == ERpgMoverRagdollPhase::GettingUp && State.AbilityHandle == Move.AbilityHandle &&
+		State.ActivationPredictionKey == Move.ActivationPredictionKey && State.bServerInitiatedKey == Move.bServerInitiatedKey &&
+		Move.MontageSequence == 1 && State.GetUpMontage == Move.MontageState.Montage;
+}
 }
 
 bool FRpgMoverAbilityRootMotion::GenerateMove(const FMoverTickStartData& StartState, const FMoverTimeStep& TimeStep,
@@ -121,7 +130,8 @@ bool FRpgMoverAbilityRootMotion::GenerateMove(const FMoverTickStartData& StartSt
 		const FRpgMoverAbilityRootMotionInputs* Inputs = StartState.InputCmd.InputCollection.FindDataByType<FRpgMoverAbilityRootMotionInputs>();
 		if (RpgMover->GetOwnerRole() != ROLE_AutonomousProxy ||
 			(!(Inputs && RpgAbilityRootMotion::MatchesPlayback(*this, Inputs->RootMotion)) &&
-			 !RpgAbilityRootMotion::MatchesTraversal(*this, RpgMover->TraversalSimulationState.Command)))
+			 !RpgAbilityRootMotion::MatchesTraversal(*this, RpgMover->TraversalSimulationState.Command) &&
+			 !RpgAbilityRootMotion::MatchesGetUp(*this, RpgMover->RagdollSimulationState.State)))
 		{
 			DurationMs = 0.0f;
 			return false;
@@ -134,6 +144,11 @@ bool FRpgMoverAbilityRootMotion::GenerateMove(const FMoverTickStartData& StartSt
 	FMoverTimeStep ExtractionTimeStep = TimeStep;
 	ExtractionTimeStep.bIsResimulating = RpgMover->GetOwnerRole() == ROLE_AutonomousProxy || TimeStep.bIsResimulating;
 	URpgCharacterMoverComponent* MutableMover = const_cast<URpgCharacterMoverComponent*>(RpgMover);
+	const FRpgMoverRagdollState& Ragdoll = MutableMover->RagdollSimulationState.State;
+	const bool bGetUp = RpgAbilityRootMotion::MatchesGetUp(*this, Ragdoll);
+	const bool bRagdollIdentity = Ragdoll.Episode != 0 && Ragdoll.AbilityHandle == AbilityHandle &&
+		Ragdoll.ActivationPredictionKey == ActivationPredictionKey && Ragdoll.bServerInitiatedKey == bServerInitiatedKey;
+	if ((Ragdoll.IsActive() && !bGetUp) || (bRagdollIdentity && !bGetUp)) { DurationMs = 0.f; return false; }
 	const FRpgMoverTraversalCommand& Traversal = MutableMover->TraversalSimulationState.Command;
 	const bool bTraversalIdentity = Traversal.Identity.AbilityHandle == AbilityHandle &&
 		Traversal.Identity.ActivationPredictionKey == ActivationPredictionKey &&
@@ -162,6 +177,7 @@ bool FRpgMoverAbilityRootMotion::GenerateMove(const FMoverTickStartData& StartSt
 			FTransform(Default->GetOrientation_WorldSpace(), Default->GetLocation_WorldSpace()));
 		bGenerated = Super::GenerateMove(StartState, ExtractionTimeStep, MoverComp, SimBlackboard, OutProposedMove);
 	}
+	if (bGetUp) { MutableMover->RagdollSimulationState.MontagePosition = MontageState.CurrentPosition; }
 	return bGenerated;
 }
 
@@ -194,6 +210,7 @@ void FRpgMoverAbilityRootMotionInputs::RetainMontageForHistory()
 {
 	MontageLifetime.Reset(RootMotion.MontageState.Montage.Get());
 	Traversal.RetainObjectsForHistory();
+	Ragdoll.RetainObjectsForHistory();
 }
 
 FMoverDataStructBase* FRpgMoverAbilityRootMotionInputs::Clone() const
@@ -215,6 +232,7 @@ bool FRpgMoverAbilityRootMotionInputs::NetSerialize(FArchive& Ar, UPackageMap* M
 	{
 		RootMotion = FRpgMoverAbilityRootMotion{};
 		Traversal = FRpgMoverTraversalCommand{};
+		Ragdoll = FRpgMoverRagdollState{};
 		RetainMontageForHistory();
 	}
 	bOutSuccess = true;
@@ -225,6 +243,7 @@ void FRpgMoverAbilityRootMotionInputs::AddReferencedObjects(FReferenceCollector&
 {
 	RootMotion.AddReferencedObjects(Collector);
 	Traversal.AddReferencedObjects(Collector);
+	Ragdoll.AddReferencedObjects(Collector);
 }
 
 bool FRpgMoverAbilityRootMotionInputs::ShouldReconcile(const FMoverDataStructBase& AuthorityState) const
@@ -262,6 +281,13 @@ void URpgCharacterMoverComponent::BeginPlay()
 		AddMovementModeFromClass(URpgDeadMovementMode::ModeName, URpgDeadMovementMode::StaticClass());
 	}
 	PersistentSyncStateDataTypes.Add(FMoverDataPersistence(FRpgMoverTraversalSyncState::StaticStruct(), true));
+	bRagdollEnabled = GetOwner()->FindComponentByClass<URpgMoverRagdollComponent>() != nullptr;
+	if (bRagdollEnabled)
+	{
+		// This pilot replaces the sample's unchecked bone-input movement with a held capsule.
+		AddMovementModeFromClass(URpgMoverRagdollMovementMode::ModeName, URpgMoverRagdollMovementMode::StaticClass());
+		PersistentSyncStateDataTypes.Add(FMoverDataPersistence(FRpgMoverRagdollSyncState::StaticStruct(), true));
+	}
 	TraversalWarping = GetOwner()->FindComponentByClass<URpgMoverMotionWarpingComponent>();
 	Super::BeginPlay();
 	OnPreSimulationTick.AddUniqueDynamic(this, &ThisClass::HandleAbilityRootMotionPreSimulation);
@@ -277,6 +303,7 @@ void URpgCharacterMoverComponent::DisableMovementForDeath()
 		return;
 	}
 	bDeathMovementRequested = true;
+	if (URpgMoverRagdollComponent* Ragdoll = GetOwner()->FindComponentByClass<URpgMoverRagdollComponent>()) { Ragdoll->HandleMovementDeath(); }
 	DeathMovementStartTimeMs = BackendLiaisonComp ? BackendLiaisonComp->GetCurrentSimTimeMs() : 0.0;
 	if (TraversalCommand.IsActive())
 	{
@@ -297,6 +324,7 @@ void URpgCharacterMoverComponent::OnPreSimulate(const FMoverTimeStep& TimeStep, 
 {
 	bSuppressMovementForDeathThisTick = IsMovementDisabledForDeath(StartingData.SyncState, TimeStep);
 	PrepareTraversalSimulation(TimeStep, StartingData);
+	PrepareRagdollSimulation(TimeStep, StartingData);
 	if (bSuppressMovementForDeathThisTick)
 	{
 		// The NP liaison deep-copies its stored command into StartingData before this callback. Mutating
@@ -304,6 +332,7 @@ void URpgCharacterMoverComponent::OnPreSimulate(const FMoverTimeStep& TimeStep, 
 		if (FCharacterDefaultInputs* Inputs = StartingData.InputCmd.InputCollection.FindMutableDataByType<FCharacterDefaultInputs>())
 		{
 			*Inputs = FCharacterDefaultInputs{};
+			Inputs->SetMoveInput(EMoveInputType::DirectionalIntent, FVector::ZeroVector);
 		}
 		if (FRpgMoverAbilityRootMotionInputs* Inputs = StartingData.InputCmd.InputCollection.FindMutableDataByType<FRpgMoverAbilityRootMotionInputs>())
 		{
@@ -316,7 +345,7 @@ void URpgCharacterMoverComponent::OnPreSimulate(const FMoverTimeStep& TimeStep, 
 
 	// A copied GASP custom-input handler can update crouch intent during this broadcast. Disable native
 	// stance processing for the scope, then restore its setting and the already-reached stance.
-	const bool bLockStance = bSuppressMovementForDeathThisTick || TraversalSimulationState.Command.IsActive();
+	const bool bLockStance = bSuppressMovementForDeathThisTick || TraversalSimulationState.Command.IsActive() || bSuppressMovementForRagdollThisTick;
 	const bool bSavedStanceHandling = bHandleStanceChanges;
 	if (bLockStance) { bHandleStanceChanges = false; }
 	Super::OnPreSimulate(TimeStep, StartingData);
@@ -351,6 +380,22 @@ void URpgCharacterMoverComponent::OnPreSimulate(const FMoverTimeStep& TimeStep, 
 		}
 	}
 
+	if (!bSuppressMovementForDeathThisTick && bRagdollEnabled && BackendLiaisonComp && Simulation && !IsBackendAsync() && TimeStep.StepMs > 0.f)
+	{
+		const FRpgMoverRagdollState& State = RagdollSimulationState.State;
+		if (State.Revision != RagdollSimulationState.AppliedRevision || State.Phase == ERpgMoverRagdollPhase::Ragdoll)
+		{
+			TSharedPtr<FApplyVelocityEffect> Transition = MakeShared<FApplyVelocityEffect>();
+			Transition->VelocityToApply = FVector::ZeroVector;
+			Transition->bAdditiveVelocity = false;
+			Transition->ForceMovementMode = State.Phase == ERpgMoverRagdollPhase::Ragdoll ? URpgMoverRagdollMovementMode::ModeName : DefaultModeNames::Falling;
+			const FMoverTime FrameTime(TimeStep.ServerFrame, TimeStep.BaseSimTimeMs);
+			Simulation->QueueInstantMovementEffect(FScheduledInstantMovementEffect(
+				FMoverSchedulingInfo(FrameTime, FrameTime, BackendLiaisonComp->IsFixedDt()), Transition));
+			RagdollSimulationState.AppliedRevision = State.Revision;
+		}
+	}
+
 	if (bSuppressMovementForDeathThisTick && BackendLiaisonComp && Simulation && !IsBackendAsync() && TimeStep.StepMs > 0.0f)
 	{
 		// Queue after engine/GASP callbacks. The instant effect wins over queued jump impulses and layered
@@ -370,6 +415,7 @@ void URpgCharacterMoverComponent::ProduceInput(int32 DeltaTimeMS, FMoverInputCmd
 	Super::ProduceInput(DeltaTimeMS, Cmd);
 	FRpgMoverAbilityRootMotionInputs& Inputs = Cmd->InputCollection.FindOrAddMutableDataByType<FRpgMoverAbilityRootMotionInputs>();
 	Inputs.Traversal = TraversalCommand;
+	Inputs.Ragdoll = RagdollCommand;
 	const bool bDeathInput = bDeathMovementRequested || GetSyncState().MovementMode == URpgDeadMovementMode::ModeName;
 	if (!BackendLiaisonComp || bDeathInput || !SampleAbilityRootMotion(BackendLiaisonComp->GetCurrentSimTimeMs(), Inputs.RootMotion))
 	{
@@ -377,10 +423,71 @@ void URpgCharacterMoverComponent::ProduceInput(int32 DeltaTimeMS, FMoverInputCmd
 	}
 	if (bDeathInput)
 	{
-		Cmd->InputCollection.FindOrAddMutableDataByType<FCharacterDefaultInputs>() = FCharacterDefaultInputs{};
+		FCharacterDefaultInputs& NeutralInput = Cmd->InputCollection.FindOrAddMutableDataByType<FCharacterDefaultInputs>();
+		NeutralInput = FCharacterDefaultInputs{};
+		NeutralInput.SetMoveInput(EMoveInputType::DirectionalIntent, FVector::ZeroVector);
 	}
 	Inputs.RetainMontageForHistory();
 	CachedLastProducedInputCmd = *Cmd;
+}
+
+bool URpgCharacterMoverComponent::CanBeginRagdoll(float MaximumSpeed) const
+{
+	const FMoverDefaultSyncState* Default = GetSyncState().SyncStateCollection.FindDataByType<FMoverDefaultSyncState>();
+	return bRagdollEnabled && BackendLiaisonComp && Simulation && !IsBackendAsync() && !bDeathMovementRequested &&
+		!RagdollCommand.IsActive() && !HasTraversalLease() && IsOnGround() && !IsCrouching() && Default &&
+		FMath::IsFinite(MaximumSpeed) && MaximumSpeed >= 0.f && Default->GetVelocity_WorldSpace().Size() <= MaximumSpeed;
+}
+
+void URpgCharacterMoverComponent::SetRagdollCommand(const FRpgMoverRagdollState& State)
+{
+	if (State.Revision <= RagdollCommand.Revision) { return; }
+	RagdollCommand = State;
+	RagdollCommand.RetainObjectsForHistory();
+}
+
+void URpgCharacterMoverComponent::PrepareRagdollSimulation(const FMoverTimeStep& TimeStep, const FMoverTickStartData& StartingData)
+{
+	bSuppressMovementForRagdollThisTick = false;
+	if (!bRagdollEnabled) { return; }
+	const FRpgMoverRagdollSyncState* Prior = StartingData.SyncState.SyncStateCollection.FindDataByType<FRpgMoverRagdollSyncState>();
+	RagdollSimulationState = Prior ? *Prior : FRpgMoverRagdollSyncState{};
+	const FRpgMoverRagdollState* Command = nullptr;
+	if (GetOwnerRole() == ROLE_Authority) { Command = &RagdollCommand; }
+	else if (GetOwnerRole() == ROLE_AutonomousProxy)
+	{
+		if (const FRpgMoverAbilityRootMotionInputs* Inputs = StartingData.InputCmd.InputCollection.FindDataByType<FRpgMoverAbilityRootMotionInputs>()) { Command = &Inputs->Ragdoll; }
+	}
+	// Owner history contains only commands previously received from authority. Corrections retain newer
+	// revisions; today's RepNotify never overwrites an older frame or resurrects a stopped episode.
+	if (Command && Command->Revision > RagdollSimulationState.State.Revision)
+	{
+		RagdollSimulationState.State = *Command;
+		RagdollSimulationState.MontagePosition = Command->GetUpStartTime;
+	}
+	if (bSuppressMovementForDeathThisTick)
+	{
+		RagdollSimulationState.State.Phase = ERpgMoverRagdollPhase::Inactive;
+		RagdollSimulationState.State.bCancelled = true;
+		RagdollSimulationState.AppliedRevision = RagdollSimulationState.State.Revision;
+	}
+	bSuppressMovementForRagdollThisTick = RagdollSimulationState.State.IsActive();
+	if (bSuppressMovementForRagdollThisTick)
+	{
+		if (FCharacterDefaultInputs* Inputs = StartingData.InputCmd.InputCollection.FindMutableDataByType<FCharacterDefaultInputs>())
+		{
+			*Inputs = FCharacterDefaultInputs{};
+			// Getup uses ordinary Walking/Falling with GAS root motion. SimpleWalking requires a valid
+			// zero intent; the default-constructed None type is not a supported movement input.
+			Inputs->SetMoveInput(EMoveInputType::DirectionalIntent, FVector::ZeroVector);
+		}
+	}
+	else if (FCharacterDefaultInputs* Inputs = StartingData.InputCmd.InputCollection.FindMutableDataByType<FCharacterDefaultInputs>();
+		Inputs && Inputs->SuggestedMovementMode == URpgMoverRagdollMovementMode::ModeName)
+	{
+		// A client cannot enter this mode through the ordinary, network-serialized suggested-mode input.
+		Inputs->SuggestedMovementMode = NAME_None;
+	}
 }
 
 uint32 URpgCharacterMoverComponent::BeginTraversal(UGameplayAbility* Ability, const FPredictionKey& ActivationKey,
@@ -388,7 +495,7 @@ uint32 URpgCharacterMoverComponent::BeginTraversal(UGameplayAbility* Ability, co
 {
 	if (!Ability || Ability->GetAvatarActorFromActorInfo() != GetOwner() || !Ability->GetCurrentAbilitySpecHandle().IsValid() ||
 		(GetOwnerRole() != ROLE_Authority && GetOwnerRole() != ROLE_AutonomousProxy) ||
-		!BackendLiaisonComp || !Simulation || IsBackendAsync() || bDeathMovementRequested || HasTraversalLease() ||
+		!BackendLiaisonComp || !Simulation || IsBackendAsync() || bDeathMovementRequested || HasTraversalLease() || RagdollCommand.IsActive() ||
 		!IsOnGround() || IsCrouching() || !MovementModes.Contains(TEXT("Traversing")) ||
 		!Request.Collider.IsValid() || Request.Collider->IsSimulatingPhysics() ||
 		!Request.Collider->GetComponentTransform().Equals(Request.ColliderTransform, .1f) ||
@@ -566,6 +673,7 @@ void URpgCharacterMoverComponent::OnPostSimulate(const FMoverTimeStep& TimeStep,
 		TraversalSimulationState.bStartApplied = false;
 	}
 	EndingData.SyncState.SyncStateCollection.FindOrAddMutableDataByType<FRpgMoverTraversalSyncState>() = TraversalSimulationState;
+	if (bRagdollEnabled) { EndingData.SyncState.SyncStateCollection.FindOrAddMutableDataByType<FRpgMoverRagdollSyncState>() = RagdollSimulationState; }
 	if (bRestoreTraversalPresentationInputs)
 	{
 		// Only the completed-frame read model receives the original input. GASP's existing WithMovementInput
@@ -649,7 +757,9 @@ void URpgCharacterMoverComponent::UpdateTraversalPresentation(const FMoverSyncSt
 		}
 		return;
 	}
-	AbilitySystem->UpdateSimulatedMoverTraversal(State, bDeathMovementRequested || SyncState.MovementMode == URpgDeadMovementMode::ModeName);
+	const URpgMoverRagdollComponent* Ragdoll = GetOwner()->FindComponentByClass<URpgMoverRagdollComponent>();
+	AbilitySystem->UpdateSimulatedMoverTraversal(State, bDeathMovementRequested || SyncState.MovementMode == URpgDeadMovementMode::ModeName ||
+		(Ragdoll && Ragdoll->IsRagdollActive()));
 }
 
 void URpgCharacterMoverComponent::UpdateTraversalWarpTargets(const FRpgMoverTraversalRequest* Request)
@@ -736,6 +846,19 @@ void URpgCharacterMoverComponent::HandleAbilityRootMotionPreSimulation(const FMo
 			Move.MontageState.BlendOutTimeSeconds = Active.Context.Montage ? Active.Context.Montage->GetDefaultBlendOutTime() : 0.f;
 			Move.MontageState.bEnableAutoBlendOut = Active.Context.Montage && Active.Context.Montage->bEnableAutoBlendOut;
 		}
+		else if (RagdollSimulationState.State.Phase == ERpgMoverRagdollPhase::GettingUp &&
+			(!Inputs || !RpgAbilityRootMotion::MatchesGetUp(Inputs->RootMotion, RagdollSimulationState.State)))
+		{
+			const FRpgMoverRagdollState& State = RagdollSimulationState.State;
+			Move.AbilityHandle = State.AbilityHandle;
+			Move.ActivationPredictionKey = State.ActivationPredictionKey;
+			Move.bServerInitiatedKey = State.bServerInitiatedKey;
+			Move.MontageSequence = 1;
+			Move.MontageState.Montage = State.GetUpMontage;
+			Move.MontageState.PlayRate = State.GetUpPlayRate;
+			Move.MontageState.BlendOutTimeSeconds = State.GetUpMontage ? State.GetUpMontage->GetDefaultBlendOutTime() : 0.f;
+			Move.MontageState.bEnableAutoBlendOut = State.GetUpMontage && State.GetUpMontage->bEnableAutoBlendOut;
+		}
 		else if (!Inputs || !Inputs->RootMotion.MontageState.Montage)
 		{
 			return;
@@ -756,6 +879,12 @@ void URpgCharacterMoverComponent::HandleAbilityRootMotionPreSimulation(const FMo
 		Move.MontageState.StartingMontagePosition = TraversalSimulationState.MontagePosition;
 		Move.MontageState.CurrentPosition = TraversalSimulationState.MontagePosition;
 	}
+	if (RagdollSimulationState.State.IsActive())
+	{
+		if (!RpgAbilityRootMotion::MatchesGetUp(Move, RagdollSimulationState.State)) { return; }
+		Move.MontageState.StartingMontagePosition = RagdollSimulationState.MontagePosition;
+		Move.MontageState.CurrentPosition = RagdollSimulationState.MontagePosition;
+	}
 
 	// The input history is the start/stop history. Reconstruct one contribution for this exact tick,
 	// including after rollback before the original GAS start. No montage is replayed by reconstruction.
@@ -768,6 +897,8 @@ void URpgCharacterMoverComponent::HandleAbilityRootMotionPreSimulation(const FMo
 bool URpgCharacterMoverComponent::CanPlayAbilityRootMotion(const UAbilitySystemComponent* AbilitySystem,
 	const UAnimMontage* Montage, float PlayRate, FName StartSection, float StartTimeSeconds) const
 {
+	const URpgMoverRagdollComponent* Ragdoll = GetOwner()->FindComponentByClass<URpgMoverRagdollComponent>();
+	if (Ragdoll && !Ragdoll->AllowsRootMotion(Montage)) { return false; }
 	const FGameplayAbilityActorInfo* ActorInfo = AbilitySystem ? AbilitySystem->AbilityActorInfo.Get() : nullptr;
 	const USkeletalMeshComponent* Mesh = Cast<USkeletalMeshComponent>(GetPrimaryVisualComponent());
 	// The asynchronous physics backend has a different montage lifecycle and is intentionally a later integration.
@@ -843,6 +974,10 @@ bool URpgCharacterMoverComponent::StartAbilityRootMotion(UAbilitySystemComponent
 	{
 		TraversalCommand.PresentationPlayId = PresentationPlayId;
 		TraversalCommand.bHasPresentationPlayId = true;
+	}
+	if (URpgMoverRagdollComponent* Ragdoll = GetOwner()->FindComponentByClass<URpgMoverRagdollComponent>())
+	{
+		Ragdoll->NotifyGetUpMontageStarted(Ability, PresentationPlayId);
 	}
 
 	UE_LOG(LogRpgAbilitySystem, Verbose,
@@ -928,6 +1063,8 @@ void URpgCharacterMoverComponent::EndPlay(const EEndPlayReason::Type EndPlayReas
 	UpdateTraversalWarpTargets(nullptr);
 	TraversalCommand = FRpgMoverTraversalCommand{};
 	TraversalSimulationState = FRpgMoverTraversalSyncState{};
+	RagdollCommand = FRpgMoverRagdollState{};
+	RagdollSimulationState = FRpgMoverRagdollSyncState{};
 	ClearAbilityRootMotion();
 	Super::EndPlay(EndPlayReason);
 }

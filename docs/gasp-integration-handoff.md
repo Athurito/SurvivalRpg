@@ -9,18 +9,100 @@ Abnahme. Beide bei relevanten Fortschritten im selben PR aktualisieren.
 
 | Feld | Wert |
 | --- | --- |
-| Aktive Implementierungsaufgabe | `GASP-03` – begrenzter Source-Audit abgeschlossen, **Review bestanden; PR #151 zum Dokumentationsstand offen** |
-| Nächste bereite Aufgabe | **GASP-03-Pilot**: originalabgeleiteter Blueprint-/PhysicsControl-/Getup-Aufbau auf RPG-Schnittstellen, autoritativen Netzwerk-Lifecycle erst implementieren und beweisen |
-| Zuständiger Chat / beanspruchte Dateien | Root koordiniert Source-Audit, sämtliche Editor-/MCP-/Buildsitzungen und `AGENTS.md`. Dokumentationsagent besitzt Roadmap, Übergabe, VAL-03-Mergestatus und neuen Ragdoll-Auditbericht. Weitere Auditbeiträge rein lesend, soweit nicht ausdrücklich zugeteilt; keine Runtime-/Assetänderung in diesem Audit |
-| Runtime-Ausgangspunkt | `4ed174d2cdc1a2d52fc5a9272ad68437fed98025`, bestätigter Merge PR #150 am 26.09.2026 um 13:09:25 UTC; letzter Runtimefix weiterhin `8de5d927`, VAL-03 änderte nur Editor-Tests und Dokumentation |
-| Checkout / aktiver Branch | `codex/gasp-03-ragdoll-source-audit`, `D:/Repos/SurvivalRpg`; Basis `4ed174d2` |
-| Letzter Implementierungs-Commit | Auditcommit `1d89072cbd7dac1da86e9f793b18335d010e36b8` – Dokumentation und Metadaten; keine GASP-03-Runtimeimplementierung |
-| Aktueller Arbeits-PR | [PR #151](https://github.com/Athurito/SurvivalRpg/pull/151), zum Dokumentationsstand offen; aktuellen Merge-Status vor Fortsetzung prüfen. PR #150 ist bestätigt gemergt |
-| Übernommene Statuspflege | Bestätigten VAL-03-Merge in Roadmap, Übergabe und `gasp-buffered-traversal-replay.md` im GASP-03-Arbeitsbranch nachgeführt |
-| Nächster Handgriff | PR #151 gemäß Dauerfreigabe nach Statusprüfung mergen und begrenzten GASP-03-Piloten beginnen; tatsächlichen Merge im Folgeauftrag nachführen |
-| Blocker / offene Abnahme | Merge offen zum Dokumentationsstand; beide Reviews ohne offene Findings und Auditprüfungen abgeschlossen, Variante noch nicht implementiert. Keine neue Runtime-/Asset-/Build-/PIE-Abnahme. VAL-01/02, NET-03-Rekonstruktionsgrenze und ältere Pending-Fixture-Timingempfindlichkeit bleiben offene Folgepunkte |
+| Aktive Implementierungsaufgabe | `GASP-03` – begrenzter spielbarer Ragdoll-/Getup-Pilot, **PR offen (Draft)**; Prüfungen und Nutzerabnahme mit kosmetischer Nachbesserung erfolgt |
+| Nächste bereite Aufgabe | PR #152 mit gewünschter grüner Farbe und validiertem MetaSound-Identitätsfix abschließen; noch nicht gemergt |
+| Zuständiger Chat / beanspruchte Dateien | Root: sämtliche Editor-/MCP-/Buildsitzungen, binäre Assets und Mover-Integration. Runtimeagent: native Lifecycle-Konzeption. Testagent: Validierungskonzept. Dokumentationsagent: Roadmap, Übergabe, Audit-Mergestatus und `gasp-mover-ragdoll-pilot.md`. Weitere Dateizuteilungen nur koordiniert |
+| Runtime-Ausgangspunkt | `9baac5f36fd978b86c364df3e82aa74d76cfb7d2`, bestätigter Merge PR #151 am 26.09.2026 um 13:40:22 UTC; Audit enthält keine Runtimeänderung |
+| Checkout / aktiver Branch | `codex/gasp-03-ragdoll-pilot`, `D:/Repos/SurvivalRpg`; Basis `9baac5f3` |
+| Letzter Implementierungs-Commit | `7c2a769a26ec1396f9cbc3804eaedefee33cd2db`, einschließlich 25 LFS-Assets gepusht |
+| Aktueller Arbeits-PR | [PR #152](https://github.com/Athurito/SurvivalRpg/pull/152), **OPEN / Draft**, Basis `master`; Pilot `7c2a769a`, Farbfix `57ecde41`, nachfolgender MetaSound-Fix im selben PR; noch nicht gemergt |
+| Übernommene Statuspflege | Bestätigten Audit-Merge in Roadmap, Übergabe und `gasp-mover-ragdoll-source-audit.md` im Pilotbranch nachgeführt |
+| Nächster Handgriff | PR #152 mit Farbkorrektur und MetaSound-Identitätsfix abschließen, danach GASP-04 beginnen |
+| Blocker / offene Abnahme | Pilot mit Editor/Game, 20/20 Tests und Abschlussaudit validiert; Nutzer bestätigt „passt“ mit Farbwunsch, grüne kosmetische Korrektur ebenfalls geprüft. Builds/20 Tests vor Farbpatch, kein Neulauf. PR weiterhin offen. VAL-01/02, NET-03-Grenze und ältere Pending-Fixture-Timingempfindlichkeit bleiben Folgepunkte |
 
-## Aktueller Auftrag – GASP-03-Source-Audit
+## Aktueller Auftrag – GASP-03-Pilot
+
+MetaSound-Folgefix: 18 kopierte Shared/Foley-Klassen haben neue eindeutige IDs,
+19 Graphen wurden gezielt angepasst; `MSS_RpgGasp_Run` behält seine Root-ID.
+Frische Registrierung: 37 eindeutige IDs, unabhängiger Graphvergleich 19/19
+bestanden; keine doppelten Klassen oder MetaSound-Warnungen/-Fehler im Log.
+Audio-PIE-Smoke W/D/S/A und R–Warten–R beendet, Playsettings restauriert,
+Editor 58312 sauber geöffnet. Pawn-Registry 2058/71 und CMC-Foley 274/5 ohne
+fehlende Pakete oder rohe Sample-Verweise. Die folgenden 6938-Unverändert-Aussagen gehören zur früheren
+Pilot-/Farbprüfung: aktuell 6919 gleich plus genau 19 erwartete Änderungen,
+alle 18 Audio-Importoriginale und 17 Map-/Savedateien unverändert. Kein neuer
+Build/20-Test-Lauf oder Klangqualitätsnachweis; Editor-Regleränderungen und
+zwei bestehende Startup-`Condition failed` im [Manifest](assets/gasp-metasound-identity-fix.json).
+
+- Erstes lebendes Ragdoll aus stationärem, nicht geducktem Stand und Getup auf
+  freier unterstützter Ebene; UEFN bleibt Physics-/GAS-/Equipment-Gameplay-Mesh.
+- Bestehende Experience/PawnData-, GAS-, Mover-, Health-/Death-/Respawn- und
+  Equipment-Schnittstellen nutzen. Konkrete Inhalte und Tuning bleiben in
+  originalabgeleiteten Blueprint-/PhysicsControl-/Chooser-/Animationsassets.
+- Vereinbarter Vertrag: Capsule während Ragdoll autoritativ verankert,
+  PhysicsControl nur am Mesh, keine kontrollierte Rollkraft oder Client-Bone-
+  Authority. Konkrete ServerInitiated-/InstancedPerActor-/Exclusive_Blocking-
+  Blueprint-GA: R zum Eintritt, zweites R via WaitInputPress für Getup;
+  native Auswahl-Task korreliert Revision/Aktivierung, terminaler Tod gewinnt.
+- Keine neue Health-/Respawn-Architektur oder Physics-Authority eines
+  Retarget-Followers. Keine automatische Erweiterung um Sample-Demo-
+  Interaktionen, Takedowns oder NPC-Autogetup.
+- Finaler Editor-Build 12 bestanden (11,21 s), Game-Build bestanden
+  (68,64 s), finaler inkrementeller Game-Build bestanden (22,82 s).
+  Scoped Physics/Smoothing, gültiger Null-DirectionalIntent, restaurierte
+  Component-Physicsflags und ASC-Stop beim Proxy-Getup-Tod implementiert.
+- Korrigierter Fokus: Remote/Late Join und Getup-Tod bestanden; keine der drei
+  gezielten Warnklassen (MoveInputType, incompatible Simulate, fully simulated
+  Mesh movement). Frühere 16842 Remote-Warnungen bleiben historisch erhalten.
+- `pie-full-current.json` bleibt **5/6**, 360 Warnungen und eine Assertion.
+  Host erreicht echte Physics/Getup; gewählter Start war 0,100 s, initiale
+  SimProxy-GAS-Montage 0,000 s, Fixture verlangte mindestens 0,09 s. Die
+  korrigierte Fixture berücksichtigt die bestehende 0,1-s-GAS-Schwelle und
+  besteht final; keine Runtime-Toleranzerhöhung.
+- `final-tests.json`: **20/20 Success**, 0 Fehler/übersprungen, 187,454575 s,
+  alle sechs neuen Ragdollfälle grün. 1089 Warnungen: NetPackageMap944,
+  Voice110, NP17, Animation14, RpgCharacter3, Blueprint1; null der drei
+  gezielten neuen Warnklassen. Übrige Warnungen bleiben dokumentiert.
+- Tatsächlicher Host-Inputkonflikt: Combat und Pilot belegten R mit gleicher
+  Priorität 1; Pilot-Experience reserviert R nun mit Priorität 2. Nur diese
+  Tastenüberschneidung bestätigt. Neue Pilotkarte: Boden Static/BlockAll mit
+  WorldStatic, drei Starts Z=88,15. Nach Save/Reload direkter Ragdoll-Eintritt
+  beobachtet. Mit finalen Binaries prüfte Root zusätzlich Getup, stehende
+  Rückkehr, Bewegung und Waffenangriff; Frontbilder vermeiden HUD-Verdeckung.
+  Keine exakte Frameglätte-/Audioabnahme (-NoSound). Editor-Inputbridge nutzt
+  PC.InputKey, die zusätzliche MCP-Blicksteuerung verändert nur die Kamera.
+- Acht Notify-Assets gespeichert und neu geladen: 28 Eventrecords erhalten,
+  alte Originalklasseninstanzen entfernt. Registry-Hülle **2115 Pakete / 81
+  externe Grenzen**, keine fehlenden Pakete oder Sample-`/Game`-Referenzen
+  außerhalb `/Game/SurvivalRpg`; dynamische/Cooked-Hülle bleibt unbewiesen.
+  [Pilotmanifest](assets/gasp-ragdoll-pilot.json): 17 Quellkopien + acht
+  Kompositionsassets im ursprünglichen Stand; später 18 Quellkopien + acht
+  Kompositionsassets nach Farbkorrektur, alle 26 gespeicherten Zielhashes geprüft. Final 6938 ursprüngliche Assets und 17 Baseline-Map-/Savedateien
+  unverändert. Sechs Blueprints mit warnings_as_errors kompiliert;
+  Experience-Hülle 2115/81 und Karten-Hülle 2225/99 ohne fehlende Pakete oder
+  rohe Sample-Kanten. Editor 17044 sauber beendet, keine UnrealEditor-/Cmd-
+  Prozesse übrig. Vier Overrides, Python-AST, Projekt-JSON und Diffprüfung
+  bestanden; unabhängiger Review ohne Blocker. Bis zur ersten PR-Veröffentlichung
+  nach den Builds nur erklärende API-Kommentare ergänzt; spätere Kosmetik unten.
+  [Pilotbericht](gasp-mover-ragdoll-pilot.md).
+- Nutzer bestätigt den Piloten mit „passt“ und wünscht die grüne Quellfarbe.
+  Neue projektlokale Physics-MI und Slot-0-Override ausschließlich im Child-
+  Pawn umgesetzt; Parameterparität, Compile/Reload und stehende/Ragdoll/Getup-
+  Sichtprüfung bestanden. Farb-Hülle 2058/71 ohne fehlende/rohe Samplekanten.
+  Builds/20 Tests gehören zum Stand davor, kein Neulauf. Farb-Editor PID556
+  sauber geöffnet, PIE beendet und Playsettings restauriert. Erneut 6938
+  Originalassets und 17 Map-/Savedateien unverändert. [PR #152](https://github.com/Athurito/SurvivalRpg/pull/152)
+  weiterhin offen und nicht gemergt; Farbkorrektur im selben PR.
+  Nachstellen: Pilotkarte Play, R, etwa 1 s warten, R, WASD/LMB.
+
+
+## Letzter abgeschlossener Schritt – GASP-03-Source-Audit
+
+- [PR #151](https://github.com/Athurito/SurvivalRpg/pull/151) bestätigt gemergt
+  am 26.09.2026 um 13:40:22 UTC: `9baac5f36fd978b86c364df3e82aa74d76cfb7d2`,
+  finaler Head `5a0e743c4796d7ef2aacf7ddb82c5fa565edcf17`. Die folgenden
+  Ergebnisse sind historische Auditbelege, keine erneut ausgeführte
+  Pilotvalidierung.
 
 - Tatsächlich geöffnetes Originalprojekt `D:/Repos/GameAnimationSample`, UE
   5.8.2; kein Sample-Release-Identifier belegt. Vier Kernassets unterscheiden
@@ -48,14 +130,14 @@ Abnahme. Beide bei relevanten Fortschritten im selben PR aktualisieren.
   Observer und Late Join an vorhandene RPG-Schnittstellen anbinden; keine
   vorweggenommene zweite Health-/Respawn-Architektur.
 - Noch keine Runtimeänderung, kein Assetimport und keine neue Build-/Testabnahme
-  behauptet. [Aktiver Auditbericht](gasp-mover-ragdoll-source-audit.md).
+  behauptet. [Abgeschlossener Auditbericht](gasp-mover-ragdoll-source-audit.md).
 - **Dauerhafte Nutzerfreigabe vom 26.09.2026:** Nicht sinnvoll manuell prüfbare
   Schritte nach geeigneter automatischer Validierung und Review direkt pushen,
   mergen und mit dem nächsten begrenzten Roadmap-Schritt fortfahren. Dafür
   nicht auf zusätzliche Sichtabnahme warten; tatsächliche Ergebnisse, offene
   Befunde und bestätigte Merges weiterhin dokumentieren.
 
-## Letzter abgeschlossener Schritt – GASP-VAL-03
+## Vorheriger abgeschlossener Schritt – GASP-VAL-03
 
 - [PR #150](https://github.com/Athurito/SurvivalRpg/pull/150) bestätigt gemergt
   am 26.09.2026 um 13:09:25 UTC: `4ed174d2cdc1a2d52fc5a9272ad68437fed98025`,

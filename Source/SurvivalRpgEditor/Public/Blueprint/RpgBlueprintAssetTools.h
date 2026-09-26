@@ -60,4 +60,18 @@ public:
 	 */
 	UFUNCTION(BlueprintCallable, Category = "Rpg|Animation|Editor")
 	static int32 CopyAnimationNotifies(UAnimSequenceBase* Source, UAnimSequenceBase* Target);
+
+	/**
+	 * Replaces animation-owned notify instances with explicitly mapped, serialization-compatible Blueprint classes.
+	 * TypeReplacements permits copied Blueprint parents, enums and script structs only after validating their layouts.
+	 * Direct hard object properties may change their class constraint only with an explicit type mapping and a
+	 * compatible ObjectReplacements entry for every non-null instance value; no class-default fallback is used.
+	 * Referenced assets are not copied or edited. Their class ancestry is checked, not their in-memory field layout.
+	 * Preserves complete event records (including GUIDs and cached timing), instance values and shared notify identities.
+	 * Runs on the editor game thread outside PIE; records undo and dirties only the project animation. Does not save.
+	 * Returns the number of distinct replaced instances, zero for no changes, or -1 for an incompatible contract.
+	 */
+	UFUNCTION(BlueprintCallable, Category = "Rpg|Animation|Editor")
+	static int32 RemapAnimationNotifyClasses(UAnimSequenceBase* Animation, const TMap<UClass*, UClass*>& Replacements,
+		const TMap<UObject*, UObject*>& TypeReplacements, const TMap<UObject*, UObject*>& ObjectReplacements);
 };

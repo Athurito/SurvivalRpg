@@ -5,6 +5,8 @@
 
 namespace RpgGameplayTags
 {
+	UE_DEFINE_GAMEPLAY_TAG_COMMENT(InputTag_Ability_Ragdoll, "InputTag.Ability.Ragdoll", "Experience-granted living ragdoll and getup request.");
+	UE_DEFINE_GAMEPLAY_TAG_COMMENT(Status_Ragdoll, "Status.Ragdoll", "GAS activation owns a living ragdoll or getup; terminal death remains a separate status.");
 	UE_DEFINE_GAMEPLAY_TAG_COMMENT(Ability_ActivateFail_IsDead, "Ability.ActivateFail.IsDead", "Ability failed to activate because its owner is dead.");
 	UE_DEFINE_GAMEPLAY_TAG_COMMENT(Ability_ActivateFail_Cooldown, "Ability.ActivateFail.Cooldown", "Ability failed to activate because it is on cool down.");
 	UE_DEFINE_GAMEPLAY_TAG_COMMENT(Ability_ActivateFail_Cost, "Ability.ActivateFail.Cost", "Ability failed to activate because it did not pass the cost checks.");

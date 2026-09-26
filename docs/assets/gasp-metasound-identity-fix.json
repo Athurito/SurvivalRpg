@@ -1,0 +1,499 @@
+{
+  "schema_version": 1,
+  "date": "2026-09-26",
+  "task": "GASP-03 MetaSound identity follow-up",
+  "engine_version": "5.8.2-56702186",
+  "applied_after_commit": "57ecde418a4b209042f1992cd2329e0548cc5027",
+  "cause": "Advanced Copy preserved the 18 embedded MetaSound class names; originals and project copies collided when registered together.",
+  "repair": "UE MetaSoundAssetSubsystem ReassignClassName, parent-first ReplaceReferencesInDirectory over an exact 19-asset allowlist, RegisterAssetClassesInDirectories, explicit save; originals excluded.",
+  "scope": {
+    "new_root_class_ids": 18,
+    "updated_project_assets": 19,
+    "unchanged_cmc_root_id": true,
+    "original_assets_unchanged": 18
+  },
+  "validation": {
+    "fresh_registered_unique_classes": 37,
+    "semantic_asset_comparisons_passed": 19,
+    "duplicate_class_warnings": 0,
+    "metasound_warnings_or_errors": 0,
+    "audio_enabled_pie_inputs": "W D S A, R, wait, R; PIE stopped and play settings restored",
+    "baseline_assets_checked": 6938,
+    "baseline_assets_unchanged": 6919,
+    "baseline_asset_changes_exactly_match_manifest": true,
+    "maps_and_saves_unchanged": 17,
+    "pawn_registry_packages": 2058,
+    "pawn_registry_boundaries": 71,
+    "cmc_foley_registry_packages": 274,
+    "cmc_foley_registry_boundaries": 5,
+    "registry_missing_or_raw_sample_references": 0
+  },
+  "semantic_comparison": "Explicit bijections for regenerated dependency, node and vertex IDs; graph edges, literals, wave references, interfaces and preset template/default data retained. T3D supplements reflected JSON and checks owned member defaults and active reference caches.",
+  "editor_metadata_changes": "Native preset refresh rebuilt member objects/localization identities and inherited editor controls (RadialSlider, Range); four Run_Soft ClampDefault flags became false. Existing sound defaults are unchanged, but future designer editing controls/limits differ.",
+  "editor_metadata_counts": {
+    "float_widgets_none_to_radial_slider": 70,
+    "volume_min_ranges_0_1_to_minus1_0": 10,
+    "pitch_max_ranges_0_1_to_0_1_05": 9,
+    "run_soft_clamp_flags_true_to_false": 4,
+    "localization_identity_changes_with_same_text": 100
+  },
+  "limits": [
+    "No new C++ build or rerun of the prior 20 gameplay tests for this asset-only repair.",
+    "Input smoke and log validation do not establish audible quality, cooked behavior or multiplayer audio parity.",
+    "Two pre-existing LogAutomationTest Condition failed messages remain during editor initialization, also present before this repair.",
+    "Registry dependency coverage does not prove runtime-generated or cooked loading paths."
+  ],
+  "local_evidence_directory": "Saved/GaspRagdollPilot20260926 (ignored; not supplied by checkout)",
+  "evidence_sha256": {
+    "metasound-repair-map.json": "c40e9146b7180edb2dd82706929dda1add6c10992d74955c02baf55e8abbe6bc",
+    "metasound-independent-fresh-complete.json": "838210e93e5ba0ac83fa416a9483f63d62f6eb42211ba90f0a5240c68513eefd",
+    "metasound-validator-negative-controls-02.json": "c9f2ca53395181eeffc15d957bfe7056198280b7a9a2bd9abb55a5c4920077a9",
+    "metasound-fresh-log-check.json": "5e28b63e9c217f0ed50a5813e0d032b67637fb96da63cc4ab7dd83e428fb687e",
+    "metasound-preservation.json": "5a783fa099a58cca720c60ae23edbe028fbf2ba1fc8f580894f267214888415d",
+    "metasound-pie-smoke.json": "d69a0b14821ecae10f86e98271b602884dff29412f659a5566b182ee2c359fd4"
+  },
+  "assets": [
+    {
+      "package": "/Game/SurvivalRpg/Characters/GASP/CMC/RPG/Audio/MSS_RpgGasp_Run",
+      "old_class": {
+        "namespace": "None",
+        "name": "83C33DD14AA09768F371CEA12DB92CCF",
+        "variant": "None",
+        "major": 1,
+        "minor": 0
+      },
+      "new_class": {
+        "namespace": "None",
+        "name": "83C33DD14AA09768F371CEA12DB92CCF",
+        "variant": "None",
+        "major": 1,
+        "minor": 0
+      },
+      "before_sha256": "9dc8072d4d256f1f1411485253dc0da638e495e14a9d2b8979cbb0d1d7c07c28",
+      "after_sha256": "06d7b452e356aa13420ba43a55974f5ac556e01fb9baa15744ed2397b2862390",
+      "semantic_comparison_passed": true,
+      "editor_member_property_changes": {
+        "$.WidgetType": 4
+      }
+    },
+    {
+      "package": "/Game/SurvivalRpg/Characters/GASP/Shared/Audio/Foley/MetaSounds/Parents/MSS_FoleySound",
+      "old_class": {
+        "namespace": "None",
+        "name": "AF49B7F74067A4D11112C78C453317F3",
+        "variant": "None",
+        "major": 1,
+        "minor": 0
+      },
+      "new_class": {
+        "namespace": "None",
+        "name": "2A1112954CF8C70C00C6619FA6951800",
+        "variant": "None",
+        "major": 1,
+        "minor": 0
+      },
+      "before_sha256": "75969ff288a08d68a0ce943ec188766e9ea2fe32210c33b2e31788cf9ed8ae57",
+      "after_sha256": "a19407bdfb5237f165617ef167020037866e218d17aa0e8905735f43b732aef0",
+      "semantic_comparison_passed": true,
+      "editor_member_property_changes": {}
+    },
+    {
+      "package": "/Game/SurvivalRpg/Characters/GASP/Shared/Audio/Foley/MetaSounds/Parents/MSS_FoleySound_Looping",
+      "old_class": {
+        "namespace": "None",
+        "name": "71FFDFA3400478CD287E89A60856BA1E",
+        "variant": "None",
+        "major": 1,
+        "minor": 0
+      },
+      "new_class": {
+        "namespace": "None",
+        "name": "7C4D3A494B892FA4869C188F7EC73F16",
+        "variant": "None",
+        "major": 1,
+        "minor": 0
+      },
+      "before_sha256": "c51b2468de7cbb6b827adcf8809d1a1dc1f4b40cd5b562d984441e620c195433",
+      "after_sha256": "9381bf02e57504128d5eaea58a39d2331c21b07dadada9d1dec4c91c624c57f1",
+      "semantic_comparison_passed": true,
+      "editor_member_property_changes": {}
+    },
+    {
+      "package": "/Game/SurvivalRpg/Characters/GASP/Shared/Audio/Foley/MetaSounds/Presets/MSS_FoleySound_Handplant",
+      "old_class": {
+        "namespace": "None",
+        "name": "C4E7FC43470FA002F52A00B1AD50A7D2",
+        "variant": "None",
+        "major": 1,
+        "minor": 0
+      },
+      "new_class": {
+        "namespace": "None",
+        "name": "A15380CB4998F9CA916BD7BF8AECD0A3",
+        "variant": "None",
+        "major": 1,
+        "minor": 0
+      },
+      "before_sha256": "c03dc44e5cb947fd1196747d2dafa60be76391656599fc018f7fa372b1d83a05",
+      "after_sha256": "95e723ec0d3d942e6609c82728404b8eaab77f036a504f98a5d6ab6bfd21a7f4",
+      "semantic_comparison_passed": true,
+      "editor_member_property_changes": {
+        "$.WidgetType": 3,
+        "$.Range": 1
+      }
+    },
+    {
+      "package": "/Game/SurvivalRpg/Characters/GASP/Shared/Audio/Foley/MetaSounds/Presets/MSS_FoleySound_Jump",
+      "old_class": {
+        "namespace": "None",
+        "name": "21B66A4B4E5D5EC72D13AA83F221CAD8",
+        "variant": "None",
+        "major": 1,
+        "minor": 0
+      },
+      "new_class": {
+        "namespace": "None",
+        "name": "230C76934BCE52988DC25A94703BA650",
+        "variant": "None",
+        "major": 1,
+        "minor": 0
+      },
+      "before_sha256": "55a079422c5ff787ce40d272ba7752c3014e63955dcae87b631d70e5d84262d3",
+      "after_sha256": "ea6802d54ed51246a6c746d84527fe93dc38332f7bd3dbf863479f3948f11ac1",
+      "semantic_comparison_passed": true,
+      "editor_member_property_changes": {
+        "$.WidgetType": 5
+      }
+    },
+    {
+      "package": "/Game/SurvivalRpg/Characters/GASP/Shared/Audio/Foley/MetaSounds/Presets/MSS_FoleySound_Kick",
+      "old_class": {
+        "namespace": "None",
+        "name": "7A3B6DF5403645C0C4DC04BD91C7E985",
+        "variant": "None",
+        "major": 1,
+        "minor": 0
+      },
+      "new_class": {
+        "namespace": "None",
+        "name": "05FDE46240589D0760C43C850CCE9D31",
+        "variant": "None",
+        "major": 1,
+        "minor": 0
+      },
+      "before_sha256": "aefdfcf02d04cbeac39a3f87db69ecd50cfe19591fe6cd7a6d48ed6a60f6d293",
+      "after_sha256": "1bd91652f1ec0f03b47653dd0a04a08af8abc87e35bbd2275f62cff53fe1adb0",
+      "semantic_comparison_passed": true,
+      "editor_member_property_changes": {
+        "$.WidgetType": 3
+      }
+    },
+    {
+      "package": "/Game/SurvivalRpg/Characters/GASP/Shared/Audio/Foley/MetaSounds/Presets/MSS_FoleySound_Land",
+      "old_class": {
+        "namespace": "None",
+        "name": "3AA8B07D4FE77D40AC8456A451D09C39",
+        "variant": "None",
+        "major": 1,
+        "minor": 0
+      },
+      "new_class": {
+        "namespace": "None",
+        "name": "4F84E0F2489BC9BFB1F5769B7AED2C6B",
+        "variant": "None",
+        "major": 1,
+        "minor": 0
+      },
+      "before_sha256": "1bcf87ce03dc3ff54684f77a51eec162299ed223dbd126b62289949b316e296c",
+      "after_sha256": "be3e61cd4f5357ecde698f759a09738868e8b0d0545b53670747705853ecc572",
+      "semantic_comparison_passed": true,
+      "editor_member_property_changes": {
+        "$.WidgetType": 5,
+        "$.Range": 2
+      }
+    },
+    {
+      "package": "/Game/SurvivalRpg/Characters/GASP/Shared/Audio/Foley/MetaSounds/Presets/MSS_FoleySound_Looping_Slide",
+      "old_class": {
+        "namespace": "None",
+        "name": "382064414C1F1AC7E3682FAB189387BA",
+        "variant": "None",
+        "major": 1,
+        "minor": 0
+      },
+      "new_class": {
+        "namespace": "None",
+        "name": "B8B205D646D6935A2F1CF4BDCF177E9A",
+        "variant": "None",
+        "major": 1,
+        "minor": 0
+      },
+      "before_sha256": "1e0154b31c156b3e95b7d4c4e85bd524191688bf75b42ffa8111f8596054c48d",
+      "after_sha256": "12ebe2a0d58c2c660414c1463064a86d50aad3a83564270a1fec4e22a3f51ab0",
+      "semantic_comparison_passed": true,
+      "editor_member_property_changes": {}
+    },
+    {
+      "package": "/Game/SurvivalRpg/Characters/GASP/Shared/Audio/Foley/MetaSounds/Presets/MSS_FoleySound_Punch",
+      "old_class": {
+        "namespace": "None",
+        "name": "0498B2CD4871BFE89C43BB887FB3104D",
+        "variant": "None",
+        "major": 1,
+        "minor": 0
+      },
+      "new_class": {
+        "namespace": "None",
+        "name": "4D2441B049F0873460C66A9BE7FFCD62",
+        "variant": "None",
+        "major": 1,
+        "minor": 0
+      },
+      "before_sha256": "2307f1e96ea1d797593f64a0b63888d8a02680411e52dd0a754a1fa7cd4f085b",
+      "after_sha256": "1fae3bc5acd8e68907a33f94a0affb60b1f9d428021b4c759a04e48a872c15d8",
+      "semantic_comparison_passed": true,
+      "editor_member_property_changes": {
+        "$.WidgetType": 3
+      }
+    },
+    {
+      "package": "/Game/SurvivalRpg/Characters/GASP/Shared/Audio/Foley/MetaSounds/Presets/MSS_FoleySound_Ragdoll",
+      "old_class": {
+        "namespace": "None",
+        "name": "A60864B44C0B0E19B2B308BEA11B1BEB",
+        "variant": "None",
+        "major": 1,
+        "minor": 0
+      },
+      "new_class": {
+        "namespace": "None",
+        "name": "1B78C06D4700E16D8239F9867D73C340",
+        "variant": "None",
+        "major": 1,
+        "minor": 0
+      },
+      "before_sha256": "2c9942a5dfd9eadb71a2a96b6e307d8f0af0cd868e2f35e1e5c5a07233a2bcea",
+      "after_sha256": "123abe2b2faa05cf7016af17eedecea004b754d11847e3a80dc26fa8194c4738",
+      "semantic_comparison_passed": true,
+      "editor_member_property_changes": {
+        "$.WidgetType": 3
+      }
+    },
+    {
+      "package": "/Game/SurvivalRpg/Characters/GASP/Shared/Audio/Foley/MetaSounds/Presets/MSS_FoleySound_RunBackwards",
+      "old_class": {
+        "namespace": "None",
+        "name": "3C52E061401C781EDDE25EBA5443F0C3",
+        "variant": "None",
+        "major": 1,
+        "minor": 0
+      },
+      "new_class": {
+        "namespace": "None",
+        "name": "98B763B7424B4E5B1CACF8991DAAD797",
+        "variant": "None",
+        "major": 1,
+        "minor": 0
+      },
+      "before_sha256": "3986710f28e9f4746dc14eacf887c1631326cc52374f7eccc634b32eb5bab8e8",
+      "after_sha256": "037b56b741a4c6c9f265d468acd8d27ba5a8b163fd8384afac0dc6ded2376c60",
+      "semantic_comparison_passed": true,
+      "editor_member_property_changes": {
+        "$.WidgetType": 5,
+        "$.Range": 2
+      }
+    },
+    {
+      "package": "/Game/SurvivalRpg/Characters/GASP/Shared/Audio/Foley/MetaSounds/Presets/MSS_FoleySound_RunStrafe",
+      "old_class": {
+        "namespace": "None",
+        "name": "07C96EFF4FC94AB03E10F1A095C5697C",
+        "variant": "None",
+        "major": 1,
+        "minor": 0
+      },
+      "new_class": {
+        "namespace": "None",
+        "name": "19A501AF41BB2C8840AF18A54E59A54B",
+        "variant": "None",
+        "major": 1,
+        "minor": 0
+      },
+      "before_sha256": "24ae2db590d93095f9d5d460f40aedcb8f98a2829c17d424b967a02359300726",
+      "after_sha256": "1021b796f76d4aca1db5b17916a9989d936f548db75f8e730746b1a2d139d919",
+      "semantic_comparison_passed": true,
+      "editor_member_property_changes": {
+        "$.WidgetType": 5,
+        "$.Range": 2
+      }
+    },
+    {
+      "package": "/Game/SurvivalRpg/Characters/GASP/Shared/Audio/Foley/MetaSounds/Presets/MSS_FoleySound_Run_Soft",
+      "old_class": {
+        "namespace": "None",
+        "name": "6F8225794483756483A2328FABC21FE2",
+        "variant": "None",
+        "major": 1,
+        "minor": 0
+      },
+      "new_class": {
+        "namespace": "None",
+        "name": "200804724C6879DC88DF31ADB35C9C85",
+        "variant": "None",
+        "major": 1,
+        "minor": 0
+      },
+      "before_sha256": "ab4ac5722dd16ceb41a8464de071cab38c883aa87c8a31246220d01cb46d27fe",
+      "after_sha256": "b9d6d96d18e1c4da38b084e665ad11c5702902dabb2e5ae9548ea3d225e7f2ef",
+      "semantic_comparison_passed": true,
+      "editor_member_property_changes": {
+        "$.ClampDefault": 4,
+        "$.WidgetType": 4
+      }
+    },
+    {
+      "package": "/Game/SurvivalRpg/Characters/GASP/Shared/Audio/Foley/MetaSounds/Presets/MSS_FoleySound_Scuff",
+      "old_class": {
+        "namespace": "None",
+        "name": "DD19F269460A1E29D4DD5EBB321C5F9C",
+        "variant": "None",
+        "major": 1,
+        "minor": 0
+      },
+      "new_class": {
+        "namespace": "None",
+        "name": "B11C1914463D213BE3EA3EA5FAFF1C99",
+        "variant": "None",
+        "major": 1,
+        "minor": 0
+      },
+      "before_sha256": "a29b094506a85b32bc8c311cef916be11c076405e8c0a03ffcba7c38e6651318",
+      "after_sha256": "3e0802b4a71c175ff80be3feeac5fc38b75270f841acd20c9584b0de9e3cdada",
+      "semantic_comparison_passed": true,
+      "editor_member_property_changes": {
+        "$.WidgetType": 5,
+        "$.Range": 2
+      }
+    },
+    {
+      "package": "/Game/SurvivalRpg/Characters/GASP/Shared/Audio/Foley/MetaSounds/Presets/MSS_FoleySound_ScuffPivot",
+      "old_class": {
+        "namespace": "None",
+        "name": "5AC44ADB417982B64B4ACE9ADF6AD5F0",
+        "variant": "None",
+        "major": 1,
+        "minor": 0
+      },
+      "new_class": {
+        "namespace": "None",
+        "name": "3E4C24D14ABC6D87A9ACD7BD2858382F",
+        "variant": "None",
+        "major": 1,
+        "minor": 0
+      },
+      "before_sha256": "2ef08e60a40aa56d89f6547e47734343485ec4d91dc49b34221ce45cab510af8",
+      "after_sha256": "e70cca41452993cd7354f326694d961e9194ea36f35514525d5f2f318971a93c",
+      "semantic_comparison_passed": true,
+      "editor_member_property_changes": {
+        "$.WidgetType": 5,
+        "$.Range": 2
+      }
+    },
+    {
+      "package": "/Game/SurvivalRpg/Characters/GASP/Shared/Audio/Foley/MetaSounds/Presets/MSS_FoleySound_ScuffWall",
+      "old_class": {
+        "namespace": "None",
+        "name": "1F8D2ABF422B20188E7D4AA8AA1480E5",
+        "variant": "None",
+        "major": 1,
+        "minor": 0
+      },
+      "new_class": {
+        "namespace": "None",
+        "name": "B5CFC3DD4CBB77461BD570B62A5C864A",
+        "variant": "None",
+        "major": 1,
+        "minor": 0
+      },
+      "before_sha256": "6b91a4f02d9fdd7d169d2be40f9cb31c9b8349a32049ecfa79e5f9124ccaf0b1",
+      "after_sha256": "ef75d67540ff80d35c16562b60eeb990b3c09ab1368525ad316d3a18993d6392",
+      "semantic_comparison_passed": true,
+      "editor_member_property_changes": {
+        "$.WidgetType": 5,
+        "$.Range": 2
+      }
+    },
+    {
+      "package": "/Game/SurvivalRpg/Characters/GASP/Shared/Audio/Foley/MetaSounds/Presets/MSS_FoleySound_Tumble",
+      "old_class": {
+        "namespace": "None",
+        "name": "12362A3A487D57979B9021A561DE5011",
+        "variant": "None",
+        "major": 1,
+        "minor": 0
+      },
+      "new_class": {
+        "namespace": "None",
+        "name": "C0C3747944E5F914CAB14BADCE989B67",
+        "variant": "None",
+        "major": 1,
+        "minor": 0
+      },
+      "before_sha256": "422289bd5d7c860ceb5c6660e829300991dd44fddb894ecd6bcadf4f421e3d78",
+      "after_sha256": "898f0fb6d3446425dc952fbddb1ea6227487b28f0ad18f1790be61799b8245a8",
+      "semantic_comparison_passed": true,
+      "editor_member_property_changes": {
+        "$.WidgetType": 5,
+        "$.Range": 2
+      }
+    },
+    {
+      "package": "/Game/SurvivalRpg/Characters/GASP/Shared/Audio/Foley/MetaSounds/Presets/MSS_FoleySound_Walk",
+      "old_class": {
+        "namespace": "None",
+        "name": "5C68FB794019BA1935589CBC5401123F",
+        "variant": "None",
+        "major": 1,
+        "minor": 0
+      },
+      "new_class": {
+        "namespace": "None",
+        "name": "CB16B371442D2EFC3EC8B9B60DCD3CFB",
+        "variant": "None",
+        "major": 1,
+        "minor": 0
+      },
+      "before_sha256": "5f8bb96c4de83c8543025d7a6ba6581ad9c7c4904b84ffa8607eaf94260d104d",
+      "after_sha256": "6cfb1a66d0e1ad3718d533c52f83801d2d5445d61f43e3f2f7f83f45d2554ead",
+      "semantic_comparison_passed": true,
+      "editor_member_property_changes": {
+        "$.WidgetType": 5,
+        "$.Range": 2
+      }
+    },
+    {
+      "package": "/Game/SurvivalRpg/Characters/GASP/Shared/Audio/Foley/MetaSounds/Presets/MSS_FoleySound_WalkBackwards",
+      "old_class": {
+        "namespace": "None",
+        "name": "C0A349354C48A08F7E93828190D05B31",
+        "variant": "None",
+        "major": 1,
+        "minor": 0
+      },
+      "new_class": {
+        "namespace": "None",
+        "name": "8CCA2249426D8A98A8B653B3D17C8B9D",
+        "variant": "None",
+        "major": 1,
+        "minor": 0
+      },
+      "before_sha256": "7077e0298771804e6456c9fd0218355fd7a85c5c978b333f3f3ced8b5f4a3b44",
+      "after_sha256": "5fc8eddea591992779f3fe633990dbf735a0ef982e20ec6b100fa8a759524de9",
+      "semantic_comparison_passed": true,
+      "editor_member_property_changes": {
+        "$.WidgetType": 5,
+        "$.Range": 2
+      }
+    }
+  ]
+}
