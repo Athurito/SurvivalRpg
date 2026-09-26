@@ -1,17 +1,19 @@
 # GASP-03 – Begrenzter Ragdoll-/Getup-Pilot
 
-Stand: **26.09.2026, Validierung abgeschlossen; Commit/Draft-PR offen**. Branch
+Stand: **26.09.2026, PR offen (Draft)**. Branch
 `codex/gasp-03-ragdoll-pilot`, Basis
 `9baac5f36fd978b86c364df3e82aa74d76cfb7d2`, bestätigter Merge des
 [Source-Audits in PR #151](https://github.com/Athurito/SurvivalRpg/pull/151)
-am 26.09.2026 um 13:40:22 UTC. Noch kein Pilot-Implementierungscommit oder
-Arbeits-PR. Finaler Editor-Build 12 und inkrementeller Game-Build bestehen.
+am 26.09.2026 um 13:40:22 UTC. Implementierung
+`7c2a769a26ec1396f9cbc3804eaedefee33cd2db` einschließlich 25 LFS-Assets ist
+gepusht; [PR #152](https://github.com/Athurito/SurvivalRpg/pull/152) ist offen
+als Draft. Finaler Editor-Build 12 und inkrementeller Game-Build bestehen.
 Ragdoll, Getup, Kontrollrückgabe und Waffenangriff sind auf der gespeicherten,
 neu geladenen Pilotkarte mit frischen Binaries manuell geprüft. Die finale
 Regression besteht mit **20/20**, einschließlich aller sechs neuen Fälle.
 Der ältere sechsteilige Lauf bleibt **5/6** mit inzwischen korrigierter
-Host-Fixture. Das Abschlussaudit ist bestanden; Commit und Draft-PR zur
-manuellen Sichtprüfung stehen noch aus. Kein automatischer Merge dieses Piloten.
+Host-Fixture. Das Abschlussaudit ist bestanden. Nächster Schritt ist die
+Nutzersichtprüfung auf der Pilotkarte, danach Merge bei Abnahme.
 
 Der vereinbarte erste Umfang ist **lebendes Ragdoll aus dem stationären,
 nicht geduckten Stand und kontrolliertes Aufstehen auf freier, unterstützter,
@@ -213,8 +215,8 @@ mit `-NoSound` nicht geprüft.
 Zum Nachstellen: Pilotkarte öffnen und **Play** starten; im Stand **R**,
 etwa eine Sekunde warten, erneut **R**, anschließend **WASD** und **LMB**.
 Mit der Maus etwas nach unten sehen hilft, da die Kamera an der gehaltenen
-Capsule bleibt. Der Pilot wird als Draft-PR zur einfachen manuellen
-Sichtprüfung bereitgestellt.
+Capsule bleibt. [Draft-PR #152](https://github.com/Athurito/SurvivalRpg/pull/152)
+steht für diese Nutzersichtprüfung bereit; Merge nach Abnahme.
 
 Ein editorseitiger `PlaytestTools`-Inputbridge leitet den Eingabedruck über
 `PlayerController::InputKey` in PIE weiter. Ein Slate-Key-Down und -Up im
@@ -239,7 +241,7 @@ Alle lokalen Belege liegen unter `Saved/GaspRagdollPilot20260926`. Ignorierte
 | Sichtprüfung | Direkter Ragdoll-Eintritt, Getup, stehende Rückkehr, Bewegung und Waffenangriff durch Root auf gespeicherter/neu geladener Karte geprüft; keine Audio-/exakte Frameglätteabnahme. |
 | Erhaltung / Manifest | Finale Prüfung bestanden: 6938 ursprüngliche Assethashes, 17 Baseline-Map-/Savedateien und alle 25 Manifest-Zielhashes unverändert. |
 | Abschlussaudit | Sechs Blueprints mit `warnings_as_errors=true` kompiliert; Experience-Hülle 2115/81, Karten-Hülle 2225/99, jeweils keine fehlenden Pakete oder rohen Sample-`/Game`-Kanten. Editor 17044 ohne dirty Content/Maps sauber beendet; anschließend keine UnrealEditor-/Cmd-Prozesse. Vier Overrides, Python-AST, Projekt-JSON und Diffprüfung bestanden. Unabhängiger Runtime-Review ohne konkreten Blocker. |
-| PR / Merge | Validierung abgeschlossen, Commit und Pilot-Draft-PR noch ausstehend. Manuelle Nutzer-Sichtprüfung vorgesehen, kein automatischer Merge. |
+| PR / Merge | **PR offen (Draft): [#152](https://github.com/Athurito/SurvivalRpg/pull/152)**, Implementierung `7c2a769a26ec1396f9cbc3804eaedefee33cd2db` gepusht. Nutzer-Sichtprüfung ausstehend; Merge nach Abnahme. |
 
 Der finale Lauf enthält **1089 Warnungen**: 944 NetPackageMap, 110
 VoiceInterface, 17 NetworkPrediction (`RollbackFrame == PendingFrame`),

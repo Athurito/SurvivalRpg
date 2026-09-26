@@ -1,7 +1,7 @@
 {
   "schema_version": 1,
   "task": "GASP-03 living ragdoll/getup pilot",
-  "status": "validated_commit_and_draft_pr_pending",
+  "status": "pr_open_draft",
   "provenance_checked_utc": "2026-09-26T14:49:18+00:00",
   "repository_base": "9baac5f36fd978b86c364df3e82aa74d76cfb7d2",
   "branch": "codex/gasp-03-ragdoll-pilot",
@@ -333,7 +333,7 @@
     "No CAS pass, complete cooked/dynamic reference closure, multiplayer acceptance is claimed by this manifest.",
     "Four-montage and four-sequence parity was independently checked again after MCP save/reload: all 28 events and active instance values match the post-remap snapshots, all retired original-class instances are absent. Sequence native exports change only generated DataModel/MovieScene/Track/Section Signature GUIDs.",
     "Actual runtime attempts and open findings belong to docs/gasp-mover-ragdoll-pilot.md. Source provenance and an editor build cannot establish living ragdoll/getup, late join, cancellation, death or movement/combat recovery.",
-    "Final Editor build 12 passed in 11.21 s and final incremental Game build passed in 22.82 s. On the saved/reloaded authored map with fresh binaries, root visually inspected actual InputKey-driven R entry, second-R getup, standing recovery, W movement and LMB weapon attack; front views avoided HUD occlusion. No claim of exact-frame transition smoothness or audio validation (-NoSound). The final 20-test run passed; environment/preservation audit passed; planned delivery is a Draft PR for manual review, not automatic merge."
+    "Final Editor build 12 passed in 11.21 s and final incremental Game build passed in 22.82 s. On the saved/reloaded authored map with fresh binaries, root visually inspected actual InputKey-driven R entry, second-R getup, standing recovery, W movement and LMB weapon attack; front views avoided HUD occlusion. No claim of exact-frame transition smoothness or audio validation (-NoSound). The final 20-test run passed; environment/preservation audit passed; Draft PR #152 is open for manual user review, with merge after acceptance."
   ],
   "observed_registry_closure": {
     "evidence": "Saved/GaspRagdollPilot20260926/pilot-closure-after-notifies.json",
@@ -368,7 +368,7 @@
       "incompatible_simulate_options": 0,
       "fully_simulated_mesh_movement": 0
     },
-    "scope": "Selected editor PIE/asset regression including all six new ragdoll cases. Earlier six-test attempt remains 5/6; final preservation audit passed. Commit, Draft PR and manual user review remain open."
+    "scope": "Selected editor PIE/asset regression including all six new ragdoll cases. Earlier six-test attempt remains 5/6; final preservation audit passed. Implementation commit is pushed and Draft PR #152 is open; manual user review and merge remain pending."
   },
   "final_audit": {
     "result": "passed",
@@ -433,5 +433,15 @@
     "editor_cleanly_closed": true,
     "remaining_unreal_editor_processes": 0,
     "changes_after_final_build": "API intent comments only; no functional source or asset changes."
+  },
+  "implementation_commit": "7c2a769a26ec1396f9cbc3804eaedefee33cd2db",
+  "pull_request": {
+    "number": 152,
+    "url": "https://github.com/Athurito/SurvivalRpg/pull/152",
+    "state": "OPEN",
+    "is_draft": true,
+    "base": "master",
+    "implementation_head": "7c2a769a26ec1396f9cbc3804eaedefee33cd2db",
+    "next_action": "User visual check: Play pilot map, R, wait about one second, R, WASD/LMB; merge after acceptance."
   }
 }

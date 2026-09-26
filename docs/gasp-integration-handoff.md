@@ -9,16 +9,16 @@ Abnahme. Beide bei relevanten Fortschritten im selben PR aktualisieren.
 
 | Feld | Wert |
 | --- | --- |
-| Aktive Implementierungsaufgabe | `GASP-03` – begrenzter spielbarer Ragdoll-/Getup-Pilot, **Validierung**; Prüfungen abgeschlossen, Commit/Draft-PR offen |
-| Nächste bereite Aufgabe | Aktuellen Piloten abschließen: erstes lebendes Ragdoll/Getup auf freier ebener Fläche mit UEFN und vorhandenen RPG-Schnittstellen; weitere Roadmap-Aufgaben danach neu bewerten |
+| Aktive Implementierungsaufgabe | `GASP-03` – begrenzter spielbarer Ragdoll-/Getup-Pilot, **PR offen (Draft)**; Prüfungen abgeschlossen, Nutzersichtprüfung offen |
+| Nächste bereite Aufgabe | Nutzersichtprüfung des validierten Piloten, danach PR #152 bei Abnahme mergen; weitere Roadmap-Aufgaben danach neu bewerten |
 | Zuständiger Chat / beanspruchte Dateien | Root: sämtliche Editor-/MCP-/Buildsitzungen, binäre Assets und Mover-Integration. Runtimeagent: native Lifecycle-Konzeption. Testagent: Validierungskonzept. Dokumentationsagent: Roadmap, Übergabe, Audit-Mergestatus und `gasp-mover-ragdoll-pilot.md`. Weitere Dateizuteilungen nur koordiniert |
 | Runtime-Ausgangspunkt | `9baac5f36fd978b86c364df3e82aa74d76cfb7d2`, bestätigter Merge PR #151 am 26.09.2026 um 13:40:22 UTC; Audit enthält keine Runtimeänderung |
 | Checkout / aktiver Branch | `codex/gasp-03-ragdoll-pilot`, `D:/Repos/SurvivalRpg`; Basis `9baac5f3` |
-| Letzter Implementierungs-Commit | Noch keiner für den Piloten; historischer Auditcommit `1d89072cbd7dac1da86e9f793b18335d010e36b8` enthält Dokumentation und Metadaten |
-| Aktueller Arbeits-PR | Noch keiner für den Piloten. [PR #151](https://github.com/Athurito/SurvivalRpg/pull/151) bestätigt gemergt; finaler Head `5a0e743c4796d7ef2aacf7ddb82c5fa565edcf17` |
+| Letzter Implementierungs-Commit | `7c2a769a26ec1396f9cbc3804eaedefee33cd2db`, einschließlich 25 LFS-Assets gepusht |
+| Aktueller Arbeits-PR | [PR #152](https://github.com/Athurito/SurvivalRpg/pull/152), **OPEN / Draft**, Basis `master`, Implementierungshead `7c2a769a`; noch nicht gemergt |
 | Übernommene Statuspflege | Bestätigten Audit-Merge in Roadmap, Übergabe und `gasp-mover-ragdoll-source-audit.md` im Pilotbranch nachgeführt |
-| Nächster Handgriff | Validierten Stand committen/pushen und Draft-PR zur manuellen Sichtprüfung bereitstellen; kein automatischer Merge |
-| Blocker / offene Abnahme | Finaler Editor 12 und Game bestanden; Root-Sichtprüfung von Ragdoll/Getup/Rückkehr/Bewegung/Angriff ausgeführt, 25 Zielhashes erfasst. Finale Regression 20/20 bestanden, 1089 Warnungen; Abschlussaudit bestanden, älterer Lauf bleibt 5/6. Commit/Draft-PR und manuelle Nutzer-Sichtprüfung offen. VAL-01/02, NET-03-Grenze und ältere Pending-Fixture-Timingempfindlichkeit bleiben Folgepunkte |
+| Nächster Handgriff | Nutzer prüft Pilotkarte: Play, R, etwa 1 s warten, R, WASD/LMB; danach PR #152 bei Abnahme mergen |
+| Blocker / offene Abnahme | Finaler Editor 12 und Game bestanden; Root-Sichtprüfung von Ragdoll/Getup/Rückkehr/Bewegung/Angriff ausgeführt, 25 Zielhashes erfasst. Finale Regression 20/20 bestanden, 1089 Warnungen; Abschlussaudit bestanden, älterer Lauf bleibt 5/6. Draft-PR #152 offen; manuelle Nutzer-Sichtprüfung und Merge noch ausstehend. VAL-01/02, NET-03-Grenze und ältere Pending-Fixture-Timingempfindlichkeit bleiben Folgepunkte |
 
 ## Aktueller Auftrag – GASP-03-Pilot
 
@@ -73,8 +73,8 @@ Abnahme. Beide bei relevanten Fortschritten im selben PR aktualisieren.
   bestanden; unabhängiger Review ohne Blocker. Nach finalen Builds nur
   erklärende API-Kommentare ergänzt, keine Funktions-/Assetänderung.
   [Pilotbericht](gasp-mover-ragdoll-pilot.md).
-- Geplante Lieferung dieses sichtbaren Piloten: Draft-PR zur manuellen
-  Sichtprüfung, kein automatischer Merge. Nachstellen: neue Pilotkarte Play,
+- [Draft-PR #152](https://github.com/Athurito/SurvivalRpg/pull/152) ist offen,
+  Implementierung `7c2a769a` gepusht. Nutzersichtprüfung, danach Merge bei Abnahme. Nachstellen: neue Pilotkarte Play,
   R, etwa 1 s warten, R, dann WASD/LMB; bei Bedarf mit der Maus nach unten sehen.
   Die Dauerfreigabe für nicht sinnvoll manuell prüfbare Schritte bleibt davon
   unberührt; historische Prüfungen nicht als neue Pilotabnahme ausgeben.
