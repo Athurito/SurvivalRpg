@@ -9,18 +9,68 @@ Abnahme. Beide bei relevanten Fortschritten im selben PR aktualisieren.
 
 | Feld | Wert |
 | --- | --- |
-| Aktive Implementierungsaufgabe | `GASP-02` / `GASP-NET-02` – vorhergesagtes Finished gegenüber autoritativem Cancelled, **implementiert und validiert; Review/Merge offen** |
-| Nächste bereite Aufgabe | Nach NET-02 `GASP-NET-03`: historische Abweichung von −70,99 ms nach 350-ms-Paketpause frisch reproduzieren und rekonstruierte Bahn/Messklammer prüfen |
-| Zuständiger Chat / beanspruchte Dateien | Root: Runtime `RpgGameplayAbility_Mantle.h/.cpp`, gemeinsame Traversal-Testfixture, Mantle-Tests und sämtliche Editor-/Buildsitzungen. Dokumentationsagent: Roadmap, Übergabe und NET-02-Bericht. Keine Assetänderung |
-| Runtime-Ausgangspunkt | `44a5e5127bab0d064608b682fcd002adf91c4159`, bestätigter Merge PR #147 am 26.09.2026 um 10:24:29 UTC; NET-01 änderte nur Editor-Testcode und Dokumentation |
-| Checkout / aktiver Branch | `codex/gasp-net-02-terminal-reconciliation`, `D:/Repos/SurvivalRpg`; Basis `44a5e512` |
-| Letzter Implementierungs-Commit | `8de5d927` – natürlicher Mover-Mantle-Abschluss trotz Remote-Ende im Auto-Blend-Out, zwei Runtime- und drei Testdateien |
-| Aktueller Arbeits-PR | [PR #148](https://github.com/Athurito/SurvivalRpg/pull/148), **Draft, offen**; [PR #147](https://github.com/Athurito/SurvivalRpg/pull/147) und [PR #146](https://github.com/Athurito/SurvivalRpg/pull/146) sind bestätigt gemergt |
-| Übernommene Statuspflege | Bestätigten NET-01-Merge in Roadmap, Übergabe und `gasp-active-mantle-rollback.md` im NET-02-Arbeitsbranch nachgeführt |
-| Nächster Handgriff | Validierten NET-02-Stand in PR #148 prüfen; nach bestätigtem Merge mit NET-03 fortsetzen |
-| Blocker / offene Abnahme | Kein bekannter Implementierungsblocker. Editor/Game, Fokus 3/3 und Regression 28/28 bestanden; Erhaltung und Overrides geprüft, alle Prozesse beendet. Review/Merge offen; dokumentierte Warnungen und Umgebungsgrenzen bleiben bestehen |
+| Aktive Implementierungsaufgabe | `GASP-02` / `GASP-NET-03` – **bewertet und Werkzeug validiert; Review/Merge offen**, Runtime-Rekonstruktionsgrenze bleibt bestehen |
+| Nächste bereite Aufgabe | Nach NET-03 `GASP-VAL-03`: Traversal B nach gewöhnlicher Montage-Ersetzung empfangen, während A noch im Präsentationspuffer liegt; konkrete Play-Token-Reihenfolge gezielt prüfen |
+| Zuständiger Chat / beanspruchte Dateien | Root: Launcher, Probe-Runtime und Prozesssitzungen. Testagent: Analyzer unter `Build/Tools/GaspPacketGap`. Dokumentationsagent: Roadmap, Übergabe, NET-02-Mergestatus und NET-03-Bericht. Keine C++-/Assetänderung |
+| Runtime-Ausgangspunkt | `1490dd7d85306bffa2b2a4b1ab7d9202f1a9b0c4`, bestätigter Merge PR #148 am 26.09.2026 um 11:56:35 UTC; Runtime `8de5d927` |
+| Checkout / aktiver Branch | `codex/gasp-net-03-packet-gap-recovery`, `D:/Repos/SurvivalRpg`; Basis `1490dd7d` |
+| Letzter Implementierungs-Commit | `49de7c876d72ce5414b75fc25a2708f8755c5525` – acht Tooldateien für reproduzierbaren Paketpausen-Probe und Offline-Diagnose, keine C++-/Assetänderung |
+| Aktueller Arbeits-PR | Noch keiner für NET-03; [PR #148](https://github.com/Athurito/SurvivalRpg/pull/148) ist bestätigt gemergt, finaler Head `065bacc917aedf80051281aee04655492ce3d657` |
+| Übernommene Statuspflege | Bestätigten NET-02-Merge in Roadmap, Übergabe und `gasp-terminal-reconciliation.md` im NET-03-Arbeitsbranch nachgeführt |
+| Nächster Handgriff | PR mit bewerteter Runtime-Grenze, validierten Werkzeugen und vollständigen Belegen anlegen; Review/Merge abschließen |
+| Blocker / offene Abnahme | Kein Werkzeugblocker; 19/19 Tests, vier CLI-Negativprüfungen und beide Prozessläufe abgeschlossen. Review/Merge offen. Rekonstruktionsgrenze bleibt bestehen; keine C++-/Assetänderung oder neuer Unreal-Build |
 
-## Aktueller Auftrag – GASP-NET-02
+## Aktueller Auftrag – GASP-NET-03
+
+- Historischer Ausgangspunkt ist
+  `Saved/GaspMoverProxyPose20260920/probe_run_final_host_gap`: zwei Prozesse,
+  Host-Vault, beobachtender SimulatedProxy, 16 Ebenen ohne Ausschluss.
+  Die alte Ebenenmessung ergibt einmal −70,99 ms; 17 eingefrorene Framepaare
+  behalten Position und Montagephase exakt bei.
+- Frische Baseline auf NET-02-Basis:
+  `Saved/GaspPacketGapRecovery20260926/probe_run_baseline_host_gap`.
+  Beide Rollen überqueren, fallen und landen. Freeze besteht; die alte
+  Ebenenmessung bleibt mit drei Abweichungen bei 16 Vergleichen rot, maximal
+  74,22 ms. Das ist ein neuer Ursachen-/Grenzbeleg, kein Fixerfolg.
+- Der Runtimeaudit trennt gemeinsame Interpolation von Position und Phase von
+  der verlorenen gekrümmten Authority-Bahn. Zwei empfangene Endpunkte enthalten
+  diese Zwischengeometrie nicht vollständig. Zudem deckt eine kurze Render-
+  Messklammer beim beschleunigten Aufholen deutlich mehr Montagezeit ab.
+- Der begrenzte Auftrag verbessert deshalb den reproduzierbaren, getrackten
+  Zwei-Prozess-Probe und die getrennte Offline-Phasen-/Geometrieauswertung.
+  Das alte Kriterium bleibt bestehen; der neue Phasen-Analyzer ist rein
+  diagnostisch und hat keinen Passwert. Keine C++-/Assetänderung und kein neuer
+  Unreal-Build. Exakte NP-Endpunkte, NP-Uhr und Montageinstanz bleiben ungemessen.
+- Erster portabler Kontrollstart scheiterte vor Probe-Boot an verschachtelten
+  `ExecCmds`-Quotes; eigener Host über Launcher beendet, alle 17 Dateien
+  erhalten. Fehler dokumentiert und Launcher korrigiert. Final **19/19 Tests**
+  in 0,008 s, vier erwartete CLI-Ablehnungen ohne Child-Prozesse, Python-AST-
+  Prüfung bestanden. Finale Launcher-/Runtimehashes entsprechen beiden Läufen.
+- Beide portablen Läufe unter `portable evidence` abgeschlossen: Kontrolle
+  **16/16** Ebenen, maximal 33,62 ms; Pause **13/16**, maximal 86,21 ms. Das alte
+  Kriterium bleibt rot und unverändert. Freeze besteht mit 17 zusammenhängenden
+  Paaren über 285,78 ms bei tatsächlich 368,28 ms Pause.
+- Neue diagnostische Geometriemessung: Kontrolle 53 Proben, bis 28,54 cm
+  3D-Root-Abweichung; nach Pause 33 Proben, bis 64,00 cm bzw. +63,27 cm Z.
+  Nahe rohe Authority-Probe bei nur 3,335 ms Phasendifferenz bestätigt 63,15 cm
+  Abstand. Je zwei fehlende Klammern ausgeschlossen; keine gültige Vorlauf-
+  Baseline im Pausenlauf. Keine Bone-/Kontaktpose oder interne NP-Uhr gemessen.
+- Je Lauf zwei Child-Prozesse, insgesamt vier, regulär mit Exitcode 0 beendet.
+  Zehn Maps und sieben SaveGames unverändert, vier
+  Overrides verifiziert, keine Unreal-Prozesse übrig; geladene Projekt-DLLs
+  im Pausenlauf nachgewiesen. Pro portablem Lauf 82 Startup-Warnungen und 116
+  Python-Error-Zeilen erhalten; ab Trigger bis Shutdown keine Warning/Error.
+- [Befunde, Ownership, Nachstellen und Grenzen](gasp-packet-gap-recovery.md).
+  Als nächster Auftrag folgt nach Review/Merge VAL-03; VAL-01 bleibt
+  dokumentierte Messgrenze, VAL-02 offene Produktionsumgebungsprüfung.
+
+## Letzter abgeschlossener Schritt – GASP-NET-02
+
+- [PR #148](https://github.com/Athurito/SurvivalRpg/pull/148) am 26.09.2026 um
+  11:56:35 UTC bestätigt gemergt: `1490dd7d85306bffa2b2a4b1ab7d9202f1a9b0c4`,
+  finaler Head `065bacc917aedf80051281aee04655492ce3d657`.
+  Die folgenden Ergebnisse gehören zum abgeschlossenen NET-02-Auftrag; sie
+  wurden für diese Merge-Statuspflege nicht erneut ausgeführt.
 
 - Historischer Beleg: `Saved/GaspMoverProxyPose20260920/regression-onset.log`,
   Zeilen 8877–8891. Owner und Authority beenden dieselbe GAS-Aktivierung normal;
@@ -58,14 +108,14 @@ Abnahme. Beide bei relevanten Fortschritten im selben PR aktualisieren.
   vier Overrides verifiziert, Quellstand unverändert `8de5d927`, alle Prozesse beendet.
 - [Ursache, Runtimevertrag, Nachweise und Grenzen](gasp-terminal-reconciliation.md),
   lokale ignorierte Belege `Saved/GaspTerminalReconciliation20260926`.
-- Nach Review/Merge ist NET-03 der begrenzte Folgeauftrag. Ausgangspunkt:
+- NET-03 ist inzwischen der aktive begrenzte Folgeauftrag. Ausgangspunkt:
   `Saved/GaspMoverProxyPose20260920/probe_run_final_host_gap` und
   [Präsentations-Bericht](gasp-mover-traversal-presentation.md). Nach 350 ms
   Paketpause halten 17 Framepaare die Montage mit der Bewegung; eine Ebene
   bleibt beim Aufholen um −70,99 ms abweichend. Aktuell nachstellen und die
   rekonstruierte Bahn samt Messklammer prüfen; durch NET-02 nicht abgenommen.
 
-## Letzter abgeschlossener Schritt – GASP-NET-01
+## Vorheriger abgeschlossener Schritt – GASP-NET-01
 
 - PR #147 am 26.09.2026 um 10:24:29 UTC bestätigt gemergt:
   `44a5e5127bab0d064608b682fcd002adf91c4159`, Implementierung `b6709eb4`.

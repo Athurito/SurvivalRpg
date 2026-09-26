@@ -1,11 +1,16 @@
 # GASP-NET-02 – Terminalgrund nach Mantle-Reconciliation
 
-Stand: **26.09.2026, implementiert und validiert: Fokusprüfung 3/3,
-gemeinsame Regression 28/28 und Editor-/Game-Builds bestanden; Review/Merge offen**.
+Stand: **26.09.2026, gemergt in [PR #148](https://github.com/Athurito/SurvivalRpg/pull/148)**:
+`1490dd7d85306bffa2b2a4b1ab7d9202f1a9b0c4`, bestätigt um 11:56:35 UTC.
+Finaler PR-Head `065bacc917aedf80051281aee04655492ce3d657`.
+Fokusprüfung 3/3, gemeinsame Regression 28/28 und Editor-/Game-Builds bestanden.
 Branch `codex/gasp-net-02-terminal-reconciliation`, Basis `44a5e512`
 (bestätigter Merge PR #147), Implementierung `8de5d927`. Die
-[Roadmap](gasp-integration-roadmap.md) führt NET-02 als begrenzten Folgeauftrag
-in abgeschlossener technischer Validierung: [Draft-PR #148](https://github.com/Athurito/SurvivalRpg/pull/148), offen.
+[Roadmap](gasp-integration-roadmap.md) führt NET-02 als gemergt. Der Folgeauftrag
+NET-03 hat die Paketpausen-Grenze bewertet und das Messwerkzeug validiert
+(`49de7c87`, Review/Merge offen); ein Laufzeit-Geometriefix wird dort nicht behauptet.
+Die Ergebnisse unten gehören zur NET-02-Abnahme;
+für diese Merge-Statuspflege wurden keine Tests erneut ausgeführt.
 
 ## Historischer Befund vom 20.09.2026
 
@@ -226,7 +231,9 @@ Dieser Bericht beansprucht keine neue handgespielte Sichtabnahme,
 Independent-, Packet-Loss-, Packaged- oder WAN-Validierung und schließt keine
 weiteren Roadmap-Punkte. Frühere rote Läufe bleiben als Beleg erhalten.
 
-Nach Review/Merge folgt `GASP-NET-03`: Ausgangspunkt ist die erhaltene Messung
+Der anschließende [`GASP-NET-03`](gasp-packet-gap-recovery.md)-Bericht bewertet
+die verbleibende Rekonstruktionsgrenze und dokumentiert das validierte Werkzeug.
+Ausgangspunkt war die erhaltene Messung
 unter `Saved/GaspMoverProxyPose20260920/probe_run_final_host_gap`. Nach 350 ms
 Paketpause blieben Bewegung und Montage in 17 eingefrorenen Framepaaren
 zusammen stehen; beim Wiederaufholen wich eine Hindernisebene um −70,99 ms ab.
