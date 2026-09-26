@@ -1,11 +1,13 @@
 # GASP-03 – Source-Audit der Mover-Ragdoll-Variante
 
-Stand: **26.09.2026, begrenzter Source-Audit abgeschlossen, in Review;
-Commit/PR noch offen**. Branch
+Stand: **26.09.2026, begrenzter Source-Audit abgeschlossen und reviewt;
+PR #151 zum Dokumentationsstand offen**. Branch
 `codex/gasp-03-ragdoll-source-audit`, Basis
 `4ed174d2cdc1a2d52fc5a9272ad68437fed98025`, bestätigter Merge von
 [PR #150](https://github.com/Athurito/SurvivalRpg/pull/150) am 26.09.2026 um
-13:09:25 UTC. Noch kein GASP-03-Implementierungscommit oder Arbeits-PR.
+13:09:25 UTC. Auditcommit `1d89072cbd7dac1da86e9f793b18335d010e36b8`,
+[PR #151](https://github.com/Athurito/SurvivalRpg/pull/151), zu diesem
+Dokumentationsstand offen. Keine Runtimeimplementierung in diesem PR.
 
 Dieser erste Teilauftrag prüft den originalen GASP-Mover-Ragdoll-Pawn, seine
 Physics-Control-/Mover-Abhängigkeiten und die passenden Schnittstellen in
@@ -270,8 +272,9 @@ prüfen, besonders beim Übergang zu Tod und beim Wiederherstellen der Kollision
   soweit keine eigene Datei ausdrücklich zugeteilt ist.
 - Dieser Audit führt keine Runtime- oder Assetmigration vorweg. Die belegten
   Quellabläufe, das korrigierte Inventar und die vorgeschlagenen Zuständigkeiten
-  bilden den abgeschlossenen begrenzten Audit. Commit/PR und dessen Review
-  stehen noch aus; die gesamte GASP-03-Variante ist damit nicht implementiert.
+  bilden den abgeschlossenen begrenzten Audit. Beide unabhängigen Reviews sind
+  ohne verbleibende Findings abgeschlossen; PR #151 ist zum Dokumentationsstand
+  offen. Die gesamte GASP-03-Variante ist damit nicht implementiert.
 
 ## Tatsächliche Abschlussprüfung
 
@@ -286,8 +289,9 @@ lokalen Prüfungen fest:
 - Die korrigierte Quellsitzung mit PID 46052 hatte beim regulären Schließen
   keine dirty Content-Pakete oder Maps. Es bleiben keine Unreal-Prozesse.
 - Der unabhängige Manifestabgleich bestätigt Zuordnungen, lokale Hashes und
-  die korrigierten Registry-Zahlen. Der bisherige Review meldet keine P1-/P2-
-  Findings; `git diff --check` besteht.
+  die korrigierten Registry-Zahlen. Beide unabhängigen Reviews melden nach
+  Präzisierung der Physics-Tick-Beschreibung keine offenen Findings;
+  `git diff --check` besteht.
 
 Es wurden für diesen Dokumentations-/Metadaten-Audit **kein neuer Unreal-Build,
 keine Automation und kein PIE-Lauf** ausgeführt. Die Source-/Hash-/Registry-

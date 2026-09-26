@@ -9,16 +9,16 @@ Abnahme. Beide bei relevanten Fortschritten im selben PR aktualisieren.
 
 | Feld | Wert |
 | --- | --- |
-| Aktive Implementierungsaufgabe | `GASP-03` – begrenzter Source-Audit abgeschlossen, **in Review; Commit/PR offen** |
+| Aktive Implementierungsaufgabe | `GASP-03` – begrenzter Source-Audit abgeschlossen, **Review bestanden; PR #151 zum Dokumentationsstand offen** |
 | Nächste bereite Aufgabe | **GASP-03-Pilot**: originalabgeleiteter Blueprint-/PhysicsControl-/Getup-Aufbau auf RPG-Schnittstellen, autoritativen Netzwerk-Lifecycle erst implementieren und beweisen |
 | Zuständiger Chat / beanspruchte Dateien | Root koordiniert Source-Audit, sämtliche Editor-/MCP-/Buildsitzungen und `AGENTS.md`. Dokumentationsagent besitzt Roadmap, Übergabe, VAL-03-Mergestatus und neuen Ragdoll-Auditbericht. Weitere Auditbeiträge rein lesend, soweit nicht ausdrücklich zugeteilt; keine Runtime-/Assetänderung in diesem Audit |
 | Runtime-Ausgangspunkt | `4ed174d2cdc1a2d52fc5a9272ad68437fed98025`, bestätigter Merge PR #150 am 26.09.2026 um 13:09:25 UTC; letzter Runtimefix weiterhin `8de5d927`, VAL-03 änderte nur Editor-Tests und Dokumentation |
 | Checkout / aktiver Branch | `codex/gasp-03-ragdoll-source-audit`, `D:/Repos/SurvivalRpg`; Basis `4ed174d2` |
-| Letzter Implementierungs-Commit | Historisch `8bc887e16d9db543f94e6f00f4328aec43ceb19d` – drei Editor-Testdateien aus VAL-03; noch kein GASP-03-Implementierungscommit |
-| Aktueller Arbeits-PR | Noch keiner für GASP-03. [PR #150](https://github.com/Athurito/SurvivalRpg/pull/150) bestätigt gemergt; finaler Head `453b265bdfa8439565017b397af66a3b193ed1a3` |
+| Letzter Implementierungs-Commit | Auditcommit `1d89072cbd7dac1da86e9f793b18335d010e36b8` – Dokumentation und Metadaten; keine GASP-03-Runtimeimplementierung |
+| Aktueller Arbeits-PR | [PR #151](https://github.com/Athurito/SurvivalRpg/pull/151), zum Dokumentationsstand offen; aktuellen Merge-Status vor Fortsetzung prüfen. PR #150 ist bestätigt gemergt |
 | Übernommene Statuspflege | Bestätigten VAL-03-Merge in Roadmap, Übergabe und `gasp-buffered-traversal-replay.md` im GASP-03-Arbeitsbranch nachgeführt |
-| Nächster Handgriff | Geprüften Auditstand committen, pushen und PR reviewen; gemäß Dauerfreigabe anschließend mergen und begrenzten GASP-03-Piloten beginnen |
-| Blocker / offene Abnahme | Commit/PR/Review offen; Auditprüfungen abgeschlossen, Variante noch nicht implementiert. Keine neue Runtime-/Asset-/Build-/PIE-Abnahme. VAL-01/02, NET-03-Rekonstruktionsgrenze und ältere Pending-Fixture-Timingempfindlichkeit bleiben offene Folgepunkte |
+| Nächster Handgriff | PR #151 gemäß Dauerfreigabe nach Statusprüfung mergen und begrenzten GASP-03-Piloten beginnen; tatsächlichen Merge im Folgeauftrag nachführen |
+| Blocker / offene Abnahme | Merge offen zum Dokumentationsstand; beide Reviews ohne offene Findings und Auditprüfungen abgeschlossen, Variante noch nicht implementiert. Keine neue Runtime-/Asset-/Build-/PIE-Abnahme. VAL-01/02, NET-03-Rekonstruktionsgrenze und ältere Pending-Fixture-Timingempfindlichkeit bleiben offene Folgepunkte |
 
 ## Aktueller Auftrag – GASP-03-Source-Audit
 
