@@ -225,14 +225,19 @@ namespace RpgGaspMoverTraversalTests
 					{ return FMath::IsNearlyEqual(Window.StartTime, Warp.Value.StartTime) && FMath::IsNearlyEqual(Window.EndTime, Warp.Value.EndTime); });
 				});
 				if (!bRequiredWindowActive) return false;
-				if (RequiredActiveTarget == TEXT("BackFloor"))
+				if (RequiredActiveTarget == TEXT("BackFloor") || RequiredActiveTarget == TEXT("FrontLedge"))
 				{
-					const FRpgMoverWarpModifierState* FloorWarp = Traversal->WarpModifiers.FindByPredicate([&RequiredWindows](const FRpgMoverWarpModifierState& Warp)
+					const FRpgMoverWarpModifierState* SelectedWarp = Traversal->WarpModifiers.FindByPredicate([&RequiredWindows](const FRpgMoverWarpModifierState& Warp)
 					{
 						return Warp.Value.State == ERootMotionModifierState::Active && RequiredWindows.ContainsByPredicate([&Warp](const FMotionWarpingWindowData& Window)
 						{ return FMath::IsNearlyEqual(Window.StartTime, Warp.Value.StartTime) && FMath::IsNearlyEqual(Window.EndTime, Warp.Value.EndTime); });
 					});
-					RequiredFloorWindow = FloorWarp->WindowIndex;
+					// Use simulation history, not the smoothed visible montage clock. Leave room on both
+					// sides for a received active snapshot and replay within the same authored window.
+					if (RequiredActiveTarget == TEXT("FrontLedge")
+						&& (SelectedWarp->Value.CurrentPosition < SelectedWarp->Value.StartTime + 0.06f
+							|| SelectedWarp->Value.CurrentPosition > SelectedWarp->Value.EndTime - 0.1f)) return false;
+					RequiredWarpWindow = SelectedWarp->WindowIndex;
 				}
 			}
 			OriginalIdentity = Traversal->Command.Identity; OriginalCollider = Traversal->Command.Context.Collider;
@@ -256,6 +261,8 @@ namespace RpgGaspMoverTraversalTests
 				Default->GetOrientation_WorldSpace(), Default->GetVelocity_WorldSpace(), Default->GetAngularVelocityDegrees_WorldSpace(),
 				nullptr);
 			if (!Backend->WritePendingSyncState(Sync)) return false;
+			InjectedLocalFrame = Prediction->GetFixedTickState().PendingFrame;
+			bTrackInjectedFrame = !bAfterHandoff && RequiredActiveTarget == TEXT("FrontLedge");
 			// The kinematic backend captures its UpdatedComponent after moving: both parts of the one-off
 			// prediction error must agree or the next normal tick would erase it without reconciliation.
 			Mover(Character)->GetUpdatedComponent()->SetWorldLocation(Default->GetLocation_WorldSpace(), false, nullptr, ETeleportType::TeleportPhysics);
@@ -267,6 +274,7 @@ namespace RpgGaspMoverTraversalTests
 				Blackboard->Invalidate(CommonBlackboard::LastFoundDynamicMovementBase);
 			}
 			RollbackObserver.Reset(NewObject<URpgMoverRollbackTestObserver>());
+			if (bTrackInjectedFrame) RollbackObserver->TrackPredictedFrame(Mover(Character), InjectedLocalFrame, Sync);
 			Mover(Character)->OnPostSimulationRollback.AddDynamic(RollbackObserver.Get(), &URpgMoverRollbackTestObserver::ObserveRollback);
 			bInjected = true;
 			UE_LOG(LogTemp, Display, TEXT("RpgMoverTraversalCorrection injection frame=%d time=%.0f afterHandoff=%d location=%s component=%s priorBase=%s"),
@@ -279,7 +287,7 @@ namespace RpgGaspMoverTraversalTests
 		}
 		bool Injected() const { return bInjected; }
 		bool Observed() const { return bObserved; }
-		bool PreservedContract() const { return bObserved && bSameFrame && bIdentity && bContext && bLifecycle && bMontage && bWarpHistory; }
+		bool PreservedContract() const { return bObserved && bSameFrame && bIdentity && bContext && bLifecycle && bMontage && bWarpHistory && (!bTrackInjectedFrame || bHistoricalContract); }
 		void Report(const TCHAR* Phase) const
 		{
 			UE_LOG(LogTemp, Display, TEXT("RpgMoverTraversalCorrection phase=%s injected=%d observed=%d afterHandoff=%d sameFrame=%d frame=%d->%d time=%.0f->%.0f delta=%s identity=%d context=%d lifecycle=%d montage=%d warpHistory=%d"),
@@ -290,6 +298,10 @@ namespace RpgGaspMoverTraversalTests
 				BeforeClock.StepMs, AfterClock.StepMs, BeforeRollbackCount, RollbackObserver.IsValid() ? RollbackObserver->Count : 0,
 				RollbackObserver.IsValid() ? RollbackObserver->LastRestored.ServerFrame : INDEX_NONE,
 				RollbackObserver.IsValid() ? RollbackObserver->LastExpunged.ServerFrame : INDEX_NONE);
+			if (bTrackInjectedFrame)
+				UE_LOG(LogTemp, Display, TEXT("RpgMoverTraversalCorrection history injectedLocal=%d restoredLocal=%d witnessLocal=%d replaySteps=%d replacement=%d window=%d delta=%s contract=%d"),
+					InjectedLocalFrame, WitnessRestoredFrame, WitnessLocalFrame, WitnessReplaySteps, bReplacedPredictedFrame, RequiredWarpWindow,
+					*HistoricalDelta.ToCompactString(), bHistoricalContract);
 		}
 		void Stop()
 		{
@@ -297,6 +309,7 @@ namespace RpgGaspMoverTraversalTests
 			BeforeHandle.Reset(); AfterHandle.Reset();
 			if (Owner.IsValid() && Mover(Owner.Get()) && RollbackObserver.IsValid())
 				Mover(Owner.Get())->OnPostSimulationRollback.RemoveDynamic(RollbackObserver.Get(), &URpgMoverRollbackTestObserver::ObserveRollback);
+			if (RollbackObserver.IsValid()) RollbackObserver->StopTrackingFrame();
 			RollbackObserver.Reset();
 			// A copied native NP frame can own history references; release it before EndPlayMap runs GC.
 			Before = FMoverSyncState();
@@ -315,10 +328,16 @@ namespace RpgGaspMoverTraversalTests
 			BeforeRollbackCount = RollbackObserver.IsValid() ? RollbackObserver->Count : 0;
 			BeforeClock = RpgMoverPredictionTests::FFixedPredictionHeadSnapshot::Capture(World, Liaison.Get());
 			BeforeFrame = BeforeClock.ServerFrame; BeforeTime = BeforeClock.SimulationTimeMs;
+			if (bTrackInjectedFrame && RollbackObserver.IsValid())
+			{
+				if (bBeforeValid) RollbackObserver->BeginDispatch(BeforeClock.LocalPendingFrame);
+				else RollbackObserver->EndDispatch();
+			}
 		}
 		void AfterDispatch(UWorld* World, ELevelTick, float)
 		{
 			if (bObserved || !bBeforeValid || !Owner.IsValid() || Owner->GetWorld() != World || !Liaison.IsValid()) return;
+			if (bTrackInjectedFrame && RollbackObserver.IsValid()) RollbackObserver->EndDispatch();
 			FMoverSyncState After;
 			if (!Liaison->ReadPendingSyncState(After)) return;
 			const FMoverDefaultSyncState* BeforeMove = Before.SyncStateCollection.FindDataByType<FMoverDefaultSyncState>();
@@ -332,11 +351,36 @@ namespace RpgGaspMoverTraversalTests
 					*BeforeMove->GetLocation_WorldSpace().ToCompactString(), *AfterMove->GetLocation_WorldSpace().ToCompactString(),
 					*Mover(Owner.Get())->GetUpdatedComponent()->GetComponentLocation().ToCompactString());
 			}
-			// Active Motion Warping can remove most of the 50 cm injection during legitimate forward ticks.
-			// Require the actual engine rollback callback inside this dispatch bracket and a remaining
-			// measurable correction; forward warping or based movement can satisfy neither callback proof.
-			if (!RollbackObserver.IsValid() || RollbackObserver->Count <= BeforeRollbackCount
-				|| FVector::DotProduct(Movement, CrossDirection) > -1.0) return;
+			if (!RollbackObserver.IsValid() || RollbackObserver->Count <= BeforeRollbackCount) return;
+			if (bTrackInjectedFrame)
+			{
+				// The current head may already have warped back during forward simulation. Require the
+				// error to be replaced at an actually recorded affected frame by restore/replay in THIS dispatch.
+				// A later unrelated rollback or normal forward movement cannot provide that snapshot.
+				WitnessRestoredFrame = RollbackObserver->RestoredLocalFrame;
+				WitnessReplaySteps = RollbackObserver->ReplaySteps;
+				WitnessLocalFrame = RollbackObserver->ReplacedLocalFrame;
+				bReplacedPredictedFrame = RollbackObserver->bHasReplacement;
+				const FMoverDefaultSyncState* PredictedMove = RollbackObserver->PredictedSync.SyncStateCollection.FindDataByType<FMoverDefaultSyncState>();
+				const FMoverDefaultSyncState* ReplacementMove = RollbackObserver->ReplacementSync.SyncStateCollection.FindDataByType<FMoverDefaultSyncState>();
+				if (!bReplacedPredictedFrame || WitnessReplaySteps <= 0 || !PredictedMove || !ReplacementMove) return;
+				HistoricalDelta = ReplacementMove->GetLocation_WorldSpace() - PredictedMove->GetLocation_WorldSpace();
+				if (FVector::DotProduct(HistoricalDelta, CrossDirection) > -1.0) return;
+				const auto ActiveHistoricalContract = [this](const FMoverSyncState& State)
+				{
+					const FRpgMoverTraversalSyncState* Traversal = State.SyncStateCollection.FindDataByType<FRpgMoverTraversalSyncState>();
+					return Traversal && Traversal->Command.Identity == OriginalIdentity && Traversal->Command.IsActive()
+						&& !Traversal->bEndApplied && Traversal->Command.Context.Collider == OriginalCollider.Get()
+						&& Traversal->Command.Context.Montage == OriginalMontage.Get()
+						&& Traversal->Command.Context.FrontLedgeTarget.Equals(OriginalTarget, 0.01)
+						&& Traversal->WarpModifiers.ContainsByPredicate([this](const FRpgMoverWarpModifierState& Warp)
+						{ return Warp.WindowIndex == RequiredWarpWindow && Warp.Value.State == ERootMotionModifierState::Active; });
+				};
+				bHistoricalContract = ActiveHistoricalContract(RollbackObserver->RestoredSync)
+					&& ActiveHistoricalContract(RollbackObserver->PredictedSync)
+					&& ActiveHistoricalContract(RollbackObserver->ReplacementSync);
+			}
+			else if (FVector::DotProduct(Movement, CrossDirection) > -1.0) return;
 			bObserved = true; Delta = Movement;
 			AfterFrame = Liaison->GetCurrentSimFrame(); AfterTime = Liaison->GetCurrentSimTimeMs();
 			AfterClock = RpgMoverPredictionTests::FFixedPredictionHeadSnapshot::Capture(World, Liaison.Get());
@@ -390,12 +434,12 @@ namespace RpgGaspMoverTraversalTests
 					bLifecycle = BeforeTraversal->Command.IsActive() && AfterTraversal->Command.IsActive() && !AfterTraversal->bEndApplied
 						&& Mover(Owner.Get())->HasTraversalLease() && Mover(Owner.Get())->GetTraversalCollider() == OriginalCollider.Get();
 					bMontage = Instance && Instance->GetInstanceID() == OriginalInstance && Instance->IsPlaying();
-					// Hurdle must witness rollback while its floor window is active on both sides;
+					// Mantle and Hurdle must witness rollback while the selected window is active on both sides;
 					// a later correction during another window cannot stand in for this contract.
 					const auto RelevantWarp = [this](const FRpgMoverTraversalSyncState& State)
 					{
-						return RequiredFloorWindow == INDEX_NONE ? ActiveWarp(State) : State.WarpModifiers.FindByPredicate(
-							[this](const FRpgMoverWarpModifierState& Warp) { return Warp.WindowIndex == RequiredFloorWindow && Warp.Value.State == ERootMotionModifierState::Active; });
+						return RequiredWarpWindow == INDEX_NONE ? ActiveWarp(State) : State.WarpModifiers.FindByPredicate(
+							[this](const FRpgMoverWarpModifierState& Warp) { return Warp.WindowIndex == RequiredWarpWindow && Warp.Value.State == ERootMotionModifierState::Active; });
 					};
 					const FRpgMoverWarpModifierState* OldWarp = RelevantWarp(*BeforeTraversal);
 					const FRpgMoverWarpModifierState* NewWarp = RelevantWarp(*AfterTraversal);
@@ -437,7 +481,10 @@ namespace RpgGaspMoverTraversalTests
 		FVector CrossDirection = FVector::ZeroVector, Delta = FVector::ZeroVector;
 		int32 OriginalInstance = INDEX_NONE, BeforeFrame = INDEX_NONE, AfterFrame = INDEX_NONE, DiagnosticSamples = 0;
 		int32 BeforeRollbackCount = 0;
-		int32 RequiredFloorWindow = INDEX_NONE;
+		int32 RequiredWarpWindow = INDEX_NONE;
+		int32 InjectedLocalFrame = INDEX_NONE, WitnessRestoredFrame = INDEX_NONE, WitnessLocalFrame = INDEX_NONE, WitnessReplaySteps = 0;
+		FVector HistoricalDelta = FVector::ZeroVector;
+		bool bTrackInjectedFrame = false, bReplacedPredictedFrame = false, bHistoricalContract = false;
 		double BeforeTime = 0.0, AfterTime = 0.0;
 		bool bInjected = false, bObserved = false, bTerminalExpected = false, bBeforeValid = false;
 		bool bSameFrame = false, bIdentity = false, bContext = false, bLifecycle = false, bMontage = false, bWarpHistory = false;
@@ -1335,8 +1382,7 @@ struct FRpgGaspMoverTraversalTestFixture::FState
 				{
 					if (Action == EAction::Vault) Correction.Inject(Owner(), false, OwnerRecord.Montage.Get(), TEXT("BackLedge"));
 					else if (Action == EAction::Hurdle) Correction.Inject(Owner(), false, OwnerRecord.Montage.Get(), TEXT("BackFloor"));
-					else if (OwnerRecord.LastTime > OwnerRecord.FirstTime + 0.2f && OwnerRecord.LastTime < OwnerRecord.LastWarpEnd - 0.15f)
-						Correction.Inject(Owner(), false, OwnerRecord.Montage.Get());
+					else Correction.Inject(Owner(), false, OwnerRecord.Montage.Get(), TEXT("FrontLedge"));
 				}
 				if (Scenario == EScenario::CorrectAfterWarp && OwnerRecord.Ends > 0 && Clean(Owner()) && Mover(Owner())->IsOnGround()) Correction.Inject(Owner(), true, OwnerRecord.Montage.Get());
 			}
