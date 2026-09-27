@@ -9,7 +9,7 @@ Abnahme. Beide bei relevanten Fortschritten im selben PR aktualisieren.
 
 | Feld | Wert |
 | --- | --- |
-| Aktive Implementierungsaufgabe | `GASP-05` – begrenzter Import-Abhängigkeits-/Entfernungslisten-Audit, **validiert, PR in Vorbereitung**; gesamte Importbereinigung noch offen |
+| Aktive Implementierungsaufgabe | `GASP-05` – begrenzter Import-Abhängigkeits-/Entfernungslisten-Audit, **validiert, [PR #156](https://github.com/Athurito/SurvivalRpg/pull/156) offen**; gesamte Importbereinigung noch offen |
 | Nächste bereite Aufgabe | Vier gespeicherte Sample-Akteure in `Lvl_RpgBaseline` und `Lvl_ThirdPerson` prüfen und die Karten vom Originalimport entkoppeln; anschließend neuer Audit |
 | Zuständiger Chat / beanspruchte Dateien | Root schließt Audit/PR ab; Planer und lesende Herkunfts-/Textrouten-Reviews beendet. Kein Editor-/MCP-Prozess aktiv, keine Assetdateien beansprucht |
 | Runtime-Ausgangspunkt | `9de031c9e255a13d117662713739e44984a98edc`, bestätigter Merge PR #152 am 26.09.2026 um 20:51:05 UTC |
@@ -22,7 +22,7 @@ Abnahme. Beide bei relevanten Fortschritten im selben PR aktualisieren.
 
 ## Letzter validierter Teilschritt – GASP-05-Importaudit
 
-Der Audit ist abgeschlossen, der PR wird vorbereitet. Es wurden keine Assets
+Der Audit ist abgeschlossen, [PR #156](https://github.com/Athurito/SurvivalRpg/pull/156) ist offen. Es wurden keine Assets
 entfernt, keine Runtime-Systeme geändert und keine alten Unreal-Build-/PIE-
 Ergebnisse als neue Prüfung verwendet. Die leere Entfernungsliste ist ein
 konkretes Ergebnis: Jede der zwei alten Testkarten erreicht alle 2156 Quellen.
