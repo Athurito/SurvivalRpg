@@ -7,7 +7,7 @@ nicht eine neue Gesamtplanung für Combat, Crafting oder Portale.
 
 ## Schnellstart
 
-- **PR offen: GASP-06 – Blocken beim Laufen.** [Draft-PR #160](https://github.com/Athurito/SurvivalRpg/pull/160). Implementierung `71602034`, Branch `codex/gasp-06-moving-block`: Oberkörperblock mit weiterlaufenden Beinen für CMC/Mover. Editor/Game, 20/20 Tests, Root-Sichtprüfung und Windows-Cook bestanden; sechs Assets geändert, 4656 Assets und sieben Saves erhalten. Einfach mit RMB+WASD nachstellbar; Nutzer-Sichtabnahme und Merge offen. [Bericht](gasp-moving-block.md), [Manifest](assets/gasp-moving-block.json).
+- **GASP-06 nachgebessert; neue Nutzer-Sichtabnahme offen.** [Draft-PR #160](https://github.com/Athurito/SurvivalRpg/pull/160), Implementierung `8ee05aa9`, Branch `codex/gasp-06-moving-block`. Retarget-Ursache der Armtranslation korrigiert, vollständiger Standblock mit weich überblendeter GASP-Bewegung, horizontale Kameraorientierung und Sperre des vorhandenen Mover-Sprints bei unverändertem Normaltempo. Editor/Game, 33 aktuell grüne Prüffälle, frische Assetprüfung, neue Root-Sichtprüfung und Windows-Cook bestanden. Vier Assets dieser Nachbesserung geändert; 4658 Assets und sieben Saves erhalten. Die frühere Nutzer-Sichtabnahme war fehlgeschlagen; neue Zustimmung und Merge bleiben ausdrücklich offen. [Bericht](gasp-block-refinement.md), [Manifest](assets/gasp-block-refinement.json).
 
 - **Gemergt: GASP-05 – Originalimport entfernt.** [PR #158](https://github.com/Athurito/SurvivalRpg/pull/158), bestätigt gemergt als `051f03f06abf84b82191338a52401dd64ddd6c32` am 2026-09-27T01:16:35Z; finaler geprüfter Head `594b202084737c6e98ad3cc853d3cc613504dcc5`. Branch `codex/gasp-05-remove-sample-actors`, Assetcommit `0c37d9c4b9fb5cb555569c81ea5b10aedaefa4d6`, Basis `d6cb927f`. Vier alte Sample-Akteure und exakt 2298 historische Originalassets entfernt; 4662 übrige Assets einschließlich aller 2156 übernommenen Ziele byteidentisch, sieben persönliche SaveGames erhalten. Frischer Graph, zwei Karten-Smokes, 9/9 Tests, neun BP-/AnimBP-Compiles und voller Windows-Cook (3132 Pakete, fünf Karten, Exit 0) bestanden. [Entfernung und Grenzen](gasp-original-import-removal.md), [Manifest](assets/gasp-original-import-removal.json). Bestätigter Merge: `051f03f06abf84b82191338a52401dd64ddd6c32`.
 - **Gemergter Teilschritt: GASP-05 – Import-Abhängigkeits-/Entfernungslisten-Audit.** [PR #156](https://github.com/Athurito/SurvivalRpg/pull/156) am 27.09.2026 um 00:29:00 UTC bestätigt gemergt als `fdff8b91341c0c130db8487cea62f5c50f86bfd8`, geprüfter Head `6c89b9f18308abcc6cbf83a7973899cd351087d4`, Werkzeugcommit `9c8d7c77`. Arbeitsbranch `codex/gasp-05-import-audit`, Basis `577d7606`. Damals waren alle 2156 zugeordneten Originalpakete über jede der zwei alten Testkarten erreichbar; vier gespeicherte Sample-Akteure waren die direkten Projektblocker. Entfernungsliste leer, 17/17 Planertests bestanden, 6964 Assets/Maps und sieben SaveGames unverändert. Für diese Merge-Statuspflege keine Neuläufe. Der damalige Folgeauftrag zur Entkopplung und Entfernung ist inzwischen ausgeführt; aktueller Stand im Eintrag darüber. [Auditbericht](gasp-import-cleanup-audit.md), [Manifest](assets/gasp-import-cleanup-audit.json).
@@ -58,7 +58,7 @@ Vorgabe, insgesamt genau drei Experience-Dateien zu besitzen.
 | `GASP-03` | Mover-Ragdoll-Experience | **Gemergt** | [PR #152](https://github.com/Athurito/SurvivalRpg/pull/152), Merge `9de031c9`, finaler Head `7ab180a8`. Historische Editor/Game-, 20/20-Test-, Sicht- und Assetprüfungen; Farb-/MetaSound-Folgefix enthalten. [Pilotbericht](gasp-mover-ragdoll-pilot.md) |
 | `GASP-04` | Vergleich der drei Varianten | **Gemergt** | [PR #154](https://github.com/Athurito/SurvivalRpg/pull/154), Merge `bb690eef`, geprüfter Head `d3240b4b`, Testcode `b9608357`; Editor/Game, 31/31 Tests und Root-Sichtprüfung. [Matrix und Grenzen](gasp-variant-comparison.md); zusätzliche Nutzer-Sichtabnahme nicht erfolgt |
 | `GASP-05` | Importbereinigung | **Gemergt: [PR #158](https://github.com/Athurito/SurvivalRpg/pull/158)** | Vier Sample-Akteure und exakt 2298 Originalassets entfernt; Projektkopien erhalten. Zwei Map-Smokes, 9/9 Tests, neun BP-Compiles, frischer Graph und Windows-Cook (3132 Pakete, fünf Karten, Exit 0) bestanden; [PR #158](https://github.com/Athurito/SurvivalRpg/pull/158) bestätigt gemergt. [Entfernung und Grenzen](gasp-original-import-removal.md) |
-| `GASP-06` | Blocken beim Laufen / RPG-Animationsfeinschliff | **PR offen** | [Draft-PR #160](https://github.com/Athurito/SurvivalRpg/pull/160), Nutzer-Sichtabnahme/Merge offen. `71602034`: CMC/Mover-Oberkörperblock, 20/20 Tests, Builds, Root-Sichtprüfung und Cook bestanden; [Bericht und Repro](gasp-moving-block.md) |
+| `GASP-06` | Blocken beim Laufen / RPG-Animationsfeinschliff | **Neue Sichtabnahme offen** | [Draft-PR #160](https://github.com/Athurito/SurvivalRpg/pull/160), `8ee05aa9`: Retarget-/Posekorrektur und kameraorientierter Block; Builds, 33 aktuell grüne Prüffälle, Review, Sichtprüfung und Cook. [Bericht und Repro](gasp-block-refinement.md); noch nicht gemergt |
 
 Statuswerte: **Geplant**, **Bereit**, **In Arbeit**, **Validierung**,
 **PR offen**, **Gemergt**, **Blockiert**, **Zurückgestellt**.
@@ -224,11 +224,16 @@ Foundation-/Sample-Dateien nicht allein aufgrund ihres Ordnernamens löschen.
 
 ## GASP-06 – Blocken beim Laufen
 
-Der Nutzer hat den zuvor zurückgestellten Schritt jetzt beauftragt. Bei CMC und
-Mover sollen die Beine während Bewegung weiter animieren, während der Oberkörper
-die Blockpose beibehält. Körperaufteilung und Montage-/Locomotion-Überblendung
-sind im bestehenden AnimGraph-/GAS-Vertrag umgesetzt und validiert. [Implementierung,
-Prüfungen und einfache Sichtprobe](gasp-moving-block.md); Nutzerabnahme/Merge offen.
+Die erste Nutzer-Sichtabnahme ist fehlgeschlagen. Die beauftragte Nachbesserung
+ist mit `8ee05aa9` umgesetzt: Armtranslationen am projektlokalen UEFN-Skeleton
+korrigiert, vollständige ruhige Blockpose und GASP-Beine beim Laufen/Drehen
+weich kombiniert, Körper nach horizontalem Kamerablick ausgerichtet. Normaltempo
+bleibt unverändert; der vorhandene Mover-Sprint ist im Block gesperrt und kehrt
+nach RMB-Release bei weiterhin gehaltenem Shift zurück. CMC besitzt weiterhin
+sein Run-only-Profil. GAS und die bestehende Bewegung besitzen den Zustand,
+AnimBlueprints die Pose/Masken. Keine Combat-Motion-Matching-Erweiterung.
+[Aktuelle Prüfungen und neue Sichtprobe](gasp-block-refinement.md);
+PR #160 bleibt bis zur neuen Nutzer-Sichtabnahme offen.
 Weitere Skeletons, visuelle Griff-/Socket-Anpassungen, Last-/Stamina-
 Tuning und schwereres Traversal-Gefühl sind eigene spätere Entscheidungen.
 Sie gehören nicht automatisch zu Hurdle oder zur Ragdoll-Basis.

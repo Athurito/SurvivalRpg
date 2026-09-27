@@ -9,16 +9,16 @@ Abnahme. Beide bei relevanten Fortschritten im selben PR aktualisieren.
 
 | Feld | Wert |
 | --- | --- |
-| Aktive Implementierungsaufgabe | `GASP-06` – Blocken beim Laufen für CMC/Mover; [Draft-PR #160](https://github.com/Athurito/SurvivalRpg/pull/160) offen, implementiert und validiert; Nutzer-Sichtabnahme/Merge offen |
-| Nächste bereite Aufgabe | Einfach sichtbare GASP-06-Probe: in `Lvl_RpgGaspMantle` bzw. `Lvl_RpgGaspMover` RMB halten und WASD bewegen; danach Merge. Kein weiterer Roadmap-Schritt automatisch beauftragt |
-| Zuständiger Chat / beanspruchte Dateien | Implementierung und unabhängige Reviews abgeschlossen. Root besitzt sechs AnimBP-/Montageassets, zwei Runtime-Dateien, neue Testdatei und Docs bis zum PR-Abschluss; Editor/Cook beendet |
-| Runtime-Ausgangspunkt | Basis `908b7c7544a42848afe6c8b673988735ebd4ba1b`; GASP-06-Implementierung `71602034e5eee0d9d0a172b483fe4a5cdd7a2ec6` |
-| Checkout / Branch | `D:/Repos/SurvivalRpg`, `codex/gasp-06-moving-block`, Basis `908b7c7544a42848afe6c8b673988735ebd4ba1b`; Remote-master und keine offenen PRs bei Start geprüft |
-| Letzter Implementierungs-Commit | `71602034e5eee0d9d0a172b483fe4a5cdd7a2ec6`: zwei AnimGraphs, vier Blockmontagen, UpperBody-Traversal-Ausschlüsse und neue CMC/Mover-Posefenstertests |
+| Aktive Implementierungsaufgabe | `GASP-06` – Nachbesserung umgesetzt und technisch validiert; [Draft-PR #160](https://github.com/Athurito/SurvivalRpg/pull/160) bleibt offen. Neue Nutzer-Sichtabnahme vor Merge erforderlich |
+| Nächste bereite Aufgabe | Neue einfache Sichtprobe in `Lvl_RpgGaspMover` und `Lvl_RpgGaspMantle`: Standblock, WASD/Kameradrehung, Anhalten, Shift und RMB-Release. Erst nach bestätigter Sichtabnahme mergen |
+| Zuständiger Chat / beanspruchte Dateien | Root besitzt Editor/MCP und bereitet die Sichtprobe vor; Runtime, Tests und vier binäre Nachbesserungs-Assets sind committed. Keine parallelen Editorzugriffe. Rohbelege unter `Saved/GaspBlockRefinement20260927` |
+| Runtime-Ausgangspunkt | PR-Basis `908b7c7544a42848afe6c8b673988735ebd4ba1b`; Nachbesserung begann bei `ccc0f010a1d0f31824bf244c0e8dff38e103565c` |
+| Checkout / Branch | `D:/Repos/SurvivalRpg`, `codex/gasp-06-moving-block`; bestehender PR #160 gegen `master`, offen und Draft, kein Merge |
+| Letzter Implementierungs-Commit | `8ee05aa9690a817ee110438869196ea7232e5b0f`: acht benannte Retarget-Modi, volle Standpose/bewegter Oberkörperblock, Kameraorientierung, Mover-Sprint-Sperre und historische Blockkorrekturen; [Bericht](gasp-block-refinement.md) |
 | Letzter gemergter GASP-Arbeits-PR | [PR #158](https://github.com/Athurito/SurvivalRpg/pull/158), bestätigt gemergt als `051f03f06abf84b82191338a52401dd64ddd6c32` am 2026-09-27T01:16:35Z; finaler geprüfter Head `594b202084737c6e98ad3cc853d3cc613504dcc5` |
-| Aktuelle Belege | Editor/Game-Builds, 20/20 Tests (515 Warnungen, null Testfehler), zwei AnimBP-Compiles, Root-Sichtprüfung und voller Windows-Cook für fünf Karten (3125 gekocht / 3132 erfasst, Exit 0, fünf Warnungen). Genau sechs Assetänderungen; 4656 Assets und sieben Saves erhalten, vier Overrides verifiziert. [GASP-06](gasp-moving-block.md), [Manifest](assets/gasp-moving-block.json) |
-| Nächster Handgriff | Einfache Nutzer-Sichtprobe anbieten; nach Freigabe [Draft-PR #160](https://github.com/Athurito/SurvivalRpg/pull/160) mergen und erst nach bestätigtem Merge Status umstellen |
-| Blocker / offene Abnahme | Keine neue Test-/Cook-Blockade. Nutzer-Sichtabnahme und Merge offen; historische VAL-01/02-/NET-03-Grenzen bleiben bestehen. Frühere rote Diagnoseversuche und vorhandene Warnungen im Bericht erhalten |
+| Aktuelle Belege | Editor/Game erfolgreich; 33 verschiedene Fälle aktuell grün (sieben Fokusfälle + gezielte Cancel-Wiederholung + 25 Regressionen), 896 Warnungen. Drei frische BP-Compiles, unabhängiger Review, neue Sichtprüfung und erfolgreicher Windows-Cook für fünf Karten: 3125 gekocht, null Fehler, drei Warnungen; Child-Exitcode vom Launcher nicht erfasst. Vier Assets gegenüber Nachbesserungsbeginn geändert, 4658 Assets und sieben Saves erhalten; vier Overrides verifiziert. [Bericht](gasp-block-refinement.md), [Manifest](assets/gasp-block-refinement.json) |
+| Nächster Handgriff | Nutzer-Sichtprobe abwarten. Nach Zustimmung bestehenden PR prüfen und mergen; keine nächste Roadmap-Implementierung vor dieser sichtbaren Abnahme beginnen |
+| Blocker / offene Abnahme | Keine offenen Befunde aus den ausgeführten technischen Prüfungen; neue Nutzer-Sichtabnahme offen. CMC bleibt vorhandenes Run-only-Profil (600 cm/s), Mover blockiert vorhandenen Sprint (375/585 cm/s). Keine vollständige Waffen-/Gait-/Retarget-Matrix; VAL-01/02-/NET-03-Grenzen und fehlgeschlagene Vorläufe bleiben dokumentiert |
 
 ## Letzter abgeschlossener Schritt – GASP-05-Originalbereinigung
 
