@@ -6,6 +6,12 @@
   "branch": "codex/gasp-05-import-audit",
   "tooling_commit": "9c8d7c77c3be6d261a268339096d00cdfe823b82",
   "pull_request": "https://github.com/Athurito/SurvivalRpg/pull/156",
+  "confirmed_merge": {
+    "commit": "fdff8b91341c0c130db8487cea62f5c50f86bfd8",
+    "merged_at_utc": "2026-09-27T00:29:00Z",
+    "final_reviewed_head": "6c89b9f18308abcc6cbf83a7973899cd351087d4",
+    "audit_validation_repeated_for_status_update": false
+  },
   "scope": "Read-only first audit of exactly 2156 provenance-mapped import packages; no deletion or runtime/content mutation.",
   "engine_version": "5.8.2-56702186+++UE5+Release-5.8",
   "registry": {
