@@ -4,6 +4,7 @@
 
 #if WITH_EDITOR
 #include "Misc/DataValidation.h"
+#include "RpgWeaponInstance.h"
 #endif
 
 #include UE_INLINE_GENERATED_CPP_BY_NAME(RpgEquipmentDefinition)
@@ -169,6 +170,12 @@ EDataValidationResult URpgEquipmentDefinition::IsDataValid(
 		EDataValidationResult::Valid);
 	const FText DefinitionPath =
 		GetEquipmentDefinitionValidationPath(this);
+	// Equipment assets reference weapon tuning through their instance class. Validate that same CDO
+	// without creating a live item, so ordinary definition validation also catches malformed block profiles.
+	if (InstanceType && InstanceType->IsChildOf(URpgWeaponInstance::StaticClass()))
+	{
+		Result = CombineDataValidationResults(Result, InstanceType->GetDefaultObject<URpgWeaponInstance>()->IsDataValid(Context));
+	}
 	const bool bHasValidSlotReferences =
 		HasStructurallyValidSlotReferences();
 	const bool bHasValidHandContract =

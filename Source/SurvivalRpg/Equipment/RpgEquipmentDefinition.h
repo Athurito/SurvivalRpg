@@ -179,7 +179,7 @@ public:
 	ERpgEquipmentSlot GetDefaultEquipSlot() const;
 
 #if WITH_EDITOR
-	/** Reports malformed generic slot references without applying semantic equipment migration policy. */
+	/** Reports malformed slot references and validates referenced weapon-instance tuning without applying migration policy. */
 	virtual EDataValidationResult IsDataValid(FDataValidationContext& Context) const override;
 #endif
 

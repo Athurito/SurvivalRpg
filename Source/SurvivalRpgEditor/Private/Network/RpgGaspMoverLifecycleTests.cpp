@@ -32,6 +32,7 @@
 #include "SurvivalRpg/AbilitySystem/Abilities/RpgGameplayAbility_Block.h"
 #include "SurvivalRpg/AbilitySystem/Attributes/RpgHealthSet.h"
 #include "SurvivalRpg/AbilitySystem/RpgAbilitySystemComponent.h"
+#include "SurvivalRpg/Animation/RpgAnimInstance.h"
 #include "SurvivalRpg/Animation/RpgRuntimeRetargetComponent.h"
 #include "SurvivalRpg/Animation/RpgRuntimeRetargetProfile.h"
 #include "SurvivalRpg/Core/Character/RpgCharacterMoverComponent.h"
@@ -109,6 +110,31 @@ namespace RpgGaspMoverLifecycleTests
 				&& (bBlock ? Ability->IsA<URpgGameplayAbility_Block>() : Ability->IsA<URpgGameplayAbility_BasicWeaponAttack>())) return &Spec;
 		}
 		return nullptr;
+	}
+	bool HasHeldBlockPresentation(APawn* Character)
+	{
+		if (!Character || !ASC(Character) || !Equipment(Character) || !Mover(Character) || !Mesh(Character)
+			|| !Mesh(Character)->GetAnimInstance() || !ASC(Character)->HasMatchingGameplayTag(Tag(TEXT("State.Blocking")))
+			|| !ASC(Character)->IsBlockMovementActive() || !Mover(Character)->IsBlockMovementActive()) return false;
+		const URpgWeaponInstance* Item = Cast<URpgWeaponInstance>(Equipment(Character)->GetActiveBlockSource());
+		if (!Item) return false;
+		if (Character->GetLocalRole() != ROLE_SimulatedProxy)
+		{
+			const FGameplayAbilitySpec* Spec = CombatSpec(Character, true);
+			if (!Spec || !Spec->IsActive() || Spec->SourceObject.Get() != Item) return false;
+		}
+		const FRpgWeaponBlockDefinition& Definition = Item->GetBlockDefinition();
+		const bool bLoopPlaying = Definition.BlockLoopMontage
+			&& Mesh(Character)->GetAnimInstance()->Montage_IsPlaying(Definition.BlockLoopMontage);
+		if (Definition.BlockLocomotionLayer)
+		{
+			// A linked profile has no persistent GAS loop. Require its actual updated instance before death,
+			// while retaining the exact loop-montage witness for definitions that use the legacy path.
+			const URpgAnimInstance* Layer = Cast<URpgAnimInstance>(Equipment(Character)->GetBlockLocomotionLayerInstance());
+			return Layer && Layer->GetClass() == Definition.BlockLocomotionLayer.Get()
+				&& Layer->GetSkelMeshComponent() == Mesh(Character) && Layer->bBlockLocomotionActive && !bLoopPlaying;
+		}
+		return bLoopPlaying && ASC(Character)->GetCurrentMontage() == Definition.BlockLoopMontage;
 	}
 	bool Equipped(APawn* Character)
 	{
@@ -751,7 +777,12 @@ namespace RpgGaspMoverLifecycleTests
 						const FGameplayAbilitySpec* Attack = CombatSpec(Old, false);
 						const FGameplayAbilitySpec* Block = CombatSpec(Old, true);
 						Peer->bInvalidDeadState |= (Attack && Attack->IsActive()) || (Block && Block->IsActive())
-							|| ASC(Old)->HasMatchingGameplayTag(Tag(TEXT("State.Blocking")));
+							|| ASC(Old)->HasMatchingGameplayTag(Tag(TEXT("State.Blocking"))) || ASC(Old)->IsBlockMovementActive();
+						const FRpgMoverBlockMovementSyncState* BlockState = Sync.SyncStateCollection.FindDataByType<FRpgMoverBlockMovementSyncState>();
+						const URpgAnimInstance* BlockLayer = Equipment(Old)
+							? Cast<URpgAnimInstance>(Equipment(Old)->GetBlockLocomotionLayerInstance()) : nullptr;
+						Peer->bInvalidDeadState |= !BlockState || BlockState->bBlocking || BlockState->SpeedLimit != 0.f
+							|| (BlockLayer && BlockLayer->bBlockLocomotionActive);
 					}
 				}
 			}
@@ -1123,9 +1154,9 @@ NETWORK_TEST_CLASS(GaspMoverLifecyclePIE, "SurvivalRpg.GASP.Mover.Lifecycle")
 				if (!Spec || !Spec->IsActive()) return false;
 				if (bBlock)
 				{
-					APawn* Proxy = Pawn(ObserverWorld.Get(), SubjectId);
-					return ASC(Character)->HasMatchingGameplayTag(Tag(TEXT("State.Blocking"))) && ASC(Proxy)
-						&& ASC(Proxy)->HasMatchingGameplayTag(Tag(TEXT("State.Blocking"))) && ASC(Proxy)->GetCurrentMontage();
+					return HasHeldBlockPresentation(Character)
+						&& HasHeldBlockPresentation(Pawn(OwnerWorld.Get(), SubjectId))
+						&& HasHeldBlockPresentation(Pawn(ObserverWorld.Get(), SubjectId));
 				}
 				const auto* Attack = Cast<URpgGameplayAbility_BasicWeaponAttack>(Spec->GetPrimaryInstance());
 				return Attack && Attack->IsAttackWindowOpenForTests();

@@ -5,18 +5,23 @@ Zentraler Plan und Aufgabenverträge:
 Diese Datei hält den **aktuellen Arbeitsstand**, die Roadmap die Reihenfolge und
 Abnahme. Beide bei relevanten Fortschritten im selben PR aktualisieren.
 
-## Aktueller Stand – GASP-06-Neuaufbau, 27.09.2026
+## Aktueller Stand – GASP-06-Neuaufbau, 28.09.2026
 
 | Feld | Wert |
 | --- | --- |
-| Aktive Aufgabe | `GASP-06`: vollständiger Rückbau auf ausdrücklichen Nutzerwunsch; anschließend gemeinsamer Linked Anim Layer mit austauschbaren Chooser-Sätzen |
+| Aktive Aufgabe | `GASP-06`: vollständiger Rückbau und Neuaufbau abgeschlossen; technische und eigene visuelle Prüfung bestanden, Nutzer-Sichtprobe offen |
 | Branch / PR | `codex/gasp-06-moving-block`, [Draft-PR #160](https://github.com/Athurito/SurvivalRpg/pull/160), offen; kein Merge |
 | Rückbaubasis | `908b7c7544a42848afe6c8b673988735ebd4ba1b`; vorheriger Head `20d1f7ffe62c8baff982d52ea5f64f41f6766aa2` |
+| Rückbaucommit | `de852e984e65009d6c68cc2be7d98cc94caa0bb5`; separate Historie erhalten, Neuaufbau danach |
 | Rückbauprüfung | Alle 28 Code-/Tool-/Assetpfade identisch zur Basis beziehungsweise dort nicht vorhanden; acht tatsächliche Assetdateien gegen die LFS-SHA256 der Basis geprüft. Keine neue Build-/PIE-Abnahme im Rückbaucheckpoint |
 | Historische Ergebnisse | Die bisherigen vier Berichte/Manifeste bleiben ausdrücklich als zurückgenommene Versuche erhalten; alte Test-/Cook-Ergebnisse gelten nicht für den Neuaufbau |
-| Editorzustand | Beim Rückbau kein UnrealEditor-/UnrealEditor-Cmd-Prozess; Root besitzt die folgende gemeinsame Editor-/MCP-Sitzung |
-| Nächster Schritt | Block-Lifecycle/Movement-Prediction neu aufbauen; gemeinsamen Blueprint-Layer, Datenkinder und Chooser über Unreal MCP erstellen; Clips und Retargeting prüfen |
-| Abnahme | Natürliche Haltung hat Vorrang vor bisherigem Blocktempo. Zweiter Testsatz beweist Austauschbarkeit. Neue technische und eigene visuelle Abnahme, danach Nutzer-Sichtprobe vor Merge |
+| Implementierung | 35 abgeleitete UEFN-Sequences, fünf kurze GAS-Montagen, gemeinsamer abstrakter AnimBP-Parent mit zwei Datenkindern/Choosern; CMC/Mover verwenden denselben Layer. Aktiver Shield-Satz: 157 cm/s. Gameplay-Lease/Prediction und Reaktionsbestätigung nativ; Abläufe, Kontaktphasen, Clipwahl und Tuning in Assets |
+| Prüfstand | Editor11 und finaler Game02 erfolgreich; Focus04 **19/19**, Regression02 **25/25**. Beide Fußphasen beim Stoppen in CMC/Mover tatsächlich erfasst; eigene Turn-/Richtungs-/Schulter-/Reaktionsaufnahmen geprüft. Fünf-Karten-Cook erfolgreich (3170 gespeicherte Pakete, 0 Fehler, 3 Warnungen); historische rote Versuche bleiben im [Bericht](gasp-block-locomotion.md) und [Manifest](assets/gasp-block-locomotion.json) |
+| Editorzustand | Alle automatisierten PIE-Sitzungen beendet, Einstellungen restauriert, Testeditor PID23056 ohne schmutzige Pakete geschlossen. Für die Nutzer-Sichtprobe Editor PID43040 auf `Lvl_RpgGaspMover` mit sichtbarem Fenster geöffnet, kein PIE automatisch gestartet; isolierter Benutzerpfad `Saved/GaspBlockLayers20260927/IsolatedUser`, MCP-Port8002 |
+| Nächster Schritt | Nutzer startet Play auf `Lvl_RpgGaspMover` oder CMC-Karte `Lvl_RpgGaspMantle`: RMB halten, Kamera drehen, WASD/Stop/Shift/Release prüfen. Erst nach erneuter Sichtfreigabe mergen. Neun BP-/AnimBP-Compiles und finaler Erhaltungscheck bestanden: 49 neue Assets, genau sechs Änderungen, 4656 übrige Assets und sieben Spielstände unverändert |
+| Abnahme | Natürliche Haltung hat Vorrang vor bisherigem Blocktempo. Zweiter Testsatz beweist Austauschbarkeit. Technische und eigene visuelle Abnahme durchgeführt; Nutzer-Sichtprobe vor Merge steht aus |
+
+GitHub-Titel/-Beschreibung konnten wegen Connector-403 und fehlender Browseranmeldung noch nicht ersetzt werden; sie beschreiben weiterhin den verworfenen Ansatz. Maßgeblich sind dieser Neuaufbaubericht und die neuen Commits im selben PR. Kein Merge ist freigegeben.
 
 ## Letzter abgeschlossener Schritt – GASP-05-Originalbereinigung
 

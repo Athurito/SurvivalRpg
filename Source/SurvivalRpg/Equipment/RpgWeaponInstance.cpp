@@ -1,6 +1,15 @@
 #include "RpgWeaponInstance.h"
 
+#include "Animation/AnimInstance.h"
+
 #include "SurvivalRpg/GameplayTags/RpgGameplayTags.h"
+
+#if WITH_EDITOR
+#include "Animation/AnimClassInterface.h"
+#include "Misc/DataValidation.h"
+#endif
+
+#define LOCTEXT_NAMESPACE "RpgWeaponInstance"
 
 FRpgWeaponAttackDefinition::FRpgWeaponAttackDefinition()
 {
@@ -60,6 +69,57 @@ URpgWeaponInstance::URpgWeaponInstance(const FObjectInitializer& ObjectInitializ
 
 	BlockDefinition.BlockableDamageTypeTags.AddTag(RpgGameplayTags::Damage_Type_Melee);
 }
+
+#if WITH_EDITOR
+EDataValidationResult URpgWeaponInstance::IsDataValid(FDataValidationContext& Context) const
+{
+	EDataValidationResult Result = CombineDataValidationResults(Super::IsDataValid(Context), EDataValidationResult::Valid);
+	const FText WeaponPath = FText::FromString(GetPathName());
+	if (!FMath::IsFinite(BlockDefinition.MovementSpeedLimit) || BlockDefinition.MovementSpeedLimit < 0.f)
+	{
+		Context.AddError(FText::Format(LOCTEXT("InvalidBlockMovementSpeedLimit",
+			"Weapon '{0}' has an invalid BlockDefinition.MovementSpeedLimit. Use a finite non-negative speed in cm/s; zero preserves the ordinary speed limit."), WeaponPath));
+		Result = EDataValidationResult::Invalid;
+	}
+
+	if (UClass* LayerClass = BlockDefinition.BlockLocomotionLayer.Get())
+	{
+		const IAnimClassInterface* AnimClass = IAnimClassInterface::GetFromClass(LayerClass);
+		// LinkAnimClassLayers binds only implemented animation functions. A main AnimGraph alone,
+		// an interface stub, or a native AnimInstance cannot replace a linked layer.
+		const bool bHasImplementedLayer = AnimClass && AnimClass->GetAnimBlueprintFunctions().ContainsByPredicate(
+			[](const FAnimBlueprintFunction& Function)
+			{
+				return Function.bImplemented && !Function.Name.IsNone() && Function.Name != TEXT("AnimGraph");
+			});
+		if (LayerClass->HasAnyClassFlags(CLASS_Abstract | CLASS_Deprecated | CLASS_NewerVersionExists | CLASS_Interface)
+			|| !bHasImplementedLayer)
+		{
+			Context.AddError(FText::Format(LOCTEXT("InvalidBlockLocomotionLayer",
+				"Weapon '{0}' uses BlockDefinition.BlockLocomotionLayer '{1}', which is not a concrete compiled Anim Blueprint with an implemented animation layer. Assign a valid linked-layer class or clear it to retain the legacy block loop."),
+				WeaponPath, FText::FromString(LayerClass->GetPathName())));
+			Result = EDataValidationResult::Invalid;
+		}
+		else
+		{
+			// Let the layer's existing asset-validation seam report its designer-owned selection checks.
+			Result = CombineDataValidationResults(Result, LayerClass->GetDefaultObject<UAnimInstance>()->IsDataValid(Context));
+		}
+	}
+	return Result;
+}
+#endif
+
+#if WITH_DEV_AUTOMATION_TESTS
+bool URpgWeaponInstance::ConfigureBlockLocomotionForTests(TSubclassOf<UAnimInstance> LayerClass, float SpeedLimit)
+{
+	if (HasAnyFlags(RF_ClassDefaultObject | RF_ArchetypeObject) || !GetPawn()
+		|| !FMath::IsFinite(SpeedLimit) || SpeedLimit < 0.f) { return false; }
+	BlockDefinition.BlockLocomotionLayer = LayerClass;
+	BlockDefinition.MovementSpeedLimit = SpeedLimit;
+	return true;
+}
+#endif
 
 const FRpgWeaponAttackDefinition* URpgWeaponInstance::FindAttackDefinition(FGameplayTag AttackDefinitionTag) const
 {
@@ -220,3 +280,5 @@ void URpgWeaponInstance::ConfigureMeleeBlock(
 	BlockDefinition.PerfectBlockStaggerDamage = FMath::Max(0.0f, PerfectBlockStaggerDamage);
 	BlockDefinition.BlockLoopMontage = BlockLoopMontage;
 }
+
+#undef LOCTEXT_NAMESPACE

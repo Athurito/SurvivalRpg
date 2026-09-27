@@ -4,8 +4,10 @@
 #include "RpgMoverMotionWarpingComponent.h"
 #include "RpgMoverRagdollComponent.h"
 #include "RpgMoverRagdollMovementMode.h"
+#include "RpgMoverPawn.h"
 
 #include "AbilitySystemComponent.h"
+#include "AbilitySystemGlobals.h"
 #include "Abilities/GameplayAbility.h"
 #include "Animation/AnimInstance.h"
 #include "Animation/AnimMontage.h"
@@ -13,8 +15,10 @@
 #include "Components/SkeletalMeshComponent.h"
 #include "Components/CapsuleComponent.h"
 #include "DefaultMovementSet/InstantMovementEffects/BasicInstantMovementEffects.h"
+#include "DefaultMovementSet/Modes/SimpleWalkingMode.h"
 #include "DefaultMovementSet/Settings/CommonLegacyMovementSettings.h"
 #include "MoveLibrary/FloorQueryUtils.h"
+#include "MoveLibrary/BasedMovementUtils.h"
 #include "MoverDataModelTypes.h"
 #include "MoverSimulation.h"
 #include "MoverSimulationTypes.h"
@@ -233,6 +237,8 @@ bool FRpgMoverAbilityRootMotionInputs::NetSerialize(FArchive& Ar, UPackageMap* M
 		RootMotion = FRpgMoverAbilityRootMotion{};
 		Traversal = FRpgMoverTraversalCommand{};
 		Ragdoll = FRpgMoverRagdollState{};
+		bBlocking = false;
+		BlockMovementSpeedLimit = 0.f;
 		RetainMontageForHistory();
 	}
 	bOutSuccess = true;
@@ -255,6 +261,30 @@ void FRpgMoverAbilityRootMotionInputs::Interpolate(const FMoverDataStructBase& F
 {
 	// Playback identities and stop boundaries are discrete, including when inputs accompany interpolated proxies.
 	*this = static_cast<const FRpgMoverAbilityRootMotionInputs&>(Pct < 1.0f ? From : To);
+}
+
+FMoverDataStructBase* FRpgMoverBlockMovementSyncState::Clone() const { return new FRpgMoverBlockMovementSyncState(*this); }
+UScriptStruct* FRpgMoverBlockMovementSyncState::GetScriptStruct() const { return StaticStruct(); }
+
+bool FRpgMoverBlockMovementSyncState::NetSerialize(FArchive& Ar, UPackageMap* Map, bool& bOutSuccess)
+{
+	Ar << bBlocking;
+	if (bBlocking) { Ar << SpeedLimit; }
+	else if (Ar.IsLoading()) { SpeedLimit = 0.f; }
+	bOutSuccess = !Ar.IsError() && FMath::IsFinite(SpeedLimit) && SpeedLimit >= 0.f;
+	return bOutSuccess;
+}
+
+bool FRpgMoverBlockMovementSyncState::ShouldReconcile(const FMoverDataStructBase& AuthorityState) const
+{
+	const FRpgMoverBlockMovementSyncState& Other = static_cast<const FRpgMoverBlockMovementSyncState&>(AuthorityState);
+	return bBlocking != Other.bBlocking || SpeedLimit != Other.SpeedLimit;
+}
+
+void FRpgMoverBlockMovementSyncState::Interpolate(const FMoverDataStructBase& From, const FMoverDataStructBase& To, float Pct)
+{
+	// Block and its activation's cap switch together at the finalized boundary, never as a blended limit.
+	*this = static_cast<const FRpgMoverBlockMovementSyncState&>(Pct < 1.f ? From : To);
 }
 
 URpgCharacterMoverComponent::URpgCharacterMoverComponent()
@@ -281,6 +311,7 @@ void URpgCharacterMoverComponent::BeginPlay()
 		AddMovementModeFromClass(URpgDeadMovementMode::ModeName, URpgDeadMovementMode::StaticClass());
 	}
 	PersistentSyncStateDataTypes.Add(FMoverDataPersistence(FRpgMoverTraversalSyncState::StaticStruct(), true));
+	PersistentSyncStateDataTypes.Add(FMoverDataPersistence(FRpgMoverBlockMovementSyncState::StaticStruct(), true));
 	bRagdollEnabled = GetOwner()->FindComponentByClass<URpgMoverRagdollComponent>() != nullptr;
 	if (bRagdollEnabled)
 	{
@@ -322,9 +353,12 @@ bool URpgCharacterMoverComponent::IsMovementDisabledForDeath(const FMoverSyncSta
 
 void URpgCharacterMoverComponent::OnPreSimulate(const FMoverTimeStep& TimeStep, const FMoverTickStartData& StartingData)
 {
+	// No cap may leak into the next frame if an earlier simulation was interrupted before PostSimulate.
+	RestoreBlockMovementSettings();
 	bSuppressMovementForDeathThisTick = IsMovementDisabledForDeath(StartingData.SyncState, TimeStep);
 	PrepareTraversalSimulation(TimeStep, StartingData);
 	PrepareRagdollSimulation(TimeStep, StartingData);
+	PrepareBlockMovement(TimeStep, StartingData);
 	if (bSuppressMovementForDeathThisTick)
 	{
 		// The NP liaison deep-copies its stored command into StartingData before this callback. Mutating
@@ -351,6 +385,32 @@ void URpgCharacterMoverComponent::OnPreSimulate(const FMoverTimeStep& TimeStep, 
 	Super::OnPreSimulate(TimeStep, StartingData);
 	bHandleStanceChanges = bSavedStanceHandling;
 	if (bLockStance) { bWantsToCrouch = IsCrouching(); }
+	// Cap the authored settings consumed by this step after pre-simulation callbacks, without changing
+	// acceleration, direction magnitude or velocity; restore them after simulation.
+	if (BlockMovementSimulationState.bBlocking && BlockMovementSimulationState.SpeedLimit > 0.f)
+	{
+		if (UCommonLegacyMovementSettings* Settings = FindSharedSettings_Mutable<UCommonLegacyMovementSettings>())
+		{
+			CappedBlockMovementSettings = Settings;
+			UncappedBlockMovementMaxSpeed = Settings->MaxSpeed;
+			AppliedBlockMovementMaxSpeed = FMath::Min(Settings->MaxSpeed, BlockMovementSimulationState.SpeedLimit);
+			Settings->MaxSpeed = AppliedBlockMovementMaxSpeed;
+		}
+		// Simple/SmoothWalking reads a nonnegative mode override before shared MaxSpeed. GASP authors
+		// that override inside GenerateWalkMove for the next step, so cap the value consumed by this
+		// step as well. Cover configured modes to retain the cap across an in-step mode transition.
+		for (const auto& Entry : MovementModes)
+		{
+			if (USimpleWalkingMode* Mode = Cast<USimpleWalkingMode>(Entry.Value.Get()); Mode && Mode->MaxSpeedOverride >= 0.f)
+			{
+				FCappedBlockMovementMode& CappedMode = CappedBlockMovementModes.AddDefaulted_GetRef();
+				CappedMode.Mode = Mode;
+				CappedMode.UncappedMaxSpeed = Mode->MaxSpeedOverride;
+				CappedMode.AppliedMaxSpeed = FMath::Min(Mode->MaxSpeedOverride, BlockMovementSimulationState.SpeedLimit);
+				Mode->MaxSpeedOverride = CappedMode.AppliedMaxSpeed;
+			}
+		}
+	}
 
 	if (!bSuppressMovementForDeathThisTick && BackendLiaisonComp && Simulation && !IsBackendAsync() && TimeStep.StepMs > 0.f)
 	{
@@ -416,6 +476,7 @@ void URpgCharacterMoverComponent::ProduceInput(int32 DeltaTimeMS, FMoverInputCmd
 	FRpgMoverAbilityRootMotionInputs& Inputs = Cmd->InputCollection.FindOrAddMutableDataByType<FRpgMoverAbilityRootMotionInputs>();
 	Inputs.Traversal = TraversalCommand;
 	Inputs.Ragdoll = RagdollCommand;
+	Inputs.bBlocking = SampleBlockMovement(Inputs.BlockMovementSpeedLimit);
 	const bool bDeathInput = bDeathMovementRequested || GetSyncState().MovementMode == URpgDeadMovementMode::ModeName;
 	if (!BackendLiaisonComp || bDeathInput || !SampleAbilityRootMotion(BackendLiaisonComp->GetCurrentSimTimeMs(), Inputs.RootMotion))
 	{
@@ -429,6 +490,108 @@ void URpgCharacterMoverComponent::ProduceInput(int32 DeltaTimeMS, FMoverInputCmd
 	}
 	Inputs.RetainMontageForHistory();
 	CachedLastProducedInputCmd = *Cmd;
+}
+
+bool URpgCharacterMoverComponent::SampleBlockMovement(float& OutSpeedLimit) const
+{
+	OutSpeedLimit = 0.f;
+	const URpgAbilitySystemComponent* AbilitySystem = Cast<URpgAbilitySystemComponent>(
+		UAbilitySystemGlobals::GetAbilitySystemComponentFromActor(GetOwner()));
+	if (bDeathMovementRequested || !AbilitySystem || AbilitySystem->GetAvatarActor() != GetOwner() ||
+		!AbilitySystem->IsBlockMovementActive()) { return false; }
+	OutSpeedLimit = AbilitySystem->GetBlockMovementSpeedLimit();
+	return true;
+}
+
+bool URpgCharacterMoverComponent::IsBlockMovementActive() const
+{
+	if (bInBlockMovementSimulation) { return BlockMovementSimulationState.bBlocking; }
+	if (bDeathMovementRequested || GetSyncState().MovementMode == URpgDeadMovementMode::ModeName) { return false; }
+	if (GetOwnerRole() == ROLE_SimulatedProxy)
+	{
+		const FRpgMoverBlockMovementSyncState* Policy = GetSyncState().SyncStateCollection.FindDataByType<FRpgMoverBlockMovementSyncState>();
+		return Policy && Policy->bBlocking;
+	}
+	float SpeedLimit = 0.f;
+	return SampleBlockMovement(SpeedLimit);
+}
+
+float URpgCharacterMoverComponent::GetBlockMovementSpeedLimit() const
+{
+	if (bInBlockMovementSimulation) { return BlockMovementSimulationState.SpeedLimit; }
+	if (!IsBlockMovementActive()) { return 0.f; }
+	if (GetOwnerRole() == ROLE_SimulatedProxy)
+	{
+		const FRpgMoverBlockMovementSyncState* Policy = GetSyncState().SyncStateCollection.FindDataByType<FRpgMoverBlockMovementSyncState>();
+		return Policy ? Policy->SpeedLimit : 0.f;
+	}
+	float SpeedLimit = 0.f;
+	SampleBlockMovement(SpeedLimit);
+	return SpeedLimit;
+}
+
+void URpgCharacterMoverComponent::PrepareBlockMovement(const FMoverTimeStep& TimeStep, const FMoverTickStartData& StartingData)
+{
+	BlockMovementSimulationState = FRpgMoverBlockMovementSyncState{};
+	bInBlockMovementSimulation = true;
+	if (bSuppressMovementForDeathThisTick || TraversalSimulationState.Command.IsActive() ||
+		bSuppressMovementForRagdollThisTick || IsBackendAsync()) { return; }
+	const FRpgMoverAbilityRootMotionInputs* Inputs = StartingData.InputCmd.InputCollection.FindDataByType<FRpgMoverAbilityRootMotionInputs>();
+	if (GetOwnerRole() == ROLE_Authority)
+	{
+		FRpgMoverAbilityRootMotion SampledRootMotion;
+		if (SampleAbilityRootMotion(TimeStep.BaseSimTimeMs, SampledRootMotion)) { return; }
+		BlockMovementSimulationState.bBlocking = SampleBlockMovement(BlockMovementSimulationState.SpeedLimit);
+	}
+	else if (GetOwnerRole() == ROLE_AutonomousProxy && Inputs && !Inputs->RootMotion.MontageState.Montage)
+	{
+		// Replay consumes the immutable original input, never current equipment or the current GAS lease.
+		BlockMovementSimulationState.bBlocking = Inputs->bBlocking;
+		BlockMovementSimulationState.SpeedLimit = Inputs->BlockMovementSpeedLimit;
+	}
+	if (!BlockMovementSimulationState.bBlocking) { BlockMovementSimulationState.SpeedLimit = 0.f; return; }
+	if (!FMath::IsFinite(BlockMovementSimulationState.SpeedLimit) || BlockMovementSimulationState.SpeedLimit < 0.f)
+	{
+		BlockMovementSimulationState = FRpgMoverBlockMovementSyncState{};
+		return;
+	}
+
+	// The liaison owns a mutable, deep-copied StartData for this simulation tick. Only this copy may
+	// receive Blueprint custom gait fields; ProduceInput retains the raw command for authority rejection/replay.
+	if (ARpgMoverPawn* Pawn = Cast<ARpgMoverPawn>(GetOwner()))
+	{
+		const_cast<FMoverInputCmdContext&>(StartingData.InputCmd) = Pawn->ApplyBlockMovementPolicy(StartingData.InputCmd, true);
+	}
+	if (FCharacterDefaultInputs* DefaultInputs = StartingData.InputCmd.InputCollection.FindMutableDataByType<FCharacterDefaultInputs>())
+	{
+		const FVector WorldFacing = FRotator(0.f, DefaultInputs->ControlRotation.Yaw, 0.f).Vector();
+		if (DefaultInputs->bUsingMovementBase && DefaultInputs->MovementBase)
+		{
+			UBasedMovementUtils::TransformWorldDirectionToBased(DefaultInputs->MovementBase, DefaultInputs->MovementBaseBoneName,
+				WorldFacing, DefaultInputs->OrientationIntent);
+		}
+		else { DefaultInputs->OrientationIntent = WorldFacing; }
+	}
+}
+
+void URpgCharacterMoverComponent::RestoreBlockMovementSettings()
+{
+	if (UCommonLegacyMovementSettings* Settings = CappedBlockMovementSettings.Get())
+	{
+		// A later authored setting change owns its new value; restore only the exact scalar we installed.
+		if (Settings->MaxSpeed == AppliedBlockMovementMaxSpeed) { Settings->MaxSpeed = UncappedBlockMovementMaxSpeed; }
+	}
+	CappedBlockMovementSettings.Reset();
+	for (const FCappedBlockMovementMode& CappedMode : CappedBlockMovementModes)
+	{
+		if (USimpleWalkingMode* Mode = CappedMode.Mode.Get())
+		{
+			// GenerateWalkMove may already have selected a new authored gait for the following step.
+			if (Mode->MaxSpeedOverride == CappedMode.AppliedMaxSpeed) { Mode->MaxSpeedOverride = CappedMode.UncappedMaxSpeed; }
+		}
+	}
+	CappedBlockMovementModes.Reset();
+	bInBlockMovementSimulation = false;
 }
 
 bool URpgCharacterMoverComponent::CanBeginRagdoll(float MaximumSpeed) const
@@ -663,6 +826,12 @@ void URpgCharacterMoverComponent::EndTraversalRootMotion(float MontagePosition)
 
 void URpgCharacterMoverComponent::OnPostSimulate(const FMoverTimeStep& TimeStep, const FMoverTickStartData& StartingData, FMoverTickEndData& EndingData)
 {
+	if (EndingData.SyncState.MovementMode == URpgDeadMovementMode::ModeName ||
+		EndingData.SyncState.MovementMode == URpgMoverRagdollMovementMode::ModeName)
+	{
+		BlockMovementSimulationState = FRpgMoverBlockMovementSyncState{};
+	}
+	EndingData.SyncState.SyncStateCollection.FindOrAddMutableDataByType<FRpgMoverBlockMovementSyncState>() = BlockMovementSimulationState;
 	if (TraversalSimulationState.bEndApplied && TraversalSimulationState.Command.IsTerminal())
 	{
 		// Historical active frames retain complete values. The terminal retains identity, target names and
@@ -683,6 +852,7 @@ void URpgCharacterMoverComponent::OnPostSimulate(const FMoverTimeStep& TimeStep,
 		Super::OnPostSimulate(TimeStep, PresentationData, EndingData);
 	}
 	else { Super::OnPostSimulate(TimeStep, StartingData, EndingData); }
+	RestoreBlockMovementSettings();
 }
 
 void URpgCharacterMoverComponent::ApplyTraversalCollisionLease(UPrimitiveComponent* Collider)
@@ -1057,6 +1227,7 @@ void URpgCharacterMoverComponent::UpdateSyncedMontageState(const FMoverTimeStep&
 
 void URpgCharacterMoverComponent::EndPlay(const EEndPlayReason::Type EndPlayReason)
 {
+	RestoreBlockMovementSettings();
 	OnPreSimulationTick.RemoveDynamic(this, &ThisClass::HandleAbilityRootMotionPreSimulation);
 	OnPostFinalize.RemoveDynamic(this, &ThisClass::HandleTraversalPostFinalize);
 	ApplyTraversalCollisionLease(nullptr);

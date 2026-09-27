@@ -1,6 +1,8 @@
 #include "RpgEquipmentManagerComponent.h"
 
 #include "AbilitySystemGlobals.h"
+#include "Animation/AnimInstance.h"
+#include "Components/SkeletalMeshComponent.h"
 #include "Engine/ActorChannel.h"
 #include "Net/UnrealNetwork.h"
 #include "RpgEquipmentDefinition.h"
@@ -8,6 +10,7 @@
 #include "RpgWeaponInstance.h"
 #include "SurvivalRpg/AbilitySystem/Effects/RpgItemizationEquipmentEffect.h"
 #include "SurvivalRpg/AbilitySystem/RpgAbilitySystemComponent.h"
+#include "SurvivalRpg/Core/Character/RpgPawnExtensionComponent.h"
 #include "SurvivalRpg/GameplayTags/RpgGameplayTags.h"
 #include "SurvivalRpg/Inventory/Itemization/RpgItemizationGameplayTags.h"
 #include "SurvivalRpg/Inventory/RpgInventoryItemInstance.h"
@@ -45,6 +48,15 @@ void FRpgEquipmentList::PostReplicatedAdd(const TArrayView<int32> AddedIndices, 
 
 void FRpgEquipmentList::PostReplicatedChange(const TArrayView<int32> ChangedIndices, int32 FinalSize)
 {
+}
+
+void FRpgEquipmentList::PostReplicatedReceive(const FFastArraySerializer::FPostReplicatedReceiveParameters& Parameters)
+{
+	// Also called when an initially unmapped equipment subobject becomes available to a late joiner.
+	if (URpgEquipmentManagerComponent* Manager = Cast<URpgEquipmentManagerComponent>(OwnerComponent))
+	{
+		Manager->RefreshBlockLocomotionLayer();
+	}
 }
 
 URpgAbilitySystemComponent* FRpgEquipmentList::GetAbilitySystemComponent() const
@@ -126,6 +138,9 @@ URpgEquipmentManagerComponent::URpgEquipmentManagerComponent(const FObjectInitia
 {
 	SetIsReplicatedByDefault(true);
 	bWantsInitializeComponent = true;
+	PrimaryComponentTick.bCanEverTick = true;
+	PrimaryComponentTick.bStartWithTickEnabled = false;
+	PrimaryComponentTick.TickGroup = TG_PrePhysics;
 }
 
 void URpgEquipmentManagerComponent::GetLifetimeReplicatedProps(TArray<FLifetimeProperty>& OutLifetimeProps) const
@@ -177,6 +192,7 @@ URpgEquipmentInstance* URpgEquipmentManagerComponent::EquipItemInSlotWithInstiga
 			}
 			RebuildEquipmentAbilityGrants();
 			Result->OnEquipped();
+			RefreshBlockLocomotionLayer();
 
 			if (IsUsingRegisteredSubObjectList() && IsReadyForReplication())
 			{
@@ -209,6 +225,7 @@ void URpgEquipmentManagerComponent::UnequipItem(URpgEquipmentInstance* ItemInsta
 	ItemInstance->OnUnequipped();
 	EquipmentList.RemoveEntry(ItemInstance);
 	RebuildEquipmentAbilityGrants();
+	RefreshBlockLocomotionLayer();
 }
 
 void URpgEquipmentManagerComponent::UnequipItemInSlot(ERpgEquipmentSlot Slot)
@@ -353,6 +370,8 @@ void URpgEquipmentManagerComponent::InitializeComponent()
 
 void URpgEquipmentManagerComponent::UninitializeComponent()
 {
+	bBlockLayerShuttingDown = true;
+	ClearBlockLocomotionLayer();
 	TArray<URpgEquipmentInstance*> EquipmentInstances;
 	for (const FRpgAppliedEquipmentEntry& Entry : EquipmentList.Entries)
 	{
@@ -365,6 +384,136 @@ void URpgEquipmentManagerComponent::UninitializeComponent()
 	}
 
 	Super::UninitializeComponent();
+}
+
+void URpgEquipmentManagerComponent::BeginPlay()
+{
+	Super::BeginPlay();
+	bBlockLayerShuttingDown = false;
+	BlockPawnExtension = URpgPawnExtensionComponent::FindPawnExtensionComponent(GetOwner());
+	if (URpgPawnExtensionComponent* Extension = BlockPawnExtension.Get())
+	{
+		Extension->OnAbilitySystemUninitialized_Register(FSimpleMulticastDelegate::FDelegate::CreateUObject(this, &ThisClass::HandleBlockAvatarUninitialized));
+		Extension->OnAbilitySystemInitialized_RegisterAndCall(FSimpleMulticastDelegate::FDelegate::CreateUObject(this, &ThisClass::HandleBlockAvatarInitialized));
+	}
+	RefreshBlockLocomotionLayer();
+}
+
+void URpgEquipmentManagerComponent::EndPlay(const EEndPlayReason::Type EndPlayReason)
+{
+	bBlockLayerShuttingDown = true;
+	SetComponentTickEnabled(false);
+	if (URpgPawnExtensionComponent* Extension = BlockPawnExtension.Get())
+	{
+		Extension->OnAbilitySystemInitialized.RemoveAll(this);
+		Extension->OnAbilitySystemUninitialized.RemoveAll(this);
+	}
+	BlockPawnExtension.Reset();
+	ClearBlockLocomotionLayer();
+	if (USkeletalMeshComponent* Mesh = BlockGameplayMesh.Get())
+	{
+		Mesh->OnAnimInitialized.RemoveDynamic(this, &ThisClass::HandleBlockAnimationInitialized);
+		Mesh->RemoveTickPrerequisiteComponent(this);
+	}
+	BlockGameplayMesh.Reset();
+	Super::EndPlay(EndPlayReason);
+}
+
+void URpgEquipmentManagerComponent::TickComponent(float DeltaTime, ELevelTick TickType, FActorComponentTickFunction* ThisTickFunction)
+{
+	Super::TickComponent(DeltaTime, TickType, ThisTickFunction);
+	// Resolve mesh/subobject readiness and replacement before animation evaluation, never from a worker graph.
+	RefreshBlockLocomotionLayer();
+}
+
+void URpgEquipmentManagerComponent::HandleBlockAvatarInitialized()
+{
+	RefreshBlockLocomotionLayer();
+}
+
+void URpgEquipmentManagerComponent::HandleBlockAvatarUninitialized()
+{
+	ClearBlockLocomotionLayer();
+}
+
+void URpgEquipmentManagerComponent::HandleBlockAnimationInitialized()
+{
+	// Reinitialization can reuse the same UAnimInstance pointer while recreating its linked nodes.
+	ClearBlockLocomotionLayer();
+	RefreshBlockLocomotionLayer();
+}
+
+UAnimInstance* URpgEquipmentManagerComponent::GetBlockLocomotionLayerInstance() const
+{
+	check(IsInGameThread());
+	UAnimInstance* MainInstance = BlockMainAnimInstance.Get();
+	const USkeletalMeshComponent* Mesh = BlockGameplayMesh.Get();
+	return MainInstance && Mesh && Mesh->GetAnimInstance() == MainInstance && BlockLayerClass.IsValid()
+		? MainInstance->GetLinkedAnimLayerInstanceByClass(BlockLayerClass.Get()) : nullptr;
+}
+
+void URpgEquipmentManagerComponent::ClearBlockLocomotionLayer()
+{
+	check(IsInGameThread());
+	UAnimInstance* PreviousInstance = BlockMainAnimInstance.Get();
+	UClass* PreviousClass = BlockLayerClass.Get();
+	BlockMainAnimInstance.Reset();
+	BlockLayerSource.Reset();
+	BlockLayerClass.Reset();
+	// Retire ownership before callbacks. A replacement main instance already owns its own linked graph lifecycle.
+	if (PreviousInstance && PreviousClass && BlockGameplayMesh.IsValid()
+		&& BlockGameplayMesh->GetAnimInstance() == PreviousInstance)
+	{
+		PreviousInstance->UnlinkAnimClassLayers(PreviousClass);
+	}
+}
+
+void URpgEquipmentManagerComponent::RefreshBlockLocomotionLayer()
+{
+	check(IsInGameThread());
+	if (bBlockLayerShuttingDown || bRefreshingBlockLayer) { return; }
+	TGuardValue<bool> RefreshGuard(bRefreshingBlockLayer, true);
+	SetComponentTickEnabled(!EquipmentList.Entries.IsEmpty());
+	if (!HasBegunPlay()) { return; }
+
+	USkeletalMeshComponent* Mesh = URpgPawnExtensionComponent::FindGameplayMesh(GetOwner());
+	if (BlockGameplayMesh.Get() != Mesh)
+	{
+		ClearBlockLocomotionLayer();
+		if (USkeletalMeshComponent* PreviousMesh = BlockGameplayMesh.Get())
+		{
+			PreviousMesh->OnAnimInitialized.RemoveDynamic(this, &ThisClass::HandleBlockAnimationInitialized);
+			PreviousMesh->RemoveTickPrerequisiteComponent(this);
+		}
+		BlockGameplayMesh = Mesh;
+		if (Mesh)
+		{
+			Mesh->OnAnimInitialized.AddUniqueDynamic(this, &ThisClass::HandleBlockAnimationInitialized);
+			Mesh->AddTickPrerequisiteComponent(this);
+		}
+	}
+	URpgWeaponInstance* Source = Cast<URpgWeaponInstance>(GetActiveBlockSource());
+	UClass* DesiredClass = Source ? Source->GetBlockDefinition().BlockLocomotionLayer.Get() : nullptr;
+	UAnimInstance* MainInstance = Mesh && Mesh->IsRegistered() ? Mesh->GetAnimInstance() : nullptr;
+	if (const URpgPawnExtensionComponent* Extension = BlockPawnExtension.Get())
+	{
+		const URpgAbilitySystemComponent* ASC = Extension->GetRpgAbilitySystemComponent();
+		if (!ASC || ASC->GetAvatarActor() != GetOwner()) { DesiredClass = nullptr; }
+	}
+	if (!MainInstance || !DesiredClass)
+	{
+		ClearBlockLocomotionLayer();
+		return;
+	}
+	if (BlockMainAnimInstance.Get() == MainInstance && BlockLayerClass.Get() == DesiredClass && BlockLayerSource.Get() == Source)
+	{
+		return;
+	}
+	ClearBlockLocomotionLayer();
+	BlockMainAnimInstance = MainInstance;
+	BlockLayerClass = DesiredClass;
+	BlockLayerSource = Source;
+	MainInstance->LinkAnimClassLayers(DesiredClass);
 }
 
 void URpgEquipmentManagerComponent::ReadyForReplication()
@@ -436,6 +585,12 @@ bool URpgEquipmentManagerComponent::CanEquipmentBlock(const URpgEquipmentInstanc
 
 URpgEquipmentInstance* URpgEquipmentManagerComponent::GetActiveBlockSource() const
 {
+	// The offhand class may still be unmapped after the list arrives. Wait for that decision rather
+	// than briefly binding a mainhand presentation which authority never selected.
+	for (const FRpgAppliedEquipmentEntry& Entry : EquipmentList.Entries)
+	{
+		if (Entry.EquippedSlot == ERpgEquipmentSlot::OffHand && !Entry.Instance) { return nullptr; }
+	}
 	if (URpgEquipmentInstance* OffHandInstance = GetEquipmentInstanceInSlot(ERpgEquipmentSlot::OffHand))
 	{
 		if (CanEquipmentBlock(OffHandInstance))

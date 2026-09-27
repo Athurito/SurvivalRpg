@@ -8,6 +8,7 @@
 #include "RpgWeaponInstance.generated.h"
 
 class UAnimMontage;
+class UAnimInstance;
 
 UENUM(BlueprintType)
 enum class ERpgWeaponAttackTraceMode : uint8
@@ -132,6 +133,7 @@ struct FRpgWeaponAttackDefinition
 	bool HasValidTraceData() const;
 };
 
+/** Designer-authored block gameplay and presentation. The ability snapshots gameplay tuning for each activation. */
 USTRUCT(BlueprintType)
 struct FRpgWeaponBlockDefinition
 {
@@ -181,11 +183,19 @@ struct FRpgWeaponBlockDefinition
 	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Perfect Block", meta = (ClampMin = "0.0"))
 	float PerfectBlockStaggerDamageMultiplier = 1.0f;
 
+	/** Optional full-body linked animation layer on the gameplay mesh. Equipment owns binding; the layer owns cosmetic selection. Null retains legacy loop-montage presentation. */
+	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Animation")
+	TSubclassOf<UAnimInstance> BlockLocomotionLayer;
+
+	/** Maximum block locomotion speed in cm/s, sampled once per predicted/server activation. Zero preserves the ordinary speed limit; never increases it. */
+	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Block", meta = (ClampMin = "0.0", ForceUnits = "cm/s"))
+	float MovementSpeedLimit = 0.0f;
+
 	// Optional montage played when block starts.
 	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Animation")
 	TObjectPtr<UAnimMontage> BlockStartMontage = nullptr;
 
-	// Optional looping or held-block montage.
+	// Optional looping or held-block montage, used only when BlockLocomotionLayer is unset.
 	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Animation")
 	TObjectPtr<UAnimMontage> BlockLoopMontage = nullptr;
 
@@ -220,6 +230,11 @@ class SURVIVALRPG_API URpgWeaponInstance : public URpgEquipmentInstance
 public:
 	URpgWeaponInstance(const FObjectInitializer& ObjectInitializer = FObjectInitializer::Get());
 
+#if WITH_EDITOR
+	/** Validates generic block tuning and the compiled linked-layer contract; pack selection coverage is designer-owned. */
+	virtual EDataValidationResult IsDataValid(FDataValidationContext& Context) const override;
+#endif
+
 	const FRpgWeaponAttackDefinition* FindAttackDefinition(FGameplayTag AttackDefinitionTag) const;
 
 	UFUNCTION(BlueprintCallable, BlueprintPure, Category = "Weapon")
@@ -240,6 +255,8 @@ public:
 		FGameplayTag AttackDefinitionTag,
 		float NewPlayRate,
 		float& OutPreviousPlayRate);
+	/** Configures only a live test equipment instance; never mutates a definition CDO or replicates test tuning. */
+	bool ConfigureBlockLocomotionForTests(TSubclassOf<UAnimInstance> LayerClass, float SpeedLimit);
 #endif
 
 	UFUNCTION(BlueprintCallable, BlueprintPure, Category = "Weapon")

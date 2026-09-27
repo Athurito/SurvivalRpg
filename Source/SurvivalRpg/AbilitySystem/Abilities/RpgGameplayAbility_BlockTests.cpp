@@ -6,8 +6,10 @@
 #include "Engine/GameInstance.h"
 #include "Engine/World.h"
 #include "GameFramework/Pawn.h"
+#include "GameFramework/PlayerController.h"
 #include "GameplayEffect.h"
 #include "Misc/AutomationTest.h"
+#include "Misc/ScopeExit.h"
 #include "SurvivalRpg/AbilitySystem/Attributes/RpgDefenseSet.h"
 #include "SurvivalRpg/AbilitySystem/RpgAbilitySet.h"
 #include "SurvivalRpg/AbilitySystem/RpgAbilitySystemComponent.h"
@@ -402,6 +404,145 @@ bool FRpgBlockDefenseReplacementDuringRestoreTest::RunTest(const FString& Parame
 	TestFalse(TEXT("Attribute replacement does not prevent normal release"), Fixture.IsActive(Handle));
 	TestEqual(TEXT("Callback replacement ends the ability once"), Fixture.EndCount, 1);
 	TestFalse(TEXT("Callback replacement preserves the normal release outcome"), Fixture.bLastEndCancelled);
+	Fixture.CheckTags(*this, false);
+	return true;
+}
+
+IMPLEMENT_SIMPLE_AUTOMATION_TEST(FRpgBlockConfirmedReactionIdentityTest,
+	"SurvivalRpg.Combat.Block.Lifecycle.ConfirmedReactionRejectsRetiredActivation",
+	EAutomationTestFlags::EditorContext | EAutomationTestFlags::EngineFilter)
+
+bool FRpgBlockConfirmedReactionIdentityTest::RunTest(const FString& Parameters)
+{
+	using namespace RpgBlockLifecycleTests;
+	FFixture Fixture;
+	if (!Fixture.Initialize(*this)) return false;
+	APlayerController* Controller = Fixture.World->SpawnActor<APlayerController>();
+	if (!TestNotNull(TEXT("Local controller exists for receipt validation"), Controller)) return false;
+	// SpawnActor bypasses the normal SetPlayer/local-player login path; possession alone leaves this
+	// controller marked remote, and GAS correctly rejects its LocalPredicted block activation.
+	Controller->SetAsLocalPlayerController();
+	Controller->Possess(Fixture.Pawn);
+	Fixture.ASC->InitAbilityActorInfo(Fixture.Pawn, Fixture.Pawn);
+	if (!TestTrue(TEXT("The receipt fixture is an explicitly local controller and pawn"),
+		Controller->IsLocalController() && Fixture.Pawn->IsLocallyControlled())) return false;
+	const FGameplayAbilitySpecHandle Handle = Fixture.Grant();
+	if (!Fixture.Press(*this, Handle)) return false;
+	UGameplayAbility* Ability = Fixture.ASC->FindAbilitySpecFromHandle(Handle)->GetPrimaryInstance();
+	const FPredictionKey FirstKey = Ability->GetCurrentActivationInfo().GetActivationPredictionKey();
+	if (!TestTrue(TEXT("The actual GAS activation has a valid identity"), FirstKey.IsValidKey())) return false;
+
+	int32 ReceivedBlock = 0;
+	int32 ReceivedPerfectBlock = 0;
+	int32 ReceivedUnsupported = 0;
+	const FDelegateHandle BlockCallback = Fixture.ASC->GenericGameplayEventCallbacks.FindOrAdd(RpgGameplayTags::GameplayEvent_Block).AddLambda(
+		[&ReceivedBlock](const FGameplayEventData*) { ++ReceivedBlock; });
+	const FDelegateHandle PerfectCallback = Fixture.ASC->GenericGameplayEventCallbacks.FindOrAdd(RpgGameplayTags::GameplayEvent_PerfectBlock).AddLambda(
+		[&ReceivedPerfectBlock](const FGameplayEventData*) { ++ReceivedPerfectBlock; });
+	const FDelegateHandle UnsupportedCallback = Fixture.ASC->GenericGameplayEventCallbacks.FindOrAdd(RpgGameplayTags::GameplayEvent_Stagger).AddLambda(
+		[&ReceivedUnsupported](const FGameplayEventData*) { ++ReceivedUnsupported; });
+	ON_SCOPE_EXIT
+	{
+		Fixture.ASC->GenericGameplayEventCallbacks.FindChecked(RpgGameplayTags::GameplayEvent_Block).Remove(BlockCallback);
+		Fixture.ASC->GenericGameplayEventCallbacks.FindChecked(RpgGameplayTags::GameplayEvent_PerfectBlock).Remove(PerfectCallback);
+		Fixture.ASC->GenericGameplayEventCallbacks.FindChecked(RpgGameplayTags::GameplayEvent_Stagger).Remove(UnsupportedCallback);
+	};
+	UFunction* Receipt = Fixture.ASC->FindFunction(TEXT("ClientConfirmBlockReaction"));
+	struct FReceiptArguments
+	{
+		AActor* Avatar;
+		FGameplayAbilitySpecHandle AbilityHandle;
+		FPredictionKey ActivationPredictionKey;
+		FGameplayTag ReactionTag;
+	};
+	if (!TestNotNull(TEXT("The production receipt RPC is reflected"), Receipt)
+		|| !TestEqual(TEXT("Receipt argument layout matches its reflected signature"), int32(Receipt->ParmsSize), int32(sizeof(FReceiptArguments)))) return false;
+	// This native regression exercises the real receive handler and real active ability/lease while
+	// selecting the local receiving role. Transport and rendered reactions are separate multiplayer tests.
+	auto Deliver = [&](AActor* Avatar, FGameplayAbilitySpecHandle Spec, FPredictionKey Key, FGameplayTag Tag, ENetRole Role = ROLE_AutonomousProxy)
+	{
+		const ENetRole OriginalRole = Fixture.Pawn->GetLocalRole();
+		Fixture.Pawn->SetRole(Role);
+		FReceiptArguments Arguments{ Avatar, Spec, Key, Tag };
+		Fixture.ASC->ProcessEvent(Receipt, &Arguments);
+		Fixture.Pawn->SetRole(OriginalRole);
+	};
+	Deliver(Fixture.Pawn, Handle, FirstKey, RpgGameplayTags::GameplayEvent_Block);
+	Deliver(Fixture.Pawn, Handle, FirstKey, RpgGameplayTags::GameplayEvent_PerfectBlock);
+	TestEqual(TEXT("Current block confirmation dispatches the local GAS event"), ReceivedBlock, 1);
+	TestEqual(TEXT("Current perfect-block confirmation dispatches the local GAS event"), ReceivedPerfectBlock, 1);
+	Fixture.Release();
+	Deliver(Fixture.Pawn, Handle, FirstKey, RpgGameplayTags::GameplayEvent_Block);
+	TestEqual(TEXT("Release drops an in-flight confirmation"), ReceivedBlock, 1);
+	if (!Fixture.Press(*this, Handle)) return false;
+	UGameplayAbility* ReactivatedAbility = Fixture.ASC->FindAbilitySpecFromHandle(Handle)->GetPrimaryInstance();
+	const FPredictionKey SecondKey = ReactivatedAbility->GetCurrentActivationInfo().GetActivationPredictionKey();
+	TestTrue(TEXT("The same ability object/spec starts a distinct activation"), Ability == ReactivatedAbility && SecondKey.IsValidKey() && SecondKey != FirstKey);
+	Deliver(Fixture.Pawn, Handle, FirstKey, RpgGameplayTags::GameplayEvent_Block);
+	TestEqual(TEXT("A retired key cannot react on the new activation of the same object"), ReceivedBlock, 1);
+	Deliver(Fixture.Pawn, FGameplayAbilitySpecHandle{}, SecondKey, RpgGameplayTags::GameplayEvent_Block);
+	Deliver(Fixture.World->SpawnActor<APawn>(), Handle, SecondKey, RpgGameplayTags::GameplayEvent_Block);
+	Deliver(Fixture.Pawn, Handle, FPredictionKey{}, RpgGameplayTags::GameplayEvent_Block);
+	Deliver(Fixture.Pawn, Handle, SecondKey, RpgGameplayTags::GameplayEvent_Block, ROLE_Authority);
+	Deliver(Fixture.Pawn, Handle, SecondKey, RpgGameplayTags::GameplayEvent_Block, ROLE_SimulatedProxy);
+	Deliver(Fixture.Pawn, Handle, SecondKey, RpgGameplayTags::GameplayEvent_Stagger);
+	TestEqual(TEXT("Wrong spec, avatar, invalid key and non-owner roles cannot deliver"), ReceivedBlock, 1);
+	TestEqual(TEXT("The bridge rejects events outside its two reaction tags"), ReceivedUnsupported, 0);
+	Deliver(Fixture.Pawn, Handle, SecondKey, RpgGameplayTags::GameplayEvent_PerfectBlock);
+	TestEqual(TEXT("The replacement activation accepts its own confirmed reaction"), ReceivedPerfectBlock, 2);
+	Fixture.Release();
+	return true;
+}
+
+IMPLEMENT_SIMPLE_AUTOMATION_TEST(FRpgBlockCancelledHoldRequiresReleaseTest,
+	"SurvivalRpg.Combat.Block.Lifecycle.CancelledHoldRequiresPhysicalRelease",
+	EAutomationTestFlags::EditorContext | EAutomationTestFlags::EngineFilter)
+
+bool FRpgBlockCancelledHoldRequiresReleaseTest::RunTest(const FString& Parameters)
+{
+	using namespace RpgBlockLifecycleTests;
+	FFixture Fixture;
+	if (!Fixture.Initialize(*this)) return false;
+	APlayerController* Controller = Fixture.World->SpawnActor<APlayerController>();
+	if (!TestNotNull(TEXT("The cancellation fixture has a local input controller"), Controller)) return false;
+	Controller->SetAsLocalPlayerController();
+	Controller->Possess(Fixture.Pawn);
+	Fixture.ASC->InitAbilityActorInfo(Fixture.Pawn, Fixture.Pawn);
+	if (!TestTrue(TEXT("Cancellation exercises the locally controlled input policy"), Fixture.Pawn->IsLocallyControlled())) return false;
+	const FGameplayAbilitySpecHandle Handle = Fixture.Grant();
+	if (!Fixture.Press(*this, Handle)) return false;
+	Fixture.ASC->CancelAbilityHandle(Handle);
+	TestFalse(TEXT("Real GAS cancellation ends the held block"), Fixture.IsActive(Handle));
+	TestEqual(TEXT("Cancellation ends exactly one activation"), Fixture.EndCount, 1);
+	TestTrue(TEXT("The end retains its cancellation outcome"), Fixture.bLastEndCancelled);
+	TestTrue(TEXT("Cancellation does not fabricate a physical release"), Fixture.ASC->FindAbilitySpecFromHandle(Handle)->InputPressed);
+	Fixture.CheckTags(*this, false);
+
+	// Enhanced Input binds ability presses to Triggered, so the same held key sends another
+	// press every frame. No interruption tag is needed to keep this cancelled hold consumed.
+	for (int32 Frame = 0; Frame < 4; ++Frame)
+	{
+		if (Frame == 2) Fixture.ASC->ClearAbilityInput();
+		Fixture.ASC->AbilityInputTagPressed(RpgGameplayTags::InputTag_Weapon_Block);
+		Fixture.ASC->ProcessAbilityInput(1.0f / 60.0f, false);
+		TestFalse(TEXT("Repeated Triggered input cannot resurrect the cancelled activation"), Fixture.IsActive(Handle));
+	}
+	TestEqual(TEXT("Repeated held input does not create additional ends"), Fixture.EndCount, 1);
+	Fixture.Release();
+	TestFalse(TEXT("The actual release clears the spec's physical input flag"), Fixture.ASC->FindAbilitySpecFromHandle(Handle)->InputPressed);
+	if (!Fixture.Press(*this, Handle)) return false;
+	Fixture.Release();
+	TestEqual(TEXT("A fresh press and normal release form exactly one new activation"), Fixture.EndCount, 2);
+	TestFalse(TEXT("Normal release remains a successful end"), Fixture.bLastEndCancelled);
+
+	// A cancellation arriving after the actual release was queued must not latch a second release.
+	if (!Fixture.Press(*this, Handle)) return false;
+	Fixture.ASC->AbilityInputTagReleased(RpgGameplayTags::InputTag_Weapon_Block);
+	Fixture.ASC->CancelAbilityHandle(Handle);
+	Fixture.ASC->ProcessAbilityInput(0.0f, false);
+	if (!Fixture.Press(*this, Handle)) return false;
+	Fixture.Release();
+	TestEqual(TEXT("Release/cancellation in the same frame does not prevent the next physical press"), Fixture.EndCount, 4);
 	Fixture.CheckTags(*this, false);
 	return true;
 }

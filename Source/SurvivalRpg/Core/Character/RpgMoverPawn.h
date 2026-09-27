@@ -5,6 +5,7 @@
 #include "CoreMinimal.h"
 #include "AbilitySystemInterface.h"
 #include "ModularPawn.h"
+#include "MoverSimulationTypes.h"
 #include "SurvivalRpg/Camera/RpgCameraAssistInterface.h"
 
 #include "RpgMoverPawn.generated.h"
@@ -37,6 +38,13 @@ public:
 
 	/** Exposes the same PlayerState-owned ASC to engine gameplay-ability callers. */
 	virtual UAbilitySystemComponent* GetAbilitySystemComponent() const override;
+
+	/**
+	 * Returns designer-owned gait/strafe policy for this tick's private input copy after native block validation.
+	 * Preserve unrelated fields; never edit live input caches or query GAS here, because corrected frames replay this function.
+	 */
+	UFUNCTION(BlueprintNativeEvent, Category = "Rpg|Mover|Block")
+	FMoverInputCmdContext ApplyBlockMovementPolicy(const FMoverInputCmdContext& InputCmd, bool bBlocking);
 
 	/** Follows Mover's smoothed visual origin with the existing eye offset, without following animated bones. */
 	virtual TOptional<FVector> GetCameraPivotLocation() const override;

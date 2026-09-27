@@ -43,6 +43,15 @@ public:
 	
 	virtual bool CanAttemptJump() const override;
 
+	/** Camera-facing block locomotion yields to traversal and root-motion rotation; never changes the authored rotation flags. */
+	bool IsBlockControllingRotation() const;
+	/** Game-thread presentation snapshot: effective saved policy inside movement/replay, otherwise the current valid GAS lease. */
+	bool GetBlockMovementForMove(float& OutSpeedLimit) const;
+
+	/** Captures activation-scoped block policy in local saved moves; authority resolves its own GAS lease. */
+	virtual FNetworkPredictionData_Client* GetPredictionData_Client() const override;
+	virtual void PerformMovement(float DeltaTime) override;
+
 	/** Acquires one validated mantle obstacle ignore; server state replicates to simulated proxies only. */
 	bool BeginMantleCollisionIgnore(UPrimitiveComponent* Component);
 
@@ -69,11 +78,25 @@ public:
 protected:
 	/** Preserves authored rotation warping during mantle even when ordinary locomotion enables physics rotation. */
 	virtual void PhysicsRotation(float DeltaTime) override;
+	/** Uses saved control yaw during replay without changing the player's current camera rotation. */
+	virtual FRotator ComputeOrientToMovementRotation(const FRotator& CurrentRotation, float DeltaTime, FRotator& DeltaRotation) const override;
 
 	// Cached ground info for the character.  Do not access this directly!  It's only updated when accessed via GetGroundInfo().
 	FRpgCharacterGroundInfo CachedGroundInfo;
 
 private:
+	friend class FSavedMove_RpgCharacter;
+#if WITH_DEV_AUTOMATION_TESTS
+	friend class FRpgBlockRepeatedSavedMoveYawTest;
+#endif
+	bool SampleBlockMovement(float& OutSpeedLimit) const;
+
+	// Immutable local saved-move values are applied only during replay; they are never client authority on the server.
+	bool bBlockMovementForMove = false;
+	float BlockMovementSpeedLimitForMove = 0.f;
+	FRotator BlockControlRotationForMove = FRotator::ZeroRotator;
+	bool bInBlockMovementScope = false;
+
 	UFUNCTION()
 	void OnRep_MantleCollisionComponent();
 
