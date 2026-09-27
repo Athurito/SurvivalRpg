@@ -9,16 +9,42 @@ Abnahme. Beide bei relevanten Fortschritten im selben PR aktualisieren.
 
 | Feld | Wert |
 | --- | --- |
-| Aktive Implementierungsaufgabe | Keine; GASP-04 bestätigt gemergt |
-| Nächste bereite Aufgabe | `GASP-05`: eigener Abhängigkeits-/Entfernungslisten-Audit; noch nicht begonnen, keine pauschale Asset-Löschfreigabe aus der Vergleichsmatrix |
-| Zuständiger Chat / beanspruchte Dateien | Keine aktive Implementierungsreservierung; Editor-/Asset-Sitzungen beendet |
+| Aktive Implementierungsaufgabe | `GASP-05` – begrenzter Import-Abhängigkeits-/Entfernungslisten-Audit, **validiert, PR in Vorbereitung**; gesamte Importbereinigung noch offen |
+| Nächste bereite Aufgabe | Vier gespeicherte Sample-Akteure in `Lvl_RpgBaseline` und `Lvl_ThirdPerson` prüfen und die Karten vom Originalimport entkoppeln; anschließend neuer Audit |
+| Zuständiger Chat / beanspruchte Dateien | Root schließt Audit/PR ab; Planer und lesende Herkunfts-/Textrouten-Reviews beendet. Kein Editor-/MCP-Prozess aktiv, keine Assetdateien beansprucht |
 | Runtime-Ausgangspunkt | `9de031c9e255a13d117662713739e44984a98edc`, bestätigter Merge PR #152 am 26.09.2026 um 20:51:05 UTC |
-| Checkout / abgeschlossener Arbeitsbranch | `D:/Repos/SurvivalRpg`; GASP-04-Merge `bb690eefc111bd22f9267b78c07e01e7937fc499` lokal übernommen; Arbeitsbranch `codex/gasp-04-variant-comparison`, anschließende reine Statuspflege separat. Vor Folgearbeit tatsächlichen Git-Stand prüfen |
-| Letzter Implementierungs-Commit | `b96083570d463547aa8f23b93445619010999269`: vier zusätzliche Editor-Tests; Runtime/Assets unverändert |
+| Checkout / aktiver Branch | `D:/Repos/SurvivalRpg`, `codex/gasp-05-import-audit`, Basis `577d760606be08e84491114db7c8a1eed0c2b43a`; GitHub master und keine offenen PRs bei Auditbeginn geprüft |
+| Letzter Implementierungs-Commit | `9c8d7c77c3be6d261a268339096d00cdfe823b82`: lesender Registryexport, Offline-Planer und 17 Tests; Runtime/Assets unverändert |
 | Letzter gemergter GASP-Arbeits-PR | [PR #154](https://github.com/Athurito/SurvivalRpg/pull/154), **MERGED**, `bb690eefc111bd22f9267b78c07e01e7937fc499`, 26.09.2026 23:49:16 UTC; finaler geprüfter Head `d3240b4ba59e4ebb3a5b2748b8a9293f0957b3ed` |
-| Aktuelle Belege | Editor/Game erfolgreich; 31/31 Tests, neun Blueprint-/AnimBP-Compiles, sechs Registry-Hüllen und Root-Sichtprobe. [Vergleich](gasp-variant-comparison.md), [Manifest](assets/gasp-variant-comparison.json) |
-| Nächster Handgriff | Für GASP-05 eigenen Branch anlegen, vier Overrides prüfen und konkrete aktive Dependency-/Entfernungsliste ableiten; keinen Altimport pauschal löschen |
-| Blocker / offene Abnahme | Kein konkreter technischer Blocker. 1361 Testwarnungen dokumentiert; keine neue GASP-04-Nutzerabnahme oder vollständige Gait-/Retarget-Kreuzproduktprüfung. VAL-01/02, NET-03-Grenze und ältere Pending-Fixture-Timingempfindlichkeit bleiben Folgepunkte |
+| Aktuelle Belege | Frischer Registrygraph: 13365 Pakete, 86576 Paketkanten, alle 6964 getrackten Assets enthalten. 2156/2156 Kandidaten referenziert, 17/17 Planertests bestanden, Assets/Maps und sieben SaveGames unverändert. [Audit](gasp-import-cleanup-audit.md), [Manifest](assets/gasp-import-cleanup-audit.json) |
+| Nächster Handgriff | Audit-PR abschließen; anschließend die vier im Manifest benannten External Actors samt Instanzwerten und benötigtem Demo-Verhalten über Unreal MCP aufnehmen. Baseline/Spawns/Persistenz/Präsentation erhalten |
+| Blocker / offene Abnahme | Originalimport bleibt über beide alten Testkarten erreichbar, Entfernungsliste daher leer. Übrige Importdateien, PrimaryAssetId-Management, dynamische Routen und späterer Cook ohne Originale nicht vollständig abgenommen; 70 unbekannte Registryziele erfasst. GASP-02-/04-Grenzen bleiben bestehen, GASP-06 zurückgestellt |
+
+## Letzter validierter Teilschritt – GASP-05-Importaudit
+
+Der Audit ist abgeschlossen, der PR wird vorbereitet. Es wurden keine Assets
+entfernt, keine Runtime-Systeme geändert und keine alten Unreal-Build-/PIE-
+Ergebnisse als neue Prüfung verwendet. Die leere Entfernungsliste ist ein
+konkretes Ergebnis: Jede der zwei alten Testkarten erreicht alle 2156 Quellen.
+Vier gespeicherte Sample-Akteure halten diese Referenzen; ihre exakten Pakete,
+Klassen und tatsächliche Referenzketten stehen im versionierten Manifest.
+
+Frischer MCP-Registryexport aus UE 5.8.2, Offline-Auswertung, 17/17 Graph-/CLI-
+Tests und unabhängiger Review bestanden. Alle 2156 Originalhashes stimmen mit
+der Herkunft überein; genau 18 geänderte Zielhashes entsprechen dem bestehenden
+MetaSound-Fix. Alle 6964 Assets/Maps und sieben SaveGames unverändert, vier
+Plugin-Overrides verifiziert. Letzter Audit-Editor PID45312 sauber geschlossen.
+
+Lokale Rohbelege: `Saved/GaspImportAudit`. Die erste Aufnahme hatte irrtümlich
+Paketkanten als Managementkanten gezählt; ausschließlich
+`registry-20260927-corrected.json` begründet die finale Entscheidung. Dessen
+null Package-Identifier-Managementkanten sind kein Nachweis über den
+PrimaryAssetId-Managementgraph. Die Rohaufnahme muss in anderen Checkouts neu
+erzeugt werden; Herkunft, Hashes und Map-Referenzketten sind versioniert.
+
+Noch keine Lade-/Compile-/Cook-Abnahme eines Entfernungsschritts. Erst die
+alten Demoobjekte gezielt entkoppeln, danach den gesamten übrigen Importumfang
+bewerten und die konkret begrenzte Entfernung ohne Originale validieren.
 
 ## Letzter abgeschlossener Schritt – GASP-04
 
