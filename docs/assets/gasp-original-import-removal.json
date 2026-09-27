@@ -1,0 +1,244 @@
+{
+  "schema_version": 1,
+  "task": "GASP-05 original import cleanup",
+  "base_commit": "d6cb927f5654a681bf0c02db551af86276cf916d",
+  "date": "2026-09-27",
+  "branch": "codex/gasp-05-remove-sample-actors",
+  "removed_original_packages": 2298,
+  "removed_map_actor_packages": [
+    "/Game/__ExternalActors__/SurvivalRpg/Maps/Test/Lvl_RpgBaseline/0/WO/BN4ICY9WZ2JTXADBUILFC8",
+    "/Game/__ExternalActors__/SurvivalRpg/Maps/Test/Lvl_RpgBaseline/5/11/0Y71IRXDVEO8I9XLYB8SPV",
+    "/Game/__ExternalActors__/SurvivalRpg/Maps/Test/Lvl_ThirdPerson/5/J3/4R4XZG0BTYVATG2CYD48YU",
+    "/Game/__ExternalActors__/SurvivalRpg/Maps/Test/Lvl_ThirdPerson/E/TT/JYZHXIW3UTAWZLS3AGG853"
+  ],
+  "retained_assets_byte_identical": 4662,
+  "mapped_targets_retained": 2156,
+  "personal_savegames_unchanged": 7,
+  "registry": {
+    "packages": 11063,
+    "package_edges": 63658,
+    "package_identifier_management_edges": 0,
+    "primary_asset_id_management_enumerated": false,
+    "references_to_removed_packages": 0,
+    "unknown_dependency_count": 70,
+    "unknown_dependencies_unchanged": true
+  },
+  "map_smokes": {
+    "Lvl_RpgBaseline": {
+      "experience": "RpgBaselineExperience",
+      "pawn_data": "/Game/SurvivalRpg/Core/Character/DA_PawnData_Baseline.DA_PawnData_Baseline",
+      "pawn": "BP_Rpg_Character",
+      "asc_owner_avatar_match": true,
+      "spawn_grounded": true,
+      "move_distance_cm": 227.25778876040278,
+      "jump_sample_rise_cm": 85.34583849977733,
+      "landed_grounded": true,
+      "save_directory": "Saved/GaspMapCleanup/IsolatedUser/Saved/SaveGames",
+      "current_experience_property_protected": true,
+      "experience_evidence": "OnExperienceLoadComplete log plus map WorldSettings and possessed PawnData"
+    },
+    "Lvl_ThirdPerson": {
+      "experience": "RpgPrototypeExperience",
+      "pawn_data": "/Game/SurvivalRpg/Core/Character/DA_PawnData.DA_PawnData",
+      "pawn": "BP_Rpg_Character",
+      "asc_owner_avatar_match": true,
+      "spawn_grounded": true,
+      "move_distance_cm": 221.51762761132625,
+      "jump_sample_rise_cm": 86.96469645777141,
+      "landed_grounded": true,
+      "save_directory": "Saved/GaspMapCleanup/IsolatedUser/Saved/SaveGames",
+      "current_experience_property_protected": true,
+      "experience_evidence": "OnExperienceLoadComplete log plus map WorldSettings and possessed PawnData"
+    }
+  },
+  "automation": {
+    "passed": 9,
+    "failed": 0,
+    "skipped": 0,
+    "total": 9,
+    "duration": 50.2950325012207,
+    "warning_count": 243,
+    "warning_log_categories": {
+      "AdvancedFriendsInterfaceLog": 18,
+      "LogPoseSearch": 1,
+      "LogNetPackageMap": 201,
+      "LogAnimation": 14,
+      "LogRpgCharacter": 7,
+      "LogNetworkPrediction": 1,
+      "LogBlueprint": 1
+    },
+    "warning_groups": {
+      "temporary_PIE_level_NetGUID": 195,
+      "WorldSettings_NetGUID": 6,
+      "voice_interface": 18,
+      "Manny_PoseAsset_source_GUID": 14,
+      "intentional_invalid_retarget_profile": 6,
+      "intentional_invalid_retarget_node": 1,
+      "PoseSearch_AsyncBuild": 1,
+      "respawn_widget_native_tick": 1,
+      "NetworkPrediction_RollbackFrame_equal_PendingFrame": 1
+    },
+    "network_prediction_warning": [
+      "LogNetworkPrediction: RollbackFrame 7 EQUAL PendingFrame 7... Offset: 158"
+    ],
+    "tests": [
+      {
+        "name": "SurvivalRpg.GASP.CMC.AssetComposition",
+        "state": "Success",
+        "duration": 8.8286771774292,
+        "warning_count": 0
+      },
+      {
+        "name": "SurvivalRpg.GASP.Mover.Gameplay.GaspMoverGameplayPIE.OptionalFollowerPreservesGameplayEquipmentAndAttack",
+        "state": "Success",
+        "duration": 18.583589553833008,
+        "warning_count": 85
+      },
+      {
+        "name": "SurvivalRpg.GASP.Mover.Ragdoll.GaspMoverRagdollPIE.OptionalFollowerPreservesPhysicsGetupAndLateJoin",
+        "state": "Success",
+        "duration": 8.903127670288086,
+        "warning_count": 68
+      },
+      {
+        "name": "SurvivalRpg.GASP.Mover.Ragdoll.AssetComposition",
+        "state": "Success",
+        "duration": 0.008688300848007202,
+        "warning_count": 0
+      },
+      {
+        "name": "SurvivalRpg.GASP.Mover.AssetComposition",
+        "state": "Success",
+        "duration": 0.00864499807357788,
+        "warning_count": 0
+      },
+      {
+        "name": "SurvivalRpg.GASP.RuntimeRetarget.GaspRuntimeRetargetPIE.RemotePoseLateJoinTraversalEquipmentAndFallback",
+        "state": "Success",
+        "duration": 13.904289245605469,
+        "warning_count": 90
+      },
+      {
+        "name": "SurvivalRpg.Spawning.PlayerStarts.BlueprintMoverUsesFreeAuthoredStart",
+        "state": "Success",
+        "duration": 0.015578199177980423,
+        "warning_count": 0
+      },
+      {
+        "name": "SurvivalRpg.Spawning.PlayerStarts.InheritedCapsuleTransformAndCollisionResponses",
+        "state": "Success",
+        "duration": 0.0255730003118515,
+        "warning_count": 0
+      },
+      {
+        "name": "SurvivalRpg.Spawning.PlayerStarts.NativeCapsuleAndOccupiedCameraFallback",
+        "state": "Success",
+        "duration": 0.0168645977973938,
+        "warning_count": 0
+      }
+    ]
+  },
+  "blueprint_compiles": {
+    "count": 9,
+    "warnings_as_errors": true,
+    "paths": [
+      "/Game/SurvivalRpg/System/Experiences/RpgGaspMantleExperience",
+      "/Game/SurvivalRpg/Characters/GASP/CMC/RPG/Traversal/BP_RpgGasp_MantleCharacter",
+      "/Game/SurvivalRpg/System/Experiences/RpgGaspMoverExperience",
+      "/Game/SurvivalRpg/Characters/GASP/Mover/RPG/BP_RpgGasp_Mover",
+      "/Game/SurvivalRpg/System/Experiences/RpgGaspMoverRagdollExperience",
+      "/Game/SurvivalRpg/Characters/GASP/Mover/Ragdoll/RPG/BP_RpgGasp_MoverRagdoll",
+      "/Game/SurvivalRpg/Characters/GASP/CMC/RPG/ABP_RpgGasp_CMC",
+      "/Game/SurvivalRpg/Characters/GASP/Mover/RPG/ABP_RpgGasp_Mover",
+      "/Game/SurvivalRpg/Characters/GASP/CMC/RPG/Retargeting/ABP_RpgGasp_RuntimeRetarget"
+    ]
+  },
+  "cpp_build_run": false,
+  "cook_status": "passed",
+  "cook": {
+    "target": "Windows",
+    "exit_code": 0,
+    "process_seconds": 98.1976569,
+    "cooked_packages": 3132,
+    "packages_remaining": 0,
+    "errors": 0,
+    "unique_warnings": 3,
+    "warning_groups": [
+      "GameplayCueNotifyPaths fallback to /Game",
+      "MCP plugin license notice",
+      "respawn widget native tick"
+    ],
+    "full_cook": true,
+    "mcp_port": 8001,
+    "maps": [
+      "/Game/SurvivalRpg/Maps/Test/Lvl_RpgBaseline",
+      "/Game/SurvivalRpg/Maps/Test/Lvl_ThirdPerson",
+      "/Game/SurvivalRpg/Maps/Test/Lvl_RpgGaspMantle",
+      "/Game/SurvivalRpg/Maps/Test/Lvl_RpgGaspMover",
+      "/Game/SurvivalRpg/Maps/Test/Lvl_RpgGaspMoverRagdoll"
+    ],
+    "actual_output_root": "Saved/Cooked/Windows",
+    "cooked_maps_sha256": {
+      "/Game/SurvivalRpg/Maps/Test/Lvl_RpgBaseline": "67f2cfe61da6bfb212371119893aa28332dcab626daecbfb224c1fd7bfef3808",
+      "/Game/SurvivalRpg/Maps/Test/Lvl_ThirdPerson": "64883df863afd04d8cc14fbd47e46927fdc906489bed8a6e78bcf39d72e63fef",
+      "/Game/SurvivalRpg/Maps/Test/Lvl_RpgGaspMantle": "9ba7efcc22f3b8138479dd0f9bdff9166e34387b349b20dc9ba8edb9f7d5d7b1",
+      "/Game/SurvivalRpg/Maps/Test/Lvl_RpgGaspMover": "a6171e914df4bc06b35cac7c624250016b0bd187fde02636067be64aa6eb94ce",
+      "/Game/SurvivalRpg/Maps/Test/Lvl_RpgGaspMoverRagdoll": "16dd3738bda469220eb718c13e6d303f071c5ff622ae76c48ce3d37853a55a8b"
+    },
+    "removed_packages_in_cooked_output": 0,
+    "packaged_application_run": false,
+    "first_attempt": {
+      "exit_code": 1,
+      "process_seconds": 631.8206848,
+      "errors": 1,
+      "unique_warnings": 3,
+      "failure": "MCP port 8000 already bound by editor; all 3132 packages processed, final rerun on port 8001 passed"
+    }
+  },
+  "attempts": [
+    "Initial standard MCP Audio directory delete removed 272/278 and returned false; all 278 were restored to exact hashes before retry.",
+    "Automatic approval review initially rejected broad deletion; user then explicitly approved all 2298 originals.",
+    "Final deletion used exact Git pathspecs at closed editor after full SHA-256/retained-assets checks; no recursive directory removal.",
+    "First baseline CaptureViewport request omitted optional parameters and failed; corrected capture succeeded. Numerical input smoke was already complete."
+  ],
+  "limits": [
+    "PrimaryAssetId management and arbitrary binary dynamic strings are not exhaustively enumerated.",
+    "70 pre-existing unknown registry destinations remain unchanged; no global project-cleanliness claim.",
+    "Viewport captures use editor camera; map gameplay evidence is the actual input/PIE-state capture, not a new user visual sign-off.",
+    "No new C++ build; runtime modules, project-owned content and config are unchanged.",
+    "Five-map Windows cook is representative; no packaged application or complete feature/network cross-product tested."
+  ],
+  "evidence_sha256": {
+    "docs/assets/gasp-original-import-inventory.json": "aa87675892a7c5e8ca1f7b3bccc2aa147d306e6dcdc42267a2a602b961e3be73",
+    "Saved/GaspImportAudit/map-cleanup-after-actors.json": "4f49eb411781499d8412793902e438a496383db07c78eac3786498edacfea575",
+    "Saved/GaspImportAudit/map-cleanup-without-originals.json": "7df6040e6d369a2b2abcbde13a2c16470f304a4483eb1bb49bab70283896a97b",
+    "Saved/GaspMapCleanup/assets-before.json": "5fe3b94fa65520dfbe5ef0ed381b7f2be2eee939b2883415b2fd29666ad22b4e",
+    "Saved/GaspMapCleanup/saves-before.json": "61614d1d9e65037a03e86a008d881a6fcbc713a331208bd47a494a601d381c9a",
+    "Saved/GaspMapCleanup/automation-results.json": "a988104560710b0746fb06204df8978ec4cb2c94bb3e4552bf36343be324561e",
+    "Saved/GaspMapCleanup/blueprint-compiles.json": "c2d736fac6ed56df9b34bdf74b2cdbb80f95c2f35840ea32f0579cf33b1578e1",
+    "Saved/GaspMapCleanup/editor-without-originals.log": "be126bbfa41d8b23070fdde30e03223ccad18f57a816151431209d085b260e7e",
+    "Saved/GaspMapCleanup/cook-result.json": "7678107f4dc561af7431516537092607d249e93f71eafdde95de3be5b03dbaa2",
+    "Saved/GaspMapCleanup/cook-without-originals.log": "f2e9b80fa5dddbf13273fed6818ce10f843044185c6b6b14a2763d6024ae2117",
+    "Saved/GaspMapCleanup/cook-final-result.json": "b03eeefa65d351e0e16b0239cc374dc1f40fec80e2c03ae7dda5805059fd4184",
+    "Saved/GaspMapCleanup/cook-final.log": "d96566ef38746047d53c966c42cee2dc998bbe9fedfcc49d68fe17d3f2384735",
+    "Saved/GaspMapCleanup/Lvl_RpgBaseline-before.json": "c038603e58a41c5d7b64e353d45f398e3f66f6a37cea3be8fa67b426b2e37721",
+    "Saved/GaspMapCleanup/Lvl_RpgBaseline-after.json": "f84ec6929e9774890cada4b268bd14c0303b82898a627cb51b0aa46f812554b1",
+    "Saved/GaspMapCleanup/Lvl_RpgBaseline-removal.json": "0787f4e172908712e17ba54121a3c6296f0b2a4dc4c86efe62e04b9b1f8907df",
+    "Saved/GaspMapCleanup/Lvl_RpgBaseline-spawn.json": "daf4e491e611cbbf25d34b019a900486b9b82006949266bd4498d664ebbeceb4",
+    "Saved/GaspMapCleanup/Lvl_RpgBaseline-moving.json": "f429b8da1bd47eed20536c5f18f7929ad8b7a7975e8580209916f86392c83593",
+    "Saved/GaspMapCleanup/Lvl_RpgBaseline-stopped.json": "66a0db9938d08a4194de4593dd014314bfab0017b2bd9b94abd3ef3da95580a0",
+    "Saved/GaspMapCleanup/Lvl_RpgBaseline-jump.json": "f7e88770c62986c808b20ef58b9579487b8b9b0a6addc9fcc446f843e6e14d9b",
+    "Saved/GaspMapCleanup/Lvl_RpgBaseline-landed.json": "2f99a515e7dcc5d996bb74e3bc8743aa9507d8ded414e628b5b0352bf5dddbba",
+    "Saved/GaspMapCleanup/Lvl_ThirdPerson-before.json": "68f88e640a74bf9ca9da0d84cd164cbf0fb5f0941db32b922daf9ba306ea79e6",
+    "Saved/GaspMapCleanup/Lvl_ThirdPerson-after.json": "338700efe867082fc6833dd6995f62da5d7ba31abafd29bb12485e563f5d2799",
+    "Saved/GaspMapCleanup/Lvl_ThirdPerson-removal.json": "1f4c415a8e6c4ebbadab7e219dc7ab788afb51447a62e863d5271076c829f69e",
+    "Saved/GaspMapCleanup/Lvl_ThirdPerson-spawn.json": "1e8cdda4b9c9976ff6bd37f1c9db2626ea9c0d4e5acc6d5b2d9780e1dbd1b2ea",
+    "Saved/GaspMapCleanup/Lvl_ThirdPerson-moving.json": "18109f4ae92c541b98d516b4c7046c1bb5ab6c684dcfcf8125565ff2620c2af7",
+    "Saved/GaspMapCleanup/Lvl_ThirdPerson-stopped.json": "4552366a752613e277a28843ca9851c4007fa7c9d879413cca9f519f20d2a439",
+    "Saved/GaspMapCleanup/Lvl_ThirdPerson-jump.json": "1062e9959b95f1c25de8124ea377cea58e3fd4adac3ecd0bf660bb68402c98f2",
+    "Saved/GaspMapCleanup/Lvl_ThirdPerson-landed.json": "791489b8213001f2aa31bc9b502e72f91cc5c21d15ec90a3b4a9c08e6a3740ef"
+  },
+  "implementation_commit": "0c37d9c4b9fb5cb555569c81ea5b10aedaefa4d6",
+  "independent_review": "Passed: exact Git/LFS provenance, retained assets and saves, fresh registry, all 28 evidence hashes and final five-map cook outputs independently checked.",
+  "plugin_overrides_verified": 4
+}

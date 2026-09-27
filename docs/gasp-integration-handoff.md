@@ -9,16 +9,16 @@ Abnahme. Beide bei relevanten Fortschritten im selben PR aktualisieren.
 
 | Feld | Wert |
 | --- | --- |
-| Aktive Implementierungsaufgabe | Kein Implementierungsauftrag aktiv; `GASP-05`-Importaudit in [PR #156](https://github.com/Athurito/SurvivalRpg/pull/156) bestätigt gemergt. Gesamte Importbereinigung noch offen |
-| Nächste bereite Aufgabe | Vier gespeicherte Sample-Akteure in `Lvl_RpgBaseline` und `Lvl_ThirdPerson` prüfen und die Karten vom Originalimport entkoppeln; anschließend neuer Audit |
-| Zuständiger Chat / beanspruchte Dateien | Audit und Reviews beendet. Kein Editor-/MCP-Prozess aktiv, keine Assetdateien beansprucht |
+| Aktive Implementierungsaufgabe | `GASP-05` – vier Sample-Akteure und 2298 Originalassets entfernt; **validiert, [PR #158](https://github.com/Athurito/SurvivalRpg/pull/158) offen**. Ausdrückliche Nutzerfreigabe liegt vor |
+| Nächste bereite Aufgabe | Geprüften [PR #158](https://github.com/Athurito/SurvivalRpg/pull/158) mergen und bestätigten Status eintragen; GASP-06 bleibt zurückgestellt |
+| Zuständiger Chat / beanspruchte Dateien | Root: Originalimport/Actor-Entfernung, Nachweise und Docs. Editor/Cook sauber beendet; unabhängige lesende Reviews abgeschlossen |
 | Runtime-Ausgangspunkt | `9de031c9e255a13d117662713739e44984a98edc`, bestätigter Merge PR #152 am 26.09.2026 um 20:51:05 UTC |
-| Checkout / Branch | `D:/Repos/SurvivalRpg`; Auditbranch `codex/gasp-05-import-audit` abgeschlossen. Bestätigter Arbeitsmerge auf master: `fdff8b91341c0c130db8487cea62f5c50f86bfd8`; anschließende reine Statuspflege verändert keine Auditbelege |
-| Letzter Implementierungs-Commit | `9c8d7c77c3be6d261a268339096d00cdfe823b82`: lesender Registryexport, Offline-Planer und 17 Tests; Runtime/Assets unverändert |
+| Checkout / Branch | `D:/Repos/SurvivalRpg`, `codex/gasp-05-remove-sample-actors`, Basis `d6cb927f5654a681bf0c02db551af86276cf916d`; master/keine offenen PRs bei Start geprüft |
+| Letzter Implementierungs-Commit | `0c37d9c4b9fb5cb555569c81ea5b10aedaefa4d6`: exakt 2298 Originalpakete und vier alte Sample-Actor-Pakete entfernt; Runtime/Projektkopien unverändert |
 | Letzter gemergter GASP-Arbeits-PR | [PR #156](https://github.com/Athurito/SurvivalRpg/pull/156), **MERGED**, `fdff8b91341c0c130db8487cea62f5c50f86bfd8`, 27.09.2026 00:29:00 UTC; finaler geprüfter Head `6c89b9f18308abcc6cbf83a7973899cd351087d4` |
-| Aktuelle Belege | Frischer Registrygraph: 13365 Pakete, 86576 Paketkanten, alle 6964 getrackten Assets enthalten. 2156/2156 Kandidaten referenziert, 17/17 Planertests bestanden, Assets/Maps und sieben SaveGames unverändert. [Audit](gasp-import-cleanup-audit.md), [Manifest](assets/gasp-import-cleanup-audit.json) |
-| Nächster Handgriff | Die vier im Manifest benannten External Actors samt Instanzwerten und benötigtem Demo-Verhalten über Unreal MCP aufnehmen. Baseline/Spawns/Persistenz/Präsentation bei der Entkopplung erhalten |
-| Blocker / offene Abnahme | Originalimport bleibt über beide alten Testkarten erreichbar, Entfernungsliste daher leer. Übrige Importdateien, PrimaryAssetId-Management, dynamische Routen und späterer Cook ohne Originale nicht vollständig abgenommen; 70 unbekannte Registryziele erfasst. GASP-02-/04-Grenzen bleiben bestehen, GASP-06 zurückgestellt |
+| Aktuelle Belege | 11063 Registry-Pakete / 63658 Kanten, keine Referenzen auf Entferntes; 4662 verbleibende Assets und sieben Saves byteidentisch. Zwei Map-Smokes, 9/9 Tests (243 Warnungen), neun BP-/AnimBP-Compiles; voller Windows-Cook für fünf Karten, 3132 Pakete, Exit 0, 3 Warnungen. Vier Overrides verifiziert. [Entfernung](gasp-original-import-removal.md), [Manifest](assets/gasp-original-import-removal.json) |
+| Nächster Handgriff | [PR #158](https://github.com/Athurito/SurvivalRpg/pull/158) nach Prüfung des finalen Heads mergen; tatsächlichen Merge dokumentieren |
+| Blocker / offene Abnahme | Kein Blocker der Originalentfernung; Merge offen. 70 bestehende unbekannte Registryziele unverändert; PrimaryAssetId-/dynamische Stringgrenzen dokumentiert. Keine Packaged-Ausführung; GASP-02-/04-Grenzen bestehen weiter, GASP-06 bleibt zurückgestellt |
 
 ## Letzter abgeschlossener Teilschritt – GASP-05-Importaudit
 
@@ -44,9 +44,9 @@ null Package-Identifier-Managementkanten sind kein Nachweis über den
 PrimaryAssetId-Managementgraph. Die Rohaufnahme muss in anderen Checkouts neu
 erzeugt werden; Herkunft, Hashes und Map-Referenzketten sind versioniert.
 
-Noch keine Lade-/Compile-/Cook-Abnahme eines Entfernungsschritts. Erst die
-alten Demoobjekte gezielt entkoppeln, danach den gesamten übrigen Importumfang
-bewerten und die konkret begrenzte Entfernung ohne Originale validieren.
+Damals gab es noch keine Lade-/Compile-/Cook-Abnahme eines Entfernungsschritts.
+Der anschließende Auftrag zur Entkopplung, vollständigen Inventarisierung und
+validierten Originalentfernung ist inzwischen ausgeführt; aktueller Stand oben.
 
 ## Letzter abgeschlossener Schritt – GASP-04
 
