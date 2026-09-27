@@ -6,7 +6,7 @@
   "pr": "https://github.com/Athurito/SurvivalRpg/pull/160",
   "pr_status": "open_manual_visual_acceptance_required",
   "branch": "codex/gasp-06-moving-block",
-  "implementation_commit": null,
+  "implementation_commit": "ac87a4a6a0a25f5b90633e4ed3e8ef12c987b845",
   "rollback": {
     "checkpoint_commit": "de852e984e65009d6c68cc2be7d98cc94caa0bb5",
     "implementation_baseline": "908b7c7544a42848afe6c8b673988735ebd4ba1b",
