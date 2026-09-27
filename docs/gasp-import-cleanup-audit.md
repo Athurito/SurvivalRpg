@@ -1,5 +1,10 @@
 # GASP-05 – Import-Abhängigkeiten und Entfernungsliste
 
+Fortsetzung: Die damals noch blockierte Entfernung wird in
+[Originalimport entfernen](gasp-original-import-removal.md) mit dem aktuellen
+Validierungsstand dokumentiert. Die folgenden Zahlen beschreiben ausdrücklich
+den Audit vor der Entfernung.
+
 Stand: 27.09.2026, **Audit abgeschlossen, [PR #156](https://github.com/Athurito/SurvivalRpg/pull/156) bestätigt gemergt**. Arbeitsbranch `codex/gasp-05-import-audit`,
 Basis `577d760606be08e84491114db7c8a1eed0c2b43a`. Der begrenzte erste Schritt
 erzeugt eine konkrete Paketliste mit Herkunft und aktuellen Referenzbelegen.

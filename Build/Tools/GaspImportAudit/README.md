@@ -4,6 +4,12 @@ This tooling reports references; it has no deletion operation. Candidates are
 the exact `source` entries of provenance mappings, never inferred from a folder
 name. Every other inventoried package is conservatively retained.
 
+The initial 2156-source capture is historical. The follow-up removal is recorded
+in `docs/gasp-original-import-removal.md`, with the full 2298-package provenance
+in `docs/assets/gasp-original-import-inventory.json`. After that removal, those
+sources are intentionally absent: `missing_source` for a historical mapping is
+not evidence that its retained project-owned target is missing.
+
 ## Capture and reproduce
 
 1. Verify the checkout-local NetworkPrediction/Mover overrides as documented in
