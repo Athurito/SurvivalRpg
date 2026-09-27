@@ -1,0 +1,580 @@
+{
+  "task": "GASP-06",
+  "date": "2026-09-27",
+  "branch": "codex/gasp-06-moving-block",
+  "base_commit": "908b7c7544a42848afe6c8b673988735ebd4ba1b",
+  "merge_status": "not_merged",
+  "raw_evidence": "Saved/GaspBlockLocomotion20260927 (ignored, local only)",
+  "asset_preservation": {
+    "tracked_count": 4662,
+    "unchanged_count": 4656,
+    "changed": {
+      "Content/SurvivalRpg/Characters/GASP/CMC/RPG/ABP_RpgGasp_CMC.uasset": {
+        "before_sha256": "15c757f29d49f35de70bb4f536f30027c22b894195bd075568acbec13e058e4a",
+        "after_sha256": "31d95c10b293425ed459193c77d5a2729ec6e5b6f2c028e66610a1b4fa704ac0"
+      },
+      "Content/SurvivalRpg/Characters/GASP/Mover/RPG/ABP_RpgGasp_Mover.uasset": {
+        "before_sha256": "c4876d504767850a3bdc22e47c9619a632edbf2597fd1d0aa1e4b6e0aefb7cf9",
+        "after_sha256": "4df36fcdba28430284db1c1d7c49d04ae2332695f18ab37bd927ff4221b233ec"
+      },
+      "Plugins/GameFeatures/GF_Combat_Core/Content/Animations/Sword_and_Shield/Animations/Sequence2/08_Hit/12_Block/Block_End_Seq_Montage.uasset": {
+        "before_sha256": "97ea3d6ac5886ab7b23c9e51238e6b49d0474da86b4336171af2327237215e41",
+        "after_sha256": "6c1f7d64b9b7283b53cba105092357bca56c6ce89d7cbfa5b7bf05de867cf38a"
+      },
+      "Plugins/GameFeatures/GF_Combat_Core/Content/Animations/Sword_and_Shield/Animations/Sequence2/08_Hit/12_Block/Block_Hit_Seq_Montage.uasset": {
+        "before_sha256": "da966199014166ede13694ffe9cd31cdb8ec4cf92f0608f0c85da974ab5fce28",
+        "after_sha256": "b56403ab9b5d15d6ba36193760b3718a3975fbd096b9fe463f5df2d7e2987311"
+      },
+      "Plugins/GameFeatures/GF_Combat_Core/Content/Animations/Sword_and_Shield/Animations/Sequence2/08_Hit/12_Block/Block_Loop_Seq_Montage.uasset": {
+        "before_sha256": "15870a34fbc05fed9912bfcaef2bc5dfcee8d17765d1eba108fd7c940756b436",
+        "after_sha256": "fbe29d4173bbc079ffff876c2952020b32f534b127760a00847832fa9f8da57e"
+      },
+      "Plugins/GameFeatures/GF_Combat_Core/Content/Animations/Sword_and_Shield/Animations/Sequence2/08_Hit/12_Block/Block_Start_Seq_Montage.uasset": {
+        "before_sha256": "dd09c50fce3dd82f719a919f940f52c54c4080a22f4e8ddddf9500e33e41a281",
+        "after_sha256": "62410ce3ba8256dc4374e68f9b4ba2719d93ee766e7944852c98f8628317fc6d"
+      }
+    },
+    "personal_saves_byte_identical": 7,
+    "save_hashes": {
+      "Saved/SaveGames/SlotManagerName.sav": "67773c569c5041710961cc257f2cfa396a724825be4c98156bf50337ff717b91",
+      "Saved/SaveGames/SurvivalRpg_BaselineTest.sav": "732a4b84487fcf46ba9e852259cdbc88a7f1659715c75033b8aaf0395f376853",
+      "Saved/SaveGames/SurvivalRpg_BaselineTest_Backup.sav": "21fb7a0a9f9c6d1cb8721a09291a15353c6c31568acd155b4882b5f10f1155a5",
+      "Saved/SaveGames/SurvivalRpg_BaselineTest_Recovery.sav": "732a4b84487fcf46ba9e852259cdbc88a7f1659715c75033b8aaf0395f376853",
+      "Saved/SaveGames/SurvivalRpg_World.sav": "220a3b286d60a6180ad296caf7cdfeff5a49c132aac2dc9568edfe4da33a38c3",
+      "Saved/SaveGames/SurvivalRpg_World_Backup.sav": "7afec4c9f0037501abfa7bce4fb785221c7c831ae3ee6a00e549488027143a32",
+      "Saved/SaveGames/SurvivalRpg_World_Recovery.sav": "220a3b286d60a6180ad296caf7cdfeff5a49c132aac2dc9568edfe4da33a38c3"
+    }
+  },
+  "automation": {
+    "negative": {
+      "passed": 0,
+      "failed": 2,
+      "total": 2,
+      "duration": 55.746673583984375,
+      "warnings": {
+        "AdvancedFriendsInterfaceLog": 8,
+        "LogNetPackageMap": 62,
+        "LogZenServiceInstance": 2,
+        "LogPoseSearch": 1,
+        "LogNetworkPrediction": 1
+      },
+      "tests": [
+        {
+          "name": "SurvivalRpg.GASP.MovingBlock.GaspMovingBlockPIE.CMCMovingBlockKeepsLegsAnimatedThroughLateJoinAndRelease",
+          "state": "Fail",
+          "errors": [
+            "Expected 'MovingBlockBeforeJoin /Temp/UEDPIE_0_Untitled_1.Untitled window 0: both legs animate in the completed local pose' to be true.",
+            "Expected 'MovingBlockBeforeJoin /Temp/UEDPIE_0_Untitled_1.Untitled window 1: both legs animate in the completed local pose' to be true.",
+            "Expected 'MovingBlockBeforeJoin /Temp/UEDPIE_1_Untitled_1.Untitled window 0: both legs animate in the completed local pose' to be true.",
+            "Expected 'MovingBlockBeforeJoin /Temp/UEDPIE_1_Untitled_1.Untitled window 1: both legs animate in the completed local pose' to be true."
+          ],
+          "warning_count": 35
+        },
+        {
+          "name": "SurvivalRpg.GASP.MovingBlock.GaspMovingBlockPIE.MoverMovingBlockKeepsLegsAnimatedThroughLateJoinAndRelease",
+          "state": "Fail",
+          "errors": [
+            "Expected 'MovingBlockBeforeJoin /Temp/UEDPIE_0_Untitled_3.Untitled window 0: both legs animate in the completed local pose' to be true.",
+            "Expected 'MovingBlockBeforeJoin /Temp/UEDPIE_0_Untitled_3.Untitled window 1: both legs animate in the completed local pose' to be true.",
+            "Expected 'MovingBlockBeforeJoin /Temp/UEDPIE_1_Untitled_3.Untitled window 0: both legs animate in the completed local pose' to be true.",
+            "Expected 'MovingBlockBeforeJoin /Temp/UEDPIE_1_Untitled_3.Untitled window 1: both legs animate in the completed local pose' to be true."
+          ],
+          "warning_count": 39
+        }
+      ]
+    },
+    "positive": {
+      "passed": 0,
+      "failed": 2,
+      "total": 2,
+      "duration": 82.64933776855469,
+      "warnings": {
+        "AdvancedFriendsInterfaceLog": 10,
+        "LogNetPackageMap": 90,
+        "LogPoseSearch": 10,
+        "LogNetworkPrediction": 1,
+        "LogAudioMixer": 6,
+        "LogZenServiceInstance": 2
+      },
+      "tests": [
+        {
+          "name": "SurvivalRpg.GASP.MovingBlock.GaspMovingBlockPIE.CMCMovingBlockKeepsLegsAnimatedThroughLateJoinAndRelease",
+          "state": "Fail",
+          "errors": [
+            "Timed out waiting for A real late join receives the already-blocking moving simulated proxy after 45011 milliseconds"
+          ],
+          "warning_count": 67
+        },
+        {
+          "name": "SurvivalRpg.GASP.MovingBlock.GaspMovingBlockPIE.MoverMovingBlockKeepsLegsAnimatedThroughLateJoinAndRelease",
+          "state": "Fail",
+          "errors": [
+            "Expected 'Locomotion /Temp/UEDPIE_0_Untitled_14.Untitled window 1: both legs animate in the completed local pose' to be true.",
+            "Expected 'Locomotion /Temp/UEDPIE_1_Untitled_14.Untitled window 1: both legs animate in the completed local pose' to be true."
+          ],
+          "warning_count": 52
+        }
+      ]
+    },
+    "positive-fresh-mover": {
+      "passed": 0,
+      "failed": 1,
+      "total": 1,
+      "duration": 65.14794158935547,
+      "warnings": {
+        "AdvancedFriendsInterfaceLog": 6,
+        "LogNetPackageMap": 61,
+        "LogNetworkPrediction": 2
+      },
+      "tests": [
+        {
+          "name": "SurvivalRpg.GASP.MovingBlock.GaspMovingBlockPIE.MoverMovingBlockKeepsLegsAnimatedThroughLateJoinAndRelease",
+          "state": "Fail",
+          "errors": [
+            "Timed out waiting for A real late join receives the already-blocking moving simulated proxy after 45003 milliseconds"
+          ],
+          "warning_count": 69
+        }
+      ]
+    },
+    "positive-final": {
+      "passed": 2,
+      "failed": 0,
+      "total": 2,
+      "duration": 38.98293685913086,
+      "warnings": {
+        "AdvancedFriendsInterfaceLog": 12,
+        "LogNetPackageMap": 122,
+        "LogPoseSearch": 1,
+        "LogNetworkPrediction": 1
+      },
+      "tests": [
+        {
+          "name": "SurvivalRpg.GASP.MovingBlock.GaspMovingBlockPIE.CMCMovingBlockKeepsLegsAnimatedThroughLateJoinAndRelease",
+          "state": "Success",
+          "errors": [],
+          "warning_count": 67
+        },
+        {
+          "name": "SurvivalRpg.GASP.MovingBlock.GaspMovingBlockPIE.MoverMovingBlockKeepsLegsAnimatedThroughLateJoinAndRelease",
+          "state": "Success",
+          "errors": [],
+          "warning_count": 69
+        }
+      ]
+    },
+    "regression": {
+      "passed": 14,
+      "failed": 0,
+      "total": 14,
+      "duration": 41.036048889160156,
+      "warnings": {
+        "AdvancedFriendsInterfaceLog": 34,
+        "LogNetPackageMap": 260,
+        "LogBlueprint": 1,
+        "LogNetworkPrediction": 2,
+        "LogAnimation": 14
+      },
+      "tests": [
+        {
+          "name": "SurvivalRpg.Combat.Block.Lifecycle.AttributeCallbackReplacementStopsRemainingRestores",
+          "state": "Success",
+          "errors": [],
+          "warning_count": 0
+        },
+        {
+          "name": "SurvivalRpg.Combat.Block.Lifecycle.InputReleasePreservesActiveAttributeModifier",
+          "state": "Success",
+          "errors": [],
+          "warning_count": 0
+        },
+        {
+          "name": "SurvivalRpg.Combat.Block.Lifecycle.InputReleaseRestoresDefenseValues",
+          "state": "Success",
+          "errors": [],
+          "warning_count": 0
+        },
+        {
+          "name": "SurvivalRpg.Combat.Block.Lifecycle.MissingDefenseSetRejectsActivationUntilRegistered",
+          "state": "Success",
+          "errors": [],
+          "warning_count": 0
+        },
+        {
+          "name": "SurvivalRpg.Combat.Block.Lifecycle.RemovedDefenseSetBeforeGrantRemoval",
+          "state": "Success",
+          "errors": [],
+          "warning_count": 0
+        },
+        {
+          "name": "SurvivalRpg.Combat.Block.Lifecycle.RepeatedOldCleanupPreservesNewBlock",
+          "state": "Success",
+          "errors": [],
+          "warning_count": 0
+        },
+        {
+          "name": "SurvivalRpg.Combat.Block.Lifecycle.ReplacementDefenseSetIsNotOverwritten",
+          "state": "Success",
+          "errors": [],
+          "warning_count": 0
+        },
+        {
+          "name": "SurvivalRpg.Combat.Block.Lifecycle.TagCallbackCancellationEndsOnlyOnce",
+          "state": "Success",
+          "errors": [],
+          "warning_count": 0
+        },
+        {
+          "name": "SurvivalRpg.GASP.CMC.GaspCMCExperiencePIE.RemoteMovementLateJoinAndEquipmentMontage",
+          "state": "Success",
+          "errors": [],
+          "warning_count": 83
+        },
+        {
+          "name": "SurvivalRpg.GASP.Mantle.GaspMantleAuthoredMapPIE.RunningApproachUsesAuthoredMapAndEnhancedInput",
+          "state": "Success",
+          "errors": [],
+          "warning_count": 4
+        },
+        {
+          "name": "SurvivalRpg.GASP.Mover.Gameplay.GaspMoverGameplayPIE.RemoteEquipmentInputMontageLateJoinAndCancellation",
+          "state": "Success",
+          "errors": [],
+          "warning_count": 64
+        },
+        {
+          "name": "SurvivalRpg.GASP.Mover.Gameplay.GaspMoverGameplayPIE.RightMouseHoldReplicatesBlockAndReleasesCleanly",
+          "state": "Success",
+          "errors": [],
+          "warning_count": 63
+        },
+        {
+          "name": "SurvivalRpg.GASP.Mover.Lifecycle.GaspMoverLifecyclePIE.DeathCancelsHeldBlockAndRespawnRecomposesOptionalFollower",
+          "state": "Success",
+          "errors": [],
+          "warning_count": 91
+        },
+        {
+          "name": "SurvivalRpg.GASP.Mover.Mantle.GaspMoverMantlePIE.RemoteRunningMantleKeepsMomentumAfterHandoff",
+          "state": "Success",
+          "errors": [],
+          "warning_count": 6
+        }
+      ]
+    },
+    "contracts": {
+      "passed": 4,
+      "failed": 0,
+      "total": 4,
+      "duration": 7.567364692687988,
+      "warnings": {
+        "AdvancedFriendsInterfaceLog": 6,
+        "LogNetPackageMap": 61,
+        "LogNetworkPrediction": 1
+      },
+      "tests": [
+        {
+          "name": "SurvivalRpg.GASP.CMC.AssetComposition",
+          "state": "Success",
+          "errors": [],
+          "warning_count": 0
+        },
+        {
+          "name": "SurvivalRpg.GASP.Mover.Ragdoll.GaspMoverRagdollPIE.OptionalFollowerPreservesPhysicsGetupAndLateJoin",
+          "state": "Success",
+          "errors": [],
+          "warning_count": 68
+        },
+        {
+          "name": "SurvivalRpg.GASP.Mover.Ragdoll.AssetComposition",
+          "state": "Success",
+          "errors": [],
+          "warning_count": 0
+        },
+        {
+          "name": "SurvivalRpg.GASP.Mover.AssetComposition",
+          "state": "Success",
+          "errors": [],
+          "warning_count": 0
+        }
+      ]
+    }
+  },
+  "visual_smoke": {
+    "cmc-final": {
+      "block-idle": {
+        "image": "cmc-final-block-idle.png",
+        "tags": [
+          "Equipment.Load.Light",
+          "State.Blocking",
+          "Trait.Staggerable"
+        ],
+        "location": {
+          "x": -1600.0,
+          "y": -600.0,
+          "z": 92.2125015258789
+        },
+        "velocity": {
+          "x": 0.0,
+          "y": 0.0,
+          "z": 0.0
+        }
+      },
+      "block-walk-a": {
+        "image": "cmc-final-block-walk-a.png",
+        "tags": [
+          "Equipment.Load.Light",
+          "State.Blocking",
+          "Trait.Staggerable"
+        ],
+        "location": {
+          "x": -1513.4558085871365,
+          "y": -513.4558096401931,
+          "z": 92.2125015258789
+        },
+        "velocity": {
+          "x": 422.04039164332295,
+          "y": 422.0403865079823,
+          "z": 0.0
+        }
+      },
+      "block-walk-b": {
+        "image": "cmc-final-block-walk-b.png",
+        "tags": [
+          "Equipment.Load.Light",
+          "State.Blocking",
+          "Trait.Staggerable"
+        ],
+        "location": {
+          "x": -1327.262091646771,
+          "y": -327.26209496541156,
+          "z": 92.2125015258789
+        },
+        "velocity": {
+          "x": 424.26407129312463,
+          "y": 424.2640661307239,
+          "z": 0.0
+        }
+      },
+      "block-stop": {
+        "image": "cmc-final-block-stop.png",
+        "tags": [
+          "Equipment.Load.Light",
+          "State.Blocking",
+          "Trait.Staggerable"
+        ],
+        "location": {
+          "x": -1285.0511623857815,
+          "y": -285.0511662180411,
+          "z": 92.2125015258789
+        },
+        "velocity": {
+          "x": 0.0,
+          "y": 0.0,
+          "z": 0.0
+        }
+      },
+      "released": {
+        "image": "cmc-final-released.png",
+        "tags": [
+          "Equipment.Load.Light",
+          "Trait.Staggerable"
+        ],
+        "location": {
+          "x": -1285.0511623857815,
+          "y": -285.0511662180411,
+          "z": 92.2125015258789
+        },
+        "velocity": {
+          "x": 0.0,
+          "y": 0.0,
+          "z": 0.0
+        }
+      },
+      "block-repeat": {
+        "image": "cmc-final-block-repeat.png",
+        "tags": [
+          "Equipment.Load.Light",
+          "State.Blocking",
+          "Trait.Staggerable"
+        ],
+        "location": {
+          "x": -1285.0511623857815,
+          "y": -285.0511662180411,
+          "z": 92.2125015258789
+        },
+        "velocity": {
+          "x": 0.0,
+          "y": 0.0,
+          "z": 0.0
+        }
+      }
+    },
+    "mover": {
+      "block-idle": {
+        "image": "mover-block-idle.png",
+        "tags": [
+          "Equipment.Load.Light",
+          "State.Blocking",
+          "Trait.Staggerable"
+        ],
+        "location": {
+          "x": -1600.0,
+          "y": -600.0,
+          "z": 110.0
+        },
+        "velocity": {
+          "x": 0.0,
+          "y": 0.0,
+          "z": 0.0
+        }
+      },
+      "block-walk-a": {
+        "image": "mover-block-walk-a.png",
+        "tags": [
+          "Equipment.Load.Light",
+          "State.Blocking",
+          "Trait.Staggerable"
+        ],
+        "location": {
+          "x": -1565.9241394210264,
+          "y": -565.9241394210269,
+          "z": 88.21249580383301
+        },
+        "velocity": {
+          "x": 186.68822191165265,
+          "y": 186.68822191165265,
+          "z": 0.0
+        }
+      },
+      "block-walk-b": {
+        "image": "mover-block-walk-b.png",
+        "tags": [
+          "Equipment.Load.Light",
+          "State.Blocking",
+          "Trait.Staggerable"
+        ],
+        "location": {
+          "x": -1423.0806266489783,
+          "y": -423.0806266489791,
+          "z": 88.21249580383301
+        },
+        "velocity": {
+          "x": 266.2390169230682,
+          "y": 266.23901692306254,
+          "z": 0.0
+        }
+      },
+      "block-stop": {
+        "image": "mover-block-stop.png",
+        "tags": [
+          "Equipment.Load.Light",
+          "State.Blocking",
+          "Trait.Staggerable"
+        ],
+        "location": {
+          "x": -1335.8525589582268,
+          "y": -335.852558958229,
+          "z": 88.21249580383301
+        },
+        "velocity": {
+          "x": 4.348307957932121,
+          "y": 4.348307957932121,
+          "z": 0.0
+        }
+      },
+      "released": {
+        "image": "mover-released.png",
+        "tags": [
+          "Equipment.Load.Light",
+          "Trait.Staggerable"
+        ],
+        "location": {
+          "x": -1335.639656085434,
+          "y": -335.6396560854355,
+          "z": 88.21249580383301
+        },
+        "velocity": {
+          "x": 0.0,
+          "y": 0.0,
+          "z": 0.0
+        }
+      },
+      "block-repeat": {
+        "image": "mover-block-repeat.png",
+        "tags": [
+          "Equipment.Load.Light",
+          "State.Blocking",
+          "Trait.Staggerable"
+        ],
+        "location": {
+          "x": -1335.639656085434,
+          "y": -335.6396560854355,
+          "z": 88.21249580383301
+        },
+        "velocity": {
+          "x": 0.0,
+          "y": 0.0,
+          "z": 0.0
+        }
+      }
+    }
+  },
+  "builds": {
+    "editor_seconds": 67.58,
+    "game_seconds": 62.29,
+    "editor_focus_fixture_seconds": 11.57,
+    "all_succeeded": true
+  },
+  "limits": [
+    "Initial red control used identical leg measurement before adding test-local PIE focus isolation.",
+    "Earlier positive runs failed and remain recorded; Mover pre-block freeze after package reload/aborted CMC did not recur in final fresh session; exact cause unproven.",
+    "Upper-body scalar checks alone do not prove the authored pose; root inspected actual CMC/Mover held-block images with matching State.Blocking tags.",
+    "No new hit-trigger visual test or full gait/network tolerance acceptance. Existing GASP-VAL-01/02 and GASP-NET-03 limits remain.",
+    "Standard montage blending only; target skeleton Partials/UpperBody vs montage DefaultGroup requires review before future inertialization."
+  ],
+  "cook": {
+    "maps": [
+      "/Game/SurvivalRpg/Maps/Test/Lvl_RpgBaseline",
+      "/Game/SurvivalRpg/Maps/Test/Lvl_ThirdPerson",
+      "/Game/SurvivalRpg/Maps/Test/Lvl_RpgGaspMantle",
+      "/Game/SurvivalRpg/Maps/Test/Lvl_RpgGaspMover",
+      "/Game/SurvivalRpg/Maps/Test/Lvl_RpgGaspMoverRagdoll"
+    ],
+    "seconds": 151.6424314,
+    "pid": 18324,
+    "arguments": [
+      "D:/Repos/SurvivalRpg/SurvivalRpg.uproject",
+      "-run=cook",
+      "-TargetPlatform=Windows",
+      "-Map=/Game/SurvivalRpg/Maps/Test/Lvl_RpgBaseline+/Game/SurvivalRpg/Maps/Test/Lvl_ThirdPerson+/Game/SurvivalRpg/Maps/Test/Lvl_RpgGaspMantle+/Game/SurvivalRpg/Maps/Test/Lvl_RpgGaspMover+/Game/SurvivalRpg/Maps/Test/Lvl_RpgGaspMoverRagdoll",
+      "-unattended",
+      "-NoP4",
+      "-NoSplash",
+      "-NoSaveConfig",
+      "-ModelContextProtocolPort=8001",
+      "-UserDir=D:/Repos/SurvivalRpg/Saved/GaspBlockLocomotion20260927/CookUser/",
+      "-abslog=D:/Repos/SurvivalRpg/Saved/GaspBlockLocomotion20260927/cook-final.log"
+    ],
+    "exit_code": 0,
+    "total_packages": 3132,
+    "cooked_packages": 3125,
+    "platform_skipped": 7,
+    "incrementally_skipped": 0,
+    "errors": 0,
+    "warnings": 5,
+    "map_outputs_confirmed": 5,
+    "warning_categories": [
+      "Zen startup timeout",
+      "GameplayCueNotifyPaths fallback",
+      "MCP license notice",
+      "Zen project connection",
+      "Respawn widget native tick"
+    ]
+  },
+  "implementation_commit": "71602034e5eee0d9d0a172b483fe4a5cdd7a2ec6",
+  "overrides_verified": 4,
+  "editor_closed_cleanly": 18252,
+  "editor_startup_condition_failed": 2,
+  "metasound_warnings_errors_final_editor_log": 0
+}

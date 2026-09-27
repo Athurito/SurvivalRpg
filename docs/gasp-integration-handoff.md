@@ -9,16 +9,16 @@ Abnahme. Beide bei relevanten Fortschritten im selben PR aktualisieren.
 
 | Feld | Wert |
 | --- | --- |
-| Aktive Implementierungsaufgabe | Kein Implementierungsauftrag aktiv; `GASP-05`-Originalbereinigung mit [PR #158](https://github.com/Athurito/SurvivalRpg/pull/158) bestätigt gemergt |
-| Nächste bereite Aufgabe | Kein weiterer automatisch bereiter Schritt; GASP-06 bleibt für einen eigenen späteren Auftrag zurückgestellt. Offene GASP-02-/04-Grenzen bleiben dokumentiert |
-| Zuständiger Chat / beanspruchte Dateien | Implementierung und unabhängige Reviews beendet; Editor/Cook sauber geschlossen, keine Assetdateien beansprucht. Nur bestätigte Merge-Statuspflege |
-| Runtime-Ausgangspunkt | `9de031c9e255a13d117662713739e44984a98edc`, bestätigter Merge PR #152 am 26.09.2026 um 20:51:05 UTC |
-| Checkout / Branch | `D:/Repos/SurvivalRpg`; Arbeitsbranch `codex/gasp-05-remove-sample-actors` abgeschlossen. Bestätigter Arbeitsmerge auf master: `051f03f06abf84b82191338a52401dd64ddd6c32`; anschließende reine Statuspflege verändert keine Prüfbelege |
-| Letzter Implementierungs-Commit | `0c37d9c4b9fb5cb555569c81ea5b10aedaefa4d6`: exakt 2298 Originalpakete und vier alte Sample-Actor-Pakete entfernt; Runtime/Projektkopien unverändert |
+| Aktive Implementierungsaufgabe | `GASP-06` – Blocken beim Laufen für CMC/Mover; implementiert und validiert, Nutzer-Sichtabnahme/Merge offen |
+| Nächste bereite Aufgabe | Einfach sichtbare GASP-06-Probe: in `Lvl_RpgGaspMantle` bzw. `Lvl_RpgGaspMover` RMB halten und WASD bewegen; danach Merge. Kein weiterer Roadmap-Schritt automatisch beauftragt |
+| Zuständiger Chat / beanspruchte Dateien | Implementierung und unabhängige Reviews abgeschlossen. Root besitzt sechs AnimBP-/Montageassets, zwei Runtime-Dateien, neue Testdatei und Docs bis zum PR-Abschluss; Editor/Cook beendet |
+| Runtime-Ausgangspunkt | Basis `908b7c7544a42848afe6c8b673988735ebd4ba1b`; GASP-06-Implementierung `71602034e5eee0d9d0a172b483fe4a5cdd7a2ec6` |
+| Checkout / Branch | `D:/Repos/SurvivalRpg`, `codex/gasp-06-moving-block`, Basis `908b7c7544a42848afe6c8b673988735ebd4ba1b`; Remote-master und keine offenen PRs bei Start geprüft |
+| Letzter Implementierungs-Commit | `71602034e5eee0d9d0a172b483fe4a5cdd7a2ec6`: zwei AnimGraphs, vier Blockmontagen, UpperBody-Traversal-Ausschlüsse und neue CMC/Mover-Posefenstertests |
 | Letzter gemergter GASP-Arbeits-PR | [PR #158](https://github.com/Athurito/SurvivalRpg/pull/158), bestätigt gemergt als `051f03f06abf84b82191338a52401dd64ddd6c32` am 2026-09-27T01:16:35Z; finaler geprüfter Head `594b202084737c6e98ad3cc853d3cc613504dcc5` |
-| Aktuelle Belege | 11063 Registry-Pakete / 63658 Kanten, keine Referenzen auf Entferntes; 4662 verbleibende Assets und sieben Saves byteidentisch. Zwei Map-Smokes, 9/9 Tests (243 Warnungen), neun BP-/AnimBP-Compiles; voller Windows-Cook für fünf Karten, 3132 Pakete, Exit 0, 3 Warnungen. Vier Overrides verifiziert. [Entfernung](gasp-original-import-removal.md), [Manifest](assets/gasp-original-import-removal.json) |
-| Nächster Handgriff | Bei einem Folgeauftrag aktuellen Git-/PR-Stand und die offenen Roadmap-Grenzen lesen; Originalimport nicht wiederherstellen und GASP-06 nicht ungefragt beginnen |
-| Blocker / offene Abnahme | GASP-05 im dokumentierten Umfang abgeschlossen. 70 bereits vorher unbekannte Registryziele sowie PrimaryAssetId-/dynamische Stringgrenzen dokumentiert. Keine Packaged-Ausführung; GASP-02-/04-Grenzen bleiben offen, GASP-06 zurückgestellt |
+| Aktuelle Belege | Editor/Game-Builds, 20/20 Tests (515 Warnungen, null Testfehler), zwei AnimBP-Compiles, Root-Sichtprüfung und voller Windows-Cook für fünf Karten (3125 gekocht / 3132 erfasst, Exit 0, fünf Warnungen). Genau sechs Assetänderungen; 4656 Assets und sieben Saves erhalten, vier Overrides verifiziert. [GASP-06](gasp-moving-block.md), [Manifest](assets/gasp-moving-block.json) |
+| Nächster Handgriff | GASP-06-Draft-PR veröffentlichen, einfache Nutzer-Sichtprobe anbieten; erst nach bestätigtem Merge Status umstellen |
+| Blocker / offene Abnahme | Keine neue Test-/Cook-Blockade. Nutzer-Sichtabnahme und Merge offen; historische VAL-01/02-/NET-03-Grenzen bleiben bestehen. Frühere rote Diagnoseversuche und vorhandene Warnungen im Bericht erhalten |
 
 ## Letzter abgeschlossener Schritt – GASP-05-Originalbereinigung
 
