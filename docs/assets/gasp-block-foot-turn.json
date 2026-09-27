@@ -2098,5 +2098,11 @@
     "raw_input_hashes_verified": 132
   },
   "implementation_commit_scope": "Final validation revision includes the unchanged asset candidate from asset_implementation_commit plus the editor-only fixture lane-spacing fix.",
-  "asset_implementation_commit": "1aaee13dbf9ef7194b9ddbde56b865365b7861f9"
+  "asset_implementation_commit": "1aaee13dbf9ef7194b9ddbde56b865365b7861f9",
+  "historical_status": {
+    "status": "fully_reverted_by_user_request",
+    "baseline": "908b7c7544a42848afe6c8b673988735ebd4ba1b",
+    "superseded_head": "20d1f7ffe62c8baff982d52ea5f64f41f6766aa2",
+    "validation_applies_to": "historical_implementation_only"
+  }
 }

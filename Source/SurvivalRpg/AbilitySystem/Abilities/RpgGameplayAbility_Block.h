@@ -78,9 +78,6 @@ private:
 	bool bBlockLoopStarted = false;
 	// GAS sets its ending guard only inside Super::EndAbility, after our synchronous cleanup callbacks.
 	bool bEndingBlock = false;
-	// Separate from defensive attributes: immediate owner prediction and exact-activation movement cleanup.
-	TWeakObjectPtr<URpgAbilitySystemComponent> BlockMovementASC;
-	uint32 BlockMovementLease = 0;
 	// This activation's base-value snapshot belongs only to these original, still-registered instances.
 	TWeakObjectPtr<URpgAbilitySystemComponent> BlockStateASC;
 	TWeakObjectPtr<const URpgDefenseSet> BlockStateDefenseSet;

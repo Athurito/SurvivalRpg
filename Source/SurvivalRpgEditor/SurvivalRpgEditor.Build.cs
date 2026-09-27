@@ -18,7 +18,6 @@ public class SurvivalRpgEditor : ModuleRules
 		PrivateDependencyModuleNames.AddRange(new string[]
 		{
 			"AIModule",
-			"AnimationBlueprintLibrary",
 			"AssetRegistry",
 			"AssetTools",
 			"BlueprintGraph",

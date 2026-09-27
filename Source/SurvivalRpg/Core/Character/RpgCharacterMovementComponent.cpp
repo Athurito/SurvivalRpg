@@ -2,7 +2,6 @@
 
 
 #include "RpgCharacterMovementComponent.h"
-#include "RpgHealthComponent.h"
 
 #include "AbilitySystemComponent.h"
 #include "AbilitySystemGlobals.h"
@@ -10,7 +9,6 @@
 #include "NativeGameplayTags.h"
 #include "GameFramework/Character.h"
 #include "Net/UnrealNetwork.h"
-#include "SurvivalRpg/AbilitySystem/RpgAbilitySystemComponent.h"
 
 
 UE_DEFINE_GAMEPLAY_TAG(TAG_Gameplay_MovementStopped, "Gameplay.MovementStopped");
@@ -85,26 +83,10 @@ void URpgCharacterMovementComponent::PhysicsRotation(float DeltaTime)
 {
 	// Pawn::FaceRotation is gated separately: controller updates and saved-move replay can call it outside CMC physics.
 	// Reuse the ability's existing lease so cancellation, rejection, death and replication release both policies together.
-	if (IsMantleControllingRotation()) { return; }
-	const URpgAbilitySystemComponent* ASC = Cast<URpgAbilitySystemComponent>(UAbilitySystemGlobals::GetAbilitySystemComponentFromActor(GetOwner()));
-	const URpgHealthComponent* Health = URpgHealthComponent::FindHealthComponent(GetOwner());
-	if ((IsMovingOnGround() || IsFalling()) && !HasAnimRootMotion() && !HasRootMotionSources() &&
-		ASC && ASC->IsBlockMovementActive() && !ASC->HasMatchingGameplayTag(TAG_Gameplay_MovementStopped) &&
-		(!Health || !Health->IsDeadOrDying()))
+	if (!IsMantleControllingRotation())
 	{
-		// CMC prioritizes movement orientation over controller orientation when both are enabled. Resolve
-		// that conflict only for this active block's ordinary rotation step. No persistent flag snapshot
-		// survives release, reactivation or a Blueprint change; engine collision/turn-rate rules remain intact.
-		const bool bSavedOrientToMovement = bOrientRotationToMovement;
-		const bool bSavedControllerDesiredRotation = bUseControllerDesiredRotation;
-		bOrientRotationToMovement = false;
-		bUseControllerDesiredRotation = true;
 		Super::PhysicsRotation(DeltaTime);
-		bOrientRotationToMovement = bSavedOrientToMovement;
-		bUseControllerDesiredRotation = bSavedControllerDesiredRotation;
-		return;
 	}
-	Super::PhysicsRotation(DeltaTime);
 }
 
 FRotator URpgCharacterMovementComponent::GetDeltaRotation(float DeltaTime) const

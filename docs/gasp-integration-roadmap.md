@@ -7,7 +7,7 @@ nicht eine neue Gesamtplanung für Combat, Crafting oder Portale.
 
 ## Schnellstart
 
-- **GASP-06: Drehschritte und Rückblendung nach erneuter Sichtablehnung korrigiert; Abnahme offen.** [Draft-PR #160](https://github.com/Athurito/SurvivalRpg/pull/160), Implementierung `1aaee13d`, Branch `codex/gasp-06-moving-block`. Die vorige Jitterkorrektur ließ Drehclips weiterhin unterdrückt. Beide AnimBPs geben die originale GASP-Root-/Turn-Logik bei Beinbewegung frei, halten den Block-Oberkörper vorwärts und blenden mit 80 ms Ruhebrücke/150 ms endlicher Überblendung zurück. Sechs neue Drehproben ohne negative Fußordnung im Messfenster; zwei BP-Compiles und unabhängiger Review bestanden. Regressionsfehler im Diagnoselauf auf Kontakt mit dem ruhenden Host zurückgeführt; Teststarts mit `fc2e2b6c` auseinandergezogen. Neuer Editor-Build und **18/18** vollständige Regressionen bestanden, Cook Exit 0. Frühere Fehlläufe bleiben erhalten. 4660 andere Assets und sieben Saves erhalten. [Bericht/Repro](gasp-block-foot-turn.md), [Manifest](assets/gasp-block-foot-turn.json). Kein Merge.
+- **GASP-06: vollständiger Rückbau und erweiterbarer Neuaufbau.** Auf ausdrücklichen Nutzerwunsch sind alle bisherigen Code-/Asset-/Tool-/Teständerungen auf `908b7c75` zurückgeführt. Der neue Ansatz verwendet einen gemeinsamen Linked Anim Layer mit datenbasierten Kindern und Chooser Tables. Natürliche Blockschritte haben Vorrang vor altem Tempo. [Draft-PR #160](https://github.com/Athurito/SurvivalRpg/pull/160) bleibt offen; neue Sichtabnahme erforderlich. [Übergabe](gasp-integration-handoff.md).
 
 - **Gemergt: GASP-05 – Originalimport entfernt.** [PR #158](https://github.com/Athurito/SurvivalRpg/pull/158), bestätigt gemergt als `051f03f06abf84b82191338a52401dd64ddd6c32` am 2026-09-27T01:16:35Z; finaler geprüfter Head `594b202084737c6e98ad3cc853d3cc613504dcc5`. Branch `codex/gasp-05-remove-sample-actors`, Assetcommit `0c37d9c4b9fb5cb555569c81ea5b10aedaefa4d6`, Basis `d6cb927f`. Vier alte Sample-Akteure und exakt 2298 historische Originalassets entfernt; 4662 übrige Assets einschließlich aller 2156 übernommenen Ziele byteidentisch, sieben persönliche SaveGames erhalten. Frischer Graph, zwei Karten-Smokes, 9/9 Tests, neun BP-/AnimBP-Compiles und voller Windows-Cook (3132 Pakete, fünf Karten, Exit 0) bestanden. [Entfernung und Grenzen](gasp-original-import-removal.md), [Manifest](assets/gasp-original-import-removal.json). Bestätigter Merge: `051f03f06abf84b82191338a52401dd64ddd6c32`.
 - **Gemergter Teilschritt: GASP-05 – Import-Abhängigkeits-/Entfernungslisten-Audit.** [PR #156](https://github.com/Athurito/SurvivalRpg/pull/156) am 27.09.2026 um 00:29:00 UTC bestätigt gemergt als `fdff8b91341c0c130db8487cea62f5c50f86bfd8`, geprüfter Head `6c89b9f18308abcc6cbf83a7973899cd351087d4`, Werkzeugcommit `9c8d7c77`. Arbeitsbranch `codex/gasp-05-import-audit`, Basis `577d7606`. Damals waren alle 2156 zugeordneten Originalpakete über jede der zwei alten Testkarten erreichbar; vier gespeicherte Sample-Akteure waren die direkten Projektblocker. Entfernungsliste leer, 17/17 Planertests bestanden, 6964 Assets/Maps und sieben SaveGames unverändert. Für diese Merge-Statuspflege keine Neuläufe. Der damalige Folgeauftrag zur Entkopplung und Entfernung ist inzwischen ausgeführt; aktueller Stand im Eintrag darüber. [Auditbericht](gasp-import-cleanup-audit.md), [Manifest](assets/gasp-import-cleanup-audit.json).
@@ -58,7 +58,7 @@ Vorgabe, insgesamt genau drei Experience-Dateien zu besitzen.
 | `GASP-03` | Mover-Ragdoll-Experience | **Gemergt** | [PR #152](https://github.com/Athurito/SurvivalRpg/pull/152), Merge `9de031c9`, finaler Head `7ab180a8`. Historische Editor/Game-, 20/20-Test-, Sicht- und Assetprüfungen; Farb-/MetaSound-Folgefix enthalten. [Pilotbericht](gasp-mover-ragdoll-pilot.md) |
 | `GASP-04` | Vergleich der drei Varianten | **Gemergt** | [PR #154](https://github.com/Athurito/SurvivalRpg/pull/154), Merge `bb690eef`, geprüfter Head `d3240b4b`, Testcode `b9608357`; Editor/Game, 31/31 Tests und Root-Sichtprüfung. [Matrix und Grenzen](gasp-variant-comparison.md); zusätzliche Nutzer-Sichtabnahme nicht erfolgt |
 | `GASP-05` | Importbereinigung | **Gemergt: [PR #158](https://github.com/Athurito/SurvivalRpg/pull/158)** | Vier Sample-Akteure und exakt 2298 Originalassets entfernt; Projektkopien erhalten. Zwei Map-Smokes, 9/9 Tests, neun BP-Compiles, frischer Graph und Windows-Cook (3132 Pakete, fünf Karten, Exit 0) bestanden; [PR #158](https://github.com/Athurito/SurvivalRpg/pull/158) bestätigt gemergt. [Entfernung und Grenzen](gasp-original-import-removal.md) |
-| `GASP-06` | Blocken beim Laufen / RPG-Animationsfeinschliff | **Erneute Sichtabnahme offen** | [Draft-PR #160](https://github.com/Athurito/SurvivalRpg/pull/160), `1aaee13d`: echte Drehschritte und kürzere Rückblendung nach erneuter Sichtablehnung. Compile/Review und sechs Drehproben; kollidierende Teststarts mit `fc2e2b6c` korrigiert, Editor-Build, neue 18/18 Regressionen und Cook bestanden. [Befunde und Repro](gasp-block-foot-turn.md); noch nicht gemergt |
+| `GASP-06` | Erweiterbare Block-Locomotion | **In Arbeit – Rückbau abgeschlossen, Neuaufbau folgt** | Basis `908b7c75`; gemeinsame Linked-Layer-Logik, Chooser/Datenkinder, native Blockvorhersage. Historische Versuche zurückgenommen; PR #160 bleibt bis neuer Sichtabnahme offen |
 
 Statuswerte: **Geplant**, **Bereit**, **In Arbeit**, **Validierung**,
 **PR offen**, **Gemergt**, **Blockiert**, **Zurückgestellt**.
@@ -222,31 +222,24 @@ und repräsentatives Cooking müssen ohne Importoriginale bzw. externes
 benötigte Varianten erhalten, Rückweg über Git/LFS sichern. Vorhandene
 Foundation-/Sample-Dateien nicht allein aufgrund ihres Ordnernamens löschen.
 
-## GASP-06 – Blocken beim Laufen
+## GASP-06 – Erweiterbare Block-Locomotion
 
-Die erste Nutzer-Sichtabnahme ist fehlgeschlagen. Die beauftragte Nachbesserung
-ist mit `8ee05aa9` umgesetzt: Armtranslationen am projektlokalen UEFN-Skeleton
-korrigiert, vollständige ruhige Blockpose und GASP-Beine beim Laufen/Drehen
-weich kombiniert, Körper nach horizontalem Kamerablick ausgerichtet. Normaltempo
-bleibt unverändert; der vorhandene Mover-Sprint ist im Block gesperrt und kehrt
-nach RMB-Release bei weiterhin gehaltenem Shift zurück. CMC besitzt weiterhin
-sein Run-only-Profil. GAS und die bestehende Bewegung besitzen den Zustand,
-AnimBlueprints die Pose/Masken. Keine Combat-Motion-Matching-Erweiterung.
-Die anschließende Nutzer-Sichtprobe meldete Zittern bei Standdrehung. Die
-Gate-Korrektur `4c0cc320` beruhigte die Wechsel, bestand aber die folgende
-Nutzer-Sichtprobe nicht: Beine setzten kaum nach, kreuzten und kehrten spät in
-den Schildstand zurück. `1aaee13d` korrigiert deshalb die tatsächliche
-Drehclip-Auswahl und die Rückblendung in beiden AnimBPs. Mover behält die
-originale State Machine, CMC Motion Matching; Gameplay und C++ bleiben unverändert.
-[Aktuelle Befunde und Sichtprobe](gasp-block-foot-turn.md). PR #160 bleibt offen.
-Der erste Regressionslauf bestand 17/18; nach einer unveränderten Einzelprüfung
-zeigte die passive Diagnose den Kontakt mit dem ruhenden Host im Testparcours.
-`fc2e2b6c` trennt die Teststarts, ohne Kollisionen oder Assertions zu lockern.
-Neuer Editor-Build und vollständige Regression **18/18** bestanden; die älteren
-Fehlläufe bleiben dokumentiert. Die Nutzer-Sichtabnahme ist vor Merge offen.
-Weitere Skeletons, visuelle Griff-/Socket-Anpassungen, Last-/Stamina-
-Tuning und schwereres Traversal-Gefühl sind eigene spätere Entscheidungen.
-Sie gehören nicht automatisch zu Hurdle oder zur Ragdoll-Basis.
+Der Nutzer hat den bisherigen Ansatz visuell abgelehnt und ausdrücklich den
+vollständigen Rückbau auf PR-Basis `908b7c75` gewählt. Der Rückbau umfasst auch
+Schulterkorrektur, Blocklease, Kameraausrichtung, Sprint-Sperre, Werkzeuge und
+Tests. Historische Berichte sind als zurückgenommen markiert und bleiben erhalten.
+
+Neuaufbau: Ein gemeinsamer Blueprint-Linked-Layer besitzt Idle, MoveStart,
+MoveLoop, MoveStop und Turn. Datenkinder konfigurieren Chooser, BlendSpaces und
+Tuning pro Animationssatz. Equipment referenziert den Layer; GAS und CMC/Mover
+besitzen Zustand, Kameraausrichtung, Sprint-Sperre und vorhergesagte Tempogrenze.
+Sword-and-Shield ist der erste Satz, ein zweiter Testsatz belegt Austauschbarkeit.
+Retargeting, Fußkontakte und Root-Yaw werden je Satz geprüft; Quellclips bleiben
+erhalten. Natürliche Haltung hat Vorrang vor bisherigem Normaltempo.
+
+Die Arbeit bleibt in PR #160. Neue Builds, Asset-/Netzwerkprüfungen, Cook und
+eigene Sichtabnahme sind erforderlich. Danach folgt die Nutzer-Sichtprobe vor
+Merge. Die alten Validierungsergebnisse ersetzen diese neue Abnahme nicht.
 
 ## Verbindliche Arbeitsweise über mehrere Chats
 

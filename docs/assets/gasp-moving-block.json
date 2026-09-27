@@ -584,5 +584,11 @@
     "is_draft": true,
     "user_visual_acceptance": false
   },
-  "validation_documentation_commit": "de54efd791a5052f97156500a8ea123ee969dd6a"
+  "validation_documentation_commit": "de54efd791a5052f97156500a8ea123ee969dd6a",
+  "historical_status": {
+    "status": "fully_reverted_by_user_request",
+    "baseline": "908b7c7544a42848afe6c8b673988735ebd4ba1b",
+    "superseded_head": "20d1f7ffe62c8baff982d52ea5f64f41f6766aa2",
+    "validation_applies_to": "historical_implementation_only"
+  }
 }

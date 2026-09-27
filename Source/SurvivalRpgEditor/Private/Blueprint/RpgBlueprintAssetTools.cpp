@@ -3,9 +3,7 @@
 #include "Animation/AnimMontage.h"
 #include "Animation/AnimNotifies/AnimNotify.h"
 #include "Animation/AnimNotifies/AnimNotifyState.h"
-#include "Animation/Skeleton.h"
 #include "Components/ActorComponent.h"
-#include "EdGraph/EdGraph.h"
 #include "Editor.h"
 #include "Engine/Blueprint.h"
 #include "Engine/BlueprintGeneratedClass.h"
@@ -13,7 +11,6 @@
 #include "Engine/SCS_Node.h"
 #include "Engine/SimpleConstructionScript.h"
 #include "Kismet2/BlueprintEditorUtils.h"
-#include "K2Node_FunctionEntry.h"
 #include "ScopedTransaction.h"
 #include "Serialization/ArchiveReplaceObjectRef.h"
 #include "UObject/Package.h"
@@ -717,128 +714,4 @@ int32 URpgBlueprintAssetTools::RemapAnimationNotifyClasses(UAnimSequenceBase* An
 	}
 	Animation->MarkPackageDirty();
 	return Originals.Num();
-}
-
-namespace
-{
-	bool CanInspectSkeletonModes(const USkeleton* Skeleton)
-	{
-		if (!IsInGameThread() || !GIsEditor || !GEditor || !GEngine || !IsValid(Skeleton) || !Skeleton->IsAsset()) return false;
-		for (const FWorldContext& Context : GEngine->GetWorldContexts()) { if (Context.WorldType == EWorldType::PIE) return false; }
-		return true;
-	}
-
-	FString SkeletonModeName(EBoneTranslationRetargetingMode::Type Mode)
-	{
-		switch (Mode)
-		{
-		case EBoneTranslationRetargetingMode::Animation: return TEXT("Animation");
-		case EBoneTranslationRetargetingMode::Skeleton: return TEXT("Skeleton");
-		case EBoneTranslationRetargetingMode::AnimationScaled: return TEXT("AnimationScaled");
-		case EBoneTranslationRetargetingMode::AnimationRelative: return TEXT("AnimationRelative");
-		case EBoneTranslationRetargetingMode::OrientAndScale: return TEXT("OrientAndScale");
-		default: return FString();
-		}
-	}
-
-	bool ParseSkeletonMode(const FString& Name, EBoneTranslationRetargetingMode::Type& OutMode)
-	{
-		for (const EBoneTranslationRetargetingMode::Type Mode : {EBoneTranslationRetargetingMode::Animation,
-			EBoneTranslationRetargetingMode::Skeleton, EBoneTranslationRetargetingMode::AnimationScaled,
-			EBoneTranslationRetargetingMode::AnimationRelative, EBoneTranslationRetargetingMode::OrientAndScale})
-		{
-			if (Name == SkeletonModeName(Mode)) { OutMode = Mode; return true; }
-		}
-		return false;
-	}
-
-	int32 FindRetargetBone(const USkeleton* Skeleton, FName Name)
-	{
-		if (Name.IsNone() || Name.ToString().Len() > 128) return INDEX_NONE;
-		const FReferenceSkeleton& Reference = Skeleton->GetReferenceSkeleton();
-		const int32 Index = Reference.FindBoneIndex(Name);
-		// Virtual bones have no BoneTree retarget entry and must not reach the unchecked engine setter.
-		return Index >= 0 && Index < Reference.GetRawBoneNum() ? Index : INDEX_NONE;
-	}
-}
-
-TMap<FName, FString> URpgBlueprintAssetTools::GetSkeletonBoneTranslationModes(USkeleton* Skeleton, const TArray<FName>& BoneNames)
-{
-	TMap<FName, FString> Result;
-	if (!CanInspectSkeletonModes(Skeleton) || BoneNames.IsEmpty() || BoneNames.Num() > 64) return Result;
-	for (const FName Name : BoneNames)
-	{
-		const int32 Index = FindRetargetBone(Skeleton, Name);
-		if (Index == INDEX_NONE || Result.Contains(Name)) return {};
-		const FString Mode = SkeletonModeName(Skeleton->GetBoneTranslationRetargetingMode(Index));
-		if (Mode.IsEmpty()) return {};
-		Result.Add(Name, Mode);
-	}
-	return Result;
-}
-
-int32 URpgBlueprintAssetTools::SetSkeletonBoneTranslationModes(USkeleton* Skeleton, const TMap<FName, FString>& BoneModes)
-{
-	if (!CanInspectSkeletonModes(Skeleton) || !Skeleton->GetOutermost()->GetName().StartsWith(TEXT("/Game/"))
-		|| BoneModes.IsEmpty() || BoneModes.Num() > 64) return -1;
-	TMap<int32, EBoneTranslationRetargetingMode::Type> Changes;
-	for (const TPair<FName, FString>& Pair : BoneModes)
-	{
-		const int32 Index = FindRetargetBone(Skeleton, Pair.Key);
-		EBoneTranslationRetargetingMode::Type Mode;
-		if (Index == INDEX_NONE || !ParseSkeletonMode(Pair.Value, Mode)) return -1;
-		if (Skeleton->GetBoneTranslationRetargetingMode(Index) != Mode) Changes.Add(Index, Mode);
-	}
-	if (Changes.IsEmpty()) return 0;
-	FScopedTransaction Transaction(NSLOCTEXT("RpgBlueprintAssetTools", "SetSkeletonBoneTranslationModes", "Set Skeleton Bone Translation Retarget Modes"));
-	Skeleton->SetFlags(RF_Transactional);
-	Skeleton->Modify();
-	for (const TPair<int32, EBoneTranslationRetargetingMode::Type>& Pair : Changes)
-	{
-		Skeleton->SetBoneTranslationRetargetingMode(Pair.Key, Pair.Value, false);
-	}
-	Skeleton->PostEditChange();
-	Skeleton->MarkPackageDirty();
-	return Changes.Num();
-}
-
-bool URpgBlueprintAssetTools::SetLocalFunctionThreadSafety(UBlueprint* Blueprint, FName FunctionName,
-	bool bThreadSafe, const FString& Description)
-{
-	if (!IsInGameThread() || !GIsEditor || !GEditor || !GEngine || !IsValid(Blueprint) || !Blueprint->IsAsset()
-		|| !Blueprint->GetOutermost()->GetName().StartsWith(TEXT("/Game/")) || Blueprint->BlueprintType == BPTYPE_Interface
-		|| Blueprint->bBeingCompiled || Blueprint->bIsRegeneratingOnLoad || Blueprint->bQueuedForCompilation
-		|| Blueprint->bSuppressStructurallyModified || FunctionName.IsNone() || FunctionName.ToString().Len() > 128
-		|| Description.Len() > 4096 || (Blueprint->ParentClass && Blueprint->ParentClass->FindFunctionByName(FunctionName))) return false;
-	for (const FWorldContext& Context : GEngine->GetWorldContexts()) { if (Context.WorldType == EWorldType::PIE) return false; }
-	if (FBlueprintEditorUtils::FindFunctionInImplementedInterfaces(Blueprint, FunctionName)) return false;
-	UEdGraph* FunctionGraph = nullptr;
-	for (UEdGraph* Graph : Blueprint->FunctionGraphs)
-	{
-		if (IsValid(Graph) && Graph->GetFName() == FunctionName)
-		{
-			if (FunctionGraph || Graph->GetOuter() != Blueprint) return false;
-			FunctionGraph = Graph;
-		}
-	}
-	if (!FunctionGraph) return false;
-	TArray<UK2Node_FunctionEntry*> Entries;
-	FunctionGraph->GetNodesOfClass(Entries);
-	if (Entries.Num() != 1 || !IsValid(Entries[0])) return false;
-	UK2Node_FunctionEntry* Entry = Entries[0];
-	if (Entry->FunctionReference.GetMemberName() != FunctionName || !Entry->CustomGeneratedFunctionName.IsNone()
-		|| (Entry->GetFunctionFlags() & FUNC_Native) != 0) return false;
-	if (Entry->MetaData.bThreadSafe == bThreadSafe && Entry->MetaData.ToolTip.ToString().Equals(Description, ESearchCase::CaseSensitive)) return true;
-	FScopedTransaction Transaction(NSLOCTEXT("RpgBlueprintAssetTools", "SetLocalFunctionThreadSafety", "Set Blueprint Function Thread Safety and Description"));
-	Blueprint->SetFlags(RF_Transactional);
-	FunctionGraph->SetFlags(RF_Transactional);
-	Entry->SetFlags(RF_Transactional);
-	Blueprint->Modify();
-	FunctionGraph->Modify();
-	Entry->Modify();
-	Entry->MetaData.bThreadSafe = bThreadSafe;
-	Entry->MetaData.ToolTip = FText::FromString(Description);
-	FunctionGraph->NotifyGraphChanged();
-	FBlueprintEditorUtils::MarkBlueprintAsStructurallyModified(Blueprint);
-	return true;
 }

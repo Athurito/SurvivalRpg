@@ -537,10 +537,8 @@ bool URpgPawnGameplayComponent::TryContextualTraversal()
 				}
 			}
 			const USkeletalMeshComponent* Mesh = URpgPawnExtensionComponent::FindGameplayMesh(Pawn);
-			// Upper-body combat montages, including block exit, retain the same contextual-jump exclusion.
 			if (bHasTraversal && Mesh && Mesh->GetAnimInstance()
-				&& (Mesh->GetAnimInstance()->IsSlotActive(TEXT("DefaultSlot"))
-					|| Mesh->GetAnimInstance()->IsSlotActive(TEXT("UpperBody"))))
+				&& Mesh->GetAnimInstance()->IsSlotActive(TEXT("DefaultSlot")))
 			{
 				return true;
 			}

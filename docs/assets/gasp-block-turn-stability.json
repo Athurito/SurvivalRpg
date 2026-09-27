@@ -1418,5 +1418,11 @@
     "author-slow-turn.py": "71d8c958cdff8e95c8e6a6f93c67eded20d5f6789c5ed7c675f89f0953209ac0",
     "audit-turn-preservation.py": "0fff009a17195ea0befa1522420ad6036b5f71fe3e5576cb6704a286e1b4b51c",
     "cook-turn.py": "0984908a777dd078b023cf5ca4b33b8a2e797949100fca5ba6e06621bf445300"
+  },
+  "historical_status": {
+    "status": "fully_reverted_by_user_request",
+    "baseline": "908b7c7544a42848afe6c8b673988735ebd4ba1b",
+    "superseded_head": "20d1f7ffe62c8baff982d52ea5f64f41f6766aa2",
+    "validation_applies_to": "historical_implementation_only"
   }
 }

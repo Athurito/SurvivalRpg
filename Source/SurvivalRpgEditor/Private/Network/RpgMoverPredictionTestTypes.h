@@ -23,9 +23,8 @@ public:
 	UFUNCTION()
 	void ObserveRollback(const FMoverTimeStep& CurrentTimeStep, const FMoverTimeStep& ExpungedTimeStep);
 
-	/** Tracks this Fixed frame and up to 63 subsequent outputs; optionally refreshes history from real replay for later correction epochs. */
-	void TrackPredictedFrame(UMoverComponent* Mover, int32 LocalFrame, const FMoverSyncState& InjectedSync,
-		bool bRetainResimulatedHistory = false);
+	/** Tracks the injected Fixed frame and up to 63 subsequent real outputs; the caller retains its rollback binding. */
+	void TrackPredictedFrame(UMoverComponent* Mover, int32 LocalFrame, const FMoverSyncState& InjectedSync);
 	/** Starts a fresh network-dispatch bracket at the world's local prediction head. */
 	void BeginDispatch(int32 LocalHead);
 	/** Closes the bracket while retaining its evidence for assertions. */
@@ -69,7 +68,6 @@ private:
 	int32 DispatchLocalHead = INDEX_NONE;
 	int32 NextReplayInputFrame = INDEX_NONE;
 	bool bDispatchActive = false;
-	bool bRetainReplayHistory = false;
 };
 
 /** Test-only receiver for linear traversal branching events; does not alter their content or execution. */

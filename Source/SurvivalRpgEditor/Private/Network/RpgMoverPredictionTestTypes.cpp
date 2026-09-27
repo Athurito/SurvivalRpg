@@ -47,17 +47,14 @@ void URpgMoverRollbackTestObserver::ObserveRollback(const FMoverTimeStep& Curren
 	// Preserve this epoch's original separately, then discard invalidated predictions. A later
 	// rollback must not compare against a snapshot that this rollback has already replaced.
 	InvalidateHistoryFrom(LocalFrame);
-	if (bRetainReplayHistory) RecordFrame(LocalFrame, RestoredSync);
 }
 
-void URpgMoverRollbackTestObserver::TrackPredictedFrame(UMoverComponent* Mover, int32 LocalFrame, const FMoverSyncState& InjectedSync,
-	bool bRetainResimulatedHistory)
+void URpgMoverRollbackTestObserver::TrackPredictedFrame(UMoverComponent* Mover, int32 LocalFrame, const FMoverSyncState& InjectedSync)
 {
 	StopTrackingFrame();
 	if (!IsValid(Mover) || LocalFrame < 0) return;
 	TrackedMover = Mover;
 	TrackedLocalFrame = LocalFrame;
-	bRetainReplayHistory = bRetainResimulatedHistory;
 	FrameHistory.SetNum(MaxTrackedFrames);
 	RecordFrame(LocalFrame, InjectedSync);
 	Mover->OnPostMovement.AddDynamic(this, &URpgMoverRollbackTestObserver::ObservePostMovement);
@@ -83,7 +80,6 @@ void URpgMoverRollbackTestObserver::StopTrackingFrame()
 	TrackedLocalFrame = INDEX_NONE;
 	DispatchLocalHead = INDEX_NONE;
 	bDispatchActive = false;
-	bRetainReplayHistory = false;
 	FrameHistory.Reset();
 	ResetFrameEvidence();
 }
@@ -167,9 +163,6 @@ void URpgMoverRollbackTestObserver::ObservePostMovement(const FMoverTimeStep& Ti
 		ReplacementSync = SyncState;
 		bHasReplacement = true;
 	}
-	// Only a verified contiguous replay can seed the next epoch. Its original snapshot above
-	// remains a separate copy, so later corrections never compare against an expunged generation.
-	if (bRetainReplayHistory) RecordFrame(InputLocalFrame + 1, SyncState);
 }
 
 void URpgMoverTraversalNotifyTestObserver::AddMontage(UAnimMontage* Montage)

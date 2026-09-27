@@ -96,9 +96,7 @@ bool URpgGameplayAbility_Mantle::IsCharacterReady(const ACharacter& Character) c
 		&& (Movement->IsMovingOnGround() || Movement->IsFalling()) && !Character.bIsCrouched && !RpgMantle::IsIncapacitated(Character)
 		&& MeshAsset && Character.FindComponentByClass<URpgTraversalQueryComponent>()
 		&& Animation && Animation->RootMotionMode == ERootMotionMode::RootMotionFromMontagesOnly
-		// Combat's upper-body slot owns the same montage exclusion as a full-body montage.
 		&& !Animation->IsSlotActive(FName(TEXT("DefaultSlot")))
-		&& !Animation->IsSlotActive(FName(TEXT("UpperBody")))
 		&& !WarpTargetName.IsNone() && FMath::IsFinite(LedgeVerticalOffset)
 		&& FMath::IsFinite(CandidateSearchDistance) && CandidateSearchDistance > 0.0f
 		&& FMath::IsFinite(PathClearance) && PathClearance >= 0.0f
@@ -116,9 +114,7 @@ bool URpgGameplayAbility_Mantle::IsPawnReady(const APawn& Pawn) const
 	return Mover && Capsule && Mover->GetUpdatedComponent() == Capsule && Capsule->IsQueryCollisionEnabled()
 		&& Mover->IsOnGround() && !Mover->IsCrouching() && !RpgMantle::IsIncapacitated(Pawn)
 		&& Mesh && Mesh->GetSkeletalMeshAsset() && Mover->GetPrimaryVisualComponent() == Mesh
-		// Keep the CMC and Mover gates identical when block moves to the upper-body slot.
 		&& Animation && !Animation->IsSlotActive(TEXT("DefaultSlot"))
-		&& !Animation->IsSlotActive(TEXT("UpperBody"))
 		&& Pawn.FindComponentByClass<URpgTraversalQueryComponent>() && !WarpTargetName.IsNone()
 		&& FMath::IsFinite(LedgeVerticalOffset) && FMath::IsFinite(CandidateSearchDistance) && CandidateSearchDistance > 0.0f
 		&& FMath::IsFinite(PathClearance) && PathClearance >= 0.0f

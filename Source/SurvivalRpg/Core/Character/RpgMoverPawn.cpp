@@ -54,11 +54,6 @@ UAbilitySystemComponent* ARpgMoverPawn::GetAbilitySystemComponent() const
 	return GetRpgAbilitySystemComponent();
 }
 
-FMoverInputCmdContext ARpgMoverPawn::ApplyBlockMovementPolicy_Implementation(const FMoverInputCmdContext& InputCmd, bool bBlocking)
-{
-	return InputCmd;
-}
-
 TOptional<FVector> ARpgMoverPawn::GetCameraPivotLocation() const
 {
 	const URpgCharacterMoverComponent* Mover = FindComponentByClass<URpgCharacterMoverComponent>();

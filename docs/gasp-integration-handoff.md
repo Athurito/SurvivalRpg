@@ -5,20 +5,18 @@ Zentraler Plan und Aufgabenverträge:
 Diese Datei hält den **aktuellen Arbeitsstand**, die Roadmap die Reihenfolge und
 Abnahme. Beide bei relevanten Fortschritten im selben PR aktualisieren.
 
-## Aktueller Stand – 27.09.2026
+## Aktueller Stand – GASP-06-Neuaufbau, 27.09.2026
 
 | Feld | Wert |
 | --- | --- |
-| Aktive Implementierungsaufgabe | `GASP-06` – nach erneuter visueller Ablehnung Drehschritte und Rückblendung in beiden AnimBPs korrigiert. [Draft-PR #160](https://github.com/Athurito/SurvivalRpg/pull/160) bleibt offen; kein Merge |
-| Nächste bereite Aufgabe | Erneute Sichtprobe von Schritten, Fußstellung und Rückblendung. Erst nach bestätigter Nutzer-Sichtabnahme mergen |
-| Zuständiger Chat / beanspruchte Dateien | Nutzer-Sichtprobe bereit: Editor PID 4984, Standalone-PIE in `Lvl_RpgGaspMover`, Viewport maximiert, isoliertes UserDir `Saved/GaspBlockRefinement20260927/IsolatedUser`. Kein Diagnose-Observer oder synthetisch gehaltener Input; keine parallelen Editor-/MCP-Zugriffe |
-| Runtime-Ausgangspunkt | PR-Basis `908b7c7544a42848afe6c8b673988735ebd4ba1b`; diese Folgekorrektur beginnt bei `94ac50d3c1a9225afb861f24b9767eb83c92cc8c` |
-| Checkout / Branch | `D:/Repos/SurvivalRpg`, `codex/gasp-06-moving-block`; bestehender PR #160 gegen `master`, offen und Draft, kein Merge |
-| Letzter Implementierungs-Commit | `1aaee13dbf9ef7194b9ddbde56b865365b7861f9`: originale GASP-Root-/Turn-Logik bei Beinbewegung freigeben, Blockoberkörper nach OffsetRoot gewichten, CMC-Turn-Eignung erweitern, 80 ms Ruhebrücke und endliche 150-ms-Überblendung. Runtimeänderung nur zwei AnimBPs. Zusätzlicher reiner Testfix `fc2e2b6c7954e95b8dedd8daf49eab9cb8842faa`: Starts 500→5000 cm. Mover State Machine/CMC Motion Matching erhalten. [Bericht](gasp-block-foot-turn.md) |
-| Letzter gemergter GASP-Arbeits-PR | [PR #158](https://github.com/Athurito/SurvivalRpg/pull/158), bestätigt gemergt als `051f03f06abf84b82191338a52401dd64ddd6c32` am 2026-09-27T01:16:35Z; finaler geprüfter Head `594b202084737c6e98ad3cc853d3cc613504dcc5` |
-| Aktuelle Belege | Sechs 5-s-Drehproben: null negative Fußordnung im Fenster ab 0,5 s. Mover normal vorher 167 negative Samples/2,605 s, danach null; tatsächliche Turn-Clip-Auswahl belegt. Zwei vollständige 12-Bild-Reihen, zwei unvollständige Aufnahmeläufe erhalten. Zwei frische BP-Compiles/Reloads und unabhängiger Exportreview. Neuer vollständiger Regressionslauf nach Fixture-Fix **18/18** (184,75 s, 804 Warnungen); erfolgreicher Editor-Build 16,01 s. Frühere **17/18** (170,87 s, 810 Warnungen), unveränderte **1/1** (26,99 s, 69 Warnungen) und instrumentierte **0/1** (31,80 s, 67 Warnungen) separat erhalten. Cook fünf Maps: Child-Exit **0**, 103,51 s, 3125 gekocht, sieben platformbedingt übersprungen, null Fehler/drei Warnungen. 4660 andere Assets und sieben Saves erhalten; vier Overrides verifiziert. Kein Runtime-C++-/Game-Build; neuer Editor-Build für den Testfix wie oben. [Bericht](gasp-block-foot-turn.md), [Manifest](assets/gasp-block-foot-turn.json) |
-| Nächster Handgriff | Nutzer-Sichtprobe abwarten. Die passive Testdiagnose ist abgeschlossen, Starts getrennt und Regressionen erneut bestanden. PR-Titel/-Beschreibung stehen wegen fehlender API-Schreibfreigabe noch auf dem Erststand. Die frühere Frage zur Verwendung gespeicherter GitHub-Anmeldedaten bleibt unbeantwortet; kein solcher Zugriff. Kein Merge und keine nächste Roadmap-Implementierung vor Abnahme |
-| Blocker / offene Abnahme | Nutzer lehnte den vorigen Stand wegen kaum nachsetzender/kreuzender Beine und später Schildstellung ab. Neue Sichtabnahme offen. Richtungstest scheiterte an Kontakt im Testparcours: instrumentierter Nachlauf belegt Host-Kapselkontakt bei konstantem Input im Steadyfenster. Teststarts anschließend getrennt, finale 18/18 bestanden; ursprüngliche Fehlläufe erhalten. Keine Assertion oder Kollision gelockert. Historisch enge Release-Replay-Fixture diesmal bestanden, Robustheit nicht bewiesen. CMC Run-only 600, Mover 375/585 cm/s; keine volle Waffen-/Gait-/Retarget-Matrix oder kontinuierliche Netzwerk-Fußqualität, VAL-01/02-/NET-03-Grenzen erhalten |
+| Aktive Aufgabe | `GASP-06`: vollständiger Rückbau auf ausdrücklichen Nutzerwunsch; anschließend gemeinsamer Linked Anim Layer mit austauschbaren Chooser-Sätzen |
+| Branch / PR | `codex/gasp-06-moving-block`, [Draft-PR #160](https://github.com/Athurito/SurvivalRpg/pull/160), offen; kein Merge |
+| Rückbaubasis | `908b7c7544a42848afe6c8b673988735ebd4ba1b`; vorheriger Head `20d1f7ffe62c8baff982d52ea5f64f41f6766aa2` |
+| Rückbauprüfung | Alle 28 Code-/Tool-/Assetpfade identisch zur Basis beziehungsweise dort nicht vorhanden; acht tatsächliche Assetdateien gegen die LFS-SHA256 der Basis geprüft. Keine neue Build-/PIE-Abnahme im Rückbaucheckpoint |
+| Historische Ergebnisse | Die bisherigen vier Berichte/Manifeste bleiben ausdrücklich als zurückgenommene Versuche erhalten; alte Test-/Cook-Ergebnisse gelten nicht für den Neuaufbau |
+| Editorzustand | Beim Rückbau kein UnrealEditor-/UnrealEditor-Cmd-Prozess; Root besitzt die folgende gemeinsame Editor-/MCP-Sitzung |
+| Nächster Schritt | Block-Lifecycle/Movement-Prediction neu aufbauen; gemeinsamen Blueprint-Layer, Datenkinder und Chooser über Unreal MCP erstellen; Clips und Retargeting prüfen |
+| Abnahme | Natürliche Haltung hat Vorrang vor bisherigem Blocktempo. Zweiter Testsatz beweist Austauschbarkeit. Neue technische und eigene visuelle Abnahme, danach Nutzer-Sichtprobe vor Merge |
 
 ## Letzter abgeschlossener Schritt – GASP-05-Originalbereinigung
 

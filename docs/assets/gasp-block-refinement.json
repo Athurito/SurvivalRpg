@@ -911,5 +911,11 @@
     "New user visual approval is required before merge.",
     "No complete retarget/gait/weapon matrix or combat motion-matching expansion.",
     "Existing GASP-VAL-01/02 and GASP-NET-03 limits remain."
-  ]
+  ],
+  "historical_status": {
+    "status": "fully_reverted_by_user_request",
+    "baseline": "908b7c7544a42848afe6c8b673988735ebd4ba1b",
+    "superseded_head": "20d1f7ffe62c8baff982d52ea5f64f41f6766aa2",
+    "validation_applies_to": "historical_implementation_only"
+  }
 }
