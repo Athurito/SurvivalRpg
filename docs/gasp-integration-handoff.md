@@ -9,15 +9,15 @@ Abnahme. Beide bei relevanten Fortschritten im selben PR aktualisieren.
 
 | Feld | Wert |
 | --- | --- |
-| Aktive Implementierungsaufgabe | `GASP-05` – vier Sample-Akteure und 2298 Originalassets entfernt; **validiert, bereit zum Merge**. Ausdrückliche Nutzerfreigabe liegt vor |
-| Nächste bereite Aufgabe | Geprüften Bereinigungsbranch pushen/mergen und bestätigten Status eintragen; GASP-06 bleibt zurückgestellt |
+| Aktive Implementierungsaufgabe | `GASP-05` – vier Sample-Akteure und 2298 Originalassets entfernt; **validiert, [PR #158](https://github.com/Athurito/SurvivalRpg/pull/158) offen**. Ausdrückliche Nutzerfreigabe liegt vor |
+| Nächste bereite Aufgabe | Geprüften [PR #158](https://github.com/Athurito/SurvivalRpg/pull/158) mergen und bestätigten Status eintragen; GASP-06 bleibt zurückgestellt |
 | Zuständiger Chat / beanspruchte Dateien | Root: Originalimport/Actor-Entfernung, Nachweise und Docs. Editor/Cook sauber beendet; unabhängige lesende Reviews abgeschlossen |
 | Runtime-Ausgangspunkt | `9de031c9e255a13d117662713739e44984a98edc`, bestätigter Merge PR #152 am 26.09.2026 um 20:51:05 UTC |
 | Checkout / Branch | `D:/Repos/SurvivalRpg`, `codex/gasp-05-remove-sample-actors`, Basis `d6cb927f5654a681bf0c02db551af86276cf916d`; master/keine offenen PRs bei Start geprüft |
 | Letzter Implementierungs-Commit | `0c37d9c4b9fb5cb555569c81ea5b10aedaefa4d6`: exakt 2298 Originalpakete und vier alte Sample-Actor-Pakete entfernt; Runtime/Projektkopien unverändert |
 | Letzter gemergter GASP-Arbeits-PR | [PR #156](https://github.com/Athurito/SurvivalRpg/pull/156), **MERGED**, `fdff8b91341c0c130db8487cea62f5c50f86bfd8`, 27.09.2026 00:29:00 UTC; finaler geprüfter Head `6c89b9f18308abcc6cbf83a7973899cd351087d4` |
 | Aktuelle Belege | 11063 Registry-Pakete / 63658 Kanten, keine Referenzen auf Entferntes; 4662 verbleibende Assets und sieben Saves byteidentisch. Zwei Map-Smokes, 9/9 Tests (243 Warnungen), neun BP-/AnimBP-Compiles; voller Windows-Cook für fünf Karten, 3132 Pakete, Exit 0, 3 Warnungen. Vier Overrides verifiziert. [Entfernung](gasp-original-import-removal.md), [Manifest](assets/gasp-original-import-removal.json) |
-| Nächster Handgriff | PR für die validierte Originalentfernung erstellen und nach Prüfung des finalen Heads mergen; tatsächlichen Merge dokumentieren |
+| Nächster Handgriff | [PR #158](https://github.com/Athurito/SurvivalRpg/pull/158) nach Prüfung des finalen Heads mergen; tatsächlichen Merge dokumentieren |
 | Blocker / offene Abnahme | Kein Blocker der Originalentfernung; Merge offen. 70 bestehende unbekannte Registryziele unverändert; PrimaryAssetId-/dynamische Stringgrenzen dokumentiert. Keine Packaged-Ausführung; GASP-02-/04-Grenzen bestehen weiter, GASP-06 bleibt zurückgestellt |
 
 ## Letzter abgeschlossener Teilschritt – GASP-05-Importaudit

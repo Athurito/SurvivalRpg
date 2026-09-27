@@ -1,6 +1,6 @@
 # GASP-05 – Originalimport entfernen
 
-Stand: 27.09.2026, **Entfernung ausgeführt und validiert, bereit zum Merge**.
+Stand: 27.09.2026, **Entfernung validiert, [PR #158](https://github.com/Athurito/SurvivalRpg/pull/158) offen**.
 Branch `codex/gasp-05-remove-sample-actors`, Basis
 `d6cb927f5654a681bf0c02db551af86276cf916d`. Der Nutzer hat die Entfernung
 aller **2298 Original-Assets** zusätzlich zu den vier Sample-Kartenobjekten
