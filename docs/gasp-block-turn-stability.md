@@ -1,6 +1,10 @@
 # GASP-06 – Blockpose beim Drehen im Stand stabilisieren
 
-Stand: 27.09.2026, **Nachbesserung geprüft; erneute Nutzer-Sichtprobe offen**.
+Stand: 27.09.2026, **historischer Teilschritt; nachfolgende Sichtprobe abgelehnt**.
+Die nächste Rückmeldung zeigte kaum nachsetzende/kreuzende Beine und eine späte
+Rückkehr zur Schildstellung. Die [Folgekorrektur](gasp-block-foot-turn.md)
+behandelt Auswahl echter Drehschritte und die Rückblendung. Die folgenden
+Prüfwerte gelten ausschließlich für den hier beschriebenen früheren Stand.
 Implementierung `4c0cc320026a317275545c51af1a7a2608a859c6` auf Basis `f3dd0473`.
 [PR #160](https://github.com/Athurito/SurvivalRpg/pull/160) bleibt ein offener Draft;
 Merge und erneute Nutzer-Sichtabnahme sind offen. Der Nutzer meldete nach der
