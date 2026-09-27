@@ -240,5 +240,14 @@
   },
   "implementation_commit": "0c37d9c4b9fb5cb555569c81ea5b10aedaefa4d6",
   "independent_review": "Passed: exact Git/LFS provenance, retained assets and saves, fresh registry, all 28 evidence hashes and final five-map cook outputs independently checked.",
-  "plugin_overrides_verified": 4
+  "plugin_overrides_verified": 4,
+  "merge": {
+    "pull_request": 158,
+    "url": "https://github.com/Athurito/SurvivalRpg/pull/158",
+    "commit": "051f03f06abf84b82191338a52401dd64ddd6c32",
+    "merged_at": "2026-09-27T01:16:35Z",
+    "verified_head": "594b202084737c6e98ad3cc853d3cc613504dcc5"
+  },
+  "status_maintenance_note": "Merge status only; previously recorded successful validation was not rerun.",
+  "evidence_hash_policy": "Versioned inventory JSON: canonical Git blob bytes (LF); Windows checkout CRLF conversion may change the worktree byte hash. Ignored Saved evidence: original raw file bytes."
 }
