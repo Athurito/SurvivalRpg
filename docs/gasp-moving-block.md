@@ -1,6 +1,6 @@
 # GASP-06 – Blocken beim Laufen
 
-Stand: **27.09.2026, validiert, Nutzer-Sichtabnahme/Merge offen**.
+Stand: **27.09.2026, [Draft-PR #160](https://github.com/Athurito/SurvivalRpg/pull/160) offen**. Nutzer-Sichtabnahme und Merge stehen aus.
 Branch `codex/gasp-06-moving-block`, Basis `908b7c7544a42848afe6c8b673988735ebd4ba1b`.
 Implementierung `71602034e5eee0d9d0a172b483fe4a5cdd7a2ec6`: sechs Assets, zwei kleine native
 Slot-Gates-Erweiterungen und zwei neue Netzwerktests. Editor/Game-Builds,
