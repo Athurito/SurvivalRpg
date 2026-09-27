@@ -212,8 +212,9 @@ namespace RpgGaspMovingBlockTests
 			Spawn.ObjectFlags |= RF_Transient;
 			Spawn.SpawnCollisionHandlingOverride = ESpawnActorCollisionHandlingMethod::AlwaysSpawn;
 			Mode->GetWorld()->SpawnActor<ARpgCombatNetworkFloorFixture>(FVector::ZeroVector, FRotator::ZeroRotator, Spawn);
+			// Keep input-driven routes clear of idle host/late-join capsules while all lanes remain within normal pawn net relevancy.
 			for (int32 Index = 0; Index < 3; ++Index)
-				Mode->GetWorld()->SpawnActor<APlayerStart>(FVector(0.0, (Index - 1) * 500.0, 120.0), FRotator::ZeroRotator, Spawn);
+				Mode->GetWorld()->SpawnActor<APlayerStart>(FVector(0.0, (Index - 1) * 5000.0, 120.0), FRotator::ZeroRotator, Spawn);
 		}
 		FString Prefix;
 		FDelegateHandle Handle;
