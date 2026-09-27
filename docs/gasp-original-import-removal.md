@@ -1,11 +1,12 @@
 # GASP-05 – Originalimport entfernen
 
-Stand: 27.09.2026, **Entfernung validiert, [PR #158](https://github.com/Athurito/SurvivalRpg/pull/158) offen**.
+Stand: 27.09.2026, **Entfernung validiert und [PR #158](https://github.com/Athurito/SurvivalRpg/pull/158) bestätigt gemergt**.
 Branch `codex/gasp-05-remove-sample-actors`, Basis
 `d6cb927f5654a681bf0c02db551af86276cf916d`. Der Nutzer hat die Entfernung
 aller **2298 Original-Assets** zusätzlich zu den vier Sample-Kartenobjekten
 ausdrücklich bestätigt. Assetcommit `0c37d9c4b9fb5cb555569c81ea5b10aedaefa4d6`.
-Noch kein Merge behauptet.
+[PR #158](https://github.com/Athurito/SurvivalRpg/pull/158), bestätigt gemergt als `051f03f06abf84b82191338a52401dd64ddd6c32` am 2026-09-27T01:16:35Z; finaler geprüfter Head `594b202084737c6e98ad3cc853d3cc613504dcc5`.
+Für die anschließende reine Merge-Statuspflege keine Prüfungen erneut ausgeführt.
 
 ## Ergebnis und Umfang
 
@@ -112,6 +113,9 @@ gelöscht und gespeichert.
 Lokale Rohbelege: `Saved/GaspMapCleanup` und die beiden neuen Registryaufnahmen
 unter `Saved/GaspImportAudit`. Das versionierte Prüfmanifest enthält ihre
 Hashes. Andere Checkouts müssen neue Laufzeitbelege erzeugen.
+Beim versionierten Inventar bezieht sich der Beleg-Hash auf den kanonischen
+Git-Inhalt mit LF-Zeilenenden; Windows-Checkouts können ihn als CRLF ausgeben.
+Die lokalen `Saved/`-Belege werden als unveränderte Rohbytes gehasht.
 
 ## Einfach nachstellen und Fortsetzung
 
@@ -120,6 +124,5 @@ Sample-Figur und ihr Traversalblock fehlen; der normale RPG-Spieler bewegt sich
 weiter mit W und springt mit Space. Die drei GASP-Testkarten verwenden ihre
 eigenen übernommenen Varianten wie bisher.
 
-GASP-05 ist für den Merge abgenommen und wird erst nach bestätigtem Merge als
-abgeschlossen geführt. GASP-02-/04-Grenzen bleiben dokumentiert;
+GASP-05 ist im dokumentierten Umfang abgeschlossen und bestätigt gemergt. GASP-02-/04-Grenzen bleiben dokumentiert;
 GASP-06 bleibt gemäß Roadmap zurückgestellt.

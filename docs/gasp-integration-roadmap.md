@@ -7,7 +7,7 @@ nicht eine neue Gesamtplanung für Combat, Crafting oder Portale.
 
 ## Schnellstart
 
-- **PR offen: GASP-05 – Originalimport entfernt und validiert.** [PR #158](https://github.com/Athurito/SurvivalRpg/pull/158). Branch `codex/gasp-05-remove-sample-actors`, Assetcommit `0c37d9c4b9fb5cb555569c81ea5b10aedaefa4d6`, Basis `d6cb927f`. Vier alte Sample-Akteure und exakt 2298 historische Originalassets entfernt; 4662 übrige Assets einschließlich aller 2156 übernommenen Ziele byteidentisch, sieben persönliche SaveGames erhalten. Frischer Graph, zwei Karten-Smokes, 9/9 Tests, neun BP-/AnimBP-Compiles und voller Windows-Cook (3132 Pakete, fünf Karten, Exit 0) bestanden. [Entfernung und Grenzen](gasp-original-import-removal.md), [Manifest](assets/gasp-original-import-removal.json). Merge noch offen.
+- **Gemergt: GASP-05 – Originalimport entfernt.** [PR #158](https://github.com/Athurito/SurvivalRpg/pull/158), bestätigt gemergt als `051f03f06abf84b82191338a52401dd64ddd6c32` am 2026-09-27T01:16:35Z; finaler geprüfter Head `594b202084737c6e98ad3cc853d3cc613504dcc5`. Branch `codex/gasp-05-remove-sample-actors`, Assetcommit `0c37d9c4b9fb5cb555569c81ea5b10aedaefa4d6`, Basis `d6cb927f`. Vier alte Sample-Akteure und exakt 2298 historische Originalassets entfernt; 4662 übrige Assets einschließlich aller 2156 übernommenen Ziele byteidentisch, sieben persönliche SaveGames erhalten. Frischer Graph, zwei Karten-Smokes, 9/9 Tests, neun BP-/AnimBP-Compiles und voller Windows-Cook (3132 Pakete, fünf Karten, Exit 0) bestanden. [Entfernung und Grenzen](gasp-original-import-removal.md), [Manifest](assets/gasp-original-import-removal.json). Bestätigter Merge: `051f03f06abf84b82191338a52401dd64ddd6c32`.
 - **Gemergter Teilschritt: GASP-05 – Import-Abhängigkeits-/Entfernungslisten-Audit.** [PR #156](https://github.com/Athurito/SurvivalRpg/pull/156) am 27.09.2026 um 00:29:00 UTC bestätigt gemergt als `fdff8b91341c0c130db8487cea62f5c50f86bfd8`, geprüfter Head `6c89b9f18308abcc6cbf83a7973899cd351087d4`, Werkzeugcommit `9c8d7c77`. Arbeitsbranch `codex/gasp-05-import-audit`, Basis `577d7606`. Damals waren alle 2156 zugeordneten Originalpakete über jede der zwei alten Testkarten erreichbar; vier gespeicherte Sample-Akteure waren die direkten Projektblocker. Entfernungsliste leer, 17/17 Planertests bestanden, 6964 Assets/Maps und sieben SaveGames unverändert. Für diese Merge-Statuspflege keine Neuläufe. Der damalige Folgeauftrag zur Entkopplung und Entfernung ist inzwischen ausgeführt; aktueller Stand im Eintrag darüber. [Auditbericht](gasp-import-cleanup-audit.md), [Manifest](assets/gasp-import-cleanup-audit.json).
 - **Gemergt: GASP-04 – Vergleich von CMC, Mover und Mover-Ragdoll.** [PR #154](https://github.com/Athurito/SurvivalRpg/pull/154) am 26.09.2026 um 23:49:16 UTC bestätigt gemergt als `bb690eefc111bd22f9267b78c07e01e7937fc499`, geprüfter Head `d3240b4ba59e4ebb3a5b2748b8a9293f0957b3ed`, Testcode `b9608357`. Editor/Game, **31/31 Tests**, neun Blueprint-/AnimBP-Compiles, sechs Registry-Hüllen und Root-Sichtprüfung bestanden; 1361 Warnungen und Grenzen dokumentiert. Keine neue GASP-04-Nutzerabnahme; Runtime/Assets unverändert. Der aktuelle GASP-05-Audit steht im Eintrag darüber. [Vergleich](gasp-variant-comparison.md), [Manifest](assets/gasp-variant-comparison.json). Für diese Merge-Statuspflege keine Neuläufe.
 - Folgefix in PR #152: Nach gemeldeter doppelter RunStrafe-MetaSound-GUID sind 18 Shared/Foley-Klassen neu identifiziert und 19 Graphen angepasst; 37 eindeutige Klassen-IDs, 19/19 semantische Reviews und Audio-PIE-Smoke bestätigt, keine doppelten Klassen oder MetaSound-Warnungen/-Fehler im frischen Log. Frühere vollständige Erhaltungszahlen gelten vor diesem gezielten Assetfix; kein neuer Build/20-Test-Lauf oder Klangqualitätsnachweis. Details einschließlich Editor-Regleränderungen und zweier bestehender Startup-Fehler im [Manifest](assets/gasp-metasound-identity-fix.json).
@@ -21,9 +21,10 @@ nicht eine neue Gesamtplanung für Combat, Crafting oder Portale.
 - **Gemergt: `GASP-02` / `GASP-STAB-02` – Falling bei belegtem Respawn.** Commit `57fa8de9`, [PR #146](https://github.com/Athurito/SurvivalRpg/pull/146), bestätigter Merge `b9a65360`. `GASP-STAB-01` ist mit [PR #145](https://github.com/Athurito/SurvivalRpg/pull/145) gemergt (`4039be25`). Der anschließende NET-01-Nachweis steht oben; weitere Registerpunkte bleiben offen.
 - Aktive Aufgabe, Branch, letzte Ergebnisse und konkrete Fortsetzung stehen in
   [gasp-integration-handoff.md](gasp-integration-handoff.md).
-- Letzter akzeptierter Runtime-/Assetstand: [PR #152](https://github.com/Athurito/SurvivalRpg/pull/152),
+- Letzter akzeptierter Runtime-Ausgangspunkt: [PR #152](https://github.com/Athurito/SurvivalRpg/pull/152),
   Merge `9de031c9`, finaler geprüfter Head `7ab180a8`. GASP-01 bleibt mit PR #144
-  und damaliger Sichtabnahme übernommen.
+  und damaliger Sichtabnahme übernommen. Die anschließende Originalasset-
+  Bereinigung ist in PR #158 gemergt; alle übernommenen Projektassets sind erhalten.
 - Dieser Stand enthält offene Folgearbeiten. „Gemergt“ bedeutet nicht, dass alle
   Netzwerk-/Lifecycle-Randfälle gelöst oder alle Umgebungen getestet sind.
 - Vor Arbeit prüfen: aktueller Git-Stand, diese Roadmap, Übergabe und die zum
@@ -54,7 +55,7 @@ Vorgabe, insgesamt genau drei Experience-Dateien zu besitzen.
 | `GASP-02` | Gezielte Stabilisierung | **Teilweise abgeschlossen, offene Folgepunkte** | `GASP-STAB-01/02`, `GASP-NET-01/02/03` und `GASP-VAL-03` gemergt in PR #145–150; VAL-01/02, NET-03-Rekonstruktionsgrenze und ältere Pending-Fixture-Timingempfindlichkeit bleiben offen |
 | `GASP-03` | Mover-Ragdoll-Experience | **Gemergt** | [PR #152](https://github.com/Athurito/SurvivalRpg/pull/152), Merge `9de031c9`, finaler Head `7ab180a8`. Historische Editor/Game-, 20/20-Test-, Sicht- und Assetprüfungen; Farb-/MetaSound-Folgefix enthalten. [Pilotbericht](gasp-mover-ragdoll-pilot.md) |
 | `GASP-04` | Vergleich der drei Varianten | **Gemergt** | [PR #154](https://github.com/Athurito/SurvivalRpg/pull/154), Merge `bb690eef`, geprüfter Head `d3240b4b`, Testcode `b9608357`; Editor/Game, 31/31 Tests und Root-Sichtprüfung. [Matrix und Grenzen](gasp-variant-comparison.md); zusätzliche Nutzer-Sichtabnahme nicht erfolgt |
-| `GASP-05` | Importbereinigung | **PR offen: [PR #158](https://github.com/Athurito/SurvivalRpg/pull/158)** | Vier Sample-Akteure und exakt 2298 Originalassets entfernt; Projektkopien erhalten. Zwei Map-Smokes, 9/9 Tests, neun BP-Compiles, frischer Graph und Windows-Cook (3132 Pakete, fünf Karten, Exit 0) bestanden; Merge offen. [Entfernung und Grenzen](gasp-original-import-removal.md) |
+| `GASP-05` | Importbereinigung | **Gemergt: [PR #158](https://github.com/Athurito/SurvivalRpg/pull/158)** | Vier Sample-Akteure und exakt 2298 Originalassets entfernt; Projektkopien erhalten. Zwei Map-Smokes, 9/9 Tests, neun BP-Compiles, frischer Graph und Windows-Cook (3132 Pakete, fünf Karten, Exit 0) bestanden; [PR #158](https://github.com/Athurito/SurvivalRpg/pull/158) bestätigt gemergt. [Entfernung und Grenzen](gasp-original-import-removal.md) |
 | `GASP-06` | Blocken beim Laufen / RPG-Animationsfeinschliff | Zurückgestellt | Eigener späterer Auftrag; bestehende Zurückstellung respektieren |
 
 Statuswerte: **Geplant**, **Bereit**, **In Arbeit**, **Validierung**,
@@ -116,7 +117,7 @@ Jede Zeile ist ein begrenzter Folgeauftrag, keine Aufforderung, alle Probleme in
 einem PR zu bearbeiten. **`GASP-STAB-01/02`, `GASP-NET-01/02/03` und
 `GASP-VAL-03` sind gemergt. Auch der GASP-03-Pilot ist gemergt;
 GASP-04 ist mit PR #154 gemergt; GASP-05-Audit ist mit PR #156 gemergt;
-die Originalentfernung ist validiert, ihr Merge noch offen.
+die Originalentfernung ist mit PR #158 bestätigt gemergt.
 VAL-01/02 bleiben dokumentierte
 Mess- bzw. Umgebungsgrenzen.**
 
@@ -193,7 +194,7 @@ festhalten; offene Punkte aus `GASP-02` mitführen.
 **Aktuell:** Nach dem Audit wurden die vier alten Demoobjekte entfernt; der
 Nutzer hat zusätzlich alle exakt inventarisierten 2298 Originalassets zur
 Entfernung freigegeben. Diese ist ausgeführt; frischer Graph, Karten-Smokes,
-gezielte Tests, Compiles und repräsentativer Windows-Cook bestehen. Merge noch offen;
+gezielte Tests, Compiles und repräsentativer Windows-Cook bestehen. [PR #158](https://github.com/Athurito/SurvivalRpg/pull/158) ist bestätigt gemergt;
 [aktueller Bericht](gasp-original-import-removal.md). Der folgende Auditbefund
 beschreibt den Ausgangspunkt vor diesen Änderungen.
 
