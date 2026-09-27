@@ -9,20 +9,22 @@ Abnahme. Beide bei relevanten Fortschritten im selben PR aktualisieren.
 
 | Feld | Wert |
 | --- | --- |
-| Aktive Implementierungsaufgabe | `GASP-05` – begrenzter Import-Abhängigkeits-/Entfernungslisten-Audit, **validiert, [PR #156](https://github.com/Athurito/SurvivalRpg/pull/156) offen**; gesamte Importbereinigung noch offen |
+| Aktive Implementierungsaufgabe | Kein Implementierungsauftrag aktiv; `GASP-05`-Importaudit in [PR #156](https://github.com/Athurito/SurvivalRpg/pull/156) bestätigt gemergt. Gesamte Importbereinigung noch offen |
 | Nächste bereite Aufgabe | Vier gespeicherte Sample-Akteure in `Lvl_RpgBaseline` und `Lvl_ThirdPerson` prüfen und die Karten vom Originalimport entkoppeln; anschließend neuer Audit |
-| Zuständiger Chat / beanspruchte Dateien | Root schließt Audit/PR ab; Planer und lesende Herkunfts-/Textrouten-Reviews beendet. Kein Editor-/MCP-Prozess aktiv, keine Assetdateien beansprucht |
+| Zuständiger Chat / beanspruchte Dateien | Audit und Reviews beendet. Kein Editor-/MCP-Prozess aktiv, keine Assetdateien beansprucht |
 | Runtime-Ausgangspunkt | `9de031c9e255a13d117662713739e44984a98edc`, bestätigter Merge PR #152 am 26.09.2026 um 20:51:05 UTC |
-| Checkout / aktiver Branch | `D:/Repos/SurvivalRpg`, `codex/gasp-05-import-audit`, Basis `577d760606be08e84491114db7c8a1eed0c2b43a`; GitHub master und keine offenen PRs bei Auditbeginn geprüft |
+| Checkout / Branch | `D:/Repos/SurvivalRpg`; Auditbranch `codex/gasp-05-import-audit` abgeschlossen. Bestätigter Arbeitsmerge auf master: `fdff8b91341c0c130db8487cea62f5c50f86bfd8`; anschließende reine Statuspflege verändert keine Auditbelege |
 | Letzter Implementierungs-Commit | `9c8d7c77c3be6d261a268339096d00cdfe823b82`: lesender Registryexport, Offline-Planer und 17 Tests; Runtime/Assets unverändert |
-| Letzter gemergter GASP-Arbeits-PR | [PR #154](https://github.com/Athurito/SurvivalRpg/pull/154), **MERGED**, `bb690eefc111bd22f9267b78c07e01e7937fc499`, 26.09.2026 23:49:16 UTC; finaler geprüfter Head `d3240b4ba59e4ebb3a5b2748b8a9293f0957b3ed` |
+| Letzter gemergter GASP-Arbeits-PR | [PR #156](https://github.com/Athurito/SurvivalRpg/pull/156), **MERGED**, `fdff8b91341c0c130db8487cea62f5c50f86bfd8`, 27.09.2026 00:29:00 UTC; finaler geprüfter Head `6c89b9f18308abcc6cbf83a7973899cd351087d4` |
 | Aktuelle Belege | Frischer Registrygraph: 13365 Pakete, 86576 Paketkanten, alle 6964 getrackten Assets enthalten. 2156/2156 Kandidaten referenziert, 17/17 Planertests bestanden, Assets/Maps und sieben SaveGames unverändert. [Audit](gasp-import-cleanup-audit.md), [Manifest](assets/gasp-import-cleanup-audit.json) |
-| Nächster Handgriff | Audit-PR abschließen; anschließend die vier im Manifest benannten External Actors samt Instanzwerten und benötigtem Demo-Verhalten über Unreal MCP aufnehmen. Baseline/Spawns/Persistenz/Präsentation erhalten |
+| Nächster Handgriff | Die vier im Manifest benannten External Actors samt Instanzwerten und benötigtem Demo-Verhalten über Unreal MCP aufnehmen. Baseline/Spawns/Persistenz/Präsentation bei der Entkopplung erhalten |
 | Blocker / offene Abnahme | Originalimport bleibt über beide alten Testkarten erreichbar, Entfernungsliste daher leer. Übrige Importdateien, PrimaryAssetId-Management, dynamische Routen und späterer Cook ohne Originale nicht vollständig abgenommen; 70 unbekannte Registryziele erfasst. GASP-02-/04-Grenzen bleiben bestehen, GASP-06 zurückgestellt |
 
-## Letzter validierter Teilschritt – GASP-05-Importaudit
+## Letzter abgeschlossener Teilschritt – GASP-05-Importaudit
 
-Der Audit ist abgeschlossen, [PR #156](https://github.com/Athurito/SurvivalRpg/pull/156) ist offen. Es wurden keine Assets
+Der Audit ist in [PR #156](https://github.com/Athurito/SurvivalRpg/pull/156) bestätigt gemergt als `fdff8b91341c0c130db8487cea62f5c50f86bfd8`.
+Die folgenden Auditprüfungen wurden für die reine Merge-Statuspflege nicht erneut ausgeführt.
+Es wurden keine Assets
 entfernt, keine Runtime-Systeme geändert und keine alten Unreal-Build-/PIE-
 Ergebnisse als neue Prüfung verwendet. Die leere Entfernungsliste ist ein
 konkretes Ergebnis: Jede der zwei alten Testkarten erreicht alle 2156 Quellen.

@@ -1,10 +1,14 @@
 # GASP-05 – Import-Abhängigkeiten und Entfernungsliste
 
-Stand: 27.09.2026, **Audit abgeschlossen, [PR #156](https://github.com/Athurito/SurvivalRpg/pull/156) offen**. Branch `codex/gasp-05-import-audit`,
+Stand: 27.09.2026, **Audit abgeschlossen, [PR #156](https://github.com/Athurito/SurvivalRpg/pull/156) bestätigt gemergt**. Arbeitsbranch `codex/gasp-05-import-audit`,
 Basis `577d760606be08e84491114db7c8a1eed0c2b43a`. Der begrenzte erste Schritt
 erzeugt eine konkrete Paketliste mit Herkunft und aktuellen Referenzbelegen.
 Es werden in diesem Audit keine Assets entfernt oder Runtime-Systeme geändert.
 Werkzeugcommit: `9c8d7c77c3be6d261a268339096d00cdfe823b82`.
+Bestätigter Merge am 27.09.2026 um 00:29:00 UTC:
+`fdff8b91341c0c130db8487cea62f5c50f86bfd8`, finaler geprüfter Head
+`6c89b9f18308abcc6cbf83a7973899cd351087d4`. Die unten genannten Prüfungen
+gehören zum Audit; für diese reine Merge-Statuspflege wurden sie nicht wiederholt.
 
 ## Zuständigkeit und Methode
 
