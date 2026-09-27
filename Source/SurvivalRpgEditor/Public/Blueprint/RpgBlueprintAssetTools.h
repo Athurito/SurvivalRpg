@@ -7,6 +7,7 @@
 class UBlueprint;
 class UAnimSequenceBase;
 class UActorComponent;
+class USkeleton;
 
 /** Reusable editor operations for authoring Blueprint contracts through Unreal MCP/Python. */
 UCLASS()
@@ -74,4 +75,27 @@ public:
 	UFUNCTION(BlueprintCallable, Category = "Rpg|Animation|Editor")
 	static int32 RemapAnimationNotifyClasses(UAnimSequenceBase* Animation, const TMap<UClass*, UClass*>& Replacements,
 		const TMap<UObject*, UObject*>& TypeReplacements, const TMap<UObject*, UObject*>& ObjectReplacements);
+
+	/** Reads translation retarget modes for 1..64 explicitly named, non-virtual bones outside PIE. Returns an empty map on invalid input; never edits the skeleton. */
+	UFUNCTION(BlueprintCallable, Category = "Rpg|Animation|Editor")
+	static TMap<FName, FString> GetSkeletonBoneTranslationModes(USkeleton* Skeleton, const TArray<FName>& BoneNames);
+
+	/**
+	 * Sets only explicitly named bones using the engine's public retarget API; never changes descendants implicitly.
+	 * Modes must be Animation, Skeleton, AnimationScaled, AnimationRelative or OrientAndScale.
+	 * Validates the whole request before modifying a project skeleton, records undo and sends PostEditChange.
+	 * Runs on the editor game thread outside PIE. Does not save. Returns the changed-bone count, zero if already
+	 * matching, or -1 for invalid input. This skeleton-level setting affects every animation evaluated on it.
+	 */
+	UFUNCTION(BlueprintCallable, Category = "Rpg|Animation|Editor")
+	static int32 SetSkeletonBoneTranslationModes(USkeleton* Skeleton, const TMap<FName, FString>& BoneModes);
+
+	/**
+	 * Sets only the thread-safe declaration and description of a locally authored Blueprint function.
+	 * Rejects inherited/native/interface functions and PIE. Records undo and refreshes the Blueprint skeleton;
+	 * does not save or perform a full compile. This declares intent, not proof of thread safety: the caller must
+	 * review the function body and compile afterwards. Returns false without changes for an invalid target.
+	 */
+	UFUNCTION(BlueprintCallable, Category = "Rpg|Blueprint|Editor")
+	static bool SetLocalFunctionThreadSafety(UBlueprint* Blueprint, FName FunctionName, bool bThreadSafe, const FString& Description);
 };

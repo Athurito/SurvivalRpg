@@ -59,6 +59,23 @@ struct TStructOpsTypeTraits<FRpgMoverAbilityRootMotion> : public TStructOpsTypeT
 	enum { WithCopy = true };
 };
 
+/** Frame-local block movement result, corrected and replicated with the capsule rather than an ASC receipt clock. */
+USTRUCT(BlueprintType)
+struct SURVIVALRPG_API FRpgMoverBlockMovementSyncState : public FMoverDataStructBase
+{
+	GENERATED_BODY()
+	/** Whether this completed simulation frame applied camera-facing, non-sprint block movement. */
+	UPROPERTY(BlueprintReadOnly, Category = "Block") bool bBlocking = false;
+	virtual FMoverDataStructBase* Clone() const override;
+	virtual UScriptStruct* GetScriptStruct() const override;
+	virtual bool NetSerialize(FArchive& Ar, UPackageMap* Map, bool& bOutSuccess) override;
+	virtual bool ShouldReconcile(const FMoverDataStructBase& AuthorityState) const override;
+	virtual void Interpolate(const FMoverDataStructBase& From, const FMoverDataStructBase& To, float Pct) override;
+};
+
+template<> struct TStructOpsTypeTraits<FRpgMoverBlockMovementSyncState> : TStructOpsTypeTraitsBase2<FRpgMoverBlockMovementSyncState>
+{ enum { WithNetSerializer = true, WithCopy = true }; };
+
 /**
  * Local GAS playback sampled into the existing NetworkPrediction input history. Each entry describes
  * one simulation tick, including an empty entry after stop. Playback data is local-only, never sent to authority.
@@ -78,6 +95,8 @@ struct SURVIVALRPG_API FRpgMoverAbilityRootMotionInputs : public FMoverDataStruc
 	FRpgMoverTraversalCommand Traversal;
 	/** Server-approved living-ragdoll command sampled at this local frame; never serialized from client to server. */
 	UPROPERTY() FRpgMoverRagdollState Ragdoll;
+	/** Actual local block activation sampled for this frame. Authority never accepts this bool from client payloads. */
+	UPROPERTY() bool bBlocking = false;
 
 	/** Pins the sampled montage until all copies of this local input frame have left NP history. */
 	void RetainMontageForHistory();
@@ -119,6 +138,9 @@ public:
 	void RefreshTraversalPresentation(URpgAbilitySystemComponent* AbilitySystem);
 	/** Preserves the GASP input producer and appends this tick's local GAS root-motion playback interval. */
 	virtual void ProduceInput(int32 DeltaTimeMS, FMoverInputCmdContext* Cmd) override;
+	/** Game-thread presentation read: immediate GAS state for owner/server, finalized movement state for observers. Never a replay-time query. */
+	UFUNCTION(BlueprintPure, Category = "Rpg|Block")
+	bool IsBlockMovementActive() const;
 
 	/**
 	 * Stops this pawn permanently after its authoritative health lifecycle starts death. Called by authority
@@ -190,6 +212,9 @@ private:
 	void UpdateTraversalPresentation(const FMoverSyncState& SyncState);
 	void PrepareTraversalSimulation(const FMoverTimeStep& TimeStep, const FMoverTickStartData& StartingData);
 	void PrepareRagdollSimulation(const FMoverTimeStep& TimeStep, const FMoverTickStartData& StartingData);
+	bool SampleBlockMovement() const;
+	void PrepareBlockMovementSimulation(const FMoverTimeStep& TimeStep, const FMoverTickStartData& StartingData);
+	void ApplyBlockMovementInput(FMoverInputCmdContext& InputCmd, bool bBlocking);
 	void ApplyTraversalCollisionLease(UPrimitiveComponent* Collider);
 	/** Publishes only this corrected command's fixed targets and releases targets from the preceding visible state. */
 	void UpdateTraversalWarpTargets(const FRpgMoverTraversalRequest* Request);
@@ -204,6 +229,7 @@ private:
 	UPROPERTY(Transient) FRpgMoverRagdollSyncState RagdollSimulationState;
 	bool bRagdollEnabled = false;
 	bool bSuppressMovementForRagdollThisTick = false;
+	bool bBlockMovementThisTick = false;
 	UPROPERTY(Transient) TObjectPtr<URpgMoverMotionWarpingComponent> TraversalWarping;
 	/** Original per-tick input for GASP's animation/conditional blend-out read model, never used to move the leased capsule. */
 	UPROPERTY(Transient) FCharacterDefaultInputs TraversalPresentationInputs;

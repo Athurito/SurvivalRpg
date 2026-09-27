@@ -67,7 +67,7 @@ public:
 	virtual float GetMaxSpeed() const override;
 	//~End of UMovementComponent interface
 protected:
-	/** Preserves authored rotation warping during mantle even when ordinary locomotion enables physics rotation. */
+	/** Preserves mantle/root-motion ownership; ordinary active block temporarily uses camera/controller-facing CMC rotation. */
 	virtual void PhysicsRotation(float DeltaTime) override;
 
 	// Cached ground info for the character.  Do not access this directly!  It's only updated when accessed via GetGroundInfo().

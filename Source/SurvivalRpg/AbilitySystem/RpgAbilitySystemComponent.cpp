@@ -52,6 +52,7 @@ URpgAbilitySystemComponent::URpgAbilitySystemComponent(const FObjectInitializer&
 
 void URpgAbilitySystemComponent::EndPlay(const EEndPlayReason::Type EndPlayReason)
 {
+	ResetBlockMovement();
 	ResetSimulatedMoverTraversalPresentation();
 	if (AActor* Avatar = GetAvatarActor())
 	{
@@ -83,6 +84,7 @@ void URpgAbilitySystemComponent::InitAbilityActorInfo(AActor* InOwnerActor, AAct
 	check(InOwnerActor);
 
 	const bool bHasNewPawnAvatar = Cast<APawn>(InAvatarActor) && (InAvatarActor != ActorInfo->AvatarActor);
+	if (ActorInfo->AvatarActor.Get() != InAvatarActor) { ResetBlockMovement(); }
 	if (ActorInfo->AvatarActor.IsValid() && ActorInfo->AvatarActor.Get() != InAvatarActor)
 	{
 		if (URpgCharacterMoverComponent* Mover = ActorInfo->AvatarActor->FindComponentByClass<URpgCharacterMoverComponent>())
@@ -164,6 +166,7 @@ PRAGMA_ENABLE_DEPRECATION_WARNINGS
 
 void URpgAbilitySystemComponent::ClearActorInfo()
 {
+	ResetBlockMovement();
 	ResetSimulatedMoverTraversalPresentation();
 	InitializedAnimInstance.Reset();
 	if (AActor* Avatar = GetAvatarActor())
@@ -174,6 +177,51 @@ void URpgAbilitySystemComponent::ClearActorInfo()
 		}
 	}
 	Super::ClearActorInfo();
+}
+
+uint32 URpgAbilitySystemComponent::BeginBlockMovement(UGameplayAbility* Ability)
+{
+	AActor* Avatar = GetAvatarActor();
+	if (!Avatar || Avatar->GetLocalRole() < ROLE_AutonomousProxy || !Ability || !Ability->IsActive() ||
+		Ability->GetAbilitySystemComponentFromActorInfo() != this || Ability->GetAvatarActorFromActorInfo() != Avatar ||
+		!Ability->GetCurrentAbilitySpecHandle().IsValid()) { return 0; }
+	if (BlockMovementLease && IsBlockMovementActive())
+	{
+		return BlockMovementAbility.Get() == Ability ? BlockMovementLease : 0;
+	}
+	BlockMovementAbility = Ability;
+	BlockMovementAvatar = Avatar;
+	BlockMovementActivationKey = Ability->GetCurrentActivationInfo().GetActivationPredictionKey();
+	if (++LastBlockMovementLease == 0) { ++LastBlockMovementLease; }
+	BlockMovementLease = LastBlockMovementLease;
+	return BlockMovementLease;
+}
+
+void URpgAbilitySystemComponent::EndBlockMovement(UGameplayAbility* Ability, uint32 Lease)
+{
+	if (Lease && Lease == BlockMovementLease && BlockMovementAbility.Get() == Ability) { ResetBlockMovement(); }
+}
+
+void URpgAbilitySystemComponent::ResetBlockMovement()
+{
+	BlockMovementLease = 0;
+	BlockMovementAbility.Reset();
+	BlockMovementAvatar.Reset();
+	BlockMovementActivationKey = FPredictionKey{};
+}
+
+bool URpgAbilitySystemComponent::IsBlockMovementActive() const
+{
+	const AActor* Avatar = GetAvatarActor();
+	if (!Avatar) { return false; }
+	if (Avatar->GetLocalRole() == ROLE_SimulatedProxy)
+	{
+		return HasMatchingGameplayTag(RpgGameplayTags::State_Blocking);
+	}
+	const UGameplayAbility* Ability = BlockMovementAbility.Get();
+	return BlockMovementLease && BlockMovementAvatar.Get() == Avatar && Ability && Ability->IsActive() &&
+		Ability->GetAbilitySystemComponentFromActorInfo() == this && Ability->GetAvatarActorFromActorInfo() == Avatar &&
+		Ability->GetCurrentActivationInfo().GetActivationPredictionKey() == BlockMovementActivationKey;
 }
 
 bool URpgAbilitySystemComponent::IsSimulatedMoverTraversalMontage(const UAnimMontage* Montage) const

@@ -104,6 +104,14 @@ void URpgGameplayAbility_Block::ActivateAbility(
 		EndAbility(Handle, ActorInfo, ActivationInfo, true, true);
 		return;
 	}
+	URpgAbilitySystemComponent* MovementASC = Cast<URpgAbilitySystemComponent>(ActorInfo->AbilitySystemComponent.Get());
+	BlockMovementLease = MovementASC ? MovementASC->BeginBlockMovement(this) : 0;
+	BlockMovementASC = MovementASC;
+	if (!BlockMovementLease)
+	{
+		EndAbility(Handle, ActorInfo, ActivationInfo, true, true);
+		return;
+	}
 
 	if (ActiveBlockDefinition.BlockStartMontage)
 	{
@@ -149,6 +157,11 @@ void URpgGameplayAbility_Block::EndAbility(
 		return;
 	}
 	bEndingBlock = true;
+	// Retire our token before any tag, montage or GAS callback can start another activation.
+	const uint32 MovementLease = BlockMovementLease;
+	BlockMovementLease = 0;
+	if (URpgAbilitySystemComponent* MovementASC = BlockMovementASC.Get()) { MovementASC->EndBlockMovement(this, MovementLease); }
+	BlockMovementASC.Reset();
 
 	if (UWorld* World = GetWorld())
 	{

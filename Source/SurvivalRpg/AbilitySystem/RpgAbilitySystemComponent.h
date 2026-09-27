@@ -41,6 +41,13 @@ public:
 	void UpdateSimulatedMoverTraversal(const FRpgMoverTraversalSyncState* State, bool bMovementDisabled);
 	/** Retries a deferred ordinary getup montage after its replicated PhysicsControl exit is ready. */
 	void RefreshReplicatedRagdollMontage();
+	/** Acquires this activation's predicted/authoritative movement policy; zero rejects an invalid or competing owner. */
+	uint32 BeginBlockMovement(UGameplayAbility* Ability);
+	/** Releases only the matching activation lease, before block-end presentation or synchronous GAS callbacks. */
+	void EndBlockMovement(UGameplayAbility* Ability, uint32 Lease);
+	/** Game-thread read model: immediate local GAS activation on owner/server, replicated block tag on CMC observers. */
+	UFUNCTION(BlueprintPure, Category = "Rpg|Block")
+	bool IsBlockMovementActive() const;
 	
 	typedef TFunctionRef<bool(const URpgGameplayAbility* RpgAbility, FGameplayAbilitySpecHandle Handle)> TShouldCancelAbilityFunc;
 	void CancelAbilitiesByFunc(TShouldCancelAbilityFunc ShouldCancelFunc, bool bReplicateCancelAbility);
@@ -196,6 +203,13 @@ protected:
 	TArray<FGameplayAbilitySpec> LastActiveAbilities;
 	
 private:
+	void ResetBlockMovement();
+	TWeakObjectPtr<UGameplayAbility> BlockMovementAbility;
+	TWeakObjectPtr<AActor> BlockMovementAvatar;
+	FPredictionKey BlockMovementActivationKey;
+	uint32 BlockMovementLease = 0;
+	uint32 LastBlockMovementLease = 0;
+
 	bool IsSimulatedMoverTraversalMontage(const UAnimMontage* Montage) const;
 	void StopPresentedMoverTraversal(const TCHAR* Reason = TEXT("reset"), const FMontageBlendSettings* BlendSettings = nullptr);
 	void SetPresentedMoverTraversalPosition(FAnimMontageInstance& Instance, float Position);
