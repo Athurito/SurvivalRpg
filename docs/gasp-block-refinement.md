@@ -1,10 +1,16 @@
 # GASP-06 – Nachbesserung von Blockpose und Bewegung
 
-Stand: 27.09.2026, **technisch validiert; neue Nutzer-Sichtprobe offen**, im offenen
+Stand dieses Berichts: 27.09.2026, **Nutzer-Sichtprobe wegen Zittern bei Standdrehung fehlgeschlagen**, im offenen
 [Draft-PR #160](https://github.com/Athurito/SurvivalRpg/pull/160).
 Die vorige Nutzer-Sichtabnahme ist fehlgeschlagen. Die historischen Ergebnisse
 in [gasp-moving-block.md](gasp-moving-block.md) nehmen diese Korrektur nicht ab.
 Eine neue Nutzer-Sichtabnahme ist vor dem Merge erforderlich.
+Die erneute Sichtprobe meldet normale Laufbewegung, aber starke Vibrationen beim
+Drehen auf der Stelle mit gehaltenem RMB. Die folgenden Prüfungen gelten für den
+bisherigen Stand und decken diese kontinuierliche Drehung noch nicht ausreichend
+ab. Die anschließende [Korrektur der Standdrehung](gasp-block-turn-stability.md)
+ist mit `4c0cc320` umgesetzt und geprüft. Deren aktuelle Ergebnisse und offene
+Nutzerabnahme stehen im neuen Bericht; kein Merge.
 Implementierung: `8ee05aa9690a817ee110438869196ea7232e5b0f` auf
 `codex/gasp-06-moving-block`. [Versionierte Ergebnisse](assets/gasp-block-refinement.json).
 

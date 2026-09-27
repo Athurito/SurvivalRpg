@@ -1,0 +1,1422 @@
+{
+  "schema_version": 1,
+  "task": "GASP-06",
+  "date": "2026-09-27",
+  "pr": "https://github.com/Athurito/SurvivalRpg/pull/160",
+  "baseline_commit": "f3dd04730c15cde1ec769fe46698c3b1be51a703",
+  "implementation_commit": "4c0cc320026a317275545c51af1a7a2608a859c6",
+  "status": "Draft remains open; new user visual approval required before merge",
+  "change": {
+    "assets": [
+      "ABP_RpgGasp_CMC",
+      "ABP_RpgGasp_Mover"
+    ],
+    "grace_seconds": 0.15,
+    "turn_enter_degrees_per_second": 5,
+    "turn_continue_degrees_per_second": 2,
+    "speed_enter_continue_cm_per_second": [
+      10,
+      3
+    ],
+    "root_gap_enter_continue_degrees": [
+      20,
+      10
+    ],
+    "alpha_interp_speed": 12,
+    "native_source_changed": false,
+    "new_native_build_run": false,
+    "authority_owner": "GAS/movement unchanged; new timer is cosmetic animation-worker state"
+  },
+  "comparison": {
+    "analysis": {
+      "steady_window": "All raw samples with elapsed_seconds > 0.7; settle uses its entire separate capture.",
+      "yaw_delta": "Shortest signed degrees in [-180,180); counts use 0.0001 degree zero threshold. Reversal-pattern negative steps are intentional.",
+      "bone_step": "Angular distance 2*acos(abs(dot(normalized quaternion pairs))) in degrees, consecutive published component-space bone rotations.",
+      "correlation": "Pearson correlation of bone angular step and absolute leg-alpha change from the same adjacent sample pair; null means effectively constant series.",
+      "p95": "Linearly interpolated empirical quantile.",
+      "rates": "Angular total variation / observed capture-window seconds; sample cadence is adjacent sample count / window seconds.",
+      "final_tuning_reported_by_author": "5 deg/s enter, 2 deg/s exit, 150 ms grace. This report analyzes outcomes; it does not independently export asset tuning."
+    },
+    "limitations": [
+      "Slate snapshots are not NetworkPrediction simulation frames; this analysis does not claim finalized NP sync-state sampling.",
+      "Published AnimInstance fields and bone poses may have different evaluation phases. No animation evaluation was forced.",
+      "Input action injection exercises the configured input path, not physical device mapping/modifier behavior.",
+      "The same mouse magnitude is injected once per callback, so differing sample rates change achieved yaw speed. Inputs match by action/mode/magnitude, not exact camera trajectory or animation phase.",
+      "Capture rates differ across runs, approximately 56-63 samples/s; measurement overhead is present and unquantified. Per-sample steps, travel per second and actual yaw rate are all retained rather than claiming perfectly equal-speed A/B.",
+      "Bone rotation metrics measure observed pose changes, not a universal visual-quality threshold. Residual legitimate locomotion/IK changes remain; no exact source/target pose parity is asserted.",
+      "The slow-stick before-02 run is retained as a nonmatching low-turn-rate diagnostic, not substituted for a matching mouse baseline.",
+      "Quiet-return timing is relative to a separately started capture and does not directly measure the configured 150 ms grace from the final input event.",
+      "CMC is represented only by final-state measurements; there is no measured CMC before/after improvement claim."
+    ],
+    "mover": {
+      "normal": {
+        "before": {
+          "file": "jitter-mover-before-03.json",
+          "sha256": "95da37236f0984c71d2a79bbcd05c7d0748519f5562c34b983660b251b59d6d8",
+          "capture": {
+            "local_role": "<NetRole.ROLE_AUTHORITY: 3>",
+            "mode": "slow",
+            "amplitude": 0.5,
+            "action_tag": "InputTag.Look.Mouse",
+            "duration_seconds": 5.0,
+            "state": "complete",
+            "error": null,
+            "cleanup_errors": [],
+            "look_zero_sent": true
+          },
+          "samples_total": 312,
+          "samples_analyzed": 269,
+          "sample_intervals_per_second": 62.587576,
+          "gate": {
+            "true_samples": 216,
+            "false_samples": 53,
+            "changes": 106,
+            "false_and_zero_anim_actor_delta": 53,
+            "true_and_zero_anim_actor_delta": 0
+          },
+          "leg_alpha": {
+            "min": 0.604954,
+            "mean": 0.820183,
+            "p95": 0.924973,
+            "max": 0.95858
+          },
+          "maximum_alpha_drop": 0.20495,
+          "root_actor_gap_degrees": {
+            "min": 0.960427,
+            "mean": 2.010782,
+            "p95": 2.753417,
+            "max": 3.023695
+          },
+          "invariants": {
+            "stationary": true,
+            "upper_body_slot_active": true,
+            "block_pose_weight_min": 1.0
+          },
+          "pelvis": {
+            "angular_step_degrees": {
+              "min": 0.302814,
+              "mean": 2.86411,
+              "p95": 8.016433,
+              "max": 10.192958
+            },
+            "angular_travel_degrees_per_second": 179.257701,
+            "correlation_step_vs_abs_alpha_change": 0.994544
+          },
+          "quiet_return": null
+        },
+        "first_candidate": {
+          "file": "jitter-mover-after-01.json",
+          "sha256": "ad9bac7956b704885ec1abc0674a864693d16eb65b52f81beafd86c0de77e9dc",
+          "capture": {
+            "local_role": "<NetRole.ROLE_AUTHORITY: 3>",
+            "mode": "slow",
+            "amplitude": 0.5,
+            "action_tag": "InputTag.Look.Mouse",
+            "duration_seconds": 5.0,
+            "state": "complete",
+            "error": null,
+            "cleanup_errors": [],
+            "look_zero_sent": true
+          },
+          "samples_total": 284,
+          "samples_analyzed": 247,
+          "sample_intervals_per_second": 57.46321,
+          "gate": {
+            "true_samples": 247,
+            "false_samples": 0,
+            "changes": 0,
+            "false_and_zero_anim_actor_delta": 0,
+            "true_and_zero_anim_actor_delta": 32
+          },
+          "leg_alpha": {
+            "min": 0.999568,
+            "mean": 0.999993,
+            "p95": 1.0,
+            "max": 1.0
+          },
+          "maximum_alpha_drop": 0,
+          "root_actor_gap_degrees": {
+            "min": 0.704902,
+            "mean": 1.93007,
+            "p95": 2.749135,
+            "max": 2.952212
+          },
+          "invariants": {
+            "stationary": true,
+            "upper_body_slot_active": true,
+            "block_pose_weight_min": 1.0
+          },
+          "pelvis": {
+            "angular_step_degrees": {
+              "min": 0.022302,
+              "mean": 0.134844,
+              "p95": 0.3303,
+              "max": 0.420426
+            },
+            "angular_travel_degrees_per_second": 7.748546,
+            "correlation_step_vs_abs_alpha_change": 0.197448
+          },
+          "quiet_return": null
+        },
+        "final": {
+          "file": "jitter-mover-final-normal.json",
+          "sha256": "6cd25c4a4d123e2db4bb2dfc2d971e5c774fe7a9a88e9905a7a86687ff9bc594",
+          "capture": {
+            "local_role": "<NetRole.ROLE_AUTHORITY: 3>",
+            "mode": "slow",
+            "amplitude": 0.5,
+            "action_tag": "InputTag.Look.Mouse",
+            "duration_seconds": 5.0,
+            "state": "complete",
+            "error": null,
+            "cleanup_errors": [],
+            "look_zero_sent": true
+          },
+          "samples_total": 283,
+          "samples_analyzed": 244,
+          "sample_intervals_per_second": 56.762439,
+          "gate": {
+            "true_samples": 244,
+            "false_samples": 0,
+            "changes": 0,
+            "false_and_zero_anim_actor_delta": 0,
+            "true_and_zero_anim_actor_delta": 30
+          },
+          "leg_alpha": {
+            "min": 0.999861,
+            "mean": 0.999999,
+            "p95": 1.0,
+            "max": 1.0
+          },
+          "maximum_alpha_drop": 0,
+          "root_actor_gap_degrees": {
+            "min": 0.740574,
+            "mean": 2.043252,
+            "p95": 2.637373,
+            "max": 3.011325
+          },
+          "invariants": {
+            "stationary": true,
+            "upper_body_slot_active": true,
+            "block_pose_weight_min": 1.0
+          },
+          "pelvis": {
+            "angular_step_degrees": {
+              "min": 0.0,
+              "mean": 0.231209,
+              "p95": 0.688224,
+              "max": 1.141696
+            },
+            "angular_travel_degrees_per_second": 13.124,
+            "correlation_step_vs_abs_alpha_change": 0.245073
+          },
+          "quiet_return": null
+        }
+      },
+      "slow": {
+        "before": {
+          "file": "jitter-mover-before-slow.json",
+          "sha256": "25aef4499035ee0502be5cd08818a8f8686ace9861c6f7f9a4deea2b3648df01",
+          "capture": {
+            "local_role": "<NetRole.ROLE_AUTHORITY: 3>",
+            "mode": "slow",
+            "amplitude": 0.10000000149011612,
+            "action_tag": "InputTag.Look.Mouse",
+            "duration_seconds": 5.0,
+            "state": "complete",
+            "error": null,
+            "cleanup_errors": [],
+            "look_zero_sent": true
+          },
+          "samples_total": 292,
+          "samples_analyzed": 252,
+          "sample_intervals_per_second": 58.617468,
+          "gate": {
+            "true_samples": 16,
+            "false_samples": 236,
+            "changes": 22,
+            "false_and_zero_anim_actor_delta": 37,
+            "true_and_zero_anim_actor_delta": 0
+          },
+          "leg_alpha": {
+            "min": 0.0,
+            "mean": 0.04733,
+            "p95": 0.220548,
+            "max": 0.571758
+          },
+          "maximum_alpha_drop": 0.122011,
+          "root_actor_gap_degrees": {
+            "min": 0.202272,
+            "mean": 0.397624,
+            "p95": 0.52592,
+            "max": 0.579179
+          },
+          "invariants": {
+            "stationary": true,
+            "upper_body_slot_active": true,
+            "block_pose_weight_min": 1.0
+          },
+          "pelvis": {
+            "angular_step_degrees": {
+              "min": 0.0,
+              "mean": 0.7161,
+              "p95": 4.706923,
+              "max": 7.90332
+            },
+            "angular_travel_degrees_per_second": 41.975983,
+            "correlation_step_vs_abs_alpha_change": 0.994296
+          },
+          "quiet_return": null
+        },
+        "first_candidate": {
+          "file": "jitter-mover-after-slow.json",
+          "sha256": "712a5af74a519ec1c2140c40c03f450afd1c9f7d4b7c32f4f7fbac897939c839",
+          "capture": {
+            "local_role": "<NetRole.ROLE_AUTHORITY: 3>",
+            "mode": "slow",
+            "amplitude": 0.10000000149011612,
+            "action_tag": "InputTag.Look.Mouse",
+            "duration_seconds": 5.0,
+            "state": "complete",
+            "error": null,
+            "cleanup_errors": [],
+            "look_zero_sent": true
+          },
+          "samples_total": 282,
+          "samples_analyzed": 243,
+          "sample_intervals_per_second": 56.528848,
+          "gate": {
+            "true_samples": 243,
+            "false_samples": 0,
+            "changes": 0,
+            "false_and_zero_anim_actor_delta": 0,
+            "true_and_zero_anim_actor_delta": 29
+          },
+          "leg_alpha": {
+            "min": 0.459267,
+            "mean": 0.9891,
+            "p95": 1.0,
+            "max": 1.0
+          },
+          "maximum_alpha_drop": 0,
+          "root_actor_gap_degrees": {
+            "min": 0.14371,
+            "mean": 0.379468,
+            "p95": 0.518401,
+            "max": 0.554073
+          },
+          "invariants": {
+            "stationary": true,
+            "upper_body_slot_active": true,
+            "block_pose_weight_min": 1.0
+          },
+          "pelvis": {
+            "angular_step_degrees": {
+              "min": 0.0,
+              "mean": 0.188058,
+              "p95": 0.294081,
+              "max": 6.532509
+            },
+            "angular_travel_degrees_per_second": 10.630705,
+            "correlation_step_vs_abs_alpha_change": 0.99745
+          },
+          "quiet_return": null
+        },
+        "final": {
+          "file": "jitter-mover-final-slow.json",
+          "sha256": "6d8eab9f28f19d6b7a7b61d6acef0ee8f0e573d52edb2c70e71afc4a5d673bec",
+          "capture": {
+            "local_role": "<NetRole.ROLE_AUTHORITY: 3>",
+            "mode": "slow",
+            "amplitude": 0.10000000149011612,
+            "action_tag": "InputTag.Look.Mouse",
+            "duration_seconds": 5.0,
+            "state": "complete",
+            "error": null,
+            "cleanup_errors": [],
+            "look_zero_sent": true
+          },
+          "samples_total": 280,
+          "samples_analyzed": 240,
+          "sample_intervals_per_second": 55.828078,
+          "gate": {
+            "true_samples": 240,
+            "false_samples": 0,
+            "changes": 0,
+            "false_and_zero_anim_actor_delta": 0,
+            "true_and_zero_anim_actor_delta": 26
+          },
+          "leg_alpha": {
+            "min": 0.999687,
+            "mean": 0.999994,
+            "p95": 1.0,
+            "max": 1.0
+          },
+          "maximum_alpha_drop": 0,
+          "root_actor_gap_degrees": {
+            "min": 0.160881,
+            "mean": 0.420505,
+            "p95": 0.528796,
+            "max": 0.600097
+          },
+          "invariants": {
+            "stationary": true,
+            "upper_body_slot_active": true,
+            "block_pose_weight_min": 1.0
+          },
+          "pelvis": {
+            "angular_step_degrees": {
+              "min": 0.0,
+              "mean": 0.276147,
+              "p95": 0.770913,
+              "max": 1.089379
+            },
+            "angular_travel_degrees_per_second": 15.416728,
+            "correlation_step_vs_abs_alpha_change": 0.239412
+          },
+          "quiet_return": null
+        }
+      },
+      "reverse": {
+        "before": {
+          "file": "jitter-mover-before-reverse.json",
+          "sha256": "1ad8cd861de4b2b99a1dce3eaa83eebdc0cf41e7cfef443f6601a82b8c2caa18",
+          "capture": {
+            "local_role": "<NetRole.ROLE_AUTHORITY: 3>",
+            "mode": "reverse",
+            "amplitude": 0.5,
+            "action_tag": "InputTag.Look.Mouse",
+            "duration_seconds": 5.0,
+            "state": "complete",
+            "error": null,
+            "cleanup_errors": [],
+            "look_zero_sent": true
+          },
+          "samples_total": 298,
+          "samples_analyzed": 257,
+          "sample_intervals_per_second": 59.799112,
+          "gate": {
+            "true_samples": 201,
+            "false_samples": 56,
+            "changes": 76,
+            "false_and_zero_anim_actor_delta": 42,
+            "true_and_zero_anim_actor_delta": 0
+          },
+          "leg_alpha": {
+            "min": 0.018669,
+            "mean": 0.79879,
+            "p95": 0.954601,
+            "max": 0.977775
+          },
+          "maximum_alpha_drop": 0.218328,
+          "root_actor_gap_degrees": {
+            "min": 0.00203,
+            "mean": 1.374509,
+            "p95": 2.403995,
+            "max": 2.752396
+          },
+          "invariants": {
+            "stationary": true,
+            "upper_body_slot_active": true,
+            "block_pose_weight_min": 1.0
+          },
+          "pelvis": {
+            "angular_step_degrees": {
+              "min": 0.248235,
+              "mean": 2.690967,
+              "p95": 9.293162,
+              "max": 11.17168
+            },
+            "angular_travel_degrees_per_second": 160.917426,
+            "correlation_step_vs_abs_alpha_change": 0.993701
+          },
+          "quiet_return": null
+        },
+        "first_candidate": {
+          "file": "jitter-mover-after-reverse.json",
+          "sha256": "6dd55cffe43d0de309a178fc7d50afb2785cecdf5856a10247e8f9ff64699018",
+          "capture": {
+            "local_role": "<NetRole.ROLE_AUTHORITY: 3>",
+            "mode": "reverse",
+            "amplitude": 0.5,
+            "action_tag": "InputTag.Look.Mouse",
+            "duration_seconds": 5.0,
+            "state": "complete",
+            "error": null,
+            "cleanup_errors": [],
+            "look_zero_sent": true
+          },
+          "samples_total": 281,
+          "samples_analyzed": 241,
+          "sample_intervals_per_second": 56.048575,
+          "gate": {
+            "true_samples": 233,
+            "false_samples": 8,
+            "changes": 2,
+            "false_and_zero_anim_actor_delta": 0,
+            "true_and_zero_anim_actor_delta": 27
+          },
+          "leg_alpha": {
+            "min": 0.119609,
+            "mean": 0.963256,
+            "p95": 1.0,
+            "max": 1.0
+          },
+          "maximum_alpha_drop": 0.234792,
+          "root_actor_gap_degrees": {
+            "min": 0.008745,
+            "mean": 1.375147,
+            "p95": 2.41321,
+            "max": 2.813789
+          },
+          "invariants": {
+            "stationary": true,
+            "upper_body_slot_active": true,
+            "block_pose_weight_min": 1.0
+          },
+          "pelvis": {
+            "angular_step_degrees": {
+              "min": 0.0,
+              "mean": 0.417246,
+              "p95": 2.724446,
+              "max": 11.851488
+            },
+            "angular_travel_degrees_per_second": 23.386023,
+            "correlation_step_vs_abs_alpha_change": 0.999657
+          },
+          "quiet_return": null
+        },
+        "final": {
+          "file": "jitter-mover-final-reverse.json",
+          "sha256": "d10f1f42c661dbd810f45025f37a19d0123244188062887688eb8c17db752373",
+          "capture": {
+            "local_role": "<NetRole.ROLE_AUTHORITY: 3>",
+            "mode": "reverse",
+            "amplitude": 0.5,
+            "action_tag": "InputTag.Look.Mouse",
+            "duration_seconds": 5.0,
+            "state": "complete",
+            "error": null,
+            "cleanup_errors": [],
+            "look_zero_sent": true
+          },
+          "samples_total": 285,
+          "samples_analyzed": 245,
+          "sample_intervals_per_second": 57.209848,
+          "gate": {
+            "true_samples": 245,
+            "false_samples": 0,
+            "changes": 0,
+            "false_and_zero_anim_actor_delta": 0,
+            "true_and_zero_anim_actor_delta": 33
+          },
+          "leg_alpha": {
+            "min": 0.999185,
+            "mean": 0.999984,
+            "p95": 1.0,
+            "max": 1.0
+          },
+          "maximum_alpha_drop": 0,
+          "root_actor_gap_degrees": {
+            "min": 0.018834,
+            "mean": 1.360099,
+            "p95": 2.438624,
+            "max": 2.582753
+          },
+          "invariants": {
+            "stationary": true,
+            "upper_body_slot_active": true,
+            "block_pose_weight_min": 1.0
+          },
+          "pelvis": {
+            "angular_step_degrees": {
+              "min": 0.0,
+              "mean": 0.209436,
+              "p95": 0.900599,
+              "max": 1.193983
+            },
+            "angular_travel_degrees_per_second": 11.981818,
+            "correlation_step_vs_abs_alpha_change": -0.111242
+          },
+          "quiet_return": null
+        }
+      }
+    },
+    "mover_settle": {
+      "normal": {
+        "file": "jitter-mover-final-normal-settle.json",
+        "sha256": "367947c6a402ee8429b531e43a4be32a9a8b8c98ca664c5135cd7a0ce21ae303",
+        "capture": {
+          "local_role": "<NetRole.ROLE_AUTHORITY: 3>",
+          "mode": "sample",
+          "amplitude": 0.0,
+          "action_tag": null,
+          "duration_seconds": 1.2000000476837158,
+          "state": "complete",
+          "error": null,
+          "cleanup_errors": [],
+          "look_zero_sent": false
+        },
+        "samples_total": 68,
+        "samples_analyzed": 68,
+        "sample_intervals_per_second": 57.216055,
+        "gate": {
+          "true_samples": 23,
+          "false_samples": 45,
+          "changes": 1,
+          "false_and_zero_anim_actor_delta": 8,
+          "true_and_zero_anim_actor_delta": 3
+        },
+        "leg_alpha": {
+          "min": 0.0,
+          "mean": 0.392366,
+          "p95": 1.0,
+          "max": 1.0
+        },
+        "maximum_alpha_drop": 0.220751,
+        "root_actor_gap_degrees": {
+          "min": 4.5e-05,
+          "mean": 0.04313,
+          "p95": 0.202409,
+          "max": 0.431616
+        },
+        "invariants": {
+          "stationary": true,
+          "upper_body_slot_active": true,
+          "block_pose_weight_min": 1.0
+        },
+        "pelvis": {
+          "angular_step_degrees": {
+            "min": 0.0,
+            "mean": 0.768353,
+            "p95": 4.84725,
+            "max": 10.733996
+          },
+          "angular_travel_degrees_per_second": 43.962138,
+          "correlation_step_vs_abs_alpha_change": 0.999525
+        },
+        "quiet_return": {
+          "first_gate_false_seconds": 0.422,
+          "first_alpha_at_most_0_01_seconds": 0.75,
+          "first_alpha_exactly_zero_seconds": 1.109,
+          "last_gate": false,
+          "last_alpha": 0.0,
+          "timing_reference": "Elapsed time from the separately started sample-only settle capture; not a synchronized timestamp of the last input injection."
+        }
+      },
+      "slow": {
+        "file": "jitter-mover-final-slow-settle.json",
+        "sha256": "64254fd750dcad4ea0304d195acc1cbd8002d4aafc5e46a523c443cfe06e2d9c",
+        "capture": {
+          "local_role": "<NetRole.ROLE_AUTHORITY: 3>",
+          "mode": "sample",
+          "amplitude": 0.0,
+          "action_tag": null,
+          "duration_seconds": 1.2000000476837158,
+          "state": "complete",
+          "error": null,
+          "cleanup_errors": [],
+          "look_zero_sent": false
+        },
+        "samples_total": 69,
+        "samples_analyzed": 69,
+        "sample_intervals_per_second": 58.823529,
+        "gate": {
+          "true_samples": 8,
+          "false_samples": 61,
+          "changes": 1,
+          "false_and_zero_anim_actor_delta": 18,
+          "true_and_zero_anim_actor_delta": 0
+        },
+        "leg_alpha": {
+          "min": 0.0,
+          "mean": 0.174871,
+          "p95": 1.0,
+          "max": 1.0
+        },
+        "maximum_alpha_drop": 0.213846,
+        "root_actor_gap_degrees": {
+          "min": 2e-06,
+          "mean": 0.006549,
+          "p95": 0.031378,
+          "max": 0.040796
+        },
+        "invariants": {
+          "stationary": true,
+          "upper_body_slot_active": true,
+          "block_pose_weight_min": 1.0
+        },
+        "pelvis": {
+          "angular_step_degrees": {
+            "min": 0.0,
+            "mean": 0.783772,
+            "p95": 5.282811,
+            "max": 10.946282
+          },
+          "angular_travel_degrees_per_second": 46.104237,
+          "correlation_step_vs_abs_alpha_change": 0.999663
+        },
+        "quiet_return": {
+          "first_gate_false_seconds": 0.157,
+          "first_alpha_at_most_0_01_seconds": 0.5,
+          "first_alpha_exactly_zero_seconds": 0.86,
+          "last_gate": false,
+          "last_alpha": 0.0,
+          "timing_reference": "Elapsed time from the separately started sample-only settle capture; not a synchronized timestamp of the last input injection."
+        }
+      },
+      "reverse": {
+        "file": "jitter-mover-final-reverse-settle.json",
+        "sha256": "3bd2bb3884711b14a87c7191c014ac4eb97224690516be869ec71304692f4c3c",
+        "capture": {
+          "local_role": "<NetRole.ROLE_AUTHORITY: 3>",
+          "mode": "sample",
+          "amplitude": 0.0,
+          "action_tag": null,
+          "duration_seconds": 1.2000000476837158,
+          "state": "complete",
+          "error": null,
+          "cleanup_errors": [],
+          "look_zero_sent": false
+        },
+        "samples_total": 70,
+        "samples_analyzed": 70,
+        "sample_intervals_per_second": 58.129739,
+        "gate": {
+          "true_samples": 7,
+          "false_samples": 63,
+          "changes": 1,
+          "false_and_zero_anim_actor_delta": 20,
+          "true_and_zero_anim_actor_delta": 1
+        },
+        "leg_alpha": {
+          "min": 0.0,
+          "mean": 0.152082,
+          "p95": 1.0,
+          "max": 1.0
+        },
+        "maximum_alpha_drop": 0.210282,
+        "root_actor_gap_degrees": {
+          "min": 1e-05,
+          "mean": 0.006314,
+          "p95": 0.034279,
+          "max": 0.053994
+        },
+        "invariants": {
+          "stationary": true,
+          "upper_body_slot_active": true,
+          "block_pose_weight_min": 1.0
+        },
+        "pelvis": {
+          "angular_step_degrees": {
+            "min": 0.0,
+            "mean": 0.646883,
+            "p95": 4.341395,
+            "max": 8.460942
+          },
+          "angular_travel_degrees_per_second": 37.603149,
+          "correlation_step_vs_abs_alpha_change": 0.99765
+        },
+        "quiet_return": {
+          "first_gate_false_seconds": 0.125,
+          "first_alpha_at_most_0_01_seconds": 0.453,
+          "first_alpha_exactly_zero_seconds": 0.812,
+          "last_gate": false,
+          "last_alpha": 0.0,
+          "timing_reference": "Elapsed time from the separately started sample-only settle capture; not a synchronized timestamp of the last input injection."
+        }
+      }
+    },
+    "cmc_final_only": {
+      "normal": {
+        "file": "jitter-cmc-final-normal.json",
+        "sha256": "a45d8b025e1f6dbe21d6013caccbb2336bd0391c67999cd03688a25fc88c39ca",
+        "capture": {
+          "local_role": "<NetRole.ROLE_AUTHORITY: 3>",
+          "mode": "slow",
+          "amplitude": 0.5,
+          "action_tag": "InputTag.Look.Mouse",
+          "duration_seconds": 5.0,
+          "state": "complete",
+          "error": null,
+          "cleanup_errors": [],
+          "look_zero_sent": true
+        },
+        "samples_total": 289,
+        "samples_analyzed": 249,
+        "sample_intervals_per_second": 57.93039,
+        "gate": {
+          "true_samples": 249,
+          "false_samples": 0,
+          "changes": 0,
+          "false_and_zero_anim_actor_delta": 0,
+          "true_and_zero_anim_actor_delta": 0
+        },
+        "leg_alpha": {
+          "min": 1.0,
+          "mean": 1.0,
+          "p95": 1.0,
+          "max": 1.0
+        },
+        "maximum_alpha_drop": 0,
+        "root_actor_gap_degrees": {
+          "min": 1.25,
+          "mean": 1.25,
+          "p95": 1.25,
+          "max": 1.25
+        },
+        "invariants": {
+          "stationary": true,
+          "upper_body_slot_active": true,
+          "block_pose_weight_min": 1.0
+        },
+        "pelvis": {
+          "angular_step_degrees": {
+            "min": 0.005589,
+            "mean": 0.031089,
+            "p95": 0.064811,
+            "max": 0.099461
+          },
+          "angular_travel_degrees_per_second": 1.801018,
+          "correlation_step_vs_abs_alpha_change": null
+        },
+        "quiet_return": null
+      },
+      "slow": {
+        "file": "jitter-cmc-final-slow.json",
+        "sha256": "aa952cfc57790279ffe4e4935477fe2a63c56c9ceb7d4d9cc96db8d75482877c",
+        "capture": {
+          "local_role": "<NetRole.ROLE_AUTHORITY: 3>",
+          "mode": "slow",
+          "amplitude": 0.10000000149011612,
+          "action_tag": "InputTag.Look.Mouse",
+          "duration_seconds": 5.0,
+          "state": "complete",
+          "error": null,
+          "cleanup_errors": [],
+          "look_zero_sent": true
+        },
+        "samples_total": 281,
+        "samples_analyzed": 241,
+        "sample_intervals_per_second": 56.061668,
+        "gate": {
+          "true_samples": 241,
+          "false_samples": 0,
+          "changes": 0,
+          "false_and_zero_anim_actor_delta": 0,
+          "true_and_zero_anim_actor_delta": 0
+        },
+        "leg_alpha": {
+          "min": 0.999921,
+          "mean": 1.0,
+          "p95": 1.0,
+          "max": 1.0
+        },
+        "maximum_alpha_drop": 0,
+        "root_actor_gap_degrees": {
+          "min": 0.25,
+          "mean": 0.25,
+          "p95": 0.25,
+          "max": 0.25
+        },
+        "invariants": {
+          "stationary": true,
+          "upper_body_slot_active": true,
+          "block_pose_weight_min": 1.0
+        },
+        "pelvis": {
+          "angular_step_degrees": {
+            "min": 0.005131,
+            "mean": 0.040921,
+            "p95": 0.080942,
+            "max": 0.103669
+          },
+          "angular_travel_degrees_per_second": 2.294118,
+          "correlation_step_vs_abs_alpha_change": -0.045581
+        },
+        "quiet_return": null
+      },
+      "reverse": {
+        "file": "jitter-cmc-final-reverse.json",
+        "sha256": "1a5698e208cdd9f3a7f96988cd44c2db3be7d8066f11c8a40d6f4d3eec628740",
+        "capture": {
+          "local_role": "<NetRole.ROLE_AUTHORITY: 3>",
+          "mode": "reverse",
+          "amplitude": 0.5,
+          "action_tag": "InputTag.Look.Mouse",
+          "duration_seconds": 5.0,
+          "state": "complete",
+          "error": null,
+          "cleanup_errors": [],
+          "look_zero_sent": true
+        },
+        "samples_total": 274,
+        "samples_analyzed": 235,
+        "sample_intervals_per_second": 54.660126,
+        "gate": {
+          "true_samples": 235,
+          "false_samples": 0,
+          "changes": 0,
+          "false_and_zero_anim_actor_delta": 0,
+          "true_and_zero_anim_actor_delta": 1
+        },
+        "leg_alpha": {
+          "min": 0.999825,
+          "mean": 0.999998,
+          "p95": 1.0,
+          "max": 1.0
+        },
+        "maximum_alpha_drop": 0,
+        "root_actor_gap_degrees": {
+          "min": 1e-06,
+          "mean": 0.845718,
+          "p95": 1.246209,
+          "max": 1.25
+        },
+        "invariants": {
+          "stationary": true,
+          "upper_body_slot_active": true,
+          "block_pose_weight_min": 1.0
+        },
+        "pelvis": {
+          "angular_step_degrees": {
+            "min": 0.008134,
+            "mean": 0.041249,
+            "p95": 0.078276,
+            "max": 0.094951
+          },
+          "angular_travel_degrees_per_second": 2.254673,
+          "correlation_step_vs_abs_alpha_change": -0.153443
+        },
+        "quiet_return": null
+      }
+    },
+    "cmc_settle": {
+      "normal": {
+        "file": "jitter-cmc-final-normal-settle.json",
+        "sha256": "9d8b82be814cfb9d267b5266dce81ba8c7645fdfc7dd41776e694fa39112867f",
+        "capture": {
+          "local_role": "<NetRole.ROLE_AUTHORITY: 3>",
+          "mode": "sample",
+          "amplitude": 0.0,
+          "action_tag": null,
+          "duration_seconds": 1.2000000476837158,
+          "state": "complete",
+          "error": null,
+          "cleanup_errors": [],
+          "look_zero_sent": false
+        },
+        "samples_total": 70,
+        "samples_analyzed": 70,
+        "sample_intervals_per_second": 58.87372,
+        "gate": {
+          "true_samples": 0,
+          "false_samples": 70,
+          "changes": 0,
+          "false_and_zero_anim_actor_delta": 70,
+          "true_and_zero_anim_actor_delta": 0
+        },
+        "leg_alpha": {
+          "min": 0.0,
+          "mean": 0.001895,
+          "p95": 0.012111,
+          "max": 0.028701
+        },
+        "maximum_alpha_drop": 0.006256,
+        "root_actor_gap_degrees": {
+          "min": 0.0,
+          "mean": 0.0,
+          "p95": 0.0,
+          "max": 0.0
+        },
+        "invariants": {
+          "stationary": true,
+          "upper_body_slot_active": true,
+          "block_pose_weight_min": 1.0
+        },
+        "pelvis": {
+          "angular_step_degrees": {
+            "min": 0.003582,
+            "mean": 0.028837,
+            "p95": 0.117439,
+            "max": 0.260959
+          },
+          "angular_travel_degrees_per_second": 1.697727,
+          "correlation_step_vs_abs_alpha_change": 0.985802
+        },
+        "quiet_return": {
+          "first_gate_false_seconds": 0.0,
+          "first_alpha_at_most_0_01_seconds": 0.094,
+          "first_alpha_exactly_zero_seconds": 0.453,
+          "last_gate": false,
+          "last_alpha": 0.0,
+          "timing_reference": "Elapsed time from the separately started sample-only settle capture; not a synchronized timestamp of the last input injection."
+        }
+      },
+      "slow": {
+        "file": "jitter-cmc-final-slow-settle.json",
+        "sha256": "0cd6f605497a896df2ceb9be16b0ec892cef46195275fde837f86ceac201e8ec",
+        "capture": {
+          "local_role": "<NetRole.ROLE_AUTHORITY: 3>",
+          "mode": "sample",
+          "amplitude": 0.0,
+          "action_tag": null,
+          "duration_seconds": 1.2000000476837158,
+          "state": "complete",
+          "error": null,
+          "cleanup_errors": [],
+          "look_zero_sent": false
+        },
+        "samples_total": 72,
+        "samples_analyzed": 72,
+        "sample_intervals_per_second": 60.631939,
+        "gate": {
+          "true_samples": 0,
+          "false_samples": 72,
+          "changes": 0,
+          "false_and_zero_anim_actor_delta": 72,
+          "true_and_zero_anim_actor_delta": 0
+        },
+        "leg_alpha": {
+          "min": 0.0,
+          "mean": 0.001623,
+          "p95": 0.011538,
+          "max": 0.023342
+        },
+        "maximum_alpha_drop": 0.005151,
+        "root_actor_gap_degrees": {
+          "min": 0.0,
+          "mean": 0.0,
+          "p95": 0.0,
+          "max": 0.0
+        },
+        "invariants": {
+          "stationary": true,
+          "upper_body_slot_active": true,
+          "block_pose_weight_min": 1.0
+        },
+        "pelvis": {
+          "angular_step_degrees": {
+            "min": 0.002305,
+            "mean": 0.024727,
+            "p95": 0.085039,
+            "max": 0.212334
+          },
+          "angular_travel_degrees_per_second": 1.499264,
+          "correlation_step_vs_abs_alpha_change": 0.976805
+        },
+        "quiet_return": {
+          "first_gate_false_seconds": 0.016,
+          "first_alpha_at_most_0_01_seconds": 0.094,
+          "first_alpha_exactly_zero_seconds": 0.453,
+          "last_gate": false,
+          "last_alpha": 0.0,
+          "timing_reference": "Elapsed time from the separately started sample-only settle capture; not a synchronized timestamp of the last input injection."
+        }
+      },
+      "reverse": {
+        "file": "jitter-cmc-final-reverse-settle.json",
+        "sha256": "5e46eb65dea6b3a47f1f1882c52f8f19c1e2371d37f5674d3970a21050c8a2c8",
+        "capture": {
+          "local_role": "<NetRole.ROLE_AUTHORITY: 3>",
+          "mode": "sample",
+          "amplitude": 0.0,
+          "action_tag": null,
+          "duration_seconds": 1.2000000476837158,
+          "state": "complete",
+          "error": null,
+          "cleanup_errors": [],
+          "look_zero_sent": false
+        },
+        "samples_total": 75,
+        "samples_analyzed": 75,
+        "sample_intervals_per_second": 62.289562,
+        "gate": {
+          "true_samples": 0,
+          "false_samples": 75,
+          "changes": 0,
+          "false_and_zero_anim_actor_delta": 75,
+          "true_and_zero_anim_actor_delta": 0
+        },
+        "leg_alpha": {
+          "min": 0.0,
+          "mean": 0.001982,
+          "p95": 0.013078,
+          "max": 0.02783
+        },
+        "maximum_alpha_drop": 0.005673,
+        "root_actor_gap_degrees": {
+          "min": 3e-06,
+          "mean": 3e-06,
+          "p95": 3e-06,
+          "max": 3e-06
+        },
+        "invariants": {
+          "stationary": true,
+          "upper_body_slot_active": true,
+          "block_pose_weight_min": 1.0
+        },
+        "pelvis": {
+          "angular_step_degrees": {
+            "min": 0.002533,
+            "mean": 0.026081,
+            "p95": 0.094695,
+            "max": 0.229403
+          },
+          "angular_travel_degrees_per_second": 1.624605,
+          "correlation_step_vs_abs_alpha_change": 0.979729
+        },
+        "quiet_return": {
+          "first_gate_false_seconds": 0.0,
+          "first_alpha_at_most_0_01_seconds": 0.094,
+          "first_alpha_exactly_zero_seconds": 0.469,
+          "last_gate": false,
+          "last_alpha": 0.0,
+          "timing_reference": "Elapsed time from the separately started sample-only settle capture; not a synchronized timestamp of the last input injection."
+        }
+      }
+    },
+    "monotonic_baseline_yaw": {
+      "control": {
+        "signed_step_degrees": {
+          "min": 1.25,
+          "mean": 1.25,
+          "p95": 1.25,
+          "max": 1.25
+        },
+        "positive_steps": 268,
+        "negative_steps": 0,
+        "zero_steps": 0,
+        "total_absolute_degrees": 335.0,
+        "absolute_degrees_per_second": 78.23447
+      },
+      "actor": {
+        "signed_step_degrees": {
+          "min": 0.0,
+          "mean": 1.250923,
+          "p95": 1.606617,
+          "max": 1.679945
+        },
+        "positive_steps": 215,
+        "negative_steps": 0,
+        "zero_steps": 53,
+        "total_absolute_degrees": 335.247327,
+        "absolute_degrees_per_second": 78.29223
+      },
+      "mesh": {
+        "signed_step_degrees": {
+          "min": 0.675541,
+          "mean": 1.248277,
+          "p95": 1.468378,
+          "max": 1.568177
+        },
+        "positive_steps": 268,
+        "negative_steps": 0,
+        "zero_steps": 0,
+        "total_absolute_degrees": 334.538206,
+        "absolute_degrees_per_second": 78.126624
+      }
+    },
+    "full_analysis_file": "turn-comparison.json",
+    "full_analysis_sha256": "eeee708bc6c32d0280ab49dbe6107aa788241e846e6aeed2f2b9acd567f55396"
+  },
+  "asset_review": {
+    "fresh_reload_and_compile": true,
+    "warnings_as_errors": true,
+    "dependency_counts": {
+      "CMC": 45,
+      "Mover": 53
+    },
+    "independent_review": "Only one new cosmetic timer variable per ABP and the bounded Update_BlockLocomotion change; other authored objects semantically unchanged after normalizing regenerated GUIDs.",
+    "final_export_files": {
+      "CMC": {
+        "file": "IsolatedUser/Saved/Gasp06/ABP_CMC-turn-settle-02.t3d",
+        "sha256": "b9b5be11f488a291d353ad3e12be8c8a83bb785274ac061b7b95207f47aeef22"
+      },
+      "Mover": {
+        "file": "IsolatedUser/Saved/Gasp06/ABP_Mover-turn-settle-02.t3d",
+        "sha256": "54ba43cfa78c6b8ff64e0601dc9d75ff58fee50a782333011d8147a378047cdc"
+      }
+    }
+  },
+  "automation_runs": [
+    {
+      "file": "turn-validation-01-results.json",
+      "sha256": "a37c00d0001f62a2a5d7a8ee82da49d48b9fdec1159342e14d3f08eca2d5b044",
+      "passed": 17,
+      "failed": 1,
+      "skipped": 0,
+      "total": 18,
+      "duration": 220.30833435058594,
+      "warning_categories": {
+        "AdvancedFriendsInterfaceLog": 78,
+        "LogNetPackageMap": 692,
+        "LogBlueprint": 1,
+        "LogNetworkPrediction": 17,
+        "LogPoseSearch": 1,
+        "LogAnimation": 14
+      },
+      "warning_count": 803,
+      "tests": [
+        {
+          "name": "SurvivalRpg.GASP.CMC.GaspCMCExperiencePIE.RemoteMovementLateJoinAndEquipmentMontage",
+          "state": "Success",
+          "duration": 13.749153137207031,
+          "errors": [],
+          "warning_count": 83
+        },
+        {
+          "name": "SurvivalRpg.GASP.CMC.AssetComposition",
+          "state": "Success",
+          "duration": 0.006372097879648209,
+          "errors": [],
+          "warning_count": 0
+        },
+        {
+          "name": "SurvivalRpg.GASP.Mantle.GaspMantleAuthoredMapPIE.RunningApproachUsesAuthoredMapAndEnhancedInput",
+          "state": "Success",
+          "duration": 4.273174285888672,
+          "errors": [],
+          "warning_count": 4
+        },
+        {
+          "name": "SurvivalRpg.GASP.Mover.Gameplay.GaspMoverGameplayPIE.RemoteEquipmentInputMontageLateJoinAndCancellation",
+          "state": "Success",
+          "duration": 6.368597984313965,
+          "errors": [],
+          "warning_count": 70
+        },
+        {
+          "name": "SurvivalRpg.GASP.Mover.Gameplay.GaspMoverGameplayPIE.RightMouseHoldReplicatesBlockAndReleasesCleanly",
+          "state": "Success",
+          "duration": 3.7419207096099854,
+          "errors": [],
+          "warning_count": 65
+        },
+        {
+          "name": "SurvivalRpg.GASP.Mover.Lifecycle.GaspMoverLifecyclePIE.DeathCancelsHeldBlockAndRespawnRecomposesOptionalFollower",
+          "state": "Success",
+          "duration": 11.94477653503418,
+          "errors": [],
+          "warning_count": 92
+        },
+        {
+          "name": "SurvivalRpg.GASP.Mover.Mantle.GaspMoverMantlePIE.RemoteRunningMantleKeepsMomentumAfterHandoff",
+          "state": "Success",
+          "duration": 5.798861980438232,
+          "errors": [],
+          "warning_count": 6
+        },
+        {
+          "name": "SurvivalRpg.GASP.Mover.Ragdoll.GaspMoverRagdollPIE.OptionalFollowerPreservesPhysicsGetupAndLateJoin",
+          "state": "Success",
+          "duration": 8.288215637207031,
+          "errors": [],
+          "warning_count": 68
+        },
+        {
+          "name": "SurvivalRpg.GASP.Mover.Ragdoll.AssetComposition",
+          "state": "Success",
+          "duration": 0.004944298416376114,
+          "errors": [],
+          "warning_count": 0
+        },
+        {
+          "name": "SurvivalRpg.GASP.Mover.AssetComposition",
+          "state": "Success",
+          "duration": 0.0074012987315654755,
+          "errors": [],
+          "warning_count": 0
+        },
+        {
+          "name": "SurvivalRpg.GASP.MovingBlock.GaspMovingBlockPIE.CMCBlockFacesCameraAndPreservesDirectionalMovementSpeed",
+          "state": "Success",
+          "duration": 25.84892463684082,
+          "errors": [],
+          "warning_count": 67
+        },
+        {
+          "name": "SurvivalRpg.GASP.MovingBlock.GaspMovingBlockPIE.CMCMovingBlockKeepsLegsAnimatedThroughLateJoinAndRelease",
+          "state": "Success",
+          "duration": 13.55610466003418,
+          "errors": [],
+          "warning_count": 67
+        },
+        {
+          "name": "SurvivalRpg.GASP.MovingBlock.GaspMovingBlockPIE.MoverAuthorityCancelUsesRawSprintWhileOwnerStillPredictsBlockAndThenCorrects",
+          "state": "Success",
+          "duration": 10.166677474975586,
+          "errors": [],
+          "warning_count": 36
+        },
+        {
+          "name": "SurvivalRpg.GASP.MovingBlock.GaspMovingBlockPIE.MoverBlockFacesCameraAndPreservesDirectionalMovementSpeed",
+          "state": "Success",
+          "duration": 27.22995948791504,
+          "errors": [],
+          "warning_count": 69
+        },
+        {
+          "name": "SurvivalRpg.GASP.MovingBlock.GaspMovingBlockPIE.MoverBlockPreventsSprintInBothInputOrdersAndResumesHeldSprintOnRelease",
+          "state": "Success",
+          "duration": 19.604095458984375,
+          "errors": [],
+          "warning_count": 70
+        },
+        {
+          "name": "SurvivalRpg.GASP.MovingBlock.GaspMovingBlockPIE.MoverFixedRollbackPreservesHeldBlockAndReplaysBlockedHistoryAcrossRelease",
+          "state": "Fail",
+          "duration": 54.22334671020508,
+          "errors": [
+            "Timed out waiting for Fixed replay reconstructs old blocked history while today's head and GAS activation are already released after 45011 milliseconds"
+          ],
+          "warning_count": 36
+        },
+        {
+          "name": "SurvivalRpg.GASP.MovingBlock.GaspMovingBlockPIE.MoverMovingBlockKeepsLegsAnimatedThroughLateJoinAndRelease",
+          "state": "Success",
+          "duration": 15.484467506408691,
+          "errors": [],
+          "warning_count": 70
+        },
+        {
+          "name": "SurvivalRpg.GASP.MovingBlock.SourceClipsPreserveUEFNArmJointTranslationsAndScale",
+          "state": "Success",
+          "duration": 0.01133279874920845,
+          "errors": [],
+          "warning_count": 0
+        }
+      ]
+    },
+    {
+      "file": "turn-rollback-01-results.json",
+      "sha256": "3fb08bd78a62bacacfafddcaeef3db6d5a12d44f17518e7cbc4fe67cfcc3af6d",
+      "passed": 1,
+      "failed": 0,
+      "skipped": 0,
+      "total": 1,
+      "duration": 23.238208770751953,
+      "warning_categories": {
+        "AdvancedFriendsInterfaceLog": 4,
+        "LogNetPackageMap": 31
+      },
+      "warning_count": 35,
+      "tests": [
+        {
+          "name": "SurvivalRpg.GASP.MovingBlock.GaspMovingBlockPIE.MoverFixedRollbackPreservesHeldBlockAndReplaysBlockedHistoryAcrossRelease",
+          "state": "Success",
+          "duration": 23.238208770751953,
+          "errors": [],
+          "warning_count": 35
+        }
+      ]
+    }
+  ],
+  "cook": {
+    "pid": 49684,
+    "exit_code": 0,
+    "seconds": 494.8115300000027,
+    "maps": [
+      "Lvl_RpgBaseline",
+      "Lvl_ThirdPerson",
+      "Lvl_RpgGaspMantle",
+      "Lvl_RpgGaspMover",
+      "Lvl_RpgGaspMoverRagdoll"
+    ],
+    "arguments": [
+      "D:/Programme/UE_5.8/Engine/Binaries/Win64/UnrealEditor-Cmd.exe",
+      "D:/Repos/SurvivalRpg/SurvivalRpg.uproject",
+      "-run=cook",
+      "-TargetPlatform=Windows",
+      "-Map=/Game/SurvivalRpg/Maps/Test/Lvl_RpgBaseline+/Game/SurvivalRpg/Maps/Test/Lvl_ThirdPerson+/Game/SurvivalRpg/Maps/Test/Lvl_RpgGaspMantle+/Game/SurvivalRpg/Maps/Test/Lvl_RpgGaspMover+/Game/SurvivalRpg/Maps/Test/Lvl_RpgGaspMoverRagdoll",
+      "-unattended",
+      "-NoP4",
+      "-NoSplash",
+      "-NoSaveConfig",
+      "-ModelContextProtocolPort=8001",
+      "-UserDir=D:\\Repos\\SurvivalRpg\\Saved\\GaspBlockRefinement20260927\\CookUser/",
+      "-abslog=D:\\Repos\\SurvivalRpg\\Saved\\GaspBlockRefinement20260927\\cook-turn.log"
+    ],
+    "log_sha256": "5c21b09886c38fc10ba73ee5040ec2a74c6c483bc99ce3376c32d2f32e9dba1d",
+    "cooked": 3125,
+    "incrementally_skipped": 0,
+    "platform_skipped": 7,
+    "total_packages": 3132,
+    "errors": 0,
+    "warnings": 3
+  },
+  "preservation": {
+    "baseline_commit": "f3dd04730c15cde1ec769fe46698c3b1be51a703",
+    "tracked_count": 4662,
+    "unchanged_count": 4660,
+    "changed": {
+      "Content/SurvivalRpg/Characters/GASP/CMC/RPG/ABP_RpgGasp_CMC.uasset": {
+        "before_sha256": "80b56d02cf90cad7eda3d56f0dc345062758df3842a2179be5167bf9efafb90b",
+        "after_sha256": "bb3869556e24f501583a5f95bd3112e8e2820e13e86b3722210d558bf0d5e68a"
+      },
+      "Content/SurvivalRpg/Characters/GASP/Mover/RPG/ABP_RpgGasp_Mover.uasset": {
+        "before_sha256": "774a369be9790ea2282b43b615b0171f8ecf0779910414478798447a84e50967",
+        "after_sha256": "ded02bea19a98ee3f7ff96fa11def5d8f2782ad4d946f63dfcd9a52e7130d6f6"
+      }
+    },
+    "personal_saves_byte_identical": 7,
+    "save_hashes": {
+      "Saved\\SaveGames\\SlotManagerName.sav": "67773c569c5041710961cc257f2cfa396a724825be4c98156bf50337ff717b91",
+      "Saved\\SaveGames\\SurvivalRpg_BaselineTest.sav": "732a4b84487fcf46ba9e852259cdbc88a7f1659715c75033b8aaf0395f376853",
+      "Saved\\SaveGames\\SurvivalRpg_BaselineTest_Backup.sav": "21fb7a0a9f9c6d1cb8721a09291a15353c6c31568acd155b4882b5f10f1155a5",
+      "Saved\\SaveGames\\SurvivalRpg_BaselineTest_Recovery.sav": "732a4b84487fcf46ba9e852259cdbc88a7f1659715c75033b8aaf0395f376853",
+      "Saved\\SaveGames\\SurvivalRpg_World.sav": "220a3b286d60a6180ad296caf7cdfeff5a49c132aac2dc9568edfe4da33a38c3",
+      "Saved\\SaveGames\\SurvivalRpg_World_Backup.sav": "7afec4c9f0037501abfa7bce4fb785221c7c831ae3ee6a00e549488027143a32",
+      "Saved\\SaveGames\\SurvivalRpg_World_Recovery.sav": "220a3b286d60a6180ad296caf7cdfeff5a49c132aac2dc9568edfe4da33a38c3"
+    },
+    "before_manifest_sha256": "137443f2d4525b9e6302804f6e90d10df8ecc032c6ab8fa2bc49bb162863d993"
+  },
+  "isolated_rollback_witness": {
+    "held": {
+      "K": 295,
+      "R": 295,
+      "F": 295,
+      "delta_y_cm": -50,
+      "replay_steps": 10,
+      "same_head": true,
+      "expected_history": true,
+      "ability_preserved": true
+    },
+    "release": {
+      "K": 396,
+      "R": 394,
+      "F": 396,
+      "delta_y_cm": -50,
+      "replay_steps": 10,
+      "same_head": true,
+      "historical_block_before": true,
+      "historical_block_after": true,
+      "current_head_block": false,
+      "current_gas_block": false
+    },
+    "log": "editor-turn-review.log",
+    "lines": [
+      3662,
+      3663
+    ],
+    "native_git_trees_unchanged_between_baseline_and_implementation": true
+  },
+  "retained_findings": [
+    "Initial 18-case regression run is 17/18. Release rollback failed its strict F>R historical-block witness, although a real -50 cm authority correction occurred at K=R=F403 with 9 replay steps. No same-head claim for that rejected event. Held rollback passed. Fixture and assertions were not changed.",
+    "Exactly one unchanged isolated rerun is recorded separately; it does not erase the initial timeout or prove timing robustness.",
+    "First 150 ms candidate with old 20/8 turn thresholds retained two transitions during direction reversal; final 5/2 thresholds were then actually measured.",
+    "First probe action resolution rejected Mover because its movement actions are directly Blueprint bound rather than in native PawnData actions. Corrected guarded action lookup was verified against active mapped keys.",
+    "First automation launcher refused an existing selection filename before running tests; subsequent run uses a distinct evidence prefix.",
+    "Continuous turn captures are single-player Authority snapshots. Network/late-join assertions belong to the separate automation cases; no per-frame turn-quality parity or WAN claim.",
+    "User visual acceptance remains open. Existing GASP-NET-03 and VAL-01/02 limits remain unchanged."
+  ],
+  "local_evidence_root": "Saved/GaspBlockRefinement20260927 (ignored, not automatically available in another checkout)",
+  "diagnostic_script_hashes": {
+    "block_turn_probe.py": "1e600dac773bda8b788b780d0eaf6f3bffa4efafb4fe83cd28ce4d6eba272f22",
+    "run-turn-probe.py": "028e18fc2a95a3aa40bdc1b6ba4d59877b0db1b21588fb5026568d66bf42bd93",
+    "author-turn-settle.py": "2fac15c99102dcdbc35199f3c616e1590f6b9255b260da1a15002c357b22c373",
+    "author-slow-turn.py": "71d8c958cdff8e95c8e6a6f93c67eded20d5f6789c5ed7c675f89f0953209ac0",
+    "audit-turn-preservation.py": "0fff009a17195ea0befa1522420ad6036b5f71fe3e5576cb6704a286e1b4b51c",
+    "cook-turn.py": "0984908a777dd078b023cf5ca4b33b8a2e797949100fca5ba6e06621bf445300"
+  }
+}
