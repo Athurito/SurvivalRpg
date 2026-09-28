@@ -5,6 +5,8 @@ Stand: 28.09.2026. **Laufkadenz und Block-Foley korrigiert und erneut geprüft; 
 
 ## Korrektur nach Nutzerprobe: Laufkadenz und Block-Foley
 
+Korrekturcommit: `794fad7501d5e19625b07c5841095d8c7c0f60b6` auf dem bestehenden PR-Branch.
+
 Die Nutzerprobe von `bf90d218` fand zwei reale Regressionen: CMC spielte die freie Laufanimation nahezu doppelt schnell, und Mover spielte beim langsamen Blocken Rennschritte. Normales Blocktempo war laut Nutzer unauffällig. Die nachfolgenden älteren Neuaufbau-Prüfungen hatten diese Fehler nicht erfasst.
 
 Der finale Interrupt-Blend des gemeinsamen Parents aktualisierte mit `bAlwaysUpdateChildren=true` beide Wege zum selben Basiseingang. CMC besitzt dort keinen Cache und aktualisierte die Locomotion doppelt. Movers Cache verhinderte das Doppeltempo, aber der unsichtbare Basispfad lieferte weiterhin Run-Notifies. Nur dieser finale Blend verwendet jetzt `false`; `BlockUpperBody.bAlwaysUpdateSourcePose=true` bleibt für laufende Beine unter kurzen Reaktionen erhalten. Gameplaytempo, C++ und alle Clip-Rates sind unverändert.

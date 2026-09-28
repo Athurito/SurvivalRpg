@@ -2902,7 +2902,8 @@
           "path": "Saved/GaspBlockCadence20260928/audio/mover-final-01-released.wav",
           "sha256": "7a82e1a03e70e9eb55019a746ed2c0d7bf3a7a4a85862c5b17caab27a9944ae6"
         }
-      }
+      },
+      "implementation_commit": "794fad7501d5e19625b07c5841095d8c7c0f60b6"
     }
   },
   "extension_workflow": [
