@@ -5,7 +5,46 @@ Zentraler Plan und Aufgabenverträge:
 Diese Datei hält den **aktuellen Arbeitsstand**, die Roadmap die Reihenfolge und
 Abnahme. Beide bei relevanten Fortschritten im selben PR aktualisieren.
 
-## Aktueller Stand – GASP-06-Neuaufbau, 28.09.2026
+## Aktuelle Fortsetzung – GASP-07, 28.09.2026
+
+Nutzerauftrag: gegen Original-GASP prüfen und CMC-Sprint als GAS-Ability mit
+Ausdauerverbrauch ergänzen; einfache Regeneration ausdrücklich bestätigt.
+Branch `codex/gasp-07-cmc-gas-sprint` auf `c357ddb1`,
+[Draft-PR #161](https://github.com/Athurito/SurvivalRpg/pull/161), offen/ungemergt,
+Implementierungscommit `301275dcc05f4d07d37b93de8f5796255819586a`.
+Der Nutzer beschreibt den Blockstand als gut, PR #160 bleibt jedoch offen und
+ist nicht gemergt. Native-/Asset-Ownership und Prüfung stehen in
+[gasp-cmc-sprint.md](gasp-cmc-sprint.md). **Editor/Game erfolgreich, Sprint
+13/13 und Regression 9/9 bestanden**, echte 50-cm-Korrektur bei 200 ms Lag,
+LateJoin/Exhaustion/Block/Respawn geprüft. Eigene Sichtaufnahmen mit 375/585
+cm/s und 157 cm/s beim Block; fünf Karten erfolgreich für Windows gekocht
+(3171 Pakete, sieben Plattform-Skips, drei Warnungen). 545 Testwarnungen und
+frühere Fehlversuche sind im [Manifest](assets/gasp-cmc-sprint-validation.json)
+erhalten. Regen-Tuning wird nach Set-Registrierung aktivierungsgebunden
+angewendet; CMC/Mover haben gemeinsame Lauf-/Sprintgeschwindigkeiten,
+Mover erhält dabei kein neues Ausdauersystem. **Nächster Schritt: einfache
+Shift/RMB-/Erschöpfungs-Sichtprobe auf `Lvl_RpgGaspMantle`, danach Freigabe;
+kein Merge oder Shutdown in diesem Auftrag.**
+Der bisherige Nutzereditor PID14180 wurde sauber geschlossen. Original-GASP
+für frischen CMC-/Input-Export mit PID37300 gestartet und ebenfalls sauber
+geschlossen (keine schmutzigen Content-/Map-Pakete); lokale Belege
+`Saved/GaspCmcSprint20260928`. Root besitzt allein Editor/MCP und Binärassets.
+
+PR #161 ist gegen `codex/gasp-06-moving-block` geöffnet, nicht gegen master.
+Nach einem späteren Merge von #160 seine Basis entsprechend umstellen.
+GitHub-Connector meldete beim Erstellen 403; die normale GitHub-CLI war nun
+authentifiziert und erstellte #161 erfolgreich. Titel/Body von #160 wurden
+darüber ebenfalls auf den tatsächlichen Neuaufbau korrigiert; die älteren
+Metadatenblockaden im historischen Abschnitt sind damit erledigt.
+
+Nutzereditor PID51032 auf `Lvl_RpgGaspMantle` mit normalem Fenster gestartet,
+MCP-Port8002, `NoSaveConfig`, isolierter Benutzerpfad
+`Saved/GaspCmcSprint20260928/ProjectUser`. Über MCP bestätigt: richtige Karte,
+keine Dirty-Pakete/-Maps und kein laufendes PIE. Die vorigen Testeditoren und
+der Cookprozess sind beendet. Editor für die einfache Shift-/Blockprobe offen
+lassen; Play wird vom Nutzer gestartet.
+
+## Vorheriger Stand – GASP-06-Neuaufbau, 28.09.2026
 
 | Feld | Wert |
 | --- | --- |

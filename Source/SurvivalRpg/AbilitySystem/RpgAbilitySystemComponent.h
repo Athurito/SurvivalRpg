@@ -66,6 +66,17 @@ public:
 	/** Immutable activation speed cap in cm/s, or zero without a local lease. Proxies use their movement snapshot. */
 	UFUNCTION(BlueprintPure, Category = "Rpg|Block")
 	float GetBlockMovementSpeedLimit() const;
+
+	/** Acquires a positive sprint speed in cm/s for this exact predicted/authority activation; no client speed RPC is accepted. */
+	uint32 BeginSprintMovement(UGameplayAbility* Ability, float SprintSpeed);
+	/** Releases only the matching activation token; old task cleanup cannot retire a replacement sprint. */
+	void EndSprintMovement(UGameplayAbility* Ability, uint32 Lease);
+	/** Live local GAS authorization, including while idle or blocked. Effective/proxy gait is owned by CharacterMovement. */
+	UFUNCTION(BlueprintPure, Category = "Rpg|Sprint")
+	bool IsSprintMovementActive() const;
+	/** Immutable authorized speed in cm/s, or zero without a current local activation. */
+	UFUNCTION(BlueprintPure, Category = "Rpg|Sprint")
+	float GetSprintMovementSpeed() const;
 	
 	
 	bool IsActivationGroupBlocked(ERpgAbilityActivationGroup Group) const;
@@ -221,6 +232,16 @@ protected:
 	TArray<FGameplayAbilitySpec> LastActiveAbilities;
 	
 private:
+	void ResetSprintMovement();
+	TWeakObjectPtr<UGameplayAbility> SprintMovementAbility;
+	TWeakObjectPtr<AActor> SprintMovementAvatar;
+	FGameplayAbilitySpecHandle SprintMovementSpecHandle;
+	FPredictionKey SprintMovementActivationKey;
+	// These local tokens identify activation ownership, never a client-supplied authority or movement setting.
+	uint32 SprintMovementLease = 0;
+	uint32 LastSprintMovementLease = 0;
+	float SprintMovementSpeed = 0.f;
+
 	void ResetBlockMovement();
 	TWeakObjectPtr<UGameplayAbility> BlockMovementAbility;
 	TWeakObjectPtr<AActor> BlockMovementAvatar;

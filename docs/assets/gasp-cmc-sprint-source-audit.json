@@ -1,0 +1,77 @@
+{
+  "task": "GASP-07",
+  "date": "2026-09-28",
+  "engine": "5.8.2",
+  "source_project": "D:\\Repos\\GameAnimationSample",
+  "source_editor_pid": 37300,
+  "source_editor_closed_clean": true,
+  "rows": [
+    {
+      "asset": "/Game/Blueprints/SandboxCharacter_CMC",
+      "source_sha256": "26309aa15138a0ab5091e4f52fc26c7b95cc1b5cb8b3337a40eb4928a9ea83af",
+      "snapshot_local_path": "Saved/GaspCmcSprint20260928/source-cmc.json",
+      "snapshot_sha256": "0a8e5a8c1577500a96c3aa86239a677f5755577b4c868c088021319091e7ad81",
+      "coverage_status": "partial",
+      "t3d": [
+        {
+          "path": "Saved/GaspCmcSprint20260928/native_exports/d45b8e7f60de851dba3a-de16b0ef.t3d",
+          "sha256": "9c82c7e059c7edfad94ae795c88150b578d735d8474afb7395f1df9113ee7c99"
+        }
+      ]
+    },
+    {
+      "asset": "/Game/Input/IMC_Sandbox",
+      "source_sha256": "dde8b555c365bd7390d29d70b2a4b73c20b6be4bfe4231243dee63c20da8547a",
+      "snapshot_local_path": "Saved/GaspCmcSprint20260928/source-input.json",
+      "snapshot_sha256": "76bba4b85f942098c3e787f689d4785e251a8caf5e31e9ce3a5fb035c0215776",
+      "coverage_status": "observed",
+      "t3d": [
+        {
+          "path": "Saved/GaspCmcSprint20260928/native_exports/098c10a9f6573c5964be-1d27748e.t3d",
+          "sha256": "9f5cc765b9c9640250e95ccdb1def76307ac39ef0eae3b4297f6daa1c7d85ee0"
+        }
+      ]
+    },
+    {
+      "asset": "/Game/Input/IA_Sprint",
+      "source_sha256": "6e5b43210db6aafa9985da99d51688f1e554752c2241cecd5a0c9d18bcc4b6b6",
+      "snapshot_local_path": "Saved/GaspCmcSprint20260928/source-sprint-action.json",
+      "snapshot_sha256": "c9e0dfb11a9d0262248c5551629e0947df0232d03887cfb89411d897b30e87b1",
+      "coverage_status": "observed",
+      "t3d": [
+        {
+          "path": "Saved/GaspCmcSprint20260928/native_exports/ffad66ec56954ad041c2-491b3022.t3d",
+          "sha256": "c1246e476b9590396d2603bead7682c0d62e1c860c46ca4528d9b6781c8d52c4"
+        }
+      ]
+    }
+  ],
+  "original_cmc_cm_per_second": {
+    "walk_forward_side_back": [
+      200,
+      180,
+      150
+    ],
+    "run_forward_side_back": [
+      500,
+      350,
+      300
+    ],
+    "sprint_forward_side_back": [
+      700,
+      700,
+      700
+    ],
+    "demo_fields_referenced_in_graphs": false
+  },
+  "original_mover_cm_per_second": {
+    "run": 375,
+    "sprint": 585,
+    "provenance": "gasp-ragdoll-source-audit.json unchanged source hash verified 2026-09-28"
+  },
+  "project_tuning_cm_per_second": {
+    "run": 375,
+    "sprint": 585
+  },
+  "scope": "Targeted original default/graph/input audit. Protected reflection gaps retained in raw snapshots; no new runtime test claimed."
+}

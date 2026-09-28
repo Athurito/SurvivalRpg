@@ -1333,7 +1333,7 @@ NETWORK_TEST_CLASS(BlockLocomotionPIE, "SurvivalRpg.Combat.BlockLocomotion")
 			}, Timeout());
 	}
 
-	float NormalSpeed() const { return Variant == EVariant::CMC ? 600.0f : 375.0f; }
+	float NormalSpeed() const { return 375.0f; }
 	void QueueMotion(const FString& Label, FVector2D Keys, bool bHeldBlock, bool bFacing, int32 Count,
 		bool bCaptureSprint = false, bool bUseSprintBaseline = false)
 	{

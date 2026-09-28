@@ -10,8 +10,9 @@
 #include "GameFramework/Character.h"
 #include "Net/UnrealNetwork.h"
 #include "SurvivalRpg/AbilitySystem/RpgAbilitySystemComponent.h"
+#include "RpgHealthComponent.h"
 
-/** Local prediction history only: block/cap are not compressed client commands accepted by authority. */
+/** Authorization and speeds remain local history; only the sprint request bit crosses the movement wire. */
 class FSavedMove_RpgCharacter : public FSavedMove_Character
 {
 public:
@@ -22,6 +23,8 @@ public:
 		bBlocking = false;
 		SpeedLimit = 0.f;
 		BlockControlRotation = FRotator::ZeroRotator;
+		bSprintAuthorized = false;
+		SprintSpeed = 0.f;
 	}
 
 	virtual void SetMoveFor(ACharacter* Character, float InDeltaTime, FVector const& NewAccel,
@@ -31,6 +34,7 @@ public:
 		const URpgCharacterMovementComponent* Movement = CastChecked<URpgCharacterMovementComponent>(Character->GetCharacterMovement());
 		bBlocking = Movement->SampleBlockMovement(SpeedLimit);
 		BlockControlRotation = Character->GetControlRotation();
+		bSprintAuthorized = Movement->SampleSprintMovement(SprintSpeed);
 	}
 
 	virtual void PrepMoveFor(ACharacter* Character) override
@@ -40,18 +44,30 @@ public:
 		Movement->bBlockMovementForMove = bBlocking;
 		Movement->BlockMovementSpeedLimitForMove = SpeedLimit;
 		Movement->BlockControlRotationForMove = BlockControlRotation;
+		Movement->bSprintAuthorizedForMove = bSprintAuthorized;
+		Movement->SprintSpeedForMove = SprintSpeed;
+		Movement->bWantsSprint = bSprintAuthorized;
+	}
+
+	virtual uint8 GetCompressedFlags() const override
+	{
+		return Super::GetCompressedFlags() | (bSprintAuthorized ? FLAG_Custom_0 : 0);
 	}
 
 	virtual bool CanCombineWith(const FSavedMovePtr& NewMove, ACharacter* Character, float MaxDelta) const override
 	{
 		const FSavedMove_RpgCharacter* Other = static_cast<const FSavedMove_RpgCharacter*>(NewMove.Get());
-		return bBlocking == Other->bBlocking && SpeedLimit == Other->SpeedLimit && Super::CanCombineWith(NewMove, Character, MaxDelta);
+		return bBlocking == Other->bBlocking && SpeedLimit == Other->SpeedLimit
+			&& bSprintAuthorized == Other->bSprintAuthorized && SprintSpeed == Other->SprintSpeed
+			&& Super::CanCombineWith(NewMove, Character, MaxDelta);
 	}
 
 private:
 	bool bBlocking = false;
 	float SpeedLimit = 0.f;
 	FRotator BlockControlRotation = FRotator::ZeroRotator;
+	bool bSprintAuthorized = false;
+	float SprintSpeed = 0.f;
 };
 
 class FNetworkPredictionData_Client_RpgCharacter : public FNetworkPredictionData_Client_Character
@@ -73,7 +89,7 @@ namespace RpgCharacter
 
 URpgCharacterMovementComponent::URpgCharacterMovementComponent(const FObjectInitializer& ObjectInitializer) : Super(ObjectInitializer)
 {
-	// Character still owns ordinary movement replication; this component adds only the simulated mantle collision lease.
+	// Character owns movement replication; this component adds simulated-proxy collision and effective-gait read models.
 	SetIsReplicatedByDefault(true);
 }
 
@@ -114,6 +130,56 @@ bool URpgCharacterMovementComponent::GetBlockMovementForMove(float& OutSpeedLimi
 	return SampleBlockMovement(OutSpeedLimit);
 }
 
+bool URpgCharacterMovementComponent::SampleSprintMovement(float& OutSprintSpeed) const
+{
+	OutSprintSpeed = 0.f;
+	const URpgAbilitySystemComponent* AbilitySystem = Cast<URpgAbilitySystemComponent>(
+		UAbilitySystemGlobals::GetAbilitySystemComponentFromActor(GetOwner()));
+	if (!bEnableGASSprint || !AbilitySystem || AbilitySystem->GetAvatarActor() != GetOwner()
+		|| !AbilitySystem->IsSprintMovementActive()) { return false; }
+	OutSprintSpeed = AbilitySystem->GetSprintMovementSpeed();
+	return FMath::IsFinite(OutSprintSpeed) && OutSprintSpeed > 0.f;
+}
+
+bool URpgCharacterMovementComponent::CanSprintForMove(float& OutSprintSpeed) const
+{
+	OutSprintSpeed = 0.f;
+	if (!bEnableGASSprint || !CharacterOwner || CharacterOwner->GetLocalRole() == ROLE_SimulatedProxy
+		|| !IsMovingOnGround() || IsCrouching() || bWantsToCrouch || Acceleration.SizeSquared2D() <= UE_SMALL_NUMBER
+		|| IsMantleControllingRotation() || HasAnimRootMotion() || CurrentRootMotion.HasActiveRootMotionSources()) { return false; }
+	const float MaximumAcceleration = GetMaxAcceleration();
+	if (!FMath::IsFinite(MinimumSprintInput) || MinimumSprintInput < 0.f || MinimumSprintInput > 1.f
+		|| !FMath::IsFinite(MaximumAcceleration) || MaximumAcceleration <= 0.f) { return false; }
+	// MoveAutonomous restores the original constrained acceleration before replay, while the server
+	// constrains the received acceleration itself. Never derive analog strength from today's input device.
+	const float InputStrength = static_cast<float>(Acceleration.Size2D() / MaximumAcceleration);
+	if (!FMath::IsFinite(InputStrength) || InputStrength < MinimumSprintInput) { return false; }
+	float BlockLimit = 0.f;
+	if (GetBlockMovementForMove(BlockLimit)) { return false; }
+	const URpgHealthComponent* Health = URpgHealthComponent::FindHealthComponent(CharacterOwner);
+	if (Health && Health->IsDeadOrDying()) { return false; }
+	if (const UAbilitySystemComponent* ASC = UAbilitySystemGlobals::GetAbilitySystemComponentFromActor(GetOwner()))
+	{
+		if (ASC->HasMatchingGameplayTag(TAG_Gameplay_MovementStopped)) { return false; }
+	}
+	if (bInBlockMovementScope)
+	{
+		OutSprintSpeed = SprintSpeedForMove;
+		return bWantsSprint && bSprintAuthorizedForMove && FMath::IsFinite(OutSprintSpeed) && OutSprintSpeed > 0.f;
+	}
+	// Local speed queries before movement may precede the first compressed command. A remote server pawn
+	// still requires its received request; possession/replication never grants sprint from the bit alone.
+	const bool bNeedsRemoteRequest = CharacterOwner->HasAuthority() && !CharacterOwner->IsLocallyControlled()
+		&& CharacterOwner->GetRemoteRole() == ROLE_AutonomousProxy;
+	return (!bNeedsRemoteRequest || bWantsSprint) && SampleSprintMovement(OutSprintSpeed);
+}
+
+void URpgCharacterMovementComponent::UpdateFromCompressedFlags(uint8 Flags)
+{
+	Super::UpdateFromCompressedFlags(Flags);
+	bWantsSprint = (Flags & FSavedMove_Character::FLAG_Custom_0) != 0;
+}
+
 void URpgCharacterMovementComponent::PerformMovement(float DeltaTime)
 {
 	// PrepMoveFor installed the original local policy during correction. A server movement RPC instead
@@ -121,9 +187,60 @@ void URpgCharacterMovementComponent::PerformMovement(float DeltaTime)
 	if (!CharacterOwner || !CharacterOwner->bClientUpdating)
 	{
 		bBlockMovementForMove = SampleBlockMovement(BlockMovementSpeedLimitForMove);
+		bSprintAuthorizedForMove = SampleSprintMovement(SprintSpeedForMove);
+		const bool bUsesRemoteRequest = CharacterOwner && CharacterOwner->HasAuthority()
+			&& !CharacterOwner->IsLocallyControlled() && CharacterOwner->GetRemoteRole() == ROLE_AutonomousProxy;
+		if (!bUsesRemoteRequest) { bWantsSprint = bSprintAuthorizedForMove; }
 	}
 	TGuardValue<bool> BlockScope(bInBlockMovementScope, true);
+	bRootMotionOwnedSprintMove = false;
 	Super::PerformMovement(DeltaTime);
+}
+
+void URpgCharacterMovementComponent::UpdateVelocityBeforeMovement(float DeltaSeconds)
+{
+	Super::UpdateVelocityBeforeMovement(DeltaSeconds);
+	bRootMotionOwnedSprintMove = HasAnimRootMotion() || CurrentRootMotion.HasActiveRootMotionSources();
+}
+
+void URpgCharacterMovementComponent::SetIsSprinting(bool bNewSprinting)
+{
+	if (bIsSprinting == bNewSprinting) { return; }
+	bIsSprinting = bNewSprinting;
+	if (CharacterOwner && CharacterOwner->HasAuthority()) { CharacterOwner->ForceNetUpdate(); }
+}
+
+void URpgCharacterMovementComponent::RefreshSprintState()
+{
+	float AuthorizedSpeed = 0.f;
+	if (!SampleSprintMovement(AuthorizedSpeed)) { SetIsSprinting(false); }
+}
+
+bool URpgCharacterMovementComponent::IsSprinting() const
+{
+	if (!bIsSprinting || !CharacterOwner) { return false; }
+	if (CharacterOwner->GetLocalRole() == ROLE_SimulatedProxy || bInBlockMovementScope) { return true; }
+	float EffectiveSprintSpeed = 0.f;
+	// A replay may finish with an older sprinting move after today's lease has already ended.
+	// Keep that historical result available inside its movement delegate, never as today's local gait.
+	return CanSprintForMove(EffectiveSprintSpeed);
+}
+
+void URpgCharacterMovementComponent::OnMovementUpdated(float DeltaSeconds, const FVector& OldLocation, const FVector& OldVelocity)
+{
+	Super::OnMovementUpdated(DeltaSeconds, OldLocation, OldVelocity);
+	if (CharacterOwner && CharacterOwner->GetLocalRole() != ROLE_SimulatedProxy)
+	{
+		float EffectiveSprintSpeed = 0.f;
+		SetIsSprinting(!bRootMotionOwnedSprintMove && CanSprintForMove(EffectiveSprintSpeed)
+			&& Velocity.SizeSquared2D() > UE_SMALL_NUMBER);
+	}
+}
+
+void URpgCharacterMovementComponent::OnMovementModeChanged(EMovementMode PreviousMovementMode, uint8 PreviousCustomMode)
+{
+	Super::OnMovementModeChanged(PreviousMovementMode, PreviousCustomMode);
+	if (CharacterOwner && CharacterOwner->GetLocalRole() != ROLE_SimulatedProxy && !IsMovingOnGround()) { SetIsSprinting(false); }
 }
 
 bool URpgCharacterMovementComponent::IsBlockControllingRotation() const
@@ -235,7 +352,8 @@ float URpgCharacterMovementComponent::GetMaxSpeed() const
 	}
 
 	float SpeedLimit = 0.f;
-	const float AuthoredSpeed = Super::GetMaxSpeed();
+	float EffectiveSprintSpeed = 0.f;
+	const float AuthoredSpeed = CanSprintForMove(EffectiveSprintSpeed) ? EffectiveSprintSpeed : Super::GetMaxSpeed();
 	return GetBlockMovementForMove(SpeedLimit) && FMath::IsFinite(SpeedLimit) && SpeedLimit > 0.f
 		? FMath::Min(AuthoredSpeed, SpeedLimit) : AuthoredSpeed;
 }
@@ -244,6 +362,7 @@ void URpgCharacterMovementComponent::GetLifetimeReplicatedProps(TArray<FLifetime
 {
 	Super::GetLifetimeReplicatedProps(OutLifetimeProps);
 	DOREPLIFETIME_CONDITION(URpgCharacterMovementComponent, MantleCollisionComponent, COND_SimulatedOnly);
+	DOREPLIFETIME_CONDITION(URpgCharacterMovementComponent, bIsSprinting, COND_SimulatedOnly);
 }
 
 bool URpgCharacterMovementComponent::BeginMantleCollisionIgnore(UPrimitiveComponent* Component)
@@ -280,6 +399,10 @@ void URpgCharacterMovementComponent::OnRep_MantleCollisionComponent()
 void URpgCharacterMovementComponent::EndPlay(const EEndPlayReason::Type EndPlayReason)
 {
 	MantleCollisionComponent = nullptr;
+	bIsSprinting = false;
+	bWantsSprint = false;
+	bSprintAuthorizedForMove = false;
+	SprintSpeedForMove = 0.f;
 	OnRep_MantleCollisionComponent();
 	Super::EndPlay(EndPlayReason);
 }
