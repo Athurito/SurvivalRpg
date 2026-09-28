@@ -1,10 +1,13 @@
 {
   "schemaVersion": 1,
   "task": "GASP-07",
-  "updatedUtc": "2026-09-28T20:10:30.919428+00:00",
+  "updatedUtc": "2026-09-28T20:14:26.877325+00:00",
   "branch": "codex/gasp-07-cmc-gas-sprint",
   "baseCommit": "c357ddb1108b841ea2c088e548594690c65655ff",
   "basePullRequest": 160,
+  "pullRequest": 161,
+  "draft": true,
+  "implementationCommit": "301275dcc05f4d07d37b93de8f5796255819586a",
   "merged": false,
   "userVisualAcceptance": "pending",
   "tuning": {

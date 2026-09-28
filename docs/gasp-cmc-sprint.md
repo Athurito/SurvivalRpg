@@ -3,7 +3,9 @@
 Status: technisch und durch eigene Sichtaufnahmen geprüft; einfache Nutzersichtprobe offen.
 Branch `codex/gasp-07-cmc-gas-sprint`, auf `c357ddb1` aus dem offenen
 [Block-PR #160](https://github.com/Athurito/SurvivalRpg/pull/160) aufgebaut.
-Die Sprint-Erweiterung erhält einen eigenen PR; der Block-PR ist nicht gemergt.
+Die Sprint-Erweiterung liegt in [Draft-PR #161](https://github.com/Athurito/SurvivalRpg/pull/161),
+Implementierungscommit `301275dcc05f4d07d37b93de8f5796255819586a`.
+Der Block-PR ist nicht gemergt.
 
 ## Auftrag und Ownership-Entscheidung
 
