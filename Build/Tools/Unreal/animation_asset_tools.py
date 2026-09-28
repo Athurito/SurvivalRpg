@@ -7,6 +7,7 @@ ordinary property edits, compilation and explicit saves.
 """
 import json
 import math
+import struct
 
 import unreal
 import toolset_registry
@@ -198,6 +199,181 @@ class AnimationAssetTools(unreal.ToolsetDefinition):
         factory.set_editor_property('target_skeleton', sequence.get_editor_property('skeleton'))
         factory.set_editor_property('source_animation', sequence)
         return _create(asset_path, unreal.AnimMontage, factory)
+
+    @toolset_registry.tool_call
+    @staticmethod
+    def animation_notify_contract(asset_path: str) -> str:
+        """Read animation tracks, complete notify records and precise engine timing; never edit or save.
+
+        Numeric notify times are public engine trigger times, including its offset;
+        author time/offset and all remaining fields stay in the complete export record.
+        Instant/state objects include their actual class, outer and ownership. Sequence
+        sync markers are separate from notifies; other animation types return null for
+        markers. Non-finite numeric data fails JSON serialization instead of being hidden.
+        """
+        _guard()
+        animation = _asset(asset_path, unreal.AnimSequenceBase)
+        library = unreal.AnimationLibrary
+
+        def object_contract(value):
+            if value is None:
+                return None
+            outer = value.get_outer()
+            return {'path': value.get_path_name(), 'class': value.get_class().get_path_name(),
+                    'outer': outer.get_path_name() if outer else None,
+                    'owned_by_animation': outer == animation}
+
+        tracks = [str(name) for name in library.get_animation_notify_track_names(animation)]
+        events = []
+        for index, track in enumerate(tracks):
+            for event in library.get_animation_notify_events_for_track(animation, track):
+                events.append({'track_index': index, 'track_name': track,
+                               'trigger_time_seconds': library.get_anim_notify_event_trigger_time(event),
+                               'duration_seconds': library.get_anim_notify_event_duration(event),
+                               'notify': object_contract(event.get_editor_property('notify')),
+                               'notify_state': object_contract(event.get_editor_property('notify_state_class')),
+                               'record': event.export_text()})
+        if sorted(event['record'] for event in events) != sorted(
+                event.export_text() for event in library.get_animation_notify_events(animation)):
+            raise ValueError('Not every notify belongs to a valid named track')
+        markers = None
+        if isinstance(animation, unreal.AnimSequence):
+            markers = []
+            for index, track in enumerate(tracks):
+                for marker in library.get_animation_sync_markers_for_track(animation, track):
+                    markers.append({'name': str(marker.get_editor_property('marker_name')),
+                                    'time_seconds': marker.get_editor_property('time'),
+                                    'track_index': index, 'track_name': track,
+                                    'record': marker.export_text()})
+            if sorted(marker['record'] for marker in markers) != sorted(
+                    marker.export_text() for marker in library.get_animation_sync_markers(animation)):
+                raise ValueError('Not every sync marker belongs to a valid named track')
+        return json.dumps({'asset': animation.get_path_name(), 'class': animation.get_class().get_path_name(),
+                           'length_seconds': animation.get_play_length(), 'tracks': tracks,
+                           'event_count': len(events), 'events': events, 'sync_markers': markers,
+                           'read_only': True}, allow_nan=False)
+
+    @toolset_registry.tool_call
+    @staticmethod
+    def add_animation_notifies(asset_path: str, track_name: str, events_json: str) -> str:
+        """Add explicit instant notifies on one new track, with undo and no implicit save.
+
+        events_json is [{"time_seconds":number,"notify_class_path":"/Mount/Notify.Notify_C"}].
+        Uses class defaults; notify states and event-property overrides are not accepted.
+        All inputs are checked before changing the animation. Existing event records and
+        sync markers are preserved, although the engine may sort their array order.
+        An existing track or duplicate class/time rejects the request, including retries.
+        The caller owns asset selection and any derived-asset/provenance restriction.
+        """
+        _guard()
+        animation = _asset(asset_path, unreal.AnimSequenceBase)
+        if (not isinstance(track_name, str) or not track_name.strip() or track_name != track_name.strip()
+                or track_name.casefold() == 'none' or len(track_name) > 128 or '\x00' in track_name):
+            raise ValueError('Expected a nonempty new notify track name, at most 128 characters')
+        events = json.loads(events_json)
+        if not isinstance(events, list) or not 1 <= len(events) <= 512:
+            raise ValueError('Expected 1..512 explicit instant notify events')
+        library = unreal.AnimationLibrary
+        tracks_before = [str(name) for name in library.get_animation_notify_track_names(animation)]
+        if library.is_valid_anim_notify_track_name(animation, track_name):
+            raise ValueError('The requested track already exists; no events were changed')
+        length = animation.get_play_length()
+        if not math.isfinite(length) or length <= 0:
+            raise ValueError('Expected an animation with a finite positive duration')
+        old_events = list(library.get_animation_notify_events(animation))
+        old_records = sorted(event.export_text() for event in old_events)
+        old_markers = (sorted(marker.export_text() for marker in library.get_animation_sync_markers(animation))
+                       if isinstance(animation, unreal.AnimSequence) else None)
+        # The public getter includes UE's +/-1e-4 s trigger offset. Conservatively
+        # reject potential duplicates within both offsets plus float32 rounding;
+        # private author-time/offset properties are not exposed to Python.
+        def coincident_existing_time(first, second):
+            return math.isclose(first, second, rel_tol=2. ** -23, abs_tol=2.1e-4)
+
+        old_pairs, tracked_records = [], []
+        for track in tracks_before:
+            times = []
+            for event in library.get_animation_notify_events_for_track(animation, track):
+                # RefreshCacheData repairs invalid/overlapping tracks. Reject those
+                # inputs beforehand so this append operation cannot edit old records.
+                time = library.get_anim_notify_event_trigger_time(event)
+                if not math.isfinite(time):
+                    raise ValueError('Existing notify has an invalid time')
+                if any(coincident_existing_time(time, other) for other in times):
+                    raise ValueError('Existing same-track notify times may overlap; repair them separately')
+                times.append(time)
+                tracked_records.append(event.export_text())
+                notify = event.get_editor_property('notify')
+                if notify:
+                    old_pairs.append((notify.get_class().get_path_name(), time))
+        if sorted(tracked_records) != old_records:
+            raise ValueError('Existing notify has an invalid track')
+        prepared, classes, new_times = [], {}, []
+        for event in events:
+            if not isinstance(event, dict) or set(event) != {'time_seconds', 'notify_class_path'}:
+                raise ValueError('Each event requires exactly time_seconds and notify_class_path')
+            time, class_path = event['time_seconds'], event['notify_class_path']
+            if type(time) not in (int, float) or not math.isfinite(time) or not 0 <= time <= length:
+                raise ValueError('Notify time must be finite and within the animation duration')
+            # Engine event times are floats. Check collisions after the same conversion.
+            time = struct.unpack('f', struct.pack('f', float(time)))[0]
+            if any(abs(time - other) <= 1.e-8 for other in new_times):
+                raise ValueError('A single new track cannot contain coincident notify times')
+            if not isinstance(class_path, str) or not class_path.startswith('/'):
+                raise ValueError('Expected an explicit notify class path')
+            if class_path not in classes:
+                cls = _class(class_path, unreal.AnimNotify)
+                if cls.get_name().startswith(('SKEL_', 'REINST_', 'TRASHCLASS_')):
+                    raise ValueError('Compile the notify Blueprint before adding its events')
+                # Python NewObject rejects abstract classes before its native creation.
+                # The validation instance belongs to the transient package, never the asset/CDO.
+                probe = unreal.new_object(cls)
+                if not isinstance(probe, unreal.AnimNotify):
+                    raise ValueError('Notify class could not be instantiated')
+                classes[class_path] = (cls, probe)
+            cls = classes[class_path][0]
+            if any(name == cls.get_path_name() and coincident_existing_time(time, other)
+                   for name, other in old_pairs):
+                raise ValueError('An event with this notify class and coincident trigger time may already exist')
+            prepared.append((time, cls))
+            new_times.append(time)
+
+        def unchanged_existing(created):
+            records = sorted(event.export_text() for event in library.get_animation_notify_events(animation)
+                             if event.get_editor_property('notify') not in created)
+            markers = (sorted(marker.export_text() for marker in library.get_animation_sync_markers(animation))
+                       if old_markers is not None else None)
+            return records == old_records and markers == old_markers
+
+        created = []
+        with unreal.ScopedEditorTransaction('Add animation notifies on a new track'):
+            animation.modify()
+            try:
+                library.add_animation_notify_track(animation, track_name)
+                for time, cls in sorted(prepared, key=lambda item: item[0]):
+                    notify = library.add_animation_notify_event(animation, track_name, time, cls)
+                    if not notify or notify.get_outer() != animation or notify.get_class() != cls:
+                        raise RuntimeError('Engine did not create the requested owned notify')
+                    created.append(notify)
+                tracks_after = [str(name) for name in library.get_animation_notify_track_names(animation)]
+                added = list(library.get_animation_notify_events_for_track(animation, track_name))
+                if (tracks_after != tracks_before + [track_name] or len(added) != len(prepared)
+                        or not unchanged_existing(created)):
+                    raise RuntimeError('Engine refresh did not preserve the requested event/track contract')
+            except Exception:
+                # Only our last, previously absent track is removed. No pre-existing
+                # event/marker is intentionally rewritten, including on failure.
+                if library.is_valid_anim_notify_track_name(animation, track_name):
+                    library.remove_animation_notify_track(animation, track_name)
+                if not unchanged_existing([]):
+                    raise RuntimeError('Unexpected engine change to existing records; undo this transaction')
+                raise
+        return json.dumps({'asset': animation.get_path_name(), 'track': track_name,
+                           'added': len(added), 'existing_events_preserved': len(old_events), 'saved': False,
+                           'notifies': [{'class': event.get_editor_property('notify').get_class().get_path_name(),
+                                        'object': event.get_editor_property('notify').get_path_name(),
+                                        'trigger_time_seconds': library.get_anim_notify_event_trigger_time(event),
+                                        'record': event.export_text()} for event in added]}, allow_nan=False)
 
     @toolset_registry.tool_call
     @staticmethod

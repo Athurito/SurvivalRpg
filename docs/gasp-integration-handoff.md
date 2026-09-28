@@ -9,7 +9,7 @@ Abnahme. Beide bei relevanten Fortschritten im selben PR aktualisieren.
 
 | Feld | Wert |
 | --- | --- |
-| Aktive Aufgabe | `GASP-06`: vollständiger Rückbau und Neuaufbau abgeschlossen; technische und eigene visuelle Prüfung bestanden, Nutzer-Sichtprobe offen |
+| Aktive Aufgabe | `GASP-06`: Nutzerregressionen nach `bf90d218` korrigiert; erneute Sicht-/Hörprobe offen |
 | Branch / PR | `codex/gasp-06-moving-block`, [Draft-PR #160](https://github.com/Athurito/SurvivalRpg/pull/160), offen; kein Merge |
 | Rückbaubasis | `908b7c7544a42848afe6c8b673988735ebd4ba1b`; vorheriger Head `20d1f7ffe62c8baff982d52ea5f64f41f6766aa2` |
 | Rückbaucommit | `de852e984e65009d6c68cc2be7d98cc94caa0bb5`; separate Historie erhalten, Neuaufbau danach |
@@ -17,10 +17,11 @@ Abnahme. Beide bei relevanten Fortschritten im selben PR aktualisieren.
 | Rückbauprüfung | Alle 28 Code-/Tool-/Assetpfade identisch zur Basis beziehungsweise dort nicht vorhanden; acht tatsächliche Assetdateien gegen die LFS-SHA256 der Basis geprüft. Keine neue Build-/PIE-Abnahme im Rückbaucheckpoint |
 | Historische Ergebnisse | Die bisherigen vier Berichte/Manifeste bleiben ausdrücklich als zurückgenommene Versuche erhalten; alte Test-/Cook-Ergebnisse gelten nicht für den Neuaufbau |
 | Implementierung | 35 abgeleitete UEFN-Sequences, fünf kurze GAS-Montagen, gemeinsamer abstrakter AnimBP-Parent mit zwei Datenkindern/Choosern; CMC/Mover verwenden denselben Layer. Aktiver Shield-Satz: 157 cm/s. Gameplay-Lease/Prediction und Reaktionsbestätigung nativ; Abläufe, Kontaktphasen, Clipwahl und Tuning in Assets |
-| Prüfstand | Editor11 und finaler Game02 erfolgreich; Focus04 **19/19**, Regression02 **25/25**. Beide Fußphasen beim Stoppen in CMC/Mover tatsächlich erfasst; eigene Turn-/Richtungs-/Schulter-/Reaktionsaufnahmen geprüft. Fünf-Karten-Cook erfolgreich (3170 gespeicherte Pakete, 0 Fehler, 3 Warnungen); historische rote Versuche bleiben im [Bericht](gasp-block-locomotion.md) und [Manifest](assets/gasp-block-locomotion.json) |
-| Editorzustand | Alle automatisierten PIE-Sitzungen beendet, Einstellungen restauriert, Testeditor PID23056 ohne schmutzige Pakete geschlossen. Für die Nutzer-Sichtprobe Editor PID43040 auf `Lvl_RpgGaspMover` mit sichtbarem Fenster geöffnet, kein PIE automatisch gestartet; isolierter Benutzerpfad `Saved/GaspBlockLayers20260927/IsolatedUser`, MCP-Port8002 |
-| Nächster Schritt | Nutzer startet Play auf `Lvl_RpgGaspMover` oder CMC-Karte `Lvl_RpgGaspMantle`: RMB halten, Kamera drehen, WASD/Stop/Shift/Release prüfen. Erst nach erneuter Sichtfreigabe mergen. Neun BP-/AnimBP-Compiles und finaler Erhaltungscheck bestanden: 49 neue Assets, genau sechs Änderungen, 4656 übrige Assets und sieben Spielstände unverändert |
-| Abnahme | Natürliche Haltung hat Vorrang vor bisherigem Blocktempo. Zweiter Testsatz beweist Austauschbarkeit. Technische und eigene visuelle Abnahme durchgeführt; Nutzer-Sichtprobe vor Merge steht aus |
+| Nachbesserung | Finaler Parent-Interruptblend aktualisiert nur relevanten Zweig; `BS_BlockWalk` behält Marker-Sync ohne zusätzliche SyncPhase-Zeitrücksetzung; 50 Walk-L/R-Notifies an bestehenden Kontakten. Rohbelege `Saved/GaspBlockCadence20260928`, ignoriert/lokal; Commitstatus im nachfolgenden Dokumentationscheckpoint |
+| Prüfstand | Neue Assetkorrektur: 16/16 Tests (623 Warnungen), drei AnimBP-Compiles, kaltes Neuladen 24 Clips/50 Notifies, Kadenz-/Spielmix-/Übergangsaufnahmen und Fünf-Karten-Cook Exit0 (3170 gespeicherte Pakete). Erster 18/19-Lauf mit Rollback-Timeout erhalten. Historische Editor11/Game02/Focus04/Regression02 gelten als frühere Neuaufbauprüfungen, keine neuen Builds; [Bericht](gasp-block-locomotion.md) |
+| Editorzustand | Validierungs-PIEs beendet, PlaySettings restauriert, Editor sauber. Sichtbarer Nutzereditor PID14180 auf `Lvl_RpgGaspMover`, kein PIE automatisch gestartet; isolierter Benutzerpfad `Saved/GaspBlockLayers20260927/IsolatedUser`, MCP-Port8002, `NoSaveConfig` |
+| Nächster Schritt | Nutzer prüft CMC auf `Lvl_RpgGaspMantle` ohne RMB (normale Laufanimation), Mover auf `Lvl_RpgGaspMover` mit RMB+WASD/Diagonal/Stop/Release (Gehschritte). Erst nach erneuter Sicht-/Hörfreigabe mergen. Kein Roadmap-Fortschritt oder Shutdown während dieser Abnahme |
+| Abnahme | 26 Assetkorrekturen seit `bf90d218`, keine C++-/Tempoänderung. Quellclips/Spielstände erhalten. Messung und Nahaufnahmen geprüft; Klangqualität und Nutzergefallen stehen aus. Untere Füße in neuen Nahaufnahmen angeschnitten, keine neue vollständige Fußkontaktabnahme behauptet |
 
 GitHub-Titel/-Beschreibung konnten wegen Connector-403 und fehlender Browseranmeldung noch nicht ersetzt werden; sie beschreiben weiterhin den verworfenen Ansatz. Maßgeblich sind dieser Neuaufbaubericht und die neuen Commits im selben PR. Kein Merge ist freigegeben.
 

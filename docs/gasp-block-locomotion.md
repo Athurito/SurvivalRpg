@@ -1,7 +1,37 @@
 # GASP-06: erweiterbare Block-Locomotion
 
-Stand: 28.09.2026. **Technische Prüfung und eigene Sichtprüfung abgeschlossen; Nutzer-Sichtabnahme offen.**
+Stand: 28.09.2026. **Laufkadenz und Block-Foley korrigiert und erneut geprüft; Nutzer-Sicht-/Hörprobe offen.**
 [PR #160](https://github.com/Athurito/SurvivalRpg/pull/160) bleibt offen. Dieser Bericht beschreibt den Neuaufbau nach dem vollständigen Rückbau des vorherigen GASP-06-Versuchs; frühere Pose-, Netzwerk- und Cook-Ergebnisse gelten dafür nicht. Das [Manifest](assets/gasp-block-locomotion.json) enthält die aktuellen Prüfergebnisse, erhaltene Fehlversuche und Abnahmegrenzen.
+
+## Korrektur nach Nutzerprobe: Laufkadenz und Block-Foley
+
+Die Nutzerprobe von `bf90d218` fand zwei reale Regressionen: CMC spielte die freie Laufanimation nahezu doppelt schnell, und Mover spielte beim langsamen Blocken Rennschritte. Normales Blocktempo war laut Nutzer unauffällig. Die nachfolgenden älteren Neuaufbau-Prüfungen hatten diese Fehler nicht erfasst.
+
+Der finale Interrupt-Blend des gemeinsamen Parents aktualisierte mit `bAlwaysUpdateChildren=true` beide Wege zum selben Basiseingang. CMC besitzt dort keinen Cache und aktualisierte die Locomotion doppelt. Movers Cache verhinderte das Doppeltempo, aber der unsichtbare Basispfad lieferte weiterhin Run-Notifies. Nur dieser finale Blend verwendet jetzt `false`; `BlockUpperBody.bAlwaysUpdateSourcePose=true` bleibt für laufende Beine unter kurzen Reaktionen erhalten. Gameplaytempo, C++ und alle Clip-Rates sind unverändert.
+
+Die 24 abgeleiteten Walk-Starts/-Loops/-Stops erhalten **50 projektlokale Walk-L/R-Notifies** an ihren vorhandenen Kontaktmarkern. Der anfängliche Korrekturstand war noch stumm: `BS_BlockWalk.bShouldMatchSyncPhases=true` setzte über UE5.8s `ResetBlendSamples` den vorherigen und aktuellen Samplezeitpunkt gleich, sodass die Notify-Abfrage ein Zeitdelta von null erhielt. Diese Zusatzoption ist jetzt `false`; normales Marker-Sync und `HighestWeightedAnimation` bleiben aktiv. Kein Enginepatch, keine künstlich halbierte Playbackrate und keine Änderungen an Quellclips.
+
+| Neue Prüfung | Ergebnis |
+| --- | --- |
+| Tatsächliche freie CMC-Bewegung, 600 cm/s | Gemessener Fußzyklus ca. 3,529 → 1,791 Hz; nach Blockrelease ca. 3,529 → 1,846 Hz |
+| Block, beide Varianten bei 157 cm/s | Finale Fußzyklen ca. 0,889 Hz; je vier Walk-L- und drei Walk-R-Triggerframes, null Run-Triggerframes |
+| Spielmix-Aufnahmen aus frischem Editor | Beide Block-WAVs 3,989 s mit sieben getrennten Energiegruppen, ca. 1,786/1,754 Hz; keine Mikrofonaufnahme |
+| Start/Diagonal/Stop/Release | CMC 828, Mover 791 eindeutige Frames; Stop übernimmt die Kontaktphase, Release setzt Cap auf null und blendet Layer in ca. 0,194/0,198 s aus; keine Wiederaktivierung |
+| Fokus auf finalen Assets | **16/16 Success**, 0 Fehler/Skips, 209,784897 s Testzeit, 623 Warnungen |
+| Kaltes Neuladen und Kompilieren | 24 Clips/50 vollständige Notifyrecords, Kontaktmarker und unveränderte RateScale bestätigt; drei betroffene AnimBPs kompiliert; Editor sauber |
+| Werkzeug-Negativkontrollen | Bestehender Track und doppeltes Event vor Änderung abgewiesen; vollständiger Readback und Dirty-State unverändert |
+| Fünf-Karten-Cook | Exit0; 446.460 s Wandzeit, 3170 gespeicherte Pakete; Success - 0 error(s), 3 warning(s) |
+| Erhaltung | Seit `bf90d218` exakt 26 geänderte Assets: Parent, BlendSpace, 24 Walkclips. Alle 35 Quellclips und sieben SaveGames unverändert; gegen Rückbaubasis weiterhin 4656 unverändert, sechs erwartete Änderungen und 49 neue Assets |
+
+Die acht Übergangs-Nahaufnahmen wurden selbst geprüft: sichtbare Schultern/Arme bleiben verbunden, Schildhaltung und Releasezustand sind nachvollziehbar. Die Füße sind in diesen breiten Nahaufnahmen unten angeschnitten; daraus wird keine vollständige neue Fußkontakt-Sichtabnahme abgeleitet. Fußzyklusmessung ist ein Posevergleich bei tatsächlich gleicher Geschwindigkeit, keine ausgelesene Motion-Matching-Playerclock. Die WAV-Hüllkurve bestätigt Tonausgabe und Kadenz, kein eigenständiges Hörurteil über Klangqualität oder samplegenaue Audio-/Pose-Synchronität. Mover-Free-/Released-WAVs sind nur 2,709/3,115 s lang. Für den Block steigt die gemessene Frequenz durch den separaten BlendSpace-Fix gegenüber dem noch stummen Zwischenstand um rund 5,9 %; sie wird nicht als exakt unverändert ausgegeben.
+
+Der erste neue Fokuslauf bleibt als **18/19** mit einem 45-s-Timeout im Mover-Fixed-Rollback-Test erhalten; derselbe Test besteht im abschließenden 16er-Lauf. Das ist kein behaupteter Fix eines Netzwerkfehlers. Die 623 Warnungen und der frühere stille Foley-Zwischenstand bleiben dokumentiert. Da C++ unverändert ist, wurde kein neuer nativer Build behauptet; die unten stehenden Editor-/Game-Builds sind die bereits ausgeführten Neuaufbau-Builds.
+
+Die frische Registry-Closure der 49 neuen Assets umfasst durch Foley nun 366 Projektpakete/39 Engine-/Script-/Plugin-Grenzen und ist vollständig. Die gesamten 55 erreichen weiterhin 2127/78 und genau die bereits bekannte fehlende Soft-Previewreferenz; keine neuen Referenten und keine Original-GASP-Abhängigkeiten. Der Gesamt-Closure-Aufruf meldet deshalb weiterhin Exit1; das ist kein verdeckter grüner Gesamtgraph. Dynamische Stringloads bleiben außerhalb des Registrybeweises.
+
+Die generischen MCP-Werkzeuge `add_animation_notifies` und `animation_notify_contract` ermöglichen explizite neue Tracks mit Undo beziehungsweise lesenden Vertragsvergleich. Sie wählen keine Spielinhalte selbst. Neue Animationssätze benötigen eigene passende Kontaktmarker und Foley-Notifies; beim Ausschalten des Blocks darf die Host-Locomotion pro Frame nur einen aktiven Updateweg erhalten.
+
+Aktuelle Rohbelege: `Saved/GaspBlockCadence20260928` sowie `Saved/GaspBlockLayers20260927/cadence-focus-01/02-*`. Saved bleibt ignoriert und ist in anderen Checkouts nicht automatisch vorhanden. **PR #160 bleibt offen bis zur erneuten Nutzer-Sicht-/Hörprobe:** auf CMC ohne RMB laufen; auf Mover RMB halten und WASD, Diagonalen, Stoppen und Loslassen prüfen.
 
 ## Ausgangspunkt und Umfang
 
@@ -89,7 +119,7 @@ Vier reale Standalone-Aufnahmen (CMC/Mover, jeweils beide Markerhälften) zeigen
 
 **Kein Plug-and-play für beliebige Skelette:** `IsAnimationCompatible` verlangt die exakte TargetSkeleton-Identität des kompilierten AnimBP. Ein anderes Skelett braucht eine ausdrücklich passende Retarget-/AnimBP-/Host-Konfiguration und eigene Prüfung von Proportionen, Bones, Slots, Kurven und Notifies. Der optionale Runtime-Retarget-Follower bleibt kosmetischer Verbraucher des GameplayMesh und übernimmt weder Equipment- noch Physics-/RootMotion-Autorität.
 
-## Validierung und verbleibende Grenzen
+## Frühere Neuaufbau-Validierung vor der Nutzerfehlermeldung
 
 | Abschließende Prüfung | Tatsächliches Ergebnis |
 | --- | --- |

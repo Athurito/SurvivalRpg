@@ -2,7 +2,7 @@
   "schema_version": 1,
   "task": "GASP-06",
   "date": "2026-09-28",
-  "status": "technical_and_own_visual_checks_complete_user_visual_acceptance_pending",
+  "status": "cadence_and_foley_corrections_verified_user_visual_and_auditory_acceptance_pending",
   "pr": "https://github.com/Athurito/SurvivalRpg/pull/160",
   "pr_status": "open_manual_visual_acceptance_required",
   "branch": "codex/gasp-06-moving-block",
@@ -271,6 +271,14 @@
       ],
       "implemented": true,
       "user_visual_acceptance": false
+    },
+    "base_pose_update_policy": "Final interrupt TwoWayBlend.bAlwaysUpdateChildren=false; BlockUpperBody.bAlwaysUpdateSourcePose=true remains for moving reaction legs.",
+    "loop_sync_and_notify_policy": {
+      "bShouldMatchSyncPhases": false,
+      "bAllowMarkerBasedSync": true,
+      "NotifyTriggerMode": "HighestWeightedAnimation",
+      "derived_walk_notifies": 50,
+      "source_walk_clips_unchanged": true
     }
   },
   "first_pack": {
@@ -1334,7 +1342,7 @@
       }
     },
     "visual_acceptance": {
-      "status": "own_turn_stop_reaction_checks_complete_user_review_pending",
+      "status": "cadence_correction_local_measurements_and_closeups_reviewed_user_visual_and_auditory_review_pending",
       "accepted": false,
       "diagnostic_material": [
         "Saved/GaspBlockLayers20260927/cmc-editor10-fullbody",
@@ -1344,7 +1352,7 @@
       "own_turn_and_stop_images_reviewed": true,
       "final_reaction_review": "complete_four_actual_local_montage_windows_and_five_images_reviewed",
       "user_editor": {
-        "pid": 43040,
+        "pid": 14180,
         "visible": true,
         "map": "/Game/SurvivalRpg/Maps/Test/Lvl_RpgGaspMover",
         "pie_running_at_handoff": false,
@@ -1353,10 +1361,10 @@
     },
     "final_saved_asset_hashes": {
       "source": {
-        "path": "Saved/GaspBlockLayers20260927/preservation-final-02.json",
-        "sha256": "e54017c1919c11038ff777a318e317823decbc8c921b851a3d9d20224abc121e"
+        "path": "Saved/GaspBlockCadence20260928/preservation-post-cook.json",
+        "sha256": "68be2c1a8a731cfd20346f71ee8f5690fdd668ffba54d44b8f8813fb19ecfeba"
       },
-      "snapshot_scope": "49 new plus6 expected changed assets after Cook and final reaction PIE",
+      "snapshot_scope": "49 new plus6 expected changed after cadence correction, final Cook and cold reload",
       "assets": [
         {
           "path": "Content/SurvivalRpg/Characters/GASP/CMC/RPG/ABP_RpgGasp_CMC.uasset",
@@ -1384,7 +1392,7 @@
         },
         {
           "path": "Content/SurvivalRpg/Characters/GASP/Shared/RPG/Block/ABP_RpgBlockLocomotion.uasset",
-          "sha256": "7f4a5f5c1d274bec3624b4573780bdfc66eb929f05306ec9178fac930f4c5052"
+          "sha256": "f64122177fbed85d7763f972a79e79c266913124d15d1c866d7339cb60ae4453"
         },
         {
           "path": "Content/SurvivalRpg/Characters/GASP/Shared/RPG/Block/ALI_RpgBlockLocomotion.uasset",
@@ -1400,7 +1408,7 @@
         },
         {
           "path": "Plugins/GameFeatures/GF_Combat_Core/Content/Animations/BlockLocomotion/SwordShield/BS_BlockWalk.uasset",
-          "sha256": "38152f799d04432a428a39c5045d84ef4036561c60657ddde386926da76d3523"
+          "sha256": "19c85915d8bc3c53abbfc823bc2462b49f5dfee0557132e9d9a55188dbc86732"
         },
         {
           "path": "Plugins/GameFeatures/GF_Combat_Core/Content/Animations/BlockLocomotion/SwordShield/CHT_BlockLocomotion.uasset",
@@ -1480,99 +1488,99 @@
         },
         {
           "path": "Plugins/GameFeatures/GF_Combat_Core/Content/Animations/BlockLocomotion/SwordShield/Sequences/Walk_Block_Loop_B_0_Seq_Retargeted.uasset",
-          "sha256": "872c80535a36f7872aa9276d1823fa6bf9b5e32aeb15cf139b7d253714b220f9"
+          "sha256": "7e1f1d6f55657e8cdcdc66d37b264a2d2e75a8cdb46b3b7aa0105e9421c946ab"
         },
         {
           "path": "Plugins/GameFeatures/GF_Combat_Core/Content/Animations/BlockLocomotion/SwordShield/Sequences/Walk_Block_Loop_B_L_45_Seq_Retargeted.uasset",
-          "sha256": "f51472e7b7349bb1104ae9a5b4c2f5ea8d4ad74084b1cdfdcb841df2b101d495"
+          "sha256": "a77e8190d5ca5469e1ae0fef8edef56058281d76dfa65be98fdb99b45c2435b8"
         },
         {
           "path": "Plugins/GameFeatures/GF_Combat_Core/Content/Animations/BlockLocomotion/SwordShield/Sequences/Walk_Block_Loop_B_R_45_Seq_Retargeted.uasset",
-          "sha256": "56a3a12c960c55c7d6a2d32a0b758b1530796c9c15dc5b7deadf9bcac70fc3fe"
+          "sha256": "96030c2579853efe1324f13152dea44db6e9f4fe0434a2a2c8f21c60cd3f2d8d"
         },
         {
           "path": "Plugins/GameFeatures/GF_Combat_Core/Content/Animations/BlockLocomotion/SwordShield/Sequences/Walk_Block_Loop_F_0_Seq_Retargeted.uasset",
-          "sha256": "74fc5985c2d24893a595bb88f8eb067e912962f6322ee966617808e54ff63483"
+          "sha256": "614dd8f8dbd5e883ba2a94aeb644f5d76d4fa3488d13405722397dc75a890f38"
         },
         {
           "path": "Plugins/GameFeatures/GF_Combat_Core/Content/Animations/BlockLocomotion/SwordShield/Sequences/Walk_Block_Loop_F_L_45_Seq_Retargeted.uasset",
-          "sha256": "c4d38a40e733506f3eadc8477f4f1579dcab4015cf598e69f2fd048d251517bc"
+          "sha256": "62b1c52458fd86a5e0d1c20549569a55bac6435a6355218f4063aa018d51f2bd"
         },
         {
           "path": "Plugins/GameFeatures/GF_Combat_Core/Content/Animations/BlockLocomotion/SwordShield/Sequences/Walk_Block_Loop_F_L_90_Seq_Retargeted.uasset",
-          "sha256": "ab3dc4d2fe00aa100f638a4050266e115fcd82b3ea6ab02f5523f84adef9cad9"
+          "sha256": "b3fdb73e3788f5a3356e20b6a0348cabb57f01e0cfed9bfe1dfdbb3fb77d5980"
         },
         {
           "path": "Plugins/GameFeatures/GF_Combat_Core/Content/Animations/BlockLocomotion/SwordShield/Sequences/Walk_Block_Loop_F_R_45_Seq_Retargeted.uasset",
-          "sha256": "f70b94065a298a82870e93030df9858255ef05b932c09317b200449b9d86b70f"
+          "sha256": "9ede0d217cfb6f9ba5a62c31e7ef56b33c902c8d0987a5746b378e641091a26b"
         },
         {
           "path": "Plugins/GameFeatures/GF_Combat_Core/Content/Animations/BlockLocomotion/SwordShield/Sequences/Walk_Block_Loop_F_R_90_Seq_Retargeted.uasset",
-          "sha256": "399662171bb06881a46b3a29d38deffcf81bf6e808e5b7a52da00260733424ef"
+          "sha256": "c1970294f576b7bce81b8f040fb17892592236a3707ba1e38a7b71080ba71604"
         },
         {
           "path": "Plugins/GameFeatures/GF_Combat_Core/Content/Animations/BlockLocomotion/SwordShield/Sequences/Walk_Block_Start_B_0_Seq_Retargeted.uasset",
-          "sha256": "eed649d24c402d28a8cb672d1279340dc7e98c527f25afe47553ca361a32e530"
+          "sha256": "875c80abc70c8d0f323bf2c9f74f1863888f43ed321179bb52bc2718afe05c58"
         },
         {
           "path": "Plugins/GameFeatures/GF_Combat_Core/Content/Animations/BlockLocomotion/SwordShield/Sequences/Walk_Block_Start_B_L_45_Seq_Retargeted.uasset",
-          "sha256": "b00f05b417f66bc10095cc8f9b788dfedf02eb5e6c5984bfbcb010f544ca17bf"
+          "sha256": "bbddbd7f17ff01c06a2af2d914c9d3b55276425772ef67b4174378152075fdeb"
         },
         {
           "path": "Plugins/GameFeatures/GF_Combat_Core/Content/Animations/BlockLocomotion/SwordShield/Sequences/Walk_Block_Start_B_R_45_Seq_Retargeted.uasset",
-          "sha256": "1c748f51c8a3a39c9a2b97ef7f21d534e5d44aaf6226e3fb97656357c6bc2bff"
+          "sha256": "69c696555d8c6deab5347478cc3dd2b0ae021d442d64860d4850d50cff721727"
         },
         {
           "path": "Plugins/GameFeatures/GF_Combat_Core/Content/Animations/BlockLocomotion/SwordShield/Sequences/Walk_Block_Start_F_0_Seq_Retargeted.uasset",
-          "sha256": "0ae23461f9897f480b03ccf7229313c9e8cadcab72491420320511303aeb4663"
+          "sha256": "b9d5e62e0d34c3fdba220e358955697f962d6da3cbd6ec8d5487e34cc2974b7d"
         },
         {
           "path": "Plugins/GameFeatures/GF_Combat_Core/Content/Animations/BlockLocomotion/SwordShield/Sequences/Walk_Block_Start_F_L_45_Seq_Retargeted.uasset",
-          "sha256": "16d4531c5fd1f479a7a7588ef19c43088550a2f10f86683433d2e61a54127f8d"
+          "sha256": "5a1e0ed57b466b10d5bf409dcf5c98517a666bf3ac9ac1321d171a2ffd2e2d10"
         },
         {
           "path": "Plugins/GameFeatures/GF_Combat_Core/Content/Animations/BlockLocomotion/SwordShield/Sequences/Walk_Block_Start_F_L_90_Seq_Retargeted.uasset",
-          "sha256": "9ffb05303d84af8aee095f4ae3d302765d668bcdd045a886bfe13f4015785a8a"
+          "sha256": "d760f7fe2f2379eb298cc48a927e56973a08ecd27f940cad008b83a3868a8b17"
         },
         {
           "path": "Plugins/GameFeatures/GF_Combat_Core/Content/Animations/BlockLocomotion/SwordShield/Sequences/Walk_Block_Start_F_R_45_Seq_Retargeted.uasset",
-          "sha256": "955e8d5b60036fb1862943fe40aaa38f8af2bce2652d0206cf38a34df398f1d3"
+          "sha256": "d4f47333d586cb62d806f308446f37140c6560bfd6ae7d1a6468762c50f3d62b"
         },
         {
           "path": "Plugins/GameFeatures/GF_Combat_Core/Content/Animations/BlockLocomotion/SwordShield/Sequences/Walk_Block_Start_F_R_90_Seq_Retargeted.uasset",
-          "sha256": "b3746e73417b5d4efbc24673dc6e08942e16a9306fee59d13c3be569b8570500"
+          "sha256": "41c9871fc98d86c6b6eed4b3ca44a815bd20173940653ba421fd847e10091b6d"
         },
         {
           "path": "Plugins/GameFeatures/GF_Combat_Core/Content/Animations/BlockLocomotion/SwordShield/Sequences/Walk_Block_Stop_B_0_Seq_Retargeted.uasset",
-          "sha256": "d0606dabe8a87f0cafc5112e33453d06e6fe947cc3836afed84d1a84c4b7313d"
+          "sha256": "4905cee2206b77a7515f8582a70fa88750efb38a0e3439f91c94099e88ae0ca2"
         },
         {
           "path": "Plugins/GameFeatures/GF_Combat_Core/Content/Animations/BlockLocomotion/SwordShield/Sequences/Walk_Block_Stop_B_L_45_Seq_Retargeted.uasset",
-          "sha256": "81cdf2660d9438638d6e10d178c576b60dd5e50d6b289ebd8f1890c58cab101f"
+          "sha256": "39419a50b08778f8b70d272cfb13cbd91d48fe282156b24fe79c38276de6e9f7"
         },
         {
           "path": "Plugins/GameFeatures/GF_Combat_Core/Content/Animations/BlockLocomotion/SwordShield/Sequences/Walk_Block_Stop_B_R_45_Seq_Retargeted.uasset",
-          "sha256": "75380816cde14f7cade3fcdb56a03f9fe98cbf868e52a9f380c3292951cd9d15"
+          "sha256": "bf262c5c667eece933595fff4a9bbfa2a08010a6dd43e0438ff8d56107641987"
         },
         {
           "path": "Plugins/GameFeatures/GF_Combat_Core/Content/Animations/BlockLocomotion/SwordShield/Sequences/Walk_Block_Stop_F_0_Seq_Retargeted.uasset",
-          "sha256": "d2482593da547e4e977e742b57f724730354a905f173bd918f45372859f4d8f7"
+          "sha256": "5bf6db7f17177340eaae4c07f39da96a466b4e7037a5e2d01039952a54fe0ac1"
         },
         {
           "path": "Plugins/GameFeatures/GF_Combat_Core/Content/Animations/BlockLocomotion/SwordShield/Sequences/Walk_Block_Stop_F_L_45_Seq_Retargeted.uasset",
-          "sha256": "8481678cacd58caf14a6f1af8edc78f3b72096c8f2932b62f0a289c4055e9b0e"
+          "sha256": "81563989076cf5a4800978c4887d0c1107c206e423eed1fc12b26b82a5b04861"
         },
         {
           "path": "Plugins/GameFeatures/GF_Combat_Core/Content/Animations/BlockLocomotion/SwordShield/Sequences/Walk_Block_Stop_F_L_90_Seq_Retargeted.uasset",
-          "sha256": "1c194b6a8ffc29e5743a399ddc1c0c8243573e1da670a9e2fe82e573c175104c"
+          "sha256": "0357d8051c03f1a4329b5d893f3c41555f7bad7a6262c24e85f2beab63389977"
         },
         {
           "path": "Plugins/GameFeatures/GF_Combat_Core/Content/Animations/BlockLocomotion/SwordShield/Sequences/Walk_Block_Stop_F_R_45_Seq_Retargeted.uasset",
-          "sha256": "5e6d272707b5d5741a472f412cd7d5a3dcacb419cbc97f39225f6e9ae6f72506"
+          "sha256": "6d2ab337a383c5571baa39e22a1e82e398c28e6674016cb59c5285a4388ba6d6"
         },
         {
           "path": "Plugins/GameFeatures/GF_Combat_Core/Content/Animations/BlockLocomotion/SwordShield/Sequences/Walk_Block_Stop_F_R_90_Seq_Retargeted.uasset",
-          "sha256": "d3282887d649eb715bc32cc64546a9bf57c2ef3de48d8bb22ec0436090e2b89f"
+          "sha256": "e20c130da24c843d4534aa3eb5c93574ec92774151e465e5fb7a1f86545c7a1e"
         },
         {
           "path": "Plugins/GameFeatures/GF_Combat_Core/Content/Animations/BlockLocomotion/TestVariant/CHT_BlockLocomotion.uasset",
@@ -1615,10 +1623,10 @@
       ]
     },
     "whole_project_preservation": {
-      "status": "success_final02_after_cook_and_last_test_PIE",
+      "status": "success_after_cadence_correction_and_cook",
       "evidence": {
-        "path": "Saved/GaspBlockLayers20260927/preservation-final-02.json",
-        "sha256": "e54017c1919c11038ff777a318e317823decbc8c921b851a3d9d20224abc121e"
+        "path": "Saved/GaspBlockCadence20260928/preservation-post-cook.json",
+        "sha256": "68be2c1a8a731cfd20346f71ee8f5690fdd668ffba54d44b8f8813fb19ecfeba"
       },
       "baseline_asset_count": 4662,
       "unchanged_asset_count": 4656,
@@ -1629,7 +1637,7 @@
       "unchanged_save_count": 7,
       "python_syntax_valid": true,
       "generated_override_verify_count": 4,
-      "post_final_reaction_snapshot": "complete_unchanged_from_final01"
+      "post_final_reaction_snapshot": "superseded_by_cadence_post_cook_snapshot"
     },
     "initial_focus_run": {
       "status": "failed_not_acceptance",
@@ -2390,6 +2398,511 @@
       "dirty_content": [],
       "dirty_maps": [],
       "user_review_editor_is_separate": true
+    },
+    "pre_cadence_scope": "Earlier rebuild results through bf90d218 remain historical; new correction checks are in cadence_refinement. No new native build or broad regression claim.",
+    "previous_saved_asset_hashes_before_user_feedback": {
+      "source": {
+        "path": "Saved/GaspBlockLayers20260927/preservation-final-02.json",
+        "sha256": "e54017c1919c11038ff777a318e317823decbc8c921b851a3d9d20224abc121e"
+      },
+      "snapshot_scope": "49 new plus6 expected changed assets after Cook and final reaction PIE",
+      "assets": [
+        {
+          "path": "Content/SurvivalRpg/Characters/GASP/CMC/RPG/ABP_RpgGasp_CMC.uasset",
+          "sha256": "fd38df17a7695b1edbb299f4f3b712627b0f812ffd585c681d65dce6570447b9"
+        },
+        {
+          "path": "Content/SurvivalRpg/Characters/GASP/Mover/RPG/ABP_RpgGasp_Mover.uasset",
+          "sha256": "4ef0da0d85d3581a822529b1d76540ecf18ee2ad00a40a05751e14f84f540c6c"
+        },
+        {
+          "path": "Content/SurvivalRpg/Characters/GASP/Mover/RPG/BP_RpgGasp_Mover.uasset",
+          "sha256": "3f37b9cf5eb730fba733e79ca8439763e0a0d3236971429c26da7db057aa09dd"
+        },
+        {
+          "path": "Content/SurvivalRpg/Characters/GASP/Shared/Characters/UEFN_Mannequin/Meshes/SK_UEFN_Mannequin.uasset",
+          "sha256": "f8ee78e14e3542089f2ea020ab8496a356271c4a1235195df815351c74d1a090"
+        },
+        {
+          "path": "Plugins/GameFeatures/GF_Combat_Core/Content/Equipment/Weapons/BP_WeaponInstance_BasicShield.uasset",
+          "sha256": "48387d0d93b858dd8c7c60b1e0375be0075ef56b62d0ba57041c5505454a1a33"
+        },
+        {
+          "path": "Plugins/GameFeatures/GF_Combat_Core/Content/GAS/Abilities/GA_Combat_Block.uasset",
+          "sha256": "3724ebaf76cacd5d86465f4b4cbcda5886b35dd8d0a60bfb02173112f1a6dcc9"
+        },
+        {
+          "path": "Content/SurvivalRpg/Characters/GASP/Shared/RPG/Block/ABP_RpgBlockLocomotion.uasset",
+          "sha256": "7f4a5f5c1d274bec3624b4573780bdfc66eb929f05306ec9178fac930f4c5052"
+        },
+        {
+          "path": "Content/SurvivalRpg/Characters/GASP/Shared/RPG/Block/ALI_RpgBlockLocomotion.uasset",
+          "sha256": "8f1cf3401e9c7b18b80968133bc2ea046a5666f40f43d045e6c40871e6cb8373"
+        },
+        {
+          "path": "Plugins/GameFeatures/GF_Combat_Core/Content/Animations/BlockLocomotion/ABP_Block_SwordShield.uasset",
+          "sha256": "dd2b562675425b3589ec45ee3db36658658ec79c470cb1fffd6a26ebaab3a8f2"
+        },
+        {
+          "path": "Plugins/GameFeatures/GF_Combat_Core/Content/Animations/BlockLocomotion/ABP_Block_TestVariant.uasset",
+          "sha256": "a19acf6f487e0fa74907fd1cd600a8e604da8e267620160fe9d0ce07a89d75b9"
+        },
+        {
+          "path": "Plugins/GameFeatures/GF_Combat_Core/Content/Animations/BlockLocomotion/SwordShield/BS_BlockWalk.uasset",
+          "sha256": "38152f799d04432a428a39c5045d84ef4036561c60657ddde386926da76d3523"
+        },
+        {
+          "path": "Plugins/GameFeatures/GF_Combat_Core/Content/Animations/BlockLocomotion/SwordShield/CHT_BlockLocomotion.uasset",
+          "sha256": "aeb9d13e752da6f91cc22d3c0befb2da27fd3ffb4f0f0e57e510784c4b2f77a4"
+        },
+        {
+          "path": "Plugins/GameFeatures/GF_Combat_Core/Content/Animations/BlockLocomotion/SwordShield/Montages/AM_Block_End_Seq.uasset",
+          "sha256": "a792ef2f3f56331c3d0bfb5b1790541bdbe9a361e5d1f93886a4a5dd59a2a405"
+        },
+        {
+          "path": "Plugins/GameFeatures/GF_Combat_Core/Content/Animations/BlockLocomotion/SwordShield/Montages/AM_Block_Hit_Break_Seq.uasset",
+          "sha256": "b31ba1b5f62007bfb369b0dc3dc7f91528bd5e5d255801c9ef3e459ae1f6d868"
+        },
+        {
+          "path": "Plugins/GameFeatures/GF_Combat_Core/Content/Animations/BlockLocomotion/SwordShield/Montages/AM_Block_Hit_Seq.uasset",
+          "sha256": "dcf0454fbc0bdb7bec2c5b11699b2f199f06ec3bb642fae9fc119dd6e26330ed"
+        },
+        {
+          "path": "Plugins/GameFeatures/GF_Combat_Core/Content/Animations/BlockLocomotion/SwordShield/Montages/AM_Block_Start_Seq.uasset",
+          "sha256": "367280284293d66a6edf123d2c746ed516833d5ee457ff2ede72f31b5b46056a"
+        },
+        {
+          "path": "Plugins/GameFeatures/GF_Combat_Core/Content/Animations/BlockLocomotion/SwordShield/Montages/AM_Parry_R_Seq.uasset",
+          "sha256": "fe52895086a0119dd6f777251602c0d87cab54362ed9dd9d377da3d16a3209ce"
+        },
+        {
+          "path": "Plugins/GameFeatures/GF_Combat_Core/Content/Animations/BlockLocomotion/SwordShield/Sequences/Block_End_Seq_Retargeted.uasset",
+          "sha256": "371fddf9e53742c49f87eb2ab6f194b2461254cf8fa597a80d137beaebe6ed0e"
+        },
+        {
+          "path": "Plugins/GameFeatures/GF_Combat_Core/Content/Animations/BlockLocomotion/SwordShield/Sequences/Block_Hit_Break_Seq_Retargeted.uasset",
+          "sha256": "c2d2fcff64ee627989f909612f2403b206db242ae16625bcf6c955a6d5a3a946"
+        },
+        {
+          "path": "Plugins/GameFeatures/GF_Combat_Core/Content/Animations/BlockLocomotion/SwordShield/Sequences/Block_Hit_Seq_Retargeted.uasset",
+          "sha256": "a86df16b7bb19feffb362fd4e29ad0848ad368f9cfe48a18b0c2bad89877d1fe"
+        },
+        {
+          "path": "Plugins/GameFeatures/GF_Combat_Core/Content/Animations/BlockLocomotion/SwordShield/Sequences/Block_Loop_Seq_Retargeted.uasset",
+          "sha256": "9962eebbbf6196be97a9843885557bfdebb90fee02443acb21fc2428d028dee7"
+        },
+        {
+          "path": "Plugins/GameFeatures/GF_Combat_Core/Content/Animations/BlockLocomotion/SwordShield/Sequences/Block_Start_Seq_Retargeted.uasset",
+          "sha256": "409fe518c0ba47f8ccf88415594fb29a1963881dbdcb0f3ff5e5efe71c63a7ca"
+        },
+        {
+          "path": "Plugins/GameFeatures/GF_Combat_Core/Content/Animations/BlockLocomotion/SwordShield/Sequences/IK_Source.uasset",
+          "sha256": "b657c51ff1594dc88873724ac63df0a0b48c8430587d5b4da5b34629076be34b"
+        },
+        {
+          "path": "Plugins/GameFeatures/GF_Combat_Core/Content/Animations/BlockLocomotion/SwordShield/Sequences/Parry_L_Seq_Retargeted.uasset",
+          "sha256": "2dea8b867e9855050de396c623499d3de0f4fcf95196a666ce235e0bbec834d2"
+        },
+        {
+          "path": "Plugins/GameFeatures/GF_Combat_Core/Content/Animations/BlockLocomotion/SwordShield/Sequences/Parry_R_Seq_Retargeted.uasset",
+          "sha256": "a384743d44a61819fe4d44c3a89c51a5c1ba6ab4ff2304dc823fb2d907333cf5"
+        },
+        {
+          "path": "Plugins/GameFeatures/GF_Combat_Core/Content/Animations/BlockLocomotion/SwordShield/Sequences/RTG_SourceToTarget.uasset",
+          "sha256": "f72308273351de85e6e6fa332c8d3e550a638f2fbd88b1591f3498fedcabe0ec"
+        },
+        {
+          "path": "Plugins/GameFeatures/GF_Combat_Core/Content/Animations/BlockLocomotion/SwordShield/Sequences/Turn_Block_180_L_Retargeted.uasset",
+          "sha256": "5ff6f6d9b3e9fe3e2c2428a1507c0d65e83e020fcb757ab5c16ec0c0a0617fa1"
+        },
+        {
+          "path": "Plugins/GameFeatures/GF_Combat_Core/Content/Animations/BlockLocomotion/SwordShield/Sequences/Turn_Block_180_R_Retargeted.uasset",
+          "sha256": "d2c2accd58717e13db6fa7a90c542c2b2b33b98744bb2c0f24ceb425f477b71b"
+        },
+        {
+          "path": "Plugins/GameFeatures/GF_Combat_Core/Content/Animations/BlockLocomotion/SwordShield/Sequences/Turn_Block_90_L_Retargeted.uasset",
+          "sha256": "7462987c09d83e57647f3a17f8db2245aacd4dc389d4bcb76b8bb9302bc747f0"
+        },
+        {
+          "path": "Plugins/GameFeatures/GF_Combat_Core/Content/Animations/BlockLocomotion/SwordShield/Sequences/Turn_Block_90_R_Retargeted.uasset",
+          "sha256": "d99644b237e90aa691f9a405f938f315a9c746e57377279a03d2c7c6f8a98050"
+        },
+        {
+          "path": "Plugins/GameFeatures/GF_Combat_Core/Content/Animations/BlockLocomotion/SwordShield/Sequences/Walk_Block_Loop_B_0_Seq_Retargeted.uasset",
+          "sha256": "872c80535a36f7872aa9276d1823fa6bf9b5e32aeb15cf139b7d253714b220f9"
+        },
+        {
+          "path": "Plugins/GameFeatures/GF_Combat_Core/Content/Animations/BlockLocomotion/SwordShield/Sequences/Walk_Block_Loop_B_L_45_Seq_Retargeted.uasset",
+          "sha256": "f51472e7b7349bb1104ae9a5b4c2f5ea8d4ad74084b1cdfdcb841df2b101d495"
+        },
+        {
+          "path": "Plugins/GameFeatures/GF_Combat_Core/Content/Animations/BlockLocomotion/SwordShield/Sequences/Walk_Block_Loop_B_R_45_Seq_Retargeted.uasset",
+          "sha256": "56a3a12c960c55c7d6a2d32a0b758b1530796c9c15dc5b7deadf9bcac70fc3fe"
+        },
+        {
+          "path": "Plugins/GameFeatures/GF_Combat_Core/Content/Animations/BlockLocomotion/SwordShield/Sequences/Walk_Block_Loop_F_0_Seq_Retargeted.uasset",
+          "sha256": "74fc5985c2d24893a595bb88f8eb067e912962f6322ee966617808e54ff63483"
+        },
+        {
+          "path": "Plugins/GameFeatures/GF_Combat_Core/Content/Animations/BlockLocomotion/SwordShield/Sequences/Walk_Block_Loop_F_L_45_Seq_Retargeted.uasset",
+          "sha256": "c4d38a40e733506f3eadc8477f4f1579dcab4015cf598e69f2fd048d251517bc"
+        },
+        {
+          "path": "Plugins/GameFeatures/GF_Combat_Core/Content/Animations/BlockLocomotion/SwordShield/Sequences/Walk_Block_Loop_F_L_90_Seq_Retargeted.uasset",
+          "sha256": "ab3dc4d2fe00aa100f638a4050266e115fcd82b3ea6ab02f5523f84adef9cad9"
+        },
+        {
+          "path": "Plugins/GameFeatures/GF_Combat_Core/Content/Animations/BlockLocomotion/SwordShield/Sequences/Walk_Block_Loop_F_R_45_Seq_Retargeted.uasset",
+          "sha256": "f70b94065a298a82870e93030df9858255ef05b932c09317b200449b9d86b70f"
+        },
+        {
+          "path": "Plugins/GameFeatures/GF_Combat_Core/Content/Animations/BlockLocomotion/SwordShield/Sequences/Walk_Block_Loop_F_R_90_Seq_Retargeted.uasset",
+          "sha256": "399662171bb06881a46b3a29d38deffcf81bf6e808e5b7a52da00260733424ef"
+        },
+        {
+          "path": "Plugins/GameFeatures/GF_Combat_Core/Content/Animations/BlockLocomotion/SwordShield/Sequences/Walk_Block_Start_B_0_Seq_Retargeted.uasset",
+          "sha256": "eed649d24c402d28a8cb672d1279340dc7e98c527f25afe47553ca361a32e530"
+        },
+        {
+          "path": "Plugins/GameFeatures/GF_Combat_Core/Content/Animations/BlockLocomotion/SwordShield/Sequences/Walk_Block_Start_B_L_45_Seq_Retargeted.uasset",
+          "sha256": "b00f05b417f66bc10095cc8f9b788dfedf02eb5e6c5984bfbcb010f544ca17bf"
+        },
+        {
+          "path": "Plugins/GameFeatures/GF_Combat_Core/Content/Animations/BlockLocomotion/SwordShield/Sequences/Walk_Block_Start_B_R_45_Seq_Retargeted.uasset",
+          "sha256": "1c748f51c8a3a39c9a2b97ef7f21d534e5d44aaf6226e3fb97656357c6bc2bff"
+        },
+        {
+          "path": "Plugins/GameFeatures/GF_Combat_Core/Content/Animations/BlockLocomotion/SwordShield/Sequences/Walk_Block_Start_F_0_Seq_Retargeted.uasset",
+          "sha256": "0ae23461f9897f480b03ccf7229313c9e8cadcab72491420320511303aeb4663"
+        },
+        {
+          "path": "Plugins/GameFeatures/GF_Combat_Core/Content/Animations/BlockLocomotion/SwordShield/Sequences/Walk_Block_Start_F_L_45_Seq_Retargeted.uasset",
+          "sha256": "16d4531c5fd1f479a7a7588ef19c43088550a2f10f86683433d2e61a54127f8d"
+        },
+        {
+          "path": "Plugins/GameFeatures/GF_Combat_Core/Content/Animations/BlockLocomotion/SwordShield/Sequences/Walk_Block_Start_F_L_90_Seq_Retargeted.uasset",
+          "sha256": "9ffb05303d84af8aee095f4ae3d302765d668bcdd045a886bfe13f4015785a8a"
+        },
+        {
+          "path": "Plugins/GameFeatures/GF_Combat_Core/Content/Animations/BlockLocomotion/SwordShield/Sequences/Walk_Block_Start_F_R_45_Seq_Retargeted.uasset",
+          "sha256": "955e8d5b60036fb1862943fe40aaa38f8af2bce2652d0206cf38a34df398f1d3"
+        },
+        {
+          "path": "Plugins/GameFeatures/GF_Combat_Core/Content/Animations/BlockLocomotion/SwordShield/Sequences/Walk_Block_Start_F_R_90_Seq_Retargeted.uasset",
+          "sha256": "b3746e73417b5d4efbc24673dc6e08942e16a9306fee59d13c3be569b8570500"
+        },
+        {
+          "path": "Plugins/GameFeatures/GF_Combat_Core/Content/Animations/BlockLocomotion/SwordShield/Sequences/Walk_Block_Stop_B_0_Seq_Retargeted.uasset",
+          "sha256": "d0606dabe8a87f0cafc5112e33453d06e6fe947cc3836afed84d1a84c4b7313d"
+        },
+        {
+          "path": "Plugins/GameFeatures/GF_Combat_Core/Content/Animations/BlockLocomotion/SwordShield/Sequences/Walk_Block_Stop_B_L_45_Seq_Retargeted.uasset",
+          "sha256": "81cdf2660d9438638d6e10d178c576b60dd5e50d6b289ebd8f1890c58cab101f"
+        },
+        {
+          "path": "Plugins/GameFeatures/GF_Combat_Core/Content/Animations/BlockLocomotion/SwordShield/Sequences/Walk_Block_Stop_B_R_45_Seq_Retargeted.uasset",
+          "sha256": "75380816cde14f7cade3fcdb56a03f9fe98cbf868e52a9f380c3292951cd9d15"
+        },
+        {
+          "path": "Plugins/GameFeatures/GF_Combat_Core/Content/Animations/BlockLocomotion/SwordShield/Sequences/Walk_Block_Stop_F_0_Seq_Retargeted.uasset",
+          "sha256": "d2482593da547e4e977e742b57f724730354a905f173bd918f45372859f4d8f7"
+        },
+        {
+          "path": "Plugins/GameFeatures/GF_Combat_Core/Content/Animations/BlockLocomotion/SwordShield/Sequences/Walk_Block_Stop_F_L_45_Seq_Retargeted.uasset",
+          "sha256": "8481678cacd58caf14a6f1af8edc78f3b72096c8f2932b62f0a289c4055e9b0e"
+        },
+        {
+          "path": "Plugins/GameFeatures/GF_Combat_Core/Content/Animations/BlockLocomotion/SwordShield/Sequences/Walk_Block_Stop_F_L_90_Seq_Retargeted.uasset",
+          "sha256": "1c194b6a8ffc29e5743a399ddc1c0c8243573e1da670a9e2fe82e573c175104c"
+        },
+        {
+          "path": "Plugins/GameFeatures/GF_Combat_Core/Content/Animations/BlockLocomotion/SwordShield/Sequences/Walk_Block_Stop_F_R_45_Seq_Retargeted.uasset",
+          "sha256": "5e6d272707b5d5741a472f412cd7d5a3dcacb419cbc97f39225f6e9ae6f72506"
+        },
+        {
+          "path": "Plugins/GameFeatures/GF_Combat_Core/Content/Animations/BlockLocomotion/SwordShield/Sequences/Walk_Block_Stop_F_R_90_Seq_Retargeted.uasset",
+          "sha256": "d3282887d649eb715bc32cc64546a9bf57c2ef3de48d8bb22ec0436090e2b89f"
+        },
+        {
+          "path": "Plugins/GameFeatures/GF_Combat_Core/Content/Animations/BlockLocomotion/TestVariant/CHT_BlockLocomotion.uasset",
+          "sha256": "09429d51560c0094de80ab74e535f5be4fba56013ff2b167bd7c4a45e2001b27"
+        }
+      ]
+    },
+    "cadence_refinement": {
+      "reported_candidate": "bf90d218a23370432ccc31124c5d6fa35a697dad",
+      "runtime_cpp_changed": false,
+      "movement_speed_or_clip_rates_changed": false,
+      "changed_assets_since_candidate": 26,
+      "derived_walk_sequences": 24,
+      "added_walk_notifies": 50,
+      "focus_final": {
+        "passed": 16,
+        "failed": 0,
+        "skipped": 0,
+        "seconds": 209.78489685058594,
+        "warnings": 623,
+        "evidence": {
+          "path": "Saved/GaspBlockLayers20260927/cadence-focus-02-summary.json",
+          "sha256": "789c809bca6a35b9fd01b0581e4ac82686b4b324857c58794425ae93c0610a19"
+        }
+      },
+      "focus_first": {
+        "passed": 18,
+        "failed": 1,
+        "failure": "Mover fixed rollback replay timeout after45 seconds; repeat passed, no network fix claimed",
+        "evidence": {
+          "path": "Saved/GaspBlockLayers20260927/cadence-focus-01-summary.json",
+          "sha256": "32ad771a8507bc943b1c2af6cf6b7465b95488586cbdaf0e6b78e1357637c0e9"
+        }
+      },
+      "cold_reload": {
+        "clips": 24,
+        "notifies": 50,
+        "compiles": 3,
+        "dirty_packages": 0
+      },
+      "cook": {
+        "seconds": 446.4601417,
+        "exit_code": 0,
+        "saved_packages": 3170,
+        "summary": "Success - 0 error(s), 3 warning(s)"
+      },
+      "measurements": {
+        "cmc_free_stride_hz_before": 3.529,
+        "cmc_free_stride_hz_final": 1.791,
+        "actual_free_speed_cm_s": 600,
+        "cmc_released_stride_hz_final": 1.846,
+        "block_stride_hz_final_both": 0.889,
+        "actual_block_speed_cm_s": 157,
+        "block_walk_getter_frames_per_variant": {
+          "L": 4,
+          "R": 3
+        },
+        "block_run_getter_frames_per_variant": 0,
+        "block_wave_duration_seconds_both": 3.989,
+        "block_mix_energy_groups_each": 7,
+        "block_mix_group_hz": {
+          "CMC": 1.786,
+          "Mover": 1.754
+        }
+      },
+      "closure_new_assets": {
+        "root_count": 49,
+        "project_package_count": 366,
+        "boundary_count": 39,
+        "registered_project_closure_complete": true,
+        "no_original_import_references": true
+      },
+      "closure_all_roots_exit": 1,
+      "closure_all_roots_reason": "Same historical missing soft-preview package; no new referencers or original imports",
+      "limits": [
+        "Foot-pose cadence is not an MM player clock.",
+        "Foley getters are frame observations; wave energy groups are not isolated footstep counts or a listening judgement.",
+        "Mover free/released WAVs only2.709/3.115 seconds; no exact audio/pose synchronization claim.",
+        "Eight closeups reviewed; lower feet cropped. No fresh complete foot-contact visual acceptance.",
+        "Intermediate after01 removed Run but was silent; phasefix reinstated Walk and increased measured block cadence about5.9%.",
+        "623 test warnings, original timeout and silent capture attempts retained.",
+        "Native C++ unchanged; prior build/regression results are not newly executed."
+      ],
+      "evidence": {
+        "authoring-before.json": {
+          "path": "Saved/GaspBlockCadence20260928/authoring-before.json",
+          "sha256": "2ae80263b6fe37d9ab898663fe42d5469b0938d41623479af3f12b6baf522393"
+        },
+        "authoring-after.json": {
+          "path": "Saved/GaspBlockCadence20260928/authoring-after.json",
+          "sha256": "acad7f9f7279782c9954c51c0cf6eebc72df45795c5d64b35ac5a41c1950bcb4"
+        },
+        "authoring-results.json": {
+          "path": "Saved/GaspBlockCadence20260928/authoring-results.json",
+          "sha256": "9393f7eea4c42dfee83f52adef6bb3882743c096e77a957027e31a8f6d8e77c6"
+        },
+        "blend-space-notify-fix.json": {
+          "path": "Saved/GaspBlockCadence20260928/blend-space-notify-fix.json",
+          "sha256": "8a8bcff36d0866db6617793fd992252a389f2f0ad093385cbb1fa3212a5e451d"
+        },
+        "cold-notify-contract.json": {
+          "path": "Saved/GaspBlockCadence20260928/cold-notify-contract.json",
+          "sha256": "9d8aeac9db5c328a07f23ce38c02c337dfdd6b686b43bd8e4eee7e491b6086b4"
+        },
+        "notify-negative-input.json": {
+          "path": "Saved/GaspBlockCadence20260928/notify-negative-input.json",
+          "sha256": "e22f2d05d86ed4ba7482459ca320bef19dafd3f037bf0b2ed36aa45c1b953d16"
+        },
+        "cadence-analysis.json": {
+          "path": "Saved/GaspBlockCadence20260928/cadence-analysis.json",
+          "sha256": "2bf1718ed547d18f0377c12eecf7f3de3ebdaf6a48c1a8c8fa98ed9b70123c34"
+        },
+        "cadence-analysis.md": {
+          "path": "Saved/GaspBlockCadence20260928/cadence-analysis.md",
+          "sha256": "3c95164b01bcd0d5ca895fa90af9ebc289df12168fd5388362b8f47b601c3273"
+        },
+        "preservation-post-cook.json": {
+          "path": "Saved/GaspBlockCadence20260928/preservation-post-cook.json",
+          "sha256": "68be2c1a8a731cfd20346f71ee8f5690fdd668ffba54d44b8f8813fb19ecfeba"
+        },
+        "source-preservation-final.json": {
+          "path": "Saved/GaspBlockCadence20260928/source-preservation-final.json",
+          "sha256": "4e291d6ddb2e1c8650bff41c21bdfb87f8ba73986a3c58ed1cd58a7098424708"
+        },
+        "dependency-closure-final.json": {
+          "path": "Saved/GaspBlockCadence20260928/dependency-closure-final.json",
+          "sha256": "2dbbf15efc55429ea6f02754d097e6cd0e0ad85d772ae3ed8705d475ed90ff90"
+        },
+        "cook-final-result.json": {
+          "path": "Saved/GaspBlockCadence20260928/cook-final-result.json",
+          "sha256": "e9380e9fabbf8b476311bf7988300cbc6c306c7f854b5ebd29e57b8bd938e7af"
+        },
+        "cook-final.log": {
+          "path": "Saved/GaspBlockCadence20260928/cook-final.log",
+          "sha256": "328924f8246d02361d05357cc24ea4d407a2ec9cd3a05bbede1f4a37de674675"
+        },
+        "cmc-final-01\\before.json": {
+          "path": "Saved/GaspBlockCadence20260928/cmc-final-01/before.json",
+          "sha256": "c1f54077f2e17d963052bebc59c98660689493e09802cf6a8207d5d4e45ae85e"
+        },
+        "cmc-final-01\\block-samples.json": {
+          "path": "Saved/GaspBlockCadence20260928/cmc-final-01/block-samples.json",
+          "sha256": "ec48bc2619fd293f6664f8120af91b33ac22e8b8809492a50b372d767bfa0834"
+        },
+        "cmc-final-01\\free-samples.json": {
+          "path": "Saved/GaspBlockCadence20260928/cmc-final-01/free-samples.json",
+          "sha256": "35fe9111343ca0cd18326a8436617477969a12ee844ef232f72c9b7786ddc0b6"
+        },
+        "cmc-final-01\\released-samples.json": {
+          "path": "Saved/GaspBlockCadence20260928/cmc-final-01/released-samples.json",
+          "sha256": "56dfc277c4bad39d7bf40d3985bfb8a021c4cb09218aa47cc028d188e08a45b6"
+        },
+        "cmc-final-01\\report.json": {
+          "path": "Saved/GaspBlockCadence20260928/cmc-final-01/report.json",
+          "sha256": "3c3d5059f08780717d82129daccd3c2c2977bac3018e1701f6b0cf7b136d6114"
+        },
+        "mover-final-01\\before.json": {
+          "path": "Saved/GaspBlockCadence20260928/mover-final-01/before.json",
+          "sha256": "87a866fbc31aa9aac33eeb779035df9a811932d82901f6191348a0232d4378a0"
+        },
+        "mover-final-01\\block-samples.json": {
+          "path": "Saved/GaspBlockCadence20260928/mover-final-01/block-samples.json",
+          "sha256": "9e1e586416f4987f68d4c396d56b47e3bfa97bbc67776f48ffd50b7dcfacbf39"
+        },
+        "mover-final-01\\free-samples.json": {
+          "path": "Saved/GaspBlockCadence20260928/mover-final-01/free-samples.json",
+          "sha256": "07eab0b07725b3de31061ddf591321ec79680798151e7567933ca148e287e4ae"
+        },
+        "mover-final-01\\released-samples.json": {
+          "path": "Saved/GaspBlockCadence20260928/mover-final-01/released-samples.json",
+          "sha256": "8fee2313eb5f0fb93e628db89583873f3f147e6bb2086ed158fcb1ab538f245b"
+        },
+        "mover-final-01\\report.json": {
+          "path": "Saved/GaspBlockCadence20260928/mover-final-01/report.json",
+          "sha256": "a9ace061ccb147c91cd1e2b15bebaf960230d05b3a3b5d86f3cd97c064e866bd"
+        },
+        "cmc-transitions-01\\diagonal.json": {
+          "path": "Saved/GaspBlockCadence20260928/cmc-transitions-01/diagonal.json",
+          "sha256": "24f45e085d8bd502ae36d5b7a80b774d3d6510c712a7305dc0c48cdcbd23eef0"
+        },
+        "cmc-transitions-01\\diagonal.png": {
+          "path": "Saved/GaspBlockCadence20260928/cmc-transitions-01/diagonal.png",
+          "sha256": "96668f6cd6d1dfd179fe39bd2313d5da9be679482edbd7d2efe933bf9108f76b"
+        },
+        "cmc-transitions-01\\release.json": {
+          "path": "Saved/GaspBlockCadence20260928/cmc-transitions-01/release.json",
+          "sha256": "65e6b4fcf520bad6f8cd792869681b62bfef0d8085de11386e5a99359fc0a5cf"
+        },
+        "cmc-transitions-01\\release.png": {
+          "path": "Saved/GaspBlockCadence20260928/cmc-transitions-01/release.png",
+          "sha256": "b3e3eb183e475871f384c85dd2fb4ba7d9be303bcdd8750dcd0f34fe1a2237ac"
+        },
+        "cmc-transitions-01\\report.json": {
+          "path": "Saved/GaspBlockCadence20260928/cmc-transitions-01/report.json",
+          "sha256": "5266a1ae677cfed1bb3c1aa3a636f4967ffb9b5e2f1a283befec24c53e6a0240"
+        },
+        "cmc-transitions-01\\stop.json": {
+          "path": "Saved/GaspBlockCadence20260928/cmc-transitions-01/stop.json",
+          "sha256": "7da0621da1ae3481140caafebb066c9aa730e02380fac5362e9160814ba818e1"
+        },
+        "cmc-transitions-01\\stop.png": {
+          "path": "Saved/GaspBlockCadence20260928/cmc-transitions-01/stop.png",
+          "sha256": "de47e65667b82a1280cdd80678a75d46006dd13119593776ae050d7bfcab0ced"
+        },
+        "cmc-transitions-01\\transitions-samples.json": {
+          "path": "Saved/GaspBlockCadence20260928/cmc-transitions-01/transitions-samples.json",
+          "sha256": "013e8f2e9a46b302239beb13a2e16bc8af587f352e3da45e53028f7f29c4a313"
+        },
+        "cmc-transitions-01\\walk.json": {
+          "path": "Saved/GaspBlockCadence20260928/cmc-transitions-01/walk.json",
+          "sha256": "e011256744f436bf12a03a88a9332848539680aa74c2fdbac36a296620f61383"
+        },
+        "cmc-transitions-01\\walk.png": {
+          "path": "Saved/GaspBlockCadence20260928/cmc-transitions-01/walk.png",
+          "sha256": "ec3da09cfde7c52a2e300e067a1da416d0d23b05c3bef1e3f802f21ad3c74d04"
+        },
+        "mover-transitions-01\\diagonal.json": {
+          "path": "Saved/GaspBlockCadence20260928/mover-transitions-01/diagonal.json",
+          "sha256": "44c130f79b1fdb6fda40e0da1fcac5b82dc12bdbaae361b57d12f7391dcfe22d"
+        },
+        "mover-transitions-01\\diagonal.png": {
+          "path": "Saved/GaspBlockCadence20260928/mover-transitions-01/diagonal.png",
+          "sha256": "8e52bf4ac40004d1e80255a1a1fd66de3f255b156b7f9260d9a2f2ade92a1c90"
+        },
+        "mover-transitions-01\\release.json": {
+          "path": "Saved/GaspBlockCadence20260928/mover-transitions-01/release.json",
+          "sha256": "33007c0ce782d8535e914b68b21aea6673d966a54a594b3e91f09ea60f4a5476"
+        },
+        "mover-transitions-01\\release.png": {
+          "path": "Saved/GaspBlockCadence20260928/mover-transitions-01/release.png",
+          "sha256": "c6c0342f043c49014625a60f44e5211396853d07d8de7becf529529f7e8b75e3"
+        },
+        "mover-transitions-01\\report.json": {
+          "path": "Saved/GaspBlockCadence20260928/mover-transitions-01/report.json",
+          "sha256": "9acaca864ed1a9d0dccfc57a9103fd2ae0183d59776fb0b96618d3445f5fab6e"
+        },
+        "mover-transitions-01\\stop.json": {
+          "path": "Saved/GaspBlockCadence20260928/mover-transitions-01/stop.json",
+          "sha256": "2c93d58b6c0155d4b9613203d1643c79a4c8d9a2596f76110dbf586eec5323bd"
+        },
+        "mover-transitions-01\\stop.png": {
+          "path": "Saved/GaspBlockCadence20260928/mover-transitions-01/stop.png",
+          "sha256": "2b4e2f5937e513e0e48cea918682af25fe90c65765bb60e26556a34c5d689429"
+        },
+        "mover-transitions-01\\transitions-samples.json": {
+          "path": "Saved/GaspBlockCadence20260928/mover-transitions-01/transitions-samples.json",
+          "sha256": "a35c5775bd0fa2e4d2d93ebb7ccd4832db53e561a61b93cc62a89996a42a549f"
+        },
+        "mover-transitions-01\\walk.json": {
+          "path": "Saved/GaspBlockCadence20260928/mover-transitions-01/walk.json",
+          "sha256": "5a1f7c405803005872730d239625005a1c7e8d53ca2fc78f4cdadbec41b6d8d5"
+        },
+        "mover-transitions-01\\walk.png": {
+          "path": "Saved/GaspBlockCadence20260928/mover-transitions-01/walk.png",
+          "sha256": "05ab8532229b980bc7c33b5a57f5145a4ab0689cd494d815d6e06e0a8a8f054d"
+        },
+        "audio\\cmc-final-01-block.wav": {
+          "path": "Saved/GaspBlockCadence20260928/audio/cmc-final-01-block.wav",
+          "sha256": "d477b4e389412c3aedeb6539a4bd02c531cbe91090eeda85d53693b1191dfbd4"
+        },
+        "audio\\cmc-final-01-free.wav": {
+          "path": "Saved/GaspBlockCadence20260928/audio/cmc-final-01-free.wav",
+          "sha256": "7b52b35d866d00f41fbce2ceea6eac6942becddedf6ee0e16f8a9fe2a0649289"
+        },
+        "audio\\cmc-final-01-released.wav": {
+          "path": "Saved/GaspBlockCadence20260928/audio/cmc-final-01-released.wav",
+          "sha256": "fc881675d4668b9b826139dceefc1977b7f50779d231f3217c304f45a84722f0"
+        },
+        "audio\\mover-final-01-block.wav": {
+          "path": "Saved/GaspBlockCadence20260928/audio/mover-final-01-block.wav",
+          "sha256": "3340d0b2b804938f926677a17192a8e233ba24a16af1d11a3c5e7b92586705fe"
+        },
+        "audio\\mover-final-01-free.wav": {
+          "path": "Saved/GaspBlockCadence20260928/audio/mover-final-01-free.wav",
+          "sha256": "8d49ecc36ded0be0eda06a267705a18b5903186e8badbc6a23e66edd364dad41"
+        },
+        "audio\\mover-final-01-released.wav": {
+          "path": "Saved/GaspBlockCadence20260928/audio/mover-final-01-released.wav",
+          "sha256": "7a82e1a03e70e9eb55019a746ed2c0d7bf3a7a4a85862c5b17caab27a9944ae6"
+        }
+      }
     }
   },
   "extension_workflow": [
@@ -2509,9 +3022,9 @@
   },
   "evidence_policy": "Hashes describe exact retained Saved bytes and original source payloads at this documentation checkpoint. In-flight content has no final hash assertion. Saved evidence is ignored and unavailable in a normal checkout.",
   "pr_metadata": {
-    "update_status": "blocked_connector403_browser_signed_out",
+    "update_status": "blocked_connector403_on_cadence_followup",
     "existing_remote_description": "historical_previous_implementation_not_this_current_final_contract",
-    "prepared_local_text": "Saved/GaspBlockLayers20260927/pr-160-block-locomotion-metadata.md",
+    "prepared_local_text": "Saved/GaspBlockCadence20260928/pr-160-metadata.md",
     "login_or_credential_workaround_used": false,
     "merge_authorized": false
   }
