@@ -6,10 +6,10 @@
   "baseCommit": "c357ddb1108b841ea2c088e548594690c65655ff",
   "basePullRequest": 160,
   "pullRequest": 161,
-  "draft": true,
+  "draft": false,
   "implementationCommit": "301275dcc05f4d07d37b93de8f5796255819586a",
-  "merged": false,
-  "userVisualAcceptance": "pending",
+  "merged": true,
+  "userVisualAcceptance": "accepted",
   "tuning": {
     "normalCmPerSecond": 375,
     "sprintCmPerSecond": 585,
@@ -1021,5 +1021,17 @@
       "[2026.09.28-20.06.37:185][  0]LogInit: Display: Warning/Error Summary (Unique only)",
       "[2026.09.28-20.06.37:185][  0]LogInit: Display: Success - 0 error(s), 3 warning(s)"
     ]
+  },
+  "mergeClosure": {
+    "date": "2026-09-28",
+    "mergeCommit": "849dc7aa751346e0d248432c24cf08cce98426af",
+    "mergedAt": "2026-09-28T21:09:29Z",
+    "finalReviewedHead": "780740348a0f7ba45412b1e8535c28be4f4aa60d",
+    "finalBase": "master",
+    "userResponse": "schaut gut aus",
+    "acceptanceScope": "Overall user visual acceptance; existing measurement and network limits remain.",
+    "integratedTreeMatchesReviewedHead": true,
+    "verifiedPluginOverrides": 4,
+    "newBuildsTestsOrCookDuringClosure": false
   }
 }

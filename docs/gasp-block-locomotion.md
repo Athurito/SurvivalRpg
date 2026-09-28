@@ -1,7 +1,7 @@
 # GASP-06: erweiterbare Block-Locomotion
 
-Stand: 28.09.2026. **Laufkadenz und Block-Foley korrigiert und erneut geprüft; Nutzer-Sicht-/Hörprobe offen.**
-[PR #160](https://github.com/Athurito/SurvivalRpg/pull/160) bleibt offen. Dieser Bericht beschreibt den Neuaufbau nach dem vollständigen Rückbau des vorherigen GASP-06-Versuchs; frühere Pose-, Netzwerk- und Cook-Ergebnisse gelten dafür nicht. Das [Manifest](assets/gasp-block-locomotion.json) enthält die aktuellen Prüfergebnisse, erhaltene Fehlversuche und Abnahmegrenzen.
+Stand: 28.09.2026. **Laufkadenz und Block-Foley korrigiert; Nutzer bestätigt den Eindruck, PR gemergt.**
+[PR #160](https://github.com/Athurito/SurvivalRpg/pull/160) wurde am 28.09.2026 um 21:08:27 UTC als `c97234d54bfbbd624bf78c34510ed2252aadaef7` gemergt; finaler geprüfter Head `c357ddb1108b841ea2c088e548594690c65655ff`. Dieser Bericht beschreibt den Neuaufbau nach dem vollständigen Rückbau des vorherigen GASP-06-Versuchs; frühere Pose-, Netzwerk- und Cook-Ergebnisse gelten dafür nicht. Das [Manifest](assets/gasp-block-locomotion.json) enthält die Prüfergebnisse, erhaltene Fehlversuche und Abnahmegrenzen. Die Merge-Statuspflege führt keine neuen Builds/Tests/Cooks aus.
 
 ## Korrektur nach Nutzerprobe: Laufkadenz und Block-Foley
 
@@ -33,7 +33,7 @@ Die frische Registry-Closure der 49 neuen Assets umfasst durch Foley nun 366 Pro
 
 Die generischen MCP-Werkzeuge `add_animation_notifies` und `animation_notify_contract` ermöglichen explizite neue Tracks mit Undo beziehungsweise lesenden Vertragsvergleich. Sie wählen keine Spielinhalte selbst. Neue Animationssätze benötigen eigene passende Kontaktmarker und Foley-Notifies; beim Ausschalten des Blocks darf die Host-Locomotion pro Frame nur einen aktiven Updateweg erhalten.
 
-Aktuelle Rohbelege: `Saved/GaspBlockCadence20260928` sowie `Saved/GaspBlockLayers20260927/cadence-focus-01/02-*`. Saved bleibt ignoriert und ist in anderen Checkouts nicht automatisch vorhanden. **PR #160 bleibt offen bis zur erneuten Nutzer-Sicht-/Hörprobe:** auf CMC ohne RMB laufen; auf Mover RMB halten und WASD, Diagonalen, Stoppen und Loslassen prüfen.
+Aktuelle Rohbelege: `Saved/GaspBlockCadence20260928` sowie `Saved/GaspBlockLayers20260927/cadence-focus-01/02-*`. Saved bleibt ignoriert und ist in anderen Checkouts nicht automatisch vorhanden. Die Nutzerprobe bestätigte den korrigierten Eindruck; PR #160 ist gemergt. Der Wiederholungsweg bleibt: auf CMC ohne RMB laufen; auf Mover RMB halten und WASD, Diagonalen, Stoppen und Loslassen prüfen.
 
 ## Ausgangspunkt und Umfang
 
@@ -162,6 +162,6 @@ Der Mover-Testvorlauf wird jetzt vor jeder Messung einmal aus echten Authority-B
 
 `/Game/SurvivalRpg/Maps/Test/Lvl_RpgGaspMantle` (CMC) oder `Lvl_RpgGaspMover` starten. RMB halten, in alle WASD-Richtungen gehen, anhalten und die Kamera bei gehaltenem RMB drehen. Rasches Loslassen/Wiederdrücken sowie beim Mover Shift vor/während Block und weiter gehaltenes Shift nach Release prüfen. Die reduzierte Blockgeschwindigkeit ist beabsichtigt. Sichtbar zu beurteilen sind Haltung, Schulter-/Schildanschluss, Schritte und Start-/Stop-/Turnübergänge.
 
-**Nutzer-Sichtabnahme bleibt offen; PR #160 bleibt Draft und wird nicht gemergt.** Die vorhandene PR-Beschreibung bezeichnet noch einen historischen Stand: Aktualisierung von Titel/Body ist derzeit durch Connector 403 und den abgemeldeten Browser blockiert. Der aktuelle Ersatztext liegt lokal unter `Saved/GaspBlockLayers20260927/pr-160-block-locomotion-metadata.md`; das betrifft die Metadatenpflege, keinen zusätzlichen Freigabeschritt. Der letzte Testeditor wurde ohne Dirty-Assets/-Maps geschlossen. Für die Nutzerprobe steht ein normal sichtbarer Editor auf der Mover-Karte bereit, noch ohne PIE. Die Umsetzung ist in `ac87a4a6` gespeichert; der Branch bleibt derselbe offene Draft-PR.
+**Nutzerfreigabe erfolgt; PR #160 ist gemergt.** Titel/Body wurden am 28.09.2026 über die inzwischen authentifizierte GitHub-CLI auf den tatsächlichen Neuaufbau korrigiert; die frühere Connector-/Browserblockade ist erledigt. Die Umsetzung liegt in `ac87a4a6`, die Kadenz-/Foley-Korrektur in `794fad75`. Der anschließende [CMC-Sprint](gasp-cmc-sprint.md) wurde separat in PR #161 geprüft und gemergt. Die positive Nutzerprobe ist keine zusätzliche universelle Audio-, Footlock- oder Mehrrechnerabnahme.
 
 Rohbelege unter `Saved/GaspBlockLayers20260927/` sind ignoriert. Das Manifest hält Pfade und Hashes fest; andere Checkouts benötigen den gespeicherten Content, verifizierte Plugin-Overrides und eigene Ausführungsbelege. Bestehende NET03-/VAL-Grenzen bleiben bestehen.

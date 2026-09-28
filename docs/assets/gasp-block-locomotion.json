@@ -2,9 +2,9 @@
   "schema_version": 1,
   "task": "GASP-06",
   "date": "2026-09-28",
-  "status": "cadence_and_foley_corrections_verified_user_visual_and_auditory_acceptance_pending",
+  "status": "cadence_and_foley_corrections_verified_user_accepted_merged",
   "pr": "https://github.com/Athurito/SurvivalRpg/pull/160",
-  "pr_status": "open_manual_visual_acceptance_required",
+  "pr_status": "merged",
   "branch": "codex/gasp-06-moving-block",
   "implementation_commit": "ac87a4a6a0a25f5b90633e4ed3e8ef12c987b845",
   "rollback": {
@@ -223,7 +223,7 @@
       "Keep fullbody GAS montage priority after block layer",
       "Use main-instance montage evaluation data"
     ],
-    "host_integration_acceptance": "Both hosts integrated; final focused and selected regression suites pass. User visual acceptance pending.",
+    "host_integration_acceptance": "Both hosts integrated; final focused and selected regression suites pass. Final overall user impression accepted; PR merged.",
     "skeleton_compatibility": "Exact compiled AnimBP TargetSkeleton identity. Other skeletons require explicit retarget/AnimBP/host adaptation and fresh validation.",
     "turn_timing_contract": {
       "status": "authored implementation contract, not visual acceptance",
@@ -270,7 +270,8 @@
         "late entry skips initial stop clip portion"
       ],
       "implemented": true,
-      "user_visual_acceptance": false
+      "user_visual_acceptance": false,
+      "user_visual_acceptance_scope": "Historical per-feature snapshot: no separate user stop-phase assessment recorded. Final overall presentation accepted; technical limits above remain."
     },
     "base_pose_update_policy": "Final interrupt TwoWayBlend.bAlwaysUpdateChildren=false; BlockUpperBody.bAlwaysUpdateSourcePose=true remains for moving reaction legs.",
     "loop_sync_and_notify_policy": {
@@ -1342,13 +1343,13 @@
       }
     },
     "visual_acceptance": {
-      "status": "cadence_correction_local_measurements_and_closeups_reviewed_user_visual_and_auditory_review_pending",
-      "accepted": false,
+      "status": "final_overall_user_impression_accepted_merged",
+      "accepted": true,
       "diagnostic_material": [
         "Saved/GaspBlockLayers20260927/cmc-editor10-fullbody",
         "Saved/GaspBlockLayers20260927/mover-editor10-fullbody"
       ],
-      "limit": "Local instrumented screenshots/pose probes; user acceptance still required, no generic smoothness or network parity claim.",
+      "limit": "Local instrumented screenshots/pose probes plus final overall user acceptance; no new universal audio, foot-lock, smoothness or network-parity claim.",
       "own_turn_and_stop_images_reviewed": true,
       "final_reaction_review": "complete_four_actual_local_montage_windows_and_five_images_reviewed",
       "user_editor": {
@@ -1356,7 +1357,8 @@
         "visible": true,
         "map": "/Game/SurvivalRpg/Maps/Test/Lvl_RpgGaspMover",
         "pie_running_at_handoff": false,
-        "NoSaveConfig": true
+        "NoSaveConfig": true,
+        "snapshot_status": "Historical handoff before final user acceptance; no UnrealEditor process running at merge closure."
       }
     },
     "final_saved_asset_hashes": {
@@ -3023,10 +3025,19 @@
   },
   "evidence_policy": "Hashes describe exact retained Saved bytes and original source payloads at this documentation checkpoint. In-flight content has no final hash assertion. Saved evidence is ignored and unavailable in a normal checkout.",
   "pr_metadata": {
-    "update_status": "blocked_connector403_on_cadence_followup",
-    "existing_remote_description": "historical_previous_implementation_not_this_current_final_contract",
+    "update_status": "updated_via_authenticated_github_cli",
+    "existing_remote_description": "current_extensible_block_rebuild",
     "prepared_local_text": "Saved/GaspBlockCadence20260928/pr-160-metadata.md",
     "login_or_credential_workaround_used": false,
-    "merge_authorized": false
+    "merge_authorized": true
+  },
+  "merge_closure": {
+    "date": "2026-09-28",
+    "merge_commit": "c97234d54bfbbd624bf78c34510ed2252aadaef7",
+    "merged_at": "2026-09-28T21:08:27Z",
+    "final_reviewed_head": "c357ddb1108b841ea2c088e548594690c65655ff",
+    "user_response": "schaut gut aus",
+    "integrated_tree_matches_reviewed_head": true,
+    "new_builds_tests_or_cook_during_closure": false
   }
 }
