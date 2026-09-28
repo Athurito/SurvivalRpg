@@ -1,11 +1,15 @@
 # GASP-07 – CMC-Sprint mit GAS-Ausdauer
 
-Status: technisch und durch eigene Sichtaufnahmen geprüft; einfache Nutzersichtprobe offen.
-Branch `codex/gasp-07-cmc-gas-sprint`, auf `c357ddb1` aus dem offenen
+Status: **Nutzersichtprobe mit „schaut gut aus“ bestätigt und gemergt.**
+Branch `codex/gasp-07-cmc-gas-sprint`, auf `c357ddb1` aus dem damaligen
 [Block-PR #160](https://github.com/Athurito/SurvivalRpg/pull/160) aufgebaut.
-Die Sprint-Erweiterung liegt in [Draft-PR #161](https://github.com/Athurito/SurvivalRpg/pull/161),
+Die Sprint-Erweiterung liegt in [PR #161](https://github.com/Athurito/SurvivalRpg/pull/161),
 Implementierungscommit `301275dcc05f4d07d37b93de8f5796255819586a`.
-Der Block-PR ist nicht gemergt.
+Nach Merge von #160 wurde #161 auf master umgestellt und am 28.09.2026 um
+21:09:29 UTC als `849dc7aa751346e0d248432c24cf08cce98426af` gemergt;
+finaler geprüfter Head `780740348a0f7ba45412b1e8535c28be4f4aa60d`.
+Für diese Statuspflege keine neuen Builds/PIEs/Cooks; der integrierte
+Dateibaum ist identisch zum freigegebenen Head, vier Plugin-Overrides erneut verifiziert.
 
 ## Auftrag und Ownership-Entscheidung
 
@@ -142,5 +146,6 @@ erneuten Drücken von Shift; Ausdauer erholt sich nach zwei Sekunden.
 
 Sprint und Regen sind Asset-Tuning. Die Skalierung von Schild/Schwert und
 eine eigene Combat-Sprintpose wurden in diesem Schritt nicht verändert.
-Der separate Sprint-PR basiert auf dem weiterhin offenen PR #160.
-Bis zur Sichtfreigabe kein Merge und kein Shutdown.
+Der Nutzer hat die Sichtprobe am 28.09.2026 bestätigt. Beide PRs sind auf
+master gemergt; die dokumentierten technischen Grenzen bleiben bestehen.
+Ein Shutdown oder weiteres Gameplaypaket gehört nicht zu diesem Abschluss.

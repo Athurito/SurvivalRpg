@@ -5,46 +5,55 @@ Zentraler Plan und Aufgabenverträge:
 Diese Datei hält den **aktuellen Arbeitsstand**, die Roadmap die Reihenfolge und
 Abnahme. Beide bei relevanten Fortschritten im selben PR aktualisieren.
 
-## Aktuelle Fortsetzung – GASP-07, 28.09.2026
+## Aktueller Abschluss – GASP-06 und GASP-07, 28.09.2026
 
-Nutzerauftrag: gegen Original-GASP prüfen und CMC-Sprint als GAS-Ability mit
-Ausdauerverbrauch ergänzen; einfache Regeneration ausdrücklich bestätigt.
-Branch `codex/gasp-07-cmc-gas-sprint` auf `c357ddb1`,
-[Draft-PR #161](https://github.com/Athurito/SurvivalRpg/pull/161), offen/ungemergt,
-Implementierungscommit `301275dcc05f4d07d37b93de8f5796255819586a`.
-Der Nutzer beschreibt den Blockstand als gut, PR #160 bleibt jedoch offen und
-ist nicht gemergt. Native-/Asset-Ownership und Prüfung stehen in
-[gasp-cmc-sprint.md](gasp-cmc-sprint.md). **Editor/Game erfolgreich, Sprint
-13/13 und Regression 9/9 bestanden**, echte 50-cm-Korrektur bei 200 ms Lag,
-LateJoin/Exhaustion/Block/Respawn geprüft. Eigene Sichtaufnahmen mit 375/585
-cm/s und 157 cm/s beim Block; fünf Karten erfolgreich für Windows gekocht
-(3171 Pakete, sieben Plattform-Skips, drei Warnungen). 545 Testwarnungen und
-frühere Fehlversuche sind im [Manifest](assets/gasp-cmc-sprint-validation.json)
-erhalten. Regen-Tuning wird nach Set-Registrierung aktivierungsgebunden
-angewendet; CMC/Mover haben gemeinsame Lauf-/Sprintgeschwindigkeiten,
-Mover erhält dabei kein neues Ausdauersystem. **Nächster Schritt: einfache
-Shift/RMB-/Erschöpfungs-Sichtprobe auf `Lvl_RpgGaspMantle`, danach Freigabe;
-kein Merge oder Shutdown in diesem Auftrag.**
-Der bisherige Nutzereditor PID14180 wurde sauber geschlossen. Original-GASP
-für frischen CMC-/Input-Export mit PID37300 gestartet und ebenfalls sauber
-geschlossen (keine schmutzigen Content-/Map-Pakete); lokale Belege
-`Saved/GaspCmcSprint20260928`. Root besitzt allein Editor/MCP und Binärassets.
+Nutzer bestätigt die Sichtprobe mit **„schaut gut aus“**. Beide Gameplay-PRs
+sind mit erhaltener Commitgeschichte auf `master` gemergt:
 
-PR #161 ist gegen `codex/gasp-06-moving-block` geöffnet, nicht gegen master.
-Nach einem späteren Merge von #160 seine Basis entsprechend umstellen.
-GitHub-Connector meldete beim Erstellen 403; die normale GitHub-CLI war nun
-authentifiziert und erstellte #161 erfolgreich. Titel/Body von #160 wurden
-darüber ebenfalls auf den tatsächlichen Neuaufbau korrigiert; die älteren
-Metadatenblockaden im historischen Abschnitt sind damit erledigt.
+- [PR #160](https://github.com/Athurito/SurvivalRpg/pull/160), GASP-06:
+  `c97234d54bfbbd624bf78c34510ed2252aadaef7`, 2026-09-28T21:08:27Z;
+  finaler geprüfter Head `c357ddb1108b841ea2c088e548594690c65655ff`.
+- [PR #161](https://github.com/Athurito/SurvivalRpg/pull/161), GASP-07:
+  `849dc7aa751346e0d248432c24cf08cce98426af`, 2026-09-28T21:09:29Z;
+  finaler geprüfter Head `780740348a0f7ba45412b1e8535c28be4f4aa60d`,
+  Implementierung `301275dcc05f4d07d37b93de8f5796255819586a`.
 
-Nutzereditor PID51032 auf `Lvl_RpgGaspMantle` mit normalem Fenster gestartet,
-MCP-Port8002, `NoSaveConfig`, isolierter Benutzerpfad
-`Saved/GaspCmcSprint20260928/ProjectUser`. Über MCP bestätigt: richtige Karte,
-keine Dirty-Pakete/-Maps und kein laufendes PIE. Die vorigen Testeditoren und
-der Cookprozess sind beendet. Editor für die einfache Shift-/Blockprobe offen
-lassen; Play wird vom Nutzer gestartet.
+PR #161 wurde nach dem Merge von #160 von dessen Branch auf `master`
+umgestellt. GitHub-CLI bestätigt beide Merges; Titel und Beschreibung von
+#160 sind auf den tatsächlichen Neuaufbau korrigiert. Die frühere
+Connector-403-Blockade ist damit erledigt.
+
+CMC läuft mit 375/585 cm/s, Block mit 157 cm/s. GAS besitzt Sprintverbrauch
+und die ausdrücklich gewünschte verzögerte Regeneration; Mover verwendet
+dieselben Lauf-/Sprintgeschwindigkeiten, erhält aber kein neues Ausdauersystem.
+Native-/Asset-Ownership und Grenzen stehen in
+[gasp-cmc-sprint.md](gasp-cmc-sprint.md). Vor der Freigabe bestanden:
+Editor/Game, **13/13 Sprinttests und 9/9 Regressionen**, echte
+50-cm-Korrektur bei 200 ms Lag, LateJoin/Exhaustion/Block/Respawn, eigene
+Sichtaufnahmen und Windows-Cook für fünf Karten (3171 Pakete, sieben
+Plattform-Skips, drei Warnungen). Die 545 Testwarnungen und früheren
+Fehlversuche bleiben im [Manifest](assets/gasp-cmc-sprint-validation.json).
+
+Beim Merge-Abschluss wurden der unveränderte Dateibaum gegenüber Head
+`78074034` und alle vier NetworkPrediction/Mover-Overrides bestätigt.
+**Keine erneuten Builds, Spieltests oder Cooks für diese reine Statuspflege.**
+Die lokale Listen-PIE-Abnahme ersetzt keine Dedicated-/Mehrrechnerprüfung;
+die allgemeine Nutzerfreigabe erweitert auch keine dokumentierten Audio-
+oder Fußkontaktmessungen.
+
+Zum Abschluss lief kein UnrealEditor-Prozess. Die früheren Nutzereditoren
+PID14180/PID51032 sind historische Übergaben. Rohbelege bleiben lokal unter
+`Saved/GaspCmcSprint20260928` und `Saved/GaspBlockCadence20260928`.
+Die Statuspflege erfolgt auf `codex/gasp-07-merge-status`. Kein weiterer
+Gameplay-Schritt ist mit dieser Sichtfreigabe begonnen; das offene
+GASP-02-Register der Roadmap bleibt erhalten. Vor einer neuen Aufgabe den
+aktuellen Branch-/PR-Stand und die Roadmap erneut prüfen.
 
 ## Vorheriger Stand – GASP-06-Neuaufbau, 28.09.2026
+
+Historischer Übergabestand vor der abschließenden Nutzerfreigabe. Die
+folgenden offenen PR-/Sichtprobe- und Editorangaben gelten für diesen
+Zeitpunkt; maßgeblich ist der bestätigte Abschluss oben.
 
 | Feld | Wert |
 | --- | --- |
@@ -62,9 +71,11 @@ lassen; Play wird vom Nutzer gestartet.
 | Nächster Schritt | Nutzer prüft CMC auf `Lvl_RpgGaspMantle` ohne RMB (normale Laufanimation), Mover auf `Lvl_RpgGaspMover` mit RMB+WASD/Diagonal/Stop/Release (Gehschritte). Erst nach erneuter Sicht-/Hörfreigabe mergen. Kein Roadmap-Fortschritt oder Shutdown während dieser Abnahme |
 | Abnahme | 26 Assetkorrekturen seit `bf90d218`, keine C++-/Tempoänderung. Quellclips/Spielstände erhalten. Messung und Nahaufnahmen geprüft; Klangqualität und Nutzergefallen stehen aus. Untere Füße in neuen Nahaufnahmen angeschnitten, keine neue vollständige Fußkontaktabnahme behauptet |
 
-GitHub-Titel/-Beschreibung konnten wegen Connector-403 und fehlender Browseranmeldung noch nicht ersetzt werden; sie beschreiben weiterhin den verworfenen Ansatz. Maßgeblich sind dieser Neuaufbaubericht und die neuen Commits im selben PR. Kein Merge ist freigegeben.
+Die damalige Connector-403-Blockade wurde später über die authentifizierte
+GitHub-CLI gelöst. PR-Metadaten wurden korrigiert; Nutzerfreigabe und
+bestätigter Merge sind im aktuellen Abschluss oben dokumentiert.
 
-## Letzter abgeschlossener Schritt – GASP-05-Originalbereinigung
+## Früherer Abschluss – GASP-05-Originalbereinigung
 
 [PR #158](https://github.com/Athurito/SurvivalRpg/pull/158), bestätigt gemergt als `051f03f06abf84b82191338a52401dd64ddd6c32` am 2026-09-27T01:16:35Z; finaler geprüfter Head `594b202084737c6e98ad3cc853d3cc613504dcc5`.
 Exakt 2298 Originalpakete und vier alte Sample-Actor-Pakete entfernt; eigene

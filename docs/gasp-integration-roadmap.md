@@ -7,7 +7,9 @@ nicht eine neue Gesamtplanung für Combat, Crafting oder Portale.
 
 ## Schnellstart
 
-- **GASP-06: Nachbesserung geprüft, erneute Nutzer-Sicht-/Hörprobe offen.** Rückbau `de852e98` auf `908b7c75`, Neuaufbau `ac87a4a6`; gemeinsame Chooser-/Linked-Layer-Blockbewegung. Die Nutzerprobe von `bf90d218` fand doppeltes freies CMC-Animationstempo und Mover-Renn-Foley beim Blocken. Korrektur `794fad75`: Updateweg-/BlendSpace-Fix und 50 Walk-Notifies geprüft: 16/16 Tests, kaltes Neuladen, drei AnimBP-Compiles, Kadenz-/Tonausgabe und Fünf-Karten-Cook erfolgreich. [Draft-PR #160](https://github.com/Athurito/SurvivalRpg/pull/160) bleibt offen. Historische Fehlversuche und Prüfgrenzen im [Bericht](gasp-block-locomotion.md) und der [Übergabe](gasp-integration-handoff.md).
+- **Gemergt: GASP-07 – CMC-Sprint mit GAS-Ausdauer.** Nutzer bestätigt „schaut gut aus“; [PR #161](https://github.com/Athurito/SurvivalRpg/pull/161) am 28.09.2026 um 21:09:29 UTC als `849dc7aa751346e0d248432c24cf08cce98426af` gemergt, finaler geprüfter Head `780740348a0f7ba45412b1e8535c28be4f4aa60d`. CMC 375/585 cm/s, GAS-Sprint mit Verbrauch und verzögerter Regeneration. Vor Merge: Editor/Game, 13/13 Sprinttests, 9/9 Regressionen, Sichtaufnahmen und Windows-Cook bestanden. Bei Abschluss Dateibaumgleichheit und vier Plugin-Overrides bestätigt; keine neuen Builds/Spieltests/Cooks für die reine Statuspflege. [Bericht und Grenzen](gasp-cmc-sprint.md), [Übergabe](gasp-integration-handoff.md).
+
+- **Gemergt: GASP-06 – erweiterbare Block-Locomotion.** [PR #160](https://github.com/Athurito/SurvivalRpg/pull/160) am 28.09.2026 um 21:08:27 UTC als `c97234d54bfbbd624bf78c34510ed2252aadaef7` gemergt, geprüfter Head `c357ddb1108b841ea2c088e548594690c65655ff`. Rückbau `de852e98`, Neuaufbau `ac87a4a6`, Kadenz-/Foley-Korrektur `794fad75`; Nutzer bestätigt den korrigierten Eindruck. Historische finale Assetabnahme: 16/16 Tests, kaltes Neuladen, drei AnimBP-Compiles, Kadenz-/Tonausgabe und Fünf-Karten-Cook. Fehlversuche und Prüfgrenzen bleiben im [Bericht](gasp-block-locomotion.md) erhalten; diese Läufe wurden beim Merge nicht wiederholt.
 
 - **Gemergt: GASP-05 – Originalimport entfernt.** [PR #158](https://github.com/Athurito/SurvivalRpg/pull/158), bestätigt gemergt als `051f03f06abf84b82191338a52401dd64ddd6c32` am 2026-09-27T01:16:35Z; finaler geprüfter Head `594b202084737c6e98ad3cc853d3cc613504dcc5`. Branch `codex/gasp-05-remove-sample-actors`, Assetcommit `0c37d9c4b9fb5cb555569c81ea5b10aedaefa4d6`, Basis `d6cb927f`. Vier alte Sample-Akteure und exakt 2298 historische Originalassets entfernt; 4662 übrige Assets einschließlich aller 2156 übernommenen Ziele byteidentisch, sieben persönliche SaveGames erhalten. Frischer Graph, zwei Karten-Smokes, 9/9 Tests, neun BP-/AnimBP-Compiles und voller Windows-Cook (3132 Pakete, fünf Karten, Exit 0) bestanden. [Entfernung und Grenzen](gasp-original-import-removal.md), [Manifest](assets/gasp-original-import-removal.json). Bestätigter Merge: `051f03f06abf84b82191338a52401dd64ddd6c32`.
 - **Gemergter Teilschritt: GASP-05 – Import-Abhängigkeits-/Entfernungslisten-Audit.** [PR #156](https://github.com/Athurito/SurvivalRpg/pull/156) am 27.09.2026 um 00:29:00 UTC bestätigt gemergt als `fdff8b91341c0c130db8487cea62f5c50f86bfd8`, geprüfter Head `6c89b9f18308abcc6cbf83a7973899cd351087d4`, Werkzeugcommit `9c8d7c77`. Arbeitsbranch `codex/gasp-05-import-audit`, Basis `577d7606`. Damals waren alle 2156 zugeordneten Originalpakete über jede der zwei alten Testkarten erreichbar; vier gespeicherte Sample-Akteure waren die direkten Projektblocker. Entfernungsliste leer, 17/17 Planertests bestanden, 6964 Assets/Maps und sieben SaveGames unverändert. Für diese Merge-Statuspflege keine Neuläufe. Der damalige Folgeauftrag zur Entkopplung und Entfernung ist inzwischen ausgeführt; aktueller Stand im Eintrag darüber. [Auditbericht](gasp-import-cleanup-audit.md), [Manifest](assets/gasp-import-cleanup-audit.json).
@@ -23,10 +25,10 @@ nicht eine neue Gesamtplanung für Combat, Crafting oder Portale.
 - **Gemergt: `GASP-02` / `GASP-STAB-02` – Falling bei belegtem Respawn.** Commit `57fa8de9`, [PR #146](https://github.com/Athurito/SurvivalRpg/pull/146), bestätigter Merge `b9a65360`. `GASP-STAB-01` ist mit [PR #145](https://github.com/Athurito/SurvivalRpg/pull/145) gemergt (`4039be25`). Der anschließende NET-01-Nachweis steht oben; weitere Registerpunkte bleiben offen.
 - Aktive Aufgabe, Branch, letzte Ergebnisse und konkrete Fortsetzung stehen in
   [gasp-integration-handoff.md](gasp-integration-handoff.md).
-- Letzter akzeptierter Runtime-Ausgangspunkt: [PR #152](https://github.com/Athurito/SurvivalRpg/pull/152),
-  Merge `9de031c9`, finaler geprüfter Head `7ab180a8`. GASP-01 bleibt mit PR #144
-  und damaliger Sichtabnahme übernommen. Die anschließende Originalasset-
-  Bereinigung ist in PR #158 gemergt; alle übernommenen Projektassets sind erhalten.
+- Letzter akzeptierter Runtime-Ausgangspunkt: [PR #161](https://github.com/Athurito/SurvivalRpg/pull/161),
+  Merge `849dc7aa`, finaler geprüfter Head `78074034`; enthält den zuvor gemergten
+  Block-Neuaufbau aus #160 und die vorangegangenen GASP-Schritte. Aktuelle
+  Runtime/Assets stimmen mit diesem freigegebenen Stand überein.
 - Dieser Stand enthält offene Folgearbeiten. „Gemergt“ bedeutet nicht, dass alle
   Netzwerk-/Lifecycle-Randfälle gelöst oder alle Umgebungen getestet sind.
 - Vor Arbeit prüfen: aktueller Git-Stand, diese Roadmap, Übergabe und die zum
@@ -58,8 +60,8 @@ Vorgabe, insgesamt genau drei Experience-Dateien zu besitzen.
 | `GASP-03` | Mover-Ragdoll-Experience | **Gemergt** | [PR #152](https://github.com/Athurito/SurvivalRpg/pull/152), Merge `9de031c9`, finaler Head `7ab180a8`. Historische Editor/Game-, 20/20-Test-, Sicht- und Assetprüfungen; Farb-/MetaSound-Folgefix enthalten. [Pilotbericht](gasp-mover-ragdoll-pilot.md) |
 | `GASP-04` | Vergleich der drei Varianten | **Gemergt** | [PR #154](https://github.com/Athurito/SurvivalRpg/pull/154), Merge `bb690eef`, geprüfter Head `d3240b4b`, Testcode `b9608357`; Editor/Game, 31/31 Tests und Root-Sichtprüfung. [Matrix und Grenzen](gasp-variant-comparison.md); zusätzliche Nutzer-Sichtabnahme nicht erfolgt |
 | `GASP-05` | Importbereinigung | **Gemergt: [PR #158](https://github.com/Athurito/SurvivalRpg/pull/158)** | Vier Sample-Akteure und exakt 2298 Originalassets entfernt; Projektkopien erhalten. Zwei Map-Smokes, 9/9 Tests, neun BP-Compiles, frischer Graph und Windows-Cook (3132 Pakete, fünf Karten, Exit 0) bestanden; [PR #158](https://github.com/Athurito/SurvivalRpg/pull/158) bestätigt gemergt. [Entfernung und Grenzen](gasp-original-import-removal.md) |
-| `GASP-06` | Erweiterbare Block-Locomotion | **PR offen – erneute Nutzerprobe** | Rückbau und Neuaufbau vorhanden; gemeldete CMC-Kadenz-/Mover-Foley-Regressionen korrigiert. 16/16 Tests, persistierte Assets, Kadenz-/Audioaufnahmen und Cook geprüft. PR #160 bleibt bis Sicht-/Hörfreigabe offen; [Bericht](gasp-block-locomotion.md) |
-| `GASP-07` | CMC-Sprint mit GAS-Ausdauer | **Technisch geprüft, Sichtfreigabe offen** | Originalvergleich bestätigt unterschiedliche Sample-Tempi; RPG-CMC auf 375/585 cm/s abgestimmt. Konkrete GAS-Blueprints mit Verbrauch und verzögerter Regeneration; Editor/Game, 13/13 Sprinttests, 9/9 Regressionen, eigener Sichtlauf und Windows-Cook erfolgreich. Commit `301275dc`, [Draft-PR #161](https://github.com/Athurito/SurvivalRpg/pull/161) auf `c357ddb1`; [Bericht und Grenzen](gasp-cmc-sprint.md). PR #160 bleibt offen; kein Merge bis zur Sichtprobe. |
+| `GASP-06` | Erweiterbare Block-Locomotion | **Gemergt** | [PR #160](https://github.com/Athurito/SurvivalRpg/pull/160), Merge `c97234d5`, Head `c357ddb1`. Nutzerfreigabe nach Kadenz-/Foley-Korrektur; vorher 16/16 Tests, persistierte Assets, Kadenz-/Audioaufnahmen und Cook geprüft. Keine neuen Läufe zur Statuspflege; [Bericht](gasp-block-locomotion.md) |
+| `GASP-07` | CMC-Sprint mit GAS-Ausdauer | **Gemergt** | [PR #161](https://github.com/Athurito/SurvivalRpg/pull/161), Merge `849dc7aa`, Head `78074034`, Implementierung `301275dc`. Nutzerfreigabe; CMC 375/585 cm/s, GAS-Verbrauch/Regeneration. Vorher Editor/Game, 13/13 Sprinttests, 9/9 Regressionen, Sichtaufnahmen und Windows-Cook erfolgreich; [Bericht und Grenzen](gasp-cmc-sprint.md) |
 
 Statuswerte: **Geplant**, **Bereit**, **In Arbeit**, **Validierung**,
 **PR offen**, **Gemergt**, **Blockiert**, **Zurückgestellt**.
@@ -238,9 +240,11 @@ Sword-and-Shield ist der erste Satz, ein zweiter Testsatz belegt Austauschbarkei
 Retargeting, Fußkontakte und Root-Yaw werden je Satz geprüft; Quellclips bleiben
 erhalten. Natürliche Haltung hat Vorrang vor bisherigem Normaltempo.
 
-Die Arbeit bleibt in PR #160. Neue Builds, Asset-/Netzwerkprüfungen, Cook und
-eigene Sichtabnahme sind erforderlich. Danach folgt die Nutzer-Sichtprobe vor
-Merge. Die alten Validierungsergebnisse ersetzen diese neue Abnahme nicht.
+Der Neuaufbau wurde in PR #160 mit eigenen Build-, Asset-/Netzwerk-, Cook-
+und Sichtprüfungen sowie anschließenden Kadenz-/Foley-Korrekturen abgenommen.
+Nach der Nutzerfreigabe ist er als `c97234d5` gemergt. Die jeweiligen
+Prüfzeitpunkte und Grenzen stehen im [Bericht](gasp-block-locomotion.md);
+zurückgenommene Ergebnisse gelten weiterhin nicht als Abnahme des Neuaufbaus.
 
 ## Verbindliche Arbeitsweise über mehrere Chats
 
